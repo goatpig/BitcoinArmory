@@ -311,15 +311,15 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
 
       pytx = txObj.getSignedPyTx()
       newTxHash = pytx.getHash()
-      
+
       def sendGetDataMsg():
          msg = PyMessage('getdata')
          msg.payload.invList.append( [MSG_INV_TX, newTxHash] )
          self.NetworkingFactory.sendMessage(msg)
-      
+
       self.NetworkingFactory.sendTx(pytx)
       reactor.callLater(3, sendGetDataMsg)
-            
+
       return pytx.getHashHex(BIGENDIAN)
 
 
@@ -1275,12 +1275,12 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
                ledgerVector = ledgerWlt.getHistoryPageAsVector(pageId)
                for entry in reversed(ledgerVector):
                   ledgerEntries.append(entry)
-               
+
                sz = len(ledgerEntries)
                pageId = pageId + 1
          except:
             pass
-         
+
          lower = min(sz, from_tx)
          upper = min(sz, from_tx+tx_count)
          txSet = set([])
@@ -3043,7 +3043,7 @@ class Armory_Daemon(object):
             # This is LISTEN call for armory RPC server
             reactor.listenTCP(ARMORY_RPC_PORT, \
                               server.Site(secured_resource), \
-                              interface="127.0.0.1")
+                              interface=CLI_OPTIONS.rpcBindAddr)
 
             # Setup the heartbeat function to run every
             reactor.callLater(3, self.Heartbeat)
