@@ -288,22 +288,18 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
 
    #############################################################################
    @catchErrsForJSON
-   def jsonrpc_sendasciitransaction(self, txASCIIFile):
+   def jsonrpc_sendasciitransaction(self, txASCII):
       """
       DESCRIPTION:
-      Broadcast to the bitcoin network the signed tx in the txASCIIFile
+      Broadcast to the bitcoin network the signed tx in the txASCII
       PARAMETERS:
-      txASCIIFile - The path to a file with a signed transacion.
+      txASCII - A signed transaction in ASCII-armored form.
       RETURN:
       The transaction id of the tx that was broadcast
       """
 
-      # Read in the signed Tx data. HANDLE UNREADABLE FILE!!!
-      with open(txASCIIFile, 'r') as lbTxData:
-         allData = lbTxData.read()
-
       # Try to decipher the Tx and make sure it's actually signed.
-      txObj = UnsignedTransaction().unserializeAscii(allData)
+      txObj = UnsignedTransaction().unserializeAscii(txASCII)
       if not txObj:
          raise InvalidTransaction, "file does not contain a valid tx"
       if not txObj.verifySigsAllInputs():
@@ -311,15 +307,15 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
 
       pytx = txObj.getSignedPyTx()
       newTxHash = pytx.getHash()
-      
+
       def sendGetDataMsg():
          msg = PyMessage('getdata')
          msg.payload.invList.append( [MSG_INV_TX, newTxHash] )
          self.NetworkingFactory.sendMessage(msg)
-      
+
       self.NetworkingFactory.sendTx(pytx)
       reactor.callLater(3, sendGetDataMsg)
-            
+
       return pytx.getHashHex(BIGENDIAN)
 
 
@@ -1275,12 +1271,12 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
                ledgerVector = ledgerWlt.getHistoryPageAsVector(pageId)
                for entry in reversed(ledgerVector):
                   ledgerEntries.append(entry)
-               
+
                sz = len(ledgerEntries)
                pageId = pageId + 1
          except:
             pass
-         
+
          lower = min(sz, from_tx)
          upper = min(sz, from_tx+tx_count)
          txSet = set([])
@@ -2012,19 +2008,61 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
 
 
    #############################################################################
+   # Take the ASCII representation of a Tx and return a JSON object describing
+   # it.
+   @catchErrsForJSON
+   def jsonrpc_decodeasciitransaction(self, txASCII):
+      """
+      DESCRIPTION:
+      Describe an ASCII-armored transaction.
+      PARAMETERS:
+      txASCII - A transaction in ASCII-armored form.
+      RETURN:
+      A JSON Map describing the transaction.
+      """
+
+      ustxObj = None
+      ustxReadable = False
+      allData = ''
+
+      # Try to decipher the Tx.
+      try:
+         ustxObj = UnsignedTransaction().unserializeAscii(txASCII)
+         ustxReadable = True
+      except BadAddressError:
+         LOGERROR('This transaction contains inconsistent information. This ' \
+                  'is probably not your fault...')
+         ustxObj = None
+         ustxReadable = False
+      except NetworkIDError:
+         LOGERROR('This transaction is actually for a different network! Did' \
+                  'you load the correct transaction?')
+         ustxObj = None
+         ustxReadable = False
+      except (UnserializeError, IndexError, ValueError):
+         LOGERROR('This transaction can\'t be read.')
+         ustxObj = None
+         ustxReadable = False
+
+      if ustxObj:
+         return ustxObj.toJSONMap()
+
+      return
+
+   #############################################################################
    # Take the ASCII representation of an unsigned Tx (i.e., the data that is
    # signed by Armory's offline Tx functionality) and returns an ASCII
    # representation of the signed Tx, with the current wallet signing the Tx.
    # See SignBroadcastOfflineTxFrame::signTx() (ui/TxFrames.py) for the GUI's
    # analog. Note this function can sign multisigs as well as normal inputs.
    @catchErrsForJSON
-   def jsonrpc_signasciitransaction(self, txASCIIFile):
+   def jsonrpc_signasciitransaction(self, txASCII):
       """
       DESCRIPTION:
       Sign whatever parts of the transaction the currently active wallet and/or
       lockbox can.
       PARAMETERS:
-      txASCIIFile - The path to a file with an unsigned transacion.
+      txASCII - An unsigned transaction in ASCII-armored form.
       RETURN:
       An ASCII-formatted semi-signed transaction, similar to the one output by
       Armory for offline signing.
@@ -2034,13 +2072,9 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
       ustxReadable = False
       allData = ''
 
-      # Read in the signed Tx data. HANDLE UNREADABLE FILE!!!
-      with open(txASCIIFile, 'r') as lbTxData:
-         allData = lbTxData.read()
-
       # Try to decipher the Tx and make sure it's actually signed.
       try:
-         ustxObj = UnsignedTransaction().unserializeAscii(allData)
+         ustxObj = UnsignedTransaction().unserializeAscii(txASCII)
          ustxReadable = True
       except BadAddressError:
          LOGERROR('This transaction contains inconsistent information. This ' \
@@ -2060,11 +2094,10 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
       # If we have a signed Tx object, let's make sure it's actually usable.
       if ustxObj:
          if not ustxReadable:
-            if not ustxReadable:
-               if len(allData) > 0:
-                  LOGERROR('The Tx data was read but was corrupt.')
-               else:
-                  LOGERROR('The Tx data couldn\'t be read.')
+            if len(allData) > 0:
+               LOGERROR('The Tx data was read but was corrupt.')
+            else:
+               LOGERROR('The Tx data couldn\'t be read.')
          else:
             partSignedTx = self.sign_transaction(ustxObj)
             if partSignedTx:
@@ -2287,7 +2320,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
                lockbox with the provided Base58 ID instead of the currently
                active armoryd lockbox.
       outForm - (Default=JSON) If used, armoryd will return the lockbox in a
-                particular format. Choices are "JSON", "Hex", and "Base64".
+                particular format. Choices are "JSON", "Hex", "ASCII", and "Base64".
       RETURN:
       If the lockbox is found, a dictionary with information on the lockbox will
       be returned.
@@ -2322,6 +2355,8 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
             retDict['Hex'] = binary_to_hex(self.lbToUse.serialize())
          elif self.outForm == 'base64':
             retDict['Base64'] = base64.b64encode(binary_to_hex(self.lbToUse.serialize()))
+         elif self.outForm == 'ascii':
+            retDict['ASCII'] = self.lbToUse.serializeAscii()
          else:
             retDict['Error'] = '%s is an invalid output type.' % self.outForm
 
@@ -2663,12 +2698,12 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
    # works with a regular signed Tx and a signed lockbox Tx if there are already
    # enough signatures.
    @catchErrsForJSON
-   def jsonrpc_gethextxtobroadcast(self, txASCIIFile):
+   def jsonrpc_gethextxtobroadcast(self, txASCII):
       """
       DESCRIPTION:
       Get a signed Tx from a file and get the raw hex data to broadcast.
       PARAMETERS:
-      txASCIIFile - The path to a file with a signed transacion.
+      txASCII - A signed transacion in ASCII-armored form.
       RETURN:
       A hex string of the raw transaction data to be transmitted.
       """
@@ -2682,13 +2717,9 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
       finalTx = None
       self.retStr = 'The transaction data cannot be broadcast'
 
-      # Read in the signed Tx data. HANDLE UNREADABLE FILE!!!
-      with open(txASCIIFile, 'r') as lbTxData:
-         allData = lbTxData.read()
-
       # Try to decipher the Tx and make sure it's actually signed.
       try:
-         ustxObj = UnsignedTransaction().unserializeAscii(allData)
+         ustxObj = UnsignedTransaction().unserializeAscii(txASCII)
          sigStatus = ustxObj.evaluateSigningStatus()
          enoughSigs = sigStatus.canBroadcast
          sigsValid = ustxObj.verifySigsAllInputs()
