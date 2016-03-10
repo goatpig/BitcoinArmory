@@ -2,7 +2,7 @@
 //                                                                            //
 //  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
-//  See LICENSE or http://www.gnu.org/licenses/agpl.html                      //
+//  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -330,7 +330,7 @@ public:
    static uint64_t readVarInt(uint8_t const * strmPtr, size_t remaining, uint32_t* lenOutPtr=NULL)
    {
       if (remaining < 1)
-         throw BlockDeserializingException();
+         throw BlockDeserializingException("invalid varint");
       uint8_t firstByte = strmPtr[0];
 
       if(firstByte < 0xfd)
@@ -342,7 +342,7 @@ public:
       if(firstByte == 0xfd)
       {
          if (remaining < 3)
-            throw BlockDeserializingException();
+            throw BlockDeserializingException("invalid varint");
          if(lenOutPtr != NULL) 
             *lenOutPtr = 3;
          return READ_UINT16_LE(strmPtr+1);
@@ -351,7 +351,7 @@ public:
       else if(firstByte == 0xfe)
       {
          if (remaining < 5)
-            throw BlockDeserializingException();
+            throw BlockDeserializingException("invalid varint");
          if(lenOutPtr != NULL) 
             *lenOutPtr = 5;
          return READ_UINT32_LE(strmPtr+1);
@@ -359,7 +359,7 @@ public:
       else //if(firstByte == 0xff)
       {
          if (remaining < 9)
-            throw BlockDeserializingException();
+            throw BlockDeserializingException("invalid varint");
          if(lenOutPtr != NULL) 
             *lenOutPtr = 9;
          return READ_UINT64_LE(strmPtr+1);
@@ -1068,7 +1068,7 @@ public:
    //        look like the output of this function operating on a multisig 
    //        script (doesn't matter if it's valid or not)?  In other words, is
    //        there is a hole where someone could mine a script that would be
-   //        forwarded by Bitcoin-Qt to this code, which would then produce
+   //        forwarded by Bitcoin-Core to this code, which would then produce
    //        a non-std-unique-key that would be indistinguishable from the 
    //        output of this function?  My guess is, no.  And my guess is that 
    //        it's not a very useful even if it did.  But it would be good to
@@ -1340,7 +1340,7 @@ public:
    }
 
 
-   // This got more complicated when Bitcoin-Qt 0.8 switched from
+   // This got more complicated when Bitcoin-Core 0.8 switched from
    // blk0001.dat to blocks/blk00000.dat
    static string getBlkFilename(string dir, uint32_t fblkNum)
    {

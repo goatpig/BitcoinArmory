@@ -2,7 +2,7 @@
 //                                                                            //
 //  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
-//  See LICENSE or http://www.gnu.org/licenses/agpl.html                      //
+//  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -249,7 +249,8 @@ const BinaryDataRef OutPoint::getDBkey(LMDBBlockDatabase* db) const
 
    if (db != nullptr)
    {
-      if (db->getStoredTx_byHash(txHash_, nullptr, &DBkey_))
+      DBkey_ = move(db->getDBKeyForHash(txHash_));
+      if (DBkey_.getSize() == 6)
       {
          DBkey_.append(WRITE_UINT16_BE((uint16_t)txOutIndex_));
          return DBkey_;
@@ -575,7 +576,6 @@ void Tx::unserialize(uint8_t const * ptr, size_t size)
    lockTime_ = READ_UINT32_LE(ptr + offsetsTxOut_[numTxOut]);
 
    isInitialized_ = true;
-   //headerPtr_ = NULL;
 }
 
 
@@ -624,7 +624,10 @@ TxIn Tx::getTxInCopy(int i) const
    assert(isInitialized());
    uint32_t txinSize = offsetsTxIn_[i+1] - offsetsTxIn_[i];
    TxIn out;
-   out.unserialize_checked(dataCopy_.getPtr()+offsetsTxIn_[i], dataCopy_.getSize()-offsetsTxIn_[i], txinSize, txRefObj_, i);
+   out.unserialize_checked(
+      dataCopy_.getPtr()+offsetsTxIn_[i], 
+      dataCopy_.getSize()-offsetsTxIn_[i], 
+      txinSize, txRefObj_, i);
    
    if(txRefObj_.isInitialized())
    {
@@ -650,6 +653,24 @@ TxOut Tx::getTxOutCopy(int i) const
       out.setParentHeight(txRefObj_.getBlockHeight());
 
    return out;
+}
+
+/////////////////////////////////////////////////////////////////////////////
+bool Tx::isRBF() const
+{
+   if (isRBF_ != UINT32_MAX)
+      return isRBF_ == 1;
+
+   for (unsigned i = 0; i < offsetsTxIn_.size() - 1; i++)
+   { 
+      uint32_t sequenceOffset = offsetsTxIn_[i + 1] - 4;
+      uint32_t* sequencePtr = (uint32_t*)(dataCopy_.getPtr() + sequenceOffset);
+
+      if (*sequencePtr < 0xFFFFFFFF - 1)
+         return true;
+   }
+
+   return false;
 }
 
 /////////////////////////////////////////////////////////////////////////////

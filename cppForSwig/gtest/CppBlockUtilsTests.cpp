@@ -1,3 +1,15 @@
+////////////////////////////////////////////////////////////////////////////////
+//                                                                            //
+//  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
+//  Distributed under the GNU Affero General Public License (AGPL v3)         //
+//  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
+//                                                                            //
+//                                                                            //
+//  Copyright (C) 2016, goatpig                                               //            
+//  Distributed under the MIT license                                         //
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                   
+//                                                                            //
+////////////////////////////////////////////////////////////////////////////////
 #include <limits.h>
 #include <iostream>
 #include <stdlib.h>
@@ -69,17 +81,6 @@ static uint64_t getDBBalanceForHash160(
    return ssh.getScriptBalance();
 }
 
-
-/*
-unused
-static uint32_t getAppliedToHeightInDB(BlockDataManager_LevelDB &bdm)
-{
-   StoredDBInfo sdbi;
-   bdm.getIFace()->getStoredDBInfo(BLKDATA, sdbi, false); 
-   return sdbi.appliedToHgt_;
-}
-*/
-
 // Utility function - Clean up comments later
 static int char2int(char input)
 {
@@ -150,6 +151,7 @@ static void nullProgress(unsigned, double, unsigned, unsigned)
 {
 
 }
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Test any custom Crypto++ code we've written.
@@ -3299,9 +3301,11 @@ TEST_F(StoredBlockObjTest, SHeaderDBSerFull_H)
    sbh_.isMainBranch_     = true;
    sbh_.numTx_            = 15;
    sbh_.numBytes_         = 0xdeadbeef;
+   sbh_.fileID_ = 25;
+   sbh_.offset_ = 0xffffeeee;
 
    // SetUp already contains sbh_.unserialize(rawHead_);
-   BinaryData last4 = READHEX("00ffff01efbeadde");
+   BinaryData last4 = READHEX("00ffff01efbeadde" "0f000000" "1900eeeeffff00000000");
    EXPECT_EQ(serializeDBValue(sbh_, HEADERS, ARMORY_DB_FULL, DB_PRUNE_NONE), rawHead_ + last4);
 }
 
@@ -4256,9 +4260,9 @@ TEST_F(StoredBlockObjTest, SScriptHistorySer)
    ssh.alreadyScannedUpToBlk_ = 65535;
 
    /////////////////////////////////////////////////////////////////////////////
-   // Empty SSH (shouldn't be written in supernode, should be in full node)
+   // Empty ssh (shouldn't be written in supernode, should be in full node)
    BinaryData expect, expSub1, expSub2;
-   expect = READHEX("0400""ffff0000""00""0000000000000000");
+   expect = READHEX("0400""ffff0000""00""0000000000000000""00000000");
    EXPECT_EQ(serializeDBValue(ssh, ARMORY_DB_BARE, DB_PRUNE_NONE), expect);
 
    /////////////////////////////////////////////////////////////////////////////
@@ -4269,14 +4273,14 @@ TEST_F(StoredBlockObjTest, SScriptHistorySer)
    txio0.setMultisig(false);
    ssh.insertTxio(txio0);
 
-   expect = READHEX("0400""ffff0000""01""0100000000000000");
+   expect = READHEX("0400""ffff0000""01""0100000000000000""00000000");
    EXPECT_EQ(serializeDBValue(ssh, ARMORY_DB_BARE, DB_PRUNE_NONE), expect);
 
    /////////////////////////////////////////////////////////////////////////////
    // Added a second one, different subSSH
    TxIOPair txio1(READHEX("00010000""0002""0002"), READ_UINT64_HEX_LE("0002000000000000"));
    ssh.insertTxio(txio1);
-   expect  = READHEX("0400""ffff0000""02""0102000000000000");
+   expect  = READHEX("0400""ffff0000""02""0102000000000000""00000000");
    expSub1 = READHEX("01""00""0100000000000000""0001""0001");
    expSub2 = READHEX("01""00""0002000000000000""0002""0002");
    EXPECT_EQ(serializeDBValue(ssh, ARMORY_DB_BARE, DB_PRUNE_NONE), expect);
@@ -4287,7 +4291,7 @@ TEST_F(StoredBlockObjTest, SScriptHistorySer)
    // Added another TxIO to the second subSSH
    TxIOPair txio2(READHEX("00010000""0004""0004"), READ_UINT64_HEX_LE("0000030000000000"));
    ssh.insertTxio(txio2);
-   expect  = READHEX("0400""ffff0000""03""0102030000000000");
+   expect  = READHEX("0400""ffff0000""03""0102030000000000""00000000");
    expSub1 = READHEX("01"
                        "00""0100000000000000""0001""0001");
    expSub2 = READHEX("02"
@@ -4302,7 +4306,7 @@ TEST_F(StoredBlockObjTest, SScriptHistorySer)
    // equivalent to marking it spent, but we are DB-mode-agnostic here, testing
    // just the base insert/erase operations)
    ssh.eraseTxio(txio1);
-   expect  = READHEX("0400""ffff0000""02""0100030000000000");
+   expect  = READHEX("0400""ffff0000""02""0100030000000000""00000000");
    expSub1 = READHEX("01"
                        "00""0100000000000000""0001""0001");
    expSub2 = READHEX("01"
@@ -4317,7 +4321,7 @@ TEST_F(StoredBlockObjTest, SScriptHistorySer)
    TxIOPair txio3(READHEX("00010000""0006""0006"), READ_UINT64_HEX_LE("0000000400000000"));
    txio3.setMultisig(true);
    ssh.insertTxio(txio3);
-   expect  = READHEX("0400""ffff0000""03""0100030000000000");
+   expect  = READHEX("0400""ffff0000""03""0100030000000000""00000000");
    expSub1 = READHEX("01"
                        "00""0100000000000000""0001""0001");
    expSub2 = READHEX("02"
@@ -4330,7 +4334,7 @@ TEST_F(StoredBlockObjTest, SScriptHistorySer)
    /////////////////////////////////////////////////////////////////////////////
    // Remove the multisig
    ssh.eraseTxio(txio3);
-   expect  = READHEX("0400""ffff0000""02""0100030000000000");
+   expect  = READHEX("0400""ffff0000""02""0100030000000000""00000000");
    expSub1 = READHEX("01"
                        "00""0100000000000000""0001""0001");
    expSub2 = READHEX("01"
@@ -4343,7 +4347,7 @@ TEST_F(StoredBlockObjTest, SScriptHistorySer)
    // Remove a full subSSH (it shouldn't be deleted, though, that will be done
    // by BlockUtils in a post-processing step
    ssh.eraseTxio(txio0);
-   expect  = READHEX("0400""ffff0000""01""0000030000000000");
+   expect  = READHEX("0400""ffff0000""01""0000030000000000""00000000");
    expSub1 = READHEX("00");
    expSub2 = READHEX("01"
                        "00""0000030000000000""0004""0004");
@@ -4372,7 +4376,7 @@ TEST_F(StoredBlockObjTest, SScriptHistoryUnser)
 
    /////////////////////////////////////////////////////////////////////////////
    ssh = sshorig;
-   toUnser = READHEX("0400""ffff0000""00");
+   toUnser = READHEX("0400""ffff0000""00""00000000");
    ssh.unserializeDBKey(DBPREF + uniq);
    ssh.unserializeDBValue(toUnser);
 
@@ -4383,7 +4387,7 @@ TEST_F(StoredBlockObjTest, SScriptHistoryUnser)
 
    /////////////////////////////////////////////////////////////////////////////
    ssh = sshorig;
-   toUnser = READHEX("0400""ffff0000""01""0100000000000000");
+   toUnser = READHEX("0400""ffff0000""01""0100000000000000""00000000");
    ssh.unserializeDBKey(DBPREF + uniq);
    ssh.unserializeDBValue(toUnser);
    BinaryData txioKey = hgtX0 + READHEX("00010001");
@@ -4394,12 +4398,12 @@ TEST_F(StoredBlockObjTest, SScriptHistoryUnser)
 
 
    /////////////////////////////////////////////////////////////////////////////
-   // Test reading a subSSH and merging it with the regular SSH
+   // Test reading a subSSH and merging it with the regular ssh
    ssh = sshorig;
    subssh1 = StoredSubHistory();
 
    ssh.unserializeDBKey(DBPREF + uniq);
-   ssh.unserializeDBValue(READHEX("0400""ffff0000""02""0000030400000000"));
+   ssh.unserializeDBValue(READHEX("0400""ffff0000""02""0000030400000000""00000000"));
    subssh1.unserializeDBKey(DBPREF + uniq + hgtX0);
    subssh1.unserializeDBValue(READHEX("02"
                                         "00""0000030000000000""0004""0004"
@@ -4412,7 +4416,7 @@ TEST_F(StoredBlockObjTest, SScriptHistoryUnser)
    uint64_t val0 = READ_UINT64_HEX_LE("0000030000000000");
    uint64_t val1 = READ_UINT64_HEX_LE("0000000400000000");
 
-   // Unmerged, so SSH doesn't have the subSSH as part of it yet.
+   // Unmerged, so ssh doesn't have the subSSH as part of it yet.
    EXPECT_EQ(   ssh.subHistMap_.size(), 0);
    EXPECT_EQ(   ssh.alreadyScannedUpToBlk_, 65535);
    EXPECT_EQ(   ssh.totalTxioCount_, 2);
@@ -4457,136 +4461,6 @@ TEST_F(StoredBlockObjTest, SScriptHistoryUnser)
                        //"10""0000000400000000""0006""0006");
 }
 
-////////////////////////////////////////////////////////////////////////////////
-/*
-TEST_F(StoredBlockObjTest, SScriptHistoryMarkSpent)
-{
-   DBUtils::setArmoryDbType(ARMORY_DB_SUPER);
-   DBUtils::setDbPruneType(DB_PRUNE_NONE);
-
-   StoredScriptHistory ssh;
-
-   BinaryData a160 = READHEX("aabbccdd11223344aabbccdd11223344aabbccdd"); 
-
-   BinaryData dbKey0 = READHEX("01e078""0f""0007""0001");
-   BinaryData dbKey1 = READHEX("01e078""0f""0009""0005");
-   BinaryData dbKey2 = READHEX("01e078""0f""000f""0000");
-   BinaryData dbKey3 = READHEX("02e078""0f""0030""0003");
-   BinaryData dbKey4 = READHEX("02e078""0f""0030""0009");
-   BinaryData dbKey5 = READHEX("02e078""0f""00a0""0008");
-
-   uint32_t hgt = READ_UINT32_HEX_BE("0001e078");
-   uint32_t dup = READ_UINT8_HEX_BE("0f");
-
-   TxIOPair txio0(dbKey0, 10*COIN);
-   TxIOPair txio1(dbKey1, 11*COIN);
-   TxIOPair txio2(dbKey2, 12*COIN);
-   TxIOPair txio3(dbKey3, 13*COIN);
-
-   txio0.setFromCoinbase(true);
-   txio0.setTxOutFromSelf(false);
-   txio0.setMultisig(false);
-
-   txio1.setFromCoinbase(false);
-   txio1.setTxOutFromSelf(true);
-   txio1.setMultisig(false);
-
-   txio2.setFromCoinbase(false);
-   txio2.setTxOutFromSelf(false);
-   txio2.setMultisig(true);
-
-   txio3.setFromCoinbase(false);
-   txio3.setTxOutFromSelf(false);
-   txio3.setMultisig(true);
-
-   //BinaryData dbKey0 = READHEX("01e078""0f""0007""0001");
-   //BinaryData dbKey1 = READHEX("01e078""0f""0009""0005");
-   //BinaryData dbKey2 = READHEX("01e078""0f""000f""0000");
-   //BinaryData dbKey3 = READHEX("02e078""0f""0030""0003");
-   //BinaryData dbKey4 = READHEX("02e078""0f""0030""0009");
-   //BinaryData dbKey5 = READHEX("02e078""0f""00a0""0008");
-
-   // First test, only one TxIO, stored in base SSH object
-   BinaryData expect_ssh1 = READHEX(
-      "0400""ffffffff"
-      "01"
-         "40""00ca9a3b00000000""01e0780f0007""0001")
-
-
-   // First test, only one TxIO, stored in base SSH object
-   BinaryData expectSSH_ssh2 = READHEX(
-      "0480""ffffffff""02""00752b7d00000000")
-   BinaryData expectSSH_ssh2sub1 = READHEX(
-      "02"
-         "00""00ca9a3b00000000""0007""0001"
-         "00""00ab904100000000""0009""0005");
-
-
-   BinaryData expectSSH_bothspent = READHEX(
-      "0400""ffffffff"
-      "02"
-         "60""00ca9a3b00000000""01e0780f0007""0001""01e0780f00a00008"
-         "a0""0065cd1d00000000""01e0780f0009""0005""01e0780f000f0000"
-      "02"
-         "01e0780f00300003"
-         "01e0780f00300009");
-
-   BinaryData expectSSH_bothunspent = READHEX(
-      "0400""ffffffff"
-      "02"
-         "40""00ca9a3b00000000""01e0780f0007""0001"
-         "80""0065cd1d00000000""01e0780f0009""0005"
-      "02"
-         "01e0780f00300003"
-         "01e0780f00300009");
-
-   BinaryData expectSSH_afterrm = READHEX(
-      "0400""ffffffff"
-      "01"
-         "40""00ca9a3b00000000""01e0780f0007""0001"
-      "02"
-         "01e0780f00300003"
-         "01e0780f00300009");
-  
-   // Mark the second one spent (from same block as it was created)
-   txio1.setTxIn(dbKey4);
-
-   // In order for for these tests to work properly, the TxIns and TxOuts need
-   // to look like they're in the main branch.  Se we set the valid dupID vals
-   // so that txio.hasTxInInMain() and txio.hasTxOutInMain() both pass
-   LSMWrapper::GetInterfacePtr()->setValidDupIDForHeight(hgt,dup);
-
-   ssh.uniqueKey_ = HASH160PREFIX + a160;
-   ssh.version_ = 1;
-   ssh.alreadyScannedUpToBlk_ = UINT32_MAX;
-
-   ssh.markTxOutUnspent(txio0);
-
-   // Check the initial state matches expectations
-   EXPECT_EQ(ssh.serializeDBValue(), expectSSH_orig);
-
-   ssh.insertTxio(txio1);
-   // Mark the first output spent (second one was already marked spent)
-   ssh.markTxOutSpent( dbKey0, dbKey5);
-   EXPECT_EQ(ssh.serializeDBValue(), expectSSH_bothspent);
-
-   // Undo the last operation
-   ssh.markTxOutUnspent(dbKey0);
-   EXPECT_EQ(ssh.serializeDBValue(), expectSSH_orig);
-
-
-   ssh.markTxOutUnspent(dbKey1);
-   EXPECT_EQ(ssh.serializeDBValue(), expectSSH_bothunspent);
-
-   ssh.markTxOutSpent( dbKey1, dbKey2);
-   EXPECT_EQ(ssh.serializeDBValue(), expectSSH_orig);
-
-
-   ssh.eraseTxio(dbKey1);
-   EXPECT_EQ(ssh.serializeDBValue(), expectSSH_afterrm);
-
-}
-*/
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -4612,7 +4486,7 @@ protected:
       #endif
 
       auto isready = [](void)->bool { return true; };
-      iface_ = new LMDBBlockDatabase(isready);
+      iface_ = new LMDBBlockDatabase(nullptr, isready, string());
       magic_ = READHEX(MAINNET_MAGIC_BYTES);
       ghash_ = READHEX(MAINNET_GENESIS_HASH_HEX);
       gentx_ = READHEX(MAINNET_GENESIS_TX_HASH_HEX);
@@ -4625,12 +4499,6 @@ protected:
       config_.genesisBlockHash = ghash_;
       config_.genesisTxHash = gentx_;
       config_.magicBytes = magic_;
-
-      // Make sure the global DB type and prune type are reset for each test
-      //iface_->openDatabases( ldbdir_, ghash_, gentx_, magic_, 
-      //                        ARMORY_DB_BARE, DB_PRUNE_NONE);
-//       DBUtils::setArmoryDbType(ARMORY_DB_FULL);
-//       DBUtils::setDbPruneType(DB_PRUNE_NONE);
 
       rawHead_ = READHEX(
          "01000000"
@@ -4877,7 +4745,8 @@ protected:
 
    /////
    bool compareKVListRange(uint32_t startH, uint32_t endplus1H,
-                           uint32_t startB, uint32_t endplus1B)
+                           uint32_t startB, uint32_t endplus1B,
+                           DB_SELECT db2 = HISTORY)
    {
       KVLIST fromDB = iface_->getAllDatabaseEntries(HEADERS);
 
@@ -4903,7 +4772,7 @@ protected:
          return false;
       }
 
-      fromDB = iface_->getAllDatabaseEntries(HISTORY);
+      fromDB = iface_->getAllDatabaseEntries(db2);
       if(fromDB.size() < endplus1B || expectOutB_.size() < endplus1B)
       {
          LOGERR << "BLKDATA DB not the correct size";
@@ -4929,7 +4798,6 @@ protected:
       return true;
    }
 
-
    /////
    bool standardOpenDBs(void) 
    {
@@ -4945,7 +4813,7 @@ protected:
 
       BinaryData DBINFO = StoredDBInfo().getDBKey();
       BinaryData flags = READHEX("03100000");
-      BinaryData val0 = magic_+flags+zeros_+zeros_+ghash_;
+      BinaryData val0 = magic_ + flags + zeros_ + zeros_ + BtcUtils::EmptyHash_;
       addOutPairH(DBINFO, val0);
       addOutPairB(DBINFO, val0);
 
@@ -4995,7 +4863,6 @@ TEST_F(LMDBTest, OpenClose)
    ASSERT_TRUE(iface_->databasesAreOpen());
 
    EXPECT_EQ(iface_->getTopBlockHeight(HEADERS), 0);
-   EXPECT_EQ(READHEX(MAINNET_GENESIS_HASH_HEX), iface_->getTopBlockHash(HEADERS));
                           
    KVLIST HList = iface_->getAllDatabaseEntries(HEADERS);
    KVLIST BList = iface_->getAllDatabaseEntries(HISTORY);
@@ -5007,13 +4874,13 @@ TEST_F(LMDBTest, OpenClose)
    for(uint32_t i=0; i<HList.size(); i++)
    {
       EXPECT_EQ(HList[i].first,  READHEX("00"));
-      EXPECT_EQ(BList[i].second, magic_ + flags + zeros_ + zeros_ + ghash_);
+      EXPECT_EQ(BList[i].second, magic_ + flags + zeros_ + zeros_ + BtcUtils::EmptyHash_);
    }
 
    for(uint32_t i=0; i<BList.size(); i++)
    {
       EXPECT_EQ(HList[i].first,  READHEX("00"));
-      EXPECT_EQ(BList[i].second, magic_ + flags + zeros_ + zeros_ + ghash_);
+      EXPECT_EQ(BList[i].second, magic_ + flags + zeros_ + zeros_ + BtcUtils::EmptyHash_);
    }
                          
    iface_->closeDatabases();
@@ -5054,13 +4921,13 @@ TEST_F(LMDBTest, OpenCloseOpenNominal)
    for(uint32_t i=0; i<HList.size(); i++)
    {
       EXPECT_EQ(HList[i].first,  READHEX("00"));
-      EXPECT_EQ(BList[i].second, magic_ + flags + zeros_ + zeros_ + ghash_);
+      EXPECT_EQ(BList[i].second, magic_ + flags + zeros_ + zeros_ + BtcUtils::EmptyHash_);
    }
 
    for(uint32_t i=0; i<BList.size(); i++)
    {
       EXPECT_EQ(HList[i].first,  READHEX("00"));
-      EXPECT_EQ(BList[i].second, magic_ + flags + zeros_ + zeros_ + ghash_);
+      EXPECT_EQ(BList[i].second, magic_ + flags + zeros_ + zeros_ + BtcUtils::EmptyHash_);
    }
                          
    iface_->closeDatabases();
@@ -5087,7 +4954,7 @@ TEST_F(LMDBTest, PutGetDelete)
    DB_PREFIX TXDATA = DB_PREFIX_TXDATA;
    BinaryData DBINFO = StoredDBInfo().getDBKey();
    BinaryData PREFIX = WRITE_UINT8_BE((uint8_t)TXDATA);
-   BinaryData val0 = magic_+flags+zeros_+zeros_+ghash_;
+   BinaryData val0 = magic_ + flags + zeros_ + zeros_ + BtcUtils::EmptyHash_;
    BinaryData commonValue = READHEX("abcd1234");
    BinaryData keyAB = READHEX("0000");
    BinaryData nothing = BinaryData(0);
@@ -5133,7 +5000,7 @@ TEST_F(LMDBTest, STxOutPutGet)
    
    ASSERT_TRUE(standardOpenDBs());
    LMDBEnv::Transaction txh(iface_->dbEnv_[HEADERS].get(), LMDB::ReadWrite);
-   LMDBEnv::Transaction txH(iface_->dbEnv_[HISTORY].get(), LMDB::ReadWrite);
+   LMDBEnv::Transaction txH(iface_->dbEnv_[STXO].get(), LMDB::ReadWrite);
 
    StoredTxOut stxo0;
    stxo0.txVersion_   = 1;
@@ -5147,7 +5014,7 @@ TEST_F(LMDBTest, STxOutPutGet)
 
    // Construct expected output
    addOutPairB(stxoKey, stxoVal);
-   ASSERT_TRUE(compareKVListRange(0,1, 0,2));
+   ASSERT_TRUE(compareKVListRange(0,1, 0,2, STXO));
 
    StoredTxOut stxoGet;
    iface_->getStoredTxOut(stxoGet, 123000, 15, 7, 1);
@@ -5184,58 +5051,8 @@ TEST_F(LMDBTest, STxOutPutGet)
    );
 
    addOutPairB(stxoKey, stxoVal);
-   ASSERT_TRUE(compareKVListRange(0,1, 0,3));
+   ASSERT_TRUE(compareKVListRange(0,1, 0,3, STXO));
 
-}
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(LMDBTest, PutFullBlockNoTx)
-{
-//    DBUtils::setArmoryDbType(ARMORY_DB_FULL);
-//    DBUtils::setDbPruneType(DB_PRUNE_NONE);
-
-   StoredHeader sbh;
-   BinaryRefReader brr(rawBlock_);
-   sbh.unserializeFullBlock(brr);
-   sbh.setKeyData(123000, UINT8_MAX);
-
-   StoredHeadHgtList hhl;
-   hhl.height_ = 123000;
-   hhl.dupAndHashList_.push_back( pair<uint8_t, BinaryData>(0, sbh.thisHash_));
-   hhl.preferredDup_ = UINT8_MAX;
-
-   BinaryData TXP   = WRITE_UINT8_BE((uint8_t)DB_PREFIX_TXDATA);
-   BinaryData HHP   = WRITE_UINT8_BE((uint8_t)DB_PREFIX_HEADHASH);
-   BinaryData HGP   = WRITE_UINT8_BE((uint8_t)DB_PREFIX_HEADHGT);
-   BinaryData hgtx  = READHEX("01e078""00");
-   BinaryData sbh_HH_key = HHP + sbh.thisHash_;
-   BinaryData sbh_HH_val = sbh.dataCopy_ + hgtx + READHEX("46040000");
-   BinaryData sbh_HG_key = hhl.getDBKey();
-   BinaryData sbh_HG_val = hhl.serializeDBValue();
-   
-   ASSERT_TRUE(standardOpenDBs());
-   LMDBEnv::Transaction txh(iface_->dbEnv_[HEADERS].get(), LMDB::ReadWrite);
-   LMDBEnv::Transaction txH(iface_->dbEnv_[HISTORY].get(), LMDB::ReadWrite);
-
-   addOutPairH( sbh_HH_key, sbh_HH_val);
-   addOutPairH( sbh_HG_key, sbh_HG_val);
-
-   brr.resetPosition();
-   testBlockHeader bh;
-   bh.unserialize(brr);
-   bh.setDuplicateID(0);
-   bh.setBlockHeight(123000);
-
-   auto getBH = [&](const BinaryData& hash)->const BlockHeader&
-   { return bh; };
-   uint8_t sdup = iface_->putRawBlockData(brr, getBH);
-   EXPECT_TRUE(compareKVListRange(0,1, 0,1));
-   EXPECT_EQ(sdup, 0);
-
-   // Try adding it again and see if get the correct dup again, and no touch DB
-   sdup = iface_->putRawBlockData(brr, getBH);
-   EXPECT_TRUE(compareKVListRange(0,1, 0, 1));
-   EXPECT_EQ(sdup, 0);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -5304,204 +5121,6 @@ TEST_F(LMDBTest, PutGetBareHeader)
    EXPECT_EQ(sbh3.duplicateID_, 2);
    EXPECT_EQ(iface_->getValidDupIDForHeight(123000), 2);
 }
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(LMDBTest, DISABLED_PutFullBlock)
-{
-//    DBUtils::setArmoryDbType(ARMORY_DB_FULL);
-//    DBUtils::setDbPruneType(DB_PRUNE_NONE);
-   ASSERT_TRUE(standardOpenDBs());
-
-   StoredHeader sbh;
-   BinaryRefReader brr(rawBlock_);
-   sbh.unserializeFullBlock(brr);
-   sbh.setKeyData(123000);
-
-   BinaryData rawHeader = READHEX(
-      "01000000eb10c9a996a2340a4d74eaab41421ed8664aa49d18538bab59010000"
-      "000000005a2f06efa9f2bd804f17877537f2080030cadbfa1eb50e02338117cc"
-      "604d91b9b7541a4ecfbb0a1a64f1ade7");
-
-   // Compute and write the headers to the expected-output
-   StoredHeadHgtList hhl;
-   hhl.height_ = 123000;
-   hhl.dupAndHashList_.push_back( pair<uint8_t, BinaryData>(0, sbh.thisHash_));
-   hhl.preferredDup_ = UINT8_MAX;
-   BinaryData HHP   = WRITE_UINT8_BE((uint8_t)DB_PREFIX_HEADHASH);
-   BinaryData HGP   = WRITE_UINT8_BE((uint8_t)DB_PREFIX_HEADHGT);
-   BinaryData sbh_HH_key = HHP + sbh.thisHash_;
-   BinaryData sbh_HH_val = rawHeader + READHEX("01e078""00") + READHEX("46040000");
-   BinaryData sbh_HG_key = hhl.getDBKey();
-   BinaryData sbh_HG_val = hhl.serializeDBValue();
-   // Only HEADHASH and HEADHGT entries get written
-   addOutPairH( sbh_HH_key, sbh_HH_val);
-   addOutPairH( sbh_HG_key, sbh_HG_val);
-
-   // Now compute and write the BLKDATA
-   BinaryData TXP       = WRITE_UINT8_BE((uint8_t)DB_PREFIX_TXDATA);
-   BinaryData sbhKey    = TXP + READHEX("01e078""00");
-   BinaryData stx0Key   = sbhKey  + READHEX("0000");
-   BinaryData stx1Key   = sbhKey  + READHEX("0001");
-   BinaryData stx2Key   = sbhKey  + READHEX("0002");
-   BinaryData stxo00Key = stx0Key + READHEX("0000");
-   BinaryData stxo10Key = stx1Key + READHEX("0000");
-   BinaryData stxo11Key = stx1Key + READHEX("0001");
-   BinaryData stxo20Key = stx2Key + READHEX("0000");
-   BinaryData stxo21Key = stx2Key + READHEX("0001");
-   BinaryData stxo00Raw = READHEX( "00f2052a01000000""434104"
-      "c2239c4eedb3beb26785753463be3ec62b82f6acd62efb65f452f8806f2ede0b"
-      "338e31d1f69b1ce449558d7061aa1648ddc2bf680834d3986624006a272dc21cac");
-   BinaryData stxo10Raw = READHEX( "40420f0000000000"
-      "19""76a914adfa66f57ded1b655eb4ccd96ee07ca62bc1ddfd88ac");
-   BinaryData stxo11Raw = READHEX( "007d6a7d04000000"
-      "19""76a914981a0c9ae61fa8f8c96ae6f8e383d6e07e77133e88ac");
-   BinaryData stxo20Raw = READHEX( "2f66ac6105000000"
-      "19""76a914964642290c194e3bfab661c1085e47d67786d2d388ac");
-   BinaryData stxo21Raw = READHEX( "2f77e20000000000"
-      "19""76a9141486a7046affd935919a3cb4b50a8a0c233c286c88ac");
-
-   StoredTx & stx0 = sbh.stxMap_[0];
-   StoredTx & stx1 = sbh.stxMap_[1];
-   StoredTx & stx2 = sbh.stxMap_[2];
-   BinaryData hflags = READHEX("01340000");
-   BinaryData ntx    = READHEX("03000000");
-   BinaryData nbyte  = READHEX("46040000");
-
-   // Add header to BLKDATA
-   addOutPairB(sbhKey, hflags + rawHeader + ntx + nbyte);
-
-   // Add Tx0 to BLKDATA
-   addOutPairB(stx0Key,   READHEX("0440") + stx0.thisHash_ + stx0.getSerializedTxFragged());
-   addOutPairB(stxo00Key, READHEX("0480") + stxo00Raw); // is coinbase
-
-   // Add Tx1 to BLKDATA
-   addOutPairB(stx1Key,   READHEX("0440") + stx1.thisHash_ + stx1.getSerializedTxFragged());
-   addOutPairB(stxo10Key, READHEX("0400") + stxo10Raw);
-   addOutPairB(stxo11Key, READHEX("0400") + stxo11Raw);
-
-   // Add Tx2 to BLKDATA
-   addOutPairB(stx2Key,   READHEX("0440") + stx2.thisHash_ + stx2.getSerializedTxFragged());
-   addOutPairB(stxo20Key, READHEX("0400") + stxo20Raw);
-   addOutPairB(stxo21Key, READHEX("0400") + stxo21Raw);
-
-   // DuplicateID values get set when we putStoredHeader since we don't know
-   // what dupIDs have been taken until we try to put it in the database.
-   ASSERT_EQ(sbh.stxMap_.size(), 3);
-   for(uint32_t i=0; i<3; i++)
-   {
-      ASSERT_EQ(sbh.stxMap_[i].blockHeight_,    123000);
-      ASSERT_EQ(sbh.stxMap_[i].duplicateID_, UINT8_MAX);
-      ASSERT_EQ(sbh.stxMap_[i].txIndex_,             i);
-      for(uint32_t j=0; j<sbh.stxMap_[i].stxoMap_.size(); j++)
-      {
-         sbh.stxMap_[i].stxoMap_[j].spentness_ = TXOUT_UNSPENT;
-         //sbh.stxoMap_[i].isCoinbase_ = (j==0);
-
-         ASSERT_EQ(sbh.stxMap_[i].stxoMap_[j].blockHeight_,    123000);
-         ASSERT_EQ(sbh.stxMap_[i].stxoMap_[j].duplicateID_, UINT8_MAX);
-         ASSERT_EQ(sbh.stxMap_[i].stxoMap_[j].txIndex_,             i);
-         ASSERT_EQ(sbh.stxMap_[i].stxoMap_[j].txOutIndex_,          j);
-      }
-   }
-
-   iface_->putStoredHeader(sbh);
-
-   ASSERT_TRUE(compareKVListRange(0,3, 0,9));
-}
-
-
-
-////////////////////////////////////////////////////////////////////////////////
-// Of course, this test only works if the previous test passes (but doesn't 
-// require a saved state, it just re-puts the full block into the DB).  I
-// did it this way, because I wasn't comfortable committing the pre-filled
-// DB to the repo.
-TEST_F(LMDBTest, DISABLED_GetFullBlock)
-{
-//    DBUtils::setArmoryDbType(ARMORY_DB_FULL);
-//    DBUtils::setDbPruneType(DB_PRUNE_NONE);
-   ASSERT_TRUE(standardOpenDBs());
-
-   StoredHeader sbh;
-   BinaryRefReader brr(rawBlock_);
-   sbh.unserializeFullBlock(brr);
-   sbh.setKeyData(123000);
-   sbh.isMainBranch_ = true;
-
-   // Check the DBInfo before and after putting the valid header
-   StoredDBInfo sdbi;
-   iface_->getStoredDBInfo(HEADERS, sdbi);
-   EXPECT_EQ(sdbi.topBlkHgt_,  0);
-   EXPECT_EQ(sdbi.topBlkHash_, iface_->getGenesisBlockHash());
-
-   iface_->putStoredHeader(sbh);
-
-   // Since we marked this block main-branch, it should have non-MAX validDup
-   EXPECT_EQ(iface_->getValidDupIDForHeight(123000), 0);
-   BinaryData headerHash = READHEX(
-      "7d97d862654e03d6c43b77820a40df894e3d6890784528e9cd05000000000000");
-   iface_->getStoredDBInfo(HEADERS, sdbi);
-   EXPECT_EQ(sdbi.topBlkHgt_,  123000);
-   EXPECT_EQ(sdbi.topBlkHash_, headerHash);
-
-   BinaryData rawHeader = READHEX(
-      "01000000eb10c9a996a2340a4d74eaab41421ed8664aa49d18538bab59010000"
-      "000000005a2f06efa9f2bd804f17877537f2080030cadbfa1eb50e02338117cc"
-      "604d91b9b7541a4ecfbb0a1a64f1ade7");
-
-   ////////////////////
-   // Now test the get methods
-  
-   for(uint32_t i=0; i<4; i++)
-   {
-      StoredHeader sbhGet;
-
-      if(i==0)
-         EXPECT_TRUE(iface_->getStoredHeader(sbhGet, 123000, 0, false));
-      else if(i==1)
-         EXPECT_TRUE(iface_->getStoredHeader(sbhGet, headerHash, false));
-      else if(i==2)
-         EXPECT_TRUE(iface_->getStoredHeader(sbhGet, 123000, 0, true));
-      else if(i==3)
-         EXPECT_TRUE(iface_->getStoredHeader(sbhGet, headerHash, true));
-
-      EXPECT_TRUE( sbhGet.isInitialized());
-      EXPECT_EQ(   sbhGet.dataCopy_,    rawHeader);
-      EXPECT_EQ(   sbhGet.thisHash_,    headerHash);
-      EXPECT_EQ(   sbhGet.numTx_,       3);
-      EXPECT_EQ(   sbhGet.numBytes_,    1094);
-      EXPECT_EQ(   sbhGet.blockHeight_, 123000);
-      EXPECT_EQ(   sbhGet.duplicateID_, 0);
-      EXPECT_EQ(   sbhGet.merkle_.getSize(), 0);
-      EXPECT_FALSE(sbhGet.merkleIsPartial_);
-      EXPECT_EQ(   sbhGet.unserArmVer_, 0);
-      EXPECT_EQ(   sbhGet.unserBlkVer_, 1);
-      EXPECT_EQ(   sbhGet.unserDbType_, ARMORY_DB_FULL);
-      EXPECT_EQ(   sbhGet.unserPrType_, DB_PRUNE_NONE);
-
-      if(i<2)
-         EXPECT_EQ( sbhGet.stxMap_.size(), 0);
-      else
-      {
-         EXPECT_EQ( sbhGet.stxMap_.size(), 3);
-         EXPECT_EQ( sbhGet.stxMap_[1].blockHeight_, 123000);
-         EXPECT_EQ( sbhGet.stxMap_[1].duplicateID_,      0);
-         EXPECT_EQ( sbhGet.stxMap_[1].txIndex_,          1);
-         EXPECT_EQ( sbhGet.stxMap_[1].numTxOut_,         2);
-         EXPECT_EQ( sbhGet.stxMap_[1].numBytes_,       621);
-         EXPECT_EQ( sbhGet.stxMap_[0].stxoMap_[0].isCoinbase_, true);
-         EXPECT_EQ( sbhGet.stxMap_[0].stxoMap_[0].spentness_, TXOUT_SPENTUNK);
-         EXPECT_EQ( sbhGet.stxMap_[1].stxoMap_[0].isCoinbase_, false);
-         EXPECT_EQ( sbhGet.stxMap_[1].stxoMap_[0].blockHeight_, 123000);
-         EXPECT_EQ( sbhGet.stxMap_[1].stxoMap_[0].duplicateID_,      0);
-         EXPECT_EQ( sbhGet.stxMap_[1].stxoMap_[0].txIndex_,          1);
-         EXPECT_EQ( sbhGet.stxMap_[1].stxoMap_[0].txOutIndex_,       0);
-      }
-   }
-
-}
-
-
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(LMDBTest, PutGetStoredTxHints)
 {
@@ -5561,10 +5180,11 @@ TEST_F(LMDBTest, PutGetStoredTxHints)
 TEST_F(LMDBTest, PutGetStoredScriptHistory)
 {
    ASSERT_TRUE(standardOpenDBs());
-   LMDBEnv::Transaction tx(iface_->dbEnv_[HISTORY].get(), LMDB::ReadWrite);
+   LMDBEnv::Transaction tx(iface_->dbEnv_[SSH].get(), LMDB::ReadWrite);
+   LMDBEnv::Transaction sshtx(iface_->dbEnv_[SUBSSH].get(), LMDB::ReadWrite);
 
    ///////////////////////////////////////////////////////////////////////////
-   // A whole bunch of setup stuff we need for SSH operations to work right
+   // A whole bunch of setup stuff we need for ssh operations to work right
    LMDBBlockDatabase *const iface = iface_;
    iface->setValidDupIDForHeight(255,0);
    iface->setValidDupIDForHeight(256,0);
@@ -5589,10 +5209,10 @@ TEST_F(LMDBTest, PutGetStoredScriptHistory)
          "00001976a914c1b4695d53b6ee57a28647ce63e45665df6762c288ac80d1f008"
          "000000001976a9140e0aec36fe2545fb31a41164fb6954adcd96b34288ac0000"
          "0000");
-   iface->putValue(HISTORY, DB_PREFIX_TXDATA, dbkey0, RAWTX);
-   iface->putValue(HISTORY, DB_PREFIX_TXDATA, dbkey1, RAWTX);
-   iface->putValue(HISTORY, DB_PREFIX_TXDATA, dbkey2, RAWTX);
-   iface->putValue(HISTORY, DB_PREFIX_TXDATA, dbkey3, RAWTX);
+   iface->putValue(SSH, DB_PREFIX_TXDATA, dbkey0, RAWTX);
+   iface->putValue(SSH, DB_PREFIX_TXDATA, dbkey1, RAWTX);
+   iface->putValue(SSH, DB_PREFIX_TXDATA, dbkey2, RAWTX);
+   iface->putValue(SSH, DB_PREFIX_TXDATA, dbkey3, RAWTX);
 
    TxIOPair txio0(dbkey0, val0);
    TxIOPair txio1(dbkey1, val1);
@@ -5621,7 +5241,7 @@ TEST_F(LMDBTest, PutGetStoredScriptHistory)
    EXPECT_EQ(ssh.subHistMap_.size(), 0);
 
    /////////////////////////////////////////////////////////////////////////////
-   // An empty SSH -- this shouldn't happen in production, but test it anyway
+   // An empty ssh -- this shouldn't happen in production, but test it anyway
    iface_->putStoredScriptHistory(ssh);
    iface_->getStoredScriptHistory(sshtemp, uniq);
 
@@ -5739,6 +5359,7 @@ TEST_F(LMDBTest, HeaderDump)
    // We don't actually use undo data at all yet, so I'll skip the tests for now
 }
 
+
 class LMDBTest_Super : public ::testing::Test
 {
 protected:
@@ -5752,7 +5373,7 @@ protected:
 #endif
 
       auto isready = [](void)->bool { return true; };
-      iface_ = new LMDBBlockDatabase(isready);
+      iface_ = new LMDBBlockDatabase(nullptr, isready, string());
       magic_ = READHEX(MAINNET_MAGIC_BYTES);
       ghash_ = READHEX(MAINNET_GENESIS_HASH_HEX);
       gentx_ = READHEX(MAINNET_GENESIS_TX_HASH_HEX);
@@ -6124,7 +5745,7 @@ protected:
 
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(LMDBTest_Super, OpenClose)
+TEST_F(LMDBTest_Super, DISABLED_OpenClose)
 {
    iface_->openDatabases(
       config_.levelDBLocation,
@@ -6163,7 +5784,7 @@ TEST_F(LMDBTest_Super, OpenClose)
 
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(LMDBTest_Super, OpenCloseOpenNominal)
+TEST_F(LMDBTest_Super, DISABLED_OpenCloseOpenNominal)
 {
    // 0123 4567 0123 4567
    // 0000 0010 0001 ---- ---- ---- ---- ----
@@ -6276,7 +5897,7 @@ TEST_F(LMDBTest_Super, DISABLED_OpenCloseOpenMismatch)
 
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(LMDBTest_Super, PutGetDelete)
+TEST_F(LMDBTest_Super, DISABLED_PutGetDelete)
 {
    BinaryData flags = READHEX("04100000");
 
@@ -6332,7 +5953,7 @@ TEST_F(LMDBTest_Super, PutGetDelete)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(LMDBTest_Super, STxOutPutGet)
+TEST_F(LMDBTest_Super, DISABLED_STxOutPutGet)
 {
    BinaryData TXP = WRITE_UINT8_BE((uint8_t)DB_PREFIX_TXDATA);
    BinaryData stxoVal = READHEX("0400") + rawTxOut0_;
@@ -6394,7 +6015,7 @@ TEST_F(LMDBTest_Super, STxOutPutGet)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(LMDBTest_Super, PutFullTxNoOuts)
+TEST_F(LMDBTest_Super, DISABLED_PutFullTxNoOuts)
 {
    //    DBUtils::setArmoryDbType(ARMORY_DB_FULL);
    //    DBUtils::setDbPruneType(DB_PRUNE_NONE);
@@ -6415,7 +6036,7 @@ TEST_F(LMDBTest_Super, PutFullTxNoOuts)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(LMDBTest_Super, PutFullTx)
+TEST_F(LMDBTest_Super, DISABLED_PutFullTx)
 {
    //    DBUtils::setArmoryDbType(ARMORY_DB_FULL);
    //    DBUtils::setDbPruneType(DB_PRUNE_NONE);
@@ -6460,49 +6081,8 @@ TEST_F(LMDBTest_Super, PutFullTx)
    EXPECT_TRUE(compareKVListRange(0, 1, 0, 4));
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(LMDBTest_Super, PutFullBlockNoTx)
-{
-   //    DBUtils::setArmoryDbType(ARMORY_DB_FULL);
-   //    DBUtils::setDbPruneType(DB_PRUNE_NONE);
-
-   StoredHeader sbh;
-   BinaryRefReader brr(rawBlock_);
-   sbh.unserializeFullBlock(brr);
-   sbh.setKeyData(123000, UINT8_MAX);
-
-   StoredHeadHgtList hhl;
-   hhl.height_ = 123000;
-   hhl.dupAndHashList_.push_back(pair<uint8_t, BinaryData>(0, sbh.thisHash_));
-   hhl.preferredDup_ = UINT8_MAX;
-
-   BinaryData TXP = WRITE_UINT8_BE((uint8_t)DB_PREFIX_TXDATA);
-   BinaryData HHP = WRITE_UINT8_BE((uint8_t)DB_PREFIX_HEADHASH);
-   BinaryData HGP = WRITE_UINT8_BE((uint8_t)DB_PREFIX_HEADHGT);
-   BinaryData hgtx = READHEX("01e078""00");
-   BinaryData sbh_HH_key = HHP + sbh.thisHash_;
-   BinaryData sbh_HH_val = sbh.dataCopy_ + hgtx + READHEX("46040000");
-   BinaryData sbh_HG_key = hhl.getDBKey();
-   BinaryData sbh_HG_val = hhl.serializeDBValue();
-
-   ASSERT_TRUE(standardOpenDBs());
-
-   addOutPairH(sbh_HH_key, sbh_HH_val);
-   addOutPairH(sbh_HG_key, sbh_HG_val);
-
-   uint8_t sdup = iface_->putStoredHeader(sbh, false);
-   EXPECT_TRUE(compareKVListRange(0, 3, 0, 1));
-   EXPECT_EQ(sdup, 0);
-
-   // Try adding it again and see if get the correct dup again, and no touch DB
-   sdup = iface_->putStoredHeader(sbh, false);
-   EXPECT_TRUE(compareKVListRange(0, 3, 0, 1));
-   EXPECT_EQ(sdup, 0);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(LMDBTest_Super, PutGetBareHeader)
+TEST_F(LMDBTest_Super, DISABLED_PutGetBareHeader)
 {
    //    DBUtils::setArmoryDbType(ARMORY_DB_FULL);
    //    DBUtils::setDbPruneType(DB_PRUNE_NONE);
@@ -6567,204 +6147,7 @@ TEST_F(LMDBTest_Super, PutGetBareHeader)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(LMDBTest_Super, PutFullBlock)
-{
-   //    DBUtils::setArmoryDbType(ARMORY_DB_FULL);
-   //    DBUtils::setDbPruneType(DB_PRUNE_NONE);
-   ASSERT_TRUE(standardOpenDBs());
-
-   StoredHeader sbh;
-   BinaryRefReader brr(rawBlock_);
-   sbh.unserializeFullBlock(brr);
-   sbh.setKeyData(123000);
-
-   BinaryData rawHeader = READHEX(
-      "01000000eb10c9a996a2340a4d74eaab41421ed8664aa49d18538bab59010000"
-      "000000005a2f06efa9f2bd804f17877537f2080030cadbfa1eb50e02338117cc"
-      "604d91b9b7541a4ecfbb0a1a64f1ade7");
-
-   // Compute and write the headers to the expected-output
-   StoredHeadHgtList hhl;
-   hhl.height_ = 123000;
-   hhl.dupAndHashList_.push_back(pair<uint8_t, BinaryData>(0, sbh.thisHash_));
-   hhl.preferredDup_ = UINT8_MAX;
-   BinaryData HHP = WRITE_UINT8_BE((uint8_t)DB_PREFIX_HEADHASH);
-   BinaryData HGP = WRITE_UINT8_BE((uint8_t)DB_PREFIX_HEADHGT);
-   BinaryData sbh_HH_key = HHP + sbh.thisHash_;
-   BinaryData sbh_HH_val = rawHeader + READHEX("01e078""00") + READHEX("46040000");
-   BinaryData sbh_HG_key = hhl.getDBKey();
-   BinaryData sbh_HG_val = hhl.serializeDBValue();
-   // Only HEADHASH and HEADHGT entries get written
-   addOutPairH(sbh_HH_key, sbh_HH_val);
-   addOutPairH(sbh_HG_key, sbh_HG_val);
-
-   // Now compute and write the BLKDATA
-   BinaryData TXP = WRITE_UINT8_BE((uint8_t)DB_PREFIX_TXDATA);
-   BinaryData sbhKey = TXP + READHEX("01e078""00");
-   BinaryData stx0Key = sbhKey + READHEX("0000");
-   BinaryData stx1Key = sbhKey + READHEX("0001");
-   BinaryData stx2Key = sbhKey + READHEX("0002");
-   BinaryData stxo00Key = stx0Key + READHEX("0000");
-   BinaryData stxo10Key = stx1Key + READHEX("0000");
-   BinaryData stxo11Key = stx1Key + READHEX("0001");
-   BinaryData stxo20Key = stx2Key + READHEX("0000");
-   BinaryData stxo21Key = stx2Key + READHEX("0001");
-   BinaryData stxo00Raw = READHEX("00f2052a01000000""434104"
-      "c2239c4eedb3beb26785753463be3ec62b82f6acd62efb65f452f8806f2ede0b"
-      "338e31d1f69b1ce449558d7061aa1648ddc2bf680834d3986624006a272dc21cac");
-   BinaryData stxo10Raw = READHEX("40420f0000000000"
-      "19""76a914adfa66f57ded1b655eb4ccd96ee07ca62bc1ddfd88ac");
-   BinaryData stxo11Raw = READHEX("007d6a7d04000000"
-      "19""76a914981a0c9ae61fa8f8c96ae6f8e383d6e07e77133e88ac");
-   BinaryData stxo20Raw = READHEX("2f66ac6105000000"
-      "19""76a914964642290c194e3bfab661c1085e47d67786d2d388ac");
-   BinaryData stxo21Raw = READHEX("2f77e20000000000"
-      "19""76a9141486a7046affd935919a3cb4b50a8a0c233c286c88ac");
-
-   StoredTx & stx0 = sbh.stxMap_[0];
-   StoredTx & stx1 = sbh.stxMap_[1];
-   StoredTx & stx2 = sbh.stxMap_[2];
-   BinaryData hflags = READHEX("01440000");
-   BinaryData ntx = READHEX("03000000");
-   BinaryData nbyte = READHEX("46040000");
-
-   // Add header to BLKDATA
-   addOutPairB(sbhKey, hflags + rawHeader + ntx + nbyte);
-
-   // Add Tx0 to BLKDATA
-   addOutPairB(stx0Key, READHEX("0440") + stx0.thisHash_ + stx0.getSerializedTxFragged());
-   addOutPairB(stxo00Key, READHEX("0480") + stxo00Raw); // is coinbase
-
-   // Add Tx1 to BLKDATA
-   addOutPairB(stx1Key, READHEX("0440") + stx1.thisHash_ + stx1.getSerializedTxFragged());
-   addOutPairB(stxo10Key, READHEX("0400") + stxo10Raw);
-   addOutPairB(stxo11Key, READHEX("0400") + stxo11Raw);
-
-   // Add Tx2 to BLKDATA
-   addOutPairB(stx2Key, READHEX("0440") + stx2.thisHash_ + stx2.getSerializedTxFragged());
-   addOutPairB(stxo20Key, READHEX("0400") + stxo20Raw);
-   addOutPairB(stxo21Key, READHEX("0400") + stxo21Raw);
-
-   // DuplicateID values get set when we putStoredHeader since we don't know
-   // what dupIDs have been taken until we try to put it in the database.
-   ASSERT_EQ(sbh.stxMap_.size(), 3);
-   for (uint32_t i = 0; i<3; i++)
-   {
-      ASSERT_EQ(sbh.stxMap_[i].blockHeight_, 123000);
-      ASSERT_EQ(sbh.stxMap_[i].duplicateID_, UINT8_MAX);
-      ASSERT_EQ(sbh.stxMap_[i].txIndex_, i);
-      for (uint32_t j = 0; j<sbh.stxMap_[i].stxoMap_.size(); j++)
-      {
-         sbh.stxMap_[i].stxoMap_[j].spentness_ = TXOUT_UNSPENT;
-         //sbh.stxoMap_[i].isCoinbase_ = (j==0);
-
-         ASSERT_EQ(sbh.stxMap_[i].stxoMap_[j].blockHeight_, 123000);
-         ASSERT_EQ(sbh.stxMap_[i].stxoMap_[j].duplicateID_, UINT8_MAX);
-         ASSERT_EQ(sbh.stxMap_[i].stxoMap_[j].txIndex_, i);
-         ASSERT_EQ(sbh.stxMap_[i].stxoMap_[j].txOutIndex_, j);
-      }
-   }
-
-   iface_->putStoredHeader(sbh);
-
-   ASSERT_TRUE(compareKVListRange(0, 3, 0, 9));
-}
-
-
-
-////////////////////////////////////////////////////////////////////////////////
-// Of course, this test only works if the previous test passes (but doesn't 
-// require a saved state, it just re-puts the full block into the DB).  I
-// did it this way, because I wasn't comfortable committing the pre-filled
-// DB to the repo.
-TEST_F(LMDBTest_Super, GetFullBlock)
-{
-   //    DBUtils::setArmoryDbType(ARMORY_DB_FULL);
-   //    DBUtils::setDbPruneType(DB_PRUNE_NONE);
-   ASSERT_TRUE(standardOpenDBs());
-
-   StoredHeader sbh;
-   BinaryRefReader brr(rawBlock_);
-   sbh.unserializeFullBlock(brr);
-   sbh.setKeyData(123000);
-   sbh.isMainBranch_ = true;
-
-   // Check the DBInfo before and after putting the valid header
-   StoredDBInfo sdbi;
-   iface_->getStoredDBInfo(HEADERS, sdbi);
-   EXPECT_EQ(sdbi.topBlkHgt_, 0);
-   EXPECT_EQ(sdbi.topBlkHash_, iface_->getGenesisBlockHash());
-
-   iface_->putStoredHeader(sbh);
-
-   // Since we marked this block main-branch, it should have non-MAX validDup
-   EXPECT_EQ(iface_->getValidDupIDForHeight(123000), 0);
-   BinaryData headerHash = READHEX(
-      "7d97d862654e03d6c43b77820a40df894e3d6890784528e9cd05000000000000");
-   iface_->getStoredDBInfo(HEADERS, sdbi);
-   EXPECT_EQ(sdbi.topBlkHgt_, 123000);
-   EXPECT_EQ(sdbi.topBlkHash_, headerHash);
-
-   BinaryData rawHeader = READHEX(
-      "01000000eb10c9a996a2340a4d74eaab41421ed8664aa49d18538bab59010000"
-      "000000005a2f06efa9f2bd804f17877537f2080030cadbfa1eb50e02338117cc"
-      "604d91b9b7541a4ecfbb0a1a64f1ade7");
-
-   ////////////////////
-   // Now test the get methods
-
-   for (uint32_t i = 0; i<4; i++)
-   {
-      StoredHeader sbhGet;
-
-      if (i == 0)
-         EXPECT_TRUE(iface_->getStoredHeader(sbhGet, 123000, 0, false));
-      else if (i == 1)
-         EXPECT_TRUE(iface_->getStoredHeader(sbhGet, headerHash, false));
-      else if (i == 2)
-         EXPECT_TRUE(iface_->getStoredHeader(sbhGet, 123000, 0, true));
-      else if (i == 3)
-         EXPECT_TRUE(iface_->getStoredHeader(sbhGet, headerHash, true));
-
-      EXPECT_TRUE(sbhGet.isInitialized());
-      EXPECT_EQ(sbhGet.dataCopy_, rawHeader);
-      EXPECT_EQ(sbhGet.thisHash_, headerHash);
-      EXPECT_EQ(sbhGet.numTx_, 3);
-      EXPECT_EQ(sbhGet.numBytes_, 1094);
-      EXPECT_EQ(sbhGet.blockHeight_, 123000);
-      EXPECT_EQ(sbhGet.duplicateID_, 0);
-      EXPECT_EQ(sbhGet.merkle_.getSize(), 0);
-      EXPECT_FALSE(sbhGet.merkleIsPartial_);
-      EXPECT_EQ(sbhGet.unserArmVer_, 0);
-      EXPECT_EQ(sbhGet.unserBlkVer_, 1);
-      EXPECT_EQ(sbhGet.unserDbType_, ARMORY_DB_SUPER);
-      EXPECT_EQ(sbhGet.unserPrType_, DB_PRUNE_NONE);
-
-      if (i<2)
-         EXPECT_EQ(sbhGet.stxMap_.size(), 0);
-      else
-      {
-         EXPECT_EQ(sbhGet.stxMap_.size(), 3);
-         EXPECT_EQ(sbhGet.stxMap_[1].blockHeight_, 123000);
-         EXPECT_EQ(sbhGet.stxMap_[1].duplicateID_, 0);
-         EXPECT_EQ(sbhGet.stxMap_[1].txIndex_, 1);
-         EXPECT_EQ(sbhGet.stxMap_[1].numTxOut_, 2);
-         EXPECT_EQ(sbhGet.stxMap_[1].numBytes_, 621);
-         EXPECT_EQ(sbhGet.stxMap_[0].stxoMap_[0].isCoinbase_, true);
-         EXPECT_EQ(sbhGet.stxMap_[0].stxoMap_[0].spentness_, TXOUT_SPENTUNK);
-         EXPECT_EQ(sbhGet.stxMap_[1].stxoMap_[0].isCoinbase_, false);
-         EXPECT_EQ(sbhGet.stxMap_[1].stxoMap_[0].blockHeight_, 123000);
-         EXPECT_EQ(sbhGet.stxMap_[1].stxoMap_[0].duplicateID_, 0);
-         EXPECT_EQ(sbhGet.stxMap_[1].stxoMap_[0].txIndex_, 1);
-         EXPECT_EQ(sbhGet.stxMap_[1].stxoMap_[0].txOutIndex_, 0);
-      }
-   }
-
-}
-
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(LMDBTest_Super, PutGetStoredTxHints)
+TEST_F(LMDBTest_Super, DISABLED_PutGetStoredTxHints)
 {
    ASSERT_TRUE(standardOpenDBs());
 
@@ -6818,12 +6201,12 @@ TEST_F(LMDBTest_Super, PutGetStoredTxHints)
 
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(LMDBTest_Super, PutGetStoredScriptHistory)
+TEST_F(LMDBTest_Super, DISABLED_PutGetStoredScriptHistory)
 {
    ASSERT_TRUE(standardOpenDBs());
 
    ///////////////////////////////////////////////////////////////////////////
-   // A whole bunch of setup stuff we need for SSH operations to work right
+   // A whole bunch of setup stuff we need for ssh operations to work right
    LMDBBlockDatabase *const iface = iface_;
    iface->setValidDupIDForHeight(255, 0);
    iface->setValidDupIDForHeight(256, 0);
@@ -6880,7 +6263,7 @@ TEST_F(LMDBTest_Super, PutGetStoredScriptHistory)
    EXPECT_EQ(ssh.subHistMap_.size(), 0);
 
    /////////////////////////////////////////////////////////////////////////////
-   // An empty SSH -- this shouldn't happen in production, but test it anyway
+   // An empty ssh -- this shouldn't happen in production, but test it anyway
    iface_->putStoredScriptHistory(ssh);
    iface_->getStoredScriptHistory(sshtemp, uniq);
 
@@ -7622,8 +7005,11 @@ TEST_F(BlockDir, HeadersFirstUpdateTwice)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockDir, AddBlockWhileUpdating)
+TEST_F(BlockDir, DISABLED_AddBlockWhileUpdating)
 {
+   //TODO: add some mechanisms activating only #ifdef _DEBUG to run this test
+   //and set other unit test specific conditions
+
    BlockDataManagerConfig config;
    config.armoryDbType = ARMORY_DB_BARE;
    config.pruneType = DB_PRUNE_NONE;
@@ -8173,7 +7559,7 @@ TEST_F(BlockUtilsBare, Load3Blocks_ZC_Plus3_TestLedgers)
 
    //pull ZC from DB, verify it's carrying the proper data
    LMDBEnv::Transaction *dbtx = 
-      new LMDBEnv::Transaction(iface_->dbEnv_[HISTORY].get(), LMDB::ReadOnly);
+      new LMDBEnv::Transaction(iface_->dbEnv_[ZERO_CONF].get(), LMDB::ReadOnly);
    StoredTx zcStx;
    BinaryData zcKey = WRITE_UINT16_BE(0xFFFF);
    zcKey.append(WRITE_UINT32_LE(0));
@@ -8237,7 +7623,7 @@ TEST_F(BlockUtilsBare, Load3Blocks_ZC_Plus3_TestLedgers)
 
    //The BDM was recycled, but the ZC is still live, and the mempool should 
    //have reloaded it. Pull from DB and verify
-   dbtx = new LMDBEnv::Transaction(iface_->dbEnv_[HISTORY].get(), LMDB::ReadOnly);
+   dbtx = new LMDBEnv::Transaction(iface_->dbEnv_[ZERO_CONF].get(), LMDB::ReadOnly);
    StoredTx zcStx2;
 
    EXPECT_EQ(iface_->getStoredZcTx(zcStx2, zcKey), true);
@@ -8273,7 +7659,7 @@ TEST_F(BlockUtilsBare, Load3Blocks_ZC_Plus3_TestLedgers)
    EXPECT_EQ(spendableBalance, 40 * COIN);
    EXPECT_EQ(unconfirmedBalance, 120 * COIN);
 
-   dbtx = new LMDBEnv::Transaction(iface_->dbEnv_[HISTORY].get(), LMDB::ReadOnly);
+   dbtx = new LMDBEnv::Transaction(iface_->dbEnv_[ZERO_CONF].get(), LMDB::ReadOnly);
    StoredTx zcStx3;
 
    EXPECT_EQ(iface_->getStoredZcTx(zcStx3, zcKey), true);
@@ -8315,7 +7701,7 @@ TEST_F(BlockUtilsBare, Load3Blocks_ZC_Plus3_TestLedgers)
    EXPECT_EQ(le.getBlockNum(), 5);
 
    //Tx is now in a block, ZC should be gone from DB
-   dbtx = new LMDBEnv::Transaction(iface_->dbEnv_[HISTORY].get(), LMDB::ReadWrite);
+   dbtx = new LMDBEnv::Transaction(iface_->dbEnv_[ZERO_CONF].get(), LMDB::ReadWrite);
    StoredTx zcStx4;
 
    EXPECT_EQ(iface_->getStoredZcTx(zcStx4, zcKey), false);
@@ -9105,355 +8491,168 @@ TEST_F(BlockUtilsBare, Load5Blocks_ScanWhatIsNeeded)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-/*
-class FullScanTest : public ::testing::Test
-{
-protected:
-
-   /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp(void) 
-   {
-      LOGDISABLESTDOUT();
-      //iface_ = LSMWrapper::GetInterfacePtr();
-      magic_ = READHEX(MAINNET_MAGIC_BYTES);
-      ghash_ = READHEX(MAINNET_GENESIS_HASH_HEX);
-      gentx_ = READHEX(MAINNET_GENESIS_TX_HASH_HEX);
-      zeros_ = READHEX("00000000");
-      //DBUtils::setArmoryDbType(ARMORY_DB_BARE);
-      //DBUtils::setDbPruneType(DB_PRUNE_NONE);
-
-      blkdatadir_ = string("./databases/leveldb_blkdata");
-   }
-
-   /////
-   virtual void TearDown(void)
-   {
-      // This seem to be the best way to remove a dir tree in C++ (in Linux)
-      //iface_->closeDatabases();
-      iface_ = NULL;
-
-   }
-
-   leveldb::Slice binaryDataToSlice(BinaryData const & bd) 
-         {return leveldb::Slice((char*)bd.getPtr(), bd.getSize());}
-   leveldb::Slice binaryDataRefToSlice(BinaryDataRef const & bdr)
-         {return leveldb::Slice((char*)bdr.getPtr(), bdr.getSize());}
-
-   BinaryRefReader sliceToRefReader(leveldb::Slice slice)
-         { return BinaryRefReader( (uint8_t*)(slice.data()), slice.size()); }
-
-   LMDBBlockDatabase* iface_;
-   BinaryData magic_;
-   BinaryData ghash_;
-   BinaryData gentx_;
-   BinaryData zeros_;
-   string blkdatadir_;
-   BinaryRefReader currKey_;
-   BinaryRefReader currVal_;
-
-};
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(FullScanTest, DISABLED_TestSuperRaw)
-{
-
-
-   leveldb::Options opts;
-   opts.compression = leveldb::kNoCompression;
-   //opts.block_cache = leveldb::NewLRUCache(2048 * 1024 * 1024);   
-   leveldb::DB* dbptr;
-   leveldb::Status stat = leveldb::DB::Open(opts, blkdatadir_, &dbptr);
-   
-   if(!stat.ok())
-      cout << "Error opening DB: " << stat.ToString() << endl;
-
-   leveldb::ReadOptions readopts;
-   readopts.fill_cache = false;
-   //cout << "fill_cache = true (bad)" << endl;
-   cout << "fill_cache = false (good)" << endl;
-   leveldb::Iterator* iter = dbptr->NewIterator(readopts);
-
-
-   BinaryData firstKeyBD = DBUtils::getBlkDataKey(0,0);
-   leveldb::Slice firstKey = binaryDataToSlice(firstKeyBD);
-   iter->Seek(firstKey);
-
-   uint32_t hgt;
-   uint8_t  dup;
-   uint16_t txi;
-   uint16_t txo;
-   BLKDATA_TYPE bdtype;
-   BinaryData pref = WRITE_UINT8_LE((uint8_t)DB_PREFIX_TXDATA);
-
-   // This scraddr should have 8 tx
-   BinaryData scraddr = WRITE_UINT8_LE((uint8_t)TXOUT_SCRIPT_STDHASH160);
-   scraddr = scraddr + READHEX("33da2736b16558c9569cc226d4b349ce1aacf649");
-      
-
-   vector<OutPoint> opList;
-
-   BinaryData currTxHash(32);
-   while(iter->Valid())
-   {
-      currKey_.setNewData((uint8_t*)iter->key().data(), iter->key().size());
-      currVal_.setNewData((uint8_t*)iter->value().data(), iter->value().size());
-
-      if(!currKey_.getRawRef().startsWith(pref))
-         break;
-
-      bdtype = DBUtils::readBlkDataKey(currKey_, hgt, dup, txi, txo);      
-
-      if(bdtype==BLKDATA_HEADER)
-      {
-         // Need to do a little reading&processing to make sure it is actually pulling dat afrom disk
-         currVal_.advance(4);
-         BinaryData hhash = currVal_.get_BinaryData(80);
-         if(hhash.startsWith(zeros_))
-            cout << "Starts with four zeros!" << endl;
-      }
-      else if(bdtype==BLKDATA_TX)
-      {
-         currVal_.advance(2);
-         currTxHash = currVal_.get_BinaryData(32);
-      }
-      else if(bdtype==BLKDATA_TXOUT)
-      {
-         currVal_.advance(2);
-
-         TxOut txout;
-         txout.unserialize(currVal_);
-         if(txout.getScrAddressStr() == scraddr)
-         {
-            cout << "Found a txout!" << endl;
-            opList.push_back(OutPoint(currTxHash, txo));
-         }
-      }
-      else if(bdtype==NOT_BLKDATA)
-         break;
-
-      iter->Next();
-   }
-
-   for(uint32_t o=0; o<opList.size(); o++)
-   {
-      cout << o << ": " << opList[o].getTxHash().toHexStr().c_str()
-                << ":" << opList[o].getTxOutIndex() << endl;
-   }
-}
-
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(FullScanTest, DISABLED_CreateSuperRawDB)
-{
-   string dbdir("./rawdbdir");
-   
-   leveldb::Options opts;
-   opts.compression = leveldb::kNoCompression;
-   opts.create_if_missing = true;
-   opts.block_size = 8*1024*1024;
-   leveldb::DB* dbptr;
-   leveldb::Status stat = leveldb::DB::Open(opts, dbdir, &dbptr);
-   
-   if(!stat.ok())
-      cout << "Error opening DB: " << stat.ToString() << endl;
-
-   //leveldb::Iterator* iter = dbptr->NewIterator(leveldb::ReadOptions());
-   uint32_t i=0;
-   uint32_t nblk=0;
-   uint64_t lastWrite=0;
-   uint64_t writeBytes=0;
-   string fname = BtcUtils::getBlkFilename("/home/alan/.bitcoin/blocks", i);
-   
-   BinaryData magic(4), nbytes(4);
-   BinaryData expectedMagicBytes = READHEX(MAINNET_MAGIC_BYTES);
-
-   leveldb::WriteBatch* writebatch = new leveldb::WriteBatch;
-   
-   while(BtcUtils::GetFileSize(fname) != FILE_DOES_NOT_EXIST)
-   {
-      cout << "Opening: " << fname.c_str() << "(" << BtcUtils::GetFileSize(fname) << ")" << endl;
-      ifstream is(fname.c_str(), ios::in | ios::binary);
-
-      while(!is.eof())
-      {
-         // Magic bytes
-         is.read((char*)magic.getPtr(), 4);
-         if(magic != expectedMagicBytes)
-            break;         
-
-         // Number of bytes in block
-         is.read((char*)nbytes.getPtr(), 4);
-         uint32_t blkBytes = READ_UINT32_LE(nbytes.getPtr());
-
-         // Reading
-         cout << nblk << " Reading " << blkBytes << " bytes in block; ";
-         BinaryReader br(blkBytes);
-         is.read((char*)br.exposeDataPtr(), blkBytes);
-
-         br.advance(80);
-         uint32_t numTx = (uint32_t)br.get_var_int();
-         cout << "Number of tx in block: " << numTx << endl;
-         for(uint32_t tx=0; tx<numTx; tx++)
-         {
-            uint32_t txSize = BtcUtils::TxCalcLength(br.getCurrPtr());
-            BinaryData rawTx, txHash;
-            br.get_BinaryData(rawTx, txSize);
-            BtcUtils::getHash256(rawTx, txHash);
-            leveldb::Slice ldbKey((char*)txHash.getPtr(), 32);
-            leveldb::Slice ldbVal((char*)rawTx.getPtr(), txSize);
-         
-            writeBytes += (uint64_t)txSize;
-            writebatch->Put(ldbKey, ldbVal);
-
-         }
-
-         if(writeBytes - lastWrite > 1024*1024*1024)
-         {
-            lastWrite = writeBytes;
-            dbptr->Write(leveldb::WriteOptions(), writebatch);
-            writebatch->Clear();
-         }
-         nblk++;
-   
-      }
-
-
-      i++;
-      fname = BtcUtils::getBlkFilename("/home/alan/.bitcoin/blocks", i);
-
-   }
-
-   dbptr->Write(leveldb::WriteOptions(), writebatch);
-   writebatch->Clear();
-   delete writebatch;
-   delete dbptr;
-}
-
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(FullScanTest, ReadSuperRawDB)
-{
-   string dbdir("./rawdbdir");
-   BinaryData scraddr = WRITE_UINT8_LE((uint8_t)TXOUT_SCRIPT_STDHASH160);
-   scraddr = scraddr + READHEX("33da2736b16558c9569cc226d4b349ce1aacf649");
-   
-   leveldb::Options opts;
-   opts.compression = leveldb::kNoCompression;
-   opts.block_cache = leveldb::NewLRUCache(2048 * 1024 * 1024);   
-   opts.block_size = 8*1024*1024;
-   leveldb::DB* dbptr;
-   leveldb::Status stat = leveldb::DB::Open(opts, dbdir, &dbptr);
-   
-   if(!stat.ok())
-      cout << "Error opening DB: " << stat.ToString() << endl;
-   
-   leveldb::ReadOptions readopts;
-   readopts.fill_cache = false;
-   leveldb::Iterator* iter = dbptr->NewIterator(readopts);
-   iter->SeekToFirst();
-
-   vector<uint32_t> txinOffsets, txoutOffsets;
-   while(iter->Valid())
-   {
-      currKey_.setNewData((uint8_t*)iter->key().data(), iter->key().size());
-      currVal_.setNewData((uint8_t*)iter->value().data(), iter->value().size());
-
-      uint8_t const * txPtr = currVal_.exposeDataPtr();
-      BtcUtils::TxCalcLength(txPtr, &txinOffsets, &txoutOffsets);
-
-      for(uint32_t txo=0; txo<txoutOffsets.size()-1; txo++)
-      {
-         uint32_t start = txoutOffsets[txo];
-         uint32_t sz    = txoutOffsets[txo+1] - start;
-         BinaryDataRef txoRef(txPtr+start, sz);
-         TxOut txout;
-         txout.unserialize(txoRef);
-         if(txout.getScrAddressStr() == scraddr)
-         {
-            cout << "Found a txout!" << endl;
-         }
-      }
-
-      iter->Next();
-   }
-   
-   cout << "Done!" << endl;
-
-}
-*/
-
-
-class LoadTestnetBareTest : public ::testing::Test
-{
-protected:
-   BlockDataManager_LevelDB *theBDM;
-   BlockDataViewer          *theBDV;
-
-   /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)  {}
-
-   virtual void SetUp(void) 
-   {
-//       DBUtils::setArmoryDbType(ARMORY_DB_BARE);
-//       DBUtils::setDbPruneType(DB_PRUNE_NONE);
-
-      blkdir_  = string("/home/alan/.bitcoin/testnet3/blocks");
-      homedir_ = string("/home/alan/.armory/testnet3");
-      ldbdir_  = string("/home/alan/.armory/testnet3/databases");
-
-
-      mkdir(ldbdir_);
-      mkdir(homedir_);
-      
-      BlockDataManagerConfig config;
-      
-      config.armoryDbType = ARMORY_DB_BARE;
-      config.pruneType = DB_PRUNE_NONE;
-      config.blkFileLocation = blkdir_;
-      config.levelDBLocation = ldbdir_;
-      
-      config.selectNetwork("Test");
-      
-      theBDM = new BlockDataManager_LevelDB(config);
-      theBDV = new BlockDataViewer(theBDM);
-      CLEANUP_ALL_TIMERS();
-   }
-
-   void mkdir(string newdir)
-   {
-      char* syscmd = new char[4096];
-      sprintf(syscmd, "mkdir -p %s", newdir.c_str());
-      system(syscmd);
-      delete[] syscmd;
-   }
-
-   LMDBBlockDatabase* iface_;
-   BinaryData magic_;
-   BinaryData ghash_;
-   BinaryData gentx_;
-   BinaryData zeros_;
-
-   string blkdir_;
-   string homedir_;
-   string ldbdir_;
-   string blk0dat_;
-};
-
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(LoadTestnetBareTest, DISABLED_StepThroughDebug_usually_disabled)
+TEST_F(BlockUtilsBare, Load5Blocks_GetUtxos)
 {
    vector<BinaryData> scrAddrVec;
    scrAddrVec.push_back(TestChain::scrAddrA);
    scrAddrVec.push_back(TestChain::scrAddrB);
    scrAddrVec.push_back(TestChain::scrAddrC);
-
-   BtcWallet& wlt = *theBDV->registerWallet(scrAddrVec, "wallet1", false);
+   scrAddrVec.push_back(TestChain::scrAddrD);
+   scrAddrVec.push_back(TestChain::scrAddrE);
+   scrAddrVec.push_back(TestChain::scrAddrF);
+   BtcWallet* wlt;
+   BtcWallet* wltLB1;
+   BtcWallet* wltLB2;
+   regWallet(scrAddrVec, "wallet1", theBDV, &wlt);
+   regLockboxes(theBDV, &wltLB1, &wltLB2);
 
    TheBDM.doInitialSyncOnLoad(nullProgress);
-   //TheBDM.scanBlockchainForTx(wlt);
+   theBDV->scanWallets();
+
+   const ScrAddrObj* scrObj;
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
+   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
+   EXPECT_EQ(scrObj->getFullBalance(), 70 * COIN);
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
+   EXPECT_EQ(scrObj->getFullBalance(), 20 * COIN);
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
+   EXPECT_EQ(scrObj->getFullBalance(), 65 * COIN);
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
+   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrF);
+   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
+
+   scrObj = wltLB1->getScrAddrObjByKey(TestChain::lb1ScrAddr);
+   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
+   scrObj = wltLB1->getScrAddrObjByKey(TestChain::lb1ScrAddrP2SH);
+   EXPECT_EQ(scrObj->getFullBalance(), 25 * COIN);
+   scrObj = wltLB2->getScrAddrObjByKey(TestChain::lb2ScrAddr);
+   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   scrObj = wltLB2->getScrAddrObjByKey(TestChain::lb2ScrAddrP2SH);
+   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+
+   EXPECT_EQ(wlt->getFullBalance(), 240 * COIN);
+   EXPECT_EQ(wltLB1->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(wltLB2->getFullBalance(), 30 * COIN);
+
+   //get all utxos, ignore zc
+   auto spendableBalance = wlt->getSpendableBalance(5);
+   auto&& utxoVec = wlt->getSpendableTxOutListForValue();
+
+   uint64_t totalUtxoVal = 0;
+   for (auto& utxo : utxoVec)
+      totalUtxoVal += utxo.getValue();
+
+   EXPECT_EQ(spendableBalance, totalUtxoVal);
 }
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BlockUtilsBare, Load4Blocks_ZC_GetUtxos)
+{
+   vector<BinaryData> scrAddrVec;
+   scrAddrVec.push_back(TestChain::scrAddrA);
+   scrAddrVec.push_back(TestChain::scrAddrB);
+   scrAddrVec.push_back(TestChain::scrAddrC);
+   BtcWallet* wlt;
+   BtcWallet* wltLB1;
+   BtcWallet* wltLB2;
+   regWallet(scrAddrVec, "wallet1", theBDV, &wlt);
+   regLockboxes(theBDV, &wltLB1, &wltLB2);
+
+   wlt->addScrAddress(TestChain::scrAddrE);
+
+   // Copy only the first four blocks.  Will copy the full file next to test
+   // readBlkFileUpdate method on non-reorg blocks.
+   setBlocks({ "0", "1", "2", "3" }, blk0dat_);
+   TheBDM.doInitialSyncOnLoad(nullProgress);
+   theBDV->enableZeroConf();
+   theBDV->scanWallets();
+
+   EXPECT_EQ(iface_->getTopBlockHeight(HEADERS), 3);
+   EXPECT_EQ(iface_->getTopBlockHash(HEADERS), TestChain::blkHash3);
+   EXPECT_TRUE(TheBDM.blockchain().getHeaderByHash(TestChain::blkHash3).isMainBranch());
+
+   const ScrAddrObj* scrObj;
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
+   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
+   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
+   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
+
+   uint64_t fullBalance = wlt->getFullBalance();
+   uint64_t spendableBalance = wlt->getSpendableBalance(4);
+   uint64_t unconfirmedBalance = wlt->getUnconfirmedBalance(4);
+   EXPECT_EQ(fullBalance, 165 * COIN);
+   EXPECT_EQ(spendableBalance, 65 * COIN);
+   EXPECT_EQ(unconfirmedBalance, 165 * COIN);
+
+   scrObj = wltLB1->getScrAddrObjByKey(TestChain::lb1ScrAddr);
+   EXPECT_EQ(scrObj->getFullBalance(), 10 * COIN);
+   scrObj = wltLB1->getScrAddrObjByKey(TestChain::lb1ScrAddrP2SH);
+   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   scrObj = wltLB2->getScrAddrObjByKey(TestChain::lb2ScrAddr);
+   EXPECT_EQ(scrObj->getFullBalance(), 10 * COIN);
+   scrObj = wltLB2->getScrAddrObjByKey(TestChain::lb2ScrAddrP2SH);
+   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
+
+   EXPECT_EQ(wltLB1->getFullBalance(), 10 * COIN);
+   EXPECT_EQ(wltLB2->getFullBalance(), 15 * COIN);
+
+
+   //add ZC
+   BinaryData rawZC(TestChain::zcTxSize);
+   FILE *ff = fopen("../reorgTest/ZCtx.tx", "rb");
+   fread(rawZC.getPtr(), TestChain::zcTxSize, 1, ff);
+   fclose(ff);
+
+   BinaryData rawLBZC(TestChain::lbZCTxSize);
+   FILE *flb = fopen("../reorgTest/LBZC.tx", "rb");
+   fread(rawLBZC.getPtr(), TestChain::lbZCTxSize, 1, flb);
+   fclose(flb);
+
+   theBDV->addNewZeroConfTx(rawZC, 0, false);
+   theBDV->addNewZeroConfTx(rawLBZC, 0, false);
+   theBDV->parseNewZeroConfTx();
+   theBDV->scanWallets();
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
+   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
+   EXPECT_EQ(scrObj->getFullBalance(), 20 * COIN);
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
+   EXPECT_EQ(scrObj->getFullBalance(), 65 * COIN);
+
+   fullBalance = wlt->getFullBalance();
+   spendableBalance = wlt->getSpendableBalance(4);
+   unconfirmedBalance = wlt->getUnconfirmedBalance(4);
+   EXPECT_EQ(fullBalance, 165 * COIN);
+   EXPECT_EQ(spendableBalance, 35 * COIN);
+   EXPECT_EQ(unconfirmedBalance, 135 * COIN);
+
+   scrObj = wltLB1->getScrAddrObjByKey(TestChain::lb1ScrAddr);
+   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
+   scrObj = wltLB1->getScrAddrObjByKey(TestChain::lb1ScrAddrP2SH);
+   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   scrObj = wltLB2->getScrAddrObjByKey(TestChain::lb2ScrAddr);
+   EXPECT_EQ(scrObj->getFullBalance(), 10 * COIN);
+   scrObj = wltLB2->getScrAddrObjByKey(TestChain::lb2ScrAddrP2SH);
+   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
+
+   EXPECT_EQ(wltLB1->getFullBalance(), 5 * COIN);
+   EXPECT_EQ(wltLB2->getFullBalance(), 15 * COIN);
+
+   //get utxos with zc
+   spendableBalance = wlt->getSpendableBalance(4);
+   auto&& utxoVec = wlt->getSpendableTxOutListForValue(UINT64_MAX, false);
+
+   uint64_t totalUtxoVal = 0;
+   for (auto& utxo : utxoVec)
+      totalUtxoVal += utxo.getValue();
+
+   EXPECT_EQ(spendableBalance, totalUtxoVal);
+}
+
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -9602,7 +8801,7 @@ protected:
 
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockUtilsSuper, HeadersOnly)
+TEST_F(BlockUtilsSuper, DISABLED_HeadersOnly)
 {
    EXPECT_EQ(&TheBDM.blockchain().top(), &TheBDM.blockchain().getGenesisBlock());
    TheBDM.readBlkFileUpdate();
@@ -9616,7 +8815,7 @@ TEST_F(BlockUtilsSuper, HeadersOnly)
 
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockUtilsSuper, HeadersOnly_Reorg)
+TEST_F(BlockUtilsSuper, DISABLED_HeadersOnly_Reorg)
 {
    // this test is presently of dubious value. I think
    // at some point the alternate blocks (4A and 5A) had a higher difficulty
@@ -9653,7 +8852,7 @@ TEST_F(BlockUtilsSuper, HeadersOnly_Reorg)
 
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockUtilsSuper, Load5Blocks)
+TEST_F(BlockUtilsSuper, DISABLED_Load5Blocks)
 {
    TheBDM.doInitialSyncOnLoad(nullProgress);
 
@@ -9711,7 +8910,7 @@ TEST_F(BlockUtilsSuper, Load5Blocks)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockUtilsSuper, Load5Blocks_ReloadBDM)
+TEST_F(BlockUtilsSuper, DISABLED_Load5Blocks_ReloadBDM)
 {
    TheBDM.doInitialSyncOnLoad(nullProgress);
 
@@ -9828,7 +9027,7 @@ TEST_F(BlockUtilsSuper, Load5Blocks_ReloadBDM)
 
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockUtilsSuper, Load3BlocksPlus3)
+TEST_F(BlockUtilsSuper, DISABLED_Load3BlocksPlus3)
 {
    // Copy only the first four blocks.  Will copy the full file next to test
    // readBlkFileUpdate method on non-reorg blocks.
@@ -9914,7 +9113,7 @@ TEST_F(BlockUtilsSuper, Load3BlocksPlus3)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockUtilsSuper, RepaidMissingTxio)
+TEST_F(BlockUtilsSuper, DISABLED_RepaidMissingTxio)
 {
    // Copy only the first four blocks.  Will copy the full file next to test
    // readBlkFileUpdate method on non-reorg blocks.
@@ -9950,7 +9149,7 @@ TEST_F(BlockUtilsSuper, RepaidMissingTxio)
    }
 
    //delete the keys
-   auto& delKeysThread = [&ssh, this](void)->void
+   auto delKeysThread = [&ssh, this](void)->void
    { 
       LMDBEnv::Transaction tx(iface_->dbEnv_[BLKDATA].get(), LMDB::ReadWrite);
 
@@ -10023,7 +9222,7 @@ TEST_F(BlockUtilsSuper, RepaidMissingTxio)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockUtilsSuper, Load5Blocks_Plus2NoReorg)
+TEST_F(BlockUtilsSuper, DISABLED_Load5Blocks_Plus2NoReorg)
 {
 //    DBUtils::setArmoryDbType(ARMORY_DB_SUPER);
 //    DBUtils::setDbPruneType(DB_PRUNE_NONE);
@@ -10047,7 +9246,7 @@ TEST_F(BlockUtilsSuper, Load5Blocks_Plus2NoReorg)
 
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockUtilsSuper, Load5Blocks_FullReorg)
+TEST_F(BlockUtilsSuper, DISABLED_Load5Blocks_FullReorg)
 {
    TheBDM.doInitialSyncOnLoad(nullProgress);
 
@@ -10110,7 +9309,7 @@ TEST_F(BlockUtilsSuper, Load5Blocks_FullReorg)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockUtilsSuper, Load5Blocks_ReloadBDM_Reorg)
+TEST_F(BlockUtilsSuper, DISABLED_Load5Blocks_ReloadBDM_Reorg)
 {
    TheBDM.doInitialSyncOnLoad(nullProgress);
 
@@ -10179,7 +9378,7 @@ TEST_F(BlockUtilsSuper, Load5Blocks_ReloadBDM_Reorg)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockUtilsSuper, Load5Blocks_DoubleReorg)
+TEST_F(BlockUtilsSuper, DISABLED_Load5Blocks_DoubleReorg)
 {
    StoredScriptHistory ssh;
 
@@ -10392,7 +9591,7 @@ TEST_F(BlockUtilsSuper, DISABLED_RestartDBAfterBuild_withReplay)
    // Random note (since I just spent 2 hours trying to figure out why
    // I wasn't getting warnings about re-marking TxOuts spent that were
    // already marked spent):   We get three warnings about TxOuts that
-   // already marked unspent in the SSH objects when we replay blocks 
+   // already marked unspent in the ssh objects when we replay blocks 
    // 1 and 2 (but not 0). This is expected.  But, I also expected a 
    // warning about a TxOut already marked spent.  Turns out that 
    // we are replaying the previous block first which calls "markUnspent" 
@@ -10543,7 +9742,7 @@ protected:
 
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockUtilsWithWalletTest, PreRegisterScrAddrs)
+TEST_F(BlockUtilsWithWalletTest, DISABLED_PreRegisterScrAddrs)
 {
    vector<BinaryData> scrAddrVec;
    scrAddrVec.push_back(TestChain::scrAddrA);
@@ -10586,7 +9785,7 @@ TEST_F(BlockUtilsWithWalletTest, PreRegisterScrAddrs)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockUtilsWithWalletTest, PostRegisterScrAddr)
+TEST_F(BlockUtilsWithWalletTest, DISABLED_PostRegisterScrAddr)
 {
    setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    TheBDM.doInitialSyncOnLoad(nullProgress);
@@ -10739,129 +9938,7 @@ TEST_F(TestCryptoECDSA, VerifyPubKeyValidity)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/* Never got around to finishing this...
-class TestMainnetBlkchain: public ::testing::Test
-{
-protected:
-   /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp(void) 
-   {
-      iface_ = LSMWrapper::GetInterfacePtr();
-      magic_ = READHEX(MAINNET_MAGIC_BYTES);
-      ghash_ = READHEX(MAINNET_GENESIS_HASH_HEX);
-      gentx_ = READHEX(MAINNET_GENESIS_TX_HASH_HEX);
-      zeros_ = READHEX("00000000");
-      DBUtils::setArmoryDbType(ARMORY_DB_FULL);
-      DBUtils::setDbPruneType(DB_PRUNE_NONE);
-
-      blkdir_  = string("/home/alan/.bitcoin");
-      homedir_ = string("./fakehomedir");
-      ldbdir_  = string("/home/alan/ARMORY_DB_257k_BLKS");
-
-      iface_->openDatabases( ldbdir_, ghash_, gentx_, magic_, 
-                             ARMORY_DB_SUPER, DB_PRUNE_NONE);
-      if(!iface_->databasesAreOpen())
-         LOGERR << "ERROR OPENING DATABASES FOR TESTING!";
-
-      mkdir(homedir_);
-
-      TheBDM.SelectNetwork("Main");
-      TheBDM.SetBlkFileLocation(blkdir_);
-      TheBDM.SetLevelDBLocation(ldbdir_);
-
-      TestChain::addrA = READHEX("b077a2b5e8a53f1d3ef4100117125de6a5b15f6b");
-      TestChain::addrB = READHEX("4c765bca17f9881ad6d4336a1d4ec34a091e5a6f");
-
-      TestChain::scrAddrA = HASH160PREFIX + TestChain::addrA;
-      TestChain::scrAddrB = HASH160PREFIX + TestChain::addrB;
-
-      LOGDISABLESTDOUT();
-   }
-
-
-   /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
-   {
-      rmdir(homedir_);
-
-      BlockDataManager_LevelDB::DestroyInstance();
-      LOGENABLESTDOUT();
-   }
-
-
-   /////////////////////////////////////////////////////////////////////////////
-   void rmdir(string src)
-   {
-      char* syscmd = new char[4096];
-      sprintf(syscmd, "rm -rf %s", src.c_str());
-      system(syscmd);
-      delete[] syscmd;
-   }
-
-   /////////////////////////////////////////////////////////////////////////////
-   void mkdir(string newdir)
-   {
-      char* syscmd = new char[4096];
-      sprintf(syscmd, "mkdir -p %s", newdir.c_str());
-      system(syscmd);
-      delete[] syscmd;
-   }
-#endif
-
-   LMDBBlockDatabase* iface_;
-   BinaryData magic_;
-   BinaryData ghash_;
-   BinaryData gentx_;
-   BinaryData zeros_;
-
-   string blkdir_;
-   string homedir_;
-   string ldbdir_;
-   string blk0dat_;
-
-};
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockUtilsWithWalletTest, TestBalanceMainnet_usuallydisabled)
-{
-   TheBDM.doInitialSyncOnLoad([] (double,unsigned) {});
-
-   // We do all the database stuff first, THEN load the addresses
-   BtcWallet wlt(theBDM);
-   wlt.addScrAddress(TestChain::scrAddrA);
-   wlt.addScrAddress(TestChain::scrAddrB);
-   TheBDM.registerWallet(&wlt);
-   TheBDM.registerNewScrAddr(TestChain::scrAddrD);
-   TheBDM.fetchAllRegisteredScrAddrData();
-   TheBDM.scanRegisteredTxForWallet(wlt);
-
-   uint64_t balanceWlt;
-   uint64_t balanceDB;
-   
-   balanceWlt = wlt.getScrAddrObjByKey(TestChain::scrAddrA).getFullBalance();
-   balanceDB  = iface_->getBalanceForScrAddr(TestChain::scrAddrA);
-   EXPECT_EQ(balanceWlt,  100*COIN);
-   EXPECT_EQ(balanceDB,   100*COIN);
-   
-   balanceWlt = wlt.getScrAddrObjByKey(TestChain::scrAddrB).getFullBalance();
-   balanceDB  = iface_->getBalanceForScrAddr(TestChain::scrAddrB);
-   EXPECT_EQ(balanceWlt,    0*COIN);
-   EXPECT_EQ(balanceDB,     0*COIN);
-
-   balanceWlt = wlt.getScrAddrObjByKey(TestChain::scrAddrC).getFullBalance();
-   balanceDB  = iface_->getBalanceForScrAddr(TestChain::scrAddrC);
-   EXPECT_EQ(balanceWlt,   50*COIN);
-   EXPECT_EQ(balanceDB,    50*COIN);
-
-   balanceWlt = wlt.getScrAddrObjByKey(TestChain::scrAddrD).getFullBalance();
-   balanceDB  = iface_->getBalanceForScrAddr(TestChain::scrAddrD);
-   EXPECT_EQ(balanceWlt,    0*COIN);  // D is not part of the wallet
-   EXPECT_EQ(balanceDB,   100*COIN);
-}
-*/
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockUtilsWithWalletTest, ZeroConfUpdate)
+TEST_F(BlockUtilsWithWalletTest, DISABLED_ZeroConfUpdate)
 {
    // Copy only the first two blocks
    setBlocks({"0", "1"}, blk0dat_);
@@ -10878,7 +9955,8 @@ TEST_F(BlockUtilsWithWalletTest, ZeroConfUpdate)
    theBDV->enableZeroConf();
    theBDV->scanWallets();
 
-   BinaryData ZChash = READHEX("b6b6f145742a9072fd85f96772e63a00eb4101709aa34ec5dd59e8fc904191a7");
+   BinaryData ZChash = READHEX(
+      "b6b6f145742a9072fd85f96772e63a00eb4101709aa34ec5dd59e8fc904191a7");
    BinaryData rawZC(259);
    FILE *ff = fopen("../reorgTest/ZCtx.tx", "rb");
    fread(rawZC.getPtr(), 259, 1, ff);
@@ -10906,29 +9984,6 @@ TEST_F(BlockUtilsWithWalletTest, ZeroConfUpdate)
    EXPECT_EQ(iface_->getTxHashForLdbKey(zcKey), ZChash);
 }
 
-// This was really just to time the logging to determine how much impact it 
-// has.  It looks like writing to file is about 1,000,000 logs/sec, while 
-// writing to the null stream (below the threshold log level) is about 
-// 2,200,000/sec.    As long as we use log messages sparingly (and timer
-// calls which call the logger), there will be no problem leaving them
-// on even in production code.
-/*
-TEST(TimeDebugging, WriteToLogNoStdOut)
-{
-   LOGDISABLESTDOUT();
-   for(uint32_t i=0; i<1000000; i++)
-      LOGERR << "Testing writing out " << 3 << " diff things";
-   LOGENABLESTDOUT();
-}
-
-TEST(TimeDebugging, WriteNull)
-{
-   for(uint32_t i=0; i<1000000; i++)
-      LOGDEBUG4 << "Testing writing out " << 3 << " diff things";
-}
-*/
-
-
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 // Now actually execute all the tests
@@ -10953,3 +10008,7 @@ GTEST_API_ int main(int argc, char **argv)
 
    return exitCode;
 }
+
+//TODO: add test to merge new addresses on reorg
+//TODO: add test for SSH rescan
+//TODO: add test to detect RBF and RBF inheritence

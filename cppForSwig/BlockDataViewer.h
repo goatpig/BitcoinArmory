@@ -2,7 +2,7 @@
 //                                                                            //
 //  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
-//  See LICENSE or http://www.gnu.org/licenses/agpl.html                      //
+//  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 #ifndef BLOCK_DATA_VIEWER_H
@@ -244,6 +244,8 @@ public:
 
    bool getZCflag(void) const
    { return rescanZC_.load(memory_order_acquire); }
+
+   bool isRBF(const BinaryData& txHash) const;
 
 public:
 

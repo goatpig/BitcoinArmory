@@ -2,9 +2,15 @@
 //                                                                            //
 //  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
-//  See LICENSE or http://www.gnu.org/licenses/agpl.html                      //
+//  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
+//                                                                            //
+//                                                                            //
+//  Copyright (C) 2016, goatpig                                               //            
+//  Distributed under the MIT license                                         //
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                   
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
+
 #ifndef _BDM_SUPPORTCLASSES_H_
 #define _BDM_SUPPORTCLASSES_H_
 
@@ -35,7 +41,7 @@ class ScrAddrFilter
    /***
    This class keeps track of all registered scrAddr to be scanned by the DB.
    If the DB isn't running in supernode, this class also acts as a helper to
-   filter transactions, which is required in order to save only relevant SSH
+   filter transactions, which is required in order to save only relevant ssh
 
    The transaction filter isn't exact however. It gets more efficient as it
    encounters more UTxO.
@@ -51,15 +57,15 @@ class ScrAddrFilter
    Registering addresses while the BDM isn't initialized will return instantly
    Otherwise, the following steps are taken:
 
-   1) Check SSH entries in the DB for this scrAddr. If there is none, this
+   1) Check ssh entries in the DB for this scrAddr. If there is none, this
    DB never saw this address (full/lite node). Else mark the top scanned block.
 
    -- Non supernode operations --
-   2.a) If the address is new, create an empty SSH header for that scrAddr
+   2.a) If the address is new, create an empty ssh header for that scrAddr
    in the DB, marked at the current top height
    2.b) If the address isn't new, scan it from its last seen block, or its
    block creation, or 0 if none of the above is available. This will create
-   the SSH entries for the address, which will have the current top height as
+   the ssh entries for the address, which will have the current top height as
    its scanned height.
    --
 
@@ -121,11 +127,11 @@ private:
    shared_ptr<ScrAddrFilter>      child_;
    ScrAddrFilter*                 root_;
    ScrAddrSideScanData            scrAddrDataForSideScan_;
-   atomic<int32_t>                mergeLock_;
+   mutex                          mergeLock_;
    bool                           mergeFlag_=false;
    
    //false: dont scan
-   //true: wipe existing SSH then scan
+   //true: wipe existing ssh then scan
    bool                           doScan_ = true; 
    bool                           isScanning_ = false;
 
@@ -145,14 +151,14 @@ public:
    const ARMORY_DB_TYPE           armoryDbType_;
   
    ScrAddrFilter(LMDBBlockDatabase* lmdb, ARMORY_DB_TYPE armoryDbType)
-      : lmdb_(lmdb), mergeLock_(0), armoryDbType_(armoryDbType)
+      : lmdb_(lmdb), armoryDbType_(armoryDbType)
    {
       scanThreadProgressCallback_ = 
          [](const vector<string>&, double, unsigned)->void {};
    }
 
    ScrAddrFilter(const ScrAddrFilter& sca) //copy constructor
-      : lmdb_(sca.lmdb_), mergeLock_(0), armoryDbType_(sca.armoryDbType_)
+      : lmdb_(sca.lmdb_), armoryDbType_(sca.armoryDbType_)
    {}
    
    virtual ~ScrAddrFilter() { }
@@ -207,7 +213,11 @@ public:
       function<void(const vector<string>&, double prog, unsigned time)> progress);
 
    const vector<string> getNextWalletIDToScan(void);
- 
+
+   void getAllScrAddrInDB(void);
+   BinaryData getAddressMapMerkle(void) const;
+   bool hasNewAddresses(void) const;
+
 public:
    virtual ScrAddrFilter* copy()=0;
 
@@ -266,7 +276,9 @@ private:
    map<HashString, map<BinaryData, TxIOPair> >  txioMap_; //<scrAddr,  <dbKeyOfOutput, TxIOPair>>
    map<HashString, vector<HashString> >         keyToSpentScrAddr_; //<zcKey, vector<ScrAddr>>
    set<HashString>                              txOutsSpentByZC_;     //<txOutDbKeys>
+   set<HashString>                              allZcTxHashes_;
 
+   BinaryData lastParsedBlockHash_;
 
    std::atomic<uint32_t>       topId_;
    mutex mu_;

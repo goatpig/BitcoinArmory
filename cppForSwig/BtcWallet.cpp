@@ -2,14 +2,13 @@
 //                                                                            //
 //  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
-//  See LICENSE or http://www.gnu.org/licenses/agpl.html                      //
+//  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 #include "BtcWallet.h"
 #include "BlockUtils.h"
 #include "txio.h"
 #include "BlockDataViewer.h"
-#include "ReorgUpdater.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -329,8 +328,8 @@ void BtcWallet::scanNonStdTx(uint32_t blknum,
       LOGERR << "ALERT:  Found non-standard transaction referencing";
       LOGERR << "        an address in your wallet.  There is no way";
       LOGERR << "        for this program to determine if you can";
-      LOGERR << "        spend these BTC or not.  Please email the";
-      LOGERR << "        following information to support@bitcoinarmory.com";
+      LOGERR << "        spend these BTC or not.  Please open an issue with the ";
+      LOGERR << "        following information at https://github.com/goatpig/BitcoinArmory/issues";
       LOGERR << "        for help identifying the transaction and how";
       LOGERR << "        to spend it:";
       LOGERR << "   Block Number: " << blknum;
@@ -522,7 +521,7 @@ vector<UnspentTxOut> BtcWallet::getSpendableTxOutListForValue(uint64_t val,
 
    //start a RO txn to grab the txouts from DB
    LMDBEnv::Transaction tx;
-   db->beginDBTransaction(&tx, HISTORY, LMDB::ReadOnly);
+   db->beginDBTransaction(&tx, STXO, LMDB::ReadOnly);
 
    vector<UnspentTxOut> utxoList;
    uint32_t blk = bdvPtr_->getTopBlockHeight();
@@ -533,6 +532,9 @@ vector<UnspentTxOut> BtcWallet::getSpendableTxOutListForValue(uint64_t val,
 
       for (const auto& txioPair : utxoMap)
       {
+         if (!txioPair.second.isSpendable(db, blk, ignoreZC))
+            continue;
+
          TxOut txout = txioPair.second.getTxOutCopy(db);
          UnspentTxOut UTXO = UnspentTxOut(db, txout, blk);
          utxoList.push_back(UTXO);
@@ -731,7 +733,7 @@ bool BtcWallet::scanWallet(uint32_t startBlock, uint32_t endBlock,
          updateAfterReorg(startBlock);
          
       LMDBEnv::Transaction tx;
-      bdvPtr_->getDB()->beginDBTransaction(&tx, HISTORY, LMDB::ReadOnly);
+      bdvPtr_->getDB()->beginDBTransaction(&tx, SSH, LMDB::ReadOnly);
 
       fetchDBScrAddrData(startBlock, endBlock);
       scanWalletZeroConf(reorg);
@@ -889,6 +891,8 @@ void BtcWallet::merge()
             }
             else
             {
+               throw("need reimplemented");
+
                //top scanned block is not on the main branch, undo till branch point
                const Blockchain::ReorganizationState state =
                   bc.findReorgPointFromBlock(mergeTopScannedBlkHash);
@@ -899,9 +903,6 @@ void BtcWallet::merge()
 
                for (const auto& scrAddr : scrAddrMapToMerge)
                   saf->regScrAddrForScan(scrAddr.first, 0);
-
-               ReorgUpdater reorgOnlyUndo(state,
-                  &bc, bdvPtr_->getDB(), bdvPtr_->config(), saf.get(), true);
 
                bottomBlock = state.reorgBranchPoint->getBlockHeight() + 1;
             }
@@ -951,7 +952,7 @@ map<uint32_t, uint32_t> BtcWallet::computeScrAddrMapHistSummary()
    map<uint32_t, preHistory> preHistSummary;
 
    LMDBEnv::Transaction tx;
-   bdvPtr_->getDB()->beginDBTransaction(&tx, HISTORY, LMDB::ReadOnly);
+   bdvPtr_->getDB()->beginDBTransaction(&tx, SSH, LMDB::ReadOnly);
    for (auto& scrAddrPair : scrAddrMap_)
    {
       scrAddrPair.second.mapHistory();

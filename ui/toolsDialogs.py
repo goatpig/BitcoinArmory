@@ -15,7 +15,7 @@ from qtdefines import *
 from qtdialogs import MIN_PASSWD_WIDTH, DlgPasswd3, createAddrBookButton,\
    DlgUnlockWallet
 from armoryengine.ArmoryUtils import isASCII
-from announcefetch import ANNOUNCE_SIGN_PUBKEY
+#from announcefetch import ANNOUNCE_SIGN_PUBKEY
 
 class MessageSigningVerificationDialog(ArmoryDialog):
 
@@ -80,7 +80,7 @@ class MessageSigningWidget(QWidget):
       
       # Create a row with just a sign message button
       
-      self.bareSigButton = QPushButton('Bare Signature (Bitcoin-Qt Compatible)')
+      self.bareSigButton = QPushButton('Bare Signature (Bitcoin-Core Compatible)')
       self.base64SigButton = QPushButton('Base64 Signature')
       self.clearSigButton = QPushButton('Clearsign Signature')
       sigButtonFrame = makeHorizFrame([self.bareSigButton,\

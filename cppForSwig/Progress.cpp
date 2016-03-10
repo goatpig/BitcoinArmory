@@ -2,7 +2,7 @@
 //                                                                            //
 //  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
-//  See LICENSE or http://www.gnu.org/licenses/agpl.html                      //
+//  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 #include "Progress.h"
@@ -13,7 +13,7 @@ ProgressCalculator::ProgressCalculator(uint64_t total)
    then_ = 0;
 }
 
-void ProgressCalculator::advance(uint64_t to)
+void ProgressCalculator::advance(uint64_t to, bool suppress)
 {
    static const double smoothingFactor=.10;
    
@@ -26,7 +26,7 @@ void ProgressCalculator::advance(uint64_t to)
    }
    if (now == then_) return;
    
-   if (now < then_+10) return;
+   if (now < then_+10 && suppress) return;
    
    double speed = (to-lastSample_)/double(now-then_);
    

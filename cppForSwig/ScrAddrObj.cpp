@@ -2,7 +2,7 @@
 //                                                                            //
 //  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
-//  See LICENSE or http://www.gnu.org/licenses/agpl.html                      //
+//  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 #include "ScrAddrObj.h"
@@ -309,7 +309,7 @@ void ScrAddrObj::getHistoryForScrAddr(
       endBlock = localTxioBottom -1;
    }
 
-   //grab txio range from SSH
+   //grab txio range from ssh
    StoredScriptHistory ssh;
    db_->getStoredScriptHistory(ssh, scrAddr_, startBlock, endBlock);
 
@@ -416,7 +416,7 @@ ScrAddrObj& ScrAddrObj::operator= (const ScrAddrObj& rhs)
    this->totalTxioCount_ = rhs.totalTxioCount_;
    this->lastSeenBlock_ = rhs.lastSeenBlock_;
 
-   //prebuild history indexes for quick fetch from SSH
+   //prebuild history indexes for quick fetch from ssh
    this->hist_ = rhs.hist_;
    this->utxos_.reset();
    this->utxos_.scrAddrObj_ = this;
@@ -528,7 +528,8 @@ vector<UnspentTxOut> ScrAddrObj::getSpendableTxOutList(
    if (ignoreZc)
       return utxoVec;
 
-   LMDBEnv::Transaction tx(db_->dbEnv_[db_->getDbSelect(HISTORY)].get(), LMDB::ReadOnly);
+   LMDBEnv::Transaction tx;
+   db_->beginDBTransaction(&tx, STXO, LMDB::ReadOnly);
 
    for (auto& txio : relevantTxIO_)
    {

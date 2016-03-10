@@ -680,7 +680,9 @@ class PyTx(BlockComponent):
       self.version    = txData.get(UINT32)
       numInputs  = txData.get(VAR_INT)
       for i in xrange(numInputs):
-         self.inputs.append( PyTxIn().unserialize(txData) )
+         txin = PyTxIn().unserialize(txData);
+         self.inputs.append( txin )
+
       numOutputs = txData.get(VAR_INT)
       for i in xrange(numOutputs):
          self.outputs.append( PyTxOut().unserialize(txData) )
@@ -757,6 +759,7 @@ class PyTx(BlockComponent):
          result = ''.join([result, '\n',  out.toString(nIndent+2, endian=endian)])
       return result
 
+
    def fetchCpp(self):
       """ Use the info in this PyTx to get the C++ version from TheBDM """
       return TheBDM.getTxByHash(self.getHash())
@@ -782,7 +785,8 @@ class PyTx(BlockComponent):
          print binary_to_hex(bu.get(BINARY_CHUNK,scriptSz))
       print binary_to_hex(bu.get(BINARY_CHUNK, 4))
 
-
+   def isRBF(self):
+      return TheBDM.bdv().isRBF(self.getHash())
 
 
 # Use to identify status of individual sigs on an UnsignedTxINPUT

@@ -1,11 +1,16 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2011-2014, Armory Technologies, Inc.                        //
+//  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
-//  See LICENSE or http://www.gnu.org/licenses/agpl.html                      //
+//  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
+//                                                                            //
+//                                                                            //
+//  Copyright (C) 2016, goatpig                                               //            
+//  Distributed under the MIT license                                         //
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                   
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
-//
+
 #ifndef _LMDB_WRAPPER_
 #define _LMDB_WRAPPER_
 
@@ -18,6 +23,8 @@
 #include "StoredBlockObj.h"
 
 #include "lmdbpp.h"
+
+class Blockchain;
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -231,19 +238,12 @@ class LMDBBlockDatabase
 public:
 
    /////////////////////////////////////////////////////////////////////////////
-   LMDBBlockDatabase(function<bool(void)> isDBReady);
+   LMDBBlockDatabase(Blockchain*, 
+      function<bool(void)> isDBReady, string blkFolder);
    ~LMDBBlockDatabase(void);
 
    /////////////////////////////////////////////////////////////////////////////
    void openDatabases(const string &basedir,
-      BinaryData const & genesisBlkHash,
-      BinaryData const & genesisTxHash,
-      BinaryData const & magic,
-      ARMORY_DB_TYPE     dbtype,
-      DB_PRUNE_TYPE      pruneType);
-
-   void openDatabasesSupernode(
-      const string& basedir,
       BinaryData const & genesisBlkHash,
       BinaryData const & genesisTxHash,
       BinaryData const & magic,
@@ -255,7 +255,6 @@ public:
 
    /////////////////////////////////////////////////////////////////////////////
    void closeDatabases();
-   void closeDatabasesSupernode(void);
 
    /////////////////////////////////////////////////////////////////////////////
    void beginDBTransaction(LMDBEnv::Transaction* tx, 
@@ -283,6 +282,7 @@ public:
    /////////////////////////////////////////////////////////////////////////////
    // Sometimes, we just need to nuke everything and start over
    void destroyAndResetDatabases(void);
+   void resetHistoryDatabases(void);
 
    /////////////////////////////////////////////////////////////////////////////
    bool databasesAreOpen(void) { return dbIsOpen_; }
@@ -291,6 +291,8 @@ public:
    // Get latest block info
    BinaryData getTopBlockHash(DB_SELECT db);
    uint32_t   getTopBlockHeight(DB_SELECT db);
+   BinaryData getTopBlockHash() const;
+
    
    /////////////////////////////////////////////////////////////////////////////
    LDBIter getIterator(DB_SELECT db) const
@@ -323,11 +325,13 @@ public:
    BinaryRefReader getValueReader(DB_SELECT db, BinaryDataRef keyWithPrefix) const;
    BinaryRefReader getValueReader(DB_SELECT db, DB_PREFIX prefix, BinaryDataRef key) const;
 
-   BinaryData getHashForDBKey(BinaryData dbkey);
+   BinaryData getDBKeyForHash(const BinaryData& txhash, 
+      uint8_t dupId = UINT8_MAX) const;
+   BinaryData getHashForDBKey(BinaryData dbkey) const;
    BinaryData getHashForDBKey(uint32_t hgt,
       uint8_t  dup,
       uint16_t txi = UINT16_MAX,
-      uint16_t txo = UINT16_MAX);
+      uint16_t txo = UINT16_MAX) const;
 
    /////////////////////////////////////////////////////////////////////////////
    // Put value based on BinaryDataRefs key and value
@@ -403,6 +407,7 @@ public:
       uint32_t endBlock);
 
    uint32_t getStxoCountForTx(const BinaryData & dbKey6) const;
+   void resetHistoryForAddressVector(const vector<BinaryData>&);
 
 public:
 
@@ -426,38 +431,15 @@ public:
 
    /////////////////////////////////////////////////////////////////////////////
    // BareHeaders are those int the HEADERS DB with no blockdta associated
-   uint8_t putBareHeader(StoredHeader & sbh, bool updateDupID = true);
-   bool    getBareHeader(StoredHeader & sbh, uint32_t blkHgt, uint8_t dup);
-   bool    getBareHeader(StoredHeader & sbh, uint32_t blkHgt);
-   bool    getBareHeader(StoredHeader & sbh, BinaryDataRef headHash);
+   uint8_t putBareHeader(StoredHeader & sbh, bool updateDupID = true,
+                         bool updateSDBI = true);
+   bool    getBareHeader(StoredHeader & sbh, uint32_t blkHgt, uint8_t dup) const;
+   bool    getBareHeader(StoredHeader & sbh, uint32_t blkHgt) const;
+   bool    getBareHeader(StoredHeader & sbh, BinaryDataRef headHash) const;
 
    /////////////////////////////////////////////////////////////////////////////
-   // StoredHeader accessors
-   //For Supernode
-   uint8_t putStoredHeader(StoredHeader & sbh,
-      bool withBlkData = true,
-      bool updateDupID = true);
-
-   //for Fullnode
-   uint8_t putRawBlockData(BinaryRefReader& brr, 
-      function<const BlockHeader& (const BinaryData&)>);
-
-   //getStoredHeader detects the dbType and update the passed StoredHeader
-   //accordingly
-   bool getStoredHeader(StoredHeader & sbh,
-      uint32_t blockHgt,
-      uint8_t blockDup = UINT8_MAX,
-      bool withTx = true) const;
-
-   bool getStoredHeader(StoredHeader & sbh,
-      BinaryDataRef headHash,
-      bool withTx = true) const;
-
-   // This seemed unnecessary and was also causing conflicts with optional args
-   //bool getStoredHeader(StoredHeader & sbh,
-   //uint32_t blockHgt,
-   //bool withTx=true);
-
+   // still using the old name even though no block data is stored anymore
+   bool getStoredHeader(StoredHeader&, uint32_t, uint8_t, bool withTx=true) const;
 
    /////////////////////////////////////////////////////////////////////////////
    // StoredTx Accessors
@@ -476,11 +458,7 @@ public:
       BinaryDataRef dbKey) const;
 
    bool getStoredTx_byHash(const BinaryData& txHash,
-      StoredTx* stx = nullptr,
-      BinaryData* DBkey = nullptr) const;
-   bool getStoredTx_byHashSuper(const BinaryData& txHash,
-      StoredTx* stx = nullptr,
-      BinaryData* DBkey = nullptr) const;
+      StoredTx* stx = nullptr) const;
 
    bool getStoredTx(StoredTx & st,
       uint32_t blkHgt,
@@ -513,6 +491,9 @@ public:
    bool getStoredTxOut(StoredTxOut & stxo,
       const BinaryData& DBkey) const;
 
+   void getUTXOflags(map<BinaryData, StoredSubHistory>&) const;
+   void getUTXOflags(StoredSubHistory&) const;
+
    void putStoredScriptHistory(StoredScriptHistory & ssh);
    void putStoredScriptHistorySummary(StoredScriptHistory & ssh);
    void putStoredSubHistory(StoredSubHistory & subssh);
@@ -533,10 +514,10 @@ public:
       BinaryDataRef rawScript) const;
 
    // This method breaks from the convention I've used for getting/putting 
-   // stored objects, because we never really handle Sub-SSH objects directly,
+   // stored objects, because we never really handle Sub-ssh objects directly,
    // but we do need to harness them.  This method could be renamed to
    // "getPartialScriptHistory()" ... it reads the main 
-   // sub-SSH from DB and adds it to the supplied regular-SSH.
+   // sub-ssh from DB and adds it to the supplied regular-ssh.
    bool fetchStoredSubHistory(StoredScriptHistory & ssh,
       BinaryData hgtX,
       bool createIfDNE = false,
@@ -550,7 +531,7 @@ public:
    uint64_t getBalanceForScrAddr(BinaryDataRef scrAddr, bool withMulti = false);
 
    // TODO: We should probably implement some kind of method for accessing or 
-   //       running calculations on an SSH without ever loading the entire
+   //       running calculations on an ssh without ever loading the entire
    //       thing into RAM.  
 
    // None of the SUD methods are implemented because we don't actually need
@@ -566,25 +547,12 @@ public:
    void updatePreferredTxHint(BinaryDataRef hashOrPrefix, BinaryData preferKey);
 
    bool putStoredHeadHgtList(StoredHeadHgtList const & hhl);
-   bool getStoredHeadHgtList(StoredHeadHgtList & hhl, uint32_t height);
+   bool getStoredHeadHgtList(StoredHeadHgtList & hhl, uint32_t height) const;
 
    ////////////////////////////////////////////////////////////////////////////
    // Some methods to grab data at the current iterator location.  Return
    // false if reading fails (maybe because we were expecting to find the
    // specified DB entry type, but the prefix byte indicated something else
-   bool readStoredBlockAtIter(LDBIter & ldbIter, DBBlock & sbh) const;
-
-   bool readStoredTxAtIter(LDBIter & iter,
-      uint32_t height,
-      uint8_t dupID,
-      DBTx & stx) const;
-
-   bool readStoredTxOutAtIter(LDBIter & iter,
-      uint32_t height,
-      uint8_t  dupID,
-      uint16_t txIndex,
-      StoredTxOut & stxo) const;
-
    bool readStoredScriptHistoryAtIter(LDBIter & iter,
       StoredScriptHistory & ssh,
       uint32_t startBlock,
@@ -600,6 +568,7 @@ public:
    Tx    getFullTxCopy(BinaryData ldbKey6B) const;
    Tx    getFullTxCopy(uint32_t hgt, uint16_t txIndex) const;
    Tx    getFullTxCopy(uint32_t hgt, uint8_t dup, uint16_t txIndex) const;
+   Tx    getFullTxCopy(uint16_t txIndex, BlockHeader* bhPtr) const;
    TxOut getTxOutCopy(BinaryData ldbKey6B, uint16_t txOutIdx) const;
    TxIn  getTxInCopy(BinaryData ldbKey6B, uint16_t txInIdx) const;
 
@@ -644,19 +613,18 @@ public:
    bool isReady(void) { return isDBReady_(); }
    ARMORY_DB_TYPE armoryDbType(void) { return armoryDbType_; }
 
-private:
-   string               baseDir_;
-   string dbBlkdataFilename() const { return baseDir_ + "/blocks";  }
-   string dbHeadersFilename() const { return baseDir_ + "/headers"; }
-   string dbHistoryFilename() const { return baseDir_ + "/history"; }
-   string dbTxhintsFilename() const { return baseDir_ + "/txhints"; }
+   const string& baseDir(void) const { return baseDir_; }
+   void setBlkFolder(const string& path) { blkFolder_ = path; }
 
-   BinaryData           genesisBlkHash_;
-   BinaryData           genesisTxHash_;
-   BinaryData           magicBytes_;
+   string getDbName(DB_SELECT) const;
+   string getDbPath(DB_SELECT) const;
 
-   ARMORY_DB_TYPE armoryDbType_;
-   DB_PRUNE_TYPE dbPruneType_;
+   void closeDB(DB_SELECT db);
+   StoredDBInfo openDB(DB_SELECT);
+   void resetSSHdb(void);
+
+   const Blockchain* blockchain(void) const { return blockchainPtr_; }
+
 
 public:
 
@@ -664,11 +632,14 @@ public:
    mutable LMDB dbs_[COUNT];
 
 private:
-   //leveldb::FilterPolicy* dbFilterPolicy_[2];
 
-   //BinaryRefReader      currReadKey_;
-   //BinaryRefReader      currReadValue_;;
-   //mutable BinaryData           lastGetValue_;
+   string               baseDir_;
+   BinaryData           genesisBlkHash_;
+   BinaryData           genesisTxHash_;
+   BinaryData           magicBytes_;
+
+   ARMORY_DB_TYPE armoryDbType_;
+   DB_PRUNE_TYPE dbPruneType_;
 
    bool                 dbIsOpen_;
    uint32_t             ldbBlockSize_;
@@ -685,6 +656,10 @@ private:
    const BinaryData ZCprefix_ = BinaryData(2);
 
    function<bool(void)> isDBReady_ = [](void)->bool{ return false; };
+
+   string blkFolder_;
+
+   const Blockchain* blockchainPtr_;
 };
 
 #endif

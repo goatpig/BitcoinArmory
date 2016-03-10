@@ -2,7 +2,7 @@
 //                                                                            //
 //  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
-//  See LICENSE or http://www.gnu.org/licenses/agpl.html                      //
+//  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 #ifndef SCRADDROBJ_H
@@ -104,7 +104,7 @@ private:
             {
                if (txioPair.second.isUTXO())
                {
-                  //isMultisig is only signifies this scrAddr was used in the
+                  //isMultisig only signifies this scrAddr was used in the
                   //composition of a funded multisig transaction. This is purely
                   //meta-data and shouldn't be returned as a spendable txout
                   if (txioPair.second.isMultisig())
@@ -326,7 +326,7 @@ private:
    mutable uint64_t totalTxioCount_=0;
    mutable uint32_t lastSeenBlock_=0;
 
-   //prebuild history indexes for quick fetch from SSH
+   //prebuild history indexes for quick fetch from ssh
    HistoryPager hist_;
 
    //fetches and maintains utxos

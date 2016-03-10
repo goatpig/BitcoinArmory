@@ -2,7 +2,7 @@
 //                                                                            //
 //  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
-//  See LICENSE or http://www.gnu.org/licenses/agpl.html                      //
+//  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 #include "HistoryPager.h"
@@ -41,7 +41,7 @@ map<BinaryData, LedgerEntry>& HistoryPager::getPageLedgerMap(
 
    page.pageLedgers_.clear();
 
-   //load page's block range from SSH and build ledgers
+   //load page's block range from ssh and build ledgers
    if (txioMap != nullptr)
    {
       getTxio(page.blockStart_, page.blockEnd_, *txioMap);
@@ -70,7 +70,7 @@ void HistoryPager::getPageLedgerMap(
 
    const Page& page = pages_[pageId];
 
-   //load page's block range from SSH and build ledgers
+   //load page's block range from ssh and build ledgers
    map<BinaryData, TxIOPair> txio;
    getTxio(page.blockStart_, page.blockEnd_, txio);
    buildLedgers(leMap, txio, page.blockStart_, page.blockEnd_);
@@ -99,7 +99,7 @@ void HistoryPager::mapHistory(
    function< map<uint32_t, uint32_t>(bool) > getSSHsummary,
    bool forcePaging)
 {
-   //grab the SSH summary for the pager. This is a map, referencing the amount
+   //grab the ssh summary for the pager. This is a map, referencing the amount
    //of txio per block for the given address.
    
    reset();
