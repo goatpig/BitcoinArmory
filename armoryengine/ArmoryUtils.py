@@ -95,6 +95,7 @@ parser.add_option("--satoshi-rpcport", dest="satoshiRpcport",default=DEFAULT,typ
 parser.add_option("--dbdir",           dest="armoryDBDir",  default=DEFAULT, type='str',          help="Location to store blocks database (defaults to --datadir)")
 parser.add_option("--rpcport",         dest="rpcport",     default=DEFAULT, type="str",          help="RPC port for running armoryd.py")
 parser.add_option("--testnet",         dest="testnet",     default=False,     action="store_true", help="Use the testnet protocol")
+parser.add_option("--segnet",         dest="segnet",     default=False,     action="store_true", help="Use the Segregated Witness Test Network protocol")
 parser.add_option("--offline",         dest="offline",     default=False,     action="store_true", help="Force Armory to run in offline mode")
 parser.add_option("--nettimeout",      dest="nettimeout",  default=2,         type="int",          help="Timeout for detecting internet connection at startup")
 parser.add_option("--interport",       dest="interport",   default=-1,        type="int",          help="Port for inter-process communication between Armory instances")
@@ -265,9 +266,15 @@ for opt,val in CLI_OPTIONS.__dict__.iteritems():
 USE_TESTNET = CLI_OPTIONS.testnet
 #USE_TESTNET = True
 
+# Use CLI args to determine segnet or not
+USE_SEGNET = CLI_OPTIONS.segnet
+
+if USE_SEGNET and USE_TESTNET:
+   os._exit(-1)
+
 # Set default port for inter-process communication
 if CLI_OPTIONS.interport < 0:
-   CLI_OPTIONS.interport = 8223 + (1 if USE_TESTNET else 0)
+   CLI_OPTIONS.interport = 8223 + (1 if USE_TESTNET else 0) + (1 if USE_SEGNET else 0)
 
 
 # Pass this bool to all getSpendable* methods, and it will consider
@@ -287,7 +294,7 @@ USER_HOME_DIR    = ''
 BTC_HOME_DIR     = ''
 ARMORY_HOME_DIR  = ''
 ARMORY_DB_DIR      = ''
-SUBDIR = 'testnet3' if USE_TESTNET else ''
+SUBDIR = 'testnet3' if USE_TESTNET else '' + 'segnet' if USE_SEGNET else ''
 if OS_WINDOWS:
    OS_NAME         = 'Windows'
    OS_VARIANT      = platform.win32_ver()
@@ -324,7 +331,7 @@ else:
 
 BLOCKCHAINS = {}
 BLOCKCHAINS['\xf9\xbe\xb4\xd9'] = "Main Network"
-BLOCKCHAINS['\xfa\xbf\xb5\xda'] = "Old Test Network"
+BLOCKCHAINS['\x2e\x96\xea\xca'] = "Segregated Witness Test Network"
 BLOCKCHAINS['\x0b\x11\x09\x07'] = "Test Network (testnet3)"
 
 NETWORKS = {}
@@ -332,6 +339,8 @@ NETWORKS['\x00'] = "Main Network"
 NETWORKS['\x05'] = "Main Network"
 NETWORKS['\x6f'] = "Test Network"
 NETWORKS['\xc4'] = "Test Network"
+NETWORKS['\x1e'] = "Segnet Network"
+NETWORKS['\x32'] = "Segnet Network"
 NETWORKS['\x34'] = "Namecoin Network"
 
 # We disable wallet checks on ARM for the sake of resources (unless forced)
@@ -378,6 +387,10 @@ if not CLI_OPTIONS.satoshiHome==DEFAULT:
       testnetTry = os.path.join(CLI_OPTIONS.satoshiHome, 'testnet3')
       if os.path.exists(testnetTry):
          CLI_OPTIONS.satoshiHome = testnetTry
+   if USE_SEGNET:
+      segnetTry = os.path.join(CLI_OPTIONS.satoshiHome, 'segnet')
+      if os.path.exists(segnetTry):
+         CLI_OPTIONS.satoshiHome = segnetTry
 
    if not os.path.exists(CLI_OPTIONS.satoshiHome):
       print 'Directory "%s" does not exist!  Using default!' % \
@@ -462,7 +475,7 @@ if not os.path.exists(ARMORY_DB_DIR):
 
 
 ##### MAIN NETWORK IS DEFAULT #####
-if not USE_TESTNET:
+if not USE_TESTNET and not USE_SEGNET:
    # TODO:  The testnet genesis tx hash can't be the same...?
    BITCOIN_PORT = 8333
    BITCOIN_RPC_PORT = 8332
@@ -481,22 +494,31 @@ if not USE_TESTNET:
    BLOCKEXPLORE_URL_TX   = 'https://blockchain.info/tx/%s'
    BLOCKEXPLORE_URL_ADDR = 'https://blockchain.info/address/%s'
 else:
-   BITCOIN_PORT = 18333
+   BITCOIN_PORT = 28333 if USE_SEGNET else 18333
    BITCOIN_RPC_PORT = 18332
    ARMORY_RPC_PORT     = 18225
-   MAGIC_BYTES  = '\x0b\x11\x09\x07'
-   GENESIS_BLOCK_HASH_HEX  = '43497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000'
-   GENESIS_BLOCK_HASH      = 'CI\x7f\xd7\xf8&\x95q\x08\xf4\xa3\x0f\xd9\xce\xc3\xae\xbay\x97 \x84\xe9\x0e\xad\x01\xea3\t\x00\x00\x00\x00'
-   GENESIS_TX_HASH_HEX     = '3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a'
-   GENESIS_TX_HASH         = ';\xa3\xed\xfdz{\x12\xb2z\xc7,>gv\x8fa\x7f\xc8\x1b\xc3\x88\x8aQ2:\x9f\xb8\xaaK\x1e^J'
-   ADDRBYTE = '\x6f'
-   P2SHBYTE = '\xc4'
-   PRIVKEYBYTE = '\xef'
+   if USE_TESTNET:
+      MAGIC_BYTES  = '\x0b\x11\x09\x07'
+      GENESIS_BLOCK_HASH_HEX  = '43497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000'
+      GENESIS_BLOCK_HASH      = 'CI\x7f\xd7\xf8&\x95q\x08\xf4\xa3\x0f\xd9\xce\xc3\xae\xbay\x97 \x84\xe9\x0e\xad\x01\xea3\t\x00\x00\x00\x00'
+      GENESIS_TX_HASH_HEX     = '3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a'
+      GENESIS_TX_HASH         = ';\xa3\xed\xfdz{\x12\xb2z\xc7,>gv\x8fa\x7f\xc8\x1b\xc3\x88\x8aQ2:\x9f\xb8\xaaK\x1e^J'
+      ADDRBYTE = '\x6f'
+      P2SHBYTE = '\xc4'
+      PRIVKEYBYTE = '\xef'
+   else:
+      MAGIC_BYTES  = '\x2e\x96\xea\xca'
+      GENESIS_BLOCK_HASH_HEX  = 'aa022fd26404d3a1f6ac348fc049996a52f40d833017c7ca3f05df8d519c5b0d'
+      GENESIS_BLOCK_HASH      = '\xaa\x02\x2f\xd2\x64\x04\xd3\xa1\xf6\xac\x34\x8f\xc0\x49\x99\x6a\x52\xf4\x0d\x83\x30\x17\xc7\xca\x3f\x05\xdf\x8d\x51\x9c\x5b\x0d'
+      GENESIS_TX_HASH_HEX     = '3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a'
+      GENESIS_TX_HASH         = ';\xa3\xed\xfdz{\x12\xb2z\xc7,>gv\x8fa\x7f\xc8\x1b\xc3\x88\x8aQ2:\x9f\xb8\xaaK\x1e^J'
+      ADDRBYTE = '\x1e'
+      P2SHBYTE = '\x32'
+      PRIVKEYBYTE = '\x9e'
 
-   # 
-   BLOCKEXPLORE_NAME     = 'blockexplorer.com'
-   BLOCKEXPLORE_URL_TX   = 'https://testnet.blockexplorer.com/tx/%s'
-   BLOCKEXPLORE_URL_ADDR = 'https://testnet.blockexplorer.com/address/%s'
+   BLOCKEXPLORE_NAME     = 'blockexplorer.com' if USE_TESTNET else ''
+   BLOCKEXPLORE_URL_TX   = 'http://blockexplorer.com/testnet/tx/%s' if USE_TESTNET else ''
+   BLOCKEXPLORE_URL_ADDR = 'http://blockexplorer.com/testnet/address/%s' if USE_TESTNET else ''
 
 # These are the same regardless of network
 # They are the way data is stored in the database which is network agnostic
@@ -1445,7 +1467,12 @@ def formatWithPlurals(txt, replList=None, pluralList=None):
 
 ################################################################################
 def getAddrByte():
-   return '\x6f' if USE_TESTNET else '\x00'
+   if USE_TESTNET:
+      return '\x6f'
+   elif USE_SEGNET:
+      return '\x1e'
+   else:
+      return '\x00'
 
 ################################################################################
 # Convert a 20-byte hash to a "pay-to-public-key-hash" script to be inserted
@@ -3722,7 +3749,7 @@ TheTDM = FakeTDM()
 DISABLE_TORRENTDL = True
 
 # We only use BITTORRENT for mainnet
-if USE_TESTNET:
+if USE_TESTNET or USE_SEGNET:
    DISABLE_TORRENTDL = True
 
 

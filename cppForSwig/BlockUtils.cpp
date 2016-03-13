@@ -753,6 +753,12 @@ void BlockDataManagerConfig::selectNetwork(const string &netname)
       genesisTxHash = READHEX(TESTNET_GENESIS_TX_HASH_HEX);
       magicBytes = READHEX(TESTNET_MAGIC_BYTES);
    }
+   else if(netname == "Segnet")
+   {
+      genesisBlockHash = READHEX(SEGNET_GENESIS_HASH_HEX);
+      genesisTxHash = READHEX(SEGNET_GENESIS_TX_HASH_HEX);
+      magicBytes = READHEX(SEGNET_MAGIC_BYTES);
+   }
 }
 
 
