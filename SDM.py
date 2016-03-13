@@ -16,7 +16,7 @@ from CppBlockUtils import SecureBinaryData, CryptoECDSA
 from armoryengine.ArmoryUtils import BITCOIN_PORT, LOGERROR, hex_to_binary, \
    ARMORY_INFO_SIGN_PUBLICKEY, LOGINFO, BTC_HOME_DIR, LOGDEBUG, OS_WINDOWS, \
    SystemSpecs, subprocess_check_output, LOGEXCEPT, FileExistsError, OS_VARIANT, \
-   BITCOIN_RPC_PORT, binary_to_base58, isASCII, USE_TESTNET, GIGABYTE, \
+   BITCOIN_RPC_PORT, binary_to_base58, isASCII, USE_TESTNET, USE_SEGNET, GIGABYTE, \
    launchProcess, killProcessTree, killProcess, LOGWARN, RightNow, HOUR, \
    PyBackgroundThread, touchFile, DISABLE_TORRENTDL, secondsToHumanTime, \
    bytesToHumanSize, MAGIC_BYTES, deleteBitcoindDBs, TheTDM, satoshiIsAvailable,\
@@ -141,7 +141,7 @@ class SatoshiDaemonManager(object):
       self.satoshiHome = newDir   
       self.satoshiRoot = newDir
       
-      if 'testnet' in newDir:
+      if 'testnet' in newDir or 'segnet' in newDir:
          self.satoshiRoot, tail = os.path.split(newDir) 
       
    #############################################################################
@@ -632,6 +632,8 @@ class SatoshiDaemonManager(object):
 
       if USE_TESTNET:
          pargs.append('-testnet')
+      elif USE_SEGNET:
+         pargs.append('-segnet')
 
       pargs.append('-datadir=%s' % self.satoshiRoot)
       
