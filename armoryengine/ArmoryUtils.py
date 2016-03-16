@@ -112,7 +112,6 @@ parser.add_option("--redownload",      dest="redownload",  default=False,     ac
 parser.add_option("--rebuild",         dest="rebuild",     default=False,     action="store_true", help="Rebuild blockchain database and rescan")
 parser.add_option("--rescan",          dest="rescan",      default=False,     action="store_true", help="Rescan existing blockchain DB")
 parser.add_option("--rescanBalance",   dest="rescanBalance", default=False,     action="store_true", help="Rescan balance")
-parser.add_option("--disable-torrent", dest="disableTorrent", default=False,     action="store_true", help="Only download blockchain data via P2P network (slow)")
 parser.add_option("--test-announce", dest="testAnnounceCode", default=False,     action="store_true", help="Only used for developers needing to test announcement code with non-offline keys")
 parser.add_option("--nospendzeroconfchange",dest="ignoreAllZC",default=False, action="store_true", help="All zero-conf funds will be unspendable, including sent-to-self coins")
 parser.add_option("--multisigfile",  dest="multisigFile",  default=DEFAULT, type='str',          help="File to store information about multi-signature transactions")
@@ -1033,11 +1032,10 @@ if CLI_OPTIONS.testAnnounceCode:
 ####
 if CLI_OPTIONS.useTorSettings:
    LOGWARN('Option --tor was supplied, forcing --skip-announce-check,')
-   LOGWARN('--skip-online-check, --skip-stats-report and --disable-torrent')
+   LOGWARN('--skip-online-check, --skip-stats-report')
    CLI_OPTIONS.skipAnnounceCheck = True
    CLI_OPTIONS.skipStatsReport = True
    CLI_OPTIONS.forceOnline = True
-   CLI_OPTIONS.disableTorrent = True
 
 
 
@@ -3702,35 +3700,6 @@ def touchFile(fname):
       f.flush()
       os.fsync(f.fileno())
       f.close()
-
-
-# NOTE: Had to put in this at the eend so it was after the AllowAsync def
-# This flag takes into account both CLI_OPTIONs, and availability of the
-# BitTornado library  (the user can remove the BitTornado dir and/or the
-# torrentDL.py files without breaking Armory, it will simply set this
-# disable flag to true)
-class FakeTDM(object):
-   def __init__(self):
-      self.isRunning   = lambda: False
-      self.isStarted   = lambda: False
-      self.isFinished  = lambda: False
-      self.getTDMState = lambda: 'Disabled'
-      self.removeOldTorrentFile = lambda: None
-
-
-#DISABLE_TORRENTDL = CLI_OPTIONS.disableTorrent
-TheTDM = FakeTDM()
-#try:
-#   import torrentDL
-#   TheTDM = torrentDL.TorrentDownloadManager()
-#except:
-   #LOGEXCEPT('Failed to import torrent downloader')
-DISABLE_TORRENTDL = True
-
-# We only use BITTORRENT for mainnet
-if USE_TESTNET:
-   DISABLE_TORRENTDL = True
-
 
 
 ############################################

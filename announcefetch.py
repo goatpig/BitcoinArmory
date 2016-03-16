@@ -43,7 +43,6 @@ class AnnounceDataFetcher(object):
       changelog.txt :  changelog of versions, triggers update nofications
       dllinks.txt   :  URLs and hashes of installers for all OS and versions
       notify.txt    :  Notifications & alerts
-      bootstrap.dat.torrent  :  torrent file for quick blockchain download 
    """
 
    #############################################################################
