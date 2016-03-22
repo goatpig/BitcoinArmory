@@ -762,40 +762,34 @@ public:
       return (8 + viLen + scrLen);
    }
 
-   static uint32_t TxWitnessCalcLength(uint8_t const * ptr, uint32_t nIn)
+   static uint32_t TxWitnessCalcLength(uint8_t const * ptr)
    {
       uint32_t witLen = 0;
-      for(uint32_t i=0; i<nIn; i++)
+      uint32_t viStackLen;
+      uint32_t stackLen = (uint32_t)readVarInt(ptr, &viStackLen);
+      witLen += viStackLen;
+      for(uint32_t i=0; i<stackLen; i++)
       {
-         uint32_t viStackLen;
-         uint32_t stackLen = (uint32_t)readVarInt(ptr+witLen, &viStackLen);
-         witLen += viStackLen;
-         for(uint32_t i=0; i<stackLen; i++)
-         {
-            uint32_t viLen;
-            witLen += (uint32_t)readVarInt(ptr+witLen, &viLen);
-            witLen += viLen;
-         }
+         uint32_t viLen;
+         witLen += (uint32_t)readVarInt(ptr+witLen, &viLen);
+         witLen += viLen;
       }
-       return witLen;
+      return witLen;
    }
 
-   static size_t TxWitnessCalcLength(uint8_t const * ptr, uint32_t nIn, size_t size)
+   static size_t TxWitnessCalcLength(uint8_t const * ptr, size_t size)
    {
-       if (size < 9)
+       if (size < 1)
         throw BlockDeserializingException();
        uint32_t witLen = 0;
-       for(uint32_t i=0; i<nIn; i++)
+       uint32_t viStackLen;
+       uint32_t stackLen = (uint32_t)readVarInt(ptr, size, &viStackLen);
+       witLen += viStackLen;
+       for(uint32_t i=0; i<stackLen; i++)
        {
-          uint32_t viStackLen;
-          uint32_t stackLen = (uint32_t)readVarInt(ptr+witLen, size-witLen, &viStackLen);
-          witLen += viStackLen;
-          for(uint32_t i=0; i<stackLen; i++)
-          {
-             uint32_t viLen;
-             witLen += (uint32_t)readVarInt(ptr+witLen, size-witLen, &viLen);
-             witLen += viLen;
-          }
+          uint32_t viLen;
+          witLen += (uint32_t)readVarInt(ptr+witLen, size-witLen, &viLen);
+          witLen += viLen;
        }
        return witLen;
    }
@@ -805,7 +799,7 @@ public:
                                 size_t size,
                                 vector<size_t> * offsetsIn=NULL,
                                 vector<size_t> * offsetsOut=NULL,
-                                size_t * offsetsWitness=NULL)
+                                vector<size_t> * offsetsWitness=NULL)
    {
       BinaryRefReader brr(ptr, size);  
       
@@ -866,8 +860,20 @@ public:
       if(usesWitness)
       {
          if(offsetsWitness != NULL)
-            (*offsetsWitness) = brr.getPosition();
-         brr.advance( TxWitnessCalcLength(brr.getCurrPtr(), nIn, brr.getSizeRemaining()) );
+         {
+            offsetsWitness->resize(nIn + 1);
+            for (uint32_t i = 0; i < nIn; i++) {
+               (*offsetsWitness)[i] = brr.getPosition();
+               brr.advance(TxWitnessCalcLength(brr.getCurrPtr(), brr.getSizeRemaining()));
+            }
+            (*offsetsWitness)[nIn] = brr.getPosition();
+         }
+         else
+         {
+            for (uint32_t i = 0; i < nIn; i++) {
+               brr.advance(TxWitnessCalcLength(brr.getCurrPtr(), brr.getSizeRemaining()));
+            }
+         }
       }
 
       brr.advance(4);
@@ -882,7 +888,7 @@ public:
                                 bool fragged,
                                 vector<size_t> * offsetsIn=NULL,
                                 vector<size_t> * offsetsOut=NULL,
-                                size_t * offsetsWitness=NULL)
+                                vector<size_t> * offsetsWitness=NULL)
    {
       BinaryRefReader brr(ptr);  
 
@@ -953,8 +959,19 @@ public:
       if(usesWitness)
       {
          if(offsetsWitness != NULL)
-            (*offsetsWitness) = brr.getPosition();
-         brr.advance( TxWitnessCalcLength(brr.getCurrPtr(), nIn, brr.getSizeRemaining()) );
+         {
+            offsetsWitness->resize(nIn + 1);
+            for (uint32_t i = 0; i < nIn; i++) {
+               (*offsetsWitness)[i] = brr.getPosition();
+               brr.advance(TxWitnessCalcLength(brr.getCurrPtr(), brr.getSizeRemaining()));
+            }
+         }
+         else
+         {
+            for (uint32_t i = 0; i < nIn; i++) {
+               brr.advance(TxWitnessCalcLength(brr.getCurrPtr(), brr.getSizeRemaining()));
+            }
+         }
       }
 
       brr.advance(4);
