@@ -570,7 +570,7 @@ bool Tx::isCoinbase(void) const
 /////////////////////////////////////////////////////////////////////////////
 void Tx::unserialize(uint8_t const * ptr, size_t size)
 {
-   uint32_t nBytes = BtcUtils::TxCalcLength(ptr, size, &offsetsTxIn_, &offsetsTxOut_, &offsetWitness_);
+   uint32_t nBytes = BtcUtils::TxCalcLength(ptr, size, &offsetsTxIn_, &offsetsTxOut_, &offsetsWitness_);
    
    if (nBytes > size)
       throw BlockDeserializingException();
@@ -589,7 +589,7 @@ void Tx::unserialize(uint8_t const * ptr, size_t size)
    {
       usesWitness_ = true;
       normData_.append(version_);
-      normData_.copyFrom(ptr+6, offsetWitness_);
+      normData_.copyFrom(ptr+6, offsetsWitness_.at(0));
       normData_.append(lockTime_);
    }
 
