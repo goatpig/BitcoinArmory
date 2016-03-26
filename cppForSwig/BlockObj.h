@@ -602,6 +602,8 @@ private:
    // Full copy of the serialized tx
    BinaryData    dataCopy_;
    bool          isInitialized_;
+   bool          usesWitness_;
+   BinaryData    normData_;
 
    uint32_t      version_;
    uint32_t      lockTime_;
@@ -612,6 +614,7 @@ private:
    // Will always create TxIns and TxOuts on-the-fly; only store the offsets
    vector<size_t> offsetsTxIn_;
    vector<size_t> offsetsTxOut_;
+   vector<size_t> offsetsWitness_;
 
    // To be calculated later
    //BlockHeader*  headerPtr_;

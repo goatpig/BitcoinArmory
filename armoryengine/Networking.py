@@ -21,6 +21,7 @@
 
 import os.path
 import random
+import armoryengine.ArmoryUtils
 
 from twisted.internet.defer import Deferred
 from twisted.internet.protocol import Protocol, ReconnectingClientFactory
@@ -28,7 +29,7 @@ from twisted.internet.protocol import Protocol, ReconnectingClientFactory
 from armoryengine.ArmoryUtils import LOGINFO, LOGWARN, RightNow, getVersionString, \
    BTCARMORY_VERSION, NetworkIDError, LOGERROR, BLOCKCHAINS, CLI_OPTIONS, LOGDEBUG, \
    binary_to_hex, BIGENDIAN, LOGRAWDATA, ARMORY_HOME_DIR, ConnectionError, \
-   MAGIC_BYTES, hash256, verifyChecksum, NETWORKENDIAN, int_to_bitset, \
+   MAGIC_BYTES, hash256, verifyChecksum, NETWORKENDIAN, int_to_bitset, NODE_WITNESS, \
    bitset_to_int, unixTimeToFormatStr, UnknownNetworkPayload
 from armoryengine.BDM import  BDM_OFFLINE, BDM_SCANNING,\
    BDM_BLOCKCHAIN_READY
@@ -70,9 +71,10 @@ class ArmoryClient(Protocol):
 
       self.peer = [addrTo, portTo]
 
-      services = '0'*16
+      # Services: NODE_WITNESS77
+      services = int_to_bitset(NODE_WITNESS, widthBytes=8)
       msgVersion = PayloadVersion()
-      msgVersion.version  = 40000   # TODO: this is what my Satoshi client says
+      msgVersion.version  = 70012   # TODO: this is what my Satoshi client says
       msgVersion.services = services
       msgVersion.time     = long(RightNow())
       msgVersion.addrRecv = PyNetAddress(0, services, addrTo,   portTo  )
@@ -153,6 +155,8 @@ class ArmoryClient(Protocol):
             self.peerInfo['subver']  = msg.payload.subver
             self.peerInfo['time']    = msg.payload.time
             self.peerInfo['height']  = msg.payload.height0
+            if(bitset_to_int(msg.payload.services) & NODE_WITNESS):
+               armoryengine.ArmoryUtils.WITNESS = True
             LOGINFO('Received version message from peer:')
             LOGINFO('   Version:     %s', str(self.peerInfo['version']))
             LOGINFO('   SubVersion:  %s', str(self.peerInfo['subver']))
