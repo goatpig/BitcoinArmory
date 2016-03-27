@@ -2719,12 +2719,6 @@ msgid ""
 "         Skip periodic version queries to Armory server"
 msgstr ""
 
-#: qtdialogs.py:8936
-msgid ""
-"\n"
-"         Disable torrent download (force synchronization via Bitcoin P2P)"
-msgstr ""
-
 #: qtdialogs.py:8959
 msgid ""
 "\n"
