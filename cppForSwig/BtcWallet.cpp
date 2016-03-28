@@ -2,14 +2,13 @@
 //                                                                            //
 //  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
-//  See LICENSE or http://www.gnu.org/licenses/agpl.html                      //
+//  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 #include "BtcWallet.h"
 #include "BlockUtils.h"
 #include "txio.h"
 #include "BlockDataViewer.h"
-#include "ReorgUpdater.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -522,7 +521,7 @@ vector<UnspentTxOut> BtcWallet::getSpendableTxOutListForValue(uint64_t val,
 
    //start a RO txn to grab the txouts from DB
    LMDBEnv::Transaction tx;
-   db->beginDBTransaction(&tx, HISTORY, LMDB::ReadOnly);
+   db->beginDBTransaction(&tx, STXO, LMDB::ReadOnly);
 
    vector<UnspentTxOut> utxoList;
    uint32_t blk = bdvPtr_->getTopBlockHeight();
@@ -533,6 +532,9 @@ vector<UnspentTxOut> BtcWallet::getSpendableTxOutListForValue(uint64_t val,
 
       for (const auto& txioPair : utxoMap)
       {
+         if (!txioPair.second.isSpendable(db, blk, ignoreZC))
+            continue;
+
          TxOut txout = txioPair.second.getTxOutCopy(db);
          UnspentTxOut UTXO = UnspentTxOut(db, txout, blk);
          utxoList.push_back(UTXO);
@@ -676,7 +678,7 @@ void BtcWallet::updateAfterReorg(uint32_t lastValidBlockHeight)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void BtcWallet::scanWalletZeroConf(bool withReorg)
+void BtcWallet::scanWalletZeroConf(bool purge)
 {
    /***
    Scanning ZC will update the scrAddr ledger with the ZC txio. Ledgers require
@@ -684,16 +686,7 @@ void BtcWallet::scanWalletZeroConf(bool withReorg)
    ***/
    SCOPED_TIMER("rescanWalletZeroConf");
 
-   map<BinaryData, map<BinaryData, TxIOPair> > ZCtxioMap = 
-      bdvPtr_->getNewZeroConfTxIOMap();
-
-   if (withReorg==true)
-   {
-      //scanning ZC after a reorg, Everything beyond the last valid block has
-      //been wiped out of RAM, thus grab the full ZC txio map. Still need a call
-      //to getNewZeroConfTxIOMap to clear the new ZC map
-      ZCtxioMap = bdvPtr_->getFullZeroConfTxIOMap();
-   }
+   auto ZCtxioMap = bdvPtr_->getFullZeroConfTxIOMap();
 
    auto isZcFromWallet = [this](const BinaryData& zcKey)->bool
    {
@@ -708,10 +701,21 @@ void BtcWallet::scanWalletZeroConf(bool withReorg)
       return false;
    };
 
+   for (auto& scrAddr : scrAddrMap_)
+   {
+      if (scrAddr.second.validZCKeys_.size() > 0)
+      {
+         auto zcIter = ZCtxioMap.find(scrAddr.first);
+         if (purge || zcIter == ZCtxioMap.end())
+            scrAddr.second.scanZC(
+               map<BinaryData, TxIOPair>(),
+               isZcFromWallet);
+      }
+   }
+
    for (auto& scrAddrTxio : ZCtxioMap)
    {
-      map<BinaryData, ScrAddrObj>::iterator scrAddr = 
-	      scrAddrMap_.find(scrAddrTxio.first);
+      auto scrAddr = scrAddrMap_.find(scrAddrTxio.first);
 
       if (scrAddr != scrAddrMap_.end())
          scrAddr->second.scanZC(scrAddrTxio.second, isZcFromWallet);
@@ -719,22 +723,19 @@ void BtcWallet::scanWalletZeroConf(bool withReorg)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool BtcWallet::scanWallet(uint32_t startBlock, uint32_t endBlock, 
-   bool reorg, const map<BinaryData, vector<BinaryData> >& invalidatedZCKeys)
+bool BtcWallet::scanWallet(uint32_t startBlock, uint32_t endBlock, bool reorg)
 {
    if (startBlock < endBlock)
    {
-      purgeZeroConfTxIO(invalidatedZCKeys);
-
       //new top block
       if (reorg)
          updateAfterReorg(startBlock);
          
       LMDBEnv::Transaction tx;
-      bdvPtr_->getDB()->beginDBTransaction(&tx, HISTORY, LMDB::ReadOnly);
+      bdvPtr_->getDB()->beginDBTransaction(&tx, SSH, LMDB::ReadOnly);
 
       fetchDBScrAddrData(startBlock, endBlock);
-      scanWalletZeroConf(reorg);
+      scanWalletZeroConf(true);
 
       map<BinaryData, TxIOPair> txioMap;
       getTxioForRange(startBlock, UINT32_MAX, txioMap);
@@ -748,11 +749,11 @@ bool BtcWallet::scanWallet(uint32_t startBlock, uint32_t endBlock,
       //top block didnt change, only have to check for new ZC
       if (bdvPtr_->isZcEnabled())
       {
-         scanWalletZeroConf();
+         scanWalletZeroConf(false);
          map<BinaryData, TxIOPair> txioMap;
          getTxioForRange(endBlock +1, UINT32_MAX, txioMap);
          updateWalletLedgersFromTxio(*ledgerAllAddr_, txioMap, 
-                             endBlock +1, UINT32_MAX);
+                             endBlock +1, UINT32_MAX, true);
 
          balance_ = getFullBalanceFromDB();
 
@@ -770,20 +771,6 @@ void BtcWallet::reset()
    merge();
 
    clearBlkData();
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void BtcWallet::purgeZeroConfTxIO(
-   const map<BinaryData, vector<BinaryData> >& invalidatedTxIO)
-{
-   for (auto& txioVec : invalidatedTxIO)
-   {
-      map<BinaryData, ScrAddrObj>::iterator scrAddr = 
-	      scrAddrMap_.find(txioVec.first);
-
-      if (scrAddr != scrAddrMap_.end())
-         scrAddr->second.purgeZC(txioVec.second);
-   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -889,6 +876,8 @@ void BtcWallet::merge()
             }
             else
             {
+               throw("need reimplemented");
+
                //top scanned block is not on the main branch, undo till branch point
                const Blockchain::ReorganizationState state =
                   bc.findReorgPointFromBlock(mergeTopScannedBlkHash);
@@ -899,9 +888,6 @@ void BtcWallet::merge()
 
                for (const auto& scrAddr : scrAddrMapToMerge)
                   saf->regScrAddrForScan(scrAddr.first, 0);
-
-               ReorgUpdater reorgOnlyUndo(state,
-                  &bc, bdvPtr_->getDB(), bdvPtr_->config(), saf.get(), true);
 
                bottomBlock = state.reorgBranchPoint->getBlockHeight() + 1;
             }
@@ -951,7 +937,7 @@ map<uint32_t, uint32_t> BtcWallet::computeScrAddrMapHistSummary()
    map<uint32_t, preHistory> preHistSummary;
 
    LMDBEnv::Transaction tx;
-   bdvPtr_->getDB()->beginDBTransaction(&tx, HISTORY, LMDB::ReadOnly);
+   bdvPtr_->getDB()->beginDBTransaction(&tx, SSH, LMDB::ReadOnly);
    for (auto& scrAddrPair : scrAddrMap_)
    {
       scrAddrPair.second.mapHistory();

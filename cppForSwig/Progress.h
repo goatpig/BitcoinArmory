@@ -2,7 +2,7 @@
 //                                                                            //
 //  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
-//  See LICENSE or http://www.gnu.org/licenses/agpl.html                      //
+//  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 #ifndef PROGRESS_H
@@ -43,7 +43,8 @@ class ProgressCalculator
 public:
    ProgressCalculator(uint64_t total);
    
-   void advance(uint64_t to);
+   void advance(uint64_t to, bool suppress = true);
+
    uint64_t total() const { return total_; }
 
    double fractionCompleted() const { return lastSample_/double(total_); }

@@ -2,9 +2,15 @@
 //                                                                            //
 //  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
-//  See LICENSE or http://www.gnu.org/licenses/agpl.html                      //
+//  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
+//                                                                            //
+//                                                                            //
+//  Copyright (C) 2016, goatpig                                               //            
+//  Distributed under the MIT license                                         //
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                   
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
+
 #ifndef _BLOCKCHAIN_H
 #define _BLOCKCHAIN_H
 
@@ -47,11 +53,14 @@ public:
    BlockHeader& addNewBlock(const HashString &blockhash, 
       const BlockHeader &block, bool suppressVerbose);
 
-   ReorganizationState organize();
+   void addBlocksInBulk(const map<HashString, BlockHeader>&);
+   void forceAddBlocksInBulk(const map<HashString, BlockHeader>&);
+
+   ReorganizationState organize(bool verbose);
    ReorganizationState forceOrganize();
    ReorganizationState findReorgPointFromBlock(const BinaryData& blkHash);
 
-   void setDuplicateIDinRAM(LMDBBlockDatabase* iface, bool forceUpdateDupID);
+   void setDuplicateIDinRAM(LMDBBlockDatabase* iface);
 
    BlockHeader& top() const;
    BlockHeader& getGenesisBlock() const;
@@ -88,7 +97,7 @@ public:
    void putNewBareHeaders(LMDBBlockDatabase *db);
 
 private:
-   BlockHeader* organizeChain(bool forceRebuild=false);
+   BlockHeader* organizeChain(bool forceRebuild=false, bool verbose=false);
    /////////////////////////////////////////////////////////////////////////////
    // Update/organize the headers map (figure out longest chain, mark orphans)
    // Start from a node, trace down to the highest solved block, accumulate
@@ -104,6 +113,8 @@ private:
    BlockHeader *topBlockPtr_;
    BlockHeader *genesisBlockBlockPtr_;
    Blockchain(const Blockchain&); // not defined
+
+   mutex mu_;
 };
 
 #endif

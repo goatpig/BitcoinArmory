@@ -1094,18 +1094,19 @@ class SendBitcoinsFrame(ArmoryFrame):
 
    #############################################################################
    def addDonation(self, amt=DONATION):
-      lastIsEmpty = True
-      for widg in ['QLE_ADDR', 'QLE_AMT', 'QLE_COMM']: 
-         if len(str(self.widgetTable[-1][widg].text())) > 0:
-            lastIsEmpty = False
-
-      if not lastIsEmpty:
-         self.makeRecipFrame(len(self.widgetTable) + 1)
-
-      self.widgetTable[-1]['QLE_ADDR'].setText(ARMORY_DONATION_ADDR)
-      self.widgetTable[-1]['QLE_AMT'].setText(coin2str(amt, maxZeros=2).strip())
-      self.widgetTable[-1]['QLE_COMM'].setText(\
-            'Donation to Armory developers.  Thank you for your generosity!')
+      return
+   #    lastIsEmpty = True
+   #    for widg in ['QLE_ADDR', 'QLE_AMT', 'QLE_COMM']:
+   #       if len(str(self.widgetTable[-1][widg].text())) > 0:
+   #          lastIsEmpty = False
+   #
+   #    if not lastIsEmpty:
+   #       self.makeRecipFrame(len(self.widgetTable) + 1)
+   #
+   #    self.widgetTable[-1]['QLE_ADDR'].setText(ARMORY_DONATION_ADDR)
+   #    self.widgetTable[-1]['QLE_AMT'].setText(coin2str(amt, maxZeros=2).strip())
+   #    self.widgetTable[-1]['QLE_COMM'].setText(\
+   #          'Donation to Armory developers.  Thank you for your generosity!')
 
    #############################################################################
    def clickEnterURI(self):
@@ -1742,15 +1743,15 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
    def broadTx(self):
       if self.main.netMode == NETWORKMODE.Disconnected:
          QMessageBox.warning(self, 'No Internet!', \
-            'Armory lost its connection to Bitcoin-Qt, and cannot '
+            'Armory lost its connection to Bitcoin-Core, and cannot '
             'broadcast any transactions until it is reconnected. '
-            'Please verify that Bitcoin-Qt (or bitcoind) is open '
+            'Please verify that Bitcoin-Core (or bitcoind) is open '
             'and synchronized with the network.', QMessageBox.Ok)
          return
       elif self.main.netMode == NETWORKMODE.Offline:
          QMessageBox.warning(self, 'No Internet!', \
             'You do not currently have a connection to the Bitcoin network. '
-            'If this does not seem correct, verify that Bitcoin-Qt is open '
+            'If this does not seem correct, verify that Bitcoin-Core is open '
             'and synchronized with the network.', QMessageBox.Ok)
          return
 

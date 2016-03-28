@@ -24,7 +24,7 @@ from armorymodels import *
 import qrc_img_resources
 from qtdefines import *
 from armoryengine.PyBtcAddress import calcWalletIDFromRoot
-from announcefetch import DEFAULT_MIN_PRIORITY
+#from announcefetch import DEFAULT_MIN_PRIORITY
 from ui.UpgradeDownloader import UpgradeDownloaderDialog
 from armoryengine.MultiSigUtils import calcLockboxID, createLockboxEntryStr,\
    LBPREFIX, isBareLockbox, isP2SHLockbox
@@ -310,7 +310,7 @@ class DlgUnlockWallet(ArmoryDialog):
 
       try:
          if self.returnPassphrase == False:
-            unlockProgress = DlgProgress(self, self.main, HBar=1, 
+            unlockProgress = DlgProgress(self, self.main, HBar=1,
                                          Title=tr("Unlocking Wallet"))
             unlockProgress.exec_(self.wlt.unlock, securePassphrase=self.securePassphrase)
             self.securePassphrase.destroy()
@@ -675,7 +675,7 @@ class DlgGenericGetPassword(ArmoryDialog):
 
 
 ################################################################################
-# Hack!  We need to replicate the DlgBugReport... but to be as safe as 
+# Hack!  We need to replicate the DlgBugReport... but to be as safe as
 # possible for 0.91.1, we simply duplicate the dialog and modify directly.
 # TODO:  There's definitely a way to make DlgBugReport more generic so that
 #        both these contexts can be handled by it.
@@ -686,72 +686,56 @@ class DlgInconsistentWltReport(ArmoryDialog):
 
 
       QMessageBox.critical(self, tr('Inconsistent Wallet!'), tr("""
-         <font color="%s" size=4><b><u>Important:</u>  Wallet Consistency 
+         <font color="%s" size=4><b><u>Important:</u>  Wallet Consistency
          Issues Detected!</b></font>
          <br><br>
-         Armory now detects certain kinds of hardware errors, and one 
+         Armory now detects certain kinds of hardware errors, and one
          or more of your wallets
-         was flagged.  The consistency logs need to be analyzed by the 
+         was flagged.  The consistency logs need to be analyzed by the
          Armory team to determine if any further action is required.
          <br><br>
          <b>This warning will pop up every time you start Armory until
-         the wallet is fixed</b>""") % (htmlColor('TextWarn')), 
+         the wallet is fixed</b>""") % (htmlColor('TextWarn')),
          QMessageBox.Ok)
 
-         
+
 
       # logPathList is [wltID, corruptFolder] pairs
       self.logPathList = logPathList[:]
       walletList = [self.main.walletMap[wid] for wid,folder in logPathList]
 
       getWltStr = lambda w: '<b>Wallet "%s" (%s)</b>' % \
-                                       (w.labelName, w.uniqueIDB58) 
-    
+                                       (w.labelName, w.uniqueIDB58)
+
       if len(logPathList) == 1:
          wltDispStr = getWltStr(walletList[0]) + ' is'
       else:
          strList = [getWltStr(w) for w in walletList]
          wltDispStr = ', '.join(strList[:-1]) + ' and ' + strList[-1] + ' are '
-      
+
       lblTopDescr = QRichLabel(tr("""
-         <b><u><font color="%s" size=4>Submit Wallet Analysis Logs for 
-         Review</font></u></b><br>""") % htmlColor('TextWarn'), 
+         <b><u><font color="%s" size=4>Submit Wallet Analysis Logs for
+         Review</font></u></b><br>""") % htmlColor('TextWarn'),
          hAlign=Qt.AlignHCenter)
 
       #too complex to tr() right now
       lblDescr = QRichLabel(("""
          Armory has detected that %s inconsistent,
          possibly due to hardware errors out of our control.  It <u>strongly
-         recommended</u> you submit the wallet logs to the Armory team 
-         for review.  Until you hear back from an Armory representative, 
-         we recommend:
+         recommended</u> you submit the wallet logs to the Armory developers
+         for review.  Until you hear back from an Armory developer,
+         it is recommended that you:
          <ul>
          <li><b>Do not delete any data in your Armory home directory</b></li>
-         <li><b>Do not send or receive any funds with the affected 
+         <li><b>Do not send or receive any funds with the affected
                 wallet(s)</b></li>
          <li><b>Create a backup of the wallet analysis logs</b></li>
-         </ul> 
+         </ul>
          """) % (wltDispStr))
-
-      self.chkIncludeReg = QCheckBox(tr("""Include all log files"""))
-      self.chkIncludeWOW = QCheckBox(tr("""Include watch-only 
-         wallet""", "Include watch-only wallets", len(walletList)))
-      self.chkIncludeWOW.setChecked(False)
-      self.chkIncludeReg.setChecked(True)
-
-      self.btnMoreInfo = QLabelButton('Privacy Warning')
-      self.connect(self.btnMoreInfo, SIGNAL(CLICKED), \
-                                 self.main.logFileTriplePrivacyWarning)
-
 
       btnBackupLogs = QPushButton(tr("Save backup of log files"))
       self.connect(btnBackupLogs, SIGNAL('clicked()'), self.doBackupLogs)
       frmBackup = makeHorizFrame(['Stretch', btnBackupLogs, 'Stretch'])
-
-
-      self.lblEmail = QRichLabel(tr('Email Address:'))
-      self.edtEmail = QLineEdit()
-      self.edtEmail.setMaxLength(100)
 
       self.lblSubject = QRichLabel(tr('Subject:'))
       self.edtSubject = QLineEdit()
@@ -764,21 +748,10 @@ class DlgInconsistentWltReport(ArmoryDialog):
       self.txtDescr.setMinimumWidth(w)
       self.txtDescr.setMinimumHeight(int(2.5*h))
 
-      self.btnSubmit = QPushButton(tr('Submit Data to ATI'))
-      self.btnCancel = QPushButton(tr('Cancel'))
+      self.btnCancel = QPushButton(tr('Close'))
       self.btnbox = QDialogButtonBox()
-      self.btnbox.addButton(self.btnSubmit, QDialogButtonBox.AcceptRole)
       self.btnbox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
-      self.connect(self.btnSubmit, SIGNAL(CLICKED), self.submitReport)
       self.connect(self.btnCancel, SIGNAL(CLICKED), self, SLOT('reject()'))
-
-      armoryver = getVersionString(BTCARMORY_VERSION)
-      lblDetect = QRichLabel( tr("""
-         <b>Detected:</b> %(osname)s (%(osvariant)s) / %(mem)0.2f GB RAM / Armory version %(ver)s<br>
-         <font size=2>(this data will be included with the data 
-         submission""") % \
-         { 'osname' : OS_NAME, 'osvariant' : OS_VARIANT[0], 'mem' : SystemSpecs.Memory, 'ver' : armoryver})
-
 
       layout = QGridLayout()
       i = -1
@@ -795,33 +768,11 @@ class DlgInconsistentWltReport(ArmoryDialog):
       i += 1
       layout.addWidget(HLINE(),          i,0, 1,2)
 
-
-      i += 1
-      layout.addWidget(self.lblEmail,    i,0, 1,1)
-      layout.addWidget(self.edtEmail,    i,1, 1,1)
-
-      i += 1
-      layout.addWidget(self.lblSubject,  i,0, 1,1)
-      layout.addWidget(self.edtSubject,  i,1, 1,1)
-
-      i += 1
-      layout.addWidget(QLabel(tr("Additional Info:")),    i,0, 1,2)
-
-      i += 1
-      layout.addWidget(self.txtDescr,    i,0, 1,2)
-
-      i += 1
-      frmChkBtnRL = makeHorizFrame([self.chkIncludeReg, 
-                                    self.chkIncludeWOW,  
-                                    self.btnMoreInfo,])
-      layout.addWidget(frmChkBtnRL,      i,0, 1,2)
-
-
       i += 1
       layout.addWidget(self.btnbox,      i,0, 1,2)
 
       self.setLayout(layout)
-      self.setWindowTitle(tr('Send Wallet Logs to ATI'))
+      self.setWindowTitle(tr('Inconsistent Wallet'))
       self.setWindowIcon(QIcon(self.main.iconfile))
 
 
@@ -975,13 +926,13 @@ class DlgInconsistentWltReport(ArmoryDialog):
 
    #############################################################################
    def createZipfile(self, zfilePath=None, forceIncludeAllData=False):
-      """ 
+      """
       If not forceIncludeAllData, then we will exclude wallet file and/or
       regular logs, depending on the user's checkbox selection.   For making
-      a user backup, we always want to include everything, regardless of 
+      a user backup, we always want to include everything, regardless of
       that selection.
       """
-         
+
       # Should we include wallet files from logs directory?
       includeWlt = self.chkIncludeWOW.isChecked()
       includeReg = self.chkIncludeReg.isChecked()
@@ -1004,7 +955,7 @@ class DlgInconsistentWltReport(ArmoryDialog):
 
             # If multiple dirs, will see duplicate armorylogs and multipliers
             if not os.path.isfile(fullpath):
-               continue 
+               continue
 
 
             if not forceIncludeAllData:
@@ -1018,14 +969,14 @@ class DlgInconsistentWltReport(ArmoryDialog):
                # Exclude regular logs as well, if desired
                if not includeReg and fn in ['armorylog.txt', 'armorycpplog.txt']:
                   continue
-               
+
 
             # If we got here, add file to archive
             parentDir = os.path.basename(logDir)
             archiveName = '%s_%s_%s' % (wltID, parentDir, fn)
             LOGINFO('   Adding %s to archive' % archiveName)
             zfile.write(fullpath, archiveName)
-      
+
       zfile.close()
 
       return zfilePath
@@ -1033,7 +984,7 @@ class DlgInconsistentWltReport(ArmoryDialog):
 
    #############################################################################
    def doBackupLogs(self):
-      saveTo = self.main.getFileSave(ffilter=['Zip files (*.zip)'], 
+      saveTo = self.main.getFileSave(ffilter=['Zip files (*.zip)'],
                                      defaultFilename='wallet_analyze_logs.zip')
       if not saveTo:
          QMessageBox.critical(self, tr("Not saved"), tr("""
@@ -1045,19 +996,19 @@ class DlgInconsistentWltReport(ArmoryDialog):
          self.createZipfile(saveTo, forceIncludeAllData=True)
          QMessageBox.information(self, tr('Success'), tr("""
             The wallet logs were successfully saved to the following
-            location: 
+            location:
             <br><br>
             %s
             <br><br>
             It is still important to complete the rest of this form
             and submit the data to the Armory team for review!""") % \
             saveTo, QMessageBox.Ok)
-         
+
       except:
          LOGEXCEPT('Failed to create zip file')
-         QMessageBox.warning(self, tr('Save Failed'), tr("""There was an 
+         QMessageBox.warning(self, tr('Save Failed'), tr("""There was an
             error saving a copy of your log files"""), QMessageBox.Ok)
-      
+
 
 
 
@@ -1587,7 +1538,7 @@ class DlgWalletDetails(ArmoryDialog):
          self.connect(lbtnChangeCrypto, SIGNAL(CLICKED), self.changeEncryption)
 
       exportStr = 'Data' if self.wlt.watchingOnly else 'Copy'
-      
+
       lbtnSendBtc = QLabelButton('Send Bitcoins')
       lbtnGenAddr = QLabelButton('Receive Bitcoins')
       lbtnImportA = QLabelButton('Import/Sweep Private Keys')
@@ -1921,9 +1872,9 @@ class DlgWalletDetails(ArmoryDialog):
             webbrowser.open(blkchnURL)
          except:
             QMessageBox.critical(self, tr('Could not open browser'), tr("""
-               Armory encountered an error opening your web browser.  To view 
-               this address on blockchain.info, please copy and paste 
-               the following URL into your browser: 
+               Armory encountered an error opening your web browser.  To view
+               this address on blockchain.info, please copy and paste
+               the following URL into your browser:
                <br><br>
                <a href="%s">%s</a>""") % (blkchnURL, blkchnURL), QMessageBox.Ok)
          return
@@ -1996,7 +1947,7 @@ class DlgWalletDetails(ArmoryDialog):
             origPassphrase = SecureBinaryData(str(dlgCrypt.edtPasswdOrig.text()))
             dlgCrypt.edtPasswdOrig.clear()
             if self.wlt.verifyPassphrase(origPassphrase):
-               unlockProgress = DlgProgress(self, self.main, HBar=1, 
+               unlockProgress = DlgProgress(self, self.main, HBar=1,
                                             Title="Unlocking Wallet")
                unlockProgress.exec_(self.wlt.unlock, securePassphrase=origPassphrase)
             else:
@@ -2007,9 +1958,9 @@ class DlgWalletDetails(ArmoryDialog):
 
 
          if self.disableEncryption:
-            unlockProgress = DlgProgress(self, self.main, HBar=1, 
+            unlockProgress = DlgProgress(self, self.main, HBar=1,
                                          Title="Changing Encryption")
-            unlockProgress.exec_(self.wlt.changeWalletEncryption)            
+            unlockProgress.exec_(self.wlt.changeWalletEncryption)
             # self.accept()
             self.labelValues[WLTFIELDS.Secure].setText('No Encryption')
             self.labelValues[WLTFIELDS.Secure].setText('')
@@ -2018,10 +1969,10 @@ class DlgWalletDetails(ArmoryDialog):
             if not self.wlt.useEncryption:
                kdfParams = self.wlt.computeSystemSpecificKdfParams(0.2)
                self.wlt.changeKdfParams(*kdfParams)
-            
-            unlockProgress = DlgProgress(self, self.main, HBar=2, 
+
+            unlockProgress = DlgProgress(self, self.main, HBar=2,
                                          Title="Changing Encryption")
-            unlockProgress.exec_(self.wlt.changeWalletEncryption, 
+            unlockProgress.exec_(self.wlt.changeWalletEncryption,
                                  securePassphrase=newPassphrase)
             self.labelValues[WLTFIELDS.Secure].setText('Encrypted (AES256)')
             # self.accept()
@@ -2671,12 +2622,12 @@ class DlgKeypoolSettings(ArmoryDialog):
       def doit():
          currPool = self.wlt.lastComputedChainIndex - \
                     self.wlt.highestUsedChainIndex
-         fillAddressPoolProgress = DlgProgress(self, self.main, HBar=1, 
+         fillAddressPoolProgress = DlgProgress(self, self.main, HBar=1,
                                                Title='Computing New Addresses')
          fillAddressPoolProgress.exec_( \
-               self.wlt.fillAddressPool, currPool + naddr, 
+               self.wlt.fillAddressPool, currPool + naddr,
                                         isActuallyNew=False)
-         
+
          self.lblAddrCompVal.setText('<font color="%s">%d</font>' % \
                         (cred, self.wlt.lastComputedChainIndex))
          self.addressesWereGenerated = True
@@ -2910,7 +2861,7 @@ class DlgImportAddress(ArmoryDialog):
                      'has access to it.  Otherwise, sweep it to get '
                      'the funds out of it.  All standard private-key formats '
                      'are supported <i>except for private keys created by '
-                     'Bitcoin-Qt version 0.6.0 and later (compressed)</i>.')
+                     'Bitcoin-Core version 0.6.0 and later (compressed)</i>.')
 
       lblPrivOne = QRichLabel('Private Key')
       self.edtPrivData = QLineEdit()
@@ -2949,7 +2900,7 @@ class DlgImportAddress(ArmoryDialog):
       stkMany = makeVertFrame([HLINE(), lblDescrMany, frmMid])
       self.stackedImport.addWidget(stkMany)
 
-      
+
       self.chkUseSP = QCheckBox(tr("""
          This is from a backup with SecurePrint\xe2\x84\xa2"""))
       self.edtSecurePrint = QLineEdit()
@@ -2957,14 +2908,14 @@ class DlgImportAddress(ArmoryDialog):
       self.edtSecurePrint.setEnabled(False)
       w, h = relaxedSizeStr(self.edtSecurePrint, 'X' * 12)
       self.edtSecurePrint.setMaximumWidth(w)
-      
+
       def toggleSP():
          if self.chkUseSP.isChecked():
             self.edtSecurePrint.setEnabled(True)
          else:
             self.edtSecurePrint.setEnabled(False)
 
-      self.chkUseSP.stateChanged.connect(toggleSP)      
+      self.chkUseSP.stateChanged.connect(toggleSP)
       frmSP = makeHorizFrame([self.chkUseSP, self.edtSecurePrint, 'Stretch'])
       #frmSP.setFrameStyle(STYLE_PLAIN)
 
@@ -3065,10 +3016,10 @@ class DlgImportAddress(ArmoryDialog):
          SECPRINT = HardcodedKeyMaskParams()
          securePrintCode = str(self.edtSecurePrint.text()).strip()
          self.edtSecurePrint.setText("")
-         
+
          if not checkSecurePrintCode(self, SECPRINT, securePrintCode):
             return
-         
+
       if self.radioImportOne.isChecked():
          self.processUserString(securePrintCode)
       else:
@@ -3082,22 +3033,22 @@ class DlgImportAddress(ArmoryDialog):
 
       try:
          binKeyData, keyType = parsePrivateKeyData(theStr)
-         
+
          if pwd:
             SECPRINT = HardcodedKeyMaskParams()
             maskKey = SECPRINT['FUNC_KDF'](pwd)
             SBDbinKeyData = SECPRINT['FUNC_UNMASK'](SecureBinaryData(binKeyData), ekey=maskKey)
             binKeyData = SBDbinKeyData.toBinStr()
-            SBDbinKeyData.destroy()  
-         
+            SBDbinKeyData.destroy()
+
          zeroes32 = '\x00'*32
          if binKeyData==zeroes32:
             QMessageBox.critical(self, tr('Invalid Private Key'), tr("""
-               You entered all zeros.  This is not a valid private key!"""), 
+               You entered all zeros.  This is not a valid private key!"""),
                QMessageBox.Ok)
             LOGERROR('User attempted import of private key 0x00*32')
             return
-            
+
          if binary_to_int(binKeyData, BIGENDIAN) >= SECP256K1_ORDER:
             QMessageBox.critical(self, 'Invalid Private Key', \
                'The private key you have entered is actually not valid '
@@ -3130,7 +3081,7 @@ class DlgImportAddress(ArmoryDialog):
       except CompressedKeyError, e:
          QMessageBox.critical(self, 'Unsupported key type', 'You entered a key '
             'for an address that uses a compressed public key, usually produced '
-            'in Bitcoin-Qt/bitcoind wallets created after version 0.6.0.  Armory '
+            'in Bitcoin-Core/bitcoind wallets created after version 0.6.0.  Armory '
             'does not yet support this key type.')
          LOGERROR('Compressed key data recognized but not supported')
          return
@@ -3204,7 +3155,7 @@ class DlgImportAddress(ArmoryDialog):
          sweepAddrList = []
          sweepAddrList.append(PyBtcAddress().createFromPlainKeyData(SecureBinaryData(binKeyData)))
          self.wlt.sweepAddressList(sweepAddrList, self.main)
-         
+
          # Regardless of the user confirmation, we're done here
          self.accept()
 
@@ -3269,10 +3220,10 @@ class DlgImportAddress(ArmoryDialog):
       inputText = str(self.txtPrivBulk.toPlainText())
       inputLines = [s.strip().replace(' ', '') for s in inputText.split('\n')]
       binKeyData, addr160, addrStr = '', '', ''
-      
+
       if pwd:
          SECPRINT = HardcodedKeyMaskParams()
-         maskKey = SECPRINT['FUNC_KDF'](pwd)      
+         maskKey = SECPRINT['FUNC_KDF'](pwd)
 
       privKeyList = []
       addrSet = set()
@@ -3335,7 +3286,7 @@ class DlgImportAddress(ArmoryDialog):
 
          #get PyBtcWallet object
          self.wlt.sweepAddressList(addrList, self.main)
-         
+
       else:
          ##### IMPORTING #####
 
@@ -3393,7 +3344,7 @@ class DlgImportAddress(ArmoryDialog):
                raise
 
          self.wlt.importExternalAddressBatch(privKeyToImport)
-            
+
          if nAlready == nTotal:
             MsgBoxCustom(MSGBOX.Warning, 'Nothing Imported!', 'All addresses '
                'chosen to be imported are already part of this wallet. '
@@ -3584,10 +3535,10 @@ class DlgAddressInfo(ArmoryDialog):
 
       self.wlt = wlt
       self.cppAddr = self.wlt.cppWallet.getScrAddrObjByKey(\
-                                       Hash160ToScrAddr(addr160))      
-      
+                                       Hash160ToScrAddr(addr160))
+
       self.addr = self.wlt.getAddrByHash160(addr160)
-      
+
       self.ledgerTable = []
 
       self.mode = mode
@@ -3681,7 +3632,7 @@ class DlgAddressInfo(ArmoryDialog):
             lbls[-1].append(QRichLabel(balStr.strip() + ' BTC'))
       except:
          lbls[-1].append(QRichLabel("N/A"))
-         
+
 
       lbls.append([])
       lbls[-1].append(QLabel(''))
@@ -3690,7 +3641,7 @@ class DlgAddressInfo(ArmoryDialog):
          lbls[-1].append(QLabel(str(wlt.commentsMap[addr160]) if addr160 in wlt.commentsMap else ''))
       else:
          lbls[-1].append(QLabel(''))
-         
+
       # Number of transactions
       #txHashes = set()
       #for le in self.addrLedger:
@@ -3732,13 +3683,13 @@ class DlgAddressInfo(ArmoryDialog):
       self.ledgerModel.setLedgerDelegate(\
          TheBDM.bdv().getLedgerDelegateForScrAddr(self.wlt.uniqueIDB58, \
                                                   Hash160ToScrAddr(addr160)))
-      
+
       def ledgerToTableScrAddr(ledger):
          return self.main.convertLedgerToTable(ledger, \
                                                wltIDIn=self.wlt.uniqueIDB58)
-      
-      self.ledgerModel.setConvertLedgerMethod(ledgerToTableScrAddr)      
-      
+
+      self.ledgerModel.setConvertLedgerMethod(ledgerToTableScrAddr)
+
       self.frmLedgUpDown = QFrame()
       self.ledgerView = ArmoryTableView(self, self.main, self.frmLedgUpDown)
       self.ledgerView.setModel(self.ledgerModel)
@@ -3751,7 +3702,7 @@ class DlgAddressInfo(ArmoryDialog):
       self.ledgerView.hideColumn(LEDGERCOLS.TxHash)
       self.ledgerView.hideColumn(LEDGERCOLS.isCoinbase)
       self.ledgerView.hideColumn(LEDGERCOLS.toSelf)
-      self.ledgerView.hideColumn(LEDGERCOLS.DoubleSpend)
+      self.ledgerView.hideColumn(LEDGERCOLS.optInRBF)
 
       self.ledgerView.setSelectionBehavior(QTableView.SelectRows)
       self.ledgerView.setSelectionMode(QTableView.SingleSelection)
@@ -3759,7 +3710,7 @@ class DlgAddressInfo(ArmoryDialog):
       self.ledgerView.verticalHeader().setDefaultSectionSize(20)
       self.ledgerView.verticalHeader().hide()
       self.ledgerView.setMinimumWidth(650)
-      
+
       dateWidth = tightSizeStr(self.ledgerView, '_9999-Dec-99 99:99pm__')[0]
       initialColResize(self.ledgerView, [20, 0, dateWidth, 72, 0, 0.45, 0.3])
 
@@ -4005,8 +3956,8 @@ class DlgEULA(ArmoryDialog):
 
 
       lblPleaseAgree = QRichLabel(\
-         '<b>Armory Bitcoin Client is licensed in part under the ' 
-         '<i>Affero General Public License, Version 3 (AGPLv3)</i>' 
+         '<b>Armory Bitcoin Client is licensed in part under the '
+         '<i>Affero General Public License, Version 3 (AGPLv3)</i>'
          'and in part under the <i>MIT License</i></b>'
          '<br><br>'
          'Additionally, as a condition of receiving this software '
@@ -4415,7 +4366,7 @@ class DlgRemoveWallet(ArmoryDialog):
       #        But I should verify that this is actually the case.
       wltEmpty = True
       if TheBDM.getState() == BDM_BLOCKCHAIN_READY:
-         # Removed this line of code because it's part of the old BDM paradigm. 
+         # Removed this line of code because it's part of the old BDM paradigm.
          # Leaving this comment here in case it needs to be replaced by anything
          # wlt.syncWithBlockchainLite()
          bal = wlt.getBalance('Full')
@@ -4471,7 +4422,7 @@ class DlgRemoveWallet(ArmoryDialog):
          if hasWarningRow:
             lbls.append(lbl)
             layout.addWidget(lbl, 4, 0, 1, 3)
-            
+
       self.radioDelete = QRadioButton('Permanently delete this wallet')
       self.radioWatch = QRadioButton('Delete private keys only, make watching-only')
 
@@ -4623,10 +4574,10 @@ class DlgRemoveWallet(ArmoryDialog):
             newWltPath = wlt.getWalletPath('WatchOnly')
             wlt.forkOnlineWallet(newWltPath, wlt.labelName, wlt.labelDescr)
             self.main.removeWalletFromApplication(wltID)
-            
+
             newWlt = PyBtcWallet().readWalletFile(newWltPath)
             self.main.addWalletToApplication(newWlt, True)
-            # Removed this line of code because it's part of the old BDM paradigm. 
+            # Removed this line of code because it's part of the old BDM paradigm.
             # Leaving this comment here in case it needs to be replaced by anything
             # newWlt.syncWithBlockchainLite()
 
@@ -4826,7 +4777,7 @@ def excludeChange(outputPairs, wlt):
    """
    NOTE:  this method works ONLY because we always generate a new address
           whenever creating a change-output, which means it must have a
-          higher chainIndex than all other addresses.  If you did something 
+          higher chainIndex than all other addresses.  If you did something
           creative with this tx, this may not actually work.
    """
    maxChainIndex = -5
@@ -4862,7 +4813,7 @@ class DlgConfirmSend(ArmoryDialog):
       lblInfoImg = QLabel()
       lblInfoImg.setPixmap(QPixmap(':/MsgBox_info48.png'))
       lblInfoImg.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
-      
+
       changeRemoved = False
       sendPairs = []
       returnPairs = []
@@ -4881,8 +4832,8 @@ class DlgConfirmSend(ArmoryDialog):
 
       # If there are more than 3 return pairs then this is a 1%'er tx we should
       # not presume to know which pair is change. It's a weird corner case so
-      # it's best to leave it alone. 
-      # 0 return is an exact change tx, no need to deal with it so this 
+      # it's best to leave it alone.
+      # 0 return is an exact change tx, no need to deal with it so this
       # chunk of code that removes change only cares about 1 and 2 return pairs.
       # if 1 remove it, if 2 remove the one with a higher index.
       # Exception: IF no send pairs, it's a tx for max to a single internal address
@@ -4916,52 +4867,52 @@ class DlgConfirmSend(ArmoryDialog):
          doExcludeChange = False
          doShowAllMsg    = True
          doShowLeaveWlt  = True
-         
+
 
       if doExcludeChange:
          returnPairs = excludeChange(returnPairs, wlt)
 
-         
+
       # returnPairs now includes only the outputs to be displayed
       totalLeavingWlt = sum([val for script,val in sendPairs]) + fee
-      totalSend       = sum([val for script,val in returnPairs]) + totalLeavingWlt 
+      totalSend       = sum([val for script,val in returnPairs]) + totalLeavingWlt
       sendFromWalletStr = coin2strNZS(totalLeavingWlt)
       totalSendStr      = coin2strNZS(totalSend)
 
 
       lblAfterBox = QRichLabel('')
-      
+
       # Always include a way to review the tx when in expert mode.  Or whenever
       # we are showing the entire output list.
-      # If we have a pytx or ustx, we can add a DlgDispTxInfo button 
+      # If we have a pytx or ustx, we can add a DlgDispTxInfo button
       showAllMsg = ''
       if doShowAllMsg or (pytxOrUstx and self.main.usermode==USERMODE.Expert):
-         showAllMsg = tr(""" To see complete transaction details 
+         showAllMsg = tr(""" To see complete transaction details
                              <a href="None">click here</a></font>""")
 
          def openDlgTxInfo(*args):
             DlgDispTxInfo(pytxOrUstx, wlt, self.parent, self.main).exec_()
-   
+
          self.connect(lblAfterBox, SIGNAL('linkActivated(const QString &)'), openDlgTxInfo)
 
 
       lblMsg = QRichLabel(tr("""
-         This transaction will spend <b>%s BTC</b> from 
+         This transaction will spend <b>%s BTC</b> from
          <font color="%s">Wallet "<b>%s</b>" (%s)</font> to the following
-         recipients:""") % 
+         recipients:""") %
          (totalSendStr, htmlColor('TextBlue'), wlt.labelName, wlt.uniqueIDB58))
 
       if doShowLeaveWlt:
          lblAfterBox.setText(tr("""
-            <font size=3>* Starred 
-            outputs are going to the same wallet from which they came 
+            <font size=3>* Starred
+            outputs are going to the same wallet from which they came
             and do not affect the wallet's final balance.
-            The total balance of the wallet will actually only decrease 
+            The total balance of the wallet will actually only decrease
             <b>%s BTC</b> as a result of this transaction.  %s</font>""") % \
             (sendFromWalletStr, showAllMsg))
       elif len(showAllMsg)>0:
          lblAfterBox.setText(showAllMsg)
-         
+
 
       addrColWidth = 50
 
@@ -5036,8 +4987,8 @@ class DlgConfirmSend(ArmoryDialog):
 
 ################################################################################
 class DlgSendBitcoins(ArmoryDialog):
-   def __init__(self, wlt, parent=None, main=None, prefill=None, 
-                              wltIDList=None, onlyOfflineWallets=False, 
+   def __init__(self, wlt, parent=None, main=None, prefill=None,
+                              wltIDList=None, onlyOfflineWallets=False,
                               spendFromLockboxID=None):
       super(DlgSendBitcoins, self).__init__(parent, main)
       layout = QVBoxLayout()
@@ -5047,7 +4998,7 @@ class DlgSendBitcoins(ArmoryDialog):
       self.frame = SendBitcoinsFrame(self, main, tr('Send Bitcoins'),
                    wlt, prefill, wltIDList, onlyOfflineWallets=onlyOfflineWallets,
                    sendCallback=self.createTxAndBroadcast,
-                   createUnsignedTxCallback=self.createUnsignedTxAndDisplay, 
+                   createUnsignedTxCallback=self.createUnsignedTxAndDisplay,
                    spendFromLockboxID=spendFromLockboxID)
       layout.addWidget(self.frame)
       self.setLayout(layout)
@@ -5122,10 +5073,10 @@ class DlgOfflineTxCreated(ArmoryDialog):
          'By clicking Continue you will continue to the next step in the offline '
          'transaction process to sign and/or broadcast the transaction.')
 
-      bottomStrip = makeHorizFrame([doneButton, 
-                                    ttipDone, 
-                                    STRETCH, 
-                                    continueButton, 
+      bottomStrip = makeHorizFrame([doneButton,
+                                    ttipDone,
+                                    STRETCH,
+                                    continueButton,
                                     ttipContinue])
 
       frame = makeVertFrame([reviewOfflineTxFrame, bottomStrip])
@@ -5931,6 +5882,16 @@ class DlgDispTxInfo(ArmoryDialog):
                lbls[-1].append(QLabel('Confirmations:'))
                lbls[-1].append(QRichLabel(str(nConf)))
 
+      isRBF = self.pytx.isRBF()
+      if isRBF:
+         lbls.append([])
+         lbls[-1].append(self.main.createToolTipWidget(
+               'This transaction can be replaced by another transaction that'
+               'spends the same inputs if the replacement transaction has'
+               'a higher fee.'))
+         lbls[-1].append(QLabel('Mempool Replaceable: '))
+         lbls[-1].append(QRichLabel(str(isRBF)))
+
 
 
 
@@ -6155,7 +6116,7 @@ class DlgDispTxInfo(ArmoryDialog):
       self.lblChangeDescr = QRichLabel( tr("""Some outputs might be "change."
          """), doWrap=False)
       self.lblChangeDescr.setOpenExternalLinks(True)
-        
+
 
 
       inStrip = makeLayoutFrame(HORIZONTAL, [lblInputs, ttipInputs, STRETCH])
@@ -6178,10 +6139,10 @@ class DlgDispTxInfo(ArmoryDialog):
       self.connect(self.btnOk, SIGNAL(CLICKED), self.accept)
       self.connect(self.btnCopy, SIGNAL(CLICKED), self.copyRawTx)
 
-      btnStrip = makeHorizFrame([self.btnIOList, 
-                                 self.btnCopy, 
-                                 self.lblCopied,  
-                                 'Stretch', 
+      btnStrip = makeHorizFrame([self.btnIOList,
+                                 self.btnCopy,
+                                 self.lblCopied,
+                                 'Stretch',
                                  self.lblChangeDescr,
                                  'Stretch',
                                  self.btnOk])
@@ -6414,7 +6375,7 @@ class DlgDisplayTxIn(ArmoryDialog):
             if lbox:
                srcStr = 'Lockbox %d-of-%d "%s" (%s)' % \
                         (lbox.M, lbox.N, lbox.shortName, lbox.uniqueIDB58)
-          
+
 
 
       dispLines = []
@@ -6449,7 +6410,7 @@ class DlgDisplayTxIn(ArmoryDialog):
             wltID = ''
 
          wouldBeAddrStr = dispInfo['AddrStr']
-         
+
 
          dispLines.append('')
          dispLines.append('')
@@ -6467,7 +6428,7 @@ class DlgDisplayTxIn(ArmoryDialog):
          for op in opStrings:
             dispLines.append('      %s' % op)
 
-      
+
       edtBrowse.setHtml(('<br>'.join(dispLines)).replace(' ', '&nbsp;'))
       btnDone = QPushButton(tr("Ok"))
       self.connect(btnDone, SIGNAL('clicked()'), self.accept)
@@ -6520,7 +6481,7 @@ class DlgDisplayTxOut(ArmoryDialog):
          wltID = ''
 
       wouldBeAddrStr = dispInfo['AddrStr']
-         
+
       dispLines.append('<font size=4><u><b>Information on TxOut</b></u></font>:')
       dispLines.append('   <b>Tx Out Index:</b>       %d' % txoIndex)
       dispLines.append('   <b>TxOut Value:</b>        %s' % coin2strNZS(val))
@@ -6535,7 +6496,7 @@ class DlgDisplayTxOut(ArmoryDialog):
       for op in opStrings:
          dispLines.append('      %s' % op)
 
-      
+
       edtBrowse.setHtml(('<br>'.join(dispLines)).replace(' ', '&nbsp;'))
       btnDone = QPushButton(tr("Ok"))
       self.connect(btnDone, SIGNAL('clicked()'), self.accept)
@@ -6961,7 +6922,7 @@ class DlgPrintBackup(ArmoryDialog):
          the screen, so that no other devices on your network see the sensitive
          data when you send it to the printer.  If you turn on
          SecurePrint\xe2\x84\xa2 <u>you must write the code on the page after
-         it is done printing!</u>  There is no point in using this feature if 
+         it is done printing!</u>  There is no point in using this feature if
          you copy the data by hand."""))
 
       self.lblSecurePrint = QRichLabel(tr("""
@@ -7564,13 +7525,13 @@ class DlgBadConnection(ArmoryDialog):
             'restart Armory.<br><br>Would you like to continue in "Offline" mode? ')
       elif haveInternet and not haveSatoshi:
          lblDescr = QRichLabel(\
-            'Armory was not able to detect the presence of Bitcoin-Qt or bitcoind '
-            'client software (available at http://www.bitcoin.org).  Please make sure that '
+            'Armory was not able to detect the presence of Bitcoin-Core or bitcoind '
+            'client software (available at https://bitcoin.org).  Please make sure that '
             'the one of those programs is... <br>'
             '<br><b>(1)</b> ...open and connected to the network '
             '<br><b>(2)</b> ...on the same network as Armory (main-network or test-network)'
             '<br><b>(3)</b> ...synchronized with the blockchain before '
-            'starting Armory<br><br>Without the Bitcoin-Qt or bitcoind open, you will only '
+            'starting Armory<br><br>Without the Bitcoin-Core or bitcoind open, you will only '
             'be able to run Armory in "Offline" mode, which will not have access '
             'to new blockchain data, and you will not be able to send outgoing '
             'transactions<br><br>If you do not want to be in "Offline" mode, please '
@@ -8109,7 +8070,7 @@ class DlgAddressBook(ArmoryDialog):
          lblToAddr.setVisible(False)
 
 
-      rowHeight = tightSizeStr(self.font, 'XygjpHI')[1]
+      rowHeight = tightSizeStr(self.font(), 'XygjpHI')[1]
 
       self.wltDispModel = AllWalletsDispModel(self.main)
       self.wltDispView = QTableView()
@@ -8173,15 +8134,15 @@ class DlgAddressBook(ArmoryDialog):
             self.lboxView.hideColumn(i)
          self.lboxView.hideColumn(LOCKBOXCOLS.UnixTime)
          self.tabWidget.addTab(self.lboxView, 'Lockboxes')
-         self.connect( self.lboxView, 
-            SIGNAL('doubleClicked(QModelIndex)'), 
+         self.connect( self.lboxView,
+            SIGNAL('doubleClicked(QModelIndex)'),
             self.dblClickedLockbox)
          self.connect(self.lboxView.selectionModel(), \
              SIGNAL('currentChanged(const QModelIndex &, const QModelIndex &)'), \
              self.clickedLockbox)
       else:
          self.lboxView = None
-      self.connect(self.tabWidget, SIGNAL('currentChanged(int)'), self.tabChanged)   
+      self.connect(self.tabWidget, SIGNAL('currentChanged(int)'), self.tabChanged)
       self.tabWidget.setCurrentIndex(0)
 
 
@@ -8198,12 +8159,12 @@ class DlgAddressBook(ArmoryDialog):
       self.useBareMultiSigCheckBox.setVisible(False)
       self.ttipBareMS = self.main.createToolTipWidget( tr("""
          EXPERT OPTION:  Do not check this box unless you know what it means
-                         and you need it!  Forces Armory to exposes public 
-                         keys to the blockchain before the funds are spent.  
-                         This is only needed for very specific use cases, 
+                         and you need it!  Forces Armory to exposes public
+                         keys to the blockchain before the funds are spent.
+                         This is only needed for very specific use cases,
                          and otherwise creates blockchain bloat."""))
-         
-         
+
+
       self.ttipBareMS.setVisible(False)
       self.btnSelectAddr = QPushButton('No Address Selected')
       self.btnSelectWlt.setEnabled(False)
@@ -8355,9 +8316,9 @@ class DlgAddressBook(ArmoryDialog):
             if len(selection)==0:
                self.disableSelectButtons()
             else:
-               self.addrTableRxClicked(selection[0])    
-         
-      
+               self.addrTableRxClicked(selection[0])
+
+
    #############################################################################
    def setAddrBookRxModel(self, wltID):
       wlt = self.main.walletMap[wltID]
@@ -8448,7 +8409,7 @@ class DlgAddressBook(ArmoryDialog):
          newComment = str(dialog.edtComment.text())
          addr160 = addrStr_to_hash160(self.selectedAddr)[1]
          wlt.setComment(addr160, newComment)
-         
+
    #############################################################################
    def getSelectedLBID(self):
       selection = self.lboxView.selectedIndexes()
@@ -8457,11 +8418,11 @@ class DlgAddressBook(ArmoryDialog):
       row = selection[0].row()
       idCol = LOCKBOXCOLS.ID
       return str(self.lboxView.model().index(row, idCol).data().toString())
-   
+
    #############################################################################
    def dblClickedLockbox(self, index):
       self.acceptLockBoxSelection()
-      
+
    #############################################################################
    def clickedLockbox(self, currIndex, prevIndex=None):
       if prevIndex == currIndex:
@@ -8482,7 +8443,7 @@ class DlgAddressBook(ArmoryDialog):
             self.useBareMultiSigCheckBox.setEnabled(False)
             self.useBareMultiSigCheckBox.setChecked(False)
             self.useBareMultiSigCheckBox.setToolTip(tr("""
-               Bare multi-sig is not available for M-of-N lockboxes on the 
+               Bare multi-sig is not available for M-of-N lockboxes on the
                main Bitcoin network with N higher than 3."""))
          else:
             self.useBareMultiSigCheckBox.setEnabled(True)
@@ -8514,7 +8475,7 @@ class DlgAddressBook(ArmoryDialog):
          self.target.setText(pubKeyHash)
       self.target.setCursorPosition(0)
       self.accept()
-      
+
    #############################################################################
    def useP2SHClicked(self):
       self.btnSelectAddr.setText( createLockboxEntryStr(self.getSelectedLBID(),
@@ -8525,26 +8486,26 @@ class DlgAddressBook(ArmoryDialog):
       if isBareLockbox(str(self.btnSelectAddr.text())) or \
          isP2SHLockbox(str(self.btnSelectAddr.text())):
          self.acceptLockBoxSelection()
-      else: 
+      else:
          atype,a160 = addrStr_to_hash160(self.selectedAddr)
          if atype==P2SHBYTE and self.returnPubKey:
             LOGERROR('Cannot select P2SH address when selecting a public key!')
             QMessageBox.critical(self, tr("P2SH Not Allowed"), tr("""
-               This operation requires a public key, but you selected a 
+               This operation requires a public key, but you selected a
                P2SH address which does not have a public key (these addresses
                start with "2" or "3").  Please select a different address"""), \
                QMessageBox.Ok)
             return
-   
+
          if self.target:
             if not self.returnPubKey:
                self.target.setText(self.selectedAddr)
             else:
                pubKeyHash = self.getPubKeyForAddr160(a160)
                if pubKeyHash is None:
-                  return 
+                  return
                self.target.setText(pubKeyHash)
-   
+
             self.target.setCursorPosition(0)
             self.accept()
 
@@ -8555,7 +8516,7 @@ class DlgAddressBook(ArmoryDialog):
                                                     self.useBareMultiSigCheckBox.isChecked()))
          self.target.setCursorPosition(0)
          self.accept()
-   
+
    #############################################################################
    def getPubKeyForAddr160(self, addr160):
       if not self.returnPubKey:
@@ -8564,17 +8525,17 @@ class DlgAddressBook(ArmoryDialog):
       wid = self.main.getWalletForAddr160(addr160)
       if not wid:
          QMessageBox.critical(self, tr('No Public Key'), tr("""
-            This operation requires a full public key, not just an address.  
+            This operation requires a full public key, not just an address.
             Unfortunately, Armory cannot find the public key for the address
-            you selected.  In general public keys will only be available 
+            you selected.  In general public keys will only be available
             for addresses in your wallet."""), QMessageBox.Ok)
          return None
 
       wlt = self.main.walletMap[wid]
       return wlt.getAddrByHash160(addr160).binPublicKey65.toHexStr()
-            
 
-      
+
+
 
    #############################################################################
    def showContextMenuTx(self, pos):
@@ -8650,7 +8611,7 @@ def createAddrBookButton(parent, targWidget, defaultWltID=None, actionStr="Selec
          QMessageBox.warning(parent, 'No wallets!', 'You have no wallets so '
             'there is no address book to display.', QMessageBox.Ok)
          return
-      dlg = DlgAddressBook(parent, parent.main, targWidget, defaultWltID, 
+      dlg = DlgAddressBook(parent, parent.main, targWidget, defaultWltID,
                     actionStr, selectExistingOnly, selectMineOnly, getPubKey,
                            showLockboxes)
       dlg.exec_()
@@ -8712,7 +8673,7 @@ class DlgSettings(ArmoryDialog):
       ##########################################################################
       # bitcoind-management settings
       self.chkManageSatoshi = QCheckBox(tr("""
-         Let Armory run Bitcoin-Qt/bitcoind in the background"""))
+         Let Armory run Bitcoin-Core/bitcoind in the background"""))
       self.edtSatoshiExePath = QLineEdit()
       self.edtSatoshiHomePath = QLineEdit()
       self.edtSatoshiExePath.setMinimumWidth(tightSizeNChar(GETFONT('Fixed', 10), 40)[0])
@@ -8723,7 +8684,7 @@ class DlgSettings(ArmoryDialog):
       if OS_MACOSX:
          self.chkManageSatoshi.setEnabled(False)
          lblManageSatoshi = QRichLabel(\
-            'Bitcoin-Qt/bitcoind management is not available on Mac/OSX')
+            'Bitcoin-Core/bitcoind management is not available on Mac/OSX')
       else:
          if self.main.settings.hasSetting('SatoshiExe'):
             satexe = self.main.settings.get('SatoshiExe')
@@ -8788,11 +8749,6 @@ class DlgSettings(ArmoryDialog):
       # self.chkSkipVersionCheck.setChecked(skipVerChk)
 
 
-      self.chkDisableTorrent = QCheckBox(tr("""
-         Disable torrent download (force synchronization via Bitcoin P2P)"""))
-      disableTorrent = self.main.getSettingOrSetDefault('DisableTorrent', False)
-      self.chkDisableTorrent.setChecked(disableTorrent)
-
 
       ##########################################################################
       #  Privacy Settings
@@ -8808,7 +8764,7 @@ class DlgSettings(ArmoryDialog):
       #    but not send any statistical information.""")
       lblPrivTorDescr = QRichLabel("""
          If you are going to use Armory and Bitcoin Core with a proxy (such
-         as Tor), you should disable all Armory communications that might operate 
+         as Tor), you should disable all Armory communications that might operate
          outside the proxy.""")
 
       # self.chkPrivacyStats = QCheckBox(tr("""
@@ -8825,7 +8781,7 @@ class DlgSettings(ArmoryDialog):
       #  Privacy Settings
       ##########################################################################
 
-   
+
       lblDefaultUriTitle = QRichLabel(tr("""
          <b>Set Armory as default URL handler</b>"""))
       lblDefaultURI = QRichLabel(tr("""
@@ -8967,8 +8923,8 @@ class DlgSettings(ArmoryDialog):
       lblNotify = QRichLabel('<b>Enable notifications from the system-tray:</b>')
       self.chkBtcIn = QCheckBox('Bitcoins Received')
       self.chkBtcOut = QCheckBox('Bitcoins Sent')
-      self.chkDiscon = QCheckBox('Bitcoin-Qt/bitcoind disconnected')
-      self.chkReconn = QCheckBox('Bitcoin-Qt/bitcoind reconnected')
+      self.chkDiscon = QCheckBox('Bitcoin-Core/bitcoind disconnected')
+      self.chkReconn = QCheckBox('Bitcoin-Core/bitcoind reconnected')
 
       # FYI:If we're not on OS X, the if condition will never be hit.
       if (OS_MACOSX) and (int(osxMinorVer) < 7):
@@ -9106,12 +9062,10 @@ class DlgSettings(ArmoryDialog):
       frmLayout.addWidget(frmMgmt, i, 0, 1, 3)
       i += 1
       frmLayout.addWidget(self.chkSkipOnlineCheck, i, 0, 1, 3)
-      i += 1
-      frmLayout.addWidget(self.chkDisableTorrent, i, 0, 1, 3)
 
       i += 1
       frmLayout.addWidget(HLINE(), i, 0, 1, 3)
-      
+
       i += 1
       frmLayout.addWidget(lblPrivacyTitle, i, 0, 1, 3)
       # i += 1
@@ -9298,7 +9252,7 @@ class DlgSettings(ArmoryDialog):
                QMessageBox.warning(self, 'Invalid Path', \
                   'The path you specified for the Bitcoin software home directory '
                   'does not exist.  Only specify this directory if you use a '
-                  'non-standard "-datadir=" option when running Bitcoin-Qt or '
+                  'non-standard "-datadir=" option when running Bitcoin-Core or '
                   'bitcoind.  If you leave this field blank, the following '
                   'path will be used: <br><br> %s' % BTC_HOME_DIR, QMessageBox.Ok)
                return
@@ -9308,7 +9262,7 @@ class DlgSettings(ArmoryDialog):
 
       self.main.writeSetting('ManageSatoshi', self.chkManageSatoshi.isChecked())
       self.main.writeSetting('SkipOnlineCheck', self.chkSkipOnlineCheck.isChecked())
-      self.main.writeSetting('DisableTorrent', self.chkDisableTorrent.isChecked())
+
 
       # Reset the DNAA flag as needed
       askuriDNAA = self.chkAskURIAtStartup.isChecked()
@@ -9350,13 +9304,14 @@ class DlgSettings(ArmoryDialog):
       self.main.writeSetting('NotifyDiscon', self.chkDiscon.isChecked())
       self.main.writeSetting('NotifyReconn', self.chkReconn.isChecked())
 
-   
+
       oldTorSetting = self.main.getSettingOrSetDefault('UseTorSettings', False)
-      self.main.writeSetting('SkipStatsReport',self.chkPrivacyStats.isChecked())
+      #self.main.writeSetting('SkipStatsReport',self.chkPrivacyStats.isChecked())
       self.main.writeSetting('UseTorSettings', self.chkPrivacyTor.isChecked())
-      
 
 
+
+      '''
       if self.radioAnnounce1024.isChecked():
          self.main.writeSetting('NotifyMinPriority',    0)
       elif self.radioAnnounce2048.isChecked():
@@ -9368,10 +9323,10 @@ class DlgSettings(ArmoryDialog):
 
       self.main.writeSetting('DisableUpgradeNotify', \
                   self.chkDisableUpgradeNotify.isChecked())
-      
+      '''
       try:
          self.main.createCombinedLedger()
-      except: 
+      except:
          pass
       super(DlgSettings, self).accept(*args)
 
@@ -9431,20 +9386,20 @@ class DlgExportTxHistory(ArmoryDialog):
       self.cmbWltSelect.addItem('My Wallets')
       self.cmbWltSelect.addItem('Offline Wallets')
       self.cmbWltSelect.addItem('Other Wallets')
-      
-      self.cmbWltSelect.insertSeparator(4)      
+
+      self.cmbWltSelect.insertSeparator(4)
       self.cmbWltSelect.addItem('All Wallets')
       self.cmbWltSelect.addItem('All Lockboxes')
       self.cmbWltSelect.addItem('All Wallets & Lockboxes')
-            
-      self.cmbWltSelect.insertSeparator(8)    
+
+      self.cmbWltSelect.insertSeparator(8)
       for wltID in self.main.walletIDList:
          self.cmbWltSelect.addItem(self.main.walletMap[wltID].labelName)
-      
-      self.cmbWltSelect.insertSeparator(8 + len(self.main.walletIDList))        
+
+      self.cmbWltSelect.insertSeparator(8 + len(self.main.walletIDList))
       for idx in self.reversedLBdict:
-         self.cmbWltSelect.addItem(self.main.allLockboxes[idx].shortName)   
- 
+         self.cmbWltSelect.addItem(self.main.allLockboxes[idx].shortName)
+
 
       self.cmbSortSelect = QComboBox()
       self.cmbSortSelect.clear()
@@ -9592,12 +9547,12 @@ class DlgExportTxHistory(ArmoryDialog):
             wltIDList = self.main.walletIDList + lockboxIDList
          else:
             pass
-         
+
       order = order_ascending
       sortTxt = str(self.cmbSortSelect.currentText())
       if 'newest' in sortTxt:
          order = order_descending
-         
+
       totalFunds, spendFunds, unconfFunds = 0, 0, 0
       wltBalances = {}
       for wltID in wltIDList:
@@ -9611,7 +9566,7 @@ class DlgExportTxHistory(ArmoryDialog):
                wltBalances[wltID] = 0   # will be accumulated
             else:
                wltBalances[wltID] = wlt.getBalance('Total')
-         
+
          else:
             #lockbox
             cppwlt = self.main.cppLockboxWltMap[wltID]
@@ -9621,15 +9576,15 @@ class DlgExportTxHistory(ArmoryDialog):
             if order == order_ascending:
                wltBalances[wltID] = 0   # will be accumulated
             else:
-               wltBalances[wltID] = cppwlt.getFullBalance()   
-                  
+               wltBalances[wltID] = cppwlt.getFullBalance()
+
       if order == order_ascending:
          allBalances = 0
       else:
          allBalances = totalFunds
-      
-               
-      #prepare csv file  
+
+
+      #prepare csv file
       wltSelectStr = str(self.cmbWltSelect.currentText()).replace(' ', '_')
       timestampStr = unixTimeToFormatStr(RightNow(), '%Y%m%d_%H%M')
       filenamePrefix = 'ArmoryTxHistory_%s_%s' % (wltSelectStr, timestampStr)
@@ -9639,18 +9594,18 @@ class DlgExportTxHistory(ArmoryDialog):
          fullpath = self.main.getFileSave('Save CSV File', \
                                               ['Comma-Separated Values (*.csv)'], \
                                               defaultName)
-   
+
          if len(fullpath) == 0:
             return
-         
+
          f = open(fullpath, 'w')
-   
+
          f.write('Export Date:, %s\n' % unixTimeToFormatStr(RightNow()))
          f.write('Total Funds:, %s\n' % coin2str(totalFunds, maxZeros=0).strip())
          f.write('Spendable Funds:, %s\n' % coin2str(spendFunds, maxZeros=0).strip())
          f.write('Unconfirmed Funds:, %s\n' % coin2str(unconfFunds, maxZeros=0).strip())
          f.write('\n')
-   
+
          f.write('Included Wallets:\n')
          for wltID in wltIDList:
             if wltID in self.main.walletMap:
@@ -9658,28 +9613,28 @@ class DlgExportTxHistory(ArmoryDialog):
                f.write('%s,%s\n' % (wltID, wlt.labelName.replace(',', ';')))
             else:
                wlt = self.main.allLockboxes[self.main.lockboxIDMap[wltID]]
-               f.write('%s (lockbox),%s\n' % (wltID, wlt.shortName.replace(',', ';')))               
+               f.write('%s (lockbox),%s\n' % (wltID, wlt.shortName.replace(',', ';')))
          f.write('\n')
-   
-   
-         headerRow = ['Date', 'Transaction ID', '#Conf', 'Wallet ID', 
-                      'Wallet Name', 'Credit', 'Debit', 'Fee (paid by this wallet)', 
+
+
+         headerRow = ['Date', 'Transaction ID', '#Conf', 'Wallet ID',
+                      'Wallet Name', 'Credit', 'Debit', 'Fee (paid by this wallet)',
                       'Wallet Balance', 'Total Balance', 'Label']
-   
-         f.write(','.join(headerRow) + '\n')    
-         
+
+         f.write(','.join(headerRow) + '\n')
+
          #create pager object
          walletGroup = TheBDM.bdv().getStandAloneWalletGroup(wltIDList, order)
-         nPages = walletGroup.getPageCount()  
-      
+         nPages = walletGroup.getPageCount()
+
          #run through all pages
          for page in range(0, nPages):
             # Each value in COL.Amount will be exactly how much the wallet balance
             # increased or decreased as a result of this transaction.
             combinedLedger = walletGroup.getHistoryPage(page, False, False)
-            ledgerTable = self.main.convertLedgerToTable(combinedLedger, 
+            ledgerTable = self.main.convertLedgerToTable(combinedLedger,
                                                          showSentToSelfAmt=True)
-      
+
             # Sort the data chronologically first, compute the running balance for
             # each row, then sort it the way that was requested by the user.
             for row in ledgerTable:
@@ -9688,22 +9643,22 @@ class DlgExportTxHistory(ArmoryDialog):
                else:
                   #if SentToSelf, balance and total rolling balance should only take fee in account
                   rawAmt = getFeeForTx(hex_to_binary(row[COL.TxHash])) * -1
-                  
+
                if order == order_ascending:
                   wltBalances[row[COL.WltID]] += rawAmt
                   allBalances += rawAmt
-                  
+
                row.append(wltBalances[row[COL.WltID]])
                row.append(allBalances)
-               
+
                if order == order_descending:
                   wltBalances[row[COL.WltID]] -= rawAmt
-                  allBalances -= rawAmt  
+                  allBalances -= rawAmt
 
-            
+
             for row in ledgerTable:
                vals = []
-   
+
                fmtstr = str(self.edtDateFormat.text())
                unixTime = row[COL.UnixTime]
                vals.append(unixTimeToFormatStr(unixTime, fmtstr))
@@ -9713,8 +9668,8 @@ class DlgExportTxHistory(ArmoryDialog):
                if row[COL.WltID] in self.main.walletMap:
                   vals.append(self.main.walletMap[row[COL.WltID]].labelName.replace(',', ';'))
                else:
-                  vals.append(self.main.allLockboxes[self.main.lockboxIDMap[row[COL.WltID]]].shortName.replace(',', ';'))                  
-   
+                  vals.append(self.main.allLockboxes[self.main.lockboxIDMap[row[COL.WltID]]].shortName.replace(',', ';'))
+
                wltEffect = row[COL.Amount]
                txFee = getFeeForTx(hex_to_binary(row[COL.TxHash]))
                if float(wltEffect) >= 0:
@@ -9725,19 +9680,19 @@ class DlgExportTxHistory(ArmoryDialog):
                   else:
                      vals.append(wltEffect.strip() + ' (STS)')
                      vals.append('')
-                     vals.append(coin2str(txFee).strip())                  
+                     vals.append(coin2str(txFee).strip())
                else:
                   vals.append('')
                   vals.append(wltEffect.strip()[1:]) # remove negative sign
                   vals.append(coin2str(txFee).strip())
-   
+
                vals.append(coin2str(row[-2]))
                vals.append(coin2str(row[-1]))
                vals.append(row[COL.Comment])
-   
+
                f.write('%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,"%s"\n' % tuple(vals))
       #
-      
+
       f.close()
       return True
 
@@ -9785,9 +9740,9 @@ class DlgRequestPayment(ArmoryDialog):
       if savedHex.startswith('FFFFFFFF'):
          # An unfortunate hack until we change our settings storage mechanism
          # See comment in saveLinkText function for details
-         savedHex = savedHex[8:] 
+         savedHex = savedHex[8:]
 
-      linkText = hex_to_binary(savedHex)  
+      linkText = hex_to_binary(savedHex)
       self.edtLinkText.setText(linkText)
       self.edtLinkText.setCursorPosition(0)
       self.edtLinkText.setMaxLength(80)
@@ -9975,10 +9930,10 @@ class DlgRequestPayment(ArmoryDialog):
       linktext = str(self.edtLinkText.text()).strip()
       if len(linktext) > 0:
          # TODO:  We desperately need a new settings file format -- the one
-         #        we use was more of an experiment in how quickly I could 
+         #        we use was more of an experiment in how quickly I could
          #        create a simple settings file, but it has quirky behavior
          #        that makes cryptic hacks like below necessary.  Simply put,
-         #        if the hex of the text is all digits (no hex A-F), then 
+         #        if the hex of the text is all digits (no hex A-F), then
          #        the settings file will read the value as a long int instead
          #        of a string.  We add 8 F's to make sure it's interpretted
          #        as a hex string, but someone looking at the file wouldn't
@@ -10022,7 +9977,7 @@ class DlgRequestPayment(ArmoryDialog):
             amt = None
          else:
             amt = str2coin(amtStr)
-            
+
             if amt > MAX_SATOSHIS:
                amt = None
 
@@ -10698,7 +10653,7 @@ class DlgInstallLinux(ArmoryDialog):
 
 
       lblOptions = QRichLabel(\
-         'If you have manually installed Bitcoin-Qt or bitcoind on this system '
+         'If you have manually installed Bitcoin-Core or bitcoind on this system '
          'before, it is recommended you use the method here you previously used.  '
          'If you get errors using this option, try using the manual instructions '
          'below.')
@@ -10765,7 +10720,7 @@ class DlgInstallLinux(ArmoryDialog):
       lblManualExperiment = QRichLabel(\
          '<b>Download and set it up for me!  (All Linux):</b>'
          '<br><br>'
-         'Armory will download and verify the binaries from www.bitcoin.org.  '
+         'Armory will download and verify the binaries from https://bitcoin.org.  '
          'Your Armory settings will automatically be adjusted to point to that '
          'as the installation directory.')
       btnManualExperiment = QPushButton('Install for me!')
@@ -10775,8 +10730,8 @@ class DlgInstallLinux(ArmoryDialog):
       lblInstallManualDescr = QRichLabel(\
          '<b>Manual download and install of the Bitcoin software:</b><br>'
          '<ol>'
-         '<li>Go to <a href="http://www.bitcoin.org/en/download">'
-         'http://www.bitcoin.org/en/download</a></li>'
+         '<li>Go to <a href="https://bitcoin.org/en/download">'
+         'https://bitcoin.org/en/download</a></li>'
          '<li>Click on the link that says "Download for Linux (tgz, 32/64-bit)" </li>'
          '<li>Open a file browser and navigate to the download directory</li>'
          '<li>Right-click on the downloaded file, and select "Extract Here"</li>'
@@ -10873,10 +10828,10 @@ class DlgInstallLinux(ArmoryDialog):
       fileData = dlg.dlFileData
       if len(fileData) == 0 or dlg.dlVerifyFailed:
          QMessageBox.critical(self, 'Download Failed', \
-            'The download failed.  Please visit www.bitcoin.org '
-            'to download and install Bitcoin-Qt manually.', QMessageBox.Ok)
+            'The download failed.  Please visit https://bitcoin.org '
+            'to download and install Bitcoin-Core manually.', QMessageBox.Ok)
          import webbrowser
-         webbrowser.open('http://www.bitcoin.org/en/download')
+         webbrowser.open('https://bitcoin.org/en/download')
          return
 
       fullPath = os.path.join(installPath, dlg.dlFileName)
@@ -11397,39 +11352,39 @@ class DlgExpWOWltData(ArmoryDialog):
 
 
       lblDescr = QRichLabel(tr("""
-         <center><b><u><font size=4 color="%s">Export Watch-Only 
+         <center><b><u><font size=4 color="%s">Export Watch-Only
          Wallet: %s</font></u></b></center>
          <br>
          Use a watching-only wallet on an online computer to distribute
-         payment addresses, verify transactions and monitor balances, but 
+         payment addresses, verify transactions and monitor balances, but
          without the ability to move the funds.""") % \
          (htmlColor('TextBlue'), wlt.uniqueIDB58))
 
       lblTopHalf = QRichLabel(tr("""
          <center><b><u>Entire Wallet File</u></b></center>
          <br>
-         <i><b><font color="%s">(Recommended)</font></b></i> 
-         An exact copy of your wallet file but without any of the private 
-         signing keys. All existing comments and labels will be carried 
-         with the file. Use this option if it is easy to transfer files 
+         <i><b><font color="%s">(Recommended)</font></b></i>
+         An exact copy of your wallet file but without any of the private
+         signing keys. All existing comments and labels will be carried
+         with the file. Use this option if it is easy to transfer files
          from this system to the target system.""") % \
          (htmlColor('TextBlue')))
 
       lblBotHalf = QRichLabel(tr("""
          <center><b><u>Only Root Data</u></b></center>
          <br>
-         Same as above, but only five lines of text that are easy to 
-         print, email inline, or copy by hand.  Only produces the 
-         wallet addresses.   No comments or labels are carried with 
+         Same as above, but only five lines of text that are easy to
+         print, email inline, or copy by hand.  Only produces the
+         wallet addresses.   No comments or labels are carried with
          it."""))
 
       btnDone = QPushButton(tr('Done'))
       self.connect(btnDone, SIGNAL('clicked()'), self.accept)
 
 
-      frmButtons = makeVertFrame([clipboardBtn,    
-                                  expDataButton,   
-                                  printWODataButton,  
+      frmButtons = makeVertFrame([clipboardBtn,
+                                  expDataButton,
+                                  printWODataButton,
                                   clipboardLbl,
                                   'Stretch'])
       layoutBottom = QHBoxLayout()
@@ -11483,13 +11438,13 @@ class DlgExpWOWltData(ArmoryDialog):
                                       defaultFilename=currPath)
       if not saveLoc.endswith('.wallet'):
          saveLoc += '.wallet'
-      
+
       if not self.wlt.watchingOnly:
          self.wlt.forkOnlineWallet(saveLoc, self.wlt.labelName, \
                                 '(Watching-Only) ' + self.wlt.labelDescr)
       else:
          self.wlt.writeFreshWalletFile(saveLoc)
-         
+
 
 
    # The function that is executed when the user wants to save the watch-only
@@ -11528,7 +11483,7 @@ class DlgWODataPrintBackup(ArmoryDialog):
       # Label displayed above the sheet to be printed.
       lblDescr = QRichLabel(tr("""
          <b><u>Print Watch-Only Wallet Root</u></b><br><br>
-         The lines below are sufficient to calculate public keys 
+         The lines below are sufficient to calculate public keys
          for every private key ever produced by the full wallet.
          Importing this data to an online computer is sufficient
          to receive and verify transactions, and monitor balances,
@@ -11611,11 +11566,11 @@ class DlgWODataPrintBackup(ArmoryDialog):
       self.scene.newLine()
 
       warnMsg = tr("""
-         <b><font size=4><font color="#aa0000">WARNING:</font>  <u>This is not 
-         a wallet backup!</u></font></b>  
-         <br><br>Please make a regular digital or paper backup of your wallet 
-         of your wallet to keep it protected!  This data simply lets you 
-         monitor the funds in this wallet but gives you no ability to move any 
+         <b><font size=4><font color="#aa0000">WARNING:</font>  <u>This is not
+         a wallet backup!</u></font></b>
+         <br><br>Please make a regular digital or paper backup of your wallet
+         of your wallet to keep it protected!  This data simply lets you
+         monitor the funds in this wallet but gives you no ability to move any
          funds.""")
       self.scene.drawText(warnMsg, GETFONT('Var', 9), wrapWidth=wrap)
 
@@ -11625,7 +11580,7 @@ class DlgWODataPrintBackup(ArmoryDialog):
 
       # Print the wallet info.
       colRect, rowHgt = self.scene.drawColumn(['<b>Watch-Only Root Data</b>',
-                                               'Wallet ID:', 
+                                               'Wallet ID:',
                                                'Wallet Name:'])
       self.scene.moveCursor(15, 0)
       colRect, rowHgt = self.scene.drawColumn(['',
@@ -11768,7 +11723,7 @@ class DlgFragBackup(ArmoryDialog):
       else:
          self.securePrint = self.secureRoot + self.secureChain
 
-      self.chkSecurePrint = QCheckBox(tr(""" Use SecurePrint\xe2\x84\xa2 
+      self.chkSecurePrint = QCheckBox(tr(""" Use SecurePrint\xe2\x84\xa2
          to prevent exposing keys to printer or other devices"""))
 
       self.scrollArea = QScrollArea()
@@ -12446,7 +12401,7 @@ class DlgRestoreSingle(ArmoryDialog):
             return
       if nError > 0:
          pluralStr = 'error' if nError == 1 else 'errors'
-         
+
          msg = tr("""
             Detected %(error)d error in the data you entered.
             Armory attempted to fix the errors but it is not
@@ -12456,7 +12411,7 @@ class DlgRestoreSingle(ArmoryDialog):
             Armory attempted to fix the errors but it is not
             always right.  Be sure to verify the "Wallet Unique ID"
             closely on the next window.""") % { 'error' : nError }
-         
+
          QMessageBox.question(self, tr('Errors Corrected'), msg, \
             QMessageBox.Ok)
 
@@ -12538,7 +12493,7 @@ class DlgRestoreSingle(ArmoryDialog):
             nPool = max(nPool, dlgOwnWlt.Meta['naddress'])
 
       self.newWallet = PyBtcWallet()
-      
+
       if passwd:
          self.newWallet.createNewWallet( \
                                  plainRootKey=privKey, \
@@ -12573,9 +12528,9 @@ class DlgRestoreSingle(ArmoryDialog):
             for n_cmt in range(0, dlgOwnWlt.Meta['ncomments']):
                entrylist = []
                entrylist = list(dlgOwnWlt.Meta[n_cmt])
-               self.newWallet.walletFileSafeUpdate([[WLT_UPDATE_ADD, 
-                                                     entrylist[2], 
-                                                     entrylist[1], 
+               self.newWallet.walletFileSafeUpdate([[WLT_UPDATE_ADD,
+                                                     entrylist[2],
+                                                     entrylist[1],
                                                      entrylist[0]]])
 
          self.newWallet = PyBtcWallet().readWalletFile(self.newWallet.walletPath)
@@ -12600,15 +12555,15 @@ class DlgRestoreWOData(ArmoryDialog):
          lblDescr = QRichLabel(tr("""
          <b><u><font color="blue" size="4">Test a Watch-Only Wallet Restore
          </font></u></b><br><br>
-         Use this window to test the restoration of a watch-only wallet using 
-         the wallet's data. You can either type the data on a root data 
+         Use this window to test the restoration of a watch-only wallet using
+         the wallet's data. You can either type the data on a root data
          printout or import the data from a file."""))
       else:
          lblDescr = QRichLabel(tr("""
          <b><u><font color="blue" size="4">Restore a Watch-Only Wallet
          </font></u></b><br><br>
-         Use this window to restore a watch-only wallet using the wallet's 
-         data. You can either type the data on a root data printout or import 
+         Use this window to restore a watch-only wallet using the wallet's
+         data. You can either type the data on a root data printout or import
          the data from a file."""))
 
       # Create the line that will contain the imported ID.
@@ -12681,7 +12636,7 @@ class DlgRestoreWOData(ArmoryDialog):
    #############################################################################
    def loadWODataFile(self):
       '''Function for loading a root public key/chain code (\"pkcc\") file.'''
-      fn = self.main.getFileLoad(tr('Import Wallet File'), 
+      fn = self.main.getFileLoad(tr('Import Wallet File'),
                                  ffilter=[tr('Root Pubkey Text Files (*.rootpubkey)')])
       if not os.path.exists(fn):
          return
@@ -12889,7 +12844,7 @@ class DlgRestoreFragged(ArmoryDialog):
 
       self.lblRightFrm = QRichLabel('', hAlign=Qt.AlignHCenter)
       self.lblSecureStr = QRichLabel(tr('SecurePrint\xe2\x84\xa2 Code:'), \
-                                     hAlign=Qt.AlignHCenter, 
+                                     hAlign=Qt.AlignHCenter,
                                      doWrap=False,
                                      color='TextWarn')
       self.displaySecureString = QLineEdit()
@@ -13170,7 +13125,7 @@ class DlgRestoreFragged(ArmoryDialog):
             self.displaySecureString.setText(dlg.editSecurePrint.text())
          else:
             return
-         
+
       if self.fragIDPrefix == UNKNOWN:
          self.fragIDPrefix = idBase58.split('-')[0]
       elif not self.fragIDPrefix == idBase58.split('-')[0]:
@@ -13348,13 +13303,13 @@ class DlgRestoreFragged(ArmoryDialog):
                                  withEncrypt=False, \
                                  isActuallyNew=False, \
                                  doRegisterWithBDM=False)
-         
-         
+
+
       # Will pop up a little "please wait..." window while filling addr pool
       fillAddrPoolProgress = DlgProgress(self, self.parent, HBar=1,
                                          Title=tr("Computing New Addresses"))
       fillAddrPoolProgress.exec_(self.newWallet.fillAddressPool, nPool)
- 
+
       if dlgOwnWlt is not None:
          if dlgOwnWlt.Meta is not None:
             from armoryengine.PyBtcWallet import WLT_UPDATE_ADD
@@ -13483,19 +13438,19 @@ class DlgShowTestResults(ArmoryDialog):
 
 ################################################################################
 class DlgEnterSecurePrintCode(ArmoryDialog):
-   
+
    def __init__(self, parent, main):
       super(DlgEnterSecurePrintCode, self).__init__(parent, main)
-      
+
       lblSecurePrintCodeDescr = QRichLabel(tr("""
-         This fragment file requires a SecurePrint\xe2\x84\xa2 code.  
-         You will only have to enter this code once since it is the same 
+         This fragment file requires a SecurePrint\xe2\x84\xa2 code.
+         You will only have to enter this code once since it is the same
          on all fragments."""))
       lblSecurePrintCodeDescr.setMinimumWidth(440)
       self.lblSP = QRichLabel(tr('SecurePrint\xe2\x84\xa2 Code: '), doWrap=False)
       self.editSecurePrint = QLineEdit()
       spFrame = makeHorizFrame([self.lblSP, self.editSecurePrint, STRETCH])
-      
+
       self.btnAccept = QPushButton(tr("Done"))
       self.btnCancel = QPushButton(tr("Cancel"))
       self.connect(self.btnAccept, SIGNAL(CLICKED), self.verifySecurePrintCode)
@@ -13503,14 +13458,14 @@ class DlgEnterSecurePrintCode(ArmoryDialog):
       buttonBox = QDialogButtonBox()
       buttonBox.addButton(self.btnAccept, QDialogButtonBox.AcceptRole)
       buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
-      
+
       layout = QVBoxLayout()
       layout.addWidget(lblSecurePrintCodeDescr)
       layout.addWidget(spFrame)
       layout.addWidget(buttonBox)
       self.setLayout(layout)
       self.setWindowTitle(tr('Enter Secure Print Code'))
-      
+
    def verifySecurePrintCode(self):
       # Prepare the key mask parameters
       SECPRINT = HardcodedKeyMaskParams()
@@ -13687,7 +13642,7 @@ class DlgEnterOneFrag(ArmoryDialog):
    #############################################################################
    def isSecurePrintID(self):
       return hex_to_int(str(self.edtID.text()[:2])) > 127
-   
+
    #############################################################################
    def verifyUserInput(self):
       self.fragData = []
@@ -13882,12 +13837,12 @@ class DlgReplaceWallet(ArmoryDialog):
    #########
    def Replace(self):
       self.main.removeWalletFromApplication(self.WalletID)
-      
+
       datestr = RightNowStr('%Y-%m-%d-%H%M')
       homedir = os.path.dirname(self.wltPath)
 
       oldpath = os.path.join(homedir, self.WalletID, datestr)
-      try: 
+      try:
          if not os.path.exists(oldpath):
             os.makedirs(oldpath)
       except:
@@ -13913,8 +13868,8 @@ class DlgReplaceWallet(ArmoryDialog):
 
       metaProgress = DlgProgress(self, self.main, Title=tr('Ripping Meta Data'))
       getMeta = PyBtcWalletRecovery()
-      self.Meta = metaProgress.exec_(getMeta.ProcessWallet, 
-                                     WalletPath=self.wltPath,  
+      self.Meta = metaProgress.exec_(getMeta.ProcessWallet,
+                                     WalletPath=self.wltPath,
                                      Mode=RECOVERMODE.Meta,
                                      Progress=metaProgress.UpdateText)
       self.Replace()
@@ -13936,12 +13891,12 @@ class DlgWltRecoverWallet(ArmoryDialog):
       lblDesc = QRichLabel(tr("""
          <b>Wallet Recovery Tool:
          </b><br>
-         This tool will recover data from damaged or inconsistent 
+         This tool will recover data from damaged or inconsistent
          wallets.  Specify a wallet file and Armory will analyze the
-         wallet and fix any errors with it. 
+         wallet and fix any errors with it.
          <br><br>
          <font color="%(color)s">If any problems are found with the specified
-         wallet, Armory will provide explanation and instructions to 
+         wallet, Armory will provide explanation and instructions to
          transition to a new wallet. """) % { 'color' : htmlColor('TextWarn') })
       lblDesc.setScaledContents(True)
 
@@ -14005,21 +13960,21 @@ class DlgWltRecoverWallet(ArmoryDialog):
       layout_CheckH = QGridLayout()
       layout_CheckH.addWidget(self.rdbtnCheck, 0, 0, 1, 1)
       layout_CheckH.addWidget(lblCheck, 0, 1, 3, 19)
-      
+
 
       layoutMode = QGridLayout()
       layoutMode.addLayout(layout_StrippedH, 0, 0, 2, 4)
       layoutMode.addLayout(layout_BareH, 2, 0, 2, 4)
       layoutMode.addLayout(layout_FullH, 4, 0, 2, 4)
       layoutMode.addLayout(layout_CheckH, 6, 0, 3, 4)
-      
-      
+
+
       #self.rdnGroup = QButtonGroup()
       #self.rdnGroup.addButton(self.rdbtnStripped)
       #self.rdnGroup.addButton(self.rdbtnBare)
       #self.rdnGroup.addButton(self.rdbtnFull)
       #self.rdnGroup.addButton(self.rdbtnCheck)
-            
+
 
       layoutMgmt.addLayout(layoutMode, 5, 0, 9, 4)
       """
@@ -14030,7 +13985,7 @@ class DlgWltRecoverWallet(ArmoryDialog):
       layoutMgmt.addWidget(wltModeQF, 5, 0, 9, 4)
       wltModeQF.setVisible(False)
 
-         
+
       btnShowAllOpts = QLabelButton(tr("All Recovery Options>>>"))
       frmBtn = makeHorizFrame(['Stretch', btnShowAllOpts, 'Stretch'], STYLE_SUNKEN)
       layoutMgmt.addWidget(frmBtn, 5, 0, 9, 4)
@@ -14057,10 +14012,10 @@ class DlgWltRecoverWallet(ArmoryDialog):
          else:
             self.btnRecover.setEnabled(False)
             self.btnRecover.setToolTip(tr('The entered path does not exist'))
-            
+
       updateBtn('')
       self.connect(self.edtWalletPath, SIGNAL('textChanged(QString)'), updateBtn)
-      
+
 
       layoutMgmt.addLayout(layout_btnH, 14, 1, 1, 2)
 
@@ -14071,7 +14026,7 @@ class DlgWltRecoverWallet(ArmoryDialog):
       self.layout().setSizeConstraint(QLayout.SetFixedSize)
       self.setWindowTitle(tr('Wallet Recovery Tool'))
       self.setMinimumWidth(550)
-      
+
    def rdClicked(self):
       # TODO:  Why does this do nohting?  Was it a stub that was forgotten?
       LOGINFO("clicked")
@@ -14092,19 +14047,19 @@ class DlgWltRecoverWallet(ArmoryDialog):
             mode = RECOVERMODE.Check
 
          if mode==RECOVERMODE.Full and self.selectedWltID:
-            # Funnel all standard, full recovery operations through the 
-            # inconsistent-wallet-dialog.  
+            # Funnel all standard, full recovery operations through the
+            # inconsistent-wallet-dialog.
             wlt = self.main.walletMap[self.selectedWltID]
             dlgRecoveryUI = DlgCorruptWallet(wlt, [], self.main, self, False)
             dlgRecoveryUI.exec_(dlgRecoveryUI.doFixWallets())
          else:
-            # This is goatpig's original behavior - preserved for any 
+            # This is goatpig's original behavior - preserved for any
             # non-loaded wallets or non-full recovery operations.
             if self.selectedWltID:
                wlt = self.main.walletMap[self.selectedWltID]
             else:
                wlt = path
-            
+
             dlgRecoveryUI = DlgCorruptWallet(wlt, [], self.main, self, False)
             dlgRecoveryUI.exec_(dlgRecoveryUI.ProcessWallet(mode))
       else:
@@ -14157,7 +14112,7 @@ class DlgProgress(ArmoryDialog):
    Passing a string TProgress will draw a label with that string. It can be
    updated through UpdateText(str)
    """
-   def __init__(self, parent=None, main=None, Interrupt=None, HBar=None, 
+   def __init__(self, parent=None, main=None, Interrupt=None, HBar=None,
                 Title=None, TProgress=None):
 
       self.running = 1
@@ -14170,7 +14125,7 @@ class DlgProgress(ArmoryDialog):
       self.Title = Title
       self.TProgress = None
       self.procressDone = False
-      
+
       self.lock = threading.Lock()
       self.condVar = threading.Condition(self.lock)
 
@@ -14214,7 +14169,7 @@ class DlgProgress(ArmoryDialog):
 
       self.emit(SIGNAL('Update'), None, self.HBarCount*100 +progressVal)
       if progressVal >= 100:
-         self.HBarCount = self.HBarCount + 1      
+         self.HBarCount = self.HBarCount + 1
       return self.running
 
    def AskUnlock(self, wll):
@@ -14222,7 +14177,7 @@ class DlgProgress(ArmoryDialog):
       self.emit(SIGNAL('PromptPassphrase'), wll)
       self.condVar.wait()
       self.condVar.release()
-      
+
       return self.Passphrase
 
    def PromptPassphrase(self, wll):
@@ -14237,7 +14192,7 @@ class DlgProgress(ArmoryDialog):
          if dlg.Accepted == 1:
             self.Passphrase = dlg.securePassphrase.copy()
             dlg.securePassphrase.destroy()
-      
+
       self.condVar.notify()
       self.condVar.release()
 
@@ -14254,13 +14209,13 @@ class DlgProgress(ArmoryDialog):
       args[1:] is the argument list for that function
       will return the functions output in exec_thread.output, which is then
       returned by exec_
-      '''      
+      '''
       exec_thread = PyBackgroundThread(self.exec_async, *args, **kwargs)
       exec_thread.start()
-      
-      self.main.emit(SIGNAL('execTrigger'), self)    
+
+      self.main.emit(SIGNAL('execTrigger'), self)
       exec_thread.join()
-      
+
       if exec_thread.didThrowError():
          exec_thread.raiseLastError()
       else:
@@ -14269,7 +14224,7 @@ class DlgProgress(ArmoryDialog):
    def exec_async(self, *args, **kwargs):
       if len(args) > 0 and hasattr(args[0], '__call__'):
          func = args[0]
-         
+
          if not 'Progress' in kwargs:
             if self.HBar > 0: kwargs['Progress'] = self.UpdateHBar
             else: kwargs['Progress'] = self.UpdateText
@@ -14280,9 +14235,9 @@ class DlgProgress(ArmoryDialog):
             self.Kill()
             raise e
             pass
-         
-         self.Kill()  
-            
+
+         self.Kill()
+
          return rt
 
    def reject(self):
@@ -14367,7 +14322,7 @@ class DlgCorruptWallet(DlgProgress):
       self.isFixing = False
       self.needToSubmitLogs = False
       self.checkMode = RECOVERMODE.NotSet
-      
+
       self.lock = threading.Lock()
       self.condVar = threading.Condition(self.lock)
 
@@ -14388,8 +14343,8 @@ class DlgCorruptWallet(DlgProgress):
       lblDescr = QRichLabel(tr("""
          <font color="%(color)s" size=5><b><u>%(title)s</u></b></font>
          <br><br>
-         Armory software now detects and prevents certain kinds of 
-         hardware errors that could lead to problems with your wallet.  
+         Armory software now detects and prevents certain kinds of
+         hardware errors that could lead to problems with your wallet.
          <br> """) % { 'color' : htmlColor('TextWarn'), 'title' : titleStr })
 
       lblDescr.setAlignment(Qt.AlignCenter)
@@ -14397,19 +14352,19 @@ class DlgCorruptWallet(DlgProgress):
 
       if alreadyFailed:
          self.lblFirstMsg = QRichLabel(tr("""
-            Armory has detected that wallet file <b>Wallet "%(name)s" (%(id)s)</b> 
+            Armory has detected that wallet file <b>Wallet "%(name)s" (%(id)s)</b>
             is inconsistent and should be further analyzed to ensure that your
             funds are protected.
             <br><br>
-            <font color="%(color)s">This error will pop up every time you start 
+            <font color="%(color)s">This error will pop up every time you start
             Armory until the wallet has been analyzed and fixed!</font>""") % \
             { 'name' : wallet.labelName, 'id' : wallet.uniqueIDB58, 'color' :htmlColor('TextWarn')})
       elif isinstance(wallet, PyBtcWallet):
          self.lblFirstMsg = QRichLabel(tr("""
-            Armory will perform a consistency check on <b>Wallet "%(name)s" (%(id)s)</b> 
+            Armory will perform a consistency check on <b>Wallet "%(name)s" (%(id)s)</b>
             and determine if any further action is required to keep your funds
-            protected.  This check is normally performed on startup on all 
-            your wallets, but you can click below to force another 
+            protected.  This check is normally performed on startup on all
+            your wallets, but you can click below to force another
             check.""") % { 'name' : wallet.labelName, 'id' : wallet.uniqueIDB58  } )
       else:
          self.lblFirstMsg = QRichLabel('')
@@ -14431,7 +14386,7 @@ class DlgCorruptWallet(DlgProgress):
       saStatus.setWidget(self.QDS)
       saStatus.setMinimumHeight(250)
       saStatus.setMinimumWidth(500)
-      
+
 
       layoutButtons = QGridLayout()
       layoutButtons.setColumnStretch(0, 1)
@@ -14454,11 +14409,11 @@ class DlgCorruptWallet(DlgProgress):
       self.lblFixRdy.setAlignment(Qt.AlignCenter)
 
       self.frmBottomMsg = makeVertFrame(['Space(5)',
-                                         HLINE(), 
+                                         HLINE(),
                                          self.lblDescr2,
                                          self.lblFixRdy,
                                          HLINE()])
-      
+
       self.frmBottomMsg.setVisible(False)
 
 
@@ -14524,44 +14479,44 @@ class DlgCorruptWallet(DlgProgress):
 
    def ProcessWallet(self, mode=RECOVERMODE.Full):
       '''
-      Serves as the entry point for non processing wallets that arent loaded 
+      Serves as the entry point for non processing wallets that arent loaded
       or fully processed. Only takes 1 wallet at a time
       '''
       if len(self.walletList) > 0:
          wlt = None
          wltPath = ''
-         
-         if isinstance(self.walletList[0], str): 
+
+         if isinstance(self.walletList[0], str):
             wltPath = self.walletList[0]
          else:
             wlt = self.walletList[0]
-            
+
       self.lblDesc = QLabel('')
       self.QDSlo.addWidget(self.lblDesc)
-      
+
       self.lblFixRdy.hide()
-      self.adjustSize()      
-      
+      self.adjustSize()
+
       self.frmBottomMsg.setVisible(False)
       self.lblStatus.setVisible(True)
-      self.lblFirstMsg.setVisible(False)  
-                     
+      self.lblFirstMsg.setVisible(False)
+
       from armoryengine.PyBtcWalletRecovery import ParseWallet
       self.btnClose.setDisabled(True)
       self.btnFixWallets.setDisabled(True)
-      self.isFixing = True        
-      
+      self.isFixing = True
+
       self.checkMode = mode
-      ParseWallet(wltPath, wlt, mode, self, 
+      ParseWallet(wltPath, wlt, mode, self,
                              Progress=self.UpdateText, async=True)
-      
+
    def UpdateDlg(self, text=None, HBar=None, Title=None):
       if text is not None: self.lblDesc.setText(text)
       self.adjustSize()
 
    def accept(self):
-      self.main.emit(SIGNAL('checkForNegImports'))      
-      super(DlgCorruptWallet, self).accept()      
+      self.main.emit(SIGNAL('checkForNegImports'))
+      super(DlgCorruptWallet, self).accept()
 
    def reject(self):
       if not self.isFixing:
@@ -14590,7 +14545,7 @@ class DlgCorruptWallet(DlgProgress):
       self.isFixing = False
       self.frmBottomMsg.setVisible(True)
 
-      anyNegImports = False 
+      anyNegImports = False
       for fixer in fixerObjs:
          if len(fixer.negativeImports) > 0:
             anyNegImports = True
@@ -14604,9 +14559,9 @@ class DlgCorruptWallet(DlgProgress):
          self.main.statusBar().showMessage('Failed to fix wallets!', 150000)
       elif len(goodWallets) == len(fixedWallets) and not anyNegImports:
          self.lblDescr2.setText(tr("""
-            <font size=4 color="%(color)s"><b>Wallet consistent, nothing to 
+            <font size=4 color="%(color)s"><b>Wallet consistent, nothing to
             fix.</b></font>""", """
-            <font size=4 color="%(color)s"><b>Wallets consistent, nothing to 
+            <font size=4 color="%(color)s"><b>Wallets consistent, nothing to
             fix.</b></font>""",
             len(goodWallets)
             ) % { 'color' : htmlColor("TextBlue") })
@@ -14615,13 +14570,13 @@ class DlgCorruptWallet(DlgProgress):
             15000)
       elif len(fixedWallets) > 0 or anyNegImports:
          if self.checkMode != RECOVERMODE.Check:
-            self.lblDescr2.setText(tr(""" 
+            self.lblDescr2.setText(tr("""
                <font color="%s"><b>
-               <font size=4><b><u>There may still be issues with your 
+               <font size=4><b><u>There may still be issues with your
                wallet!</u></b></font>
                <br>
-               It is important that you send us the recovery logs 
-               and an email address so the Armory team can check for 
+               It is important that you send us the recovery logs
+               and an email address so the Armory team can check for
                further risk to your funds!</b></font>""") % \
                (htmlColor('TextWarn')))
             #self.main.statusBar().showMessage('Wallets fixed!', 15000)
@@ -14638,11 +14593,11 @@ class DlgCorruptWallet(DlgProgress):
       for wlt in wallets:
          newWallet = PyBtcWallet().readWalletFile(wlt)
          self.main.addWalletToApplication(newWallet, False)
-            
+
       self.main.emit(SIGNAL('checkForkedImport'))
 
 
-   # Decided that we can just add all the logic to 
+   # Decided that we can just add all the logic to
    #def checkForkedSubmitLogs(self):
       #forkedImports = []
       #for wlt in self.walletMap:
@@ -14664,7 +14619,7 @@ class DlgFactoryReset(ArmoryDialog):
          It is <i>strongly</i> recommended that you make backups of your
          wallets before continuing, though <b>wallet files will never be
          intentionally deleted!</b>  All Armory
-         wallet files, and the wallet.dat file used by Bitcoin-Qt/bitcoind
+         wallet files, and the wallet.dat file used by Bitcoin-Core/bitcoind
          should remain untouched in their current locations.  All Armory
          wallets will automatically be detected and loaded after the reset.
          <br><br>
@@ -14693,7 +14648,7 @@ class DlgFactoryReset(ArmoryDialog):
          <b>Also re-download the blockchain (most extreme)</b>"""))
       self.lblBitcoinDB = QRichLabel(tr("""
          This will delete settings, network data, Armory's databases,
-         <b>and</b> the Bitcoin software databases.  Bitcoin-Qt/bitcoind will
+         <b>and</b> the Bitcoin software databases.  Bitcoin-Core/bitcoind will
          have to download the blockchain again.  Only use this if you
          suspect blockchain corruption, such as receiving StdOut/StdErr errors
          on the dashboard (8-72 hours depending on your connection)"""))
@@ -14712,7 +14667,7 @@ class DlgFactoryReset(ArmoryDialog):
          txt.setWordWrap(False)
          optLayout.addWidget(makeHorizFrame([rdo, txt, 'Stretch']))
          optLayout.addWidget(lbl, 1,0, 1,3)
-         if len(optFrames)==2:  
+         if len(optFrames)==2:
             # Add option to disable deleting settings, on most extreme option
             optLayout.addWidget(self.chkSaveSettings, 2,0, 1,3)
          optFrames.append(QFrame())
@@ -14786,7 +14741,7 @@ class DlgFactoryReset(ArmoryDialog):
 
       elif self.rdoBitcoinDB.isChecked():
          msg = 'delete your settings and '
-         
+
          if self.chkSaveSettings.isChecked():
             msg = tr("""
                You are about to delete <b>all</b>
@@ -14803,10 +14758,10 @@ class DlgFactoryReset(ArmoryDialog):
                network again which can take from 8 to 72 hours depending on
                your system speed and connection.  <br><br><b>Are you absolutely
                sure you want to do this?</b>""")
-            
+
          reply = QMessageBox.warning(self, tr('Confirmation'), msg, \
             QMessageBox.Cancel | QMessageBox.Yes)
-            
+
          if not reply==QMessageBox.Yes:
             QMessageBox.warning(self, tr('Aborted'), tr("""
                   You canceled the factory reset operation.  No changes were
@@ -14818,11 +14773,11 @@ class DlgFactoryReset(ArmoryDialog):
          if not self.main.settings.get('ManageSatoshi'):
             # Must have user shutdown Bitcoin sw now, and delete DBs now
             reply = MsgBoxCustom(MSGBOX.Warning, tr('Restart Armory'), tr("""
-               <b>Bitcoin-Qt (or bitcoind) must be closed to do the reset!</b>
+               <b>Bitcoin-Core (or bitcoind) must be closed to do the reset!</b>
                Please close all Bitcoin software, <u><b>right now</b></u>,
                before clicking "Continue".
                <br><br>
-               Armory will now close.  Please restart Bitcoin-Qt/bitcoind
+               Armory will now close.  Please restart Bitcoin-Core/bitcoind
                first and wait for it to finish synchronizing before restarting
                Armory."""), wCancel=True, yesStr="Continue")
 
@@ -14853,7 +14808,7 @@ class DlgFactoryReset(ArmoryDialog):
          #  Always flag the rebuild, and del mempool and settings
          touchFile( os.path.join(ARMORY_HOME_DIR, 'rebuild.flag') )
          touchFile( os.path.join(ARMORY_HOME_DIR, 'clearmempool.flag'))
-         touchFile( os.path.join(ARMORY_HOME_DIR, 'cleartorrent.flag'))
+
          if not self.chkSaveSettings.isChecked():
             touchFile( os.path.join(ARMORY_HOME_DIR, 'delsettings.flag'))
          self.accept()
@@ -14872,49 +14827,49 @@ class DlgForkedImports(ArmoryDialog):
 
       descr1 = tr('<h2 style="color: red; text-align: center;">Forked imported addresses have been \
       detected in your wallets!!!</h2>')
-      
+
       descr2 = tr('The following wallets have forked imported addresses: <br><br><b>') + \
       '<br>'.join(walletList) + '</b>'
-      
+
       descr3 = tr('When you fix a corrupted wallet, any damaged private keys will be off \
       the determinstic chain. It means these private keys cannot be recreated \
       by your paper backup. If such private keys are encountered, Armory saves \
       them as forked imported private keys after it fixes the relevant wallets.')
-      
+
       descr4 = tr('<h1 style="color: orange;"> - Do not accept payments to these wallets anymore<br>\
       - Do not delete or overwrite these wallets. <br> \
       - Transfer all funds to a fresh and backed up wallet<h1>')
-      
+
       lblDescr1 = QRichLabel(descr1)
       lblDescr2 = QRichLabel(descr2)
       lblDescr3 = QRichLabel(descr3)
       lblDescr4 = QRichLabel(descr4)
-      
+
       layout2 = QVBoxLayout()
       layout2.addWidget(lblDescr2)
       frame2 = QFrame()
-      frame2.setLayout(layout2) 
+      frame2.setLayout(layout2)
       frame2.setFrameStyle(QFrame.StyledPanel)
-      
+
       layout4 = QVBoxLayout()
       layout4.addWidget(lblDescr4)
       frame4 = QFrame()
-      frame4.setLayout(layout4) 
-      frame4.setFrameStyle(QFrame.StyledPanel)      
-      
-      
+      frame4.setLayout(layout4)
+      frame4.setFrameStyle(QFrame.StyledPanel)
+
+
       self.btnOk = QPushButton('Ok')
       self.connect(self.btnOk, SIGNAL('clicked()'), self.accept)
-      
-      
-      layout = QVBoxLayout()      
+
+
+      layout = QVBoxLayout()
       layout.addWidget(lblDescr1)
       layout.addWidget(frame2)
-      layout.addWidget(lblDescr3)      
-      layout.addWidget(frame4)      
+      layout.addWidget(lblDescr3)
+      layout.addWidget(frame4)
       layout.addWidget(self.btnOk)
 
-      
+
       self.setLayout(layout)
       self.setMinimumWidth(600)
       self.setWindowTitle(tr('Forked Imported Addresses'))
@@ -14929,26 +14884,26 @@ class DlgBroadcastBlindTx(ArmoryDialog):
       self.pytx = None
 
       lblDescr = QRichLabel(tr("""
-         Copy a raw, hex-encoded transaction below to have Armory 
-         broadcast it to the Bitcoin network.  This function is 
-         provided as a convenience to expert users, and carries 
+         Copy a raw, hex-encoded transaction below to have Armory
+         broadcast it to the Bitcoin network.  This function is
+         provided as a convenience to expert users, and carries
          no guarantees of usefulness.
          <br><br>
-         Specifically, be aware of the following limitations of 
+         Specifically, be aware of the following limitations of
          this broadcast function:
          <ul>
             <li>The transaction will be "broadcast" by sending it
                 to the connected Bitcon Core instance which will
-                forward it to the rest of the Bitcoin network.  
-                However, if the transaction is non-standard or 
-                does not satisfy standard fee rules, Bitcoin Core 
-                <u>will</u> drop it and it 
-                will never be seen by the Bitcoin network. 
+                forward it to the rest of the Bitcoin network.
+                However, if the transaction is non-standard or
+                does not satisfy standard fee rules, Bitcoin Core
+                <u>will</u> drop it and it
+                will never be seen by the Bitcoin network.
             </li>
             <li>There will be no feedback as to whether the
                 transaction succeeded.  You will have to verify the
-                success of this operation via other means.  
-                However, if the transaction sends 
+                success of this operation via other means.
+                However, if the transaction sends
                 funds directly to or from an address in one of your
                 wallets, it will still generate a notification and show
                 up in your transaction history for that wallet.
@@ -14990,15 +14945,15 @@ class DlgBroadcastBlindTx(ArmoryDialog):
 
       self.setLayout(layout)
       self.setWindowTitle(tr("Broadcast Raw Transaction"))
-      
-      
+
+
    #############################################################################
    def txChanged(self):
       try:
          txt = str(self.txtRawTx.toPlainText()).strip()
          txt = ''.join(txt.split())  # removes all whitespace
          self.pytx = PyTx().unserialize(hex_to_binary(txt))
-         self.txtTxInfo.setPlainText(self.pytx.toString()) 
+         self.txtTxInfo.setPlainText(self.pytx.toString())
          LOGINFO('Valid tx entered:')
          LOGINFO(self.pytx.toString())
          self.setReady(True)
@@ -15006,7 +14961,7 @@ class DlgBroadcastBlindTx(ArmoryDialog):
          LOGEXCEPT('Failed to parse tx')
          self.setReady(False)
          self.pytx = None
-      
+
 
    #############################################################################
    def setReady(self, isTrue):
@@ -15015,7 +14970,7 @@ class DlgBroadcastBlindTx(ArmoryDialog):
       if not isTrue:
          self.txtTxInfo.setPlainText('')
          if len(str(self.txtRawTx.toPlainText()).strip()) > 0:
-            self.lblInvalid.setText(tr("""<font color="%s"><b>Raw transaction 
+            self.lblInvalid.setText(tr("""<font color="%s"><b>Raw transaction
             is invalid!</font></b>""") % htmlColor('TextWarn'))
 
 
@@ -15023,7 +14978,7 @@ class DlgBroadcastBlindTx(ArmoryDialog):
    def doBroadcast(self):
       txhash = self.pytx.getHash()
       self.main.NetworkingFactory.sendTx(self.pytx)
-      
+
       time.sleep(0.5)
       msg = PyMessage('getdata')
       msg.payload.invList.append( [MSG_INV_TX, txhash] )
@@ -15031,8 +14986,8 @@ class DlgBroadcastBlindTx(ArmoryDialog):
 
       hexhash = binary_to_hex(txhash, endOut=BIGENDIAN)
       if USE_TESTNET:
-         linkToExplorer = 'http://blockexplorer.com/testnet/tx/%s' % hexhash
-         dispToExplorer = 'http://blockexplorer.com/testnet/tx/%s...' % hexhash[:16]
+         linkToExplorer = 'https://testnet.blockexplorer.com/tx/%s' % hexhash
+         dispToExplorer = 'https://testnet.blockexplorer.com/tx/%s...' % hexhash[:16]
       else:
          linkToExplorer = 'https://blockchain.info/search/%s' % hexhash
          dispToExplorer = 'https://blockchain.info/search/%s...' % hexhash[:16]
@@ -15045,7 +15000,7 @@ class DlgBroadcastBlindTx(ArmoryDialog):
          main Bitcoin network, this will fail unless it was a standard
          transaction type.
 
-         The transaction 
+         The transaction
          had the following hash:
          <br><br>
          %(hexhash)s
@@ -15058,7 +15013,7 @@ class DlgBroadcastBlindTx(ArmoryDialog):
          { 'hexhash' : hexhash, 'link' : linkToExplorer, 'disp' : dispToExplorer}, QMessageBox.Ok)
 
       self.accept()
-      
+
 # #################################################################################
 # Commented out until announcements system fix
 # class DlgPrivacyPolicy(ArmoryDialog):
@@ -15149,7 +15104,7 @@ class DlgBroadcastBlindTx(ArmoryDialog):
 #
 #
 #       self.setWindowTitle(tr("Privacy Policy"))
-         
+
 
 #################################################################################
 class ArmorySplashScreen(QSplashScreen):
@@ -15159,8 +15114,8 @@ class ArmorySplashScreen(QSplashScreen):
       css = """
             QProgressBar{ text-align: center; font-size: 8px; }
             """
-      self.setStyleSheet(css)   
-      
+      self.setStyleSheet(css)
+
       self.progressBar = QProgressBar(self)
       self.progressBar.setMaximum(100)
       self.progressBar.setMinimum(0)
@@ -15169,10 +15124,10 @@ class ArmorySplashScreen(QSplashScreen):
       self.progressBar.setMaximumHeight(10)
       self.progressBar.setFormat(tr(\
          "%(title)s: %(pct)s%%") % { 'title' : "Loading", 'pct' : "%p" })
-                       
+
    def updateProgress(self, val):
       self.progressBar.setValue(val)
-      
+
 # Put circular imports at the end
 from ui.WalletFrames import SelectWalletFrame, WalletBackupFrame,\
    AdvancedOptionsFrame

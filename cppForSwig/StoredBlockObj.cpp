@@ -2,9 +2,15 @@
 //                                                                            //
 //  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
-//  See LICENSE or http://www.gnu.org/licenses/agpl.html                      //
+//  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
+//                                                                            //
+//                                                                            //
+//  Copyright (C) 2016, goatpig                                               //            
+//  Distributed under the MIT license                                         //
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                   
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
+
 #include <vector>
 #include <list>
 #include <map>
@@ -32,14 +38,14 @@ void StoredDBInfo::unserializeDBValue(BinaryRefReader & brr)
    {
       magic_.resize(0);
       topBlkHgt_ = UINT32_MAX;
-      topBlkHash_.resize(0);
+      metaHash_.resize(0);
       return;
    }
    brr.get_BinaryData(magic_, 4);
    BitUnpacker<uint32_t> bitunpack(brr);
    topBlkHgt_    = brr.get_uint32_t();
    appliedToHgt_ = brr.get_uint32_t();
-   brr.get_BinaryData(topBlkHash_, 32);
+   brr.get_BinaryData(metaHash_, 32);
 
    armoryVer_  =                 bitunpack.getBits(4);
    armoryType_ = (ARMORY_DB_TYPE)bitunpack.getBits(4);
@@ -61,7 +67,7 @@ void StoredDBInfo::serializeDBValue(BinaryWriter & bw ) const
    bw.put_BitPacker(bitpack);
    bw.put_uint32_t(topBlkHgt_); // top blk height
    bw.put_uint32_t(appliedToHgt_); // top blk height
-   bw.put_BinaryData(topBlkHash_);
+   bw.put_BinaryData(metaHash_);
 
    if (topScannedBlkHash_.getSize())
       bw.put_BinaryData(topScannedBlkHash_);
@@ -90,7 +96,7 @@ void StoredDBInfo::pprintOneLine(uint32_t indent)
    
    cout << "DBINFO: " 
         << " TopBlk: " << topBlkHgt_
-        << " , " << topBlkHash_.getSliceCopy(0,4).toHexStr().c_str()
+        << " , " << metaHash_.getSliceCopy(0,4).toHexStr().c_str()
         << endl;
 }
 
@@ -192,6 +198,9 @@ void DBBlock::createFromBlockHeader(const BlockHeader & bh)
    duplicateID_ = UINT8_MAX;
    isMainBranch_ = bh.isMainBranch();
    hasBlockHeader_ = true;
+
+   fileID_ = bh.getBlockFileNum();
+   offset_ = bh.getOffset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -222,6 +231,48 @@ void DBBlock::setHeaderData(BinaryData const & header80B)
    }
    dataCopy_.copyFrom(header80B);
    BtcUtils::getHash256(header80B, thisHash_);
+}
+
+/////////////////////////////////////////////////////////////////////////////
+void StoredHeader::unserializeSimple(BinaryRefReader brr)
+{
+   uint32_t height = blockHeight_;
+   uint8_t  dupid = duplicateID_;
+
+   vector<BinaryData> allTxHashes;
+   BlockHeader bh(brr);
+   uint32_t nTx = (uint32_t)brr.get_var_int();
+
+   createFromBlockHeader(bh);
+   numTx_ = nTx;
+
+   blockHeight_ = height;
+   duplicateID_ = dupid;
+
+   numBytes_ = HEADER_SIZE + BtcUtils::calcVarIntSize(numTx_);
+   if (dataCopy_.getSize() != HEADER_SIZE)
+   {
+      LOGERR << "Unserializing header did not produce 80-byte object!";
+      return;
+   }
+
+   if (numBytes_ > brr.getSize())
+   {
+      LOGERR << "Anticipated size of block header is more than what we have";
+      throw BlockDeserializingException();
+   }
+
+   BtcUtils::getHash256(dataCopy_, thisHash_);
+
+   for (uint32_t tx = 0; tx < nTx; tx++)
+   {
+      // gather tx hashes
+      Tx thisTx(brr);
+
+      StoredTx stx;
+      stx.thisHash_ = thisTx.getThisHash();
+      stxMap_[tx] = move(stx);
+   }
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -315,6 +366,12 @@ void StoredHeader::unserializeFullBlock(BinaryRefReader brr,
 
       // Finally, add the 
       stxMap_[tx] = stx;
+   }
+
+   if (nTx == 0 || nTx != allTxHashes.size())
+   {
+	   LOGERR << "Mismatch between numtx and allTxHashes.size() or 0 tx in block";
+	   throw BlockDeserializingException();
    }
 
    //compute the merkle root and compare to the header's
@@ -424,6 +481,9 @@ BlockHeader DBBlock::getBlockHeaderCopy(void) const
    bh.setBlockSize(numBytes_);
    bh.setDuplicateID(duplicateID_);
 
+   bh.setBlockFileNum(fileID_);
+   bh.setBlockFileOffset(offset_);
+
    return bh;
 }
 
@@ -468,6 +528,9 @@ void DBBlock::unserializeDBValue( DB_SELECT         db,
       duplicateID_ = DBUtils::hgtxToDupID(hgtx);
       BtcUtils::getHash256(dataCopy_, thisHash_);
       numBytes_ = brr.get_uint32_t();
+      numTx_ = brr.get_uint32_t();
+      fileID_ = brr.get_uint16_t();
+      offset_ = brr.get_uint64_t();
    }
    else if(db==BLKDATA)
    {
@@ -524,6 +587,9 @@ void DBBlock::serializeDBValue(
       bw.put_BinaryData(dataCopy_);
       bw.put_BinaryData(hgtx);
       bw.put_uint32_t(numBytes_);
+      bw.put_uint32_t(numTx_);
+      bw.put_uint16_t(fileID_);
+      bw.put_uint64_t(offset_);
    }
    else if(db==BLKDATA)
    {
@@ -1297,12 +1363,31 @@ void StoredScriptHistory::unserializeDBValue(BinaryRefReader & brr)
    alreadyScannedUpToBlk_ = brr.get_uint32_t();
    totalTxioCount_ = brr.get_var_int();
 
-   // We shouldn't end up with empty SSH's, but should catch it just in case
+   // We shouldn't end up with empty ssh's, but should catch it just in case
    if(totalTxioCount_==0)
       return;
    
    subHistMap_.clear();
-   totalUnspent_ = brr.get_uint64_t();
+
+   try
+   {
+      totalUnspent_ = brr.get_uint64_t();
+
+      //
+      auto sumSize = brr.get_uint32_t();
+      for (unsigned i = 0; i < sumSize; i++)
+      {
+         unsigned height = brr.get_var_int();
+         unsigned sum = brr.get_var_int();
+
+         subsshSummary_[height] = sum;
+      }
+   }
+   catch (BlockDeserializingException& e)
+   {
+      LOGERR << "invalid varint in StoredScriptHistory data";
+      throw e;
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1321,6 +1406,14 @@ void StoredScriptHistory::serializeDBValue(BinaryWriter & bw,
    bw.put_uint32_t(alreadyScannedUpToBlk_); 
    bw.put_var_int(totalTxioCount_); 
    bw.put_uint64_t(totalUnspent_);
+
+   //
+   bw.put_uint32_t(subsshSummary_.size());
+   for (auto& sum : subsshSummary_)
+   {
+      bw.put_var_int(sum.first);
+      bw.put_var_int(sum.second);
+   }
 }
 
 
@@ -1588,7 +1681,7 @@ void StoredScriptHistory::eraseTxio(const TxIOPair& txio)
 ////////////////////////////////////////////////////////////////////////////////
 // SubSSH object code
 //
-// If the SSH has more than one TxIO, then we put them into SubSSH objects,
+// If the ssh has more than one TxIO, then we put them into SubSSH objects,
 // which represent a list of TxIOs for the given block.  The complexity of
 // doing it this way seems unnecessary, but it actually works quite efficiently
 // for massively-reused addresses like SatoshiDice.
@@ -1871,7 +1964,7 @@ const TxIOPair* StoredSubHistory::markTxOutSpent(const BinaryData& txOutKey8B)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Since the outer-SSH object tracks total unspent balances, we need to pass 
+// Since the outer-ssh object tracks total unspent balances, we need to pass 
 // out the total amount that was deleted from the sub-history, and of course
 // return zero if nothing was removed.
 bool StoredSubHistory::eraseTxio(BinaryData const & dbKey8B)
@@ -1945,7 +2038,7 @@ uint64_t StoredSubHistory::getSubHistoryBalance(bool withMultisig)
    return bal;
 }
 ////////////////////////////////////////////////////////////////////////////////
-// This method will add the TxIOPair to the SSH object if it doesn't exist,
+// This method will add the TxIOPair to the ssh object if it doesn't exist,
 // in addition to marking it unspent.  
 //
 // If there is a 2-of-3 multisig scraddr M, which includes pubkeys, X, Y and Z,
@@ -1964,7 +2057,7 @@ uint64_t StoredSubHistory::getSubHistoryBalance(bool withMultisig)
 // involve a given scraddr, but don't automatically include them in any
 // balance or UTXO set calculations.
 //   
-// Returns the difference to be applied to totalUnspent_ in the outer SSH
+// Returns the difference to be applied to totalUnspent_ in the outer ssh
 // (unless it's UINT64_MAX which is interpretted as failure)
 void StoredSubHistory::markTxOutUnspent(const BinaryData& txOutKey8B, 
                                         uint64_t&  additionalSize,

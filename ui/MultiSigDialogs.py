@@ -732,7 +732,7 @@ class DlgLockboxManager(ArmoryDialog):
       self.ledgerView.hideColumn(LEDGERCOLS.TxHash)
       self.ledgerView.hideColumn(LEDGERCOLS.isCoinbase)
       self.ledgerView.hideColumn(LEDGERCOLS.toSelf)
-      self.ledgerView.hideColumn(LEDGERCOLS.DoubleSpend)
+      self.ledgerView.hideColumn(LEDGERCOLS.optInRBF)
 
       dateWidth    = tightSizeStr(self.ledgerView, '_9999-Dec-99 99:99pm__')[0]
       nameWidth    = tightSizeStr(self.ledgerView, '9'*32)[0]
@@ -1356,7 +1356,7 @@ class DlgLockboxManager(ArmoryDialog):
 
       if USE_TESTNET:
          blkExploreTitle = 'View on blockexplorer.com'
-         blkExploreURL   = 'http://blockexplorer.com/testnet/tx/%s' % txHash
+         blkExploreURL   = 'https://testnet.blockexplorer.com/tx/%s' % txHash
       else:
          blkExploreTitle = 'View on blockchain.info'
          blkExploreURL   = 'https://blockchain.info/tx/%s' % txHash
