@@ -295,7 +295,7 @@ USER_HOME_DIR    = ''
 BTC_HOME_DIR     = ''
 ARMORY_HOME_DIR  = ''
 ARMORY_DB_DIR      = ''
-SUBDIR = 'testnet3' if USE_TESTNET else '' + 'segnet' if USE_SEGNET else ''
+SUBDIR = 'testnet3' if USE_TESTNET else '' + 'segnet4' if USE_SEGNET else ''
 if OS_WINDOWS:
    OS_NAME         = 'Windows'
    OS_VARIANT      = platform.win32_ver()
@@ -389,7 +389,7 @@ if not CLI_OPTIONS.satoshiHome==DEFAULT:
       if os.path.exists(testnetTry):
          CLI_OPTIONS.satoshiHome = testnetTry
    if USE_SEGNET:
-      segnetTry = os.path.join(CLI_OPTIONS.satoshiHome, 'segnet')
+      segnetTry = os.path.join(CLI_OPTIONS.satoshiHome, 'segnet4')
       if os.path.exists(segnetTry):
          CLI_OPTIONS.satoshiHome = segnetTry
 
@@ -495,7 +495,7 @@ if not USE_TESTNET and not USE_SEGNET:
    BLOCKEXPLORE_URL_TX   = 'https://blockchain.info/tx/%s'
    BLOCKEXPLORE_URL_ADDR = 'https://blockchain.info/address/%s'
 else:
-   BITCOIN_PORT = 28333 if USE_SEGNET else 18333
+   BITCOIN_PORT = 28901 if USE_SEGNET else 18333
    BITCOIN_RPC_PORT = 18332
    ARMORY_RPC_PORT     = 18225
    if USE_TESTNET:
@@ -508,9 +508,9 @@ else:
       P2SHBYTE = '\xc4'
       PRIVKEYBYTE = '\xef'
    else:
-      MAGIC_BYTES  = '\x2e\x96\xea\xca'
-      GENESIS_BLOCK_HASH_HEX  = 'aa022fd26404d3a1f6ac348fc049996a52f40d833017c7ca3f05df8d519c5b0d'
-      GENESIS_BLOCK_HASH      = '\xaa\x02\x2f\xd2\x64\x04\xd3\xa1\xf6\xac\x34\x8f\xc0\x49\x99\x6a\x52\xf4\x0d\x83\x30\x17\xc7\xca\x3f\x05\xdf\x8d\x51\x9c\x5b\x0d'
+      MAGIC_BYTES  = '\xdc\xab\xa1\xc4'
+      GENESIS_BLOCK_HASH_HEX  = 'b291211d4bb2b7e1b7a4758225e69e50104091a637213d033295c010f55ffb18'
+      GENESIS_BLOCK_HASH      = '\xb2\x91\x21\x1d\x4b\xb2\xb7\xe1\xb7\xa4\x75\x82\x25\xe6\x9e\x50\x10\x40\x91\xa6\x37\x21\x3d\x03\x32\x95\xc0\x10\xf5\x5f\xfb\x18'
       GENESIS_TX_HASH_HEX     = '3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a'
       GENESIS_TX_HASH         = ';\xa3\xed\xfdz{\x12\xb2z\xc7,>gv\x8fa\x7f\xc8\x1b\xc3\x88\x8aQ2:\x9f\xb8\xaaK\x1e^J'
       ADDRBYTE = '\x1e'
