@@ -513,7 +513,7 @@ class Tx
    friend class BlockDataManager_LevelDB;
 
 public:
-   Tx(void) : isInitialized_(false), offsetsTxIn_(0), offsetsTxOut_(0) {}
+   Tx(void) : isInitialized_(false), offsetsTxIn_(0), offsetsTxOut_(0), offsetsWitness_(0) {}
    explicit Tx(uint8_t const * ptr, uint32_t size) { unserialize(ptr, size); }
    explicit Tx(BinaryRefReader & brr)     { unserialize(brr);       }
    explicit Tx(BinaryData const & str)    { unserialize(str);       }
@@ -530,10 +530,12 @@ public:
    //bool               isMainBranch(void) const;
    bool               isInitialized(void) const { return isInitialized_; }
    bool               isCoinbase(void) const;
+   bool               usesWitness(void) const;
 
    /////////////////////////////////////////////////////////////////////////////
    size_t             getTxInOffset(uint32_t i) const  { return offsetsTxIn_[i]; }
    size_t             getTxOutOffset(uint32_t i) const { return offsetsTxOut_[i]; }
+   size_t             getWitnessOffset(uint32_t i) const { return  offsetsWitness_[i]; }
 
    /////////////////////////////////////////////////////////////////////////////
    static Tx          createFromStr(BinaryData const & bd) {return Tx(bd);}
@@ -545,6 +547,7 @@ public:
 
    /////////////////////////////////////////////////////////////////////////////
    BinaryData         serialize(void) const    { return dataCopy_; }
+   BinaryData         serializeNoWitness(void) const { return dataNoWitness_; };
 
    /////////////////////////////////////////////////////////////////////////////
    void unserialize(uint8_t const * ptr, size_t size);
@@ -603,7 +606,7 @@ private:
    BinaryData    dataCopy_;
    bool          isInitialized_;
    bool          usesWitness_;
-   BinaryData    normData_;
+   BinaryData    dataNoWitness_;
 
    uint32_t      version_;
    uint32_t      lockTime_;

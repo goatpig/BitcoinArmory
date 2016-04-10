@@ -782,6 +782,9 @@ class PyTx(BlockComponent):
    def copy(self):
       return PyTx().unserialize(self.serialize())
 
+   def copyWithoutWitness(self):
+      return PyTx().unserialize(self.serializeWithoutWitness())
+
 
    def makeRecipientsList(self):
       """
@@ -973,7 +976,7 @@ def generatePreHashTxMsgToSign(pytx, txInIndex, prevTxOutScript, hashcode=1):
       return None
 
    # Create a copy of the tx with all scripts blanked out
-   txCopy = pytx.copy()
+   txCopy = pytx.copyWithoutWitness()
    for i in range(len(txCopy.inputs)):
       txCopy.inputs[i].binScript = ''
 
