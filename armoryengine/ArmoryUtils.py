@@ -65,8 +65,8 @@ DEFAULT = 'DEFAULT'
 LEVELDB_BLKDATA = 'leveldb_blkdata'
 LEVELDB_HEADERS = 'leveldb_headers'
 
-# Version Numbers 
-BTCARMORY_VERSION    = (0, 94,  1, 0)  # (Major, Minor, Bugfix, AutoIncrement) 
+# Version Numbers
+BTCARMORY_VERSION    = (0, 94,  1, 0)  # (Major, Minor, Bugfix, AutoIncrement)
 PYBTCWALLET_VERSION  = (1, 35,  0, 0)  # (Major, Minor, Bugfix, AutoIncrement)
 
 # ARMORY_DONATION_ADDR = '1ArmoryXcfq7TnCSuZa9fQjRYwJ4bkRKfv'
@@ -91,6 +91,7 @@ parser.add_option("--satoshi-rpcport", dest="satoshiRpcport",default=DEFAULT,typ
 #parser.add_option("--bitcoind-path",   dest="bitcoindPath",default='DEFAULT', type="str",         help="Path to the location of bitcoind on your system")
 parser.add_option("--dbdir",           dest="armoryDBDir",  default=DEFAULT, type='str',          help="Location to store blocks database (defaults to --datadir)")
 parser.add_option("--rpcport",         dest="rpcport",     default=DEFAULT, type="str",          help="RPC port for running armoryd.py")
+parser.add_option("--rpcbindaddr",     dest="rpcBindAddr", default="127.0.0.1", type="str",      help="IP Address to bind to for RPC.")
 parser.add_option("--testnet",         dest="testnet",     default=False,     action="store_true", help="Use the testnet protocol")
 parser.add_option("--offline",         dest="offline",     default=False,     action="store_true", help="Force Armory to run in offline mode")
 parser.add_option("--nettimeout",      dest="nettimeout",  default=2,         type="int",          help="Timeout for detecting internet connection at startup")
@@ -288,12 +289,12 @@ SUBDIR = 'testnet3' if USE_TESTNET else ''
 if OS_WINDOWS:
    OS_NAME         = 'Windows'
    OS_VARIANT      = platform.win32_ver()
-   
+
    import ctypes
    buffer = ctypes.create_unicode_buffer(u'\0' * 260)
    rt = ctypes.windll.shell32.SHGetFolderPathW(0, 26, 0, 0, ctypes.byref(buffer))
    USER_HOME_DIR = unicode(buffer.value)
-               
+
    BTC_HOME_DIR    = os.path.join(USER_HOME_DIR, 'Bitcoin', SUBDIR)
    ARMORY_HOME_DIR = os.path.join(USER_HOME_DIR, 'Armory', SUBDIR)
    BLKFILE_DIR     = os.path.join(BTC_HOME_DIR, 'blocks')
@@ -392,7 +393,7 @@ if not CLI_OPTIONS.datadir==DEFAULT:
       # If user has no permission to create the directory
       # pass so that the default value remains
       # This condition will be checked after the main
-      # constructor completes so that a warning dialog 
+      # constructor completes so that a warning dialog
       # can be displayed
       pass
 # Same for the directory that holds the LevelDB databases
@@ -407,7 +408,7 @@ if not CLI_OPTIONS.armoryDBDir==DEFAULT:
       # If user has no permission to create the directory
       # pass so that the default value remains
       # This condition will be checked after the main
-      # constructor completes so that a warning dialog 
+      # constructor completes so that a warning dialog
       # can be displayed
       pass
 
@@ -490,7 +491,7 @@ else:
    P2SHBYTE = '\xc4'
    PRIVKEYBYTE = '\xef'
 
-   # 
+   #
    BLOCKEXPLORE_NAME     = 'blockexplorer.com'
    BLOCKEXPLORE_URL_TX   = 'https://testnet.blockexplorer.com/tx/%s'
    BLOCKEXPLORE_URL_ADDR = 'https://testnet.blockexplorer.com/address/%s'
@@ -648,7 +649,7 @@ def subprocess_check_output(*popenargs, **kwargs):
       from subprocess import CalledProcessError
    else:
       from subprocess_win import CalledProcessError
-      
+
    process = launchProcess(*popenargs, **kwargs)
    output, unused_err = process.communicate()
    retcode = process.poll()
@@ -671,7 +672,7 @@ def killProcessTree(pid):
       from subprocess import Popen, PIPE
    else:
       from subprocess_win import Popen, PIPE
-      
+
    if not OS_LINUX:
       for child in psutil.Process(pid).get_children():
          killProcess(child.pid)
@@ -793,14 +794,14 @@ def chopLogFile(filename, size):
          logFile.seek(0,0)
       logLines = logFile.readlines()
       logFile.close()
-   
+
       nBytes,nLines = 0,0;
       for line in logLines[::-1]:
          nBytes += len(line)
          nLines += 1
          if nBytes>size:
             break
-   
+
       logFile = open(filename, 'w')
       for line in logLines[-nLines:]:
          logFile.write(line)
@@ -935,7 +936,7 @@ elif os.path.exists(fileRebuild):
 
    if os.path.exists(fileRescan):
       os.remove(fileRescan)
-      
+
    if os.path.exists(fileRescanBalance):
       os.remove(fileRescanBalance)
 
@@ -945,7 +946,7 @@ elif os.path.exists(fileRescan):
    LOGINFO('Found %s, will throw out saved history, rescan' % fileRescan)
    os.remove(fileRescan)
    CLI_OPTIONS.rescan = True
-   
+
    if os.path.exists(fileRescanBalance):
       os.remove(fileRescanBalance)
 
@@ -953,15 +954,15 @@ elif os.path.exists(fileRescanBalance):
    LOGINFO('Found %s, will rescan balances' % fileRescanBalance)
    os.remove(fileRescanBalance)
    CLI_OPTIONS.rescanBalance = True
-   
+
 CLI_OPTIONS.clearMempool = False
 if os.path.exists(fileClrMempool):
    # Flag to clear all ZC transactions from database
    LOGINFO('Found %s, will destroy all zero conf transaction in DB' % fileClrMempool)
    os.remove(fileClrMempool)
-   
+
    CLI_OPTIONS.clearMempool = True
-   
+
 
 # Separately, we may want to delete the settings file, which couldn't
 # be done easily from the GUI, because it frequently gets rewritten to
@@ -1470,7 +1471,7 @@ def hash160_to_p2sh_script(binStr20):
 
    from Transaction import getOpCode
    from Script import scriptPushData
-   outScript = ''.join([  getOpCode('OP_HASH160'), 
+   outScript = ''.join([  getOpCode('OP_HASH160'),
                           scriptPushData(binStr20),
                           getOpCode('OP_EQUAL')])
    return outScript
@@ -1503,10 +1504,10 @@ def pubkey_to_p2pk_script(binStr33or65):
 # will do that by default.  If you require a different order, pre-sort them
 # and pass withSort=False.
 #
-# NOTE:  About the hardcoded bytes in here: the mainnet addrByte and P2SH  
+# NOTE:  About the hardcoded bytes in here: the mainnet addrByte and P2SH
 #        bytes are hardcoded into DB format.  This means that
 #        that any ScrAddr object will use the mainnet prefix bytes, regardless
-#        of whether it is in testnet.  
+#        of whether it is in testnet.
 def pubkeylist_to_multisig_script(pkList, M, withSort=True):
 
    if sum([  (0 if len(pk) in [33,65] else 1)   for pk in pkList]) > 0:
@@ -1531,11 +1532,11 @@ def pubkeylist_to_multisig_script(pkList, M, withSort=True):
 
 ################################################################################
 def scrAddr_to_script(scraddr):
-   """ 
-   Convert a scrAddr string (used by BDM) to the correct TxOut script 
-   Note this only works for P2PKH and P2SH scraddrs.  Multi-sig and 
+   """
+   Convert a scrAddr string (used by BDM) to the correct TxOut script
+   Note this only works for P2PKH and P2SH scraddrs.  Multi-sig and
    all non-standard scripts cannot be derived from scrAddrs.  In a way,
-   a scrAddr is intended to be an intelligent "hash" of the script, 
+   a scrAddr is intended to be an intelligent "hash" of the script,
    and it's a perk that most of the time we can reverse it to get the script.
    """
    if len(scraddr)==0:
@@ -1799,7 +1800,7 @@ def RightNowUTC():
 
 def RightNowStr(fmt=DEFAULT_DATE_FORMAT):
    return unixTimeToFormatStr(RightNow(), fmt)
-   
+
 
 # Define all the hashing functions we're going to need.  We don't actually
 # use any of the first three directly (sha1, sha256, ripemd160), we only
@@ -2406,7 +2407,7 @@ def CreateQRMatrix(dataToEncode, errLevel=QRErrorCorrectLevel.L):
    baseSz = 4 if errLevel == QRErrorCorrectLevel.L else \
             5 if errLevel == QRErrorCorrectLevel.M else \
             6 if errLevel == QRErrorCorrectLevel.Q else \
-            7 # errLevel = QRErrorCorrectLevel.H 
+            7 # errLevel = QRErrorCorrectLevel.H
    sz = baseSz if dataLen < 70 else  5 +  (dataLen - 70) / 30
    qrmtrx = [[]]
    while sz<20:
@@ -3734,14 +3735,14 @@ class ArmoryInstanceListener(Protocol):
       LOGINFO('Received data from alternate Armory instance')
       self.factory.func_recv_data(data)
       self.transport.loseConnection()
-      
+
 ############################################
 class ArmoryListenerFactory(ClientFactory):
    protocol = ArmoryInstanceListener
    def __init__(self, fn_conn_made, fn_recv_data):
       self.func_conn_made = fn_conn_made
       self.func_recv_data = fn_recv_data
-      
+
 # Check general internet connection
 # Do not Check when ForceOnline is true
 def isInternetAvailable(forceOnline = False):
