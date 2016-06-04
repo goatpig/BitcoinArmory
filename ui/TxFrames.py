@@ -109,7 +109,12 @@ class SendBitcoinsFrame(ArmoryFrame):
       self.ttipUnsigned = self.main.createToolTipWidget(\
          'Check this box to create an unsigned transaction to be signed'
          ' and/or broadcast later.')
+      self.ttipRbf = self.main.createToolTipWidget(\
+         'Check this box to create a transaction which uses Opt-In Replace-By-Fee.'
+         ' This allows the transaction to be replaced at a later date by one which'
+         ' has a higher fee.')
       self.unsignedCheckbox = QCheckBox('Create Unsigned')
+      self.rbfCheckbox = QCheckBox('Use RBF')
       self.btnSend = QPushButton('Send!')
       self.btnCancel = QPushButton('Cancel')
       self.connect(self.btnCancel, SIGNAL(CLICKED), parent.reject)
@@ -145,7 +150,13 @@ class SendBitcoinsFrame(ArmoryFrame):
       if self.sendCallback:
          self.connect(self.btnSend, SIGNAL(CLICKED), self.createTxAndBroadcast)
          buttonList.append(self.btnSend)
-         
+
+      # In Expert usermode, allow the user to use RBF
+      if self.main.usermode == USERMODE.Expert:
+         componentList.insert(2, self.ttipRbf)
+         componentList.insert(3, self.rbfCheckbox)
+
+
       txFrm = makeHorizFrame(componentList, condenseMargins=True)
       buttonFrame = makeHorizFrame(buttonList, condenseMargins=True)
       btnEnterURI = QPushButton('Manually Enter "bitcoin:" Link')
@@ -763,7 +774,7 @@ class SendBitcoinsFrame(ArmoryFrame):
 
          # Now create the unsigned USTX
          ustx = UnsignedTransaction().createFromTxOutSelection( \
-                                       utxoSelect, scriptValPairs, pubKeyMap)
+                                       utxoSelect, scriptValPairs, pubKeyMap, usesRBF=self.rbfCheckbox.isChecked())
 
       #ustx.pprint()
 
