@@ -2,7 +2,12 @@
 //                                                                            //
 //  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
-//  See LICENSE or http://www.gnu.org/licenses/agpl.html                      //
+//  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
+//                                                                            //
+//                                                                            //
+//  Copyright (C) 2016, goatpig                                               //            
+//  Distributed under the MIT license                                         //
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                   
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -89,6 +94,8 @@ class FoundAllBlocksException {};
 
 class debug_replay_blocks {};
 
+class BlockFiles;
+class DatabaseBuilder;
 
 ////////////////////////////////////////////////////////////////////////////////
 class BlockDataManager_LevelDB
@@ -139,6 +146,9 @@ private:
    Blockchain blockchain_;
 
    BDM_state BDMstate_ = BDM_offline;
+
+   shared_ptr<BlockFiles> blockFiles_;
+   shared_ptr<DatabaseBuilder> dbBuilder_;
 
 
 public:
@@ -195,7 +205,9 @@ public:
    void doInitialSyncOnLoad(const ProgressCallback &progress);
    void doInitialSyncOnLoad_Rescan(const ProgressCallback &progress);
    void doInitialSyncOnLoad_Rebuild(const ProgressCallback &progress);
-   
+   void doInitialSyncOnLoad_RescanBalance(
+      const ProgressCallback &progress);
+
    // for testing only
    struct BlkFileUpdateCallbacks
    {
@@ -209,25 +221,7 @@ private:
       const ProgressCallback &progress,
       bool doRescan=false
    );
-   void loadBlockData(
-      ProgressReporter &prog,
-      const BlockFilePosition &stopAt,
-      bool updateDupID
-   );
-   void loadBlockHeadersFromDB(const ProgressCallback &progress);
-   pair<BlockFilePosition, vector<BlockHeader*> >
-      loadBlockHeadersStartingAt(
-         ProgressReporter &prog,
-         const BlockFilePosition &fileAndOffset
-      );
    
-   void deleteHistories(void);
-   void wipeHistoryAndHintDB(void);
-
-   void addRawBlockToDB(BinaryRefReader & brr, bool updateDupID = true);
-   uint32_t findFirstBlockToScan(void);
-   void findFirstBlockToApply(void);
-
 public:
 
    BinaryData applyBlockRangeToDB(ProgressReporter &prog, 
@@ -240,13 +234,11 @@ public:
    uint8_t getValidDupIDForHeight(uint32_t blockHgt) const
    { return iface_->getValidDupIDForHeight(blockHgt); }
 
-   ScrAddrFilter* getScrAddrFilter(void) const;
+   shared_ptr<ScrAddrFilter> getScrAddrFilter(void) const;
 
 
    StoredHeader getMainBlockFromDB(uint32_t hgt) const;
    StoredHeader getBlockFromDB(uint32_t hgt, uint8_t dup) const;
-
-   void repairBlockDataDB(set<BinaryData>& missingBlocksByHash);
 
 public:
 
@@ -272,8 +264,6 @@ public:
    bool startSideScan(
       const function<void(const vector<string>&, double prog,unsigned time)> &cb
    );
-
-   void wipeScrAddrsSSH(const vector<BinaryData>& saVec);
 
    bool isRunning(void) const { return BDMstate_ != BDM_offline; }
    bool isReady(void) const   { return BDMstate_ == BDM_ready; }

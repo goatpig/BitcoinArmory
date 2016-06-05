@@ -66,20 +66,17 @@ LEVELDB_BLKDATA = 'leveldb_blkdata'
 LEVELDB_HEADERS = 'leveldb_headers'
 
 # Version Numbers 
-BTCARMORY_VERSION    = (0, 93,  3, 0)  # (Major, Minor, Bugfix, AutoIncrement) 
+BTCARMORY_VERSION    = (0, 94,  1, 0)  # (Major, Minor, Bugfix, AutoIncrement) 
 PYBTCWALLET_VERSION  = (1, 35,  0, 0)  # (Major, Minor, Bugfix, AutoIncrement)
 
-ARMORY_DONATION_ADDR = '1ArmoryXcfq7TnCSuZa9fQjRYwJ4bkRKfv'
-ARMORY_DONATION_PUBKEY = ( '04'
-      '11d14f8498d11c33d08b0cd7b312fb2e6fc9aebd479f8e9ab62b5333b2c395c5'
-      'f7437cab5633b5894c4a5c2132716bc36b7571cbe492a7222442b75df75b9a84')
+# ARMORY_DONATION_ADDR = '1ArmoryXcfq7TnCSuZa9fQjRYwJ4bkRKfv'
+# ARMORY_DONATION_PUBKEY = ( '04'
+#       '11d14f8498d11c33d08b0cd7b312fb2e6fc9aebd479f8e9ab62b5333b2c395c5'
+#       'f7437cab5633b5894c4a5c2132716bc36b7571cbe492a7222442b75df75b9a84')
 ARMORY_INFO_SIGN_ADDR = '1NWvhByxfTXPYNT4zMBmEY3VL8QJQtQoei'
 ARMORY_INFO_SIGN_PUBLICKEY = ('04'
       'af4abc4b24ef57547dd13a1110e331645f2ad2b99dfe1189abb40a5b24e4ebd8'
       'de0c1c372cc46bbee0ce3d1d49312e416a1fa9c7bb3e32a7eb3867d1c6d1f715')
-SATOSHI_PUBLIC_KEY = ( '04'
-      'fc9702847840aaf195de8442ebecedf5b095cdbb9bc716bda9110971b28a49e0'
-      'ead8564ff0db22209e0374782c093bb899692d524e9d6a6956e7c5ecbcd68284')
 
 
 indent = ' '*3
@@ -88,9 +85,9 @@ haveGUI = [False, None]
 parser = optparse.OptionParser(usage="%prog [options]\n")
 parser.add_option("--settings",        dest="settingsPath",default=DEFAULT, type="str",          help="load Armory with a specific settings file")
 parser.add_option("--datadir",         dest="datadir",     default=DEFAULT, type="str",          help="Change the directory that Armory calls home")
-parser.add_option("--satoshi-datadir", dest="satoshiHome", default=DEFAULT, type='str',          help="The Bitcoin-Qt/bitcoind home directory")
-parser.add_option("--satoshi-port",    dest="satoshiPort", default=DEFAULT, type="str",          help="For Bitcoin-Qt instances operating on a non-standard port")
-parser.add_option("--satoshi-rpcport", dest="satoshiRpcport",default=DEFAULT,type="str",         help="RPC port Bitcoin-Qt instances operating on a non-standard port")
+parser.add_option("--satoshi-datadir", dest="satoshiHome", default=DEFAULT, type='str',          help="The Bitcoin-Core/bitcoind home directory")
+parser.add_option("--satoshi-port",    dest="satoshiPort", default=DEFAULT, type="str",          help="For Bitcoin-Core instances operating on a non-standard port")
+parser.add_option("--satoshi-rpcport", dest="satoshiRpcport",default=DEFAULT,type="str",         help="RPC port Bitcoin-Core instances operating on a non-standard port")
 #parser.add_option("--bitcoind-path",   dest="bitcoindPath",default='DEFAULT', type="str",         help="Path to the location of bitcoind on your system")
 parser.add_option("--dbdir",           dest="armoryDBDir",  default=DEFAULT, type='str',          help="Location to store blocks database (defaults to --datadir)")
 parser.add_option("--rpcport",         dest="rpcport",     default=DEFAULT, type="str",          help="RPC port for running armoryd.py")
@@ -108,9 +105,10 @@ parser.add_option("--skip-stats-report", dest="skipStatsReport", default=False, 
 parser.add_option("--skip-announce-check",dest="skipAnnounceCheck", default=False, action="store_true", help="Do not query for Armory announcements")
 parser.add_option("--tor",             dest="useTorSettings", default=False, action="store_true", help="Enable common settings for when Armory connects through Tor")
 parser.add_option("--keypool",         dest="keypool",     default=100, type="int",                help="Default number of addresses to lookahead in Armory wallets")
-parser.add_option("--redownload",      dest="redownload",  default=False,     action="store_true", help="Delete Bitcoin-Qt/bitcoind databases; redownload")
+parser.add_option("--redownload",      dest="redownload",  default=False,     action="store_true", help="Delete Bitcoin-Core/bitcoind databases; redownload")
 parser.add_option("--rebuild",         dest="rebuild",     default=False,     action="store_true", help="Rebuild blockchain database and rescan")
 parser.add_option("--rescan",          dest="rescan",      default=False,     action="store_true", help="Rescan existing blockchain DB")
+parser.add_option("--rescanBalance",   dest="rescanBalance", default=False,     action="store_true", help="Rescan balance")
 parser.add_option("--disable-torrent", dest="disableTorrent", default=False,     action="store_true", help="Only download blockchain data via P2P network (slow)")
 parser.add_option("--test-announce", dest="testAnnounceCode", default=False,     action="store_true", help="Only used for developers needing to test announcement code with non-offline keys")
 parser.add_option("--nospendzeroconfchange",dest="ignoreAllZC",default=False, action="store_true", help="All zero-conf funds will be unspendable, including sent-to-self coins")
@@ -123,8 +121,14 @@ parser.add_option("--enable-detsign", dest="enableDetSign", action="store_true",
 parser.add_option("--supernode", dest="enableSupernode", default=False, action="store_true", help="Enabled Exhaustive Blockchain Tracking")
 parser.set_defaults(enableDetSign=True)
 
+# Get the host operating system
+opsys = platform.system()
+OS_WINDOWS = 'win32'  in opsys.lower() or 'windows' in opsys.lower()
+OS_LINUX   = 'nix'    in opsys.lower() or 'nux'     in opsys.lower()
+OS_MACOSX  = 'darwin' in opsys.lower() or 'osx'     in opsys.lower()
+
 # Pre-10.9 OS X sometimes passes a process serial number as -psn_0_xxxxxx. Nuke!
-if sys.platform == 'darwin':
+if OS_MACOSX:
    parser.add_option('-p', '--psn')
 
 # These are arguments passed by running unit-tests that need to be handled
@@ -230,11 +234,6 @@ class P2SHNotSupportedError(Exception): pass
 class NonBase58CharacterError(Exception): pass
 class isMSWallet(Exception): pass
 
-# Get the host operating system
-opsys = platform.system()
-OS_WINDOWS = 'win32'  in opsys.lower() or 'windows' in opsys.lower()
-OS_LINUX   = 'nix'    in opsys.lower() or 'nux'     in opsys.lower()
-OS_MACOSX  = 'darwin' in opsys.lower() or 'osx'     in opsys.lower()
 
 
 if getattr(sys, 'frozen', False):
@@ -320,12 +319,6 @@ else:
    print '***Unknown operating system!'
    print '***Cannot determine default directory locations'
 
-# Get the host operating system
-opsys = platform.system()
-OS_WINDOWS = 'win32'  in opsys.lower() or 'windows' in opsys.lower()
-OS_LINUX   = 'nix'    in opsys.lower() or 'nux'     in opsys.lower()
-OS_MACOSX  = 'darwin' in opsys.lower() or 'osx'     in opsys.lower()
-
 BLOCKCHAINS = {}
 BLOCKCHAINS['\xf9\xbe\xb4\xd9'] = "Main Network"
 BLOCKCHAINS['\xfa\xbf\xb5\xda'] = "Old Test Network"
@@ -375,7 +368,7 @@ def readVersionInt(verInt):
    verList.append( int(verStr[:-7       ]) )
    return tuple(verList[::-1])
 
-# Allow user to override default bitcoin-qt/bitcoind home directory
+# Allow user to override default bitcoin-core/bitcoind home directory
 if not CLI_OPTIONS.satoshiHome==DEFAULT:
    success = True
    if USE_TESTNET:
@@ -499,8 +492,8 @@ else:
 
    # 
    BLOCKEXPLORE_NAME     = 'blockexplorer.com'
-   BLOCKEXPLORE_URL_TX   = 'http://blockexplorer.com/testnet/tx/%s'
-   BLOCKEXPLORE_URL_ADDR = 'http://blockexplorer.com/testnet/address/%s'
+   BLOCKEXPLORE_URL_TX   = 'https://testnet.blockexplorer.com/tx/%s'
+   BLOCKEXPLORE_URL_ADDR = 'https://testnet.blockexplorer.com/address/%s'
 
 # These are the same regardless of network
 # They are the way data is stored in the database which is network agnostic
@@ -559,14 +552,14 @@ if not CLI_OPTIONS.satoshiPort == DEFAULT:
    try:
       BITCOIN_PORT = int(CLI_OPTIONS.satoshiPort)
    except:
-      raise TypeError('Invalid port for Bitcoin-Qt, using ' + str(BITCOIN_PORT))
+      raise TypeError('Invalid port for Bitcoin-Core, using ' + str(BITCOIN_PORT))
 
 ################################################################################
 if not CLI_OPTIONS.satoshiRpcport == DEFAULT:
    try:
       BITCOIN_RPC_PORT = int(CLI_OPTIONS.satoshiRpcport)
    except:
-      raise TypeError('Invalid rpc port for Bitcoin-Qt, using ' + str(BITCOIN_RPC_PORT))
+      raise TypeError('Invalid rpc port for Bitcoin-Core, using ' + str(BITCOIN_RPC_PORT))
 
 ################################################################################
 if not CLI_OPTIONS.rpcport == DEFAULT:
@@ -917,10 +910,11 @@ fileRebuild     = os.path.join(ARMORY_HOME_DIR, 'rebuild.flag')
 fileRescan      = os.path.join(ARMORY_HOME_DIR, 'rescan.flag')
 fileDelSettings = os.path.join(ARMORY_HOME_DIR, 'delsettings.flag')
 fileClrMempool  = os.path.join(ARMORY_HOME_DIR, 'clearmempool.flag')
+fileRescanBalance  = os.path.join(ARMORY_HOME_DIR, 'rescanbalance.flag')
 
 # Flag to remove everything in Bitcoin dir except wallet.dat (if requested)
 if os.path.exists(fileRedownload):
-   # Flag to remove *BITCOIN-QT* databases so it will have to re-download
+   # Flag to remove *BITCOIN-Core* databases so it will have to re-download
    LOGINFO('Found %s, will delete Bitcoin DBs & redownload' % fileRedownload)
 
    os.remove(fileRedownload)
@@ -941,15 +935,25 @@ elif os.path.exists(fileRebuild):
 
    if os.path.exists(fileRescan):
       os.remove(fileRescan)
+      
+   if os.path.exists(fileRescanBalance):
+      os.remove(fileRescanBalance)
 
    CLI_OPTIONS.rebuild = True
+
 elif os.path.exists(fileRescan):
    LOGINFO('Found %s, will throw out saved history, rescan' % fileRescan)
    os.remove(fileRescan)
-   if os.path.exists(fileRebuild):
-      os.remove(fileRebuild)
    CLI_OPTIONS.rescan = True
+   
+   if os.path.exists(fileRescanBalance):
+      os.remove(fileRescanBalance)
 
+elif os.path.exists(fileRescanBalance):
+   LOGINFO('Found %s, will rescan balances' % fileRescanBalance)
+   os.remove(fileRescanBalance)
+   CLI_OPTIONS.rescanBalance = True
+   
 CLI_OPTIONS.clearMempool = False
 if os.path.exists(fileClrMempool):
    # Flag to clear all ZC transactions from database
@@ -971,7 +975,7 @@ if os.path.exists(fileDelSettings):
 ################################################################################
 def deleteBitcoindDBs():
    if not os.path.exists(BTC_HOME_DIR):
-      LOGERROR('Could not find Bitcoin-Qt/bitcoind home dir to remove blk data')
+      LOGERROR('Could not find Bitcoin-Core/bitcoind home dir to remove blk data')
       LOGERROR('  Does not exist: %s' % BTC_HOME_DIR)
    else:
       LOGINFO('Found bitcoin home dir, removing blocks and databases')
@@ -3705,14 +3709,14 @@ class FakeTDM(object):
       self.removeOldTorrentFile = lambda: None
 
 
-DISABLE_TORRENTDL = CLI_OPTIONS.disableTorrent
+#DISABLE_TORRENTDL = CLI_OPTIONS.disableTorrent
 TheTDM = FakeTDM()
-try:
-   import torrentDL
-   TheTDM = torrentDL.TorrentDownloadManager()
-except:
-   LOGEXCEPT('Failed to import torrent downloader')
-   DISABLE_TORRENTDL = True
+#try:
+#   import torrentDL
+#   TheTDM = torrentDL.TorrentDownloadManager()
+#except:
+   #LOGEXCEPT('Failed to import torrent downloader')
+DISABLE_TORRENTDL = True
 
 # We only use BITTORRENT for mainnet
 if USE_TESTNET:

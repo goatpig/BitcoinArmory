@@ -298,6 +298,8 @@ class BlockDataManager(object):
          mode = 2
       elif CLI_OPTIONS.rescan:
          mode = 1
+      elif CLI_OPTIONS.rescanBalance:
+         mode = 3
       else:
          mode = 0
          
@@ -312,7 +314,7 @@ class BlockDataManager(object):
       blkdir = ""
       
       if forInit == False:
-      # Check for the existence of the Bitcoin-Qt directory         
+      # Check for the existence of the Bitcoin-Core directory         
          if not os.path.exists(self.btcdir):
             raise FileExistsError, ('Directory does not exist: %s' % self.btcdir)
    

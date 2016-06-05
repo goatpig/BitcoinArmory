@@ -655,7 +655,6 @@ class PyTx(BlockComponent):
       self.outputs    = UNINITIALIZED
       self.lockTime   = 0
       self.thisHash   = UNINITIALIZED
-      self.optInRBF   = False
 
    def serialize(self):
       binOut = BinaryPacker()
@@ -683,8 +682,7 @@ class PyTx(BlockComponent):
       for i in xrange(numInputs):
          txin = PyTxIn().unserialize(txData);
          self.inputs.append( txin )
-         if txin.intSeq < (2**32 - 1) - 1:
-            self.optInRBF = True
+
       numOutputs = txData.get(VAR_INT)
       for i in xrange(numOutputs):
          self.outputs.append( PyTxOut().unserialize(txData) )
@@ -743,8 +741,6 @@ class PyTx(BlockComponent):
       print indstr + indent + 'Outputs: '
       for out in self.outputs:
          out.pprint(nIndent+2, endian=endian)
-      if self.optInRBF:
-         print indstr + indent + 'Opted into Replace-By-Fee'
 
    def toString(self, nIndent=0, endian=BIGENDIAN):
       indstr = indent*nIndent
@@ -762,8 +758,7 @@ class PyTx(BlockComponent):
       for out in self.outputs:
          result = ''.join([result, '\n',  out.toString(nIndent+2, endian=endian)])
       return result
-      if self.optInRBF:
-         result = ''.join([result, '\n',   indstr + indent + 'Opted Into Replace-By-Fee'])
+
 
    def fetchCpp(self):
       """ Use the info in this PyTx to get the C++ version from TheBDM """
@@ -790,7 +785,8 @@ class PyTx(BlockComponent):
          print binary_to_hex(bu.get(BINARY_CHUNK,scriptSz))
       print binary_to_hex(bu.get(BINARY_CHUNK, 4))
 
-
+   def isRBF(self):
+      return TheBDM.bdv().isRBF(self.getHash())
 
 
 # Use to identify status of individual sigs on an UnsignedTxINPUT
@@ -2084,7 +2080,8 @@ class UnsignedTransaction(AsciiSerializable):
          ustxiList.append(UnsignedTxInput(pyPrevTx.serialize(), 
                                           txoIdx, 
                                           p2sh, 
-                                          pubKeyMap))
+                                          pubKeyMap,
+                                          None, None, None, None, txin.intSeq))
 
 
 
@@ -2105,7 +2102,7 @@ class UnsignedTransaction(AsciiSerializable):
 
    #############################################################################
    def createFromTxOutSelection(self, utxoSelection, scriptValuePairs,
-                                pubKeyMap=None, txMap=None, p2shMap=None):
+                                pubKeyMap=None, txMap=None, p2shMap=None, usesRBF=False):
 
       totalUtxoSum = sumTxOutList(utxoSelection)
       totalOutputSum = sum([a[1] for a in scriptValuePairs])
@@ -2144,7 +2141,10 @@ class UnsignedTransaction(AsciiSerializable):
          txin = PyTxIn()
          txin.outpoint = PyOutPoint()
          txin.binScript = ''
-         txin.intSeq = 2**32-1
+         if usesRBF:
+            txin.intSeq = 2**32-1 - 2
+         else:
+            txin.intSeq
 
          txhash = utxo.getTxHash()
          txoIdx  = utxo.getTxOutIndex()
@@ -2858,12 +2858,14 @@ def getUnspentTxOutsForAddr160List(addr160List):
             if addr!='ROOT':
                scrAddrList.append(Hash160ToScrAddr(addr))
       
-      try:
-         utxoList = TheBDM.bdv().getUnspentTxoutsForAddr160List(scrAddrList, IGNOREZC)
-      except:
-         raise AddressUnregisteredError
-      
-      return utxoList
+
+      from CoinSelection import PyUnspentTxOut
+      utxoList = TheBDM.bdv().getUnspentTxoutsForAddr160List(scrAddrList, IGNOREZC)
+      pyUtxoList = []
+      for utxo in utxoList:
+         pyUtxoList.append(PyUnspentTxOut().createFromCppUtxo(utxo))
+
+      return pyUtxoList
    
    else:
       return []

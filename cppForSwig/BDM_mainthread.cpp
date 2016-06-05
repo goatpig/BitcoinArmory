@@ -2,7 +2,7 @@
 //                                                                            //
 //  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
-//  See LICENSE or http://www.gnu.org/licenses/agpl.html                      //
+//  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 #include "BDM_mainthread.h"
@@ -289,12 +289,13 @@ try
          if (mode == 0) bdm->doInitialSyncOnLoad(loadProgress);
          else if (mode == 1) bdm->doInitialSyncOnLoad_Rescan(loadProgress);
          else if (mode == 2) bdm->doInitialSyncOnLoad_Rebuild(loadProgress);
+         else if (mode == 3) bdm->doInitialSyncOnLoad_RescanBalance(loadProgress);
 
          if (bdm->missingBlockHashes().size() || bdm->missingBlockHeaderHashes().size())
          {
             string errorMsg(
                "Armory has detected an error in the blockchain database "
-               "maintained by the third-party Bitcoin software (Bitcoin-Qt "
+               "maintained by the third-party Bitcoin software (Bitcoin-Core "
                "or bitcoind). This error is not fatal, but may lead to "
                "incorrect balances, inability to send coins, or application "
                "instability."
@@ -366,9 +367,9 @@ try
       if(bdv->getZCflag())
       {
          bdv->flagRescanZC(false);
-         if (bdv->parseNewZeroConfTx() == true)
+         auto&& newZCTxHash = bdv->parseNewZeroConfTx();
+         if (newZCTxHash.size() > 0)
          {
-            set<BinaryData> newZCTxHash = bdv->getNewZCTxHash();
             bdv->scanWallets();
 
             vector<LedgerEntry> newZCLedgers;
@@ -407,15 +408,19 @@ try
       }
 
       const uint32_t prevTopBlk = bdm->readBlkFileUpdate();
-      if(prevTopBlk > 0)
+      if(prevTopBlk != 0)
       {
          bdv->scanWallets(prevTopBlk);
 
          //notify Python that new blocks have been parsed
-         int nNewBlocks = bdm->blockchain().top().getBlockHeight() + 1
+         StoredDBInfo sdbi;
+         pimpl->bdm->getIFace()->getStoredDBInfo(SUBSSH, sdbi);
+         
+
+         int nNewBlocks = sdbi.topBlkHgt_ + 1
             - prevTopBlk;
          callback->run(BDMAction_NewBlock, &nNewBlocks,
-            bdm->getTopBlockHeight()
+            sdbi.topBlkHgt_
          );
       }
       

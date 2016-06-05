@@ -2,9 +2,15 @@
 //                                                                            //
 //  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
-//  See LICENSE or http://www.gnu.org/licenses/agpl.html                      //
+//  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
+//                                                                            //
+//                                                                            //
+//  Copyright (C) 2016, goatpig                                               //            
+//  Distributed under the MIT license                                         //
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                   
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
+
 #ifndef _STORED_BLOCK_OBJ_
 #define _STORED_BLOCK_OBJ_
 
@@ -61,8 +67,12 @@ enum DB_SELECT
 {
    HEADERS,
    BLKDATA,
+   SSH,
+   SUBSSH,
    HISTORY,
+   STXO,
    TXHINTS,
+   ZERO_CONF,
    COUNT
 };
 
@@ -214,7 +224,8 @@ public:
 class StoredDBInfo
 {
 public:
-   StoredDBInfo(void)
+   StoredDBInfo(void) :
+      metaHash_(BtcUtils::EmptyHash_)
    {}
 
    bool isInitialized(void) const { return magic_.getSize() > 0; }
@@ -232,9 +243,9 @@ public:
 
    BinaryData      magic_;
    uint32_t        topBlkHgt_=0;
-   BinaryData      topBlkHash_; //hash of last block commited
-   BinaryData      topScannedBlkHash_; //commited to SSH
-   uint32_t        appliedToHgt_=0; // only used in BLKDATA DB
+   BinaryData      metaHash_; //32 bytes
+   BinaryData      topScannedBlkHash_; //32 bytes
+   uint32_t        appliedToHgt_=0;
    uint32_t        armoryVer_=ARMORY_DB_VERSION;
    ARMORY_DB_TYPE  armoryType_=ARMORY_DB_WHATEVER;
    DB_PRUNE_TYPE   pruneType_=DB_PRUNE_WHATEVER;
@@ -319,6 +330,7 @@ public:
    // leter check that it
    uint32_t          unserArmVer_;
    uint32_t          unserDbType_;
+   unsigned          parentTxOutCount_ = 0;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -477,7 +489,7 @@ public:
 
    // We don't actually enforce these members.  They're solely for recording
    // the values that were unserialized with everything else, so that we can
-   // leter check that DB data matches what we were expecting
+   // later check that DB data matches what we were expecting
    uint32_t        unserArmVer_;
    uint32_t        unserBlkVer_;
    ARMORY_DB_TYPE  unserDbType_;
@@ -485,6 +497,9 @@ public:
    MERKLE_SER_TYPE unserMkType_;
    
    bool hasBlockHeader_=false;
+
+   size_t offset_;
+   uint16_t fileID_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -507,6 +522,8 @@ public:
    virtual void unserializeFullBlock(BinaryRefReader brr,
       bool doFrag = true,
       bool withPrefix8 = false);
+
+   void unserializeSimple(BinaryRefReader);
 
    bool serializeFullBlock(BinaryWriter & bw) const;
    void setKeyData(uint32_t hgt, uint8_t dupID = UINT8_MAX);
@@ -658,8 +675,9 @@ public:
    uint32_t       alreadyScannedUpToBlk_;
    uint64_t       totalTxioCount_;
    uint64_t       totalUnspent_;
+   map<unsigned, unsigned> subsshSummary_;
 
-   // If this SSH has only one TxIO (most of them), then we don't bother
+   // If this ssh has only one TxIO (most of them), then we don't bother
    // with supplemental entries just to hold that one TxIO in the DB.
    // We always stored them in RAM using the StoredSubHistory 
    // objects which will have the per-block lists of TxIOs.  But when 
