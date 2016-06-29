@@ -12,8 +12,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 void BlockchainScanner::scan(uint32_t scanFrom)
 {
-   unique_lock<mutex> lock(scrAddrFilter_->mergeLock_);
-
    scanFrom = check_merkle(scanFrom);
    if (scanFrom == UINT32_MAX)
       return;
@@ -132,11 +130,11 @@ void BlockchainScanner::scan_nocheck(uint32_t scanFrom)
                targetHeight = topBlock.getBlockHeight();
          }
 
-         #ifdef _DEBUG
+         /*#ifdef _DEBUG
             targetHeight = startHeight + totalThreadCount_;
             if(targetHeight > topBlock.getBlockHeight())
                targetHeight = topBlock.getBlockHeight();
-         #endif
+         #endif*/
 
          endHeight = targetHeight;
 
@@ -413,10 +411,10 @@ void BlockchainScanner::scanBlockData(shared_ptr<BlockDataBatch> batch)
             stxo.spentness_ = TXOUT_SPENT;
             stxo.spentByTxInKey_ = txinkey;
 
-            //if this tx's hash was never pulled, let's add it to the stxo's
-            //parent hash, in order to keep track of this tx in the hint db
-            if (txn.txHash_.getSize() == 0)
-               stxo.parentHash_ = move(txn.getHash());
+            //set spenderHash and parentTxOutCount to count and hash tallying
+            //of spent txouts
+            stxo.spenderHash_ = txn.getHash();
+            stxo.parentTxOutCount_ = txn.txouts_.size();
 
             //add to ssh_
             auto& ssh = batch->ssh_[stxo.getScrAddress()];
@@ -466,11 +464,17 @@ void BlockchainScanner::accumulateDataBeforeBatchWrite(
    {
       auto utxoIter = utxoMap_.find(spentTxOut.parentHash_);
       if (utxoIter == utxoMap_.end())
+      {
+         LOGERR << "stxo parent hash not in utxo map";
          continue;
+      }
 
       auto idIter = utxoIter->second.find(spentTxOut.txOutIndex_);
       if (idIter == utxoIter->second.end())
+      {
+         LOGERR << "stxo txoutid not in utxo map";
          continue;
+      }
 
       utxoIter->second.erase(idIter);
       if (utxoIter->second.size() == 0)
@@ -533,8 +537,6 @@ void BlockchainScanner::writeBlockData(
       //serialize data
       map<BinaryData, BinaryWriter> serializedSubSSH;
       map<BinaryData, BinaryWriter> serializedStxo;
-      map<BinaryData, BinaryWriter> serializedTxHints;
-      map<BinaryData, StoredTxHints> txHints;
 
       {
          for (auto& batchPtr : batchLinkPtr->batchVec_)
@@ -559,21 +561,13 @@ void BlockchainScanner::writeBlockData(
             for (auto& utxomap : batchPtr->utxos_)
             {
                auto&& txHashPrefix = utxomap.first.getSliceCopy(0, 4);
-               StoredTxHints& stxh = txHints[txHashPrefix];
-               if (stxh.txHashPrefix_.getSize() == 0)
-                  stxh.txHashPrefix_ = txHashPrefix;
-
 
                for (auto& utxo : utxomap.second)
                {
-                  stxh.dbKeyList_.push_back(utxo.second.getDBKeyOfParentTx());
-
                   auto& bw = serializedStxo[utxo.second.getDBKey()];
                   utxo.second.serializeDBValue(
                      bw, ARMORY_DB_BARE, DB_PRUNE_NONE, true);
                }
-               
-               stxh.preferredDBKey_ = stxh.dbKeyList_.front();
             }
          }
       }
@@ -708,22 +702,30 @@ void BlockchainScanner::processAndCommitTxHints(
             addTxHintMap(utxomap);
          }
          
+         map<BinaryData, map<unsigned, StoredTxOut>> spentTxOutMap;
          for (auto& stxo : batchPtr->spentTxOuts_)
          {
-            //if this stxo has no parent hash, it means the hash was flagged
-            //by a utxo, we can skip this
-            if (stxo.parentHash_.getSize() == 0)
-               continue;
+            auto& stxomap = spentTxOutMap[stxo.spenderHash_];
+            StoredTxOut spentstxo;
+            spentstxo.parentHash_ = stxo.spenderHash_;
+            spentstxo.blockHeight_ = 
+               DBUtils::hgtxToHeight(stxo.spentByTxInKey_.getSliceRef(0, 4));
+            spentstxo.duplicateID_ = 
+               DBUtils::hgtxToDupID(stxo.spentByTxInKey_.getSliceRef(0, 4));
 
-            //spoof the object for addTxHintMap
-            pair<BinaryData, map<unsigned, StoredTxOut>> stxomap;
-            
-            stxomap.first = stxo.parentHash_;
-            //unsigned value in map is unused for tallying txhints
-            stxomap.second.insert(make_pair(0, stxo));
+            spentstxo.txIndex_ = 
+               READ_UINT16_BE(stxo.spentByTxInKey_.getSliceRef(4, 2));
+            spentstxo.txOutIndex_ = 
+               READ_UINT16_BE(stxo.spentByTxInKey_.getSliceRef(6, 2));
 
-            addTxHintMap(stxomap);
+            spentstxo.parentTxOutCount_ = stxo.parentTxOutCount_;
+
+            stxomap.insert(move(
+               make_pair(spentstxo.txOutIndex_, move(spentstxo))));
          }
+
+         for (auto& stxomap : spentTxOutMap)
+            addTxHintMap(stxomap);
       }
    }
 
@@ -915,7 +917,7 @@ void BlockchainScanner::updateSSH(bool force)
    db_->beginDBTransaction(&putsshtx, SSH, LMDB::ReadWrite);
 
    auto& scrAddrMap = scrAddrFilter_->getScrAddrMap();
-   for (auto& scrAddr : scrAddrMap)
+   for (auto& scrAddr : *scrAddrMap)
    {
       auto& ssh = sshMap_[scrAddr.first];
 
@@ -972,7 +974,7 @@ void BlockchainScanner::undo(Blockchain::ReorganizationState& reorgState)
 {
    //dont undo subssh, these are skipped by dupID when loading history
 
-   BlockHeader* blockPtr = reorgState.prevTopBlock;
+   BlockHeader* blockPtr = reorgState.prevTop;
    map<uint32_t, BlockFileMapPointer> fileMaps_;
 
    map<DB_SELECT, set<BinaryData>> keysToDelete;
@@ -980,7 +982,7 @@ void BlockchainScanner::undo(Blockchain::ReorganizationState& reorgState)
    set<BinaryData> undoSpentness; //TODO: add spentness DB
 
    //TODO: sanity checks on header ptrs from reorgState
-   if (reorgState.prevTopBlock->getBlockHeight() <=
+   if (reorgState.prevTop->getBlockHeight() <=
        reorgState.reorgBranchPoint->getBlockHeight())
       throw runtime_error("invalid reorg state");
 
@@ -1149,7 +1151,7 @@ void BlockchainScanner::undo(Blockchain::ReorganizationState& reorgState)
 
       //go thourgh all ssh in scrAddrFilter
       auto& scrAddrMap = scrAddrFilter_->getScrAddrMap();
-      for (auto& scrAddr : scrAddrMap)
+      for (auto& scrAddr : *scrAddrMap)
       {
          auto& ssh = sshMap[scrAddr.first];
          

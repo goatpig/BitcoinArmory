@@ -8749,12 +8749,6 @@ class DlgSettings(ArmoryDialog):
       # self.chkSkipVersionCheck.setChecked(skipVerChk)
 
 
-      self.chkDisableTorrent = QCheckBox(tr("""
-         Disable torrent download (force synchronization via Bitcoin P2P)"""))
-      disableTorrent = self.main.getSettingOrSetDefault('DisableTorrent', False)
-      self.chkDisableTorrent.setChecked(disableTorrent)
-
-
       ##########################################################################
       #  Privacy Settings
       # privacyStats = self.main.getSettingOrSetDefault('SkipStatsReport', False)
@@ -9067,8 +9061,6 @@ class DlgSettings(ArmoryDialog):
       frmLayout.addWidget(frmMgmt, i, 0, 1, 3)
       i += 1
       frmLayout.addWidget(self.chkSkipOnlineCheck, i, 0, 1, 3)
-      i += 1
-      frmLayout.addWidget(self.chkDisableTorrent, i, 0, 1, 3)
 
       i += 1
       frmLayout.addWidget(HLINE(), i, 0, 1, 3)
@@ -9269,7 +9261,6 @@ class DlgSettings(ArmoryDialog):
 
       self.main.writeSetting('ManageSatoshi', self.chkManageSatoshi.isChecked())
       self.main.writeSetting('SkipOnlineCheck', self.chkSkipOnlineCheck.isChecked())
-      self.main.writeSetting('DisableTorrent', self.chkDisableTorrent.isChecked())
 
       # Reset the DNAA flag as needed
       askuriDNAA = self.chkAskURIAtStartup.isChecked()
@@ -14815,7 +14806,6 @@ class DlgFactoryReset(ArmoryDialog):
          #  Always flag the rebuild, and del mempool and settings
          touchFile( os.path.join(ARMORY_HOME_DIR, 'rebuild.flag') )
          touchFile( os.path.join(ARMORY_HOME_DIR, 'clearmempool.flag'))
-         touchFile( os.path.join(ARMORY_HOME_DIR, 'cleartorrent.flag'))
          if not self.chkSaveSettings.isChecked():
             touchFile( os.path.join(ARMORY_HOME_DIR, 'delsettings.flag'))
          self.accept()

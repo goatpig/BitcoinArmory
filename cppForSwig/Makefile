@@ -25,13 +25,21 @@ endif
 #**************************************************************************
 LINK = $(CXX)
 
-OBJS = UniversalTimer.o BinaryData.o lmdb_wrapper.o StoredBlockObj.o \
-	BtcUtils.o BlockObj.o BlockUtils.o EncryptionUtils.o \
+OBJS_Client = UniversalTimer.o BinaryData.o \
+	BtcUtils.o DBUtils.o EncryptionUtils.o \
+	BDM_seder.o DataObject.o FcgiMessage.o \
+	SocketObject.o SwigClient.o \
+	TxClasses.o libcryptopp.a
+
+OBJS_Server = UniversalTimer.o BinaryData.o lmdb_wrapper.o \
+	BtcUtils.o DBUtils.o BlockObj.o BlockUtils.o EncryptionUtils.o \
 	BtcWallet.o LedgerEntry.o ScrAddrObj.o Blockchain.o \
 	BDM_mainthread.o lmdbpp.o BDM_supportClasses.o \
 	BlockDataViewer.o HistoryPager.o Progress.o \
-	libcryptopp.a mdb.o midl.o txio.o \
-	DatabaseBuilder.o BlockchainScanner.o BlockDataMap.o
+	mdb.o midl.o txio.o TxClasses.o StoredBlockObj.o \
+	DatabaseBuilder.o BlockchainScanner.o BlockDataMap.o \
+	DataObject.o BitcoinP2P.o BDM_Server.o BDM_seder.o \
+	fcgiapp.o os_unix.o libcryptopp.a 
 
 #if python is specified, use it
 ifndef PYVER
@@ -41,7 +49,7 @@ else
 PYTHON_INCLUDES=$(shell $(PYVER)-config --includes )
 endif
 
-CPPFLAGS += $(ARMORY_CPPFLAGS) -Icryptopp -Imdb -DUSE_CRYPTOPP -D__STDC_LIMIT_MACROS
+CPPFLAGS += -Icryptopp -Imdb -DUSE_CRYPTOPP -D__STDC_LIMIT_MACROS
 LDLIBS += -lpthread -Lmdb
 SWIG_OPTS    += -c++ -python -threads
 
@@ -70,17 +78,25 @@ endif
 # each .o file depends on all .h files
 ALL_HEADERS_FOUND=$(wildcard *.h)
 ALL_HEADERS=$(filter-out CppBlockUtils_wrap.h,$(ALL_HEADERS_FOUND))
+FCGI_DIR=./BlockDataManager/fcgi
 
 
 #**************************************************************************
 
-all: ../_CppBlockUtils.so ../qrc_img_resources.py
+all: ../ArmoryDB ../_CppBlockUtils.so ../qrc_img_resources.py
 
-../_CppBlockUtils.so: $(OBJS) CppBlockUtils_wrap.o
-	$(LINK) -shared -fPIC $(LDFLAGS) $(CXXFLAGS) $(OBJS) $(STATICPYTHON) CppBlockUtils_wrap.o $(LDLIBS) -o ../_CppBlockUtils.so
+client: ../_CppBlockUtils.so ../qrc_img_resources.py
+
+server: ../ArmoryDB
+
+../_CppBlockUtils.so: $(OBJS_Client) CppBlockUtils_wrap.o
+	$(LINK) -shared $(LDFLAGS) $(CXXFLAGS) $(OBJS_Client) $(STATICPYTHON) CppBlockUtils_wrap.o -o ../_CppBlockUtils.so
 
 ../qrc_img_resources.py: ../imgList.xml
 	pyrcc4 -o ../qrc_img_resources.py ../imgList.xml
+
+../ArmoryDB: $(OBJS_Server) main.o
+	$(LINK) -fPIC $(CXXFLAGS) $(OBJS_Server) main.o $(LDLIBS) -o ../ArmoryDB
 
 
 #**************************************************************************
@@ -96,6 +112,11 @@ midl.o: mdb/midl.c mdb/lmdb.h mdb/midl.h
 %.o: %.cpp $(ALL_HEADERS)
 	$(CXX) $(CXXCPP) $(CXXFLAGS) -c $<
 
+fcgiapp.o: $(FCGI_DIR)/libfcgi/fcgiapp.c 
+	$(CXX) $(CXXFLAGS) -I$(FCGI_DIR) -I$(FCGI_DIR)/include -c  $(FCGI_DIR)/libfcgi/fcgiapp.c 
+
+os_unix.o: $(FCGI_DIR)/libfcgi/os_unix.c
+	$(CXX) $(CXXFLAGS) -I$(FCGI_DIR) -I$(FCGI_DIR)/include -DHAVE_NETDB_H -DHAVE_SYS_SOCKET_H -DHAVE_UNISTD_H -DHAVE_SOCKLEN -c $(FCGI_DIR)/libfcgi/os_unix.c
 
 CppBlockUtils_wrap.cxx: $(ALL_HEADERS) CppBlockUtils.i
 	swig $(SWIG_OPTS) -outdir ../ -v CppBlockUtils.i 

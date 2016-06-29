@@ -37,14 +37,10 @@ def newTheBDM(isOffline=False):
       TheBDM.beginCleanShutdown()
    TheBDM = BlockDataManager(isOffline=isOffline)
 
-class PySide_CallBack(Cpp.BDM_CallBack):
+class PySide_CallBack(Cpp.PythonCallback):
    def __init__(self, bdm):
-      Cpp.BDM_CallBack.__init__(self)
+      Cpp.PythonCallback.__init__(self, bdm.bdv())
       self.bdm = bdm
-      self.bdm.progressComplete=0
-      self.bdm.secondsRemaining=0
-      self.bdm.progressPhase=0
-      self.bdm.progressNumeric=0
       
    def run(self, action, arg, block):
       try:
@@ -54,6 +50,7 @@ class PySide_CallBack(Cpp.BDM_CallBack):
          # AOTODO replace with constants
          
          if action == Cpp.BDMAction_Ready:
+            print 'BDM is ready!'
             act = FINISH_LOAD_BLOCKCHAIN_ACTION
             TheBDM.topBlockHeight = block
             TheBDM.setState(BDM_BLOCKCHAIN_READY)
@@ -105,35 +102,6 @@ class PySide_CallBack(Cpp.BDM_CallBack):
       except:
          LOGEXCEPT('Error in running progress callback')
          print sys.exc_info()
-
-class BDM_Inject(Cpp.BDM_Inject):
-   def __init__(self):
-      Cpp.BDM_Inject.__init__(self)
-      self.command = None
-      self.response = None
-      self.hasResponse = False
-      
-   def run(self):
-      try:
-         if self.command:
-            cmd = self.command
-            self.command = None
-            self.response = cmd()
-            self.hasResponse = True
-      except:
-         LOGEXCEPT('Error in running thread callback')
-         print sys.exc_info()
-
-   def runCommand(self, fn):
-      self.hasResponse = False
-      self.command = fn
-      
-      while not self.hasResponse:
-         self.notify()
-         self.waitRun();
-      res = self.response
-      self.response=None
-      return res
       
 def getCurrTimeAndBlock():
    time0 = long(RightNowUTC())
@@ -160,17 +128,7 @@ class BlockDataManager(object):
       super(BlockDataManager, self).__init__()
 
       #register callbacks
-      self.callback = PySide_CallBack(self).__disown__()
-      self.inject = BDM_Inject().__disown__()
-      
       self.armoryDBDir = ""
-
-      #dbType
-      self.dbType = Cpp.ARMORY_DB_BARE
-      if ENABLE_SUPERNODE:
-         self.dbType = Cpp.ARMORY_DB_SUPER      
-      
-      self.bdmThread = Cpp.BlockDataManagerThread(self.bdmConfig(forInit=True));
 
       # Flags
       self.aboutToRescan = False
@@ -188,30 +146,41 @@ class BlockDataManager(object):
       
       self.topBlockHeight = 0
       self.cppNotificationListenerList = []
+
+      self.progressComplete=0
+      self.secondsRemaining=0
+      self.progressPhase=0
+      self.progressNumeric=0
+      
+      self.instantiateBDV()
    
-   
+   #############################################################################  
+   def instantiateBDV(self):
+      if self.bdmState == BDM_OFFLINE:
+         return
+      
+      self.bdmState = BDM_SCANNING
+      socketType = Cpp.SocketFcgi
+      if ARMORYDB_IP != ARMORYDB_DEFAULT_IP or ARMORYDB_PORT != ARMORYDB_DEFAULT_PORT:
+         socketType = Cpp.SocketHttp 
+      self.bdv_ = Cpp.BlockDataViewer_getNewBDV(ARMORYDB_IP, ARMORYDB_PORT, socketType)   
+
+   #############################################################################
+   def registerBDV(self):   
+      if self.bdmState == BDM_OFFLINE:
+         return   
+      
+      self.bdv_.registerWithDB()
+      
    #############################################################################
    @ActLikeASingletonBDM
    def getListenerList(self):
       return self.cppNotificationListenerList
-         
-   
-   #############################################################################
-   @ActLikeASingletonBDM
-   def cleanUpBDMThread(self):
-      self.bdmThread = None
-         
-   #############################################################################
-   @ActLikeASingletonBDM
-   def BDMshutdownCallback(self, action, args):
-      if action == 'stopped':
-         self.cppNotificationListenerList.remove(self.BDMshutdownCallback)
-         self.cleanUpBDMThread()
 
    #############################################################################
    @ActLikeASingletonBDM
    def bdv(self):
-      return self.bdmThread.bdv()
+      return self.bdv_
 
    #############################################################################
    @ActLikeASingletonBDM
@@ -247,19 +216,17 @@ class BlockDataManager(object):
    #############################################################################
    @ActLikeASingletonBDM
    def goOnline(self, satoshiDir=None, armoryDBDir=None, armoryHomeDir=None):
-
-      self.bdmThread.setConfig(self.bdmConfig())
+      self.bdv().goOnline()
+      self.callback = PySide_CallBack(self).__disown__()
+      self.callback.startLoop()
       
-      self.bdmState = BDM_SCANNING
-      self.bdmThread.start(self.bdmMode(), self.callback, self.inject)
-
    #############################################################################
    @ActLikeASingletonBDM
    def registerWallet(self, prefixedKeys, uniqueIDB58, isNew=False):
       #this returns a pointer to the BtcWallet C++ object. This object is
       #instantiated at registration and is unique for the BDV object, so we
       #should only ever set the cppWallet member here 
-      return self.bdv().registerWallet(prefixedKeys, uniqueIDB58, isNew)
+      return self.bdv().registerWallet(uniqueIDB58, prefixedKeys, isNew)
 
    #############################################################################
    @ActLikeASingletonBDM
@@ -272,7 +239,7 @@ class BlockDataManager(object):
       #this returns a pointer to the BtcWallet C++ object. This object is
       #instantiated at registration and is unique for the BDV object, so we
       #should only ever set the cppWallet member here 
-      return self.bdv().registerLockbox(addressList, uniqueIDB58, isNew)
+      return self.bdv().registerLockbox(uniqueIDB58, addressList, isNew)
 
    #############################################################################
    @ActLikeASingletonBDM
@@ -309,45 +276,6 @@ class BlockDataManager(object):
       
    #############################################################################
    @ActLikeASingletonBDM
-   def bdmConfig(self, forInit=False):
-
-      blkdir = ""
-      
-      if forInit == False:
-      # Check for the existence of the Bitcoin-Core directory         
-         if not os.path.exists(self.btcdir):
-            raise FileExistsError, ('Directory does not exist: %s' % self.btcdir)
-   
-         blkdir = os.path.join(self.btcdir, 'blocks')
-         blk1st = os.path.join(blkdir, 'blk00000.dat')
-   
-         # ... and its blk000X.dat files
-         if not os.path.exists(blk1st):
-            LOGERROR('Blockchain data not available: %s', blk1st)
-            raise FileExistsError, ('Blockchain data not available: %s' % blk1st)
-
-      blockdir = blkdir
-      armoryDBDir = self.armoryDBDir
-      
-      if OS_WINDOWS:
-         if isinstance(blkdir, unicode):
-            blockdir = blkdir.encode('utf8')
-         if isinstance(self.armoryDBDir, unicode):
-            armoryDBDir = self.armoryDBDir.encode('utf8')
-
-      bdmConfig = Cpp.BlockDataManagerConfig()
-      bdmConfig.armoryDbType = self.dbType
-      bdmConfig.pruneType = Cpp.DB_PRUNE_NONE
-      bdmConfig.blkFileLocation = blockdir
-      bdmConfig.levelDBLocation = armoryDBDir
-      bdmConfig.setGenesisBlockHash(GENESIS_BLOCK_HASH)
-      bdmConfig.setGenesisTxHash(GENESIS_TX_HASH)
-      bdmConfig.setMagicBytes(MAGIC_BYTES)
-
-      return bdmConfig
-
-   #############################################################################
-   @ActLikeASingletonBDM
    def predictLoadTime(self):
       return (self.progressPhase, self.progressComplete, self.secondsRemaining, self.progressNumeric)
 
@@ -369,25 +297,15 @@ class BlockDataManager(object):
 
    #############################################################################
    @ActLikeASingletonBDM
-   def beginCleanShutdown(self):
-      if self.bdmThread: 
-         self.bdmState = BDM_UNINITIALIZED
-         self.registerCppNotification(self.BDMshutdownCallback)      
-         self.bdv().reset()
-         if self.bdmThread.requestShutdown() == False:
-            self.cleanUpBDMThread()
+   def shutdown(self):
+      self.bdv_.unregisterFromDB()
+      self.callback.shutdown()
 
    #############################################################################
    @ActLikeASingletonBDM
    def runBDM(self, fn):
       return self.inject.runCommand(fn)
    
-   #############################################################################
-   @ActLikeASingletonBDM
-   def forceSupernode(self):
-      self.dbType = Cpp.ARMORY_DB_SUPER 
-
-
    #############################################################################
    @ActLikeASingletonBDM
    def RegisterEventForSignal(self, func, signal):

@@ -1040,7 +1040,7 @@ class PyBtcWallet(object):
          
          wltNAddr = {}
          wltNAddr[self.uniqueIDB58] = newAddrList
-         TheBDM.bdv().registerAddressBatch(wltNAddr, isActuallyNew)
+         TheBDM.bdv().registerWallet(self.uniqueIDB58, newAddrList, isActuallyNew)
          self.actionsToTakeAfterScan.append([self.detectHighestUsedIndex, \
                                           [lastComputedIndex, True]])
          
@@ -1104,7 +1104,7 @@ class PyBtcWallet(object):
          if self.cppWallet.getAddrTotalTxnCount(scrAddr) > 0:
             highestIndex = max(highestIndex, addr.chainIndex)
 
-      if writeResultToWallet:
+      if highestIndex > self.highestUsedChainIndex:
          self.highestUsedChainIndex = highestIndex
          self.walletFileSafeUpdate( [[WLT_UPDATE_MODIFY, self.offsetTopUsed, \
                                       int_to_binary(highestIndex, widthBytes=8)]])

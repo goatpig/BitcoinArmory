@@ -13,7 +13,7 @@
 
 /////////////////////////////////////////////////////////////////////////////
 DatabaseBuilder::DatabaseBuilder(BlockFiles& blockFiles, 
-   BlockDataManager_LevelDB& bdm,
+   BlockDataManager& bdm,
    const ProgressCallback &progress)
    : blockFiles_(blockFiles), db_(bdm.getIFace()),
    blockchain_(bdm.blockchain()),
@@ -27,7 +27,8 @@ DatabaseBuilder::DatabaseBuilder(BlockFiles& blockFiles,
 /////////////////////////////////////////////////////////////////////////////
 void DatabaseBuilder::init()
 {
-   //TODO: lower thread count for unit test builds
+   unique_lock<mutex> lock(scrAddrFilter_->mergeLock_);
+
    TIMER_START("initdb");
 
    //list all files in block data folder
@@ -51,7 +52,7 @@ void DatabaseBuilder::init()
    scrAddrFilter_->getAllScrAddrInDB();
 
    //don't scan without any registered addresses
-   if (scrAddrFilter_->getScrAddrMap().size() == 0)
+   if (scrAddrFilter_->getScrAddrMap()->size() == 0)
       return;
 
    bool reset = false;
@@ -86,7 +87,7 @@ void DatabaseBuilder::init()
       reset = true;
    }
 
-   if (!reorgState.prevTopBlockStillValid && !reset)
+   if (!reorgState.prevTopStillValid && !reset)
    {
       //reorg
       undoHistory(reorgState);
@@ -430,29 +431,29 @@ BinaryData DatabaseBuilder::scanHistory(uint32_t startHeight,
    bcs.scan(startHeight);
    bcs.updateSSH(false);
 
+   scrAddrFilter_->lastScannedHash_ = bcs.getTopScannedBlockHash();
    return bcs.getTopScannedBlockHash();
 }
 
 /////////////////////////////////////////////////////////////////////////////
-uint32_t DatabaseBuilder::update(void)
+Blockchain::ReorganizationState DatabaseBuilder::update(void)
 {
+   unique_lock<mutex> lock(scrAddrFilter_->mergeLock_);
+
    //list all files in block data folder
    blockFiles_.detectAllBlockFiles();
 
    //update db
    auto&& reorgState = updateBlocksInDB(progress_, false, false);
 
-   uint32_t prevTop = reorgState.prevTopBlock->getBlockHeight();
-   if (reorgState.prevTopBlockStillValid && 
-       prevTop == blockchain_.top().getBlockHeight())
-      return 0;
-
-   uint32_t startHeight = reorgState.prevTopBlock->getBlockHeight() + 1;
-
    if (!reorgState.hasNewTop)
-      return startHeight - 1;
+      return reorgState;
 
-   if (!reorgState.prevTopBlockStillValid)
+   uint32_t prevTop = reorgState.prevTop->getBlockHeight();
+   uint32_t startHeight = reorgState.prevTop->getBlockHeight() + 1;
+
+
+   if (!reorgState.prevTopStillValid)
    {
       //reorg, undo blocks up to branch point
       undoHistory(reorgState);
@@ -467,7 +468,7 @@ uint32_t DatabaseBuilder::update(void)
 
    //TODO: recover from failed scan 
 
-   return startHeight;
+   return reorgState;
 }
 
 /////////////////////////////////////////////////////////////////////////////

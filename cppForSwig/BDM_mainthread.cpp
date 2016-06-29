@@ -4,136 +4,69 @@
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
+//                                                                            //
+//  Copyright (C) 2016, goatpig                                               //            
+//  Distributed under the MIT license                                         //
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                   
+//                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
+
 #include "BDM_mainthread.h"
 #include "BlockUtils.h"
 #include "BlockDataViewer.h"
 
 #include <ctime>
-#include <unistd.h>
-#include "pthread.h"
+
+////////////////////////////////////////////////////////////////////////////////
+void BlockDataManager::registerBDVwithZCcontainer(
+   shared_ptr<BDV_Server_Object> bdvPtr)
+{
+   auto filter = [bdvPtr](const BinaryData& scrAddr)->bool
+   {
+      return bdvPtr->hasScrAddress(scrAddr);
+   };
+
+   auto newzc = [bdvPtr](
+      map<BinaryData, shared_ptr<map<BinaryData, TxIOPair>>> zcMap)->void
+   {
+      bdvPtr->zcCallback(move(zcMap));
+   };
+
+   ZeroConfContainer::BDV_Callbacks callbacks;
+   callbacks.addressFilter_ = filter;
+   callbacks.newZcCallback_ = newzc;
+
+   zeroConfCont_->insertBDVcallback(move(bdvPtr->getID()), move(callbacks));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void BlockDataManager::unregisterBDVwithZCcontainer(
+   const string& bdvID)
+{
+   zeroConfCont_->eraseBDVcallback(bdvID);
+}
 
 BDM_CallBack::~BDM_CallBack()
 {}
 
-struct BDM_Inject::BDM_Inject_Impl
-{
-   pthread_mutex_t notifierLock;
-   pthread_cond_t notifier;
-   bool wantsToRun=false, failure=false;
-};
-
-BDM_Inject::BDM_Inject()
-{
-   pimpl = new BDM_Inject_Impl;
-   pthread_mutex_init(&pimpl->notifierLock, 0);
-   pthread_cond_init(&pimpl->notifier, 0);
-}
-
-BDM_Inject::~BDM_Inject()
-{
-   pthread_mutex_destroy(&pimpl->notifierLock);
-   pthread_cond_destroy(&pimpl->notifier);
-   delete pimpl;
-}
-   
-void BDM_Inject::notify()
-{
-   pthread_mutex_lock(&pimpl->notifierLock);
-   pimpl->wantsToRun=true;
-   pthread_cond_signal(&pimpl->notifier);
-   pthread_mutex_unlock(&pimpl->notifierLock);
-}
-
-void BDM_Inject::wait(unsigned ms)
-{
-#ifdef _WIN32_
-   ULONGLONG abstime = GetTickCount64();
-   abstime += ms;
-   
-   pthread_mutex_lock(&pimpl->notifierLock);
-   while (!pimpl->wantsToRun)
-   {
-      pthread_cond_timedwait(&pimpl->notifier, &pimpl->notifierLock, &abstime); 
-      
-      ULONGLONG latertime = GetTickCount64();
-      if (latertime >= abstime)
-         break;
-   }
-   if (pimpl->wantsToRun)
-      run();
-   pimpl->wantsToRun=false;
-   pthread_cond_signal(&pimpl->notifier);
-   pthread_mutex_unlock(&pimpl->notifierLock);
-#else
-   struct timeval abstime;
-   gettimeofday(&abstime, 0);
-   abstime.tv_sec += ms/1000;
-   
-   pthread_mutex_lock(&pimpl->notifierLock);
-   while (!pimpl->wantsToRun)
-   {
-      struct timespec abstimets;
-      abstimets.tv_sec = abstime.tv_sec;
-      abstimets.tv_nsec = abstime.tv_usec*1000;
-      pthread_cond_timedwait(&pimpl->notifier, &pimpl->notifierLock, &abstimets); 
-      
-      struct timeval latertime;
-      gettimeofday(&latertime, 0);
-      if (latertime.tv_sec >= abstime.tv_sec && latertime.tv_usec >= abstime.tv_usec)
-         break;
-   }
-   if (pimpl->wantsToRun)
-      run();
-   pimpl->wantsToRun=false;
-   pthread_cond_signal(&pimpl->notifier);
-   pthread_mutex_unlock(&pimpl->notifierLock);
-#endif
-
-}
-
-void BDM_Inject::waitRun()
-{
-   pthread_mutex_lock(&pimpl->notifierLock);
-   while (pimpl->wantsToRun)
-   {
-      pthread_cond_wait(&pimpl->notifier, &pimpl->notifierLock); 
-   }
-   const bool f = pimpl->failure;
-   pthread_mutex_unlock(&pimpl->notifierLock);
-   
-   if (f)
-      throw BDMFailure();
-}
-
-void BDM_Inject::setFailureFlag()
-{
-   pimpl->failure = true;
-}
-
 struct BlockDataManagerThread::BlockDataManagerThreadImpl
 {
-   BlockDataManager_LevelDB *bdm=nullptr;
-   BlockDataViewer *bdv = nullptr;
-   BDM_CallBack *callback=nullptr;
-   BDM_Inject *inject=nullptr;
-   pthread_t tID=0;
+   BlockDataManager *bdm=nullptr;
    int mode=0;
    volatile bool run=false;
    bool failure=false;
+   thread tID;
 
    ~BlockDataManagerThreadImpl()
    {
       delete bdm;
-      delete bdv;
    }
 };
 
 BlockDataManagerThread::BlockDataManagerThread(const BlockDataManagerConfig &config)
 {
    pimpl = new BlockDataManagerThreadImpl;
-   pimpl->bdm = new BlockDataManager_LevelDB(config);
-   pimpl->bdv = new BlockDataViewer(pimpl->bdm);
+   pimpl->bdm = new BlockDataManager(config);
 }
 
 BlockDataManagerThread::~BlockDataManagerThread()
@@ -149,26 +82,17 @@ BlockDataManagerThread::~BlockDataManagerThread()
 }
 
 
-void BlockDataManagerThread::start(int mode, BDM_CallBack *callback, BDM_Inject *inject)
+void BlockDataManagerThread::start(BDM_INIT_MODE mode)
 {
-   pimpl->callback = callback;
-   pimpl->inject = inject;
    pimpl->mode = mode;
-   
    pimpl->run = true;
    
-   if (0 != pthread_create(&pimpl->tID, nullptr, thrun, this))
-      throw std::runtime_error("Failed to start BDM thread");
+   pimpl->tID = thread(thrun, this);
 }
 
-BlockDataManager_LevelDB *BlockDataManagerThread::bdm()
+BlockDataManager *BlockDataManagerThread::bdm()
 {
    return pimpl->bdm;
-}
-
-BlockDataViewer* BlockDataManagerThread::bdv()
-{
-   return pimpl->bdv;
 }
 
 void BlockDataManagerThread::setConfig(const BlockDataManagerConfig &config)
@@ -182,12 +106,8 @@ void BlockDataManagerThread::shutdownAndWait()
 {
    requestShutdown();
    
-   if (pimpl->tID)
-   {
-      pthread_join(pimpl->tID, nullptr);
-      pimpl->tID=0;
-
-   }
+   if (pimpl->tID.joinable())
+      pimpl->tID.join();
 }
 
 bool BlockDataManagerThread::requestShutdown()
@@ -195,7 +115,7 @@ bool BlockDataManagerThread::requestShutdown()
    if (pimpl->run)
    {
       pimpl->run = false;
-      pimpl->inject->notify();
+      //pimpl->inject->notify();
 
       return true;
    }
@@ -220,20 +140,17 @@ public:
 
 }
 
-
 void BlockDataManagerThread::run()
 try
 {
-   BlockDataManager_LevelDB *const bdm = this->bdm();
-   BlockDataViewer *const bdv = this->bdv();
-   
-   BDM_CallBack *const callback = pimpl->callback;
-
-   OnFinish onFinish(
-      [callback] () { callback->run(BDMAction_Exited, nullptr); }
-   );
+   BlockDataManager *const bdm = this->bdm();
+      
+   promise<bool> isReadyPromise;
+   bdm->isReadyFuture_ = isReadyPromise.get_future();
    
    {
+      bdm->networkNode_->connectToNode();
+
       tuple<BDMPhase, double, unsigned, unsigned> lastvalues;
       time_t lastProgressTime=0;
       
@@ -266,7 +183,7 @@ try
          lastvalues = currentvalues;
          
          //pass empty walletID for main build&scan calls
-         callback->progress(phase, vector<string>(), prog, time, numericProgress);
+         //callback->progress(phase, vector<string>(), prog, time, numericProgress);
 
          if (!pimpl->run)
          {
@@ -278,9 +195,6 @@ try
       
       try
       {
-         //don't call this unless you're trying to get online
-         pimpl->bdm->setNotifier(pimpl->inject);
-
          bdm->openDatabase();
 
          unsigned mode = pimpl->mode & 0x00000003;
@@ -291,27 +205,7 @@ try
          else if (mode == 2) bdm->doInitialSyncOnLoad_Rebuild(loadProgress);
          else if (mode == 3) bdm->doInitialSyncOnLoad_RescanBalance(loadProgress);
 
-         if (bdm->missingBlockHashes().size() || bdm->missingBlockHeaderHashes().size())
-         {
-            string errorMsg(
-               "Armory has detected an error in the blockchain database "
-               "maintained by the third-party Bitcoin software (Bitcoin-Core "
-               "or bitcoind). This error is not fatal, but may lead to "
-               "incorrect balances, inability to send coins, or application "
-               "instability."
-               "<br><br> "
-               "It is unlikely that the error affects your wallets, "
-               "but it <i>is</i> possible. If you experience crashing, "
-               "or see incorrect balances on any wallets, it is strongly "
-               "recommended you re-download the blockchain using: "
-               "<i>Help</i>\"\xe2\x86\x92\"<i>Factory Reset</i>\".");
-            callback->run(BDMAction_ErrorMsg, &errorMsg, bdm->missingBlockHashes().size());
-            throw;
-         }
-
-         bdv->enableZeroConf(clearZc);
-
-         bdv->scanWallets();
+         bdm->enableZeroConf(clearZc);
       }
       catch (BDMStopRequest&)
       {
@@ -319,52 +213,29 @@ try
          return;
       }
    }
+
+   isReadyPromise.set_value(true);
    
-   double lastprog=0;
-   unsigned lasttime=0;
-   
-   const auto rescanProgress
-      = [&] (const vector<string>& wltIdVec, double prog,unsigned time)
+   auto updateChainLambda = [bdm, this]()->bool
    {
-      if (prog == lastprog && time==lasttime)
-         return; // don't go to python if nothing's changed
-      //callback->progress("blk", prog, time);
-      lastprog = prog;
-      lasttime = time;
-      
-      callback->progress(
-         BDMPhase_Rescan,
-         wltIdVec,
-         lastprog, lasttime, 0
-      );
-   };   
-   
-   //push 'bdm is ready' to Python
-   callback->run(BDMAction_Ready, nullptr, bdm->getTopBlockHeight());
-   
+      auto reorgState = bdm->readBlkFileUpdate();
+      if (reorgState.hasNewTop)
+      {
+         bdm->newBlocksStack_.push_back(move(reorgState));
+         
+         ZeroConfContainer::ZcActionStruct zcaction;
+         zcaction.action_ = Zc_Purge;
+
+         bdm->zeroConfCont_->newZcStack_.push_back(move(zcaction));
+         return true;
+      }
+
+      return false;
+   };
+
    while(pimpl->run)
    {
-      bdm->getScrAddrFilter()->checkForMerge();
-
-      if (bdm->sideScanFlag_ == true)
-      {
-         bdm->sideScanFlag_ = false;
-
-         bool doScan = bdm->startSideScan(rescanProgress);
-         
-         vector<string> wltIDs = bdm->getNextWalletIDToScan();
-         if (wltIDs.size() && doScan)
-         {
-            callback->run(BDMAction_StartedWalletScan, &wltIDs);
-         }
-      }
-
-      if (bdm->criticalError_.size())
-      {
-         throw runtime_error(bdm->criticalError_.c_str());
-      }
-
-      if(bdv->getZCflag())
+      /*if(bdv->getZCflag())
       {
          bdv->flagRescanZC(false);
          auto&& newZCTxHash = bdv->parseNewZeroConfTx();
@@ -389,59 +260,40 @@ try
             //notify ZC
             callback->run(BDMAction_ZC, &newZCLedgers);
          }
-      }
+      }*/
 
-      if (bdv->refresh_ != BDV_dontRefresh)
-      {
-         unique_lock<mutex> lock(bdv->refreshLock_);
-
-         BDV_refresh refresh = bdv->refresh_;
-         bdv->refresh_ = BDV_dontRefresh;
-         bdv->scanWallets(UINT32_MAX, UINT32_MAX, refresh);
-         
-         vector<BinaryData> refreshIDVec;
-         for (const auto& refreshID : bdv->refreshIDSet_)
-            refreshIDVec.push_back(refreshID);
-
-         bdv->refreshIDSet_.clear();
-         callback->run(BDMAction_Refresh, &refreshIDVec);
-      }
-
-      const uint32_t prevTopBlk = bdm->readBlkFileUpdate();
-      if(prevTopBlk != 0)
-      {
-         bdv->scanWallets(prevTopBlk);
-
-         //notify Python that new blocks have been parsed
-         StoredDBInfo sdbi;
-         pimpl->bdm->getIFace()->getStoredDBInfo(SUBSSH, sdbi);
-         
-
-         int nNewBlocks = sdbi.topBlkHgt_ + 1
-            - prevTopBlk;
-         callback->run(BDMAction_NewBlock, &nNewBlocks,
-            sdbi.topBlkHgt_
-         );
-      }
+      //register promise with p2p interface
+      promise<bool> newBlocksPromise;
+      auto newBlocksFuture = newBlocksPromise.get_future();
       
-#ifndef _DEBUG_REPLAY_BLOCKS
-      pimpl->inject->wait(1000);
-#endif
+      auto newBlocksCallback = 
+         [&newBlocksPromise](const vector<InvEntry>&)->void
+      {
+         newBlocksPromise.set_value(true);
+      };
+
+      bdm->networkNode_->registerInvBlockLambda(newBlocksCallback);
+
+      //keep updating until there are no more new blocks
+      while (updateChainLambda());
+
+      //wait on future
+      newBlocksFuture.get();
    }
 }
 catch (std::exception &e)
 {
    LOGERR << "BDM thread failed: " << e.what();
    string errstr(e.what());
-   pimpl->callback->run(BDMAction_ErrorMsg, &errstr);
+   /*pimpl->callback->run(BDMAction_ErrorMsg, &errstr);
    pimpl->inject->setFailureFlag();
-   pimpl->inject->notify();
+   pimpl->inject->notify();*/
 }
 catch (...)
 {
    LOGERR << "BDM thread failed: (unknown exception)";
-   pimpl->inject->setFailureFlag();
-   pimpl->inject->notify();
+   /*pimpl->inject->setFailureFlag();
+   pimpl->inject->notify();*/
 }
 
 void* BlockDataManagerThread::thrun(void *_self)

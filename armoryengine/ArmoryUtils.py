@@ -66,7 +66,7 @@ LEVELDB_BLKDATA = 'leveldb_blkdata'
 LEVELDB_HEADERS = 'leveldb_headers'
 
 # Version Numbers 
-BTCARMORY_VERSION    = (0, 94,  0, 0)  # (Major, Minor, Bugfix, AutoIncrement) 
+BTCARMORY_VERSION    = (0, 94,  1, 0)  # (Major, Minor, Bugfix, AutoIncrement) 
 PYBTCWALLET_VERSION  = (1, 35,  0, 0)  # (Major, Minor, Bugfix, AutoIncrement)
 
 # ARMORY_DONATION_ADDR = '1ArmoryXcfq7TnCSuZa9fQjRYwJ4bkRKfv'
@@ -81,6 +81,9 @@ ARMORY_INFO_SIGN_PUBLICKEY = ('04'
 
 indent = ' '*3
 haveGUI = [False, None]
+
+ARMORYDB_DEFAULT_IP = "127.0.0.1"
+ARMORYDB_DEFAULT_PORT = "9050"
 
 parser = optparse.OptionParser(usage="%prog [options]\n")
 parser.add_option("--settings",        dest="settingsPath",default=DEFAULT, type="str",          help="load Armory with a specific settings file")
@@ -109,7 +112,6 @@ parser.add_option("--redownload",      dest="redownload",  default=False,     ac
 parser.add_option("--rebuild",         dest="rebuild",     default=False,     action="store_true", help="Rebuild blockchain database and rescan")
 parser.add_option("--rescan",          dest="rescan",      default=False,     action="store_true", help="Rescan existing blockchain DB")
 parser.add_option("--rescanBalance",   dest="rescanBalance", default=False,     action="store_true", help="Rescan balance")
-parser.add_option("--disable-torrent", dest="disableTorrent", default=False,     action="store_true", help="Only download blockchain data via P2P network (slow)")
 parser.add_option("--test-announce", dest="testAnnounceCode", default=False,     action="store_true", help="Only used for developers needing to test announcement code with non-offline keys")
 parser.add_option("--nospendzeroconfchange",dest="ignoreAllZC",default=False, action="store_true", help="All zero-conf funds will be unspendable, including sent-to-self coins")
 parser.add_option("--multisigfile",  dest="multisigFile",  default=DEFAULT, type='str',          help="File to store information about multi-signature transactions")
@@ -118,7 +120,9 @@ parser.add_option("--disable-modules", dest="disableModules", default=False, act
 parser.add_option("--disable-conf-permis", dest="disableConfPermis", default=False, action="store_true", help="Disable forcing permissions on bitcoin.conf")
 parser.add_option("--disable-detsign", dest="enableDetSign", action="store_false", help="Disable Transaction Deterministic Signing (RFC 6979)")
 parser.add_option("--enable-detsign", dest="enableDetSign", action="store_true", help="Enable Transaction Deterministic Signing (RFC 6979) - Enabled by default")
-parser.add_option("--supernode", dest="enableSupernode", default=False, action="store_true", help="Enabled Exhaustive Blockchain Tracking")
+parser.add_option("--armorydb-ip", dest="armorydb_ip", default=ARMORYDB_DEFAULT_IP, type="str", help="Set remote DB IP (default: 127.0.0.1)")
+parser.add_option("--armorydb-port", dest="armorydb_port", default=ARMORYDB_DEFAULT_PORT, type="str", help="Set remote DB port (default: 9050)")
+
 parser.set_defaults(enableDetSign=True)
 
 # Get the host operating system
@@ -272,7 +276,11 @@ if CLI_OPTIONS.interport < 0:
 IGNOREZC  = CLI_OPTIONS.ignoreAllZC
 
 #supernode
-ENABLE_SUPERNODE = CLI_OPTIONS.enableSupernode
+#ENABLE_SUPERNODE = CLI_OPTIONS.enableSupernode
+
+#db address
+ARMORYDB_IP = CLI_OPTIONS.armorydb_ip
+ARMORYDB_PORT = CLI_OPTIONS.armorydb_port
 
 # Is deterministic signing enabled?
 ENABLE_DETSIGN = CLI_OPTIONS.enableDetSign
@@ -1024,11 +1032,10 @@ if CLI_OPTIONS.testAnnounceCode:
 ####
 if CLI_OPTIONS.useTorSettings:
    LOGWARN('Option --tor was supplied, forcing --skip-announce-check,')
-   LOGWARN('--skip-online-check, --skip-stats-report and --disable-torrent')
+   LOGWARN('--skip-online-check, --skip-stats-report')
    CLI_OPTIONS.skipAnnounceCheck = True
    CLI_OPTIONS.skipStatsReport = True
    CLI_OPTIONS.forceOnline = True
-   CLI_OPTIONS.disableTorrent = True
 
 
 
@@ -3695,35 +3702,6 @@ def touchFile(fname):
       f.close()
 
 
-# NOTE: Had to put in this at the eend so it was after the AllowAsync def
-# This flag takes into account both CLI_OPTIONs, and availability of the
-# BitTornado library  (the user can remove the BitTornado dir and/or the
-# torrentDL.py files without breaking Armory, it will simply set this
-# disable flag to true)
-class FakeTDM(object):
-   def __init__(self):
-      self.isRunning   = lambda: False
-      self.isStarted   = lambda: False
-      self.isFinished  = lambda: False
-      self.getTDMState = lambda: 'Disabled'
-      self.removeOldTorrentFile = lambda: None
-
-
-#DISABLE_TORRENTDL = CLI_OPTIONS.disableTorrent
-TheTDM = FakeTDM()
-#try:
-#   import torrentDL
-#   TheTDM = torrentDL.TorrentDownloadManager()
-#except:
-   #LOGEXCEPT('Failed to import torrent downloader')
-DISABLE_TORRENTDL = True
-
-# We only use BITTORRENT for mainnet
-if USE_TESTNET:
-   DISABLE_TORRENTDL = True
-
-
-
 ############################################
 class ArmoryInstanceListener(Protocol):
    def connectionMade(self):
@@ -3745,30 +3723,7 @@ class ArmoryListenerFactory(ClientFactory):
 # Check general internet connection
 # Do not Check when ForceOnline is true
 def isInternetAvailable(forceOnline = False):
-   internetStatus = INTERNET_STATUS.Unavailable
-   if forceOnline:
-      internetStatus = INTERNET_STATUS.DidNotCheck
-   else:
-      try:
-         import urllib2
-         urllib2.urlopen('http://google.com', timeout=CLI_OPTIONS.nettimeout)
-         internetStatus = INTERNET_STATUS.Available
-      except ImportError:
-         LOGERROR('No module urllib2 -- cannot determine if internet is '
-            'available')
-      except urllib2.URLError:
-         # In the extremely rare case that google might be down (or just to try
-         # again...)
-         try:
-            urllib2.urlopen('http://microsoft.com', timeout=CLI_OPTIONS.nettimeout)
-            internetStatus = INTERNET_STATUS.Available
-         except:
-            LOGEXCEPT('Error checking for internet connection')
-            LOGERROR('Run --skip-online-check if you think this is an error')
-      except:
-         LOGEXCEPT('Error checking for internet connection')
-         LOGERROR('Run --skip-online-check if you think this is an error')
-
+   internetStatus = INTERNET_STATUS.DidNotCheck
    return internetStatus
 
 
