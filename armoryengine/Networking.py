@@ -206,6 +206,9 @@ class ArmoryClient(Protocol):
          if self.factory.bdm and not self.factory.bdm.getState()==BDM_SCANNING:
             self.sendMessage(getdataMsg)
 
+      if msg.cmd=='ping':
+         self.sendMessage(PayloadPong(msg.payload.nonce))
+
       if msg.cmd=='tx':
          pytx = msg.payload.tx
          self.factory.func_newTx(pytx)
@@ -587,20 +590,61 @@ class PayloadPing(object):
    """
    command = 'ping'
 
-   def __init__(self):
-      pass
+   def __init__(self, nonce=-1):
+      self.nonce = nonce
  
    def unserialize(self, toUnpack):
+      if isinstance(toUnpack, BinaryUnpacker):
+         pingData = toUnpack
+      else:
+         pingData = BinaryUnpacker( toUnpack )
+
+      self.nonce    = pingData.get(UINT64)
       return self
- 
+
    def serialize(self):
-      return ''
+      bp = BinaryPacker()
+      bp.put(UINT64, self.nonce)
+      return bp.getBinaryString()
 
 
    def pprint(self, nIndent=0):
       indstr = indent*nIndent
       print ''
       print indstr + 'Message(ping)'
+
+################################################################################
+################################################################################
+class PayloadPong(object):
+   """
+   All payload objects have a serialize and unserialize method, making them
+   easy to attach to PyMessage objects
+   """
+   command = 'pong'
+
+   def __init__(self, nonce=-1):
+      self.nonce = nonce
+
+   def unserialize(self, toUnpack):
+      if isinstance(toUnpack, BinaryUnpacker):
+         pongData = toUnpack
+      else:
+         pongData = BinaryUnpacker( toUnpack )
+
+      self.nonce    = pongData.get(UINT64)
+      return self
+
+   def serialize(self):
+      bp = BinaryPacker()
+      bp.put(UINT64, self.nonce)
+      return bp.getBinaryString()
+
+
+   def pprint(self, nIndent=0):
+      indstr = indent*nIndent
+      print ''
+      print indstr + 'Message(pong)'
+      print indstr + indent + 'Nonce:    ' + str(self.nonce)
 
       
 ################################################################################
@@ -821,7 +865,56 @@ class PayloadGetHeaders(object):
       for i in range(1,len(self.hashList)):
          print indstr + indent + '             :' + binary_to_hex(self.hashList[i])
       print indstr + indent + 'HashStop     :' + binary_to_hex(self.hashStop)
+
+
+################################################################################
+################################################################################
+class PayloadSendHeaders(object):
+   """
+   All payload objects have a serialize and unserialize method, making them
+   easy to attach to PyMessage objects
+   """
+   command = 'sendheaders'
+
+   def __init__(self):
+      pass
+
+   def unserialize(self, toUnpack):
+      return self
+
+   def serialize(self):
+      return ''
+
+
+   def pprint(self, nIndent=0):
+      indstr = indent*nIndent
+      print ''
+      print indstr + 'Message(pong)'
          
+
+################################################################################
+################################################################################
+class PayloadSendHeaders(object):
+   """
+   All payload objects have a serialize and unserialize method, making them
+   easy to attach to PyMessage objects
+   """
+   command = 'sendheaders'
+
+   def __init__(self):
+      pass
+
+   def unserialize(self, toUnpack):
+      return self
+
+   def serialize(self):
+      return ''
+
+
+   def pprint(self, nIndent=0):
+      indstr = indent*nIndent
+      print ''
+      print indstr + 'Message(pong)'
 
 
 ################################################################################
@@ -1005,6 +1098,7 @@ class PayloadReject(object):
 # Use this map to figure out which object to serialize/unserialize from a cmd
 PayloadMap = {
    'ping':        PayloadPing,
+   'pong':        PayloadPong,
    'tx':          PayloadTx,
    'inv':         PayloadInv,
    'version':     PayloadVersion,
@@ -1012,6 +1106,7 @@ PayloadMap = {
    'addr':        PayloadAddr,
    'getdata':     PayloadGetData,
    'getheaders':  PayloadGetHeaders,
+   'sendheaders': PayloadSendHeaders,
    'getblocks':   PayloadGetBlocks,
    'block':       PayloadBlock,
    'headers':     PayloadHeaders,
