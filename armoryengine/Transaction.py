@@ -751,7 +751,9 @@ class PyTx(BlockComponent):
       self.outputs    = []
       self.witnesses  = []
       self.version    = txData.get(UINT32)
-      if txData.get(UINT8) == MARKER and txData.get(UINT8) == FLAG:
+      marker = txData.get(UINT8)
+      flag = txData.get(UINT8)
+      if marker == MARKER and flag == FLAG:
          self.useWitness = True
       else:
          txData.rewind(2)
