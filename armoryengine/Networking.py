@@ -420,6 +420,7 @@ def parseNetAddress(addrObj):
 MSG_INV_ERROR = 0
 MSG_INV_TX    = 1
 MSG_INV_BLOCK = 2
+MSG_WITNESS_FLAG = 1 << 30
 
 
 ################################################################################
@@ -809,7 +810,10 @@ class PayloadGetData(object):
       bp = BinaryPacker()
       bp.put(VAR_INT, len(self.invList))
       for inv in self.invList:
-         bp.put(UINT32, inv[0])
+         if armoryengine.ArmoryUtils.WITNESS and (inv[0] == MSG_INV_TX or inv[0] == MSG_INV_BLOCK):
+            bp.put(UINT32, inv[0] | MSG_WITNESS_FLAG)
+         else:
+            bp.put(UINT32, inv[0])
          bp.put(BINARY_CHUNK, inv[1], width=32)
       return bp.getBinaryString()
       
