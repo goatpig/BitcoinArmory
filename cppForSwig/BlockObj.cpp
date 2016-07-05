@@ -596,9 +596,10 @@ void Tx::unserialize(uint8_t const * ptr, size_t size)
    if(READ_UINT8_BE(ptr+4) == 0 && READ_UINT8_BE(ptr+5) == 1)
    {
       usesWitness_ = true;
-      dataNoWitness_.append(version_);
-      dataNoWitness_.copyFrom(ptr+6, offsetsWitness_.at(0));
-      dataNoWitness_.append(lockTime_);
+      dataNoWitness_.append(WRITE_UINT32_LE(version_));
+	  BinaryData txBody(ptr + 6, offsetsTxOut_.back()-6);
+	  dataNoWitness_.append(txBody);
+	  dataNoWitness_.append(WRITE_UINT32_LE(lockTime_));
       BtcUtils::getHash256(dataNoWitness_, thisHash_);
    }
    else
