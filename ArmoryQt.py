@@ -3722,7 +3722,10 @@ class ArmoryMainWindow(QMainWindow):
 
          def sendGetDataMsg():
             msg = PyMessage('getdata')
-            msg.payload.invList.append( [MSG_INV_TX, newTxHash] )
+            if armoryengine.ArmoryUtils.WITNESS:
+               msg.payload.invList.append( [MSG_INV_TX | MSG_WITNESS_FLAG, newTxHash] )
+            else:
+               msg.payload.invList.append( [MSG_INV_TX, newTxhash])
             self.NetworkingFactory.sendMessage(msg)
 
          def checkForTxInBDM():
