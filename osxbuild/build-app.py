@@ -231,7 +231,7 @@ def getTarUnpackPath(tarName, inDir=None):
    if tarName == "Python-%s.tar.xz" % pythonVer:
       theDir = "Python-%s" % pythonVer
    elif tarName == "libpng-%s.tar.xz" % libpngVer:
-      theDir = "libpng-%s" % pythonVer
+      theDir = "libpng-%s" % libpngVer
    else:
       tar = tarfile.open(tarPath,'r')
       theDir = tar.next().name.split('/')[0]
