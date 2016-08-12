@@ -27,8 +27,6 @@
 
 #include "Blockchain.h"
 
-struct MDB_val;
-
 ////////////////////////////////////////////////////////////////////////////////
 LDBIter::LDBIter(LMDB::Iterator&& mv)
    : iter_(std::move(mv))
@@ -66,9 +64,9 @@ LDBIter& LDBIter::operator=(LDBIter&& mv)
 ////////////////////////////////////////////////////////////////////////////////
 bool LDBIter::isValid(DB_PREFIX dbpref)
 {
-   if(!isValid() || iter_.key().size() == 0)
+   if(!isValid() || iter_.key().mv_size == 0)
       return false;
-   return iter_.key()[0] == (char)dbpref;
+   return (*(uint8_t*)iter_.key().mv_data) == (uint8_t)dbpref;
 }
 
 
@@ -105,8 +103,13 @@ bool LDBIter::readIterData(void)
       return false;
    }
 
-   currKey_ = BinaryData(iter_.key());
-   currValue_ = BinaryData(iter_.value());
+   currKey_ = BinaryDataRef(
+      (uint8_t*)iter_.key().mv_data, 
+      iter_.key().mv_size);
+   currValue_ = BinaryDataRef(
+      (uint8_t*)iter_.value().mv_data, 
+      iter_.value().mv_size);
+
    currKeyReader_.setNewData( currKey_ );
    currValueReader_.setNewData( currValue_ );
    isDirty_ = false;
@@ -346,9 +349,9 @@ bool LDBIter::checkKeyStartsWith(DB_PREFIX prefix, BinaryDataRef key)
 
 
 ////////////////////////////////////////////////////////////////////////////////
-LMDBBlockDatabase::LMDBBlockDatabase(Blockchain* bcPtr, 
-   function<bool(void)> isDBReady, string blkFolder) :
-blockchainPtr_(bcPtr), isDBReady_(isDBReady), blkFolder_(blkFolder)
+LMDBBlockDatabase::LMDBBlockDatabase(
+   shared_ptr<Blockchain> bcPtr, string blkFolder) :
+   blockchainPtr_(bcPtr), blkFolder_(blkFolder)
 {
    //for some reason the WRITE_UINT16 macros create 4 byte long BinaryData 
    //instead of 2, so I'm doing this the hard way instead
@@ -377,8 +380,7 @@ void LMDBBlockDatabase::openDatabases(
    BinaryData const & genesisBlkHash,
    BinaryData const & genesisTxHash,
    BinaryData const & magic,
-   ARMORY_DB_TYPE     dbtype,
-   DB_PRUNE_TYPE      pruneType
+   ARMORY_DB_TYPE     dbtype
    )
 {
    baseDir_ = basedir;
@@ -391,7 +393,6 @@ void LMDBBlockDatabase::openDatabases(
    genesisBlkHash_ = genesisBlkHash;
 
    armoryDbType_ = dbtype;
-   dbPruneType_ = pruneType;
 
    if (genesisBlkHash_.getSize() == 0 || magicBytes_.getSize() == 0)
    {
@@ -403,50 +404,22 @@ void LMDBBlockDatabase::openDatabases(
    // Just in case this isn't the first time we tried to open it.
    closeDatabases();
 
-   try
+   for (int i = 0; i < COUNT; i++)
    {
-      for (int i = 0; i < COUNT; i++)
+      DB_SELECT CURRDB = DB_SELECT(i);
+      StoredDBInfo sdbi = openDB(CURRDB);
+
+      // Check that the magic bytes are correct
+      if (magicBytes_ != sdbi.magic_)
       {
-         DB_SELECT CURRDB = DB_SELECT(i);
-         StoredDBInfo sdbi = openDB(CURRDB);
-
-         // Check that the magic bytes are correct
-         if (magicBytes_ != sdbi.magic_)
-         {
-            throw runtime_error("Magic bytes mismatch!  Different blkchain?");
-         }
-
-         else if (armoryDbType_ != sdbi.armoryType_)
-         {
-            LOGERR << "Mismatch in DB type";
-            LOGERR << "DB is in  mode: " << (uint32_t)armoryDbType_;
-            LOGERR << "Expecting mode: " << sdbi.armoryType_;
-            throw runtime_error("Mismatch in DB type");
-         }
-
-         if (dbPruneType_ != sdbi.pruneType_)
-         {
-            throw runtime_error("Mismatch in DB type");
-         }
+         throw DbErrorMsg("Magic bytes mismatch!  Different blokchain?");
       }
-   }
-   catch (LMDBException &e)
-   {
-      LOGERR << "Exception thrown while opening database";
-      LOGERR << e.what();
-      throw e;
-   }
-   catch (runtime_error &e)
-   {
-      LOGERR << "Exception thrown while opening database";
-      LOGERR << e.what();
-      throw e;
-   }
-   catch (...)
-   {
-      LOGERR << "Exception thrown while opening database";
-      closeDatabases();
-      throw;
+
+      if (CURRDB == HEADERS)
+      {
+         if (armoryDbType_ != sdbi.armoryType_)
+            armoryDbType_ = sdbi.armoryType_;
+      }
    }
 
    dbIsOpen_ = true;
@@ -466,19 +439,21 @@ void LMDBBlockDatabase::nukeHeadersDB(void)
    
    while(begin != end)
    {
-      LMDB::Iterator here = begin;
+      CharacterArrayRef keydata(
+         begin.key().mv_size, 
+         (const char*)begin.key().mv_data);
       ++begin;
       
-      dbs_[HEADERS].erase(here.key());
+      dbs_[HEADERS].erase(keydata);
    }
 
    StoredDBInfo sdbi;
    sdbi.magic_      = magicBytes_;
    sdbi.topBlkHgt_  = 0;
    sdbi.armoryType_ = armoryDbType_;
-   sdbi.pruneType_ = dbPruneType_;
+   sdbi.armoryVer_ = ARMORY_DB_VERSION;
    
-   putStoredDBInfo(HEADERS, sdbi);
+   putStoredDBInfo(HEADERS, sdbi, 0);
 }
 
 
@@ -495,14 +470,15 @@ void LMDBBlockDatabase::closeDatabases(void)
 ////////////////////////////////////////////////////////////////////////////////
 void LMDBBlockDatabase::resetHistoryDatabases(void)
 {
+   resetSSHdb();
+
    closeDatabases();
    remove(getDbPath(SUBSSH).c_str());
-   remove(getDbPath(SSH).c_str());
    remove(getDbPath(TXHINTS).c_str());
    remove(getDbPath(STXO).c_str());
 
    openDatabases(baseDir_, genesisBlkHash_, genesisTxHash_,
-      magicBytes_, armoryDbType_, dbPruneType_);
+      magicBytes_, armoryDbType_);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -522,7 +498,7 @@ void LMDBBlockDatabase::destroyAndResetDatabases(void)
    // Reopen the databases with the exact same parameters as before
    // The close & destroy operations shouldn't have changed any of that.
    openDatabases(baseDir_, genesisBlkHash_, genesisTxHash_, 
-      magicBytes_, armoryDbType_, dbPruneType_);
+      magicBytes_, armoryDbType_);
 }
 
 
@@ -534,8 +510,7 @@ BinaryData LMDBBlockDatabase::getTopBlockHash(DB_SELECT db)
 
    LMDBEnv::Transaction tx;
    beginDBTransaction(&tx, db, LMDB::ReadOnly);
-   StoredDBInfo sdbi;
-   getStoredDBInfo(db, sdbi);
+   auto&& sdbi = getStoredDBInfo(db, 0);
    return sdbi.topScannedBlkHash_;
 }
 
@@ -548,17 +523,8 @@ BinaryData LMDBBlockDatabase::getTopBlockHash() const
 ////////////////////////////////////////////////////////////////////////////////
 uint32_t LMDBBlockDatabase::getTopBlockHeight(DB_SELECT db)
 {
-   StoredDBInfo sdbi;
-   getStoredDBInfo(db, sdbi);
+   auto&& sdbi = getStoredDBInfo(db, 0);
    return sdbi.topBlkHgt_;
-}
-
-/////////////////////////////////////////////////////////////////////////////
-// Get value using pre-created slice
-BinaryData LMDBBlockDatabase::getValue(DB_SELECT db, BinaryDataRef key) const
-{
-   return dbs_[db].value( CharacterArrayRef(
-      key.getSize(), (char*)key.getPtr() ) );
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -572,26 +538,6 @@ BinaryDataRef LMDBBlockDatabase::getValueNoCopy(DB_SELECT db,
       return BinaryDataRef((uint8_t*)data.data, data.len);
    else
       return BinaryDataRef();
-}
-
-/////////////////////////////////////////////////////////////////////////////
-// Get value using BinaryData object.  If you have a string, you can use
-// BinaryData key(string(theStr));
-BinaryData LMDBBlockDatabase::getValue(DB_SELECT db, 
-                                       DB_PREFIX prefix,
-                                       BinaryDataRef key) const
-{
-   BinaryData keyFull(key.getSize()+1);
-   keyFull[0] = (uint8_t)prefix;
-   key.copyTo(keyFull.getPtr()+1, key.getSize());
-   try
-   {
-      return getValue(db, keyFull.getRef());
-   }
-   catch (...)
-   {
-      return BinaryData(0);
-   }
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -969,7 +915,7 @@ void LMDBBlockDatabase::putStoredScriptHistory( StoredScriptHistory & ssh)
 
    auto db = SSH;
       
-   putValue(db, ssh.getDBKey(), serializeDBValue(ssh, armoryDbType_, dbPruneType_));
+   putValue(db, ssh.getDBKey(), serializeDBValue(ssh, armoryDbType_));
 
    //onyl supporting these for unit tests, phase out eventually
    {
@@ -981,7 +927,7 @@ void LMDBBlockDatabase::putStoredScriptHistory( StoredScriptHistory & ssh)
          StoredSubHistory & subssh = iter->second;
          if (subssh.txioMap_.size() > 0)
             putValue(SUBSSH, subssh.getDBKey(),
-            serializeDBValue(subssh, this, armoryDbType_, dbPruneType_)
+            serializeDBValue(subssh, this, armoryDbType_)
             );
       }
    }
@@ -997,7 +943,7 @@ void LMDBBlockDatabase::putStoredScriptHistorySummary(StoredScriptHistory & ssh)
       return;
    }
 
-   putValue(SSH, ssh.getDBKey(), serializeDBValue(ssh, armoryDbType_, dbPruneType_));
+   putValue(SSH, ssh.getDBKey(), serializeDBValue(ssh, armoryDbType_));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1008,7 +954,7 @@ void LMDBBlockDatabase::putStoredSubHistory(StoredSubHistory & subssh)
 
    if (subssh.txioMap_.size() > 0)
       putValue(db, subssh.getDBKey(),
-         serializeDBValue(subssh, this, armoryDbType_, dbPruneType_));
+         serializeDBValue(subssh, this, armoryDbType_));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1198,46 +1144,6 @@ bool LMDBBlockDatabase::getFullUTXOMapForSSH(
    return true;
 }
 
-
-
-
-////////////////////////////////////////////////////////////////////////////////
-// We must guarantee that we don't overwrite data if 
-void LMDBBlockDatabase::addRegisteredScript(BinaryDataRef rawScript, 
-                                         uint32_t      blockCreated)
-{
-   BinaryData uniqKey = BtcUtils::getTxOutScrAddr(rawScript);
-   // bool       isMulti = BtcUtils::isMultisigScript(rawScript);
-
-   StoredScriptHistory ssh;
-   getStoredScriptHistory(ssh, uniqKey);
-   
-   uint32_t scannedTo;
-   if(!ssh.isInitialized())
-   {
-      // Script is not registered in the DB yet
-      ssh.uniqueKey_  = uniqKey;
-      ssh.version_    = ARMORY_DB_VERSION;
-      ssh.alreadyScannedUpToBlk_ = blockCreated;
-      //ssh.multisigDBKeys_.resize(0);
-      putStoredScriptHistory(ssh);
-   }
-   else
-   {
-      if(blockCreated!=UINT32_MAX)
-         scannedTo = max(ssh.alreadyScannedUpToBlk_, blockCreated);
-      
-      // Only overwrite if the data in the DB is incorrect
-      if(scannedTo != ssh.alreadyScannedUpToBlk_)
-      {
-         ssh.alreadyScannedUpToBlk_ = scannedTo;
-         putStoredScriptHistory(ssh);
-      }
-   }
-
-   registeredSSHs_[uniqKey] = ssh;
-}
-
 /////////////////////////////////////////////////////////////////////////////
 // TODO: We should also read the HeaderHgtList entries to get the blockchain
 //       sorting that is saved in the DB.  But right now, I'm not sure what
@@ -1280,6 +1186,7 @@ void LMDBBlockDatabase::readAllHeaders(
 
       regHead.setBlockFileNum(sbh.fileID_);
       regHead.setBlockFileOffset(sbh.offset_);
+      regHead.setUniqueID(sbh.uniqueID_);
 
       if (sbh.thisHash_ != regHead.getThisHash())
       {
@@ -1348,37 +1255,33 @@ uint8_t LMDBBlockDatabase::getValidDupIDForHeight_fromDB(uint32_t blockHgt)
    return UINT8_MAX;
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
-void LMDBBlockDatabase::putStoredDBInfo(DB_SELECT db, 
-   StoredDBInfo const & sdbi)
+void LMDBBlockDatabase::putStoredDBInfo(
+   DB_SELECT db, StoredDBInfo const & sdbi, uint32_t id)
 {
    SCOPED_TIMER("putStoredDBInfo");
-   if(!sdbi.isInitialized())
-   {
-      LOGERR << "Tried to put DB info into DB but it's not initialized";
-      return;
-   }
-   putValue(db, sdbi.getDBKey(), serializeDBValue(sdbi));
+   if (!sdbi.isInitialized())
+      throw runtime_error("tried to write uninitiliazed sdbi");
+
+   putValue(db, StoredDBInfo::getDBKey(id), serializeDBValue(sdbi));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool LMDBBlockDatabase::getStoredDBInfo(DB_SELECT db, 
-   StoredDBInfo & sdbi, bool warn)
+StoredDBInfo LMDBBlockDatabase::getStoredDBInfo(DB_SELECT db, uint32_t id)
 {
    SCOPED_TIMER("getStoredDBInfo");
    LMDBEnv::Transaction tx;
    beginDBTransaction(&tx, db, LMDB::ReadOnly);
 
-   BinaryRefReader brr = getValueRef(db, StoredDBInfo::getDBKey());
-    
-   if(brr.getSize() == 0 && warn) 
-   {
-      LOGERR << "No DB info key in database to get";
-      return false;
-   }
+   auto&& key = StoredDBInfo::getDBKey(id);
+   BinaryRefReader brr = getValueRef(db, key.getRef());
+
+   if (brr.getSize() == 0)
+      throw runtime_error("no sdbi at this key");
+
+   StoredDBInfo sdbi;
    sdbi.unserializeDBValue(brr);
-   return true;
+   return sdbi;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1406,8 +1309,7 @@ uint8_t LMDBBlockDatabase::putBareHeader(StoredHeader & sbh, bool updateDupID,
    LMDBEnv::Transaction tx;
    beginDBTransaction(&tx, HEADERS, LMDB::ReadWrite);
 
-   StoredDBInfo sdbiH;
-   getStoredDBInfo(HEADERS, sdbiH);
+   auto&& sdbiH = getStoredDBInfo(HEADERS, 0);
 
 
    uint32_t height  = sbh.blockHeight_;
@@ -1467,7 +1369,7 @@ uint8_t LMDBBlockDatabase::putBareHeader(StoredHeader & sbh, bool updateDupID,
    // Overwrite the existing hash-indexed entry, just in case the dupID was
    // not known when previously written.  
    putValue(HEADERS, DB_PREFIX_HEADHASH, sbh.thisHash_,
-      serializeDBValue(sbh, HEADERS, armoryDbType_, dbPruneType_));
+      serializeDBValue(sbh, HEADERS, armoryDbType_));
 
    // If this block is valid, update quick lookup table, and store it in DBInfo
    if(sbh.isMainBranch_)
@@ -1475,11 +1377,11 @@ uint8_t LMDBBlockDatabase::putBareHeader(StoredHeader & sbh, bool updateDupID,
       setValidDupIDForHeight(sbh.blockHeight_, sbh.duplicateID_, updateDupID);
       if (updateSDBI)
       {
-         getStoredDBInfo(HEADERS, sdbiH);
+         sdbiH = move(getStoredDBInfo(HEADERS, 0));
          if (sbh.blockHeight_ >= sdbiH.topBlkHgt_)
          {
             sdbiH.topBlkHgt_ = sbh.blockHeight_;
-            putStoredDBInfo(HEADERS, sdbiH);
+            putStoredDBInfo(HEADERS, sdbiH, 0);
          }
       }
    }
@@ -1605,7 +1507,7 @@ void LMDBBlockDatabase::putStoredTx( StoredTx & stx, bool withTxOut)
 
    // Now add the base Tx entry in the BLKDATA DB.
    BinaryWriter bw;
-   stx.serializeDBValue(bw, armoryDbType_, dbPruneType_);
+   stx.serializeDBValue(bw, armoryDbType_);
    putValue(BLKDATA, DB_PREFIX_TXDATA, ldbKey, bw.getDataRef());
 
 
@@ -1637,7 +1539,7 @@ void LMDBBlockDatabase::putStoredZC(StoredTx & stx, const BinaryData& zcKey)
 
    // Now add the base Tx entry in the BLKDATA DB.
    BinaryWriter bw;
-   stx.serializeDBValue(bw, armoryDbType_, dbPruneType_);
+   stx.serializeDBValue(bw, armoryDbType_);
    bw.put_uint32_t(stx.unixTime_);
    putValue(dbs, DB_PREFIX_ZCDATA, zcKey, bw.getDataRef());
 
@@ -1766,9 +1668,11 @@ Tx LMDBBlockDatabase::getFullTxCopy(uint16_t txIndex, BlockHeader* bhPtr) const
 
    auto dataPtr = fileMapPtr->getPtr();
 
+   auto getID = [bhPtr]()->uint32_t {return bhPtr->getThisID(); };
+
    BlockData block;
    block.deserialize(dataPtr + bhPtr->getOffset(),
-      bhPtr->getBlockSize(), bhPtr);
+      bhPtr->getBlockSize(), bhPtr, getID);
 
    auto bctx = block.getTxns()[txIndex];
 
@@ -1785,7 +1689,7 @@ TxOut LMDBBlockDatabase::getTxOutCopy(
    SCOPED_TIMER("getTxOutCopy");
    BinaryWriter bw(8);
    bw.put_BinaryData(ldbKey6B);
-   bw.put_uint16_t(txOutIdx, BIGENDIAN);
+   bw.put_uint16_t(txOutIdx, BE);
    BinaryDataRef ldbKey8 = bw.getDataRef();
 
    TxOut txoOut;
@@ -1850,7 +1754,8 @@ TxIn LMDBBlockDatabase::getTxInCopy(
       {
          bool isFragged = txSer == TX_SER_FRAGGED;
          vector<size_t> offsetsIn;
-         BtcUtils::StoredTxCalcLength(brr.getCurrPtr(), isFragged, &offsetsIn);
+         BtcUtils::StoredTxCalcLength(brr.getCurrPtr(), 
+            brr.getSize(), isFragged, &offsetsIn, nullptr, nullptr);
          if ((uint32_t)(offsetsIn.size() - 1) < (uint32_t)(txInIdx + 1))
          {
             LOGERR << "Requested TxIn with index greater than numTxIn";
@@ -1902,7 +1807,7 @@ BinaryData LMDBBlockDatabase::getTxHashForLdbKey(BinaryDataRef ldbKey6B) const
       }
 
       // We can't get here unless we found the precise Tx entry we were looking for
-      stxVal.advance(2);
+      stxVal.advance(4);
       return stxVal.get_BinaryData(32);
    }
 
@@ -2161,7 +2066,7 @@ void LMDBBlockDatabase::putStoredTxOut( StoredTxOut const & stxo)
    SCOPED_TIMER("putStoredTx");
 
    BinaryData ldbKey = stxo.getDBKey(false);
-   BinaryData bw = serializeDBValue(stxo, armoryDbType_, dbPruneType_);
+   BinaryData bw = serializeDBValue(stxo, armoryDbType_);
    putValue(STXO, DB_PREFIX_TXDATA, ldbKey, bw);
 }
 
@@ -2170,7 +2075,7 @@ void LMDBBlockDatabase::putStoredZcTxOut(StoredTxOut const & stxo,
 {
    SCOPED_TIMER("putStoredTx");
 
-   BinaryData bw = serializeDBValue(stxo, armoryDbType_, dbPruneType_);
+   BinaryData bw = serializeDBValue(stxo, armoryDbType_);
    putValue(ZERO_CONF, DB_PREFIX_ZCDATA, zcKey, bw);
 }
 
@@ -2266,56 +2171,6 @@ void LMDBBlockDatabase::getUTXOflags(StoredSubHistory& subssh) const
          txio.setUTXO(true);
    }
 }
-
-
-////////////////////////////////////////////////////////////////////////////////
-bool LMDBBlockDatabase::putStoredUndoData(StoredUndoData const & sud)
-{
-   LOGERR << "putStoredUndoData not implemented yet!!!";
-   return false;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-bool LMDBBlockDatabase::getStoredUndoData(StoredUndoData & sud, uint32_t height)
-{
-   LOGERR << "getStoredUndoData not implemented yet!!!";
-   return false;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-bool LMDBBlockDatabase::getStoredUndoData(StoredUndoData & sud, 
-                                       uint32_t         height, 
-                                       uint8_t          dup)
-{
-   LOGERR << "getStoredUndoData not implemented yet!!!";
-   return false;
-
-   /*
-   BinaryData key = DBUtils.getBlkDataKeyNoPrefix(height, dup); 
-   BinaryRefReader brr = getValueReader(BLKDATA, DB_PREFIX_UNDODATA, key);
-
-   if(brr.getSize() == 0)
-   {
-      LOGERR << " 
-   }
-
-   for(uint32_t i=0; i<sud.stxOutsRemovedByBlock_.size(); i++)
-   {
-      sud.stxOutsRemovedByBlock_[i].blockHeight_ = height;
-      sud.stxOutsRemovedByBlock_[i].duplicateID_ = dup;
-   }
-   */
-}
-
-////////////////////////////////////////////////////////////////////////////////
-bool LMDBBlockDatabase::getStoredUndoData(StoredUndoData & sud, 
-                                       BinaryDataRef    headHash)
-{
-   SCOPED_TIMER("getStoredUndoData");
-   LOGERR << "getStoredUndoData not implemented yet!!!";
-   return false;
-}
-
 
 ////////////////////////////////////////////////////////////////////////////////
 bool LMDBBlockDatabase::putStoredTxHints(StoredTxHints const & sths)
@@ -2427,7 +2282,7 @@ TxRef LMDBBlockDatabase::getTxRef(BinaryData hgtx, uint16_t txIndex)
 {
    BinaryWriter bw;
    bw.put_BinaryData(hgtx);
-   bw.put_uint16_t(txIndex, BIGENDIAN);
+   bw.put_uint16_t(txIndex, BE);
    return TxRef(bw.getDataRef());
 }
 
@@ -2436,7 +2291,7 @@ TxRef LMDBBlockDatabase::getTxRef( uint32_t hgt, uint8_t  dup, uint16_t txIndex)
 {
    BinaryWriter bw;
    bw.put_BinaryData(DBUtils::heightAndDupToHgtx(hgt,dup));
-   bw.put_uint16_t(txIndex, BIGENDIAN);
+   bw.put_uint16_t(txIndex, BE);
    return TxRef(bw.getDataRef());
 }
 
@@ -2797,16 +2652,18 @@ StoredDBInfo LMDBBlockDatabase::openDB(DB_SELECT db)
    dbs_[db].open(dbEnv_[db].get(), getDbName(db));
 
    StoredDBInfo sdbi;
-   getStoredDBInfo(db, sdbi, false);
-   if (!sdbi.isInitialized())
+   try
+   {
+      sdbi = move(getStoredDBInfo(db, 0));
+   }
+   catch (runtime_error&)
    {
       // If DB didn't exist yet (dbinfo key is empty), seed it
       sdbi.magic_ = magicBytes_;
       sdbi.metaHash_ = BtcUtils::EmptyHash_;
       sdbi.topBlkHgt_ = 0;
       sdbi.armoryType_ = armoryDbType_;
-      sdbi.pruneType_ = dbPruneType_;
-      putStoredDBInfo(db, sdbi);
+      putStoredDBInfo(db, sdbi, 0);
    }
 
    return sdbi;
@@ -2849,6 +2706,9 @@ string LMDBBlockDatabase::getDbName(DB_SELECT db) const
       case ZERO_CONF:
          return "zeroconf";
 
+      case TXFILTERS:
+         return "txfilters";
+
       default: 
          throw runtime_error("unknown db");
    }
@@ -2870,8 +2730,85 @@ void LMDBBlockDatabase::closeDB(DB_SELECT db)
 /////////////////////////////////////////////////////////////////////////////
 void LMDBBlockDatabase::resetSSHdb()
 {
-   closeDB(SSH);
-   remove(getDbPath(SSH).c_str());
+   map<BinaryData, int> sshKeys;
 
-   openDB(SSH);
+   {
+      //gather keys
+      LMDBEnv::Transaction tx;
+      beginDBTransaction(&tx, SSH, LMDB::ReadOnly);
+
+      auto dbIter = getIterator(SSH);
+
+      while (dbIter.advanceAndRead(DB_PREFIX_SCRIPT))
+      {
+         StoredScriptHistory ssh;
+         ssh.unserializeDBValue(dbIter.getValueRef());
+
+         sshKeys[dbIter.getKeyRef()] = ssh.scanHeight_;
+      }
+   }
+
+   {
+      //reset them
+
+      LMDBEnv::Transaction tx;
+      beginDBTransaction(&tx, SSH, LMDB::ReadWrite);
+
+
+      for (auto& sshkey : sshKeys)
+      {
+         StoredScriptHistory ssh;
+         BinaryWriter bw;
+         
+         ssh.scanHeight_ = sshkey.second;
+         ssh.serializeDBValue(bw, ARMORY_DB_FULL);
+
+         putValue(SSH, sshkey.first.getRef(), bw.getDataRef());
+      }
+
+      auto&& sdbi = getStoredDBInfo(SSH, 0);
+      sdbi.topBlkHgt_ = 0;
+      sdbi.topScannedBlkHash_ = BtcUtils::EmptyHash_;
+      putStoredDBInfo(SSH, sdbi, 0);
+   }
+}
+
+/////////////////////////////////////////////////////////////////////////////
+void LMDBBlockDatabase::putMissingHashes(
+   const set<BinaryData>& hashSet, uint32_t id)
+{
+   auto&& missingHashesKey = DBUtils::getMissingHashesKey(id);
+
+   BinaryWriter bw;
+   bw.put_uint32_t(hashSet.size());
+   for (auto& hash : hashSet)
+      bw.put_BinaryData(hash);
+
+   putValue(TXFILTERS, missingHashesKey.getRef(), bw.getDataRef());
+}
+
+/////////////////////////////////////////////////////////////////////////////
+set<BinaryData> LMDBBlockDatabase::getMissingHashes(uint32_t id) const
+{
+   auto&& missingHashesKey = DBUtils::getMissingHashesKey(id);
+
+   LMDBEnv::Transaction tx;
+   beginDBTransaction(&tx, TXFILTERS, LMDB::ReadOnly);
+
+   auto&& rawMissingHashes = getValueNoCopy(TXFILTERS, missingHashesKey);
+
+   BinaryRefReader brr(rawMissingHashes);
+   if (brr.getSizeRemaining() < 4)
+      throw runtime_error("invalid missing hashes entry");
+
+   set<BinaryData> missingHashesSet;
+
+   auto&& len = brr.get_uint32_t();
+   if (rawMissingHashes.getSize() != len * 32 + 4)
+      throw runtime_error("missing hashes entry size mismatch");
+
+   for (uint32_t i = 0; i < len; i++)
+      missingHashesSet.insert(move(brr.get_BinaryData(32)));
+
+   return missingHashesSet;
 }

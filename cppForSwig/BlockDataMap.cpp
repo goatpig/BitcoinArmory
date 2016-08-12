@@ -11,14 +11,15 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 void BlockData::deserialize(const uint8_t* data, size_t size,
-   const BlockHeader* blockHeader, bool checkMerkle)
+   const BlockHeader* blockHeader,
+   function<unsigned int(void)> getID, bool checkMerkle)
 {
    headerPtr_ = blockHeader;
 
    //deser header from raw block and run a quick sanity check
    if (size < HEADER_SIZE)
       throw BlockDeserializingException(
-         "raw data is smaller than HEADER_SIZE");
+      "raw data is smaller than HEADER_SIZE");
 
    BinaryDataRef bdr(data, HEADER_SIZE);
    BlockHeader bh(bdr);
@@ -32,25 +33,31 @@ void BlockData::deserialize(const uint8_t* data, size_t size,
    {
       if (bh.getThisHashRef() != blockHeader->getThisHashRef())
          throw BlockDeserializingException(
-            "raw data does not match expected block hash");
+         "raw data does not match expected block hash");
 
       if (numTx != blockHeader->getNumTx())
          throw BlockDeserializingException(
-            "tx count mismatch in deser header");
+         "tx count mismatch in deser header");
    }
 
    for (unsigned i = 0; i < numTx; i++)
    {
       //light tx deserialization, just figure out the offset and size of
       //txins and txouts
-      vector<size_t> offsetIns, offsetOuts;
+      vector<size_t> offsetIns, offsetOuts, offsetsWitness;
       auto txSize = BtcUtils::TxCalcLength(
          brr.getCurrPtr(), brr.getSizeRemaining(),
-         &offsetIns, &offsetOuts);
+         &offsetIns, &offsetOuts, &offsetsWitness);
 
       //create BCTX object and fill it up
       shared_ptr<BCTX> tx = make_shared<BCTX>(brr.getCurrPtr(), txSize);
       tx->version_ = READ_UINT32_LE(brr.getCurrPtr());
+
+      // Check the marker and flag for witness transaction
+      auto brrPtr = brr.getCurrPtr() + 4;
+      auto marker = (const uint16_t*)brrPtr;
+      if (*marker == 0x0100)
+         tx->usesWitness_ = true;
 
       //first tx in block is always the coinbase
       if (i == 0)
@@ -69,7 +76,7 @@ void BlockData::deserialize(const uint8_t* data, size_t size,
          offsetOuts[y],
          offsetOuts[y + 1] - offsetOuts[y]));
 
-      tx->lockTime_ = READ_UINT32_LE(brr.getCurrPtr() + offsetOuts.back());
+      tx->lockTime_ = READ_UINT32_LE(brr.getCurrPtr() + offsetsWitness.back());
 
       //move it to BlockData object vector
       txns_.push_back(move(tx));
@@ -88,14 +95,27 @@ void BlockData::deserialize(const uint8_t* data, size_t size,
    vector<BinaryData> allhashes;
    for (auto& txn : txns_)
    {
-      BinaryDataRef txdata(txn->data_, txn->size_);
-      auto&& txhash = BtcUtils::getHash256(txdata);
-      allhashes.push_back(txhash);
+      auto txhash = txn->moveHash();
+      allhashes.push_back(move(txhash));
    }
 
    auto&& merkleroot = BtcUtils::calculateMerkleRoot(allhashes);
    if (merkleroot != bh.getMerkleRoot())
       throw BlockDeserializingException("invalid merkle root");
+
+   uniqueID_ = getID();
+
+   txFilter_ = move(computeTxFilter(allhashes));
+}
+
+/////////////////////////////////////////////////////////////////////////////
+TxFilter<TxFilterType> 
+BlockData::computeTxFilter(const vector<BinaryData>& allHashes) const
+{
+   TxFilter<TxFilterType> txFilter(uniqueID_, allHashes.size());
+   txFilter.update(allHashes);
+
+   return move(txFilter);
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -124,6 +144,7 @@ BlockHeader BlockData::createBlockHeader(void) const
    bh.blkFileNum_ = fileID_;
    bh.blkFileOffset_ = offset_;
    bh.thisHash_ = blockHash_;
+   bh.uniqueID_ = uniqueID_;
 
    return bh;
 }
@@ -229,9 +250,6 @@ BlockFileMapPointer BlockDataLoader::get(uint32_t fileid, bool prefetch)
    shared_ptr<BlockDataFileMap> fMap;
    
    //if the prefetch flag is set, get the next file
-   auto prefetchLambda = [&](unsigned fileID)
-      ->BlockFileMapPointer
-   { return get(fileID, false); };
 
 
    //lock map, look for fileid entry
@@ -240,6 +258,10 @@ BlockFileMapPointer BlockDataLoader::get(uint32_t fileid, bool prefetch)
 
       if (prefetch)
       {
+         auto prefetchLambda = [this](unsigned fileID)
+            ->BlockFileMapPointer
+         { return get(fileID, false); };
+
          thread tid(prefetchLambda, fileid + 1);
          tid.detach();
       }
@@ -317,14 +339,27 @@ BlockDataFileMap::BlockDataFileMap(const string& filename, bool preload)
 
 #ifdef _WIN32
    fd = _open(filename.c_str(), _O_RDONLY | _O_BINARY);
+   if (fd == -1)
+      return;
+
+   size_ = _lseek(fd, 0, SEEK_END);
+
+   if(size_ == 0)
+   {
+      stringstream ss;
+      ss << "empty block file under path: " << filename;
+      throw ss.str();
+   }
+
+   _lseek(fd, 0, SEEK_SET);
 #else
    fd = open(filename.c_str(), O_RDONLY);
-#endif
    if (fd == -1)
       return;
 
    size_ = lseek(fd, 0, SEEK_END);
    lseek(fd, 0, SEEK_SET);
+#endif
 
    char* data = nullptr;
 

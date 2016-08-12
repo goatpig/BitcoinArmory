@@ -8,55 +8,72 @@
 #ifndef BLOCKDATAMANAGERCONFIG_H
 #define BLOCKDATAMANAGERCONFIG_H
 
+#include <exception>
+#include <thread>
+#include "bdmenums.h"
 #include "BinaryData.h"
 
-enum ARMORY_DB_TYPE
-{
-  ARMORY_DB_BARE, // only raw block data
-  ARMORY_DB_LITE,
-  ARMORY_DB_PARTIAL,
-  ARMORY_DB_FULL,
-  ARMORY_DB_SUPER,
-  ARMORY_DB_WHATEVER
-};
-
-enum DB_PRUNE_TYPE
-{
-  DB_PRUNE_ALL,
-  DB_PRUNE_NONE,
-  DB_PRUNE_WHATEVER
-};
-
+#ifdef _WIN32
+#include <ShlObj.h>
+#else
+#include <wordexp.h>
+#endif
 
 struct BlockDataManagerConfig
 {
-   ARMORY_DB_TYPE armoryDbType;
-   DB_PRUNE_TYPE pruneType;
+   ARMORY_DB_TYPE armoryDbType_ = ARMORY_DB_FULL;
+   BDM_INIT_MODE initMode_ = INIT_RESUME;
+
+   static const string dbDirExtention_;
+   static const string defaultDataDir_;
+   static const string defaultBlkFileLocation_;
+   static const string defaultTestnetDataDir_;
+   static const string defaultTestnetBlkFileLocation_;
+   static const string defaultRegtestDataDir_;
+   static const string defaultRegtestBlkFileLocation_;
+
+   string dataDir_;
+   string blkFileLocation_;
+   string dbDir_;
+
+   bool testnet_ = false;
+   bool regtest_ = false;
+
+   string logFilePath_;
+
+   string spawnID_;
    
-   string blkFileLocation;
-   string levelDBLocation;
-   
-   BinaryData genesisBlockHash;
-   BinaryData genesisTxHash;
-   BinaryData magicBytes;
+   BinaryData genesisBlockHash_;
+   BinaryData genesisTxHash_;
+   BinaryData magicBytes_;
+
+   string btcPort_;
+
+   unsigned ramUsage_ = 4;
+   unsigned threadCount_ = thread::hardware_concurrency();
+
+   exception_ptr exceptionPtr_ = nullptr;
    
    void setGenesisBlockHash(const BinaryData &h)
    {
-      genesisBlockHash = h;
+      genesisBlockHash_ = h;
    }
    void setGenesisTxHash(const BinaryData &h)
    {
-      genesisTxHash = h;
+      genesisTxHash_ = h;
    }
    void setMagicBytes(const BinaryData &h)
    {
-      magicBytes = h;
+      magicBytes_ = h;
    }
-   
+
    BlockDataManagerConfig();
-   BlockDataManagerConfig(const BlockDataManagerConfig& in);
-   BlockDataManagerConfig& operator=(const BlockDataManagerConfig& in);
-   void selectNetwork(const string &netname);
+   void selectNetwork(const std::string &netname);
+
+   void appendPath(string& base, const string& add);
+   void parseArgs(int argc, char* argv[]);
+   void printHelp(void);
+   string stripQuotes(const string& input);
 };
 
 #endif

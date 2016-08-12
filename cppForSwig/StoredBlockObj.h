@@ -17,45 +17,19 @@
 #include <vector>
 #include <list>
 #include <map>
+#include <atomic>
+
 #include "BinaryData.h"
+#include "DBUtils.h"
 #include "BtcUtils.h"
 #include "BlockObj.h"
 #include "txio.h"
 #include "BlockDataManagerConfig.h"
-#include <atomic>
 
-#define ARMORY_DB_VERSION   0x00
+#define ARMORY_DB_VERSION   0x9502
 #define ARMORY_DB_DEFAULT   ARMORY_DB_FULL
 #define UTXO_STORAGE        SCRIPT_UTXO_VECTOR
 
-static const uint64_t UPDATE_BYTES_SSH    = 25;
-static const uint64_t UPDATE_BYTES_SUBSSH = 75;
-static const uint64_t UPDATE_BYTES_KEY    = 8;
-
-enum BLKDATA_TYPE
-{
-  NOT_BLKDATA,
-  BLKDATA_HEADER,
-  BLKDATA_TX,
-  BLKDATA_TXOUT
-};
-
-enum DB_PREFIX
-{
-  DB_PREFIX_DBINFO,
-  DB_PREFIX_HEADHASH,
-  DB_PREFIX_HEADHGT,
-  DB_PREFIX_TXDATA,
-  DB_PREFIX_TXHINTS,
-  DB_PREFIX_SCRIPT,
-  DB_PREFIX_UNDODATA,
-  DB_PREFIX_TRIENODES,
-  DB_PREFIX_COUNT,
-  DB_PREFIX_ZCDATA
-};
-
-// In ARMORY_DB_PARTIAL and LITE, we may not store full tx, but we will know 
-// its block and index, so we can just request the full block from our peer.
 enum DB_TX_AVAIL
 {
   DB_TX_EXISTS,
@@ -73,6 +47,7 @@ enum DB_SELECT
    STXO,
    TXHINTS,
    ZERO_CONF,
+   TXFILTERS,
    COUNT
 };
 
@@ -115,7 +90,6 @@ class DBTx;
 class StoredScriptHistory;
 class StoredSubHistory;
 
-
 template<class T, typename ...Args>
 static BinaryData serializeDBValue(const T &o, const Args &...a)
 {
@@ -123,102 +97,6 @@ static BinaryData serializeDBValue(const T &o, const Args &...a)
    o.serializeDBValue(wr, a...);
    return wr.getData();
 }
-
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-// Basically making stuff globally accessible through DBUtils singleton
-////////////////////////////////////////////////////////////////////////////////
-class DBUtils
-{
-public:
-
-   static uint32_t   hgtxToHeight(const BinaryData& hgtx);
-   static uint8_t    hgtxToDupID(const BinaryData& hgtx);
-   static BinaryData heightAndDupToHgtx(uint32_t hgt, uint8_t dup);
-
-   /////////////////////////////////////////////////////////////////////////////
-   static BinaryData getBlkDataKey(uint32_t height, 
-                            uint8_t  dup);
-
-   /////////////////////////////////////////////////////////////////////////////
-   static BinaryData getBlkDataKey(uint32_t height, 
-                            uint8_t  dup,
-                            uint16_t txIdx);
-
-   /////////////////////////////////////////////////////////////////////////////
-   static BinaryData getBlkDataKey(uint32_t height, 
-                            uint8_t  dup,
-                            uint16_t txIdx,
-                            uint16_t txOutIdx);
-
-   /////////////////////////////////////////////////////////////////////////////
-   static BinaryData getBlkDataKeyNoPrefix(uint32_t height, 
-                                           uint8_t  dup);
-
-   /////////////////////////////////////////////////////////////////////////////
-   static BinaryData getBlkDataKeyNoPrefix(uint32_t height, 
-                                           uint8_t  dup,
-                                           uint16_t txIdx);
-
-   /////////////////////////////////////////////////////////////////////////////
-   static BinaryData getBlkDataKeyNoPrefix(uint32_t height, 
-                                           uint8_t  dup,
-                                           uint16_t txIdx,
-                                           uint16_t txOutIdx);
-
-
-
-   /////////////////////////////////////////////////////////////////////////////
-   static BLKDATA_TYPE readBlkDataKey( BinaryRefReader & brr,
-                                       uint32_t & height,
-                                       uint8_t  & dupID);
-
-   /////////////////////////////////////////////////////////////////////////////
-   static BLKDATA_TYPE readBlkDataKey( BinaryRefReader & brr,
-                                       uint32_t & height,
-                                       uint8_t  & dupID,
-                                       uint16_t & txIdx);
-
-   /////////////////////////////////////////////////////////////////////////////
-   static BLKDATA_TYPE readBlkDataKey( BinaryRefReader & brr,
-                                       uint32_t & height,
-                                       uint8_t  & dupID,
-                                       uint16_t & txIdx,
-                                       uint16_t & txOutIdx);
-   /////////////////////////////////////////////////////////////////////////////
-   static BLKDATA_TYPE readBlkDataKeyNoPrefix( 
-                                       BinaryRefReader & brr,
-                                       uint32_t & height,
-                                       uint8_t  & dupID);
-
-   /////////////////////////////////////////////////////////////////////////////
-   static BLKDATA_TYPE readBlkDataKeyNoPrefix( 
-                                       BinaryRefReader & brr,
-                                       uint32_t & height,
-                                       uint8_t  & dupID,
-                                       uint16_t & txIdx);
-
-   /////////////////////////////////////////////////////////////////////////////
-   static BLKDATA_TYPE readBlkDataKeyNoPrefix( 
-                                       BinaryRefReader & brr,
-                                       uint32_t & height,
-                                       uint8_t  & dupID,
-                                       uint16_t & txIdx,
-                                       uint16_t & txOutIdx);
-   
-
-
-   static string getPrefixName(uint8_t prefixInt);
-   static string getPrefixName(DB_PREFIX pref);
-
-   static bool checkPrefixByte(       BinaryRefReader & brr, 
-                                      DB_PREFIX prefix,
-                                      bool rewindWhenDone=false);
-   static bool checkPrefixByteWError( BinaryRefReader & brr, 
-                                      DB_PREFIX prefix,
-                                      bool rewindWhenDone=false);
-};
 
 ////////////////////////////////////////////////////////////////////////////////
 class StoredDBInfo
@@ -231,7 +109,7 @@ public:
    bool isInitialized(void) const { return magic_.getSize() > 0; }
    bool isNull(void) { return !isInitialized(); }
 
-   static BinaryData getDBKey(void);
+   static BinaryData getDBKey(uint16_t id = 0);
    
    void       unserializeDBValue(BinaryRefReader & brr);
    void         serializeDBValue(BinaryWriter &    bw ) const;
@@ -247,8 +125,7 @@ public:
    BinaryData      topScannedBlkHash_; //32 bytes
    uint32_t        appliedToHgt_=0;
    uint32_t        armoryVer_=ARMORY_DB_VERSION;
-   ARMORY_DB_TYPE  armoryType_=ARMORY_DB_WHATEVER;
-   DB_PRUNE_TYPE   pruneType_=DB_PRUNE_WHATEVER;
+   ARMORY_DB_TYPE  armoryType_=ARMORY_DB_FULL; //default db mode
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -276,8 +153,7 @@ public:
 
    void       unserializeDBValue(BinaryRefReader &  brr);
    void       serializeDBValue(BinaryWriter & bw, ARMORY_DB_TYPE dbType,
-      DB_PRUNE_TYPE pruneType,
-      bool forceSaveSpent = false) const;
+               bool forceSaveSpent = false) const;
    void       unserializeDBValue(BinaryData const & bd);
    void       unserializeDBValue(BinaryDataRef      bd);
    void       unserializeDBKey(BinaryDataRef key);
@@ -317,20 +193,18 @@ public:
    uint16_t          txIndex_;
    uint16_t          txOutIndex_;
    BinaryData        parentHash_;
-   BinaryData        hashAndId_;
    TXOUT_SPENTNESS   spentness_;
    bool              isCoinbase_;
    BinaryData        spentByTxInKey_;
    BinaryData        hgtX_;
+   
 
    mutable BinaryData scrAddr_;
 
-   // We don't actually enforce these members.  They're solely for recording
-   // the values that were unserialized with everything else, so that we can
-   // leter check that it
    uint32_t          unserArmVer_;
    uint32_t          unserDbType_;
    unsigned          parentTxOutCount_ = 0;
+   BinaryData        spenderHash_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -351,8 +225,7 @@ public:
    void       unserializeDBValue(BinaryRefReader & brr);
    void       unserializeDBValue(BinaryData const & bd);
    void       unserializeDBValue(BinaryDataRef      bd);
-   BinaryData   serializeDBValue(ARMORY_DB_TYPE dbType,
-      DB_PRUNE_TYPE pruneType) const;
+   BinaryData   serializeDBValue(ARMORY_DB_TYPE dbType) const;
    void       unserializeDBKey(BinaryDataRef key);
 
    BinaryData getDBKey(bool withPrefix = true) const;
@@ -401,7 +274,7 @@ public:
 
    void         serializeDBValue(
       BinaryWriter &    bw,
-      ARMORY_DB_TYPE dbType, DB_PRUNE_TYPE pruneType
+      ARMORY_DB_TYPE dbType
       ) const;
 
    BinaryData getSerializedTx(void) const;
@@ -422,9 +295,11 @@ public:
    }
 
    virtual bool haveAllTxOut(void) const;
+   bool isRBF(void) const { return isRBF_; }
 
    ////
    map<uint16_t, StoredTxOut> stxoMap_;
+   bool isRBF_ = false;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -454,8 +329,7 @@ public:
    void serializeDBValue( 
       BinaryWriter &    bw,
       DB_SELECT         db,
-      ARMORY_DB_TYPE dbType,
-      DB_PRUNE_TYPE pruneType
+      ARMORY_DB_TYPE dbType
    ) const;
 
    void unserializeDBValue(DB_SELECT db, BinaryData const & bd, bool ignMrkl=false);
@@ -493,13 +367,14 @@ public:
    uint32_t        unserArmVer_;
    uint32_t        unserBlkVer_;
    ARMORY_DB_TYPE  unserDbType_;
-   DB_PRUNE_TYPE   unserPrType_;
    MERKLE_SER_TYPE unserMkType_;
    
    bool hasBlockHeader_=false;
 
    size_t offset_;
    uint16_t fileID_;
+
+   unsigned int uniqueID_ = UINT32_MAX;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -559,7 +434,8 @@ public:
    bool isNull(void) { return !isInitialized(); }
 
    void       unserializeDBValue(BinaryRefReader & brr);
-   void         serializeDBValue(BinaryWriter    & bw, LMDBBlockDatabase *db, ARMORY_DB_TYPE dbType, DB_PRUNE_TYPE pruneType ) const;
+   void       serializeDBValue(BinaryWriter    & bw, 
+               LMDBBlockDatabase *db, ARMORY_DB_TYPE dbType) const;
    void       unserializeDBValue(BinaryData const & bd);
    void       unserializeDBValue(BinaryDataRef      bd);
    void       unserializeDBKey(BinaryDataRef key, bool withPrefix=true);
@@ -569,15 +445,6 @@ public:
    SCRIPT_PREFIX getScriptType(void) const;
    //uint64_t      getTxioCount(void) const {return (uint64_t)txioMap_.size();}
 
-   //void pprintOneLine(uint32_t indent=3);
-   //void pprintFullSSH(uint32_t indent=3);
-
-   TxIOPair*   findTxio(BinaryData const & dbKey8B, bool includeMultisig=false);
-   TxIOPair& insertTxio(TxIOPair const & txio, 
-                        uint64_t* additionalSize = nullptr);
-   bool      eraseTxio(BinaryData const & dbKey8B);
-
-   
    // This adds the TxOut if it doesn't exist yet
    const TxIOPair* markTxOutSpent(const BinaryData& txOutKey8B);
 
@@ -636,7 +503,6 @@ public:
 
    StoredScriptHistory(void) : uniqueKey_(0), 
                                version_(UINT32_MAX),
-                               alreadyScannedUpToBlk_(0),
                                totalTxioCount_(0),
                                totalUnspent_(0) {}
                                
@@ -645,7 +511,7 @@ public:
    bool isNull(void) { return !isInitialized(); }
 
    void       unserializeDBValue(BinaryRefReader & brr);
-   void         serializeDBValue(BinaryWriter    & bw, ARMORY_DB_TYPE dbType, DB_PRUNE_TYPE pruneType ) const;
+   void         serializeDBValue(BinaryWriter    & bw, ARMORY_DB_TYPE dbType) const;
    void       unserializeDBValue(BinaryData const & bd);
    void       unserializeDBValue(BinaryDataRef      bd);
    void       unserializeDBKey(BinaryDataRef key, bool withPrefix=true);
@@ -661,8 +527,6 @@ public:
 
    bool     haveFullHistoryLoaded(void) const;
 
-   TxIOPair*   findTxio(BinaryData const & dbKey8B, bool inclMultisig=false);
-
    bool getFullTxioMap(map<BinaryData, TxIOPair> & mapToFill,
                        bool withMultisig=false);
 
@@ -672,7 +536,8 @@ public:
 
    BinaryData     uniqueKey_;  // includes the prefix byte!
    uint32_t       version_;
-   uint32_t       alreadyScannedUpToBlk_;
+   int32_t        scanHeight_ = -1;
+   int32_t        tallyHeight_ = -1;
    uint64_t       totalTxioCount_;
    uint64_t       totalUnspent_;
    map<unsigned, unsigned> subsshSummary_;
@@ -700,10 +565,10 @@ public:
    bool isInitialized(void) { return (outPointsAddedByBlock_.size() > 0);}
    bool isNull(void) { return !isInitialized(); }
 
-   void       unserializeDBValue(BinaryRefReader & brr, ARMORY_DB_TYPE dbType, DB_PRUNE_TYPE pruneType);
-   void         serializeDBValue(BinaryWriter    & bw, ARMORY_DB_TYPE dbType, DB_PRUNE_TYPE pruneType ) const;
-   void       unserializeDBValue(BinaryData const & bd, ARMORY_DB_TYPE dbType, DB_PRUNE_TYPE pruneType);
-   void       unserializeDBValue(BinaryDataRef      bd, ARMORY_DB_TYPE dbType, DB_PRUNE_TYPE pruneType);
+   void       unserializeDBValue(BinaryRefReader & brr, ARMORY_DB_TYPE dbType);
+   void         serializeDBValue(BinaryWriter    & bw, ARMORY_DB_TYPE dbType) const;
+   void       unserializeDBValue(BinaryData const & bd, ARMORY_DB_TYPE dbType);
+   void       unserializeDBValue(BinaryDataRef      bd, ARMORY_DB_TYPE dbType);
 
    BinaryData getDBKey(bool withPrefix=true) const;
 

@@ -61,7 +61,11 @@
 #include <fstream>
 #include <iostream>
 #include <stdio.h>
+#include <thread>
+#include <mutex>
+#include <memory>
 #include "OS_TranslatePath.h"
+#include "make_unique.h"
 
 #define FILEANDLINE "(" << __FILE__ << ":" << __LINE__ << ") "
 #define LOGERR    (LoggerObj(LogLvlError ).getLogStream() << FILEANDLINE )
@@ -122,8 +126,26 @@ public:
 ////////////////////////////////////////////////////////////////////////////////
 class DualStream : public LogStream
 {
+protected:
+   mutex mu_;
+   unique_ptr<unique_lock<mutex>> thisLock_ = nullptr;
+
 public:
-   DualStream(void) : noStdout_(false) {}
+   DualStream(void) : noStdout_(false) {
+      thisLock_ = make_unique<unique_lock<mutex>>(mu_);
+   }
+
+   ~DualStream(void)
+   {
+      thisLock_.reset();
+      thisLock_ = nullptr;
+   }
+
+   void unlock(void)
+   {
+      thisLock_.reset();
+      thisLock_ = nullptr;
+   }
 
    void enableStdOut(bool newbool) { noStdout_ = !newbool; }
 
@@ -249,6 +271,7 @@ public:
          if (filename != nullptr)
          {
             theOneLog->ds_.setLogFile(string(filename));
+            theOneLog->ds_.unlock();
             theOneLog->isInitialized_ = true;
          }
       }
