@@ -46,6 +46,7 @@ import subprocess
 #from psutil import Popen
 import psutil
 
+from armoryengine.VersionUtils import *
 from CppBlockUtils import KdfRomix, CryptoAES
 from qrcodenative import QRCode, QRErrorCorrectLevel
 from twisted.internet.protocol import Protocol, ClientFactory
@@ -361,39 +362,6 @@ NETWORKS['\x34'] = "Namecoin Network"
 # We disable wallet checks on ARM for the sake of resources (unless forced)
 DO_WALLET_CHECK = CLI_OPTIONS.forceWalletCheck or \
                   not platform.machine().lower().startswith('arm')
-
-# Version Handling Code
-def getVersionString(vquad, numPieces=4):
-   vstr = '%d.%02d' % vquad[:2]
-   if (vquad[2] > 0 or vquad[3] > 0) and numPieces>2:
-      vstr += '.%d' % vquad[2]
-   if vquad[3] > 0 and numPieces>3:
-      vstr += '.%d' % vquad[3]
-   return vstr
-
-def getVersionInt(vquad, numPieces=4):
-   vint  = int(vquad[0] * 1e7)
-   vint += int(vquad[1] * 1e5)
-   if numPieces>2:
-      vint += int(vquad[2] * 1e3)
-   if numPieces>3:
-      vint += int(vquad[3])
-   return vint
-
-def readVersionString(verStr):
-   verList = [int(piece) for piece in verStr.split('.')]
-   while len(verList)<4:
-      verList.append(0)
-   return tuple(verList)
-
-def readVersionInt(verInt):
-   verStr = str(verInt).rjust(10,'0')
-   verList = []
-   verList.append( int(verStr[       -3:]) )
-   verList.append( int(verStr[    -5:-3 ]) )
-   verList.append( int(verStr[ -7:-5    ]) )
-   verList.append( int(verStr[:-7       ]) )
-   return tuple(verList[::-1])
 
 # Allow user to override default bitcoin-core/bitcoind home directory
 if not CLI_OPTIONS.satoshiHome==DEFAULT:
