@@ -58,10 +58,6 @@ uint64_t ScrAddrObj::getUnconfirmedBalance(
    uint32_t currBlk, bool inclAllZC
 ) const
 {
-   /***may need some help with the paging system in place***/
-   if (!db_->isReady())
-      throw runtime_error("DB isnt ready");
-
    uint64_t balance = 0;
    for (auto txio : relevantTxIO_)
    {
@@ -74,9 +70,6 @@ uint64_t ScrAddrObj::getUnconfirmedBalance(
 ////////////////////////////////////////////////////////////////////////////////
 uint64_t ScrAddrObj::getFullBalance() const
 {
-   if (!db_->isReady())
-      throw runtime_error("DB isnt ready");
-
    StoredScriptHistory ssh;
    db_->getStoredScriptHistorySummary(ssh, scrAddr_);
    uint64_t balance = ssh.getScriptBalance(false);
@@ -123,8 +116,8 @@ void ScrAddrObj::updateTxIOMap(map<BinaryData, TxIOPair>& txio_map)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void ScrAddrObj::scanZC(const map<HashString, TxIOPair>& zcTxIOMap,
-   function<bool(const BinaryData&)> isZcFromWallet)
+void ScrAddrObj::scanZC(const ScanAddressStruct& scanInfo,
+   function<bool(const BinaryDataRef)> isZcFromWallet)
 {
    //Dont use a reference for this loop. We check and set the isFromSelf flag
    //in this operation, which is based on the wallet this scrAddr belongs to.
@@ -145,24 +138,21 @@ void ScrAddrObj::scanZC(const map<HashString, TxIOPair>& zcTxIOMap,
       return BinaryData();
    };
 
-   //sort new ZC by zc key and txio key
-   set<BinaryData> zckeys;
-   for (auto& txiopair : zcTxIOMap)
-      zckeys.insert(getZcKeyFromTxio(txiopair.second));
-
-   //break down zcTxIOMap into valid and invalid keys
-   map<BinaryData, TxIOPair> newZC;
-   set<BinaryData> invalidZCset;
+   set<BinaryData> invalidatedZCSet;
 
    //look for invalidated keys, delete from validZcKeys_ as we go
+   bool purge = false;
    auto keyIter = validZCKeys_.begin();
    while (keyIter != validZCKeys_.end())
    {
-      auto zcIter = zckeys.find(keyIter->first);
-      if (zcIter == zckeys.end())
+      auto zcIter = scanInfo.invalidatedZCKeys_.find(
+         keyIter->first.getSliceRef(0, 6));
+      if (zcIter != scanInfo.invalidatedZCKeys_.end())
       {
+         purge = true;
+
          for (auto& txiokey : keyIter->second)
-            invalidZCset.insert(txiokey);
+            invalidatedZCSet.insert(txiokey);
 
          validZCKeys_.erase(keyIter++);
          continue;
@@ -172,19 +162,29 @@ void ScrAddrObj::scanZC(const map<HashString, TxIOPair>& zcTxIOMap,
    }
 
    //purge if necessary
-   if (invalidZCset.size() > 0)
-      purgeZC(invalidZCset);
+   if (purge)
+      purgeZC(invalidatedZCSet);
+
+   auto haveIter = scanInfo.zcMap_.find(scrAddr_);
+   if (haveIter == scanInfo.zcMap_.end())
+      return;
+
+   auto& zcTxIOMap = *haveIter->second;
 
    //look for new keys
+   map<BinaryData, TxIOPair> newZC;
+
    for (auto& txiopair : zcTxIOMap)
    {
+      auto& newtxio = txiopair.second;
       auto keyIter = relevantTxIO_.find(txiopair.first);
       if (keyIter != relevantTxIO_.end())
       {
-         //make sure the ZC txio wasn't spent by another ZC
-         auto& newtxio = txiopair.second;
-         if (!newtxio.hasTxIn())
-            continue;
+         
+         //dont replace a zc that is spent with a zc that is unspent. zc revocation
+         //is handled in the purge segment
+         /*if (!newtxio.hasTxIn())
+            continue;*/
          
          auto& txio = keyIter->second;
          if (txio.hasTxIn())
@@ -194,7 +194,7 @@ void ScrAddrObj::scanZC(const map<HashString, TxIOPair>& zcTxIOMap,
          }
       }
 
-      newZC.insert(txiopair);
+      newZC[txiopair.first] = newtxio;
       auto& zckeyset = validZCKeys_[getZcKeyFromTxio(txiopair.second)];
       zckeyset.insert(txiopair.first);
    }
@@ -206,13 +206,13 @@ void ScrAddrObj::scanZC(const map<HashString, TxIOPair>& zcTxIOMap,
    for (auto& txioPair : newZC)
    {
       if (txioPair.second.hasTxOutZC() &&
-         isZcFromWallet(txioPair.second.getDBKeyOfOutput().getSliceCopy(0, 6)))
+          isZcFromWallet(move(txioPair.second.getDBKeyOfOutput().getSliceRef(0, 6))))
          txioPair.second.setTxOutFromSelf(true);
 
       txioPair.second.setScrAddrLambda(
          [this](void)->const BinaryData&{ return this->getScrAddr(); });
 
-      relevantTxIO_[txioPair.first] = txioPair.second;
+      relevantTxIO_[txioPair.first] = move(txioPair.second);
    }
    
    updateLedgers(*ledger_, zcTxIOMap, 0, UINT32_MAX, false);
@@ -311,9 +311,6 @@ void ScrAddrObj::updateLedgers(map<BinaryData, LedgerEntry>& leMap,
 ////////////////////////////////////////////////////////////////////////////////
 uint64_t ScrAddrObj::getTxioCountFromSSH(void) const
 {
-   if (!db_->isReady())
-      throw runtime_error("DB isnt ready");
-
    StoredScriptHistory ssh;
    db_->getStoredScriptHistorySummary(ssh, scrAddr_);
 
@@ -446,7 +443,7 @@ void ScrAddrObj::mapHistory()
    ledger_ = &LedgerEntry::EmptyLedgerMap_;
 
    //create history map
-   auto getSummary = [this](bool)->map<uint32_t, uint32_t>
+   auto getSummary = [this]()->map<uint32_t, uint32_t>
       { return db_->getSSHSummary(this->getScrAddr(), UINT32_MAX); };
 
    hist_.mapHistory(getSummary); 

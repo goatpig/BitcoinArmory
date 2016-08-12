@@ -46,7 +46,6 @@
 #include <vector>
 #include <string>
 #include <stdexcept>
-#include <assert.h>
 
 // We can remove these includes (Crypto++ ) if we remove the GenerateRandom()
 #include "log.h"
@@ -89,12 +88,12 @@
 
 enum ENDIAN 
 { 
-   LITTLEENDIAN, 
-   BIGENDIAN 
+   ENDIAN_LITTLE, 
+   ENDIAN_BIG 
 };
 
-#define LE LITTLEENDIAN
-#define BE BIGENDIAN
+#define LE ENDIAN_LITTLE
+#define BE ENDIAN_BIG
 
 using namespace std;
 
@@ -550,7 +549,8 @@ public:
          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0             };
 
-      assert(str.size()%2 == 0);
+      if (str.size() % 2 != 0)
+         throw runtime_error("odd hexit count");
       size_t newLen = str.size() / 2;
       alloc(newLen);
 
@@ -844,13 +844,18 @@ public:
    /////////////////////////////////////////////////////////////////////////////
    bool operator<(BinaryDataRef const & bd2) const
    {
-      size_t minLen = min(nBytes_, bd2.nBytes_);
-      for(size_t i=0; i<minLen; i++)
+      if (nBytes_ == bd2.nBytes_)
       {
-         if( ptr_[i] == bd2.ptr_[i] )
-            continue;
-         return ptr_[i] < bd2.ptr_[i];
+         for (size_t i = 0; i < nBytes_; i++)
+         {
+            if (ptr_[i] == bd2.ptr_[i])
+               continue;
+            return ptr_[i] < bd2.ptr_[i];
+         }
+
+         return false;
       }
+
       return (nBytes_ < bd2.nBytes_);
    }
 
@@ -1081,6 +1086,16 @@ public:
    }
 
    /////////////////////////////////////////////////////////////////////////////
+   uint32_t get_int32_t(ENDIAN e = LE)
+   {
+      uint32_t outVal = (e == LE ? 
+         BinaryData::StrToIntLE<int32_t>(bdStr_.getPtr() + pos_) :
+         BinaryData::StrToIntBE<int32_t>(bdStr_.getPtr() + pos_));
+      pos_ += 4;
+      return outVal;
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
    uint64_t get_uint64_t(ENDIAN e=LE)
    {
       uint64_t outVal = (e==LE ? READ_UINT64_LE(bdStr_.getPtr() + pos_) :
@@ -1233,6 +1248,16 @@ public:
    {
       uint32_t  outVal = (e==LE ? READ_UINT32_LE(bdRef_.getPtr() + pos_) :
                                   READ_UINT32_BE(bdRef_.getPtr() + pos_) );
+      pos_ += 4;
+      return outVal;
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   uint32_t get_int32_t(ENDIAN e = LE)
+   {
+      uint32_t outVal = (e == LE ?
+         BinaryData::StrToIntLE<int32_t>(bdRef_.getPtr() + pos_) :
+         BinaryData::StrToIntBE<int32_t>(bdRef_.getPtr() + pos_));
       pos_ += 4;
       return outVal;
    }
@@ -1440,6 +1465,15 @@ public:
    }
 
    /////
+   void put_int32_t(uint32_t val, ENDIAN e = LE)
+   {
+      BinaryData out = (e == LE ? 
+         BinaryData::IntToStrLE<int32_t>(val) : 
+         BinaryData::IntToStrBE<int32_t>(val));
+      theString_.append(out.getPtr(), 4);
+   }
+
+   /////
    void put_uint64_t(uint64_t val, ENDIAN e=LE) 
    { 
       BinaryData out = (e==LE ? WRITE_UINT64_LE(val) : WRITE_UINT64_BE(val));
@@ -1576,7 +1610,7 @@ public:
          {
             cerr << "Could not open file for reading!  File: " << filename.c_str() << endl;
             cerr << "Aborting!" << endl;
-            assert(false);
+            throw runtime_error("failed to open file");
          }
 
          ifstreamPtr->seekg(0, ios::end);

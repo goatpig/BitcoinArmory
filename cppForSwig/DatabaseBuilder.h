@@ -11,27 +11,26 @@
 #include "bdmenums.h"
 #include "Progress.h"
 
-class BlockDataManager_LevelDB;
+class BlockDataManager;
 class ScrAddrFilter;
 
 typedef function<void(BDMPhase, double, unsigned, unsigned)> ProgressCallback;
-
-#define DEBUG_THREAD_COUNT 2
 
 /////////////////////////////////////////////////////////////////////////////
 class DatabaseBuilder
 {
 private:
    BlockFiles& blockFiles_;
-   Blockchain& blockchain_;
+   shared_ptr<Blockchain> blockchain_;
    LMDBBlockDatabase* db_;
    shared_ptr<ScrAddrFilter> scrAddrFilter_;
 
    const ProgressCallback progress_;
    const BinaryData magicBytes_;
    BlockOffset topBlockOffset_;
+   const ARMORY_DB_TYPE dbType_;
 
-   const unsigned threadCount_;
+   const BlockDataManagerConfig bdmConfig_;
 
 private:
    void findLastKnownBlockPos();
@@ -45,18 +44,9 @@ private:
 
    Blockchain::ReorganizationState updateBlocksInDB(
       const ProgressCallback &progress, bool verbose, bool initialLoad);
-   BinaryData updateTransactionHistory(uint32_t startHeight);
-   BinaryData scanHistory(uint32_t startHeight, bool reportprogress);
+   BinaryData updateTransactionHistory(int32_t startHeight);
+   BinaryData scanHistory(int32_t startHeight, bool reportprogress);
    void undoHistory(Blockchain::ReorganizationState& reorgState);
-
-   unsigned getThreadCount(void)
-   {
-      #ifdef _DEBUG
-            return DEBUG_THREAD_COUNT;
-      #else
-            return thread::hardware_concurrency();
-      #endif
-   }
 
    void resetHistory(void);
    void resetSSHdb(void);
@@ -65,10 +55,12 @@ private:
    map<BinaryData, BlockHeader> assessBlkFile(BlockDataLoader& bdl,
       unsigned fileID);
 
+   ARMORY_DB_TYPE getDbType(void) const;
+
 public:
-   DatabaseBuilder(BlockFiles&, BlockDataManager_LevelDB&,
+   DatabaseBuilder(BlockFiles&, BlockDataManager&,
       const ProgressCallback&);
 
    void init(void);
-   uint32_t update(void);
+   Blockchain::ReorganizationState update(void);
 };

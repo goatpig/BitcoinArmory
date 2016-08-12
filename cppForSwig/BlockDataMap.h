@@ -51,6 +51,8 @@ struct BCTX
    uint32_t version_;
    uint32_t lockTime_;
 
+   bool usesWitness_ = false;
+
    vector<OffsetAndSize> txins_;
    vector<OffsetAndSize> txouts_;
 
@@ -64,10 +66,36 @@ struct BCTX
 
    const BinaryData& getHash(void) const
    {
-      if (txHash_.getSize() == 0)
-         BtcUtils::getHash256(data_, size_, txHash_);
+      if(txHash_.getSize() == 0)
+      {
+         if (usesWitness_)
+         {
+            BinaryData noWitData;
+            BinaryDataRef version(data_, 4);
+            BinaryDataRef txinout(data_ + size_ + 6, txouts_.back().first - 6);
+            BinaryDataRef locktime(data_ + size_ - 4, 4);
+           
+            noWitData.append(version);
+            noWitData.append(txinout);
+            noWitData.append(locktime);
+            
+            BtcUtils::getHash256(noWitData, txHash_);
+         }
+         else
+         {
+            BinaryDataRef hashdata(data_, size_);
+            BtcUtils::getHash256(hashdata, txHash_);
+         }
+      }
 
       return txHash_;
+   }
+
+   BinaryData&& moveHash(void)
+   {
+      getHash();
+
+      return move(txHash_);
    }
 };
 
@@ -85,12 +113,20 @@ private:
    size_t offset_ = SIZE_MAX;
 
    BinaryData blockHash_;
+   TxFilter<TxFilterType> txFilter_;
+
+   uint32_t uniqueID_ = UINT32_MAX;
 
 public:
    BlockData(void) {}
 
+   BlockData(uint32_t blockid) 
+      : uniqueID_(blockid)
+   {}
+
    void deserialize(const uint8_t* data, size_t size,
-      const BlockHeader*, bool checkMerkle = false);
+      const BlockHeader*, 
+      function<unsigned int(void)> getID, bool checkMerkle = false);
 
    bool isInitialized(void) const
    {
@@ -117,6 +153,10 @@ public:
 
    BlockHeader createBlockHeader(void) const;
    const BinaryData& getHash(void) const { return blockHash_; }
+   
+   TxFilter<TxFilterType> computeTxFilter(const vector<BinaryData>&) const;
+   const TxFilter<TxFilterType>& getTxFilter(void) const { return txFilter_; }
+   uint32_t uniqueID(void) const { return uniqueID_; }
 };
 
 /////////////////////////////////////////////////////////////////////////////
@@ -212,7 +252,8 @@ private:
    function<void(void)> gcLambda_;
 
 public:
-   BlockFileMapPointer(shared_ptr<BlockDataFileMap> ptr, function<void(void)> gcLambda)
+   BlockFileMapPointer(
+      shared_ptr<BlockDataFileMap> ptr, function<void(void)> gcLambda)
       : ptr_(ptr), gcLambda_(gcLambda)
    {
       //update ptr counter
