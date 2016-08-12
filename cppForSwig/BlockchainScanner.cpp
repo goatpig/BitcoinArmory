@@ -10,37 +10,23 @@
 #include "log.h"
 
 ////////////////////////////////////////////////////////////////////////////////
-void BlockchainScanner::scan(uint32_t scanFrom)
+void BlockchainScanner::scan(int32_t scanFrom)
 {
-   unique_lock<mutex> lock(scrAddrFilter_->mergeLock_);
-
    scanFrom = check_merkle(scanFrom);
-   if (scanFrom == UINT32_MAX)
+   if (scanFrom == INT32_MIN)
       return;
 
    scan_nocheck(scanFrom);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-uint32_t BlockchainScanner::check_merkle(uint32_t scanFrom)
+int32_t BlockchainScanner::check_merkle(int32_t scanFrom)
 {
    auto& topBlock = blockchain_->top();
-   StoredDBInfo subsshSdbi;
 
-   //write address merkle in SSH sdbi
-   {
-      auto&& addrMerkle = scrAddrFilter_->getAddressMapMerkle();
+   scrAddrFilter_->updateAddressMerkleInDB();
+   auto&& subsshSdbi = scrAddrFilter_->getSubSshSDBI();
 
-      StoredDBInfo sshSdbi;
-      LMDBEnv::Transaction historytx;
-      db_->beginDBTransaction(&historytx, SSH, LMDB::ReadWrite);
-
-      db_->getStoredDBInfo(SSH, sshSdbi);
-      sshSdbi.metaHash_ = addrMerkle;
-      db_->putStoredDBInfo(SSH, sshSdbi);
-   }
-
-   db_->getStoredDBInfo(SUBSSH, subsshSdbi);
    BlockHeader* sdbiblock = nullptr;
 
    //check if we need to scan anything
@@ -56,15 +42,16 @@ uint32_t BlockchainScanner::check_merkle(uint32_t scanFrom)
 
    if (sdbiblock->isMainBranch())
    {
-      if (sdbiblock->getBlockHeight() > scanFrom)
+      //this will set scanFrom to 0 before an initial scan
+      if ((int)sdbiblock->getBlockHeight() > scanFrom)
          scanFrom = sdbiblock->getBlockHeight();
 
-      if (scanFrom != 0 &&
-         scanFrom > topBlock.getBlockHeight())
+      if (scanFrom > (int)topBlock.getBlockHeight() || 
+          scrAddrFilter_->getScrAddrMap()->size() == 0)
       {
          LOGINFO << "no history to scan";
          topScannedBlockHash_ = topBlock.getThisHash();
-         return UINT32_MAX;
+         return INT32_MIN;
       }
    }
 
@@ -72,17 +59,21 @@ uint32_t BlockchainScanner::check_merkle(uint32_t scanFrom)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void BlockchainScanner::scan_nocheck(uint32_t scanFrom)
+void BlockchainScanner::scan_nocheck(int32_t scanFrom)
 {
+   TIMER_START("scan_nocheck");
+
    startAt_ = scanFrom;
    auto& topBlock = blockchain_->top();
 
    preloadUtxos();
+
    shared_ptr<BatchLink> batchLinkPtr;
 
    //lambdas
+   auto&& scrRefMap = scrAddrFilter_->getOutScrRefMap();
    auto scanBlockDataLambda = [&](shared_ptr<BlockDataBatch> batch)
-   { scanBlockData(batch); };
+   { scanBlockData(batch, scrRefMap); };
 
    auto writeBlockDataLambda = [&](void)
    { writeBlockData(batchLinkPtr); };
@@ -120,23 +111,17 @@ void BlockchainScanner::scan_nocheck(uint32_t scanFrom)
 
             while (currentHeader->getBlockFileNum() < targetBlkFileNum)
                currentHeader = &(blockchain_->getHeaderByHeight(++targetHeight));
-
          }
          catch (range_error& e)
          {
             //if getHeaderByHeight throws before targetHeight is topBlock's height,
             //something went wrong. Otherwise we just hit the end of the chain.
+
             if (targetHeight < topBlock.getBlockHeight())
                throw e;
             else
                targetHeight = topBlock.getBlockHeight();
          }
-
-         #ifdef _DEBUG
-            targetHeight = startHeight + totalThreadCount_;
-            if(targetHeight > topBlock.getBlockHeight())
-               targetHeight = topBlock.getBlockHeight();
-         #endif
 
          endHeight = targetHeight;
 
@@ -144,12 +129,15 @@ void BlockchainScanner::scan_nocheck(uint32_t scanFrom)
          vector<thread> tIDs;
          vector<shared_ptr<BlockDataBatch>> batchVec;
 
+         atomic<unsigned> blockCounter;
+         blockCounter.store(startHeight, memory_order_relaxed);
+
          //start batch scanner threads
          vector<unique_lock<mutex>> lockVec;
          for (unsigned i = 0; i < totalThreadCount_; i++)
          {
             shared_ptr<BlockDataBatch> batch
-               = make_shared<BlockDataBatch>(startHeight + i, endHeight);
+               = make_shared<BlockDataBatch>(endHeight, &blockCounter);
             batchVec.push_back(batch);
             
             //lock each batch mutex before start scan thread
@@ -199,6 +187,8 @@ void BlockchainScanner::scan_nocheck(uint32_t scanFrom)
          currentBatchPtr->topScannedBlockHash_ = topScannedBlockHash_;
          currentBatchPtr->batchVec_ = batchVec;
          currentBatchPtr->next_ = batchLinkPtr;
+         currentBatchPtr->start_ = startHeight;
+         currentBatchPtr->end_ = endHeight;
          
          currentBatchLock.reset();
 
@@ -227,21 +217,24 @@ void BlockchainScanner::scan_nocheck(uint32_t scanFrom)
 
    if (writeThreadID.joinable())
       writeThreadID.join();
+
+   TIMER_STOP("scan_nocheck");
+   if (topBlock.getBlockHeight() - scanFrom > 100)
+   {
+      auto timeSpent = TIMER_READ_SEC("scan_nocheck");
+      LOGINFO << "scanned transaction history in " << timeSpent << "s";
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void BlockchainScanner::scanBlockData(shared_ptr<BlockDataBatch> batch)
+void BlockchainScanner::scanBlockData(shared_ptr<BlockDataBatch> batch,
+   const map<TxOutScriptRef, int>& scrRefSet)
 {
    //getBlock lambda
-   auto getBlock = [&](unsigned height)->BlockData
+   auto getBlock = [&](unsigned height)->const BlockData&
    {
-      auto iter = batch->blocks_.find(height);
-      if (iter == batch->blocks_.end())
+      try
       {
-         //TODO: encapsulate in try block to catch deser errors and signal pull thread
-         //termination before exiting scope. cant have the scan thread hanging if this
-         //one fails. Also update batch->end_ if we didn't go as far as that block height
-
          //grab block file map
          BlockHeader* blockheader = nullptr;
          blockheader = &blockchain_->getHeaderByHeight(height);
@@ -260,50 +253,65 @@ void BlockchainScanner::scanBlockData(shared_ptr<BlockDataBatch> batch)
          auto filemap = mapIter->second.get();
 
          //find block and deserialize it
-         try
+         auto getID = [blockheader](void)->unsigned int
          {
-            BlockData bdata;
-            bdata.deserialize(
-               filemap->getPtr() + blockheader->getOffset(),
-               blockheader->getBlockSize(),
-               blockheader, false);
+            return blockheader->getThisID();
+         };
 
-            auto insertPair = batch->blocks_.insert(make_pair(height, move(bdata)));
-            iter = insertPair.first;
-         }
-         catch (...)
-         {
-            LOGERR << "unknown block deser error during scan at height #" << height;
-            batch->exceptionPtr_ = current_exception();
-            return BlockData();
-         }
+         auto& bdata = batch->blocks_[height];
+         bdata.deserialize(
+            filemap->getPtr() + blockheader->getOffset(),
+            blockheader->getBlockSize(),
+            blockheader, getID, false);
+
+         return bdata;
       }
-
-      return iter->second;
+      catch (BlockDeserializingException& e)
+      {
+         LOGERR << e.what();
+         batch->exceptionPtr_ = current_exception();
+         return BlockData();
+      }
+      catch (...)
+      {
+         LOGERR << "unknown block deser error during scan at height #" << height;
+         batch->exceptionPtr_ = current_exception();
+         return BlockData();
+      }
    };
 
-   //parser lambda
-   auto blockDataLoop = [&](function<void(const BlockData&)> callback)
+   //txout parser lambda
+   auto txoutLoop = [&](function<void(const BlockData&)> callback)
    {
-      auto currentBlock = batch->start_;
+      unsigned currentBlock;
 
-      while (currentBlock <= batch->end_)
+      while (1)
       {
-         BlockData&& bdata = getBlock(currentBlock);
+         currentBlock = 
+            batch->blockCounter_->fetch_add(1, memory_order_relaxed);
+
+         if (currentBlock > batch->end_)
+            break;
+
+         auto& bdata = getBlock(currentBlock);
          if (!bdata.isInitialized())
             return;
 
          callback(bdata);
-
-         currentBlock += totalThreadCount_;
       }
+   };
+
+   //txin parser lambda
+   auto txinLoop = [&](function<void(const BlockData&)> callback)
+   {
+      for (auto& bdata : batch->blocks_)
+         callback(bdata.second);
    };
 
    //txout lambda
    auto txoutParser = [&](const BlockData& blockdata)->void
    {
       //TODO: flag isMultisig
-
       const BlockHeader* header = blockdata.header();
 
       //update processed height
@@ -322,15 +330,21 @@ void BlockchainScanner::scanBlockData(shared_ptr<BlockDataBatch> batch)
                txn.data_ + txout.first, txout.second);
             brr.advance(8);
             unsigned scriptSize = (unsigned)brr.get_var_int();
-            auto&& scrAddr = BtcUtils::getTxOutScrAddr(
+            auto&& scrRef = BtcUtils::getTxOutScrAddrNoCopy(
                brr.get_BinaryDataRef(scriptSize));
 
-            if (!scrAddrFilter_->hasScrAddress(scrAddr))
+            auto saIter = scrRefSet.find(scrRef);
+            if (saIter == scrRefSet.end())
+               continue;
+
+            if (saIter->second >= (int)blockdata.header()->getBlockHeight())
                continue;
 
             //if we got this far, this txout is ours
             //get tx hash
             auto& txHash = txn.getHash();
+
+            auto&& scrAddr = scrRef.getScrAddr();
 
             //construct StoredTxOut
             StoredTxOut stxo;
@@ -413,10 +427,10 @@ void BlockchainScanner::scanBlockData(shared_ptr<BlockDataBatch> batch)
             stxo.spentness_ = TXOUT_SPENT;
             stxo.spentByTxInKey_ = txinkey;
 
-            //if this tx's hash was never pulled, let's add it to the stxo's
-            //parent hash, in order to keep track of this tx in the hint db
-            if (txn.txHash_.getSize() == 0)
-               stxo.parentHash_ = move(txn.getHash());
+            //set spenderHash and parentTxOutCount to count and hash tallying
+            //of spent txouts
+            stxo.spenderHash_ = txn.getHash();
+            stxo.parentTxOutCount_ = txn.txouts_.size();
 
             //add to ssh_
             auto& ssh = batch->ssh_[stxo.getScrAddress()];
@@ -437,7 +451,7 @@ void BlockchainScanner::scanBlockData(shared_ptr<BlockDataBatch> batch)
    };
 
    //txout loop
-   blockDataLoop(txoutParser);
+   txoutLoop(txoutParser);
 
    //done with txouts, fill the future flag and wait on the mutex 
    //to move to txins processing
@@ -445,7 +459,7 @@ void BlockchainScanner::scanBlockData(shared_ptr<BlockDataBatch> batch)
    unique_lock<mutex> txinLock(batch->parseTxinMutex_);
 
    //txins loop
-   blockDataLoop(txinParser);
+   txinLoop(txinParser);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -466,11 +480,17 @@ void BlockchainScanner::accumulateDataBeforeBatchWrite(
    {
       auto utxoIter = utxoMap_.find(spentTxOut.parentHash_);
       if (utxoIter == utxoMap_.end())
+      {
+         LOGERR << "stxo parent hash not in utxo map";
          continue;
+      }
 
       auto idIter = utxoIter->second.find(spentTxOut.txOutIndex_);
       if (idIter == utxoIter->second.end())
+      {
+         LOGERR << "stxo txoutid not in utxo map";
          continue;
+      }
 
       utxoIter->second.erase(idIter);
       if (utxoIter->second.size() == 0)
@@ -533,8 +553,6 @@ void BlockchainScanner::writeBlockData(
       //serialize data
       map<BinaryData, BinaryWriter> serializedSubSSH;
       map<BinaryData, BinaryWriter> serializedStxo;
-      map<BinaryData, BinaryWriter> serializedTxHints;
-      map<BinaryData, StoredTxHints> txHints;
 
       {
          for (auto& batchPtr : batchLinkPtr->batchVec_)
@@ -552,28 +570,20 @@ void BlockchainScanner::writeBlockData(
 
                   auto& bw = serializedSubSSH[subsshkey.getDataRef()];
                   subssh.second.serializeDBValue(
-                     bw, db_, ARMORY_DB_BARE, DB_PRUNE_NONE);
+                     bw, db_, ARMORY_DB_BARE);
                }
             }
 
             for (auto& utxomap : batchPtr->utxos_)
             {
                auto&& txHashPrefix = utxomap.first.getSliceCopy(0, 4);
-               StoredTxHints& stxh = txHints[txHashPrefix];
-               if (stxh.txHashPrefix_.getSize() == 0)
-                  stxh.txHashPrefix_ = txHashPrefix;
-
 
                for (auto& utxo : utxomap.second)
                {
-                  stxh.dbKeyList_.push_back(utxo.second.getDBKeyOfParentTx());
-
                   auto& bw = serializedStxo[utxo.second.getDBKey()];
                   utxo.second.serializeDBValue(
-                     bw, ARMORY_DB_BARE, DB_PRUNE_NONE, true);
+                     bw, ARMORY_DB_BARE, true);
                }
-               
-               stxh.preferredDBKey_ = stxh.dbKeyList_.front();
             }
          }
       }
@@ -589,7 +599,7 @@ void BlockchainScanner::writeBlockData(
             if (bw.getSize() > 0)
                bw.reset();
             stxo.serializeDBValue(
-               bw, ARMORY_DB_BARE, DB_PRUNE_NONE, true);
+               bw, ARMORY_DB_BARE, true);
          }
       }
 
@@ -622,19 +632,18 @@ void BlockchainScanner::writeBlockData(
          }
 
          //update SUBSSH sdbi
-         StoredDBInfo sdbi;
-         db_->getStoredDBInfo(SUBSSH, sdbi);
+         auto&& sdbi = scrAddrFilter_->getSubSshSDBI();
          sdbi.topBlkHgt_ = batchLinkPtr->batchVec_[0]->end_;
          sdbi.topScannedBlkHash_ = batchLinkPtr->topScannedBlockHash_;
-         db_->putStoredDBInfo(SUBSSH, sdbi);
+         scrAddrFilter_->putSubSshSDBI(sdbi);
       }
 
       //wait on writeHintsThreadId
       if (writeHintsThreadId.joinable())
          writeHintsThreadId.join();
 
-      LOGINFO << "scanned from height #" << batchLinkPtr->batchVec_[0]->start_
-         << " to #" << batchLinkPtr->batchVec_[0]->end_;
+      LOGINFO << "scanned from height #" << batchLinkPtr->start_
+         << " to #" << batchLinkPtr->end_;
 
       size_t progVal = getGlobalOffsetForBlock(batchLinkPtr->batchVec_[0]->end_);
       calc.advance(progVal);
@@ -708,22 +717,30 @@ void BlockchainScanner::processAndCommitTxHints(
             addTxHintMap(utxomap);
          }
          
+         map<BinaryData, map<unsigned, StoredTxOut>> spentTxOutMap;
          for (auto& stxo : batchPtr->spentTxOuts_)
          {
-            //if this stxo has no parent hash, it means the hash was flagged
-            //by a utxo, we can skip this
-            if (stxo.parentHash_.getSize() == 0)
-               continue;
+            auto& stxomap = spentTxOutMap[stxo.spenderHash_];
+            StoredTxOut spentstxo;
+            spentstxo.parentHash_ = stxo.spenderHash_;
+            spentstxo.blockHeight_ = 
+               DBUtils::hgtxToHeight(stxo.spentByTxInKey_.getSliceRef(0, 4));
+            spentstxo.duplicateID_ = 
+               DBUtils::hgtxToDupID(stxo.spentByTxInKey_.getSliceRef(0, 4));
 
-            //spoof the object for addTxHintMap
-            pair<BinaryData, map<unsigned, StoredTxOut>> stxomap;
-            
-            stxomap.first = stxo.parentHash_;
-            //unsigned value in map is unused for tallying txhints
-            stxomap.second.insert(make_pair(0, stxo));
+            spentstxo.txIndex_ = 
+               READ_UINT16_BE(stxo.spentByTxInKey_.getSliceRef(4, 2));
+            spentstxo.txOutIndex_ = 
+               READ_UINT16_BE(stxo.spentByTxInKey_.getSliceRef(6, 2));
 
-            addTxHintMap(stxomap);
+            spentstxo.parentTxOutCount_ = stxo.parentTxOutCount_;
+
+            stxomap.insert(move(
+               make_pair(spentstxo.txOutIndex_, move(spentstxo))));
          }
+
+         for (auto& stxomap : spentTxOutMap)
+            addTxHintMap(stxomap);
       }
    }
 
@@ -763,10 +780,11 @@ void BlockchainScanner::updateSSH(bool force)
    //loop over all subssh entiers in SUBSSH db, 
    //compile balance, txio count and summary map for each address
 
-   {
-      StoredDBInfo sdbi;
-      db_->getStoredDBInfo(SSH, sdbi);
+   //now also resolves unhinted tx hashes
 
+   StoredDBInfo sdbi = scrAddrFilter_->getSshSDBI();
+
+   {
       BlockHeader* sdbiblock = nullptr;
 
       try
@@ -792,8 +810,22 @@ void BlockchainScanner::updateSSH(bool force)
       }
    }
 
+   bool resolveHashes = false;
+   {
+      //check for db mode against HEADERS db since it the only one that 
+      //doesn't change through rescans
+      auto headersSdbi = db_->getStoredDBInfo(HEADERS, 0);
+
+      if (headersSdbi.armoryType_ == ARMORY_DB_FULL)
+         resolveHashes = true;
+   }
+
+   set<BinaryData> txnsToResolve;
+
+   //process ssh, list missing hashes for hash resolver
    map<BinaryData, StoredScriptHistory> sshMap_;
-   
+   auto scrAddrMap = scrAddrFilter_->getScrAddrMap();
+
    {
       StoredScriptHistory* sshPtr = nullptr;
 
@@ -802,9 +834,9 @@ void BlockchainScanner::updateSSH(bool force)
       db_->beginDBTransaction(&sshTx, SUBSSH, LMDB::ReadOnly);
 
       auto sshIter = db_->getIterator(SUBSSH);
-      sshIter.seekToFirst();
+      sshIter.seekToStartsWith(DB_PREFIX_SCRIPT);
 
-      while (sshIter.advanceAndRead())
+      do
       {
          while (sshIter.isValid())
          {
@@ -823,7 +855,8 @@ void BlockchainScanner::updateSSH(bool force)
 
             auto sshKey = subsshkey.getSliceRef(1, subsshkey.getSize() - 5);
 
-            if (!scrAddrFilter_->hasScrAddress(sshKey))
+            auto saIter = scrAddrMap->find(sshKey);
+            if (saIter == scrAddrMap->end())
             {
                sshPtr = nullptr;
                sshIter.advanceAndRead();
@@ -838,14 +871,14 @@ void BlockchainScanner::updateSSH(bool force)
             {
                //set iterator at unscanned height
                auto hgtx = sshIter.getKeyRef().getSliceRef(-4, 4);
-               auto height = DBUtils::hgtxToHeight(hgtx);
-               if (sshPtr->alreadyScannedUpToBlk_ >= height)
+               int height = DBUtils::hgtxToHeight(hgtx);
+               if (sshPtr->tallyHeight_ >= height)
                {
                   //this ssh has already been scanned beyond the height sshIter is at,
                   //let's set the iterator to the correct height (or the next key)
                   auto&& newKey = sshIter.getKey().getSliceCopy(0, subsshkey.getSize() - 4);
                   auto&& newHgtx = DBUtils::heightAndDupToHgtx(
-                     sshPtr->alreadyScannedUpToBlk_ + 1, 0);
+                     sshPtr->tallyHeight_ + 1, 0);
 
                   newKey.append(newHgtx);
                   sshIter.seekTo(newKey);
@@ -866,22 +899,31 @@ void BlockchainScanner::updateSSH(bool force)
          //deser subssh
          StoredSubHistory subssh;
          subssh.unserializeDBKey(sshIter.getKeyRef());
-         
+
          //check dupID
          if (db_->getValidDupIDForHeight(subssh.height_) != subssh.dupID_)
             continue;
 
          subssh.unserializeDBValue(sshIter.getValueRef());
 
+         set<BinaryData> txSet;
          for (auto& txioPair : subssh.txioMap_)
          {
+            auto&& keyOfOutput = txioPair.second.getDBKeyOfOutput();
+            
+            if (resolveHashes)
+            {
+               auto&& txKey = keyOfOutput.getSliceRef(0, 6);
+
+               txnsToResolve.insert(txKey);
+            }
+
             if (!txioPair.second.isMultisig())
             {
                //add up balance
                if (txioPair.second.hasTxIn())
                {
                   //check for same block fund&spend
-                  auto&& keyOfOutput = txioPair.second.getDBKeyOfOutput();
                   auto&& keyOfInput = txioPair.second.getDBKeyOfInput();
 
                   if (keyOfOutput.startsWith(keyOfInput.getSliceRef(0, 4)))
@@ -905,17 +947,64 @@ void BlockchainScanner::updateSSH(bool force)
          //build subssh summary
          sshPtr->subsshSummary_[subssh.height_] = subssh.txioCount_;
       }
+      while (sshIter.advanceAndRead(DB_PREFIX_SCRIPT));
+   }
+
+
+   //build txHash refs from listed txins
+   if (resolveHashes && txnsToResolve.size() > 0)
+   {
+      set<BinaryData> allMissingTxHashes;
+      try
+      {
+         allMissingTxHashes = move(scrAddrFilter_->getMissingHashes());
+      }
+      catch (runtime_error&)
+      {
+         //no missing hashes entry yet, move on
+      }
+
+      for (auto& txid : txnsToResolve)
+      {
+         //grab tx
+         Tx tx;
+         try
+         {
+            tx = move(db_->getFullTxCopy(txid));
+         }
+         catch (exception&)
+         {
+            continue;
+         }
+
+         //build list of all refered hashes in txins
+         auto txinCount = tx.getNumTxIn();
+         auto dataPtr = tx.getPtr();
+
+         for (auto i = 0; i < txinCount; i++)
+         {
+            auto offset = tx.getTxInOffset(i);
+            BinaryDataRef bdr(dataPtr + offset, 32);
+
+            //skip coinbase txns
+            if (bdr == BtcUtils::EmptyHash_)
+               continue;
+
+            allMissingTxHashes.insert(bdr);
+         }
+      }
+
+      scrAddrFilter_->putMissingHashes(allMissingTxHashes);
    }
    
-   //write it
+   //write ssh data
    auto& topheader = blockchain_->getHeaderByHash(topScannedBlockHash_);
    auto topheight = topheader.getBlockHeight();
 
    LMDBEnv::Transaction putsshtx;
    db_->beginDBTransaction(&putsshtx, SSH, LMDB::ReadWrite);
 
-   auto& scrAddrMap = scrAddrFilter_->getScrAddrMap();
-   for (auto& scrAddr : scrAddrMap)
+   for (auto& scrAddr : *scrAddrMap)
    {
       auto& ssh = sshMap_[scrAddr.first];
 
@@ -925,27 +1014,26 @@ void BlockchainScanner::updateSSH(bool force)
       }
 
       BinaryData&& sshKey = ssh.getDBKey();
-      ssh.alreadyScannedUpToBlk_ = topheight;
+      ssh.scanHeight_ = topheight;
+      ssh.tallyHeight_ = topheight;
 
       BinaryWriter bw;
-      ssh.serializeDBValue(bw, ARMORY_DB_BARE, DB_PRUNE_NONE);
+      ssh.serializeDBValue(bw, ARMORY_DB_BARE);
       
       db_->putValue(SSH, sshKey.getRef(), bw.getDataRef());
    }
 
    //update sdbi
-   StoredDBInfo sdbi;
-   db_->getStoredDBInfo(SSH, sdbi);
-
    sdbi.topScannedBlkHash_ = topScannedBlockHash_;
    sdbi.topBlkHgt_ = topheight;
 
-   db_->putStoredDBInfo(SSH, sdbi);
+   scrAddrFilter_->putSshSDBI(sdbi);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 void BlockchainScanner::preloadUtxos()
 {
+   //TODO: check utxos pulled vs scraddrfilter (to reduce dataset for side scans)
    LMDBEnv::Transaction tx;
    db_->beginDBTransaction(&tx, STXO, LMDB::ReadOnly);
    auto dbIter = db_->getIterator(STXO);
@@ -972,7 +1060,7 @@ void BlockchainScanner::undo(Blockchain::ReorganizationState& reorgState)
 {
    //dont undo subssh, these are skipped by dupID when loading history
 
-   BlockHeader* blockPtr = reorgState.prevTopBlock;
+   BlockHeader* blockPtr = reorgState.prevTop;
    map<uint32_t, BlockFileMapPointer> fileMaps_;
 
    map<DB_SELECT, set<BinaryData>> keysToDelete;
@@ -980,13 +1068,15 @@ void BlockchainScanner::undo(Blockchain::ReorganizationState& reorgState)
    set<BinaryData> undoSpentness; //TODO: add spentness DB
 
    //TODO: sanity checks on header ptrs from reorgState
-   if (reorgState.prevTopBlock->getBlockHeight() <=
+   if (reorgState.prevTop->getBlockHeight() <=
        reorgState.reorgBranchPoint->getBlockHeight())
       throw runtime_error("invalid reorg state");
 
+   auto scrAddrMap = scrAddrFilter_->getScrAddrMap();
+
    while (blockPtr != reorgState.reorgBranchPoint)
    {
-      auto currentHeight = blockPtr->getBlockHeight();
+      int currentHeight = blockPtr->getBlockHeight();
       auto currentDupId  = blockPtr->getDuplicateID();
 
       //create tx to pull subssh data
@@ -1009,9 +1099,11 @@ void BlockchainScanner::undo(Blockchain::ReorganizationState& reorgState)
 
       auto& filemap = fileIter->second;
 
+      auto getID = [blockPtr]()->uint32_t {return blockPtr->getThisID(); };
+
       BlockData bdata;
       bdata.deserialize(filemap.get()->getPtr() + blockPtr->getOffset(),
-         blockPtr->getBlockSize(), blockPtr);
+         blockPtr->getBlockSize(), blockPtr, getID);
 
       auto& txns = bdata.getTxns();
       for (unsigned i = 0; i < txns.size(); i++)
@@ -1030,7 +1122,8 @@ void BlockchainScanner::undo(Blockchain::ReorganizationState& reorgState)
             auto&& scrAddr = BtcUtils::getTxOutScrAddr(
                brr.get_BinaryDataRef(scriptSize));
 
-            if (!scrAddrFilter_->hasScrAddress(scrAddr))
+            auto saIter = scrAddrMap->find(scrAddr);
+            if (saIter == scrAddrMap->end())
                continue;
 
             //update ssh value and txio count
@@ -1038,7 +1131,7 @@ void BlockchainScanner::undo(Blockchain::ReorganizationState& reorgState)
             if (!ssh.isInitialized())
                db_->getStoredScriptHistorySummary(ssh, scrAddr);
 
-            if (ssh.alreadyScannedUpToBlk_ < currentHeight)
+            if (ssh.scanHeight_ < currentHeight)
                continue;
             
             brr.resetPosition();
@@ -1085,7 +1178,7 @@ void BlockchainScanner::undo(Blockchain::ReorganizationState& reorgState)
             if (!ssh.isInitialized())
                db_->getStoredScriptHistorySummary(ssh, scrAddr);
 
-            if (ssh.alreadyScannedUpToBlk_ < currentHeight)
+            if (ssh.scanHeight_ < currentHeight)
                continue;
 
             ssh.totalUnspent_ += stxo.getValue();
@@ -1139,7 +1232,7 @@ void BlockchainScanner::undo(Blockchain::ReorganizationState& reorgState)
          db_->deleteValue(STXO, key);
    }
 
-   auto branchPointHeight = 
+   int branchPointHeight = 
       reorgState.reorgBranchPoint->getBlockHeight();
 
    //ssh
@@ -1148,8 +1241,7 @@ void BlockchainScanner::undo(Blockchain::ReorganizationState& reorgState)
       db_->beginDBTransaction(&tx, SSH, LMDB::ReadWrite);
 
       //go thourgh all ssh in scrAddrFilter
-      auto& scrAddrMap = scrAddrFilter_->getScrAddrMap();
-      for (auto& scrAddr : scrAddrMap)
+      for (auto& scrAddr : *scrAddrMap)
       {
          auto& ssh = sshMap[scrAddr.first];
          
@@ -1165,31 +1257,429 @@ void BlockchainScanner::undo(Blockchain::ReorganizationState& reorgState)
          }
 
          //update alreadyScannedUpToBlk_ to branch point height
-         if (ssh.alreadyScannedUpToBlk_ > branchPointHeight)
-            ssh.alreadyScannedUpToBlk_ = branchPointHeight;
+         if (ssh.scanHeight_ > branchPointHeight)
+            ssh.scanHeight_ = branchPointHeight;
+
+         if (ssh.tallyHeight_ > branchPointHeight)
+            ssh.tallyHeight_ = branchPointHeight;
       }
 
       //write it all up
       for (auto& ssh : sshMap)
       {
-         if (!scrAddrFilter_->hasScrAddress(ssh.second.uniqueKey_))
+         auto saIter = scrAddrMap->find(ssh.second.uniqueKey_);
+         if (saIter == scrAddrMap->end())
          {
             LOGWARN << "invalid scrAddr during undo";
             continue;
          }
 
          BinaryWriter bw;
-         ssh.second.serializeDBValue(bw, ARMORY_DB_BARE, DB_PRUNE_NONE);
+         ssh.second.serializeDBValue(bw, ARMORY_DB_BARE);
          db_->putValue(SSH,
             ssh.second.getDBKey().getRef(),
             bw.getDataRef());
       }
 
       //update SSH sdbi      
-      StoredDBInfo sdbi;
-      db_->getStoredDBInfo(SSH, sdbi);
+      StoredDBInfo sdbi = scrAddrFilter_->getSshSDBI();
       sdbi.topScannedBlkHash_ = reorgState.reorgBranchPoint->getThisHash();
       sdbi.topBlkHgt_ = branchPointHeight;
-      db_->putStoredDBInfo(SSH, sdbi);
+      scrAddrFilter_->putSshSDBI(sdbi);
    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void BlockchainScanner::getFilterHitsThread(
+   const set<BinaryData>& hashSet,
+   atomic<int>& counter,
+   map<uint32_t, set<TxFilterResults>>& resultMap)
+{
+   map<uint32_t, set<TxFilterResults>> localResults;
+
+   {
+      LMDBEnv::Transaction tx;
+      db_->beginDBTransaction(&tx, TXFILTERS, LMDB::ReadOnly);
+
+      while (1)
+      {
+         auto&& fileNum = counter.fetch_sub(1, memory_order_relaxed);
+
+         if (fileNum < 0)
+            break;
+
+         auto&& pool = db_->getFilterPoolRefForFileNum<TxFilterType>(fileNum);
+         for (auto& hash : hashSet)
+         {
+            auto&& blockKeys = pool.compare(hash);
+            if (blockKeys.size() > 0)
+            {
+               auto& fileNumEntry = localResults[fileNum];
+
+               TxFilterResults filterResult;
+               filterResult.hash_ = hash;
+               filterResult.filterHits_ = move(blockKeys);
+
+               fileNumEntry.insert(move(filterResult));
+            }
+         }
+      }
+   }
+
+   //merge results
+   unique_lock<mutex> lock(resolverMutex_);
+   resultMap.insert(localResults.begin(), localResults.end());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void BlockchainScanner::processFilterHitsThread(
+   map<uint32_t, map<uint32_t, set<const TxFilterResults*>>>& filtersResultMap,
+   TransactionalSet<BinaryData>& missingHashes,
+   atomic<int>& counter, map<BinaryData, BinaryData>& results)
+{
+   map<BinaryData, BinaryData> result;
+
+   uint32_t missedBlocks = 0;
+
+   auto resolveHashes = 
+      [&](uint32_t fileNum,
+      map<uint32_t, set<const TxFilterResults*>> filterHit,
+      set<BinaryData>& hashSet)->void
+   {
+      auto filemap = blockDataLoader_.get(fileNum, false);
+      auto fileptr = filemap.get();
+      
+      for (auto& blockkey : filterHit)
+      {
+         BlockHeader* headerPtr;
+         try
+         {
+            headerPtr = &blockchain_->getHeaderById(blockkey.first);
+         }
+         catch (range_error&)
+         {
+            //no block for this id, this is an orphan
+            missedBlocks++;
+            continue;
+         }
+
+         auto& filterSet = blockkey.second;
+
+         auto getID = [headerPtr](void)->unsigned int
+         { return headerPtr->getThisID(); };
+
+         //search the block
+         BlockData bdata;
+         bdata.deserialize(
+            fileptr->getPtr() + headerPtr->getOffset(),
+            headerPtr->getBlockSize(),
+            headerPtr, getID, false);
+
+         auto txns = bdata.getTxns();
+
+         for (auto& filterhit : filterSet)
+         {
+            auto iditer = filterhit->filterHits_.find(blockkey.first);
+            if (iditer == filterhit->filterHits_.end())
+               continue;
+
+            auto& txids = iditer->second;
+
+            for (auto& txid : txids)
+            {
+               auto& txn = txns[txid];
+               auto& txnHash = txn->getHash();
+
+               auto hashIter = hashSet.begin();
+
+               while (hashIter != hashSet.end())
+               {
+                  if (txnHash == *hashIter)
+                  {
+                     auto&& countAndHash = WRITE_UINT32_LE(txids.size());
+                     countAndHash.append(txnHash);
+                     result[countAndHash] = move(
+                        DBUtils::getBlkDataKeyNoPrefix(
+                        headerPtr->getBlockHeight(),
+                        headerPtr->getDuplicateID(),
+                        txid));
+
+                     missingHashes.erase(txnHash);
+
+                     hashSet.erase(hashIter++);
+                     continue;
+                  }
+
+                  ++hashIter;
+               }
+
+            }
+         }
+      }
+   };
+
+   vector<uint32_t> blkFileNums;
+   for (auto& hitsPair : filtersResultMap)
+      blkFileNums.push_back(hitsPair.first);
+
+   while (1)
+   {
+      auto&& index = counter.fetch_sub(1, memory_order_relaxed);
+      if (index < 0)
+         break;
+
+      auto& fileNum = blkFileNums[index];
+      auto filterIter = filtersResultMap.find(fileNum);
+
+      auto& blkHitsMap = filterIter->second;
+      auto hashSet = missingHashes.get();
+
+      auto hitsPairIter = blkHitsMap.begin();
+
+      while (hitsPairIter != blkHitsMap.end())
+      {
+         auto& txFilterSet = hitsPairIter->second;
+
+         auto hitsIter = txFilterSet.begin();
+         while (hitsIter != txFilterSet.end())
+         {
+            auto hashIter = hashSet->find((*hitsIter)->hash_);
+            if (hashIter != hashSet->end())
+            {
+               ++hitsIter;
+               continue;
+            }
+
+            txFilterSet.erase(hitsIter++);
+         }
+
+         if (txFilterSet.size() > 0)
+         {
+            ++hitsPairIter;
+            continue;
+         }
+
+         blkHitsMap.erase(hitsPairIter++);
+      }
+
+      if (blkHitsMap.size() == 0)
+         continue;
+
+      resolveHashes(filterIter->first, filterIter->second, *hashSet);
+   }
+
+   //merge results
+   unique_lock<mutex> lock(resolverMutex_);
+   results.insert(result.begin(), result.end());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void BlockchainScanner::resolveTxHashes()
+{
+   /***
+   the missing hashes entry will always be empty if the db is not set
+   to ARMORY_DB_FULL, no need to check dbType here
+   ***/
+
+   TIMER_START("resolveHashes");
+
+   set<BinaryData> missingHashes;
+   try
+   {
+      missingHashes = move(scrAddrFilter_->getMissingHashes());
+   }
+   catch (runtime_error&)
+   {
+      //no missing hashes entry, return
+      TIMER_STOP("resolveHashes");
+      return;
+   }
+   
+   if (missingHashes.size() == 0)
+      return;
+
+   set<BinaryData> resolvedHashes;
+   auto originalMissingSet = missingHashes;
+
+   auto hashIter = missingHashes.begin();
+   while (hashIter != missingHashes.end())
+   {
+      auto&& dbkey = db_->getDBKeyForHash(*hashIter);
+      if (dbkey.getSize() == 0)
+      {
+         ++hashIter;
+         continue;
+      }
+
+      resolvedHashes.insert(*hashIter);
+      missingHashes.erase(hashIter++);
+   }
+
+   TransactionalSet<BinaryData> missingHashSet;
+   map<BinaryData, TxFilter<TxFilterType>> relevantFilters;
+   missingHashSet.insert(missingHashes);
+
+   LOGINFO << "resolving txhashes";
+
+   //check filters
+   atomic<int> counter;
+   counter.store((int)totalBlockFileCount_ - 1, memory_order_relaxed);
+
+   vector<thread> filterThreads;
+   map<uint32_t, set<TxFilterResults>> resultMap;
+
+   auto filterThr = [&](void)->void
+   {
+      getFilterHitsThread(missingHashes, counter, resultMap);
+   };
+
+   for (unsigned i = 1; i < totalThreadCount_; i++)
+      filterThreads.push_back(thread(filterThr));
+
+   filterThr();
+
+   for (auto& thr : filterThreads)
+   {
+      if (thr.joinable())
+         thr.join();
+   }
+
+   set<uint32_t> heights;
+   map<uint32_t, map<uint32_t, set<const TxFilterResults*>>> resultsByHash;
+   unsigned missingIDs = 0;
+   for (auto& fileNumPair : resultMap)
+   {
+      auto& block_result_pair = resultsByHash[fileNumPair.first];
+
+      for (auto& filterHits : fileNumPair.second)
+      {
+         for (auto& filterHit : filterHits.filterHits_)
+         {
+            try
+            {
+               auto& header = 
+                  blockchain_->getHeaderById(filterHit.first);
+               auto&& height = header.getBlockHeight();
+         
+               heights.insert(height);
+               block_result_pair[filterHit.first].insert(&filterHits);
+            }
+            catch (...)
+            {
+               ++missingIDs;
+            }
+         }
+      }
+   }
+
+   if (missingIDs > 0)
+      LOGINFO << missingIDs << " missing block IDs";
+
+   LOGINFO << heights.size() << " blocks hit by tx filters";
+
+   //process filter hits
+   counter.store(resultMap.size() - 1, memory_order_relaxed);
+   map<BinaryData, BinaryData> resolverResults;
+   vector<thread> resolverThreads;
+
+   auto resolverThr = [&](void)->void
+   {
+      processFilterHitsThread(resultsByHash,
+         missingHashSet,
+         counter, resolverResults);
+   };
+
+   for (unsigned i = 1; i < totalThreadCount_; i++)
+      resolverThreads.push_back(thread(resolverThr));
+
+   resolverThr();
+
+   for (auto& thr : resolverThreads)
+   {
+      if (thr.joinable())
+         thr.join();
+   }
+
+   //write the resolved hashes
+   {
+      map<BinaryData, StoredTxHints> txHints;
+      map<BinaryData, BinaryWriter> serializedHints;
+      map<BinaryData, BinaryWriter> countAndHash;
+
+      {
+         LMDBEnv::Transaction hintTx;
+         db_->beginDBTransaction(&hintTx, TXHINTS, LMDB::ReadOnly);
+
+         for (auto& result : resolverResults)
+         {
+            resolvedHashes.insert(result.first);
+
+            //get hashPrefix
+            auto hashPrefix = result.first.getSliceRef(4, 4);
+
+            auto& hintObj = txHints[hashPrefix];
+
+            //pull hint if it's fresh
+            if (hintObj.getNumHints() == 0)
+               db_->getStoredTxHints(hintObj, hashPrefix);
+
+            //append new key
+            hintObj.dbKeyList_.push_back(result.second);
+
+            //save hash and count under dbkey
+            BinaryData dbkey;
+            dbkey.append(WRITE_UINT8_LE(DB_PREFIX_TXDATA));
+            dbkey.append(result.second);
+
+            auto& bw = countAndHash[dbkey];
+            bw.put_BinaryData(result.first);
+         }
+      }
+
+      LOGINFO << "found " << resolverResults.size() << " missing hashes";
+
+      for (auto& hint : txHints)
+      {
+         BinaryData hintKey(1);
+         hintKey.getPtr()[0] = DB_PREFIX_TXHINTS;
+         hintKey.append(hint.first);
+         auto& bw = serializedHints[hintKey];
+         hint.second.serializeDBValue(bw);
+      }
+
+      //write it
+      {
+         LMDBEnv::Transaction hintTx;
+         db_->beginDBTransaction(&hintTx, TXHINTS, LMDB::ReadWrite);
+
+         for (auto& toWrite : serializedHints)
+         {
+            db_->putValue(TXHINTS,
+               toWrite.first.getRef(),
+               toWrite.second.getDataRef());
+         }
+
+         for (auto& toWrite : countAndHash)
+         {
+            db_->putValue(TXHINTS,
+               toWrite.first.getRef(),
+               toWrite.second.getDataRef());
+         }
+      }
+   }
+
+   //clean up missing hashes in db
+   missingHashes.clear();
+   for (auto& hash : originalMissingSet)
+   {
+      auto resolvedIter = resolvedHashes.find(hash);
+      if (resolvedIter == resolvedHashes.end())
+         missingHashes.insert(hash);
+   }
+
+   scrAddrFilter_->putMissingHashes(missingHashes);
+
+   TIMER_STOP("resolveHashes");
+   auto timeElapsed = TIMER_READ_SEC("resolveHashes");
+   LOGINFO << "Resolved missing hashes in " << timeElapsed << "s";
 }

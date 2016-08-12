@@ -77,7 +77,8 @@ static uint64_t scanFor(const uint8_t *in, const uint64_t inLen,
    return UINT64_MAX;
 }
 
-class BlockDataManager_LevelDB::BitcoinQtBlockFiles
+
+class BlockDataManager::BitcoinQtBlockFiles
 {
    const string blkFileLocation_;
    struct BlkFile
@@ -695,67 +696,384 @@ private:
    }
 };
 
-/////////////////////////////////////////////////////////////////////////////
-//  This basically does the same thing as the bulk filter, but it's for the
-//  BDM to collect data on registered wallets/addresses during bulk
-//  blockchain scaning.  It needs to track relevant OutPoints and produce 
-//  a list of transactions that are relevant to the registered wallets.
-//
-//  Also, this takes a raw pointer to memory, because it is assumed that 
-//  the data is being buffered and not converted/parsed for Tx objects, yet.
-//
-//  If the txSize and offsets have been pre-calculated, you can pass them 
-//  in, or pass {0, NULL, NULL} to have it calculated for you.
-//  
+////////////////////////////////////////////////////////////////////////////////
+////
+//// BlockDataManagerConfig
+////
+////////////////////////////////////////////////////////////////////////////////
+const string BlockDataManagerConfig::dbDirExtention_ = "/databases";
+#if defined(_WIN32) || defined(__APPLE__)
+const string BlockDataManagerConfig::defaultDataDir_ = "~/Armory";
+const string BlockDataManagerConfig::defaultBlkFileLocation_ = "~/Bitcoin/blocks";
 
+const string BlockDataManagerConfig::defaultTestnetDataDir_ = "~/Armory/testnet3";
+const string BlockDataManagerConfig::defaultTestnetBlkFileLocation_ = "~/Bitcoin/testnet3/blocks";
 
+const string BlockDataManagerConfig::defaultRegtestDataDir_ = "~/Armory/regtest";
+const string BlockDataManagerConfig::defaultRegtestBlkFileLocation_ = "~/Bitcoin/regtest/blocks";
+#else
+const string BlockDataManagerConfig::defaultDataDir_ = "~/.armory";
+const string BlockDataManagerConfig::defaultBlkFileLocation_ = "~/.bitcoin/blocks";
+
+const string BlockDataManagerConfig::defaultTestnetDataDir_ = "~/.armory/testnet3";
+const string BlockDataManagerConfig::defaultTestnetBlkFileLocation_ = "~/.bitcoin/testnet3/blocks";
+
+const string BlockDataManagerConfig::defaultRegtestDataDir_ = "~/.armory/regtest";
+const string BlockDataManagerConfig::defaultRegtestBlkFileLocation_ = "~/.bitcoin/regtest/blocks";
+#endif
+
+////////////////////////////////////////////////////////////////////////////////
 BlockDataManagerConfig::BlockDataManagerConfig()
 {
-   armoryDbType = ARMORY_DB_BARE;
-   pruneType = DB_PRUNE_NONE;
+   armoryDbType_ = ARMORY_DB_BARE;
+   selectNetwork("Main");
 }
 
-BlockDataManagerConfig::BlockDataManagerConfig(const BlockDataManagerConfig& in)
-{
-   *this = in;
-}
-
-BlockDataManagerConfig& BlockDataManagerConfig::operator=(
-   const BlockDataManagerConfig& in)
-{
-   if (this != &in)
-   {
-      armoryDbType = ARMORY_DB_BARE;
-      pruneType = DB_PRUNE_NONE;
-
-      blkFileLocation = in.blkFileLocation;
-      levelDBLocation = in.levelDBLocation;
-
-      genesisBlockHash = in.genesisBlockHash;
-      genesisTxHash = in.genesisTxHash;
-      magicBytes = in.magicBytes;
-   }
-
-   return *this;
-}
-
+////////////////////////////////////////////////////////////////////////////////
 void BlockDataManagerConfig::selectNetwork(const string &netname)
 {
    if(netname == "Main")
    {
-      genesisBlockHash = READHEX(MAINNET_GENESIS_HASH_HEX);
-      genesisTxHash = READHEX(MAINNET_GENESIS_TX_HASH_HEX);
-      magicBytes = READHEX(MAINNET_MAGIC_BYTES);
+      genesisBlockHash_ = READHEX(MAINNET_GENESIS_HASH_HEX);
+      genesisTxHash_ = READHEX(MAINNET_GENESIS_TX_HASH_HEX);
+      magicBytes_ = READHEX(MAINNET_MAGIC_BYTES);
+      btcPort_ = "8333";
    }
    else if(netname == "Test")
    {
-      genesisBlockHash = READHEX(TESTNET_GENESIS_HASH_HEX);
-      genesisTxHash = READHEX(TESTNET_GENESIS_TX_HASH_HEX);
-      magicBytes = READHEX(TESTNET_MAGIC_BYTES);
+      genesisBlockHash_ = READHEX(TESTNET_GENESIS_HASH_HEX);
+      genesisTxHash_ = READHEX(TESTNET_GENESIS_TX_HASH_HEX);
+      magicBytes_ = READHEX(TESTNET_MAGIC_BYTES);
+      btcPort_ = "18333";
+
+      testnet_ = true;
+   }
+   else if (netname == "Regtest")
+   {
+	   genesisBlockHash_ = READHEX(REGTEST_GENESIS_HASH_HEX);
+	   genesisTxHash_ = READHEX(REGTEST_GENESIS_TX_HASH_HEX);
+	   magicBytes_ = READHEX(REGTEST_MAGIC_BYTES);
+      btcPort_ = "18444";
+
+      regtest_ = true;
    }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+string BlockDataManagerConfig::stripQuotes(const string& input)
+{
+   size_t start = 0;
+   size_t len = input.size();
 
+   auto& first_char = input.c_str()[0];
+   auto& last_char = input.c_str()[len - 1];
+
+   if (first_char == '\"' || first_char == '\'')
+   {
+      start = 1;
+      --len;
+   }
+
+   if (last_char == '\"' || last_char == '\'')
+      --len;
+
+   return input.substr(start, len);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void BlockDataManagerConfig::printHelp(void)
+{
+   //TODO: spit out arg list with description
+   exit(0);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void BlockDataManagerConfig::parseArgs(int argc, char* argv[])
+{
+   /***
+   --testnet: run db against testnet bitcoin network
+
+   --regtest: run db against regression test network
+
+   --rescan: delete all processed history data and rescan blockchain from the
+   first block
+
+   --rebuild: delete all DB data and build and scan from scratch
+
+   --rescanSSH: delete balance and txcount data and rescan it. Much faster than
+   rescan or rebuild.
+
+   --datadir: path to the operation folder
+
+   --dbdir: path to folder containing the database files. If empty, a new db
+   will be created there
+
+   --satoshi-datadir: path to blockchain data folder (blkXXXXX.dat files)
+
+   --spawnId: id as a string with which the db was spawned. Certain methods like
+   shutdown require this id to proceed. Starting with an empty id makes all
+   these methods unusable. Currently only used by shutdown()
+
+   --ram_usage: defines the ram use during scan operations. 1 level averages
+   128MB of ram (without accounting the base amount, ~400MB). Defaults at 4.
+   Can't be lower than 1. Can be changed in between processes
+
+   --thread-count: defines how many processing threads can be used during db
+   builds and scans. Defaults to maximum available CPU threads. Can't be
+   lower than 1. Can be changed in between processes
+
+   --db-type: sets the db type:
+   DB_BARE: tracks wallet history only. Smallest DB.
+   DB_FULL: tracks wallet history and resolves all relevant tx hashes.
+   ~750MB DB at the time of 0.95 release. Default DB type.
+   DB_SUPER: tracks all blockchain history. XXL DB (100GB+).
+   Not implemented yet
+
+   db type cannot be changed in between processes. Once a db has been built
+   with a certain type, it will always function according to that type.
+   Specifying another type will do nothing. Build a new db to change type.
+
+   ***/
+
+   try
+   {
+      for (int i = 1; i < argc; i++)
+      {
+         istringstream ss(argv[i]);
+         string str;
+         getline(ss, str, '=');
+
+         if (str == "--testnet")
+         {
+            selectNetwork("Test");
+         }
+         else if (str == "--regtest")
+         {
+            selectNetwork("Regtest");
+         }
+         else if (str == "--rescan")
+         {
+            initMode_ = INIT_RESCAN;
+         }
+         else if (str == "--rebuild")
+         {
+            initMode_ = INIT_REBUILD;
+         }
+         else if (str == "--rescanSSH")
+         {
+            initMode_ = INIT_SSH;
+         }
+         else
+         {
+            if (str == "--datadir")
+            {
+               string argstr;
+               getline(ss, argstr, '=');
+
+               dataDir_ = stripQuotes(argstr);
+            }
+            else if (str == "--dbdir")
+            {
+               string argstr;
+               getline(ss, argstr, '=');
+
+               dbDir_ = stripQuotes(argstr);
+            }
+            else if (str == "--satoshi-datadir")
+            {
+               string argstr;
+               getline(ss, argstr, '=');
+
+               blkFileLocation_ = stripQuotes(argstr);
+            }
+            else if (str == "--spawnId")
+            {
+               string argstr;
+               getline(ss, argstr, '=');
+
+               spawnID_ = stripQuotes(argstr);
+            }
+            else if (str == "--db-type")
+            {
+               string argstr;
+               getline(ss, argstr, '=');
+
+               auto&& str = stripQuotes(argstr);
+               if (str == "DB_BARE")
+                  armoryDbType_ = ARMORY_DB_BARE;
+               else if (str == "DB_FULL")
+                  armoryDbType_ = ARMORY_DB_FULL;
+               else if (str == "DB_SUPER")
+                  armoryDbType_ = ARMORY_DB_SUPER;
+               else
+               {
+                  cout << "Error: bad argument syntax" << endl;
+                  printHelp();
+               }
+            }
+            else if (str == "--ram-usage")
+            {
+               string argstr;
+               getline(ss, argstr, '=');
+
+               int val = 0;
+               try
+               {
+                  val = stoi(argstr);
+               }
+               catch (...)
+               {
+               }
+
+               if (val > 0)
+                  ramUsage_ = val;
+            }
+            else if (str == "--thread-count")
+            {
+               string argstr;
+               getline(ss, argstr, '=');
+
+               int val = 0;
+               try
+               {
+                  val = stoi(argstr);
+               }
+               catch (...)
+               {
+               }
+
+               if (val > 0)
+                  threadCount_ = val;
+            }
+            else
+            {
+               cout << "Error: bad argument syntax" << endl;
+               printHelp();
+            }
+         }
+      }
+
+      //figure out defaults
+      if (dataDir_.size() == 0)
+      {
+         if (!testnet_ && !regtest_)
+            dataDir_ = defaultDataDir_;
+         else if (!regtest_)
+            dataDir_ = defaultTestnetDataDir_;
+         else
+            dataDir_ = defaultRegtestDataDir_;
+      }
+
+
+      if (dbDir_.size() == 0)
+      {
+         dbDir_ = dataDir_;
+         appendPath(dbDir_, dbDirExtention_);
+      }
+
+      if (blkFileLocation_.size() == 0)
+      {
+         if (!testnet_)
+            blkFileLocation_ = defaultBlkFileLocation_;
+         else
+            blkFileLocation_ = defaultTestnetBlkFileLocation_;
+      }
+
+      //resolve ~
+#ifdef _WIN32
+      char* pathPtr = new char[MAX_PATH + 1];
+      if (SHGetFolderPath(0, CSIDL_APPDATA, 0, 0, pathPtr) != S_OK)
+      {
+         delete[] pathPtr;
+         throw runtime_error("failed to resolve appdata path");
+      }
+
+      string userPath(pathPtr);
+      delete[] pathPtr;
+#else
+      wordexp_t wexp;
+      wordexp("~", &wexp, 0);
+
+      for(unsigned i=0; i < wexp.we_wordc; i++)
+      {
+         cout << wexp.we_wordv[i] << endl;
+      }
+
+      if(wexp.we_wordc == 0)
+         throw runtime_error("failed to resolve home path");
+
+      string userPath(wexp.we_wordv[0]);
+#endif
+
+      //expand paths if necessary
+      if (dataDir_.c_str()[0] == '~')
+      {
+         auto newPath = userPath;
+         appendPath(newPath, dataDir_.substr(1));
+
+         dataDir_ = move(newPath);
+      }
+
+      if (dbDir_.c_str()[0] == '~')
+      {
+         auto newPath = userPath;
+         appendPath(newPath, dbDir_.substr(1));
+
+         dbDir_ = move(newPath);
+      }
+
+      if (blkFileLocation_.c_str()[0] == '~')
+      {
+         auto newPath = userPath;
+         appendPath(newPath, blkFileLocation_.substr(1));
+
+         blkFileLocation_ = move(newPath);
+      }
+
+      logFilePath_ = dataDir_;
+      appendPath(logFilePath_, "/dbLog.txt");
+
+      //test all paths
+      auto testPath = [](const string& path, int mode)
+      {
+#ifdef _WIN32
+         if (_access(path.c_str(), mode) != 0)
+#else
+         if (access(path.c_str(), mode) != 0)
+#endif
+         {
+            stringstream ss;
+            ss << path << " is not a valid path";
+
+            cout << ss.str() << endl;
+            throw DbErrorMsg(ss.str());
+         }
+      };
+
+      testPath(dataDir_, 6);
+      testPath(dbDir_, 6);
+      testPath(blkFileLocation_, 4);
+   }
+   catch (...)
+   {
+      exceptionPtr_ = current_exception();
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void BlockDataManagerConfig::appendPath(string& base, const string& add)
+{
+   if (add.size() == 0)
+      return;
+
+   auto firstChar = add.c_str()[0];
+   if (firstChar != '\\' && firstChar != '/')
+      base.append("/");
+
+   base.append(add);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 class ProgressMeasurer
 {
    const uint64_t total_;
@@ -806,22 +1124,23 @@ public:
 
 
 
-class BlockDataManager_LevelDB::BDM_ScrAddrFilter : public ScrAddrFilter
+class BlockDataManager::BDM_ScrAddrFilter : public ScrAddrFilter
 {
-   BlockDataManager_LevelDB *const bdm_;
+   BlockDataManager *const bdm_;
    //0: didn't start, 1: is initializing, 2: done initializing
    
 public:
-   BDM_ScrAddrFilter(BlockDataManager_LevelDB *bdm)
-      : ScrAddrFilter(bdm->getIFace(), bdm->config().armoryDbType)
+   BDM_ScrAddrFilter(BlockDataManager *bdm)
+      : ScrAddrFilter(bdm->getIFace(), bdm->config().armoryDbType_)
       , bdm_(bdm)
    {
    
    }
 
-   virtual BDM_ScrAddrFilter* copy()
+   virtual shared_ptr<ScrAddrFilter> copy()
    {
-      return new BDM_ScrAddrFilter(bdm_);
+      shared_ptr<ScrAddrFilter> sca = make_shared<BDM_ScrAddrFilter>(bdm_);
+      return sca;
    }
 
 protected:
@@ -855,27 +1174,55 @@ protected:
       };
    
       WalletIdProgressReporter progress(wltIDs, scanThreadProgressCallback_);
-      
-      //pass to false to skip SDBI top block updates
+
+      //make sure sdbis are initialized (fresh ids wont have sdbi entries)
+      try
+      {
+         auto&& sdbi = getSshSDBI();
+      }
+      catch (runtime_error&)
+      {
+         StoredDBInfo sdbi;
+         sdbi.magic_ = config().magicBytes_;
+         sdbi.metaHash_ = BtcUtils::EmptyHash_;
+         sdbi.topBlkHgt_ = 0;
+         sdbi.armoryType_ = config().armoryDbType_;
+
+         //write sdbi
+         putSshSDBI(sdbi);
+      }
+
+      try
+      {
+         auto&& sdbi = getSubSshSDBI();
+      }
+      catch (runtime_error&)
+      {
+         StoredDBInfo sdbi;
+         sdbi.magic_ = config().magicBytes_;
+         sdbi.metaHash_ = BtcUtils::EmptyHash_;
+         sdbi.topBlkHgt_ = 0;
+         sdbi.armoryType_ = config().armoryDbType_;
+
+         //write sdbi
+         putSubSshSDBI(sdbi);
+      }
+
+      //pass false to skip SDBI top block updates
       return bdm_->applyBlockRangeToDB(progress, startBlock, endBlock, *this, false);
    }
    
    virtual uint32_t currentTopBlockHeight() const
    {
-      return bdm_->blockchain().top().getBlockHeight();
+      return bdm_->blockchain()->top().getBlockHeight();
    }
    
-   virtual void flagForScanThread(void)
-   {
-      bdm_->sideScanFlag_ = true;
-   }
-
    virtual void wipeScrAddrsSSH(const vector<BinaryData>& saVec)
    {
       bdm_->getIFace()->resetHistoryForAddressVector(saVec);
    }
 
-   virtual Blockchain& blockchain(void)
+   virtual shared_ptr<Blockchain> blockchain(void)
    {
       return bdm_->blockchain();
    }
@@ -886,44 +1233,66 @@ protected:
    }
 };
 
-
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 //
-// Start BlockDataManager_LevelDB methods
+// Start BlockDataManager methods
 //
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-BlockDataManager_LevelDB::BlockDataManager_LevelDB(
+BlockDataManager::BlockDataManager(
    const BlockDataManagerConfig &bdmConfig) 
    : config_(bdmConfig)
-   , blockchain_(config_.genesisBlockHash)
 {
-   auto isready = [this](void)->bool { return this->isReady(); };
-   iface_ = new LMDBBlockDatabase(&blockchain_, isready, config_.blkFileLocation);
 
-   scrAddrData_ = make_shared<BDM_ScrAddrFilter>(this);
-   setConfig(bdmConfig);
-}
+   if (bdmConfig.exceptionPtr_ != nullptr)
+   {
+      exceptPtr_ = bdmConfig.exceptionPtr_;
+      return;
+   }
+   
+   blockchain_ = make_shared<Blockchain>(config_.genesisBlockHash_);
 
-/////////////////////////////////////////////////////////////////////////////
-void BlockDataManager_LevelDB::setConfig(
-   const BlockDataManagerConfig &bdmConfig)
-{
-   config_ = bdmConfig;
+   iface_ = new LMDBBlockDatabase(blockchain_, config_.blkFileLocation_);
    readBlockHeaders_ = make_shared<BitcoinQtBlockFiles>(
-      config_.blkFileLocation,
-      config_.magicBytes
-   );
-   iface_->setBlkFolder(config_.blkFileLocation);
+      config_.blkFileLocation_,
+      config_.magicBytes_
+      );
+
+   try
+   {
+      openDatabase();
+      
+      if (bdmConfig.nodeType_ == Node_BTC)
+      {
+         networkNode_ = make_shared<BitcoinP2P>("127.0.0.1", config_.btcPort_,
+            *(uint32_t*)config_.magicBytes_.getPtr());
+      }
+      else if (bdmConfig.nodeType_ == Node_UnitTest)
+      {
+         networkNode_ = make_shared<NodeUnitTest>("127.0.0.1", config_.btcPort_,
+            *(uint32_t*)config_.magicBytes_.getPtr());
+      }
+      else
+      {
+         throw DbErrorMsg("invalid node type in bdmConfig");
+      }
+
+      zeroConfCont_ = make_shared<ZeroConfContainer>(iface_, networkNode_);
+      scrAddrData_ = make_shared<BDM_ScrAddrFilter>(this);
+   }
+   catch (...)
+   {
+      exceptPtr_ = current_exception();
+   }
 }
 
 /////////////////////////////////////////////////////////////////////////////
-void BlockDataManager_LevelDB::openDatabase()
+void BlockDataManager::openDatabase()
 {
-   LOGINFO << "blkfile dir: " << config_.blkFileLocation;
-   LOGINFO << "lmdb dir: " << config_.levelDBLocation;
-   if (config_.genesisBlockHash.getSize() == 0)
+   LOGINFO << "blkfile dir: " << config_.blkFileLocation_;
+   LOGINFO << "lmdb dir: " << config_.dbDir_;
+   if (config_.genesisBlockHash_.getSize() == 0)
    {
       throw runtime_error("ERROR: Genesis Block Hash not set!");
    }
@@ -931,12 +1300,11 @@ void BlockDataManager_LevelDB::openDatabase()
    try
    {
       iface_->openDatabases(
-         config_.levelDBLocation,
-         config_.genesisBlockHash,
-         config_.genesisTxHash,
-         config_.magicBytes,
-         config_.armoryDbType,
-         config_.pruneType);
+         config_.dbDir_,
+         config_.genesisBlockHash_,
+         config_.genesisTxHash_,
+         config_.magicBytes_,
+         config_.armoryDbType_);
    }
    catch (runtime_error &e)
    {
@@ -944,19 +1312,16 @@ void BlockDataManager_LevelDB::openDatabase()
       ss << "DB failed to open, reporting the following error: " << e.what();
       throw runtime_error(ss.str());
    }
-   catch (...)
-   {
-      stringstream ss;
-      ss << "DB failed to open, unknown error";
-      ss >> criticalError_;
-      throw runtime_error(ss.str());
-   }
-
 }
 
 /////////////////////////////////////////////////////////////////////////////
-BlockDataManager_LevelDB::~BlockDataManager_LevelDB()
+BlockDataManager::~BlockDataManager()
 {
+   blockFiles_.reset();
+   dbBuilder_.reset();
+   networkNode_.reset();
+   readBlockHeaders_.reset();
+   zeroConfCont_.reset();
    iface_->closeDatabases();
    scrAddrData_.reset();
    delete iface_;
@@ -968,7 +1333,7 @@ BlockDataManager_LevelDB::~BlockDataManager_LevelDB()
 // raw blockdata is stored in the DB with no ssh objects.  This goes through
 // and processes every Tx, creating new SSHs if not there, and creating and
 // marking-spent new TxOuts.  
-BinaryData BlockDataManager_LevelDB::applyBlockRangeToDB(
+BinaryData BlockDataManager::applyBlockRangeToDB(
    ProgressReporter &prog, 
    uint32_t blk0, uint32_t blk1, 
    ScrAddrFilter& scrAddrData,
@@ -976,10 +1341,6 @@ BinaryData BlockDataManager_LevelDB::applyBlockRangeToDB(
 {
    // compute how many bytes of raw blockdata we're going to apply
    uint64_t startingAt=0, totalBytes=0;   
-   unsigned threadcount = thread::hardware_concurrency();
-#ifdef _DEBUG
-   threadcount = DEBUG_THREAD_COUNT;
-#endif
 
    auto prg = [&](BDMPhase phase, double fracCompleted,
       unsigned secRemain, unsigned progVal)->void
@@ -988,10 +1349,12 @@ BinaryData BlockDataManager_LevelDB::applyBlockRangeToDB(
    };
 
    // Start scanning and timer
-   BlockchainScanner bcs(&blockchain_, iface_, &scrAddrData, 
-      *blockFiles_.get(), threadcount, prg, true);
+   BlockchainScanner bcs(blockchain_, iface_, &scrAddrData, 
+      *blockFiles_.get(), config_.threadCount_, config_.ramUsage_,
+      prg, true);
    bcs.scan_nocheck(blk0);
    bcs.updateSSH(true);
+   bcs.resolveTxHashes();
 
    return bcs.getTopScannedBlockHash();
 }
@@ -999,7 +1362,7 @@ BinaryData BlockDataManager_LevelDB::applyBlockRangeToDB(
 /////////////////////////////////////////////////////////////////////////////
 /*  This is not currently being used, and is actually likely to change 
  *  a bit before it is needed, so I have just disabled it.
-vector<TxRef*> BlockDataManager_LevelDB::findAllNonStdTx(void)
+vector<TxRef*> BlockDataManager::findAllNonStdTx(void)
 {
    PDEBUG("Finding all non-std tx");
    vector<TxRef*> txVectOut(0);
@@ -1084,21 +1447,37 @@ vector<TxRef*> BlockDataManager_LevelDB::findAllNonStdTx(void)
 // untouched
 
 
-/////////////////////////////////////////////////////////////////////////////
-void BlockDataManager_LevelDB::destroyAndResetDatabases(void)
+void BlockDataManager::resetDatabases(ResetDBMode mode)
 {
-   if(iface_)
+   if (mode == Reset_SSH)
    {
-      LOGWARN << "Destroying databases;  will need to be rebuilt";
-      iface_->destroyAndResetDatabases();
+      iface_->resetSSHdb();
       return;
    }
-   LOGERR << "Attempted to destroy databases, but no DB interface set";
+
+   //we keep all scrAddr data in between db reset/clear
+   scrAddrData_->getAllScrAddrInDB();
+
+   switch (mode)
+   {
+   case Reset_Rescan:
+      iface_->resetHistoryDatabases();
+      break;
+
+   case Reset_Rebuild:
+      iface_->destroyAndResetDatabases();
+      blockchain_->clear();
+      break;
+   }
+
+   //reapply scrAddrData_'s content to the db
+   scrAddrData_->putAddrMapInDB();
+
+   scrAddrData_->clear();
 }
 
-
 /////////////////////////////////////////////////////////////////////////////
-void BlockDataManager_LevelDB::doInitialSyncOnLoad(
+void BlockDataManager::doInitialSyncOnLoad(
    const ProgressCallback &progress
 )
 {
@@ -1107,72 +1486,59 @@ void BlockDataManager_LevelDB::doInitialSyncOnLoad(
 }
 
 /////////////////////////////////////////////////////////////////////////////
-void BlockDataManager_LevelDB::doInitialSyncOnLoad_Rescan(
+void BlockDataManager::doInitialSyncOnLoad_Rescan(
    const ProgressCallback &progress
 )
 {
    LOGINFO << "Executing: doInitialSyncOnLoad_Rescan";
-   iface_->resetHistoryDatabases();
+   resetDatabases(Reset_Rescan);
    loadDiskState(progress, true);
 }
 
 /////////////////////////////////////////////////////////////////////////////
-void BlockDataManager_LevelDB::doInitialSyncOnLoad_Rebuild(
+void BlockDataManager::doInitialSyncOnLoad_Rebuild(
    const ProgressCallback &progress
 )
 {
    LOGINFO << "Executing: doInitialSyncOnLoad_Rebuild";
-   destroyAndResetDatabases();
-   scrAddrData_->clear();
-   blockchain_.clear();
+   resetDatabases(Reset_Rebuild);
    loadDiskState(progress, true);
 }
 
 /////////////////////////////////////////////////////////////////////////////
-void BlockDataManager_LevelDB::doInitialSyncOnLoad_RescanBalance(
+void BlockDataManager::doInitialSyncOnLoad_RescanBalance(
    const ProgressCallback &progress
    )
 {
    LOGINFO << "Executing: doInitialSyncOnLoad_RescanBalance";
-   iface_->resetSSHdb();
+   resetDatabases(Reset_SSH);
    loadDiskState(progress, false);
 }
 
-/////////////////////////////////////////////////////////////////////////////
-void BlockDataManager_LevelDB::doRebuildDatabases(
-   const ProgressCallback &progress
-)
-{
-   LOGINFO << "Executing: doRebuildDatabases";
-   destroyAndResetDatabases();
-   scrAddrData_->clear();
-   loadDiskState(progress);
-}
-
-void BlockDataManager_LevelDB::loadDiskState(
+////////////////////////////////////////////////////////////////////////////////
+void BlockDataManager::loadDiskState(
    const ProgressCallback &progress,
    bool forceRescan
 )
 {  
    BDMstate_ = BDM_initializing;
          
-   blockFiles_ = make_shared<BlockFiles>(config_.blkFileLocation);
+   blockFiles_ = make_shared<BlockFiles>(config_.blkFileLocation_);
    dbBuilder_ = make_shared<DatabaseBuilder>(*blockFiles_, *this, progress);
    dbBuilder_->init();
    BDMstate_ = BDM_ready;
 }
 
-uint32_t BlockDataManager_LevelDB::readBlkFileUpdate(
-   const BlockDataManager_LevelDB::BlkFileUpdateCallbacks& callbacks
+////////////////////////////////////////////////////////////////////////////////
+Blockchain::ReorganizationState BlockDataManager::readBlkFileUpdate(
+   const BlockDataManager::BlkFileUpdateCallbacks& callbacks
 )
-{
-   scrAddrData_->checkForMerge();
-   
+{ 
    return dbBuilder_->update();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-StoredHeader BlockDataManager_LevelDB::getBlockFromDB(uint32_t hgt, uint8_t dup) const
+StoredHeader BlockDataManager::getBlockFromDB(uint32_t hgt, uint8_t dup) const
 {
 
    // Get the full block from the DB
@@ -1185,29 +1551,64 @@ StoredHeader BlockDataManager_LevelDB::getBlockFromDB(uint32_t hgt, uint8_t dup)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-StoredHeader BlockDataManager_LevelDB::getMainBlockFromDB(uint32_t hgt) const
+StoredHeader BlockDataManager::getMainBlockFromDB(uint32_t hgt) const
 {
    uint8_t dupMain = iface_->getValidDupIDForHeight(hgt);
    return getBlockFromDB(hgt, dupMain);
 }
    
 ////////////////////////////////////////////////////////////////////////////////
-shared_ptr<ScrAddrFilter> BlockDataManager_LevelDB::getScrAddrFilter(void) const
+shared_ptr<ScrAddrFilter> BlockDataManager::getScrAddrFilter(void) const
 {
    return scrAddrData_;
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
-bool BlockDataManager_LevelDB::startSideScan(
-   const function<void(const vector<string>&, double prog,unsigned time)> &cb
-)
+shared_future<bool> BlockDataManager::registerAddressBatch(
+   const set<BinaryData>& addrSet, bool isNew)
 {
-   return scrAddrData_->startSideScan(cb);
+   auto waitOnPromise = make_shared<promise<bool>>();
+   shared_future<bool> waitOnFuture = waitOnPromise->get_future();
+
+   auto callback = [waitOnPromise](bool refresh)->void
+   {
+      waitOnPromise->set_value(refresh);
+   };
+
+   shared_ptr<ScrAddrFilter::WalletInfo> wltInfo = 
+      make_shared<ScrAddrFilter::WalletInfo>();
+   wltInfo->scrAddrSet_ = addrSet;
+   wltInfo->callback_ = callback;
+
+   vector<shared_ptr<ScrAddrFilter::WalletInfo>> wltInfoVec;
+   wltInfoVec.push_back(move(wltInfo));
+
+   scrAddrData_->registerAddressBatch(move(wltInfoVec), isNew);
+
+   return waitOnFuture;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-vector<string> BlockDataManager_LevelDB::getNextWalletIDToScan(void)
+void BlockDataManager::enableZeroConf(bool clearMempool)
 {
-   return scrAddrData_->getNextWalletIDToScan();
+   SCOPED_TIMER("enableZeroConf");
+   LOGINFO << "Enabling zero-conf tracking ";
+   zcEnabled_ = true;
+
+   auto zcFilter = [this](void)->shared_ptr<map<BinaryData, int32_t>>
+   { 
+      auto scrAddrMap = scrAddrData_->getScrAddrMap();
+      return scrAddrMap;
+   };
+
+   zeroConfCont_->init(zcFilter, clearMempool);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void BlockDataManager::disableZeroConf(void)
+{
+   SCOPED_TIMER("disableZeroConf");
+   zcEnabled_ = false;
+
+   zeroConfCont_->shutdown();
 }
