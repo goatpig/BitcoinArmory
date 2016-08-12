@@ -1,0 +1,26 @@
+#!/bin/bash -e
+
+unset CDPATH
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$DIR"
+cd ..
+
+test -n "$1" || {
+    echo "usage: maketarball VERSION" >&2
+    exit 64
+}
+
+tmpdir=`mktemp -d`
+cleanup() {
+    test -z "$tmpdir" || rm -rf "$tmpdir"
+}
+
+trap cleanup EXIT
+
+mkdir -p "$tmpdir"/BitcoinArmory-"$1"
+rsync -a ./ "$tmpdir"/BitcoinArmory-"$1"/ --exclude '.git*' --exclude "$tmpdir" --exclude '*.tar.gz' --delete --delete-excluded
+cd "$tmpdir"
+tar cvzf BitcoinArmory-"$1".tar.gz BitcoinArmory-"$1"/
+cd "$DIR"
+cd ..
+mv "$tmpdir"/BitcoinArmory-"$1".tar.gz .

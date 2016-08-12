@@ -82,10 +82,7 @@ BitcoinArmory.spec: BitcoinArmory.spec.in
 	sed 's/@VERSION@/$(VERSION)/g' < BitcoinArmory.spec.in > BitcoinArmory.spec
 
 BitcoinArmory-$(VERSION).tar.gz: BitcoinArmory.spec
-	mkdir -p dist/BitcoinArmory-$(VERSION)
-	rsync -a ./ dist/BitcoinArmory-$(VERSION)/ --exclude '.git*' --exclude dist --exclude '*.tar.gz' --delete --delete-excluded
-	cd dist ; tar cvzf BitcoinArmory-$(VERSION).tar.gz BitcoinArmory-$(VERSION)/ ; cd ..
-	mv dist/BitcoinArmory-$(VERSION).tar.gz .
+	extras/maketarball $(VERSION)
 
 dist: BitcoinArmory-$(VERSION).tar.gz
 	true
