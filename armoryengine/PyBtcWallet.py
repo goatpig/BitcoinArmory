@@ -198,7 +198,7 @@ class PyBtcWallet(object):
       self.linearAddr160List = []
       self.chainIndexMap = {}
       self.txAddrMap = {}    # cache for getting tx-labels based on addr search
-      if USE_TESTNET:
+      if USE_TESTNET or USE_REGTEST:
          self.addrPoolSize = 10  # this makes debugging so much easier!
       else:
          self.addrPoolSize = CLI_OPTIONS.keypool
@@ -261,6 +261,12 @@ class PyBtcWallet(object):
       #[[method1, [arg1, ar2, arg3]], [method2, [arg1, arg2]]]
       #list is cleared after each scan.
       self.actionsToTakeAfterScan = []
+      
+      self.balance_spendable = 0
+      self.balance_unconfirmed = 0
+      self.balance_full = 0
+      
+      self.addrTxnCountDict = {}
       
    #############################################################################
    def registerWallet(self, isNew=False):
@@ -369,18 +375,26 @@ class PyBtcWallet(object):
    # change was always deprioritized, but using --nospendzeroconfchange makes
    # it totally unspendable
    def getBalance(self, balType="Spendable"):
+      if balType.lower() in ('spendable','spend'):
+         return self.balance_spendable
+         #return self.cppWallet.getSpendableBalance(topBlockHeight, IGNOREZC)
+      elif balType.lower() in ('unconfirmed','unconf'):
+         #return self.cppWallet.getUnconfirmedBalance(topBlockHeight, IGNOREZC)
+         return self.balance_unconfirmed
+      elif balType.lower() in ('total','ultimate','unspent','full'):
+         #return self.cppWallet.getFullBalance()
+         return self.balance_full
+      else:
+         raise TypeError('Unknown balance type! "' + balType + '"')
+   
+   #############################################################################  
+   def getBalanceFromDB(self):
       if self.cppWallet != None and TheBDM.getState() is BDM_BLOCKCHAIN_READY:
          topBlockHeight = TheBDM.getTopBlockHeight()
-         if balType.lower() in ('spendable','spend'):
-            return self.cppWallet.getSpendableBalance(topBlockHeight, IGNOREZC)
-         elif balType.lower() in ('unconfirmed','unconf'):
-            return self.cppWallet.getUnconfirmedBalance(topBlockHeight, IGNOREZC)
-         elif balType.lower() in ('total','ultimate','unspent','full'):
-            return self.cppWallet.getFullBalance()
-         else:
-            raise TypeError('Unknown balance type! "' + balType + '"')
-      else:
-         return 0
+         balanceVector = self.cppWallet.getBalances(topBlockHeight, IGNOREZC)
+         self.balance_full = balanceVector[0]
+         self.balance_spendable = balanceVector[1]
+         self.balance_unconfirmed = balanceVector[2]
 
    #############################################################################
    @CheckWalletRegistration
@@ -1040,7 +1054,7 @@ class PyBtcWallet(object):
          
          wltNAddr = {}
          wltNAddr[self.uniqueIDB58] = newAddrList
-         TheBDM.bdv().registerAddressBatch(wltNAddr, isActuallyNew)
+         TheBDM.bdv().registerWallet(self.uniqueIDB58, newAddrList, isActuallyNew)
          self.actionsToTakeAfterScan.append([self.detectHighestUsedIndex, \
                                           [lastComputedIndex, True]])
          
@@ -1101,10 +1115,10 @@ class PyBtcWallet(object):
       for a160 in self.linearAddr160List[startFrom:]:
          addr = self.addrMap[a160]
          scrAddr = Hash160ToScrAddr(a160)
-         if self.cppWallet.getAddrTotalTxnCount(scrAddr) > 0:
+         if self.getAddrTotalTxnCount(scrAddr) > 0:
             highestIndex = max(highestIndex, addr.chainIndex)
 
-      if writeResultToWallet:
+      if highestIndex > self.highestUsedChainIndex:
          self.highestUsedChainIndex = highestIndex
          self.walletFileSafeUpdate( [[WLT_UPDATE_MODIFY, self.offsetTopUsed, \
                                       int_to_binary(highestIndex, widthBytes=8)]])
@@ -3079,7 +3093,18 @@ class PyBtcWallet(object):
    ###############################################################################
    @CheckWalletRegistration
    def getAddrTotalTxnCount(self, a160):
-      return self.cppWallet.getAddrTotalTxnCount(a160)
+      try:
+         return self.addrTxnCountDict[a160]
+      except:
+         return 0
+      
+   ###############################################################################
+   @CheckWalletRegistration
+   def getAddrTxnCountsFromDB(self):
+      countList = self.cppWallet.getAddrTxnCountsFromDB()
+      
+      for addr in countList:
+         self.addrTxnCountDict[addr] = countList[addr]
    
    ###############################################################################
    @CheckWalletRegistration
@@ -3120,7 +3145,7 @@ class PyBtcWallet(object):
    @CheckWalletRegistration
    def getHistoryPage(self, pageID):
       try:
-         return self.cppWallet.getHistoryPageAsVector(pageID)
+         return self.cppWallet.getHistoryPage(pageID)
       except:
          raise 'pageID is out of range'  
       
@@ -3173,6 +3198,11 @@ class PyBtcWallet(object):
    @CheckWalletRegistration
    def getCppAddr(self, scrAddr):
       return self.cppWallet.getScrAddrObjByKey(Hash160ToScrAddr(scrAddr))
+   
+   ###############################################################################
+   @CheckWalletRegistration
+   def getLedgerEntryForTxHash(self, txHash):
+      return self.cppWallet.getLedgerEntryForTxHash(txHash)
 
 ###############################################################################
 def getSuffixedPath(walletPath, nameSuffix):

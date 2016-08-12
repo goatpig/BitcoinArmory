@@ -20,8 +20,6 @@
 #include <sys/stat.h>
 #endif
 
-//#define DISABLE_TRANSACTIONS
-
 static std::string errorString(int rc)
 {
    return mdb_strerror(rc);
@@ -51,7 +49,11 @@ inline void LMDB::Iterator::checkOk() const
       
       if (has_)
       {
-         const_cast<Iterator*>(this)->seek(key_);
+         CharacterArrayRef keydata(
+            key_.mv_size,
+            (const char*)key_.mv_data);
+
+         const_cast<Iterator*>(this)->seek(keydata);
          if (!has_)
             throw LMDBException("Cursor could not be regenerated");
       }
@@ -61,7 +63,7 @@ inline void LMDB::Iterator::checkOk() const
 
 void LMDB::Iterator::openCursor()
 {
-   const pthread_t tID = pthread_self();
+   auto tID = std::this_thread::get_id();
    LMDBEnv *const env = db_->env;
    std::unique_lock<std::mutex> lock(env->threadTxMutex_);
    
@@ -167,7 +169,11 @@ LMDB::Iterator& LMDB::Iterator::operator=(const Iterator &copy)
    
    if (copy.has_)
    {
-      seek(copy.key_);
+      CharacterArrayRef keydata(
+         copy.key_.mv_size, 
+         (const char*)copy.key_.mv_data);
+
+      seek(keydata);
       if (!has_)
          throw LMDBException("Cursor could not be copied");
    }
@@ -186,7 +192,9 @@ bool LMDB::Iterator::operator==(const Iterator &other) const
       if (a || b) return false;
    }
    
-   return key() == other.key();
+   //make sure this is a proper check
+   return key().mv_data == other.key().mv_data &&
+      key().mv_size == key().mv_size;
 }
 
 void LMDB::Iterator::advance()
@@ -205,8 +213,8 @@ void LMDB::Iterator::advance()
    else
    {
       has_ = true;
-      key_ = std::string(static_cast<char*>(mkey.mv_data), mkey.mv_size);
-      val_ = std::string(static_cast<char*>(mval.mv_data), mval.mv_size);
+      key_ = mkey;
+      val_ = mval;
    }
 }
 
@@ -226,8 +234,8 @@ void LMDB::Iterator::retreat()
    else
    {
       has_ = true;
-      key_ = std::string(static_cast<char*>(mkey.mv_data), mkey.mv_size);
-      val_ = std::string(static_cast<char*>(mval.mv_data), mval.mv_size);
+      key_ = mkey;
+      val_ = mval;
    }
 }
 
@@ -248,8 +256,8 @@ void LMDB::Iterator::toFirst()
    else
    {
       has_ = true;
-      key_ = std::string(static_cast<char*>(mkey.mv_data), mkey.mv_size);
-      val_ = std::string(static_cast<char*>(mval.mv_data), mval.mv_size);
+      key_ = mkey;
+      val_ = mval;
    }
 }
 
@@ -292,8 +300,8 @@ void LMDB::Iterator::seek(const CharacterArrayRef &key, SeekBy e)
          // key is longer and the earlier bytes are the same,
          // therefor, mkey is before key
          has_ = true;
-         key_ = std::string(static_cast<char*>(mkey.mv_data), mkey.mv_size);
-         val_ = std::string(static_cast<char*>(mval.mv_data), mval.mv_size);
+         key_ = mkey;
+         val_ = mval;
          return;
       }
       else
@@ -310,8 +318,8 @@ void LMDB::Iterator::seek(const CharacterArrayRef &key, SeekBy e)
    else
    {
       has_ = true;
-      key_ = std::string(static_cast<char*>(mkey.mv_data), mkey.mv_size);
-      val_ = std::string(static_cast<char*>(mval.mv_data), mval.mv_size);
+      key_ = mkey;
+      val_ = mval;
    }
 }
 
@@ -383,7 +391,7 @@ void LMDBEnv::Transaction::begin()
    
    began = true;
 
-   const pthread_t tID = pthread_self();
+   auto tID = std::this_thread::get_id();
    
    std::unique_lock<std::mutex> lock(env->threadTxMutex_);
    LMDBThreadTxInfo& thTx = env->txForThreads_[tID];
@@ -438,7 +446,7 @@ void LMDBEnv::Transaction::commit()
    began=false;
 
    //look for an existing transaction in this thread
-   const pthread_t tID = pthread_self();
+   auto tID = std::this_thread::get_id();
    std::unique_lock<std::mutex> lock(env->threadTxMutex_);
    auto txnIter = env->txForThreads_.find(tID);
 
@@ -512,7 +520,7 @@ void LMDB::open(LMDBEnv *env, const std::string &name)
    this->env = env;
    
    LMDBEnv::Transaction tx(env);
-   const pthread_t tID = pthread_self();
+   auto tID = std::this_thread::get_id();
    std::unique_lock<std::mutex> lock(env->threadTxMutex_);
    auto txnIter = env->txForThreads_.find(tID);
 
@@ -536,8 +544,8 @@ void LMDB::insert(
    MDB_val mkey = { key.len, const_cast<char*>(key.data) };
    MDB_val mval = { value.len, const_cast<char*>(value.data) };
    
-   const pthread_t tID = pthread_self();
-   
+   auto tID = std::this_thread::get_id();
+
    std::unique_lock<std::mutex> lock(env->threadTxMutex_);
    
    auto txnIter = env->txForThreads_.find(tID);
@@ -556,7 +564,7 @@ void LMDB::insert(
 
 void LMDB::erase(const CharacterArrayRef& key)
 {
-   const pthread_t tID = pthread_self();
+   auto tID = std::this_thread::get_id();
    std::unique_lock<std::mutex> lock(env->threadTxMutex_);
    auto txnIter = env->txForThreads_.find(tID);
 
@@ -573,7 +581,7 @@ void LMDB::erase(const CharacterArrayRef& key)
    }
 }
 
-std::string LMDB::value(const CharacterArrayRef& key) const
+MDB_val LMDB::value(const CharacterArrayRef& key) const
 {
    Iterator c = find(key);
    if (!c.isValid())
@@ -586,7 +594,7 @@ CharacterArrayRef LMDB::get_NoCopy(const CharacterArrayRef& key) const
 {
    //simple get without the use of iterators
 
-   const pthread_t tID = pthread_self();
+   auto tID = std::this_thread::get_id();
    std::unique_lock<std::mutex> lock(env->threadTxMutex_);
    
    auto txnIter = env->txForThreads_.find(tID);
@@ -611,7 +619,7 @@ CharacterArrayRef LMDB::get_NoCopy(const CharacterArrayRef& key) const
 
 void LMDB::drop(void)
 {
-   const pthread_t tID = pthread_self();
+   auto tID = std::this_thread::get_id();
    std::unique_lock<std::mutex> lock(env->threadTxMutex_);
 
    auto txnIter = env->txForThreads_.find(tID);
