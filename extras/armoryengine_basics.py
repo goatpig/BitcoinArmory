@@ -37,8 +37,11 @@ print 19, binary_to_hex(donate160, BIGENDIAN)
 print 20, donateStr2, '(network: %s)' % NETWORKS[netByte]
 
 print '\nBuiltin Constants and magic numbers:'
+print 21, 'BITCOIN_HOST:    ', BITCOIN_HOST
 print 21, 'BITCOIN_PORT:    ', BITCOIN_PORT
+print 22, 'BITCOIN_RPC_HOST:', BITCOIN_RPC_HOST
 print 22, 'BITCOIN_RPC_PORT:', BITCOIN_RPC_PORT
+print 23, 'ARMORY_RPC_HOST: ', ARMORY_RPC_HOST
 print 23, 'ARMORY_RPC_PORT: ', ARMORY_RPC_PORT
 print 24, 'MAGIC_BYTES:     ', binary_to_hex(MAGIC_BYTES)
 print 25, 'GENESIS_BLK_HASH:', GENESIS_BLOCK_HASH_HEX 

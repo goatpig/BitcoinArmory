@@ -3034,7 +3034,7 @@ class Armory_Daemon(object):
             if numLockboxes > 0:
                LOGWARN('Active lockbox is set to %s' % self.curLB.uniqueIDB58)
 
-            LOGINFO("Initialising RPC server on port %d", ARMORY_RPC_PORT)
+            LOGINFO("Initialising RPC server on host/port %s/%d", ARMORY_RPC_HOST, ARMORY_RPC_PORT)
             self.resource = Armory_Json_Rpc_Server(self.curWlt, self.curLB, \
                                               self.WltMap, self.lboxMap, \
                                               self.lboxCppWalletMap)
@@ -3043,7 +3043,7 @@ class Armory_Daemon(object):
             # This is LISTEN call for armory RPC server
             reactor.listenTCP(ARMORY_RPC_PORT, \
                               server.Site(secured_resource), \
-                              interface="127.0.0.1")
+                              interface=ARMORY_RPC_HOST)
 
             # Setup the heartbeat function to run every
             reactor.callLater(3, self.Heartbeat)
@@ -3079,7 +3079,7 @@ class Armory_Daemon(object):
                         func_newTx       = self.execOnNewTx, \
                         func_newBlock    = self.execOnNewBlock)
 
-         reactor.connectTCP('127.0.0.1', BITCOIN_PORT, self.NetworkingFactory)
+         reactor.connectTCP(BITCOIN_HOST, BITCOIN_PORT, self.NetworkingFactory)
          # give access to the networking factory from json-rpc listener
          self.resource.NetworkingFactory = self.NetworkingFactory
 
@@ -3212,9 +3212,9 @@ class Armory_Daemon(object):
       # that means the server doesn't exist.
       try:
          # For now, all we want to do is see if the server exists.
-         sock = socket.create_connection(('127.0.0.1',ARMORY_RPC_PORT), 0.1);
+         sock = socket.create_connection((ARMORY_RPC_HOST, ARMORY_RPC_PORT), 0.1);
       except socket.error:
-         LOGINFO('No other armoryd.py instance is running.  We\'re the first. %d' % ARMORY_RPC_PORT)
+         LOGINFO('No other armoryd.py instance is running.  We\'re the first. %s/%d' % (ARMORY_RPC_HOST, ARMORY_RPC_PORT))
          retVal = False
 
       # Clean up the socket and return the result.
@@ -3239,8 +3239,8 @@ class Armory_Daemon(object):
          CLI_ARGS[0] = CLI_ARGS[0].lower()
 
          # Create a proxy pointing to the armoryd server.
-         proxyobj = ServiceProxy("http://%s:%s@127.0.0.1:%d" % \
-                                 (usr,pwd,ARMORY_RPC_PORT))
+         proxyobj = ServiceProxy("http://%s:%s@%s:%d" % \
+                                 (usr,pwd,ARMORY_RPC_HOST,ARMORY_RPC_PORT))
 
          # Let's try to get everything set up for successful command execution.
          try:

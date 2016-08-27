@@ -13,10 +13,10 @@ import time
 from threading import Event
 from bitcoinrpc_jsonrpc import ServiceProxy
 from CppBlockUtils import SecureBinaryData, CryptoECDSA
-from armoryengine.ArmoryUtils import BITCOIN_PORT, LOGERROR, hex_to_binary, \
+from armoryengine.ArmoryUtils import BITCOIN_HOST, BITCOIN_PORT, LOGERROR, hex_to_binary, \
    ARMORY_INFO_SIGN_PUBLICKEY, LOGINFO, BTC_HOME_DIR, LOGDEBUG, OS_WINDOWS, \
    SystemSpecs, subprocess_check_output, LOGEXCEPT, FileExistsError, OS_VARIANT, \
-   BITCOIN_RPC_PORT, binary_to_base58, isASCII, USE_TESTNET, GIGABYTE, \
+   BITCOIN_RPC_HOST, BITCOIN_RPC_PORT, binary_to_base58, isASCII, USE_TESTNET, GIGABYTE, \
    launchProcess, killProcessTree, killProcess, LOGWARN, RightNow, HOUR, \
    PyBackgroundThread, touchFile, DISABLE_TORRENTDL, secondsToHumanTime, \
    bytesToHumanSize, MAGIC_BYTES, deleteBitcoindDBs, TheTDM, satoshiIsAvailable,\
@@ -554,6 +554,7 @@ class SatoshiDaemonManager(object):
 
 
       # Look for rpcport, use default if not there
+      self.bitconf['rpchost'] = self.bitconf.get('rpchost', BITCOIN_RPC_HOST)
       self.bitconf['rpcport'] = int(self.bitconf.get('rpcport', BITCOIN_RPC_PORT))
 
       # We must have a username and password.  If not, append to file
@@ -579,7 +580,7 @@ class SatoshiDaemonManager(object):
       if not isASCII(self.bitconf['rpcpassword']):
          LOGERROR('Non-ASCII character in bitcoin.conf (rpcpassword)!')
 
-      self.bitconf['host'] = '127.0.0.1'
+      self.bitconf['host'] = self.bitconf.get('host', BITCOIN_HOST)
 
 
    #############################################################################
