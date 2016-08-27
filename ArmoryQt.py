@@ -2761,7 +2761,7 @@ class ArmoryMainWindow(QMainWindow):
 
 
       LOGINFO('Loading wallets...')
-      wltPaths = readWalletFiles()
+      wltPaths = readWalletFiles(WALLET_PATHS)
 
       wltExclude = self.settings.get('Excluded_Wallets', expectList=True)
       

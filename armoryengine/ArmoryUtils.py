@@ -119,6 +119,7 @@ parser.add_option("--disable-conf-permis", dest="disableConfPermis", default=Fal
 parser.add_option("--disable-detsign", dest="enableDetSign", action="store_false", help="Disable Transaction Deterministic Signing (RFC 6979)")
 parser.add_option("--enable-detsign", dest="enableDetSign", action="store_true", help="Enable Transaction Deterministic Signing (RFC 6979) - Enabled by default")
 parser.add_option("--supernode", dest="enableSupernode", default=False, action="store_true", help="Enabled Exhaustive Blockchain Tracking")
+parser.add_option("--wallet-paths", dest="walletPaths", default=DEFAULT, type=str, help="Paths of wallet to load at statup, comma separated")
 parser.set_defaults(enableDetSign=True)
 
 # Get the host operating system
@@ -445,7 +446,9 @@ if not CLI_OPTIONS.multisigFile==DEFAULT:
    else:
       MULTISIG_FILE  = CLI_OPTIONS.multisigFile
 
-
+WALLET_PATHS = None
+if not CLI_OPTIONS.walletPaths==DEFAULT:
+   WALLET_PATHS = CLI_OPTIONS.walletPaths.split(",")
 
 # If this is the first Armory has been run, create directories
 if ARMORY_HOME_DIR and not os.path.exists(ARMORY_HOME_DIR):

@@ -2998,7 +2998,7 @@ class Armory_Daemon(object):
                # Get the wallets in the Armory data directory and store pointers
                # to them. Also, set the current wallet to the 1st wallet in the
                # set. (The choice is arbitrary.)
-               wltPaths = readWalletFiles()
+               wltPaths = readWalletFiles(WALLET_PATHS)
                addMultWallets(wltPaths, self.WltMap)
                if len(self.WltMap) > 0:
                   self.curWlt = self.WltMap[self.WltMap.keys()[0]]
