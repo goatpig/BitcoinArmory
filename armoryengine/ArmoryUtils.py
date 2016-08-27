@@ -87,14 +87,18 @@ parser.add_option("--settings",        dest="settingsPath",default=DEFAULT, type
 parser.add_option("--datadir",         dest="datadir",     default=DEFAULT, type="str",          help="Change the directory that Armory calls home")
 parser.add_option("--satoshi-datadir", dest="satoshiHome", default=DEFAULT, type='str',          help="The Bitcoin-Core/bitcoind home directory")
 parser.add_option("--satoshi-port",    dest="satoshiPort", default=DEFAULT, type="str",          help="For Bitcoin-Core instances operating on a non-standard port")
+parser.add_option("--satoshi-host",    dest="satoshiHost", default=DEFAULT, type="str",          help="For Bitcoin-Core instances operating on a non-standard host")
 parser.add_option("--satoshi-rpcport", dest="satoshiRpcport",default=DEFAULT,type="str",         help="RPC port Bitcoin-Core instances operating on a non-standard port")
+parser.add_option("--satoshi-rpchost", dest="satoshiRpchost",default=DEFAULT,type="str",         help="RPC host Bitcoin-Core instances operating on a non-standard host")
 #parser.add_option("--bitcoind-path",   dest="bitcoindPath",default='DEFAULT', type="str",         help="Path to the location of bitcoind on your system")
 parser.add_option("--dbdir",           dest="armoryDBDir",  default=DEFAULT, type='str',          help="Location to store blocks database (defaults to --datadir)")
 parser.add_option("--rpcport",         dest="rpcport",     default=DEFAULT, type="str",          help="RPC port for running armoryd.py")
+parser.add_option("--rpchost",         dest="rpchost",     default=DEFAULT, type="str",          help="RPC host for running armoryd.py")
 parser.add_option("--testnet",         dest="testnet",     default=False,     action="store_true", help="Use the testnet protocol")
 parser.add_option("--offline",         dest="offline",     default=False,     action="store_true", help="Force Armory to run in offline mode")
 parser.add_option("--nettimeout",      dest="nettimeout",  default=2,         type="int",          help="Timeout for detecting internet connection at startup")
 parser.add_option("--interport",       dest="interport",   default=-1,        type="int",          help="Port for inter-process communication between Armory instances")
+parser.add_option("--interhost",       dest="interhost",   default="127.0.0.1",        type="str",          help="Host for inter-process communication between Armory instances")
 parser.add_option("--debug",           dest="doDebug",     default=False,     action="store_true", help="Increase amount of debugging output")
 parser.add_option("--nologging",       dest="logDisable",  default=False,     action="store_true", help="Disable all logging")
 parser.add_option("--netlog",          dest="netlog",      default=False,     action="store_true", help="Log networking messages sent and received by Armory")
@@ -462,8 +466,11 @@ if not os.path.exists(ARMORY_DB_DIR):
 if not USE_TESTNET:
    # TODO:  The testnet genesis tx hash can't be the same...?
    BITCOIN_PORT = 8333
+   BITCOIN_HOST = "127.0.0.1"
    BITCOIN_RPC_PORT = 8332
+   BITCOIN_RPC_HOST = "127.0.0.1"
    ARMORY_RPC_PORT = 8225
+   ARMORY_RPC_HOST = "127.0.0.1"
    MAGIC_BYTES = '\xf9\xbe\xb4\xd9'
    GENESIS_BLOCK_HASH_HEX  = '6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000'
    GENESIS_BLOCK_HASH      = 'o\xe2\x8c\n\xb6\xf1\xb3r\xc1\xa6\xa2F\xaec\xf7O\x93\x1e\x83e\xe1Z\x08\x9ch\xd6\x19\x00\x00\x00\x00\x00'
@@ -479,8 +486,11 @@ if not USE_TESTNET:
    BLOCKEXPLORE_URL_ADDR = 'https://blockchain.info/address/%s'
 else:
    BITCOIN_PORT = 18333
+   BITCOIN_HOST = "127.0.0.1"
    BITCOIN_RPC_PORT = 18332
+   BITCOIN_RPC_HOST = "127.0.0.1"
    ARMORY_RPC_PORT     = 18225
+   ARMORY_RPC_HOST = "127.0.0.1"
    MAGIC_BYTES  = '\x0b\x11\x09\x07'
    GENESIS_BLOCK_HASH_HEX  = '43497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000'
    GENESIS_BLOCK_HASH      = 'CI\x7f\xd7\xf8&\x95q\x08\xf4\xa3\x0f\xd9\xce\xc3\xae\xbay\x97 \x84\xe9\x0e\xad\x01\xea3\t\x00\x00\x00\x00'
@@ -553,6 +563,8 @@ if not CLI_OPTIONS.satoshiPort == DEFAULT:
       BITCOIN_PORT = int(CLI_OPTIONS.satoshiPort)
    except:
       raise TypeError('Invalid port for Bitcoin-Core, using ' + str(BITCOIN_PORT))
+if not CLI_OPTIONS.satoshiHost == DEFAULT:
+   BITCOIN_HOST = CLI_OPTIONS.satoshiHost
 
 ################################################################################
 if not CLI_OPTIONS.satoshiRpcport == DEFAULT:
@@ -560,6 +572,8 @@ if not CLI_OPTIONS.satoshiRpcport == DEFAULT:
       BITCOIN_RPC_PORT = int(CLI_OPTIONS.satoshiRpcport)
    except:
       raise TypeError('Invalid rpc port for Bitcoin-Core, using ' + str(BITCOIN_RPC_PORT))
+if not CLI_OPTIONS.satoshiRpchost == DEFAULT:
+   BITCOIN_RPC_HOST = CLI_OPTIONS.satoshiRpchost
 
 ################################################################################
 if not CLI_OPTIONS.rpcport == DEFAULT:
@@ -567,7 +581,8 @@ if not CLI_OPTIONS.rpcport == DEFAULT:
       ARMORY_RPC_PORT = int(CLI_OPTIONS.rpcport)
    except:
       raise TypeError('Invalid RPC port for armoryd ' + str(ARMORY_RPC_PORT))
-
+if not CLI_OPTIONS.rpchost == DEFAULT:
+   ARMORY_RPC_HOST = CLI_OPTIONS.rpchost
 
 
 if sys.argv[0]=='ArmoryQt.py':
@@ -1213,7 +1228,7 @@ LOGINFO('   Available HDD (ARM)   : %d GB' % SystemSpecs.HddAvailA)
 LOGINFO('   Available HDD (BTC)   : %d GB' % SystemSpecs.HddAvailB)
 LOGINFO('')
 LOGINFO('Network Name: ' + NETWORKS[ADDRBYTE])
-LOGINFO('Satoshi Port: %d', BITCOIN_PORT)
+LOGINFO('Satoshi Host/Port: %s/%d', BITCOIN_HOST, BITCOIN_PORT)
 LOGINFO('Do wlt check: %s', str(DO_WALLET_CHECK))
 LOGINFO('Named options/arguments to armoryengine.py:')
 for key,val in ast.literal_eval(str(CLI_OPTIONS)).iteritems():
@@ -1692,7 +1707,7 @@ def unicode_truncate(theStr, length, encoding='utf-8'):
 
 
 #############################################################################
-def satoshiIsAvailable(host='127.0.0.1', port=BITCOIN_PORT, timeout=0.01):
+def satoshiIsAvailable(host=BITCOIN_HOST, port=BITCOIN_PORT, timeout=0.01):
 
    if not isinstance(port, (list,tuple)):
       port = [port]

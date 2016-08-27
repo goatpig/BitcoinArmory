@@ -2277,7 +2277,7 @@ class ArmoryMainWindow(QMainWindow):
          try:
             self.InstanceListener = ArmoryListenerFactory(self.bringArmoryToFront, \
                                                           uriClick_partial )
-            reactor.listenTCP(CLI_OPTIONS.interport, self.InstanceListener)
+            reactor.listenTCP(CLI_OPTIONS.interport, self.InstanceListener, interface=CLI_OPTIONS.interhost)
          except twisted.internet.error.CannotListenError:
             LOGWARN('Socket already occupied!  This must be a duplicate Armory')
             QMessageBox.warning(self, tr('Already Open'), tr("""
@@ -2576,7 +2576,7 @@ class ArmoryMainWindow(QMainWindow):
                                       func_loseConnect=showOfflineMsg,
                                       func_madeConnect=showOnlineMsg,
                                       func_newTx=self.newTxFunc)
-         reactor.callWhenRunning(reactor.connectTCP, '127.0.0.1',
+         reactor.callWhenRunning(reactor.connectTCP, BICOIN_HOST,
                                  BITCOIN_PORT,
                                  self.SingletonConnectedNetworkingFactory)
       return self.SingletonConnectedNetworkingFactory
@@ -6986,7 +6986,7 @@ def checkForAlreadyOpen():
    import socket
    LOGDEBUG('Checking for already open socket...')
    try:
-      sock = socket.create_connection(('127.0.0.1',CLI_OPTIONS.interport), 0.1);
+      sock = socket.create_connection((CLI_OPTIONS.interhost,CLI_OPTIONS.interport), 0.1);
       # If we got here (no error), there's already another Armory open
 
       if OS_WINDOWS:
