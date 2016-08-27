@@ -117,7 +117,6 @@ class UniversalEncoder(json.JSONEncoder):
          return float(obj)
       return json.JSONEncoder.default(self, obj)
 
-ARMORYD_CONF_FILE = os.path.join(ARMORY_HOME_DIR, 'armoryd.conf')
 
 
 # Define some specific errors that can be thrown and caught

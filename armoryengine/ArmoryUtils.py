@@ -84,6 +84,7 @@ haveGUI = [False, None]
 
 parser = optparse.OptionParser(usage="%prog [options]\n")
 parser.add_option("--settings",        dest="settingsPath",default=DEFAULT, type="str",          help="load Armory with a specific settings file")
+parser.add_option("--armoryd-conf",  dest="confArmoryd",  default=DEFAULT, type='str',          help="File path for armoryd.conf")
 parser.add_option("--datadir",         dest="datadir",     default=DEFAULT, type="str",          help="Change the directory that Armory calls home")
 parser.add_option("--satoshi-datadir", dest="satoshiHome", default=DEFAULT, type='str',          help="The Bitcoin-Core/bitcoind home directory")
 parser.add_option("--satoshi-port",    dest="satoshiPort", default=DEFAULT, type="str",          help="For Bitcoin-Core instances operating on a non-standard port")
@@ -454,6 +455,13 @@ if ARMORY_HOME_DIR and not os.path.exists(ARMORY_HOME_DIR):
 
 if not os.path.exists(ARMORY_DB_DIR):
    os.makedirs(ARMORY_DB_DIR)
+
+ARMORYD_CONF_FILE = os.path.join(ARMORY_HOME_DIR, 'armoryd.conf')
+if not CLI_OPTIONS.confArmoryd==DEFAULT:
+   if not os.path.exists(CLI_OPTIONS.confArmoryd):
+      print 'Armoryd config file "%s" does not exist!' % CLI_OPTIONS.confArmoryd
+   else:
+      ARMORYD_CONF_FILE  = CLI_OPTIONS.confArmoryd
 
 
 
