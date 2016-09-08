@@ -2861,7 +2861,7 @@ class DlgImportAddress(ArmoryDialog):
                      'has access to it.  Otherwise, sweep it to get '
                      'the funds out of it.  All standard private-key formats '
                      'are supported <i>except for private keys created by '
-                     'Bitcoin-Core version 0.6.0 and later (compressed)</i>.')
+                     'Bitcoin Core version 0.6.0 and later (compressed)</i>.')
 
       lblPrivOne = QRichLabel('Private Key')
       self.edtPrivData = QLineEdit()
@@ -3081,7 +3081,7 @@ class DlgImportAddress(ArmoryDialog):
       except CompressedKeyError, e:
          QMessageBox.critical(self, 'Unsupported key type', 'You entered a key '
             'for an address that uses a compressed public key, usually produced '
-            'in Bitcoin-Core/bitcoind wallets created after version 0.6.0.  Armory '
+            'in Bitcoin Core/bitcoind wallets created after version 0.6.0.  Armory '
             'does not yet support this key type.')
          LOGERROR('Compressed key data recognized but not supported')
          return
@@ -7525,13 +7525,13 @@ class DlgBadConnection(ArmoryDialog):
             'restart Armory.<br><br>Would you like to continue in "Offline" mode? ')
       elif haveInternet and not haveSatoshi:
          lblDescr = QRichLabel(\
-            'Armory was not able to detect the presence of Bitcoin-Core or bitcoind '
+            'Armory was not able to detect the presence of Bitcoin Core or bitcoind '
             'client software (available at https://bitcoin.org).  Please make sure that '
             'the one of those programs is... <br>'
             '<br><b>(1)</b> ...open and connected to the network '
             '<br><b>(2)</b> ...on the same network as Armory (main-network or test-network)'
             '<br><b>(3)</b> ...synchronized with the blockchain before '
-            'starting Armory<br><br>Without the Bitcoin-Core or bitcoind open, you will only '
+            'starting Armory<br><br>Without the Bitcoin Core or bitcoind open, you will only '
             'be able to run Armory in "Offline" mode, which will not have access '
             'to new blockchain data, and you will not be able to send outgoing '
             'transactions<br><br>If you do not want to be in "Offline" mode, please '
@@ -8493,7 +8493,7 @@ class DlgAddressBook(ArmoryDialog):
             QMessageBox.critical(self, tr("P2SH Not Allowed"), tr("""
                This operation requires a public key, but you selected a 
                P2SH address which does not have a public key (these addresses
-               start with "2" or "3").  Please select a different address"""), \
+               start with "2" or "3").  Please select a different address."""), \
                QMessageBox.Ok)
             return
    
@@ -8673,7 +8673,7 @@ class DlgSettings(ArmoryDialog):
       ##########################################################################
       # bitcoind-management settings
       self.chkManageSatoshi = QCheckBox(tr("""
-         Let Armory run Bitcoin-Core/bitcoind in the background"""))
+         Let Armory run Bitcoin Core/bitcoind in the background"""))
       self.edtSatoshiExePath = QLineEdit()
       self.edtSatoshiHomePath = QLineEdit()
       self.edtSatoshiExePath.setMinimumWidth(tightSizeNChar(GETFONT('Fixed', 10), 40)[0])
@@ -8684,7 +8684,7 @@ class DlgSettings(ArmoryDialog):
       if OS_MACOSX:
          self.chkManageSatoshi.setEnabled(False)
          lblManageSatoshi = QRichLabel(\
-            'Bitcoin-Core/bitcoind management is not available on Mac/OSX')
+            'Bitcoin Core/bitcoind management is not available on Mac/OSX')
       else:
          if self.main.settings.hasSetting('SatoshiExe'):
             satexe = self.main.settings.get('SatoshiExe')
@@ -8880,7 +8880,7 @@ class DlgSettings(ArmoryDialog):
          coin2strNZS(MIN_TX_FEE))
 
       ttipDefaultFee = self.main.createToolTipWidget(tr("""
-         NOTE: some transactions will require a certain fee
+         NOTE: Some transactions will require a certain fee
          regardless of your settings -- in such cases
          you will be prompted to include the correct
          value or cancel the transaction"""))
@@ -8902,7 +8902,7 @@ class DlgSettings(ArmoryDialog):
          background, and you will still receive notifications.  Access Armory
          through the icon on your system tray.
          <br><br>
-         If select "Minimize on close", the 'x' on the top window bar will
+         If you select "Minimize on close", the 'x' on the top window bar will
          minimize Armory instead of exiting the application.  You can always use
          <i>"File"</i> -> <i>"Quit Armory"</i> to actually close it."""))
 
@@ -8928,8 +8928,8 @@ class DlgSettings(ArmoryDialog):
       lblNotify = QRichLabel('<b>Enable notifications from the system-tray:</b>')
       self.chkBtcIn = QCheckBox('Bitcoins Received')
       self.chkBtcOut = QCheckBox('Bitcoins Sent')
-      self.chkDiscon = QCheckBox('Bitcoin-Core/bitcoind disconnected')
-      self.chkReconn = QCheckBox('Bitcoin-Core/bitcoind reconnected')
+      self.chkDiscon = QCheckBox('Bitcoin Core/bitcoind disconnected')
+      self.chkReconn = QCheckBox('Bitcoin Core/bitcoind reconnected')
 
       # FYI:If we're not on OS X, the if condition will never be hit.
       if (OS_MACOSX) and (int(osxMinorVer) < 7):
@@ -9224,7 +9224,7 @@ class DlgSettings(ArmoryDialog):
                            # 'Fees go to users that contribute computing power '
                            # 'to keep the Bitcoin network secure (0.0005 BTC is '
                            # 'standard).', \
-                           # 'NOTE: some transactions will require a fee '
+                           # 'NOTE: Some transactions will require a fee '
                            # 'regardless of your preferences -- in such cases '
                            # 'you will be prompted to include the correct '
                            # 'value or abort the transaction'])
@@ -9259,7 +9259,7 @@ class DlgSettings(ArmoryDialog):
                QMessageBox.warning(self, 'Invalid Path', \
                   'The path you specified for the Bitcoin software home directory '
                   'does not exist.  Only specify this directory if you use a '
-                  'non-standard "-datadir=" option when running Bitcoin-Core or '
+                  'non-standard "-datadir=" option when running Bitcoin Core or '
                   'bitcoind.  If you leave this field blank, the following '
                   'path will be used: <br><br> %s' % BTC_HOME_DIR, QMessageBox.Ok)
                return
@@ -10660,7 +10660,7 @@ class DlgInstallLinux(ArmoryDialog):
 
 
       lblOptions = QRichLabel(\
-         'If you have manually installed Bitcoin-Core or bitcoind on this system '
+         'If you have manually installed Bitcoin Core or bitcoind on this system '
          'before, it is recommended you use the method here you previously used.  '
          'If you get errors using this option, try using the manual instructions '
          'below.')
@@ -10836,7 +10836,7 @@ class DlgInstallLinux(ArmoryDialog):
       if len(fileData) == 0 or dlg.dlVerifyFailed:
          QMessageBox.critical(self, 'Download Failed', \
             'The download failed.  Please visit https://bitcoin.org '
-            'to download and install Bitcoin-Core manually.', QMessageBox.Ok)
+            'to download and install Bitcoin Core manually.', QMessageBox.Ok)
          import webbrowser
          webbrowser.open('https://bitcoin.org/en/download')
          return
@@ -11576,7 +11576,7 @@ class DlgWODataPrintBackup(ArmoryDialog):
          <b><font size=4><font color="#aa0000">WARNING:</font>  <u>This is not 
          a wallet backup!</u></font></b>  
          <br><br>Please make a regular digital or paper backup of your wallet 
-         of your wallet to keep it protected!  This data simply lets you 
+         to keep it protected!  This data simply lets you 
          monitor the funds in this wallet but gives you no ability to move any 
          funds.""")
       self.scene.drawText(warnMsg, GETFONT('Var', 9), wrapWidth=wrap)
@@ -12404,14 +12404,14 @@ class DlgRestoreSingle(ArmoryDialog):
             return
       if self.chkEncrypt.isChecked() and self.advancedOptionsTab.getKdfBytes() == -1:
             QMessageBox.critical(self, tr('Invalid Max Memory Usage'), \
-               tr('You entered Max Memory Usage incorrectly.\n\nnter: <Number> (kb, mb)'), QMessageBox.Ok)
+               tr('You entered Max Memory Usage incorrectly.\n\nEnter: <Number> (kB, MB)'), QMessageBox.Ok)
             return
       if nError > 0:
          pluralStr = 'error' if nError == 1 else 'errors'
          
          msg = tr("""
             Detected %(error)d error in the data you entered.
-            Armory attempted to fix the errors but it is not
+            Armory attempted to fix the error but it is not
             always right.  Be sure to verify the "Wallet Unique ID"
             closely on the next window.""","""
             Detected %(error)d errors in the data you entered.
@@ -13136,11 +13136,11 @@ class DlgRestoreFragged(ArmoryDialog):
       if self.fragIDPrefix == UNKNOWN:
          self.fragIDPrefix = idBase58.split('-')[0]
       elif not self.fragIDPrefix == idBase58.split('-')[0]:
-         QMessageBox.critical(self, tr('Multiple Walletss'), tr("""
+         QMessageBox.critical(self, tr('Multiple Wallets'), tr("""
             The fragment you just entered is actually for a different wallet
             than the previous fragments you entered.  Please double-check that
             all the fragments you are entering belong to the same wallet and
-            have the "number of needed fragments" (M-value, in M-of-N)."""), \
+            have the same "number of needed fragments" (M-value, in M-of-N)."""), \
             QMessageBox.Ok)
          LOGERROR('Mixing fragments of different wallets! %s', idBase58)
          return
@@ -13790,7 +13790,7 @@ def finishPrintingBackup(parent, btype=None):
    openTestDlg = False
    msg = tr("""
          Please make sure that any printed backups you create  (excluding any "ID" lines) have <b>nine
-         columns</b> of four letters each
+         columns</b> of four letters
          each.
          If you just made a paper backup, it is important that you test it
          to make sure that it was printed or copied correctly.  Most importantly,
@@ -13962,7 +13962,7 @@ class DlgWltRecoverWallet(ArmoryDialog):
       layout_FullH.addWidget(lblFull, 0, 1, 2, 19)
 
       self.rdbtnCheck = QRadioButton('')
-      lblCheck = QLabel(tr('<b>Consistency Check</b><br>Checks wallet consistency. Works will both full and watch only<br> wallets.'
+      lblCheck = QLabel(tr('<b>Consistency Check</b><br>Checks wallet consistency. Works with both full and watch only<br> wallets.'
                          ' Unlocking of encrypted wallets is not mandatory'))
       layout_CheckH = QGridLayout()
       layout_CheckH.addWidget(self.rdbtnCheck, 0, 0, 1, 1)
@@ -14626,7 +14626,7 @@ class DlgFactoryReset(ArmoryDialog):
          It is <i>strongly</i> recommended that you make backups of your
          wallets before continuing, though <b>wallet files will never be
          intentionally deleted!</b>  All Armory
-         wallet files, and the wallet.dat file used by Bitcoin-Core/bitcoind
+         wallet files, and the wallet.dat file used by Bitcoin Core/bitcoind
          should remain untouched in their current locations.  All Armory
          wallets will automatically be detected and loaded after the reset.
          <br><br>
@@ -14655,7 +14655,7 @@ class DlgFactoryReset(ArmoryDialog):
          <b>Also re-download the blockchain (most extreme)</b>"""))
       self.lblBitcoinDB = QRichLabel(tr("""
          This will delete settings, network data, Armory's databases,
-         <b>and</b> the Bitcoin software databases.  Bitcoin-Core/bitcoind will
+         <b>and</b> the Bitcoin software databases.  Bitcoin Core/bitcoind will
          have to download the blockchain again.  Only use this if you
          suspect blockchain corruption, such as receiving StdOut/StdErr errors
          on the dashboard (8-72 hours depending on your connection)"""))
@@ -14753,7 +14753,7 @@ class DlgFactoryReset(ArmoryDialog):
             msg = tr("""
                You are about to delete <b>all</b>
                blockchain databases on your system.  The Bitcoin software will
-               have to redownload of blockchain data over the peer-to-peer
+               have to redownload blockchain data over the peer-to-peer
                network again which can take from 8 to 72 hours depending on
                your system speed and connection.  <br><br><b>Are you absolutely
                sure you want to do this?</b>""")
@@ -14761,7 +14761,7 @@ class DlgFactoryReset(ArmoryDialog):
             msg = tr("""
                You are about to delete your settings and delete <b>all</b>
                blockchain databases on your system.  The Bitcoin software will
-               have to redownload of blockchain data over the peer-to-peer
+               have to redownload blockchain data over the peer-to-peer
                network again which can take from 8 to 72 hours depending on
                your system speed and connection.  <br><br><b>Are you absolutely
                sure you want to do this?</b>""")
@@ -14780,17 +14780,17 @@ class DlgFactoryReset(ArmoryDialog):
          if not self.main.settings.get('ManageSatoshi'):
             # Must have user shutdown Bitcoin sw now, and delete DBs now
             reply = MsgBoxCustom(MSGBOX.Warning, tr('Restart Armory'), tr("""
-               <b>Bitcoin-Core (or bitcoind) must be closed to do the reset!</b>
+               <b>Bitcoin Core (or bitcoind) must be closed to do the reset!</b>
                Please close all Bitcoin software, <u><b>right now</b></u>,
                before clicking "Continue".
                <br><br>
-               Armory will now close.  Please restart Bitcoin-Core/bitcoind
+               Armory will now close.  Please restart Bitcoin Core/bitcoind
                first and wait for it to finish synchronizing before restarting
                Armory."""), wCancel=True, yesStr="Continue")
 
             if not reply:
                QMessageBox.warning(self, tr('Aborted'), tr("""
-                  You canceled the factory-reset operation.  No changes were
+                  You canceled the factory reset operation.  No changes were
                   made."""), QMessageBox.Ok)
                self.reject()
                return
@@ -14833,7 +14833,7 @@ class DlgForkedImports(ArmoryDialog):
       super(DlgForkedImports, self).__init__(parent, main)
 
       descr1 = tr('<h2 style="color: red; text-align: center;">Forked imported addresses have been \
-      detected in your wallets!!!</h2>')
+      detected in your wallets!</h2>')
       
       descr2 = tr('The following wallets have forked imported addresses: <br><br><b>') + \
       '<br>'.join(walletList) + '</b>'
@@ -14845,7 +14845,7 @@ class DlgForkedImports(ArmoryDialog):
       
       descr4 = tr('<h1 style="color: orange;"> - Do not accept payments to these wallets anymore<br>\
       - Do not delete or overwrite these wallets. <br> \
-      - Transfer all funds to a fresh and backed up wallet<h1>')
+      - Transfer all funds to a fresh and backed up wallet</h1>')
       
       lblDescr1 = QRichLabel(descr1)
       lblDescr2 = QRichLabel(descr2)
@@ -15014,7 +15014,7 @@ class DlgBroadcastBlindTx(ArmoryDialog):
          <br><br>
          If this is test
          You can check whether it was seen by other nodes on the network
-         blockchain.info (this link will not work on testnet):
+         via blockchain.info (this link will not work on testnet):
          <br><br>
          <a href="%(link)s">%(disp)s</a>""") % \
          { 'hexhash' : hexhash, 'link' : linkToExplorer, 'disp' : dispToExplorer}, QMessageBox.Ok)
