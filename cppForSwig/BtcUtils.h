@@ -1977,9 +1977,9 @@ public:
       CryptoPP::Integer exponent = CryptoPP::Integer::One();
       CryptoPP::Integer five_eight(58);
       CryptoPP::Integer value = CryptoPP::Integer::Zero();
-      for (unsigned i = b58.getSize() - 1; i >= offset; i--)
+      for (unsigned i = b58.getSize(); i > offset; i--)
       {
-         auto b58Iter = base58Vals_.find(ptr[i]);
+         auto b58Iter = base58Vals_.find(ptr[i - 1]);
          if (b58Iter == base58Vals_.end())
             throw runtime_error("invalid char in b58 string");
 
