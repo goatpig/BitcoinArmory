@@ -3876,8 +3876,6 @@ class ArmoryMainWindow(QMainWindow):
          dlg = DlgWalletSelect(self, self, 'Receive coins with wallet...', '', \
                                        firstSelect=wltID, onlyMyWallets=False)
          if dlg.exec_():
-            loading = LoadingDisp(self, self)
-            loading.show()
             wltID = dlg.selectedID
          else:
             selectionMade = False
@@ -3886,6 +3884,8 @@ class ArmoryMainWindow(QMainWindow):
          wlt = self.walletMap[wltID]
          wlttype = determineWalletType(wlt, self)[0]
          if showRecvCoinsWarningIfNecessary(wlt, self, self):
+            loading = LoadingDisp(self, self)
+            loading.show()
             QAPP.processEvents()
             dlg = DlgNewAddressDisp(wlt, self, self, loading)
             dlg.exec_()
