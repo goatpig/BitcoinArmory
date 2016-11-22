@@ -2187,7 +2187,8 @@ class UnsignedTransaction(AsciiSerializable):
          ustxiList.append(UnsignedTxInput(pyPrevTx.serializeWithoutWitness(),
                                           txoIdx, 
                                           p2sh, 
-                                          pubKeyMap))
+                                          pubKeyMap,
+                                          None, None, None, None, txin.intSeq))
 
 
 
@@ -2208,7 +2209,7 @@ class UnsignedTransaction(AsciiSerializable):
 
    #############################################################################
    def createFromTxOutSelection(self, utxoSelection, scriptValuePairs,
-                                pubKeyMap=None, txMap=None, p2shMap=None):
+                                pubKeyMap=None, txMap=None, p2shMap=None, usesRBF=False):
 
       totalUtxoSum = sumTxOutList(utxoSelection)
       totalOutputSum = sum([a[1] for a in scriptValuePairs])
@@ -2247,7 +2248,10 @@ class UnsignedTransaction(AsciiSerializable):
          txin = PyTxIn()
          txin.outpoint = PyOutPoint()
          txin.binScript = ''
-         txin.intSeq = 2**32-1
+         if usesRBF:
+            txin.intSeq = 2**32-1 - 2
+         else:
+            txin.intSeq
 
          txhash = utxo.getTxHash()
          txoIdx  = utxo.getTxOutIndex()
