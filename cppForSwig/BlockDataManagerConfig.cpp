@@ -10,6 +10,7 @@
 #include "BtcUtils.h"
 #include "DBUtils.h"
 #include "DbHeader.h"
+#include <sys/stat.h>
 
 uint8_t BlockDataManagerConfig::pubkeyHashPrefix_;
 uint8_t BlockDataManagerConfig::scriptHashPrefix_;
