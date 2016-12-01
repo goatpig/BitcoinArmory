@@ -268,9 +268,9 @@ public:
    BinaryData & append(uint8_t const * str, size_t sz);
 
    /////////////////////////////////////////////////////////////////////////////
-   BinaryData & append(uint8_t byte)
+   BinaryData & append(uint8_t _byte)
    {
-      data_.insert(data_.end(), byte);
+      data_.insert(data_.end(), _byte);
       return (*this);
    }
 

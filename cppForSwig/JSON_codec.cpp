@@ -73,9 +73,9 @@ void JSON_object::unserialize(istream& s)
    if (val != '{')
       throw JSON_Exception("invalid object encapsulation");
 
-   auto addPair = [this](JSON_string& key, shared_ptr<JSON_value> val)->void
+   auto addPair = [this](JSON_string& key, shared_ptr<JSON_value> _val)->void
    {
-      auto&& keyval = make_pair(move(key), val);
+      auto&& keyval = make_pair(move(key), _val);
       keyval_pairs_.insert(move(keyval));
    };
 

@@ -14,7 +14,7 @@
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
-void BlockData::deserialize(const uint8_t* data, size_t size,
+void BlockData::deserialize(const uint8_t* data, size_t _size,
    const shared_ptr<BlockHeader> blockHeader,
    function<unsigned int(const BinaryData&)> getID, 
    bool checkMerkle, bool keepHashes)
@@ -22,7 +22,7 @@ void BlockData::deserialize(const uint8_t* data, size_t size,
    headerPtr_ = blockHeader;
 
    //deser header from raw block and run a quick sanity check
-   if (size < HEADER_SIZE)
+   if (_size < HEADER_SIZE)
       throw BlockDeserializingException(
       "raw data is smaller than HEADER_SIZE");
 
@@ -31,7 +31,7 @@ void BlockData::deserialize(const uint8_t* data, size_t size,
 
    blockHash_ = bh.thisHash_;
 
-   BinaryRefReader brr(data + HEADER_SIZE, size - HEADER_SIZE);
+   BinaryRefReader brr(data + HEADER_SIZE, _size - HEADER_SIZE);
    auto numTx = (unsigned)brr.get_var_int();
 
    if (blockHeader != nullptr)
@@ -57,7 +57,7 @@ void BlockData::deserialize(const uint8_t* data, size_t size,
    }
 
    data_ = data;
-   size_ = size;
+   size_ = _size;
 
    if (!checkMerkle)
       return;

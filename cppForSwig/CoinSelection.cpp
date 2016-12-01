@@ -537,8 +537,8 @@ vector<UTXO> CoinSorting::sortCoins(
             vecIter = addrUtxoMap.insert(
                         make_pair(move(addr), vector<UTXO>())).first;
          
-         auto& utxoVec = vecIter->second;
-         utxoVec.push_back(utxo);
+         auto& _utxoVec = vecIter->second;
+         _utxoVec.push_back(utxo);
       }
 
       //compute rule 1 score for each address vector, then sort by single highest utxo score

@@ -7,8 +7,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 #include "Progress.h"
 
-ProgressCalculator::ProgressCalculator(uint64_t total)
-   : total_(total)
+ProgressCalculator::ProgressCalculator(uint64_t _total)
+   : total_(_total)
 {
    init(0);
 }
@@ -51,12 +51,12 @@ ProgressReporterFilter::ProgressReporterFilter(ProgressReporter *to)
 { }
 
 void ProgressReporterFilter::progress(
-   double progress, unsigned secondsRemaining
+   double _progress, unsigned secondsRemaining
 )
 {
    secondsRemaining_ = secondsRemaining;
-   progress_ = progress;
-   to_->progress(progress, secondsRemaining);
+   progress_ = _progress;
+   to_->progress(_progress, secondsRemaining);
 }
 
 

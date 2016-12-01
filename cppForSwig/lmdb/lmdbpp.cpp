@@ -261,11 +261,11 @@ void LMDB::Iterator::toFirst()
    }
 }
 
-void LMDB::Iterator::seek(const CharacterArrayRef &key, SeekBy e)
+void LMDB::Iterator::seek(const CharacterArrayRef& _key, SeekBy e)
 {
    checkHasDb();
    
-   MDB_val mkey = { key.len, const_cast<char*>(key.data) };
+   MDB_val mkey = { _key.len, const_cast<char*>(_key.data) };
    MDB_val mval = {0, 0};
 
    MDB_cursor_op op=MDB_SET;
@@ -288,13 +288,13 @@ void LMDB::Iterator::seek(const CharacterArrayRef &key, SeekBy e)
       else if (rc != MDB_SUCCESS)
          throw LMDBException("Failed to seek (" + errorString(rc) +")");
       
-      if (mkey.mv_size > key.len)
+      if (mkey.mv_size > _key.len)
       {
          // mkey can't possibly be before key if it's longer than key
          has_ = false;
          return;
       }
-      const int cmp = std::memcmp(mkey.mv_data, key.data, key.len);
+      const int cmp = std::memcmp(mkey.mv_data, _key.data, _key.len);
       if (cmp <= 0)
       {
          // key is longer and the earlier bytes are the same,
@@ -568,11 +568,11 @@ void LMDB::open(LMDBEnv *_env, const std::string &name)
 
 void LMDB::insert(
    const CharacterArrayRef& key,
-   const CharacterArrayRef& value
+   const CharacterArrayRef& _value
 )
 {
    MDB_val mkey = { key.len, const_cast<char*>(key.data) };
-   MDB_val mval = { value.len, const_cast<char*>(value.data) };
+   MDB_val mval = { _value.len, const_cast<char*>(_value.data) };
    
    auto tID = std::this_thread::get_id();
 

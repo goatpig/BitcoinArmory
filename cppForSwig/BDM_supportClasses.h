@@ -225,14 +225,14 @@ public:
 
    static void init(void);
 
-   ScrAddrFilter(LMDBBlockDatabase* lmdb, ARMORY_DB_TYPE armoryDbType)
-      : lmdb_(lmdb), armoryDbType_(armoryDbType), 
+   ScrAddrFilter(LMDBBlockDatabase* _lmdb, ARMORY_DB_TYPE armoryDbType)
+      : lmdb_(_lmdb), armoryDbType_(armoryDbType),
       uniqueKey_(getUniqueKey())
    {
       //make sure we are running off of a clean SDBI set when instantiating the first
       //SAF object (held by the BDM object)
       if (uniqueKey_ == 0) 
-         cleanUpPreviousChildren(lmdb);
+         cleanUpPreviousChildren(_lmdb);
 
       scrAddrMap_ = make_shared<TransactionalMap<AddrAndHash, int>>();
       scanThreadProgressCallback_ = 

@@ -6,6 +6,14 @@ AM_INIT_AUTOMAKE([1.10 subdir-objects foreign -Wall -Werror])
 AC_CONFIG_SUBDIRS([cppForSwig/fcgi cppForSwig/cryptopp])
 
 AM_PROG_AR
+
+# Compiler checks (here before libtool).
+if test "x${CXXFLAGS+set}" = "xset"; then
+  CXXFLAGS_overridden=yes
+else
+  CXXFLAGS_overridden=no
+fi
+
 LT_INIT
 
 AC_CANONICAL_HOST
@@ -133,8 +141,17 @@ case $host in
     ;;
 esac
 
-dnl Clang detection is complicated since it comes up as GCC too.
+# Turn warnings into errors
+AC_ARG_ENABLE([werror],
+	[AS_HELP_STRING([--enable-werror],
+	                [Treat certain compiler warnings as errors (default is no)])],
+	[enable_werror=$enableval],
+[enable_werror=no])
+
 AC_LANG_PUSH([C++])
+AX_CHECK_COMPILE_FLAG([-Werror],[CXXFLAG_WERROR="-Werror"],[CXXFLAG_WERROR=""])
+
+dnl Clang detection is complicated since it comes up as GCC too.
 AC_COMPILE_IFELSE(
 [AC_LANG_PROGRAM([], [[
 #ifndef __clang__
@@ -142,6 +159,20 @@ AC_COMPILE_IFELSE(
 #endif
 ]])],
 [CLANG=yes], [CLANG=no])
+
+ERROR_CXXFLAGS=
+if test "x$enable_werror" = "xyes"; then
+	if test "x$CXXFLAG_WERROR" = "x"; then
+		AC_MSG_ERROR("enable-werror set but -Werror is not usable")
+	fi
+	AX_CHECK_COMPILE_FLAG([-Werror=vla],[ERROR_CXXFLAGS="$ERROR_CXXFLAGS -Werror=vla"],,[[$CXXFLAG_WERROR]])
+fi
+
+# If no flags have been overridden, add some warning flags.
+if test "x$CXXFLAGS_overridden" = "xno"; then
+	AX_CHECK_COMPILE_FLAG([-Wshadow],[CXXFLAGS="$CXXFLAGS -Wshadow"],,[[$CXXFLAG_WERROR]])
+fi
+
 AC_LANG_POP([C++])
 
 AC_MSG_RESULT([is compiler clang: $CLANG])
