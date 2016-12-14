@@ -14,6 +14,7 @@ Credits
 **Open Source Project:** 
 
  - Farhod Fathpour (@goatpig) - Open Source Project Lead 
+ - Jimmy Song (@jimmysong) - Contributor
 
 [Current Source code repository](https://github.com/goatpig/BitcoinArmory)
 
@@ -21,7 +22,6 @@ Credits
 
  - Alan Reiner (@etotheipi) - Project Creator and Former Project Lead 
  - Andy Ofiesh (@AndyOfiesh) - Former Lead Developer 
- - Farhod Fathpour (@goatpig) - Former Developer 
  - Charles Samuels (@njaard) - Former Developer
  - Douglas Roark (@droark) - Former Developer
  - Jimmy Song (@jimmysong) - Former Developer
