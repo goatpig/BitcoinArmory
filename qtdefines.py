@@ -38,16 +38,6 @@ STYLE_NONE   = QFrame.NoFrame
 VERTICAL = 'vertical'
 HORIZONTAL = 'horizontal'
 CHANGE_ADDR_DESCR_STRING = '[[ Change received ]]'
-HTTP_VERSION_FILE = 'https://bitcoinarmory.com/versions.txt'
-BUG_REPORT_URL = 'https://bitcoinarmory.com/scripts/receive_debug.php'
-PRIVACY_URL = 'https://bitcoinarmory.com/privacy-policy'
-# For announcements handling
-ANNOUNCE_FETCH_INTERVAL = 1 * HOUR
-if CLI_OPTIONS.testAnnounceCode:
-   HTTP_ANNOUNCE_FILE = \
-      'https://s3.amazonaws.com/bitcoinarmory-testing/testannounce.txt'
-else:
-   HTTP_ANNOUNCE_FILE = 'https://bitcoinarmory.com/atiannounce.txt'
 
 # Keep track of dialogs and wizard that are executing
 runningDialogsList = []
