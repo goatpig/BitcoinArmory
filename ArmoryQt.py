@@ -2959,9 +2959,9 @@ class ArmoryMainWindow(QMainWindow):
       if bdmState == BDM_BLOCKCHAIN_READY:
          for wltID in self.wltIDList:
             wlt = self.walletMap[wltID]
-            totalFunds += wlt.getBalance('Total')
-            spendFunds += wlt.getBalance('Spendable')
-            unconfFunds += wlt.getBalance('Unconfirmed')
+            totalFunds += int(wlt.getBalance('Total'))
+            spendFunds += int(wlt.getBalance('Spendable'))
+            unconfFunds += int(wlt.getBalance('Unconfirmed'))
 
 
       self.ledgerSize = len(self.combinedLedger)

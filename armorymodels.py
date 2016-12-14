@@ -74,7 +74,7 @@ class AllWalletsDispModel(QAbstractTableModel):
             if not bdmState==BDM_BLOCKCHAIN_READY:
                return QVariant('(...)')
             if wlt.isEnabled == True:
-               bal = wlt.getBalance('Total')
+               bal = int(wlt.getBalance('Total'))
                if bal==-1:
                   return QVariant('(...)') 
                else:
