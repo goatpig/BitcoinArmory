@@ -1,5 +1,5 @@
-CXX = g++
-CC = gcc
+CXX ?= g++
+CC ?= gcc
 
 ifdef DEBUG
 CFLAGS=-g3 -Wall -pipe -fPIC

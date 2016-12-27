@@ -9,6 +9,9 @@
 #include "SocketObject.h"
 #include <cstring>
 #include <stdexcept>
+#if defined(__FreeBSD__)
+#include <netinet/in.h>
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 //

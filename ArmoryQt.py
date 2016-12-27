@@ -1,4 +1,4 @@
-#! /usr/bin/python
+#!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 ################################################################################
 #                                                                              #
@@ -1117,6 +1117,9 @@ class ArmoryMainWindow(QMainWindow):
          elif OS_LINUX:
             tempDir = '/var/log'
             extraFiles = ['/var/log/Xorg.0.log']
+         elif OS_FREEBSD:
+            tempDir = '/var/log'
+            extraFiles = ['/var/log/Xorg.0.log']
          elif OS_MACOSX:
             tempDir = '/var/log'
             extraFiles = ['/var/log/system.log']
@@ -1414,7 +1417,7 @@ class ArmoryMainWindow(QMainWindow):
       if USE_TESTNET or USE_REGTEST:
          return
 
-      if OS_LINUX:
+      if OS_LINUX or OS_FREEBSD:
          out,err = execAndWait('gconftool-2 --get /desktop/gnome/url-handlers/bitcoin/command')
          out2,err = execAndWait('xdg-mime query default x-scheme-handler/bitcoin')
 
@@ -4278,6 +4281,8 @@ class ArmoryMainWindow(QMainWindow):
                Download and Install Bitcoin Core for Ubuntu/Debian"""))
             self.dashBtns[DASHBTNS.Install][TTIP] = self.createToolTipWidget( tr("""
                'Will download and Bitcoin software and cryptographically verify it"""))
+      elif OS_FREEBSD:
+         pass
       elif OS_MACOSX:
          pass
       else:
