@@ -122,6 +122,12 @@ struct BitcoinMessageDeserError : public BitcoinP2P_Exception
    {}
 };
 
+struct BitcoinMessageNoPayloadError : public BitcoinP2P_Exception
+{
+   BitcoinMessageNoPayloadError(const string& e) : BitcoinP2P_Exception(e)
+   {}
+};
+
 struct BitcoinMessageUnknown : public BitcoinP2P_Exception
 {
    BitcoinMessageUnknown(const string& e) : BitcoinP2P_Exception(e)

@@ -170,7 +170,6 @@ vector<unique_ptr<Payload>> Payload::deserialize(
 {
    //TODO: add trailing uncomplete payload data replay in next deser call
    //(mostly useful for grabbing data during blocks over p2p syncing)
-
    if (data.size() < MESSAGE_HEADER_LEN)
       throw BitcoinMessageDeserError("invalid header size");
    
@@ -218,6 +217,16 @@ vector<unique_ptr<Payload>> Payload::deserialize(
       {
          offset += 4; //skip the current mw before reentering the loop
          continue;
+      }
+
+      // Check that this is not just a message header
+      if (totalsize == MESSAGE_HEADER_LEN) {
+         // Filterclear, getaddr, sendheaders, and verack have no payload, so skip those
+         if (strcmp(messagetype, "filterclear") != 0 &&
+             strcmp(messagetype, "getaddr") != 0 &&
+             strcmp(messagetype, "sendheaders") != 0 &&
+             strcmp(messagetype, "verack") != 0)
+            throw BitcoinMessageNoPayloadError("Message without payload");
       }
 
       //get and verify length
@@ -841,12 +850,25 @@ void BitcoinP2P::processDataStackThread()
 {
    try
    {
+      vector<uint8_t> prevData;
       while (1)
       {
-         auto&& data = dataStack_->pop_front();
-         auto&& payload = Payload::deserialize(data, magic_word_);
+         vector<uint8_t> nextData = dataStack_->pop_front();
+         vector<uint8_t> data;
+         data.insert(data.end(), prevData.begin(), prevData.end());
+         data.insert(data.end(), nextData.begin(), nextData.end());
 
-         processPayload(move(payload));
+         try
+         {
+            auto&& payload = Payload::deserialize(data, magic_word_);
+            prevData.clear();
+
+            processPayload(move(payload));
+         }
+         catch(BitcoinMessageNoPayloadError& e)
+         {
+            prevData = data;
+         }
       }
    }
    catch (SocketError& e)
