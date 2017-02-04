@@ -10,6 +10,7 @@
 #include "BtcUtils.h"
 #include "DBUtils.h"
 #include "DbHeader.h"
+#include <sys/stat.h>
 
 #ifndef _WIN32
 #include "sys/stat.h"
