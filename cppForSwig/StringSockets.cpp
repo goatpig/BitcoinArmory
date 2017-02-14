@@ -79,10 +79,6 @@ int32_t HttpSocket::makePacket(char** packet, const char* msg)
 
    memset(*packet + pos, 0, 1);
 
-   FILE* ff = fopen("C:/ArmoryDB-testnet2/httpheader.txt", "wb");
-   fwrite(*packet, strlen(*packet), 1, ff);
-   fclose(ff);
-
    return pos;
 }
 
