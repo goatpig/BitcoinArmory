@@ -82,3 +82,8 @@ osxbuild/env
 /dpkgfiles/control
 
 /r-pi/RPI_CROSSCOMPILE/*
+
+dist
+BitcoinArmory-*.tar.gz
+BitcoinArmory.spec
+BitcoinArmory-*.rpm

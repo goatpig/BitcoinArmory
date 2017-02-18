@@ -4,6 +4,7 @@
 PREFIX=/usr
 DESTDIR=
 UNAME_S := $(shell uname -s)
+VERSION := $(shell PYTHONPATH=. extras/getVersionString.py)
 
 all:
 	$(MAKE) -C cppForSwig
@@ -23,6 +24,9 @@ endif
 	rm -f *.pyc bitcoinrpc_jsonrpc/*.pyc ui/*.pyc
 	rm -f armoryengine/*.pyc dialogs/*.pyc	
 	rm -f pytest/*.pyc txjsonrpc/*.pyc jsonrpc/*.pyc txjsonrpc/web/*.pyc
+	rm -f BitcoinArmory.spec
+	rm -f BitcoinArmory-*.tar.gz
+	rm -fr dist
 
 install : all
 	mkdir -p $(DESTDIR)$(PREFIX)/share/armory/img
@@ -74,3 +78,18 @@ messages:
 osx :
 	chmod +x osxbuild/deploy.sh
 	cd osxbuild; ./deploy.sh
+
+BitcoinArmory.spec: BitcoinArmory.spec.in
+	sed 's/@VERSION@/$(VERSION)/g' < BitcoinArmory.spec.in > BitcoinArmory.spec
+
+BitcoinArmory-$(VERSION).tar.gz: BitcoinArmory.spec
+	extras/maketarball $(VERSION)
+
+dist: BitcoinArmory-$(VERSION).tar.gz
+	true
+
+srpm: dist
+	tmpdir=`mktemp -d` ; rpmbuild --define "_topdir $$tmpdir" -ts BitcoinArmory-$(VERSION).tar.gz && { mv -f "$$tmpdir"/SRPMS/* . ; } ; rm -rf "$$tmpdir"
+
+rpm: dist
+	tmpdir=`mktemp -d` ; rpmbuild --define "_topdir $$tmpdir" -ta BitcoinArmory-$(VERSION).tar.gz && { mv -f "$$tmpdir"/SRPMS/* "$$tmpdir"/RPMS/*/* . ; } ; rm -rf "$$tmpdir"
