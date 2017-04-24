@@ -1030,9 +1030,16 @@ void PythonCallback::remoteLoop(void)
       }
       catch (runtime_error&)
       {
-         continue;
+         break;
       }
    }
+
+   onStop();
+}
+
+void PythonCallback::onStop()
+{
+   // do nothing by default
 }
 
 ///////////////////////////////////////////////////////////////////////////////

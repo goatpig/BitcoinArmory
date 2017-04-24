@@ -290,6 +290,7 @@ namespace SwigClient
          float progress, unsigned secondsRem,
          unsigned progressNumeric
          ) = 0;
+      virtual void onStop();
 
       void startLoop(void);
       void remoteLoop(void);
