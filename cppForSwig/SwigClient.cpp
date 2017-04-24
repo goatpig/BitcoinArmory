@@ -1028,18 +1028,23 @@ void PythonCallback::remoteLoop(void)
          if (!processCallback(move(args)))
             return;
       }
+      catch (const SocketError& e)
+      {
+         if (!ignoreSocketError(e.what())) {
+            break;
+         }
+         continue;
+      }
       catch (runtime_error&)
       {
-         break;
+         continue;
       }
    }
-
-   onStop();
 }
 
-void PythonCallback::onStop()
+bool PythonCallback::ignoreSocketError(const std::string& errorMessage)
 {
-   // do nothing by default
+   return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
