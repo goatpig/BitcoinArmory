@@ -1025,15 +1025,13 @@ void PythonCallback::remoteLoop(void)
          auto&& retval = sock_->writeAndRead(sendCmd.command_);
          Arguments args(move(retval));
 
-         if (!processCallback(move(args)))
-            return;
+         if (!processCallback(move(args))) {
+            run_ = false;
+         }
       }
       catch (const SocketError& e)
       {
-         if (!ignoreSocketError(e.what())) {
-            break;
-         }
-         continue;
+         run_ = ignoreSocketError(e.what());
       }
       catch (runtime_error&)
       {
