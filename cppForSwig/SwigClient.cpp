@@ -867,6 +867,7 @@ void PythonCallback::startLoop(void)
    auto loop = [this](void)->void
    { this->remoteLoop(); };
 
+   run_ = true;
    thr_ = thread(loop);
 }
 
@@ -1025,14 +1026,24 @@ void PythonCallback::remoteLoop(void)
          auto&& retval = sock_->writeAndRead(sendCmd.command_);
          Arguments args(move(retval));
 
-         if (!processCallback(move(args)))
-            return;
+         if (!processCallback(move(args))) {
+            run_ = false;
+         }
+      }
+      catch (const SocketError& e)
+      {
+         run_ = ignoreSocketError(e.what());
       }
       catch (runtime_error&)
       {
          continue;
       }
    }
+}
+
+bool PythonCallback::ignoreSocketError(const std::string& errorMessage)
+{
+   return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -290,6 +290,7 @@ namespace SwigClient
          float progress, unsigned secondsRem,
          unsigned progressNumeric
          ) = 0;
+      virtual bool ignoreSocketError(const std::string& errorMessage);
 
       void startLoop(void);
       void remoteLoop(void);
