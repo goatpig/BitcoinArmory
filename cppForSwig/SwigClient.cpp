@@ -867,6 +867,7 @@ void PythonCallback::startLoop(void)
    auto loop = [this](void)->void
    { this->remoteLoop(); };
 
+   run_ = true;
    thr_ = thread(loop);
 }
 
