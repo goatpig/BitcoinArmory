@@ -1940,7 +1940,15 @@ bool ZeroConfContainer::processInvTxThread(InvEntry entry)
    auto payloadtx = dynamic_pointer_cast<Payload_Tx>(payload);
    if (payloadtx == nullptr)
       return true;
+      
+   ProcessZCPayloadTx(payloadtx);
 
+   return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void ZeroConfContainer::ProcessZCPayloadTx(shared_ptr<Payload_Tx>& payloadtx)
+{
    //push raw tx with current time
    pair<BinaryData, Tx> zcpair;
    zcpair.first = getNewZCkey();
@@ -1952,8 +1960,6 @@ bool ZeroConfContainer::processInvTxThread(InvEntry entry)
    actionstruct.zcMap_.insert(move(zcpair));
    actionstruct.action_ = Zc_NewTx;
    newZcStack_.push_back(move(actionstruct));
-
-   return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2000,7 +2006,7 @@ void ZeroConfContainer::broadcastZC(const BinaryData& rawzc,
    payload_inv.setInvVector(invVec);
 
    //create getData payload packet
-   auto&& payload = make_unique<Payload_Tx>();
+   auto&& payload = make_shared<Payload_Tx>();
    vector<uint8_t> rawtx;
    rawtx.resize(rawzc.getSize());
    memcpy(&rawtx[0], rawzc.getPtr(), rawzc.getSize());
@@ -2010,7 +2016,7 @@ void ZeroConfContainer::broadcastZC(const BinaryData& rawzc,
    auto getDataFut = getDataProm->get_future();
 
    BitcoinP2P::getDataPayload getDataPayload;
-   getDataPayload.payload_ = move(payload);
+   getDataPayload.payload_ = payload;
    getDataPayload.promise_ = getDataProm;
 
    pair<BinaryData, BitcoinP2P::getDataPayload> getDataPair;
@@ -2056,42 +2062,64 @@ void ZeroConfContainer::broadcastZC(const BinaryData& rawzc,
       return;
    }
 
-   auto watchTxFuture = gds->getFuture();
+   // Wait for a reject message. If one is sent, it will go to gds
+   auto watchForRejectFut = gds->getFuture();
 
-   //try to fetch tx by hash from node
-   if(PEER_USES_WITNESS)
-      entry.invtype_ = Inv_Msg_Witness_Tx;
+   // Do a ping-pong to make sure that the connection is live
+   // If the ping-pong is successful and no reject was received, then the transaction
+   // can be considered successfully sent.
+   
+   // Get a random nonce
+   srand(time(0));
+   uint64_t nonce = rand();
+   
+   // Construct pong payload and promise
+   auto pongProm = make_shared<promise<bool>>();
+   auto pongFut = pongProm->get_future();
 
-   auto grabtxlambda = [this](InvEntry inventry)->void
-   {
-      processInvTxThread(move(inventry));
-   };
+   BitcoinP2P::pongPayload pongPayload;
+   auto&& pong_payload = make_unique<Payload_Pong>();
+   pong_payload->nonce_ = nonce;
+   pongPayload.payload_ = move(pong_payload);
+   pongPayload.promise_ = pongProm;
+   
+   pair<uint64_t, BitcoinP2P::pongPayload> pongPair;
+   pongPair.first = nonce;
+   pongPair.second = move(pongPayload);
 
-   thread grabtxthread(grabtxlambda, move(entry));
-   if (grabtxthread.joinable())
-      grabtxthread.detach();
+   //register getData payload
+   networkNode_->pongPayloadMap_.insert(move(pongPair));
 
-
+   // Construct ping payload and send
+   Payload_Ping payload_ping;
+   payload_ping.nonce_ = nonce;
+   networkNode_->sendMessage(move(payload_ping));
+   
+   //wait on pong future
    if (timeout_sec == 0)
    {
-      watchTxFuture.wait();
+      pongFut.wait();
    }
    else
    {
-      auto status = watchTxFuture.wait_for(chrono::seconds(timeout_sec));
-      if (status != future_status::ready)
+      auto pongFutStatus = pongFut.wait_for(chrono::seconds(timeout_sec));
+      if (pongFutStatus != future_status::ready)
       {
          gds->setStatus(false);
-         gds->setMessage("tx broadcast timed out (get)");
+         gds->setMessage("tx broadcast failed. Disconnected from node.");
       }
    }
-   
+      
    networkNode_->unregisterGetTxCallback(txHash);
 
    if (!gds->status())
    {
       auto&& errorMsg = gds->getMessage();
       bdv_cb.zcErrorCallback_(errorMsg, txHashStr);
+   }
+   else
+   {
+      ProcessZCPayloadTx(payload);
    }
 }
 

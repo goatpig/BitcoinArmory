@@ -535,8 +535,15 @@ public:
       shared_ptr<Payload> payload_;
       shared_ptr<promise<bool>> promise_;
    };
+   
+   struct pongPayload
+   {
+      shared_ptr<Payload> payload_;
+      shared_ptr<promise<bool>> promise_;
+   };
 
    TransactionalMap<BinaryData, getDataPayload> getDataPayloadMap_;
+   TransactionalMap<uint64_t, pongPayload> pongPayloadMap_;
 
 public:
    static const map<string, PayloadType> strToPayload_;
@@ -563,6 +570,7 @@ private:
    void processGetData(unique_ptr<Payload>);
    void processGetTx(unique_ptr<Payload>);
    void processReject(unique_ptr<Payload>);
+   void processPong(unique_ptr<Payload>);
 
    int64_t getTimeStamp() const;
 

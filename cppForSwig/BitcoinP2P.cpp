@@ -1089,6 +1089,10 @@ void BitcoinP2P::processPayload(vector<unique_ptr<Payload>> payloadVec)
       case Payload_reject:
          processReject(move(payload));
          break;
+         
+      case Payload_pong:
+         processPong(move(payload));
+         break;
 
       default:
          continue;
@@ -1239,6 +1243,31 @@ void BitcoinP2P::processGetData(unique_ptr<Payload> payload)
       }
       catch (future_error&)
       {
+         //do nothing
+      }
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void BitcoinP2P::processPong(unique_ptr<Payload> payload)
+{
+   LOGINFO << "Received pong";
+   Payload_Pong payload_pong = move(*(Payload_Pong*)payload.release());
+
+   uint64_t nonce = payload_pong.nonce_;
+   auto pongmap = pongPayloadMap_.get();
+
+   auto payloadIter = pongmap->find(nonce);
+   if (payloadIter != pongmap->end())
+   {
+      try
+      {
+         LOGINFO << "Setting pong promise value";
+         payloadIter->second.promise_->set_value(true);
+      }
+      catch (future_error&)
+      {
+         LOGINFO << "Pong future value set failed";
          //do nothing
       }
    }
