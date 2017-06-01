@@ -447,6 +447,7 @@ private:
 
    void processInvTxThread(void);
    bool processInvTxThread(InvEntry);
+   void ProcessZCPayloadTx(shared_ptr<Payload_Tx>&);
 
 public:
    //stacks new zc Tx objects from node

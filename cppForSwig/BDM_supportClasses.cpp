@@ -1940,7 +1940,15 @@ bool ZeroConfContainer::processInvTxThread(InvEntry entry)
    auto payloadtx = dynamic_pointer_cast<Payload_Tx>(payload);
    if (payloadtx == nullptr)
       return true;
+      
+   ProcessZCPayloadTx(payloadtx);
 
+   return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void ZeroConfContainer::ProcessZCPayloadTx(shared_ptr<Payload_Tx>& payloadtx)
+{
    //push raw tx with current time
    pair<BinaryData, Tx> zcpair;
    zcpair.first = getNewZCkey();
@@ -1952,8 +1960,6 @@ bool ZeroConfContainer::processInvTxThread(InvEntry entry)
    actionstruct.zcMap_.insert(move(zcpair));
    actionstruct.action_ = Zc_NewTx;
    newZcStack_.push_back(move(actionstruct));
-
-   return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2000,7 +2006,7 @@ void ZeroConfContainer::broadcastZC(const BinaryData& rawzc,
    payload_inv.setInvVector(invVec);
 
    //create getData payload packet
-   auto&& payload = make_unique<Payload_Tx>();
+   auto&& payload = make_shared<Payload_Tx>();
    vector<uint8_t> rawtx;
    rawtx.resize(rawzc.getSize());
    memcpy(&rawtx[0], rawzc.getPtr(), rawzc.getSize());
@@ -2010,7 +2016,7 @@ void ZeroConfContainer::broadcastZC(const BinaryData& rawzc,
    auto getDataFut = getDataProm->get_future();
 
    BitcoinP2P::getDataPayload getDataPayload;
-   getDataPayload.payload_ = move(payload);
+   getDataPayload.payload_ = payload;
    getDataPayload.promise_ = getDataProm;
 
    pair<BinaryData, BitcoinP2P::getDataPayload> getDataPair;
@@ -2058,7 +2064,6 @@ void ZeroConfContainer::broadcastZC(const BinaryData& rawzc,
 
    // Wait for a reject message. If one is sent, it will go to gds
    auto watchForRejectFut = gds->getFuture();
-   watchForRejectFut.wait_for(chrono::seconds(timeout_sec));
 
    // Do a ping-pong to make sure that the connection is live
    // If the ping-pong is successful and no reject was received, then the transaction
@@ -2114,7 +2119,7 @@ void ZeroConfContainer::broadcastZC(const BinaryData& rawzc,
    }
    else
    {
-      // TODO: add tx to wallet
+      ProcessZCPayloadTx(payload);
    }
 }
 
