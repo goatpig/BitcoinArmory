@@ -4634,7 +4634,7 @@ Does this ID match the &quot;Wallet Unique ID&quot; printed on your paper backup
     </message>
     <message>
         <location filename="qtdialogs.py" line="3590"/>
-        <source>&lt;b&gt;You are about to use the most secure and feature-rich Bitcoin clientsoftware available!&lt;/b&gt;  But please remember, this softwareis still &lt;i&gt;Beta&lt;/i&gt; - Armory developers will not be held responsiblefor loss of bitcoins resulting from the use of this software!&lt;br&gt;&lt;br&gt;</source>
+        <source>&lt;b&gt;You are about to use the most secure and feature-rich Bitcoin client software available!&lt;/b&gt;  But please remember, this software is still &lt;i&gt;Beta&lt;/i&gt; - Armory developers will not be held responsible for loss of bitcoins resulting from the use of this software!&lt;br&gt;&lt;br&gt;</source>
         <translation type="unfinished"/>
     </message>
     <message>

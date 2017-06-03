@@ -4648,7 +4648,7 @@ Does this ID match the &quot;Wallet Unique ID&quot; printed on your paper backup
     </message>
     <message>
         <location filename="qtdialogs.py" line="3590"/>
-        <source>&lt;b&gt;You are about to use the most secure and feature-rich Bitcoin clientsoftware available!&lt;/b&gt;  But please remember, this softwareis still &lt;i&gt;Beta&lt;/i&gt; - Armory developers will not be held responsiblefor loss of bitcoins resulting from the use of this software!&lt;br&gt;&lt;br&gt;</source>
+        <source>&lt;b&gt;You are about to use the most secure and feature-rich Bitcoin client software available!&lt;/b&gt;  But please remember, this software is still &lt;i&gt;Beta&lt;/i&gt; - Armory developers will not be held responsible for loss of bitcoins resulting from the use of this software!&lt;br&gt;&lt;br&gt;</source>
         <translation>&lt;b&gt;Vous êtes sur le point d&apos;utiliser le logiciel client Bitcoin le plus sûr et le plus riche en fonctions qu&apos;il soit !&lt;/b&gt; Mais gardez à l&apos;esprit que ce logiciel est encore en &lt;i&gt;bêta&lt;/i&gt; - Les développeurs d&apos;Armory ne pourront être tenus responsables d&apos;aucune perte de bitcoins résultant de l&apos;utilisation de ce logiciel !&lt;br&gt;&lt;br&gt;</translation>
     </message>
     <message>
