@@ -2315,7 +2315,7 @@ Adresse unten auswählen und ungewünschte abwählen.</translation>
     <message>
         <location filename="qtdialogs.py" line="13615"/>
         <source>Copy a raw, hex-encoded transaction below to have Armory broadcast it to the Bitcoin network.  This function is provided as a convenience to expert users, and carries no guarantees of usefulness. &lt;br&gt;&lt;br&gt;Specifically, be aware of the following limitations of this broadcast function: &lt;ul&gt;&lt;li&gt;The transaction will be &quot;broadcast&quot; by sending it to the connected Bitcon Core instance which will forward it to the rest of the Bitcoin network. However, if the transaction is non-standard or does not satisfy standard fee rules, Bitcoin Core &lt;u&gt;will&lt;/u&gt; drop it and it will never be seen by the Bitcoin network. &lt;/li&gt;&lt;li&gt;There will be no feedback as to whether the transaction succeeded.  You will have to verify the success of this operation via other means. However, if the transaction sends funds directly to or from an address in one of your wallets, it will still generate a notification and show up in your transaction history for that wallet. &lt;/li&gt;&lt;/ul&gt;</source>
-        <translation>Kopieren sie eine unbearbeitete hex-Kodierte Transaktion ins untere Feld, damit Armory diese ins Bitcoinnetzwerk überträgt. Diese Funktion ist für die Bequemlichkeit von Experten Nutzern gegeben und bring keine Gewähr für Nützlichkeit. &lt;br&gt;&lt;br&gt;Seien sie sich insbesondere der folgenden Grenzen der Übertragungsfunktion bewusst: &lt;ul&gt;&lt;li&gt;Die Transaktion wird &quot;übertragen&quot;, indem sie der verbundene Bitcoin Core Instanz übermittelt wird, die sie an den Rest des Bitcoinnetzwerks 
+        <translation>Kopieren sie eine unbearbeitete hex-Kodierte Transaktion ins untere Feld, damit Armory diese ins Bitcoinnetzwerk überträgt. Diese Funktion ist für die Bequemlichkeit von Experten Nutzern gegeben und bring keine Gewähr für Nützlichkeit. &lt;br&gt;&lt;br&gt;Seien sie sich insbesondere der folgenden Grenzen der Übertragungsfunktion bewusst: &lt;ul&gt;&lt;li&gt;Die Transaktion wird &quot;übertragen&quot;, indem sie der verbundene Bitcoin Core Instanz übermittelt wird, die sie an den Rest des Bitcoinnetzwerks
 weiterleitet. Allerdings, sollte die Transaktion nicht standard sein oder Standardregeln für Gebühren nicht erfüllen, &lt;u&gt;wird&lt;/u&gt; sie von Bitcoin Core fallen gelassen und nie vom Rest des Netzwerks gesehen. &lt;/li&gt;&lt;li&gt;Es gibt keine Rückmeldung ob die Transaktion Erfolg hatte. Sie müssen den Erfolg anders, selbst überprüfen. Wenn die Transaktion Gelder von oder an eine Adresse aus einer ihrer Wallets sendet, wird dies eine Meldung erstellen, die im Transaktionsverlauf ihrer Wallet erscheint. &lt;/li&gt;&lt;/ul&gt;</translation>
     </message>
     <message>
@@ -4311,7 +4311,7 @@ Diese Option wählen falls dieser Schlüssel aus fremder Hand stammt</translatio
         <location filename="qtdialogs.py" line="2681"/>
         <source>The key data you entered appears to correspond to the following Bitcoin address:
 
- %1 
+ %1
 
 Is this the correct address?</source>
         <translation>Die eingegebenen Schlüsseldaten scheinen zu folgender Bitcoin Adresse zu gehören:
@@ -4369,7 +4369,7 @@ Ist dies die korrekte Adresse?</translation>
         <location filename="qtdialogs.py" line="2693"/>
         <source>It is possible that the key was supplied in a &quot;reversed&quot; form.  When the data you provide is reversed, the following address is obtained:
 
- %1 
+ %1
 
 Is this the correct address?</source>
         <translation>Ist es möglich, dass der Schlüssel in einer &quot;umgekehrten&quot; Form eingegeben wurde? Wenn die bereitgestellten Daten umgekehrt werden, ergibt sich folgende Adresse:
@@ -4559,11 +4559,11 @@ Ist dies die korrekte Adresse?</translation>
     </message>
     <message>
         <location filename="qtdialogs.py" line="3797"/>
-        <source>The data you entered is for a wallet with a ID: 
+        <source>The data you entered is for a wallet with a ID:
 
- %1 
+ %1
 
-You already own this wallet! 
+You already own this wallet!
   Nothing to do...</source>
         <translation>Die eingegebenen Daten sind für eine Wallet mit der ID:
 
@@ -4574,9 +4574,9 @@ Nichts zu tun...</translation>
     </message>
     <message>
         <location filename="qtdialogs.py" line="3806"/>
-        <source>The data you entered corresponds to a wallet with a wallet ID: 
+        <source>The data you entered corresponds to a wallet with a wallet ID:
 
- %1 
+ %1
 
 Does this ID match the &quot;Wallet Unique ID&quot; printed on your paper backup?  If not, click &quot;No&quot; and reenter key and chain-code data again.</source>
         <translation>Die eingegebenen Daten gehören zu einer Wallet mit der ID:
@@ -4686,8 +4686,8 @@ Passt diese ID zu der &quot;Einzigartige Wallets ID&quot;, die sie wiederherstel
     </message>
     <message>
         <location filename="qtdialogs.py" line="3590"/>
-        <source>&lt;b&gt;You are about to use the most secure and feature-rich Bitcoin clientsoftware available!&lt;/b&gt;  But please remember, this softwareis still &lt;i&gt;Beta&lt;/i&gt; - Armory developers will not be held responsiblefor loss of bitcoins resulting from the use of this software!&lt;br&gt;&lt;br&gt;</source>
-        <translation>&lt;b&gt;Sie sind dabei die sicherste und funktionsreichste Bitcoin Clientsoftware zu nutzen!&lt;/b&gt; Bedenken sie aber, dass diese Software noch &lt;i&gt;Beta&lt;/i&gt; ist. Armory Entwickler können nicht für den Verlust von Bitcoins auf Grund der Nutzung dieser Software verantwortlich gemacht werden!&lt;br&gt;&lt;br&gt;</translation>
+        <source>&lt;b&gt;You are about to use the most secure and feature-rich Bitcoin client software available!&lt;/b&gt;  But please remember, this software is still &lt;i&gt;Beta&lt;/i&gt; - Armory developers will not be held responsible for loss of bitcoins resulting from the use of this software!&lt;br&gt;&lt;br&gt;</source>
+        <translation>&lt;b&gt;Sie sind dabei die sicherste und funktionsreichste Bitcoin client software zu nutzen!&lt;/b&gt; Bedenken sie aber, dass diese Software noch &lt;i&gt;Beta&lt;/i&gt; ist. Armory Entwickler können nicht für den Verlust von Bitcoins auf Grund der Nutzung dieser Software verantwortlich gemacht werden!&lt;br&gt;&lt;br&gt;</translation>
     </message>
     <message>
         <location filename="qtdialogs.py" line="3605"/>
@@ -6797,7 +6797,7 @@ Eingabe: &lt;Zahl&gt; (kB, MB)</translation>
     </message>
     <message>
         <location filename="qtdialogs.py" line="11211"/>
-        <source>The data you entered corresponds to a wallet with a wallet ID: 
+        <source>The data you entered corresponds to a wallet with a wallet ID:
 
 %1
 
@@ -6913,7 +6913,7 @@ Passt diese ID zu der &quot;Einzigartige Wallets ID&quot;, die auf ihrem Papierb
     </message>
     <message>
         <location filename="qtdialogs.py" line="11513"/>
-        <source>The data you entered corresponds to a wallet with a wallet ID: 
+        <source>The data you entered corresponds to a wallet with a wallet ID:
 
 <byte value="x9"/>%1
 
@@ -10627,7 +10627,7 @@ Signierungsschlüssel, nicht der Coins selbst).&lt;br&gt;&lt;br&gt;Wenn sie kein
     </message>
     <message>
         <location filename="qtdialogs.py" line="1977"/>
-        <source>The funds in this wallet are currently identified as belonging to &lt;b&gt;&lt;i&gt;you&lt;/i&gt;&lt;/b&gt;.  As such, any funds available to this wallet will be included in the total balance displayed on the main screen.  
+        <source>The funds in this wallet are currently identified as belonging to &lt;b&gt;&lt;i&gt;you&lt;/i&gt;&lt;/b&gt;.  As such, any funds available to this wallet will be included in the total balance displayed on the main screen.
 
  If you do not actually own this wallet, or do not wish for its funds to be considered part of your balance, uncheck the box below.  Optionally, you can include the name of the person or organization that does own it.</source>
         <translation>Die Gelder dieser Wallet werden als &lt;b&gt;&lt;i&gt;Ihre&lt;/i&gt;&lt;/b&gt; betrachtet. Deshalb werden Gelder dieser Wallet im Gesamtguthaben im Hauptfenster einbegriffen.
