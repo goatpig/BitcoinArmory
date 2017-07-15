@@ -366,7 +366,7 @@ distfiles.append( [ 'Twisted', \
 
 distfiles.append( [ 'libpng', \
                     "libpng-%s.tar.xz" % libpngVer, \
-                    "https://sourceforge.net/projects/libpng/files/libpng16/%s/libpng-%s.tar.xz" % (libpngVer, libpngVer), \
+                    "https://sourceforge.net/projects/libpng/files/libpng16/older-releases/%s/libpng-%s.tar.xz" % (libpngVer, libpngVer), \
                     "ff4dceadb15e2c929ad26283118d56f66f4a6cff" ] )
 
 distfiles.append( [ 'service_identity', \
