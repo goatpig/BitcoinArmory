@@ -36,7 +36,7 @@ siSubdir      = 'f3/2a/7c04e7ab74f9f2be026745a9ffa81fd9d56139fa6f5f4b4c8a8c07b2b
 incVer        = '16.10.1'
 incSubdir     = 'da/b0/32233c9e84b0d44b39015fba8fec03e88053723c1b455925081dc6ccd9e7'
 twistedVer    = '16.6.0'
-libpngVer     = '1.6.28'
+libpngVer     = '1.6.29'
 qtVer         = '4.8.7'  # NB: ArmoryMac.pro must also be kept up to date!!!
                          # Possibly "sipFlags" below too.
 sipVer        = '4.19'   # NB: ArmoryMac.pro must also be kept up to date!!!
@@ -367,7 +367,7 @@ distfiles.append( [ 'Twisted', \
 distfiles.append( [ 'libpng', \
                     "libpng-%s.tar.xz" % libpngVer, \
                     "https://sourceforge.net/projects/libpng/files/libpng16/%s/libpng-%s.tar.xz" % (libpngVer, libpngVer), \
-                    "ff4dceadb15e2c929ad26283118d56f66f4a6cff" ] )
+                    "7dbe6a5088b938545fc0857c507d4e0cf5d9023e" ] )
 
 distfiles.append( [ 'service_identity', \
                     "service_identity-%s.tar.gz" % siVer, \
