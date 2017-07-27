@@ -29,11 +29,11 @@ The above example is specifically for checking the tag for version 0.93.3. You c
 
 ## Building in Linux
 
-To checkout and build a specific version, simply use `git checkout tag` before the `make` command in the build instructions below. For instance, to build version 0.93.3, you would simply do:
+To checkout and build a specific version, simply use `git checkout tag` before the `make` command in the build instructions below. For instance, to build version 0.96, you would simply do:
 
 ```
-$ git checkout v0.93.3
-Note: checking out 'v0.93.3'
+$ git checkout v0.96
+Note: checking out 'v0.96'
 ...
 HEAD is now at e59e10d... Add comment explaining why the padding was removed
 ```
@@ -49,13 +49,17 @@ Now, you need to clone Armory's git repository:
     $ git clone https://github.com/goatpig/BitcoinArmory.git
     $ cd BitcoinArmory
 
-At this point, you may want to check the authenticity of the source code, as stated above. You can do that by typing the following (replacing `0.93.1` with the latest Armory version):
+At this point, you may want to check the authenticity of the source code, as stated above. You can do that by typing the following (replacing `0.96` with the latest Armory version):
 
-    $ git checkout v0.93.1
-    $ git tag -v v0.93.1
+    $ git checkout v0.96
+    $ git tag -v v0.96
+    $ git submodule init 
+    $ git submodule update
 
 Finally, we make the application. This may take a while, depending on your computer:
 
+    $ ./autogen.sh
+    $ ./configure
     $ make
 
 You're all set! To launch Armory, type in a terminal in the BitcoinArmory directory:
