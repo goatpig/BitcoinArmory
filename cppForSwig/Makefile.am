@@ -106,10 +106,8 @@ libCppBlockUtils_la_LDFLAGS += -Wl,-rpath,@executable_path/ -Wl,-rpath,@loader_p
 endif
 
 #custom rules
-CppBlockUtils_wrap.cxx: CppBlockUtils.i
+CppBlockUtils_wrap.cxx: CppBlockUtils.i $(INCLUDE_FILES)
 	swig $(SWIG_FLAGS) CppBlockUtils.i 
-
-.PHONY: CppBlockUtils_wrap.cxx
 
 clean-local:
 	rm -f CppBlockUtils.py
