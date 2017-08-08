@@ -42,7 +42,7 @@ HEAD is now at e59e10d... Add comment explaining why the padding was removed
 
 In Ubuntu, you are required to install some packages before attempting to build Armory. To do so, type the following line (omitting the dollar sign) into a terminal. This only needs to be done once:
 
-    $ sudo apt-get install git-core build-essential pyqt4-dev-tools swig libqtcore4 libqt4-dev python-qt4 python-dev python-twisted python-psutil
+    $ sudo apt-get install git-core build-essential pyqt4-dev-tools swig libqtcore4 libqt4-dev python-qt4 python-dev python-twisted python-psutil qttools5-dev-tools
 
 Now, you need to clone Armory's git repository:
 
