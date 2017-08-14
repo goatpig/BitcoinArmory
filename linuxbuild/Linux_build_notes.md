@@ -56,6 +56,9 @@ At this point, you may want to check the authenticity of the source code, as sta
 
 Finally, we make the application. This may take a while, depending on your computer:
 
+    $ git submodule update --init --recursive
+    $ autoreconf --install
+    $ ./configure
     $ make
 
 You're all set! To launch Armory, type in a terminal in the BitcoinArmory directory:
