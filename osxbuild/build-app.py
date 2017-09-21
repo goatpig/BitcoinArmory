@@ -18,7 +18,7 @@ from subprocess import Popen, PIPE
 from tempfile import mkstemp
 
 # Set some constants up front
-minOSXVer     = '10.7'
+minOSXVer     = '10.8'
 pythonVer     = '2.7.13' # NB: ArmoryMac.pro must also be kept up to date!!!
 pyMajorVer    = '2.7'
 setToolVer    = '35.0.2'

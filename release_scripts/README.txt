@@ -197,10 +197,10 @@ def getMasterPackageList():
    m[pkg]['FetchFrom']  = ['scp', 'joeschmoe', '192.168.1.22', 22, '~/BitcoinArmory/osxbuild/armory_%s_osx.tar.gz']
    m[pkg]['FileSuffix'] = 'osx.tar.gz'
    m[pkg]['OSNameDisp'] = 'MacOSX'
-   m[pkg]['OSVarDisp']  = '10.7+'
+   m[pkg]['OSVarDisp']  = '10.8+'
    m[pkg]['OSArchDisp'] = '64bit'
    m[pkg]['OSNameLink'] = 'MacOSX'
-   m[pkg]['OSVarLink']  = '10.7,10.8,10.9,10.9.1,10.9.2'
+   m[pkg]['OSVarLink']  = '10.8,10.9,10.9.1,10.9.2'
    m[pkg]['OSArchLink'] = '64''
    m[pkg]['HasBundle']  = False
    
