@@ -74,7 +74,7 @@ if test "x$cross_compiling" != "xyes"; then
 		[AC_MSG_ERROR([failed to procure swig include path, make sure swig is installed])])
 	AX_PYTHON_MODULE([psutil], [fatal])
 else
-AC_SUBST([AX_SWIG_PYTHON_CPPFLAGS], [`python-config --includes`])
+AC_SUBST([AX_SWIG_PYTHON_CPPFLAGS], [`$PYTHON-config --includes`])
 fi
 
 AC_MSG_RESULT([AX_SWIG_PYTHON_CPPFLAGS: $AX_SWIG_PYTHON_CPPFLAGS])
