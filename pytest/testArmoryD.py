@@ -3,6 +3,7 @@ Created on Oct 8, 2013
 
 @author: Andy
 '''
+from __future__ import print_function
 import sys
 from unittest.case import SkipTest
 sys.path.append('..')
@@ -146,7 +147,7 @@ class ArmoryDTest(TiabTest):
       self.assertEqual(actualDD['locktime'], 0)
       self.assertEqual(actualDD['version'], 1)
       self.assertEqual(len(actualDD['vin']), 1)
-      self.assertEqual(actualDD['vin'][0]['sequence'], 4294967295L)
+      self.assertEqual(actualDD['vin'][0]['sequence'], 4294967295)
       self.assertEqual(actualDD['vin'][0]['scriptSig']['hex'], '4830450220081341a4e803c7c8e64c3a3fd285dca34c9f7c71c4dfc2b576d761c5783ce735022100eea66ba382d00e628d86fc5bc1928a93765e26fd8252c4d01efe22147c12b91a01410458fec9d580b0c6842cae00aecd96e89af3ff56f5be49dae425046e64057e0f499acc35ec10e1b544e0f01072296c6fa60a68ea515e59d24ff794cf8923cd30f4')
       self.assertEqual(actualDD['vin'][0]['vout'], 1)
       self.assertEqual(actualDD['vin'][0]['txid'], '04b865ecf5fca3a56f6ce73a571a09a668f4b7aa5a7547a5f51fae08eadcdbb5')
@@ -202,7 +203,7 @@ class ArmoryDTest(TiabTest):
       # Verify that a locked wallet Raises WalletUnlockNeeded Exception
       # self.assertRaises(WalletUnlockNeeded, self.jsonServer.jsonrpc_encryptwallet, PASSPHRASE1)
       result = self.jsonServer.jsonrpc_encryptwallet(PASSPHRASE1)
-      print result
+      print(result)
       
    def testUnlockwallet(self):
       kdfParams = self.wallet.computeSystemSpecificKdfParams(0.1)

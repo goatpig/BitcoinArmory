@@ -1,3 +1,4 @@
+from __future__ import print_function
 ################################################################################
 #
 # Copyright (C) 2011-2015, Armory Technologies, Inc.
@@ -370,8 +371,8 @@ elif OS_MACOSX:
    BLKFILE_DIR     = os.path.join(BTC_HOME_DIR, 'blocks')
    BLKFILE_1stFILE = os.path.join(BLKFILE_DIR, 'blk00000.dat')
 else:
-   print '***Unknown operating system!'
-   print '***Cannot determine default directory locations'
+   print('***Unknown operating system!')
+   print('***Cannot determine default directory locations')
 
 BLOCKCHAINS = {}
 BLOCKCHAINS['\xf9\xbe\xb4\xd9'] = "Main Network"
@@ -484,7 +485,7 @@ MULTISIG_FILE   = os.path.join(ARMORY_HOME_DIR, MULTISIG_FILE_NAME)
 
 if not CLI_OPTIONS.multisigFile==DEFAULT:
    if not os.path.exists(CLI_OPTIONS.multisigFile):
-      print 'Multisig file "%s" does not exist!' % CLI_OPTIONS.multisigFile
+      print('Multisig file "%s" does not exist!' % CLI_OPTIONS.multisigFile)
    else:
       MULTISIG_FILE  = CLI_OPTIONS.multisigFile
 
@@ -651,20 +652,20 @@ if not CLI_OPTIONS.rpcport == DEFAULT:
 
 
 if sys.argv[0]=='ArmoryQt.py':
-   print '********************************************************************************'
-   print 'Loading Armory Engine:'
-   print '   Armory Version:      ', getVersionString(BTCARMORY_VERSION)
-   print '   Armory Build:        ', BTCARMORY_BUILD
-   print '   PyBtcWallet  Version:', getVersionString(PYBTCWALLET_VERSION)
-   print 'Detected Operating system:', OS_NAME
-   print '   OS Variant            :', OS_VARIANT
-   print '   User home-directory   :', USER_HOME_DIR
-   print '   Satoshi BTC directory :', BTC_HOME_DIR
-   print '   Armory home dir       :', ARMORY_HOME_DIR
-   print '   ArmoryDB directory     :', ARMORY_DB_DIR
-   print '   Armory settings file  :', SETTINGS_PATH
-   print '   Armory log file       :', ARMORY_LOG_FILE
-   print '   Do wallet checking    :', DO_WALLET_CHECK
+   print('********************************************************************************')
+   print('Loading Armory Engine:')
+   print('   Armory Version:      ', getVersionString(BTCARMORY_VERSION))
+   print('   Armory Build:        ', BTCARMORY_BUILD)
+   print('   PyBtcWallet  Version:', getVersionString(PYBTCWALLET_VERSION))
+   print('Detected Operating system:', OS_NAME)
+   print('   OS Variant            :', OS_VARIANT)
+   print('   User home-directory   :', USER_HOME_DIR)
+   print('   Satoshi BTC directory :', BTC_HOME_DIR)
+   print('   Armory home dir       :', ARMORY_HOME_DIR)
+   print('   ArmoryDB directory     :', ARMORY_DB_DIR)
+   print('   Armory settings file  :', SETTINGS_PATH)
+   print('   Armory log file       :', ARMORY_LOG_FILE)
+   print('   Do wallet checking    :', DO_WALLET_CHECK)
 
 
 
@@ -777,7 +778,7 @@ def execAndWait(cli_str, timeout=0, useStartInfo=True):
    while process.poll() == None:
       time.sleep(0.1)
       if timeout>0 and (RightNow() - start)>timeout:
-         print 'Process exceeded timeout, killing it'
+         print('Process exceeded timeout, killing it')
          killProcess(pid)
    out,err = process.communicate()
    return [out,err]
@@ -857,7 +858,7 @@ def LOGEXCEPT(msg, *a):
 
 def chopLogFile(filename, size):
    if not os.path.exists(filename):
-      print 'Log file doesn\'t exist [yet]'
+      print('Log file doesn\'t exist [yet]')
       return
 
    logFile = open(filename, 'r')
@@ -968,7 +969,7 @@ def LOGRAWDATA(rawStr, loglevel=DEFAULT_RAWDATA_LOGLEVEL):
 
 cpplogfile = None
 if CLI_OPTIONS.logDisable:
-   print 'Logging is disabled'
+   print('Logging is disabled')
    rootLogger.disabled = True
 
 
@@ -1526,8 +1527,8 @@ def hash160_to_p2pkhash_script(binStr20):
    if not len(binStr20)==20:
       raise InvalidHashError('Tried to convert non-20-byte str to p2pkh script')
 
-   from Transaction import getOpCode
-   from Script import scriptPushData
+   from armoryengine.Transaction import getOpCode
+   from armoryengine.Script import scriptPushData
    outScript = ''.join([  getOpCode('OP_DUP'        ), \
                           getOpCode('OP_HASH160'    ), \
                           scriptPushData(binStr20),
@@ -1543,8 +1544,8 @@ def hash160_to_p2sh_script(binStr20):
    if not len(binStr20)==20:
       raise InvalidHashError('Tried to convert non-20-byte str to p2sh script')
 
-   from Transaction import getOpCode
-   from Script import scriptPushData
+   from armoryengine.Transaction import getOpCode
+   from armoryengine.Script import scriptPushData
    outScript = ''.join([  getOpCode('OP_HASH160'),
                           scriptPushData(binStr20),
                           getOpCode('OP_EQUAL')])
@@ -1565,8 +1566,8 @@ def pubkey_to_p2pk_script(binStr33or65):
    if not len(binStr33or65) in [33, 65]:
       raise KeyDataError('Invalid public key supplied to p2pk script')
 
-   from Transaction import getOpCode
-   from Script import scriptPushData
+   from armoryengine.Transaction import getOpCode
+   from armoryengine.Script import scriptPushData
    serPubKey = scriptPushData(binStr33or65)
    outScript = serPubKey + getOpCode('OP_CHECKSIG')
    return outScript
@@ -1587,7 +1588,7 @@ def pubkeylist_to_multisig_script(pkList, M, withSort=True):
    if sum([  (0 if len(pk) in [33,65] else 1)   for pk in pkList]) > 0:
       raise KeyDataError('Not all strings in pkList are 33 or 65 bytes!')
 
-   from Transaction import getOpCode
+   from armoryengine.Transaction import getOpCode
    opM = getOpCode('OP_%d' % M)
    opN = getOpCode('OP_%d' % len(pkList))
 
@@ -1804,7 +1805,7 @@ def isLikelyDataType(theStr, dtype=None):
 
 cpplogfile = None
 if CLI_OPTIONS.logDisable:
-   print 'Logging is disabled'
+   print('Logging is disabled')
    rootLogger.disabled = True
 
 
@@ -1930,12 +1931,12 @@ def pprintHex(theStr, indent='', withAddr=True, major=8, minor=8):
    entire block, remove address markings, or change the major/minor
    grouping size (major * minor = hexCharsPerRow)
    """
-   print prettyHex(theStr, indent, withAddr, major, minor)
+   print(prettyHex(theStr, indent, withAddr, major, minor))
 
 
 def pprintDiff(str1, str2, indent=''):
    if not len(str1)==len(str2):
-      print 'pprintDiff: Strings are different length!'
+      print('pprintDiff: Strings are different length!')
       return
 
    byteDiff = []
@@ -2464,12 +2465,12 @@ def difficulty_to_binaryBits(i):
 
 
 # The following params are for the Bitcoin elliptic curves (secp256k1)
-SECP256K1_MOD   = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2FL
-SECP256K1_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141L
-SECP256K1_B     = 0x0000000000000000000000000000000000000000000000000000000000000007L
-SECP256K1_A     = 0x0000000000000000000000000000000000000000000000000000000000000000L
-SECP256K1_GX    = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798L
-SECP256K1_GY    = 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8L
+SECP256K1_MOD   = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
+SECP256K1_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+SECP256K1_B     = 0x0000000000000000000000000000000000000000000000000000000000000007
+SECP256K1_A     = 0x0000000000000000000000000000000000000000000000000000000000000000
+SECP256K1_GX    = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798
+SECP256K1_GY    = 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8
 
 ################################################################################
 ################################################################################
@@ -2506,7 +2507,7 @@ class FiniteField(object):
               256:  2**2048-1157  }
 
    def __init__(self, nbytes):
-      if not self.PRIMES.has_key(nbytes):
+      if nbytes not in self.PRIMES:
          LOGERROR('No primes available for size=%d bytes', nbytes)
          self.prime = None
          raise FiniteFieldError
@@ -3566,14 +3567,14 @@ class SettingsFile(object):
    #############################################################################
    def pprint(self, nIndent=0):
       indstr = indent*nIndent
-      print indstr + 'Settings:'
+      print(indstr + 'Settings:')
       for k,v in self.settingsMap.iteritems():
-         print indstr + indent + k.ljust(15), v
+         print(indstr + indent + k.ljust(15), v)
 
 
    #############################################################################
    def hasSetting(self, name):
-      return self.settingsMap.has_key(name)
+      return name in self.settingsMap
 
    #############################################################################
    def set(self, name, value):
@@ -3586,7 +3587,7 @@ class SettingsFile(object):
    #############################################################################
    def extend(self, name, value):
       """ Adds/converts setting to list, appends value to the end of it """
-      if not self.settingsMap.has_key(name):
+      if name not in self.settingsMap:
          if isinstance(value, list):
             self.set(name, value)
          else:

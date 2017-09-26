@@ -1,3 +1,4 @@
+from __future__ import print_function
 ################################################################################
 #                                                                              #
 # Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
@@ -52,7 +53,7 @@ class PySide_CallBack(Cpp.PythonCallback):
          # AOTODO replace with constants
          
          if action == Cpp.BDMAction_Ready:
-            print 'BDM is ready!'
+            print('BDM is ready!')
             act = FINISH_LOAD_BLOCKCHAIN_ACTION
             TheBDM.topBlockHeight = block
             TheBDM.setState(BDM_BLOCKCHAIN_READY)
@@ -93,7 +94,7 @@ class PySide_CallBack(Cpp.PythonCallback):
             cppNotificationListener(act, arglist)
       except:
          LOGEXCEPT('Error in running callback')
-         print sys.exc_info()
+         print(sys.exc_info())
          raise
 
    def progress(self, phase, walletVec, prog, seconds, progressNumeric):
@@ -115,7 +116,7 @@ class PySide_CallBack(Cpp.PythonCallback):
                
       except:
          LOGEXCEPT('Error in running progress callback')
-         print sys.exc_info()
+         print(sys.exc_info())
       
 def getCurrTimeAndBlock():
    time0 = long(RightNowUTC())

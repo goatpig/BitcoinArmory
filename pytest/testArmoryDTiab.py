@@ -3,6 +3,7 @@ Created on Oct 8, 2013
 
 @author: Andy
 '''
+from __future__ import print_function
 import sys
 from unittest.case import SkipTest
 sys.path.append('..')
@@ -117,7 +118,7 @@ class ArmoryDTiabTest(TiabTest):
    def armoryDTiabTestCallback(self, action, args):
       if action == REFRESH_ACTION:
          for wltID in args:
-            print wltID
+            print(wltID)
             if wltID in self.wltIDs:
                self.numberOfWalletsScanned += 1
          

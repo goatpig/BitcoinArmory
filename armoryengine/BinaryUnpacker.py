@@ -22,7 +22,7 @@
 ################################################################################
 ################################################################################
 from struct import pack, unpack
-from BinaryPacker import UINT8, UINT16, UINT32, UINT64, INT8, INT16, INT32, INT64, VAR_INT, VAR_STR, FLOAT, BINARY_CHUNK
+from armoryengine.BinaryPacker import UINT8, UINT16, UINT32, UINT64, INT8, INT16, INT32, INT64, VAR_INT, VAR_STR, FLOAT, BINARY_CHUNK
 from armoryengine.ArmoryUtils import LITTLEENDIAN, unpackVarInt, LOGERROR
 
 class UnpackerError(Exception): pass
@@ -125,6 +125,6 @@ class BinaryUnpacker(object):
          return binOut
 
       LOGERROR('Var Type not recognized!  VarType = %d', varType)
-      raise UnpackerError, "Var type not recognized!  VarType="+str(varType)
+      raise UnpackerError("Var type not recognized!  VarType="+str(varType))
 
 ################################################################################

@@ -1,3 +1,4 @@
+from __future__ import print_function
 ################################################################################
 #                                                                              #
 # Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
@@ -64,7 +65,7 @@ from armoryengine.ArmoryUtils import CheckHash160, binary_to_hex, coin2str, \
    hash160_to_addrStr, ONE_BTC, CENT, int_to_binary, MIN_RELAY_TX_FEE, MIN_TX_FEE
 from armoryengine.Timer import TimeThisFunction
 from armoryengine.Transaction import *
-import BDM
+from armoryengine.BDM import TheBDM
 
 ################################################################################
 # These would normally be defined by C++ and fed in, but I've recreated
@@ -167,7 +168,7 @@ class PyUnspentTxOut(object):
          (self.txHeight, self.txIndex, self.txOutIndex, self.txHashStr)
 
    def pprint(self, indent=''):
-      print self.prettyStr(indent)
+      print(self.prettyStr(indent))
       
    def setChecked(self, val):
       self.checked = val
@@ -184,17 +185,17 @@ def sumTxOutList(txoutList):
 # This is really just for viewing a TxOut list -- usually for debugging
 def pprintUnspentTxOutList(utxoList, headerLine='Coin Selection: '):
    totalSum = sum([u.getValue() for u in utxoList])
-   print headerLine, '(Total = %s BTC)' % coin2str(totalSum)
-   print '   ','Owner Address'.ljust(34),
-   print '   ','TxOutValue'.rjust(18),
-   print '   ','NumConf'.rjust(8),
-   print '   ','PriorityFactor'.rjust(16)
+   print(headerLine, '(Total = %s BTC)' % coin2str(totalSum))
+   print('   ','Owner Address'.ljust(34), end=' ')
+   print('   ','TxOutValue'.rjust(18), end=' ')
+   print('   ','NumConf'.rjust(8), end=' ')
+   print('   ','PriorityFactor'.rjust(16))
    for utxo in utxoList:
       a160 = CheckHash160(utxo.getRecipientScrAddr())
-      print '   ',hash160_to_addrStr(a160).ljust(34),
-      print '   ',(coin2str(utxo.getValue()) + ' BTC').rjust(18),
-      print '   ',str(utxo.getNumConfirm()).rjust(8),
-      print '   ', ('%0.2f' % (utxo.getValue()*utxo.getNumConfirm()/(ONE_BTC*144.))).rjust(16)
+      print('   ',hash160_to_addrStr(a160).ljust(34), end=' ')
+      print('   ',(coin2str(utxo.getValue()) + ' BTC').rjust(18), end=' ')
+      print('   ',str(utxo.getNumConfirm()).rjust(8), end=' ')
+      print('   ', ('%0.2f' % (utxo.getValue()*utxo.getNumConfirm()/(ONE_BTC*144.))).rjust(16))
 
 
 ################################################################################
@@ -242,7 +243,7 @@ def PySortCoins(unspentTxOutInfo, sortMethod=1):
             else:
                addr = script_to_scrAddr(utxo.getScript())
 
-            if not addrMap.has_key(addr):
+            if addr not in addrMap:
                addrMap[addr] = [utxo]
             else:
                addrMap[addr].append(utxo)

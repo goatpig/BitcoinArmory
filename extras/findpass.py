@@ -3,7 +3,9 @@ Created on Aug 30, 2013
 
 @author: Andy Ofiesh
 '''
+from __future__ import print_function
 import sys
+from functools import reduce
 sys.argv.append('--nologging')
 from sys import path, argv
 import os
@@ -118,8 +120,8 @@ class PasswordFinder(object):
          self.wallet = wallet
       else:
          if not os.path.exists(walletPath):
-            print 'Wallet does not exist:'
-            print '  ', walletPath
+            print('Wallet does not exist:')
+            print('  ', walletPath)
             raise WalletNotFound
          self.wallet = PyBtcWallet().readWalletFile(walletPath)
 
@@ -164,30 +166,30 @@ class PasswordFinder(object):
             
          if isValid:
             # If the passphrase was wrong, it would error out, and not continue
-            print 'Passphrase found!'
-            print ''
-            print '\t', p
-            print ''
-            print 'Thanks for using this script.  If you recovered coins because of it, '
-            print 'please consider donating :) '
-            print '   1ArmoryXcfq7TnCSuZa9fQjRYwJ4bkRKfv'
-            print ''
+            print('Passphrase found!')
+            print('')
+            print('\t', p)
+            print('')
+            print('Thanks for using this script.  If you recovered coins because of it, ')
+            print('please consider donating :) ')
+            print('   1ArmoryXcfq7TnCSuZa9fQjRYwJ4bkRKfv')
+            print('')
             found = True
             open('FOUND_PASSWORD.txt','w').write(p)
             result = p
             break
          elif i%100==0:
                telapsed = (RightNow() - startTime)/3600.
-               print ('%d/%d passphrases tested... (%0.1f hours so far)'%(i,passwordCount,telapsed)).rjust(40)
-         print p,
+               print(('%d/%d passphrases tested... (%0.1f hours so far)'%(i,passwordCount,telapsed)).rjust(40))
+         print(p, end=' ')
          if i % 10 == 9:
-            print
+            print()
       if not found:
-         print ''
+         print('')
          
-         print 'Script finished!'
-         print 'Sorry, none of the provided passphrases were correct :('
-         print ''
+         print('Script finished!')
+         print('Sorry, none of the provided passphrases were correct :(')
+         print('')
       return result
 
 # Print help mess if less than 3 args:
@@ -195,8 +197,8 @@ class PasswordFinder(object):
 #  arg[1] = wallet path provided on command line
 #  arg[2] = --nologging flag appended at beginning of script
 if len(argv)<3:
-   print '***USAGE: '
-   print '    %s /path/to/wallet/file.wallet' % argv[0]
+   print('***USAGE: ')
+   print('    %s /path/to/wallet/file.wallet' % argv[0])
    exit(0)
 passwordFinder = PasswordFinder(walletPath=argv[1])
 

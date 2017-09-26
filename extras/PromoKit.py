@@ -1,3 +1,4 @@
+from __future__ import print_function
 ################################################################################
 #
 # Copyright (C) 2011-2014, Armory Technologies, Inc.                         
@@ -195,7 +196,7 @@ def distributeBtc(masterWallet, amount, sendingAddrList):
          addr160 = sendingAddr.getAddr160()
          # Make sure the sending addresses are in the masterWallet
          if not masterWallet.hasAddr(addr160):
-            raise WalletAddressError, 'Address is not in wallet! [%s]' % sendingAddr.getAddrStr()
+            raise WalletAddressError('Address is not in wallet! [%s]' % sendingAddr.getAddrStr())
          utxoList.extend(masterWallet.getAddrTxOutList(addr160))
    
 
@@ -212,7 +213,7 @@ def distributeBtc(masterWallet, amount, sendingAddrList):
 
       # Make sure there are funds to cover the transaction.
       if totalChange < 0:
-         print '***ERROR: you are trying to spend more than your balance!'
+         print('***ERROR: you are trying to spend more than your balance!')
          raise NegativeValueError
       recipValuePairs.append((masterWallet.getNextUnusedAddress().getAddr160(), totalChange ))
 
@@ -238,8 +239,8 @@ def distributeBtc(masterWallet, amount, sendingAddrList):
       masterWallet.signUnsignedTx(ustx)
       pytx = ustx.getPyTxSignedIfPossible()
    
-      print '\nSigned transaction to be broadcast using Armory "offline transactions"...'
-      print ustx.serializeAscii()
+      print('\nSigned transaction to be broadcast using Armory "offline transactions"...')
+      print(ustx.serializeAscii())
    finally:
       TheBDM.beginCleanShutdown()
    return pytx
@@ -270,7 +271,7 @@ def sweepImportedAddrs(masterWallet):
    fee = calcMinSuggestedFees(utxoList, totalAvailable, MIN_RELAY_TX_FEE, 1)
    totalSpend = totalAvailable - fee
    if totalSpend<0:
-      print '***ERROR: The fees are greater than the funds being swept!'
+      print('***ERROR: The fees are greater than the funds being swept!')
       raise NegativeValueError
    recipValuePairs.append((masterWallet.getNextUnusedAddress().getAddr160(), totalSpend ))
 
@@ -285,8 +286,8 @@ def sweepImportedAddrs(masterWallet):
    masterWallet.signTxDistProposal(ustx)
    pytx = ustx.getPyTxSignedIfPossible()
 
-   print '\nSigned transaction to be broadcast using Armory "offline transactions"...'
-   print ustx.serializeAscii()
+   print('\nSigned transaction to be broadcast using Armory "offline transactions"...')
+   print(ustx.serializeAscii())
    return pytx
 
 
@@ -308,14 +309,14 @@ pytx = distributeBtc(masterWallet, 10000, masterWallet.getLinearAddrList(withImp
 
 # Show help whenever the args are not correct
 def printHelp():
-   print 'USAGE: %s --create <master wallet file path> <number of promo wallets> <addrs per promo wallet> <promo wallet label>' % sys.argv[0]
-   print '   or: %s --distribute <master wallet file path> <satoshis per addr>' % sys.argv[0]
-   print '   or: %s --sweep <master wallet file path>' % sys.argv[0]
+   print('USAGE: %s --create <master wallet file path> <number of promo wallets> <addrs per promo wallet> <promo wallet label>' % sys.argv[0])
+   print('   or: %s --distribute <master wallet file path> <satoshis per addr>' % sys.argv[0])
+   print('   or: %s --sweep <master wallet file path>' % sys.argv[0])
    exit(0)
    
 # Main execution path
 # Do not ever access the same wallet file from two different processes at the same time
-print '\n'
+print('\n')
 raw_input('PLEASE CLOSE ARMORY BEFORE RUNNING THIS SCRIPT!  (press enter to continue)\n')
 
 if len(promoKitArgList)<3:
@@ -324,7 +325,7 @@ if len(promoKitArgList)<3:
 operation = promoKitArgList[1]
 walletFile = promoKitArgList[2]
 if not os.path.exists(walletFile):
-   print 'Wallet file was not found: %s' % walletFile
+   print('Wallet file was not found: %s' % walletFile)
 masterWallet = PyBtcWallet().readWalletFile(walletFile, False)
 if operation == '--create':
    if len(promoKitArgList)<6:

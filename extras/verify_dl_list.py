@@ -1,3 +1,4 @@
+from __future__ import print_function
 import sys
 sys.path.append('..')
 sys.path.append('/usr/share/armory')
@@ -26,10 +27,10 @@ def extractSignedDataFromVersionsDotTxt(wholeFile, doVerify=True):
       LOGERROR('No signed data block found')
       return ''
 
-   print 'MESSAGE:  '
-   print MSGRAW
-   print 'SIGNATURE:'
-   print SIGHEX
+   print('MESSAGE:  ')
+   print(MSGRAW)
+   print('SIGNATURE:')
+   print(SIGHEX)
 
    
    if doVerify:
@@ -42,7 +43,7 @@ def extractSignedDataFromVersionsDotTxt(wholeFile, doVerify=True):
          LOGERROR('Signed data block failed verification!')
          return ''
       else:
-         print 'SIGNATURE IS GOOD!'
+         print('SIGNATURE IS GOOD!')
 
 
    return MSGRAW
@@ -74,10 +75,10 @@ def parseLinkList(theData):
 if __name__=='__main__':
    fn = 'versions.txt'
    if not os.path.exists(fn):
-      print 'File does not exist!'
+      print('File does not exist!')
       fn = '../versions.txt'
       if not os.path.exists(fn):
-         print 'Really does not exist. Aborting.' 
+         print('Really does not exist. Aborting.') 
          exit(1)
 
    f = open(fn, 'r')
@@ -86,13 +87,13 @@ if __name__=='__main__':
    msgVerified = extractSignedDataFromVersionsDotTxt(allData, doVerify=False)
    DICT,VER = parseLinkList(msgVerified)
          
-   print DICT
+   print(DICT)
    for dl in DICT:
-      print dl.upper(), VER[dl]
+      print(dl.upper(), VER[dl])
       for theOS in DICT[dl]:
-         print '   ' + dl + '-' + theOS
-         print '      ', DICT[dl][theOS][0]
-         print '      ', DICT[dl][theOS][1]
+         print('   ' + dl + '-' + theOS)
+         print('      ', DICT[dl][theOS][0])
+         print('      ', DICT[dl][theOS][1])
 
    msgVerified = extractSignedDataFromVersionsDotTxt(allData)
       

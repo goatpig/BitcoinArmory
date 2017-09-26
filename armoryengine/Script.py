@@ -1,3 +1,4 @@
+from __future__ import print_function
 ################################################################################
 #                                                                              #
 # Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
@@ -74,10 +75,10 @@ def convertScriptToOpStrings(binScript):
 
 def pprintScript(binScript, nIndent=0):
    indstr = indent*nIndent
-   print indstr + 'Script:'
+   print(indstr + 'Script:')
    opList = convertScriptToOpStrings(binScript)
    for op in opList:
-      print indstr + indent + op
+      print(indstr + indent + op)
 
 def scriptPushData(binObj):
    sz = len(binObj) 
@@ -183,19 +184,19 @@ class PyScriptProcessor(object):
          txInIndex = self.txInIndex
 
       if self.script1==None or self.txNew==None:
-         raise VerifyScriptError, 'Cannot verify transactions, without setTxObjects call first!'
+         raise VerifyScriptError('Cannot verify transactions, without setTxObjects call first!')
 
       # Execute TxIn script first
       self.stack = []
       exitCode1 = self.executeScript(self.script1, self.stack)
 
       if not exitCode1 == SCRIPT_NO_ERROR:
-         raise VerifyScriptError, ('First script failed!  Exit Code: ' + str(exitCode1))
+         raise VerifyScriptError('First script failed!  Exit Code: ' + str(exitCode1))
 
       exitCode2 = self.executeScript(self.script2, self.stack)
 
       if not exitCode2 == SCRIPT_NO_ERROR:
-         raise VerifyScriptError, ('Second script failed!  Exit Code: ' + str(exitCode2))
+         raise VerifyScriptError('Second script failed!  Exit Code: ' + str(exitCode2))
 
       return self.stack[-1]==1
 

@@ -16,6 +16,7 @@ from qtdefines import QRichLabel, makeHorizFrame, GETFONT, relaxedSizeNChar, \
 from armorycolors import Colors
 from armorymodels import WLTVIEWCOLS
 from PyQt4 import QtGui
+from functools import reduce
 
 
 # Give an upper limit for any method to return

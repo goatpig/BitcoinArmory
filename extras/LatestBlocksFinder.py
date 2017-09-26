@@ -1,3 +1,4 @@
+from __future__ import print_function
 import sys
 sys.argv.append('--nologging')
 
@@ -113,4 +114,4 @@ def getLastNBlocks(n=10):
 
 lastNBlocks = getLastNBlocks(3)
 for blk in lastNBlocks:
-   print blk[0], binary_to_hex(blk[1], BIGENDIAN), blk[2], blk[3]
+   print(blk[0], binary_to_hex(blk[1], BIGENDIAN), blk[2], blk[3])

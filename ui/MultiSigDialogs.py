@@ -24,7 +24,7 @@ from armoryengine.CoinSelection import PySelectCoins, PyUnspentTxOut, \
 import cStringIO
 import textwrap
 
-from SignerSelectDialog import SignerLabelFrame
+from ui.SignerSelectDialog import SignerLabelFrame
 from armoryengine.SignerWrapper import SIGNER_DEFAULT, SIGNER_LEGACY, \
    SIGNER_CPP, SIGNER_BCH
 

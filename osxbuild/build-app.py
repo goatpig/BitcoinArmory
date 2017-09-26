@@ -1,5 +1,6 @@
 #!/usr/env python
 """Build Armory as a Mac OS X Application."""
+from __future__ import print_function
 
 import os
 from os import path
@@ -74,7 +75,7 @@ parser.add_option('--cleanupapp',   dest='cleanupapp',  default=False, action='s
 ########################################################
 # Write the string to both console and log file
 def logprint(s):
-   print s
+   print(s)
    with open(LOGFILE,'a') as f:
       f.write(s if s.endswith('\n') else s+'\n')
 
@@ -102,7 +103,7 @@ for var in ['PATH','DYLD_FRAMEWORK_PATH', 'QTDIR', 'QMAKESPEC']:
 # Build requires a "brew"ed OpenSSL. Need to get the header location.
 opensslPath = subprocess.check_output(["brew", "--prefix", "openssl"]).rstrip('\n')
 if opensslPath.startswith("Error"):
-   print 'ERROR: You must use brew to install OpenSSL. Exiting build process.'
+   print('ERROR: You must use brew to install OpenSSL. Exiting build process.')
    sys.exit()
 
 ########################################################
@@ -653,11 +654,11 @@ def make_resources():
 def cleanup_app():
    "Try to remove as much unnecessary junk as possible."
    show_app_size()
-   print "Removing Python test-suite."
+   print("Removing Python test-suite.")
    testdir = path.join(PYPREFIX, "lib/python%s/test" % pyMajorVer)
    if path.exists(testdir):
       removetree(testdir)
-      print "Removing .pyo and unneeded .py files."
+      print("Removing .pyo and unneeded .py files.")
    if CLIOPTS.cleanupapp:
       remove_python_files(PYPREFIX, False)
    else:
@@ -677,7 +678,7 @@ def getVersionStr():
          if line.startswith('BTCARMORY_VERSION'):
             vstr = line[line.index('(')+1:line.index(')')]
             vquad = tuple([int(v) for v in vstr.replace(' ','').split(',')])
-            print vquad, len(vquad)
+            print(vquad, len(vquad))
             vstr = '%d.%02d' % vquad[:2]
             if (vquad[2] > 0 or vquad[3] > 0):
                vstr += '.%d' % vquad[2]

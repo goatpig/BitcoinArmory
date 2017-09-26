@@ -1,3 +1,4 @@
+from __future__ import print_function
 # This is a sample plugin file that will be used to create a new tab 
 # in the Armory main window.  All plugin files (such as this one) will 
 # be injected with the globals() from ArmoryQt.py, which includes pretty
@@ -80,8 +81,8 @@ class PluginObject(object):
                   [],
                   privKeyMap, SIGHASH_NONE|SIGHASH_ANYONECANPAY )
             
-            print "-------------"
-            print binary_to_hex(signedTx.serialize())
+            print("-------------")
+            print(binary_to_hex(signedTx.serialize()))
             
             # sock = socket.create_connection(('dust-b-gone.bitcoin.petertodd.org',80))
             # sock.send(signedTx.serialize())

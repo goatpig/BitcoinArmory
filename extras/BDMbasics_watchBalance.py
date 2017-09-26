@@ -16,6 +16,7 @@ In this example, we will list all initialize the BDM and indefinitely wait
 on new blocks, on which occasion we will print out our registered wallet's
 balance
 """
+from __future__ import print_function
 
 import os
 import sys
@@ -24,13 +25,13 @@ from armoryengine.ALL import *
 
 # Check that user actually supplied a wallet file
 if len(CLI_ARGS) < 1:
-   print 'Must supply path to wallet file as first argument!'
+   print('Must supply path to wallet file as first argument!')
    exit(1)
 
 # Check that wallet file exists
 walletPath = CLI_ARGS[0]
 if not os.path.exists(walletPath):
-   print 'Wallet file does not exist: "%s"' % walletPath
+   print('Wallet file does not exist: "%s"' % walletPath)
    exit(1)
    
 # Read it into a PyBtcWallet object
@@ -39,13 +40,13 @@ wlt = PyBtcWallet().readWalletFile(walletPath)
 ################################################################################
 def printWalletBalance(args):
    # If any args, it's because this is a NEW_BLOCK_ACTION with a new top block
-   print 'Current top block:', TheBDM.getTopBlockHeight()
+   print('Current top block:', TheBDM.getTopBlockHeight())
 
    # Print all three types of balances you can query for a wallet
    for balType in ['full', 'spendable', 'unconfirmed']:
       balStr  = coin2str(wlt.getBalance(balType))
       typeStr = balType.upper().rjust(16)
-      print '%s balance for wallet %s: %s BTC' % (typeStr, wlt.uniqueIDB58, balStr)
+      print('%s balance for wallet %s: %s BTC' % (typeStr, wlt.uniqueIDB58, balStr))
    
 
 

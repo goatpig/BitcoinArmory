@@ -1,3 +1,4 @@
+from __future__ import print_function
 ################################################################################
 #                                                                              #
 # Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
@@ -515,11 +516,11 @@ class PyOutPoint(BlockComponent):
 
    def pprint(self, nIndent=0, endian=BIGENDIAN):
       indstr = indent*nIndent
-      print indstr + 'OutPoint:'
-      print indstr + indent + 'PrevTxHash:', \
+      print(indstr + 'OutPoint:')
+      print(indstr + indent + 'PrevTxHash:', \
                   binary_to_hex(self.txHash, endian), \
-                  '(BE)' if endian==BIGENDIAN else '(LE)'
-      print indstr + indent + 'TxOutIndex:', self.txOutIndex
+                  '(BE)' if endian==BIGENDIAN else '(LE)')
+      print(indstr + indent + 'TxOutIndex:', self.txOutIndex)
 
 
 #####
@@ -557,18 +558,18 @@ class PyTxIn(BlockComponent):
 
    def pprint(self, nIndent=0, endian=BIGENDIAN):
       indstr = indent*nIndent
-      print indstr + 'PyTxIn:'
-      print indstr + indent + 'PrevTxHash:', \
+      print(indstr + 'PyTxIn:')
+      print(indstr + indent + 'PrevTxHash:', \
                   binary_to_hex(self.outpoint.txHash, endian), \
-                      '(BE)' if endian==BIGENDIAN else '(LE)'
-      print indstr + indent + 'TxOutIndex:', self.outpoint.txOutIndex
-      print indstr + indent + 'Script:    ', \
-                  '('+binary_to_hex(self.binScript)[:64]+')'
+                      '(BE)' if endian==BIGENDIAN else '(LE)')
+      print(indstr + indent + 'TxOutIndex:', self.outpoint.txOutIndex)
+      print(indstr + indent + 'Script:    ', \
+                  '('+binary_to_hex(self.binScript)[:64]+')')
       addrStr = TxInExtractAddrStrIfAvail(self)
       if len(addrStr)==0:
          addrStr = '<UNKNOWN>'
-      print indstr + indent + 'Sender:    ', addrStr
-      print indstr + indent + 'Seq:       ', self.intSeq
+      print(indstr + indent + 'Sender:    ', addrStr)
+      print(indstr + indent + 'Seq:       ', self.intSeq)
 
    def toString(self, nIndent=0, endian=BIGENDIAN):
       indstr = indent*nIndent
@@ -638,7 +639,7 @@ class PyTxOut(BlockComponent):
          opStrList = convertScriptToOpStrings(self.binScript)
          print indstr + indent + 'Script:  ', ' '.join(opStrList)
       """
-      print self.toString(nIndent, endian)
+      print(self.toString(nIndent, endian))
 
    def toString(self, nIndent=0, endian=BIGENDIAN):
       indstr  = indent*nIndent
@@ -699,7 +700,7 @@ class PyTxWitness(BlockComponent):
       return binOut.getBinaryString()
 
    def pprint(self, nIndent=0, endian=BIGENDIAN):
-      print self.toString(nIndent, endian)
+      print(self.toString(nIndent, endian))
 
    def toString(self, nIndent=0, endian=BIGENDIAN):
       indstr = indent*nIndent
@@ -831,19 +832,19 @@ class PyTx(BlockComponent):
 
    def pprint(self, nIndent=0, endian=BIGENDIAN):
       indstr = indent*nIndent
-      print indstr + 'Transaction:'
-      print indstr + indent + 'TxHash:   ', self.getHashHex(endian), \
-                                    '(BE)' if endian==BIGENDIAN else '(LE)'
-      print indstr + indent + 'Version:  ', self.version
-      print indstr + indent + 'nInputs:  ', len(self.inputs)
-      print indstr + indent + 'nOutputs: ', len(self.outputs)
+      print(indstr + 'Transaction:')
+      print(indstr + indent + 'TxHash:   ', self.getHashHex(endian), \
+                                    '(BE)' if endian==BIGENDIAN else '(LE)')
+      print(indstr + indent + 'Version:  ', self.version)
+      print(indstr + indent + 'nInputs:  ', len(self.inputs))
+      print(indstr + indent + 'nOutputs: ', len(self.outputs))
       if self.useWitness:
-         print indstr + indent + 'nWitnesses: ', len(self.witnesses)
-      print indstr + indent + 'LockTime: ', self.lockTime
-      print indstr + indent + 'Inputs: '
+         print(indstr + indent + 'nWitnesses: ', len(self.witnesses))
+      print(indstr + indent + 'LockTime: ', self.lockTime)
+      print(indstr + indent + 'Inputs: ')
       for inp in self.inputs:
          inp.pprint(nIndent+2, endian=endian)
-      print indstr + indent + 'Outputs: '
+      print(indstr + indent + 'Outputs: ')
       for out in self.outputs:
          out.pprint(nIndent+2, endian=endian)
       for witness in self.witnesses:
@@ -877,34 +878,34 @@ class PyTx(BlockComponent):
    def pprintHex(self, nIndent=0):
       bu = BinaryUnpacker(self.serialize())
       theSer = self.serialize()
-      print binary_to_hex(bu.get(BINARY_CHUNK, 4))
+      print(binary_to_hex(bu.get(BINARY_CHUNK, 4)))
       if self.useWitness:
-         print binary_to_hex(bu.get(BINARY_CHUNK, 1))
-         print binary_to_hex(bu.get(BINARY_CHUNK, 1))
+         print(binary_to_hex(bu.get(BINARY_CHUNK, 1)))
+         print(binary_to_hex(bu.get(BINARY_CHUNK, 1)))
       nTxin = bu.get(VAR_INT)
-      print 'VAR_INT(%d)' % nTxin
+      print('VAR_INT(%d)' % nTxin)
       for i in range(nTxin):
-         print binary_to_hex(bu.get(BINARY_CHUNK,32))
-         print binary_to_hex(bu.get(BINARY_CHUNK,4))
+         print(binary_to_hex(bu.get(BINARY_CHUNK,32)))
+         print(binary_to_hex(bu.get(BINARY_CHUNK,4)))
          scriptSz = bu.get(VAR_INT)
-         print 'VAR_IN(%d)' % scriptSz
-         print binary_to_hex(bu.get(BINARY_CHUNK,scriptSz))
-         print binary_to_hex(bu.get(BINARY_CHUNK,4))
+         print('VAR_IN(%d)' % scriptSz)
+         print(binary_to_hex(bu.get(BINARY_CHUNK,scriptSz)))
+         print(binary_to_hex(bu.get(BINARY_CHUNK,4)))
       nTxout = bu.get(VAR_INT)
-      print 'VAR_INT(%d)' % nTxout
+      print('VAR_INT(%d)' % nTxout)
       for i in range(nTxout):
-         print binary_to_hex(bu.get(BINARY_CHUNK,8))
+         print(binary_to_hex(bu.get(BINARY_CHUNK,8)))
          scriptSz = bu.get(VAR_INT)
-         print binary_to_hex(bu.get(BINARY_CHUNK,scriptSz))
+         print(binary_to_hex(bu.get(BINARY_CHUNK,scriptSz)))
       if self.useWitness:
          for i in range(nTxin):
             stackSize = bu.get(VAR_INT)
-            print 'VAR_IN(%d)' % stackSize
+            print('VAR_IN(%d)' % stackSize)
             for j in range(stackSize):
                stackItemSize = bu.get(VAR_INT)
-               print 'VAR_IN(%d)' % stackItemSize
-               print binary_to_hex(bu.get(BINARY_CHUNK, stackItemSize))
-      print binary_to_hex(bu.get(BINARY_CHUNK, 4))
+               print('VAR_IN(%d)' % stackItemSize)
+               print(binary_to_hex(bu.get(BINARY_CHUNK, stackItemSize)))
+      print(binary_to_hex(bu.get(BINARY_CHUNK, 4)))
 
    def setRBF(self, flag):
       self.rbfFlag = flag
@@ -978,11 +979,11 @@ class InputSigningStatus(object):
          lutFunc = lutDispLetter
 
       ind = ' '*indent
-      print ind,
-      print '(%d-of-%d)' % (self.M, self.N),
-      print 'AllSigned: %s' % str(self.allSigned).ljust(6),
-      print 'AllSlots:',  ' '.join([lutFunc(s) for s in self.statusN]), ' ',
-      print 'ReqSorted:', ' '.join([lutFunc(s) for s in self.statusM]), ' '
+      print(ind, end=' ')
+      print('(%d-of-%d)' % (self.M, self.N), end=' ')
+      print('AllSigned: %s' % str(self.allSigned).ljust(6), end=' ')
+      print('AllSlots:',  ' '.join([lutFunc(s) for s in self.statusN]), ' ', end=' ')
+      print('ReqSorted:', ' '.join([lutFunc(s) for s in self.statusM]), ' ')
 
 
 ################################################################################
@@ -1000,7 +1001,7 @@ class TxSigningStatus(object):
 
 
    def pprint(self, indent=3, lutFunc=None):
-      print ' '*indent + 'Tx has %d inputs:' % self.numInputs
+      print(' '*indent + 'Tx has %d inputs:' % self.numInputs)
       for stat in self.statusList:
          stat.pprint(indent+3, lutFunc)
 
@@ -1181,7 +1182,7 @@ class UnsignedTxInput(AsciiSerializable):
          scriptHash = hash160(self.p2shMap[BASE_SCRIPT])
          if not P2SHBYTE + scriptHash == self.p2shScrAddr:
             self.isInitialized = False
-            raise InvalidScriptError, 'No P2SH script info avail for TxDP'
+            raise InvalidScriptError('No P2SH script info avail for TxDP')
 
          # Replace script type with that of the sub-script
          # We can use the presence of p2shScript to identify it's p2sh
@@ -1875,11 +1876,11 @@ class UnsignedTxInput(AsciiSerializable):
       txoIdx    = self.outpoint.txOutIndex
       scrType   = CPP_TXOUT_SCRIPT_NAMES[self.scriptType]
 
-      print 'UnsignedTxInput --  %s:%d (%s)' % (txHashStr, txoIdx, scrType)
+      print('UnsignedTxInput --  %s:%d (%s)' % (txHashStr, txoIdx, scrType))
 
    #############################################################################
    def getUnspentTxOut(self):
-      from CoinSelection import PyUnspentTxOut
+      from armoryengine.CoinSelection import PyUnspentTxOut
       return PyUnspentTxOut(
             txHash = self.outpoint.txHash,
             txoIdx = self.outpoint.txOutIndex,
@@ -2134,17 +2135,17 @@ class DecoratedTxOut(AsciiSerializable):
       ind = ' '*indent
       scrType   = CPP_TXOUT_SCRIPT_NAMES[self.scriptType]
 
-      print ind + 'Version:     ', self.version
+      print(ind + 'Version:     ', self.version)
       if self.scriptType in CPP_TXOUT_HAS_ADDRSTR:
-         print ind + 'Address:     ', scrAddr_to_addrStr(self.scrAddr)
+         print(ind + 'Address:     ', scrAddr_to_addrStr(self.scrAddr))
          if self.p2shScript:
-            print ind + 'P2SH Script: ', binary_to_hex(self.p2shScript)[:50]
+            print(ind + 'P2SH Script: ', binary_to_hex(self.p2shScript)[:50])
 
       elif self.scriptType==CPP_TXOUT_MULTISIG:
-         print ind + 'Multisig:      %(M)s-of-%(N)s' % self.multiInfo
-      print ind + 'Value:       ', coin2strNZS(self.value)
-      print ind + 'ContribID:   ', self.contribID
-      print ind + 'ContribLabel:', self.contribLabel
+         print(ind + 'Multisig:      %(M)s-of-%(N)s' % self.multiInfo)
+      print(ind + 'Value:       ', coin2strNZS(self.value))
+      print(ind + 'ContribID:   ', self.contribID)
+      print(ind + 'ContribLabel:', self.contribLabel)
 
 
    #############################################################################
@@ -2339,7 +2340,7 @@ class UnsignedTransaction(AsciiSerializable):
       if len(txMap)==0 and not TheBDM.getState()==BDM_BLOCKCHAIN_READY:
          # TxDP includes the transactions that supply the inputs to this
          # transaction, so the BDM needs to be available to fetch those.
-         raise BlockchainUnavailableError, ('Must input supporting transactions '
+         raise BlockchainUnavailableError('Must input supporting transactions '
                                             'or access to the blockchain, to '
                                             'create the TxDP')
 
@@ -2360,17 +2361,17 @@ class UnsignedTransaction(AsciiSerializable):
          # Either the supporting tx was supplied in txMap, or BDM is avail
          if len(txMap)>0:
             # If supplied a txMap, we expect it to have everything we need
-            if not txMap.has_key(txhash):
-               raise InvalidHashError, ('Could not find the referenced tx '
+            if txhash not in txMap:
+               raise InvalidHashError('Could not find the referenced tx '
                                         'in supplied txMap')
             pyPrevTx = txMap[txhash].copy()
          elif TheBDM.getState()==BDM_BLOCKCHAIN_READY:
             cppPrevTx = TheBDM.bdv().getTxByHash(txhash)
             if not cppPrevTx:
-               raise InvalidHashError, 'Could not find the referenced tx'
+               raise InvalidHashError('Could not find the referenced tx')
             pyPrevTx = PyTx().unserialize(cppPrevTx.serialize())
          else:
-            raise InvalidScriptError, 'No previous-tx data available for TxDP'
+            raise InvalidScriptError('No previous-tx data available for TxDP')
 
          txoScript = pyPrevTx.outputs[txoIdx].binScript
          txoScrAddr = script_to_scrAddr(txoScript)
@@ -2913,7 +2914,7 @@ class UnsignedTransaction(AsciiSerializable):
    def getBroadcastTxIfReady(self, verifySigs=True):
       try:
          return self.getSignedPyTx(verifySigs)
-      except SignatureError, msg:
+      except SignatureError as msg:
          return None
       except KeyError:
          return None
@@ -2927,12 +2928,12 @@ class UnsignedTransaction(AsciiSerializable):
       ind = ' '*indent
       tx = self.pytxObj
       txHash = hash256(tx.serialize())
-      print ind+'UnsignedTx ID: ', self.uniqueIDB58
-      print ind+'Curr TxID    : ', binary_to_hex(txHash, BIGENDIAN)
-      print ind+'Version      : ', tx.version
-      print ind+'Lock Time    : ', tx.lockTime
-      print ind+'Fee (BTC)    : ', coin2strNZS(self.calculateFee())
-      print ind+'#Inputs      : ', len(tx.inputs)
+      print(ind+'UnsignedTx ID: ', self.uniqueIDB58)
+      print(ind+'Curr TxID    : ', binary_to_hex(txHash, BIGENDIAN))
+      print(ind+'Version      : ', tx.version)
+      print(ind+'Lock Time    : ', tx.lockTime)
+      print(ind+'Fee (BTC)    : ', coin2strNZS(self.calculateFee()))
+      print(ind+'#Inputs      : ', len(tx.inputs))
 
       for i,ustxi in enumerate(self.ustxInputs):
          prevHash  = binary_to_hex(ustxi.outpoint.txHash, BIGENDIAN)[:8]
@@ -2950,16 +2951,16 @@ class UnsignedTransaction(AsciiSerializable):
          printStr += '(M=%(M)d, N=%(N)d) / '  % locals()
          printStr += '%(value)s / %(contrib)s'  % locals()
          printStr += 'PubSz: ' + pubKeySz
-         print printStr
+         print(printStr)
 
-      print ind+'#Outputs     : ', len(tx.outputs)
+      print(ind+'#Outputs     : ', len(tx.outputs))
       for i,txout in enumerate(tx.outputs):
          dtxo = self.decorTxOuts[i]
          addrDisp = getTxOutScriptDisplayStr(txout.binScript)
          valDisp = coin2str(txout.value, maxZeros=2)
-         print ' '*2*indent + 'Recip:', addrDisp.ljust(35),
-         print valDisp, 'BTC',
-         print ('(%s)' % dtxo.contribID) if dtxo.contribID else ''
+         print(' '*2*indent + 'Recip:', addrDisp.ljust(35), end=' ')
+         print(valDisp, 'BTC', end=' ')
+         print(('(%s)' % dtxo.contribID) if dtxo.contribID else '')
 
    #############################################################################
    def isSegWit(self):
@@ -3281,7 +3282,7 @@ def getUnspentTxOutsForAddr160List(addr160List):
                scrAddrList.append(ADDRBYTE + addr)
       
 
-      from CoinSelection import PyUnspentTxOut
+      from armoryengine.CoinSelection import PyUnspentTxOut
       utxoList = TheBDM.bdv().getUtxosForAddrVec(scrAddrList)
       pyUtxoList = []
       for utxo in utxoList:
@@ -3308,8 +3309,8 @@ def pprintLedgerEntry(le, indent=''):
       txType = 'Recv' if le.getValue()>0 else 'Sent'
 
    blkStr = str(le.getBlockNum())
-   print indent + 'LE %s %s %s %s' % \
-            (addrStr.ljust(15), leVal, txType.ljust(8), blkStr.ljust(8))
+   print(indent + 'LE %s %s %s %s' % \
+            (addrStr.ljust(15), leVal, txType.ljust(8), blkStr.ljust(8)))
 
 # Putting this at the end because of the circular dependency
 from armoryengine.BDM import TheBDM, BDM_BLOCKCHAIN_READY

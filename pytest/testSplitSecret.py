@@ -3,6 +3,7 @@ Created on Aug 4, 2013
 
 @author: Andy
 '''
+from __future__ import print_function
 import sys
 sys.path.append('..')
 from pytest.Tiab import TiabTest
@@ -74,26 +75,26 @@ class SplitSecretTest(TiabTest):
    
    def callSplitSecret(self, secretHex, M, N, nbytes=1):
       secret = hex_to_binary(secretHex)
-      print '\nSplitting secret into %d-of-%d: secret=%s' % (M,N,secretHex)
+      print('\nSplitting secret into %d-of-%d: secret=%s' % (M,N,secretHex))
       tstart = RightNow() 
       out = SplitSecret(secret, M, N)
       tsplit = RightNow() - tstart
-      print 'Fragments:'
+      print('Fragments:')
       for i in range(len(out)):
          x = binary_to_hex(out[i][0])
          y = binary_to_hex(out[i][1])
-         print '   Fragment %d: [%s, %s]' % (i+1,x,y)
+         print('   Fragment %d: [%s, %s]' % (i+1,x,y))
       trecon = 0
-      print 'Reconstructing secret from various subsets of fragments...'
+      print('Reconstructing secret from various subsets of fragments...')
       for i in range(10):
          shuffle(out)
          tstart = RightNow()
          reconstruct = ReconstructSecret(out, M, nbytes)
          trecon += RightNow() - tstart
-         print '   The reconstructed secret is:', binary_to_hex(reconstruct)
+         print('   The reconstructed secret is:', binary_to_hex(reconstruct))
          self.assertEqual(binary_to_hex(reconstruct), secretHex)
-      print 'Splitting secret took: %0.5f sec' % tsplit
-      print 'Reconstructing takes:  %0.5f sec' % (trecon/10)
+      print('Splitting secret took: %0.5f sec' % tsplit)
+      print('Reconstructing takes:  %0.5f sec' % (trecon/10))
 
 # Running tests with "python <module name>" will NOT work for any Armory tests
 # You must run tests with "python -m unittest <module name>" or run all tests with "python -m unittest discover"

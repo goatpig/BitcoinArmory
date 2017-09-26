@@ -17,6 +17,7 @@
 #              corrupted
 #
 #
+from __future__ import print_function
 from sys import argv, path
 path.append('..')
 path.append('.')
@@ -28,9 +29,9 @@ pubfile  = 'keylistpub.txt'
 pairfile = 'keylistpair.txt'
 
 if len(argv)<2:
-   print 'USAGE:', argv[0], 'path/to/wallet.dat'
+   print('USAGE:', argv[0], 'path/to/wallet.dat')
    for a in argv:
-      print a
+      print(a)
    exit(0)
 else:
    wallet = open(argv[1], 'rb')
@@ -47,7 +48,7 @@ pubout = open(pubfile,'w')
 keyout = open(pairfile,'w')
 
 
-print 'Wallet is %d bytes ' % len(walletBytes)
+print('Wallet is %d bytes ' % len(walletBytes))
 
 privKeyDict = {}
 pubKeyDict = {}
@@ -60,11 +61,11 @@ for i in range(len(walletBytes)):
          potentialPubKey = SecureBinaryData(walletBytes[i:i+65])
          if CryptoECDSA().VerifyPublicKeyValid(potentialPubKey):
             fileloc = int_to_hex(i, widthBytes=4, endOut=BIGENDIAN)
-            print '\nFound PUBLIC key in file (0x%08s) / ' % (fileloc,),
+            print('\nFound PUBLIC key in file (0x%08s) / ' % (fileloc,), end=' ')
             hash160   = potentialPubKey.getHash160()
             addrStr   = hash160_to_addrStr(hash160)
             pubkeyHex = potentialPubKey.toHexStr()
-            print ' Addr: %-34s' % (addrStr,), '   PrivKey:',
+            print(' Addr: %-34s' % (addrStr,), '   PrivKey:', end=' ')
 
             # Now search for a private key that matches
             havePrivKey = False
@@ -82,10 +83,10 @@ for i in range(len(walletBytes)):
    
             if not havePrivKey:
                pubKeyDict[addrStr] = pubkeyHex
-               print ' NOT_FOUND ',
+               print(' NOT_FOUND ', end=' ')
             else:
                privKeyDict[addrStr] = (pubkeyHex, privkeyHex)
-               print ' FOUND ',
+               print(' FOUND ', end=' ')
       except:
          raise
          
@@ -96,20 +97,20 @@ for k,v in privKeyDict.iteritems():
 for k,v in pubKeyDict.iteritems():
    pubout.write('\n%s:\n\tPubKey: %s' % (k,pretty(v)))
 
-print ''
-print ''
-print 'Total number of PUBLIC  keys found:    ', len(pubKeyDict)
-print 'Total number of PRIVATE keys (subset): ', len(privKeyDict)
+print('')
+print('')
+print('Total number of PUBLIC  keys found:    ', len(pubKeyDict))
+print('Total number of PRIVATE keys (subset): ', len(privKeyDict))
 
-print ''
-print 'All public keys (including your own) saved to: ', pubfile
-print 'All public/private keypairs stored in hex in:  ', pairfile
-print ''
-print '!!!'
-print 'Please protect your keypair file.  It contains all the '
-print 'information an attacker would need to steal your money!'
-print '!!!'
-print ''
+print('')
+print('All public keys (including your own) saved to: ', pubfile)
+print('All public/private keypairs stored in hex in:  ', pairfile)
+print('')
+print('!!!')
+print('Please protect your keypair file.  It contains all the ')
+print('information an attacker would need to steal your money!')
+print('!!!')
+print('')
       
 pubout.close()
 keyout.close()

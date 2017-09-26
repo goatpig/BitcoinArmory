@@ -1,3 +1,4 @@
+from __future__ import print_function
 import sys
 sys.argv.append('--nologging')
 from armoryengine import BTC_HOME_DIR
@@ -60,4 +61,4 @@ def getLastBlockHash(blkFile):
             result = blockHash
    return result
 
-print binary_to_hex(getLastBlockHash(getLastBlockFile()), BIGENDIAN)
+print(binary_to_hex(getLastBlockHash(getLastBlockFile()), BIGENDIAN))
