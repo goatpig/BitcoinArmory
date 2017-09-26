@@ -75,7 +75,6 @@ ArmoryDB_LDADD = -Llmdb -llmdb \
 ArmoryDB_LDFLAGS = -static $(LDFLAGS)
 
 #libCppBlockUtils
-if HAVE_GUI
 lib_LTLIBRARIES = libCppBlockUtils.la
 
 libCppBlockUtils_la_SOURCES = $(INCLUDE_FILES) \
@@ -107,4 +106,3 @@ clean-local:
 	rm -f CppBlockUtils.py
 	rm -f CppBlockUtils_wrap.cxx
 	rm -f CppBlockUtils_wrap.h
-endif

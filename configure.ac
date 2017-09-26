@@ -61,9 +61,6 @@ m4_include([m4/ax_cxx_compile_stdcxx.m4])
 #check for c++11
 AX_CXX_COMPILE_STDCXX([11], [noext], [mandatory], [nodefault])
 
-if test "x$with_gui" = "xyes"; then
-#check for  swig
-
 AC_CHECK_PROG([HAVE_SWIG], [swig], [yes], [no])
 AS_IF([test $HAVE_SWIG == yes], [],
 	[AC_MSG_ERROR([missing swig!])]) 
@@ -78,6 +75,9 @@ AC_SUBST([AX_SWIG_PYTHON_CPPFLAGS], [`python-config --includes`])
 fi
 
 AC_MSG_RESULT([AX_SWIG_PYTHON_CPPFLAGS: $AX_SWIG_PYTHON_CPPFLAGS])
+
+if test "x$with_gui" = "xyes"; then
+#check for  gui
 
 AC_CHECK_PROG([HAVE_PYRCC4], [pyrcc4], [yes], [no])
 AS_IF([test $HAVE_PYRCC4 == yes], [],

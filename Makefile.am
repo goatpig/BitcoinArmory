@@ -23,13 +23,11 @@ copy-script:
 	cp cppForSwig/ArmoryDB ./ArmoryDB
 
 # SWIG code and requirements.
-if HAVE_GUI
 	cp cppForSwig/CppBlockUtils.py ./CppBlockUtils.py
 if BUILD_DARWIN
 	cp cppForSwig/.libs/libCppBlockUtils.dylib ./_CppBlockUtils.so
 else
 	cp cppForSwig/.libs/libCppBlockUtils.so ./_CppBlockUtils.so
-endif
 endif
 
 .PHONY: copy-script lrelease qrc_img_resources.py
@@ -42,14 +40,14 @@ uninstall-old:
 	rm -f $(DESTDIR)$(prefix)/bin/ArmoryDB
 
 install-exec-hook: uninstall-old
-if HAVE_GUI
-	mkdir -p $(DESTDIR)$(prefix)/lib/armory/ui
 	mkdir -p $(DESTDIR)$(prefix)/lib/armory/armoryengine
-	mkdir -p $(DESTDIR)$(prefix)/lib/armory/lang
 	mkdir -p $(DESTDIR)$(prefix)/share/applications
 	cp *.py *.so README.md $(DESTDIR)$(prefix)/lib/armory
-	cp -r ui/* $(DESTDIR)$(prefix)/lib/armory/ui
 	cp -r armoryengine/* $(DESTDIR)$(prefix)/lib/armory/armoryengine
+if HAVE_GUI
+	mkdir -p $(DESTDIR)$(prefix)/lib/armory/ui
+	mkdir -p $(DESTDIR)$(prefix)/lib/armory/lang
+	cp -r ui/* $(DESTDIR)$(prefix)/lib/armory/ui
 	cp lang/*.qm $(DESTDIR)$(prefix)/lib/armory/lang
 endif
 
@@ -66,11 +64,9 @@ endif
 
 # Skip Linux-specific steps on OSX.
 if ! BUILD_DARWIN
-if HAVE_GUI
 	rsync -rupE --exclude="img/.DS_Store" img $(DESTDIR)$(prefix)/share/armory/
 	sed "s: /usr: $(prefix):g" < dpkgfiles/armory > $(DESTDIR)$(prefix)/bin/armory
 	chmod +x $(DESTDIR)$(prefix)/bin/armory
-endif
 endif
 
 uninstall-hook: uninstall-old
