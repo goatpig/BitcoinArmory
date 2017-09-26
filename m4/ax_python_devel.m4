@@ -67,7 +67,7 @@
 #   modified version of the Autoconf Macro, you may extend this special
 #   exception to the GPL to apply to your modified version as well.
 
-#serial 19
+#serial 21
 
 AU_ALIAS([AC_PYTHON_DEVEL], [AX_PYTHON_DEVEL])
 AC_DEFUN([AX_PYTHON_DEVEL],[
@@ -137,7 +137,7 @@ variable to configure. See ``configure --help'' for reference.
 	#
 	AC_MSG_CHECKING([for the distutils Python package])
 	ac_distutils_result=`$PYTHON -c "import distutils" 2>&1`
-	if test -z "$ac_distutils_result"; then
+	if test $? -eq 0; then
 		AC_MSG_RESULT([yes])
 	else
 		AC_MSG_RESULT([no])
@@ -262,25 +262,25 @@ EOD`
 	# libraries which must be linked in when embedding
 	#
 	AC_MSG_CHECKING(python extra libraries)
-	if test -z "$PYTHON_EXTRA_LDFLAGS"; then
-	   PYTHON_EXTRA_LDFLAGS=`$PYTHON -c "import distutils.sysconfig; \
+	if test -z "$PYTHON_EXTRA_LIBS"; then
+	   PYTHON_EXTRA_LIBS=`$PYTHON -c "import distutils.sysconfig; \
                 conf = distutils.sysconfig.get_config_var; \
                 print (conf('LIBS') + ' ' + conf('SYSLIBS'))"`
 	fi
-	AC_MSG_RESULT([$PYTHON_EXTRA_LDFLAGS])
-	AC_SUBST(PYTHON_EXTRA_LDFLAGS)
+	AC_MSG_RESULT([$PYTHON_EXTRA_LIBS])
+	AC_SUBST(PYTHON_EXTRA_LIBS)
 
 	#
 	# linking flags needed when embedding
 	#
 	AC_MSG_CHECKING(python extra linking flags)
-	if test -z "$PYTHON_EXTRA_LIBS"; then
-		PYTHON_EXTRA_LIBS=`$PYTHON -c "import distutils.sysconfig; \
+	if test -z "$PYTHON_EXTRA_LDFLAGS"; then
+		PYTHON_EXTRA_LDFLAGS=`$PYTHON -c "import distutils.sysconfig; \
 			conf = distutils.sysconfig.get_config_var; \
 			print (conf('LINKFORSHARED'))"`
 	fi
-	AC_MSG_RESULT([$PYTHON_EXTRA_LIBS])
-	AC_SUBST(PYTHON_EXTRA_LIBS)
+	AC_MSG_RESULT([$PYTHON_EXTRA_LDFLAGS])
+	AC_SUBST(PYTHON_EXTRA_LDFLAGS)
 
 	#
 	# final check to see if everything compiles alright
