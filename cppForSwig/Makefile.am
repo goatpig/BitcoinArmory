@@ -3,8 +3,8 @@ if BUILD_TESTS
 MAYBE_BUILD += gtest
 endif
 
-DIST_SUBDIRS = lmdb fcgi cryptopp
-SUBDIRS = lmdb fcgi cryptopp $(MAYBE_BUILD)
+DIST_SUBDIRS = lmdb cryptopp
+SUBDIRS = lmdb cryptopp $(MAYBE_BUILD)
 
 SWIG_FLAGS = -c++ -python -threads
 AM_CXXFLAGS = $(CXXFLAGS) -std=c++11
