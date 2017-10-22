@@ -39,6 +39,9 @@ Multi-signature transactions are accommodated under-the-hood about 80%, and will
  Linux:   Install package `python-dev`  
  Windows: [Download](https://www.python.org/getit/)  
 
+* Python process management utilities
+ Linux:   Install package `python-psutil`
+
 * Python Twisted -- asynchronous networking  
  Linux:   Install package `python-twisted`  
  Windows: [Download](https://twistedmatrix.com/trac/wiki/Downloads)  
@@ -48,7 +51,8 @@ Multi-signature transactions are accommodated under-the-hood about 80%, and will
  Windows: [Download](https://riverbankcomputing.com/software/pyqt/download) 
 
 * qt4reactor.py -- combined eventloop for PyQt and Twisted  
- All OS:  [Download](https://launchpad.net/qt4reactor)  
+ Linux:   Install package `python-qt4reactor`
+ Windows:  [Download](https://launchpad.net/qt4reactor)
 
 * pywin32  
  Windows Only:  qt4reactor relies on pywin32 (for win32event module). [Download](https://sourceforge.net/projects/pywin32/files/pywin32/)  
@@ -58,7 +62,11 @@ Multi-signature transactions are accommodated under-the-hood about 80%, and will
  Windows: [Download](http://www.py2exe.org/)  
 
 * LMDB - database engine, modified to suit Armory's use cases
-[LMDB page](http://symas.com/mdb/)
+ Linux:   Install package `liblmdb-dev` and `python-lmdb`
+ Windows: [LMDB page](http://symas.com/mdb/)
+
+* FastCGI
+ Linux:   Install package `libfcgi-dev`
 
 ## Sample Code
 
