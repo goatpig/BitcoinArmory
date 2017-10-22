@@ -61,13 +61,6 @@ Multi-signature transactions are accommodated under-the-hood about 80%, and will
  (OPTIONAL - if you want to make a standalone executable in Windows)  
  Windows: [Download](http://www.py2exe.org/)  
 
-* LMDB - database engine, modified to suit Armory's use cases
- Linux:   Install package `liblmdb-dev` and `python-lmdb`
- Windows: [LMDB page](http://symas.com/mdb/)
-
-* FastCGI
- Linux:   Install package `libfcgi-dev`
-
 ## Sample Code
 
 Armory contains over 25,000 lines of code, between the C++ and python libraries.  This can be very confusing for someone unfamiliar with the code (you).  Below I have attempted to illustrate the CONOPS (concept of operations) that the library was designed for, so you know how to use it in your own development activities.  There is a TON of sample code in the following:
