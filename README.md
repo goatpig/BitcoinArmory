@@ -26,10 +26,6 @@ Multi-signature transactions are accommodated under-the-hood about 80%, and will
 * GNU Compiler Collection  
  Linux:   Install package `g++`
 
-* Crypto++  
- Linux:   Install package `libcrypto++-dev`  
- Windows: [Download](https://www.cryptopp.com/#download)   
-
 * SWIG  
  Linux:   Install package `swig`  
  Windows: [Download](http://www.swig.org/download.html)  
@@ -60,6 +56,15 @@ Multi-signature transactions are accommodated under-the-hood about 80%, and will
 * py2exe  
  (OPTIONAL - if you want to make a standalone executable in Windows)  
  Windows: [Download](http://www.py2exe.org/)  
+
+* Crypto++ - crypto utilities, modified to suit Armory's use cases.
+It is included with the Armory source.  The original package can be
+found at the [Cryptopp page](https://www.cryptopp.com/).
+
+* LMDB - database engine, modified to suit Armory's use cases.
+It is included with the Armory source.  The original package can be
+found at the [LMDB page](http://symas.com/mdb/).
+
 
 ## Sample Code
 
