@@ -206,7 +206,7 @@ float NodeRPC::getFeeByte(unsigned blocksToConfirm)
    ReentrantLock lock(this);
 
    JSON_object json_obj;
-   json_obj.add_pair("method", "estimatefee");
+   json_obj.add_pair("method", "estimatesmartfee");
 
    auto json_array = make_shared<JSON_array>();
    json_array->add_value(blocksToConfirm);
