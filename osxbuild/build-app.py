@@ -27,7 +27,7 @@ pipVer        = '9.0.1'
 pipSubdir     = '11/b6/abcb525026a4be042b486df43905d6893fb04f05aac21c32c638e939e447'
 psutilVer     = '5.2.2'
 psutilSubdir  = '57/93/47a2e3befaf194ccc3d05ffbcba2cdcdd22a231100ef7e4cf63f085c900b'
-libpngVer     = '1.6.31'
+libpngVer     = '1.6.34'
 qtVer         = '4.8.7'  # NB: ArmoryMac.pro must also be kept up to date!!!
                          # Possibly "sipFlags" below too.
 sipVer        = '4.19.2' # NB: ArmoryMac.pro must also be kept up to date!!!
