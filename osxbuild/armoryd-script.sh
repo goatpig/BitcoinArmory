@@ -8,21 +8,11 @@
 # Note that `dirname $0` gives a relative path. We'd like the absolute path.
 DIRNAME="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 ARMORYDIR="${DIRNAME}/py/usr/local/lib/armory"
-LIBDIR="${DIRNAME}/../Dependencies"
-FRDIR="${DIRNAME}/../Frameworks"
-
-export PYTHONPATH="$ARMORYDIR"
-export DYLD_LIBRARY_PATH="${LIBDIR}:${FRDIR}"
-export DYLD_FRAMEWORK_PATH="${LIBDIR}:${FRDIR}"
 
 # Misc. crap to keep around in case it's ever needed.
 #OSXVER=`sw_vers -productVersion | awk '{ print substr( $0, 0, 4 ) }'`
 #if [ $# == "0" ]; then # <-- If 0 CL args....
 
-# The Python link should be here so that the link works wherever this is
-# executed, and not just on the build machine.
-ln -sf "${FRDIR}/Python.framework/Versions/2.7/Resources/Python.app/Contents/MacOS/Python" "${DIRNAME}/Python"
-
 # Assume all args are meant for armoryd. Assuming otherwise, for shell scripts
-# at least, it horribly painful.
-exec "${DIRNAME}/Python" "${ARMORYDIR}/armoryd.py" "$@"
+# at least, is horribly painful.
+exec "python" "${ARMORYDIR}/armoryd.py" "$@"
