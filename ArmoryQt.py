@@ -81,7 +81,7 @@ QDesktopServices.setUrlHandler("https", handler.handleURL)
 
 # Load our framework with OS X-specific code.
 if OS_MACOSX:
-   import ArmoryMac
+#   import ArmoryMac
 
 # HACK ALERT: Qt has a bug in OS X where the system font settings will override
 # the app's settings when a window is activated (e.g., Armory starts, the user
@@ -142,8 +142,8 @@ class ArmoryMainWindow(QMainWindow):
       else:
          if USE_TESTNET or USE_REGTEST:
             self.iconfile = ':/armory_icon_green_fullres.png'
-            ArmoryMac.MacDockIconHandler.instance().setMainWindow(self)
-            ArmoryMac.MacDockIconHandler.instance().setIcon(QIcon(self.iconfile))
+#            ArmoryMac.MacDockIconHandler.instance().setMainWindow(self)
+#            ArmoryMac.MacDockIconHandler.instance().setIcon(QIcon(self.iconfile))
       self.lblLogoIcon.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
 
       self.netMode     = NETWORKMODE.Offline
@@ -712,8 +712,8 @@ class ArmoryMainWindow(QMainWindow):
       if CLI_ARGS:
          self.signalExecution.callLater(1, self.uriLinkClicked, CLI_ARGS[0])
 
-      if OS_MACOSX:
-         self.macNotifHdlr = ArmoryMac.MacNotificationHandler()
+#      if OS_MACOSX:
+#         self.macNotifHdlr = ArmoryMac.MacNotificationHandler()
 
       # Now that construction of the UI is done
       # Check for warnings to be displayed
@@ -3749,6 +3749,8 @@ class ArmoryMainWindow(QMainWindow):
 
       # Will switch this to array/matrix of widgets if I get more than 2 rows
       self.lblDashModeSync    = QRichLabel('',doWrap=False)
+      self.lblDashModeSync.setText( self.tr('Node Status'), \
+                                        size=4, bold=True, color='Foreground')
       self.lblDashModeBuild   = QRichLabel('',doWrap=False)
       self.lblDashModeScan    = QRichLabel('',doWrap=False)
 
@@ -4090,8 +4092,9 @@ class ArmoryMainWindow(QMainWindow):
 
          
          if sdmStr == 'NodeStatus_Syncing':
-            sdmPercent = sdmState.chainState_.getProgressPct()
-            self.lblTimeLeftSync.setText(sdmState.chainState_.getETA())
+            sdmPercent = sdmState.chainState_.getProgressPct() * 100
+            self.lblTimeLeftSync.setText(\
+               "%d blocks remaining" % sdmState.chainState_.getBlocksLeft())
 
          elif sdmStr == 'NodeStatus_Initializing':
             sdmPercent = 0
@@ -4905,7 +4908,7 @@ class ArmoryMainWindow(QMainWindow):
          #ledgers
          
          self.nodeStatus = TheBDM.bdv().getNodeStatus()
-         armoryengine.ArmoryUtils.WITNESS = self.nodeStatus.SegWitEnabled_
+         TheBDM.setWitness(self.nodeStatus.SegWitEnabled_)
 
          self.updateWalletData()
 
@@ -5057,26 +5060,32 @@ class ArmoryMainWindow(QMainWindow):
                self.lbDialog.resetLBSelection()
                self.lbDialog.changeLBFilter()
                
-      elif action == NODESTATUS_UPDATE:        
-         self.nodeStatus = args[0]
-
-         TheSDM.updateState(self.nodeStatus)
-
-         armoryengine.ArmoryUtils.WITNESS = self.nodeStatus.SegWitEnabled_
+      elif action == NODESTATUS_UPDATE:    
          
-         if self.nodeStatus.status_ == Cpp.NodeStatus_Offline:
-            self.showTrayMsg(self.tr('Disconnected'), self.tr('Connection to Bitcoin Core '
-                             'client lost!  Armory cannot send nor '
-                             'receive bitcoins until connection is '
-                             're-established.'), QSystemTrayIcon.Critical,
-                             10000)
-         elif self.nodeStatus.status_ == Cpp.NodeStatus_Online:
-            self.showTrayMsg(self.tr('Connected'), self.tr('Connection to Bitcoin Core '
-                                   're-established'), \
-                                   QSystemTrayIcon.Information, 10000)
+         prevStatus = None
+         if self.nodeStatus != None:
+            prevStatus = self.nodeStatus.status_
+         
+         self.nodeStatus = args[0]
+         TheSDM.updateState(self.nodeStatus)
+         
+         if prevStatus != self.nodeStatus.status_:
+            TheBDM.setWitness(self.nodeStatus.SegWitEnabled_)
+            
+            if self.nodeStatus.status_ == Cpp.NodeStatus_Offline:
+               self.showTrayMsg(self.tr('Disconnected'), self.tr('Connection to Bitcoin Core '
+                                'client lost!  Armory cannot send nor '
+                                'receive bitcoins until connection is '
+                                're-established.'), QSystemTrayIcon.Critical,
+                                10000)
+            elif self.nodeStatus.status_ == Cpp.NodeStatus_Online:
+               self.showTrayMsg(self.tr('Connected'), self.tr('Connection to Bitcoin Core '
+                                      're-established'), \
+                                      QSystemTrayIcon.Information, 10000)
+            self.updateStatusBarText()
          
          self.updateSyncProgress()   
-         self.updateStatusBarText()
+
          
       elif action == BDM_SCAN_PROGRESS:
          self.setDashboardDetails()
@@ -5905,7 +5914,7 @@ class ArmoryMainWindow(QMainWindow):
          script = txout.getScript()
          scrAddr = BtcUtils().getScrAddrForScript(script)
          prefix, h160 = scrAddr_to_hash160(scrAddr)
-         addrComment = wlt.getCommentForAddress(h160)
+         addrComment = wlt.getCommentForAddress(scrAddr)
          
          b58Addr = scrAddr_to_addrStr(scrAddr)
          
