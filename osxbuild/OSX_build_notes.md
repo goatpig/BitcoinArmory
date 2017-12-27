@@ -25,7 +25,7 @@ Because C++11 support is shaky on OS X 10.7, *Armory developers may not fix bugs
 
  4. Install and link dependencies required by the Armory build process but not by included Armory binaries.
 
-        brew install python xz swig gettext openssl automake libtool homebrew/dupes/zlib
+        brew install xz swig gettext openssl automake libtool homebrew/dupes/zlib
         brew link gettext --force
 
  5. Restart your Mac. (This is necessary due to issues related to the Python install.)
