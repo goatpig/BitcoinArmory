@@ -1,4 +1,12 @@
 import os
+import urllib2
+
+def _fetch_url( url ):
+    try:
+        urllib2.urlopen(url, timeout=1)
+        return True
+    except urllib2.URLError as err:
+        return False
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 os.chdir(script_dir)
@@ -19,9 +27,13 @@ if os.path.exists('.git'):
         print "Please run this script from the root Armory source directory" \
             " along with the .git directory"
 else:
-    import subprocess
-    build = subprocess.check_output("git ls-remote --heads https://github.com/goatpig/BitcoinArmory.git refs/heads/master", shell=True)
-    build = build[:10]
+    url = 'https://github.com/goatpig/BitcoinArmory.git'
+    if _fetch_url( url ):
+        import subprocess
+        build = subprocess.check_output('git ls-remote --heads %s refs/heads/master' % url, shell=True)
+        build = build[:10]
+    else:
+        build = 'tgz_offlne'
 
 build_file = os.path.join("armoryengine", "ArmoryBuild.py")
 f = open(build_file, "w")
