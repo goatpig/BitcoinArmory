@@ -15,4 +15,4 @@ ARMORYDIR="${DIRNAME}/py/usr/local/lib/armory"
 
 # Assume all args are meant for armoryd. Assuming otherwise, for shell scripts
 # at least, is horribly painful.
-exec "python" "${ARMORYDIR}/armoryd.py" "$@"
+exec "python3" "${ARMORYDIR}/armoryd.py" "$@"
