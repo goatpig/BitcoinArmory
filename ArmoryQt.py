@@ -80,8 +80,8 @@ QDesktopServices.setUrlHandler("http", handler.handleURL)
 QDesktopServices.setUrlHandler("https", handler.handleURL) 
 
 # Load our framework with OS X-specific code.
-if OS_MACOSX:
-   import ArmoryMac
+#if OS_MACOSX:
+#   import ArmoryMac
 
 # HACK ALERT: Qt has a bug in OS X where the system font settings will override
 # the app's settings when a window is activated (e.g., Armory starts, the user
@@ -139,11 +139,11 @@ class ArmoryMainWindow(QMainWindow):
       # takes care of everything.
       if not OS_MACOSX:
          self.setWindowIcon(QIcon(self.iconfile))
-      else:
-         if USE_TESTNET or USE_REGTEST:
-            self.iconfile = ':/armory_icon_green_fullres.png'
-            ArmoryMac.MacDockIconHandler.instance().setMainWindow(self)
-            ArmoryMac.MacDockIconHandler.instance().setIcon(QIcon(self.iconfile))
+#      else:
+#         if USE_TESTNET or USE_REGTEST:
+#            self.iconfile = ':/armory_icon_green_fullres.png'
+#            ArmoryMac.MacDockIconHandler.instance().setMainWindow(self)
+#            ArmoryMac.MacDockIconHandler.instance().setIcon(QIcon(self.iconfile))
       self.lblLogoIcon.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
 
       self.netMode     = NETWORKMODE.Offline
@@ -712,8 +712,8 @@ class ArmoryMainWindow(QMainWindow):
       if CLI_ARGS:
          self.signalExecution.callLater(1, self.uriLinkClicked, CLI_ARGS[0])
 
-      if OS_MACOSX:
-         self.macNotifHdlr = ArmoryMac.MacNotificationHandler()
+#      if OS_MACOSX:
+#         self.macNotifHdlr = ArmoryMac.MacNotificationHandler()
 
       # Now that construction of the UI is done
       # Check for warnings to be displayed
