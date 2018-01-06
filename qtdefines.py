@@ -717,7 +717,7 @@ class ArmoryDialog(QDialog):
       
       #connect this dialog to the parent's close signal
       if self.parent is not None and hasattr(self.parent, 'closeSignal'):
-         self.connect(self.parent, SIGNAL(self.parent.closeSignal), self.reject)
+         self.parent.closeSignal.connect(self.reject)
          
       self.setFont(GETFONT('var'))
       self.setWindowFlags(Qt.Window)
@@ -737,7 +737,7 @@ class ArmoryDialog(QDialog):
       return super(ArmoryDialog, self).exec_()
    
    def reject(self):
-      self.emit(SIGNAL(self.closeSignal))
+      self.closeSignal.emit()
       super(ArmoryDialog, self).reject()
       
    def executeMethod(self, _callable, *args):

@@ -38,7 +38,6 @@ from ui.SignerSelectDialog import SignerLabelFrame
 NO_CHANGE = 'NoChange'
 MIN_PASSWD_WIDTH = lambda obj: tightSizeStr(obj, '*' * 16)[0]
 STRETCH = 'Stretch'
-CLICKED = 'clicked()'
 BACKUP_TYPE_135A = '1.35a'
 BACKUP_TYPE_135C = '1.35c'
 BACKUP_TYPE_0_TEXT = 'Version 0  (from script, 9 lines)'
@@ -69,8 +68,8 @@ class DlgUnlockWallet(ArmoryDialog):
 
       self.btnAccept = QPushButton(self.tr("Unlock"))
       self.btnCancel = QPushButton(self.tr("Cancel"))
-      self.connect(self.btnAccept, SIGNAL(CLICKED), self.acceptPassphrase)
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.reject)
+      self.connect(self.btnAccept, SIGNAL('clicked()'), self.acceptPassphrase)
+      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
       buttonBox = QDialogButtonBox()
       buttonBox.addButton(self.btnAccept, QDialogButtonBox.AcceptRole)
       buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
@@ -107,9 +106,9 @@ class DlgUnlockWallet(ArmoryDialog):
          self.rdoScrambleLite.setChecked(True)
       elif defaultScramble == 2:
          self.rdoScrambleFull.setChecked(True)
-      self.connect(self.rdoScrambleNone, SIGNAL(CLICKED), self.changeScramble)
-      self.connect(self.rdoScrambleLite, SIGNAL(CLICKED), self.changeScramble)
-      self.connect(self.rdoScrambleFull, SIGNAL(CLICKED), self.changeScramble)
+      self.connect(self.rdoScrambleNone, SIGNAL('clicked()'), self.changeScramble)
+      self.connect(self.rdoScrambleLite, SIGNAL('clicked()'), self.changeScramble)
+      self.connect(self.rdoScrambleFull, SIGNAL('clicked()'), self.changeScramble)
       btnRowFrm = makeHorizFrame([self.rdoScrambleNone, \
                                   self.rdoScrambleLite, \
                                   self.rdoScrambleFull, \
@@ -166,7 +165,7 @@ class DlgUnlockWallet(ArmoryDialog):
    #############################################################################
    def createKeyboardKeyButton(self, keyLow, keyUp, defRow, special=None):
       theBtn = LetterButton(keyLow, keyUp, defRow, special, self.edtPasswd, self)
-      self.connect(theBtn, SIGNAL(CLICKED), theBtn.insertLetter)
+      self.connect(theBtn, SIGNAL('clicked()'), theBtn.insertLetter)
       theBtn.setMaximumWidth(40)
       return theBtn
 
@@ -392,8 +391,8 @@ class DlgGenericGetPassword(ArmoryDialog):
 
       self.btnAccept = QPushButton(self.tr("OK"))
       self.btnCancel = QPushButton(self.tr("Cancel"))
-      self.connect(self.btnAccept, SIGNAL(CLICKED), self.accept)
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.reject)
+      self.connect(self.btnAccept, SIGNAL('clicked()'), self.accept)
+      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
       buttonBox = QDialogButtonBox()
       buttonBox.addButton(self.btnAccept, QDialogButtonBox.AcceptRole)
       buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
@@ -482,7 +481,7 @@ class DlgInconsistentWltReport(ArmoryDialog):
       self.btnCancel = QPushButton(self.tr('Close'))
       self.btnbox = QDialogButtonBox()
       self.btnbox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self, SLOT('reject()'))
+      self.connect(self.btnCancel, SIGNAL('clicked()'), self, SLOT('reject()'))
 
       layout = QGridLayout()
       i = -1
@@ -719,9 +718,9 @@ class DlgNewWallet(ArmoryDialog):
 
       self.connect(self.btnAdvCrypto, SIGNAL('toggled(bool)'), \
                    self.cryptoFrame, SLOT('setVisible(bool)'))
-      self.connect(self.btnAccept, SIGNAL(CLICKED), \
+      self.connect(self.btnAccept, SIGNAL('clicked()'), \
                    self.verifyInputsBeforeAccept)
-      self.connect(self.btnCancel, SIGNAL(CLICKED), \
+      self.connect(self.btnCancel, SIGNAL('clicked()'), \
                    self, SLOT('reject()'))
 
 
@@ -903,10 +902,10 @@ class DlgChangePassphrase(ArmoryDialog):
       self.connect(self.edtPasswd2, SIGNAL('textChanged(QString)'), \
                    self.checkPassphrase)
 
-      self.connect(self.btnAccept, SIGNAL(CLICKED), \
+      self.connect(self.btnAccept, SIGNAL('clicked()'), \
                    self.checkPassphraseFinal)
 
-      self.connect(self.btnCancel, SIGNAL(CLICKED), \
+      self.connect(self.btnCancel, SIGNAL('clicked()'), \
                    self, SLOT('reject()'))
 
 
@@ -987,8 +986,8 @@ class DlgPasswd3(ArmoryDialog):
       bbox = QDialogButtonBox()
       btnOk = QPushButton(self.tr('Accept'))
       btnNo = QPushButton(self.tr('Cancel'))
-      self.connect(btnOk, SIGNAL(CLICKED), self.accept)
-      self.connect(btnNo, SIGNAL(CLICKED), self.reject)
+      self.connect(btnOk, SIGNAL('clicked()'), self.accept)
+      self.connect(btnNo, SIGNAL('clicked()'), self.reject)
       bbox.addButton(btnOk, QDialogButtonBox.AcceptRole)
       bbox.addButton(btnNo, QDialogButtonBox.RejectRole)
       layout = QGridLayout()
@@ -1087,7 +1086,7 @@ class DlgWalletDetails(ArmoryDialog):
       # Now add all the options buttons, dependent on the type of wallet.
 
       lbtnChangeLabels = QLabelButton(self.tr('Change Wallet Labels'));
-      self.connect(lbtnChangeLabels, SIGNAL(CLICKED), self.changeLabels)
+      self.connect(lbtnChangeLabels, SIGNAL('clicked()'), self.changeLabels)
 
       if not self.wlt.watchingOnly:
          s = ''
@@ -1096,7 +1095,7 @@ class DlgWalletDetails(ArmoryDialog):
          else:
             s = self.tr('Encrypt Wallet')
          lbtnChangeCrypto = QLabelButton(s)
-         self.connect(lbtnChangeCrypto, SIGNAL(CLICKED), self.changeEncryption)
+         self.connect(lbtnChangeCrypto, SIGNAL('clicked()'), self.changeEncryption)
 
       exportStr = 'Data' if self.wlt.watchingOnly else 'Copy'
       lbtnSendBtc = QLabelButton(self.tr('Send Bitcoins'))
@@ -1113,15 +1112,15 @@ class DlgWalletDetails(ArmoryDialog):
       # fnfrag = lambda: DlgFragBackup(self, self.main, self.wlt).exec_()
       # LOGERROR('remove me!')
 
-      self.connect(lbtnSendBtc, SIGNAL(CLICKED), self.execSendBtc)
-      self.connect(lbtnGenAddr, SIGNAL(CLICKED), self.getNewAddress)
-      self.connect(lbtnBackups, SIGNAL(CLICKED), self.execBackupDlg)
-      # self.connect(lbtnBackups, SIGNAL(CLICKED), fnfrag)
-      self.connect(lbtnRemove, SIGNAL(CLICKED), self.execRemoveDlg)
-      self.connect(lbtnImportA, SIGNAL(CLICKED), self.execImportAddress)
-      self.connect(lbtnDeleteA, SIGNAL(CLICKED), self.execDeleteAddress)
-      self.connect(lbtnExpWOWlt, SIGNAL(CLICKED), self.execExpWOCopy)
-      #self.connect(lbtnRecover, SIGNAL(CLICKED), self.recoverPwd)
+      self.connect(lbtnSendBtc, SIGNAL('clicked()'), self.execSendBtc)
+      self.connect(lbtnGenAddr, SIGNAL('clicked()'), self.getNewAddress)
+      self.connect(lbtnBackups, SIGNAL('clicked()'), self.execBackupDlg)
+      # self.connect(lbtnBackups, SIGNAL('clicked()'), fnfrag)
+      self.connect(lbtnRemove, SIGNAL('clicked()'), self.execRemoveDlg)
+      self.connect(lbtnImportA, SIGNAL('clicked()'), self.execImportAddress)
+      self.connect(lbtnDeleteA, SIGNAL('clicked()'), self.execDeleteAddress)
+      self.connect(lbtnExpWOWlt, SIGNAL('clicked()'), self.execExpWOCopy)
+      #self.connect(lbtnRecover, SIGNAL('clicked()'), self.recoverPwd)
 
       lbtnSendBtc.setToolTip(self.tr('Send bitcoins to other users, or transfer between wallets'))
       if self.wlt.watchingOnly:
@@ -1253,7 +1252,7 @@ class DlgWalletDetails(ArmoryDialog):
       lblWltAddr = QRichLabel(self.tr('<b>Addresses in Wallet:</b>'), doWrap=False)
 
       btnGoBack = QPushButton(self.tr('<<< Go Back'))
-      self.connect(btnGoBack, SIGNAL(CLICKED), self.accept)
+      self.connect(btnGoBack, SIGNAL('clicked()'), self.accept)
       bottomFrm = makeHorizFrame([btnGoBack, STRETCH, frmTotals])
 
       layout = QGridLayout()
@@ -1814,7 +1813,7 @@ class DlgWalletDetails(ArmoryDialog):
       self.labelValues[WLTFIELDS.NumAddr] = QLabelButton('%d' % topUsed)
       self.labelValues[WLTFIELDS.NumAddr].setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
       opendlgkeypool = lambda: DlgKeypoolSettings(self.wlt, self, self.main).exec_()
-      self.connect(self.labelValues[WLTFIELDS.NumAddr], SIGNAL(CLICKED), opendlgkeypool)
+      self.connect(self.labelValues[WLTFIELDS.NumAddr], SIGNAL('clicked()'), opendlgkeypool)
 
       # Set the owner appropriately
       if self.wlt.watchingOnly:
@@ -1830,7 +1829,7 @@ class DlgWalletDetails(ArmoryDialog):
                self.labelValues[WLTFIELDS.BelongsTo] = QLabelButton(owner)
                self.labelValues[WLTFIELDS.BelongsTo].setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-         self.connect(self.labelValues[WLTFIELDS.BelongsTo], SIGNAL(CLICKED), \
+         self.connect(self.labelValues[WLTFIELDS.BelongsTo], SIGNAL('clicked()'), \
                       self.execSetOwner)
 
       if dispCrypto:
@@ -1871,7 +1870,7 @@ class DlgWalletDetails(ArmoryDialog):
       # Not sure why this has to be connected downhere... it didn't work above it
       if dispCrypto:
          self.labelValues[WLTFIELDS.Time].setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-         self.connect(self.labelValues[WLTFIELDS.Time], SIGNAL(CLICKED), self.testKdfTime)
+         self.connect(self.labelValues[WLTFIELDS.Time], SIGNAL('clicked()'), self.testKdfTime)
 
       labelNames[WLTFIELDS.Descr].setAlignment(Qt.AlignLeft | Qt.AlignTop)
       self.labelValues[WLTFIELDS.Descr].setWordWrap(True)
@@ -2123,8 +2122,8 @@ class DlgKeypoolSettings(ArmoryDialog):
       buttonBox = QDialogButtonBox()
       self.btnAccept = QPushButton(self.tr("Compute"))
       self.btnReject = QPushButton(self.tr("Done"))
-      self.connect(self.btnAccept, SIGNAL(CLICKED), self.clickCompute)
-      self.connect(self.btnReject, SIGNAL(CLICKED), self.reject)
+      self.connect(self.btnAccept, SIGNAL('clicked()'), self.clickCompute)
+      self.connect(self.btnReject, SIGNAL('clicked()'), self.reject)
       buttonBox.addButton(self.btnAccept, QDialogButtonBox.AcceptRole)
       buttonBox.addButton(self.btnReject, QDialogButtonBox.RejectRole)
 
@@ -2246,7 +2245,7 @@ class DlgNewAddressDisp(ArmoryDialog):
       # lbtnClipboard.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
       self.lblIsCopied = QLabel(self.tr(' or '))
       self.lblIsCopied.setTextFormat(Qt.RichText)
-      self.connect(btnClipboard, SIGNAL(CLICKED), self.setClipboard)
+      self.connect(btnClipboard, SIGNAL('clicked()'), self.setClipboard)
       
       def openPaymentRequest():
          msgTxt = str(self.edtComm.toPlainText())
@@ -2256,7 +2255,7 @@ class DlgNewAddressDisp(ArmoryDialog):
          dlg.exec_()
 
       btnLink = QPushButton(self.tr('Create Clickable Link'))
-      self.connect(btnLink, SIGNAL(CLICKED), openPaymentRequest)
+      self.connect(btnLink, SIGNAL('clicked()'), openPaymentRequest)
 
 
       tooltip1 = self.main.createToolTipWidget(self.tr(
@@ -2328,7 +2327,7 @@ class DlgNewAddressDisp(ArmoryDialog):
 
       buttonBox = QDialogButtonBox()
       self.btnDone = QPushButton(self.tr("Done"))
-      self.connect(self.btnDone, SIGNAL(CLICKED), self.accept)
+      self.connect(self.btnDone, SIGNAL('clicked()'), self.accept)
       buttonBox.addButton(self.btnDone, QDialogButtonBox.AcceptRole)
 
       frmWlt = QFrame()
@@ -2429,8 +2428,8 @@ class DlgImportAddress(ArmoryDialog):
       btngrp.addButton(self.radioImportMany)
       btngrp.setExclusive(True)
       self.radioImportOne.setChecked(True)
-      self.connect(self.radioImportOne, SIGNAL(CLICKED), self.clickImportCount)
-      self.connect(self.radioImportMany, SIGNAL(CLICKED), self.clickImportCount)
+      self.connect(self.radioImportOne, SIGNAL('clicked()'), self.clickImportCount)
+      self.connect(self.radioImportMany, SIGNAL('clicked()'), self.clickImportCount)
 
       frmTop = makeHorizFrame([lblImportLbl, self.radioImportOne, \
                                              self.radioImportMany, STRETCH])
@@ -3042,8 +3041,8 @@ class DlgConfirmBulkImport(ArmoryDialog):
       buttonBox = QDialogButtonBox()
       self.btnAccept = QPushButton(self.tr("Import"))
       self.btnReject = QPushButton(self.tr("Cancel"))
-      self.connect(self.btnAccept, SIGNAL(CLICKED), self.accept)
-      self.connect(self.btnReject, SIGNAL(CLICKED), self.reject)
+      self.connect(self.btnAccept, SIGNAL('clicked()'), self.accept)
+      self.connect(self.btnReject, SIGNAL('clicked()'), self.reject)
       buttonBox.addButton(self.btnAccept, QDialogButtonBox.AcceptRole)
       buttonBox.addButton(self.btnReject, QDialogButtonBox.RejectRole)
 
@@ -3092,8 +3091,8 @@ class DlgDuplicateAddr(ArmoryDialog):
       buttonBox = QDialogButtonBox()
       self.btnContinue = QPushButton(self.tr("Continue"))
       self.btnCancel = QPushButton(self.tr("Cancel"))
-      self.connect(self.btnContinue, SIGNAL(CLICKED), self.accept)
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.reject)
+      self.connect(self.btnContinue, SIGNAL('clicked()'), self.accept)
+      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
       buttonBox.addButton(self.btnContinue, QDialogButtonBox.AcceptRole)
       buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
 
@@ -3311,9 +3310,9 @@ class DlgAddressInfo(ArmoryDialog):
       # lbtnSweepA   = QLabelButton('Sweep Address')
       lbtnDelete = QLabelButton(self.tr('Delete Address'))
 
-      self.connect(lbtnCopyAddr, SIGNAL(CLICKED), self.copyAddr)
-      self.connect(lbtnViewKeys, SIGNAL(CLICKED), self.viewKeys)
-      self.connect(lbtnDelete, SIGNAL(CLICKED), self.deleteAddr)
+      self.connect(lbtnCopyAddr, SIGNAL('clicked()'), self.copyAddr)
+      self.connect(lbtnViewKeys, SIGNAL('clicked()'), self.viewKeys)
+      self.connect(lbtnDelete, SIGNAL('clicked()'), self.deleteAddr)
 
       optFrame = QFrame()
       optFrame.setFrameStyle(STYLE_SUNKEN)
@@ -3350,7 +3349,7 @@ class DlgAddressInfo(ArmoryDialog):
       dlgLayout.addWidget(rightFrm, 0, 1, 2, 1)
 
       btnGoBack = QPushButton(self.tr('<<< Go Back'))
-      self.connect(btnGoBack, SIGNAL(CLICKED), self.reject)
+      self.connect(btnGoBack, SIGNAL('clicked()'), self.reject)
 
       self.setLayout(dlgLayout)
       self.setWindowTitle(self.tr('Address Information'))
@@ -3525,8 +3524,8 @@ class DlgEULA(ArmoryDialog):
       self.btnCancel = QPushButton(self.tr("Cancel"))
       self.btnAccept = QPushButton(self.tr("Accept"))
       self.btnAccept.setEnabled(False)
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.reject)
-      self.connect(self.btnAccept, SIGNAL(CLICKED), self.accept)
+      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
+      self.connect(self.btnAccept, SIGNAL('clicked()'), self.accept)
       self.connect(self.chkAgree, SIGNAL('toggled(bool)'), self.toggleChkBox)
       btnBox = makeHorizFrame([STRETCH, self.btnCancel, self.btnAccept])
 
@@ -3612,9 +3611,9 @@ class DlgIntroMessage(ArmoryDialog):
          self.btnCreate = QPushButton(self.tr("Create Your First Wallet!"))
          self.btnImport = QPushButton(self.tr("Import Existing Wallet"))
          self.btnCancel = QPushButton(self.tr("Skip"))
-         self.connect(self.btnCreate, SIGNAL(CLICKED), self.createClicked)
-         self.connect(self.btnImport, SIGNAL(CLICKED), self.importClicked)
-         self.connect(self.btnCancel, SIGNAL(CLICKED), self.reject)
+         self.connect(self.btnCreate, SIGNAL('clicked()'), self.createClicked)
+         self.connect(self.btnImport, SIGNAL('clicked()'), self.importClicked)
+         self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
          buttonBox.addButton(self.btnCreate, QDialogButtonBox.AcceptRole)
          buttonBox.addButton(self.btnImport, QDialogButtonBox.AcceptRole)
          buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
@@ -3626,7 +3625,7 @@ class DlgIntroMessage(ArmoryDialog):
                                             self.btnCreate])
       else:
          self.btnOkay = QPushButton(self.tr("OK!"))
-         self.connect(self.btnOkay, SIGNAL(CLICKED), self.accept)
+         self.connect(self.btnOkay, SIGNAL('clicked()'), self.accept)
          buttonBox.addButton(self.btnOkay, QDialogButtonBox.AcceptRole)
          frmBtn = makeLayoutFrame(HORIZONTAL, [self.chkDnaaIntroDlg, \
                                             STRETCH, \
@@ -4081,8 +4080,8 @@ class DlgRemoveWallet(ArmoryDialog):
       startRow += 1
       self.btnDelete = QPushButton(self.tr("Delete"))
       self.btnCancel = QPushButton(self.tr("Cancel"))
-      self.connect(self.btnDelete, SIGNAL(CLICKED), rmWalletSlot)
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.reject)
+      self.connect(self.btnDelete, SIGNAL('clicked()'), rmWalletSlot)
+      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
       buttonBox = QDialogButtonBox()
       buttonBox.addButton(self.btnDelete, QDialogButtonBox.AcceptRole)
       buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
@@ -4325,8 +4324,8 @@ class DlgWalletSelect(ArmoryDialog):
       buttonBox = QDialogButtonBox()
       btnAccept = QPushButton('OK')
       btnCancel = QPushButton('Cancel')
-      self.connect(btnAccept, SIGNAL(CLICKED), self.accept)
-      self.connect(btnCancel, SIGNAL(CLICKED), self.reject)
+      self.connect(btnAccept, SIGNAL('clicked()'), self.accept)
+      self.connect(btnCancel, SIGNAL('clicked()'), self.reject)
       buttonBox.addButton(btnAccept, QDialogButtonBox.AcceptRole)
       buttonBox.addButton(btnCancel, QDialogButtonBox.RejectRole)
 
@@ -4527,8 +4526,8 @@ class DlgConfirmSend(ArmoryDialog):
          lblLastConfirm = QLabel(self.tr('Does the above look correct?'))
 
       self.btnCancel = QPushButton(self.tr("Cancel"))
-      self.connect(self.btnAccept, SIGNAL(CLICKED), self.accept)
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.reject)
+      self.connect(self.btnAccept, SIGNAL('clicked()'), self.accept)
+      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
       buttonBox = QDialogButtonBox()
       buttonBox.addButton(self.btnAccept, QDialogButtonBox.AcceptRole)
       buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
@@ -4650,9 +4649,9 @@ class DlgOfflineTxCreated(ArmoryDialog):
       reviewOfflineTxFrame.setWallet(wlt)
       reviewOfflineTxFrame.setUSTX(ustx)
       continueButton = QPushButton(self.tr('Continue'))
-      self.connect(continueButton, SIGNAL(CLICKED), self.signBroadcastTx)
+      self.connect(continueButton, SIGNAL('clicked()'), self.signBroadcastTx)
       doneButton = QPushButton(self.tr('Done'))
-      self.connect(doneButton, SIGNAL(CLICKED), self.accept)
+      self.connect(doneButton, SIGNAL('clicked()'), self.accept)
 
       ttipDone = self.main.createToolTipWidget(self.tr(
          'By clicking Done you will exit the offline transaction process for now. '
@@ -4732,9 +4731,9 @@ class DlgOfflineSelect(ArmoryDialog):
       def broadc():
          self.do_broadc = True; self.accept()
 
-      self.connect(btnCreate, SIGNAL(CLICKED), create)
-      self.connect(broadcastButton, SIGNAL(CLICKED), broadc)
-      self.connect(btnCancel, SIGNAL(CLICKED), self.reject)
+      self.connect(btnCreate, SIGNAL('clicked()'), create)
+      self.connect(broadcastButton, SIGNAL('clicked()'), broadc)
+      self.connect(btnCancel, SIGNAL('clicked()'), self.reject)
 
       lblCreate = QRichLabel(self.tr(
          'Create a transaction from an Offline/Watching-Only wallet '
@@ -4794,7 +4793,7 @@ class DlgSignBroadcastOfflineTx(ArmoryDialog):
                            self, main, self.tr("Sign or Broadcast Transaction"))
 
       doneButton = QPushButton(self.tr('Done'))
-      self.connect(doneButton, SIGNAL(CLICKED), self.accept)
+      self.connect(doneButton, SIGNAL('clicked()'), self.accept)
       doneForm = makeLayoutFrame(HORIZONTAL, [STRETCH, doneButton])
       dlgLayout = QVBoxLayout()
       dlgLayout.addWidget(signBroadcastOfflineTxFrame)
@@ -4940,9 +4939,9 @@ class DlgShowKeyList(ArmoryDialog):
       btnCopyClip = QPushButton(self.tr('Copy to Clipboard'))
       self.lblCopied = QRichLabel('')
 
-      self.connect(btnGoBack, SIGNAL(CLICKED), self.accept)
-      self.connect(btnSaveFile, SIGNAL(CLICKED), self.saveToFile)
-      self.connect(btnCopyClip, SIGNAL(CLICKED), self.copyToClipboard)
+      self.connect(btnGoBack, SIGNAL('clicked()'), self.accept)
+      self.connect(btnSaveFile, SIGNAL('clicked()'), self.saveToFile)
+      self.connect(btnCopyClip, SIGNAL('clicked()'), self.copyToClipboard)
       frmGoBack = makeLayoutFrame(HORIZONTAL, [btnGoBack, \
                                             STRETCH, \
                                             self.chkOmitSpaces, \
@@ -5735,9 +5734,9 @@ class DlgDispTxInfo(ArmoryDialog):
       self.lblCopied = QRichLabel('')
       self.btnOk = QPushButton(self.tr('OK'))
       self.btnIOList.setCheckable(True)
-      self.connect(self.btnIOList, SIGNAL(CLICKED), self.extraInfoClicked)
-      self.connect(self.btnOk, SIGNAL(CLICKED), self.accept)
-      self.connect(self.btnCopy, SIGNAL(CLICKED), self.copyRawTx)
+      self.connect(self.btnIOList, SIGNAL('clicked()'), self.extraInfoClicked)
+      self.connect(self.btnOk, SIGNAL('clicked()'), self.accept)
+      self.connect(self.btnCopy, SIGNAL('clicked()'), self.copyRawTx)
 
       btnStrip = makeHorizFrame([self.btnIOList,
                                  self.btnCopy,
@@ -6508,7 +6507,7 @@ class DlgPrintBackup(ArmoryDialog):
 
 
       self.chkImportPrint = QCheckBox(self.tr('Print imported keys'))
-      self.connect(self.chkImportPrint, SIGNAL(CLICKED), self.clickImportChk)
+      self.connect(self.chkImportPrint, SIGNAL('clicked()'), self.clickImportChk)
 
       self.lblPageStr = QRichLabel(self.tr('Page:'))
       self.comboPageNum = QComboBox()
@@ -6550,8 +6549,8 @@ class DlgPrintBackup(ArmoryDialog):
       self.btnPrint = QPushButton('&Print...')
       self.btnPrint.setMinimumWidth(3 * tightSizeStr(self.btnPrint, 'Print...')[0])
       self.btnCancel = QPushButton('&Cancel')
-      self.connect(self.btnPrint, SIGNAL(CLICKED), self.print_)
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.accept)
+      self.connect(self.btnPrint, SIGNAL('clicked()'), self.print_)
+      self.connect(self.btnCancel, SIGNAL('clicked()'), self.accept)
 
       if self.doPrintFrag:
          M, N = self.fragData['M'], self.fragData['N']
@@ -7155,8 +7154,8 @@ class DlgBadConnection(ArmoryDialog):
       lblDescr.setMinimumWidth(500)
       self.btnAccept = QPushButton(self.tr("Continue in Offline Mode"))
       self.btnCancel = QPushButton(self.tr("Close Armory"))
-      self.connect(self.btnAccept, SIGNAL(CLICKED), self.accept)
-      self.connect(self.btnCancel, SIGNAL(CLICKED), abortLoad)
+      self.connect(self.btnAccept, SIGNAL('clicked()'), self.accept)
+      self.connect(self.btnCancel, SIGNAL('clicked()'), abortLoad)
       buttonBox = QDialogButtonBox()
       buttonBox.addButton(self.btnAccept, QDialogButtonBox.AcceptRole)
       buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
@@ -7403,9 +7402,9 @@ class DlgECDSACalc(ArmoryDialog):
       imgTimes2 = QRichLabel('<b>*</b>')
       imgDown = QRichLabel('')
 
-      self.connect(self.btnCalcSS, SIGNAL(CLICKED), self.multss)
-      self.connect(self.btnCalcSP, SIGNAL(CLICKED), self.multsp)
-      self.connect(self.btnCalcPP, SIGNAL(CLICKED), self.addpp)
+      self.connect(self.btnCalcSS, SIGNAL('clicked()'), self.multss)
+      self.connect(self.btnCalcSP, SIGNAL('clicked()'), self.multsp)
+      self.connect(self.btnCalcPP, SIGNAL('clicked()'), self.addpp)
 
 
       ##########################################################################
@@ -7509,10 +7508,10 @@ class DlgECDSACalc(ArmoryDialog):
 
       btnClear = QPushButton(self.tr('Clear'))
       btnClear.setMaximumWidth(2 * relaxedSizeStr(btnClear, 'Clear')[0])
-      self.connect(btnClear, SIGNAL(CLICKED), self.eccClear)
+      self.connect(btnClear, SIGNAL('clicked()'), self.eccClear)
 
       btnBack = QPushButton(self.tr('<<< Go Back'))
-      self.connect(btnBack, SIGNAL(CLICKED), self.accept)
+      self.connect(btnBack, SIGNAL('clicked()'), self.accept)
       frmBack = makeHorizFrame([btnBack, STRETCH])
 
       eccLayout = QVBoxLayout()
@@ -7793,10 +7792,10 @@ class DlgAddressBook(ArmoryDialog):
          self.btnSelectWlt.setVisible(False)
          ttipSendWlt.setVisible(False)
 
-      self.connect(self.btnSelectWlt, SIGNAL(CLICKED), self.acceptWltSelection)
-      self.connect(self.btnSelectAddr, SIGNAL(CLICKED), self.acceptAddrSelection)
-      self.connect(self.useBareMultiSigCheckBox, SIGNAL(CLICKED), self.useP2SHClicked)
-      self.connect(btnCancel, SIGNAL(CLICKED), self.reject)
+      self.connect(self.btnSelectWlt, SIGNAL('clicked()'), self.acceptWltSelection)
+      self.connect(self.btnSelectAddr, SIGNAL('clicked()'), self.acceptAddrSelection)
+      self.connect(self.useBareMultiSigCheckBox, SIGNAL('clicked()'), self.useP2SHClicked)
+      self.connect(btnCancel, SIGNAL('clicked()'), self.reject)
 
 
       dlgLayout = QGridLayout()
@@ -8251,7 +8250,7 @@ def createAddrBookButton(parent, targWidget, defaultWltID=None, actionStr="Selec
 
    btn.setMaximumWidth(24)
    btn.setMaximumHeight(24)
-   parent.connect(btn, SIGNAL(CLICKED), execAddrBook)
+   parent.connect(btn, SIGNAL('clicked()'), execAddrBook)
    btn.setToolTip(parent.tr('Select from Address Book'))
    return btn
 
@@ -8310,7 +8309,7 @@ class DlgSettings(ArmoryDialog):
       self.edtSatoshiExePath = QLineEdit()
       self.edtSatoshiHomePath = QLineEdit()
       self.edtSatoshiExePath.setMinimumWidth(tightSizeNChar(GETFONT('Fixed', 10), 40)[0])
-      self.connect(self.chkManageSatoshi, SIGNAL(CLICKED), self.clickChkManage)
+      self.connect(self.chkManageSatoshi, SIGNAL('clicked()'), self.clickChkManage)
       self.startChk = self.main.getSettingOrSetDefault('ManageSatoshi', not OS_MACOSX)
       if self.startChk:
          self.chkManageSatoshi.setChecked(True)
@@ -8389,7 +8388,7 @@ class DlgSettings(ArmoryDialog):
             'Armory just attempted to register itself to handle "bitcoin:" '
             'links, but this does not work on all operating systems.'), QMessageBox.Ok)
 
-      self.connect(btnDefaultURI, SIGNAL(CLICKED), clickRegURI)
+      self.connect(btnDefaultURI, SIGNAL('clicked()'), clickRegURI)
 
       ###############################################################
       # Minimize on Close
@@ -8488,7 +8487,7 @@ class DlgSettings(ArmoryDialog):
       def doReset():
          self.edtDateFormat.setText(DEFAULT_DATE_FORMAT)
          self.doExampleDate()
-      self.connect(self.btnResetFormat, SIGNAL(CLICKED), doReset)
+      self.connect(self.btnResetFormat, SIGNAL('clicked()'), doReset)
 
       # Make a little subframe just for the date format stuff... everything
       # fits nicer if I do this...
@@ -8503,8 +8502,8 @@ class DlgSettings(ArmoryDialog):
       # Save/Cancel Button
       self.btnCancel = QPushButton(self.tr("Cancel"))
       self.btnAccept = QPushButton(self.tr("Save"))
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.reject)
-      self.connect(self.btnAccept, SIGNAL(CLICKED), self.accept)
+      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
+      self.connect(self.btnAccept, SIGNAL('clicked()'), self.accept)
 
       ################################################################
       # User mode selection
@@ -9036,15 +9035,15 @@ class DlgExportTxHistory(ArmoryDialog):
       def doReset():
          self.edtDateFormat.setText(DEFAULT_DATE_FORMAT)
          self.doExampleDate()
-      self.connect(self.btnResetFormat, SIGNAL(CLICKED), doReset)
+      self.connect(self.btnResetFormat, SIGNAL('clicked()'), doReset)
 
 
 
       # Add the usual buttons
       self.btnCancel = QPushButton(self.tr("Cancel"))
       self.btnAccept = QPushButton(self.tr("Export"))
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.reject)
-      self.connect(self.btnAccept, SIGNAL(CLICKED), self.accept)
+      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
+      self.connect(self.btnAccept, SIGNAL('clicked()'), self.accept)
       btnBox = makeHorizFrame([STRETCH, self.btnCancel, self.btnAccept])
 
 
@@ -9407,11 +9406,11 @@ class DlgRequestPayment(ArmoryDialog):
                                         self.lblWarn])
                                         # self.btnCopyAll, \
 
-      self.connect(self.btnCopyRich, SIGNAL(CLICKED), self.clickCopyRich)
+      self.connect(self.btnCopyRich, SIGNAL('clicked()'), self.clickCopyRich)
       self.connect(self.btnOtherOpt, SIGNAL('toggled(bool)'), self.clickOtherOpt)
-      self.connect(self.btnCopyRaw, SIGNAL(CLICKED), self.clickCopyRaw)
-      self.connect(self.btnCopyHtml, SIGNAL(CLICKED), self.clickCopyHtml)
-      self.connect(self.btnCopyAll, SIGNAL(CLICKED), self.clickCopyAll)
+      self.connect(self.btnCopyRaw, SIGNAL('clicked()'), self.clickCopyRaw)
+      self.connect(self.btnCopyHtml, SIGNAL('clicked()'), self.clickCopyHtml)
+      self.connect(self.btnCopyAll, SIGNAL('clicked()'), self.clickCopyAll)
 
       lblDescr = QRichLabel(\
          self.tr('Create a clickable link that you can copy into email or webpage to '
@@ -9444,7 +9443,7 @@ class DlgRequestPayment(ArmoryDialog):
 
 
       btnClose = QPushButton(self.tr('Close'))
-      self.connect(btnClose, SIGNAL(CLICKED), self.accept)
+      self.connect(btnClose, SIGNAL('clicked()'), self.accept)
 
 
       frmEntry = QFrame()
@@ -9747,8 +9746,8 @@ class DlgUriCopyAndPaste(ArmoryDialog):
       buttonBox.addButton(self.btnOkay, QDialogButtonBox.AcceptRole)
       buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
 
-      self.connect(self.btnOkay, SIGNAL(CLICKED), self.clickedOkay)
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.reject)
+      self.connect(self.btnOkay, SIGNAL('clicked()'), self.clickedOkay)
+      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
 
       frmImg = makeHorizFrame([STRETCH, lblShowExample, STRETCH])
 
@@ -9783,7 +9782,7 @@ class DlgQRCodeDisplay(ArmoryDialog):
       super(DlgQRCodeDisplay, self).__init__(parent, main)
 
       btnDone = QPushButton('Close')
-      self.connect(btnDone, SIGNAL(CLICKED), self.accept)
+      self.connect(btnDone, SIGNAL('clicked()'), self.accept)
       frmBtn = makeHorizFrame([STRETCH, btnDone, STRETCH])
 
       qrDisp = QRCodeWidget(dataToQR, parent=self)
@@ -9908,7 +9907,7 @@ class DlgBackupCenter(ArmoryDialog):
       self.walletBackupFrame = WalletBackupFrame(parent, main)
       self.walletBackupFrame.setWallet(wlt)
       self.btnDone = QPushButton(self.tr('Done'))
-      self.connect(self.btnDone, SIGNAL(CLICKED), self.reject)
+      self.connect(self.btnDone, SIGNAL('clicked()'), self.reject)
       frmBottomBtns = makeHorizFrame([STRETCH, self.btnDone])
 
       layoutDialog = QVBoxLayout()
@@ -9965,9 +9964,9 @@ class DlgSimpleBackup(ArmoryDialog):
          self.accept()
          DlgBackupCenter(self, self.main, self.wlt).exec_()
 
-      self.connect(btnPaper, SIGNAL(CLICKED), backupPaper)
-      self.connect(btnDigital, SIGNAL(CLICKED), backupDigital)
-      self.connect(btnOther, SIGNAL(CLICKED), backupOther)
+      self.connect(btnPaper, SIGNAL('clicked()'), backupPaper)
+      self.connect(btnDigital, SIGNAL('clicked()'), backupDigital)
+      self.connect(btnOther, SIGNAL('clicked()'), backupOther)
 
       layout = QGridLayout()
 
@@ -9994,7 +9993,7 @@ class DlgSimpleBackup(ArmoryDialog):
       frmGrid.setLayout(layout)
 
       btnClose = QPushButton(self.tr('Done'))
-      self.connect(btnClose, SIGNAL(CLICKED), self.accept)
+      self.connect(btnClose, SIGNAL('clicked()'), self.accept)
       frmClose = makeHorizFrame([STRETCH, btnClose])
 
       frmAll = makeVertFrame([lblDescrTitle, lblDescr, frmGrid, frmClose])
@@ -10034,9 +10033,9 @@ class DlgExpWOWltData(ArmoryDialog):
       printWODataButton = QPushButton(self.tr('Print Root Data'))
 
 
-      self.connect(expWltButton, SIGNAL(CLICKED), self.clickedExpWlt)
-      self.connect(expDataButton, SIGNAL(CLICKED), self.clickedExpData)
-      self.connect(printWODataButton, SIGNAL(CLICKED), \
+      self.connect(expWltButton, SIGNAL('clicked()'), self.clickedExpWlt)
+      self.connect(expDataButton, SIGNAL('clicked()'), self.clickedExpData)
+      self.connect(printWODataButton, SIGNAL('clicked()'), \
                    self.clickedPrintWOData)
 
 
@@ -10208,8 +10207,8 @@ class DlgWODataPrintBackup(ArmoryDialog):
       self.btnPrint = QPushButton('&Print...')
       self.btnPrint.setMinimumWidth(3 * tightSizeStr(self.btnPrint, 'Print...')[0])
       self.btnCancel = QPushButton('&Cancel')
-      self.connect(self.btnPrint, SIGNAL(CLICKED), self.print_)
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.reject)
+      self.connect(self.btnPrint, SIGNAL('clicked()'), self.print_)
+      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
       frmButtons = makeHorizFrame([self.btnCancel, STRETCH, self.btnPrint])
 
       # Draw the sheet for the first time.
@@ -10418,7 +10417,7 @@ class DlgFragBackup(ArmoryDialog):
       self.comboN.setMinimumWidth(30)
 
       btnAccept = QPushButton(self.tr('Close'))
-      self.connect(btnAccept, SIGNAL(CLICKED), self.accept)
+      self.connect(btnAccept, SIGNAL('clicked()'), self.accept)
       frmBottomBtn = makeHorizFrame([STRETCH, btnAccept])
 
       # We will hold all fragments here, in SBD objects.  Destroy all of them
@@ -10455,7 +10454,7 @@ class DlgFragBackup(ArmoryDialog):
          'All fragments for a given wallet use the '
          'same code.</font>').arg(htmlColor('TextWarn'), htmlColor('TextBlue'), self.randpass.toBinStr(), \
           htmlColor('TextWarn')))
-      self.connect(self.chkSecurePrint, SIGNAL(CLICKED), self.clickChkSP)
+      self.connect(self.chkSecurePrint, SIGNAL('clicked()'), self.clickChkSP)
       self.chkSecurePrint.setChecked(False)
       self.lblSecurePrint.setVisible(False)
       frmChkSP = makeHorizFrame([self.chkSecurePrint, self.ttipSecurePrint, STRETCH])
@@ -10513,7 +10512,7 @@ class DlgFragBackup(ArmoryDialog):
       frmComboN = makeHorizFrame([STRETCH, QLabel('N:'), self.comboN, STRETCH])
 
       btnPrintAll = QPushButton(self.tr('Print All Fragments'))
-      self.connect(btnPrintAll, SIGNAL(CLICKED), self.clickPrintAll)
+      self.connect(btnPrintAll, SIGNAL('clicked()'), self.clickPrintAll)
       leftFrame = makeVertFrame([STRETCH, \
                                  lblAboveM, \
                                  frmComboM, \
@@ -10589,8 +10588,8 @@ class DlgFragBackup(ArmoryDialog):
 
       btnPrintFrag = QPushButton(self.tr('View/Print'))
       btnSaveFrag = QPushButton(self.tr('Save to File'))
-      self.connect(btnPrintFrag, SIGNAL(CLICKED), fnPrint)
-      self.connect(btnSaveFrag, SIGNAL(CLICKED), fnSave)
+      self.connect(btnPrintFrag, SIGNAL('clicked()'), fnPrint)
+      self.connect(btnSaveFrag, SIGNAL('clicked()'), fnSave)
       frmButtons = makeHorizFrame([btnPrintFrag, btnSaveFrag])
 
 
@@ -10815,18 +10814,18 @@ class DlgUniversalRestoreSelect(ArmoryDialog):
       btngrp.setExclusive(True)
 
       self.rdoSingle.setChecked(True)
-      self.connect(self.rdoSingle, SIGNAL(CLICKED), self.clickedRadio)
-      self.connect(self.rdoFragged, SIGNAL(CLICKED), self.clickedRadio)
-      self.connect(self.rdoDigital, SIGNAL(CLICKED), self.clickedRadio)
-      self.connect(self.rdoWOData, SIGNAL(CLICKED), self.clickedRadio)
+      self.connect(self.rdoSingle, SIGNAL('clicked()'), self.clickedRadio)
+      self.connect(self.rdoFragged, SIGNAL('clicked()'), self.clickedRadio)
+      self.connect(self.rdoDigital, SIGNAL('clicked()'), self.clickedRadio)
+      self.connect(self.rdoWOData, SIGNAL('clicked()'), self.clickedRadio)
 
       self.btnOkay = QPushButton(self.tr('Continue'))
       self.btnCancel = QPushButton(self.tr('Cancel'))
       buttonBox = QDialogButtonBox()
       buttonBox.addButton(self.btnOkay, QDialogButtonBox.AcceptRole)
       buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
-      self.connect(self.btnOkay, SIGNAL(CLICKED), self.clickedOkay)
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.reject)
+      self.connect(self.btnOkay, SIGNAL('clicked()'), self.clickedOkay)
+      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
 
 
       layout = QVBoxLayout()
@@ -10999,8 +10998,8 @@ class DlgRestoreSingle(ArmoryDialog):
 
       self.btnAccept = QPushButton(doItText)
       self.btnCancel = QPushButton(self.tr("Cancel"))
-      self.connect(self.btnAccept, SIGNAL(CLICKED), self.verifyUserInput)
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.reject)
+      self.connect(self.btnAccept, SIGNAL('clicked()'), self.verifyUserInput)
+      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
       buttonBox = QDialogButtonBox()
       buttonBox.addButton(self.btnAccept, QDialogButtonBox.AcceptRole)
       buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
@@ -11030,7 +11029,7 @@ class DlgRestoreSingle(ArmoryDialog):
          self.setWindowTitle(self.tr('Test Single-Sheet Backup'))
       else:
          self.setWindowTitle(self.tr('Restore Single-Sheet Backup'))
-         self.connect(self.chkEncrypt, SIGNAL(CLICKED), self.onEncryptCheckboxChange)
+         self.connect(self.chkEncrypt, SIGNAL('clicked()'), self.onEncryptCheckboxChange)
 
       self.setMinimumWidth(500)
       self.layout().setSizeConstraint(QLayout.SetFixedSize)
@@ -11301,9 +11300,9 @@ class DlgRestoreWOData(ArmoryDialog):
       self.btnLoad   = QPushButton(self.tr("Load From Text File"))
       self.btnAccept = QPushButton(doItText)
       self.btnCancel = QPushButton(self.tr("Cancel"))
-      self.connect(self.btnLoad, SIGNAL(CLICKED), self.loadWODataFile)
-      self.connect(self.btnAccept, SIGNAL(CLICKED), self.verifyUserInput)
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.reject)
+      self.connect(self.btnLoad, SIGNAL('clicked()'), self.loadWODataFile)
+      self.connect(self.btnAccept, SIGNAL('clicked()'), self.verifyUserInput)
+      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
       buttonBox = QDialogButtonBox()
       buttonBox.addButton(self.btnLoad, QDialogButtonBox.AcceptRole)
       buttonBox.addButton(self.btnAccept, QDialogButtonBox.AcceptRole)
@@ -11525,8 +11524,8 @@ class DlgRestoreFragged(ArmoryDialog):
       self.btnAddFrag = QPushButton(self.tr('+Frag'))
       self.btnRmFrag = QPushButton(self.tr('-Frag'))
       self.btnRmFrag.setVisible(False)
-      self.connect(self.btnAddFrag, SIGNAL(CLICKED), self.addFragment)
-      self.connect(self.btnRmFrag, SIGNAL(CLICKED), self.removeFragment)
+      self.connect(self.btnAddFrag, SIGNAL('clicked()'), self.addFragment)
+      self.connect(self.btnRmFrag, SIGNAL('clicked()'), self.removeFragment)
       self.chkEncrypt = QCheckBox(self.tr('Encrypt Restored Wallet'))
       self.chkEncrypt.setChecked(True)
       frmAddRm = makeHorizFrame([self.chkEncrypt, STRETCH, self.btnRmFrag, self.btnAddFrag])
@@ -11540,8 +11539,8 @@ class DlgRestoreFragged(ArmoryDialog):
 
       btnExit = QPushButton(self.tr('Cancel'))
       self.btnRestore = QPushButton(doItText)
-      self.connect(btnExit, SIGNAL(CLICKED), self.reject)
-      self.connect(self.btnRestore, SIGNAL(CLICKED), self.processFrags)
+      self.connect(btnExit, SIGNAL('clicked()'), self.reject)
+      self.connect(self.btnRestore, SIGNAL('clicked()'), self.processFrags)
       frmBtns = makeHorizFrame([btnExit, STRETCH, self.btnRestore])
 
       self.lblRightFrm = QRichLabel('', hAlign=Qt.AlignHCenter)
@@ -11594,7 +11593,7 @@ class DlgRestoreFragged(ArmoryDialog):
       self.chkEncrypt.setVisible(not thisIsATest)
       self.advancedOptionsTab.setEnabled(not thisIsATest)
       if not thisIsATest:
-         self.connect(self.chkEncrypt, SIGNAL(CLICKED), self.onEncryptCheckboxChange)
+         self.connect(self.chkEncrypt, SIGNAL('clicked()'), self.onEncryptCheckboxChange)
 
       layout = QVBoxLayout()
       layout.addWidget(walletRestoreTabs)
@@ -11634,11 +11633,11 @@ class DlgRestoreFragged(ArmoryDialog):
                lblFragID.setText('<b>' + fid + '</b>', color='TextWarn')
 
 
-         self.connect(btnEnter, SIGNAL(CLICKED), \
+         self.connect(btnEnter, SIGNAL('clicked()'), \
                       functools.partial(self.dataEnter, fnum=i))
-         self.connect(btnLoad, SIGNAL(CLICKED), \
+         self.connect(btnLoad, SIGNAL('clicked()'), \
                       functools.partial(self.dataLoad, fnum=i))
-         self.connect(btnClear, SIGNAL(CLICKED), \
+         self.connect(btnClear, SIGNAL('clicked()'), \
                       functools.partial(self.dataClear, fnum=i))
 
 
@@ -12125,7 +12124,7 @@ class DlgShowTestResults(ArmoryDialog):
       btnOkay = QPushButton(self.tr('Ok'))
       buttonBox = QDialogButtonBox()
       buttonBox.addButton(btnOkay, QDialogButtonBox.AcceptRole)
-      self.connect(btnOkay, SIGNAL(CLICKED), self.accept)
+      self.connect(btnOkay, SIGNAL('clicked()'), self.accept)
 
       mainLayout = QVBoxLayout()
       mainLayout.addWidget(lblDescr)
@@ -12154,8 +12153,8 @@ class DlgEnterSecurePrintCode(ArmoryDialog):
 
       self.btnAccept = QPushButton(self.tr("Done"))
       self.btnCancel = QPushButton(self.tr("Cancel"))
-      self.connect(self.btnAccept, SIGNAL(CLICKED), self.verifySecurePrintCode)
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.reject)
+      self.connect(self.btnAccept, SIGNAL('clicked()'), self.verifySecurePrintCode)
+      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
       buttonBox = QDialogButtonBox()
       buttonBox.addButton(self.btnAccept, QDialogButtonBox.AcceptRole)
       buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
@@ -12289,8 +12288,8 @@ class DlgEnterOneFrag(ArmoryDialog):
 
       self.btnAccept = QPushButton(self.tr("Done"))
       self.btnCancel = QPushButton(self.tr("Cancel"))
-      self.connect(self.btnAccept, SIGNAL(CLICKED), self.verifyUserInput)
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.reject)
+      self.connect(self.btnAccept, SIGNAL('clicked()'), self.verifyUserInput)
+      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
       buttonBox = QDialogButtonBox()
       buttonBox.addButton(self.btnAccept, QDialogButtonBox.AcceptRole)
       buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
@@ -12592,7 +12591,7 @@ class DlgWltRecoverWallet(ArmoryDialog):
             self.edtWalletPath.setText(wlt.walletPath)
 
       self.btnWltSelect = QPushButton(self.tr("Select Loaded Wallet"))
-      self.connect(self.btnWltSelect, SIGNAL(CLICKED), doWltSelect)
+      self.connect(self.btnWltSelect, SIGNAL('clicked()'), doWltSelect)
 
       layoutMgmt = QGridLayout()
       wltSltQF = QFrame()
@@ -13362,8 +13361,8 @@ class DlgFactoryReset(ArmoryDialog):
       buttonBox = QDialogButtonBox()
       buttonBox.addButton(self.btnOkay, QDialogButtonBox.AcceptRole)
       buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
-      self.connect(self.btnOkay, SIGNAL(CLICKED), self.clickedOkay)
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.reject)
+      self.connect(self.btnOkay, SIGNAL('clicked()'), self.clickedOkay)
+      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
 
       layout = QVBoxLayout()
       layout.addWidget(frmDescr)
@@ -13712,7 +13711,7 @@ class DlgRegAndTest(ArmoryDialog):
       super(DlgRegAndTest, self).__init__(parent, main)
 
       self.btcClose = QPushButton("Close")
-      self.connect(self.btcClose, SIGNAL(CLICKED), self.close)
+      self.connect(self.btcClose, SIGNAL('clicked()'), self.close)
       btnBox = makeHorizFrame([STRETCH, self.btcClose])
 
       lblError = QRichLabel(self.tr('Error: You cannot run the Regression Test network and Bitcoin Test Network at the same time.'))
@@ -13742,9 +13741,9 @@ class DlgBrowserWarn(ArmoryDialog):
 
       self.link = link
       self.btnCancel = QPushButton("Cancel")
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.cancel)
+      self.connect(self.btnCancel, SIGNAL('clicked()'), self.cancel)
       self.btnContinue = QPushButton("Continue")
-      self.connect(self.btnContinue, SIGNAL(CLICKED), self.accept)
+      self.connect(self.btnContinue, SIGNAL('clicked()'), self.accept)
       btnBox = makeHorizFrame([STRETCH, self.btnCancel, self.btnContinue])
 
       lblWarn = QRichLabel(self.tr('Your default browser will now open and go to the following link: %1. Are you sure you want to proceed?').arg(self.link))

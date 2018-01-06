@@ -207,10 +207,10 @@ class SelectWalletFrame(ArmoryFrame):
          frmLayout.addWidget(self.lblRBF, 5, 2, 1, 1)
                   
          self.btnCoinCtrl = QPushButton(self.tr('Coin Control'))
-         self.connect(self.btnCoinCtrl, SIGNAL(CLICKED), self.doCoinCtrl)         
+         self.connect(self.btnCoinCtrl, SIGNAL('clicked()'), self.doCoinCtrl)         
          
          self.btnRBF = QPushButton(self.tr('RBF Control'))
-         self.connect(self.btnRBF, SIGNAL(CLICKED), self.doRBF)
+         self.connect(self.btnRBF, SIGNAL('clicked()'), self.doRBF)
          
          frmLayout.addWidget(self.btnCoinCtrl, 4, 0, 1, 2)
          frmLayout.addWidget(self.btnRBF, 5, 0, 1, 2)         
@@ -567,7 +567,7 @@ class CardDeckFrame(ArmoryFrame):
          for col, rank in enumerate('A23456789TJQK'):
             card = QPixmapButton(':%s%s.png' %(rank,suit))
             card.nameText = rank + suit
-            self.connect(card, SIGNAL(CLICKED), self.cardClicked)
+            self.connect(card, SIGNAL('clicked()'), self.cardClicked)
 
             layout.addWidget(card,row+1, col, 1, 1)
             self.cards.append(card)
@@ -788,13 +788,13 @@ class WalletBackupFrame(ArmoryFrame):
       btngrpDig.addButton(self.optDigitalBackupCrypt)
       btngrpDig.setExclusive(True)
 
-      self.connect(self.optPaperBackupTop, SIGNAL(CLICKED), self.optionClicked)
-      self.connect(self.optPaperBackupOne, SIGNAL(CLICKED), self.optionClicked)
-      self.connect(self.optPaperBackupFrag, SIGNAL(CLICKED), self.optionClicked)
-      self.connect(self.optDigitalBackupTop, SIGNAL(CLICKED), self.optionClicked)
-      self.connect(self.optDigitalBackupPlain, SIGNAL(CLICKED), self.optionClicked)
-      self.connect(self.optDigitalBackupCrypt, SIGNAL(CLICKED), self.optionClicked)
-      self.connect(self.optIndivKeyListTop, SIGNAL(CLICKED), self.optionClicked)
+      self.connect(self.optPaperBackupTop, SIGNAL('clicked()'), self.optionClicked)
+      self.connect(self.optPaperBackupOne, SIGNAL('clicked()'), self.optionClicked)
+      self.connect(self.optPaperBackupFrag, SIGNAL('clicked()'), self.optionClicked)
+      self.connect(self.optDigitalBackupTop, SIGNAL('clicked()'), self.optionClicked)
+      self.connect(self.optDigitalBackupPlain, SIGNAL('clicked()'), self.optionClicked)
+      self.connect(self.optDigitalBackupCrypt, SIGNAL('clicked()'), self.optionClicked)
+      self.connect(self.optIndivKeyListTop, SIGNAL('clicked()'), self.optionClicked)
 
 
       spacer = lambda: QSpacerItem(20, 1, QSizePolicy.Fixed, QSizePolicy.Expanding)
@@ -900,7 +900,7 @@ class WalletBackupFrame(ArmoryFrame):
       self.lblDescrSelected.setMinimumHeight(tightSizeNChar(self, 10)[1] * 8)
 
       self.btnDoIt = QPushButton(self.tr('Create Backup'))
-      self.connect(self.btnDoIt, SIGNAL(CLICKED), self.clickedDoIt)
+      self.connect(self.btnDoIt, SIGNAL('clicked()'), self.clickedDoIt)
 
       layout = QGridLayout()
       layout.addWidget(self.lblTitle, 0, 0, 1, 2)
@@ -1168,7 +1168,7 @@ class WizardCreateWatchingOnlyWalletFrame(ArmoryFrame):
                'Use the "<i>Import or Restore Wallet</i>" button in the '
                'upper-right corner'))
       lbtnForkWlt = QPushButton('Create Watching-Only Copy')
-      self.connect(lbtnForkWlt, SIGNAL(CLICKED), self.forkOnlineWallet)
+      self.connect(lbtnForkWlt, SIGNAL('clicked()'), self.forkOnlineWallet)
       layout = QVBoxLayout()
       layout.addWidget(summaryText)
       layout.addWidget(lbtnForkWlt)
@@ -1194,7 +1194,7 @@ class WizardCreateWatchingOnlyWalletFrame(ArmoryFrame):
 
       
 # Need to put circular imports at the end of the script to avoid an import deadlock
-from qtdialogs import CLICKED, STRETCH, MIN_PASSWD_WIDTH, \
+from qtdialogs import STRETCH, MIN_PASSWD_WIDTH, \
    QRadioButtonBackupCtr, OpenPaperBackupWindow, DlgUnlockWallet, DlgShowKeyList
 
 from ui.CoinControlUI import CoinControlDlg, RBFDlg
