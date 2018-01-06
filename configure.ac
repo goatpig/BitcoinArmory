@@ -58,6 +58,9 @@ m4_include([m4/ax_python_devel.m4])
 m4_include([m4/ax_python_module.m4])
 m4_include([m4/ax_cxx_compile_stdcxx.m4])
 
+#check for Python 3 - 3.3 is arbitrary for now
+AX_PYTHON_DEVEL([>= '3.3'])
+
 #check for c++11
 AX_CXX_COMPILE_STDCXX([11], [noext], [mandatory], [nodefault])
 
@@ -79,13 +82,13 @@ AC_MSG_RESULT([AX_SWIG_PYTHON_CPPFLAGS: $AX_SWIG_PYTHON_CPPFLAGS])
 if test "x$with_gui" = "xyes"; then
 #check for  gui
 
-AC_CHECK_PROG([HAVE_PYRCC4], [pyrcc4], [yes], [no])
-AS_IF([test $HAVE_PYRCC4 == yes], [],
-	[AC_MSG_ERROR([missing pyrcc4 in path, make sure pyqt4-dev-tools is installed])]) 
+AC_CHECK_PROG([HAVE_PYRCC5], [pyrcc5], [yes], [no])
+AS_IF([test $HAVE_PYRCC5 == yes], [],
+	[AC_MSG_ERROR([missing pyrcc5 in path, make sure pyqt5-dev-tools is installed])]) 
 
 AC_CHECK_PROG([HAVE_LRELEASE], [lrelease], [yes], [no])
 AS_IF([test $HAVE_LRELEASE == yes], [],
-	[AC_MSG_ERROR([missing lrelease in path, make sure qt4-linguist-tools is installed])]) 
+	[AC_MSG_ERROR([missing lrelease in path, make sure qt5-linguist-tools is installed])]) 
 
 fi
 

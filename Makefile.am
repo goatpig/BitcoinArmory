@@ -16,7 +16,7 @@ endif
 
 qrc_img_resources.py: imgList.xml
 if HAVE_GUI
-	pyrcc4 -o qrc_img_resources.py imgList.xml
+	pyrcc5 -o qrc_img_resources.py imgList.xml
 endif
 
 copy-script:

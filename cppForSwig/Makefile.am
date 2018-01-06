@@ -6,7 +6,7 @@ endif
 DIST_SUBDIRS = lmdb fcgi cryptopp
 SUBDIRS = lmdb fcgi cryptopp $(MAYBE_BUILD)
 
-SWIG_FLAGS = -c++ -python -threads
+SWIG_FLAGS = -c++ -python -py3 -threads
 AM_CXXFLAGS = $(CXXFLAGS) -std=c++11
 
 if HAVE_GCC
@@ -84,6 +84,7 @@ libCppBlockUtils_la_CXXFLAGS = $(AM_CXXFLAGS) -Ilmdb \
 		    		-Icryptopp \
 				$(AX_SWIG_PYTHON_CPPFLAGS) \
 				$(EXTRA_PYTHON_INCLUDES) \
+				-Ipy3c/include \
 				-D__STDC_LIMIT_MACROS
 
 libCppBlockUtils_la_LIBADD = 	-Llmdb -llmdb \

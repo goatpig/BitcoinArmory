@@ -20,6 +20,7 @@
 
 %{
 #define SWIG_PYTHON_EXTRA_NATIVE_CONTAINERS
+#include "py3c/compat.h"
 #include "BtcUtils.h"
 #include "EncryptionUtils.h"
 #include "DbHeader.h"
@@ -109,26 +110,26 @@ namespace std
 /* Convert Python(str) to C++(BinaryData) */
 %typemap(in) BinaryData
 {
-   if(!PyString_Check($input))
+   if(!PyStr_Check($input))
    {
       PyErr_SetString(PyExc_ValueError, "Expected string argument!");
       return NULL;
    }
    
-   $1 = BinaryData((uint8_t*)PyString_AsString($input), PyString_Size($input));
+   $1 = BinaryData(PyStr_AsString($input));
 }
 
 /******************************************************************************/
 /* Convert C++(BinaryData) to Python(str) */
 %typemap(out) BinaryData
 {
-   $result = PyString_FromStringAndSize((char*)($1.getPtr()), $1.getSize());
+   $result = PyStr_FromStringAndSize((char*)($1.getPtr()), $1.getSize());
 }
 
 /* Convert C++(const BinaryDataRef) to Python(str) */
 %typemap(out) const BinaryDataRef
 {
-   $result = PyString_FromStringAndSize((char*)($1.getPtr()), $1.getSize());
+   $result = PyStr_FromStringAndSize((char*)($1.getPtr()), $1.getSize());
 }
 /******************************************************************************/
 /*
@@ -139,12 +140,12 @@ namespace std
 */
 %typemap(in) BinaryData const & (BinaryData bdObj)
 {
-   if(!PyString_Check($input))
+   if(!PyStr_Check($input))
    {
       PyErr_SetString(PyExc_ValueError, "Expected string argument!");
       return NULL;
    }
-   bdObj.copyFrom((uint8_t*)PyString_AsString($input), PyString_Size($input));
+   bdObj.copyFrom(PyStr_AsString($input));
    $1 = &bdObj;
 }
 
@@ -152,7 +153,7 @@ namespace std
 /* Convert C++(BinaryData const &) to Python(str) */
 %typemap(out) BinaryData const & 
 {
-   $result = PyString_FromStringAndSize((char*)($1->getPtr()), $1->getSize());
+   $result = PyStr_FromStringAndSize((char*)($1->getPtr()), $1->getSize());
 }
 
 /******************************************************************************/
@@ -162,8 +163,8 @@ namespace std
 	for(int i=0; i<PyList_Size($input); i++)
 	{
 		PyObject* strobj = PyList_GetItem($input, i);
-		
-		BinaryData bdStr((uint8_t*)PyString_AsString(strobj), PyString_Size(strobj));
+
+		BinaryData bdStr(PyStr_AsString(strobj));
 
 		bdObjVec.push_back(bdStr);
 	}
@@ -182,8 +183,8 @@ namespace std
 	while(bdIter != $1.end())
 	{
 		BinaryData & bdobj = (*bdIter);
-		
-		PyObject* thisPyObj = PyString_FromStringAndSize((char*)(bdobj.getPtr()), bdobj.getSize());
+
+		PyObject* thisPyObj = PyStr_FromStringAndSize((char*)(bdobj.getPtr()), bdobj.getSize());
 
 		PyList_SET_ITEM(thisList, i, thisPyObj);
 
@@ -206,7 +207,7 @@ namespace std
 	{
 		auto& bdobj = (*bdIter);
 		
-		PyObject* thisPyObj = PyString_FromStringAndSize(bdobj.getCharPtr(), bdobj.getSize());
+		PyObject* thisPyObj = PyStr_FromStringAndSize(bdobj.getCharPtr(), bdobj.getSize());
 
 		PyList_SET_ITEM(thisList, i, thisPyObj);
 
@@ -226,14 +227,14 @@ namespace std
 
 	while(PyDict_Next($input, &pos, &key, &value))
 	{
-		BinaryData wltIDStr((uint8_t*)PyString_AsString(key), PyString_Size(key));
+		BinaryData wltIDStr(PyStr_AsString(key));
 		std::vector<BinaryData> bdObjVec;
 
 		for(int i=0; i<PyList_Size(value); i++)
 		{
 			PyObject* strobj = PyList_GetItem(value, i);
 		
-			BinaryData bdStr((uint8_t*)PyString_AsString(strobj), PyString_Size(strobj));
+			BinaryData bdStr(PyStr_AsString(strobj));
 
 			bdObjVec.push_back(bdStr);
 		}
@@ -263,12 +264,12 @@ namespace std
 	//block hash
 	std::string hashStr = $1.thisHash_.toHexStr(true);
 	PyDict_SetItemString(thisDict, "blockHash", 
-		PyString_FromStringAndSize(hashStr.c_str(), hashStr.size()));
+		PyStr_FromStringAndSize(hashStr.c_str(), hashStr.size()));
 
 	//merkle
 	std::string merkleStr = $1.merkle_.toHexStr(true);
 	PyDict_SetItemString(thisDict, "merkle", 
-		PyString_FromStringAndSize(merkleStr.c_str(), merkleStr.size()));
+		PyStr_FromStringAndSize(merkleStr.c_str(), merkleStr.size()));
 
 	//size of block in bytes
 	PyDict_SetItemString(thisDict, "numBytes", PyInt_FromSize_t($1.numBytes_));
@@ -284,7 +285,7 @@ namespace std
 		DBTx& tx = $1.getTxByIndex(i);
 		std::string hashStr = tx.thisHash_.toHexStr(true);
 		PyList_SET_ITEM(thisList, i, 
-			PyString_FromStringAndSize(hashStr.c_str(), hashStr.size()));
+			PyStr_FromStringAndSize(hashStr.c_str(), hashStr.size()));
 	}
 
 	//add list to dict
@@ -304,7 +305,7 @@ namespace std
 	{
 		auto& bdobj = bdIter->first;
 		PyObject* pyStringObj = 
-		   PyString_FromStringAndSize(bdobj.getCharPtr(), bdobj.getSize());
+		   PyStr_FromStringAndSize(bdobj.getCharPtr(), bdobj.getSize());
 		
 		PyObject* pyIntObj =
 		   PyInt_FromLong(bdIter->second);
@@ -328,7 +329,7 @@ namespace std
 	{
 		auto& bdobj = bdIter->first;
 		PyObject* pyStringObj = 
-		   PyString_FromStringAndSize(bdobj.getCharPtr(), bdobj.getSize());
+		   PyStr_FromStringAndSize(bdobj.getCharPtr(), bdobj.getSize());
 		
 		auto& vectorObj = bdIter->second;
 		auto vectorIter = vectorObj.begin();
@@ -364,7 +365,7 @@ namespace std
 
 	while(PyDict_Next($input, &pos, &key, &value))
 	{
-		BinaryData key_bd((uint8_t*)PyString_AsString(key), PyString_Size(key));
+		BinaryData key_bd(PyStr_AsString(key));
 		std::map<unsigned, BinaryData> bdObjMap;
 
 		PyObject *inner_key, *inner_value;
@@ -374,8 +375,7 @@ namespace std
 		{
 			unsigned inner_key_uint = PyInt_AsLong(inner_key);
 			 
-			BinaryData inner_value_bd(
-				(uint8_t*)PyString_AsString(inner_value), PyString_Size(inner_value));
+			BinaryData inner_value_bd(PyStr_AsString(inner_value));
 
 			bdObjMap.insert(std::move(std::make_pair(
 				inner_key_uint,
@@ -402,4 +402,3 @@ namespace std
 %include "BlockDataManagerConfig.h"
 %include "TransactionBatch.h"
 %include "TxEvalState.h"
-
