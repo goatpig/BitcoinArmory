@@ -12,8 +12,6 @@
 #                                                                            #
 ##############################################################################
 import gettext
-
-
 from copy import deepcopy
 from datetime import datetime
 import hashlib
@@ -32,9 +30,9 @@ import time
 import traceback
 import glob
 
-
-from PyQt4.QtCore import *
-from PyQt4.QtGui import *
+from PyQt5.QtWidgets import *
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
 import psutil
 
 import CppBlockUtils as Cpp
@@ -49,6 +47,13 @@ from ui.QtExecuteSignal import QtExecuteSignal
 
 # Setup translations
 translator = QTranslator(QAPP)
+
+try:
+    QString = unicode
+except NameError:
+    # Python 3
+    QString = str
+QStringList = list
 
 app_dir = "./"
 try:
@@ -103,6 +108,11 @@ class ArmoryMainWindow(QMainWindow):
    """ The primary Armory window """
 
    #############################################################################
+   processMutexNotification = pyqtSignal()
+   UWCS = pyqtSignal()
+   checkForNegImports = pyqtSignal()
+   Show = pyqtSignal()
+   PWCE = pyqtSignal()
 
    def __init__(self, parent=None, splashScreen=None):
       super(ArmoryMainWindow, self).__init__(parent)
@@ -204,9 +214,9 @@ class ArmoryMainWindow(QMainWindow):
       self.delayedURIData['qLen'] = 0
 
       #Setup the signal to spawn progress dialogs from the main thread
-      self.connect(self, SIGNAL('initTrigger') , self.initTrigger)
-      self.connect(self, SIGNAL('execTrigger'), self.execTrigger)
-      self.connect(self, SIGNAL('checkForNegImports'), self.checkForNegImports)
+      self.initTrigger.connect(self.initTrigger)
+      self.execTrigger.connect(self.execTrigger)
+      self.checkForNegImports.connect(self.checkForNegImports)
 
       '''
       With Qt, all GUI operations need to happen in the main thread. If 
@@ -315,7 +325,7 @@ class ArmoryMainWindow(QMainWindow):
       self.walletsView.verticalHeader().setDefaultSectionSize(sectionSz)
       self.walletsView.setMinimumSize(viewWidth, viewHeight)
       self.walletsView.setItemDelegate(AllWalletsCheckboxDelegate(self))
-      self.walletsView.horizontalHeader().setResizeMode(0, QHeaderView.Fixed)
+      self.walletsView.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
 
 
       self.walletsView.hideColumn(0)
@@ -330,10 +340,8 @@ class ArmoryMainWindow(QMainWindow):
             self.walletsView.showColumn(0)
 
 
-      self.connect(self.walletsView, SIGNAL('doubleClicked(QModelIndex)'),
-                   self.execDlgWalletDetails)
-      self.connect(self.walletsView, SIGNAL('clicked(QModelIndex)'),
-                   self.execClickRow)
+      self.walletsView.doubleClicked[QModelIndex].connect(self.execDlgWalletDetails)
+      self.walletsView.clicked[QModelIndex].connect(self.execClickRow)
 
       self.walletsView.setColumnWidth(WLTVIEWCOLS.Visible, 20)
       w,h = tightSizeNChar(GETFONT('var'), 100)
@@ -349,8 +357,8 @@ class ArmoryMainWindow(QMainWindow):
 
       btnAddWallet  = QPushButton(self.tr("Create Wallet"))
       btnImportWlt  = QPushButton(self.tr("Import or Restore Wallet"))
-      self.connect(btnAddWallet,  SIGNAL('clicked()'), self.startWalletWizard)
-      self.connect(btnImportWlt,  SIGNAL('clicked()'), self.execImportWallet)
+      btnAddWallet.clicked.connect(self.startWalletWizard)
+      btnImportWlt.clicked.connect(self.execImportWallet)
 
       # Put the Wallet info into it's own little box
       lblAvail = QLabel(self.tr("<b>Available Wallets:</b>"))
@@ -379,8 +387,7 @@ class ArmoryMainWindow(QMainWindow):
       self.comboWltSelect = QComboBox()
       self.populateLedgerComboBox()
 
-      self.connect(self.comboWltSelect, SIGNAL('activated(int)'),
-                   self.changeWltFilter)
+      self.comboWltSelect.activated[int].connect(self.changeWltFilter)
 
 
       self.lblTot  = QRichLabel(self.tr('<b>Maximum Funds:</b>'), doWrap=False);
@@ -453,11 +460,11 @@ class ArmoryMainWindow(QMainWindow):
       btnOfflineTx = QPushButton(self.tr("Offline Transactions"))
       btnMultisig  = QPushButton(self.tr("Lockboxes (Multi-Sig)"))
 
-      self.connect(btnWltProps, SIGNAL('clicked()'), self.execDlgWalletDetails)
-      self.connect(btnRecvBtc,  SIGNAL('clicked()'), self.clickReceiveCoins)
-      self.connect(btnSendBtc,  SIGNAL('clicked()'), self.clickSendBitcoins)
-      self.connect(btnOfflineTx,SIGNAL('clicked()'), self.execOfflineTx)
-      self.connect(btnMultisig, SIGNAL('clicked()'), self.browseLockboxes)
+      btnWltProps.clicked.connect(self.execDlgWalletDetails)
+      btnRecvBtc.clicked.connect(self.clickReceiveCoins)
+      btnSendBtc.clicked.connect(self.clickSendBitcoins)
+      btnOfflineTx.clicked.connect(self.execOfflineTx)
+      btnMultisig.clicked.connect(self.browseLockboxes)
 
       verStr = 'Armory %s / %s' % (getVersionString(BTCARMORY_VERSION),
                                               UserModeStr(self, self.usermode))
@@ -1289,8 +1296,8 @@ class ArmoryMainWindow(QMainWindow):
       self.sysTray.setIcon( QIcon(self.iconfile) )
       self.sysTray.setVisible(True)
       self.sysTray.setToolTip('Armory' + (' [Testnet]' if USE_TESTNET else '') + (' [Regtest]' if USE_REGTEST else ''))
-      self.connect(self.sysTray, SIGNAL('messageClicked()'), self.bringArmoryToFront)
-      self.connect(self.sysTray, SIGNAL('activated(QSystemTrayIcon::ActivationReason)'), \
+      self.sysTray.messageClicked.connect(self.bringArmoryToFront)
+      self.sysTray.activated[QSystemTrayIcon.ActivationReason].connect(\
                    self.sysTrayActivated)
       menu = QMenu(self)
 
@@ -1679,9 +1686,9 @@ class ArmoryMainWindow(QMainWindow):
 
       if isCheckable:
          theAction.setCheckable(True)
-         self.connect(theAction, SIGNAL('toggled(bool)'), slot)
+         theAction.toggled[bool].connect(slot)
       else:
-         self.connect(theAction, SIGNAL('triggered()'), slot)
+         theAction.triggered.connect(slot)
 
       if ttip:
          theAction.setToolTip(ttip)
@@ -1762,12 +1769,11 @@ class ArmoryMainWindow(QMainWindow):
    def acquireProcessMutex(self):
       LOGINFO('acquiring process mutex...')
       
-      self.connect(self, SIGNAL("processMutexNotification"), \
-                   self.triggerProcessMutexNotification)
+      self.processMutexNotification.connect(self.triggerProcessMutexNotification)
 
       # Prevent Armory from being opened twice
       def uriClick_partial(a):
-         self.emit(SIGNAL("processMutexNotification"), a)
+         self.processMutexNotification.emit(a)
 
       if CLI_OPTIONS.interport > 1:
          from armoryengine.ProcessMutex import PySide_ProcessMutex
@@ -2249,11 +2255,11 @@ class ArmoryMainWindow(QMainWindow):
       # circumstances.
       if not OS_MACOSX:
          fullPath = unicode(QFileDialog.getSaveFileName(self, title, startPath,
-                                                        typesStr))
+                                                        typesStr))[0]
       else:
          fullPath = unicode(QFileDialog.getSaveFileName(self, title, startPath,
                                                         typesStr,
-                                       options=QFileDialog.DontUseNativeDialog))
+                                       options=QFileDialog.DontUseNativeDialog))[0]
 
       fdir,fname = os.path.split(fullPath)
       if fdir:
@@ -2291,11 +2297,11 @@ class ArmoryMainWindow(QMainWindow):
       # circumstances.
       if not OS_MACOSX:
          fullPath = unicode(QFileDialog.getOpenFileName(self, title, defaultDir,
-                                                        typeStr))
+                                                        typeStr))[0]
       else:
          fullPath = unicode(QFileDialog.getOpenFileName(self, title, defaultDir,
                                                         typeStr,
-                                       options=QFileDialog.DontUseNativeDialog))
+                                       options=QFileDialog.DontUseNativeDialog))[0]
 
       self.writeSetting('LastDirectory', os.path.split(fullPath)[0])
       return fullPath
@@ -3743,8 +3749,7 @@ class ArmoryMainWindow(QMainWindow):
       LOGDEBUG('setupDashboard')
       self.lblBusy = QLabel('')
       self.btnModeSwitch = QPushButton('')
-      self.connect(self.btnModeSwitch, SIGNAL('clicked()'), \
-                                       self.executeModeSwitch)
+      self.btnModeSwitch.clicked.connect(self.executeModeSwitch)
 
 
       # Will switch this to array/matrix of widgets if I get more than 2 rows
@@ -3840,12 +3845,9 @@ class ArmoryMainWindow(QMainWindow):
 
 
 
-      self.connect(self.dashBtns[DASHBTNS.Close][BTN], SIGNAL('clicked()'), \
-                                                   self.closeExistingBitcoin)
-      self.connect(self.dashBtns[DASHBTNS.Browse][BTN], SIGNAL('clicked()'), \
-                                                             openBitcoinOrg)
-      self.connect(self.dashBtns[DASHBTNS.Settings][BTN], SIGNAL('clicked()'), \
-                                                           self.openSettings)
+      self.dashBtns[DASHBTNS.Close][BTN].clicked.connect(self.closeExistingBitcoin)
+      self.dashBtns[DASHBTNS.Browse][BTN].clicked.connect(openBitcoinOrg)
+      self.dashBtns[DASHBTNS.Settings][BTN].clicked.connect(self.openSettings)
 
       self.dashBtns[DASHBTNS.Close][LBL] = QRichLabel( \
            self.tr('Stop existing Bitcoin processes so that Armory can open its own'))
@@ -4815,8 +4817,7 @@ class ArmoryMainWindow(QMainWindow):
       ##########################################################################
 
       # Now actually connect the entry widgets
-      parent.connect(addrEntryObjs['QLE_ADDR'], SIGNAL('textChanged(QString)'),
-                                                         updateAddrDetectLabels)
+      addrEntryObjs['QLE_ADDR'].textChanged['QString'].connect(updateAddrDetectLabels)
 
       updateAddrDetectLabels()
 
@@ -5554,11 +5555,11 @@ class ArmoryMainWindow(QMainWindow):
       while prgAt[2] != 2:
          time.sleep(0.1)
       if nerrors == 0:
-         self.emit(SIGNAL('UWCS'), [1, self.tr('All wallets are consistent'), 10000, dlgrdy])
-         self.emit(SIGNAL('checkForNegImports'))
+         self.UWCS.emit([1, self.tr('All wallets are consistent'), 10000, dlgrdy])
+         self.checkForNegImports.emit()
       else:
          while not dlgrdy:
-            self.emit(SIGNAL('UWCS'), [1, self.tr('Consistency Check Failed!'), 0, dlgrdy])
+            self.UWCS.emit([1, self.tr('Consistency Check Failed!'), 0, dlgrdy])
             time.sleep(1)
 
          self.checkRdyForFix()
@@ -5567,7 +5568,7 @@ class ArmoryMainWindow(QMainWindow):
    def checkRdyForFix(self):
       #check BDM first
       time.sleep(1)
-      self.dlgCptWlt.emit(SIGNAL('Show'))
+      self.dlgCptWlt.Show.emit()
       while 1:
          if TheBDM.getState() == BDM_SCANNING:
             canFix = self.tr(
@@ -5585,7 +5586,7 @@ class ArmoryMainWindow(QMainWindow):
             break
 
       #check running dialogs
-      self.dlgCptWlt.emit(SIGNAL('Show'))
+      self.dlgCptWlt.Show.emit()
       runningList = []
       while 1:
          listchanged = 0
@@ -5631,17 +5632,17 @@ class ArmoryMainWindow(QMainWindow):
          self.pbarWalletProgress.setValue(0)
          self.statusBar().addWidget(self.pbarWalletProgress)
 
-         self.connect(self, SIGNAL('UWCS'), self.UpdateWalletConsistencyStatus)
-         self.connect(self, SIGNAL('PWCE'), self.PromptWltCstError)
+         self.UWCS.connect(self.UpdateWalletConsistencyStatus)
+         self.PWCE.connect(self.PromptWltCstError)
          self.CheckWalletConsistency(self.walletMap, self.prgAt, async=True)
          self.UpdateConsistencyCheckMessage(async = True)
    @AllowAsync
    def UpdateConsistencyCheckMessage(self):
       while self.prgAt[2] == 0:
-         self.emit(SIGNAL('UWCS'), [0, self.prgAt[0]])
+         self.UWCS.emit([0, self.prgAt[0]])
          time.sleep(0.5)
 
-      self.emit(SIGNAL('UWCS'), [2])
+      self.UWCS.emit([2])
       self.prgAt[2] = 2
 
    def UpdateWalletConsistencyStatus(self, msg):
@@ -5654,7 +5655,7 @@ class ArmoryMainWindow(QMainWindow):
          self.pbarWalletProgress.hide()
 
    def WltCstError(self, wlt, status, dlgrdy):
-      self.emit(SIGNAL('PWCE'), dlgrdy, wlt, status)
+      self.PWCE.emit(dlgrdy, wlt, status)
       LOGERROR('Wallet consistency check failed! (%s)', wlt.uniqueIDB58)
 
    def PromptWltCstError(self, dlgrdy, wallet=None, status='', mode=None):
@@ -5784,8 +5785,8 @@ class ArmoryMainWindow(QMainWindow):
 
       self.ledgerView.verticalHeader().setDefaultSectionSize(sectionSz)
       self.ledgerView.verticalHeader().hide()
-      self.ledgerView.horizontalHeader().setResizeMode(0, QHeaderView.Fixed)
-      self.ledgerView.horizontalHeader().setResizeMode(3, QHeaderView.Fixed)
+      self.ledgerView.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
+      self.ledgerView.horizontalHeader().setSectionResizeMode(3, QHeaderView.Fixed)
 
       self.ledgerView.hideColumn(LEDGERCOLS.isOther)
       self.ledgerView.hideColumn(LEDGERCOLS.UnixTime)
@@ -5810,14 +5811,13 @@ class ArmoryMainWindow(QMainWindow):
       tWidth = 72 # date icon width
       initialColResize(self.ledgerView, [cWidth, 0, dateWidth, tWidth, 0.30, 0.40, 0.3])
 
-      self.connect(self.ledgerView, SIGNAL('doubleClicked(QModelIndex)'), \
+      self.ledgerView.doubleClicked[QModelIndex].connect(\
                    self.dblClickLedger)
 
       self.ledgerView.setContextMenuPolicy(Qt.CustomContextMenu)
       self.ledgerView.customContextMenuRequested.connect(self.showContextMenuLedger)
 
-      self.connect(self.ledgerView.horizontalHeader(), \
-                   SIGNAL('sortIndicatorChanged(int,Qt::SortOrder)'), \
+      self.ledgerView.horizontalHeader().sortIndicatorChanged[int, Qt.SortOrder].connect( \
                    self.changeLedgerSorting)
 
             #page selection UI
@@ -5826,7 +5826,7 @@ class ArmoryMainWindow(QMainWindow):
       self.PageLineEdit = QLineEdit('1')
       self.lblNPages    = QRichLabel(' out of 1')
 
-      self.connect(self.PageLineEdit, SIGNAL('editingFinished()'), \
+      self.PageLineEdit.editingFinished.connect( \
                    self.loadNewPage)
 
       self.changeWltFilter()
@@ -5855,9 +5855,9 @@ class ArmoryMainWindow(QMainWindow):
       self.btnLedgDn.setAlignment(Qt.AlignVCenter | Qt.AlignHCenter)
 
 
-      self.connect(self.comboNumShow, SIGNAL('activated(int)'), self.changeNumShow)
-      self.connect(self.btnLedgUp,    SIGNAL('clicked()'),      self.clickLedgUp)
-      self.connect(self.btnLedgDn,    SIGNAL('clicked()'),      self.clickLedgDn)
+      self.comboNumShow.activated[int].connect(self.changeNumShow)
+      self.btnLedgUp.clicked.connect(self.clickLedgUp)
+      self.btnLedgDn.clicked.connect(self.clickLedgDn)
 
       frmFilter = makeVertFrame([QLabel(self.tr('Filter:')), self.comboWltSelect, 'Stretch'])
 

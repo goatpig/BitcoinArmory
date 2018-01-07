@@ -1,10 +1,10 @@
-from PyQt4.Qt import QPushButton, SIGNAL, QTextEdit, QScrollArea, QTabWidget,\
-   QLineEdit
+from PyQt5.QtGui import QPushButton, QTextEdit, QScrollArea, QTabWidget
+from PyQt5.QtWidgets import QLineEdit
 
 from qtdefines import QRichLabel, makeHorizFrame, GETFONT, relaxedSizeNChar, \
    makeVertFrame
-from armoryengine.ArmoryUtils import addrStr_to_hash160, LOGINFO,\
-   BadAddressError, binary_to_hex, coin2str, isLikelyDataType, DATATYPE,\
+from armoryengine.ArmoryUtils import addrStr_to_hash160, LOGINFO, \
+   BadAddressError, binary_to_hex, coin2str, isLikelyDataType, DATATYPE, \
    hex_to_binary, ph, BIGENDIAN
 from armoryengine.BDM import TheBDM
 from armoryengine.Transaction import PyTx
@@ -48,7 +48,7 @@ class PluginObject(object):
       lblHeader = QRichLabel(tr("""<b>Search Armory: </b>"""), doWrap=False)
       self.searchButton = QPushButton("Search")
       self.searchEntry = QLineEdit()
-      self.main.connect(self.searchButton, SIGNAL('clicked()'), searchItem)
+      self.searchButton.clicked.connect(searchItem)
       topRow =  makeHorizFrame([lblHeader, self.searchEntry, self.searchButton, 'stretch'])
 
 

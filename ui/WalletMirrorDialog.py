@@ -6,12 +6,12 @@
 #                                                                            #
 ##############################################################################
 
-from PyQt4.QtGui import QFrame
-from PyQt4.QtCore import Qt, QObject
+from PyQt5.QtWidgets import QFrame
+from PyQt5.QtCore import Qt, QObject
 import time
 
 from qtdefines import ArmoryDialog, QLabel, QGridLayout, \
-   SIGNAL, STYLE_RAISED, QRichLabel
+   STYLE_RAISED, QRichLabel
    
 from armoryengine.ArmoryUtils import PyBackgroundThread
 from armoryengine.CppWalletMirroring import WalletMirroringClass, \
@@ -46,6 +46,9 @@ class WalletComparisonClass(WalletMirroringClass):
 class MirrorWalletsDialog(ArmoryDialog):
    
    ###########################################################################
+   UpdateTextStatus = pyqtSignal()
+   TerminateDlg = pyqtSignal()
+
    def __init__(self, parent, main):
       super(MirrorWalletsDialog, self).__init__(parent, main)
       
@@ -79,8 +82,8 @@ class MirrorWalletsDialog(ArmoryDialog):
       progressLayout.addWidget(self.statusLabel, 0, 0, 1, 1)
       frmProgress.setLayout(progressLayout)
       
-      self.connect(self, SIGNAL('UpdateTextStatus'), self.updateTextStatus)
-      self.connect(self, SIGNAL('TerminateDlg'), self.shutdown)
+      self.UpdateTextStatus.connect(self.updateTextStatus)
+      self.TerminateDlg.connect(self.shutdown)
       
       layout = QGridLayout()
       layout.addWidget(infoLabel, 0, 0, 3, 1)
@@ -130,7 +133,7 @@ class MirrorWalletsDialog(ArmoryDialog):
       
       dots = '.' * dotCount
       text += dots
-      self.emit(SIGNAL('UpdateTextStatus'), text)
+      self.UpdateTextStatus.emit(text)
    
    ###########################################################################   
    def updateTextStatus(self, text):
@@ -138,7 +141,7 @@ class MirrorWalletsDialog(ArmoryDialog):
    
    ###########################################################################   
    def signalTerminateDialog(self):
-      self.emit(SIGNAL('TerminateDlg'), None)
+      self.TerminateDlg.emit(None)
    
    ###########################################################################   
    def shutdown(self):

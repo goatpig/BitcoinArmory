@@ -12,8 +12,9 @@
 import struct
 from tempfile import mkstemp
 
-from PyQt4.QtCore import *
-from PyQt4.QtGui import *
+from PyQt5.QtWidgets import *
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
 import urllib
 
 from armorycolors import Colors, htmlColor
@@ -370,6 +371,7 @@ def QDoneButton():
 
 ################################################################################
 class QLabelButton(QLabel):
+   clicked = pyqtSignal()
    mousePressOn = set()
 
    def __init__(self, txt):
@@ -392,7 +394,7 @@ class QLabelButton(QLabel):
       txt = toBytes(unicode(self.text()))
       if txt in self.mousePressOn:
          self.mousePressOn.remove(txt)
-         self.emit(SIGNAL('clicked()'))  
+         self.clicked.emit()
 
    def enterEvent(self, ev):  
       ssStr = "QLabel { background-color : %s }" % htmlColor('LBtnHoverBG')
@@ -449,8 +451,8 @@ def MsgBoxCustom(wtype, title, msg, wCancel=False, yesStr=None, noStr=None,
             if not noStr:  noStr = self.tr('&No')
             btnYes = QPushButton(yesStr)
             btnNo  = QPushButton(noStr)
-            self.connect(btnYes, SIGNAL('clicked()'), self.accept)
-            self.connect(btnNo,  SIGNAL('clicked()'), self.reject)
+            btnYes.clicked.connect(self.accept)
+            btnNo.clicked.connect(self.reject)
             buttonbox.addButton(btnYes,QDialogButtonBox.AcceptRole)
             buttonbox.addButton(btnNo, QDialogButtonBox.RejectRole)
          else:
@@ -458,8 +460,8 @@ def MsgBoxCustom(wtype, title, msg, wCancel=False, yesStr=None, noStr=None,
             yesStr    = self.tr('&OK') if (yesStr is None) else yesStr
             btnOk     = QPushButton(yesStr)
             btnCancel = QPushButton(cancelStr)
-            self.connect(btnOk,     SIGNAL('clicked()'), self.accept)
-            self.connect(btnCancel, SIGNAL('clicked()'), self.reject)
+            btnOk.clicked.connect(self.accept)
+            btnCancel.clicked.connect(self.reject)
             buttonbox.addButton(btnOk, QDialogButtonBox.AcceptRole)
             if cancelStr:
                buttonbox.addButton(btnCancel, QDialogButtonBox.RejectRole)
@@ -538,17 +540,17 @@ def MsgBoxWithDNAA(parent, main, wtype, title, msg, dnaaMsg, wCancel=False, \
          if dtype==MSGBOX.Question:
             btnYes = QPushButton(yesStr)
             btnNo  = QPushButton(noStr)
-            self.connect(btnYes, SIGNAL('clicked()'), self.accept)
-            self.connect(btnNo,  SIGNAL('clicked()'), self.reject)
+            btnYes.clicked.connect(self.accept)
+            btnNo.clicked.connect(self.reject)
             buttonbox.addButton(btnYes,QDialogButtonBox.AcceptRole)
             buttonbox.addButton(btnNo, QDialogButtonBox.RejectRole)
          else:
             btnOk = QPushButton('Ok')
-            self.connect(btnOk, SIGNAL('clicked()'), self.accept)
+            btnOk.clicked.connect(self.accept)
             buttonbox.addButton(btnOk, QDialogButtonBox.AcceptRole)
             if withCancel:
                btnOk = QPushButton('Cancel')
-               self.connect(btnOk, SIGNAL('clicked()'), self.reject)
+               btnOk.clicked.connect(self.reject)
                buttonbox.addButton(btnOk, QDialogButtonBox.RejectRole)
             
 
@@ -976,10 +978,10 @@ def selectFileForQLineEdit(parent, qObj, title="Select File", existing=False, \
    typesStr = ';; '.join(types)
    if not OS_MACOSX:
       fullPath = unicode(QFileDialog.getOpenFileName(parent, \
-         title, ARMORY_HOME_DIR, typesStr))
+         title, ARMORY_HOME_DIR, typesStr))[0]
    else:
       fullPath = unicode(QFileDialog.getOpenFileName(parent, \
-         title, ARMORY_HOME_DIR, typesStr, options=QFileDialog.DontUseNativeDialog))
+         title, ARMORY_HOME_DIR, typesStr, options=QFileDialog.DontUseNativeDialog))[0]
 
    if fullPath:
       qObj.setText( fullPath)
@@ -1009,7 +1011,7 @@ def createDirectorySelectButton(parent, targetWidget, title="Select Directory"):
 
 
    fn = lambda: selectDirectoryForQLineEdit(parent, targetWidget, title)
-   parent.connect(btn, SIGNAL('clicked()'), fn)
+   btn.clicked.connect(fn)
    return btn
 
 

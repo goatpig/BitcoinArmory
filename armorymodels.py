@@ -7,12 +7,13 @@
 ################################################################################
 
 from os import path
+from PyQt5.QtWidgets import *
 import os
 import platform
 import sys
 
-from PyQt4.QtCore import *
-from PyQt4.QtGui import *
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
 
 from CppBlockUtils import *
 from armoryengine.ALL import *
@@ -502,6 +503,10 @@ class CalendarDialog(ArmoryDialog):
            
 ################################################################################
 class ArmoryBlockAndDateSelector():
+   hideIt = pyqtSignal()
+   centerView = pyqtSignal()
+   goToTop = pyqtSignal()
+
    def __init__(self, parent, main, controlFrame):
       self.parent = parent
       self.main = main
@@ -575,16 +580,15 @@ class ArmoryBlockAndDateSelector():
       self.dateBlockSelectButton = QPushButton('Goto')
       self.dateBlockSelectButton.setStyleSheet('QPushButton { font-size : 10px }')
       self.dateBlockSelectButton.setMaximumSize(60, 20)  
-      self.main.connect(self.dateBlockSelectButton, \
-                        SIGNAL('clicked()'), self.showBlockDateController)
+      self.dateBlockSelectButton.clicked.connect(self.showBlockDateController)
 
                                  
       self.frmLayout = QGridLayout()
       self.frmLayout.addWidget(self.dateBlockSelectButton)       
       self.frmLayout.addWidget(self.frmBlockAndDate)
-      self.frmLayout.connect(self.frmLayout, SIGNAL('hideIt'), self.hideBlockAndDate)
+      self.frmLayout.hideIt.connect(self.hideBlockAndDate)
       self.frmLayout.setAlignment(Qt.AlignCenter | Qt.AlignTop)
-      self.frmLayout.setMargin(0)
+      self.frmLayout.setContentsMargins(0, 0, 0, 0)
       
       self.dateBlockSelectButton.setVisible(True)
 
@@ -639,7 +643,7 @@ class ArmoryBlockAndDateSelector():
       self.doHide = True   
       time.sleep(1)
       
-      self.frmLayout.emit(SIGNAL('hideIt'))
+      self.frmLayout.hideIt.emit()
       
    def triggerHideBlockAndDate(self, mEvent):
       hideThread = PyBackgroundThread(self.prepareToHideThread)
@@ -687,7 +691,7 @@ class ArmoryBlockAndDateSelector():
       self.editBlockHeight()
       self.updateLabel(self.Block)
       
-      self.parent.emit(SIGNAL('centerView'), self.Block)
+      self.parent.centerView.emit(self.Block)
       
    def dateChanged(self):
       try:
@@ -699,12 +703,12 @@ class ArmoryBlockAndDateSelector():
          pass
       
       self.updateLabel(self.Block)       
-      self.parent.emit(SIGNAL('centerView'), self.Block)
+      self.parent.centerView.emit(self.Block)
       
    def goToTop(self):
       if self.isEditingBlockHeight == True:
          self.editBlockHeight()
-      self.parent.emit(SIGNAL('goToTop'))
+      self.parent.goToTop.emit()
       
    def hide(self):
       self.dateBlockSelectButton.setVisible(False)
@@ -730,8 +734,8 @@ class ArmoryTableView(QTableView):
       
       self.prevIndex = -1
       
-      self.connect(self, SIGNAL('centerView'), self.centerViewAtBlock)
-      self.connect(self, SIGNAL('goToTop'), self.goToTop)
+      self.centerView.connect(self.centerViewAtBlock)
+      self.goToTop.connect(self.goToTop)
    
    def verticalScrollbarValueChanged(self, dx):
 

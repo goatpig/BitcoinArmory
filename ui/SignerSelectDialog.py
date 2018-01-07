@@ -6,8 +6,9 @@
 #                                                                            #
 ##############################################################################
 
-from PyQt4.QtCore import *
-from PyQt4.QtGui import *
+from PyQt5.QtCore import *
+from PyQt5.QtWidgets import *
+from PyQt5.QtGui import *
 
 from qtdefines import ArmoryDialog, STYLE_RAISED, QLabelButton
 from armoryengine.SignerWrapper import SIGNER_DEFAULT, SIGNER_LEGACY, \
@@ -72,7 +73,7 @@ class SignerSelectDialog(ArmoryDialog):
       def setDefault():
          self.selectType(SIGNER_DEFAULT)
       
-      self.connect(self.radioDefault, SIGNAL('clicked()'), setDefault)
+      self.radioDefault.clicked.connect(setDefault)
       
       #legacy signer
       if canUseLegacySigner:
@@ -95,7 +96,7 @@ class SignerSelectDialog(ArmoryDialog):
       def setLegacy():
          self.selectType(SIGNER_LEGACY)
       
-      self.connect(self.radioLegacy, SIGNAL('clicked()'), setLegacy)
+      self.radioLegacy.clicked.connect(setLegacy)
       
       #cpp signer
       self.radioCpp = QRadioButton(self.tr("C++ Signer"))
@@ -113,7 +114,7 @@ class SignerSelectDialog(ArmoryDialog):
       def setCpp():
          self.selectType(SIGNER_CPP)
       
-      self.connect(self.radioCpp, SIGNAL('clicked()'), setCpp) 
+      self.radioCpp.clicked.connect(setCpp)
       
       #bch signer
       if canUseBchSigner:
@@ -137,7 +138,7 @@ class SignerSelectDialog(ArmoryDialog):
       def setBch():
          self.selectType(SIGNER_BCH)
       
-      self.connect(self.radioBch, SIGNAL('clicked()'), setBch) 
+      self.radioBch.clicked.connect(setBch)
       
       #main layout
       layout = QGridLayout()
@@ -149,8 +150,8 @@ class SignerSelectDialog(ArmoryDialog):
       self.btnOk = QPushButton(self.tr('Apply'))
       self.btnCancel = QPushButton(self.tr('Cancel'))
       
-      self.connect(self.btnOk, SIGNAL('clicked()'), self.accept)
-      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
+      self.btnOk.clicked.connect(self.accept)
+      self.btnCancel.clicked.connect(self.reject)
 
       layout.addWidget(self.btnOk, 7, 2, 1, 1)
       layout.addWidget(self.btnCancel, 7, 3, 1, 1)
@@ -219,7 +220,7 @@ class SignerLabelFrame(object):
       self.setType(self.originalType)
       setSignerFunc(self.originalType)
          
-      self.main.connect(self.typeLabel, SIGNAL('clicked()'), self.changeType)
+      self.typeLabel.clicked.connect(self.changeType)
       
       frmSignerLayout.addWidget(signerLabel, 0, 0, 1, 1)
       frmSignerLayout.addWidget(self.typeLabel, 0, 1, 1, 2)

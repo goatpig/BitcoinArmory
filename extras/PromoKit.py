@@ -17,7 +17,7 @@ promoKitArgList = sys.argv
 sys.argv = sys.argv[:1]
 import time
 
-from PyQt4.QtGui import *
+from PyQt5.QtGui import *
 from pywin.scintilla import view
 from armoryengine.PyBtcWallet import PyBtcWallet
 from CppBlockUtils import SecureBinaryData

@@ -8,8 +8,8 @@
 
 import math
 
-from PyQt4.Qt import * #@UnusedWildImport
-from PyQt4.QtGui import * #@UnusedWildImport
+from PyQt5.QtWidgets import *
+from PyQt5.QtGui import * #@UnusedWildImport
 
 from armoryengine.BDM import TheBDM, BDM_BLOCKCHAIN_READY
 from qtdefines import * #@UnusedWildImport
@@ -154,8 +154,8 @@ class SelectWalletFrame(ArmoryFrame):
             self.walletListBox.setCurrentRow(selectedWltIndex)
 
 
-      self.connect(self.walletComboBox, SIGNAL('currentIndexChanged(int)'), self.updateOnWalletChange)
-      self.connect(self.walletListBox,  SIGNAL('currentRowChanged(int)'),   self.updateOnWalletChange)
+      self.walletComboBox.currentIndexChanged[int].connect(self.updateOnWalletChange)
+      self.walletListBox.currentRowChanged[int].connect(self.updateOnWalletChange)
 
       # Start the layout
       layout =  QVBoxLayout() 
@@ -207,10 +207,10 @@ class SelectWalletFrame(ArmoryFrame):
          frmLayout.addWidget(self.lblRBF, 5, 2, 1, 1)
                   
          self.btnCoinCtrl = QPushButton(self.tr('Coin Control'))
-         self.connect(self.btnCoinCtrl, SIGNAL('clicked()'), self.doCoinCtrl)         
+         self.btnCoinCtrl.clicked.connect(self.doCoinCtrl)
          
          self.btnRBF = QPushButton(self.tr('RBF Control'))
-         self.connect(self.btnRBF, SIGNAL('clicked()'), self.doRBF)
+         self.btnRBF.clicked.connect(self.doRBF)
          
          frmLayout.addWidget(self.btnCoinCtrl, 4, 0, 1, 2)
          frmLayout.addWidget(self.btnRBF, 5, 0, 1, 2)         
@@ -567,7 +567,7 @@ class CardDeckFrame(ArmoryFrame):
          for col, rank in enumerate('A23456789TJQK'):
             card = QPixmapButton(':%s%s.png' %(rank,suit))
             card.nameText = rank + suit
-            self.connect(card, SIGNAL('clicked()'), self.cardClicked)
+            card.clicked.connect(self.cardClicked)
 
             layout.addWidget(card,row+1, col, 1, 1)
             self.cards.append(card)
@@ -644,17 +644,14 @@ class SetPassphraseFrame(ArmoryFrame):
       self.lblMatches.setTextFormat(Qt.RichText)
       layout.addWidget(self.lblMatches, 3, 1)
       self.setLayout(layout)
-      self.connect(self.editPasswd1, SIGNAL('textChanged(QString)'), \
-                   self.checkPassphrase)
-      self.connect(self.editPasswd2, SIGNAL('textChanged(QString)'), \
-                   self.checkPassphrase)
-
+      self.editPasswd1.textChanged['QString'].connect(self.checkPassphrase)
+      self.editPasswd2.textChanged['QString'].connect(self.checkPassphrase)
 
       # These help us collect entropy as the user goes through the wizard
       # to be used for wallet creation
       self.main.registerWidgetActivateTime(self)
 
-   
+
    # This function is multi purpose. It updates the screen and validates the passphrase
    def checkPassphrase(self, sideEffects=True):
       result = True
@@ -682,9 +679,11 @@ class SetPassphraseFrame(ArmoryFrame):
             self.passphraseCallback()
       return result
 
+
    def getPassphrase(self):
       return str(self.editPasswd1.text())
-   
+
+
 class VerifyPassphraseFrame(ArmoryFrame):
    def __init__(self, parent, main, initLabel=''):
       super(VerifyPassphraseFrame, self).__init__(parent, main)
@@ -709,7 +708,6 @@ class VerifyPassphraseFrame(ArmoryFrame):
          'Please enter your passphrase a third time to indicate that you '
          'are aware of the risks of losing your passphrase!</b>'), doWrap=True)
 
-
       self.edtPasswd3 = QLineEdit()
       self.edtPasswd3.setEchoMode(QLineEdit.Password)
       self.edtPasswd3.setMinimumWidth(MIN_PASSWD_WIDTH(self))
@@ -725,7 +723,7 @@ class VerifyPassphraseFrame(ArmoryFrame):
       # to be used for wallet creation
       self.main.registerWidgetActivateTime(self)
 
-      
+
 class WalletBackupFrame(ArmoryFrame):
    # Some static enums, and a QRadioButton with mouse-enter/mouse-leave events
    FEATURES = enum('ProtGen', 'ProtImport', 'LostPass', 'Durable', \
@@ -743,7 +741,6 @@ class WalletBackupFrame(ArmoryFrame):
          'The backup is good no matter how many addresses you use. '))
       lblTitleDescr.setOpenExternalLinks(True)
 
-
       self.optPaperBackupTop = QRadioButtonBackupCtr(self, \
                                     self.tr('Printable Paper Backup'), self.OPTIONS.Paper1)
       self.optPaperBackupOne = QRadioButtonBackupCtr(self, \
@@ -760,7 +757,6 @@ class WalletBackupFrame(ArmoryFrame):
 
       self.optIndivKeyListTop = QRadioButtonBackupCtr(self, \
                                     self.tr('Export Key Lists'), self.OPTIONS.Export)
-
 
       self.optPaperBackupTop.setFont(GETFONT('Var', bold=True))
       self.optDigitalBackupTop.setFont(GETFONT('Var', bold=True))
@@ -788,14 +784,13 @@ class WalletBackupFrame(ArmoryFrame):
       btngrpDig.addButton(self.optDigitalBackupCrypt)
       btngrpDig.setExclusive(True)
 
-      self.connect(self.optPaperBackupTop, SIGNAL('clicked()'), self.optionClicked)
-      self.connect(self.optPaperBackupOne, SIGNAL('clicked()'), self.optionClicked)
-      self.connect(self.optPaperBackupFrag, SIGNAL('clicked()'), self.optionClicked)
-      self.connect(self.optDigitalBackupTop, SIGNAL('clicked()'), self.optionClicked)
-      self.connect(self.optDigitalBackupPlain, SIGNAL('clicked()'), self.optionClicked)
-      self.connect(self.optDigitalBackupCrypt, SIGNAL('clicked()'), self.optionClicked)
-      self.connect(self.optIndivKeyListTop, SIGNAL('clicked()'), self.optionClicked)
-
+      self.optPaperBackupTop.clicked.connect(self.optionClicked)
+      self.optPaperBackupOne.clicked.connect(self.optionClicked)
+      self.optPaperBackupFrag.clicked.connect(self.optionClicked)
+      self.optDigitalBackupTop.clicked.connect(self.optionClicked)
+      self.optDigitalBackupPlain.clicked.connect(self.optionClicked)
+      self.optDigitalBackupCrypt.clicked.connect(self.optionClicked)
+      self.optIndivKeyListTop.clicked.connect(self.optionClicked)
 
       spacer = lambda: QSpacerItem(20, 1, QSizePolicy.Fixed, QSizePolicy.Expanding)
       layoutOpts = QGridLayout()
@@ -818,11 +813,9 @@ class WalletBackupFrame(ArmoryFrame):
       frmOpts.setLayout(layoutOpts)
       frmOpts.setFrameStyle(STYLE_SUNKEN)
 
-
       self.featuresTips = [None] * self.FEATURES.Count
       self.featuresLbls = [None] * self.FEATURES.Count
       self.featuresImgs = [None] * self.FEATURES.Count
-
 
       F = self.FEATURES
       self.featuresTips[F.ProtGen] = self.main.createToolTipWidget(self.tr(
@@ -864,7 +857,6 @@ class WalletBackupFrame(ArmoryFrame):
          '<b>and</b> the passphrase.  This feature is only needed for those '
          'concerned about physical security, not just online security.'))
 
-
       MkFeatLabel = lambda x: QRichLabel(x, doWrap=False)
       self.featuresLbls[F.ProtGen] = MkFeatLabel(self.tr('Protects All Future Addresses'))
       self.featuresLbls[F.ProtImport] = MkFeatLabel(self.tr('Protects Imported Addresses'))
@@ -894,13 +886,12 @@ class WalletBackupFrame(ArmoryFrame):
       frmFeat.setLayout(layoutFeat)
       frmFeat.setFrameStyle(STYLE_SUNKEN)
 
-
       self.lblDescrSelected = QRichLabel('')
       frmFeatDescr = makeVertFrame([self.lblDescrSelected])
       self.lblDescrSelected.setMinimumHeight(tightSizeNChar(self, 10)[1] * 8)
 
       self.btnDoIt = QPushButton(self.tr('Create Backup'))
-      self.connect(self.btnDoIt, SIGNAL('clicked()'), self.clickedDoIt)
+      self.btnDoIt.clicked.connect(self.clickedDoIt)
 
       layout = QGridLayout()
       layout.addWidget(self.lblTitle, 0, 0, 1, 2)
@@ -921,7 +912,8 @@ class WalletBackupFrame(ArmoryFrame):
       self.optPaperBackupOne.setChecked(True)
       self.setDispFrame(-1)
       self.optionClicked()
-      
+
+
    #############################################################################
    def setWallet(self, wlt):
       self.wlt = wlt
@@ -940,9 +932,8 @@ class WalletBackupFrame(ArmoryFrame):
             'backup if you import more addresses! '
             '<i>Your wallet <u>does</u> contain imported addresses</i>.'))
 
-
-         
       self.lblTitle.setText(self.tr('<b>Backup Options for Wallet "%1" (%2)</b>').arg(wltName, wltID))
+
 
    #############################################################################
    def setDispFrame(self, index):
@@ -990,7 +981,6 @@ class WalletBackupFrame(ArmoryFrame):
                'You can view/backup imported keys, as well as unused keys in your '
                'keypool (pregenerated addresses protected by your backup that '
                'have not yet been used).')
-
 
          chk = lambda: QPixmap(':/checkmark32.png').scaled(20, 20)
          _X_ = lambda: QPixmap(':/red_X.png').scaled(16, 16)
@@ -1041,7 +1031,8 @@ class WalletBackupFrame(ArmoryFrame):
             self.lblDescrSelected.setText(txtIndivKeys)
          else:
             LOGERROR('What index was sent to setDispFrame? %d', index)
-            
+
+
    #############################################################################
    def getIndexChecked(self):
       if self.optPaperBackupOne.isChecked():
@@ -1060,6 +1051,7 @@ class WalletBackupFrame(ArmoryFrame):
          return self.OPTIONS.Export
       else:
          return 0
+
 
    #############################################################################
    def optionClicked(self):
@@ -1095,12 +1087,14 @@ class WalletBackupFrame(ArmoryFrame):
          self.btnDoIt.setText(self.tr('Export Key Lists'))
       self.setDispFrame(-1)
 
+
    def setPassphrase(self, passphrase):
       self.passphrase = passphrase
-      
+
+
    def clickedDoIt(self):
       isBackupCreated = False
-      
+
       if self.passphrase:
          from qtdialogs import DlgProgress
          unlockProgress = DlgProgress(self, self.main, HBar=1,
@@ -1109,7 +1103,7 @@ class WalletBackupFrame(ArmoryFrame):
                               securePassphrase=SecureBinaryData( \
                               self.passphrase),
                               Progress=unlockProgress.UpdateHBar)
-         
+
       if self.optPaperBackupOne.isChecked():
          isBackupCreated = OpenPaperBackupWindow('Single', self.parent(), self.main, self.wlt)
       elif self.optPaperBackupFrag.isChecked():
@@ -1140,13 +1134,11 @@ class WalletBackupFrame(ArmoryFrame):
       if isBackupCreated:
          self.isBackupCreated = True
 
-        
-      
+
 class WizardCreateWatchingOnlyWalletFrame(ArmoryFrame):
 
    def __init__(self, parent, main, initLabel='', backupCreatedCallback=None):
       super(WizardCreateWatchingOnlyWalletFrame, self).__init__(parent, main)
-
 
       summaryText = QRichLabel(self.tr(
                'Your wallet has been created and is ready to be used.  It will '
@@ -1168,13 +1160,13 @@ class WizardCreateWatchingOnlyWalletFrame(ArmoryFrame):
                'Use the "<i>Import or Restore Wallet</i>" button in the '
                'upper-right corner'))
       lbtnForkWlt = QPushButton('Create Watching-Only Copy')
-      self.connect(lbtnForkWlt, SIGNAL('clicked()'), self.forkOnlineWallet)
+      lbtnForkWlt.clicked.connect(self.forkOnlineWallet)
       layout = QVBoxLayout()
       layout.addWidget(summaryText)
       layout.addWidget(lbtnForkWlt)
       self.setLayout(layout)
-      
-   
+
+
    def forkOnlineWallet(self):
       currPath = self.wlt.walletPath
       pieces = os.path.splitext(currPath)
@@ -1186,15 +1178,13 @@ class WizardCreateWatchingOnlyWalletFrame(ArmoryFrame):
          saveLoc += '.wallet'
       self.wlt.forkOnlineWallet(saveLoc, self.wlt.labelName, \
                              '(Watching-Only) ' + self.wlt.labelDescr)   
-   
+
+
    def setWallet(self, wlt):
       self.wlt = wlt
 
 
-
-      
 # Need to put circular imports at the end of the script to avoid an import deadlock
 from qtdialogs import STRETCH, MIN_PASSWD_WIDTH, \
    QRadioButtonBackupCtr, OpenPaperBackupWindow, DlgUnlockWallet, DlgShowKeyList
-
 from ui.CoinControlUI import CoinControlDlg, RBFDlg

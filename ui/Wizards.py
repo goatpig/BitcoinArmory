@@ -6,8 +6,9 @@
 #                                                                              #
 ################################################################################
 
-from PyQt4.Qt import * #@UnusedWildImport
-from PyQt4.QtGui import * #@UnusedWildImport
+from PyQt5.QtGui import * #@UnusedWildImport
+from PyQt5.QtWidgets import *
+
 from armoryengine.ArmoryUtils import USE_TESTNET, USE_REGTEST, int_to_binary
 from ui.WalletFrames import NewWalletFrame, SetPassphraseFrame, VerifyPassphraseFrame,\
    WalletBackupFrame, WizardCreateWatchingOnlyWalletFrame, CardDeckFrame
@@ -31,7 +32,7 @@ class ArmoryWizard(QWizard):
       self.setFont(GETFONT('var'))
       self.setWindowFlags(Qt.Window)
       # Need to adjust the wizard frame size whenever the page changes.
-      self.connect(self, SIGNAL('currentIdChanged(int)'), self.fitContents)
+      self.currentIdChanged[int].connect(self.fitContents)
       if USE_TESTNET:
          self.setWindowTitle('Armory - Bitcoin Wallet Management [TESTNET]')
          self.setWindowIcon(QIcon(':/armory_icon_green_32x32.png'))
@@ -261,6 +262,8 @@ class WalletCreationPage(ArmoryWizardPage):
          return self.wizard.setPassphraseId
 
 class SetPassphrasePage(ArmoryWizardPage):
+   completeChanged = pyqtSignal()
+
    def __init__(self, wizard):
       super(SetPassphrasePage, self).__init__(wizard, 
                SetPassphraseFrame(wizard, wizard.main, wizard.tr("Set Passphrase"), self.updateNextButton))
@@ -269,7 +272,7 @@ class SetPassphrasePage(ArmoryWizardPage):
       self.updateNextButton()
 
    def updateNextButton(self):
-      self.emit(SIGNAL("completeChanged()"))
+      self.completeChanged.emit()
    
    def isComplete(self):
       return self.pageFrame.checkPassphrase(False)
@@ -351,7 +354,7 @@ class TxWizard(ArmoryWizard):
 
       self.setButtonText(QWizard.NextButton, self.tr('Create Unsigned Transaction'))
       self.setButtonText(QWizard.CustomButton1, self.tr('Send!'))
-      self.connect(self, SIGNAL('customButtonClicked(int)'), self.sendClicked)
+      self.customButtonClicked[int].connect(self.sendClicked)
       self.setButtonLayout([QWizard.CancelButton,
                             QWizard.BackButton,
                             QWizard.Stretch,
