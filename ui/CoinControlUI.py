@@ -6,8 +6,9 @@
 #                                                                            #
 ##############################################################################
 
-from PyQt4.QtCore import *
-from PyQt4.QtGui import *
+from PyQt5.QtCore import *
+from PyQt5.QtWidgets import *
+from PyQt5.QtGui import *
 
 from qtdefines import ArmoryDialog, QRichLabel, makeHorizFrame, \
    saveTableView, restoreTableView
@@ -47,8 +48,8 @@ class CoinControlDlg(ArmoryDialog):
            
       self.btnAccept = QPushButton(self.tr("Accept"))
       self.btnCancel = QPushButton(self.tr("Cancel"))
-      self.connect(self.btnAccept, SIGNAL('clicked()'), self.accept)
-      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)            
+      self.btnAccept.clicked.connect(self.accept)
+      self.btnCancel.clicked.connect(self.reject)
       buttonBox = QDialogButtonBox()
       buttonBox.addButton(self.btnAccept, QDialogButtonBox.AcceptRole)
       buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
@@ -143,8 +144,8 @@ class RBFDlg(ArmoryDialog):
       
       self.btnAccept = QPushButton(self.tr("Accept"))
       self.btnCancel = QPushButton(self.tr("Cancel"))
-      self.connect(self.btnAccept, SIGNAL('clicked()'), self.accept)
-      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)            
+      self.btnAccept.clicked.connect(self.accept)
+      self.btnCancel.clicked.connect(self.reject)
       buttonBox = QDialogButtonBox()
       buttonBox.addButton(self.btnAccept, QDialogButtonBox.AcceptRole)
       buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)

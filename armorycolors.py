@@ -6,7 +6,8 @@
 #                                                                              #
 ################################################################################
 import sys
-from PyQt4.QtGui  import QColor, QPalette, QApplication
+from PyQt5.QtWidgets import *
+from PyQt5.QtGui  import QColor, QPalette, QApplication
 
 
 """

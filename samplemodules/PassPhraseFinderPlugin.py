@@ -1,10 +1,12 @@
 from operator import add, mul
+from PyQt5.QtWidgets import *
 import os
 
-from PyQt4.Qt import QPushButton, SIGNAL, QTextEdit, QScrollArea, QTabWidget, \
-   QLineEdit, QAbstractTableModel, QModelIndex, Qt, QVariant, QTableView, QIcon,\
-   QDialogButtonBox, QGridLayout, QLabel, QComboBox, QMenu, QCursor, QListWidget,\
-   QListWidgetItem, QMessageBox, QString
+from PyQt5.QtGui import (QPushButton, QTextEdit, QScrollArea, QTabWidget,
+                         QLineEdit, QAbstractTableModel, QModelIndex, Qt,
+                         QVariant, QTableView, QIcon,, QDialogButtonBox,
+                         QGridLayout, QLabel, QComboBox, QMenu, QCursor,
+                         QListWidget,, QListWidgetItem, QMessageBox)
 
 from CppBlockUtils import SecureBinaryData
 from armoryengine.ArmoryUtils import RightNow, script_to_addrStr, \
@@ -15,13 +17,18 @@ from qtdefines import QRichLabel, makeHorizFrame, GETFONT, relaxedSizeNChar, \
    UnicodeErrorBox
 from armorycolors import Colors
 from armorymodels import WLTVIEWCOLS
-from PyQt4 import QtGui
+from PyQt5 import QtGui
 from functools import reduce
-
 
 # Give an upper limit for any method to return
 # if the limit is exceded raise MaxResultsExceeded exception
 MAX_LIST_LEN = 20000000
+
+try:
+    QString = unicode
+except NameError:
+    # Python 3
+    QString = str
 
 class MaxResultsExceeded(Exception): pass
 class WalletNotFound(object): pass
@@ -149,9 +156,9 @@ class PluginObject(object):
       self.knownButton = QPushButton("Add Known Segment")
       self.unknownCaseButton = QPushButton("Add Unknown Case Segment")
       self.unknownOrderButton = QPushButton("Add Unknown Order Segment")
-      self.main.connect(self.knownButton, SIGNAL('clicked()'), addKnownSegment)
-      self.main.connect(self.unknownCaseButton, SIGNAL('clicked()'), addUnknownCaseSegment)
-      self.main.connect(self.unknownOrderButton, SIGNAL('clicked()'), addUnknownOrderSegment)
+      self.knownButton.clicked.connect(addKnownSegment)
+      self.unknownCaseButton.clicked.connect(addUnknownCaseSegment)
+      self.unknownOrderButton.clicked.connect(addUnknownOrderSegment)
       topRow =  makeHorizFrame([segmentHeader, self.knownButton, self.unknownCaseButton, self.unknownOrderButton, 'stretch'])
       
       self.segDefTableModel = SegDefDisplayModel()
@@ -174,7 +181,7 @@ class PluginObject(object):
       self.addOrderingButton = QPushButton("Add Ordering")
       
       
-      self.main.connect(self.addOrderingButton, SIGNAL('clicked()'), addOrdering)
+      self.addOrderingButton.clicked.connect(addOrdering)
       orderingButtonPanel = makeHorizFrame([segmentOrderingsHeader, self.addOrderingButton, 'stretch'])
 
       self.segOrdListBox  = QListWidget()
@@ -184,10 +191,10 @@ class PluginObject(object):
       
       
       self.searchButton = QPushButton("Search")
-      self.main.connect(self.searchButton, SIGNAL('clicked()'), searchForPassphrase)
+      self.searchButton.clicked.connect(searchForPassphrase)
       self.stopButton = QPushButton("Stop Searching")
       self.stopButton.setEnabled(False)
-      self.main.connect(self.stopButton, SIGNAL('clicked()'), endSearch)
+      self.stopButton.clicked.connect(endSearch)
       totalSearchLabel = QRichLabel(tr("""<b>Total Passphrase Tries To Search: </b>"""), doWrap=False)
       self.totalSearchTriesDisplay = QLineEdit()
       self.totalSearchTriesDisplay.setReadOnly(True)
@@ -287,8 +294,8 @@ class DlgSpecifyOrdering(ArmoryDialog):
       self.setWindowIcon(QIcon(self.main.iconfile))
       buttonbox = QDialogButtonBox(QDialogButtonBox.Ok | \
                                    QDialogButtonBox.Cancel)
-      self.connect(buttonbox, SIGNAL('accepted()'), self.accept)
-      self.connect(buttonbox, SIGNAL('rejected()'), self.reject)
+      buttonbox.accepted.connect(self.accept)
+      buttonbox.rejected.connect(self.reject)
 
       layout = QGridLayout()
       lbl =  QLabel('Enter Ordering as a comma separated list of segment indices between 1 and %d:' % maxSeg)
@@ -334,8 +341,8 @@ class DlgEnterSegment(ArmoryDialog):
       self.setWindowIcon(QIcon(self.main.iconfile))
       buttonbox = QDialogButtonBox(QDialogButtonBox.Ok | \
                                    QDialogButtonBox.Cancel)
-      self.connect(buttonbox, SIGNAL('accepted()'), self.accept)
-      self.connect(buttonbox, SIGNAL('rejected()'), self.reject)
+      buttonbox.accepted.connect(self.accept)
+      buttonbox.rejected.connect(self.reject)
 
       layout = QGridLayout()
       lbl =  QLabel('Segment Text:')
@@ -375,10 +382,8 @@ class DlgEnterSegment(ArmoryDialog):
             if minLen > maxLen:
                self.minSelector.setCurrentIndex(maxLen - 1)
                
-         main.connect(self.minSelector, SIGNAL('activated(int)'), \
-                                             updateMaxSelector)
-         main.connect(self.maxSelector, SIGNAL('activated(int)'), \
-                                             updateMinSelector)
+         self.minSelector.activated[int].connect(updateMaxSelector)
+         self.maxSelector.activated[int].connect(updateMinSelector)
             
          layout.addWidget(minSelectorLabel, 1, 0)
          minSelectorPanel = makeHorizFrame([self.minSelector,'stretch'])

@@ -6,8 +6,8 @@
 #                                                                            #
 ##############################################################################
 
-from PyQt4.QtCore import *
-from PyQt4.QtGui import *
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
 
 from CppBlockUtils import AddressType_P2SH_P2PK, \
    AddressType_P2SH_P2WPKH, AddressType_P2PKH
@@ -896,6 +896,8 @@ class AddressTreeModel(ArmoryTreeModel):
   
 ################################################################################ 
 class CoinControlTreeModel(ArmoryTreeModel):
+   layoutChanged = pyqtSignal()
+
    def __init__(self, main, wlt):
       super(CoinControlTreeModel, self).__init__(main)
 
@@ -982,7 +984,7 @@ class CoinControlTreeModel(ArmoryTreeModel):
          node = self.getNodeItem(index)
          node.treeNode.setCheckState(value)
             
-         self.emit(SIGNAL('layoutChanged()'))
+         self.layoutChanged.emit()
          return True
       
       return False
@@ -990,6 +992,8 @@ class CoinControlTreeModel(ArmoryTreeModel):
 
 ################################################################################ 
 class RBFTreeModel(ArmoryTreeModel):
+   layoutChanged = pyqtSignal()
+
    def __init__(self, main, wlt):
       super(RBFTreeModel, self).__init__(main)
 
@@ -1015,7 +1019,7 @@ class RBFTreeModel(ArmoryTreeModel):
          node = self.getNodeItem(index)
          node.treeNode.setCheckState(value)
             
-         self.emit(SIGNAL('layoutChanged()'))
+         self.layoutChanged.emit()
          return True
       
       return False

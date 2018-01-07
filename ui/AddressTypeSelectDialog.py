@@ -6,8 +6,9 @@
 #                                                                            #
 ##############################################################################
 
-from PyQt4.QtCore import *
-from PyQt4.QtGui import *
+from PyQt5.QtCore import *
+from PyQt5.QtWidgets import *
+from PyQt5.QtGui import *
 
 from qtdefines import ArmoryDialog, STYLE_RAISED, QLabelButton
 
@@ -34,7 +35,7 @@ class AddressTypeSelectDialog(ArmoryDialog):
       def setP2PKH():
          self.selectType('P2PKH')
       
-      self.connect(self.radioP2PKH, SIGNAL('clicked()'), setP2PKH)
+      self.radioP2PKH.clicked.connect(setP2PKH)
       
       #nested p2wpkh
       self.radioSW = QRadioButton(self.tr("P2SH-P2WPKH address"))
@@ -55,7 +56,7 @@ class AddressTypeSelectDialog(ArmoryDialog):
       def setSW():
          self.selectType('P2SH-P2WPKH')
       
-      self.connect(self.radioSW, SIGNAL('clicked()'), setSW)
+      self.radioSW.clicked.connect(setSW)
       
       #nested p2pk
       self.radioNP2PK = QRadioButton(self.tr("P2SH-P2PK address"))
@@ -75,7 +76,7 @@ class AddressTypeSelectDialog(ArmoryDialog):
       def setNP2PK():
          self.selectType('P2SH-P2PK')
       
-      self.connect(self.radioNP2PK, SIGNAL('clicked()'), setNP2PK) 
+      self.radioNP2PK.clicked.connect(setNP2PK)
       
       #main layout
       layout = QGridLayout()
@@ -86,8 +87,8 @@ class AddressTypeSelectDialog(ArmoryDialog):
       self.btnOk = QPushButton(self.tr('Apply'))
       self.btnCancel = QPushButton(self.tr('Cancel'))
       
-      self.connect(self.btnOk, SIGNAL('clicked()'), self.accept)
-      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
+      self.btnOk.clicked.connect(self.accept)
+      self.btnCancel.clicked.connect(self.reject)
 
       layout.addWidget(self.btnOk, 5, 2, 1, 1)
       layout.addWidget(self.btnCancel, 5, 3, 1, 1)
@@ -131,7 +132,7 @@ class AddressLabelFrame(object):
          self.typeLabel.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
          self.setType('P2PKH')
          
-         self.main.connect(self.typeLabel, SIGNAL('clicked()'), self.changeType)
+         self.typeLabel.clicked.connect(self.changeType)
       
          frmAddrTypeLayout.addWidget(addrLabel, 0, 0, 1, 1)
          frmAddrTypeLayout.addWidget(self.typeLabel, 0, 1, 1, 2)

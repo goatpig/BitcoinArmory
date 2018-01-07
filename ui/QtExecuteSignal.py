@@ -6,7 +6,7 @@
 #                                                                            #
 ##############################################################################
 
-from PyQt4.QtCore import SIGNAL
+from PyQt5.QtCore import pyqtSignal
 from threading import Thread
 from time import sleep
 
@@ -14,17 +14,18 @@ from time import sleep
 class QtExecuteSignal(object):
    
    ###########################################################################
+   executeSignal = pyqtSignal()
+
    def __init__(self, mainWnd):
       self.mainWnd = mainWnd
       
-      self.mainWnd.connect(\
-         self.mainWnd, SIGNAL("executeSignal"), self.methodSlot)
+      self.mainWnd.executeSignal.connect(self.methodSlot)
       
       self.waiting = {}
       
    ###########################################################################
    def executeMethod(self, _callable, *args):
-      self.mainWnd.emit(SIGNAL("executeSignal"), _callable, *args)
+      self.mainWnd.executeSignal.emit(_callable, *args)
       
    ###########################################################################
    def methodSlot(self, _callable, *args):

@@ -5,9 +5,10 @@
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                         #
 #                                                                              #
 ################################################################################
-from PyQt4 import Qt, QtCore
-from PyQt4.QtCore import *
-from PyQt4.QtGui import *
+from PyQt5 import Qt, QtCore
+from PyQt5.QtWidgets import *
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
 
 from armorycolors import htmlColor
 from jasvet import ASv0, ASv1B64, ASv1CS, verifySignature, readSigBlock
@@ -24,7 +25,7 @@ class MessageSigningVerificationDialog(ArmoryDialog):
       self.setWindowTitle(self.tr("Message Signing/Verification"))
       self.setWindowIcon(QIcon( self.main.iconfile))
       self.setMinimumWidth(600)
-      
+
       tabbedPanel = QTabWidget()
       messageSigningTab = MessageSigningWidget(parent, main)
       bareSignatureVerificationTab = BareSignatureVerificationWidget(parent, main)
@@ -33,22 +34,19 @@ class MessageSigningVerificationDialog(ArmoryDialog):
       tabbedPanel.addTab(bareSignatureVerificationTab, self.tr("Verify Bare Signature"))
       tabbedPanel.addTab(signedMsgBlockVerificationTab, self.tr("Verify Signed Message Block"))
       layout.addWidget(tabbedPanel)
-      
+
       self.goBackButton = QPushButton(self.tr("Done"))
       actionButtonBox = QDialogButtonBox()
       actionButtonBox.addButton(self.goBackButton, QDialogButtonBox.RejectRole)
       layout.addWidget(actionButtonBox)
 
       self.setLayout(layout)
-      self.connect(self.goBackButton, SIGNAL('clicked()'), \
-                   self,           SLOT('reject()'))
-      
+      self.goBackButton.clicked.connect(self.reject)
+
    def clearFields(self):
       self.addressLineEdit.setText('')
       self.messageTextEdit.setPlainText('')
       self.signatureDisplay.setPlainText('')
-      
-      
 
 
 class MessageSigningWidget(QWidget):
@@ -75,19 +73,18 @@ class MessageSigningWidget(QWidget):
       self.messageTextEdit.setStyleSheet("font: 9pt \"Courier\";")
       signMessageLayout.addWidget(messageLabel,          1, 0)
       signMessageLayout.addWidget(self.messageTextEdit,  1, 1, 1, 2)
-      
-      
+
       # Create a row with just a sign message button
-      
+
       self.bareSigButton = QPushButton(self.tr('Bare Signature (Bitcoin Core Compatible)'))
       self.base64SigButton = QPushButton(self.tr('Base64 Signature'))
       self.clearSigButton = QPushButton(self.tr('Clearsign Signature'))
-      sigButtonFrame = makeHorizFrame([self.bareSigButton,\
-                                        self.base64SigButton,\
-                                        self.clearSigButton,\
-                                        'Stretch'])
+      sigButtonFrame = makeHorizFrame([self.bareSigButton, \
+                                       self.base64SigButton, \
+                                       self.clearSigButton, \
+                                       'Stretch'])
       signMessageLayout.addWidget(sigButtonFrame,  2, 1, 1, 3)
-      
+
       # Create a Signature display
       signatureLabel = QLabel(self.tr('Message Signature:'))
       self.signatureDisplay = QTextEdit()
@@ -98,22 +95,18 @@ class MessageSigningWidget(QWidget):
 
       self.copySignatureButton = QPushButton(self.tr("Copy Signature"))
       self.clearFieldsButton = QPushButton(self.tr("Clear All"))
-      
+
       buttonFrame = makeHorizFrame([self.copySignatureButton, self.clearFieldsButton,'Stretch'])
       signMessageLayout.addWidget(buttonFrame, 4, 1, 1, 3)
 
       self.setLayout(signMessageLayout)
-      self.connect(self.bareSigButton, SIGNAL('clicked()'), \
-                   self.bareSignMessage)
-      self.connect(self.base64SigButton, SIGNAL('clicked()'), \
-                    self.base64SignMessage)
-      self.connect(self.clearSigButton, SIGNAL('clicked()'), \
-                    self.clearSignMessage)
-      self.connect(self.copySignatureButton, SIGNAL('clicked()'), \
-                   self.copySignature)
-      self.connect(self.clearFieldsButton, SIGNAL('clicked()'), \
-                   self.clearFields)
-      
+      self.bareSigButton.clicked.connect(self.bareSignMessage)
+      self.base64SigButton.clicked.connect(self.base64SignMessage)
+      self.clearSigButton.clicked.connect(self.clearSignMessage)
+      self.copySignatureButton.clicked.connect(self.copySignature)
+      self.clearFieldsButton.clicked.connect(self.clearFields)
+
+
    def getPrivateKeyFromAddrInput(self):
       atype, addr160 = addrStr_to_hash160(str(self.addressLineEdit.text()))
       if atype==P2SHBYTE:
@@ -130,6 +123,7 @@ class MessageSigningWidget(QWidget):
             return
       return wallet.addrMap[addr160].binPrivKey32_Plain.toBinStr()
 
+
    def bareSignMessage(self):
       messageText = str(self.messageTextEdit.toPlainText())
       if not isASCII(messageText):
@@ -145,7 +139,8 @@ class MessageSigningWidget(QWidget):
          except:
             QMessageBox.warning(self, self.tr('Invalid Address'), self.tr('The signing address is invalid.'), QMessageBox.Ok)
             raise
-   
+
+
    def base64SignMessage(self):
       messageText = str(self.messageTextEdit.toPlainText())
       if not isASCII(messageText):
@@ -161,7 +156,8 @@ class MessageSigningWidget(QWidget):
          except:
             QMessageBox.warning(self, self.tr('Invalid Address'), self.tr('The signing address is invalid.'), QMessageBox.Ok)
             raise
-   
+
+
    def clearSignMessage(self):
       messageText = str(self.messageTextEdit.toPlainText())
       if not isASCII(messageText):
@@ -178,15 +174,18 @@ class MessageSigningWidget(QWidget):
          else:
             QMessageBox.warning(self, self.tr('Private Key Not Known'), self.tr('The private key is not known for this address.'), QMessageBox.Ok)
 
+
    def copySignature(self):
       clipb = QApplication.clipboard()
       clipb.clear()
       clipb.setText(str(self.signatureDisplay.toPlainText()))
 
+
    def clearFields(self):
       self.addressLineEdit.setText('')
       self.messageTextEdit.setPlainText('')
       self.signatureDisplay.setPlainText('')
+
 
 # Intended to be a base class
 class SignatureVerificationWidget(QWidget):
@@ -199,25 +198,28 @@ class SignatureVerificationWidget(QWidget):
 
       self.verifySignatureButton = QPushButton(self.tr("Verify Signature"))
       self.clearFieldsButton = QPushButton(self.tr("Clear All"))
-      
+
       self.lblSigResult = QRichLabel('', doWrap=False)
       buttonFrame = makeHorizFrame([self.verifySignatureButton, self.clearFieldsButton,\
                                     'Stretch', self.lblSigResult])
       self.signMessageLayout.addWidget(buttonFrame, 3, 1, 1, 2)
 
       self.setLayout(self.signMessageLayout)
-      self.connect(self.verifySignatureButton, SIGNAL('clicked()'), \
+      self.verifySignatureButton.clicked.connect(\
                    self.verifySignature)
-      self.connect(self.clearFieldsButton, SIGNAL('clicked()'), \
+      self.clearFieldsButton.clicked.connect(\
                    self.clearFields)
+
 
    # To be implemented by child classes
    def verifySignature(self):
       pass
-         
+
+
    def clearFields(self):
       self.lblSigResult.setText('')
-      
+
+
    def displayVerifiedBox(self, addrB58, messageString):
       ownerStr = str(self.tr(
       'The owner of the following Bitcoin address...'
@@ -228,7 +230,7 @@ class SignatureVerificationWidget(QWidget):
       '<br>'
       '... has produced a <b><u>valid</u></b> signature for '
       'the following message:<br>').arg(addrB58))
-         
+
       if addrB58:
          msg = messageString.replace('\r\n','\n')
          msg = '   ' + '<br>   '.join(msg.split('\n'))
@@ -255,7 +257,8 @@ class SignatureVerificationWidget(QWidget):
       MsgBoxCustom(MSGBOX.Error, self.tr('Invalid Signature!'), \
                                  self.tr('The supplied signature <b>is not valid</b>!'))
       self.lblSigResult.setText(self.tr('<font color="red">Invalid Signature!</font>'))
-      
+
+
 class BareSignatureVerificationWidget(SignatureVerificationWidget):
 
    def __init__(self, parent=None, main=None):
@@ -268,7 +271,7 @@ class BareSignatureVerificationWidget(SignatureVerificationWidget):
       self.signMessageLayout.addWidget(addressLabel,      0, 0)
       self.signMessageLayout.addWidget(self.addressLineEdit,  0, 1)
       self.signMessageLayout.addWidget(self.addressBookButton,  0, 2)
-      
+
       # Create a message text box
       messageLabel = QLabel(self.tr("Signed Message:"))
       self.messageTextEdit = QTextEdit()
@@ -282,7 +285,8 @@ class BareSignatureVerificationWidget(SignatureVerificationWidget):
       self.signatureTextEdit.setStyleSheet("font: 9pt \"Courier\";")
       self.signMessageLayout.addWidget(signatureLabel,         2, 0)
       self.signMessageLayout.addWidget(self.signatureTextEdit,  2, 1)
-      
+
+
    def verifySignature(self):
       messageString = str(self.messageTextEdit.toPlainText())
       try:
@@ -296,12 +300,13 @@ class BareSignatureVerificationWidget(SignatureVerificationWidget):
          self.displayInvalidSignatureMessage()
          raise
 
-         
+
    def clearFields(self):
       super(BareSignatureVerificationWidget, self).clearFields()
       self.addressLineEdit.setText('')
       self.messageTextEdit.setPlainText('')
       self.signatureTextEdit.setPlainText('')
+
 
 class SignedMessageBlockVerificationWidget(SignatureVerificationWidget):
 
@@ -323,7 +328,7 @@ class SignedMessageBlockVerificationWidget(SignatureVerificationWidget):
       self.messageTextEdit.setStyleSheet("font: 9pt \"Courier\"; background-color: #bbbbbb;")
       self.signMessageLayout.addWidget(messageLabel,          1, 0)
       self.signMessageLayout.addWidget(self.messageTextEdit,  1, 1, 1, 2)
-      
+
       
    def verifySignature(self):
       try:
@@ -334,11 +339,9 @@ class SignedMessageBlockVerificationWidget(SignatureVerificationWidget):
       except:   
          self.displayInvalidSignatureMessage()
          raise
-         
+
+
    def clearFields(self):
       super(SignedMessageBlockVerificationWidget, self).clearFields()
       self.signedMessageBlockTextEdit.setPlainText('')
       self.messageTextEdit.setPlainText('')
-
-
-

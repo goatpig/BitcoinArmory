@@ -7,8 +7,9 @@
 import ast
 import urllib2
 
-from PyQt4.Qt import QPushButton, SIGNAL, Qt, QLineEdit, QTableWidget, \
-   QGridLayout, QSpacerItem, QWidget, QScrollArea, QTableWidgetItem
+from PyQt5.QtWidgets import *
+from PyQt5.QtGui import (QPushButton, Qt, QLineEdit, QTableWidget,, QGridLayout,
+                         QSpacerItem, QWidget, QScrollArea, QTableWidgetItem)
 
 from armorycolors import htmlColor
 from armoryengine.ArmoryUtils import RightNow, secondsToHumanTime, coin2str
@@ -51,7 +52,7 @@ class PluginObject(object):
       self.lastBuyStr = ''
 
       self.btnUpdate = QPushButton(tr('Check Now'))
-      self.main.connect(self.btnUpdate, SIGNAL('clicked()'), self.checkUpdatePrice)
+      self.btnUpdate.clicked.connect(self.checkUpdatePrice)
 
       ##########################################################################
       ##### A calculator for converting prices between USD and BTC
@@ -64,10 +65,10 @@ class PluginObject(object):
       self.lblEnterBTC = QRichLabel('BTC')
       btnClear = QPushButton('Clear')
 
-      self.main.connect(self.edtEnterUSD, SIGNAL('textEdited(QString)'), self.updateCalcBTC)
-      self.main.connect(self.edtEnterBTC, SIGNAL('textEdited(QString)'), self.updateCalcUSD)
+      self.edtEnterUSD.textEdited['QString'].connect(self.updateCalcBTC)
+      self.edtEnterBTC.textEdited['QString'].connect(self.updateCalcUSD)
 
-      self.main.connect(btnClear, SIGNAL('clicked()'), self.clearCalc)
+      btnClear.clicked.connect(self.clearCalc)
 
       frmCalcMid = makeHorizFrame( [self.lblEnterUSD1,
                                     self.edtEnterUSD,
