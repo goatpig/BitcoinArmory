@@ -6,7 +6,7 @@
 name: Bitcoin Armory
 
 # Short bio or description (displayed in the header)
-description: Python-based fully-featured Bitcoin Wallet Software
+description: Python-based, fully-featured Bitcoin wallet software
 
 # URL of your avatar or profile pic (you could use your GitHub profile pic)
 avatar: https://raw.githubusercontent.com/goatpig/BitcoinArmory/master/img/armory_icon_fullres.png
@@ -73,7 +73,8 @@ sass:
   style: :expanded # You might prefer to minify using :compressed
 
 # Use the following plug-ins
-gems:
+plugins_dir: ./_plugins # Useful for prototyping usage of new plugins
+plugins:                # Installed by users via gem
   - jekyll-sitemap # Create a sitemap using the official Jekyll sitemap gem
   - jekyll-feed # Create an Atom feed using the official Jekyll feed gem
 
