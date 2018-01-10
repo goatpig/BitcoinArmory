@@ -197,7 +197,7 @@ If the transaction isn't accepted at all by Core, and you can't see the transact
 ## How does Armory handle transaction fees?
 Unlike many wallets, Armory is quite flexible regarding fees. Basically, you control your destiny, but Armory will attempt to lend a hand. Armory currently offers three methods.
 
-- Fee recommendations from Bitcoin Core (the [*estimatefee*](https://bitcoin.org/en/developer-reference#estimatefee) RPC method before Core 0.15, and the [*estimatesmartfee*](https://bitcointechtalk.com/an-introduction-to-bitcoin-core-fee-estimation-27920880ad0) RPC method as of 0.15). Core will analyze the current state of the network and attempt to provote an accurate fee estimate for getting your transaction onto the blockchain in a reasonable amount of time. Starting with Core 0.15, you can choose whether or not you want an aggressive or conservative fee estimate, and give a targeted number of blocks before your transaction will be placed on the blockchain.
+- Fee recommendations from Bitcoin Core (the [*estimatefee*](https://bitcoin.org/en/developer-reference#estimatefee) RPC method before Core 0.15, and the [*estimatesmartfee*](https://bitcointechtalk.com/an-introduction-to-bitcoin-core-fee-estimation-27920880ad0) RPC method as of 0.15). Core will analyze the current state of the network and attempt to provide an accurate fee estimate for getting your transaction onto the blockchain in a reasonable amount of time. Starting with Core 0.15, you can choose whether or not you want an aggressive or conservative fee estimate, and give a targeted number of blocks before your transaction will be placed on the blockchain.
 - You may set a fee for each byte in the transaction. There are sites from companies like [earn.com](https://bitcoinfees.earn.com/) that can help you determine what you feel is an appropriate fee.
 - Set a flat fee for the transaction.
 
@@ -211,6 +211,12 @@ Here are some tips for optimizing your fees.
 - Minimize the number of [unspent transaction outputs](https://www.r3.com/blog/2017/07/18/what-is-a-utxo/) (UTXOs) used to pay for your transaction. Armory automatically manages your UTXOs via "Coin Control" and attempts to optimize UTXO usage. However, like many other things in Armory, you can exercise control if you wish.
 
 If you set the fee too low and it won't confirm within your preferred timeline, don't worry. You can use the [replace-by-fee](https://bitcoin.org/en/glossary/rbf) feature to resend the transaction with a higher fee.
+
+## I have to store the blockchain in a location other than the default location. Is that a problem?
+No, but you will have to tell Armory where to look for the blockchain. (FINISH)
+
+## I have to store Armory data in a location other than the default location. Is that a problem?
+No. See the question regrading blockchain storage, only the option will be *datadir* instead of *satoshi-datadir*.
 
 ## I'm tired of Armory! I want out!!!
 If all else fails and you don't want to use Armory any more, you have a couple of options.
