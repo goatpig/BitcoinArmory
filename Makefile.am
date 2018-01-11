@@ -1,3 +1,10 @@
+##############################################################################
+#                                                                            #
+# Copyright (C) 2017-2018, goatpig                                           #
+# Distributed under the MIT license                                          #
+# See LICENSE-MIT or https://opensource.org/licenses/MIT                     #
+#                                                                            #
+##############################################################################
 # Makefile for BitcoinArmory bitcoin wallet
 SUBDIRS = cppForSwig
 

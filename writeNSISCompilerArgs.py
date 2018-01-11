@@ -1,3 +1,4 @@
+# Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
 '''
 Created on Sep 24, 2013
 

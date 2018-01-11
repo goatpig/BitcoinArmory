@@ -1,3 +1,10 @@
+################################################################################
+##                                                                            ##
+##  Copyright (C) 2017-2018, goatpig                                          ##
+##  Distributed under the MIT license                                         ##
+##  See LICENSE-MIT or https:##opensource.org/licenses/MIT                    ##
+##                                                                            ##
+################################################################################
 MAYBE_BUILD =
 if BUILD_TESTS
 MAYBE_BUILD += gtest

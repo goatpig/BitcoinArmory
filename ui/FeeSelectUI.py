@@ -1,8 +1,8 @@
 ##############################################################################
 #                                                                            #
-# Copyright (C) 2016-17, goatpig                                             #
-#  Distributed under the MIT license                                         #
-#  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #                                   
+# Copyright (C) 2016-2018, goatpig                                           #
+# Distributed under the MIT license                                          #
+# See LICENSE-MIT or https://opensource.org/licenses/MIT                     #
 #                                                                            #
 ##############################################################################
 

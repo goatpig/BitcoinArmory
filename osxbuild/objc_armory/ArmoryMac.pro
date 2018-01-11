@@ -1,3 +1,14 @@
+##############################################################################
+#                                                                            #
+# Copyright (C) 2011-2015, Armory Technologies, Inc.                         #
+# Distributed under the GNU Affero General Public License (AGPL v3)          #
+# See LICENSE or https://www.gnu.org/licenses/agpl.html                      #
+#                                                                            #
+# Copyright (C) 2016-2018, goatpig                                           #
+# Distributed under the MIT license                                          #
+# See LICENSE-MIT or https://opensource.org/licenses/MIT                     #
+#                                                                            #
+##############################################################################
 # The qmake project file used to build the Mac-specific Objective-C++ code into
 # a framework to be loaded by Armory for tasks that can performed only by using
 # Objective-C++ code. Parameters have been culled from multiple sources.

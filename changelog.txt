@@ -1,3 +1,12 @@
+##############################################################################
+#                                                                            #
+# Copyright (C) 2016-2018, goatpig                                           #
+# Distributed under the MIT license                                          #
+# See LICENSE-MIT or https://opensource.org/licenses/MIT                     #
+#                                                                            #
+##############################################################################
+ARMORY CHANGELOG
+
 v0.96.4
 == Added ==
    - Updated fee estimate query from node to improve estimateSmartFee call introduced in Bitcoin Core 0.15.

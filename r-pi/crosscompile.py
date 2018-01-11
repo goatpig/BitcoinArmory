@@ -1,6 +1,10 @@
-# Armory -- Bitcoin Wallet Software
-# Copyright (c) 2016, goatpig <moothecowlord@gmail.com>
-# Originally written by Alan Reiner  (etotheipi@gmail.com)
+################################################################################
+##                                                                            ##
+##  Copyright (C) 2016-2018, goatpig                                          ##
+##  Distributed under the MIT license                                         ##
+##  See LICENSE-MIT or https://opensource.org/licenses/MIT                    ##
+##                                                                            ##
+################################################################################
 
 import os
 import shutil

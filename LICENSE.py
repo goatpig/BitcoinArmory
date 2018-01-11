@@ -18,13 +18,6 @@ def licenseText():
 *   for more details.                                                          *
 *                                                                              *
 ********************************************************************************
-*                                                                              *
-*   To use this software or source code in a way not compliant with the        *
-*   APGLv3, please contact us to discuss a dual-licensing agreement:           *
-*                                                                              *
-*                 licensing@bitcoinarmory.com                                  * 
-*                                                                              *
-********************************************************************************
 
     This license applies to all works under this directory tree EXCEPT for:
     
@@ -268,7 +261,7 @@ END OF TERMS AND CONDITIONS
 ********************************************************************************
 The MIT License (MIT)
 
-Copyright (c) 2011-2015 The Bitcoin Core developers
+Copyright (c) 2016-2018 goatpig
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

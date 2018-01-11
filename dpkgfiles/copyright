@@ -4,7 +4,7 @@ Upstream-Contact: https://github.com/goatpig/BitcoinArmory/issues
 Source: https://github.com/goatpig/BitcoinArmory
 
 Files: *
-Copyright: 2016, goatpig
+Copyright: 2016-2018, goatpig
 License: MIT
  Permission is hereby granted, free of charge, to any person obtaining a 
  copy of this software and associated documentation files (the "Software"), 

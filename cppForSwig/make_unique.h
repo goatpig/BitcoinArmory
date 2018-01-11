@@ -1,3 +1,10 @@
+////////////////////////////////////////////////////////////////////////////////
+//                                                                            //
+//  Copyright (C) 2016-2018, goatpig                                          //
+//  Distributed under the MIT license                                         //
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
+//                                                                            //
+////////////////////////////////////////////////////////////////////////////////
 #ifndef _H_MAKE_UNIQUE
 #define _H_MAKE_UNIQUE
 

@@ -1,3 +1,10 @@
+################################################################################
+##                                                                            ##
+##  Copyright (C) 2016-2018, goatpig                                          ##
+##  Distributed under the MIT license                                         ##
+##  See LICENSE-MIT or https:##opensource.org/licenses/MIT                    ##
+##                                                                            ##
+################################################################################
 REM This should only be run from cppForSwig\BitcoinArmory_SwigDLL directory
 
 mkdir ..\..\ArmoryStandalone

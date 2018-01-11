@@ -71,10 +71,9 @@ Armory contains over 25,000 lines of code, between the C++ and python libraries.
 
 ## License
 
-Distributed partially under the GNU Affero General Public License (AGPL v3)  
-and the MIT License
-See [LICENSE file](LICENSE)
+Distributed partially under the GNU Affero General Public License (AGPL v3) and the MIT License. See the [LICENSE](LICENSE) file for complete license information.
 
 ## Copyright
 
-Copyright (C) 2011-2015, Armory Technologies, Inc.
+Copyright (C) 2011-2015 Armory Technologies, Inc.
+Copyright (C) 2016-2018 goatpig

@@ -1,3 +1,10 @@
+////////////////////////////////////////////////////////////////////////////////
+//                                                                            //
+//  Copyright (C) 2016-2018, goatpig                                          //
+//  Distributed under the MIT license                                         //
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
+//                                                                            //
+////////////////////////////////////////////////////////////////////////////////
 #include <Win_TranslatePath.h>
 
 std::wstring Win_TranslatePath(std::string path)

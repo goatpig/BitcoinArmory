@@ -1,21 +1,23 @@
-**********************************************************************************************************
+********************************************************************************
 
 Armory -- Bitcoin Wallet Software                                          
-Copyright (C) 2011-2015, Armory Technologies, Inc. 
-Copyright (C) 2016, goatpig
+Copyright (C) 2011-2015 Armory Technologies, Inc. 
+Copyright (C) 2016-2018 goatpig
 
-Portion of the code is ATI's property, licensed under GNU Affero GPL Version 3
-Portion of the code is goatpig's property, licensed under the MIT license
+- The portion of the code that is ATI's property is licensed under GNU Affero
+  GPL Version 3.
+- The portion of the code that is goatpig's property is licensed under the MIT
+  license.
 
-See each individual code files to determine which licenses apply 
-For code files pointing directly here (LICENSE), see LICENSE-ATI
+See each individual code files to determine which licenses apply. For code files
+pointing directly here (LICENSE), see the LICENSE-ATI file.
 
-**********************************************************************************************************
+********************************************************************************
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 // 
-// 	All code up to and including tag v0.93.3 is the sole property of ATI, 
-// 	under the GNU Affero GPL Version 3. 
-// 	See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html
+// 	All code up to and including tag v0.93.3 is the sole property of ATI, under
+// 	the GNU Affero GPL Version 3. 
+// 	See LICENSE-ATI or https://www.gnu.org/licenses/agpl.html
 //
-//////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////

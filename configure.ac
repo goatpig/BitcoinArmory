@@ -1,3 +1,10 @@
+##############################################################################
+#                                                                            #
+# Copyright (C) 2016-2018, goatpig                                           #
+# Distributed under the MIT license                                          #
+# See LICENSE-MIT or https://opensource.org/licenses/MIT                     #
+#                                                                            #
+##############################################################################
 AC_PREREQ(2.60)
 AC_INIT([BitcoinArmory], [0.96.3.991], [moothecowlord@gmail.com])
 
