@@ -1,10 +1,24 @@
-// vmac.cpp - written and placed in the public domain by Wei Dai
+// vmac.cpp - originally written and placed in the public domain by Wei Dai
 // based on Ted Krovetz's public domain vmac.c and draft-krovetz-vmac-01.txt
 
 #include "pch.h"
+#include "config.h"
+
 #include "vmac.h"
-#include "argnames.h"
 #include "cpu.h"
+#include "argnames.h"
+#include "secblock.h"
+
+#if defined(CRYPTOPP_DISABLE_VMAC_ASM)
+# undef CRYPTOPP_X86_ASM_AVAILABLE
+# undef CRYPTOPP_X32_ASM_AVAILABLE
+# undef CRYPTOPP_X64_ASM_AVAILABLE
+# undef CRYPTOPP_SSE2_ASM_AVAILABLE
+#endif
+
+#if CRYPTOPP_MSC_VERSION
+# pragma warning(disable: 4731)
+#endif
 
 NAMESPACE_BEGIN(CryptoPP)
 
@@ -12,7 +26,12 @@ NAMESPACE_BEGIN(CryptoPP)
 #include <intrin.h>
 #endif
 
-#define VMAC_BOOL_WORD128 (defined(CRYPTOPP_WORD128_AVAILABLE) && !defined(CRYPTOPP_X64_ASM_AVAILABLE))
+#if defined(CRYPTOPP_WORD128_AVAILABLE) && !defined(CRYPTOPP_X64_ASM_AVAILABLE)
+# define VMAC_BOOL_WORD128 1
+#else
+# define VMAC_BOOL_WORD128 0
+#endif
+
 #ifdef __BORLANDC__
 #define const	// Turbo C++ 2006 workaround
 #endif
@@ -48,16 +67,16 @@ void VMAC_Base::UncheckedSetKey(const byte *userKey, unsigned int keylength, con
 
 	BlockCipher &cipher = AccessCipher();
 	cipher.SetKey(userKey, keylength, params);
-	unsigned int blockSize = cipher.BlockSize();
-	unsigned int blockSizeInWords = blockSize / sizeof(word64);
-	SecBlock<word64> out(blockSizeInWords);
-	SecByteBlock in;
+	const unsigned int blockSize = cipher.BlockSize();
+	const unsigned int blockSizeInWords = blockSize / sizeof(word64);
+	SecBlock<word64, AllocatorWithCleanup<word64, true> > out(blockSizeInWords);
+	AlignedSecByteBlock in;
 	in.CleanNew(blockSize);
 	size_t i;
 
 	/* Fill nh key */
-	in[0] = 0x80; 
-	cipher.AdvancedProcessBlocks(in, NULL, (byte *)m_nhKey(), m_nhKeySize()*sizeof(word64), cipher.BT_InBlockIsCounter);
+	in[0] = 0x80;
+	cipher.AdvancedProcessBlocks(in, NULLPTR, (byte *)m_nhKey(), m_nhKeySize()*sizeof(word64), cipher.BT_InBlockIsCounter);
 	ConditionalByteReverse<word64>(BIG_ENDIAN_ORDER, m_nhKey(), m_nhKey(), m_nhKeySize()*sizeof(word64));
 
 	/* Fill poly key */
@@ -75,6 +94,8 @@ void VMAC_Base::UncheckedSetKey(const byte *userKey, unsigned int keylength, con
 	in[0] = 0xE0;
 	in[15] = 0;
 	word64 *l3Key = m_l3Key();
+	CRYPTOPP_ASSERT(IsAlignedOn(l3Key,GetAlignmentOf<word64>()));
+
 	for (i = 0; i <= (size_t)m_is128; i++)
 		do
 		{
@@ -132,21 +153,40 @@ void VMAC_Base::Resynchronize(const byte *nonce, int len)
 
 void VMAC_Base::HashEndianCorrectedBlock(const word64 *data)
 {
-	assert(false);
-	throw 0;
+	CRYPTOPP_UNUSED(data);
+	CRYPTOPP_ASSERT(false);
+	throw NotImplemented("VMAC: HashEndianCorrectedBlock is not implemented");
 }
 
-#if CRYPTOPP_BOOL_SSE2_ASM_AVAILABLE && CRYPTOPP_BOOL_X86
-#pragma warning(disable: 4731)	// frame pointer register 'ebp' modified by inline assembly code
+unsigned int VMAC_Base::OptimalDataAlignment() const
+{
+	return
+#if CRYPTOPP_SSE2_ASM_AVAILABLE || defined(CRYPTOPP_X64_MASM_AVAILABLE)
+		HasSSE2() ? 16 :
+#endif
+		GetCipher().OptimalDataAlignment();
+}
+
+#if CRYPTOPP_SSE2_ASM_AVAILABLE && (CRYPTOPP_BOOL_X86 || CRYPTOPP_BOOL_X32)
+#if CRYPTOPP_MSC_VERSION
+# pragma warning(disable: 4731)	// frame pointer register 'ebp' modified by inline assembly code
+#endif
 void
 #ifdef __GNUC__
 __attribute__ ((noinline))		// Intel Compiler 9.1 workaround
 #endif
 VMAC_Base::VHASH_Update_SSE2(const word64 *data, size_t blocksRemainingInWord64, int tagPart)
 {
+	CRYPTOPP_ASSERT(IsAlignedOn(m_polyState(),GetAlignmentOf<word64>()));
+	CRYPTOPP_ASSERT(IsAlignedOn(m_nhKey(),GetAlignmentOf<word64>()));
+
 	const word64 *nhK = m_nhKey();
-	word64 *polyS = m_polyState();
+	word64 *polyS = (word64*)(void*)m_polyState();
 	word32 L1KeyLength = m_L1KeyLength;
+
+	// These are used in the ASM, but some analysis engines cnnot determine it.
+	CRYPTOPP_UNUSED(data); CRYPTOPP_UNUSED(tagPart); CRYPTOPP_UNUSED(L1KeyLength);
+	CRYPTOPP_UNUSED(blocksRemainingInWord64);
 
 #ifdef __GNUC__
 	word32 temp;
@@ -154,9 +194,9 @@ VMAC_Base::VHASH_Update_SSE2(const word64 *data, size_t blocksRemainingInWord64,
 	(
 	AS2(	mov		%%ebx, %0)
 	AS2(	mov		%1, %%ebx)
-	".intel_syntax noprefix;"
+	INTEL_NOPREFIX
 #else
-	#if _MSC_VER < 1300 || defined(__INTEL_COMPILER)
+	#if defined(__INTEL_COMPILER)
 	char isFirstBlock = m_isFirstBlock;
 	AS2(	mov		ebx, [L1KeyLength])
 	AS2(	mov		dl, [isFirstBlock])
@@ -177,8 +217,13 @@ VMAC_Base::VHASH_Update_SSE2(const word64 *data, size_t blocksRemainingInWord64,
 #endif
 
 	AS2(	shr		ebx, 3)
-	AS1(	push	ebp)
+#if CRYPTOPP_BOOL_X32
+	AS_PUSH_IF86(	bp)
+	AS2(	sub		esp, 24)
+#else
+	AS_PUSH_IF86(	bp)
 	AS2(	sub		esp, 12)
+#endif
 	ASL(4)
 	AS2(	mov		ebp, ebx)
 	AS2(	cmp		ecx, ebx)
@@ -201,7 +246,11 @@ VMAC_Base::VHASH_Update_SSE2(const word64 *data, size_t blocksRemainingInWord64,
 	AS2(	pxor	mm7, mm7)
 	AS2(	movd	[esp], mm6)
 	AS2(	psrlq	mm6, 32)
+#if CRYPTOPP_BOOL_X32
+	AS2(	movd	[esp+8], mm5)
+#else
 	AS2(	movd	[esp+4], mm5)
+#endif
 	AS2(	psrlq	mm5, 32)
 	AS2(	cmp		edi, ebp)
 	ASJ(	je,		1, f)
@@ -216,7 +265,11 @@ VMAC_Base::VHASH_Update_SSE2(const word64 *data, size_t blocksRemainingInWord64,
 	AS2(	paddq	mm5, mm2)
 	ASS(	pshufw	mm2, mm0, 1, 0, 3, 2)
 	AS2(	pmuludq	mm0, mm1)
+#if CRYPTOPP_BOOL_X32
+	AS2(	movd	[esp+16], mm3)
+#else
 	AS2(	movd	[esp+8], mm3)
+#endif
 	AS2(	psrlq	mm3, 32)
 	AS2(	paddq	mm5, mm3)
 	ASS(	pshufw	mm3, mm1, 1, 0, 3, 2)
@@ -225,28 +278,48 @@ VMAC_Base::VHASH_Update_SSE2(const word64 *data, size_t blocksRemainingInWord64,
 	AS2(	pmuludq	mm3, mm4)
 	AS2(	movd	mm4, [esp])
 	AS2(	paddq	mm7, mm4)
+#if CRYPTOPP_BOOL_X32
+	AS2(	movd	mm4, [esp+8])
+	AS2(	paddq	mm6, mm4)
+	AS2(	movd	mm4, [esp+16])
+#else
 	AS2(	movd	mm4, [esp+4])
 	AS2(	paddq	mm6, mm4)
 	AS2(	movd	mm4, [esp+8])
+#endif
 	AS2(	paddq	mm6, mm4)
 	AS2(	movd	[esp], mm0)
 	AS2(	psrlq	mm0, 32)
 	AS2(	paddq	mm6, mm0)
+#if CRYPTOPP_BOOL_X32
+	AS2(	movd	[esp+8], mm1)
+#else
 	AS2(	movd	[esp+4], mm1)
+#endif
 	AS2(	psrlq	mm1, 32)
 	AS2(	paddq	mm5, mm1)
 	AS2(	cmp		edi, ebp)
 	ASJ(	jne,	0, b)
 	ASL(1)
 	AS2(	paddq	mm5, mm2)
+#if CRYPTOPP_BOOL_X32
+	AS2(	movd	[esp+16], mm3)
+#else
 	AS2(	movd	[esp+8], mm3)
+#endif
 	AS2(	psrlq	mm3, 32)
 	AS2(	paddq	mm5, mm3)
 	AS2(	movd	mm4, [esp])
 	AS2(	paddq	mm7, mm4)
+#if CRYPTOPP_BOOL_X32
+	AS2(	movd	mm4, [esp+8])
+	AS2(	paddq	mm6, mm4)
+	AS2(	movd	mm4, [esp+16])
+#else
 	AS2(	movd	mm4, [esp+4])
 	AS2(	paddq	mm6, mm4)
 	AS2(	movd	mm4, [esp+8])
+#endif
 	AS2(	paddq	mm6, mm4)
 	AS2(	lea		ebp, [8*ebx])
 	AS2(	sub		edi, ebp)		// reset edi to start of nhK
@@ -254,7 +327,11 @@ VMAC_Base::VHASH_Update_SSE2(const word64 *data, size_t blocksRemainingInWord64,
 	AS2(	movd	[esp], mm7)
 	AS2(	psrlq	mm7, 32)
 	AS2(	paddq	mm6, mm7)
+#if CRYPTOPP_BOOL_X32
+	AS2(	movd	[esp+8], mm6)
+#else
 	AS2(	movd	[esp+4], mm6)
+#endif
 	AS2(	psrlq	mm6, 32)
 	AS2(	paddq	mm5, mm6)
 	AS2(	psllq	mm5, 2)
@@ -276,7 +353,11 @@ VMAC_Base::VHASH_Update_SSE2(const word64 *data, size_t blocksRemainingInWord64,
 	AS2(	movd	a0, mm0)
 	AS2(	psrlq	mm0, 32)
 	AS2(	movd	mm1, k1)
+#if CRYPTOPP_BOOL_X32
+	AS2(	movd	mm2, [esp+8])
+#else
 	AS2(	movd	mm2, [esp+4])
+#endif
 	AS2(	paddq	mm1, mm2)
 	AS2(	paddq	mm0, mm1)
 	AS2(	movd	a1, mm0)
@@ -314,7 +395,11 @@ VMAC_Base::VHASH_Update_SSE2(const word64 *data, size_t blocksRemainingInWord64,
 	AS2(	movq	mm3, mm2)
 	AS2(	pmuludq	mm2, k3)		// a0*k3
 	AS2(	pmuludq	mm3, mm7)		// a0*k0
+#if CRYPTOPP_BOOL_X32
+	AS2(	movd	[esp+16], mm0)
+#else
 	AS2(	movd	[esp+8], mm0)
+#endif
 	AS2(	psrlq	mm0, 32)
 	AS2(	pmuludq	mm7, mm5)		// a1*k0
 	AS2(	pmuludq	mm5, k3)		// a1*k3
@@ -337,14 +422,22 @@ VMAC_Base::VHASH_Update_SSE2(const word64 *data, size_t blocksRemainingInWord64,
 	AS2(	movd	mm1, a3)
 	AS2(	pmuludq	mm1, k2)		// a3*k2
 	AS2(	paddq	mm5, mm2)
+#if CRYPTOPP_BOOL_X32
+	AS2(	movd	mm2, [esp+8])
+#else
 	AS2(	movd	mm2, [esp+4])
+#endif
 	AS2(	psllq	mm5, 1)
 	AS2(	paddq	mm0, mm5)
 	AS2(	psllq	mm4, 33)
 	AS2(	movd	a0, mm0)
 	AS2(	psrlq	mm0, 32)
 	AS2(	paddq	mm6, mm7)
+#if CRYPTOPP_BOOL_X32
+	AS2(	movd	mm7, [esp+16])
+#else
 	AS2(	movd	mm7, [esp+8])
+#endif
 	AS2(	paddq	mm0, mm6)
 	AS2(	paddq	mm0, mm2)
 	AS2(	paddq	mm3, mm1)
@@ -368,12 +461,15 @@ VMAC_Base::VHASH_Update_SSE2(const word64 *data, size_t blocksRemainingInWord64,
 	ASL(3)
 	AS2(	test	ecx, ecx)
 	ASJ(	jnz,	4, b)
-
+#if CRYPTOPP_BOOL_X32
+	AS2(	add		esp, 24)
+#else
 	AS2(	add		esp, 12)
-	AS1(	pop		ebp)
+#endif
+	AS_POP_IF86(	bp)
 	AS1(	emms)
 #ifdef __GNUC__
-	".att_syntax prefix;"
+	ATT_PREFIX
 	AS2(	mov	%0, %%ebx)
 		: "=m" (temp)
 		: "m" (L1KeyLength), "c" (blocksRemainingInWord64), "S" (data), "D" (nhK+tagPart*2), "d" (m_isFirstBlock), "a" (polyS+tagPart*4)
@@ -389,7 +485,7 @@ VMAC_Base::VHASH_Update_SSE2(const word64 *data, size_t blocksRemainingInWord64,
 	#define AccumulateNH(a, b, c) a += word128(b)*(c)
 	#define Multiply128(r, i1, i2) r = word128(word64(i1)) * word64(i2)
 #else
-	#if _MSC_VER >= 1400 && !defined(__INTEL_COMPILER)
+	#if _MSC_VER >= 1400 && !defined(__INTEL_COMPILER) && !defined(_M_ARM)
 		#define MUL32(a, b) __emulu(word32(a), word32(b))
 	#else
 		#define MUL32(a, b) ((word64)((word32)(a)) * (word32)(b))
@@ -444,11 +540,12 @@ VMAC_Base::VHASH_Update_SSE2(const word64 *data, size_t blocksRemainingInWord64,
 		}
 #endif
 
-#if !(defined(_MSC_VER) && _MSC_VER < 1300)
 template <bool T_128BitTag>
-#endif
 void VMAC_Base::VHASH_Update_Template(const word64 *data, size_t blocksRemainingInWord64)
 {
+	CRYPTOPP_ASSERT(IsAlignedOn(m_polyState(),GetAlignmentOf<word64>()));
+	CRYPTOPP_ASSERT(IsAlignedOn(m_nhKey(),GetAlignmentOf<word64>()));
+
 	#define INNER_LOOP_ITERATION(j)	{\
 		word64 d0 = ConditionalByteReverse(LITTLE_ENDIAN_ORDER, data[i+2*j+0]);\
 		word64 d1 = ConditionalByteReverse(LITTLE_ENDIAN_ORDER, data[i+2*j+1]);\
@@ -457,21 +554,18 @@ void VMAC_Base::VHASH_Update_Template(const word64 *data, size_t blocksRemaining
 			AccumulateNH(nhB, d0+nhK[i+2*j+2], d1+nhK[i+2*j+3]);\
 		}
 
-#if (defined(_MSC_VER) && _MSC_VER < 1300)
-	bool T_128BitTag = m_is128;
-#endif
 	size_t L1KeyLengthInWord64 = m_L1KeyLength / 8;
 	size_t innerLoopEnd = L1KeyLengthInWord64;
 	const word64 *nhK = m_nhKey();
-	word64 *polyS = m_polyState();
+	word64 *polyS = (word64*)(void*)m_polyState();
 	bool isFirstBlock = true;
 	size_t i;
 
 	#if !VMAC_BOOL_32BIT
 		#if VMAC_BOOL_WORD128
-			word128 a1, a2;
+			word128 a1=0, a2=0;
 		#else
-			word64 ah1, al1, ah2, al2;
+			word64 ah1=0, al1=0, ah2=0, al2=0;
 		#endif
 		word64 kh1, kl1, kh2, kl2;
 		kh1=(polyS+0*4+2)[0]; kl1=(polyS+0*4+2)[1];
@@ -595,7 +689,7 @@ void VMAC_Base::VHASH_Update_Template(const word64 *data, size_t blocksRemaining
 			#undef k0
 			#undef k1
 			#undef k2
-			#undef k3		
+			#undef k3
 			#undef kHi
 		#else		// #if VMAC_BOOL_32BIT
 			if (isFirstBlock)
@@ -706,7 +800,7 @@ void VMAC_Base::VHASH_Update_Template(const word64 *data, size_t blocksRemaining
 
 inline void VMAC_Base::VHASH_Update(const word64 *data, size_t blocksRemainingInWord64)
 {
-#if CRYPTOPP_BOOL_SSE2_ASM_AVAILABLE && CRYPTOPP_BOOL_X86
+#if CRYPTOPP_SSE2_ASM_AVAILABLE && (CRYPTOPP_BOOL_X86 || CRYPTOPP_BOOL_X32)
 	if (HasSSE2())
 	{
 		VHASH_Update_SSE2(data, blocksRemainingInWord64, 0);
@@ -717,14 +811,10 @@ inline void VMAC_Base::VHASH_Update(const word64 *data, size_t blocksRemainingIn
 	else
 #endif
 	{
-#if defined(_MSC_VER) && _MSC_VER < 1300
-		VHASH_Update_Template(data, blocksRemainingInWord64);
-#else
 		if (m_is128)
 			VHASH_Update_Template<true>(data, blocksRemainingInWord64);
 		else
 			VHASH_Update_Template<false>(data, blocksRemainingInWord64);
-#endif
 	}
 }
 
@@ -778,6 +868,8 @@ static word64 L3Hash(const word64 *input, const word64 *l3Key, size_t len)
 
 void VMAC_Base::TruncatedFinal(byte *mac, size_t size)
 {
+	CRYPTOPP_ASSERT(IsAlignedOn(DataBuf(),GetAlignmentOf<word64>()));
+	CRYPTOPP_ASSERT(IsAlignedOn(m_polyState(),GetAlignmentOf<word64>()));
 	size_t len = ModPowerOf2(GetBitCountLo()/8, m_L1KeyLength);
 
 	if (len)

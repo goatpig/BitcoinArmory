@@ -1,28 +1,24 @@
-// lubyrack.h - written and placed in the public domain by Wei Dai
+// lubyrack.h - originally written and placed in the public domain by Wei Dai
+
+/// \file lubyrack.h
+/// \brief Classes for the Luby-Rackoff block cipher
 
 #ifndef CRYPTOPP_LUBYRACK_H
 #define CRYPTOPP_LUBYRACK_H
-
-/** \file */
 
 #include "simple.h"
 #include "secblock.h"
 
 NAMESPACE_BEGIN(CryptoPP)
 
-template <class T> struct DigestSizeDoubleWorkaround 	// VC60 workaround
-{
-	CRYPTOPP_CONSTANT(RESULT = 2*T::DIGESTSIZE)
-};
-
-//! algorithm info
+/// \brief Luby-Rackoff block cipher information
 template <class T>
-struct LR_Info : public VariableKeyLength<16, 0, 2*(INT_MAX/2), 2>, public FixedBlockSize<DigestSizeDoubleWorkaround<T>::RESULT>
+struct LR_Info : public VariableKeyLength<16, 0, 2*(INT_MAX/2), 2>, public FixedBlockSize<2*T::DIGESTSIZE>
 {
 	static std::string StaticAlgorithmName() {return std::string("LR/")+T::StaticAlgorithmName();}
 };
 
-//! Luby-Rackoff
+/// \brief Luby-Rackoff block cipher
 template <class T>
 class LR : public LR_Info<T>, public BlockCipherDocumentation
 {

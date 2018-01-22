@@ -3,7 +3,7 @@
 
 #include "config.h"
 
-#ifdef THREADS_AVAILABLE
+#if !defined(NO_OS_DEPENDENCE) && defined(THREADS_AVAILABLE)
 
 #include "misc.h"
 
@@ -16,11 +16,11 @@ typedef pthread_key_t ThreadLocalIndexType;
 
 NAMESPACE_BEGIN(CryptoPP)
 
-//! thread local storage
+/// thread local storage
 class CRYPTOPP_DLL ThreadLocalStorage : public NotCopyable
 {
 public:
-	//! exception thrown by ThreadLocalStorage class
+	/// exception thrown by ThreadLocalStorage class
 	class Err : public OS_Error
 	{
 	public:
@@ -28,7 +28,7 @@ public:
 	};
 
 	ThreadLocalStorage();
-	~ThreadLocalStorage();
+	~ThreadLocalStorage() CRYPTOPP_THROW;
 
 	void SetValue(void *value);
 	void *GetValue() const;
@@ -39,6 +39,6 @@ private:
 
 NAMESPACE_END
 
-#endif	// #ifdef THREADS_AVAILABLE
+#endif	// THREADS_AVAILABLE
 
-#endif
+#endif  // CRYPTOPP_TRDLOCAL_H

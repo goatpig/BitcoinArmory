@@ -1,21 +1,25 @@
-// network.cpp - written and placed in the public domain by Wei Dai
+// network.cpp - originally written and placed in the public domain by Wei Dai
 
 #include "pch.h"
+
 #include "network.h"
+
+#if !defined(NO_OS_DEPENDENCE) && defined(SOCKETS_AVAILABLE)
+
 #include "wait.h"
 
 #define CRYPTOPP_TRACE_NETWORK 0
 
 NAMESPACE_BEGIN(CryptoPP)
 
-#ifdef HIGHRES_TIMER_AVAILABLE
-
 lword LimitedBandwidth::ComputeCurrentTransceiveLimit()
 {
 	if (!m_maxBytesPerSecond)
 		return ULONG_MAX;
 
-	double curTime = GetCurTimeAndCleanUp();
+	const double curTime = GetCurTimeAndCleanUp();
+	CRYPTOPP_UNUSED(curTime);
+
 	lword total = 0;
 	for (OpQueue::size_type i=0; i!=m_ops.size(); ++i)
 		total += m_ops[i].second;
@@ -130,7 +134,7 @@ size_t NonblockingSource::GeneralPump2(
 		}
 
 		WaitObjectContainer container;
-		LimitedBandwidth::GetWaitObjects(container, CallStack("NonblockingSource::GeneralPump2() - speed limit", 0));
+		LimitedBandwidth::GetWaitObjects(container, CallStack("NonblockingSource::GeneralPump2() - speed limit", NULLPTR));
 		container.Wait((unsigned long)waitTime);
 	}
 
@@ -152,7 +156,7 @@ size_t NonblockingSource::PumpMessages2(unsigned int &messageCount, bool blockin
 
 	if (!m_messageEndSent && SourceExhausted())
 	{
-		RETURN_IF_NONZERO(AttachedTransformation()->Put2(NULL, 0, GetAutoSignalPropagation(), true));
+		RETURN_IF_NONZERO(AttachedTransformation()->Put2(NULLPTR, 0, GetAutoSignalPropagation(), true));
 		m_messageEndSent = true;
 		messageCount = 1;
 	}
@@ -178,7 +182,7 @@ lword NonblockingSink::TimedFlush(unsigned long maxTime, size_t targetSize)
 	timer.StartTimer();
 
 	while (true)
-	{	
+	{
 		size_t flushSize = UnsignedMin(curBufSize - targetSize, ComputeCurrentTransceiveLimit());
 		if (flushSize || EofPending())
 		{
@@ -210,7 +214,7 @@ lword NonblockingSink::TimedFlush(unsigned long maxTime, size_t targetSize)
 		}
 
 		WaitObjectContainer container;
-		LimitedBandwidth::GetWaitObjects(container, CallStack("NonblockingSink::TimedFlush() - speed limit", 0));
+		LimitedBandwidth::GetWaitObjects(container, CallStack("NonblockingSink::TimedFlush() - speed limit", NULLPTR));
 		container.Wait((unsigned long)waitTime);
 	}
 
@@ -227,8 +231,8 @@ bool NonblockingSink::IsolatedFlush(bool hardFlush, bool blocking)
 
 NetworkSource::NetworkSource(BufferedTransformation *attachment)
 	: NonblockingSource(attachment), m_buf(1024*16)
-	, m_waitingForResult(false), m_outputBlocked(false)
-	, m_dataBegin(0), m_dataEnd(0)
+	,  m_putSize(0), m_dataBegin(0), m_dataEnd(0)
+	,  m_waitingForResult(false), m_outputBlocked(false)
 {
 }
 
@@ -246,7 +250,7 @@ void NetworkSource::GetWaitObjects(WaitObjectContainer &container, CallStack con
 	else if (!m_outputBlocked)
 	{
 		if (m_dataBegin == m_dataEnd)
-			AccessReceiver().GetWaitObjects(container, CallStack("NetworkSource::GetWaitObjects() - no data", &callStack)); 
+			AccessReceiver().GetWaitObjects(container, CallStack("NetworkSource::GetWaitObjects() - no data", &callStack));
 		else
 			container.SetNoWait(CallStack("NetworkSource::GetWaitObjects() - have data", &callStack));
 	}
@@ -278,12 +282,12 @@ size_t NetworkSource::DoPump(lword &byteCount, bool blockingOutput, unsigned lon
 			{
 				if (receiver.MustWaitForResult() &&
 					!receiver.Wait(SaturatingSubtract(maxTime, timer.ElapsedTime()),
-						CallStack("NetworkSource::DoPump() - wait receive result", 0)))
+						CallStack("NetworkSource::DoPump() - wait receive result", NULLPTR)))
 					break;
 
 				unsigned int recvResult = receiver.GetReceiveResult();
 #if CRYPTOPP_TRACE_NETWORK
-				OutputDebugString((IntToString((unsigned int)this) + ": Received " + IntToString(recvResult) + " bytes\n").c_str());
+				OutputDebugStringA((IntToString((unsigned int)this) + ": Received " + IntToString(recvResult) + " bytes\n").c_str());
 #endif
 				m_dataEnd += recvResult;
 				m_waitingForResult = false;
@@ -298,7 +302,7 @@ size_t NetworkSource::DoPump(lword &byteCount, bool blockingOutput, unsigned lon
 				if (receiver.MustWaitToReceive())
 				{
 					if (!receiver.Wait(SaturatingSubtract(maxTime, timer.ElapsedTime()),
-							CallStack("NetworkSource::DoPump() - wait receive", 0)))
+							CallStack("NetworkSource::DoPump() - wait receive", NULLPTR)))
 						break;
 
 					receiver.Receive(m_buf+m_dataEnd, m_buf.size()-m_dataEnd);
@@ -311,13 +315,13 @@ ReceiveNoWait:
 					// call Receive repeatedly as long as data is immediately available,
 					// because some receivers tend to return data in small pieces
 #if CRYPTOPP_TRACE_NETWORK
-					OutputDebugString((IntToString((unsigned int)this) + ": Receiving " + IntToString(m_buf.size()-m_dataEnd) + " bytes\n").c_str());
+					OutputDebugStringA((IntToString((unsigned int)this) + ": Receiving " + IntToString(m_buf.size()-m_dataEnd) + " bytes\n").c_str());
 #endif
 					while (receiver.Receive(m_buf+m_dataEnd, m_buf.size()-m_dataEnd))
 					{
 						unsigned int recvResult = receiver.GetReceiveResult();
 #if CRYPTOPP_TRACE_NETWORK
-						OutputDebugString((IntToString((unsigned int)this) + ": Received " + IntToString(recvResult) + " bytes\n").c_str());
+						OutputDebugStringA((IntToString((unsigned int)this) + ": Received " + IntToString(recvResult) + " bytes\n").c_str());
 #endif
 						m_dataEnd += recvResult;
 						if (receiver.EofReceived() || m_dataEnd > m_buf.size() /2)
@@ -341,7 +345,7 @@ DoOutput:
 			if (result)
 			{
 				if (t->Wait(SaturatingSubtract(maxTime, timer.ElapsedTime()),
-						CallStack("NetworkSource::DoPump() - wait attachment", 0)))
+						CallStack("NetworkSource::DoPump() - wait attachment", NULLPTR)))
 					goto DoOutput;
 				else
 				{
@@ -373,7 +377,7 @@ DoOutput:
 NetworkSink::NetworkSink(unsigned int maxBufferSize, unsigned int autoFlushBound)
 	: m_maxBufferSize(maxBufferSize), m_autoFlushBound(autoFlushBound)
 	, m_needSendResult(false), m_wasBlocked(false), m_eofState(EOF_NONE)
-	, m_buffer(STDMIN(16U*1024U+256, maxBufferSize)), m_skipBytes(0) 
+	, m_buffer(STDMIN(16U*1024U+256, maxBufferSize)), m_skipBytes(0)
 	, m_speedTimer(Timer::MILLISECONDS), m_byteCountSinceLastTimerReset(0)
 	, m_currentSpeed(0), m_maxObservedSpeed(0)
 {
@@ -387,7 +391,7 @@ float NetworkSink::ComputeCurrentSpeed()
 		m_maxObservedSpeed = STDMAX(m_currentSpeed, m_maxObservedSpeed * 0.98f);
 		m_byteCountSinceLastTimerReset = 0;
 		m_speedTimer.StartTimer();
-//		OutputDebugString(("max speed: " + IntToString((int)m_maxObservedSpeed) + " current speed: " + IntToString((int)m_currentSpeed) + "\n").c_str());
+//		OutputDebugStringA(("max speed: " + IntToString((int)m_maxObservedSpeed) + " current speed: " + IntToString((int)m_currentSpeed) + "\n").c_str());
 	}
 	return m_currentSpeed;
 }
@@ -395,7 +399,7 @@ float NetworkSink::ComputeCurrentSpeed()
 float NetworkSink::GetMaxObservedSpeed() const
 {
 	lword m = GetMaxBytesPerSecond();
-	return m ? STDMIN(m_maxObservedSpeed, float(CRYPTOPP_VC6_INT64 m)) : m_maxObservedSpeed;
+	return m ? STDMIN(m_maxObservedSpeed, static_cast<float>(m)) : m_maxObservedSpeed;
 }
 
 unsigned int NetworkSink::GetMaxWaitObjectCount() const
@@ -431,7 +435,7 @@ size_t NetworkSink::Put2(const byte *inString, size_t length, int messageEnd, bo
 	{
 		if (m_skipBytes)
 		{
-			assert(length >= m_skipBytes);
+			CRYPTOPP_ASSERT(length >= m_skipBytes);
 			inString += m_skipBytes;
 			length -= m_skipBytes;
 		}
@@ -447,7 +451,7 @@ size_t NetworkSink::Put2(const byte *inString, size_t length, int messageEnd, bo
 
 		if (m_buffer.CurrentSize() > targetSize)
 		{
-			assert(!blocking);
+			CRYPTOPP_ASSERT(!blocking);
 			m_wasBlocked = true;
 			m_skipBytes += length;
 			size_t blockedBytes = UnsignedMin(length, m_buffer.CurrentSize() - targetSize);
@@ -483,17 +487,17 @@ lword NetworkSink::DoFlush(unsigned long maxTime, size_t targetSize)
 	{
 		if (m_buffer.CurrentSize() <= targetSize)
 			break;
-		
+
 		if (m_needSendResult)
 		{
 			if (sender.MustWaitForResult() &&
 				!sender.Wait(SaturatingSubtract(maxTime, timer.ElapsedTime()),
-					CallStack("NetworkSink::DoFlush() - wait send result", 0)))
+					CallStack("NetworkSink::DoFlush() - wait send result", NULLPTR)))
 				break;
 
 			unsigned int sendResult = sender.GetSendResult();
 #if CRYPTOPP_TRACE_NETWORK
-			OutputDebugString((IntToString((unsigned int)this) + ": Sent " + IntToString(sendResult) + " bytes\n").c_str());
+			OutputDebugStringA((IntToString((unsigned int)this) + ": Sent " + IntToString(sendResult) + " bytes\n").c_str());
 #endif
 			m_buffer.Skip(sendResult);
 			totalFlushSize += sendResult;
@@ -504,14 +508,14 @@ lword NetworkSink::DoFlush(unsigned long maxTime, size_t targetSize)
 		}
 
 		unsigned long timeOut = maxTime ? SaturatingSubtract(maxTime, timer.ElapsedTime()) : 0;
-		if (sender.MustWaitToSend() && !sender.Wait(timeOut, CallStack("NetworkSink::DoFlush() - wait send", 0)))
+		if (sender.MustWaitToSend() && !sender.Wait(timeOut, CallStack("NetworkSink::DoFlush() - wait send", NULLPTR)))
 			break;
 
 		size_t contiguousSize = 0;
 		const byte *block = m_buffer.Spy(contiguousSize);
 
 #if CRYPTOPP_TRACE_NETWORK
-		OutputDebugString((IntToString((unsigned int)this) + ": Sending " + IntToString(contiguousSize) + " bytes\n").c_str());
+		OutputDebugStringA((IntToString((unsigned int)this) + ": Sending " + IntToString(contiguousSize) + " bytes\n").c_str());
 #endif
 		sender.Send(block, contiguousSize);
 		m_needSendResult = true;
@@ -522,7 +526,7 @@ lword NetworkSink::DoFlush(unsigned long maxTime, size_t targetSize)
 
 	m_byteCountSinceLastTimerReset += totalFlushSize;
 	ComputeCurrentSpeed();
-	
+
 	if (m_buffer.IsEmpty() && !m_needSendResult)
 	{
 		if (m_eofState == EOF_PENDING_SEND)
@@ -534,7 +538,7 @@ lword NetworkSink::DoFlush(unsigned long maxTime, size_t targetSize)
 		while (m_eofState == EOF_PENDING_DELIVERY)
 		{
 			unsigned long timeOut = maxTime ? SaturatingSubtract(maxTime, timer.ElapsedTime()) : 0;
-			if (!sender.Wait(timeOut, CallStack("NetworkSink::DoFlush() - wait EOF", 0)))
+			if (!sender.Wait(timeOut, CallStack("NetworkSink::DoFlush() - wait EOF", NULLPTR)))
 				break;
 
 			if (sender.EofSent())
@@ -545,6 +549,6 @@ lword NetworkSink::DoFlush(unsigned long maxTime, size_t targetSize)
 	return totalFlushSize;
 }
 
-#endif	// #ifdef HIGHRES_TIMER_AVAILABLE
-
 NAMESPACE_END
+
+#endif	// #ifdef SOCKETS_AVAILABLE

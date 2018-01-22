@@ -10,6 +10,14 @@ See comments at top of rijndael.cpp for more details.
 */
 
 #include "pch.h"
+#include "config.h"
+
+#if CRYPTOPP_MSC_VERSION
+# pragma warning(disable: 4456)
+# if (CRYPTOPP_MSC_VERSION >= 1400)
+#  pragma warning(disable: 6246)
+# endif
+#endif
 
 #include "camellia.h"
 #include "misc.h"
@@ -21,20 +29,20 @@ NAMESPACE_BEGIN(CryptoPP)
 #define SLOW_ROUND(lh, ll, rh, rl, kh, kl)	{							\
 	word32 zr = ll ^ kl;												\
 	word32 zl = lh ^ kh;												\
-	zr=	rotlFixed(s1[GETBYTE(zr, 3)], 1) |								\
-		(rotrFixed(s1[GETBYTE(zr, 2)], 1) << 24) |						\
-		(s1[rotlFixed(CRYPTOPP_GET_BYTE_AS_BYTE(zr, 1),1)] << 16) |		\
+	zr=	rotlConstant<1>(s1[GETBYTE(zr, 3)]) |							\
+		(rotrConstant<1>(s1[GETBYTE(zr, 2)]) << 24) |					\
+		(s1[rotlConstant<1>(CRYPTOPP_GET_BYTE_AS_BYTE(zr, 1))] << 16) |	\
 		(s1[GETBYTE(zr, 0)] << 8);										\
 	zl=	(s1[GETBYTE(zl, 3)] << 24) |									\
-		(rotlFixed(s1[GETBYTE(zl, 2)], 1) << 16) |						\
-		(rotrFixed(s1[GETBYTE(zl, 1)], 1) << 8) |						\
-		s1[rotlFixed(CRYPTOPP_GET_BYTE_AS_BYTE(zl, 0), 1)];				\
+		(rotlConstant<1>(s1[GETBYTE(zl, 2)]) << 16) |					\
+		(rotrConstant<1>(s1[GETBYTE(zl, 1)]) << 8) |					\
+		s1[rotlConstant<1>(CRYPTOPP_GET_BYTE_AS_BYTE(zl, 0))];			\
 	zl ^= zr;															\
-	zr = zl ^ rotlFixed(zr, 8);											\
-	zl = zr ^ rotrFixed(zl, 8);											\
-	rh ^= rotlFixed(zr, 16);											\
+	zr = zl ^ rotlConstant<8>(zr);										\
+	zl = zr ^ rotrConstant<8>(zl);										\
+	rh ^= rotlConstant<16>(zr);											\
 	rh ^= zl;															\
-	rl ^= rotlFixed(zl, 8);												\
+	rl ^= rotlConstant<8>(zl);											\
 	}
 
 // normal round - same output as above but using larger tables for faster speed
@@ -46,13 +54,13 @@ NAMESPACE_BEGIN(CryptoPP)
 	d ^= u;									\
 	rh ^= d;								\
 	rl ^= d;								\
-	rl ^= rotrFixed(u, 8);}
+	rl ^= rotrConstant<8>(u);}
 
 #define DOUBLE_ROUND(lh, ll, rh, rl, k0, k1, k2, k3)	\
 	ROUND(lh, ll, rh, rl, k0, k1)						\
 	ROUND(rh, rl, lh, ll, k2, k3)
 
-#ifdef IS_LITTLE_ENDIAN
+#ifdef CRYPTOPP_LITTLE_ENDIAN
 #define EFI(i) (1-(i))
 #else
 #define EFI(i) (i)
@@ -83,11 +91,15 @@ void Camellia::Base::UncheckedSetKey(const byte *key, unsigned int keylen, const
 	kwl = (word64(k0) << 32) | k1;	\
 	kwr = (word64(k2) << 32) | k3
 #define KS_ROUND_0(i)							\
-	*(word64*)CALC_ADDR(ks32, i+EFI(0)) = kwl;	\
-	*(word64*)CALC_ADDR(ks32, i+EFI(1)) = kwr
+	CRYPTOPP_ASSERT(IsAlignedOn(CALC_ADDR(ks32, i+EFI(0)),GetAlignmentOf<word64>()));	\
+	CRYPTOPP_ASSERT(IsAlignedOn(CALC_ADDR(ks32, i+EFI(1)),GetAlignmentOf<word64>()));	\
+	*(word64*)(void*)CALC_ADDR(ks32, i+EFI(0)) = kwl;	\
+	*(word64*)(void*)CALC_ADDR(ks32, i+EFI(1)) = kwr
 #define KS_ROUND(i, r, which)																						\
-	if (which & (1<<int(r<64))) *(word64*)CALC_ADDR(ks32, i+EFI(r<64)) = (kwr << (r%64)) | (kwl >> (64 - (r%64)));	\
-	if (which & (1<<int(r>64))) *(word64*)CALC_ADDR(ks32, i+EFI(r>64)) = (kwl << (r%64)) | (kwr >> (64 - (r%64)))
+	CRYPTOPP_ASSERT(IsAlignedOn(CALC_ADDR(ks32, i+EFI(r<64)),GetAlignmentOf<word64>()));	\
+	CRYPTOPP_ASSERT(IsAlignedOn(CALC_ADDR(ks32, i+EFI(r>64)),GetAlignmentOf<word64>()));	\
+	if (which & (1<<int(r<64))) *(word64*)(void*)CALC_ADDR(ks32, i+EFI(r<64)) = (kwr << (r%64)) | (kwl >> (64 - (r%64)));	\
+	if (which & (1<<int(r>64))) *(word64*)(void*)CALC_ADDR(ks32, i+EFI(r>64)) = (kwl << (r%64)) | (kwr >> (64 - (r%64)))
 #else
 	// SSE2 version is 30% faster on Intel Core 2. Doesn't seem worth the hassle of maintenance, but left here
 	// #if'd out in case someone needs it.
@@ -190,10 +202,10 @@ void Camellia::Base::ProcessAndXorBlock(const byte *inBlock, const byte *xorBloc
 #define KS(i, j) ks[i*4 + EFI(j/2)*2 + EFI(j%2)]
 
 #define FL(klh, kll, krh, krl)		\
-	ll ^= rotlFixed(lh & klh, 1);	\
+	ll ^= rotlConstant<1>(lh & klh);\
 	lh ^= (ll | kll);				\
 	rh ^= (rl | krl);				\
-	rl ^= rotlFixed(rh & krh, 1);
+	rl ^= rotlConstant<1>(rh & krh);
 
 	word32 lh, ll, rh, rl;
 	typedef BlockGetAndPut<word32, BigEndian> Block;
@@ -204,13 +216,15 @@ void Camellia::Base::ProcessAndXorBlock(const byte *inBlock, const byte *xorBloc
 	rh ^= KS(0,2);
 	rl ^= KS(0,3);
 
-	// timing attack countermeasure. see comments at top for more details
+	// Timing attack countermeasure. see comments in Rijndael for more details
 	const int cacheLineSize = GetCacheLineSize();
 	unsigned int i;
-	word32 u = 0;
+	volatile word32 _u = 0;
+	word32 u = _u;
+
 	for (i=0; i<256; i+=cacheLineSize)
-		u &= *(const word32 *)(s1+i);
-	u &= *(const word32 *)(s1+252);
+		u &= *(const word32 *)(void*)(s1+i);
+	u &= *(const word32 *)(void*)(s1+252);
 	lh |= u; ll |= u;
 
 	SLOW_ROUND(lh, ll, rh, rl, KS(1,0), KS(1,1))
@@ -235,6 +249,7 @@ void Camellia::Base::ProcessAndXorBlock(const byte *inBlock, const byte *xorBloc
 
 // The Camellia s-boxes
 
+CRYPTOPP_ALIGN_DATA(4)
 const byte Camellia::Base::s1[256] =
 {
 	112,130,44,236,179,39,192,229,228,133,87,53,234,12,174,65,

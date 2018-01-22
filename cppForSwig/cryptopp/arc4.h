@@ -1,25 +1,35 @@
+// arc4.h - originally written and placed in the public domain by Wei Dai
+
+/// \file arc4.h
+/// \brief Classes for ARC4 cipher
+
 #ifndef CRYPTOPP_ARC4_H
 #define CRYPTOPP_ARC4_H
 
+#include "cryptlib.h"
 #include "strciphr.h"
+#include "secblock.h"
+#include "smartptr.h"
 
 NAMESPACE_BEGIN(CryptoPP)
 
 namespace Weak1 {
 
-//! _
+/// \brief ARC4 base class
+/// \details Implementations and overrides in \p Base apply to both \p ENCRYPTION and \p DECRYPTION directions
+/// \since Crypto++ 1.0
 class CRYPTOPP_NO_VTABLE ARC4_Base : public VariableKeyLength<16, 1, 256>, public RandomNumberGenerator, public SymmetricCipher, public SymmetricCipherDocumentation
 {
 public:
 	~ARC4_Base();
 
-	static const char *StaticAlgorithmName() {return "ARC4";}
+	CRYPTOPP_STATIC_CONSTEXPR const char* StaticAlgorithmName() {return "ARC4";}
 
 	void GenerateBlock(byte *output, size_t size);
 	void DiscardBytes(size_t n);
 
     void ProcessData(byte *outString, const byte *inString, size_t length);
-	
+
 	bool IsRandomAccess() const {return false;}
 	bool IsSelfInverting() const {return true;}
 	bool IsForwardTransformation() const {return true;}
@@ -35,14 +45,18 @@ protected:
     byte m_x, m_y;
 };
 
-//! <a href="http://www.weidai.com/scan-mirror/cs.html#RC4">Alleged RC4</a>
+/// \brief Alleged RC4
+/// \sa <a href="http://www.cryptopp.com/wiki/RC4">Alleged RC4</a>
+/// \since Crypto++ 1.0
 DOCUMENTED_TYPEDEF(SymmetricCipherFinal<ARC4_Base>, ARC4)
 
-//! _
+/// \brief MARC4 base class
+/// \details Implementations and overrides in \p Base apply to both \p ENCRYPTION and \p DECRYPTION directions
+/// \details MARC4 discards the first 256 bytes of keystream, which may be weaker than the rest
 class CRYPTOPP_NO_VTABLE MARC4_Base : public ARC4_Base
 {
 public:
-	static const char *StaticAlgorithmName() {return "MARC4";}
+	CRYPTOPP_STATIC_CONSTEXPR const char* StaticAlgorithmName() {return "MARC4";}
 
 	typedef SymmetricCipherFinal<MARC4_Base> Encryption;
 	typedef SymmetricCipherFinal<MARC4_Base> Decryption;
@@ -51,7 +65,9 @@ protected:
 	unsigned int GetDefaultDiscardBytes() const {return 256;}
 };
 
-//! Modified ARC4: it discards the first 256 bytes of keystream which may be weaker than the rest
+/// \brief Modified Alleged RC4
+/// \sa <a href="http://www.cryptopp.com/wiki/RC4">Alleged RC4</a>
+/// \since Crypto++ 1.0
 DOCUMENTED_TYPEDEF(SymmetricCipherFinal<MARC4_Base>, MARC4)
 
 }

@@ -1,12 +1,15 @@
-// zinflate.cpp - written and placed in the public domain by Wei Dai
+// zinflate.cpp - originally written and placed in the public domain by Wei Dai
 
 // This is a complete reimplementation of the DEFLATE decompression algorithm.
-// It should not be affected by any security vulnerabilities in the zlib 
+// It should not be affected by any security vulnerabilities in the zlib
 // compression library. In particular it is not affected by the double free bug
 // (http://www.kb.cert.org/vuls/id/368819).
 
 #include "pch.h"
+
 #include "zinflate.h"
+#include "secblock.h"
+#include "smartptr.h"
 
 NAMESPACE_BEGIN(CryptoPP)
 
@@ -29,20 +32,20 @@ inline bool LowFirstBitReader::FillBuffer(unsigned int length)
 		m_buffer |= (unsigned long)b << m_bitsBuffered;
 		m_bitsBuffered += 8;
 	}
-	assert(m_bitsBuffered <= sizeof(unsigned long)*8);
+	CRYPTOPP_ASSERT(m_bitsBuffered <= sizeof(unsigned long)*8);
 	return true;
 }
 
 inline unsigned long LowFirstBitReader::PeekBits(unsigned int length)
 {
 	bool result = FillBuffer(length);
-	assert(result);
+	CRYPTOPP_UNUSED(result); CRYPTOPP_ASSERT(result);
 	return m_buffer & (((unsigned long)1 << length) - 1);
 }
 
 inline void LowFirstBitReader::SkipBits(unsigned int length)
 {
-	assert(m_bitsBuffered >= length);
+	CRYPTOPP_ASSERT(m_bitsBuffered >= length);
 	m_buffer >>= length;
 	m_bitsBuffered -= length;
 }
@@ -110,19 +113,22 @@ void HuffmanDecoder::Initialize(const unsigned int *codeBits, unsigned int nCode
 		nextCode[i] = code;
 	}
 
-	if (code > (1 << m_maxCodeBits) - blCount[m_maxCodeBits])
+	// MAX_CODE_BITS is 32, m_maxCodeBits may be smaller.
+	const word64 shiftedMaxCode = ((word64)1 << m_maxCodeBits);
+	if (code > shiftedMaxCode - blCount[m_maxCodeBits])
 		throw Err("codes oversubscribed");
-	else if (m_maxCodeBits != 1 && code < (1 << m_maxCodeBits) - blCount[m_maxCodeBits])
+	else if (m_maxCodeBits != 1 && code < shiftedMaxCode - blCount[m_maxCodeBits])
 		throw Err("codes incomplete");
 
 	// compute a vector of <code, length, value> triples sorted by code
 	m_codeToValue.resize(nCodes - blCount[0]);
 	unsigned int j=0;
-	for (i=0; i<nCodes; i++) 
+	for (i=0; i<nCodes; i++)
 	{
 		unsigned int len = codeBits[i];
 		if (len != 0)
 		{
+			CRYPTOPP_ASSERT(j < m_codeToValue.size());
 			code = NormalizeCode(nextCode[len]++, len);
 			m_codeToValue[j].code = code;
 			m_codeToValue[j].len = len;
@@ -136,10 +142,12 @@ void HuffmanDecoder::Initialize(const unsigned int *codeBits, unsigned int nCode
 	m_cacheBits = STDMIN(9U, m_maxCodeBits);
 	m_cacheMask = (1 << m_cacheBits) - 1;
 	m_normalizedCacheMask = NormalizeCode(m_cacheMask, m_cacheBits);
-	assert(m_normalizedCacheMask == BitReverse(m_cacheMask));
+	CRYPTOPP_ASSERT(m_normalizedCacheMask == BitReverse(m_cacheMask));
 
-	if (m_cache.size() != size_t(1) << m_cacheBits)
-		m_cache.resize(1 << m_cacheBits);
+	const word64 shiftedCache = ((word64)1 << m_cacheBits);
+	CRYPTOPP_ASSERT(shiftedCache <= SIZE_MAX);
+	if (m_cache.size() != shiftedCache)
+		m_cache.resize((size_t)shiftedCache);
 
 	for (i=0; i<m_cache.size(); i++)
 		m_cache[i].type = 0;
@@ -174,10 +182,10 @@ void HuffmanDecoder::FillCacheEntry(LookupEntry &entry, code_t normalizedCode) c
 
 inline unsigned int HuffmanDecoder::Decode(code_t code, /* out */ value_t &value) const
 {
-	assert(m_codeToValue.size() > 0);
+	CRYPTOPP_ASSERT(((int)(code & m_cacheMask)) < (int)m_cache.size());
 	LookupEntry &entry = m_cache[code & m_cacheMask];
 
-	code_t normalizedCode;
+	code_t normalizedCode = 0;
 	if (entry.type != 1)
 		normalizedCode = BitReverse(code);
 
@@ -201,7 +209,9 @@ inline unsigned int HuffmanDecoder::Decode(code_t code, /* out */ value_t &value
 
 bool HuffmanDecoder::Decode(LowFirstBitReader &reader, value_t &value) const
 {
-	reader.FillBuffer(m_maxCodeBits);
+	bool result = reader.FillBuffer(m_maxCodeBits);
+	CRYPTOPP_UNUSED(result); // CRYPTOPP_ASSERT(result);
+
 	unsigned int codeBits = Decode(reader.PeekBuffer(), value);
 	if (codeBits > reader.BitsBuffered())
 		return false;
@@ -213,7 +223,9 @@ bool HuffmanDecoder::Decode(LowFirstBitReader &reader, value_t &value) const
 
 Inflator::Inflator(BufferedTransformation *attachment, bool repeat, int propagation)
 	: AutoSignaling<Filter>(propagation)
-	, m_state(PRE_STREAM), m_repeat(repeat), m_reader(m_inQueue)
+	, m_state(PRE_STREAM), m_repeat(repeat), m_eof(0), m_wrappedAround(0)
+	, m_blockType(0xff), m_storedLen(0xffff), m_nextDecode(), m_literal(0)
+	, m_distance(0), m_reader(m_inQueue), m_current(0), m_lastFlush(0)
 {
 	Detach(attachment);
 }
@@ -254,7 +266,7 @@ void Inflator::OutputString(const byte *string, size_t length)
 		}
 		string += len;
 		length -= len;
-	}		
+	}
 }
 
 void Inflator::OutputPast(unsigned int length, unsigned int distance)
@@ -298,7 +310,7 @@ size_t Inflator::Put2(const byte *inString, size_t length, int messageEnd, bool 
 		if (!(m_state == PRE_STREAM || m_state == AFTER_END))
 			throw UnexpectedEndErr();
 
-	Output(0, NULL, 0, messageEnd, blocking);
+	Output(0, NULLPTR, 0, messageEnd, blocking);
 	return 0;
 }
 
@@ -328,7 +340,7 @@ void Inflator::ProcessInput(bool flush)
 			m_wrappedAround = false;
 			m_current = 0;
 			m_lastFlush = 0;
-			m_window.New(1 << GetLog2WindowSize());
+			m_window.New(((size_t) 1) << GetLog2WindowSize());
 			break;
 		case WAIT_HEADER:
 			{
@@ -348,7 +360,7 @@ void Inflator::ProcessInput(bool flush)
 				return;
 			ProcessPoststreamTail();
 			m_state = m_repeat ? PRE_STREAM : AFTER_END;
-			Output(0, NULL, 0, GetAutoSignalPropagation(), true);	// TODO: non-blocking
+			Output(0, NULLPTR, 0, GetAutoSignalPropagation(), true);	// TODO: non-blocking
 			if (m_inQueue.IsEmpty())
 				return;
 			break;
@@ -365,6 +377,7 @@ void Inflator::DecodeHeader()
 		throw UnexpectedEndErr();
 	m_eof = m_reader.GetBits(1) != 0;
 	m_blockType = (byte)m_reader.GetBits(2);
+
 	switch (m_blockType)
 	{
 	case 0:	// stored
@@ -388,22 +401,27 @@ void Inflator::DecodeHeader()
 		unsigned int hlit = m_reader.GetBits(5);
 		unsigned int hdist = m_reader.GetBits(5);
 		unsigned int hclen = m_reader.GetBits(4);
+		unsigned int i = 0;
 
 		FixedSizeSecBlock<unsigned int, 286+32> codeLengths;
-		unsigned int i;
 		static const unsigned int border[] = {    // Order of the bit length code lengths
 			16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
 		std::fill(codeLengths.begin(), codeLengths+19, 0);
-		for (i=0; i<hclen+4; i++)
+		for (i=0; i<hclen+4; ++i)
+		{
+			CRYPTOPP_ASSERT(border[i] < codeLengths.size());
 			codeLengths[border[i]] = m_reader.GetBits(3);
+		}
 
 		try
 		{
+			bool result = false;
+			unsigned int k=0, count=0, repeater=0;
 			HuffmanDecoder codeLengthDecoder(codeLengths, 19);
-			for (i = 0; i < hlit+257+hdist+1; )
+			for (i=0; i < hlit+257+hdist+1; )
 			{
-				unsigned int k, count, repeater;
-				bool result = codeLengthDecoder.Decode(m_reader, k);
+				k = 0, count = 0, repeater = 0;
+				result = codeLengthDecoder.Decode(m_reader, k);
 				if (!result)
 					throw UnexpectedEndErr();
 				if (k <= 15)
@@ -467,15 +485,17 @@ bool Inflator::DecodeBody()
 	switch (m_blockType)
 	{
 	case 0:	// stored
-		assert(m_reader.BitsBuffered() == 0);
+		CRYPTOPP_ASSERT(m_reader.BitsBuffered() == 0);
 		while (!m_inQueue.IsEmpty() && !blockEnd)
 		{
 			size_t size;
 			const byte *block = m_inQueue.Spy(size);
 			size = UnsignedMin(m_storedLen, size);
+			CRYPTOPP_ASSERT(size <= 0xffff);
+
 			OutputString(block, size);
 			m_inQueue.Skip(size);
-			m_storedLen -= (word16)size;
+			m_storedLen = m_storedLen - (word16)size;
 			if (m_storedLen == 0)
 				blockEnd = true;
 		}
@@ -523,12 +543,14 @@ bool Inflator::DecodeBody()
 						throw BadBlockErr();
 					unsigned int bits;
 		case LENGTH_BITS:
+					CRYPTOPP_ASSERT(m_literal-257 < COUNTOF(lengthExtraBits));
 					bits = lengthExtraBits[m_literal-257];
 					if (!m_reader.FillBuffer(bits))
 					{
 						m_nextDecode = LENGTH_BITS;
 						break;
 					}
+					CRYPTOPP_ASSERT(m_literal-257 < COUNTOF(lengthStarts));
 					m_literal = m_reader.GetBits(bits) + lengthStarts[m_literal-257];
 		case DISTANCE:
 					if (!distanceDecoder.Decode(m_reader, m_distance))
@@ -537,16 +559,25 @@ bool Inflator::DecodeBody()
 						break;
 					}
 		case DISTANCE_BITS:
+					CRYPTOPP_ASSERT(m_distance < COUNTOF(distanceExtraBits));
+					if (m_distance >= COUNTOF(distanceExtraBits))
+						throw BadDistanceErr();
 					bits = distanceExtraBits[m_distance];
 					if (!m_reader.FillBuffer(bits))
 					{
 						m_nextDecode = DISTANCE_BITS;
 						break;
 					}
+					CRYPTOPP_ASSERT(m_distance < COUNTOF(distanceStarts));
+					if (m_distance >= COUNTOF(distanceStarts))
+						throw BadDistanceErr();
 					m_distance = m_reader.GetBits(bits) + distanceStarts[m_distance];
 					OutputPast(m_literal, m_distance);
 				}
 			}
+			break;
+		default:
+			CRYPTOPP_ASSERT(0);
 		}
 	}
 	if (blockEnd)
@@ -575,7 +606,7 @@ void Inflator::FlushOutput()
 {
 	if (m_state != PRE_STREAM)
 	{
-		assert(m_current >= m_lastFlush);
+		CRYPTOPP_ASSERT(m_current >= m_lastFlush);
 		ProcessDecompressedData(m_window + m_lastFlush, m_current - m_lastFlush);
 		m_lastFlush = m_current;
 	}
@@ -590,7 +621,7 @@ struct NewFixedLiteralDecoder
 		std::fill(codeLengths + 144, codeLengths + 256, 9);
 		std::fill(codeLengths + 256, codeLengths + 280, 7);
 		std::fill(codeLengths + 280, codeLengths + 288, 8);
-		std::auto_ptr<HuffmanDecoder> pDecoder(new HuffmanDecoder);
+		member_ptr<HuffmanDecoder> pDecoder(new HuffmanDecoder);
 		pDecoder->Initialize(codeLengths, 288);
 		return pDecoder.release();
 	}
@@ -602,7 +633,7 @@ struct NewFixedDistanceDecoder
 	{
 		unsigned int codeLengths[32];
 		std::fill(codeLengths + 0, codeLengths + 32, 5);
-		std::unique_ptr<HuffmanDecoder> pDecoder(new HuffmanDecoder);
+		member_ptr<HuffmanDecoder> pDecoder(new HuffmanDecoder);
 		pDecoder->Initialize(codeLengths, 32);
 		return pDecoder.release();
 	}
