@@ -1,7 +1,16 @@
+// oids.h - originally written and placed in the public domain by Wei Dai
+
+/// \file oids.h
+/// \brief ASN.1 object identifiers for algorthms and schemes
+/// \details Most OIDs can be found at http://www.oid-info.com/. The Chinese OIDs
+///   are assigned in GM/T 0006-2012, Cryptographic Application Identifier Criterion
+///   Specification. A reproduction can be found at http://gmssl.org/docs/oid.html.
+///   There seems to be some confusion between the text of GmSSL's oid.html web page
+///   and the actual OID used in the code. We used the same OIDs that were detailed in
+///   http://github.com/guanzhi/GmSSL/blob/master/crypto/objects/objects.txt.
+
 #ifndef CRYPTOPP_OIDS_H
 #define CRYPTOPP_OIDS_H
-
-// crypto-related ASN.1 object identifiers
 
 #include "asn.h"
 
@@ -13,6 +22,16 @@ NAMESPACE_BEGIN(ASN1)
 
 DEFINE_OID(1, iso)
 	DEFINE_OID(iso()+2, member_body)
+		DEFINE_OID(member_body()+156, iso_cn)
+			DEFINE_OID(iso_cn()+10197, oscca)
+				DEFINE_OID(oscca()+1, sm_scheme)
+					DEFINE_OID(sm_scheme()+104, sms4)
+					DEFINE_OID(sm_scheme()+301, sm2p256v1)
+						DEFINE_OID(sm2p256v1()+1, sm2sign)
+						DEFINE_OID(sm2p256v1()+2, sm2exchange)
+						DEFINE_OID(sm2p256v1()+3, sm2encrypt)
+							DEFINE_OID(sm2encrypt()+1, sm2encrypt_recommendedParameters)
+							DEFINE_OID(sm2encrypt()+2, sm2encrypt_specifiedParameters)
 		DEFINE_OID(member_body()+840, iso_us)
 			DEFINE_OID(iso_us()+10040, ansi_x9_57)
 				DEFINE_OID(ansi_x9_57()+4+1, id_dsa)
@@ -37,12 +56,22 @@ DEFINE_OID(1, iso)
 				DEFINE_OID(rsadsi()+2, rsadsi_digestAlgorithm)
 					DEFINE_OID(rsadsi_digestAlgorithm()+2, id_md2)
 					DEFINE_OID(rsadsi_digestAlgorithm()+5, id_md5)
-	DEFINE_OID(iso()+3, identified_organization);
+	DEFINE_OID(iso()+3, identified_organization)
+		// Arc from http://tools.ietf.org/html/draft-josefsson-pkix-newcurves
+		DEFINE_OID(identified_organization()+6, dod)
+			DEFINE_OID(dod()+1, internet)
+				DEFINE_OID(internet()+4, internet_private)
+					DEFINE_OID(internet_private()+1, enterprise)
+						DEFINE_OID(enterprise()+11591,gnu)
+							DEFINE_OID(gnu()+15,ellipticCurve)
+								DEFINE_OID(ellipticCurve()+1,curve25519)
+								DEFINE_OID(ellipticCurve()+2,curve448)
+								DEFINE_OID(ellipticCurve()+3,curve25519ph)
+								DEFINE_OID(ellipticCurve()+4,curve448ph)
 		DEFINE_OID(identified_organization()+14, oiw);
 			DEFINE_OID(oiw()+3, oiw_secsig);
 				DEFINE_OID(oiw_secsig()+2, oiw_secsig_algorithms);
 					DEFINE_OID(oiw_secsig_algorithms()+26, id_sha1);
-
 		DEFINE_OID(identified_organization()+36, teletrust);
 			DEFINE_OID(teletrust()+3, teletrust_algorithm)
 				DEFINE_OID(teletrust_algorithm()+2+1, id_ripemd160)
@@ -54,7 +83,6 @@ DEFINE_OID(1, iso)
 					DEFINE_OID(teletrust_ellipticCurve()+1+9, brainpoolP320r1)
 					DEFINE_OID(teletrust_ellipticCurve()+1+11, brainpoolP384r1)
 					DEFINE_OID(teletrust_ellipticCurve()+1+13, brainpoolP512r1)
-
 		DEFINE_OID(identified_organization()+132, certicom);
 			DEFINE_OID(certicom()+0, certicom_ellipticCurve);
 				// these are sorted by curve type and then by OID
@@ -115,6 +143,11 @@ DEFINE_OID(2, joint_iso_ccitt)
 								DEFINE_OID(nist_hashalgs()+1, id_sha256)
 								DEFINE_OID(nist_hashalgs()+2, id_sha384)
 								DEFINE_OID(nist_hashalgs()+3, id_sha512)
+								DEFINE_OID(nist_hashalgs()+4, id_sha224)
+								DEFINE_OID(nist_hashalgs()+7, id_sha3_224)
+								DEFINE_OID(nist_hashalgs()+8, id_sha3_256)
+								DEFINE_OID(nist_hashalgs()+9, id_sha3_384)
+								DEFINE_OID(nist_hashalgs()+10, id_sha3_512)
 
 NAMESPACE_END
 

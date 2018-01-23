@@ -66,7 +66,7 @@
 #include "modes.h"
 #include "eccrypto.h"
 #include "filters.h"
-#include "DetSign.h"
+#include "eccrypto.h"
 
 #include "BinaryData.h"
 #include "BtcUtils.h"
@@ -122,7 +122,7 @@ using namespace std;
 #define BTC_PRIVKEY   CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA256>::PrivateKey
 #define BTC_PUBKEY    CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA256>::PublicKey
 #define BTC_SIGNER    CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA256>::Signer
-#define BTC_DETSIGNER CryptoPP::ECDSA_DetSign<CryptoPP::ECP, CryptoPP::SHA256>::DetSigner
+#define BTC_DETSIGNER CryptoPP::ECDSA_RFC6979<CryptoPP::ECP, CryptoPP::SHA256>::Signer
 #define BTC_VERIFIER  CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA256>::Verifier
 
 

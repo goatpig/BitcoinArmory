@@ -1,12 +1,13 @@
 #ifndef CRYPTOPP_OAEP_H
 #define CRYPTOPP_OAEP_H
 
+#include "cryptlib.h"
 #include "pubkey.h"
 #include "sha.h"
 
 NAMESPACE_BEGIN(CryptoPP)
 
-//! _
+/// \brief OAEP padding base class
 class CRYPTOPP_DLL OAEP_Base : public PK_EncryptionMessageEncodingMethod
 {
 public:
@@ -21,7 +22,8 @@ protected:
 	virtual MaskGeneratingFunction * NewMGF() const =0;
 };
 
-//! <a href="http://www.weidai.com/scan-mirror/ca.html#cem_OAEP-MGF1">EME-OAEP</a>, for use with classes derived from TF_ES
+/// \brief OAEP padding
+/// \sa <a href="http://www.weidai.com/scan-mirror/ca.html#cem_OAEP-MGF1">EME-OAEP</a>, for use with classes derived from TF_ES
 template <class H, class MGF=P1363_MGF1>
 class OAEP : public OAEP_Base, public EncryptionStandard
 {
@@ -35,7 +37,7 @@ protected:
 	MaskGeneratingFunction * NewMGF() const {return new MGF;}
 };
 
-CRYPTOPP_DLL_TEMPLATE_CLASS OAEP<SHA>;
+CRYPTOPP_DLL_TEMPLATE_CLASS OAEP<SHA1>;
 
 NAMESPACE_END
 

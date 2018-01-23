@@ -750,7 +750,7 @@ void StackInterpreter::op_checksig()
    //prepare pubkey
    BTC_ECPOINT ptPub;
    CryptoPP::ECP ecp = CryptoECDSA::Get_secp256k1_ECP();
-   ecp.DecodePoint(ptPub, (byte*)pubkey.getPtr(), pubkey.getSize());
+   ecp.DecodePoint(ptPub, (CryptoPP::byte*)pubkey.getPtr(), pubkey.getSize());
 
    BTC_PUBKEY cppPubKey;
    cppPubKey.Initialize(CryptoPP::ASN1::secp256k1(), ptPub);
@@ -791,7 +791,7 @@ void StackInterpreter::op_checkmultisig()
 
       CryptoPP::ECP ecp = CryptoECDSA::Get_secp256k1_ECP();
       BTC_ECPOINT ptPub;
-      ecp.DecodePoint(ptPub, (byte*)pubkey.getPtr(), pubkey.getSize());
+      ecp.DecodePoint(ptPub, (CryptoPP::byte*)pubkey.getPtr(), pubkey.getSize());
 
       BTC_PUBKEY cppPubKey;
       cppPubKey.Initialize(CryptoPP::ASN1::secp256k1(), ptPub);

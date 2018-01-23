@@ -1,29 +1,34 @@
+// cast.h - originally written and placed in the public domain by Wei Dai
+
+/// \file cast.h
+/// \brief Classes for the CAST-128 and CAST-256 block ciphers
+
 #ifndef CRYPTOPP_CAST_H
 #define CRYPTOPP_CAST_H
-
-/** \file
-*/
 
 #include "seckey.h"
 #include "secblock.h"
 
 NAMESPACE_BEGIN(CryptoPP)
 
+/// \brief CAST block cipher base
 class CAST
 {
 protected:
 	static const word32 S[8][256];
 };
 
-//! algorithm info
+/// \brief CAST128 block cipher information
 struct CAST128_Info : public FixedBlockSize<8>, public VariableKeyLength<16, 5, 16>
 {
-	static const char *StaticAlgorithmName() {return "CAST-128";}
+	CRYPTOPP_STATIC_CONSTEXPR const char* StaticAlgorithmName() {return "CAST-128";}
 };
 
-/// <a href="http://www.weidai.com/scan-mirror/cs.html#CAST-128">CAST-128</a>
+/// \brief CAST128 block cipher
+/// \sa <a href="http://www.cryptopp.com/wiki/CAST-128">CAST-128</a>
 class CAST128 : public CAST128_Info, public BlockCipherDocumentation
 {
+	/// \brief CAST128 block cipher default operation
 	class CRYPTOPP_NO_VTABLE Base : public CAST, public BlockCipherImpl<CAST128_Info>
 	{
 	public:
@@ -34,12 +39,14 @@ class CAST128 : public CAST128_Info, public BlockCipherDocumentation
 		FixedSizeSecBlock<word32, 32> K;
 	};
 
+	/// \brief CAST128 block cipher encryption operation
 	class CRYPTOPP_NO_VTABLE Enc : public Base
 	{
 	public:
 		void ProcessAndXorBlock(const byte *inBlock, const byte *xorBlock, byte *outBlock) const;
 	};
 
+	/// \brief CAST128 block cipher decryption operation
 	class CRYPTOPP_NO_VTABLE Dec : public Base
 	{
 	public:
@@ -51,15 +58,17 @@ public:
 	typedef BlockCipherFinal<DECRYPTION, Dec> Decryption;
 };
 
-//! algorithm info
-struct CAST256_Info : public FixedBlockSize<16>, public VariableKeyLength<16, 16, 32>
+/// \brief CAST256 block cipher information
+struct CAST256_Info : public FixedBlockSize<16>, public VariableKeyLength<16, 16, 32, 4>
 {
-	static const char *StaticAlgorithmName() {return "CAST-256";}
+	CRYPTOPP_STATIC_CONSTEXPR const char* StaticAlgorithmName() {return "CAST-256";}
 };
 
-//! <a href="http://www.weidai.com/scan-mirror/cs.html#CAST-256">CAST-256</a>
+/// \brief CAST256 block cipher
+/// \sa <a href="http://www.cryptopp.com/wiki/CAST-256">CAST-256</a>
 class CAST256 : public CAST256_Info, public BlockCipherDocumentation
 {
+	/// \brief CAST256 block cipher default operation
 	class CRYPTOPP_NO_VTABLE Base : public CAST, public BlockCipherImpl<CAST256_Info>
 	{
 	public:

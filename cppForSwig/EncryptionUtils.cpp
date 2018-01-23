@@ -81,7 +81,7 @@ SecureBinaryData SecureBinaryData::GenerateRandom(uint32_t numBytes,
    // for generating entropy which is sufficient, but it doesn't hurt to add
    // more if you have it.
    if(entropy.getSize() > 0)
-      prng.IncorporateEntropy( (byte*)entropy.getPtr(), entropy.getSize());
+      prng.IncorporateEntropy( (CryptoPP::byte*)entropy.getPtr(), entropy.getSize());
 
    SecureBinaryData randData(numBytes);
    prng.GenerateBlock(randData.getPtr(), numBytes);
@@ -319,12 +319,12 @@ SecureBinaryData CryptoAES::EncryptCFB(SecureBinaryData & data,
       iv = SecureBinaryData().GenerateRandom(BTC_AES::BLOCKSIZE);
 
 
-   BTC_CFB_MODE<BTC_AES>::Encryption aes_enc( (byte*)key.getPtr(), 
+   BTC_CFB_MODE<BTC_AES>::Encryption aes_enc( (CryptoPP::byte*)key.getPtr(), 
                                                      key.getSize(), 
-                                              (byte*)iv.getPtr());
+                                              (CryptoPP::byte*)iv.getPtr());
 
-   aes_enc.ProcessData( (byte*)encrData.getPtr(), 
-                        (byte*)data.getPtr(), 
+   aes_enc.ProcessData( (CryptoPP::byte*)encrData.getPtr(), 
+                        (CryptoPP::byte*)data.getPtr(), 
                                data.getSize());
 
    return encrData;
@@ -350,12 +350,12 @@ SecureBinaryData CryptoAES::DecryptCFB(SecureBinaryData & data,
 
    SecureBinaryData unencrData(data.getSize());
 
-   BTC_CFB_MODE<BTC_AES>::Decryption aes_enc( (byte*)key.getPtr(), 
+   BTC_CFB_MODE<BTC_AES>::Decryption aes_enc( (CryptoPP::byte*)key.getPtr(), 
                                                      key.getSize(), 
-                                              (byte*)iv.getPtr());
+                                              (CryptoPP::byte*)iv.getPtr());
 
-   aes_enc.ProcessData( (byte*)unencrData.getPtr(), 
-                        (byte*)data.getPtr(), 
+   aes_enc.ProcessData( (CryptoPP::byte*)unencrData.getPtr(), 
+                        (CryptoPP::byte*)data.getPtr(), 
                                data.getSize());
 
    return unencrData;
@@ -388,12 +388,12 @@ SecureBinaryData CryptoAES::EncryptCBC(SecureBinaryData & data,
       iv = SecureBinaryData().GenerateRandom(BTC_AES::BLOCKSIZE);
 
 
-   BTC_CBC_MODE<BTC_AES>::Encryption aes_enc( (byte*)key.getPtr(), 
+   BTC_CBC_MODE<BTC_AES>::Encryption aes_enc( (CryptoPP::byte*)key.getPtr(), 
                                                      key.getSize(), 
-                                              (byte*)iv.getPtr());
+                                              (CryptoPP::byte*)iv.getPtr());
 
-   aes_enc.ProcessData( (byte*)encrData.getPtr(), 
-                        (byte*)data.getPtr(), 
+   aes_enc.ProcessData( (CryptoPP::byte*)encrData.getPtr(), 
+                        (CryptoPP::byte*)data.getPtr(), 
                                data.getSize());
 
    return encrData;
@@ -418,12 +418,12 @@ SecureBinaryData CryptoAES::DecryptCBC(SecureBinaryData & data,
 
    SecureBinaryData unencrData(data.getSize());
 
-   BTC_CBC_MODE<BTC_AES>::Decryption aes_enc( (byte*)key.getPtr(), 
+   BTC_CBC_MODE<BTC_AES>::Decryption aes_enc( (CryptoPP::byte*)key.getPtr(), 
                                                      key.getSize(), 
-                                              (byte*)iv.getPtr());
+                                              (CryptoPP::byte*)iv.getPtr());
 
-   aes_enc.ProcessData( (byte*)unencrData.getPtr(), 
-                        (byte*)data.getPtr(), 
+   aes_enc.ProcessData( (CryptoPP::byte*)unencrData.getPtr(), 
+                        (CryptoPP::byte*)data.getPtr(), 
                                data.getSize());
    return unencrData;
 }
@@ -706,9 +706,9 @@ bool CryptoECDSA::VerifyData(BinaryData const & binMessage,
 
    // Verifying message 
    BTC_VERIFIER verifier(cppPubKey);
-   return verifier.VerifyMessage((const byte*)hashVal.getPtr(),
+   return verifier.VerifyMessage((const CryptoPP::byte*)hashVal.getPtr(),
       hashVal.getSize(),
-      (const byte*)sig.getPtr(),
+      (const CryptoPP::byte*)sig.getPtr(),
       sig.getSize());
 }
 
@@ -733,9 +733,9 @@ bool CryptoECDSA::VerifyData(SecureBinaryData const & binMessage,
 
    // Verifying message 
    BTC_VERIFIER verifier(cppPubKey); 
-   return verifier.VerifyMessage((const byte*)hashVal.getPtr(), 
+   return verifier.VerifyMessage((const CryptoPP::byte*)hashVal.getPtr(), 
                                               hashVal.getSize(),
-                                 (const byte*)binSignature.getPtr(), 
+                                 (const CryptoPP::byte*)binSignature.getPtr(), 
                                               binSignature.getSize());
 }
 
@@ -1039,9 +1039,9 @@ SecureBinaryData CryptoECDSA::CompressPoint(SecureBinaryData const & pubKey65)
 {
    CryptoPP::ECP ecp = Get_secp256k1_ECP();
    BTC_ECPOINT ptPub;
-   ecp.DecodePoint(ptPub, (byte*)pubKey65.getPtr(), 65);
+   ecp.DecodePoint(ptPub, (CryptoPP::byte*)pubKey65.getPtr(), 65);
    SecureBinaryData ptCompressed(33);
-   ecp.EncodePoint((byte*)ptCompressed.getPtr(), ptPub, true);
+   ecp.EncodePoint((CryptoPP::byte*)ptCompressed.getPtr(), ptPub, true);
    return ptCompressed; 
 }
 
@@ -1050,9 +1050,9 @@ SecureBinaryData CryptoECDSA::UncompressPoint(SecureBinaryData const & pubKey33)
 {
    CryptoPP::ECP ecp = Get_secp256k1_ECP();
    BTC_ECPOINT ptPub;
-   ecp.DecodePoint(ptPub, (byte*)pubKey33.getPtr(), 33);
+   ecp.DecodePoint(ptPub, (CryptoPP::byte*)pubKey33.getPtr(), 33);
    SecureBinaryData ptUncompressed(65);
-   ecp.EncodePoint((byte*)ptUncompressed.getPtr(), ptPub, false);
+   ecp.EncodePoint((CryptoPP::byte*)ptUncompressed.getPtr(), ptPub, false);
    return ptUncompressed; 
 
 }

@@ -1,4 +1,4 @@
-// files.cpp - written and placed in the public domain by Wei Dai
+// files.cpp - originally written and placed in the public domain by Wei Dai
 
 #include "pch.h"
 
@@ -10,9 +10,7 @@
 
 NAMESPACE_BEGIN(CryptoPP)
 
-using namespace std;
-
-#ifndef NDEBUG
+#if defined(CRYPTOPP_DEBUG) && !defined(CRYPTOPP_DOXYGEN_PROCESSING)
 void Files_TestInstantiations()
 {
 	FileStore f0;
@@ -24,12 +22,12 @@ void Files_TestInstantiations()
 void FileStore::StoreInitialize(const NameValuePairs &parameters)
 {
 	m_waiting = false;
-	m_stream = NULL;
+	m_stream = NULLPTR;
 	m_file.release();
 
-	const char *fileName = NULL;
+	const char *fileName = NULLPTR;
 #if defined(CRYPTOPP_UNIX_AVAILABLE) || _MSC_VER >= 1400
-	const wchar_t *fileNameWide = NULL;
+	const wchar_t *fileNameWide = NULLPTR;
 	if (!parameters.GetValue(Name::InputFileNameWide(), fileNameWide))
 #endif
 		if (!parameters.GetValue(Name::InputFileName(), fileName))
@@ -38,7 +36,7 @@ void FileStore::StoreInitialize(const NameValuePairs &parameters)
 			return;
 		}
 
-	ios::openmode binary = parameters.GetValueWithDefault(Name::InputBinaryMode(), true) ? ios::binary : ios::openmode(0);
+	std::ios::openmode binary = parameters.GetValueWithDefault(Name::InputBinaryMode(), true) ? std::ios::binary : std::ios::openmode(0);
 	m_file.reset(new std::ifstream);
 #ifdef CRYPTOPP_UNIX_AVAILABLE
 	std::string narrowed;
@@ -48,14 +46,14 @@ void FileStore::StoreInitialize(const NameValuePairs &parameters)
 #if _MSC_VER >= 1400
 	if (fileNameWide)
 	{
-		m_file->open(fileNameWide, ios::in | binary);
+		m_file->open(fileNameWide, std::ios::in | binary);
 		if (!*m_file)
 			throw OpenErr(StringNarrow(fileNameWide, false));
 	}
 #endif
 	if (fileName)
 	{
-		m_file->open(fileName, ios::in | binary);
+		m_file->open(fileName, std::ios::in | binary);
 		if (!*m_file)
 			throw OpenErr(fileName);
 	}
@@ -67,8 +65,8 @@ lword FileStore::MaxRetrievable() const
 	if (!m_stream)
 		return 0;
 
-	streampos current = m_stream->tellg();
-	streampos end = m_stream->seekg(0, ios::end).tellg();
+	std::streampos current = m_stream->tellg();
+	std::streampos end = m_stream->seekg(0, std::ios::end).tellg();
 	m_stream->seekg(current);
 	return end-current;
 }
@@ -91,7 +89,7 @@ size_t FileStore::TransferTo2(BufferedTransformation &target, lword &transferByt
 	{
 		{
 		size_t spaceSize = 1024;
-		m_space = HelpCreatePutSpace(target, channel, 1, UnsignedMin(size_t(0)-1, size), spaceSize);
+		m_space = HelpCreatePutSpace(target, channel, 1, UnsignedMin(size_t(SIZE_MAX), size), spaceSize);
 
 		m_stream->read((char *)m_space, (unsigned int)STDMIN(size, (lword)spaceSize));
 		}
@@ -120,7 +118,7 @@ size_t FileStore::CopyRangeTo2(BufferedTransformation &target, lword &begin, lwo
 	if (begin == 0 && end == 1)
 	{
 		int result = m_stream->peek();
-		if (result == char_traits<char>::eof())
+		if (result == std::char_traits<char>::eof())
 			return 0;
 		else
 		{
@@ -131,9 +129,9 @@ size_t FileStore::CopyRangeTo2(BufferedTransformation &target, lword &begin, lwo
 	}
 
 	// TODO: figure out what happens on cin
-	streampos current = m_stream->tellg();
-	streampos endPosition = m_stream->seekg(0, ios::end).tellg();
-	streampos newPosition = current + (streamoff)begin;
+	std::streampos current = m_stream->tellg();
+	std::streampos endPosition = m_stream->seekg(0, std::ios::end).tellg();
+	std::streampos newPosition = current + static_cast<std::streamoff>(begin);
 
 	if (newPosition >= endPosition)
 	{
@@ -143,7 +141,7 @@ size_t FileStore::CopyRangeTo2(BufferedTransformation &target, lword &begin, lwo
 	m_stream->seekg(newPosition);
 	try
 	{
-		assert(!m_waiting);
+		CRYPTOPP_ASSERT(!m_waiting);
 		lword copyMax = end-begin;
 		size_t blockedBytes = const_cast<FileStore *>(this)->TransferTo2(target, copyMax, channel, blocking);
 		begin += copyMax;
@@ -174,18 +172,18 @@ lword FileStore::Skip(lword skipMax)
 	std::istream::off_type offset;
 	if (!SafeConvert(skipMax, offset))
 		throw InvalidArgument("FileStore: maximum seek offset exceeded");
-	m_stream->seekg(offset, ios::cur);
+	m_stream->seekg(offset, std::ios::cur);
 	return (lword)m_stream->tellg() - oldPos;
 }
 
 void FileSink::IsolatedInitialize(const NameValuePairs &parameters)
 {
-	m_stream = NULL;
+	m_stream = NULLPTR;
 	m_file.release();
 
-	const char *fileName = NULL;
+	const char *fileName = NULLPTR;
 #if defined(CRYPTOPP_UNIX_AVAILABLE) || _MSC_VER >= 1400
-	const wchar_t *fileNameWide = NULL;
+	const wchar_t *fileNameWide = NULLPTR;
 	if (!parameters.GetValue(Name::OutputFileNameWide(), fileNameWide))
 #endif
 		if (!parameters.GetValue(Name::OutputFileName(), fileName))
@@ -194,24 +192,23 @@ void FileSink::IsolatedInitialize(const NameValuePairs &parameters)
 			return;
 		}
 
-	ios::openmode binary = parameters.GetValueWithDefault(Name::OutputBinaryMode(), true) ? ios::binary : ios::openmode(0);
+	std::ios::openmode binary = parameters.GetValueWithDefault(Name::OutputBinaryMode(), true) ? std::ios::binary : std::ios::openmode(0);
 	m_file.reset(new std::ofstream);
 #ifdef CRYPTOPP_UNIX_AVAILABLE
 	std::string narrowed;
 	if (fileNameWide)
 		fileName = (narrowed = StringNarrow(fileNameWide)).c_str();
-#endif
-#if _MSC_VER >= 1400
+#elif (CRYPTOPP_MSC_VERSION >= 1400)
 	if (fileNameWide)
 	{
-		m_file->open(fileNameWide, ios::out | ios::trunc | binary);
+		m_file->open(fileNameWide, std::ios::out | std::ios::trunc | binary);
 		if (!*m_file)
 			throw OpenErr(StringNarrow(fileNameWide, false));
 	}
 #endif
 	if (fileName)
 	{
-		m_file->open(fileName, ios::out | ios::trunc | binary);
+		m_file->open(fileName, std::ios::out | std::ios::trunc | binary);
 		if (!*m_file)
 			throw OpenErr(fileName);
 	}
@@ -220,6 +217,7 @@ void FileSink::IsolatedInitialize(const NameValuePairs &parameters)
 
 bool FileSink::IsolatedFlush(bool hardFlush, bool blocking)
 {
+	CRYPTOPP_UNUSED(hardFlush), CRYPTOPP_UNUSED(blocking);
 	if (!m_stream)
 		throw Err("FileSink: output stream not opened");
 
@@ -232,6 +230,7 @@ bool FileSink::IsolatedFlush(bool hardFlush, bool blocking)
 
 size_t FileSink::Put2(const byte *inString, size_t length, int messageEnd, bool blocking)
 {
+	CRYPTOPP_UNUSED(blocking);
 	if (!m_stream)
 		throw Err("FileSink: output stream not opened");
 
@@ -239,7 +238,7 @@ size_t FileSink::Put2(const byte *inString, size_t length, int messageEnd, bool 
 	{
 		std::streamsize size;
 		if (!SafeConvert(length, size))
-			size = numeric_limits<std::streamsize>::max();
+			size = ((std::numeric_limits<std::streamsize>::max)());
 		m_stream->write((const char *)inString, size);
 		inString += size;
 		length -= (size_t)size;

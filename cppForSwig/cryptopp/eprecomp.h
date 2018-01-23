@@ -1,9 +1,15 @@
+// eprecomp.h - originally written and placed in the public domain by Wei Dai
+
+/// \file eprecomp.h
+/// \brief Classes for precomputation in a group
+
 #ifndef CRYPTOPP_EPRECOMP_H
 #define CRYPTOPP_EPRECOMP_H
 
+#include "cryptlib.h"
 #include "integer.h"
 #include "algebra.h"
-#include <vector>
+#include "stdcpp.h"
 
 NAMESPACE_BEGIN(CryptoPP)
 
@@ -12,6 +18,8 @@ class DL_GroupPrecomputation
 {
 public:
 	typedef T Element;
+
+	virtual ~DL_GroupPrecomputation() {}
 
 	virtual bool NeedConversions() const {return false;}
 	virtual Element ConvertIn(const Element &v) const {return v;}
@@ -26,6 +34,8 @@ class DL_FixedBasePrecomputation
 {
 public:
 	typedef T Element;
+
+	virtual ~DL_FixedBasePrecomputation() {}
 
 	virtual bool IsInitialized() const =0;
 	virtual void SetBase(const DL_GroupPrecomputation<Element> &group, const Element &base) =0;
@@ -42,6 +52,8 @@ class DL_FixedBasePrecomputationImpl : public DL_FixedBasePrecomputation<T>
 {
 public:
 	typedef T Element;
+
+	virtual ~DL_FixedBasePrecomputationImpl() {}
 
 	DL_FixedBasePrecomputationImpl() : m_windowSize(0) {}
 

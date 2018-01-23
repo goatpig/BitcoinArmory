@@ -1,20 +1,24 @@
-// luc.cpp - written and placed in the public domain by Wei Dai
+// luc.cpp - originally written and placed in the public domain by Wei Dai
 
 #include "pch.h"
 #include "luc.h"
 #include "asn.h"
-#include "nbtheory.h"
 #include "sha.h"
+#include "integer.h"
+#include "nbtheory.h"
 #include "algparam.h"
+#include "pkcspad.h"
 
 NAMESPACE_BEGIN(CryptoPP)
 
+#if defined(CRYPTOPP_DEBUG) && !defined(CRYPTOPP_DOXYGEN_PROCESSING)
 void LUC_TestInstantiations()
 {
-	LUC_HMP<SHA>::Signer t1;
+	LUC_HMP<SHA1>::Signer t1;
 	LUCFunction t2;
 	InvertibleLUCFunction t3;
 }
+#endif
 
 void DL_Algorithm_LUC_HMP::Sign(const DL_GroupParameters<Integer> &params, const Integer &x, const Integer &k, const Integer &e, Integer &r, Integer &s) const
 {
@@ -25,7 +29,7 @@ void DL_Algorithm_LUC_HMP::Sign(const DL_GroupParameters<Integer> &params, const
 
 bool DL_Algorithm_LUC_HMP::Verify(const DL_GroupParameters<Integer> &params, const DL_PublicKey<Integer> &publicKey, const Integer &e, const Integer &r, const Integer &s) const
 {
-	Integer p = params.GetGroupOrder()-1;
+	const Integer p = params.GetGroupOrder()-1;
 	const Integer &q = params.GetSubgroupOrder();
 
 	Integer Vsg = params.ExponentiateBase(s);
@@ -68,9 +72,12 @@ Integer LUCFunction::ApplyFunction(const Integer &x) const
 
 bool LUCFunction::Validate(RandomNumberGenerator &rng, unsigned int level) const
 {
+	CRYPTOPP_UNUSED(rng), CRYPTOPP_UNUSED(level);
 	bool pass = true;
 	pass = pass && m_n > Integer::One() && m_n.IsOdd();
+	CRYPTOPP_ASSERT(pass);
 	pass = pass && m_e > Integer::One() && m_e.IsOdd() && m_e < m_n;
+	CRYPTOPP_ASSERT(pass);
 	return pass;
 }
 
@@ -165,6 +172,7 @@ void InvertibleLUCFunction::DEREncode(BufferedTransformation &bt) const
 Integer InvertibleLUCFunction::CalculateInverse(RandomNumberGenerator &rng, const Integer &x) const
 {
 	// not clear how to do blinding with LUC
+	CRYPTOPP_UNUSED(rng);
 	DoQuickSanityCheck();
 	return InverseLucas(m_e, x, m_q, m_p, m_u);
 }
@@ -172,20 +180,33 @@ Integer InvertibleLUCFunction::CalculateInverse(RandomNumberGenerator &rng, cons
 bool InvertibleLUCFunction::Validate(RandomNumberGenerator &rng, unsigned int level) const
 {
 	bool pass = LUCFunction::Validate(rng, level);
+	CRYPTOPP_ASSERT(pass);
 	pass = pass && m_p > Integer::One() && m_p.IsOdd() && m_p < m_n;
+	CRYPTOPP_ASSERT(pass);
 	pass = pass && m_q > Integer::One() && m_q.IsOdd() && m_q < m_n;
+	CRYPTOPP_ASSERT(pass);
 	pass = pass && m_u.IsPositive() && m_u < m_p;
+	CRYPTOPP_ASSERT(pass);
 	if (level >= 1)
 	{
 		pass = pass && m_p * m_q == m_n;
+		CRYPTOPP_ASSERT(pass);
 		pass = pass && RelativelyPrime(m_e, m_p+1);
+		CRYPTOPP_ASSERT(pass);
 		pass = pass && RelativelyPrime(m_e, m_p-1);
+		CRYPTOPP_ASSERT(pass);
 		pass = pass && RelativelyPrime(m_e, m_q+1);
+		CRYPTOPP_ASSERT(pass);
 		pass = pass && RelativelyPrime(m_e, m_q-1);
+		CRYPTOPP_ASSERT(pass);
 		pass = pass && m_u * m_q % m_p == 1;
+		CRYPTOPP_ASSERT(pass);
 	}
 	if (level >= 2)
+	{
 		pass = pass && VerifyPrime(rng, m_p, level-2) && VerifyPrime(rng, m_q, level-2);
+		CRYPTOPP_ASSERT(pass);
+	}
 	return pass;
 }
 

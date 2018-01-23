@@ -21,7 +21,7 @@
  *      ``The Whirlpool hashing function,''
  *      NESSIE submission, 2000 (tweaked version, 2001),
  *      <https://www.cosic.esat.kuleuven.ac.be/nessie/workshop/submissions/whirlpool.zip>
- * 
+ *
  * @author  Paulo S.L.M. Barreto
  * @author  Vincent Rijmen.
  *
@@ -64,16 +64,31 @@
  */
 
 #include "pch.h"
+#include "config.h"
+
+#if CRYPTOPP_MSC_VERSION
+# pragma warning(disable: 4127)
+#endif
+
 #include "whrlpool.h"
 #include "misc.h"
 #include "cpu.h"
 
+// "Inline assembly operands don't work with .intel_syntax",
+//   http://llvm.org/bugs/show_bug.cgi?id=24232
+#if defined(CRYPTOPP_DISABLE_INTEL_ASM)
+# undef CRYPTOPP_SSE2_ASM_AVAILABLE
+# undef CRYPTOPP_SSSE3_ASM_AVAILABLE
+#endif
+
 NAMESPACE_BEGIN(CryptoPP)
 
+#if defined(CRYPTOPP_DEBUG) && !defined(CRYPTOPP_DOXYGEN_PROCESSING)
 void Whirlpool_TestInstantiations()
 {
 	Whirlpool x;
 }
+#endif
 
 void Whirlpool::InitState(HashWordType *state)
 {
@@ -111,10 +126,12 @@ void Whirlpool::TruncatedFinal(byte *hash, size_t size)
  * employed).
  */
 
-#if CRYPTOPP_BOOL_SSE2_ASM_AVAILABLE
-CRYPTOPP_ALIGN_DATA(16) static const word64 Whirlpool_C[4*256+R] CRYPTOPP_SECTION_ALIGN16 = {
+#if CRYPTOPP_SSE2_ASM_AVAILABLE
+CRYPTOPP_ALIGN_DATA(16)
+CRYPTOPP_TABLE
+const word64 Whirlpool_C[4*256+R] = {
 #else
-static const word64 Whirlpool_C[4*256+R] = {
+const word64 Whirlpool_C[4*256+R] = {
 #endif
     W64LIT(0x18186018c07830d8), W64LIT(0x23238c2305af4626), W64LIT(0xc6c63fc67ef991b8), W64LIT(0xe8e887e8136fcdfb),
     W64LIT(0x878726874ca113cb), W64LIT(0xb8b8dab8a9626d11), W64LIT(0x0101040108050209), W64LIT(0x4f4f214f426e9e0d),
@@ -391,8 +408,8 @@ static const word64 Whirlpool_C[4*256+R] = {
 // Whirlpool basic transformation. Transforms state based on block.
 void Whirlpool::Transform(word64 *digest, const word64 *block)
 {
-#if CRYPTOPP_BOOL_SSE2_ASM_AVAILABLE
-	if (HasISSE())
+#if CRYPTOPP_SSE2_ASM_AVAILABLE
+	if (HasSSE2())
 	{
 		// MMX version has the same structure as C version below
 #ifdef __GNUC__
@@ -401,23 +418,24 @@ void Whirlpool::Transform(word64 *digest, const word64 *block)
 	#endif
 	__asm__ __volatile__
 	(
-		".intel_syntax noprefix;"
+		INTEL_NOPREFIX
 		AS_PUSH_IF86(	bx)
 		AS2(	mov		AS_REG_6, WORD_REG(ax))
 #else
-	#if _MSC_VER < 1300
-		AS_PUSH_IF86(	bx)
-	#endif
 		AS2(	lea		AS_REG_6, [Whirlpool_C])
 		AS2(	mov		WORD_REG(cx), digest)
 		AS2(	mov		WORD_REG(dx), block)
 #endif
-#if CRYPTOPP_BOOL_X86
+#if CRYPTOPP_BOOL_X86 || CRYPTOPP_BOOL_X32
 		AS2(	mov		eax, esp)
 		AS2(	and		esp, -16)
 		AS2(	sub		esp, 16*8)
-		AS1(	push	eax)
-	#define SSE2_workspace	esp+WORD_SZ
+		AS_PUSH_IF86(	ax)
+	#if CRYPTOPP_BOOL_X86
+		#define SSE2_workspace	esp+WORD_SZ
+	#elif CRYPTOPP_BOOL_X32
+		#define SSE2_workspace	esp+(WORD_SZ*2)
+	#endif
 #else
 	#define SSE2_workspace	%3
 #endif
@@ -565,11 +583,11 @@ void Whirlpool::Transform(word64 *digest, const word64 *block)
 		AS_POP_IF86(	sp)
 		AS1(	emms)
 
-#if defined(__GNUC__) || (defined(_MSC_VER) && _MSC_VER < 1300)
+#if defined(__GNUC__)
 		AS_POP_IF86(	bx)
 #endif
 #ifdef __GNUC__
-		".att_syntax prefix;"
+		ATT_PREFIX
 			:
 			: "a" (Whirlpool_C), "c" (digest), "d" (block)
 	#if CRYPTOPP_BOOL_X64
@@ -605,16 +623,16 @@ void Whirlpool::Transform(word64 *digest, const word64 *block)
 
 #define KSH(op, i, a, b, c, d)	\
 	t = (word32)(k[(i+4)%8]>>32);\
-	w##a = Whirlpool_C[3*256 + (byte)t] ^ (op ? w##a : rotrFixed(w##a, 32));\
+	w##a = Whirlpool_C[3*256 + (byte)t] ^ (op ? w##a : rotrConstant<32>(w##a));\
 	if (op==2) k[a] = w##a;\
 	t >>= 8;\
-	w##b = Whirlpool_C[2*256 + (byte)t] ^ (op ? w##b : rotrFixed(w##b, 32));\
+	w##b = Whirlpool_C[2*256 + (byte)t] ^ (op ? w##b : rotrConstant<32>(w##b));\
 	if (op==2) k[b] = w##b;\
 	t >>= 8;\
-	w##c = Whirlpool_C[1*256 + (byte)t] ^ (op ? w##c : rotrFixed(w##c, 32));\
+	w##c = Whirlpool_C[1*256 + (byte)t] ^ (op ? w##c : rotrConstant<32>(w##c));\
 	if (op==2) k[c] = w##c;\
 	t >>= 8;\
-	w##d = Whirlpool_C[0*256 + t]       ^ (op ? w##d : rotrFixed(w##d, 32));\
+	w##d = Whirlpool_C[0*256 + t]       ^ (op ? w##d : rotrConstant<32>(w##d));\
 	if (op==2) k[d] = w##d;\
 
 #define TSL(op, i, a, b, c, d)	\
@@ -628,7 +646,7 @@ void Whirlpool::Transform(word64 *digest, const word64 *block)
 	w##d = Whirlpool_C[0*256 + t]       ^ (op ? w##d : 0);
 
 #define TSH_OP(op, a, b)	\
-	w##a = Whirlpool_C[b*256 + (byte)t] ^ (op ? w##a : rotrFixed(w##a, 32) ^ k[a]);\
+	w##a = Whirlpool_C[b*256 + (byte)t] ^ (op ? w##a : rotrConstant<32>(w##a) ^ k[a]);\
 	if (op==2) s[a] = w##a;\
 	if (op==3) digest[a] ^= w##a;\
 
@@ -646,8 +664,9 @@ void Whirlpool::Transform(word64 *digest, const word64 *block)
 	int r=0;
 	while (true)
 	{
-		word64 w0, w1, w2, w3, w4, w5, w6, w7;	// temporary storage
-		word32 t;
+		// Added initialization due to Coverity findings.
+		word64 w0=0, w1=0, w2=0, w3=0, w4=0, w5=0, w6=0, w7=0;
+		word32 t=0;
 
 		KSL(0, 4, 3, 2, 1, 0)
 		KSL(0, 0, 7, 6, 5, 4)

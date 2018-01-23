@@ -1,8 +1,10 @@
+// shark.h - originally written and placed in the public domain by Wei Dai
+
+/// \file shark.h
+/// \brief Classes for the SHARK block cipher
+
 #ifndef CRYPTOPP_SHARK_H
 #define CRYPTOPP_SHARK_H
-
-/** \file
-*/
 
 #include "config.h"
 #include "seckey.h"
@@ -10,15 +12,17 @@
 
 NAMESPACE_BEGIN(CryptoPP)
 
-//! _
-struct SHARK_Info : public FixedBlockSize<8>, public VariableKeyLength<16, 1, 16>, public VariableRounds<6, 2>
+/// \brief SHARK block cipher information
+struct SHARK_Info : public FixedBlockSize<8>, public FixedKeyLength<16>, public VariableRounds<6, 2>
 {
-	static const char *StaticAlgorithmName() {return "SHARK-E";}
+	CRYPTOPP_STATIC_CONSTEXPR const char* StaticAlgorithmName() {return "SHARK-E";}
 };
 
-/// <a href="http://www.weidai.com/scan-mirror/cs.html#SHARK-E">SHARK-E</a>
+/// \brief SHARK block cipher
+/// <a href="http://www.cryptopp.com/wiki/SHARK-E">SHARK-E</a>
 class SHARK : public SHARK_Info, public BlockCipherDocumentation
 {
+	/// \brief SHARK block cipher default operation
 	class CRYPTOPP_NO_VTABLE Base : public BlockCipherImpl<SHARK_Info>
 	{
 	public:
@@ -29,6 +33,7 @@ class SHARK : public SHARK_Info, public BlockCipherDocumentation
 		SecBlock<word64> m_roundKeys;
 	};
 
+	/// \brief SHARK block cipher encryption operation
 	class CRYPTOPP_NO_VTABLE Enc : public Base
 	{
 	public:
@@ -42,6 +47,7 @@ class SHARK : public SHARK_Info, public BlockCipherDocumentation
 		static const word64 cbox[8][256];
 	};
 
+	/// \brief SHARK block cipher decryption operation
 	class CRYPTOPP_NO_VTABLE Dec : public Base
 	{
 	public:
