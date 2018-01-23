@@ -90,7 +90,7 @@ void BtcUtils::getHMAC256(const uint8_t* keyptr, size_t keylen,
    const char* msgptr, size_t msglen, uint8_t* digest)
 {
    CryptoPP::HMAC<CryptoPP::SHA256> hmac(keyptr, keylen);
-   hmac.CalculateDigest(digest, (const byte*)msgptr, msglen);
+   hmac.CalculateDigest(digest, (const CryptoPP::byte*)msgptr, msglen);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -346,7 +346,7 @@ string BtcUtils::base64_encode(const string& in)
    string output;
    CryptoPP::Base64Encoder base64e(
       new CryptoPP::StringSink(output), false, in.size() + 1);
-   base64e.Put((const byte*)in.c_str(), in.size());
+   base64e.Put((const CryptoPP::byte*)in.c_str(), in.size());
    base64e.MessageEnd();
 
    return output;
@@ -357,7 +357,7 @@ string BtcUtils::base64_decode(const string& in)
 {
    string output;
    CryptoPP::Base64Decoder base64e(new CryptoPP::StringSink(output));
-   base64e.Put((const byte*)in.c_str(), in.size());
+   base64e.Put((const CryptoPP::byte*)in.c_str(), in.size());
    base64e.MessageEnd();
 
    return output;

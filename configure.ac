@@ -3,7 +3,10 @@ AC_INIT([BitcoinArmory], [0.96.3.992], [moothecowlord@gmail.com])
 
 AM_INIT_AUTOMAKE([1.10 subdir-objects foreign -Wall -Werror])
 
-AC_CONFIG_SUBDIRS([cppForSwig/fcgi cppForSwig/cryptopp])
+AC_CONFIG_SUBDIRS([cppForSwig/fcgi])
+
+ac_configure_args="${ac_configure_args} CXXFLAGS=\"-DNDEBUG -g2 -O3 -std=c++11\""
+AC_CONFIG_SUBDIRS([cppForSwig/cryptopp])
 
 AM_PROG_AR
 LT_INIT

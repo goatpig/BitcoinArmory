@@ -55,6 +55,10 @@ CPPBLOCKUTILS_SOURCE_FILES = UniversalTimer.cpp BinaryData.cpp \
 	CoinSelection.cpp ReentrantLock.cpp JSON_codec.cpp \
 	TransactionBatch.cpp log.cpp TxEvalState.cpp
 
+# Crypto++
+LIBCRYPTOPP = cryptopp/libcryptopp.a
+$(LIBCRYPTOPP):
+	$(MAKE) $(AM_MAKEFLAGS) libcryptopp.la
 
 #ArmoryDB
 noinst_PROGRAMS = ArmoryDB
