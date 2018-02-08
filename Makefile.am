@@ -1,5 +1,7 @@
-# Makefile for BitcoinArmory bitcoin wallet
+# Makefile for Bitcoin Armory - Root Makefile
 SUBDIRS = cppForSwig
+bin_PROGRAMS =
+noinst_PROGRAMS =
 
 EXTRA_DIST = *.py *.md LICENSE LICENSE-ATI LICENSE-MIT \
 	nginx_example.conf imgList.xml autogen.sh \

@@ -1,3 +1,4 @@
+# Makefile for Bitcoin Armory - C/C++ subdirectory Makefile
 MAYBE_BUILD =
 if BUILD_TESTS
 MAYBE_BUILD += gtest
@@ -7,7 +8,7 @@ DIST_SUBDIRS = lmdb fcgi cryptopp
 SUBDIRS = lmdb fcgi cryptopp $(MAYBE_BUILD)
 
 SWIG_FLAGS = -c++ -python -threads
-AM_CXXFLAGS = $(CXXFLAGS) -std=c++11
+AM_CXXFLAGS = $(CXXFLAGS)
 
 if HAVE_GCC
 SWIG_FLAGS += -D__GNUC__
