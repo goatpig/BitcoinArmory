@@ -16,9 +16,15 @@ AS_IF([test "$CXXFLAGS" = "-g -O2"] ,[AC_SUBST(CXXFLAGS, [ ])])
 
 #build tests arg
 AC_ARG_ENABLE([tests],
-	      AC_HELP_STRING([--enable-tests],
-	      [build with test suites @<:@default=no@:>@]),
-	      [want_tests="$enableval"], [want_tests=no])
+              AC_HELP_STRING([--enable-tests],
+              [build with test suites @<:@default=no@:>@]),
+              [want_tests="$enableval"], [want_tests=no])
+
+#build benchmarks
+AC_ARG_ENABLE([benchmarks],
+              AC_HELP_STRING([--enable-benchmarks],
+              [build with benchmark suites @<:@default=no@:>@]),
+              [want_benchmarks=$enableval], [want_benchmarks=no])
 
 #build debug arg
 AC_ARG_ENABLE([debug],
@@ -166,6 +172,7 @@ AC_CONFIG_FILES(Makefile
 		cppForSwig/Makefile
 		cppForSwig/lmdb/Makefile)
 
+AM_CONDITIONAL([BUILD_BENCH], [test x$want_benchmarks = xyes])
 AM_CONDITIONAL([BUILD_TESTS], [test "x$want_tests" = "xyes"])
 if test "x$want_tests" = "xyes"; then
 AC_CONFIG_FILES(cppForSwig/gtest/Makefile)
@@ -173,14 +180,15 @@ fi
 
 AC_OUTPUT
 
-echo "  CC            = $CC"
-echo "  CFLAGS        = $CFLAGS"
-echo "  CPP           = $CPP"
-echo "  CPPFLAGS      = $CPPFLAGS"
-echo "  CXX           = $CXX"
-echo "  CXXFLAGS      = $CXXFLAGS"
-echo "  LDFLAGS       = $LDFLAGS"
-echo "  LD            = $LD"
-echo "  with tests    = $want_tests"
-echo "  debug symbols = $want_debug"
-echo "  with GUI      = $with_gui"
+echo "  CC              = $CC"
+echo "  CFLAGS          = $CFLAGS"
+echo "  CPP             = $CPP"
+echo "  CPPFLAGS        = $CPPFLAGS"
+echo "  CXX             = $CXX"
+echo "  CXXFLAGS        = $CXXFLAGS"
+echo "  LDFLAGS         = $LDFLAGS"
+echo "  LD              = $LD"
+echo "  with tests      = $want_tests"
+echo "  with benchmarks = $want_benchmarks"
+echo "  debug symbols   = $want_debug"
+echo "  with GUI        = $with_gui"
