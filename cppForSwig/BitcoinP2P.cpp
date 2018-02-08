@@ -141,10 +141,10 @@ vector<uint8_t> Payload::serialize(uint32_t magic_word) const
    *magicword = magic_word;
 
    //message type
-   auto&& type = typeStr();
+   auto&& _type = typeStr();
    char* msgtype = (char*)(ptr + MESSAGE_TYPE_OFFSET);
    memset(msgtype, 0, MESSAGE_TYPE_LEN);
-   memcpy(msgtype, type.c_str(), type.size());
+   memcpy(msgtype, _type.c_str(), _type.size());
 
    //length
    uint32_t msglen = payload_size;
@@ -257,7 +257,7 @@ shared_ptr<Payload::DeserializedPayloads> Payload::deserialize(
 {
    size_t bytesConsumed = 0;
 
-   auto parsepayloads = [&bytesConsumed](vector<uint8_t>& data, vector<size_t>& offsetVec)->
+   auto parsepayloads = [&bytesConsumed](vector<uint8_t>& _data, vector<size_t>& offsetVec)->
       shared_ptr<DeserializedPayloads>
    {
       auto result = make_shared<DeserializedPayloads>();
@@ -269,19 +269,19 @@ shared_ptr<Payload::DeserializedPayloads> Payload::deserialize(
          auto offset = offsetVec[y];         
          bytesConsumed = offset;
 
-         auto length = (uint32_t*)(&data[offset] + PAYLOAD_LENGTH_OFFSET);
+         auto length = (uint32_t*)(&_data[offset] + PAYLOAD_LENGTH_OFFSET);
 
          size_t localBytesConsumed = *length + MESSAGE_HEADER_LEN;
-         if (localBytesConsumed + offset > data.size())
+         if (localBytesConsumed + offset > _data.size())
             break;
 
-         auto messagetype = (char*)(&data[offset] + MESSAGE_TYPE_OFFSET);
+         auto messagetype = (char*)(&_data[offset] + MESSAGE_TYPE_OFFSET);
 
          try
          {
             uint8_t* payloadptr = nullptr;
             if (*length > 0)
-               payloadptr = &data[offset] + MESSAGE_HEADER_LEN;
+               payloadptr = &_data[offset] + MESSAGE_HEADER_LEN;
 
             //instantiate relevant Payload child class and return it
             auto payloadIter = BitcoinP2P::strToPayload_.find(messagetype);
@@ -342,10 +342,10 @@ shared_ptr<Payload::DeserializedPayloads> Payload::deserialize(
          }
       }
 
-      if (bytesConsumed < data.size())
+      if (bytesConsumed < _data.size())
       {
          result->spillOffset_ = bytesConsumed;
-         result->data_ = move(data);
+         result->data_ = move(_data);
       }
 
       return result;
@@ -353,7 +353,7 @@ shared_ptr<Payload::DeserializedPayloads> Payload::deserialize(
 
    auto patchspill = [&parsepayloads, &bytesConsumed](
                      shared_ptr<DeserializedPayloads> prevpacket, 
-                     const vector<uint8_t>& data,
+                     const vector<uint8_t>& _data,
                      const vector<size_t> offsets) -> shared_ptr<DeserializedPayloads>
    {
       if (prevpacket == nullptr)
@@ -361,7 +361,7 @@ shared_ptr<Payload::DeserializedPayloads> Payload::deserialize(
 
       size_t spillSize = 0;
       if (offsets.size() == 0)
-         spillSize = data.size();
+         spillSize = _data.size();
       else
          spillSize = offsets[0];
 
@@ -380,7 +380,7 @@ shared_ptr<Payload::DeserializedPayloads> Payload::deserialize(
       }
 
       prevpacket->data_.insert(prevpacket->data_.end(),
-         data.begin(), data.begin() + spillSize);
+         _data.begin(), _data.begin() + spillSize);
 
       vector<size_t> offvec;
       offvec.push_back(prevpacket->spillOffset_);

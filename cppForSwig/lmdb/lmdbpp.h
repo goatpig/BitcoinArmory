@@ -24,16 +24,16 @@ struct MDB_cursor;
 class LMDBException : public std::runtime_error
 {
 public:
-   LMDBException(const std::string &what)
-      : std::runtime_error(what)
+   LMDBException(const std::string& _what)
+      : std::runtime_error(_what)
    { }
 };
 
 class NoValue : public LMDBException
 {
 public:
-   NoValue(const std::string &what)
-      : LMDBException(what)
+   NoValue(const std::string& _what)
+      : LMDBException(_what)
    { }
 
 };

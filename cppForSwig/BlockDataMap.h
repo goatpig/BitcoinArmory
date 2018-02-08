@@ -284,8 +284,8 @@ private:
    size_t totalBlockchainBytes_ = 0;
 
 public:
-   BlockFiles(const string& folderPath) :
-      folderPath_(folderPath)
+   BlockFiles(const string& _folderPath) :
+      folderPath_(_folderPath)
    {}
 
    void detectAllBlockFiles(void);

@@ -135,22 +135,22 @@ public:
 void BlockDataManagerThread::run()
 try
 {
-   BlockDataManager *const bdm = this->bdm();
+   BlockDataManager *const _bdm = this->bdm();
 
-   if (bdm->hasException())
+   if (_bdm->hasException())
       return;
 
    promise<bool> isReadyPromise;
-   bdm->isReadyFuture_ = isReadyPromise.get_future();
+   _bdm->isReadyFuture_ = isReadyPromise.get_future();
 
-   auto updateNodeStatusLambda = [bdm]()->void
+   auto updateNodeStatusLambda = [_bdm]()->void
    {
       try
       {
-         auto&& nodeStatus = bdm->getNodeStatus();
+         auto&& nodeStatus = _bdm->getNodeStatus();
          auto&& notifPtr =
             make_unique<BDV_Notification_NodeStatus>(move(nodeStatus));
-         bdm->notificationStack_.push_back(move(notifPtr));
+         _bdm->notificationStack_.push_back(move(notifPtr));
       }
       catch (exception&)
       {
@@ -159,12 +159,12 @@ try
 
    //connect to node as async, no need to wait for a succesful connection
    //to init the DB
-   bdm->networkNode_->connectToNode(true);
+   _bdm->networkNode_->connectToNode(true);
 
    //if RPC is running, wait on node init
    try
    {
-      bdm->nodeRPC_->waitOnChainSync(updateNodeStatusLambda);
+      _bdm->nodeRPC_->waitOnChainSync(updateNodeStatusLambda);
    }
    catch (exception& e)
    {
@@ -188,7 +188,7 @@ try
       auto&& notifPtr = make_unique<BDV_Notification_Progress>(
          phase, prog, time, numericProgress, vector<string>());
 
-      bdm->notificationStack_.push_back(move(notifPtr));
+      _bdm->notificationStack_.push_back(move(notifPtr));
 
       if (!pimpl->run)
       {
@@ -202,13 +202,13 @@ try
       unsigned mode = pimpl->mode & 0x00000003;
       bool clearZc = bdm->config().clearMempool_;
 
-      if (mode == 0) bdm->doInitialSyncOnLoad(loadProgress);
-      else if (mode == 1) bdm->doInitialSyncOnLoad_Rescan(loadProgress);
-      else if (mode == 2) bdm->doInitialSyncOnLoad_Rebuild(loadProgress);
-      else if (mode == 3) bdm->doInitialSyncOnLoad_RescanBalance(loadProgress);
+      if (mode == 0) _bdm->doInitialSyncOnLoad(loadProgress);
+      else if (mode == 1) _bdm->doInitialSyncOnLoad_Rescan(loadProgress);
+      else if (mode == 2) _bdm->doInitialSyncOnLoad_Rebuild(loadProgress);
+      else if (mode == 3) _bdm->doInitialSyncOnLoad_RescanBalance(loadProgress);
 
-      if (!bdm->config().checkChain_)
-         bdm->enableZeroConf(clearZc);
+      if (!_bdm->config().checkChain_)
+         _bdm->enableZeroConf(clearZc);
    }
    catch (BDMStopRequest&)
    {
@@ -218,12 +218,12 @@ try
 
    isReadyPromise.set_value(true);
 
-   if (bdm->config().checkChain_)
+   if (_bdm->config().checkChain_)
       return;
 
-   auto updateChainLambda = [bdm, this]()->bool
+   auto updateChainLambda = [_bdm, this]()->bool
    {
-      auto reorgState = bdm->readBlkFileUpdate();
+      auto reorgState = _bdm->readBlkFileUpdate();
       if (reorgState.hasNewTop_)
       {
          //purge zc container
@@ -232,7 +232,7 @@ try
          zcaction.finishedPromise_ = make_shared<promise<bool>>();
          auto purgeFuture = zcaction.finishedPromise_->get_future();
 
-         bdm->zeroConfCont_->newZcStack_.push_back(move(zcaction));
+         _bdm->zeroConfCont_->newZcStack_.push_back(move(zcaction));
 
          //wait on purge
          purgeFuture.get();
@@ -240,7 +240,7 @@ try
          //notify bdvs
          auto&& notifPtr =
             make_unique<BDV_Notification_NewBlock>(move(reorgState));
-         bdm->notificationStack_.push_back(move(notifPtr));
+         _bdm->notificationStack_.push_back(move(notifPtr));
 
          return true;
       }
@@ -248,8 +248,8 @@ try
       return false;
    };
 
-   bdm->networkNode_->registerNodeStatusLambda(updateNodeStatusLambda);
-   bdm->nodeRPC_->registerNodeStatusLambda(updateNodeStatusLambda);
+   _bdm->networkNode_->registerNodeStatusLambda(updateNodeStatusLambda);
+   _bdm->nodeRPC_->registerNodeStatusLambda(updateNodeStatusLambda);
 
    while (pimpl->run)
    {
@@ -281,7 +281,7 @@ try
 
       try
       {
-         bdm->networkNode_->registerInvBlockLambda(newBlocksCallback);
+         _bdm->networkNode_->registerInvBlockLambda(newBlocksCallback);
 
          //keep updating until there are no more new blocks
          while (updateChainLambda());

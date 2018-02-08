@@ -79,11 +79,11 @@ public:
                BinaryData const & txhash, 
                uint32_t idx,
                uint32_t txtime,
-               bool isCoinbase,
-               bool isToSelf,
-               bool isChange,
-               bool isOptInRBF,
-               bool usesWitness,
+               bool _isCoinbase,
+               bool _isToSelf,
+               bool _isChange,
+               bool _isOptInRBF,
+               bool _usesWitness,
                bool isChainedZC) :
       ID_(ID),
       value_(val),
@@ -91,11 +91,11 @@ public:
       txHash_(txhash),
       index_(idx),
       txTime_(txtime),
-      isCoinbase_(isCoinbase),
+      isCoinbase_(_isCoinbase),
       isSentToSelf_(isToSelf),
       isChangeBack_(isChange),
-      isOptInRBF_(isOptInRBF),
-      usesWitness_(usesWitness),
+      isOptInRBF_(_isOptInRBF),
+      usesWitness_(_usesWitness),
       isChainedZC_(isChainedZC) {}
 
    BinaryData const &  getScrAddr(void) const;

@@ -22,7 +22,7 @@
 class UnsupportedSigHashTypeException : public runtime_error
 {
 public:
-   UnsupportedSigHashTypeException(const string& what) : runtime_error(what)
+   UnsupportedSigHashTypeException(const string& _what) : runtime_error(_what)
    {}
 };
 

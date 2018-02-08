@@ -287,16 +287,16 @@ enum OPCODETYPE
 class BlockDeserializingException : public runtime_error
 {
 public:
-   BlockDeserializingException(const string &what="")
-      : runtime_error(what)
+   BlockDeserializingException(const string& _what="")
+      : runtime_error(_what)
    { }
 };
 
 class DERException : public runtime_error
 {
 public:
-   DERException(const string& what = "") :
-      runtime_error(what)
+   DERException(const string& _what = "") :
+      runtime_error(_what)
    {}
 };
 

@@ -32,7 +32,7 @@
 class ScriptException : public runtime_error
 {
 public:
-   ScriptException(const string& what) : runtime_error(what)
+   ScriptException(const string& _what) : runtime_error(_what)
    {}
 };
 
@@ -850,8 +850,8 @@ private:
    const StackValueEnum type_;
 
 public:
-   StackValue(StackValueEnum type) :
-      type_(type)
+   StackValue(StackValueEnum _type) :
+      type_(_type)
    {}
 
    virtual ~StackValue(void) = 0;

@@ -14,7 +14,7 @@
 void BDV_Server_Object::buildMethodMap()
 {
    //registerCallback
-   auto registerCallback = [this]
+   auto _registerCallback = [this]
       (const vector<string>& ids, Arguments& args)->Arguments
    {
       auto cbPtr = this->cb_;
@@ -31,7 +31,7 @@ void BDV_Server_Object::buildMethodMap()
       return retval;
    };
 
-   methodMap_["registerCallback"] = registerCallback;
+   methodMap_["registerCallback"] = _registerCallback;
 
    //goOnline
    auto goOnline = [this]
@@ -46,7 +46,7 @@ void BDV_Server_Object::buildMethodMap()
    methodMap_["goOnline"] = goOnline;
 
    //getTopBlockHeight
-   auto getTopBlockHeight = [this]
+   auto _getTopBlockHeight = [this]
       (const vector<string>& ids, Arguments& args)->Arguments
    {
       auto retVal = IntType(this->getTopBlockHeight());
@@ -55,7 +55,7 @@ void BDV_Server_Object::buildMethodMap()
       return retarg;
    };
 
-   methodMap_["getTopBlockHeight"] = getTopBlockHeight;
+   methodMap_["getTopBlockHeight"] = _getTopBlockHeight;
 
    //getHistoryPage
    auto getHistoryPage = [this]
@@ -173,7 +173,7 @@ void BDV_Server_Object::buildMethodMap()
    methodMap_["getHistoryPage"] = getHistoryPage;
 
    //registerWallet
-   auto registerWallet = [this]
+   auto _registerWallet = [this]
       (const vector<string>& ids, Arguments& args)->Arguments
    {
       if (ids.size() != 1)
@@ -191,10 +191,10 @@ void BDV_Server_Object::buildMethodMap()
       return retarg;
    };
 
-   methodMap_["registerWallet"] = registerWallet;
+   methodMap_["registerWallet"] = _registerWallet;
 
    //registerLockbox
-   auto registerLockbox = [this]
+   auto _registerLockbox = [this]
       (const vector<string>& ids, Arguments& args)->Arguments
    {
       if (ids.size() != 1)
@@ -212,7 +212,7 @@ void BDV_Server_Object::buildMethodMap()
       return retarg;
    };
 
-   methodMap_["registerLockbox"] = registerLockbox;
+   methodMap_["registerLockbox"] = _registerLockbox;
 
    //registerAddrList
    auto registerAddrList = [this]
@@ -238,7 +238,7 @@ void BDV_Server_Object::buildMethodMap()
    methodMap_["registerAddrList"] = registerAddrList;
 
    //getLedgerDelegateForWallets
-   auto getLedgerDelegateForWallets = [this]
+   auto _getLedgerDelegateForWallets = [this]
       (const vector<string>& ids, Arguments& args)->Arguments
    {
       auto&& ledgerdelegate = this->getLedgerDelegateForWallets();
@@ -253,10 +253,10 @@ void BDV_Server_Object::buildMethodMap()
       return retarg;
    };
 
-   methodMap_["getLedgerDelegateForWallets"] = getLedgerDelegateForWallets;
+   methodMap_["getLedgerDelegateForWallets"] = _getLedgerDelegateForWallets;
 
    //getLedgerDelegateForLockbox
-   auto getLedgerDelegateForLockboxes = [this]
+   auto _getLedgerDelegateForLockboxes = [this]
       (const vector<string>& ids, Arguments& args)->Arguments
    {
       auto&& ledgerdelegate = this->getLedgerDelegateForLockboxes();
@@ -271,10 +271,10 @@ void BDV_Server_Object::buildMethodMap()
       return retarg;
    };
 
-   methodMap_["getLedgerDelegateForLockboxes"] = getLedgerDelegateForLockboxes;
+   methodMap_["getLedgerDelegateForLockboxes"] = _getLedgerDelegateForLockboxes;
 
    //getLedgerDelegateForScrAddr
-   auto getLedgerDelegateForScrAddr = [this]
+   auto _getLedgerDelegateForScrAddr = [this]
       (const vector<string>& ids, Arguments& args)->Arguments
    {
       auto& walletId = ids[1];
@@ -293,7 +293,7 @@ void BDV_Server_Object::buildMethodMap()
       return retarg;
    };
 
-   methodMap_["getLedgerDelegateForScrAddr"] = getLedgerDelegateForScrAddr;
+   methodMap_["getLedgerDelegateForScrAddr"] = _getLedgerDelegateForScrAddr;
 
    //getBalancesAndCount
    auto getBalancesAndCount = [this]
@@ -633,7 +633,7 @@ void BDV_Server_Object::buildMethodMap()
 
 
    //getTxByHash
-   auto getTxByHash = [this]
+   auto _getTxByHash = [this]
       (const vector<string>& ids, Arguments& args)->Arguments
    {
       if (ids.size() != 1)
@@ -648,7 +648,7 @@ void BDV_Server_Object::buildMethodMap()
       return move(retarg);
    };
 
-   methodMap_["getTxByHash"] = getTxByHash;
+   methodMap_["getTxByHash"] = _getTxByHash;
 
    //getAddressFullBalance
    auto getAddressFullBalance = [this]

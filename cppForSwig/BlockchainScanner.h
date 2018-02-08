@@ -31,8 +31,8 @@ private:
    const unsigned badHeight_;
 
 public:
-   ScanningException(unsigned badHeight, const string &what = "")
-      : runtime_error(what), badHeight_(badHeight)
+   ScanningException(unsigned badHeight, const string& _what = "")
+      : runtime_error(_what), badHeight_(badHeight)
    { }
 };
 

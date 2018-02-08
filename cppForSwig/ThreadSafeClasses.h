@@ -677,8 +677,8 @@ public:
       {
          while (1)
          {
-            auto terminate = terminate_.load(memory_order_relaxed);
-            if (terminate)
+            auto _terminate = terminate_.load(memory_order_relaxed);
+            if (_terminate)
                throw StopBlockingLoop();
 
             //try to pop_front
@@ -817,8 +817,8 @@ private:
 private:
    shared_future<bool> get_future()
    {
-      auto completed = completed_.load(memory_order_acquire);
-      if (completed)
+      auto _completed = completed_.load(memory_order_acquire);
+      if (_completed)
       {
          if (Stack<T>::exceptPtr_ != nullptr)
             rethrow_exception(Stack<T>::exceptPtr_);
@@ -848,8 +848,8 @@ public:
       {
          while (1)
          {
-            auto terminate = terminated_.load(memory_order_acquire);
-            if (terminate)
+            auto _terminate = terminated_.load(memory_order_acquire);
+            if (_terminate)
             {
                if (Stack<T>::exceptPtr_ != nullptr)
                   rethrow_exception(Stack<T>::exceptPtr_);
@@ -904,8 +904,8 @@ public:
 
    void push_back(T&& obj)
    {
-      auto completed = completed_.load(memory_order_acquire);
-      if (completed)
+      auto _completed = completed_.load(memory_order_acquire);
+      if (_completed)
          return;
 
       Stack<T>::push_back(move(obj));
