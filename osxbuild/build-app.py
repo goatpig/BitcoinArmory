@@ -67,8 +67,12 @@ parser = optparse.OptionParser(usage="%prog [options]\n")
 parser.add_option('--fromscratch',  dest='fromscratch', default=False, action='store_true', help='Remove all prev-downloaded: redownload and rebuild all')
 parser.add_option('--rebuildall',   dest='rebuildall',  default=False, action='store_true', help='Remove all prev-built; no redownload, only rebuild')
 parser.add_option('--compapponly',  dest='compapponly', default=False, action='store_true', help='Recompile Armory, not the 3rd party code')
+parser.add_option('--verbose',      dest='verboseOut',  default=False, action='store_true', help='Verbose output in Makefile output')
 parser.add_option('--armoryd',      dest='armoryd',     default=False, action='store_true', help='Add files to allow armoryd to run')
 (CLIOPTS, CLIARGS) = parser.parse_args()
+
+if CLIOPTS.verboseOut:
+   MAKEFLAGS += ' V=1'
 
 ########################################################
 # Write the string to both console and log file

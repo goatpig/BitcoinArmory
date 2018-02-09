@@ -2,8 +2,8 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([Cryptopp], [1], [weidai@github])
-AM_INIT_AUTOMAKE([1.10 foreign -Wall -Werror])
+AC_INIT([Crypto++], [5.62], [http://www.cryptopp.com/wiki/Bug_Report], [cryptopp], [http://www.cryptopp.com])
+AM_INIT_AUTOMAKE([1.11 foreign -Wall -Werror])
 
 AM_PROG_AR
 LT_INIT
@@ -37,6 +37,13 @@ AC_PROG_CC
 AC_CONFIG_MACRO_DIR([m4])
 m4_include([m4/ax_check_x86_features.m4])
 m4_include([m4/ax_gcc_x86_cpu_supports.m4])
+m4_include([m4/ax_cxx_compile_stdcxx.m4])
+
+#check for c++11
+AX_CXX_COMPILE_STDCXX([11], [noext], [mandatory], [nodefault])
+
+# Make the compilation flags quiet unless V=1 is used.
+m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 # Checks for header files.
 AC_CHECK_HEADERS([arpa/inet.h fcntl.h limits.h malloc.h netdb.h netinet/in.h stddef.h stdlib.h string.h sys/ioctl.h sys/socket.h sys/time.h unistd.h])

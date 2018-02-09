@@ -1,7 +1,7 @@
 AC_PREREQ(2.60)
 AC_INIT([BitcoinArmory], [0.96.3.992], [moothecowlord@gmail.com])
 
-AM_INIT_AUTOMAKE([1.10 subdir-objects foreign -Wall -Werror])
+AM_INIT_AUTOMAKE([1.11 subdir-objects foreign -Wall -Werror])
 
 AC_CONFIG_SUBDIRS([cppForSwig/fcgi cppForSwig/cryptopp])
 
@@ -60,6 +60,9 @@ m4_include([m4/ax_cxx_compile_stdcxx.m4])
 
 #check for c++11
 AX_CXX_COMPILE_STDCXX([11], [noext], [mandatory], [nodefault])
+
+# Make the compilation flags quiet unless V=1 is used.
+m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 if test "x$with_gui" = "xyes"; then
 #check for  swig

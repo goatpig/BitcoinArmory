@@ -1,6 +1,8 @@
+# Makefile for Bitcoin Armory - C/C++ test subdirectory Makefile
 SUBDIRS = ../lmdb ../fcgi ../cryptopp
-
+TESTS =
 AM_CXXFLAGS =
+bin_PROGRAMS =
 
 # "#include <tr1/tuple>" causes a build error on OSX without this flag.
 if BUILD_DARWIN
@@ -44,29 +46,42 @@ AM_CXXFLAGS += -I../lmdb \
 
 AM_LDFLAGS = -static $(LDFLAGS)
 
-bin_PROGRAMS = CppBlockUtilsTests ContainerTests DB1kIterTest SupernodeTests
-
-CppBlockUtilsTests_SOURCES = $(INCLUDE_FILES) $(SOURCE_FILES) CppBlockUtilsTests.cpp
-DB1kIterTest_SOURCES = $(INCLUDE_FILES) $(SOURCE_FILES) DB1kIterTest.cpp
-ContainerTests_SOURCES = ContainerTests.cpp gtest.h gtest-all.cc
-SupernodeTests_SOURCES = $(INCLUDE_FILES) $(SOURCE_FILES) SupernodeTests.cpp
-
-CppBlockUtilsTests_CXXFLAGS = $(AM_CXXFLAGS) $(CXXFLAGS) -std=c++11
-DB1kIterTest_CXXFLAGS = $(AM_CXXFLAGS) $(CXXFLAGS) -std=c++11
-ContainerTests_CXXFLAGS = $(AM_CXXFLAGS) $(CXXFLAGS) -std=c++11
-
+# CppBlockUtilsTests
+bin_PROGRAMS += CppBlockUtilsTests
+TESTS += CppBlockUtilsTests
+CppBlockUtilsTests_SOURCES = $(SOURCE_FILES) CppBlockUtilsTests.cpp
+CppBlockUtilsTests_CXXFLAGS = $(AM_CXXFLAGS) $(CXXFLAGS)
+CppBlockUtilsTests_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
 CppBlockUtilsTests_LDADD = -L../lmdb -llmdb \
 	-L../cryptopp -lcryptopp \
 	-L../fcgi/libfcgi/ -lfcgi \
 	-lpthread $(LDFLAGS)
 
-ContainerTests_LDADD = -lpthread $(LDFLAGS)
-
+# DB1kIterTest
+bin_PROGRAMS += ContainerTests
+TESTS += ContainerTests
+DB1kIterTest_SOURCES = $(SOURCE_FILES) DB1kIterTest.cpp
+DB1kIterTest_CXXFLAGS = $(AM_CXXFLAGS) $(CXXFLAGS)
+DB1kIterTest_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
 DB1kIterTest_LDADD = -L../lmdb -llmdb \
 	-L../cryptopp -lcryptopp \
 	-L../fcgi/libfcgi/ -lfcgi \
 	-lpthread $(LDFLAGS)
 
+# ContainerTests
+bin_PROGRAMS += DB1kIterTest
+TESTS += DB1kIterTest
+ContainerTests_SOURCES = ContainerTests.cpp gtest.h gtest-all.cc
+ContainerTests_CXXFLAGS = $(AM_CXXFLAGS) $(CXXFLAGS)
+ContainerTests_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+ContainerTests_LDADD = -lpthread $(LDFLAGS)
+
+# SupernodeTests (NOT YET FULLY FUNCTIONAL)
+bin_PROGRAMS += SupernodeTests
+TESTS += SupernodeTests
+SupernodeTests_SOURCES = $(SOURCE_FILES) SupernodeTests.cpp
+SupernodeTests_CXXFLAGS = $(AM_CPPFLAGS) $(CXXFLAGS)
+SupernodeTests_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
 SupernodeTests_LDADD = -L../lmdb -llmdb \
 	-L../cryptopp -lcryptopp \
 	-L../fcgi/libfcgi/ -lfcgi \
