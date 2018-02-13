@@ -33,7 +33,7 @@ INCLUDE_FILES = UniversalTimer.h BinaryData.h lmdb_wrapper.h \
 	ReentrantLock.h StringSockets.h log.h OS_TranslatePath.h \
 	TransactionBatch.h BlockchainScanner_Super.h SigHashEnum.h TxEvalState.h \
 	Accounts.h Addresses.h AssetEncryption.h Assets.h \
-	DecryptedDataContainer.h DerviationScheme.h \
+	DecryptedDataContainer.h DerivationScheme.h \
 	bech32/ref/c++/bech32.h bech32/ref/c++/segwit_addr.h \
         SshParser.h
 
