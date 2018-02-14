@@ -16,8 +16,8 @@ noinst_PROGRAMS += chacha20poly1305/chacha20poly1305bench
 BENCHMARKS += chacha20poly1305/chacha20poly1305bench
 endif
 
-DIST_SUBDIRS = lmdb fcgi cryptopp
-SUBDIRS = lmdb fcgi cryptopp $(MAYBE_BUILD)
+DIST_SUBDIRS = lmdb fcgi cryptopp libbtc
+SUBDIRS = lmdb fcgi cryptopp libbtc $(MAYBE_BUILD)
 
 SWIG_FLAGS = -c++ -python -threads
 AM_CXXFLAGS = $(CXXFLAGS) -std=c++11
@@ -90,12 +90,14 @@ libCppBlockUtils_la_SOURCES = $(CPPBLOCKUTILS_SOURCE_FILES) \
 libCppBlockUtils_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
 libCppBlockUtils_la_CXXFLAGS = $(AM_CXXFLAGS) -Ilmdb \
 		    		-Icryptopp \
+				-Ilibbtc/src/secp256k1/include \
 				$(AX_SWIG_PYTHON_CPPFLAGS) \
 				$(EXTRA_PYTHON_INCLUDES) \
 				-D__STDC_LIMIT_MACROS
 libCppBlockUtils_la_LIBADD = 	-Llmdb -llmdb \
 		 	 	./cryptopp/libcryptopp.la \
-		 	 	-lpthread
+		 	 	./libbtc/src/secp256k1/libsecp256k1.la \
+				-lpthread
 libCppBlockUtils_la_LDFLAGS = $(LDFLAGS)
 
 # ChaCha20Poly1305 library

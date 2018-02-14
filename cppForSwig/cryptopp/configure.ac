@@ -129,3 +129,13 @@ AM_CONDITIONAL([IS_X86], [test x$HOST_MACHINE = xx86])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
+
+echo "  Crypto++ flags"
+echo "  CC                = $CC"
+echo "  CFLAGS            = $CFLAGS"
+echo "  CPP               = $CPP"
+echo "  CPPFLAGS          = $CPPFLAGS"
+echo "  CXX               = $CXX"
+echo "  CXXFLAGS          = $CXXFLAGS"
+echo "  LDFLAGS           = $LDFLAGS"
+echo "  LD                = $LD"
