@@ -179,19 +179,28 @@ if test "x$want_tests" = "xyes"; then
 AC_CONFIG_FILES(cppForSwig/gtest/Makefile)
 fi
 
-AC_CONFIG_SUBDIRS([cppForSwig/fcgi cppForSwig/cryptopp])
+dnl ac_configure_args can only be set once and affects all subdirs.
+dnl Place all params here.
+dnl FCGI - No customs
+dnl Crypto++ - No customs
+dnl libchacha20poly1305 - No customs
+dnl libsecp256k1 (libbtc) - --disable-shared --with-pic --with-bignum=no --enable-experimental --enable-module-ecdh
+ac_configure_args="${orig_config_args} --disable-shared --with-pic --with-bignum=no --enable-experimental --enable-module-ecdh"
+AC_CONFIG_SUBDIRS([cppForSwig/fcgi cppForSwig/cryptopp cppForSwig/libbtc])
 
 AC_OUTPUT
 
-echo "  CC              = $CC"
-echo "  CFLAGS          = $CFLAGS"
-echo "  CPP             = $CPP"
-echo "  CPPFLAGS        = $CPPFLAGS"
-echo "  CXX             = $CXX"
-echo "  CXXFLAGS        = $CXXFLAGS"
-echo "  LDFLAGS         = $LDFLAGS"
-echo "  LD              = $LD"
-echo "  with tests      = $want_tests"
-echo "  with benchmarks = $want_benchmark"
-echo "  debug symbols   = $want_debug"
-echo "  with GUI        = $with_gui"
+echo "  Armory Autotools flags"
+echo "  CC                = $CC"
+echo "  CFLAGS            = $CFLAGS"
+echo "  CPP               = $CPP"
+echo "  CPPFLAGS          = $CPPFLAGS"
+echo "  CXX               = $CXX"
+echo "  CXXFLAGS          = $CXXFLAGS"
+echo "  LDFLAGS           = $LDFLAGS"
+echo "  LD                = $LD"
+echo "  ac_configure_args = $ac_configure_args"
+echo "  with tests        = $want_tests"
+echo "  with benchmarks   = $want_benchmark"
+echo "  debug symbols     = $want_debug"
+echo "  with GUI          = $with_gui"

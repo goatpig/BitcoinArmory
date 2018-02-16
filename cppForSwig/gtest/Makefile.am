@@ -9,24 +9,7 @@ if BUILD_DARWIN
 AM_CXXFLAGS += -DGTEST_USE_OWN_TR1_TUPLE=1
 endif
 
-INCLUDE_FILES = ../UniversalTimer.h ../BinaryData.h ../lmdb_wrapper.h \
-	../BtcUtils.h ../DBUtils.h ../BlockObj.h ../BlockUtils.h ../EncryptionUtils.h \
-	../BtcWallet.h ../LedgerEntry.h ../ScrAddrObj.h ../Blockchain.h \
-	../BDM_mainthread.h ../BDM_supportClasses.h \
-	../BlockDataViewer.h ../HistoryPager.h ../Progress.h \
-	../txio.h ../TxClasses.h ../StoredBlockObj.h \
-	../DatabaseBuilder.h ../BlockchainScanner.h ../BlockchainScanner_Super.h ../BlockDataMap.h \
-	../DataObject.h ../BitcoinP2p.h ../BDM_Server.h ../BDM_seder.h ../SocketObject.h \
-	../FcgiMessage.h ../BlockDataManagerConfig.h \
-	../Transactions.h ../nodeRPC.h ../JSON_codec.h \
-	../ReentrantLock.h ../StringSockets.h ../log.h ../OS_TranslatePath.h \
-	../WalletManager.h ../Wallets.h ../Signer.h ../SwigClient.h \
-	../CoinSelection.h ../SigHashEnum.h ../TxEvalState.h \
-	../Accounts.h ../Addresses.h ../AssetEncryption.h ../Assets.h \
-	../DecryptedDataContainer.h ../DerivationScheme.h \
-	../bech32/ref/c++/bech32.h ../bech32/ref/c++/segwit_addr.h \
-	../BIP32_Serialization.h TestUtils.h SshParser.h \
-	gtest.h
+INCLUDE_FILES = -I.. -I../cryptopp -I../lmdb -I../fcgi -I../bech32/ref/c++
 
 SOURCE_FILES = ../UniversalTimer.cpp ../BinaryData.cpp ../lmdb_wrapper.cpp \
 	../BtcUtils.cpp ../DBUtils.cpp ../BlockObj.cpp ../BlockUtils.cpp ../EncryptionUtils.cpp \
@@ -44,21 +27,19 @@ SOURCE_FILES = ../UniversalTimer.cpp ../BinaryData.cpp ../lmdb_wrapper.cpp \
 	../Accounts.cpp ../Addresses.cpp ../AssetEncryption.cpp ../Assets.cpp \
 	../DecryptedDataContainer.cpp ../DerivationScheme.cpp ../SshParser.cpp \
 	../bech32/ref/c++/bech32.cpp ../bech32/ref/c++/segwit_addr.cpp \
-	../BIP32_Serialization.cpp TestUtils.cpp \
-	gtest-all.cc
+	../BIP32_Serialization.cpp \
+	TestUtils.cpp gtest-all.cc
 
-AM_CXXFLAGS += -I../lmdb \
-	-I../cryptopp \
-	-I../fcgi -I../fcgi/include \
-	-D__STDC_LIMIT_MACROS
+# Files to add later, once they compile
 
+AM_CXXFLAGS += $(CXXFLAGS)
 AM_LDFLAGS = -static $(LDFLAGS)
 
 # CppBlockUtilsTests
 bin_PROGRAMS += CppBlockUtilsTests
 TESTS += CppBlockUtilsTests
 CppBlockUtilsTests_SOURCES = $(SOURCE_FILES) CppBlockUtilsTests.cpp
-CppBlockUtilsTests_CXXFLAGS = $(AM_CXXFLAGS) $(CXXFLAGS)
+CppBlockUtilsTests_CXXFLAGS = $(AM_CXXFLAGS) -D__STDC_LIMIT_MACROS
 CppBlockUtilsTests_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
 CppBlockUtilsTests_LDADD = -L../lmdb -llmdb \
 	-L../cryptopp -lcryptopp \
@@ -66,8 +47,8 @@ CppBlockUtilsTests_LDADD = -L../lmdb -llmdb \
 	-lpthread $(LDFLAGS)
 
 # DB1kIterTest
-bin_PROGRAMS += ContainerTests
-TESTS += ContainerTests
+bin_PROGRAMS += DB1kIterTest
+TESTS += DB1kIterTest
 DB1kIterTest_SOURCES = $(SOURCE_FILES) DB1kIterTest.cpp
 DB1kIterTest_CXXFLAGS = $(AM_CXXFLAGS) $(CXXFLAGS)
 DB1kIterTest_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
@@ -77,8 +58,8 @@ DB1kIterTest_LDADD = -L../lmdb -llmdb \
 	-lpthread $(LDFLAGS)
 
 # ContainerTests
-bin_PROGRAMS += DB1kIterTest
-TESTS += DB1kIterTest
+bin_PROGRAMS += ContainerTests
+TESTS += ContainerTests
 ContainerTests_SOURCES = ContainerTests.cpp gtest.h gtest-all.cc
 ContainerTests_CXXFLAGS = $(AM_CXXFLAGS) $(CXXFLAGS)
 ContainerTests_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
