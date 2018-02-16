@@ -1,0 +1,12 @@
+prefix=/usr/local
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: libbtc
+Description: C library for manipulating bitcoin data structures
+URL: https://github.com/jonasschnelli/libbtc
+Version: 0.1
+Cflags: -I${includedir}
+Libs: -L${libdir} -lbtc
+
