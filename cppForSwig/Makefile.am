@@ -10,17 +10,17 @@ LIBBTC = libbtc/libbtc.la
 LIBCHACHA20POLY1305 = libChaCha20Poly1305.la
 LIBCPPBLOCKUTILS = libCppBlockUtils.la
 LIBCRYPTOPP = cryptopp/libcryptopp.la
-LIBFCGI = fcgi/libfcgi/.libs/libfcgi.a
-LIBLMDB = lmdb/.libs/liblmdb.a
+LIBFCGI = fcgi/libfcgi/.libs/libfcgi.la
+LIBLMDB = lmdb/.libs/liblmdb.la
 LIBSECP256K1 = libbtc/src/secp256k1/libsecp256k1.la
 
-if WANT_TESTS
+if BUILD_TESTS
 MAYBE_BUILD += gtest
 noinst_PROGRAMS += chacha20poly1305test
 TESTS += chacha20poly1305test
 endif
 
-if WANT_BENCHMARK
+if BUILD_BENCH
 noinst_PROGRAMS += chacha20poly1305bench
 BENCH += chacha20poly1305bench
 endif
@@ -81,9 +81,7 @@ ArmoryDB_SOURCES = $(DB_SOURCE_FILES)
 
 ArmoryDB_CXXFLAGS = $(AM_CXXFLAGS) -D__STDC_LIMIT_MACROS
 ArmoryDB_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
-
 ArmoryDB_LDADD = $(LIBLMDB) $(LIBCRYPTOPP) $(LIBFCGI) -lpthread
-
 ArmoryDB_LDFLAGS = -static $(LDFLAGS)
 
 #libCppBlockUtils
@@ -102,8 +100,9 @@ lib_LTLIBRARIES += $(LIBCHACHA20POLY1305)
 libChaCha20Poly1305_la_SOURCES = $(CHACHA20POLY1305_SOURCE_FILES)
 libChaCha20Poly1305_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
 libChaCha20Poly1305_la_CFLAGS = $(AM_CFLAGS)
+libChaCha20Poly1305_la_LDFLAGS = $(LDFLAGS)
 
-if WANT_TESTS
+if BUILD_TESTS
 chacha20poly1305test_SOURCE_FILES = $(CHACHA20POLY1305_SOURCE_FILES) \
 				    chacha20poly1305/test.c
 chacha20poly1305test_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
@@ -111,7 +110,7 @@ chacha20poly1305test_CFLAGS = $(AM_CFLAGS)
 chacha20poly1305test_LDADD = $(LIBCHACHA20POLY1305)
 endif
 
-if WANT_BENCHMARK
+if BUILD_BENCH
 chacha20poly1305bench_SOURCE_FILES = $(CHACHA20POLY1305_SOURCE_FILES) \
 				     chacha20poly1305/bench.c
 chacha20poly1305bench_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
@@ -123,7 +122,7 @@ if BUILD_DARWIN
 libCppBlockUtils_la_LDFLAGS += -Wl,-rpath,@executable_path/ -Wl,-rpath,@loader_path/
 endif
 
-#custom rules
+#custom rules - always force SWIG to run and compile the resultant C++ file
 CppBlockUtils_wrap.cxx: CppBlockUtils.i
 	swig $(SWIG_FLAGS) CppBlockUtils.i 
 

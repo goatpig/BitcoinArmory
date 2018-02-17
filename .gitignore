@@ -58,6 +58,9 @@ _CppBlockUtils.*
 /cppForSwig/cryptopp/dlltest___Win32_Debug
 /cppForSwig/cryptopp/Release
 
+/cppForSwig/fcgi/fcgi_config.h
+/cppForSwig/fcgi/examples/*
+
 /cppForSwig/gtest/ContainerTests
 /cppForSwig/gtest/CppBlockUtilsTests
 /cppForSwig/gtest/*.txt
@@ -68,6 +71,8 @@ _CppBlockUtils.*
 /cppForSwig/gtest/*.dSYM
 /cppForSwig/gtest/*.lmdb*
 /cppForSwig/gtest/DB1kIterTest
+
+/cppForSwig/libbtc/bitcoin-spv
 
 *.DS_Store
 
@@ -99,6 +104,8 @@ _CppBlockUtils.*
 /sandbox.py
 
 /lang/*.qm
+
+test-driver
 
 /webshop/orders/m*
 /webshop/orders/n*

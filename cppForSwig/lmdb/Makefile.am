@@ -1,12 +1,7 @@
-noinst_LTLIBRARIES = liblmdb.la
+lib_LTLIBRARIES = liblmdb.la
 
+# Shared library. Portability required when linking with  libCppBlockUtils.
 liblmdb_la_SOURCES = lmdb.h midl.h \
 		    mdb.c midl.c \
 		    lmdbpp.h lmdbpp.cpp
-
-AM_CXXFLAGS = -fPIC
-AM_CFLAGS = -fPIC
-
-
-
-
+liblmdb_la_LDFLAGS = $(LDFLAGS) -shared
