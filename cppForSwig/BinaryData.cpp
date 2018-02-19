@@ -210,7 +210,7 @@ uint64_t BinaryRefReader::get_var_int(uint8_t* nRead)
    uint64_t varInt = BtcUtils::readVarInt( bdRef_.getPtr() + pos_, getSizeRemaining(), &nBytes);
    if(nRead != NULL)
       *nRead = nBytes;
-   pos_ += nBytes;
+   pos_.fetch_add(nBytes, memory_order_relaxed);
    return varInt;
 }
 
@@ -245,7 +245,7 @@ SecureBinaryData BinaryRefReader::get_SecureBinaryData(uint32_t nBytes)
       throw runtime_error("buffer overflow");
    SecureBinaryData out(nBytes);
    bdRef_.copyTo(out.getPtr(), pos_, nBytes);
-   pos_ += nBytes;
+   pos_.fetch_add(nBytes, memory_order_relaxed);
    return out;
 }
 

@@ -38,64 +38,149 @@ endif
 INCLUDE_FILES = -Ilmdb -Icryptopp -Ifcgi -Ifcgi/include -Ichacha20poly1305 \
 	-Ilibbtc/src/secp256k1/include -Ibech32/ref/c++
 
-DB_SOURCE_FILES = UniversalTimer.cpp BinaryData.cpp lmdb_wrapper.cpp \
-	BtcUtils.cpp DBUtils.cpp BlockObj.cpp BlockUtils.cpp EncryptionUtils.cpp \
-	BtcWallet.cpp LedgerEntry.cpp ScrAddrObj.cpp Blockchain.cpp \
-	BDM_mainthread.cpp BDM_supportClasses.cpp \
-	BlockDataViewer.cpp HistoryPager.cpp Progress.cpp \
-	txio.cpp TxClasses.cpp StoredBlockObj.cpp \
-	DatabaseBuilder.cpp BlockchainScanner.cpp BlockchainScanner_Super.cpp BlockDataMap.cpp \
-	DataObject.cpp BitcoinP2P.cpp BDM_Server.cpp BDM_seder.cpp SocketObject.cpp \
-	FcgiMessage.cpp BlockDataManagerConfig.cpp \
-	Transactions.cpp Script.cpp Signer.cpp nodeRPC.cpp JSON_codec.cpp \
-	StringSockets.cpp main.cpp ReentrantLock.cpp log.cpp TxEvalState.cpp \
-	bech32/ref/c++/bech32.cpp bech32/ref/c++/segwit_addr.cpp \
-        SshParser.cpp
+ARMORYDB_SOURCE_FILES = main.cpp
 
-CPPBLOCKUTILS_SOURCE_FILES = UniversalTimer.cpp BinaryData.cpp \
-	BtcUtils.cpp DBUtils.cpp EncryptionUtils.cpp \
-	BDM_seder.cpp DataObject.cpp FcgiMessage.cpp \
-	SocketObject.cpp SwigClient.cpp StringSockets.cpp \
-	BlockDataManagerConfig.cpp TxClasses.cpp \
-	WalletManager.cpp Wallets.cpp Script.cpp Signer.cpp \
+ARMORYGUI_SOURCE_FILES = CoinSelection.cpp \
+	SwigClient.cpp \
+	TransactionBatch.cpp \
+	WalletManager.cpp \
+	Wallets.cpp
+ARMORYCLI_SOURCE_FILES = Accounts.cpp \
+	Addresses.cpp \
+	AssetEncryption.cpp \
+	Assets.cpp \
+	BDM_mainthread.cpp \
+	BDM_Server.cpp \
+	BitcoinP2P.cpp \
+	BlockchainScanner.cpp \
+	BlockchainScanner_Super.cpp \
+	BlockDataViewer.cpp \
+	BlockUtils.cpp \
+	BtcWallet.cpp \
+	DatabaseBuilder.cpp \
+	DataObject.cpp \
+	DecryptedDataContainer.cpp \
+	DerivationScheme.cpp \
+	FcgiMessage.cpp \
+	HistoryPager.cpp \
+	LedgerEntry.cpp \
+	lmdb_wrapper.cpp \
+	log.cpp \
+	nodeRPC.cpp \
+	Progress.cpp \
+	ReentrantLock.cpp \
+	ScrAddrFilter.cpp \
+	ScrAddrObj.cpp \
+	SocketObject.cpp \
+	SshParser.cpp \
+	StringSockets.cpp \
+	StoredBlockObj.cpp \
+	txio.cpp \
+	ZeroConf.cpp
+ARMORYCOMMON_SOURCE_FILES = BDM_seder.cpp \
+	BinaryData.cpp \
+	Blockchain.cpp \
+	BlockDataManagerConfig.cpp \
+	BlockDataMap.cpp \
+	BlockObj.cpp \
+	BtcUtils.cpp \
+	DBUtils.cpp \
+	EncryptionUtils.cpp \
+	JSON_codec.cpp \
+	Script.cpp \
+	Signer.cpp \
 	Transactions.cpp \
-	CoinSelection.cpp ReentrantLock.cpp JSON_codec.cpp \
-	TransactionBatch.cpp log.cpp TxEvalState.cpp \
-	Accounts.cpp Addresses.cpp AssetEncryption.cpp Assets.cpp \
-	DecryptedDataContainer.cpp DerivationScheme.cpp \
-	bech32/ref/c++/bech32.cpp bech32/ref/c++/segwit_addr.cpp
+	TxClasses.cpp \
+	TxEvalState.cpp \
+	txio.cpp \
+	UniversalTimer.cpp \
+	bech32/ref/c++/bech32.cpp \
+	bech32/ref/c++/segwit_addr.cpp
 
 #ArmoryDB
 bin_PROGRAMS += ArmoryDB
-ArmoryDB_SOURCES = $(DB_SOURCE_FILES)
+ArmoryDB_SOURCES = $(ARMORYDB_SOURCE_FILES)
 ArmoryDB_CXXFLAGS = $(AM_CXXFLAGS) -D__STDC_LIMIT_MACROS
 ArmoryDB_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
 ArmoryDB_LDADD = $(LIBLMDB) $(LIBCRYPTOPP) $(LIBFCGI) -lpthread
 ArmoryDB_LDFLAGS = -static $(LDFLAGS)
 
-#libCppBlockUtils
+# libArmoryCommon - Required by all Armory programs/libraries.
+# May be able to modularize in the future so that it's not monolithic.
+lib_LTLIBRARIES += libArmoryCommon.la
+libArmoryCommon_la_SOURCES = $(ARMORYCOMMON_SOURCE_FILES)
+libArmoryCommon_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+libArmoryCommon_la_CXXFLAGS = $(AM_CXXFLAGS) -D__STDC_LIMIT_MACROS
+libArmoryCommon_la_LIBADD = lmdb/liblmdb.la \
+				cryptopp/libcryptopp.la \
+				-lpthread
+libArmoryCommon_la_LDFLAGS = $(LDFLAGS) -shared
+
+# Common command-line functionality library
+lib_LTLIBRARIES += libArmoryCLI.la
+libArmoryCLI_la_SOURCES = $(ARMORYCLI_SOURCE_FILES)
+libArmoryCLI_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES) \
+			$(PYTHON_CFLAGS)
+libArmoryCLI_la_CXXFLAGS = $(AM_CXXFLAGS) -Ilmdb \
+			-D__STDC_LIMIT_MACROS
+libArmoryCLI_la_LIBADD = lmdb/liblmdb.la \
+			 fcgi/libfcgi/libfcgi.la \
+			 libArmoryCommon.la \
+			-lpthread
+libArmoryCLI_la_LDFLAGS = $(LDFLAGS) -shared
+
+#ArmoryDB
+bin_PROGRAMS += ArmoryDB
+ArmoryDB_SOURCES = $(ARMORYDB_SOURCE_FILES)
+ArmoryDB_CXXFLAGS = $(AM_CXXFLAGS) -D__STDC_LIMIT_MACROS
+ArmoryDB_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+ArmoryDB_LDADD = fcgi/libfcgi/libfcgi.la \
+		 libArmoryCommon.la \
+		 libArmoryCLI.la \
+		 -lpthread
+
 if HAVE_GUI
+# Common GUI functionality library
+lib_LTLIBRARIES += $(LIBARMORYGUI)
+libArmoryGUI_la_SOURCES = $(ARMORYGUI_SOURCE_FILES)
+libArmoryGUI_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES) \
+			$(PYTHON_CFLAGS)
+libArmoryGUI_la_CXXFLAGS = $(AM_CXXFLAGS)
+			-D__STDC_LIMIT_MACROS
+libArmoryGUI_la_LIBADD = $(LIBARMORYCOMMON) -lpthread
+libArmoryGUI_la_LDFLAGS = $(LDFLAGS) $(PYTHON_LDFLAGS) -shared
+
+#libCppBlockUtils - SWIG library.
+# "shared" LDFLAG due to SWIG requirements.
 lib_LTLIBRARIES += $(LIBCPPBLOCKUTILS)
-libCppBlockUtils_la_SOURCES = $(CPPBLOCKUTILS_SOURCE_FILES) \
-			      CppBlockUtils_wrap.cxx
-libCppBlockUtils_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
-libCppBlockUtils_la_CXXFLAGS = $(AM_CXXFLAGS) $(AX_SWIG_PYTHON_CPPFLAGS) \
-			       $(EXTRA_PYTHON_INCLUDES) -D__STDC_LIMIT_MACROS
-libCppBlockUtils_la_LIBADD = $(LIBLMDB) $(LIBCRYPTOPP) $(LIBSECP256K1) -lpthread
-libCppBlockUtils_la_LDFLAGS = $(LDFLAGS) -shared
+libCppBlockUtils_la_SOURCES = CppBlockUtils_wrap.cxx
+libCppBlockUtils_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES) $(PYTHON_CFLAGS)
+libCppBlockUtils_la_CXXFLAGS = $(AM_CXXFLAGS) -Ilmdb -Ifcgi/include \
+				-D__STDC_LIMIT_MACROS
+libCppBlockUtils_la_LIBADD = $(LIBARMORYGUI) \
+		 	 	-lpthread
+libCppBlockUtils_la_LDFLAGS = $(LDFLAGS) $(PYTHON_LDFLAGS) -shared
 
 if BUILD_DARWIN
 libCppBlockUtils_la_LDFLAGS += -Wl,-rpath,@executable_path/ -Wl,-rpath,@loader_path/
+libArmoryCLI_la_LDFLAGS += -Wl,-rpath,@executable_path/ -Wl,-rpath,@loader_path/
 endif
 
 #custom rules - always force SWIG to run and compile the resultant C++ file
 CppBlockUtils_wrap.cxx: CppBlockUtils.i
-	swig $(SWIG_FLAGS) CppBlockUtils.i 
+	swig $(SWIG_FLAGS) CppBlockUtils.i
 
 .PHONY: CppBlockUtils_wrap.cxx
+endif
 
 clean-local:
 	rm -f CppBlockUtils.py
 	rm -f CppBlockUtils_wrap.cxx
 	rm -f CppBlockUtils_wrap.h
+
+# .include file prevents gtest subdir from building a second copy of Armory.
+# Also provides a convenient spot to place all test-related materials.
+if BUILD_TESTS
+TESTS =
+include Makefile.tests.include
 endif

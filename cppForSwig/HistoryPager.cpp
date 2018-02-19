@@ -12,85 +12,73 @@ uint32_t HistoryPager::txnPerPage_ = 100;
 ////////////////////////////////////////////////////////////////////////////////
 void HistoryPager::addPage(uint32_t count, uint32_t bottom, uint32_t top)
 {
-   Page newPage(count, bottom, top);
+   auto newPage = make_shared<Page>(count, bottom, top);
    pages_.push_back(newPage);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-map<BinaryData, LedgerEntry>& HistoryPager::getPageLedgerMap(
-   function< void(uint32_t, uint32_t, map<BinaryData, TxIOPair>&) > getTxio,
-   function< void(map<BinaryData, LedgerEntry>&, 
-                  const map<BinaryData, TxIOPair>&, uint32_t) > buildLedgers,
-   uint32_t pageId,
+shared_ptr<map<BinaryData, LedgerEntry>> HistoryPager::getPageLedgerMap(
+   function< map<BinaryData, TxIOPair>(uint32_t, uint32_t) > getTxio,
+   function< map<BinaryData, LedgerEntry>(
+      const map<BinaryData, TxIOPair>&, uint32_t, uint32_t) > buildLedgers,
+   uint32_t pageId, unsigned updateID,
    map<BinaryData, TxIOPair>* txioMap)
 {
    if (!isInitialized_)
       throw std::runtime_error("Uninitialized history");
 
    if (pageId >= pages_.size())
-      return LedgerEntry::EmptyLedgerMap_;
+      return nullptr;
 
    currentPage_ = pageId;
-   Page& page = pages_[pageId];
+   auto& page = pages_[pageId];
 
-   if (page.pageLedgers_.size() != 0)
+   if (updateID != UINT32_MAX && page->updateID_ == updateID)
    {
       //already loaded this page
-      return page.pageLedgers_;
+      return page->pageLedgers_.get();
    }
 
-   page.pageLedgers_.clear();
+   page->pageLedgers_.clear();
 
    //load page's block range from ssh and build ledgers
    if (txioMap != nullptr)
    {
-      getTxio(page.blockStart_, page.blockEnd_, *txioMap);
-      buildLedgers(page.pageLedgers_, *txioMap, page.blockStart_);
+      *txioMap = getTxio(page->blockStart_, page->blockEnd_);
+      page->pageLedgers_.update(
+         buildLedgers(*txioMap, page->blockStart_, page->blockEnd_));
    }
    else
    {
-      map<BinaryData, TxIOPair> txio; 
-      getTxio(page.blockStart_, page.blockEnd_, txio);
-      buildLedgers(page.pageLedgers_, txio, page.blockStart_);
+      auto&& txio = getTxio(page->blockStart_, page->blockEnd_);
+      page->pageLedgers_.update(
+         buildLedgers(txio, page->blockStart_, page->blockEnd_));
    }
 
-   return page.pageLedgers_;
+   if(updateID != UINT32_MAX)
+      page->updateID_ = updateID;
+   return page->pageLedgers_.get();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void HistoryPager::getPageLedgerMap(
-   function< void(uint32_t, uint32_t, map<BinaryData, TxIOPair>&) > getTxio,
-   function< void(map<BinaryData, LedgerEntry>&,
-   const map<BinaryData, TxIOPair>&, uint32_t, uint32_t) > buildLedgers,
-   uint32_t pageId,
-   map<BinaryData, LedgerEntry>& leMap) const
-{
-   if (!isInitialized_)
-      throw std::runtime_error("Uninitialized history");
-
-   const Page& page = pages_[pageId];
-
-   //load page's block range from ssh and build ledgers
-   map<BinaryData, TxIOPair> txio;
-   getTxio(page.blockStart_, page.blockEnd_, txio);
-   buildLedgers(leMap, txio, page.blockStart_, page.blockEnd_);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-map<BinaryData, LedgerEntry>& HistoryPager::getPageLedgerMap(uint32_t pageId)
+shared_ptr<map<BinaryData, LedgerEntry>> HistoryPager::getPageLedgerMap(
+   uint32_t pageId)
 {
    if (!isInitialized_)
       throw std::runtime_error("Uninitialized history");
 
    currentPage_ = pageId;
-   Page& page = pages_[pageId];
+   auto& page = pages_[pageId];
 
-   if (page.pageLedgers_.size() != 0)
+   if (page->pageLedgers_.size() != 0)
    {
       //already loaded this page
-      return page.pageLedgers_;
+      return page->pageLedgers_.get();
    }
-   else return LedgerEntry::EmptyLedgerMap_;
+   else
+   {
+      return nullptr;
+   }
 }
 
 
@@ -156,7 +144,7 @@ bool HistoryPager::mapHistory(
 uint32_t HistoryPager::getPageBottom(uint32_t id) const
 {
    if (id < pages_.size())
-      return pages_[id].blockStart_;
+      return pages_[id]->blockStart_;
 
    return 0;
 }
@@ -173,10 +161,10 @@ uint32_t HistoryPager::getRangeForHeightAndCount(
 
    for (const auto& page : pages_)
    {
-      if (page.blockEnd_ > height)
+      if (page->blockEnd_ > height)
       {
-         total += page.count_;
-         top = page.blockEnd_;
+         total += page->count_;
+         top = page->blockEnd_;
 
          if (total > count)
             break;
@@ -217,13 +205,20 @@ uint32_t HistoryPager::getPageIdForBlockHeight(uint32_t blk) const
    if (!isInitialized_)
       throw std::runtime_error("Uninitialized history");
 
-   for (int32_t i = 0; i < pages_.size(); i++)
+   unsigned i = 0;
+   for (auto& page : pages_)
    {
-      auto& page = pages_[i];
-
-      if (blk >= page.blockStart_ && blk <= page.blockEnd_)
+      if (blk >= page->blockStart_ && blk <= page->blockEnd_)
          return i;
+
+      ++i;
    }
 
    return 0;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void HistoryPager::sortPages()
+{
+   std::sort(pages_.begin(), pages_.end(), Page::comparator); 
 }

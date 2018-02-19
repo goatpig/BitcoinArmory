@@ -64,8 +64,8 @@
 #include <thread>
 #include <mutex>
 #include <memory>
+#include <chrono>
 #include "OS_TranslatePath.h"
-#include "make_unique.h"
 
 #define FILEANDLINE "(" << __FILE__ << ":" << __LINE__ << ") "
 #define LOGERR    (LoggerObj(LogLvlError ).getLogStream() << FILEANDLINE )
@@ -208,7 +208,6 @@ public:
    bool     noStdout_;
 };
 
-
 ////////////////////////////////////////////////////////////////////////////////
 class NullStream : public LogStream
 {
@@ -309,79 +308,69 @@ private:
 
 };
 
+////////////////////////////////////////////////////////////////////////////////
+class StreamBuffer : public LogStream
+{
+private:
+   stringstream ss_;
 
-// I missed the opportunity with the above class, to design it as a constantly
-// constructing/destructing object that adds a newline on every destruct.  So 
-// instead I create this little wrapper that does it for me.
+public:
+   StreamBuffer(void)
+   {}
+
+   LogStream& operator<<(const char * str) { ss_ << str; return *this; }
+   LogStream& operator<<(string const & str) { ss_ << str.c_str(); return *this; }
+   LogStream& operator<<(int i) { ss_ << i; return *this; }
+   LogStream& operator<<(unsigned int i) { ss_ << i; return *this; }
+   LogStream& operator<<(unsigned long long int i) { ss_ << i; return *this; }
+   LogStream& operator<<(float f) { ss_ << f; return *this; }
+   LogStream& operator<<(double d) { ss_ << d; return *this; }
+#if !defined(_MSC_VER) && !defined(__MINGW32__) && defined(__LP64__)
+   LogStream& operator<<(size_t i) { ss_ << i; return *this; }
+#endif
+
+   string str(void) { return ss_.str(); }
+};
+
+
+////////////////////////////////////////////////////////////////////////////////
 class LoggerObj
 {
 private:
    static mutex mu_;
-   unique_ptr<unique_lock<mutex>> lockPtr_ = nullptr;
+   StreamBuffer buffer_;
 
 public:
    LoggerObj(LogLevel lvl) : logLevel_(lvl) 
-   {
-      lockPtr_ = move(make_unique<unique_lock<mutex>>(mu_));
-   }
+   {}
 
    LogStream & getLogStream(void) 
    { 
-      LogStream & lg = Log::GetInstance().Get(logLevel_);
-      lg << "-" << Log::ToString(logLevel_);
-      lg << "- " << NowTime() << ": ";
-      return lg;
+      buffer_ << "-" << Log::ToString(logLevel_);
+      buffer_ << "- " << NowTime() << ": ";
+      return buffer_;
    }
 
    ~LoggerObj(void) 
    { 
-      Log::GetInstance().Get(logLevel_) << "\n";
+      //terminate buffer with newline
+      buffer_ << "\n";
+
+      //process wide lock
+      unique_lock<mutex> lock(mu_);
+
+      //push buffer to log stream
+      LogStream & lg = Log::GetInstance().Get(logLevel_);
+      lg << buffer_.str();
+
+      //flush streams
       Log::GetInstance().FlushStreams();
-      lockPtr_.reset();
    }
 
 private:
    LogLevel logLevel_;
 };
 
-
-//#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__)
-//#   if defined (BUILDING_FILELOG_DLL)
-//#       define FILELOG_DECLSPEC   __declspec (dllexport)
-//#   elif defined (USING_FILELOG_DLL)
-//#       define FILELOG_DECLSPEC   __declspec (dllimport)
-//#   else
-//#       define FILELOG_DECLSPEC
-//#   endif // BUILDING_DBSIMPLE_DLL
-//#else
-//#   define FILELOG_DECLSPEC
-//#endif // _WIN32
-
-//#ifndef FILELOG_MAX_LEVEL
-//#define FILELOG_MAX_LEVEL LogLvlDEBUG4
-//#endif
-
-// Print the current time ("YYYY-MM-DD - HH:MM:SS.sss")
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__)
-
-#include <windows.h>
-inline string NowTime()
-{
-    char buffer[LOGTIMEBUFLEN];
-    if (GetTimeFormatA(LOCALE_USER_DEFAULT, 0, 0, 
-            "yyyy'-'MM'-'dd' - 'HH':'mm':'ss", buffer, LOGTIMEBUFLEN) == 0)
-        return "Error in NowTime()";
-
-    char result[LOGTIMEBUFLEN] = {0};
-    SYSTEMTIME curTime;
-    GetSystemTime(&curTime);
-    snprintf(result, sizeof(result), "%s.%03ld", buffer, curTime.wMilliseconds); 
-    return result;
-}
-
-#else
-
-#include <chrono>
 inline string NowTime()
 {
     // Getting current time in ms is way trickier than it should be.
@@ -405,5 +394,4 @@ inline string NowTime()
     return result;
 }
 
-#endif //WIN32
 #endif //__LOG_H__

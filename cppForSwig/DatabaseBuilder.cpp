@@ -10,7 +10,7 @@
 #include "BlockUtils.h"
 #include "BlockchainScanner.h"
 #include "BlockchainScanner_Super.h"
-#include "BDM_supportClasses.h"
+#include "ScrAddrFilter.h"
 #include "Transactions.h"
 
 /////////////////////////////////////////////////////////////////////////////
@@ -46,8 +46,8 @@ void DatabaseBuilder::init()
    if (bdmConfig_.reportProgress_)
       progress_(BDMPhase_OrganizingChain, 0, UINT32_MAX, 0);
 
-   blockchain_->forceOrganize();
-   blockchain_->setDuplicateIDinRAM(db_);
+   auto&& initialReorgState = blockchain_->forceOrganize();
+   blockchain_->updateBranchingMaps(db_, initialReorgState);
 
    try
    {
@@ -134,9 +134,6 @@ void DatabaseBuilder::init()
          scanFrom, (int)reorgState.reorgBranchPoint_->getBlockHeight() + 1);
    }
    
-   LOGINFO << "scanning new blocks from #" << scanFrom << " to #" <<
-      blockchain_->top()->getBlockHeight();
-
    TIMER_START("scanning");
    while (1)
    {
@@ -216,10 +213,13 @@ BlockOffset DatabaseBuilder::loadBlockHeadersFromDB(
    }();
 
    ProgressCalculator calc(howManyBlocks);
+   map<BinaryData, shared_ptr<BlockHeader>> headerMap;
 
    const auto callback = [&](shared_ptr<BlockHeader> h, uint32_t height, uint8_t dup)
    {
-      blockchain_->addBlock(h->getThisHash(), h, height, dup);
+      h->setBlockHeight(height);
+      h->setDuplicateID(dup);
+      headerMap.insert(make_pair(h->getThisHash(), h));
 
       BlockOffset currblock(h->getBlockFileNum(), h->getOffset());
       if (currblock > topBlockOffet)
@@ -237,8 +237,9 @@ BlockOffset DatabaseBuilder::loadBlockHeadersFromDB(
    };
 
    db_->readAllHeaders(callback);
+   blockchain_->addBlocksInBulk(headerMap, false);
 
-   LOGINFO << "Found " << blockchain_->allHeaders().size() << " headers in db";
+   LOGINFO << "Found " << headerMap.size() << " headers in db";
 
    return topBlockOffet;
 }
@@ -407,7 +408,7 @@ bool DatabaseBuilder::addBlocksToDB(BlockDataLoader& bdl,
    }
 
    //add in bulk
-   auto&& insertedBlocks = blockchain_->addBlocksInBulk(bhmap);
+   auto&& insertedBlocks = blockchain_->addBlocksInBulk(bhmap, true);
 
    if (!fullHints)
    {
@@ -544,6 +545,9 @@ BinaryData DatabaseBuilder::scanHistory(int32_t startHeight,
 {
    if (BlockDataManagerConfig::getDbType() != ARMORY_DB_SUPER)
    {
+      LOGINFO << "scanning new blocks from #" << startHeight << " to #" <<
+         blockchain_->top()->getBlockHeight();
+
       BlockchainScanner bcs(blockchain_, db_, scrAddrFilter_.get(),
          blockFiles_, bdmConfig_.threadCount_, bdmConfig_.ramUsage_,
          progress_, reportprogress);
@@ -576,7 +580,7 @@ BinaryData DatabaseBuilder::scanHistory(int32_t startHeight,
          progress_, reportprogress);
 
       bcs.scan();
-      bcs.updateSSH(forceRescanSSH_);
+      bcs.updateSSH(forceRescanSSH_ & init);
 
       return bcs.getTopScannedBlockHash();
    }
@@ -638,7 +642,7 @@ void DatabaseBuilder::undoHistory(
       bcs.undo(reorgState);
    }
 
-   blockchain_->setDuplicateIDinRAM(db_);
+   blockchain_->updateBranchingMaps(db_, reorgState);
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -788,7 +792,8 @@ map<BinaryData, shared_ptr<BlockHeader>> DatabaseBuilder::assessBlkFile(
 void DatabaseBuilder::verifyChain()
 {
    /*
-   builds db (no scanning) with full txhints, then verifies all tx.
+   builds db (no scanning) with full txhints, then verifies all tx 
+   (consensus and sigs).
    */
 
    //list all files in block data folder
@@ -800,8 +805,8 @@ void DatabaseBuilder::verifyChain()
    if (bdmConfig_.reportProgress_)
       progress_(BDMPhase_OrganizingChain, 0, UINT32_MAX, 0);
 
-   blockchain_->forceOrganize();
-   blockchain_->setDuplicateIDinRAM(db_);
+   auto initialReorgState = blockchain_->forceOrganize();
+   blockchain_->updateBranchingMaps(db_, initialReorgState);
 
    //update db
    LOGINFO << "updating HEADERS db";

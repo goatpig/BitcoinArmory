@@ -26,6 +26,8 @@
 #include "LedgerEntry.h"
 #include "DbHeader.h"
 #include "FcgiMessage.h"
+#include "BDV_Notification.h"
+#include "ZeroConf.h"
 
 #define MAX_CONTENT_LENGTH 1024*1024*1024
 #define CALLBACK_EXPIRE_COUNT 5
@@ -93,7 +95,7 @@ private:
    map<string, function<Arguments(
       const vector<string>&, Arguments&)>> methodMap_;
    
-   thread tID_, initT_;
+   thread initT_;
    shared_ptr<SocketCallback> cb_;
 
    string bdvID_;
@@ -115,10 +117,6 @@ private:
    shared_ptr<promise<bool>> isReadyPromise_;
    shared_future<bool> isReadyFuture_;
 
-public:
-
-   BlockingStack<shared_ptr<BDV_Notification>> notificationStack_;
-
 private:
    BDV_Server_Object(BDV_Server_Object&) = delete; //no copies
       
@@ -130,11 +128,6 @@ private:
    bool registerLockbox(
       vector<BinaryData> const& scrAddrVec, string IDstr, bool wltIsNew);
    void registerAddrVec(const string&, vector<BinaryData> const& scrAddrVec);
-
-   void pushNotification(unique_ptr<BDV_Notification> notifPtr)
-   {
-      notificationStack_.push_back(move(notifPtr));
-   }
 
    void resetCounter(void) const
    {
@@ -150,22 +143,40 @@ public:
    }
 
    const string& getID(void) const { return bdvID_; }
-   void maintenanceThread(void);
+   void pushNotification(shared_ptr<BDV_Notification>);
    void init(void);
 
    Arguments executeCommand(const string& method, 
                               const vector<string>& ids, 
                               Arguments& args);
   
-   void zcCallback(ZeroConfContainer::NotificationPacket& zcMap);
-   void zcErrorCallback(string&, string&);
-
    void haltThreads(void);
+};
+
+class Clients;
+
+///////////////////////////////////////////////////////////////////////////////
+class ZeroConfCallbacks_BDV : public ZeroConfCallbacks
+{
+private:
+   Clients * clientsPtr_;
+
+public:
+   ZeroConfCallbacks_BDV(Clients* clientsPtr) :
+      clientsPtr_(clientsPtr)
+   {}
+
+   set<string> hasScrAddr(const BinaryDataRef&) const;
+   void pushZcNotification(ZeroConfContainer::NotificationPacket& packet);
+   void errorCallback(
+      const string& bdvId, string& errorStr, const string& txHash);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 class Clients
 {
+   friend class ZeroConfCallbacks_BDV;
+
 private:
    TransactionalMap<string, shared_ptr<BDV_Server_Object>> BDVs_;
    mutable BlockingStack<bool> gcCommands_;
@@ -175,16 +186,19 @@ private:
 
    atomic<bool> run_;
 
-   thread mainteThr_;
-   thread gcThread_;
+   vector<thread> controlThreads_;
+
+   mutable BlockingStack<shared_ptr<BDV_Notification>> outerBDVNotifStack_;
+   BlockingStack<shared_ptr<BDV_Notification_Packet>> innerBDVNotifStack_;
 
 private:
-   void maintenanceThread(void) const;
+   void commandThread(void) const;
    void garbageCollectorThread(void);
    void unregisterAllBDVs(void);
+   void bdvMaintenanceLoop(void);
+   void bdvMaintenanceThread(void);
 
 public:
-
    Clients(BlockDataManagerThread* bdmT,
       function<void(void)> shutdownLambda) :
       bdmT_(bdmT), fcgiShutdownCallback_(shutdownLambda)
@@ -193,7 +207,17 @@ public:
 
       auto mainthread = [this](void)->void
       {
-         maintenanceThread();
+         commandThread();
+      };
+
+      auto outerthread = [this](void)->void
+      {
+         bdvMaintenanceLoop();
+      };
+
+      auto innerthread = [this](void)->void
+      {
+         bdvMaintenanceThread();
       };
 
       auto gcThread = [this](void)->void
@@ -201,13 +225,24 @@ public:
          garbageCollectorThread();
       };
 
-      mainteThr_ = thread(mainthread);
+      controlThreads_.push_back(thread(mainthread));
+      controlThreads_.push_back(thread(outerthread));
+      
+      unsigned innerThreadCount = 2;
+      if (BlockDataManagerConfig::getDbType() == ARMORY_DB_SUPER &&
+         bdmT_->bdm()->config().nodeType_ != Node_UnitTest)
+         innerThreadCount == thread::hardware_concurrency();
+      for (unsigned i = 0; i < innerThreadCount; i++)
+         controlThreads_.push_back(thread(innerthread));
+
+      auto callbackPtr = make_unique<ZeroConfCallbacks_BDV>(this);
+      bdmT_->bdm()->registerZcCallbacks(move(callbackPtr));
 
       //no gc for unit tests
       if (bdmT_->bdm()->config().nodeType_ == Node_UnitTest)
          return;
 
-      gcThread_ = thread(gcThread);
+      controlThreads_.push_back(thread(gcThread));
    }
 
    const shared_ptr<BDV_Server_Object>& get(const string& id) const;

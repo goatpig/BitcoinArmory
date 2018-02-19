@@ -920,13 +920,13 @@ public:
 public:
 
    uint8_t getValidDupIDForHeight(uint32_t blockHgt) const;
-   void setValidDupIDForHeight(uint32_t blockHgt, uint8_t dup,
-      bool overwrite = true);
-
-   /////////////////////////////////////////////////////////////////////////////
    uint8_t getValidDupIDForHeight_fromDB(uint32_t blockHgt);
-
-
+   void setValidDupIDForHeight(
+      uint32_t blockHgt, uint8_t dup, bool overwrite = true);
+   void setValidDupIDForHeight(map<unsigned, uint8_t>&);
+   
+   bool isBlockIDOnMainBranch(unsigned) const;
+   void setBlockIDBranch(map<unsigned, bool>&);
 
    /////////////////////////////////////////////////////////////////////////////
    // Interface to translate Stored* objects to/from persistent DB storage
@@ -1174,7 +1174,8 @@ private:
 
    uint32_t             lowestScannedUpTo_;
 
-   map<uint32_t, uint8_t>      validDupByHeight_;
+   TransactionalMap<unsigned, uint8_t> validDupByHeight_;
+   TransactionalMap<unsigned, bool> blockIDMainChainMap_;
 
    // In this case, a address is any TxOut script, which is usually
    // just a 25-byte script.  But this generically captures all types

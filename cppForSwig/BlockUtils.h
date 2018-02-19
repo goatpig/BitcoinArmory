@@ -31,13 +31,15 @@
 #include "ScrAddrObj.h"
 #include "bdmenums.h"
 
-#include "cryptlib.h"
-#include "sha.h"
+#include "cryptopp/cryptlib.h"
+#include "cryptopp/sha.h"
 #include "UniversalTimer.h"
 
 #include <functional>
-#include "BDM_supportClasses.h"
+#include "ScrAddrFilter.h"
 #include "nodeRPC.h"
+#include "BitcoinP2p.h"
+#include "BDV_Notification.h"
 
 #ifndef MAXSIZE_T
    #if defined(_WIN64) || defined(__X86_64__)
@@ -175,9 +177,6 @@ public:
       std::function<void()> headersRead, headersUpdated, blockDataLoaded;
    };
    
-   void registerBDVwithZCcontainer(BDV_Server_Object*);
-   void unregisterBDVwithZCcontainer(const string&);
-
    bool hasException(void) const { return exceptPtr_ != nullptr; }
    exception_ptr getException(void) const { return exceptPtr_; }
 
@@ -219,14 +218,8 @@ public:
 
 public:
    bool isRunning(void) const { return BDMstate_ != BDM_offline; }
-   void blockUntilReady(void) const { isReadyFuture_.wait(); }
-   bool isReady(void) const
-   {
-      return 
-         isReadyFuture_.wait_for(chrono::seconds(0)) == 
-         std::future_status::ready;
-   }
-   
+   void blockUntilReady(void) const;
+   bool isReady(void) const;
    void resetDatabases(ResetDBMode mode);
    
    void terminateAllScans(void) 
@@ -236,6 +229,10 @@ public:
 
    unsigned getCheckedTxCount(void) const { return checkTransactionCount_; }
    NodeStatusStruct getNodeStatus(void) const;
+   void registerZcCallbacks(unique_ptr<ZeroConfCallbacks> ptr)
+   {
+      zeroConfCont_->setZeroConfCallbacks(move(ptr));
+   }
 };
 
 ///////////////////////////////////////////////////////////////////////////////

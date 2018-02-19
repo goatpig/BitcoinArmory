@@ -21,7 +21,8 @@ using namespace std;
 
 #include "BlockUtils.h"
 #include "txio.h"
-#include "BDM_supportClasses.h"
+#include "BDV_Notification.h"
+#include "ZeroConf.h"
 #include "util.h"
 #include "bdmenums.h"
 
@@ -51,7 +52,7 @@ class BDMnotReady : public exception
 class BlockDataViewer
 {
 private:
-   virtual void pushNotification(unique_ptr<BDV_Notification>) = 0;
+   virtual void pushNotification(shared_ptr<BDV_Notification>) = 0;
 
 public:
    BlockDataViewer(BlockDataManager* bdm);
@@ -64,12 +65,9 @@ public:
    // blockchain in RAM, each scan will take 30-120 seconds.  Registering makes 
    // sure that the intial blockchain scan picks up wallet-relevant stuff as 
    // it goes, and does a full [re-]scan of the blockchain only if necessary.
-   shared_ptr<BtcWallet> createWallet(const string& id);
-   shared_ptr<BtcWallet> createLockbox(const string& id);
-
-   shared_ptr<BtcWallet> registerWallet(vector<BinaryData> const& scrAddrVec,
+   bool registerWallet(vector<BinaryData> const& scrAddrVec,
                               string ID, bool wltIsNew);
-   shared_ptr<BtcWallet> registerLockbox(vector<BinaryData> const& scrAddrVec, 
+   bool registerLockbox(vector<BinaryData> const& scrAddrVec, 
                               string ID, bool wltIsNew);
    void       unregisterWallet(const string& ID);
    void       unregisterLockbox(const string& ID);
@@ -86,11 +84,6 @@ public:
    const shared_ptr<map<BinaryData, shared_ptr<map<BinaryData, TxIOPair>>>>
       getFullZeroConfTxIOMap() const
    { return zeroConfCont_->getFullTxioMap(); }
-
-   const LedgerEntry& getTxLedgerByHash_FromWallets(
-      const BinaryData& txHash) const;
-   const LedgerEntry& getTxLedgerByHash_FromLockboxes(
-      const BinaryData& txHash) const;
 
    Tx                getTxByHash(BinaryData const & txHash) const;
    TxOut             getPrevTxOut(TxIn & txin) const;
@@ -217,6 +210,8 @@ public:
    unique_ptr<BDV_Notification_ZC> createZcNotification(
       function<bool(const BinaryData&)>);
 
+   virtual const string& getID(void) const = 0;
+
 protected:
    atomic<bool> rescanZC_;
 
@@ -263,7 +258,7 @@ public:
 
    ~WalletGroup();
 
-   shared_ptr<BtcWallet> registerWallet(
+   bool registerWallet(
       vector<BinaryData> const& scrAddrVec, string IDstr, bool wltIsNew);
    void unregisterWallet(const string& IDstr);
    bool registerAddresses(const vector<BinaryData>& saVec,
@@ -272,12 +267,10 @@ public:
    bool hasID(const BinaryData& ID) const;
    shared_ptr<BtcWallet> getWalletByID(const BinaryData& ID) const;
 
-   const LedgerEntry& getTxLedgerByHash(const BinaryData& txHash) const;
-
    void reset();
    
    size_t getPageCount(void) const { return hist_.getPageCount(); }
-   vector<LedgerEntry> getHistoryPage(uint32_t pageId,
+   vector<LedgerEntry> getHistoryPage(uint32_t pageId, unsigned updateID, 
       bool rebuildLedger, bool remapWallets);
 
    const set<BinaryData>& getValidZcSet(void) const
@@ -292,9 +285,6 @@ private:
    void updateLedgerFilter(const vector<BinaryData>& walletsVec);
 
    void scanWallets(ScanWalletStruct&, int32_t);
-   void updateGlobalLedgerFirstPage(uint32_t startBlock, 
-      uint32_t endBlock, BDV_refresh forceRefresh);
-
    map<BinaryData, shared_ptr<BtcWallet> > getWalletMap(void) const;
 
    uint32_t getBlockInVicinity(uint32_t) const;
@@ -310,7 +300,6 @@ private:
    //a single one), the globalLedger does not merge wallet level txn. It
    //can thus have several entries under the same transaction. Thus, this
    //cannot be a map nor a set.
-   vector<LedgerEntry> globalLedger_;
    HistoryPager hist_;
    HistoryOrdering order_ = order_descending;
 
@@ -322,6 +311,7 @@ private:
    std::mutex globalLedgerLock_;
 
    set<BinaryData> validZcSet_;
+   set<BinaryData> wltFilterSet_;
 };
 
 #endif

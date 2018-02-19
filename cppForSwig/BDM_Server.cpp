@@ -135,8 +135,8 @@ void BDV_Server_Object::buildMethodMap()
             pageId = 0;
             while (1)
             {
-               auto&& ledgerMap = theWallet->getHistoryPage(pageId++);
-               for (auto& lePair : ledgerMap)
+               auto ledgerMap = theWallet->getHistoryPage(pageId++);
+               for (auto& lePair : *ledgerMap)
                {
                   auto& leHash = lePair.second.getTxHash();
                   if (leHash == txHash)
@@ -809,7 +809,7 @@ void BDV_Server_Object::buildMethodMap()
       LedgerEntryVector lev;
       for (unsigned y = 0; y < wltGroup.getPageCount(); y++)
       {
-         auto&& histPage = wltGroup.getHistoryPage(y, false, false);
+         auto&& histPage = wltGroup.getHistoryPage(y, false, false, UINT32_MAX);
          for (auto& le : histPage)
          {
             LedgerEntryData led(le.getWalletID(),
@@ -1071,13 +1071,14 @@ void Clients::exitRequestLoop()
 
    //shutdown node
    bdmT_->bdm()->shutdownNode();
-
    bdmT_->bdm()->shutdownNotifications();
 
-   if (mainteThr_.joinable())
-      mainteThr_.join();
-   if (gcThread_.joinable())
-      gcThread_.join();
+   outerBDVNotifStack_.completed();
+   innerBDVNotifStack_.completed();
+
+   for (auto& thr : controlThreads_)
+      if (thr.joinable())
+         thr.join();
 
    //shutdown loop on FcgiServer side
    fcgiShutdownCallback_();
@@ -1152,7 +1153,7 @@ void Clients::unregisterBDV(const string& bdvId)
 
 
 ///////////////////////////////////////////////////////////////////////////////
-void Clients::maintenanceThread(void) const
+void Clients::commandThread(void) const
 {
    if (bdmT_ == nullptr)
       throw runtime_error("invalid BDM thread ptr");
@@ -1192,13 +1193,7 @@ void Clients::maintenanceThread(void) const
       if (timedout)
          continue;
 
-      auto bdvmap = BDVs_.get();
-
-      for (auto& bdv : *bdvmap)
-      {
-         auto newPtr = notifPtr;
-         bdv.second->notificationStack_.push_back(move(newPtr));
-      }
+      outerBDVNotifStack_.push_back(move(notifPtr));
    }
 }
 
@@ -1483,40 +1478,24 @@ BDV_Server_Object::BDV_Server_Object(
 
    bdvID_ = SecureBinaryData().GenerateRandom(10).toHexStr();
    buildMethodMap();
-
-   //register with ZC container
-   bdmT_->bdm()->registerBDVwithZCcontainer(this);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 void BDV_Server_Object::startThreads()
 {
-   auto thrLambda = [this](void)->void
-   { this->maintenanceThread(); };
-
    auto initLambda = [this](void)->void
    { this->init(); };
 
    initT_ = thread(initLambda);
-   tID_ = thread(thrLambda);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 void BDV_Server_Object::haltThreads()
 {
-   notificationStack_.terminate();
-
-
-   //unregister from ZC container
-   bdmT_->bdm()->unregisterBDVwithZCcontainer(bdvID_);
-
    if (initT_.joinable())
       initT_.join();
 
-   if (tID_.joinable())
-      tID_.join();
-
-   cb_.reset();
+   cb_->shutdown();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1595,166 +1574,135 @@ void BDV_Server_Object::init()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void BDV_Server_Object::maintenanceThread(void)
+void BDV_Server_Object::pushNotification(
+   shared_ptr<BDV_Notification> notifPtr)
 {
-   while (1)
+   auto action = notifPtr->action_type();
+   if (action != BDV_Progress && action != BDV_NodeStatus)
    {
-      shared_ptr<BDV_Notification> notifPtr;
-      try
-      {
-         notifPtr = move(notificationStack_.pop_front());
-      }
-      catch (StopBlockingLoop&)
-      {
-         cb_->callback(Arguments(), OrderTerminate);
-         break;
-      }
-
-      auto action = notifPtr->action_type();
-      if (action != BDV_Progress && action != BDV_NodeStatus)
-      {
-         //skip all but progress notifications if BDV isn't ready
-         if (isReadyFuture_.wait_for(chrono::seconds(0)) != future_status::ready)
-            continue;
-      }
-
-      scanWallets(notifPtr);
-
-      switch(action)
-      {
-         case BDV_NewBlock:
-         {
-            Arguments args2;
-            auto&& payload =
-               dynamic_pointer_cast<BDV_Notification_NewBlock>(notifPtr);
-            uint32_t blocknum =
-               payload->reorgState_.newTop_->getBlockHeight();
-
-            BinaryDataObject bdo("NewBlock");
-            args2.push_back(move(bdo));
-            args2.push_back(move(IntType(blocknum)));
-            cb_->callback(move(args2), OrderNewBlock);
-            break;
-         }
-      
-         case BDV_Refresh:
-         {
-            auto&& payload =
-               dynamic_pointer_cast<BDV_Notification_Refresh>(notifPtr);
-
-            IntType refreshType(payload->refresh_);
-            BinaryData bdId = payload->refreshID_;
-            BinaryDataVector bdvec;
-            bdvec.push_back(move(bdId));
-
-            Arguments args2;
-            BinaryDataObject bdo("BDV_Refresh");
-            args2.push_back(move(bdo));
-            args2.push_back(move(refreshType));
-            args2.push_back(move(bdvec));
-            cb_->callback(move(args2), OrderRefresh);
-            break;
-         }
-
-         case BDV_ZC:
-         {
-            Arguments args2;
-
-            auto&& payload =
-               dynamic_pointer_cast<BDV_Notification_ZC>(notifPtr);
-
-            BinaryDataObject bdo("BDV_ZC");
-            args2.push_back(move(bdo));
-
-            LedgerEntryVector lev;
-            for (auto& lePair : payload->leMap_)
-            {
-               auto&& le = lePair.second;
-               LedgerEntryData led(le.getWalletID(),
-                  le.getValue(), le.getBlockNum(), move(le.getTxHash()),
-                  le.getIndex(), le.getTxTime(), le.isCoinbase(),
-                  le.isSentToSelf(), le.isChangeBack(), 
-                  le.isOptInRBF(), le.isChainedZC(), le.usesWitness(),
-                  le.getScrAddrList());
-
-               lev.push_back(move(led));
-            }
-
-            args2.push_back(move(lev));
-
-            cb_->callback(move(args2), OrderZC);
-            break;
-         }
-
-         case BDV_Progress:
-         {
-            auto&& payload = 
-               dynamic_pointer_cast<BDV_Notification_Progress>(notifPtr);
-
-            ProgressData pd(payload->phase_, payload->progress_,
-               payload->time_, payload->numericProgress_, payload->walletIDs_);
-
-            Arguments args2;
-            BinaryDataObject bdo("BDV_Progress");
-            args2.push_back(move(bdo));
-            args2.push_back(move(pd));
-
-            cb_->callback(move(args2), OrderProgress);
-            break;
-         }
-
-         case BDV_NodeStatus:
-         {
-            auto&& payload =
-               dynamic_pointer_cast<BDV_Notification_NodeStatus>(notifPtr);
-
-            Arguments args2;
-            BinaryDataObject bdo("BDV_NodeStatus");
-            BinaryDataObject nssBdo(payload->status_.serialize());
-            args2.push_back(move(bdo));
-            args2.push_back(move(nssBdo));
-
-            cb_->callback(move(args2), OrderNodeStatus);
-            break;
-         }
-
-         case BDV_Error:
-         {
-            auto&& payload =
-               dynamic_pointer_cast<BDV_Notification_Error>(notifPtr);
-
-            Arguments args2;
-            BinaryDataObject bdo("BDV_Error");
-            BinaryDataObject errBdo(payload->errStruct.serialize());
-            args2.push_back(move(bdo));
-            args2.push_back(move(errBdo));
-
-            cb_->callback(move(args2), OrderBDVError);
-            break;
-         }
-
-         default:
-            continue;
-      }
+      //skip all but progress notifications if BDV isn't ready
+      if (isReadyFuture_.wait_for(chrono::seconds(0)) != future_status::ready)
+         return;
    }
-}
 
-///////////////////////////////////////////////////////////////////////////////
-void BDV_Server_Object::zcCallback(
-   ZeroConfContainer::NotificationPacket& packet)
-{
-   auto notificationPtr = make_unique<BDV_Notification_ZC>(packet);
+   scanWallets(notifPtr);
 
-   notificationStack_.push_back(move(notificationPtr));
-}
+   switch (action)
+   {
+   case BDV_NewBlock:
+   {
+      Arguments args2;
+      auto&& payload =
+         dynamic_pointer_cast<BDV_Notification_NewBlock>(notifPtr);
+      uint32_t blocknum =
+         payload->reorgState_.newTop_->getBlockHeight();
 
-///////////////////////////////////////////////////////////////////////////////
-void BDV_Server_Object::zcErrorCallback(string& errorStr, string& txHash)
-{
-   auto notificationPtr = make_unique<BDV_Notification_Error>(
-      Error_ZC, move(errorStr), txHash);
+      BinaryDataObject bdo("NewBlock");
+      args2.push_back(move(bdo));
+      args2.push_back(move(IntType(blocknum)));
+      cb_->callback(move(args2), OrderNewBlock);
+      break;
+   }
 
-   notificationStack_.push_back(move(notificationPtr));
+   case BDV_Refresh:
+   {
+      auto&& payload =
+         dynamic_pointer_cast<BDV_Notification_Refresh>(notifPtr);
+
+      IntType refreshType(payload->refresh_);
+      BinaryData bdId = payload->refreshID_;
+      BinaryDataVector bdvec;
+      bdvec.push_back(move(bdId));
+
+      Arguments args2;
+      BinaryDataObject bdo("BDV_Refresh");
+      args2.push_back(move(bdo));
+      args2.push_back(move(refreshType));
+      args2.push_back(move(bdvec));
+      cb_->callback(move(args2), OrderRefresh);
+      break;
+   }
+
+   case BDV_ZC:
+   {
+      Arguments args2;
+
+      auto&& payload =
+         dynamic_pointer_cast<BDV_Notification_ZC>(notifPtr);
+
+      BinaryDataObject bdo("BDV_ZC");
+      args2.push_back(move(bdo));
+
+      LedgerEntryVector lev;
+      for (auto& lePair : payload->leMap_)
+      {
+         auto&& le = lePair.second;
+         LedgerEntryData led(le.getWalletID(),
+            le.getValue(), le.getBlockNum(), move(le.getTxHash()),
+            le.getIndex(), le.getTxTime(), le.isCoinbase(),
+            le.isSentToSelf(), le.isChangeBack(),
+            le.isOptInRBF(), le.isChainedZC(), le.usesWitness(),
+            le.getScrAddrList());
+
+         lev.push_back(move(led));
+      }
+
+      args2.push_back(move(lev));
+
+      cb_->callback(move(args2), OrderZC);
+      break;
+   }
+
+   case BDV_Progress:
+   {
+      auto&& payload =
+         dynamic_pointer_cast<BDV_Notification_Progress>(notifPtr);
+
+      ProgressData pd(payload->phase_, payload->progress_,
+         payload->time_, payload->numericProgress_, payload->walletIDs_);
+
+      Arguments args2;
+      BinaryDataObject bdo("BDV_Progress");
+      args2.push_back(move(bdo));
+      args2.push_back(move(pd));
+
+      cb_->callback(move(args2), OrderProgress);
+      break;
+   }
+
+   case BDV_NodeStatus:
+   {
+      auto&& payload =
+         dynamic_pointer_cast<BDV_Notification_NodeStatus>(notifPtr);
+
+      Arguments args2;
+      BinaryDataObject bdo("BDV_NodeStatus");
+      BinaryDataObject nssBdo(payload->status_.serialize());
+      args2.push_back(move(bdo));
+      args2.push_back(move(nssBdo));
+
+      cb_->callback(move(args2), OrderNodeStatus);
+      break;
+   }
+
+   case BDV_Error:
+   {
+      auto&& payload =
+         dynamic_pointer_cast<BDV_Notification_Error>(notifPtr);
+
+      Arguments args2;
+      BinaryDataObject bdo("BDV_Error");
+      BinaryDataObject errBdo(payload->errStruct.serialize());
+      args2.push_back(move(bdo));
+      args2.push_back(move(errBdo));
+
+      cb_->callback(move(args2), OrderBDVError);
+      break;
+   }
+
+   default:
+      return;
+   }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1779,7 +1727,7 @@ bool BDV_Server_Object::registerWallet(
 
    //register wallet with BDV
    auto bdvPtr = (BlockDataViewer*)this;
-   return bdvPtr->registerWallet(scrAddrVec, IDstr, wltIsNew) != nullptr;
+   return bdvPtr->registerWallet(scrAddrVec, IDstr, wltIsNew);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1830,7 +1778,70 @@ bool BDV_Server_Object::registerLockbox(
 
    //register wallet with BDV
    auto bdvPtr = (BlockDataViewer*)this;
-   return bdvPtr->registerLockbox(scrAddrVec, IDstr, wltIsNew) != nullptr;
+   return bdvPtr->registerLockbox(scrAddrVec, IDstr, wltIsNew);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void Clients::bdvMaintenanceLoop()
+{
+   while (1)
+   {
+      shared_ptr<BDV_Notification> notifPtr;
+      try
+      {
+         notifPtr = move(outerBDVNotifStack_.pop_front());
+      }
+      catch (StopBlockingLoop&)
+      {
+         LOGINFO << "Shutting down BDV event loop";
+         break;
+      }
+
+      auto bdvMap = BDVs_.get();
+      auto& bdvID = notifPtr->bdvID();
+      if (bdvID.size() == 0)
+      {
+         //empty bdvID means broadcast notification to all BDVs
+         for (auto& bdv_pair : *bdvMap)
+         {
+            auto notifPacket = make_shared<BDV_Notification_Packet>();
+            notifPacket->bdvPtr_ = bdv_pair.second;
+            notifPacket->notifPtr_ = notifPtr;
+            innerBDVNotifStack_.push_back(move(notifPacket));
+         }
+      }
+      else
+      {
+         //grab bdv
+         auto iter = bdvMap->find(bdvID);
+         if (iter == bdvMap->end())
+            continue;
+
+         auto notifPacket = make_shared<BDV_Notification_Packet>();
+         notifPacket->bdvPtr_ = iter->second;
+         notifPacket->notifPtr_ = notifPtr;
+         innerBDVNotifStack_.push_back(move(notifPacket));
+      }
+   }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void Clients::bdvMaintenanceThread()
+{
+   while (1)
+   {
+      shared_ptr<BDV_Notification_Packet> notifPtr;
+      try
+      {
+         notifPtr = move(innerBDVNotifStack_.pop_front());
+      }
+      catch (StopBlockingLoop&)
+      {
+         break;
+      }
+
+      notifPtr->bdvPtr_->pushNotification(notifPtr->notifPtr_);
+   }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1955,4 +1966,56 @@ Arguments SocketCallback::respond(const string& command)
 
    //send it
    return move(arg);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+set<string> ZeroConfCallbacks_BDV::hasScrAddr(const BinaryDataRef& addr) const
+{
+   set<string> result;
+   auto bdvPtr = clientsPtr_->BDVs_.get();
+
+   for (auto& bdv_pair : *bdvPtr)
+   {
+      if (bdv_pair.second->hasScrAddress(addr))
+         result.insert(bdv_pair.first);
+   }
+
+   return result;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void ZeroConfCallbacks_BDV::pushZcNotification(
+   ZeroConfContainer::NotificationPacket& packet)
+{
+   auto bdvPtr = clientsPtr_->BDVs_.get();
+   auto iter = bdvPtr->find(packet.bdvID_);
+   if (iter == bdvPtr->end())
+   {
+      LOGWARN << "pushed zc notification with invalid bdvid";
+      return;
+   }
+
+   auto notifPacket = make_shared<BDV_Notification_Packet>();
+   notifPacket->bdvPtr_ = iter->second;
+   notifPacket->notifPtr_ = make_shared<BDV_Notification_ZC>(packet);
+   clientsPtr_->innerBDVNotifStack_.push_back(move(notifPacket));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void ZeroConfCallbacks_BDV::errorCallback(
+   const string& bdvId, string& errorStr, const string& txHash)
+{
+   auto bdvPtr = clientsPtr_->BDVs_.get();
+   auto iter = bdvPtr->find(bdvId);
+   if (iter == bdvPtr->end())
+   {
+      LOGWARN << "pushed zc error for missing bdv";
+      return;
+   }
+
+   auto notifPacket = make_shared<BDV_Notification_Packet>();
+   notifPacket->bdvPtr_ = iter->second;
+   notifPacket->notifPtr_ = make_shared<BDV_Notification_Error>(
+      bdvId, Error_ZC, move(errorStr), txHash);
+   clientsPtr_->innerBDVNotifStack_.push_back(move(notifPacket));
 }

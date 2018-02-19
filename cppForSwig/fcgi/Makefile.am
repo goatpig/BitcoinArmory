@@ -6,7 +6,7 @@
 
 SUBDIRS = libfcgi examples include
 
-ACLOCAL_AMFLAGS = -I m4
+ACLOCAL_AMFLAGS = -I build-aux/m4
 
 include_HEADERS = fcgi_config.h
 

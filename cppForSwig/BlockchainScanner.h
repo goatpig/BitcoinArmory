@@ -11,7 +11,7 @@
 
 #include "Blockchain.h"
 #include "lmdb_wrapper.h"
-#include "BDM_supportClasses.h"
+#include "ScrAddrFilter.h"
 #include "BlockDataMap.h"
 #include "Progress.h"
 #include "bdmenums.h"

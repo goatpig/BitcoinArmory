@@ -7,9 +7,9 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "BtcUtils.h"
-#include "hmac.h"
-#include "sha.h"
-#include "base64.h"
+#include "cryptopp/hmac.h"
+#include "cryptopp/sha.h"
+#include "cryptopp/base64.h"
 #include "EncryptionUtils.h"
 #include "BlockDataManagerConfig.h"
 #include "bech32/ref/c++/segwit_addr.h"

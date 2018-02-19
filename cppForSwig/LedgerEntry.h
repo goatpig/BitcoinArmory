@@ -130,13 +130,12 @@ public:
    static void purgeLedgerVectorFromHeight(vector<LedgerEntry>& leMap,
       uint32_t purgeFrom);
 
-   static void computeLedgerMap(map<BinaryData, LedgerEntry> &leMap,
+   static map<BinaryData, LedgerEntry> computeLedgerMap(
                                 const map<BinaryData, TxIOPair>& txioMap,
                                 uint32_t startBlock, uint32_t endBlock,
                                 const BinaryData& ID,
                                 const LMDBBlockDatabase* db,
-                                const Blockchain* bc,
-                                bool purge);
+                                const Blockchain* bc);
    
    set<BinaryData> getScrAddrList(void) const
    { return scrAddrSet_; }

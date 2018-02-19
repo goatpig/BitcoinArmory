@@ -223,7 +223,7 @@ BlockDataFileMap::BlockDataFileMap(const string& filename)
       fileMap_ = filemap.filePtr_;
       size_ = filemap.size_;
    }
-   catch (exception &e)
+   catch (exception&)
    {
       //LOGERR << "Failed to create BlockDataMap with error: " << e.what();
    }

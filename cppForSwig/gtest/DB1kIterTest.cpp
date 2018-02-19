@@ -269,10 +269,10 @@ TEST_F(DB1kIter, DbInit1kIter_WithSignals)
       EXPECT_EQ(unconfirmedBalance, 135 * COIN);
 
       //check ledger for ZC
-      LedgerEntry le = wlt->getLedgerEntryForTx(ZChash);
+      /*LedgerEntry le = wlt->getLedgerEntryForTx(ZChash);
       EXPECT_EQ(le.getTxTime(), 1300000000);
       EXPECT_EQ(le.getValue(), 3000000000);
-      EXPECT_EQ(le.getBlockNum(), UINT32_MAX);
+      EXPECT_EQ(le.getBlockNum(), UINT32_MAX);*/
 
       //pull ZC from DB, verify it's carrying the proper data
       auto&& dbtx = iface_->beginTransaction(ZERO_CONF, LMDB::ReadOnly);
@@ -345,10 +345,10 @@ TEST_F(DB1kIter, DbInit1kIter_WithSignals)
       EXPECT_EQ(spendableBalance, 5 * COIN);
       EXPECT_EQ(unconfirmedBalance, 105 * COIN);
 
-      le = wlt->getLedgerEntryForTx(ZChash);
+      /*le = wlt->getLedgerEntryForTx(ZChash);
       EXPECT_EQ(le.getTxTime(), 1300000000);
       EXPECT_EQ(le.getValue(), 3000000000);
-      EXPECT_EQ(le.getBlockNum(), UINT32_MAX);
+      EXPECT_EQ(le.getBlockNum(), UINT32_MAX);*/
 
       //The BDM was recycled, but the ZC is still live, and the mempool should 
       //have reloaded it. Pull from DB and verify
@@ -422,10 +422,10 @@ TEST_F(DB1kIter, DbInit1kIter_WithSignals)
       EXPECT_EQ(spendableBalance, 40 * COIN);
       EXPECT_EQ(unconfirmedBalance, 140 * COIN);
 
-      le = wlt->getLedgerEntryForTx(ZChash);
+      /*le = wlt->getLedgerEntryForTx(ZChash);
       EXPECT_EQ(le.getTxTime(), 1231009513);
       EXPECT_EQ(le.getValue(), 3000000000);
-      EXPECT_EQ(le.getBlockNum(), 5);
+      EXPECT_EQ(le.getBlockNum(), 5);*/
 
       //Tx is now in a block, ZC should be gone from DB
       dbtx = move(iface_->beginTransaction(ZERO_CONF, LMDB::ReadWrite));

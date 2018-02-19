@@ -48,7 +48,17 @@ void LedgerEntryVector::serialize(BinaryWriter& bw) const
       
       bw.put_uint64_t(le.value_);
       bw.put_uint32_t(le.blockNum_);
-      bw.put_BinaryData(le.txHash_);
+      
+      if(le.txHash_.getSize() == 0)
+      {
+         LOGWARN << "empty hash in ledger";
+         bw.put_BinaryData(BtcUtils::EmptyHash());
+      }
+      else
+      {     
+         bw.put_BinaryData(le.txHash_);
+      }
+      
       bw.put_uint32_t(le.index_);
       bw.put_uint32_t(le.txTime_);
 

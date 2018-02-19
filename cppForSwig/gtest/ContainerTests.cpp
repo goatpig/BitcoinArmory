@@ -61,10 +61,9 @@ TEST_F(ContainerTests, TransactionalMap)
 
    auto find_thread = [&theMap, &iterations](unsigned id, uint32_t* tally)
    {
-      auto mapptr = theMap.get();
-
       for (auto i = id * iterations; i < (id + 1) * iterations; i++)
       {
+         auto mapptr = theMap.get();
          auto iter = mapptr->find(i);
          if (iter != mapptr->end())
             *tally += iter->second;
@@ -84,6 +83,8 @@ TEST_F(ContainerTests, TransactionalMap)
 
    for (unsigned i = 0; i < threadCount_; i++)
       vecthr.push_back(thread(find_thread, i, &tallies[0] + i));
+
+   insert_thread(threadCount_);
 
    for (auto& thr : vecthr)
       if (thr.joinable())

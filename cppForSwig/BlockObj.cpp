@@ -13,7 +13,7 @@
 #include <algorithm>
 #include <thread>
 
-#include "integer.h"
+#include "cryptopp/integer.h"
 #include "BinaryData.h"
 #include "BtcUtils.h"
 #include "BlockObj.h"

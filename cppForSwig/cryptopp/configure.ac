@@ -21,12 +21,7 @@ AC_ARG_ENABLE([debug],
               [want_debug="$enableval"], [want_debug=no])
 
 if test "x$want_debug" = "xyes" -a $ac_cv_c_compiler_gnu != no; then
-  CFLAGS="$CFLAGS -O0 -g"
-  CXXFLAGS="$CXXFLAGS -O0 -g"
   AC_DEFINE([DEBUG], 1, [Define for debugging])
-else
-  CFLAGS="$CFLAGS -O2"
-  CXXFLAGS="$CXXFLAGS -O2"
 fi
 
 # Checks for programs.
@@ -88,11 +83,11 @@ AC_COMPILE_IFELSE(
 [CLANG=yes], [CLANG=no])
 AC_LANG_POP([C++])
 
-AC_MSG_RESULT([$CLANG])
+AC_MSG_RESULT([clang has been detected: $CLANG])
 AC_SUBST([CLANG])
 
 AM_CONDITIONAL([CRYPTOPP_HAVE_CLANG], [test x$CLANG = xyes])
-AM_CONDITIONAL([CRYPTOPP_HAVE_GCC], [test $CXX == g++])
+AM_CONDITIONAL([CRYPTOPP_HAVE_GCC], [test "x$CXX" = "xg++"])
 
 #set this otherwise autoconf complains about conditionals never getting defined
 AM_CONDITIONAL([GAS210_OR_LATER], [test "a" == "b"])
@@ -101,7 +96,7 @@ AM_CONDITIONAL([GAS219_OR_LATER], [test "a" == "b"])
 AM_CONDITIONAL([HAVE_AES], [test "a" == "b"])
 AM_CONDITIONAL([HAVE_PCLMUL], [test "a" == "b"])
 
-if test $CXX == g++; then
+if test "x$CXX" == "xg++"; then
 AM_CONDITIONAL([GAS210_OR_LATER], [test $(as -v 2>&1 | egrep -c "GNU assembler version (2\.[1-9][0-9]|[3-9])")])
 AM_CONDITIONAL([GAS217_OR_LATER], [test $(as -v 2>&1 | egrep -c "GNU assembler version (2\.1[7-9]|2\.[2-9]|[3-9])")])
 AM_CONDITIONAL([GAS219_OR_LATER], [test $(as -v 2>&1 | egrep -c "GNU assembler version (2\.19|2\.[2-9]|[3-9])")])
@@ -135,3 +130,13 @@ AM_CONDITIONAL([IS_X86], [test x$HOST_MACHINE = xx86])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
+
+echo "  Crypto++ flags"
+echo "  CC              = $CC"
+echo "  CFLAGS          = $CFLAGS"
+echo "  CPP             = $CPP"
+echo "  CPPFLAGS        = $CPPFLAGS"
+echo "  CXX             = $CXX"
+echo "  CXXFLAGS        = $CXXFLAGS"
+echo "  LDFLAGS         = $LDFLAGS"
+echo "  LD              = $LD"

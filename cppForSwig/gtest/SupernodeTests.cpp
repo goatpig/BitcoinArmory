@@ -645,6 +645,275 @@ TEST_F(BlockUtilsSuper, Load5Blocks_Reload_Rescan)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(BlockUtilsSuper, Load5Blocks_RescanSSH)
+{
+   TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
+
+   theBDMt_->start(config.initMode_);
+   auto&& bdvID = DBTestUtils::registerBDV(clients_, magic_);
+   DBTestUtils::goOnline(clients_, bdvID);
+   DBTestUtils::waitOnBDMReady(clients_, bdvID);
+
+
+   StoredScriptHistory ssh;
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrA);
+   EXPECT_EQ(ssh.getScriptBalance(), 50 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 50 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 1);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrB);
+   EXPECT_EQ(ssh.getScriptBalance(), 30 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 160 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 9);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrC);
+   EXPECT_EQ(ssh.getScriptBalance(), 55 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 55 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 2);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrD);
+   EXPECT_EQ(ssh.getScriptBalance(), 5 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 5 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 1);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrE);
+   EXPECT_EQ(ssh.getScriptBalance(), 30 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 30 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 2);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrF);
+   EXPECT_EQ(ssh.getScriptBalance(), 5 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 40 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 5);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::lb1ScrAddr);
+   EXPECT_EQ(ssh.getScriptBalance(), 10 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 10 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 1);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::lb1ScrAddrP2SH);
+   EXPECT_EQ(ssh.getScriptBalance(), 0 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 15 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 2);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::lb2ScrAddr);
+   EXPECT_EQ(ssh.getScriptBalance(), 10 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 20 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 3);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::lb2ScrAddrP2SH);
+   EXPECT_EQ(ssh.getScriptBalance(), 5 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 5 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 1);
+
+   //restart bdm
+   clients_->exitRequestLoop();
+   clients_->shutdown();
+
+   delete clients_;
+   delete theBDMt_;
+
+   initBDM();
+
+   auto&& subssh_sdbi = iface_->getStoredDBInfo(SUBSSH, 0);
+   EXPECT_EQ(subssh_sdbi.topBlkHgt_, 3);
+
+   auto&& ssh_sdbi = iface_->getStoredDBInfo(SSH, 0);
+   EXPECT_EQ(ssh_sdbi.topBlkHgt_, 3);
+
+   theBDMt_->start(INIT_SSH);
+   bdvID = DBTestUtils::registerBDV(clients_, magic_);
+   DBTestUtils::goOnline(clients_, bdvID);
+   DBTestUtils::waitOnBDMReady(clients_, bdvID);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrA);
+   EXPECT_EQ(ssh.getScriptBalance(), 50 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 50 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 1);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrB);
+   EXPECT_EQ(ssh.getScriptBalance(), 30 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 160 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 9);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrC);
+   EXPECT_EQ(ssh.getScriptBalance(), 55 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 55 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 2);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrD);
+   EXPECT_EQ(ssh.getScriptBalance(), 5 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 5 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 1);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrE);
+   EXPECT_EQ(ssh.getScriptBalance(), 30 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 30 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 2);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrF);
+   EXPECT_EQ(ssh.getScriptBalance(), 5 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 40 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 5);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::lb1ScrAddr);
+   EXPECT_EQ(ssh.getScriptBalance(), 10 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 10 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 1);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::lb1ScrAddrP2SH);
+   EXPECT_EQ(ssh.getScriptBalance(), 0 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 15 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 2);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::lb2ScrAddr);
+   EXPECT_EQ(ssh.getScriptBalance(), 10 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 20 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 3);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::lb2ScrAddrP2SH);
+   EXPECT_EQ(ssh.getScriptBalance(), 5 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 5 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 1);
+
+   //restart bdm
+   clients_->exitRequestLoop();
+   clients_->shutdown();
+
+   delete clients_;
+   delete theBDMt_;
+
+
+   initBDM();
+
+   subssh_sdbi = iface_->getStoredDBInfo(SUBSSH, 0);
+   EXPECT_EQ(subssh_sdbi.topBlkHgt_, 3);
+
+   ssh_sdbi = iface_->getStoredDBInfo(SSH, 0);
+   EXPECT_EQ(ssh_sdbi.topBlkHgt_, 3);
+
+   //add next block
+   TestUtils::appendBlocks({ "4" }, blk0dat_);
+
+   theBDMt_->start(INIT_SSH);
+   bdvID = DBTestUtils::registerBDV(clients_, magic_);
+   DBTestUtils::goOnline(clients_, bdvID);
+   DBTestUtils::waitOnBDMReady(clients_, bdvID);
+
+   subssh_sdbi = iface_->getStoredDBInfo(SUBSSH, 0);
+   EXPECT_EQ(subssh_sdbi.topBlkHgt_, 4);
+
+   ssh_sdbi = iface_->getStoredDBInfo(SSH, 0);
+   EXPECT_EQ(ssh_sdbi.topBlkHgt_, 4);
+   
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrA);
+   EXPECT_EQ(ssh.getScriptBalance(), 50 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 50 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 1);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrB);
+   EXPECT_EQ(ssh.getScriptBalance(), 30 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 160 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 9);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrC);
+   EXPECT_EQ(ssh.getScriptBalance(), 10 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 65 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 5);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrD);
+   EXPECT_EQ(ssh.getScriptBalance(), 60 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 60 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 3);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrE);
+   EXPECT_EQ(ssh.getScriptBalance(), 30 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 30 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 2);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrF);
+   EXPECT_EQ(ssh.getScriptBalance(), 10 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 45 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 6);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::lb1ScrAddr);
+   EXPECT_EQ(ssh.getScriptBalance(), 5 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 15 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 3);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::lb1ScrAddrP2SH);
+   EXPECT_EQ(ssh.getScriptBalance(), 25 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 40 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 3);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::lb2ScrAddr);
+   EXPECT_EQ(ssh.getScriptBalance(), 30 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 40 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 4);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::lb2ScrAddrP2SH);
+   EXPECT_EQ(ssh.getScriptBalance(), 0 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 5 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 2);
+
+   //add last block
+   TestUtils::appendBlocks({ "5" }, blk0dat_);
+   DBTestUtils::triggerNewBlockNotification(theBDMt_);
+   DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrA);
+   EXPECT_EQ(ssh.getScriptBalance(), 50 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 50 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 1);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrB);
+   EXPECT_EQ(ssh.getScriptBalance(), 70 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 230 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 12);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrC);
+   EXPECT_EQ(ssh.getScriptBalance(), 20 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 75 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 6);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrD);
+   EXPECT_EQ(ssh.getScriptBalance(), 65 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 65 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 4);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrE);
+   EXPECT_EQ(ssh.getScriptBalance(), 30 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 30 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 2);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::scrAddrF);
+   EXPECT_EQ(ssh.getScriptBalance(), 5 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 45 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 7);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::lb1ScrAddr);
+   EXPECT_EQ(ssh.getScriptBalance(), 5 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 15 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 3);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::lb1ScrAddrP2SH);
+   EXPECT_EQ(ssh.getScriptBalance(), 25 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 40 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 3);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::lb2ScrAddr);
+   EXPECT_EQ(ssh.getScriptBalance(), 30 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 40 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 4);
+
+   iface_->getStoredScriptHistory(ssh, TestChain::lb2ScrAddrP2SH);
+   EXPECT_EQ(ssh.getScriptBalance(), 0 * COIN);
+   EXPECT_EQ(ssh.getScriptReceived(), 5 * COIN);
+   EXPECT_EQ(ssh.totalTxioCount_, 2);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(BlockUtilsSuper, Load3BlocksPlus3)
 {
    // Copy only the first four blocks.  Will copy the full file next to test
@@ -1205,7 +1474,7 @@ TEST_F(BlockUtilsWithWalletTest, RegisterAddrAfterWallet)
    //post initial load address registration
    wlt->addScrAddress(TestChain::scrAddrD);
    //wait on the address scan
-   DBTestUtils::waitOnWalletRefresh(clients_, bdvID);
+   DBTestUtils::waitOnWalletRefresh(clients_, bdvID, wlt->walletID());
 
 
    balanceWlt = wlt->getScrAddrObjByKey(TestChain::scrAddrA)->getFullBalance();
@@ -1358,7 +1627,7 @@ TEST_F(BlockUtilsWithWalletTest, ZeroConfUpdate)
    EXPECT_EQ(wlt->getScrAddrObjByKey(TestChain::scrAddrE)->getFullBalance(), 3 * COIN);
 
    //test ledger entry
-   LedgerEntry le = wlt->getLedgerEntryForTx(ZChash);
+   LedgerEntry le = DBTestUtils::getLedgerEntryFromWallet(wlt, ZChash);
 
    EXPECT_EQ(le.getTxTime(), 1300000000);
    EXPECT_EQ(le.isSentToSelf(), false);
@@ -1446,6 +1715,7 @@ TEST_F(BlockUtilsWithWalletTest, UnrelatedZC_CheckLedgers)
       theBDMt_->bdm()->zeroConfCont()->getTxioMapForScrAddr(
          TestChain::scrAddrD);
    ASSERT_NE(zcTxios, nullptr);
+   EXPECT_EQ(zcTxios->size(), 1);
    iface_->getStoredScriptHistory(ssh, TestChain::scrAddrD);
    DBTestUtils::addTxioToSsh(ssh, *zcTxios);
    EXPECT_EQ(ssh.getScriptBalance(), 65 * COIN);
@@ -1459,11 +1729,11 @@ TEST_F(BlockUtilsWithWalletTest, UnrelatedZC_CheckLedgers)
    EXPECT_EQ(ssh.getScriptBalance(), 5 * COIN);
 
    //grab ledger for 1st ZC, should be empty
-   auto zcledger = wlt->getLedgerEntryForTx(ZChash1);
+   auto zcledger = DBTestUtils::getLedgerEntryFromWallet(wlt, ZChash1);
    EXPECT_EQ(zcledger.getTxHash(), BtcUtils::EmptyHash());
 
    //grab ledger for 2nd ZC
-   zcledger = wlt->getLedgerEntryForTx(ZChash2);
+   zcledger = DBTestUtils::getLedgerEntryFromWallet(wlt, ZChash2);
    EXPECT_EQ(zcledger.getValue(), 30 * COIN);
    EXPECT_EQ(zcledger.getTxTime(), 14100000);
    EXPECT_FALSE(zcledger.isOptInRBF());
@@ -1509,9 +1779,9 @@ TEST_F(BlockUtilsWithWalletTest, UnrelatedZC_CheckLedgers)
    EXPECT_EQ(ssh.getScriptBalance(), 5 * COIN);
 
    //try to get ledgers, ZCs should be all gone
-   zcledger = wlt->getLedgerEntryForTx(ZChash1);
+   zcledger = DBTestUtils::getLedgerEntryFromWallet(wlt, ZChash1);
    EXPECT_EQ(zcledger.getTxHash(), BtcUtils::EmptyHash());
-   zcledger = wlt->getLedgerEntryForTx(ZChash2);
+   zcledger = DBTestUtils::getLedgerEntryFromWallet(wlt, ZChash2);
    EXPECT_EQ(zcledger.getTxTime(), 1231009513);
 }
 
@@ -1600,7 +1870,7 @@ TEST_F(BlockUtilsWithWalletTest, RegisterAfterZC)
    //Register scrAddrD with the wallet. It should have the ZC balance
    scrAddrVec.push_back(TestChain::scrAddrD);
    DBTestUtils::regWallet(clients_, bdvID, scrAddrVec, "wallet1");
-   DBTestUtils::waitOnWalletRefresh(clients_, bdvID);
+   DBTestUtils::waitOnWalletRefresh(clients_, bdvID, wallet1id);
    
    scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
    EXPECT_EQ(scrObj->getFullBalance(), 65 * COIN);
@@ -2347,7 +2617,7 @@ TEST_F(BlockUtilsWithWalletTest, ChainZC_RBFchild_Test)
    EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
 
    //grab ledger
-   auto zcledger = dbAssetWlt->getLedgerEntryForTx(ZCHash1);
+   auto zcledger = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash1);
    EXPECT_EQ(zcledger.getValue(), 27 * COIN);
    EXPECT_EQ(zcledger.getTxTime(), 14000000);
    EXPECT_TRUE(zcledger.isOptInRBF());
@@ -2427,13 +2697,13 @@ TEST_F(BlockUtilsWithWalletTest, ChainZC_RBFchild_Test)
    //grab ledgers
 
    //first zc should be valid still
-   auto zcledger1 = dbAssetWlt->getLedgerEntryForTx(ZCHash1);
+   auto zcledger1 = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash1);
    EXPECT_EQ(zcledger1.getValue(), 27 * COIN);
    EXPECT_EQ(zcledger1.getTxTime(), 14000000);
    EXPECT_TRUE(zcledger1.isOptInRBF());
 
    //second zc should be valid
-   auto zcledger2 = dbAssetWlt->getLedgerEntryForTx(ZCHash2);
+   auto zcledger2 = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash2);
    EXPECT_EQ(zcledger2.getValue(), -17 * COIN);
    EXPECT_EQ(zcledger2.getTxTime(), 15000000);
    EXPECT_TRUE(zcledger2.isOptInRBF());
@@ -2530,22 +2800,108 @@ TEST_F(BlockUtilsWithWalletTest, ChainZC_RBFchild_Test)
    //grab ledgers
 
    //first zc should be replaced, hence the ledger should be empty
-   auto zcledger3 = dbAssetWlt->getLedgerEntryForTx(ZCHash1);
+   auto zcledger3 = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash1);
    EXPECT_EQ(zcledger3.getValue(), 27 * COIN);
    EXPECT_EQ(zcledger3.getTxTime(), 14000000);
    EXPECT_TRUE(zcledger3.isOptInRBF());
 
    //second zc should be replaced
-   auto zcledger8 = dbAssetWlt->getLedgerEntryForTx(ZCHash2);
+   auto zcledger8 = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash2);
    EXPECT_EQ(zcledger8.getTxHash(), BtcUtils::EmptyHash_);
 
    //third zc should be valid
-   auto zcledger9 = dbAssetWlt->getLedgerEntryForTx(ZCHash3);
+   auto zcledger9 = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash3);
    EXPECT_EQ(zcledger9.getValue(), -6 * COIN);
    EXPECT_EQ(zcledger9.getTxTime(), 17000000);
    EXPECT_TRUE(zcledger9.isOptInRBF());
 }
 
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BlockUtilsWithWalletTest, ZC_InOut_SameBlock)
+{
+   //create spender lambda
+   auto getSpenderPtr = [](
+      const UnspentTxOut& utxo,
+      shared_ptr<ResolverFeed> feed, bool flagRBF)
+      ->shared_ptr<ScriptSpender>
+   {
+      UTXO entry(utxo.value_, utxo.txHeight_, utxo.txIndex_, utxo.txOutIndex_,
+         move(utxo.txHash_), move(utxo.script_));
+
+      auto spender = make_shared<ScriptSpender>(entry, feed);
+
+      if (flagRBF)
+         spender->setSequence(UINT32_MAX - 2);
+
+      return spender;
+   };
+
+   BinaryData ZCHash1, ZCHash2, ZCHash3;
+
+   //
+   TestUtils::setBlocks({ "0", "1" }, blk0dat_);
+
+   theBDMt_->start(config.initMode_);
+   auto&& bdvID = DBTestUtils::registerBDV(clients_, magic_);
+
+   vector<BinaryData> scrAddrVec;
+   scrAddrVec.push_back(TestChain::scrAddrA);
+   scrAddrVec.push_back(TestChain::scrAddrB);
+   scrAddrVec.push_back(TestChain::scrAddrC);
+
+   DBTestUtils::regWallet(clients_, bdvID, scrAddrVec, "wallet1");
+
+   auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
+
+   //wait on signals
+   DBTestUtils::goOnline(clients_, bdvID);
+   DBTestUtils::waitOnBDMReady(clients_, bdvID);
+   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
+
+   //check balances
+   const ScrAddrObj* scrObj;
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
+   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
+   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
+   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+
+   //add the 2 zc
+   auto&& ZC1 = TestUtils::getTx(2, 1); //block 2, tx 1
+   auto&& ZChash1 = BtcUtils::getHash256(ZC1);
+
+   auto&& ZC2 = TestUtils::getTx(2, 2); //block 2, tx 2
+   auto&& ZChash2 = BtcUtils::getHash256(ZC2);
+
+   DBTestUtils::ZcVector rawZcVec;
+   rawZcVec.push_back(ZC1, 1300000000);
+   rawZcVec.push_back(ZC2, 1310000000);
+
+   DBTestUtils::pushNewZc(theBDMt_, rawZcVec);
+   DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
+
+   //check balances
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
+   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
+   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
+   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+
+   //add last block
+   TestUtils::appendBlocks({ "2" }, blk0dat_);
+   DBTestUtils::triggerNewBlockNotification(theBDMt_);
+   DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
+
+   //check balances
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
+   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
+   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
+   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
+   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -2572,7 +2928,6 @@ GTEST_API_ int main(int argc, char **argv)
 
    FLUSHLOG();
    CLEANUPLOG();
-
 
    return exitCode;
 }

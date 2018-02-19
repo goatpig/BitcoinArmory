@@ -46,6 +46,7 @@
 #include <vector>
 #include <string>
 #include <stdexcept>
+#include <atomic>
 
 // We can remove these includes (Crypto++ ) if we remove the GenerateRandom()
 #include "log.h"
@@ -1185,10 +1186,28 @@ public:
    /////////////////////////////////////////////////////////////////////////////
    BinaryRefReader(size_t sz=0) :
       bdRef_(),
-      totalSize_(sz),
-      pos_(0)
+      totalSize_(sz)
    {
-      // Nothing needed here
+      pos_.store(0, memory_order_relaxed);
+   }
+
+   BinaryRefReader& operator=(const BinaryRefReader& brr)
+   {
+      if(&brr == this)
+         return *this;
+
+      bdRef_ = brr.bdRef_;
+      totalSize_ = brr.totalSize_;
+      pos_.store(brr.pos_.load(memory_order_relaxed), memory_order_relaxed);
+
+      return *this;
+   }
+
+   BinaryRefReader(const BinaryRefReader& brr)
+   {
+      bdRef_ = brr.bdRef_;
+      totalSize_ = brr.totalSize_;
+      pos_.store(brr.pos_.load(memory_order_relaxed), memory_order_relaxed);
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -1217,23 +1236,23 @@ public:
    {
       bdRef_ = BinaryDataRef(ptr, nBytes);
       totalSize_ = nBytes;
-      pos_ = 0;
+      pos_.store(0, memory_order_relaxed);
    }
 
    /////////////////////////////////////////////////////////////////////////////
    void advance(size_t nBytes) 
    { 
-      pos_ += nBytes;  
-      pos_ = min(pos_, totalSize_);
+      pos_.fetch_add(nBytes, memory_order_relaxed);  
+      pos_.store(min(pos_.load(memory_order_relaxed), totalSize_), memory_order_relaxed);
    }
 
    /////////////////////////////////////////////////////////////////////////////
    void rewind(uint32_t nBytes) 
    { 
-      size_t start = pos_;
-      pos_ -= nBytes;  
-      if(pos_ > start)
-         pos_ = (size_t)0;
+      size_t start = pos_.load(memory_order_relaxed);
+      pos_.fetch_sub(nBytes, memory_order_relaxed);  
+      if(pos_.load(memory_order_relaxed) > start)
+         pos_.store(0, memory_order_relaxed);
    }
 
 
@@ -1250,7 +1269,7 @@ public:
          throw runtime_error("buffer overflow");
       }
       uint8_t outVal = bdRef_[pos_];
-      pos_ += 1;
+      pos_.fetch_add(1, memory_order_relaxed);
       return outVal;
    }
 
@@ -1264,7 +1283,7 @@ public:
       }
       uint16_t  outVal = (e==LE ? READ_UINT16_LE(bdRef_.getPtr() + pos_) :
                                   READ_UINT16_BE(bdRef_.getPtr() + pos_) );
-      pos_ += 2;
+      pos_.fetch_add(2, memory_order_relaxed);
       return outVal;
    }
 
@@ -1278,7 +1297,7 @@ public:
       }
       uint32_t  outVal = (e==LE ? READ_UINT32_LE(bdRef_.getPtr() + pos_) :
                                   READ_UINT32_BE(bdRef_.getPtr() + pos_) );
-      pos_ += 4;
+      pos_.fetch_add(4, memory_order_relaxed);
       return outVal;
    }
 
@@ -1293,7 +1312,7 @@ public:
       int32_t outVal = (e == LE ?
          BinaryData::StrToIntLE<int32_t>(bdRef_.getPtr() + pos_) :
          BinaryData::StrToIntBE<int32_t>(bdRef_.getPtr() + pos_));
-      pos_ += 4;
+      pos_.fetch_add(4, memory_order_relaxed);
       return outVal;
    }
 
@@ -1307,7 +1326,7 @@ public:
       }
       uint64_t  outVal = (e==LE ? READ_UINT64_LE(bdRef_.getPtr() + pos_) :
                                   READ_UINT64_BE(bdRef_.getPtr() + pos_) );
-      pos_ += 8;
+      pos_.fetch_add(8, memory_order_relaxed);
       return outVal;
    }
 
@@ -1322,7 +1341,7 @@ public:
 
       auto doublePtr = (double*)(bdRef_.getPtr() + pos_);
 
-      pos_ += 8;
+      pos_.fetch_add(8, memory_order_relaxed);
       return *doublePtr;
    }
 
@@ -1336,14 +1355,15 @@ public:
       }
 
       BinaryDataRef bdrefout(bdRef_.getPtr() + pos_, nBytes);
-      pos_ += nBytes;
+      pos_.fetch_add(nBytes, memory_order_relaxed);
       return bdrefout;
    }
 
    /////////////////////////////////////////////////////////////////////////////
    BinaryRefReader fork(void) const
    {
-      return BinaryRefReader(bdRef_.getPtr() + pos_, getSizeRemaining());
+      return BinaryRefReader(
+         bdRef_.getPtr() + pos_.load(memory_order_relaxed), getSizeRemaining());
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -1356,7 +1376,7 @@ public:
       }
 
       bdTarget.copyFrom( bdRef_.getPtr() + pos_, nBytes);
-      pos_ += nBytes;
+      pos_.fetch_add(nBytes, memory_order_relaxed);
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -1388,7 +1408,7 @@ public:
       }
 
       bdRef_.copyTo(targPtr, pos_, nBytes);
-      pos_ += nBytes;
+      pos_.fetch_add(nBytes, memory_order_relaxed);
    }
 
 
@@ -1396,10 +1416,10 @@ public:
    void     resetPosition(void)           { pos_ = 0; }
    size_t   getPosition(void) const       { return pos_; }
    size_t   getSize(void) const           { return totalSize_; }
-   size_t   getSizeRemaining(void) const  { return totalSize_ - pos_; }
-   bool     isEndOfStream(void) const     { return pos_ >= totalSize_; }
+   size_t   getSizeRemaining(void) const  { return totalSize_ - pos_.load(memory_order_relaxed); }
+   bool     isEndOfStream(void) const     { return pos_.load(memory_order_relaxed) >= totalSize_; }
    uint8_t const * exposeDataPtr(void)    { return bdRef_.getPtr(); }
-   uint8_t const * getCurrPtr(void)       { return bdRef_.getPtr() + pos_; }
+   uint8_t const * getCurrPtr(void)       { return bdRef_.getPtr() + pos_.load(memory_order_relaxed); }
 
    /////////////////////////////////////////////////////////////////////////////
    BinaryDataRef getRawRef(void) { return bdRef_;   }
@@ -1407,8 +1427,20 @@ public:
 private:
    BinaryDataRef bdRef_;
    size_t totalSize_;
-   size_t pos_;
 
+   /*
+   On at least AMD Ryzen CPUs, gcc O1/2 compilation has demonstrated that reset
+   and advance operations can result in out of order execution on pos leading to 
+   unexpected offset position, when pos_ is a simple size_t.
+
+   Upgrading pos_ to either volatile or atomic<size_t> enforces the sequential 
+   execution of operations on pos_, fixing the issue.
+
+   Since the only desirable additional feature is sequentiality, relaxed atomic
+   operations were prefered to volatile, as they are generally cheaper at least
+   on Windows (where volatiles come with acq_rel semantics by default).
+   */
+   atomic<size_t> pos_;
 };
 
 

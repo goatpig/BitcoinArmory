@@ -252,6 +252,7 @@ public:
    uint32_t           getTimestamp(void) const    { return READ_UINT32_LE(getPtr()+68); }
    uint32_t           getNonce(void) const        { return READ_UINT32_LE(getPtr()+76); }
    uint32_t           getBlockHeight(void) const  { return blockHeight_;                }
+   void               setBlockHeight(unsigned hgt){ blockHeight_ = hgt;                 }
    bool               isMainBranch(void) const    { return isMainBranch_;               }
    bool               isOrphan(void) const        { return isOrphan_;                   }
    double             getDifficulty(void) const   { return difficultyDbl_;              }

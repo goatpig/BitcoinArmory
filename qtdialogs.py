@@ -5092,7 +5092,7 @@ class DlgShowKeyList(ArmoryDialog):
       wltID = self.wlt.uniqueIDB58
       fn = self.main.getFileSave(title=self.tr('Save Key List'), \
                                  ffilter=[self.tr('Text Files (*.txt)')], \
-                                 defaultFilename=('keylist_%1_.txt' % wltID))
+                                 defaultFilename=('keylist_%s_.txt' % wltID))
       if len(fn) > 0:
          fileobj = open(fn, 'w')
          fileobj.write(str(self.txtBox.toPlainText()))
@@ -5145,13 +5145,13 @@ def extractTxInfo(pytx, rcvTime=None):
       txcpp = TheBDM.bdv().getTxByHash(txHash)
       if txcpp.isInitialized():
          hgt = txcpp.getBlockHeight()
+         txWeight = txcpp.getTxWeight()
          if hgt <= TheBDM.getTopBlockHeight():
             headref = TheBDM.bdv().blockchain().getHeaderByHeight(hgt)
             txTime = unixTimeToFormatStr(headref.getTimestamp())
             txBlk = headref.getBlockHeight()
             txIdx = txcpp.getBlockTxIndex()
             txSize = txcpp.getSize()
-            txWeight = txcpp.getTxWeight()
          else:
             if rcvTime == None:
                txTime = 'Unknown'
@@ -5420,8 +5420,18 @@ class DlgDispTxInfo(ArmoryDialog):
       lbls.append([])
       lbls[-1].append(self.main.createToolTipWidget(self.tr('Comment stored for this transaction in this wallet')))
       lbls[-1].append(QLabel(self.tr('User Comment:')))
-      if haveWallet and wlt.getComment(txHash):
-         lbls[-1].append(QRichLabel(wlt.getComment(txHash)))
+      txhash_bin = hex_to_binary(txHash, endOut=endianness)
+      comment_tx = ''
+      if haveWallet:
+         comment_tx = wlt.getComment(txhash_bin)
+         if not comment_tx: # and tempPyTx:
+            comment_tx = wlt.getAddrCommentIfAvail(txhash_bin)
+            #for txout in tempPyTx.outputs:
+             #  script = script_to_scrAddr(txout.getScript())
+
+
+      if comment_tx:
+         lbls[-1].append(QRichLabel(comment_tx))
       else:
          lbls[-1].append(QRichLabel(self.tr('<font color="gray">[None]</font>')))
 
@@ -13173,7 +13183,8 @@ class DlgCorruptWallet(DlgProgress):
          wlt = None
          wltPath = ''
 
-         if isinstance(self.walletList[0], str):
+         if isinstance(self.walletList[0], str) or \
+            isinstance(self.walletList[0], unicode):
             wltPath = self.walletList[0]
          else:
             wlt = self.walletList[0]

@@ -742,6 +742,25 @@ string BlockDataManagerConfig::getCookie(const string& datadir)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+string BlockDataManagerConfig::getDbModeStr()
+{
+   switch(getDbType())
+   {
+   case ARMORY_DB_BARE: 
+      return "DB_BARE";
+
+   case ARMORY_DB_FULL:
+      return "DB_FULL";
+  
+   case ARMORY_DB_SUPER:
+      return "DB_SUPER";
+
+   default:
+      throw runtime_error("invalid db type!");
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 //
 // ConfigFile
 //
@@ -893,7 +912,7 @@ bool NodeChainState::processState(
    
    if (pct_int != prev_pct_int_)
    {
-      LOGINFO << "waiting on node sync: " << pct_ << "%";
+      LOGINFO << "waiting on node sync: " << float(pct_ * 100.0) << "%";
       prev_pct_int_ = pct_int;
    }
 

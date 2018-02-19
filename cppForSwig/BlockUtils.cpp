@@ -166,7 +166,7 @@ public:
       Blockchain &bc
    ) 
    {
-      auto& allHeaders = bc.allHeaders();
+      auto allHeaders = bc.allHeaders();
       
       size_t index=0;
       
@@ -174,7 +174,7 @@ public:
       {
          const BinaryData hash = getFirstHash(blkFiles_[index]);
 
-         if (allHeaders.find(hash) == allHeaders.end())
+         if (allHeaders->find(hash) == allHeaders->end())
          { // not found in this file
             if (index == 0)
                return { 0, 0 };
@@ -196,7 +196,7 @@ public:
       auto topBlockHash = bc.top()->getThisHash();
 
       const auto stopIfBlkHeaderRecognized =
-      [&allHeaders, &foundAtPosition, &foundTopBlock, &topBlockHash] (
+      [allHeaders, &foundAtPosition, &foundTopBlock, &topBlockHash] (
          const BinaryData &blockheader,
          const BlockFilePosition &pos,
          uint32_t blksize
@@ -210,9 +210,9 @@ public:
          block.unserialize(brr);
          
          const HashString blockhash = block.getThisHash();
-         auto bhIter = allHeaders.find(blockhash);
+         auto bhIter = allHeaders->find(blockhash);
          
-         if(bhIter == allHeaders.end())
+         if(bhIter == allHeaders->end())
             throw StopReading();
 
          if (bhIter->second->getThisHash() == topBlockHash)
@@ -999,6 +999,7 @@ void BlockDataManager::loadDiskState(const ProgressCallback &progress,
       checkTransactionCount_ = dbBuilder_->getCheckedTxCount();
 
    BDMstate_ = BDM_ready;
+   LOGINFO << "BDM is ready";
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1143,4 +1144,43 @@ void BlockDataManager::pollNodeStatus() const
    thread pollThr(poll_thread);
    if (pollThr.joinable())
       pollThr.detach();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void BlockDataManager::blockUntilReady() const
+{
+   while (1)
+   {
+      try
+      {
+         isReadyFuture_.wait();
+         return;
+      }
+      catch (future_error&)
+      {
+         this_thread::sleep_for(chrono::seconds(1));
+      }
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+bool BlockDataManager::isReady() const
+{
+   bool isready = false;
+
+   while (1)
+   {
+      try
+      {
+         isready = isReadyFuture_.wait_for(chrono::seconds(0)) ==
+            std::future_status::ready;
+         break;
+      }
+      catch (future_error&)
+      {
+         this_thread::sleep_for(chrono::seconds(1));
+      }
+   }
+
+   return isready;
 }

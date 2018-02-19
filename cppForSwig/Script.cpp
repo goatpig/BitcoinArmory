@@ -9,7 +9,7 @@
 #include "Script.h"
 #include "Transactions.h"
 #include "Signer.h"
-#include "oids.h"
+#include "cryptopp/oids.h"
 
 //dtors
 StackValue::~StackValue()

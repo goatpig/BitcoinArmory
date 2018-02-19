@@ -2,14 +2,15 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([libfcgi], [v1.21], [toshic@github])
+AC_INIT([libfcgi],[v1.21],[toshic@github])
 AC_CONFIG_SRCDIR([fcgi_config.h.in])
-AM_INIT_AUTOMAKE([1.10 subdir-objects foreign -Wall -Werror])
-AM_CONFIG_HEADER(fcgi_config.h)
+AM_INIT_AUTOMAKE([1.11 subdir-objects foreign -Wall -Werror])
+AC_CONFIG_HEADERS([fcgi_config.h])
 
 AM_PROG_AR
 LT_INIT
-AC_CONFIG_MACRO_DIR([m4])
+AC_CANONICAL_HOST
+AC_CONFIG_MACRO_DIRS([build-aux/m4])
 
 #reset these flags if they are the default -g -02
 AS_IF([test "$CFLAGS" = "-g -O2"] ,[AC_SUBST(CFLAGS, [ ])])
@@ -17,17 +18,13 @@ AS_IF([test "$CXXFLAGS" = "-g -O2"] ,[AC_SUBST(CXXFLAGS, [ ])])
 
 #debug flag
 AC_ARG_ENABLE([debug],
-              AC_HELP_STRING([--enable-debug],
+              AS_HELP_STRING([--enable-debug],
               [compile with debug symbols @<:@default=no@:>@]),
               [want_debug="$enableval"], [want_debug=no])
 
+# Debug flags picked up from cppForSwig folder. No need to overwrite them.
 if test "x$want_debug" = "xyes" -a $ac_cv_c_compiler_gnu != no; then
-  CFLAGS="$CFLAGS -O0 -g"
-  CXXFLAGS="$CXXFLAGS -O0 -g"
   AC_DEFINE([DEBUG], 1, [Define for debugging])
-else
-  CFLAGS="$CFLAGS -O2"
-  CXXFLAGS="$CXXFLAGS -O2"
 fi
 
 # Checks for programs.
@@ -61,11 +58,8 @@ AC_LANG([C])
 AC_CHECK_LIB([nsl],       [gethostbyname])
 AC_CHECK_LIB([socket],    [socket]) 
 
-m4_include([m4/acx_pthread.m4])
-ACX_PTHREAD([THREADED=threaded${EXEEXT}])
+AX_PTHREAD([THREADED=threaded${EXEEXT}])
 AC_SUBST([THREADED])
-
-FCGI_COMMON_CHECKS
 
 SYSTEM=unix
 AC_SUBST([SYSTEM])
@@ -74,9 +68,23 @@ AC_REPLACE_FUNCS([strerror])
 
 AC_C_INLINE
 
+# Make the compilation flags quiet unless V=1 is used.
+m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
+
 AC_CONFIG_FILES([Makefile
                  examples/Makefile
                  include/Makefile
                  libfcgi/Makefile])
 
 AC_OUTPUT
+
+echo "  libfcgi"
+echo "  CC              = $CC"
+echo "  CFLAGS          = $CFLAGS"
+echo "  CPP             = $CPP"
+echo "  CPPFLAGS        = $CPPFLAGS"
+echo "  CXX             = $CXX"
+echo "  CXXFLAGS        = $CXXFLAGS"
+echo "  LDFLAGS         = $LDFLAGS"
+echo "  LD              = $LD"
+echo "  debug symbols   = $want_debug"

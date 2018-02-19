@@ -78,6 +78,12 @@
     <ClInclude Include="..\SigHashEnum.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\bech32\ref\c++\bech32.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\bech32\ref\c++\segwit_addr.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\BinaryData.cpp">
@@ -180,6 +186,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\DecryptedDataContainer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\bech32\ref\c++\bech32.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\bech32\ref\c++\segwit_addr.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

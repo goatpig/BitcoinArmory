@@ -56,69 +56,9 @@ bool BtcWallet::hasScrAddress(HashString const & scrAddr) const
    return (addrMap->find(scrAddr) != addrMap->end());
 }
 
-/////////////////////////////////////////////////////////////////////////////
-void BtcWallet::pprintAlot(LMDBBlockDatabase *db, uint32_t topBlk, bool withAddr) const
-{
-   cout << "Wallet PPRINT:" << endl;
-   cout << "Tot: " << getFullBalance() << endl;
-   cout << "Spd: " << getSpendableBalance(topBlk) << endl;
-   cout << "Ucn: " << getUnconfirmedBalance(topBlk) << endl;
-
-   cout << "Ledger: " << endl;
-   for(const auto ledger : *ledgerAllAddr_)
-      ledger.second.pprintOneLine();
-
-   /*cout << "TxioMap:" << endl;
-   for( const auto &txio : txioMap_)
-   {
-      txio.second.pprintOneLine(db);
-   }*/
-
-   auto addrMap = scrAddrMap_.get();
-
-   if(withAddr)
-   {
-      for(auto &sa : *addrMap)
-      {
-         const ScrAddrObj & addr = *sa.second;
-         HashString scraddr = addr.getScrAddr();
-         cout << "\nAddress: " << scraddr.copySwapEndian().toHexStr() << endl;
-         cout << "   Tot: " << addr.getFullBalance() << endl;
-         cout << "   Spd: " << addr.getSpendableBalance(topBlk) << endl;
-         cout << "   Ucn: " << addr.getUnconfirmedBalance(topBlk) << endl;
-                  
-         cout << "   Ledger: " << endl;
-         const auto& saLedgers = addr.getTxLedger();
-         for(const auto ledger : saLedgers)
-            ledger.second.pprintOneLine();
-            
-         cout << "   TxioPtrs (Blockchain):" << endl;
-         map<OutPoint, TxIOPair>::iterator iter;
-         for(auto txio : addr.relevantTxIO_)
-         {
-            txio.second.pprintOneLine(db);
-         }
-      }
-   }
-}
-
-void BtcWallet::pprintAlittle(std::ostream &os) const
-{
-   auto addrMap = scrAddrMap_.get();
-
-   os << "\tBalance: " << getFullBalance();
-   os << "\tNAddr:   " << addrMap->size();
-//   os << "\tNTxio:   " << .size();
-   os << "\tNLedg:   " << getTxLedger().size();
- //  os << "\tNZC:     " << getZeroConfLedger().size() << endl;      
-
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 void BtcWallet::clearBlkData(void)
 {
-   ledgerAllAddr_ = &LedgerEntry::EmptyLedgerMap_;
-
    auto addrMap = scrAddrMap_.get();
 
    for (auto saPair : *addrMap)
@@ -462,14 +402,6 @@ vector<UnspentTxOut> BtcWallet::getRBFTxOutList()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void BtcWallet::pprintLedger() const
-{ 
-   cout << "Wallet Ledger:  " << getFullBalance()/1e8 << endl;
-   for(const auto ledger : *ledgerAllAddr_)
-      ledger.second.pprintOneLine();
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Return a list of addresses this wallet has ever sent to (w/o change addr)
 // Does not include zero-conf tx
 //
@@ -543,37 +475,6 @@ vector<AddressBookEntry> BtcWallet::createAddressBook(void)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-vector<LedgerEntry> BtcWallet::getTxLedger(
-   HashString const & scraddr)
-   const
-{
-   vector<LedgerEntry> leVec;
-
-   auto addrMap = scrAddrMap_.get();
-
-   auto saIter = addrMap->find(scraddr);
-   if (saIter != addrMap->end())
-   {
-      const auto& leMap = saIter->second->getTxLedger();
-      for (const auto& lePair : leMap)
-         leVec.push_back(lePair.second);
-   }
-
-   return leVec;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-vector<LedgerEntry> BtcWallet::getTxLedger() const
-{
-   vector<LedgerEntry> leVec;
-
-   for (const auto& lePair : *ledgerAllAddr_)
-      leVec.push_back(lePair.second);
-
-   return leVec;
-}
-
-////////////////////////////////////////////////////////////////////////////////
 void BtcWallet::updateAfterReorg(uint32_t lastValidBlockHeight)
 {
    auto addrMap = scrAddrMap_.get();
@@ -635,11 +536,6 @@ bool BtcWallet::scanWallet(ScanWalletStruct& scanInfo, int32_t updateID)
          scrAddrPair.second->fetchDBScrAddrData(
             scanInfo.prevTopBlockHeight_, scanInfo.endBlock_, updateID);
 
-      map<BinaryData, TxIOPair> txioMap;
-      getTxioForRange(scanInfo.startBlock_, UINT32_MAX, txioMap);
-      updateWalletLedgersFromTxio(*ledgerAllAddr_, txioMap, 
-         scanInfo.startBlock_, UINT32_MAX, true);
-
       balance_ = getFullBalanceFromDB();
    }
   
@@ -650,37 +546,36 @@ bool BtcWallet::scanWallet(ScanWalletStruct& scanInfo, int32_t updateID)
       if (bdvPtr_->isZcEnabled())
       {
          scanWalletZeroConf(scanInfo, updateID);
-         map<BinaryData, TxIOPair> txioMap;
-         getTxioForRange(scanInfo.endBlock_ + 1, UINT32_MAX, txioMap);
-         
-         BinaryData lastLedgerEntryKey;
-         if (ledgerAllAddr_->size() > 0)
-            lastLedgerEntryKey = ledgerAllAddr_->rbegin()->first;
 
-         updateWalletLedgersFromTxio(*ledgerAllAddr_, txioMap, 
-            scanInfo.endBlock_ + 1, UINT32_MAX, true);
-
-         auto iter = ledgerAllAddr_->rbegin();
-         while (iter != ledgerAllAddr_->rend())
+         if (scanInfo.saStruct_.newZcKeys_.size() != 0)
          {
-            if (iter->first > lastLedgerEntryKey)
+            //compute zc ledgers
+            auto&& txioMap =
+               getTxioForRange(scanInfo.endBlock_ + 1, UINT32_MAX);
+
+            auto&& ledgerMap = updateWalletLedgersFromTxio(
+               txioMap, scanInfo.endBlock_ + 1, UINT32_MAX);
+
+            for (auto& zckey : scanInfo.saStruct_.newZcKeys_)
             {
+               auto iter = ledgerMap.find(zckey);
+               if (iter == ledgerMap.end())
+                  continue;
+
                scanInfo.saStruct_.zcLedgers_.insert(
                   make_pair(iter->first, iter->second));
-
-               ++iter;
             }
-
-            break;
          }
 
          balance_ = getFullBalanceFromDB();
+         updateID_ = updateID;
 
          //return false because no new block was parsed
          return false;
       }
    }
 
+   updateID_ = updateID;
    return true;
 }
 
@@ -688,18 +583,6 @@ bool BtcWallet::scanWallet(ScanWalletStruct& scanInfo, int32_t updateID)
 void BtcWallet::reset()
 {
    clearBlkData();
-}
-
-////////////////////////////////////////////////////////////////////////////////
-const LedgerEntry& BtcWallet::getLedgerEntryForTx(const BinaryData& txHash) const
-{
-   for (auto& le : *ledgerAllAddr_)
-   {
-      if (le.second.getTxHash() == txHash)
-         return le.second;
-   }
-
-   return LedgerEntry::EmptyLedger_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -797,27 +680,10 @@ void BtcWallet::mapPages()
    certain in depth amendments to its code to satisfy a behavior that takes 
    place only once per wallet per load.
    ***/
-   TIMER_START("mapPages");
-   ledgerAllAddr_ = &LedgerEntry::EmptyLedgerMap_;
-
    auto computeSSHsummary = [this](void)->map<uint32_t, uint32_t>
       {return this->computeScrAddrMapHistSummary(); };
 
    histPages_.mapHistory(computeSSHsummary);
-
-   auto getTxio = [this](uint32_t start, uint32_t end, map<BinaryData, TxIOPair>& txioMap)->void
-   { this->getTxioForRange(start, end, txioMap); };
-
-   auto computeLedgers = [this](map<BinaryData, LedgerEntry>& leMap, 
-                               const map<BinaryData, TxIOPair>& txioMap,
-                               uint32_t start)->void
-   { this->updateWalletLedgersFromTxio(leMap, txioMap, start, UINT32_MAX, false); };
-
-   ledgerAllAddr_ = &histPages_.getPageLedgerMap(getTxio, computeLedgers, 0);
-
-   TIMER_STOP("mapPages");
-   //double mapPagesTimer = TIMER_READ_SEC("mapPages");
-   //LOGINFO << "mapPages done in " << mapPagesTimer << " secs";
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -836,24 +702,29 @@ bool BtcWallet::isPaged() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void BtcWallet::getTxioForRange(uint32_t start, uint32_t end,
-   map<BinaryData, TxIOPair>& outMap) const
+map<BinaryData, TxIOPair> BtcWallet::getTxioForRange(
+   uint32_t start, uint32_t end) const
 {
+   map<BinaryData, TxIOPair> outMap;
    auto addrMap = scrAddrMap_.get();
 
    for (const auto& scrAddrPair : *addrMap)
-      scrAddrPair.second->getHistoryForScrAddr(start, end, outMap, false);
+   {
+      auto&& saTxioMap = 
+         scrAddrPair.second->getHistoryForScrAddr(start, end, false);
+      outMap.insert(saTxioMap.begin(), saTxioMap.end());
+   }
+
+   return outMap;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void BtcWallet::updateWalletLedgersFromTxio(
-   map<BinaryData, LedgerEntry>& leMap,
+map<BinaryData, LedgerEntry> BtcWallet::updateWalletLedgersFromTxio(
    const map<BinaryData, TxIOPair>& txioMap,
-   uint32_t startBlock, uint32_t endBlock,
-   bool purge) const
+   uint32_t startBlock, uint32_t endBlock) const
 {
-   LedgerEntry::computeLedgerMap(leMap, txioMap, startBlock, endBlock, walletID_,
-                                 bdvPtr_->getDB(), &bdvPtr_->blockchain(), purge);
+   return LedgerEntry::computeLedgerMap(txioMap, startBlock, endBlock, 
+      walletID_, bdvPtr_->getDB(), &bdvPtr_->blockchain());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -889,44 +760,40 @@ ScrAddrObj& BtcWallet::getScrAddrObjRef(const BinaryData& key)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const map<BinaryData, LedgerEntry>& BtcWallet::getHistoryPage(uint32_t pageId) 
+shared_ptr<map<BinaryData, LedgerEntry>> BtcWallet::getHistoryPage(
+   uint32_t pageId)
 {
    if (!bdvPtr_->isBDMRunning())
-      return LedgerEntry::EmptyLedgerMap_;
+      return nullptr;
 
    if (pageId >= getHistoryPageCount())
       throw std::range_error("pageID is out of range");
 
    auto getTxio = 
-      [this](uint32_t start, uint32_t end, map<BinaryData, TxIOPair>& txioMap)->void
-   { this->getTxioForRange(start, end, txioMap); };
+      [this](uint32_t start, uint32_t end)->map<BinaryData, TxIOPair>
+   { return this->getTxioForRange(start, end); };
 
-   auto computeLedgers = [this](map<BinaryData, LedgerEntry>& leMap,
-      const map<BinaryData, TxIOPair>& txioMap,
-      uint32_t start)->void
-   { this->updateWalletLedgersFromTxio(leMap, txioMap, start, UINT32_MAX, false); };
+   auto computeLedgers = [this](
+      const map<BinaryData, TxIOPair>& txioMap, uint32_t start, uint32_t end)->
+      map<BinaryData, LedgerEntry>
+   { return this->updateWalletLedgersFromTxio(txioMap, start, end); };
 
-   return histPages_.getPageLedgerMap(getTxio, computeLedgers, pageId);
+   return histPages_.getPageLedgerMap(getTxio, computeLedgers, pageId, updateID_);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 vector<LedgerEntry> BtcWallet::getHistoryPageAsVector(uint32_t pageId)
 {
-   try
-   {
-      auto& ledgerMap = getHistoryPage(pageId);
-      
-      vector<LedgerEntry> ledgerVec;
+   auto ledgerMap = getHistoryPage(pageId);
 
-      for (const auto& ledgerPair : ledgerMap)
-         ledgerVec.push_back(ledgerPair.second);
-
+   vector<LedgerEntry> ledgerVec;
+   if (ledgerMap == nullptr)
       return ledgerVec;
-   }
-   catch (std::range_error &e)
-   {
-      throw e;
-   }
+
+   for (const auto& ledgerPair : *ledgerMap)
+      ledgerVec.push_back(ledgerPair.second);
+
+   return ledgerVec;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

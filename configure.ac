@@ -1,5 +1,5 @@
 AC_PREREQ([2.69])
-AC_INIT([BitcoinArmory],[0.96.3.992],[moothecowlord@gmail.com])
+AC_INIT([BitcoinArmory],[0.96.4],[moothecowlord@gmail.com])
 
 AM_INIT_AUTOMAKE([1.11 subdir-objects foreign -Wall -Werror])
 
@@ -8,7 +8,7 @@ LT_INIT
 
 AC_CANONICAL_HOST
 
-#reset these flags if they are the default -g -02
+# Reset these flags if they are the system default "-g -02".
 AS_IF([test "$CFLAGS" = "-g -O2"] ,[AC_SUBST(CFLAGS, [ ])])
 AS_IF([test "$CXXFLAGS" = "-g -O2"] ,[AC_SUBST(CXXFLAGS, [ ])])
 
@@ -79,12 +79,18 @@ if test "x$cross_compiling" != "xyes"; then
 	AX_SWIG_PYTHON([no])
 	AS_IF([test -z $AX_SWIG_PYTHON_CPPFLAGS], 
 		[AC_MSG_ERROR([failed to procure swig include path, make sure swig is installed])])
+	AC_SUBST([PYTHON_CFLAGS], [`python-config --cflags`])
+	AC_SUBST([PYTHON_LDFLAGS], [`python-config --ldflags`])
 	AX_PYTHON_MODULE([psutil], [fatal])
 else
 AC_SUBST([AX_SWIG_PYTHON_CPPFLAGS], [`python-config --includes`])
+AC_SUBST([PYTHON_CFLAGS], [`python-config --cflags`])
+AC_SUBST([PYTHON_LDFLAGS], [`python-config --ldflags`])
 fi
 
 AC_MSG_RESULT([AX_SWIG_PYTHON_CPPFLAGS: $AX_SWIG_PYTHON_CPPFLAGS])
+AC_MSG_RESULT([PYTHON_CFLAGS: $PYTHON_LDFLAGS])
+AC_MSG_RESULT([PYTHON_LDFLAGS: $PYTHON_LDFLAGS])
 
 AC_CHECK_PROG([HAVE_PYRCC4], [pyrcc4], [yes], [no])
 AS_IF([test $HAVE_PYRCC4 == yes], [],
@@ -176,9 +182,6 @@ AC_CONFIG_FILES(Makefile
 
 AM_CONDITIONAL([BUILD_BENCH], [test x$want_benchmark = xyes])
 AM_CONDITIONAL([BUILD_TESTS], [test "x$want_tests" = "xyes"])
-if test "x$want_tests" = "xyes"; then
-AC_CONFIG_FILES(cppForSwig/gtest/Makefile)
-fi
 
 dnl ac_configure_args can only be set once and affects all subdirs.
 dnl Place all params here.

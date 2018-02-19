@@ -239,7 +239,10 @@ namespace DBTestUtils
       auto& argVec = result.getArgVector();
       auto retint = dynamic_pointer_cast<DataObject<IntType>>(argVec[0]);
       if (retint->getObj().getVal() == 0)
-         throw runtime_error("server returned false to registerWallet query");
+      {
+         BinaryData wltId = (wltName);
+         waitOnWalletRefresh(clients, bdvId, wltId);
+      }
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -297,7 +300,10 @@ namespace DBTestUtils
       auto& argVec = result.getArgVector();
       auto retint = dynamic_pointer_cast<DataObject<IntType>>(argVec[0]);
       if (retint->getObj().getVal() == 0)
-         throw runtime_error("server returned false to registerWallet query");
+      {
+         BinaryData wltId = (wltName);
+         waitOnWalletRefresh(clients, bdvId, wltId);
+      }
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -340,7 +346,8 @@ namespace DBTestUtils
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   void waitOnSignal(Clients* clients, const string& bdvId,
+   vector<shared_ptr<DataMeta>> waitOnSignal(
+      Clients* clients, const string& bdvId,
       string command, const string& signal)
    {
       Command cmd;
@@ -350,6 +357,8 @@ namespace DBTestUtils
       BinaryDataObject bdo(command);
       cmd.args_.push_back(move(bdo));
       cmd.serialize();
+
+      vector<shared_ptr<DataMeta>> resultVec;
 
       auto processCallback = [&](Arguments args)->bool
       {
@@ -363,7 +372,10 @@ namespace DBTestUtils
 
             auto&& cb = argstr->getObj().toStr();
             if (cb == signal)
+            {
+               resultVec = argVec;
                return true;
+            }
          }
 
          return false;
@@ -374,7 +386,7 @@ namespace DBTestUtils
          auto&& result = clients->runCommand(cmd.command_);
 
          if (processCallback(move(result)))
-            return;
+            return resultVec;
       }
    }
 
@@ -391,15 +403,55 @@ namespace DBTestUtils
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   void waitOnNewZcSignal(Clients* clients, const string& bdvId)
+   vector<LedgerEntryData> waitOnNewZcSignal(Clients* clients, const string& bdvId)
    {
-      waitOnSignal(clients, bdvId, "getStatus", "BDV_ZC");
+      auto&& result = waitOnSignal(clients, bdvId, "getStatus", "BDV_ZC");
+
+      if (result.size() != 2)
+      {
+         cout << "invalid result vector size in waitOnNewZcSignal";
+         throw runtime_error("");
+      }
+
+      auto arg_bdov = 
+         dynamic_pointer_cast<DataObject<LedgerEntryVector>>(result[1]);
+      if (arg_bdov == nullptr)
+      {
+         cout << "invalid result entry type in waitOnNewBlockSignal";
+         throw runtime_error("");
+      }
+
+      auto&& levec = arg_bdov->getObj();
+      return levec.toVector();
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   void waitOnWalletRefresh(Clients* clients, const string& bdvId)
+   void waitOnWalletRefresh(Clients* clients, const string& bdvId,
+      const BinaryData& wltId)
    {
-      waitOnSignal(clients, bdvId, "getStatus", "BDV_Refresh");
+      while (1)
+      {
+         auto&& result = waitOnSignal(clients, bdvId, "getStatus", "BDV_Refresh");
+
+         if (wltId.getSize() == 0)
+            return;
+
+         if (result.size() != 3)
+         {
+            cout << "invalid result vector size in waitOnWalletRefresh";
+            throw runtime_error("");
+         }
+
+         auto argstr = dynamic_pointer_cast<DataObject<BinaryDataVector>>(result[2]);
+         if (argstr == nullptr)
+         {
+            cout << "invalid result entry type in waitOnWalletRefresh";
+            throw runtime_error("");
+         }
+
+         if (argstr->getObj().get()[0] == wltId)
+            break;
+      }
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -503,7 +555,7 @@ namespace DBTestUtils
          auto subssh_key = txio_pair.first.getSliceRef(0, 4);
 
          auto& subssh = ssh.subHistMap_[subssh_key];
-         subssh.txioMap_.insert(txio_pair);
+         subssh.txioMap_[txio_pair.first] = txio_pair.second;
 
          unsigned txioCount = 1;
          if (txio_pair.second.hasTxIn())
@@ -511,7 +563,7 @@ namespace DBTestUtils
             ssh.totalUnspent_ -= txio_pair.second.getValue();
 
             auto txinKey_prefix = 
-               txio_pair.second.getDBKeyOfInput().getSliceRef(0, 4);
+               txio_pair.second.getDBKeyOfInput().getSliceCopy(0, 4);
             if (txio_pair.second.getDBKeyOfOutput().startsWith(txinKey_prefix))
             {
                ssh.totalUnspent_ += txio_pair.second.getValue();
@@ -525,5 +577,84 @@ namespace DBTestUtils
 
          ssh.totalTxioCount_ += txioCount;
       }
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   void prettyPrintSsh(StoredScriptHistory& ssh)
+   {
+      cout << "balance: " << ssh.totalUnspent_ << endl;
+      cout << "txioCount: " << ssh.totalTxioCount_ << endl;
+
+      for(auto& subssh : ssh.subHistMap_)
+      {
+         cout << "key: " << subssh.first.toHexStr() << ", txCount:" << 
+            subssh.second.txioCount_ << endl;
+        
+         for(auto& txio : subssh.second.txioMap_)
+         {
+            cout << "   amount: " << txio.second.getValue();
+            cout << "   keys: " << txio.second.getDBKeyOfOutput().toHexStr();
+            if (txio.second.hasTxIn())
+            {
+               cout << " to " << txio.second.getDBKeyOfInput().toHexStr();
+            }
+ 
+	    cout << ", isUTXO: " << txio.second.isUTXO();
+            cout << endl;
+         }
+      }
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   LedgerEntry getLedgerEntryFromWallet(
+      shared_ptr<BtcWallet> wlt, const BinaryData& txHash)
+   {
+      //get ledgermap from wallet
+      auto ledgerMap = wlt->getHistoryPage(0);
+
+      //grab ledger by hash
+      for (auto& ledger : *ledgerMap)
+      {
+         if (ledger.second.getTxHash() == txHash)
+            return ledger.second;
+      }
+
+      return LedgerEntry();
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   LedgerEntry getLedgerEntryFromAddr(
+      ScrAddrObj* scrAddrObj, const BinaryData& txHash)
+   {
+      //get ledgermap from wallet
+      auto&& ledgerMap = scrAddrObj->getHistoryPageById(0);
+
+      //grab ledger by hash
+      for (auto& ledger : ledgerMap)
+      {
+         if (ledger.getTxHash() == txHash)
+            return ledger;
+      }
+
+      return LedgerEntry();
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   void updateWalletsLedgerFilter(
+      Clients* clients, const string& bdvId, const vector<BinaryData>& idVec)
+   {
+      Command cmd;
+
+      cmd.method_ = "updateWalletsLedgerFilter";
+      cmd.ids_.push_back(bdvId);
+
+      BinaryDataVector bdVec;
+      for (auto id : idVec)
+         bdVec.push_back(move(id));
+
+      cmd.args_.push_back(move(bdVec));
+      cmd.serialize();
+
+      clients->runCommand(cmd.command_);
    }
 }

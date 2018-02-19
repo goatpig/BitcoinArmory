@@ -154,9 +154,9 @@ SwigClient::BtcWallet BlockDataViewer::registerWallet(
 
    //check result
    Arguments retval(result);
+   
+   //false return means the wallet is in the process of being scanned
    auto retint = retval.get<IntType>().getVal();
-   if (retint == 0)
-      throw runtime_error("server returned false to registerWallet query");
 
    return BtcWallet(*this, id);
 }
@@ -179,9 +179,9 @@ Lockbox BlockDataViewer::registerLockbox(
 
    //check result
    Arguments retval(result);
+
+   //false return means the wallet is in the process of being scanned
    auto retint = retval.get<IntType>().getVal();
-   if (retint == 0)
-      throw runtime_error("server returned false to registerLockbox query");
 
    return Lockbox(*this, id, addrVec);
 }

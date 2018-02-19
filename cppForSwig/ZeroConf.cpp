@@ -5,774 +5,14 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016, goatpig                                               //            
+//  Copyright (C) 2016-2018, goatpig                                          //            
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                   
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#include "BDM_supportClasses.h"
+#include "ZeroConf.h"
 #include "BlockDataMap.h"
-#include "BlockUtils.h"
-#include "txio.h"
-#include <thread>
-
-
-///////////////////////////////////////////////////////////////////////////////
-//ScrAddrScanData Methods
-///////////////////////////////////////////////////////////////////////////////
-atomic<unsigned> ScrAddrFilter::keyCounter_;
-atomic<unsigned> ScrAddrFilter::WalletInfo::idCounter_;
-atomic<bool> ScrAddrFilter::run_;
-
-///////////////////////////////////////////////////////////////////////////////
-void ScrAddrFilter::init()
-{
-   keyCounter_.store(0, memory_order_relaxed);
-   run_.store(true, memory_order_relaxed);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ScrAddrFilter::cleanUpPreviousChildren(LMDBBlockDatabase* lmdb)
-{
-   //get rid of sdbi entries created by side scans that have not been 
-   //cleaned up during the previous run
-
-   set<BinaryData> sdbiKeys;
-
-   //clean up SUBSSH SDBIs
-   {
-      auto&& tx = lmdb->beginTransaction(SSH, LMDB::ReadWrite);
-      auto dbIter = lmdb->getIterator(SSH);
-
-      while (dbIter->advanceAndRead(DB_PREFIX_DBINFO))
-      {
-         auto&& keyRef = dbIter->getKeyRef();
-         if (keyRef.getSize() != 3)
-            throw runtime_error("invalid sdbi key in SSH db");
-
-         auto id = (uint16_t*)(keyRef.getPtr() + 1);
-         if (*id == 0)
-            continue;
-
-         sdbiKeys.insert(keyRef);
-      }
-
-      for (auto& keyRef : sdbiKeys)
-         lmdb->deleteValue(SSH, keyRef);
-   }
-
-   //clean up SSH SDBIs
-   sdbiKeys.clear();
-   {
-      auto&& tx = lmdb->beginTransaction(SUBSSH, LMDB::ReadWrite);
-      auto dbIter = lmdb->getIterator(SUBSSH);
-
-      while (dbIter->advanceAndRead(DB_PREFIX_DBINFO))
-      {
-         auto&& keyRef = dbIter->getKeyRef();
-         if (keyRef.getSize() != 3)
-            throw runtime_error("invalid sdbi key in SSH db");
-
-         auto id = (uint16_t*)(keyRef.getPtr() + 1);
-         if (*id == 0)
-            continue;
-
-         sdbiKeys.insert(keyRef);
-      }
-
-      for (auto& keyRef : sdbiKeys)
-         lmdb->deleteValue(SUBSSH, keyRef);
-   }
-
-   //clean up missing hashes entries in TXFILTERS
-   set<BinaryData> missingHashKeys;
-   {
-      auto&& tx = lmdb->beginTransaction(TXFILTERS, LMDB::ReadWrite);
-      auto dbIter = lmdb->getIterator(TXFILTERS);
-
-      while (dbIter->advanceAndRead(DB_PREFIX_MISSING_HASHES))
-      {
-         auto&& keyRef = dbIter->getKeyRef();
-         if (keyRef.getSize() != 4)
-            throw runtime_error("invalid missing hashes key");
-
-         auto id = (uint32_t*)(keyRef.getPtr());
-         if ((*id & 0x00FFFFFF) == 0)
-            continue;
-
-         sdbiKeys.insert(keyRef);
-      }
-
-      for (auto& keyRef : sdbiKeys)
-         lmdb->deleteValue(TXFILTERS, keyRef);
-   }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ScrAddrFilter::updateAddressMerkleInDB()
-{
-   auto&& addrMerkle = getAddressMapMerkle();
-
-   StoredDBInfo sshSdbi;
-   auto&& tx = lmdb_->beginTransaction(SSH, LMDB::ReadWrite);
-
-   try
-   {
-      sshSdbi = move(lmdb_->getStoredDBInfo(SSH, uniqueKey_));
-   }
-   catch (runtime_error&)
-   {
-      sshSdbi.magic_ = lmdb_->getMagicBytes();
-      sshSdbi.metaHash_ = BtcUtils::EmptyHash_;
-      sshSdbi.topBlkHgt_ = 0;
-      sshSdbi.armoryType_ = ARMORY_DB_BARE;
-   }
-
-   sshSdbi.metaHash_ = addrMerkle;
-   lmdb_->putStoredDBInfo(SSH, sshSdbi, uniqueKey_);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-StoredDBInfo ScrAddrFilter::getSubSshSDBI(void) const
-{
-   StoredDBInfo sdbi;
-   auto&& tx = lmdb_->beginTransaction(SUBSSH, LMDB::ReadOnly);
-
-   sdbi = move(lmdb_->getStoredDBInfo(SUBSSH, uniqueKey_));
-   return sdbi;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ScrAddrFilter::putSubSshSDBI(const StoredDBInfo& sdbi)
-{
-   auto&& tx = lmdb_->beginTransaction(SUBSSH, LMDB::ReadWrite);
-   lmdb_->putStoredDBInfo(SUBSSH, sdbi, uniqueKey_);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-StoredDBInfo ScrAddrFilter::getSshSDBI(void) const
-{
-   auto&& tx = lmdb_->beginTransaction(SSH, LMDB::ReadOnly);
-   return lmdb_->getStoredDBInfo(SSH, uniqueKey_);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ScrAddrFilter::putSshSDBI(const StoredDBInfo& sdbi)
-{
-   auto&& tx = lmdb_->beginTransaction(SSH, LMDB::ReadWrite);
-   lmdb_->putStoredDBInfo(SSH, sdbi, uniqueKey_);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-set<BinaryData> ScrAddrFilter::getMissingHashes(void) const
-{
-   return lmdb_->getMissingHashes(uniqueKey_);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ScrAddrFilter::putMissingHashes(const set<BinaryData>& hashSet)
-{
-   auto&& tx = lmdb_->beginTransaction(TXFILTERS, LMDB::ReadWrite);
-   lmdb_->putMissingHashes(hashSet, uniqueKey_);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ScrAddrFilter::getScrAddrCurrentSyncState()
-{
-   map<AddrAndHash, int> newSaMap;
-
-   {
-      auto scraddrmap = scrAddrMap_->get();
-      auto&& tx = lmdb_->beginTransaction(SSH, LMDB::ReadOnly);
-
-      for (auto& scrAddr : *scraddrmap)
-      {
-         auto aah = scrAddr.first;
-         int height = getScrAddrCurrentSyncState(scrAddr.first.scrAddr_);
-         newSaMap.insert(move(make_pair(move(aah), height)));
-      }
-   }
-
-   scrAddrMap_->update(newSaMap);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-int ScrAddrFilter::getScrAddrCurrentSyncState(
-   BinaryData const & scrAddr)
-{
-   //grab ssh for scrAddr
-   StoredScriptHistory ssh;
-   lmdb_->getStoredScriptHistorySummary(ssh, scrAddr);
-
-   //update scrAddrData lowest scanned block
-   return ssh.scanHeight_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ScrAddrFilter::setSSHLastScanned(uint32_t height)
-{
-   LOGWARN << "Updating ssh last scanned";
-   
-   auto scraddrmap = scrAddrMap_->get();
-   auto&& tx = lmdb_->beginTransaction(SSH, LMDB::ReadWrite);
-   for (const auto scrAddr : *scraddrmap)
-   {
-      StoredScriptHistory ssh;
-      lmdb_->getStoredScriptHistorySummary(ssh, scrAddr.first.scrAddr_);
-      if (!ssh.isInitialized())
-         ssh.uniqueKey_ = scrAddr.first.scrAddr_;
-
-      ssh.scanHeight_ = height;
-
-      lmdb_->putStoredScriptHistorySummary(ssh);
-   }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ScrAddrFilter::registerAddresses(const set<BinaryData>& saSet, string ID,
-   bool areNew, function<void(bool)> callback)
-{
-   shared_ptr<WalletInfo> wltInfo = make_shared<WalletInfo>();
-   wltInfo->scrAddrSet_ = saSet;
-   wltInfo->ID_ = ID;
-   wltInfo->callback_ = callback;
-
-   vector<shared_ptr<WalletInfo>> wltInfoVec;
-   wltInfoVec.push_back(wltInfo);
-
-   return registerAddressBatch(move(wltInfoVec), areNew);
-}
-
-
-///////////////////////////////////////////////////////////////////////////////
-bool ScrAddrFilter::registerAddressBatch(
-   vector<shared_ptr<WalletInfo>>&& wltInfoVec, bool areNew)
-{
-   /***
-   return true if addresses were registered without the need for scanning
-   ***/
-
-   if (armoryDbType_ == ARMORY_DB_SUPER)
-   {
-      unique_lock<mutex> lock(mergeLock_);
-
-      map<AddrAndHash, int> updateMap;
-
-      for (auto& batch : wltInfoVec)
-      {
-         for (auto& sa : batch->scrAddrSet_)
-         {
-            AddrAndHash aah(sa);
-
-            updateMap.insert(make_pair(move(aah), 0));
-         }
-
-         batch->callback_(true);
-      }
-
-      scrAddrMap_->update(updateMap);
-
-      return true;
-   }
-
-   {
-      unique_lock<mutex> lock(mergeLock_);
-      
-      //check against already scanning addresses
-      for (auto& wlt : wltInfoVec)
-      {
-         for (auto& wltInfo : scanningAddresses_)
-         {
-            bool has = false;
-            auto addrIter = wlt->scrAddrSet_.begin();
-            while (addrIter != wlt->scrAddrSet_.end())
-            {
-               auto checkIter = wltInfo->scrAddrSet_.find(*addrIter);
-               if (checkIter == wltInfo->scrAddrSet_.end())
-               {
-                  ++addrIter;
-                  continue;
-               }
-
-               wlt->scrAddrSet_.erase(addrIter++);
-               has = true;
-            }
-
-            if (!has)
-               continue;
-
-            //there were address collisions between the set to scan and
-            //what's already scanning, let's bind the completion callback
-            //conditions to this concurent address set
-
-            shared_ptr<promise<bool>> parentSetPromise = 
-               make_shared<promise<bool>>();
-            shared_future<bool> childSetFuture = parentSetPromise->get_future();
-            auto originalParentCallback = wltInfo->callback_;
-            auto originalChildCallback = wlt->callback_;
-
-            auto parentCallback = [parentSetPromise, originalParentCallback]
-               (bool flag)->void
-            {
-               parentSetPromise->set_value(true);
-               originalParentCallback(flag);
-            };
-
-            auto childCallback = [childSetFuture, originalChildCallback]
-               (bool flag)->void
-            {
-               childSetFuture.wait();
-               originalChildCallback(flag);
-            };
-
-            wltInfo->callback_ = parentCallback;
-            wlt->callback_ = childCallback;
-         }
-      }
-
-      //add to scanning address container
-      scanningAddresses_.insert(wltInfoVec.begin(), wltInfoVec.end());
-   }
-
-   auto scraddrmapptr = scrAddrMap_->get();
-
-   struct pred
-   {
-      shared_ptr<map<AddrAndHash, int>> saMap_;
-      function<void(shared_ptr<WalletInfo>)> eraseLambda_;
-
-      pred(shared_ptr<map<AddrAndHash, int>> saMap,
-         function<void(shared_ptr<WalletInfo>)> eraselambda)
-         : saMap_(saMap), eraseLambda_(eraselambda)
-      {}
-
-      bool operator()(shared_ptr<WalletInfo> wltInfo) const
-      {
-         auto saIter = wltInfo->scrAddrSet_.begin();
-         while (saIter != wltInfo->scrAddrSet_.end())
-         {
-            if (saMap_->find(*saIter) == saMap_->end())
-            {
-               ++saIter;
-               continue;
-            }
-
-            wltInfo->scrAddrSet_.erase(saIter++);
-         }
-
-         if (wltInfo->scrAddrSet_.size() == 0)
-         {
-            wltInfo->callback_(true);
-
-            //clean up from scanning addresses container            
-            eraseLambda_(wltInfo);
-
-            return false;
-         }
-
-         return true;
-      }
-   };
-
-   auto eraseAddrSetLambda = [&](shared_ptr<WalletInfo> wltInfo)->void
-   {
-      unique_lock<mutex> lock(mergeLock_);
-      scanningAddresses_.erase(wltInfo);
-   };
-   
-   auto removeIter = remove_if(wltInfoVec.begin(), wltInfoVec.end(), 
-      pred(scraddrmapptr, eraseAddrSetLambda));
-   wltInfoVec.erase(wltInfoVec.begin(), removeIter);
-   
-   if (wltInfoVec.size() == 0)
-      return true;
-
-   LOGINFO << "Starting address registration process";
-
-   if (bdmIsRunning())
-   {
-      //BDM is initialized and maintenance thread is running, check mode
-
-      //create ScrAddrFilter for side scan         
-      shared_ptr<ScrAddrFilter> sca = copy();
-      sca->setParent(this);
-      bool hasNewSA = false;
-
-      vector<pair<BinaryData, unsigned>> saVec;
-      for (auto& batch : wltInfoVec)
-      {
-         if (batch->scrAddrSet_.size() == 0)
-            continue;
-
-         for (const auto& scrAddr : batch->scrAddrSet_)
-            saVec.push_back(make_pair(scrAddr, 0));
-
-         hasNewSA = true;
-      }
-
-      sca->regScrAddrVecForScan(saVec);
-      sca->buildSideScanData(wltInfoVec, areNew);
-      scanFilterInNewThread(sca);
-
-      if (!hasNewSA)
-         return true;
-
-      return false;
-   }
-   else
-   {
-      //BDM isnt initialized yet, the maintenance thread isnt running, 
-      //just register the scrAddr and return true.
-      map<AddrAndHash, int> newSaMap;
-      for (auto& batch : wltInfoVec)
-      {
-         for (const auto& scrAddr : batch->scrAddrSet_)
-         {
-            AddrAndHash aah(scrAddr);
-            newSaMap.insert(move(make_pair(move(aah), -1)));
-         }
-
-         batch->callback_(true);
-      }
-
-      scrAddrMap_->update(newSaMap);
-      return true;
-   }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ScrAddrFilter::scanScrAddrThread()
-{
-   //Only one wallet at a time         
-   uint32_t endBlock = currentTopBlockHeight();
-   vector<string> wltIDs = scrAddrDataForSideScan_.getWalletIDString();
-
-   BinaryData topScannedBlockHash;
-   {
-      auto&& tx = lmdb_->beginTransaction(HEADERS, LMDB::ReadOnly);
-      StoredHeader sbh;
-      lmdb_->getBareHeader(sbh, endBlock);
-      topScannedBlockHash = sbh.thisHash_;
-   }
-
-   if(scrAddrDataForSideScan_.doScan_ == false)
-   {
-      //new addresses, set their last seen block in the ssh entries
-      setSSHLastScanned(currentTopBlockHeight());
-   }
-   else
-   {
-      //wipe ssh
-      auto scraddrmap = scrAddrMap_->get();
-      vector<BinaryData> saVec;
-      for (const auto& scrAddrPair : *scraddrmap)
-         saVec.push_back(scrAddrPair.first.scrAddr_);
-      wipeScrAddrsSSH(saVec);
-      saVec.clear();
-
-      //scan from 0
-      topScannedBlockHash =
-         applyBlockRangeToDB(0, endBlock, wltIDs, true);
-   }
-      
-   addToMergePile(topScannedBlockHash);
-
-   for (const auto& wID : wltIDs)
-      LOGINFO << "Completed scan of wallet " << wID;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ScrAddrFilter::scanFilterInNewThread(shared_ptr<ScrAddrFilter> sca)
-{
-   auto scanMethod = [sca](void)->void
-   { sca->scanScrAddrThread(); };
-
-   thread scanThread(scanMethod);
-   scanThread.detach();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ScrAddrFilter::addToMergePile(const BinaryData& lastScannedBlkHash)
-{
-   if (parent_ == nullptr)
-      throw runtime_error("scf invalid parent");
-
-   scrAddrDataForSideScan_.lastScannedBlkHash_ = lastScannedBlkHash;
-   scrAddrDataForSideScan_.uniqueID_ = uniqueKey_;
-   parent_->scanDataPile_.push_back(scrAddrDataForSideScan_);
-   parent_->mergeSideScanPile();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ScrAddrFilter::mergeSideScanPile()
-{
-   /***
-   We're about to add a set of newly registered scrAddrs to the BDM's
-   ScrAddrFilter map. Make sure they are scanned up to the last known
-   top block first, then merge it in.
-   ***/
-
-   vector<ScrAddrSideScanData> scanDataVec;
-   map<AddrAndHash, int> newScrAddrMap;
-
-   unique_lock<mutex> lock(mergeLock_);
-
-   try
-   {
-      //pop all we can from the pile
-      while (1)
-         scanDataVec.push_back(move(scanDataPile_.pop_back()));
-   }
-   catch (IsEmpty&)
-   {
-      //pile is empty
-   }
-
-   if (scanDataVec.size() == 0)
-      return;
-
-   vector<string> walletIDs;
-
-   auto bcptr = blockchain();
-   bool reportProgress = false;
-
-   uint32_t startHeight = bcptr->top()->getBlockHeight();
-   for (auto& scanData : scanDataVec)
-   {
-      auto& topHash = scanData.lastScannedBlkHash_;
-      auto&& idStrings = scanData.getWalletIDString();
-      if (scanData.doScan_)
-      {
-         walletIDs.insert(walletIDs.end(), idStrings.begin(), idStrings.end());
-         reportProgress = true;
-      }
-
-      try
-      {
-         auto header = bcptr->getHeaderByHash(topHash);
-         auto headerHeight = header->getBlockHeight();
-         if (startHeight > headerHeight)
-            startHeight = headerHeight;
-
-         for (auto& wltInfo : scanData.wltInfoVec_)
-         {
-            for (auto& scannedAddr : wltInfo->scrAddrSet_)
-            {
-               AddrAndHash aah(scannedAddr);
-               newScrAddrMap.insert(move(make_pair(move(aah), headerHeight)));
-            }
-         }
-      }
-      catch (range_error&)
-      {
-         throw runtime_error("Couldn't grab top block from parallel scan by hash");
-      }
-   }
-
-   //add addresses to main filter map
-   scrAddrMap_->update(newScrAddrMap);
-
-   //scan it all to sync all subssh and ssh to the same height
-   applyBlockRangeToDB(
-      startHeight + 1, 
-      bcptr->top()->getBlockHeight(),
-      walletIDs, reportProgress);
-   updateAddressMerkleInDB();
-
-   //clean up SDBI entries
-   {
-      //SSH
-      {
-         auto&& tx = lmdb_->beginTransaction(SSH, LMDB::ReadWrite);
-         for (auto& scanData : scanDataVec)
-            lmdb_->deleteValue(SSH, 
-               StoredDBInfo::getDBKey(scanData.uniqueID_));
-      }
-
-      //SUBSSH
-      {
-         auto&& tx = lmdb_->beginTransaction(SUBSSH, LMDB::ReadWrite);
-         for (auto& scanData : scanDataVec)
-            lmdb_->deleteValue(SUBSSH,
-               StoredDBInfo::getDBKey(scanData.uniqueID_));
-      }
-
-      //TXFILTERS
-      {
-         auto&& tx = lmdb_->beginTransaction(TXFILTERS, LMDB::ReadWrite);
-         for (auto& scanData : scanDataVec)
-            lmdb_->deleteValue(TXFILTERS,
-               DBUtils::getMissingHashesKey(scanData.uniqueID_));
-      }
-   }
-
-   //hit callbacks and clean up
-   for (auto& scandata : scanDataVec)
-   {
-      for (auto wltinfo : scandata.wltInfoVec_)
-      {
-         wltinfo->callback_(true);
-         scanningAddresses_.erase(wltinfo);
-      }
-   }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-int32_t ScrAddrFilter::scanFrom() const
-{
-   int32_t lowestBlock = -1;
-
-   if (scrAddrMap_->size() > 0)
-   {
-      auto scraddrmap = scrAddrMap_->get();
-      lowestBlock = scraddrmap->begin()->second;
-
-      for (auto scrAddr : *scraddrmap)
-      {
-         if (lowestBlock != scrAddr.second)
-         {
-            lowestBlock = -1;
-            break;
-         }
-      }
-   }
-
-   if (lowestBlock != -1)
-      lowestBlock++;
-
-   return lowestBlock;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ScrAddrFilter::clear()
-{
-   map<AddrAndHash, int> newSaMap;
-
-   {
-      scanDataPile_.clear();
-      auto scraddrmap = scrAddrMap_->get();
-
-      for (const auto& regScrAddr : *scraddrmap)
-      {
-         auto aah = regScrAddr.first;
-         newSaMap.insert(move(make_pair(move(aah), 0)));
-      }
-   }
-
-   scrAddrMap_->update(newSaMap);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ScrAddrFilter::buildSideScanData(
-   const vector<shared_ptr<WalletInfo>>& wltInfoVec,
-   bool areNew)
-{
-   scrAddrDataForSideScan_.startScanFrom_ = INT32_MAX;
-   auto scraddrmap = scrAddrMap_->get();
-   for (const auto& scrAddr : *scraddrmap)
-      scrAddrDataForSideScan_.startScanFrom_ = 
-      min(scrAddrDataForSideScan_.startScanFrom_, scrAddr.second);
-
-   scrAddrDataForSideScan_.wltInfoVec_ = wltInfoVec;
-   scrAddrDataForSideScan_.doScan_ = !areNew;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ScrAddrFilter::getAllScrAddrInDB()
-{
-   auto&& tx = lmdb_->beginTransaction(SSH, LMDB::ReadOnly);
-   auto dbIter = lmdb_->getIterator(SSH);   
-
-   map<AddrAndHash, int> scrAddrMap;
-
-   //iterate over ssh DB
-   while(dbIter->advanceAndRead(DB_PREFIX_SCRIPT))
-   {
-      auto keyRef = dbIter->getKeyRef();
-      StoredScriptHistory ssh;
-      ssh.unserializeDBKey(dbIter->getKeyRef());
-
-      AddrAndHash aah(ssh.uniqueKey_);
-      auto insertResult = scrAddrMap.insert(move(make_pair(move(aah), 0)));
-      if (!insertResult.second)
-      {
-         insertResult.second = 0;
-      }
-   } 
-
-   scrAddrMap_->update(scrAddrMap);
-   getScrAddrCurrentSyncState();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ScrAddrFilter::putAddrMapInDB()
-{
-   auto&& tx = lmdb_->beginTransaction(SSH, LMDB::ReadWrite);
-
-   auto scraddrmap = scrAddrMap_->get();
-   for (const auto& scrAddrObj : *scraddrmap)
-   {
-      StoredScriptHistory ssh;
-      ssh.uniqueKey_ = scrAddrObj.first.scrAddr_;
-
-      auto&& sshKey = ssh.getDBKey();
-
-      BinaryWriter bw;
-      ssh.serializeDBValue(bw, ARMORY_DB_BARE);
-
-      lmdb_->putValue(SSH, sshKey.getRef(), bw.getDataRef());
-   }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-BinaryData ScrAddrFilter::getAddressMapMerkle(void) const
-{
-   vector<BinaryData> addrVec;
-   addrVec.reserve(scrAddrMap_->size());
-
-   auto scraddrmap = scrAddrMap_->get();
-   for (const auto& addr : *scraddrmap)
-      addrVec.push_back(addr.first.getHash());
-
-   if (addrVec.size() > 0)
-      return BtcUtils::calculateMerkleRoot(addrVec);
-
-   return BinaryData();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ScrAddrFilter::hasNewAddresses(void) const
-{
-   if (scrAddrMap_->size() == 0)
-      return false;
-
-   //do not run before getAllScrAddrInDB
-   auto&& currentmerkle = getAddressMapMerkle();
-   BinaryData dbMerkle;
-
-   {
-      auto&& tx = lmdb_->beginTransaction(SSH, LMDB::ReadOnly);
-      
-      auto&& sdbi = getSshSDBI();
-
-      dbMerkle = sdbi.metaHash_;
-   }
-
-   if (dbMerkle == currentmerkle)
-      return false;
-
-   //merkles don't match, check height in each address
-   auto scraddrmap = scrAddrMap_->get();
-   auto scanfrom = scraddrmap->begin()->second;
-   for (const auto& scrAddr : *scraddrmap)
-   {
-      if (scanfrom != scrAddr.second)
-         return true;
-   }
-
-   return false;
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 //ZeroConfContainer Methods
@@ -825,17 +65,65 @@ map<BinaryData, BinaryData> ZeroConfContainer::purge(
 
    vector<BinaryData> ktdVec;
    map<BinaryData, BinaryData> minedKeys;
-   
+
+   auto updateChildren = [&zcMap, &minedKeys, this](
+      const BinaryData& txHash, const BinaryData& blockKey,
+      map<BinaryData, unsigned> minedHashes)->void
+   {
+      auto spentIter = outPointsSpentByKey_.find(txHash);
+      if (spentIter == outPointsSpentByKey_.end())
+         return;
+
+      //is this zc mined or just invalidated?
+      auto minedIter = minedHashes.find(txHash);
+      if (minedIter == minedHashes.end())
+         return;
+      auto txid = minedIter->second;
+
+      //list children by key
+      set<BinaryDataRef> keysToClear;
+      for (auto& op_pair : spentIter->second)
+         keysToClear.insert(op_pair.second.getRef());
+
+      //run through children, replace key
+      for (auto& zckey : keysToClear)
+      {
+         auto zcIter = zcMap.find(zckey);
+         if (zcIter == zcMap.end())
+            continue;
+
+         for (auto& input : zcIter->second.inputs_)
+         {
+            if (input.opRef_.getTxHashRef() != txHash)
+               continue;
+
+            auto prevKey = input.opRef_.getDbKey();
+            input.opRef_.reset();
+
+            BinaryWriter bw_key;
+            bw_key.put_BinaryData(blockKey);
+            bw_key.put_uint16_t(txid, BE);
+            bw_key.put_uint16_t(input.opRef_.getIndex(), BE);
+
+            minedKeys.insert(make_pair(prevKey, bw_key.getData()));
+            input.opRef_.getDbKey() = bw_key.getData();
+
+            zcIter->second.isChainedZc_ = false;
+         }
+      }
+   };
+
    //lambda to purge zc map per block
-   auto purgeZcMap = [&zcMap, &ktdVec, &reorgState, &minedKeys, this](
-      map<BinaryDataRef, set<unsigned>>& spentOutpoints,
-      map<BinaryData, unsigned> minedHashes,
-      const BinaryData& blockKey)->void
+   auto purgeZcMap =
+      [&zcMap, &ktdVec, &reorgState, &minedKeys, this, updateChildren](
+         map<BinaryDataRef, set<unsigned>>& spentOutpoints,
+         map<BinaryData, unsigned> minedHashes,
+         const BinaryData& blockKey)->void
    {
       auto txhashmap = txHashToDBKey_.get();
 
       auto zcMapIter = zcMap.begin();
-      while(zcMapIter != zcMap.end())
+      while (zcMapIter != zcMap.end())
       {
          auto& zc = zcMapIter->second;
          bool invalidated = false;
@@ -869,47 +157,7 @@ map<BinaryData, BinaryData> ZeroConfContainer::purge(
 
          //this zc is now invalid, check if it has children
          auto& zchash = zcMove.getTxHash();
-         auto spentIter = outPointsSpentByKey_.find(zchash);
-         if (spentIter == outPointsSpentByKey_.end())
-            continue;
-
-         //is this zc mined or just invalidated?
-         auto minedIter = minedHashes.find(zchash);
-         if (minedIter == minedHashes.end())
-            continue;
-         auto txid = minedIter->second;
-
-         //list children by key
-         set<BinaryDataRef> keysToClear;
-         for (auto& op_pair : spentIter->second)
-            keysToClear.insert(op_pair.second.getRef());
-
-         //run through children, replace key
-         for (auto& zckey : keysToClear)
-         {
-            auto zcIter = zcMap.find(zckey);
-            if (zcIter == zcMap.end())
-               continue;
-
-            for (auto& input : zcIter->second.inputs_)
-            {
-               if (input.opRef_.getTxHashRef() != zchash)
-                  continue;
-
-               auto prevKey = input.opRef_.getDbKey();
-               input.opRef_.reset();
-
-               BinaryWriter bw_key;
-               bw_key.put_BinaryData(blockKey);
-               bw_key.put_uint16_t(txid, BE);
-               bw_key.put_uint16_t(input.opRef_.getIndex(), BE);
-
-               minedKeys.insert(make_pair(prevKey, bw_key.getData()));
-               input.opRef_.getDbKey() = bw_key.getData();
-
-               zcIter->second.isChainedZc_ = false;
-            }
-         }
+         updateChildren(zchash, blockKey, minedHashes);
       }
    };
 
@@ -971,8 +219,18 @@ map<BinaryData, BinaryData> ZeroConfContainer::purge(
             minedHashes.insert(make_pair(txn->getHash(), txid));
          }
 
-         purgeZcMap(spentOutpoints, minedHashes, 
+         purgeZcMap(spentOutpoints, minedHashes,
             currentHeader->getBlockDataKey());
+
+         if (BlockDataManagerConfig::getDbType() != ARMORY_DB_SUPER)
+         {
+            //purge mined hashes
+            for (auto& minedHash : minedHashes)
+            {
+               allZcTxHashes_.erase(minedHash.first);
+               ktdVec.push_back(minedHash.first);
+            }
+         }
 
          //next block
          if (currentHeader->getThisHash() == reorgState.newTop_->getThisHash())
@@ -986,22 +244,28 @@ map<BinaryData, BinaryData> ZeroConfContainer::purge(
    {
    }
 
-   //reset containers
-   reset();
-
-   //gotta resolve outpoints again after a reorg
-   if (!reorgState.prevTopStillValid_)
-      preprocessZcMap(zcMap);
-
-   //delete keys from DB
-   auto deleteKeys = [&](void)->void
+   if (reorgState.prevTopStillValid_)
    {
-      this->updateZCinDB(vector<BinaryData>(), ktdVec);
-   };
+      set<BinaryData> ktdSet;
+      for (auto& key : ktdVec)
+         ktdSet.insert(key);
+      dropZC(ktdSet);
+   }
+   else
+   {
+      //reset containers and resolve outpoints anew after a reorg
+      reset();
+      //delete keys from DB
+      auto deleteKeys = [&](void)->void
+      {
+         this->updateZCinDB(vector<BinaryData>(), ktdVec);
+      };
 
-   thread deleteKeyThread(deleteKeys);
-   if (deleteKeyThread.joinable())
-      deleteKeyThread.join();
+      preprocessZcMap(zcMap);
+      thread deleteKeyThread(deleteKeys);
+      if (deleteKeyThread.joinable())
+         deleteKeyThread.join();
+   }
 
    return minedKeys;
 }
@@ -1019,12 +283,15 @@ void ZeroConfContainer::preprocessZcMap(map<BinaryData, ParsedTx>& zcMap)
 
    auto parserLdb = [this, &txVec, counter](void)->void
    {
-      auto id = counter->fetch_add(1, memory_order_relaxed);
-      if (id >= txVec.size())
-         return;
+      while (1)
+      {
+         auto id = counter->fetch_add(1, memory_order_relaxed);
+         if (id >= txVec.size())
+            return;
 
-      auto txIter = txVec.begin() + id;
-      this->preprocessTx(*(*txIter));
+         auto txIter = txVec.begin() + id;
+         this->preprocessTx(*(*txIter));
+      }
    };
 
    vector<thread> parserThreads;
@@ -1048,6 +315,7 @@ void ZeroConfContainer::reset()
    keyToSpentScrAddr_.clear();
    txOutsSpentByZC_.clear();
    outPointsSpentByKey_.clear();
+   keyToFundedScrAddr_.clear();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1125,7 +393,7 @@ void ZeroConfContainer::dropZC(const set<BinaryData>& zcKeys)
          if (zcIter == txmapPtr->end())
             continue;
 
-         auto hash = zcIter->second.getTxHash();
+         auto& hash = zcIter->second.getTxHash();
          hashesToDelete.push_back(hash);
          outPointsSpentByKey_.erase(hash);
 
@@ -1148,12 +416,11 @@ void ZeroConfContainer::dropZC(const set<BinaryData>& zcKeys)
          }
 
          //drop from txOutsSpentByZC_
+         for (auto& input : zcIter->second.inputs_)
          {
-            for (auto txoutkey : *txoutset)
-            {
-               if (txoutkey.startsWith(zcKey))
-                  txoutsToDelete.push_back(txoutkey);
-            }
+            if (!input.isResolved())
+               continue;
+            txoutsToDelete.push_back(input.opRef_.getDbKey());
          }
 
          //mark for deletion
@@ -1170,7 +437,7 @@ void ZeroConfContainer::dropZC(const set<BinaryData>& zcKeys)
    //gathers keys to delete
    vector<BinaryData> delKeys;
    auto updateMapIter = updateMap.begin();
-   while(updateMapIter != updateMap.end())
+   while (updateMapIter != updateMap.end())
    {
       if (updateMapIter->second->size() > 0)
       {
@@ -1278,7 +545,7 @@ void ZeroConfContainer::parseNewZC(void)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void ZeroConfContainer::parseNewZC(map<BinaryData, ParsedTx> zcMap, 
+void ZeroConfContainer::parseNewZC(map<BinaryData, ParsedTx> zcMap,
    bool updateDB, bool notify)
 {
    unique_lock<mutex> lock(parserMutex_);
@@ -1297,10 +564,21 @@ void ZeroConfContainer::parseNewZC(map<BinaryData, ParsedTx> zcMap,
 
    for (auto& newZCPair : zcMap)
    {
-     auto& txHash = newZCPair.second.getTxHash();
-      auto insertIter = allZcTxHashes_.insert(txHash);
-      if (insertIter.second)
-         keysToWrite.push_back(newZCPair.first);
+      auto txmap_ptr = txMap_.get();
+      if (BlockDataManagerConfig::getDbType() != ARMORY_DB_SUPER)
+      {
+         auto& txHash = newZCPair.second.getTxHash();
+         auto insertIter = allZcTxHashes_.insert(txHash);
+         if (!insertIter.second)
+            continue;
+      }
+      else
+      {
+         if (txmap_ptr->find(newZCPair.first) != txmap_ptr->end())
+            continue;
+      }
+
+      keysToWrite.push_back(newZCPair.first);
    }
 
    map<BinaryData, BinaryData> txhashmap_update;
@@ -1339,17 +617,17 @@ void ZeroConfContainer::parseNewZC(map<BinaryData, ParsedTx> zcMap,
       (const BinaryData& zc_key)->const ParsedTx&
       {
          auto local_iter = txmap_update.find(zc_key);
-         if (local_iter != txmap_update.end())
-            return local_iter->second;
+      if (local_iter != txmap_update.end())
+         return local_iter->second;
 
-         auto global_iter = txmap_ptr->find(zc_key);
-         if (global_iter == txmap_ptr->end())
-            throw runtime_error("no zc tx for this key");
+      auto global_iter = txmap_ptr->find(zc_key);
+      if (global_iter == txmap_ptr->end())
+         throw runtime_error("no zc tx for this key");
 
-         return global_iter->second;
+      return global_iter->second;
       };
 
-      function<set<BinaryData>(const BinaryData&)> getTxChildren = 
+      function<set<BinaryData>(const BinaryData&)> getTxChildren =
          [&](const BinaryData& zcKey)->
          set<BinaryData>
       {
@@ -1373,10 +651,10 @@ void ZeroConfContainer::parseNewZC(map<BinaryData, ParsedTx> zcMap,
 
             for (auto& keypair : keymap)
             {
-                  auto&& childrenKeys = getTxChildren(keypair.second);
-                  childKeys.insert(move(keypair.second));
-                  for (auto& c_key : childrenKeys)
-                     childKeys.insert(move(c_key));
+               auto&& childrenKeys = getTxChildren(keypair.second);
+               childKeys.insert(move(keypair.second));
+               for (auto& c_key : childrenKeys)
+                  childKeys.insert(move(c_key));
             }
          }
 
@@ -1429,9 +707,9 @@ void ZeroConfContainer::parseNewZC(map<BinaryData, ParsedTx> zcMap,
             }
 
             //add ZC if its relevant
-            if (newZCPair.second.status() != Tx_Invalid && 
-                newZCPair.second.status() != Tx_Uninitialized && 
-                !bulkData.isEmpty())
+            if (newZCPair.second.status() != Tx_Invalid &&
+               newZCPair.second.status() != Tx_Uninitialized &&
+               !bulkData.isEmpty())
             {
                hasChanges = true;
 
@@ -1486,9 +764,13 @@ void ZeroConfContainer::parseNewZC(map<BinaryData, ParsedTx> zcMap,
       }
    }
 
+   set<BinaryData> newZcKeys;
+   for (auto tx_pair : txmap_update)
+      newZcKeys.insert(tx_pair.first);
+
    txHashToDBKey_.update(txhashmap_update);
    txMap_.update(txmap_update);
-   
+
    if (updateDB && keysToWrite.size() > 0)
    {
       //write ZC in the new thread to guaranty we can get a RW tx
@@ -1503,14 +785,11 @@ void ZeroConfContainer::parseNewZC(map<BinaryData, ParsedTx> zcMap,
    if (!hasChanges)
       return;
 
-   if (!notify)
-      return;
-
    //find BDVs affected by invalidated keys
-   if(invalidatedKeys.size() > 0)
+   if (invalidatedKeys.size() > 0)
    {
       //TODO: multi thread this at some point
-      
+
       auto txmap = txMap_.get();
       auto bdvcallbacks = bdvCallbacks_.get();
 
@@ -1540,14 +819,12 @@ void ZeroConfContainer::parseNewZC(map<BinaryData, ParsedTx> zcMap,
          //flag relevant BDVs
          for (auto& addrRef : addrRefs)
          {
-            for (auto& callbacks : *bdvcallbacks)
+            auto&& bdvid_set = bdvCallbacks_->hasScrAddr(addrRef);
+            for (auto& bdvid : bdvid_set)
             {
-               if (callbacks.second.addressFilter_(addrRef))
-               {
-                  auto& bdv = flaggedBDVs[callbacks.first];
-                  bdv.second.invalidatedKeys_.insert(invalidKey);
-                  bdv.first = true;
-               }
+               auto& bdv = flaggedBDVs[bdvid];
+               bdv.second.invalidatedKeys_.insert(invalidKey);
+               bdv.first = true;
             }
          }
       }
@@ -1557,6 +834,9 @@ void ZeroConfContainer::parseNewZC(map<BinaryData, ParsedTx> zcMap,
    if (invalidatedKeys.size() > 0)
       dropZC(invalidatedKeys);
 
+   if (!notify)
+      return;
+
    auto txiomapPtr = txioMap_.get();
    auto bdvcallbacks = bdvCallbacks_.get();
 
@@ -1565,7 +845,7 @@ void ZeroConfContainer::parseNewZC(map<BinaryData, ParsedTx> zcMap,
       if (!bdvMap.second.first)
          continue;
 
-      NotificationPacket notificationPacket;
+      NotificationPacket notificationPacket(bdvMap.first);
       for (auto& sa : bdvMap.second.second.txioKeys_)
       {
          auto saIter = txiomapPtr->find(sa);
@@ -1582,11 +862,8 @@ void ZeroConfContainer::parseNewZC(map<BinaryData, ParsedTx> zcMap,
             move(bdvMap.second.second.invalidatedKeys_);
       }
 
-      auto callbackIter = bdvcallbacks->find(bdvMap.first);
-      if (callbackIter == bdvcallbacks->end())
-         continue;
-
-      callbackIter->second.newZcCallback_(notificationPacket);
+      notificationPacket.newZcKeys_ = newZcKeys;
+      bdvCallbacks_->pushZcNotification(notificationPacket);
    }
 }
 
@@ -1601,25 +878,28 @@ void ZeroConfContainer::preprocessTx(ParsedTx& tx) const
       tx.state_ = Tx_Mined;
       return;
    }
-    
+
    uint8_t const * txStartPtr = tx.tx_.getPtr();
    unsigned len = tx.tx_.getSize();
 
+   auto nTxIn = tx.tx_.getNumTxIn();
+   auto nTxOut = tx.tx_.getNumTxOut();
+
    //try to resolve as many outpoints as we can. unresolved outpoints are 
    //either invalid or (most likely) children of unconfirmed transactions
-   if (tx.tx_.getNumTxIn() != tx.inputs_.size())
+   if (nTxIn != tx.inputs_.size())
    {
       tx.inputs_.clear();
-      tx.inputs_.resize(tx.tx_.getNumTxIn());
+      tx.inputs_.resize(nTxIn);
    }
 
-   if (tx.tx_.getNumTxOut() != tx.outputs_.size())
+   if (nTxOut != tx.outputs_.size())
    {
       tx.outputs_.clear();
-      tx.outputs_.resize(tx.tx_.getNumTxOut());
+      tx.outputs_.resize(nTxOut);
    }
 
-   for (uint32_t iin = 0; iin < tx.tx_.getNumTxIn(); iin++)
+   for (uint32_t iin = 0; iin < nTxIn; iin++)
    {
 
       auto& txIn = tx.inputs_[iin];
@@ -1663,8 +943,8 @@ void ZeroConfContainer::preprocessTx(ParsedTx& tx) const
       txIn.scrAddr_ = stxOut.getScrAddress();
       txIn.value_ = stxOut.getValue();
    }
-   
-   for (uint32_t iout = 0; iout < tx.tx_.getNumTxOut(); iout++)
+
+   for (uint32_t iout = 0; iout < nTxOut; iout++)
    {
       auto& txOut = tx.outputs_[iout];
       if (txOut.isInitialized())
@@ -1712,10 +992,9 @@ ZeroConfContainer::BulkFilterData ZeroConfContainer::ZCisMineBulkFilter(
 
    auto& tx = parsedTx.tx_;
    auto mainAddressSet = scrAddrMap_->get();
-   auto bdvcallbacks = bdvCallbacks_.get();
 
-   auto filter = [mainAddressSet, &bdvcallbacks]
-   (const BinaryData& addr)->pair<bool, set<string>>
+   auto filter = [mainAddressSet, this]
+      (const BinaryData& addr)->pair<bool, set<string>>
    {
       pair<bool, set<string>> flaggedBDVs;
       flaggedBDVs.first = false;
@@ -1731,15 +1010,10 @@ ZeroConfContainer::BulkFilterData ZeroConfContainer::ZCisMineBulkFilter(
 
       flaggedBDVs.first = true;
 
-      for (auto& callbacks : *bdvcallbacks)
-      {
-         if (callbacks.second.addressFilter_(addr))
-            flaggedBDVs.second.insert(callbacks.first);
-      }
-
+      flaggedBDVs.second = move(bdvCallbacks_->hasScrAddr(addr.getRef()));
       return flaggedBDVs;
    };
-   
+
    auto insertNewZc = [&bulkData](BinaryData sa,
       BinaryData txiokey, TxIOPair txio,
       set<string> flaggedBDVs, bool consumesTxOut)->void
@@ -1759,9 +1033,9 @@ ZeroConfContainer::BulkFilterData ZeroConfContainer::ZCisMineBulkFilter(
    };
 
    if (parsedTx.status() == Tx_Uninitialized ||
-       parsedTx.status() == Tx_ResolveAgain)
+      parsedTx.status() == Tx_ResolveAgain)
       preprocessTx(parsedTx);
-   
+
    auto& txHash = parsedTx.getTxHash();
    bool isRBF = parsedTx.isRBF_;
    bool isChained = parsedTx.isChainedZc_;
@@ -1805,7 +1079,11 @@ ZeroConfContainer::BulkFilterData ZeroConfContainer::ZCisMineBulkFilter(
 
       auto& opZcKey = input.opRef_.getDbKey();
       if (!getzckeyfortxhash(input.opRef_.getTxHashRef(), opZcKey))
-         continue;
+      {
+         if (BlockDataManagerConfig::getDbType() == ARMORY_DB_SUPER ||
+            allZcTxHashes_.find(input.opRef_.getTxHashRef()) == allZcTxHashes_.end())
+            continue;
+      }
 
       isChained = true;
 
@@ -1897,7 +1175,7 @@ ZeroConfContainer::BulkFilterData ZeroConfContainer::ZCisMineBulkFilter(
          txio.setUTXO(true);
          txio.setRBF(isRBF);
          txio.setChained(isChained);
-         
+
          auto& fundedScrAddr = bulkData.keyToFundedScrAddr_[ZCkey];
          fundedScrAddr.insert(output.scrAddr_);
 
@@ -1919,8 +1197,8 @@ void ZeroConfContainer::clear()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool ZeroConfContainer::isTxOutSpentByZC(const BinaryData& dbkey) 
-   const
+bool ZeroConfContainer::isTxOutSpentByZC(const BinaryData& dbkey)
+const
 {
    auto txoutset = txOutsSpentByZC_.get();
    if (txoutset->find(dbkey) != txoutset->end())
@@ -2026,24 +1304,18 @@ const set<BinaryData>& ZeroConfContainer::getSpentSAforZCKey(
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-const shared_ptr<map<BinaryData, set<BinaryData>>> 
-   ZeroConfContainer::getKeyToSpentScrAddrMap() const
+const shared_ptr<map<BinaryData, set<BinaryData>>>
+ZeroConfContainer::getKeyToSpentScrAddrMap() const
 {
    return keyToSpentScrAddr_.get();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void ZeroConfContainer::updateZCinDB(const vector<BinaryData>& keysToWrite, 
+void ZeroConfContainer::updateZCinDB(const vector<BinaryData>& keysToWrite,
    const vector<BinaryData>& keysToDelete)
 {
-   //TODO: bulk writes
-
-   //should run in its own thread to make sure we can get a write tx
-   DB_SELECT dbs = ZERO_CONF;
-
    auto txmap = txMap_.get();
-
-   auto&& tx = db_->beginTransaction(dbs, LMDB::ReadWrite);
+   auto&& tx = db_->beginTransaction(ZERO_CONF, LMDB::ReadWrite);
 
    for (auto& key : keysToWrite)
    {
@@ -2074,12 +1346,13 @@ void ZeroConfContainer::updateZCinDB(const vector<BinaryData>& keysToWrite,
       else
          keyWithPrefix = key;
 
-      auto dbIter = db_->getIterator(dbs);
+      auto dbIter = db_->getIterator(ZERO_CONF);
 
       if (!dbIter->seekTo(keyWithPrefix))
          continue;
 
       vector<BinaryData> ktd;
+      ktd.push_back(keyWithPrefix);
 
       do
       {
@@ -2088,11 +1361,10 @@ void ZeroConfContainer::updateZCinDB(const vector<BinaryData>& keysToWrite,
             break;
 
          ktd.push_back(thisKey);
-      } 
-      while (dbIter->advanceAndRead(DB_PREFIX_ZCDATA));
+      } while (dbIter->advanceAndRead(DB_PREFIX_ZCDATA));
 
       for (auto Key : ktd)
-         db_->deleteValue(dbs, Key);
+         db_->deleteValue(ZERO_CONF, Key);
    }
 }
 
@@ -2164,13 +1436,13 @@ void ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
       updateZCinDB(keysToWrite, keysToDelete);
    }
    else if (zcMap.size())
-   {   
+   {
       preprocessZcMap(zcMap);
 
       //set highest used index
       auto lastEntry = zcMap.rbegin();
       auto& topZcKey = lastEntry->first;
-      topId_.store(READ_UINT32_BE(topZcKey.getSliceCopy(2, 4)) +1);
+      topId_.store(READ_UINT32_BE(topZcKey.getSliceCopy(2, 4)) + 1);
 
       //no need to update the db nor notify bdvs on init
       parseNewZC(move(zcMap), false, false);
@@ -2186,7 +1458,7 @@ void ZeroConfContainer::init(shared_ptr<ScrAddrFilter> saf, bool clearMempool)
 
    scrAddrMap_ = saf->getScrAddrTransactionalMap();
    loadZeroConfMempool(clearMempool);
-   
+
    auto processZcThread = [this](void)->void
    {
       parseNewZC();
@@ -2206,13 +1478,13 @@ void ZeroConfContainer::processInvTxVec(
       return;
 
    //skip this entirely if there are no addresses to scan the ZCs against
-   if (scrAddrMap_->size() == 0 && extend && 
-       BlockDataManagerConfig::getDbType() != ARMORY_DB_SUPER)
+   if (scrAddrMap_->size() == 0 && extend &&
+      BlockDataManagerConfig::getDbType() != ARMORY_DB_SUPER)
       return;
 
    if (extend &&
-       parserThreadCount_ < invVec.size() &&
-       parserThreadCount_ < maxZcThreadCount_)
+      parserThreadCount_ < invVec.size() &&
+      parserThreadCount_ < maxZcThreadCount_)
       increaseParserThreadPool(invVec.size());
 
    //setup batch
@@ -2235,6 +1507,7 @@ void ZeroConfContainer::processInvTxVec(
       packet.invEntry_ = move(entry);
 
       newInvTxStack_.push_back(move(packet));
+      ++mapIter;
    }
 
    //register batch with main zc processing thread
@@ -2263,10 +1536,15 @@ void ZeroConfContainer::processInvTxThread(void)
          packet.batchPtr_->incrementCounter();
          continue;
       }
+      catch (runtime_error &e)
+      {
+         LOGERR << "zc parser error: " << e.what();
+         packet.batchPtr_->incrementCounter();
+      }
       catch (exception&)
       {
          LOGERR << "unhandled exception in ZcParser thread!";
-         return;
+         packet.batchPtr_->incrementCounter();
       }
    }
 }
@@ -2274,9 +1552,9 @@ void ZeroConfContainer::processInvTxThread(void)
 ///////////////////////////////////////////////////////////////////////////////
 void ZeroConfContainer::processInvTxThread(ZeroConfInvPacket& packet)
 {
-   auto payload = 
+   auto payload =
       networkNode_->getTx(packet.invEntry_, packet.batchPtr_->timeout_);
-   
+
    auto txIter = packet.batchPtr_->txMap_.find(packet.zcKey_);
    if (txIter == packet.batchPtr_->txMap_.end())
       throw runtime_error("batch does not have zckey");
@@ -2290,7 +1568,6 @@ void ZeroConfContainer::processInvTxThread(ZeroConfInvPacket& packet)
       packet.batchPtr_->incrementCounter();
       return;
    }
-
 
    //push raw tx with current time
    auto& rawTx = payloadtx->getRawTx();
@@ -2317,42 +1594,20 @@ void ZeroConfContainer::pushZcToParser(const BinaryData& rawTx)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void ZeroConfContainer::insertBDVcallback(string id, BDV_Callbacks callback)
-{
-   bdvCallbacks_.insert(move(make_pair(move(id), move(callback))));
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ZeroConfContainer::eraseBDVcallback(string id)
-{
-   bdvCallbacks_.erase(id);
-}
-
-///////////////////////////////////////////////////////////////////////////////
 void ZeroConfContainer::broadcastZC(const BinaryData& rawzc,
    const string& bdvId, uint32_t timeout_ms)
 {
-   BDV_Callbacks bdv_cb;
-   {
-      auto bdvsPtr = bdvCallbacks_.get();
-      auto bdvIter = bdvsPtr->find(bdvId);
-      if (bdvIter == bdvsPtr->end())
-         throw runtime_error("broadcast error: unknown bdvId");
-
-      bdv_cb = bdvIter->second;
-   }
-
    Tx zcTx(rawzc);
 
    //get tx hash
    auto&& txHash = zcTx.getThisHash();
    auto&& txHashStr = txHash.toHexStr();
-   
+
    if (!networkNode_->connected())
    {
       string errorMsg("node is offline, cannot broadcast");
       LOGWARN << errorMsg;
-      bdv_cb.zcErrorCallback_(errorMsg, txHashStr);
+      bdvCallbacks_->errorCallback(bdvId, errorMsg, txHashStr);
       return;
    }
 
@@ -2360,7 +1615,7 @@ void ZeroConfContainer::broadcastZC(const BinaryData& rawzc,
    InvEntry entry;
    entry.invtype_ = Inv_Msg_Tx;
    memcpy(entry.hash, txHash.getPtr(), 32);
-   
+
    vector<InvEntry> invVec;
    invVec.push_back(entry);
 
@@ -2425,14 +1680,14 @@ void ZeroConfContainer::broadcastZC(const BinaryData& rawzc,
    {
       auto&& errorMsg = gds->getMessage();
       networkNode_->unregisterGetTxCallback(txHash);
-      bdv_cb.zcErrorCallback_(errorMsg, txHashStr);
+      bdvCallbacks_->errorCallback(bdvId, errorMsg, txHashStr);
       return;
    }
 
    auto watchTxFuture = gds->getFuture();
 
    //try to fetch tx by hash from node
-   if(PEER_USES_WITNESS)
+   if (PEER_USES_WITNESS)
       entry.invtype_ = Inv_Msg_Witness_Tx;
 
    auto grabtxlambda = [this, timeout_ms](InvEntry inventry)->void
@@ -2463,13 +1718,13 @@ void ZeroConfContainer::broadcastZC(const BinaryData& rawzc,
          gds->setMessage("tx broadcast timed out (get)");
       }
    }
-   
+
    networkNode_->unregisterGetTxCallback(txHash);
 
    if (!gds->status())
    {
       auto&& errorMsg = gds->getMessage();
-      bdv_cb.zcErrorCallback_(errorMsg, txHashStr);
+      bdvCallbacks_->errorCallback(bdvId, errorMsg, txHashStr);
    }
    else
    {
@@ -2507,17 +1762,18 @@ void ZeroConfContainer::increaseParserThreadPool(unsigned count)
    //start Zc parser thread
    auto processZcThread = [this](void)->void
    {
-      parseNewZC();
+      processInvTxThread();
    };
 
    for (unsigned i = parserThreadCount_; i < count; i++)
       parserThreads_.push_back(thread(processZcThread));
 
    parserThreadCount_ = parserThreads_.size();
+   LOGINFO << "now running " << parserThreadCount_ << " zc parser threads";
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-shared_ptr<map<BinaryData, TxIOPair>> 
+shared_ptr<map<BinaryData, TxIOPair>>
 ZeroConfContainer::getTxioMapForScrAddr(const BinaryData& scrAddr) const
 {
    auto txiomap = txioMap_.get();
@@ -2579,9 +1835,9 @@ BinaryDataRef OutPointRef::getDbTxKeyRef() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool OutPointRef::isInitialized() const 
-{ 
-   return txHash_.getSize() == 32 && txOutIndex_ != UINT16_MAX; 
+bool OutPointRef::isInitialized() const
+{
+   return txHash_.getSize() == 32 && txOutIndex_ != UINT16_MAX;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2624,8 +1880,8 @@ bool ParsedTx::isResolved() const
    if (!tx_.isInitialized())
       return false;
 
-   if (inputs_.size() != tx_.getNumTxIn() || 
-       outputs_.size() != tx_.getNumTxOut())
+   if (inputs_.size() != tx_.getNumTxIn() ||
+      outputs_.size() != tx_.getNumTxOut())
       return false;
 
    for (auto& input : inputs_)
@@ -2654,3 +1910,11 @@ const BinaryData& ParsedTx::getTxHash(void) const
       txHash_ = move(tx_.getThisHash());
    return txHash_;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+//// ZeroConfCallbacks
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+ZeroConfCallbacks::~ZeroConfCallbacks() 
+{}

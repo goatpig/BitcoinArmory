@@ -495,8 +495,8 @@ void LMDBBlockDatabase::openDatabases(
    if (DatabaseContainer::magicBytes_.getSize() == 0)
       DatabaseContainer::magicBytes_ = magic;
 
-   SCOPED_TIMER("openDatabases");
    LOGINFO << "Opening databases...";
+   LOGINFO << "dbmode: " << BlockDataManagerConfig::getDbModeStr();
 
    magicBytes_ = magic;
    genesisTxHash_ = genesisTxHash;
@@ -572,6 +572,7 @@ void LMDBBlockDatabase::openDatabases(
 /////////////////////////////////////////////////////////////////////////////
 void LMDBBlockDatabase::openSupernodeDBs()
 {
+   LOGINFO << "opening supernode shards";
    shared_ptr<DatabaseContainer> dbPtr;
 
    //SUBSSH
@@ -885,7 +886,7 @@ BinaryData LMDBBlockDatabase::getDBKeyForHash(const BinaryData& txhash,
             auto height = DBUtils::hgtxToHeight(hintRef);
             auto dupId = DBUtils::hgtxToDupID(hintRef);
 
-            if (getValidDupIDForHeight(height) != dupId)
+            if (!isBlockIDOnMainBranch(height))
             {
                forkedMatch = hint;
                continue;
@@ -1357,9 +1358,10 @@ void LMDBBlockDatabase::readAllHeaders(
 ////////////////////////////////////////////////////////////////////////////////
 uint8_t LMDBBlockDatabase::getValidDupIDForHeight(uint32_t blockHgt) const
 {
-   auto iter = validDupByHeight_.find(blockHgt);
+   auto dupmap = validDupByHeight_.get();
 
-   if(iter == validDupByHeight_.end())
+   auto iter = dupmap->find(blockHgt);
+   if(iter == dupmap->end())
    {
       LOGERR << "Block height exceeds DupID lookup table";
       return UINT8_MAX;
@@ -1372,15 +1374,24 @@ uint8_t LMDBBlockDatabase::getValidDupIDForHeight(uint32_t blockHgt) const
 void LMDBBlockDatabase::setValidDupIDForHeight(uint32_t blockHgt, uint8_t dup,
                                                bool overwrite)
 {
-   auto iter = validDupByHeight_.find(blockHgt);
-   if (iter == validDupByHeight_.end())
-      validDupByHeight_[blockHgt] = UINT8_MAX;
+   if (!overwrite)
+   {
+      auto dupmap = validDupByHeight_.get();
+      auto iter = dupmap->find(blockHgt);
 
-   uint8_t& dupid = validDupByHeight_[blockHgt];
-   if (!overwrite && dupid != UINT8_MAX)
-      return;
+      if(iter != dupmap->end() && iter->second != UINT8_MAX)
+         return;
+   }
 
-   dupid = dup;
+   map<unsigned, uint8_t> updateMap;
+   updateMap[blockHgt] = dup;
+   validDupByHeight_.update(updateMap);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void LMDBBlockDatabase::setValidDupIDForHeight(map<unsigned, uint8_t>& dupMap)
+{
+   validDupByHeight_.update(dupMap);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1401,13 +1412,33 @@ uint8_t LMDBBlockDatabase::getValidDupIDForHeight_fromDB(uint32_t blockHgt)
    for(uint8_t i=0; i<numDup; i++)
    {
       uint8_t dup8 = brrHgts.get_uint8_t(); 
-      // BinaryDataRef thisHash = brrHgts.get_BinaryDataRef(lenEntry-1);
       if((dup8 & 0x80) > 0)
          return (dup8 & 0x7f);
    }
 
    LOGERR << "Requested a header-by-height but none were marked as main";
    return UINT8_MAX;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+bool LMDBBlockDatabase::isBlockIDOnMainBranch(unsigned blockId) const
+{
+   auto dupmap = blockIDMainChainMap_.get();
+
+   auto iter = dupmap->find(blockId);
+   if (iter == dupmap->end())
+   {
+      LOGERR << "no branching entry for blockID " << blockId;
+      return false;
+   }
+
+   return iter->second;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void LMDBBlockDatabase::setBlockIDBranch(map<unsigned, bool>& idMap)
+{
+   blockIDMainChainMap_.update(idMap);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1498,7 +1529,6 @@ uint8_t LMDBBlockDatabase::putBareHeader(StoredHeader & sbh, bool updateDupID,
    // If this block is valid, update quick lookup table, and store it in DBInfo
    if(sbh.isMainBranch_)
    {
-      setValidDupIDForHeight(sbh.blockHeight_, sbh.duplicateID_, updateDupID);
       if (updateSDBI)
       {
          sdbiH = move(getStoredDBInfo(HEADERS, 0));
@@ -1747,7 +1777,7 @@ Tx LMDBBlockDatabase::getFullTxCopy(BinaryData ldbKey6B) const
    }
    
    shared_ptr<BlockHeader> header;
-   if (getDbType() != ARMORY_DB_SUPER)
+   if (getDbType() != ARMORY_DB_SUPER || dup != 0x7F)
       header = blockchainPtr_->getHeaderByHeight(height);
    else
       header = blockchainPtr_->getHeaderById(height);
@@ -2000,7 +2030,7 @@ BinaryData LMDBBlockDatabase::getTxHashForLdbKey(BinaryDataRef ldbKey6B) const
 
       if (stxVal.getSize() == 0)
       {
-         LOGERR << "TxRef key does not exist in BLKDATA DB";
+         LOGERR << "TxRef key does not exist in ZC DB";
          return BinaryData(0);
       }
 
@@ -2204,10 +2234,27 @@ bool LMDBBlockDatabase::getStoredTx_byHash(const BinaryData& txHash,
       return false;
 
    auto&& dbKey = getDBKeyForHash(txHash);
-   if (dbKey.getSize() == 0)
+   if (dbKey.getSize() < 6)
       return false;
 
-   auto&& tx = beginTransaction(STXO, LMDB::ReadOnly);
+   if (getDbType() == ARMORY_DB_SUPER)
+   {
+      auto hgtx = dbKey.getSliceRef(0, 4);
+      if (DBUtils::hgtxToDupID(hgtx) == 0x7F)
+      {
+         auto block_id = DBUtils::hgtxToHeight(hgtx);
+         auto header = blockchainPtr_->getHeaderById(block_id);
+         
+         BinaryWriter bw;
+         bw.put_BinaryData(DBUtils::heightAndDupToHgtx(
+            header->getBlockHeight(), header->getDuplicateID()));
+         bw.put_BinaryDataRef(dbKey.getSliceRef(
+            4, dbKey.getSize() - 4));
+
+         dbKey = bw.getData();
+      }
+   }
+
    return getStoredTx_byDBKey(*stx, dbKey);
 }
 
@@ -2841,7 +2888,10 @@ void LMDBBlockDatabase::resetHistoryForAddressVector(
 void LMDBBlockDatabase::resetSSHdb()
 {
    if (getDbType() == ARMORY_DB_SUPER)
-      return resetSSHdb_Super();
+   {
+      resetSSHdb_Super();
+      return;
+   }
 
    map<BinaryData, int> sshKeys;
 

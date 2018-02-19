@@ -1,0 +1,52 @@
+# Makefile .include for Bitcoin Armory - Armory tests
+
+# "#include <tr1/tuple>" causes a build error on OSX without this flag.
+if BUILD_DARWIN
+AM_CXXFLAGS += -DGTEST_USE_OWN_TR1_TUPLE=1
+endif
+
+# Standard gtest library
+lib_LTLIBRARIES += gtest/libgtest.la
+gtest_libgtest_la_CXXFLAGS = $(AM_CXXFLAGS)
+gtest_libgtest_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+gtest_libgtest_la_SOURCES = gtest/TestUtils.cpp gtest/gtest-all.cc
+gtest_libgtest_la_LIBADD = libArmoryCommon.la libArmoryCLI.la
+gtest_libgtest_la_LDFLAGS = $(AM_LDFLAGS) $(LDFLAGS) -shared
+
+# ContainerTests
+bin_PROGRAMS += gtest/ContainerTests
+gtest_ContainerTests_SOURCES = gtest/ContainerTests.cpp
+gtest_ContainerTests_CXXFLAGS = $(AM_CXXFLAGS)
+gtest_ContainerTests_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+gtest_ContainerTests_LDADD = gtest/libgtest.la libArmoryCommon.la
+gtest_ContainerTests_LDFLAGS = $(AM_LDFLAGS) $(LDFLAGS) -static
+TESTS += gtest/ContainerTests
+
+# DB1kIterTest
+bin_PROGRAMS += gtest/DB1kIterTest
+gtest_DB1kIterTest_SOURCES = gtest/DB1kIterTest.cpp
+gtest_DB1kIterTest_CXXFLAGS = $(AM_CXXFLAGS)
+gtest_DB1kIterTest_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+gtest_DB1kIterTest_LDADD = gtest/libgtest.la libArmoryCLI.la
+gtest_DB1kIterTest_LDFLAGS = $(AM_LDFLAGS) $(LDFLAGS) -static
+TESTS += gtest/DB1kIterTest
+
+if HAVE_GUI
+# SupernodeTests
+bin_PROGRAMS += gtest/SupernodeTests
+gtest_SupernodeTests_SOURCES = gtest/SupernodeTests.cpp
+gtest_SupernodeTests_CXXFLAGS = $(AM_CXXFLAGS)
+gtest_SupernodeTests_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+gtest_SupernodeTests_LDADD = gtest/libgtest.la libArmoryCLI.la libArmoryGUI.la
+gtest_SupernodeTests_LDFLAGS = $(AM_LDFLAGS) $(LDFLAGS) -static
+TESTS += gtest/SupernodeTests
+
+# CppBlockUtilsTests - Contains the bulk of the tests (CLI or GUI)
+bin_PROGRAMS += gtest/CppBlockUtilsTests
+gtest_CppBlockUtilsTests_SOURCES = gtest/CppBlockUtilsTests.cpp
+gtest_CppBlockUtilsTests_CXXFLAGS = $(AM_CXXFLAGS)
+gtest_CppBlockUtilsTests_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+gtest_CppBlockUtilsTests_LDADD = gtest/libgtest.la libArmoryCLI.la libArmoryGUI.la
+gtest_CppBlockUtilsTests_LDFLAGS = $(AM_LDFLAGS) $(LDFLAGS) -static
+TESTS += gtest/CppBlockUtilsTests
+endif

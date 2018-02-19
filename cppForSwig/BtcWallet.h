@@ -87,15 +87,6 @@ public:
    vector<UnspentTxOut> getSpendableTxOutListZC(void);
    vector<UnspentTxOut> getRBFTxOutList(void);
 
-   vector<LedgerEntry>
-      getTxLedger(BinaryData const &scrAddr) const;
-   vector<LedgerEntry>
-      getTxLedger(void) const;
-
-   void pprintLedger() const;
-   void pprintAlot(LMDBBlockDatabase *db, uint32_t topBlk=0, bool withAddr=false) const;
-   void pprintAlittle(std::ostream &os) const;
-   
    void clearBlkData(void);
    
    vector<AddressBookEntry> createAddressBook(void);
@@ -105,12 +96,10 @@ public:
    const ScrAddrObj* getScrAddrObjByKey(const BinaryData& key) const;
    ScrAddrObj& getScrAddrObjRef(const BinaryData& key);
 
-   const LedgerEntry& getLedgerEntryForTx(const BinaryData& txHash) const;
-
    void setWalletID(BinaryData const & wltId) { walletID_ = wltId; }
    const BinaryData& walletID() const { return walletID_; }
 
-   const map<BinaryData, LedgerEntry>& getHistoryPage(uint32_t);
+   shared_ptr<map<BinaryData, LedgerEntry>> getHistoryPage(uint32_t);
    vector<LedgerEntry> getHistoryPageAsVector(uint32_t);
    size_t getHistoryPageCount(void) const { return histPages_.getPageCount(); }
 
@@ -133,10 +122,9 @@ private:
 
    void setRegistered(bool isTrue = true) { isRegistered_ = isTrue; }
 
-   void updateWalletLedgersFromTxio(map<BinaryData, LedgerEntry>& le,
+   map<BinaryData, LedgerEntry> updateWalletLedgersFromTxio(
       const map<BinaryData, TxIOPair>& txioMap,
-      uint32_t startBlock, uint32_t endBlock,
-      bool purge = false) const;
+      uint32_t startBlock, uint32_t endBlock) const;
 
    void mapPages(void);
    bool isPaged(void) const;
@@ -148,8 +136,7 @@ private:
    const map<uint32_t, uint32_t>& getSSHSummary(void) const
    { return histPages_.getSSHsummary(); }
 
-   void getTxioForRange(uint32_t, uint32_t, 
-      map<BinaryData, TxIOPair>&) const;
+   map<BinaryData, TxIOPair> getTxioForRange(uint32_t, uint32_t) const;
    void unregister(void) { isRegistered_ = false; }
    void resetTxOutHistory(void);
    void resetCounters(void);
@@ -159,10 +146,8 @@ private:
    BlockDataViewer* const        bdvPtr_;
    TransactionalMap<BinaryData, shared_ptr<ScrAddrObj>> scrAddrMap_;
    
-   bool                          ignoreLastScanned_=true;
-   map<BinaryData, LedgerEntry>* ledgerAllAddr_ = &LedgerEntry::EmptyLedgerMap_;
-                                 
-   bool                          isRegistered_=false;
+   bool ignoreLastScanned_ = true;
+   bool isRegistered_ = false;
    
    //manages history pages
    HistoryPager                  histPages_;
@@ -183,6 +168,7 @@ private:
 
    mutable int lastPulledCountsID_ = -1;
    mutable int lastPulledBalancesID_ = -1;
+   int32_t updateID_ = 0;
 };
 
 #endif

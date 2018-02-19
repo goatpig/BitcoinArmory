@@ -10,7 +10,7 @@
 #define _SSH_PARSER_H
 
 #include "lmdb_wrapper.h"
-#include "BDM_supportClasses.h"
+#include "ScrAddrFilter.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 struct SshBatch
@@ -33,6 +33,7 @@ private:
    const unsigned scanFrom_;
    const unsigned scanTo_;
    const unsigned threadCount_;
+   bool init_;
 
    mutex mu_;
 
@@ -57,9 +58,13 @@ private:
       bool withPrefix, uint8_t prefix);
 
 public:
-   ShardedSshParser(LMDBBlockDatabase* db, unsigned scanFrom, unsigned scanTo,
-      unsigned threadCount)
-      : db_(db), scanFrom_(scanFrom), scanTo_(scanTo), threadCount_(threadCount)
+   ShardedSshParser(
+      LMDBBlockDatabase* db,
+      unsigned scanFrom, unsigned scanTo,
+      unsigned threadCount, bool init)
+      : db_(db),
+      scanFrom_(scanFrom), scanTo_(scanTo),
+      threadCount_(threadCount), init_(init)
    {
       counter_.store(0, memory_order_relaxed);
    }

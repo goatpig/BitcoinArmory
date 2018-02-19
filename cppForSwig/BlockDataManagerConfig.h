@@ -68,7 +68,7 @@ public:
    bool customFcgiPort_ = false;
 
 
-   unsigned ramUsage_ = 50;
+   unsigned ramUsage_ = 4;
    unsigned threadCount_ = thread::hardware_concurrency();
    unsigned zcThreadCount_ = DEFAULT_ZCTHREAD_COUNT;
 
@@ -137,6 +137,8 @@ public:
    {
       return armoryDbType_;
    }
+
+   static string getDbModeStr(void);
 };
 
 ////
