@@ -385,20 +385,23 @@ class SendBitcoinsFrame(ArmoryFrame):
          self.unsignedCheckBoxUpdate()
       if self.selectWltCallback:
          self.selectWltCallback(wlt)
-   
+
    #############################################################################      
    def setupCoinSelectionInstance(self):
       if self.wlt is None:
          self.coinSelection = None
          return
-      
-      self.coinSelection = self.wlt.cppWallet.getCoinSelectionInstance()
-      
+
+      try:
+         self.coinSelection = self.wlt.cppWallet.getCoinSelectionInstance()
+      except Cpp.DbErrorMsg as dbErr:
+         LOGERROR('DB error: %s', dbErr.what())
+
       try:
          self.resetCoinSelectionRecipients()
       except:
          pass
-     
+
    #############################################################################   
    def setupCoinSelectionForLockbox(self, lbox):
       try:        
