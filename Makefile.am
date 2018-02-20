@@ -28,6 +28,17 @@ copy-script:
 if HAVE_GUI
 	cp cppForSwig/CppBlockUtils.py ./CppBlockUtils.py
 if BUILD_DARWIN
+# Autotools insists on looking for shared libraries (-install_name flag during
+# compilation) in /usr/local/lib. Unsure how to safely override the setting.
+# We also can't rely on the user installing libraries elsewhere. So, by default,
+# CppBlockUtils will choke when it attempts to load any shared library to which
+# it's linked. The workaround: Let Automake do its thing and then use an
+# external tool (installed by Xcode) to tell CppBlockUtils.so where to actually
+# find shared libraries it needs.
+# SOURCE 1: https://www.mikeash.com/pyblog/friday-qa-2009-11-06-linking-and-install-names.html
+# SOURCE 2: https://github.com/conda/conda-build/issues/279
+# Alt target name (useful for debugging?): @executable_path/py/usr/local/lib/liblmdb.0.dylib
+	install_name_tool -change /usr/local/lib/liblmdb.0.dylib @loader_path/../liblmdb.0.dylib ./cppForSwig/.libs/libCppBlockUtils.dylib
 	cp cppForSwig/.libs/libCppBlockUtils.dylib ./_CppBlockUtils.so
 else
 	cp cppForSwig/.libs/libCppBlockUtils.so ./_CppBlockUtils.so

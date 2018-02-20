@@ -1,7 +1,6 @@
 # Makefile for Bitcoin Armory - C/C++ subdirectory Makefile
 bin_PROGRAMS =
 noinst_PROGRAMS =
-TESTS =
 BENCH =
 lib_LTLIBRARIES =
 MAYBE_BUILD =
@@ -13,10 +12,6 @@ LIBCRYPTOPP = cryptopp/libcryptopp.la
 LIBFCGI = fcgi/libfcgi/.libs/libfcgi.la
 LIBLMDB = lmdb/.libs/liblmdb.la
 LIBSECP256K1 = libbtc/src/secp256k1/libsecp256k1.la
-
-if BUILD_TESTS
-MAYBE_BUILD += gtest
-endif
 
 DIST_SUBDIRS = lmdb fcgi cryptopp libbtc chacha20poly1305
 SUBDIRS = lmdb fcgi cryptopp libbtc chacha20poly1305 $(MAYBE_BUILD)
@@ -161,9 +156,15 @@ libCppBlockUtils_la_LIBADD = $(LIBARMORYGUI) \
 		 	 	-lpthread
 libCppBlockUtils_la_LDFLAGS = $(LDFLAGS) $(PYTHON_LDFLAGS) -shared
 
+# While not strictly necessary, it may be necessary at some point to use install
+# names (macOS equivlent of rpath) longer than the one used by default
+# (/usr/local/lib). Let's plan for it. Don't use "-install_name" flag, as that
+# only affects CppBlockUtils and not whatever it relies upon. Can fix that
+# elsewhere with the "install_name_tool" binary.
 if BUILD_DARWIN
-libCppBlockUtils_la_LDFLAGS += -Wl,-rpath,@executable_path/ -Wl,-rpath,@loader_path/
-libArmoryCLI_la_LDFLAGS += -Wl,-rpath,@executable_path/ -Wl,-rpath,@loader_path/
+libCppBlockUtils_la_LDFLAGS += -headerpad_max_install_names
+libArmoryCommon_la_LDFLAGS += -headerpad_max_install_names
+libArmoryCLI_la_LDFLAGS += -headerpad_max_install_names
 endif
 
 #custom rules - always force SWIG to run and compile the resultant C++ file
