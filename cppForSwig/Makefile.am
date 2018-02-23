@@ -6,7 +6,9 @@ endif
 DIST_SUBDIRS = lmdb fcgi cryptopp
 SUBDIRS = lmdb fcgi cryptopp $(MAYBE_BUILD)
 
-SWIG_FLAGS = -c++ -python -py3 -threads
+# Once we switch to Py3-only, add -py3 flag to SWIG_FLAGS
+#SWIG_FLAGS = -c++ -python -py3 -threads
+SWIG_FLAGS = -c++ -python -threads
 AM_CXXFLAGS = $(CXXFLAGS) -std=c++11
 
 if HAVE_GCC

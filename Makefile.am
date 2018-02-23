@@ -9,6 +9,13 @@ EXTRA_DIST = *.py *.md LICENSE LICENSE-ATI LICENSE-MIT \
 
 ACLOCAL_AMFLAGS = -I m4
 
+PYRCC=
+if PYTHON3
+PYRCC += pyrcc5
+else
+PYRCC += pyrcc4
+endif
+
 lrelease:
 if HAVE_GUI
 	lrelease lang/*.ts
@@ -16,7 +23,7 @@ endif
 
 qrc_img_resources.py: imgList.xml
 if HAVE_GUI
-	pyrcc5 -o qrc_img_resources.py imgList.xml
+	$(PYRCC) -o qrc_img_resources.py imgList.xml
 endif
 
 copy-script:

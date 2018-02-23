@@ -20,7 +20,7 @@
 
 %{
 #define SWIG_PYTHON_EXTRA_NATIVE_CONTAINERS
-#include "py3c/compat.h"
+#include "py3c.h"
 #include "BtcUtils.h"
 #include "EncryptionUtils.h"
 #include "DbHeader.h"
