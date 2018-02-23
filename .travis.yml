@@ -1,0 +1,21 @@
+language: python
+
+python:
+  - "2.6"
+  - "2.7"
+  - "3.3"
+  - "3.4"
+  - "3.5"
+  - "3.5"
+  - "3.6"
+  - "nightly"
+
+env:
+    - TEST_USE_CPP=no
+      CFLAGS="-Werror -Wall -std=c90 -Wno-error=strict-aliasing"
+    - TEST_USE_CPP=yes
+      CFLAGS="-Werror -Wall -Wno-error=strict-aliasing"
+
+script: make test-python
+
+sudo: false
