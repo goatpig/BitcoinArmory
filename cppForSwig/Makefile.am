@@ -6,6 +6,8 @@ endif
 DIST_SUBDIRS = lmdb fcgi cryptopp
 SUBDIRS = lmdb fcgi cryptopp $(MAYBE_BUILD)
 
+# Once we switch to Py3-only, add -py3 flag to SWIG_FLAGS
+#SWIG_FLAGS = -c++ -python -py3 -threads
 SWIG_FLAGS = -c++ -python -threads
 AM_CXXFLAGS = $(CXXFLAGS) -std=c++11
 
@@ -84,6 +86,7 @@ libCppBlockUtils_la_CXXFLAGS = $(AM_CXXFLAGS) -Ilmdb \
 		    		-Icryptopp \
 				$(AX_SWIG_PYTHON_CPPFLAGS) \
 				$(EXTRA_PYTHON_INCLUDES) \
+				-Ipy3c/include \
 				-D__STDC_LIMIT_MACROS
 
 libCppBlockUtils_la_LIBADD = 	-Llmdb -llmdb \
