@@ -35,8 +35,6 @@ ARMORYCLI_SOURCE_FILES = Accounts.cpp \
 	Assets.cpp \
 	BDM_mainthread.cpp \
 	BDM_Server.cpp \
-    ScrAddrFilter.cpp \
-	ZeroConf.cpp \
 	BitcoinP2P.cpp \
 	BlockchainScanner.cpp \
 	BlockchainScanner_Super.cpp \
@@ -55,12 +53,14 @@ ARMORYCLI_SOURCE_FILES = Accounts.cpp \
 	nodeRPC.cpp \
 	Progress.cpp \
 	ReentrantLock.cpp \
+	ScrAddrFilter.cpp \
 	ScrAddrObj.cpp \
 	SocketObject.cpp \
 	SshParser.cpp \
 	StringSockets.cpp \
 	StoredBlockObj.cpp \
-	txio.cpp
+	txio.cpp \
+	ZeroConf.cpp
 ARMORYCOMMON_SOURCE_FILES = BDM_seder.cpp \
 	BinaryData.cpp \
 	Blockchain.cpp \
