@@ -128,8 +128,16 @@ case $host in
         OBJC="${OBJC} -mmacosx-version-min=${with_macosx_version_min}"
     fi
 
+    # Just FYI, here are some linker flags, used and unused, that are noteworthy.
+    # In the future, making sure install_name_tool usage is minimized would be
+    # ideal. (Some usage may be necessary. See https://lists.gnu.org/archive/html/libtool-patches/2010-09/msg00308.html
+    # for an example.)
+    # -undefined dynamic_lookup: https://stackoverflow.com/a/30934307
+    # -headerpad_max_install_names: https://software.intel.com/en-us/forums/intel-threading-building-blocks/topic/509396
+    # -rpath @executable_path/ (or other paths to search): https://wincent.com/wiki/@executable_path,_@load_path_and_@rpath
+    # -install_name @loader_path/libArmoryCommon.0.dylib: http://osiris.laya.com/coding/dylib_linking.html
     CXXFLAGS="${CXXFLAGS} -stdlib=libc++ -fPIC -pipe"
-    LD="${LD} -stdlib=libc++ -std=c++11 -lc++ -undefined dynamic_lookup -headerpad_max_install_names"
+    LDFLAGS="${LDFLAGS} -stdlib=libc++ -lc++ -headerpad_max_install_names"
 
     # There really ought to be some sort of Qt check here. M4 files don't work
     # well with Armory. Revisit this later. Not required, just nice to have.

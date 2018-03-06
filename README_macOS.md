@@ -1,6 +1,6 @@
 # macOS README
 ## Requirements
-Armory will run on macOS 10.8 and beyond. It is highly recommended to install Armory on the newest version of macOS that is feasible, as Apple often introduces changes to newer versions that make support of older versions difficult, if not impossible.
+Armory will run on macOS 10.9 and beyond. It is highly recommended to install Armory on the newest version of macOS that is feasible, as Apple often introduces changes to newer versions that make support of older versions difficult, if not impossible.
 
 Due to [Python](https://python.org/) requirements that can't be met by default on macOS, users must use `brew` to install an updated version of OpenSSL in order for Armory to run. Please follow these instructions.
 
