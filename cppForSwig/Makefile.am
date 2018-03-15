@@ -116,7 +116,7 @@ ArmoryDB_LDADD = fcgi/libfcgi/libfcgi.la \
 		 -lpthread
 ArmoryDB_LDFLAGS = -static $(LDFLAGS)
 
-if HAVE_GUI
+if BUILD_CLIENT
 # Common GUI functionality library
 lib_LTLIBRARIES += libArmoryGUI.la
 libArmoryGUI_la_SOURCES = $(ARMORYGUI_SOURCE_FILES)

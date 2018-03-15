@@ -12,12 +12,12 @@ EXTRA_DIST = *.py *.md LICENSE LICENSE-ATI LICENSE-MIT \
 ACLOCAL_AMFLAGS = -I build-aux/m4
 
 lrelease:
-if HAVE_GUI
+if BUILD_CLIENT
 	lrelease lang/*.ts
 endif
 
 qrc_img_resources.py: imgList.xml
-if HAVE_GUI
+if BUILD_CLIENT
 	pyrcc4 -o qrc_img_resources.py imgList.xml
 endif
 
@@ -25,7 +25,7 @@ copy-script:
 	cp cppForSwig/ArmoryDB ./ArmoryDB
 
 # SWIG code and requirements.
-if HAVE_GUI
+if BUILD_CLIENT
 	cp cppForSwig/CppBlockUtils.py ./CppBlockUtils.py
 if BUILD_DARWIN
 	cp cppForSwig/.libs/libCppBlockUtils.dylib ./_CppBlockUtils.so
@@ -44,7 +44,7 @@ uninstall-old:
 	rm -f $(DESTDIR)$(prefix)/bin/ArmoryDB
 
 install-exec-hook: uninstall-old
-if HAVE_GUI
+if BUILD_CLIENT
 	mkdir -p $(DESTDIR)$(prefix)/lib/armory/ui
 	mkdir -p $(DESTDIR)$(prefix)/lib/armory/armoryengine
 	mkdir -p $(DESTDIR)$(prefix)/lib/armory/lang
@@ -68,7 +68,7 @@ endif
 
 # Skip Linux-specific steps on OSX.
 if ! BUILD_DARWIN
-if HAVE_GUI
+if BUILD_CLIENT
 	rsync -rupE --exclude="img/.DS_Store" img $(DESTDIR)$(prefix)/share/armory/
 	sed "s: /usr: $(prefix):g" < dpkgfiles/armory > $(DESTDIR)$(prefix)/bin/armory
 	chmod +x $(DESTDIR)$(prefix)/bin/armory
