@@ -177,6 +177,7 @@ AM_CONDITIONAL([BUILD_DARWIN], [test x$BUILD_OS = xdarwin])
 
 AC_CONFIG_FILES(Makefile
 		cppForSwig/Makefile
+		cppForSwig/ccan/Makefile
 		cppForSwig/lmdb/Makefile
 		cppForSwig/chacha20poly1305/Makefile)
 
@@ -187,7 +188,6 @@ dnl ac_configure_args can only be set once and affects all subdirs.
 dnl Place all params here.
 dnl FCGI - No customs
 dnl Crypto++ - No customs
-dnl libchacha20poly1305 - No customs
 dnl libsecp256k1 (libbtc) - --disable-shared --with-pic --with-bignum=no --enable-experimental --enable-module-ecdh
 ac_configure_args="${orig_config_args} --disable-shared --with-pic --with-bignum=no --enable-experimental --enable-module-ecdh"
 AC_CONFIG_SUBDIRS([cppForSwig/fcgi cppForSwig/cryptopp cppForSwig/libbtc])

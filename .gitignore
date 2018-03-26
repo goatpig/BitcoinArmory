@@ -78,6 +78,8 @@ _CppBlockUtils.*
 
 /cppForSwig/libbtc/bitcoin-spv
 
+!/cppForSwig/ccan/config.h
+
 *.DS_Store
 
 /ArmoryStandalone/*

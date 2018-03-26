@@ -6,6 +6,7 @@ lib_LTLIBRARIES =
 MAYBE_BUILD =
 
 LIBBTC = libbtc/libbtc.la
+LIBCCAN = ccan/libCCAN.la
 LIBCHACHA20POLY1305 = chacha20poly1305/.libs/libchacha20poly1305.la
 LIBCPPBLOCKUTILS = libCppBlockUtils.la
 LIBCRYPTOPP = cryptopp/libcryptopp.la
@@ -13,8 +14,8 @@ LIBFCGI = fcgi/libfcgi/.libs/libfcgi.la
 LIBLMDB = lmdb/.libs/liblmdb.la
 LIBSECP256K1 = libbtc/src/secp256k1/libsecp256k1.la
 
-DIST_SUBDIRS = lmdb fcgi cryptopp libbtc chacha20poly1305
-SUBDIRS = lmdb fcgi cryptopp libbtc chacha20poly1305 $(MAYBE_BUILD)
+DIST_SUBDIRS = lmdb fcgi cryptopp libbtc chacha20poly1305 ccan
+SUBDIRS = lmdb fcgi cryptopp libbtc chacha20poly1305 ccan $(MAYBE_BUILD)
 
 SWIG_FLAGS = -c++ -python -threads
 AM_CXXFLAGS = $(CXXFLAGS)
