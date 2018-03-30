@@ -85,7 +85,7 @@
 #define FLUSHLOG()          Log::FlushStreams()
 #define CLEANUPLOG()        Log::CleanUp()
 
-
+#define LOGTIMEBUFLEN 30
 #define MAX_LOG_FILE_SIZE (500*1024)
 
 using namespace std;
@@ -310,7 +310,6 @@ private:
 };
 
 
-
 // I missed the opportunity with the above class, to design it as a constantly
 // constructing/destructing object that adds a newline on every destruct.  So 
 // instead I create this little wrapper that does it for me.
@@ -346,9 +345,6 @@ private:
 };
 
 
-
-
-
 //#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__)
 //#   if defined (BUILDING_FILELOG_DLL)
 //#       define FILELOG_DECLSPEC   __declspec (dllexport)
@@ -361,47 +357,53 @@ private:
 //#   define FILELOG_DECLSPEC
 //#endif // _WIN32
 
-
 //#ifndef FILELOG_MAX_LEVEL
 //#define FILELOG_MAX_LEVEL LogLvlDEBUG4
 //#endif
 
+// Print the current time ("YYYY-MM-DD - HH:MM:SS.sss")
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__)
 
 #include <windows.h>
-
 inline string NowTime()
 {
-    const int MAX_LEN = 200;
-    char buffer[MAX_LEN];
+    char buffer[LOGTIMEBUFLEN];
     if (GetTimeFormatA(LOCALE_USER_DEFAULT, 0, 0, 
-            "HH':'mm':'ss", buffer, MAX_LEN) == 0)
+            "yyyy'-'MM'-'dd' - 'HH':'mm':'ss", buffer, LOGTIMEBUFLEN) == 0)
         return "Error in NowTime()";
 
-    char result[100] = {0};
-    static DWORD first = GetTickCount();
-    sprintf(result, "%s.%03ld", buffer, (long)(GetTickCount() - first) % 1000); 
+    char result[LOGTIMEBUFLEN] = {0};
+    SYSTEMTIME curTime;
+    GetSystemTime(&curTime);
+    snprintf(result, sizeof(result), "%s.%03ld", buffer, curTime.wMilliseconds); 
     return result;
 }
 
 #else
 
-#include <sys/time.h>
-
+#include <chrono>
 inline string NowTime()
 {
-    char buffer[11];
-    time_t t;
-    time(&t);
-    tm r = {0};
-    strftime(buffer, sizeof(buffer), "%X", localtime_r(&t, &r));
-    struct timeval tv;
-    gettimeofday(&tv, 0);
-    char result[100] = {0};
-    sprintf(result, "%s", buffer);
+    // Getting current time in ms is way trickier than it should be.
+    chrono::system_clock::time_point curTime = chrono::system_clock::now();
+    chrono::system_clock::duration timeDur = curTime.time_since_epoch();
+    timeDur -= chrono::duration_cast<chrono::seconds>(timeDur);
+    unsigned int ms = static_cast<unsigned>(timeDur / chrono::milliseconds(1));
+
+    // Print time.
+    time_t curTimeTT = chrono::system_clock::to_time_t(curTime);
+    tm* tStruct = localtime(&curTimeTT);
+    string timeStr = "%04i-%02i-%02i - %02i:%02i:%02i.%03i";
+    char result[LOGTIMEBUFLEN] = {0};
+    snprintf(result, sizeof(result), timeStr.c_str(), tStruct->tm_year + 1900, \
+                                                      tStruct->tm_mon + 1, \
+                                                      tStruct->tm_mday, \
+                                                      tStruct->tm_hour, \
+                                                      tStruct->tm_min, \
+                                                      tStruct->tm_sec, \
+                                                      ms);
     return result;
 }
 
 #endif //WIN32
-
 #endif //__LOG_H__
