@@ -453,7 +453,7 @@ def compile_pip():
    if path.exists(pipexe):
       logprint('Pip already installed')
    else:
-      command = 'python -s setup.py --no-user-cfg install --force --verbose'
+      command = 'python2 -s setup.py --no-user-cfg install --force --verbose'
 
       # Unpack and build setuptools
       logprint('Installing setuptools.')
@@ -517,6 +517,7 @@ def compile_qt():
    execAndWait('patch -p1 < %s' % path.join(os.getcwd(), 'qpaintengine_mac.patch'), cwd=qtBuildDir)
    # macOS 10.13 errors on unused code.
    execAndWait('patch -p1 < %s' % path.join(os.getcwd(), 'qt_cocoa_helpers_mac.patch'), cwd=qtBuildDir)
+   execAndWait('patch -p1 < %s' % path.join(os.getcwd(), 'clang-5-darwin.patch'), cwd=qtBuildDir)
 
    # Configure Qt. http://wiki.phisys.com/index.php/Compiling_Phi has an example
    # that can be checked for ideas.
@@ -569,7 +570,7 @@ def compile_sip():
       logprint('Sip is already installed.')
    else:
       sipPath = unpack(tarfilesToDL['sip'])
-      command  = 'python configure.py'
+      command  = 'python2 configure.py'
       command += ' --destdir="%s"' % PYSITEPKGS
       command += ' --bindir="%s/bin"' % PYFRAMEBASE
       command += ' --incdir="%s/include"' % PYFRAMEBASE
@@ -592,7 +593,7 @@ def compile_pyqt():
    else:
       pyqtPath = unpack(tarfilesToDL['pyqt'])
       incDir = path.join(PYFRAMEBASE, 'include')
-      execAndWait('python ./configure-ng.py --confirm-license --sip-incdir="%s"' % incDir, cwd=pyqtPath)
+      execAndWait('python2 ./configure-ng.py --confirm-license --sip-incdir="%s"' % incDir, cwd=pyqtPath)
       execAndWait('make %s' % MAKEFLAGS, cwd=pyqtPath)
 
    # Need to add pyrcc4 to the PATH
@@ -607,7 +608,7 @@ def compile_psutil():
    if glob.glob(PYSITEPKGS + '/psutil*'):
       logprint('Psutil already installed')
    else:
-      command = 'python -s setup.py --no-user-cfg install --force --verbose'
+      command = 'python2 -s setup.py --no-user-cfg install --force --verbose'
       psPath = unpack(tarfilesToDL['psutil'])
       execAndWait(command, cwd=psPath)
 
@@ -618,7 +619,7 @@ def compile_twisted():
    if glob.glob(PYSITEPKGS + '/Twisted*'):
       logprint('Twisted already installed')
    else:
-      command = "python -s setup.py --no-user-cfg install --force --verbose"
+      command = "python2 -s setup.py --no-user-cfg install --force --verbose"
       twpath = unpack(tarfilesToDL['Twisted'])
       execAndWait(command, cwd=twpath)
 
@@ -631,7 +632,7 @@ def compile_armory():
    armoryDB = path.join(APPBASE, 'Contents/MacOS/ArmoryDB')
    currentDir = os.getcwd()
    os.chdir("..")
-   execAndWait('python update_version.py')
+   execAndWait('python2 update_version.py')
    os.chdir(currentDir)
    execAndWait('./autogen.sh', cwd='..')
    execAndWait('./configure %s' % CONFIGFLAGS, cwd='..')
