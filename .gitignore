@@ -79,6 +79,9 @@ _CppBlockUtils.*
 /cppForSwig/libbtc/bitcoin-spv
 
 !/cppForSwig/ccan/config.h
+/cppForSwig/ccan/**/*.d
+/cppForSwig/ccan/**/Info
+/cppForSwig/ccan/**/Info.plist
 
 *.DS_Store
 
