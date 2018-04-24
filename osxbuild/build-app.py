@@ -18,7 +18,7 @@ from subprocess import Popen, PIPE
 from tempfile import mkstemp
 
 # Set some constants up front
-minOSXVer     = '10.8'
+minOSXVer     = '10.9'
 pythonVer     = '2.7.14' # NB: ArmoryMac.pro must also be kept up to date!!!
 pyMajorVer    = '2.7'
 setToolVer    = '38.2.3'
@@ -48,25 +48,30 @@ WORKUNPACKDIR  = path.join(WORKDIR, 'unpackandbuild')
 WORKINSTALLDIR = path.join(WORKDIR, 'install')
 ARMORYCODEBASE = path.join(APPBASE, 'Contents/MacOS/py')
 PYFRAMEBASE    = path.join(APPBASE, 'Contents/Frameworks/Python.framework/Versions/%s' % pyMajorVer)
+LIBINSTPATH    = path.join(ARMORYCODEBASE, 'usr/local')
 PYLIBPREFIX    = path.join(PYFRAMEBASE, 'lib')
 PYINCPREFIX    = path.join(PYFRAMEBASE, 'include/python%s' % pyMajorVer)
 PYBINARY       = path.join(PYFRAMEBASE, 'Resources/Python.app/Contents/MacOS/Python')
+PYBINPATH      = path.join(PYFRAMEBASE, 'bin') # Needed by rebuildapp/compapponly
 PYSITEPKGS     = path.join(PYLIBPREFIX, 'python%s/site-packages' % pyMajorVer)
 MAKEFLAGS      = '-j4'
 
 # Autotools needs some TLC to make Python happy.
-CONFIGFLAGS = '--with-macosx-version-min=%s LIBS=\"-L%s\" PYTHON=\"%s\" PYTHON_LDFLAGS=\"-L%s\" PYTHON_CPPFLAGS=\"-I%s\" PYTHON_EXTRA_LIBS=\"-u _PyMac_Error %s/Python\"' % (minOSXVer, PYLIBPREFIX, PYBINARY, PYLIBPREFIX, PYINCPREFIX, PYFRAMEBASE)
+CONFIGFLAGS = '--prefix=\"%s\" --with-macosx-version-min=%s PATH=\"$PATH:%s\" LIBS=\"-L%s\" PYTHON=\"%s\" PYTHON_LDFLAGS=\"-L%s\" PYTHON_CPPFLAGS=\"-I%s\" PYTHON_EXTRA_LIBS=\"-u _PyMac_Error %s/Python\"' % (LIBINSTPATH, minOSXVer, PYBINPATH, PYLIBPREFIX, PYBINARY, PYLIBPREFIX, PYINCPREFIX, PYFRAMEBASE)
 
 # Susceptible to build failures. Would fix, but prereqs are going away. Leave
 # alone since it'll be gone soon anyway.
 QTBUILTFLAG = path.join(WORKUNPACKDIR, 'qt/qt_install_success.txt')
 
-# If no arguments specified, then do the minimal amount of work necessary
-# Assume that only one flag is specified.  These should be
+# If no arguments specified, then do the minimal amount of work necessary.
+# Some flags are incompatible with others. (TODO: Sort it out.)
+# In addition, "rebuildapp" works only after a full build, and completely
+# rebuilds Armory.
 parser = optparse.OptionParser(usage="%prog [options]\n")
 parser.add_option('--fromscratch',  dest='fromscratch', default=False, action='store_true', help='Remove all prev-downloaded: redownload and rebuild all')
 parser.add_option('--rebuildall',   dest='rebuildall',  default=False, action='store_true', help='Remove all prev-built; no redownload, only rebuild')
-parser.add_option('--compapponly',  dest='compapponly', default=False, action='store_true', help='Recompile Armory, not the 3rd party code')
+parser.add_option('--rebuildapp',   dest='rebuildapp',  default=False, action='store_true', help='Completely rebuild (autogen/configure/make) Armory')
+parser.add_option('--compapponly',  dest='compapponly', default=False, action='store_true', help='Recompile Armory')
 parser.add_option('--armoryd',      dest='armoryd',     default=False, action='store_true', help='Add files to allow armoryd to run')
 parser.add_option('--verbose',      dest='verboseOut',  default=False, action='store_true', help='Verbose output in Makefile output')
 (CLIOPTS, CLIARGS) = parser.parse_args()
@@ -117,7 +122,7 @@ def main():
    if path.exists(LOGFILE):
       os.remove(LOGFILE)
 
-   if not CLIOPTS.compapponly:
+   if not CLIOPTS.rebuildapp and not CLIOPTS.compapponly:
       delete_prereq_data(CLIOPTS)
 
    makedir(WORKDIR)
@@ -135,7 +140,7 @@ def main():
       make_empty_app()
       make_resources()
 
-   if not CLIOPTS.compapponly:
+   if not CLIOPTS.rebuildapp and not CLIOPTS.compapponly:
       compile_python()
       compile_pip()
       compile_libpng()
@@ -453,7 +458,7 @@ def compile_pip():
    if path.exists(pipexe):
       logprint('Pip already installed')
    else:
-      command = 'python -s setup.py --no-user-cfg install --force --verbose'
+      command = 'python2 -s setup.py --no-user-cfg install --force --verbose'
 
       # Unpack and build setuptools
       logprint('Installing setuptools.')
@@ -517,6 +522,8 @@ def compile_qt():
    execAndWait('patch -p1 < %s' % path.join(os.getcwd(), 'qpaintengine_mac.patch'), cwd=qtBuildDir)
    # macOS 10.13 errors on unused code.
    execAndWait('patch -p1 < %s' % path.join(os.getcwd(), 'qt_cocoa_helpers_mac.patch'), cwd=qtBuildDir)
+   # Xcode 9.3 (clang 9.1) breaks Qt4.
+   execAndWait('patch -p1 < %s' % path.join(os.getcwd(), 'qt_clang9.1_fix.patch'), cwd=qtBuildDir)
 
    # Configure Qt. http://wiki.phisys.com/index.php/Compiling_Phi has an example
    # that can be checked for ideas.
@@ -569,7 +576,7 @@ def compile_sip():
       logprint('Sip is already installed.')
    else:
       sipPath = unpack(tarfilesToDL['sip'])
-      command  = 'python configure.py'
+      command  = 'python2 configure.py'
       command += ' --destdir="%s"' % PYSITEPKGS
       command += ' --bindir="%s/bin"' % PYFRAMEBASE
       command += ' --incdir="%s/include"' % PYFRAMEBASE
@@ -592,7 +599,7 @@ def compile_pyqt():
    else:
       pyqtPath = unpack(tarfilesToDL['pyqt'])
       incDir = path.join(PYFRAMEBASE, 'include')
-      execAndWait('python ./configure-ng.py --confirm-license --sip-incdir="%s"' % incDir, cwd=pyqtPath)
+      execAndWait('python2 ./configure-ng.py --confirm-license --sip-incdir="%s"' % incDir, cwd=pyqtPath)
       execAndWait('make %s' % MAKEFLAGS, cwd=pyqtPath)
 
    # Need to add pyrcc4 to the PATH
@@ -607,7 +614,7 @@ def compile_psutil():
    if glob.glob(PYSITEPKGS + '/psutil*'):
       logprint('Psutil already installed')
    else:
-      command = 'python -s setup.py --no-user-cfg install --force --verbose'
+      command = 'python2 -s setup.py --no-user-cfg install --force --verbose'
       psPath = unpack(tarfilesToDL['psutil'])
       execAndWait(command, cwd=psPath)
 
@@ -618,7 +625,7 @@ def compile_twisted():
    if glob.glob(PYSITEPKGS + '/Twisted*'):
       logprint('Twisted already installed')
    else:
-      command = "python -s setup.py --no-user-cfg install --force --verbose"
+      command = "python2 -s setup.py --no-user-cfg install --force --verbose"
       twpath = unpack(tarfilesToDL['Twisted'])
       execAndWait(command, cwd=twpath)
 
@@ -631,12 +638,18 @@ def compile_armory():
    armoryDB = path.join(APPBASE, 'Contents/MacOS/ArmoryDB')
    currentDir = os.getcwd()
    os.chdir("..")
-   execAndWait('python update_version.py')
+   execAndWait('python2 update_version.py')
    os.chdir(currentDir)
-   execAndWait('./autogen.sh', cwd='..')
-   execAndWait('./configure %s' % CONFIGFLAGS, cwd='..')
-   execAndWait('make clean', cwd='..')
-   execAndWait('make DESTDIR="%s" install %s' % (ARMORYCODEBASE, MAKEFLAGS), cwd='..')
+   if not CLIOPTS.compapponly:
+      execAndWait('./autogen.sh', cwd='..')
+      execAndWait('./configure %s' % CONFIGFLAGS, cwd='..')
+      execAndWait('make clean', cwd='..')
+
+# See https://stackoverflow.com/a/11307770 for more info on when to use DESTDIR
+# and other subtle config items.
+#   execAndWait('make install DESTDIR="%s" %s' % (ARMORYCODEBASE, MAKEFLAGS), cwd='..')
+   execAndWait('make install %s' % MAKEFLAGS, cwd='..')
+
    copyfile('Armory-script.sh', armoryAppScript)
    copyfile('armoryd-script.sh', armorydAppScript)
    execAndWait('chmod +x "%s"' % armoryAppScript)

@@ -1,8 +1,11 @@
-noinst_LTLIBRARIES = libcryptopp.la
+lib_LTLIBRARIES = libcryptopp.la
 
+# Make Crypto++ static per the dev's recommendation pre-6.0. Do NOT attempt to
+# make Crypto++ a shared library pre-6.0! It leads to subtle runtime linker
+# errors involving missing vtables for classes Armory requires.
 libcryptopp_la_LIBADD =
-AM_LDFLAGS = $(LDFLAGS)
-AM_CXXFLAGS = $(CXXFLAGS) -std=c++11
+AM_LDFLAGS = -static
+AM_CXXFLAGS =
 
 ACLOCAL_AMFLAGS = -I build-aux/m4
 
@@ -40,12 +43,13 @@ endif	# CRYPTOPP_HAVE_GCC
 endif	# IS_X86
 
 if UNAME_LINUX
+# -fPIC keeps GCC 7 happy when linking a static library to shared libraries
+AM_CXXFLAGS += -fPIC
 AM_LDFLAGS += -pthread
 endif
 
 if BUILD_DARWIN
 AM_CXXFLAGS += -DNDEBUG -march=native
-libcryptopp_la_LDFLAGS = -Wl,-rpath,@executable_path/ -Wl,-rpath,@loader_path/
 endif
 
 INCLUDE_FILES = 3way.h	    crc.h	gcm.h	    modexppc.h	ripemd.h     tea.h \

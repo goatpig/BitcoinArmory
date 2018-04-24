@@ -59,6 +59,41 @@ endif
 # Sometimes, uninstall-old deletes a valid ArmoryDB. Copy again to be safe.
 	cp ArmoryDB $(DESTDIR)$(prefix)/bin
 
+# On macOS, The linker hard-codes the locations of dependent shared libraries
+# linked in libraries and binaries. This means Armory.app won't be portable
+# because, by default, attempts to load the link shared libraries will fail. The
+# workaround: Let Automake do its thing and then use an external tool (installed
+# by Xcode) to tell libraries where to actually find shared libraries they need.
+# In addition, while not necessary, change the shared library IDs so that
+# they're not absolute. (Strangely, some frameworks are also hard-coded inside
+# the shared libraries, but they don't cause problems. Just ignore them.)
+# Finally, delete a redundant instance of libCppBlockUtils.
+# SOURCE 1: https://www.mikeash.com/pyblog/friday-qa-2009-11-06-linking-and-install-names.html
+# SOURCE 2: https://github.com/conda/conda-build/issues/279
+# Alt target name (useful for debugging?): @executable_path/py/usr/local/lib/liblmdb.0.dylib
+if BUILD_DARWIN
+	install_name_tool -change $(DESTDIR)$(prefix)/lib/libArmoryCommon.0.dylib @loader_path/../libArmoryCommon.0.dylib $(DESTDIR)$(prefix)/lib/armory/_CppBlockUtils.so
+	install_name_tool -change $(DESTDIR)$(prefix)/lib/libcryptopp.0.dylib @loader_path/libcryptopp.0.dylib $(DESTDIR)$(prefix)/lib/libArmoryCommon.0.dylib
+	install_name_tool -change $(DESTDIR)$(prefix)/lib/libcryptopp.0.dylib @loader_path/libcryptopp.0.dylib $(DESTDIR)$(prefix)/lib/libArmoryCLI.0.dylib
+	install_name_tool -change $(DESTDIR)$(prefix)/lib/libArmoryCommon.0.dylib @loader_path/libArmoryCommon.0.dylib $(DESTDIR)$(prefix)/lib/libArmoryCLI.0.dylib
+	install_name_tool -id @rpath/libCppBlockUtils.0.dylib $(DESTDIR)$(prefix)/lib/armory/_CppBlockUtils.so
+	install_name_tool -id @rpath/libfcgi.0.dylib $(DESTDIR)$(prefix)/lib/libfcgi.0.dylib
+	install_name_tool -id @rpath/libArmoryCommon.0.dylib $(DESTDIR)$(prefix)/lib/libArmoryCommon.0.dylib
+	install_name_tool -id @rpath/libArmoryCLI.0.dylib $(DESTDIR)$(prefix)/lib/libArmoryCLI.0.dylib
+	install_name_tool -id @rpath/libArmoryGUI.0.dylib $(DESTDIR)$(prefix)/lib/libArmoryGUI.0.dylib
+	install_name_tool -id @rpath/libcryptopp.0.dylib $(DESTDIR)$(prefix)/lib/libcryptopp.0.dylib
+	install_name_tool -change $(DESTDIR)$(prefix)/lib/libArmoryCommon.0.dylib @loader_path/../lib/libArmoryCommon.0.dylib $(DESTDIR)$(prefix)/bin/ArmoryDB
+	install_name_tool -change $(DESTDIR)$(prefix)/lib/libArmoryCLI.0.dylib @loader_path/../lib/libArmoryCLI.0.dylib $(DESTDIR)$(prefix)/bin/ArmoryDB
+	install_name_tool -change $(DESTDIR)$(prefix)/lib/libcryptopp.0.dylib @loader_path/../lib/libcryptopp.0.dylib $(DESTDIR)$(prefix)/bin/ArmoryDB
+if HAVE_GUI
+	rm -f $(DESTDIR)$(prefix)/lib/libCppBlockUtils.*
+	install_name_tool -change $(DESTDIR)$(prefix)/lib/libArmoryGUI.0.dylib @loader_path/../libArmoryGUI.0.dylib $(DESTDIR)$(prefix)/lib/armory/_CppBlockUtils.so
+	install_name_tool -change $(DESTDIR)$(prefix)/lib/libArmoryCommon.0.dylib @loader_path/libArmoryCommon.0.dylib $(DESTDIR)$(prefix)/lib/libArmoryGUI.0.dylib
+	install_name_tool -change $(DESTDIR)$(prefix)/lib/libcryptopp.0.dylib @loader_path/libcryptopp.0.dylib $(DESTDIR)$(prefix)/lib/libArmoryGUI.0.dylib
+	install_name_tool -change $(DESTDIR)$(prefix)/lib/libcryptopp.0.dylib @loader_path/../libcryptopp.0.dylib $(DESTDIR)$(prefix)/lib/armory/_CppBlockUtils.so
+endif
+endif
+
 # No need to install test binaries.
 if BUILD_TESTS
 	rm -f $(DESTDIR)$(prefix)/bin/ContainerTests
