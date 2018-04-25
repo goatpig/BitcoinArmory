@@ -46,8 +46,12 @@ else
   CXXFLAGS="$CXXFLAGS -O2"
 fi
 
-AM_CONDITIONAL([HAVE_GUI], [test "x$with_gui" = "xyes"])
-   
+# Even if the GUI is disabled, build GUI elements if tests are enabled.
+AS_IF([test "x$with_gui" = "xyes"], [build_client=yes],
+	[test "x$want_tests" = "xyes"], [build_client=yes],
+	[build_client=no])
+AM_CONDITIONAL([BUILD_CLIENT], [test x$build_client = xyes])
+
 AC_PROG_CC
 AC_PROG_CXX
 AM_CONDITIONAL([HAVE_GCC], [test $CXX = g++])
@@ -68,7 +72,7 @@ AX_CXX_COMPILE_STDCXX([11], [noext], [mandatory], [nodefault])
 # Make the compilation flags quiet unless V=1 is used.
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
-if test "x$with_gui" = "xyes"; then
+if test "x$build_client" = "xyes"; then
 #check for  swig
 
 AC_CHECK_PROG([HAVE_SWIG], [swig], [yes], [no])
@@ -137,7 +141,7 @@ case $host in
   *linux*)
     BUILD_OS=linux
 
-    if test "x$with_gui" = "xyes"; then
+    if test "x$build_client" = "xyes"; then
        # Check existence of Qt packages.
        if ! pkg-config --exists 'QtCore >= 4.8 QtCore <= 5 QtGui >= 4.8 QtGui <= 5'; then
        	   AC_MSG_ERROR([missing QtCore library, make sure libqtcore4 and libqt4-dev are installed])
@@ -198,4 +202,4 @@ echo "  LD              = $LD"
 echo "  with tests      = $want_tests"
 echo "  with benchmarks = $want_benchmark"
 echo "  debug symbols   = $want_debug"
-echo "  with GUI        = $with_gui"
+echo "  with GUI/client = $build_client"

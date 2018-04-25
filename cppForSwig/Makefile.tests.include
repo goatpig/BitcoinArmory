@@ -31,7 +31,6 @@ gtest_DB1kIterTest_LDADD = gtest/libgtest.la libArmoryCLI.la
 gtest_DB1kIterTest_LDFLAGS = $(AM_LDFLAGS) $(LDFLAGS) -static
 TESTS += gtest/DB1kIterTest
 
-if HAVE_GUI
 # SupernodeTests
 bin_PROGRAMS += gtest/SupernodeTests
 gtest_SupernodeTests_SOURCES = gtest/SupernodeTests.cpp
@@ -49,4 +48,3 @@ gtest_CppBlockUtilsTests_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
 gtest_CppBlockUtilsTests_LDADD = gtest/libgtest.la libArmoryCLI.la libArmoryGUI.la
 gtest_CppBlockUtilsTests_LDFLAGS = $(AM_LDFLAGS) $(LDFLAGS) -static
 TESTS += gtest/CppBlockUtilsTests
-endif
