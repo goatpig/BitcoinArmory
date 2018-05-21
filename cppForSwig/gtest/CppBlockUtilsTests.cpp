@@ -12,12 +12,114 @@
 ////////////////////////////////////////////////////////////////////////////////
 #include "TestUtils.h"
 
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+// Test the BIP 151 code here.
+// Test vectors taken from Bcoin and CCAN test suites.
+class BIP151Test : public ::testing::Test
+{
+protected:
+   virtual void SetUp(void)
+   {
+      startupBIP151CTX();
+
+      // Test vector data. Unfortunately, there are no test suites for BIP 151.
+      // Test data was generated using the Bcoin test suite for BIP 151. We will
+      // assume the external libraries we use in BIP 151 are functioning
+      // properly. (This can be verified by running their test suites.)
+      string prvKeyClientIn_hexstr = "001eb0c6ace84eb1590636134a87a6fa35379db0d19ecd9e2eb1b68c791774b9";
+      string prvKeyClientOut_hexstr = "fb245a1ba7aebb3771312985c1512efe48a93539950b60626b4d03584e99b573";
+      string prvKeyServerIn_hexstr = "d2c7901a6b5508cf53e4be641fd94ab525429fb2abb0b5e19b362dc8fbab510c";
+      string prvKeyServerOut_hexstr = "1afffad36edaba644d3a0b106a87a694148992b4bf23e9c82ba7949c86fd7d2a";
+      string pubKeyClientIn_hexstr = "028acd0713bbe163d869c6b77b8ee2047804f2242ba838f1b7c785c13dba491ddc";
+      string pubKeyClientOut_hexstr = "0274718cf4a5554f02f806ae3224bab5202509af358b2307834d31a3b6523501c0";
+      string pubKeyServerIn_hexstr = "0269d2b803c34e372080c126b8d84c8cb2630d7c1886d2bbf47ddb8146be7bce9b";
+      string pubKeyServerOut_hexstr = "028e363d1018efd16bf4d3f70e1a4f221c92c29d380cb08e4751e390461c4a6a54";
+      string ecdhCliInSrvOut_hexstr = "beea4e4bec58f63516e78bef23a086cbe5a42165313bfebfb430a389e432d72b";
+      string ecdhCliOutSrvIn_hexstr = "94cff6b1b89e33d19ed22347ba8a19aae318f049eca8ecb7b180fa366fa10604";
+      string k1CliInSrvOut_hexstr = "bee6b1d25675a57bd0b6d569c67e0ba1bb05f9c9d9abe7c1f4be501f46e2c77f";
+      string k1CliOutSrvIn_hexstr = "178954f78cfddbb05944954ce2c3bcfdea4224a8367bcc54a5aafcac3fdd4901";
+      string k2CliInSrvOut_hexstr = "5188100e517d709e38fd331e7f804361d8b2074e714b286b2de3f7d358af0ff1";
+      string k2CliOutSrvIn_hexstr = "dbe91ef008fd0e202477e4ff3f5591660cd77aee00a568a526eeaf1979a11041";
+      string sesIDCliInSrvOut_hexstr = "5ed9ef67265e61cb1d8278bc3c5354818e6d6d632755cce114e775458876c73e";
+      string sesIDCliOutSrvIn_hexstr = "7003d136f14a56bd52820f800e9b225cb652462f4757007e04c2e434ff1dbe89";
+      string payload_hexstr = "deadbeef";
+
+      TestUtils::hex2bin(prvKeyClientIn_hexstr.c_str(), prvKeyClientIn.data());
+      TestUtils::hex2bin(prvKeyClientOut_hexstr.c_str(), prvKeyClientOut.data());
+      TestUtils::hex2bin(prvKeyServerIn_hexstr.c_str(), prvKeyServerIn.data());
+      TestUtils::hex2bin(prvKeyServerOut_hexstr.c_str(), prvKeyServerOut.data());
+      TestUtils::hex2bin(pubKeyClientIn_hexstr.c_str(), pubKeyClientIn.data());
+      TestUtils::hex2bin(pubKeyClientOut_hexstr.c_str(), pubKeyClientOut.data());
+      TestUtils::hex2bin(pubKeyServerIn_hexstr.c_str(), pubKeyServerIn.data());
+      TestUtils::hex2bin(pubKeyServerOut_hexstr.c_str(), pubKeyServerOut.data());
+      TestUtils::hex2bin(ecdhCliInSrvOut_hexstr.c_str(), ecdhCliInSrvOut.data());
+      TestUtils::hex2bin(ecdhCliOutSrvIn_hexstr.c_str(), ecdhCliOutSrvIn.data());
+      TestUtils::hex2bin(k1CliInSrvOut_hexstr.c_str(), k1CliInSrvOut.data());
+      TestUtils::hex2bin(k1CliOutSrvIn_hexstr.c_str(), k1CliOutSrvIn.data());
+      TestUtils::hex2bin(k2CliInSrvOut_hexstr.c_str(), k2CliInSrvOut.data());
+      TestUtils::hex2bin(k2CliOutSrvIn_hexstr.c_str(), k2CliOutSrvIn.data());
+      TestUtils::hex2bin(sesIDCliInSrvOut_hexstr.c_str(), sesIDCliInSrvOut.data());
+      TestUtils::hex2bin(sesIDCliOutSrvIn_hexstr.c_str(), sesIDCliOutSrvIn.data());
+      TestUtils::hex2bin(payload_hexstr.c_str(), payload.data());
+   }
+
+   virtual void TearDown(void)
+   {
+      shutdownBIP151CTX();
+   }
+
+   array<uint8_t, 32> prvKeyClientIn;
+   array<uint8_t, 32> prvKeyClientOut;
+   array<uint8_t, 32> prvKeyServerIn;
+   array<uint8_t, 32> prvKeyServerOut;
+   array<uint8_t, 33> pubKeyClientIn;
+   array<uint8_t, 33> pubKeyClientOut;
+   array<uint8_t, 33> pubKeyServerIn;
+   array<uint8_t, 33> pubKeyServerOut;
+   array<uint8_t, 32> ecdhCliInSrvOut;
+   array<uint8_t, 32> ecdhCliOutSrvIn;
+   array<uint8_t, 32> k1CliInSrvOut;
+   array<uint8_t, 32> k1CliOutSrvIn;
+   array<uint8_t, 32> k2CliInSrvOut;
+   array<uint8_t, 32> k2CliOutSrvIn;
+   array<uint8_t, 32> sesIDCliInSrvOut;
+   array<uint8_t, 32> sesIDCliOutSrvIn;
+   array<uint8_t, 4> payload;
+};
 
 ////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+TEST_F(BIP151Test, genChaCha20Poly1305)
+{
+   btc_key prvKeyCliIn;
+   btc_key prvKeyCliOut;
+   btc_key prvKeySrvIn;
+   btc_key prvKeySrvOut;
+   copy(begin(prvKeyClientIn), end(prvKeyClientIn), &prvKeyCliIn.privkey[0]);
+   copy(begin(prvKeyClientOut), end(prvKeyClientOut), &prvKeyCliOut.privkey[0]);
+   copy(begin(prvKeyServerIn), end(prvKeyServerIn), &prvKeySrvIn.privkey[0]);
+   copy(begin(prvKeyServerOut), end(prvKeyServerOut), &prvKeySrvOut.privkey[0]);
+   bip151Session clientIn(&prvKeyCliIn, false);
+   bip151Session clientOut(&prvKeyCliOut, true);
+   bip151Session serverIn(&prvKeySrvIn, false);
+   bip151Session serverOut(&prvKeySrvOut, true);
+   clientIn.setCipherType(bip151SymCiphers::CHACHA20POLY1305);
+   clientOut.setCipherType(bip151SymCiphers::CHACHA20POLY1305);
+   serverIn.setCipherType(bip151SymCiphers::CHACHA20POLY1305);
+   serverOut.setCipherType(bip151SymCiphers::CHACHA20POLY1305);
+   clientIn.symKeySetup(pubKeyServerOut.data(), pubKeyServerOut.size());
+   clientOut.symKeySetup(pubKeyServerIn.data(), pubKeyServerIn.size());
+   serverIn.symKeySetup(pubKeyClientOut.data(), pubKeyClientOut.size());
+   serverOut.symKeySetup(pubKeyClientIn.data(), pubKeyClientIn.size());
+   EXPECT_TRUE(0 == memcmp(sesIDCliInSrvOut.data(), clientIn.getSessionID(),
+                           sesIDCliInSrvOut.size()));
+   // FIX - Finish putting tests here, which will likely rely on convoluted
+   // coding due to how the data makes EXPECT_EQ usage difficult or impossible.
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Test any custom Crypto++ code we've written.
-// Deterministic signing vectors taken from RFC6979. (NOT TRUE JUST YET!)
+// Deterministic signing vectors taken from RFC6979 and other sources.
 class CryptoPPTest : public ::testing::Test
 {
 protected:
@@ -306,6 +408,7 @@ TEST_F(CryptoPPTest, DetSigning)
     EXPECT_EQ(secp256k1ExpRes1T, secp256k1Res1T);
 
 }
+
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -9966,9 +10069,15 @@ GTEST_API_ int main(int argc, char **argv)
    STARTLOGGING("cppTestsLog.txt", LogLvlDebug2);
    //LOGDISABLESTDOUT();
 
+   // Required by libbtc.
+   btc_ecc_start();
+
    testing::InitGoogleTest(&argc, argv);
    int exitCode = RUN_ALL_TESTS();
-   
+
+   // Required by libbtc.
+   btc_ecc_stop();
+
    FLUSHLOG();
    CLEANUPLOG();
 

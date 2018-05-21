@@ -1,0 +1,132 @@
+# Makefile .include for CCAN - Unit tests
+
+# Add files needed for building tests
+CCAN_EXTRA_SOURCE_FILES = ccan/str/hex/hex.c \
+	ccan/tap/tap.c
+libCCAN_la_SOURCES += $(CCAN_EXTRA_SOURCE_FILES)
+
+# ccan/compiler/test/compile_fail-printf.c
+noinst_PROGRAMS += tests/compile_fail-printf
+tests_compile_fail_printf_SOURCES = ccan/compiler/test/compile_fail-printf.c
+tests_compile_fail_printf_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+tests_compile_fail_printf_CFLAGS = $(AM_CFLAGS)
+tests_compile_fail_printf_LDADD = libCCAN.la
+tests_compile_fail_printf_LDFLAGS = $(AM_LDFLAGS) -static
+TESTS += tests/compile_fail-printf
+
+# ccan/compiler/test/run-is_compile_constant.c
+noinst_PROGRAMS += tests/run-is_compile_constant
+tests_run_is_compile_constant_SOURCES = ccan/compiler/test/run-is_compile_constant.c
+tests_run_is_compile_constant_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+tests_run_is_compile_constant_CFLAGS = $(AM_CFLAGS)
+tests_run_is_compile_constant_LDADD = libCCAN.la
+tests_run_is_compile_constant_LDFLAGS = $(AM_LDFLAGS) -static
+TESTS += tests/run-is_compile_constant
+
+# ccan/crypto/hkdf_sha256/test/api-rfc5869.c
+noinst_PROGRAMS += tests/HKDFSHA256
+tests_HKDFSHA256_SOURCES = ccan/crypto/hkdf_sha256/test/api-rfc5869.c
+tests_HKDFSHA256_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+tests_HKDFSHA256_CFLAGS = $(AM_CFLAGS)
+tests_HKDFSHA256_LDADD = libCCAN.la
+tests_HKDFSHA256_LDFLAGS = $(AM_LDFLAGS) -static
+TESTS += tests/HKDFSHA256
+
+# ccan/crypto/hmac_sha256/test/api-rfc4231.c
+noinst_PROGRAMS += tests/HMACSHA256
+tests_HMACSHA256_SOURCES = ccan/crypto/hmac_sha256/test/api-rfc4231.c
+tests_HMACSHA256_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+tests_HMACSHA256_CFLAGS = $(AM_CFLAGS)
+tests_HMACSHA256_LDADD = libCCAN.la
+tests_HMACSHA256_LDFLAGS = $(AM_LDFLAGS) -static
+TESTS += tests/HMACSHA256
+
+# ccan/crypto/sha256/test/run-33-bit-test.c
+noinst_PROGRAMS += tests/SHA3-test
+tests_SHA3_test_SOURCES = ccan/crypto/sha256/test/run-33-bit-test.c
+tests_SHA3_test_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+tests_SHA3_test_CFLAGS = $(AM_CFLAGS)
+tests_SHA3_test_LDADD = libCCAN.la
+tests_SHA3_test_LDFLAGS = $(AM_LDFLAGS) -static
+TESTS += tests/SHA3-test
+
+# ccan/crypto/sha256/test/run-lotsa-data.c
+noinst_PROGRAMS += tests/SHA256-data-test
+tests_SHA256_data_test_SOURCES = ccan/crypto/sha256/test/run-lotsa-data.c
+tests_SHA256_data_test_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+tests_SHA256_data_test_CFLAGS = $(AM_CFLAGS)
+tests_SHA256_data_test_LDADD = libCCAN.la
+tests_SHA256_data_test_LDFLAGS = $(AM_LDFLAGS) -static
+TESTS += tests/SHA256-data-test
+
+# ccan/crypto/sha256/test/run-test-vectors.c
+noinst_PROGRAMS += tests/SHA256-vector-test
+tests_SHA256_vector_test_SOURCES = ccan/crypto/sha256/test/run-test-vectors.c
+tests_SHA256_vector_test_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+tests_SHA256_vector_test_CFLAGS = $(AM_CFLAGS)
+tests_SHA256_vector_test_LDADD = libCCAN.la
+tests_SHA256_vector_test_LDFLAGS = $(AM_LDFLAGS) -static
+TESTS += tests/SHA256-vector-test
+
+# ccan/crypto/sha256/test/run-types.c
+noinst_PROGRAMS += tests/SHA256-type-test
+tests_SHA256_type_test_SOURCES = ccan/crypto/sha256/test/run-types.c
+tests_SHA256_type_test_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+tests_SHA256_type_test_CFLAGS = $(AM_CFLAGS)
+tests_SHA256_type_test_LDADD = libCCAN.la
+tests_SHA256_type_test_LDFLAGS = $(AM_LDFLAGS) -static
+TESTS += tests/SHA256-type-test
+
+# ccan/endian/test/compile_ok-constant.c
+noinst_PROGRAMS += tests/compiler-bswap-test
+tests_compiler_bswap_test_SOURCES = ccan/endian/test/compile_ok-constant.c
+tests_compiler_bswap_test_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+tests_compiler_bswap_test_CFLAGS = $(AM_CFLAGS)
+tests_compiler_bswap_test_LDADD = libCCAN.la
+tests_compiler_bswap_test_LDFLAGS = $(AM_LDFLAGS) -static
+TESTS += tests/compiler-bswap-test
+
+# ccan/str/hex/test/run.c
+noinst_PROGRAMS += tests/hex-test
+tests_hex_test_SOURCES = ccan/endian/test/run.c
+tests_hex_test_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+tests_hex_test_CFLAGS = $(AM_CFLAGS)
+tests_hex_test_LDADD = libCCAN.la
+tests_hex_test_LDFLAGS = $(AM_LDFLAGS) -static
+TESTS += tests/hex-test
+
+# ccan/tap/test/run.c
+noinst_PROGRAMS += tests/tap-test
+tests_tap_test_SOURCES = ccan/tap/test/run.c
+tests_tap_test_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+tests_tap_test_CFLAGS = $(AM_CFLAGS)
+tests_tap_test_LDADD = libCCAN.la
+tests_tap_test_LDFLAGS = $(AM_LDFLAGS) -static
+TESTS += tests/tap-test
+
+# ccan/time/test/run.c
+noinst_PROGRAMS += tests/time-test
+tests_time_test_SOURCES = ccan/time/test/run.c
+tests_time_test_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+tests_time_test_CFLAGS = $(AM_CFLAGS)
+tests_time_test_LDADD = libCCAN.la
+tests_time_test_LDFLAGS = $(AM_LDFLAGS) -static
+TESTS += tests/time-test
+
+# ccan/time/test/run-check.c
+noinst_PROGRAMS += tests/time-test-2
+tests_time_test_2_SOURCES = ccan/time/test/run-check.c
+tests_time_test_2_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+tests_time_test_2_CFLAGS = $(AM_CFLAGS)
+tests_time_test_2_LDADD = libCCAN.la
+tests_time_test_2_LDFLAGS = $(AM_LDFLAGS) -static
+TESTS += tests/time-test-2
+
+# ccan/time/test/run-monotonic.c
+noinst_PROGRAMS += tests/time-monotonic-test
+tests_time_monotonic_test_SOURCES = ccan/time/test/run-monotonic.c
+tests_time_monotonic_test_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+tests_time_monotonic_test_CFLAGS = $(AM_CFLAGS)
+tests_time_monotonic_test_LDADD = libCCAN.la
+tests_time_monotonic_test_LDFLAGS = $(AM_LDFLAGS) -static
+TESTS += tests/time-monotonic-test

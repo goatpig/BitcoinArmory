@@ -177,25 +177,35 @@ AM_CONDITIONAL([BUILD_DARWIN], [test x$BUILD_OS = xdarwin])
 
 AC_CONFIG_FILES(Makefile
 		cppForSwig/Makefile
-		cppForSwig/lmdb/Makefile)
+		cppForSwig/ccan/Makefile
+		cppForSwig/lmdb/Makefile
+		cppForSwig/chacha20poly1305/Makefile)
 
 AM_CONDITIONAL([BUILD_BENCH], [test x$want_benchmark = xyes])
 AM_CONDITIONAL([BUILD_TESTS], [test "x$want_tests" = "xyes"])
 
-AC_CONFIG_SUBDIRS([cppForSwig/fcgi cppForSwig/cryptopp])
+dnl ac_configure_args can only be set once and affects all subdirs.
+dnl Place all params here.
+dnl FCGI - No customs
+dnl Crypto++ - No customs
+dnl libbtc - --disable-wallet --disable-tools
+dnl libsecp256k1 (libbtc) - --disable-shared --with-pic --with-bignum=no
+ac_configure_args="${orig_config_args} --disable-wallet --disable-tools --disable-shared --with-pic --with-bignum=no"
+AC_CONFIG_SUBDIRS([cppForSwig/fcgi cppForSwig/cryptopp cppForSwig/libbtc])
 
 AC_OUTPUT
 
-echo "  Armory flags"
-echo "  CC              = $CC"
-echo "  CFLAGS          = $CFLAGS"
-echo "  CPP             = $CPP"
-echo "  CPPFLAGS        = $CPPFLAGS"
-echo "  CXX             = $CXX"
-echo "  CXXFLAGS        = $CXXFLAGS"
-echo "  LDFLAGS         = $LDFLAGS"
-echo "  LD              = $LD"
-echo "  with tests      = $want_tests"
-echo "  with benchmarks = $want_benchmark"
-echo "  debug symbols   = $want_debug"
-echo "  with GUI        = $with_gui"
+echo "  Armory Autotools flags"
+echo "  CC                = $CC"
+echo "  CFLAGS            = $CFLAGS"
+echo "  CPP               = $CPP"
+echo "  CPPFLAGS          = $CPPFLAGS"
+echo "  CXX               = $CXX"
+echo "  CXXFLAGS          = $CXXFLAGS"
+echo "  LDFLAGS           = $LDFLAGS"
+echo "  LD                = $LD"
+echo "  ac_configure_args = $ac_configure_args"
+echo "  with tests        = $want_tests"
+echo "  with benchmarks   = $want_benchmark"
+echo "  debug symbols     = $want_debug"
+echo "  with GUI          = $with_gui"

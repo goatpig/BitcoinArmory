@@ -1,0 +1,95 @@
+language: c
+
+cache:
+  apt: true
+  directories:
+  - depends/built
+  - depends/sdk-sources
+  - $HOME/Library/Caches/Homebrew
+
+addons:
+  apt:
+    packages:
+        - valgrind
+        - binutils-mingw-w64
+        - g++-mingw-w64-x86-64
+        - gcc-mingw-w64
+        - wine1.6
+        - libevent-dev
+
+before_install:
+  - if [ "${TRAVIS_OS_NAME}" = "osx" ]; then brew install valgrind gnu-sed --default-names; fi
+
+matrix:
+    fast_finish:
+        - true
+    include:
+      - os: osx
+        compiler: clang
+        env: RUN_MAKE_CHECK="yes" $BUILD_CONFIG='--enable-debug'
+      - os: osx
+        compiler: gcc
+        env: RUN_TOOLTESTS="yes" $BUILD_CONFIG=""
+      - os: linux
+        compiler: gcc
+        env: VALGRIND_UNIT_TESTS="yes" RUN_TOOLTESTS="yes" SUBMIT_COVERALLS="yes" $BUILD_CONFIG=''
+      - os: linux
+        compiler: x86_64-w64-mingw32
+        env: HOST="x86_64-w64-mingw32" CROSS_COMPILE="yes" RUN_WINE_UNIT_TESTS="yes" $BUILD_CONFIG="--disable-shared --enable-static --disable-net"
+      - os: linux
+        compiler: i686-w64-mingw32
+        env: HOST="i686-w64-mingw32" CROSS_COMPILE="yes" RUN_WINE_UNIT_TESTS="yes" $BUILD_CONFIG="--disable-shared --enable-static --disable-net"
+      - os: linux
+        compiler: arm-linux-gnueabihf
+        env: HOST="arm-linux-gnueabihf" CROSS_COMPILE="yes"
+        addons:
+          apt:
+            packages:
+              - g++-arm-linux-gnueabihf
+            sources:
+              - ubuntu-toolchain-r-test
+#      - os: linux
+#        compiler: i686-pc-linux-gnu
+#        env: HOST="i686-pc-linux-gnu" CROSS_COMPILE="yes"
+#        addons:
+#          apt:
+#            packages:
+#            - g++-arm-linux-gnueabihf
+#            - g++-multilib
+
+before_script:
+    - ./autogen.sh
+    - if [ "$CROSS_COMPILE" == "yes" ]; then
+          make -C depends HOST=$HOST;
+          LIBTOOL_APP_LDFLAGS='-all-static' LDFLAGS='-static' ./configure --prefix=$TRAVIS_BUILD_DIR/depends/$HOST $BUILD_CONFIG; cat config.log;
+      elif [ "$SUBMIT_COVERALLS" == "yes" ]; then
+          ./configure $BUILD_CONFIG CFLAGS='-fprofile-arcs -ftest-coverage'; cat config.log;
+      else
+          ./configure $BUILD_CONFIG; cat config.log;
+      fi
+
+script: 
+    - make -j2 V=1
+    - ls -la
+    - if ( [ "$VALGRIND_UNIT_TESTS" == "yes" ] ); then
+          valgrind --track-origins=yes --leak-check=full --error-exitcode=1 ./tests;
+          ./tests;
+      fi
+    - if ( [ "$RUN_MAKE_CHECK" == "yes" ] ); then
+          make check;
+          if [ ! -f test-suite.log; ]; then
+              cat test-suite.log;
+          fi
+      fi
+    - if ( [ "$RUN_WINE_UNIT_TESTS" == "yes" ] ); then
+          wine /home/travis/build/libbtc/libbtc/tests.exe;
+      fi
+    - if ( [ "$RUN_TOOLTESTS" == "yes" ] ); then
+          ./tooltests.py;
+      fi
+
+after_success:
+  - if [ "$SUBMIT_COVERALLS" == "yes" ]; then
+      sudo pip install -U "cpp-coveralls";
+      coveralls --verbose -i src -x c -e src/logdb -e src/secp256k1 -r $TRAVIS_BUILD_DIR -b $TRAVIS_BUILD_DIR --gcov-options '\-lp';
+    fi

@@ -1,0 +1,11 @@
+# Makefile .include for CCAN - Benchmarks
+
+# NB: Skipping ASM tests
+# ccan/crypto/sha256/benchmarks/double-sha-bench.c
+noinst_PROGRAMS += bench/SHA256Bench
+bench_SHA256Bench_SOURCES = ccan/crypto/sha256/benchmarks/double-sha-bench.c
+bench_SHA256Bench_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+bench_SHA256Bench_CFLAGS = $(AM_CFLAGS)
+bench_SHA256Bench_LDADD = libCCAN.la
+bench_SHA256Bench_LDFLAGS = $(AM_LDFLAGS) -static
+BENCH += bench/SHA256Bench
