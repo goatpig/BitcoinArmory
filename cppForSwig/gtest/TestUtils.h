@@ -16,7 +16,9 @@
 #include <stdint.h>
 #include <thread>
 #include "gtest.h"
+#include "btc/ecc.h"
 
+#include "../BIP151.h"
 #include "../log.h"
 #include "../BinaryData.h"
 #include "../BtcUtils.h"

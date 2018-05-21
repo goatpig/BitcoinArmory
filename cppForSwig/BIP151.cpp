@@ -9,15 +9,14 @@
 #include <cassert>
 #include <iomanip>
 
-extern "C" {
-#include "secp256k1_ecdh.h"
+#include "BIP151.h"
 #include "btc/ecc.h"
 #include "btc/hash.h"
 #include "btc/sha2.h"
+extern "C" {
 #include "ccan/crypto/hkdf_sha256/hkdf_sha256.h"
 }
 #include "log.h"
-#include "BIP151.h"
 
 // Because libbtc doesn't export its libsecp256k1 context, and we need one for
 // direct access to the ECDH code, just create one w/o signing or verification.
@@ -53,6 +52,17 @@ void shutdownBIP151CTX()
    }
 }
 
+const string hexData(const uint8_t* hexDataPtr, const size_t& hexDataPtrSize)
+{
+    ostringstream sid;
+    sid << hex << setfill('0');
+    for(uint i = 0; i < hexDataPtrSize; ++i)
+    {
+        sid << setw(2) << static_cast<int>(hexDataPtr[i]);
+    };
+    return sid.str();
+}
+
 // Default constructor for a BIP 151 session.
 // 
 // IN:  None
@@ -66,8 +76,7 @@ bip151Session::bip151Session()
    
 }
 
-// Overridden constructor for a BIP 151 session. Sets whether or not the session
-// is outgoing.
+// Overridden constructor for a BIP 151 session. Sets the session direction.
 // 
 // IN:  sessOut - Indicates session direction.
 // OUT: None
@@ -79,6 +88,20 @@ bip151Session::bip151Session(const bool& sessOut) : isOutgoing(sessOut)
    btc_privkey_gen(&genSymECDHPrivKey);
 }
 
+// Overridden constructor for a BIP 151 session. Sets the session direction and
+// sets the private key used in ECDH. USE WITH EXTREME CAUTION!!! Unless there's
+// a very specific need for a pre-determined key (e.g., test harness or key is
+// HW-generated), using this will just get you into trouble.
+// IN:  inSymECDHPrivKey - ECDH private key.
+//      sessOut - Indicates session direction.
+// OUT: None
+// RET: N/A
+bip151Session::bip151Session(btc_key* inSymECDHPrivKey, const bool& sessOut) :
+isOutgoing(sessOut)
+{
+   genSymECDHPrivKey = *inSymECDHPrivKey;
+}
+
 // Function that generates the symmetric keys required by the BIP 151
 // ciphersuite and performs any related setup.
 // 
@@ -88,28 +111,44 @@ bip151Session::bip151Session(const bool& sessOut) : isOutgoing(sessOut)
 int bip151Session::genSymKeys(const uint8_t* peerPubKey)
 {
    int retVal = -1;
+   btc_key sessionECDHKey;
+   secp256k1_pubkey peerECDHPK;
+   array<uint8_t, BIP151PUBKEYSIZE> parseECDHMulRes{};
+   size_t parseECDHMulResSize = parseECDHMulRes.size();
    switch(cipherType)
    {
    case bip151SymCiphers::CHACHA20POLY1305:
       // Confirm that the incoming pub key is valid and compressed.
-      secp256k1_pubkey peerECDHPK;
       if(secp256k1_ec_pubkey_parse(secp256k1_ecdh_ctx, &peerECDHPK, peerPubKey,
-                                   SECP256K1_EC_COMPRESSED) != 1)
+                                   BIP151PUBKEYSIZE) != 1)
       {
          LOGERR << "BIP 151 - Peer public key for session " << getSessionIDHex()
             << " is invalid.";
          return retVal;
       }
 
-      // libbtc doesn't care about ECDH. We have to go straight to libsecp256k1.
-      // Generate the session's ECDH key and delete our private key source.
-      btc_key sessionECDHKey;
-      if(secp256k1_ecdh(secp256k1_ecdh_ctx, &sessionECDHKey.privkey[0],
-                        &peerECDHPK, &genSymECDHPrivKey.privkey[0]) != 1)
+      // Perform ECDH here. Use direct calculations via libsecp256k1. The libbtc
+      // API doesn't offer ECDH or calls that allow for ECDH functionality.
+      //
+      // Do NOT use the libsecp256k1 ECDH module. On top of having to create a
+      // libsecp256k1 context or use libbtc's context, it has undocumented
+      // behavior. Instead of returning the X-coordinate, it returns a SHA-256
+      // hash of the compressed pub key in order to preserve secrecy. See
+      // https://github.com/bitcoin-core/secp256k1/pull/252#issuecomment-118129035
+      // for more info. This is NOT standard ECDH behavior. It will kill
+      // BIP 151 interopability.
+      if(secp256k1_ec_pubkey_tweak_mul(secp256k1_ecdh_ctx, &peerECDHPK,
+                                       genSymECDHPrivKey.privkey) != 1)
       {
-         LOGERR << "BIP 151 - ECDH key generation failed.";
+         LOGERR << "BIP 151 - ECDH failed.";
          return -1;
       }
+      secp256k1_ec_pubkey_serialize(secp256k1_ecdh_ctx, parseECDHMulRes.data(),
+                                    &parseECDHMulResSize, &peerECDHPK,
+                                    SECP256K1_EC_COMPRESSED);
+      copy(parseECDHMulRes.data() + 1, parseECDHMulRes.data() + 33,
+           sessionECDHKey.privkey);
+
       btc_privkey_cleanse(&genSymECDHPrivKey);
 
       // Generate the ChaCha20Poly1305 key set and the session ID.
@@ -162,7 +201,7 @@ int bip151Session::symKeySetup(const uint8_t* peerPubKey,
    {
    case bip151SymCiphers::CHACHA20POLY1305:
       // Generate the keys only if the peer key is the correct size (and valid)..
-      if((peerPubKeySize != 33) || (genSymKeys(peerPubKey) != 0))
+      if((peerPubKeySize != BIP151PUBKEYSIZE) || (genSymKeys(peerPubKey) != 0))
       {
          return retVal;
       }
@@ -190,18 +229,18 @@ int bip151Session::symKeySetup(const uint8_t* peerPubKey,
 // RET: None
 void bip151Session::calcChaCha20Poly1305Keys(const btc_key& sesECDHKey)
 {
-   array<unsigned char, 11> salt = {'b','i','t','c','o','i','n','e','c','d','h'};
-   array<unsigned char, 33> ikm;
+   array<uint8_t, 11> salt = {'b','i','t','c','o','i','n','e','c','d','h'};
+   array<uint8_t, 33> ikm;
    copy(begin(sesECDHKey.privkey), end(sesECDHKey.privkey), begin(ikm));
    ikm[32] = static_cast<uint8_t>(bip151SymCiphers::CHACHA20POLY1305);
-   array<unsigned char, 9> info1 = {'B','i','t','c','o','i','n','K','1'};
-   array<unsigned char, 9> info2 = {'B','i','t','c','o','i','n','K','2'};
+   array<uint8_t, 9> info1 = {'B','i','t','c','o','i','n','K','1'};
+   array<uint8_t, 9> info2 = {'B','i','t','c','o','i','n','K','2'};
 
    // NB: The ChaCha20Poly1305 library reverses the expected key order.
-   hkdf_sha256(&hkdfKeySet[0], 32, &salt[0], salt.size(), &ikm[0],
-               ikm.size(), &info2[0], info2.size());
-   hkdf_sha256(&hkdfKeySet[32], 32, &salt[0], salt.size(), &ikm[0],
-               ikm.size(), &info1[0], info1.size());
+   hkdf_sha256(static_cast<void*>(hkdfKeySet.data()), 32, static_cast<void*>(salt.data()), salt.size(), static_cast<void*>(ikm.data()),
+               ikm.size(), static_cast<void*>(info2.data()), info2.size());
+   hkdf_sha256(hkdfKeySet.data() + 32, 32, salt.data(), salt.size(), ikm.data(),
+               ikm.size(), info1.data(), info1.size());
    chacha20poly1305_init(&sessionCTX, hkdfKeySet.data(), hkdfKeySet.size());
 }
 
@@ -214,7 +253,7 @@ void bip151Session::calcChaCha20Poly1305Keys(const btc_key& sesECDHKey)
 void bip151Session::calcSessionID(const btc_key& sesECDHKey)
 {
    array<uint8_t, 11> salt = {'b','i','t','c','o','i','n','e','c','d','h'};
-   array<uint8_t, 33> ikm;
+   array<uint8_t, BIP151PUBKEYSIZE> ikm;
    copy(begin(sesECDHKey.privkey), end(sesECDHKey.privkey), ikm.data());
    ikm[32] = static_cast<uint8_t>(cipherType);
    array<uint8_t, 16> info = {'B','i','t','c','o','i','n','S','e','s','s','i','o','n','I','D'};
@@ -280,10 +319,10 @@ void bip151Session::sessionRekey()
 int bip151Session::inMsgIsRekey(const uint8_t* inMsg, const size_t& inMsgSize)
 {
    int retVal = -1;
-   if(inMsgSize == 33)
+   if(inMsgSize == BIP151PUBKEYSIZE)
    {
-     array<uint8_t, 33> rekeyMsg{};
-     retVal = memcmp(inMsg, rekeyMsg.data(), 33);
+     array<uint8_t, BIP151PUBKEYSIZE> rekeyMsg{};
+     retVal = memcmp(inMsg, rekeyMsg.data(), BIP151PUBKEYSIZE);
    }
    return retVal;
 }
@@ -396,7 +435,7 @@ int bip151Session::sendEncack(const bip151SymCiphers& cipherType)
 
    btc_pubkey ourPubKey; // Get compressed pub key from our priv key.
    btc_pubkey_from_key(&genSymECDHPrivKey, &ourPubKey);
-   array<uint8_t, 33> encInitData{};
+   array<uint8_t, BIP151PUBKEYSIZE> encInitData{};
    copy(begin(ourPubKey.pubkey), end(ourPubKey.pubkey), &encInitData[0]);
 
    // FIX - SEND PACKET HERE
@@ -462,8 +501,8 @@ int bip151Connection::handleEncinit(const uint8_t* inMsg,
    }
    else
    {
-      array<uint8_t, 33> inECDHPubKey;
-      copy(inMsg, inMsg + 33, inECDHPubKey.data());
+      array<uint8_t, BIP151PUBKEYSIZE> inECDHPubKey;
+      copy(inMsg, inMsg + BIP151PUBKEYSIZE, inECDHPubKey.data());
       if(inSes.symKeySetup(inECDHPubKey.data(), inECDHPubKey.size()) != 0 ||
          inSes.isCipherValid(static_cast<bip151SymCiphers>(inMsg[33])) != 0)
       {
@@ -492,7 +531,7 @@ int bip151Connection::handleEncack(const uint8_t* inMsg,
                                    const bool outDir)
 {
    int retVal = -1;
-   if(inMsgSize != 33)
+   if(inMsgSize != BIP151PUBKEYSIZE)
    {
       LOGERR << "BIP 151 - encack message size isn't 33 bytes. Will shut down "
          << "connection.";

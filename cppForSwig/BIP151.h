@@ -16,9 +16,9 @@
 
 #include <cstdint>
 
-extern "C" {
 #include "secp256k1.h"
 #include "btc/ecc_key.h"
+extern "C" {
 #include "chachapoly_aead.h"
 }
 
@@ -28,6 +28,11 @@ extern "C" {
 #define AUTHASSOCDATAFIELDLEN 4
 #define CHACHAPOLY1305_AEAD_ENC 1
 #define CHACHAPOLY1305_AEAD_DEC 0
+#define BIP151PUBKEYSIZE 33
+
+extern "C" {
+   int secp256k1_ec_pubkey_tweak_mul(const secp256k1_context* ctx, secp256k1_pubkey *pubkey, const unsigned char *tweak);
+}
 
 // Match against BIP 151 spec, although "INVALID" is our choice.
 enum class bip151SymCiphers : uint8_t {CHACHA20POLY1305 = 0, INVALID};
@@ -42,14 +47,15 @@ enum class bip151SymCiphers : uint8_t {CHACHA20POLY1305 = 0, INVALID};
 // off of their context.) Call these alongside any startup and shutdown code.
 void startupBIP151CTX();
 void shutdownBIP151CTX();
+const std::string hexData(const uint8_t* hexDataPtr, const size_t& hexDataPtrSize);
 
 class bip151Session
 {
 private:
    chachapolyaead_ctx sessionCTX; // Session context
-   array<uint8_t, 32> sessionID{}; // Session ID
-   array<uint8_t, 64> hkdfKeySet{}; // 2 32-byte keys (K1=Payload, K2=Data size)
-   btc_key genSymECDHPrivKey; // Our ECDH prv key. Delete ASAP once used.
+   std::array<uint8_t, 32> sessionID{}; // Session ID
+   std::array<uint8_t, 64> hkdfKeySet{}; // 2 32-byte keys (K1=Payload, K2=Data size)
+   btc_key genSymECDHPrivKey; // Prv key for ECDH deriv. Delete ASAP once used.
    uint32_t bytesOnCurKeys = 0; // Bytes ctr for when to switch
    bip151SymCiphers cipherType = bip151SymCiphers::INVALID;
    uint32_t seqNum = 0;
@@ -67,7 +73,10 @@ private:
 public:
    // Default constructor - Used when initiating contact with a peer.
    bip151Session();
+   // Constructor setting the session direction.
    bip151Session(const bool& sessOut);
+   // Constructor manually setting the ECDH setup prv key. USE WITH CAUTION.
+   bip151Session(btc_key* inSymECDHPrivKey, const bool& sessOut);
    // Set up the symmetric keys needed for the session.
    int symKeySetup(const uint8_t* peerPubKey, const size_t& peerKeyPubSize);
    void sessionRekey();
@@ -77,7 +86,8 @@ public:
    void setEncack() { encack = true; }
    bool getEncinit() const { return encinit; }
    bool getEncack() const { return encack; }
-   const string getSessionIDHex();
+   const uint8_t* getSessionID() const { return sessionID.data(); }
+   const std::string getSessionIDHex();
    bool handshakeComplete() const { return (encinit == true && encack == true); }
    bool getBytesOnCurKeys() const { return bytesOnCurKeys; }
    void setOutgoing() { isOutgoing = true; }

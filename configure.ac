@@ -189,8 +189,8 @@ dnl Place all params here.
 dnl FCGI - No customs
 dnl Crypto++ - No customs
 dnl libbtc - --disable-wallet --disable-tools
-dnl libsecp256k1 (libbtc) - --disable-shared --with-pic --with-bignum=no --enable-experimental --enable-module-ecdh
-ac_configure_args="${orig_config_args} --disable-wallet --disable-tools --disable-shared --with-pic --with-bignum=no --enable-experimental --enable-module-ecdh"
+dnl libsecp256k1 (libbtc) - --disable-shared --with-pic --with-bignum=no
+ac_configure_args="${orig_config_args} --disable-wallet --disable-tools --disable-shared --with-pic --with-bignum=no"
 AC_CONFIG_SUBDIRS([cppForSwig/fcgi cppForSwig/cryptopp cppForSwig/libbtc])
 
 AC_OUTPUT
