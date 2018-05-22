@@ -217,7 +217,8 @@ AM_CONDITIONAL([HAVE_CLANG], [test x$CLANG = xyes])
 AM_CONDITIONAL([BUILD_DARWIN], [test x$BUILD_OS = xdarwin])
 
 AC_CONFIG_FILES(Makefile
-		cppForSwig/Makefile)
+		cppForSwig/Makefile
+		cppForSwig/chacha20poly1305/Makefile)
 
 AM_CONDITIONAL([BUILD_BENCH], [test x$want_benchmark = xyes])
 AM_CONDITIONAL([BUILD_TESTS], [test "x$want_tests" = "xyes"])
@@ -234,7 +235,7 @@ AC_CONFIG_SUBDIRS([cppForSwig/cryptopp cppForSwig/libbtc])
 
 AC_OUTPUT
 
-echo "  Armory flags"
+echo "  Armory Autotools flags"
 echo "  CC              = $CC"
 echo "  CFLAGS          = $CFLAGS"
 echo "  CPP             = $CPP"

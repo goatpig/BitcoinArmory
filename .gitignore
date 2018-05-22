@@ -45,6 +45,10 @@ ArmoryDB
 CppBlockUtils.py
 _CppBlockUtils.*
 /cppForSwig/CppBlockUtils_wrap.cxx
+
+/cppForSwig/chacha20poly1305/chacha20poly1305bench
+/cppForSwig/chacha20poly1305/chacha20poly1305tests
+
 /cppForSwig/libcryptopp.a
 /cppForSwig/libleveldb.a
 /cppForSwig/cryptopp/*.a
@@ -58,6 +62,9 @@ _CppBlockUtils.*
 /cppForSwig/cryptopp/dlltest___Win32_Debug
 /cppForSwig/cryptopp/Release
 
+/cppForSwig/fcgi/fcgi_config.h
+/cppForSwig/fcgi/examples/*
+
 /cppForSwig/gtest/ContainerTests
 /cppForSwig/gtest/CppBlockUtilsTests
 /cppForSwig/gtest/*.txt
@@ -69,6 +76,13 @@ _CppBlockUtils.*
 /cppForSwig/gtest/*.lmdb*
 /cppForSwig/gtest/DB1kIterTest
 
+/cppForSwig/libbtc/bitcoin-spv
+
+!/cppForSwig/ccan/config.h
+/cppForSwig/ccan/**/*.d
+/cppForSwig/ccan/**/Info
+/cppForSwig/ccan/**/Info.plist
+
 *.DS_Store
 
 /ArmoryStandalone/*
@@ -79,8 +93,6 @@ _CppBlockUtils.*
 /cppForSwig/swigwin/*
 /cppForSwig/pypaths.txt
 /cppForSwig/output.txt
-
-/cppForSwig/libbtc/bitcoin-spv
 
 /pytest/*.bin
 /pytest/mytxfile
