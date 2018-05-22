@@ -3,12 +3,20 @@ bin_PROGRAMS =
 noinst_PROGRAMS =
 lib_LTLIBRARIES =
 TESTS =
-BENCH =
 
 LIBBTC = libbtc/libbtc.la
+LIBCHACHA20POLY1305 = chacha20poly1305/.libs/libchacha20poly1305.la
+LIBCPPBLOCKUTILS = libCppBlockUtils.la
+LIBARMORYCOMMON = libArmoryCommon.la
+LIBARMORYGUI = libArmoryGUI.la
+LIBARMORYCLI = libArmoryCLI.la
+LIBCRYPTOPP = cryptopp/libcryptopp.la
+LIBFCGI = fcgi/libfcgi/.libs/libfcgi.la
+LIBLMDB = lmdb/.libs/liblmdb.la
+LIBSECP256K1 = libbtc/src/secp256k1/libsecp256k1.la
 
-DIST_SUBDIRS = lmdb fcgi cryptopp libwebsockets/build libbtc
-SUBDIRS = lmdb fcgi cryptopp libwebsockets/build libbtc $(MAYBE_BUILD)
+DIST_SUBDIRS = lmdb fcgi cryptopp libwebsockets/build libbtc chacha20poly1305
+SUBDIRS = lmdb fcgi cryptopp libwebsockets/build libbtc chacha20poly1305 $(MAYBE_BUILD)
 
 SWIG_FLAGS = -c++ -python -threads
 AM_CXXFLAGS =
@@ -39,9 +47,9 @@ endif
 # Source 4: https://stackoverflow.com/a/33862145
 #LDFLAGS += -Wl,-rpath,. -Wl,-rpath,'$$ORIGIN/../more/libs/here' -Wl,-z,origin
 
-INCLUDE_FILES = -Ibech32/ref/c++ -Ifcgi -Ilibwebsockets/build/include \
-	-Ilibbtc/include -Ilibbtc/src/secp256k1/include
-
+INCLUDE_FILES = -Ilmdb -Icryptopp -Ifcgi -Ifcgi/include -Ichacha20poly1305 \
+	-Ilibbtc/src/secp256k1/include -Ibech32/ref/c++ -Ilibbtc/include \
+	-Ilibwebsockets/build/include
 ARMORYDB_SOURCE_FILES = main.cpp
 ARMORYGUI_SOURCE_FILES = CoinSelection.cpp \
 	SwigClient.cpp \
@@ -51,6 +59,7 @@ ARMORYGUI_SOURCE_FILES = CoinSelection.cpp \
         WebSocketClient.cpp
 ARMORYCLI_SOURCE_FILES = BDM_mainthread.cpp \
 	BDM_Server.cpp \
+	BIP151.cpp \
 	BitcoinP2P.cpp \
 	BlockchainScanner.cpp \
 	BlockchainScanner_Super.cpp \
@@ -99,33 +108,28 @@ ARMORYCOMMON_SOURCE_FILES = Accounts.cpp \
 	TxEvalState.cpp \
 	txio.cpp \
 	UniversalTimer.cpp \
+	WebSocketMessage.cpp \
 	bech32/ref/c++/bech32.cpp \
-	bech32/ref/c++/segwit_addr.cpp \
-        WebSocketMessage.cpp
-        
+	bech32/ref/c++/segwit_addr.cpp
 
 # libArmoryCommon - Required by all Armory programs/libraries.
 # Includes any files required by the common files.
-lib_LTLIBRARIES += libArmoryCommon.la
+lib_LTLIBRARIES += $(LIBARMORYCOMMON)
 libArmoryCommon_la_SOURCES = $(ARMORYCOMMON_SOURCE_FILES)
 libArmoryCommon_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
 libArmoryCommon_la_CXXFLAGS = $(AM_CXXFLAGS) -D__STDC_LIMIT_MACROS
-libArmoryCommon_la_LIBADD = lmdb/liblmdb.la \
-				cryptopp/libcryptopp.la \
-				-lpthread
+libArmoryCommon_la_LIBADD = $(LIBLMDB) $(LIBCRYPTOPP) -lpthread
 libArmoryCommon_la_LDFLAGS = $(LDFLAGS) -shared
 
 # Common command-line functionality library
 # NB: libwebsockets isn't Autotools, so that library's added differently than
 # Autotools-handled libraries. Ironically, LDADD for binaries doesn't care. Odd.
-lib_LTLIBRARIES += libArmoryCLI.la
+lib_LTLIBRARIES += $(LIBARMORYCLI)
 libArmoryCLI_la_SOURCES = $(ARMORYCLI_SOURCE_FILES)
-libArmoryCLI_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES) \
-			$(PYTHON_CFLAGS)
+libArmoryCLI_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES) $(PYTHON_CFLAGS)
 libArmoryCLI_la_CXXFLAGS = $(AM_CXXFLAGS) -Ilmdb -D__STDC_LIMIT_MACROS
-libArmoryCLI_la_LIBADD = fcgi/libfcgi/libfcgi.la \
-			 $(LIBBTC) \
-			 libArmoryCommon.la \
+libArmoryCLI_la_LIBADD = $(LIBBTC) $(LIBARMORYCOMMON) \
+			 $(LIBCHACHA20POLY1305) $(LIBSECP256K1) $(LIBFCGI) \
 			 -Llibwebsockets/build/lib/ -lwebsockets \
 			 -lpthread
 libArmoryCLI_la_LDFLAGS = $(LDFLAGS) -Wl,-rpath,'$$ORIGIN/../libwebsockets/build/lib' -shared
@@ -135,38 +139,42 @@ bin_PROGRAMS += ArmoryDB
 ArmoryDB_SOURCES = $(ARMORYDB_SOURCE_FILES)
 ArmoryDB_CXXFLAGS = $(AM_CXXFLAGS) -D__STDC_LIMIT_MACROS
 ArmoryDB_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
-ArmoryDB_LDADD = fcgi/libfcgi/libfcgi.la \
-		 libArmoryCommon.la \
-		 libArmoryCLI.la \
+ArmoryDB_LDADD = $(LIBFCGI) $(LIBARMORYCOMMON) $(LIBARMORYCLI) \
 		 libwebsockets/build/lib/libwebsockets.so \
 		 -lpthread
 ArmoryDB_LDFLAGS = -static $(LDFLAGS)
 
 if BUILD_CLIENT
 # Common GUI functionality library
-lib_LTLIBRARIES += libArmoryGUI.la
+lib_LTLIBRARIES += $(LIBARMORYGUI)
 libArmoryGUI_la_SOURCES = $(ARMORYGUI_SOURCE_FILES)
-libArmoryGUI_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES) \
-			$(PYTHON_CFLAGS)
+libArmoryGUI_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES) $(PYTHON_CFLAGS)
 libArmoryGUI_la_CXXFLAGS = $(AM_CXXFLAGS) -D__STDC_LIMIT_MACROS
-libArmoryGUI_la_LIBADD = libArmoryCommon.la cryptopp/libcryptopp.la \
-			-lpthread
+libArmoryGUI_la_LIBADD = $(LIBARMORYCOMMON) $(LIBCRYPTOPP) -lpthread
 libArmoryGUI_la_LDFLAGS = $(LDFLAGS) $(PYTHON_LDFLAGS) -shared
 
 #libCppBlockUtils - SWIG library.
 # "shared" LDFLAG due to SWIG requirements.
-lib_LTLIBRARIES += libCppBlockUtils.la
+lib_LTLIBRARIES += $(LIBCPPBLOCKUTILS)
 libCppBlockUtils_la_SOURCES = CppBlockUtils_wrap.cxx
-libCppBlockUtils_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES) \
-				$(PYTHON_CFLAGS)
-libCppBlockUtils_la_CXXFLAGS = $(AM_CXXFLAGS) -Ilmdb \
-				-Ifcgi/include \
-				-D__STDC_LIMIT_MACROS
-libCppBlockUtils_la_LIBADD = libArmoryCommon.la libArmoryGUI.la \
-				cryptopp/libcryptopp.la -lpthread
+libCppBlockUtils_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES) $(PYTHON_CFLAGS)
+libCppBlockUtils_la_CXXFLAGS = $(AM_CXXFLAGS) -D__STDC_LIMIT_MACROS
+libCppBlockUtils_la_LIBADD = $(LIBARMORYCOMMON) $(LIBARMORYGUI) $(LIBCRYPTOPP) \
+			     -lpthread
 libCppBlockUtils_la_LDFLAGS = $(LDFLAGS) $(PYTHON_LDFLAGS) -shared
 
-#custom rules
+# While not strictly necessary, it may be necessary at some point to use install
+# names (macOS equivlent of rpath) longer than the one used by default
+# (/usr/local/lib). Let's plan for it. Don't use "-install_name" flag, as that
+# only affects CppBlockUtils and not whatever it relies upon. Can fix that
+# elsewhere with the "install_name_tool" binary.
+if BUILD_DARWIN
+libCppBlockUtils_la_LDFLAGS += -headerpad_max_install_names
+libArmoryCommon_la_LDFLAGS += -headerpad_max_install_names
+libArmoryCLI_la_LDFLAGS += -headerpad_max_install_names
+endif
+
+#custom rules - always force SWIG to run and compile the resultant C++ file
 CppBlockUtils_wrap.cxx: CppBlockUtils.i
 	swig $(SWIG_FLAGS) CppBlockUtils.i
 
