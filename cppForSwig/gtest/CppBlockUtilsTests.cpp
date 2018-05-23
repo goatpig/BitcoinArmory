@@ -12,6 +12,71 @@
 ////////////////////////////////////////////////////////////////////////////////
 #include "TestUtils.h"
 
+////////////////////////////////////////////////////////////////////////////////
+// Test the BIP 151 code here.
+// Test vectors taken from Bcoin and CCAN test suites.
+class HKDF256Test : public ::testing::Test
+{
+protected:
+   virtual void SetUp(void)
+   {
+      // Official SHA-256 test vector data from RFC 5869.
+      string ikm1_hexstr = "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b";
+      string salt1_hexstr = "000102030405060708090a0b0c";
+      string info1_hexstr = "f0f1f2f3f4f5f6f7f8f9";
+      string okm1_hexstr = "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865";
+      string ikm2_hexstr = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f";
+      string salt2_hexstr = "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeaf";
+      string info2_hexstr = "b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff";
+      string okm2_hexstr = "b11e398dc80327a1c8e7f78c596a49344f012eda2d4efad8a050cc4c19afa97c59045a99cac7827271cb41c65e590e09da3275600c2f09b8367793a9aca3db71cc30c58179ec3e87c14c01d5c1f3434f1d87";
+      string ikm3_hexstr = "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b";
+      string okm3_hexstr = "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8";
+
+      ikm1 = READHEX(ikm1_hexstr);
+      salt1 = READHEX(salt1_hexstr);
+      info1 = READHEX(info1_hexstr);
+      okm1 = READHEX(okm1_hexstr);
+      ikm2 = READHEX(ikm2_hexstr);
+      salt2 = READHEX(salt2_hexstr);
+      info2 = READHEX(info2_hexstr);
+      okm2 = READHEX(okm2_hexstr);
+      ikm3 = READHEX(ikm3_hexstr);
+      okm3 = READHEX(okm3_hexstr);
+   }
+
+   BinaryData ikm1;
+   BinaryData salt1;
+   BinaryData info1;
+   SecureBinaryData okm1;
+   BinaryData ikm2;
+   BinaryData salt2;
+   BinaryData info2;
+   SecureBinaryData okm2;
+   BinaryData ikm3;
+   SecureBinaryData okm3;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+// Check the official RFC 5869 test vectors.
+TEST_F(HKDF256Test, RFC5869Vectors)
+{
+   BinaryData results1(42);
+   BinaryData results2(82);
+   BinaryData results3(42);
+   hkdf_sha256(results1.getPtr(), results1.getSize(), salt1.getPtr(),
+               salt1.getSize(), ikm1.getPtr(), ikm1.getSize(), info1.getPtr(),
+               info1.getSize());
+   hkdf_sha256(results2.getPtr(), results2.getSize(), salt2.getPtr(),
+               salt2.getSize(), ikm2.getPtr(), ikm2.getSize(), info2.getPtr(),
+               info2.getSize());
+   hkdf_sha256(results3.getPtr(), results3.getSize(), nullptr, 0, ikm3.getPtr(),
+               ikm3.getSize(), nullptr, 0);
+
+   EXPECT_EQ(okm1, results1);
+   EXPECT_EQ(okm2, results2);
+   EXPECT_EQ(okm3, results3);
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Test the BIP 151 code here.
@@ -45,23 +110,23 @@ protected:
       string sesIDCliOutSrvIn_hexstr = "7003d136f14a56bd52820f800e9b225cb652462f4757007e04c2e434ff1dbe89";
       string payload_hexstr = "deadbeef";
 
-      TestUtils::hex2bin(prvKeyClientIn_hexstr.c_str(), prvKeyClientIn.data());
-      TestUtils::hex2bin(prvKeyClientOut_hexstr.c_str(), prvKeyClientOut.data());
-      TestUtils::hex2bin(prvKeyServerIn_hexstr.c_str(), prvKeyServerIn.data());
-      TestUtils::hex2bin(prvKeyServerOut_hexstr.c_str(), prvKeyServerOut.data());
-      TestUtils::hex2bin(pubKeyClientIn_hexstr.c_str(), pubKeyClientIn.data());
-      TestUtils::hex2bin(pubKeyClientOut_hexstr.c_str(), pubKeyClientOut.data());
-      TestUtils::hex2bin(pubKeyServerIn_hexstr.c_str(), pubKeyServerIn.data());
-      TestUtils::hex2bin(pubKeyServerOut_hexstr.c_str(), pubKeyServerOut.data());
-      TestUtils::hex2bin(ecdhCliInSrvOut_hexstr.c_str(), ecdhCliInSrvOut.data());
-      TestUtils::hex2bin(ecdhCliOutSrvIn_hexstr.c_str(), ecdhCliOutSrvIn.data());
-      TestUtils::hex2bin(k1CliInSrvOut_hexstr.c_str(), k1CliInSrvOut.data());
-      TestUtils::hex2bin(k1CliOutSrvIn_hexstr.c_str(), k1CliOutSrvIn.data());
-      TestUtils::hex2bin(k2CliInSrvOut_hexstr.c_str(), k2CliInSrvOut.data());
-      TestUtils::hex2bin(k2CliOutSrvIn_hexstr.c_str(), k2CliOutSrvIn.data());
-      TestUtils::hex2bin(sesIDCliInSrvOut_hexstr.c_str(), sesIDCliInSrvOut.data());
-      TestUtils::hex2bin(sesIDCliOutSrvIn_hexstr.c_str(), sesIDCliOutSrvIn.data());
-      TestUtils::hex2bin(payload_hexstr.c_str(), payload.data());
+      prvKeyClientIn = READHEX(prvKeyClientIn_hexstr);
+      prvKeyClientOut = READHEX(prvKeyClientOut_hexstr);
+      prvKeyServerIn = READHEX(prvKeyServerIn_hexstr);
+      prvKeyServerOut = READHEX(prvKeyServerOut_hexstr);
+      pubKeyClientIn = READHEX(pubKeyClientIn_hexstr);
+      pubKeyClientOut = READHEX(pubKeyClientOut_hexstr);
+      pubKeyServerIn = READHEX(pubKeyServerIn_hexstr);
+      pubKeyServerOut = READHEX(pubKeyServerOut_hexstr);
+      ecdhCliInSrvOut = READHEX(ecdhCliInSrvOut_hexstr);
+      ecdhCliOutSrvIn = READHEX(ecdhCliOutSrvIn_hexstr);
+      k1CliInSrvOut = READHEX(k1CliInSrvOut_hexstr);
+      k1CliOutSrvIn = READHEX(k1CliOutSrvIn_hexstr);
+      k2CliInSrvOut = READHEX(k2CliInSrvOut_hexstr);
+      k2CliOutSrvIn = READHEX(k2CliOutSrvIn_hexstr);
+      sesIDCliInSrvOut = READHEX(sesIDCliInSrvOut_hexstr);
+      sesIDCliOutSrvIn = READHEX(sesIDCliOutSrvIn_hexstr);
+      payload = READHEX(payload_hexstr);
    }
 
    virtual void TearDown(void)
@@ -69,23 +134,24 @@ protected:
       shutdownBIP151CTX();
    }
 
-   array<uint8_t, 32> prvKeyClientIn;
-   array<uint8_t, 32> prvKeyClientOut;
-   array<uint8_t, 32> prvKeyServerIn;
-   array<uint8_t, 32> prvKeyServerOut;
-   array<uint8_t, 33> pubKeyClientIn;
-   array<uint8_t, 33> pubKeyClientOut;
-   array<uint8_t, 33> pubKeyServerIn;
-   array<uint8_t, 33> pubKeyServerOut;
-   array<uint8_t, 32> ecdhCliInSrvOut;
-   array<uint8_t, 32> ecdhCliOutSrvIn;
-   array<uint8_t, 32> k1CliInSrvOut;
-   array<uint8_t, 32> k1CliOutSrvIn;
-   array<uint8_t, 32> k2CliInSrvOut;
-   array<uint8_t, 32> k2CliOutSrvIn;
-   array<uint8_t, 32> sesIDCliInSrvOut;
-   array<uint8_t, 32> sesIDCliOutSrvIn;
-   array<uint8_t, 4> payload;
+   BinaryData prvKeyClientIn;
+   BinaryData prvKeyClientOut;
+   BinaryData prvKeyServerIn;
+   BinaryData prvKeyServerOut;
+   BinaryData pubKeyClientIn;
+   BinaryData pubKeyClientOut;
+   BinaryData pubKeyServerIn;
+   BinaryData pubKeyServerOut;
+   BinaryData ecdhCliInSrvOut;
+   BinaryData ecdhCliOutSrvIn;
+   BinaryData k1CliInSrvOut;
+   BinaryData k1CliOutSrvIn;
+   BinaryData k2CliInSrvOut;
+   BinaryData k2CliOutSrvIn;
+   BinaryData sesIDCliInSrvOut;
+   BinaryData sesIDCliOutSrvIn;
+   BinaryData payload;
+
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -95,10 +161,11 @@ TEST_F(BIP151Test, genChaCha20Poly1305)
    btc_key prvKeyCliOut;
    btc_key prvKeySrvIn;
    btc_key prvKeySrvOut;
-   copy(begin(prvKeyClientIn), end(prvKeyClientIn), &prvKeyCliIn.privkey[0]);
-   copy(begin(prvKeyClientOut), end(prvKeyClientOut), &prvKeyCliOut.privkey[0]);
-   copy(begin(prvKeyServerIn), end(prvKeyServerIn), &prvKeySrvIn.privkey[0]);
-   copy(begin(prvKeyServerOut), end(prvKeyServerOut), &prvKeySrvOut.privkey[0]);
+
+   prvKeyClientIn.copyTo(prvKeyCliIn.privkey);
+   prvKeyClientOut.copyTo(prvKeyCliOut.privkey);
+   prvKeyServerIn.copyTo(prvKeySrvIn.privkey);
+   prvKeyServerOut.copyTo(prvKeySrvOut.privkey);
    bip151Session clientIn(&prvKeyCliIn, false);
    bip151Session clientOut(&prvKeyCliOut, true);
    bip151Session serverIn(&prvKeySrvIn, false);
@@ -107,14 +174,19 @@ TEST_F(BIP151Test, genChaCha20Poly1305)
    clientOut.setCipherType(bip151SymCiphers::CHACHA20POLY1305);
    serverIn.setCipherType(bip151SymCiphers::CHACHA20POLY1305);
    serverOut.setCipherType(bip151SymCiphers::CHACHA20POLY1305);
-   clientIn.symKeySetup(pubKeyServerOut.data(), pubKeyServerOut.size());
-   clientOut.symKeySetup(pubKeyServerIn.data(), pubKeyServerIn.size());
-   serverIn.symKeySetup(pubKeyClientOut.data(), pubKeyClientOut.size());
-   serverOut.symKeySetup(pubKeyClientIn.data(), pubKeyClientIn.size());
-   EXPECT_TRUE(0 == memcmp(sesIDCliInSrvOut.data(), clientIn.getSessionID(),
-                           sesIDCliInSrvOut.size()));
-   // FIX - Finish putting tests here, which will likely rely on convoluted
-   // coding due to how the data makes EXPECT_EQ usage difficult or impossible.
+   clientIn.symKeySetup(pubKeyServerOut.getPtr(), pubKeyServerOut.getSize());
+   clientOut.symKeySetup(pubKeyServerIn.getPtr(), pubKeyServerIn.getSize());
+   serverIn.symKeySetup(pubKeyClientOut.getPtr(), pubKeyClientOut.getSize());
+   serverOut.symKeySetup(pubKeyClientIn.getPtr(), pubKeyClientIn.getSize());
+
+   BinaryData sesID1(clientIn.getSessionID(), 32);
+   BinaryData sesID2(serverOut.getSessionID(), 32);
+   BinaryData sesID3(clientOut.getSessionID(), 32);
+   BinaryData sesID4(serverIn.getSessionID(), 32);
+   EXPECT_EQ(sesIDCliInSrvOut, sesID1);
+   EXPECT_EQ(sesIDCliInSrvOut, sesID2);
+   EXPECT_EQ(sesIDCliOutSrvIn, sesID3);
+   EXPECT_EQ(sesIDCliOutSrvIn, sesID4);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

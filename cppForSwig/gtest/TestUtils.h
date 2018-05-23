@@ -18,6 +18,7 @@
 #include "gtest.h"
 #include "btc/ecc.h"
 
+#include "../hkdf.h"
 #include "../BIP151.h"
 #include "../log.h"
 #include "../BinaryData.h"

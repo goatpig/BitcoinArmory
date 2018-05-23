@@ -95,6 +95,7 @@ ARMORYCOMMON_SOURCE_FILES = Accounts.cpp \
 	DerivationScheme.cpp \
 	EncryptionUtils.cpp \
 	FcgiMessage.cpp \
+	hkdf.cpp \
 	JSON_codec.cpp \
 	lmdb_wrapper.cpp \
 	log.cpp \
@@ -118,7 +119,7 @@ lib_LTLIBRARIES += $(LIBARMORYCOMMON)
 libArmoryCommon_la_SOURCES = $(ARMORYCOMMON_SOURCE_FILES)
 libArmoryCommon_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
 libArmoryCommon_la_CXXFLAGS = $(AM_CXXFLAGS) -D__STDC_LIMIT_MACROS
-libArmoryCommon_la_LIBADD = $(LIBLMDB) $(LIBCRYPTOPP) -lpthread
+libArmoryCommon_la_LIBADD = $(LIBBTC) $(LIBLMDB) $(LIBCRYPTOPP) -lpthread
 libArmoryCommon_la_LDFLAGS = $(LDFLAGS) -shared
 
 # Common command-line functionality library

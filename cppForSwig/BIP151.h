@@ -11,8 +11,8 @@
 // between an Armory server and a remote Armory client, the server talking to
 // Core and feeding the (encrypted) data to the client.
 
-#ifndef ARMORY_BIP151_H
-#define ARMORY_BIP151_H
+#ifndef BIP151_H
+#define BIP151_H
 
 #include <cstdint>
 
@@ -30,10 +30,6 @@ extern "C" {
 #define CHACHAPOLY1305_AEAD_DEC 0
 #define BIP151PUBKEYSIZE 33
 
-extern "C" {
-   int secp256k1_ec_pubkey_tweak_mul(const secp256k1_context* ctx, secp256k1_pubkey *pubkey, const unsigned char *tweak);
-}
-
 // Match against BIP 151 spec, although "INVALID" is our choice.
 enum class bip151SymCiphers : uint8_t {CHACHA20POLY1305 = 0, INVALID};
 
@@ -47,7 +43,6 @@ enum class bip151SymCiphers : uint8_t {CHACHA20POLY1305 = 0, INVALID};
 // off of their context.) Call these alongside any startup and shutdown code.
 void startupBIP151CTX();
 void shutdownBIP151CTX();
-const std::string hexData(const uint8_t* hexDataPtr, const size_t& hexDataPtrSize);
 
 class bip151Session
 {
@@ -131,4 +126,4 @@ public:
                                             outSes.handshakeComplete() == true); }
 };
 
-#endif // ARMORY_BIP151_H
+#endif // BIP151_H
