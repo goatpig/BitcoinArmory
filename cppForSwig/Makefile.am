@@ -105,8 +105,11 @@ ARMORYCOMMON_SOURCE_FILES = Accounts.cpp \
 	DecryptedDataContainer.cpp \
 	DerivationScheme.cpp \
 	EncryptionUtils.cpp \
-	NetworkConfig.cpp \
+	hkdf.cpp \
+	JSON_codec.cpp \
+	lmdb_wrapper.cpp \
 	log.cpp \
+	NetworkConfig.cpp \
 	ReentrantLock.cpp \
 	Script.cpp \
 	Signer.cpp \
@@ -118,8 +121,7 @@ ARMORYCOMMON_SOURCE_FILES = Accounts.cpp \
 	UniversalTimer.cpp \
 	WebSocketMessage.cpp \
 	bech32/ref/c++/bech32.cpp \
-	bech32/ref/c++/segwit_addr.cpp \
-	WebSocketMessage.cpp
+	bech32/ref/c++/segwit_addr.cpp
 
 PROTOBUF_PROTO = protobuf/AddressBook.proto \
 	protobuf/AddressData.proto \
@@ -164,8 +166,8 @@ libArmoryCommon_la_SOURCES = $(ARMORYCOMMON_SOURCE_FILES)
 nodist_libArmoryCommon_la_SOURCES = $(PROTOBUF_CC) $(PROTOBUF_H)
 libArmoryCommon_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
 libArmoryCommon_la_CXXFLAGS = $(AM_CXXFLAGS) -D__STDC_LIMIT_MACROS
-libArmoryCommon_la_LIBADD = $(LIBLMDB) $(LIBCRYPTOPP) $(LIBBTC) $(LIBSECP256K1) \
-#				-lpthread -lprotobuf \
+libArmoryCommon_la_LIBADD = $(LIBBTC) $(LIBSECP256K1) $(LIBLMDB) $(LIBCRYPTOPP) \
+				-lpthread -lprotobuf
 #				-lwebsockets
 libArmoryCommon_la_LDFLAGS = $(LDFLAGS) $(PROTOBUF_FLAGS) $(LWS_LDFLAGS) -shared
 
@@ -176,6 +178,7 @@ libArmoryCLI_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES) $(PYTHON_CFLAGS)
 libArmoryCLI_la_CXXFLAGS = $(AM_CXXFLAGS) -Ilmdb/libraries/liblmdb -D__STDC_LIMIT_MACROS
 libArmoryCLI_la_LIBADD = $(LIBBTC) \
 			 $(LIBARMORYCOMMON) \
+			 $(LIBCHACHAPOLY1305) \
 			 -lpthread -lwebsockets
 libArmoryCLI_la_LDFLAGS = $(LDFLAGS) $(LWS_LDFLAGS) -shared
 

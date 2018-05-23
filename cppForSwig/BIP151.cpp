@@ -10,16 +10,14 @@
 #include <iomanip>
 
 #include "BIP151.h"
+#include "hkdf.h"
 #include "btc/ecc.h"
 #include "btc/hash.h"
 #include "btc/sha2.h"
-extern "C" {
-#include "ccan/crypto/hkdf_sha256/hkdf_sha256.h"
-}
 #include "log.h"
 
 // Because libbtc doesn't export its libsecp256k1 context, and we need one for
-// direct access to the ECDH code, just create one w/o signing or verification.
+// direct access to libsecp256k1 calls, just create one.
 static secp256k1_context* secp256k1_ecdh_ctx = nullptr;
 
 // FIX/NOTE: Just use btc_ecc_start() from btc/ecc.h when starting up Armory.
@@ -34,7 +32,8 @@ void startupBIP151CTX()
 {
    if(secp256k1_ecdh_ctx == nullptr)
    {
-      secp256k1_ecdh_ctx = secp256k1_context_create(SECP256K1_CONTEXT_NONE);
+      // VERIFY used to allow for EC multiplication, which won't work otherwise.
+      secp256k1_ecdh_ctx = secp256k1_context_create(SECP256K1_CONTEXT_VERIFY);
    }
    assert(secp256k1_ecdh_ctx != nullptr);
 }
@@ -52,17 +51,6 @@ void shutdownBIP151CTX()
    }
 }
 
-const string hexData(const uint8_t* hexDataPtr, const size_t& hexDataPtrSize)
-{
-    ostringstream sid;
-    sid << hex << setfill('0');
-    for(uint i = 0; i < hexDataPtrSize; ++i)
-    {
-        sid << setw(2) << static_cast<int>(hexDataPtr[i]);
-    };
-    return sid.str();
-}
-
 // Default constructor for a BIP 151 session.
 // 
 // IN:  None
@@ -73,7 +61,6 @@ bip151Session::bip151Session()
    // Generate the ECDH key off the bat.
    btc_privkey_init(&genSymECDHPrivKey);
    btc_privkey_gen(&genSymECDHPrivKey);
-   
 }
 
 // Overridden constructor for a BIP 151 session. Sets the session direction.
@@ -128,7 +115,8 @@ int bip151Session::genSymKeys(const uint8_t* peerPubKey)
       }
 
       // Perform ECDH here. Use direct calculations via libsecp256k1. The libbtc
-      // API doesn't offer ECDH or calls that allow for ECDH functionality.
+      // API doesn't offer ECDH or calls that allow for ECDH functionality. So,
+      // just multiply our priv key by their pub key and cut off the first byte.
       //
       // Do NOT use the libsecp256k1 ECDH module. On top of having to create a
       // libsecp256k1 context or use libbtc's context, it has undocumented
@@ -148,7 +136,6 @@ int bip151Session::genSymKeys(const uint8_t* peerPubKey)
                                     SECP256K1_EC_COMPRESSED);
       copy(parseECDHMulRes.data() + 1, parseECDHMulRes.data() + 33,
            sessionECDHKey.privkey);
-
       btc_privkey_cleanse(&genSymECDHPrivKey);
 
       // Generate the ChaCha20Poly1305 key set and the session ID.
@@ -237,8 +224,8 @@ void bip151Session::calcChaCha20Poly1305Keys(const btc_key& sesECDHKey)
    array<uint8_t, 9> info2 = {'B','i','t','c','o','i','n','K','2'};
 
    // NB: The ChaCha20Poly1305 library reverses the expected key order.
-   hkdf_sha256(static_cast<void*>(hkdfKeySet.data()), 32, static_cast<void*>(salt.data()), salt.size(), static_cast<void*>(ikm.data()),
-               ikm.size(), static_cast<void*>(info2.data()), info2.size());
+   hkdf_sha256(hkdfKeySet.data(), 32, salt.data(), salt.size(), ikm.data(),
+               ikm.size(), info2.data(), info2.size());
    hkdf_sha256(hkdfKeySet.data() + 32, 32, salt.data(), salt.size(), ikm.data(),
                ikm.size(), info1.data(), info1.size());
    chacha20poly1305_init(&sessionCTX, hkdfKeySet.data(), hkdfKeySet.size());
@@ -607,7 +594,7 @@ int bip151Connection::assemblePacket(const uint8_t* packetData,
                                      const bool& outDir)
 {
    int retVal = -1;
-   array<uint8_t, 2000> cipherData; // FIX - Adjust buffer size?
+   array<uint8_t, 2000> cipherData; // FIX - Switch to vector for dynamic size.
 
    bip151Session* sesToUse;
    if(outDir)
@@ -652,7 +639,7 @@ int bip151Connection::decryptPacket(const uint8_t* packetData,
                                     const bool& outDir)
 {
    int retVal = -1;
-   array<uint8_t, 2000> plainData; // FIX - Adjust buffer size?
+   array<uint8_t, 2000> plainData; // FIX - Switch to vector for dynamic size.
    uint32_t decryptedLen = 0;
 
    bip151Session* sesToUse;
