@@ -410,6 +410,7 @@ class SatoshiDaemonManager(object):
          pargs.append('-regtest')
 
       pargs.append('-datadir=%s' % self.satoshiHome)
+      pargs.append('-noprinttoconsole')
 
       try:
          # Don't want some strange error in this size-check to abort loading
