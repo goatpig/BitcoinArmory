@@ -96,8 +96,6 @@ enum ENDIAN
 #define LE ENDIAN_LITTLE
 #define BE ENDIAN_BIG
 
-using namespace std;
-
 class BinaryDataRef;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -184,7 +182,7 @@ public:
    }  
 
    /////////////////////////////////////////////////////////////////////////////
-   const vector<uint8_t>& getDataVector(void) const
+   const std::vector<uint8_t>& getDataVector(void) const
    {
       return data_;
    }
@@ -435,7 +433,7 @@ public:
       if(bigEndian)
          bdToHex.swapEndian();
 
-      vector<int8_t> outStr(2*getSize());
+      std::vector<int8_t> outStr(2*getSize());
       for( size_t i=0; i<getSize(); i++)
       {
          uint8_t nextByte = bdToHex.data_[i];
@@ -589,7 +587,7 @@ public:
    static BinaryData EmptyBinData_;
 
 protected:
-   vector<uint8_t> data_;
+   std::vector<uint8_t> data_;
 
 private:
    void alloc(size_t sz) 
@@ -939,7 +937,7 @@ public:
       if(bigEndian)
          bdToHex.swapEndian();
 
-      vector<int8_t> outStr(2*nBytes_);
+      std::vector<int8_t> outStr(2*nBytes_);
       for(size_t i=0; i<nBytes_; i++)
       {
          uint8_t nextByte = *(bdToHex.getPtr()+i);

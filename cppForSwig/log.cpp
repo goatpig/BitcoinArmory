@@ -8,4 +8,4 @@
 
 #include "log.h"
 
-mutex LoggerObj::mu_;
+std::mutex LoggerObj::mu_;

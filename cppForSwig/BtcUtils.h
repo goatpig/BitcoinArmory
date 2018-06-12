@@ -432,7 +432,7 @@ public:
    {
       uint64_t num = fullNum;
       num *= (fullNum < 0 ? -1 : 1);
-      vector<uint32_t> triplets;
+      std::vector<uint32_t> triplets;
       do
       {
          int bottom3 = (num % 1000);
@@ -663,19 +663,19 @@ public:
 
 
    /////////////////////////////////////////////////////////////////////////////
-   static BinaryData calculateMerkleRoot(vector<BinaryData> const & txhashlist)
+   static BinaryData calculateMerkleRoot(std::vector<BinaryData> const & txhashlist)
    {
-      vector<BinaryData> mtree = calculateMerkleTree(txhashlist);
+      std::vector<BinaryData> mtree = calculateMerkleTree(txhashlist);
       return mtree[mtree.size()-1];
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   static vector<BinaryData> calculateMerkleTree(vector<BinaryData> const & txhashlist)
+   static std::vector<BinaryData> calculateMerkleTree(std::vector<BinaryData> const & txhashlist)
    {
       // Don't know in advance how big this list will be, make a list too big
       // and copy the result to the right size list afterwards
       size_t numTx = txhashlist.size();
-      vector<BinaryData> merkleTree(3*numTx);
+      std::vector<BinaryData> merkleTree(3*numTx);
       CryptoPP::SHA256 sha256_;
       BinaryData hashInput(64);
       BinaryData hashOutput(32);
@@ -725,7 +725,7 @@ public:
    // hence we don't know in advance how big the object actually will be, so
    // we can't provide it as an input for safety checking...
    static void TxInCalcLength(uint8_t const * ptr, size_t size, 
-                       vector<size_t> * offsetsIn)
+                       std::vector<size_t> * offsetsIn)
    {
       BinaryRefReader brr(ptr, size);
 
@@ -791,9 +791,9 @@ public:
    /////////////////////////////////////////////////////////////////////////////
    static size_t TxCalcLength(uint8_t const * ptr,
                                 size_t size,
-                                vector<size_t> * offsetsIn,
-                                vector<size_t> * offsetsOut,
-                                vector<size_t> * offsetsWitness)
+                                std::vector<size_t> * offsetsIn,
+                                std::vector<size_t> * offsetsOut,
+                                std::vector<size_t> * offsetsWitness)
    {
       BinaryRefReader brr(ptr, size);  
       
@@ -887,9 +887,9 @@ public:
       uint8_t const * ptr,
       size_t len,
       bool fragged,
-      vector<size_t> * offsetsIn,
-      vector<size_t> * offsetsOut,
-      vector<size_t> * offsetsWitness)
+      std::vector<size_t> * offsetsIn,
+      std::vector<size_t> * offsetsOut,
+      std::vector<size_t> * offsetsWitness)
    {
       BinaryRefReader brr(ptr, len);  
 
@@ -1076,7 +1076,7 @@ public:
       {
          // TODO: All this complexity to check TxIn type may be too slow when 
          //       scanning the blockchain...will need to investigate later
-         vector<BinaryDataRef> splitScr = splitPushOnlyScriptRefs(script);
+         std::vector<BinaryDataRef> splitScr = splitPushOnlyScriptRefs(script);
    
          if(splitScr.size() == 0)
             return TXIN_SCRIPT_NONSTANDARD;
@@ -1182,7 +1182,7 @@ public:
    static BinaryData getMultisigUniqueKey(BinaryData const & script)
    {
 
-      vector<BinaryData> a160List(0);
+      std::vector<BinaryData> a160List(0);
 
       uint8_t M = getMultisigAddrList(script, a160List);
       size_t  N = a160List.size();
@@ -1206,10 +1206,10 @@ public:
    /////////////////////////////////////////////////////////////////////////////
    // Returns M in M-of-N.  Use addr160List.size() for N.  Output is sorted.
    static uint8_t getMultisigAddrList( BinaryData const & script, 
-                                       vector<BinaryData> & addr160List)
+                                       std::vector<BinaryData> & addr160List)
    {
 
-      vector<BinaryData> pkList;
+      std::vector<BinaryData> pkList;
       uint32_t M = getMultisigPubKeyList(script, pkList);
       size_t   N = pkList.size();
       
@@ -1227,7 +1227,7 @@ public:
    /////////////////////////////////////////////////////////////////////////////
    // Returns M in M-of-N.  Use pkList.size() for N.  Output is sorted.
    static uint8_t getMultisigPubKeyList( BinaryData const & script, 
-                                         vector<BinaryData> & pkList)
+                                         std::vector<BinaryData> & pkList)
    {
       if( script[-1] != 0xae )
          return 0;
@@ -1263,7 +1263,7 @@ public:
    // These two methods are basically just to make SWIG access easier
    static BinaryData getMultisigAddr160InfoStr( BinaryData const & script)
    {
-      vector<BinaryData> outVect;
+      std::vector<BinaryData> outVect;
       uint32_t M = getMultisigAddrList(script, outVect);
       size_t   N = outVect.size();
       
@@ -1279,7 +1279,7 @@ public:
    /////////////////////////////////////////////////////////////////////////////
    static BinaryData getMultisigPubKeyInfoStr( BinaryData const & script)
    {
-      vector<BinaryData> outVect;
+      std::vector<BinaryData> outVect;
       uint32_t M = getMultisigPubKeyList(script, outVect);
       size_t   N = outVect.size();
       
@@ -1329,7 +1329,7 @@ public:
             return getHash160(script.getSliceRef(-33, 33));
          case(TXIN_SCRIPT_SPENDP2SH):   
          {
-            vector<BinaryDataRef> pushVect = splitPushOnlyScriptRefs(script);
+            std::vector<BinaryDataRef> pushVect = splitPushOnlyScriptRefs(script);
             return getHash160(pushVect[pushVect.size()-1]);
          }
          case(TXIN_SCRIPT_COINBASE):    
@@ -1351,7 +1351,7 @@ public:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   static vector<BinaryDataRef> splitPushOnlyScriptRefs(BinaryDataRef script)
+   static std::vector<BinaryDataRef> splitPushOnlyScriptRefs(BinaryDataRef script)
    {
       list<BinaryDataRef> opList;
 
@@ -1393,10 +1393,10 @@ public:
             opList.push_back( brr.get_BinaryDataRef(1));
          }
          else
-            return vector<BinaryDataRef>(0);
+            return std::vector<BinaryDataRef>(0);
       }
 
-      vector<BinaryDataRef> vectOut(opList.size());
+      std::vector<BinaryDataRef> vectOut(opList.size());
       list<BinaryDataRef>::iterator iter;
       uint32_t i=0;
       for(iter = opList.begin(); iter != opList.end(); iter++,i++)
@@ -1406,10 +1406,10 @@ public:
 
 
    /////////////////////////////////////////////////////////////////////////////
-   static vector<BinaryData> splitPushOnlyScript(BinaryData const & script)
+   static std::vector<BinaryData> splitPushOnlyScript(BinaryData const & script)
    {
-      vector<BinaryDataRef> refs = splitPushOnlyScriptRefs(script);
-      vector<BinaryData> out(refs.size());
+      std::vector<BinaryDataRef> refs = splitPushOnlyScriptRefs(script);
+      std::vector<BinaryData> out(refs.size());
       for(uint32_t i=0; i<refs.size(); i++)
          out[i].copyFrom(refs[i]);
       return out;
@@ -1418,7 +1418,7 @@ public:
    /////////////////////////////////////////////////////////////////////////////
    static BinaryData getLastPushDataInScript(BinaryData const & script)
    {
-      vector<BinaryDataRef> refs = splitPushOnlyScriptRefs(script);
+      std::vector<BinaryDataRef> refs = splitPushOnlyScriptRefs(script);
       if(refs.size()==0)
          return BinaryData(0);
 
@@ -1605,7 +1605,7 @@ public:
       }
    }
    
-   static vector<string> convertScriptToOpStrings(BinaryData const & script)
+   static std::vector<string> convertScriptToOpStrings(BinaryData const & script)
    {
       list<string> opList;
 
@@ -1668,7 +1668,7 @@ public:
       }
 
       size_t nops = opList.size();
-      vector<string> vectOut(nops);
+      std::vector<string> vectOut(nops);
       list<string>::iterator iter;
       uint32_t op=0;
       for(iter = opList.begin(); iter != opList.end(); iter++)
@@ -1681,7 +1681,7 @@ public:
    
    static void pprintScript(BinaryData const & script)
    {
-      vector<string> oplist = convertScriptToOpStrings(script);
+      std::vector<string> oplist = convertScriptToOpStrings(script);
       for(uint32_t i=0; i<oplist.size(); i++)
          cout << "   " << oplist[i] << endl;
    }
@@ -1725,9 +1725,9 @@ public:
       return *(reinterpret_cast<int*>(in));
    }
 
-   static const vector<LedgerEntryData>& cast_to_LedgerVector(void* in)
+   static const std::vector<LedgerEntryData>& cast_to_LedgerVector(void* in)
    {
-      vector<LedgerEntryData>* vle = (vector<LedgerEntryData>*)in;
+      std::vector<LedgerEntryData>* vle = (std::vector<LedgerEntryData>*)in;
       return *vle;
    }
 
@@ -1737,15 +1737,15 @@ public:
       return *str;
    }
 
-   static const vector<string>& cast_to_string_vec(void *in)
+   static const std::vector<string>& cast_to_string_vec(void *in)
    {
-      vector<string>* strvec = (vector<string>*)in;
+      std::vector<string>* strvec = (std::vector<string>*)in;
       return *strvec;
    }
 
-   static vector<BinaryData> cast_to_BinaryDataVector(void *in)
+   static std::vector<BinaryData> cast_to_BinaryDataVector(void *in)
    {
-      vector<BinaryData>* vbd = (vector<BinaryData>*)in;
+      std::vector<BinaryData>* vbd = (std::vector<BinaryData>*)in;
       return *vbd;
    }
 
@@ -1853,7 +1853,7 @@ public:
       while (payload.getPtr()[pos++] == 0)
          div_output.push_front('1');
 
-      vector<char> div_vec;
+      std::vector<char> div_vec;
       div_vec.insert(div_vec.end(), div_output.begin(), div_output.end());
       BinaryData b58_output((uint8_t*)&div_vec[0], div_vec.size());
       return b58_output;
