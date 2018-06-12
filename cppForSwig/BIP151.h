@@ -21,6 +21,7 @@
 extern "C" {
 #include "chachapoly_aead.h"
 }
+#include "BinaryData.h"
 
 // With ChaCha20Poly1305, 1 GB is the max 
 #define CHACHA20POLY1305MAXBYTESSENT 10000000000
@@ -29,6 +30,7 @@ extern "C" {
 #define CHACHAPOLY1305_AEAD_ENC 1
 #define CHACHAPOLY1305_AEAD_DEC 0
 #define BIP151PUBKEYSIZE 33
+#define ENCINITMSGSIZE 34
 
 // Match against BIP 151 spec, although "INVALID" is our choice.
 enum class bip151SymCiphers : uint8_t {CHACHA20POLY1305 = 0, INVALID};
@@ -66,8 +68,6 @@ private:
    void chacha20Poly1305Rekey(uint8_t* keyToUpdate, const size_t& keySize);
 
 public:
-   // Default constructor - Used when initiating contact with a peer.
-   bip151Session();
    // Constructor setting the session direction.
    bip151Session(const bool& sessOut);
    // Constructor manually setting the ECDH setup prv key. USE WITH CAUTION.
@@ -77,25 +77,31 @@ public:
    void sessionRekey();
    // "Smart" ciphertype set. Checks to make sure it's valid.
    int setCipherType(const bip151SymCiphers& inCipher);
-   void setEncinit() { encinit = true; }
-   void setEncack() { encack = true; }
-   bool getEncinit() const { return encinit; }
-   bool getEncack() const { return encack; }
+   void setEncinitSeen() { encinit = true; }
+   void setEncackSeen() { encack = true; }
+   bool encinitSeen() const { return encinit; }
+   bool encackSeen() const { return encack; }
    const uint8_t* getSessionID() const { return sessionID.data(); }
-   const std::string getSessionIDHex();
-   bool handshakeComplete() const { return (encinit == true && encack == true); }
-   bool getBytesOnCurKeys() const { return bytesOnCurKeys; }
+   const std::string getSessionIDHex() const;
+   const bool handshakeComplete() const { return (encinit == true && encack == true); }
+   const bool getBytesOnCurKeys() const { return bytesOnCurKeys; }
    void setOutgoing() { isOutgoing = true; }
-   bool getOutgoing() const { return isOutgoing; }
+   const bool getOutgoing() const { return isOutgoing; }
    bool getSeqNum() const { return seqNum; }
+   const bip151SymCiphers getCipherType() const { return cipherType; }
    int inMsgIsRekey(const uint8_t* inMsg, const size_t& inMsgSize);
    bool rekeyNeeded();
    void addBytes(const uint32_t& sentBytes) { bytesOnCurKeys += sentBytes; }
-   int sendEncinit(const bip151SymCiphers& cipherType);
-   int sendEncack(const bip151SymCiphers& cipherType);
+   int getEncinitData(uint8_t* initBuffer, const size_t& initBufferSize,
+                      const bip151SymCiphers& cipherType);
+   int getEncackData(uint8_t* ackBuffer, const size_t& ackBufferSize);
    bool isCipherValid(const bip151SymCiphers& inCipher);
    void incSeqNum() { ++seqNum; };
    chachapolyaead_ctx* getSessionCtxPtr() { return &sessionCTX; };
+   int encPayload(uint8_t* cipherData, const size_t cipherSize,
+                  const uint8_t* plainData, const size_t plainSize);
+   int decPayload(const uint8_t* cipherData, const size_t cipherSize,
+                  uint8_t* plainData, const size_t plainSize);
 };
 
 class bip151Connection
@@ -104,26 +110,47 @@ private:
    bip151Session inSes;
    bip151Session outSes;
 
-   int encPayload(uint8_t* cipherData, const size_t& cipherSize,
-                  const uint8_t* plainData, const size_t plainSize,
-                  const uint32_t& curSeqNum, chachapolyaead_ctx* sesCtx);
-   int decPayload(const uint8_t* cipherData, const size_t& cipherSize,
-                  uint8_t* plainData, const size_t plainSize,
-                  const uint32_t& curSeqNum, chachapolyaead_ctx* sesCtx);
-
 public:
    // Default constructor - Used when initiating contact with a peer.
    bip151Connection();
-   int assemblePacket(const uint8_t* packetData, const size_t& packetDataSize,
-                      const bool& outDir);
-   int decryptPacket(const uint8_t* packetData, const size_t& packetDataSize,
-                     const bool& outDir);
-   int handleEncinit(const uint8_t* inMsg, const size_t& inMsgSize,
-                     const bip151SymCiphers& cipherType, const bool outDir);
-   int handleEncack(const uint8_t* inMsg, const size_t& inMsgSize,
-                    const bool outDir);
-   bool connectionComplete() const { return(inSes.handshakeComplete() == true &&
+   // Constructor manually setting the ECDH setup prv keys. USE WITH CAUTION.
+   bip151Connection(btc_key* inSymECDHPrivKeyIn, btc_key* inSymECDHPrivKeyOut);
+   int assemblePacket(const uint8_t* plainData, const size_t& plainSize,
+                      uint8_t* cipherData, const size_t& cipherSize);
+   int decryptPacket(const uint8_t* cipherData, const size_t& cipherSize,
+                     uint8_t* plainData, const size_t& plainSize);
+   const bool updateSession(const size_t& plaintextSize, const bool& outDir);
+   int processEncinit(const uint8_t* inMsg, const size_t& inMsgSize,
+                      const bool outDir);
+   int processEncack(const uint8_t* inMsg, const size_t& inMsgSize,
+                     const bool outDir);
+   const int getEncinitData(uint8_t* encinitBuf, const size_t& encinitBufSize,
+                            const bip151SymCiphers& cipherType);
+   const int getEncackData(uint8_t* encackBuf, const size_t& encBufSize);
+   const uint8_t* getSessionID(const bool& sesDir);
+   const bool connectionComplete() const { return(inSes.handshakeComplete() == true &&
                                             outSes.handshakeComplete() == true); }
+};
+
+// Class to use on BIP 151 encrypted messages. Contains the plaintext contents
+// and can generate plaintext packet contents but not the Poly1305 tag.
+class bip151Message
+{
+private:
+   BinaryData cmd;
+   BinaryData payload;
+
+public:
+   bip151Message();
+   bip151Message(const uint8_t* inCmd, const size_t& inCmdSize,
+                 const uint8_t* inPayload, const size_t& inPayloadSize);
+   void setPayload(const uint8_t* inCmd, const size_t& inCmdSize,
+                   const uint8_t* inPayload, const size_t& inPayloadSize);
+   int setPayloadStruct(uint8_t* plaintextData,
+                        const size_t& plaintextDataSize);
+   bool getPayloadStruct(uint8_t* outStruct, const size_t& outStructSize,
+                         size_t& finalStructSize);
+   const size_t messageSizeHint();
 };
 
 #endif // BIP151_H

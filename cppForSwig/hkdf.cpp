@@ -39,7 +39,8 @@ void hkdf_sha256(uint8_t *result, const size_t &resultSize,
 
    // Write an explicit float value in order to force the ceil() call to round
    // up if necessary.
-   float numStepsF = static_cast<float>(resultSize) / static_cast<float>(SHA256_DIGEST_LENGTH);
+   float numStepsF = static_cast<float>(resultSize) / \
+                     static_cast<float>(SHA256_DIGEST_LENGTH);
    unsigned int numSteps = ceil(numStepsF);
    unsigned int hashInputBytes = isize + 1;
    unsigned int totalHashBytes = numSteps * SHA256_DIGEST_LENGTH;

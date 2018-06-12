@@ -9,12 +9,13 @@
 #include <cassert>
 #include <iomanip>
 
-#include "BIP151.h"
 #include "hkdf.h"
 #include "btc/ecc.h"
 #include "btc/hash.h"
 #include "btc/sha2.h"
+#include "BtcUtils.h"
 #include "log.h"
+#include "BIP151.h"
 
 // Because libbtc doesn't export its libsecp256k1 context, and we need one for
 // direct access to libsecp256k1 calls, just create one.
@@ -32,8 +33,11 @@ void startupBIP151CTX()
 {
    if(secp256k1_ecdh_ctx == nullptr)
    {
+      // SIGN used to generate public keys from private keys. (Can be removed
+      // once libbtc exports compressed public keys.)
       // VERIFY used to allow for EC multiplication, which won't work otherwise.
-      secp256k1_ecdh_ctx = secp256k1_context_create(SECP256K1_CONTEXT_VERIFY);
+      secp256k1_ecdh_ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | \
+                                                    SECP256K1_CONTEXT_VERIFY);
    }
    assert(secp256k1_ecdh_ctx != nullptr);
 }
@@ -49,18 +53,6 @@ void shutdownBIP151CTX()
    {
       secp256k1_context_destroy(secp256k1_ecdh_ctx);
    }
-}
-
-// Default constructor for a BIP 151 session.
-// 
-// IN:  None
-// OUT: None
-// RET: N/A
-bip151Session::bip151Session()
-{
-   // Generate the ECDH key off the bat.
-   btc_privkey_init(&genSymECDHPrivKey);
-   btc_privkey_gen(&genSymECDHPrivKey);
 }
 
 // Overridden constructor for a BIP 151 session. Sets the session direction.
@@ -86,7 +78,12 @@ bip151Session::bip151Session(const bool& sessOut) : isOutgoing(sessOut)
 bip151Session::bip151Session(btc_key* inSymECDHPrivKey, const bool& sessOut) :
 isOutgoing(sessOut)
 {
-   genSymECDHPrivKey = *inSymECDHPrivKey;
+   // libbtc assumes it'll generate the private key. If you want to set it, you
+   // have to go into the private key struct.
+   btc_privkey_init(&genSymECDHPrivKey);
+   std::copy(inSymECDHPrivKey->privkey,
+             inSymECDHPrivKey->privkey + 32,
+             genSymECDHPrivKey.privkey);
 }
 
 // Function that generates the symmetric keys required by the BIP 151
@@ -100,8 +97,9 @@ int bip151Session::genSymKeys(const uint8_t* peerPubKey)
    int retVal = -1;
    btc_key sessionECDHKey;
    secp256k1_pubkey peerECDHPK;
-   array<uint8_t, BIP151PUBKEYSIZE> parseECDHMulRes{};
+   std::array<uint8_t, BIP151PUBKEYSIZE> parseECDHMulRes{};
    size_t parseECDHMulResSize = parseECDHMulRes.size();
+
    switch(cipherType)
    {
    case bip151SymCiphers::CHACHA20POLY1305:
@@ -131,12 +129,12 @@ int bip151Session::genSymKeys(const uint8_t* peerPubKey)
          LOGERR << "BIP 151 - ECDH failed.";
          return -1;
       }
+
       secp256k1_ec_pubkey_serialize(secp256k1_ecdh_ctx, parseECDHMulRes.data(),
                                     &parseECDHMulResSize, &peerECDHPK,
                                     SECP256K1_EC_COMPRESSED);
-      copy(parseECDHMulRes.data() + 1, parseECDHMulRes.data() + 33,
-           sessionECDHKey.privkey);
-      btc_privkey_cleanse(&genSymECDHPrivKey);
+      std::copy(parseECDHMulRes.data() + 1, parseECDHMulRes.data() + 33,
+                sessionECDHKey.privkey);
 
       // Generate the ChaCha20Poly1305 key set and the session ID.
       calcChaCha20Poly1305Keys(sessionECDHKey);
@@ -179,21 +177,28 @@ bool bip151Session::rekeyNeeded()
 // 
 // IN:  peerPubKey  (The peer's public key - Needs to be validated)
 // OUT: None
-// RET: N/A
+// RET: -1 if failure, 0 if success.
 int bip151Session::symKeySetup(const uint8_t* peerPubKey,
                                const size_t& peerPubKeySize)
 {
    int retVal = -1;
+
    switch(cipherType)
    {
    case bip151SymCiphers::CHACHA20POLY1305:
-      // Generate the keys only if the peer key is the correct size (and valid)..
+      // Generate the keys only if the peer key is the correct size (and valid).
       if((peerPubKeySize != BIP151PUBKEYSIZE) || (genSymKeys(peerPubKey) != 0))
       {
          return retVal;
       }
       else
       {
+         // We're done with the ECDH key now. Nuke it.
+         // **Applies only to outbound sessions.**
+         if(isOutgoing)
+         {
+            btc_privkey_cleanse(&genSymECDHPrivKey);
+         }
          retVal = 0;
       }
       break;
@@ -216,18 +221,19 @@ int bip151Session::symKeySetup(const uint8_t* peerPubKey,
 // RET: None
 void bip151Session::calcChaCha20Poly1305Keys(const btc_key& sesECDHKey)
 {
-   array<uint8_t, 11> salt = {'b','i','t','c','o','i','n','e','c','d','h'};
-   array<uint8_t, 33> ikm;
-   copy(begin(sesECDHKey.privkey), end(sesECDHKey.privkey), begin(ikm));
+   BinaryData salt("bitcoinecdh");
+   std::array<uint8_t, 33> ikm;
+   std::copy(sesECDHKey.privkey, sesECDHKey.privkey + 32,
+             ikm.data());
    ikm[32] = static_cast<uint8_t>(bip151SymCiphers::CHACHA20POLY1305);
-   array<uint8_t, 9> info1 = {'B','i','t','c','o','i','n','K','1'};
-   array<uint8_t, 9> info2 = {'B','i','t','c','o','i','n','K','2'};
+   BinaryData info1("BitcoinK1");
+   BinaryData info2("BitcoinK2");
 
    // NB: The ChaCha20Poly1305 library reverses the expected key order.
-   hkdf_sha256(hkdfKeySet.data(), 32, salt.data(), salt.size(), ikm.data(),
-               ikm.size(), info2.data(), info2.size());
-   hkdf_sha256(hkdfKeySet.data() + 32, 32, salt.data(), salt.size(), ikm.data(),
-               ikm.size(), info1.data(), info1.size());
+   hkdf_sha256(hkdfKeySet.data(), 32, salt.getPtr(), salt.getSize(), ikm.data(),
+               ikm.size(), info2.getPtr(), info2.getSize());
+   hkdf_sha256(hkdfKeySet.data() + 32, 32, salt.getPtr(), salt.getSize(),
+               ikm.data(), ikm.size(), info1.getPtr(), info1.getSize());
    chacha20poly1305_init(&sessionCTX, hkdfKeySet.data(), hkdfKeySet.size());
 }
 
@@ -239,30 +245,16 @@ void bip151Session::calcChaCha20Poly1305Keys(const btc_key& sesECDHKey)
 // RET: None
 void bip151Session::calcSessionID(const btc_key& sesECDHKey)
 {
-   array<uint8_t, 11> salt = {'b','i','t','c','o','i','n','e','c','d','h'};
-   array<uint8_t, BIP151PUBKEYSIZE> ikm;
-   copy(begin(sesECDHKey.privkey), end(sesECDHKey.privkey), ikm.data());
+   BinaryData salt("bitcoinecdh");
+   std::array<uint8_t, BIP151PUBKEYSIZE> ikm;
+   std::copy(sesECDHKey.privkey, sesECDHKey.privkey + 32,
+             ikm.data());
    ikm[32] = static_cast<uint8_t>(cipherType);
-   array<uint8_t, 16> info = {'B','i','t','c','o','i','n','S','e','s','s','i','o','n','I','D'};
+   BinaryData info("BitcoinSessionID");
 
-   hkdf_sha256(sessionID.data(), sessionID.size(), salt.data(), salt.size(),
-               ikm.data(), ikm.size(), info.data(), info.size());
-}
-
-// A helper function that returns a hex string of the session ID.
-// 
-// IN:  None
-// OUT: None
-// RET: A const string with the session ID hex string.
-const string bip151Session::getSessionIDHex()
-{
-    ostringstream sid;
-    sid << hex << setfill('0');
-    for(uint8_t curChar : sessionID)
-    {
-        sid << setw(2) << curChar;
-    };
-    return sid.str();
+   hkdf_sha256(sessionID.data(), sessionID.size(), salt.getPtr(),
+               salt.getSize(), ikm.data(), ikm.size(), info.getPtr(),
+               info.getSize());
 }
 
 // A helper function that can be used when it's time to rekey a session. It
@@ -278,7 +270,8 @@ void bip151Session::sessionRekey()
    switch(cipherType)
    {
    case bip151SymCiphers::CHACHA20POLY1305:
-      // Process both symmetric keys at the same time.
+      // Process both symmetric keys at the same time. Reset the # of bytes on
+      // the session but *not* the sequence number.
       uint8_t* poly1305Key;
       uint8_t* chacha20Key;
       poly1305Key = &hkdfKeySet[0];
@@ -287,8 +280,6 @@ void bip151Session::sessionRekey()
       chacha20Poly1305Rekey(chacha20Key, 32);
       bytesOnCurKeys = 0;
       break;
-
-      // FIX - Send rekey packet.
 
    default:
       // You should never get here.
@@ -302,18 +293,101 @@ void bip151Session::sessionRekey()
 // IN:  inMsg - Pointer to a message to check for a rekey request.
 //      inMsgSize - incoming message size. Must be 33 bytes.
 // OUT: None
-// RET: 0 if valid, a negative value (probably -1) if not valid.
+// RET: 0 if rekey, any other value if not rekey.
 int bip151Session::inMsgIsRekey(const uint8_t* inMsg, const size_t& inMsgSize)
 {
    int retVal = -1;
    if(inMsgSize == BIP151PUBKEYSIZE)
    {
-     array<uint8_t, BIP151PUBKEYSIZE> rekeyMsg{};
+     std::array<uint8_t, BIP151PUBKEYSIZE> rekeyMsg{};
      retVal = memcmp(inMsg, rekeyMsg.data(), BIP151PUBKEYSIZE);
    }
    return retVal;
 }
 
+// A helper function that encrypts a payload. The code expects the BIP 151
+// encrypted messages structure, minus the MAC (Poly1305) tag. The encrypted
+// payload *will* include the MAC tag.
+//
+// IN:  plainData - Plaintext data to encrypt.
+//      plainSize - The size of the plaintext buffer. The size *must* be the
+//                   exact length of the actual plaintext buffer.
+//      cipherSize - The size of the ciphertext buffer. The size *must* be at least
+//                   16 bytes larger than the plaintext buffer.
+// OUT: cipherData - The encrypted plaintext data.
+// RET: -1 if failure, 0 if success
+int bip151Session::encPayload(uint8_t* cipherData,
+                              const size_t cipherSize,
+                              const uint8_t* plainData,
+                              const size_t plainSize)
+{
+   int retVal = -1;
+   assert(cipherSize >= (plainSize + 16));
+
+   if(chacha20poly1305_crypt(&sessionCTX,
+                             seqNum,
+                             cipherData + 4,
+                             plainData + 4,
+                             plainSize - AUTHASSOCDATAFIELDLEN,
+                             0,
+                             CHACHAPOLY1305_AEAD_ENC) == -1)
+   {
+      LOGERR << "Encryption at sequence number " << seqNum << " failed.";
+   }
+   else
+   {
+      retVal = 0;
+   }
+
+   ++seqNum;
+   return retVal;
+}
+
+// A helper function that decrypts a payload. The code expects the BIP 151
+// encrypted messages structure, with the MAC (Poly1305) tag. The decrypted
+// payload *will not* include the MAC tag but the tag will be authenticated
+// before decryption occurs.
+//
+// IN:  cipherData - The buffer (w/ MAC tag) to decrypt. Must be at least 16
+//                   bytes larger than the resulting plaintext buffer.
+//      cipherSize - The size of the ciphertext buffer. The size *must* be the
+//                   exact length of the actual ciphertext.
+//      plainSize - The size of the plaintext buffer. The size *must* be at
+//                  least as large as the ciphertext buffer.
+// OUT: plainData - The decrypted ciphertext data.
+// RET: -1 if failure, 0 if success
+int bip151Session::decPayload(const uint8_t* cipherData,
+                              const size_t cipherSize,
+                              uint8_t* plainData,
+                              const size_t plainSize)
+{
+   int retVal = -1;
+   uint32_t decryptedLen = 0;
+   assert(cipherSize <= plainSize);
+
+   chacha20poly1305_get_length(&sessionCTX,
+                               &decryptedLen,
+                               seqNum,
+                               cipherData,
+                               cipherSize);
+   if(chacha20poly1305_crypt(&sessionCTX,
+                             seqNum,
+                             plainData,
+                             cipherData,
+                             decryptedLen,
+                             AUTHASSOCDATAFIELDLEN,
+                             CHACHAPOLY1305_AEAD_DEC) == -1)
+   {
+      LOGERR << "Decryption at sequence number " << seqNum << " failed.";
+   }
+   else
+   {
+      retVal = 0;
+   }
+
+   ++seqNum;
+   return retVal;
+}
 
 // Internal function that actually does the ChaCha20Poly1305 rekeying.
 // 
@@ -324,12 +398,12 @@ void bip151Session::chacha20Poly1305Rekey(uint8_t* keyToUpdate,
                                           const size_t& keySize)
 {
    // Generate, via 2xSHA256, a new symmetric key.
-   array<uint8_t, 64> hashData;
-   copy(begin(sessionID), end(sessionID), &hashData[0]);
-   copy(keyToUpdate, keyToUpdate + keySize, &hashData[32]);
+   std::array<uint8_t, 64> hashData;
+   std::copy(std::begin(sessionID), std::end(sessionID), &hashData[0]);
+   std::copy(keyToUpdate, keyToUpdate + keySize, &hashData[32]);
    uint256 hashOut;
    btc_hash(hashData.data(), hashData.size(), hashOut);
-   copy(begin(hashOut), end(hashOut), keyToUpdate);
+   std::copy(std::begin(hashOut), std::end(hashOut), keyToUpdate);
 }
 
 // A helper function that confirms whether or not we have a valid ciphersuite,
@@ -348,7 +422,8 @@ int bip151Session::setCipherType(const bip151SymCiphers& inCipher)
    }
    else
    {
-      LOGERR << "BIP 151 - Invalid ciphersuite (" << static_cast<int>(cipherType) << ")";
+      LOGERR << "BIP 151 - Invalid ciphersuite type ("
+         << static_cast<int>(cipherType) << ")";
    }
    return retVal;
 }
@@ -381,54 +456,98 @@ void bip151Session::gettempECDHPubKey(btc_pubkey* tempECDHPubKey)
    btc_pubkey_from_key(&genSymECDHPrivKey, tempECDHPubKey);
 }
 
-// Send an encinit msg.
-// 
-// IN:  cipherType - The cipher type to send.
-// OUT: None
+// Function that gets the data sent alongside an encinit message. This can be
+// used to get data for encrypted and unencrypted encinit messages.
+//
+// IN:  initBufferSize - The size of the output buffer.
+//      cipherType - The cipher type to send.
+// OUT: initBuffer - The buffer with the encinit data.
 // RET: -1 if failure, 0 if success
-int bip151Session::sendEncinit(const bip151SymCiphers& cipherType)
+int bip151Session::getEncinitData(uint8_t* initBuffer,
+                                  const size_t& initBufferSize,
+                                  const bip151SymCiphers& cipherType)
 {
    int retVal = -1;
-   if(setCipherType(cipherType) != 0)
+   if(setCipherType(cipherType) != 0 || initBufferSize > ENCINITMSGSIZE)
    {
       return retVal;
    }
 
-   btc_pubkey ourPubKey; // Get compressed pub key from our priv key.
-   btc_pubkey_from_key(&genSymECDHPrivKey, &ourPubKey);
-   array<uint8_t, 34> encInitData{};
-   copy(begin(ourPubKey.pubkey), end(ourPubKey.pubkey), &encInitData[0]);
-   encInitData[33] = static_cast<uint8_t>(cipherType);
+   // Ideally, libbtc would be used here. Unfortunately, it doesn't output
+   // compressed public keys (although it's aware of them). Go straight to
+   // libsecp256k1 until this is fixed upstream.
+   secp256k1_pubkey ourPubKey;
+   size_t copyLen = BIP151PUBKEYSIZE;
+   std::array<uint8_t, BIP151PUBKEYSIZE> ourCompPubKey{};
+   if(!secp256k1_ec_pubkey_create(secp256k1_ecdh_ctx,
+                                 &ourPubKey,
+                                 genSymECDHPrivKey.privkey))
+   {
+      LOGERR << "BIP 151 - Invalid public key creation. Closing connection.";
+      return retVal;
+   }
+   secp256k1_ec_pubkey_serialize(secp256k1_ecdh_ctx,
+                                 initBuffer,
+                                 &copyLen,
+                                 &ourPubKey,
+                                 SECP256K1_EC_COMPRESSED);
+   initBuffer[33] = static_cast<uint8_t>(cipherType);
 
 
-   // FIX - SEND PACKET HERE
-
-   encinit = true;
+   retVal = 0;
    return retVal;
 }
 
-// Send an encinit msg.
-// 
-// IN:  None
-// OUT: None
+// Function that gets the data sent alongside an encack message. This can be
+// used to get data for encrypted and unencrypted encack messages.
+//
+// IN:  ackBufferSize - The size of the output buffer.
+// OUT: ackBuffer - The buffer with the encinit data.
 // RET: -1 if failure, 0 if success
-int bip151Session::sendEncack(const bip151SymCiphers& cipherType)
+int bip151Session::getEncackData(uint8_t* ackBuffer,
+                                 const size_t& ackBufferSize)
 {
    int retVal = -1;
-   if(setCipherType(cipherType) != 0)
+
+   if(setCipherType(cipherType) != 0 || ackBufferSize > BIP151PUBKEYSIZE)
    {
       return retVal;
    }
 
-   btc_pubkey ourPubKey; // Get compressed pub key from our priv key.
-   btc_pubkey_from_key(&genSymECDHPrivKey, &ourPubKey);
-   array<uint8_t, BIP151PUBKEYSIZE> encInitData{};
-   copy(begin(ourPubKey.pubkey), end(ourPubKey.pubkey), &encInitData[0]);
+   // Ideally, libbtc would be used here. Unfortunately, it doesn't output
+   // compressed public keys (although it's aware of them). Go straight to
+   // libsecp256k1 until this is fixed upstream.
+   secp256k1_pubkey ourPubKey;
+   size_t copyLen = BIP151PUBKEYSIZE;
+   std::array<uint8_t, BIP151PUBKEYSIZE> ourCompPubKey{};
+   if(!secp256k1_ec_pubkey_create(secp256k1_ecdh_ctx,
+                                 &ourPubKey,
+                                 genSymECDHPrivKey.privkey))
+   {
+      LOGERR << "BIP 151 - Invalid public key creation. Closing connection.";
+      return retVal;
+   }
+   secp256k1_ec_pubkey_serialize(secp256k1_ecdh_ctx,
+                                 ackBuffer,
+                                 &copyLen,
+                                 &ourPubKey,
+                                 SECP256K1_EC_COMPRESSED);
 
-   // FIX - SEND PACKET HERE
-
-   encack = true;
+   // We're done with the ECDH key now. Nuke it. **Applies only to inbound sessions.**
+   btc_privkey_cleanse(&genSymECDHPrivKey);
+   retVal = 0;
    return retVal;
+}
+
+// A helper function that returns a hex string of the session ID.
+// 
+// IN:  None
+// OUT: None
+// RET: A const string with the session ID hex string.
+const std::string bip151Session::getSessionIDHex() const
+{
+    BinaryData outID(getSessionID(), 32);
+    return outID.toHexStr();
 }
 
 // Default BIP 151 connection constructor.
@@ -436,73 +555,81 @@ int bip151Session::sendEncack(const bip151SymCiphers& cipherType)
 // IN:  None
 // OUT: None
 // RET: N/A
-bip151Connection::bip151Connection()
+bip151Connection::bip151Connection() : inSes(false), outSes(true)
 {
    // The context must be set up before we can establish BIP 151 connections.
    assert(secp256k1_ecdh_ctx != nullptr);
 }
 
-// The function that handing incoming and outgoing "encinit" messages.
+// Overridden constructor for a BIP 151 connection. Sets out ECDH private keys
+// used in the input and output sessions. USE WITH EXTREME CAUTION!!! Unless
+// there's a very specific need for a pre-determined key (e.g., test harness or
+// keys are HW-generated), using this will just get you into trouble.
+// IN:  inSymECDHPrivKeyIn - ECDH private key for the inbound channel.
+//      inSymECDHPrivKeyOut - ECDH private key for the outbound channel.
+// OUT: None
+// RET: N/A
+bip151Connection::bip151Connection(btc_key* inSymECDHPrivKeyIn,
+                                   btc_key* inSymECDHPrivKeyOut) :
+                                   inSes(inSymECDHPrivKeyIn, false),
+                                   outSes(inSymECDHPrivKeyOut, true)
+{
+   // The context must be set up before we can establish BIP 151 connections.
+   assert(secp256k1_ecdh_ctx != nullptr);
+}
+
+// The function that handing incoming "encinit" messages.
 // 
 // IN:  inMsg - Buffer with the encinit msg contents. nullptr if we're sending.
-//      outgoing - Boolean indicating if the message is outgoing or incoming.
+//      inMsgSize - Size of the incomnig message.
+//      outDir - Boolean indicating if the message is outgoing or incoming.
 // OUT: None
 // RET: -1 if unsuccessful, 0 if successful.
-int bip151Connection::handleEncinit(const uint8_t* inMsg,
-                                    const size_t& inMsgSize,
-                                    const bip151SymCiphers& cipherType,
-                                    const bool outDir)
+int bip151Connection::processEncinit(const uint8_t* inMsg,
+                                     const size_t& inMsgSize,
+                                     const bool outDir)
 {
    
    int retVal = -1;
-   if(inMsgSize != 34)
+   if(inMsgSize != ENCINITMSGSIZE)
    {
-      LOGERR << "BIP 151 - encinit message size isn't 34 bytes. Will shut down "
-         << "connection.";
+      LOGERR << "BIP 151 - encinit message size isn't " << ENCINITMSGSIZE
+         << " bytes. Will shut down connection.";
       return retVal;
    }
 
-   // If we've already seen an encinit msg, bail out.
-   bip151Session* sesToHandle;
-   if(outDir)
+   // The BIP 151 spec states that traffic is handled via two unidirectional
+   // sessions. We should only get an encinit on the incoming session.
+   if(!outDir)
    {
-      sesToHandle = &outSes;
-   }
-   else
-   {
-      sesToHandle = &inSes;
-   }
-   if(sesToHandle->getEncinit())
-   {
-      LOGERR << "BIP 151 - Have already seen encinit (session ID "
-         << sesToHandle->getSessionIDHex() << ") - Will shut down connection.";
-      return retVal;
-   }
-
-   // Set keys and ciphersuite type as needed. For now, assume that if we're
-   // kicking things off, we're using ChaCha20Poly1305. Also, if we're getting an
-   // encinit, reply with an encack packet.
-   if(outDir)
-   {
-      outSes.sendEncinit(bip151SymCiphers::CHACHA20POLY1305);
-   }
-   else
-   {
-      array<uint8_t, BIP151PUBKEYSIZE> inECDHPubKey;
-      copy(inMsg, inMsg + BIP151PUBKEYSIZE, inECDHPubKey.data());
-      if(inSes.symKeySetup(inECDHPubKey.data(), inECDHPubKey.size()) != 0 ||
-         inSes.isCipherValid(static_cast<bip151SymCiphers>(inMsg[33])) != 0)
+      if(inSes.encinitSeen())
       {
+         LOGERR << "BIP 151 - Have already seen encinit (session ID "
+            << inSes.getSessionIDHex() << ") - Closing the connection.";
          return retVal;
       }
-      else
+
+      // Set keys and ciphersuite type as needed. For now, assume that if we're
+      // kicking things off, we're using ChaCha20Poly1305.
+      std::array<uint8_t, BIP151PUBKEYSIZE> inECDHPubKey;
+      std::copy(inMsg, inMsg + BIP151PUBKEYSIZE, inECDHPubKey.data());
+
+      // Set up the session's symmetric keys and cipher type. If the functs fail,
+      // they'll write log msgs.
+      if(inSes.setCipherType(static_cast<bip151SymCiphers>(inMsg[33])) == 0 &&
+         inSes.symKeySetup(inECDHPubKey.data(), inECDHPubKey.size()) == 0)
       {
-         inSes.sendEncack(static_cast<bip151SymCiphers>(inMsg[33]));
+         // We've successfully handled the packet.
+         inSes.setEncinitSeen();
+         retVal = 0;
       }
    }
-
-   // We've successfully handled the packet.
-   retVal = 0;
+   else
+   {
+      LOGERR << "BIP 151 - Received an encinit message on outgoing session "
+         << outSes.getSessionIDHex() << ". This should not happen. Closing the "
+         << "connection.";
+   }
 
    return retVal;
 }
@@ -513,135 +640,139 @@ int bip151Connection::handleEncinit(const uint8_t* inMsg,
 //      outgoing - Boolean indicating if the message is outgoing or incoming.
 // OUT: None
 // RET: -1 if unsuccessful, 0 if successful.
-int bip151Connection::handleEncack(const uint8_t* inMsg,
-                                   const size_t& inMsgSize,
-                                   const bool outDir)
+int bip151Connection::processEncack(const uint8_t* inMsg,
+                                    const size_t& inMsgSize,
+                                    const bool outDir)
 {
    int retVal = -1;
    if(inMsgSize != BIP151PUBKEYSIZE)
    {
-      LOGERR << "BIP 151 - encack message size isn't 33 bytes. Will shut down "
-         << "connection.";
+      LOGERR << "BIP 151 - encack message size isn't " << BIP151PUBKEYSIZE
+         << " bytes. Will shut down connection.";
       return retVal;
    }
 
-   bip151Session* sesToHandle;
+   // The BIP 151 spec states that traffic is handled via two unidirectional
+   // sessions. We should only get an encack on the outgoing session.
    if(outDir)
    {
-      sesToHandle = &outSes;
-   }
-   else
-   {
-      sesToHandle = &inSes;
-   }
-   // Valid only if we've already seen an encinit.
-   if(!sesToHandle->getEncinit())
-   {
-      LOGERR << "BIP 151 - Received an encack message before an encinit ("
-         << "session ID " << sesToHandle->getSessionIDHex() << "). Closing "
-         << "connection";
-      return retVal;
-   }
-
-   // If outgoing, get their pub key and generate the keys. Per the spec,
-   // assume it's the same ciphersuite.
-   if(outDir)
-   {
-      if(outSes.symKeySetup(inMsg, inMsgSize) != 0)
+      // Valid only if we've already seen an encinit.
+      if(!outSes.encinitSeen())
       {
+         LOGERR << "BIP 151 - Received an encack message before an encinit ("
+            << "outgoing session ID " << outSes.getSessionIDHex() << "). "
+            << "Closing connection.";
          return retVal;
       }
-      outSes.setEncack();
-      retVal = 0;
+
+      // We should never receive a rekey, just an initial keying.
+      if(outSes.inMsgIsRekey(inMsg, inMsgSize) == 0)
+      {
+         LOGERR << "BIP 151 - Received a rekey message on outgoing session ID "
+            << outSes.getSessionIDHex() << "). Closing connection.";
+         return retVal;
+      }
+
+      if(outSes.symKeySetup(inMsg, inMsgSize) == 0)
+      {
+         outSes.setEncackSeen();
+         retVal = 0;
+      }
    }
-   // If incoming, we should see one if it's a rekey, otherwise it's an error.
    else
    {
-      if(inSes.inMsgIsRekey(inMsg, inMsgSize))
+      // Incoming sessions should only see rekeys.
+      if(!inSes.inMsgIsRekey(inMsg, inMsgSize))
       {
-         inSes.sessionRekey();
-         retVal = 0;
+         LOGERR << "BIP 151 - Received a non-rekey encack message on incoming "
+            << "session ID " << inSes.getSessionIDHex() << ". This should not "
+            << "happen. Closing the connection.";
       }
       else
       {
-         LOGERR << "BIP 151 - Received an encack message after establishing "
-            << "session " << inSes.getSessionIDHex() << " that is not a "
-            << "rekey. Closing the connection";
+         inSes.sessionRekey();
       }
    }
 
    return retVal;
 }
 
+////////////////////////////////////////////////////////////////////////////////
 // ENCRYPTED PACKET OUTLINE, PER BIP 151:
-// - Encrypted size of payload  (4 bytes)
-// - Encrypted payload
-// --- Command  (VarStr - Variable bytes)
+// - Encrypted size of payload  (4 bytes)  (Uses the "K2" key)
+// - Encrypted payload  (Uses the "K1" key)
+// --- Command length  (VarStr)
+// --- Command  ("Command length" bytes)
 // --- Length of command payload  (4 bytes)
 // --- Payload  (Variable bytes)
-// - MAC for the encrypted payload  (16 bytes)
+// - MAC for the encrypted payload  (16 bytes)  (Uses Poly1305)
 // - Whether or not encryption is successful, increment the seq ctr & # of bytes.
 // - Check to see if a rekey is necessary. If so, make it happen.
+////////////////////////////////////////////////////////////////////////////////
 
 // Function used to assemble an encrypted packet.
-// 
-// IN:  packetData - Plaintext data that will be encrypted.
-//      outDir - Indicates if the session is outgoing or incoming.
-// OUT: None
+//
+// IN:  plainData - Plaintext buffer that will be encrypted.
+//      plainSize - Plaintext buffer size.
+//      cipherSize - Ciphertext buffer size.
+// OUT: cipherData - The encrypted buffer. Must be 16 bytes larger than the
+//                   plaintext buffer.
 // RET: -1 if failure, 0 if success.
-int bip151Connection::assemblePacket(const uint8_t* packetData,
-                                     const size_t& packetDataSize,
-                                     const bool& outDir)
+int bip151Connection::assemblePacket(const uint8_t* plainData,
+                                     const size_t& plainSize,
+                                     uint8_t* cipherData,
+                                     const size_t& cipherSize)
 {
    int retVal = -1;
-   array<uint8_t, 2000> cipherData; // FIX - Switch to vector for dynamic size.
 
-   bip151Session* sesToUse;
-   if(outDir)
+   if(outSes.encPayload(cipherData, cipherSize, plainData, plainSize) != 0)
    {
-      sesToUse = &outSes;
-   }
-   else
-   {
-      sesToUse = &inSes;
-   }
-
-   if(encPayload(cipherData.data(), cipherData.size(), packetData,
-                 packetDataSize, sesToUse->getSeqNum(),
-                 sesToUse->getSessionCtxPtr()) == -1)
-   {
-      LOGERR << "BIP 151 - Session ID " << sesToUse->getSessionIDHex()
-         << " failed to encrypt packet for seq num " << sesToUse->getSeqNum();
+      LOGERR << "BIP 151 - Session ID " << outSes.getSessionIDHex()
+         << " encryption failed (seq num " << outSes.getSeqNum() - 1 << ").";
       return retVal;
    }
 
-   // FIX - SEND PACKET
-
    retVal = 0;
-   sesToUse->incSeqNum();
-   sesToUse->addBytes(packetDataSize);
-   if(sesToUse->rekeyNeeded())
-   {
-      sesToUse->sessionRekey();
-   }
-
    return retVal;
 }
 
 // Function used to decrypt a packet.
-// 
-// IN:  packetData - Ciphertext data that will be decrypted.
-//      outDir - Indicates if the session is outgoing or incoming.
-// OUT: None
+//
+// IN:  cipherData - Encrypted buffer that will be decrypted.
+//      cipherSize - Encrypted buffer size.
+//      plainSize - Decrypted buffer size.
+// OUT: plainData - The decrypted packet. Must be no more than 16 bytes smaller
+//                  than the plaintext buffer.
 // RET: -1 if failure, 0 if success.
-int bip151Connection::decryptPacket(const uint8_t* packetData,
-                                    const size_t& packetDataSize,
-                                    const bool& outDir)
+int bip151Connection::decryptPacket(const uint8_t* cipherData,
+                                    const size_t& cipherSize,
+                                    uint8_t* plainData,
+                                    const size_t& plainSize)
 {
    int retVal = -1;
-   array<uint8_t, 2000> plainData; // FIX - Switch to vector for dynamic size.
-   uint32_t decryptedLen = 0;
 
+   if(inSes.decPayload(cipherData, cipherSize, plainData, plainSize) != 0)
+   {
+      LOGERR << "BIP 151 - Session ID " << inSes.getSessionIDHex()
+         << " decryption failed (seq num " << inSes.getSeqNum() - 1 << ").";
+      return retVal;
+   }
+
+   retVal = 0;
+   return retVal;
+}
+
+// Function to call after a packet has been encrypted or decrypted.
+// Updates the session info and, if necessary, triggers a rekey.
+//
+// IN:  packetDataSize - Size of the plaintxt data sent or received.
+//      outDir - Indicates if the session is outgoing or incoming.
+// OUT: None
+// RET: True if rekey required, false if not.
+const bool bip151Connection::updateSession(const size_t& plaintextSize,
+                                           const bool& outDir)
+{
+   bool retVal = false;
    bip151Session* sesToUse;
    if(outDir)
    {
@@ -652,76 +783,189 @@ int bip151Connection::decryptPacket(const uint8_t* packetData,
       sesToUse = &inSes;
    }
 
-   chacha20poly1305_get_length(sesToUse->getSessionCtxPtr(), &decryptedLen,
-                               sesToUse->getSeqNum(), packetData,
-                               packetDataSize);
-   if(decPayload(packetData, packetDataSize, plainData.data(), plainData.size(),
-                 sesToUse->getSeqNum(), sesToUse->getSessionCtxPtr()) == -1)
+   // Update the session as needed, including initiating a rekey if necessary.
+   sesToUse->incSeqNum();
+   sesToUse->addBytes(plaintextSize);
+
+   if(outDir && sesToUse->rekeyNeeded())
    {
-      LOGERR << "BIP 151 - Session ID " << sesToUse->getSessionIDHex()
-         << " failed to decrypt packet for seq num " << sesToUse->getSeqNum();
+      retVal = true;
+   }
+
+   return retVal;
+}
+
+// Function that gets encinit data from the outbound session. Assume the session
+// will do incoming data validation.
+//
+// IN:  encinitBufSize - encinit data buffer size.
+//      cipherType - The cipher type to get.
+// OUT: encinitBuf - The data to go into an encinit messsage.
+// RET: -1 if not successful, 0 if successful.
+const int bip151Connection::getEncinitData(uint8_t* encinitBuf,
+                                           const size_t& encinitBufSize,
+                                           const bip151SymCiphers& cipherType)
+{
+   outSes.setEncinitSeen();
+   return outSes.getEncinitData(encinitBuf, encinitBufSize, cipherType);
+}
+
+// Function that gets encack data from the inbound session. Assume the session
+// will do incoming data validation.
+//
+// IN:  encackBufSize - encinit data buffer size. Must be >=33 bytes.
+// OUT: encackBuf - The data to go into an encinit messsage.
+// RET: -1 if not successful, 0 if successful.
+const int bip151Connection::getEncackData(uint8_t* encackBuf,
+                                          const size_t& encackBufSize)
+{
+   inSes.setEncackSeen();
+   int retVal = inSes.getEncackData(encackBuf, encackBufSize);
+
+   return retVal;
+}
+
+// Function that returns the connection's input or output session ID.
+// 
+// IN:  dirIsOut - Bool indicating if the direction is outbound.
+// OUT: None
+// RET: A pointer to a 32 byte array with the session ID.
+const uint8_t* bip151Connection::getSessionID(const bool& dirIsOut)
+{
+   bip151Session* sesToUse;
+   if(sesDir)
+   {
+      sesToUse = &outSes;
+   }
+   else
+   {
+      sesToUse = &inSes;
+   }
+   return sesToUse->getSessionID();
+}
+
+
+// Default BIP 151 "payload" constructor.
+//
+// IN:  None
+// OUT: None
+// RET: None
+bip151Message::bip151Message() {}
+
+// Overloaded BIP 151 message constructor. Sets up the contents.
+//
+// IN:  inCmd - The command.
+//      inCmdSize - The command size.
+//      inPayload - The payload.
+//      inPayloadSize - The payload size.
+// OUT: None
+// RET: None
+bip151Message::bip151Message(const uint8_t* inCmd,
+                             const size_t& inCmdSize,
+                             const uint8_t* inPayload,
+                             const size_t& inPayloadSize)
+{
+   setPayload(inCmd, inCmdSize, inPayload, inPayloadSize);
+}
+
+// A function that sets up the plaintext contents via the individual command and
+// payload pieces.
+//
+// IN:  inCmd - The command.
+//      inCmdSize - The command size.
+//      inPayload - The payload.
+//      inPayloadSize - The payload size.
+// OUT: None
+// RET: None
+void bip151Message::setPayload(const uint8_t* inCmd,
+                               const size_t& inCmdSize,
+                               const uint8_t* inPayload,
+                               const size_t& inPayloadSize)
+{
+   cmd.copyFrom(inCmd, inCmdSize);
+   payload.copyFrom(inPayload, inPayloadSize);
+}
+
+// A function that sets up the plaintext contents for an encrypted BIP 151
+// message. Use with a successfully decrypted payload.
+//
+// IN:  plaintextData - The payload from a decrypted message.
+//      plaintextDataSize - The size of the decrypted message payload.
+// OUT: None
+// RET: -1 if failure, 0 if success
+int bip151Message::setPayloadStruct(uint8_t* plaintextData,
+                                    const size_t& plaintextDataSize)
+{
+   int retVal = -1;
+   BinaryReader inData(plaintextData, plaintextDataSize);
+
+   // Do some basic sanity checking before proceeding.
+   uint32_t msgSize = inData.get_uint32_t();
+   if(msgSize != inData.getSizeRemaining())
+   {
+      // LOG ERROR HERE
       return retVal;
    }
 
-   // FIX - SEND PACKET
+   // uint64_t -> uint32_t is safe in this case. The spec disallows >4GB msgs.
+   uint8_t cmdSize = inData.get_uint8_t();
+   inData.get_BinaryData(cmd, static_cast<uint32_t>(cmdSize));
+   uint64_t payloadSize = inData.get_var_int();
+   inData.get_BinaryData(payload, static_cast<uint32_t>(payloadSize));
 
    retVal = 0;
-   sesToUse->incSeqNum();
-   sesToUse->addBytes(decryptedLen);
-   if(sesToUse->rekeyNeeded())
-   {
-      sesToUse->sessionRekey();
-   }
-
    return retVal;
 }
 
-// A helper function that encrypts a payload.
-// 
-// IN:  plainData - Plaintext data to encrypt.
-// OUT: cipherData - The encrypted plaintext data.
-// RET: -1 if failure, 0 if success
-int bip151Connection::encPayload(uint8_t* cipherData,
-                                 const size_t& cipherSize,
-                                 const uint8_t* plainData,
-                                 const size_t plainSize,
-                                 const uint32_t& curSeqNum,
-                                 chachapolyaead_ctx* sesCtx)
-{
-   int retVal = -1;
-//   assert(plainSize <= (cipherSize - POLY1305MACLEN));
-
-   if(chacha20poly1305_crypt(sesCtx, curSeqNum, cipherData, plainData,
-                             plainSize, AUTHASSOCDATAFIELDLEN,
-                             CHACHAPOLY1305_AEAD_ENC) == 0)
-   {
-      retVal = 0;
-   }
-
-   return retVal;
-}
-
-// A helper function that decrypts a payload.
+// A function that gets the payload contents for a to-be-encrypted BIP 151
+// message.
 //
-// IN:  cipherData - Ciphertext data to encrypt.
-// OUT: plainData - The decrypted ciphertext data.
-// RET: -1 if failure, 0 if success
-int bip151Connection::decPayload(const uint8_t* cipherData,
-                                 const size_t& cipherSize,
-                                 uint8_t* plainData,
-                                 const size_t plainSize,
-                                 const uint32_t& curSeqNum,
-                                 chachapolyaead_ctx* sesCtx)
+// IN:  None
+// OUT: outStruct - The struct for a to-be-encrypted BIP 151 message.
+//      outStructSize - The size of the incoming struct.
+//      finalStructSize - The final size of the written struct.
+// RET: false if failure to write, true if success.
+bool bip151Message::getPayloadStruct(uint8_t* outStruct,
+                                     const size_t& outStructSize,
+                                     size_t& finalStructSize)
 {
-   int retVal = -1;
-//   assert(cipherSize <= (plainSize - POLY1305MACLEN));
+   bool retVal = false;
 
-   if(chacha20poly1305_crypt(sesCtx, curSeqNum, plainData, cipherData,
-                             cipherSize, AUTHASSOCDATAFIELDLEN,
-                             CHACHAPOLY1305_AEAD_DEC) == 0)
+   size_t writerSize = messageSizeHint() - 4;
+   BinaryWriter payloadWriter(writerSize);
+   payloadWriter.put_var_int(cmd.getSize());
+   payloadWriter.put_BinaryData(cmd);
+   payloadWriter.put_uint32_t(payload.getSize());
+   payloadWriter.put_BinaryData(payload);
+
+   // Write a second, final buffer.
+   finalStructSize = payloadWriter.getSize() + 4;
+   if(finalStructSize > outStructSize)
    {
-      retVal = 0;
+      // LOGERR HERE
+      return retVal;
    }
+   BinaryWriter finalStruct(finalStructSize);
+   finalStruct.put_uint32_t(payloadWriter.getSize());
+   finalStruct.put_BinaryData(payloadWriter.getData());
 
+   std::copy(finalStruct.getData().getPtr(),
+             finalStruct.getData().getPtr() + finalStructSize,
+             outStruct);
+   retVal = true;
    return retVal;
+}
+
+// A function that can be used to determine the final struct output size. This
+// will be the same size as the encrypted messages structure from the BIP 151
+// spec, minus the MAC (Poly1305) tag (16 bytes).
+//
+// IN:  None
+// OUT: None
+// RET: The maximum possible size for the struct.
+const size_t bip151Message::messageSizeHint()
+{
+   // Hint: Operand order is the same order as what's found in the struct.
+   return 4 + BtcUtils::calcVarIntSize(cmd.getSize()) + cmd.getSize() + 4 + \
+          payload.getSize();
 }
