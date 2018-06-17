@@ -99,10 +99,9 @@ int bip151Session::genSymKeys(const uint8_t* peerPubKey)
    secp256k1_pubkey peerECDHPK;
    std::array<uint8_t, BIP151PUBKEYSIZE> parseECDHMulRes{};
    size_t parseECDHMulResSize = parseECDHMulRes.size();
-
    switch(cipherType)
    {
-   case bip151SymCiphers::CHACHA20POLY1305:
+   case bip151SymCiphers::CHACHA20POLY1305_OPENSSH:
       // Confirm that the incoming pub key is valid and compressed.
       if(secp256k1_ec_pubkey_parse(secp256k1_ecdh_ctx, &peerECDHPK, peerPubKey,
                                    BIP151PUBKEYSIZE) != 1)
@@ -185,7 +184,7 @@ int bip151Session::symKeySetup(const uint8_t* peerPubKey,
 
    switch(cipherType)
    {
-   case bip151SymCiphers::CHACHA20POLY1305:
+   case bip151SymCiphers::CHACHA20POLY1305_OPENSSH:
       // Generate the keys only if the peer key is the correct size (and valid).
       if((peerPubKeySize != BIP151PUBKEYSIZE) || (genSymKeys(peerPubKey) != 0))
       {
@@ -225,7 +224,7 @@ void bip151Session::calcChaCha20Poly1305Keys(const btc_key& sesECDHKey)
    std::array<uint8_t, 33> ikm;
    std::copy(sesECDHKey.privkey, sesECDHKey.privkey + 32,
              ikm.data());
-   ikm[32] = static_cast<uint8_t>(bip151SymCiphers::CHACHA20POLY1305);
+   ikm[32] = static_cast<uint8_t>(bip151SymCiphers::CHACHA20POLY1305_OPENSSH);
    BinaryData info1("BitcoinK1");
    BinaryData info2("BitcoinK2");
 
@@ -269,7 +268,7 @@ void bip151Session::sessionRekey()
 {
    switch(cipherType)
    {
-   case bip151SymCiphers::CHACHA20POLY1305:
+   case bip151SymCiphers::CHACHA20POLY1305_OPENSSH:
       // Process both symmetric keys at the same time. Reset the # of bytes on
       // the session but *not* the sequence number.
       uint8_t* poly1305Key;
@@ -312,9 +311,10 @@ int bip151Session::inMsgIsRekey(const uint8_t* inMsg, const size_t& inMsgSize)
 // IN:  plainData - Plaintext data to encrypt.
 //      plainSize - The size of the plaintext buffer. The size *must* be the
 //                   exact length of the actual plaintext buffer.
-//      cipherSize - The size of the ciphertext buffer. The size *must* be at least
-//                   16 bytes larger than the plaintext buffer.
-// OUT: cipherData - The encrypted plaintext data.
+//      cipherSize - The size of the ciphertext buffer. The size *must* be at
+//                   least 16 bytes larger than the plaintext buffer, as the
+//                   cipher will include the Poly1305 tag.
+// OUT: cipherData - The encrypted plaintext data and the Poly1305 tag.
 // RET: -1 if failure, 0 if success
 int bip151Session::encPayload(uint8_t* cipherData,
                               const size_t cipherSize,
@@ -326,10 +326,10 @@ int bip151Session::encPayload(uint8_t* cipherData,
 
    if(chacha20poly1305_crypt(&sessionCTX,
                              seqNum,
-                             cipherData + 4,
-                             plainData + 4,
+                             cipherData,
+                             plainData,
                              plainSize - AUTHASSOCDATAFIELDLEN,
-                             0,
+                             AUTHASSOCDATAFIELDLEN,
                              CHACHAPOLY1305_AEAD_ENC) == -1)
    {
       LOGERR << "Encryption at sequence number " << seqNum << " failed.";
@@ -352,9 +352,10 @@ int bip151Session::encPayload(uint8_t* cipherData,
 //                   bytes larger than the resulting plaintext buffer.
 //      cipherSize - The size of the ciphertext buffer. The size *must* be the
 //                   exact length of the actual ciphertext.
-//      plainSize - The size of the plaintext buffer. The size *must* be at
-//                  least as large as the ciphertext buffer.
-// OUT: plainData - The decrypted ciphertext data.
+//      plainSize - The size of the plaintext buffer. The size can be up to 16
+//                  bytes smaller than the cipher. This is due to the results
+//                  not including the 16 byte Poly1305 tag.
+// OUT: plainData - The decrypted ciphertext data but no Poly1305 tag.
 // RET: -1 if failure, 0 if success
 int bip151Session::decPayload(const uint8_t* cipherData,
                               const size_t cipherSize,
@@ -438,7 +439,7 @@ bool bip151Session::isCipherValid(const bip151SymCiphers& inCipher)
 {
    // For now, this is simple. Just check for ChaChaPoly1305.
    bool retVal = false;
-   if(inCipher == bip151SymCiphers::CHACHA20POLY1305)
+   if(inCipher == bip151SymCiphers::CHACHA20POLY1305_OPENSSH)
    {
       retVal = true;
    }
@@ -833,7 +834,7 @@ const int bip151Connection::getEncackData(uint8_t* encackBuf,
 const uint8_t* bip151Connection::getSessionID(const bool& dirIsOut)
 {
    bip151Session* sesToUse;
-   if(sesDir)
+   if(dirIsOut)
    {
       sesToUse = &outSes;
    }

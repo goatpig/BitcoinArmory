@@ -10,6 +10,22 @@
 // The immediate purpose of this code is to implement secure data transfer
 // between an Armory server and a remote Armory client, the server talking to
 // Core and feeding the (encrypted) data to the client.
+//
+// NOTE: There is a very subtle implementation detail in BIP 151 that requires
+// attention. BIP 151 explicitly states that it uses ChaCha20Poly1305 as used in
+// OpenSSH. This is important. RFC 7539 is a formalized version of what's in
+// OpenSSH, with tiny changes. In particular, the OpenSSH version of Poly1305
+// uses 64-bit nonces. RFC 7539 uses 96-bit nonces. Because of this, THE
+// IMPLEMENTATIONS ARE INCOMPATIBLE WHEN VERIFYING THE OTHER VARIANT'S POLY1305
+// TAGS. Bcrypto (the only library used in a public BIP 151 implementation as of
+// June 2018) appears to use the RFC 7539 variant. So, as of June 2018, there
+// are no Bitcoin-related codebases that can generate mutually verifiable
+// Poly1305 data. (See https://tools.ietf.org/html/rfc7539#section-2.8 for more
+// info.)
+//
+// Despite the OpenSSH and RFC differences, the two variants can generate the
+// same encrypted results. However, this is another thing to note if Armory
+// attempts to interoperate directly with other BIP 151 nodes in the future.
 
 #ifndef BIP151_H
 #define BIP151_H
@@ -33,7 +49,7 @@ extern "C" {
 #define ENCINITMSGSIZE 34
 
 // Match against BIP 151 spec, although "INVALID" is our choice.
-enum class bip151SymCiphers : uint8_t {CHACHA20POLY1305 = 0, INVALID};
+enum class bip151SymCiphers : uint8_t {CHACHA20POLY1305_OPENSSH = 0, INVALID};
 
 // Global functions needed to deal with a global libsecp256k1 context.
 // libbtc doesn't export its libsecp256k1 context (which, by the way, is set up
@@ -127,7 +143,7 @@ public:
    const int getEncinitData(uint8_t* encinitBuf, const size_t& encinitBufSize,
                             const bip151SymCiphers& cipherType);
    const int getEncackData(uint8_t* encackBuf, const size_t& encBufSize);
-   const uint8_t* getSessionID(const bool& sesDir);
+   const uint8_t* getSessionID(const bool& dirIsOut);
    const bool connectionComplete() const { return(inSes.handshakeComplete() == true &&
                                             outSes.handshakeComplete() == true); }
 };
