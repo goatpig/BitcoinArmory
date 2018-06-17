@@ -89,9 +89,10 @@ protected:
       startupBIP151CTX();
 
       // Test vector data. Unfortunately, there are no test suites for BIP 151.
-      // Test data was generated using the Bcoin test suite for BIP 151. We will
-      // assume the external libraries we use in BIP 151 are functioning
-      // properly. (This can be verified by running their test suites.)
+      // Test data was generated using a combination of Bcoin test results for
+      // BIP 151, and private runs of libchacha20poly1305. Despite cobbling data
+      // together, assume the external libraries used in BIP 151 are functioning
+      // properly. This can be verified by running their test suites.
       string prvKeyClientIn_hexstr = "001eb0c6ace84eb1590636134a87a6fa35379db0d19ecd9e2eb1b68c791774b9";
       string prvKeyClientOut_hexstr = "fb245a1ba7aebb3771312985c1512efe48a93539950b60626b4d03584e99b573";
       string prvKeyServerIn_hexstr = "d2c7901a6b5508cf53e4be641fd94ab525429fb2abb0b5e19b362dc8fbab510c";
@@ -111,8 +112,8 @@ protected:
       string command_hexstr = "fake";
       string payload_hexstr = "deadbeef";
       string msg_hexstr = "0d0000000466616b6504000000deadbeef";
-      string cliMsg_hexstr = "d721bcbf435f320d25c4c47b63a592c86f288706fdeec1d9c6751b409a063bf3a8";
-      string srvMsg_hexstr = "0d0000000466616b6504000000deadbeef288706fdeec1d9c6751b409a063bf3a8";
+      string cliMsg_hexstr = "d721bcbf435f320d25c4c47b63a592c86f3135af4a92dfecca8926c9a44fa873e3";
+      string srvMsg_hexstr = "0d0000000466616b6504000000deadbeef";
 
       prvKeyClientIn = READHEX(prvKeyClientIn_hexstr);
       prvKeyClientOut = READHEX(prvKeyClientOut_hexstr);
@@ -166,7 +167,7 @@ protected:
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(BIP151Test, sessionID)
+TEST_F(BIP151Test, checkData)
 {
    btc_key prvKeyCliIn;
    btc_key prvKeyCliOut;
@@ -185,7 +186,7 @@ TEST_F(BIP151Test, sessionID)
    BinaryData outEncackCliData(33);
    srvCon.getEncinitData(inEncinitCliData.getPtr(),
                          inEncinitCliData.getSize(),
-                         bip151SymCiphers::CHACHA20POLY1305);
+                         bip151SymCiphers::CHACHA20POLY1305_OPENSSH);
    cliCon.processEncinit(inEncinitCliData.getPtr(),
                          inEncinitCliData.getSize(),
                          false);
@@ -195,8 +196,8 @@ TEST_F(BIP151Test, sessionID)
                         inEncackCliData.getSize(),
                         true);
    cliCon.getEncinitData(outEncinitCliData.getPtr(),
-                          outEncinitCliData.getSize(),
-                          bip151SymCiphers::CHACHA20POLY1305);
+                         outEncinitCliData.getSize(),
+                         bip151SymCiphers::CHACHA20POLY1305_OPENSSH);
    srvCon.processEncinit(outEncinitCliData.getPtr(),
                          outEncinitCliData.getSize(),
                          false);
@@ -210,7 +211,7 @@ TEST_F(BIP151Test, sessionID)
    std::copy(pubKeyClientOut.getPtr(),
              pubKeyClientOut.getPtr() + 33,
              expectedEncinitData.getPtr());
-   expectedEncinitData[33] = static_cast<uint8_t>(bip151SymCiphers::CHACHA20POLY1305);
+   expectedEncinitData[33] = static_cast<uint8_t>(bip151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(pubKeyClientIn, inEncackCliData);
    EXPECT_EQ(expectedEncinitData, outEncinitCliData);
 
@@ -222,7 +223,6 @@ TEST_F(BIP151Test, sessionID)
 
    // Encrypt and decrypt a test packet.
    BinaryData cmd("fake");
-//   BinaryData payload("deadbeef");
    std::array<uint8_t, 4> payload = {0xde, 0xad, 0xbe, 0xef};
    BinaryData testMsgData(50);
    size_t finalMsgSize;
@@ -234,33 +234,22 @@ TEST_F(BIP151Test, sessionID)
    EXPECT_EQ(msg, testMsgData);
 
    BinaryData encMsgBuffer(testMsgData.getSize() + 16);
-   BinaryData decMsgBuffer(testMsgData.getSize() + 16);
    int encryptRes = cliCon.assemblePacket(testMsgData.getPtr(),
                                           testMsgData.getSize(),
                                           encMsgBuffer.getPtr(),
                                           encMsgBuffer.getSize());
    EXPECT_EQ(0, encryptRes);
    EXPECT_EQ(cliMsg, encMsgBuffer);
+
+   BinaryData decMsgBuffer(testMsgData.getSize());
    encryptRes = srvCon.decryptPacket(encMsgBuffer.getPtr(),
                                      encMsgBuffer.getSize(),
                                      decMsgBuffer.getPtr(),
                                      decMsgBuffer.getSize());
    EXPECT_EQ(0, encryptRes);
    EXPECT_EQ(srvMsg, decMsgBuffer);
-
 }
 
-////////////////////////////////////////////////////////////////////////////////
-/*TEST_F(BIP151Test, encryptPacket)
-{
-   //
-}
-
-////////////////////////////////////////////////////////////////////////////////
-/*TEST_F(BIP151Test, decryptPacket)
-{
-   //
-}*/
 
 ////////////////////////////////////////////////////////////////////////////////
 // Test any custom Crypto++ code we've written.
