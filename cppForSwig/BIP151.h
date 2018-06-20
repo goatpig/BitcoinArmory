@@ -106,7 +106,7 @@ public:
    bool getSeqNum() const { return seqNum; }
    const bip151SymCiphers getCipherType() const { return cipherType; }
    int inMsgIsRekey(const uint8_t* inMsg, const size_t& inMsgSize);
-   bool rekeyNeeded();
+   const bool rekeyNeeded();
    void addBytes(const uint32_t& sentBytes) { bytesOnCurKeys += sentBytes; }
    int getEncinitData(uint8_t* initBuffer, const size_t& initBufferSize,
                       const bip151SymCiphers& cipherType);
@@ -135,7 +135,6 @@ public:
                       uint8_t* cipherData, const size_t& cipherSize);
    int decryptPacket(const uint8_t* cipherData, const size_t& cipherSize,
                      uint8_t* plainData, const size_t& plainSize);
-   const bool updateSession(const size_t& plaintextSize, const bool& outDir);
    int processEncinit(const uint8_t* inMsg, const size_t& inMsgSize,
                       const bool outDir);
    int processEncack(const uint8_t* inMsg, const size_t& inMsgSize,
@@ -143,6 +142,9 @@ public:
    const int getEncinitData(uint8_t* encinitBuf, const size_t& encinitBufSize,
                             const bip151SymCiphers& cipherType);
    const int getEncackData(uint8_t* encackBuf, const size_t& encBufSize);
+   const bool rekeyNeeded() { return outSes.rekeyNeeded(); }
+   void getRekeyBuf(uint8_t* encackBuf, const size_t& encackSize);
+   void rekeyConn(uint8_t* encackBuf, const size_t& encackSize);
    const uint8_t* getSessionID(const bool& dirIsOut);
    const bool connectionComplete() const { return(inSes.handshakeComplete() == true &&
                                             outSes.handshakeComplete() == true); }
@@ -158,14 +160,20 @@ private:
 
 public:
    bip151Message();
+   bip151Message(uint8_t* plaintextData, uint32_t plaintextDataSize);
    bip151Message(const uint8_t* inCmd, const size_t& inCmdSize,
                  const uint8_t* inPayload, const size_t& inPayloadSize);
-   void setPayload(const uint8_t* inCmd, const size_t& inCmdSize,
-                   const uint8_t* inPayload, const size_t& inPayloadSize);
-   int setPayloadStruct(uint8_t* plaintextData,
-                        const size_t& plaintextDataSize);
-   bool getPayloadStruct(uint8_t* outStruct, const size_t& outStructSize,
-                         size_t& finalStructSize);
+   void setEncStructData(const uint8_t* inCmd, const size_t& inCmdSize,
+                         const uint8_t* inPayload, const size_t& inPayloadSize);
+   int setEncStruct(uint8_t* plaintextData, uint32_t& plaintextDataSize);
+   void getEncStructMsg(uint8_t* outStruct, const size_t& outStructSize,
+                        size_t& finalStructSize);
+   void getCmd(uint8_t* cmdBuf, const size_t& cmdBufSize);
+   const size_t getCmdSize() const { return cmd.getSize(); }
+   const uint8_t* getCmdPtr() const { return cmd.getPtr(); }
+   void getPayload(uint8_t* payloadBuf, const size_t& payloadBufSize);
+   const size_t getPayloadSize() const { return payload.getSize(); }
+   const uint8_t* getPayloadPtr() const { return payload.getPtr(); }
    const size_t messageSizeHint();
 };
 

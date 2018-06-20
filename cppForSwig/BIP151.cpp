@@ -157,7 +157,7 @@ int bip151Session::genSymKeys(const uint8_t* peerPubKey)
 // IN:  None
 // OUT: None
 // RET: True if a rekey is required, false if not.
-bool bip151Session::rekeyNeeded()
+const bool bip151Session::rekeyNeeded()
 {
    bool retVal = false;
 
@@ -322,7 +322,7 @@ int bip151Session::encPayload(uint8_t* cipherData,
                               const size_t plainSize)
 {
    int retVal = -1;
-   assert(cipherSize >= (plainSize + 16));
+   assert(cipherSize >= (plainSize + POLY1305MACLEN));
 
    if(chacha20poly1305_crypt(&sessionCTX,
                              seqNum,
@@ -340,6 +340,7 @@ int bip151Session::encPayload(uint8_t* cipherData,
    }
 
    ++seqNum;
+   bytesOnCurKeys += plainSize;
    return retVal;
 }
 
@@ -387,6 +388,7 @@ int bip151Session::decPayload(const uint8_t* cipherData,
    }
 
    ++seqNum;
+   bytesOnCurKeys += plainSize;
    return retVal;
 }
 
@@ -683,7 +685,7 @@ int bip151Connection::processEncack(const uint8_t* inMsg,
    else
    {
       // Incoming sessions should only see rekeys.
-      if(!inSes.inMsgIsRekey(inMsg, inMsgSize))
+      if(inSes.inMsgIsRekey(inMsg, inMsgSize) != 0)
       {
          LOGERR << "BIP 151 - Received a non-rekey encack message on incoming "
             << "session ID " << inSes.getSessionIDHex() << ". This should not "
@@ -692,6 +694,7 @@ int bip151Connection::processEncack(const uint8_t* inMsg,
       else
       {
          inSes.sessionRekey();
+         retVal = 0;
       }
    }
 
@@ -700,15 +703,15 @@ int bip151Connection::processEncack(const uint8_t* inMsg,
 
 ////////////////////////////////////////////////////////////////////////////////
 // ENCRYPTED PACKET OUTLINE, PER BIP 151:
-// - Encrypted size of payload  (4 bytes)  (Uses the "K2" key)
+// - Encrypted size of payload  (4 bytes)  (Uses the K1/AAD key for ChaCha20)
 // - Encrypted payload  (Uses the "K1" key)
 // --- Command length  (VarStr)
 // --- Command  ("Command length" bytes)
 // --- Length of command payload  (4 bytes)
 // --- Payload  (Variable bytes)
-// - MAC for the encrypted payload  (16 bytes)  (Uses Poly1305)
+// - MAC for the encrypted payload  (16 bytes)  (Uses the K2 key for Poly1305)
 // - Whether or not encryption is successful, increment the seq ctr & # of bytes.
-// - Check to see if a rekey is necessary. If so, make it happen.
+// - Check to see if a rekey's needed for the outgoing session. If so, do it.
 ////////////////////////////////////////////////////////////////////////////////
 
 // Function used to assemble an encrypted packet.
@@ -763,39 +766,6 @@ int bip151Connection::decryptPacket(const uint8_t* cipherData,
    return retVal;
 }
 
-// Function to call after a packet has been encrypted or decrypted.
-// Updates the session info and, if necessary, triggers a rekey.
-//
-// IN:  packetDataSize - Size of the plaintxt data sent or received.
-//      outDir - Indicates if the session is outgoing or incoming.
-// OUT: None
-// RET: True if rekey required, false if not.
-const bool bip151Connection::updateSession(const size_t& plaintextSize,
-                                           const bool& outDir)
-{
-   bool retVal = false;
-   bip151Session* sesToUse;
-   if(outDir)
-   {
-      sesToUse = &outSes;
-   }
-   else
-   {
-      sesToUse = &inSes;
-   }
-
-   // Update the session as needed, including initiating a rekey if necessary.
-   sesToUse->incSeqNum();
-   sesToUse->addBytes(plaintextSize);
-
-   if(outDir && sesToUse->rekeyNeeded())
-   {
-      retVal = true;
-   }
-
-   return retVal;
-}
-
 // Function that gets encinit data from the outbound session. Assume the session
 // will do incoming data validation.
 //
@@ -814,8 +784,8 @@ const int bip151Connection::getEncinitData(uint8_t* encinitBuf,
 // Function that gets encack data from the inbound session. Assume the session
 // will do incoming data validation.
 //
-// IN:  encackBufSize - encinit data buffer size. Must be >=33 bytes.
-// OUT: encackBuf - The data to go into an encinit messsage.
+// IN:  encackBufSize - encack data buffer size. Must be >=33 bytes.
+// OUT: encackBuf - The data to go into an encack messsage.
 // RET: -1 if not successful, 0 if successful.
 const int bip151Connection::getEncackData(uint8_t* encackBuf,
                                           const size_t& encackBufSize)
@@ -824,6 +794,36 @@ const int bip151Connection::getEncackData(uint8_t* encackBuf,
    int retVal = inSes.getEncackData(encackBuf, encackBufSize);
 
    return retVal;
+}
+
+// Get a rekey message. Will be in the BIP 151 "encrypted message" format.
+//
+// IN:  encackSize - The size of the buffer with the encack rekey message. Must
+//                   be >=48 bytes.
+// OUT: encackMsg - The data to go into the encack rekey messsage.
+// RET: None
+void bip151Connection::getRekeyBuf(uint8_t* encackBuf,
+                                   const size_t& encackSize)
+{
+   BinaryData cmd("encack");
+   std::array<uint8_t, BIP151PUBKEYSIZE> payload{};
+   size_t finalMsgSize = 0;
+   bip151Message encackMsg(cmd.getPtr(), cmd.getSize(),
+                         payload.data(), payload.size());
+   encackMsg.getEncStructMsg(encackBuf, encackSize, finalMsgSize);
+}
+
+// The function that kicks off a rekey for a connection's outbound session.
+//
+// IN:  encackSize - The size of the buffer with the encack rekey message. Must
+//                   be >=48 bytes.
+// OUT: encackMsg - The data to go into the encack rekey messsage.
+// RET: None
+void bip151Connection::rekeyConn(uint8_t* encackBuf,
+                                 const size_t& encackSize)
+{
+   getRekeyBuf(encackBuf, encackSize);
+   outSes.sessionRekey();
 }
 
 // Function that returns the connection's input or output session ID.
@@ -853,7 +853,23 @@ const uint8_t* bip151Connection::getSessionID(const bool& dirIsOut)
 // RET: None
 bip151Message::bip151Message() {}
 
-// Overloaded BIP 151 message constructor. Sets up the contents.
+// Overloaded BIP 151 message constructor. Sets up the contents based on a
+// plaintext message in the BIP 151 "encrypted structure" format.
+//
+// IN:  inCmd - The command.
+//      inCmdSize - The command size.
+//      inPayload - The payload.
+//      inPayloadSize - The payload size.
+// OUT: None
+// RET: None
+bip151Message::bip151Message(uint8_t* plaintextData,
+                             uint32_t plaintextDataSize)
+{
+   setEncStruct(plaintextData, plaintextDataSize);
+}
+
+// Overloaded BIP 151 message constructor. Sets up the contents based on a
+// plaintext command and a binary payload.
 //
 // IN:  inCmd - The command.
 //      inCmdSize - The command size.
@@ -866,7 +882,7 @@ bip151Message::bip151Message(const uint8_t* inCmd,
                              const uint8_t* inPayload,
                              const size_t& inPayloadSize)
 {
-   setPayload(inCmd, inCmdSize, inPayload, inPayloadSize);
+   setEncStructData(inCmd, inCmdSize, inPayload, inPayloadSize);
 }
 
 // A function that sets up the plaintext contents via the individual command and
@@ -878,10 +894,10 @@ bip151Message::bip151Message(const uint8_t* inCmd,
 //      inPayloadSize - The payload size.
 // OUT: None
 // RET: None
-void bip151Message::setPayload(const uint8_t* inCmd,
-                               const size_t& inCmdSize,
-                               const uint8_t* inPayload,
-                               const size_t& inPayloadSize)
+void bip151Message::setEncStructData(const uint8_t* inCmd,
+                                     const size_t& inCmdSize,
+                                     const uint8_t* inPayload,
+                                     const size_t& inPayloadSize)
 {
    cmd.copyFrom(inCmd, inCmdSize);
    payload.copyFrom(inPayload, inPayloadSize);
@@ -894,8 +910,8 @@ void bip151Message::setPayload(const uint8_t* inCmd,
 //      plaintextDataSize - The size of the decrypted message payload.
 // OUT: None
 // RET: -1 if failure, 0 if success
-int bip151Message::setPayloadStruct(uint8_t* plaintextData,
-                                    const size_t& plaintextDataSize)
+int bip151Message::setEncStruct(uint8_t* plaintextData,
+                                uint32_t& plaintextDataSize)
 {
    int retVal = -1;
    BinaryReader inData(plaintextData, plaintextDataSize);
@@ -904,7 +920,8 @@ int bip151Message::setPayloadStruct(uint8_t* plaintextData,
    uint32_t msgSize = inData.get_uint32_t();
    if(msgSize != inData.getSizeRemaining())
    {
-      // LOG ERROR HERE
+      LOGERR << "BIP 151 - Incoming message size (" << msgSize << ") does not "
+         << "match the data buffer size (" << inData.getSizeRemaining() << ").";
       return retVal;
    }
 
@@ -918,19 +935,18 @@ int bip151Message::setPayloadStruct(uint8_t* plaintextData,
    return retVal;
 }
 
-// A function that gets the payload contents for a to-be-encrypted BIP 151
-// message.
+// A function that gets an "encrypted structure" BIP 151 plaintext message.
 //
 // IN:  None
 // OUT: outStruct - The struct for a to-be-encrypted BIP 151 message.
 //      outStructSize - The size of the incoming struct.
 //      finalStructSize - The final size of the written struct.
-// RET: false if failure to write, true if success.
-bool bip151Message::getPayloadStruct(uint8_t* outStruct,
-                                     const size_t& outStructSize,
-                                     size_t& finalStructSize)
+// RET: None
+void bip151Message::getEncStructMsg(uint8_t* outStruct,
+                                    const size_t& outStructSize,
+                                    size_t& finalStructSize)
 {
-   bool retVal = false;
+   assert(outStructSize >= messageSizeHint());
 
    size_t writerSize = messageSizeHint() - 4;
    BinaryWriter payloadWriter(writerSize);
@@ -941,11 +957,6 @@ bool bip151Message::getPayloadStruct(uint8_t* outStruct,
 
    // Write a second, final buffer.
    finalStructSize = payloadWriter.getSize() + 4;
-   if(finalStructSize > outStructSize)
-   {
-      // LOGERR HERE
-      return retVal;
-   }
    BinaryWriter finalStruct(finalStructSize);
    finalStruct.put_uint32_t(payloadWriter.getSize());
    finalStruct.put_BinaryData(payloadWriter.getData());
@@ -953,8 +964,33 @@ bool bip151Message::getPayloadStruct(uint8_t* outStruct,
    std::copy(finalStruct.getData().getPtr(),
              finalStruct.getData().getPtr() + finalStructSize,
              outStruct);
-   retVal = true;
-   return retVal;
+}
+
+// A function that gets the command from a BIP 151 message structure.
+//
+// IN:  encackSize - The size of the buffer with the encack rekey message. Must
+//                   be >=48 bytes.
+// OUT: encackMsg - The data to go into the encack rekey messsage.
+// RET: None
+void bip151Message::getCmd(uint8_t* cmdBuf,
+                           const size_t& cmdBufSize)
+{
+   assert(cmd.getSize() <= cmdBufSize);
+   std::copy(cmd.getPtr(), cmd.getPtr() + cmd.getSize(), cmdBuf);
+}
+
+// A function that gets the payload from a BIP 151 message structure.
+//
+// IN:  encackSize - The size of the buffer with the encack rekey message. Must
+//                   be >=48 bytes.
+// OUT: encackMsg - The data to go into the encack rekey messsage.
+// RET: None
+void bip151Message::getPayload(uint8_t* payloadBuf,
+                               const size_t& payloadBufSize)
+{
+   assert(payload.getSize() <= payloadBufSize);
+   std::copy(payload.getPtr(), payload.getPtr() + payload.getSize(),
+             payloadBuf);
 }
 
 // A function that can be used to determine the final struct output size. This
