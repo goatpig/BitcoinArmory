@@ -86,8 +86,6 @@ class BIP151Test : public ::testing::Test
 protected:
    virtual void SetUp(void)
    {
-      startupBIP151CTX();
-
       // Test vector data. Unfortunately, there are no test suites for BIP 151.
       // Test data was generated using a combination of Bcoin test results for
       // BIP 151, and private runs of libchacha20poly1305. Despite cobbling data
@@ -112,12 +110,22 @@ protected:
       string command_hexstr = "fake";
       string payload_hexstr = "deadbeef";
       string msg_hexstr = "0d0000000466616b6504000000deadbeef";
-      string cliMsg1_hexstr = "8c7b743fc456d2f4c7cbb18ebb697ddfdb8308b29b9031fba2c50c5d160ec77bc0";
-      string srvMsg1_hexstr = "0d0000000466616b6504000000deadbeef";
-      string cliMsg2_hexstr = "d5ce6ff902fa2936c8518ed503857134d7a062afe4c5868fd832188b8a5d84e576";
-      string srvMsg2_hexstr = "0d0000000466616b6504000000deadbeef";
-      string cliMsg3_hexstr = "08c2b3592f53197bf1e81df1f2d36dadca27470f4f422e583e2f4ce32cd9719f1ac5a3a8e3e5a0c5f47e60cbdc81f314d030a545c31d9b632ab4e8740f756c00";
-      string srvMsg3_hexstr = "2c00000006656e6361636b21000000000000000000000000000000000000000000000000000000000000000000000000";
+      string cliOutMsg1_hexstr = "8c7b743fc456d2f4c7cbb18ebb697ddfdb8308b29b9031fba2c50c5d160ec77bc0";
+      string srvInMsg1_hexstr = "0d0000000466616b6504000000deadbeef";
+      string cliOutMsg2_hexstr = "d5ce6ff902fa2936c8518ed503857134d7a062afe4c5868fd832188b8a5d84e576";
+      string srvInMsg2_hexstr = "0d0000000466616b6504000000deadbeef";
+      string cliOutMsg3_hexstr = "08c2b3592f53197bf1e81df1f2d36dadca27470f4f422e583e2f4ce32cd9719f1ac5a3a8e3e5a0c5f47e60cbdc81f314d030a545c31d9b632ab4e8740f756c00";
+      string srvInMsg3_hexstr = "2c00000006656e6361636b21000000000000000000000000000000000000000000000000000000000000000000000000";
+      string cliOutMsg4_hexstr = "aeebf0c698d0dc983db496a2c50a8a85e71101956b957f93d68cf6b5474d1c49b3";
+      string srvInMsg4_hexstr = "0d0000000466616b6504000000deadbeef";
+      string srvOutMsg1_hexstr = "754bd639b31487e6e775fd336acf9cb2790323f4355ffc2cf17fcb2c6827d30a7a";
+      string cliInMsg1_hexstr = "0d0000000466616b6504000000deadbeef";
+      string srvOutMsg2_hexstr = "63c9868c88c78b7cdc30f9a23f1f7f8bbe2dec215a38df518c6880bf51ce11a35a";
+      string cliInMsg2_hexstr = "0d0000000466616b6504000000deadbeef";
+      string srvOutMsg3_hexstr = "367951da70abdc072956680a17fed98c54d4cd5fabc401576cbdce7a3e1b1bfd236152b4e55a1a9ff732f98b2b874477a25eeaf3264c0af42932c2eada06c5ab";
+      string cliInMsg3_hexstr = "2c00000006656e6361636b21000000000000000000000000000000000000000000000000000000000000000000000000";
+      string srvOutMsg4_hexstr = "d00ed8a2b7b61f304f7d4bbf617b247a5c35fe04f715533785b2f81afcddfd6edd";
+      string cliInMsg4_hexstr = "0d0000000466616b6504000000deadbeef";
 
       prvKeyClientIn = READHEX(prvKeyClientIn_hexstr);
       prvKeyClientOut = READHEX(prvKeyClientOut_hexstr);
@@ -138,17 +146,22 @@ protected:
       command.copyFrom(command_hexstr);
       payload = READHEX(payload_hexstr);
       msg = READHEX(msg_hexstr);
-      cliMsg1 = READHEX(cliMsg1_hexstr);
-      srvMsg1 = READHEX(srvMsg1_hexstr);
-      cliMsg2 = READHEX(cliMsg2_hexstr);
-      srvMsg2 = READHEX(srvMsg2_hexstr);
-      cliMsg3 = READHEX(cliMsg3_hexstr);
-      srvMsg3 = READHEX(srvMsg3_hexstr);
-   }
-
-   virtual void TearDown(void)
-   {
-      shutdownBIP151CTX();
+      cliOutMsg1 = READHEX(cliOutMsg1_hexstr);
+      srvInMsg1 = READHEX(srvInMsg1_hexstr);
+      cliOutMsg2 = READHEX(cliOutMsg2_hexstr);
+      srvInMsg2 = READHEX(srvInMsg2_hexstr);
+      cliOutMsg3 = READHEX(cliOutMsg3_hexstr);
+      srvInMsg3 = READHEX(srvInMsg3_hexstr);
+      cliOutMsg4 = READHEX(cliOutMsg4_hexstr);
+      srvInMsg4 = READHEX(srvInMsg4_hexstr);
+      srvOutMsg1 = READHEX(srvOutMsg1_hexstr);
+      cliInMsg1 = READHEX(cliInMsg1_hexstr);
+      srvOutMsg2 = READHEX(srvOutMsg2_hexstr);
+      cliInMsg2 = READHEX(cliInMsg2_hexstr);
+      srvOutMsg3 = READHEX(srvOutMsg3_hexstr);
+      cliInMsg3 = READHEX(cliInMsg3_hexstr);
+      srvOutMsg4 = READHEX(srvOutMsg4_hexstr);
+      cliInMsg4 = READHEX(cliInMsg4_hexstr);
    }
 
    BinaryData prvKeyClientIn;
@@ -170,17 +183,31 @@ protected:
    BinaryData command;
    BinaryData payload;
    BinaryData msg;
-   BinaryData cliMsg1;
-   BinaryData srvMsg1;
-   BinaryData cliMsg2;
-   BinaryData srvMsg2;
-   BinaryData cliMsg3;
-   BinaryData srvMsg3;
+   BinaryData cliOutMsg1;
+   BinaryData srvInMsg1;
+   BinaryData cliOutMsg2;
+   BinaryData srvInMsg2;
+   BinaryData cliOutMsg3;
+   BinaryData srvInMsg3;
+   BinaryData cliOutMsg4;
+   BinaryData srvInMsg4;
+   BinaryData srvOutMsg1;
+   BinaryData cliInMsg1;
+   BinaryData srvOutMsg2;
+   BinaryData cliInMsg2;
+   BinaryData srvOutMsg3;
+   BinaryData cliInMsg3;
+   BinaryData srvOutMsg4;
+   BinaryData cliInMsg4;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(BIP151Test, checkData)
 {
+   // Run before the first test has been run. (SetUp/TearDown will be called
+   // for each test. Multiple context startups/shutdowns leads to crashes.)
+   startupBIP151CTX();
+
    // BIP 151 connection uses private keys we feed it. (Normally, we'd let it
    // generate its own private keys.)
    btc_key prvKeyCliIn;
@@ -195,35 +222,52 @@ TEST_F(BIP151Test, checkData)
    bip151Connection srvCon(&prvKeySrvIn, &prvKeySrvOut);
 
    // Set up encinit/encack directly. (Initial encinit/encack will use regular
-   // Bitcoin P2P messages, which we'll skip building.)
+   // Bitcoin P2P messages, which we'll skip building.) Confirm all steps
+   // function properly along the way.
    BinaryData cliInEncinitCliData(ENCINITMSGSIZE);   // SRV (Out) -> CLI (In)
    BinaryData cliInEncackCliData(BIP151PUBKEYSIZE);  // CLI (In)  -> SRV (Out)
    BinaryData cliOutEncinitCliData(ENCINITMSGSIZE);  // CLI (Out) -> SRV (In)
    BinaryData cliOutEncackCliData(BIP151PUBKEYSIZE); // SRV (In)  -> CLI (Out)
-   srvCon.getEncinitData(cliInEncinitCliData.getPtr(),
-                         cliInEncinitCliData.getSize(),
-                         bip151SymCiphers::CHACHA20POLY1305_OPENSSH);
-   cliCon.processEncinit(cliInEncinitCliData.getPtr(),
-                         cliInEncinitCliData.getSize(),
-                         false);
-   cliCon.getEncackData(cliInEncackCliData.getPtr(),
-                        cliInEncackCliData.getSize());
-   srvCon.processEncack(cliInEncackCliData.getPtr(),
-                        cliInEncackCliData.getSize(),
-                        true);
-   cliCon.getEncinitData(cliOutEncinitCliData.getPtr(),
-                         cliOutEncinitCliData.getSize(),
-                         bip151SymCiphers::CHACHA20POLY1305_OPENSSH);
-   srvCon.processEncinit(cliOutEncinitCliData.getPtr(),
-                         cliOutEncinitCliData.getSize(),
-                         false);
-   srvCon.getEncackData(cliOutEncackCliData.getPtr(),
-                        cliOutEncackCliData.getSize());
-   cliCon.processEncack(cliOutEncackCliData.getPtr(),
-                        cliOutEncackCliData.getSize(),
-                        true);
+   int s1 = srvCon.getEncinitData(cliInEncinitCliData.getPtr(),
+                                  cliInEncinitCliData.getSize(),
+                                  bip151SymCiphers::CHACHA20POLY1305_OPENSSH);
+   EXPECT_EQ(0, s1);
+   EXPECT_FALSE(srvCon.connectionComplete());
+   int s2 = cliCon.processEncinit(cliInEncinitCliData.getPtr(),
+                                  cliInEncinitCliData.getSize(),
+                                  false);
+   EXPECT_EQ(0, s2);
+   EXPECT_FALSE(cliCon.connectionComplete());
+   int s3 = cliCon.getEncackData(cliInEncackCliData.getPtr(),
+                                 cliInEncackCliData.getSize());
+   EXPECT_EQ(0, s3);
+   EXPECT_FALSE(cliCon.connectionComplete());
+   int s4 = srvCon.processEncack(cliInEncackCliData.getPtr(),
+                                 cliInEncackCliData.getSize(),
+                                 true);
+   EXPECT_EQ(0, s4);
+   EXPECT_FALSE(srvCon.connectionComplete());
+   int s5 = cliCon.getEncinitData(cliOutEncinitCliData.getPtr(),
+                                  cliOutEncinitCliData.getSize(),
+                                  bip151SymCiphers::CHACHA20POLY1305_OPENSSH);
+   EXPECT_EQ(0, s5);
+   EXPECT_FALSE(cliCon.connectionComplete());
+   int s6 = srvCon.processEncinit(cliOutEncinitCliData.getPtr(),
+                                  cliOutEncinitCliData.getSize(),
+                                  false);
+   EXPECT_EQ(0, s6);
+   EXPECT_FALSE(srvCon.connectionComplete());
+   int s7 = srvCon.getEncackData(cliOutEncackCliData.getPtr(),
+                                 cliOutEncackCliData.getSize());
+   EXPECT_EQ(0, s7);
+   EXPECT_TRUE(srvCon.connectionComplete());
+   int s8 = cliCon.processEncack(cliOutEncackCliData.getPtr(),
+                                 cliOutEncackCliData.getSize(),
+                                 true);
+   EXPECT_EQ(0, s8);
+   EXPECT_TRUE(cliCon.connectionComplete());
 
-   // Check the data the client sends on its outbound session.
+   // Check the encinit/encack data the client sends on its outbound session.
    BinaryData expectedCliEncinitData(34);
    std::copy(pubKeyClientOut.getPtr(),
              pubKeyClientOut.getPtr() + 33,
@@ -233,13 +277,24 @@ TEST_F(BIP151Test, checkData)
    EXPECT_EQ(pubKeyClientIn, cliInEncackCliData);
    EXPECT_EQ(expectedCliEncinitData, cliOutEncinitCliData);
 
+   // Check the encinit/encack data the server sends on its outbound session.
+   BinaryData expectedSrvEncinitData(34);
+   std::copy(pubKeyServerOut.getPtr(),
+             pubKeyServerOut.getPtr() + 33,
+             expectedSrvEncinitData.getPtr());
+   expectedSrvEncinitData[BIP151PUBKEYSIZE] = \
+      static_cast<uint8_t>(bip151SymCiphers::CHACHA20POLY1305_OPENSSH);
+   EXPECT_EQ(pubKeyServerIn, cliOutEncackCliData);
+   EXPECT_EQ(expectedSrvEncinitData, cliInEncinitCliData);
+
    // Check the session IDs.
    BinaryData inSesID(cliCon.getSessionID(false), 32);
    BinaryData outSesID(cliCon.getSessionID(true), 32);
    EXPECT_EQ(sesIDCliInSrvOut, inSesID);
    EXPECT_EQ(sesIDCliOutSrvIn, outSesID);
 
-   // Encrypt and decrypt a test packet.
+   // Get that the size of the encrypted packet will be correct. The message
+   // buffer is intentionally missized at first.
    BinaryData cmd("fake");
    std::array<uint8_t, 4> payload = {0xde, 0xad, 0xbe, 0xef};
    BinaryData testMsgData(50);
@@ -249,67 +304,191 @@ TEST_F(BIP151Test, checkData)
    testMsg.getEncStructMsg(testMsgData.getPtr(), testMsgData.getSize(),
                            finalMsgSize);
    testMsgData.resize(finalMsgSize);
+   EXPECT_EQ(finalMsgSize, 17);
    EXPECT_EQ(msg, testMsgData);
 
+   // Encrypt and decrypt the first CLI -> SRV packet. Buffer is intentionally
+   // oversized to show that the code works properly.
    BinaryData encMsgBuffer(testMsgData.getSize() + 16);
    int encryptRes = cliCon.assemblePacket(testMsgData.getPtr(),
                                           testMsgData.getSize(),
                                           encMsgBuffer.getPtr(),
                                           encMsgBuffer.getSize());
    EXPECT_EQ(0, encryptRes);
-   EXPECT_EQ(cliMsg1, encMsgBuffer);
-
+   EXPECT_EQ(cliOutMsg1, encMsgBuffer);
    BinaryData decMsgBuffer(testMsgData.getSize());
    int decryptRes = srvCon.decryptPacket(encMsgBuffer.getPtr(),
                                          encMsgBuffer.getSize(),
                                          decMsgBuffer.getPtr(),
                                          decMsgBuffer.getSize());
    EXPECT_EQ(0, decryptRes);
-   EXPECT_EQ(srvMsg1, decMsgBuffer);
+   EXPECT_EQ(srvInMsg1, decMsgBuffer);
 
-   // Encrypt and decrypt a second packet.
-   encMsgBuffer.clear();
+   // Encrypt and decrypt the second CLI -> SRV packet.
    encMsgBuffer.resize(testMsgData.getSize() + 16);
    encryptRes = cliCon.assemblePacket(testMsgData.getPtr(),
                                       testMsgData.getSize(),
                                       encMsgBuffer.getPtr(),
                                       encMsgBuffer.getSize());
    EXPECT_EQ(0, encryptRes);
-   EXPECT_EQ(cliMsg2, encMsgBuffer);
+   EXPECT_EQ(cliOutMsg2, encMsgBuffer);
 
-   decMsgBuffer.clear();
    decMsgBuffer.resize(testMsgData.getSize());
    decryptRes = srvCon.decryptPacket(encMsgBuffer.getPtr(),
                                      encMsgBuffer.getSize(),
                                      decMsgBuffer.getPtr(),
                                      decMsgBuffer.getSize());
-   EXPECT_EQ(0, encryptRes);
-   EXPECT_EQ(srvMsg2, decMsgBuffer);
+   EXPECT_EQ(0, decryptRes);
+   EXPECT_EQ(srvInMsg2, decMsgBuffer);
 
-   // Rekey and confirm that the data results in proper data generation.
-   BinaryData rekeyBuf(48);
-   cliCon.getRekeyBuf(rekeyBuf.getPtr(), rekeyBuf.getSize());
-   encMsgBuffer.clear();
-   encMsgBuffer.resize(rekeyBuf.getSize() + 16);
-   encryptRes = cliCon.assemblePacket(rekeyBuf.getPtr(),
-                                      rekeyBuf.getSize(),
+   // Rekey (CLI -> SRV) and confirm that the results are correct.
+   BinaryData rekeyBuf(64);
+   int rekeySendRes = cliCon.rekeyConn(rekeyBuf.getPtr(), rekeyBuf.getSize());
+   EXPECT_EQ(0, rekeySendRes);
+   EXPECT_EQ(cliOutMsg3, rekeyBuf);
+   decMsgBuffer.resize(rekeyBuf.getSize() - 16);
+   decryptRes = srvCon.decryptPacket(rekeyBuf.getPtr(),
+                                     rekeyBuf.getSize(),
+                                     decMsgBuffer.getPtr(),
+                                     decMsgBuffer.getSize());
+   EXPECT_EQ(0, decryptRes);
+   EXPECT_EQ(srvInMsg3, decMsgBuffer);
+   bip151Message decData1(decMsgBuffer.getPtr(), decMsgBuffer.getSize());
+   int rekeyProcRes = srvCon.processEncack(decData1.getPayloadPtr(),
+                                           decData1.getPayloadSize(),
+                                           false);
+   EXPECT_EQ(0, rekeyProcRes);
+
+   // Encrypt and decrypt the third CLI -> SRV packet.
+   encMsgBuffer.resize(testMsgData.getSize() + 16);
+   encryptRes = cliCon.assemblePacket(testMsgData.getPtr(),
+                                      testMsgData.getSize(),
                                       encMsgBuffer.getPtr(),
                                       encMsgBuffer.getSize());
    EXPECT_EQ(0, encryptRes);
-   EXPECT_EQ(cliMsg3, encMsgBuffer);
-   decMsgBuffer.clear();
-   decMsgBuffer.resize(rekeyBuf.getSize());
+   EXPECT_EQ(cliOutMsg4, encMsgBuffer);
+   decMsgBuffer.resize(testMsgData.getSize());
    decryptRes = srvCon.decryptPacket(encMsgBuffer.getPtr(),
                                      encMsgBuffer.getSize(),
                                      decMsgBuffer.getPtr(),
                                      decMsgBuffer.getSize());
    EXPECT_EQ(0, decryptRes);
-   EXPECT_EQ(srvMsg3, decMsgBuffer);
-   bip151Message decData(decMsgBuffer.getPtr(), decMsgBuffer.getSize());
-   int rekeyRes = srvCon.processEncack(decData.getPayloadPtr(),
-                                       decData.getPayloadSize(),
+   EXPECT_EQ(srvInMsg4, decMsgBuffer);
+
+   // Encrypt and decrypt the first SRV -> CLI packet.
+   encMsgBuffer.resize(testMsgData.getSize() + 16);
+   encryptRes = srvCon.assemblePacket(testMsgData.getPtr(),
+                                      testMsgData.getSize(),
+                                      encMsgBuffer.getPtr(),
+                                      encMsgBuffer.getSize());
+   EXPECT_EQ(0, encryptRes);
+   EXPECT_EQ(srvOutMsg1, encMsgBuffer);
+
+   decMsgBuffer.resize(testMsgData.getSize());
+   decryptRes = cliCon.decryptPacket(encMsgBuffer.getPtr(),
+                                     encMsgBuffer.getSize(),
+                                     decMsgBuffer.getPtr(),
+                                     decMsgBuffer.getSize());
+   EXPECT_EQ(0, decryptRes);
+   EXPECT_EQ(cliInMsg1, decMsgBuffer);
+
+   // Encrypt and decrypt the second SRV -> CLI packet.
+   encMsgBuffer.resize(testMsgData.getSize() + 16);
+   encryptRes = srvCon.assemblePacket(testMsgData.getPtr(),
+                                      testMsgData.getSize(),
+                                      encMsgBuffer.getPtr(),
+                                      encMsgBuffer.getSize());
+   EXPECT_EQ(0, encryptRes);
+   EXPECT_EQ(srvOutMsg2, encMsgBuffer);
+
+   decMsgBuffer.resize(testMsgData.getSize());
+   decryptRes = cliCon.decryptPacket(encMsgBuffer.getPtr(),
+                                     encMsgBuffer.getSize(),
+                                     decMsgBuffer.getPtr(),
+                                     decMsgBuffer.getSize());
+   EXPECT_EQ(0, decryptRes);
+   EXPECT_EQ(cliInMsg2, decMsgBuffer);
+
+   // Rekey (CLI -> SRV) and confirm that the results are correct.
+   rekeySendRes = srvCon.rekeyConn(rekeyBuf.getPtr(), rekeyBuf.getSize());
+   EXPECT_EQ(0, rekeySendRes);
+   EXPECT_EQ(srvOutMsg3, rekeyBuf);
+   decMsgBuffer.resize(rekeyBuf.getSize() - 16);
+   decryptRes = cliCon.decryptPacket(rekeyBuf.getPtr(),
+                                     rekeyBuf.getSize(),
+                                     decMsgBuffer.getPtr(),
+                                     decMsgBuffer.getSize());
+   EXPECT_EQ(0, decryptRes);
+   EXPECT_EQ(cliInMsg3, decMsgBuffer);
+   bip151Message decData2(decMsgBuffer.getPtr(), decMsgBuffer.getSize());
+   rekeyProcRes = cliCon.processEncack(decData2.getPayloadPtr(),
+                                       decData2.getPayloadSize(),
                                        false);
-   EXPECT_EQ(0, rekeyRes);
+   EXPECT_EQ(0, rekeyProcRes);
+
+   // Encrypt and decrypt the third SRV -> CLI packet.
+   encMsgBuffer.resize(testMsgData.getSize() + 16);
+   encryptRes = cliCon.assemblePacket(testMsgData.getPtr(),
+                                      testMsgData.getSize(),
+                                      encMsgBuffer.getPtr(),
+                                      encMsgBuffer.getSize());
+   EXPECT_EQ(0, encryptRes);
+   EXPECT_EQ(srvOutMsg4, encMsgBuffer);
+
+   decMsgBuffer.resize(testMsgData.getSize());
+   decryptRes = srvCon.decryptPacket(encMsgBuffer.getPtr(),
+                                     encMsgBuffer.getSize(),
+                                     decMsgBuffer.getPtr(),
+                                     decMsgBuffer.getSize());
+   EXPECT_EQ(0, decryptRes);
+   EXPECT_EQ(cliInMsg4, decMsgBuffer);
+}
+
+// Test handshake failure cases. All cases will fail eventually.
+TEST_F(BIP151Test, handshakeCases)
+{
+   // Try to generate an encack before generating an encinit.
+   bip151Connection cliCon1;
+   bip151Connection srvCon1;
+   std::array<uint8_t, BIP151PUBKEYSIZE> dummy1{};
+   std::array<uint8_t, BIP151PUBKEYSIZE> dummy2{};
+   int s1 = cliCon1.getEncackData(dummy1.data(),
+                                  dummy1.size());
+   EXPECT_EQ(-1, s1);
+
+   // Try to process an encack before processing an encinit.
+   dummy1[0] = 0x03;
+   dummy1[1] = 0xff;
+   int s2 = srvCon1.processEncack(dummy1.data(),
+                                  dummy1.size(),
+                                  true);
+   EXPECT_EQ(-1, s2);
+
+   // Attempt to set an incorrect ciphersuite.
+   bip151Connection cliCon2;
+   bip151Connection srvCon2;
+   std::array<uint8_t, ENCINITMSGSIZE> dummy3{};
+   std::array<uint8_t, BIP151PUBKEYSIZE> dummy4{};
+   int s3 = cliCon2.getEncinitData(dummy3.data(),
+                                   dummy3.size(),
+                                   static_cast<bip151SymCiphers>(0xda));
+   EXPECT_EQ(-1, s3);
+
+   // Attempt to rekey before the connection is complete.
+   int s4 = cliCon2.getEncinitData(dummy3.data(),
+                                   dummy3.size(),
+                                   bip151SymCiphers::CHACHA20POLY1305_OPENSSH);
+   EXPECT_EQ(0, s4);
+   int s5 = srvCon2.processEncinit(dummy3.data(),
+                                   dummy3.size(),
+                                   false);
+   EXPECT_EQ(0, s5);
+   int s6 = cliCon2.rekeyConn(dummy4.data(),
+                              dummy4.size());
+   EXPECT_EQ(-1, s6);
+
+   // Run after the final test has finished.
+   shutdownBIP151CTX();
 }
 
 

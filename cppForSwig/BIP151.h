@@ -14,18 +14,16 @@
 // NOTE: There is a very subtle implementation detail in BIP 151 that requires
 // attention. BIP 151 explicitly states that it uses ChaCha20Poly1305 as used in
 // OpenSSH. This is important. RFC 7539 is a formalized version of what's in
-// OpenSSH, with tiny changes. In particular, the OpenSSH version of Poly1305
-// uses 64-bit nonces. RFC 7539 uses 96-bit nonces. Because of this, THE
+// OpenSSH, with tiny changes. For example, the OpenSSH version of Poly1305 uses
+// 64-bit nonces, and RFC 7539 uses 96-bit nonces. Because of this, THE
 // IMPLEMENTATIONS ARE INCOMPATIBLE WHEN VERIFYING THE OTHER VARIANT'S POLY1305
 // TAGS. Bcrypto (the only library used in a public BIP 151 implementation as of
 // June 2018) appears to use the RFC 7539 variant. So, as of June 2018, there
 // are no Bitcoin-related codebases that can generate mutually verifiable
-// Poly1305 data. (See https://tools.ietf.org/html/rfc7539#section-2.8 for more
-// info.)
-//
-// Despite the OpenSSH and RFC differences, the two variants can generate the
-// same encrypted results. However, this is another thing to note if Armory
-// attempts to interoperate directly with other BIP 151 nodes in the future.
+// BIP 151 test data. (See https://tools.ietf.org/html/rfc7539 and
+// https://github.com/openssh/openssh-portable/blob/master/PROTOCOL.chacha20poly1305
+// for more info.) In addition, this may affect ChaCha20 too beyond the first
+// encryption/decryption cycle.
 
 #ifndef BIP151_H
 #define BIP151_H
@@ -40,7 +38,7 @@ extern "C" {
 #include "BinaryData.h"
 
 // With ChaCha20Poly1305, 1 GB is the max 
-#define CHACHA20POLY1305MAXBYTESSENT 10000000000
+#define CHACHA20POLY1305MAXBYTESSENT 1000000000
 #define POLY1305MACLEN 16
 #define AUTHASSOCDATAFIELDLEN 4
 #define CHACHAPOLY1305_AEAD_ENC 1
@@ -48,8 +46,8 @@ extern "C" {
 #define BIP151PUBKEYSIZE 33
 #define ENCINITMSGSIZE 34
 
-// Match against BIP 151 spec, although "INVALID" is our choice.
-enum class bip151SymCiphers : uint8_t {CHACHA20POLY1305_OPENSSH = 0, INVALID};
+// Match against BIP 151 spec, although "INVALID" is our addition.
+enum class bip151SymCiphers : uint8_t {CHACHA20POLY1305_OPENSSH = 0x00, INVALID};
 
 // Global functions needed to deal with a global libsecp256k1 context.
 // libbtc doesn't export its libsecp256k1 context (which, by the way, is set up
@@ -100,7 +98,7 @@ public:
    const uint8_t* getSessionID() const { return sessionID.data(); }
    const std::string getSessionIDHex() const;
    const bool handshakeComplete() const { return (encinit == true && encack == true); }
-   const bool getBytesOnCurKeys() const { return bytesOnCurKeys; }
+   const uint32_t getBytesOnCurKeys() const { return bytesOnCurKeys; }
    void setOutgoing() { isOutgoing = true; }
    const bool getOutgoing() const { return isOutgoing; }
    bool getSeqNum() const { return seqNum; }
@@ -109,7 +107,7 @@ public:
    const bool rekeyNeeded();
    void addBytes(const uint32_t& sentBytes) { bytesOnCurKeys += sentBytes; }
    int getEncinitData(uint8_t* initBuffer, const size_t& initBufferSize,
-                      const bip151SymCiphers& cipherType);
+                      const bip151SymCiphers& inCipher);
    int getEncackData(uint8_t* ackBuffer, const size_t& ackBufferSize);
    bool isCipherValid(const bip151SymCiphers& inCipher);
    void incSeqNum() { ++seqNum; };
@@ -126,6 +124,8 @@ private:
    bip151Session inSes;
    bip151Session outSes;
 
+   int getRekeyBuf(uint8_t* encackBuf, const size_t& encackSize);
+
 public:
    // Default constructor - Used when initiating contact with a peer.
    bip151Connection();
@@ -140,14 +140,13 @@ public:
    int processEncack(const uint8_t* inMsg, const size_t& inMsgSize,
                      const bool outDir);
    const int getEncinitData(uint8_t* encinitBuf, const size_t& encinitBufSize,
-                            const bip151SymCiphers& cipherType);
+                            const bip151SymCiphers& inCipher);
    const int getEncackData(uint8_t* encackBuf, const size_t& encBufSize);
    const bool rekeyNeeded() { return outSes.rekeyNeeded(); }
-   void getRekeyBuf(uint8_t* encackBuf, const size_t& encackSize);
-   void rekeyConn(uint8_t* encackBuf, const size_t& encackSize);
+   int rekeyConn(uint8_t* encackBuf, const size_t& encackSize);
    const uint8_t* getSessionID(const bool& dirIsOut);
    const bool connectionComplete() const { return(inSes.handshakeComplete() == true &&
-                                            outSes.handshakeComplete() == true); }
+                                                  outSes.handshakeComplete() == true); }
 };
 
 // Class to use on BIP 151 encrypted messages. Contains the plaintext contents
