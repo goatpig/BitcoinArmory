@@ -13,6 +13,7 @@
 #define HKDF_H
 
 #include <cstdint>
+#include <cstring>
 
 void hkdf_sha256(uint8_t *result, const size_t &resultSize,
                  const uint8_t *salt, const size_t &ssize,

@@ -31,6 +31,15 @@ gtest_DB1kIterTest_LDADD = gtest/libgtest.la
 gtest_DB1kIterTest_LDFLAGS = $(AM_LDFLAGS) $(LDFLAGS) -static
 TESTS += gtest/DB1kIterTest
 
+# BIP151RekeyTest
+bin_PROGRAMS += gtest/BIP151RekeyTest
+gtest_BIP151RekeyTest_SOURCES = gtest/BIP151RekeyTest.cpp
+gtest_BIP151RekeyTest_CXXFLAGS = $(AM_CXXFLAGS)
+gtest_BIP151RekeyTest_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+gtest_BIP151RekeyTest_LDADD = gtest/libgtest.la
+gtest_BIP151RekeyTest_LDFLAGS = $(AM_LDFLAGS) $(LDFLAGS) -static
+TESTS += gtest/BIP151RekeyTest
+
 # SupernodeTests
 bin_PROGRAMS += gtest/SupernodeTests
 gtest_SupernodeTests_SOURCES = gtest/SupernodeTests.cpp

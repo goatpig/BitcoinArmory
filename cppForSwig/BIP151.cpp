@@ -7,7 +7,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include <cassert>
-#include <iomanip>
 
 #include "hkdf.h"
 #include "btc/ecc.h"
@@ -164,7 +163,7 @@ const bool bip151Session::rekeyNeeded()
    // In theory, there's a race condition if both sides decide at the same time
    // to rekey. In practice, they'll arrive at the same keys eventually.
    // FIX - Add a timer policy. Not currently coded.
-   if(bytesOnCurKeys > CHACHA20POLY1305MAXBYTESSENT /*|| Timer policy check here */)
+   if(bytesOnCurKeys >= CHACHA20POLY1305MAXBYTESSENT /*|| Timer policy check here */)
    {
       retVal = true;
    }
@@ -418,7 +417,7 @@ void bip151Session::chacha20Poly1305Rekey(uint8_t* keyToUpdate,
 int bip151Session::setCipherType(const bip151SymCiphers& inCipher)
 {
    int retVal = -1;
-   if(isCipherValid(inCipher))
+   if(isCipherValid(inCipher) == true)
    {
       cipherType = inCipher;
       retVal = 0;
@@ -426,7 +425,7 @@ int bip151Session::setCipherType(const bip151SymCiphers& inCipher)
    else
    {
       LOGERR << "BIP 151 - Invalid ciphersuite type ("
-         << static_cast<int>(cipherType) << ")";
+         << static_cast<int>(inCipher) << ")";
    }
    return retVal;
 }
@@ -441,6 +440,7 @@ bool bip151Session::isCipherValid(const bip151SymCiphers& inCipher)
 {
    // For now, this is simple. Just check for ChaChaPoly1305.
    bool retVal = false;
+
    if(inCipher == bip151SymCiphers::CHACHA20POLY1305_OPENSSH)
    {
       retVal = true;
@@ -463,16 +463,22 @@ void bip151Session::gettempECDHPubKey(btc_pubkey* tempECDHPubKey)
 // used to get data for encrypted and unencrypted encinit messages.
 //
 // IN:  initBufferSize - The size of the output buffer.
-//      cipherType - The cipher type to send.
+//      inCipher - The cipher type to send.
 // OUT: initBuffer - The buffer with the encinit data.
 // RET: -1 if failure, 0 if success
 int bip151Session::getEncinitData(uint8_t* initBuffer,
                                   const size_t& initBufferSize,
-                                  const bip151SymCiphers& cipherType)
+                                  const bip151SymCiphers& inCipher)
 {
    int retVal = -1;
-   if(setCipherType(cipherType) != 0 || initBufferSize > ENCINITMSGSIZE)
+   if(setCipherType(inCipher) != 0)
    {
+      return retVal;
+   }
+   if(initBufferSize != ENCINITMSGSIZE)
+   {
+      LOGERR << "BIP 151 - encinit data buffer is not " << ENCINITMSGSIZE
+         << " bytes.";
       return retVal;
    }
 
@@ -512,8 +518,15 @@ int bip151Session::getEncackData(uint8_t* ackBuffer,
 {
    int retVal = -1;
 
-   if(setCipherType(cipherType) != 0 || ackBufferSize > BIP151PUBKEYSIZE)
+   if(!encinit)
    {
+      LOGERR << "BIP 151 - Getting encack data before an encinit has arrived.";
+      return retVal;
+   }
+   if(ackBufferSize != BIP151PUBKEYSIZE)
+   {
+      LOGERR << "BIP 151 - encack data buffer is not " << BIP151PUBKEYSIZE
+         << " bytes.";
       return retVal;
    }
 
@@ -527,7 +540,7 @@ int bip151Session::getEncackData(uint8_t* ackBuffer,
                                  &ourPubKey,
                                  genSymECDHPrivKey.privkey))
    {
-      LOGERR << "BIP 151 - Invalid public key creation. Closing connection.";
+      LOGERR << "BIP 151 - Invalid encack public key creation.";
       return retVal;
    }
    secp256k1_ec_pubkey_serialize(secp256k1_ecdh_ctx,
@@ -637,10 +650,11 @@ int bip151Connection::processEncinit(const uint8_t* inMsg,
    return retVal;
 }
 
-// The function that handing incoming and outgoing "encack" messages.
+// The function that handing incoming and outgoing "encack" payloads.
 // 
 // IN:  inMsg - Buffer with the encack msg contents.
-//      outgoing - Boolean indicating if the message is outgoing or incoming.
+//      inMsgSize - Size of the incoming buffer. Must be 33 bytes.
+//      outDir - Boolean indicating if the message is outgoing or incoming.
 // OUT: None
 // RET: -1 if unsuccessful, 0 if successful.
 int bip151Connection::processEncack(const uint8_t* inMsg,
@@ -662,8 +676,7 @@ int bip151Connection::processEncack(const uint8_t* inMsg,
       // Valid only if we've already seen an encinit.
       if(!outSes.encinitSeen())
       {
-         LOGERR << "BIP 151 - Received an encack message before an encinit ("
-            << "outgoing session ID " << outSes.getSessionIDHex() << "). "
+         LOGERR << "BIP 151 - Received an encack message before an encinit. "
             << "Closing connection.";
          return retVal;
       }
@@ -770,15 +783,15 @@ int bip151Connection::decryptPacket(const uint8_t* cipherData,
 // will do incoming data validation.
 //
 // IN:  encinitBufSize - encinit data buffer size.
-//      cipherType - The cipher type to get.
+//      inCipher - The cipher type to get.
 // OUT: encinitBuf - The data to go into an encinit messsage.
 // RET: -1 if not successful, 0 if successful.
 const int bip151Connection::getEncinitData(uint8_t* encinitBuf,
                                            const size_t& encinitBufSize,
-                                           const bip151SymCiphers& cipherType)
+                                           const bip151SymCiphers& inCipher)
 {
    outSes.setEncinitSeen();
-   return outSes.getEncinitData(encinitBuf, encinitBufSize, cipherType);
+   return outSes.getEncinitData(encinitBuf, encinitBufSize, inCipher);
 }
 
 // Function that gets encack data from the inbound session. Assume the session
@@ -796,34 +809,35 @@ const int bip151Connection::getEncackData(uint8_t* encackBuf,
    return retVal;
 }
 
-// Get a rekey message. Will be in the BIP 151 "encrypted message" format.
-//
-// IN:  encackSize - The size of the buffer with the encack rekey message. Must
-//                   be >=48 bytes.
-// OUT: encackMsg - The data to go into the encack rekey messsage.
-// RET: None
-void bip151Connection::getRekeyBuf(uint8_t* encackBuf,
-                                   const size_t& encackSize)
-{
-   BinaryData cmd("encack");
-   std::array<uint8_t, BIP151PUBKEYSIZE> payload{};
-   size_t finalMsgSize = 0;
-   bip151Message encackMsg(cmd.getPtr(), cmd.getSize(),
-                         payload.data(), payload.size());
-   encackMsg.getEncStructMsg(encackBuf, encackSize, finalMsgSize);
-}
-
 // The function that kicks off a rekey for a connection's outbound session.
 //
 // IN:  encackSize - The size of the buffer with the encack rekey message. Must
-//                   be >=48 bytes.
+//                   be >=64 bytes.
 // OUT: encackMsg - The data to go into the encack rekey messsage.
-// RET: None
-void bip151Connection::rekeyConn(uint8_t* encackBuf,
-                                 const size_t& encackSize)
+// RET: -1 if failure, 0 if successful.
+int bip151Connection::rekeyConn(uint8_t* encackBuf,
+                                const size_t& encackSize)
 {
-   getRekeyBuf(encackBuf, encackSize);
+   assert(encackSize >= 64);
+
+   int retVal = -1;
+   BinaryData clrRekeyBuf(48);
+   if(getRekeyBuf(clrRekeyBuf.getPtr(), clrRekeyBuf.getSize()) == -1)
+   {
+      return retVal;
+   }
+
+   if(assemblePacket(clrRekeyBuf.getPtr(),
+                     clrRekeyBuf.getSize(),
+                     encackBuf,
+                     encackSize) == -1)
+   {
+      return retVal;
+   }
+
    outSes.sessionRekey();
+   retVal = 0;
+   return retVal;
 }
 
 // Function that returns the connection's input or output session ID.
@@ -843,6 +857,34 @@ const uint8_t* bip151Connection::getSessionID(const bool& dirIsOut)
       sesToUse = &inSes;
    }
    return sesToUse->getSessionID();
+}
+
+// Get a rekey message. Will be in the BIP 151 "encrypted message" format.
+//
+// IN:  encackSize - The size of the buffer with the encack rekey message. Must
+//                   be >=48 bytes.
+// OUT: encackMsg - The data to go into the encack rekey messsage.
+// RET: -1 if successful, 0 if successful.
+int bip151Connection::getRekeyBuf(uint8_t* encackBuf,
+                                   const size_t& encackSize)
+{
+   int retVal = -1;
+
+   // If the connection isn't complete yet, the function fails.
+   if(connectionComplete() == false)
+   {
+      LOGERR << "BIP 151 - Attempting a rekey before connection is completed.";
+      return retVal;
+   }
+
+   BinaryData cmd("encack");
+   std::array<uint8_t, BIP151PUBKEYSIZE> payload{};
+   size_t finalMsgSize = 0;
+   bip151Message encackMsg(cmd.getPtr(), cmd.getSize(),
+                         payload.data(), payload.size());
+   encackMsg.getEncStructMsg(encackBuf, encackSize, finalMsgSize);
+   retVal = 0;
+   return retVal;
 }
 
 
