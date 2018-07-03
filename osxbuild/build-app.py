@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 """Build Armory as a Mac OS X Application."""
 
 import os
@@ -19,23 +19,23 @@ from tempfile import mkstemp
 
 # Set some constants up front
 minOSXVer     = '10.8'
-pythonVer     = '2.7.14' # NB: ArmoryMac.pro must also be kept up to date!!!
+pythonVer     = '2.7.15' # NB: ArmoryMac.pro must also be kept up to date!!!
 pyMajorVer    = '2.7'
-setToolVer    = '38.2.3'
-setToolSubdir = '41/80/268fda78a53c2629128f8174d2952c7f902c93ebaa2062b64f27aa101b07'
-pipVer        = '9.0.1'
-pipSubdir     = '11/b6/abcb525026a4be042b486df43905d6893fb04f05aac21c32c638e939e447'
-psutilVer     = '5.4.1'
-psutilSubdir  = 'fe/17/0f0bf5792b2dfe6003efc5175c76225f7d3426f88e2bf8d360cfab870cd8'
+setToolVer    = '39.2.0'
+setToolSubdir = '1a/04/d6f1159feaccdfc508517dba1929eb93a2854de729fa68da9d5c6b48fa00'
+pipVer        = '10.0.1'
+pipSubdir     = 'ae/e8/2340d46ecadb1692a1e455f13f75e596d4eab3d11a57446f08259dee8f02'
+psutilVer     = '5.4.6'
+psutilSubdir  = '51/9e/0f8f5423ce28c9109807024f7bdde776ed0b1161de20b408875de7e030c3'
 libpngVer     = '1.6.34'
-qtVer         = '4.8.7'  # NB: ArmoryMac.pro must also be kept up to date!!!
-                         # Possibly "sipFlags" below too.
+qtVer         = '4.8.7'   # NB: ArmoryMac.pro must also be kept up to date!!!
+                          # Possibly "sipFlags" below too.
 sipVer        = '4.19.6' # NB: ArmoryMac.pro must also be kept up to date!!!
-pyQtVer       = '4.12.1' # NB: When I'm upgraded, SIP usually has to be upgraded too.
+pyQtVer       = '4.12.1'  # NB: When I'm upgraded, SIP usually has to be upgraded too.
 
 # Used only if compiling a version that supports armoryd
-twistedVer    = '17.9.0'
-twistedSubdir = 'a2/37/298f9547606c45d75aa9792369302cc63aa4bbcf7b5f607560180dd099d2'
+twistedVer    = '18.4.0'
+twistedSubdir = '12/2a/e9e4fb2e6b2f7a75577e0614926819a472934b0b85f205ba5d5d2add54d0'
 
 # Various paths and build materials related to Armory.
 LOGFILE        = 'build-app.log.txt'
@@ -48,14 +48,16 @@ WORKUNPACKDIR  = path.join(WORKDIR, 'unpackandbuild')
 WORKINSTALLDIR = path.join(WORKDIR, 'install')
 ARMORYCODEBASE = path.join(APPBASE, 'Contents/MacOS/py')
 PYFRAMEBASE    = path.join(APPBASE, 'Contents/Frameworks/Python.framework/Versions/%s' % pyMajorVer)
+LIBINSTPATH    = path.join(ARMORYCODEBASE, 'usr/local')
 PYLIBPREFIX    = path.join(PYFRAMEBASE, 'lib')
 PYINCPREFIX    = path.join(PYFRAMEBASE, 'include/python%s' % pyMajorVer)
 PYBINARY       = path.join(PYFRAMEBASE, 'Resources/Python.app/Contents/MacOS/Python')
+PYBINPATH      = path.join(PYFRAMEBASE, 'bin') # Needed by rebuildapp/compapponly
 PYSITEPKGS     = path.join(PYLIBPREFIX, 'python%s/site-packages' % pyMajorVer)
 MAKEFLAGS      = '-j4'
 
 # Autotools needs some TLC to make Python happy.
-CONFIGFLAGS = '--with-macosx-version-min=%s LIBS=\"-L%s\" PYTHON=\"%s\" PYTHON_LDFLAGS=\"-L%s\" PYTHON_CPPFLAGS=\"-I%s\" PYTHON_EXTRA_LIBS=\"-u _PyMac_Error %s/Python\"' % (minOSXVer, PYLIBPREFIX, PYBINARY, PYLIBPREFIX, PYINCPREFIX, PYFRAMEBASE)
+CONFIGFLAGS = '--prefix=\"%s\" --with-macosx-version-min=%s PATH=\"$PATH:%s\" LIBS=\"-L%s\" PYTHON=\"%s\" PYTHON_LDFLAGS=\"-L%s\" PYTHON_CPPFLAGS=\"-I%s\" PYTHON_EXTRA_LIBS=\"-u _PyMac_Error %s/Python\"' % (LIBINSTPATH, minOSXVer, PYBINPATH, PYLIBPREFIX, PYBINARY, PYLIBPREFIX, PYINCPREFIX, PYFRAMEBASE)
 
 # Susceptible to build failures. Would fix, but prereqs are going away. Leave
 # alone since it'll be gone soon anyway.
@@ -66,6 +68,7 @@ QTBUILTFLAG = path.join(WORKUNPACKDIR, 'qt/qt_install_success.txt')
 parser = optparse.OptionParser(usage="%prog [options]\n")
 parser.add_option('--fromscratch',  dest='fromscratch', default=False, action='store_true', help='Remove all prev-downloaded: redownload and rebuild all')
 parser.add_option('--rebuildall',   dest='rebuildall',  default=False, action='store_true', help='Remove all prev-built; no redownload, only rebuild')
+parser.add_option('--rebuildapp',   dest='rebuildapp',  default=False, action='store_true', help='Completely rebuild (autogen/configure/make) Armory')
 parser.add_option('--compapponly',  dest='compapponly', default=False, action='store_true', help='Recompile Armory, not the 3rd party code')
 parser.add_option('--armoryd',      dest='armoryd',     default=False, action='store_true', help='Add files to allow armoryd to run')
 (CLIOPTS, CLIARGS) = parser.parse_args()
@@ -113,7 +116,7 @@ def main():
    if path.exists(LOGFILE):
       os.remove(LOGFILE)
 
-   if not CLIOPTS.compapponly:
+   if not CLIOPTS.rebuildapp and not CLIOPTS.compapponly:
       delete_prereq_data(CLIOPTS)
 
    makedir(WORKDIR)
@@ -131,7 +134,7 @@ def main():
       make_empty_app()
       make_resources()
 
-   if not CLIOPTS.compapponly:
+   if not CLIOPTS.rebuildapp and not CLIOPTS.compapponly:
       compile_python()
       compile_pip()
       compile_libpng()
@@ -333,23 +336,23 @@ def downloadPkg(pkgname, fname, url, ID, toDir=WORKDLDIR):
 distfiles = []
 distfiles.append( [ 'Python', \
                     "Python-%s.tar.xz" % pythonVer, \
-                    "http://python.org/ftp/python/%s/Python-%s.tar.xz" % (pythonVer, pythonVer), \
-                    "cf146474fc988b4b6b53fdd81b71c2815873b469" ] )
+                    "https://python.org/ftp/python/%s/Python-%s.tar.xz" % (pythonVer, pythonVer), \
+                    "f99348a095ec4a6411c84c0d15343d11920c9724" ] )
 
 distfiles.append( [ 'setuptools', \
                     "setuptools-%s.zip" % setToolVer, \
                     "https://pypi.python.org/packages/%s/setuptools-%s.zip" % (setToolSubdir, setToolVer), \
-                    "a1044deb1f2c42f037003f02704557fb4ee55694" ] )
+                    "83e75ec6b04423735e0a9a384b465c68f5206bcf" ] )
 
 distfiles.append( [ 'Pip', \
                     "pip-%s.tar.gz" % pipVer, \
                     "https://pypi.python.org/packages/%s/pip-%s.tar.gz" % (pipSubdir, pipVer), \
-                    "57ff41e99cb01b6a1c2b0999161589b726f0ec8b" ] )
+                    "b5ed40805e5bedb8e992c618a24dbe88cb85ae70" ] )
 
 distfiles.append( [ "psutil", \
                     "psutil-%s.tar.gz" % psutilVer, \
                     "https://pypi.python.org/packages/%s/psutil-%s.tar.gz" % (psutilSubdir, psutilVer), \
-                    "6305bc320d7b9d37967e5e004e2404beefa71a34" ] )
+                    "b304ed9909588f1ee0a7bd3060df54fd06f8323d" ] )
 
 distfiles.append( [ 'libpng', \
                     "libpng-%s.tar.xz" % libpngVer, \
@@ -364,13 +367,13 @@ distfiles.append( [ 'libpng', \
 
 distfiles.append( [ "Qt", \
                     "qt-everywhere-opensource-src-%s.tar.gz" % qtVer, \
-                    "http://download.qt-project.org/official_releases/qt/4.8/%s/qt-everywhere-opensource-src-%s.tar.gz" % (qtVer, qtVer), \
+                    "https://download.qt.io/archive/qt/4.8/%s/qt-everywhere-opensource-src-%s.tar.gz" % (qtVer, qtVer), \
                     "76aef40335c0701e5be7bb3a9101df5d22fe3666" ] )
 
 distfiles.append( [ "sip", \
                     "sip-%s.tar.gz" % sipVer, \
                     "https://sourceforge.net/projects/pyqt/files/sip/sip-%s/sip-%s.tar.gz" % (sipVer, sipVer), \
-                    '61ff744c67642f10a352f3e076cbe89c79e6387b' ] )
+                    '41806f7b284b3f386e922635ce974959a843c738' ] )
 
 # When we upgrade to Qt5....
 #distfiles.append( [ "pyqt", \
@@ -386,7 +389,7 @@ distfiles.append( [ "pyqt", \
 distfiles.append( [ 'Twisted', \
                     "Twisted-%s.tar.bz2" % twistedVer, \
                     "https://files.pythonhosted.org/packages/%s/Twisted-%s.tar.bz2" % (twistedSubdir, twistedVer), \
-                    "a218e69ab51b5c6b632043f91aed98bc92083a90" ] )
+                    "2fdbd45125e23eb1a24c458b16467e95cda517f2" ] )
 
 # Now repack the information in distfiles
 tarfilesToDL = {}
@@ -449,7 +452,7 @@ def compile_pip():
    if path.exists(pipexe):
       logprint('Pip already installed')
    else:
-      command = 'python -s setup.py --no-user-cfg install --force --verbose'
+      command = 'python2 -s setup.py --no-user-cfg install --force --verbose'
 
       # Unpack and build setuptools
       logprint('Installing setuptools.')
@@ -513,6 +516,8 @@ def compile_qt():
    execAndWait('patch -p1 < %s' % path.join(os.getcwd(), 'qpaintengine_mac.patch'), cwd=qtBuildDir)
    # macOS 10.13 errors on unused code.
    execAndWait('patch -p1 < %s' % path.join(os.getcwd(), 'qt_cocoa_helpers_mac.patch'), cwd=qtBuildDir)
+   # Xcode 9.3 (clang 9.1) breaks Qt4.
+   execAndWait('patch -p1 < %s' % path.join(os.getcwd(), 'qt_clang9.1_fix.patch'), cwd=qtBuildDir)
 
    # Configure Qt. http://wiki.phisys.com/index.php/Compiling_Phi has an example
    # that can be checked for ideas.
@@ -565,7 +570,7 @@ def compile_sip():
       logprint('Sip is already installed.')
    else:
       sipPath = unpack(tarfilesToDL['sip'])
-      command  = 'python configure.py'
+      command  = 'python2 configure.py'
       command += ' --destdir="%s"' % PYSITEPKGS
       command += ' --bindir="%s/bin"' % PYFRAMEBASE
       command += ' --incdir="%s/include"' % PYFRAMEBASE
@@ -588,7 +593,7 @@ def compile_pyqt():
    else:
       pyqtPath = unpack(tarfilesToDL['pyqt'])
       incDir = path.join(PYFRAMEBASE, 'include')
-      execAndWait('python ./configure-ng.py --confirm-license --sip-incdir="%s"' % incDir, cwd=pyqtPath)
+      execAndWait('python2 ./configure-ng.py --confirm-license --sip-incdir="%s"' % incDir, cwd=pyqtPath)
       execAndWait('make %s' % MAKEFLAGS, cwd=pyqtPath)
 
    # Need to add pyrcc4 to the PATH
@@ -603,7 +608,7 @@ def compile_psutil():
    if glob.glob(PYSITEPKGS + '/psutil*'):
       logprint('Psutil already installed')
    else:
-      command = 'python -s setup.py --no-user-cfg install --force --verbose'
+      command = 'python2 -s setup.py --no-user-cfg install --force --verbose'
       psPath = unpack(tarfilesToDL['psutil'])
       execAndWait(command, cwd=psPath)
 
@@ -614,7 +619,7 @@ def compile_twisted():
    if glob.glob(PYSITEPKGS + '/Twisted*'):
       logprint('Twisted already installed')
    else:
-      command = "python -s setup.py --no-user-cfg install --force --verbose"
+      command = "python2 -s setup.py --no-user-cfg install --force --verbose"
       twpath = unpack(tarfilesToDL['Twisted'])
       execAndWait(command, cwd=twpath)
 
@@ -627,12 +632,18 @@ def compile_armory():
    armoryDB = path.join(APPBASE, 'Contents/MacOS/ArmoryDB')
    currentDir = os.getcwd()
    os.chdir("..")
-   execAndWait('python update_version.py')
+   execAndWait('python2 update_version.py')
    os.chdir(currentDir)
-   execAndWait('./autogen.sh', cwd='..')
-   execAndWait('./configure %s' % CONFIGFLAGS, cwd='..')
-   execAndWait('make clean', cwd='..')
-   execAndWait('make DESTDIR="%s" install %s' % (ARMORYCODEBASE, MAKEFLAGS), cwd='..')
+   if not CLIOPTS.compapponly:
+      execAndWait('./autogen.sh', cwd='..')
+      execAndWait('./configure %s' % CONFIGFLAGS, cwd='..')
+      execAndWait('make clean', cwd='..')
+
+# See https://stackoverflow.com/a/11307770 for more info on when to use DESTDIR
+# and other subtle config items.
+#   execAndWait('make install DESTDIR="%s" %s' % (ARMORYCODEBASE, MAKEFLAGS), cwd='..')
+   execAndWait('make install %s' % MAKEFLAGS, cwd='..')
+
    copyfile('Armory-script.sh', armoryAppScript)
    copyfile('armoryd-script.sh', armorydAppScript)
    execAndWait('chmod +x "%s"' % armoryAppScript)
