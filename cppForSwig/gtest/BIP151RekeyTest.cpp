@@ -38,8 +38,8 @@ TEST_F(BIP151RekeyTest, rekeyRequired)
    // for each test. Context startup/shutdown multiple times leads to crashes.)
    startupBIP151CTX();
 
-   bip151Connection cliCon;
-   bip151Connection srvCon;
+   BIP151Connection cliCon;
+   BIP151Connection srvCon;
 
    // Set up encinit/encack directly. (Initial encinit/encack will use regular
    // Bitcoin P2P messages, which we'll skip building.) Confirm all steps
@@ -50,7 +50,7 @@ TEST_F(BIP151RekeyTest, rekeyRequired)
    BinaryData cliOutEncackCliData(BIP151PUBKEYSIZE); // SRV (In)  -> CLI (Out)
    srvCon.getEncinitData(cliInEncinitCliData.getPtr(),
                          cliInEncinitCliData.getSize(),
-                         bip151SymCiphers::CHACHA20POLY1305_OPENSSH);
+                         BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_FALSE(srvCon.connectionComplete());
    cliCon.processEncinit(cliInEncinitCliData.getPtr(),
                          cliInEncinitCliData.getSize(),
@@ -65,7 +65,7 @@ TEST_F(BIP151RekeyTest, rekeyRequired)
    EXPECT_FALSE(srvCon.connectionComplete());
    cliCon.getEncinitData(cliOutEncinitCliData.getPtr(),
                          cliOutEncinitCliData.getSize(),
-                         bip151SymCiphers::CHACHA20POLY1305_OPENSSH);
+                         BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_FALSE(cliCon.connectionComplete());
    srvCon.processEncinit(cliOutEncinitCliData.getPtr(),
                          cliOutEncinitCliData.getSize(),
@@ -85,7 +85,7 @@ TEST_F(BIP151RekeyTest, rekeyRequired)
    std::array<uint8_t, 4> payload = {0xde, 0xad, 0xbe, 0xef};
    BinaryData testMsgData(17);
    size_t finalMsgSize;
-   bip151Message testMsg(cmd.getPtr(), cmd.getSize(),
+   BIP151Message testMsg(cmd.getPtr(), cmd.getSize(),
                          payload.data(), payload.size());
    testMsg.getEncStructMsg(testMsgData.getPtr(), testMsgData.getSize(),
                            finalMsgSize);
@@ -126,7 +126,7 @@ TEST_F(BIP151RekeyTest, rekeyRequired)
                         decMsgBuffer.getSize());
 
    // Process the incoming rekey.
-   bip151Message inEncack(decMsgBuffer.getPtr(), decMsgBuffer.getSize());
+   BIP151Message inEncack(decMsgBuffer.getPtr(), decMsgBuffer.getSize());
    BinaryData inCmd(inEncack.getCmdSize());
    BinaryData inPayload(inEncack.getPayloadSize());
    inEncack.getCmd(inCmd.getPtr(), inCmd.getSize());

@@ -177,8 +177,9 @@ libArmoryCLI_la_SOURCES = $(ARMORYCLI_SOURCE_FILES)
 libArmoryCLI_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES) $(PYTHON_CFLAGS)
 libArmoryCLI_la_CXXFLAGS = $(AM_CXXFLAGS) -Ilmdb/libraries/liblmdb -D__STDC_LIMIT_MACROS
 libArmoryCLI_la_LIBADD = $(LIBBTC) \
+			 $(LIBCHACHA20POLY1305) \
 			 $(LIBARMORYCOMMON) \
-			 $(LIBCHACHAPOLY1305) \
+			 $(LIBSECP256K1) \
 			 -lpthread -lwebsockets
 libArmoryCLI_la_LDFLAGS = $(LDFLAGS) $(LWS_LDFLAGS) -shared
 

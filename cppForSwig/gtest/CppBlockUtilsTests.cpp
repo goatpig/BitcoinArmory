@@ -218,8 +218,8 @@ TEST_F(BIP151Test, checkData)
    prvKeyClientOut.copyTo(prvKeyCliOut.privkey);
    prvKeyServerIn.copyTo(prvKeySrvIn.privkey);
    prvKeyServerOut.copyTo(prvKeySrvOut.privkey);
-   bip151Connection cliCon(&prvKeyCliIn, &prvKeyCliOut);
-   bip151Connection srvCon(&prvKeySrvIn, &prvKeySrvOut);
+   BIP151Connection cliCon(&prvKeyCliIn, &prvKeyCliOut);
+   BIP151Connection srvCon(&prvKeySrvIn, &prvKeySrvOut);
 
    // Set up encinit/encack directly. (Initial encinit/encack will use regular
    // Bitcoin P2P messages, which we'll skip building.) Confirm all steps
@@ -230,7 +230,7 @@ TEST_F(BIP151Test, checkData)
    BinaryData cliOutEncackCliData(BIP151PUBKEYSIZE); // SRV (In)  -> CLI (Out)
    int s1 = srvCon.getEncinitData(cliInEncinitCliData.getPtr(),
                                   cliInEncinitCliData.getSize(),
-                                  bip151SymCiphers::CHACHA20POLY1305_OPENSSH);
+                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(0, s1);
    EXPECT_FALSE(srvCon.connectionComplete());
    int s2 = cliCon.processEncinit(cliInEncinitCliData.getPtr(),
@@ -249,7 +249,7 @@ TEST_F(BIP151Test, checkData)
    EXPECT_FALSE(srvCon.connectionComplete());
    int s5 = cliCon.getEncinitData(cliOutEncinitCliData.getPtr(),
                                   cliOutEncinitCliData.getSize(),
-                                  bip151SymCiphers::CHACHA20POLY1305_OPENSSH);
+                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(0, s5);
    EXPECT_FALSE(cliCon.connectionComplete());
    int s6 = srvCon.processEncinit(cliOutEncinitCliData.getPtr(),
@@ -273,7 +273,7 @@ TEST_F(BIP151Test, checkData)
              pubKeyClientOut.getPtr() + 33,
              expectedCliEncinitData.getPtr());
    expectedCliEncinitData[BIP151PUBKEYSIZE] = \
-      static_cast<uint8_t>(bip151SymCiphers::CHACHA20POLY1305_OPENSSH);
+      static_cast<uint8_t>(BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(pubKeyClientIn, cliInEncackCliData);
    EXPECT_EQ(expectedCliEncinitData, cliOutEncinitCliData);
 
@@ -283,7 +283,7 @@ TEST_F(BIP151Test, checkData)
              pubKeyServerOut.getPtr() + 33,
              expectedSrvEncinitData.getPtr());
    expectedSrvEncinitData[BIP151PUBKEYSIZE] = \
-      static_cast<uint8_t>(bip151SymCiphers::CHACHA20POLY1305_OPENSSH);
+      static_cast<uint8_t>(BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(pubKeyServerIn, cliOutEncackCliData);
    EXPECT_EQ(expectedSrvEncinitData, cliInEncinitCliData);
 
@@ -299,7 +299,7 @@ TEST_F(BIP151Test, checkData)
    std::array<uint8_t, 4> payload = {0xde, 0xad, 0xbe, 0xef};
    BinaryData testMsgData(50);
    size_t finalMsgSize;
-   bip151Message testMsg(cmd.getPtr(), cmd.getSize(),
+   BIP151Message testMsg(cmd.getPtr(), cmd.getSize(),
                          payload.data(), payload.size());
    testMsg.getEncStructMsg(testMsgData.getPtr(), testMsgData.getSize(),
                            finalMsgSize);
@@ -353,7 +353,7 @@ TEST_F(BIP151Test, checkData)
                                      decMsgBuffer.getSize());
    EXPECT_EQ(0, decryptRes);
    EXPECT_EQ(srvInMsg3, decMsgBuffer);
-   bip151Message decData1(decMsgBuffer.getPtr(), decMsgBuffer.getSize());
+   BIP151Message decData1(decMsgBuffer.getPtr(), decMsgBuffer.getSize());
    int rekeyProcRes = srvCon.processEncack(decData1.getPayloadPtr(),
                                            decData1.getPayloadSize(),
                                            false);
@@ -420,7 +420,7 @@ TEST_F(BIP151Test, checkData)
                                      decMsgBuffer.getSize());
    EXPECT_EQ(0, decryptRes);
    EXPECT_EQ(cliInMsg3, decMsgBuffer);
-   bip151Message decData2(decMsgBuffer.getPtr(), decMsgBuffer.getSize());
+   BIP151Message decData2(decMsgBuffer.getPtr(), decMsgBuffer.getSize());
    rekeyProcRes = cliCon.processEncack(decData2.getPayloadPtr(),
                                        decData2.getPayloadSize(),
                                        false);
@@ -448,8 +448,8 @@ TEST_F(BIP151Test, checkData)
 TEST_F(BIP151Test, handshakeCases)
 {
    // Try to generate an encack before generating an encinit.
-   bip151Connection cliCon1;
-   bip151Connection srvCon1;
+   BIP151Connection cliCon1;
+   BIP151Connection srvCon1;
    std::array<uint8_t, BIP151PUBKEYSIZE> dummy1{};
    std::array<uint8_t, BIP151PUBKEYSIZE> dummy2{};
    int s1 = cliCon1.getEncackData(dummy1.data(),
@@ -465,19 +465,19 @@ TEST_F(BIP151Test, handshakeCases)
    EXPECT_EQ(-1, s2);
 
    // Attempt to set an incorrect ciphersuite.
-   bip151Connection cliCon2;
-   bip151Connection srvCon2;
+   BIP151Connection cliCon2;
+   BIP151Connection srvCon2;
    std::array<uint8_t, ENCINITMSGSIZE> dummy3{};
    std::array<uint8_t, BIP151PUBKEYSIZE> dummy4{};
    int s3 = cliCon2.getEncinitData(dummy3.data(),
                                    dummy3.size(),
-                                   static_cast<bip151SymCiphers>(0xda));
+                                   static_cast<BIP151SymCiphers>(0xda));
    EXPECT_EQ(-1, s3);
 
    // Attempt to rekey before the connection is complete.
    int s4 = cliCon2.getEncinitData(dummy3.data(),
                                    dummy3.size(),
-                                   bip151SymCiphers::CHACHA20POLY1305_OPENSSH);
+                                   BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(0, s4);
    int s5 = srvCon2.processEncinit(dummy3.data(),
                                    dummy3.size(),
