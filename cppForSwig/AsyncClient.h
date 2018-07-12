@@ -189,6 +189,8 @@ namespace AsyncClient
 
    public:
       BtcWallet(const BlockDataViewer&, const std::string&);
+
+      std::string walletID() const { return walletID_; }
       
       void getBalancesAndCount(uint32_t topBlockHeight,
          std::function<void(ReturnMessage<std::vector<uint64_t>>)>);
