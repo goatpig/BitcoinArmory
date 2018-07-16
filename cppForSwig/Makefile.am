@@ -47,16 +47,12 @@ INCLUDE_FILES = -Ibech32/ref/c++ -Ilmdb/libraries/liblmdb \
 	-Ilibbtc/include -Ilibbtc/src/secp256k1/include \
 	$(LWS_CFLAGS)
 
-# Files should *not* be marked as "common" if at all possible.
+# Files should *not* be marked as "common" if at all possible. Also, a refactor
+# might not hurt one of these days. Some of the "common" files could be GUI/CLI
+# files but are "common" for the sake of unit testing. In an ideal world, the
+# unit tests would be split into multiple files as needed. One day....
 ARMORYDB_SOURCE_FILES = main.cpp
-ARMORYGUI_SOURCE_FILES = AsyncClient.cpp \
-	CoinSelection.cpp \
-	ClientClasses.cpp \
-	SwigClient.cpp \
-	TransactionBatch.cpp \
-	WalletManager.cpp \
-	Wallets.cpp \
-	WebSocketClient.cpp
+ARMORYGUI_SOURCE_FILES = TransactionBatch.cpp
 ARMORYCLI_SOURCE_FILES = BDM_mainthread.cpp \
 	BDM_Server.cpp \
 	BitcoinP2P.cpp \
@@ -90,10 +86,13 @@ ARMORYCOMMON_SOURCE_FILES = Accounts.cpp \
 	Addresses.cpp \
 	AssetEncryption.cpp \
 	Assets.cpp \
+	AsyncClient.cpp \
 	BinaryData.cpp \
 	BIP32_Node.cpp \
 	BlockDataManagerConfig.cpp \
 	BtcUtils.cpp \
+	ClientClasses.cpp \
+	CoinSelection.cpp \
 	DecryptedDataContainer.cpp \
 	DerivationScheme.cpp \
 	EncryptionUtils.cpp \
@@ -103,14 +102,19 @@ ARMORYCOMMON_SOURCE_FILES = Accounts.cpp \
 	Script.cpp \
 	Signer.cpp \
 	SocketObject.cpp \
+	StoredBlockObj.cpp \
+	SwigClient.cpp \
 	Transactions.cpp \
 	TxClasses.cpp \
 	TxEvalState.cpp \
 	txio.cpp \
 	UniversalTimer.cpp \
+	WalletManager.cpp \
+	Wallets.cpp \
+	WebSocketClient.cpp \
+	WebSocketMessage.cpp \
 	bech32/ref/c++/bech32.cpp \
-	bech32/ref/c++/segwit_addr.cpp \
-	WebSocketMessage.cpp
+	bech32/ref/c++/segwit_addr.cpp
 
 PROTOBUF_PROTO = protobuf/AddressBook.proto \
 	protobuf/AddressData.proto \

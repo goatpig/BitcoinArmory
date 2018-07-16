@@ -68,9 +68,8 @@ else
   CXXFLAGS="$CXXFLAGS -O2"
 fi
 
-# Even if the GUI is disabled, build GUI elements if tests are enabled.
+# For now, the GUI is considered synonymous with the client. This may change.
 AS_IF([test "x$with_gui" = "xyes"], [build_client=yes],
-	[test "x$want_tests" = "xyes"], [build_client=yes],
 	[build_client=no])
 AM_CONDITIONAL([BUILD_CLIENT], [test x$build_client = xyes])
 

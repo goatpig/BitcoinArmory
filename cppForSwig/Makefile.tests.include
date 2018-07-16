@@ -10,7 +10,7 @@ lib_LTLIBRARIES += gtest/libgtest.la
 gtest_libgtest_la_CXXFLAGS = $(AM_CXXFLAGS)
 gtest_libgtest_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
 gtest_libgtest_la_SOURCES = gtest/TestUtils.cpp gtest/gtest-all.cc
-gtest_libgtest_la_LIBADD = libArmoryCommon.la libArmoryCLI.la libArmoryGUI.la
+gtest_libgtest_la_LIBADD = libArmoryCommon.la libArmoryCLI.la
 gtest_libgtest_la_LDFLAGS = $(AM_LDFLAGS) $(LDFLAGS) -shared
 
 # ContainerTests
@@ -40,7 +40,7 @@ gtest_SupernodeTests_LDADD = gtest/libgtest.la
 gtest_SupernodeTests_LDFLAGS = $(AM_LDFLAGS) $(LDFLAGS) -static
 TESTS += gtest/SupernodeTests
 
-# CppBlockUtilsTests - Contains the bulk of the tests (CLI or GUI)
+# CppBlockUtilsTests - Contains the bulk of the tests
 bin_PROGRAMS += gtest/CppBlockUtilsTests
 gtest_CppBlockUtilsTests_SOURCES = gtest/CppBlockUtilsTests.cpp
 gtest_CppBlockUtilsTests_CXXFLAGS = $(AM_CXXFLAGS)
