@@ -644,15 +644,18 @@ namespace DBTestUtils
       auto len = msg->ByteSize();
       vector<uint8_t> buffer(len);
       msg->SerializeToArray(&buffer[0], len);
-      auto&& bdVec = WebSocketMessage::serialize(0, buffer);
+      auto&& bdVec = WebSocketMessageCodec::serialize(0, buffer);
       
       if (bdVec.size() > 1)
          LOGWARN << "large message in unit tests";
 
       auto payload = make_shared<BDV_Payload>();
       payload->messageID_ = 0;
-      payload->payloadRef_ = bdVec[0].getSliceRef(
+      payload->packet_ = make_shared<BDV_packet>(0, nullptr);
+
+      auto bdRef = bdVec[0].getSliceRef(
          LWS_PRE, bdVec[0].getSize() - LWS_PRE);
+      payload->packet_->data_ = bdRef;
       
       BinaryData zero;
       zero.resize(8);

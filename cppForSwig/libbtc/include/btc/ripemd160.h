@@ -22,11 +22,15 @@
  */
 
 
-#ifndef __RIPEMD160_H__
-#define __RIPEMD160_H__
+#ifndef __LIBBTC_RIPEMD160_H__
+#define __LIBBTC_RIPEMD160_H__
 
-#include <stdint.h>
+#include "btc.h"
 
-void ripemd160(const uint8_t* msg, uint32_t msg_len, uint8_t* hash);
+LIBBTC_BEGIN_DECL
 
-#endif
+LIBBTC_API void btc_ripemd160(const uint8_t* msg, uint32_t msg_len, uint8_t* hash);
+
+LIBBTC_END_DECL
+
+#endif // END __LIBBTC_RIPEMD160_H__

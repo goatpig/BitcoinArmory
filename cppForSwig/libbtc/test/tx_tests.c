@@ -1363,3 +1363,22 @@ void test_tx_sign() {
     btc_tx_free(tx);
 }
 
+void test_scripts() {
+    const char *script_p2pk = "41042f462d3245d2f3a015f7f9505f763ee1080cab36191d07ae9e6509f71bb68818719e6fb41c019bf48ae11c45b024d476e19b6963103ce8647fc15fee513b15c7ac";
+    const char *script_p2pkh = "76a91481edb497b5ba6eb9e67b7ed50fb220395f76f95088ac";
+    int outlen;
+    cstring* script_data_p2pk = cstr_new_sz(strlen(script_p2pk) / 2);
+    utils_hex_to_bin(script_p2pk, (unsigned char *)script_data_p2pk->str, strlen(script_p2pk), &outlen);
+    script_data_p2pk->len = outlen;
+
+    cstring* script_data_p2pkh = cstr_new_sz(strlen(script_p2pkh) / 2);
+    utils_hex_to_bin(script_p2pkh, (unsigned char *)script_data_p2pkh->str, strlen(script_p2pkh), &outlen);
+    script_data_p2pkh->len = outlen;
+
+    vector* vec = vector_new(16, free);
+    enum btc_tx_out_type type = btc_script_classify(script_data_p2pk, vec);
+    u_assert_int_eq(type, BTC_TX_PUBKEY);
+    type = btc_script_classify(script_data_p2pkh, vec);
+    u_assert_int_eq(type, BTC_TX_PUBKEYHASH);
+    vector_free(vec, true);
+}

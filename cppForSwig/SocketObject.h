@@ -39,7 +39,7 @@ typedef function<bool(vector<uint8_t>, exception_ptr)>  ReadCallback;
 struct CallbackReturn
 {
    virtual ~CallbackReturn(void) = 0;
-   virtual void callback(BinaryDataRef) = 0;
+   virtual void callback(BinaryDataRef bdr) = 0;
 };
 
 struct CallbackReturn_CloseBitcoinP2PSocket : public CallbackReturn
@@ -53,8 +53,8 @@ public:
       dataStack_(datastack)
    {}
 
-   void callback(const BinaryDataRef& bdr, exception_ptr eptr) 
-   { dataStack_->terminate(eptr); }
+   void callback(const BinaryDataRef& bdr) 
+   { dataStack_->terminate(nullptr); }
 };
 
 ///////////////////////////////////////////////////////////////////////////////

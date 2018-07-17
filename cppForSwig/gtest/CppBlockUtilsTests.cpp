@@ -5097,7 +5097,6 @@ TEST_F(TxRefTest, TxRefKeyParts)
    EXPECT_EQ(txr.getBlockTxIndex(), 15);
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 class BlockDir : public ::testing::Test
@@ -7934,18 +7933,26 @@ TEST_F(BlockUtilsBare, WebSocketStack)
       TestChain::lb2ScrAddrP2SH
    };
 
-   auto&& wallet1 = bdvObj.instantiateWallet("wallet1");
-   wallet1.registerAddresses(scrAddrVec, false);
+   vector<string> walletRegIDs;
+   DBTestUtils::UTCallback pCallback(bdvObj);
 
+   auto&& wallet1 = bdvObj.instantiateWallet("wallet1");
+   walletRegIDs.push_back(
+      wallet1.registerAddresses(scrAddrVec, false));
+  
    auto&& lb1 = bdvObj.instantiateLockbox("lb1");
-   lb1.registerAddresses(lb1ScrAddrs, false);
+   walletRegIDs.push_back(
+      lb1.registerAddresses(lb1ScrAddrs, false));
 
    auto&& lb2 = bdvObj.instantiateLockbox("lb2");
-   lb2.registerAddresses(lb2ScrAddrs, false);
+   walletRegIDs.push_back(
+      lb2.registerAddresses(lb2ScrAddrs, false));
 
-   //wait on signals
+   //wait on registration ack
+   pCallback.waitOnManyRefresh(walletRegIDs);
+
+   //go online
    bdvObj.goOnline();
-   DBTestUtils::UTCallback pCallback(bdvObj);
    pCallback.waitOnSignal(BDMAction_Ready);
 
    auto w1AddrBalances = wallet1.getAddrBalancesFromDB();

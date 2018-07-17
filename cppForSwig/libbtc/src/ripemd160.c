@@ -24,7 +24,7 @@
 
 #include <string.h>
 
-#include "ripemd160.h"
+#include <btc/ripemd160.h>
 
 #define ROL(x, n) (((x) << (n)) | ((x) >> (32 - (n))))
 
@@ -289,7 +289,7 @@ static void compress(uint32_t* MDbuf, uint32_t* X)
     MDbuf[0] = ddd;
 }
 
-void ripemd160(const uint8_t* msg, uint32_t msg_len, uint8_t* hash)
+void btc_ripemd160(const uint8_t* msg, uint32_t msg_len, uint8_t* hash)
 {
     uint32_t i;
     int j;

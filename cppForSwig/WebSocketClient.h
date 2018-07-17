@@ -30,7 +30,7 @@ struct WriteAndReadPacket
 {
    const unsigned id_;
    vector<BinaryData> packets_;
-   unique_ptr<FragmentedMessage> fragmentedMessage_ = nullptr;
+   unique_ptr<WebSocketMessagePartial> partialMessage_ = nullptr;
    shared_ptr<Socket_ReadPayload> payload_;
 
    WriteAndReadPacket(unsigned id, shared_ptr<Socket_ReadPayload> payload) :
@@ -59,6 +59,19 @@ namespace SwigClient
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+struct ClientPartialMessage
+{
+   vector<BinaryData> packets_;
+   WebSocketMessagePartial message_;
+
+   void reset(void) 
+   {
+      packets_.clear();
+      message_.reset();
+   }
+};
+
+////////////////////////////////////////////////////////////////////////////////
 class WebSocketClient : public SocketPrototype
 {
 private:
@@ -66,14 +79,19 @@ private:
    atomic<void*> contextPtr_;
    unique_ptr<promise<bool>> ctorProm_ = nullptr;
 
-   Stack<BinaryData> writeQueue_;
+   Stack<WebSocketMessage> writeQueue_;
+   WebSocketMessage currentWriteMessage_;
+
    BlockingStack<BinaryData> readQueue_;
    atomic<unsigned> run_;
    thread serviceThr_, readThr_;
    TransactionalMap<uint64_t, shared_ptr<WriteAndReadPacket>> readPackets_;
    RemoteCallback* callbackPtr_ = nullptr;
    
-   static TransactionalMap<struct lws*, shared_ptr<WebSocketClient>> objectMap_; 
+   static TransactionalMap<
+      struct lws*, shared_ptr<WebSocketClient>> objectMap_; 
+
+   ClientPartialMessage currentReadMessage_;
 
 private:
    WebSocketClient(const string& addr, const string& port) :

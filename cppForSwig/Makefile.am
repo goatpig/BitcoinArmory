@@ -172,8 +172,8 @@ ArmoryDB_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
 ArmoryDB_LDADD = fcgi/libfcgi/libfcgi.la \
 		 libArmoryCommon.la \
 		 libArmoryCLI.la \
-		 -lpthread
-ArmoryDB_LDFLAGS = -static $(LDFLAGS)
+		 -lpthread -lprotobuf
+ArmoryDB_LDFLAGS = -static $(LDFLAGS) $(LWS_LDFLAGS)
 
 if BUILD_CLIENT
 # Common GUI functionality library

@@ -25,6 +25,7 @@ include_HEADERS = \
     include/btc/hash.h \
     include/btc/portable_endian.h \
     include/btc/random.h \
+    include/btc/ripemd160.h \
     include/btc/script.h \
     include/btc/segwit_addr.h \
     include/btc/serialize.h \
@@ -33,9 +34,6 @@ include_HEADERS = \
     include/btc/tx.h \
     include/btc/utils.h \
     include/btc/vector.h
-
-noinst_HEADERS = \
-	src/ripemd160.h
 
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = libbtc.pc

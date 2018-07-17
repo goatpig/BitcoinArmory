@@ -210,6 +210,33 @@ namespace DBTestUtils
             }
          }
       }
+
+      void waitOnManyRefresh(vector<string> ids)
+      {
+         unsigned count = 0;
+         set<BinaryDataRef> bdrVec;
+         for (auto& id : ids)
+         {
+            BinaryDataRef bdr; bdr.setRef(id);
+            bdrVec.insert(bdr);
+         }
+
+         while (1)
+         {
+            if (count == ids.size())
+               break;
+
+            auto action = actionStack_.pop_front();
+            if (action.action_ == BDMAction_Refresh)
+            {
+               for (auto& id : action.idVec_)
+               {
+                  if (bdrVec.find(id) != bdrVec.end())
+                     ++count;
+               }
+            }
+         }
+      }
    };
 }
 

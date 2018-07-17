@@ -47,7 +47,7 @@ if test "x$with_own_lws" = "xno"; then
 	AC_SUBST([LWS_LDFLAGS], "")
 else
 	AC_SUBST([LWS_CFLAGS], ["-I$with_own_lws/include"])
-	AC_SUBST([LWS_LDFLAGS], ["-L$with_own_lws/lib"])
+	AC_SUBST([LWS_LDFLAGS], ["-L$with_own_lws/lib  -rpath $with_own_lws/lib"])
 fi
 
 # Check for protobuf (protoc in particular is required)

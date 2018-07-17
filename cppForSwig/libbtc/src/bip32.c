@@ -35,12 +35,11 @@
 #include <btc/ecc.h>
 #include <btc/ecc_key.h>
 #include <btc/hash.h>
+#include <btc/ripemd160.h>
 #include <btc/sha2.h>
 #include <btc/utils.h>
 
 #include "memory.h"
-
-#include "ripemd160.h"
 
 // write 4 big endian bytes
 static void write_be(uint8_t* data, uint32_t x)
@@ -126,7 +125,7 @@ btc_bool btc_hdnode_public_ckd(btc_hdnode* inout, uint32_t i)
     write_be(data + BTC_ECKEY_COMPRESSED_LENGTH, i);
 
     sha256_Raw(inout->public_key, BTC_ECKEY_COMPRESSED_LENGTH, fingerprint);
-    ripemd160(fingerprint, 32, fingerprint);
+    btc_ripemd160(fingerprint, 32, fingerprint);
     inout->fingerprint = (fingerprint[0] << 24) + (fingerprint[1] << 16) + (fingerprint[2] << 8) + fingerprint[3];
 
     memset(inout->private_key, 0, 32);
@@ -169,7 +168,7 @@ btc_bool btc_hdnode_private_ckd(btc_hdnode* inout, uint32_t i)
     write_be(data + BTC_ECKEY_COMPRESSED_LENGTH, i);
 
     sha256_Raw(inout->public_key, BTC_ECKEY_COMPRESSED_LENGTH, fingerprint);
-    ripemd160(fingerprint, 32, fingerprint);
+    btc_ripemd160(fingerprint, 32, fingerprint);
     inout->fingerprint = (fingerprint[0] << 24) + (fingerprint[1] << 16) +
                          (fingerprint[2] << 8) + fingerprint[3];
 
@@ -248,7 +247,7 @@ void btc_hdnode_get_hash160(const btc_hdnode* node, uint160 hash160_out)
 {
     uint256 hashout;
     btc_hash_sngl_sha256(node->public_key, BTC_ECKEY_COMPRESSED_LENGTH, hashout);
-    ripemd160(hashout, sizeof(hashout), hash160_out);
+    btc_ripemd160(hashout, sizeof(hashout), hash160_out);
 }
 
 void btc_hdnode_get_p2pkh_address(const btc_hdnode* node, const btc_chainparams* chain, char* str, int strsize)

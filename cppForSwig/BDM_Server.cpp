@@ -1260,73 +1260,33 @@ void BDV_Server_Object::flagRefresh(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool BDV_Server_Object::processPayload(
-   shared_ptr<BDV_Payload>& packet, shared_ptr<Message>& result)
+bool BDV_Server_Object::processPayload(shared_ptr<BDV_Payload>& packet, 
+   shared_ptr<Message>& result)
 {
    //only ever one thread gets this far at any given time, therefor none of the
    //underlying objects need to be thread safe
    if (packet == nullptr)
       return false;
 
-   if (WebSocketMessage::getMessageCount(packet->payloadRef_) == 1)
-   {
-      //single packet, process right away
-      auto&& payload = WebSocketMessage::getSingleMessage(
-         packet->payloadRef_);
-
-      auto message = make_shared<BDVCommand>();
-      if (!message->ParseFromArray(payload.getPtr(), payload.getSize()))
-      {
-         auto staticCommand = make_shared<StaticCommand>();
-         if (staticCommand->ParseFromArray(payload.getPtr(), payload.getSize()))
-            result = staticCommand;
-
-         return false;
-      }
-
-      result = processCommand(message);
+   currentMessage_.parsePacket(packet);
+   packet->messageID_ = currentMessage_.partialMessage_.getId();
+   if (!currentMessage_.isReady())
       return true;
-   }
-   else
+
+   auto message = make_shared<BDVCommand>();
+   if (!currentMessage_.getMessage(message))
    {
-      /*fragmented packet*/
+      auto staticCommand = make_shared<StaticCommand>();
+      if (currentMessage_.getMessage(staticCommand))
+         result = staticCommand;
 
-      //have we seen this id already?
-      shared_ptr<BDV_FragmentedMessage> fragmentedMessagePtr;
-
-      auto iter = fragmentedPackets_.find(packet->messageID_);
-      if (iter == fragmentedPackets_.end())
-      {
-         //otherwise, instantiate the object
-         fragmentedMessagePtr = make_shared<BDV_FragmentedMessage>();
-         fragmentedPackets_.insert(make_pair(
-            packet->messageID_, fragmentedMessagePtr));
-      }
-      else
-      {
-         fragmentedMessagePtr = iter->second;
-      }
-
-      //merge new packet in container
-      fragmentedMessagePtr->mergePayload(packet);
-
-      //if we have all payloads, grab message and process
-      if (!fragmentedMessagePtr->message_.isComplete())
-         return false;
-
-      auto message = make_shared<::Codec_BDVCommand::BDVCommand>();
-      if (!fragmentedMessagePtr->getMessage(message))
-      {
-         fragmentedPackets_.erase(packet->messageID_);
-         return false;
-      }
-
-      result = processCommand(message);
-
-      //clean up msg id and return result
-      fragmentedPackets_.erase(packet->messageID_);
-      return true;
+      currentMessage_.reset();
+      return false;
    }
+
+   result = processCommand(message);
+   currentMessage_.reset();
+   return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2027,18 +1987,28 @@ void ZeroConfCallbacks_BDV::errorCallback(
 // BDV_FragmentedMessage
 //
 ///////////////////////////////////////////////////////////////////////////////
-void BDV_FragmentedMessage::mergePayload(shared_ptr<BDV_Payload> payload)
+size_t BDV_PartialMessage::parsePacket(shared_ptr<BDV_Payload> packet)
 {
-   if (payload == nullptr)
-      return;
+   auto&& bdr = packet->packet_->data_.getRef();
+   auto result = partialMessage_.parsePacket(bdr);
+   if (result >= SIZE_MAX - 1)
+      return SIZE_MAX;
 
-   message_.mergePayload(payload->payloadRef_);
-   payloads_.push_back(payload);
+   payloads_.push_back(packet);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool BDV_FragmentedMessage::getMessage(
-   shared_ptr<::google::protobuf::Message> msgPtr)
+void BDV_PartialMessage::reset()
 {
-   return message_.getMessage(msgPtr);
+   partialMessage_.reset();
+   payloads_.clear();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool BDV_PartialMessage::getMessage(shared_ptr<Message> msgPtr)
+{
+   if (!isReady())
+      return false;
+
+   return partialMessage_.getMessage(msgPtr.get());
 }

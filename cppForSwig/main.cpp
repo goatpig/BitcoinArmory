@@ -65,7 +65,7 @@ int main(int argc, char* argv[])
    if (!bdmConfig.checkChain_)
    {
       //process incoming connections
-      server.start(&bdmThread, true);
+      server.start(&bdmThread, false);
    }
    else
    {

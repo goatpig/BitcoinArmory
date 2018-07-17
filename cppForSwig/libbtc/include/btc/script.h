@@ -195,6 +195,7 @@ enum opcodetype {
 };
 
 enum btc_tx_out_type {
+    BTC_TX_INVALID = -1,
     BTC_TX_NONSTANDARD,
     // 'standard' transaction types:
     BTC_TX_PUBKEY,
@@ -210,6 +211,9 @@ typedef struct btc_script_op_ {
     unsigned char* data; /* associated data, if any */
     size_t datalen;
 } btc_script_op;
+
+// Maximum script length in bytes
+static const int MAX_SCRIPT_SIZE = 10000;
 
 //copy a script without the codeseperator ops
 btc_bool btc_script_copy_without_op_codeseperator(const cstring* scriptin, cstring* scriptout);

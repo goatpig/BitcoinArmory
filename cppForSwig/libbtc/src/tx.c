@@ -808,6 +808,8 @@ enum btc_tx_sign_result btc_tx_sign_input(btc_tx *tx_in_out, const cstring *scri
     if (type == BTC_TX_SCRIPTHASH) {
         // p2sh script, need the redeem script
         // for now, pretend to be a p2sh-p2wpkh
+        vector_free(script_pushes, true);
+        script_pushes = vector_new(1, free);
         type = BTC_TX_WITNESS_V0_PUBKEYHASH;
         uint8_t *hash160 = btc_calloc(1, 20);
         btc_pubkey_get_hash160(&pubkey, hash160);

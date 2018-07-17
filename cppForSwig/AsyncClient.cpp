@@ -776,39 +776,24 @@ void AsyncClient::Blockchain::getHeaderByHeight(unsigned height,
 //
 ///////////////////////////////////////////////////////////////////////////////
 void AsyncClient::deserialize(
-   google::protobuf::Message* ptr, BinaryDataRef bdr)
+   google::protobuf::Message* ptr, const WebSocketMessagePartial& partialMsg)
 {
-   if (!textSerialization_)
+   if (!partialMsg.getMessage(ptr))
    {
-      if (!ptr->ParseFromArray(bdr.getPtr(), bdr.getSize()))
-      {
-         ::Codec_NodeStatus::BDV_Error errorMsg;
-         if (!errorMsg.ParseFromArray(bdr.getPtr(), bdr.getSize()))
-            throw ClientMessageError("unknown error deserializing message");
+      ::Codec_NodeStatus::BDV_Error errorMsg;
+      if (!partialMsg.getMessage(&errorMsg))
+         throw ClientMessageError("unknown error deserializing message");
 
-         throw ClientMessageError(errorMsg.error());
-      }
-   }
-   else
-   {
-      google::protobuf::io::ArrayInputStream ais(
-         bdr.getPtr(), bdr.getSize());
-      if (!google::protobuf::TextFormat::Parse(&ais, ptr))
-      {
-         ::Codec_NodeStatus::BDV_Error errorMsg;
-         if (!google::protobuf::TextFormat::Parse(&ais, &errorMsg))
-            throw ClientMessageError("unknown error deserializing message");
-
-         throw ClientMessageError(errorMsg.error());
-      }
+      throw ClientMessageError(errorMsg.error());
    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void CallbackReturn_BinaryDataRef::callback(BinaryDataRef bdr)
+void CallbackReturn_BinaryDataRef::callback(
+   const WebSocketMessagePartial& partialMsg)
 {
    ::Codec_CommonTypes::BinaryData msg;
-   AsyncClient::deserialize(&msg, bdr);
+   AsyncClient::deserialize(&msg, partialMsg);
 
    auto str = msg.data();
    BinaryDataRef ref;
@@ -818,10 +803,11 @@ void CallbackReturn_BinaryDataRef::callback(BinaryDataRef bdr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void CallbackReturn_String::callback(BinaryDataRef bdr)
+void CallbackReturn_String::callback(
+   const WebSocketMessagePartial& partialMsg)
 {
    ::Codec_CommonTypes::Strings msg;
-   AsyncClient::deserialize(&msg, bdr);
+   AsyncClient::deserialize(&msg, partialMsg);
 
    if (msg.data_size() != 1)
       throw runtime_error("invalid message in CallbackReturn_String");
@@ -831,10 +817,11 @@ void CallbackReturn_String::callback(BinaryDataRef bdr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void CallbackReturn_LedgerDelegate::callback(BinaryDataRef bdr)
+void CallbackReturn_LedgerDelegate::callback(
+   const WebSocketMessagePartial& partialMsg)
 {
    ::Codec_CommonTypes::Strings msg;
-   AsyncClient::deserialize(&msg, bdr);
+   AsyncClient::deserialize(&msg, partialMsg);
 
    if (msg.data_size() != 1)
       throw runtime_error("invalid message in CallbackReturn_LedgerDelegate");
@@ -846,10 +833,11 @@ void CallbackReturn_LedgerDelegate::callback(BinaryDataRef bdr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void CallbackReturn_Tx::callback(BinaryDataRef bdr)
+void CallbackReturn_Tx::callback(
+   const WebSocketMessagePartial& partialMsg)
 {
    ::Codec_CommonTypes::TxWithMetaData msg;
-   AsyncClient::deserialize(&msg, bdr);
+   AsyncClient::deserialize(&msg, partialMsg);
 
    auto& rawtx = msg.rawtx();
    BinaryDataRef ref;
@@ -864,10 +852,11 @@ void CallbackReturn_Tx::callback(BinaryDataRef bdr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void CallbackReturn_RawHeader::callback(BinaryDataRef bdr)
+void CallbackReturn_RawHeader::callback(
+   const WebSocketMessagePartial& partialMsg)
 {
    ::Codec_CommonTypes::BinaryData msg;
-   AsyncClient::deserialize(&msg, bdr);
+   AsyncClient::deserialize(&msg, partialMsg);
 
    auto& rawheader = msg.data();
    BinaryDataRef ref;
@@ -879,20 +868,22 @@ void CallbackReturn_RawHeader::callback(BinaryDataRef bdr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void CallbackReturn_NodeStatusStruct::callback(BinaryDataRef bdr)
+void CallbackReturn_NodeStatusStruct::callback(
+   const WebSocketMessagePartial& partialMsg)
 {
    auto msg = make_shared<::Codec_NodeStatus::NodeStatus>();
-   AsyncClient::deserialize(msg.get(), bdr);
+   AsyncClient::deserialize(msg.get(), partialMsg);
 
    auto nss = make_shared<::ClientClasses::NodeStatusStruct>(msg);
    userCallbackLambda_(move(nss));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void CallbackReturn_FeeEstimateStruct::callback(BinaryDataRef bdr)
+void CallbackReturn_FeeEstimateStruct::callback(
+   const WebSocketMessagePartial& partialMsg)
 {
    ::Codec_FeeEstimate::FeeEstimate msg;
-   AsyncClient::deserialize(&msg, bdr);
+   AsyncClient::deserialize(&msg, partialMsg);
 
    ClientClasses::FeeEstimateStruct fes(
       msg.feebyte(), msg.smartfee(), msg.error());
@@ -901,10 +892,11 @@ void CallbackReturn_FeeEstimateStruct::callback(BinaryDataRef bdr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void CallbackReturn_VectorLedgerEntry::callback(BinaryDataRef bdr)
+void CallbackReturn_VectorLedgerEntry::callback(
+   const WebSocketMessagePartial& partialMsg)
 {
    auto msg = make_shared<::Codec_LedgerEntry::ManyLedgerEntry>();
-   AsyncClient::deserialize(msg.get(), bdr);
+   AsyncClient::deserialize(msg.get(), partialMsg);
 
    vector <::ClientClasses::LedgerEntry> lev;
    for (int i = 0; i < msg->values_size(); i++)
@@ -917,19 +909,21 @@ void CallbackReturn_VectorLedgerEntry::callback(BinaryDataRef bdr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void CallbackReturn_UINT64::callback(BinaryDataRef bdr)
+void CallbackReturn_UINT64::callback(
+   const WebSocketMessagePartial& partialMsg)
 {
    ::Codec_CommonTypes::OneUnsigned msg;
-   AsyncClient::deserialize(&msg, bdr);
+   AsyncClient::deserialize(&msg, partialMsg);
 
    userCallbackLambda_(msg.value());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void CallbackReturn_VectorUTXO::callback(BinaryDataRef bdr)
+void CallbackReturn_VectorUTXO::callback(
+   const WebSocketMessagePartial& partialMsg)
 {
    ::Codec_Utxo::ManyUtxo utxos;
-   AsyncClient::deserialize(&utxos, bdr);
+   AsyncClient::deserialize(&utxos, partialMsg);
 
    vector<UTXO> utxovec(utxos.value_size());
    for (int i = 0; i < utxos.value_size(); i++)
@@ -951,10 +945,11 @@ void CallbackReturn_VectorUTXO::callback(BinaryDataRef bdr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void CallbackReturn_VectorUINT64::callback(BinaryDataRef bdr)
+void CallbackReturn_VectorUINT64::callback(
+   const WebSocketMessagePartial& partialMsg)
 {
    ::Codec_CommonTypes::ManyUnsigned msg;
-   AsyncClient::deserialize(&msg, bdr);
+   AsyncClient::deserialize(&msg, partialMsg);
 
    vector<uint64_t> intvec(msg.value_size());
    for (int i = 0; i < msg.value_size(); i++)
@@ -964,10 +959,11 @@ void CallbackReturn_VectorUINT64::callback(BinaryDataRef bdr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void CallbackReturn_Map_BD_U32::callback(BinaryDataRef bdr)
+void CallbackReturn_Map_BD_U32::callback(
+   const WebSocketMessagePartial& partialMsg)
 {
    ::Codec_AddressData::ManyAddressData msg;
-   AsyncClient::deserialize(&msg, bdr);
+   AsyncClient::deserialize(&msg, partialMsg);
 
    map<BinaryData, uint32_t> bdmap;
 
@@ -988,10 +984,11 @@ void CallbackReturn_Map_BD_U32::callback(BinaryDataRef bdr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void CallbackReturn_Map_BD_VecU64::callback(BinaryDataRef bdr)
+void CallbackReturn_Map_BD_VecU64::callback(
+   const WebSocketMessagePartial& partialMsg)
 {
    ::Codec_AddressData::ManyAddressData msg;
-   AsyncClient::deserialize(&msg, bdr);
+   AsyncClient::deserialize(&msg, partialMsg);
 
    map<BinaryData, vector<uint64_t>> bdMap;
    for (int i = 0; i < msg.scraddrdata_size(); i++)
@@ -1010,20 +1007,22 @@ void CallbackReturn_Map_BD_VecU64::callback(BinaryDataRef bdr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void CallbackReturn_LedgerEntry::callback(BinaryDataRef bdr)
+void CallbackReturn_LedgerEntry::callback(
+   const WebSocketMessagePartial& partialMsg)
 {
    auto msg = make_shared<::Codec_LedgerEntry::LedgerEntry>();
-   AsyncClient::deserialize(msg.get(), bdr);
+   AsyncClient::deserialize(msg.get(), partialMsg);
 
    auto le = make_shared<::ClientClasses::LedgerEntry>(msg);
    userCallbackLambda_(le);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void CallbackReturn_VectorAddressBookEntry::callback(BinaryDataRef bdr)
+void CallbackReturn_VectorAddressBookEntry::callback(
+   const WebSocketMessagePartial& partialMsg)
 {
    ::Codec_AddressBook::AddressBook addressBook;
-   AsyncClient::deserialize(&addressBook, bdr);
+   AsyncClient::deserialize(&addressBook, partialMsg);
 
    vector<AddressBookEntry> abVec;
    for (int i = 0; i < addressBook.entry_size(); i++)
@@ -1044,19 +1043,21 @@ void CallbackReturn_VectorAddressBookEntry::callback(BinaryDataRef bdr)
    userCallbackLambda_(move(abVec));
 }
 ///////////////////////////////////////////////////////////////////////////////
-void CallbackReturn_Bool::callback(BinaryDataRef bdr)
+void CallbackReturn_Bool::callback(
+   const WebSocketMessagePartial& partialMsg)
 {
    ::Codec_CommonTypes::OneUnsigned msg;
-   AsyncClient::deserialize(&msg, bdr);
+   AsyncClient::deserialize(&msg, partialMsg);
 
    userCallbackLambda_(bool(msg.value()));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void CallbackReturn_BlockHeader::callback(BinaryDataRef bdr)
+void CallbackReturn_BlockHeader::callback(
+   const WebSocketMessagePartial& partialMsg)
 {
    ::Codec_CommonTypes::BinaryData msg;
-   AsyncClient::deserialize(&msg, bdr);
+   AsyncClient::deserialize(&msg, partialMsg);
 
    auto& str = msg.data();
    BinaryDataRef ref;
@@ -1067,10 +1068,11 @@ void CallbackReturn_BlockHeader::callback(BinaryDataRef bdr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void CallbackReturn_BDVCallback::callback(BinaryDataRef bdr)
+void CallbackReturn_BDVCallback::callback(
+   const WebSocketMessagePartial& partialMsg)
 {
    auto msg = make_shared<::Codec_BDVCommand::BDVCallback>();
-   AsyncClient::deserialize(msg.get(), bdr);
+   AsyncClient::deserialize(msg.get(), partialMsg);
 
    userCallbackLambda_(msg);
 }

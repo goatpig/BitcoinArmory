@@ -52,9 +52,9 @@ void WebSocketClient::pushPayload(
    write_payload->serialize(data);
 
    //push packets to write queue
-   auto&& data_vector = WebSocketMessage::serialize(id, data);
-   for(auto& data : data_vector)
-      writeQueue_.push_back(move(data));
+   WebSocketMessage ws_msg;
+   ws_msg.construct(id, data);
+   writeQueue_.push_back(move(ws_msg));
 
    //trigger write callback
    auto wsiptr = (struct lws*)wsiPtr_.load(memory_order_relaxed);
@@ -269,17 +269,21 @@ int WebSocketClient::callback(struct lws *wsi,
    {
       auto instance = WebSocketClient::getInstance(wsi);
 
-      BinaryData packet;
-      try
+      if (instance->currentWriteMessage_.isDone())
       {
-         packet = move(instance->writeQueue_.pop_front());
-      }
-      catch (IsEmpty&)
-      {
-         break;
+         try
+         {
+            instance->currentWriteMessage_ =
+               move(instance->writeQueue_.pop_front());
+         }
+         catch (IsEmpty&)
+         {
+            break;
+         }
       }
 
-      auto body = packet.getPtr() + LWS_PRE;
+      auto& packet = instance->currentWriteMessage_.getNextPacket();
+      auto body = (uint8_t*)packet.getPtr() + LWS_PRE;
       auto m = lws_write(wsi, 
          body, packet.getSize() - LWS_PRE,
          LWS_WRITE_BINARY);
@@ -327,56 +331,58 @@ void WebSocketClient::readService()
       }
 
       //deser packet
-      auto payloadRef = payload.getRef();      
-      auto msgid = WebSocketMessage::getMessageId(payloadRef);
+      currentReadMessage_.packets_.push_back(move(payload));
+      auto payloadRef = currentReadMessage_.packets_.back().getRef();
+
+      auto sz = currentReadMessage_.message_.parsePacket(payloadRef);
+      if (sz == SIZE_MAX)
+      {
+         currentReadMessage_.reset();
+         continue;
+      }
+      else if (sz == SIZE_MAX -1)
+      {
+         currentReadMessage_.packets_.pop_back();
+         continue;
+      }
+
+      if (!currentReadMessage_.message_.isReady())
+         continue;
+
 
       //figure out request id, fulfill promise
+      auto& msgid = currentReadMessage_.message_.getId();
       auto readMap = readPackets_.get();
       auto iter = readMap->find(msgid);
       if (iter != readMap->end())
       {
          auto& msgObjPtr = iter->second;
-         if (WebSocketMessage::getMessageCount(payloadRef) == 1)
-         {
-            //single packet, process it right away
-            auto&& message = WebSocketMessage::getSingleMessage(payloadRef);
-            msgObjPtr->payload_->callbackReturn_->callback(message);
-            readPackets_.erase(msgid);
+         auto callbackPtr = dynamic_cast<CallbackReturn_WebSocket*>(
+            msgObjPtr->payload_->callbackReturn_.get());
+         if (callbackPtr == nullptr)
             continue;
-         }
-         
-         //fragmented packet
-         if (msgObjPtr->fragmentedMessage_ == nullptr)
-            msgObjPtr->fragmentedMessage_ = move(make_unique<FragmentedMessage>());
 
-         msgObjPtr->packets_.push_back(move(payload));
-         msgObjPtr->fragmentedMessage_->mergePayload(payloadRef);
-         
-         if (!msgObjPtr->fragmentedMessage_->isComplete())
-            continue;
-         
-         //TODO: replace with zero copy concatenated stream
-         BinaryData reconstructedPayload;
-         msgObjPtr->fragmentedMessage_->getMessage(reconstructedPayload);
-         iter->second->payload_->callbackReturn_->callback(
-            reconstructedPayload.getRef());
+         callbackPtr->callback(currentReadMessage_.message_);
          readPackets_.erase(msgid);
+         currentReadMessage_.reset();
       }
       else if (msgid == WEBSOCKET_CALLBACK_ID)
       {
-         //callbacks can only be single packets
-         if (WebSocketMessage::getMessageCount(payloadRef) != 1)
-            continue;
-
-         if (callbackPtr_ != nullptr)
+         if (callbackPtr_ == nullptr)
          {
-            auto&& message = WebSocketMessage::getSingleMessage(payloadRef);
-
-            auto msgptr = make_shared<::Codec_BDVCommand::BDVCallback>();
-            msgptr->ParseFromArray(message.getPtr(), message.getSize());
-
-            callbackPtr_->processNotifications(msgptr);
+            currentReadMessage_.reset();
+            continue;
          }
+
+         auto msgptr = make_shared<::Codec_BDVCommand::BDVCallback>();
+         if (!currentReadMessage_.message_.getMessage(msgptr.get()))
+         {
+            currentReadMessage_.reset();
+            continue;
+         }
+
+         callbackPtr_->processNotifications(msgptr);
+         currentReadMessage_.reset();
       }
       else
       {

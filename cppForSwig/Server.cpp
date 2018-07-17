@@ -398,17 +398,23 @@ int WebSocketServer::callback(
       if (iter == writeMap->end())
          break;
 
-      BinaryData packet;
-      try
+      if (iter->second.currentMsg_.isDone())
       {
-         packet = move(iter->second.stack_->pop_front());
+         try
+         {
+            iter->second.currentMsg_ = 
+               move(iter->second.stack_->pop_front());
+         }
+         catch (IsEmpty&)
+         {
+            break;
+         }
       }
-      catch (IsEmpty&)
-      {
-         break;
-      }
+      
+      auto& ws_msg = iter->second.currentMsg_;
 
-      auto body = packet.getPtr() + LWS_PRE;
+      auto& packet = ws_msg.getNextPacket();
+      auto body = (uint8_t*)packet.getPtr() + LWS_PRE;
 
       auto m = lws_write(wsi, 
          body, packet.getSize() - LWS_PRE,
@@ -621,46 +627,39 @@ void WebSocketServer::commandThread()
          continue;
       }
 
-      auto&& msgPairs = WebSocketMessage::parsePacket(packetPtr->data_.getRef());
-      if (msgPairs.size() == 0)
-         continue;
-
       BinaryDataRef bdr((uint8_t*)&packetPtr->bdvID_, 8);
       auto&& hexID = bdr.toHexStr();
       auto bdvPtr = clients_->get(hexID);
-      for (auto& msg : msgPairs)
+
+      if (bdvPtr != nullptr)
       {
-         if (bdvPtr != nullptr)
-         {
-            //create payload
-            auto bdv_payload = make_shared<BDV_Payload>();
-            bdv_payload->bdvPtr_ = bdvPtr;
-            bdv_payload->packet_ = packetPtr;
-            bdv_payload->payloadRef_ = msg.second;
-            bdv_payload->messageID_ = msg.first;
+         //create payload
+         auto bdv_payload = make_shared<BDV_Payload>();
+         bdv_payload->bdvPtr_ = bdvPtr;
+         bdv_payload->packet_ = packetPtr;
 
-            //queue for clients thread pool to process
-            clients_->queuePayload(bdv_payload);
-         }
-         else
-         {
-            //unregistered command
-            if (WebSocketMessage::getMessageCount(msg.second) != 1)
-               continue;
+         //queue for clients thread pool to process
+         clients_->queuePayload(bdv_payload);
+      }
+      else
+      {
+         //unregistered command
+         auto&& messageRef = 
+            WebSocketMessageCodec::getSingleMessage(packetPtr->data_);
+         if (messageRef.getSize() == 0)
+            continue;
 
-            auto&& messageRef = WebSocketMessage::getSingleMessage(msg.second);
+         //process command 
+         auto message = make_shared<::Codec_BDVCommand::StaticCommand>();
+         if (!message->ParseFromArray(messageRef.getPtr(), messageRef.getSize()))
+            continue;
 
-            //process command 
-            auto message = make_shared<::Codec_BDVCommand::StaticCommand>();
-            if (!message->ParseFromArray(messageRef.getPtr(), messageRef.getSize()))
-               continue;
+         auto&& reply = clients_->processUnregisteredCommand(
+            packetPtr->bdvID_, message);
 
-            auto&& reply = clients_->processUnregisteredCommand(
-               packetPtr->bdvID_, message);
-
-            //reply
-            write(packetPtr->bdvID_, msg.first, reply);
-         }
+         //reply
+         write(packetPtr->bdvID_, 
+            WebSocketMessageCodec::getMessageId(packetPtr->data_), reply);
       }
    }
 
@@ -690,8 +689,8 @@ void WebSocketServer::write(const uint64_t& id, const uint32_t& msgid,
       }
    }
 
-   auto&& serializedResult =
-      WebSocketMessage::serialize(msgid, serializedData);
+   WebSocketMessage ws_msg; 
+   ws_msg.construct(msgid, serializedData);
 
    //push to write map
    auto writemap = instance->writeMap_.get();
@@ -700,8 +699,7 @@ void WebSocketServer::write(const uint64_t& id, const uint32_t& msgid,
    if (wsi_iter == writemap->end())
       return;
 
-   for(auto& data : serializedResult)
-      wsi_iter->second.stack_->push_back(move(data));
+   wsi_iter->second.stack_->push_back(move(ws_msg));
 
    //call write callback
    lws_callback_on_writable(wsi_iter->second.wsiPtr_);

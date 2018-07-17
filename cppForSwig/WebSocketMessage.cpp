@@ -13,7 +13,11 @@
 using namespace ::google::protobuf::io;
 
 ////////////////////////////////////////////////////////////////////////////////
-vector<BinaryData> WebSocketMessage::serialize(uint32_t id,
+//
+// WebSocketMessageCodec
+//
+////////////////////////////////////////////////////////////////////////////////
+vector<BinaryData> WebSocketMessageCodec::serialize(uint32_t id,
    const vector<uint8_t>& payload)
 {
    BinaryDataRef bdr;
@@ -23,7 +27,7 @@ vector<BinaryData> WebSocketMessage::serialize(uint32_t id,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-vector<BinaryData> WebSocketMessage::serialize(uint32_t id,
+vector<BinaryData> WebSocketMessageCodec::serialize(uint32_t id,
    const string& payload)
 {
    BinaryDataRef bdr((uint8_t*)payload.c_str(), payload.size());
@@ -31,67 +35,56 @@ vector<BinaryData> WebSocketMessage::serialize(uint32_t id,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-vector<BinaryData> WebSocketMessage::serialize(uint32_t id, 
+vector<BinaryData> WebSocketMessageCodec::serialize(uint32_t id,
    const BinaryDataRef& payload)
 {
-   //TODO: fallback to raw binary messages once lws is standardized
    //TODO: less copies, more efficient serialization
 
    vector<BinaryData> result;
+   auto data_len = payload.getSize();
+   BinaryData bd_buffer(LWS_PRE);
+   BinaryWriter bw;
 
-   size_t data_size =
-      WEBSOCKET_MESSAGE_PACKET_SIZE - 
-      WEBSOCKET_MESSAGE_PACKET_HEADER - 
-      3; //max varint length to encode size <= 8000
-   auto msg_count = payload.getSize() / data_size;
-   if (msg_count * data_size < payload.getSize())
-      msg_count++;
+   //header packet
+   bw.put_BinaryData(bd_buffer);
+   bw.put_uint16_t(WEBSOCKET_MAGIC_WORD);
+   bw.put_uint32_t(id);
+   bw.put_var_int(payload.getSize());
+   auto room_left = WEBSOCKET_MESSAGE_PACKET_SIZE - bw.getSize() + LWS_PRE;
+   auto packet_len = min(room_left, data_len);
+   bw.put_BinaryDataRef(payload.getSliceRef(0, packet_len));
+   result.push_back(bw.getData());
 
-   if (msg_count > 255)
-      throw LWS_Error("msg is too large");
-
-   //for empty return (client method may still be waiting on reply to return)
-   if (msg_count == 0)
-      msg_count = 1;
-
-   size_t pos = 0;
-   for (unsigned i = 0; i < msg_count; i++)
+   if (packet_len < payload.getSize())
    {
-      BinaryWriter bw;
-
-      //leading bytes for lws write routine
-      BinaryData bd_buffer(LWS_PRE);
-      bw.put_BinaryData(bd_buffer); 
-
-      //msg id
-      bw.put_uint32_t(id);
-
-      //packet counts and id
-      bw.put_uint8_t(msg_count);
-      bw.put_uint8_t(i);
-
-      //msg size
-      auto size = min(data_size, payload.getSize() - pos);
-      bw.put_var_int(size);
-
-      //data
-      if (payload.getSize() > 0)
+      size_t pos = packet_len;
+      while(1)
       {
-         BinaryDataRef bdr(payload.getPtr() + pos, size);
-         bw.put_BinaryDataRef(bdr);
-         pos += size;
-      }
+         BinaryWriter bw;
 
-      result.push_back(bw.getData());
+         //leading bytes for lws write routine
+         bw.put_BinaryData(bd_buffer);
+
+         auto packet_len = min(
+            (size_t)WEBSOCKET_MESSAGE_PACKET_SIZE, 
+            data_len - pos);
+
+         bw.put_BinaryDataRef(payload.getSliceRef(pos, packet_len));
+         result.push_back(bw.getData());
+
+         if (packet_len + pos >= payload.getSize())
+            break;
+
+         pos += packet_len;
+      }
    }
 
    return result;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool WebSocketMessage::reconstructFragmentedMessage(
-   const map<uint8_t, BinaryDataRef>& payloadMap,
-   shared_ptr<::google::protobuf::Message> msg)
+bool WebSocketMessageCodec::reconstructFragmentedMessage(
+   const vector<BinaryDataRef>& payloadMap, ::google::protobuf::Message* msg)
 {
    //this method expects packets in order
 
@@ -106,15 +99,10 @@ bool WebSocketMessage::reconstructFragmentedMessage(
    
    try
    {
-      for (auto& data_pair : payloadMap)
+      for (auto& dataRef : payloadMap)
       {
-         BinaryRefReader brr(data_pair.second);
-         brr.advance(WEBSOCKET_MESSAGE_PACKET_HEADER);
-         auto len = brr.get_var_int();
-         auto bdrPacket = brr.get_BinaryDataRef(len);
-
          auto stream = new ArrayInputStream(
-            bdrPacket.getPtr(), bdrPacket.getSize());
+            dataRef.getPtr(), dataRef.getSize());
          streams.push_back(stream);
       }
    }
@@ -139,150 +127,121 @@ bool WebSocketMessage::reconstructFragmentedMessage(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool WebSocketMessage::reconstructFragmentedMessage(
-   const map<uint8_t, BinaryDataRef>& payloadMap, BinaryData& msg)
-{
-   //this method expects packets in order
-
-   if (payloadMap.size() == 0)
-      return false;
-
-   try
-   {
-      for (auto& data_pair : payloadMap)
-      {
-         BinaryRefReader brr(data_pair.second);
-         brr.advance(WEBSOCKET_MESSAGE_PACKET_HEADER);
-         auto len = brr.get_var_int();
-         auto bdrPacket = brr.get_BinaryDataRef(len);
-
-         msg.append(bdrPacket);
-      }
-   }
-   catch (...)
-   {
-      return false;
-   }
-
-   return true;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-uint32_t WebSocketMessage::getMessageId(const BinaryDataRef& packet)
+uint32_t WebSocketMessageCodec::getMessageId(const BinaryDataRef& packet)
 {
    //sanity check
-   if (packet.getSize() < WEBSOCKET_MESSAGE_PACKET_HEADER ||
-      packet.getSize() > WEBSOCKET_MESSAGE_PACKET_SIZE)
+   if (packet.getSize() < 7)
       return UINT32_MAX;
 
-   return *(uint32_t*)packet.getPtr();
+   return *(uint32_t*)(packet.getPtr() + 2);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-uint8_t WebSocketMessage::getPayloadId(const BinaryDataRef& packet)
-{
-   //sanity check
-   if (packet.getSize() < WEBSOCKET_MESSAGE_PACKET_HEADER ||
-      packet.getSize() > WEBSOCKET_MESSAGE_PACKET_SIZE)
-      return UINT32_MAX;
-
-   return *(packet.getPtr() + 5);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-vector<pair<unsigned, BinaryDataRef>> WebSocketMessage::parsePacket(
-   BinaryDataRef packet)
-{
-   vector<pair<unsigned, BinaryDataRef>> msgVec;
-   BinaryRefReader brr(packet);
-
-   while (brr.getSizeRemaining() > 0)
-   {
-      if (brr.getSizeRemaining() < WEBSOCKET_MESSAGE_PACKET_HEADER + 1)
-         break;
-
-      brr.advance(WEBSOCKET_MESSAGE_PACKET_HEADER);
-
-      try
-      {
-         uint8_t varIntSize;
-         auto len = brr.get_var_int(&varIntSize);
-         if (brr.getSizeRemaining() < len)
-            break;
-
-         brr.rewind(varIntSize + WEBSOCKET_MESSAGE_PACKET_HEADER);
-         auto&& msgRef = brr.get_BinaryDataRef(
-            WEBSOCKET_MESSAGE_PACKET_HEADER + len + varIntSize);
-         auto msgId = getMessageId(msgRef);
-
-         auto&& data_pair = make_pair(msgId, msgRef);
-         msgVec.push_back(move(data_pair));
-      }
-      catch (runtime_error&)
-      {
-         break;
-      }
-   }
-
-   return msgVec;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-uint8_t WebSocketMessage::getMessageCount(const BinaryDataRef& bdr)
-{
-   return *(bdr.getPtr() + 4);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-BinaryDataRef WebSocketMessage::getSingleMessage(const BinaryDataRef& bdr)
+BinaryDataRef WebSocketMessageCodec::getSingleMessage(const BinaryDataRef& bdr)
 {
    BinaryRefReader brr(bdr);
-   brr.advance(WEBSOCKET_MESSAGE_PACKET_HEADER);
+   brr.advance(6);
    auto len = brr.get_var_int();
+   if (len > brr.getSizeRemaining())
+      return BinaryDataRef();
+
    return brr.get_BinaryDataRef(len);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 //
-// FragmentedMessage
+// WebSocketMessage
 //
 ///////////////////////////////////////////////////////////////////////////////
-void FragmentedMessage::mergePayload(BinaryDataRef payload)
+void WebSocketMessage::construct(uint32_t msgid, vector<uint8_t> data)
 {
-   if (payload.getSize() == 0)
-      return;
-
-   auto id = WebSocketMessage::getPayloadId(payload);
-   payloads_.insert(move(make_pair(id, payload)));
+   packets_ = move(
+      WebSocketMessageCodec::serialize(msgid, data));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool FragmentedMessage::getMessage(
-   shared_ptr<::google::protobuf::Message> msgPtr)
+const BinaryData& WebSocketMessage::getNextPacket() const
 {
-   if (!isComplete())
-      return false;
-
-   return WebSocketMessage::reconstructFragmentedMessage(payloads_, msgPtr);
+   auto& val = packets_[index_++];
+   return val;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool FragmentedMessage::getMessage(BinaryData& bd)
+void WebSocketMessagePartial::reset()
 {
-   return WebSocketMessage::reconstructFragmentedMessage(payloads_, bd);
+   packets_.clear();
+   pos_ = len_ = 0;
+   id_ = UINT32_MAX;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool FragmentedMessage::isComplete() const
+size_t WebSocketMessagePartial::parsePacket(const BinaryDataRef& dataRef)
 {
-   if (payloads_.size() == 0)
+   if (dataRef.getSize() == 0)
+      return SIZE_MAX;
+
+   if (packets_.size() == 0)
+   {
+      auto dataPtr = dataRef.getPtr();
+
+      //look for message header
+      auto len = dataRef.getSize();
+      size_t i;
+      for (i=0; i < len -1; i++)
+      {
+         auto val = (uint16_t*)(dataPtr + i);
+         if (*val == WEBSOCKET_MAGIC_WORD)
+            break;
+      }
+
+      if (i == len)
+         return SIZE_MAX;
+
+      //get slice ref
+      auto&& slice = dataRef.getSliceRef(i, dataRef.getSize() - i);
+      BinaryRefReader brr(slice);
+
+      brr.advance(2); //skip magic word
+      id_ = brr.get_uint32_t(); //message id
+      len_ = brr.get_var_int(); //message length
+
+      auto remaining = min(len_, brr.getSizeRemaining());
+      auto&& packetRef = brr.get_BinaryDataRef(remaining);
+      packets_.push_back(packetRef);
+      pos_ = remaining;
+
+      return remaining;
+   }
+   else
+   {
+      //fill message
+      auto remaining = len_ - pos_;
+      if (remaining == 0)
+         return SIZE_MAX - 1;
+
+      auto read_size = min(remaining, dataRef.getSize());
+      auto&& slice = dataRef.getSliceRef(0, read_size);
+      packets_.push_back(slice);
+      pos_ += read_size;
+
+      return read_size;
+   }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool WebSocketMessagePartial::getMessage(
+  ::google::protobuf::Message* msgPtr) const
+{
+   if (!isReady())
       return false;
 
-   auto iter = payloads_.begin();
-   auto count = WebSocketMessage::getMessageCount(iter->second);
-
-   if (payloads_.size() != count)
-      return false;
-
-   return true;
+   if (packets_.size() == 1)
+   {
+      auto& dataRef = packets_[0];
+      return msgPtr->ParseFromArray(dataRef.getPtr(), dataRef.getSize());
+   }
+   else
+   {
+      return WebSocketMessageCodec::reconstructFragmentedMessage(packets_, msgPtr);
+   }
 }

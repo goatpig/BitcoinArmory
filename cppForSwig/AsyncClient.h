@@ -287,7 +287,8 @@ namespace AsyncClient
    };
 
    ////////////////////////////////////////////////////////////////////////////
-   void deserialize(::google::protobuf::Message*, BinaryDataRef);
+   void deserialize(::google::protobuf::Message*, 
+      const WebSocketMessagePartial&);
 };
 
 
@@ -296,7 +297,7 @@ namespace AsyncClient
 //// callback structs for async networking
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
-struct CallbackReturn_BinaryDataRef : public CallbackReturn
+struct CallbackReturn_BinaryDataRef : public CallbackReturn_WebSocket
 {
 private:
    function<void(BinaryDataRef)> userCallbackLambda_;
@@ -307,11 +308,11 @@ public:
    {}
 
    //virtual
-   void callback(BinaryDataRef);
+   void callback(const WebSocketMessagePartial&);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct CallbackReturn_String : public CallbackReturn
+struct CallbackReturn_String : public CallbackReturn_WebSocket
 {
 private:
    function<void(string)> userCallbackLambda_;
@@ -322,11 +323,11 @@ public:
    {}
 
    //virtual
-   void callback(BinaryDataRef);
+   void callback(const WebSocketMessagePartial&);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct CallbackReturn_LedgerDelegate : public CallbackReturn
+struct CallbackReturn_LedgerDelegate : public CallbackReturn_WebSocket
 {
 private:
    function<void(AsyncClient::LedgerDelegate)> userCallbackLambda_;
@@ -341,11 +342,11 @@ public:
    {}
 
    //virtual
-   void callback(BinaryDataRef);
+   void callback(const WebSocketMessagePartial&);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct CallbackReturn_Tx : public CallbackReturn
+struct CallbackReturn_Tx : public CallbackReturn_WebSocket
 {
 private:
    function<void(Tx)> userCallbackLambda_;
@@ -359,11 +360,11 @@ public:
    {}
 
    //virtual
-   void callback(BinaryDataRef);
+   void callback(const WebSocketMessagePartial&);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct CallbackReturn_RawHeader : public CallbackReturn
+struct CallbackReturn_RawHeader : public CallbackReturn_WebSocket
 {
 private:
    function<void(BinaryData)> userCallbackLambda_;
@@ -377,11 +378,11 @@ public:
    {}
 
    //virtual
-   void callback(BinaryDataRef);
+   void callback(const WebSocketMessagePartial&);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct CallbackReturn_NodeStatusStruct : public CallbackReturn
+struct CallbackReturn_NodeStatusStruct : public CallbackReturn_WebSocket
 {
 private:
    function<void(shared_ptr<::ClientClasses::NodeStatusStruct>)> 
@@ -394,11 +395,11 @@ public:
    {}
 
    //virtual
-   void callback(BinaryDataRef);
+   void callback(const WebSocketMessagePartial&);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct CallbackReturn_FeeEstimateStruct : public CallbackReturn
+struct CallbackReturn_FeeEstimateStruct : public CallbackReturn_WebSocket
 {
 private:
    function<void(ClientClasses::FeeEstimateStruct)> userCallbackLambda_;
@@ -410,11 +411,11 @@ public:
    {}
 
    //virtual
-   void callback(BinaryDataRef);
+   void callback(const WebSocketMessagePartial&);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct CallbackReturn_VectorLedgerEntry : public CallbackReturn
+struct CallbackReturn_VectorLedgerEntry : public CallbackReturn_WebSocket
 {
 private:
    function<void(vector<::ClientClasses::LedgerEntry>)> userCallbackLambda_;
@@ -426,11 +427,11 @@ public:
    {}
 
    //virtual
-   void callback(BinaryDataRef);
+   void callback(const WebSocketMessagePartial&);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct CallbackReturn_UINT64 : public CallbackReturn
+struct CallbackReturn_UINT64 : public CallbackReturn_WebSocket
 {
 private:
    function<void(uint64_t)> userCallbackLambda_;
@@ -442,11 +443,11 @@ public:
    {}
 
    //virtual
-   void callback(BinaryDataRef);
+   void callback(const WebSocketMessagePartial&);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct CallbackReturn_VectorUTXO : public CallbackReturn
+struct CallbackReturn_VectorUTXO : public CallbackReturn_WebSocket
 {
 private:
    function<void(vector<UTXO>)> userCallbackLambda_;
@@ -458,11 +459,11 @@ public:
    {}
 
    //virtual
-   void callback(BinaryDataRef);
+   void callback(const WebSocketMessagePartial&);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct CallbackReturn_VectorUINT64 : public CallbackReturn
+struct CallbackReturn_VectorUINT64 : public CallbackReturn_WebSocket
 {
 private:
    function<void(vector<uint64_t>)> userCallbackLambda_;
@@ -474,11 +475,11 @@ public:
    {}
 
    //virtual
-   void callback(BinaryDataRef);
+   void callback(const WebSocketMessagePartial&);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct CallbackReturn_Map_BD_U32 : public CallbackReturn
+struct CallbackReturn_Map_BD_U32 : public CallbackReturn_WebSocket
 {
 private:
    function<void(map<BinaryData, uint32_t>)> userCallbackLambda_;
@@ -490,11 +491,11 @@ public:
    {}
 
    //virtual
-   void callback(BinaryDataRef);
+   void callback(const WebSocketMessagePartial&);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct CallbackReturn_Map_BD_VecU64 : public CallbackReturn
+struct CallbackReturn_Map_BD_VecU64 : public CallbackReturn_WebSocket
 {
 private:
    function<void(map<BinaryData, vector<uint64_t>>)> userCallbackLambda_;
@@ -506,11 +507,11 @@ public:
    {}
 
    //virtual
-   void callback(BinaryDataRef);
+   void callback(const WebSocketMessagePartial&);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct CallbackReturn_LedgerEntry : public CallbackReturn
+struct CallbackReturn_LedgerEntry : public CallbackReturn_WebSocket
 {
 private:
    function<void(shared_ptr<::ClientClasses::LedgerEntry>)> userCallbackLambda_;
@@ -522,11 +523,11 @@ public:
    {}
 
    //virtual
-   void callback(BinaryDataRef);
+   void callback(const WebSocketMessagePartial&);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct CallbackReturn_VectorAddressBookEntry : public CallbackReturn
+struct CallbackReturn_VectorAddressBookEntry : public CallbackReturn_WebSocket
 {
 private:
    function<void(vector<AddressBookEntry>)> userCallbackLambda_;
@@ -538,11 +539,11 @@ public:
    {}
 
    //virtual
-   void callback(BinaryDataRef);
+   void callback(const WebSocketMessagePartial&);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct CallbackReturn_Bool : public CallbackReturn
+struct CallbackReturn_Bool : public CallbackReturn_WebSocket
 {
 private:
    function<void(bool)> userCallbackLambda_;
@@ -553,11 +554,11 @@ public:
    {}
 
    //virtual
-   void callback(BinaryDataRef);
+   void callback(const WebSocketMessagePartial&);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct CallbackReturn_BlockHeader : public CallbackReturn
+struct CallbackReturn_BlockHeader : public CallbackReturn_WebSocket
 {
 private:
    function<void(ClientClasses::BlockHeader)> userCallbackLambda_;
@@ -570,11 +571,11 @@ public:
    {}
 
    //virtual
-   void callback(BinaryDataRef);
+   void callback(const WebSocketMessagePartial&);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct CallbackReturn_BDVCallback : public CallbackReturn
+struct CallbackReturn_BDVCallback : public CallbackReturn_WebSocket
 {
 private:
    function<void(shared_ptr<::Codec_BDVCommand::BDVCallback>)>
@@ -587,7 +588,7 @@ public:
    {}
 
    //virtual
-   void callback(BinaryDataRef);
+   void callback(const WebSocketMessagePartial&);
 };
 
 #endif

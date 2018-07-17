@@ -52,6 +52,10 @@ LIBBTC_API void btc_privkey_encode_wif(const btc_key* privkey, const btc_chainpa
 LIBBTC_API btc_bool btc_privkey_decode_wif(const char *privkey_wif, const btc_chainparams* chain, btc_key* privkey);
 
 LIBBTC_API void btc_pubkey_init(btc_pubkey* pubkey);
+
+// Compute the length of a pubkey with a given first byte.
+LIBBTC_API unsigned int btc_pubkey_get_length(unsigned char ch_header);
+
 LIBBTC_API btc_bool btc_pubkey_is_valid(const btc_pubkey* pubkey);
 LIBBTC_API void btc_pubkey_cleanse(btc_pubkey* pubkey);
 LIBBTC_API void btc_pubkey_from_key(const btc_key* privkey, btc_pubkey* pubkey_inout);

@@ -42,19 +42,19 @@ struct BDV_Payload
 {
    shared_ptr<BDV_packet> packet_;
    shared_ptr<BDV_Server_Object> bdvPtr_;
-   BinaryDataRef payloadRef_;
    uint32_t messageID_;
-   //uint64_t bdvID_;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct BDV_FragmentedMessage
+struct BDV_PartialMessage
 {
    vector<shared_ptr<BDV_Payload>> payloads_;
-   FragmentedMessage message_;
+   WebSocketMessagePartial partialMessage_;
 
-   void mergePayload(shared_ptr<BDV_Payload>);
+   size_t parsePacket(shared_ptr<BDV_Payload>);
+   bool isReady(void) const { return partialMessage_.isReady(); }
    bool getMessage(shared_ptr<::google::protobuf::Message>);
+   void reset(void);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -174,9 +174,9 @@ private:
    shared_future<bool> isReadyFuture_;
 
    function<void(unique_ptr<BDV_Notification>)> notifLambda_;
-
-   map<unsigned, shared_ptr<BDV_FragmentedMessage>> fragmentedPackets_;
    atomic<unsigned> packetProcess_threadLock_;
+
+   BDV_PartialMessage currentMessage_;
 
 private:
    BDV_Server_Object(BDV_Server_Object&) = delete; //no copies

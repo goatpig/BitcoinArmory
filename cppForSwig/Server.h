@@ -117,12 +117,13 @@ struct BDV_packet
 struct WriteStack
 {
    struct lws *wsiPtr_ = nullptr;
-   shared_ptr<Stack<BinaryData>> stack_;
+   shared_ptr<Stack<WebSocketMessage>> stack_;
+   WebSocketMessage currentMsg_;
 
    WriteStack(struct lws *wsi) :
       wsiPtr_(wsi)
    {
-      stack_ = make_shared<Stack<BinaryData>>();
+      stack_ = make_shared<Stack<WebSocketMessage>>();
    }
 };
 
