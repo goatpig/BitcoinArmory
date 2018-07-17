@@ -128,7 +128,7 @@ public:
       data_.clear();
    }
 
-   bool isNull(void) { return (data_.size()==0);}
+   bool isNull(void) const { return (data_.size()==0);}
    
    BinaryData& operator=(const BinaryData &o)
    {
