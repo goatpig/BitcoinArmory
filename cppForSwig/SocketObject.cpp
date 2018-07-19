@@ -268,16 +268,12 @@ void PersistentSocket::socketService_nix()
 
    //socket to poll
    pfd[1].fd = sockfd_;
-   pfd[1].events = POLLIN | POLLOUT;
+   pfd[1].events = POLLIN;
 
    int timeout = 100;
-   bool writeReady = false;
 
    auto serviceWrite = [&](void)->void
    {
-      if (!writeReady)
-         return;
-      writeReady = false;
       vector<uint8_t> payload;
 
       if (writeLeftOver_.size() != 0)
@@ -293,14 +289,17 @@ void PersistentSocket::socketService_nix()
          }
          catch (IsEmpty&)
          {
-            writeReady = true;
+            pfd[1].events = POLLIN;
             return;
          }
       }
 
-      auto bytessent = send(sockfd_, (char*)&payload[0], payload.size(), 0);
+      auto bytessent = send(sockfd_, 
+         (char*)&payload[0] + writeOffset_, 
+         payload.size() - writeOffset_, 0);
+
       if (bytessent == 0)
-         LOGERR << "failed to send data";
+         LOGERR << "failed to send data: " << payload.size() << ", offset: " << writeOffset_;
 
       writeOffset_ += bytessent;
       if (writeOffset_ < payload.size())
@@ -332,7 +331,7 @@ void PersistentSocket::socketService_nix()
          if (readAmt == 1)
          {
             if (b == 0)
-               serviceWrite();
+               pfd[1].events = POLLIN | POLLOUT;
             else if (b == 1)
                break; //exit poll loop signal
          }
@@ -381,12 +380,6 @@ void PersistentSocket::socketService_nix()
             readdata.resize(totalread + readIncrement);
          }
 
-         if (readAmt == 0)
-         {
-            LOGINFO << "POLLIN recv return 0";
-            break;
-         }
-
          if (totalread > 0)
          {
             readdata.resize(totalread);
@@ -396,7 +389,6 @@ void PersistentSocket::socketService_nix()
 
       if (pfd[1].revents & POLLOUT)
       {
-         writeReady = true;
          serviceWrite();
       }
 
@@ -404,6 +396,8 @@ void PersistentSocket::socketService_nix()
       if (pfd[1].revents & POLLHUP)
          break;
    }
+
+   run_.store(false, memory_order_relaxed);
 }
 #endif
 
@@ -441,8 +435,8 @@ void PersistentSocket::socketService_win()
       }
 
       WSABUF wsaBuffer;
-      wsaBuffer.buf = (char*)&payload[0];
-      wsaBuffer.len = payload.size();
+      wsaBuffer.buf = (char*)&payload[0] + writeOffset_;
+      wsaBuffer.len = payload.size() - writeOffset_;
 
       DWORD bytessent;
       if (WSASend(sockfd_, &wsaBuffer, 1, &bytessent, 0, nullptr, nullptr) ==
@@ -533,12 +527,6 @@ void PersistentSocket::socketService_win()
             readdata.resize(totalread + readIncrement);
          }
 
-         if (readAmt == 0)
-         {
-            LOGINFO << "POLLIN recv return 0";
-            break;
-         }
-
          if (totalread > 0)
          {
             readdata.resize(totalread);
@@ -557,6 +545,8 @@ void PersistentSocket::socketService_win()
          break;
       }
    }
+
+   run_.store(false, memory_order_relaxed);
 }
 #endif
 
@@ -635,6 +625,8 @@ void PersistentSocket::init()
 ///////////////////////////////////////////////////////////////////////////////
 void PersistentSocket::initPipes()
 {
+   cleanUpPipes();
+
 #ifdef _WIN32
    for (unsigned i = 0; i < 1; i++)
       events_[i] = WSACreateEvent();
@@ -650,7 +642,10 @@ void PersistentSocket::cleanUpPipes()
    {
 #ifdef _WIN32
       if (events_[i] != nullptr)
+      {
          WSACloseEvent(events_[i]);
+         events_[i] = nullptr;
+      }
 #else
       if (pipes_[i] != SOCK_MAX)
          close(pipes_[i]);
@@ -695,15 +690,16 @@ int PersistentSocket::getPeerName(struct sockaddr& sa)
 ///////////////////////////////////////////////////////////////////////////////
 bool PersistentSocket::connectToRemote()
 {
+   if (run_.load(memory_order_relaxed))
+      return true;
+
    if (sockfd_ == SOCK_MAX)
    {
       if (!openSocket(false))
-      {
-         LOGERR << "failed to connect socket";
          return false;
-      }
    }
 
+   run_.store(true, memory_order_relaxed);
    initPipes();
 
    auto readLBD = [this](void)->void

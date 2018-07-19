@@ -34,7 +34,10 @@ RpcStatus NodeRPC::setupConnection()
 
    //test the socket
    if (!socket_->testConnection())
-      return RpcStatus_Disabled;
+   {
+      if(!socket_->connectToRemote())
+         return RpcStatus_Disabled;
+   }
 
    auto&& authString = getAuthString();
    if (authString.size() == 0)

@@ -82,11 +82,9 @@ bool HttpSocket::processPacket(
    if (httpData.size() >= currentRead_.content_length_ + currentRead_.header_len_)
    {
       //set result ptr
-      typedef vector<uint8_t>::iterator vecIter;
       payload.insert(payload.end(),
-         move_iterator<vecIter>(httpData.begin() + currentRead_.header_len_),
-         move_iterator<vecIter>(httpData.begin() + 
-            currentRead_.header_len_ + currentRead_.content_length_));
+         httpData.begin() + currentRead_.header_len_,
+         httpData.begin() + currentRead_.header_len_ + currentRead_.content_length_);
 
       currentRead_.clear();
 
@@ -100,17 +98,26 @@ bool HttpSocket::processPacket(
 ///////////////////////////////////////////////////////////////////////////////
 vector<uint8_t> HttpSocket::getHttpPayload(const char* ptr, size_t len)
 {
-   //create http packet
-   HttpMessage msg(addr_);
+   /*TODO: 
+      return value is a vector but http serialization method takes
+      char**. At least one copy can be avoided by unifying the output types.
+      HttpSocket is used by NodeRPC, which in turn can get a lot of data to 
+      deal with if there's a constant stream of transactions to push to the
+      node. Optimizing this copy out will save some performance.
+   */
 
+   //create http packet
    char* http_payload;
-   auto payload_len = msg.makeHttpPayload(&http_payload, ptr, len);
+   auto payload_len = 
+      messageWithPrecacheHeaders_->makeHttpPayload(&http_payload, ptr, len);
    
    vector<uint8_t> payload;
-   payload.resize(payload_len);
-   memcpy(&payload[0], http_payload, payload_len);
-   delete[] http_payload;
+   payload.reserve(payload_len);
+   payload.insert(payload.end(), 
+      (uint8_t*)http_payload, 
+      (uint8_t*)(http_payload + payload_len));
 
+   delete[] http_payload;
    return payload;
 }
 
@@ -120,8 +127,7 @@ void HttpSocket::addReadPayload(shared_ptr<Socket_ReadPayload> read_payload)
    if (read_payload == nullptr)
       return;
 
-   auto&& payload_pair = make_pair(read_payload->id_, read_payload);
-   payloadMap_.insert(move(payload_pair));
+   readStack_.push_back(move(read_payload));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -129,16 +135,8 @@ void HttpSocket::pushPayload(
    unique_ptr<Socket_WritePayload> write_payload,
    shared_ptr<Socket_ReadPayload> read_payload)
 {
-   uint16_t id = rand() % 65536;
-   BinaryDataRef bdr((uint8_t*)&id, 2);
-   read_payload->id_ = id;
-
-   stringstream data;
-   data << bdr.toHexStr();
-   data << write_payload->serializeToText();
-   auto&& str = data.str();
-
-   auto&& payload = move(getHttpPayload(str.c_str(), str.size()));
+   auto&& str = write_payload->serializeToText();
+   auto&& payload = getHttpPayload(str.c_str(), str.size());
 
    addReadPayload(read_payload);
    queuePayloadForWrite(payload);
@@ -147,26 +145,18 @@ void HttpSocket::pushPayload(
 ///////////////////////////////////////////////////////////////////////////////
 void HttpSocket::respond(vector<uint8_t>& payload)
 {
-   if (payload.size() < 4)
-      return;
-
-   BinaryData id_ref(&payload[0], 4);
-   BinaryData id_bd;
-   id_bd.createFromHex(id_ref);
-   auto msg_id = READ_UINT16_LE(id_bd);
-
-   BinaryDataRef bdr(&payload[0] + 4, payload.size() - 4);
-   
+   try
    {
-      auto payloadmap = payloadMap_.get();
-      auto iter = payloadmap->find(msg_id);
-      if (iter == payloadmap->end())
-         return;
+      auto&& callback = readStack_.pop_front();
+      
+      BinaryDataRef bdr;
+      if (payload.size() != 0)
+         bdr.setRef(&payload[0], payload.size());
 
-      iter->second->callbackReturn_->callback(bdr);
+      callback->callbackReturn_->callback(bdr);
    }
-
-   payloadMap_.erase(msg_id);
+   catch(IsEmpty&)
+   { }
 }
 
 ///////////////////////////////////////////////////////////////////////////////

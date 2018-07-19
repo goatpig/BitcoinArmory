@@ -164,7 +164,7 @@ public:
    SocketPrototype(const string& addr, const string& port, bool init = true);
    virtual ~SocketPrototype(void) = 0;
 
-   bool testConnection(void);
+   virtual bool testConnection(void);
    bool isBlocking(void) const { return blocking_; }
    SOCKET openSocket(bool blocking);
    
@@ -281,6 +281,7 @@ public:
    int getPeerName(struct sockaddr& sa);
    bool connectToRemote(void);
    bool isValid(void) const { return sockfd_ != SOCK_MAX; }
+   bool testConnection(void) { return isValid(); }
 };
 
 ///////////////////////////////////////////////////////////////////////////////
