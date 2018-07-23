@@ -7949,7 +7949,7 @@ TEST_F(BlockUtilsBare, WebSocketStack)
       lb2.registerAddresses(lb2ScrAddrs, false));
 
    //wait on registration ack
-   pCallback.waitOnManyRefresh(walletRegIDs);
+   pCallback.waitOnManySignals(BDMAction_Refresh, walletRegIDs);
 
    //go online
    bdvObj.goOnline();
@@ -7995,21 +7995,22 @@ TEST_F(BlockUtilsBare, WebSocketStack)
    FILE *ff = fopen("../reorgTest/ZCtx.tx", "rb");
    fread(rawZC.getPtr(), TestChain::zcTxSize, 1, ff);
    fclose(ff);
-   DBTestUtils::ZcVector rawZcVec;
-   rawZcVec.push_back(move(rawZC), 0);
 
    BinaryData rawLBZC(TestChain::lbZCTxSize);
    FILE *flb = fopen("../reorgTest/LBZC.tx", "rb");
    fread(rawLBZC.getPtr(), TestChain::lbZCTxSize, 1, flb);
    fclose(flb);
-   DBTestUtils::ZcVector rawLBZcVec;
-   rawLBZcVec.push_back(move(rawLBZC), 0);
 
-   DBTestUtils::pushNewZc(theBDMt_, rawZcVec);
-   pCallback.waitOnSignal(BDMAction_ZC);
+   DBTestUtils::ZcVector zcVec;
+   zcVec.push_back(rawZC, 14000000);
+   zcVec.push_back(rawLBZC, 14100000);
 
-   DBTestUtils::pushNewZc(theBDMt_, rawLBZcVec);
-   pCallback.waitOnSignal(BDMAction_ZC);
+   vector<string> hashVec;
+   hashVec.push_back(BtcUtils::getHash256(rawZC).toHexStr());
+   hashVec.push_back(BtcUtils::getHash256(rawLBZC).toHexStr());
+
+   DBTestUtils::pushNewZc(theBDMt_, zcVec);
+   pCallback.waitOnManySignals(BDMAction_ZC, hashVec);
 
    w1AddrBalances = wallet1.getAddrBalancesFromDB();
    balanceVec = w1AddrBalances[TestChain::scrAddrA];
@@ -8085,6 +8086,185 @@ TEST_F(BlockUtilsBare, WebSocketStack)
 
    lb2Balances = lb2.getBalancesAndCount(5);
    EXPECT_EQ(lb2Balances[0], 30 * COIN);
+
+   //cleanup
+   bdvObj.unregisterFromDB();
+   bdvObj.shutdown(config.cookie_);
+
+   WebSocketServer::waitOnShutdown();
+
+   delete theBDMt_;
+   theBDMt_ = nullptr;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BlockUtilsBare, WebSocketStack_ManyZC)
+{
+   BlockDataManagerConfig::setServiceType(SERVICE_WEBSOCKET);
+
+   //
+   TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
+
+   //run clients from websocketserver object instead
+   clients_->exitRequestLoop();
+   clients_->shutdown();
+
+   delete clients_;
+   delete theBDMt_;
+   clients_ = nullptr;
+
+   theBDMt_ = new BlockDataManagerThread(config);
+   WebSocketServer::start(theBDMt_, true);
+
+   theBDMt_->start(config.initMode_);
+
+   auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
+      "127.0.0.1", "7681", SocketType::SocketWS);
+   bdvObj.registerWithDB(config.magicBytes_);
+   auto& bdvID = bdvObj.getID();
+
+   vector<BinaryData> scrAddrVec;
+   scrAddrVec.push_back(TestChain::scrAddrA);
+   scrAddrVec.push_back(TestChain::scrAddrB);
+   scrAddrVec.push_back(TestChain::scrAddrC);
+   scrAddrVec.push_back(TestChain::scrAddrE);
+
+   vector<string> walletRegIDs;
+   DBTestUtils::UTCallback pCallback(bdvObj);
+
+   auto&& wallet1 = bdvObj.instantiateWallet("wallet1");
+   walletRegIDs.push_back(
+      wallet1.registerAddresses(scrAddrVec, false));
+
+   //wait on registration ack
+   pCallback.waitOnManySignals(BDMAction_Refresh, walletRegIDs);
+
+   //go online
+   bdvObj.goOnline();
+   pCallback.waitOnSignal(BDMAction_Ready);
+
+   auto w1AddrBalances = wallet1.getAddrBalancesFromDB();
+   vector<uint64_t> balanceVec;
+   balanceVec = w1AddrBalances[TestChain::scrAddrA];
+   EXPECT_EQ(balanceVec[0], 50 * COIN);
+   balanceVec = w1AddrBalances[TestChain::scrAddrB];
+   EXPECT_EQ(balanceVec[0], 30 * COIN);
+   balanceVec = w1AddrBalances[TestChain::scrAddrC];
+   EXPECT_EQ(balanceVec[0], 55 * COIN);
+
+   auto w1Balances = wallet1.getBalancesAndCount(4);
+   uint64_t fullBalance = w1Balances[0];
+   uint64_t spendableBalance = w1Balances[1];
+   uint64_t unconfirmedBalance = w1Balances[2];
+   EXPECT_EQ(fullBalance, 165 * COIN);
+   EXPECT_EQ(spendableBalance, 65 * COIN);
+   EXPECT_EQ(unconfirmedBalance, 165 * COIN);
+
+   //signer feed
+   auto feed = make_shared<ResolverUtils::TestResolverFeed>();
+
+   auto addToFeed = [feed](const BinaryData& key)->void
+   {
+      auto&& datapair = DBTestUtils::getAddrAndPubKeyFromPrivKey(key);
+      feed->h160ToPubKey_.insert(datapair);
+      feed->pubKeyToPrivKey_[datapair.second] = key;
+   };
+
+   addToFeed(TestChain::privKeyAddrA);
+   addToFeed(TestChain::privKeyAddrB);
+   addToFeed(TestChain::privKeyAddrC);
+   addToFeed(TestChain::privKeyAddrE);
+
+   //create spender lambda
+   auto getSpenderPtr = [](
+      const UTXO& utxo,
+      shared_ptr<ResolverFeed> feed)
+      ->shared_ptr<ScriptSpender>
+   {
+      auto spender = make_shared<ScriptSpender>(utxo, feed);
+      spender->setSequence(UINT32_MAX - 2);
+
+      return spender;
+   };
+
+   //add 50 ZC
+   vector<BinaryData> allZcHash;
+   for(int i=0; i<100; i++)
+   {
+      size_t spendVal = 1000000;
+      Signer signer;
+
+      //get utxo list for spend value
+      auto&& unspentVec = wallet1.getSpendableTxOutListForValue(spendVal);
+      auto&& zcOutputsVec = wallet1.getSpendableZCList();
+
+      unspentVec.insert(unspentVec.end(), 
+         zcOutputsVec.begin(), zcOutputsVec.end());
+
+      vector<UTXO> utxoVec;
+      uint64_t tval = 0;
+      auto utxoIter = unspentVec.begin();
+      while (utxoIter != unspentVec.end())
+      {
+         tval += utxoIter->getValue();
+         utxoVec.push_back(*utxoIter);
+
+         if (tval > spendVal)
+            break;
+
+         ++utxoIter;
+      }
+
+      //create script spender objects
+      uint64_t total = 0;
+      for (auto& utxo : utxoVec)
+      {
+         total += utxo.getValue();
+         signer.addSpender(getSpenderPtr(utxo, feed));
+      }
+
+      //spendVal to scrAddrD
+      auto recipientD = make_shared<Recipient_P2PKH>(
+         TestChain::scrAddrE.getSliceCopy(1, 20), spendVal);
+      signer.addRecipient(recipientD);
+
+      //change to scrAddrE, no fee
+      if (total > spendVal)
+      {
+         //deal with change, no fee
+         auto changeVal = total - spendVal;
+         auto recipientChange = make_shared<Recipient_P2PKH>(
+            TestChain::scrAddrE.getSliceCopy(1, 20), changeVal);
+         signer.addRecipient(recipientChange);
+      }
+
+      //sign, verify then broadcast
+      signer.sign();
+      EXPECT_TRUE(signer.verify());
+
+      auto rawTx = signer.serialize();
+      DBTestUtils::ZcVector zcVec;
+      zcVec.push_back(rawTx, 14000000);
+
+      auto&& ZCHash = BtcUtils::getHash256(rawTx);
+      allZcHash.push_back(ZCHash);
+      DBTestUtils::pushNewZc(theBDMt_, zcVec);
+      pCallback.waitOnSignal(BDMAction_ZC, ZCHash.toHexStr());
+   }
+
+   //grad ledger, check all zc hash are in there
+   auto&& ledgerDelegate = bdvObj.getLedgerDelegateForWallets();
+   auto&& history = ledgerDelegate.getHistoryPage(0);
+
+   set<BinaryData> ledgerHashes;
+   for (auto& le : history)
+      ledgerHashes.insert(le.getTxHash());
+
+   for (auto& zcHash : allZcHash)
+   {
+      auto iter = ledgerHashes.find(zcHash);
+      EXPECT_TRUE(iter != ledgerHashes.end());
+   }
 
    //cleanup
    bdvObj.unregisterFromDB();

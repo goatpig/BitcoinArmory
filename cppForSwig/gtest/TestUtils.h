@@ -178,7 +178,20 @@ namespace DBTestUtils
          BdmNotif notif;
          notif.action_ = action;
          if (action == BDMAction_Refresh)
+         {
             notif.idVec_ = *((vector<BinaryData>*)ptr);
+         }
+         else if (action == BDMAction_ZC)
+         {
+            if (ptr == nullptr)
+               return;
+
+            auto leVecPtr = (vector<::ClientClasses::LedgerEntry>*)ptr;
+            for (auto& le : *leVecPtr)
+            {
+               notif.idVec_.push_back(le.getTxHash().toHexStr());
+            }
+         }
 
          actionStack_.push_back(move(notif));
       }
@@ -211,7 +224,7 @@ namespace DBTestUtils
          }
       }
 
-      void waitOnManyRefresh(vector<string> ids)
+      void waitOnManySignals(BDMAction signal, vector<string> ids)
       {
          unsigned count = 0;
          set<BinaryDataRef> bdrVec;
@@ -227,7 +240,7 @@ namespace DBTestUtils
                break;
 
             auto action = actionStack_.pop_front();
-            if (action.action_ == BDMAction_Refresh)
+            if (action.action_ == signal)
             {
                for (auto& id : action.idVec_)
                {

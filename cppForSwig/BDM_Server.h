@@ -43,6 +43,7 @@ struct BDV_Payload
    shared_ptr<BDV_packet> packet_;
    shared_ptr<BDV_Server_Object> bdvPtr_;
    uint32_t messageID_;
+   size_t packetID_;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -51,7 +52,7 @@ struct BDV_PartialMessage
    vector<shared_ptr<BDV_Payload>> payloads_;
    WebSocketMessagePartial partialMessage_;
 
-   size_t parsePacket(shared_ptr<BDV_Payload>);
+   bool parsePacket(shared_ptr<BDV_Payload>);
    bool isReady(void) const { return partialMessage_.isReady(); }
    bool getMessage(shared_ptr<::google::protobuf::Message>);
    void reset(void);
@@ -176,7 +177,9 @@ private:
    function<void(unique_ptr<BDV_Notification>)> notifLambda_;
    atomic<unsigned> packetProcess_threadLock_;
 
+   map<size_t, shared_ptr<BDV_Payload>> packetMap_;
    BDV_PartialMessage currentMessage_;
+   size_t nextPacketId_ = 0;
 
 private:
    BDV_Server_Object(BDV_Server_Object&) = delete; //no copies
@@ -201,6 +204,7 @@ private:
    void flagRefresh(
       BDV_refresh refresh, const BinaryData& refreshId,
       unique_ptr<BDV_Notification_ZC> zcPtr);
+   void resetCurrentMessage(void);
 
 public:
    BDV_Server_Object(const string& id, BlockDataManagerThread *bdmT);
@@ -216,6 +220,8 @@ public:
    void haltThreads(void);
    bool processPayload(shared_ptr<BDV_Payload>&, 
       shared_ptr<::google::protobuf::Message>&);
+
+   size_t getNextPacketId(void) { return nextPacketId_++; }
 };
 
 class Clients;

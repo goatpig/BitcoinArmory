@@ -61,13 +61,32 @@ namespace SwigClient
 ////////////////////////////////////////////////////////////////////////////////
 struct ClientPartialMessage
 {
-   vector<BinaryData> packets_;
+private:
+   int counter_ = 0;
+
+public:
+   map<int, BinaryData> packets_;
    WebSocketMessagePartial message_;
 
    void reset(void) 
    {
       packets_.clear();
       message_.reset();
+   }
+
+   BinaryDataRef insertDataAndGetRef(BinaryData& data)
+   {
+      auto&& data_pair = make_pair(counter_++, move(data));
+      auto iter = packets_.insert(move(data_pair));
+      return iter.first->second.getRef();
+   }
+
+   void eraseLast(void)
+   {
+      if (counter_ == 0)
+         return;
+
+      packets_.erase(counter_--);
    }
 };
 

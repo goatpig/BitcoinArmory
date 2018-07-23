@@ -937,8 +937,6 @@ void CallbackReturn_VectorUTXO::callback(
       utxo.txIndex_ = proto_utxo.txindex();
       utxo.txOutIndex_ = proto_utxo.txoutindex();
       utxo.txHash_.copyFrom(proto_utxo.txhash());
-
-      utxovec.push_back(move(utxo));
    }
 
    userCallbackLambda_(move(utxovec));

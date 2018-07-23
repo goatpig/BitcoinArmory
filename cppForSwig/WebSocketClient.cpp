@@ -93,6 +93,7 @@ void WebSocketClient::setIsReady(bool status)
 void WebSocketClient::init()
 {
    run_.store(1, memory_order_relaxed);
+   currentReadMessage_.reset();
 
    //setup context
    struct lws_context_creation_info info;
@@ -318,6 +319,7 @@ int WebSocketClient::callback(struct lws *wsi,
 ////////////////////////////////////////////////////////////////////////////////
 void WebSocketClient::readService()
 {
+   size_t packetid = 0;
    while (1)
    {
       BinaryData payload;
@@ -331,18 +333,12 @@ void WebSocketClient::readService()
       }
 
       //deser packet
-      currentReadMessage_.packets_.push_back(move(payload));
-      auto payloadRef = currentReadMessage_.packets_.back().getRef();
-
-      auto sz = currentReadMessage_.message_.parsePacket(payloadRef);
-      if (sz == SIZE_MAX)
+      auto payloadRef = currentReadMessage_.insertDataAndGetRef(payload);
+      auto result = 
+         currentReadMessage_.message_.parsePacket(packetid++, payloadRef);
+      if (!result)
       {
          currentReadMessage_.reset();
-         continue;
-      }
-      else if (sz == SIZE_MAX -1)
-      {
-         currentReadMessage_.packets_.pop_back();
          continue;
       }
 

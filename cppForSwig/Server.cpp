@@ -637,6 +637,7 @@ void WebSocketServer::commandThread()
          auto bdv_payload = make_shared<BDV_Payload>();
          bdv_payload->bdvPtr_ = bdvPtr;
          bdv_payload->packet_ = packetPtr;
+         bdv_payload->packetID_ = bdvPtr->getNextPacketId();
 
          //queue for clients thread pool to process
          clients_->queuePayload(bdv_payload);

@@ -43,7 +43,7 @@ public:
     
    static BinaryDataRef getSingleMessage(const BinaryDataRef&);
    static bool reconstructFragmentedMessage(
-      const vector<BinaryDataRef>&, 
+      const map<size_t, BinaryDataRef>&, 
       ::google::protobuf::Message*);
 };
 
@@ -67,7 +67,7 @@ public:
 class WebSocketMessagePartial
 {
 private:
-   vector<BinaryDataRef> packets_;
+   map<size_t, BinaryDataRef> packets_;
    size_t pos_;
 
    uint32_t id_ = UINT32_MAX;
@@ -75,10 +75,12 @@ private:
 
 public:
    void reset(void);
-   size_t parsePacket(const BinaryDataRef&);
+   bool parsePacket(const size_t& id, const BinaryDataRef&);
    bool isReady(void) const { return pos_ == len_ && packets_.size() != 0; }
    bool getMessage(::google::protobuf::Message*) const;
    const uint32_t& getId(void) const { return id_; }
+
+   const map<size_t, BinaryDataRef>& getPacketMap(void) const { return packets_; }
 };
 
 ///////////////////////////////////////////////////////////////////////////////

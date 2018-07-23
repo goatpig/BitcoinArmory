@@ -1268,11 +1268,53 @@ bool BDV_Server_Object::processPayload(shared_ptr<BDV_Payload>& packet,
    if (packet == nullptr)
       return false;
 
-   currentMessage_.parsePacket(packet);
-   packet->messageID_ = currentMessage_.partialMessage_.getId();
-   if (!currentMessage_.isReady())
-      return true;
+   if (packetMap_.size() > 0)
+   {
+      if (packetMap_.rbegin()->first < packet->packetID_)
+      {
+         //packet id exceed id of highest unparsed packet, store for later
+         packetMap_.insert(make_pair(packet->packetID_, packet));
+         return true;
+      }
+   }
 
+   shared_ptr<BDV_Payload> currentPacket = packet;
+   do //loop over packetMap to feed unparsed messages back in
+   {
+      auto parsed = currentMessage_.parsePacket(packet);
+      if (!parsed)
+      {
+         //packet did not extend current message, save for later
+         packetMap_.insert(make_pair(packet->packetID_, packet));
+         return true;
+      }
+
+      if (currentMessage_.isReady())
+      {
+         //message is complete, time to process it
+         break;
+      }
+
+      if (packetMap_.size() == 0)
+      {
+         //out of packets to feed the current message, return;
+         return true;
+      }
+
+      //look for the next consecutive id
+      auto nextId = packet->packetID_ + 1;
+      auto iter = packetMap_.find(nextId);
+      if (iter == packetMap_.end())
+      {
+         //no packet with the next id, return
+         return true;
+      }
+
+      //have the next packet, iterate over it
+      currentPacket = iter->second;
+   } while (1);
+
+   packet->messageID_ = currentMessage_.partialMessage_.getId();
    auto message = make_shared<BDVCommand>();
    if (!currentMessage_.getMessage(message))
    {
@@ -1280,13 +1322,27 @@ bool BDV_Server_Object::processPayload(shared_ptr<BDV_Payload>& packet,
       if (currentMessage_.getMessage(staticCommand))
          result = staticCommand;
 
-      currentMessage_.reset();
+      //reset the current message as it resulted in a full payload
+      resetCurrentMessage();
       return false;
    }
 
    result = processCommand(message);
-   currentMessage_.reset();
+
+   //reset the current message as it resulted in a full payload
+   resetCurrentMessage();
    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void BDV_Server_Object::resetCurrentMessage()
+{
+   //remove packet ids current message is using from packetMap
+   auto& messagePacketMap = currentMessage_.partialMessage_.getPacketMap();
+   for (auto& packetPair : messagePacketMap)
+      packetMap_.erase(packetPair.first);
+
+   currentMessage_.reset();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1987,14 +2043,15 @@ void ZeroConfCallbacks_BDV::errorCallback(
 // BDV_FragmentedMessage
 //
 ///////////////////////////////////////////////////////////////////////////////
-size_t BDV_PartialMessage::parsePacket(shared_ptr<BDV_Payload> packet)
+bool BDV_PartialMessage::parsePacket(shared_ptr<BDV_Payload> packet)
 {
    auto&& bdr = packet->packet_->data_.getRef();
-   auto result = partialMessage_.parsePacket(bdr);
-   if (result >= SIZE_MAX - 1)
-      return SIZE_MAX;
+   auto result = partialMessage_.parsePacket(packet->packetID_, bdr);
+   if (!result)
+      return false;
 
    payloads_.push_back(packet);
+   return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

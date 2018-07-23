@@ -84,7 +84,7 @@ vector<BinaryData> WebSocketMessageCodec::serialize(uint32_t id,
 
 ////////////////////////////////////////////////////////////////////////////////
 bool WebSocketMessageCodec::reconstructFragmentedMessage(
-   const vector<BinaryDataRef>& payloadMap, ::google::protobuf::Message* msg)
+   const map<size_t, BinaryDataRef>& payloadMap, ::google::protobuf::Message* msg)
 {
    //this method expects packets in order
 
@@ -99,8 +99,9 @@ bool WebSocketMessageCodec::reconstructFragmentedMessage(
    
    try
    {
-      for (auto& dataRef : payloadMap)
+      for (auto& data_pair : payloadMap)
       {
+         auto& dataRef = data_pair.second;
          auto stream = new ArrayInputStream(
             dataRef.getPtr(), dataRef.getSize());
          streams.push_back(stream);
@@ -175,10 +176,11 @@ void WebSocketMessagePartial::reset()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-size_t WebSocketMessagePartial::parsePacket(const BinaryDataRef& dataRef)
+bool WebSocketMessagePartial::parsePacket(
+   const size_t& id, const BinaryDataRef& dataRef)
 {
    if (dataRef.getSize() == 0)
-      return SIZE_MAX;
+      return false;
 
    if (packets_.size() == 0)
    {
@@ -195,7 +197,7 @@ size_t WebSocketMessagePartial::parsePacket(const BinaryDataRef& dataRef)
       }
 
       if (i == len)
-         return SIZE_MAX;
+         return false;
 
       //get slice ref
       auto&& slice = dataRef.getSliceRef(i, dataRef.getSize() - i);
@@ -207,21 +209,25 @@ size_t WebSocketMessagePartial::parsePacket(const BinaryDataRef& dataRef)
 
       auto remaining = min(len_, brr.getSizeRemaining());
       auto&& packetRef = brr.get_BinaryDataRef(remaining);
-      packets_.push_back(packetRef);
+      packets_.insert(make_pair(id, packetRef));
       pos_ = remaining;
 
-      return remaining;
+      return true;
    }
    else
    {
       //fill message
       auto remaining = len_ - pos_;
       if (remaining == 0)
-         return SIZE_MAX - 1;
+         return false;
+
+      auto iter = packets_.rbegin();
+      if (iter->first + 1 != id)
+         return false;
 
       auto read_size = min(remaining, dataRef.getSize());
       auto&& slice = dataRef.getSliceRef(0, read_size);
-      packets_.push_back(slice);
+      packets_.insert(make_pair(id, slice));
       pos_ += read_size;
 
       return read_size;
@@ -237,7 +243,7 @@ bool WebSocketMessagePartial::getMessage(
 
    if (packets_.size() == 1)
    {
-      auto& dataRef = packets_[0];
+      auto& dataRef = packets_.begin()->second;
       return msgPtr->ParseFromArray(dataRef.getPtr(), dataRef.getSize());
    }
    else
