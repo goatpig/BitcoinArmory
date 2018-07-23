@@ -66,7 +66,7 @@ ARMORYGUI_SOURCE_FILES = AsyncClient.cpp \
 	WebSocketClient.cpp
 ARMORYCLI_SOURCE_FILES = BDM_mainthread.cpp \
 	BDM_Server.cpp \
-	BIP151.cpp \
+	BIP150_151.cpp \
 	BitcoinP2P.cpp \
 	Blockchain.cpp \
 	BlockchainScanner.cpp \

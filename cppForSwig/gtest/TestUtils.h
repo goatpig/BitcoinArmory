@@ -19,7 +19,7 @@
 #include "btc/ecc.h"
 
 #include "../hkdf.h"
-#include "../BIP151.h"
+#include "../BIP150_151.h"
 #include "../log.h"
 #include "../BinaryData.h"
 #include "../BtcUtils.h"
