@@ -35,6 +35,7 @@ enum Methods
 	getLedgerDelegateForLockboxes = 41;
 	getLedgerDelegateForScrAddr = 42;
 	updateWalletsLedgerFilter = 43;
+	getPageCountForLedgerDelegate = 44;
 
 	getBalancesAndCount = 50;
 	getAddrTxnCounts = 51;

@@ -122,6 +122,23 @@ shared_ptr<Message> BDV_Server_Object::processCommand(
       throw runtime_error("invalid command for getHistoryPage");
    }
 
+   case Methods::getPageCountForLedgerDelegate:
+   {
+      if (!command->has_delegateid())
+         throw runtime_error(
+            "invalid command for getPageCountForLedgerDelegate");
+
+      auto delegateIter = delegateMap_.find(command->delegateid());
+      if (delegateIter != delegateMap_.end())
+      {
+         auto count = delegateIter->second.getPageCount();
+         
+         auto response = make_shared<::Codec_CommonTypes::OneUnsigned>();
+         response->set_value(count);
+         return response;
+      }
+   }
+
    case Methods::registerWallet:
    {
       /*
@@ -1281,28 +1298,28 @@ bool BDV_Server_Object::processPayload(shared_ptr<BDV_Payload>& packet,
    shared_ptr<BDV_Payload> currentPacket = packet;
    do //loop over packetMap to feed unparsed messages back in
    {
-      auto parsed = currentMessage_.parsePacket(packet);
+      auto parsed = currentMessage_.parsePacket(currentPacket);
       if (!parsed)
       {
          //packet did not extend current message, save for later
-         packetMap_.insert(make_pair(packet->packetID_, packet));
+         packetMap_.insert(make_pair(packet->packetID_, currentPacket));
          return true;
       }
 
       if (currentMessage_.isReady())
       {
-         //message is complete, time to process it
+         //message is complete, time to process it        
          break;
       }
 
       if (packetMap_.size() == 0)
       {
-         //out of packets to feed the current message, return;
+         //out of packets to feed the current message, return
          return true;
       }
 
       //look for the next consecutive id
-      auto nextId = packet->packetID_ + 1;
+      auto nextId = currentPacket->packetID_ + 1;
       auto iter = packetMap_.find(nextId);
       if (iter == packetMap_.end())
       {
@@ -1339,10 +1356,16 @@ void BDV_Server_Object::resetCurrentMessage()
 {
    //remove packet ids current message is using from packetMap
    auto& messagePacketMap = currentMessage_.partialMessage_.getPacketMap();
+
    for (auto& packetPair : messagePacketMap)
       packetMap_.erase(packetPair.first);
 
    currentMessage_.reset();
+   if (packetMap_.size() != 0)
+   {
+      auto iter = packetMap_.begin();
+      packetToReinject_ = iter->second;
+   }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1772,6 +1795,12 @@ void Clients::messageParserThread(void)
 
       /*grabbed the thread lock, time to process the payload*/
       auto result = processCommand(payloadPtr);
+      if (bdvPtr->packetToReinject_ != nullptr)
+      {
+         bdvPtr->packetToReinject_->bdvPtr_ = bdvPtr;
+         packetQueue_.push_back(move(bdvPtr->packetToReinject_));
+         bdvPtr->packetToReinject_ = nullptr;
+      }
 
       //release lock
       bdvPtr->packetProcess_threadLock_.store(0, memory_order_relaxed);

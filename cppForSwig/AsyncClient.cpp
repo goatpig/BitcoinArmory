@@ -437,6 +437,20 @@ void LedgerDelegate::getHistoryPage(uint32_t id,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+void LedgerDelegate::getPageCount(function<void(uint64_t)> callback) const
+{
+   auto payload = BlockDataViewer::make_payload(
+      Methods::getPageCountForLedgerDelegate, bdvID_);
+   auto command = dynamic_cast<BDVCommand*>(payload->message_.get());
+   command->set_delegateid(delegateID_);
+
+   auto read_payload = make_shared<Socket_ReadPayload>();
+   read_payload->callbackReturn_ =
+      make_unique<CallbackReturn_UINT64>(callback);
+   sock_->pushPayload(move(payload), read_payload);
+}
+
+///////////////////////////////////////////////////////////////////////////////
 //
 // BtcWallet
 //

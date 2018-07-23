@@ -180,6 +180,7 @@ private:
    map<size_t, shared_ptr<BDV_Payload>> packetMap_;
    BDV_PartialMessage currentMessage_;
    size_t nextPacketId_ = 0;
+   shared_ptr<BDV_Payload> packetToReinject_ = nullptr;
 
 private:
    BDV_Server_Object(BDV_Server_Object&) = delete; //no copies

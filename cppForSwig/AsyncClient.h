@@ -61,6 +61,7 @@ namespace AsyncClient
 
       void getHistoryPage(uint32_t id, 
          function<void(vector<::ClientClasses::LedgerEntry>)>);
+      void getPageCount(function<void(uint64_t)>) const;
    };
 
    class BtcWallet;

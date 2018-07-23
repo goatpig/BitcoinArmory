@@ -489,7 +489,10 @@ LedgerDelegate BlockDataViewer::getLedgerDelegateForWallets()
    auto getPageId = [this](uint32_t block)->uint32_t
    { return this->groups_[group_wallet].getPageIdForBlockHeight(block); };
 
-   return LedgerDelegate(getHist, getBlock, getPageId);
+   auto getPageCount = [this](void)->uint32_t
+   { return this->getWalletsPageCount(); };
+
+   return LedgerDelegate(getHist, getBlock, getPageId, getPageCount);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -504,7 +507,10 @@ LedgerDelegate BlockDataViewer::getLedgerDelegateForLockboxes()
    auto getPageId = [this](uint32_t block)->uint32_t
    { return this->groups_[group_lockbox].getPageIdForBlockHeight(block); };
 
-   return LedgerDelegate(getHist, getBlock, getPageId);
+   auto getPageCount = [this](void)->uint32_t
+   { return this->getLockboxesPageCount(); };
+
+   return LedgerDelegate(getHist, getBlock, getPageId, getPageCount);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -538,7 +544,10 @@ LedgerDelegate BlockDataViewer::getLedgerDelegateForScrAddr(
    auto getPageId = [&](uint32_t block)->uint32_t
    { return sca.getPageIdForBlockHeight(block); };
 
-   return LedgerDelegate(getHist, getBlock, getPageId);
+   auto getPageCount = [&](void)->uint32_t
+   { return sca.getPageCount(); };
+
+   return LedgerDelegate(getHist, getBlock, getPageId, getPageCount);
 }
 
 

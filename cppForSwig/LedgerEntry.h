@@ -196,20 +196,28 @@ public:
       return getPageIdForBlockHeight_(blk);
    }
 
+   uint32_t getPageCount(void)
+   {
+      return getPageCount_();
+   }
+
 private:
    LedgerDelegate(
       function<vector<LedgerEntry>(uint32_t)> getHist,
       function<uint32_t(uint32_t)> getBlock,
-      function<uint32_t(uint32_t)> getPageId) :
+      function<uint32_t(uint32_t)> getPageId,
+      function<uint32_t(void)> getPageCount) :
       getHistoryPage_(getHist),
       getBlockInVicinity_(getBlock),
-      getPageIdForBlockHeight_(getPageId)
+      getPageIdForBlockHeight_(getPageId),
+      getPageCount_(getPageCount)
    {}
 
 private:
    const function<vector<LedgerEntry>(uint32_t)> getHistoryPage_;
    const function<uint32_t(uint32_t)>            getBlockInVicinity_;
    const function<uint32_t(uint32_t)>            getPageIdForBlockHeight_;
+   const function<uint32_t(void)>                getPageCount_;
 };
 
 #endif

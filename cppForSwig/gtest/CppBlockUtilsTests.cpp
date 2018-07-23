@@ -8254,8 +8254,10 @@ TEST_F(BlockUtilsBare, WebSocketStack_ManyZC)
 
    //grad ledger, check all zc hash are in there
    auto&& ledgerDelegate = bdvObj.getLedgerDelegateForWallets();
-   auto&& history = ledgerDelegate.getHistoryPage(0);
+   auto count = ledgerDelegate.getPageCount();
+   EXPECT_EQ(count, 1);
 
+   auto&& history = ledgerDelegate.getHistoryPage(0);
    set<BinaryData> ledgerHashes;
    for (auto& le : history)
       ledgerHashes.insert(le.getTxHash());

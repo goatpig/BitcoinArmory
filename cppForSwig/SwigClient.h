@@ -51,6 +51,7 @@ namespace SwigClient
       LedgerDelegate(AsyncClient::LedgerDelegate&);
 
       vector<::ClientClasses::LedgerEntry> getHistoryPage(uint32_t id);
+      uint64_t getPageCount(void) const;
    };
 
    class BtcWallet;

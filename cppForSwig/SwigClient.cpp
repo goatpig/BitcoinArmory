@@ -315,6 +315,21 @@ vector<::ClientClasses::LedgerEntry> LedgerDelegate::getHistoryPage(
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+uint64_t LedgerDelegate::getPageCount() const
+{
+   auto prom = make_shared<promise<uint64_t>>();
+   auto fut = prom->get_future();
+
+   auto resultLBD = [prom](uint64_t val)->void
+   {
+      prom->set_value(val);
+   };
+
+   asyncLed_.getPageCount(resultLBD);
+   return move(fut.get());
+}
+
+///////////////////////////////////////////////////////////////////////////////
 //
 // BtcWallet
 //

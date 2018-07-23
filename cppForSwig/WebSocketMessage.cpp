@@ -184,6 +184,9 @@ bool WebSocketMessagePartial::parsePacket(
 
    if (packets_.size() == 0)
    {
+      if (dataRef.getSize() < 7)
+        return false;
+
       auto dataPtr = dataRef.getPtr();
 
       //look for message header
@@ -196,7 +199,7 @@ bool WebSocketMessagePartial::parsePacket(
             break;
       }
 
-      if (i == len)
+      if (i == len -1)
          return false;
 
       //get slice ref
@@ -230,7 +233,7 @@ bool WebSocketMessagePartial::parsePacket(
       packets_.insert(make_pair(id, slice));
       pos_ += read_size;
 
-      return read_size;
+      return true;
    }
 }
 
