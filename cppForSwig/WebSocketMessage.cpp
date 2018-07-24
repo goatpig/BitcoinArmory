@@ -202,6 +202,9 @@ bool WebSocketMessagePartial::parsePacket(
       if (i == len -1)
          return false;
 
+      if (i != 0)
+         LOGWARN << "message started haflway through payload";
+
       //get slice ref
       auto&& slice = dataRef.getSliceRef(i, dataRef.getSize() - i);
       BinaryRefReader brr(slice);
@@ -214,6 +217,9 @@ bool WebSocketMessagePartial::parsePacket(
       auto&& packetRef = brr.get_BinaryDataRef(remaining);
       packets_.insert(make_pair(id, packetRef));
       pos_ = remaining;
+
+      if (brr.getSizeRemaining() > len_)
+         LOGWARN << "payload has left over data";
 
       return true;
    }
@@ -232,6 +238,9 @@ bool WebSocketMessagePartial::parsePacket(
       auto&& slice = dataRef.getSliceRef(0, read_size);
       packets_.insert(make_pair(id, slice));
       pos_ += read_size;
+
+      if(remaining < dataRef.getSize())
+         LOGWARN << "packet has left over data";
 
       return true;
    }
