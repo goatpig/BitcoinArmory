@@ -452,7 +452,7 @@ public:
       count_.store(map_->size(), memory_order_relaxed);
    }
 
-   void update(map<T, U> updatemap)
+   void update(map<T, U>& updatemap)
    {
       if (updatemap.size() == 0)
          return;

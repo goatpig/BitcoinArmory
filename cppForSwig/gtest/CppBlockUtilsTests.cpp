@@ -8279,6 +8279,278 @@ TEST_F(BlockUtilsBare, WebSocketStack_ManyZC)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
+{
+   BlockDataManagerConfig::setServiceType(SERVICE_WEBSOCKET);
+
+   //
+   TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
+
+   //run clients from websocketserver object instead
+   clients_->exitRequestLoop();
+   clients_->shutdown();
+
+   delete clients_;
+   delete theBDMt_;
+   clients_ = nullptr;
+
+   theBDMt_ = new BlockDataManagerThread(config);
+   WebSocketServer::start(theBDMt_, true);
+
+   theBDMt_->start(config.initMode_);
+
+   {
+      auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
+         "127.0.0.1", "7681", SocketType::SocketWS);
+      bdvObj.registerWithDB(config.magicBytes_);
+
+      auto createNAddresses = [](unsigned count)->vector<BinaryData>
+      {
+         vector<BinaryData> result;
+
+         for (unsigned i = 0; i < count; i++)
+         {
+            BinaryWriter bw;
+            bw.put_uint8_t(SCRIPT_PREFIX_HASH160);
+
+            auto&& addrData = SecureBinaryData().GenerateRandom(20);
+            bw.put_BinaryData(addrData);
+
+            result.push_back(bw.getData());
+         }
+
+         return result;
+      };
+
+      auto&& scrAddrVec = createNAddresses(2000);
+      scrAddrVec.push_back(TestChain::scrAddrA);
+      scrAddrVec.push_back(TestChain::scrAddrB);
+      scrAddrVec.push_back(TestChain::scrAddrC);
+      scrAddrVec.push_back(TestChain::scrAddrE);
+
+      const vector<BinaryData> lb1ScrAddrs
+      {
+         TestChain::lb1ScrAddr,
+         TestChain::lb1ScrAddrP2SH
+      };
+      const vector<BinaryData> lb2ScrAddrs
+      {
+         TestChain::lb2ScrAddr,
+         TestChain::lb2ScrAddrP2SH
+      };
+
+      vector<string> walletRegIDs;
+      DBTestUtils::UTCallback pCallback(bdvObj);
+
+      auto&& wallet1 = bdvObj.instantiateWallet("wallet1");
+      walletRegIDs.push_back(
+         wallet1.registerAddresses(scrAddrVec, false));
+
+      auto&& lb1 = bdvObj.instantiateLockbox("lb1");
+      walletRegIDs.push_back(
+         lb1.registerAddresses(lb1ScrAddrs, false));
+
+      auto&& lb2 = bdvObj.instantiateLockbox("lb2");
+      walletRegIDs.push_back(
+         lb2.registerAddresses(lb2ScrAddrs, false));
+
+      //wait on registration ack
+      pCallback.waitOnManySignals(BDMAction_Refresh, walletRegIDs);
+
+      //go online
+      bdvObj.goOnline();
+      pCallback.waitOnSignal(BDMAction_Ready);
+
+      auto w1AddrBalances = wallet1.getAddrBalancesFromDB();
+      vector<uint64_t> balanceVec;
+      balanceVec = w1AddrBalances[TestChain::scrAddrA];
+      EXPECT_EQ(balanceVec[0], 50 * COIN);
+      balanceVec = w1AddrBalances[TestChain::scrAddrB];
+      EXPECT_EQ(balanceVec[0], 30 * COIN);
+      balanceVec = w1AddrBalances[TestChain::scrAddrC];
+      EXPECT_EQ(balanceVec[0], 55 * COIN);
+
+      auto w1Balances = wallet1.getBalancesAndCount(4);
+      uint64_t fullBalance = w1Balances[0];
+      uint64_t spendableBalance = w1Balances[1];
+      uint64_t unconfirmedBalance = w1Balances[2];
+      EXPECT_EQ(fullBalance, 165 * COIN);
+      EXPECT_EQ(spendableBalance, 65 * COIN);
+      EXPECT_EQ(unconfirmedBalance, 165 * COIN);
+
+      auto lb1AddrBalances = lb1.getAddrBalancesFromDB();
+      balanceVec = lb1AddrBalances[TestChain::lb1ScrAddr];
+      EXPECT_EQ(balanceVec[0], 10 * COIN);
+      balanceVec = lb1AddrBalances[TestChain::lb1ScrAddrP2SH];
+      EXPECT_EQ(balanceVec.size(), 0);
+
+      auto lb2AddrBalances = lb2.getAddrBalancesFromDB();
+      balanceVec = lb2AddrBalances[TestChain::lb2ScrAddr];
+      EXPECT_EQ(balanceVec[0], 10 * COIN);
+      balanceVec = lb2AddrBalances[TestChain::lb2ScrAddrP2SH];
+      EXPECT_EQ(balanceVec[0], 5 * COIN);
+
+      auto lb1Balances = lb1.getBalancesAndCount(4);
+      EXPECT_EQ(lb1Balances[0], 10 * COIN);
+
+      auto lb2Balances = lb2.getBalancesAndCount(4);
+      EXPECT_EQ(lb2Balances[0], 15 * COIN);
+
+      //
+      TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+      DBTestUtils::triggerNewBlockNotification(theBDMt_);
+      pCallback.waitOnSignal(BDMAction_NewBlock);
+
+      w1AddrBalances = wallet1.getAddrBalancesFromDB();
+      balanceVec = w1AddrBalances[TestChain::scrAddrA];
+      //value didn't change, shouldnt be getting a balance vector for this address
+      EXPECT_EQ(balanceVec.size(), 0);
+      balanceVec = w1AddrBalances[TestChain::scrAddrB];
+      EXPECT_EQ(balanceVec[0], 70 * COIN);
+      balanceVec = w1AddrBalances[TestChain::scrAddrC];
+      EXPECT_EQ(balanceVec[0], 20 * COIN);
+
+      w1Balances = wallet1.getBalancesAndCount(5);
+      fullBalance = w1Balances[0];
+      spendableBalance = w1Balances[1];
+      unconfirmedBalance = w1Balances[2];
+      EXPECT_EQ(fullBalance, 170 * COIN);
+      EXPECT_EQ(spendableBalance, 70 * COIN);
+      EXPECT_EQ(unconfirmedBalance, 170 * COIN);
+
+      lb1AddrBalances = lb1.getAddrBalancesFromDB();
+      balanceVec = lb1AddrBalances[TestChain::lb1ScrAddr];
+      EXPECT_EQ(balanceVec[0], 5 * COIN);
+      balanceVec = lb1AddrBalances[TestChain::lb1ScrAddrP2SH];
+      EXPECT_EQ(balanceVec[0], 25 * COIN);
+
+      lb2AddrBalances = lb2.getAddrBalancesFromDB();
+      balanceVec = lb2AddrBalances[TestChain::lb2ScrAddr];
+      EXPECT_EQ(balanceVec[0], 30 * COIN);
+      balanceVec = lb2AddrBalances[TestChain::lb2ScrAddrP2SH];
+      EXPECT_EQ(balanceVec[0], 0 * COIN);
+
+      lb1Balances = lb1.getBalancesAndCount(5);
+      EXPECT_EQ(lb1Balances[0], 30 * COIN);
+
+      lb2Balances = lb2.getBalancesAndCount(5);
+      EXPECT_EQ(lb2Balances[0], 30 * COIN);
+
+      bdvObj.unregisterFromDB();
+   }
+
+   for (int i = 0; i < 10; i++)
+   {
+      auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
+         "127.0.0.1", "7681", SocketType::SocketWS);
+      bdvObj.registerWithDB(config.magicBytes_);
+
+      auto createNAddresses = [](unsigned count)->vector<BinaryData>
+      {
+         vector<BinaryData> result;
+
+         for (unsigned i = 0; i < count; i++)
+         {
+            BinaryWriter bw;
+            bw.put_uint8_t(SCRIPT_PREFIX_HASH160);
+
+            auto&& addrData = SecureBinaryData().GenerateRandom(20);
+            bw.put_BinaryData(addrData);
+
+            result.push_back(bw.getData());
+         }
+
+         return result;
+      };
+
+      //auto&& scrAddrVec = createNAddresses(2000);
+      vector<BinaryData> scrAddrVec;
+      scrAddrVec.push_back(TestChain::scrAddrA);
+      scrAddrVec.push_back(TestChain::scrAddrB);
+      scrAddrVec.push_back(TestChain::scrAddrC);
+      scrAddrVec.push_back(TestChain::scrAddrE);
+
+      const vector<BinaryData> lb1ScrAddrs
+      {
+         TestChain::lb1ScrAddr,
+         TestChain::lb1ScrAddrP2SH
+      };
+      const vector<BinaryData> lb2ScrAddrs
+      {
+         TestChain::lb2ScrAddr,
+         TestChain::lb2ScrAddrP2SH
+      };
+
+      vector<string> walletRegIDs;
+      DBTestUtils::UTCallback pCallback(bdvObj);
+
+      auto&& wallet1 = bdvObj.instantiateWallet("wallet1");
+      walletRegIDs.push_back(
+         wallet1.registerAddresses(scrAddrVec, false));
+
+      auto&& lb1 = bdvObj.instantiateLockbox("lb1");
+      walletRegIDs.push_back(
+         lb1.registerAddresses(lb1ScrAddrs, false));
+
+      auto&& lb2 = bdvObj.instantiateLockbox("lb2");
+      walletRegIDs.push_back(
+         lb2.registerAddresses(lb2ScrAddrs, false));
+
+      //wait on registration ack
+      pCallback.waitOnManySignals(BDMAction_Refresh, walletRegIDs);
+
+      //go online
+      bdvObj.goOnline();
+      pCallback.waitOnSignal(BDMAction_Ready);
+
+      auto w1AddrBalances = wallet1.getAddrBalancesFromDB();
+      auto balanceVec = w1AddrBalances[TestChain::scrAddrA];
+      EXPECT_EQ(balanceVec[0], 50 * COIN);
+      balanceVec = w1AddrBalances[TestChain::scrAddrB];
+      EXPECT_EQ(balanceVec[0], 70 * COIN);
+      balanceVec = w1AddrBalances[TestChain::scrAddrC];
+      EXPECT_EQ(balanceVec[0], 20 * COIN);
+
+      auto w1Balances = wallet1.getBalancesAndCount(5);
+      auto fullBalance = w1Balances[0];
+      auto spendableBalance = w1Balances[1];
+      auto unconfirmedBalance = w1Balances[2];
+      EXPECT_EQ(fullBalance, 170 * COIN);
+      EXPECT_EQ(spendableBalance, 70 * COIN);
+      EXPECT_EQ(unconfirmedBalance, 170 * COIN);
+
+      auto lb1AddrBalances = lb1.getAddrBalancesFromDB();
+      balanceVec = lb1AddrBalances[TestChain::lb1ScrAddr];
+      EXPECT_EQ(balanceVec[0], 5 * COIN);
+      balanceVec = lb1AddrBalances[TestChain::lb1ScrAddrP2SH];
+      EXPECT_EQ(balanceVec[0], 25 * COIN);
+
+      auto lb2AddrBalances = lb2.getAddrBalancesFromDB();
+      balanceVec = lb2AddrBalances[TestChain::lb2ScrAddr];
+      EXPECT_EQ(balanceVec[0], 30 * COIN);
+      balanceVec = lb2AddrBalances[TestChain::lb2ScrAddrP2SH];
+      EXPECT_EQ(balanceVec.size(), 0);
+
+      auto lb1Balances = lb1.getBalancesAndCount(5);
+      EXPECT_EQ(lb1Balances[0], 30 * COIN);
+
+      auto lb2Balances = lb2.getBalancesAndCount(5);
+      EXPECT_EQ(lb2Balances[0], 30 * COIN);
+
+      bdvObj.unregisterFromDB();
+   }
+
+   auto&& bdvObj2 = SwigClient::BlockDataViewer::getNewBDV(
+      "127.0.0.1", "7681", SocketType::SocketWS);
+   bdvObj2.shutdown(config.cookie_);
+   WebSocketServer::waitOnShutdown();
+
+   delete theBDMt_;
+   theBDMt_ = nullptr;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(BlockUtilsBare, Replace_ZC_Test)
 {
    //create spender lambda

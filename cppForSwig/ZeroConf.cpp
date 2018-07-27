@@ -1516,9 +1516,15 @@ void ZeroConfContainer::processInvTxThread(void)
 {
    while (1)
    {
-      auto&& packet = newInvTxStack_.pop_front();
-      if (packet.invEntry_.invtype_ == Inv_Terminate)
-         return;
+      ZeroConfInvPacket packet;
+      try
+      {
+         packet = move(newInvTxStack_.pop_front());
+      }
+      catch (StopBlockingLoop&)
+      {
+         break;
+      }
 
       try
       {
@@ -1730,19 +1736,8 @@ void ZeroConfContainer::broadcastZC(const BinaryData& rawzc,
 ///////////////////////////////////////////////////////////////////////////////
 void ZeroConfContainer::shutdown()
 {
-   newZcStack_.completed();
-
-   //shutdow invtx processing threads by pushing inventries of 
-   //inv_terminate type
-   InvEntry terminateEntry;
-   vector<InvEntry> vecIE;
-   terminateEntry.invtype_ = Inv_Terminate;
-
-   for (unsigned i = 0; i < parserThreads_.size(); i++)
-      vecIE.push_back(terminateEntry);
-
-   processInvTxVec(vecIE, false);
-   zcEnabled_.store(false, memory_order_relaxed);
+   newInvTxStack_.terminate();
+   newZcStack_.terminate();
 
    vector<thread::id> idVec;
    for (auto& parser : parserThreads_)

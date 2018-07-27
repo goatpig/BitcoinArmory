@@ -59,7 +59,7 @@ public:
     **/
    set<uint32_t> addBlocksInBulk(
       const map<HashString, shared_ptr<BlockHeader>>&, bool flag);
-   void forceAddBlocksInBulk(const map<HashString, shared_ptr<BlockHeader>>&);
+   void forceAddBlocksInBulk(map<HashString, shared_ptr<BlockHeader>>&);
 
    ReorganizationState organize(bool verbose);
    ReorganizationState forceOrganize();

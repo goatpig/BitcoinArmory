@@ -590,7 +590,7 @@ set<uint32_t> Blockchain::addBlocksInBulk(
 
 /////////////////////////////////////////////////////////////////////////////
 void Blockchain::forceAddBlocksInBulk(
-   const map<HashString, shared_ptr<BlockHeader>>& bhMap)
+   map<HashString, shared_ptr<BlockHeader>>& bhMap)
 {
    unique_lock<mutex> lock(mu_);
    map<unsigned, shared_ptr<BlockHeader>> idMap;

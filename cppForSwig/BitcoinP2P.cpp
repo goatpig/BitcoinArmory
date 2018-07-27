@@ -1389,18 +1389,16 @@ void BitcoinP2P::unregisterGetTxCallback(
 void BitcoinP2P::shutdown()
 {
    run_.store(false, memory_order_relaxed);
-   socket_->shutdown();
+   if (socket_ != nullptr)
+   {
+      socket_->shutdown();
 
-   //wait until connect loop exists
-   shutdownFuture_.wait();
+      //wait until connect loop exists
+      shutdownFuture_.wait();
+   }
 
    //clean up remaining lambdas
-   vector<InvEntry> ieVec;
-   InvEntry entry;
-   entry.invtype_ = Inv_Terminate;
-   ieVec.push_back(entry);
-
-   processInvBlock(ieVec);
+   invBlockStack_->terminate();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

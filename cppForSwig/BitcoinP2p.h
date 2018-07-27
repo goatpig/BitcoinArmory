@@ -70,7 +70,6 @@ enum InvType
    Inv_Msg_Tx,
    Inv_Msg_Block,
    Inv_Msg_Filtered_Block,
-   Inv_Terminate,
    Inv_Witness = 1 << 30,
    Inv_Msg_Witness_Tx = Inv_Msg_Tx | Inv_Witness,
    Inv_Msg_Witness_Block = Inv_Msg_Block | Inv_Witness
@@ -652,12 +651,7 @@ public:
    void shutdown(void)
    {
       //clean up remaining lambdas
-      vector<InvEntry> ieVec;
-      InvEntry entry;
-      entry.invtype_ = Inv_Terminate;
-      ieVec.push_back(entry);
-
-      processInvBlock(ieVec);
+      BitcoinP2P::shutdown();
    }
 };
 
