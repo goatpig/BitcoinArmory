@@ -343,7 +343,8 @@ TEST_F(BIP151Test, checkData)
 
    // Rekey (CLI -> SRV) and confirm that the results are correct.
    BinaryData rekeyBuf(64);
-   int rekeySendRes = cliCon.rekeyConn(rekeyBuf.getPtr(), rekeyBuf.getSize());
+   int rekeySendRes = cliCon.bip151RekeyConn(rekeyBuf.getPtr(),
+                                             rekeyBuf.getSize());
    EXPECT_EQ(0, rekeySendRes);
    EXPECT_EQ(cliOutMsg3, rekeyBuf);
    decMsgBuffer.resize(rekeyBuf.getSize() - 16);
@@ -410,7 +411,8 @@ TEST_F(BIP151Test, checkData)
    EXPECT_EQ(cliInMsg2, decMsgBuffer);
 
    // Rekey (CLI -> SRV) and confirm that the results are correct.
-   rekeySendRes = srvCon.rekeyConn(rekeyBuf.getPtr(), rekeyBuf.getSize());
+   rekeySendRes = srvCon.bip151RekeyConn(rekeyBuf.getPtr(),
+                                         rekeyBuf.getSize());
    EXPECT_EQ(0, rekeySendRes);
    EXPECT_EQ(srvOutMsg3, rekeyBuf);
    decMsgBuffer.resize(rekeyBuf.getSize() - 16);
@@ -483,8 +485,8 @@ TEST_F(BIP151Test, handshakeCases)
                                    dummy3.size(),
                                    false);
    EXPECT_EQ(0, s5);
-   int s6 = cliCon2.rekeyConn(dummy4.data(),
-                              dummy4.size());
+   int s6 = cliCon2.bip151RekeyConn(dummy4.data(),
+                                    dummy4.size());
    EXPECT_EQ(-1, s6);
 
    // Run after the final test has finished.

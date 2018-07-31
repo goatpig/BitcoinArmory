@@ -21,6 +21,7 @@ and handle the data transmission with the BDM server
 #include "BlockDataManagerConfig.h"
 #include "WebSocketClient.h"
 #include "AsyncClient.h"
+#include "BIP150_151.h"
 
 class WalletManager;
 class WalletContainer;
@@ -33,6 +34,12 @@ namespace SwigClient
    inline void DisableCppLogging() { SETLOGLEVEL(LogLvlDisabled); }
    inline void EnableCppLogStdOut() { LOGENABLESTDOUT(); }
    inline void DisableCppLogStdOut() { LOGDISABLESTDOUT(); }
+   inline void EnableBIP150(const uint32_t& ipVer, const string& dataDir)
+   {
+      startupBIP150CTX(ipVer, dataDir);
+   }
+   inline void EnableBIP151() { startupBIP151CTX(); }
+   inline void DisableBIP151() { shutdownBIP151CTX(); }
 
 #include <thread>
 

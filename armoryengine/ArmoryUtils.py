@@ -21,6 +21,8 @@ from email.Utils import COMMASPACE, formatdate
 from email import Encoders
 import hashlib
 import inspect
+if sys.info.version[0] == 3:
+   import ipaddress
 import locale
 import logging
 import math
@@ -109,6 +111,8 @@ parser.add_option("--logfile",         dest="logFile",     default=DEFAULT, type
 parser.add_option("--mtdebug",         dest="mtdebug",     default=False,     action="store_true", help="Log multi-threaded call sequences")
 parser.add_option("--skip-online-check",dest="forceOnline", default=False,   action="store_true", help="Go into online mode, even if internet connection isn't detected")
 parser.add_option("--tor",             dest="useTorSettings", default=False, action="store_true", help="Enable common settings for when Armory connects through Tor")
+parser.add_option("--bip150",          dest="bip150Used",  default=False,     action="store_true", help="Enable BIP 150 and BIP 151 support")
+parser.add_option("--bip151",          dest="bip15Used",  default=False,     action="store_true", help="Enable BIP 151 support")
 parser.add_option("--keypool",         dest="keypool",     default=100, type="int",                help="Default number of addresses to lookahead in Armory wallets")
 parser.add_option("--redownload",      dest="redownload",  default=False,     action="store_true", help="Delete Bitcoin Core/bitcoind databases; redownload")
 parser.add_option("--rebuild",         dest="rebuild",     default=False,     action="store_true", help="Rebuild blockchain database and rescan")
@@ -672,7 +676,28 @@ if sys.argv[0]=='ArmoryQt.py':
    print '   Armory log file       :', ARMORY_LOG_FILE
    print '   Do wallet checking    :', DO_WALLET_CHECK
 
-
+################################################################################
+def ipAddrVersion(ipAddr):
+   """
+   Function that gets the IP version (4/6) for a given address. If the address
+   is invalid, the return value will be 0.
+   """
+   # Python 3.3+ makes things a bit easier.
+   if sys.info.version[0] == 2:
+      try:
+         socket.inet_pton(socket.AF_INET, ipAddr)
+         return 4
+      except socket.error:
+         try:
+            socket.inet_pton(socket.AF_INET6, ipAddr)
+            return 6
+         except:
+            return 0
+   else:
+      try:
+         return ipaddress.ip_address(str(ipAddr)).version
+      except ValueError:
+         return 0
 
 ################################################################################
 def launchProcess(cmd, useStartInfo=True, *args, **kwargs):

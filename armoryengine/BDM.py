@@ -43,14 +43,14 @@ class PySide_CallBack(Cpp.PythonCallback):
    def __init__(self, bdm):
       Cpp.PythonCallback.__init__(self, bdm.bdv())
       self.bdm = bdm
-      
+
    def run(self, action, arg, block):
       try:
          act = ''
          arglist = []
-         
+
          # AOTODO replace with constants
-         
+
          if action == Cpp.BDMAction_Ready:
             print 'BDM is ready!'
             act = FINISH_LOAD_BLOCKCHAIN_ACTION
@@ -83,7 +83,7 @@ class PySide_CallBack(Cpp.PythonCallback):
             act = NODESTATUS_UPDATE
             argNodeStatus = Cpp.NodeStatusStruct_cast_to_NodeStatusStruct(arg)
             arglist.append(argNodeStatus)
-            
+
          listenerList = TheBDM.getListenerList()
          for cppNotificationListener in listenerList:
             cppNotificationListener(act, arglist)
@@ -99,20 +99,20 @@ class PySide_CallBack(Cpp.PythonCallback):
             self.bdm.progressComplete = prog
             self.bdm.secondsRemaining = seconds
             self.bdm.progressNumeric = progressNumeric
-            
+
             self.bdm.bdmState = BDM_SCANNING
-            
+
             for cppNotificationListener in TheBDM.getListenerList():
                cppNotificationListener(BDM_SCAN_PROGRESS, [None, None])            
          else:
             progInfo = [walletVec, prog]
             for cppNotificationListener in TheBDM.getListenerList():
                cppNotificationListener(SCAN_ACTION, progInfo)
-               
+
       except:
          LOGEXCEPT('Error in running progress callback')
          print sys.exc_info()
-      
+
 def getCurrTimeAndBlock():
    time0 = long(RightNowUTC())
    return (time0, TheBDM.getTopBlockHeight())
@@ -144,10 +144,10 @@ class BlockDataManager(object):
       # Flags
       self.aboutToRescan = False
       self.errorOut      = 0
-      
+
       self.currentActivity = 'None'
       self.walletsToRegister = []
-      
+
       if isOffline == True: self.bdmState = BDM_OFFLINE
       else: self.bdmState = BDM_UNINITIALIZED
 
@@ -155,7 +155,7 @@ class BlockDataManager(object):
       self.armoryDBDir = ARMORY_DB_DIR
       self.datadir = ARMORY_HOME_DIR
       self.lastPctLoad = 0
-      
+
       self.topBlockHeight = 0
       self.cppNotificationListenerList = []
 
@@ -163,21 +163,21 @@ class BlockDataManager(object):
       self.secondsRemaining=0
       self.progressPhase=0
       self.progressNumeric=0
-            
+
       self.remoteDB = False
       if ARMORYDB_IP != ARMORYDB_DEFAULT_IP:
          self.remoteDB = True
-               
+
       self.exception = ""
       self.cookie = None
-      
+
       self.witness = False
-   
+
    #############################################################################  
    def instantiateBDV(self, port):
       if self.bdmState == BDM_OFFLINE:
          return
-      
+
       socketType = Cpp.SocketFcgi
       if self.remoteDB and not FORCE_FCGI:
          socketType = Cpp.SocketHttp 
@@ -186,22 +186,22 @@ class BlockDataManager(object):
                      str(ARMORYDB_IP), str(port), socketType)   
 
    #############################################################################
-   def registerBDV(self):   
+   def registerBDV(self):
       if self.bdmState == BDM_OFFLINE:
-         return   
-      
+         return
+
       try:
          self.bdv_.registerWithDB(MAGIC_BYTES)
       except Cpp.DbErrorMsg as e:
          self.exception = e.what()
          LOGERROR('DB error: ' + e.what())
          raise e
-      
+
    #############################################################################
    @ActLikeASingletonBDM
    def hasRemoteDB(self):
       return self.remoteDB
-            
+
    #############################################################################
    @ActLikeASingletonBDM
    def getListenerList(self):
@@ -216,7 +216,7 @@ class BlockDataManager(object):
    @ActLikeASingletonBDM
    def getTxByHash(self, txHash):
       return self.bdv().getTxByHash(txHash)
-   
+
    #############################################################################
    @ActLikeASingletonBDM
    def getSentValue(self, txIn):
@@ -226,25 +226,25 @@ class BlockDataManager(object):
    @ActLikeASingletonBDM
    def getTopBlockHeight(self):
       return self.topBlockHeight
-   
+
    #############################################################################
    @ActLikeASingletonBDM
    def registerCppNotification(self, cppNotificationListener):
       self.cppNotificationListenerList.append(cppNotificationListener)
-    
+
    #############################################################################
    @ActLikeASingletonBDM
    def unregisterCppNotification(self, cppNotificationListener):
       if cppNotificationListener in self.cppNotificationListenerList:
          self.cppNotificationListenerList.remove(cppNotificationListener)
-   
+
    #############################################################################
    @ActLikeASingletonBDM
    def goOnline(self, satoshiDir=None, armoryDBDir=None, armoryHomeDir=None):
       self.bdv().goOnline()
       self.callback = PySide_CallBack(self).__disown__()
       self.callback.startLoop()
-      
+
    #############################################################################
    @ActLikeASingletonBDM
    def registerWallet(self, prefixedKeys, uniqueIDB58, isNew=False):
@@ -277,7 +277,7 @@ class BlockDataManager(object):
          os.makedirs(armoryDBDir)
 
       self.armoryDBDir = armoryDBDir
-         
+
    #############################################################################
    @ActLikeASingletonBDM
    def predictLoadTime(self):
@@ -288,12 +288,12 @@ class BlockDataManager(object):
    @ActLikeASingletonBDM
    def createAddressBook(self, cppWlt):
       return cppWlt.createAddressBook()
-   
+
    #############################################################################
    @ActLikeASingletonBDM
    def setState(self, state):
       self.bdmState = state
-      
+
    #############################################################################
    @ActLikeASingletonBDM
    def getState(self):
@@ -304,16 +304,18 @@ class BlockDataManager(object):
    def shutdown(self):
       if self.bdmState == BDM_OFFLINE:
          return
-      
-      try:         
+
+      try:
+         if CLI_OPTIONS.bip150Used or CLI_OPTIONS.bip151Used:
+            Cpp.DisableBIP151()
          self.bdv_.unregisterFromDB()
          self.callback.shutdown()
-         
-         cookie = self.getCookie()        
+
+         cookie = self.getCookie()
          self.bdv_.shutdown(cookie)
       except:
          pass
-      
+
    #############################################################################
    def getCookie(self):
       if self.cookie == None:
@@ -324,7 +326,7 @@ class BlockDataManager(object):
    @ActLikeASingletonBDM
    def runBDM(self, fn):
       return self.inject.runCommand(fn)
-   
+
    #############################################################################
    @ActLikeASingletonBDM
    def RegisterEventForSignal(self, func, signal):
@@ -332,16 +334,16 @@ class BlockDataManager(object):
          if bdmSignal == signal:
             func(args)
       self.registerCppNotification(bdmCallback)
-   
+
    #############################################################################
    def setWitness(self, wit):
       self.witness = wit   
-   
+
    #############################################################################
    def isSegWitEnabled(self):
       return self.witness or FORCE_SEGWIT
-      
-   
+
+
 ################################################################################
 # Make TheBDM reference the asyncrhonous BlockDataManager wrapper if we are 
 # running 
@@ -370,10 +372,19 @@ else:
    if OS_WINDOWS and isinstance(cppLogFile, unicode):
       cpplf = cppLogFile.encode('utf8')
    Cpp.StartCppLogging(cpplf, 4)
-   Cpp.EnableCppLogStdOut()    
+   Cpp.EnableCppLogStdOut()
+
+   # If necessary, enable BIP 150/151 on the C++ side. The database IP will set
+   # the version (internal connections use 150/151), and the Armory data
+   # directory will be used.
+   if CLI_OPTIONS.bip150Used or CLI_OPTIONS.bip151Used:
+      Cpp.EnableBIP151()
+   if CLI_OPTIONS.bip150Used:
+      ipVer = ipAddrVersion(ARMORYDB_IP)
+      if CLI_OPTIONS.useTorSettings:
+         ipVer = 20
+      Cpp.EnableBIP150(ipVer, ARMORY_HOME_DIR)
 
 # Put the import at the end to avoid circular reference problem
 from armoryengine.MultiSigUtils import MultiSigLockbox
 from armoryengine.Transaction import PyTx
-
-# kate: indent-width 3; replace-tabs on;

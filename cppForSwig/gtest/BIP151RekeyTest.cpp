@@ -118,7 +118,7 @@ TEST_F(BIP151RekeyTest, rekeyRequired)
    // Do a rekey and confirm that everything has been reset.
    // Rekey (CLI -> SRV) and confirm that the results are correct.
    BinaryData rekeyBuf(64);
-   cliCon.rekeyConn(rekeyBuf.getPtr(), rekeyBuf.getSize()); // Cli rekey
+   cliCon.bip151RekeyConn(rekeyBuf.getPtr(), rekeyBuf.getSize()); // Cli rekey
    decMsgBuffer.resize(rekeyBuf.getSize() - 16);
    srvCon.decryptPacket(rekeyBuf.getPtr(),
                         rekeyBuf.getSize(),

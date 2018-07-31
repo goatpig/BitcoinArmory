@@ -6,10 +6,11 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-// A BIP 151 implementation for Armory. As of May 2018, BIP 151 isn't in Core.
-// The immediate purpose of this code is to implement secure data transfer
-// between an Armory server and a remote Armory client, the server talking to
-// Core and feeding the (encrypted) data to the client.
+// A BIP 151 implementation for Armory. As of May 2018, BIP 151 isn't in Bitcoin
+// Core. The immediate purpose of this code is to implement secure data transfer
+// between an Armory server and a remote Armory client (i.e., the server talking
+// to Core in an unencrypted (for now?) manner and feeding the (encrypted) data
+// to the client).
 //
 // NOTE: There is a very subtle implementation detail in BIP 151 that requires
 // attention. BIP 151 explicitly states that it uses ChaCha20Poly1305 as used in
@@ -17,18 +18,17 @@
 // OpenSSH, with tiny changes. For example, the OpenSSH version of Poly1305 uses
 // 64-bit nonces, and RFC 7539 uses 96-bit nonces. Because of this, THE
 // IMPLEMENTATIONS ARE INCOMPATIBLE WHEN VERIFYING THE OTHER VARIANT'S POLY1305
-// TAGS. Bcrypto (the only library used in a public BIP 151 implementation as of
-// June 2018) appears to use the RFC 7539 variant. So, as of June 2018, there
-// are no Bitcoin-related codebases that can generate mutually verifiable
-// BIP 151 test data. (See https://tools.ietf.org/html/rfc7539 and
-// https://github.com/openssh/openssh-portable/blob/master/PROTOCOL.chacha20poly1305
-// for more info.) In addition, this may affect ChaCha20 too beyond the first
-// encryption/decryption cycle.
+// TAGS. As of July 2018, there are no codebases that can generate mutually
+// verifiable BIP 150/151 test data. (See https://tools.ietf.org/html/rfc7539
+// and https://github.com/openssh/openssh-portable/blob/master/PROTOCOL.chacha20poly1305
+// for more info.)
 
-#ifndef BIP151_H
-#define BIP151_H
+#ifndef BIP150_151_H
+#define BIP150_151_H
 
 #include <cstdint>
+#include <unordered_set>
+#include <unordered_map>
 
 #include "secp256k1.h"
 #include "btc/ecc_key.h"
@@ -48,7 +48,18 @@ extern "C" {
 #define ENCINITMSGSIZE 34
 
 // Match against BIP 151 spec, although "INVALID" is our addition.
-enum class BIP151SymCiphers : uint8_t {CHACHA20POLY1305_OPENSSH = 0x00, INVALID};
+enum class BIP151SymCiphers : uint8_t {CHACHA20POLY1305_OPENSSH = 0x00,
+                                       INVALID};
+
+// Track BIP 150 message state.
+enum class BIP150State : uint8_t {INACTIVE = 0x00,
+                                  CHALLENGE1,
+                                  REPLY1,
+                                  PROPOSE,
+                                  CHALLENGE2,
+                                  REPLY2,
+                                  SUCCESS,
+                                  ERROR};
 
 // Global functions needed to deal with a global libsecp256k1 context.
 // libbtc doesn't export its libsecp256k1 context (which, by the way, is set up
@@ -60,6 +71,19 @@ enum class BIP151SymCiphers : uint8_t {CHACHA20POLY1305_OPENSSH = 0x00, INVALID}
 // off of their context.) Call these alongside any startup and shutdown code.
 void startupBIP151CTX();
 void shutdownBIP151CTX();
+
+// Global function used to load up the key DBs. CALL AFTER BIP 151 IS INITIALIZED.
+void startupBIP150CTX(const uint32_t& ipVer, const string& dataDir);
+
+string bipDataDir = "";
+unordered_set<std::string> authPeers_; // Compressed ECDSA key
+unordered_map<std::string, std::string> knownPeers_; // IP:Port/Com. key
+btc_pubkey pubIDKey;
+btc_pubkey chosenAuthPeerKey;
+uint32_t ipType = 0;
+string idKeyStr = "";
+string idPubKeyStr = "";
+
 
 class BIP151Session
 {
@@ -78,10 +102,16 @@ private:
 
    void calcChaCha20Poly1305Keys(const btc_key& sesECDHKey);
    void calcSessionID(const btc_key& sesECDHKey);
-   int verifyCipherType();
+   const int verifyCipherType();
    void gettempECDHPubKey(btc_pubkey* tempECDHPubKey);
-   int genSymKeys(const uint8_t* peerECDHPubKey);
-   void chacha20Poly1305Rekey(uint8_t* keyToUpdate, const size_t& keySize);
+   const int genSymKeys(const uint8_t* peerECDHPubKey);
+   void chacha20Poly1305Rekey(uint8_t* keyToUpdate,
+                              const size_t& keySize,
+                              const bool& bip151Rekey,
+                              const uint8_t* bip150ReqIDKey,
+                              const size_t& bip150ReqIDKeySize,
+                              const uint8_t* bip150ResIDKey,
+                              const size_t& bip150ResIDKeySize);
 
 public:
    // Constructor setting the session direction.
@@ -89,66 +119,77 @@ public:
    // Constructor manually setting the ECDH setup prv key. USE WITH CAUTION.
    BIP151Session(btc_key* inSymECDHPrivKey, const bool& sessOut);
    // Set up the symmetric keys needed for the session.
-   int symKeySetup(const uint8_t* peerPubKey, const size_t& peerKeyPubSize);
-   void sessionRekey();
+   const int symKeySetup(const uint8_t* peerPubKey,
+                         const size_t& peerKeyPubSize);
+   void sessionRekey(const bool& bip151Rekey,
+                     const uint8_t* reqIDKey,
+                     const size_t& reqIDKeySize,
+                     const uint8_t* resIDKey,
+                     const size_t& resIDKeySize);
    // "Smart" ciphertype set. Checks to make sure it's valid.
-   int setCipherType(const BIP151SymCiphers& inCipher);
+   const int setCipherType(const BIP151SymCiphers& inCipher);
    void setEncinitSeen() { encinit_ = true; }
    void setEncackSeen() { encack_ = true; }
-   bool encinitSeen() const { return encinit_; }
-   bool encackSeen() const { return encack_; }
+   const bool encinitSeen() const { return encinit_; }
+   const bool encackSeen() const { return encack_; }
    const uint8_t* getSessionID() const { return sessionID_.data(); }
    const std::string getSessionIDHex() const;
-   const bool handshakeComplete() const { return (encinit_ == true && encack_ == true); }
+   const bool handshakeComplete() const { return (encinit_ == true && \
+                                                  encack_ == true); }
    const uint32_t getBytesOnCurKeys() const { return bytesOnCurKeys_; }
    void setOutgoing() { isOutgoing_ = true; }
    const bool getOutgoing() const { return isOutgoing_; }
-   bool getSeqNum() const { return seqNum_; }
+   const bool getSeqNum() const { return seqNum_; }
    const BIP151SymCiphers getCipherType() const { return cipherType_; }
-   int inMsgIsRekey(const uint8_t* inMsg, const size_t& inMsgSize);
+   const int inMsgIsRekey(const uint8_t* inMsg, const size_t& inMsgSize);
    const bool rekeyNeeded();
    void addBytes(const uint32_t& sentBytes) { bytesOnCurKeys_ += sentBytes; }
-   int getEncinitData(uint8_t* initBuffer, const size_t& initBufferSize,
-                      const BIP151SymCiphers& inCipher);
-   int getEncackData(uint8_t* ackBuffer, const size_t& ackBufferSize);
-   bool isCipherValid(const BIP151SymCiphers& inCipher);
+   const int getEncinitData(uint8_t* initBuffer,
+                            const size_t& initBufferSize,
+                            const BIP151SymCiphers& inCipher);
+   const int getEncackData(uint8_t* ackBuffer, const size_t& ackBufferSize);
+   const bool isCipherValid(const BIP151SymCiphers& inCipher);
    void incSeqNum() { ++seqNum_; };
    chachapolyaead_ctx* getSessionCtxPtr() { return &sessionCTX_; };
-   int encPayload(uint8_t* cipherData, const size_t cipherSize,
-                  const uint8_t* plainData, const size_t plainSize);
-   int decPayload(const uint8_t* cipherData, const size_t cipherSize,
-                  uint8_t* plainData, const size_t plainSize);
+   const int encPayload(uint8_t* cipherData, const size_t cipherSize,
+                        const uint8_t* plainData, const size_t plainSize);
+   const int decPayload(const uint8_t* cipherData, const size_t cipherSize,
+                        uint8_t* plainData, const size_t plainSize);
 };
 
+class BIP150StateMachine;
 class BIP151Connection
 {
 private:
    BIP151Session inSes_;
    BIP151Session outSes_;
+   BIP150StateMachine* bip150SM_; // Ptr due to circular dependency silliness.
 
-   int getRekeyBuf(uint8_t* encackBuf, const size_t& encackSize);
+   const int getRekeyBuf(uint8_t* encackBuf, const size_t& encackSize);
 
 public:
    // Default constructor - Used when initiating contact with a peer.
    BIP151Connection();
    // Constructor manually setting the ECDH setup prv keys. USE WITH CAUTION.
    BIP151Connection(btc_key* inSymECDHPrivKeyIn, btc_key* inSymECDHPrivKeyOut);
-   int assemblePacket(const uint8_t* plainData, const size_t& plainSize,
-                      uint8_t* cipherData, const size_t& cipherSize);
-   int decryptPacket(const uint8_t* cipherData, const size_t& cipherSize,
-                     uint8_t* plainData, const size_t& plainSize);
-   int processEncinit(const uint8_t* inMsg, const size_t& inMsgSize,
-                      const bool outDir);
-   int processEncack(const uint8_t* inMsg, const size_t& inMsgSize,
-                     const bool outDir);
+   const int assemblePacket(const uint8_t* plainData, const size_t& plainSize,
+                            uint8_t* cipherData, const size_t& cipherSize);
+   const int decryptPacket(const uint8_t* cipherData, const size_t& cipherSize,
+                           uint8_t* plainData, const size_t& plainSize);
+   const int processEncinit(const uint8_t* inMsg, const size_t& inMsgSize,
+                            const bool outDir);
+   const int processEncack(const uint8_t* inMsg, const size_t& inMsgSize,
+                           const bool outDir);
    const int getEncinitData(uint8_t* encinitBuf, const size_t& encinitBufSize,
                             const BIP151SymCiphers& inCipher);
    const int getEncackData(uint8_t* encackBuf, const size_t& encBufSize);
+
    const bool rekeyNeeded() { return outSes_.rekeyNeeded(); }
-   int rekeyConn(uint8_t* encackBuf, const size_t& encackSize);
+   const int bip151RekeyConn(uint8_t* encackBuf, const size_t& encackSize);
    const uint8_t* getSessionID(const bool& dirIsOut);
    const bool connectionComplete() const { return(inSes_.handshakeComplete() == true &&
                                                   outSes_.handshakeComplete() == true); }
+   ~BIP151Connection();
 };
 
 // Class to use on BIP 151 encrypted messages. Contains the plaintext contents
@@ -166,7 +207,8 @@ public:
                  const uint8_t* inPayload, const size_t& inPayloadSize);
    void setEncStructData(const uint8_t* inCmd, const size_t& inCmdSize,
                          const uint8_t* inPayload, const size_t& inPayloadSize);
-   int setEncStruct(uint8_t* plaintextData, uint32_t& plaintextDataSize);
+   const int setEncStruct(uint8_t* plaintextData,
+                          const uint32_t& plaintextDataSize);
    void getEncStructMsg(uint8_t* outStruct, const size_t& outStructSize,
                         size_t& finalStructSize);
    void getCmd(uint8_t* cmdBuf, const size_t& cmdBufSize);
@@ -178,4 +220,47 @@ public:
    const size_t messageSizeHint();
 };
 
-#endif // BIP151_H
+class BIP150StateMachine
+{
+private:
+   const int buildHashData(uint8_t* outHash,
+                           const uint8_t* pubKey,
+                           const bool& willSendHash);
+   void resetSM();
+   const int errorSM(const int& outVal);
+
+   // Design note: There will be only one pub/prv ID key for the system. Making
+   // global vars would be ideal. But, we don't want the private key exposed.
+   // Bite the bullet and give each 151 connection a copy via its 150 state
+   // machine. We won't have many connections open, so the I/O hit's minimal.
+   BIP150State curState_;
+   BIP151Session* inSes_;
+   BIP151Session* outSes_;
+   btc_key prvIDKey;
+   btc_pubkey chosenAuthPeerKey;
+   btc_pubkey chosenChallengeKey;
+
+public:
+   BIP150StateMachine(BIP151Session* incomingSes, BIP151Session* outgoingSes);
+
+   const int processAuthchallenge(const BinaryData& inData,
+                                  const bool& requesterSent);
+   const int processAuthreply(BinaryData& inData,
+                              const bool& responderSent,
+                              const bool& goodChallenge);
+   const int processAuthpropose(const BinaryData& inData);
+   const int getAuthchallengeData(uint8_t* buf,
+                                  const size_t& bufSize,
+                                  const std::string& targetIPPort,
+                                  const bool& requesterSent,
+                                  const bool& goodPropose);
+   const int getAuthreplyData(uint8_t* buf,
+                              const size_t& bufSize,
+                              const bool& responderSent,
+                              const bool& goodChallenge);
+   const int getAuthproposeData(uint8_t* buf, const size_t& bufSize);
+   const std::string getBIP150Fingerprint();
+   const BIP150State getBIP150Status() const { return curState_; }
+};
+
+#endif // BIP150_151_H
