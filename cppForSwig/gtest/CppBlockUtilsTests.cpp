@@ -14,8 +14,7 @@
 
 
 ////////////////////////////////////////////////////////////////////////////////
-// Test the BIP 151 code here.
-// Test vectors taken from Bcoin and CCAN test suites.
+// RFC 5869 (HKDF) unit tests for SHA-256.
 class HKDF256Test : public ::testing::Test
 {
 protected:
@@ -79,9 +78,9 @@ TEST_F(HKDF256Test, RFC5869Vectors)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Test the BIP 151 code here.
-// Test vectors partially taken from the Bcoin test suite.
-class BIP151Test : public ::testing::Test
+// Test the BIP 150/151 code here.
+// BIP 151 test vectors partially taken from an old Bcoin test suite.
+class BIP150_151Test : public ::testing::Test
 {
 protected:
    virtual void SetUp(void)
@@ -127,6 +126,13 @@ protected:
       string srvOutMsg4_hexstr = "d00ed8a2b7b61f304f7d4bbf617b247a5c35fe04f715533785b2f81afcddfd6edd";
       string cliInMsg4_hexstr = "0d0000000466616b6504000000deadbeef";
 
+      // BIP 150
+      string authchallenge1_hexstr = "050c50dbd6c47e00c882223f1632ccf697939245462ed582aea1be0c916c9684";
+      string authreply1_hexstr = "7c32b0bbb2b9c065d855c5ad788660e8ed04c6dd5ecbf2f036b3608874b5adc3305c25691874c740b531b353d64582747d9353c4f4b9a82f08c7d02389929428";
+      string authpropose_hexstr = "bde8e33de5a6b60651b82e2337112aebca11d351f84d9c027c7013f75701682b";
+      string authchallenge2_hexstr = "653f05a5e12a40579c8d9c782e04f3fff22c61888b8d67d7f783b1259cbf26cc";
+      string authreply2_hexstr = "0299a6086ab60af5fc4b5ccfa08d71c996cf0099a3ebb779cc42c94cfe3926294cf9505fd3835f73dcf88d114ed6c7e8956c8dec999617bb2b8b9a340c1eee22";
+
       prvKeyClientIn = READHEX(prvKeyClientIn_hexstr);
       prvKeyClientOut = READHEX(prvKeyClientOut_hexstr);
       prvKeyServerIn = READHEX(prvKeyServerIn_hexstr);
@@ -162,6 +168,13 @@ protected:
       cliInMsg3 = READHEX(cliInMsg3_hexstr);
       srvOutMsg4 = READHEX(srvOutMsg4_hexstr);
       cliInMsg4 = READHEX(cliInMsg4_hexstr);
+
+      // BIP 150
+      authchallenge1Data = READHEX(authchallenge1_hexstr);
+      authreply1Data = READHEX(authreply1_hexstr);
+      authproposeData = READHEX(authpropose_hexstr);
+      authchallenge2Data = READHEX(authchallenge2_hexstr);
+      authreply2Data = READHEX(authreply2_hexstr);
    }
 
    BinaryData prvKeyClientIn;
@@ -202,7 +215,7 @@ protected:
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(BIP151Test, checkData)
+TEST_F(BIP150_151Test, checkData_151_Only)
 {
    // Run before the first test has been run. (SetUp/TearDown will be called
    // for each test. Multiple context startups/shutdowns leads to crashes.)
@@ -446,8 +459,164 @@ TEST_F(BIP151Test, checkData)
    EXPECT_EQ(cliInMsg4, decMsgBuffer);
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Test BIP 150 and BIP 151. Establish a 151 connection first and then confirm
+// that BIP 150 functions properly, with a quick check to confirm that 151 is
+// still functional afterwards.
+TEST_F(BIP150_151Test, checkData_150_151)
+{
+   // Get test files from the current (gtest) directory. C++17 would be nice
+   // since filesystem::current_path() has been added. Alas, for now....
+   // Test IPv4, and then IPv6 later.
+   // Ideally, the code would be smart enough to support two separate contexts
+   // so that two separate key sets can be tested. There's no real reason to
+   // support this in Armory right now, though, and it'd be a lot of work. For
+   // now, just cheat and have two "separate" systems with the same input files.
+   startupBIP150CTX(4, OS_TranslatePath("./input_files/"));
+
+   btc_key prvKeyCliIn;
+   btc_key prvKeyCliOut;
+   btc_key prvKeySrvIn;
+   btc_key prvKeySrvOut;
+   prvKeyClientIn.copyTo(prvKeyCliIn.privkey);
+   prvKeyClientOut.copyTo(prvKeyCliOut.privkey);
+   prvKeyServerIn.copyTo(prvKeySrvIn.privkey);
+   prvKeyServerOut.copyTo(prvKeySrvOut.privkey);
+   BIP151Connection cliCon(&prvKeyCliIn, &prvKeyCliOut);
+   BIP151Connection srvCon(&prvKeySrvIn, &prvKeySrvOut);
+
+   // Set up encinit/encack directly. (Initial encinit/encack will use regular
+   // Bitcoin P2P messages, which we'll skip building.) Confirm all steps
+   // function properly along the way.
+   BinaryData cliInEncinitCliData(ENCINITMSGSIZE);   // SRV (Out) -> CLI (In)
+   BinaryData cliInEncackCliData(BIP151PUBKEYSIZE);  // CLI (In)  -> SRV (Out)
+   BinaryData cliOutEncinitCliData(ENCINITMSGSIZE);  // CLI (Out) -> SRV (In)
+   BinaryData cliOutEncackCliData(BIP151PUBKEYSIZE); // SRV (In)  -> CLI (Out)
+   int s1 = srvCon.getEncinitData(cliInEncinitCliData.getPtr(),
+                                  cliInEncinitCliData.getSize(),
+                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
+   EXPECT_EQ(0, s1);
+   EXPECT_FALSE(srvCon.connectionComplete());
+   int s2 = cliCon.processEncinit(cliInEncinitCliData.getPtr(),
+                                  cliInEncinitCliData.getSize(),
+                                  false);
+   EXPECT_EQ(0, s2);
+   EXPECT_FALSE(cliCon.connectionComplete());
+   int s3 = cliCon.getEncackData(cliInEncackCliData.getPtr(),
+                                 cliInEncackCliData.getSize());
+   EXPECT_EQ(0, s3);
+   EXPECT_FALSE(cliCon.connectionComplete());
+   int s4 = srvCon.processEncack(cliInEncackCliData.getPtr(),
+                                 cliInEncackCliData.getSize(),
+                                 true);
+   EXPECT_EQ(0, s4);
+   EXPECT_FALSE(srvCon.connectionComplete());
+   int s5 = cliCon.getEncinitData(cliOutEncinitCliData.getPtr(),
+                                  cliOutEncinitCliData.getSize(),
+                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
+   EXPECT_EQ(0, s5);
+   EXPECT_FALSE(cliCon.connectionComplete());
+   int s6 = srvCon.processEncinit(cliOutEncinitCliData.getPtr(),
+                                  cliOutEncinitCliData.getSize(),
+                                  false);
+   EXPECT_EQ(0, s6);
+   EXPECT_FALSE(srvCon.connectionComplete());
+   int s7 = srvCon.getEncackData(cliOutEncackCliData.getPtr(),
+                                 cliOutEncackCliData.getSize());
+   EXPECT_EQ(0, s7);
+   EXPECT_TRUE(srvCon.connectionComplete());
+   int s8 = cliCon.processEncack(cliOutEncackCliData.getPtr(),
+                                 cliOutEncackCliData.getSize(),
+                                 true);
+   EXPECT_EQ(0, s8);
+   EXPECT_TRUE(cliCon.connectionComplete());
+
+   ////////////////// Start the BIP 150 process for each side. /////////////////
+   BinaryData authchallengeBuf(BIP151PRVKEYSIZE);
+   BinaryData authreplyBuf(BIP151PRVKEYSIZE*2);
+   BinaryData authproposeBuf(BIP151PRVKEYSIZE);
+   EXPECT_EQ(BIP150State::INACTIVE, cliCon.getBIP150State());
+   EXPECT_EQ(BIP150State::INACTIVE, srvCon.getBIP150State());
+
+   // INACTIVE -> CHALLENGE1
+   int b1 = cliCon.getAuthchallengeData(authchallengeBuf.getPtr(),
+                                        authchallengeBuf.getSize(),
+                                        "1.2.3.4:8333",
+                                        true,
+                                        true);
+   EXPECT_EQ(0, b1);
+   EXPECT_EQ(BIP150State::CHALLENGE1, cliCon.getBIP150State());
+   EXPECT_EQ(authchallenge1Data, authchallengeBuf);
+   int b2 = srvCon.processAuthchallenge(authchallengeBuf.getPtr(),
+                                        authchallengeBuf.getSize(),
+                                        true);
+   EXPECT_EQ(0, b2);
+   EXPECT_EQ(BIP150State::CHALLENGE1, srvCon.getBIP150State());
+
+   // CHALLENGE1 -> REPLY1
+   int b3 = srvCon.getAuthreplyData(authreplyBuf.getPtr(),
+                                    authreplyBuf.getSize(),
+                                    true,
+                                    true);
+   EXPECT_EQ(0, b3);
+   EXPECT_EQ(BIP150State::REPLY1, srvCon.getBIP150State());
+   EXPECT_EQ(authreply1Data, authreplyBuf);
+   int b4 = cliCon.processAuthreply(authreplyBuf.getPtr(),
+                                    authreplyBuf.getSize(),
+                                    true,
+                                    true);
+   EXPECT_EQ(0, b4);
+   EXPECT_EQ(BIP150State::REPLY1, cliCon.getBIP150State());
+
+   // REPLY1 -> PROPOSE
+   int b5 = cliCon.getAuthproposeData(authproposeBuf.getPtr(),
+                                      authproposeBuf.getSize());
+   EXPECT_EQ(0, b5);
+   EXPECT_EQ(BIP150State::PROPOSE, cliCon.getBIP150State());
+   EXPECT_EQ(authproposeData, authproposeBuf);
+   int b6 = srvCon.processAuthpropose(authproposeBuf.getPtr(),
+                                      authproposeBuf.getSize());
+   EXPECT_EQ(0, b6);
+   EXPECT_EQ(BIP150State::PROPOSE, srvCon.getBIP150State());
+
+   // PROPOSE -> CHALLENGE2
+   int b7 = srvCon.getAuthchallengeData(authchallengeBuf.getPtr(),
+                                        authchallengeBuf.getSize(),
+                                        "101.101.101.101:10101",
+                                        false,
+                                        true);
+   EXPECT_EQ(0, b7);
+   EXPECT_EQ(BIP150State::CHALLENGE2, srvCon.getBIP150State());
+   EXPECT_EQ(authchallenge2Data, authchallengeBuf);
+   int b8 = cliCon.processAuthchallenge(authchallengeBuf.getPtr(),
+                                        authchallengeBuf.getSize(),
+                                        false);
+   EXPECT_EQ(0, b8);
+   EXPECT_EQ(BIP150State::CHALLENGE2, cliCon.getBIP150State());
+
+   // CHALLENGE2 -> REPLY2 (SUCCESS)
+   int b9 = cliCon.getAuthreplyData(authreplyBuf.getPtr(),
+                                    authreplyBuf.getSize(),
+                                    false,
+                                    true);
+   EXPECT_EQ(0, b9);
+   EXPECT_EQ(BIP150State::SUCCESS, cliCon.getBIP150State());
+   EXPECT_EQ(authreply2Data, authreplyBuf);
+   int b10 = srvCon.processAuthreply(authreplyBuf.getPtr(),
+                                     authreplyBuf.getSize(),
+                                     false,
+                                     true);
+   EXPECT_EQ(0, b10);
+   EXPECT_EQ(BIP150State::SUCCESS, srvCon.getBIP150State());
+
+// TODO - Add some 151 message transfers to prove it still works
+// TODO - Check cases where messages are received out-of-order.
+// TODO - Slight rearchitecture of input files - Set up such that a second key set can be used by the server
+
+}
+
 // Test handshake failure cases. All cases will fail eventually.
-TEST_F(BIP151Test, handshakeCases)
+TEST_F(BIP150_151Test, handshakeCases_151_Only)
 {
    // Try to generate an encack before generating an encinit.
    BIP151Connection cliCon1;

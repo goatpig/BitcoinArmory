@@ -75,16 +75,6 @@ void shutdownBIP151CTX();
 // Global function used to load up the key DBs. CALL AFTER BIP 151 IS INITIALIZED.
 void startupBIP150CTX(const uint32_t& ipVer, const string& dataDir);
 
-string bipDataDir = "";
-unordered_set<std::string> authPeers_; // Compressed ECDSA key
-unordered_map<std::string, std::string> knownPeers_; // IP:Port/Com. key
-btc_pubkey pubIDKey;
-btc_pubkey chosenAuthPeerKey;
-uint32_t ipType = 0;
-string idKeyStr = "";
-string idPubKeyStr = "";
-
-
 class BIP151Session
 {
 private:
@@ -157,77 +147,13 @@ public:
                         uint8_t* plainData, const size_t plainSize);
 };
 
-class BIP150StateMachine;
-class BIP151Connection
-{
-private:
-   BIP151Session inSes_;
-   BIP151Session outSes_;
-   BIP150StateMachine* bip150SM_; // Ptr due to circular dependency silliness.
-
-   const int getRekeyBuf(uint8_t* encackBuf, const size_t& encackSize);
-
-public:
-   // Default constructor - Used when initiating contact with a peer.
-   BIP151Connection();
-   // Constructor manually setting the ECDH setup prv keys. USE WITH CAUTION.
-   BIP151Connection(btc_key* inSymECDHPrivKeyIn, btc_key* inSymECDHPrivKeyOut);
-   const int assemblePacket(const uint8_t* plainData, const size_t& plainSize,
-                            uint8_t* cipherData, const size_t& cipherSize);
-   const int decryptPacket(const uint8_t* cipherData, const size_t& cipherSize,
-                           uint8_t* plainData, const size_t& plainSize);
-   const int processEncinit(const uint8_t* inMsg, const size_t& inMsgSize,
-                            const bool outDir);
-   const int processEncack(const uint8_t* inMsg, const size_t& inMsgSize,
-                           const bool outDir);
-   const int getEncinitData(uint8_t* encinitBuf, const size_t& encinitBufSize,
-                            const BIP151SymCiphers& inCipher);
-   const int getEncackData(uint8_t* encackBuf, const size_t& encBufSize);
-
-   const bool rekeyNeeded() { return outSes_.rekeyNeeded(); }
-   const int bip151RekeyConn(uint8_t* encackBuf, const size_t& encackSize);
-   const uint8_t* getSessionID(const bool& dirIsOut);
-   const bool connectionComplete() const { return(inSes_.handshakeComplete() == true &&
-                                                  outSes_.handshakeComplete() == true); }
-   ~BIP151Connection();
-};
-
-// Class to use on BIP 151 encrypted messages. Contains the plaintext contents
-// and can generate plaintext packet contents but not the Poly1305 tag.
-class BIP151Message
-{
-private:
-   BinaryData cmd_;
-   BinaryData payload_;
-
-public:
-   BIP151Message();
-   BIP151Message(uint8_t* plaintextData, uint32_t plaintextDataSize);
-   BIP151Message(const uint8_t* inCmd, const size_t& inCmdSize,
-                 const uint8_t* inPayload, const size_t& inPayloadSize);
-   void setEncStructData(const uint8_t* inCmd, const size_t& inCmdSize,
-                         const uint8_t* inPayload, const size_t& inPayloadSize);
-   const int setEncStruct(uint8_t* plaintextData,
-                          const uint32_t& plaintextDataSize);
-   void getEncStructMsg(uint8_t* outStruct, const size_t& outStructSize,
-                        size_t& finalStructSize);
-   void getCmd(uint8_t* cmdBuf, const size_t& cmdBufSize);
-   const size_t getCmdSize() const { return cmd_.getSize(); }
-   const uint8_t* getCmdPtr() const { return cmd_.getPtr(); }
-   void getPayload(uint8_t* payloadBuf, const size_t& payloadBufSize);
-   const size_t getPayloadSize() const { return payload_.getSize(); }
-   const uint8_t* getPayloadPtr() const { return payload_.getPtr(); }
-   const size_t messageSizeHint();
-};
-
 class BIP150StateMachine
 {
 private:
    const int buildHashData(uint8_t* outHash,
                            const uint8_t* pubKey,
                            const bool& willSendHash);
-   void resetSM();
-   const int errorSM(const int& outVal);
+   inline void resetSM();
 
    // Design note: There will be only one pub/prv ID key for the system. Making
    // global vars would be ideal. But, we don't want the private key exposed.
@@ -260,7 +186,88 @@ public:
                               const bool& goodChallenge);
    const int getAuthproposeData(uint8_t* buf, const size_t& bufSize);
    const std::string getBIP150Fingerprint();
-   const BIP150State getBIP150Status() const { return curState_; }
+   const BIP150State getBIP150State() const { return curState_; }
+   const int errorSM(const int& outVal);
+//   const void clearErrorState() { curState_ = BIP150State::INACTIVE; }
 };
 
+class BIP151Connection
+{
+private:
+   BIP151Session inSes_;
+   BIP151Session outSes_;
+   BIP150StateMachine bip150SM_;
+
+   const int getRekeyBuf(uint8_t* encackBuf, const size_t& encackSize);
+
+public:
+   // Default constructor - Used when initiating contact with a peer.
+   BIP151Connection();
+   // Constructor manually setting the ECDH setup prv keys. USE WITH CAUTION.
+   BIP151Connection(btc_key* inSymECDHPrivKeyIn, btc_key* inSymECDHPrivKeyOut);
+   const int assemblePacket(const uint8_t* plainData, const size_t& plainSize,
+                            uint8_t* cipherData, const size_t& cipherSize);
+   const int decryptPacket(const uint8_t* cipherData, const size_t& cipherSize,
+                           uint8_t* plainData, const size_t& plainSize);
+   const int processEncinit(const uint8_t* inMsg, const size_t& inMsgSize,
+                            const bool outDir);
+   const int processEncack(const uint8_t* inMsg, const size_t& inMsgSize,
+                           const bool outDir);
+   const int getEncinitData(uint8_t* encinitBuf, const size_t& encinitBufSize,
+                            const BIP151SymCiphers& inCipher);
+   const int getEncackData(uint8_t* encackBuf, const size_t& encBufSize);
+   const bool rekeyNeeded() { return outSes_.rekeyNeeded(); }
+   const int bip151RekeyConn(uint8_t* encackBuf, const size_t& encackSize);
+   const uint8_t* getSessionID(const bool& dirIsOut);
+   const bool connectionComplete() const { return(inSes_.handshakeComplete() == true &&
+                                                  outSes_.handshakeComplete() == true); }
+
+   // BIP 150-related calls.
+   const int processAuthchallenge(const uint8_t* inMsg, const size_t& inMsgSize,
+                                  const bool& requesterSent);
+   const int processAuthreply(const uint8_t* inMsg, const size_t& inMsgSize,
+                              const bool& requesterSent, const bool& goodChallenge);
+   const int processAuthpropose(const uint8_t* inMsg, const size_t& inMsgSize);
+   const int getAuthchallengeData(uint8_t* authchallengeBuf,
+                                  const size_t& authchallengeBufSize,
+                                  const std::string& targetIPPort,
+                                  const bool& requesterSent,
+                                  const bool& goodPropose);
+   const int getAuthreplyData(uint8_t* authreplyBuf,
+                              const size_t& authreplyBufSize,
+                              const bool& responderSent,
+                              const bool& goodChallenge);
+   const int getAuthproposeData(uint8_t* authproposeBuf,
+                                const size_t& authproposeBufSize);
+   const BIP150State getBIP150State() const { return bip150SM_.getBIP150State(); }
+//   const void clearBIP150ErrorState() const { bip150SM_.clearErrorState(); }
+};
+
+// Class to use on BIP 151 encrypted messages. Contains the plaintext contents
+// and can generate plaintext packet contents but not the Poly1305 tag.
+class BIP151Message
+{
+private:
+   BinaryData cmd_;
+   BinaryData payload_;
+
+public:
+   BIP151Message();
+   BIP151Message(uint8_t* plaintextData, uint32_t plaintextDataSize);
+   BIP151Message(const uint8_t* inCmd, const size_t& inCmdSize,
+                 const uint8_t* inPayload, const size_t& inPayloadSize);
+   void setEncStructData(const uint8_t* inCmd, const size_t& inCmdSize,
+                         const uint8_t* inPayload, const size_t& inPayloadSize);
+   const int setEncStruct(uint8_t* plaintextData,
+                          const uint32_t& plaintextDataSize);
+   void getEncStructMsg(uint8_t* outStruct, const size_t& outStructSize,
+                        size_t& finalStructSize);
+   void getCmd(uint8_t* cmdBuf, const size_t& cmdBufSize);
+   const size_t getCmdSize() const { return cmd_.getSize(); }
+   const uint8_t* getCmdPtr() const { return cmd_.getPtr(); }
+   void getPayload(uint8_t* payloadBuf, const size_t& payloadBufSize);
+   const size_t getPayloadSize() const { return payload_.getSize(); }
+   const uint8_t* getPayloadPtr() const { return payload_.getPtr(); }
+   const size_t messageSizeHint();
+};
 #endif // BIP150_151_H
