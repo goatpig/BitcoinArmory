@@ -1506,6 +1506,13 @@ const int BIP150StateMachine::getAuthchallengeData(uint8_t* buf,
    }
    else
    {
+      // Make sure the current state is acceptable before proceeding.
+      if(curState_ != BIP150State::PROPOSE)
+      {
+         LOGERR << "BIP 150 - Attempting to process AUTHCHALLENGE (2) message "
+            << "when state is not correct. Setting BIP 150 to error state.";
+         return errorSM(retVal);
+      }
       curState_ = BIP150State::CHALLENGE2;
       checkSes = inSes_;
    }
@@ -1550,15 +1557,15 @@ const int BIP150StateMachine::getAuthchallengeData(uint8_t* buf,
    }
 
    // What's hashed depends on if AUTHPROPOSE was verified.
-   if(requesterSent == true)
+   if(requesterSent == true) // AUTHCHALLENGE 1
    {
       retVal = buildHashData(buf, hashKey->pubkey, true);
    }
-   else if(goodPropose == true && requesterSent == false)
+   else if(goodPropose == true && requesterSent == false) // AC 2 GOOD
    {
       retVal = buildHashData(buf, hashKey->pubkey, true);
    }
-   else if(goodPropose == false && requesterSent == false)
+   else if(goodPropose == false && requesterSent == false) // AC 2 BAD
    {
       std::array<uint8_t, BIP151PUBKEYSIZE> badPropose{};
       buildHashData(buf, badPropose.data(), false);
@@ -1591,10 +1598,24 @@ const int BIP150StateMachine::getAuthreplyData(uint8_t* buf,
    int retVal = -1;
    if(responderSent == true)
    {
+      // Make sure the current state is acceptable before proceeding.
+      if(curState_ != BIP150State::CHALLENGE1)
+      {
+         LOGERR << "BIP 150 - Attempting to process AUTHREPLY (1) message "
+            << "when state is not correct. Setting BIP 150 to error state.";
+         return errorSM(retVal);
+      }
       curState_ = BIP150State::REPLY1;
    }
    else
    {
+      // Make sure the current state is acceptable before proceeding.
+      if(curState_ != BIP150State::CHALLENGE2)
+      {
+         LOGERR << "BIP 150 - Attempting to process AUTHREPLY (2) message "
+            << "when state is not correct. Setting BIP 150 to error state.";
+         return errorSM(retVal);
+      }
       curState_ = BIP150State::REPLY2;
    }
 
@@ -1659,6 +1680,16 @@ const int BIP150StateMachine::getAuthproposeData(uint8_t* buf,
                                                  const size_t& bufSize)
 {
    int retVal = -1;
+
+   // Make sure the current state is acceptable before proceeding.
+   if(curState_ != BIP150State::REPLY1)
+   {
+      LOGERR << "BIP 150 - Attempting to process AUTHREPLY message when "
+         << "state is not correct. Setting BIP 150 to error state.";
+      return errorSM(retVal);
+   }
+   assert(bufSize == BIP151PRVKEYSIZE);
+
    curState_ = BIP150State::PROPOSE;
 
    if(outSes_->handshakeComplete() == false)
@@ -1698,6 +1729,7 @@ const int BIP150StateMachine::processAuthchallenge(const BinaryData& inData,
    int retVal = -1;
    assert(inData.getSize() == BIP151PRVKEYSIZE);
    btc_pubkey* hashKey;
+
    if(requesterSent == true)
    {
       resetSM();
@@ -1706,6 +1738,13 @@ const int BIP150StateMachine::processAuthchallenge(const BinaryData& inData,
    }
    else
    {
+      // Make sure the current state is acceptable before proceeding.
+      if(curState_ != BIP150State::PROPOSE)
+      {
+         LOGERR << "BIP 150 - Attempting to process AUTHCHALLENGE (2) message "
+            << "when state is not correct. Setting BIP 150 to error state.";
+         return errorSM(retVal);
+      }
       curState_ = BIP150State::CHALLENGE2;
       hashKey = &chosenAuthPeerKey;
       BinaryData hashkeystr(hashKey->pubkey, 33);
@@ -1748,11 +1787,25 @@ const int BIP150StateMachine::processAuthreply(BinaryData& inData,
    btc_pubkey* hashKey;
    if(responderSent == true)
    {
+      // Make sure the current state is acceptable before proceeding.
+      if(curState_ != BIP150State::CHALLENGE1)
+      {
+         LOGERR << "BIP 150 - Attempting to process AUTHREPLY (1) message "
+            << "when state is not correct. Setting BIP 150 to error state.";
+         return errorSM(retVal);
+      }
       curState_ = BIP150State::REPLY1;
       hashKey = &chosenAuthPeerKey;
    }
    else
    {
+      // Make sure the current state is acceptable before proceeding.
+      if(curState_ != BIP150State::CHALLENGE2)
+      {
+         LOGERR << "BIP 150 - Attempting to process AUTHREPLY (2) message "
+            << "when state is not correct. Setting BIP 150 to error state.";
+         return errorSM(retVal);
+      }
       curState_ = BIP150State::REPLY2;
       hashKey = &::pubIDKey_;
    }
@@ -1809,6 +1862,14 @@ const int BIP150StateMachine::processAuthpropose(const BinaryData& inData)
 {
    int retVal = -1;
    assert(inData.getSize() == BIP151PRVKEYSIZE);
+
+   // Make sure the current state is acceptable before proceeding.
+   if(curState_ != BIP150State::REPLY1)
+   {
+      LOGERR << "BIP 150 - Attempting to process AUTHPROPOSE message when "
+         << "state is not correct. Setting BIP 150 to error state.";
+      return errorSM(retVal);
+   }
    curState_ = BIP150State::PROPOSE;
 
    // Iterate through the authorized-users DB and attempt to replicate the
