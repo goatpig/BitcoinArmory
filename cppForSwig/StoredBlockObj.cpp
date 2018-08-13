@@ -1111,20 +1111,15 @@ void StoredTxOut::serializeDBValue(
 {
    TXOUT_SPENTNESS writeSpent = spentness;
 
-   if (!forceSaveSpentness)
-   {
-      switch (dbType)
-      {
-         //// If the DB is in lite or partial modes, we don't bother recording
-         //   spentness (in fact, if it's spent, this entry probably won't even
-         //   be written to the DB).
-      case ARMORY_DB_BARE:                                 break;
-      case ARMORY_DB_FULL:                                 break;
-      case ARMORY_DB_SUPER:                                break;
-      default:
-         LOGERR << "Invalid DB mode in serializeStoredTxOutValue";
-      }
-   }
+   size_t len = 2 + dataRef.getSize();
+   
+   if (writeSpent)
+      len += spentByTxIn.getSize();
+
+   if (dbType == ARMORY_DB_SUPER)
+      len += hash.getSize() + 2;
+
+   bw.reserve(len);
 
    BitPacker<uint16_t> bitpack;
    bitpack.putBits((uint16_t)ARMORY_DB_VERSION, 4);
@@ -1466,6 +1461,16 @@ void StoredScriptHistory::serializeDBValue(BinaryWriter & bw,
    ARMORY_DB_TYPE dbType) 
    const
 {
+   size_t len = 13 + BtcUtils::get_varint_len(totalTxioCount_);
+   if (dbType != ARMORY_DB_SUPER)
+      len += 8;
+
+   for (auto& sum : subsshSummary_)
+      len += BtcUtils::get_varint_len(sum.first) +
+      BtcUtils::get_varint_len(sum.second);
+
+   bw.reserve(len);
+
    // Write out all the flags
    BitPacker<uint16_t> bitpack;
    bitpack.putBits((uint16_t)dbType,                  4);
@@ -1848,6 +1853,19 @@ void StoredSubHistory::getSummary(BinaryRefReader & brr)
 void StoredSubHistory::serializeDBValue(BinaryWriter & bw,
                                         ARMORY_DB_TYPE dbType) const
 {
+   size_t len = BtcUtils::get_varint_len(txioMap_.size());
+   for (const auto& txioPair : txioMap_)
+   {
+      TxIOPair const & txio = txioPair.second;
+      bool isSpent = txio.hasTxIn();
+
+      len += 13; //bitpack + value + at least 4 bytes of txio key
+      if (isSpent)
+         len += 8;
+   }
+
+   bw.reserve(len);
+
    bw.put_var_int(txioMap_.size());
    for(const auto& txioPair : txioMap_)
    {
@@ -1864,13 +1882,7 @@ void StoredSubHistory::serializeDBValue(BinaryWriter & bw,
          }
       }
 
-      BinaryData key8B = txio.getDBKeyOfOutput();
-      if (isSpent)
-         key8B = txio.getDBKeyOfInput();
-
-      if (!key8B.startsWith(hgtX_))
-        LOGERR << "How did TxIO key not match hgtX_??";
-
+      auto&& key8B = txio.getDBKeyOfOutput();
 
       BitPacker<uint8_t> bitpack;
       bitpack.putBit(txio.isTxOutFromSelf());
@@ -1884,7 +1896,7 @@ void StoredSubHistory::serializeDBValue(BinaryWriter & bw,
       {
          // Always write the value and last 4 bytes of dbkey (first 4 is in dbkey)
          bw.put_uint64_t(txio.getValue());
-         bw.put_BinaryData(key8B.getSliceCopy(4, 4));
+         bw.put_BinaryDataRef(key8B.getSliceRef(4, 4));
       }
       else
       {
@@ -1892,10 +1904,11 @@ void StoredSubHistory::serializeDBValue(BinaryWriter & bw,
          
          //write the full TxOut dbkey, since this is saved at TxIn hgtX
          bw.put_uint64_t(txio.getValue());
-         bw.put_BinaryData(txio.getDBKeyOfOutput());
+         bw.put_BinaryData(key8B);
 
          //Spent subssh are saved by TxIn hgtX, only write the last 4 bytes
-         bw.put_BinaryData(key8B.getSliceCopy(4, 4));
+         key8B = move(txio.getDBKeyOfInput());
+         bw.put_BinaryDataRef(key8B.getSliceRef(4, 4));
       }
    }
 }

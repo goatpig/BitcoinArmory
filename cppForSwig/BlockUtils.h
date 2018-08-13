@@ -156,7 +156,7 @@ public:
    shared_future<bool> isReadyFuture_;
    mutable shared_ptr<NodeRPC> nodeRPC_;
 
-   TimedStack<unique_ptr<BDV_Notification>> notificationStack_;
+   TimedQueue<unique_ptr<BDV_Notification>> notificationStack_;
    shared_ptr<ZeroConfContainer>   zeroConfCont_;
 
 public:

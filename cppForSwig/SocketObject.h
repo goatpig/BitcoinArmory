@@ -45,11 +45,11 @@ struct CallbackReturn
 struct CallbackReturn_CloseBitcoinP2PSocket : public CallbackReturn
 {
 private:
-   shared_ptr<BlockingStack<vector<uint8_t>>> dataStack_;
+   shared_ptr<BlockingQueue<vector<uint8_t>>> dataStack_;
 
 public:
    CallbackReturn_CloseBitcoinP2PSocket(
-      shared_ptr<BlockingStack<vector<uint8_t>>> datastack) :
+      shared_ptr<BlockingQueue<vector<uint8_t>>> datastack) :
       dataStack_(datastack)
    {}
 
@@ -237,8 +237,8 @@ private:
    SOCKET pipes_[2];
 #endif
 
-   BlockingStack<vector<uint8_t>> readQueue_;
-   Stack<vector<uint8_t>> writeQueue_;
+   BlockingQueue<vector<uint8_t>> readQueue_;
+   Queue<vector<uint8_t>> writeQueue_;
 
 private:
    void signalService(uint8_t);
@@ -304,7 +304,7 @@ private:
 private:
    unique_ptr<SimpleSocket> listenSocket_;
    map<SOCKET, unique_ptr<SocketStruct>> acceptMap_;
-   Stack<SOCKET> cleanUpStack_;
+   Queue<SOCKET> cleanUpStack_;
 
    thread listenThread_;
    mutex mu_;

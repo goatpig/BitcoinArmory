@@ -190,24 +190,11 @@ bool WebSocketMessagePartial::parsePacket(
       auto dataPtr = dataRef.getPtr();
 
       //look for message header
-      auto len = dataRef.getSize();
-      size_t i;
-      for (i=0; i < len -1; i++)
-      {
-         auto val = (uint16_t*)(dataPtr + i);
-         if (*val == WEBSOCKET_MAGIC_WORD)
-            break;
-      }
-
-      if (i == len -1)
+      auto val = (uint16_t*)dataPtr;
+      if (*val != WEBSOCKET_MAGIC_WORD)
          return false;
 
-      if (i != 0)
-         LOGWARN << "message started haflway through payload";
-
-      //get slice ref
-      auto&& slice = dataRef.getSliceRef(i, dataRef.getSize() - i);
-      BinaryRefReader brr(slice);
+      BinaryRefReader brr(dataRef);
 
       brr.advance(2); //skip magic word
       id_ = brr.get_uint32_t(); //message id
@@ -239,8 +226,11 @@ bool WebSocketMessagePartial::parsePacket(
       packets_.insert(make_pair(id, slice));
       pos_ += read_size;
 
+
       if(remaining < dataRef.getSize())
+      {
          LOGWARN << "packet has left over data";
+      }
 
       return true;
    }

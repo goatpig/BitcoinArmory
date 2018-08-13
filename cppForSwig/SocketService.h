@@ -31,7 +31,7 @@ private:
    thread thr_;
    atomic<bool> run_;
 
-   Stack<SocketStruct> socketQueue_;
+   Queue<SocketStruct> socketQueue_;
 
 private:
    void serviceSockets(void);
@@ -56,7 +56,7 @@ private:
    thread thr_;
    atomic<bool> run_;
 
-   Stack<SocketStruct> socketQueue_;
+   Queue<SocketStruct> socketQueue_;
 
 private:
    void serviceSockets(void);

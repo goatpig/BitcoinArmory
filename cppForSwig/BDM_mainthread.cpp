@@ -62,14 +62,14 @@ bool BlockDataManagerThread::shutdown()
 {
    if (pimpl == nullptr)
       return false;
+   
+   pimpl->bdm->shutdownNotifications();
 
    if (!pimpl->run)
       return true;
 
    pimpl->run = false;
-
    pimpl->bdm->shutdownNode();
-   pimpl->bdm->shutdownNotifications();
 
    if (pimpl->tID.joinable())
       pimpl->tID.join();

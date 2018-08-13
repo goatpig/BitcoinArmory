@@ -38,9 +38,9 @@ private:
 
    mutex mu_;
 
-   BlockingStack<unique_ptr<SshBatch>> checkpointQueue_;
-   BlockingStack<unique_ptr<SshBatch>> serializedSshQueue_;
-   BlockingStack<pair<BinaryData, BinaryData>>  sshBoundsQueue_;
+   BlockingQueue<unique_ptr<SshBatch>> checkpointQueue_;
+   BlockingQueue<unique_ptr<SshBatch>> serializedSshQueue_;
+   BlockingQueue<pair<BinaryData, BinaryData>>  sshBoundsQueue_;
 
    map<unsigned, atomic<unsigned>> shardSemaphores_;
 

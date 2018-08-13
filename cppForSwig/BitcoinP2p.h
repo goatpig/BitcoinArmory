@@ -77,7 +77,6 @@ enum InvType
 
 int get_varint(uint64_t& val, uint8_t* ptr, uint32_t size);
 int make_varint(const uint64_t& value, vector<uint8_t>& varint);
-int get_varint_len(const int64_t& value);
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -500,11 +499,11 @@ public:
 class BitcoinP2PSocket : public PersistentSocket
 {
 private:
-   shared_ptr<BlockingStack<vector<uint8_t>>> readDataStack_;
+   shared_ptr<BlockingQueue<vector<uint8_t>>> readDataStack_;
 
 public:
    BitcoinP2PSocket(const string& addr, const string& port, 
-      shared_ptr<BlockingStack<vector<uint8_t>>> readStack) :
+      shared_ptr<BlockingQueue<vector<uint8_t>>> readStack) :
       PersistentSocket(addr, port), readDataStack_(readStack)
    {}
 
@@ -533,13 +532,13 @@ private:
    atomic<bool> nodeConnected_;
 
    //to pass payloads between the poll thread and the processing one
-   shared_ptr<BlockingStack<vector<uint8_t>>> dataStack_;
+   shared_ptr<BlockingQueue<vector<uint8_t>>> dataStack_;
 
    exception_ptr select_except_ = nullptr;
    exception_ptr process_except_ = nullptr;
 
    //callback lambdas
-   shared_ptr<BlockingStack<vector<InvEntry>>> invBlockStack_;
+   shared_ptr<BlockingQueue<vector<InvEntry>>> invBlockStack_;
    function<void(vector<InvEntry>&)> invTxLambda_;
    function<void(void)> nodeStatusLambda_;
 
@@ -620,7 +619,7 @@ public:
 
    void updateNodeStatus(bool connected);
    void registerNodeStatusLambda(function<void(void)> lbd) { nodeStatusLambda_ = lbd; }
-   shared_ptr<BlockingStack<vector<InvEntry>>> getInvBlockStack(void) const
+   shared_ptr<BlockingQueue<vector<InvEntry>>> getInvBlockStack(void) const
    {
       return invBlockStack_;
    }

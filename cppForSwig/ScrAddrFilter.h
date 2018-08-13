@@ -129,7 +129,7 @@ private:
 
    shared_ptr<TransactionalMap<
       BinaryDataRef, shared_ptr<AddrAndHash>>> scrAddrMap_;
-   BlockingStack<shared_ptr<AddressBatch>> registrationStack_;
+   BlockingQueue<shared_ptr<AddressBatch>> registrationStack_;
 
    thread thr_;
 

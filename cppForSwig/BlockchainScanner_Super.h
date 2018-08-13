@@ -176,13 +176,13 @@ private:
    LMDBBlockDatabase* db_;
    BlockDataLoader blockDataLoader_;
 
-   BlockingStack<unique_ptr<ParserBatch_Super>> outputQueue_;
-   BlockingStack<unique_ptr<ParserBatch_Super>> inputQueue_;
-   BlockingStack<unique_ptr<ParserBatch_Super>> serializeQueue_;
-   BlockingStack<unique_ptr<ParserBatch_Super>> commitQueue_;
+   BlockingQueue<unique_ptr<ParserBatch_Super>> outputQueue_;
+   BlockingQueue<unique_ptr<ParserBatch_Super>> inputQueue_;
+   BlockingQueue<unique_ptr<ParserBatch_Super>> serializeQueue_;
+   BlockingQueue<unique_ptr<ParserBatch_Super>> commitQueue_;
    
-   BlockingStack<pair<BinaryData, BinaryData>>  sshBoundsQueue_;
-   BlockingStack<unique_ptr<map<BinaryData, BinaryWriter>>> serializedSshQueue_;
+   BlockingQueue<pair<BinaryData, BinaryData>>  sshBoundsQueue_;
+   BlockingQueue<unique_ptr<map<BinaryData, BinaryWriter>>> serializedSshQueue_;
 
    set<BinaryData> updateSshHints_;
 

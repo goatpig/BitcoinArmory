@@ -254,7 +254,7 @@ TEST_F(ContainerTests, PileTest_Concurrent)
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(ContainerTests, StackTest_Sequential)
 {
-   Stack<uint64_t> theStack;
+   Queue<uint64_t> theStack;
    unsigned iterCount = 100000;
 
    auto push_thread = [&](uint64_t* tally)
@@ -325,7 +325,7 @@ TEST_F(ContainerTests, StackTest_Sequential)
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(ContainerTests, StackTest_Concurrent)
 {
-   Stack<uint64_t> theStack;
+   Queue<uint64_t> theStack;
    unsigned iterCount = 100000;
 
    auto push_thread = [&](uint64_t* tally)
@@ -405,7 +405,7 @@ TEST_F(ContainerTests, StackTest_Concurrent)
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(ContainerTests, BlockingStackTest_Sequential)
 {
-   BlockingStack<uint64_t> theStack;
+   BlockingQueue<uint64_t> theStack;
    unsigned iterCount = 100000;
 
    auto push_thread = [&](uint64_t* tally)
@@ -477,7 +477,7 @@ TEST_F(ContainerTests, BlockingStackTest_Sequential)
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(ContainerTests, BlockingStackTest_Concurrent)
 {
-   BlockingStack<uint64_t> theStack;
+   BlockingQueue<uint64_t> theStack;
    unsigned iterCount = 100000;
 
    auto push_thread = [&](uint64_t* tally)
@@ -582,7 +582,7 @@ TEST_F(ContainerTests, BlockingStackTest_Concurrent)
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(ContainerTests, TimedStackTest_Concurrent)
 {
-   TimedStack<uint64_t> theStack;
+   TimedQueue<uint64_t> theStack;
    unsigned iterCount = 35000;
 
    auto push_thread = [&](uint64_t* tally)

@@ -98,11 +98,13 @@ private:
    atomic<void*> contextPtr_;
    unique_ptr<promise<bool>> ctorProm_ = nullptr;
 
-   Stack<WebSocketMessage> writeQueue_;
+   atomic<int> shutdownCount_;
+
+   Queue<WebSocketMessage> writeQueue_;
    WebSocketMessage currentWriteMessage_;
 
-   BlockingStack<BinaryData> readQueue_;
-   atomic<unsigned> run_;
+   BlockingQueue<BinaryData> readQueue_;
+   shared_ptr<atomic<unsigned>> run_;
    thread serviceThr_, readThr_;
    TransactionalMap<uint64_t, shared_ptr<WriteAndReadPacket>> readPackets_;
    RemoteCallback* callbackPtr_ = nullptr;
@@ -116,20 +118,31 @@ private:
    WebSocketClient(const string& addr, const string& port) :
       SocketPrototype(addr, port, false)
    {
+      shutdownCount_.store(0, memory_order_relaxed); 
+
       wsiPtr_.store(nullptr, memory_order_relaxed);
       contextPtr_.store(nullptr, memory_order_relaxed);
+      run_ = make_shared<atomic<unsigned>>();
+
+      count_.store(0, memory_order_relaxed);
       init();
    }
 
    void init();
    void setIsReady(bool);
    void readService(void);
-   void service(void);
+   static void service(
+      shared_ptr<atomic<unsigned>>, struct lws*, struct lws_context*);
+
+public:
+   atomic<int> count_;
 
 public:
    ~WebSocketClient()
    {
-      shutdown();
+      auto lwsPtr = (struct lws*)wsiPtr_.load(memory_order_relaxed);
+      if(lwsPtr != nullptr)
+         destroyInstance(lwsPtr);
    }
 
    //locals

@@ -255,7 +255,7 @@ private:
 
    //stacks inv tx packets from node
    shared_ptr<BitcoinP2P> networkNode_;
-   BlockingStack<ZeroConfInvPacket> newInvTxStack_;
+   BlockingQueue<ZeroConfInvPacket> newInvTxStack_;
 
    mutex parserMutex_;
 
@@ -290,7 +290,7 @@ private:
 public:
    //stacks new zc Tx objects from node
    BinaryData getNewZCkey(void);
-   BlockingStack<ZcActionStruct> newZcStack_;
+   BlockingQueue<ZcActionStruct> newZcStack_;
 
 public:
    ZeroConfContainer(LMDBBlockDatabase* db,

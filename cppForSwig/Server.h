@@ -117,13 +117,16 @@ struct BDV_packet
 struct WriteStack
 {
    struct lws *wsiPtr_ = nullptr;
-   shared_ptr<Stack<WebSocketMessage>> stack_;
+   shared_ptr<Queue<WebSocketMessage>> stack_;
    WebSocketMessage currentMsg_;
+   shared_ptr<atomic<int>> count_;
 
    WriteStack(struct lws *wsi) :
       wsiPtr_(wsi)
    {
-      stack_ = make_shared<Stack<WebSocketMessage>>();
+      stack_ = make_shared<Queue<WebSocketMessage>>();
+      count_ = make_shared<atomic<int>>();
+      count_->store(0, memory_order_relaxed);
    }
 };
 
@@ -132,7 +135,7 @@ class WebSocketServer
 {
 private:
    vector<thread> threads_;
-   BlockingStack<shared_ptr<BDV_packet>> packetQueue_;
+   BlockingQueue<shared_ptr<BDV_packet>> packetQueue_;
    TransactionalMap<uint64_t, WriteStack> writeMap_;
 
    static atomic<WebSocketServer*> instance_;

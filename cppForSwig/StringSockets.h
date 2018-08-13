@@ -97,7 +97,7 @@ private:
 private:
    PacketData currentRead_;
    unique_ptr<HttpMessage> messageWithPrecacheHeaders_;
-   Stack<shared_ptr<Socket_ReadPayload>> readStack_;
+   Queue<shared_ptr<Socket_ReadPayload>> readStack_;
 
 protected:
    void addReadPayload(shared_ptr<Socket_ReadPayload>);

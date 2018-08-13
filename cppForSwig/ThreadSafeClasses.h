@@ -19,6 +19,8 @@
 #include <thread>
 #include <exception>
 #include <iostream>
+#include <condition_variable>
+#include <deque>
 
 #include "make_unique.h"
 
@@ -33,6 +35,8 @@ class StopBlockingLoop
 struct StackTimedOutException
 {};
 
+#define Queue Queue_Locking
+
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T> class Entry
 {
@@ -44,16 +48,16 @@ public:
 
 public:
    Entry<T>(const T& obj) :
-      obj_(obj)
+		obj_(obj)
    {}
 
    Entry<T>(T&& obj) : 
-      obj_(obj)
+		obj_(obj)
    {}
 
    T get(void)
    {
-      return move(obj_);
+		return move(obj_);
    }
 };
 
@@ -68,22 +72,66 @@ public:
 
 public:
    AtomicEntry(const T& obj) :
-      obj_(obj)
+		obj_(obj)
    {      
-      next_.store(nullptr, memory_order_relaxed);
+		next_.store(nullptr, memory_order_relaxed);
    }
 
    AtomicEntry(T&& obj)  :
-      obj_(move(obj))
+		obj_(move(obj))
    {
-      next_.store(nullptr, memory_order_relaxed);
+		next_.store(nullptr, memory_order_relaxed);
    }
 
    T get(void)
    {
-      return move(obj_);
+	return move(obj_);
    }
 };
+
+////////////////////////////////////////////////////////////////////////////////
+template <typename T> class AtomicEntry2
+{
+private:
+   T obj_;
+   atomic<int> count_;
+   atomic<int> pos_;
+
+public:
+   atomic<AtomicEntry2<T>*> next_;
+
+public:
+   AtomicEntry2(const T& obj) :
+		obj_(obj)
+   {      
+		count_.store(0, memory_order_relaxed);
+		pos_.store(0, memory_order_relaxed);
+		next_.store(nullptr, memory_order_relaxed);
+   }
+
+   AtomicEntry2(T&& obj)  :
+		obj_(move(obj))
+   {
+		count_.store(0, memory_order_relaxed);
+		pos_.store(0, memory_order_relaxed);
+		next_.store(nullptr, memory_order_relaxed);
+   }
+
+   T get(void)
+   {
+		return move(obj_);
+   }
+
+   /*T get(int pos)
+   {
+	auto val = count_.fetch_add(1, memory_order_relaxed);
+	pos_.fetch_add(pos, memory_order_relaxed);
+	if (val > 0)
+	   cout << "!!!!!!! get count is: " << pos_.load(memory_order_relaxed) << endl;
+	return obj_;
+   }*/
+};
+
 
 ////////////////////////////////////////////////////////////////////////////////
 template<typename T> class Pile
@@ -100,305 +148,568 @@ private:
 public:
    Pile()
    {
-      maxptr_ = (AtomicEntry<T>*)SIZE_MAX;
-      top_.store(nullptr, memory_order_relaxed);
-      count_.store(0, memory_order_relaxed);
+		maxptr_ = (AtomicEntry<T>*)SIZE_MAX;
+		top_.store(nullptr, memory_order_relaxed);
+		count_.store(0, memory_order_relaxed);
    }
 
    ~Pile()
    {
-      clear();
+		clear();
    }
 
    void push_back(const T& obj)
    {
-      AtomicEntry<T>* nextentry = new AtomicEntry<T>(obj);
-      nextentry->next_.store(maxptr_, memory_order_release);
+		AtomicEntry<T>* nextentry = new AtomicEntry<T>(obj);
+		nextentry->next_.store(maxptr_, memory_order_release);
 
-      auto topentry = top_.load(memory_order_acquire);
-      do
-      {
-         while (topentry == maxptr_)
-            topentry = top_.load(memory_order_acquire);
-      }
-      while (!top_.compare_exchange_weak(topentry, nextentry,
-         memory_order_release, memory_order_relaxed));
+		auto topentry = top_.load(memory_order_acquire);
+		do
+		{
+			while (topentry == maxptr_)
+			topentry = top_.load(memory_order_acquire);
+		}
+		while (!top_.compare_exchange_weak(topentry, nextentry,
+			memory_order_release, memory_order_relaxed));
 
-      nextentry->next_.store(topentry, memory_order_release);
+		nextentry->next_.store(topentry, memory_order_release);
 
-      count_.fetch_add(1, memory_order_relaxed);
+		count_.fetch_add(1, memory_order_relaxed);
    }
   
    T pop_back(void)
    {
-      AtomicEntry<T>* topentry = top_.load(memory_order_acquire);
+		AtomicEntry<T>* topentry = top_.load(memory_order_acquire);
 
-      do
-      {
-         //1: make sure the value we got out of top_ is not the marker 
-         //invalid value, otherwise keep load top_
-         while (topentry == maxptr_)
-            topentry = top_.load(memory_order_acquire);
+		do
+		{
+			//1: make sure the value we got out of top_ is not the marker 
+			//invalid value, otherwise keep load top_
+			while (topentry == maxptr_)
+			topentry = top_.load(memory_order_acquire);
 
-         //2: with a valid topentry, try to compare_exchange top_ for
-         //the invalid value
-      } 
-      while (!top_.compare_exchange_weak(topentry, maxptr_,
-         memory_order_release, memory_order_relaxed));
+			//2: with a valid topentry, try to compare_exchange top_ for
+			//the invalid value
+		} 
+		while (!top_.compare_exchange_weak(topentry, maxptr_,
+			memory_order_release, memory_order_relaxed));
 
-      //3: if topentry is empty, the container is emtpy, throw
-      if (topentry == nullptr)
-      {
-         //make sure the replace the marker value with nullptr in top_
-         top_.store(nullptr, memory_order_release);
-         throw IsEmpty();
-      }
+		//3: if topentry is empty, the container is emtpy, throw
+		if (topentry == nullptr)
+		{
+			//make sure the replace the marker value with nullptr in top_
+			top_.store(nullptr, memory_order_release);
+			throw IsEmpty();
+		}
 
-      /*4: if we got this far we guarantee 2 things:
-      - topentry is neither null nor the invalid marker
-      - topentry has yet to be derefenced in any thread, in other 
-        words it is safe to read and delete in this particular thread
-      - top_ is set to the invalid marker so we have to set it
-        before other threads can get this far
-      */ 
+		/*4: if we got this far we guarantee 2 things:
+		- topentry is neither null nor the invalid marker
+		- topentry has yet to be derefenced in any thread, in other 
+		words it is safe to read and delete in this particular thread
+		- top_ is set to the invalid marker so we have to set it
+		before other threads can get this far
+		*/ 
 
-      while (topentry->next_.load(memory_order_acquire) == maxptr_);
-      top_.store(topentry->next_, memory_order_release);
+		while (topentry->next_.load(memory_order_acquire) == maxptr_);
+		top_.store(topentry->next_, memory_order_release);
 
-      auto&& retval = topentry->get();
+		auto&& retval = topentry->get();
 
-      count_.fetch_sub(1, memory_order_relaxed);
+		count_.fetch_sub(1, memory_order_relaxed);
 
-      delete topentry;
-      return move(retval);
+		delete topentry;
+		return move(retval);
    }
 
    void clear(void)
    {
-      try
-      {
-         while (1)
-            pop_back();
-      }
-      catch (IsEmpty&)
-      {}
+		try
+		{
+			while (1)
+			pop_back();
+		}
+		catch (IsEmpty&)
+		{}
 
-      count_.store(0, memory_order_relaxed);
+		count_.store(0, memory_order_relaxed);
    }
 
    size_t count(void) const
    {
-      return count_.load(memory_order_relaxed);
+		return count_.load(memory_order_relaxed);
    }
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-template <typename T> class Stack
+template <typename T> class Queue_LockFree
 {
-   /***
-   lockless FIFO container class
-   ***/
-
 private:
-   atomic<AtomicEntry<T>*> top_;
-   atomic<AtomicEntry<T>*> bottom_;
-   AtomicEntry<T>* maxptr_;
+   atomic<AtomicEntry2<T>*> head_;
+   atomic<AtomicEntry2<T>*> tail_;
+
+protected:
+   atomic<int> count_;
+   exception_ptr exceptPtr_ = nullptr;
+
+public:
+   Queue_LockFree()
+   {
+      head_.store(nullptr, memory_order_relaxed);
+      tail_.store(nullptr, memory_order_relaxed);
+      count_.store(0, memory_order_relaxed);
+   }
+
+   virtual T pop_front(bool rethrow = true)
+   {
+	   auto tailPtr = tail_.load();
+
+      while(true)
+      {
+         //compare exchange till tail_ is replaced with its next
+
+         if (tailPtr == nullptr)
+            throw IsEmpty();
+
+         auto nextPtr = tailPtr->next_.load();
+         if (!tail_.compare_exchange_weak(tailPtr, nextPtr))
+            continue;
+
+         if (nextPtr == nullptr)
+         {
+            auto tailPtrCopy = tailPtr;
+            if (!head_.compare_exchange_strong(tailPtrCopy, nullptr))
+            {
+               do
+               {
+                  nextPtr = tailPtr->next_.load();
+               } while (nextPtr == nullptr);
+
+               tail_.store(nextPtr);
+            }
+         }
+
+         auto val = tailPtr->get();
+			//delete tailPtr;
+
+         count_.fetch_sub(1);            
+         return move(val);
+      }
+   }
+
+   virtual void push_back(T&& obj)
+   {
+      //create new atomic entry
+      AtomicEntry2<T>* newEntry = new AtomicEntry2<T>(move(obj));
+
+      auto current_head = head_.load();
+      while(true)
+      {
+         if (head_.compare_exchange_weak(current_head, newEntry))
+         {           
+            if(current_head != nullptr)
+            {
+               current_head->next_.store(newEntry);            
+            }
+            else
+            {
+               tail_.store(newEntry);
+            }
+         }
+         else
+         {
+            continue;
+         }
+         
+         count_.fetch_add(1);
+         return;
+      }
+   }
+
+   size_t count(void) const
+   {
+		return count_.load(memory_order_acquire);
+   }
+
+   virtual void clear()
+   {
+		count_.store(0, memory_order_relaxed);
+   }
+};
+
+////////////////////////////////////////////////////////////////////////////////
+template <typename T> class Queue_Locking
+{
+private:
+   mutex mu_;
+   deque<T> queue_;
 
 protected:
    atomic<size_t> count_;
    exception_ptr exceptPtr_ = nullptr;
 
-   atomic<void*> promPtr_;
-   atomic<void*> futPtr_;
-
-   atomic<int> replaceFut_;
-
-protected:
-   virtual shared_future<bool> get_future()
-   {
-      int val = -1, val1;
-
-      do
-      {
-         while (val == -1)
-            val = replaceFut_.load(memory_order_acquire);
-
-         val1 = val + 1;
-      } while (!replaceFut_.compare_exchange_weak(val, val1,
-         memory_order_release, memory_order_relaxed));
-
-      auto futptr = futPtr_.load(memory_order_acquire);
-      auto fut = *(shared_future<bool>*)futptr;
-
-      replaceFut_.fetch_sub(1, memory_order_acq_rel);
-      return fut;
-   }
-
-   void pop_promise(void)
-   {
-      int zero = 0;
-      while (!replaceFut_.compare_exchange_weak(zero, -1,
-         memory_order_release, memory_order_relaxed))
-      {
-         if (zero == -1)
-            return;
-
-         zero = 0;
-      }
-
-      auto oldprom = (promise<bool>*)promPtr_.load(memory_order_acquire);
-      oldprom->set_value(true);
-
-      auto newprom = new promise<bool>();
-      promPtr_.store((void*)newprom, memory_order_release);
-
-      auto newfut = new shared_future<bool>();
-      shared_future<bool> fut = newprom->get_future();
-      *newfut = fut;
-
-      auto futval =
-         (shared_future<bool>*)futPtr_.load(memory_order_acquire);
-      futPtr_.store((void*)newfut, memory_order_release);
-
-      delete futval;
-      delete oldprom;
-
-      replaceFut_.store(0, memory_order_release);
-   }
-
 public:
-   Stack()
+   Queue_Locking()
    {
-      maxptr_ = (AtomicEntry<T>*)SIZE_MAX;
-      top_.store(nullptr, memory_order_relaxed);
-      bottom_.store(nullptr, memory_order_relaxed);
-      count_.store(0, memory_order_relaxed);
-
-      auto newprom = new promise<bool>();
-      promPtr_.store((void*)newprom, memory_order_release);
-
-      auto futptr = new shared_future<bool>();
-      *futptr = newprom->get_future();
-      futPtr_.store((void*)futptr, memory_order_release);
-
-      replaceFut_.store(0, memory_order_release);
-   }
-
-   ~Stack()
-   {
-      clear();
-
-      auto futptr = (shared_future<bool>*)futPtr_.load();
-      auto promptr = (promise<bool>*)promPtr_.load();
-
-      delete futptr;
-      delete promptr;
+		count_.store(0, memory_order_relaxed);
    }
 
    virtual T pop_front(bool rethrow = true)
    {
-      //throw if empty
-      auto valptr = bottom_.load(memory_order_acquire);
+		unique_lock<mutex> lock(mu_);
+		if (queue_.size() == 0)
+			throw IsEmpty();
 
-      do
-      {
-         while (valptr == maxptr_)
-            valptr = bottom_.load(memory_order_acquire);
-
-         if (valptr == nullptr)
-         {
-            /*if (this->count() != 0)
-               cout << "~~~ count != 0" << endl;*/
-            throw IsEmpty();
-         }
-      } 
-      while (!bottom_.compare_exchange_weak(valptr, maxptr_,
-      memory_order_acq_rel, memory_order_acquire));
-
-      auto valptrcopy = valptr;
-      while (1)
-      {
-         if (!top_.compare_exchange_strong(valptrcopy, maxptr_,
-            memory_order_acq_rel, memory_order_relaxed))
-         {
-            AtomicEntry<T>* nextptr = 
-               valptr->next_.load(memory_order_acquire);
-            if (nextptr == maxptr_)
-               continue;
-
-            count_.fetch_sub(1, memory_order_acq_rel);
-            bottom_.store(nextptr, memory_order_release);
-            break;
-         }
-         else
-         {
-            count_.fetch_sub(1, memory_order_acq_rel);
-            bottom_.store(nullptr, memory_order_release);
-            top_.store(nullptr, memory_order_release);
-            break;
-         }
-      }
-
-      //delete ptr and return value
-      auto&& retval = valptr->get();
-      delete valptr;
-
-      if (rethrow && exceptPtr_ != nullptr)
-         rethrow_exception(exceptPtr_);
-
-      return move(retval);
+		T val = move(queue_.front());
+		queue_.pop_front();
+		count_.fetch_sub(1, memory_order_relaxed);
+		return move(val);
    }
 
    virtual void push_back(T&& obj)
    {
-      //create object
-      AtomicEntry<T>* newentry = new AtomicEntry<T>(move(obj));
-      newentry->next_.store(maxptr_, memory_order_relaxed);
-
-      AtomicEntry<T>* nullentry = nullptr;
-
-      auto topentry = top_.load(memory_order_acquire);
-
-      do
-      {
-         while (topentry == maxptr_)
-            topentry = top_.load(memory_order_acquire);
-      } 
-      while (!top_.compare_exchange_weak(topentry, maxptr_,
-      memory_order_acq_rel, memory_order_relaxed));
-
-      if (topentry != nullptr)
-      {
-         topentry->next_.store(newentry, memory_order_release);
-      }
-      else
-      {
-         bottom_.compare_exchange_strong(nullentry, newentry,
-            memory_order_acq_rel, memory_order_relaxed);
-      }
-
-      count_.fetch_add(1, memory_order_acq_rel);
-      top_.store(newentry, memory_order_release);
-   }
-
-   virtual void clear()
-   {
-      //pop as long as possible
-      try
-      {
-         while (1)
-            pop_front(false);
-      }
-      catch (IsEmpty&)
-      {
-      }
-
-      exceptPtr_ = nullptr;
+		unique_lock<mutex> lock(mu_);
+		queue_.push_back(move(obj));
+		count_.fetch_add(1, memory_order_relaxed);
    }
 
    size_t count(void) const
    {
-      return count_.load(memory_order_acquire);
+		return count_.load(memory_order_acquire);
+   }
+
+   virtual void clear()
+   {
+		unique_lock<mutex> lock(mu_);
+		queue_.clear();
+		count_.store(0, memory_order_relaxed);
+   }
+};
+
+////////////////////////////////////////////////////////////////////////////////
+template <typename T> class BlockingQueue : public Queue<T>
+{
+   /***
+   get() blocks as long as the container is empty
+
+   terminate() halts all operations and returns on all waiting threads
+   completed() lets the container serve it's remaining entries before halting
+   ***/
+
+private:
+   atomic<int> waiting_;
+   atomic<bool> terminated_;
+   atomic<bool> completed_;
+   mutex condVarMutex_;
+   condition_variable condVar_;
+   
+   int flag_ = 0;
+   
+private:
+   void wait_on_data(void)
+   {
+		auto completed = completed_.load(memory_order_relaxed);
+		if (completed)
+		{
+			if (Queue<T>::exceptPtr_ != nullptr)
+				rethrow_exception(Queue<T>::exceptPtr_);
+			else
+				throw StopBlockingLoop();
+		}
+
+		unique_lock<mutex> lock(condVarMutex_);
+		if (flag_ > 0)
+		{
+			--flag_;
+			return;
+		}
+
+		condVar_.wait(lock);
+   }
+
+public:
+   BlockingQueue() : Queue<T>()
+   {
+		terminated_.store(false, memory_order_relaxed);
+		completed_.store(false, memory_order_relaxed);
+		waiting_.store(0, memory_order_relaxed);
+   }
+
+   T pop_front(void)
+   {
+		//blocks as long as there is no data available in the chain.
+		//run in loop until we get data or a throw
+
+		waiting_.fetch_add(1, memory_order_relaxed);
+
+		try
+		{
+			while (1)
+			{
+				auto terminate = terminated_.load(memory_order_acquire);
+				if (terminate)
+				{
+					if (Queue<T>::exceptPtr_ != nullptr)
+						rethrow_exception(Queue<T>::exceptPtr_);
+
+					throw StopBlockingLoop();
+				}
+
+				//try to pop_front
+				try
+				{
+					auto&& retval = Queue<T>::pop_front(false);
+					waiting_.fetch_sub(1, memory_order_relaxed);
+					return move(retval);
+				}
+				catch (IsEmpty&)
+				{}
+
+				wait_on_data();
+			}
+		}
+		catch (...)
+		{
+			//loop stopped
+			waiting_.fetch_sub(1, memory_order_relaxed);
+			rethrow_exception(current_exception());
+		}
+
+		//to shut up the compiler warning
+		return T();
+   }
+
+   void push_back(T&& obj)
+   {
+		auto completed = completed_.load(memory_order_acquire);
+		if (completed)
+			return;
+
+		Queue<T>::push_back(move(obj));
+
+		{
+			unique_lock<mutex> lock(condVarMutex_);
+			++flag_;
+		}
+
+		condVar_.notify_one();
+   }
+
+   void terminate(exception_ptr exceptptr = nullptr)
+   {
+		if (exceptptr == nullptr)
+		{
+			try
+			{
+				throw StopBlockingLoop();
+			}
+			catch (...)
+			{
+				exceptptr = current_exception();
+			}
+		}
+
+		Queue<T>::exceptPtr_ = exceptptr;
+		terminated_.store(true, memory_order_release);
+		completed_.store(true, memory_order_release);
+
+		condVar_.notify_all();
+   }
+
+   void clear(void)
+   {
+		completed();
+
+		Queue<T>::clear();
+
+		terminated_.store(false, memory_order_relaxed);
+		completed_.store(false, memory_order_relaxed);
+   }
+
+   void completed(exception_ptr exceptptr = nullptr)
+   {
+		if (exceptptr == nullptr)
+		{
+			try
+			{
+				throw StopBlockingLoop();
+			}
+			catch (...)
+			{
+				exceptptr = current_exception();
+			}
+		}
+
+		Queue<T>::exceptPtr_ = exceptptr;
+		completed_.store(true, memory_order_release);
+
+		while (waiting_.load(memory_order_relaxed) > 0)
+			condVar_.notify_all();
+   }
+
+   int waiting(void) const
+   {
+		return waiting_.load(memory_order_relaxed);
+   }
+};
+
+////////////////////////////////////////////////////////////////////////////////
+template <typename T> class TimedQueue : public Queue<T>
+{
+   /***
+   get() blocks as long as the container is empty
+   ***/
+
+private:
+   atomic<int> waiting_;
+   atomic<bool> terminate_;
+   mutex condVarMutex_;
+   condition_variable condVar_;
+   
+   int flag_ = 0;
+
+private:
+   cv_status wait_on_data(chrono::milliseconds timeout)
+   {
+		auto terminate = terminate_.load(memory_order_relaxed);
+		if (terminate)
+		{
+			if (Queue<T>::exceptPtr_ != nullptr)
+				rethrow_exception(Queue<T>::exceptPtr_);
+			else
+				throw StopBlockingLoop();
+		}
+
+		unique_lock<mutex> lock(condVarMutex_);
+		if (flag_ > 0)
+		{
+			--flag_;
+			return cv_status::no_timeout;
+		}
+
+		return condVar_.wait_for(lock, timeout);
+   }
+
+public:
+   TimedQueue() : Queue<T>()
+   {
+		terminate_.store(false, memory_order_relaxed);
+		waiting_.store(0, memory_order_relaxed);
+   }
+
+   T pop_front(chrono::milliseconds timeout = chrono::milliseconds(600000))
+   {
+	//block until timeout expires or data is available
+	//return data or throw IsEmpty or StackTimedOutException
+
+	waiting_.fetch_add(1, memory_order_relaxed);
+	try
+	{
+	   while (1)
+	   {
+		auto terminate = terminate_.load(memory_order_relaxed);
+		if (terminate)
+		   throw StopBlockingLoop();
+
+		//try to pop_front
+		try
+		{
+		   auto&& retval = Queue<T>::pop_front();
+		   waiting_.fetch_sub(1, memory_order_relaxed);
+		   return move(retval);
+		}
+		catch (IsEmpty&)
+		{}
+		
+		auto before = chrono::high_resolution_clock::now();
+		auto status = wait_on_data(timeout);
+
+		if (status == cv_status::timeout) //future timed out
+		   throw StackTimedOutException();
+
+		auto after = chrono::high_resolution_clock::now();
+		auto timediff = chrono::duration_cast<chrono::milliseconds>(after - before);
+		if (timediff <= timeout)
+		   timeout -= timediff;
+		else
+		   timeout = chrono::milliseconds(0);
+	   }
+	}
+	catch (...)
+	{
+	   //loop stopped unexpectedly
+	   waiting_.fetch_sub(1, memory_order_relaxed);
+	   rethrow_exception(current_exception());
+	}
+
+	return T();
+   }
+
+   vector<T> pop_all(chrono::seconds timeout = chrono::seconds(600))
+   {
+		vector<T> vecT;
+
+		vecT.push_back(move(pop_front(timeout)));
+	
+		try
+		{
+			while (1)
+				vecT.push_back(move(Queue<T>::pop_front()));
+		}
+		catch (IsEmpty&)
+		{}
+
+		return move(vecT);
+   }
+
+   void push_back(T&& obj)
+   {
+		Queue<T>::push_back(move(obj));
+
+		{
+			unique_lock<mutex> lock(condVarMutex_);
+			++flag_;
+		}
+
+		condVar_.notify_all();
+   }
+
+
+   void terminate(exception_ptr exceptptr = nullptr)
+   {
+		if (exceptptr == nullptr)
+		{
+			try
+			{
+				throw StopBlockingLoop();
+			}
+			catch (...)
+			{
+				exceptptr = current_exception();
+			}
+		}
+
+		Queue<T>::exceptPtr_ = exceptptr;
+		terminate_.store(true, memory_order_release);
+
+		condVar_.notify_all();
+   }
+
+   void reset(void)
+   {
+		Queue<T>::clear();
+
+		terminate_.store(false, memory_order_relaxed);
+   }
+
+   bool isValid(void) const
+   {
+		auto val = terminate_.load(memory_order_relaxed);
+		return !val;
+   }
+
+   int waiting(void) const
+   {
+		return waiting_.load(memory_order_relaxed);
    }
 };
 
@@ -422,123 +733,123 @@ public:
 
    TransactionalMap(void)
    {
-      count_.store(0, memory_order_relaxed);
-      map_ = make_shared<map<T, U>>();
+		count_.store(0, memory_order_relaxed);
+		map_ = make_shared<map<T, U>>();
    }
 
    void insert(pair<T, U>&& mv)
    {
-      auto newMap = make_shared<map<T, U>>();
+		auto newMap = make_shared<map<T, U>>();
 
-      unique_lock<mutex> lock(mu_);
-      newMap->insert(map_->begin(), map_->end());
-      newMap->insert(move(mv));
+		unique_lock<mutex> lock(mu_);
+		newMap->insert(map_->begin(), map_->end());
+		newMap->insert(move(mv));
 
-      atomic_store(&map_, newMap);
+		atomic_store(&map_, newMap);
 
-      count_.store(map_->size(), memory_order_relaxed);
+		count_.store(map_->size(), memory_order_relaxed);
    }
 
    void insert(const pair<T, U>& obj)
    {
-      auto newMap = make_shared<map<T, U>>();
+		auto newMap = make_shared<map<T, U>>();
 
-      unique_lock<mutex> lock(mu_);
-      newMap->insert(map_->begin(), map_->end());
-      newMap->insert(obj);
-      
-      atomic_store(&map_, newMap);
+		unique_lock<mutex> lock(mu_);
+		newMap->insert(map_->begin(), map_->end());
+		newMap->insert(obj);
+		
+		atomic_store(&map_, newMap);
 
-      count_.store(map_->size(), memory_order_relaxed);
+		count_.store(map_->size(), memory_order_relaxed);
    }
 
-   void update(map<T, U>& updatemap)
+   void update(map<T, U> updatemap)
    {
-      if (updatemap.size() == 0)
-         return;
+		if (updatemap.size() == 0)
+			return;
 
-      auto newMap = make_shared<map<T, U>>(move(updatemap));
+		auto newMap = make_shared<map<T, U>>(move(updatemap));
 
-      unique_lock<mutex> lock(mu_);
-      for (auto& data_pair : *map_)
-         newMap->insert(data_pair);
+		unique_lock<mutex> lock(mu_);
+		for (auto& data_pair : *map_)
+			newMap->insert(data_pair);
 
-      atomic_store(&map_, newMap);
+		atomic_store(&map_, newMap);
 
-      count_.store(map_->size(), memory_order_relaxed);
+		count_.store(map_->size(), memory_order_relaxed);
    }
 
    void erase(const T& id)
    {
-      unique_lock<mutex> lock(mu_);
+		unique_lock<mutex> lock(mu_);
 
-      auto iter = map_->find(id);
-      if (iter == map_->end())
-         return;
+		auto iter = map_->find(id);
+		if (iter == map_->end())
+			return;
 
-      auto newMap = make_shared<map<T, U>>();
-      newMap->insert(map_->begin(), map_->end());
-      newMap->erase(id);
+		auto newMap = make_shared<map<T, U>>();
+		newMap->insert(map_->begin(), map_->end());
+		newMap->erase(id);
 
-      atomic_store(&map_, newMap);
+		atomic_store(&map_, newMap);
 
-      count_.store(map_->size(), memory_order_relaxed);
+		count_.store(map_->size(), memory_order_relaxed);
    }
 
    void erase(const vector<T>& idVec)
    {
-      if (idVec.size() == 0)
-         return;
+		if (idVec.size() == 0)
+			return;
 
-      auto newMap = make_shared<map<T, U>>();
+		auto newMap = make_shared<map<T, U>>();
 
-      unique_lock<mutex> lock(mu_);
-      newMap->insert(map_->begin(), map_->end());
+		unique_lock<mutex> lock(mu_);
+		newMap->insert(map_->begin(), map_->end());
 
-      bool erased = false;
-      for (auto& id : idVec)
-      {
-         if (newMap->erase(id) != 0)
-            erased = true;
-      }
+		bool erased = false;
+		for (auto& id : idVec)
+		{
+			if (newMap->erase(id) != 0)
+				erased = true;
+		}
 
-      if (erased)
-         atomic_store(&map_, newMap);
+		if (erased)
+			atomic_store(&map_, newMap);
 
-      count_.store(map_->size(), memory_order_relaxed);
+		count_.store(map_->size(), memory_order_relaxed);
    }
 
    shared_ptr<map<T, U>> pop_all(void)
    {
-      auto newMap = make_shared<map<T, U>>();
-      unique_lock<mutex> lock(mu_);
-      
-      auto retMap = atomic_load(&map_);
-      atomic_store(&map_, newMap);
+		auto newMap = make_shared<map<T, U>>();
+		unique_lock<mutex> lock(mu_);
+		
+		auto retMap = atomic_load(&map_);
+		atomic_store(&map_, newMap);
 
-      count_.store(map_->size(), memory_order_relaxed);
-      return retMap;
+		count_.store(map_->size(), memory_order_relaxed);
+		return retMap;
    }
 
    shared_ptr<map<T, U>> get(void) const
    {
-      auto retMap = atomic_load(&map_);
-      return retMap;
+		auto retMap = atomic_load(&map_);
+		return retMap;
    }
 
    void clear(void)
    {
-      auto newMap = make_shared<map<T, U>>();
-      unique_lock<mutex> lock(mu_);
+		auto newMap = make_shared<map<T, U>>();
+		unique_lock<mutex> lock(mu_);
 
-      atomic_store(&map_, newMap);
+		atomic_store(&map_, newMap);
 
-      count_.store(0, memory_order_relaxed);
+		count_.store(0, memory_order_relaxed);
    }
 
    size_t size(void) const
    {
-      return count_.load(memory_order_relaxed);
+		return count_.load(memory_order_relaxed);
    }
 };
 
@@ -562,444 +873,119 @@ public:
 
    TransactionalSet(void)
    {
-      count_.store(0, memory_order_relaxed);
-      set_ = make_shared<set<T>>();
+		count_.store(0, memory_order_relaxed);
+		set_ = make_shared<set<T>>();
    }
 
    void insert(T&& mv)
    {
-      auto newSet = make_shared<set<T>>();
+		auto newSet = make_shared<set<T>>();
 
-      unique_lock<mutex> lock(mu_);
-      newSet->insert(set_->begin(), set_->end());
-      newSet->insert(move(mv));
+		unique_lock<mutex> lock(mu_);
+		newSet->insert(set_->begin(), set_->end());
+		newSet->insert(move(mv));
 
-      atomic_store(&set_, newSet);
-      count_.store(set_->size(), memory_order_relaxed);
+		atomic_store(&set_, newSet);
+		count_.store(set_->size(), memory_order_relaxed);
    }
 
    void insert(const T& obj)
    {
-      auto newSet = make_shared<set<T>>();
+		auto newSet = make_shared<set<T>>();
 
-      unique_lock<mutex> lock(mu_);
-      newSet->insert(set_->begin(), set_->end());
-      newSet->insert(obj);
+		unique_lock<mutex> lock(mu_);
+		newSet->insert(set_->begin(), set_->end());
+		newSet->insert(obj);
 
-      atomic_store(&set_, newSet);
-      count_.store(set_->size(), memory_order_relaxed);
+		atomic_store(&set_, newSet);
+		count_.store(set_->size(), memory_order_relaxed);
    }
 
    void insert(const set<T>& dataSet)
    {
-      if (dataSet.size() == 0)
-         return;
+		if (dataSet.size() == 0)
+			return;
 
-      auto newSet = make_shared<set<T>>();
+		auto newSet = make_shared<set<T>>();
 
-      unique_lock<mutex> lock(mu_);
-      newSet->insert(set_->begin(), set_->end());
-      newSet->insert(dataSet.begin(), dataSet.end());
+		unique_lock<mutex> lock(mu_);
+		newSet->insert(set_->begin(), set_->end());
+		newSet->insert(dataSet.begin(), dataSet.end());
 
-      atomic_store(&set_, newSet);
-      count_.store(set_->size(), memory_order_relaxed);
+		atomic_store(&set_, newSet);
+		count_.store(set_->size(), memory_order_relaxed);
    }
 
    void erase(const T& id)
    {
-      unique_lock<mutex> lock(mu_);
-      
-      auto iter = set_->find(id);
-      if (iter == set_->end())
-         return;
+		unique_lock<mutex> lock(mu_);
+		
+		auto iter = set_->find(id);
+		if (iter == set_->end())
+			return;
 
-      auto newSet = make_shared<set<T>>();
-      newSet->insert(set_->begin(), set_->end());
-      newSet->erase(id);
+		auto newSet = make_shared<set<T>>();
+		newSet->insert(set_->begin(), set_->end());
+		newSet->erase(id);
 
-      atomic_store(&set_, newSet);
-      count_.store(set_->size(), memory_order_relaxed);
+		atomic_store(&set_, newSet);
+		count_.store(set_->size(), memory_order_relaxed);
    }
 
    void erase(const vector<T>& idVec)
    {
-      if (idVec.size() == 0)
-         return;
+		if (idVec.size() == 0)
+			return;
 
-      auto newSet = make_shared<set<T>>();
+		auto newSet = make_shared<set<T>>();
 
-      unique_lock<mutex> lock(mu_);
-      newSet->insert(set_->begin(), set_->end());
+		unique_lock<mutex> lock(mu_);
+		newSet->insert(set_->begin(), set_->end());
 
-      bool erased = false;
-      for (auto& id : idVec)
-      {
-         if (newSet->erase(id) != 0)
-            erased = true;
-      }
+		bool erased = false;
+		for (auto& id : idVec)
+		{
+			if (newSet->erase(id) != 0)
+			erased = true;
+		}
 
-      if (erased)
-         atomic_store(&set_, newSet);
+		if (erased)
+			atomic_store(&set_, newSet);
 
-      count_.store(set_->size(), memory_order_relaxed);
+		count_.store(set_->size(), memory_order_relaxed);
    }
 
    shared_ptr<set<T>> pop_all(void)
    {
-      auto newSet = make_shared<set<T>>();
-      unique_lock<mutex> lock(mu_);
+		auto newSet = make_shared<set<T>>();
+		unique_lock<mutex> lock(mu_);
 
-      auto retSet = atomic_load(&set_);
-      atomic_store(&set_, newSet);
-      count_.store(set_->size(), memory_order_relaxed);
+		auto retSet = atomic_load(&set_);
+		atomic_store(&set_, newSet);
+		count_.store(set_->size(), memory_order_relaxed);
 
-      return retSet;
-   }
+		return retSet;
+	}
 
-   shared_ptr<set<T>> get(void) const
-   {
-      auto retSet = atomic_load(&set_);
-      return retSet;
+	shared_ptr<set<T>> get(void) const
+	{
+		auto retSet = atomic_load(&set_);
+		return retSet;
    }
 
    void clear(void)
    {
-      auto newSet = make_shared<set<T>>();
-      unique_lock<mutex> lock(mu_);
+		auto newSet = make_shared<set<T>>();
+		unique_lock<mutex> lock(mu_);
 
-      atomic_store(&set_, newSet);
-      count_.store(0, memory_order_relaxed);
+		atomic_store(&set_, newSet);
+		count_.store(0, memory_order_relaxed);
    }
 
    size_t size(void) const
    {
-      return count_.load(memory_order_relaxed);
+		return count_.load(memory_order_relaxed);
    }
 };
-
-
-////////////////////////////////////////////////////////////////////////////////
-template <typename T> class TimedStack : public Stack<T>
-{
-   /***
-   get() blocks as long as the container is empty
-   ***/
-
-private:
-   atomic<int> waiting_;
-   atomic<bool> terminate_;
-
-public:
-   TimedStack() : Stack<T>()
-   {
-      terminate_.store(false, memory_order_relaxed);
-      waiting_.store(0, memory_order_relaxed);
-   }
-
-   T pop_front(chrono::milliseconds timeout = chrono::milliseconds(600000))
-   {
-      //block until timeout expires or data is available
-      //return data or throw IsEmpty or StackTimedOutException
-
-      waiting_.fetch_add(1, memory_order_relaxed);
-      try
-      {
-         while (1)
-         {
-            auto terminate = terminate_.load(memory_order_relaxed);
-            if (terminate)
-               throw StopBlockingLoop();
-
-            //try to pop_front
-            try
-            {
-               auto&& retval = Stack<T>::pop_front();
-               waiting_.fetch_sub(1, memory_order_relaxed);
-               return move(retval);
-            }
-            catch (IsEmpty&)
-            {
-            }
-
-            //if there are no items, create promise, push to promise pile
-            auto fut = Stack<T>::get_future();
-
-            //try to grab data one more time before waiting on future
-            try
-            {
-               auto&& retval = Stack<T>::pop_front();
-               waiting_.fetch_sub(1, memory_order_relaxed);
-               return move(retval);
-            }
-            catch (IsEmpty&)
-            {
-            }
-
-            //TODO: figure out time left if we break before the timeout
-            //but reenter the loop
-            
-            auto before = chrono::high_resolution_clock::now();
-            auto status = fut.wait_for(timeout);
-
-            if (status == future_status::timeout) //future timed out
-               throw StackTimedOutException();
-
-            auto after = chrono::high_resolution_clock::now();
-            auto timediff = chrono::duration_cast<chrono::milliseconds>(after - before);
-            if (timediff <= timeout)
-               timeout -= timediff;
-            else
-               timeout = chrono::milliseconds(0);
-         }
-      }
-      catch (...)
-      {
-         //loop stopped unexpectedly
-         waiting_.fetch_sub(1, memory_order_relaxed);
-         rethrow_exception(current_exception());
-      }
-
-      return T();
-   }
-
-   vector<T> pop_all(chrono::seconds timeout = chrono::seconds(600))
-   {
-      vector<T> vecT;
-
-      vecT.push_back(move(pop_front(timeout)));
-      
-      try
-      {
-         while (1)
-            vecT.push_back(move(Stack<T>::pop_front()));
-      }
-      catch (IsEmpty&)
-      {}
-
-      return move(vecT);
-   }
-
-   void push_back(T&& obj)
-   {
-      Stack<T>::push_back(move(obj));
-
-      //pop promises
-      if (waiting_.load(memory_order_relaxed) > 0)
-         Stack<T>::pop_promise();
-   }
-
-   void terminate(exception_ptr exceptptr = nullptr)
-   {
-      if (exceptptr == nullptr)
-      {
-         try
-         {
-            throw(StopBlockingLoop());
-         }
-         catch (...)
-         {
-            exceptptr = current_exception();
-         }
-      }
-
-      Stack<T>::exceptPtr_ = exceptptr;
-
-      terminate_.store(true, memory_order_relaxed);
-      while (waiting_.load(memory_order_relaxed) > 0)
-         Stack<T>::pop_promise();
-   }
-
-   void reset(void)
-   {
-      Stack<T>::clear();
-
-      terminate_.store(false, memory_order_relaxed);
-   }
-
-   bool isValid(void) const
-   {
-      auto val = terminate_.load(memory_order_relaxed);
-      return !val;
-   }
-
-   int waiting(void) const
-   {
-      return waiting_.load(memory_order_relaxed);
-   }
-};
-
-////////////////////////////////////////////////////////////////////////////////
-template <typename T> class BlockingStack : public Stack<T>
-{
-   /***
-   get() blocks as long as the container is empty
-
-   terminate() halts all operations and returns on all waiting threads
-   completed() lets the container serve it's remaining entries before halting
-   ***/
-
-private:
-   atomic<int> waiting_;
-   atomic<bool> terminated_;
-   atomic<bool> completed_;
-   
-private:
-   shared_future<bool> get_future()
-   {
-      auto completed = completed_.load(memory_order_acquire);
-      if (completed)
-      {
-         if (Stack<T>::exceptPtr_ != nullptr)
-            rethrow_exception(Stack<T>::exceptPtr_);
-         else
-            throw StopBlockingLoop();
-      }
-
-      return move(Stack<T>::get_future());
-   }
-
-public:
-   BlockingStack() : Stack<T>()
-   {
-      terminated_.store(false, memory_order_relaxed);
-      completed_.store(false, memory_order_relaxed);
-      waiting_.store(0, memory_order_relaxed);
-   }
-
-   T pop_front(void)
-   {
-      //blocks as long as there is no data available in the chain.
-      //run in loop until we get data or a throw
-
-      waiting_.fetch_add(1, memory_order_acq_rel);
-
-      try
-      {
-         while (1)
-         {
-            auto terminate = terminated_.load(memory_order_acquire);
-            if (terminate)
-            {
-               if (Stack<T>::exceptPtr_ != nullptr)
-                  rethrow_exception(Stack<T>::exceptPtr_);
-
-               throw StopBlockingLoop();
-            }
-
-            //try to pop_front
-            try
-            {
-               auto&& retval = Stack<T>::pop_front(false);
-               waiting_.fetch_sub(1, memory_order_acq_rel);
-               return move(retval);
-            }
-            catch (IsEmpty&)
-            {}
-
-            //if there are no items, create promise, push to promise pile
-            auto fut = get_future();
-
-            try
-            {
-               auto&& retval = Stack<T>::pop_front(false);
-               waiting_.fetch_sub(1, memory_order_acq_rel);
-               return move(retval);
-            }
-            catch (IsEmpty&)
-            {
-               if(completed_.load(memory_order_acquire) || 
-                  terminated_.load(memory_order_acquire))
-	            throw StopBlockingLoop();
-            }
-
-            try
-            {
-               fut.get();
-            }
-            catch (future_error&)
-            {}
-         }
-      }
-      catch (...)
-      {
-         //loop stopped
-         waiting_.fetch_sub(1, memory_order_acq_rel);
-         rethrow_exception(current_exception());
-      }
-
-      //to shut up the compiler warning
-      return T();
-   }
-
-   void push_back(T&& obj)
-   {
-      auto completed = completed_.load(memory_order_acquire);
-      if (completed)
-         return;
-
-      Stack<T>::push_back(move(obj));
-      Stack<T>::pop_promise();
-   }
-
-   void terminate(exception_ptr exceptptr = nullptr)
-   {
-      if (exceptptr == nullptr)
-      {
-         try
-         {
-            throw StopBlockingLoop();
-         }
-         catch (...)
-         {
-            exceptptr = current_exception();
-         }
-      }
-
-      Stack<T>::exceptPtr_ = exceptptr;
-      terminated_.store(true, memory_order_release);
-      completed_.store(true, memory_order_release);
-
-      //while (waiting_.load(memory_order_acquire) > 0)
-         Stack<T>::pop_promise();
-   }
-
-   void clear(void)
-   {
-      completed();
-
-      Stack<T>::clear();
-
-      terminated_.store(false, memory_order_relaxed);
-      completed_.store(false, memory_order_relaxed);
-   }
-
-   void completed(exception_ptr exceptptr = nullptr)
-   {
-      if (exceptptr == nullptr)
-      {
-         try
-         {
-            throw StopBlockingLoop();
-         }
-         catch (...)
-         {
-            exceptptr = current_exception();
-         }
-      }
-
-      Stack<T>::exceptPtr_ = exceptptr;
-      completed_.store(true, memory_order_release);
-
-      //while (waiting_.load(memory_order_acquire) > 0)
-         Stack<T>::pop_promise();
-   }
-
-   int waiting(void) const
-   {
-      return waiting_.load(memory_order_relaxed);
-   }
-};
-
-
 
 #endif

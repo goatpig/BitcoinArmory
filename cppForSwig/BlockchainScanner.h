@@ -115,9 +115,9 @@ private:
 
    mutex resolverMutex_;
 
-   BlockingStack<unique_ptr<ParserBatch>> outputQueue_;
-   BlockingStack<unique_ptr<ParserBatch>> inputQueue_;
-   BlockingStack<unique_ptr<ParserBatch>> commitQueue_;
+   BlockingQueue<unique_ptr<ParserBatch>> outputQueue_;
+   BlockingQueue<unique_ptr<ParserBatch>> inputQueue_;
+   BlockingQueue<unique_ptr<ParserBatch>> commitQueue_;
 
    atomic<unsigned> completedBatches_;
 

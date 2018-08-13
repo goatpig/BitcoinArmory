@@ -2132,6 +2132,7 @@ public:
 
    static BinaryData scrAddrToSegWitAddress(const BinaryData& scrAddr);
    static BinaryData segWitAddressToScrAddr(const BinaryData& swAddr);
+   static int get_varint_len(const int64_t& value);
 };
    
 static inline void suppressUnusedFunctionWarning()

@@ -65,6 +65,7 @@
 #include <mutex>
 #include <memory>
 #include <chrono>
+#include <atomic>
 #include "OS_TranslatePath.h"
 
 #define FILEANDLINE "(" << __FILE__ << ":" << __LINE__ << ") "
@@ -226,7 +227,7 @@ public:
    void FlushStreams(void) {}
 };
 
-
+////////////////////////////////////////////////////////////////////////////////
 class Log
 {
 public:
@@ -234,27 +235,33 @@ public:
 
    static Log & GetInstance(const char * filename=nullptr)
    {
-      static Log* theOneLog = nullptr;
-      if (theOneLog == nullptr || filename != nullptr)
+      while (true)
       {
-         // Close and delete any existing Log object
-         if (theOneLog != nullptr)
-         {
-            theOneLog->ds_.close();
-            delete theOneLog;
-         }
-   
+         //lock free check and return if instance is valid
+         auto logPtr = theOneLog_.load(memory_order_acquire);
+         if (logPtr != nullptr)
+            return *logPtr;
+
+         //lock and instantiate
+         unique_lock<mutex> lock(mu_, defer_lock);
+         if (!lock.try_lock())
+            continue;
+    
          // Create a Log object
-         theOneLog = new Log;
-   
-         // Open the filestream if it's open
+         Log* newLogPtr = new Log;
+    
+         // Open the filestream if available
          if (filename != nullptr)
          {
-            theOneLog->ds_.setLogFile(string(filename));
-            theOneLog->isInitialized_ = true;
+            newLogPtr->ds_.setLogFile(string(filename));
+            newLogPtr->isInitialized_ = true;
          }
+
+         theOneLog_.store(newLogPtr, memory_order_release);
+         lock.unlock();
+
+         return *newLogPtr;
       }
-      return *theOneLog;
    }
 
    ~Log(void)
@@ -305,6 +312,10 @@ protected:
 private:
     Log(const Log&);
     Log& operator =(const Log&);
+    
+private:
+    static atomic<Log*> theOneLog_;
+    static mutex mu_;
 
 };
 
@@ -337,7 +348,6 @@ public:
 class LoggerObj
 {
 private:
-   static mutex mu_;
    StreamBuffer buffer_;
 
 public:
@@ -356,15 +366,12 @@ public:
       //terminate buffer with newline
       buffer_ << "\n";
 
-      //process wide lock
-      unique_lock<mutex> lock(mu_);
-
       //push buffer to log stream
       LogStream & lg = Log::GetInstance().Get(logLevel_);
       lg << buffer_.str();
 
       //flush streams
-      Log::GetInstance().FlushStreams();
+      //Log::GetInstance().FlushStreams();
    }
 
 private:

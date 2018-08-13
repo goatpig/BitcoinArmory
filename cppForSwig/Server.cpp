@@ -407,6 +407,9 @@ int WebSocketServer::callback(
          }
          catch (IsEmpty&)
          {
+            auto val = iter->second.count_->load(memory_order_relaxed);
+            if(val != 0)
+               LOGWARN << "!!!! out of server write loop with pending message: " << val;
             break;
          }
       }
@@ -427,6 +430,8 @@ int WebSocketServer::callback(
             " bytes, sent " << m << " bytes";
       }
 
+      if (iter->second.currentMsg_.isDone())
+         iter->second.count_->fetch_sub(1, memory_order_relaxed);
       /***
       In case several threads are trying to write to the same socket, it's
       possible their calls to callback_on_writeable may overlap, resulting 
@@ -492,14 +497,19 @@ void WebSocketServer::start(BlockDataManagerThread* bdmT, bool async)
 ///////////////////////////////////////////////////////////////////////////////
 void WebSocketServer::shutdown()
 {
-   unique_lock<mutex> lock(mu_);
-
+   unique_lock<mutex> lock(mu_, defer_lock);
+   if (!lock.try_lock())
+      return;
+   
    auto ptr = instance_.load(memory_order_relaxed);
    if (ptr == nullptr)
       return;
 
    auto instance = getInstance();
+   if (instance->run_.load(memory_order_relaxed) == 0)
+      return;
 
+   instance->clients_->shutdown();
    instance->run_.store(0, memory_order_relaxed);
    instance->packetQueue_.terminate();
 
@@ -512,13 +522,17 @@ void WebSocketServer::shutdown()
    }
 
    instance->threads_.clear();
-   instance->clients_->shutdown();
-
    DatabaseContainer_Sharded::clearThreadShardTx(idVec);
 
    instance_.store(nullptr, memory_order_relaxed);
    delete instance;
-   shutdownPromise_.set_value(true);
+   
+   try
+   {
+      shutdownPromise_.set_value(true);
+   }
+   catch (future_error& e)
+   {}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -567,9 +581,16 @@ void WebSocketServer::webSocketService()
       throw LWS_Error("failed to create vhost");
 
    run_.store(1, memory_order_relaxed);
+   try
+   {
    while (run_.load(memory_order_relaxed) != 0 && n >= 0)
    {
       n = lws_service(context, 50);
+   }
+   }
+   catch(exception& e)
+   {
+      LOGERR << "server lws service choked: " << e.what();
    }
 
    LOGINFO << "cleaning up lws server";
@@ -637,8 +658,8 @@ void WebSocketServer::commandThread()
          auto bdv_payload = make_shared<BDV_Payload>();
          bdv_payload->bdvPtr_ = bdvPtr;
          bdv_payload->packet_ = packetPtr;
-         bdv_payload->packetID_ = bdvPtr->getNextPacketId();
-
+         bdv_payload->packetID_ = bdvPtr->getNextPacketId(); 
+  
          //queue for clients thread pool to process
          clients_->queuePayload(bdv_payload);
       }
@@ -701,6 +722,7 @@ void WebSocketServer::write(const uint64_t& id, const uint32_t& msgid,
       return;
 
    wsi_iter->second.stack_->push_back(move(ws_msg));
+   wsi_iter->second.count_->fetch_add(1, memory_order_relaxed);
 
    //call write callback
    lws_callback_on_writable(wsi_iter->second.wsiPtr_);

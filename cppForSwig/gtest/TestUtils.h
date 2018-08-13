@@ -166,7 +166,7 @@ namespace DBTestUtils
       };
 
    private:
-      BlockingStack<BdmNotif> actionStack_;
+      BlockingQueue<unique_ptr<BdmNotif>> actionStack_;
 
    public:
       UTCallback(const SwigClient::BlockDataViewer& bdv) :
@@ -175,11 +175,15 @@ namespace DBTestUtils
 
       void run(BDMAction action, void* ptr, int block = 0)
       {
-         BdmNotif notif;
-         notif.action_ = action;
+         auto notif = make_unique<BdmNotif>();
+         notif->action_ = action;
+
          if (action == BDMAction_Refresh)
          {
-            notif.idVec_ = *((vector<BinaryData>*)ptr);
+            notif->idVec_ = *((vector<BinaryData>*)ptr);
+
+            for(auto& id : notif->idVec_)
+               string str(id.toCharPtr(), id.getSize());
          }
          else if (action == BDMAction_ZC)
          {
@@ -189,7 +193,7 @@ namespace DBTestUtils
             auto leVecPtr = (vector<::ClientClasses::LedgerEntry>*)ptr;
             for (auto& le : *leVecPtr)
             {
-               notif.idVec_.push_back(le.getTxHash().toHexStr());
+               notif->idVec_.push_back(le.getTxHash().toHexStr());
             }
          }
 
@@ -205,22 +209,23 @@ namespace DBTestUtils
          BinaryDataRef idRef; idRef.setRef(id);
          while (1)
          {
-            auto action = actionStack_.pop_front();
-            if (action.action_ == signal)
-            {
-               if (id.size() > 0)
-               {
-                  for (auto& id : action.idVec_)
-                  {
-                     if (id == idRef)
-                        return;
-                  }
-               }
-               else
-               {
-                  return;
-               }
-            }
+            auto&& action = actionStack_.pop_front();
+            if (action->action_ == signal)
+	    {
+	       if (id.size() > 0)
+	       {
+	          for (auto& id : action->idVec_)
+	          {
+	             if (id == idRef)
+	                return;
+	          }
+	       }
+	       else
+	       {
+	          return;
+	       }
+	    }
+
          }
       }
 
@@ -239,15 +244,16 @@ namespace DBTestUtils
             if (count == ids.size())
                break;
 
-            auto action = actionStack_.pop_front();
-            if (action.action_ == signal)
+            auto queuesize = actionStack_.count();
+            auto&& action = actionStack_.pop_front();
+            if (action->action_ == signal)
             {
-               for (auto& id : action.idVec_)
+               for (auto& id : action->idVec_)
                {
                   if (bdrVec.find(id) != bdrVec.end())
                      ++count;
                }
-            }
+            }         
          }
       }
    };

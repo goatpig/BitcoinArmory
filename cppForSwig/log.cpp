@@ -8,4 +8,5 @@
 
 #include "log.h"
 
-mutex LoggerObj::mu_;
+atomic<Log*> Log::theOneLog_ = { nullptr };
+mutex Log::mu_;

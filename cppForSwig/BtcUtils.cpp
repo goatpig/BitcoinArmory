@@ -485,3 +485,16 @@ BinaryData BtcUtils::segWitAddressToScrAddr(const BinaryData& swAddr)
    BinaryData scrAddr(&result.second[0], result.second.size());
    return scrAddr;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+int BtcUtils::get_varint_len(const int64_t& value)
+{
+   if (value < 0xFD)
+      return 1;
+   else if (value <= 0xFFFF)
+      return 3;
+   else if (value <= 0xFFFFFFFF)
+      return 5;
+
+   return 9;
+}

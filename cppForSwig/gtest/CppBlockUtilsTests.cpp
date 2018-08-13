@@ -12,7 +12,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 #include "TestUtils.h"
 
-
+/*
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -5521,7 +5521,7 @@ TEST_F(BlockDir, BlockFileSplitUpdate)
    delete clients;
    delete BDMt;
 }
-
+*/
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -5638,7 +5638,7 @@ protected:
    BinaryData LB1ID;
    BinaryData LB2ID;
 };
-
+/*
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(BlockUtilsBare, Load5Blocks)
 {
@@ -8088,7 +8088,6 @@ TEST_F(BlockUtilsBare, WebSocketStack)
    EXPECT_EQ(lb2Balances[0], 30 * COIN);
 
    //cleanup
-   bdvObj.unregisterFromDB();
    bdvObj.shutdown(config.cookie_);
 
    WebSocketServer::waitOnShutdown();
@@ -8269,7 +8268,6 @@ TEST_F(BlockUtilsBare, WebSocketStack_ManyZC)
    }
 
    //cleanup
-   bdvObj.unregisterFromDB();
    bdvObj.shutdown(config.cookie_);
 
    WebSocketServer::waitOnShutdown();
@@ -8277,7 +8275,7 @@ TEST_F(BlockUtilsBare, WebSocketStack_ManyZC)
    delete theBDMt_;
    theBDMt_ = nullptr;
 }
-
+*/
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
 {
@@ -8290,6 +8288,7 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
    clients_->exitRequestLoop();
    clients_->shutdown();
 
+   auto&& firstHash = READHEX("b6b6f145742a9072fd85f96772e63a00eb4101709aa34ec5dd59e8fc904191a7");
    delete clients_;
    delete theBDMt_;
    clients_ = nullptr;
@@ -8297,6 +8296,25 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
    theBDMt_ = new BlockDataManagerThread(config);
    WebSocketServer::start(theBDMt_, true);
 
+   auto createNAddresses = [](unsigned count)->vector<BinaryData>
+   {
+      vector<BinaryData> result;
+
+      for (unsigned i = 0; i < count; i++)
+      {
+         BinaryWriter bw;
+         bw.put_uint8_t(SCRIPT_PREFIX_HASH160);
+
+         auto&& addrData = SecureBinaryData().GenerateRandom(20);
+         bw.put_BinaryData(addrData);
+
+         result.push_back(bw.getData());
+      }
+
+      return result;
+   };
+
+      auto&& scrAddrVec = createNAddresses(2000);
    theBDMt_->start(config.initMode_);
 
    {
@@ -8304,25 +8322,6 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
          "127.0.0.1", "7681", SocketType::SocketWS);
       bdvObj.registerWithDB(config.magicBytes_);
 
-      auto createNAddresses = [](unsigned count)->vector<BinaryData>
-      {
-         vector<BinaryData> result;
-
-         for (unsigned i = 0; i < count; i++)
-         {
-            BinaryWriter bw;
-            bw.put_uint8_t(SCRIPT_PREFIX_HASH160);
-
-            auto&& addrData = SecureBinaryData().GenerateRandom(20);
-            bw.put_BinaryData(addrData);
-
-            result.push_back(bw.getData());
-         }
-
-         return result;
-      };
-
-      auto&& scrAddrVec = createNAddresses(2000);
       scrAddrVec.push_back(TestChain::scrAddrA);
       scrAddrVec.push_back(TestChain::scrAddrB);
       scrAddrVec.push_back(TestChain::scrAddrC);
@@ -8439,36 +8438,13 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
       bdvObj.unregisterFromDB();
    }
 
-   for (int i = 0; i < 10; i++)
+   for (int i = 0; i < 10000; i++)
    {
+      cout << ".iter " << i << endl;
+
       auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
          "127.0.0.1", "7681", SocketType::SocketWS);
       bdvObj.registerWithDB(config.magicBytes_);
-
-      auto createNAddresses = [](unsigned count)->vector<BinaryData>
-      {
-         vector<BinaryData> result;
-
-         for (unsigned i = 0; i < count; i++)
-         {
-            BinaryWriter bw;
-            bw.put_uint8_t(SCRIPT_PREFIX_HASH160);
-
-            auto&& addrData = SecureBinaryData().GenerateRandom(20);
-            bw.put_BinaryData(addrData);
-
-            result.push_back(bw.getData());
-         }
-
-         return result;
-      };
-
-      //auto&& scrAddrVec = createNAddresses(2000);
-      vector<BinaryData> scrAddrVec;
-      scrAddrVec.push_back(TestChain::scrAddrA);
-      scrAddrVec.push_back(TestChain::scrAddrB);
-      scrAddrVec.push_back(TestChain::scrAddrC);
-      scrAddrVec.push_back(TestChain::scrAddrE);
 
       const vector<BinaryData> lb1ScrAddrs
       {
@@ -8537,6 +8513,16 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
       auto lb2Balances = lb2.getBalancesAndCount(5);
       EXPECT_EQ(lb2Balances[0], 30 * COIN);
 
+      //grab main ledgers
+      auto&& delegate = bdvObj.getLedgerDelegateForWallets();
+      auto&& ledgers = delegate.getHistoryPage(0);
+      auto& firstEntry = ledgers[0];
+      auto txHash = firstEntry.getTxHash();
+      EXPECT_EQ(firstHash, txHash);
+      
+      auto&& tx = bdvObj.getTxByHash(firstHash);
+      EXPECT_EQ(tx.getThisHash(), firstHash);
+
       bdvObj.unregisterFromDB();
    }
 
@@ -8548,8 +8534,7 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
    delete theBDMt_;
    theBDMt_ = nullptr;
 }
-
-
+/*
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(BlockUtilsBare, Replace_ZC_Test)
 {
@@ -10197,7 +10182,6 @@ TEST_F(BlockUtilsBare, GrabAddrLedger_PostReg)
    EXPECT_FALSE(ledgerDelegate.getHistoryPage(0).empty());
 
    //cleanup
-   bdvObj.unregisterFromDB();
    bdvObj.shutdown(config.cookie_);
    WebSocketServer::waitOnShutdown();
 
@@ -10398,7 +10382,7 @@ TEST_F(TestCryptoECDSA, VerifyPubKeyValidity)
    EXPECT_TRUE(CryptoECDSA().VerifyPublicKeyValid(uncompPointPub1));
    EXPECT_TRUE(CryptoECDSA().VerifyPublicKeyValid(uncompPointPub2));
 }
-
+*/
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 // Now actually execute all the tests

@@ -56,6 +56,7 @@ struct BDV_PartialMessage
    bool isReady(void) const { return partialMessage_.isReady(); }
    bool getMessage(shared_ptr<::google::protobuf::Message>);
    void reset(void);
+   size_t topId(void) const;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -76,7 +77,7 @@ class LongPoll : public Callback
 private:
    mutex mu_;
    atomic<unsigned> count_;
-   TimedStack<shared_ptr<::Codec_BDVCommand::BDVCallback>> notificationStack_;
+   TimedQueue<shared_ptr<::Codec_BDVCommand::BDVCallback>> notificationStack_;
 
    function<unsigned(void)> isReady_;
 
@@ -179,7 +180,7 @@ private:
 
    map<size_t, shared_ptr<BDV_Payload>> packetMap_;
    BDV_PartialMessage currentMessage_;
-   size_t nextPacketId_ = 0;
+   atomic<size_t> nextPacketId_ = {0};
    shared_ptr<BDV_Payload> packetToReinject_ = nullptr;
 
 private:
@@ -222,7 +223,7 @@ public:
    bool processPayload(shared_ptr<BDV_Payload>&, 
       shared_ptr<::google::protobuf::Message>&);
 
-   size_t getNextPacketId(void) { return nextPacketId_++; }
+   size_t getNextPacketId(void) { return nextPacketId_.fetch_add(1, memory_order_relaxed); }
 };
 
 class Clients;
@@ -251,7 +252,7 @@ class Clients
 
 private:
    TransactionalMap<string, shared_ptr<BDV_Server_Object>> BDVs_;
-   mutable BlockingStack<bool> gcCommands_;
+   mutable BlockingQueue<bool> gcCommands_;
    BlockDataManagerThread* bdmT_ = nullptr;
 
    function<void(void)> shutdownCallback_;
@@ -260,9 +261,11 @@ private:
 
    vector<thread> controlThreads_;
 
-   mutable BlockingStack<shared_ptr<BDV_Notification>> outerBDVNotifStack_;
-   BlockingStack<shared_ptr<BDV_Notification_Packet>> innerBDVNotifStack_;
-   BlockingStack<shared_ptr<BDV_Payload>> packetQueue_;
+   mutable BlockingQueue<shared_ptr<BDV_Notification>> outerBDVNotifStack_;
+   BlockingQueue<shared_ptr<BDV_Notification_Packet>> innerBDVNotifStack_;
+   BlockingQueue<shared_ptr<BDV_Payload>> packetQueue_;
+
+   mutex shutdownMutex_;
 
 private:
    void notificationThread(void) const;
@@ -297,7 +300,7 @@ public:
    void exitRequestLoop(void);
    
    void queuePayload(shared_ptr<BDV_Payload>& payload)
-   {
+   {  
       packetQueue_.push_back(move(payload));
    }
 
