@@ -17,3 +17,7 @@ privKey = SecureBinaryData().GenerateRandom(32)
 print('Private key: ', privKey.toHexStr())
 pubKey = CryptoECDSA().ComputePublicKey(privKey)
 print('Public key:  ', CryptoECDSA().CompressPoint(pubKey).toHexStr())
+
+# Use the lines below if you want to generate the key from a pre-determined key
+# privKeyStr = "000102030405060708090a0b0c0d0e0f000102030405060708090a0b0c0d0e0f"
+# privKey = SecureBinaryData(hexstr.decode("hex"))

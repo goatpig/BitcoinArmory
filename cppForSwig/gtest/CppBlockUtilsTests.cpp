@@ -175,6 +175,7 @@ protected:
       authproposeData = READHEX(authpropose_hexstr);
       authchallenge2Data = READHEX(authchallenge2_hexstr);
       authreply2Data = READHEX(authreply2_hexstr);
+      cli150Fingerprint = "3APoaDH59ANeNt6WbGNksbcWSpdUsZhCqrANS";
    }
 
    BinaryData prvKeyClientIn;
@@ -212,6 +213,12 @@ protected:
    BinaryData cliInMsg3;
    BinaryData srvOutMsg4;
    BinaryData cliInMsg4;
+   BinaryData authchallenge1Data;
+   BinaryData authreply1Data;
+   BinaryData authproposeData;
+   BinaryData authchallenge2Data;
+   BinaryData authreply2Data;
+   string cli150Fingerprint;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -472,7 +479,7 @@ TEST_F(BIP150_151Test, checkData_150_151)
    // so that two separate key sets can be tested. There's no real reason to
    // support this in Armory right now, though, and it'd be a lot of work. For
    // now, just cheat and have two "separate" systems with the same input files.
-   startupBIP150CTX(4, OS_TranslatePath("./input_files/"));
+   startupBIP150CTX(4, OS_TranslatePath("./input_files/bip150v0_cli1/"));
 
    btc_key prvKeyCliIn;
    btc_key prvKeyCliOut;
@@ -530,6 +537,10 @@ TEST_F(BIP150_151Test, checkData_150_151)
                                  true);
    EXPECT_EQ(0, s8);
    EXPECT_TRUE(cliCon.connectionComplete());
+
+   // Get the fingerprint.
+   string curFng = cliCon.getBIP150Fingerprint();
+   EXPECT_EQ(cli150Fingerprint, curFng);
 
    ////////////////// Start the BIP 150 process for each side. /////////////////
    BinaryData authchallengeBuf(BIP151PRVKEYSIZE);
@@ -609,10 +620,22 @@ TEST_F(BIP150_151Test, checkData_150_151)
    EXPECT_EQ(0, b10);
    EXPECT_EQ(BIP150State::SUCCESS, srvCon.getBIP150State());
 
-// TODO - Add some 151 message transfers to prove it still works
-// TODO - Check cases where messages are received out-of-order.
-// TODO - Slight rearchitecture of input files - Set up such that a second key set can be used by the server
+   // See what happens when messages are received out of order.
+   // INACTIVE -> CHALLENGE1  (Client)
+   int b11 = cliCon.getAuthchallengeData(authchallengeBuf.getPtr(),
+                                        authchallengeBuf.getSize(),
+                                        "1.2.3.4:8333",
+                                        true,
+                                        true);
+   EXPECT_EQ(0, b11);
+   EXPECT_EQ(BIP150State::CHALLENGE1, cliCon.getBIP150State());
+   EXPECT_EQ(authchallenge1Data, authchallengeBuf);
 
+   // CHALLENGE1 -> PROPOSE  (Client)
+   int b12 = cliCon.getAuthproposeData(authproposeBuf.getPtr(),
+                                       authproposeBuf.getSize());
+   EXPECT_EQ(-1, b12);
+   EXPECT_EQ(BIP150State::ERROR, cliCon.getBIP150State());
 }
 
 // Test handshake failure cases. All cases will fail eventually.

@@ -62,7 +62,7 @@ void hkdf_sha256(uint8_t *result, const size_t &resultSize,
    // Loop as needed until you have enough output keying material.
    // NB: There appear to be subtle memory allocation gotchas in the HMAC code.
    // If you try to make a buffer serve double duty (output that writes over
-   // input), Armory crashes due to C memory deallocation errors. Circumvent
+   // input), the code crashes due to C memory deallocation errors. Circumvent
    // with dedicated buffers.
    for(unsigned int i = 1; i < numSteps; ++i)
    {

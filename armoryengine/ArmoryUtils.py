@@ -112,7 +112,7 @@ parser.add_option("--mtdebug",         dest="mtdebug",     default=False,     ac
 parser.add_option("--skip-online-check",dest="forceOnline", default=False,   action="store_true", help="Go into online mode, even if internet connection isn't detected")
 parser.add_option("--tor",             dest="useTorSettings", default=False, action="store_true", help="Enable common settings for when Armory connects through Tor")
 parser.add_option("--bip150",          dest="bip150Used",  default=False,     action="store_true", help="Enable BIP 150 and BIP 151 support")
-parser.add_option("--bip151",          dest="bip15Used",  default=False,     action="store_true", help="Enable BIP 151 support")
+parser.add_option("--bip151",          dest="bip151Used",  default=False,     action="store_true", help="Enable BIP 151 support")
 parser.add_option("--keypool",         dest="keypool",     default=100, type="int",                help="Default number of addresses to lookahead in Armory wallets")
 parser.add_option("--redownload",      dest="redownload",  default=False,     action="store_true", help="Delete Bitcoin Core/bitcoind databases; redownload")
 parser.add_option("--rebuild",         dest="rebuild",     default=False,     action="store_true", help="Rebuild blockchain database and rescan")

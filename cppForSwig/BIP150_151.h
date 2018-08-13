@@ -6,11 +6,15 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-// A BIP 151 implementation for Armory. As of May 2018, BIP 151 isn't in Bitcoin
-// Core. The immediate purpose of this code is to implement secure data transfer
-// between an Armory server and a remote Armory client (i.e., the server talking
-// to Core in an unencrypted (for now?) manner and feeding the (encrypted) data
-// to the client).
+// A BIP 150/151 implementation for Armory. As of Aug. 2018, BIP 150/151 isn't
+// in Bitcoin Core. The immediate purpose of this code is to implement secure
+// data transfer between an Armory server and a remote Armory client (i.e., the
+// server talking to Core in an unencrypted (for now?) manner and feeding the
+// (encrypted) data to the client).
+//
+// NOTE: As of Aug. 2018, BIP 151 is set for rewriting, and possible replacement
+// by another BIP. The code in Armory is based on the BIP 151 spec as of July
+// 2018. The BIP 151 replacement may be coded later.
 //
 // NOTE: There is a very subtle implementation detail in BIP 151 that requires
 // attention. BIP 151 explicitly states that it uses ChaCha20Poly1305 as used in
@@ -26,6 +30,7 @@
 #ifndef BIP150_151_H
 #define BIP150_151_H
 
+#include <array>
 #include <cstdint>
 #include <unordered_set>
 #include <unordered_map>
@@ -59,7 +64,7 @@ enum class BIP150State : uint8_t {INACTIVE = 0x00,
                                   CHALLENGE2,
                                   REPLY2,
                                   SUCCESS,
-                                  ERROR};
+                                  ERR_STATE};
 
 // Global functions needed to deal with a global libsecp256k1 context.
 // libbtc doesn't export its libsecp256k1 context (which, by the way, is set up
@@ -73,7 +78,14 @@ void startupBIP151CTX();
 void shutdownBIP151CTX();
 
 // Global function used to load up the key DBs. CALL AFTER BIP 151 IS INITIALIZED.
-void startupBIP150CTX(const uint32_t& ipVer, const string& dataDir);
+void startupBIP150CTX(const uint32_t& ipVer, const std::string& dataDir);
+
+// Global variables.
+extern std::string bipDataDir_;
+extern std::unordered_set<std::string> authPeers_; // Compressed ECDSA key
+extern std::unordered_map<std::string, std::string> knownPeers_; // IP:Port/Com. key
+extern btc_pubkey pubIDKey_;
+extern uint32_t ipType;
 
 class BIP151Session
 {
@@ -240,7 +252,7 @@ public:
    const int getAuthproposeData(uint8_t* authproposeBuf,
                                 const size_t& authproposeBufSize);
    const BIP150State getBIP150State() const { return bip150SM_.getBIP150State(); }
-//   const void clearBIP150ErrorState() const { bip150SM_.clearErrorState(); }
+   const std::string getBIP150Fingerprint() { return bip150SM_.getBIP150Fingerprint(); }
 };
 
 // Class to use on BIP 151 encrypted messages. Contains the plaintext contents

@@ -8,7 +8,11 @@
 
 #include <cassert>
 #include <fstream>
+#ifdef WIN32
+#include <Ws2tcpip.h>
+#else
 #include <arpa/inet.h>
+#endif
 
 #include "hkdf.h"
 #include "btc/ecc.h"
@@ -26,8 +30,8 @@ secp256k1_context* secp256k1_ecdh_ctx = nullptr;
 
 // Miscellaneous global variables.
 std::string bipDataDir_ = "";
-unordered_set<std::string> authPeers_; // Compressed ECDSA key
-unordered_map<std::string, std::string> knownPeers_; // IP:Port/Com. key
+std::unordered_set<std::string> authPeers_; // Compressed ECDSA key
+std::unordered_map<std::string, std::string> knownPeers_; // IP:Port/Com. key
 btc_pubkey pubIDKey_;
 uint32_t ipType_ = 0;
 
@@ -1011,7 +1015,7 @@ const int BIP151Connection::processAuthpropose(const uint8_t* inMsg,
 // RET: -1 if failure, 0 if success, 1 if AUTHPROPOSE validation was a failure.
 const int BIP151Connection::getAuthchallengeData(uint8_t* authchallengeBuf,
                                                  const size_t& authchallengeBufSize,
-                                                 const string& targetIPPort,
+                                                 const std::string& targetIPPort,
                                                  const bool& requesterSent,
                                                  const bool& goodPropose)
 {
@@ -1253,12 +1257,12 @@ const size_t BIP151Message::messageSizeHint()
 //      dataDir - The directory that stores the relevant key material.
 // OUT: None
 // RET: N/A
-void startupBIP150CTX(const uint32_t& ipVer, const string& dataDir)
+void startupBIP150CTX(const uint32_t& ipVer, const std::string& dataDir)
 {
    ::bipDataDir_ = dataDir;
-   string idPubFilename;
-   string kuFilename;
-   string auFilename;
+   std::string idPubFilename;
+   std::string kuFilename;
+   std::string auFilename;
    ::ipType_ = ipVer;
    switch(::ipType_)
    {
@@ -1310,18 +1314,30 @@ void startupBIP150CTX(const uint32_t& ipVer, const string& dataDir)
       // --- Make sure the key is a compressed public key.
       // If an add fails, just keep going.
       std::array<uint8_t, 16> binaryIP; // Dummy buffer - Ignore
-      string rawIP = ipPort.substr(0, ipPort.rfind(':'));
+      std::string rawIP = ipPort.substr(0, ipPort.rfind(':'));
+#ifdef WIN32
+      if(ipVer == 4 && InetPton(AF_INET,
+                                rawIP.c_str(),
+                                binaryIP.data()) == 0)
+#else
       if(ipVer == 4 && inet_pton(AF_INET,
                                  rawIP.c_str(),
                                  binaryIP.data()) == 0)
+#endif
       {
          LOGERR << "BIP 150 - Attempted to add invalid key IP address " << ipPort
             << "to the known users DB. Armory will skip the entry.";
          continue;
       }
-      else if(ipVer == 6 && inet_pton(AF_INET6,
+#ifdef WIN32
+      else if(ipVer == 6 && InetPton(AF_INET6,
                                      rawIP.c_str(),
                                      binaryIP.data()) == 0)
+#else
+      else if(ipVer == 6 && inet_pton(AF_INET6,
+                                      rawIP.c_str(),
+                                      binaryIP.data()) == 0)
+#endif
       {
          LOGERR << "BIP 150 - Attempted to add invalid key IP address " << ipPort
             << "to the known users DB. Armory will skip the entry.";
@@ -1424,14 +1440,20 @@ void startupBIP150CTX(const uint32_t& ipVer, const string& dataDir)
                                 pubkeyBin.getPtr(),
                                 BIP151PUBKEYSIZE) != 1)
    {
-      LOGERR << "BIP 150 - Attempted to add invalid public ID key " << inLine
-         << "to the system. BIP 150 will not be activated.";
+      LOGERR << "BIP 150 - Attempted to add invalid public ID key to the "
+         << "system (invalid length). BIP 150 will not be activated.";
       return;
    }
 
-   // Save the ID public key.
+   // Save the ID public key and verify that it's valid.
    std::copy(pubkeyBin.getPtr(), pubkeyBin.getPtr() + 33, ::pubIDKey_.pubkey);
    ::pubIDKey_.compressed = true;
+   if(btc_pubkey_is_valid(&::pubIDKey_) == false)
+   {
+      LOGERR << "BIP 150 - Attempted to add invalid public ID key to the "
+         << "system (invalid value). BIP 150 will not be activated.";
+      return;
+   }
 }
 
 // Overridden constructor for a BIP 150 state machine session. Sets the internal
@@ -1445,7 +1467,7 @@ BIP150StateMachine::BIP150StateMachine(BIP151Session* incomingSes,
                                        BIP151Session* outgoingSes) :
      curState_(BIP150State::INACTIVE), inSes_(incomingSes), outSes_(outgoingSes)
 {
-   string prvIDFilename;
+   std::string prvIDFilename;
    switch(::ipType_)
    {
    case 4: // IPv4
@@ -1464,18 +1486,32 @@ BIP150StateMachine::BIP150StateMachine(BIP151Session* incomingSes,
 
    // id-key file format:
    // private-key-value
-   string absID = ::bipDataDir_ + prvIDFilename;
+   std::string absID = ::bipDataDir_ + prvIDFilename;
    std::ifstream idFile(absID);
    std::string inKey;
    std::getline(idFile, inKey);
    BinaryData prvKeyBin = READHEX(inKey);
    if(prvKeyBin.getSize() != 32)
    {
-      LOGERR << "BIP 150 - Attempted to add invalid private ID key " << inKey
-         << "to the system. BIP 150 will not be activated.";
+      LOGERR << "BIP 150 - Attempted to add invalid private ID key to the "
+         << "system (invalid length). BIP 150 will not be activated.";
       return;
    }
    std::copy(prvKeyBin.getPtr(), prvKeyBin.getPtr() + 32, prvIDKey.privkey);
+
+    // Validate the private key and confirm that it matches the public key.
+   if(btc_privkey_is_valid(&prvIDKey) == false)
+   {
+      LOGERR << "BIP 150 - Attempted to add invalid private ID key to the "
+         << "system (invalid value). BIP 150 will not be activated.";
+      return;
+   }
+   if(btc_privkey_verify_pubkey(&prvIDKey, &::pubIDKey_) == false)
+   {
+      LOGERR << "BIP 150 - Attempted to add invalid private ID key to the "
+         << "system (pub/pri mismatch). BIP 150 will not be activated.";
+      return;
+   }
 }
 
 // Function that gets AUTHCHALLENGE data for the state machine. Works for
@@ -1492,7 +1528,7 @@ BIP150StateMachine::BIP150StateMachine(BIP151Session* incomingSes,
 //      a failure.
 const int BIP150StateMachine::getAuthchallengeData(uint8_t* buf,
                                                    const size_t& bufSize,
-                                                   const string& targetIPPort,
+                                                   const std::string& targetIPPort,
                                                    const bool& requesterSent,
                                                    const bool& goodPropose)
 {
@@ -1875,7 +1911,7 @@ const int BIP150StateMachine::processAuthpropose(const BinaryData& inData)
    // Iterate through the authorized-users DB and attempt to replicate the
    // incoming hash.
    std::array<uint8_t, BIP151PRVKEYSIZE> proposeHash;
-   string validKey;
+   std::string validKey;
    for(const auto& checkKey: ::authPeers_)
    {
       BinaryData checkKeyBin = READHEX(checkKey);
@@ -1928,14 +1964,15 @@ const std::string BIP150StateMachine::getBIP150Fingerprint()
 
    // Build the Base58 data but don't add the SHA-256 tag. libbtc handles it.
    std::array<uint8_t, 23> addrData{};
-   std::array<char, 36> b58IDAddr;
+   std::array<char, 50> b58IDAddr; // 38 is safe but leave a safety buffer.
    addrData[0] = 0x0f;
    addrData[1] = 0xff;
    addrData[2] = 0x01;
    std::copy(std::begin(hashStep2), std::end(hashStep2), &addrData[3]);
-   btc_base58_encode_check(addrData.data(), addrData.size(), b58IDAddr.data(), b58IDAddr.size());
+   int outLen = btc_base58_encode_check(addrData.data(), addrData.size(),
+                                        b58IDAddr.data(), b58IDAddr.size());
 
-   std::string retFingerprint(b58IDAddr.data(), b58IDAddr.size());
+   std::string retFingerprint(b58IDAddr.data(), outLen-1);
    return retFingerprint;
 }
 
@@ -2021,7 +2058,7 @@ void BIP150StateMachine::resetSM()
 // RET: None
 const int BIP150StateMachine::errorSM(const int& outVal)
 {
-   curState_ = BIP150State::ERROR;
+   curState_ = BIP150State::ERR_STATE;
    std::memset(chosenAuthPeerKey.pubkey, 0, BIP151PUBKEYSIZE);
    chosenAuthPeerKey.compressed = false;
    std::memset(chosenChallengeKey.pubkey, 0, BIP151PUBKEYSIZE);
