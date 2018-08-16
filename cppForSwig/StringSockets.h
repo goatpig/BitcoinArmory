@@ -32,7 +32,7 @@ public:
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-class HttpSocket : public PersistentSocket
+class HttpSocket : public SimpleSocket
 {
 private:
    struct PacketData
@@ -101,7 +101,7 @@ private:
 
 protected:
    void addReadPayload(shared_ptr<Socket_ReadPayload>);
-   vector<uint8_t> getHttpPayload(const char*, size_t);
+   string getHttpPayload(const char*, size_t);
 
 public:
    HttpSocket(const string& addr, const string& port);

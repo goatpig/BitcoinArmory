@@ -30,22 +30,14 @@ void WebSocketClient::pushPayload(
    unique_ptr<Socket_WritePayload> write_payload,
    shared_ptr<Socket_ReadPayload> read_payload)
 {
-   unsigned id;
-   do
-   {
-      id = rand();
-   } while (id == UINT32_MAX || id == WEBSOCKET_CALLBACK_ID);
-
+   unsigned id = requestID_.fetch_add(1, memory_order_relaxed);
    if (read_payload != nullptr)
    {
       //create response object
       auto response = make_shared<WriteAndReadPacket>(id, read_payload);
 
       //set response id
-      readPackets_.insert(make_pair(response->id_, move(response)));   
-   }
-   else
-   {
+      readPackets_.insert(make_pair(id, move(response)));   
    }
 
    vector<uint8_t> data;

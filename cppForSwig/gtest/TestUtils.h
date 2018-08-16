@@ -173,6 +173,10 @@ namespace DBTestUtils
          RemoteCallback(bdv.getRemoteCallbackSetupStruct())
       {}
 
+      UTCallback(const AsyncClient::BlockDataViewer& bdv) :
+         RemoteCallback(bdv.getRemoteCallbackSetupStruct())
+      {}      
+
       void run(BDMAction action, void* ptr, int block = 0)
       {
          auto notif = make_unique<BdmNotif>();

@@ -2894,6 +2894,312 @@ TEST_F(BlockUtilsWithWalletTest, ZC_InOut_SameBlock)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
+{
+   BlockDataManagerConfig::setServiceType(SERVICE_WEBSOCKET);
+
+   //
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+
+   //run clients from websocketserver object instead
+   clients_->exitRequestLoop();
+   clients_->shutdown();
+
+   auto&& firstHash = READHEX("b6b6f145742a9072fd85f96772e63a00eb4101709aa34ec5dd59e8fc904191a7");
+   delete clients_;
+   delete theBDMt_;
+   clients_ = nullptr;
+
+   theBDMt_ = new BlockDataManagerThread(config);
+   WebSocketServer::start(theBDMt_, true);
+
+   auto createNAddresses = [](unsigned count)->vector<BinaryData>
+   {
+      vector<BinaryData> result;
+
+      for (unsigned i = 0; i < count; i++)
+      {
+         BinaryWriter bw;
+         bw.put_uint8_t(SCRIPT_PREFIX_HASH160);
+
+         auto&& addrData = SecureBinaryData().GenerateRandom(20);
+         bw.put_BinaryData(addrData);
+
+         result.push_back(bw.getData());
+      }
+
+      return result;
+   };
+
+   auto&& scrAddrVec = createNAddresses(2000);
+   scrAddrVec.push_back(TestChain::scrAddrA);
+   scrAddrVec.push_back(TestChain::scrAddrB);
+   scrAddrVec.push_back(TestChain::scrAddrC);
+   scrAddrVec.push_back(TestChain::scrAddrE);
+
+   theBDMt_->start(config.initMode_);
+
+   {
+      auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
+         "127.0.0.1", "7681", SocketType::SocketWS);
+      bdvObj.registerWithDB(config.magicBytes_);
+      DBTestUtils::UTCallback pCallback(bdvObj);
+      
+      auto&& wallet1 = bdvObj.instantiateWallet("wallet1");
+      vector<string> walletRegIDs;
+      walletRegIDs.push_back(
+         wallet1.registerAddresses(scrAddrVec, false));
+
+      //wait on registration ack
+      pCallback.waitOnManySignals(BDMAction_Refresh, walletRegIDs);
+
+      //go online
+      bdvObj.goOnline();
+      pCallback.waitOnSignal(BDMAction_Ready);
+
+      auto delegate = move(bdvObj.getLedgerDelegateForWallets());
+      auto ledgers = move(delegate.getHistoryPage(0));
+
+      bdvObj.unregisterFromDB();
+   }
+
+   auto request_lambda = [&](void)->void
+   {
+      auto&& bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
+         "127.0.0.1", "7681", SocketType::SocketWS);
+      bdvObj.registerWithDB(config.magicBytes_);
+
+      const vector<BinaryData> lb1ScrAddrs
+      {
+         TestChain::lb1ScrAddr,
+         TestChain::lb1ScrAddrP2SH
+      };
+      const vector<BinaryData> lb2ScrAddrs
+      {
+         TestChain::lb2ScrAddr,
+         TestChain::lb2ScrAddrP2SH
+      };
+
+      vector<string> walletRegIDs;
+      DBTestUtils::UTCallback pCallback(bdvObj);
+
+      auto&& wallet1 = bdvObj.instantiateWallet("wallet1");
+      walletRegIDs.push_back(
+         wallet1.registerAddresses(scrAddrVec, false));
+
+      auto&& lb1 = bdvObj.instantiateLockbox("lb1");
+      walletRegIDs.push_back(
+         lb1.registerAddresses(lb1ScrAddrs, false));
+
+      auto&& lb2 = bdvObj.instantiateLockbox("lb2");
+      walletRegIDs.push_back(
+         lb2.registerAddresses(lb2ScrAddrs, false));
+
+      //wait on registration ack
+      pCallback.waitOnManySignals(BDMAction_Refresh, walletRegIDs);
+
+      //go online
+      bdvObj.goOnline();
+      pCallback.waitOnSignal(BDMAction_Ready);
+
+      //get delegate
+      auto del1_prom = make_shared<promise<AsyncClient::LedgerDelegate>>();
+      auto del1_fut = del1_prom->get_future();
+      auto del1_get = [del1_prom](AsyncClient::LedgerDelegate delegate)->void
+      {
+         del1_prom->set_value(move(delegate));
+      };
+      bdvObj.getLedgerDelegateForWallets(del1_get);
+      auto delegate = move(del1_fut.get());
+
+      //get ledgers
+      auto ledger_prom = 
+         make_shared<promise<vector<::ClientClasses::LedgerEntry>>>();
+      auto ledger_fut = ledger_prom->get_future();
+      auto ledger_get = 
+         [ledger_prom](vector<::ClientClasses::LedgerEntry> ledgerV)->void
+      {
+         ledger_prom->set_value(move(ledgerV));
+      };
+      delegate.getHistoryPage(0, ledger_get);
+
+      //
+      auto w1AddrBal_prom = make_shared<promise<map<BinaryData, vector<uint64_t>>>>();
+      auto w1AddrBal_fut = w1AddrBal_prom->get_future();
+      auto w1_getAddrBalancesLBD = 
+         [w1AddrBal_prom](map<BinaryData, vector<uint64_t>> balances)->void
+      {
+         w1AddrBal_prom->set_value(move(balances));
+      };
+      wallet1.getAddrBalancesFromDB(w1_getAddrBalancesLBD);
+      
+      //
+      auto w1Bal_prom = make_shared<promise<vector<uint64_t>>>();
+      auto w1Bal_fut = w1Bal_prom->get_future();
+      auto w1_getBalanceAndCountLBD = 
+         [w1Bal_prom](vector<uint64_t> balances)->void
+      {
+         w1Bal_prom->set_value(move(balances));
+      };
+      wallet1.getBalancesAndCount(5, w1_getBalanceAndCountLBD);
+
+      //
+      auto lb1AddrBal_prom = make_shared<promise<map<BinaryData, vector<uint64_t>>>>();
+      auto lb1AddrBal_fut = lb1AddrBal_prom->get_future();
+      auto lb1_getAddrBalancesLBD = 
+         [lb1AddrBal_prom](map<BinaryData, vector<uint64_t>> balances)->void
+      {
+         lb1AddrBal_prom->set_value(move(balances));
+      };
+      lb1.getAddrBalancesFromDB(lb1_getAddrBalancesLBD);
+
+      //
+      auto lb2AddrBal_prom = make_shared<promise<map<BinaryData, vector<uint64_t>>>>();
+      auto lb2AddrBal_fut = lb2AddrBal_prom->get_future();
+      auto lb2_getAddrBalancesLBD = 
+         [lb2AddrBal_prom](map<BinaryData, vector<uint64_t>> balances)->void
+      {
+         lb2AddrBal_prom->set_value(move(balances));
+      };
+      lb2.getAddrBalancesFromDB(lb2_getAddrBalancesLBD);
+
+      //
+      auto lb1Bal_prom = make_shared<promise<vector<uint64_t>>>();
+      auto lb1Bal_fut = lb1Bal_prom->get_future();
+      auto lb1_getBalanceAndCountLBD = 
+         [lb1Bal_prom](vector<uint64_t> balances)->void
+      {
+         lb1Bal_prom->set_value(move(balances));
+      };
+      lb1.getBalancesAndCount(5, lb1_getBalanceAndCountLBD);
+
+      //
+      auto lb2Bal_prom = make_shared<promise<vector<uint64_t>>>();
+      auto lb2Bal_fut = lb2Bal_prom->get_future();
+      auto lb2_getBalanceAndCountLBD = 
+         [lb2Bal_prom](vector<uint64_t> balances)->void
+      {
+         lb2Bal_prom->set_value(move(balances));
+      };
+      lb2.getBalancesAndCount(5, lb2_getBalanceAndCountLBD);
+
+      //get tx
+      auto tx_prom = make_shared<promise<Tx>>();
+      auto tx_fut = tx_prom->get_future();
+      auto tx_get = [tx_prom](Tx tx)->void
+      {
+         tx_prom->set_value(move(tx));
+      };
+      bdvObj.getTxByHash(firstHash, tx_get);
+
+      //get utxos
+      auto utxo_prom = make_shared<promise<vector<UTXO>>>();
+      auto utxo_fut = utxo_prom->get_future();
+      auto utxo_get = [utxo_prom](vector<UTXO> utxoV)->void
+      {
+         utxo_prom->set_value(move(utxoV));
+      };
+      wallet1.getSpendableTxOutListForValue(UINT64_MAX, utxo_get);
+
+      //wait on futures
+      auto w1AddrBalances = move(w1AddrBal_fut.get());
+      auto w1Balances = move(w1Bal_fut.get());
+      auto lb1AddrBalances = move(lb1AddrBal_fut.get());
+      auto lb2AddrBalances = move(lb2AddrBal_fut.get());
+      auto lb1Balances = move(lb1Bal_fut.get());
+      auto lb2Balances = move(lb2Bal_fut.get());
+      auto ledgers = move(ledger_fut.get());
+      auto tx = move(tx_fut.get());
+      auto utxos = move(utxo_fut.get());
+
+      //w1 addr balances
+      auto balanceVec = w1AddrBalances[TestChain::scrAddrA];
+      EXPECT_EQ(balanceVec[0], 50 * COIN);
+      balanceVec = w1AddrBalances[TestChain::scrAddrB];
+      EXPECT_EQ(balanceVec[0], 70 * COIN);
+      balanceVec = w1AddrBalances[TestChain::scrAddrC];
+      EXPECT_EQ(balanceVec[0], 20 * COIN);
+
+      //w1 balances
+      auto fullBalance = w1Balances[0];
+      auto spendableBalance = w1Balances[1];
+      auto unconfirmedBalance = w1Balances[2];
+      EXPECT_EQ(fullBalance, 170 * COIN);
+      EXPECT_EQ(spendableBalance, 70 * COIN);
+      EXPECT_EQ(unconfirmedBalance, 170 * COIN);
+
+      //lb1 addr balances
+      balanceVec = lb1AddrBalances[TestChain::lb1ScrAddr];
+      EXPECT_EQ(balanceVec[0], 5 * COIN);
+      balanceVec = lb1AddrBalances[TestChain::lb1ScrAddrP2SH];
+      EXPECT_EQ(balanceVec[0], 25 * COIN);
+
+      //lb2 addr balances
+      balanceVec = lb2AddrBalances[TestChain::lb2ScrAddr];
+      EXPECT_EQ(balanceVec[0], 30 * COIN);
+      balanceVec = lb2AddrBalances[TestChain::lb2ScrAddrP2SH];
+      EXPECT_EQ(balanceVec.size(), 0);
+
+      //lb1 balances
+      EXPECT_EQ(lb1Balances[0], 30 * COIN);
+
+      //lb2 balances
+      EXPECT_EQ(lb2Balances[0], 30 * COIN);
+
+      //grab main ledgers
+      auto& firstEntry = ledgers[0];
+      auto txHash = firstEntry.getTxHash();
+      EXPECT_EQ(firstHash, txHash);
+
+      //check first tx
+      EXPECT_EQ(tx.getThisHash(), firstHash);
+
+      //check utxos
+      EXPECT_EQ(utxos.size(), 5);
+
+      //grab all tx for each utxo
+      map<BinaryData, shared_future<Tx>> futMap;
+      for(auto& utxo : utxos)
+      {
+         auto& hash = utxo.getTxHash();
+         auto utxoProm = make_shared<promise<Tx>>();
+         futMap.insert(make_pair(hash, utxoProm->get_future()));
+         auto utxoLBD = [utxoProm](Tx tx)->void
+         {
+            utxoProm->set_value(move(tx));
+         };
+         bdvObj.getTxByHash(hash, utxoLBD);
+      }
+
+      for(auto& fut_pair : futMap)
+      {
+         auto txobj = move(fut_pair.second.get());
+         EXPECT_EQ(txobj.getThisHash(), fut_pair.first);
+      }
+
+      bdvObj.unregisterFromDB();
+   };
+
+   vector<thread> thrV;
+   for(unsigned ct=0; ct<20; ct++)
+      thrV.push_back(thread(request_lambda));
+
+   for(auto& thr : thrV)
+   {
+      if(thr.joinable())
+         thr.join();
+   }
+
+   auto&& bdvObj2 = SwigClient::BlockDataViewer::getNewBDV(
+      "127.0.0.1", "7681", SocketType::SocketWS);
+   bdvObj2.shutdown(config.cookie_);
+   WebSocketServer::waitOnShutdown();
+
+   delete theBDMt_;
+   theBDMt_ = nullptr;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 // Now actually execute all the tests
 ////////////////////////////////////////////////////////////////////////////////

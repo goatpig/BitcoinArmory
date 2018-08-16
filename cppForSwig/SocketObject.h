@@ -112,6 +112,23 @@ struct WritePayload_String : public Socket_WritePayload
    }
 };
 
+////
+struct WritePayload_StringPassthrough : public Socket_WritePayload
+{
+   string data_;
+
+   void serialize(vector<uint8_t>& payload) {
+      payload.reserve(data_.size() +1);
+      payload.insert(payload.end(), data_.begin(), data_.end());
+      data_.push_back(0);
+   }
+
+   string serializeToText(void) {
+      return move(data_);
+   }
+};
+
+
 ///////////////////////////////////////////////////////////////////////////////
 struct AcceptStruct
 {

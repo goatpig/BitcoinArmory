@@ -96,6 +96,7 @@ class WebSocketClient : public SocketPrototype
 private:
    atomic<void*> wsiPtr_;
    atomic<void*> contextPtr_;
+   atomic<unsigned> requestID_;
    unique_ptr<promise<bool>> ctorProm_ = nullptr;
 
    atomic<int> shutdownCount_;
@@ -125,6 +126,7 @@ private:
       run_ = make_shared<atomic<unsigned>>();
 
       count_.store(0, memory_order_relaxed);
+      requestID_.store(0, memory_order_relaxed);
       init();
    }
 

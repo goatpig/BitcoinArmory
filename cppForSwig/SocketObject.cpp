@@ -760,7 +760,11 @@ void SimpleSocket::pushPayload(
       return;
 
    auto&& result = readFromSocket();
-   BinaryDataRef bdr(&result[0], result.size());
+
+   BinaryDataRef bdr;
+   if (result.size() != 0)
+      bdr.setRef(&result[0], result.size());
+
    read_payload->callbackReturn_->callback(bdr);
 }
 

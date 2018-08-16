@@ -48,6 +48,14 @@ enum ChainStatus
    ChainStatus_Ready
 };
 
+////
+class RpcError : public runtime_error
+{
+public:
+   RpcError(void) : runtime_error("")
+   {}
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 struct FeeEstimateResult
 {
@@ -103,16 +111,19 @@ class NodeRPC : protected Lockable
 {
 private:
    const BlockDataManagerConfig& bdmConfig_;
-   unique_ptr<HttpSocket> socket_;
-   string basicAuthString_;
-
-   //set to true if node is connected and identified
-   bool goodNode_ = false; 
+   string basicAuthString64_;
 
    ::NodeChainState nodeChainState_;
    function<void(void)> nodeStatusLambda_;
 
    RpcStatus previousState_ = RpcStatus_Disabled;
+   condition_variable pollCondVar_;
+
+   typedef map<string, map<unsigned, FeeEstimateResult>> EstimateCache;
+   shared_ptr<EstimateCache> currentEstimateCache_ = nullptr;
+
+   vector<thread> thrVec_;
+   atomic<bool> run_ = { true };
 
 private:
    string getAuthString(void);
@@ -127,15 +138,20 @@ private:
    }
 
    string queryRPC(JSON_object&);
+   string queryRPC(HttpSocket&, JSON_object&);
+   void pollThread(void);
+   
+   float queryFeeByte(HttpSocket&, unsigned);
+   FeeEstimateResult queryFeeByteSmart(HttpSocket&,
+      unsigned confTarget, string& strategy);
+   void aggregateFeeEstimates(void);
 
 public:
    NodeRPC(BlockDataManagerConfig&);
+   ~NodeRPC(void);
    
    RpcStatus testConnection();
-   RpcStatus setupConnection(void);
-   float getFeeByte(unsigned);
-   FeeEstimateResult getFeeByteSmart(
-      unsigned confTarget, string& strategy);
+   bool setupConnection(HttpSocket&);
    void shutdown(void);
 
    bool updateChainStatus(void);
@@ -146,6 +162,7 @@ public:
    void registerNodeStatusLambda(function<void(void)> lbd) { nodeStatusLambda_ = lbd; }
 
    virtual bool canPool(void) const { return true; }
+   FeeEstimateResult getFeeByte(unsigned confTarget, string& strategy);
 };
 
 ////////////////////////////////////////////////////////////////////////////////

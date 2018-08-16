@@ -24,41 +24,39 @@ NodeRPC::NodeRPC(
    BlockDataManagerConfig& config) :
    bdmConfig_(config)
 {
-   socket_ = make_unique<HttpSocket>("127.0.0.1", bdmConfig_.rpcPort_);
+   //start fee estimate polling thread
+   auto pollLbd = [this](void)->void
+   {
+      this->pollThread();
+   };
+
+   thrVec_.push_back(thread(pollLbd));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-RpcStatus NodeRPC::setupConnection()
+bool NodeRPC::setupConnection(HttpSocket& sock)
 {
    ReentrantLock lock(this);
 
    //test the socket
-   if (!socket_->testConnection())
+   if(!sock.connectToRemote())
+      return false;
+
+   if (basicAuthString64_.size() == 0)
    {
-      if(!socket_->connectToRemote())
-         return RpcStatus_Disabled;
+      auto&& authString = getAuthString();
+      if (authString.size() == 0)
+         return false;
+
+      basicAuthString64_ = move(BtcUtils::base64_encode(authString));
    }
 
-   auto&& authString = getAuthString();
-   if (authString.size() == 0)
-      return RpcStatus_BadAuth;
-
-   basicAuthString_ = move(authString);
-   auto&& b64_ba = BtcUtils::base64_encode(basicAuthString_);
-
    stringstream auth_header;
-   auth_header << "Authorization: Basic " << b64_ba;
+   auth_header << "Authorization: Basic " << basicAuthString64_;
    auto header_str = auth_header.str();
-   socket_->precacheHttpHeader(header_str);
+   sock.precacheHttpHeader(header_str);
 
-   goodNode_ = true;
-   nodeChainState_.reset();
-
-   auto status = testConnection();
-   if (status == RpcStatus_Online)
-      LOGINFO << "RPC connection established";
-
-   return status;
+   return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -67,63 +65,43 @@ RpcStatus NodeRPC::testConnection()
    ReentrantLock lock(this);
 
    RpcStatus state = RpcStatus_Disabled;
+   JSON_object json_obj;
+   json_obj.add_pair("method", "getblockcount");
 
-   if (!goodNode_)
+   try
    {
-      state = setupConnection();
-   }
-   else
-   {
-      goodNode_ = false;
+      auto&& response = queryRPC(json_obj);
+      auto&& response_obj = JSON_decode(response);
 
-      JSON_object json_obj;
-      json_obj.add_pair("method", "getblockcount");
-
-      try
+      if (response_obj.isResponseValid(json_obj.id_))
       {
-         auto&& response = queryRPC(json_obj);
-         auto&& response_obj = JSON_decode(response);
+         state = RpcStatus_Online;
+      }
+      else
+      {
+         auto error_ptr = response_obj.getValForKey("error");
+         auto error_obj = dynamic_pointer_cast<JSON_object>(error_ptr);
+         auto error_code_ptr = error_obj->getValForKey("code");
+         auto error_code = dynamic_pointer_cast<JSON_number>(error_code_ptr);
 
-         if (response_obj.isResponseValid(json_obj.id_))
+         if (error_code == nullptr)
+            throw JSON_Exception("failed to get error code");
+
+         if ((int)error_code->val_ == -28)
          {
-            state = RpcStatus_Online;
-            goodNode_ = true;
-         }
-         else
-         {
-            auto error_ptr = response_obj.getValForKey("error");
-            auto error_obj = dynamic_pointer_cast<JSON_object>(error_ptr);
-            auto error_code_ptr = error_obj->getValForKey("code");
-            auto error_code = dynamic_pointer_cast<JSON_number>(error_code_ptr);
-
-            if (error_code == nullptr)
-               throw JSON_Exception("failed to get error code");
-
-            if ((int)error_code->val_ == -28)
-            {
-               state = RpcStatus_Error_28;
-            }
+            state = RpcStatus_Error_28;
          }
       }
-      catch (SocketError&)
-      {
-         state = RpcStatus_Disabled;
-      }
-      catch (JSON_Exception& e)
-      {
-         LOGERR << "RPC connection test error: " << e.what();
-         state = RpcStatus_BadAuth;
-      }
    }
-
-   bool doCallback = false;
-   if (state != previousState_)
-      doCallback = true;
-
-   previousState_ = state;
-
-   if (doCallback)
-      callback();
+   catch (SocketError&)
+   {
+      state = RpcStatus_Disabled;
+   }
+   catch (JSON_Exception& e)
+   {
+      LOGERR << "RPC connection test error: " << e.what();
+      state = RpcStatus_BadAuth;
+   }
 
    return state;
 }
@@ -201,7 +179,7 @@ string NodeRPC::getAuthString()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-float NodeRPC::getFeeByte(unsigned blocksToConfirm)
+float NodeRPC::queryFeeByte(HttpSocket& sock, unsigned blocksToConfirm)
 {
    ReentrantLock lock(this);
 
@@ -213,7 +191,7 @@ float NodeRPC::getFeeByte(unsigned blocksToConfirm)
 
    json_obj.add_pair("params", json_array);
 
-   auto&& response = queryRPC(json_obj);
+   auto&& response = queryRPC(sock, json_obj);
    auto&& response_obj = JSON_decode(response);
 
    if (!response_obj.isResponseValid(json_obj.id_))
@@ -229,14 +207,14 @@ float NodeRPC::getFeeByte(unsigned blocksToConfirm)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-FeeEstimateResult NodeRPC::getFeeByteSmart(
+FeeEstimateResult NodeRPC::queryFeeByteSmart(HttpSocket& sock,
    unsigned confTarget, string& strategy)
 {
-   auto fallback = [this, &confTarget](void)->FeeEstimateResult
+   auto fallback = [this, &confTarget, &sock](void)->FeeEstimateResult
    {
       FeeEstimateResult fer;
       fer.smartFee_ = false;
-      auto feeByteSimple = getFeeByte(confTarget);
+      auto feeByteSimple = queryFeeByte(sock, confTarget);
       if (feeByteSimple == -1.0f)
          fer.error_ = "error";
       else
@@ -259,7 +237,7 @@ FeeEstimateResult NodeRPC::getFeeByteSmart(
 
    json_obj.add_pair("params", json_array);
 
-   auto&& response = queryRPC(json_obj);
+   auto&& response = queryRPC(sock, json_obj);
    auto&& response_obj = JSON_decode(response);
 
    if (!response_obj.isResponseValid(json_obj.id_))
@@ -293,7 +271,7 @@ FeeEstimateResult NodeRPC::getFeeByteSmart(
    {
       if (resultPairPtr == nullptr)
       {
-         //fallback to the estimatefee is the method is missing
+         //fallback to the estimatefee if the method is missing
          return fallback();
       }
       else
@@ -305,6 +283,61 @@ FeeEstimateResult NodeRPC::getFeeByteSmart(
    }
 
    return fer;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+FeeEstimateResult NodeRPC::getFeeByte(
+   unsigned confTarget, string& strategy)
+{
+   auto estimateCachePtr = atomic_load(&currentEstimateCache_);
+
+   if (estimateCachePtr == nullptr)
+      throw RpcError();
+
+   auto iterStrat = estimateCachePtr->find(strategy);
+   if (iterStrat == estimateCachePtr->end())
+      throw RpcError();
+
+   auto targetIter = iterStrat->second.lower_bound(confTarget);
+   if (targetIter == iterStrat->second.end() ||
+      targetIter == iterStrat->second.begin())
+      throw RpcError();
+
+   --targetIter;
+   return targetIter->second;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void NodeRPC::aggregateFeeEstimates()
+{
+   //get fee/byte for 2-3-4-5-6-10-20 confs on both strategies
+   static vector<unsigned> confTargets = { 2, 3, 4, 5, 6, 10, 20 };
+   static vector<string> strategies = { 
+      FEE_STRAT_CONSERVATIVE, FEE_STRAT_ECONOMICAL };
+
+   HttpSocket sock("127.0.0.1", bdmConfig_.rpcPort_);
+   if (!setupConnection(sock))
+      throw RpcError();
+
+   auto newCache = make_shared<EstimateCache>();
+
+   for (auto& strat : strategies)
+   {
+      auto insertIter = newCache->insert(
+         make_pair(strat, map<unsigned, FeeEstimateResult>()));
+      auto& newMap = insertIter.first->second;
+
+      for (auto& target : confTargets)
+      {
+         auto&& result = queryFeeByteSmart(sock, target, strat);
+         /*LOGINFO << "fee-byte for strat \"" << strat <<
+            "\", target: " << target << ": " << result.feeByte_;*/
+
+         newMap.insert(make_pair(target, move(result)));
+      }
+   }
+
+   atomic_store(&currentEstimateCache_, newCache);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -495,7 +528,17 @@ void NodeRPC::shutdown()
 ////////////////////////////////////////////////////////////////////////////////
 string NodeRPC::queryRPC(JSON_object& request)
 {
-   auto write_payload = make_unique<WritePayload_String>();
+   HttpSocket sock("127.0.0.1", bdmConfig_.rpcPort_);
+   if (!setupConnection(sock))
+      throw RpcError();
+
+   return queryRPC(sock, request);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+string NodeRPC::queryRPC(HttpSocket& sock, JSON_object& request)
+{
+   auto write_payload = make_unique<WritePayload_StringPassthrough>();
    write_payload->data_ = move(JSON_encode(request));
 
    auto promPtr = make_shared<promise<string>>();
@@ -507,10 +550,86 @@ string NodeRPC::queryRPC(JSON_object& request)
    };
 
    auto read_payload = make_shared<Socket_ReadPayload>(request.id_);
-   read_payload->callbackReturn_ = make_unique<CallbackReturn_HttpBody>(callback);
-   socket_->pushPayload(move(write_payload), read_payload);
+   read_payload->callbackReturn_ = 
+      make_unique<CallbackReturn_HttpBody>(callback);
+   sock.pushPayload(move(write_payload), read_payload);
 
    return fut.get();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void NodeRPC::pollThread()
+{
+   auto pred = [this](void)->bool
+   {
+      return !run_.load(memory_order_acquire);
+   };
+
+   mutex mu;
+   bool status = false;
+   while (true)
+   {
+      LOGINFO << "!!!!!!!! rpc poll iteration";
+      if (!status)
+      {
+         //test connection
+         try
+         {
+            auto rpcState = testConnection();
+            bool doCallback = false;
+            if (rpcState != previousState_)
+               doCallback = true;
+
+            previousState_ = rpcState;
+
+            if (doCallback)
+               callback();
+
+            if (rpcState == RpcStatus_Online)
+            {
+               LOGINFO << "RPC connection established";
+               status = true;
+               continue;
+            }
+         }
+         catch (exception&)
+         {
+            status = false;
+         }
+      }
+      else
+      {
+         //update fee estimate
+         try
+         {
+            aggregateFeeEstimates();
+         }
+         catch (exception&)
+         {
+            status = false;
+            continue;
+         }
+      }
+
+      unique_lock<mutex> lock(mu);
+      if (pollCondVar_.wait_for(lock, chrono::seconds(10), pred))
+         break;
+   }
+
+   LOGWARN << "out of rpc poll loop";
+}
+
+////////////////////////////////////////////////////////////////////////////////
+NodeRPC::~NodeRPC()
+{
+   run_.store(false, memory_order_release);
+   pollCondVar_.notify_all();
+
+   for (auto& thr : thrVec_)
+   {
+      if (thr.joinable())
+         thr.join();
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

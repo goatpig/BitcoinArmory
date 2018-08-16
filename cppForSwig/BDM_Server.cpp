@@ -560,6 +560,13 @@ shared_ptr<Message> BDV_Server_Object::processCommand(
       auto& txHash = command->hash();
       BinaryDataRef txHashRef; txHashRef.setRef(txHash);
       auto&& retval = this->getTxByHash(txHashRef);
+      
+      //sanity check
+      if (retval.getSize() == 0)
+      {
+         LOGWARN << "empty raw tx!";
+         throw runtime_error("could not find tx");
+      }
 
       auto response = make_shared<::Codec_CommonTypes::TxWithMetaData>();
       response->set_rawtx(retval.getPtr(), retval.getSize());
@@ -715,7 +722,7 @@ shared_ptr<Message> BDV_Server_Object::processCommand(
       uint32_t blocksToConfirm = command->value();
       auto strat = command->bindata(0);
 
-      auto feeByte = this->bdmPtr_->nodeRPC_->getFeeByteSmart(
+      auto feeByte = this->bdmPtr_->nodeRPC_->getFeeByte(
          blocksToConfirm, strat);
 
       auto response = make_shared<::Codec_FeeEstimate::FeeEstimate>();

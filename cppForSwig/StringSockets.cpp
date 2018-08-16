@@ -14,7 +14,7 @@
 //
 ///////////////////////////////////////////////////////////////////////////////
 HttpSocket::HttpSocket(const string& addr, const string& port) :
-   PersistentSocket(addr, port)
+   SimpleSocket(addr, port)
 {
    messageWithPrecacheHeaders_ = make_unique<HttpMessage>(getAddrStr());
 }
@@ -46,6 +46,9 @@ size_t HttpSocket::getHttpBodyOffset(const char* ptr, size_t len)
 bool HttpSocket::processPacket(
    vector<uint8_t>& packet, vector<uint8_t>& payload)
 {
+   /***TODO: avoid copying packets into a sequential buffer before 
+       finding body offset and length***/
+
    //puts packets together till a full http payload is achieved. returns false
    //if there's no payload yet. return true and sets value in &payload if 
    //the full http message was received
@@ -96,7 +99,7 @@ bool HttpSocket::processPacket(
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-vector<uint8_t> HttpSocket::getHttpPayload(const char* ptr, size_t len)
+string HttpSocket::getHttpPayload(const char* ptr, size_t len)
 {
    /*TODO: 
       return value is a vector but http serialization method takes
@@ -111,12 +114,7 @@ vector<uint8_t> HttpSocket::getHttpPayload(const char* ptr, size_t len)
    auto payload_len = 
       messageWithPrecacheHeaders_->makeHttpPayload(&http_payload, ptr, len);
    
-   vector<uint8_t> payload;
-   payload.reserve(payload_len);
-   payload.insert(payload.end(), 
-      (uint8_t*)http_payload, 
-      (uint8_t*)(http_payload + payload_len));
-
+   string payload(http_payload, payload_len);
    delete[] http_payload;
    return payload;
 }
@@ -136,10 +134,10 @@ void HttpSocket::pushPayload(
    shared_ptr<Socket_ReadPayload> read_payload)
 {
    auto&& str = write_payload->serializeToText();
-   auto&& payload = getHttpPayload(str.c_str(), str.size());
+   auto strPayload = make_unique<WritePayload_StringPassthrough>();
+   strPayload->data_ = move(getHttpPayload(str.c_str(), str.size()));
 
-   addReadPayload(read_payload);
-   queuePayloadForWrite(payload);
+   SimpleSocket::pushPayload(move(strPayload), read_payload);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -324,7 +322,7 @@ void FcgiSocket::pushPayload(
    auto&& payload = fcgi_message.serialize();
 
    addReadPayload(read_payload);
-   queuePayloadForWrite(payload);
+   //queuePayloadForWrite(payload);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -334,6 +332,16 @@ void FcgiSocket::pushPayload(
 ///////////////////////////////////////////////////////////////////////////////
 void CallbackReturn_HttpBody::callback(BinaryDataRef ref)
 {
-   string body(ref.toCharPtr(), ref.getSize());
+   string body;
+   if (ref.getSize() != 0)
+   {
+      auto offset = HttpSocket::getHttpBodyOffset(
+         ref.toCharPtr(), ref.getSize());
+
+      if (offset != SIZE_MAX)
+         body = move(string(
+            ref.toCharPtr() + offset, ref.getSize() - offset));
+   }
+
    userCallbackLambda_(move(body));
 }
