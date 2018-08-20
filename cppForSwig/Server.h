@@ -148,7 +148,7 @@ private:
    promise<bool> isReadyProm_;
 
 private:
-   void webSocketService(void);
+   void webSocketService(int port);
    void commandThread(void);
    void setIsReady(void);
    

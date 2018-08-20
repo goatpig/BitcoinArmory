@@ -2941,7 +2941,7 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
 
    {
       auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
-         "127.0.0.1", "7681", SocketType::SocketWS);
+         "127.0.0.1", config.listenPort_, SocketType::SocketWS);
       bdvObj.registerWithDB(config.magicBytes_);
       DBTestUtils::UTCallback pCallback(bdvObj);
       
@@ -2965,9 +2965,9 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
 
    auto request_lambda = [&](void)->void
    {
-      auto&& bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
-         "127.0.0.1", "7681", SocketType::SocketWS);
-      bdvObj.registerWithDB(config.magicBytes_);
+      auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
+         "127.0.0.1", config.listenPort_, SocketType::SocketWS);
+      bdvObj->registerWithDB(config.magicBytes_);
 
       const vector<BinaryData> lb1ScrAddrs
       {
@@ -2981,17 +2981,17 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
       };
 
       vector<string> walletRegIDs;
-      DBTestUtils::UTCallback pCallback(bdvObj);
+      DBTestUtils::UTCallback pCallback(*bdvObj);
 
-      auto&& wallet1 = bdvObj.instantiateWallet("wallet1");
+      auto&& wallet1 = bdvObj->instantiateWallet("wallet1");
       walletRegIDs.push_back(
          wallet1.registerAddresses(scrAddrVec, false));
 
-      auto&& lb1 = bdvObj.instantiateLockbox("lb1");
+      auto&& lb1 = bdvObj->instantiateLockbox("lb1");
       walletRegIDs.push_back(
          lb1.registerAddresses(lb1ScrAddrs, false));
 
-      auto&& lb2 = bdvObj.instantiateLockbox("lb2");
+      auto&& lb2 = bdvObj->instantiateLockbox("lb2");
       walletRegIDs.push_back(
          lb2.registerAddresses(lb2ScrAddrs, false));
 
@@ -2999,7 +2999,7 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
       pCallback.waitOnManySignals(BDMAction_Refresh, walletRegIDs);
 
       //go online
-      bdvObj.goOnline();
+      bdvObj->goOnline();
       pCallback.waitOnSignal(BDMAction_Ready);
 
       //get delegate
@@ -3009,7 +3009,7 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
       {
          del1_prom->set_value(move(delegate));
       };
-      bdvObj.getLedgerDelegateForWallets(del1_get);
+      bdvObj->getLedgerDelegateForWallets(del1_get);
       auto delegate = move(del1_fut.get());
 
       //get ledgers
@@ -3090,7 +3090,7 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
       {
          tx_prom->set_value(move(tx));
       };
-      bdvObj.getTxByHash(firstHash, tx_get);
+      bdvObj->getTxByHash(firstHash, tx_get);
 
       //get utxos
       auto utxo_prom = make_shared<promise<vector<UTXO>>>();
@@ -3168,7 +3168,7 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
          {
             utxoProm->set_value(move(tx));
          };
-         bdvObj.getTxByHash(hash, utxoLBD);
+         bdvObj->getTxByHash(hash, utxoLBD);
       }
 
       for(auto& fut_pair : futMap)
@@ -3177,7 +3177,7 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
          EXPECT_EQ(txobj.getThisHash(), fut_pair.first);
       }
 
-      bdvObj.unregisterFromDB();
+      bdvObj->unregisterFromDB();
    };
 
    vector<thread> thrV;
@@ -3191,7 +3191,7 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
    }
 
    auto&& bdvObj2 = SwigClient::BlockDataViewer::getNewBDV(
-      "127.0.0.1", "7681", SocketType::SocketWS);
+      "127.0.0.1", config.listenPort_, SocketType::SocketWS);
    bdvObj2.shutdown(config.cookie_);
    WebSocketServer::waitOnShutdown();
 

@@ -83,13 +83,11 @@ public:
    const string cookie_;
    bool useCookie_ = false;
 
-   /////////////
    static uint8_t pubkeyHashPrefix_;
    static uint8_t scriptHashPrefix_;
 
-   /////////////
-   static uint8_t getPubkeyHashPrefix(void) { return pubkeyHashPrefix_; }
-   static uint8_t getScriptHashPrefix(void) { return scriptHashPrefix_; }
+public:
+   BlockDataManagerConfig();
 
    /////////////
    void setGenesisBlockHash(const BinaryData &h)
@@ -105,7 +103,6 @@ public:
       magicBytes_ = h;
    }
 
-   BlockDataManagerConfig();
    void selectNetwork(const std::string &netname);
 
    void processArgs(const map<string, string>&, bool);
@@ -150,6 +147,9 @@ public:
    }
 
    static string getDbModeStr(void);
+
+   static uint8_t getPubkeyHashPrefix(void) { return pubkeyHashPrefix_; }
+   static uint8_t getScriptHashPrefix(void) { return scriptHashPrefix_; }
 };
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -54,7 +54,7 @@ bool BlockDataViewer::hasRemoteDB(void)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-BlockDataViewer BlockDataViewer::getNewBDV(const string& addr,
+shared_ptr<BlockDataViewer> BlockDataViewer::getNewBDV(const string& addr,
    const string& port, SocketType st)
 {
    shared_ptr<SocketPrototype> sockptr = nullptr;
@@ -80,8 +80,10 @@ BlockDataViewer BlockDataViewer::getNewBDV(const string& addr,
       throw SocketError("unexpected socket type");
    }
 
-   BlockDataViewer bdv(sockptr);
-   return bdv;
+   BlockDataViewer* bdvPtr = new BlockDataViewer(sockptr);
+   shared_ptr<BlockDataViewer> bdvSharedPtr;
+   bdvSharedPtr.reset(bdvPtr);
+   return bdvSharedPtr;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -147,16 +149,14 @@ void BlockDataViewer::goOnline()
 ///////////////////////////////////////////////////////////////////////////////
 BlockDataViewer::BlockDataViewer(void)
 {
-   txMap_ = make_shared<map<BinaryData, Tx>>();
-   rawHeaderMap_ = make_shared<map<BinaryData, BinaryData>>();
+   cache_ = make_shared<ClientCache>();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 BlockDataViewer::BlockDataViewer(const shared_ptr<SocketPrototype> sock) :
    sock_(sock)
 {
-   txMap_ = make_shared<map<BinaryData, Tx>>();
-   rawHeaderMap_ = make_shared<map<BinaryData, BinaryData>>();
+   cache_ = make_shared<ClientCache>();
    sock->connectToRemote(); //TODO: move this to its own method
 }
 
@@ -233,7 +233,7 @@ void BlockDataViewer::broadcastZC(const BinaryData& rawTx)
 {
    auto&& txHash = BtcUtils::getHash256(rawTx.getRef());
    Tx tx(rawTx);
-   txMap_->insert(make_pair(txHash, tx));
+   cache_->insertTx(txHash, tx);
 
    auto payload = make_payload(Methods::broadcastZC, bdvID_);
    auto command = dynamic_cast<BDVCommand*>(payload->message_.get());
@@ -259,12 +259,14 @@ void BlockDataViewer::getTxByHash(const BinaryData& txHash,
       }
    }
 
-   auto iter = txMap_->find(bdRef);
-   if (iter != txMap_->end())
+   try
    {
-      callback(iter->second);
+      auto& tx = cache_->getTx(bdRef);
+      callback(tx);
       return;
    }
+   catch(NoMatch&)
+   { }
 
    auto payload = make_payload(Methods::getTxByHash, bdvID_);
    auto command = dynamic_cast<BDVCommand*>(payload->message_.get());
@@ -272,7 +274,7 @@ void BlockDataViewer::getTxByHash(const BinaryData& txHash,
 
    auto read_payload = make_shared<Socket_ReadPayload>();
    read_payload->callbackReturn_ =
-      make_unique<CallbackReturn_Tx>(txMap_, txHash, callback);
+      make_unique<CallbackReturn_Tx>(cache_, txHash, callback);
    sock_->pushPayload(move(payload), read_payload);
 }
 
@@ -293,12 +295,15 @@ void BlockDataViewer::getRawHeaderForTxHash(const BinaryData& txHash,
       }
    }
 
-   auto iter = rawHeaderMap_->find(bdRef);
-   if (iter != rawHeaderMap_->end())
+   try
    {
-      callback(iter->second);
+      auto& height = cache_->getHeightForTxHash(txHash);
+      auto& rawHeader = cache_->getRawHeader(height);
+      callback(rawHeader);
       return;
    }
+   catch(NoMatch&)
+   { }
 
    auto payload = make_payload(Methods::getHeaderByHash, bdvID_);
    auto command = dynamic_cast<BDVCommand*>(payload->message_.get());
@@ -306,7 +311,33 @@ void BlockDataViewer::getRawHeaderForTxHash(const BinaryData& txHash,
 
    auto read_payload = make_shared<Socket_ReadPayload>();
    read_payload->callbackReturn_ =
-      make_unique<CallbackReturn_RawHeader>(rawHeaderMap_, txHash, callback);
+      make_unique<CallbackReturn_RawHeader>(
+         cache_, UINT32_MAX, txHash, callback);
+   sock_->pushPayload(move(payload), read_payload);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void BlockDataViewer::getHeaderByHeight(unsigned height,
+   function<void(BinaryData)> callback)
+{
+   try
+   {
+      auto& rawHeader = cache_->getRawHeader(height);
+      callback(rawHeader);
+      return;
+   }
+   catch(NoMatch&)
+   { }
+
+   auto payload = make_payload(Methods::getHeaderByHeight, bdvID_);
+   auto command = dynamic_cast<BDVCommand*>(payload->message_.get());
+   command->set_height(height);
+
+   BinaryData txhash;
+   auto read_payload = make_shared<Socket_ReadPayload>();
+   read_payload->callbackReturn_ =
+      make_unique<CallbackReturn_RawHeader>(
+         cache_, height, txhash, callback);
    sock_->pushPayload(move(payload), read_payload);
 }
 
@@ -868,7 +899,7 @@ void CallbackReturn_Tx::callback(
    tx.setChainedZC(msg.ischainedzc());
    tx.setRBF(msg.isrbf());
 
-   txMap_->insert(move(make_pair(move(txHash_), tx)));
+   cache_->insertTx(txHash_, tx);
    userCallbackLambda_(move(tx));
 }
 
@@ -880,12 +911,18 @@ void CallbackReturn_RawHeader::callback(
    AsyncClient::deserialize(&msg, partialMsg);
 
    auto& rawheader = msg.data();
-   BinaryDataRef ref;
-   ref.setRef(rawheader);
+   BinaryDataRef ref; ref.setRef(rawheader);
+   BinaryRefReader brr(ref);
+   auto headerRef = brr.get_BinaryDataRef(HEADER_SIZE);
 
-   rawHeaderMap_->insert(move(make_pair(move(txHash_), ref)));
+   if (height_ == UINT32_MAX)
+      height_ = brr.get_uint32_t();
 
-   userCallbackLambda_(ref);
+   if (txHash_.getSize() != 0)
+      cache_->insertHeightForTxHash(txHash_, height_);
+   cache_->insertRawHeader(height_, headerRef);
+
+   userCallbackLambda_(headerRef);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1095,3 +1132,65 @@ void CallbackReturn_BDVCallback::callback(
 
    userCallbackLambda_(msg);
 }
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// ClientCache
+//
+///////////////////////////////////////////////////////////////////////////////
+void ClientCache::insertTx(BinaryData& hash, Tx& tx)
+{
+   ReentrantLock(this);
+   txMap_.insert(make_pair(hash, tx));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void ClientCache::insertRawHeader(unsigned& height, BinaryDataRef header)
+{
+   ReentrantLock(this);
+   rawHeaderMap_.insert(make_pair(height, header));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void ClientCache::insertHeightForTxHash(BinaryData& hash, unsigned& height)
+{
+   ReentrantLock(this);
+   txHashToHeightMap_.insert(make_pair(hash, height));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+const Tx& ClientCache::getTx(const BinaryDataRef& hashRef) const
+{
+   ReentrantLock(this);
+
+   auto iter = txMap_.find(hashRef);
+   if (iter == txMap_.end())
+      throw NoMatch();
+
+   return iter->second;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+const BinaryData& ClientCache::getRawHeader(const unsigned& height) const
+{
+   ReentrantLock(this);
+
+   auto iter = rawHeaderMap_.find(height);
+   if (iter == rawHeaderMap_.end())
+      throw NoMatch();
+
+   return iter->second;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+const unsigned& ClientCache::getHeightForTxHash(const BinaryData& height) const
+{
+   ReentrantLock(this);
+
+   auto iter = txHashToHeightMap_.find(height);
+   if (iter == txHashToHeightMap_.end())
+      throw NoMatch();
+
+   return iter->second;
+}
+

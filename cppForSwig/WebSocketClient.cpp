@@ -104,14 +104,18 @@ void WebSocketClient::init()
    if (contextptr == NULL) 
       throw LWS_Error("failed to create LWS context");
 
-   contextPtr_.store(contextptr, memory_order_relaxed);
+   contextPtr_.store(contextptr, memory_order_release);
 
    //connect to server
    struct lws_client_connect_info i;
    memset(&i, 0, sizeof(i));
    
    //i.address = ip.c_str();
-   i.port = WEBSOCKET_PORT;
+   int port = stoi(port_);
+   if (port == 0)
+      port = WEBSOCKET_PORT;
+   i.port = port;
+
    const char *prot, *p;
    char path[300];
    lws_parse_uri((char*)addr_.c_str(), &prot, &i.address, &i.port, &p);
@@ -130,7 +134,7 @@ void WebSocketClient::init()
    struct lws* wsiptr;
    i.pwsi = &wsiptr;
    wsiptr = lws_client_connect_via_info(&i); 
-   wsiPtr_.store(wsiptr, memory_order_relaxed);
+   wsiPtr_.store(wsiptr, memory_order_release);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -149,9 +153,9 @@ bool WebSocketClient::connectToRemote()
 
    auto serviceLBD = [this](void)->void
    {
-      auto wsiPtr = (struct lws*)this->wsiPtr_.load(memory_order_relaxed);
+      auto wsiPtr = (struct lws*)this->wsiPtr_.load(memory_order_acquire);
       auto contextPtr = 
-         (struct lws_context*)this->contextPtr_.load(memory_order_relaxed);
+         (struct lws_context*)this->contextPtr_.load(memory_order_acquire);
       service(this->run_, wsiPtr, contextPtr);
    };
 

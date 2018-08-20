@@ -475,13 +475,16 @@ void WebSocketServer::start(BlockDataManagerThread* bdmT, bool async)
    };
 
    instance->threads_.push_back(thread(commandThr));
+   auto port = stoi(bdmT->bdm()->config().listenPort_);
+   if (port == 0)
+      port = WEBSOCKET_PORT;
 
    //run service thread
    if (async)
    {
-      auto loopthr = [instance](void)->void
+      auto loopthr = [instance, port](void)->void
       {
-         instance->webSocketService();
+         instance->webSocketService(port);
       };
 
       auto fut = instance->isReadyProm_.get_future();
@@ -491,7 +494,7 @@ void WebSocketServer::start(BlockDataManagerThread* bdmT, bool async)
       return;
    }
 
-   instance->webSocketService();
+   instance->webSocketService(port);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -547,7 +550,7 @@ void WebSocketServer::setIsReady()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void WebSocketServer::webSocketService()
+void WebSocketServer::webSocketService(int port)
 {
    struct lws_context_creation_info info;
    struct lws_vhost *vhost;
@@ -558,7 +561,7 @@ void WebSocketServer::webSocketService()
    int n = 0;
 
    memset(&info, 0, sizeof info);
-   info.port = WEBSOCKET_PORT;
+   info.port = port;
 
    info.iface = iface;
    info.protocols = protocols;

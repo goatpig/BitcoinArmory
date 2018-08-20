@@ -34,7 +34,7 @@ BlockDataViewer BlockDataViewer::getNewBDV(const string& addr,
    const string& port, SocketType st)
 {
    auto&& bdvAsync = AsyncClient::BlockDataViewer::getNewBDV(addr, port, st);
-   return BlockDataViewer(bdvAsync);
+   return BlockDataViewer(*bdvAsync);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

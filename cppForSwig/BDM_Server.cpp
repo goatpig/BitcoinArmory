@@ -722,8 +722,18 @@ shared_ptr<Message> BDV_Server_Object::processCommand(
       uint32_t blocksToConfirm = command->value();
       auto strat = command->bindata(0);
 
-      auto feeByte = this->bdmPtr_->nodeRPC_->getFeeByte(
-         blocksToConfirm, strat);
+      FeeEstimateResult feeByte;
+      try
+      {
+         feeByte = this->bdmPtr_->nodeRPC_->getFeeByte(
+            blocksToConfirm, strat);
+      }
+      catch (exception&)
+      {
+         feeByte.smartFee_ = false;
+         feeByte.feeByte_ = -1.0f;
+         feeByte.error_ = string("failed to get fee/byte from RPC");
+      }
 
       auto response = make_shared<::Codec_FeeEstimate::FeeEstimate>();
       response->set_feebyte(feeByte.feeByte_);
@@ -839,7 +849,7 @@ shared_ptr<Message> BDV_Server_Object::processCommand(
    case Methods::getHeaderByHash:
    {
       /*
-      in: hash
+      in: tx hash
       out: raw header, as Codec_CommonTypes::BinaryData
       */
 
@@ -858,11 +868,14 @@ shared_ptr<Message> BDV_Server_Object::processCommand(
       BinaryRefReader key_brr(dbKey.getRef());
       DBUtils::readBlkDataKeyNoPrefix(key_brr, height, dup);
 
-      BinaryData rawHeader;
+      BinaryData bw;
       try
       {
          auto block = this->blockchain().getHeaderByHeight(height);
-         rawHeader = block->serialize();
+         auto rawHeader = block->serialize();
+         BinaryWriter bw(rawHeader.getSize() + 4);
+         bw.put_uint32_t(height);
+         bw.put_BinaryData(rawHeader);
       }
       catch (exception&)
       {
@@ -870,7 +883,7 @@ shared_ptr<Message> BDV_Server_Object::processCommand(
       }
 
       auto response = make_shared<::Codec_CommonTypes::BinaryData>();
-      response->set_data(rawHeader.getPtr(), rawHeader.getSize());
+      response->set_data(bw.getPtr(), bw.getSize());
       return response;
    }
 

@@ -145,6 +145,7 @@ private:
    FeeEstimateResult queryFeeByteSmart(HttpSocket&,
       unsigned confTarget, string& strategy);
    void aggregateFeeEstimates(void);
+   void resetAuthString(void);
 
 public:
    NodeRPC(BlockDataManagerConfig&);

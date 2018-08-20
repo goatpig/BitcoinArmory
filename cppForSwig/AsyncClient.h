@@ -26,6 +26,7 @@ Handle codec and socketing for armory client
 class WalletManager;
 class WalletContainer;
 
+///////////////////////////////////////////////////////////////////////////////
 class ClientMessageError : public runtime_error
 {
 public:
@@ -34,6 +35,33 @@ public:
    {}
 };
 
+
+///////////////////////////////////////////////////////////////////////////////
+struct ClientCache : public Lockable
+{
+private:
+   map<BinaryData, Tx> txMap_;
+   map<unsigned, BinaryData> rawHeaderMap_;
+   map<BinaryData, unsigned> txHashToHeightMap_;
+
+public:
+   void insertTx(BinaryData&, Tx&);
+   void insertRawHeader(unsigned&, BinaryDataRef);
+   void insertHeightForTxHash(BinaryData&, unsigned&);
+
+   const Tx& getTx(const BinaryDataRef&) const;
+   const BinaryData& getRawHeader(const unsigned&) const;
+   const unsigned& getHeightForTxHash(const BinaryData&) const;
+
+   //virtuals
+   void initAfterLock(void) {}
+   void cleanUpBeforeUnlock(void) {}
+};
+
+class NoMatch
+{};
+
+///////////////////////////////////////////////////////////////////////////////
 namespace SwigClient
 {
    class BlockDataViewer;
@@ -42,10 +70,9 @@ namespace SwigClient
 namespace AsyncClient
 {
    static bool textSerialization_ = false;
-
    class BlockDataViewer;
 
-   ///////////////////////////////////////////////////////////////////////////////
+   /////////////////////////////////////////////////////////////////////////////
    class LedgerDelegate
    {
    private:
@@ -66,7 +93,7 @@ namespace AsyncClient
 
    class BtcWallet;
 
-   ///////////////////////////////////////////////////////////////////////////////
+   /////////////////////////////////////////////////////////////////////////////
    class ScrAddrObj
    {
       friend class ::WalletContainer;
@@ -116,7 +143,7 @@ namespace AsyncClient
       int getIndex(void) const { return index_; }
    };
 
-   ///////////////////////////////////////////////////////////////////////////////
+   /////////////////////////////////////////////////////////////////////////////
    class BtcWallet
    {
       friend class ScrAddrObj;
@@ -154,7 +181,7 @@ namespace AsyncClient
       void createAddressBook(function<void(vector<AddressBookEntry>)>) const;
    };
 
-   ///////////////////////////////////////////////////////////////////////////////
+   /////////////////////////////////////////////////////////////////////////////
    class Lockbox : public BtcWallet
    {
    private:
@@ -181,7 +208,7 @@ namespace AsyncClient
          const vector<BinaryData>& addrVec, bool isNew);
    };
 
-   ///////////////////////////////////////////////////////////////////////////////
+   /////////////////////////////////////////////////////////////////////////////
    class Blockchain
    {
    private:
@@ -196,7 +223,7 @@ namespace AsyncClient
          unsigned height, function<void(ClientClasses::BlockHeader)>);
    };
 
-   ///////////////////////////////////////////////////////////////////////////////
+   /////////////////////////////////////////////////////////////////////////////
    class BlockDataViewer
    {
       friend class ScrAddrObj;
@@ -211,10 +238,7 @@ namespace AsyncClient
       string bdvID_;
       shared_ptr<SocketPrototype> sock_;
 
-      //save all tx we fetch by hash to reduce resource cost on redundant fetches
-      shared_ptr<map<BinaryData, Tx>> txMap_;
-      shared_ptr<map<BinaryData, BinaryData>> rawHeaderMap_;
-
+      shared_ptr<ClientCache> cache_;
       mutable unsigned topBlock_ = 0;
 
    private:
@@ -226,7 +250,7 @@ namespace AsyncClient
       {
          bdvID_ = rhs.bdvID_;
          sock_ = rhs.sock_;
-         txMap_ = rhs.txMap_;
+         cache_ = rhs.cache_;
 
          return *this;
       }
@@ -241,7 +265,7 @@ namespace AsyncClient
       const string& getID(void) const { return bdvID_; }
       shared_ptr<SocketPrototype> getSocketObject(void) const { return sock_; }
 
-      static BlockDataViewer getNewBDV(
+      static shared_ptr<BlockDataViewer> getNewBDV(
          const string& addr, const string& port, SocketType);
 
       void getLedgerDelegateForWallets(function<void(LedgerDelegate)>);
@@ -260,6 +284,8 @@ namespace AsyncClient
       void getTxByHash(const BinaryData& txHash, function<void(Tx)>);
       void getRawHeaderForTxHash(
          const BinaryData& txHash, function<void(BinaryData)>);
+      void getHeaderByHeight(
+         unsigned height, function<void(BinaryData)>);
 
       void updateWalletsLedgerFilter(const vector<BinaryData>& wltIdVec);
       bool hasRemoteDB(void);
@@ -351,13 +377,13 @@ struct CallbackReturn_Tx : public CallbackReturn_WebSocket
 {
 private:
    function<void(Tx)> userCallbackLambda_;
-   shared_ptr<map<BinaryData, Tx>> txMap_;
+   shared_ptr<ClientCache> cache_;
    BinaryData txHash_;
 
 public:
-   CallbackReturn_Tx(shared_ptr<map<BinaryData, Tx>> mapPtr,
+   CallbackReturn_Tx(shared_ptr<ClientCache> cache,
       const BinaryData& txHash, function<void(Tx)> lbd) :
-      txMap_(mapPtr), txHash_(txHash), userCallbackLambda_(lbd)
+      cache_(cache), txHash_(txHash), userCallbackLambda_(lbd)
    {}
 
    //virtual
@@ -369,13 +395,17 @@ struct CallbackReturn_RawHeader : public CallbackReturn_WebSocket
 {
 private:
    function<void(BinaryData)> userCallbackLambda_;
-   shared_ptr<map<BinaryData, BinaryData>> rawHeaderMap_;   
+   shared_ptr<ClientCache> cache_;
    BinaryData txHash_;
+   unsigned height_;
 
 public:
-   CallbackReturn_RawHeader(shared_ptr<map<BinaryData, BinaryData>> headerMap,
-      const BinaryData& txHash, function<void(BinaryData)> lbd) :
-      rawHeaderMap_(headerMap), txHash_(txHash), userCallbackLambda_(lbd)
+   CallbackReturn_RawHeader(
+      shared_ptr<ClientCache> cache,
+      unsigned height, const BinaryData& txHash, 
+      function<void(BinaryData)> lbd) :
+      cache_(cache),txHash_(txHash), height_(height),
+      userCallbackLambda_(lbd)
    {}
 
    //virtual
@@ -383,7 +413,7 @@ public:
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct CallbackReturn_NodeStatusStruct : public CallbackReturn_WebSocket
+class CallbackReturn_NodeStatusStruct : public CallbackReturn_WebSocket
 {
 private:
    function<void(shared_ptr<::ClientClasses::NodeStatusStruct>)> 

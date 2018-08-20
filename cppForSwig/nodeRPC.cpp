@@ -60,6 +60,13 @@ bool NodeRPC::setupConnection(HttpSocket& sock)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+void NodeRPC::resetAuthString()
+{
+   ReentrantLock lock(this);
+   basicAuthString64_.clear();
+}
+
+////////////////////////////////////////////////////////////////////////////////
 RpcStatus NodeRPC::testConnection()
 {
    ReentrantLock lock(this);
@@ -330,9 +337,6 @@ void NodeRPC::aggregateFeeEstimates()
       for (auto& target : confTargets)
       {
          auto&& result = queryFeeByteSmart(sock, target, strat);
-         /*LOGINFO << "fee-byte for strat \"" << strat <<
-            "\", target: " << target << ": " << result.feeByte_;*/
-
          newMap.insert(make_pair(target, move(result)));
       }
    }
@@ -569,12 +573,12 @@ void NodeRPC::pollThread()
    bool status = false;
    while (true)
    {
-      LOGINFO << "!!!!!!!! rpc poll iteration";
       if (!status)
       {
          //test connection
          try
          {
+            resetAuthString();
             auto rpcState = testConnection();
             bool doCallback = false;
             if (rpcState != previousState_)

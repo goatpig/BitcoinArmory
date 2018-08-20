@@ -7895,7 +7895,7 @@ TEST_F(BlockUtilsBare, WebSocketStack)
    theBDMt_->start(config.initMode_);
 
    auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
-      "127.0.0.1", "7681", SocketType::SocketWS);
+      "127.0.0.1", config.listenPort_, SocketType::SocketWS);
    bdvObj.registerWithDB(config.magicBytes_);
 
    auto createNAddresses = [](unsigned count)->vector<BinaryData>
@@ -8118,7 +8118,7 @@ TEST_F(BlockUtilsBare, WebSocketStack_ManyZC)
    theBDMt_->start(config.initMode_);
 
    auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
-      "127.0.0.1", "7681", SocketType::SocketWS);
+      "127.0.0.1", config.listenPort_, SocketType::SocketWS);
    bdvObj.registerWithDB(config.magicBytes_);
    auto& bdvID = bdvObj.getID();
 
@@ -8314,12 +8314,12 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
       return result;
    };
 
-      auto&& scrAddrVec = createNAddresses(2000);
+   auto&& scrAddrVec = createNAddresses(2000);
    theBDMt_->start(config.initMode_);
 
    {
       auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
-         "127.0.0.1", "7681", SocketType::SocketWS);
+         "127.0.0.1", config.listenPort_, SocketType::SocketWS);
       bdvObj.registerWithDB(config.magicBytes_);
 
       scrAddrVec.push_back(TestChain::scrAddrA);
@@ -8443,7 +8443,7 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
       cout << ".iter " << i << endl;
 
       auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
-         "127.0.0.1", "7681", SocketType::SocketWS);
+         "127.0.0.1", config.listenPort_, SocketType::SocketWS);
       bdvObj.registerWithDB(config.magicBytes_);
 
       const vector<BinaryData> lb1ScrAddrs
@@ -8527,7 +8527,7 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
    }
 
    auto&& bdvObj2 = SwigClient::BlockDataViewer::getNewBDV(
-      "127.0.0.1", "7681", SocketType::SocketWS);
+      "127.0.0.1", config.listenPort_, SocketType::SocketWS);
    bdvObj2.shutdown(config.cookie_);
    WebSocketServer::waitOnShutdown();
 
@@ -10149,7 +10149,7 @@ TEST_F(BlockUtilsBare, GrabAddrLedger_PostReg)
    theBDMt_->start(config.initMode_);
 
    auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
-      "127.0.0.1", "7681", SocketType::SocketWS);
+      "127.0.0.1", config.listenPort_, SocketType::SocketWS);
    bdvObj.registerWithDB(config.magicBytes_);
 
    vector<BinaryData> scrAddrVec;
