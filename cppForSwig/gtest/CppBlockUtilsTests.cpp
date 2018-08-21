@@ -8318,8 +8318,13 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
    theBDMt_->start(config.initMode_);
 
    {
+      DBTestUtils::UTCallback pCallback;
       auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
-         "127.0.0.1", config.listenPort_, SocketType::SocketWS);
+         "127.0.0.1", config.listenPort_, &pCallback);
+      auto isConnectedFut = pCallback.getFuture();
+      if (!isConnectedFut.get())
+         throw runtime_error("failed to connected to remote");
+
       bdvObj.registerWithDB(config.magicBytes_);
 
       scrAddrVec.push_back(TestChain::scrAddrA);
@@ -8339,8 +8344,6 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
       };
 
       vector<string> walletRegIDs;
-      DBTestUtils::UTCallback pCallback(bdvObj);
-
       auto&& wallet1 = bdvObj.instantiateWallet("wallet1");
       walletRegIDs.push_back(
          wallet1.registerAddresses(scrAddrVec, false));
@@ -8438,12 +8441,20 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
       bdvObj.unregisterFromDB();
    }
 
+
+   this_thread::sleep_for(chrono::seconds(20));
+
    for (int i = 0; i < 10000; i++)
    {
       cout << ".iter " << i << endl;
 
+      DBTestUtils::UTCallback pCallback;
       auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
-         "127.0.0.1", config.listenPort_, SocketType::SocketWS);
+         "127.0.0.1", config.listenPort_, &pCallback);
+      auto isConnectedFut = pCallback.getFuture();
+      if (!isConnectedFut.get())
+         throw runtime_error("failed to connected to remote");
+
       bdvObj.registerWithDB(config.magicBytes_);
 
       const vector<BinaryData> lb1ScrAddrs
@@ -8458,7 +8469,6 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
       };
 
       vector<string> walletRegIDs;
-      DBTestUtils::UTCallback pCallback(bdvObj);
 
       auto&& wallet1 = bdvObj.instantiateWallet("wallet1");
       walletRegIDs.push_back(
@@ -8527,7 +8537,7 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
    }
 
    auto&& bdvObj2 = SwigClient::BlockDataViewer::getNewBDV(
-      "127.0.0.1", config.listenPort_, SocketType::SocketWS);
+      "127.0.0.1", config.listenPort_, nullptr);
    bdvObj2.shutdown(config.cookie_);
    WebSocketServer::waitOnShutdown();
 

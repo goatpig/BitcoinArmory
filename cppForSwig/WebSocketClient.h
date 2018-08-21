@@ -97,9 +97,8 @@ private:
    atomic<void*> wsiPtr_;
    atomic<void*> contextPtr_;
    atomic<unsigned> requestID_;
-   unique_ptr<promise<bool>> ctorProm_ = nullptr;
-
    atomic<int> shutdownCount_;
+   atomic<bool> connected_ = { false };
 
    Queue<WebSocketMessage> writeQueue_;
    WebSocketMessage currentWriteMessage_;
@@ -131,7 +130,6 @@ private:
    }
 
    void init();
-   void setIsReady(bool);
    void readService(void);
    static void service(
       shared_ptr<atomic<unsigned>>, struct lws*, struct lws_context*);

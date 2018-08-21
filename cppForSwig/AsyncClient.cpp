@@ -55,34 +55,25 @@ bool BlockDataViewer::hasRemoteDB(void)
 
 ///////////////////////////////////////////////////////////////////////////////
 shared_ptr<BlockDataViewer> BlockDataViewer::getNewBDV(const string& addr,
-   const string& port, SocketType st)
+   const string& port, RemoteCallback* callback)
 {
-   shared_ptr<SocketPrototype> sockptr = nullptr;
+   //create socket object
+   auto  sockptr = WebSocketClient::getNew(addr, port);
 
-   switch (st)
+   //instantiate bdv object
+   BlockDataViewer* bdvPtr = new BlockDataViewer(sockptr);
+
+   //setup callback
+   if (callback != nullptr)
    {
-   case SocketHttp:
-      sockptr = make_shared<HttpSocket>(addr, port);
-      textSerialization_ = true;
-      break;
-
-   case SocketFcgi:
-      sockptr = make_shared<FcgiSocket>(addr, port);
-      textSerialization_ = true;
-      break;
-
-   case SocketWS:
-      sockptr = WebSocketClient::getNew(addr, port);
-      textSerialization_ = false;
-      break;
-
-   default:
-      throw SocketError("unexpected socket type");
+      callback->setup(bdvPtr->getRemoteCallbackSetupStruct());
+      sockptr->setCallback(callback);
    }
 
-   BlockDataViewer* bdvPtr = new BlockDataViewer(sockptr);
+   //create shared_ptr of bdv object
    shared_ptr<BlockDataViewer> bdvSharedPtr;
    bdvSharedPtr.reset(bdvPtr);
+
    return bdvSharedPtr;
 }
 

@@ -159,6 +159,7 @@ namespace DBTestUtils
    /////////////////////////////////////////////////////////////////////////////
    class UTCallback : public RemoteCallback
    {
+      promise<bool> isConnected_;
       struct BdmNotif
       {
          BDMAction action_;
@@ -169,13 +170,8 @@ namespace DBTestUtils
       BlockingQueue<unique_ptr<BdmNotif>> actionStack_;
 
    public:
-      UTCallback(const SwigClient::BlockDataViewer& bdv) :
-         RemoteCallback(bdv.getRemoteCallbackSetupStruct())
+      UTCallback() : RemoteCallback()
       {}
-
-      UTCallback(const AsyncClient::BlockDataViewer& bdv) :
-         RemoteCallback(bdv.getRemoteCallbackSetupStruct())
-      {}      
 
       void run(BDMAction action, void* ptr, int block = 0)
       {
@@ -208,6 +204,16 @@ namespace DBTestUtils
          float progress, unsigned secondsRem, unsigned progressNumeric)
       {}
 
+      void socketStatus(bool status)
+      {
+         isConnected_.set_value(status);
+      }
+
+      shared_future<bool> getFuture(void)
+      {
+         return isConnected_.get_future();
+      }
+
       void waitOnSignal(BDMAction signal, string id = "")
       {
          BinaryDataRef idRef; idRef.setRef(id);
@@ -215,21 +221,20 @@ namespace DBTestUtils
          {
             auto&& action = actionStack_.pop_front();
             if (action->action_ == signal)
-	    {
-	       if (id.size() > 0)
-	       {
-	          for (auto& id : action->idVec_)
-	          {
-	             if (id == idRef)
-	                return;
-	          }
-	       }
-	       else
-	       {
-	          return;
-	       }
-	    }
-
+            {
+               if (id.size() > 0)
+               {
+                  for (auto& id : action->idVec_)
+                  {
+                     if (id == idRef)
+                        return;
+                  }
+               }
+               else
+               {
+                  return;
+               }
+            }
          }
       }
 

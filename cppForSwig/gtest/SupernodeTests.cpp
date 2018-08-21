@@ -2940,10 +2940,13 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
    theBDMt_->start(config.initMode_);
 
    {
+      DBTestUtils::UTCallback pCallback;
+      auto isConnectedFut = pCallback.getFuture();
       auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
-         "127.0.0.1", config.listenPort_, SocketType::SocketWS);
+         "127.0.0.1", config.listenPort_, &pCallback);
+      if (!isConnectedFut.get())
+         throw runtime_error("failed to connect to remote");
       bdvObj.registerWithDB(config.magicBytes_);
-      DBTestUtils::UTCallback pCallback(bdvObj);
       
       auto&& wallet1 = bdvObj.instantiateWallet("wallet1");
       vector<string> walletRegIDs;
@@ -2965,8 +2968,12 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
 
    auto request_lambda = [&](void)->void
    {
+      DBTestUtils::UTCallback pCallback;
+      auto isConnectedFut = pCallback.getFuture();
       auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
-         "127.0.0.1", config.listenPort_, SocketType::SocketWS);
+         "127.0.0.1", config.listenPort_, &pCallback);
+      if (!isConnectedFut.get())
+         throw runtime_error("failed to connect to remote");
       bdvObj->registerWithDB(config.magicBytes_);
 
       const vector<BinaryData> lb1ScrAddrs
@@ -2981,7 +2988,6 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
       };
 
       vector<string> walletRegIDs;
-      DBTestUtils::UTCallback pCallback(*bdvObj);
 
       auto&& wallet1 = bdvObj->instantiateWallet("wallet1");
       walletRegIDs.push_back(
@@ -3191,7 +3197,7 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
    }
 
    auto&& bdvObj2 = SwigClient::BlockDataViewer::getNewBDV(
-      "127.0.0.1", config.listenPort_, SocketType::SocketWS);
+      "127.0.0.1", config.listenPort_, nullptr);
    bdvObj2.shutdown(config.cookie_);
    WebSocketServer::waitOnShutdown();
 

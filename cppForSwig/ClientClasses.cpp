@@ -179,16 +179,11 @@ bool LedgerEntry::isWitness() const
 // RemoteCallback
 //
 ///////////////////////////////////////////////////////////////////////////////
-RemoteCallback::RemoteCallback(RemoteCallbackSetupStruct setupstruct) :
-   sock_(setupstruct.sockPtr_), bdvID_(setupstruct.bdvId_), 
-   setHeightLbd_(setupstruct.setHeightLambda_)
+void RemoteCallback::setup(RemoteCallbackSetupStruct setupstruct)
 {
-   //set callback ptr for websocket client
-   auto ws_ptr = dynamic_pointer_cast<WebSocketClient>(sock_);
-   if (ws_ptr == nullptr)
-      return;
-
-   ws_ptr->setCallback(this);
+   sock_ = setupstruct.sockPtr_;
+   bdvID_ = setupstruct.bdvId_;
+   setHeightLbd_ = setupstruct.setHeightLambda_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

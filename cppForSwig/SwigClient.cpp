@@ -31,9 +31,10 @@ const BlockDataViewer& BlockDataViewer::operator=(const BlockDataViewer& rhs)
 
 ///////////////////////////////////////////////////////////////////////////////
 BlockDataViewer BlockDataViewer::getNewBDV(const string& addr,
-   const string& port, SocketType st)
+   const string& port, RemoteCallback* callback)
 {
-   auto&& bdvAsync = AsyncClient::BlockDataViewer::getNewBDV(addr, port, st);
+   auto&& bdvAsync = 
+      AsyncClient::BlockDataViewer::getNewBDV(addr, port, callback);
    return BlockDataViewer(*bdvAsync);
 }
 

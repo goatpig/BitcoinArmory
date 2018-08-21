@@ -266,7 +266,7 @@ namespace AsyncClient
       shared_ptr<SocketPrototype> getSocketObject(void) const { return sock_; }
 
       static shared_ptr<BlockDataViewer> getNewBDV(
-         const string& addr, const string& port, SocketType);
+         const string& addr, const string& port, RemoteCallback*);
 
       void getLedgerDelegateForWallets(function<void(LedgerDelegate)>);
       void getLedgerDelegateForLockboxes(function<void(LedgerDelegate)>);

@@ -179,7 +179,7 @@ namespace SwigClient
       const string& getID(void) const;
 
       static BlockDataViewer getNewBDV(
-         const string& addr, const string& port, SocketType);
+         const string& addr, const string& port, RemoteCallback*);
 
       LedgerDelegate getLedgerDelegateForWallets(void);
       LedgerDelegate getLedgerDelegateForLockboxes(void);

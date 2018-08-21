@@ -51,7 +51,10 @@ void WebSocketClient::pushPayload(
 
    //trigger write callback
    auto wsiptr = (struct lws*)wsiPtr_.load(memory_order_relaxed);
-   lws_callback_on_writable(wsiptr);
+   if (wsiptr == nullptr)
+      throw LWS_Error("invalid lws instance");
+   if (lws_callback_on_writable(wsiptr) < 1)
+      throw LWS_Error("invalid lws instance");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -68,20 +71,6 @@ shared_ptr<WebSocketClient> WebSocketClient::getNew(
    newmap.insert(move(make_pair(wsiptr, newObject)));
    objectMap_.update(newmap);
    return newObject;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void WebSocketClient::setIsReady(bool status)
-{
-   if (ctorProm_ != nullptr)
-   {
-      try
-      {
-         ctorProm_->set_value(status);
-      }
-      catch(future_error&)
-      { }
-   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -140,9 +129,6 @@ void WebSocketClient::init()
 ////////////////////////////////////////////////////////////////////////////////
 bool WebSocketClient::connectToRemote()
 {
-   ctorProm_ = make_unique<promise<bool>>();
-   auto fut = ctorProm_->get_future();
-
    //start service threads
    auto readLBD = [this](void)->void
    {
@@ -161,23 +147,7 @@ bool WebSocketClient::connectToRemote()
 
    auto serviceThr = thread(serviceLBD);
    serviceThr.detach();
-
-   bool result = true;
-   try
-   {
-      result = fut.get();
-   }
-   catch (future_error&)
-   {
-      result = false;
-   }
-   
-   if (result == false)
-   {
-      LOGERR << "failed to connect to lws server";
-   }
-
-   return result;
+   return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -225,7 +195,6 @@ void WebSocketClient::shutdown()
       throw e;
    }
 
-   setIsReady(false);
    wsiPtr_.store(nullptr, memory_order_relaxed);
 }
 
@@ -243,7 +212,10 @@ int WebSocketClient::callback(struct lws *wsi,
    {
       //ws connection established with server
       auto instance = WebSocketClient::getInstance(wsi);
-      instance->setIsReady(true);
+      instance->connected_.store(true, memory_order_release);
+
+      if (instance->callbackPtr_ != nullptr)
+         instance->callbackPtr_->socketStatus(true);
       break;
    }
 
@@ -264,6 +236,16 @@ int WebSocketClient::callback(struct lws *wsi,
    case LWS_CALLBACK_CLIENT_CLOSED:
    case LWS_CALLBACK_CLOSED:
    {
+      try
+      {
+         auto instance = WebSocketClient::getInstance(wsi);
+         instance->connected_.store(false, memory_order_release);
+         if (instance->callbackPtr_ != nullptr)
+            instance->callbackPtr_->socketStatus(false);
+      }
+      catch(LWS_Error&)
+      { }
+
       WebSocketClient::destroyInstance(wsi);
       break;
    }
