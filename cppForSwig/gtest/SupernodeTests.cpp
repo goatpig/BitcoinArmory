@@ -2940,10 +2940,10 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
    theBDMt_->start(config.initMode_);
 
    {
-      DBTestUtils::UTCallback pCallback;
-      auto isConnectedFut = pCallback.getFuture();
+      auto pCallback = make_shared<DBTestUtils::UTCallback>();
+      auto isConnectedFut = pCallback->getFuture();
       auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
-         "127.0.0.1", config.listenPort_, &pCallback);
+         "127.0.0.1", config.listenPort_, pCallback);
       if (!isConnectedFut.get())
          throw runtime_error("failed to connect to remote");
       bdvObj.registerWithDB(config.magicBytes_);
@@ -2954,11 +2954,11 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
          wallet1.registerAddresses(scrAddrVec, false));
 
       //wait on registration ack
-      pCallback.waitOnManySignals(BDMAction_Refresh, walletRegIDs);
+      pCallback->waitOnManySignals(BDMAction_Refresh, walletRegIDs);
 
       //go online
       bdvObj.goOnline();
-      pCallback.waitOnSignal(BDMAction_Ready);
+      pCallback->waitOnSignal(BDMAction_Ready);
 
       auto delegate = move(bdvObj.getLedgerDelegateForWallets());
       auto ledgers = move(delegate.getHistoryPage(0));
@@ -2968,10 +2968,10 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
 
    auto request_lambda = [&](void)->void
    {
-      DBTestUtils::UTCallback pCallback;
-      auto isConnectedFut = pCallback.getFuture();
+      auto pCallback = make_shared<DBTestUtils::UTCallback>();
+      auto isConnectedFut = pCallback->getFuture();
       auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
-         "127.0.0.1", config.listenPort_, &pCallback);
+         "127.0.0.1", config.listenPort_, pCallback);
       if (!isConnectedFut.get())
          throw runtime_error("failed to connect to remote");
       bdvObj->registerWithDB(config.magicBytes_);
@@ -3002,11 +3002,11 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
          lb2.registerAddresses(lb2ScrAddrs, false));
 
       //wait on registration ack
-      pCallback.waitOnManySignals(BDMAction_Refresh, walletRegIDs);
+      pCallback->waitOnManySignals(BDMAction_Refresh, walletRegIDs);
 
       //go online
       bdvObj->goOnline();
-      pCallback.waitOnSignal(BDMAction_Ready);
+      pCallback->waitOnSignal(BDMAction_Ready);
 
       //get delegate
       auto del1_prom = make_shared<promise<AsyncClient::LedgerDelegate>>();

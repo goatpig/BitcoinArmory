@@ -62,16 +62,8 @@ public:
 class RemoteCallback
 {
 private:
-   bool run_ = true;
-
-   shared_ptr<SocketPrototype> sock_;
    string bdvID_;
-   SOCKET sockfd_;
-
    function<void(unsigned)> setHeightLbd_;
-
-private:
-   void pushCallbackRequest(void);
 
 public:
    RemoteCallback(void) {}
@@ -86,8 +78,6 @@ public:
    ) = 0;
    virtual void socketStatus(bool) = 0;
 
-   void start(void);
-   void shutdown(void);
    void setup(RemoteCallbackSetupStruct);
    bool processNotifications(shared_ptr<::Codec_BDVCommand::BDVCallback>);
 };

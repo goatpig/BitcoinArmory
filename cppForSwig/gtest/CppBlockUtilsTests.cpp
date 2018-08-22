@@ -8318,10 +8318,10 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
    theBDMt_->start(config.initMode_);
 
    {
-      DBTestUtils::UTCallback pCallback;
+      auto pCallback = make_shared<DBTestUtils::UTCallback>();
       auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
-         "127.0.0.1", config.listenPort_, &pCallback);
-      auto isConnectedFut = pCallback.getFuture();
+         "127.0.0.1", config.listenPort_, pCallback);
+      auto isConnectedFut = pCallback->getFuture();
       if (!isConnectedFut.get())
          throw runtime_error("failed to connected to remote");
 
@@ -8357,11 +8357,11 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
          lb2.registerAddresses(lb2ScrAddrs, false));
 
       //wait on registration ack
-      pCallback.waitOnManySignals(BDMAction_Refresh, walletRegIDs);
+      pCallback->waitOnManySignals(BDMAction_Refresh, walletRegIDs);
 
       //go online
       bdvObj.goOnline();
-      pCallback.waitOnSignal(BDMAction_Ready);
+      pCallback->waitOnSignal(BDMAction_Ready);
 
       auto w1AddrBalances = wallet1.getAddrBalancesFromDB();
       vector<uint64_t> balanceVec;
@@ -8401,7 +8401,7 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
       //
       TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
       DBTestUtils::triggerNewBlockNotification(theBDMt_);
-      pCallback.waitOnSignal(BDMAction_NewBlock);
+      pCallback->waitOnSignal(BDMAction_NewBlock);
 
       w1AddrBalances = wallet1.getAddrBalancesFromDB();
       balanceVec = w1AddrBalances[TestChain::scrAddrA];
@@ -8441,17 +8441,14 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
       bdvObj.unregisterFromDB();
    }
 
-
-   this_thread::sleep_for(chrono::seconds(20));
-
    for (int i = 0; i < 10000; i++)
    {
       cout << ".iter " << i << endl;
 
-      DBTestUtils::UTCallback pCallback;
+      auto pCallback = make_shared<DBTestUtils::UTCallback>();
       auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
-         "127.0.0.1", config.listenPort_, &pCallback);
-      auto isConnectedFut = pCallback.getFuture();
+         "127.0.0.1", config.listenPort_, pCallback);
+      auto isConnectedFut = pCallback->getFuture();
       if (!isConnectedFut.get())
          throw runtime_error("failed to connected to remote");
 
@@ -8483,11 +8480,11 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
          lb2.registerAddresses(lb2ScrAddrs, false));
 
       //wait on registration ack
-      pCallback.waitOnManySignals(BDMAction_Refresh, walletRegIDs);
+      pCallback->waitOnManySignals(BDMAction_Refresh, walletRegIDs);
 
       //go online
       bdvObj.goOnline();
-      pCallback.waitOnSignal(BDMAction_Ready);
+      pCallback->waitOnSignal(BDMAction_Ready);
 
       auto w1AddrBalances = wallet1.getAddrBalancesFromDB();
       auto balanceVec = w1AddrBalances[TestChain::scrAddrA];

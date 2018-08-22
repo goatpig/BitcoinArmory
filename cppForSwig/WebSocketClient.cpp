@@ -160,6 +160,8 @@ void WebSocketClient::service(shared_ptr<atomic<unsigned>> runPtr,
       n = lws_service(contextPtr, 50);
    }
 
+   auto instance = getInstance(wsiPtr);
+   instance->cleanUp();
    destroyInstance(wsiPtr);
    lws_context_destroy(contextPtr);
 }
@@ -167,25 +169,23 @@ void WebSocketClient::service(shared_ptr<atomic<unsigned>> runPtr,
 ////////////////////////////////////////////////////////////////////////////////
 void WebSocketClient::shutdown()
 {
+   run_->store(0, memory_order_relaxed);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void WebSocketClient::cleanUp()
+{
    auto count = shutdownCount_.fetch_add(1);
    if (count > 0)
       return;
 
-   run_->store(0, memory_order_relaxed);
    readPackets_.clear();
-
-   auto contextptr =
-      (struct lws_context*)contextPtr_.load(memory_order_relaxed);
-   if (contextptr != nullptr)
-   {
-      contextPtr_.store(nullptr, memory_order_relaxed);
-   }
-
    readQueue_.terminate();
+
    try
    {
-   if(readThr_.joinable())
-      readThr_.join();
+      if(readThr_.joinable())
+         readThr_.join();
    }
    catch(system_error& e)
    {
@@ -194,8 +194,6 @@ void WebSocketClient::shutdown()
             shutdownCount_.load(memory_order_relaxed);
       throw e;
    }
-
-   wsiPtr_.store(nullptr, memory_order_relaxed);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -242,11 +240,11 @@ int WebSocketClient::callback(struct lws *wsi,
          instance->connected_.store(false, memory_order_release);
          if (instance->callbackPtr_ != nullptr)
             instance->callbackPtr_->socketStatus(false);
+         instance->shutdown();
       }
       catch(LWS_Error&)
       { }
 
-      WebSocketClient::destroyInstance(wsi);
       break;
    }
 
@@ -411,7 +409,7 @@ void WebSocketClient::destroyInstance(struct lws* ptr)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void WebSocketClient::setCallback(RemoteCallback* ptr)
+void WebSocketClient::setCallback(shared_ptr<RemoteCallback> ptr)
 {
    callbackPtr_ = ptr;
 }

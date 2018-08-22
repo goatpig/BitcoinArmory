@@ -181,54 +181,13 @@ bool LedgerEntry::isWitness() const
 ///////////////////////////////////////////////////////////////////////////////
 void RemoteCallback::setup(RemoteCallbackSetupStruct setupstruct)
 {
-   sock_ = setupstruct.sockPtr_;
    bdvID_ = setupstruct.bdvId_;
    setHeightLbd_ = setupstruct.setHeightLambda_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void RemoteCallback::start(void)
-{
-   pushCallbackRequest();
-}
-
-///////////////////////////////////////////////////////////////////////////////
 RemoteCallback::~RemoteCallback(void)
-{
-   shutdown();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void RemoteCallback::shutdown()
-{
-   run_ = false;
-   SocketPrototype::closeSocket(sockfd_);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void RemoteCallback::pushCallbackRequest(void)
-{
-   if (!run_ || sock_->type() == SocketWS)
-      return;
-
-   auto command = make_unique<BDVCommand>();
-   command->set_method(Methods::waitOnBDVNotification);
-   command->set_bdvid(bdvID_);
-
-   auto write_payload = make_unique<WritePayload_Protobuf>();
-   write_payload->message_ = move(command);
-
-   auto callback = [this](
-      shared_ptr<BDVCallback> msg)->void
-   {
-      this->processNotifications(msg);
-   };
-
-   auto read_payload = make_shared<Socket_ReadPayload>();
-   read_payload->callbackReturn_ =
-      make_unique<CallbackReturn_BDVCallback>(callback);
-   sock_->pushPayload(move(write_payload), read_payload);
-}
+{}
 
 ///////////////////////////////////////////////////////////////////////////////
 bool RemoteCallback::processNotifications(
@@ -369,7 +328,6 @@ bool RemoteCallback::processNotifications(
       }
    }
 
-   pushCallbackRequest();
    return true;
 }
 
