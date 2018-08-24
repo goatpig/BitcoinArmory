@@ -416,9 +416,9 @@ public:
    // All these methods return UINTX_MAX if txRefObj.isNull()
    // BinaryData getBlockHash(void)      { return txRefObj_.getBlockHash();      }
    // uint32_t   getBlockTimestamp(void) { return txRefObj_.getBlockTimestamp(); }
-   uint32_t   getBlockHeight(void)    { return txRefObj_.getBlockHeight(); }
-   uint8_t    getDuplicateID(void)    { return txRefObj_.getDuplicateID(); }
-   uint16_t   getBlockTxIndex(void)   { return txRefObj_.getBlockTxIndex(); }
+   uint32_t   getBlockHeight(void) const    { return txRefObj_.getBlockHeight(); }
+   uint8_t    getDuplicateID(void) const    { return txRefObj_.getDuplicateID(); }
+   uint16_t   getBlockTxIndex(void) const   { return txRefObj_.getBlockTxIndex(); }
 
    bool isRBF(void) const;
    void setRBF(bool isTrue)
