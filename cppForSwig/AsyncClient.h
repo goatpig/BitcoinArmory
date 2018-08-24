@@ -255,7 +255,7 @@ namespace AsyncClient
    public:
       ~BlockDataViewer(void);
 
-      void connectToRemote(void);
+      bool connectToRemote(void);
       BtcWallet instantiateWallet(const string& id);
       Lockbox instantiateLockbox(const string& id);
 

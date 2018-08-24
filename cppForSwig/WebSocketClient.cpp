@@ -128,8 +128,7 @@ bool WebSocketClient::connectToRemote()
 
    readThr_ = thread(readLBD);
 
-   connectedFut.get();
-   return true;
+   return connectedFut.get();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -209,7 +208,16 @@ int WebSocketClient::callback(struct lws *wsi,
       {
          instance->connected_.store(false, memory_order_release);
          if (instance->callbackPtr_ != nullptr)
+         {
             instance->callbackPtr_->disconnected();
+            try
+            {
+               instance->connectedProm_.set_value(false);
+            }
+            catch(future_error&)
+            { }
+         }
+
          instance->shutdown();
       }
       catch(LWS_Error&)

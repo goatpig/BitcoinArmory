@@ -54,9 +54,9 @@ bool BlockDataViewer::hasRemoteDB(void)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void BlockDataViewer::connectToRemote(void)
+bool BlockDataViewer::connectToRemote(void)
 {
-   sock_->connectToRemote();
+   return sock_->connectToRemote();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

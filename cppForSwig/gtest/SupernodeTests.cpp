@@ -2931,11 +2931,11 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
       return result;
    };
 
-   auto&& scrAddrVec = createNAddresses(2000);
-   scrAddrVec.push_back(TestChain::scrAddrA);
-   scrAddrVec.push_back(TestChain::scrAddrB);
-   scrAddrVec.push_back(TestChain::scrAddrC);
-   scrAddrVec.push_back(TestChain::scrAddrE);
+   auto&& _scrAddrVec = createNAddresses(2000);
+   _scrAddrVec.push_back(TestChain::scrAddrA);
+   _scrAddrVec.push_back(TestChain::scrAddrB);
+   _scrAddrVec.push_back(TestChain::scrAddrC);
+   _scrAddrVec.push_back(TestChain::scrAddrE);
 
    theBDMt_->start(config.initMode_);
 
@@ -2949,7 +2949,7 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
       auto&& wallet1 = bdvObj->instantiateWallet("wallet1");
       vector<string> walletRegIDs;
       walletRegIDs.push_back(
-         wallet1.registerAddresses(scrAddrVec, false));
+         wallet1.registerAddresses(_scrAddrVec, false));
 
       //wait on registration ack
       pCallback->waitOnManySignals(BDMAction_Refresh, walletRegIDs);
@@ -2966,6 +2966,12 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
 
    auto request_lambda = [&](void)->void
    {
+      auto&& scrAddrVec = createNAddresses(6);
+      scrAddrVec.push_back(TestChain::scrAddrA);
+      scrAddrVec.push_back(TestChain::scrAddrB);
+      scrAddrVec.push_back(TestChain::scrAddrC);
+      scrAddrVec.push_back(TestChain::scrAddrE);
+
       auto pCallback = make_shared<DBTestUtils::UTCallback>();
       auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
          "127.0.0.1", config.listenPort_, pCallback);
@@ -3013,7 +3019,7 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
       };
       bdvObj->getLedgerDelegateForWallets(del1_get);
 
-      vector<AsyncClient::LedgerDelegate> delV(4);
+      vector<AsyncClient::LedgerDelegate> delV(10);
 
       auto getAddrDelegate = [bdvObj](const BinaryData& scrAddr, 
          AsyncClient::LedgerDelegate* delPtr)->void
@@ -3033,10 +3039,8 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
       auto delegate = move(del1_fut.get());
 
       deque<thread> delThr;
-      delThr.push_back(thread(getAddrDelegate, TestChain::scrAddrA, &delV[0]));
-      delThr.push_back(thread(getAddrDelegate, TestChain::scrAddrB, &delV[1]));
-      delThr.push_back(thread(getAddrDelegate, TestChain::scrAddrC, &delV[2]));
-      delThr.push_back(thread(getAddrDelegate, TestChain::scrAddrE, &delV[3]));
+      for (unsigned i=0; i<10; i++)
+         delThr.push_back(thread(getAddrDelegate, scrAddrVec[i], &delV[i]));
 
       for (auto& thr : delThr)
       {
@@ -3056,7 +3060,7 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
       delegate.getHistoryPage(0, ledger_get);
 
       //get addr ledgers
-      deque<vector<::ClientClasses::LedgerEntry>> addrLedgerV(4);
+      deque<vector<::ClientClasses::LedgerEntry>> addrLedgerV(10);
       auto getAddrLedger = [bdvObj](
          AsyncClient::LedgerDelegate delegate, 
          vector<::ClientClasses::LedgerEntry>* addrLedger)->void
@@ -3075,10 +3079,9 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
       };
 
       delThr.clear();
-      delThr.push_back(thread(getAddrLedger, delV[0], &addrLedgerV[0]));
-      delThr.push_back(thread(getAddrLedger, delV[1], &addrLedgerV[1]));
-      delThr.push_back(thread(getAddrLedger, delV[2], &addrLedgerV[2]));
-      delThr.push_back(thread(getAddrLedger, delV[3], &addrLedgerV[3]));
+
+      for (unsigned i = 0; i < 10; i++)
+         delThr.push_back(thread(getAddrLedger, delV[i], &addrLedgerV[i]));
 
       //
       auto w1AddrBal_prom = make_shared<promise<map<BinaryData, vector<uint64_t>>>>();
@@ -3240,10 +3243,12 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
             thr.join();
       }
 
-      EXPECT_EQ(addrLedgerV[0].size(), 1);
-      EXPECT_EQ(addrLedgerV[1].size(), 7);
-      EXPECT_EQ(addrLedgerV[2].size(), 4);
-      EXPECT_EQ(addrLedgerV[3].size(), 2);
+      for (unsigned i = 0; i < 6; i++)
+         EXPECT_EQ(addrLedgerV[i].size(), 0);
+      EXPECT_EQ(addrLedgerV[6].size(), 1);
+      EXPECT_EQ(addrLedgerV[7].size(), 7);
+      EXPECT_EQ(addrLedgerV[8].size(), 4);
+      EXPECT_EQ(addrLedgerV[9].size(), 2);
 
       bdvObj->unregisterFromDB();
    };
