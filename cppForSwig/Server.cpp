@@ -586,10 +586,10 @@ void WebSocketServer::webSocketService(int port)
    run_.store(1, memory_order_relaxed);
    try
    {
-   while (run_.load(memory_order_relaxed) != 0 && n >= 0)
-   {
-      n = lws_service(context, 50);
-   }
+      while (run_.load(memory_order_relaxed) != 0 && n >= 0)
+      {
+         n = lws_service(context, 50);
+      }
    }
    catch(exception& e)
    {

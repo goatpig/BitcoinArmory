@@ -179,13 +179,6 @@ bool LedgerEntry::isWitness() const
 // RemoteCallback
 //
 ///////////////////////////////////////////////////////////////////////////////
-void RemoteCallback::setup(RemoteCallbackSetupStruct setupstruct)
-{
-   bdvID_ = setupstruct.bdvId_;
-   setHeightLbd_ = setupstruct.setHeightLambda_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
 RemoteCallback::~RemoteCallback(void)
 {}
 
@@ -208,8 +201,6 @@ bool RemoteCallback::processNotifications(
             break;
 
          unsigned int newblock = notif.height();
-         setHeightLbd_(newblock);
-
          if (newblock != 0)
             run(BDMAction::BDMAction_NewBlock, &newblock, newblock);
 
@@ -271,8 +262,6 @@ bool RemoteCallback::processNotifications(
             break;
 
          unsigned int topblock = notif.height();
-         setHeightLbd_(topblock);
-
          run(BDMAction::BDMAction_Ready, nullptr, topblock);
 
          break;

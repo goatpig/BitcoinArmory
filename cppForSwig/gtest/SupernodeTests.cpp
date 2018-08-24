@@ -2941,14 +2941,12 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
 
    {
       auto pCallback = make_shared<DBTestUtils::UTCallback>();
-      auto isConnectedFut = pCallback->getFuture();
       auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
          "127.0.0.1", config.listenPort_, pCallback);
-      if (!isConnectedFut.get())
-         throw runtime_error("failed to connect to remote");
-      bdvObj.registerWithDB(config.magicBytes_);
+      bdvObj->connectToRemote();
+      bdvObj->registerWithDB(config.magicBytes_);
       
-      auto&& wallet1 = bdvObj.instantiateWallet("wallet1");
+      auto&& wallet1 = bdvObj->instantiateWallet("wallet1");
       vector<string> walletRegIDs;
       walletRegIDs.push_back(
          wallet1.registerAddresses(scrAddrVec, false));
@@ -2957,23 +2955,21 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
       pCallback->waitOnManySignals(BDMAction_Refresh, walletRegIDs);
 
       //go online
-      bdvObj.goOnline();
+      bdvObj->goOnline();
       pCallback->waitOnSignal(BDMAction_Ready);
 
-      auto delegate = move(bdvObj.getLedgerDelegateForWallets());
+      auto delegate = move(bdvObj->getLedgerDelegateForWallets());
       auto ledgers = move(delegate.getHistoryPage(0));
 
-      bdvObj.unregisterFromDB();
+      bdvObj->unregisterFromDB();
    }
 
    auto request_lambda = [&](void)->void
    {
       auto pCallback = make_shared<DBTestUtils::UTCallback>();
-      auto isConnectedFut = pCallback->getFuture();
       auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
          "127.0.0.1", config.listenPort_, pCallback);
-      if (!isConnectedFut.get())
-         throw runtime_error("failed to connect to remote");
+      bdvObj->connectToRemote();
       bdvObj->registerWithDB(config.magicBytes_);
 
       const vector<BinaryData> lb1ScrAddrs
@@ -3008,7 +3004,7 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
       bdvObj->goOnline();
       pCallback->waitOnSignal(BDMAction_Ready);
 
-      //get delegate
+      //get wallets delegate
       auto del1_prom = make_shared<promise<AsyncClient::LedgerDelegate>>();
       auto del1_fut = del1_prom->get_future();
       auto del1_get = [del1_prom](AsyncClient::LedgerDelegate delegate)->void
@@ -3016,7 +3012,37 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
          del1_prom->set_value(move(delegate));
       };
       bdvObj->getLedgerDelegateForWallets(del1_get);
+
+      vector<AsyncClient::LedgerDelegate> delV(4);
+
+      auto getAddrDelegate = [bdvObj](const BinaryData& scrAddr, 
+         AsyncClient::LedgerDelegate* delPtr)->void
+      {
+         //get scrAddr delegates
+         auto del_prom = make_shared<promise<AsyncClient::LedgerDelegate>>();
+         auto del_fut = del_prom->get_future();
+         auto del_get = [del_prom](AsyncClient::LedgerDelegate delegate)->void
+         {
+            del_prom->set_value(move(delegate));
+         };
+         bdvObj->getLedgerDelegateForScrAddr(
+            "wallet1", scrAddr, del_get);
+         *delPtr = move(del_fut.get());
+      };
+      
       auto delegate = move(del1_fut.get());
+
+      deque<thread> delThr;
+      delThr.push_back(thread(getAddrDelegate, TestChain::scrAddrA, &delV[0]));
+      delThr.push_back(thread(getAddrDelegate, TestChain::scrAddrB, &delV[1]));
+      delThr.push_back(thread(getAddrDelegate, TestChain::scrAddrC, &delV[2]));
+      delThr.push_back(thread(getAddrDelegate, TestChain::scrAddrE, &delV[3]));
+
+      for (auto& thr : delThr)
+      {
+         if (thr.joinable())
+            thr.join();
+      }
 
       //get ledgers
       auto ledger_prom = 
@@ -3028,6 +3054,31 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
          ledger_prom->set_value(move(ledgerV));
       };
       delegate.getHistoryPage(0, ledger_get);
+
+      //get addr ledgers
+      deque<vector<::ClientClasses::LedgerEntry>> addrLedgerV(4);
+      auto getAddrLedger = [bdvObj](
+         AsyncClient::LedgerDelegate delegate, 
+         vector<::ClientClasses::LedgerEntry>* addrLedger)->void
+      {
+         auto ledger_prom = 
+            make_shared<promise<vector<::ClientClasses::LedgerEntry>>>();
+         auto ledger_fut = ledger_prom->get_future();
+         auto ledger_get = 
+            [ledger_prom](vector<::ClientClasses::LedgerEntry> ledgerV)->void
+         {
+            ledger_prom->set_value(move(ledgerV));
+         };
+
+         delegate.getHistoryPage(0, ledger_get);
+         *addrLedger = move(ledger_fut.get());
+      };
+
+      delThr.clear();
+      delThr.push_back(thread(getAddrLedger, delV[0], &addrLedgerV[0]));
+      delThr.push_back(thread(getAddrLedger, delV[1], &addrLedgerV[1]));
+      delThr.push_back(thread(getAddrLedger, delV[2], &addrLedgerV[2]));
+      delThr.push_back(thread(getAddrLedger, delV[3], &addrLedgerV[3]));
 
       //
       auto w1AddrBal_prom = make_shared<promise<map<BinaryData, vector<uint64_t>>>>();
@@ -3183,6 +3234,17 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
          EXPECT_EQ(txobj.getThisHash(), fut_pair.first);
       }
 
+      for (auto& thr : delThr)
+      {
+         if (thr.joinable())
+            thr.join();
+      }
+
+      EXPECT_EQ(addrLedgerV[0].size(), 1);
+      EXPECT_EQ(addrLedgerV[1].size(), 7);
+      EXPECT_EQ(addrLedgerV[2].size(), 4);
+      EXPECT_EQ(addrLedgerV[3].size(), 2);
+
       bdvObj->unregisterFromDB();
    };
 
@@ -3198,7 +3260,9 @@ TEST_F(BlockUtilsWithWalletTest, WebSocketStack_ParallelAsync)
 
    auto&& bdvObj2 = SwigClient::BlockDataViewer::getNewBDV(
       "127.0.0.1", config.listenPort_, nullptr);
-   bdvObj2.shutdown(config.cookie_);
+   bdvObj2->connectToRemote();
+
+   bdvObj2->shutdown(config.cookie_);
    WebSocketServer::waitOnShutdown();
 
    delete theBDMt_;

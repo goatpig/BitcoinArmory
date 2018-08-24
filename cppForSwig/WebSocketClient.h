@@ -95,58 +95,51 @@ class WebSocketClient : public SocketPrototype
 {
 private:
    atomic<void*> wsiPtr_;
-   atomic<void*> contextPtr_;
+
    atomic<unsigned> requestID_;
-   atomic<int> shutdownCount_;
    atomic<bool> connected_ = { false };
 
    Queue<WebSocketMessage> writeQueue_;
    WebSocketMessage currentWriteMessage_;
 
    BlockingQueue<BinaryData> readQueue_;
-   shared_ptr<atomic<unsigned>> run_;
+   atomic<unsigned> run_ = { 1 };
    thread serviceThr_, readThr_;
    TransactionalMap<uint64_t, shared_ptr<WriteAndReadPacket>> readPackets_;
    shared_ptr<RemoteCallback> callbackPtr_ = nullptr;
    
-   static TransactionalMap<
-      struct lws*, shared_ptr<WebSocketClient>> objectMap_; 
-
    ClientPartialMessage currentReadMessage_;
-
-private:
-   WebSocketClient(const string& addr, const string& port) :
-      SocketPrototype(addr, port, false)
-   {
-      shutdownCount_.store(0, memory_order_relaxed); 
-
-      wsiPtr_.store(nullptr, memory_order_relaxed);
-      contextPtr_.store(nullptr, memory_order_relaxed);
-      run_ = make_shared<atomic<unsigned>>();
-
-      count_.store(0, memory_order_relaxed);
-      requestID_.store(0, memory_order_relaxed);
-      init();
-   }
-
-   void init();
-   void readService(void);
-   static void service(
-      shared_ptr<atomic<unsigned>>, struct lws*, struct lws_context*);
+   promise<bool> connectedProm_;
 
 public:
    atomic<int> count_;
 
+private:
+   struct lws_context* init();
+   void readService(void);
+   void service(lws_context*);
+
+
 public:
+   WebSocketClient(const string& addr, const string& port,
+      shared_ptr<RemoteCallback> cbPtr) :
+      SocketPrototype(addr, port, false), callbackPtr_(cbPtr)
+   {
+      count_.store(0, memory_order_relaxed);
+      requestID_.store(0, memory_order_relaxed);
+   }
+
    ~WebSocketClient()
    {
       shutdown();
+
+      if (serviceThr_.joinable())
+         serviceThr_.join();
    }
 
    //locals
    void shutdown(void);   
    void cleanUp(void);
-   void setCallback(shared_ptr<RemoteCallback>);
 
    //virtuals
    SocketType type(void) const { return SocketWS; }
@@ -155,16 +148,9 @@ public:
       shared_ptr<Socket_ReadPayload>);
    bool connectToRemote(void);
 
-   //statics
-   static shared_ptr<WebSocketClient> getNew(
-      const string& addr, const string& port);
-
    static int callback(
       struct lws *wsi, enum lws_callback_reasons reason, 
       void *user, void *in, size_t len);
-
-   static shared_ptr<WebSocketClient> getInstance(struct lws* ptr);
-   static void destroyInstance(struct lws* ptr);
 };
 
 #endif

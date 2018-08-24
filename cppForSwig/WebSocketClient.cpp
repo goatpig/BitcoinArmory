@@ -8,9 +8,6 @@
 
 #include "WebSocketClient.h"
 
-TransactionalMap<struct lws*, shared_ptr<WebSocketClient>> 
-   WebSocketClient::objectMap_;
-
 ////////////////////////////////////////////////////////////////////////////////
 static struct lws_protocols protocols[] = {
    /* first protocol must always be HTTP handler */
@@ -58,25 +55,9 @@ void WebSocketClient::pushPayload(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-shared_ptr<WebSocketClient> WebSocketClient::getNew(
-   const string& addr, const string& port)
+struct lws_context* WebSocketClient::init()
 {
-   WebSocketClient* objPtr = new WebSocketClient(addr, port);
-   shared_ptr<WebSocketClient> newObject;
-   newObject.reset(objPtr);
-   
-   auto wsiptr = (struct lws*)newObject->wsiPtr_.load(memory_order_relaxed);
-
-   map<struct lws*, shared_ptr<WebSocketClient>> newmap;
-   newmap.insert(move(make_pair(wsiptr, newObject)));
-   objectMap_.update(newmap);
-   return newObject;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void WebSocketClient::init()
-{
-   run_->store(1, memory_order_relaxed);
+   run_.store(1, memory_order_relaxed);
    currentReadMessage_.reset();
 
    //setup context
@@ -92,8 +73,6 @@ void WebSocketClient::init()
    auto contextptr = lws_create_context(&info);
    if (contextptr == NULL) 
       throw LWS_Error("failed to create LWS context");
-
-   contextPtr_.store(contextptr, memory_order_release);
 
    //connect to server
    struct lws_client_connect_info i;
@@ -118,18 +97,30 @@ void WebSocketClient::init()
 
    i.context = contextptr;
    i.method = nullptr;
-   i.protocol = protocols[PROTOCOL_ARMORY_CLIENT].name;   
+   i.protocol = protocols[PROTOCOL_ARMORY_CLIENT].name;  
+   i.userdata = this;
 
    struct lws* wsiptr;
-   i.pwsi = &wsiptr;
+   //i.pwsi = &wsiptr;
    wsiptr = lws_client_connect_via_info(&i); 
    wsiPtr_.store(wsiptr, memory_order_release);
+
+   return contextptr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 bool WebSocketClient::connectToRemote()
 {
-   //start service threads
+   auto connectedFut = connectedProm_.get_future();
+
+   auto serviceLBD = [this](void)->void
+   {
+      auto contextPtr = init();
+      this->service(contextPtr);
+   };
+
+   serviceThr_ = thread(serviceLBD);
+
    auto readLBD = [this](void)->void
    {
       this->readService();
@@ -137,49 +128,32 @@ bool WebSocketClient::connectToRemote()
 
    readThr_ = thread(readLBD);
 
-   auto serviceLBD = [this](void)->void
-   {
-      auto wsiPtr = (struct lws*)this->wsiPtr_.load(memory_order_acquire);
-      auto contextPtr = 
-         (struct lws_context*)this->contextPtr_.load(memory_order_acquire);
-      service(this->run_, wsiPtr, contextPtr);
-   };
-
-   auto serviceThr = thread(serviceLBD);
-   serviceThr.detach();
+   connectedFut.get();
    return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void WebSocketClient::service(shared_ptr<atomic<unsigned>> runPtr,
-   struct lws* wsiPtr, struct lws_context* contextPtr)
+void WebSocketClient::service(lws_context* contextPtr)
 {
    int n = 0;
-   while(runPtr->load(memory_order_relaxed) != 0 && n >= 0)
+   while(run_.load(memory_order_relaxed) != 0 && n >= 0)
    {
       n = lws_service(contextPtr, 50);
    }
 
-   auto instance = getInstance(wsiPtr);
-   instance->cleanUp();
-   destroyInstance(wsiPtr);
    lws_context_destroy(contextPtr);
+   cleanUp();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 void WebSocketClient::shutdown()
 {
-   run_->store(0, memory_order_relaxed);
+   run_.store(0, memory_order_relaxed);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 void WebSocketClient::cleanUp()
 {
-   auto count = shutdownCount_.fetch_add(1);
-   if (count > 0)
-      return;
-
-   readPackets_.clear();
    readQueue_.terminate();
 
    try
@@ -189,19 +163,17 @@ void WebSocketClient::cleanUp()
    }
    catch(system_error& e)
    {
-      LOGERR << "!!!!!! client read thread join failed with error: " << e.what();
-      LOGERR << "!!!!!! shutdown count is " << 
-            shutdownCount_.load(memory_order_relaxed);
       throw e;
    }
+   
+   readPackets_.clear();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 int WebSocketClient::callback(struct lws *wsi, 
    enum lws_callback_reasons reason, void *user, void *in, size_t len)
 {
-   struct per_session_data__client *session_data =
-      (struct per_session_data__client *)user;
+   auto instance = (WebSocketClient*)user;
 
    switch (reason)
    {
@@ -209,11 +181,10 @@ int WebSocketClient::callback(struct lws *wsi,
    case LWS_CALLBACK_CLIENT_ESTABLISHED:
    {
       //ws connection established with server
-      auto instance = WebSocketClient::getInstance(wsi);
       instance->connected_.store(true, memory_order_release);
 
-      if (instance->callbackPtr_ != nullptr)
-         instance->callbackPtr_->socketStatus(true);
+      if (instance != nullptr)
+         instance->connectedProm_.set_value(true);
       break;
    }
 
@@ -236,10 +207,9 @@ int WebSocketClient::callback(struct lws *wsi,
    {
       try
       {
-         auto instance = WebSocketClient::getInstance(wsi);
          instance->connected_.store(false, memory_order_release);
          if (instance->callbackPtr_ != nullptr)
-            instance->callbackPtr_->socketStatus(false);
+            instance->callbackPtr_->disconnected();
          instance->shutdown();
       }
       catch(LWS_Error&)
@@ -254,15 +224,12 @@ int WebSocketClient::callback(struct lws *wsi,
       bdData.resize(len);
       memcpy(bdData.getPtr(), in, len);
 
-      auto instance = WebSocketClient::getInstance(wsi);
       instance->readQueue_.push_back(move(bdData));
       break;
    }
 
    case LWS_CALLBACK_CLIENT_WRITEABLE:
    {
-      auto instance = WebSocketClient::getInstance(wsi);
-
       if (instance->currentWriteMessage_.isDone())
       {
          try
@@ -381,36 +348,5 @@ void WebSocketClient::readService()
          LOGWARN << "invalid msg id";
       }
    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-shared_ptr<WebSocketClient> WebSocketClient::getInstance(struct lws* ptr)
-{
-   auto clientMap = objectMap_.get();
-   auto iter = clientMap->find(ptr);
- 
-   if (iter == clientMap->end())
-      throw LWS_Error("no client object for this lws instance");
-
-   return iter->second;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void WebSocketClient::destroyInstance(struct lws* ptr)
-{
-   try
-   {
-      auto instance = getInstance(ptr);
-      instance->shutdown();
-      objectMap_.erase(ptr);
-   }
-   catch (LWS_Error&)
-   {}
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void WebSocketClient::setCallback(shared_ptr<RemoteCallback> ptr)
-{
-   callbackPtr_ = ptr;
 }
 

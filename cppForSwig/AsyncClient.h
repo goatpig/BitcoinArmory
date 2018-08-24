@@ -81,8 +81,7 @@ namespace AsyncClient
       shared_ptr<SocketPrototype> sock_;
 
    public:
-      LedgerDelegate(void)
-      {}
+      LedgerDelegate(void) {}
 
       LedgerDelegate(shared_ptr<SocketPrototype>, const string&, const string&);
 
@@ -237,13 +236,11 @@ namespace AsyncClient
    private:
       string bdvID_;
       shared_ptr<SocketPrototype> sock_;
-
       shared_ptr<ClientCache> cache_;
-      mutable unsigned topBlock_ = 0;
 
    private:
       BlockDataViewer(void);
-      BlockDataViewer(const shared_ptr<SocketPrototype> sock);
+      BlockDataViewer(shared_ptr<SocketPrototype> sock);
       bool isValid(void) const { return sock_ != nullptr; }
 
       const BlockDataViewer& operator=(const BlockDataViewer& rhs)
@@ -255,10 +252,10 @@ namespace AsyncClient
          return *this;
       }
 
-      void setTopBlock(unsigned block) const { topBlock_ = block; }
-
    public:
       ~BlockDataViewer(void);
+
+      void connectToRemote(void);
       BtcWallet instantiateWallet(const string& id);
       Lockbox instantiateLockbox(const string& id);
 
@@ -292,7 +289,6 @@ namespace AsyncClient
 
       void getNodeStatus(
          function<void(shared_ptr<::ClientClasses::NodeStatusStruct>)>);
-      unsigned getTopBlock(void) const { return topBlock_; }
       void estimateFee(unsigned, const string&, 
          function<void(ClientClasses::FeeEstimateStruct)>);
 
@@ -304,8 +300,6 @@ namespace AsyncClient
 
       void getUtxosForAddrVec(const vector<BinaryData>&, 
          function<void(vector<UTXO>)>);
-
-      RemoteCallbackSetupStruct getRemoteCallbackSetupStruct(void) const;
 
       static unique_ptr<WritePayload_Protobuf> make_payload(
          ::Codec_BDVCommand::Methods, const string&);

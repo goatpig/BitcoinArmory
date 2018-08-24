@@ -8313,7 +8313,7 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
 
       return result;
    };
-
+   
    auto&& scrAddrVec = createNAddresses(2000);
    theBDMt_->start(config.initMode_);
 
@@ -8321,11 +8321,8 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
       auto pCallback = make_shared<DBTestUtils::UTCallback>();
       auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
          "127.0.0.1", config.listenPort_, pCallback);
-      auto isConnectedFut = pCallback->getFuture();
-      if (!isConnectedFut.get())
-         throw runtime_error("failed to connected to remote");
-
-      bdvObj.registerWithDB(config.magicBytes_);
+      bdvObj->connectToRemote();
+      bdvObj->registerWithDB(config.magicBytes_);
 
       scrAddrVec.push_back(TestChain::scrAddrA);
       scrAddrVec.push_back(TestChain::scrAddrB);
@@ -8344,15 +8341,15 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
       };
 
       vector<string> walletRegIDs;
-      auto&& wallet1 = bdvObj.instantiateWallet("wallet1");
+      auto&& wallet1 = bdvObj->instantiateWallet("wallet1");
       walletRegIDs.push_back(
          wallet1.registerAddresses(scrAddrVec, false));
 
-      auto&& lb1 = bdvObj.instantiateLockbox("lb1");
+      auto&& lb1 = bdvObj->instantiateLockbox("lb1");
       walletRegIDs.push_back(
          lb1.registerAddresses(lb1ScrAddrs, false));
 
-      auto&& lb2 = bdvObj.instantiateLockbox("lb2");
+      auto&& lb2 = bdvObj->instantiateLockbox("lb2");
       walletRegIDs.push_back(
          lb2.registerAddresses(lb2ScrAddrs, false));
 
@@ -8360,7 +8357,7 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
       pCallback->waitOnManySignals(BDMAction_Refresh, walletRegIDs);
 
       //go online
-      bdvObj.goOnline();
+      bdvObj->goOnline();
       pCallback->waitOnSignal(BDMAction_Ready);
 
       auto w1AddrBalances = wallet1.getAddrBalancesFromDB();
@@ -8438,21 +8435,18 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
       lb2Balances = lb2.getBalancesAndCount(5);
       EXPECT_EQ(lb2Balances[0], 30 * COIN);
 
-      bdvObj.unregisterFromDB();
+      bdvObj->unregisterFromDB();
    }
-
-   for (int i = 0; i < 10000; i++)
+   
+   for (int i = 0; i < 10; i++)
    {
       cout << ".iter " << i << endl;
 
       auto pCallback = make_shared<DBTestUtils::UTCallback>();
       auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
          "127.0.0.1", config.listenPort_, pCallback);
-      auto isConnectedFut = pCallback->getFuture();
-      if (!isConnectedFut.get())
-         throw runtime_error("failed to connected to remote");
-
-      bdvObj.registerWithDB(config.magicBytes_);
+      bdvObj->connectToRemote();
+      bdvObj->registerWithDB(config.magicBytes_);
 
       const vector<BinaryData> lb1ScrAddrs
       {
@@ -8467,15 +8461,15 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
 
       vector<string> walletRegIDs;
 
-      auto&& wallet1 = bdvObj.instantiateWallet("wallet1");
+      auto&& wallet1 = bdvObj->instantiateWallet("wallet1");
       walletRegIDs.push_back(
          wallet1.registerAddresses(scrAddrVec, false));
 
-      auto&& lb1 = bdvObj.instantiateLockbox("lb1");
+      auto&& lb1 = bdvObj->instantiateLockbox("lb1");
       walletRegIDs.push_back(
          lb1.registerAddresses(lb1ScrAddrs, false));
 
-      auto&& lb2 = bdvObj.instantiateLockbox("lb2");
+      auto&& lb2 = bdvObj->instantiateLockbox("lb2");
       walletRegIDs.push_back(
          lb2.registerAddresses(lb2ScrAddrs, false));
 
@@ -8483,7 +8477,7 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
       pCallback->waitOnManySignals(BDMAction_Refresh, walletRegIDs);
 
       //go online
-      bdvObj.goOnline();
+      bdvObj->goOnline();
       pCallback->waitOnSignal(BDMAction_Ready);
 
       auto w1AddrBalances = wallet1.getAddrBalancesFromDB();
@@ -8521,21 +8515,23 @@ TEST_F(BlockUtilsBare, WebSocketStack_Reconnect)
       EXPECT_EQ(lb2Balances[0], 30 * COIN);
 
       //grab main ledgers
-      auto&& delegate = bdvObj.getLedgerDelegateForWallets();
+      auto&& delegate = bdvObj->getLedgerDelegateForWallets();
       auto&& ledgers = delegate.getHistoryPage(0);
       auto& firstEntry = ledgers[0];
       auto txHash = firstEntry.getTxHash();
       EXPECT_EQ(firstHash, txHash);
       
-      auto&& tx = bdvObj.getTxByHash(firstHash);
+      auto&& tx = bdvObj->getTxByHash(firstHash);
       EXPECT_EQ(tx.getThisHash(), firstHash);
 
-      bdvObj.unregisterFromDB();
+      bdvObj->unregisterFromDB();
    }
-
+   
    auto&& bdvObj2 = SwigClient::BlockDataViewer::getNewBDV(
       "127.0.0.1", config.listenPort_, nullptr);
-   bdvObj2.shutdown(config.cookie_);
+   bdvObj2->connectToRemote();
+
+   bdvObj2->shutdown(config.cookie_);
    WebSocketServer::waitOnShutdown();
 
    delete theBDMt_;

@@ -22,6 +22,12 @@ bool BlockDataViewer::hasRemoteDB(void)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+void BlockDataViewer::connectToRemote()
+{
+   bdvAsync_.connectToRemote();
+}
+
+///////////////////////////////////////////////////////////////////////////////
 const BlockDataViewer& BlockDataViewer::operator=(const BlockDataViewer& rhs)
 {
    bdvAsync_ = rhs.bdvAsync_;
@@ -30,12 +36,16 @@ const BlockDataViewer& BlockDataViewer::operator=(const BlockDataViewer& rhs)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-BlockDataViewer BlockDataViewer::getNewBDV(const string& addr,
+shared_ptr<BlockDataViewer> BlockDataViewer::getNewBDV(const string& addr,
    const string& port, shared_ptr<RemoteCallback> callbackPtr)
 {
    auto&& bdvAsync = 
       AsyncClient::BlockDataViewer::getNewBDV(addr, port, callbackPtr);
-   return BlockDataViewer(*bdvAsync);
+   auto bdvPtr = new BlockDataViewer(*bdvAsync);
+   shared_ptr<BlockDataViewer> bdvSharedPtr;
+   bdvSharedPtr.reset(bdvPtr);
+
+   return bdvSharedPtr;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -270,12 +280,6 @@ vector<UTXO> BlockDataViewer::getUtxosForAddrVec(
 
    bdvAsync_.getUtxosForAddrVec(addrVec, resultLBD);
    return move(fut.get());
-}
-
-///////////////////////////////////////////////////////////////////////////////
-unsigned BlockDataViewer::getTopBlock() const
-{
-   return bdvAsync_.getTopBlock();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

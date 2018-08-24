@@ -159,7 +159,6 @@ namespace DBTestUtils
    /////////////////////////////////////////////////////////////////////////////
    class UTCallback : public RemoteCallback
    {
-      promise<bool> isConnected_;
       struct BdmNotif
       {
          BDMAction action_;
@@ -204,15 +203,8 @@ namespace DBTestUtils
          float progress, unsigned secondsRem, unsigned progressNumeric)
       {}
 
-      void socketStatus(bool status)
-      {
-         isConnected_.set_value(status);
-      }
-
-      shared_future<bool> getFuture(void)
-      {
-         return isConnected_.get_future();
-      }
+      void disconnected()
+      {}
 
       void waitOnSignal(BDMAction signal, string id = "")
       {

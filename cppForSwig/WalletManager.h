@@ -67,8 +67,7 @@ public:
    CoinSelectionInstance(WalletContainer* const walletContainer,
       const vector<AddressBookEntry>& addrBook);
    CoinSelectionInstance(SwigClient::Lockbox* const, 
-      unsigned M, unsigned N,
-      unsigned blockHeight, uint64_t balance);
+      unsigned M, unsigned N, uint64_t balance);
 
    unsigned addRecipient(const BinaryData&, uint64_t);
    void updateRecipient(unsigned, const BinaryData&, uint64_t);
@@ -342,8 +341,6 @@ public:
       auto&& addrBookVector = createAddressBook();
       return CoinSelectionInstance(this, addrBookVector);
    }
-
-   unsigned getTopBlock(void);
 };
 
 class ResolverFeed_PythonWalletSingle;

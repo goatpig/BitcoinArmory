@@ -191,13 +191,6 @@ int WalletContainer::detectHighestUsedIndex()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-unsigned WalletContainer::getTopBlock(void)
-{
-   auto& bdv = getBDVlambda_();
-   return bdv.getTopBlock();
-}
-
-////////////////////////////////////////////////////////////////////////////////
 ////
 //// CoinSelectionInstance
 ////
@@ -207,19 +200,17 @@ CoinSelectionInstance::CoinSelectionInstance(
    const vector<AddressBookEntry>& addrBook) :
    walletContainer_(walletContainer),
    cs_(getFetchLambdaFromWalletContainer(walletContainer), addrBook,
-      walletContainer->getTopBlock(), walletContainer->spendableBalance_),
+      walletContainer->spendableBalance_),
    spendableBalance_(walletContainer->spendableBalance_)
 {}
 
 ////////////////////////////////////////////////////////////////////////////////
 CoinSelectionInstance::CoinSelectionInstance(
    SwigClient::Lockbox* const lockbox, 
-   unsigned M, unsigned N,
-   unsigned blockHeight, uint64_t balance) :
+   unsigned M, unsigned N, uint64_t balance) :
    walletContainer_(nullptr),
    cs_(getFetchLambdaFromLockbox(lockbox, M, N), 
-      vector<AddressBookEntry>(),
-      blockHeight, balance),
+      vector<AddressBookEntry>(), balance),
    spendableBalance_(balance)
 {}
 

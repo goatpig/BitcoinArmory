@@ -37,34 +37,8 @@ struct BDVAlreadyRegistered : public std::runtime_error
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct RemoteCallbackSetupStruct
-{
-private:
-   friend class AsyncClient::BlockDataViewer;
-   friend class RemoteCallback;
-
-   shared_ptr<SocketPrototype> sockPtr_;
-   string bdvId_;
-   function<void(unsigned)> setHeightLambda_;
-   
-private:
-   RemoteCallbackSetupStruct(shared_ptr<SocketPrototype> sockptr,
-      const string& id, function<void(unsigned)> lbd) :
-      sockPtr_(sockptr), bdvId_(id), setHeightLambda_(lbd)
-   {}
-
-public:
-   RemoteCallbackSetupStruct(void)
-   {}
-};
-
-///////////////////////////////////////////////////////////////////////////////
 class RemoteCallback
 {
-private:
-   string bdvID_;
-   function<void(unsigned)> setHeightLbd_;
-
 public:
    RemoteCallback(void) {}
    virtual ~RemoteCallback(void) = 0;
@@ -76,9 +50,8 @@ public:
       float progress, unsigned secondsRem,
       unsigned progressNumeric
    ) = 0;
-   virtual void socketStatus(bool) = 0;
+   virtual void disconnected(void) = 0;
 
-   void setup(RemoteCallbackSetupStruct);
    bool processNotifications(shared_ptr<::Codec_BDVCommand::BDVCallback>);
 };
 

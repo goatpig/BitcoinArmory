@@ -49,7 +49,6 @@ namespace SwigClient
       {}
 
       LedgerDelegate(AsyncClient::LedgerDelegate&);
-
       vector<::ClientClasses::LedgerEntry> getHistoryPage(uint32_t id);
       uint64_t getPageCount(void) const;
    };
@@ -160,25 +159,21 @@ namespace SwigClient
       AsyncClient::BlockDataViewer bdvAsync_;
 
    private:
-      BlockDataViewer(void)
-      {}
-
+      BlockDataViewer(void) {}
       BlockDataViewer(AsyncClient::BlockDataViewer&);
-      
-      bool isValid(void) const;
-
       const BlockDataViewer& operator=(const BlockDataViewer& rhs);
-
-      void setTopBlock(unsigned block) const;
+      bool isValid(void) const;
 
    public:
       ~BlockDataViewer(void);
+      
+      void connectToRemote(void);
       BtcWallet instantiateWallet(const string& id);
       Lockbox instantiateLockbox(const string& id);
 
       const string& getID(void) const;
 
-      static BlockDataViewer getNewBDV(
+      static shared_ptr<BlockDataViewer> getNewBDV(
          const string& addr, const string& port, shared_ptr<RemoteCallback>);
 
       LedgerDelegate getLedgerDelegateForWallets(void);
@@ -201,7 +196,6 @@ namespace SwigClient
       bool hasRemoteDB(void);
 
       shared_ptr<::ClientClasses::NodeStatusStruct> getNodeStatus(void);
-      unsigned getTopBlock(void) const;
       ClientClasses::FeeEstimateStruct estimateFee(unsigned, const string&);
 
       vector<::ClientClasses::LedgerEntry> getHistoryForWalletSelection(
@@ -210,9 +204,6 @@ namespace SwigClient
       string broadcastThroughRPC(const BinaryData& rawTx);
 
       vector<UTXO> getUtxosForAddrVec(const vector<BinaryData>&);
-
-      RemoteCallbackSetupStruct getRemoteCallbackSetupStruct(void) const
-      { return bdvAsync_.getRemoteCallbackSetupStruct(); }
    };
 
    ///////////////////////////////////////////////////////////////////////////////
