@@ -25,14 +25,14 @@ The database types are as follows:
 
 * DB\_BARE: Tracks wallet history only. Smallest DB, as the DB doesn't resolve a wallet's relevant transaction hashes until requested. (In other words, database accesses will be relatively slow.) This was the default database type in Armory v0.94.
 * DB\_FULL: Tracks wallet history and resolves all relevant transaction hashes. (In other words, the database can instantly pull up relevant transaction data). ~1GB minimum size for the database. Default database type as of v0.95.
-* DB\_SUPER: Tracks the entire blockchain history. Any transaction hash can be instantly resolved into its relevant data. Not fully implemented yet, and the database will be at least ~100GB large.
+* DB\_SUPER: Tracks the entire blockchain history. Any transaction hash can be instantly resolved into its relevant data. Not fully stable yet, and the database will be at least ~100GB large.
 
 There are additional flags.
 
 * checkchain: A test mode of sorts. It checks all the signatures in the blockchain. (Default: False)
 * clear\_mempool: Delete all zero confirmation transactions from the database. (Default: False)
-* fcgi-port: Sets the database listening port. The database listens to external connections (e.g., from Armory) via FCGI and can be placed behind an HTTP daemon in order to obtain remote access to ArmoryDB. (Default: 9001 (mainnet) / 19001 (testnet) / 19002 (regtest))
 * listen-all: Listen to all incoming IPs (not just localhost). (Default: False)
+* listen-port: Sets the database listening port. The database listens to external connections (e.g., from Armory) via [WebSocket](https://en.wikipedia.org/wiki/WebSocket) and can be placed behind an HTTP daemon in order to obtain remote access to ArmoryDB. (Default: 9001 (mainnet) / 19001 (testnet) / 19002 (regtest))
 * ram-usage: Defines the RAM use during database scan operations. One point averages 128MB of RAM (without accounting for the base amount, ~400MB). Can't be lower than one point. Can be changed in between Armory runs. (Default: 50)
 * rebuild: Delete all DB data, and build the database and scan the blockchain data from scratch.
 * regtest: Run database against the regression test network.
