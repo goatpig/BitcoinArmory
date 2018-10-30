@@ -27,8 +27,6 @@
 #include "DecryptedDataContainer.h"
 #include "Accounts.h"
 
-using namespace std;
-
 #define WALLETTYPE_KEY        0x00000001
 #define PARENTID_KEY          0x00000002
 #define WALLETID_KEY          0x00000003

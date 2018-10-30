@@ -17,8 +17,6 @@
 #include "ScriptRecipient.h"
 #include "TxEvalState.h"
 
-using namespace std;
-
 enum SpenderStatus
 {
    SpenderStatus_Unkonwn,

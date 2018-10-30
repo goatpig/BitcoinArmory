@@ -16,8 +16,6 @@
 #include "./fcgi/include/fastcgi.h"
 #include "BinaryData.h"
 
-using namespace std;
-
 ///////////////////////////////////////////////////////////////////////////////
 struct FcgiData
 {

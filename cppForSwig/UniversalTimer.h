@@ -80,8 +80,6 @@
 
 #define CLEANUP_ALL_TIMERS() UniversalTimer::cleanup()
 
-using namespace std;
-
 class UniversalTimer
 {
 public:

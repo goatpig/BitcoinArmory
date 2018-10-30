@@ -21,8 +21,6 @@
 #define WEBSOCKET_CALLBACK_ID 0xFFFFFFFE
 #define WEBSOCKET_MAGIC_WORD 0x56E1
 
-using namespace std;
-
 class LWS_Error : public runtime_error
 {
 public:
