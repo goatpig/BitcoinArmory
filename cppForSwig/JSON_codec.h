@@ -9,8 +9,6 @@
 #ifndef _H_JSONCODEC_
 #define _H_JSONCODEC_
 
-using namespace std;
-
 #include <stdexcept>
 #include <memory>
 #include <vector>
@@ -29,10 +27,10 @@ enum JSON_StateEnum
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-class JSON_Exception : public runtime_error
+class JSON_Exception : public std::runtime_error
 {
 public:
-   JSON_Exception(const string& str) : runtime_error(str)
+   JSON_Exception(const std::string& str) : std::runtime_error(str)
    {}
 };
 
@@ -40,7 +38,7 @@ public:
 struct JSON_value
 {
    virtual ~JSON_value(void) = 0;
-   virtual void serialize(ostream&) const = 0;
+   virtual void serialize(std::ostream&) const = 0;
 };
 
 struct JSON_array;
@@ -48,20 +46,20 @@ struct JSON_array;
 ////////////////////////////////////////////////////////////////////////////////
 struct JSON_string : JSON_value
 {
-   string val_;
+   std::string val_;
 
    JSON_string(void)
    {}
 
-   JSON_string(const string& val) : val_(val)
+   JSON_string(const std::string& val) : val_(val)
    {}
 
-   void serialize(ostream& s) const
+   void serialize(std::ostream& s) const
    {
       s << "\"" << val_ << "\"";
    }
 
-   void unserialize(istream& s);
+   void unserialize(std::istream& s);
 
    bool operator<(const JSON_string& rhs) const
    {
@@ -86,12 +84,12 @@ struct JSON_number : JSON_value
    JSON_number(unsigned val) : val_(double(val))
    {}
 
-   void serialize(ostream& s) const
+   void serialize(std::ostream& s) const
    {
       s << val_;
    }
 
-   void unserialize(istream& s)
+   void unserialize(std::istream& s)
    {
       s >> val_;
    }
@@ -102,7 +100,7 @@ struct JSON_state : JSON_value
 {
    JSON_StateEnum state_ = JSON_null;
 
-   void serialize(ostream& s) const
+   void serialize(std::ostream& s) const
    {
       if (state_ == JSON_null)
          s << "null";
@@ -114,7 +112,7 @@ struct JSON_state : JSON_value
          throw JSON_Exception("unexpected state at ser");
    }
 
-   void unserialize(istream& s);
+   void unserialize(std::istream& s);
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -124,7 +122,7 @@ private:
    static int id_counter_;
 
 public:
-   map<JSON_string, shared_ptr<JSON_value>> keyval_pairs_;
+   std::map<JSON_string, std::shared_ptr<JSON_value>> keyval_pairs_;
 
 public:
    const int id_;
@@ -133,79 +131,79 @@ public:
       id_(id_counter_++)
    {}
 
-   bool add_pair(const string& key, const string& val)
+   bool add_pair(const std::string& key, const std::string& val)
    {
-      auto jsonstr = make_shared<JSON_string>(val);
-      auto&& keyval = make_pair(
-         move(JSON_string(key)), dynamic_pointer_cast<JSON_value>(jsonstr));
+      auto jsonstr = std::make_shared<JSON_string>(val);
+      auto&& keyval = std::make_pair(
+         std::move(JSON_string(key)), std::dynamic_pointer_cast<JSON_value>(jsonstr));
 
-      auto insert_iter = keyval_pairs_.insert(move(keyval));
+      auto insert_iter = keyval_pairs_.insert(std::move(keyval));
       return insert_iter.second;
    }
 
-   bool add_pair(const string& key, shared_ptr<JSON_value> val)
+   bool add_pair(const std::string& key, std::shared_ptr<JSON_value> val)
    {
-      auto&& keyval = make_pair(move(JSON_string(key)), val);
+      auto&& keyval = std::make_pair(std::move(JSON_string(key)), val);
 
-      auto insert_iter = keyval_pairs_.insert(move(keyval));
+      auto insert_iter = keyval_pairs_.insert(std::move(keyval));
       return insert_iter.second;
    }
 
-   bool add_pair(const string& key, JSON_array& val)
+   bool add_pair(const std::string& key, JSON_array& val)
    {
-      auto jsonarr = make_shared<JSON_array>(move(val));
-      auto&& keyval = make_pair(
-         move(JSON_string(key)), dynamic_pointer_cast<JSON_value>(jsonarr));
+      auto jsonarr = std::make_shared<JSON_array>(std::move(val));
+      auto&& keyval = std::make_pair(
+         std::move(JSON_string(key)), std::dynamic_pointer_cast<JSON_value>(jsonarr));
 
-      auto insert_iter = keyval_pairs_.insert(move(keyval));
+      auto insert_iter = keyval_pairs_.insert(std::move(keyval));
       return insert_iter.second;
    }
 
-   bool add_pair(const string& key, float val)
+   bool add_pair(const std::string& key, float val)
    {
-      auto jsonarr = make_shared<JSON_number>(val);
-      auto&& keyval = make_pair(
-         move(JSON_string(key)), dynamic_pointer_cast<JSON_value>(jsonarr));
+      auto jsonarr = std::make_shared<JSON_number>(val);
+      auto&& keyval = std::make_pair(
+         std::move(JSON_string(key)), std::dynamic_pointer_cast<JSON_value>(jsonarr));
 
-      auto insert_iter = keyval_pairs_.insert(move(keyval));
+      auto insert_iter = keyval_pairs_.insert(std::move(keyval));
       return insert_iter.second;
    }
 
-   bool add_pair(const string& key, int val)
+   bool add_pair(const std::string& key, int val)
    {
       return add_pair(key, float(val));
    }
 
-   void serialize(ostream& s) const;
-   void unserialize(istream& s);
+   void serialize(std::ostream& s) const;
+   void unserialize(std::istream& s);
 
-   shared_ptr<JSON_value> getValForKey(const string&);
+   std::shared_ptr<JSON_value> getValForKey(const std::string&);
    bool isResponseValid(int);
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 struct JSON_array : public JSON_value
 {
-   vector<shared_ptr<JSON_value>> values_;
+   std::vector<std::shared_ptr<JSON_value>> values_;
 
-   void add_value(string& val)
+   void add_value(std::string& val)
    {
-      auto jsonstr = make_shared<JSON_string>(val);
-      values_.push_back(dynamic_pointer_cast<JSON_value>(jsonstr));
+      auto jsonstr = std::make_shared<JSON_string>(val);
+      values_.push_back(std::dynamic_pointer_cast<JSON_value>(jsonstr));
    }
 
    void add_value(unsigned val)
    {
-      auto jsonnum = make_shared<JSON_number>(val);
-      values_.push_back(dynamic_pointer_cast<JSON_value>(jsonnum));
+      auto jsonnum = std::make_shared<JSON_number>(val);
+      values_.push_back(std::dynamic_pointer_cast<JSON_value>(jsonnum));
    }
 
-   void add_value(shared_ptr<JSON_value> valptr)
+   void add_value(std::shared_ptr<JSON_value> valptr)
    {
       values_.push_back(valptr);
    }
 
-   void serialize(ostream& s) const
+   void serialize(std::ostream& s) const
    {
       s << "[";
 
@@ -228,10 +226,10 @@ struct JSON_array : public JSON_value
       s << "]";
    }
 
-   void unserialize(istream&);
+   void unserialize(std::istream&);
 };
 
-string JSON_encode(JSON_object& json_obj);
-JSON_object JSON_decode(const string& json_str);
+std::string JSON_encode(JSON_object& json_obj);
+JSON_object JSON_decode(const std::string& json_str);
 
 #endif

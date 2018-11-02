@@ -23,8 +23,6 @@
 #include "ClientClasses.h"
 #include "AsyncClient.h"
 
-using namespace std;
-
 ////////////////////////////////////////////////////////////////////////////////
 struct WriteAndReadPacket
 {

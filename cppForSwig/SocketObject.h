@@ -31,8 +31,6 @@
 
 #include <google/protobuf/message.h>
 
-using namespace std;
-   
 typedef function<bool(vector<uint8_t>, exception_ptr)>  ReadCallback;
 
 ///////////////////////////////////////////////////////////////////////////////

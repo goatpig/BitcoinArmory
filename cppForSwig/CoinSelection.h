@@ -9,8 +9,6 @@
 #ifndef _H_COINSELECTION
 #define _H_COINSELECTOIN
 
-using namespace std;
-
 #include <stdint.h>
 #include <memory>
 #include <functional>
