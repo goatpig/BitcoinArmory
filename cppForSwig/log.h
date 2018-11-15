@@ -60,6 +60,7 @@
 #include <string>
 #include <fstream>
 #include <iostream>
+#include <iomanip>
 #include <stdio.h>
 #include <thread>
 #include <mutex>
@@ -86,7 +87,6 @@
 #define FLUSHLOG()          Log::FlushStreams()
 #define CLEANUPLOG()        Log::CleanUp()
 
-#define LOGTIMEBUFLEN 30
 #define MAX_LOG_FILE_SIZE (500*1024)
 
 inline std::string NowTime();
@@ -211,15 +211,15 @@ public:
 class NullStream : public LogStream
 {
 public:
-   LogStream& operator<<(const char * str)   { return *this; }
-   LogStream& operator<<(std::string const & str) { return *this; }
-   LogStream& operator<<(int i)              { return *this; }
-   LogStream& operator<<(unsigned int i)     { return *this; }
-   LogStream& operator<<(unsigned long long int i)     { return *this; }
-   LogStream& operator<<(float f)            { return *this; }
-   LogStream& operator<<(double d)           { return *this; }
+   LogStream& operator<<(const char*)              { return *this; }
+   LogStream& operator<<(std::string const&)       { return *this; }
+   LogStream& operator<<(int)                      { return *this; }
+   LogStream& operator<<(unsigned int)             { return *this; }
+   LogStream& operator<<(unsigned long long int)   { return *this; }
+   LogStream& operator<<(float)                    { return *this; }
+   LogStream& operator<<(double)                   { return *this; }
 #if !defined(_MSC_VER) && !defined(__MINGW32__) && defined(__LP64__)
-   LogStream& operator<<(size_t i)           { return *this; }
+   LogStream& operator<<(size_t)                   { return *this; }
 #endif
 
    void FlushStreams(void) {}
@@ -384,19 +384,17 @@ inline std::string NowTime()
     timeDur -= std::chrono::duration_cast<std::chrono::seconds>(timeDur);
     unsigned int ms = static_cast<unsigned>(timeDur / std::chrono::milliseconds(1));
 
-    // Print time.
+    // Print time. snprintf() causes warnings under clang and requires weird
+    // workarounds to stop them. Just use stringstream, which is cleaner.
     time_t curTimeTT = std::chrono::system_clock::to_time_t(curTime);
     tm* tStruct = localtime(&curTimeTT);
-    std::string timeStr = "%04i-%02i-%02i - %02i:%02i:%02i.%03i";
-    char result[LOGTIMEBUFLEN] = {0};
-    snprintf(result, sizeof(result), timeStr.c_str(), tStruct->tm_year + 1900, \
-                                                      tStruct->tm_mon + 1, \
-                                                      tStruct->tm_mday, \
-                                                      tStruct->tm_hour, \
-                                                      tStruct->tm_min, \
-                                                      tStruct->tm_sec, \
-                                                      ms);
-    return result;
+    auto&& oss = std::ostringstream();
+    oss << std::setw(4) << tStruct->tm_year + 1900 << "-" << std::setfill('0')
+        << std::setw(2) << tStruct->tm_mon + 1 << "-" << tStruct->tm_mday
+        << " - " << tStruct->tm_hour << ":" << tStruct->tm_min << ":"
+        << tStruct->tm_sec << "." << std::setw(3) << ms;
+
+    return oss.str();
 }
 
 #endif //__LOG_H__
