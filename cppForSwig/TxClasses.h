@@ -327,7 +327,8 @@ public:
    void setTxTime(uint32_t txtime) { txTime_ = txtime; }
    uint32_t getTxTime(void) const { return txTime_; }
 
-   //returns tx weight in bytes
+   // Get TX virtual size, which is what is used when calculating fee/byte.
+   size_t getTxVirtSize(void) const;
    size_t getTxWeight(void) const;
 
 private:
@@ -351,6 +352,8 @@ private:
 
    bool isRBF_ = false;
    bool isChainedZc_ = false;
+
+   size_t getTxBaseSize() const;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

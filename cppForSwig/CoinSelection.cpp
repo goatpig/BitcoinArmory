@@ -1035,8 +1035,10 @@ void UtxoSelection::computeSizeAndFee(
       throw CoinSelectionException("targetVal > value");
 
    size_ = 10 + txOutSize + txInSize;
-   if (sw)
+   if (sw) {
       size_ += 2 + witnessSize_ + utxoVec_.size();
+   }
+   computeVirtSize(sw);
 
    targetVal = payStruct.spendVal_ + fee_;
    changeVal = value_ - targetVal;
@@ -1070,6 +1072,21 @@ void UtxoSelection::computeSizeAndFee(
          return;
       }
    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Function that calculates the selection's virtual size (the size actually used
+// to calculate fees).
+void UtxoSelection::computeVirtSize(const bool& segwit)
+{
+   size_t numerator{0};
+   if(segwit) {
+      numerator = 3*(size_ - witnessSize_) + size_;
+   }
+   else {
+      numerator = 4*size_;
+   }
+   virtSize_ = std::ceil(static_cast<float>(numerator) / 4.0f);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
