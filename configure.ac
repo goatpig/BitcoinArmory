@@ -83,9 +83,9 @@ AC_CHECK_PROG([HAVE_PYRCC4], [pyrcc4], [yes], [no])
 AS_IF([test $HAVE_PYRCC4 == yes], [],
 	[AC_MSG_ERROR([missing pyrcc4 in path, make sure pyqt4-dev-tools is installed])]) 
 
-AC_CHECK_PROG([HAVE_LRELEASE], [lrelease], [yes], [no])
-AS_IF([test $HAVE_LRELEASE == yes], [],
-	[AC_MSG_ERROR([missing lrelease in path, make sure qt4-linguist-tools is installed])]) 
+AC_PATH_PROG([LRELEASE_PATH], [lrelease], [])
+AS_IF([test "x$LRELEASE_PATH" != "x" ], [],
+  [AC_MSG_ERROR([missing lrelease in path, make sure qt4-linguist-tools is installed or specify LRELEASE_PATH])])
 
 fi
 
