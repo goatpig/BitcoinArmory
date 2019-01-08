@@ -37,9 +37,9 @@ void BIP32_Node::init()
 ////////////////////////////////////////////////////////////////////////////////
 void BIP32_Node::assign()
 {
-   node_.chain_code = chaincode_.getPtr();
-   node_.private_key = privkey_.getPtr();
-   node_.public_key = pubkey_.getPtr();
+   memcpy(node_.chain_code, chaincode_.getPtr(), chaincode_.getSize());
+   memcpy(node_.private_key, privkey_.getPtr(), privkey_.getSize());
+   memcpy(node_.public_key, pubkey_.getPtr(), pubkey_.getSize());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -79,7 +79,7 @@ SecureBinaryData BIP32_Node::encodeBase58() const
 ////////////////////////////////////////////////////////////////////////////////
 void BIP32_Node::decodeBase58(const char* str)
 {
-   //b58 decode 
+   //b58 decode
    if(!btc_hdnode_deserialize(
       str, NetworkConfig::get_chain_params(), &node_))
       throw std::runtime_error("invalid bip32 serialized string");
@@ -121,7 +121,7 @@ void BIP32_Node::initFromPrivateKey(uint8_t depth, unsigned leaf_id,
    init();
    memcpy(privkey_.getPtr(), privKey.getPtr(), BTC_ECKEY_PKEY_LENGTH);
    memcpy(chaincode_.getPtr(), chaincode.getPtr(), BTC_BIP32_CHAINCODE_SIZE);
-   
+
    node_.depth = depth;
    node_.child_num = leaf_id;
 
