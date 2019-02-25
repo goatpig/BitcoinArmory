@@ -228,6 +228,7 @@ export LDFLAGS
 
 AM_CONDITIONAL([HAVE_CLANG], [test x$CLANG = xyes])
 AM_CONDITIONAL([BUILD_DARWIN], [test x$BUILD_OS = xdarwin])
+AM_CONDITIONAL([BUILD_LINUX], [test x$BUILD_OS = xlinux])
 
 AC_CONFIG_FILES(Makefile
 		cppForSwig/Makefile
