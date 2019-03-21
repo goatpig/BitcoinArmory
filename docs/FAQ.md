@@ -114,7 +114,7 @@ Because Armory is a desktop client, so long as you have a copy of the software a
 
 You should backup your wallet frequently, but only one backup is truly necessary. This is because Armory uses a deterministic wallet; all of the addresses are derived from a specific root algorithmically. This algorithm ensures that the same addresses are derived every time for a given root. This means that you only need to have one backup and you will be able to recover all of the addresses that you have every used from that wallet.
 
-## What Bitcoin Improvement Proposals (BIPs) does Armory supports?
+## What Bitcoin Improvement Proposals (BIPs) does Armory support?
 
 Armory currently supports:
 
@@ -126,7 +126,7 @@ Armory currently supports:
  - BIPs 141, 143, and 144 for Segregated Witness (Except for deployment)
 
 There is planned support for:
- - BIP 32 for Heirarchical Determinisitc wallets
+ - BIP 32 for Hierarchical Determinisitc wallets
 
 ## Will Armory work with full nodes other than Bitcoin Core?
 
