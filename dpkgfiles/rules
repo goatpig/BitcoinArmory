@@ -10,9 +10,24 @@
 #export DH_VERBOSE=1
 
 %:
-	dh $@
+	dh $@ --with autoreconf --parallel
 
 override_dh_auto_test:
 
 override_dh_usrlocal:
 
+ifeq ($(CROSS_COMPILING), armhf)
+override_dh_autoreconf:
+	dh_autoreconf ./autogen.sh
+
+override_dh_auto_build:
+	dh_auto_build -- EXTRA_PYTHON_INCLUDES=-I$(EXTRA_PYTHON)
+
+override_dh_auto_install:
+	dh_auto_install -- EXTRA_PYTHON_INCLUDES=-I$(EXTRA_PYTHON)
+
+# We'd need to require install of multiarch packages for this to work when cross compiling.
+override_dh_makeshlibs override_dh_shlibdeps:
+
+endif
+	
