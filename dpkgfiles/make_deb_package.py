@@ -110,11 +110,8 @@ for f in dpkgfiles:
 
 # Finally, all the magic happens here
 if args.cross:
-   print 'Attempting armhf cross compile for Raspberry Pi'
-   # We need these build options to stop dpkg/configure testing for options that gcc <4.9 (e.g. raspbian toolchain) doesn't support, and then failing
-   # Requires hardening-wrapper package to work too.
-   deb_build_options = 'hardening=-stackprotectorstrong reproducible=-timeless'
-   execAndWait('export PATH="$PATH:%s" DEB_BUILD_OPTIONS="%s" CROSS_COMPILING="armhf" EXTRA_PYTHON="%s"; dpkg-buildpackage -t arm-linux-gnueabihf -d -rfakeroot -uc -us %s' % (args.toolchain, deb_build_options, args.extrapython, jobParam))
+   print 'Attempting armhf cross compile for Raspberry Pi' 
+   execAndWait('export PATH="$PATH:%s" CROSS_COMPILING="armhf" EXTRA_PYTHON="%s"; dpkg-buildpackage -t arm-linux-gnueabihf -d -rfakeroot -uc -us %s' % (args.toolchain, args.extrapython, jobParam))
 else:
    print 'Attempting normal build for debian'
    execAndWait('dpkg-buildpackage -rfakeroot -uc -us %s' % jobParam)

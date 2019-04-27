@@ -9,12 +9,17 @@
 # Uncomment this to turn on verbose mode.
 #export DH_VERBOSE=1
 
+ifeq ($(CROSS_COMPILING), armhf)
+# RPi's toolchain (gcc <4.9) can't handle these flags, so strip them. Stops failure in configure stage.
+export DEB_CFLAGS_MAINT_STRIP=-fstack-protector-strong
+export DEB_CXXFLAGS_MAINT_STRIP=-fstack-protector-strong
+export DEB_CPPFLAGS_MAINT_STRIP=-Wdate-time
+endif
+
 %:
 	dh $@ --with autoreconf --parallel
 
-override_dh_auto_test:
-
-override_dh_usrlocal:
+override_dh_auto_test override_dh_usrlocal:
 
 ifeq ($(CROSS_COMPILING), armhf)
 override_dh_autoreconf:
