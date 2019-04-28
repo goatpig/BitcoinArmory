@@ -5,7 +5,7 @@ import shutil
 import platform
 import time
 import argparse
-from subprocess import Popen, PIPE
+from subprocess import Popen, PIPE, check_output
 
 def execAndWait(cli_str):
    print '*** Executing:', cli_str[:60], '...'
@@ -47,14 +47,27 @@ if not os.path.exists('./armoryengine/ArmoryUtils.py') or \
    print '***ERROR: Must run this script from the root Armory directory!'
    exit(1)
 
-jobParam = ''
+jobparam = ''
 if args.jobs >= 1:
-   jobParam = '-j' + str(args.jobs)
+   jobparam = '-j' + str(args.jobs)
 
-if args.cross:
+if args.cross == 'armhf':
+   crosstuple = 'arm-linux-gnueabihf'
    if args.toolchain and args.extrapython and os.path.exists(args.toolchain) and os.path.exists(args.extrapython):
       args.toolchain = os.path.abspath(args.toolchain)
       args.extrapython = os.path.abspath(args.extrapython)
+
+      pathtogcc = args.toolchain.rstrip('/') + '/' + crosstuple + '-gcc'
+      if not os.path.exists(pathtogcc):
+         exit("***ERROR: Could not find GCC at: " + pathtogcc)
+
+      #Check GCC version as <4.9 can't handle some flags. Can't check in makefile as the fail happens during configure.
+      oldgcc = 0
+      gccversion = check_output([pathtogcc, '-dumpversion']).split('.')
+      gccversion[-1] = gccversion[-1].strip("\n")
+      if int(gccversion[0]) < 4 or (int(gccversion[0]) == 4 and int(gccversion[2]) < 9):
+         oldgcc = 1
+
    else:
       exit('Cross compiler toolchain location and/or python include location are not valid directories. These are required for cross compiling.')
 
@@ -92,7 +105,6 @@ else:
 
 dpkgfiles = ['control', 'copyright', 'postinst', 'postrm', 'rules']
 
-
 # Start pseudo-bash-script
 origDir = pwd().split('/')[-1]
 execAndWait('python update_version.py')
@@ -109,9 +121,9 @@ for f in dpkgfiles:
    shutil.copy('dpkgfiles/%s' % f, 'debian/%s' % f)
 
 # Finally, all the magic happens here
-if args.cross:
-   print 'Attempting armhf cross compile for Raspberry Pi' 
-   execAndWait('export PATH="$PATH:%s" CROSS_COMPILING="armhf" EXTRA_PYTHON="%s"; dpkg-buildpackage -t arm-linux-gnueabihf -d -rfakeroot -uc -us %s' % (args.toolchain, args.extrapython, jobParam))
+if args.cross == 'armhf':
+   execAndWait('export PATH="$PATH:%s" CROSS_COMPILING="armhf" EXTRA_PYTHON="%s" OLDGCC="%d"; dpkg-buildpackage -t %s -d -rfakeroot -uc -us %s'
+               % (args.toolchain, args.extrapython, oldgcc, crosstuple, jobparam))
 else:
    print 'Attempting normal build for debian'
-   execAndWait('dpkg-buildpackage -rfakeroot -uc -us %s' % jobParam)
+   execAndWait('dpkg-buildpackage -rfakeroot -uc -us %s' % jobparam)
