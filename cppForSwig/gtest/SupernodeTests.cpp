@@ -3140,7 +3140,7 @@ TEST_F(WebSocketTests, WebSocketStack_ParallelAsync)
       auto pCallback = make_shared<DBTestUtils::UTCallback>();
       auto&& bdvObj = SwigClient::BlockDataViewer::getNewBDV(
          "127.0.0.1", config.listenPort_,  BlockDataManagerConfig::getDataDir(),
-         BlockDataManagerConfig::ephemeralPeers_,pCallback);
+         BlockDataManagerConfig::ephemeralPeers_, pCallback);
       bdvObj->addPublicKey(serverPubkey);
       bdvObj->connectToRemote();
       bdvObj->registerWithDB(NetworkConfig::getMagicBytes());
@@ -3174,7 +3174,7 @@ TEST_F(WebSocketTests, WebSocketStack_ParallelAsync)
       auto pCallback = make_shared<DBTestUtils::UTCallback>();
       auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
          "127.0.0.1", config.listenPort_,  BlockDataManagerConfig::getDataDir(),
-         BlockDataManagerConfig::ephemeralPeers_,pCallback);
+         BlockDataManagerConfig::ephemeralPeers_, false, false, pCallback);
       bdvObj->addPublicKey(serverPubkey);
       bdvObj->connectToRemote();
       bdvObj->registerWithDB(NetworkConfig::getMagicBytes());
@@ -3538,7 +3538,7 @@ TEST_F(WebSocketTests, WebSocketStack_ZcUpdate)
    auto pCallback = make_shared<DBTestUtils::UTCallback>();
    auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
       "127.0.0.1", config.listenPort_, BlockDataManagerConfig::getDataDir(),
-      BlockDataManagerConfig::ephemeralPeers_, pCallback);
+      BlockDataManagerConfig::ephemeralPeers_, false, false, pCallback);
    bdvObj->connectToRemote();
    bdvObj->registerWithDB(NetworkConfig::getMagicBytes());
 
@@ -3760,7 +3760,7 @@ TEST_F(WebSocketTests, WebSocketStack_ParallelAsync_ManyLargeWallets)
       auto pCallback = make_shared<DBTestUtils::UTCallback>();
       auto&& bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
          "127.0.0.1", config.listenPort_, BlockDataManagerConfig::getDataDir(),
-         BlockDataManagerConfig::ephemeralPeers_, pCallback);
+         BlockDataManagerConfig::ephemeralPeers_, false, false, pCallback);
       bdvObj->addPublicKey(serverPubkey);
       bdvObj->connectToRemote();
       bdvObj->registerWithDB(NetworkConfig::getMagicBytes());

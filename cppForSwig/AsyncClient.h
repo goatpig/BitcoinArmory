@@ -308,6 +308,7 @@ namespace AsyncClient
       static std::shared_ptr<BlockDataViewer> getNewBDV(
          const std::string& addr, const std::string& port,
          const std::string& datadir, const bool& ephemeralPeers,
+         const bool& overrideBIP150VerMode, const bool& newBIP150VerMode,
          std::shared_ptr<RemoteCallback> callbackPtr);
 
       void getLedgerDelegateForWallets(

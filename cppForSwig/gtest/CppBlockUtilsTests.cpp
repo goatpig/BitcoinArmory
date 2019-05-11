@@ -237,7 +237,7 @@ TEST_F(BIP150_151Test, checkData_151_Only)
    // Run before the first test has been run. (SetUp/TearDown will be called
    // for each test. Multiple context startups/shutdowns leads to crashes.)
    startupBIP151CTX();
-   startupBIP150CTX(4, false);
+   startupBIP150CTX(4);
 
    // BIP 151 connection uses private keys we feed it. (Normally, we'd let it
    // generate its own private keys.)
@@ -608,7 +608,7 @@ TEST_F(BIP150_151Test, checkData_150_151)
    AuthPeersLambdas aklCli(cli_getPubKeyMap, cli_getPrivKey, cli_getauthset);
 
 
-   startupBIP150CTX(4, false);
+   startupBIP150CTX(4);
 
    btc_key prvKeyCliIn;
    btc_key prvKeyCliOut;
@@ -10196,7 +10196,7 @@ protected:
       LB2ID = BinaryData(TestChain::lb2B58ID);
 
       startupBIP151CTX();
-      startupBIP150CTX(4, false);
+      startupBIP150CTX(4);
 
       //setup auth peers for server and client
       AuthorizedPeers serverPeers(homedir_, SERVER_AUTH_PEER_FILENAME);

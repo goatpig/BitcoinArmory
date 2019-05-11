@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2018, goatpig                                               //
+//  Copyright (C) 2018-2019, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -61,6 +61,8 @@ extern "C" {
 #define BIP151PUBKEYSIZE 33
 #define ENCINITMSGSIZE 34
 
+extern bool publicRequester;
+
 // Match against BIP 151 spec, although "INVALID" is our addition.
 enum class BIP151SymCiphers : uint8_t {CHACHA20POLY1305_OPENSSH = 0x00,
                                        INVALID};
@@ -86,8 +88,9 @@ enum class BIP150State : uint8_t {INACTIVE = 0x00,
 void startupBIP151CTX();
 void shutdownBIP151CTX();
 
-// Global function used to load up the key DBs. CALL AFTER BIP 151 IS INITIALIZED.
-void startupBIP150CTX(const uint32_t& ipVer, bool publicRequester);
+// Global function used to load up the key DBs. Takes the IP version and a flag
+// indicating if verification is done only by the client (false by default).
+void startupBIP150CTX(const uint32_t& ipVer, const bool& pubReq = false);
 
 struct AuthPeersLambdas
 {
@@ -197,12 +200,13 @@ private:
    BIP151Session* outSes_;
    btc_pubkey chosenAuthPeerKey;
    btc_pubkey chosenChallengeKey;
+   bool usePublicRequester_;
 
    AuthPeersLambdas authKeys_;
 
 public:
    BIP150StateMachine(BIP151Session* incomingSes, BIP151Session* outgoingSes,
-      AuthPeersLambdas& authkeys);
+      AuthPeersLambdas& authkeys, const bool& publicRequester = false);
 
    int processAuthchallenge(const BinaryData& inData,
       const bool& requesterSent);
@@ -236,11 +240,11 @@ private:
 
 public:
    // Default constructor - Used when initiating contact with a peer.
-   BIP151Connection(AuthPeersLambdas&);
+   BIP151Connection(AuthPeersLambdas&, const bool& publicRequester = false);
 
    // Constructor manually setting the ECDH setup prv keys. USE WITH CAUTION.
    BIP151Connection(btc_key* inSymECDHPrivKeyIn, btc_key* inSymECDHPrivKeyOut,
-      AuthPeersLambdas& authkeys);
+      AuthPeersLambdas& authkeys, const bool& publicRequester = false);
 
    int assemblePacket(const uint8_t* plainData, const size_t& plainSize,
       uint8_t* cipherData, const size_t& cipherSize);

@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2018, goatpig                                               //
+//  Copyright (C) 2018-2019, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -28,7 +28,7 @@
 // direct access to libsecp256k1 calls, just create one.
 secp256k1_context* secp256k1_ecdh_ctx = nullptr;
 uint32_t ipType_ = 0;
-bool publicRequester_ = false;
+bool publicRequester = false;
 
 // FIX/NOTE: Just use btc_ecc_start() from btc/ecc.h when starting up Armory.
 // Need to initialize things, and not just for BIP 151 once libbtc is used more.
@@ -652,11 +652,13 @@ std::string BIP151Session::getSessionIDHex() const
 
 // Default BIP 151 connection constructor.
 // 
-// IN:  None
+// IN:  Authenticated peer lambda set. (AuthPeersLambdas)
+//      Flag for public (1-way: cli verifs srv) verification. (const bool)
 // OUT: None
 // RET: N/A
-BIP151Connection::BIP151Connection(AuthPeersLambdas& authkeys) :
-   inSes_(false), outSes_(true), bip150SM_(&inSes_, &outSes_, authkeys)
+BIP151Connection::BIP151Connection(AuthPeersLambdas& authkeys,
+   const bool& publicRequester) : inSes_(false), outSes_(true),
+   bip150SM_(&inSes_, &outSes_, authkeys, publicRequester)
 {
    // The context must be set up before we can establish BIP 151 connections.
    assert(secp256k1_ecdh_ctx != nullptr);
@@ -668,12 +670,15 @@ BIP151Connection::BIP151Connection(AuthPeersLambdas& authkeys) :
 // keys are HW-generated), using this will just get you into trouble.
 // IN:  inSymECDHPrivKeyIn - ECDH private key for the inbound channel.
 //      inSymECDHPrivKeyOut - ECDH private key for the outbound channel.
+//      Authenticated peer lambda set. (AuthPeersLambdas)
+//      Flag for public (1-way: cli verifs srv) verification. (const bool)
 // OUT: None
 // RET: N/A
 BIP151Connection::BIP151Connection(btc_key* inSymECDHPrivKeyIn,
-   btc_key* inSymECDHPrivKeyOut, AuthPeersLambdas& authkeys) :
-   inSes_(inSymECDHPrivKeyIn, false), outSes_(inSymECDHPrivKeyOut, true),
-   bip150SM_(&inSes_, &outSes_, authkeys)
+   btc_key* inSymECDHPrivKeyOut, AuthPeersLambdas& authkeys,
+   const bool& publicRequester) : inSes_(inSymECDHPrivKeyIn, false),
+   outSes_(inSymECDHPrivKeyOut, true),
+   bip150SM_(&inSes_, &outSes_, authkeys, publicRequester)
 {
    // The context must be set up before we can establish BIP 151 connections.
    assert(secp256k1_ecdh_ctx != nullptr);
@@ -1267,16 +1272,15 @@ size_t BIP151Message::messageSizeHint()
 // safe to call this function if switching to a new IP version mid-stream,
 // although it's not recommended except for test purposes.
 // 
-// IN:  ipVer - The IP version to be used. Valid values are 4, 6, and 20 (20
-//              indicates that Armory will use Tor).
+// IN:  ipVer - The IP version to be used. Valid values are 4 and 6. (const uint32_t)
 //      publicRequester - false: auth both sides
 //                        true: auth responder (server), allow anonymous requester (client)
 // OUT: None
 // RET: N/A
-void startupBIP150CTX(const uint32_t& ipVer, bool publicRequester)
+void startupBIP150CTX(const uint32_t& ipVer, const bool& pubReq)
 {
    ::ipType_ = ipVer;
-   ::publicRequester_ = publicRequester;
+   ::publicRequester = pubReq;
 }
 
 // Overridden constructor for a BIP 150 state machine session. Sets the internal
@@ -1284,12 +1288,14 @@ void startupBIP150CTX(const uint32_t& ipVer, bool publicRequester)
 // 
 // IN:  incomingSes - 151 connection's incoming session.
 //      outgoingSes - 151 connection's outgoing session.
+//      Flag for public (1-way: cli verifs srv) verification. (const bool)
 // OUT: None
 // RET: N/A
 BIP150StateMachine::BIP150StateMachine(BIP151Session* incomingSes,
-   BIP151Session* outgoingSes, AuthPeersLambdas& authkeys) :
+   BIP151Session* outgoingSes, AuthPeersLambdas& authkeys,
+   const bool& publicRequester) :
    curState_(BIP150State::INACTIVE), inSes_(incomingSes), outSes_(outgoingSes),
-   authKeys_(authkeys)
+   usePublicRequester_(publicRequester), authKeys_(authkeys)
 {}
 
 // Function that gets AUTHCHALLENGE data for the state machine. Works for
@@ -1378,7 +1384,7 @@ int BIP150StateMachine::getAuthchallengeData(uint8_t* buf,
    else if(goodPropose == false && requesterSent == false) // AC 2 BAD
    {
       //could not find an authorized public key from auth propose
-      if (::publicRequester_ == false)
+      if (usePublicRequester_ == false)
       {
          //we do not allow for unknown peers, return all 0 auth challenge
          std::memset(buf, 0, BIP151PRVKEYSIZE);
@@ -1488,7 +1494,7 @@ int BIP150StateMachine::getAuthreplyData(uint8_t* buf, const size_t& bufSize,
 
       retVal = 0;
    } // if
-   else if (!responderSent && ::publicRequester_)
+   else if (!responderSent && usePublicRequester_)
    {
       const btc_pubkey* hashKey = &authKeys_.getPubKey("own");
       std::memcpy(buf, hashKey->pubkey, BIP151PUBKEYSIZE);
@@ -1590,7 +1596,7 @@ int BIP150StateMachine::processAuthchallenge(const BinaryData& inData,
 
    if(std::memcmp(inData.getPtr(), challengeHash.data(), BIP151PRVKEYSIZE) != 0)
    {
-      if (!requesterSent && ::publicRequester_)
+      if (!requesterSent && usePublicRequester_)
       {
          char anonChallenge[BIP151PRVKEYSIZE];
          memset(anonChallenge, 0xFF, BIP151PRVKEYSIZE);
@@ -1678,7 +1684,7 @@ int BIP150StateMachine::processAuthreply(BinaryData& inData,
    }
    else
    {
-      if (::publicRequester_ && !responderSent && !goodChallenge)
+      if (usePublicRequester_ && !responderSent && !goodChallenge)
       {
          //Responder allows for anon peers and requester auth propose had no match,
          //this auth reply carries the requester's public key instead of the signed
@@ -1740,7 +1746,7 @@ int BIP150StateMachine::processAuthpropose(const BinaryData& inData)
    // If we found a valid key, save it for later processing purposes.
    if(validKey == nullptr)
    {
-      if (::publicRequester_)
+      if (usePublicRequester_)
       {
          //public responders tolerate anon peers
          return 1;

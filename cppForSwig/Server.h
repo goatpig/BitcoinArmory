@@ -104,10 +104,11 @@ private:
    void processAEADHandshake(BinaryData);
 
 public:
-   ClientConnection(struct lws *wsi, uint64_t id, AuthPeersLambdas& lbds) :
-      wsiPtr_(wsi), id_(id)
+   ClientConnection(struct lws *wsi, uint64_t id, AuthPeersLambdas& lbds,
+      const bool& bip150AuthMode) : wsiPtr_(wsi), id_(id)
    {
-      bip151Connection_ = std::make_shared<BIP151Connection>(lbds);
+      bip151Connection_ = std::make_shared<BIP151Connection>(lbds,
+         bip150AuthMode);
 
       writeLock_ = std::make_shared<std::atomic<unsigned>>();
       writeLock_->store(0);
@@ -151,6 +152,7 @@ private:
    BlockingQueue<uint64_t> clientConnectionInterruptQueue_;
 
    std::shared_ptr<AuthorizedPeers> authorizedPeers_;
+   const bool bip150AuthMode_ = ::publicRequester;
 
 private:
    void webSocketService(int port);
@@ -165,7 +167,8 @@ private:
    void clientInterruptThread(void);
 
 public:
-   WebSocketServer(void);
+   WebSocketServer();
+   WebSocketServer(const bool& bip150AuthMode);
 
    static int callback(
       struct lws *wsi, enum lws_callback_reasons reason,

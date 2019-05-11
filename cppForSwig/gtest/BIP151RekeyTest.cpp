@@ -36,10 +36,6 @@ protected:
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(BIP151RekeyTest, rekeyRequired)
 {
-   // Run before the first test has been run. (SetUp/TearDown will be called
-   // for each test. Context startup/shutdown multiple times leads to crashes.)
-   startupBIP151CTX();
-
    // BIP 151 connection uses private keys we feed it. (Normally, we'd let it
    // generate its own private keys.)
    auto getpubkeymap = [](void)->const std::map<std::string, btc_pubkey>&
@@ -206,14 +202,18 @@ GTEST_API_ int main(int argc, char **argv)
    STARTLOGGING("cppTestsLog.txt", LogLvlDebug2);
    //LOGDISABLESTDOUT();
 
-   // Required by libbtc.
-   btc_ecc_start();
+   btc_ecc_start(); // Required by libbtc.
+   // Run before the first test has been run. (SetUp/TearDown will be called
+   // for each test. Context startup/shutdown multiple times leads to crashes.)
+   startupBIP151CTX();
+   startupBIP150CTX(4);
 
    testing::InitGoogleTest(&argc, argv);
    int exitCode = RUN_ALL_TESTS();
 
    FLUSHLOG();
    CLEANUPLOG();
+   shutdownBIP151CTX();
 
    return exitCode;
 }

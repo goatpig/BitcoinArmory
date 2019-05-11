@@ -48,7 +48,7 @@ shared_ptr<BlockDataViewer> BlockDataViewer::getNewBDV(const string& addr,
    shared_ptr<RemoteCallback> callbackPtr)
 {
    auto&& bdvAsync = AsyncClient::BlockDataViewer::getNewBDV(addr, port,
-      datadir, ephemeralPeers, callbackPtr);
+      datadir, ephemeralPeers, false, false, callbackPtr);
    auto bdvPtr = new BlockDataViewer(*bdvAsync);
    shared_ptr<BlockDataViewer> bdvSharedPtr;
    bdvSharedPtr.reset(bdvPtr);
