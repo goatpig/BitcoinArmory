@@ -4,7 +4,8 @@ import os
 import shutil
 import platform
 import time
-from subprocess import Popen, PIPE
+import argparse
+from subprocess import Popen, PIPE, check_output
 
 def execAndWait(cli_str):
    print '*** Executing:', cli_str[:60], '...'
@@ -26,7 +27,17 @@ def cd(path):
 def pwd():
    return os.getcwd()
 
-
+# Set up parsing of input flags
+parser = argparse.ArgumentParser(description='Build debian packages for Armory.')
+parser.add_argument('-c', '--cross', metavar='arch', choices=['armhf'],
+                    help='Specify architecture to cross compile for. Use "armhf" for RPi.')
+parser.add_argument('-t', '--toolchain-path', dest='toolchain', 
+                    help='Cross compiler directory, use in combination with --cross.')
+parser.add_argument('-p', '--extra-python-includes', dest='extrapython',
+                    help='Path to python include directory containing armhf version of pyconfig.h. Do not add "-I" prefix to path. Use in combination with --cross.')
+parser.add_argument('-j', '--jobs', type=int, default=8,
+                   help='Number of processing jobs to pass into dpkg & make')
+args = parser.parse_args()
 
 if pwd().split('/')[-1]=='dpkgfiles':
    cd('..')
@@ -35,6 +46,30 @@ if not os.path.exists('./armoryengine/ArmoryUtils.py') or \
    not os.path.exists('./ArmoryQt.py'):
    print '***ERROR: Must run this script from the root Armory directory!'
    exit(1)
+
+jobparam = ''
+if args.jobs >= 1:
+   jobparam = '-j' + str(args.jobs)
+
+if args.cross == 'armhf':
+   crosstuple = 'arm-linux-gnueabihf'
+   if args.toolchain and args.extrapython and os.path.exists(args.toolchain) and os.path.exists(args.extrapython):
+      args.toolchain = os.path.abspath(args.toolchain)
+      args.extrapython = os.path.abspath(args.extrapython)
+
+      pathtogcc = args.toolchain.rstrip('/') + '/' + crosstuple + '-gcc'
+      if not os.path.exists(pathtogcc):
+         exit("***ERROR: Could not find GCC at: " + pathtogcc)
+
+      #Check GCC version as <4.9 can't handle some flags. Can't check in makefile as the fail happens during configure.
+      oldgcc = 0
+      gccversion = check_output([pathtogcc, '-dumpversion']).split('.')
+      gccversion[-1] = gccversion[-1].strip("\n")
+      if int(gccversion[0]) < 4 or (int(gccversion[0]) == 4 and int(gccversion[2]) < 9):
+         oldgcc = 1
+
+   else:
+      exit('Cross compiler toolchain location and/or python include location are not valid directories. These are required for cross compiling.')
 
 # Must get current Armory version from armoryengine.py
 # I desperately need a better way to store/read/increment version numbers
@@ -61,11 +96,14 @@ if not vstr:
    print '          There is no good reason for this to happen.  Ever! :('
    exit(1)
 
-# Copy the correct control file (for 32-bit or 64-bit OS)
-osBits = platform.architecture()[0][:2]
-shutil.copy('dpkgfiles/control%s' % (osBits), 'dpkgfiles/control')
-dpkgfiles = ['control', 'copyright', 'postinst', 'postrm', 'rules']
+# Copy the correct control file (for 32/64-bit OS or armhf crosscompile)
+if args.cross == 'armhf':
+    shutil.copy('dpkgfiles/controlarmhf', 'dpkgfiles/control')
+else:    
+    osBits = platform.architecture()[0][:2]
+    shutil.copy('dpkgfiles/control%s' % (osBits), 'dpkgfiles/control')
 
+dpkgfiles = ['control', 'copyright', 'postinst', 'postrm', 'rules']
 
 # Start pseudo-bash-script
 origDir = pwd().split('/')[-1]
@@ -83,4 +121,9 @@ for f in dpkgfiles:
    shutil.copy('dpkgfiles/%s' % f, 'debian/%s' % f)
 
 # Finally, all the magic happens here
-execAndWait('dpkg-buildpackage -rfakeroot -uc -us -j8')
+if args.cross == 'armhf':
+   execAndWait('export PATH="$PATH:%s" CROSS_COMPILING="armhf" EXTRA_PYTHON="%s" OLDGCC="%d"; dpkg-buildpackage -t %s -d -rfakeroot -uc -us %s'
+               % (args.toolchain, args.extrapython, oldgcc, crosstuple, jobparam))
+else:
+   print 'Attempting normal build for debian'
+   execAndWait('dpkg-buildpackage -rfakeroot -uc -us %s' % jobparam)
