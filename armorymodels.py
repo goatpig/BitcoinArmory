@@ -14,7 +14,6 @@ import sys
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 
-from CppBlockUtils import *
 from armoryengine.ALL import *
 from qtdefines import *
 from armoryengine.MultiSigUtils import calcLockboxID

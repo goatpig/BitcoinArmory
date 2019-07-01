@@ -15,7 +15,6 @@ from ui.TxFrames import SendBitcoinsFrame, SignBroadcastOfflineTxFrame,\
    ReviewOfflineTxFrame
 from qtdefines import USERMODE, GETFONT, AddToRunningDialogsList
 from armoryengine.PyBtcWallet import PyBtcWallet
-from CppBlockUtils import SecureBinaryData
 from armoryengine.BDM import TheBDM, BDM_OFFLINE, BDM_UNINITIALIZED
 from qtdialogs import DlgProgress
 

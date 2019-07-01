@@ -38,7 +38,6 @@ from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 import psutil
 
-import CppBlockUtils as Cpp
 from armorycolors import Colors, htmlColor, QAPP
 from armoryengine.ALL import *
 from armoryengine.Block import PyBlock
@@ -47,6 +46,8 @@ from armoryengine.PyBtcWalletRecovery import WalletConsistencyCheck
 from SDM import SatoshiDaemonManager
 
 from ui.QtExecuteSignal import QtExecuteSignal
+
+from armoryengine.cppyyWrapper import ArmoryCpp, std
 
 # Setup translations
 translator = QTranslator(QAPP)
@@ -96,7 +97,6 @@ if OS_MACOSX:
 
 if OS_WINDOWS:
    from _winreg import *
-
 
 MODULES_ZIP_DIR_NAME = 'modules'
 
@@ -1770,6 +1770,7 @@ class ArmoryMainWindow(QMainWindow):
       def uriClick_partial(a):
          self.emit(SIGNAL("processMutexNotification"), a)
 
+      '''
       if CLI_OPTIONS.interport > 1:
          from armoryengine.ProcessMutex import PySide_ProcessMutex
          self.prc_mutex = PySide_ProcessMutex(CLI_OPTIONS.interport, uriClick_partial) 
@@ -1782,6 +1783,7 @@ class ArmoryMainWindow(QMainWindow):
             os._exit(0)
       else:
          LOGWARN('*** Listening port is disabled.  URI-handling will not work')
+      '''
 
       self.internetStatus = INTERNET_STATUS.DidNotCheck
 
@@ -2212,7 +2214,7 @@ class ArmoryMainWindow(QMainWindow):
    def loadCppWallets(self):
       #load all existing cpp wallets
       if self.walletManager == None:
-         self.walletManager = Cpp.WalletManager(str(ARMORY_HOME_DIR))
+         self.walletManager = ArmoryCpp.WalletManager(str(ARMORY_HOME_DIR))
       
       #check python wallets against cpp wallets
       from ui.WalletMirrorDialog import WalletComparisonClass
@@ -2222,7 +2224,7 @@ class ArmoryMainWindow(QMainWindow):
       #load all cpp wallets
       for wltID in self.walletMap:
          wlt = self.walletMap[wltID]
-         wlt.cppWallet = self.walletManager.getCppWallet(wltID)
+         wlt.cppWallet = self.walletManager.getCppWallet(str(wltID))
          
          
    #############################################################################
@@ -5963,6 +5965,7 @@ class ArmoryMainWindow(QMainWindow):
 
 ############################################
 def checkForAlreadyOpen():
+   '''
    from armoryengine.ProcessMutex import PySide_ProcessMutex
    LOGDEBUG('Checking for already open socket...')
 
@@ -5976,6 +5979,8 @@ def checkForAlreadyOpen():
       LOGERROR('Socket already in use.  Sent CLI args to existing proc.')      
       LOGERROR('Exiting...')      
       os._exit(0)
+   '''
+   return
 
 ############################################
 

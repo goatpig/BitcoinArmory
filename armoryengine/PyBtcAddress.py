@@ -6,7 +6,6 @@ from __future__ import print_function
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                         #
 #                                                                              #
 ################################################################################
-from CppBlockUtils import SecureBinaryData, CryptoAES, CryptoECDSA
 from armoryengine.ArmoryUtils import ADDRBYTE, hash256, binary_to_base58, \
    KeyDataError, RightNow, LOGERROR, ChecksumError, convertKeyDataToAddress, \
    verifyChecksum, WalletLockError, createDERSigFromRS, binary_to_int, \
@@ -18,14 +17,16 @@ from armoryengine.BinaryPacker import BinaryPacker, UINT8, UINT16, UINT32, UINT6
    INT8, INT16, INT32, INT64, VAR_INT, VAR_STR, FLOAT, BINARY_CHUNK
 from armoryengine.BinaryUnpacker import BinaryUnpacker
 from armoryengine.Timer import TimeThisFunction
-import CppBlockUtils as Cpp
+
+from armoryengine.cppyyWrapper import ArmoryCpp, cppyy
+from cppyy.gbl import SecureBinaryData, CryptoAES, CryptoECDSA
 
 
 #############################################################################
 def calcWalletIDFromRoot(root, chain):
    """ Helper method for computing a wallet ID """
-   root  = PyBtcAddress().createFromPlainKeyData(SecureBinaryData(root))
-   root.chaincode = SecureBinaryData(chain)
+   root  = PyBtcAddress().createFromPlainKeyData(ArmoryCpp.SecureBinaryData(root))
+   root.chaincode = ArmoryCpp.SecureBinaryData(chain)
    first = root.extendAddressChain()
    return binary_to_base58((ADDRBYTE + first.getAddr160()[:5])[::-1])
 
@@ -85,16 +86,16 @@ class PyBtcAddress(object):
       to see that available methods.
       """
       self.addrStr20             = ''
-      self.binPublicKey65        = SecureBinaryData()  # 0x04 X(BE) Y(BE)
-      self.binPrivKey32_Encr     = SecureBinaryData()  # BIG-ENDIAN
-      self.binPrivKey32_Plain    = SecureBinaryData()
-      self.binInitVect16         = SecureBinaryData()
+      self.binPublicKey65        = ArmoryCpp.SecureBinaryData()  # 0x04 X(BE) Y(BE)
+      self.binPrivKey32_Encr     = ArmoryCpp.SecureBinaryData()  # BIG-ENDIAN
+      self.binPrivKey32_Plain    = ArmoryCpp.SecureBinaryData()
+      self.binInitVect16         = ArmoryCpp.SecureBinaryData()
       self.isLocked              = False
       self.useEncryption         = False
       self.isInitialized         = False
       self.keyChanged            = False   # ...since last key encryption
       self.walletByteLoc         = -1
-      self.chaincode             = SecureBinaryData()
+      self.chaincode             = ArmoryCpp.SecureBinaryData()
       self.chainIndex            = 0
 
       # Information to be used by C++ to know where to search for transactions
@@ -1033,7 +1034,7 @@ class PyBtcAddress(object):
       self.createPrivKeyNextUnlock_ChainDepth = depth
 
       # Correct errors, convert to secure container
-      self.chaincode = SecureBinaryData(verifyChecksum(self.chaincode, chkChaincode))
+      self.chaincode = ArmoryCpp.SecureBinaryData(verifyChecksum(self.chaincode, chkChaincode))
 
 
       # Write out whatever is appropriate for private-key data
@@ -1042,8 +1043,8 @@ class PyBtcAddress(object):
       chkIv   =         serializedData.get(BINARY_CHUNK,  4)
       privKey = chkzero(serializedData.get(BINARY_CHUNK, 32))
       chkPriv =         serializedData.get(BINARY_CHUNK,  4)
-      iv      = SecureBinaryData(verifyChecksum(iv, chkIv))
-      privKey = SecureBinaryData(verifyChecksum(privKey, chkPriv))
+      iv      = ArmoryCpp.SecureBinaryData(verifyChecksum(iv, chkIv))
+      privKey = ArmoryCpp.SecureBinaryData(verifyChecksum(privKey, chkPriv))
 
       # If this is SUPPOSED to contain a private key...
       if containsPrivKey:
@@ -1067,12 +1068,12 @@ class PyBtcAddress(object):
 
       pubKey = chkzero(serializedData.get(BINARY_CHUNK, 65))
       chkPub =         serializedData.get(BINARY_CHUNK, 4)
-      pubKey = SecureBinaryData(verifyChecksum(pubKey, chkPub))
+      pubKey = ArmoryCpp.SecureBinaryData(verifyChecksum(pubKey, chkPub))
 
       if containsPubKey:
          if not pubKey.getSize()==65:
             if self.binPrivKey32_Plain.getSize()==32:
-               pubKey = CryptoAES().ComputePublicKey(self.binPrivKey32_Plain)
+               pubKey = ArmoryCpp.CryptoECDSA().ComputePublicKey(self.binPrivKey32_Plain)
             else:
                raise UnserializeError('Checksum mismatch in PublicKey ' +\
                                        '('+hash160_to_addrStr(self.addrStr20)+')')
@@ -1103,20 +1104,20 @@ class PyBtcAddress(object):
       This method DOES perform elliptic-curve operations
       """
       if isinstance(privKey, str) and len(privKey)==32:
-         self.binPrivKey32_Plain = SecureBinaryData(privKey)
+         self.binPrivKey32_Plain = ArmoryCpp.SecureBinaryData(privKey)
       elif isinstance(privKey, int) or isinstance(privKey, long):
          binPriv = int_to_binary(privKey, widthBytes=32, endOut=BIGENDIAN)
-         self.binPrivKey32_Plain = SecureBinaryData(binPriv)
+         self.binPrivKey32_Plain = ArmoryCpp.SecureBinaryData(binPriv)
       else:
          raise KeyDataError('Unknown private key format')
 
       if pubKey==None:
-         self.binPublicKey65 = CryptoECDSA().ComputePublicKey(self.binPrivKey32_Plain)
+         self.binPublicKey65 = ArmoryCpp.CryptoECDSA().ComputePublicKey(self.binPrivKey32_Plain)
       else:
-         self.binPublicKey65 = SecureBinaryData(pubKey)
+         self.binPublicKey65 = ArmoryCpp.SecureBinaryData(pubKey)
 
       if not skipCheck:
-         assert(CryptoECDSA().CheckPubPrivKeyMatch( \
+         assert(ArmoryCpp.CryptoECDSA().CheckPubPrivKeyMatch( \
                                              self.binPrivKey32_Plain, \
                                              self.binPublicKey65))
 

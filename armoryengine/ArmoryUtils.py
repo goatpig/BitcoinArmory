@@ -22,8 +22,9 @@ from email.Utils import COMMASPACE, formatdate
 from email import Encoders
 import hashlib
 import inspect
-if sys.info.version[0] == 3:
-   import ipaddress
+import sys
+#if sys.info.version[0] == 3:
+#   import ipaddress
 import locale
 import logging
 import math
@@ -49,8 +50,6 @@ import subprocess
 #from psutil import Popen
 import psutil
 
-from CppBlockUtils import KdfRomix, CryptoAES, ConfigFile_fleshOutArgs, AddressType_P2SH_P2WPKH
-
 try:
    if os.path.exists('update_version.py') and os.path.exists('.git'):
       subprocess.check_output(["python", "update_version.py"])
@@ -64,7 +63,14 @@ except:
    
 #pass sys.argv to the cpp config file parser, get the fleshed out verison 
 #in return
-sys.argv = ConfigFile_fleshOutArgs("armoryqt.conf", sys.argv)
+from armoryengine.cppyyWrapper import ArmoryCpp, std
+arg_vec = std.vector[std.string]()
+for arg in sys.argv:
+   arg_vec.push_back(arg)
+
+newArgVec = ArmoryCpp.ConfigFile.fleshOutArgs("armoryqt.conf", arg_vec)
+for arg in newArgVec:
+   sys.argv.append(str(arg))
 
 DEFAULT = 'DEFAULT'
 LEVELDB_BLKDATA = 'leveldb_blkdata'
@@ -514,8 +520,7 @@ if not os.path.exists(ARMORY_DB_DIR):
    os.makedirs(ARMORY_DB_DIR)
 
 ##### MAIN NETWORK IS DEFAULT #####
-from CppBlockUtils import BlockDataManagerConfig
-bdmConfig = BlockDataManagerConfig()
+bdmConfig = ArmoryCpp.BlockDataManagerConfig()
 
 BECH32_PREFIX = "tb" #default to testnet
 
@@ -611,7 +616,7 @@ CPP_TXOUT_STDSINGLESIG = [CPP_TXOUT_STDHASH160, \
                           CPP_TXOUT_STDPUBKEY33]
 CPP_TXOUT_NESTED_SINGLESIG = [CPP_TXOUT_STDPUBKEY33,
                           CPP_TXOUT_P2WPKH]
-CPP_TXOUT_SEGWIT = [AddressType_P2SH_P2WPKH]
+CPP_TXOUT_SEGWIT = [ArmoryCpp.AddressType_P2SH_P2WPKH]
 
 CPP_TXOUT_SCRIPT_NAMES = ['']*9
 CPP_TXOUT_SCRIPT_NAMES[CPP_TXOUT_STDHASH160]  = 'Standard (PKH)'
@@ -1177,31 +1182,6 @@ def readWalletFiles(inWltList=None):
 
    return wltPaths
 
-
-################################################################################
-# Load the C++ utilites here
-#
-#    The SWIG/C++ block utilities give us access to the blockchain, fast ECDSA
-#    operations, and general encryption/secure-binary containers
-################################################################################
-try:
-   import CppBlockUtils as Cpp
-   from CppBlockUtils import CryptoECDSA, SecureBinaryData
-   LOGINFO('C++ block utilities loaded successfully')
-except:
-   LOGCRIT('C++ block utilities not available.')
-   LOGCRIT('   Make sure that you have the SWIG-compiled modules')
-   LOGCRIT('   in the current directory (or added to the PATH)')
-   LOGCRIT('   Specifically, you need:')
-   LOGCRIT('       CppBlockUtils.py     and')
-   if OS_LINUX or OS_MACOSX:
-      LOGCRIT('       _CppBlockUtils.so')
-   elif OS_WINDOWS:
-      LOGCRIT('       _CppBlockUtils.pyd')
-   else:
-      LOGCRIT('\n\n... UNKNOWN operating system')
-   raise
-
 ################################################################################
 # Get system details for logging purposes
 class DumbStruct(object): pass
@@ -1731,33 +1711,6 @@ def addrStr_to_scrAddr(addrStr, p2pkhByte = ADDRBYTE, p2shByte = P2SHBYTE):
 def addrStr_to_script(addrStr):
    """ Convert an addr string to a binary script """
    return scrAddr_to_script(addrStr_to_scrAddr(addrStr))
-
-
-
-################################################################################
-# Load the C++ utilites here
-#
-#    The SWIG/C++ block utilities give us access to the blockchain, fast ECDSA
-#    operations, and general encryption/secure-binary containers
-################################################################################
-try:
-   import CppBlockUtils as Cpp
-   from CppBlockUtils import CryptoECDSA, SecureBinaryData
-   LOGINFO('C++ block utilities loaded successfully')
-except:
-   LOGCRIT('C++ block utilities not available.')
-   LOGCRIT('   Make sure that you have the SWIG-compiled modules')
-   LOGCRIT('   in the current directory (or added to the PATH)')
-   LOGCRIT('   Specifically, you need:')
-   LOGCRIT('       CppBlockUtils.py     and')
-   if OS_LINUX or OS_MACOSX:
-      LOGCRIT('       _CppBlockUtils.so')
-   elif OS_WINDOWS:
-      LOGCRIT('       _CppBlockUtils.pyd')
-   else:
-      LOGCRIT('\n\n... UNKNOWN operating system')
-   raise
-
 
 ################################################################################
 # We need to have some methods for casting ASCII<->Unicode<->Preferred

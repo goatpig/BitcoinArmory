@@ -1769,7 +1769,7 @@ public:
       }
 
       if(size < b58_str.getSize())
-         b58_str.resize(size);
+         b58_str.resize(size-1);
       return b58_str;
    }
 
@@ -1779,21 +1779,27 @@ public:
       if (b58.getSize() == 0)
          throw std::range_error("empty BinaryData");
 
+      BinaryDataRef b58Bdr(b58);
       if (b58.getPtr()[b58.getSize() - 1] != 0)
-         throw std::runtime_error("b58 string has to be 0 terminated");
+      {
+         BinaryData b58Zero(b58.getSize() + 1);
+         memcpy(b58Zero.getPtr(), b58.getPtr(), b58.getSize());
+         b58Zero.getPtr()[b58.getSize()] = 0;
+         b58Bdr.setRef(b58Zero);
+      }
 
-      uint8_t* result = new uint8_t[b58.getSize()];
-      size_t size = b58.getSize();
+      uint8_t* result = new uint8_t[b58Bdr.getSize()];
+      size_t size = b58Bdr.getSize();
 
-      if (!btc_base58_decode(result, &size, b58.getCharPtr()) ||
-         size > b58.getSize())
+      if (!btc_base58_decode(result, &size, (const char*)b58Bdr.getPtr()) ||
+         size > b58Bdr.getSize())
       {
          delete[] result;
          throw std::runtime_error("failed to decode b58 string");
       }
 
       BinaryData result_bd(size);
-      memcpy(result_bd.getPtr(), result + b58.getSize() - size, size);
+      memcpy(result_bd.getPtr(), result + b58Bdr.getSize() - size, size);
 
       delete[] result;
       return result_bd;

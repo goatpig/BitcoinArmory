@@ -10,7 +10,6 @@ import os
 import sys
 from armoryengine.ArmoryUtils import *
 from zipfile import ZipFile
-from CppBlockUtils import SecureBinaryData, CryptoECDSA
 PY_EXTENSION = '.py'
 ZIP_EXTENSION = '.zip'
 SIG_EXTENSION = '.sig'

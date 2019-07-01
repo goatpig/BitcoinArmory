@@ -13,8 +13,6 @@ from __future__ import print_function
 import os.path
 import shutil
 
-from CppBlockUtils import SecureBinaryData, KdfRomix, CryptoAES, CryptoECDSA
-import CppBlockUtils as Cpp
 from armoryengine.ArmoryUtils import *
 from armoryengine.BinaryPacker import *
 from armoryengine.BinaryUnpacker import *
@@ -1550,7 +1548,7 @@ class PyBtcWallet(object):
       nIter = kdfUnpacker.get(UINT32)
       salt  = kdfUnpacker.get(BINARY_CHUNK, 32)
 
-      kdf = KdfRomix(mem, nIter, SecureBinaryData(salt))
+      kdf = ArmoryCpp.KdfRomix(mem, nIter, ArmoryCpp.SecureBinaryData(salt))
       return kdf
 
 
@@ -1576,7 +1574,7 @@ class PyBtcWallet(object):
          binUnpacker = BinaryUnpacker(toUnpack)
 
       binUnpacker.get(BINARY_CHUNK, binWidth)
-      return CryptoAES()
+      return ArmoryCpp.CryptoAES()
 
    #############################################################################
    def verifyPassphrase(self, securePassphrase):

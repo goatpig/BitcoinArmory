@@ -105,7 +105,7 @@ private:
 
 public:
    ClientConnection(struct lws *wsi, uint64_t id, AuthPeersLambdas& lbds) :
-      wsiPtr_(wsi), id_(id)
+      id_(id), wsiPtr_(wsi)
    {
       bip151Connection_ = std::make_shared<BIP151Connection>(lbds);
 

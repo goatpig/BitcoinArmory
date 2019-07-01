@@ -15,7 +15,6 @@ import hashlib
 import random
 import time
 
-import CppBlockUtils
 from armoryengine.ArmoryUtils import getVersionString, BTCARMORY_VERSION, \
    ChecksumError, ADDRBYTE
 

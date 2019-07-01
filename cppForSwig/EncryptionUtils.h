@@ -63,6 +63,8 @@
 #include "UniversalTimer.h"
 #include "SecureBinaryData.h"
 
+//#define LIBBTC_ONLY
+
 #ifdef LIBBTC_ONLY
 #include "btc/random.h"
 #include "btc/ctaes.h"

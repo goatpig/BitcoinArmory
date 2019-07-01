@@ -8,15 +8,15 @@ BUILT_SOURCES =
 
 LIBBTC = libbtc/libbtc.la
 LIBCHACHA20POLY1305 = chacha20poly1305/libchacha20poly1305.la
-LIBCPPBLOCKUTILS = libCppBlockUtils.la
 LIBARMORYCOMMON = libArmoryCommon.la
-LIBARMORYGUI = libArmoryGUI.la
+LIBARMORYCLIENT = libArmoryClient.la
 LIBARMORYCLI = libArmoryCLI.la
 LIBCRYPTOPP =
 LIBLMDB = liblmdb.la
 LIBSECP256K1 = libbtc/src/secp256k1/libsecp256k1.la
 LIBWEBSOCKETS_STATIC = $(WEBSOCKETS_LIBDIR)/libwebsockets.a
 LIBPROTOBUF_STATIC = $(PROTOBUF_LIBDIR)/libprotobuf.a
+LIBPROTOBUF_SHARED = $(PROTOBUF_LIBDIR)/libprotobuf.so
 if BUILD_OPENSSL_SUPPORT
 LIBCRYPTO_STATIC = $(CRYPTO_LIBDIR)/libcrypto.a
 LIBSSL_STATIC = $(SSL_LIBDIR)/libssl.a
@@ -117,7 +117,6 @@ ARMORYCLI_SOURCE_FILES = BDM_mainthread.cpp \
 	SocketService_unix.cpp \
 	SshParser.cpp \
 	StringSockets.cpp \
-	txio.cpp \
 	ZeroConf.cpp
 ARMORYCOMMON_SOURCE_FILES = Accounts.cpp \
 	Addresses.cpp \
@@ -279,37 +278,17 @@ BIP150KeyManager_LDADD = $(LIBARMORYCOMMON) \
 		 -lpthread
 BIP150KeyManager_LDFLAGS = $(LWSLDFLAGS) $(LDFLAGS) -static
 
-if BUILD_GUI
-# Common GUI functionality library
-noinst_LTLIBRARIES += $(LIBARMORYGUI)
-libArmoryGUI_la_SOURCES = $(ARMORYGUI_SOURCE_FILES)
-libArmoryGUI_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES) $(PYTHON_CFLAGS)
-libArmoryGUI_la_CXXFLAGS = $(AM_CXXFLAGS) $(UNIT_TEST_CXXFLAGS) -D__STDC_LIMIT_MACROS
-libArmoryGUI_la_LIBADD = $(LIBARMORYCOMMON) $(LIBCRYPTOPP) \
-			-lpthread
-libArmoryGUI_la_LDFLAGS = $(LDFLAGS) $(LWSLDFLAGS) $(PYTHON_LDFLAGS)
-endif
-
 if BUILD_CLIENT
-#libCppBlockUtils - SWIG library.
-# "shared" LDFLAG due to SWIG requirements.
-lib_LTLIBRARIES += $(LIBCPPBLOCKUTILS)
-libCppBlockUtils_la_SOURCES = CppBlockUtils_wrap.cxx
-libCppBlockUtils_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES) \
-				$(PYTHON_CFLAGS)
-libCppBlockUtils_la_CXXFLAGS = $(AM_CXXFLAGS) -Ilmdb/libraries/liblmdb \
-				$(UNIT_TEST_CXXFLAGS) -D__STDC_LIMIT_MACROS
-libCppBlockUtils_la_LIBADD = $(LIBARMORYCOMMON) $(LIBCRYPTOPP) \
-				-lpthread
-if BUILD_GUI
-libCppBlockUtils_la_LIBADD += $(LIBARMORYGUI)
-endif
-libCppBlockUtils_la_LDFLAGS = $(LDFLAGS) $(LWSLDFLAGS) $(PYTHON_LDFLAGS) -shared
-
-BUILT_SOURCES += CppBlockUtils_wrap.cxx
-#custom rules - always force SWIG to run and compile the resultant C++ file
-CppBlockUtils_wrap.cxx: CppBlockUtils.i
-	swig $(SWIG_FLAGS) CppBlockUtils.i
+# Client API shared lib
+lib_LTLIBRARIES += $(LIBARMORYCLIENT)
+libArmoryClient_la_SOURCES = $(ARMORYGUI_SOURCE_FILES)
+libArmoryClient_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES) $(PYTHON_CFLAGS)
+libArmoryClient_la_CXXFLAGS = $(AM_CXXFLAGS) $(UNIT_TEST_CXXFLAGS) -D__STDC_LIMIT_MACROS
+libArmoryClient_la_LIBADD = $(LIBARMORYCLI) \
+			$(LIBCRYPTOPP) $(LIBBTC) \
+			$(LIBPROTOBUF_SHARED) $(LIBSECP256K1) \
+			-lpthread
+libArmoryClient_la_LDFLAGS = $(LDFLAGS) $(LWSLDFLAGS) $(PYTHON_LDFLAGS) -shared
 endif
 
 MOSTLYCLEANFILES = $(PROTOBUF_CC) $(PROTOBUF_H)

@@ -9,8 +9,6 @@
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 
-from CppBlockUtils import AddressType_P2SH_P2PK, \
-   AddressType_P2SH_P2WPKH, AddressType_P2PKH
 from armoryengine.ArmoryUtils import coin2str, hash160_to_addrStr,\
    addrStr_to_hash160
 from armoryengine.BDM import TheBDM
@@ -18,6 +16,9 @@ from armoryengine.Transaction import PyTx, getFeeForTx
 
 from qtdefines import GETFONT
 from armorycolors import Colors
+
+from armoryengine.cppyyWrapper import cppyy
+#from cppyy.gbl import AddressType_P2SH_P2PK
 
 COL_TREE = 0
 COL_COMMENT = 1

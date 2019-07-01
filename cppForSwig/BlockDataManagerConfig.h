@@ -146,8 +146,8 @@ struct ConfigFile
 
    ConfigFile(const std::string& path);
 
-   static std::vector<BinaryData> fleshOutArgs(
-      const std::string& path, const std::vector<BinaryData>& argv);
+   static std::vector<std::string> fleshOutArgs(
+      const std::string& path, const std::vector<std::string>& argv);
 };
 
 ////////////////////////////////////////////////////////////////////////////////

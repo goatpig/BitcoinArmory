@@ -13,9 +13,6 @@ import stat
 import time
 from urllib import quote_plus as urlquote
 from threading import Event
-from CppBlockUtils import SecureBinaryData, CryptoECDSA, NodeStatusStruct, \
-   RpcStatus_Disabled, RpcStatus_Online, RpcStatus_Error_28, \
-   NodeStatus_Online, NodeStatus_Offline, ChainStatus_Unknown, ChainStatus_Syncing
    
 from armoryengine.ArmoryUtils import BITCOIN_PORT, LOGERROR, hex_to_binary, \
    ARMORY_INFO_SIGN_PUBLICKEY, LOGINFO, BTC_HOME_DIR, LOGDEBUG, OS_MACOSX, \
@@ -28,6 +25,7 @@ from armoryengine.ArmoryUtils import BITCOIN_PORT, LOGERROR, hex_to_binary, \
    ARMORY_THREAD_COUNT, ARMORY_DB_TYPE, ARMORYDB_IP, ARMORYDB_DEFAULT_IP, ARMORYDB_PORT, \
    ARMORYDB_DEFAULT_PORT
 
+from armoryengine.cppyyWrapper import ArmoryCpp
 
 ################################################################################
 def extractSignedDataFromVersionsDotTxt(wholeFile, doVerify=True):
@@ -120,8 +118,7 @@ class SatoshiDaemonManager(object):
 
       self.satoshiHome = None
       self.satoshiRoot = None
-      self.nodeState = NodeStatusStruct()
-
+      self.nodeState = ArmoryCpp.NodeStatusStruct()
 
    #############################################################################
    def setSatoshiDir(self, newDir):
@@ -563,11 +560,11 @@ class SatoshiDaemonManager(object):
    def getSDMStateStr(self):
       sdmStr = ""
       
-      if self.nodeState.status_ == NodeStatus_Offline:
+      if self.nodeState.status_ == ArmoryCpp.NodeStatus_Offline:
          sdmStr = "NodeStatus_Offline"
          
-         if self.nodeState.rpcStatus_ == RpcStatus_Online or \
-            self.nodeState.rpcStatus_ == RpcStatus_Error_28: 
+         if self.nodeState.rpcStatus_ == ArmoryCpp.RpcStatus_Online or \
+            self.nodeState.rpcStatus_ == ArmoryCpp.RpcStatus_Error_28: 
             sdmStr = "NodeStatus_Initializing"
          elif isinstance(self.executable, str):
             if not os.path.exists(self.executable):
@@ -576,20 +573,20 @@ class SatoshiDaemonManager(object):
       else:
          sdmStr = "NodeStatus_Ready"
          
-         if self.nodeState.rpcStatus_ == RpcStatus_Disabled:
+         if self.nodeState.rpcStatus_ == ArmoryCpp.RpcStatus_Disabled:
             return sdmStr
          
-         if self.nodeState.rpcStatus_ != RpcStatus_Online:
+         if self.nodeState.rpcStatus_ != ArmoryCpp.RpcStatus_Online:
             sdmStr = "NodeStatus_Initializing"
             
          else:
-            if self.nodeState.chainState_.state() == ChainStatus_Unknown:
+            if self.nodeState.chainState_.state() == ArmoryCpp.ChainStatus_Unknown:
                sdmStr = "NodeStatus_Initializing"
-            elif self.nodeState.chainState_.state() == ChainStatus_Syncing:
+            elif self.nodeState.chainState_.state() == ArmoryCpp.ChainStatus_Syncing:
                sdmStr = "NodeStatus_Syncing"   
                
       return sdmStr
    
    #############################################################################
    def satoshiIsAvailable(self):
-      return self.nodeState.rpcStatus_ != RpcStatus_Disabled
+      return self.nodeState.rpcStatus_ != ArmoryCpp.RpcStatus_Disabled

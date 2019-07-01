@@ -798,24 +798,17 @@ ConfigFile::ConfigFile(const string& path)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-vector<BinaryData> ConfigFile::fleshOutArgs(
-   const string& path, const vector<BinaryData>& argv)
+vector<string> ConfigFile::fleshOutArgs(
+   const string& path, const vector<string>& argv)
 {
    //sanity check
    if (path.size() == 0)
       throw runtime_error("invalid config file path");
 
    //remove first arg
-   auto binaryPath = argv.front();
+   auto stringPath = argv.front();
    vector<string> arg_minus_1;
-
-   auto argvIter = argv.begin() + 1;
-   while (argvIter != argv.end())
-   {
-      string argStr((*argvIter).getCharPtr(), (*argvIter).getSize());
-      arg_minus_1.push_back(move(argStr));
-      ++argvIter;
-   }
+   arg_minus_1.insert(arg_minus_1.end(), argv.begin() + 1, argv.end());
 
    //break down string vector
    auto&& keyValMap = BlockDataManagerConfig::getKeyValsFromLines(arg_minus_1, '=');
@@ -859,15 +852,10 @@ vector<BinaryData> ConfigFile::fleshOutArgs(
    auto&& newArgs = BlockDataManagerConfig::keyValToArgv(keyValMap);
 
    //prepend the binary path and return
-   vector<BinaryData> fleshedOutArgs;
-   fleshedOutArgs.push_back(binaryPath);
-   auto newArgsIter = newArgs.begin();
-   while (newArgsIter != newArgs.end())
-   {
-      BinaryData bdStr(*newArgsIter);
-      fleshedOutArgs.push_back(move(bdStr));
-      ++newArgsIter;
-   }
+   vector<string> fleshedOutArgs;
+   fleshedOutArgs.push_back(stringPath);
+   fleshedOutArgs.insert(fleshedOutArgs.end(),
+      arg_minus_1.begin(), arg_minus_1.end());
 
    return fleshedOutArgs;
 }

@@ -21,8 +21,6 @@ from armoryengine.MultiSigUtils import \
    isP2SHLockbox
 from armoryengine.ArmoryUtils import MAX_COMMENT_LENGTH, getAddrByte
 from ui.FeeSelectUI import FeeSelectionDialog
-from CppBlockUtils import TXOUT_SCRIPT_P2SH, TXOUT_SCRIPT_P2WPKH, TXOUT_SCRIPT_P2WSH, \
-   TransactionBatch, SecureBinaryData, RecipientReuseException
 from armoryengine.SignerWrapper import SIGNER_DEFAULT
 
 class SendBitcoinsFrame(ArmoryFrame):

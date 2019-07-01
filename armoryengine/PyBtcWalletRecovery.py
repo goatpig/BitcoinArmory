@@ -18,7 +18,6 @@ from armoryengine.PyBtcWallet import (PyBtcWallet, WLT_DATATYPE_KEYDATA, \
                                       WLT_DATATYPE_OPEVAL, \
                                       WLT_DATATYPE_DELETED, WLT_UPDATE_ADD, \
                                       getSuffixedPath)
-from CppBlockUtils import SecureBinaryData, CryptoECDSA, CryptoAES, BtcWallet 
 import os
 import shutil
 from time import sleep, ctime
@@ -26,7 +25,7 @@ from armoryengine.ArmoryUtils import AllowAsync, emptyFunc, LOGEXCEPT, \
                                      LOGINFO, LOGERROR, SECP256K1_ORDER, \
                                      binary_to_int, BIGENDIAN, int_to_binary, \
                                      binary_to_hex, enum, HMAC256
-
+from armoryengine.cppyyWrapper import ArmoryCpp
 
 #                      0          1        2       3       4        5 
 RECOVERMODE = enum('NotSet', 'Stripped', 'Bare', 'Full', 'Meta', 'Check')
@@ -493,14 +492,14 @@ class PyBtcWalletRecovery(object):
                3) a function that will return the passphrase (think user prompt)
             '''
             if isinstance(Passphrase, str):
-               SecurePassphrase = SecureBinaryData(Passphrase)
+               SecurePassphrase = ArmoryCpp.SecureBinaryData(Passphrase)
                Passphrase = ''
-            elif isinstance(Passphrase, SecureBinaryData):
+            elif isinstance(Passphrase, ArmoryCpp.SecureBinaryData):
                   SecurePassphrase = Passphrase.copy()
             elif hasattr(Passphrase, '__call__'):
                getPassphrase = Passphrase(toRecover)
                
-               if isinstance(getPassphrase, SecureBinaryData):
+               if isinstance(getPassphrase, ArmoryCpp.SecureBinaryData):
                   SecurePassphrase = getPassphrase.copy()
                   getPassphrase.destroy()                       
                else:
@@ -531,7 +530,7 @@ class PyBtcWalletRecovery(object):
             #DlgUnlockWallet may have filled kdfKey. Since this code can be 
             #called with no UI and just the passphrase, gotta make sure this 
             #member is cleaned up before setting it
-            if isinstance(toRecover.kdfKey, SecureBinaryData): 
+            if isinstance(toRecover.kdfKey, ArmoryCpp.SecureBinaryData): 
                toRecover.kdfKey.destroy()
             toRecover.kdfKey = secureKdfOutput
 
@@ -554,9 +553,9 @@ class PyBtcWalletRecovery(object):
             if not isinstance(RecoveredWallet, PyBtcWallet):  
                return RecoveredWallet
             
-            if isinstance(toRecover.kdfKey, SecureBinaryData): 
+            if isinstance(toRecover.kdfKey, ArmoryCpp.SecureBinaryData): 
                toRecover.kdfKey.destroy()
-            if isinstance(RecoveredWallet.kdfKey, SecureBinaryData): 
+            if isinstance(RecoveredWallet.kdfKey, ArmoryCpp.SecureBinaryData): 
                RecoveredWallet.kdfKey.destroy()
             
             #stripped recovery, we are done
@@ -762,7 +761,7 @@ class PyBtcWalletRecovery(object):
 
          #check public key is a valid EC point
          if newAddr.hasPubKey():
-            if not CryptoECDSA().VerifyPublicKeyValid(newAddr.binPublicKey65):
+            if not ArmoryCpp.CryptoECDSA().VerifyPublicKeyValid(newAddr.binPublicKey65):
                self.invalidPubKey.append([newAddr.chainIndex, byteLocation])
          else: self.missingPubKey.append([newAddr.chainIndex, byteLocation])
 
@@ -799,7 +798,7 @@ class PyBtcWalletRecovery(object):
                cid = 0
                extended = prevAddr.binPublicKey65
                while cid < gap:
-                  extended = CryptoECDSA().ComputeChainedPublicKey( \
+                  extended = ArmoryCpp.CryptoECDSA().ComputeChainedPublicKey( \
                                                 extended, prevAddr.chaincode)
                   cid = cid +1
 
@@ -884,7 +883,7 @@ class PyBtcWalletRecovery(object):
                if prevAddr.useEncryption:
                   if prevAddr.binPrivKey32_Encr.getSize() == 32:
                      gap = newAddr.chainIndex - prevAddr.chainIndex
-                     prevkey = CryptoAES().DecryptCFB( \
+                     prevkey = ArmoryCpp.CryptoAES().DecryptCFB( \
                                      prevAddr.binPrivKey32_Encr, \
                                      SecureBinaryData(toRecover.kdfKey), \
                                      prevAddr.binInitVect16)
@@ -899,7 +898,7 @@ class PyBtcWalletRecovery(object):
                   prevAddr = addrDict[0][0]
                   
                   if prevAddr.useEncryption:
-                     prevkey = CryptoAES().DecryptCFB( \
+                     prevkey = ArmoryCpp.CryptoAES().DecryptCFB( \
                                      prevAddr.binPrivKey32_Encr, \
                                      SecureBinaryData(toRecover.kdfKey), \
                                      prevAddr.binInitVect16)
@@ -927,7 +926,7 @@ class PyBtcWalletRecovery(object):
                      isPrivForked = True
                      validAddr = newAddr.copy()
                      validAddr.binPrivKey32_Plain = prevkey.copy()
-                     validAddr.binPublicKey65 = CryptoECDSA().ComputePublicKey(\
+                     validAddr.binPublicKey65 = ArmoryCpp.CryptoECDSA().ComputePublicKey(\
                                                    validAddr.binPrivKey32_Plain)
                      validAddr.chainCode = prevAddr.chaincode.copy()
                      validAddr.keyChanged = True
@@ -950,7 +949,7 @@ class PyBtcWalletRecovery(object):
                      
                      validChainAddr = validChainDict[validchID]
                      if validChainAddr.useEncryption:
-                        validPrivKey = CryptoAES().DecryptCFB( \
+                        validPrivKey = ArmoryCpp.CryptoAES().DecryptCFB( \
                                      validChainAddr.binPrivKey32_Encr, \
                                      SecureBinaryData(toRecover.kdfKey), \
                                      validChainAddr.binInitVect16)
@@ -968,7 +967,7 @@ class PyBtcWalletRecovery(object):
                         validAddr = newAddr.copy()
                         validAddr.binPrivKey32_Plain = validPrivKey.copy()
                         validAddr.binPublicKey65 = \
-                                 CryptoECDSA().ComputePublicKey( \
+                                 ArmoryCpp.CryptoECDSA().ComputePublicKey( \
                                  validAddr.binPrivKey32_Plain)
                                  
                         validAddr.chainCode = validChainAddr.chaincode.copy()                        
@@ -1001,13 +1000,13 @@ class PyBtcWalletRecovery(object):
 
             elif keymismatch == 3:
                newAddr.binPublicKey65 = \
-                     CryptoECDSA().ComputePublicKey(newAddr.binPrivKey32_Plain)
+                     ArmoryCpp.CryptoECDSA().ComputePublicKey(newAddr.binPrivKey32_Plain)
                newAddr.addrStr20 = newAddr.binPublicKey65.getHash160()
 
             #if we have clear possible mismatches (or there were none), 
             #proceed to consistency checks
             if keymismatch == 0:
-               if not CryptoECDSA().CheckPubPrivKeyMatch( \
+               if not ArmoryCpp.CryptoECDSA().CheckPubPrivKeyMatch( \
                                     newAddr.binPrivKey32_Plain, \
                                     newAddr.binPublicKey65):
                   self.unmatchedPair.append([newAddr.chainIndex, byteLocation])
@@ -1104,7 +1103,7 @@ class PyBtcWalletRecovery(object):
       
                   if keymismatch == 0:
                      #pubkey is present, check against priv key
-                     if not CryptoECDSA().CheckPubPrivKeyMatch( \
+                     if not ArmoryCpp.CryptoECDSA().CheckPubPrivKeyMatch( \
                            newAddr.binPrivKey32_Plain, newAddr.binPublicKey65):
                         keymismatch = 1
                         self.importedErr.append('pub key doesnt match private \
@@ -1113,7 +1112,7 @@ class PyBtcWalletRecovery(object):
       
                   if keymismatch == 1:
                      #compute missing/invalid pubkey
-                     newAddr.binPublicKey65 = CryptoECDSA().ComputePublicKey( \
+                     newAddr.binPublicKey65 = ArmoryCpp.CryptoECDSA().ComputePublicKey( \
                                                     newAddr.binPrivKey32_Plain)
       
                   #check hashVal
@@ -1195,13 +1194,13 @@ class PyBtcWalletRecovery(object):
                      newAddr.unlock(toRecover.kdfKey)
                     
                   if newAddr.chainIndex < -2:
-                     privMultiplier = CryptoECDSA().ECMultiplyScalars( \
+                     privMultiplier = ArmoryCpp.CryptoECDSA().ECMultiplyScalars( \
                                            newAddr.binPrivKey32_Plain.toBinStr(),
                                            invQ.toBinStr())
                      self.privKeyMultipliers.append(binary_to_hex(privMultiplier))
 
                      # Sanity check that the multipliers are correct
-                     recov = CryptoECDSA().ECMultiplyScalars(privMultiplier,
+                     recov = ArmoryCpp.CryptoECDSA().ECMultiplyScalars(privMultiplier,
                                                              regQ.toBinStr())
                      if not recov==newAddr.binPrivKey32_Plain.toBinStr():
                         # Unfortunately I'm not sure what to do here if it doesn't match
@@ -1240,15 +1239,15 @@ class PyBtcWalletRecovery(object):
                   if Progress and self.ncomments > 0: self.UIreport = \
                                                       self.UIreport + UIupdate
    
-      if isinstance(rootAddr.binPrivKey32_Plain, SecureBinaryData): 
+      if isinstance(rootAddr.binPrivKey32_Plain, ArmoryCpp.SecureBinaryData): 
          rootAddr.lock()
       
       #TODO: nothing to process anymore at this point. if the recovery mode 
       #is 4 (meta), just return the comments dict
-      if isinstance(toRecover.kdfKey, SecureBinaryData): 
+      if isinstance(toRecover.kdfKey, ArmoryCpp.SecureBinaryData): 
          toRecover.kdfKey.destroy()
       if RecoveredWallet is not None:
-         if isinstance(RecoveredWallet.kdfKey, SecureBinaryData): 
+         if isinstance(RecoveredWallet.kdfKey, ArmoryCpp.SecureBinaryData): 
             RecoveredWallet.kdfKey.destroy()
 
       if SecurePassphrase: SecurePassphrase.destroy()
@@ -1515,7 +1514,7 @@ class PyBtcWalletRecovery(object):
       retAddr.createPrivKeyNextUnlock_ChainDepth = depth
 
       # Correct errors, convert to secure container
-      retAddr.chaincode = SecureBinaryData(verifyChecksum(retAddr.chaincode, \
+      retAddr.chaincode = ArmoryCpp.SecureBinaryData(verifyChecksum(retAddr.chaincode, \
                                                           chkChaincode))
       if retAddr.chaincode.getSize == 0:
          chksumError |= 128
@@ -1527,8 +1526,8 @@ class PyBtcWalletRecovery(object):
       chkIv   =         serializedData.get(BINARY_CHUNK,  4)
       privKey = chkzero(serializedData.get(BINARY_CHUNK, 32))
       chkPriv =         serializedData.get(BINARY_CHUNK,  4)
-      iv      = SecureBinaryData(verifyChecksum(iv, chkIv))
-      privKey = SecureBinaryData(verifyChecksum(privKey, chkPriv))
+      iv      = ArmoryCpp.SecureBinaryData(verifyChecksum(iv, chkIv))
+      privKey = ArmoryCpp.SecureBinaryData(verifyChecksum(privKey, chkPriv))
 
 
       # If this is SUPPOSED to contain a private key...
@@ -1563,13 +1562,13 @@ class PyBtcWalletRecovery(object):
 
       pubKey = chkzero(serializedData.get(BINARY_CHUNK, 65))
       chkPub =         serializedData.get(BINARY_CHUNK, 4)
-      pubKey = SecureBinaryData(verifyChecksum(pubKey, chkPub))
+      pubKey = ArmoryCpp.SecureBinaryData(verifyChecksum(pubKey, chkPub))
 
       if containsPubKey:
          if not pubKey.getSize()==65:
             chksumError |= 32
             if retAddr.binPrivKey32_Plain.getSize()==32:
-               pubKey = CryptoECDSA().ComputePublicKey(
+               pubKey = ArmoryCpp.CryptoECDSA().ComputePublicKey(
                                       retAddr.binPrivKey32_Plain)
       else:
          if pubKey.getSize()==65:

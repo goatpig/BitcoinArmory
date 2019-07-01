@@ -9,7 +9,6 @@ from __future__ import print_function
 import logging
 import os
 
-import CppBlockUtils as Cpp
 import armoryengine.ArmoryUtils
 from armoryengine.ArmoryUtils import *
 from armoryengine.BinaryPacker import *

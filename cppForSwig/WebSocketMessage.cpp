@@ -402,7 +402,6 @@ bool WebSocketMessagePartial::parseSinglePacket(const BinaryDataRef& bdr)
    uint32_t msgid
    nbytes payload
    */
-
    if (id_ != UINT32_MAX)
       return false;
    BinaryRefReader brr(bdr);

@@ -62,6 +62,7 @@ void WalletManager::loadWallets()
 
    unique_lock<mutex> lock(mu_);
    
+   cout << ".loading wallets" << endl;
    //read the files
    for (auto& wltPath : walletPaths)
    {
@@ -72,12 +73,14 @@ void WalletManager::loadWallets()
          wltCont.wallet_ = wltPtr;
 
          wallets_.insert(make_pair(wltPtr->getID(), wltCont));
+         cout << ".loaded wlt " << wltPtr->getID() << endl;
       }
       catch (exception& e)
       {
          stringstream ss;
          ss << "Failed to open wallet with error:" << endl << e.what();
          LOGERR << ss.str();
+         cout << ss.str() << endl;
       }
    }
 }
@@ -88,6 +91,7 @@ void WalletManager::duplicateWOWallet(
    const SecureBinaryData& chainCode,
    unsigned chainLength)
 {
+   cout << "-duplicating wallet" << endl;
    auto root = pubRoot;
    auto cc = chainCode;
 
@@ -104,6 +108,7 @@ void WalletManager::duplicateWOWallet(
 
    unique_lock<mutex> lock(mu_);
    wallets_.insert(make_pair(newWO->getID(), wltCont));
+   cout << "-done duplicating wallet " << newWO->getID() << endl;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -145,7 +150,21 @@ WalletContainer& WalletManager::getCppWallet(const string& id)
 
    auto wltIter = wallets_.find(id);
    if (wltIter == wallets_.end())
+   {
+      cout << "failed to grab wallet id: " << id << endl;
+      cout << "have the following ids:" << endl;
+      for(auto& wallet : wallets_)
+      {
+         cout << wallet.first << endl;
+         if(strcmp(wallet.first.c_str(), id.c_str()) == 0)
+         {   
+            cout << "match!" << endl;
+            return wallet.second;
+         }
+      }
+
       throw runtime_error("invalid id");
+   }
 
    return wltIter->second;
 }

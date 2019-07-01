@@ -6,13 +6,13 @@
 #                                                                            #
 ##############################################################################
 
-import CppBlockUtils as Cpp
+from armoryengine.cppyyWrapper import SwigClient
 
-class PySide_ProcessMutex(Cpp.ProcessMutex):
+class PySide_ProcessMutex(SwigClient.ProcessMutex):
    def __init__(self, port, callbck):
       if not isinstance(port, str):
          port = str(port)
-      Cpp.ProcessMutex.__init__(self, "127.0.0.1", port)      
+      #SwigClient.ProcessMutex.__init__(self, "127.0.0.1", port)      
       
       self.callback_ = callbck
       

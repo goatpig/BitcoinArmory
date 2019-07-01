@@ -1,7 +1,7 @@
 from __future__ import print_function
 ################################################################################
 #                                                                              #
-# Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
+# Copyright (C) 2011-2019, Armory Technologies, Inc.                           #
 # Distributed under the GNU Affero General Public License (AGPL v3)            #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                         #
 #                                                                              #
@@ -14,9 +14,9 @@ import traceback
 
 from armoryengine.ArmoryUtils import *
 from armoryengine.Timer import TimeThisFunction
-import CppBlockUtils as Cpp
 from armoryengine.BinaryPacker import UINT64
 
+from armoryengine.cppyyWrapper import SwigClient, ArmoryCpp, std
 
 BDM_OFFLINE = 'Offline'
 BDM_UNINITIALIZED = 'Uninitialized'
@@ -40,9 +40,10 @@ def newTheBDM(isOffline=False):
       TheBDM.beginCleanShutdown()
    TheBDM = BlockDataManager(isOffline=isOffline)
 
-class PySide_CallBack(Cpp.PythonCallback):
+
+class PySide_CallBack(ArmoryCpp.RemoteCallback):
    def __init__(self, bdm):
-      Cpp.PythonCallback.__init__(self, bdm.bdv())
+      #ArmoryCpp.RemoteCallback.__init__()
       self.bdm = bdm
 
    def run(self, action, arg, block):
@@ -114,6 +115,7 @@ class PySide_CallBack(Cpp.PythonCallback):
          LOGEXCEPT('Error in running progress callback')
          print(sys.exc_info())
 
+
 def getCurrTimeAndBlock():
    time0 = long(RightNowUTC())
    return (time0, TheBDM.getTopBlockHeight())
@@ -174,17 +176,18 @@ class BlockDataManager(object):
 
       self.witness = False
 
+      #setups BIP151/0 and libbtc contexts
+      ArmoryCpp.ClientClasses.initLibrary()
+
    #############################################################################  
    def instantiateBDV(self, port):
       if self.bdmState == BDM_OFFLINE:
          return
 
-      socketType = Cpp.SocketFcgi
-      if self.remoteDB and not FORCE_FCGI:
-         socketType = Cpp.SocketHttp 
-
-      self.bdv_ = Cpp.BlockDataViewer_getNewBDV(\
-                     str(ARMORYDB_IP), str(port), socketType)   
+      self.callback = PySide_CallBack(self)
+      callbackPtr = std.make_shared(ArmoryCpp.RemoteCallback)(self.callback)
+      self.bdv_ = SwigClient.BlockDataViewer.getNewBDV(\
+         str(ARMORYDB_IP), str(port), False, callbackPtr) 
 
    #############################################################################
    def registerBDV(self):
@@ -243,8 +246,7 @@ class BlockDataManager(object):
    @ActLikeASingletonBDM
    def goOnline(self):
       self.bdv().goOnline()
-      self.callback = PySide_CallBack(self).__disown__()
-      self.callback.startLoop()
+
 
    #############################################################################
    @ActLikeASingletonBDM

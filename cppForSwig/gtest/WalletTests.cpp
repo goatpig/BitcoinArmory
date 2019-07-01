@@ -26,7 +26,6 @@ TEST_F(AddressTests, base58_Tests)
 {
    BinaryData h_160 = READHEX("00010966776006953d5567439e5e39f86a0d273bee");
    BinaryData scrAddr("16UwLL9Risc3QfPqBUvKofHmBQ7wMtjvM");
-   scrAddr.append(0x00);
 
    auto&& encoded = BtcUtils::scrAddrToBase58(h_160);
    EXPECT_EQ(encoded, scrAddr);
