@@ -25,9 +25,6 @@ copy-script:
 	cp cppForSwig/ArmoryDB ./ArmoryDB
 	cp cppForSwig/BIP150KeyManager ./BIP150KeyManager
 
-# SWIG code and requirements.
-if BUILD_CLIENT
-	cp cppForSwig/CppBlockUtils.py ./CppBlockUtils.py
 if BUILD_DARWIN
 # Autotools insists on looking for shared libraries (-install_name flag during
 # compilation) in /usr/local/lib. Unsure how to safely override the setting.
@@ -42,7 +39,6 @@ if BUILD_DARWIN
 	cp cppForSwig/.libs/libCppBlockUtils.dylib ./_CppBlockUtils.so
 else
 	cp cppForSwig/.libs/libCppBlockUtils.so ./_CppBlockUtils.so
-endif
 endif
 
 .PHONY: copy-script lrelease qrc_img_resources.py

@@ -45,6 +45,10 @@ In Ubuntu, you are required to install some packages before attempting to build 
 
     $ sudo apt-get install python git-core pkg-config build-essential pyqt4-dev-tools swig libqtcore4 libqt4-dev python-qt4 python-dev python-twisted python-psutil cmake autoconf libtool
 
+Once the aforementioned packages have been installed, use `pip` to install the following modules.
+
+    $ sudo pip install cppyy
+
 Now, you need to clone Armory's git repository and initialize the submodules:
 
 ~~~bash

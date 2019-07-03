@@ -29,10 +29,9 @@ Multi-signature transactions are accommodated under-the-hood about 80%, and will
  Linux:   Install package `libcrypto++-dev`
  Windows: [Download](https://www.cryptopp.com/#download)
 
-* SWIG
- Linux:   Install package `swig`
- Windows: [Download](http://www.swig.org/download.html)  
- MSVS: Copy swigwin-2.x directory next to cryptopp as `swigwin`
+* cppyy
+ Linux:   Use pip to install package `cppyy`
+ Windows: TBD
 
 * Python 2.6/2.7
  Linux:   Install package `python-dev`
@@ -80,4 +79,4 @@ See [LICENSE file](LICENSE)
 ## Copyright
 
 Copyright (C) 2011-2015, Armory Technologies, Inc.
-Copyright (C) 2016-2018, goatpig
+Copyright (C) 2016-2019, goatpig
