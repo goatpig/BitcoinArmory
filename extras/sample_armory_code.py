@@ -28,7 +28,7 @@ if run_WalletCreate:
    #     Use hash160_to_addrStr() and addrStr_to_hash160() to convert...
    
    print('\n\nCreating a new C++ wallet, add a few addresses...')
-   cppWallet = Cpp.BtcWallet()
+   cppWallet = ArmoryCpp.BtcWallet()
    cppWallet.addAddress_1_( hex_to_binary('11b366edfc0a8b66feebae5c2e25a7b6a5d1cf31') )  # hash160 (hex)
    cppWallet.addAddress_1_( addrStr_to_hash160('1EbAUHsitefy3rSECh8eK2fdAWTUbpVUDN')[1] )   # addrStr
    cppWallet.addAddress_1_('\x1b~\xa7*\x85\t\x12\xb7=\xd4G\xf3\xbd\xc1\x00\xf1\x00\x8b\xde\xb0') # hash160 (bin)

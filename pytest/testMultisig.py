@@ -3,6 +3,7 @@ Created on Aug 4, 2013
 
 @author: Andy
 '''
+from armoryengine.cppyyWrapper import ArmoryCpp, std
 import sys
 import textwrap
 sys.path.append('..')
@@ -326,7 +327,7 @@ class MSUtilsTest(unittest.TestCase):
 
    
       privKeys = [SecureBinaryData(a*32) for a in ['\xaa','\xbb','\xcc']]
-      pubKeys  = [CryptoECDSA().ComputePublicKey(prv) for prv in privKeys]
+      pubKeys  = [ArmoryCpp.CryptoECDSA().ComputePublicKey(prv) for prv in privKeys]
       pubStrs  = [pubk.toBinStr() for pubk in pubKeys]
 
       #for i,prv in enumerate(privKeys):

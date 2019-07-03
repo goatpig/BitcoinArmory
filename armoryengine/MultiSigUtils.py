@@ -98,11 +98,11 @@ def calcLockboxID(script=None, scraddr=None):
          return None
       scraddr = script_to_scrAddr(script)
 
-   if not scraddr.startswith(SCRADDR_MULTISIG_BYTE):
+   if not (scraddr[0] == SCRADDR_MULTISIG_BYTE):
       LOGERROR('ScrAddr is not a multisig script!')
       return None
 
-   hashedData = hash160(MAGIC_BYTES + scraddr)
+   hashedData = hash160(MAGIC_BYTES + scraddr.toBinStr())
    return binary_to_base58(hashedData)[1:9]
 
 
@@ -478,7 +478,7 @@ class MultiSigLockbox(AsciiSerializable):
       self.compressedPubKeys = []
       for pubkey in dPubKeys:
          pubkey_sbd = SecureBinaryData(pubkey.binPubKey)
-         self.compressedPubKeys.append(CryptoECDSA().CompressPoint(pubkey_sbd).toBinStr())
+         self.compressedPubKeys.append(ArmoryCpp.CryptoECDSA().CompressPoint(pubkey_sbd).toBinStr())
 
       if createDate is not None:
          self.createDate = createDate
@@ -1134,7 +1134,7 @@ class MultiSigPromissoryNote(AsciiSerializable):
          return False
       
       if keyPair[0] == '\x04':
-         if not CryptoECDSA().VerifyPublicKeyValid(SecureBinaryData(binPubKey)):
+         if not ArmoryCpp.CryptoECDSA().VerifyPublicKeyValid(SecureBinaryData(binPubKey)):
             LOGERROR('Invalid public key supplied')
             return False
 

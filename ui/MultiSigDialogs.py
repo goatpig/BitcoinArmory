@@ -512,7 +512,7 @@ class DlgLockboxEditor(ArmoryDialog):
             pkBin = hex_to_binary(pkHex)
             isValid = self.isPotentiallyValidHexPubKey(pkHex)
             if len(pkBin) == 65:
-               if not CryptoECDSA().VerifyPublicKeyValid(SecureBinaryData(pkBin)):
+               if not ArmoryCpp.CryptoECDSA().VerifyPublicKeyValid(SecureBinaryData(pkBin)):
                   isValid = False
             
          if not isValid: 
@@ -2267,7 +2267,7 @@ class DlgSelectPublicKey(ArmoryDialog):
          if binPub[0] in ['\x02', '\x03'] and len(binPub)==33:
             pass  # valid key
          elif binPub[0]=='\x04' and len(binPub)==65:
-            if not CryptoECDSA().VerifyPublicKeyValid(SecureBinaryData(binPub)):
+            if not ArmoryCpp.CryptoECDSA().VerifyPublicKeyValid(SecureBinaryData(binPub)):
                raise BadAddressError('Public key starting with 0x04 is invalid')
          else:
             raise BadAddressError('Invalid pub key entered, or not a pub key')
@@ -3531,11 +3531,11 @@ class DlgCreatePromNote(ArmoryDialog):
             p2shMap[BASE_SCRIPT] = p2shScript
 
          try:
-            scriptType = Cpp.BtcUtils().getTxOutScriptTypeInt(p2shScript)
+            scriptType = ArmoryCpp.BtcUtils().getTxOutScriptTypeInt(p2shScript)
             if scriptType == CPP_TXOUT_P2WPKH:
                nestedScript = binary_to_hex(p2shScript[2:])
                pubkey = SecureBinaryData(aobj.getPubKey())
-               compressed_key = CryptoECDSA().CompressPoint(pubkey)
+               compressed_key = ArmoryCpp.CryptoECDSA().CompressPoint(pubkey)
                p2shMap[nestedScript] = compressed_key.toBinStr()
          except:
             pass

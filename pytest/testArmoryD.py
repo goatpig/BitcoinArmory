@@ -10,7 +10,7 @@ sys.path.append('..')
 import os
 import time
 from pytest.Tiab import TiabTest
-from CppBlockUtils import SecureBinaryData, CryptoECDSA
+from armoryengine.cppyyWrapper import ArmoryCpp, std
 from armoryd import Armory_Json_Rpc_Server, PrivateKeyNotFound, \
    InvalidBitcoinAddress, WalletUnlockNeeded, Armory_Daemon, AmountToJSON
 from armoryengine.ArmoryUtils import hex_to_binary, \
@@ -57,12 +57,12 @@ class ArmoryDTest(TiabTest):
       self.removeFileList([self.fileA, self.fileB, self.fileAupd, self.fileBupd])
    
       # We need a controlled test, so we script the all the normally-random stuff
-      self.privKey   = SecureBinaryData('\xaa'*32)
-      self.privKey2  = SecureBinaryData('\x33'*32)
-      self.chainstr  = SecureBinaryData('\xee'*32)
-      theIV     = SecureBinaryData(hex_to_binary('77'*16))
-      self.passphrase  = SecureBinaryData('A self.passphrase')
-      self.passphrase2 = SecureBinaryData('A new self.passphrase')
+      self.privKey   = ArmoryCpp.SecureBinaryData('\xaa'*32)
+      self.privKey2  = ArmoryCpp.SecureBinaryData('\x33'*32)
+      self.chainstr  = ArmoryCpp.SecureBinaryData('\xee'*32)
+      theIV     = ArmoryCpp.SecureBinaryData(hex_to_binary('77'*16))
+      self.passphrase  = ArmoryCpp.SecureBinaryData('A self.passphrase')
+      self.passphrase2 = ArmoryCpp.SecureBinaryData('A new self.passphrase')
       
       #register a callback
       TheBDM.registerCppNotification(self.armoryDTestCallback)

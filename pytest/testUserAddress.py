@@ -4,7 +4,7 @@ sys.path.append('..')
 import unittest
 from pytest.Tiab import TiabTest
 
-from CppBlockUtils import SecureBinaryData, CryptoECDSA
+from armoryengine.cppyyWrapper import ArmoryCpp, std
 from armoryengine.ArmoryUtils import *
 from armoryengine.MultiSigUtils import calcLockboxID
 from armoryengine.Transaction import getTxOutScriptType
@@ -97,7 +97,7 @@ class ScriptToDispStrTest(TiabTest):
       our 65-byte keys are checked
       """
       sbd33 = SecureBinaryData('\x02' + byte*32)
-      return CryptoECDSA().UncompressPoint(sbd33).toBinStr()
+      return ArmoryCpp.CryptoECDSA().UncompressPoint(sbd33).toBinStr()
 
 
    ##########################################################################
@@ -245,7 +245,7 @@ class UserAddressToScript(TiabTest):
       our 65-byte keys are checked
       """
       sbd33 = SecureBinaryData('\x02' + byte*32)
-      return CryptoECDSA().UncompressPoint(sbd33).toBinStr()
+      return ArmoryCpp.CryptoECDSA().UncompressPoint(sbd33).toBinStr()
 
    #############################################################################
    def testReadP2PKH(self):

@@ -17,6 +17,7 @@
 #              corrupted
 #
 #
+from armoryengine.cppyyWrapper import ArmoryCpp, std
 from __future__ import print_function
 from sys import argv, path
 path.append('..')
@@ -59,7 +60,7 @@ for i in range(len(walletBytes)):
    else:
       try:
          potentialPubKey = SecureBinaryData(walletBytes[i:i+65])
-         if CryptoECDSA().VerifyPublicKeyValid(potentialPubKey):
+         if ArmoryCpp.CryptoECDSA().VerifyPublicKeyValid(potentialPubKey):
             fileloc = int_to_hex(i, widthBytes=4, endOut=BIGENDIAN)
             print('\nFound PUBLIC key in file (0x%08s) / ' % (fileloc,), end=' ')
             hash160   = potentialPubKey.getHash160()
@@ -75,7 +76,7 @@ for i in range(len(walletBytes)):
                startIdx = j+2
                endIdx = startIdx+32
                potentialPrivKey = SecureBinaryData(walletBytes[startIdx:endIdx])
-               computedPub = CryptoECDSA().ComputePublicKey(potentialPrivKey)
+               computedPub = ArmoryCpp.CryptoECDSA().ComputePublicKey(potentialPrivKey)
                if( hash160 == computedPub.getHash160()):
                   havePrivKey = True
                   privkeyHex =  potentialPrivKey.toHexStr()

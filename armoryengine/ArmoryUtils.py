@@ -545,7 +545,7 @@ if not USE_TESTNET and not USE_REGTEST:
    BLOCKEXPLORE_URL_ADDR = 'https://blockstream.info/address/%s'
 else:
    #set static members of BDMconfig for address generation on C++ side
-   bdmConfig.selectNetwork("Test")
+   bdmConfig.selectNetwork(ArmoryCpp.NETWORK_MODE_TESTNET)
    
    BITCOIN_PORT = 18444 if USE_REGTEST else 18333
    BITCOIN_RPC_PORT = 18443 if USE_REGTEST else 18332
@@ -616,7 +616,9 @@ CPP_TXOUT_STDSINGLESIG = [CPP_TXOUT_STDHASH160, \
                           CPP_TXOUT_STDPUBKEY33]
 CPP_TXOUT_NESTED_SINGLESIG = [CPP_TXOUT_STDPUBKEY33,
                           CPP_TXOUT_P2WPKH]
-CPP_TXOUT_SEGWIT = [ArmoryCpp.AddressType_P2SH_P2WPKH]
+# cppyy TODO: Proper cppyy fix
+#CPP_TXOUT_SEGWIT = [ArmoryCpp.AddressType_P2SH_P2WPKH]
+CPP_TXOUT_SEGWIT = [CPP_TXOUT_P2WPKH, CPP_TXOUT_P2WSH]
 
 CPP_TXOUT_SCRIPT_NAMES = ['']*9
 CPP_TXOUT_SCRIPT_NAMES[CPP_TXOUT_STDHASH160]  = 'Standard (PKH)'
@@ -1655,7 +1657,7 @@ def scrAddr_to_script(scraddr):
 ################################################################################
 def script_to_scrAddr(binScript):
    """ Convert a binary script to scrAddr string (used by BDM) """
-   return Cpp.BtcUtils().getScrAddrForScript(binScript)
+   return ArmoryCpp.BtcUtils().getScrAddrForScript(binScript)
 
 ################################################################################
 def script_to_addrStr(binScript):
@@ -1676,7 +1678,7 @@ def scrAddr_to_addrStr(scrAddr):
    elif prefix==P2SHBYTE:
       return hash160_to_p2shAddrStr(scrAddr[1:])
    elif prefix==SCRADDR_P2WPKH_BYTE or prefix==SCRADDR_P2WSH_BYTE:
-      return Cpp.BtcUtils_scriptToBech32(scrAddr[1:], BECH32_PREFIX)
+      return ArmoryCpp.BtcUtils_scriptToBech32(scrAddr[1:], BECH32_PREFIX)
    else:
       LOGERROR('Unsupported scrAddr type: "%s"' % binary_to_hex(scrAddr))
       raise BadAddressError('Can only convert P2PKH and P2SH scripts')
@@ -1873,13 +1875,13 @@ def sha512(bits):
 def ripemd160(bits):
    # It turns out that not all python has ripemd160...?
    #return hashlib.new('ripemd160', bits).digest()
-   return Cpp.BtcUtils().ripemd160_SWIG(bits)
+   return ArmoryCpp.BtcUtils().ripemd160_SWIG(bits)
 def hash256(s):
    """ Double-SHA256 """
    return sha256(sha256(s))
 def hash160(s):
    """ RIPEMD160( SHA256( binaryStr ) ) """
-   return Cpp.BtcUtils().getHash160_SWIG(s)
+   return ArmoryCpp.BtcUtils().getHash160_SWIG(s)
 
 
 def HMAC(key, msg, hashfunc=sha512, hashsz=None):
@@ -2153,19 +2155,19 @@ def hash160_to_addrStr(binStr, netbyte=ADDRBYTE):
    which includes the network byte (prefix) and 4-byte checksum (suffix)
    """
 
-   if not len(binStr) == 20:
-      raise InvalidHashError('Input string is %d bytes' % len(binStr))
+   if not (binStr.getSize() == 20):
+      raise InvalidHashError('Input string is %d bytes' % binStr.getSize())
 
-   addr21 = netbyte + binStr
+   addr21 = netbyte + binStr.toBinStr()
    addr25 = addr21 + hash256(addr21)[:4]
    return binary_to_base58(addr25);
 
 ################################################################################
 def hash160_to_p2shAddrStr(binStr):
-   if not len(binStr) == 20:
+   if not (binStr.getSize() == 20):
       raise InvalidHashError('Input string is %d bytes' % len(binStr))
 
-   addr21 = P2SHBYTE + binStr
+   addr21 = P2SHBYTE + binStr.toBinStr()
    addr25 = addr21 + hash256(addr21)[:4]
    return binary_to_base58(addr25);
 
@@ -2621,7 +2623,7 @@ def SplitSecret(secret, needed, pieces, nbytes=None):
    # We use randomized coefficients so as to respect SSS security parameters
    othernum = []
    for i in range(pieces+needed-1):
-      othernum.append(binary_to_int(SecureBinaryData().GenerateRandom(nbytes).toBinStr()))
+      othernum.append(binary_to_int(ArmoryCpp.CryptoPRNG().generateRandom(nbytes).toBinStr()))
 
    def poly(x):
       polyout = ff.mult(a, ff.power(x,needed-1))
@@ -2816,7 +2818,7 @@ def convertKeyDataToAddress(privKey=None, pubKey=None):
       if not privKey.getSize()==32:
          raise BadAddressError('Invalid private key format!')
       else:
-         pubKey = CryptoECDSA().ComputePublicKey(privKey)
+         pubKey = ArmoryCpp.CryptoECDSA().ComputePublicKey(privKey)
 
    if isinstance(pubKey,str):
       pubKey = SecureBinaryData(pubKey)
@@ -3340,7 +3342,7 @@ def isValidPK(inPK, inStr=False):
 
    if pkLen == UNCOMP_PK_LEN or pkLen == COMP_PK_LEN:
       # The "proper" way to check the key is to feed it to Crypto++.
-      if not CryptoECDSA().VerifyPublicKeyValid(SecureBinaryData(checkVal)):
+      if not ArmoryCpp.CryptoECDSA().VerifyPublicKeyValid(SecureBinaryData(checkVal)):
          LOGWARN('Pub key %s is invalid.' % binary_to_hex(inPK))
       else:
          retVal = True
@@ -3401,7 +3403,7 @@ def decompressPK(inKey, inStr=False):
    else:
       if checkKey[0] == '\x02' or checkKey[0] == '\x03':
          cppKeyVal = SecureBinaryData(checkKey)
-         outKey = CryptoECDSA().UncompressPoint(cppKeyVal).toBinStr()
+         outKey = ArmoryCpp.CryptoECDSA().UncompressPoint(cppKeyVal).toBinStr()
          keyStr = binary_to_hex(outKey)
       else:
          LOGERROR('The public key\'s first byte (%s) is incorrectly ' \
@@ -3507,19 +3509,19 @@ def HardcodedKeyMaskParams():
    def hardcodeApplyKdf(secret):
       if isinstance(secret, basestring):
          secret = SecureBinaryData(secret)
-      kdf = KdfRomix()
+      kdf = ArmoryCpp.KdfRomix()
       kdf.usePrecomputedKdfParams(paramMap['KDFBYTES'], 1, paramMap['SALT'])
       return kdf.DeriveKey(secret)
 
    def hardcodeMask(secret, passphrase=None, ekey=None):
       if not ekey:
          ekey = hardcodeApplyKdf(passphrase)
-      return CryptoAES().EncryptCBC(secret, ekey, paramMap['IV'])
+      return ArmoryCpp.CryptoAES().EncryptCBC(secret, ekey, paramMap['IV'])
 
    def hardcodeUnmask(secret, passphrase=None, ekey=None):
       if not ekey:
          ekey = hardcodeApplyKdf(passphrase)
-      return CryptoAES().DecryptCBC(secret, ekey, paramMap['IV'])
+      return ArmoryCpp.CryptoAES().DecryptCBC(secret, ekey, paramMap['IV'])
 
    paramMap['FUNC_PWD']    = hardcodeCreateSecurePrintPassphrase
    paramMap['FUNC_KDF']    = hardcodeApplyKdf

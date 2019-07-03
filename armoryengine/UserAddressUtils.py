@@ -97,7 +97,7 @@ def getScriptForUserString(userStr, wltMap, lboxList):
                   lboxID = lbox.uniqueIDB58
                   break
          except:
-            outScript = Cpp.BtcUtils.bech32ToScript(userStr, BECH32_PREFIX)
+            outScript = ArmoryCpp.BtcUtils.bech32ToScript(userStr, BECH32_PREFIX)
             isBech32 = True
             
 
@@ -277,7 +277,7 @@ def getDisplayStringForScript(binScript, wltMap, lboxList, maxChars=256,
    # If we're here, it didn't match any loaded wlt or lockbox
    dispStr = ''
    if scriptType == CPP_TXOUT_P2WPKH or scriptType == CPP_TXOUT_P2WSH:
-      dispStr = Cpp.BtcUtils_scriptToBech32(binScript[2:], BECH32_PREFIX)
+      dispStr = ArmoryCpp.BtcUtils_scriptToBech32(binScript[2:], BECH32_PREFIX)
       addrStr = dispStr
    elif scriptType in CPP_TXOUT_HAS_ADDRSTR:
       addrStr = script_to_addrStr(binScript)

@@ -1,4 +1,5 @@
 #! /usr/bin/python
+from armoryengine.cppyyWrapper import ArmoryCpp, std
 from __future__ import print_function
 import sys
 sys.path.append('..')
@@ -83,7 +84,7 @@ print(51, '   coin2str(0.01 BTC)    :', coin2str(10000000, maxZeros=0))
 
 print('\nRaw crypto operations:')
 privKey = SecureBinaryData('\xa3'*32)
-pubKey  = CryptoECDSA().ComputePublicKey(privKey)
+pubKey  = ArmoryCpp.CryptoECDSA().ComputePublicKey(privKey)
 addrStr = hash160_to_addrStr( hash160(pubKey.toBinStr()) )
 print('Raw Private Key:', privKey.toHexStr())
 print('Raw Public Key: ', pubKey.toHexStr())

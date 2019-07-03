@@ -55,7 +55,7 @@ def verifyZipSignature(outerZipFilePath):
          dataToSignSBD = SecureBinaryData(dataToSign)
          sigSBD = SecureBinaryData(hex_to_binary(signature.strip()))
          publicKeySBD = SecureBinaryData(hex_to_binary(ARMORY_INFO_SIGN_PUBLICKEY))
-         result = MODULE_ZIP_STATUS.Valid if CryptoECDSA().VerifyData(dataToSignSBD, sigSBD, publicKeySBD) else \
+         result = MODULE_ZIP_STATUS.Valid if ArmoryCpp.CryptoECDSA().VerifyData(dataToSignSBD, sigSBD, publicKeySBD) else \
                   MODULE_ZIP_STATUS.Unsigned
    except:
       # if anything goes wrong an invalid zip file indicator will get returned 
@@ -78,7 +78,7 @@ def signZipFile(zipFilePath, propertiesDictionary=None):
    dataToSignSBD = SecureBinaryData(dataToSign)
    # get the privKeySBD
    privKeySBD = None
-   signature = CryptoECDSA().SignData(dataToSignSBD, privKeySBD, ENABLE_DETSIGN)
+   signature = ArmoryCpp.CryptoECDSA().SignData(dataToSignSBD, privKeySBD, ENABLE_DETSIGN)
    # Write the Signature to signature.txt
    # rename the source Zip file to inner.zip
    # Create a new Zip File with the original name of the source zip file
@@ -214,4 +214,3 @@ def dynamicImportNoZip(inDir, moduleName, injectLocals=None):
       exit(1)
    
    return modTemp
-   

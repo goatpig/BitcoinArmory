@@ -1,3 +1,4 @@
+from armoryengine.cppyyWrapper import ArmoryCpp, std
 from __future__ import print_function
 ################################################################################
 # This takes a sample AddressEntry serialization as seen in the wallet files,
@@ -99,7 +100,7 @@ for i in xrange(NLINESTOREAD):
       break
 
    privBin = extractPrivateKeyFromLine(line)
-   pubBin  = CryptoECDSA().ComputePublicKey(SecureBinaryData(privBin)).toBinStr()
+   pubBin  = ArmoryCpp.CryptoECDSA().ComputePublicKey(SecureBinaryData(privBin)).toBinStr()
    addr20  = hash160(pubBin)
 
    # Pre-PyBtcAddr Entry Header

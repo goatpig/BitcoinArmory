@@ -255,7 +255,7 @@ class DlgUnlockWallet(ArmoryDialog):
       elif self.rdoScrambleLite.isChecked():
          opt = 1
          nchar = len(self.btnList)
-         rnd = SecureBinaryData().GenerateRandom(2 * nchar).toBinStr()
+         rnd = ArmoryCpp.CryptoPRNG().generateRandom(2 * nchar).toBinStr()
          newBtnList = [[self.btnList[i], rnd[2 * i:2 * (i + 1)]] for i in range(nchar)]
          newBtnList.sort(key=lambda x: x[1])
          prevRow = 0
@@ -278,7 +278,7 @@ class DlgUnlockWallet(ArmoryDialog):
          extBtnList = self.btnList[:]
          extBtnList.extend([self.btnShift, self.btnSpace])
          nchar = len(extBtnList)
-         rnd = SecureBinaryData().GenerateRandom(2 * nchar).toBinStr()
+         rnd = ArmoryCpp.CryptoPRNG().generateRandom(2 * nchar).toBinStr()
          newBtnList = [[extBtnList[i], rnd[2 * i:2 * (i + 1)]] for i in range(nchar)]
          newBtnList.sort(key=lambda x: x[1])
          prevRow = 0
@@ -7565,7 +7565,7 @@ class DlgECDSACalc(ArmoryDialog):
    def multss(self):
       binA = self.getBinary(self.txtScalarScalarA, 'a')
       binB = self.getBinary(self.txtScalarScalarB, 'b')
-      C = CryptoECDSA().ECMultiplyScalars(binA, binB)
+      C = ArmoryCpp.CryptoECDSA().ECMultiplyScalars(binA, binB)
       self.txtScalarScalarC.setText(binary_to_hex(C))
 
       for txt in [self.txtScalarScalarA, \
@@ -7579,13 +7579,13 @@ class DlgECDSACalc(ArmoryDialog):
       binBx = self.getBinary(self.txtScalarPtB_x, '<b>B</b><font size=2>x</font>')
       binBy = self.getBinary(self.txtScalarPtB_y, '<b>B</b><font size=2>y</font>')
 
-      if not CryptoECDSA().ECVerifyPoint(binBx, binBy):
+      if not ArmoryCpp.CryptoECDSA().ECVerifyPoint(binBx, binBy):
          QMessageBox.critical(self, self.tr('Invalid EC Point'), \
             self.tr('The point you specified (<b>B</b>) is not on the '
             'elliptic curve used in Bitcoin (secp256k1).'), QMessageBox.Ok)
          return
 
-      C = CryptoECDSA().ECMultiplyPoint(binA, binBx, binBy)
+      C = ArmoryCpp.CryptoECDSA().ECMultiplyPoint(binA, binBx, binBy)
       self.txtScalarPtC_x.setText(binary_to_hex(C[:32]))
       self.txtScalarPtC_y.setText(binary_to_hex(C[32:]))
 
@@ -7601,19 +7601,19 @@ class DlgECDSACalc(ArmoryDialog):
       binBx = self.getBinary(self.txtPtPtB_x, '<b>B</b><font size=2>x</font>')
       binBy = self.getBinary(self.txtPtPtB_y, '<b>B</b><font size=2>y</font>')
 
-      if not CryptoECDSA().ECVerifyPoint(binAx, binAy):
+      if not ArmoryCpp.CryptoECDSA().ECVerifyPoint(binAx, binAy):
          QMessageBox.critical(self, self.tr('Invalid EC Point'), \
             self.tr('The point you specified (<b>A</b>) is not on the '
             'elliptic curve used in Bitcoin (secp256k1).'), QMessageBox.Ok)
          return
 
-      if not CryptoECDSA().ECVerifyPoint(binBx, binBy):
+      if not ArmoryCpp.CryptoECDSA().ECVerifyPoint(binBx, binBy):
          QMessageBox.critical(self, self.tr('Invalid EC Point'), \
             self.tr('The point you specified (<b>B</b>) is not on the '
             'elliptic curve used in Bitcoin (secp256k1).'), QMessageBox.Ok)
          return
 
-      C = CryptoECDSA().ECAddPoints(binAx, binAy, binBx, binBy)
+      C = ArmoryCpp.CryptoECDSA().ECAddPoints(binAx, binAy, binBx, binBy)
       self.txtPtPtC_x.setText(binary_to_hex(C[:32]))
       self.txtPtPtC_y.setText(binary_to_hex(C[32:]))
 
@@ -10826,7 +10826,7 @@ class DlgFragBackup(ArmoryDialog):
       # Make sure only local variables contain non-SBD data
       self.destroyFrags()
       self.uniqueFragSetID = \
-         binary_to_base58(SecureBinaryData().GenerateRandom(6).toBinStr())
+         binary_to_base58(ArmoryCpp.CryptoPRNG().generateRandom(6).toBinStr())
       insecureData = SplitSecret(self.securePrint, M, self.maxmaxN)
       for x, y in insecureData:
          self.secureMtrx.append([SecureBinaryData(x), SecureBinaryData(y)])
@@ -11511,7 +11511,7 @@ class DlgRestoreWOData(ArmoryDialog):
       pkVer = binary_to_int(inRootVer) & PYROOTPKCCVERMASK  # Ignored for now.
       pkSignByte = ((binary_to_int(inRootVer) & PYROOTPKCCSIGNMASK) >> 7) + 2
       rootPKComBin = int_to_binary(pkSignByte) + ''.join(inputLines[:2])
-      rootPubKey = CryptoECDSA().UncompressPoint(SecureBinaryData(rootPKComBin))
+      rootPubKey = ArmoryCpp.CryptoECDSA().UncompressPoint(SecureBinaryData(rootPKComBin))
       rootChainCode = SecureBinaryData(''.join(inputLines[2:]))
 
       # Now we should have a fully-plaintext root key and chain code, and can

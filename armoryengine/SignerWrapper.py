@@ -14,7 +14,10 @@ SIGNER_LEGACY  = 'Legacy'
 SIGNER_CPP     = '0.96 C++'
 SIGNER_BCH     = 'Bcash'
 
-class PythonSignerDirector(ArmoryCpp.PythonSigner):
+# cppyy TODO: cppyy doesn't seem to allow Python to derive classes from C++ classes.
+# This code will need to be refactored somehow.
+#class PythonSignerDirector(ArmoryCpp.PythonSigner):
+class PythonSignerDirector():
    def __init__(self, btcWallet):
       ArmoryCpp.PythonSigner.__init__(self, btcWallet.cppWallet)
       
@@ -35,7 +38,10 @@ class PythonSignerDirector(ArmoryCpp.PythonSigner):
          0, 0, utxo.txOutIndex, \
          utxo.txHash, utxo.binScript, sequence)
 
-class PythonSignerDirector_BCH(ArmoryCpp.PythonSigner_BCH):
+# cppyy TODO: cppyy doesn't seem to allow Python to derive classes from C++ classes.
+# This code will need to be refactored somehow.
+#class PythonSignerDirector_BCH(ArmoryCpp.PythonSigner_BCH):
+class PythonSignerDirector_BCH():
    def __init__(self, btcWallet):
       ArmoryCpp.PythonSigner_BCH.__init__(self, btcWallet.cppWallet)
       
@@ -56,7 +62,10 @@ class PythonSignerDirector_BCH(ArmoryCpp.PythonSigner_BCH):
          0, 0, utxo.txOutIndex, \
          utxo.txHash, utxo.binScript, sequence)
             
-class UniversalSignerDirector(ArmoryCpp.UniversalSigner):
+# cppyy TODO: cppyy doesn't seem to allow Python to derive classes from C++ classes.
+# This code will need to be refactored somehow.
+#class UniversalSignerDirector(ArmoryCpp.UniversalSigner):
+class UniversalSignerDirector():
    def __init__(self, signerType):
       ArmoryCpp.UniversalSigner.__init__(self, str(signerType))
 
@@ -80,5 +89,3 @@ class UniversalSignerDirector(ArmoryCpp.UniversalSigner):
          return self.privData[key]
       else:
          return ArmoryCpp.SecureBinaryData()
-      
-   

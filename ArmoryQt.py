@@ -1795,7 +1795,7 @@ class ArmoryMainWindow(QMainWindow):
       try:
          if TheBDM.hasRemoteDB() == False:
             #check there is no local db
-            localDBPort = Cpp.BlockDataManagerConfig_hasLocalDB(\
+            localDBPort = ArmoryCpp.BlockDataManagerConfig().hasLocalDB(\
                str(ARMORY_HOME_DIR), armoryengine.ArmoryUtils.ARMORYDB_PORT)
             if len(localDBPort) > 0:
                armoryengine.ArmoryUtils.ARMORYDB_PORT = localDBPort
@@ -1816,10 +1816,10 @@ class ArmoryMainWindow(QMainWindow):
                
             #get port from cookie
             armoryengine.ArmoryUtils.ARMORYDB_PORT = \
-               Cpp.BlockDataManagerConfig_getPortFromCookie(str(ARMORY_HOME_DIR))
+               ArmoryCpp.BlockDataManagerConfig().getPortFromCookie(str(ARMORY_HOME_DIR))
    
             #test if db has started
-            if Cpp.BlockDataManagerConfig_testConnection(\
+            if ArmoryCpp.BlockDataManagerConfig().testConnection(\
                ARMORYDB_IP, armoryengine.ArmoryUtils.ARMORYDB_PORT) == False:
                LOGERROR("Failed to spawn ArmoryDB")
                return False
@@ -1918,7 +1918,7 @@ class ArmoryMainWindow(QMainWindow):
          try:
             TheBDM.goOnline()
             self.switchNetworkMode(NETWORKMODE.Full)
-         except Cpp.NoArmoryDBExcept:
+         except ArmoryCpp.NoArmoryDBExcept:
             self.switchNetworkMode(NETWORKMODE.Offline)
 
    #############################################################################
@@ -3732,7 +3732,7 @@ class ArmoryMainWindow(QMainWindow):
          try:
             TheBDM.goOnline()
             self.switchNetworkMode(NETWORKMODE.Full)
-         except Cpp.NoArmoryDBExcept:
+         except ArmoryCpp.NoArmoryDBExcept:
             self.switchNetworkMode(NETWORKMODE.Offline)
       else:
          LOGERROR('ModeSwitch button pressed when it should be disabled')
@@ -3970,7 +3970,7 @@ class ArmoryMainWindow(QMainWindow):
          self.lblTimeLeftScan.setVisible(False)
 
          phase,pct,tleft,numericProgress = TheBDM.predictLoadTime()
-         if phase==Cpp.BDMPhase_DBHeaders:
+         if phase==ArmoryCpp.BDMPhase_DBHeaders:
             self.lblDashModeBuild.setText( self.tr('Loading Database Headers'), \
                                         size=4, bold=True, color='Foreground')
             self.lblDashModeScan.setText( self.tr('Scan Transaction History'), \
@@ -3979,7 +3979,7 @@ class ArmoryMainWindow(QMainWindow):
             self.barProgressScan.setFormat('')
             self.barProgressBuild.setRange(0,100)
 
-         elif phase==Cpp.BDMPhase_OrganizingChain:
+         elif phase==ArmoryCpp.BDMPhase_OrganizingChain:
             self.lblDashModeBuild.setText( self.tr('Organizing Blockchain'), \
                                         size=4, bold=True, color='Foreground')
             self.lblDashModeScan.setText( self.tr('Scan Transaction History'), \
@@ -3990,7 +3990,7 @@ class ArmoryMainWindow(QMainWindow):
             self.barProgressBuild.setRange(0,0)
             self.lblTimeLeftBuild.setVisible(False)
             self.lblTimeLeftScan.setVisible(False)
-         elif phase==Cpp.BDMPhase_BlockHeaders:
+         elif phase==ArmoryCpp.BDMPhase_BlockHeaders:
             self.lblDashModeBuild.setText( self.tr('Reading New Block Headers'), \
                                         size=4, bold=True, color='Foreground')
             self.lblDashModeScan.setText( self.tr('Scan Transaction History'), \
@@ -3998,7 +3998,7 @@ class ArmoryMainWindow(QMainWindow):
             self.barProgressBuild.setFormat('%p%')
             self.barProgressScan.setFormat('')
             self.barProgressBuild.setRange(0,100)
-         elif phase==Cpp.BDMPhase_BlockData:
+         elif phase==ArmoryCpp.BDMPhase_BlockData:
             self.lblDashModeBuild.setText( self.tr('Building Databases'), \
                                         size=4, bold=True, color='Foreground')
             self.lblDashModeScan.setText( self.tr('Scan Transaction History'), \
@@ -4006,7 +4006,7 @@ class ArmoryMainWindow(QMainWindow):
             self.barProgressBuild.setFormat('%p%')
             self.barProgressScan.setFormat('')
             self.barProgressBuild.setRange(0,100)
-         elif phase==Cpp.BDMPhase_Rescan:
+         elif phase==ArmoryCpp.BDMPhase_Rescan:
             self.lblDashModeBuild.setText( self.tr('Build Databases'), \
                                         size=4, bold=True, color='DisableFG')
             self.lblDashModeScan.setText( self.tr('Scanning Transaction History'), \
@@ -4016,7 +4016,7 @@ class ArmoryMainWindow(QMainWindow):
             self.barProgressBuild.setValue(100)
             self.barProgressBuild.setRange(0,100)
             self.barProgressScan.setFormat('%p%')
-         elif phase==Cpp.BDMPhase_Balance:
+         elif phase==ArmoryCpp.BDMPhase_Balance:
             self.lblDashModeBuild.setText( self.tr('Build Databases'), \
                                         size=4, bold=True, color='DisableFG')
             self.lblDashModeScan.setText( self.tr('Computing Balances'), \
@@ -4026,7 +4026,7 @@ class ArmoryMainWindow(QMainWindow):
             self.barProgressBuild.setValue(0)
             self.barProgressBuild.setRange(0,0)
             self.lblTimeLeftBuild.setVisible(False)   
-         elif phase==Cpp.BDMPhase_SearchHashes:
+         elif phase==ArmoryCpp.BDMPhase_SearchHashes:
             self.lblDashModeBuild.setText( self.tr('Build Databases'), \
                                         size=4, bold=True, color='DisableFG')
             self.lblDashModeScan.setText( self.tr('Parsing Tx Hashes'), \
@@ -4040,7 +4040,7 @@ class ArmoryMainWindow(QMainWindow):
             self.barProgressScan.setValue(0)
             self.barProgressScan.setRange(0,0)
             self.lblTimeLeftScan.setVisible(False)     
-         elif phase==Cpp.BDMPhase_ResolveHashes:
+         elif phase==ArmoryCpp.BDMPhase_ResolveHashes:
             self.lblDashModeBuild.setText( self.tr('Build Databases'), \
                                         size=4, bold=True, color='DisableFG')
             self.lblDashModeScan.setText( self.tr('Resolving Tx Hashes'), \
@@ -4865,7 +4865,7 @@ class ArmoryMainWindow(QMainWindow):
       
    #############################################################################      
    def updateStatusBarText(self):
-      if self.nodeStatus.status_ == Cpp.NodeStatus_Online:
+      if self.nodeStatus.status_ == ArmoryCpp.NodeStatus_Online:
          
          haveRPC = (self.nodeStatus.rpcStatus_ == RpcStatus_Online)
          
@@ -4888,7 +4888,7 @@ class ArmoryMainWindow(QMainWindow):
          
          self.lblArmoryStatus.setToolTipLambda(getToolTipTextOnline)
          
-      elif self.nodeStatus.status_ == Cpp.NodeStatus_Offline:
+      elif self.nodeStatus.status_ == ArmoryCpp.NodeStatus_Offline:
          self.lblArmoryStatus.setText(\
                self.tr('<font color=%1><b>Node offline (%2 blocks)</b></font> ').arg(\
                   htmlColor('TextRed')).arg(TheBDM.getTopBlockHeight()))    
@@ -5095,13 +5095,13 @@ class ArmoryMainWindow(QMainWindow):
          if prevStatus != self.nodeStatus.status_:
             TheBDM.setWitness(self.nodeStatus.SegWitEnabled_)
             
-            if self.nodeStatus.status_ == Cpp.NodeStatus_Offline:
+            if self.nodeStatus.status_ == ArmoryCpp.NodeStatus_Offline:
                self.showTrayMsg(self.tr('Disconnected'), self.tr('Connection to Bitcoin Core '
                                 'client lost!  Armory cannot send nor '
                                 'receive bitcoins until connection is '
                                 're-established.'), QSystemTrayIcon.Critical,
                                 10000)
-            elif self.nodeStatus.status_ == Cpp.NodeStatus_Online:
+            elif self.nodeStatus.status_ == ArmoryCpp.NodeStatus_Online:
                self.showTrayMsg(self.tr('Connected'), self.tr('Connection to Bitcoin Core '
                                       're-established'), \
                                       QSystemTrayIcon.Information, 10000)
@@ -5117,7 +5117,7 @@ class ArmoryMainWindow(QMainWindow):
       elif action == BDV_ERROR:
          errorStruct = args[0]
          
-         if errorStruct.errType_ == Cpp.Error_ZC:
+         if errorStruct.errType_ == ArmoryCpp.Error_ZC:
             errorMsg = errorStruct.errorStr_
             txHash = errorStruct.extraMsg_
 
@@ -5928,7 +5928,7 @@ class ArmoryMainWindow(QMainWindow):
       pytx = PyTx().unserialize(zctx.serialize())
       
       #create tx batch
-      batch = Cpp.TransactionBatch()
+      batch = ArmoryCpp.TransactionBatch()
       for txin in pytx.inputs:
          outpoint = txin.outpoint
          batch.addSpender(binary_to_hex(outpoint.txHash), \

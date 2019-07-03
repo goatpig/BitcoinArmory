@@ -17,6 +17,8 @@ cppyy.include('cppForSwig/BlockDataManagerConfig.h')
 cppyy.include('cppForSwig/WalletManager.h')
 cppyy.include('cppForSwig/nodeRPC.h')
 cppyy.include('cppForSwig/EncryptionUtils.h')
+cppyy.include('cppForSwig/BDM_mainthread.h')
+cppyy.include('cppForSwig/NetworkConfig.h')
 
 #have to add lib path for cppyy to find libprotobuf.so
 cppyy.gbl.gSystem.AddDynamicPath('/usr/lib/x86_64-linux-gnu/')

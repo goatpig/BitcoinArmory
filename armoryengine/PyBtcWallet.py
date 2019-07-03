@@ -21,6 +21,7 @@ from armoryengine.Decorators import singleEntrantMethod
 
 from armoryengine.SignerWrapper import SIGNER_DEFAULT, SIGNER_BCH, SIGNER_CPP, \
    SIGNER_LEGACY, PythonSignerDirector, PythonSignerDirector_BCH
+
 # This import is causing a circular import problem when used by findpass and promokit
 # it is imported at the end of the file. Do not add it back at the begining
 # from armoryengine.Transaction import *
@@ -95,7 +96,7 @@ class PyBtcWallet(object):
        watch money without considering it part of our own assets
 
    This class is included in the combined-python-cpp module, because we really
-   need to maintain a persistent Cpp.BtcWallet if this class is to be useful
+   need to maintain a persistent ArmoryCpp.BtcWallet if this class is to be useful
    (we don't want to have to rescan the entire blockchain every time we do any
    wallet operations).
 
@@ -888,7 +889,7 @@ class PyBtcWallet(object):
          self.kdfKey = None
       else:
          LOGINFO('(with encryption)')
-         self.kdf = KdfRomix()
+         self.kdf = ArmoryCpp.KdfRomix()
          LOGINFO('Target (time,RAM)=(%0.3f,%d)', kdfTargSec, kdfMaxMem)
          (mem,niter,salt) = self.computeSystemSpecificKdfParams( \
                                                 kdfTargSec, kdfMaxMem)
@@ -900,10 +901,10 @@ class PyBtcWallet(object):
          #       At least, Crypto++ grabs from a few different sources, itself
          if not extraEntropy:
             extraEntropy = SecureBinaryData(0)
-         plainRootKey = SecureBinaryData().GenerateRandom(32, extraEntropy)
+         plainRootKey = ArmoryCpp.CryptoPRNG().generateRandom(32, extraEntropy)
 
       if not chaincode:
-         #chaincode = SecureBinaryData().GenerateRandom(32)
+         #chaincode = ArmoryCpp.CryptoPRNG().generateRandom(32)
          # For wallet 1.35a, derive chaincode deterministically from root key
          # The root key already has 256 bits of entropy which is excessive,
          # anyway.  And my original reason for having the chaincode random is 
@@ -1318,7 +1319,7 @@ class PyBtcWallet(object):
       # Finish assembling data for the final output.
       if pkIsCompressed == True:
          wltRootCompPubKey = \
-            CryptoECDSA().CompressPoint(SecureBinaryData(wltRootPubKey))
+            ArmoryCpp.CryptoECDSA().CompressPoint(SecureBinaryData(wltRootPubKey))
          wltRootPubKey = wltRootCompPubKey.toBinStr()
 
       return (wltRootPubKey, wltChainCode)
@@ -1616,7 +1617,7 @@ class PyBtcWallet(object):
                  in order to determine good KDF parameters based on your
                  computer's specific speed/memory capabilities.
       """
-      kdf = KdfRomix()
+      kdf = ArmoryCpp.KdfRomix()
       kdf.computeKdfParams(targetSec, long(maxMem))
 
       mem   = kdf.getMemoryReqtBytes()
@@ -2545,7 +2546,7 @@ class PyBtcWallet(object):
          if privChk:
             privKey = SecureBinaryData(verifyChecksum(privKey.toBinStr(), privChk))
 
-         computedPubkey = CryptoECDSA().ComputePublicKey(privKey)
+         computedPubkey = ArmoryCpp.CryptoECDSA().ComputePublicKey(privKey)
          computedAddr20 = convertKeyDataToAddress(pubKey=computedPubkey)
 
       # If public key is provided, we prep it so we can verify Pub/Priv match
@@ -2602,7 +2603,7 @@ class PyBtcWallet(object):
       newAddr.chainIndex = -2
       newAddr.timeRange = [firstTime, lastTime]
       newAddr.blkRange  = [firstBlk,  lastBlk ]
-      #newAddr.binInitVect16  = SecureBinaryData().GenerateRandom(16)
+      #newAddr.binInitVect16  = ArmoryCpp.CryptoPRNG().generateRandom(16)
       newAddr160 = newAddr.getAddr160()
 
       newDataLoc = self.walletFileSafeUpdate( \
@@ -2697,7 +2698,7 @@ class PyBtcWallet(object):
          if not addrObj.hasPubKey():
             # Make sure the public key is available for this address
             addrObj.binPublicKey65 = \
-               CryptoECDSA().ComputePublicKey(addrObj.binPrivKey32_Plain)
+               ArmoryCpp.CryptoECDSA().ComputePublicKey(addrObj.binPrivKey32_Plain)
 
       ustx.signerType = signer
       
@@ -3160,7 +3161,7 @@ class PyBtcWallet(object):
       for addr in addrList:
          addrVec.append(ADDRBYTE + addr.getAddr160())
       
-      _id = Cpp.SecureBinaryData().GenerateRandom(8).toHexStr()
+      _id = ArmoryCpp.CryptoPRNG().generateRandom(8).toHexStr()
       main.oneTimeScanAction[_id] = self.doAfterScan()
       TheBDM.bdv().registerAddrList(_id, addrList)
             

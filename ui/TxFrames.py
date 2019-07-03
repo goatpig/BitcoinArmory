@@ -393,7 +393,7 @@ class SendBitcoinsFrame(ArmoryFrame):
 
       try:
          self.coinSelection = self.wlt.cppWallet.getCoinSelectionInstance()
-      except Cpp.DbErrorMsg as dbErr:
+      except ArmoryCpp.DbErrorMsg as dbErr:
          LOGERROR('DB error: %s', dbErr.what())
 
       try:
@@ -405,7 +405,7 @@ class SendBitcoinsFrame(ArmoryFrame):
    def setupCoinSelectionForLockbox(self, lbox):
       try:        
          lbCppWlt = self.main.cppLockboxWltMap[lbox.uniqueIDB58]
-         self.coinSelection = Cpp.CoinSelectionInstance(\
+         self.coinSelection = ArmoryCpp.CoinSelectionInstance(\
             lbCppWlt, lbox.M, lbox.N, \
             TheBDM.getTopBlockHeight(), lbCppWlt.getSpendableBalance())
          
@@ -439,7 +439,7 @@ class SendBitcoinsFrame(ArmoryFrame):
          try:
             prefix, h160 = addrStr_to_hash160(scrAddr)
          except:
-            h160 = Cpp.BtcUtils_bech32ToScript(scrAddr, BECH32_PREFIX)[2:]
+            h160 = ArmoryCpp.BtcUtils_bech32ToScript(scrAddr, BECH32_PREFIX)[2:]
             if len(h160) == 20:
                prefix = SCRADDR_P2WPKH_BYTE
             elif len(h160) == 32:
@@ -484,7 +484,7 @@ class SendBitcoinsFrame(ArmoryFrame):
                   prefix = scraddr[0]
                   h160 = scraddr[1:]   
                else:
-                  h160 = Cpp.BtcUtils_bech32ToScript(addrStr, BECH32_PREFIX)[2:]
+                  h160 = ArmoryCpp.BtcUtils_bech32ToScript(addrStr, BECH32_PREFIX)[2:]
                   if len(h160) == 20:
                      prefix = SCRADDR_P2WPKH_BYTE
                   elif len(h160) == 32:
@@ -534,13 +534,13 @@ class SendBitcoinsFrame(ArmoryFrame):
          fee, feePerByte, adjust_fee = self.feeDialog.getFeeData()
          processFlag = 0
          if self.useCustomListInFull:
-            processFlag += Cpp.USE_FULL_CUSTOM_LIST
+            processFlag += ArmoryCpp.USE_FULL_CUSTOM_LIST
                   
          if adjust_fee:
-            processFlag += Cpp.ADJUST_FEE
+            processFlag += ArmoryCpp.ADJUST_FEE
                   
          if self.shuffleEntries:
-            processFlag += Cpp.SHUFFLE_ENTRIES         
+            processFlag += ArmoryCpp.SHUFFLE_ENTRIES
          
          if self.customUtxoList is None or len(self.customUtxoList) == 0:
             self.coinSelection.selectUTXOs(fee, feePerByte, processFlag)
@@ -1036,7 +1036,7 @@ class SendBitcoinsFrame(ArmoryFrame):
       haveBech32 = False
       homogenousOutputs = True
       for script, val in scriptValPairs:
-         scripttype = Cpp.BtcUtils.getTxOutScriptTypeInt(script)
+         scripttype = ArmoryCpp.BtcUtils.getTxOutScriptTypeInt(script)
          if scripttype == TXOUT_SCRIPT_P2SH:
             haveP2SH = True
          if scripttype == TXOUT_SCRIPT_P2WSH or \
@@ -1076,7 +1076,7 @@ class SendBitcoinsFrame(ArmoryFrame):
          
       if changeType != 'Auto':
          if homogenousOutputs:
-            scripttype = Cpp.BtcUtils.getTxOutScriptTypeInt(scriptValPairs[0][0])
+            scripttype = ArmoryCpp.BtcUtils.getTxOutScriptTypeInt(scriptValPairs[0][0])
             if scripttype == TXOUT_SCRIPT_P2SH:
                scripttype = 'P2SH'
             else:
@@ -1318,7 +1318,7 @@ class SendBitcoinsFrame(ArmoryFrame):
             r = len(self.widgetTable) 
             self.widgetTable.append({})
             
-            self.widgetTable[r]['UID'] = SecureBinaryData().GenerateRandom(8).toHexStr()
+            self.widgetTable[r]['UID'] = ArmoryCpp.CryptoPRNG().generateRandom(8).toHexStr()
             
             if not is_opreturn:
                createAddrWidget(self.widgetTable[r], r)

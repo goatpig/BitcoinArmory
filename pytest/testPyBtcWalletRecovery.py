@@ -2,7 +2,7 @@ import sys
 sys.path.append('..')
 from pytest.Tiab import TiabTest
 
-from CppBlockUtils import SecureBinaryData, CryptoECDSA, CryptoAES
+from armoryengine.cppyyWrapper import ArmoryCpp, std
 from armoryengine.PyBtcAddress import PyBtcAddress
 from armoryengine.ArmoryUtils import *
 from armoryengine.BinaryUnpacker import BinaryUnpacker
@@ -48,7 +48,7 @@ class PyBtcWalletRecoveryTest(TiabTest):
       newAddr.chainIndex = 250
       PrivKey = hex_to_binary('e3b0c44298fc1c149afbf4c8996fb92427ae41e5978fe51ca495991b7852b855')
       newAddr.binPrivKey32_Plain = SecureBinaryData(PrivKey)
-      newAddr.binPublicKey65 = CryptoECDSA().ComputePublicKey( \
+      newAddr.binPublicKey65 = ArmoryCpp.CryptoECDSA().ComputePublicKey( \
                                                 newAddr.binPrivKey32_Plain)
       newAddr.addrStr20 = newAddr.binPublicKey65.getHash160()
       newAddr.isInitialized = True
@@ -60,7 +60,7 @@ class PyBtcWalletRecoveryTest(TiabTest):
       lastAddr = crpWlt.addrMap[crpWlt.lastComputedChainAddr160]
       PrivKey = hex_to_binary('e3b0c44298fc1c149afbf4c8996fb92427ae41e5978fe51ca495991b00000000')
       lastAddr.binPrivKey32_Plain = SecureBinaryData(PrivKey)
-      lastAddr.binPublicKey65 = CryptoECDSA().ComputePublicKey( \
+      lastAddr.binPublicKey65 = ArmoryCpp.CryptoECDSA().ComputePublicKey( \
                                                 lastAddr.binPrivKey32_Plain)      
       lastAddr.keyChanged = True
       crpWlt.kdfKey = crpWlt.kdf.DeriveKey(SecureBinaryData('testing'))
@@ -124,7 +124,7 @@ class PyBtcWalletRecoveryTest(TiabTest):
       for i in range(0, len(brkWltResult['privMult'])):
          obfsPKey = SecureBinaryData(
                         hex_to_binary(brkWltResult['privMult'][i]))
-         pKey = CryptoECDSA().ECMultiplyScalars(obfsPKey.toBinStr(), \
+         pKey = ArmoryCpp.CryptoECDSA().ECMultiplyScalars(obfsPKey.toBinStr(), \
                                                 hmacQ.toBinStr())
          
          try:

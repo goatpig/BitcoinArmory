@@ -43,7 +43,7 @@ class UnknownSigBlockType(Exception): pass
    
 def randomk():  
    # Using Crypto++ CSPRNG instead of python's
-   sbdRandK = CppBlockUtils.SecureBinaryData().GenerateRandom(32)
+   sbdRandK = ArmoryCpp.CryptoPRNG().generateRandom(32)
    hexRandK = sbdRandK.toBinStr().encode('hex_codec')
    return int(hexRandK, 16)
 

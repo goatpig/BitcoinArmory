@@ -353,7 +353,7 @@ def getMultisigScriptInfo(rawScript):
 
    M,N = 0,0
 
-   pubKeyStr = Cpp.BtcUtils().getMultisigPubKeyInfoStr(rawScript)
+   pubKeyStr = ArmoryCpp.BtcUtils().getMultisigPubKeyInfoStr(rawScript)
 
    bu = BinaryUnpacker(pubKeyStr)
    M = bu.get(UINT8)
@@ -385,7 +385,7 @@ def getHash160ListFromMultisigScrAddr(scrAddr):
 ################################################################################
 # These two methods are just easier-to-type wrappers around the C++ methods
 def getTxOutScriptType(script):
-   return Cpp.BtcUtils().getTxOutScriptTypeInt(script)
+   return ArmoryCpp.BtcUtils().getTxOutScriptTypeInt(script)
 
 ################################################################################
 # These two methods are just easier-to-type wrappers around the C++ methods
@@ -411,7 +411,7 @@ def getTxInScriptType(txinObj):
    """
    script = txinObj.binScript
    prevTx = txinObj.outpoint.txHash
-   return Cpp.BtcUtils().getTxInScriptTypeInt(script, prevTx)
+   return ArmoryCpp.BtcUtils().getTxInScriptTypeInt(script, prevTx)
 
 ################################################################################
 def getTxInP2SHScriptType(txinObj):
@@ -426,7 +426,7 @@ def getTxInP2SHScriptType(txinObj):
    if not scrType==CPP_TXIN_SPENDP2SH:
       return None
 
-   lastPush = Cpp.BtcUtils().getLastPushDataInScript(txinObj.binScript)
+   lastPush = ArmoryCpp.BtcUtils().getLastPushDataInScript(txinObj.binScript)
 
    return getTxOutScriptType(lastPush)
 
@@ -435,8 +435,8 @@ def getTxInP2SHScriptType(txinObj):
 def TxInExtractAddrStrIfAvail(txinObj):
    rawScript  = txinObj.binScript
    prevTxHash = txinObj.outpoint.txHash
-   scrType = Cpp.BtcUtils().getTxInScriptTypeInt(rawScript, prevTxHash)
-   lastPush = Cpp.BtcUtils().getLastPushDataInScript(rawScript)
+   scrType = ArmoryCpp.BtcUtils().getTxInScriptTypeInt(rawScript, prevTxHash)
+   lastPush = ArmoryCpp.BtcUtils().getLastPushDataInScript(rawScript)
 
    if scrType in [CPP_TXIN_STDUNCOMPR, CPP_TXIN_STDCOMPR]:
       return hash160_to_addrStr( hash160(lastPush) )
@@ -454,10 +454,10 @@ def TxInExtractAddrStrIfAvail(txinObj):
 def TxInExtractPreImageIfAvail(txinObj):
    rawScript  = txinObj.binScript
    prevTxHash = txinObj.outpoint.txHash
-   scrType = Cpp.BtcUtils().getTxInScriptTypeInt(rawScript, prevTxHash)
+   scrType = ArmoryCpp.BtcUtils().getTxInScriptTypeInt(rawScript, prevTxHash)
 
    if scrType == [CPP_TXIN_STDUNCOMPR, CPP_TXIN_STDCOMPR, CPP_TXIN_SPENDP2SH]:
-      return Cpp.BtcUtils().getLastPushDataInScript(rawScript)
+      return ArmoryCpp.BtcUtils().getLastPushDataInScript(rawScript)
    else:
       return ''
 
@@ -1416,8 +1416,8 @@ class UnsignedTxInput(AsciiSerializable):
       appended to the end
       """
       # Make sure the supplied privateKey is relevant to this USTXI
-      computedPub_sbd = CryptoECDSA().ComputePublicKey(sbdPrivKey)
-      compressedPub_sbd = CryptoECDSA().CompressPoint(computedPub_sbd)
+      computedPub_sbd = ArmoryCpp.CryptoECDSA().ComputePublicKey(sbdPrivKey)
+      compressedPub_sbd = ArmoryCpp.CryptoECDSA().CompressPoint(computedPub_sbd)
       
       computedPub = computedPub_sbd.toBinStr()
       compressedPub = compressedPub_sbd.toBinStr()
@@ -1447,7 +1447,7 @@ class UnsignedTxInput(AsciiSerializable):
    
          msg,hc = generatePreHashTxMsgToSign(pytx, txiIdx, 
                                        self.getTxoScriptToSign(), hashcode)
-         sbdSig = CryptoECDSA().SignData(SecureBinaryData(msg), sbdPrivKey, DetSign)
+         sbdSig = ArmoryCpp.CryptoECDSA().SignData(SecureBinaryData(msg), sbdPrivKey, DetSign)
          binSig = sbdSig.toBinStr()
          return createDERSigFromRS(binSig[:32], binSig[32:]) + hc
       else: 
@@ -1506,7 +1506,7 @@ class UnsignedTxInput(AsciiSerializable):
          DetSign=ENABLE_DETSIGN, signerType=SIGNER_DEFAULT):
       derSig = self.createTxSignature(pytx, sbdPrivKey, hashcode, \
                                       DetSign, signerType=signerType)
-      computedPub = CryptoECDSA().ComputePublicKey(sbdPrivKey).toBinStr()
+      computedPub = ArmoryCpp.CryptoECDSA().ComputePublicKey(sbdPrivKey).toBinStr()
 
       msIdx = self.insertSignature(derSig, computedPub)
       return derSig, msIdx
@@ -1564,7 +1564,7 @@ class UnsignedTxInput(AsciiSerializable):
       sbdMsg = SecureBinaryData(msg)
       sbdSig = SecureBinaryData(rBin + sBin)
       sbdPub = SecureBinaryData(pubKey)
-      return msIndex if CryptoECDSA().VerifyData(sbdMsg, sbdSig, sbdPub) else -1
+      return msIndex if ArmoryCpp.CryptoECDSA().VerifyData(sbdMsg, sbdSig, sbdPub) else -1
 
    #############################################################################
    # make sure to sign the p2shScript if it is there, other wise sign the txoScript
@@ -2781,7 +2781,7 @@ class UnsignedTransaction(AsciiSerializable):
          return True
             
       elif signer == SIGNER_CPP:
-         cppVerifier = Cpp.PythonVerifier()
+         cppVerifier = ArmoryCpp.PythonVerifier()
 
          pytx = self.getSignedPyTx(doVerifySigs=False)
          rawTxOuts = {}
@@ -2803,7 +2803,7 @@ class UnsignedTransaction(AsciiSerializable):
             return False
             
       elif signer == SIGNER_BCH:
-         cppVerifier = Cpp.PythonVerifier_BCH()
+         cppVerifier = ArmoryCpp.PythonVerifier_BCH()
 
          pytx = self.getSignedPyTx(doVerifySigs=False)
          rawTxOuts = {}
@@ -3123,10 +3123,9 @@ def PyCreateAndSignTx(ustxiList, dtxoList, sbdPrivKeyMap, hashcode=1, DetSign=Tr
 #
 # Of course, we usually don't have the private keys of the dst addrs...
 #
+from armoryengine.MultiSigUtils import *
 def PyCreateAndSignTx_old(srcTxOuts, dstAddrsVals):
    # This needs to support multisig. Perhaps the funct should just be moved....
-   from armoryengine.MultiSigUtils import *
-
    newTx = PyTx()
    newTx.version    = 1
    newTx.lockTime   = 0

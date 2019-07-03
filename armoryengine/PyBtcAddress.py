@@ -272,7 +272,7 @@ class PyBtcAddress(object):
          return False
 
 
-      decryptedKey = CryptoAES().DecryptCFB( self.binPrivKey32_Encr, \
+      decryptedKey = ArmoryCpp.CryptoAES().DecryptCFB( self.binPrivKey32_Encr, \
                                              SecureBinaryData(secureKdfOutput), \
                                              self.binInitVect16)
       verified = False
@@ -281,7 +281,7 @@ class PyBtcAddress(object):
          if decryptedKey==self.binPrivKey32_Plain:
             verified = True
       else:
-         computedPubKey = CryptoECDSA().ComputePublicKey(decryptedKey)
+         computedPubKey = ArmoryCpp.CryptoECDSA().ComputePublicKey(decryptedKey)
          if self.hasPubKey():
             verified = (self.binPublicKey65==computedPubKey)
          else:
@@ -322,7 +322,7 @@ class PyBtcAddress(object):
       if IV16:
          self.binInitVect16 = SecureBinaryData(IV16)
       elif random==True:
-         self.binInitVect16 = SecureBinaryData().GenerateRandom(16)
+         self.binInitVect16 = ArmoryCpp.CryptoPRNG().generateRandom(16)
       else:
          raise KeyDataError('setInitVector: set IV data, or random=True')
       return self.binInitVect16
@@ -396,12 +396,12 @@ class PyBtcAddress(object):
          if not self.binPublicKey65.getHash160()==self.addrStr20:
             raise KeyDataError("Public key does not match supplied address")
          if not skipCheck:
-            if not CryptoECDSA().CheckPubPrivKeyMatch(self.binPrivKey32_Plain,\
+            if not ArmoryCpp.CryptoECDSA().CheckPubPrivKeyMatch(self.binPrivKey32_Plain,\
                                                       self.binPublicKey65):
                raise KeyDataError('Supplied pub and priv key do not match!')
       elif not skipPubCompute:
          # No public key supplied, but we do want to calculate it
-         self.binPublicKey65 = CryptoECDSA().ComputePublicKey(plainPrivKey)
+         self.binPublicKey65 = ArmoryCpp.CryptoECDSA().ComputePublicKey(plainPrivKey)
 
       return self
 
@@ -438,8 +438,8 @@ class PyBtcAddress(object):
       else:
          a160hex = binary_to_hex(pubKey.getHash160())
 
-      newPriv1 = CryptoECDSA().ComputeChainedPrivateKey(privKey, chn, logMult1)
-      newPriv2 = CryptoECDSA().ComputeChainedPrivateKey(privKey, chn, logMult2)
+      newPriv1 = ArmoryCpp.CryptoECDSA().ComputeChainedPrivateKey(privKey, chn, logMult1)
+      newPriv2 = ArmoryCpp.CryptoECDSA().ComputeChainedPrivateKey(privKey, chn, logMult2)
 
       if newPriv1==newPriv2:
          newPriv2.destroy()
@@ -453,9 +453,9 @@ class PyBtcAddress(object):
          newPriv1.destroy()
          newPriv2.destroy()
          logMult3 = SecureBinaryData()
-         newPriv1 = CryptoECDSA().ComputeChainedPrivateKey(privKey, chn, logMult1)
-         newPriv2 = CryptoECDSA().ComputeChainedPrivateKey(privKey, chn, logMult2)
-         newPriv3 = CryptoECDSA().ComputeChainedPrivateKey(privKey, chn, logMult3)
+         newPriv1 = ArmoryCpp.CryptoECDSA().ComputeChainedPrivateKey(privKey, chn, logMult1)
+         newPriv2 = ArmoryCpp.CryptoECDSA().ComputeChainedPrivateKey(privKey, chn, logMult2)
+         newPriv3 = ArmoryCpp.CryptoECDSA().ComputeChainedPrivateKey(privKey, chn, logMult3)
          LOGCRIT('   Multiplier1: ' + logMult1.toHexStr())
          LOGCRIT('   Multiplier2: ' + logMult2.toHexStr())
          LOGCRIT('   Multiplier3: ' + logMult3.toHexStr())
@@ -483,8 +483,8 @@ class PyBtcAddress(object):
       a160hex = binary_to_hex(pubKey.getHash160())
       logMult1 = SecureBinaryData()
       logMult2 = SecureBinaryData()
-      newPub1 = CryptoECDSA().ComputeChainedPublicKey(pubKey, chn, logMult1)
-      newPub2 = CryptoECDSA().ComputeChainedPublicKey(pubKey, chn, logMult2)
+      newPub1 = ArmoryCpp.CryptoECDSA().ComputeChainedPublicKey(pubKey, chn, logMult1)
+      newPub2 = ArmoryCpp.CryptoECDSA().ComputeChainedPublicKey(pubKey, chn, logMult2)
 
       if newPub1==newPub2:
          newPub2.destroy()
@@ -497,9 +497,9 @@ class PyBtcAddress(object):
          newPub1.destroy()
          newPub2.destroy()
          logMult3 = SecureBinaryData()
-         newPub1 = CryptoECDSA().ComputeChainedPublicKey(pubKey, chn, logMult1)
-         newPub2 = CryptoECDSA().ComputeChainedPublicKey(pubKey, chn, logMult2)
-         newPub3 = CryptoECDSA().ComputeChainedPublicKey(pubKey, chn, logMult3)
+         newPub1 = ArmoryCpp.CryptoECDSA().ComputeChainedPublicKey(pubKey, chn, logMult1)
+         newPub2 = ArmoryCpp.CryptoECDSA().ComputeChainedPublicKey(pubKey, chn, logMult2)
+         newPub3 = ArmoryCpp.CryptoECDSA().ComputeChainedPublicKey(pubKey, chn, logMult3)
          LOGCRIT('   Multiplier1: ' + logMult1.toHexStr())
          LOGCRIT('   Multiplier2: ' + logMult2.toHexStr())
          LOGCRIT('   Multiplier3: ' + logMult3.toHexStr())
@@ -541,11 +541,11 @@ class PyBtcAddress(object):
                   if not generateIVIfNecessary:
                      raise KeyDataError('No Initialization Vector available')
                   else:
-                     self.binInitVect16 = SecureBinaryData().GenerateRandom(16)
+                     self.binInitVect16 = ArmoryCpp.CryptoPRNG().generateRandom(16)
                      newIV = True
 
                # Finally execute the encryption
-               self.binPrivKey32_Encr = CryptoAES().EncryptCFB( \
+               self.binPrivKey32_Encr = ArmoryCpp.CryptoAES().EncryptCFB( \
                                                 self.binPrivKey32_Plain, \
                                                 SecureBinaryData(secureKdfOutput), \
                                                 self.binInitVect16)
@@ -582,13 +582,13 @@ class PyBtcAddress(object):
          # This is SPECIFICALLY for the case that we didn't have the encr key
          # available when we tried to extend our deterministic wallet, and
          # generated a new address anyway
-         self.binPrivKey32_Plain = CryptoAES().DecryptCFB( \
+         self.binPrivKey32_Plain = ArmoryCpp.CryptoAES().DecryptCFB( \
                                      self.createPrivKeyNextUnlock_IVandKey[1], \
                                      SecureBinaryData(secureKdfOutput), \
                                      self.createPrivKeyNextUnlock_IVandKey[0])
 
          for i in range(self.createPrivKeyNextUnlock_ChainDepth):
-            #self.binPrivKey32_Plain = CryptoECDSA().ComputeChainedPrivateKey( \
+            #self.binPrivKey32_Plain = ArmoryCpp.CryptoECDSA().ComputeChainedPrivateKey( \
                                          #self.binPrivKey32_Plain, \
                                          #self.chaincode)
 
@@ -615,7 +615,7 @@ class PyBtcAddress(object):
          if not self.binInitVect16.getSize()==16:
             raise WalletLockError('Initialization Vect (IV) is missing!')
 
-         self.binPrivKey32_Plain = CryptoAES().DecryptCFB( \
+         self.binPrivKey32_Plain = ArmoryCpp.CryptoAES().DecryptCFB( \
                                         self.binPrivKey32_Encr, \
                                         secureKdfOutput, \
                                         self.binInitVect16)
@@ -624,7 +624,7 @@ class PyBtcAddress(object):
 
       if not skipCheck:
          if not self.hasPubKey():
-            self.binPublicKey65 = CryptoECDSA().ComputePublicKey(\
+            self.binPublicKey65 = ArmoryCpp.CryptoECDSA().ComputePublicKey(\
                                                       self.binPrivKey32_Plain)
          else:
             # We should usually check that keys match, but may choose to skip
@@ -634,7 +634,7 @@ class PyBtcAddress(object):
             #        when locked (it should), but this wallet format has been
             #        working flawless for almost a year... and will be replaced
             #        soon, so I won't sweat it.
-            if not CryptoECDSA().CheckPubPrivKeyMatch(self.binPrivKey32_Plain, \
+            if not ArmoryCpp.CryptoECDSA().CheckPubPrivKeyMatch(self.binPrivKey32_Plain, \
                                             self.binPublicKey65):
                raise KeyDataError("Stored public key does not match priv key!")
 
@@ -685,7 +685,7 @@ class PyBtcAddress(object):
    #############################################################################
    # This is more of a static method
    def checkPubPrivKeyMatch(self, securePriv, securePub):
-      CryptoECDSA().CheckPubPrivKeyMatch(securePriv, securePub)
+      ArmoryCpp.CryptoECDSA().CheckPubPrivKeyMatch(securePriv, securePub)
 
 
 
@@ -714,7 +714,7 @@ class PyBtcAddress(object):
 
       try:
          secureMsg = SecureBinaryData(binMsg)
-         sig = CryptoECDSA().SignData(secureMsg, self.binPrivKey32_Plain,
+         sig = ArmoryCpp.CryptoECDSA().SignData(secureMsg, self.binPrivKey32_Plain,
                                       DetSign)
          sigstr = sig.toBinStr()
 
@@ -748,7 +748,7 @@ class PyBtcAddress(object):
       secMsg    = SecureBinaryData(binMsgVerify)
       secSig    = SecureBinaryData(rBin + sBin)
       secPubKey = SecureBinaryData(self.binPublicKey65)
-      return CryptoECDSA().VerifyData(secMsg, secSig, secPubKey)
+      return ArmoryCpp.CryptoECDSA().VerifyData(secMsg, secSig, secPubKey)
 
    #############################################################################
    def markAsRootAddr(self, chaincode):
@@ -792,13 +792,13 @@ class PyBtcAddress(object):
                raise WalletLockError('Cannot create new address without passphrase')
             self.unlock(secureKdfOutput)
          if not newIV:
-            newIV = SecureBinaryData().GenerateRandom(16)
+            newIV = ArmoryCpp.CryptoPRNG().generateRandom(16)
 
          newPriv = self.safeExtendPrivateKey( \
                                  self.binPrivKey32_Plain, \
                                  self.chaincode)
 
-         newPub  = CryptoECDSA().ComputePublicKey(newPriv)
+         newPub  = ArmoryCpp.CryptoECDSA().ComputePublicKey(newPriv)
          newAddr160 = newPub.getHash160()
          newAddr.createFromPlainKeyData(newPriv, newAddr160, \
                                        IV16=newIV, publicKey65=newPub)
@@ -821,7 +821,7 @@ class PyBtcAddress(object):
          if not self.hasPubKey():
             raise KeyDataError('No public key available to extend chain')
 
-         #newAddr.binPublicKey65 = CryptoECDSA().ComputeChainedPublicKey( \
+         #newAddr.binPublicKey65 = ArmoryCpp.CryptoECDSA().ComputeChainedPublicKey( \
                                     #self.binPublicKey65, self.chaincode)
          newAddr.binPublicKey65 = self.safeExtendPublicKey( \
                                     self.binPublicKey65, self.chaincode)
@@ -838,7 +838,7 @@ class PyBtcAddress(object):
             newAddr.isLocked      = True
             newAddr.useEncryption = True
             if not newIV:
-               newIV = SecureBinaryData().GenerateRandom(16)
+               newIV = ArmoryCpp.CryptoPRNG().generateRandom(16)
             newAddr.binInitVect16 = newIV
             newAddr.createPrivKeyNextUnlock           = True
             newAddr.createPrivKeyNextUnlock_IVandKey = [None,None]
@@ -1073,7 +1073,7 @@ class PyBtcAddress(object):
       if containsPubKey:
          if not pubKey.getSize()==65:
             if self.binPrivKey32_Plain.getSize()==32:
-               pubKey = ArmoryCpp.CryptoECDSA().ComputePublicKey(self.binPrivKey32_Plain)
+               pubKey = ArmoryCpp.ArmoryCpp.CryptoECDSA().ComputePublicKey(self.binPrivKey32_Plain)
             else:
                raise UnserializeError('Checksum mismatch in PublicKey ' +\
                                        '('+hash160_to_addrStr(self.addrStr20)+')')
@@ -1145,11 +1145,11 @@ class PyBtcAddress(object):
          binXBE = int_to_binary(pubkey[0], widthBytes=32, endOut=BIGENDIAN)
          binYBE = int_to_binary(pubkey[1], widthBytes=32, endOut=BIGENDIAN)
          self.binPublicKey65 = SecureBinaryData('\x04' + binXBE + binYBE)
-         if not CryptoECDSA().VerifyPublicKeyValid(self.binPublicKey65):
+         if not ArmoryCpp.CryptoECDSA().VerifyPublicKeyValid(self.binPublicKey65):
             raise KeyDataError('Supplied public key is not on secp256k1 curve')
       elif isinstance(pubkey, str) and len(pubkey)==65:
          self.binPublicKey65 = SecureBinaryData(pubkey)
-         if not CryptoECDSA().VerifyPublicKeyValid(self.binPublicKey65):
+         if not ArmoryCpp.CryptoECDSA().VerifyPublicKeyValid(self.binPublicKey65):
             raise KeyDataError('Supplied public key is not on secp256k1 curve')
       else:
          raise KeyDataError('Unknown public key format!')

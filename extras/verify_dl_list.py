@@ -1,3 +1,4 @@
+from armoryengine.cppyyWrapper import ArmoryCpp, std
 from __future__ import print_function
 import sys
 sys.path.append('..')
@@ -37,7 +38,7 @@ def extractSignedDataFromVersionsDotTxt(wholeFile, doVerify=True):
       Pub = SecureBinaryData(hex_to_binary(ARMORY_INFO_SIGN_PUBLICKEY))
       Msg = SecureBinaryData(MSGRAW)
       Sig = SecureBinaryData(hex_to_binary(SIGHEX))
-      isVerified = CryptoECDSA().VerifyData(Msg, Sig, Pub)
+      isVerified = ArmoryCpp.CryptoECDSA().VerifyData(Msg, Sig, Pub)
    
       if not isVerified:
          LOGERROR('Signed data block failed verification!')

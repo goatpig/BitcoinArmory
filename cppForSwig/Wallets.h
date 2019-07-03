@@ -45,7 +45,9 @@
 #define VERSION_MAJOR      2
 #define VERSION_MINOR      1
 #define VERSION_REVISION   0
- 
+
+static SecureBinaryData cppyyDummySilencer;
+
 class WalletException : public std::runtime_error
 {
 public:
@@ -721,6 +723,8 @@ class ResolverFeed_AssetWalletSingle_Exotic :
       //grab asset account
 
       //run through assets, check pubkeys
+      // Dummy here only to make cppyy happy. Need to remove.
+      return cppyyDummySilencer;
    }
 };
 

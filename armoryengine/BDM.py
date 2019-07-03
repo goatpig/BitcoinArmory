@@ -53,37 +53,37 @@ class PySide_CallBack(ArmoryCpp.RemoteCallback):
 
          # AOTODO replace with constants
 
-         if action == Cpp.BDMAction_Ready:
+         if action == ArmoryCpp.BDMAction_Ready:
             print('BDM is ready!')
             act = FINISH_LOAD_BLOCKCHAIN_ACTION
             TheBDM.topBlockHeight = block
             TheBDM.setState(BDM_BLOCKCHAIN_READY)
-         elif action == Cpp.BDMAction_ZC:
+         elif action == ArmoryCpp.BDMAction_ZC:
             act = NEW_ZC_ACTION
-            castArg = Cpp.BtcUtils_cast_to_LedgerVector(arg)
+            castArg = ArmoryCpp.BtcUtils_cast_to_LedgerVector(arg)
             arglist = castArg
-         elif action == Cpp.BDMAction_NewBlock:
+         elif action == ArmoryCpp.BDMAction_NewBlock:
             act = NEW_BLOCK_ACTION
-            castArg = Cpp.BtcUtils_cast_to_int(arg)
+            castArg = ArmoryCpp.BtcUtils_cast_to_int(arg)
             arglist.append(castArg)
             TheBDM.topBlockHeight = block
-         elif action == Cpp.BDMAction_Refresh:
+         elif action == ArmoryCpp.BDMAction_Refresh:
             act = REFRESH_ACTION
-            castArg = Cpp.BtcUtils_cast_to_BinaryDataVector(arg)
+            castArg = ArmoryCpp.BtcUtils_cast_to_BinaryDataVector(arg)
             arglist = castArg
-         elif action == Cpp.BDMAction_Exited:
+         elif action == ArmoryCpp.BDMAction_Exited:
             act = STOPPED_ACTION
-         elif action == Cpp.BDMAction_ErrorMsg:
+         elif action == ArmoryCpp.BDMAction_ErrorMsg:
             act = WARNING_ACTION
-            argstr = Cpp.BtcUtils_cast_to_string(arg)
+            argstr = ArmoryCpp.BtcUtils_cast_to_string(arg)
             arglist.append(argstr)
-         elif action == Cpp.BDMAction_BDV_Error:
+         elif action == ArmoryCpp.BDMAction_BDV_Error:
             act = BDV_ERROR
-            argBdvError = Cpp.BDV_Error_Struct_cast_to_BDVErrorStruct(arg)
+            argBdvError = ArmoryCpp.BDV_Error_Struct_cast_to_BDVErrorStruct(arg)
             arglist.append(argBdvError)
-         elif action == Cpp.BDMAction_NodeStatus:
+         elif action == ArmoryCpp.BDMAction_NodeStatus:
             act = NODESTATUS_UPDATE
-            argNodeStatus = Cpp.NodeStatusStruct_cast_to_NodeStatusStruct(arg)
+            argNodeStatus = ArmoryCpp.NodeStatusStruct_cast_to_NodeStatusStruct(arg)
             arglist.append(argNodeStatus)
 
          listenerList = TheBDM.getListenerList()
@@ -196,7 +196,7 @@ class BlockDataManager(object):
 
       try:
          self.bdv_.registerWithDB(MAGIC_BYTES)
-      except Cpp.DbErrorMsg as e:
+      except ArmoryCpp.DbErrorMsg as e:
          self.exception = e.what()
          LOGERROR('DB error: ' + e.what())
          raise e
@@ -302,7 +302,7 @@ class BlockDataManager(object):
 
       try:
          if CLI_OPTIONS.bip150Used or CLI_OPTIONS.bip151Used:
-            Cpp.DisableBIP151()
+            ArmoryCpp.DisableBIP151()
          self.bdv_.unregisterFromDB()
          self.callback.shutdown()
 
@@ -314,7 +314,7 @@ class BlockDataManager(object):
    #############################################################################
    def getCookie(self):
       if self.cookie == None:
-         self.cookie = Cpp.BlockDataManagerConfig_getCookie(str(self.datadir))
+         self.cookie = ArmoryCpp.BlockDataManagerConfig_getCookie(str(self.datadir))
       return self.cookie
 
    #############################################################################
@@ -366,19 +366,19 @@ else:
    cpplf = cppLogFile
    if OS_WINDOWS and isinstance(cppLogFile, unicode):
       cpplf = cppLogFile.encode('utf8')
-   Cpp.StartCppLogging(cpplf, 4)
-   Cpp.EnableCppLogStdOut()
+   ArmoryCpp.StartCppLogging(cpplf, 4)
+   ArmoryCpp.EnableCppLogStdOut()
 
    # If necessary, enable BIP 150/151 on the C++ side. The database IP will set
    # the version (internal connections use 150/151), and the Armory data
    # directory will be used.
    if CLI_OPTIONS.bip150Used or CLI_OPTIONS.bip151Used:
-      Cpp.EnableBIP151()
+      ArmoryCpp.EnableBIP151()
    if CLI_OPTIONS.bip150Used:
       ipVer = ipAddrVersion(ARMORYDB_IP)
       if CLI_OPTIONS.useTorSettings:
          ipVer = 20
-      Cpp.EnableBIP150(ipVer, ARMORY_HOME_DIR)
+      ArmoryCpp.EnableBIP150(ipVer, ARMORY_HOME_DIR)
 
 # Put the import at the end to avoid circular reference problem
 from armoryengine.MultiSigUtils import MultiSigLockbox

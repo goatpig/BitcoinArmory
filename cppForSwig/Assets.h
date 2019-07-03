@@ -471,11 +471,11 @@ public:
    const SecureBinaryData& getChaincode(void) const { return chaincode_; }
 
    //virtual
-   BinaryData serialize(void) const;
+   BinaryData serialize(void) const override;
    const AssetEntryType getType(void) const override 
    { return AssetEntryType_BIP32Root; }
 
-   std::shared_ptr<AssetEntry_Single> getPublicCopy(void);
+   std::shared_ptr<AssetEntry_Single> getPublicCopy(void) override;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

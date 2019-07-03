@@ -10,11 +10,11 @@ class SigningTester(unittest.TestCase):
 
    def testLowSig(self):
       sbdPrivKey = SecureBinaryData(b'\x01'*32)
-      pub = CryptoECDSA().ComputePublicKey(sbdPrivKey).toBinStr()
+      pub = ArmoryCpp.CryptoECDSA().ComputePublicKey(sbdPrivKey).toBinStr()
 
       for i in range(100):
          msg = "some random msg %s" % random.random()
-         sbdSig = CryptoECDSA().SignData(SecureBinaryData(msg), sbdPrivKey, False)
+         sbdSig = ArmoryCpp.CryptoECDSA().SignData(SecureBinaryData(msg), sbdPrivKey, False)
          binSig = sbdSig.toBinStr()
          derSig = createDERSigFromRS(binSig[:32], binSig[32:])
          r, s = getRSFromDERSig(derSig)

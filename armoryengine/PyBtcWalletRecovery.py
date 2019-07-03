@@ -1066,7 +1066,7 @@ class PyBtcWalletRecovery(object):
                      
                #check public key is a valid EC point
                if newAddr.hasPubKey():
-                  if not CryptoECDSA().VerifyPublicKeyValid( \
+                  if not ArmoryCpp.CryptoECDSA().VerifyPublicKeyValid( \
                                                       newAddr.binPublicKey65):
                      self.importedErr.append('invalid pub key for imported \
                         address %d at file offset %d\r\n' % (i, entrylist[2]))
@@ -1660,7 +1660,7 @@ class PyBtcWalletRecovery(object):
    ############################################################################
    def getInvModOfHMAC(self, Q):
       hmacQ = self.getValidKeyHMAC(Q)
-      return CryptoECDSA().InvMod(SecureBinaryData(hmacQ))
+      return ArmoryCpp.CryptoECDSA().InvMod(SecureBinaryData(hmacQ))
 
 
 ###############################################################################

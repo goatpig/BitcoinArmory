@@ -1,3 +1,4 @@
+from armoryengine.cppyyWrapper import ArmoryCpp, std
 from __future__ import print_function
 import sys
 sys.path.append('..')
@@ -38,7 +39,7 @@ if Priv.getSize()==0:
    exit(1)
 
 Pub = SecureBinaryData(hex_to_binary(ARMORY_INFO_SIGN_PUBLICKEY))
-print('Keys match? ', CryptoECDSA().CheckPubPrivKeyMatch(Priv, Pub))
+print('Keys match? ', ArmoryCpp.CryptoECDSA().CheckPubPrivKeyMatch(Priv, Pub))
 
 
 fn = 'versions.txt'
@@ -54,6 +55,6 @@ sigData = open(fn, 'r').read()
 msgToSign = extractSignedDataFromVersionsDotTxt(sigData, doVerify=False)
 Msg = SecureBinaryData(msgToSign)
 
-result = CryptoECDSA().SignData(Msg, Priv)
+result = ArmoryCpp.CryptoECDSA().SignData(Msg, Priv)
 print('Signature:', result.toHexStr())
 

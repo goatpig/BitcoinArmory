@@ -36,13 +36,15 @@ class WalletMirroringClass(object):
             #flag it for mirroring
             walletsToMirror.append(wltID)
             continue
-         
-         lastComputed = self.walletManagerObj.getLastComputedIndex(wltID)
-         if lastComputed < wlt.lastComputedChainIndex:
-            #if python wallet has more computed addresses than cpp 
-            #wallet, mark it for synchronizing
-            walletsToSync.append(wltID)
-                    
+
+         # cppyy TODO: getLastComputedIndex() call is incorrect. This code probably
+         # needs to be refactored for 0.97.
+#         lastComputed = self.walletManagerObj.getLastComputedIndex(wltID)
+#         if lastComputed < wlt.lastComputedChainIndex:
+#            #if python wallet has more computed addresses than cpp 
+#            #wallet, mark it for synchronizing
+#            walletsToSync.append(wltID)
+
       if len(walletsToMirror) + len(walletsToSync) + len(importsToCheck) > 0:
          self.updateCppWallets(walletsToMirror, walletsToSync, importsToCheck)
    
@@ -93,8 +95,9 @@ class WalletMirroringClass(object):
          for importId in wlt.importList:
             scrAddr = wlt.linearAddr160List[importId]
             addrObj = wlt.addrMap[scrAddr]
-            
-            self.walletManagerObj.setImport(\
-               wltID, importId, addrObj.getPubKey())
+
+            # cppyy TODO: setImport() call no longer exists. This code probably
+            # needs to be refactored for 0.97.
+#            self.walletManagerObj.setImport(wltID, importId, addrObj.getPubKey())
          
       reportProgress(STATUS_DONE, "")
