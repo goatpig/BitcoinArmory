@@ -25,26 +25,9 @@ copy-script:
 	cp cppForSwig/ArmoryDB ./ArmoryDB
 	cp cppForSwig/BIP150KeyManager ./BIP150KeyManager
 
-if BUILD_DARWIN
-# Autotools insists on looking for shared libraries (-install_name flag during
-# compilation) in /usr/local/lib. Unsure how to safely override the setting.
-# We also can't rely on the user installing libraries elsewhere. So, by default,
-# CppBlockUtils will choke when it attempts to load any shared library to which
-# it's linked. The workaround: Let Automake do its thing and then use an
-# external tool (installed by Xcode) to tell CppBlockUtils.so where to actually
-# find shared libraries it needs.
-# SOURCE 1: https://www.mikeash.com/pyblog/friday-qa-2009-11-06-linking-and-install-names.html
-# SOURCE 2: https://github.com/conda/conda-build/issues/279
-# Alt target name (useful for debugging?): @executable_path/py/usr/local/lib/liblmdb.0.dylib
-	cp cppForSwig/.libs/libCppBlockUtils.dylib ./_CppBlockUtils.so
-else
-	cp cppForSwig/.libs/libCppBlockUtils.so ./_CppBlockUtils.so
-endif
-
 .PHONY: copy-script lrelease qrc_img_resources.py
 
 all-local: copy-script lrelease qrc_img_resources.py
-
 
 #target to clean up pre autotools installation left overs
 uninstall-old:
@@ -96,8 +79,3 @@ clean-local:
 	rm -f ArmoryDB
 	rm -f BIP150KeyManager
 	rm -f lib/*
-if BUILD_CLIENT
-	rm -f CppBlockUtils.py
-	rm -f _CppBlockUtils.so
-	rm -f CppBlockUtils.pyc
-endif

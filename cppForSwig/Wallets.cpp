@@ -44,7 +44,7 @@ BinaryData WalletMeta::serializeVersion() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void WalletMeta::unseralizeVersion(BinaryRefReader& brr)
+void WalletMeta::unserializeVersion(BinaryRefReader& brr)
 {
    versionMajor_ = brr.get_uint8_t();
    versionMinor_ = brr.get_uint16_t();
@@ -167,7 +167,7 @@ shared_ptr<WalletMeta> WalletMeta::deserialize(
    case WalletMetaType_Single:
    {
       wltMetaPtr = make_shared<WalletMeta_Single>(env);
-      wltMetaPtr->unseralizeVersion(brrVal);
+      wltMetaPtr->unserializeVersion(brrVal);
       wltMetaPtr->unserializeEncryptionKey(brrVal);
       break;
    }
@@ -181,7 +181,7 @@ shared_ptr<WalletMeta> WalletMeta::deserialize(
    case WalletMetaType_Multisig:
    {
       wltMetaPtr = make_shared<WalletMeta_Multisig>(env);
-      wltMetaPtr->unseralizeVersion(brrVal);
+      wltMetaPtr->unserializeVersion(brrVal);
       wltMetaPtr->unserializeEncryptionKey(brrVal);
       break;
    }

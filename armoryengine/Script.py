@@ -81,16 +81,16 @@ def pprintScript(binScript, nIndent=0):
       print(indstr + indent + op)
 
 def scriptPushData(binObj):
-   sz = len(binObj) 
+   sz = binObj.getSize()
    if sz <= 76:
       lenByte = int_to_binary(sz, widthBytes=1)
-      return lenByte+binObj
+      return lenByte+binObj.toBinStr()
    elif sz <= 256:
       lenByte = int_to_binary(sz, widthBytes=1)
-      return '\x4c' + lenByte + binObj
+      return '\x4c' + lenByte + binObj.toBinStr()
    elif sz <= 65536:
       lenBytes = int_to_binary(sz, widthBytes=2)
-      return '\x4d' + lenBytes + binObj
+      return '\x4d' + lenBytes + binObj.toBinStr()
    else:
       InvalidScriptError('Cannot use PUSHDATA for len(obj)>65536')
 

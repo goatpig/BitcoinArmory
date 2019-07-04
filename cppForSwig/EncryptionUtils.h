@@ -63,7 +63,8 @@
 #include "UniversalTimer.h"
 #include "SecureBinaryData.h"
 
-//#define LIBBTC_ONLY
+// Redundant but required to get cppyy to stop complaining.
+#define SILENCE_CPPYY
 
 #ifdef LIBBTC_ONLY
 #include "btc/random.h"
@@ -81,6 +82,7 @@
 
 #define CRYPTO_DEBUG false
 
+#ifndef SILENCE_CPPYY
 #ifndef LIBBTC_ONLY
 #include "cryptopp/cryptlib.h"
 #include "cryptopp/osrng.h"
@@ -112,7 +114,7 @@
 #define AES_MIN_KEY_LEN AES_BLOCK_SIZE
 #define AES_MAX_KEY_LEN AES_BLOCK_SIZE*2
 #endif
-
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 class CryptoSHA2
@@ -331,6 +333,7 @@ public:
       const SecureBinaryData& pubKey,
       const SecureBinaryData& scalar);
 
+#ifndef SILENCE_CPPYY
 #ifndef LIBBTC_ONLY
    /////////////////////////////////////////////////////////////////////////////
    static BTC_PRIVKEY ParsePrivateKey(SecureBinaryData const & privKeyData);
@@ -338,6 +341,7 @@ public:
    
    /////////////////////////////////////////////////////////////////////////////
    static BinaryData computeLowS(BinaryDataRef s);
+#endif
 #endif
 };
 

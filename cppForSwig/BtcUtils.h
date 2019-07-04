@@ -584,23 +584,13 @@ public:
       return hashOutput;
    }
 
-
    /////////////////////////////////////////////////////////////////////////////
-   //  I need a non-static, non-overloaded method to be able to use this in SWIG
-   BinaryData getHash160_SWIG(BinaryData const & strToHash)
-   {
-      return getHash160(strToHash);
-   }
-
-   /////////////////////////////////////////////////////////////////////////////
-   //  I need a non-static, non-overloaded method to be able to use this in SWIG
-   BinaryData ripemd160_SWIG(BinaryData const & strToHash)
+   static BinaryData ripemd160(BinaryData const & strToHash)
    {
       BinaryData bd(20);
       CryptoHASH160::getHash160(strToHash.getRef(), bd.getPtr());
       return bd;
    }
-
 
    /////////////////////////////////////////////////////////////////////////////
    static BinaryData calculateMerkleRoot(std::vector<BinaryData> const & txhashlist)

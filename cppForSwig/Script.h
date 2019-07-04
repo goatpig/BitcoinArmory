@@ -464,7 +464,7 @@ private:
    void op_ripemd160(void)
    {
       auto&& data = pop_back();
-      auto&& hash = BtcUtils().ripemd160_SWIG(data);
+      auto&& hash = BtcUtils::ripemd160(data);
       stack_.push_back(std::move(hash));
    }
 

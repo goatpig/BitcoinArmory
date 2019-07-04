@@ -1,4 +1,5 @@
 from __future__ import print_function
+import binascii
 ################################################################################
 #                                                                              #
 # Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
@@ -98,11 +99,11 @@ def calcLockboxID(script=None, scraddr=None):
          return None
       scraddr = script_to_scrAddr(script)
 
-   if not (scraddr[0] == SCRADDR_MULTISIG_BYTE):
+   if not chr(scraddr[0]) == SCRADDR_MULTISIG_BYTE:
       LOGERROR('ScrAddr is not a multisig script!')
       return None
 
-   hashedData = hash160(MAGIC_BYTES + scraddr.toBinStr())
+   hashedData = hash160(MAGIC_BYTES + scraddr.toBinStr()).toBinStr()
    return binary_to_base58(hashedData)[1:9]
 
 
@@ -477,7 +478,7 @@ class MultiSigLockbox(AsciiSerializable):
       
       self.compressedPubKeys = []
       for pubkey in dPubKeys:
-         pubkey_sbd = SecureBinaryData(pubkey.binPubKey)
+         pubkey_sbd = ArmoryCpp.SecureBinaryData(pubkey.binPubKey)
          self.compressedPubKeys.append(ArmoryCpp.CryptoECDSA().CompressPoint(pubkey_sbd).toBinStr())
 
       if createDate is not None:
@@ -1134,7 +1135,7 @@ class MultiSigPromissoryNote(AsciiSerializable):
          return False
       
       if keyPair[0] == '\x04':
-         if not ArmoryCpp.CryptoECDSA().VerifyPublicKeyValid(SecureBinaryData(binPubKey)):
+         if not ArmoryCpp.CryptoECDSA().VerifyPublicKeyValid(ArmoryCpp.SecureBinaryData(binPubKey)):
             LOGERROR('Invalid public key supplied')
             return False
 

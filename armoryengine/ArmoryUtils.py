@@ -1564,7 +1564,7 @@ def hash160_to_p2pkhash_script(binStr20):
 # Convert a 20-byte hash to a "pay-to-script-hash" script to be inserted
 # into a TxOut script
 def hash160_to_p2sh_script(binStr20):
-   if not len(binStr20)==20:
+   if not binStr20.getSize()==20:
       raise InvalidHashError('Tried to convert non-20-byte str to p2sh script')
 
    from armoryengine.Transaction import getOpCode
@@ -1875,13 +1875,13 @@ def sha512(bits):
 def ripemd160(bits):
    # It turns out that not all python has ripemd160...?
    #return hashlib.new('ripemd160', bits).digest()
-   return ArmoryCpp.BtcUtils().ripemd160_SWIG(bits)
+   return ArmoryCpp.BtcUtils().ripemd160(bits)
 def hash256(s):
    """ Double-SHA256 """
    return sha256(sha256(s))
 def hash160(s):
    """ RIPEMD160( SHA256( binaryStr ) ) """
-   return ArmoryCpp.BtcUtils().getHash160_SWIG(s)
+   return ArmoryCpp.BtcUtils().getHash160(s)
 
 
 def HMAC(key, msg, hashfunc=sha512, hashsz=None):

@@ -48,19 +48,7 @@ else
 LIBBTC_FLAGS += -DLIBBTC_ONLY
 endif
 
-SWIG_FLAGS = -c++ -python -threads
 AM_CXXFLAGS =
-
-if HAVE_GCC
-SWIG_FLAGS += -D__GNUC__
-if HAVE_64BIT
-SWIG_FLAGS += -D__LP64__
-endif
-endif
-
-if HAVE_CLANG
-SWIG_FLAGS += -D__CLANG__
-endif
 
 # Revisit this line later. RPATH is needed for portability purposes. For now,
 # install_name_tool works around portability issues on macOS but RPATH probably
@@ -295,9 +283,6 @@ MOSTLYCLEANFILES = $(PROTOBUF_CC) $(PROTOBUF_H)
 BUILT_SOURCES += $(PROTOBUF_CC)
 
 clean-local:
-	rm -f CppBlockUtils.py
-	rm -f CppBlockUtils_wrap.cxx
-	rm -f CppBlockUtils_wrap.h
 	rm -f BIP150KeyManager
 
 protobuf_clean:

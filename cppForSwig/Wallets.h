@@ -118,7 +118,7 @@ struct WalletMeta
    }
 
    BinaryData serializeVersion(void) const;
-   void unseralizeVersion(BinaryRefReader&);
+   void unserializeVersion(BinaryRefReader&);
 
    BinaryData serializeEncryptionKey(void) const;
    void unserializeEncryptionKey(BinaryRefReader&);
