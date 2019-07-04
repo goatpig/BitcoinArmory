@@ -16,7 +16,7 @@ from armoryengine.ArmoryUtils import *
 from armoryengine.Timer import TimeThisFunction
 from armoryengine.BinaryPacker import UINT64
 
-from armoryengine.cppyyWrapper import SwigClient, ArmoryCpp, std
+from armoryengine.cppyyWrapper import AsyncClient, ArmoryCpp, std
 
 BDM_OFFLINE = 'Offline'
 BDM_UNINITIALIZED = 'Uninitialized'
@@ -184,10 +184,9 @@ class BlockDataManager(object):
       if self.bdmState == BDM_OFFLINE:
          return
 
-      self.callback = PySide_CallBack(self)
-      callbackPtr = std.make_shared(ArmoryCpp.RemoteCallback)(self.callback)
-      self.bdv_ = SwigClient.BlockDataViewer.getNewBDV(\
-         str(ARMORYDB_IP), str(port), False, callbackPtr) 
+      callbackPtr = std.shared_ptr[ArmoryCpp.RemoteCallback]()
+      self.bdv_ = AsyncClient.BlockDataViewer.getNewBDV(\
+         str(ARMORYDB_IP), str(port), ARMORY_HOME_DIR, False, callbackPtr)
 
    #############################################################################
    def registerBDV(self):

@@ -25,6 +25,6 @@ cppyy.gbl.gSystem.AddDynamicPath('/usr/lib/x86_64-linux-gnu/')
 
 #libArmoryClient.so dynamically links to protobuf, have to preload it
 cppyy.load_library('libprotobuf.so')
-cppyy.load_library('/home/goat/Code/Armory/Armory1/libArmoryClient.so')
-from cppyy.gbl import SwigClient, ClientClasses, RemoteCallback, std
+cppyy.load_library('libArmoryClient.so')
+from cppyy.gbl import AsyncClient, std
 import cppyy.gbl as ArmoryCpp
