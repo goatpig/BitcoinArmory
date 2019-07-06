@@ -3523,22 +3523,23 @@ class DlgCreatePromNote(ArmoryDialog):
          pubKeys = {utxoScrAddr: aobj.binPublicKey65.toBinStr()}
 
          p2shMap = {}
-         p2shScript = wlt.cppWallet.getP2SHScriptForHash(utxo.getScript())
-         if len(p2shScript) > 0:
-            p2shKey = binary_to_hex(script_to_scrAddr(script_to_p2sh_script(
-               p2shScript)))
-            p2shMap[p2shKey] = p2shScript  
-            p2shMap[BASE_SCRIPT] = p2shScript
-
-         try:
-            scriptType = ArmoryCpp.BtcUtils().getTxOutScriptTypeInt(p2shScript)
-            if scriptType == CPP_TXOUT_P2WPKH:
-               nestedScript = binary_to_hex(p2shScript[2:])
-               pubkey = SecureBinaryData(aobj.getPubKey())
-               compressed_key = ArmoryCpp.CryptoECDSA().CompressPoint(pubkey)
-               p2shMap[nestedScript] = compressed_key.toBinStr()
-         except:
-            pass
+         # cppyy TODO: getP2SHScriptForHash() doesn't exist.
+#         p2shScript = wlt.cppWallet.getP2SHScriptForHash(utxo.getScript())
+#         if len(p2shScript) > 0:
+#            p2shKey = binary_to_hex(script_to_scrAddr(script_to_p2sh_script(
+#               p2shScript)))
+#            p2shMap[p2shKey] = p2shScript
+#            p2shMap[BASE_SCRIPT] = p2shScript
+#
+#         try:
+#            scriptType = ArmoryCpp.BtcUtils().getTxOutScriptTypeInt(p2shScript)
+#            if scriptType == CPP_TXOUT_P2WPKH:
+#               nestedScript = binary_to_hex(p2shScript[2:])
+#               pubkey = SecureBinaryData(aobj.getPubKey())
+#               compressed_key = ArmoryCpp.CryptoECDSA().CompressPoint(pubkey)
+#               p2shMap[nestedScript] = compressed_key.toBinStr()
+#         except:
+#            pass
 
          ustxiList.append(UnsignedTxInput(rawTx, txoIdx, p2shMap, pubKeys))
          

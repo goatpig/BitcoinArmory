@@ -18,7 +18,9 @@ from qtdefines import GETFONT
 from armorycolors import Colors
 
 from armoryengine.cppyyWrapper import cppyy
-#from cppyy.gbl import AddressType_P2SH_P2PK
+from cppyy.gbl import AddressEntryType_P2PKH, AddressEntryType_P2PK, \
+   AddressEntryType_P2WPKH, AddressEntryType_Multisig, \
+   AddressEntryType_Compressed, AddressEntryType_P2SH, AddressEntryType_P2WSH
 
 COL_TREE = 0
 COL_COMMENT = 1
@@ -529,18 +531,19 @@ class TreeStructure_AddressDisplay():
       
       def createChildNode(name, filterStr):
          nodeMain = AddressTreeNode(name, True, None)
-         
+
+         # cppyy TODO: Confirm AddressEntryType usage is correct
          def walletFilterP2SH_P2PK():
             return self.wallet.returnFilteredCppAddrList(\
-                     filterStr, AddressType_P2SH_P2PK)
+                     filterStr, AddressEntryType_P2SH | AddressEntryType_P2PK)
          
          def walletFilterP2SH_P2WPKH():
             return self.wallet.returnFilteredCppAddrList(\
-                     filterStr, AddressType_P2SH_P2WPKH)
+                     filterStr, AddressEntryType_P2SH | AddressEntryType_P2WPKH)
          
          def walletFilterP2PKH():
             return self.wallet.returnFilteredCppAddrList(\
-                     filterStr, AddressType_P2PKH)
+                     filterStr, AddressEntryType_P2PKH)
 
          nodep2pkh = AddressTreeNode("P2PKH", True, walletFilterP2PKH)
          nodeMain.appendEntry(nodep2pkh)
@@ -612,18 +615,23 @@ class TreeStructure_CoinControl():
          h160 = utxo.getRecipientHash160()
          binAddr = utxo.getRecipientScrAddr()
          scrAddr = hash160_to_addrStr(h160, binAddr[0])
-            
-         assetId = self.wallet.cppWallet.getAssetIndexForAddr(h160)
-         addrType = self.wallet.cppWallet.getAddrTypeForIndex_WithScript(assetId, h160)
-                 
+
+         # cppyy TODO: Replace C++ calls, or make sure they're correct
+         # getAssetIndexForAddr() --> getAssetIDForAddr(Prefixed hashes or a Base58 addr)
+         # getAddrTypeForIndex() --> getAddrTypeForID(12 byte BinaryData obj)
+         assetId = self.wallet.cppWallet.getAssetIDForAddr(h160)
+#         addrType = self.wallet.cppWallet.getAddrTypeForIndex_WithScript(assetId, h160)
+         addrType = None
+
+         # cppyy TODO: Make sure AddressEntryType is the correct type!
          addrDict = None
-         if addrType == AddressType_P2PKH:
+         if addrType == AddressEntryType_P2PKH:
             addrDict = self.treeData['UTXO']['p2pkh']
-         elif addrType == AddressType_P2SH_P2PK:
+         elif addrType == AddressEntryType_P2SH | AddressEntryType_P2PK:
             addrDict = self.treeData['UTXO']['p2sh_p2pk']
-         elif addrType == AddressType_P2SH_P2WPKH:
+         elif addrType == AddressType_P2SH | AddressEntryType_P2WPKH:
             addrDict = self.treeData['UTXO']['p2sh_p2wpkh']
-            
+
          if addrDict == None:
             continue
          

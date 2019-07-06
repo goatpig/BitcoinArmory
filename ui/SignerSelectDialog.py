@@ -42,8 +42,9 @@ class SignerSelectDialog(ArmoryDialog):
             if wltID != '':
                wlt = main.walletMap[wltID]
                try:
-                  addrIndex = wlt.cppWallet.getAssetIndexForAddr(dtxo.scrAddr)
-                  addrType = wlt.cppWallet.getAddrTypeForIndex(addrIndex)
+                  # cppyy TODO: Replace C++ calls, or make sure they're correct
+                  addrIndex = wlt.cppWallet.getAssetIDForAddr(dtxo.scrAddr)
+                  addrType = wlt.cppWallet.getAddrTypeForID(addrIndex)
                   if addrType in CPP_TXOUT_SEGWIT:
                      hasSegWitRecipients = True
                      break

@@ -1642,8 +1642,8 @@ class DlgWalletDetails(ArmoryDialog):
       if atype==P2SHBYTE:
          LOGWARN('Deleting P2SH address: %s' % addrStr)
 
-      
-      if self.wlt.cppWallet.getAssetIndexForAddr(addr160) < 0:
+      # cppyy TODO: Replace C++ calls, or make sure they're correct
+      if self.wlt.cppWallet.getAssetIDForAddr(addr160) < 0:
          dlg = DlgRemoveAddress(self.wlt, addr160, self, self.main)
          dlg.exec_()
       else:
@@ -3390,9 +3390,10 @@ class DlgShowKeys(ArmoryDialog):
 
       self.addr = addr
       self.wlt = wlt
-      
+
+      # cppyy TODO: Replace C++ calls, or make sure they're correct.
       self.scrAddr = \
-         self.wlt.cppWallet.getAddrObjByIndex(self.addr.chainIndex).getScrAddr() 
+         self.wlt.cppWallet.getAddrObjByID(self.addr.chainIndex).getScrAddr() 
 
 
       lblWarn = QRichLabel('')
@@ -4173,15 +4174,17 @@ class DlgRemoveAddress(ArmoryDialog):
       if not wlt.hasScrAddr(addr160):
          raise WalletAddressError('Address does not exist in wallet!')
 
-      addrIndex = wlt.cppWallet.getAssetIndexForAddr(addr160)
-      self.cppAddrObj = wlt.cppWallet.getAddrObjByIndex(addrIndex)
+      # cppyy TODO: Replace C++ calls, or make sure they're correct
+      addrIndex = wlt.cppWallet.getAssetIDForAddr(addr160)
+      self.cppAddrObj = wlt.cppWallet.getAddrObjByID(addrIndex)
       
       if addrIndex >= 0:
          raise WalletAddressError('Cannot delete regular chained addresses! '
                                    'Can only delete imported addresses.')
 
-         
-      importIndex = wlt.cppWallet.convertToImportIndex(addrIndex)
+      # cppyy TODO: convertToImportIndex() no longer exists.
+      importIndex = 0
+#      importIndex = wlt.cppWallet.convertToImportIndex(addrIndex)
 
       self.wlt = wlt
       importStr = wlt.linearAddr160List[importIndex]
@@ -5030,10 +5033,12 @@ class DlgShowKeyList(ArmoryDialog):
 
       for addr in self.addrCopies:
          try:
-            cppAddrObj = self.wlt.cppWallet.getAddrObjByIndex(addr.chainIndex)
+            # cppyy TODO: Replace C++ calls, or make sure they're correct.
+            cppAddrObj = self.wlt.cppWallet.getAddrObjByID(addr.chainIndex)
          except:
-            addrIndex = self.wlt.cppWallet.getAssetIndexForAddr(addr.getAddr160())
-            cppAddrObj = self.wlt.cppWallet.getAddrObjByIndex(addrIndex)
+            # cppyy TODO: Replace C++ calls, or make sure they're correct
+            addrIndex = self.wlt.cppWallet.getAssetIDForAddr(addr.getAddr160())
+            cppAddrObj = self.wlt.cppWallet.getAddrObjByID(addrIndex)
             
          # Address pool
          if self.chkWithAddrPool.isChecked():

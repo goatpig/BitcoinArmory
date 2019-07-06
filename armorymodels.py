@@ -995,11 +995,13 @@ class WalletAddrDispModel(QAbstractTableModel):
 
       try:
          if addr_index == -2:
-            addr_index = self.wlt.cppWallet.getAssetIndexForAddr(addr.getAddr160())
-            index_import = self.wlt.cppWallet.convertToImportIndex(addr_index)
-            cppaddr = self.wlt.cppWallet.getImportAddrObjByIndex(index_import) 
+            # cppyy TODO: Replace C++ calls, or make sure they're correct.
+            # convertToImportIndex() and convertToImportIndex() no longer exist.
+            addr_index = self.wlt.cppWallet.getAssetIDForAddr(addr.getAddr160())
+#            index_import = self.wlt.cppWallet.convertToImportIndex(addr_index)
+#            cppaddr = self.wlt.cppWallet.getImportAddrObjByIndex(index_import) 
          else:
-            cppaddr = self.wlt.cppWallet.getAddrObjByIndex(addr_index)
+            cppaddr = self.wlt.cppWallet.getAddrObjByID(addr_index)
       except:
          LOGERROR('failed to grab address by index %d, original id: %d' % (addr_index, addr.chainIndex))
          return QVariant()

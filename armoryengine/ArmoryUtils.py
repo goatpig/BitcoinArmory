@@ -616,9 +616,7 @@ CPP_TXOUT_STDSINGLESIG = [CPP_TXOUT_STDHASH160, \
                           CPP_TXOUT_STDPUBKEY33]
 CPP_TXOUT_NESTED_SINGLESIG = [CPP_TXOUT_STDPUBKEY33,
                           CPP_TXOUT_P2WPKH]
-# cppyy TODO: Proper cppyy fix
-#CPP_TXOUT_SEGWIT = [ArmoryCpp.AddressType_P2SH_P2WPKH]
-CPP_TXOUT_SEGWIT = [CPP_TXOUT_P2WPKH, CPP_TXOUT_P2WSH]
+CPP_TXOUT_SEGWIT = [ArmoryCpp.AddressEntryType_P2SH | ArmoryCpp.AddressEntryType_P2WPKH]
 
 CPP_TXOUT_SCRIPT_NAMES = ['']*9
 CPP_TXOUT_SCRIPT_NAMES[CPP_TXOUT_STDHASH160]  = 'Standard (PKH)'
@@ -3065,7 +3063,9 @@ def notifyOnSurpriseTx(blk0, blk1, wltMap, lboxWltMap, isGui, bdm, notifyQueue, 
          # the transaction. If we haven't already been notified of the
          # transaction, put it on the notification queue.
          for wltID,wlt in wltMap.iteritems():
-            le = wlt.cppWallet.calcLedgerEntryForTx(cppTx)
+            # cppyy TODO: calcLedgerEntryForTx() no longer exists.
+            le = None
+#            le = wlt.cppWallet.calcLedgerEntryForTx(cppTx)
             if isGui and (notifyQueue != None):
                if not le.getTxHash() in notifiedAlready:
                   if (le.getValue()<=0 and notifyOut) or (le.getValue>0 and notifyIn):

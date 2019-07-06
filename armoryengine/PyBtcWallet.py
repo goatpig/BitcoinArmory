@@ -384,12 +384,9 @@ class PyBtcWallet(object):
    def getBalance(self, balType="Spendable"):
       if balType.lower() in ('spendable','spend'):
          return self.balance_spendable
-         #return self.cppWallet.getSpendableBalance(topBlockHeight, IGNOREZC)
       elif balType.lower() in ('unconfirmed','unconf'):
-         #return self.cppWallet.getUnconfirmedBalance(topBlockHeight, IGNOREZC)
          return self.balance_unconfirmed
       elif balType.lower() in ('total','ultimate','unspent','full'):
-         #return self.cppWallet.getFullBalance()
          return self.balance_full
       else:
          raise TypeError('Unknown balance type! "' + balType + '"')
@@ -402,8 +399,7 @@ class PyBtcWallet(object):
    def getBalancesAndCountFromDB(self):
       if self.cppWallet != None and TheBDM.getState() is BDM_BLOCKCHAIN_READY:
          topBlockHeight = TheBDM.getTopBlockHeight()
-         balanceVector = self.cppWallet.getBalancesAndCount(\
-                     topBlockHeight, IGNOREZC)
+         balanceVector = self.cppWallet.getBalancesAndCount(topBlockHeight)
          self.balance_full = balanceVector[0]
          self.balance_spendable = balanceVector[1]
          self.balance_unconfirmed = balanceVector[2]
@@ -545,6 +541,7 @@ class PyBtcWallet(object):
          # Leaving this comment here in case it needs to be replaced by anything
          # self.syncWithBlockchainLite()
          scrAddrStr = Hash160ToScrAddr(addr160)
+         # cppyy TODO: getScrAddrObjByKey() call needs extra parameters.
          cppAddr = self.cppWallet.getScrAddrObjByKey(scrAddrStr)
          if txType.lower() in ('spend', 'spendable'):
             return cppAddr.getSpendableTxOutList(IGNOREZC);
@@ -612,9 +609,10 @@ class PyBtcWallet(object):
    #############################################################################
    @CheckWalletRegistration
    def lockTxOutsOnNewTx(self, pytxObj):
-      for txin in pytxObj.inputs:
-         self.cppWallet.lockTxOutSwig(txin.outpoint.txHash, \
-                                      txin.outpoint.txOutIndex)
+      # cppyy TODO: lockTxOutSwig() no longer exists.
+#      for txin in pytxObj.inputs:
+#         self.cppWallet.lockTxOutSwig(txin.outpoint.txHash, \
+#                                      txin.outpoint.txOutIndex)
 
    
    #############################################################################
@@ -1062,9 +1060,11 @@ class PyBtcWallet(object):
       self.linearAddr160List.append(new160)
       self.chainIndexMap[newAddr.chainIndex] = new160
          
-      if self.cppWallet != None:      
-         needsRegistered = \
-            self.cppWallet.extendAddressChainTo(self.lastComputedChainIndex)  
+      if self.cppWallet != None:
+         # cppyy TODO: extendAddressChainTo() calls doesn't exist.
+         needsRegistered = True
+#         needsRegistered = \
+#            self.cppWallet.extendAddressChainTo(self.lastComputedChainIndex)  
          
          #grab cpp addr as default addr type
          addrType = armoryengine.ArmoryUtils.DEFAULT_ADDR_TYPE
@@ -1815,8 +1815,10 @@ class PyBtcWallet(object):
    #############################################################################
    def getCommentForAddress(self, addr160):
       try:
-         assetIndex = self.cppWallet.getAssetIndexForAddr(addr160)
-         hashList = self.cppWallet.getScriptHashVectorForIndex(assetIndex)
+         # cppyy TODO: Replace C++ calls, or make sure they're correct
+         assetIndex = self.cppWallet.getAssetIDForAddr(addr160)
+         # cppyy TODO: getScriptHashVectorForIndex() doesn't exist.
+#         hashList = self.cppWallet.getScriptHashVectorForIndex(assetIndex)
       except:
          return ''
 
@@ -2498,7 +2500,8 @@ class PyBtcWallet(object):
       wltPath = self.walletPath
       
       passCppWallet = self.cppWallet
-      self.cppWallet.removeAddressBulk([Hash160ToScrAddr(addr160)])
+      # cppyy TODO: removeAddressBulk() doesn't exist.
+#      self.cppWallet.removeAddressBulk([Hash160ToScrAddr(addr160)])
       self.readWalletFile(wltPath)
       self.cppWallet = passCppWallet
       self.registerWallet(False)
@@ -3103,6 +3106,7 @@ class PyBtcWallet(object):
       
 
       for i,addr160,addrObj in sortedAddrList:
+         # cppyy TODO: getScrAddrObjByKey() call needs extra parameters.
          cppAddr = self.cppWallet.getScrAddrObjByKey(Hash160ToScrAddr(addr160))
          bal = cppAddr.getFullBalance() / float(100000000)
          
@@ -3116,7 +3120,8 @@ class PyBtcWallet(object):
          realtime = datetime.fromtimestamp(unixtime).strftime('%Y-%m-%d %H:%M:%S')
          timeAndBlock = ",#%d,%s,%d" % (block, realtime, unixtime)
          
-         cppAddrObj = self.cppWallet.getAddrObjByIndex(addrObj.chainIndex)
+         # cppyy TODO: Replace C++ calls, or make sure they're correct.
+         cppAddrObj = self.cppWallet.getAddrObjByID(addrObj.chainIndex)
          putStr = '%d,%s,%s,%f%s\n' \
                   % (i, cppAddrObj.getScrAddr(), addrObj.binPublicKey65.toHexStr(), bal, \
                      (timeAndBlock if unixtime != 0 else ""))
@@ -3207,22 +3212,25 @@ class PyBtcWallet(object):
    def getP2PKHAddrForIndex(self, chainIndex):
       if chainIndex < 0:
          raise NotImplementedError("need to cover this behavior")
-     
-      return self.cppWallet.getP2PKHAddrForIndex(chainIndex)   
+
+      # cppyy TODO: Replace C++ calls, or make sure they're correct.
+      return self.cppWallet.getP2PKHAddrForID(chainIndex)
 
    ###############################################################################
    def getNestedSWAddrForIndex(self, chainIndex):
       if chainIndex < 0:
          raise('Nested addresses are no available for imports')
-      
-      return self.cppWallet.getNestedSWAddrForIndex(chainIndex)
+
+      # cppyy TODO: Replace C++ calls, or make sure they're correct.
+      return self.cppWallet.getNestedSWAddrForID(chainIndex)
    
    ###############################################################################
    def getNestedP2PKAddrForIndex(self, chainIndex):
       if chainIndex < 0:
          raise('Nested addresses are no available for imports')
       
-      return self.cppWallet.getNestedP2PKAddrForIndex(chainIndex) 
+      # cppyy TODO: Replace C++ calls, or make sure they're correct.
+      return self.cppWallet.getNestedP2PKAddrForID(chainIndex)
    
    ###############################################################################
    def getPrivateKeyForIndex(self, index):
@@ -3233,17 +3241,20 @@ class PyBtcWallet(object):
    
    ###############################################################################
    def getAddrObjectForHash(self, hashVal):
-      assetIndex = self.cppWallet.getAssetIndexForAddr(hashVal)
+      # cppyy TODO: Replace C++ calls, or make sure they're correct
+      assetIndex = self.cppWallet.getAssetIDForAddr(hashVal)
       if assetIndex == 2**32:
          raise("unknown hash")
       
       try:
          addr160 = self.chainIndexMap[assetIndex]
       except:
-         if assetIndex < -2:
-            importIndex = self.cppWallet.convertToImportIndex(assetIndex)
-            addr160 = self.linearAddr160List[importIndex]
-         else:
+         # cppyy TODO: Just about everything under except is commented out.
+#         if assetIndex < -2:
+#            # cppyy TODO: convertToImportIndex() no longer exists.
+#            importIndex = self.cppWallet.convertToImportIndex(assetIndex)
+#            addr160 = self.linearAddr160List[importIndex]
+#         else:
             raise Exception("invalid address index")
          
       return self.addrMap[addr160]
@@ -3264,10 +3275,16 @@ class PyBtcWallet(object):
             continue
          
          #filter by address type
-         if filterType != self.cppWallet.getAddrTypeForIndex(addrIndex):
+         # cppyy TODO: Replace getAddrTypeForIndex() with new call. Has to pass
+         # in a 12 byte ID which seems to use the following format (big endian):
+         # Bytes 01-04 - AccountType ID
+         # Bytes 05-08 - AssetAccount ID
+         # Bytes 09-12 - AssetEntry ID
+#         if filterType != self.cppWallet.getAddrTypeForIndex(addrIndex):
             continue
-         
-         addrObj = self.cppWallet.getAddrObjByIndex(addrIndex)
+
+         # cppyy TODO: Replace C++ calls, or make sure they're correct.
+         addrObj = self.cppWallet.getAddrObjByID(addrIndex)
          typeCount = typeCount + 1         
          
          #filter by usage
@@ -3292,21 +3309,24 @@ class PyBtcWallet(object):
          addr160 = self.chainIndexMap[index]
          return self.addrMap[addr160]
       else:
-         importIndex = self.cppWallet.convertFromImportIndex(index)
-         addr160 = self.linearAddr160List[importIndex]
-         return self.addrMap[addr160]
+         # cppyy TODO: convertFromImportIndex() no longer exists.
+#         importIndex = self.cppWallet.convertFromImportIndex(index)
+#         addr160 = self.linearAddr160List[importIndex]
+#         return self.addrMap[addr160]
+         return None
    
    ###############################################################################
    def getImportCppAddrList(self):
    
       addrList = []
       for addrIndex in self.importList:
-         
-         addrObj = self.cppWallet.getImportAddrObjByIndex(addrIndex)    
-         addrComment = self.getCommentForAddress(addrObj.getAddrHash()[1:])
-         addrObj.setComment(addrComment)
-         
-         addrList.append(addrObj)
+
+         # cppyy TODO: getImportAddrObjByIndex() no longer exists.
+#         addrObj = self.cppWallet.getImportAddrObjByIndex(addrIndex)
+#         addrComment = self.getCommentForAddress(addrObj.getAddrHash()[1:])
+#         addrObj.setComment(addrComment)
+#
+#         addrList.append(addrObj)
          
       return addrList  
    

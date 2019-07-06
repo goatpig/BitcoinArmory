@@ -392,6 +392,7 @@ class SendBitcoinsFrame(ArmoryFrame):
          return
 
       try:
+         # cppyy TODO: getCoinSelectionInstance() requires a top height parameter
          self.coinSelection = self.wlt.cppWallet.getCoinSelectionInstance()
       except ArmoryCpp.DbErrorMsg as dbErr:
          LOGERROR('DB error: %s', dbErr.what())
@@ -873,16 +874,19 @@ class SendBitcoinsFrame(ArmoryFrame):
                if addrObj:
                   pubKeyMap[scrAddr] = addrObj.binPublicKey65.toBinStr()
             elif scrType == CPP_TXOUT_P2SH:
+               # cppyy TODO: getP2SHScriptForHash() doesn't exist.
                p2shScript = self.wlt.cppWallet.getP2SHScriptForHash(utxo.getScript())
                p2shKey = binary_to_hex(script_to_scrAddr(script_to_p2sh_script(
                   p2shScript)))
                p2shMap[p2shKey]  = p2shScript  
-               
-               addrIndex = self.wlt.cppWallet.getAssetIndexForAddr(utxo.getRecipientHash160())
+
+               # cppyy TODO: Replace C++ calls, or make sure they're correct
+               addrIndex = self.wlt.cppWallet.getAssetIDForAddr(utxo.getRecipientHash160())
                try:
                   addrStr = self.wlt.chainIndexMap[addrIndex]
                except:
                   if addrIndex < -2:
+                     # cppyy TODO: convertToImportIndex() doesn't exist.
                      importIndex = self.wlt.cppWallet.convertToImportIndex(addrIndex)
                      addrStr = self.wlt.linearAddr160List[importIndex]
                   else:
