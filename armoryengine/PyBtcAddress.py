@@ -803,7 +803,7 @@ class PyBtcAddress(object):
          newAddr.createFromPlainKeyData(newPriv, newAddr160, \
                                        IV16=newIV, publicKey65=newPub)
 
-         newAddr.addrStr20 = newPub.getHash160()
+         newAddr.addrStr20 = newPub.getHash160().toBinStr()
          newAddr.useEncryption = self.useEncryption
          newAddr.isInitialized = True
          newAddr.chaincode     = self.chaincode
@@ -826,7 +826,7 @@ class PyBtcAddress(object):
          newAddr.binPublicKey65 = self.safeExtendPublicKey( \
                                     self.binPublicKey65, self.chaincode)
 
-         newAddr.addrStr20 = newAddr.binPublicKey65.getHash160()
+         newAddr.addrStr20 = newAddr.binPublicKey65.getHash160().toBinStr()
          newAddr.useEncryption = self.useEncryption
          newAddr.isInitialized = True
          newAddr.chaincode  = self.chaincode
@@ -838,7 +838,7 @@ class PyBtcAddress(object):
             newAddr.isLocked      = True
             newAddr.useEncryption = True
             if not newIV:
-               newIV = ArmoryCpp.CryptoPRNG().generateRandom(16)
+               newIV = ArmoryCpp.CryptoPRNG().generateRandom(16).toBinStr()
             newAddr.binInitVect16 = newIV
             newAddr.createPrivKeyNextUnlock           = True
             newAddr.createPrivKeyNextUnlock_IVandKey = [None,None]

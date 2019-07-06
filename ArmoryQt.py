@@ -5576,7 +5576,8 @@ class ArmoryMainWindow(QMainWindow):
 
          self.wltCstStatus = WalletConsistencyCheck(wallets[wlt], prgAt)
          if self.wltCstStatus[0] != 0:
-            self.WltCstError(wallets[wlt], self.wltCstStatus[1], dlgrdy)
+            self.WltCstError(wallets[wlt], self.wltCstStatus[1], \
+               self.wltCstStatus[0], dlgrdy)
             while not dlgrdy[0]:
                time.sleep(0.01)
             nerrors = nerrors +1
@@ -5686,9 +5687,10 @@ class ArmoryMainWindow(QMainWindow):
       else:
          self.pbarWalletProgress.hide()
 
-   def WltCstError(self, wlt, status, dlgrdy):
+   def WltCstError(self, wlt, status, errCode, dlgrdy):
       self.emit(SIGNAL('PWCE'), dlgrdy, wlt, status)
-      LOGERROR('Wallet consistency check failed! (%s)', wlt.uniqueIDB58)
+      LOGERROR('Wallet consistency check failed! Wallet=%s Code=%s', wlt.uniqueIDB58, \
+         errCode)
 
    def PromptWltCstError(self, dlgrdy, wallet=None, status='', mode=None):
       if not self.dlgCptWlt:

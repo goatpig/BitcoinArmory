@@ -1627,6 +1627,24 @@ TEST_F(BinaryDataTest, Contains)
    EXPECT_FALSE(bd4_.contains(d, 8));
 }
 
+TEST_F(BinaryDataTest, hash160)
+{
+   // SHA-256 + RIPEMD-160 for "abc"
+   SecureBinaryData testVectorData    = READHEX("616263");
+   SecureBinaryData testVectorHashRes = READHEX("bb1be98c142444d7a56aa3981c3942a978e4dc33");
+   SecureBinaryData dataHash          = testVectorData.getHash160();
+   EXPECT_EQ(testVectorHashRes, dataHash);
+}
+
+TEST_F(BinaryDataTest, hash256)
+{
+   // 2xSHA-256 for "abc"
+   SecureBinaryData testVectorData    = READHEX("616263");
+   SecureBinaryData testVectorHashRes = READHEX("4f8b42c22dd3729b519ba6f68d2da7cc5b2d606d05daed5ad5128cc03e6c6358");
+   SecureBinaryData dataHash          = testVectorData.getHash256();
+   EXPECT_EQ(testVectorHashRes, dataHash);
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 class BinaryDataRefTest : public ::testing::Test

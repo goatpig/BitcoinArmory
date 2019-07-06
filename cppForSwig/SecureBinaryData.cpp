@@ -63,6 +63,7 @@ SecureBinaryData SecureBinaryData::copySwapEndian(size_t pos1, size_t pos2) cons
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// Get the 2xSHA256 value for a given SBD object.
 SecureBinaryData SecureBinaryData::getHash256(void) const
 { 
    SecureBinaryData digest(32);
@@ -71,9 +72,12 @@ SecureBinaryData SecureBinaryData::getHash256(void) const
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// Get the SHA256/RIPEMD-160 value for a given SBD object.
 SecureBinaryData SecureBinaryData::getHash160(void) const
-{ 
-   SecureBinaryData digest(20);
-   CryptoHASH160::getHash160(getRef(), digest.getPtr()); 
-   return digest;
+{
+   SecureBinaryData tempDigest(32);
+   SecureBinaryData finalDigest(20);
+   CryptoSHA2::getSha256(getRef(), tempDigest.getPtr()); 
+   CryptoHASH160::getHash160(tempDigest.getRef(), finalDigest.getPtr());
+   return finalDigest;
 }
