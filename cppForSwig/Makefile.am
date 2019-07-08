@@ -275,6 +275,7 @@ libArmoryClient_la_CXXFLAGS = $(AM_CXXFLAGS) $(UNIT_TEST_CXXFLAGS) -D__STDC_LIMI
 libArmoryClient_la_LIBADD = $(LIBARMORYCLI) \
 			$(LIBCRYPTOPP) $(LIBBTC) \
 			$(LIBPROTOBUF_SHARED) $(LIBSECP256K1) \
+			$(LIBWEBSOCKETS_STATIC) \
 			-lpthread
 libArmoryClient_la_LDFLAGS = $(LDFLAGS) $(LWSLDFLAGS) $(PYTHON_LDFLAGS) -shared
 endif

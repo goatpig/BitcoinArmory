@@ -116,6 +116,7 @@ void BlockDataViewer::registerWithDB(BinaryData magic_word)
          {
             auto eptr = current_exception();
             promPtr->set_exception(eptr);
+            throw;
          }
       };
 

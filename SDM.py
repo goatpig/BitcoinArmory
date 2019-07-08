@@ -361,7 +361,7 @@ class SatoshiDaemonManager(object):
 
       if USE_TESTNET:
          pargs.append('--testnet')
-      if USE_REGTEST:
+      elif USE_REGTEST:
          pargs.append('--regtest');
 
       haveSatoshiDir = False

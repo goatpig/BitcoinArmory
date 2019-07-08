@@ -187,6 +187,11 @@ class BlockDataManager(object):
       callbackPtr = std.shared_ptr[ArmoryCpp.RemoteCallback]()
       self.bdv_ = AsyncClient.BlockDataViewer.getNewBDV(\
          str(ARMORYDB_IP), str(port), ARMORY_HOME_DIR, False, callbackPtr)
+      # cppyy TODO: Get server key from a cookie file, and pass in our key as a CL arg
+      # to ArmoryDB.
+      serverPubKey = ArmoryCpp.BinaryData.CreateFromHex('02bbeb897f233389b068c9479552d2ae104212a06d05e0e5fce6c97597855d0578')
+      self.bdv_.addPublicKey(serverPubKey);
+      self.bdv_.connectToRemote();
 
    #############################################################################
    def registerBDV(self):
@@ -201,11 +206,11 @@ class BlockDataManager(object):
          LOGERROR('DB error: ' + e.what())
          raise e
       except TypeError as e:
-         LOGERROR('BDV error: ' + e)
+         LOGERROR('BDV error: {}'.format(e))
       except Exception as e: # C++
-         LOGERROR('BDV error: ' + e)
+         LOGERROR('BDV error: {}'.format(e))
       except:
-         print('Unexpected BDV error: {}'.format(sys.exc_info()[0]))
+         LOGERROR('BDV unknown error: {}'.format(sys.exc_info()[0]))
 
    #############################################################################
    @ActLikeASingletonBDM
@@ -320,7 +325,7 @@ class BlockDataManager(object):
    #############################################################################
    def getCookie(self):
       if self.cookie == None:
-         self.cookie = ArmoryCpp.BlockDataManagerConfig_getCookie(str(self.datadir))
+         self.cookie = ArmoryCpp.BlockDataManagerConfig().getCookie(str(self.datadir))
       return self.cookie
 
    #############################################################################

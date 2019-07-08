@@ -1,17 +1,24 @@
 # Makefile for Jonas Schnelli's ChaCha20Poly1305 library
-lib_LTLIBRARIES = libchacha20poly1305.la
+lib_LTLIBRARIES = libchacha20poly1305.la libchacha20poly1305-shared.la
 noinst_PROGRAMS =
 TESTS =
 BENCH =
 
 CHACHA20POLY1305_SOURCE_FILES = poly1305.c chacha.c chachapoly_aead.c
 
-# ChaCha20Poly1305 library
+# ChaCha20Poly1305 library - static
 libchacha20poly1305_la_SOURCES = $(CHACHA20POLY1305_SOURCE_FILES)
 libchacha20poly1305_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES) -fPIC
 libchacha20poly1305_la_CFLAGS = $(AM_CFLAGS)
 libchacha20poly1305_la_LIBADD = $(LIBCHACHAPOLY1305)
 libchacha20poly1305_la_LDFLAGS = $(LDFLAGS) -static
+
+# ChaCha20Poly1305 library - shared (needed for cppyy)
+libchacha20poly1305_shared_la_SOURCES = $(CHACHA20POLY1305_SOURCE_FILES)
+libchacha20poly1305_shared_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES) -fPIC
+libchacha20poly1305_shared_la_CFLAGS = $(AM_CFLAGS)
+libchacha20poly1305_shared_la_LIBADD = $(LIBCHACHAPOLY1305)
+libchacha20poly1305_shared_la_LDFLAGS = $(LDFLAGS) -shared
 
 if BUILD_TESTS
 noinst_PROGRAMS += chacha20poly1305tests

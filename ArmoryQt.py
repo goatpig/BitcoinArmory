@@ -5995,7 +5995,7 @@ if 1:
    # of BIP 150/151.
    ArmoryCpp.btc_ecc_start();
    ArmoryCpp.startupBIP151CTX();
-   ArmoryCpp.startupBIP150CTX(4, True);
+   ArmoryCpp.startupBIP150CTX(4, False);
 
    pixLogo = QPixmap(':/splashlogo.png')
    if USE_TESTNET or USE_REGTEST:

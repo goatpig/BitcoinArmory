@@ -27,5 +27,12 @@ cppyy.gbl.gSystem.AddDynamicPath('/usr/lib/x86_64-linux-gnu/')
 #libArmoryClient.so dynamically links to protobuf, have to preload it
 cppyy.load_library('libprotobuf.so')
 cppyy.load_library('libArmoryClient.so')
+
+# Need to add libwebsockets
+cppyy.load_library('libwebsockets.so')
+
+# Need to add libchachapoly1305
+cppyy.load_library('libchacha20poly1305-shared.so')
+
 from cppyy.gbl import AsyncClient, std
 import cppyy.gbl as ArmoryCpp
