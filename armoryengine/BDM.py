@@ -194,11 +194,18 @@ class BlockDataManager(object):
          return
 
       try:
-         self.bdv_.registerWithDB(MAGIC_BYTES)
+         mb = ArmoryCpp.BinaryData(MAGIC_BYTES)
+         self.bdv_.registerWithDB(mb)
       except ArmoryCpp.DbErrorMsg as e:
          self.exception = e.what()
          LOGERROR('DB error: ' + e.what())
          raise e
+      except TypeError as e:
+         LOGERROR('BDV error: ' + e)
+      except Exception as e: # C++
+         LOGERROR('BDV error: ' + e)
+      except:
+         print('Unexpected BDV error: {}'.format(sys.exc_info()[0]))
 
    #############################################################################
    @ActLikeASingletonBDM

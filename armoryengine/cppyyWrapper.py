@@ -19,6 +19,7 @@ cppyy.include('cppForSwig/nodeRPC.h')
 cppyy.include('cppForSwig/EncryptionUtils.h')
 cppyy.include('cppForSwig/BDM_mainthread.h')
 cppyy.include('cppForSwig/NetworkConfig.h')
+cppyy.include('cppForSwig/libbtc/include/btc/ecc.h')
 
 #have to add lib path for cppyy to find libprotobuf.so
 cppyy.gbl.gSystem.AddDynamicPath('/usr/lib/x86_64-linux-gnu/')

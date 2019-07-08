@@ -610,6 +610,7 @@ class PyBtcWallet(object):
    @CheckWalletRegistration
    def lockTxOutsOnNewTx(self, pytxObj):
       # cppyy TODO: lockTxOutSwig() no longer exists.
+      return None # TEMPORARY - cppyy
 #      for txin in pytxObj.inputs:
 #         self.cppWallet.lockTxOutSwig(txin.outpoint.txHash, \
 #                                      txin.outpoint.txOutIndex)
@@ -3319,9 +3320,9 @@ class PyBtcWallet(object):
    def getImportCppAddrList(self):
    
       addrList = []
-      for addrIndex in self.importList:
 
-         # cppyy TODO: getImportAddrObjByIndex() no longer exists.
+      # cppyy TODO: getImportAddrObjByIndex() no longer exists.
+#      for addrIndex in self.importList:
 #         addrObj = self.cppWallet.getImportAddrObjByIndex(addrIndex)
 #         addrComment = self.getCommentForAddress(addrObj.getAddrHash()[1:])
 #         addrObj.setComment(addrComment)

@@ -5991,6 +5991,12 @@ if 1:
    if CLI_OPTIONS.interport > 1:
       checkForAlreadyOpen()
 
+   # ArmoryDB-related setup. We will communicate with it using a modified form
+   # of BIP 150/151.
+   ArmoryCpp.btc_ecc_start();
+   ArmoryCpp.startupBIP151CTX();
+   ArmoryCpp.startupBIP150CTX(4, True);
+
    pixLogo = QPixmap(':/splashlogo.png')
    if USE_TESTNET or USE_REGTEST:
       pixLogo = QPixmap(':/splashlogo_testnet.png')
