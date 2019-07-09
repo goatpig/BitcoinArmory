@@ -14,6 +14,7 @@
 #include "JSON_codec.h"
 #include "SocketObject.h"
 #include "BIP150_151.h"
+#include "btc/ecc.h"
 #ifndef _WIN32
 #include "sys/stat.h"
 #endif
@@ -252,6 +253,9 @@ void BlockDataManagerConfig::parseArgs(int argc, char* argv[])
    can be anon (servers/responders are always auth'ed), both sides need to enable
    public channels for the handshake to succeed
 
+   --cli-bip150-key: BIP150 identity key for the client. Used for 2-way
+   authentication.
+
    ***/
 
    try
@@ -434,8 +438,29 @@ void BlockDataManagerConfig::parseArgs(int argc, char* argv[])
 void BlockDataManagerConfig::processArgs(const map<string, string>& args, 
    bool onlyDetectNetwork)
 {
+   // Client key - Used to enable 2-way BIP 150/151 handshakes.
+   auto iter = args.find("cli-bip150-key");
+   if (iter != args.end())
+   {
+      auto bip150PubKeyData = stripQuotes(iter->second);
+      string cliBIP150PubKeyStr;
+
+      // Verify that the incoming key is valid and compressed. Format is
+      // IP:Port_CompressedPublicKey
+      stringstream keyData(bip150PubKeyData);
+      getline(keyData, cliIP_, '_');
+      getline(keyData, cliBIP150PubKeyStr, '_');
+      cliBIP150PubKey_ = READHEX(cliBIP150PubKeyStr);
+
+      if(!btc_ecc_verify_pubkey(cliBIP150PubKey_.getPtr(), true))
+      {
+         LOGERR << "Incoming client BIP 150 key is invalid";
+         cliBIP150PubKey_ = BinaryData();
+      }
+   }
+
    //server networking
-   auto iter = args.find("listen-port");
+   iter = args.find("listen-port");
    if (iter != args.end())
    {
       listenPort_ = stripQuotes(iter->second);
@@ -685,7 +710,9 @@ vector<string> BlockDataManagerConfig::keyValToArgv(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void BlockDataManagerConfig::createCookie() const
+// Write an authentication cookie that allows local clients to make use of
+// elevated commands. Cookie will also include the ArmoryDB listening port.
+void BlockDataManagerConfig::createAuthCookie() const
 {
    //cookie file
    if (!useCookie_)

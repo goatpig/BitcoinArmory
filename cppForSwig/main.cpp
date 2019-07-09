@@ -68,14 +68,15 @@ int main(int argc, char* argv[])
    }
 
 
-   //create cookie file if applicable
-   bdmConfig.createCookie();
+   //create cookie files if applicable
+   bdmConfig.createAuthCookie();
    
    if (!bdmConfig.checkChain_)
    {
       //process incoming connections
-      server.start(&bdmThread, BlockDataManagerConfig::getDataDir()
-         , BlockDataManagerConfig::ephemeralPeers_, false);
+      server.start(&bdmThread, BlockDataManagerConfig::getDataDir(),
+         BlockDataManagerConfig::ephemeralPeers_, false, /*bdmConfig.cliIP_,*/
+         &(bdmConfig.cliBIP150PubKey_));
    }
    else
    {

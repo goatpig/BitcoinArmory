@@ -1788,9 +1788,9 @@ class ArmoryMainWindow(QMainWindow):
       self.internetStatus = INTERNET_STATUS.DidNotCheck
 
    ############################################################################
-   def startArmoryDBIfNecessary(self):
+   def startArmoryDBIfNecessary(self, cliBIP150Key):
       if CLI_OPTIONS.offline:
-         LOGWARN("Offline instance, not startig the DB")
+         LOGWARN("Offline instance, not starting the DB")
          return False
       try:
          if TheBDM.hasRemoteDB() == False:
@@ -1800,24 +1800,28 @@ class ArmoryMainWindow(QMainWindow):
             if len(localDBPort) > 0:
                armoryengine.ArmoryUtils.ARMORYDB_PORT = localDBPort
                return True
-            
-            #look for cookie file and delete it
-            cookiePath = os.path.join(ARMORY_HOME_DIR, ".cookie_") 
-            if os.path.exists(cookiePath):            
-               os.remove(cookiePath)
+
+            #look for auth and cookie files, and delete them
+            authCookiePath = os.path.join(ARMORY_HOME_DIR, ".cookie_")
+            if os.path.exists(authCookiePath):
+               os.remove(authCookiePath)
+            bip150CookiePath = os.path.join(ARMORY_HOME_DIR, ".cookie_bip150_")
+            if os.path.exists(bip150CookiePath):
+               os.remove(bip150CookiePath)
 
             #If we got this far, we need to spawn a local db
             self.setSatoshiPaths()
-            TheSDM.spawnDB(str(ARMORY_HOME_DIR), TheBDM.armoryDBDir)
+            TheSDM.spawnDB(str(ARMORY_HOME_DIR), TheBDM.armoryDBDir,
+               '127.0.0.1', TheBDM.getPortStr(), TheBDM.getPublicKey().toHexStr())
    
             #wait for cookie file creation
-            while not os.path.exists(cookiePath):
+            while not os.path.exists(authCookiePath):
                time.sleep(0.1)
                
-            #get port from cookie
+            #get port from auth cookie
             armoryengine.ArmoryUtils.ARMORYDB_PORT = \
                ArmoryCpp.BlockDataManagerConfig().getPortFromCookie(str(ARMORY_HOME_DIR))
-   
+
             #test if db has started
             if ArmoryCpp.BlockDataManagerConfig().testConnection(\
                ARMORYDB_IP, armoryengine.ArmoryUtils.ARMORYDB_PORT) == False:
@@ -3941,7 +3945,6 @@ class ArmoryMainWindow(QMainWindow):
 
    #############################################################################
    def updateSyncProgress(self):
-
       if self.isShuttingDown:
          return
       
@@ -5745,7 +5748,15 @@ class ArmoryMainWindow(QMainWindow):
          return
 
       try:
-         TheBDM.registerBDV()
+         #get BIP 150 key from BIP 150 cookie
+         bip150CookiePath = os.path.join(ARMORY_HOME_DIR, ".cookie_bip150_")
+         while not os.path.exists(bip150CookiePath):
+            time.sleep(0.1)
+         self.serverBIP150Key = TheBDM.getBIP150ServerCookie(str(ARMORY_HOME_DIR))
+
+         if TheBDM is None:
+             print('TheBDM is null!')
+         TheBDM.registerBDV(self.serverBIP150Key)
          self.walletManager.setBDVObject(TheBDM.bdv())
       except:
          self.switchNetworkMode(NETWORKMODE.Offline)
@@ -5769,8 +5780,12 @@ class ArmoryMainWindow(QMainWindow):
    def completeBlockchainProcessingInitialization(self):
       if CLI_OPTIONS.offline:
          return
-      
-      gotDB = self.startArmoryDBIfNecessary()
+
+      # Because of BIP 150's 2-way auth, we need to spawn our BDV first so that
+      # we can get our ID key to feed to ArmoryDB.
+      TheBDM.instantiateBDV(armoryengine.ArmoryUtils.ARMORYDB_PORT)
+
+      gotDB = self.startArmoryDBIfNecessary(TheBDM.getPublicKey().toHexStr())
       if gotDB == False:
          TheBDM.setState(BDM_OFFLINE)
          self.switchNetworkMode(NETWORKMODE.Offline)
@@ -5785,7 +5800,6 @@ class ArmoryMainWindow(QMainWindow):
       else:
          self.switchNetworkMode(NETWORKMODE.Full)
 
-      TheBDM.instantiateBDV(armoryengine.ArmoryUtils.ARMORYDB_PORT)
       self.setupBDV()
       self.setupLedgerViews()
 

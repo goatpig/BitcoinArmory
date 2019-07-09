@@ -162,6 +162,7 @@ public:
       getRekeyCount(void) const { return std::make_pair(outerRekeyCount_, innerRekeyCount_); }
    void addPublicKey(const SecureBinaryData&);
    void setPubkeyPromptLambda(std::function<bool(const BinaryData&, const std::string&)>);
+   BinaryData getPublicKey(void);
 
    //virtuals
    SocketType type(void) const { return SocketWS; }

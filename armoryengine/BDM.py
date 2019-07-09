@@ -187,18 +187,28 @@ class BlockDataManager(object):
       callbackPtr = std.shared_ptr[ArmoryCpp.RemoteCallback]()
       self.bdv_ = AsyncClient.BlockDataViewer.getNewBDV(\
          str(ARMORYDB_IP), str(port), ARMORY_HOME_DIR, False, callbackPtr)
-      # cppyy TODO: Get server key from a cookie file, and pass in our key as a CL arg
-      # to ArmoryDB.
-      serverPubKey = ArmoryCpp.BinaryData.CreateFromHex('02bbeb897f233389b068c9479552d2ae104212a06d05e0e5fce6c97597855d0578')
-      self.bdv_.addPublicKey(serverPubKey);
-      self.bdv_.connectToRemote();
 
    #############################################################################
-   def registerBDV(self):
+   def getPortStr(self):
+      return self.bdv_.getPortStr()
+
+   #############################################################################
+   def getPublicKey(self):
+      return self.bdv_.getPublicKey()
+
+   #############################################################################
+   def getBIP150ServerCookie(self, cookieLocation):
+      return self.bdv_.getBIP150ServerCookie(cookieLocation)
+
+   #############################################################################
+   def registerBDV(self, serverBIP150IDKey):
       if self.bdmState == BDM_OFFLINE:
          return
 
       try:
+         self.bdv_.addPublicKey(serverBIP150IDKey);
+         self.bdv_.connectToRemote();
+
          mb = ArmoryCpp.BinaryData(MAGIC_BYTES)
          self.bdv_.registerWithDB(mb)
       except ArmoryCpp.DbErrorMsg as e:

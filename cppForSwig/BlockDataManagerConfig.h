@@ -61,6 +61,8 @@ public:
    std::string btcPort_;
    std::string listenPort_;
    std::string rpcPort_;
+   std::string cliIP_;
+   BinaryData cliBIP150PubKey_;
 
    bool customListenPort_ = false;
    bool customBtcPort_ = false;
@@ -89,7 +91,7 @@ public:
 
    void processArgs(const std::map<std::string, std::string>&, bool);
    void parseArgs(int argc, char* argv[]);
-   void createCookie(void) const;
+   void createAuthCookie(void) const;
    void printHelp(void);
    static std::string portToString(unsigned);
 

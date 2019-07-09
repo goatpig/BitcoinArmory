@@ -71,6 +71,32 @@ void BlockDataViewer::addPublicKey(const SecureBinaryData& pubkey)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+BinaryData BlockDataViewer::getPublicKey()
+{
+   auto wsSock = dynamic_pointer_cast<WebSocketClient>(sock_);
+   if (wsSock == nullptr)
+   {
+      LOGERR << "invalid socket type for auth peer management";
+      return BinaryData();
+   }
+
+   return wsSock->getPublicKey();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Read a cookie with ArmoryDB's BIP 150 server key. Assume that the written
+// key is valid.
+BinaryData BlockDataViewer::getBIP150ServerCookie(const string& dataDir)
+{
+   auto cookiePath = dataDir;
+   DBUtils::appendPath(cookiePath, BIP150_COOKIE);
+   fstream fs(cookiePath, ios_base::in | ios::binary);
+   string inData;
+   fs >> inData;
+   return READHEX(inData);
+}
+
+///////////////////////////////////////////////////////////////////////////////
 shared_ptr<BlockDataViewer> BlockDataViewer::getNewBDV(const string& addr,
    const string& port, const string& datadir, const bool& ephemeralPeers,
    shared_ptr<RemoteCallback> callbackPtr)

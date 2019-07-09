@@ -30,6 +30,7 @@
 #include <google/protobuf/io/zero_copy_stream_impl_lite.h>
 
 #define SERVER_AUTH_PEER_FILENAME "server.peers"
+#define BIP150_COOKIE ".cookie_bip150_"
 
 class Clients;
 class BlockDataManagerThread;
@@ -156,7 +157,8 @@ private:
    void webSocketService(int port);
    void commandThread(void);
    void setIsReady(void);
-   
+   void createBIP150Cookie(const std::string& dataDir) const;
+
    static WebSocketServer* getInstance(void);
    void prepareWriteThread(void);
 
@@ -173,10 +175,11 @@ public:
 
    static void start(BlockDataManagerThread* bdmT,
       const std::string& datadir, const bool& ephemeralPeers,
-      const bool& async);
+      const bool& async, /*const std::string& cliIPPort,*/
+      const BinaryData* cliBIP150PubKey = nullptr);
    static void shutdown(void);
    static void waitOnShutdown(void);
-   static SecureBinaryData getPublicKey(void);
+   static BinaryData getPublicKey(void);
 
    static void write(const uint64_t&, const uint32_t&,
       std::shared_ptr<::google::protobuf::Message>);

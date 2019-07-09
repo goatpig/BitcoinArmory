@@ -186,7 +186,8 @@ int WebSocketServer::callback(
 
 ///////////////////////////////////////////////////////////////////////////////
 void WebSocketServer::start(BlockDataManagerThread* bdmT,
-   const string& datadir, const bool& ephemeralPeers, const bool& async)
+   const string& datadir, const bool& ephemeralPeers, const bool& async,
+   /*const string& cliIPPort,*/ const BinaryData* cliBIP150PubKey)
 {
    shutdownPromise_ = promise<bool>();
    shutdownFuture_ = shutdownPromise_.get_future();
@@ -202,6 +203,10 @@ void WebSocketServer::start(BlockDataManagerThread* bdmT,
    else
    {
       instance->authorizedPeers_ = make_shared<AuthorizedPeers>();
+   }
+   if(cliBIP150PubKey != nullptr)
+   {
+      instance->authorizedPeers_->addPeer(*cliBIP150PubKey, "127.0.0.1");
    }
 
    //setup encinit and pubkey present packet
@@ -261,6 +266,7 @@ void WebSocketServer::start(BlockDataManagerThread* bdmT,
       fut.get();
       return;
    }
+   instance->createBIP150Cookie(datadir);
 
    instance->webSocketService(port);
 }
@@ -309,12 +315,23 @@ void WebSocketServer::shutdown()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-SecureBinaryData WebSocketServer::getPublicKey()
+BinaryData WebSocketServer::getPublicKey()
 {
    auto instance = getInstance();
    auto& pubkey = instance->authorizedPeers_->getOwnPublicKey();
-   SecureBinaryData keySbd(pubkey.pubkey, BIP151PUBKEYSIZE);
+   BinaryData keySbd(pubkey.pubkey, BIP151PUBKEYSIZE);
    return keySbd;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Write a cookie with ArmoryDB's BIP 150 server key. Assume that the written
+// key is valid.
+void WebSocketServer::createBIP150Cookie(const string& dataDir) const
+{
+   auto cookiePath = dataDir;
+   DBUtils::appendPath(cookiePath, BIP150_COOKIE);
+   fstream fs(cookiePath, ios_base::out | ios_base::trunc);
+   fs << getPublicKey().toHexStr() << endl;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

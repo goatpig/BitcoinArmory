@@ -88,9 +88,6 @@ def parseLinkList(theData):
    return DLDICT,VERDICT
 
 
-
-
-
 ################################################################################
 class SatoshiDaemonManager(object):
    """
@@ -353,7 +350,8 @@ class SatoshiDaemonManager(object):
       callback()
 
    #############################################################################
-   def spawnDB(self, dataDir, dbDir):
+   def spawnDB(self, dataDir, dbDir, cliIP, cliPort, cliBIP150Key):
+      print('Spawn the DB!')
       pargs = [self.dbExecutable]
 
       pargs.append('--db-type="' + ARMORY_DB_TYPE + '"')
@@ -374,6 +372,7 @@ class SatoshiDaemonManager(object):
          
       pargs.append('--datadir="' + dataDir + '"')
       pargs.append('--dbdir="' + dbDir + '"')
+      pargs.append('--cli-bip150-key="127.0.0.1_' + cliBIP150Key + '"')
 
       if CLI_OPTIONS.rebuild:
          pargs.append('--rebuild')

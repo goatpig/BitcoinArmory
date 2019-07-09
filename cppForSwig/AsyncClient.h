@@ -27,6 +27,8 @@ Handle codec and socketing for armory client
 class WalletManager;
 class WalletContainer;
 
+#define BIP150_COOKIE ".cookie_bip150_"
+
 ///////////////////////////////////////////////////////////////////////////////
 struct OutpointData
 {
@@ -381,11 +383,14 @@ namespace AsyncClient
 
       bool connectToRemote(void);
       void addPublicKey(const SecureBinaryData&);
+      BinaryData getPublicKey();
       BtcWallet instantiateWallet(const std::string& id);
       Lockbox instantiateLockbox(const std::string& id);
 
-      const std::string& getID(void) const { return bdvID_; }
+      std::string getID(void) const { return bdvID_; }
       std::shared_ptr<SocketPrototype> getSocketObject(void) const { return sock_; }
+      std::string getPortStr() const { return sock_->getPortStr(); }
+      BinaryData getBIP150ServerCookie(const std::string& dataDir);
 
       static std::shared_ptr<BlockDataViewer> getNewBDV(
          const std::string& addr, const std::string& port,

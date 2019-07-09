@@ -274,6 +274,14 @@ void WebSocketClient::cleanUp()
    readPackets_.clear();
 }
 
+///////////////////////////////////////////////////////////////////////////////
+BinaryData WebSocketClient::getPublicKey()
+{
+   auto& pubkey = authPeers_->getOwnPublicKey();
+   BinaryData keySbd(pubkey.pubkey, BIP151PUBKEYSIZE);
+   return keySbd;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 int WebSocketClient::callback(struct lws *wsi, 
    enum lws_callback_reasons reason, void *user, void *in, size_t len)
