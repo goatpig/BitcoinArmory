@@ -115,7 +115,6 @@ class PySide_CallBack(ArmoryCpp.RemoteCallback):
          LOGEXCEPT('Error in running progress callback')
          print(sys.exc_info())
 
-
 def getCurrTimeAndBlock():
    time0 = long(RightNowUTC())
    return (time0, TheBDM.getTopBlockHeight())
@@ -179,14 +178,20 @@ class BlockDataManager(object):
       #setups BIP151/0 and libbtc contexts
       ArmoryCpp.ClientClasses.initLibrary()
 
+      # We need a shared ptr for the BDV callback. cppyy may not ever be able to
+      # handle make_shared<>() for derived classes in Python. Work around this
+      # by instantiating an instance of the class and
+      self.pysideObj = PySide_CallBack(TheBDM)
+      self.callbackPtr = std.shared_ptr[ArmoryCpp.RemoteCallback](self.pysideObj)
+
    #############################################################################  
    def instantiateBDV(self, port):
       if self.bdmState == BDM_OFFLINE:
          return
 
-      callbackPtr = std.shared_ptr[ArmoryCpp.RemoteCallback]()
+      callbackPtr = std.shared_ptr[ArmoryCpp.RemoteCallback](self.pysideObj)
       self.bdv_ = AsyncClient.BlockDataViewer.getNewBDV(\
-         str(ARMORYDB_IP), str(port), ARMORY_HOME_DIR, False, callbackPtr)
+         str(ARMORYDB_IP), str(port), ARMORY_HOME_DIR, False, self.callbackPtr)
 
    #############################################################################
    def getPortStr(self):
