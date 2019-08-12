@@ -36,7 +36,7 @@ namespace SwigClient
    inline void DisableCppLogStdOut() { LOGDISABLESTDOUT(); }
    inline void EnableBIP150(const uint32_t& ipVer)
    {
-      startupBIP150CTX(ipVer, false);
+      startupBIP150CTX(ipVer);
    }
    inline void EnableBIP151() { startupBIP151CTX(); }
    inline void DisableBIP151() { shutdownBIP151CTX(); }

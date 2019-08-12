@@ -145,6 +145,7 @@ private:
 public:
    WebSocketClient(const std::string& addr, const std::string& port,
       const std::string& datadir, const bool& ephemeralPeers,
+      const bool& overrideBIP150AuthMode, const bool& newBIP150AuthMode,
       std::shared_ptr<RemoteCallback> cbPtr);
 
    ~WebSocketClient()

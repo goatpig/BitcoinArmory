@@ -31,6 +31,13 @@ WebSocketServer::WebSocketServer()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+WebSocketServer::WebSocketServer(const bool& bip150AuthMode) :
+   bip150AuthMode_(bip150AuthMode)
+{
+   clients_ = make_shared<Clients>();
+}
+
+///////////////////////////////////////////////////////////////////////////////
 static struct lws_protocols protocols[] = {
    /* first protocol must always be HTTP handler */
 
@@ -615,7 +622,8 @@ shared_ptr<map<uint64_t, ClientConnection>>
 void WebSocketServer::addId(const uint64_t& id, struct lws* ptr)
 {
    auto&& lbds = getAuthPeerLambda();
-   auto&& write_pair = make_pair(id, ClientConnection(ptr, id, lbds));
+   auto&& write_pair = make_pair(id, ClientConnection(ptr, id, lbds,
+      bip150AuthMode_));
    clientStateMap_.insert(move(write_pair));
 }
 

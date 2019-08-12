@@ -73,11 +73,12 @@ void BlockDataViewer::addPublicKey(const SecureBinaryData& pubkey)
 ///////////////////////////////////////////////////////////////////////////////
 shared_ptr<BlockDataViewer> BlockDataViewer::getNewBDV(const string& addr,
    const string& port, const string& datadir, const bool& ephemeralPeers,
+   const bool& overrideBIP150VerMode, const bool& newBIP150VerMode,
    shared_ptr<RemoteCallback> callbackPtr)
 {
    //create socket object
    auto sockptr = make_shared<WebSocketClient>(addr, port, datadir,
-      ephemeralPeers, callbackPtr);
+      ephemeralPeers, overrideBIP150VerMode, newBIP150VerMode, callbackPtr);
 
    //instantiate bdv object
    BlockDataViewer* bdvPtr = new BlockDataViewer(sockptr);

@@ -27,6 +27,7 @@ static struct lws_protocols protocols[] = {
 ////////////////////////////////////////////////////////////////////////////////
 WebSocketClient::WebSocketClient(const string& addr, const string& port,
    const string& datadir, const bool& ephemeralPeers,
+   const bool& overrideBIP150AuthMode, const bool& newBIP150AuthMode,
    shared_ptr<RemoteCallback> cbPtr) :
    SocketPrototype(addr, port, false), callbackPtr_(cbPtr)
 {
@@ -44,8 +45,14 @@ WebSocketClient::WebSocketClient(const string& addr, const string& port,
       authPeers_ = make_shared<AuthorizedPeers>();
    }
 
+   // We may wish to override the global BIP 150 authentication mode setting.
    auto lbds = getAuthPeerLambda();
-   bip151Connection_ = make_shared<BIP151Connection>(lbds);
+   bool bip150AuthMode = ::publicRequester;
+   if (overrideBIP150AuthMode)
+   {
+      bip150AuthMode = newBIP150AuthMode;
+   }
+   bip151Connection_ = make_shared<BIP151Connection>(lbds, bip150AuthMode);
 }
 
 
