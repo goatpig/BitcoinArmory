@@ -137,6 +137,7 @@ struct PaymentStruct
 ////////////////////////////////////////////////////////////////////////////////
 struct UtxoSelection
 {
+public:
    std::vector<UTXO> utxoVec_;
 
    uint64_t value_ = 0;
@@ -145,6 +146,7 @@ struct UtxoSelection
 
    size_t size_ = 0;
    size_t witnessSize_ = 0;
+   size_t virtSize_ = 0;
    float bumpPct_ = 0.0f;
 
    bool hasChange_ = false;
@@ -158,6 +160,10 @@ struct UtxoSelection
 
    void computeSizeAndFee(const PaymentStruct&);
    void shuffle(void);
+
+private:
+   void computeVirtSize(const bool& segwit);
+
 };
 
 

@@ -465,16 +465,38 @@ bool Tx::isRBF() const
 }
 
 /////////////////////////////////////////////////////////////////////////////
-size_t Tx::getTxWeight() const
+// Get the virtual size of the TX. Used in Bitcoin to determine minimum fees.
+size_t Tx::getTxVirtSize() const
 {
    auto size = getSize();
-   
+
    if (offsetsWitness_.size() > 1)
    {
       auto witnessSize = *offsetsWitness_.rbegin() - *offsetsWitness_.begin();
       float witnessDiscount = float(witnessSize) * 0.75f;
 
       size -= size_t(witnessDiscount);
+   }
+
+   return size;
+}
+
+// Get the weight of the Tx.
+size_t Tx::getTxWeight(void) const
+{
+   return (getTxBaseSize() * 3) + getSize();
+}
+
+// Get the base size of the TX. Used for weight & virt size calculations.
+size_t Tx::getTxBaseSize() const
+{
+   auto size = getSize();
+
+   if (offsetsWitness_.size() > 1)
+   {
+      auto witnessSize = *offsetsWitness_.rbegin() - *offsetsWitness_.begin();
+
+      size -= witnessSize;
    }
 
    return size;

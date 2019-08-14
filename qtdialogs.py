@@ -5136,7 +5136,7 @@ def extractTxInfo(pytx, rcvTime=None):
       pytx = ustx.pytxObj.copy()
 
    txHash = pytx.getHash()
-   txSize, txWeight, sumTxIn, txTime, txBlk, txIdx = [None] * 6
+   txSize, txVirtSize, sumTxIn, txTime, txBlk, txIdx = [None] * 6
 
    txOutToList = pytx.makeRecipientsList()
    sumTxOut = sum([t[1] for t in txOutToList])
@@ -5146,7 +5146,7 @@ def extractTxInfo(pytx, rcvTime=None):
       txcpp = TheBDM.bdv().getTxByHash(txHash)
       if txcpp.isInitialized():
          hgt = txcpp.getBlockHeight()
-         txWeight = txcpp.getTxWeight()
+         txVirtSize = txcpp.getTxVirtSize()
          if hgt <= TheBDM.getTopBlockHeight():
             headref = TheBDM.bdv().blockchain().getHeaderByHeight(hgt)
             txTime = unixTimeToFormatStr(headref.getTimestamp())
@@ -5234,7 +5234,7 @@ def extractTxInfo(pytx, rcvTime=None):
       sumTxIn = None
 
    return [txHash, txOutToList, sumTxOut, txinFromList, sumTxIn, \
-           txTime, txBlk, txIdx, txSize, txWeight]
+           txTime, txBlk, txIdx, txSize, txVirtSize]
 
 ################################################################################
 class DlgDispTxInfo(ArmoryDialog):

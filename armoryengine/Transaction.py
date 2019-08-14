@@ -3252,8 +3252,8 @@ def getFeeForTx(txHash):
          for i in range(tx.getNumTxOut()):
             valOut += tx.getTxOutCopy(i).getValue()
          fee = valIn - valOut
-         txWeight = tx.getTxWeight()
-         fee_byte = fee / float(txWeight)
+         txVirtSize = tx.getTxVirtSize()
+         fee_byte = fee / float(txVirtSize)
          return fee, fee_byte
       except:
          LOGERROR('Couldn\'t get tx fee. Ignore this message in Fullnode') 
