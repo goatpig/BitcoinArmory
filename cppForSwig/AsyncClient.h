@@ -61,7 +61,8 @@ public:
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-template<class U> class ReturnMessage
+template<class U>
+class ReturnMessage
 {
 private:
    U value_;
@@ -191,9 +192,9 @@ namespace AsyncClient
    class LedgerDelegate
    {
    private:
+      std::shared_ptr<SocketPrototype> sock_;
       std::string delegateID_;
       std::string bdvID_;
-      std::shared_ptr<SocketPrototype> sock_;
 
    public:
       LedgerDelegate(void) {}
@@ -214,17 +215,17 @@ namespace AsyncClient
       friend class ::WalletContainer;
 
    private:
+      const std::shared_ptr<SocketPrototype> sock_;
       const std::string bdvID_;
       const std::string walletID_;
       const BinaryData scrAddr_;
+      const int index_;
       BinaryData addrHash_;
-      const std::shared_ptr<SocketPrototype> sock_;
 
       const uint64_t fullBalance_;
       const uint64_t spendableBalance_;
       const uint64_t unconfirmedBalance_;
       const uint32_t count_;
-      const int index_;
 
       std::string comment_;
 
@@ -265,9 +266,9 @@ namespace AsyncClient
       friend class ScrAddrObj;
 
    protected:
+      const std::shared_ptr<SocketPrototype> sock_;
       const std::string walletID_;
       const std::string bdvID_;
-      const std::shared_ptr<SocketPrototype> sock_;
 
    public:
       BtcWallet(const BlockDataViewer&, const std::string&);
@@ -520,9 +521,9 @@ public:
 struct CallbackReturn_LedgerDelegate : public CallbackReturn_WebSocket
 {
 private:
-   std::function<void(ReturnMessage<AsyncClient::LedgerDelegate>)> userCallbackLambda_;
    std::shared_ptr<SocketPrototype> sockPtr_;
    const std::string& bdvID_;
+   std::function<void(ReturnMessage<AsyncClient::LedgerDelegate>)> userCallbackLambda_;
 
 public:
    CallbackReturn_LedgerDelegate(
@@ -539,9 +540,9 @@ public:
 struct CallbackReturn_Tx : public CallbackReturn_WebSocket
 {
 private:
-   std::function<void(ReturnMessage<Tx>)> userCallbackLambda_;
    std::shared_ptr<ClientCache> cache_;
    BinaryData txHash_;
+   function<void(ReturnMessage<Tx>)> userCallbackLambda_;
 
 public:
    CallbackReturn_Tx(std::shared_ptr<ClientCache> cache,
@@ -557,10 +558,10 @@ public:
 struct CallbackReturn_RawHeader : public CallbackReturn_WebSocket
 {
 private:
-   std::function<void(ReturnMessage<BinaryData>)> userCallbackLambda_;
    std::shared_ptr<ClientCache> cache_;
    BinaryData txHash_;
    unsigned height_;
+   function<void(ReturnMessage<BinaryData>)> userCallbackLambda_;
 
 public:
    CallbackReturn_RawHeader(
@@ -776,8 +777,8 @@ public:
 struct CallbackReturn_BlockHeader : public CallbackReturn_WebSocket
 {
 private:
-   std::function<void(ReturnMessage<ClientClasses::BlockHeader>)> userCallbackLambda_;
    const unsigned height_;
+   std::function<void(ReturnMessage<ClientClasses::BlockHeader>)> userCallbackLambda_;
 
 public:
    CallbackReturn_BlockHeader(unsigned height, 

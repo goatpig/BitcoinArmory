@@ -952,7 +952,7 @@ public:
 
 
    /////////////////////////////////////////////////////////////////////////////
-   uint8_t get_uint8_t(ENDIAN e=LE)
+   uint8_t get_uint8_t()
    {
       uint8_t outVal = bdStr_[pos_];
       pos_ += 1;
@@ -1134,7 +1134,7 @@ public:
 
 
    /////////////////////////////////////////////////////////////////////////////
-   uint8_t get_uint8_t(ENDIAN e=LE)
+   uint8_t get_uint8_t()
    {
       if (getSizeRemaining() < 1)
       {
@@ -1443,7 +1443,7 @@ public:
 
    /////////////////////////////////////////////////////////////////////////////
    // These write data properly regardless of the architecture
-   void put_uint8_t (const uint8_t&  val, ENDIAN e=LE) { theString_.append( val ); }
+   void put_uint8_t (const uint8_t&  val) { theString_.append( val ); }
 
    /////
    void put_uint16_t(const uint16_t& val, ENDIAN e=LE) 

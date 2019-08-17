@@ -5,9 +5,9 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016, goatpig                                               //            
+//  Copyright (C) 2016, goatpig                                               //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                   
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -46,7 +46,7 @@
 #define COINBASE_MATURITY 1
 #endif
 
-#define TX_0_UNCONFIRMED    0 
+#define TX_0_UNCONFIRMED    0
 #define TX_NOT_EXIST       -1
 #define TX_OFF_MAIN_BRANCH -2
 
@@ -73,8 +73,8 @@
 #define MSIGPREFIX    WRITE_UINT8_LE((uint8_t)SCRIPT_PREFIX_MULTISIG)
 #define NONSTDPREFIX  WRITE_UINT8_LE((uint8_t)SCRIPT_PREFIX_NONSTD)
 
-// Really, these defs are just for making it painfully clear in the 
-// code what you are attempting to compare.  I'm constantly messing 
+// Really, these defs are just for making it painfully clear in the
+// code what you are attempting to compare.  I'm constantly messing
 // up == and != when trying to read through the code.
 #define  KEY_NOT_IN_MAP(KEY,MAP)  (MAP.find(KEY) == MAP.end())
 #define      KEY_IN_MAP(KEY,MAP)  (MAP.find(KEY) != MAP.end())
@@ -276,7 +276,7 @@ public:
 #define BIP32_SER_VERSION_TEST_PRV 0x043587CF
 #define BIP32_SER_VERSION_TEST_PUB 0x04358394
 
-// This class holds only static methods.  
+// This class holds only static methods.
 // NOTE:  added default ctor and a few non-static, to support SWIG
 //        (-classic SWIG doesn't support static methods)
 class BtcUtils
@@ -287,7 +287,7 @@ class BtcUtils
 
 public:
    static const BinaryData        EmptyHash_;
-   
+
    // Block of code to be called by SWIG -- i.e. made available to python
    BtcUtils(void) {}
    static BinaryData hash256(BinaryData const & str) {return getHash256(str);}
@@ -298,7 +298,7 @@ public:
    static const BinaryData& EmptyHash() { return EmptyHash_;  }
 
    /////////////////////////////////////////////////////////////////////////////
-   static uint64_t readVarInt(uint8_t const * strmPtr, size_t remaining, 
+   static uint64_t readVarInt(uint8_t const * strmPtr, size_t remaining,
       uint32_t* lenOutPtr=NULL)
    {
       if (remaining < 1)
@@ -307,7 +307,7 @@ public:
 
       if(firstByte < 0xfd)
       {
-         if(lenOutPtr != NULL) 
+         if(lenOutPtr != NULL)
             *lenOutPtr = 1;
          return firstByte;
       }
@@ -315,16 +315,16 @@ public:
       {
          if (remaining < 3)
             throw BlockDeserializingException("invalid varint");
-         if(lenOutPtr != NULL) 
+         if(lenOutPtr != NULL)
             *lenOutPtr = 3;
          return READ_UINT16_LE(strmPtr+1);
-         
+
       }
       else if(firstByte == 0xfe)
       {
          if (remaining < 5)
             throw BlockDeserializingException("invalid varint");
-         if(lenOutPtr != NULL) 
+         if(lenOutPtr != NULL)
             *lenOutPtr = 5;
          return READ_UINT32_LE(strmPtr+1);
       }
@@ -332,7 +332,7 @@ public:
       {
          if (remaining < 9)
             throw BlockDeserializingException("invalid varint");
-         if(lenOutPtr != NULL) 
+         if(lenOutPtr != NULL)
             *lenOutPtr = 9;
          return READ_UINT64_LE(strmPtr+1);
       }
@@ -347,7 +347,7 @@ public:
       brr.advance(outLen);
       return std::pair<uint64_t, uint8_t>(outVal, (uint8_t)outLen);
    }
-   
+
    /////////////////////////////////////////////////////////////////////////////
    static inline uint32_t readVarIntLength(uint8_t const * strmPtr)
    {
@@ -390,7 +390,7 @@ public:
       std::ifstream is(OS_TranslatePath(filename.c_str()), std::ios::in| std::ios::binary);
       if(!is.is_open())
          return FILE_DOES_NOT_EXIST;
-   
+
       is.seekg(0, std::ios::end);
       uint64_t filesize = (size_t)is.tellg();
       is.close();
@@ -411,19 +411,19 @@ public:
          num = (num - bottom3) / 1000;
       } while(num>=1);
 
-      
+
       std::stringstream out;
       out << (fullNum < 0 ? "-" : "");
       size_t nt = triplets.size()-1;
       char t[4];
       for(uint32_t i=0; i<=nt; i++)
       {
-         if(i==0) 
-            sprintf(t, "%d",   triplets[nt-i]); 
-         else     
-            sprintf(t, "%03d", triplets[nt-i]); 
+         if(i==0)
+            sprintf(t, "%d",   triplets[nt-i]);
+         else
+            sprintf(t, "%03d", triplets[nt-i]);
          out << std::string(t);
-         
+
          if(i != nt)
             out << ",";
       }
@@ -463,8 +463,8 @@ public:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   static void getSha256(const uint8_t* data, 
-                         size_t len, 
+   static void getSha256(const uint8_t* data,
+                         size_t len,
                          BinaryData& hashOutput)
    {
       if (hashOutput.getSize() != 32)
@@ -473,7 +473,7 @@ public:
       BinaryDataRef dataBdr(data, len);
       CryptoSHA2::getSha256(dataBdr, hashOutput.getPtr());
    }
-   
+
    /////////////////////////////////////////////////////////////////////////////
    static BinaryData getSha256(const BinaryData& bd)
    {
@@ -506,14 +506,14 @@ public:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   static void getHash256(BinaryData const & strToHash, 
+   static void getHash256(BinaryData const & strToHash,
                           BinaryData &       hashOutput)
    {
       getHash256(strToHash.getPtr(), strToHash.getSize(), hashOutput);
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   static void getHash256(BinaryDataRef strToHash, 
+   static void getHash256(BinaryDataRef strToHash,
                           BinaryData &  hashOutput)
    {
       getHash256(strToHash.getPtr(), strToHash.getSize(), hashOutput);
@@ -554,7 +554,7 @@ public:
    /////////////////////////////////////////////////////////////////////////////
    static BinaryData getHash160(uint8_t const * strToHash,
                                 size_t          nBytes)
-                          
+
    {
       BinaryData hashOutput(20);
       getHash160(strToHash, nBytes, hashOutput);
@@ -617,10 +617,10 @@ public:
       size_t numTx = txhashlist.size();
       std::vector<BinaryData> merkleTree(3*numTx);
       BinaryData hashInput(64);
-   
+
       for(uint32_t i=0; i<numTx; i++)
          merkleTree[i] = txhashlist[i];
-   
+
       size_t thisLevelStart = 0;
       size_t nextLevelStart = numTx;
       size_t levelSize = numTx;
@@ -631,18 +631,18 @@ public:
          {
             uint8_t* half1Ptr = hashInput.getPtr();
             uint8_t* half2Ptr = hashInput.getPtr()+32;
-         
+
             if(j < levelSize/2)
             {
                merkleTree[thisLevelStart+(2*j)  ].copyTo(half1Ptr, 32);
                merkleTree[thisLevelStart+(2*j)+1].copyTo(half2Ptr, 32);
             }
-            else 
+            else
             {
                merkleTree[nextLevelStart-1].copyTo(half1Ptr, 32);
                merkleTree[nextLevelStart-1].copyTo(half2Ptr, 32);
             }
-            
+
             CryptoSHA2::getHash256(hashInput.getRef(), hashOutput.getPtr());
             merkleTree[nextLevelStart+j] = hashOutput;
          }
@@ -654,15 +654,15 @@ public:
       // nextLevelStart is the size of the merkle tree
       merkleTree.erase(merkleTree.begin()+nextLevelStart, merkleTree.end());
       return merkleTree;
-   
+
    }
-   
+
    /////////////////////////////////////////////////////////////////////////////
    // ALL THESE METHODS ASSUME THERE IS A FULL TX/TXIN/TXOUT BEHIND THE PTR
    // The point of these methods is to calculate the length of the object,
    // hence we don't know in advance how big the object actually will be, so
    // we can't provide it as an input for safety checking...
-   static void TxInCalcLength(uint8_t const * ptr, size_t size, 
+   static void TxInCalcLength(uint8_t const * ptr, size_t size,
       std::vector<size_t> * offsetsIn)
    {
       BinaryRefReader brr(ptr, size);
@@ -685,7 +685,7 @@ public:
          (*offsetsIn)[nIn] = brr.getPosition(); // Get the end of the last
       }
    }
-   
+
    static size_t TxInCalcLength(uint8_t const * ptr, size_t size)
    {
       if (size < 37)
@@ -694,7 +694,7 @@ public:
       uint32_t scrLen = (uint32_t)readVarInt(ptr+36, size-36, &viLen);
       return (36 + viLen + scrLen + 4);
    }
-   
+
    /////////////////////////////////////////////////////////////////////////////
    static size_t TxOutCalcLength(uint8_t const * ptr, size_t size)
    {
@@ -733,8 +733,8 @@ public:
                               std::vector<size_t> * offsetsOut,
                               std::vector<size_t> * offsetsWitness)
    {
-      BinaryRefReader brr(ptr, size);  
-      
+      BinaryRefReader brr(ptr, size);
+
       if (brr.getSizeRemaining() < 4)
          throw BlockDeserializingException();
       // Tx Version;
@@ -829,9 +829,9 @@ public:
       std::vector<size_t> * offsetsOut,
       std::vector<size_t> * offsetsWitness)
    {
-      BinaryRefReader brr(ptr, len);  
+      BinaryRefReader brr(ptr, len);
 
-      
+
       // Tx Version;
       brr.advance(4);
 
@@ -883,7 +883,7 @@ public:
             for(uint32_t i=0; i<nOut; i++)
             {
                (*offsetsOut)[i] = brr.getPosition();
-               brr.advance( 
+               brr.advance(
                   TxOutCalcLength(brr.getCurrPtr(), brr.getSizeRemaining()));
             }
             (*offsetsOut)[nOut] = brr.getPosition();
@@ -891,7 +891,7 @@ public:
          else
          {
             for(uint32_t i=0; i<nOut; i++)
-               brr.advance( 
+               brr.advance(
                   TxOutCalcLength(brr.getCurrPtr(), brr.getSizeRemaining()));
          }
       }
@@ -996,7 +996,7 @@ public:
    {
       if(prevTxHash == BtcUtils::EmptyHash_)
          return TXIN_SCRIPT_COINBASE;
-      
+
       if(script.getSize() == 0)
          return TXIN_SCRIPT_WITNESS;
       if(script.getSize() == 23 && script[1] == 0x00 && script[2] == 0x14)
@@ -1004,7 +1004,7 @@ public:
       if(script.getSize() == 35 && script[1] == 0x00 && script[2] == 0x20)
          return TXIN_SCRIPT_P2WSH_P2SH;
 
-      // Technically, this doesn't recognize all P2SH spends.  Only 
+      // Technically, this doesn't recognize all P2SH spends.  Only
       // spends of P2SH scripts that are, themselves, standard
       BinaryData lastPush = getLastPushDataInScript(script);
       if(getTxOutScriptType(lastPush) != TXOUT_SCRIPT_NONSTANDARD)
@@ -1012,22 +1012,22 @@ public:
 
       if(script[0]==0x00)
       {
-         // TODO: All this complexity to check TxIn type may be too slow when 
+         // TODO: All this complexity to check TxIn type may be too slow when
          //       scanning the blockchain...will need to investigate later
          std::vector<BinaryDataRef> splitScr = splitPushOnlyScriptRefs(script);
-   
+
          if(splitScr.size() == 0)
             return TXIN_SCRIPT_NONSTANDARD;
 
          // TODO: Maybe should identify whether the other pushed data
-         //       in the script is a potential solution for the 
+         //       in the script is a potential solution for the
          //       subscript... meh?
          //BinaryDataRef lastObj = splitScr[splitScr.size() - 1];
 
          if(script[2]==0x30 && script[4]==0x02)
             return TXIN_SCRIPT_SPENDMULTI;
       }
-         
+
 
       if( !(script[1]==0x30 && script[3]==0x02) )
          return TXIN_SCRIPT_NONSTANDARD;
@@ -1037,7 +1037,7 @@ public:
       if(script.getSize() == sigSize)
          return TXIN_SCRIPT_SPENDPUBKEY;
 
-      uint32_t keySizeFull = 66;  // \x41 \x04 [X32] [Y32] 
+      uint32_t keySizeFull = 66;  // \x41 \x04 [X32] [Y32]
       uint32_t keySizeCompr= 34;  // \x41 \x02 [X32]
 
       if(script.getSize() == sigSize + keySizeFull)
@@ -1049,7 +1049,7 @@ public:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   static BinaryData getTxOutRecipientAddr(BinaryDataRef const & script, 
+   static BinaryData getTxOutRecipientAddr(BinaryDataRef const & script,
                                            TXOUT_SCRIPT_TYPE type=TXOUT_SCRIPT_NONSTANDARD)
    {
       if(type==TXOUT_SCRIPT_NONSTANDARD)
@@ -1069,7 +1069,7 @@ public:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   // We use this for LevelDB keys, to return same key if the same priv/pub 
+   // We use this for LevelDB keys, to return same key if the same priv/pub
    // pair is used, and also saving a few bytes for common script types
    static BinaryData getTxOutScrAddr(BinaryDataRef script,
       TXOUT_SCRIPT_TYPE type = TXOUT_SCRIPT_NONSTANDARD);
@@ -1109,12 +1109,12 @@ public:
    /////////////////////////////////////////////////////////////////////////////
    //        "UniqueKey"=="ScrAddr" minus prefix
    // TODO:  Interesting exercise:  is there a non-standard script that could
-   //        look like the output of this function operating on a multisig 
+   //        look like the output of this function operating on a multisig
    //        script (doesn't matter if it's valid or not)?  In other words, is
    //        there is a hole where someone could mine a script that would be
    //        forwarded by Bitcoin Core to this code, which would then produce
-   //        a non-std-unique-key that would be indistinguishable from the 
-   //        output of this function?  My guess is, no.  And my guess is that 
+   //        a non-std-unique-key that would be indistinguishable from the
+   //        output of this function?  My guess is, no.  And my guess is that
    //        it's not a very useful even if it did.  But it would be good to
    //        rule it out.
    static BinaryData getMultisigUniqueKey(BinaryData const & script)
@@ -1133,7 +1133,7 @@ public:
       bw.put_uint8_t((uint8_t)N);
 
       std::sort(a160List.begin(), a160List.end());
-      
+
       for(uint32_t i=0; i<a160List.size(); i++)
          bw.put_BinaryData(a160List[i]);
 
@@ -1143,14 +1143,14 @@ public:
 
    /////////////////////////////////////////////////////////////////////////////
    // Returns M in M-of-N.  Use addr160List.size() for N.  Output is sorted.
-   static uint8_t getMultisigAddrList( BinaryData const & script, 
+   static uint8_t getMultisigAddrList( BinaryData const & script,
       std::vector<BinaryData> & addr160List)
    {
 
       std::vector<BinaryData> pkList;
       uint32_t M = getMultisigPubKeyList(script, pkList);
       size_t   N = pkList.size();
-      
+
       if(M==0)
          return 0;
 
@@ -1164,7 +1164,7 @@ public:
 
    /////////////////////////////////////////////////////////////////////////////
    // Returns M in M-of-N.  Use pkList.size() for N.  Output is sorted.
-   static uint8_t getMultisigPubKeyList( BinaryData const & script, 
+   static uint8_t getMultisigPubKeyList( BinaryData const & script,
       std::vector<BinaryData> & pkList)
    {
       if( script[-1] != 0xae )
@@ -1172,7 +1172,7 @@ public:
 
       uint8_t M = script[0];
       uint8_t N = script[-2];
-      
+
       if(M<81 || M>96|| N<81 || N>96)
          return 0;
 
@@ -1196,7 +1196,7 @@ public:
    }
 
 
-   
+
    /////////////////////////////////////////////////////////////////////////////
    // These two methods are basically just to make SWIG access easier
    static BinaryData getMultisigAddr160InfoStr( BinaryData const & script)
@@ -1204,7 +1204,7 @@ public:
       std::vector<BinaryData> outVect;
       uint32_t M = getMultisigAddrList(script, outVect);
       size_t   N = outVect.size();
-      
+
       BinaryWriter bw(2 + N*20);  // reserve enough space for header + N addr
       bw.put_uint8_t((uint8_t)M);
       bw.put_uint8_t((uint8_t)N);
@@ -1220,7 +1220,7 @@ public:
       std::vector<BinaryData> outVect;
       uint32_t M = getMultisigPubKeyList(script, outVect);
       size_t   N = outVect.size();
-      
+
       BinaryWriter bw(2 + N*20);  // reserve enough space for header + N addr
       bw.put_uint8_t((uint8_t)M);
       bw.put_uint8_t((uint8_t)N);
@@ -1241,7 +1241,7 @@ public:
    // TXIN_SCRIPT_SPENDMULTI,
    // TXIN_SCRIPT_SPENDP2SH,
    // TXIN_SCRIPT_NONSTANDARD
-   static BinaryData getTxInAddr(BinaryDataRef script, 
+   static BinaryData getTxInAddr(BinaryDataRef script,
                                  BinaryDataRef prevTxHash,
                                  TXIN_SCRIPT_TYPE type=TXIN_SCRIPT_NONSTANDARD)
    {
@@ -1257,30 +1257,30 @@ public:
    {
       switch(type)
       {
-         case(TXIN_SCRIPT_STDUNCOMPR):  
+         case(TXIN_SCRIPT_STDUNCOMPR):
             if (script.getSize() < 65)
                throw BlockDeserializingException();
             return getHash160(script.getSliceRef(-65, 65));
-         case(TXIN_SCRIPT_STDCOMPR):    
+         case(TXIN_SCRIPT_STDCOMPR):
             if (script.getSize() < 33)
                throw BlockDeserializingException();
             return getHash160(script.getSliceRef(-33, 33));
-         case(TXIN_SCRIPT_SPENDP2SH):   
+         case(TXIN_SCRIPT_SPENDP2SH):
          {
             std::vector<BinaryDataRef> pushVect = splitPushOnlyScriptRefs(script);
             return getHash160(pushVect[pushVect.size()-1]);
          }
-         case(TXIN_SCRIPT_COINBASE):    
-         case(TXIN_SCRIPT_SPENDPUBKEY):   
-         case(TXIN_SCRIPT_SPENDMULTI):   
-         case(TXIN_SCRIPT_NONSTANDARD): 
+         case(TXIN_SCRIPT_COINBASE):
+         case(TXIN_SCRIPT_SPENDPUBKEY):
+         case(TXIN_SCRIPT_SPENDMULTI):
+         case(TXIN_SCRIPT_NONSTANDARD):
             return BadAddress_;
          default:
             LOGERR << "What kind of TxIn script did we get?";
             return BadAddress_;
       }
    }
-   
+
    /////////////////////////////////////////////////////////////////////////////
    static BinaryData getTxInAddrFromTypeInt( BinaryData const & script,
                                              uint32_t typeInt)
@@ -1295,7 +1295,7 @@ public:
 
       BinaryRefReader brr(script);
       uint8_t nextOp;
-      
+
       while(brr.getSizeRemaining() > 0)
       {
          nextOp = brr.get_uint8_t();
@@ -1369,7 +1369,7 @@ public:
        uint32_t diffBits = READ_UINT32_LE(diffBitsBinary);
        int nShift = (diffBits >> 24) & 0xff;
        double dDiff = (double)0x0000ffff / (double)(diffBits & 0x00ffffff);
-   
+
        while (nShift < 29)
        {
            dDiff *= 256.0;
@@ -1388,7 +1388,7 @@ public:
    // blk0001.dat to blocks/blk00000.dat
    static std::string getBlkFilename(std::string dir, uint32_t fblkNum)
    {
-      /// Update:  It's been enough time since the hardfork that just about 
+      /// Update:  It's been enough time since the hardfork that just about
       //           everyone must've upgraded to 0.8+ by now... remove pre-0.8
       //           compatibility.
       char* fname = new char[1024];
@@ -1427,7 +1427,7 @@ public:
       case OP_14                : return "OP_14";
       case OP_15                : return "OP_15";
       case OP_16                : return "OP_16";
-   
+
       // control
       case OP_NOP               : return "OP_NOP";
       case OP_VER               : return "OP_VER";
@@ -1439,7 +1439,7 @@ public:
       case OP_ENDIF              : return "OP_ENDIF";
       case OP_VERIFY             : return "OP_VERIFY";
       case OP_RETURN             : return "OP_RETURN";
-   
+
       // stack ops
       case OP_TOALTSTACK          : return "OP_TOALTSTACK";
       case OP_FROMALTSTACK         : return "OP_FROMALTSTACK";
@@ -1460,14 +1460,14 @@ public:
       case OP_ROT               : return "OP_ROT";
       case OP_SWAP               : return "OP_SWAP";
       case OP_TUCK               : return "OP_TUCK";
-   
+
       // splice ops
       case OP_CAT               : return "OP_CAT";
       case OP_SUBSTR             : return "OP_SUBSTR";
       case OP_LEFT               : return "OP_LEFT";
       case OP_RIGHT              : return "OP_RIGHT";
       case OP_SIZE               : return "OP_SIZE";
-   
+
       // bit logic
       case OP_INVERT             : return "OP_INVERT";
       case OP_AND               : return "OP_AND";
@@ -1477,7 +1477,7 @@ public:
       case OP_EQUALVERIFY         : return "OP_EQUALVERIFY";
       case OP_RESERVED1           : return "OP_RESERVED1";
       case OP_RESERVED2           : return "OP_RESERVED2";
-   
+
       // numeric
       case OP_1ADD               : return "OP_1ADD";
       case OP_1SUB               : return "OP_1SUB";
@@ -1506,7 +1506,7 @@ public:
       case OP_MIN               : return "OP_MIN";
       case OP_MAX               : return "OP_MAX";
       case OP_WITHIN             : return "OP_WITHIN";
-   
+
       // crypto
       case OP_RIPEMD160           : return "OP_RIPEMD160";
       case OP_SHA1               : return "OP_SHA1";
@@ -1518,7 +1518,7 @@ public:
       case OP_CHECKSIGVERIFY       : return "OP_CHECKSIGVERIFY";
       case OP_CHECKMULTISIG        : return "OP_CHECKMULTISIG";
       case OP_CHECKMULTISIGVERIFY   : return "OP_CHECKMULTISIGVERIFY";
-   
+
       // expanson
       case OP_NOP1               : return "OP_NOP1";
       case OP_NOP2               : return "OP_NOP2";
@@ -1530,19 +1530,19 @@ public:
       case OP_NOP8               : return "OP_NOP8";
       case OP_NOP9               : return "OP_NOP9";
       case OP_NOP10              : return "OP_NOP10";
-   
-   
-   
+
+
+
       // template matching params
       case OP_PUBKEYHASH          : return "OP_PUBKEYHASH";
       case OP_PUBKEY             : return "OP_PUBKEY";
-   
+
       case OP_INVALIDOPCODE        : return "OP_INVALIDOPCODE";
       default:
          return "OP_UNKNOWN";
       }
    }
-   
+
    static std::vector<std::string> convertScriptToOpStrings(BinaryData const & script)
    {
       std::list<std::string> opList;
@@ -1596,7 +1596,7 @@ public:
             opList.push_back(getOpCodeName((OPCODETYPE)nextOp));
             i++;
          }
-            
+
       }
 
       if(error)
@@ -1616,7 +1616,7 @@ public:
       }
       return vectOut;
    }
-   
+
    static void pprintScript(BinaryData const & script)
    {
       std::vector<std::string> oplist = convertScriptToOpStrings(script);
@@ -1634,12 +1634,12 @@ public:
          return false;
 
       srcsz = std::min((uint32_t)srcsz, nbytes);
-   
+
       BinaryData temp((size_t)srcsz);
       std::ifstream is(src.c_str(), std::ios::in  | std::ios::binary);
       is.read((char*)temp.getPtr(), srcsz);
       is.close();
-   
+
       std::ofstream os(dst.c_str(), std::ios::out | std::ios::binary);
       os.write((char*)temp.getPtr(), srcsz);
       os.close();
@@ -1696,7 +1696,7 @@ public:
 
    static bool verifyProofOfWork(BinaryDataRef bh80, BinaryDataRef bhrHash)
    {
-      // This is only approximate.  I can put in an exact verifier once 
+      // This is only approximate.  I can put in an exact verifier once
       // I figure out big integers better in C++, or another way to do
       // the calculation.  I just want to make sure this isn't a completely
       // bogus proof of work.
@@ -1713,7 +1713,7 @@ public:
       return true;
    }
    */
-   
+
    static BinaryData scrAddrToBase58(const BinaryData& scrAddr)
    {
       /***
@@ -1736,12 +1736,12 @@ public:
       auto&& scriptNhash = base58_decode(b58Addr);
 
       //should be at least 4 bytes checksum + 1 version byte
-      if (scriptNhash.getSize() <= 5) 
+      if (scriptNhash.getSize() <= 5)
          throw std::range_error("invalid b58 decoded address length");
 
       //split last 4 bytes
       auto len = scriptNhash.getSize();
-      auto scriptRef = 
+      auto scriptRef =
          scriptNhash.getSliceRef(0, len - 4);
 
       auto checksumRef =
@@ -1762,7 +1762,7 @@ public:
       BinaryData b58_str(size);
       if (!btc_base58_encode(
          b58_str.getCharPtr(), &size,
-         payload.getPtr(), payload.getSize()) || 
+         payload.getPtr(), payload.getSize()) ||
          size > b58_str.getSize())
       {
          throw std::runtime_error("failed to encode b58 string");
@@ -1814,7 +1814,7 @@ public:
             int zeroCount = 32 - len;
             while (zeroCount-- > 0)
                output.put_uint8_t(0);
-            
+
             output.put_BinaryData(data);
          }
       };
@@ -2040,5 +2040,5 @@ public:
    static BinaryData segWitAddressToScrAddr(const BinaryData& swAddr);
    static int get_varint_len(const int64_t& value);
 };
-   
+
 #endif
