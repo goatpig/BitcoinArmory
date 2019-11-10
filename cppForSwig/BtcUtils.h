@@ -1756,13 +1756,25 @@ public:
       return BinaryData(scriptRef);
    }
 
-   static BinaryData base58_encode(const BinaryData& payload)
+   // Frontend for libbtc Base58 encoding. By default, it'll strip the null
+   // character added by libbtc to the decoded data. (This is what Armory did
+   // before libbtc.)
+   static BinaryData base58_encode(const BinaryData& payload,
+      const bool& stripNull = true)
    {
-      size_t size = payload.getSize() * 2;
+      // libbtc requires null-terminated input data. The code used before libbtc
+      // didn't care. So, some code may assume no null char is needed. Check and
+      // add as needed.
+      BinaryData inPayload(payload);
+      if (inPayload[-1] != '\0') {
+         inPayload.append('\0');
+      }
+
+      size_t size = inPayload.getSize() * 2;
       BinaryData b58_str(size);
       if (!btc_base58_encode(
          b58_str.getCharPtr(), &size,
-         payload.getPtr(), payload.getSize()) || 
+         inPayload.getPtr(), inPayload.getSize()) || 
          size > b58_str.getSize())
       {
          throw std::runtime_error("failed to encode b58 string");
@@ -1770,10 +1782,21 @@ public:
 
       if(size < b58_str.getSize())
          b58_str.resize(size);
+
+      // libbtc returns null-terminated decoded data. before libbtc, the code
+      // didn't do that. This may cause subtle issues for code relying on the
+      // old style. Remove the null byte by default.
+      if(stripNull && b58_str[-1] == '\0') {
+         b58_str = b58_str.getSliceCopy(0, b58_str.getSize() - 1);
+      }
+
       return b58_str;
    }
 
-   static BinaryData base58_decode(const BinaryData& b58)
+   // Frontend for libbtc Base58 decoding. By default, it'll strip the null
+   // character added by libbtc to the decoded data.
+   static BinaryData base58_decode(const BinaryData& b58,
+      const bool& stripNull = true)
    {
       //sanity checks
       if (b58.getSize() == 0)
@@ -1796,6 +1819,14 @@ public:
       memcpy(result_bd.getPtr(), result + b58.getSize() - size, size);
 
       delete[] result;
+
+      // libbtc returns null-terminated decoded data. before libbtc, the code
+      // didn't do that. This may cause subtle issues for code relying on the
+      // old style. Remove the null byte by default.
+      if(stripNull && result_bd[-1] == '\0') {
+         result_bd = result_bd.getSliceCopy(0, result_bd.getSize() - 1);
+      }
+
       return result_bd;
    }
 
