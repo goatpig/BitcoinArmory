@@ -285,10 +285,10 @@ public:
       AddressEntry(AddressEntryType_P2WSH), 
       AddressEntry_Nested(addrPtr)
    {
-      if (addrPtr->getType() & AddressEntryType_P2WPKH)
+      if (addrPtr->getType() == AddressEntryType_P2WPKH)
          throw AddressException("cannot nest SW in P2WSH");
 
-      if (addrPtr->getType() & AddressEntryType_P2WSH)
+      if (addrPtr->getType() == AddressEntryType_P2WSH)
          throw AddressException("cannot nest P2WSH in P2WSH");
    }
 
