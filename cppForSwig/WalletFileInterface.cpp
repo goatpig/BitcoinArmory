@@ -199,6 +199,10 @@ void DBInterface::loadAllEntries(const SecureBinaryData& rootKey)
 
          //dbkeys should be consecutive integers, mark gaps
          int dbKeyInt = READ_UINT32_BE(key_bdr);
+         if (dbKeyInt < 0) {     // dbKey can unlikely be >2^31, so this looks like
+            throw WalletInterfaceException("invalid dbkey");   // data corruption
+         }
+
          if (dbKeyInt - prevDbKey != 1)
          {
             for (unsigned i = prevDbKey + 1; i < dbKeyInt; i++)
