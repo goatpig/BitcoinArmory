@@ -520,6 +520,10 @@ def compile_qt():
    execAndWait('patch -p1 < %s' % path.join(os.getcwd(), 'qt_cocoa_helpers_mac.patch'), cwd=qtBuildDir)
    # Xcode 9.3 (clang 9.1) breaks Qt4.
    execAndWait('patch -p1 < %s' % path.join(os.getcwd(), 'qt_clang9.1_fix.patch'), cwd=qtBuildDir)
+   # Disable SSLv3.
+   execAndWait('patch -p1 < %s' % path.join(os.getcwd(), 'qt4-no-ssl3.patch'), cwd=qtBuildDir)
+   # Homebrew only provides openssl 1.1 as 1.0 is deprecated.
+   execAndWait('patch -p1 < %s' % path.join(os.getcwd(), 'qt4-openssl-1.1.patch'), cwd=qtBuildDir)
 
    # Configure Qt. http://wiki.phisys.com/index.php/Compiling_Phi has an example
    # that can be checked for ideas.
