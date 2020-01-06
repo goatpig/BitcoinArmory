@@ -103,7 +103,6 @@ ARMORYCLI_SOURCE_FILES = BDM_mainthread.cpp \
 	BlockUtils.cpp \
 	BtcWallet.cpp \
 	DatabaseBuilder.cpp \
-	DBUtils.cpp \
 	HistoryPager.cpp \
 	HttpMessage.cpp \
 	JSON_codec.cpp \
@@ -134,6 +133,7 @@ ARMORYCOMMON_SOURCE_FILES = Accounts.cpp \
 	BtcUtils.cpp \
 	ClientClasses.cpp \
 	CoinSelection.cpp \
+	DBUtils.cpp \
 	DecryptedDataContainer.cpp \
 	DerivationScheme.cpp \
 	hkdf.cpp \
@@ -251,7 +251,8 @@ ArmoryDB_LDADD = $(LIBARMORYCOMMON) \
 		 $(LIBWEBSOCKETS_STATIC)
 if BUILD_OPENSSL_SUPPORT
 ArmoryDB_LDADD += $(LIBSSL_STATIC) \
-		 $(LIBCRYPTO_STATIC)
+		 $(LIBCRYPTO_STATIC) \
+		 $(CRYPTO_LDFLAGS)
 endif
 if BUILD_LIBUV_SUPPORT
 ArmoryDB_LDADD += $(LIBUV_STATIC)
@@ -300,17 +301,17 @@ libCppBlockUtils_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES) \
 				$(PYTHON_CFLAGS)
 libCppBlockUtils_la_CXXFLAGS = $(AM_CXXFLAGS) -Ilmdb/libraries/liblmdb \
 				$(UNIT_TEST_CXXFLAGS) -D__STDC_LIMIT_MACROS
-libCppBlockUtils_la_LIBADD = $(LIBARMORYCOMMON) $(LIBCRYPTOPP) \
-				-lpthread
 if BUILD_GUI
-libCppBlockUtils_la_LIBADD += $(LIBARMORYGUI)
+libCppBlockUtils_la_LIBADD = $(LIBARMORYGUI) $(LIBCRYPTOPP) -lpthread
+else
+libCppBlockUtils_la_LIBADD = $(LIBARMORYCOMMON) $(LIBCRYPTOPP) -lpthread
 endif
 libCppBlockUtils_la_LDFLAGS = $(LDFLAGS) $(LWSLDFLAGS) $(PYTHON_LDFLAGS) -shared
 
 BUILT_SOURCES += CppBlockUtils_wrap.cxx
 #custom rules - always force SWIG to run and compile the resultant C++ file
 CppBlockUtils_wrap.cxx: CppBlockUtils.i
-	swig $(SWIG_FLAGS) CppBlockUtils.i
+	swig $(SWIG_FLAGS) -o CppBlockUtils_wrap.cxx CppBlockUtils.i
 endif
 
 MOSTLYCLEANFILES = $(PROTOBUF_CC) $(PROTOBUF_H)

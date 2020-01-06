@@ -1,0 +1,106 @@
+#ifndef LIBSECP256K1_CONFIG_H
+
+#define LIBSECP256K1_CONFIG_H
+
+/* Define this symbol to enable the ECDH module */
+#cmakedefine ENABLE_MODULE_ECDH
+
+/* Define this symbol to enable the ECDSA pubkey recovery module */
+#cmakedefine ENABLE_MODULE_RECOVERY
+
+/* Define this symbol to enable the Schnorr signature module */
+#cmakedefine ENABLE_MODULE_SCHNORR
+
+/* Define this symbol if OpenSSL EC functions are available */
+#cmakedefine ENABLE_OPENSSL_TESTS
+
+/* Define this symbol if __builtin_expect is available */
+#cmakedefine HAVE_BUILTIN_EXPECT
+
+/* Define to 1 if you have the <dlfcn.h> header file. */
+#cmakedefine HAVE_DLFCN_H
+
+/* Define to 1 if you have the <inttypes.h> header file. */
+#cmakedefine HAVE_INTTYPES_H
+
+/* Define this symbol if libcrypto is installed */
+#cmakedefine HAVE_LIBCRYPTO
+
+/* Define this symbol if libgmp is installed */
+#cmakedefine HAVE_LIBGMP
+
+/* Define to 1 if you have the <memory.h> header file. */
+#cmakedefine HAVE_MEMORY_H
+
+/* Define to 1 if you have the <stdint.h> header file. */
+#cmakedefine HAVE_STDINT_H
+
+/* Define to 1 if you have the <stdlib.h> header file. */
+#cmakedefine HAVE_STDLIB_H
+
+/* Define to 1 if you have the <strings.h> header file. */
+#cmakedefine HAVE_STRINGS_H
+
+/* Define to 1 if you have the <string.h> header file. */
+#cmakedefine HAVE_STRING_H
+
+/* Define to 1 if you have the <sys/stat.h> header file. */
+#cmakedefine HAVE_SYS_STAT_H
+
+/* Define to 1 if you have the <sys/types.h> header file. */
+#cmakedefine HAVE_SYS_TYPES_H
+
+/* Define to 1 if you have the <unistd.h> header file. */
+#cmakedefine HAVE_UNISTD_H
+
+/* Define to 1 if the system has the type `__int128'. */
+#cmakedefine HAVE___INT128
+
+/* Define this symbol to enable x86_64 assembly optimizations */
+#cmakedefine USE_ASM_X86_64
+
+/* Define this symbol to use a statically generated ecmult table */
+#cmakedefine USE_ECMULT_STATIC_PRECOMPUTATION
+
+/* Define this symbol to use endomorphism optimization */
+#cmakedefine USE_ENDOMORPHISM
+
+/* Define this symbol if an external (non-inline) assembly implementation is
+   used */
+#cmakedefine USE_EXTERNAL_ASM
+
+/* Define this symbol to use the FIELD_10X26 implementation */
+#cmakedefine USE_FIELD_10X26
+
+/* Define this symbol to use the FIELD_5X52 implementation */
+#cmakedefine USE_FIELD_5X52
+
+/* Define this symbol to use the native field inverse implementation */
+#cmakedefine USE_FIELD_INV_BUILTIN
+
+/* Define this symbol to use the num-based field inverse implementation */
+#cmakedefine USE_FIELD_INV_NUM
+
+/* Define this symbol to use the gmp implementation for num */
+#cmakedefine USE_NUM_GMP
+
+/* Define this symbol to use no num implementation */
+#cmakedefine USE_NUM_NONE
+
+/* Define this symbol to use the 4x64 scalar implementation */
+#cmakedefine USE_SCALAR_4X64
+
+/* Define this symbol to use the 8x32 scalar implementation */
+#cmakedefine USE_SCALAR_8X32
+
+/* Define this symbol to use the native scalar inverse implementation */
+#cmakedefine USE_SCALAR_INV_BUILTIN
+
+/* Define this symbol to use the num-based scalar inverse implementation */
+#cmakedefine USE_SCALAR_INV_NUM
+
+/* Define WORDS_BIGENDIAN to 1 if your processor stores words with the most
+   significant byte first (like Motorola and SPARC, unlike Intel). */
+#cmakedefine WORDS_BIGENDIAN
+
+#endif /*LIBSECP256K1_CONFIG_H*/

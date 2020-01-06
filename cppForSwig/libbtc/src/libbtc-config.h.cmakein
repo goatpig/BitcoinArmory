@@ -1,0 +1,59 @@
+#ifndef LIBBTC_CONFIG_H
+
+#define LIBBTC_CONFIG_H
+
+/* Define to 1 if you have the <dlfcn.h> header file. */
+#cmakedefine HAVE_DLFCN_H
+
+/* Define to 1 if you have the <inttypes.h> header file. */
+#cmakedefine HAVE_INTTYPES_H
+
+/* Define to 1 if you have the <memory.h> header file. */
+#cmakedefine HAVE_MEMORY_H
+
+/* Define to 1 if stdbool.h conforms to C99. */
+#cmakedefine HAVE_STDBOOL_H
+
+/* Define to 1 if you have the <stdint.h> header file. */
+#cmakedefine HAVE_STDINT_H
+
+/* Define to 1 if you have the <stdlib.h> header file. */
+#cmakedefine HAVE_STDLIB_H
+
+/* Define to 1 if you have the <strings.h> header file. */
+#cmakedefine HAVE_STRINGS_H
+
+/* Define to 1 if you have the <string.h> header file. */
+#cmakedefine HAVE_STRING_H
+
+/* Define to 1 if you have the <sys/stat.h> header file. */
+#cmakedefine HAVE_SYS_STAT_H
+
+/* Define to 1 if you have the <sys/types.h> header file. */
+#cmakedefine HAVE_SYS_TYPES_H
+
+/* Define to 1 if you have the <unistd.h> header file. */
+#cmakedefine HAVE_UNISTD_H
+
+/* Define this symbol if __builtin_expect is available */
+#cmakedefine HAVE_BUILTIN_EXPECT
+
+/* Define to set random file handle */
+#define RANDOM_DEVICE "@RANDOM_DEVICE@"
+
+/* Define to 1 to enable /dev/random or /dev/urandom as random device */
+#cmakedefine FILE_RANDOM
+
+/* Define to 1 to enable net compilation */
+#cmakedefine WITH_NET
+
+/* Define to 1 to enable wallet compilation */
+#cmakedefine WITH_WALLET
+
+/* Define to the full name of this package. */
+#define PACKAGE_NAME "@PACKAGE_NAME@"
+
+/* Define to the version of this package. */
+#define PACKAGE_VERSION "@PACKAGE_VERSION@"
+
+#endif /*LIBBTC_CONFIG_H*/

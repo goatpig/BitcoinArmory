@@ -16,31 +16,19 @@ Multi-signature transactions are accommodated under-the-hood about 80%, and will
 
 ## Building Armory From Source
 
-[Instructions for Windows](windowsbuild/Windows_build_notes.md)
-[Instructions for macOS](osxbuild/macOS_build_notes.md)
-[Instructions for Ubuntu and Arch Linux](linuxbuild/Linux_build_notes.md)
-
 ### Dependencies
 
 * GNU Compiler Collection
  Linux:   Install package `g++`
 
-* Crypto++
- Linux:   Install package `libcrypto++-dev`
- Windows: [Download](https://www.cryptopp.com/#download)
-
 * SWIG
  Linux:   Install package `swig`
- Windows: [Download](http://www.swig.org/download.html)  
+ Windows: [Download](http://www.swig.org/download.html)
  MSVS: Copy swigwin-2.x directory next to cryptopp as `swigwin`
 
 * Python 2.6/2.7
  Linux:   Install package `python-dev`
  Windows: [Download](https://www.python.org/getit/)
-
-* Python Twisted -- asynchronous networking
- Linux:   Install package `python-twisted`
- Windows: [Download](https://twistedmatrix.com/trac/wiki/Downloads)
 
 * PyQt 4 (for Python 2.X)
  Linux:   Install packages `libqtcore4`, `libqt4-dev`, `python-qt4`, and `pyqt4-dev-tools`
@@ -50,19 +38,48 @@ Multi-signature transactions are accommodated under-the-hood about 80%, and will
  (OPTIONAL - if you want to make a standalone executable in Windows)
  Windows: [Download](http://www.py2exe.org/)
 
-* LMDB - database engine, modified to suit Armory's use cases
-[LMDB page](http://symas.com/mdb/) - No need for external installs by Armory users
-
 * libwebsockets
- Linux:   Final instructions TBA.
- Windows: Follow the "Windows binary build" directions [here](https://github.com/warmcat/libwebsockets/blob/master/README.md).
+ Linux:   install latest version from source
+ Windows: handled automatically with vcpkg, see below
 
 * Google Protocol Buffers (protobuf)
  Linux:   Install the `protobuf` package.
- Windows: Follow the "C++ Installation - Windows" directions [here](https://github.com/google/protobuf/blob/master/src/README.md), downloading only the `protoc` binary.
+ Windows: handled automatically with vcpkg, see below
 
-* macOS
- [Instructions for downloading, verifying, and running Armory on macOS](README_macOS.md).
+### CMake options
+
+| **Option**                  | **Description**                                                                          | **Default**                    |
+|-----------------------------|------------------------------------------------------------------------------------------|--------------------------------|
+| WITH_HOST_CPU_FEATURES      | use -march=native and supported cpu feature flags, gcc only                              | ON                             |
+| WITH_CRYPTOPP               | use Crypto++ library for cryptography functions                                          | OFF                            |
+| WITH_CLIENT                 | build Python client                                                                      | AUTO                           |
+| WITH_GUI                    | build GUI support using Qt4 for the Python client                                        | AUTO                           |
+| ENABLE_TESTS                | build the test binaries                                                                  | OFF                            |
+| LIBBTC_WITH_WALLET          | enable libbtc wallet                                                                     | OFF                            |
+| LIBBTC_WITH_TESTS           | enable libbtc tests                                                                      | OFF                            |
+| LIBBTC_WITH_TOOLS           | build libbtc tools binaries                                                              | OFF                            |
+| LIBBTC_RANDOM_DEVICE        | device to use for random numbers                                                         | /dev/urandom                   |
+| SECP256K1_ENABLE_ASM        | enable asm routines in the secp256k1 library                                             | ON                             |
+| SECP256K1_USE_LIBGMP        | use libgmp for numeric routines in the secp256k1 library                                 | AUTO                           |
+| SECP256K1_MODULE_ECDH       | enable the ecdh module in the secp256k1 library                                          | OFF                            |
+| SECP256K1_MODULE_SCHNORR    | enable the schnorr module in the secp256k1 library                                       | OFF                            |
+| SECP256K1_ECMULT_STATIC_PRECOMPUTATION | use a statically generated ecmult table for the secp256k1 library             | OFF                            |
+| SECP256K1_ENDOMORPHISM      | use endomorphism optiomization for the secp256k1 library                                 | OFF                            |
+| SECP256K1_WITH_FIELD        | field for the secp256k1 library, can be '32bit', '64bit' or 'AUTO'                       | AUTO                           |
+| SECP256K1_WITH_SCALAR       | scalar for the secp256k1 library, can be '32bit', '64bit' or 'AUTO'                      | AUTO                           |
+| VCPKG_TARGET_TRIPLET        | see below                                                                                | not set                        |
+
+### CMake Windows/vcpkg Build Type
+
+When building on windows, set the cmake variable `VCPKG_TARGET_TRIPLET` to
+`x64-windows` or `x86-windows` depending on whether the build is for 64 bit or
+32 bit. You must be in the appropriate Visual Studio environment as well.
+
+All vcpkg supported triplets should work, and this variable can be used to
+activate vcpkg support on other platforms.
+
+When building with the Visual Studio IDE, the build products will be located
+under `C:\Users\<your-user>\CMakeBuilds`.
 
 ## Sample Code
 

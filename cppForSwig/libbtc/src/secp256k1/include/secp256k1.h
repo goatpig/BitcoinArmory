@@ -7,6 +7,10 @@ extern "C" {
 
 #include <stddef.h>
 
+#ifdef HAVE_CONFIG_H
+#include "libsecp256k1-config.h"
+#endif
+
 /* These rules specify the order of arguments in API calls:
  *
  * 1. Context pointers go first, followed by output arguments, combined

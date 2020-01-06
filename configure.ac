@@ -89,7 +89,7 @@ AM_CONDITIONAL([BUILD_GUI], [test x$build_gui = xyes])
 
 AC_PROG_CC
 AC_PROG_CXX
-AM_CONDITIONAL([HAVE_GCC], [test $CXX = g++])
+AM_CONDITIONAL([HAVE_GCC], [$CXX -v 2>&1 | grep -q 'g++'])
 AC_CHECK_SIZEOF([long unsigned int])
 AM_CONDITIONAL([HAVE_64BIT], [test $ac_cv_sizeof_long_unsigned_int = 8])
 
@@ -279,6 +279,8 @@ if test x$LWS_WITH_TLS_FOUND = xyes; then
     ])
     AC_MSG_RESULT($CRYPTO_LIBDIR)
     AC_SUBST([CRYPTO_LIBDIR])
+    CRYPTO_LDFLAGS=$(pkg-config --libs --static libcrypto 2>/dev/null)
+    AC_SUBST([CRYPTO_LDFLAGS])
 fi
 
 AC_MSG_CHECKING(for LWS_WITH_LIBUV)
@@ -385,6 +387,7 @@ export LDFLAGS
 
 AM_CONDITIONAL([HAVE_CLANG], [test x$CLANG = xyes])
 AM_CONDITIONAL([BUILD_DARWIN], [test x$BUILD_OS = xdarwin])
+AM_CONDITIONAL([BUILD_LINUX], [test x$BUILD_OS = xlinux])
 
 AC_CONFIG_FILES(Makefile
     cppForSwig/Makefile

@@ -13,6 +13,10 @@
 *.idb
 *.pdb
 
+build/*
+build32/*
+vsbuild/*
+
 *libtool.m4
 *ltoptions.m4
 *ltsugar.m4
@@ -125,8 +129,10 @@ _CppBlockUtils.*
 /.settings
 /*.wallet
 
-/findpass.py
 /*.txt
+!CMakeLists.txt
+
+/findpass.py
 /sandbox.py
 
 /lang/*.qm
