@@ -384,7 +384,7 @@ public:
    const SecureBinaryData& chaincode(void) const { return chaincode_; }
    const SecureBinaryData& iv(void) const { return iv_; }
 
-   const BinaryData& scrAddr(void) const { scrAddr_; }
+   const BinaryData& scrAddr(void) const { return scrAddr_; }
    int64_t chainIndex(void) const { return chainIndex_; }
 };
 
