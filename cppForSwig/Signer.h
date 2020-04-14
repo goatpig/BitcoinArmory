@@ -214,10 +214,10 @@ public:
    { }
    ~ScriptSpender_Signed() override = default;
 
-   void setWitnessData(const BinaryData &inputSig)
+   void setWitnessData(const BinaryData &inputSig, int itemCount = 2)
    {
       BinaryWriter bw;
-      bw.put_var_int(2);   // itemCount - should be determined later if needed
+      bw.put_var_int(itemCount);
       bw.put_BinaryData(inputSig);
       witnessData_ = bw.getData();
       segwitStatus_ = SpenderStatus_Resolved;
