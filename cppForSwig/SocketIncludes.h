@@ -9,7 +9,7 @@
 #ifndef _H_SOCKET_INCLUDES
 #define _H_SOCKET_INCLUDES
 
-#include <exception>
+#include <stdexcept>
 #include <string>
 
 #ifdef _WIN32
