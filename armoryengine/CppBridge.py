@@ -57,7 +57,7 @@ class CppBridge(object):
       pass
 
    #############################################################################
-   def start(self, stringArgs):
+   def start(self, listArgs):
       self.run = True
       self.rwLock = threading.Lock()
 
@@ -69,7 +69,7 @@ class CppBridge(object):
 
       self.executor = ThreadPoolExecutor(max_workers=2)
       listenFut = self.executor.submit(self.listenOnBridge)
-      self.processFut = self.executor.submit(self.spawnBridge, stringArgs)
+      self.processFut = self.executor.submit(self.spawnBridge, listArgs)
 
       self.clientSocket = listenFut.result()
       self.clientFut = self.executor.submit(self.readBridgeSocket)
@@ -88,8 +88,8 @@ class CppBridge(object):
       return clientSocket
 
    #############################################################################
-   def spawnBridge(self, stringArgs):
-      subprocess.run(["./CppBridge", stringArgs])
+   def spawnBridge(self, listArgs):
+      subprocess.run(["./CppBridge"] + listArgs)
 
    #############################################################################
    def sendToBridge(self, msg, needsReply=True, callback=None, cbArgs=[]):

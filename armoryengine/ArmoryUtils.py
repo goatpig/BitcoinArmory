@@ -3646,32 +3646,28 @@ def startBridge():
 
    #testnet
    if USE_TESTNET:
-      bridgeArgs.append(["testnet", ""])
+      bridgeArgs.append("--testnet")
 
    #db type
-   bridgeArgs.append(["db-type", CLI_OPTIONS.db_type])
+   bridgeArgs.append("--db-type")
+   bridgeArgs.append(CLI_OPTIONS.db_type)
 
    #db ip & port
-   bridgeArgs.append(["armorydb-ip", ARMORYDB_IP])
-   bridgeArgs.append(["armorydb-port", ARMORYDB_PORT])
+   bridgeArgs.append("--armorydb-ip")
+   bridgeArgs.append(ARMORYDB_IP)
+   bridgeArgs.append("--armorydb-port")
+   bridgeArgs.append(ARMORYDB_PORT)
 
    #datadir
-   bridgeArgs.append(["datadir", ARMORY_HOME_DIR])
+   bridgeArgs.append("--datadir")
+   bridgeArgs.append(ARMORY_HOME_DIR)
 
    #enforce --public for now
-   bridgeArgs.append(["public", ""])
+   bridgeArgs.append("--public")
 
    #offline 
    if CLI_OPTIONS.offline:
-      bridgeArgs.append(["offline", ""])      
-
-   stringArgs = ""
-   for argPair in bridgeArgs:
-      stringArgs += " --"
-      stringArgs += argPair[0]
-      if len(argPair[1]) > 0:
-         stringArgs += "="
-         stringArgs += argPair[1]
+      bridgeArgs.append("--offline")
 
    #set bridge
-   TheBridge.start(stringArgs)
+   TheBridge.start(bridgeArgs)
