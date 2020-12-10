@@ -7,6 +7,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "CoinSelection.h"
+#include <random>
 
 using namespace std;
 using namespace ArmorySigner;
@@ -631,7 +632,9 @@ vector<UTXO> CoinSorting::sortCoins(
          utxos.push_back(&utxo);
       }
 
-      random_shuffle(utxos.begin(), utxos.end());
+      std::random_device rd;
+      std::mt19937 g(rd());
+      shuffle(utxos.begin(), utxos.end(), g);
 
       for (auto utxoPtr : utxos)
          finalVec.push_back(*utxoPtr);
@@ -1082,8 +1085,10 @@ void UtxoSelection::shuffle()
 {
    if (utxoVec_.size() < 2)
       return;
-     
-   random_shuffle(utxoVec_.begin(), utxoVec_.end());
+
+   std::random_device rd;
+   std::mt19937 g(rd());
+   std::shuffle(utxoVec_.begin(), utxoVec_.end(), g);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
