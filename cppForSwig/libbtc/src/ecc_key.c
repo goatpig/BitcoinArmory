@@ -69,7 +69,7 @@ void btc_privkey_gen(btc_key* privkey)
         return;
 
     do {
-        assert(btc_random_bytes(privkey->privkey, BTC_ECKEY_PKEY_LENGTH, 0));
+        btc_random_bytes(privkey->privkey, BTC_ECKEY_PKEY_LENGTH, 0);
     } while (btc_ecc_verify_privatekey(privkey->privkey) == 0);
 }
 
