@@ -43,15 +43,17 @@ HEAD is now at a3d01aa... bump version
 
 In Ubuntu, you are required to install some packages before attempting to build Armory. To do so, type the following line (omitting the dollar sign) into a terminal. This only needs to be done once:
 
-    $ sudo apt-get install python git-core pkg-config build-essential pyqt4-dev-tools swig libqtcore4 libqt4-dev python-qt4 python-dev python-twisted python-psutil cmake autoconf libtool
+    $ sudo apt-get install python git-core pkg-config build-essential pyqt4-dev-tools swig libqtcore4 libqt4-dev python-qt4 python-dev python-psutil cmake autoconf libtool
 
-Now, you need to clone Armory's git repository and initialize the submodules:
+The following is required only if you wish to run the [armoryd](https://github.com/goatpig/armoryd) script at some point.
+
+    $ sudo apt-get install python-twisted
+
+Now, you need to clone Armory's git repository:
 
 ~~~bash
 $ git clone https://github.com/goatpig/BitcoinArmory.git
 $ cd BitcoinArmory
-$ git submodule init
-$ git submodule update
 ~~~
 
 At this point, you may want to check the authenticity of the source code, as stated above. You can do that by typing the following (replacing `0.96` with the specific Armory version that you're compiling):
@@ -64,8 +66,8 @@ $ git tag -v v0.96
 Init and update submodules; this will check out external repositories withing Armory source tree
 
 ~~~bash
-    $ git submodule init
-    $ git submodule update
+$ git submodule init
+$ git submodule update
 ~~~
 
 Finally, we make the application. This may take a while, depending on your computer:

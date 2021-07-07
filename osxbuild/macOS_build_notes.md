@@ -6,14 +6,14 @@ Due to code changes, as of v0.97, Armory can run only on macOS 10.9 or later. v0
 
 If a bug is found, please consult the [Bitcoin Forum](https://bitcointalk.org/index.php?board=97.0) or *bitcoin-armory* IRC channel on Freenode for further instructions.
 
-## Instructions
+## Armory compilation instructions
  1. Get an Apple developer account (free), log in, and download the latest version of Command Line Tools for Xcode. As an alternative, install the latest version of [Xcode](https://itunes.apple.com/us/app/xcode/id497799835) and download Command Line Tools via Xcode. Either choice will be updated via the App Store.
 
  2. Open a terminal and install the Xcode commandline tools. Follow any prompts that appear.
 
         xcode-select --install
 
- 3. Install and update [Homebrew](http://brew.sh). Warnings can probably be ignored, although environment differences and changes Apple makes to the OS between major releases make it impossible to provide definitive guidance. Any instructions given by Homebrew must be followed. (Exact directions seem to change depending on which version of Xcode is installed.)
+ 3. Install and update [Homebrew](https://brew.sh). Warnings can probably be ignored, although environment differences and changes Apple makes to the OS between major releases make it impossible to provide definitive guidance. Any instructions given by Homebrew must be followed. (Exact directions seem to change depending on which version of Xcode is installed.)
 
         /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
         touch ~/.bashrc
@@ -36,7 +36,7 @@ If a bug is found, please consult the [Bitcoin Forum](https://bitcointalk.org/in
 
  7. Download Armory [here](https://github.com/goatpig/BitcoinArmory). There are two options.
 
-   7.1. Download the source code from the [GitHub Armory releases page](https://github.com/goatpig/BitcoinArmory/releases/). Ensure that you download **only** the relevant "src.tar.gz" file, and **not** the code from the "Download ZIP" buttonfound elsewhere on GitHub. (Long story short, the `fcgi` submodule, which Armory requires, will **only** be included in the "src.tar.gz" file due to a long-standing GitHub bug affecting code auto-downloads.) After verifying the code, per the [macOS README directions](../README_macOS.md), unzip the code.
+   7.1. Download the source code from the [GitHub Armory releases page](https://github.com/goatpig/BitcoinArmory/releases/). Ensure that you download **only** the relevant "src.tar.gz" file, and **not** the code from the "Download ZIP" buttonfound elsewhere on GitHub. (Long story short, the `fcgi` submodule, which Armory requires, will **only** be included in the "src.tar.gz" file due to a long-standing GitHub bug affecting code auto-downloads.) After verifying the code, per the [macOS README directions](README.md), unzip the code.
 
    7.2. The more advanced method, which is recommended only for developers and other advanced tinkerers, is to use [Git version control](https://en.wikipedia.org/wiki/Git) in order to obtain the code. While more advanced, this makes it far easier to obtain code updates and to submit patches to Armory. Go [here](https://github.com/goatpig/BitcoinArmory) and use the "Clone or download" button to get a URL to use to clone the code. [This page](https://help.github.com/articles/cloning-a-repository-from-github/) has a partial tutorial, and [SourceTree](https://www.sourcetreeapp.com/) is a good app for starters. It is highly recommended that, at a bare minimum, users learn how to clone a repo and successfully switch between branches before going any further.
 
@@ -46,13 +46,29 @@ If a bug is found, please consult the [Bitcoin Forum](https://bitcointalk.org/in
 		git submodule init  (Required only if using Git version control, as discussed in Step 7.2.)
 		git submodule update  (Required only if using Git version control, as discussed in Step 7.2.)
 		cd osxbuild
-        python2 build-app.py > /dev/null
+		python2 build-app.py > /dev/null
 
 The "> /dev/null" line in step 8 is optional. All this does is prevent the command line from being overwhelmed with build output. The output will automatically be saved to osxbuild/build-app.log.txt no matter what.
 
-Armory.app will be found under the "workspace" subdirectory. It can be moved anywhere on the system, including under `/Applications`.
+Armory.app will be found under the "workspace" subdirectory. Armory.app and its contents can be moved anywhere on the system, including under `/Applications`.
 
 To avoid runtime issues (e.g. *ImportError: No module named pkg_resources*) when attempting to run builds on other machines/VMs, make sure $PYTHONPATH is empty. In addition, try not to have any "brew"ed libpng, Python or Qt modules installed. Any of the above could lead to unpredictable behavior.
+
+## ArmoryDB-only compilation
+Some users may wish to compile only the [ArmoryDB](../README_ArmoryDB.md) binary, and not deal with all the packages required to handle the Qt (GUI) stuff. Fortunately, this is possible, and is much simpler than compiling for the entire package. The instructions are below.
+
+ 1. Follow Steps 1-3 and 6 from "Armory compilation instructions".
+
+ 2. From the Armory root directory, compile Armory via the Autotools process. *Note that the configuration option provided is required.*
+
+        ./autogen.sh
+        ./configure --with-gui=no
+        make
+
+The resultant binary (*ArmoryDB*) will be located in the root directory.
+
+## armoryd support
+To compile Armory with support for *armoryd*, follow the instructions for full compilation, with one exception. When invoking the Armory build script (*osxbuild/build-app.py*) and building Armory from scratch, use the *--armoryd* flag. Once completed, the easiest thing to do is to copy *armoryd.py* from the [*armoryd* repo](https://github.com/goatpig/armoryd) into the application directory where Armory is invoked on Macs (Armory.app/Contents/MacOS).
 
 ## Compilation issues
 If you run into any compilation issues, please [post on Bitcoin Forum's Armory subforum](https://bitcointalk.org/index.php?board=97.0) or consult the *bitcoin-armory* IRC channel on Freenode. Note that compilation of "dev"/"testing" versions of Armory may be broken on Linux and macOS. Armory's developed primarily for Windows, with Linux and macOS compilation issues fixed once goatpig's satisfied with the state of the Windows code. The "master" code should never be broken, as it consists of what gets officially released.
