@@ -5,13 +5,13 @@ EXTRA_DIST = *.py *.md LICENSE LICENSE-ATI LICENSE-MIT \
 	nginx_example.conf imgList.xml autogen.sh \
 	armoryengine/*.py ui/*.py \
 	img/* lang/* dpkgfiles/* \
-	windowsbuild/* linuxbuild/* osxbuild/*
+	windowsbuild/* linuxbuild/* osxbuild/* BitcoinArmory.spec
 
 ACLOCAL_AMFLAGS = -I m4
 
 lrelease:
 if HAVE_GUI
-	lrelease lang/*.ts
+	$(HAVE_LRELEASE) lang/*.ts
 endif
 
 qrc_img_resources.py: imgList.xml
@@ -66,10 +66,16 @@ endif
 
 # Skip Linux-specific steps on OSX.
 if ! BUILD_DARWIN
+# Unfuck broken build system that, upon make install, incorrectly
+# regenerates files with DESTDIR instead of prefix.
+# Who the hell uses autotools in 2017?
 if HAVE_GUI
 	rsync -rupE --exclude="img/.DS_Store" img $(DESTDIR)$(prefix)/share/armory/
 	sed "s: /usr: $(prefix):g" < dpkgfiles/armory > $(DESTDIR)$(prefix)/bin/armory
 	chmod +x $(DESTDIR)$(prefix)/bin/armory
+	mkdir -p $(DESTDIR)$(datadir)/applications
+	chmod 0755 $(DESTDIR)$(datadir)/applications
+	for f in armory.desktop armoryoffline.desktop armorytestnet.desktop ; do sed "s:/usr/local/bin:$(bindir):g" < dpkgfiles/$$f > $(DESTDIR)$(datadir)/applications/$$f ; chmod 0644 $(DESTDIR)$(datadir)/applications/$$f ; done
 endif
 endif
 
@@ -84,3 +90,11 @@ clean-local:
 	rm -f CppBlockUtils.py
 	rm -f _CppBlockUtils.so
 	rm -f CppBlockUtils.pyc
+
+srpm: dist
+	mkdir -p dist
+	tmpdir=`mktemp -d` ; rpmbuild --define "_topdir $$tmpdir" -ts bitcoinarmory-$(PACKAGE_VERSION).tar.gz && { mv -f "$$tmpdir"/SRPMS/* . ; } ; rm -rf "$$tmpdir"
+
+rpm: dist
+	mkdir -p dist
+	tmpdir=`mktemp -d` ; rpmbuild --define "_topdir $$tmpdir" -ta bitcoinarmory-$(PACKAGE_VERSION).tar.gz && { mv -f "$$tmpdir"/SRPMS/* "$$tmpdir"/RPMS/*/* . ; } ; rm -rf "$$tmpdir"
