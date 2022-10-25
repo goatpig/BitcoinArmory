@@ -29,10 +29,10 @@
 #include <stdexcept>
 
 #include "BinaryData.h"
-#include "cryptlib.h"
-#include "sha.h"
-#include "integer.h"
-#include "ripemd.h"
+#include "cryptopp/cryptlib.h"
+#include "cryptopp/sha.h"
+#include "cryptopp/integer.h"
+#include "cryptopp/ripemd.h"
 #include "UniversalTimer.h"
 #include "log.h"
 #include "bech32/ref/c++/segwit_addr.h"

@@ -7,8 +7,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 #include "EncryptionUtils.h"
 #include "log.h"
-#include "integer.h"
-#include "oids.h"
+#include "cryptopp/integer.h"
+#include "cryptopp/oids.h"
 
 //#include <openssl/ec.h>
 //#include <openssl/ecdsa.h>

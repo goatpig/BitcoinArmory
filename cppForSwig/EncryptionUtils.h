@@ -59,14 +59,14 @@
 #include <cmath>
 #include <algorithm>
 
-#include "cryptlib.h"
-#include "osrng.h"
-#include "sha.h"
-#include "aes.h"
-#include "modes.h"
-#include "eccrypto.h"
-#include "filters.h"
-#include "DetSign.h"
+#include "cryptopp/cryptlib.h"
+#include "cryptopp/osrng.h"
+#include "cryptopp/sha.h"
+#include "cryptopp/aes.h"
+#include "cryptopp/modes.h"
+#include "cryptopp/eccrypto.h"
+#include "cryptopp/filters.h"
+#include "cryptopp/DetSign.h"
 
 #include "BinaryData.h"
 #include "BtcUtils.h"
