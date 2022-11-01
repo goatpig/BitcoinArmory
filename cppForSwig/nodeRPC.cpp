@@ -376,9 +376,9 @@ FeeEstimateResult NodeRPC::getFeeByte(
 ////////////////////////////////////////////////////////////////////////////////
 void NodeRPC::aggregateFeeEstimates()
 {
-   //get fee/byte for 2-3-4-5-6-10-20 confs on both strategies
-   static vector<unsigned> confTargets = { 2, 3, 4, 5, 6, 10, 20 };
-   static vector<string> strategies = { 
+   //get fee/byte on both strategies
+   vector<unsigned> confTargets = { 2, 3, 4, 5, 6, 10, 12, 20, 24, 48, 144 };
+   static vector<string> strategies = {
       FEE_STRAT_CONSERVATIVE, FEE_STRAT_ECONOMICAL };
 
    HttpSocket sock("127.0.0.1", NetworkSettings::rpcPort());
