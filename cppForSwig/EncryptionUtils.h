@@ -162,13 +162,14 @@ public:
 
    /////////////////////////////////////////////////////////////////////////////
    // Default max-memory reqt will 
-   void computeKdfParams(double   targetComputeSec=0.25, 
-                         uint32_t maxMemReqtsBytes=DEFAULT_KDF_MAX_MEMORY);
+   void computeKdfParams(double targetComputeSec=0.25,
+      uint32_t maxMemReqtsBytes=DEFAULT_KDF_MAX_MEMORY,
+      bool verbose = false);
 
    /////////////////////////////////////////////////////////////////////////////
-   void usePrecomputedKdfParams(uint32_t memReqts, 
-                                uint32_t numIter, 
-                                SecureBinaryData salt);
+   void usePrecomputedKdfParams(uint32_t memReqts,
+      uint32_t numIter,
+      SecureBinaryData salt);
 
    /////////////////////////////////////////////////////////////////////////////
    void printKdfParams(void);

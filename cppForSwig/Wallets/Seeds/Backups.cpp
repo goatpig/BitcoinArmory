@@ -11,6 +11,7 @@
 #include "BtcUtils.h"
 #include "../WalletIdTypes.h"
 #include "Seeds.h"
+#include "Wallets.h"
 #include "protobuf/BridgeProto.pb.h"
 extern "C" {
 #include <trezor-crypto/bip39.h>
@@ -1024,8 +1025,8 @@ unique_ptr<Backup_Base58> Helpers::getBase58BackupString(
 
 ////////////////////////////// -- restore methods -- ///////////////////////////
 shared_ptr<AssetWallet> Helpers::restoreFromBackup(
-   unique_ptr<WalletBackup> backup, const std::string& homedir,
-   const UserPrompt& callback)
+   unique_ptr<WalletBackup> backup, const UserPrompt& callback,
+   const WalletCreationParams& params)
 {
    unique_ptr<ClearTextSeed> seed = nullptr;
    auto bType = backup->type();
@@ -1074,7 +1075,9 @@ shared_ptr<AssetWallet> Helpers::restoreFromBackup(
    }
 
    //prompt for passwords
-   SecureBinaryData privkey, control;
+   BinaryDataRef pass = params.passphrase.getRef();
+   BinaryDataRef control = params.controlPassphrase.getRef();
+   if (pass.empty())
    {
       BridgeProto::RestorePrompt prompt;
       prompt.set_get_passphrases(true);
@@ -1083,13 +1086,16 @@ shared_ptr<AssetWallet> Helpers::restoreFromBackup(
       if (!reply.success())
          throw RestoreUserException("user did not provide a passphrase");
 
-      privkey = SecureBinaryData::fromString(reply.passphrases().privkey());
-      control = SecureBinaryData::fromString(reply.passphrases().control());
+      pass.setRef(reply.passphrases().privkey());
+      control.setRef(reply.passphrases().control());
    }
 
+   WalletCreationParams paramsCopy{ pass, control,
+      params.folder, params.lookup,
+      params.publicUnlockDuration_ms, params.privateUnlockDuration_ms };
+
    //return wallet
-   return AssetWallet_Single::createFromSeed(
-      std::move(seed), privkey, control, homedir);
+   return AssetWallet_Single::createFromSeed(std::move(seed), paramsCopy);
 }
 
 ////////

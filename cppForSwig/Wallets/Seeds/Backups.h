@@ -27,6 +27,11 @@ namespace BridgeProto
 
 namespace Armory
 {
+   namespace Wallets
+   {
+      struct WalletCreationParams;
+   }
+
    namespace Seeds
    {
       //forward declarations
@@ -286,7 +291,8 @@ namespace Armory
 
          //restore methods
          static std::shared_ptr<Wallets::AssetWallet> restoreFromBackup(
-            std::unique_ptr<WalletBackup>, const std::string&, const UserPrompt&);
+            std::unique_ptr<WalletBackup>, const UserPrompt&,
+               const Wallets::WalletCreationParams&);
          static std::unique_ptr<ClearTextSeed> restoreFromEasy16(
             std::unique_ptr<WalletBackup>, const UserPrompt&, BackupType&);
          static std::unique_ptr<ClearTextSeed> restoreFromBase58(

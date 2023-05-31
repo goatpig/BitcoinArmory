@@ -156,8 +156,9 @@ shared_ptr<WalletContainer> WalletManager::createNewWallet(
    unique_ptr<ClearTextSeed> seed(new ClearTextSeed_Armory135(root,
       ClearTextSeed_Armory135::LegacyType::Armory200));
    auto wallet = AssetWallet_Single::createFromSeed(move(seed),
-      pass, controlPass,
-      path_, lookup);
+      WalletCreationParams{
+         pass, controlPass, path_, lookup
+      });
    return addWallet(wallet, wallet->getMainAccountID());
 }
 
@@ -940,8 +941,9 @@ shared_ptr<AssetWallet_Single> Armory135Header::migrate(
       unique_ptr<ClearTextSeed> seed(new ClearTextSeed_Armory135(
          decryptedRoot, chaincodeCopy));
       wallet = AssetWallet_Single::createFromSeed(move(seed),
-         privKeyPass, controlPass,
-         folder, highestIndex);
+         WalletCreationParams{
+            privKeyPass, controlPass, folder, (uint32_t)highestIndex
+         });
    }
 
    //main account id, check it matches armory wallet id

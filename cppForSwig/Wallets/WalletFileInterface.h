@@ -182,7 +182,7 @@ namespace Armory
             //header methods
             void openControlDb(void);
             std::shared_ptr<WalletHeader_Control> setupControlDB(
-               const PassphraseLambda&);
+               const PassphraseLambda&, uint32_t);
             void putHeader(std::shared_ptr<WalletHeader>);
 
             void openDbEnv(bool);
@@ -198,7 +198,8 @@ namespace Armory
             ~WalletDBInterface(void);
 
             //setup
-            void setupEnv(const std::string&, bool, const PassphraseLambda&);
+            void setupEnv(const std::string&, bool,
+               const PassphraseLambda&, uint32_t);
             void shutdown(void);
             void eraseFromDisk(void);
 
@@ -206,7 +207,9 @@ namespace Armory
 
             //headers
             static MasterKeyStruct initWalletHeaderObject(
-               std::shared_ptr<WalletHeader>, const SecureBinaryData&);
+               std::shared_ptr<WalletHeader>,
+               const SecureBinaryData&,
+               uint32_t);
             void addHeader(std::shared_ptr<WalletHeader>);
             std::shared_ptr<WalletHeader> getWalletHeader(
                const std::string&) const;

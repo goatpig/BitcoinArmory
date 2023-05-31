@@ -2363,16 +2363,13 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
    scrAddrVec.push_back(TestChain::scrAddrE);
 
    //// create assetWlt ////
+   WalletCreationParams params{{}, {}, homedir_, 10, 1, 1};
 
    //create a root private key
    unique_ptr<Armory::Seeds::ClearTextSeed> seed(
       new Armory::Seeds::ClearTextSeed_Armory135());
    auto assetWlt = AssetWallet_Single::createFromSeed(
-      move(seed),
-      SecureBinaryData(),
-      SecureBinaryData(),
-      homedir_,
-      10); //set lookup computation to 5 entries
+      move(seed), params);
 
    //register with db
    vector<BinaryData> addrVec;
@@ -2876,16 +2873,11 @@ TEST_F(ZeroConfTests_FullNode, RegisterAddress_AfterZC)
    scrAddrVec.push_back(TestChain::scrAddrE);
 
    //// create assetWlt ////
-
-   //create a root private key
+   WalletCreationParams params{{}, {}, homedir_, 3, 1, 1};
    unique_ptr<Armory::Seeds::ClearTextSeed> seed(
       new Armory::Seeds::ClearTextSeed_Armory135());
    auto assetWlt = AssetWallet_Single::createFromSeed(
-      move(seed),
-      SecureBinaryData(),
-      SecureBinaryData(),
-      homedir_,
-      3); //set lookup computation to 3 entries
+      move(seed), params);
 
    //register with db
    vector<BinaryData> addrVec;
@@ -3094,18 +3086,13 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
    scrAddrVec.push_back(TestChain::scrAddrE);
 
    //// create assetWlt ////
-
-   //create a root private key
+   WalletCreationParams params{{}, {}, homedir_, 10, 1, 1};
    unique_ptr<Armory::Seeds::ClearTextSeed> seed(
       new Armory::Seeds::ClearTextSeed_Armory135());
    auto assetWlt = AssetWallet_Single::createFromSeed(
-      move(seed),
-      SecureBinaryData(),
-      SecureBinaryData(),
-      homedir_,
-      10); //set lookup computation to 3 entries
+      move(seed), params);
 
-           //register with db
+   //register with db
    vector<BinaryData> addrVec;
 
    auto hashSet = assetWlt->getAddrHashSet();
@@ -3575,16 +3562,11 @@ TEST_F(ZeroConfTests_FullNode, TwoZC_CheckLedgers)
    scrAddrVec.push_back(TestChain::scrAddrE);
 
    //// create assetWlt ////
-
-   //create a root private key
+   WalletCreationParams params{{}, {}, homedir_, 5, 1, 1};
    unique_ptr<Armory::Seeds::ClearTextSeed> seed(
       new Armory::Seeds::ClearTextSeed_Armory135());
    auto assetWlt = AssetWallet_Single::createFromSeed(
-      move(seed),
-      SecureBinaryData(),
-      SecureBinaryData(),
-      homedir_,
-      5); //set lookup computation to 3 entries
+      move(seed), params);
 
    //register with db
    vector<BinaryData> addrVec;
@@ -4376,14 +4358,11 @@ TEST_F(ZeroConfTests_Supernode, ZC_Reorg)
    theBDMt_->start(DBSettings::initMode());
    auto&& bdvID = DBTestUtils::registerBDV(clients_, BitcoinSettings::getMagicBytes());
 
+   WalletCreationParams params{{}, {}, homedir_, 3, 1, 1};
    unique_ptr<Armory::Seeds::ClearTextSeed> seed(
       new Armory::Seeds::ClearTextSeed_Armory135());
    auto assetWlt = AssetWallet_Single::createFromSeed(
-      move(seed),
-      SecureBinaryData(),
-      SecureBinaryData(),
-      homedir_,
-      3); //set lookup computation to 3 entries
+      move(seed), params);
    auto addr1_ptr = assetWlt->getNewAddress();
    auto addr2_ptr = assetWlt->getNewAddress();
 
@@ -4545,16 +4524,11 @@ TEST_F(ZeroConfTests_Supernode, ChainZC_RBFchild_Test)
    scrAddrVec.push_back(TestChain::scrAddrE);
 
    //// create assetWlt ////
-
-   //create a root private key
+   WalletCreationParams params{{}, {}, homedir_, 10, 1, 1};
    unique_ptr<Armory::Seeds::ClearTextSeed> seed(
       new Armory::Seeds::ClearTextSeed_Armory135());
    auto assetWlt = AssetWallet_Single::createFromSeed(
-      move(seed),
-      SecureBinaryData(),
-      SecureBinaryData(),
-      homedir_,
-      10); //set lookup computation to 3 entries
+      move(seed), params);
 
    //register with db
    vector<BinaryData> addrVec;

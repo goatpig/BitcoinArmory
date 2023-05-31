@@ -31,15 +31,18 @@ KdfRomix::KdfRomix(uint32_t memReqts, uint32_t numIter, SecureBinaryData salt) :
 }
 
 /////////////////////////////////////////////////////////////////////////////
-void KdfRomix::computeKdfParams(double targetComputeSec, uint32_t maxMemReqts)
+void KdfRomix::computeKdfParams(
+   double targetComputeMSec,
+   uint32_t maxMemReqts,
+   bool verbose)
 {
    // Create a random salt, even though this is probably unnecessary:
    // the variation in numIter and memReqts is probably effective enough
    salt_ = CryptoPRNG::generateRandom(32);
 
-   // If target compute is 0s, then this method really only generates 
+   // If target compute is 0s, then this method really only generates
    // a random salt, and sets the other params to default minimum.
-   if (targetComputeSec == 0)
+   if (targetComputeMSec <= 4)
    {
       numIterations_ = 1;
       memoryReqtBytes_ = 1024;
@@ -48,63 +51,67 @@ void KdfRomix::computeKdfParams(double targetComputeSec, uint32_t maxMemReqts)
 
 
    // Here, we pick the largest memory reqt that allows the executing system
-   // to compute the KDF is less than the target time.  A maximum can be 
+   // to compute the KDF is less than the target time.  A maximum can be
    // specified, in case the target system is likely to be memory-limited
    // more than compute-speed limited
-   auto&& testKey = SecureBinaryData::fromString("This is an example key to test KDF iteration speed");
+
+   //12 bytes test key
+   auto testKey = SecureBinaryData::fromString("- Test Key -");
 
    // Start the search for a memory value at 1kB
    memoryReqtBytes_ = 1024;
-   double approxSec = 0;
-   while (approxSec <= targetComputeSec / 4 && memoryReqtBytes_ < maxMemReqts)
+   uint64_t approxMSec = 0;
+   while (approxMSec <= targetComputeMSec / 4 &&
+      memoryReqtBytes_ < maxMemReqts)
    {
       memoryReqtBytes_ *= 2;
 
       sequenceCount_ = memoryReqtBytes_ / hashOutputBytes_;
       lookupTable_.resize(memoryReqtBytes_);
 
-      TIMER_RESTART("KDF_Mem_Search");
+      auto start = chrono::system_clock::now();
       testKey = DeriveKey_OneIter(testKey);
-      TIMER_STOP("KDF_Mem_Search");
-      approxSec = TIMER_READ_SEC("KDF_Mem_Search");
+      auto end = chrono::system_clock::now();
+      approxMSec = chrono::duration_cast<chrono::milliseconds>(
+         end - start).count();
    }
 
-   // Recompute here, in case we didn't enter the search above 
+   // Recompute here, in case we didn't enter the search above
    sequenceCount_ = memoryReqtBytes_ / hashOutputBytes_;
    lookupTable_.resize(memoryReqtBytes_);
 
 
-   // Depending on the search above (or if a low max memory was chosen, 
+   // Depending on the search above (or if a low max memory was chosen,
    // we may need to do multiple iterations to achieve the desired compute
    // time on this system.
-   double allItersSec = 0;
+   uint64_t allItersMSec = 0;
    uint32_t numTest = 1;
-   while (allItersSec < 0.02)
+   while (allItersMSec < 100)
    {
       numTest *= 2;
-      TIMER_RESTART("KDF_Time_Search");
+      auto start = chrono::system_clock::now();
       for (uint32_t i = 0; i < numTest; i++)
       {
-         auto&& _testKey = SecureBinaryData::fromString(
-            "This is an example key to test KDF iteration speed");
-
+         auto&& _testKey = testKey;
          _testKey = DeriveKey_OneIter(_testKey);
       }
-      TIMER_STOP("KDF_Time_Search");
-      allItersSec = TIMER_READ_SEC("KDF_Time_Search");
+      auto end = chrono::system_clock::now();
+      allItersMSec = chrono::duration_cast<chrono::milliseconds>(
+         end - start).count();
    }
 
-   double perIterSec = allItersSec / numTest;
-   numIterations_ = (uint32_t)(targetComputeSec / (perIterSec + 0.0005));
-   numIterations_ = (numIterations_ < 1 ? 1 : numIterations_);
-   //cout << "System speed test results    :  " << endl;
-   //cout << "   Total test of the KDF took:  " << allItersSec*1000 << " ms" << endl;
-   //cout << "                   to execute:  " << numTest << " iterations" << endl;
-   //cout << "   Target computation time is:  " << targetComputeSec*1000 << " ms" << endl;
-   //cout << "   Setting numIterations to:    " << numIterations_ << endl;
+   uint64_t perIterMSec = allItersMSec / numTest;
+   numIterations_ = (uint32_t)(targetComputeMSec / (perIterMSec + 1));
+   numIterations_ = (numIterations_ < 1 ? 1 : numIterations_ + 1);
+   if (verbose)
+   {
+      cout << "System speed test results    :  " << endl;
+      cout << "   Total test of the KDF took:  " << allItersMSec << " ms" << endl;
+      cout << "                   to execute:  " << numTest << " iterations" << endl;
+      cout << "   Target computation time is:  " << targetComputeMSec << " ms" << endl;
+      cout << "   Setting numIterations to:    " << numIterations_ << endl;
+   }
 }
-
-
 
 /////////////////////////////////////////////////////////////////////////////
 void KdfRomix::usePrecomputedKdfParams(uint32_t memReqts,
@@ -206,5 +213,5 @@ SecureBinaryData KdfRomix::DeriveKey(SecureBinaryData const & password)
    for (uint32_t i = 0; i < numIterations_; i++)
       masterKey = DeriveKey_OneIter(masterKey);
 
-   return SecureBinaryData(masterKey);
+   return masterKey;
 }
