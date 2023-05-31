@@ -48,7 +48,7 @@ WalletDBInterface::~WalletDBInterface()
 
 ////////////////////////////////////////////////////////////////////////////////
 void WalletDBInterface::setupEnv(const string& path, bool fileExists,
-   const PassphraseLambda& passLbd)
+   const PassphraseLambda& passLbd, uint32_t lockTime_ms)
 {
    auto lock = unique_lock<mutex>(setupMutex_);
    if (dbEnv_ != nullptr)
@@ -76,7 +76,7 @@ void WalletDBInterface::setupEnv(const string& path, bool fileExists,
    catch (NoEntryInWalletException&)
    {
       //no control header, this is a fresh wallet, set it up
-      controlHeader = setupControlDB(passLbd);
+      controlHeader = setupControlDB(passLbd, lockTime_ms);
       isNew = true;
    }
 
@@ -348,7 +348,9 @@ void WalletDBInterface::loadSeed(shared_ptr<WalletHeader> headerPtr)
 
 ////////////////////////////////////////////////////////////////////////////////
 MasterKeyStruct WalletDBInterface::initWalletHeaderObject(
-   shared_ptr<WalletHeader> headerPtr, const SecureBinaryData& passphrase)
+   shared_ptr<WalletHeader> headerPtr,
+   const SecureBinaryData& passphrase,
+   uint32_t unlockTime_ms)
 {
    /*
    Setup master and top encryption key.
@@ -369,7 +371,7 @@ MasterKeyStruct WalletDBInterface::initWalletHeaderObject(
    /*
    generate master encryption key, derive id
    */
-   mks.kdf_ = make_shared<KeyDerivationFunction_Romix>();
+   mks.kdf_ = make_shared<KeyDerivationFunction_Romix>(unlockTime_ms);
    auto&& masterKeySBD = CryptoPRNG::generateRandom(32);
    mks.decryptedMasterKey_ = make_shared<ClearTextEncryptionKey>(masterKeySBD);
    mks.decryptedMasterKey_->deriveKey(mks.kdf_);
@@ -449,7 +451,7 @@ MasterKeyStruct WalletDBInterface::initWalletHeaderObject(
 
 ////////////////////////////////////////////////////////////////////////////////
 shared_ptr<WalletHeader_Control> WalletDBInterface::setupControlDB(
-   const PassphraseLambda& passLbd)
+   const PassphraseLambda& passLbd, uint32_t unlockTime_ms)
 {
    //prompt for passphrase
    SecureBinaryData passphrase;
@@ -459,7 +461,7 @@ shared_ptr<WalletHeader_Control> WalletDBInterface::setupControlDB(
    //create control meta object
    auto headerPtr = make_shared<WalletHeader_Control>();
    headerPtr->walletID_ = CONTROL_DB_NAME;
-   auto keyStruct = initWalletHeaderObject(headerPtr, passphrase);
+   auto keyStruct = initWalletHeaderObject(headerPtr, passphrase, unlockTime_ms);
 
    //setup controlDB decrypted data container
    auto decryptedData = make_shared<DecryptedDataContainer>(

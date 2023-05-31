@@ -115,7 +115,7 @@ namespace Armory
             std::shared_ptr<IO::WalletHeader>, const std::string&);
 
          static std::shared_ptr<IO::WalletDBInterface> getIfaceFromFile(
-            const std::string&, bool, const PassphraseLambda&);
+            const std::string&, bool, const PassphraseLambda&, uint32_t);
 
          //locals
 
@@ -252,6 +252,22 @@ namespace Armory
       };
 
       //////////////////////////////////////////////////////////////////////////
+      struct WalletCreationParams
+      {
+         const SecureBinaryData passphrase;
+         const SecureBinaryData controlPassphrase;
+
+         const std::string folder{"./"};
+         const uint32_t lookup{100};
+
+         //250ms target unlock duration for public data (control passphrase)
+         const uint32_t publicUnlockDuration_ms{250};
+
+         //2sec target unlock duration for private keys (passphrase)
+         const uint32_t privateUnlockDuration_ms{2000};
+      };
+
+      //////////////////////////////////////////////////////////////////////////
       class AssetWallet_Single : public AssetWallet
       {
          friend class AssetWallet;
@@ -269,10 +285,9 @@ namespace Armory
          static std::shared_ptr<AssetWallet_Single> initWalletDb(
             std::shared_ptr<IO::WalletDBInterface> iface,
             const std::string& masterID, const std::string& walletID,
-            const SecureBinaryData& passphrase,
-            const SecureBinaryData& controlPassphrase,
             const SecureBinaryData& privateRoot,
             const SecureBinaryData& chaincode,
+            const WalletCreationParams&,
             uint32_t seedFingerprint);
 
          static std::shared_ptr<AssetWallet_Single> initWalletDbWithPubRoot(
@@ -292,18 +307,12 @@ namespace Armory
 
          //wallet creation private statics
          static std::shared_ptr<AssetWallet_Single> createFromSeed(
-            const std::string&, //folder
             Seeds::ClearTextSeed_Armory135*,
-            const SecureBinaryData&, //pass
-            const SecureBinaryData&, //control pass
-            unsigned); //lookup
+            const WalletCreationParams&);
 
          static std::shared_ptr<AssetWallet_Single> createFromSeed(
-            const std::string&, //folder
             Seeds::ClearTextSeed_BIP32*,
-            const SecureBinaryData&, //pass
-            const SecureBinaryData&, //control pass
-            unsigned); //lookup
+            const WalletCreationParams&);
 
       public:
          //tors
@@ -353,9 +362,7 @@ namespace Armory
          //static
          static std::shared_ptr<AssetWallet_Single> createFromSeed(
             std::unique_ptr<Armory::Seeds::ClearTextSeed>,
-            const SecureBinaryData&,
-            const SecureBinaryData&,
-            const std::string&, unsigned lookup = 1000);
+            const WalletCreationParams&);
 
          static std::shared_ptr<AssetWallet_Single>
          createFromPublicRoot_Armory135(

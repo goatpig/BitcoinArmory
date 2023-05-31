@@ -1761,34 +1761,23 @@ TEST_F(BlockUtilsWithWalletTest, MultipleSigners_2of3_NativeP2WSH)
    scrAddrVec.push_back(TestChain::scrAddrE);
 
    //// create 3 assetWlt ////
+   WalletCreationParams params{{}, {}, homedir_, 3, 1, 1};
 
    //create a root private key
    unique_ptr<Armory::Seeds::ClearTextSeed> seed1(
       new Armory::Seeds::ClearTextSeed_Armory135());
    auto assetWlt_1 = AssetWallet_Single::createFromSeed(
-      move(seed1),
-      SecureBinaryData(),
-      SecureBinaryData(),
-      homedir_,
-      3); //set lookup computation to 3 entries
+      move(seed1), params);
 
    unique_ptr<Armory::Seeds::ClearTextSeed> seed2(
       new Armory::Seeds::ClearTextSeed_Armory135());
    auto assetWlt_2 = AssetWallet_Single::createFromSeed(
-      move(seed2),
-      SecureBinaryData(),
-      SecureBinaryData(),
-      homedir_,
-      3); //set lookup computation to 3 entries
+      move(seed2), params);
 
    unique_ptr<Armory::Seeds::ClearTextSeed> seed3(
       new Armory::Seeds::ClearTextSeed_Armory135());
    auto assetWlt_3 = AssetWallet_Single::createFromSeed(
-      move(seed3),
-      SecureBinaryData(),
-      SecureBinaryData(),
-      homedir_,
-      3); //set lookup computation to 3 entries
+      move(seed3), params);
 
           //create 2-of-3 multisig asset entry from 3 different wallets
    map<BinaryData, shared_ptr<AssetEntry>> asset_single_map;

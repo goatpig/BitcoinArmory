@@ -45,6 +45,7 @@ namespace Armory
          struct ClearTextEncryptionKey;
          class ClearTextAssetData;
 
+         ///////////////////////////////////////////////////////////////////////
          class KeyDerivationFunction
          {
          public:
@@ -67,7 +68,7 @@ namespace Armory
                deserialize(const BinaryDataRef&);
          };
 
-         ///////////////////////////////////////////////////////////////////////
+         ////////
          class KeyDerivationFunction_Romix : public KeyDerivationFunction
          {
          private:
@@ -78,25 +79,23 @@ namespace Armory
 
          private:
             BinaryData computeID(void) const;
-            BinaryData initialize(void);
+            BinaryData initialize(uint32_t);
 
          public:
-            KeyDerivationFunction_Romix() :
-               KeyDerivationFunction(),
-               salt_(std::move(initialize()))
-            {}
+            KeyDerivationFunction_Romix(uint32_t);
+            KeyDerivationFunction_Romix(unsigned, unsigned, SecureBinaryData);
+            ~KeyDerivationFunction_Romix(void) override;
 
-            KeyDerivationFunction_Romix(unsigned iterations, unsigned memTarget,
-               SecureBinaryData& salt) :
-               KeyDerivationFunction(),
-               iterations_(iterations), memTarget_(memTarget), salt_(salt)
-            {}
+            //overrides
+            SecureBinaryData deriveKey(const SecureBinaryData&) const override;
+            bool isSame(KeyDerivationFunction* const) const override;
+            BinaryData serialize(void) const override;
+            const BinaryData& getId(void) const override;
 
-            SecureBinaryData deriveKey(const SecureBinaryData& rawKey) const;
-            bool isSame(KeyDerivationFunction* const) const;
-            BinaryData serialize(void) const;
-            const BinaryData& getId(void) const;
+            //locals
             unsigned memTarget(void) const;
+            unsigned iterations(void) const;
+            void prettyPrint(void) const;
          };
 
          ///////////////////////////////////////////////////////////////////////

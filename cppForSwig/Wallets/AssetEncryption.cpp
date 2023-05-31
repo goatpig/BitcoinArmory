@@ -26,6 +26,23 @@ KeyDerivationFunction::~KeyDerivationFunction()
 {}
 
 ////////////////////////////////////////////////////////////////////////////////
+KeyDerivationFunction_Romix::KeyDerivationFunction_Romix(
+   uint32_t unlockTime_ms) :
+   KeyDerivationFunction(), salt_((initialize(unlockTime_ms)))
+{}
+
+////
+KeyDerivationFunction_Romix::KeyDerivationFunction_Romix(
+   unsigned iterations, unsigned memTarget, SecureBinaryData salt) :
+   KeyDerivationFunction(),
+   iterations_(iterations), memTarget_(memTarget), salt_(move(salt))
+{}
+
+////
+KeyDerivationFunction_Romix::~KeyDerivationFunction_Romix()
+{}
+
+////////////////////////////////////////////////////////////////////////////////
 BinaryData KeyDerivationFunction_Romix::computeID() const
 {
    BinaryWriter bw;
@@ -39,10 +56,10 @@ BinaryData KeyDerivationFunction_Romix::computeID() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-BinaryData KeyDerivationFunction_Romix::initialize()
+BinaryData KeyDerivationFunction_Romix::initialize(uint32_t unlockTime_ms)
 {
    KdfRomix kdf;
-   kdf.computeKdfParams(0);
+   kdf.computeKdfParams(unlockTime_ms);
    iterations_ = kdf.getNumIterations();
    memTarget_ = kdf.getMemoryReqtBytes();
    return kdf.getSalt();
@@ -53,7 +70,7 @@ SecureBinaryData KeyDerivationFunction_Romix::deriveKey(
    const SecureBinaryData& rawKey) const
 {
    KdfRomix kdfObj(memTarget_, iterations_, salt_);
-   return move(kdfObj.DeriveKey(rawKey));
+   return kdfObj.DeriveKey(rawKey);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -95,7 +112,7 @@ shared_ptr<KeyDerivationFunction> KeyDerivationFunction::deserialize(
          SecureBinaryData salt(move(brr.get_BinaryData(len)));
 
          kdfPtr = make_shared<KeyDerivationFunction_Romix>(
-            iterations, memTarget, salt);
+            iterations, memTarget, move(salt));
          break;
       }
 
@@ -155,6 +172,22 @@ bool KeyDerivationFunction_Romix::isSame(KeyDerivationFunction* const kdf) const
 unsigned KeyDerivationFunction_Romix::memTarget() const
 {
    return memTarget_;
+}
+
+////////
+unsigned KeyDerivationFunction_Romix::iterations() const
+{
+   return iterations_;
+}
+
+////////
+void KeyDerivationFunction_Romix::prettyPrint() const
+{
+   cout << "KDF Parameters:" << endl;
+   cout << "   HashFunction : " << "sha512" << endl;
+   cout << "   Memory/thread: " << memTarget_ << " bytes" << endl;
+   cout << "   NumIterations: " << iterations_ << endl;
+   cout << "   Salt         : " << salt_.toHexStr() << endl;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

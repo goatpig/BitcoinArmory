@@ -26,7 +26,7 @@ using namespace Armory::Seeds;
 
 ////////////////////////////////////////////////////////////////////////////////
 AuthorizedPeers::AuthorizedPeers(
-   const string& datadir, const string& filename, 
+   const string& datadir, const string& filename,
    const PassphraseLambda& passLbd)
 {
    auto path = datadir;
@@ -157,10 +157,10 @@ void AuthorizedPeers::loadWallet(
 
 ////////////////////////////////////////////////////////////////////////////////
 void AuthorizedPeers::createWallet(
-   const string& baseDir, const string& filename, 
+   const string& baseDir, const string& filename,
    const PassphraseLambda& passLbd)
 {
-   //Default peers wallet password. Asset wallets always encrypt private keys, 
+   //Default peers wallet password. Asset wallets always encrypt private keys,
    //have to provide a password at creation.
    auto&& password = SecureBinaryData::fromString(PEERS_WALLET_PASSWORD);
    auto&& controlPassphrase = passLbd({});
@@ -175,7 +175,9 @@ void AuthorizedPeers::createWallet(
       wallet_ = AssetWallet_Single::createFromSeed(
          make_unique<ClearTextSeed_BIP32>(
             CryptoPRNG::generateRandom(32), SeedType::BIP32_Virgin),
-         password, controlPassphrase, baseDir);
+         WalletCreationParams{
+            password, controlPassphrase, baseDir, 0, 100, 250
+         });
       auto wltSingle = dynamic_pointer_cast<AssetWallet_Single>(wallet_);
 
       auto rootBip32 = dynamic_pointer_cast<AssetEntry_BIP32Root>(

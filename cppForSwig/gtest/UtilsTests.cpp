@@ -18,6 +18,7 @@
 using namespace std;
 using namespace Armory::Signer;
 using namespace Armory::Config;
+using namespace Armory::Wallets::Encryption;
 
 ////////////////////////////////////////////////////////////////////////////////
 // RFC 5869 (HKDF) unit tests for SHA-256.
@@ -6648,6 +6649,78 @@ TEST_F(TestTxHashFilters, FilterALot)
       search(hashes1k, TxFilterPoolMode::Auto);
       search(hashes100, TxFilterPoolMode::Auto);
    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+class KdfTests : public ::testing::Test
+{
+protected:
+   virtual void SetUp(void)
+   {}
+};
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(KdfTests, Romix)
+{
+   uint32_t targetUnlock_ms = 2000;
+
+   //create a KDF object
+   KeyDerivationFunction_Romix kdfRom(targetUnlock_ms);
+   EXPECT_GE(kdfRom.memTarget(), 8092);
+
+   //derive key with it, check it takes over 2sec
+   auto keyToDerive = SecureBinaryData::fromString("0123456789AB");
+   {
+      auto start = chrono::system_clock::now();
+      auto derivedKey = kdfRom.deriveKey(keyToDerive);
+      auto end = chrono::system_clock::now();
+
+      EXPECT_NE(derivedKey, keyToDerive);
+      auto diff = chrono::duration_cast<chrono::milliseconds>(end - start);
+      EXPECT_GE(diff.count(), targetUnlock_ms);
+      EXPECT_LE(diff.count(), targetUnlock_ms + 1000);
+   }
+   kdfRom.prettyPrint();
+
+   //deser kdf object into a copy, check it load correctly
+   auto serializedKdf = kdfRom.serialize();
+   auto kdfCopy = KeyDerivationFunction::deserialize(serializedKdf);
+   auto kdfRom2 = dynamic_pointer_cast<KeyDerivationFunction_Romix>(kdfCopy);
+   ASSERT_NE(kdfRom2, nullptr);
+   EXPECT_TRUE(kdfRom.isSame(kdfRom2.get()));
+
+   //derive key with kdf copy, check it takes over 2sec
+   {
+      auto start = chrono::system_clock::now();
+      auto derivedKey = kdfRom2->deriveKey(keyToDerive);
+      auto end = chrono::system_clock::now();
+
+      EXPECT_NE(derivedKey, keyToDerive);
+      auto diff = chrono::duration_cast<chrono::milliseconds>(end - start);
+      EXPECT_GE(diff.count(), targetUnlock_ms);
+      EXPECT_LE(diff.count(), targetUnlock_ms + 1000);
+   }
+   kdfRom2->prettyPrint();
+
+   //create kdf with same params but its own salt
+   KeyDerivationFunction_Romix kdfRom3(
+      kdfRom.iterations(),
+      kdfRom.memTarget(),
+      CryptoPRNG::generateRandom(32)
+   );
+
+   //derive key with 3rd kdf, check it takes over 2sec
+   {
+      auto start = chrono::system_clock::now();
+      auto derivedKey = kdfRom3.deriveKey(keyToDerive);
+      auto end = chrono::system_clock::now();
+
+      EXPECT_NE(derivedKey, keyToDerive);
+      auto diff = chrono::duration_cast<chrono::milliseconds>(end - start);
+      EXPECT_GE(diff.count(), targetUnlock_ms);
+      EXPECT_LE(diff.count(), targetUnlock_ms + 1000);
+   }
+   kdfRom3.prettyPrint();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
