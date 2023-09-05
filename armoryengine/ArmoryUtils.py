@@ -246,11 +246,6 @@ class P2SHNotSupportedError(Exception): pass
 class isMSWallet(Exception): pass
 class SignerException(Exception): pass
 
-# Witness variables and constants
-NODE_WITNESS = 1 << 3
-WITNESS_MARKER = 0
-WITNESS_FLAG = 1
-
 if getattr(sys, 'frozen', False):
    sys.argv = [arg.decode('utf8') for arg in sys.argv]
 

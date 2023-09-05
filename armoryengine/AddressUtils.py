@@ -149,7 +149,7 @@ def hash160_to_p2shAddrStr(binStr):
       raise InvalidHashError('Input string is %d bytes' % len(binStr))
 
    packer = BinaryPacker()
-   packer.put(BINARY_CHUNK, netbyte)
+   packer.put(BINARY_CHUNK, P2SHBYTE)
    packer.put(BINARY_CHUNK, binStr)
    hash21 = hash256(packer.getBinaryString())
    packer.put(BINARY_CHUNK, hash21[:4])

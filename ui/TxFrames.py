@@ -18,11 +18,12 @@ from qtdialogs.qtdefines import ArmoryFrame, tightSizeNChar, \
    GETFONT, QRichLabel, VLINE, QLabelButton, USERMODE, \
    VERTICAL, makeHorizFrame, STYLE_RAISED, makeVertFrame, \
    relaxedSizeNChar, STYLE_SUNKEN, CHANGE_ADDR_DESCR_STRING, \
-   STRETCH, createToolTipWidget
+   STRETCH, createToolTipWidget, MSGBOX
 
 from qtdialogs.qtdialogs import NO_CHANGE
 from qtdialogs.DlgDispTxInfo import DlgDispTxInfo
 from qtdialogs.DlgConfirmSend import DlgConfirmSend
+from qtdialogs.MsgBoxCustom import MsgBoxCustom
 
 from armoryengine.BDM import TheBDM, BDM_BLOCKCHAIN_READY
 from armoryengine.Transaction import UnsignedTransaction, getTxOutScriptType

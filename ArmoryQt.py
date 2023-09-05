@@ -85,7 +85,8 @@ from qtdialogs.qtdefines import GETFONT, NETWORKMODE, \
    makeLayoutFrame, HORIZONTAL, QRichLabel, relaxedSizeStr, STYLE_SUNKEN, \
    makeHorizFrame, DASHBTNS, STYLE_NONE, UserModeStr, makeVertFrame, \
    restoreTableView, determineWalletType, WLTTYPES, tightSizeStr, \
-   QLabelButton, MSGBOX, saveTableView, createToolTipWidget
+   QLabelButton, MSGBOX, saveTableView, createToolTipWidget, \
+   CHANGE_ADDR_DESCR_STRING
 
 from qtdialogs.ArmoryDialog import ArmoryDialog
 from qtdialogs.qtdialogs import URLHandler, ArmorySplashScreen, LoadingDisp
@@ -5470,37 +5471,44 @@ class ArmoryMainWindow(QMainWindow):
       wlt = self.walletMap[walletId]
 
       #grab ZC from DB
-      zctx = TheBDM.service.getTxByHash(txHash)
-      pytx = PyTx().unserialize(zctx.serialize())
+      txHashBin = hex_to_binary(txHash)
+      zctx = TheBridge.service.getTxByHash(txHashBin)
+      pytx = PyTx().unserialize(zctx.raw)
 
-      #create tx batch
-      batch = Cpp.TransactionBatch()
+      #init tx prefill data
+      prefill = {
+         'walletID': walletId,
+         'spenders': [],
+         'recipients': [],
+      }
+
+      #inputs
       for txin in pytx.inputs:
          outpoint = txin.outpoint
-         batch.addSpender(binary_to_hex(outpoint.txHash), \
-            outpoint.txOutIndex, txin.intSeq)
+         prefill['spenders'].append([
+            binary_to_hex(outpoint.txHash),
+            outpoint.txOutIndex,
+            txin.intSeq
+         ])
 
+      #outputs
+      prefill['recipients'] = []
       for txout in pytx.outputs:
-         script = txout.getScript()
-         scrAddr = BtcUtils().getScrAddrForScript(script)
-         addrComment = wlt.getCommentForAddress(scrAddr)
-
-         b58Addr = scrAddr_to_addrStr(scrAddr)
+         address = txout.getScrAddressStr()
+         addrComment = wlt.getCommentForAddress(address)
+         prefill['recipients'].append([
+            address,
+            txout.getValue(),
+            addrComment
+         ])
 
          if addrComment == CHANGE_ADDR_DESCR_STRING:
             #change address
-            batch.setChange(b58Addr)
-
-         else:
-            #recipient
-            batch.addRecipient(b58Addr, txout.value)
-
-      batch.setWalletID(walletId)
+            prefill['change'] = address
 
       #feed batch to spend dlg
-      batchStr = batch.serialize()
       dlgSpend = DlgSendBitcoins(None, self, self)
-      dlgSpend.frame.prefillFromBatch(batchStr)
+      dlgSpend.frame.prefill(prefill)
       dlgSpend.exec_()
 
    #############################################################################

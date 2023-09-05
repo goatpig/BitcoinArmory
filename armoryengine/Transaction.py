@@ -12,7 +12,7 @@ import os
 import binascii
 
 from armoryengine.ArmoryUtils import BlockComponent, BIGENDIAN, \
-   LITTLEENDIAN, enum, UINT32_MAX, UNINITIALIZED, WITNESS_MARKER, hash256, \
+   LITTLEENDIAN, enum, UINT32_MAX, UNINITIALIZED, hash256, \
    CPP_TXOUT_NONSTANDARD, CPP_TXOUT_P2SH, CPP_TXOUT_MULTISIG, \
    CPP_TXOUT_P2WPKH, CPP_TXOUT_P2WSH, CPP_TXOUT_NONSTANDARD, \
    CPP_TXOUT_STDPUBKEY33, CPP_TXOUT_STDPUBKEY65, CPP_TXOUT_STDHASH160, \
@@ -36,6 +36,9 @@ from armoryengine.Script import convertScriptToOpStrings
 from qtdialogs.DlgUnlockWallet import UnlockWalletHandler
 
 UNSIGNED_TX_VERSION = 2
+
+WITNESS_MARKER = 0
+WITNESS_FLAG = 1
 
 TXIN_EXT_P2SHSCRIPT = 0x10
 USTX_EXT_SIGNERTYPE = 0x20

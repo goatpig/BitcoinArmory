@@ -368,12 +368,20 @@ bool ProtobufCommandParser::processCoinSelectionCommands(CppBridge* bridge,
       case BridgeProto::CoinSelection::kSetRecipient:
       {
          const auto& setRecipientMsg = msg.set_recipient();
-         cs->updateRecipient(setRecipientMsg.id(),
-            setRecipientMsg.address(), setRecipientMsg.value());
-
          auto payload = make_unique<BridgeProto::Payload>();
          auto reply = payload->mutable_reply();
-         reply->set_success(true);
+         try
+         {
+            cs->updateRecipient(setRecipientMsg.id(),
+               setRecipientMsg.address(), setRecipientMsg.value());
+            reply->set_success(true);
+         }
+         catch (const std::exception& e)
+         {
+            reply->set_success(false);
+            reply->set_error(e.what());
+         }
+
          response = move(payload);
          break;
       }

@@ -23,7 +23,7 @@ from PySide2.QtWidgets import QStyle, QApplication, QCalendarWidget, \
 
 from armoryengine.ArmoryUtils import enum, coin2str, binary_to_hex, \
    int_to_hex, CPP_TXOUT_SCRIPT_NAMES, CPP_TXOUT_MULTISIG, \
-   CPP_TXIN_SCRIPT_NAMES
+   CPP_TXIN_SCRIPT_NAMES, ADDRBYTE, P2SHBYTE
 from armoryengine.UserAddressUtils import getDisplayStringForScriptImpl
 from armoryengine.Transaction import UnsignedTransaction, \
    getTxInScriptType
@@ -33,6 +33,7 @@ from armoryengine.BDM import TheBDM, BDM_BLOCKCHAIN_READY
 from armoryengine.CppBridge import TheBridge
 from armoryengine.AddressUtils import Hash160ToScrAddr, addrStr_to_hash160, \
    scrAddr_to_addrStr
+from armoryengine.Settings import TheSettings
 
 from armorycolors import Colors
 from qtdialogs.qtdefines import determineWalletType, WLTTYPES, \
@@ -332,7 +333,7 @@ class LedgerDispModelSimple(QAbstractTableModel):
                else:
                   return self.tr('Bitcoins received')
          if col==COL.Amount:
-            if self.main.settings.get('DispRmFee'):
+            if TheSettings.get('DispRmFee'):
                return self.tr('The net effect on the balance of this wallet '
                                '<b>not including transaction fees.</b>  '
                                'You can change this behavior in the Armory '

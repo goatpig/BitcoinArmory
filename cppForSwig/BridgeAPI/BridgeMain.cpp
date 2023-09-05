@@ -24,6 +24,9 @@ int main(int argc, char* argv[])
 
 
    auto pubKeyHex = std::getenv("SERVER_PUBKEY");
+   if (pubKeyHex == nullptr)
+      throw std::runtime_error("could not find pubkey env var, aborting!");
+
    auto pubKeyStr = std::string("--uiPubKey=") + pubKeyHex;
    args[argc] = (char*)pubKeyStr.c_str();
 
