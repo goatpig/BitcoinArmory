@@ -492,7 +492,7 @@ bool AssetWallet::hasScrAddr(const BinaryData& scrAddr) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const pair<AssetId, AddressEntryType>& 
+const pair<AssetId, AddressEntryType>&
    AssetWallet::getAssetIDForAddrStr(const string& addrStr) const
 {
    //this takes b58 or bech32 addresses

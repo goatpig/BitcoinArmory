@@ -14,7 +14,6 @@
 #include <string>
 #include <memory>
 
-#include "make_unique.h"
 #include "BinaryData.h"
 #include "EncryptionUtils.h"
 #include "WalletIdTypes.h"

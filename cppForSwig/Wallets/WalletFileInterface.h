@@ -17,7 +17,6 @@
 #include <mutex>
 #include <functional>
 
-#include "make_unique.h"
 #include "lmdbpp.h"
 #include "BinaryData.h"
 #include "SecureBinaryData.h"

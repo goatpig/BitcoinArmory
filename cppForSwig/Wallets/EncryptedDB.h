@@ -16,7 +16,6 @@
 #include <mutex>
 #include <functional>
 
-#include "make_unique.h"
 #include "lmdbpp.h"
 #include "BinaryData.h"
 #include "SecureBinaryData.h"
@@ -237,7 +236,7 @@ namespace Armory
                if (write)
                   type = LMDB::ReadWrite;
 
-               txPtr_ = make_unique<LMDBEnv::Transaction>(dbEnv, type);
+               txPtr_ = std::make_unique<LMDBEnv::Transaction>(dbEnv, type);
             }
 
             ~RawIfaceTransaction(void) noexcept(false)

@@ -729,8 +729,8 @@ pair<BinaryData, int> BtcUtils::segWitAddressToScrAddr(const string& swAddr)
    int ver;
    size_t len;
    BinaryData result(40);
-   if (segwit_addr_decode(&ver, result.getPtr(), &len, 
-      headerPtr->c_str(), swAddr.c_str()) == 0) 
+   if (segwit_addr_decode(&ver, result.getPtr(), &len,
+      headerPtr->c_str(), swAddr.c_str()) == 0)
    {
       throw runtime_error("failed to decode sw address!");
    }

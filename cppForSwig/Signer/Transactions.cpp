@@ -7,7 +7,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "Transactions.h"
-#include "make_unique.h"
 
 using namespace std;
 using namespace Armory::Signer;

@@ -9,7 +9,6 @@
 #include "Script.h"
 #include "Transactions.h"
 #include "Signer.h"
-#include "make_unique.h"
 
 using namespace std;
 using namespace Armory::Signer;

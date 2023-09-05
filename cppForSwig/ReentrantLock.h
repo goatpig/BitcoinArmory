@@ -13,8 +13,7 @@
 #include <mutex>
 #include <memory>
 #include <string>
-
-#include "make_unique.h"
+#include <stdexcept>
 
 class LockableException : public std::runtime_error
 {
@@ -71,8 +70,8 @@ public:
       if (lockablePtr_->mutexTID_ == std::this_thread::get_id())
          throw AlreadyLocked();
 
-      lock_ =
-         make_unique<std::unique_lock<std::mutex>>(lockablePtr_->mu_, std::defer_lock);
+      lock_ = std::make_unique<std::unique_lock<std::mutex>>(
+         lockablePtr_->mu_, std::defer_lock);
 
       lock_->lock();
       lockablePtr_->mutexTID_ = std::this_thread::get_id();
@@ -83,7 +82,7 @@ public:
    SingleLock(SingleLock&& lock) :
       lockablePtr_(lock.lockablePtr_)
    {
-      lock_ = move(lock.lock_);
+      lock_ = std::move(lock.lock_);
    }
 
    ~SingleLock(void)
@@ -120,11 +119,11 @@ public:
       lockablePtr_ = const_cast<Lockable*>(ptr);
       if (lockablePtr_ == nullptr)
          throw LockableException("null lockable ptr");
-      
+
       if (lockablePtr_->mutexTID_ != std::this_thread::get_id())
       {
-         lock_ =
-            make_unique<std::unique_lock<std::mutex>>(lockablePtr_->mu_, std::defer_lock);
+         lock_ = std::make_unique<std::unique_lock<std::mutex>>(
+            lockablePtr_->mu_, std::defer_lock);
 
          lock_->lock();
          lockablePtr_->mutexTID_ = std::this_thread::get_id();
@@ -137,8 +136,6 @@ public:
    {
       lock_ = move(lock.lock_);
    }
-
-
 
    ~ReentrantLock(void)
    {

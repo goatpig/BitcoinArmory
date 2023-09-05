@@ -47,7 +47,7 @@ struct SshBounds
 
    SshBounds(void)
    {
-      completed_ = make_unique<std::promise<bool>>();
+      completed_ = std::make_unique<std::promise<bool>>();
       fut_ = completed_->get_future();
    }
 

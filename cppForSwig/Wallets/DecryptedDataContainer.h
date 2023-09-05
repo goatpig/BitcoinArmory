@@ -82,7 +82,7 @@ namespace Armory
                         "emtpy DecryptedDataContainer ptr");
                   }
 
-                  lock_ = make_unique<ReentrantLock>(obj.get());
+                  lock_ = std::make_unique<ReentrantLock>(obj.get());
                }
             };
 

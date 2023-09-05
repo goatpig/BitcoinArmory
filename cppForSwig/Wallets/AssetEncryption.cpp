@@ -7,7 +7,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "AssetEncryption.h"
-#include "make_unique.h"
 #include "DBUtils.h"
 
 #define CIPHER_VERSION     0x00000001

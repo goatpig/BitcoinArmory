@@ -22,8 +22,6 @@
 #include <condition_variable>
 #include <deque>
 
-#include "make_unique.h"
-
 namespace Armory
 {
    namespace Threading

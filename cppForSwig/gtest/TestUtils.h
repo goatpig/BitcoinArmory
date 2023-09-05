@@ -267,7 +267,7 @@ namespace DBTestUtils
 
       void run(BdmNotification bdmNotif)
       {
-         auto notif = make_unique<BdmNotif>();
+         auto notif = std::make_unique<BdmNotif>();
          notif->action_ = bdmNotif.action_;
          notif->requestID_ = bdmNotif.requestID_;
 
