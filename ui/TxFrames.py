@@ -33,7 +33,7 @@ from armoryengine.MultiSigUtils import createLockboxEntryStr
 from armoryengine.ArmoryUtils import MAX_COMMENT_LENGTH, getAddrByte, \
    LOGEXCEPT, LOGERROR, LOGINFO, NegativeValueError, TooMuchPrecisionError, \
    str2coin, CPP_TXOUT_STDSINGLESIG, CPP_TXOUT_P2SH, coin2str, \
-   MIN_FEE_BYTE, getNameForAddrType, binary_to_hex
+   coin2str_approx, MIN_FEE_BYTE, getNameForAddrType, binary_to_hex
 from armoryengine.Settings import TheSettings
 from armoryengine.AddressUtils import hash160_to_addrStr, addrTypeInSet, \
    addrStr_to_hash160, script_to_addrStr, getAddressTypeForOutputType, \
