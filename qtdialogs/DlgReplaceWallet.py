@@ -4,7 +4,7 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2022, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
@@ -12,7 +12,7 @@
 
 import os
 
-from PySide2.QtWidgets import QGridLayout, QLabel, QPushButton
+from qtpy import QtWidgets
 
 from armoryengine.ArmoryUtils import LOGEXCEPT, RightNowStr
 
@@ -26,7 +26,7 @@ class DlgReplaceWallet(ArmoryDialog):
    def __init__(self, WalletID, parent, main):
       super(DlgReplaceWallet, self).__init__(parent, main)
 
-      lblDesc = QLabel(self.tr(
+      lblDesc = QtWidgets.QLabel(self.tr(
                        '<b>You already have this wallet loaded!</b><br>'
                        'You can choose to:<br>'
                        '- Cancel wallet restore operation<br>'
@@ -40,15 +40,15 @@ class DlgReplaceWallet(ArmoryDialog):
 
       self.wltPath = main.walletMap[WalletID].walletPath
 
-      self.btnAbort = QPushButton(self.tr('Cancel'))
-      self.btnReplace = QPushButton(self.tr('Overwrite'))
-      self.btnSaveMeta = QPushButton(self.tr('Merge'))
+      self.btnAbort = QtWidgets.QPushButton(self.tr('Cancel'))
+      self.btnReplace = QtWidgets.QPushButton(self.tr('Overwrite'))
+      self.btnSaveMeta = QtWidgets.QPushButton(self.tr('Merge'))
 
       self.btnAbort.clicked.connect(self.reject)
       self.btnReplace.clicked.connect(self.Replace)
       self.btnSaveMeta.clicked.connect(self.SaveMeta)
 
-      layoutDlg = QGridLayout()
+      layoutDlg = QtWidgets.QGridLayout()
 
       layoutDlg.addWidget(lblDesc,          0, 0, 4, 4)
       layoutDlg.addWidget(self.btnAbort,    4, 0, 1, 1)

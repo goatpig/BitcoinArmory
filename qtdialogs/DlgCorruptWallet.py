@@ -4,7 +4,7 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2022, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
@@ -17,9 +17,9 @@ from armoryengine.PyBtcWallet import PyBtcWallet
 
 from qtdialogs.DlgProgress import DlgProgress
 from qtdialogs.qtdefines import HLINE, QRichLabel, makeVertFrame
-from PySide2.QtWidgets import QDialog, QGridLayout, QLabel, QLayout, QPushButton, QScrollArea, QVBoxLayout
-from PySide2.QtCore import Qt, SIGNAL
 from armorycolors import htmlColor
+
+from qtpy import QtCore, QtWidgets
 
 #################################################################################
 class DlgCorruptWallet(DlgProgress):
@@ -41,7 +41,7 @@ class DlgCorruptWallet(DlgProgress):
       self.lock = threading.Lock()
       self.condVar = threading.Condition(self.lock)
 
-      mainLayout = QVBoxLayout()
+      mainLayout = QtWidgets.QVBoxLayout()
 
       self.connect(self, SIGNAL('UCF'), self.UCF)
       self.connect(self, SIGNAL('Show'), self.show)
@@ -62,7 +62,7 @@ class DlgCorruptWallet(DlgProgress):
          'hardware errors that could lead to problems with your wallet. '
          '<br>').arg(htmlColor('TextWarn'), titleStr))
 
-      lblDescr.setAlignment(Qt.AlignCenter)
+      lblDescr.setAlignment(QtCore.Qt.AlignCenter)
 
 
       if alreadyFailed:
@@ -83,10 +83,10 @@ class DlgCorruptWallet(DlgProgress):
       else:
          self.lblFirstMsg = QRichLabel('')
 
-      self.QDS = QDialog()
-      self.lblStatus = QLabel('')
+      self.QDS = QtWidgets.QDialog()
+      self.lblStatus = QtWidgets.QLabel('')
       self.addStatus(wallet, status)
-      self.QDSlo = QVBoxLayout()
+      self.QDSlo = QtWidgets.QVBoxLayout()
       self.QDS.setLayout(self.QDSlo)
 
       self.QDSlo.addWidget(self.lblFirstMsg)
@@ -95,18 +95,18 @@ class DlgCorruptWallet(DlgProgress):
       self.lblStatus.setVisible(False)
       self.lblFirstMsg.setVisible(True)
 
-      saStatus = QScrollArea()
+      saStatus = QtWidgets.QScrollArea()
       saStatus.setWidgetResizable(True)
       saStatus.setWidget(self.QDS)
       saStatus.setMinimumHeight(250)
       saStatus.setMinimumWidth(500)
 
 
-      layoutButtons = QGridLayout()
+      layoutButtons = QtWidgets.QGridLayout()
       layoutButtons.setColumnStretch(0, 1)
       layoutButtons.setColumnStretch(4, 1)
-      self.btnClose = QPushButton(self.tr('Hide'))
-      self.btnFixWallets = QPushButton(self.tr('Run Analysis and Recovery Tool'))
+      self.btnClose = QtWidgets.QPushButton(self.tr('Hide'))
+      self.btnFixWallets = QtWidgets.QPushButton(self.tr('Run Analysis and Recovery Tool'))
       self.btnFixWallets.setDisabled(True)
       self.connect(self.btnFixWallets, SIGNAL('clicked()'), self.doFixWallets)
       self.connect(self.btnClose, SIGNAL('clicked()'), self.hide)
@@ -114,13 +114,13 @@ class DlgCorruptWallet(DlgProgress):
       layoutButtons.addWidget(self.btnFixWallets, 0, 2, 1, 1)
 
       self.lblDescr2 = QRichLabel('')
-      self.lblDescr2.setAlignment(Qt.AlignCenter)
+      self.lblDescr2.setAlignment(QtCore.Qt.AlignCenter)
 
       self.lblFixRdy = QRichLabel(self.tr(
          '<u>Your wallets will be ready to fix once the scan is over</u><br> '
          'You can hide this window until then<br>'))
 
-      self.lblFixRdy.setAlignment(Qt.AlignCenter)
+      self.lblFixRdy.setAlignment(QtCore.Qt.AlignCenter)
 
       self.frmBottomMsg = makeVertFrame(['Space(5)',
                                          HLINE(),
@@ -137,7 +137,7 @@ class DlgCorruptWallet(DlgProgress):
       mainLayout.addLayout(layoutButtons)
 
       self.setLayout(mainLayout)
-      self.layout().setSizeConstraint(QLayout.SetFixedSize)
+      self.layout().setSizeConstraint(QtWidgets.QLayout.SetFixedSize)
       self.setWindowTitle(self.tr('Wallet Error'))
 
    def addStatus(self, wallet, status):
@@ -204,7 +204,7 @@ class DlgCorruptWallet(DlgProgress):
          else:
             wlt = self.walletList[0]
 
-      self.lblDesc = QLabel('')
+      self.lblDesc = QtWidgets.QLabel('')
       self.QDSlo.addWidget(self.lblDesc)
 
       self.lblFixRdy.hide()
@@ -239,7 +239,7 @@ class DlgCorruptWallet(DlgProgress):
       self.emit(SIGNAL('SNP'), status)
 
    def setNewProgress(self, status):
-      self.lblDesc = QLabel('')
+      self.lblDesc = QtWidgets.QLabel('')
       self.QDSlo.addWidget(self.lblDesc)
         #self.QDS.adjustSize()
       status[0] = 1

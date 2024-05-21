@@ -18,15 +18,15 @@ class DlgBrowserWarn(ArmoryDialog):
       super(DlgBrowserWarn, self).__init__(parent, main)
 
       self.link = link
-      self.btnCancel = QPushButton("Cancel")
+      self.btnCancel = QtWidgets.QPushButton("Cancel")
       self.connect(self.btnCancel, SIGNAL(CLICKED), self.cancel)
-      self.btnContinue = QPushButton("Continue")
+      self.btnContinue = QtWidgets.QPushButton("Continue")
       self.connect(self.btnContinue, SIGNAL(CLICKED), self.accept)
       btnBox = makeHorizFrame([STRETCH, self.btnCancel, self.btnContinue])
 
       lblWarn = QRichLabel(self.tr('Your default browser will now open and go to the following link: %s. Are you sure you want to proceed?' % self.link))
 
-      dlgLayout = QVBoxLayout()
+      dlgLayout = QtWidgets.QVBoxLayout()
       frmAll = makeVertFrame([lblWarn, btnBox])
 
       dlgLayout.addWidget(frmAll)

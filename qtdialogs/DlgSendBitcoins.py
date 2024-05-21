@@ -4,14 +4,14 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2022, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
 ##############################################################################
 
-from PySide2.QtCore import QSize
-from PySide2.QtWidgets import QVBoxLayout
+from qtpy import QtCore, QtWidgets
+
 
 from armoryengine.Settings import TheSettings
 
@@ -26,7 +26,7 @@ class DlgSendBitcoins(ArmoryDialog):
                               wltIDList=None, onlyOfflineWallets=False,
                               spendFromLockboxID=None):
       super(DlgSendBitcoins, self).__init__(parent, main)
-      layout = QVBoxLayout()
+      layout = QtWidgets.QVBoxLayout()
 
       self.spendFromLockboxID = spendFromLockboxID
 
@@ -37,7 +37,7 @@ class DlgSendBitcoins(ArmoryDialog):
                    spendFromLockboxID=spendFromLockboxID)
       layout.addWidget(self.frame)
       self.setLayout(layout)
-      self.sizeHint = lambda: QSize(850, 600)
+      self.sizeHint = lambda: QtCore.QSize(850, 600)
       self.setMinimumWidth(700)
       # Update the any controls based on the initial wallet selection
       self.frame.fireWalletChange()

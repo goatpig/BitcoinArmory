@@ -4,19 +4,13 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)            #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                         #
 #                                                                              #
-# Copyright (C) 2016-2023, goatpig                                             #
+# Copyright (C) 2016-2024, goatpig                                             #
 #  Distributed under the MIT license                                           #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                      #
 #                                                                              #
 ################################################################################
 
-from PySide2.QtCore import Qt, Signal, QPointF, QRectF
-from PySide2.QtGui import QColor, QPen, QPainter, QBrush, QPixmap, \
-   QMatrix, QIcon
-from PySide2.QtWidgets import QRadioButton, QPushButton, QVBoxLayout, \
-   QFrame, QMessageBox, QGraphicsTextItem, QGraphicsRectItem, \
-   QGraphicsScene, QGraphicsView, QCheckBox, QComboBox, QGraphicsPixmapItem, \
-   QGraphicsLineItem, QGraphicsItem
+from qtpy import QtCore, QtGui, QtWidgets
 
 from armoryengine.ArmoryUtils import toUnicode, USE_TESTNET, USE_REGTEST
 from armoryengine.AddressUtils import binary_to_base58, encodePrivKeyBase58, \
@@ -47,11 +41,11 @@ class DlgBackupCenter(ArmoryDialog):
 
       self.walletBackupFrame = WalletBackupFrame(parent, main)
       self.walletBackupFrame.setWallet(wlt)
-      self.btnDone = QPushButton(self.tr('Done'))
+      self.btnDone = QtWidgets.QPushButton(self.tr('Done'))
       self.btnDone.clicked.connect(self.reject)
       frmBottomBtns = makeHorizFrame([STRETCH, self.btnDone])
 
-      layoutDialog = QVBoxLayout()
+      layoutDialog = QtWidgets.QVBoxLayout()
 
       layoutDialog.addWidget(self.walletBackupFrame)
 
@@ -83,16 +77,16 @@ class DlgSimpleBackup(ArmoryDialog):
       # ## Paper
       lblPaper = QRichLabel(self.tr(
          'Use a printer or pen-and-paper to write down your wallet "seed."'))
-      btnPaper = QPushButton(self.tr('Make Paper Backup'))
+      btnPaper = QtWidgets.QPushButton(self.tr('Make Paper Backup'))
 
       # ## Digital
       lblDigital = QRichLabel(self.tr(
          'Create an unencrypted copy of your wallet file, including imported '
          'addresses.'))
-      btnDigital = QPushButton(self.tr('Make Digital Backup'))
+      btnDigital = QtWidgets.QPushButton(self.tr('Make Digital Backup'))
 
       # ## Other
-      btnOther = QPushButton(self.tr('See Other Backup Options'))
+      btnOther = QtWidgets.QPushButton(self.tr('See Other Backup Options'))
 
       def backupDigital():
          if self.main.digitalBackupWarning():
@@ -111,7 +105,7 @@ class DlgSimpleBackup(ArmoryDialog):
       btnDigital.connect.clicked(backupDigital)
       btnOther.connect.clicked(backupOther)
 
-      layout = QGridLayout()
+      layout = QtWidgets.QGridLayout()
 
       layout.addWidget(lblPaper, 0, 0)
       layout.addWidget(btnPaper, 0, 2)
@@ -131,19 +125,19 @@ class DlgSimpleBackup(ArmoryDialog):
       setLayoutStretchRows(layout, 1, 0, 1, 0, 0)
       setLayoutStretchCols(layout, 1, 0, 0)
 
-      frmGrid = QFrame()
+      frmGrid = QtWidgets.QFrame()
       frmGrid.setFrameStyle(STYLE_PLAIN)
       frmGrid.setLayout(layout)
 
-      btnClose = QPushButton(self.tr('Done'))
+      btnClose = QtWidgets.QPushButton(self.tr('Done'))
       btnClose.connect.clicked(self.accept)
       frmClose = makeHorizFrame([STRETCH, btnClose])
 
       frmAll = makeVertFrame([lblDescrTitle, lblDescr, frmGrid, frmClose])
-      layoutAll = QVBoxLayout()
+      layoutAll = QtWidgets.QVBoxLayout()
       layoutAll.addWidget(frmAll)
       self.setLayout(layoutAll)
-      self.sizeHint = lambda: QSize(400, 250)
+      self.sizeHint = lambda: QtCore.QSize(400, 250)
 
       self.setWindowTitle(self.tr('Backup Options'))
 
@@ -169,25 +163,25 @@ class SimplePrintableGraphicsScene(object):
       self.PAPER_A4_HEIGHT = 11.0 * self.INCH
       self.MARGIN_PIXELS = 0.6 * self.INCH
 
-      self.PAGE_BKGD_COLOR = QColor(255, 255, 255)
-      self.PAGE_TEXT_COLOR = QColor(0, 0, 0)
+      self.PAGE_BKGD_COLOR = QtGui.QColor(255, 255, 255)
+      self.PAGE_TEXT_COLOR = QtGui.QColor(0, 0, 0)
 
       self.fontFix = GETFONT('Courier', 9)
       self.fontVar = GETFONT('Times', 10)
 
-      self.gfxScene = QGraphicsScene(self.parent)
+      self.gfxScene = QtGui.QGraphicsScene(self.parent)
       self.gfxScene.setSceneRect(0, 0, self.PAPER_A4_WIDTH, self.PAPER_A4_HEIGHT)
       self.gfxScene.setBackgroundBrush(self.PAGE_BKGD_COLOR)
 
       # For when it eventually makes it to the printer
       # self.printer = QPrinter(QPrinter.HighResolution)
       # self.printer.setPageSize(QPrinter.Letter)
-      # self.gfxPainter = QPainter(self.printer)
-      # self.gfxPainter.setRenderHint(QPainter.TextAntialiasing)
-      # self.gfxPainter.setPen(Qt.NoPen)
-      # self.gfxPainter.setBrush(QBrush(self.PAGE_TEXT_COLOR))
+      # self.gfxPainter = QtGui.QPainter(self.printer)
+      # self.gfxPainter.setRenderHint(QtGui.QPainter.TextAntialiasing)
+      # self.gfxPainter.setPen(QtCore.Qt.NoPen)
+      # self.gfxPainter.setBrush(QtGui.QBrush(self.PAGE_TEXT_COLOR))
 
-      self.cursorPos = QPointF(self.MARGIN_PIXELS, self.MARGIN_PIXELS)
+      self.cursorPos = QtCore.QPointF(self.MARGIN_PIXELS, self.MARGIN_PIXELS)
       self.lastCursorMove = (0, 0)
 
 
@@ -199,7 +193,7 @@ class SimplePrintableGraphicsScene(object):
 
    def pageRect(self):
       marg = self.MARGIN_PIXELS
-      return QRectF(marg, marg, self.PAPER_A4_WIDTH - marg, self.PAPER_A4_HEIGHT - marg)
+      return QtCore.QRectF(marg, marg, self.PAPER_A4_WIDTH - marg, self.PAPER_A4_HEIGHT - marg)
 
    def insidePageRect(self, pt=None):
       if pt == None:
@@ -210,10 +204,10 @@ class SimplePrintableGraphicsScene(object):
    def moveCursor(self, dx, dy, absolute=False):
       xOld, yOld = self.getCursorXY()
       if absolute:
-         self.cursorPos = QPointF(dx, dy)
+         self.cursorPos = QtCore.QPointF(dx, dy)
          self.lastCursorMove = (dx - xOld, dy - yOld)
       else:
-         self.cursorPos = QPointF(xOld + dx, yOld + dy)
+         self.cursorPos = QtCore.QPointF(xOld + dx, yOld + dy)
          self.lastCursorMove = (dx, dy)
 
 
@@ -222,7 +216,7 @@ class SimplePrintableGraphicsScene(object):
       self.resetCursor()
 
    def resetCursor(self):
-      self.cursorPos = QPointF(self.MARGIN_PIXELS, self.MARGIN_PIXELS)
+      self.cursorPos = QtCore.QPointF(self.MARGIN_PIXELS, self.MARGIN_PIXELS)
 
 
    def newLine(self, extra_dy=0):
@@ -236,8 +230,8 @@ class SimplePrintableGraphicsScene(object):
       if width == None:
          width = 3 * self.INCH
       currX, currY = self.getCursorXY()
-      lineItem = QGraphicsLineItem(currX, currY, currX + width, currY)
-      pen = QPen()
+      lineItem = QtGui.QGraphicsLineItem(currX, currY, currX + width, currY)
+      pen = QtGui.QPen()
       pen.setWidth(penWidth)
       lineItem.setPen(pen)
       self.gfxScene.addItem(lineItem)
@@ -246,19 +240,19 @@ class SimplePrintableGraphicsScene(object):
       self.moveCursor(rect.width(), 0)
       return self.lastItemSize
 
-   def drawRect(self, w, h, edgeColor=QColor(0, 0, 0), fillColor=None, penWidth=1):
-      rectItem = QGraphicsRectItem(self.cursorPos.x(), self.cursorPos.y(), w, h)
+   def drawRect(self, w, h, edgeColor=QtGui.QColor(0, 0, 0), fillColor=None, penWidth=1):
+      rectItem = QtGui.QGraphicsRectItem(self.cursorPos.x(), self.cursorPos.y(), w, h)
       if edgeColor == None:
-         rectItem.setPen(QPen(Qt.NoPen))
+         rectItem.setPen(QtGui.QPen(QtCore.Qt.NoPen))
       else:
-         pen = QPen(edgeColor)
+         pen = QtGui.QPen(edgeColor)
          pen.setWidth(penWidth)
          rectItem.setPen(pen)
 
       if fillColor == None:
-         rectItem.setBrush(QBrush(Qt.NoBrush))
+         rectItem.setBrush(QtGui.QBrush(QtCore.Qt.NoBrush))
       else:
-         rectItem.setBrush(QBrush(fillColor))
+         rectItem.setBrush(QtGui.QBrush(fillColor))
 
       self.gfxScene.addItem(rectItem)
       rect = rectItem.boundingRect()
@@ -270,7 +264,7 @@ class SimplePrintableGraphicsScene(object):
    def drawText(self, txt, font=None, wrapWidth=None, useHtml=True):
       if font == None:
          font = GETFONT('Var', 9)
-      txtItem = QGraphicsTextItem('')
+      txtItem = QtWidgets.QGraphicsTextItem('')
       if useHtml:
          txtItem.setHtml(toUnicode(txt))
       else:
@@ -287,12 +281,12 @@ class SimplePrintableGraphicsScene(object):
       return self.lastItemSize
 
    def drawPixmapFile(self, pixFn, sizePx=None):
-      pix = QPixmap(pixFn)
+      pix = QtGui.QPixmap(pixFn)
       if not sizePx == None:
          pix = pix.scaled(sizePx, sizePx)
       pixItem = QGraphicsPixmapItem(pix)
       pixItem.setPos(self.cursorPos)
-      pixItem.setMatrix(QMatrix())
+      pixItem.setMatrix(QtGui.QMatrix())
       self.gfxScene.addItem(pixItem)
       rect = pixItem.boundingRect()
       self.lastItemSize = (rect.width(), rect.height())
@@ -302,7 +296,7 @@ class SimplePrintableGraphicsScene(object):
    def drawQR(self, qrdata, size=150):
       objQR = GfxItemQRCode(qrdata, size)
       objQR.setPos(self.cursorPos)
-      objQR.setMatrix(QMatrix())
+      objQR.setMatrix(QtGui.QMatrix())
       self.gfxScene.addItem(objQR)
       rect = objQR.boundingRect()
       self.lastItemSize = (rect.width(), rect.height())
@@ -341,10 +335,10 @@ class SimplePrintableGraphicsScene(object):
 
       self.moveCursor(origX + maxColWidth, origY, absolute=True)
 
-      return [QRectF(origX, origY, maxColWidth, cumulativeY), rowHeight]
+      return [QtCore.QRectF(origX, origY, maxColWidth, cumulativeY), rowHeight]
 
 ################################################################################
-class GfxItemQRCode(QGraphicsItem):
+class GfxItemQRCode(QtWidgets.QGraphicsItem):
    """
    Converts binary data to base58, and encodes the Base58 characters in
    the QR-code.  It seems weird to use Base58 instead of binary, but the
@@ -374,11 +368,11 @@ class GfxItemQRCode(QGraphicsItem):
       self.qrmtrx, self.modCt = CreateQRMatrix(toEncode, 'H')
       self.modSz = round(float(self.maxSize) / float(self.modCt) - 0.5)
       totalSize = self.modCt * self.modSz
-      self.Rect = QRectF(0, 0, totalSize, totalSize)
+      self.Rect = QtCore.QRectF(0, 0, totalSize, totalSize)
 
    def paint(self, painter, option, widget=None):
-      painter.setPen(Qt.NoPen)
-      painter.setBrush(QBrush(QColor(0, 0, 0)))
+      painter.setPen(QtCore.Qt.NoPen)
+      painter.setBrush(QtGui.QBrush(QtGui.QColor(0, 0, 0)))
 
       for r in range(self.modCt):
          for c in range(self.modCt):
@@ -435,9 +429,9 @@ class DlgPrintBackup(ArmoryDialog):
       # an inconsistency in the data.  Yes, this is like a goto!
       if self.backupData == None:
          LOGEXCEPT("Problem with private key and/or chaincode.  Aborting.")
-         QMessageBox.critical(self, self.tr("Error Creating Backup"), self.tr(
+         QtWidgets.QMessageBox.critical(self, self.tr("Error Creating Backup"), self.tr(
             'There was an error with the backup creator.  The operation is being '
-            'canceled to avoid making bad backups!'), QMessageBox.Ok)
+            'canceled to avoid making bad backups!'), QtWidgets.QMessageBox.Ok)
          return
 
       # A self-evident check of whether we need to print the chaincode.
@@ -456,7 +450,7 @@ class DlgPrintBackup(ArmoryDialog):
                self.binImport.append([a160, addr.binPrivKey32_Plain.copy(), 0])
 
 
-      tempTxtItem = QGraphicsTextItem('')
+      tempTxtItem = QtWidgets.QGraphicsTextItem('')
       tempTxtItem.setPlainText(toUnicode('0123QAZjqlmYy'))
       tempTxtItem.setFont(GETFONT('Fix', 7))
       self.importHgt = tempTxtItem.boundingRect().height() - 5
@@ -464,16 +458,16 @@ class DlgPrintBackup(ArmoryDialog):
 
       # Create the scene and the view.
       self.scene = SimplePrintableGraphicsScene(self, self.main)
-      self.view = QGraphicsView()
-      self.view.setRenderHint(QPainter.TextAntialiasing)
+      self.view = QtWidgets.QGraphicsView()
+      self.view.setRenderHint(QtGui.QPainter.TextAntialiasing)
       self.view.setScene(self.scene.getScene())
 
 
-      self.chkImportPrint = QCheckBox(self.tr('Print imported keys'))
+      self.chkImportPrint = QtWidgets.QCheckBox(self.tr('Print imported keys'))
       self.chkImportPrint.clicked.connect(self.clickImportChk)
 
       self.lblPageStr = QRichLabel(self.tr('Page:'))
-      self.comboPageNum = QComboBox()
+      self.comboPageNum = QtWidgets.QComboBox()
       self.lblPageMaxStr = QRichLabel('')
       self.comboPageNum.activated.connect(self.redrawBackup)
 
@@ -485,7 +479,7 @@ class DlgPrintBackup(ArmoryDialog):
       self.comboPageNum.setVisible(False)
       self.lblPageMaxStr.setVisible(False)
 
-      self.chkSecurePrint = QCheckBox(self.tr(u'Use SecurePrint\u200b\u2122 to prevent exposing keys to printer or other '
+      self.chkSecurePrint = QtWidgets.QCheckBox(self.tr(u'Use SecurePrint\u200b\u2122 to prevent exposing keys to printer or other '
          'network devices'))
 
       if(self.doPrintFrag):
@@ -509,9 +503,9 @@ class DlgPrintBackup(ArmoryDialog):
       self.chkSecurePrint.clicked.connect(self.redrawBackup)
 
 
-      self.btnPrint = QPushButton('&Print...')
+      self.btnPrint = QtWidgets.QPushButton('&Print...')
       self.btnPrint.setMinimumWidth(3 * tightSizeStr(self.btnPrint, 'Print...')[0])
-      self.btnCancel = QPushButton('&Cancel')
+      self.btnCancel = QtWidgets.QPushButton('&Cancel')
       self.btnPrint.clicked.connect(self.print_)
       self.btnCancel.clicked.connect(self.accept)
 
@@ -552,7 +546,7 @@ class DlgPrintBackup(ArmoryDialog):
 
       frmButtons = makeHorizFrame([self.btnCancel, STRETCH, self.btnPrint])
 
-      layout = QVBoxLayout()
+      layout = QtWidgets.QVBoxLayout()
       layout.addWidget(frmDescr)
       layout.addWidget(frmChkImport)
       layout.addWidget(self.view)
@@ -563,7 +557,7 @@ class DlgPrintBackup(ArmoryDialog):
 
       self.setLayout(layout)
 
-      self.setWindowIcon(QIcon('./img/printer_icon.png'))
+      self.setWindowIcon(QtGui.QIcon('./img/printer_icon.png'))
       self.setWindowTitle('Print Wallet Backup')
 
       # Apparently I can't programmatically scroll until after it's painted
@@ -602,7 +596,7 @@ class DlgPrintBackup(ArmoryDialog):
 
    def clickImportChk(self):
       if self.numImportPages > 1 and self.chkImportPrint.isChecked():
-         ans = QMessageBox.warning(self, self.tr('Lots to Print!'), self.tr(
+         ans = QtWidgets.QMessageBox.warning(self, self.tr('Lots to Print!'), self.tr(
             'This wallet contains <b>%d</b> imported keys, which will require '
             '<b>%d</b> pages to print.  Not only will this use a lot of paper, '
             'it will be a lot of work to manually type in these keys in the '
@@ -610,8 +604,8 @@ class DlgPrintBackup(ArmoryDialog):
             'that you do <u>not</u> print your imported keys and instead make '
             'a digital backup, which can be restored instantly if needed. '
             '<br><br> Do you want to print the imported keys, anyway?' % (len(self.binImport), self.numImportPages)), \
-            QMessageBox.Yes | QMessageBox.No)
-         if not ans == QMessageBox.Yes:
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+         if not ans == QtWidgets.QMessageBox.Yes:
             self.chkImportPrint.setChecked(False)
 
       showPageCombo = self.chkImportPrint.isChecked() or \
@@ -648,8 +642,8 @@ class DlgPrintBackup(ArmoryDialog):
       self.printer.setPageSize(QPrinter.Letter)
 
       if QPrintDialog(self.printer).exec_():
-         painter = QPainter(self.printer)
-         painter.setRenderHint(QPainter.TextAntialiasing)
+         painter = QtGui.QPainter(self.printer)
+         painter.setRenderHint(QtGui.QPainter.TextAntialiasing)
 
          if self.doPrintFrag:
             for i in self.fragData['Range']:
@@ -675,14 +669,14 @@ class DlgPrintBackup(ArmoryDialog):
          self.comboPageNum.setCurrentIndex(self.comboPageNum.count() - 1)
 
          if self.chkSecurePrint.isChecked():
-            QMessageBox.warning(self, self.tr('SecurePrint Code'), self.tr(
+            QtWidgets.QMessageBox.warning(self, self.tr('SecurePrint Code'), self.tr(
                u'<br><b>You must write your SecurePrint\u200b\u2122 '
                'code on each sheet of paper you just printed!</b> '
                'Write it in the red box in upper-right corner '
                u'of each printed page. <br><br>SecurePrint\u200b\u2122 code: '
                '<font color="%s" size=5><b>%s</b></font> <br><br> '
                '<b>NOTE: the above code <u>is</u> case-sensitive!</b>' % (htmlColor('TextBlue'), self.randpass.toBinStr())), \
-               QMessageBox.Ok)
+               QtWidgets.QMessageBox.Ok)
          if self.chkSecurePrint.isChecked():
             self.btnCancel.setText('Done')
          else:
@@ -711,7 +705,7 @@ class DlgPrintBackup(ArmoryDialog):
       self.scene.resetCursor()
 
       pr = self.scene.pageRect()
-      self.scene.drawRect(pr.width(), pr.height(), edgeColor=None, fillColor=QColor(255, 255, 255))
+      self.scene.drawRect(pr.width(), pr.height(), edgeColor=None, fillColor=QtGui.QColor(255, 255, 255))
       self.scene.resetCursor()
 
 
@@ -836,7 +830,7 @@ class DlgPrintBackup(ArmoryDialog):
          self.scene.moveCursor(4.0 * INCH, 0)
          spWid, spHgt = 2.75 * INCH, 1.5 * INCH,
          if doMask:
-            self.scene.drawRect(spWid, spHgt, edgeColor=QColor(180, 0, 0), penWidth=3)
+            self.scene.drawRect(spWid, spHgt, edgeColor=QtGui.QColor(180, 0, 0), penWidth=3)
 
          self.scene.resetCursor()
          self.scene.moveCursor(4.07 * INCH, 0.07 * INCH)
@@ -942,7 +936,7 @@ class DlgPrintBackup(ArmoryDialog):
 
       self.scene.moveCursor(MARGIN, colRect.y() - 2, absolute=True)
       width = self.scene.pageRect().width() - 2 * MARGIN
-      self.scene.drawRect(width, colRect.height() + 7, edgeColor=QColor(0, 0, 0), fillColor=None)
+      self.scene.drawRect(width, colRect.height() + 7, edgeColor=QtGui.QColor(0, 0, 0), fillColor=None)
 
       self.scene.newLine(extra_dy=30)
       self.scene.drawText(self.tr(
@@ -1019,8 +1013,8 @@ class DlgFragBackup(ArmoryDialog):
       self.currMinN = 2
       self.maxmaxN = 12
 
-      self.comboM = QComboBox()
-      self.comboN = QComboBox()
+      self.comboM = QtWidgets.QComboBox()
+      self.comboN = QtWidgets.QComboBox()
 
       for M in range(2, self.maxM + 1):
          self.comboM.addItem(str(M))
@@ -1042,7 +1036,7 @@ class DlgFragBackup(ArmoryDialog):
       self.comboM.setMinimumWidth(30)
       self.comboN.setMinimumWidth(30)
 
-      btnAccept = QPushButton(self.tr('Close'))
+      btnAccept = QtWidgets.QPushButton(self.tr('Close'))
       self.connect(btnAccept, SIGNAL(CLICKED), self.accept)
       frmBottomBtn = makeHorizFrame([STRETCH, btnAccept])
 
@@ -1059,10 +1053,10 @@ class DlgFragBackup(ArmoryDialog):
       else:
          self.securePrint = self.secureRoot + self.secureChain
 
-      self.chkSecurePrint = QCheckBox(self.tr(u'Use SecurePrint\u200b\u2122 '
+      self.chkSecurePrint = QtWidgets.QCheckBox(self.tr(u'Use SecurePrint\u200b\u2122 '
          'to prevent exposing keys to printer or other devices'))
 
-      self.scrollArea = QScrollArea()
+      self.scrollArea = QtWidgets.QScrollArea()
       self.createFragDisplay()
       self.scrollArea.setWidgetResizable(True)
 
@@ -1085,7 +1079,7 @@ class DlgFragBackup(ArmoryDialog):
       self.lblSecurePrint.setVisible(False)
       frmChkSP = makeHorizFrame([self.chkSecurePrint, self.ttipSecurePrint, STRETCH])
 
-      dlgLayout = QVBoxLayout()
+      dlgLayout = QtWidgets.QVBoxLayout()
       dlgLayout.addWidget(frmDescr)
       dlgLayout.addWidget(self.scrollArea)
       dlgLayout.addWidget(frmChkSP)
@@ -1137,12 +1131,12 @@ class DlgFragBackup(ArmoryDialog):
       self.fragDisplayLastN = N
       self.fragDisplayLastM = M
 
-      lblAboveM = QRichLabel(self.tr('<u><b>Required Fragments</b></u> '), hAlign=Qt.AlignHCenter, doWrap=False)
-      lblAboveN = QRichLabel(self.tr('<u><b>Total Fragments</b></u> '), hAlign=Qt.AlignHCenter)
-      frmComboM = makeHorizFrame([STRETCH, QLabel('M:'), self.comboM, STRETCH])
-      frmComboN = makeHorizFrame([STRETCH, QLabel('N:'), self.comboN, STRETCH])
+      lblAboveM = QRichLabel(self.tr('<u><b>Required Fragments</b></u> '), hAlign=QtCore.Qt.AlignHCenter, doWrap=False)
+      lblAboveN = QRichLabel(self.tr('<u><b>Total Fragments</b></u> '), hAlign=QtCore.Qt.AlignHCenter)
+      frmComboM = makeHorizFrame([STRETCH, QtWidgets.QLabel('M:'), self.comboM, STRETCH])
+      frmComboN = makeHorizFrame([STRETCH, QtWidgets.QLabel('N:'), self.comboN, STRETCH])
 
-      btnPrintAll = QPushButton(self.tr('Print All Fragments'))
+      btnPrintAll = QtWidgets.QPushButton(self.tr('Print All Fragments'))
       btnPrintAll.connect.clicked(self.clickPrintAll)
       leftFrame = makeVertFrame([STRETCH, \
                                  lblAboveM, \
@@ -1154,16 +1148,16 @@ class DlgFragBackup(ArmoryDialog):
                                  btnPrintAll, \
                                  STRETCH], STYLE_STYLED)
 
-      layout = QHBoxLayout()
+      layout = QtWidgets.QHBoxLayout()
       layout.addWidget(leftFrame)
 
       for f in range(N):
          layout.addWidget(self.createFragFrm(f))
 
 
-      frmScroll = QFrame()
+      frmScroll = QtWidgets.QFrame()
       frmScroll.setFrameStyle(STYLE_SUNKEN)
-      frmScroll.setStyleSheet('QFrame { background-color : %s  }' % \
+      frmScroll.setStyleSheet('QtWidgets.QFrame { background-color : %s  }' % \
                                                 htmlColor('SlightBkgdDark'))
       frmScroll.setLayout(layout)
       self.scrollArea.setWidget(frmScroll)
@@ -1206,32 +1200,32 @@ class DlgFragBackup(ArmoryDialog):
       lblPreview.setFont(GETFONT('Fixed', 9))
 
       lblFragIdx = QRichLabel('#%d' % (idx + 1), size=4, color='TextBlue', \
-                                                   hAlign=Qt.AlignHCenter)
+                                                   hAlign=QtCore.Qt.AlignHCenter)
 
       frmTopLeft = makeVertFrame([lblFragID, lblFragIdx, STRETCH])
       frmTopRight = makeVertFrame([lblFragPix, STRETCH])
 
       frmPaper = makeVertFrame([lblPreview])
-      frmPaper.setStyleSheet('QFrame { background-color : #ffffff  }')
+      frmPaper.setStyleSheet('QtWidgets.QFrame { background-color : #ffffff  }')
 
       fnPrint = lambda: self.clickPrintFrag(idx)
       fnSave = lambda: self.clickSaveFrag(idx)
 
-      btnPrintFrag = QPushButton(self.tr('View/Print'))
-      btnSaveFrag = QPushButton(self.tr('Save to File'))
+      btnPrintFrag = QtWidgets.QPushButton(self.tr('View/Print'))
+      btnSaveFrag = QtWidgets.QPushButton(self.tr('Save to File'))
       self.connect(btnPrintFrag, SIGNAL(CLICKED), fnPrint)
       self.connect(btnSaveFrag, SIGNAL(CLICKED), fnSave)
       frmButtons = makeHorizFrame([btnPrintFrag, btnSaveFrag])
 
 
-      layout = QGridLayout()
+      layout = QtWidgets.QGridLayout()
       layout.addWidget(frmTopLeft, 0, 0, 1, 1)
       layout.addWidget(frmTopRight, 0, 1, 1, 1)
       layout.addWidget(frmPaper, 1, 0, 1, 2)
       layout.addWidget(frmButtons, 2, 0, 1, 2)
-      layout.setSizeConstraint(QLayout.SetFixedSize)
+      layout.setSizeConstraint(QtWidgets.QLayout.SetFixedSize)
 
-      outFrame = QFrame()
+      outFrame = QtWidgets.QFrame()
       outFrame.setFrameStyle(STYLE_STYLED)
       outFrame.setLayout(layout)
       return outFrame
@@ -1263,19 +1257,19 @@ class DlgFragBackup(ArmoryDialog):
       saveMtrx = self.secureMtrx
       doMask = False
       if self.chkSecurePrint.isChecked():
-         response = QMessageBox.question(self, self.tr('Secure Backup?'), self.tr(
+         response = QtWidgets.QMessageBox.question(self, self.tr('Secure Backup?'), self.tr(
             u'You have selected to use SecurePrint\u200b\u2122 for the printed '
             'backups, which can also be applied to fragments saved to file. '
             u'Doing so will require you store the SecurePrint\u200b\u2122 '
             'code with the backup, but it will prevent unencrypted key data from '
             'touching any disks.  <br><br> Do you want to encrypt the fragment '
             u'file with the same SecurePrint\u200b\u2122 code?'), \
-            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel)
 
-         if response == QMessageBox.Yes:
+         if response == QtWidgets.QMessageBox.Yes:
             saveMtrx = self.secureMtrxCrypt
             doMask = True
-         elif response == QMessageBox.No:
+         elif response == QtWidgets.QMessageBox.No:
             pass
          else:
             return
@@ -1340,7 +1334,7 @@ class DlgFragBackup(ArmoryDialog):
             % (htmlColor('TextWarn'), htmlColor('TextBlue'), \
             self.backupData.sp_pass))
 
-      QMessageBox.information(self, self.tr('Success'), qmsg, QMessageBox.Ok)
+      QtWidgets.QMessageBox.information(self, self.tr('Success'), qmsg, QtWidgets.QMessageBox.Ok)
 
 
 

@@ -17,7 +17,7 @@ class DlgQRCodeDisplay(ArmoryDialog):
    def __init__(self, parent, main, dataToQR, descrUp='', descrDown=''):
       super(DlgQRCodeDisplay, self).__init__(parent, main)
 
-      btnDone = QPushButton('Close')
+      btnDone = QtWidgets.QPushButton('Close')
       self.connect(btnDone, SIGNAL(CLICKED), self.accept)
       frmBtn = makeHorizFrame([STRETCH, btnDone, STRETCH])
 
@@ -25,13 +25,13 @@ class DlgQRCodeDisplay(ArmoryDialog):
       frmQR = makeHorizFrame([STRETCH, qrDisp, STRETCH])
 
       lblUp = QRichLabel(descrUp)
-      lblUp.setAlignment(Qt.AlignVCenter | Qt.AlignHCenter)
+      lblUp.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignHCenter)
       lblDn = QRichLabel(descrDown)
-      lblDn.setAlignment(Qt.AlignVCenter | Qt.AlignHCenter)
+      lblDn.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignHCenter)
 
 
 
-      layout = QVBoxLayout()
+      layout = QtWidgets.QVBoxLayout()
       layout.addWidget(lblUp)
       layout.addWidget(frmQR)
       layout.addWidget(lblDn)

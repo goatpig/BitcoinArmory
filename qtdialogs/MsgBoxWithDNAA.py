@@ -4,17 +4,13 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2022, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
 ##############################################################################
 
-from PySide2.QtCore import Qt
-from PySide2.QtWidgets import QLabel, QMessageBox, QPushButton, QDialogButtonBox, \
-        QCheckBox, QSpacerItem, QSizePolicy, QGridLayout
-from PySide2.QtGui import QPixmap
-
+from qtpy import QtCore, QtGui, QtWidgets
 from qtdialogs.qtdefines import MSGBOX, tightSizeNChar
 from qtdialogs.ArmoryDialog import ArmoryDialog
 
@@ -29,7 +25,7 @@ def MsgBoxWithDNAA(parent, main, wtype, title, msg, dnaaMsg, wCancel=False, \
       def __init__(self, parent, main, dtype, dtitle, wmsg, dmsg=None, withCancel=False):
          super(dlgWarn, self).__init__(parent, main)
 
-         msgIcon = QLabel()
+         msgIcon = QtWidgets.QLabel()
          fpix = ''
          if dtype==MSGBOX.Info:
             fpix = './img/MsgBox_info48.png'
@@ -49,42 +45,42 @@ def MsgBoxWithDNAA(parent, main, wtype, title, msg, dnaaMsg, wCancel=False, \
 
 
          if len(fpix)>0:
-            msgIcon.setPixmap(QPixmap(fpix))
-            msgIcon.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+            msgIcon.setPixmap(QtGui.QPixmap(fpix))
+            msgIcon.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
-         self.chkDnaa = QCheckBox(dmsg)
+         self.chkDnaa = QtWidgets.QCheckBox(dmsg)
          self.chkDnaa.setChecked(dnaaStartChk)
-         lblMsg = QLabel(msg)
-         lblMsg.setTextFormat(Qt.RichText)
+         lblMsg = QtWidgets.QLabel(msg)
+         lblMsg.setTextFormat(QtCore.Qt.RichText)
          lblMsg.setWordWrap(True)
-         lblMsg.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+         lblMsg.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
          w,h = tightSizeNChar(lblMsg, 50)
          lblMsg.setMinimumSize( w, 3.2*h )
          lblMsg.setOpenExternalLinks(True)
 
-         buttonbox = QDialogButtonBox()
+         buttonbox = QtWidgets.QDialogButtonBox()
 
          if dtype==MSGBOX.Question:
-            btnYes = QPushButton(yesStr)
-            btnNo  = QPushButton(noStr)
+            btnYes = QtWidgets.QPushButton(yesStr)
+            btnNo  = QtWidgets.QPushButton(noStr)
             btnYes.clicked.connect(self.accept)
             btnNo.clicked.connect(self.reject)
-            buttonbox.addButton(btnYes,QDialogButtonBox.AcceptRole)
-            buttonbox.addButton(btnNo, QDialogButtonBox.RejectRole)
+            buttonbox.addButton(btnYes,QtWidgets.QDialogButtonBox.AcceptRole)
+            buttonbox.addButton(btnNo, QtWidgets.QDialogButtonBox.RejectRole)
          else:
-            btnOk = QPushButton('Ok')
+            btnOk = QtWidgets.QPushButton('Ok')
             btnOk.clicked.connect(self.accept)
-            buttonbox.addButton(btnOk, QDialogButtonBox.AcceptRole)
+            buttonbox.addButton(btnOk, QtWidgets.QDialogButtonBox.AcceptRole)
             if withCancel:
-               btnCancel = QPushButton('Cancel')
+               btnCancel = QtWidgets.QPushButton('Cancel')
                btnCancel.clicked.connect(self.reject)
-               buttonbox.addButton(btnCancel, QDialogButtonBox.RejectRole)
+               buttonbox.addButton(btnCancel, QtWidgets.QDialogButtonBox.RejectRole)
 
 
-         spacer = QSpacerItem(20, 10, QSizePolicy.Fixed, QSizePolicy.Expanding)
+         spacer = QtWidgets.QSpacerItem(20, 10, QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Expanding)
 
 
-         layout = QGridLayout()
+         layout = QtWidgets.QGridLayout()
          layout.addItem(  spacer,         0,0, 1,2)
          layout.addWidget(msgIcon,        1,0, 1,1)
          layout.addWidget(lblMsg,         1,1, 1,1)

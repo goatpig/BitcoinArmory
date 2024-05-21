@@ -27,7 +27,7 @@ class DlgRequestPayment(ArmoryDialog):
 
 
       # Amount
-      self.edtAmount = QLineEdit()
+      self.edtAmount = QtWidgets.QLineEdit()
       self.edtAmount.setFont(GETFONT('Fixed'))
       self.edtAmount.setMaximumWidth(relaxedSizeNChar(GETFONT('Fixed'), 13)[0])
       if amt:
@@ -35,7 +35,7 @@ class DlgRequestPayment(ArmoryDialog):
 
 
       # Message:
-      self.edtMessage = QLineEdit()
+      self.edtMessage = QtWidgets.QLineEdit()
       self.edtMessage.setMaxLength(128)
       if msg:
          self.edtMessage.setText(msg[:128])
@@ -45,11 +45,11 @@ class DlgRequestPayment(ArmoryDialog):
 
 
       # Address:
-      self.edtAddress = QLineEdit()
+      self.edtAddress = QtWidgets.QLineEdit()
       self.edtAddress.setText(self.recvAddr)
 
       # Link Text:
-      self.edtLinkText = QLineEdit()
+      self.edtLinkText = QtWidgets.QLineEdit()
       defaultHex = binary_to_hex('Click here to pay for your order!')
       savedHex = TheSettings.getSettingOrSetDefault('DefaultLinkText', defaultHex)
       if savedHex.startswith('FFFFFFFF'):
@@ -62,8 +62,8 @@ class DlgRequestPayment(ArmoryDialog):
       self.edtLinkText.setCursorPosition(0)
       self.edtLinkText.setMaxLength(80)
 
-      qpal = QPalette()
-      qpal.setColor(QPalette.Text, Colors.TextBlue)
+      qpal = QtGui.QPalette()
+      qpal.setColor(QtGui.QPalette.Text, Colors.TextBlue)
       self.edtLinkText.setPalette(qpal)
       edtFont = self.edtLinkText.font()
       edtFont.setUnderline(True)
@@ -85,24 +85,24 @@ class DlgRequestPayment(ArmoryDialog):
       # This is the "output"
       self.lblLink = QRichLabel('')
       self.lblLink.setOpenExternalLinks(True)
-      self.lblLink.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
+      self.lblLink.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse | QtCore.Qt.TextSelectableByKeyboard)
       self.lblLink.setMinimumHeight(3 * tightSizeNChar(self, 1)[1])
-      self.lblLink.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+      self.lblLink.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
       self.lblLink.setContentsMargins(10, 5, 10, 5)
-      self.lblLink.setStyleSheet('QLabel { background-color : %s }' % htmlColor('SlightBkgdDark'))
-      frmOut = makeHorizFrame([self.lblLink], QFrame.Box | QFrame.Raised)
+      self.lblLink.setStyleSheet('QtWidgets.QLabel { background-color : %s }' % htmlColor('SlightBkgdDark'))
+      frmOut = makeHorizFrame([self.lblLink], QtWidgets.QFrame.Box | QtWidgets.QFrame.Raised)
       frmOut.setLineWidth(1)
       frmOut.setMidLineWidth(5)
 
 
       self.lblWarn = QRichLabel('')
-      self.lblWarn.setAlignment(Qt.AlignVCenter | Qt.AlignHCenter)
+      self.lblWarn.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignHCenter)
 
-      self.btnOtherOpt = QPushButton(self.tr('Other Options >>>'))
-      self.btnCopyRich = QPushButton(self.tr('Copy to Clipboard'))
-      self.btnCopyHtml = QPushButton(self.tr('Copy Raw HTML'))
-      self.btnCopyRaw = QPushButton(self.tr('Copy Raw URL'))
-      self.btnCopyAll = QPushButton(self.tr('Copy All Text'))
+      self.btnOtherOpt = QtWidgets.QPushButton(self.tr('Other Options >>>'))
+      self.btnCopyRich = QtWidgets.QPushButton(self.tr('Copy to Clipboard'))
+      self.btnCopyHtml = QtWidgets.QPushButton(self.tr('Copy Raw HTML'))
+      self.btnCopyRaw = QtWidgets.QPushButton(self.tr('Copy Raw URL'))
+      self.btnCopyAll = QtWidgets.QPushButton(self.tr('Copy All Text'))
 
       # I never actally got this button working right...
       self.btnCopyRich.setVisible(True)
@@ -155,13 +155,13 @@ class DlgRequestPayment(ArmoryDialog):
          'etc, as convenience to them.'))
 
 
-      btnClose = QPushButton(self.tr('Close'))
+      btnClose = QtWidgets.QPushButton(self.tr('Close'))
       self.connect(btnClose, SIGNAL(CLICKED), self.accept)
 
 
-      frmEntry = QFrame()
+      frmEntry = QtWidgets.QFrame()
       frmEntry.setFrameStyle(STYLE_SUNKEN)
-      layoutEntry = QGridLayout()
+      layoutEntry = QtWidgets.QGridLayout()
       i = 0
       layoutEntry.addWidget(QRichLabel(self.tr('<b>Link Text:</b>')), i, 0)
       layoutEntry.addWidget(self.edtLinkText, i, 1)
@@ -191,15 +191,15 @@ class DlgRequestPayment(ArmoryDialog):
       frmClose = makeHorizFrame([STRETCH, btnClose])
 
       self.qrStackedDisplay = QStackedWidget()
-      self.qrStackedDisplay.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
-      self.qrWaitingLabel = QRichLabel(self.tr('Creating QR Code Please Wait'), doWrap=False, hAlign=Qt.AlignHCenter)
+      self.qrStackedDisplay.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Preferred)
+      self.qrWaitingLabel = QRichLabel(self.tr('Creating QR Code Please Wait'), doWrap=False, hAlign=QtCore.Qt.AlignHCenter)
       self.qrStackedDisplay.addWidget(self.qrWaitingLabel)
       self.qrURI = QRCodeWidget('', parent=self)
       self.qrStackedDisplay.addWidget(self.qrURI)
       lblQRDescr = QRichLabel(self.tr('This QR code contains address <b>and</b> the '
                               'other payment information shown to the left.'), doWrap=True)
 
-      lblQRDescr.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
+      lblQRDescr.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignHCenter)
       frmQR = makeVertFrame([self.qrStackedDisplay, STRETCH, lblQRDescr, STRETCH], STYLE_SUNKEN)
       frmQR.layout().setStretch(0, 0)
       frmQR.layout().setStretch(1, 0)
@@ -208,7 +208,7 @@ class DlgRequestPayment(ArmoryDialog):
       frmQR.setMinimumWidth(MAX_QR_SIZE)
       self.qrURI.setMinimumHeight(MAX_QR_SIZE)
 
-      dlgLayout = QGridLayout()
+      dlgLayout = QtWidgets.QGridLayout()
 
       dlgLayout.addWidget(frmDescr, 0, 0, 1, 2)
       dlgLayout.addWidget(frmEntry, 1, 0, 1, 1)
@@ -235,7 +235,7 @@ class DlgRequestPayment(ArmoryDialog):
 
       hexgeom = str(self.main.settings.get('PayRequestGeometry'))
       if len(hexgeom) > 0:
-         geom = QByteArray.fromHex(hexgeom)
+         geom = QtCore.QByteArray.fromHex(hexgeom)
          self.restoreGeometry(geom)
       self.setMinimumSize(750, 500)
 
@@ -315,11 +315,11 @@ class DlgRequestPayment(ArmoryDialog):
          self.btnCopyAll.setEnabled(False)
          # self.lblLink.setText('<br>'.join(str(self.lblLink.text()).split('<br>')[1:]))
          self.lblLink.setEnabled(False)
-         self.lblLink.setTextInteractionFlags(Qt.NoTextInteraction)
+         self.lblLink.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
          return
 
-      self.lblLink.setTextInteractionFlags(Qt.TextSelectableByMouse | \
-                                           Qt.TextSelectableByKeyboard)
+      self.lblLink.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse | \
+                                           QtCore.Qt.TextSelectableByKeyboard)
 
       self.rawHtml = '<a href="%s">%s</a>' % (self.rawURI, str(self.edtLinkText.text()))
       self.lblWarn.setText('')
@@ -387,7 +387,7 @@ class DlgRequestPayment(ArmoryDialog):
       self.prevURI = self.rawURI
 
    def clickCopyRich(self):
-      clipb = QApplication.clipboard()
+      clipb = QtWidgets.QApplication.clipboard()
       clipb.clear()
       qmd = QMimeData()
       if OS_WINDOWS:
@@ -412,19 +412,19 @@ class DlgRequestPayment(ArmoryDialog):
          self.btnOtherOpt.setText(self.tr('Other Options >>>'))
 
    def clickCopyRaw(self):
-      clipb = QApplication.clipboard()
+      clipb = QtWidgets.QApplication.clipboard()
       clipb.clear()
       clipb.setText(self.rawURI)
       self.lblWarn.setText(self.tr('<i>Copied!</i>'))
 
    def clickCopyHtml(self):
-      clipb = QApplication.clipboard()
+      clipb = QtWidgets.QApplication.clipboard()
       clipb.clear()
       clipb.setText(self.rawHtml)
       self.lblWarn.setText(self.tr('<i>Copied!</i>'))
 
    def clickCopyAll(self):
-      clipb = QApplication.clipboard()
+      clipb = QtWidgets.QApplication.clipboard()
       clipb.clear()
       qmd = QMimeData()
       qmd.setHtml(self.dispText)

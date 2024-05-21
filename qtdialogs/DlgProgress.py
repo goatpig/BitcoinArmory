@@ -4,7 +4,7 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2022, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
@@ -13,9 +13,7 @@
 import threading
 import time
 
-from PySide2.QtCore import Qt, QPoint
-from PySide2.QtWidgets import QPushButton, QVBoxLayout, QLabel, \
-   QProgressBar, QGridLayout
+from qtpy import QtCore, QtWidgets
 
 from qtdialogs.qtdefines import STRETCH
 from qtdialogs.ArmoryDialog import ArmoryDialog
@@ -134,23 +132,23 @@ class DlgProgress(ArmoryDialog):
       super(DlgProgress, self).__init__(parent, self.main)
 
       css = """
-            QDialog{ border:1px solid rgb(0, 0, 0); }
-            QProgressBar{ text-align: center; font-weight: bold; }
+            QtWidgets.QDialog{ border:1px solid rgb(0, 0, 0); }
+            QtWidgets.QProgressBar{ text-align: center; font-weight: bold; }
             """
       self.setStyleSheet(css)
 
-      layoutMgmt = QVBoxLayout()
-      self.lblDesc = QLabel('')
+      layoutMgmt = QtWidgets.QVBoxLayout()
+      self.lblDesc = QtWidgets.QLabel('')
 
       if self.Title is not None:
          if not self.HBar:
-            self.lblTitle = QLabel(self.Title)
-            self.lblTitle.setAlignment(Qt.AlignCenter)
+            self.lblTitle = QtWidgets.QLabel(self.Title)
+            self.lblTitle.setAlignment(QtCore.Qt.AlignCenter)
             layoutMgmt.addWidget(self.lblTitle)
 
 
       if self.HBar is not None:
-         self.hbarProgress = QProgressBar(self)
+         self.hbarProgress = QtWidgets.QProgressBar(self)
          self.hbarProgress.setMaximum(self.HBar*100)
          self.hbarProgress.setMinimum(0)
          self.hbarProgress.setValue(0)
@@ -164,17 +162,17 @@ class DlgProgress(ArmoryDialog):
          layoutMgmt.addWidget(self.lblDesc)
 
       if self.Interrupt is not None:
-         self.btnStop = QPushButton(self.Interrupt)
+         self.btnStop = QtWidgets.QPushButton(self.Interrupt)
          self.btnStop.clicked.connect(self.Kill)
 
-         layout_btnG = QGridLayout()
+         layout_btnG = QtWidgets.QGridLayout()
          layout_btnG.setColumnStretch(0, 1)
          layout_btnG.setColumnStretch(4, 1)
          layout_btnG.addWidget(self.btnStop, 0, 1, 1, 3)
          layoutMgmt.addLayout(layout_btnG)
 
       self.minimize = None
-      self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+      self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.FramelessWindowHint)
       self.setModal(True)
 
       self.setLayout(layoutMgmt)
@@ -184,7 +182,7 @@ class DlgProgress(ArmoryDialog):
       topLeft = self.parent.rect().topLeft()
       globalbtmRight = self.parent.mapToGlobal((btmRight+topLeft)/2)
 
-      self.move(globalbtmRight - QPoint(self.width()/2, self.height()))
+      self.move(globalbtmRight - QtCore.QPoint(self.width()/2, self.height()))
       if self.Title:
          self.setWindowTitle(self.Title)
       else:

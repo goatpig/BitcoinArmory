@@ -1,4 +1,4 @@
-from PyQt4.Qt import QPushButton, SIGNAL, QTextEdit, QScrollArea, QTabWidget
+from PyQt4.QtCore.Qt import QtWidgets.QPushButton, SIGNAL, QtWidgets.QTextEdit, QtWidgets.QScrollArea, QtWidgets.QTabWidget
 
 from armoryengine.ArmoryUtils import getLastBytesOfFile, ARMORY_LOG_FILE,\
    ARMCPP_LOG_FILE
@@ -25,13 +25,13 @@ class PluginObject(object):
          self.cppLogTextDisplay.moveCursor(QtGui.QTextCursor.End)
 
       lblHeader    = QRichLabel(tr("""<b>Log File Display</b>"""), doWrap=False)
-      self.updateButton = QPushButton("Update")
+      self.updateButton = QtWidgets.QPushButton("Update")
       self.main.connect(self.updateButton, SIGNAL('clicked()'), updateLogDisplay)
       topRow =  makeHorizFrame([lblHeader, self.updateButton, 'stretch'])
       
       self.pyLogTextDisplay = self.createLogDisplay()
       self.cppLogTextDisplay = self.createLogDisplay()
-      logTabPanel = QTabWidget()
+      logTabPanel = QtWidgets.QTabWidget()
       logTabPanel.addTab(self.pyLogTextDisplay, "Python Log")
       logTabPanel.addTab(self.cppLogTextDisplay, "C++ Log")
       
@@ -39,13 +39,13 @@ class PluginObject(object):
       self.logFrame = makeVertFrame([topRow, logTabPanel ])
 
       # Now set the scrollarea widget to the layout
-      self.tabToDisplay = QScrollArea()
+      self.tabToDisplay = QtWidgets.QScrollArea()
       self.tabToDisplay.setWidgetResizable(True)
       self.tabToDisplay.setWidget(self.logFrame)
       updateLogDisplay()
 
    def createLogDisplay(self):
-      logTextDisplay = QTextEdit()
+      logTextDisplay = QtWidgets.QTextEdit()
       logTextDisplay.setFont(GETFONT('Fixed', 8))
       w,h = relaxedSizeNChar(logTextDisplay, 68)[0], int(12 * 8.2)
       logTextDisplay.setMinimumWidth(w)

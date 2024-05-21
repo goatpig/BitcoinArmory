@@ -6,7 +6,7 @@ from __future__ import (absolute_import, division,
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-17, goatpig                                             #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
@@ -16,15 +16,7 @@ import struct
 from tempfile import mkstemp
 import urllib
 
-from PySide2.QtCore import Qt, QAbstractTableModel, QModelIndex, \
-   QSortFilterProxyModel, QEvent, Signal, SIGNAL, QSize
-from PySide2.QtGui import QFont, QIcon, QFontMetricsF, QPixmap, \
-   QPainter, QColor
-from PySide2.QtWidgets import QWidget, QDialog, QFrame, QLabel, \
-   QStyledItemDelegate, QTableView, QHBoxLayout, QLayoutItem, \
-   QVBoxLayout, QCheckBox, QDialogButtonBox, QPushButton, \
-   QSpacerItem, QSizePolicy, QGridLayout, QApplication, QRadioButton, \
-   QLineEdit
+from qtpy import QtCore, QtGui, QtWidgets
 
 from armoryengine.ArmoryUtils import enum, ARMORY_HOME_DIR, OS_MACOSX, \
    USE_TESTNET, USE_REGTEST, OS_WINDOWS, coin2str, int_to_hex, toBytes, \
@@ -47,11 +39,11 @@ MSGBOX          = enum('Good','Info', 'Question', 'Warning', 'Critical', 'Error'
 MSGBOX          = enum('Good','Info', 'Question', 'Warning', 'Critical', 'Error')
 DASHBTNS        = enum('Close', 'Browse', 'Settings')
 
-STYLE_SUNKEN = QFrame.Box | QFrame.Sunken
-STYLE_RAISED = QFrame.Box | QFrame.Raised
-STYLE_PLAIN  = QFrame.Box | QFrame.Plain
-STYLE_STYLED = QFrame.StyledPanel | QFrame.Raised
-STYLE_NONE   = QFrame.NoFrame
+STYLE_SUNKEN = QtWidgets.QFrame.Box | QtWidgets.QFrame.Sunken
+STYLE_RAISED = QtWidgets.QFrame.Box | QtWidgets.QFrame.Raised
+STYLE_PLAIN  = QtWidgets.QFrame.Box | QtWidgets.QFrame.Plain
+STYLE_STYLED = QtWidgets.QFrame.StyledPanel | QtWidgets.QFrame.Raised
+STYLE_NONE   = QtWidgets.QFrame.NoFrame
 VERTICAL = 'vertical'
 HORIZONTAL = 'horizontal'
 CHANGE_ADDR_DESCR_STRING = '[[ Change received ]]'
@@ -71,14 +63,14 @@ def AddToRunningDialogsList(func):
    return wrapper
 
 ################################################################################
-def HLINE(style=QFrame.Plain):
-   qf = QFrame()
-   qf.setFrameStyle(QFrame.HLine | style)
+def HLINE(style=QtWidgets.QFrame.Plain):
+   qf = QtWidgets.QFrame()
+   qf.setFrameStyle(QtWidgets.QFrame.HLine | style)
    return qf
 
-def VLINE(style=QFrame.Plain):
-   qf = QFrame()
-   qf.setFrameStyle(QFrame.VLine | style)
+def VLINE(style=QtWidgets.QFrame.Plain):
+   qf = QtWidgets.QFrame()
+   qf.setFrameStyle(QtWidgets.QFrame.VLine | style)
    return qf
 
 
@@ -88,32 +80,32 @@ def GETFONT(ftype, sz=10, bold=False, italic=False):
    fnt = None
    if ftype.lower().startswith('fix'):
       if OS_WINDOWS:
-         fnt = QFont("Courier", sz)
+         fnt = QtGui.QFont("Courier", sz)
       elif OS_MACOSX:
-         fnt = QFont("Menlo", sz)
+         fnt = QtGui.QFont("Menlo", sz)
       else:
-         fnt = QFont("DejaVu Sans Mono", sz)
+         fnt = QtGui.QFont("DejaVu Sans Mono", sz)
    elif ftype.lower().startswith('var'):
       if OS_MACOSX:
-         fnt = QFont("Lucida Grande", sz)
+         fnt = QtGui.QFont("Lucida Grande", sz)
       else:
-         fnt = QFont("Verdana", sz)
+         fnt = QtGui.QFont("Verdana", sz)
       #if OS_WINDOWS:
-         #fnt = QFont("Tahoma", sz)
+         #fnt = QtGui.QFont("Tahoma", sz)
       #else:
-         #fnt = QFont("Sans", sz)
+         #fnt = QtGui.QFont("Sans", sz)
    elif ftype.lower().startswith('money'):
       if OS_WINDOWS:
-         fnt = QFont("Courier", sz)
+         fnt = QtGui.QFont("Courier", sz)
       elif OS_MACOSX:
-         fnt = QFont("Menlo", sz)
+         fnt = QtGui.QFont("Menlo", sz)
       else:
-         fnt = QFont("DejaVu Sans Mono", sz)
+         fnt = QtGui.QFont("DejaVu Sans Mono", sz)
    else:
-      fnt = QFont(ftype, sz)
+      fnt = QtGui.QFont(ftype, sz)
 
    if bold:
-      fnt.setWeight(QFont.Bold)
+      fnt.setWeight(QtGui.QFont.Bold)
 
    if italic:
       fnt.setItalic(True)
@@ -122,12 +114,12 @@ def GETFONT(ftype, sz=10, bold=False, italic=False):
 
 
 def UnicodeErrorBox(parent):
-   QMessageBox.warning(parent, 'ASCII Error', \
+   QtWidgets.QMessageBox.warning(parent, 'ASCII Error', \
       toUnicode('Armory does not currently support non-ASCII characters in '
       'most text fields (like \xc2\xa3\xc2\xa5\xc3\xa1\xc3\xb6\xc3\xa9).  '
       'Please use only letters found '
       'on an English(US) keyboard.  This will be fixed in an upcoming '
-      'release'), QMessageBox.Ok)
+      'release'), QtWidgets.QMessageBox.Ok)
 
 
 
@@ -152,9 +144,9 @@ def tightSizeNChar(obj, nChar):
    """
 
    try:
-      fm = QFontMetricsF(QFont(obj.font()))
+      fm = QtGui.QFontMetricsF(QtGui.QFont(obj.font()))
    except AttributeError:
-      fm = QFontMetricsF(QFont())
+      fm = QtGui.QFontMetricsF(QtGui.QFont())
    szWidth,szHeight = fm.boundingRect('abcfgijklm').width(), fm.height()
    szWidth = int(szWidth * nChar/10.0 + 0.5)
    return szWidth, szHeight
@@ -163,9 +155,9 @@ def tightSizeNChar(obj, nChar):
 def tightSizeStr(obj, theStr):
    """ Measure a specific string """
    try:
-      fm = QFontMetricsF(QFont(obj.font()))
+      fm = QtGui.QFontMetricsF(QtGui.QFont(obj.font()))
    except AttributeError:
-      fm = QFontMetricsF(QFont())
+      fm = QtGui.QFontMetricsF(QtGui.QFont())
    szWidth,szHeight = fm.boundingRect(theStr).width(), fm.height()
    return szWidth, szHeight
 
@@ -175,9 +167,9 @@ def relaxedSizeStr(obj, theStr):
    Approximates the size of a row text, nchars long, adds some margin
    """
    try:
-      fm = QFontMetricsF(QFont(obj.font()))
+      fm = QtGui.QFontMetricsF(QtGui.QFont(obj.font()))
    except AttributeError:
-      fm = QFontMetricsF(QFont())
+      fm = QtGui.QFontMetricsF(QtGui.QFont())
    szWidth,szHeight = fm.boundingRect(theStr).width(), fm.height()
    return (10 + szWidth*1.05), 1.5*szHeight
 
@@ -187,9 +179,9 @@ def relaxedSizeNChar(obj, nChar):
    Approximates the size of a row text, nchars long, adds some margin
    """
    try:
-      fm = QFontMetricsF(QFont(obj.font()))
+      fm = QtGui.QFontMetricsF(QtGui.QFont(obj.font()))
    except AttributeError:
-      fm = QFontMetricsF(QFont())
+      fm = QtGui.QFontMetricsF(QtGui.QFont())
    szWidth,szHeight = fm.boundingRect('abcfg ijklm').width(), fm.height()
    szWidth = int(szWidth * nChar/10.0 + 0.5)
    return (10 + szWidth*1.05), 1.5*szHeight
@@ -244,19 +236,19 @@ def initialColResize(tblViewObj, sizeList):
 
 
 
-class QRichLabel(QLabel):
+class QRichLabel(QtWidgets.QLabel):
    def __init__(self, txt, doWrap=True, \
-                           hAlign=Qt.AlignLeft, \
-                           vAlign=Qt.AlignVCenter, \
+                           hAlign=QtCore.Qt.AlignLeft, \
+                           vAlign=QtCore.Qt.AlignVCenter, \
                            **kwargs):
       super(QRichLabel, self).__init__(txt)
-      self.setTextFormat(Qt.RichText)
+      self.setTextFormat(QtCore.Qt.RichText)
       self.setWordWrap(doWrap)
       self.setAlignment(hAlign | vAlign)
       self.setText(txt, **kwargs)
-      # Fixes a problem with QLabel resizing based on content
+      # Fixes a problem with QtWidgets.QLabel resizing based on content
       # ACR:  ... and makes other problems.  Removing for now.
-      #self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.MinimumExpanding)
+      #self.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.MinimumExpanding)
       #self.setMinimumHeight(int(relaxedSizeStr(self, 'QWERTYqypgj')[1]))
 
    def setText(self, text, color=None, size=None, bold=None, italic=None):
@@ -283,8 +275,8 @@ class QRichLabel(QLabel):
 
 class QRichLabel_AutoToolTip(QRichLabel):
    def __init__(self, txt, doWrap=True, \
-                           hAlign=Qt.AlignLeft, \
-                           vAlign=Qt.AlignVCenter, \
+                           hAlign=QtCore.Qt.AlignLeft, \
+                           vAlign=QtCore.Qt.AlignVCenter, \
                            **kwargs):
       super(QRichLabel_AutoToolTip, self).__init__(txt, \
             doWrap, hAlign, vAlign, **kwargs)
@@ -296,18 +288,18 @@ class QRichLabel_AutoToolTip(QRichLabel):
       self.setToolTip(self.toolTipMethod())
 
    def event(self, event):
-      if event.type() == QEvent.ToolTip:
+      if event.type() == QtCore.QEvent.ToolTip:
          if self.toolTipMethod != None:
             txt = self.toolTipMethod()
             self.setToolTip(txt)
 
-      return QLabel.event(self,event)
+      return QtWidgets.QLabel.event(self,event)
 
 
 class QMoneyLabel(QRichLabel):
    def __init__(self, nSatoshi, ndec=8, maxZeros=2, wColor=True,
                               wBold=False, txtSize=10):
-      QLabel.__init__(self, coin2str(nSatoshi))
+      QtWidgets.QLabel.__init__(self, coin2str(nSatoshi))
 
       self.nSatoshi = nSatoshi
       self.setValueText(nSatoshi, ndec, maxZeros, wColor, wBold, txtSize)
@@ -334,7 +326,7 @@ class QMoneyLabel(QRichLabel):
 
       theFont = GETFONT("Fixed", txtSize)
       if self.bold:
-         theFont.setWeight(QFont.Bold)
+         theFont.setWeight(QtGui.QFont.Bold)
 
       self.setFont(theFont)
       self.setWordWrap(False)
@@ -347,7 +339,7 @@ class QMoneyLabel(QRichLabel):
          self.setText('<font color=%s>%s</font>' % (goodMoney, valStr))
       else:
          self.setText('%s' % valStr)
-      self.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+      self.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
 
 
 def setLayoutStretchRows(layout, *args):
@@ -358,44 +350,44 @@ def setLayoutStretchCols(layout, *args):
    for i,st in enumerate(args):
       layout.setColumnStretch(i, st)
 
-# Use this for QHBoxLayout and QVBoxLayout, where you don't specify dimension
+# Use this for QtWidgets.QHBoxLayout and QtWidgets.QVBoxLayout, where you don't specify dimension
 def setLayoutStretch(layout, *args):
    for i,st in enumerate(args):
       layout.setStretch(i, st)
 
 ################################################################################
-def QPixmapButton(img):
-   btn = QPushButton('')
-   px = QPixmap(img)
-   btn.setIcon( QIcon(px))
+def QPixMapButton(img):
+   btn = QtWidgets.QPushButton('')
+   px = QtGui.QPixmap(img)
+   btn.setIcon( QtGui.QIcon(px))
    btn.setIconSize(px.rect().size())
    return btn
+
 ################################################################################
 def QAcceptButton():
-   return QPixmapButton('img/btnaccept.png')
+   return QPixMapButton('img/btnaccept.png')
 def QCancelButton():
-   return QPixmapButton('img/btncancel.png')
+   return QPixMapButton('img/btncancel.png')
 def QBackButton():
-   return QPixmapButton('img/btnback.png')
+   return QPixMapButton('img/btnback.png')
 def QOkButton():
-   return QPixmapButton('img/btnok.png')
+   return QPixMapButton('img/btnok.png')
 def QDoneButton():
-   return QPixmapButton('img/btndone.png')
-
+   return QPixMapButton('img/btndone.png')
 
 ################################################################################
-class QLabelButton(QLabel):
+class QLabelButton(QtWidgets.QLabel):
    mousePressOn = set()
 
    def __init__(self, txt):
       colorStr = htmlColor('LBtnNormalFG')
-      QLabel.__init__(self, '<font color=%s>%s</u></font>' % (colorStr, txt))
+      QtWidgets.QLabel.__init__(self, '<font color=%s>%s</u></font>' % (colorStr, txt))
       self.plainText = txt
-      self.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+      self.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
    def sizeHint(self):
       w,h = relaxedSizeStr(self, self.plainText)
-      return QSize(w,1.2*h)
+      return QtCore.QSize(w,1.2*h)
 
    def mousePressEvent(self, ev):
       # Prevent click-bleed-through to dialogs being opened
@@ -409,38 +401,38 @@ class QLabelButton(QLabel):
          self.linkActivated.emit(ev)
 
    def enterEvent(self, ev):
-      ssStr = "QLabel { background-color : %s }" % htmlColor('LBtnHoverBG')
+      ssStr = "QtWidgets.QLabel { background-color : %s }" % htmlColor('LBtnHoverBG')
       self.setStyleSheet(ssStr)
 
    def leaveEvent(self, ev):
-      ssStr = "QLabel { background-color : %s }" % htmlColor('LBtnNormalBG')
+      ssStr = "QtWidgets.QLabel { background-color : %s }" % htmlColor('LBtnNormalBG')
       self.setStyleSheet(ssStr)
 
 ################################################################################
-def makeLayoutFrame(dirStr, widgetList, style=QFrame.NoFrame, condenseMargins=False):
-   frm = QFrame()
+def makeLayoutFrame(dirStr, widgetList, style=QtWidgets.QFrame.NoFrame, condenseMargins=False):
+   frm = QtWidgets.QFrame()
    frm.setFrameStyle(style)
 
-   frmLayout = QHBoxLayout()
+   frmLayout = QtWidgets.QHBoxLayout()
    if dirStr.lower().startswith(VERTICAL):
-      frmLayout = QVBoxLayout()
+      frmLayout = QtWidgets.QVBoxLayout()
 
    for w in widgetList:
       if w is None:
          frmLayout.addWidget(w)
-      elif issubclass(type(w),QWidget):
+      elif issubclass(type(w),QtWidgets.QWidget):
          frmLayout.addWidget(w)
-      elif issubclass(type(w),QLayoutItem):
+      elif issubclass(type(w),QtWidgets.QLayoutItem):
          frmLayout.addItem(w)
       else: #we assume at this point we are using a string/unicode
          if w.lower()=='stretch':
             frmLayout.addStretch()
          elif w.lower().startswith('line'):
-            frmLine = QFrame()
+            frmLine = QtWidgets.QFrame()
             if dirStr.lower().startswith(VERTICAL):
-               frmLine.setFrameStyle(QFrame.HLine | QFrame.Plain)
+               frmLine.setFrameStyle(QtWidgets.QFrame.HLine | QtWidgets.QFrame.Plain)
             else:
-               frmLine.setFrameStyle(QFrame.VLine | QFrame.Plain)
+               frmLine.setFrameStyle(QtWidgets.QFrame.VLine | QtWidgets.QFrame.Plain)
             frmLayout.addWidget(frmLine)
          elif w.lower().startswith('strut'):
             first = w.index('(')+1
@@ -454,7 +446,7 @@ def makeLayoutFrame(dirStr, widgetList, style=QFrame.NoFrame, condenseMargins=Fa
             wid,hgt = int(w[first:last]), 1
             if dirStr.lower().startswith(VERTICAL):
                wid,hgt = hgt,wid
-            frmLayout.addItem( QSpacerItem(wid,hgt) )
+            frmLayout.addItem( QtWidgets.QSpacerItem(wid,hgt) )
 
    if condenseMargins:
       frmLayout.setContentsMargins(3,3,3,3)
@@ -468,21 +460,21 @@ def makeLayoutFrame(dirStr, widgetList, style=QFrame.NoFrame, condenseMargins=Fa
 def addFrame(widget, style=STYLE_SUNKEN, condenseMargins=False):
    return makeLayoutFrame(HORIZONTAL, [widget], style, condenseMargins)
 
-def makeVertFrame(widgetList, style=QFrame.NoFrame, condenseMargins=False):
+def makeVertFrame(widgetList, style=QtWidgets.QFrame.NoFrame, condenseMargins=False):
    return makeLayoutFrame(VERTICAL, widgetList, style, condenseMargins)
 
-def makeHorizFrame(widgetList, style=QFrame.NoFrame, condenseMargins=False):
+def makeHorizFrame(widgetList, style=QtWidgets.QFrame.NoFrame, condenseMargins=False):
    return makeLayoutFrame(HORIZONTAL, widgetList, style, condenseMargins)
 
 
 def QImageLabel(imgfn, size=None, stretch='NoStretch'):
 
-   lbl = QLabel()
+   lbl = QtWidgets.QLabel()
 
    if size==None:
-      px = QPixmap(imgfn)
+      px = QtGui.QPixmap(imgfn)
    else:
-      px = QPixmap(imgfn).scaled(*size)  # expect size=(W,H)
+      px = QtGui.QPixmap(imgfn).scaled(*size)  # expect size=(W,H)
 
    lbl.setPixmap(px)
    return lbl
@@ -529,7 +521,7 @@ def saveTableView(qtbl):
 
 
 ################################################################################
-class QRadioButtonBackupCtr(QRadioButton):
+class QRadioButtonBackupCtr(QtWidgets.QRadioButton):
    def __init__(self, parent, txt, index):
       super(QRadioButtonBackupCtr, self).__init__(txt)
       self.parent = parent
@@ -538,13 +530,13 @@ class QRadioButtonBackupCtr(QRadioButton):
    def enterEvent(self, ev):
       pass
       # self.parent.setDispFrame(self.index)
-      # self.setStyleSheet('QRadioButton { background-color : %s }' % \
+      # self.setStyleSheet('QtWidgets.QRadioButton { background-color : %s }' % \
                                           # htmlColor('SlightBkgdDark'))
 
    def leaveEvent(self, ev):
       pass
       # self.parent.setDispFrame(-1)
-      # self.setStyleSheet('QRadioButton { background-color : %s }' % \
+      # self.setStyleSheet('QtWidgets.QRadioButton { background-color : %s }' % \
                                           # htmlColor('Background'))
 
 
@@ -556,7 +548,7 @@ class QRadioButtonBackupCtr(QRadioButton):
 # display and control components for some screen used in Armory
 # Putting this content in a frame allows it to be used on it's own
 # in a dialog or as a component in a larger frame.
-class ArmoryFrame(QFrame):
+class ArmoryFrame(QtWidgets.QFrame):
    def __init__(self, parent, main):
       super(ArmoryFrame, self).__init__(parent)
       self.main = main
@@ -678,11 +670,11 @@ def selectFileForQLineEdit(parent, qObj, title="Select File", existing=False, \
    types.append('All files (*)')
    typesStr = ';; '.join(types)
    if not OS_MACOSX:
-      fullPath = unicode(QFileDialog.getOpenFileName(parent, \
+      fullPath = unicode(QtWidgets.QFileDialog.getOpenFileName(parent, \
          title, ARMORY_HOME_DIR, typesStr))
    else:
-      fullPath = unicode(QFileDialog.getOpenFileName(parent, \
-         title, ARMORY_HOME_DIR, typesStr, options=QFileDialog.DontUseNativeDialog))
+      fullPath = unicode(QtWidgets.QFileDialog.getOpenFileName(parent, \
+         title, ARMORY_HOME_DIR, typesStr, options=QtWidgets.QFileDialog.DontUseNativeDialog))
 
    if fullPath:
       qObj.setText( fullPath)
@@ -696,18 +688,18 @@ def selectDirectoryForQLineEdit(par, qObj, title="Select Directory"):
          initPath = currText
 
    if not OS_MACOSX:
-      fullPath = unicode(QFileDialog.getExistingDirectory(par, title, initPath))
+      fullPath = unicode(QtWidgets.QFileDialog.getExistingDirectory(par, title, initPath))
    else:
-      fullPath = unicode(QFileDialog.getExistingDirectory(par, title, initPath, \
-                                       options=QFileDialog.DontUseNativeDialog))
+      fullPath = unicode(QtWidgets.QFileDialog.getExistingDirectory(par, title, initPath, \
+                                       options=QtWidgets.QFileDialog.DontUseNativeDialog))
    if fullPath:
       qObj.setText( fullPath)
 
 
 def createDirectorySelectButton(parent, targetWidget, title="Select Directory"):
 
-   btn = QPushButton('')
-   ico = QIcon(QPixmap('./img/folder24.png'))
+   btn = QtWidgets.QPushButton('')
+   ico = QtGui.QIcon(QtGui.QPixmap('./img/folder24.png'))
    btn.setIcon(ico)
 
 
@@ -716,7 +708,7 @@ def createDirectorySelectButton(parent, targetWidget, title="Select Directory"):
    return btn
 
 #############################################################################
-class LetterButton(QPushButton):
+class LetterButton(QtWidgets.QPushButton):
    def __init__(self, Low, Up, Row, Spec, edtTarget, parent):
       super(LetterButton, self).__init__('')
       self.lower = Low
@@ -765,17 +757,17 @@ class LetterButton(QPushButton):
 #############################################################################
 def createToolTipWidget(tiptext, iconSz=2):
    """
-   The <u></u> is to signal to Qt that it should be interpretted as HTML/Rich
-   text even if no HTML tags are used.  This appears to be necessary for Qt
+   The <u></u> is to signal to QtCore.Qt that it should be interpretted as HTML/Rich
+   text even if no HTML tags are used.  This appears to be necessary for QtCore.Qt
    to wrap the tooltip text
    """
    fgColor = htmlColor('ToolTipQ')
-   lbl = QLabel('<font size=%d color=%s>(?)</font>' % (iconSz, fgColor))
+   lbl = QtWidgets.QLabel('<font size=%d color=%s>(?)</font>' % (iconSz, fgColor))
    lbl.setMaximumWidth(int(relaxedSizeStr(lbl, '(?)')[0]))
 
    def setAllText(wself, txt):
       def pressEv(ev):
-         QWhatsThis.showText(ev.globalPos(), txt, self)
+         QtWidgets.QWhatsThis.showText(ev.globalPos(), txt, self)
       wself.mousePressEvent = pressEv
       wself.setToolTip('<u></u>' + txt)
 
@@ -803,10 +795,10 @@ class AdvancedOptionsFrame(ArmoryFrame):
                   'time, but more than one half of it).  '))
       
       # Set maximum compute time
-      self.editComputeTime = QLineEdit()
+      self.editComputeTime = QtWidgets.QLineEdit()
       self.editComputeTime.setText('250 ms')
       self.editComputeTime.setMaxLength(12)
-      lblComputeTime = QLabel(self.tr('Target compute &time (s, ms):'))
+      lblComputeTime = QtWidgets.QLabel(self.tr('Target compute &time (s, ms):'))
       memDescriptionTip = createToolTipWidget( \
                   self.tr('This is the <b>maximum</b> memory that will be '
                   'used as part of the encryption process.  The actual value used '
@@ -818,17 +810,17 @@ class AdvancedOptionsFrame(ArmoryFrame):
       lblComputeTime.setBuddy(self.editComputeTime)
 
       # Set maximum memory usage
-      self.editComputeMem = QLineEdit()
+      self.editComputeMem = QtWidgets.QLineEdit()
       self.editComputeMem.setText('32.0 MB')
       self.editComputeMem.setMaxLength(12)
-      lblComputeMem  = QLabel(self.tr('Max &memory usage (kB, MB):'))
+      lblComputeMem  = QtWidgets.QLabel(self.tr('Max &memory usage (kB, MB):'))
       lblComputeMem.setBuddy(self.editComputeMem)
 
       self.editComputeTime.setMaximumWidth( tightSizeNChar(self, 20)[0] )
       self.editComputeMem.setMaximumWidth( tightSizeNChar(self, 20)[0] )
       
-      entryFrame = QFrame()
-      entryLayout = QGridLayout()
+      entryFrame = QtWidgets.QFrame()
+      entryLayout = QtWidgets.QGridLayout()
       entryLayout.addWidget(timeDescriptionTip,        0, 0,  1, 1)
       entryLayout.addWidget(lblComputeTime,      0, 1,  1, 1)
       entryLayout.addWidget(self.editComputeTime, 0, 2,  1, 1)
@@ -836,7 +828,7 @@ class AdvancedOptionsFrame(ArmoryFrame):
       entryLayout.addWidget(lblComputeMem,       1, 1,  1, 1)
       entryLayout.addWidget(self.editComputeMem,  1, 2,  1, 1)
       entryFrame.setLayout(entryLayout)
-      layout = QVBoxLayout()
+      layout = QtWidgets.QVBoxLayout()
       layout.addWidget(lblComputeDescription)
       layout.addWidget(entryFrame)
       layout.addStretch()

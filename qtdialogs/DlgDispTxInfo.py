@@ -4,17 +4,13 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2022, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
 ##############################################################################
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QFont
-from PySide2.QtWidgets import QLabel, QGridLayout, QFrame, QTableView, \
-   QPushButton, QSpacerItem, QScrollArea, QTextBrowser, QTextEdit, \
-   QVBoxLayout, QDialogButtonBox, QApplication
+from qtpy import QtCore, QtGui, QtWidgets
 
 from armoryengine.ArmoryUtils import enum, CPP_TXOUT_MULTISIG, \
    CPP_TXOUT_P2SH, CPP_TXOUT_HAS_ADDRSTR, BIGENDIAN, binary_to_hex, \
@@ -48,10 +44,10 @@ class DlgDisplayTxIn(ArmoryDialog):
 
       lblDescr = QRichLabel(self.tr("<center><u><b>TxIn Information</b></u></center>"))
 
-      edtBrowse = QTextBrowser()
+      edtBrowse = QtWidgets.QTextBrowser()
       edtBrowse.setFont(GETFONT('Fixed', 9))
       edtBrowse.setReadOnly(True)
-      edtBrowse.setLineWrapMode(QTextEdit.NoWrap)
+      edtBrowse.setLineWrapMode(QtWidgets.QTextEdit.NoWrap)
 
       ustx = None
       pytx = pytxOrUstx
@@ -138,10 +134,10 @@ class DlgDisplayTxIn(ArmoryDialog):
          u_string = u_string + "<br>" + dline.replace(' ', '&nbsp;')
 
       edtBrowse.setHtml(u_string)
-      btnDone = QPushButton(self.tr("Ok"))
+      btnDone = QtWidgets.QPushButton(self.tr("Ok"))
       btnDone.clicked.connect(self.accept)
 
-      layout = QVBoxLayout()
+      layout = QtWidgets.QVBoxLayout()
       layout.addWidget(lblDescr)
       layout.addWidget(edtBrowse)
       layout.addWidget(makeHorizFrame(['Stretch', btnDone]))
@@ -158,10 +154,10 @@ class DlgDisplayTxOut(ArmoryDialog):
 
       lblDescr = QRichLabel(self.tr("<center><u><b>TxOut Information</b></u></center>"))
 
-      edtBrowse = QTextBrowser()
+      edtBrowse = QtWidgets.QTextBrowser()
       edtBrowse.setFont(GETFONT('Fixed', 9))
       edtBrowse.setReadOnly(True)
-      edtBrowse.setLineWrapMode(QTextEdit.NoWrap)
+      edtBrowse.setLineWrapMode(QtWidgets.QTextEdit.NoWrap)
 
       ustx = None
       pytx = pytxOrUstx
@@ -213,10 +209,10 @@ class DlgDisplayTxOut(ArmoryDialog):
          u_string = u_string + u"<br>" + line_to_str.replace(u' ', u'&nbsp;')
 
       edtBrowse.setHtml(u_string)
-      btnDone = QPushButton(self.tr("Ok"))
+      btnDone = QtWidgets.QPushButton(self.tr("Ok"))
       btnDone.clicked.connect(self.accept)
 
-      layout = QVBoxLayout()
+      layout = QtWidgets.QVBoxLayout()
       layout.addWidget(lblDescr)
       layout.addWidget(edtBrowse)
       layout.addWidget(makeHorizFrame(['Stretch', btnDone]))
@@ -337,14 +333,14 @@ class DlgDispTxInfo(ArmoryDialog):
          txAmt = precomputeAmt
 
 
-      layout = QGridLayout()
-      lblDescr = QLabel(self.tr('Transaction Information:'))
+      layout = QtWidgets.QGridLayout()
+      lblDescr = QtWidgets.QLabel(self.tr('Transaction Information:'))
 
       layout.addWidget(lblDescr, 0, 0, 1, 1)
 
-      frm = QFrame()
+      frm = QtWidgets.QFrame()
       frm.setFrameStyle(STYLE_RAISED)
-      frmLayout = QGridLayout()
+      frmLayout = QtWidgets.QGridLayout()
       lbls = []
 
 
@@ -358,7 +354,7 @@ class DlgDispTxInfo(ArmoryDialog):
 
       lbls.append([])
       lbls[-1].append(createToolTipWidget(self.tr('Unique identifier for this transaction')))
-      lbls[-1].append(QLabel(self.tr('Transaction ID' )+ estr + ':'))
+      lbls[-1].append(QtWidgets.QLabel(self.tr('Transaction ID' )+ estr + ':'))
 
 
       # Want to display the hash of the Tx if we have a valid one:
@@ -379,7 +375,7 @@ class DlgDispTxInfo(ArmoryDialog):
 
       if tempPyTx:
          txHash = binary_to_hex(tempPyTx.getHash(), endOut=endianness)
-         lbls[-1].append(QLabel(txHash))
+         lbls[-1].append(QtWidgets.QLabel(txHash))
 
 
       lbls[-1][-1].setMinimumWidth(w)
@@ -388,25 +384,25 @@ class DlgDispTxInfo(ArmoryDialog):
          # Add protocol version and locktime to the display
          lbls.append([])
          lbls[-1].append(createToolTipWidget(self.tr('Bitcoin Protocol Version Number')))
-         lbls[-1].append(QLabel(self.tr('Tx Version:')))
-         lbls[-1].append(QLabel(str(self.pytx.version)))
+         lbls[-1].append(QtWidgets.QLabel(self.tr('Tx Version:')))
+         lbls[-1].append(QtWidgets.QLabel(str(self.pytx.version)))
 
          lbls.append([])
          lbls[-1].append(createToolTipWidget(
             self.tr('The time at which this transaction becomes valid.')))
-         lbls[-1].append(QLabel(self.tr('Lock-Time:')))
+         lbls[-1].append(QtWidgets.QLabel(self.tr('Lock-Time:')))
          if self.pytx.lockTime == 0:
-            lbls[-1].append(QLabel(self.tr('Immediate (0)')))
+            lbls[-1].append(QtWidgets.QLabel(self.tr('Immediate (0)')))
          elif self.pytx.lockTime < 500000000:
-            lbls[-1].append(QLabel(self.tr('Block %s' % self.pytx.lockTime)))
+            lbls[-1].append(QtWidgets.QLabel(self.tr('Block %s' % self.pytx.lockTime)))
          else:
-            lbls[-1].append(QLabel(unixTimeToFormatStr(self.pytx.lockTime)))
+            lbls[-1].append(QtWidgets.QLabel(unixTimeToFormatStr(self.pytx.lockTime)))
 
 
 
       lbls.append([])
       lbls[-1].append(createToolTipWidget(self.tr('Comment stored for this transaction in this wallet')))
-      lbls[-1].append(QLabel(self.tr('User Comment:')))
+      lbls[-1].append(QtWidgets.QLabel(self.tr('User Comment:')))
       try:
          txhash_bin = hex_to_binary(txHash, endOut=endianness)
       except:
@@ -435,8 +431,8 @@ class DlgDispTxInfo(ArmoryDialog):
             lbls[-1].append(createToolTipWidget(
                   self.tr('All transactions are eventually included in a "block."  The '
                   'time shown here is the time that the block entered the "blockchain."')))
-         lbls[-1].append(QLabel('Transaction Time:'))
-         lbls[-1].append(QLabel(str(self.data[FIELDS.Time])))
+         lbls[-1].append(QtWidgets.QLabel('Transaction Time:'))
+         lbls[-1].append(QtWidgets.QLabel(str(self.data[FIELDS.Time])))
 
       if not self.data[FIELDS.Blk] == None:
          nConf = 0
@@ -446,7 +442,7 @@ class DlgDispTxInfo(ArmoryDialog):
                   self.tr('This transaction has not yet been included in a block. '
                   'It usually takes 5-20 minutes for a transaction to get '
                   'included in a block after the user hits the "Send" button.')))
-            lbls[-1].append(QLabel('Block Number:'))
+            lbls[-1].append(QtWidgets.QLabel('Block Number:'))
             lbls[-1].append(QRichLabel('<i>Not in the blockchain yet</i>'))
          else:
             idxStr = ''
@@ -457,7 +453,7 @@ class DlgDispTxInfo(ArmoryDialog):
                   self.tr('Every transaction is eventually included in a "block" which '
                   'is where the transaction is permanently recorded.  A new block '
                   'is produced approximately every 10 minutes.')))
-            lbls[-1].append(QLabel('Included in Block:'))
+            lbls[-1].append(QtWidgets.QLabel('Included in Block:'))
             lbls[-1].append(QRichLabel(str(self.data[FIELDS.Blk]) + idxStr))
             if TheBDM.getState() == BDM_BLOCKCHAIN_READY:
                nConf = TheBDM.getTopBlockHeight() - self.data[FIELDS.Blk] + 1
@@ -466,7 +462,7 @@ class DlgDispTxInfo(ArmoryDialog):
                      self.tr('The number of blocks that have been produced since '
                      'this transaction entered the blockchain.  A transaction '
                      'with 6 or more confirmations is nearly impossible to reverse.')))
-               lbls[-1].append(QLabel(self.tr('Confirmations:')))
+               lbls[-1].append(QtWidgets.QLabel(self.tr('Confirmations:')))
                lbls[-1].append(QRichLabel(str(nConf)))
 
       isRBF = self.pytx.isRBF()
@@ -476,7 +472,7 @@ class DlgDispTxInfo(ArmoryDialog):
                self.tr('This transaction can be replaced by another transaction that '
                'spends the same inputs if the replacement transaction has '
                'a higher fee.')))
-         lbls[-1].append(QLabel(self.tr('Mempool Replaceable: ')))
+         lbls[-1].append(QtWidgets.QLabel(self.tr('Mempool Replaceable: ')))
          lbls[-1].append(QRichLabel(str(isRBF)))
 
 
@@ -488,20 +484,20 @@ class DlgDispTxInfo(ArmoryDialog):
                'returned-change output.  You do not have enough information '
                'to determine which is which, and so this fields shows the sum '
                'of <b>all</b> outputs.')))
-         lbls[-1].append(QLabel(self.tr('Sum of Outputs:')))
-         lbls[-1].append(QLabel(coin2str(txAmt, maxZeros=1).strip() + '  BTC'))
+         lbls[-1].append(QtWidgets.QLabel(self.tr('Sum of Outputs:')))
+         lbls[-1].append(QtWidgets.QLabel(coin2str(txAmt, maxZeros=1).strip() + '  BTC'))
       else:
          lbls.append([])
          lbls[-1].append(createToolTipWidget(
                self.tr('Bitcoins were either sent or received, or sent-to-self')))
-         lbls[-1].append(QLabel('Transaction Direction:'))
+         lbls[-1].append(QtWidgets.QLabel('Transaction Direction:'))
          lbls[-1].append(QRichLabel(txdir))
 
          lbls.append([])
          lbls[-1].append(createToolTipWidget(
                self.tr('The value shown here is the net effect on your '
                'wallet, including transaction fee.')))
-         lbls[-1].append(QLabel('Transaction Amount:'))
+         lbls[-1].append(QtWidgets.QLabel('Transaction Amount:'))
          lbls[-1].append(QRichLabel(coin2str(txAmt, maxZeros=1).strip() + '  BTC'))
          if txAmt < 0:
             lbls[-1][-1].setText('<font color="red">' + lbls[-1][-1].text() + '</font> ')
@@ -515,8 +511,8 @@ class DlgDispTxInfo(ArmoryDialog):
          lbls.append([])
          lbls[-1].append(createToolTipWidget(
             self.tr('Size of the transaction in bytes')))
-         lbls[-1].append(QLabel(self.tr('Tx Size: ')))
-         lbls[-1].append(QLabel(txsize_str))
+         lbls[-1].append(QtWidgets.QLabel(self.tr('Tx Size: ')))
+         lbls[-1].append(QtWidgets.QLabel(txsize_str))
 
       if not self.data[FIELDS.SumIn] == None:
          fee = self.data[FIELDS.SumIn] - self.data[FIELDS.SumOut]
@@ -524,14 +520,14 @@ class DlgDispTxInfo(ArmoryDialog):
          lbls[-1].append(createToolTipWidget(
             self.tr('Transaction fees go to users supplying the Bitcoin network with '
             'computing power for processing transactions and maintaining security.')))
-         lbls[-1].append(QLabel('Tx Fee Paid:'))
+         lbls[-1].append(QtWidgets.QLabel('Tx Fee Paid:'))
 
          fee_str = coin2str(fee, maxZeros=0).strip() + '  BTC'
          if not self.data[FIELDS.TxWeight] == None:
             fee_byte = float(fee) / float(self.data[FIELDS.TxWeight])
             fee_str += ' (%d sat/B)' % fee_byte
 
-         lbls[-1].append(QLabel(fee_str))
+         lbls[-1].append(QtWidgets.QLabel(fee_str))
 
 
 
@@ -541,14 +537,14 @@ class DlgDispTxInfo(ArmoryDialog):
       for row, lbl3 in enumerate(lbls):
          lastRow = row
          for i in range(3):
-            lbl3[i].setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            lbl3[i].setTextInteractionFlags(Qt.TextSelectableByMouse | \
-                                            Qt.TextSelectableByKeyboard)
+            lbl3[i].setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            lbl3[i].setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse | \
+                                            QtCore.Qt.TextSelectableByKeyboard)
          frmLayout.addWidget(lbl3[0], row, 0, 1, 1)
          frmLayout.addWidget(lbl3[1], row, 1, 1, 1)
          frmLayout.addWidget(lbl3[2], row, 3, 1, 2)
 
-      spacer = QSpacerItem(20, 20)
+      spacer = QtWidgets.QSpacerItem(20, 20)
       frmLayout.addItem(spacer, 0, 2, len(lbls), 1)
 
       # Show the list of recipients, if possible
@@ -565,31 +561,31 @@ class DlgDispTxInfo(ArmoryDialog):
                   'correct, it is possible that the change-output was '
                   'detected incorrectly -- please check the complete '
                   'input/output list below.')))
-               rlbls[-1].append(QLabel(self.tr('Recipients:')))
+               rlbls[-1].append(QtWidgets.QLabel(self.tr('Recipients:')))
             else:
-               rlbls[-1].extend([QLabel(), QLabel()])
+               rlbls[-1].extend([QtWidgets.QLabel(), QtWidgets.QLabel()])
 
-            rlbls[-1].append(QLabel(scrAddr_to_addrStr(sv[0])))
+            rlbls[-1].append(QtWidgets.QLabel(scrAddr_to_addrStr(sv[0])))
             if numRV > 1:
-               rlbls[-1].append(QLabel(coin2str(sv[1], maxZeros=1) + '  BTC'))
+               rlbls[-1].append(QtWidgets.QLabel(coin2str(sv[1], maxZeros=1) + '  BTC'))
             else:
-               rlbls[-1].append(QLabel(''))
+               rlbls[-1].append(QtWidgets.QLabel(''))
             ffixBold = GETFONT('Fixed', 10)
-            ffixBold.setWeight(QFont.Bold)
+            ffixBold.setWeight(QtGui.QFont.Bold)
             rlbls[-1][-1].setFont(ffixBold)
 
             if numRV > numShow and i == numShow - 2:
                moreStr = self.tr('[%s more recipients]' % (numRV - numShow + 1))
                rlbls.append([])
-               rlbls[-1].extend([QLabel(), QLabel(), QLabel(moreStr), QLabel()])
+               rlbls[-1].extend([QtWidgets.QLabel(), QtWidgets.QLabel(), QtWidgets.QLabel(moreStr), QtWidgets.QLabel()])
                break
 
 
          # ##
          for i, lbl4 in enumerate(rlbls):
             for j in range(4):
-               lbl4[j].setTextInteractionFlags(Qt.TextSelectableByMouse | \
-                                            Qt.TextSelectableByKeyboard)
+               lbl4[j].setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse | \
+                                            QtCore.Qt.TextSelectableByKeyboard)
             row = lastRow + 1 + i
             frmLayout.addWidget(lbl4[0], row, 0, 1, 1)
             frmLayout.addWidget(lbl4[1], row, 1, 1, 1)
@@ -606,10 +602,10 @@ class DlgDispTxInfo(ArmoryDialog):
          self.txInModel = TxInDispModel(ustx, self.data[FIELDS.InList], self.main)
       else:
          self.txInModel = TxInDispModel(pytx, self.data[FIELDS.InList], self.main)
-      self.txInView = QTableView()
+      self.txInView = QtWidgets.QTableView()
       self.txInView.setModel(self.txInModel)
-      self.txInView.setSelectionBehavior(QTableView.SelectRows)
-      self.txInView.setSelectionMode(QTableView.SingleSelection)
+      self.txInView.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
+      self.txInView.setSelectionMode(QtWidgets.QTableView.SingleSelection)
       self.txInView.horizontalHeader().setStretchLastSection(True)
       self.txInView.verticalHeader().setDefaultSectionSize(20)
       self.txInView.verticalHeader().hide()
@@ -626,26 +622,26 @@ class DlgDispTxInfo(ArmoryDialog):
          self.txInView.hideColumn(TXINCOLS.FromBlk)
          self.txInView.hideColumn(TXINCOLS.ScrType)
          self.txInView.hideColumn(TXINCOLS.Sequence)
-         # self.txInView.setSelectionMode(QTableView.NoSelection)
+         # self.txInView.setSelectionMode(QtWidgets.QTableView.NoSelection)
       elif self.mode == USERMODE.Advanced:
          initialColResize(self.txInView, [0.8 * wWlt, 0.6 * wAddr, wAmt, 0, 0, 0, 0.2, 0, 0])
          self.txInView.hideColumn(TXINCOLS.FromBlk)
          self.txInView.hideColumn(TXINCOLS.Sequence)
-         # self.txInView.setSelectionMode(QTableView.NoSelection)
+         # self.txInView.setSelectionMode(QtWidgets.QTableView.NoSelection)
       elif self.mode == USERMODE.Expert:
          self.txInView.resizeColumnsToContents()
 
-      self.txInView.setContextMenuPolicy(Qt.CustomContextMenu)
+      self.txInView.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
       self.txInView.customContextMenuRequested.connect(self.showContextMenuTxIn)
 
       # List of TxOuts/Recipients
       if not precomputeIdxGray is None:
          indicesMakeGray = precomputeIdxGray[:]
       self.txOutModel = TxOutDispModel(self.pytx, self.main, idxGray=indicesMakeGray)
-      self.txOutView = QTableView()
+      self.txOutView = QtWidgets.QTableView()
       self.txOutView.setModel(self.txOutModel)
-      self.txOutView.setSelectionBehavior(QTableView.SelectRows)
-      self.txOutView.setSelectionMode(QTableView.SingleSelection)
+      self.txOutView.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
+      self.txOutView.setSelectionMode(QtWidgets.QTableView.SingleSelection)
       self.txOutView.verticalHeader().setDefaultSectionSize(20)
       self.txOutView.verticalHeader().hide()
       self.txOutView.setMinimumHeight(2 * (1.3 * h))
@@ -657,15 +653,15 @@ class DlgDispTxInfo(ArmoryDialog):
          self.txOutView.hideColumn(TXOUTCOLS.ScrType)
          initialColResize(self.txOutView, [wWlt, wAddr, 0.25, 0, 0])
          self.txOutView.horizontalHeader().setStretchLastSection(True)
-         # self.txOutView.setSelectionMode(QTableView.NoSelection)
+         # self.txOutView.setSelectionMode(QtWidgets.QTableView.NoSelection)
       elif self.mode == USERMODE.Advanced:
          initialColResize(self.txOutView, [0.8 * wWlt, 0.6 * wAddr, wAmt, 0.25, 0])
-         # self.txOutView.setSelectionMode(QTableView.NoSelection)
+         # self.txOutView.setSelectionMode(QtWidgets.QTableView.NoSelection)
       elif self.mode == USERMODE.Expert:
          initialColResize(self.txOutView, [wWlt, wAddr, wAmt, 0.25, 0])
       # self.txOutView.resizeColumnsToContents()
 
-      self.txOutView.setContextMenuPolicy(Qt.CustomContextMenu)
+      self.txOutView.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
       self.txOutView.customContextMenuRequested.connect(self.showContextMenuTxOut)
 
       self.lblTxioInfo = QRichLabel('')
@@ -675,22 +671,22 @@ class DlgDispTxInfo(ArmoryDialog):
       self.txInView.doubleClicked.connect(self.showTxInDialog)
       self.txOutView.doubleClicked.connect(self.showTxOutDialog)
 
-      # scrFrm = QFrame()
+      # scrFrm = QtWidgets.QFrame()
       # scrFrm.setFrameStyle(STYLE_SUNKEN)
       # scrFrmLayout = Q
 
 
-      self.scriptArea = QScrollArea()
+      self.scriptArea = QtWidgets.QScrollArea()
       self.scriptArea.setWidget(self.lblTxioInfo)
       self.scriptFrm = makeLayoutFrame(HORIZONTAL, [self.scriptArea])
       # self.scriptFrm.setMaximumWidth(150)
       self.scriptArea.setMaximumWidth(200)
 
-      self.frmIOList = QFrame()
+      self.frmIOList = QtWidgets.QFrame()
       self.frmIOList.setFrameStyle(STYLE_SUNKEN)
-      frmIOListLayout = QGridLayout()
+      frmIOListLayout = QtWidgets.QGridLayout()
 
-      lblInputs = QLabel(self.tr('Transaction Inputs (Sending addresses):'))
+      lblInputs = QtWidgets.QLabel(self.tr('Transaction Inputs (Sending addresses):'))
       ttipText = (self.tr('All transactions require previous transaction outputs as inputs.'))
       if not haveBDM:
          ttipText += (self.tr('<b>Since the blockchain is not available, not all input '
@@ -703,7 +699,7 @@ class DlgDispTxInfo(ArmoryDialog):
                       'output returning change to the sender'))
       ttipInputs = createToolTipWidget(ttipText)
 
-      lblOutputs = QLabel(self.tr('Transaction Outputs (Receiving addresses):'))
+      lblOutputs = QtWidgets.QLabel(self.tr('Transaction Outputs (Receiving addresses):'))
       ttipOutputs = createToolTipWidget(
                   self.tr('Shows <b>all</b> outputs, including other recipients '
                   'of the same transaction, and change-back-to-sender outputs '
@@ -725,10 +721,10 @@ class DlgDispTxInfo(ArmoryDialog):
       self.frmIOList.setLayout(frmIOListLayout)
 
 
-      self.btnIOList = QPushButton('')
-      self.btnCopy = QPushButton(self.tr('Copy Raw Tx (Hex)'))
+      self.btnIOList = QtWidgets.QPushButton('')
+      self.btnCopy = QtWidgets.QPushButton(self.tr('Copy Raw Tx (Hex)'))
       self.lblCopied = QRichLabel('')
-      self.btnOk = QPushButton(self.tr('OK'))
+      self.btnOk = QtWidgets.QPushButton(self.tr('OK'))
       self.btnIOList.setCheckable(True)
       self.btnIOList.clicked.connect(self.extraInfoClicked)
       self.btnOk.clicked.connect(self.accept)
@@ -824,15 +820,15 @@ class DlgDispTxInfo(ArmoryDialog):
          lblScript = QRichLabel('')
          lblScript.setText('<b>Script:</b><br><br>' + '<br>'.join(opprint))
          lblScript.setWordWrap(False)
-         lblScript.setTextInteractionFlags(Qt.TextSelectableByMouse | \
-                                        Qt.TextSelectableByKeyboard)
+         lblScript.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse | \
+                                        QtCore.Qt.TextSelectableByKeyboard)
 
          self.scriptArea.setWidget(makeLayoutFrame(VERTICAL, [lblScript]))
          self.scriptArea.setMaximumWidth(200)
 
 
    def copyRawTx(self):
-      clipb = QApplication.clipboard()
+      clipb = QtWidgets.QApplication.clipboard()
       clipb.clear()
       #print "Binscript: " + binary_to_hex(self.pytx.inputs[0].binScript)
       clipb.setText(binary_to_hex(self.pytx.serialize()))
@@ -861,7 +857,7 @@ class DlgDispTxInfo(ArmoryDialog):
 
    #############################################################################
    def showContextMenuTxIn(self, pos):
-      menu = QMenu(self.txInView)
+      menu = QtWidgets.QMenu(self.txInView)
       std = (self.main.usermode == USERMODE.Standard)
       adv = (self.main.usermode == USERMODE.Advanced)
       dev = (self.main.usermode == USERMODE.Expert)
@@ -871,7 +867,7 @@ class DlgDispTxInfo(ArmoryDialog):
       if True:   actCopyAmount = menu.addAction(self.tr("Copy Amount"))
       if True:   actMoreInfo = menu.addAction(self.tr("More Info"))
       idx = self.txInView.selectedIndexes()[0]
-      action = menu.exec_(QCursor.pos())
+      action = menu.exec_(QtGui.QCursor.pos())
 
       if action == actMoreInfo:
          self.showTxInDialog()
@@ -890,13 +886,13 @@ class DlgDispTxInfo(ArmoryDialog):
       else:
          return
 
-      clipb = QApplication.clipboard()
+      clipb = QtWidgets.QApplication.clipboard()
       clipb.clear()
       clipb.setText(s.strip())
 
    #############################################################################
    def showContextMenuTxOut(self, pos):
-      menu = QMenu(self.txOutView)
+      menu = QtWidgets.QMenu(self.txOutView)
       std = (self.main.usermode == USERMODE.Standard)
       adv = (self.main.usermode == USERMODE.Advanced)
       dev = (self.main.usermode == USERMODE.Expert)
@@ -906,7 +902,7 @@ class DlgDispTxInfo(ArmoryDialog):
       if True:   actCopyAmount = menu.addAction(self.tr("Copy Amount"))
       if dev:    actCopyScript = menu.addAction(self.tr("Copy Raw Script"))
       idx = self.txOutView.selectedIndexes()[0]
-      action = menu.exec_(QCursor.pos())
+      action = menu.exec_(QtGui.QCursor.pos())
 
       if action == actCopyWltID:
          s = self.txOutView.model().index(idx.row(), TXOUTCOLS.WltID).data().toString()
@@ -919,7 +915,7 @@ class DlgDispTxInfo(ArmoryDialog):
       else:
          return
 
-      clipb = QApplication.clipboard()
+      clipb = QtWidgets.QApplication.clipboard()
       clipb.clear()
       clipb.setText(str(s).strip())
 

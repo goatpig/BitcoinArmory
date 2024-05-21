@@ -4,16 +4,13 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2022, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
 ##############################################################################
 
-from PySide2.QtCore import QSize
-from PySide2.QtGui import QIcon
-from PySide2.QtWidgets import QVBoxLayout, QTextEdit, QCheckBox, QPushButton
-
+from qtpy import QtCore, QtGui, QtWidgets
 from qtdialogs.qtdefines import GETFONT, tightSizeNChar, STRETCH, \
    makeHorizFrame, makeVertFrame, QRichLabel
 from qtdialogs.ArmoryDialog import ArmoryDialog
@@ -24,19 +21,19 @@ class DlgEULA(ArmoryDialog):
       super(DlgEULA, self).__init__(parent, main)
 
       txtWidth, txtHeight = tightSizeNChar(self, 110)
-      txtLicense = QTextEdit()
-      txtLicense.sizeHint = lambda: QSize(txtWidth, 14 * txtHeight)
+      txtLicense = QtWidgets.QTextEdit()
+      txtLicense.sizeHint = lambda: QtCore.QSize(txtWidth, 14 * txtHeight)
       txtLicense.setReadOnly(True)
       txtLicense.setCurrentFont(GETFONT('Fixed', 8))
 
       from LICENSE import licenseText
       txtLicense.setText(licenseText())
 
-      self.chkAgree = QCheckBox(\
+      self.chkAgree = QtWidgets.QCheckBox(\
         self.tr('I agree to all the terms of the license above'))
 
-      self.btnCancel = QPushButton(self.tr("Cancel"))
-      self.btnAccept = QPushButton(self.tr("Accept"))
+      self.btnCancel = QtWidgets.QPushButton(self.tr("Cancel"))
+      self.btnAccept = QtWidgets.QPushButton(self.tr("Accept"))
       self.btnAccept.setEnabled(False)
       self.btnCancel.clicked.connect(self.reject)
       self.btnAccept.clicked.connect(self.accept)
@@ -58,7 +55,7 @@ class DlgEULA(ArmoryDialog):
          'agreement with its terms.</b>'))
 
 
-      dlgLayout = QVBoxLayout()
+      dlgLayout = QtWidgets.QVBoxLayout()
       frmChk = makeHorizFrame([self.chkAgree, STRETCH])
       frmBtn = makeHorizFrame([STRETCH, self.btnCancel, self.btnAccept])
       frmAll = makeVertFrame([lblPleaseAgree, txtLicense, frmChk, frmBtn])
@@ -66,7 +63,7 @@ class DlgEULA(ArmoryDialog):
       dlgLayout.addWidget(frmAll)
       self.setLayout(dlgLayout)
       self.setWindowTitle(self.tr('Armory License Agreement'))
-      self.setWindowIcon(QIcon(self.main.iconfile))
+      self.setWindowIcon(QtGui.QIcon(self.main.iconfile))
 
 
    def reject(self):

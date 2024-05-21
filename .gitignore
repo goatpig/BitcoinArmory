@@ -180,7 +180,7 @@ CppBridge
 armoryengine/BridgeProto_pb2.py
 cppForSwig/gtest/UtilsTests
 cppForSwig/gtest/ZeroConfTests
-c20p1305_cffi/c20p1305.c
-c20p1305_cffi/c20p1305.cpython-39-x86_64-linux-gnu.so
+c20p1305_cffi/c20p1305.*
+armoryengine/c20*
 
 /build

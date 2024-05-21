@@ -7,8 +7,8 @@
 import ast
 import urllib2
 
-from PyQt4.Qt import QPushButton, SIGNAL, Qt, QLineEdit, QTableWidget, \
-   QGridLayout, QSpacerItem, QWidget, QScrollArea, QTableWidgetItem
+from PyQt4.QtCore.Qt import QtWidgets.QPushButton, SIGNAL, QtCore.Qt, QtWidgets.QLineEdit, QTableWidget, \
+   QtWidgets.QGridLayout, QtWidgets.QSpacerItem, QtWidgets.QWidget, QtWidgets.QScrollArea, QTableWidgetItem
 
 from armorycolors import htmlColor
 from armoryengine.ArmoryUtils import RightNow, secondsToHumanTime, coin2str
@@ -50,19 +50,19 @@ class PluginObject(object):
       self.lastSellStr = ''
       self.lastBuyStr = ''
 
-      self.btnUpdate = QPushButton(tr('Check Now'))
+      self.btnUpdate = QtWidgets.QPushButton(tr('Check Now'))
       self.main.connect(self.btnUpdate, SIGNAL('clicked()'), self.checkUpdatePrice)
 
       ##########################################################################
       ##### A calculator for converting prices between USD and BTC
       lblCalcTitle = QRichLabel(tr("""Convert between USD and BTC using 
-         Coinbase sell price"""), hAlign=Qt.AlignHCenter, doWrap=False)
-      self.edtEnterUSD = QLineEdit()
-      self.edtEnterBTC = QLineEdit()
+         Coinbase sell price"""), hAlign=QtCore.Qt.AlignHCenter, doWrap=False)
+      self.edtEnterUSD = QtWidgets.QLineEdit()
+      self.edtEnterBTC = QtWidgets.QLineEdit()
       self.lblEnterUSD1 = QRichLabel('$')
       self.lblEnterUSD2 = QRichLabel('USD')
       self.lblEnterBTC = QRichLabel('BTC')
-      btnClear = QPushButton('Clear')
+      btnClear = QtWidgets.QPushButton('Clear')
 
       self.main.connect(self.edtEnterUSD, SIGNAL('textEdited(QString)'), self.updateCalcBTC)
       self.main.connect(self.edtEnterBTC, SIGNAL('textEdited(QString)'), self.updateCalcUSD)
@@ -82,7 +82,7 @@ class PluginObject(object):
       ##########################################################################
       ##### A table showing you the total balance of each wallet in USD and BTC
       lblWltTableTitle = QRichLabel(tr("Wallet balances converted to USD"), 
-                                            doWrap=False, hAlign=Qt.AlignHCenter)
+                                            doWrap=False, hAlign=QtCore.Qt.AlignHCenter)
       numWallets = len(self.main.walletMap)
       self.wltTable = QTableWidget(self.main)
       self.wltTable.setRowCount(numWallets)
@@ -93,26 +93,26 @@ class PluginObject(object):
 
       ##########################################################################
       ##### Setup the main layout for the tab
-      mainLayout = QGridLayout()
+      mainLayout = QtWidgets.QGridLayout()
       i=0
       mainLayout.addWidget(self.lblHeader,      i,0,  1,3)
       i+=1
-      mainLayout.addItem(QSpacerItem(15,15),    i,0)
+      mainLayout.addItem(QtWidgets.QSpacerItem(15,15),    i,0)
       mainLayout.addWidget(self.lblSellLabel,   i,1)
       mainLayout.addWidget(self.lblSellPrice,   i,2)
       i+=1
-      mainLayout.addItem(QSpacerItem(15,15),    i,0)
+      mainLayout.addItem(QtWidgets.QSpacerItem(15,15),    i,0)
       mainLayout.addWidget(self.lblBuyLabel,    i,1)
       mainLayout.addWidget(self.lblBuyPrice,    i,2)
       i+=1
       mainLayout.addWidget(self.lblLastTime,    i,0,  1,2)
       mainLayout.addWidget(self.btnUpdate,      i,2)
       i+=1
-      mainLayout.addItem(QSpacerItem(20,20),    i,0)
+      mainLayout.addItem(QtWidgets.QSpacerItem(20,20),    i,0)
       i+=1
       mainLayout.addWidget(frmCalc,             i,0,  1,3)
       i+=1
-      mainLayout.addItem(QSpacerItem(30,30),    i,0)
+      mainLayout.addItem(QtWidgets.QSpacerItem(30,30),    i,0)
       i+=1
       mainLayout.addWidget(lblWltTableTitle,    i,0,  1,3)
       i+=1
@@ -121,7 +121,7 @@ class PluginObject(object):
       mainLayout.setColumnStretch(0,0)
       mainLayout.setColumnStretch(1,1)
       mainLayout.setColumnStretch(2,1)
-      tabWidget = QWidget()
+      tabWidget = QtWidgets.QWidget()
       tabWidget.setLayout(mainLayout)
 
       frmH = makeHorizFrame(['Stretch', tabWidget, 'Stretch'])
@@ -129,7 +129,7 @@ class PluginObject(object):
 
 
       # Now set the scrollarea widget to the layout
-      self.tabToDisplay = QScrollArea()
+      self.tabToDisplay = QtWidgets.QScrollArea()
       self.tabToDisplay.setWidgetResizable(True)
       self.tabToDisplay.setWidget(frm)
 
@@ -254,14 +254,14 @@ class PluginObject(object):
          rowItems.append(QTableWidgetItem(wltValueBTC))
          rowItems.append(QTableWidgetItem(wltValueUSD))
 
-         rowItems[-2].setTextAlignment(Qt.AlignRight)
-         rowItems[-1].setTextAlignment(Qt.AlignRight)
+         rowItems[-2].setTextAlignment(QtCore.Qt.AlignRight)
+         rowItems[-1].setTextAlignment(QtCore.Qt.AlignRight)
          rowItems[-2].setFont(GETFONT('Fixed', 10))
          rowItems[-1].setFont(GETFONT('Fixed', 10))
 
          for i,item in enumerate(rowItems):
             self.wltTable.setItem(row, i, item)
-            item.setFlags(Qt.NoItemFlags)
+            item.setFlags(QtCore.Qt.NoItemFlags)
 
          self.wltTable.setHorizontalHeaderItem(0, QTableWidgetItem(tr('Wallet ID')))
          self.wltTable.setHorizontalHeaderItem(1, QTableWidgetItem(tr('Wallet Name')))

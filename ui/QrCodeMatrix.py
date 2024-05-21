@@ -1,10 +1,8 @@
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
 ##############################################################################
 #                                                                            #
-# Copyright (C) 2016-17, goatpig                                             #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
-#  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #                                   
+#  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
 ##############################################################################
 

@@ -124,7 +124,7 @@ class SettingsFile(object):
       for key,val in self.settingsMap.items():
          try:
             # Skip anything that throws an exception
-            from PySide2.QtCore import QByteArray
+            from qtpy import QtCore
 
             valStr = ''
             if   isinstance(val, str):
@@ -135,7 +135,7 @@ class SettingsFile(object):
             elif isinstance(val, list) or \
                  isinstance(val, tuple):
                valStr = ' $  '.join([str(v) for v in val])
-            elif isinstance(val, QByteArray) and \
+            elif isinstance(val, QtCore.QByteArray) and \
                  sys.version_info >= (3,0):
                valStr = str(val.data(), encoding='utf-8')
             else:

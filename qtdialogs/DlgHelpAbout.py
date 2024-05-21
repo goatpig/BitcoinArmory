@@ -4,19 +4,15 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2022, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
 ##############################################################################
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QPixmap
-from PySide2.QtWidgets import QHBoxLayout, QLabel
-
-#from armoryengine.ArmoryBuild import BTCARMORY_BUILD
 from armoryengine.ArmoryUtils import BTCARMORY_VERSION, getVersionString
 
+from qtpy import QtCore, QtGui, QtWidgets
 from qtdialogs.ArmoryDialog import ArmoryDialog
 from qtdialogs.qtdefines import QRichLabel, STRETCH, makeVertFrame
 
@@ -25,9 +21,9 @@ class DlgHelpAbout(ArmoryDialog):
    def __init__(self, putResultInWidget, defaultWltID=None, parent=None, main=None):
       super(DlgHelpAbout, self).__init__(parent, main)
 
-      imgLogo = QLabel()
-      imgLogo.setPixmap(QPixmap('./img/armory_logo_h56.png'))
-      imgLogo.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+      imgLogo = QtWidgets.QLabel()
+      imgLogo.setPixmap(QtGui.QPixmap('./img/armory_logo_h56.png'))
+      imgLogo.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
 #        if BTCARMORY_BUILD != None:
 #            lblHead = QRichLabel(self.tr('Armory Bitcoin Wallet : Version %s-beta-%s' % (getVersionString(BTCARMORY_VERSION), BTCARMORY_BUILD)), doWrap=False)
@@ -46,13 +42,13 @@ class DlgHelpAbout(ArmoryDialog):
                               'MIT License'))
       lblLicense.setOpenExternalLinks(True)
 
-      lblHead.setAlignment(Qt.AlignHCenter)
-      lblCopyright.setAlignment(Qt.AlignHCenter)
-      lblOldCopyright.setAlignment(Qt.AlignHCenter)
-      lblLicense.setAlignment(Qt.AlignHCenter)
-      lblOldLicense.setAlignment(Qt.AlignHCenter)
+      lblHead.setAlignment(QtCore.Qt.AlignHCenter)
+      lblCopyright.setAlignment(QtCore.Qt.AlignHCenter)
+      lblOldCopyright.setAlignment(QtCore.Qt.AlignHCenter)
+      lblLicense.setAlignment(QtCore.Qt.AlignHCenter)
+      lblOldLicense.setAlignment(QtCore.Qt.AlignHCenter)
 
-      dlgLayout = QHBoxLayout()
+      dlgLayout = QtWidgets.QHBoxLayout()
       dlgLayout.addWidget(makeVertFrame([imgLogo, lblHead, lblCopyright, lblOldCopyright, STRETCH, lblLicense, lblOldLicense]))
       self.setLayout(dlgLayout)
 

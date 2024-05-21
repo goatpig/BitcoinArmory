@@ -1,16 +1,16 @@
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
-################################################################################
-#                                                                              #
-# Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
-# Distributed under the GNU Affero General Public License (AGPL v3)            #
-# See LICENSE or http://www.gnu.org/licenses/agpl.html                         #
-#                                                                              #
-################################################################################
+##############################################################################
+#                                                                            #
+# Copyright (C) 2011-2015, Armory Technologies, Inc.                         #
+# Distributed under the GNU Affero General Public License (AGPL v3)          #
+# See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
+#                                                                            #
+# Copyright (C) 2016-2024, goatpig                                           #
+#  Distributed under the MIT license                                         #
+#  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
+#                                                                            #
+##############################################################################
 
-from PySide2.QtWidgets import QWizard, QWizardPage, QVBoxLayout, QMessageBox
-from PySide2.QtCore import Qt, SIGNAL
-from PySide2.QtGui import QIcon
+from qtpy import QtCore, QtGui, QtWidgets
 
 from armoryengine.ArmoryUtils import USE_TESTNET, USE_REGTEST, int_to_binary
 from ui.WalletFrames import NewWalletFrame, SetPassphraseFrame, VerifyPassphraseFrame,\
@@ -25,25 +25,25 @@ from qtdialogs.DlgOfflineTx import ReviewOfflineTxFrame
 # This class is intended to be an abstract Wizard class that
 # will hold all of the functionality that is common to all
 # Wizards in Armory.
-class ArmoryWizard(QWizard):
+class ArmoryWizard(QtWidgets.QWizard):
    def __init__(self, parent, main):
       super(ArmoryWizard, self).__init__(parent)
-      self.setWizardStyle(QWizard.ClassicStyle)
+      self.setWizardStyle(QtWidgets.QWizard.ClassicStyle)
       self.parent = parent
       self.main = main
       self.setFont(GETFONT('var'))
-      self.setWindowFlags(Qt.Window)
+      self.setWindowFlags(QtCore.Qt.Window)
         # Need to adjust the wizard frame size whenever the page changes.
       self.currentIdChanged.connect(self.fitContents)
       if USE_TESTNET:
          self.setWindowTitle('Armory - Bitcoin Wallet Management [TESTNET]')
-         self.setWindowIcon(QIcon(':/armory_icon_green_32x32.png'))
+         self.setWindowIcon(QtGui.QIcon(':/armory_icon_green_32x32.png'))
       elif USE_REGTEST:
          self.setWindowTitle('Armory - Bitcoin Wallet Management [REGTEST]')
-         self.setWindowIcon(QIcon(':/armory_icon_green_32x32.png'))
+         self.setWindowIcon(QtGui.QIcon(':/armory_icon_green_32x32.png'))
       else:
          self.setWindowTitle('Armory - Bitcoin Wallet Management')
-         self.setWindowIcon(QIcon(':/armory_icon_32x32.png'))
+         self.setWindowIcon(QtGui.QIcon(':/armory_icon_32x32.png'))
 
    def fitContents(self):
       self.adjustSize()
@@ -55,12 +55,12 @@ class ArmoryWizard(QWizard):
 # This class is intended to be an abstract Wizard Page class that
 # will hold all of the functionality that is common to all
 # Wizard pages in Armory.
-# The layout is QVBoxLayout and holds a single QFrame (self.pageFrame)
-class ArmoryWizardPage(QWizardPage):
+# The layout is QtWidgets.QVBoxLayout and holds a single QtWidgets.QFrame (self.pageFrame)
+class ArmoryWizardPage(QtWidgets.QWizardPage):
    def __init__(self, wizard, pageFrame):
       super(ArmoryWizardPage, self).__init__(wizard)
       self.pageFrame = pageFrame
-      self.pageLayout = QVBoxLayout()
+      self.pageLayout = QtWidgets.QVBoxLayout()
       self.pageLayout.addWidget(self.pageFrame)
       self.setLayout(self.pageLayout)
 
@@ -81,8 +81,8 @@ class WalletWizard(ArmoryWizard):
       self.newWallet = None
       self.isBackupCreated = False
       self.setWindowTitle(self.tr("Wallet Creation Wizard"))
-      self.setOption(QWizard.HaveFinishButtonOnEarlyPages, on=True)
-      self.setOption(QWizard.IgnoreSubTitles, on=True)
+      self.setOption(QtWidgets.QWizard.HaveFinishButtonOnEarlyPages, on=True)
+      self.setOption(QtWidgets.QWizard.IgnoreSubTitles, on=True)
       
       self.walletCreationId, self.manualEntropyId, self.setPassphraseId, self.verifyPassphraseId, self.walletBackupId, self.WOWId = range(6)
 
@@ -113,10 +113,10 @@ class WalletWizard(ArmoryWizard):
          self.createWOWPage = CreateWatchingOnlyWalletPage(self)
          self.setPage(self.WOWId, self.createWOWPage)
 
-      self.setButtonLayout([QWizard.BackButton,
-                             QWizard.Stretch,
-                             QWizard.NextButton,
-                             QWizard.FinishButton])
+      self.setButtonLayout([QtWidgets.QWizard.BackButton,
+                             QtWidgets.QWizard.Stretch,
+                             QtWidgets.QWizard.NextButton,
+                             QtWidgets.QWizard.FinishButton])
 
    def initializePage(self, *args, **kwargs):
 
@@ -133,22 +133,22 @@ class WalletWizard(ArmoryWizard):
          self.walletBackupPage.pageFrame.setWallet(self.newWallet)
 
             # Hide the back button on wallet backup page
-         self.setButtonLayout([QWizard.Stretch,
-                                 QWizard.NextButton,
-                                 QWizard.FinishButton])
+         self.setButtonLayout([QtWidgets.QWizard.Stretch,
+                                 QtWidgets.QWizard.NextButton,
+                                 QtWidgets.QWizard.FinishButton])
       elif self.currentPage() == self.walletCreationPage:
             # Hide the back button on the first page
-         self.setButtonLayout([QWizard.Stretch,
-                                 QWizard.NextButton,
-                                 QWizard.FinishButton])
+         self.setButtonLayout([QtWidgets.QWizard.Stretch,
+                                 QtWidgets.QWizard.NextButton,
+                                 QtWidgets.QWizard.FinishButton])
       else:
-         self.setButtonLayout([QWizard.BackButton,
-                                  QWizard.Stretch,
-                                  QWizard.NextButton,
-                                  QWizard.FinishButton])
+         self.setButtonLayout([QtWidgets.QWizard.BackButton,
+                                  QtWidgets.QWizard.Stretch,
+                                  QtWidgets.QWizard.NextButton,
+                                  QtWidgets.QWizard.FinishButton])
    def done(self, event):
       if self.newWallet and not self.walletBackupPage.pageFrame.isBackupCreated:
-         reply = QMessageBox.question(self, self.tr('Wallet Backup Warning'), self.tr('<qt>'
+         reply = QtWidgets.QMessageBox.question(self, self.tr('Wallet Backup Warning'), self.tr('<qt>'
                'You have not made a backup for your new wallet.  You only have '
                'to make a backup of your wallet <u>one time</u> to protect '
                'all the funds held by this wallet <i>any time in the future</i> '
@@ -160,8 +160,8 @@ class WalletWizard(ArmoryWizard):
                '<br><br>'
                'Are you sure that you want to leave this wizard without backing '
                'up your wallet?</qt>'), \
-               QMessageBox.Yes | QMessageBox.No)
-         if reply == QMessageBox.No:
+               QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+         if reply == QtWidgets.QMessageBox.No:
                 # Stay in the wizard
             return None
       return super(WalletWizard, self).done(event)
@@ -186,21 +186,21 @@ class WalletWizard(ArmoryWizard):
    
    def cleanupPage(self, *args, **kwargs):
       if self.hasCWOWPage and self.currentPage() == self.createWOWPage:
-         self.setButtonLayout([QWizard.Stretch,
-                                  QWizard.NextButton,
-                                  QWizard.FinishButton])
+         self.setButtonLayout([QtWidgets.QWizard.Stretch,
+                                  QtWidgets.QWizard.NextButton,
+                                  QtWidgets.QWizard.FinishButton])
         # If we are backing up from setPassphrasePage must be going
         # to the first page.
       elif self.currentPage() == self.setPassphrasePage:
             # Hide the back button on the first page
-         self.setButtonLayout([QWizard.Stretch,
-                                 QWizard.NextButton,
-                                 QWizard.FinishButton])
+         self.setButtonLayout([QtWidgets.QWizard.Stretch,
+                                 QtWidgets.QWizard.NextButton,
+                                 QtWidgets.QWizard.FinishButton])
       else:
-         self.setButtonLayout([QWizard.BackButton,
-                                  QWizard.Stretch,
-                                  QWizard.NextButton,
-                                  QWizard.FinishButton])
+         self.setButtonLayout([QtWidgets.QWizard.BackButton,
+                                  QtWidgets.QWizard.Stretch,
+                                  QtWidgets.QWizard.NextButton,
+                                  QtWidgets.QWizard.FinishButton])
 
 
 class ManualEntropyPage(ArmoryWizardPage):
@@ -232,12 +232,12 @@ class WalletCreationPage(ArmoryWizardPage):
    def validatePage(self):
       result = True
       if self.pageFrame.getKdfSec() == -1:
-         QMessageBox.critical(self, self.tr('Invalid Target Compute Time'), \
-            self.tr('You entered Target Compute Time incorrectly.\n\nEnter: <Number> (ms, s)'), QMessageBox.Ok)
+         QtWidgets.QMessageBox.critical(self, self.tr('Invalid Target Compute Time'), \
+            self.tr('You entered Target Compute Time incorrectly.\n\nEnter: <Number> (ms, s)'), QtWidgets.QMessageBox.Ok)
          result = False
       elif self.pageFrame.getKdfBytes() == -1:
-         QMessageBox.critical(self, self.tr('Invalid Max Memory Usage'), \
-            self.tr('You entered Max Memory Usage incorrectly.\n\nEnter: <Number> (kb, mb)'), QMessageBox.Ok)
+         QtWidgets.QMessageBox.critical(self, self.tr('Invalid Max Memory Usage'), \
+            self.tr('You entered Max Memory Usage incorrectly.\n\nEnter: <Number> (kb, mb)'), QtWidgets.QMessageBox.Ok)
          result = False
       return result
 
@@ -282,8 +282,8 @@ class VerifyPassphrasePage(ArmoryWizardPage):
    def validatePage(self):
       result = self.passphrase == str(self.pageFrame.edtPasswd3.text())
       if not result:
-         QMessageBox.critical(self, self.tr('Invalid Passphrase'), \
-             self.tr('You entered your confirmation passphrase incorrectly!'), QMessageBox.Ok)
+         QtWidgets.QMessageBox.critical(self, self.tr('Invalid Passphrase'), \
+             self.tr('You entered your confirmation passphrase incorrectly!'), QtWidgets.QMessageBox.Ok)
       return result
 
    def nextId(self):
@@ -323,9 +323,9 @@ class TxWizard(ArmoryWizard):
    def __init__(self, parent, main, wlt, prefill=None, onlyOfflineWallets=False):
       super(TxWizard,self).__init__(parent, main)
       self.setWindowTitle(self.tr("Offline Transaction Wizard"))
-      self.setOption(QWizard.IgnoreSubTitles, on=True)
-      self.setOption(QWizard.HaveCustomButton1, on=True)
-      self.setOption(QWizard.HaveFinishButtonOnEarlyPages, on=True)
+      self.setOption(QtWidgets.QWizard.IgnoreSubTitles, on=True)
+      self.setOption(QtWidgets.QWizard.HaveCustomButton1, on=True)
+      self.setOption(QtWidgets.QWizard.HaveFinishButtonOnEarlyPages, on=True)
 
         # Page 1: Create Offline TX
       self.createTxPage = CreateTxPage(self, wlt, prefill, onlyOfflineWallets=onlyOfflineWallets)
@@ -339,14 +339,14 @@ class TxWizard(ArmoryWizard):
       self.signBroadcastOfflineTxPage = SignBroadcastOfflineTxPage(self)
       self.addPage(self.signBroadcastOfflineTxPage)
 
-      self.setButtonText(QWizard.NextButton, self.tr('Create Unsigned Transaction'))
-      self.setButtonText(QWizard.CustomButton1, self.tr('Send!'))
+      self.setButtonText(QtWidgets.QWizard.NextButton, self.tr('Create Unsigned Transaction'))
+      self.setButtonText(QtWidgets.QWizard.CustomButton1, self.tr('Send!'))
       self.connect(self, SIGNAL('customButtonClicked(int)'), self.sendClicked)
-      self.setButtonLayout([QWizard.CancelButton,
-                             QWizard.BackButton,
-                             QWizard.Stretch,
-                             QWizard.NextButton,
-                             QWizard.CustomButton1])
+      self.setButtonLayout([QtWidgets.QWizard.CancelButton,
+                             QtWidgets.QWizard.BackButton,
+                             QtWidgets.QWizard.Stretch,
+                             QtWidgets.QWizard.NextButton,
+                             QtWidgets.QWizard.CustomButton1])
 
 
 
@@ -354,11 +354,11 @@ class TxWizard(ArmoryWizard):
       if self.currentPage() == self.createTxPage:
          self.createTxPage.pageFrame.fireWalletChange()
       elif self.currentPage() == self.reviewOfflineTxPage:
-         self.setButtonText(QWizard.NextButton, self.tr('Next'))
-         self.setButtonLayout([QWizard.BackButton,
-                            QWizard.Stretch,
-                            QWizard.NextButton,
-                            QWizard.FinishButton])
+         self.setButtonText(QtWidgets.QWizard.NextButton, self.tr('Next'))
+         self.setButtonLayout([QtWidgets.QWizard.BackButton,
+                            QtWidgets.QWizard.Stretch,
+                            QtWidgets.QWizard.NextButton,
+                            QtWidgets.QWizard.FinishButton])
          self.reviewOfflineTxPage.pageFrame.setTxDp(self.createTxPage.txdp)
          self.reviewOfflineTxPage.pageFrame.setWallet(
                     self.createTxPage.pageFrame.wlt)
@@ -366,7 +366,7 @@ class TxWizard(ArmoryWizard):
    def cleanupPage(self, *args, **kwargs):
       if self.currentPage() == self.reviewOfflineTxPage:
          self.updateOnSelectWallet(self.createTxPage.pageFrame.wlt)
-         self.setButtonText(QWizard.NextButton, self.tr('Create Unsigned Transaction'))
+         self.setButtonText(QtWidgets.QWizard.NextButton, self.tr('Create Unsigned Transaction'))
 
    def sendClicked(self, customButtonIndex):
       self.createTxPage.pageFrame.createTxAndBroadcast()
@@ -374,16 +374,16 @@ class TxWizard(ArmoryWizard):
 
    def updateOnSelectWallet(self, wlt):
       if wlt.watchingOnly:
-         self.setButtonLayout([QWizard.CancelButton,
-                             QWizard.BackButton,
-                             QWizard.Stretch,
-                             QWizard.NextButton])
+         self.setButtonLayout([QtWidgets.QWizard.CancelButton,
+                             QtWidgets.QWizard.BackButton,
+                             QtWidgets.QWizard.Stretch,
+                             QtWidgets.QWizard.NextButton])
       else:
-         self.setButtonLayout([QWizard.CancelButton,
-                               QWizard.BackButton,
-                               QWizard.Stretch,
-                               QWizard.NextButton,
-                               QWizard.CustomButton1])
+         self.setButtonLayout([QtWidgets.QWizard.CancelButton,
+                               QtWidgets.QWizard.BackButton,
+                               QtWidgets.QWizard.Stretch,
+                               QtWidgets.QWizard.NextButton,
+                               QtWidgets.QWizard.CustomButton1])
 
 class CreateTxPage(ArmoryWizardPage):
    def __init__(self, wizard, wlt, prefill=None, onlyOfflineWallets=False):

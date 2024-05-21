@@ -1,12 +1,10 @@
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
 ################################################################################
 #                                                                              #
 # Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
 # Distributed under the GNU Affero General Public License (AGPL v3)            #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                         #
 #                                                                              #
-# Copyright (C) 2016-2023, goatpig                                             #
+# Copyright (C) 2016-2024, goatpig                                             #
 #  Distributed under the MIT license                                           #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                      #
 #                                                                              #
@@ -15,10 +13,7 @@ from __future__ import (absolute_import, division,
 import os
 import shutil
 
-from PySide2.QtCore import Qt, QObject, Signal
-from PySide2.QtWidgets import QPushButton, QGridLayout, QFrame, \
-   QVBoxLayout, QLabel, QMessageBox, QTextEdit, QSizePolicy, \
-   QApplication, QRadioButton
+from qtpy import QtCore, QtWidgets
 
 from ui.QtExecuteSignal import TheSignalExecution
 from armoryengine.Transaction import UnsignedTransaction, \
@@ -62,21 +57,21 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
          'you will have the opportunity to broadcast it to '
          'the Bitcoin network to make it final.'))
 
-      self.txtUSTX = QTextEdit()
+      self.txtUSTX = QtWidgets.QTextEdit()
       self.txtUSTX.setFont(GETFONT('Fixed', 8))
       w,h = relaxedSizeNChar(self.txtUSTX, 68)
       self.txtUSTX.setMinimumWidth(w)
       self.txtUSTX.setMinimumHeight(8*h)
-      self.txtUSTX.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+      self.txtUSTX.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
 
-      self.btnSign = QPushButton(self.tr('Sign'))
-      self.btnBroadcast = QPushButton(self.tr('Broadcast'))
-      self.btnSave = QPushButton(self.tr('Save file...'))
-      self.btnLoad = QPushButton(self.tr('Load file...'))
-      self.btnCopy = QPushButton(self.tr('Copy Text'))
-      self.btnCopyHex = QPushButton(self.tr('Copy Raw Tx (Hex)'))
+      self.btnSign = QtWidgets.QPushButton(self.tr('Sign'))
+      self.btnBroadcast = QtWidgets.QPushButton(self.tr('Broadcast'))
+      self.btnSave = QtWidgets.QPushButton(self.tr('Save file...'))
+      self.btnLoad = QtWidgets.QPushButton(self.tr('Load file...'))
+      self.btnCopy = QtWidgets.QPushButton(self.tr('Copy Text'))
+      self.btnCopyHex = QtWidgets.QPushButton(self.tr('Copy Raw Tx (Hex)'))
       self.lblCopied = QRichLabel('')
-      self.lblCopied.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+      self.lblCopied.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
       self.btnSign.setEnabled(False)
       self.btnBroadcast.setEnabled(False)
@@ -92,7 +87,7 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
       self.btnCopyHex.clicked.connect(self.copyTxHex)
 
       self.lblStatus = QRichLabel('')
-      self.lblStatus.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+      self.lblStatus.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
       wStat, hStat = relaxedSizeStr(self.lblStatus, self.tr('Signature is Invalid!'))
       self.lblStatus.setMinimumWidth(int(wStat * 1.2))
       self.lblStatus.setMinimumHeight(int(hStat * 1.2))
@@ -151,20 +146,20 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
                                          'Stretch', \
                                          frmMoreInfo])
 
-      frmBtn.setMaximumWidth(tightSizeNChar(QPushButton(''), 30)[0])
+      frmBtn.setMaximumWidth(tightSizeNChar(QtWidgets.QPushButton(''), 30)[0])
 
-      frmInfoLayout = QGridLayout()
+      frmInfoLayout = QtWidgets.QGridLayout()
       for r in range(len(self.infoLbls)):
          for c in range(len(self.infoLbls[r])):
             frmInfoLayout.addWidget(self.infoLbls[r][c], r, c, 1, 1)
 
-      frmInfo = QFrame()
+      frmInfo = QtWidgets.QFrame()
       frmInfo.setFrameStyle(STYLE_SUNKEN)
       frmInfo.setLayout(frmInfoLayout)
 
-      frmBottom = QFrame()
+      frmBottom = QtWidgets.QFrame()
       frmBottom.setFrameStyle(STYLE_SUNKEN)
-      frmBottomLayout = QGridLayout()
+      frmBottomLayout = QtWidgets.QGridLayout()
       frmBottomLayout.addWidget(self.txtUSTX, 0, 0, 1, 1)
       frmBottomLayout.addWidget(frmBtn, 0, 1, 2, 1)
       frmBottomLayout.addWidget(frmInfo, 1, 0, 1, 1)
@@ -173,7 +168,7 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
 
       self.signerTypeSelect = SignerSerializeTypeSelector(False)
 
-      layout = QVBoxLayout()
+      layout = QtWidgets.QVBoxLayout()
       layout.addWidget(frmDescr)
       layout.addWidget(self.signerTypeSelect.getFrame())
       layout.addWidget(frmBottom)
@@ -210,15 +205,15 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
             self.sigsValid = self.ustxObj.verifySigsAllInputs()
             self.ustxReadable = True
          except BadAddressError:
-            QMessageBox.critical(self, self.tr('Inconsistent Data!'), \
+            QtWidgets.QMessageBox.critical(self, self.tr('Inconsistent Data!'), \
                self.tr('This transaction contains inconsistent information.  This '
-               'is probably not your fault...'), QMessageBox.Ok)
+               'is probably not your fault...'), QtWidgets.QMessageBox.Ok)
             self.ustxObj = None
             self.ustxReadable = False
          except NetworkIDError:
-            QMessageBox.critical(self, self.tr('Wrong Network!'), \
+            QtWidgets.QMessageBox.critical(self, self.tr('Wrong Network!'), \
                self.tr('This transaction is actually for a different network!  '
-               'Did you load the correct transaction?'), QMessageBox.Ok)
+               'Did you load the correct transaction?'), QtWidgets.QMessageBox.Ok)
             self.ustxObj = None
             self.ustxReadable = False
          except (UnserializeError, IndexError, ValueError):
@@ -287,18 +282,18 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
             fromWlts.add(wltID)
 
       if len(fromWlts) > 1:
-         QMessageBox.warning(self, self.tr('Multiple Input Wallets'), \
+         QtWidgets.QMessageBox.warning(self, self.tr('Multiple Input Wallets'), \
             self.tr('Somehow, you have obtained a transaction that actually pulls from more '
             'than one wallet.  The support for handling multi-wallet signatures is '
             'not currently implemented (this also could have happened if you imported '
-            'the same private key into two different wallets).') , QMessageBox.Ok)
+            'the same private key into two different wallets).') , QtWidgets.QMessageBox.Ok)
          self.makeReviewFrame()
          return
       elif len(fromWlts) == 0:
-         QMessageBox.warning(self, self.tr('Unrelated Transaction'), \
+         QtWidgets.QMessageBox.warning(self, self.tr('Unrelated Transaction'), \
             self.tr('This transaction appears to have no relationship to any of the wallets '
             'stored on this computer.  Did you load the correct transaction?'), \
-            QMessageBox.Ok)
+            QtWidgets.QMessageBox.Ok)
          self.makeReviewFrame()
          return
 
@@ -375,8 +370,8 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
          self.processUSTX()
 
       if not self.ustxObj:
-         QMessageBox.warning(self, self.tr('Invalid Transaction'), \
-            self.tr('Transaction data is invalid and cannot be shown!'), QMessageBox.Ok)
+         QtWidgets.QMessageBox.warning(self, self.tr('Invalid Transaction'), \
+            self.tr('Transaction data is invalid and cannot be shown!'), QtWidgets.QMessageBox.Ok)
          return
 
       leVal = 0 if self.leValue is None else -self.leValue
@@ -388,28 +383,28 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
 
    def signTx(self):
       if not self.ustxObj:
-         QMessageBox.critical(self, self.tr('Cannot Sign'), \
+         QtWidgets.QMessageBox.critical(self, self.tr('Cannot Sign'), \
                self.tr('This transaction is not relevant to any of your wallets.'
-               'Did you load the correct transaction?'), QMessageBox.Ok)
+               'Did you load the correct transaction?'), QtWidgets.QMessageBox.Ok)
          return
 
       if self.ustxObj == None:
-         QMessageBox.warning(self, self.tr('Not Signable'), \
+         QtWidgets.QMessageBox.warning(self, self.tr('Not Signable'), \
                self.tr('This is not a valid transaction, and thus it cannot '
-               'be signed. '), QMessageBox.Ok)
+               'be signed. '), QtWidgets.QMessageBox.Ok)
          return
       elif self.enoughSigs and self.sigsValid:
-         QMessageBox.warning(self, self.tr('Already Signed'), \
-               self.tr('This transaction has already been signed!'), QMessageBox.Ok)
+         QtWidgets.QMessageBox.warning(self, self.tr('Already Signed'), \
+               self.tr('This transaction has already been signed!'), QtWidgets.QMessageBox.Ok)
          return
 
 
       if self.wlt and self.wlt.watchingOnly:
-         QMessageBox.warning(self, self.tr('No Private Keys!'), \
+         QtWidgets.QMessageBox.warning(self, self.tr('No Private Keys!'), \
             self.tr('This transaction refers one of your wallets, but that wallet '
             'is a watching-only wallet.  Therefore, private keys are '
             'not available to sign this transaction.'), \
-             QMessageBox.Ok)
+             QtWidgets.QMessageBox.Ok)
          return
 
 
@@ -427,7 +422,7 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
             svpairsMine.append([script, value])
 
       if len(svpairsMine) == 0 and len(svpairs) > 1:
-         QMessageBox.warning(self, self.tr('Missing Change'), self.tr(
+         QtWidgets.QMessageBox.warning(self, self.tr('Missing Change'), self.tr(
             'This transaction has %d recipients, and none of them '
             'are addresses in this wallet (for receiving change). '
             'This can happen if you specified a custom change address '
@@ -436,7 +431,7 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
             'be the result of someone tampering with the transaction. '
             '<br><br>The transaction is valid and ready to be signed. '
             'Please verify the recipient and amounts carefully before '
-            'confirming the transaction on the next screen.' % len(svpairs)), QMessageBox.Ok)
+            'confirming the transaction on the next screen.' % len(svpairs)), QtWidgets.QMessageBox.Ok)
 
       dlg = DlgConfirmSend(self.wlt, svpairs, theFee, self, self.main, pytxOrUstx=ustx)
       if not dlg.exec_():
@@ -451,26 +446,26 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
                if not self.fileLoaded == None:
                   self.saveTxAuto()
             else:
-               QMessageBox.warning(self, self.tr('Error'),
+               QtWidgets.QMessageBox.warning(self, self.tr('Error'),
                   self.tr('Failed to sign transaction!'),
-                  QMessageBox.Ok)
+                  QtWidgets.QMessageBox.Ok)
          TheSignalExecution.executeMethod(signTxLastStep, success)
 
       self.ustxObj.signTx(self.wlt.uniqueIDB58, completeSignProcess, self)
 
    def broadTx(self):
       if self.main.netMode == NETWORKMODE.Disconnected:
-         QMessageBox.warning(self, self.tr('No Internet!'), \
+         QtWidgets.QMessageBox.warning(self, self.tr('No Internet!'), \
             self.tr('Armory lost its connection to Bitcoin Core, and cannot '
             'broadcast any transactions until it is reconnected. '
             'Please verify that Bitcoin Core (or bitcoind) is open '
-            'and synchronized with the network.'), QMessageBox.Ok)
+            'and synchronized with the network.'), QtWidgets.QMessageBox.Ok)
          return
       elif self.main.netMode == NETWORKMODE.Offline:
-         QMessageBox.warning(self, self.tr('No Internet!'), \
+         QtWidgets.QMessageBox.warning(self, self.tr('No Internet!'), \
             self.tr('You do not currently have a connection to the Bitcoin network. '
             'If this does not seem correct, verify that  is open '
-            'and synchronized with the network.'), QMessageBox.Ok)
+            'and synchronized with the network.'), QtWidgets.QMessageBox.Ok)
          return
 
 
@@ -478,13 +473,13 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
       try:
          finalTx = self.ustxObj.getSignedPyTx()
       except SignatureError:
-         QMessageBox.warning(self, self.tr('Signature Error'), self.tr(
+         QtWidgets.QMessageBox.warning(self, self.tr('Signature Error'), self.tr(
             'Not all signatures are valid.  This transaction '
-            'cannot be broadcast.'), QMessageBox.Ok)
+            'cannot be broadcast.'), QtWidgets.QMessageBox.Ok)
       except:
-         QMessageBox.warning(self, self.tr('Error'), self.tr(
+         QtWidgets.QMessageBox.warning(self, self.tr('Error'), self.tr(
             'There was an error processing this transaction, for reasons '
-            'that are probably not your fault...'), QMessageBox.Ok)
+            'that are probably not your fault...'), QtWidgets.QMessageBox.Ok)
          return
 
       # We should provide the same confirmation dialog here, as we do when
@@ -508,10 +503,10 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
                # newFileName = '.'.join(pcs[:-2]) + '.DONE.' + '.'.join(pcs[-2:])
                shutil.move(self.fileLoaded, self.fileLoaded.replace('signed', 'SENT'))
             except:
-               QMessageBox.critical(self, self.tr('File Remove Error'), \
+               QtWidgets.QMessageBox.critical(self, self.tr('File Remove Error'), \
                   self.tr('The file could not be deleted.  If you want to delete '
                   'it, please do so manually.  The file was loaded from: '
-                  '<br><br>%s: ' % self.fileLoaded), QMessageBox.Ok)
+                  '<br><br>%s: ' % self.fileLoaded), QtWidgets.QMessageBox.Ok)
 
          try:
             self.parent().accept()
@@ -523,7 +518,7 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
 
    def saveTxAuto(self):
       if not self.ustxReadable:
-         QMessageBox.warning(self, self.tr('Formatting Error'), \
+         QtWidgets.QMessageBox.warning(self, self.tr('Formatting Error'), \
             self.tr('The transaction data was not in a format recognized by '
             'Armory.'))
          return
@@ -538,15 +533,15 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
          if not newSaveFile == self.fileLoaded:
             os.remove(self.fileLoaded)
          self.fileLoaded = newSaveFile
-         QMessageBox.information(self, self.tr('Transaction Saved!'), \
+         QtWidgets.QMessageBox.information(self, self.tr('Transaction Saved!'), \
             self.tr('Your transaction has been saved to the following location:'
             '\n\n%s\n\nIt can now be broadcast from any computer running '
-            'Armory in online mode.' % newSaveFile), QMessageBox.Ok)
+            'Armory in online mode.' % newSaveFile), QtWidgets.QMessageBox.Ok)
          return
 
    def saveTx(self):
       if not self.ustxReadable:
-         QMessageBox.warning(self, self.tr('Formatting Error'), \
+         QtWidgets.QMessageBox.warning(self, self.tr('Formatting Error'), \
             self.tr('The transaction data was not in a format recognized by '
             'Armory.'))
          return
@@ -588,22 +583,22 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
 
 
    def copyTx(self):
-      clipb = QApplication.clipboard()
+      clipb = QtWidgets.QApplication.clipboard()
       clipb.clear()
       clipb.setText(str(self.txtUSTX.toPlainText()))
       self.lblCopied.setText(self.tr('<i>Copied!</i>'))
 
 
    def copyTxHex(self):
-      clipb = QApplication.clipboard()
+      clipb = QtWidgets.QApplication.clipboard()
       clipb.clear()
       clipb.setText(binary_to_hex(\
          self.ustxObj.getSignedPyTx().serialize()))
       self.lblCopied.setText(self.tr('<i>Copied!</i>'))
 
 ################################################################################
-class SignerSerializeTypeSelector(QObject):
-   toggledSignal = Signal()
+class SignerSerializeTypeSelector(QtCore.QObject):
+   toggledSignal = QtCore.Signal()
 
    def __init__(self, selectable=True):
       super(SignerSerializeTypeSelector, self).__init__()
@@ -614,9 +609,9 @@ class SignerSerializeTypeSelector(QObject):
       #ustx type version radio
       self.typesRadio = {}
       lblType = QRichLabel("<u><b>USTX Type:</b></u>")
-      self.typesRadio[USTX_TYPE_MODERN] = QRadioButton("Modern (0.97+)")
-      self.typesRadio[USTX_TYPE_PSBT] = QRadioButton("PSBT (0.97+)")
-      self.typesRadio[USTX_TYPE_LEGACY] = QRadioButton("Legacy (0.96.5 and older)")
+      self.typesRadio[USTX_TYPE_MODERN] = QtWidgets.QRadioButton("Modern (0.97+)")
+      self.typesRadio[USTX_TYPE_PSBT] = QtWidgets.QRadioButton("PSBT (0.97+)")
+      self.typesRadio[USTX_TYPE_LEGACY] = QtWidgets.QRadioButton("Legacy (0.96.5 and older)")
       self.reset()
 
       #connect toggle event

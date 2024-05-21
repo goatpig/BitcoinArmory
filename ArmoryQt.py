@@ -6,28 +6,17 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2023, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
 ##############################################################################
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
-import gettext
-
-
-from copy import deepcopy
-from datetime import datetime
 from io import BytesIO
 from binascii import hexlify, unhexlify
-import hashlib
 import logging
-import math
 import os
-import platform
 import random
 import shutil
-import socket
 import subprocess
 import sys
 import threading
@@ -35,16 +24,8 @@ import time
 import traceback
 import glob
 from struct import pack
-
-from PySide2.QtGui import QDesktopServices, QPixmap, QPalette, \
-   QCursor, QIcon
-from PySide2.QtCore import Qt, QTranslator, Signal, QByteArray, \
-   QSize, QModelIndex, QBuffer, QIODevice
-from PySide2.QtWidgets import QMainWindow, QSystemTrayIcon, \
-   QMenu, QAction, QGridLayout, QTabWidget, QScrollArea, \
-   QComboBox, QSizePolicy, QActionGroup, QMessageBox, QLabel, \
-   QTableView, QPushButton, QFrame, QWidget, QProgressBar, QVBoxLayout, \
-   QLineEdit, QFileDialog, QApplication, QWhatsThis
+import qtpy
+from qtpy import QtCore, QtGui, QtWidgets
 
 from armorycolors import Colors, htmlColor, QAPP
 from armoryengine.ArmoryUtils import HMAC256, \
@@ -144,14 +125,14 @@ import tempfile
 
 # Set URL handler to warn before opening url
 handler = URLHandler()
-QDesktopServices.setUrlHandler("http", handler, "handleURL")
-QDesktopServices.setUrlHandler("https", handler, "handleURL")
+QtGui.QDesktopServices.setUrlHandler("http", handler, "handleURL")
+QtGui.QDesktopServices.setUrlHandler("https", handler, "handleURL")
 
 # Load our framework with OS X-specific code.
 if OS_MACOSX:
    import ArmoryMac
 
-# HACK ALERT: Qt has a bug in OS X where the system font settings will override
+# HACK ALERT: QtCore.Qt has a bug in OS X where the system font settings will override
 # the app's settings when a window is activated (e.g., Armory starts, the user
 # switches to another app, and then switches back to Armory). There is a
 # workaround, as used by TeXstudio and other programs.
@@ -159,7 +140,7 @@ if OS_MACOSX:
 # http://sourceforge.net/p/texstudio/bugs/594/?page=1 - Fix is mentioned.
 # http://pyqt.sourceforge.net/Docs/PyQt4/qapplication.html#setDesktopSettingsAware
 # - Mentions that this must be called before the app (QAPP) is created.
-   QApplication.setDesktopSettingsAware(False)
+   QtWidgets.QApplication.setDesktopSettingsAware(False)
 
 if OS_WINDOWS:
    from _winreg import *
@@ -167,9 +148,9 @@ if OS_WINDOWS:
 
 MODULES_ZIP_DIR_NAME = 'modules'
 
-class ArmoryMainWindow(QMainWindow):
+class ArmoryMainWindow(QtWidgets.QMainWindow):
    """ The primary Armory window """
-   processMutexNotificationSignal = Signal()
+   processMutexNotificationSignal = QtCore.Signal()
    scriptDispStrings = {}
 
    #############################################################################
@@ -180,37 +161,37 @@ class ArmoryMainWindow(QMainWindow):
       self.ledgerView = None
 
       # SETUP THE WINDOWS DECORATIONS
-      self.lblLogoIcon = QLabel()
+      self.lblLogoIcon = QtWidgets.QLabel()
       if USE_TESTNET:
          self.setWindowTitle('Armory - Bitcoin Wallet Management [TESTNET] dlgMain')
          self.iconfile = './img/armory_icon_green_32x32.png'
-         self.lblLogoIcon.setPixmap(QPixmap('./img/armory_logo_green_h56.png'))
+         self.lblLogoIcon.setPixmap(QtGui.QPixmap('./img/armory_logo_green_h56.png'))
          if Colors.isDarkBkgd:
-            self.lblLogoIcon.setPixmap(QPixmap('./img/armory_logo_white_text_green_h56.png'))
+            self.lblLogoIcon.setPixmap(QtGui.QPixmap('./img/armory_logo_white_text_green_h56.png'))
       elif USE_REGTEST:
          self.setWindowTitle('Armory - Bitcoin Wallet Management [REGTEST] dlgMain')
          self.iconfile = './img/armory_icon_green_32x32.png'
-         self.lblLogoIcon.setPixmap(QPixmap('./img/armory_logo_green_h56.png'))
+         self.lblLogoIcon.setPixmap(QtGui.QPixmap('./img/armory_logo_green_h56.png'))
          if Colors.isDarkBkgd:
-            self.lblLogoIcon.setPixmap(QPixmap('./img/armory_logo_white_text_green_h56.png'))
+            self.lblLogoIcon.setPixmap(QtGui.QPixmap('./img/armory_logo_white_text_green_h56.png'))
       else:
          self.setWindowTitle('Armory - Bitcoin Wallet Management')
          self.iconfile = './img/armory_icon_32x32.png'
-         self.lblLogoIcon.setPixmap(QPixmap('./img/armory_logo_h44.png'))
+         self.lblLogoIcon.setPixmap(QtGui.QPixmap('./img/armory_logo_h44.png'))
          if Colors.isDarkBkgd:
-            self.lblLogoIcon.setPixmap(QPixmap('./img/armory_logo_white_text_h56.png'))
+            self.lblLogoIcon.setPixmap(QtGui.QPixmap('./img/armory_logo_white_text_h56.png'))
 
       # OS X requires some Objective-C code if we're switching to the testnet
       # (green) icon. We should also use a larger icon. Otherwise, Info.plist
       # takes care of everything.
       if not OS_MACOSX:
-         self.setWindowIcon(QIcon(self.iconfile))
+         self.setWindowIcon(QtGui.QIcon(self.iconfile))
       else:
          if USE_TESTNET or USE_REGTEST:
             self.iconfile = './img/armory_icon_green_fullres.png'
          ArmoryMac.MacDockIconHandler.instance().setMainWindow(self)
-         ArmoryMac.MacDockIconHandler.instance().setIcon(QIcon(self.iconfile))
-      self.lblLogoIcon.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+         ArmoryMac.MacDockIconHandler.instance().setIcon(QtGui.QIcon(self.iconfile))
+      self.lblLogoIcon.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
       self.netMode     = NETWORKMODE.Offline
       self.abortLoad   = False
@@ -269,9 +250,9 @@ class ArmoryMainWindow(QMainWindow):
       self.delayedURIData['qLen'] = 0
 
       '''
-      With Qt, all GUI operations need to happen in the main thread. If
+      With QtCore.Qt, all GUI operations need to happen in the main thread. If
       the GUI operation is triggered from another thread, it needs to
-      emit a Qt signal, so that Qt can schedule the operation in the main
+      emit a QtCore.Qt signal, so that QtCore.Qt can schedule the operation in the main
       thread. QtExecuteSignal is a utility class that handles the signaling
       and delaying/threading of execution
       '''
@@ -358,7 +339,7 @@ class ArmoryMainWindow(QMainWindow):
 
       # Table for all the wallets
       self.walletModel = AllWalletsDispModel(self)
-      self.walletsView  = QTableView(self)
+      self.walletsView  = QtWidgets.QTableView(self)
 
       w,h = tightSizeNChar(self.walletsView, 55)
       viewWidth  = 1.2*w
@@ -368,8 +349,8 @@ class ArmoryMainWindow(QMainWindow):
       self.loadSettings()
 
       self.walletsView.setModel(self.walletModel)
-      self.walletsView.setSelectionBehavior(QTableView.SelectRows)
-      self.walletsView.setSelectionMode(QTableView.SingleSelection)
+      self.walletsView.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
+      self.walletsView.setSelectionMode(QtWidgets.QTableView.SingleSelection)
       self.walletsView.verticalHeader().setDefaultSectionSize(int(sectionSz))
       self.walletsView.setMinimumSize(int(viewWidth), int(viewHeight))
       self.walletsView.setItemDelegate(AllWalletsCheckboxDelegate(self))
@@ -397,26 +378,26 @@ class ArmoryMainWindow(QMainWindow):
 
       # Prepare for tableView slices (i.e. "Showing 1 to 100 of 382", etc)
       self.numShowOpts = [100,250,500,1000,'All']
-      self.sortLedgOrder = Qt.AscendingOrder
+      self.sortLedgOrder = QtCore.Qt.AscendingOrder
       self.sortLedgCol = 0
       self.currLedgMin = 1
       self.currLedgMax = 100
       self.currLedgWidth = 100
 
-      btnAddWallet  = QPushButton(self.tr("Create Wallet"))
-      btnImportWlt  = QPushButton(self.tr("Import or Restore Wallet"))
+      btnAddWallet  = QtWidgets.QPushButton(self.tr("Create Wallet"))
+      btnImportWlt  = QtWidgets.QPushButton(self.tr("Import or Restore Wallet"))
       btnAddWallet.clicked.connect(self.startWalletWizard)
       btnImportWlt.clicked.connect(self.execImportWallet)
 
       # Put the Wallet info into it's own little box
-      lblAvail = QLabel(self.tr("<b>Available Wallets:</b>"))
+      lblAvail = QtWidgets.QLabel(self.tr("<b>Available Wallets:</b>"))
       viewHeader = makeLayoutFrame(HORIZONTAL, [lblAvail, \
                                              'Stretch', \
                                              btnAddWallet, \
                                              btnImportWlt, ])
-      wltFrame = QFrame()
-      wltFrame.setFrameStyle(QFrame.Box|QFrame.Sunken)
-      wltLayout = QGridLayout()
+      wltFrame = QtWidgets.QFrame()
+      wltFrame.setFrameStyle(QtWidgets.QFrame.Box|QtWidgets.QFrame.Sunken)
+      wltLayout = QtWidgets.QGridLayout()
       wltLayout.addWidget(viewHeader, 0,0, 1,3)
       wltLayout.addWidget(self.walletsView, 1,0, 1,3)
       wltFrame.setLayout(wltLayout)
@@ -424,15 +405,15 @@ class ArmoryMainWindow(QMainWindow):
 
 
       # Make the bottom 2/3 a tabwidget
-      self.mainDisplayTabs = QTabWidget()
+      self.mainDisplayTabs = QtWidgets.QTabWidget()
 
       # Put the labels into scroll areas just in case window size is small.
-      self.tabDashboard = QWidget()
+      self.tabDashboard = QtWidgets.QWidget()
       self.setupDashboard()
 
 
       # Combo box to filter ledger display
-      self.comboWltSelect = QComboBox()
+      self.comboWltSelect = QtWidgets.QComboBox()
       self.populateLedgerComboBox()
       self.comboWltSelect.activated.connect(self.changeWltFilter)
 
@@ -444,13 +425,13 @@ class ArmoryMainWindow(QMainWindow):
       self.lblTotalFunds  = QRichLabel('-'*12, doWrap=False)
       self.lblSpendFunds  = QRichLabel('-'*12, doWrap=False)
       self.lblUnconfFunds = QRichLabel('-'*12, doWrap=False)
-      self.lblTotalFunds.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-      self.lblSpendFunds.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-      self.lblUnconfFunds.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+      self.lblTotalFunds.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+      self.lblSpendFunds.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+      self.lblUnconfFunds.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
 
-      self.lblTot.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-      self.lblSpd.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-      self.lblUcn.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+      self.lblTot.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+      self.lblSpd.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+      self.lblUcn.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
 
       self.lblBTC1 = QRichLabel('<b>BTC</b>', doWrap=False)
       self.lblBTC2 = QRichLabel('<b>BTC</b>', doWrap=False)
@@ -463,9 +444,9 @@ class ArmoryMainWindow(QMainWindow):
             'Funds that have less than 6 confirmations, and thus should not '
             'be considered <i>yours</i>, yet.'))
 
-      self.frmTotals = QFrame()
+      self.frmTotals = QtWidgets.QFrame()
       self.frmTotals.setFrameStyle(STYLE_NONE)
-      frmTotalsLayout = QGridLayout()
+      frmTotalsLayout = QtWidgets.QGridLayout()
       frmTotalsLayout.addWidget(self.lblTot, 0,0)
       frmTotalsLayout.addWidget(self.lblSpd, 1,0)
       frmTotalsLayout.addWidget(self.lblUcn, 2,0)
@@ -501,11 +482,11 @@ class ArmoryMainWindow(QMainWindow):
 
       self.lbDialog = None
 
-      btnSendBtc   = QPushButton(self.tr("Send Bitcoins"))
-      btnRecvBtc   = QPushButton(self.tr("Receive Bitcoins"))
-      btnWltProps  = QPushButton(self.tr("Wallet Properties"))
-      btnOfflineTx = QPushButton(self.tr("Offline Transactions"))
-      btnMultisig  = QPushButton(self.tr("Lockboxes (Multi-Sig)"))
+      btnSendBtc   = QtWidgets.QPushButton(self.tr("Send Bitcoins"))
+      btnRecvBtc   = QtWidgets.QPushButton(self.tr("Receive Bitcoins"))
+      btnWltProps  = QtWidgets.QPushButton(self.tr("Wallet Properties"))
+      btnOfflineTx = QtWidgets.QPushButton(self.tr("Offline Transactions"))
+      btnMultisig  = QtWidgets.QPushButton(self.tr("Lockboxes (Multi-Sig)"))
 
       btnWltProps.clicked.connect(self.execDlgWalletDetails)
       btnRecvBtc.clicked.connect(self.clickReceiveCoins)
@@ -517,7 +498,7 @@ class ArmoryMainWindow(QMainWindow):
                                               UserModeStr(self, self.usermode))
       lblInfo = QRichLabel(verStr, doWrap=False)
       lblInfo.setFont(GETFONT('var',10))
-      lblInfo.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+      lblInfo.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
       logoBtnFrame = []
       logoBtnFrame.append(self.lblLogoIcon)
@@ -533,11 +514,11 @@ class ArmoryMainWindow(QMainWindow):
 
       btnFrame = makeVertFrame(logoBtnFrame, STYLE_SUNKEN)
       logoWidth=220
-      btnFrame.sizeHint = lambda: QSize(int(logoWidth*1.0), 10)
+      btnFrame.sizeHint = lambda: QtCore.QSize(int(logoWidth*1.0), 10)
       btnFrame.setMaximumWidth(int(logoWidth*1.2))
-      btnFrame.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+      btnFrame.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
 
-      layout = QGridLayout()
+      layout = QtWidgets.QGridLayout()
       layout.addWidget(btnFrame,          0, 0, 1, 1)
       layout.addWidget(wltFrame,          0, 1, 1, 1)
       layout.addWidget(self.mainDisplayTabs,  1, 0, 1, 2)
@@ -545,7 +526,7 @@ class ArmoryMainWindow(QMainWindow):
       layout.setRowStretch(1, 5)
 
       # Attach the layout to the frame that will become the central widget
-      mainFrame = QFrame()
+      mainFrame = QtWidgets.QFrame()
       mainFrame.setLayout(layout)
       self.setCentralWidget(mainFrame)
       self.setMinimumSize(750,500)
@@ -574,10 +555,10 @@ class ArmoryMainWindow(QMainWindow):
 
       def exportTx():
          if not TheBDM.getState()==BDM_BLOCKCHAIN_READY:
-            QMessageBox.warning(self, self.tr('Transactions Unavailable'),
+            QtWidgets.QMessageBox.warning(self, self.tr('Transactions Unavailable'),
                self.tr('Transaction history cannot be collected until Armory is '
                'in online mode.  Please try again when Armory is online. '),
-               QMessageBox.Ok)
+               QtWidgets.QMessageBox.Ok)
             return
          else:
             DlgExportTxHistory(self,self).exec_()
@@ -602,7 +583,7 @@ class ArmoryMainWindow(QMainWindow):
       def chngDev(b):
          if b: self.setUserMode(USERMODE.Expert)
 
-      modeActGrp = QActionGroup(self)
+      modeActGrp = QtWidgets.QActionGroup(self)
       actSetModeStd = self.createAction(self.tr('&Standard'),  chngStd, True)
       actSetModeAdv = self.createAction(self.tr('&Advanced'),  chngAdv, True)
       actSetModeDev = self.createAction(self.tr('&Expert'),    chngDev, True)
@@ -634,9 +615,9 @@ class ArmoryMainWindow(QMainWindow):
 
       def openBlindBroad():
          if TheBDM.getState() in (BDM_OFFLINE, BDM_UNINITIALIZED):
-            QMessageBox.warning(self, self.tr("Not Online"), self.tr(
+            QtWidgets.QMessageBox.warning(self, self.tr("Not Online"), self.tr(
                'Bitcoin Core is not available, so Armory will not be able '
-               'to broadcast any transactions for you.'), QMessageBox.Ok)
+               'to broadcast any transactions for you.'), QtWidgets.QMessageBox.Ok)
             return
          DlgBroadcastBlindTx(self,self).exec_()
 
@@ -654,10 +635,10 @@ class ArmoryMainWindow(QMainWindow):
 
       def mkprom():
          if not TheBDM.getState()==BDM_BLOCKCHAIN_READY:
-            QMessageBox.warning(self, self.tr('Offline'), self.tr(
+            QtWidgets.QMessageBox.warning(self, self.tr('Offline'), self.tr(
                'Armory is currently offline, and cannot determine what funds are '
                'available for Simulfunding.  Please try again when Armory is in '
-               'online mode.'), QMessageBox.Ok)
+               'online mode.'), QtWidgets.QMessageBox.Ok)
          else:
             DlgCreatePromNote(self, self).exec_()
 
@@ -740,8 +721,8 @@ class ArmoryMainWindow(QMainWindow):
 
       hexwltsz  = TheSettings.get('MainWalletCols')
       if len(hexgeom)>0:
-         #QByteArray is weak sauce, have to deser the hexit on our own
-         geom = QByteArray(bytes.fromhex(hexgeom))
+         #QtCore.QByteArray is weak sauce, have to deser the hexit on our own
+         geom = QtCore.QByteArray(bytes.fromhex(hexgeom))
          self.restoreGeometry(geom)
       if len(hexwltsz)>0:
          restoreTableView(self.walletsView, hexwltsz)
@@ -765,24 +746,24 @@ class ArmoryMainWindow(QMainWindow):
      # This is true if and only if the command line has a data dir that doesn't exist
       # and can't be created.
       if not CLI_OPTIONS.datadir in [ARMORY_HOME_DIR, DEFAULT]:
-         QMessageBox.warning(self, self.tr('Default Data Directory'), self.tr(
+         QtWidgets.QMessageBox.warning(self, self.tr('Default Data Directory'), self.tr(
             'Armory is using the default data directory because '
             'the data directory specified in the command line could '
-            'not be found nor created.'), QMessageBox.Ok)
+            'not be found nor created.'), QtWidgets.QMessageBox.Ok)
       # This is true if and only if the command line has a database dir that doesn't exist
       # and can't be created.
       elif not CLI_OPTIONS.armoryDBDir in [ARMORY_DB_DIR, DEFAULT]:
-         QMessageBox.warning(self, self.tr('Default Database Directory'), self.tr(
+         QtWidgets.QMessageBox.warning(self, self.tr('Default Database Directory'), self.tr(
             'Armory is using the default database directory because '
             'the database directory specified in the command line could '
-            'not be found nor created.'), QMessageBox.Ok)
+            'not be found nor created.'), QtWidgets.QMessageBox.Ok)
 
       # This is true if and only if the command line has a bitcoin dir that doesn't exist
       #if not CLI_OPTIONS.satoshiHome in [BTC_HOME_DIR, DEFAULT]:
-      #   QMessageBox.warning(self, self.tr('Bitcoin Directory'), self.tr(
+      #   QtWidgets.QMessageBox.warning(self, self.tr('Bitcoin Directory'), self.tr(
       #      'Armory is using the default Bitcoin directory because '
       #      'the Bitcoin directory specified in the command line could '
-      #      'not be found.'), QMessageBox.Ok)
+      #      'not be found.'), QtWidgets.QMessageBox.Ok)
 
       if not TheSettings.getSettingOrSetDefault('DNAA_DeleteLevelDB', False) and \
          os.path.exists(os.path.join(ARMORY_DB_DIR, LEVELDB_BLKDATA)):
@@ -805,6 +786,7 @@ class ArmoryMainWindow(QMainWindow):
    def networkReadyCallback(self):
       #this ServerPush obj should be a child class implementating the handling
       #of the bridge server requests
+
       pushObj = ServerPush()
       TheBridge.service.loadWallets(self.loadWallets, pushObj)
 
@@ -902,25 +884,25 @@ class ArmoryMainWindow(QMainWindow):
          if not hasattr(plugObj,'getTabToDisplay') or \
             not hasattr(plugObj,'tabName'):
             LOGERROR('Module is malformed!  No tabToDisplay or tabName attrs')
-            QMessageBox.critmoduleName(self, self.tr("Bad Module"), self.tr(
+            QtWidgets.QMessageBox.critmoduleName(self, self.tr("Bad Module"), self.tr(
                'The module you attempted to load (%s) is malformed.  It is '
                'missing attributes that are needed for Armory to load it. '
-               'It will be skipped.' % moduleName), QMessageBox.Ok)
+               'It will be skipped.' % moduleName), QtWidgets.QMessageBox.Ok)
             continue
 
          verPluginInt = getVersionInt(readVersionString(plugObj.maxVersion))
          verArmoryInt = getVersionInt(BTCARMORY_VERSION)
          if verArmoryInt >verPluginInt:
-            reply = QMessageBox.warning(self, self.tr("Outdated Module"), self.tr(
+            reply = QtWidgets.QMessageBox.warning(self, self.tr("Outdated Module"), self.tr(
                'Module "%s" is only specified to work up to Armory version %2. '
                'You are using Armory version %3.  Please remove the module if '
                'you experience any problems with it, or contact the maintainer '
                'for a new version. '
                '<br><br> '
                'Do you want to continue loading the module?' % moduleName),
-               QMessageBox.Yes | QMessageBox.No)
+               QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
 
-            if not reply==QMessageBox.Yes:
+            if not reply==QtWidgets.QMessageBox.Yes:
                continue
 
          # All plugins should have "tabToDisplay" and "tabName" attributes
@@ -968,7 +950,7 @@ class ArmoryMainWindow(QMainWindow):
          for moduleName,infoMap in modMap.items():
             moduleZipPath = os.path.join(modulesZipDirPath, infoMap[MODULE_PATH_KEY])
             if  infoMap[MODULE_ZIP_STATUS_KEY] == MODULE_ZIP_STATUS.Invalid:
-               reply = QMessageBox.warning(self, self.tr("Invalid Module"), self.tr(
+               reply = QtWidgets.QMessageBox.warning(self, self.tr("Invalid Module"), self.tr(
                   'Armory detected the following module which is '
                   '<font color=%s><b>invalid</b></font>:'
                   '<br><br>'
@@ -976,16 +958,16 @@ class ArmoryMainWindow(QMainWindow):
                   '   <b>Module Path:</b> %s<br>'
                   '<br><br>'
                   'Armory will only run a module from a zip file that '
-                  'has the required stucture.' % (htmlColor('TextRed'), moduleName, moduleZipPath)), QMessageBox.Ok)
+                  'has the required stucture.' % (htmlColor('TextRed'), moduleName, moduleZipPath)), QtWidgets.QMessageBox.Ok)
             elif not USE_TESTNET and not USE_REGTEST and infoMap[MODULE_ZIP_STATUS_KEY] == MODULE_ZIP_STATUS.Unsigned:
-               reply = QMessageBox.warning(self, self.tr("UNSIGNED Module"), self.tr(
+               reply = QtWidgets.QMessageBox.warning(self, self.tr("UNSIGNED Module"), self.tr(
                   'Armory detected the following module which '
                   '<font color="%s"><b>has not been signed by Armory</b></font> and may be dangerous: '
                   '<br><br>'
                   '   <b>Module Name:</b> %s<br>'
                   '   <b>Module Path:</b> %s<br>'
                   '<br><br>'
-                  'Armory will not allow you to run this module.' % (htmlColor('TextRed'), moduleName, moduleZipPath)), QMessageBox.Ok)
+                  'Armory will not allow you to run this module.' % (htmlColor('TextRed'), moduleName, moduleZipPath)), QtWidgets.QMessageBox.Ok)
             else:
 
                ZipFile(moduleZipPath).extract(INNER_ZIP_FILENAME, self.tempModulesDirName)
@@ -997,25 +979,25 @@ class ArmoryMainWindow(QMainWindow):
                if not hasattr(plugObj,'getTabToDisplay') or \
                   not hasattr(plugObj,'tabName'):
                   LOGERROR('Module is malformed!  No tabToDisplay or tabName attrs')
-                  QMessageBox.critmoduleName(self, self.tr("Bad Module"), self.tr(
+                  QtWidgets.QMessageBox.critmoduleName(self, self.tr("Bad Module"), self.tr(
                      'The module you attempted to load (%s) is malformed.  It is '
                      'missing attributes that are needed for Armory to load it. '
-                     'It will be skipped.' % moduleName), QMessageBox.Ok)
+                     'It will be skipped.' % moduleName), QtWidgets.QMessageBox.Ok)
                   continue
 
                verPluginInt = getVersionInt(readVersionString(plugObj.maxVersion))
                verArmoryInt = getVersionInt(BTCARMORY_VERSION)
                if verArmoryInt >verPluginInt:
-                  reply = QMessageBox.warning(self, self.tr("Outdated Module"), self.tr(
+                  reply = QtWidgets.QMessageBox.warning(self, self.tr("Outdated Module"), self.tr(
                      'Module %s is only specified to work up to Armory version %s. '
                      'You are using Armory version %s.  Please remove the module if '
                      'you experience any problems with it, or contact the maintainer '
                      'for a new version.'
                      '<br><br>'
                      'Do you want to continue loading the module?' % (moduleName,  plugObj.maxVersion, getVersionString(BTCARMORY_VERSION))),
-                           QMessageBox.Yes | QMessageBox.No)
+                           QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
 
-                  if not reply==QMessageBox.Yes:
+                  if not reply==QtWidgets.QMessageBox.Yes:
                      continue
 
                # All plugins should have "tabToDisplay" and "tabName" attributes
@@ -1049,7 +1031,7 @@ class ArmoryMainWindow(QMainWindow):
    ############################################################################
    def factoryReset(self):
       """
-      reply = QMessageBox.information(self,'Factory Reset', \
+      reply = QtWidgets.QMessageBox.information(self,'Factory Reset', \
          'You are about to revert all Armory settings '
          'to the state they were in when Armory was first installed.  '
          '<br><br>'
@@ -1057,9 +1039,9 @@ class ArmoryMainWindow(QMainWindow):
          'reverted.  You will have to manually start Armory again.'
          '<br><br>'
          'Do you want to continue? ', \
-         QMessageBox.Yes | QMessageBox.No)
+         QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
 
-      if reply==QMessageBox.Yes:
+      if reply==QtWidgets.QMessageBox.Yes:
          self.removeSettingsOnClose = True
          self.closeForReal()
       """
@@ -1079,7 +1061,7 @@ class ArmoryMainWindow(QMainWindow):
          '<br><br>Make sure you also restart Bitcoin Core '
          '(or bitcoind) and let it synchronize again before you restart '
          'Armory.  Doing so will clear its memory pool as well.')
-      QMessageBox.information(self, self.tr('Memory Pool'), msg, QMessageBox.Ok)
+      QtWidgets.QMessageBox.information(self, self.tr('Memory Pool'), msg, QtWidgets.QMessageBox.Ok)
 
 
 
@@ -1123,8 +1105,8 @@ class ArmoryMainWindow(QMainWindow):
    def logEntropy(self):
       try:
          self.entropyAccum.write(pack('d', RightNow()))
-         self.entropyAccum.write(pack('i', QCursor.pos().x()))
-         self.entropyAccum.write(pack('i', QCursor.pos().y()))
+         self.entropyAccum.write(pack('i', QtGui.QCursor.pos().x()))
+         self.entropyAccum.write(pack('i', QtGui.QCursor.pos().y()))
       except:
          LOGEXCEPT('Error logging keypress entropy')
 
@@ -1183,10 +1165,10 @@ class ArmoryMainWindow(QMainWindow):
 
       source3 = bytes()
       try:
-         pixDesk = QPixmap.grabWindow(QApplication.desktop().winId())
-         pixRaw = QByteArray()
-         pixBuf = QBuffer(pixRaw)
-         pixBuf.open(QIODevice.WriteOnly)
+         pixDesk = QtGui.QPixmap.grabWindow(QtWidgets.QApplication.desktop().winId())
+         pixRaw = QtCore.QByteArray()
+         pixBuf = QtCore.QBuffer(pixRaw)
+         pixBuf.open(QtCore.QIODevice.WriteOnly)
          pixDesk.save(pixBuf, 'PNG')
          source3 = bytes(pixBuf.buffer())
       except:
@@ -1212,37 +1194,37 @@ class ArmoryMainWindow(QMainWindow):
 
    ####################################################
    def rescanNextLoad(self):
-      reply = QMessageBox.warning(self, self.tr('Queue Rescan?'), self.tr(
+      reply = QtWidgets.QMessageBox.warning(self, self.tr('Queue Rescan?'), self.tr(
          'The next time you restart Armory, it will rescan the blockchain '
          'database, and reconstruct your wallet histories from scratch. '
          'The rescan will take 10-60 minutes depending on your system. '
          '<br><br> '
          'Do you wish to force a rescan on the next Armory restart?'), \
-         QMessageBox.Yes | QMessageBox.No)
-      if reply==QMessageBox.Yes:
+         QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+      if reply==QtWidgets.QMessageBox.Yes:
          touchFile( os.path.join(ARMORY_HOME_DIR, 'rescan.flag') )
 
    ####################################################
    def rebuildNextLoad(self):
-      reply = QMessageBox.warning(self, self.tr('Queue Rebuild?'), self.tr(
+      reply = QtWidgets.QMessageBox.warning(self, self.tr('Queue Rebuild?'), self.tr(
          'The next time you restart Armory, it will rebuild and rescan '
          'the entire blockchain database.  This operation can take between '
          '30 minutes and 4 hours depending on your system speed. '
          '<br><br>'
          'Do you wish to force a rebuild on the next Armory restart?'), \
-         QMessageBox.Yes | QMessageBox.No)
-      if reply==QMessageBox.Yes:
+         QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+      if reply==QtWidgets.QMessageBox.Yes:
          touchFile( os.path.join(ARMORY_HOME_DIR, 'rebuild.flag') )
 
    ####################################################
    def rescanBalanceNextLoad(self):
-      reply = QMessageBox.warning(self, self.tr('Queue Balance Rescan?'), self.tr(
+      reply = QtWidgets.QMessageBox.warning(self, self.tr('Queue Balance Rescan?'), self.tr(
          'The next time you restart Armory, it will rescan the balance of '
          'your wallets. This operation typically takes less than a minute. '
          '<br><br>'
          'Do you wish to force a balance rescan on the next Armory restart?'), \
-         QMessageBox.Yes | QMessageBox.No)
-      if reply==QMessageBox.Yes:
+         QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+      if reply==QtWidgets.QMessageBox.Yes:
          touchFile( os.path.join(ARMORY_HOME_DIR, 'rescanbalance.flag') )
 
    ####################################################
@@ -1262,7 +1244,7 @@ class ArmoryMainWindow(QMainWindow):
 
    ####################################################
    def menuSelectImportKey(self):
-      QMessageBox.information(self, self.tr('Select Wallet'), self.tr(
+      QtWidgets.QMessageBox.information(self, self.tr('Select Wallet'), self.tr(
          'You must import an address into a specific wallet.  If '
          'you do not want to import the key into any available wallet, '
          'it is recommeneded you make a new wallet for this purpose.'
@@ -1272,18 +1254,18 @@ class ArmoryMainWindow(QMainWindow):
          'of the properties window.'
          '<br><br>'
          'Keys cannot be imported into watching-only wallets, only full '
-         'wallets.'), QMessageBox.Ok)
+         'wallets.'), QtWidgets.QMessageBox.Ok)
 
    ####################################################
    def menuSelectSweepKey(self):
-      QMessageBox.information(self, self.tr('Select Wallet'), self.tr(
+      QtWidgets.QMessageBox.information(self, self.tr('Select Wallet'), self.tr(
          'You must select a wallet into which funds will be swept. '
          'Double-click on the desired wallet from the main window, then '
          'click on "Import/Sweep Private Keys" on the bottom-right '
          'of the properties window to sweep to that wallet.'
          '<br><br>'
          'Keys cannot be swept into watching-only wallets, only full '
-         'wallets.'), QMessageBox.Ok)
+         'wallets.'), QtWidgets.QMessageBox.Ok)
 
    ####################################################
    def changeNumShow(self):
@@ -1343,15 +1325,15 @@ class ArmoryMainWindow(QMainWindow):
    def setupSystemTray(self):
       LOGDEBUG('setupSystemTray')
       # Creating a QSystemTray
-      self.sysTray = QSystemTrayIcon(self)
-      self.sysTray.setIcon( QIcon(self.iconfile) )
+      self.sysTray = QtWidgets.QSystemTrayIcon(self)
+      self.sysTray.setIcon( QtGui.QIcon(self.iconfile) )
       self.sysTray.setVisible(True)
       self.sysTray.setToolTip('Armory' + (' [Testnet]' if USE_TESTNET else '') + (' [Regtest]' if USE_REGTEST else ''))
       self.sysTray.messageClicked.connect(self.bringArmoryToFront)
-      #self.connect(self.sysTray, SIGNAL('activated(QSystemTrayIcon::ActivationReason)'), \
+      #self.connect(self.sysTray, SIGNAL('activated(QtWidgets.QSystemTrayIcon::ActivationReason)'), \
       #               self.sysTrayActivated)
       self.sysTray.activated.connect(self.sysTrayActivated)
-      menu = QMenu(self)
+      menu = QtWidgets.QMenu(self)
 
       def traySend():
          self.bringArmoryToFront()
@@ -1483,15 +1465,15 @@ class ArmoryMainWindow(QMainWindow):
 
    #############################################################################
    def sizeHint(self):
-      return QSize(1000, 650)
+      return QtCore.QSize(1000, 650)
 
    #############################################################################
    def openToolsDlg(self):
-      QMessageBox.information(self, self.tr('No Tools Yet!'),
+      QtWidgets.QMessageBox.information(self, self.tr('No Tools Yet!'),
          self.tr('The developer tools are not available yet, but will be added '
          'soon.  Regardless, developer-mode still offers lots of '
          'extra information and functionality that is not available in '
-         'Standard or Advanced mode.'), QMessageBox.Ok)
+         'Standard or Advanced mode.'), QtWidgets.QMessageBox.Ok)
 
 
 
@@ -1554,9 +1536,9 @@ class ArmoryMainWindow(QMainWindow):
          if not wlt.useEncryption:
             dlgCrypt = DlgChangePassphrase(parent, self, not wlt.useEncryption)
             if not dlgCrypt.exec_():
-               QMessageBox.information(parent, self.tr('Aborted'), self.tr(
+               QtWidgets.QMessageBox.information(parent, self.tr('Aborted'), self.tr(
                   'No passphrase was selected for the encrypted backup. '
-                  'No backup was created.'), QMessageBox.Ok)
+                  'No backup was created.'), QtWidgets.QMessageBox.Ok)
             newPassphrase = SecureBinaryData(str(dlgCrypt.edtPasswd1.text()))
 
          wlt.makeEncryptedWalletCopy(savePath, newPassphrase)
@@ -1566,9 +1548,9 @@ class ArmoryMainWindow(QMainWindow):
          LOGERROR('Invalid "copyType" supplied to makeWalletCopy: %s', copyType)
          return False
 
-      QMessageBox.information(parent, self.tr('Backup Complete'), self.tr(
+      QtWidgets.QMessageBox.information(parent, self.tr('Backup Complete'), self.tr(
          'Your wallet was successfully backed up to the following '
-         'location:<br><br>%s' % savePath), QMessageBox.Ok)
+         'location:<br><br>%s' % savePath), QtWidgets.QMessageBox.Ok)
       return True
 
 
@@ -1576,13 +1558,13 @@ class ArmoryMainWindow(QMainWindow):
    def createAction(self,  txt, slot, isCheckable=False, \
                            ttip=None, iconpath=None, shortcut=None):
       """
-      Modeled from the "Rapid GUI Programming with Python and Qt" book, page 174
+      Modeled from the "Rapid GUI Programming with Python and QtCore.Qt" book, page 174
       """
-      icon = QIcon()
+      icon = QtGui.QIcon()
       if iconpath:
-         icon = QIcon(iconpath)
+         icon = QtGui.QIcon(iconpath)
 
-      theAction = QAction(icon, txt, self)
+      theAction = QtWidgets.QAction(icon, txt, self)
 
       if isCheckable:
          theAction.setCheckable(True)
@@ -1614,9 +1596,9 @@ class ArmoryMainWindow(QMainWindow):
       LOGINFO('     To: %s', TheSettings.get('User_Mode'))
 
       if not self.firstModeSwitch:
-         QMessageBox.information(self,self.tr('Restart Armory'),
+         QtWidgets.QMessageBox.information(self,self.tr('Restart Armory'),
          self.tr('You may have to restart Armory for all aspects of '
-         'the new usermode to go into effect.'), QMessageBox.Ok)
+         'the new usermode to go into effect.'), QtWidgets.QMessageBox.Ok)
 
       self.firstModeSwitch = False
 
@@ -1629,8 +1611,8 @@ class ArmoryMainWindow(QMainWindow):
       LOGINFO('     To: %s', TheSettings.get('Language'))
 
       if not self.firstModeSwitch:
-         QMessageBox.information(self, self.tr('Restart Armory'),
-            self.tr('You will have to restart Armory for the new language to go into effect'), QMessageBox.Ok)
+         QtWidgets.QMessageBox.information(self, self.tr('Restart Armory'),
+            self.tr('You will have to restart Armory for the new language to go into effect'), QtWidgets.QMessageBox.Ok)
 
       self.firstModeSwitch = False
 
@@ -1650,9 +1632,9 @@ class ArmoryMainWindow(QMainWindow):
       try:
          unixTimeToFormatStr(1000000000, fmtStr)
       except:
-         QMessageBox.warning(self, self.tr('Invalid Date Format'),
+         QtWidgets.QMessageBox.warning(self, self.tr('Invalid Date Format'),
             self.tr('The date format you specified was not valid.  Please re-enter '
-            'it using only the strftime symbols shown in the help text.'), QMessageBox.Ok)
+            'it using only the strftime symbols shown in the help text.'), QtWidgets.QMessageBox.Ok)
          return False
 
       TheSettings.set('DateFormat', hexlify(fmtStr.encode('utf-8')).decode('ascii'))
@@ -1737,9 +1719,9 @@ class ArmoryMainWindow(QMainWindow):
    #############################################################################
    def parseUriLink(self, uriStr, click=True):
       if len(uriStr) < 1:
-         QMessageBox.critical(self, self.tr('No URL String'),
+         QtWidgets.QMessageBox.critical(self, self.tr('No URL String'),
                self.tr('You have not entered a URL String yet. '
-               'Please go back and enter a URL String.'), QMessageBox.Ok)
+               'Please go back and enter a URL String.'), QtWidgets.QMessageBox.Ok)
          return {}
       LOGINFO('URI link clicked!')
       LOGINFO('The following URI string was parsed:')
@@ -1755,17 +1737,17 @@ class ArmoryMainWindow(QMainWindow):
          LOGERROR('Clicked or entered "bitcoin:" link in offline mode.')
          self.bringArmoryToFront()
          if click:
-            QMessageBox.warning(self, self.tr('Offline Mode'),
+            QtWidgets.QMessageBox.warning(self, self.tr('Offline Mode'),
                self.tr('You clicked on a "bitcoin:" link, but Armory is in '
                'offline mode, and is not capable of creating transactions. '
                'Using links will only work if Armory is connected '
-               'to the Bitcoin network!'), QMessageBox.Ok)
+               'to the Bitcoin network!'), QtWidgets.QMessageBox.Ok)
          else:
-            QMessageBox.warning(self, self.tr('Offline Mode'),
+            QtWidgets.QMessageBox.warning(self, self.tr('Offline Mode'),
                self.tr('You entered a "bitcoin:" link, but Armory is in '
                'offline mode, and is not capable of creating transactions. '
                'Using links will only work if Armory is connected '
-               'to the Bitcoin network!'), QMessageBox.Ok)
+               'to the Bitcoin network!'), QtWidgets.QMessageBox.Ok)
          return {}
 
       if len(uriDict)==0:
@@ -1777,19 +1759,19 @@ class ArmoryMainWindow(QMainWindow):
             warnMsg += (self.tr('Please check the source of the link and enter the transaction manually.'))
          else:
             warnMsg += self.tr('The raw URI string is:\n\n') + uriStr
-         QMessageBox.warning(self, self.tr('Invalid URI'), warnMsg, QMessageBox.Ok)
+         QtWidgets.QMessageBox.warning(self, self.tr('Invalid URI'), warnMsg, QtWidgets.QMessageBox.Ok)
          LOGERROR(warnMsg.replace('\n', ' '))
          return {}
 
       if 'address' not in uriDict:
          if click:
-            QMessageBox.warning(self, self.tr('The "bitcoin:" link you just clicked '
+            QtWidgets.QMessageBox.warning(self, self.tr('The "bitcoin:" link you just clicked '
                'does not even contain an address!  There is nothing that '
-               'Armory can do with this link!'), QMessageBox.Ok)
+               'Armory can do with this link!'), QtWidgets.QMessageBox.Ok)
          else:
-            QMessageBox.warning(self, self.tr('The "bitcoin:" link you just entered '
+            QtWidgets.QMessageBox.warning(self, self.tr('The "bitcoin:" link you just entered '
                'does not even contain an address!  There is nothing that '
-               'Armory can do with this link!'), QMessageBox.Ok)
+               'Armory can do with this link!'), QtWidgets.QMessageBox.Ok)
          LOGERROR('No address in "bitcoin:" link!  Nothing to do!')
          return {}
 
@@ -1800,17 +1782,17 @@ class ArmoryMainWindow(QMainWindow):
          if theAddrByte in NETWORKS:
             net = NETWORKS[theAddrByte]
          if click:
-            QMessageBox.warning(self, self.tr('Wrong Network!'),
+            QtWidgets.QMessageBox.warning(self, self.tr('Wrong Network!'),
                self.tr('The address for the "bitcoin:" link you just clicked is '
                'for the wrong network!  You are on the <b>%s</b> '
                'and the address you supplied is for the '
-               '<b>%s</b>!' % (NETWORKS[ADDRBYTE], net)), QMessageBox.Ok)
+               '<b>%s</b>!' % (NETWORKS[ADDRBYTE], net)), QtWidgets.QMessageBox.Ok)
          else:
-            QMessageBox.warning(self, self.tr('Wrong Network!'),
+            QtWidgets.QMessageBox.warning(self, self.tr('Wrong Network!'),
                self.tr('The address for the "bitcoin:" link you just entered is '
                'for the wrong network!  You are on the <b>%s</b> '
                'and the address you supplied is for the '
-               '<b>%s</b>!' % (NETWORKS[ADDRBYTE], net)), QMessageBox.Ok)
+               '<b>%s</b>!' % (NETWORKS[ADDRBYTE], net)), QtWidgets.QMessageBox.Ok)
          LOGERROR('URI link is for the wrong network!')
          return {}
 
@@ -1819,17 +1801,17 @@ class ArmoryMainWindow(QMainWindow):
       for key,value in uriDict.items():
          if key.startswith('req-') and not key[4:] in recognized:
             if click:
-               QMessageBox.warning(self, self.tr('Unsupported URI'), self.tr('The "bitcoin:" link '
+               QtWidgets.QMessageBox.warning(self, self.tr('Unsupported URI'), self.tr('The "bitcoin:" link '
                   'you just clicked contains fields that are required but not '
                   'recognized by Armory.  This may be an older version of Armory, '
                   'or the link you clicked on uses an exotic, unsupported format. '
-                  '<br><br>The action cannot be completed.'''), QMessageBox.Ok)
+                  '<br><br>The action cannot be completed.'''), QtWidgets.QMessageBox.Ok)
             else:
-               QMessageBox.warning(self, self.tr('Unsupported URI'), self.tr('The "bitcoin:" link '
+               QtWidgets.QMessageBox.warning(self, self.tr('Unsupported URI'), self.tr('The "bitcoin:" link '
                   'you just entered contains fields that are required but not '
                   'recognized by Armory.  This may be an older version of Armory, '
                   'or the link you entered on uses an exotic, unsupported format. '
-                  '<br><br>The action cannot be completed.'), QMessageBox.Ok)
+                  '<br><br>The action cannot be completed.'), QtWidgets.QMessageBox.Ok)
             LOGERROR('URI link contains unrecognized req- fields.')
             return {}
 
@@ -1841,11 +1823,11 @@ class ArmoryMainWindow(QMainWindow):
    def uriLinkClicked(self, uriStr):
       LOGINFO('uriLinkClicked')
       if TheBDM.getState()==BDM_OFFLINE:
-         QMessageBox.warning(self, self.tr('Offline'),
+         QtWidgets.QMessageBox.warning(self, self.tr('Offline'),
             self.tr('You just clicked on a "bitcoin:" link, but Armory is offline '
             'and cannot send transactions.  Please click the link '
             'again when Armory is online.'), \
-            QMessageBox.Ok)
+            QtWidgets.QMessageBox.Ok)
          return
       elif not TheBDM.getState()==BDM_BLOCKCHAIN_READY:
          # BDM isnt ready yet, saved URI strings in the delayed URIDict to
@@ -2019,16 +2001,16 @@ class ArmoryMainWindow(QMainWindow):
       typesStr = ';; '.join(str(_type) for _type in types)
 
       # Open the native file save dialog and grab the saved file/path unless
-      # we're in OS X, where native dialogs sometimes freeze. Looks like a Qt
+      # we're in OS X, where native dialogs sometimes freeze. Looks like a QtCore.Qt
       # issue of some sort. Some experimental code under ArmoryMac that directly
       # calls a dialog produces better results but still freezes under some
       # circumstances.
-      fullPath = str(QFileDialog.getSaveFileName(
+      fullPath = str(QtWidgets.QFileDialog.getSaveFileName(
          self, title, startPath, typesStr,
-         options=QFileDialog.DontUseNativeDialog))
+         options=QtWidgets.QFileDialog.DontUseNativeDialog))
 
       '''
-      With PySide2, QFileDialog.getSaveFileName return the user selection as
+      With PySide2, QtWidgets.QFileDialog.getSaveFileName return the user selection as
       str("('file name', 'filter1'; 'filter2')")
       '''
       pathStripped = fullPath.strip('(')
@@ -2065,20 +2047,20 @@ class ArmoryMainWindow(QMainWindow):
             typeStr += str(";; ")
 
       # Open the native file load dialog and grab the loaded file/path unless
-      # we're in OS X, where native dialogs sometimes freeze. Looks like a Qt
+      # we're in OS X, where native dialogs sometimes freeze. Looks like a QtCore.Qt
       # issue of some sort. Some experimental code under ArmoryMac that directly
       # calls a dialog produces better results but still freezes under some
       # circumstances.
       if not OS_MACOSX:
-         fullPath = str(QFileDialog.getOpenFileName(
+         fullPath = str(QtWidgets.QFileDialog.getOpenFileName(
             self, title, defaultDir, typeStr))
       else:
-         fullPath = str(QFileDialog.getOpenFileName(
+         fullPath = str(QtWidgets.QFileDialog.getOpenFileName(
             self, title, defaultDir, typeStr,
-            options=QFileDialog.DontUseNativeDialog))
+            options=QtWidgets.QFileDialog.DontUseNativeDialog))
 
       '''
-      With PySide2, QFileDialog.getOpenFileName return the user selection as
+      With PySide2, QtWidgets.QFileDialog.getOpenFileName return the user selection as
       str("('file name', 'filter1'; 'filter2')")
       '''
       pathStripped = fullPath.strip('(')
@@ -2528,21 +2510,21 @@ class ArmoryMainWindow(QMainWindow):
    #############################################################################
    def execDlgWalletDetails(self, index=None):
       if len(self.walletMap)==0:
-         reply = QMessageBox.information(self, self.tr('No Wallets!'),
+         reply = QtWidgets.QMessageBox.information(self, self.tr('No Wallets!'),
             self.tr('You currently do not have any wallets.  Would you like to '
-            'create one, now?'), QMessageBox.Yes | QMessageBox.No)
-         if reply==QMessageBox.Yes:
+            'create one, now?'), QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+         if reply==QtWidgets.QMessageBox.Yes:
             self.startWalletWizard()
          return
 
-      if type(index) != QModelIndex:
+      if type(index) != QtCore.QModelIndex:
          index = self.walletsView.selectedIndexes()
          if len(self.walletMap)==1:
             self.walletsView.selectRow(0)
             index = self.walletsView.selectedIndexes()
          elif len(index)==0:
-            QMessageBox.warning(self, self.tr('Select a Wallet'), \
-               self.tr('Please select a wallet on the right, to see its properties.'), QMessageBox.Ok)
+            QtWidgets.QMessageBox.warning(self, self.tr('Select a Wallet'), \
+               self.tr('Please select a wallet on the right, to see its properties.'), QtWidgets.QMessageBox.Ok)
             return
          index = index[0]
 
@@ -2759,14 +2741,14 @@ class ArmoryMainWindow(QMainWindow):
       gt1 = len(self.sweepAfterScanList)>1
 
       if len(self.sweepAfterScanList) > 0:
-         QMessageBox.critical(self, self.tr('Already Sweeping'),
+         QtWidgets.QMessageBox.critical(self, self.tr('Already Sweeping'),
             self.tr('You are already in the process of scanning the blockchain for '
             'the purposes of sweeping other addresses.  You cannot initiate '
             'sweeping new addresses until the current operation completes. '
             '<br><br>'
             'In the future, you may select "Multiple Keys" when entering '
             'addresses to sweep.  There is no limit on the number that can be '
-            'specified, but they must all be entered at once.'), QMessageBox.Ok)
+            'specified, but they must all be entered at once.'), QtWidgets.QMessageBox.Ok)
          # Destroy the private key data
          for addr in pybtcaddrList:
             addr.binPrivKey32_Plain.destroy()
@@ -2776,16 +2758,16 @@ class ArmoryMainWindow(QMainWindow):
       confirmed=False
       if TheBDM.getState() in (BDM_OFFLINE, BDM_UNINITIALIZED):
          #LOGERROR('Somehow ended up at confirm-sweep while in offline mode')
-         #QMessageBox.info(self, 'Armory is Offline', \
+         #QtWidgets.QMessageBox.info(self, 'Armory is Offline', \
             #'Armory is currently in offline mode.  You must be in online '
             #'mode to initiate the sweep operation.')
          nkey = len(self.sweepAfterScanList)
          strPlur = self.tr('addresses') if nkey>1 else self.tr('address')
-         QMessageBox.info(self, self.tr('Armory is Offline'), \
+         QtWidgets.QMessageBox.info(self, self.tr('Armory is Offline'), \
             self.tr('You have chosen to sweep %n key(s), but Armory is currently '
             'in offline mode.  The sweep will be performed the next time you '
             'go into online mode.  You can initiate online mode (if available) '
-            'from the dashboard in the main window.', "", nkey), QMessageBox.Ok)
+            'from the dashboard in the main window.', "", nkey), QtWidgets.QMessageBox.Ok)
          confirmed=True
 
       else:
@@ -2807,10 +2789,10 @@ class ArmoryMainWindow(QMainWindow):
 
          msgConfirm += (self.tr('<br><br>Clicking "No" will abort the sweep operation'))
 
-         confirmed = QMessageBox.question(self, self.tr('Confirm Rescan'), msgConfirm, \
-                                                QMessageBox.Yes | QMessageBox.No)
+         confirmed = QtWidgets.QMessageBox.question(self, self.tr('Confirm Rescan'), msgConfirm, \
+                                                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
 
-      if confirmed==QMessageBox.Yes:
+      if confirmed==QtWidgets.QMessageBox.Yes:
          for addr in pybtcaddrList:
             TheBDM.registerImportedScrAddr(Hash160ToScrAddr(addr.getAddr160()))
          self.sweepAfterScanList = pybtcaddrList
@@ -2834,14 +2816,14 @@ class ArmoryMainWindow(QMainWindow):
 
       if finishedTx==None:
          if (outVal,fee)==(0,0):
-            QMessageBox.critical(self, self.tr('Nothing to do'), \
+            QtWidgets.QMessageBox.critical(self, self.tr('Nothing to do'), \
                self.tr('The private key(s) you have provided does not appear to contain '
                'any funds.  There is nothing to sweep.', "", len(sweepList)), \
-               QMessageBox.Ok)
+               QtWidgets.QMessageBox.Ok)
             return
          else:
             pladdr = (self.tr('addresses') if gt1 else self.tr('address'))
-            QMessageBox.critical(self, self.tr('Cannot sweep'),\
+            QtWidgets.QMessageBox.critical(self, self.tr('Cannot sweep'),\
                self.tr('You cannot sweep the funds from the address(es) you specified because '
                'the transaction fee would be greater than or equal to the amount '
                'swept. '
@@ -2849,7 +2831,7 @@ class ArmoryMainWindow(QMainWindow):
                '<b>Balance of address(es):</b> %1<br> '
                '<b>Fee to sweep address(es):</b> %2 '
                '<br><br>The sweep operation has been canceled.', "", len(sweepList)).arg(coin2str(outVal+fee,maxZeros=0), coin2str(fee,maxZeros=0)), \
-               QMessageBox.Ok)
+               QtWidgets.QMessageBox.Ok)
             LOGERROR('Sweep amount (%s) is less than fee needed for sweeping (%s)', \
                      coin2str(outVal+fee, maxZeros=0), coin2str(fee, maxZeros=0))
             return
@@ -2904,9 +2886,9 @@ class ArmoryMainWindow(QMainWindow):
          LOGINFO('Sending Tx, %s', newTxHash)
          TheBridge.service.broadcastTx(rawTxData)
          #except:
-         #   QMessageBox.warning(self, self.tr('Broadcast failed'), self.tr(
+         #   QtWidgets.QMessageBox.warning(self, self.tr('Broadcast failed'), self.tr(
          #         'The broadcast process failed unexpectedly. Report this error to '
-         #         'the development team if this issue occurs repeatedly'), QMessageBox.Ok)
+         #         'the development team if this issue occurs repeatedly'), QtWidgets.QMessageBox.Ok)
 
    #############################################################################
    def zcBroadcastError(self, txHash, errorMsg):
@@ -2924,14 +2906,14 @@ class ArmoryMainWindow(QMainWindow):
          try:
             errorMsgFromRPC = TheBDM.bdv().broadcastThroughRPC(pytx.serialize())
             if errorMsgFromRPC == "success":
-               QMessageBox.warning(self, self.tr('Transaction Broadcast'), self.tr(
+               QtWidgets.QMessageBox.warning(self, self.tr('Transaction Broadcast'), self.tr(
                   'Your Transaction failed to broadcast through the P2P layer but '
                   'successfully broadcasted through the RPC. This can be a symptom '
                   'of bad node connectivity to the Bitcoin network, or that your '
                   'node is overwhelmed by network traffic. If you consistently get '
                   'this warning, report to the developers for assistance with node '
                   'maintenance.'),
-                  QMessageBox.Ok)
+                  QtWidgets.QMessageBox.Ok)
                return
          except:
             LOGERROR("Node RPC is disabled")
@@ -2949,7 +2931,7 @@ class ArmoryMainWindow(QMainWindow):
       blkexplURL_short = BLOCKEXPLORE_URL_TX % searchstr[:20]
 
       if not isTimeoutError:
-         QMessageBox.warning(self, self.tr('Transaction Not Accepted'), self.tr(
+         QtWidgets.QMessageBox.warning(self, self.tr('Transaction Not Accepted'), self.tr(
             'The transaction that you just executed failed with '
             'the following error message: <br><br> '
             '<b>%s</b>'
@@ -2972,23 +2954,23 @@ class ArmoryMainWindow(QMainWindow):
             'If the problem persists, go to "<i>File</i>" -> '
             '"<i>Export Log File</i>" and then attach it to a support '
             'ticket at <a href="%s">%s</a>' % (errorMsg, BLOCKEXPLORE_NAME, blkexplURL, \
-            blkexplURL_short, supportURL, supportURL)), QMessageBox.Ok)
+            blkexplURL_short, supportURL, supportURL)), QtWidgets.QMessageBox.Ok)
       else:
          if errorMsgFromRPC == None:
             LOGERROR('Broadcast error: %s' % errorMsg)
-            QMessageBox.warning(self, self.tr('Transaction Not Accepted'), self.tr(
+            QtWidgets.QMessageBox.warning(self, self.tr('Transaction Not Accepted'), self.tr(
                'The transaction that you just attempted to broadcast has timed out. '
                '<br><br>'
                'The RPC interface of your node is disabled, therefor Armory cannot '
                'use it to gather more information about the timeout. It is '
                'recommended that you enable the RPC and try again.'
-               ), QMessageBox.Ok)
+               ), QtWidgets.QMessageBox.Ok)
          else:
             LOGERROR('Broadcast error: %s' % errorMsgFromRPC)
-            QMessageBox.warning(self, self.tr('Transaction Not Accepted'), self.tr(
+            QtWidgets.QMessageBox.warning(self, self.tr('Transaction Not Accepted'), self.tr(
                'The transaction that you just attempted to broadcast has failed with '
                'the following error: '
-               '<br><br><b>%s</b>' % errorMsgFromRPC), QMessageBox.Ok)
+               '<br><br><b>%s</b>' % errorMsgFromRPC), QtWidgets.QMessageBox.Ok)
 
 
 
@@ -3000,10 +2982,10 @@ class ArmoryMainWindow(QMainWindow):
                      self.tr('In the future, you may avoid scanning twice by '
                      'starting Armory in offline mode (--offline), and '
                      'perform the import before switching to online mode.'))
-      QMessageBox.warning(self, self.tr('Armory is Busy'), \
+      QtWidgets.QMessageBox.warning(self, self.tr('Armory is Busy'), \
          self.tr('Wallets and addresses cannot be imported while Armory is in '
          'the middle of an existing blockchain scan.  Please wait for '
-         'the scan to finish.  ') + extraMsg, QMessageBox.Ok)
+         'the scan to finish.  ') + extraMsg, QtWidgets.QMessageBox.Ok)
 
 
 
@@ -3011,10 +2993,10 @@ class ArmoryMainWindow(QMainWindow):
    def execImportWallet(self):
       bdm = TheBDM.getState()
       if bdm in [BDM_SCANNING]:
-         QMessageBox.warning(self, self.tr('Scanning'), self.tr(
+         QtWidgets.QMessageBox.warning(self, self.tr('Scanning'), self.tr(
             'Armory is currently in the middle of scanning the blockchain for '
             'your existing wallets.  New wallets cannot be imported until this '
-            'operation is finished.'), QMessageBox.Ok)
+            'operation is finished.'), QtWidgets.QMessageBox.Ok)
          return
 
       DlgUniversalRestoreSelect(self, self).exec_()
@@ -3031,11 +3013,11 @@ class ArmoryMainWindow(QMainWindow):
       wlt = None
 
       if wltID in self.walletMap:
-         QMessageBox.warning(self, self.tr('Duplicate Wallet!'), self.tr(
+         QtWidgets.QMessageBox.warning(self, self.tr('Duplicate Wallet!'), self.tr(
             'You selected a wallet that has the same ID as one already '
             'in your wallet (%s)!  If you would like to import it anyway, '
             'please delete the duplicate wallet in Armory, first.' % wltID), \
-            QMessageBox.Ok)
+            QtWidgets.QMessageBox.Ok)
          return
 
       fname = self.getUniqueWalletFilename(fn)
@@ -3050,31 +3032,31 @@ class ArmoryMainWindow(QMainWindow):
 
    #############################################################################
    def digitalBackupWarning(self):
-      reply = QMessageBox.warning(self, self.tr('Be Careful!'), self.tr(
+      reply = QtWidgets.QMessageBox.warning(self, self.tr('Be Careful!'), self.tr(
         '<font color="red"><b>WARNING:</b></font> You are about to make an '
         '<u>unencrypted</u> backup of your wallet.  It is highly recommended '
         'that you do <u>not</u> ever save unencrypted wallets to your regular '
         'hard drive.  This feature is intended for saving to a USB key or '
-        'other removable media.'), QMessageBox.Ok | QMessageBox.Cancel)
-      return (reply==QMessageBox.Ok)
+        'other removable media.'), QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel)
+      return (reply==QtWidgets.QMessageBox.Ok)
 
 
    #############################################################################
    def execAddressBook(self):
       if TheBDM.getState()==BDM_SCANNING:
-         QMessageBox.warning(self, self.tr('Blockchain Not Ready'), self.tr(
+         QtWidgets.QMessageBox.warning(self, self.tr('Blockchain Not Ready'), self.tr(
             'The address book is created from transaction data available in '
             'the blockchain, which has not finished loading.  The address '
-            'book will become available when Armory is online.'), QMessageBox.Ok)
+            'book will become available when Armory is online.'), QtWidgets.QMessageBox.Ok)
       elif TheBDM.getState() in (BDM_UNINITIALIZED,BDM_OFFLINE):
-         QMessageBox.warning(self, self.tr('Blockchain Not Ready'), self.tr(
+         QtWidgets.QMessageBox.warning(self, self.tr('Blockchain Not Ready'), self.tr(
             'The address book is created from transaction data available in '
             'the blockchain, but Armory is currently offline.  The address '
-            'book will become available when Armory is online.'), QMessageBox.Ok)
+            'book will become available when Armory is online.'), QtWidgets.QMessageBox.Ok)
       else:
          if len(self.walletMap)==0:
-            QMessageBox.warning(self, self.tr('No wallets!'), self.tr('You have no wallets so '
-               'there is no address book to display.'), QMessageBox.Ok)
+            QtWidgets.QMessageBox.warning(self, self.tr('No wallets!'), self.tr('You have no wallets so '
+               'there is no address book to display.'), QtWidgets.QMessageBox.Ok)
             return
          DlgAddressBook(self, self, None, None, None).exec_()
 
@@ -3124,9 +3106,9 @@ class ArmoryMainWindow(QMainWindow):
       pytx.setRBF(txProto.rbf)
 
       if pytx==None:
-         QMessageBox.critical(self, self.tr('Invalid Tx'), self.tr(
+         QtWidgets.QMessageBox.critical(self, self.tr('Invalid Tx'), self.tr(
          'The transaction you requested be displayed does not exist in '
-         'Armory\'s database.  This is unusual...'), QMessageBox.Ok)
+         'Armory\'s database.  This is unusual...'), QtWidgets.QMessageBox.Ok)
          return
 
       def filter(leProto):
@@ -3139,7 +3121,7 @@ class ArmoryMainWindow(QMainWindow):
 
    #############################################################################
    def showContextMenuLedger(self):
-      menu = QMenu(self.ledgerView)
+      menu = QtWidgets.QMenu(self.ledgerView)
 
       if len(self.ledgerView.selectedIndexes())==0:
          return
@@ -3165,7 +3147,7 @@ class ArmoryMainWindow(QMainWindow):
       actComment    = menu.addAction(self.tr("Change Comment"))
       actCopyTxID   = menu.addAction(self.tr("Copy Transaction ID"))
       actOpenWallet = menu.addAction(self.tr("Open Relevant Wallet"))
-      action = menu.exec_(QCursor.pos())
+      action = menu.exec_(QtGui.QCursor.pos())
 
       if action==actViewTx:
          self.showLedgerTx()
@@ -3174,13 +3156,13 @@ class ArmoryMainWindow(QMainWindow):
             DlgBrowserWarn(BLOCKEXPLORE_URL_TX % txHash).exec_()
          except:
             LOGEXCEPT('Failed to open webbrowser')
-            QMessageBox.critical(self, self.tr('Could not open browser'), self.tr(
+            QtWidgets.QMessageBox.critical(self, self.tr('Could not open browser'), self.tr(
                'Armory encountered an error opening your web browser.  To view '
                'this transaction on blockchain.info, please copy and paste '
                'the following URL into your browser: '
-               '<br><br>%s' % (BLOCKEXPLORE_URL_TX % txHash)), QMessageBox.Ok)
+               '<br><br>%s' % (BLOCKEXPLORE_URL_TX % txHash)), QtWidgets.QMessageBox.Ok)
       elif action==actCopyTxID:
-         clipb = QApplication.clipboard()
+         clipb = QtWidgets.QApplication.clipboard()
          clipb.clear()
          clipb.setText(txHash)
       elif action==actComment:
@@ -3206,30 +3188,30 @@ class ArmoryMainWindow(QMainWindow):
 
    def clickSendBitcoins(self):
       if TheBDM.getState() in (BDM_OFFLINE, BDM_UNINITIALIZED):
-         QMessageBox.warning(self, self.tr('Offline Mode'), self.tr(
+         QtWidgets.QMessageBox.warning(self, self.tr('Offline Mode'), self.tr(
            'Armory is currently running in offline mode, and has no '
            'ability to determine balances or create transactions. '
            '<br><br>'
            'In order to send coins from this wallet you must use a '
            'full copy of this wallet from an online computer, '
            'or initiate an "offline transaction" using a watching-only '
-           'wallet on an online computer.'), QMessageBox.Ok)
+           'wallet on an online computer.'), QtWidgets.QMessageBox.Ok)
          return
       elif TheBDM.getState()==BDM_SCANNING:
-         QMessageBox.warning(self, self.tr('Armory Not Ready'), self.tr(
+         QtWidgets.QMessageBox.warning(self, self.tr('Armory Not Ready'), self.tr(
            'Armory is currently scanning the blockchain to collect '
            'the information needed to create transactions.  This typically '
            'takes between one and five minutes.  Please wait until your '
            'balance appears on the main window, then try again.'), \
-            QMessageBox.Ok)
+            QtWidgets.QMessageBox.Ok)
          return
 
       if len(self.walletMap)==0:
-         reply = QMessageBox.information(self, self.tr('No Wallets!'), self.tr(
+         reply = QtWidgets.QMessageBox.information(self, self.tr('No Wallets!'), self.tr(
             'You cannot send any bitcoins until you create a wallet and '
             'receive some coins.  Would you like to create a wallet?'), \
-            QMessageBox.Yes | QMessageBox.No)
-         if reply==QMessageBox.Yes:
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+         if reply==QtWidgets.QMessageBox.Yes:
             self.startWalletWizard()
       else:
          DlgSendBitcoins(self.getSelectedWallet(), self, self).exec_()
@@ -3289,11 +3271,11 @@ class ArmoryMainWindow(QMainWindow):
 
 
       if len(self.walletMap)==0:
-         reply = QMessageBox.information(self, self.tr('No Wallets!'), self.tr(
+         reply = QtWidgets.QMessageBox.information(self, self.tr('No Wallets!'), self.tr(
             'You just clicked on a "bitcoin:" link to send money, but you '
             'currently have no wallets!  Would you like to create a wallet '
-            'now?'), QMessageBox.Yes | QMessageBox.No)
-         if reply==QMessageBox.Yes:
+            'now?'), QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+         if reply==QtWidgets.QMessageBox.Yes:
             self.startWalletWizard()
          return False
       else:
@@ -3310,12 +3292,12 @@ class ArmoryMainWindow(QMainWindow):
       wltID = None
       selectionMade = True
       if len(self.walletMap)==0:
-         reply = QMessageBox.information(self, self.tr('No Wallets!'), self.tr(
+         reply = QtWidgets.QMessageBox.information(self, self.tr('No Wallets!'), self.tr(
             'You have not created any wallets which means there is '
             'nowhere to store your bitcoins!  Would you like to '
             'create a wallet now?'), \
-            QMessageBox.Yes | QMessageBox.No)
-         if reply==QMessageBox.Yes:
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+         if reply==QtWidgets.QMessageBox.Yes:
             self.startWalletWizard()
          return
       elif len(self.walletMap)==1:
@@ -3347,7 +3329,7 @@ class ArmoryMainWindow(QMainWindow):
 
    #############################################################################
    def sysTrayActivated(self, reason):
-      if reason==QSystemTrayIcon.DoubleClick:
+      if reason==QtWidgets.QSystemTrayIcon.DoubleClick:
          self.bringArmoryToFront()
 
 
@@ -3355,7 +3337,7 @@ class ArmoryMainWindow(QMainWindow):
    #############################################################################
    def bringArmoryToFront(self):
       self.show()
-      self.setWindowState(Qt.WindowActive)
+      self.setWindowState(QtCore.Qt.WindowActive)
       self.activateWindow()
       self.raise_()
 
@@ -3486,26 +3468,26 @@ class ArmoryMainWindow(QMainWindow):
       if TheSDM.getSDMState() == 'BitcoindExeMissing':
          bitcoindStat = self.lookForBitcoind()
          if bitcoindStat=='Running':
-            result = QMessageBox.warning(self, self.tr('Already running!'), self.tr(
+            result = QtWidgets.QMessageBox.warning(self, self.tr('Already running!'), self.tr(
                'The Bitcoin software appears to be installed now, but it '
                'needs to be closed for Armory to work.  Would you like Armory '
-               'to close it for you?'), QMessageBox.Yes | QMessageBox.No)
-            if result==QMessageBox.Yes:
+               'to close it for you?'), QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+            if result==QtWidgets.QMessageBox.Yes:
                self.closeExistingBitcoin()
                self.startBitcoindIfNecessary()
          elif bitcoindStat=='StillMissing':
-            QMessageBox.warning(self, self.tr('Still Missing'), self.tr(
+            QtWidgets.QMessageBox.warning(self, self.tr('Still Missing'), self.tr(
                'The Bitcoin software still appears to be missing.  If you '
                'just installed it, then please adjust your settings to point '
-               'to the installation directory.'), QMessageBox.Ok)
+               'to the installation directory.'), QtWidgets.QMessageBox.Ok)
          self.startBitcoindIfNecessary()
       elif self.doAutoBitcoind and not TheSDM.isRunningBitcoind():
          if TheSDM.satoshiIsAvailable():
-            result = QMessageBox.warning(self, self.tr('Still Running'), self.tr(
+            result = QtWidgets.QMessageBox.warning(self, self.tr('Still Running'), self.tr(
                'Bitcoin Core is still running.  Armory cannot start until '
                'it is closed.  Do you want Armory to close it for you?'), \
-               QMessageBox.Yes | QMessageBox.No)
-            if result==QMessageBox.Yes:
+               QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+            if result==QtWidgets.QMessageBox.Yes:
                self.closeExistingBitcoin()
                self.startBitcoindIfNecessary()
          else:
@@ -3525,8 +3507,8 @@ class ArmoryMainWindow(QMainWindow):
    #############################################################################
    def setupDashboard(self):
       LOGDEBUG('setupDashboard')
-      self.lblBusy = QLabel('')
-      self.btnModeSwitch = QPushButton('')
+      self.lblBusy = QtWidgets.QLabel('')
+      self.btnModeSwitch = QtWidgets.QPushButton('')
       self.btnModeSwitch.clicked.connect(self.executeModeSwitch)
 
 
@@ -3537,13 +3519,13 @@ class ArmoryMainWindow(QMainWindow):
       self.lblDashModeBuild   = QRichLabel('',doWrap=False)
       self.lblDashModeScan    = QRichLabel('',doWrap=False)
 
-      self.lblDashModeSync.setAlignment(   Qt.AlignLeft | Qt.AlignVCenter)
-      self.lblDashModeBuild.setAlignment(  Qt.AlignLeft | Qt.AlignVCenter)
-      self.lblDashModeScan.setAlignment(   Qt.AlignLeft | Qt.AlignVCenter)
+      self.lblDashModeSync.setAlignment(   QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+      self.lblDashModeBuild.setAlignment(  QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+      self.lblDashModeScan.setAlignment(   QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
 
-      self.barProgressSync    = QProgressBar(self)
-      self.barProgressBuild   = QProgressBar(self)
-      self.barProgressScan    = QProgressBar(self)
+      self.barProgressSync    = QtWidgets.QProgressBar(self)
+      self.barProgressBuild   = QtWidgets.QProgressBar(self)
+      self.barProgressScan    = QtWidgets.QProgressBar(self)
 
       self.barProgressSync.setRange(0,100)
       self.barProgressScan.setRange(0,100)
@@ -3557,7 +3539,7 @@ class ArmoryMainWindow(QMainWindow):
       self.lblTimeLeftSync.setMinimumWidth(int(twid))
       self.lblTimeLeftScan.setMinimumWidth(int(twid))
 
-      layoutDashMode = QGridLayout()
+      layoutDashMode = QtWidgets.QGridLayout()
 
       layoutDashMode.addWidget(self.lblDashModeSync,     2,0)
       layoutDashMode.addWidget(self.barProgressSync,     2,1)
@@ -3574,7 +3556,7 @@ class ArmoryMainWindow(QMainWindow):
       layoutDashMode.addWidget(self.lblBusy,             0,3, 5,1)
       layoutDashMode.addWidget(self.btnModeSwitch,       0,3, 5,1)
 
-      self.frmDashModeSub = QFrame()
+      self.frmDashModeSub = QtWidgets.QFrame()
       self.frmDashModeSub.setFrameStyle(STYLE_SUNKEN)
       self.frmDashModeSub.setLayout(layoutDashMode)
       self.frmDashMode = makeHorizFrame(['Stretch', \
@@ -3588,7 +3570,7 @@ class ArmoryMainWindow(QMainWindow):
          # One textbox above buttons, one below
          lbl.setStyleSheet('padding: 5px')
          qpal = lbl.palette()
-         qpal.setColor(QPalette.Base, Colors.Background)
+         qpal.setColor(QtGui.QPalette.Base, Colors.Background)
          lbl.setPalette(qpal)
          lbl.setOpenExternalLinks(True)
 
@@ -3598,20 +3580,20 @@ class ArmoryMainWindow(QMainWindow):
       self.lblDashBtnDescr.setOpenExternalLinks(True)
       BTN,LBL,TTIP = range(3)
       self.dashBtns = [[None]*3 for i in range(3)]
-      self.dashBtns[DASHBTNS.Close   ][BTN] = QPushButton(self.tr('Close Bitcoin Process'))
-      self.dashBtns[DASHBTNS.Browse  ][BTN] = QPushButton(self.tr('Open https://bitcoin.org'))
-      self.dashBtns[DASHBTNS.Settings][BTN] = QPushButton(self.tr('Change Settings'))
+      self.dashBtns[DASHBTNS.Close   ][BTN] = QtWidgets.QPushButton(self.tr('Close Bitcoin Process'))
+      self.dashBtns[DASHBTNS.Browse  ][BTN] = QtWidgets.QPushButton(self.tr('Open https://bitcoin.org'))
+      self.dashBtns[DASHBTNS.Settings][BTN] = QtWidgets.QPushButton(self.tr('Change Settings'))
 
       # The "Now shutting down" frame
       self.lblShuttingDown    = QRichLabel('', doWrap=False)
       self.lblShuttingDown.setText(self.tr('Preparing to shut down..'), \
                                     size=4, bold=True, color='Foreground')
-      self.lblShuttingDown.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+      self.lblShuttingDown.setAlignment(QtCore.Qt.AlignCenter | QtCore.Qt.AlignVCenter)
 
-      layoutDashExit = QGridLayout()
+      layoutDashExit = QtWidgets.QGridLayout()
       layoutDashExit.addWidget(self.lblShuttingDown,  0,0, 0, 1)
 
-      self.frmDashSubExit = QFrame()
+      self.frmDashSubExit = QtWidgets.QFrame()
       self.frmDashSubExit.setFrameStyle(STYLE_SUNKEN)
       self.frmDashSubExit.setLayout(layoutDashExit)
       self.frmDashSubExit = makeHorizFrame(['Stretch', \
@@ -3648,9 +3630,9 @@ class ArmoryMainWindow(QMainWindow):
            'Armory has detected a running Bitcoin Core or bitcoind instance and '
            'will force it to exit'))
 
-      self.frmDashMgmtButtons = QFrame()
+      self.frmDashMgmtButtons = QtWidgets.QFrame()
       self.frmDashMgmtButtons.setFrameStyle(STYLE_SUNKEN)
-      layoutButtons = QGridLayout()
+      layoutButtons = QtWidgets.QGridLayout()
       layoutButtons.addWidget(self.lblDashBtnDescr, 0,0, 1,3)
       for r in range(3):
          for c in range(3):
@@ -3664,20 +3646,20 @@ class ArmoryMainWindow(QMainWindow):
                                               self.frmDashMgmtButtons,
                                               'Stretch'])
 
-      dashLayout = QVBoxLayout()
+      dashLayout = QtWidgets.QVBoxLayout()
       dashLayout.addWidget(self.frmDashSubExit)
       dashLayout.addWidget(self.frmDashMode)
       dashLayout.addWidget(self.lblDashDescr1)
       dashLayout.addWidget(self.frmDashMidButtons )
       dashLayout.addWidget(self.lblDashDescr2)
       dashLayout.addWidget(self.lblDashDescr2)
-      frmInner = QFrame()
+      frmInner = QtWidgets.QFrame()
       frmInner.setLayout(dashLayout)
 
-      self.dashScrollArea = QScrollArea()
+      self.dashScrollArea = QtWidgets.QScrollArea()
       self.dashScrollArea.setWidgetResizable(True)
       self.dashScrollArea.setWidget(frmInner)
-      scrollLayout = QVBoxLayout()
+      scrollLayout = QtWidgets.QVBoxLayout()
       scrollLayout.addWidget(self.dashScrollArea)
       self.tabDashboard.setLayout(scrollLayout)
       self.frmDashSubExit.setVisible(False)
@@ -3696,9 +3678,9 @@ class ArmoryMainWindow(QMainWindow):
             pass
 
       # If got here, never found it
-      QMessageBox.warning(self, self.tr('Not Found'), self.tr(
+      QtWidgets.QMessageBox.warning(self, self.tr('Not Found'), self.tr(
          'Attempted to kill the running Bitcoin Core/bitcoind instance, '
-         'but it was not found.'), QMessageBox.Ok)
+         'but it was not found.'), QtWidgets.QMessageBox.Ok)
 
    #############################################################################
    def showShuttingDownMessage(self):
@@ -4528,7 +4510,7 @@ class ArmoryMainWindow(QMainWindow):
 
       if self.lblBusy.isVisible():
          self.numHeartBeat += 1
-         self.lblBusy.setPixmap(QPixmap('./img/loadicon_%d.png' % \
+         self.lblBusy.setPixmap(QtGui.QPixmap('./img/loadicon_%d.png' % \
                                              (self.numHeartBeat%6)))
 
    #############################################################################
@@ -4548,12 +4530,12 @@ class ArmoryMainWindow(QMainWindow):
                                   showLockboxes=True)
 
       Returns three widgets that can be put into layouts:
-         [[QLineEdit: addr/pubkey]]  [[Button: Addrbook]]
+         [[QtWidgets.QLineEdit: addr/pubkey]]  [[Button: Addrbook]]
          [[Label: Wallet/Lockbox/Addr autodetect]]
       """
 
       addrEntryObjs = {}
-      addrEntryObjs['QLE_ADDR'] = QLineEdit()
+      addrEntryObjs['QLE_ADDR'] = QtWidgets.QLineEdit()
       addrEntryObjs['QLE_ADDR'].setText(initString)
       addrEntryObjs['BTN_BOOK']  = createAddrBookButton(parent,
                                                         addrEntryObjs['QLE_ADDR'],
@@ -4814,9 +4796,9 @@ class ArmoryMainWindow(QMainWindow):
                DlgFactoryReset(self, self).exec_()
 
          else:
-            QMessageBox.critical(self, self.tr('BlockDataManager Warning'), \
+            QtWidgets.QMessageBox.critical(self, self.tr('BlockDataManager Warning'), \
                               args[0], \
-                              QMessageBox.Ok)
+                              QtWidgets.QMessageBox.Ok)
          #this is a critical error reporting channel, should kill the app right
          #after
          os._exit(0)
@@ -4875,12 +4857,12 @@ class ArmoryMainWindow(QMainWindow):
                self.showTrayMsg(self.tr('Disconnected'), self.tr('Connection to Bitcoin Core '
                                 'client lost!  Armory cannot send nor '
                                 'receive bitcoins until connection is '
-                                're-established.'), QSystemTrayIcon.Critical,
+                                're-established.'), QtWidgets.QSystemTrayIcon.Critical,
                                 10000)
             elif self.nodeStatus.node_state == NodeStatus_Online:
                self.showTrayMsg(self.tr('Connected'), self.tr('Connection to Bitcoin Core '
                                       're-established'), \
-                                      QSystemTrayIcon.Information, 10000)
+                                      QtWidgets.QSystemTrayIcon.Information, 10000)
             self.updateStatusBarText()
 
          self.updateSyncProgress()
@@ -4942,9 +4924,9 @@ class ArmoryMainWindow(QMainWindow):
          return
 
       if TheBDM.exception != "":
-         QMessageBox.warning(self, self.tr('Database Error'), self.tr(
+         QtWidgets.QMessageBox.warning(self, self.tr('Database Error'), self.tr(
                            'The DB has returned the following error: <br><br> '
-                           '<b> %s </b> <br><br> Armory will now shutdown.' % TheBDM.exception), QMessageBox.Ok)
+                           '<b> %s </b> <br><br> Armory will now shutdown.' % TheBDM.exception), QtWidgets.QMessageBox.Ok)
          self.closeForReal()
 
       # SatoshiDaemonManager
@@ -5059,7 +5041,7 @@ class ArmoryMainWindow(QMainWindow):
          dispLines.append(self.tr('Sender:  %s' % dispName))
 
       self.showTrayMsg(title, dispLines.join('\n'), \
-                       QSystemTrayIcon.Information, 10000)
+                       QtWidgets.QSystemTrayIcon.Information, 10000)
       LOGINFO(title)
 
 
@@ -5127,7 +5109,7 @@ class ArmoryMainWindow(QMainWindow):
             #         (wlt.labelName, moneyID, coin2str(amt,maxZeros=1).strip()),
             self.showTrayMsg(self.tr('Your bitcoins just did a lap!'), \
                              self.tr('%s just sent some BTC to itself!' % wltName), \
-                             QSystemTrayIcon.Information, 10000)
+                             QtWidgets.QSystemTrayIcon.Information, 10000)
             return
 
          # If coins were either received or sent from the loaded wlt/lbox
@@ -5159,7 +5141,7 @@ class ArmoryMainWindow(QMainWindow):
 
          if title:
             self.showTrayMsg(title, "\n".join(dispLines), \
-                       QSystemTrayIcon.Information, 10000)
+                       QtWidgets.QSystemTrayIcon.Information, 10000)
             LOGINFO(title + '\n' + "\n".join(dispLines))
 
          # Wait for 5 seconds before processing the next queue object.
@@ -5204,7 +5186,7 @@ class ArmoryMainWindow(QMainWindow):
       minimize Armory, this method is for *really* closing Armory
       '''
 
-      self.setCursor(Qt.WaitCursor)
+      self.setCursor(QtCore.Qt.WaitCursor)
       self.showShuttingDownMessage()
 
       try:
@@ -5353,14 +5335,14 @@ class ArmoryMainWindow(QMainWindow):
          TheBridge.service.getLedgerDelegateIdForWallets())
       self.ledgerModel.setConvertLedgerMethod(self.convertLedgerToTable)
 
-      self.frmLedgUpDown = QFrame()
-      self.ledgerView = QTableView(self)
+      self.frmLedgUpDown = QtWidgets.QFrame()
+      self.ledgerView = QtWidgets.QTableView(self)
       #self.ledgerView = ArmoryTableView(self, self, self.frmLedgUpDown)
       self.ledgerView.setModel(self.ledgerModel)
       self.ledgerView.setSortingEnabled(True)
       self.ledgerView.setItemDelegate(LedgerDispDelegate(self))
-      self.ledgerView.setSelectionBehavior(QTableView.SelectRows)
-      self.ledgerView.setSelectionMode(QTableView.SingleSelection)
+      self.ledgerView.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
+      self.ledgerView.setSelectionMode(QtWidgets.QTableView.SingleSelection)
 
 
       self.ledgerView.verticalHeader().setDefaultSectionSize(sectionSz)
@@ -5395,7 +5377,7 @@ class ArmoryMainWindow(QMainWindow):
       initialColResize(self.ledgerView, [cWidth, 0, dateWidth, tWidth, 0.30, 0.40, 0.3])
 
       self.ledgerView.doubleClicked.connect(self.dblClickLedger)
-      self.ledgerView.setContextMenuPolicy(Qt.CustomContextMenu)
+      self.ledgerView.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
       self.ledgerView.customContextMenuRequested.connect(self.showContextMenuLedger)
 
       self.ledgerView.horizontalHeader().sortIndicatorChanged.connect(\
@@ -5404,7 +5386,7 @@ class ArmoryMainWindow(QMainWindow):
       #page selection UI
       self.mainLedgerCurrentPage = 1
       self.lblPages     = QRichLabel('Page: ')
-      self.PageLineEdit = QLineEdit('1')
+      self.PageLineEdit = QtWidgets.QLineEdit('1')
       self.lblNPages    = QRichLabel(' out of 1')
 
       self.PageLineEdit.editingFinished.connect(self.loadNewPage)
@@ -5412,10 +5394,10 @@ class ArmoryMainWindow(QMainWindow):
 
 
       # Will fill this in when ledgers are created & combined
-      self.lblLedgShowing = QRichLabel('Showing:', hAlign=Qt.AlignHCenter)
-      self.lblLedgRange   = QRichLabel('', hAlign=Qt.AlignHCenter)
-      self.lblLedgTotal   = QRichLabel('', hAlign=Qt.AlignHCenter)
-      self.comboNumShow = QComboBox()
+      self.lblLedgShowing = QRichLabel('Showing:', hAlign=QtCore.Qt.AlignHCenter)
+      self.lblLedgRange   = QRichLabel('', hAlign=QtCore.Qt.AlignHCenter)
+      self.lblLedgTotal   = QRichLabel('', hAlign=QtCore.Qt.AlignHCenter)
+      self.comboNumShow = QtWidgets.QComboBox()
       for s in self.numShowOpts:
          self.comboNumShow.addItem( str(s) )
       self.comboNumShow.setCurrentIndex(0)
@@ -5424,21 +5406,21 @@ class ArmoryMainWindow(QMainWindow):
 
       self.btnLedgUp = QLabelButton('')
       self.btnLedgUp.setMaximumHeight(20)
-      self.btnLedgUp.setPixmap(QPixmap('./img/scroll_up_18.png'))
-      self.btnLedgUp.setAlignment(Qt.AlignVCenter | Qt.AlignHCenter)
+      self.btnLedgUp.setPixmap(QtGui.QPixmap('./img/scroll_up_18.png'))
+      self.btnLedgUp.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignHCenter)
       self.btnLedgUp.setVisible(False)
 
       self.btnLedgDn = QLabelButton('')
       self.btnLedgDn.setMaximumHeight(20)
-      self.btnLedgDn.setPixmap(QPixmap('./img/scroll_down_18.png'))
-      self.btnLedgDn.setAlignment(Qt.AlignVCenter | Qt.AlignHCenter)
+      self.btnLedgDn.setPixmap(QtGui.QPixmap('./img/scroll_down_18.png'))
+      self.btnLedgDn.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignHCenter)
 
 
       self.comboNumShow.activated.connect(self.changeNumShow)
       self.btnLedgUp.linkActivated.connect(self.clickLedgUp)
       self.btnLedgDn.linkActivated.connect(self.clickLedgDn)
 
-      frmFilter = makeVertFrame([QLabel(self.tr('Filter:')), self.comboWltSelect, 'Stretch'])
+      frmFilter = makeVertFrame([QtWidgets.QLabel(self.tr('Filter:')), self.comboWltSelect, 'Stretch'])
 
       frmLower = makeHorizFrame([ frmFilter, \
                                  'Stretch', \
@@ -5448,14 +5430,14 @@ class ArmoryMainWindow(QMainWindow):
 
 
       # Now add the ledger to the bottom of the window
-      ledgLayout = QGridLayout()
+      ledgLayout = QtWidgets.QGridLayout()
       ledgLayout.addWidget(self.ledgerView,           1,0)
       ledgLayout.addWidget(frmLower,                  2,0)
       ledgLayout.setRowStretch(0, 0)
       ledgLayout.setRowStretch(1, 1)
       ledgLayout.setRowStretch(2, 0)
 
-      self.tabActivity = QWidget()
+      self.tabActivity = QtWidgets.QWidget()
       self.tabActivity.setLayout(ledgLayout)
       self.mainDisplayTabs.addTab(self.tabActivity,  self.tr('Transactions'))
 
@@ -5521,7 +5503,7 @@ class ArmoryMainWindow(QMainWindow):
       '''
       Check if we already have a dialog for this promptID.
       This method is only ever called in the GUI thread (since it calls exec_
-      on a Qt dialog), so we use it to manage the promptID map as well
+      on a QtCore.Qt dialog), so we use it to manage the promptID map as well
       '''
 
       if state == BridgeProto_pb2.UnlockPromptState.Value('start'):
@@ -5574,9 +5556,9 @@ class ArmoryMainWindow(QMainWindow):
 
 if 1:
    #setup splash screen
-   pixLogo = QPixmap('./img/splashlogo.png')
+   pixLogo = QtGui.QPixmap('./img/splashlogo.png')
    if USE_TESTNET or USE_REGTEST:
-      pixLogo = QPixmap('./img/splashlogo_testnet.png')
+      pixLogo = QtGui.QPixmap('./img/splashlogo_testnet.png')
    SPLASH = ArmorySplashScreen(pixLogo)
    SPLASH.setMask(pixLogo.mask())
 
@@ -5587,7 +5569,7 @@ if 1:
    QAPP.setFont(GETFONT('var'))
 
    # Setup translations
-   translator = QTranslator(QAPP)
+   translator = QtCore.QTranslator(QAPP)
    app_dir = "./"
    try:
       app_dir = os.path.dirname(os.path.realpath(__file__))

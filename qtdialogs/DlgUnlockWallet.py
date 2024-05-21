@@ -10,10 +10,6 @@
 #                                                                            #
 ##############################################################################
 
-from PySide2.QtWidgets import QFrame, QVBoxLayout, QGridLayout, \
-   QPushButton, QLabel, QLineEdit, QDialogButtonBox, QButtonGroup, \
-   QRadioButton, QSizePolicy, QLayout, QMessageBox
-
 from ui.QtExecuteSignal import TheSignalExecution
 from armoryengine.CppBridge import ServerPush
 
@@ -30,26 +26,26 @@ class DlgUnlockWallet(ArmoryDialog):
       self.wltID = wltID
 
       ##### Upper layout
-      lblDescr = QLabel(self.tr("Enter your passphrase to unlock this wallet"))
-      lblPasswd = QLabel(self.tr("Passphrase:"))
-      self.edtPasswd = QLineEdit()
-      self.edtPasswd.setEchoMode(QLineEdit.Password)
+      lblDescr = QtWidgets.QLabel(self.tr("Enter your passphrase to unlock this wallet"))
+      lblPasswd = QtWidgets.QLabel(self.tr("Passphrase:"))
+      self.edtPasswd = QtWidgets.QLineEdit()
+      self.edtPasswd.setEchoMode(QtWidgets.QLineEdit.Password)
       self.edtPasswd.setMinimumWidth(MIN_PASSWD_WIDTH(self))
-      self.edtPasswd.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+      self.edtPasswd.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Expanding)
 
-      self.btnAccept = QPushButton(self.tr("Unlock"))
-      self.btnCancel = QPushButton(self.tr("Cancel"))
+      self.btnAccept = QtWidgets.QPushButton(self.tr("Unlock"))
+      self.btnCancel = QtWidgets.QPushButton(self.tr("Cancel"))
       self.btnAccept.clicked.connect(self.acceptPassphrase)
       self.btnCancel.clicked.connect(self.rejectPassphrase)
-      buttonBox = QDialogButtonBox()
-      buttonBox.addButton(self.btnAccept, QDialogButtonBox.AcceptRole)
-      buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
+      buttonBox = QtWidgets.QDialogButtonBox()
+      buttonBox.addButton(self.btnAccept, QtWidgets.QDialogButtonBox.AcceptRole)
+      buttonBox.addButton(self.btnCancel, QtWidgets.QDialogButtonBox.RejectRole)
 
-      layoutUpper = QGridLayout()
+      layoutUpper = QtWidgets.QGridLayout()
       layoutUpper.addWidget(lblDescr, 1, 0, 1, 2)
       layoutUpper.addWidget(lblPasswd, 2, 0, 1, 1)
       layoutUpper.addWidget(self.edtPasswd, 2, 1, 1, 1)
-      self.frmUpper = QFrame()
+      self.frmUpper = QtWidgets.QFrame()
       self.frmUpper.setLayout(layoutUpper)
 
       ##### Lower layout
@@ -62,10 +58,10 @@ class DlgUnlockWallet(ArmoryDialog):
          'that record mouse clicks.'))
 
       self.createKeyButtons()
-      self.rdoScrambleNone = QRadioButton(self.tr('Regular Keyboard'))
-      self.rdoScrambleLite = QRadioButton(self.tr('Scrambled (Simple)'))
-      self.rdoScrambleFull = QRadioButton(self.tr('Scrambled (Dynamic)'))
-      btngrp = QButtonGroup(self)
+      self.rdoScrambleNone = QtWidgets.QRadioButton(self.tr('Regular Keyboard'))
+      self.rdoScrambleLite = QtWidgets.QRadioButton(self.tr('Scrambled (Simple)'))
+      self.rdoScrambleFull = QtWidgets.QRadioButton(self.tr('Scrambled (Dynamic)'))
+      btngrp = QtWidgets.QButtonGroup(self)
       btngrp.addButton(self.rdoScrambleNone)
       btngrp.addButton(self.rdoScrambleLite)
       btngrp.addButton(self.rdoScrambleFull)
@@ -85,21 +81,21 @@ class DlgUnlockWallet(ArmoryDialog):
                                   self.rdoScrambleFull, \
                                   STRETCH])
 
-      self.layoutKeyboard = QGridLayout()
-      self.frmKeyboard = QFrame()
+      self.layoutKeyboard = QtWidgets.QGridLayout()
+      self.frmKeyboard = QtWidgets.QFrame()
       self.frmKeyboard.setLayout(self.layoutKeyboard)
 
       showOSD = TheSettings.getSettingOrSetDefault('KeybdOSD', False)
-      self.layoutLower = QGridLayout()
+      self.layoutLower = QtWidgets.QGridLayout()
       self.layoutLower.addWidget(btnRowFrm , 0, 0)
       self.layoutLower.addWidget(self.frmKeyboard , 1, 0)
-      self.frmLower = QFrame()
+      self.frmLower = QtWidgets.QFrame()
       self.frmLower.setLayout(self.layoutLower)
       self.frmLower.setVisible(showOSD)
 
 
       ##### Expand button
-      self.btnShowOSD = QPushButton(self.tr('Show Keyboard >>>'))
+      self.btnShowOSD = QtWidgets.QPushButton(self.tr('Show Keyboard >>>'))
       self.btnShowOSD.setCheckable(True)
       self.btnShowOSD.setChecked(showOSD)
       if showOSD:
@@ -109,7 +105,7 @@ class DlgUnlockWallet(ArmoryDialog):
 
 
       ##### Complete Layout
-      layout = QVBoxLayout()
+      layout = QtWidgets.QVBoxLayout()
       layout.addWidget(self.frmUpper)
       layout.addWidget(frmAccept)
       layout.addWidget(self.frmLower)
@@ -117,7 +113,7 @@ class DlgUnlockWallet(ArmoryDialog):
       self.setWindowTitle(unlockMsg + ' - ' + self.wltID)
 
       # Add scrambled keyboard
-      self.layout().setSizeConstraint(QLayout.SetFixedSize)
+      self.layout().setSizeConstraint(QtWidgets.QLayout.SetFixedSize)
       self.changeScramble()
       self.redrawKeys()
 
@@ -198,8 +194,8 @@ class DlgUnlockWallet(ArmoryDialog):
    #############################################################################
    def changeScramble(self):
       self.deleteKeyboard()
-      self.frmKeyboard = QFrame()
-      self.layoutKeyboard = QGridLayout()
+      self.frmKeyboard = QtWidgets.QFrame()
+      self.layoutKeyboard = QtWidgets.QGridLayout()
       self.createKeyButtons()
 
       if self.rdoScrambleNone.isChecked():
@@ -271,8 +267,8 @@ class DlgUnlockWallet(ArmoryDialog):
 
    #############################################################################
    def recycle(self):
-      QMessageBox.critical(self, self.tr('Invalid Passphrase'), \
-         self.tr('That passphrase is not correct!'), QMessageBox.Ok)
+      QtWidgets.QMessageBox.critical(self, self.tr('Invalid Passphrase'), \
+         self.tr('That passphrase is not correct!'), QtWidgets.QMessageBox.Ok)
       self.edtPasswd.setText('')
 
    #############################################################################

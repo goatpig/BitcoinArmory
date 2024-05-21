@@ -1,12 +1,14 @@
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
-################################################################################
-#                                                                              #
-# Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
-# Distributed under the GNU Affero General Public License (AGPL v3)            #
-# See LICENSE or http://www.gnu.org/licenses/agpl.html                         #
-#                                                                              #
-################################################################################
+##############################################################################
+#                                                                            #
+# Copyright (C) 2011-2015, Armory Technologies, Inc.                         #
+# Distributed under the GNU Affero General Public License (AGPL v3)          #
+# See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
+#                                                                            #
+# Copyright (C) 2016-2024, goatpig                                           #
+#  Distributed under the MIT license                                         #
+#  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
+#                                                                            #
+##############################################################################
 
 from os import path
 import os
@@ -14,13 +16,7 @@ import platform
 import sys
 from copy import deepcopy
 
-from PySide2.QtGui import QColor, QPalette, QImage, QFont, QPixmap
-from PySide2.QtCore import Qt, QObject, QAbstractTableModel, QModelIndex, \
-   Signal, QSortFilterProxyModel
-from PySide2.QtWidgets import QStyle, QApplication, QCalendarWidget, \
-   QLineEdit, QFrame, QGridLayout, QPushButton, QAbstractItemView, \
-   QStyledItemDelegate, QTableView, QLabel
-
+from qtpy import QtCore, QtGui, QtWidgets
 from armoryengine.ArmoryUtils import enum, coin2str, binary_to_hex, \
    int_to_hex, CPP_TXOUT_SCRIPT_NAMES, CPP_TXOUT_MULTISIG, \
    CPP_TXIN_SCRIPT_NAMES, ADDRBYTE, P2SHBYTE
@@ -56,7 +52,7 @@ PROMCOLS = enum('PromID', 'Label', 'PayAmt', 'FeeAmt')
 PAGE_LOAD_OFFSET = 10
 
 ################################################################################
-class AllWalletsDispModel(QAbstractTableModel):
+class AllWalletsDispModel(QtCore.QAbstractTableModel):
 
    # The columns enumeration
 
@@ -64,20 +60,20 @@ class AllWalletsDispModel(QAbstractTableModel):
       super(AllWalletsDispModel, self).__init__()
       self.main = mainWindow
 
-   def rowCount(self, index=QModelIndex()):
+   def rowCount(self, index=QtCore.QModelIndex()):
       return len(self.main.walletMap)
 
-   def columnCount(self, index=QModelIndex()):
+   def columnCount(self, index=QtCore.QModelIndex()):
       return 5
 
-   def data(self, index, role=Qt.DisplayRole):
+   def data(self, index, role=QtCore.Qt.DisplayRole):
       bdmState = TheBDM.getState()
       COL = WLTVIEWCOLS
       row,col = index.row(), index.column()
       wlt = self.main.walletMap[self.main.walletIDList[row]]
       wltID = wlt.uniqueIDB58
 
-      if role==Qt.DisplayRole:
+      if role==QtCore.Qt.DisplayRole:
          if col==COL.Visible:
             return self.main.walletVisibleList[row]
          elif col==COL.ID:
@@ -101,17 +97,17 @@ class AllWalletsDispModel(QAbstractTableModel):
                dispStr = 'Scanning: %d%%' % (self.main.walletSideScanProgress[wltID])
                return str(dispStr)
 
-      elif role==Qt.TextAlignmentRole:
+      elif role==QtCore.Qt.TextAlignmentRole:
          if col in (COL.ID, COL.Name):
-            return int(Qt.AlignLeft | Qt.AlignVCenter)
+            return int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
          elif col in (COL.Secure,):
-            return int(Qt.AlignHCenter | Qt.AlignVCenter)
+            return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
          elif col in (COL.Bal,):
             if not bdmState==BDM_BLOCKCHAIN_READY:
-               return int(Qt.AlignHCenter | Qt.AlignVCenter)
+               return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
             else:
-               return int(Qt.AlignLeft | Qt.AlignVCenter)
-      elif role==Qt.BackgroundColorRole:
+               return int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+      elif role==QtCore.Qt.BackgroundColorRole:
          t = determineWalletType(wlt, self.main)[0]
          if t==WLTTYPES.WatchOnly:
             return Colors.TblWltOther
@@ -119,27 +115,27 @@ class AllWalletsDispModel(QAbstractTableModel):
             return Colors.TblWltOffline
          else:
             return Colors.TblWltMine
-      elif role==Qt.FontRole:
+      elif role==QtCore.Qt.FontRole:
          if col==COL.Bal:
             return GETFONT('Fixed')
       return None
 
-   def headerData(self, section, orientation, role=Qt.DisplayRole):
+   def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
       colLabels = ['', self.tr('ID'), self.tr('Wallet Name'), self.tr('Security'), self.tr('Balance')]
-      if role==Qt.DisplayRole:
-         if orientation==Qt.Horizontal:
+      if role==QtCore.Qt.DisplayRole:
+         if orientation==QtCore.Qt.Horizontal:
             return colLabels[section]
-      elif role==Qt.TextAlignmentRole:
-         return int(Qt.AlignHCenter | Qt.AlignVCenter)
+      elif role==QtCore.Qt.TextAlignmentRole:
+         return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
-   def flags(self, index, role=Qt.DisplayRole):
-      if role == Qt.DisplayRole:
+   def flags(self, index, role=QtCore.Qt.DisplayRole):
+      if role == QtCore.Qt.DisplayRole:
          wlt = self.main.walletMap[self.main.walletIDList[index.row()]]
 
-         rowFlag = Qt.ItemIsEnabled | Qt.ItemIsSelectable
+         rowFlag = QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable
 
          if wlt.isEnabled is False:
-            return Qt.ItemFlags()
+            return QtCore.Qt.ItemFlags()
 
          return rowFlag
 
@@ -148,7 +144,7 @@ class AllWalletsDispModel(QAbstractTableModel):
       self.endResetModel()
 
 ################################################################################
-class AllWalletsCheckboxDelegate(QStyledItemDelegate):
+class AllWalletsCheckboxDelegate(QtWidgets.QStyledItemDelegate):
    """
    Taken from http://stackoverflow.com/a/3366899/1610471
    """
@@ -159,26 +155,27 @@ class AllWalletsCheckboxDelegate(QStyledItemDelegate):
 
    #############################################################################
    def paint(self, painter, option, index):
-      bgcolor = QColor(index.model().data(index, Qt.BackgroundColorRole))
-      if option.state & QStyle.State_Selected:
-         bgcolor = QApplication.palette().highlight().color()
+      bgcolor = None
+      if option.state & QtWidgets.QStyle.State_Selected:
+         bgcolor = QtWidgets.QApplication.palette().highlight().color()
 
       if index.column() == WLTVIEWCOLS.Visible:
          isVisible = index.model().data(index)
          image=None
-         painter.fillRect(option.rect, bgcolor)
+         if bgcolor:
+            painter.fillRect(option.rect, bgcolor)
          if isVisible:
-            image = QImage('./img/visible2.png').scaled(self.EYESIZE,self.EYESIZE)
-            pixmap = QPixmap.fromImage(image)
+            image = QtGui.QImage('./img/visible2.png').scaled(self.EYESIZE,self.EYESIZE)
+            pixmap = QtGui.QPixmap.fromImage(image)
             painter.drawPixmap(option.rect, pixmap)
       else:
-         QStyledItemDelegate.paint(self, painter, option, index)
+         QtWidgets.QStyledItemDelegate.paint(self, painter, option, index)
 
    #############################################################################
    def sizeHint(self, option, index):
       if index.column()==WLTVIEWCOLS.Visible:
-         return QSize(self.EYESIZE,self.EYESIZE)
-      return QStyledItemDelegate.sizeHint(self, option, index)
+         return QtCore.QSize(self.EYESIZE,self.EYESIZE)
+      return QtWidgets.QStyledItemDelegate.sizeHint(self, option, index)
 
 ################################################################################
 class TableEntry():
@@ -188,7 +185,7 @@ class TableEntry():
       self.table = table
 
 ################################################################################
-class LedgerDispModelSimple(QAbstractTableModel):
+class LedgerDispModelSimple(QtCore.QAbstractTableModel):
    """ Displays an Nx10 table of pre-formatted/processed ledger entries """
    def __init__(self, ledgerTable, parent=None, main=None, isLboxModel=False):
       super(LedgerDispModelSimple, self).__init__()
@@ -206,13 +203,13 @@ class LedgerDispModelSimple(QAbstractTableModel):
       self.ledger = ledgerTable
       self.ledgerDelegateId = None
 
-   def rowCount(self, index=QModelIndex()):
+   def rowCount(self, index=QtCore.QModelIndex()):
       return len(self.ledger)
 
-   def columnCount(self, index=QModelIndex()):
+   def columnCount(self, index=QtCore.QModelIndex()):
       return 13
 
-   def data(self, index, role=Qt.DisplayRole):
+   def data(self, index, role=QtCore.Qt.DisplayRole):
       COL = LEDGERCOLS
       row,col = index.row(), index.column()
       rowData = self.ledger[row]
@@ -232,18 +229,18 @@ class LedgerDispModelSimple(QAbstractTableModel):
       else:
          wtype = WLTTYPES.WatchOnly
 
-      if role==Qt.DisplayRole:
+      if role==QtCore.Qt.DisplayRole:
          return str(rowData[col])
-      elif role==Qt.TextAlignmentRole:
+      elif role==QtCore.Qt.TextAlignmentRole:
          if col in (COL.NumConf,  COL.TxDir):
-            return int(Qt.AlignHCenter | Qt.AlignVCenter)
+            return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
          elif col in (COL.Comment, COL.DateStr):
-            return int(Qt.AlignLeft | Qt.AlignVCenter)
+            return int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
          elif col in (COL.Amount,):
-            return int(Qt.AlignRight | Qt.AlignVCenter)
-      elif role==Qt.DecorationRole:
+            return int(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+      elif role==QtCore.Qt.DecorationRole:
          pass
-      elif role==Qt.BackgroundColorRole:
+      elif role==QtCore.Qt.BackgroundColorRole:
          if optInRBF is True:
             if flagged:
                return Colors.myRBF
@@ -257,7 +254,7 @@ class LedgerDispModelSimple(QAbstractTableModel):
             return Colors.TblWltOffline
          else:
             return Colors.TblWltMine
-      elif role==Qt.ForegroundRole:
+      elif role==QtCore.Qt.ForegroundRole:
          if highlighted:
             return Colors.HighlightFG
          elif nConf < 2:
@@ -273,12 +270,12 @@ class LedgerDispModelSimple(QAbstractTableModel):
             if   amt>0: return Colors.TextGreen
             elif amt<0: return Colors.TextRed
             else:       return Colors.Foreground
-      elif role==Qt.FontRole:
+      elif role==QtCore.Qt.FontRole:
          if col==COL.Amount:
             f = GETFONT('Fixed')
-            f.setWeight(QFont.Bold)
+            f.setWeight(QtGui.QFont.Bold)
             return f
-      elif role==Qt.ToolTipRole:
+      elif role==QtCore.Qt.ToolTipRole:
          if col in (COL.NumConf, COL.DateStr):
             nConf = rowData[COL.NumConf]
             isCB  = rowData[COL.isCoinbase]
@@ -344,10 +341,10 @@ class LedgerDispModelSimple(QAbstractTableModel):
 
       return None
 
-   def headerData(self, section, orientation, role=Qt.DisplayRole):
+   def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
       COL = LEDGERCOLS
-      if role==Qt.DisplayRole:
-         if orientation==Qt.Horizontal:
+      if role==QtCore.Qt.DisplayRole:
+         if orientation==QtCore.Qt.Horizontal:
             if section==COL.NumConf: return None
             if section==COL.DateStr: return str(self.tr('Date'))
             if section==COL.WltName: return str(self.tr('Lockbox')) if self.isLboxModel else str(self.tr('Wallet'))
@@ -357,8 +354,8 @@ class LedgerDispModelSimple(QAbstractTableModel):
             if section==COL.isOther: return str(self.tr('Other Owner'))
             if section==COL.WltID:   return str(self.tr('Wallet ID'))
             if section==COL.TxHash:  return str(self.tr('Tx Hash (LE)'))
-      elif role==Qt.TextAlignmentRole:
-         return int(Qt.AlignHCenter | Qt.AlignVCenter)
+      elif role==QtCore.Qt.TextAlignmentRole:
+         return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
    def setLedgerDelegateId(self, delegateId):
       if len(delegateId) == 0:
@@ -432,7 +429,7 @@ class LedgerDispModelSimple(QAbstractTableModel):
    def reset(self, hard=False):
       #if either top or current page is index 0, update it
       #also if any of the pages has no ledger, pull and convert it
-      super(QAbstractTableModel, self).beginResetModel()
+      super(QtCore.QAbstractTableModel, self).beginResetModel()
 
       if hard == True:
          self.topPage.id = -1
@@ -473,7 +470,7 @@ class LedgerDispModelSimple(QAbstractTableModel):
       self.ledger.extend(self.currentPage.table)
       self.ledger.extend(self.bottomPage.table)
 
-      super(QAbstractTableModel, self).endResetModel()
+      super(QtCore.QAbstractTableModel, self).endResetModel()
 
    def centerAtHeight(self, blk):
       #return the index for that block height in the new ledger
@@ -538,7 +535,7 @@ class CalendarDialog(ArmoryDialog):
       self.main = main
 
       self.calendarWidget = QCalendarWidget(self)
-      self.layout = QGridLayout()
+      self.layout = QtWidgets.QGridLayout()
       self.layout.addWidget(self.calendarWidget, 0, 0)
       self.setLayout(self.layout)
 
@@ -547,8 +544,8 @@ class CalendarDialog(ArmoryDialog):
       self.calendarWidget.selectionChanged.connect(self.accept)
 
 ################################################################################
-class ArmoryBlockAndDateSelector(QObject):
-   hideIt = Signal()
+class ArmoryBlockAndDateSelector(QtCore.QObject):
+   hideIt = QtCore.Signal()
 
    def __init__(self, parent, main, controlFrame):
       super(ArmoryBlockAndDateSelector, self).__init__()
@@ -567,37 +564,37 @@ class ArmoryBlockAndDateSelector(QObject):
       self.doHide = False
       self.isEditingBlockHeight = False
 
-      self.frmBlockAndDate = QFrame()
-      self.frmBlockAndDateLayout = QGridLayout()
-      self.frmBlockAndDateLayout.setAlignment(Qt.AlignLeft | Qt.AlignBottom)
+      self.frmBlockAndDate = QtWidgets.QFrame()
+      self.frmBlockAndDateLayout = QtWidgets.QGridLayout()
+      self.frmBlockAndDateLayout.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignBottom)
 
-      self.lblBlock = QLabel(self.main.tr("<a href=edtBlock>Block:</a>"))
+      self.lblBlock = QtWidgets.QLabel(self.main.tr("<a href=edtBlock>Block:</a>"))
       self.lblBlock.linkActivated.connect(self.linkClicked)
       self.lblBlock.adjustSize()
-      self.lblBlockValue = QLabel("")
+      self.lblBlockValue = QtWidgets.QLabel("")
       self.lblBlockValue.adjustSize()
 
-      self.lblDate = QLabel(self.main.tr("<a href=edtDate>Date:</a>"))
+      self.lblDate = QtWidgets.QLabel(self.main.tr("<a href=edtDate>Date:</a>"))
       self.lblDate.linkActivated.connect(self.linkClicked)
       self.lblDate.adjustSize()
-      self.lblDateValue = QLabel("")
+      self.lblDateValue = QtWidgets.QLabel("")
       self.lblDateValue.adjustSize()
 
-      self.lblTop = QLabel(self.main.tr("<a href=goToTop>Top</a>"))
+      self.lblTop = QtWidgets.QLabel(self.main.tr("<a href=goToTop>Top</a>"))
       self.lblTop.linkActivated.connect(self.goToTop)
       self.lblTop.adjustSize()
 
       self.calendarDlg = CalendarDialog(self.parent, self.main)
 
-      self.edtBlock = QLineEdit()
+      self.edtBlock = QtWidgets.QLineEdit()
       edtFontMetrics = self.edtBlock.fontMetrics()
       fontRect = edtFontMetrics.boundingRect("00000000")
       self.edtBlock.setFixedWidth(fontRect.width())
       self.edtBlock.setVisible(False)
       self.edtBlock.editingFinished.connect(self.blkEditingFinished)
 
-      self.frmBlock = QFrame()
-      self.frmBlockLayout = QGridLayout()
+      self.frmBlock = QtWidgets.QFrame()
+      self.frmBlockLayout = QtWidgets.QGridLayout()
       self.frmBlockLayout.addWidget(self.lblBlock, 0, 0)
       self.frmBlockLayout.addWidget(self.lblBlockValue, 0, 1)
       self.frmBlockLayout.addWidget(self.edtBlock, 0, 1)
@@ -614,24 +611,24 @@ class ArmoryBlockAndDateSelector(QObject):
       self.frmBlockAndDateLayout.addWidget(self.lblDateValue, 1, 1)
 
       self.frmBlockAndDate.setLayout(self.frmBlockAndDateLayout)
-      self.frmBlockAndDate.setBackgroundRole(QPalette.Window)
+      self.frmBlockAndDate.setBackgroundRole(QtGui.QPalette.Window)
       self.frmBlockAndDate.setAutoFillBackground(True)
-      self.frmBlockAndDate.setFrameStyle(QFrame.Panel | QFrame.Raised)
+      self.frmBlockAndDate.setFrameStyle(QtWidgets.QFrame.Panel | QtWidgets.QFrame.Raised)
       self.frmBlockAndDate.setVisible(False)
       self.frmBlockAndDate.setMouseTracking(True)
       self.frmBlockAndDate.leaveEvent = self.triggerHideBlockAndDate
       self.frmBlockAndDate.enterEvent = self.resetHideBlockAndDate
 
-      self.dateBlockSelectButton = QPushButton('Goto')
-      self.dateBlockSelectButton.setStyleSheet('QPushButton { font-size : 10px }')
+      self.dateBlockSelectButton = QtWidgets.QPushButton('Goto')
+      self.dateBlockSelectButton.setStyleSheet('QtWidgets.QPushButton { font-size : 10px }')
       self.dateBlockSelectButton.setMaximumSize(60, 20)
       self.dateBlockSelectButton.clicked.connect(self.showBlockDateController)
 
 
-      self.frmLayout = QGridLayout()
+      self.frmLayout = QtWidgets.QGridLayout()
       self.frmLayout.addWidget(self.dateBlockSelectButton)
       self.frmLayout.addWidget(self.frmBlockAndDate)
-      self.frmLayout.setAlignment(Qt.AlignCenter | Qt.AlignTop)
+      self.frmLayout.setAlignment(QtCore.Qt.AlignCenter | QtCore.Qt.AlignTop)
       self.frmLayout.setMargin(0)
 
       self.hideIt.connect(self.hideBlockAndDate)
@@ -671,10 +668,10 @@ class ArmoryBlockAndDateSelector(QObject):
       self.Height = fontRect.height()
 
    def getLayoutSize(self):
-      return QSize(self.Width, self.Height)
+      return QtCore.QSize(self.Width, self.Height)
 
    def pressEvent(self, mEvent):
-      if mEvent.button() == Qt.LeftButton:
+      if mEvent.button() == QtCore.Qt.LeftButton:
          self.lblClicked()
 
    def showBlockDateController(self):
@@ -764,9 +761,9 @@ class ArmoryBlockAndDateSelector(QObject):
 
 
 ################################################################################
-class ArmoryTableView(QTableView):
-   #centerViewSignal = Signal()
-   #goToTopSignal = Signal()
+class ArmoryTableView(QtWidgets.QTableView):
+   #centerViewSignal = QtCore.Signal()
+   #goToTopSignal = QtCore.Signal()
 
    def __init__(self, parent, main, controlFrame):
       super(ArmoryTableView, self).__init__(parent)
@@ -876,7 +873,7 @@ class ArmoryTableView(QTableView):
       self.verticalScrollBar().setValue(0)
 
 ################################################################################
-class LedgerDispSortProxy(QSortFilterProxyModel):
+class LedgerDispSortProxy(QtCore.QSortFilterProxyModel):
    """
    Acts as a proxy that re-maps indices to the table view so that data
    appears sorted, without actually touching the model
@@ -915,7 +912,7 @@ class LedgerDispSortProxy(QSortFilterProxyModel):
 
 
 ################################################################################
-class LedgerDispDelegate(QStyledItemDelegate):
+class LedgerDispDelegate(QtWidgets.QStyledItemDelegate):
 
    COL = LEDGERCOLS
 
@@ -924,9 +921,9 @@ class LedgerDispDelegate(QStyledItemDelegate):
 
 
    def paint(self, painter, option, index):
-      bgcolor = QColor(index.model().data(index, Qt.BackgroundColorRole))
-      if option.state & QStyle.State_Selected:
-         bgcolor = QApplication.palette().highlight().color()
+      bgcolor = None
+      if option.state & QtWidgets.QStyle.State_Selected:
+         bgcolor = QtWidgets.QApplication.palette().highlight().color()
 
       isCoinbase = False
       if index.model().index(index.row(), self.COL.isCoinbase).data() == "True":
@@ -943,52 +940,54 @@ class LedgerDispDelegate(QStyledItemDelegate):
          if isCoinbase:
             if nConf<120:
                effectiveNConf = int(6*float(nConf)/120.)
-               image = QImage('./img/conf%dt_nonum.png'%effectiveNConf)
+               image = QtGui.QImage('./img/conf%dt_nonum.png'%effectiveNConf)
             else:
-               image = QImage('./img/conf6t.png')
+               image = QtGui.QImage('./img/conf6t.png')
          else:
             if nConf<6:
-               image = QImage('./img/conf%dt.png'%nConf)
+               image = QtGui.QImage('./img/conf%dt.png'%nConf)
             else:
-               image = QImage('./img/conf6t.png')
-         painter.fillRect(option.rect, bgcolor)
-         pixmap = QPixmap.fromImage(image)
-         #pixmap.scaled(70, 30, Qt.KeepAspectRatio)
+               image = QtGui.QImage('./img/conf6t.png')
+         if bgcolor:
+            painter.fillRect(option.rect, bgcolor)
+         pixmap = QtGui.QPixmap.fromImage(image)
+         #pixmap.scaled(70, 30, QtCore.Qt.KeepAspectRatio)
          painter.drawPixmap(option.rect, pixmap)
       elif index.column() == self.COL.TxDir:
          # This is frustrating... QVariant doesn't support 64-bit ints
          # So I have to pass the amt as string, then convert here to long
-         image = QImage()
+         image = QtGui.QImage()
 
          # isCoinbase still needs to be flagged in the C++ utils
          if isCoinbase:
-            image = QImage('./img/moneyCoinbase.png')
+            image = QtGui.QImage('./img/moneyCoinbase.png')
          elif toSelf:
-            image = QImage('./img/moneySelf.png')
+            image = QtGui.QImage('./img/moneySelf.png')
          else:
             txdir = str(index.model().data(index)).strip()
             if txdir[0].startswith('-'):
-               image = QImage('./img/moneyOut.png')
+               image = QtGui.QImage('./img/moneyOut.png')
             else:
-               image = QImage('./img/moneyIn.png')
+               image = QtGui.QImage('./img/moneyIn.png')
 
-         painter.fillRect(option.rect, bgcolor)
-         pixmap = QPixmap.fromImage(image)
-         #pixmap.scaled(70, 30, Qt.KeepAspectRatio)
+         if bgcolor:
+            painter.fillRect(option.rect, bgcolor)
+         pixmap = QtGui.QPixmap.fromImage(image)
+         #pixmap.scaled(70, 30, QtCore.Qt.KeepAspectRatio)
          painter.drawPixmap(option.rect, pixmap)
       else:
-         QStyledItemDelegate.paint(self, painter, option, index)
+         QtWidgets.QStyledItemDelegate.paint(self, painter, option, index)
 
    def sizeHint(self, option, index):
       if index.column()==self.COL.NumConf:
-         return QSize(28,28)
+         return QtCore.QSize(28,28)
       elif index.column()==self.COL.TxDir:
-         return QSize(28,28)
-      return QStyledItemDelegate.sizeHint(self, option, index)
+         return QtCore.QSize(28,28)
+      return QtWidgets.QStyledItemDelegate.sizeHint(self, option, index)
 
 
 ################################################################################
-class WalletAddrDispModel(QAbstractTableModel):
+class WalletAddrDispModel(QtCore.QAbstractTableModel):
 
    def __init__(self, wlt, mainWindow):
       super(WalletAddrDispModel, self).__init__()
@@ -1034,13 +1033,13 @@ class WalletAddrDispModel(QAbstractTableModel):
 
 
 
-   def rowCount(self, index=QModelIndex()):
+   def rowCount(self, index=QtCore.QModelIndex()):
       return len(self.addr160List)
 
-   def columnCount(self, index=QModelIndex()):
+   def columnCount(self, index=QtCore.QModelIndex()):
       return 5
 
-   def data(self, index, role=Qt.DisplayRole):
+   def data(self, index, role=QtCore.Qt.DisplayRole):
       COL = ADDRESSCOLS
       row,col = index.row(), index.column()
       if row>=len(self.addr160List):
@@ -1051,7 +1050,7 @@ class WalletAddrDispModel(QAbstractTableModel):
       addrHash = addr.getPrefixedAddr()
       addrB58 = addr.getAddressString()
       chainIdx = addr.chainIndex+1  # user must get 1-indexed
-      if role==Qt.DisplayRole:
+      if role==QtCore.Qt.DisplayRole:
          if col==COL.Address:
             return addrB58
          if col==COL.Comment:
@@ -1070,24 +1069,24 @@ class WalletAddrDispModel(QAbstractTableModel):
                return '(...)'
             addrFullBalance = self.wlt.getAddrBalance(addrHash, balType="full")
             return coin2str(addrFullBalance, maxZeros=2)
-      elif role==Qt.TextAlignmentRole:
+      elif role==QtCore.Qt.TextAlignmentRole:
          if col in (COL.Address, COL.Comment, COL.ChainIdx):
-            return int(Qt.AlignLeft | Qt.AlignVCenter)
+            return int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
          elif col in (COL.NumTx,):
-            return int(Qt.AlignHCenter | Qt.AlignVCenter)
+            return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
          elif col in (COL.Balance,):
             if not TheBDM.getState()==BDM_BLOCKCHAIN_READY:
-               return int(Qt.AlignHCenter | Qt.AlignVCenter)
+               return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
             else:
-               return int(Qt.AlignRight | Qt.AlignVCenter)
-      elif role==Qt.ForegroundRole:
+               return int(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+      elif role==QtCore.Qt.ForegroundRole:
          if col==COL.Balance:
             if not TheBDM.getState()==BDM_BLOCKCHAIN_READY:
                return Colors.Foreground
             addrFullBalance = self.wlt.getAddrBalance(addrHash, balType="full")
             if addrFullBalance>0: return Colors.TextGreen
             else: return Colors.Foreground
-      elif role==Qt.FontRole:
+      elif role==QtCore.Qt.FontRole:
          try:
             hasTx = addr.getTxioCount()>0
          except:
@@ -1104,7 +1103,7 @@ class WalletAddrDispModel(QAbstractTableModel):
             doBold   = hasTx and not isChange
             doItalic = isChange
             return GETFONT('Var',bold=doBold, italic=doItalic)
-      elif role==Qt.ToolTipRole:
+      elif role==QtCore.Qt.ToolTipRole:
          if col==COL.ChainIdx:
             cmt = self.index(index.row(),COL.ChainIdx).data()
             if cmt.strip().lower().startswith('imp'):
@@ -1120,7 +1119,7 @@ class WalletAddrDispModel(QAbstractTableModel):
             return self.tr('This address was created by Armory to '
                             'receive change-back-to-self from an oversized '
                             'transaction.')
-      elif role==Qt.BackgroundColorRole:
+      elif role==QtCore.Qt.BackgroundColorRole:
          if not TheBDM.getState()==BDM_BLOCKCHAIN_READY:
             return Colors.TblWltOther
 
@@ -1132,28 +1131,28 @@ class WalletAddrDispModel(QAbstractTableModel):
 
       return None
 
-   def headerData(self, section, orientation, role=Qt.DisplayRole):
+   def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
       COL = ADDRESSCOLS
-      if role==Qt.DisplayRole:
-         if orientation==Qt.Horizontal:
+      if role==QtCore.Qt.DisplayRole:
+         if orientation==QtCore.Qt.Horizontal:
             if section==COL.ChainIdx: return '#'
             if section==COL.Address:  return self.tr('Address')
             if section==COL.Comment:  return self.tr('Comment')
             if section==COL.NumTx:    return self.tr('#Tx')
             if section==COL.Balance:  return self.tr('Balance')
-         elif role==Qt.TextAlignmentRole:
+         elif role==QtCore.Qt.TextAlignmentRole:
             if section in (COL.Address, COL.Comment):
-               return int(Qt.AlignLeft | Qt.AlignVCenter)
+               return int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
             elif section in (COL.NumTx,):
-               return int(Qt.AlignHCenter | Qt.AlignVCenter)
+               return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
             elif section in (COL.Balance,):
-               return int(Qt.AlignRight | Qt.AlignVCenter)
+               return int(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
 
       return None
 
 
 ################################################################################
-class WalletAddrSortProxy(QSortFilterProxyModel):
+class WalletAddrSortProxy(QtCore.QSortFilterProxyModel):
    """
    Acts as a proxy that re-maps indices to the table view so that data
    appears sorted, without actually touching the model
@@ -1178,7 +1177,7 @@ class WalletAddrSortProxy(QSortFilterProxyModel):
 
 
 ################################################################################
-class TxInDispModel(QAbstractTableModel):
+class TxInDispModel(QtCore.QAbstractTableModel):
    def __init__(self,  pytx, txinListFromBDM=None, main=None):
       super(TxInDispModel, self).__init__()
       self.main = main
@@ -1249,28 +1248,28 @@ class TxInDispModel(QAbstractTableModel):
 
 
 
-   def rowCount(self, index=QModelIndex()):
+   def rowCount(self, index=QtCore.QModelIndex()):
       return len(self.dispTable)
 
-   def columnCount(self, index=QModelIndex()):
+   def columnCount(self, index=QtCore.QModelIndex()):
       return 10
 
    #TXINCOLS  = enum('WltID', 'Sender', 'Btc', 'OutPt', 'OutIdx', 'FromBlk', 'ScrType', 'Sequence', 'Script')
-   def data(self, index, role=Qt.DisplayRole):
+   def data(self, index, role=QtCore.Qt.DisplayRole):
       COLS = TXINCOLS
       row,col = index.row(), index.column()
 
       wltID = self.dispTable[row][COLS.WltID]
-      if role==Qt.DisplayRole:
+      if role==QtCore.Qt.DisplayRole:
          return self.dispTable[row][col]
-      elif role==Qt.TextAlignmentRole:
+      elif role==QtCore.Qt.TextAlignmentRole:
          if col in (COLS.WltID, COLS.Sender, COLS.OutPt):
-            return int(Qt.AlignLeft | Qt.AlignVCenter)
+            return int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
          elif col in (COLS.OutIdx, COLS.FromBlk, COLS.Sequence, COLS.ScrType):
-            return int(Qt.AlignHCenter | Qt.AlignVCenter)
+            return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
          elif col in (COLS.Btc,):
-            return int(Qt.AlignRight | Qt.AlignVCenter)
-      elif role==Qt.BackgroundColorRole:
+            return int(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+      elif role==QtCore.Qt.BackgroundColorRole:
          if self.dispTable[row][COLS.WltID] and wltID in self.main.walletMap:
             wtype = determineWalletType(self.main.walletMap[wltID], self.main)[0]
             if wtype==WLTTYPES.WatchOnly:
@@ -1279,16 +1278,16 @@ class TxInDispModel(QAbstractTableModel):
                return Colors.TblWltOffline
             else:
                return Colors.TblWltMine
-      elif role==Qt.FontRole:
+      elif role==QtCore.Qt.FontRole:
          if col==COLS.Btc:
             return GETFONT('Fixed')
 
       return None
 
-   def headerData(self, section, orientation, role=Qt.DisplayRole):
+   def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
       COLS = TXINCOLS
-      if role==Qt.DisplayRole:
-         if orientation==Qt.Horizontal:
+      if role==QtCore.Qt.DisplayRole:
+         if orientation==QtCore.Qt.Horizontal:
             if section==COLS.WltID:    return self.tr('Wallet ID')
             if section==COLS.Sender:   return self.tr('Sender')
             if section==COLS.Btc:      return self.tr('Amount')
@@ -1298,13 +1297,13 @@ class TxInDispModel(QAbstractTableModel):
             if section==COLS.ScrType:  return self.tr('Script Type')
             if section==COLS.Sequence: return self.tr('Sequence')
             if section==COLS.Script:   return self.tr('Script')
-      elif role==Qt.TextAlignmentRole:
-         if orientation==Qt.Horizontal:
+      elif role==QtCore.Qt.TextAlignmentRole:
+         if orientation==QtCore.Qt.Horizontal:
             if section in (COLS.WltID, COLS.Sender, COLS.OutPt):
-               return int(Qt.AlignLeft | Qt.AlignVCenter)
+               return int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
             elif section in (COLS.OutIdx, COLS.FromBlk, COLS.Btc, COLS.Sequence, COLS.ScrType):
-               return int(Qt.AlignHCenter | Qt.AlignVCenter)
-         return int(Qt.AlignHCenter | Qt.AlignVCenter)
+               return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
+         return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
 
 
@@ -1312,7 +1311,7 @@ class TxInDispModel(QAbstractTableModel):
 
 
 ################################################################################
-class TxOutDispModel(QAbstractTableModel):
+class TxOutDispModel(QtCore.QAbstractTableModel):
    def __init__(self,  pytx, main=None, idxGray=[]):
       super(TxOutDispModel, self).__init__()
       self.tx = pytx.copy()
@@ -1324,14 +1323,14 @@ class TxOutDispModel(QAbstractTableModel):
       for i,txout in enumerate(self.tx.outputs):
          self.txOutList.append(txout)
 
-   def rowCount(self, index=QModelIndex()):
+   def rowCount(self, index=QtCore.QModelIndex()):
       return len(self.txOutList)
 
-   def columnCount(self, index=QModelIndex()):
+   def columnCount(self, index=QtCore.QModelIndex()):
       return 6
 
    #TXOUTCOLS = enum('WltID', 'Recip', 'Btc', 'ScrType')
-   def data(self, index, role=Qt.DisplayRole):
+   def data(self, index, role=QtCore.Qt.DisplayRole):
       COLS = TXOUTCOLS
       row,col = index.row(), index.column()
       txout = self.txOutList[row]
@@ -1349,21 +1348,21 @@ class TxOutDispModel(QAbstractTableModel):
          M,N = getMultisigScriptInfo(txout.binScript)[:2]
          stypeStr = 'MultiSig[%d-of-%d]' % (M,N)
 
-      if role==Qt.DisplayRole:
+      if role==QtCore.Qt.DisplayRole:
          if col==COLS.WltID:   return str(wltID)
          if col==COLS.ScrType: return str(stypeStr)
          if col==COLS.Script:  return str(binary_to_hex(txout.binScript))
          if col==COLS.Btc:     return str(coin2str(txout.getValue(),maxZeros=2))
          if col==COLS.Recip:   return str(dispInfo['String'])
          if col==COLS.AddrStr: return str(dispInfo['AddrStr'])
-      elif role==Qt.TextAlignmentRole:
-         if col==COLS.Recip:   return int(Qt.AlignLeft | Qt.AlignVCenter)
-         if col==COLS.Btc:     return int(Qt.AlignRight | Qt.AlignVCenter)
-         if col==COLS.ScrType: return int(Qt.AlignHCenter | Qt.AlignVCenter)
-      elif role==Qt.ForegroundRole:
+      elif role==QtCore.Qt.TextAlignmentRole:
+         if col==COLS.Recip:   return int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+         if col==COLS.Btc:     return int(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+         if col==COLS.ScrType: return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
+      elif role==QtCore.Qt.ForegroundRole:
          if row in self.idxGray:
             return Colors.Mid
-      elif role==Qt.BackgroundColorRole:
+      elif role==QtCore.Qt.BackgroundColorRole:
          if wltID and wltID in self.main.walletMap:
             wtype = determineWalletType(self.main.walletMap[wltID], self.main)[0]
             if wtype==WLTTYPES.WatchOnly:
@@ -1372,34 +1371,34 @@ class TxOutDispModel(QAbstractTableModel):
                return Colors.TblWltOffline
             else:
                return Colors.TblWltMine
-      elif role==Qt.FontRole:
+      elif role==QtCore.Qt.FontRole:
          if col==COLS.Btc:
             return GETFONT('Fixed')
 
       return None
 
-   def headerData(self, section, orientation, role=Qt.DisplayRole):
+   def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
       COLS = TXOUTCOLS
-      if role==Qt.DisplayRole:
-         if orientation==Qt.Horizontal:
+      if role==QtCore.Qt.DisplayRole:
+         if orientation==QtCore.Qt.Horizontal:
             if section==COLS.WltID:   return self.tr('Wallet ID')
             if section==COLS.Recip:   return self.tr('Recipient')
             if section==COLS.Btc:     return self.tr('Amount')
             if section==COLS.ScrType: return self.tr('Script Type')
-      elif role==Qt.TextAlignmentRole:
-         if orientation==Qt.Horizontal:
-            if section==COLS.WltID:   return int(Qt.AlignLeft | Qt.AlignVCenter)
-            if section==COLS.Recip:   return int(Qt.AlignLeft | Qt.AlignVCenter)
-            if section==COLS.Btc:     return int(Qt.AlignHCenter | Qt.AlignVCenter)
-            if section==COLS.ScrType: return int(Qt.AlignHCenter | Qt.AlignVCenter)
-         return int(Qt.AlignHCenter | Qt.AlignVCenter)
+      elif role==QtCore.Qt.TextAlignmentRole:
+         if orientation==QtCore.Qt.Horizontal:
+            if section==COLS.WltID:   return int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            if section==COLS.Recip:   return int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            if section==COLS.Btc:     return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
+            if section==COLS.ScrType: return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
+         return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
 
 
 
 
 ################################################################################
-class SentToAddrBookModel(QAbstractTableModel):
+class SentToAddrBookModel(QtCore.QAbstractTableModel):
    def __init__(self, wltID, main):
       super(SentToAddrBookModel, self).__init__()
       self.main  = main
@@ -1430,13 +1429,13 @@ class SentToAddrBookModel(QAbstractTableModel):
 
 
 
-   def rowCount(self, index=QModelIndex()):
+   def rowCount(self, index=QtCore.QModelIndex()):
       return len(self.addrBook)
 
-   def columnCount(self, index=QModelIndex()):
+   def columnCount(self, index=QtCore.QModelIndex()):
       return 4
 
-   def data(self, index, role=Qt.DisplayRole):
+   def data(self, index, role=QtCore.Qt.DisplayRole):
       COL = ADDRBOOKCOLS
       row,col  = index.row(), index.column()
       scrAddr  = self.addrBook[row][0]
@@ -1452,7 +1451,7 @@ class SentToAddrBookModel(QAbstractTableModel):
       comment  = self.wlt.getCommentForTxList(scrAddr, txList)
 
       #ADDRBOOKCOLS = enum('Address', 'WltID', 'NumSent', 'Comment')
-      if role==Qt.DisplayRole:
+      if role==QtCore.Qt.DisplayRole:
          if col==COL.Address:
             return addrB58
          if col==COL.NumSent:
@@ -1461,30 +1460,30 @@ class SentToAddrBookModel(QAbstractTableModel):
             return comment
          if col==COL.WltID:
             return wltID
-      elif role==Qt.TextAlignmentRole:
+      elif role==QtCore.Qt.TextAlignmentRole:
          if col in (COL.Address, COL.Comment, COL.WltID):
-            return int(Qt.AlignLeft | Qt.AlignVCenter)
+            return int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
          elif col in (COL.NumSent,):
-            return int(Qt.AlignHCenter | Qt.AlignVCenter)
-      elif role==Qt.FontRole:
+            return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
+      elif role==QtCore.Qt.FontRole:
          isFreqAddr = (numSent>1)
          return GETFONT('Var', bold=isFreqAddr)
 
       return None
 
-   def headerData(self, section, orientation, role=Qt.DisplayRole):
+   def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
       COL = ADDRBOOKCOLS
-      if role==Qt.DisplayRole:
-         if orientation==Qt.Horizontal:
+      if role==QtCore.Qt.DisplayRole:
+         if orientation==QtCore.Qt.Horizontal:
             if section==COL.Address:  return self.tr('Address')
             if section==COL.WltID:    return self.tr('Ownership')
             if section==COL.NumSent:  return self.tr('Times Used')
             if section==COL.Comment:  return self.tr('Comment')
-      elif role==Qt.TextAlignmentRole:
+      elif role==QtCore.Qt.TextAlignmentRole:
          if section in (COL.Address, COL.Comment, COL.WltID):
-            return int(Qt.AlignLeft | Qt.AlignVCenter)
+            return int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
          elif section in (COL.NumSent,):
-            return int(Qt.AlignHCenter | Qt.AlignVCenter)
+            return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
       return None
 
@@ -1494,7 +1493,7 @@ class SentToAddrBookModel(QAbstractTableModel):
 
 
 ################################################################################
-class SentAddrSortProxy(QSortFilterProxyModel):
+class SentAddrSortProxy(QtCore.QSortFilterProxyModel):
    def lessThan(self, idxLeft, idxRight):
       COL = ADDRBOOKCOLS
       thisCol  = self.sortColumn()
@@ -1511,7 +1510,7 @@ class SentAddrSortProxy(QSortFilterProxyModel):
 
 
 ################################################################################
-class PromissoryCollectModel(QAbstractTableModel):
+class PromissoryCollectModel(QtCore.QAbstractTableModel):
 
    # The columns enumeration
 
@@ -1521,21 +1520,21 @@ class PromissoryCollectModel(QAbstractTableModel):
       self.promNoteList = promNoteList
 
 
-   def rowCount(self, index=QModelIndex()):
+   def rowCount(self, index=QtCore.QModelIndex()):
       return len(self.promNoteList)
 
-   def columnCount(self, index=QModelIndex()):
+   def columnCount(self, index=QtCore.QModelIndex()):
       return 4
 
 
-   def data(self, index, role=Qt.DisplayRole):
+   def data(self, index, role=QtCore.Qt.DisplayRole):
       COL = PROMCOLS
       row,col = index.row(), index.column()
       prom = self.promNoteList[row]
 
       #PROMCOLS = enum('PromID', 'Label', 'PayAmt', 'FeeAmt')
 
-      if role==Qt.DisplayRole:
+      if role==QtCore.Qt.DisplayRole:
          if col==COL.PromID:
             return prom.promID
          elif col==COL.Label:
@@ -1544,19 +1543,19 @@ class PromissoryCollectModel(QAbstractTableModel):
             return coin2str(prom.dtxoTarget.value, maxZeros=2)
          elif col==COL.FeeAmt:
             return coin2str(prom.feeAmt, maxZeros=2)
-      elif role==Qt.TextAlignmentRole:
+      elif role==QtCore.Qt.TextAlignmentRole:
          if col in [COL.PromID, COL.Label]:
-            return int(Qt.AlignHCenter | Qt.AlignVCenter)
+            return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
          else:
-            return int(Qt.AlignLeft | Qt.AlignVCenter)
-      elif role==Qt.ForegroundRole:
+            return int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+      elif role==QtCore.Qt.ForegroundRole:
          if col == COL.PayAmt:
             if prom.dtxoTarget.value>0:
                return Colors.TextGreen
          elif col == COL.FeeAmt:
             if prom.feeAmt>0:
                return Colors.TextGreen
-      elif role==Qt.FontRole:
+      elif role==QtCore.Qt.FontRole:
          if col in [COL.PayAmt, COL.FeeAmt]:
             return GETFONT('Fixed')
 
@@ -1564,10 +1563,10 @@ class PromissoryCollectModel(QAbstractTableModel):
 
 
 
-   def headerData(self, section, orientation, role=Qt.DisplayRole):
+   def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
       colLabels = [self.tr('Note ID'), self.tr('Label'), self.tr('Funding'), self.tr('Fee')]
-      if role==Qt.DisplayRole:
-         if orientation==Qt.Horizontal:
+      if role==QtCore.Qt.DisplayRole:
+         if orientation==QtCore.Qt.Horizontal:
             return colLabels[section]
-      elif role==Qt.TextAlignmentRole:
-         return int(Qt.AlignHCenter | Qt.AlignVCenter)
+      elif role==QtCore.Qt.TextAlignmentRole:
+         return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)

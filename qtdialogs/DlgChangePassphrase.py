@@ -4,16 +4,13 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2022, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
 ##############################################################################
 
-from PySide2.QtWidgets import QCheckBox, QDialogButtonBox, QGridLayout, \
-   QLabel, QLineEdit, QMessageBox, QPushButton
-from PySide2.QtGui import QIcon
-from PySide2.QtCore import Qt, SIGNAL, SLOT
+from qtpy import QtCore, QtGui, QtWidgets
 
 from armorycolors import htmlColor
 from armoryengine.ArmoryUtils import isASCII
@@ -29,33 +26,33 @@ class DlgChangePassphrase(ArmoryDialog):
 
 
 
-      layout = QGridLayout()
+      layout = QtWidgets.QGridLayout()
       if noPrevEncrypt:
-         lblDlgDescr = QLabel(self.tr('Please enter an passphrase for wallet encryption.\n\n'
+         lblDlgDescr = QtWidgets.QLabel(self.tr('Please enter an passphrase for wallet encryption.\n\n'
                               'A good passphrase consists of at least 8 or more\n'
                               'random letters, or 5 or more random words.\n'))
          lblDlgDescr.setWordWrap(True)
          layout.addWidget(lblDlgDescr, 0, 0, 1, 2)
       else:
-         lblDlgDescr = QLabel(self.tr("Change your wallet encryption passphrase"))
+         lblDlgDescr = QtWidgets.QLabel(self.tr("Change your wallet encryption passphrase"))
          layout.addWidget(lblDlgDescr, 0, 0, 1, 2)
-         self.edtPasswdOrig = QLineEdit()
-         self.edtPasswdOrig.setEchoMode(QLineEdit.Password)
+         self.edtPasswdOrig = QtWidgets.QLineEdit()
+         self.edtPasswdOrig.setEchoMode(QtWidgets.QLineEdit.Password)
          self.edtPasswdOrig.setMinimumWidth(MIN_PASSWD_WIDTH(self))
-         lblCurrPasswd = QLabel(self.tr('Current Passphrase:'))
+         lblCurrPasswd = QtWidgets.QLabel(self.tr('Current Passphrase:'))
          layout.addWidget(lblCurrPasswd, 1, 0)
          layout.addWidget(self.edtPasswdOrig, 1, 1)
 
 
 
-      lblPwd1 = QLabel(self.tr("New Passphrase:"))
-      self.edtPasswd1 = QLineEdit()
-      self.edtPasswd1.setEchoMode(QLineEdit.Password)
+      lblPwd1 = QtWidgets.QLabel(self.tr("New Passphrase:"))
+      self.edtPasswd1 = QtWidgets.QLineEdit()
+      self.edtPasswd1.setEchoMode(QtWidgets.QLineEdit.Password)
       self.edtPasswd1.setMinimumWidth(MIN_PASSWD_WIDTH(self))
 
-      lblPwd2 = QLabel(self.tr("Again:"))
-      self.edtPasswd2 = QLineEdit()
-      self.edtPasswd2.setEchoMode(QLineEdit.Password)
+      lblPwd2 = QtWidgets.QLabel(self.tr("Again:"))
+      self.edtPasswd2 = QtWidgets.QLineEdit()
+      self.edtPasswd2.setEchoMode(QtWidgets.QLineEdit.Password)
       self.edtPasswd2.setMinimumWidth(MIN_PASSWD_WIDTH(self))
 
       layout.addWidget(lblPwd1, 2, 0)
@@ -63,23 +60,23 @@ class DlgChangePassphrase(ArmoryDialog):
       layout.addWidget(self.edtPasswd1, 2, 1)
       layout.addWidget(self.edtPasswd2, 3, 1)
 
-      self.lblMatches = QLabel(' ' * 20)
-      self.lblMatches.setTextFormat(Qt.RichText)
+      self.lblMatches = QtWidgets.QLabel(' ' * 20)
+      self.lblMatches.setTextFormat(QtCore.Qt.RichText)
       layout.addWidget(self.lblMatches, 4, 1)
 
 
-      self.chkDisableCrypt = QCheckBox(self.tr('Disable encryption for this wallet'))
+      self.chkDisableCrypt = QtWidgets.QCheckBox(self.tr('Disable encryption for this wallet'))
       if not noPrevEncrypt:
          self.connect(self.chkDisableCrypt, SIGNAL('toggled(bool)'), \
                       self.disablePassphraseBoxes)
          layout.addWidget(self.chkDisableCrypt, 4, 0)
 
 
-      self.btnAccept = QPushButton(self.tr("Accept"))
-      self.btnCancel = QPushButton(self.tr("Cancel"))
-      buttonBox = QDialogButtonBox()
-      buttonBox.addButton(self.btnAccept, QDialogButtonBox.AcceptRole)
-      buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
+      self.btnAccept = QtWidgets.QPushButton(self.tr("Accept"))
+      self.btnCancel = QtWidgets.QPushButton(self.tr("Cancel"))
+      buttonBox = QtWidgets.QDialogButtonBox()
+      buttonBox.addButton(self.btnAccept, QtWidgets.QDialogButtonBox.AcceptRole)
+      buttonBox.addButton(self.btnCancel, QtWidgets.QDialogButtonBox.RejectRole)
       layout.addWidget(buttonBox, 5, 0, 1, 2)
 
       if noPrevEncrypt:
@@ -87,7 +84,7 @@ class DlgChangePassphrase(ArmoryDialog):
       else:
          self.setWindowTitle(self.tr("Change Encryption Passphrase"))
 
-      self.setWindowIcon(QIcon(self.main.iconfile))
+      self.setWindowIcon(QtGui.QIcon(self.main.iconfile))
 
       self.setLayout(layout)
 
@@ -136,8 +133,8 @@ class DlgChangePassphrase(ArmoryDialog):
             dlg = DlgPasswd3(self, self.main)
             if dlg.exec_():
                if not str(dlg.edtPasswd3.text()) == str(self.edtPasswd1.text()):
-                  QMessageBox.critical(self, self.tr('Invalid Passphrase'), \
-                      self.tr('You entered your confirmation passphrase incorrectly!'), QMessageBox.Ok)
+                  QtWidgets.QMessageBox.critical(self, self.tr('Invalid Passphrase'), \
+                      self.tr('You entered your confirmation passphrase incorrectly!'), QtWidgets.QMessageBox.Ok)
                else:
                   self.accept()
             else:

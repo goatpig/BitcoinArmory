@@ -1,12 +1,10 @@
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
 ##############################################################################
 #                                                                            #
 # Copyright (C) 2011-2015, Armory Technologies, Inc.                         #
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2023, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
@@ -41,15 +39,8 @@ from armoryengine.AddressUtils import hash160_to_addrStr, addrTypeInSet, \
 
 from ui.FeeSelectUI import FeeSelectionDialog
 from ui.QtExecuteSignal import TheSignalExecution
-
-from PySide2.QtCore import Qt, QByteArray
-from PySide2.QtGui import QPalette
-from PySide2.QtWidgets import QPushButton, QRadioButton, QCheckBox, \
-   QGridLayout, QScrollArea, QFrame, QButtonGroup, QHBoxLayout, \
-   QVBoxLayout, QLabel, QLineEdit, QMessageBox
-
+from qtpy import QtGui, QtCore, QtWidgets
 from armorycolors import Colors
-
 from armoryengine.CppBridge import TheBridge
 
 CS_USE_FULL_CUSTOM_LIST = 1
@@ -167,10 +158,10 @@ class SendBitcoinsFrame(ArmoryFrame):
       self.onlyOfflineWallets = onlyOfflineWallets
       self.widgetTable = []
       self.isMax = False
-      self.scrollRecipArea = QScrollArea()
+      self.scrollRecipArea = QtWidgets.QScrollArea()
 
       lblRecip = QRichLabel('<b>Enter Recipients:</b>')
-      lblRecip.setAlignment(Qt.AlignLeft | Qt.AlignBottom)
+      lblRecip.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignBottom)
 
       self.shuffleEntries = True
       self.freeOfErrors = True
@@ -203,9 +194,9 @@ class SendBitcoinsFrame(ArmoryFrame):
       # This used to be in the later, expert-only section, but some of these
       # are actually getting referenced before being declared.  So moved them
       # up to here.
-      self.chkDefaultChangeAddr = QCheckBox(self.tr('Use an existing address for change'))
-      self.radioFeedback = QRadioButton(self.tr('Send change to first input address'))
-      self.radioSpecify = QRadioButton(self.tr('Specify a change address'))
+      self.chkDefaultChangeAddr = QtWidgets.QCheckBox(self.tr('Use an existing address for change'))
+      self.radioFeedback = QtWidgets.QRadioButton(self.tr('Send change to first input address'))
+      self.radioSpecify = QtWidgets.QRadioButton(self.tr('Specify a change address'))
       self.lblChangeAddr = QRichLabel(self.tr('Change:'))
 
       addrWidgets = self.main.createAddressEntryWidgets(\
@@ -215,7 +206,7 @@ class SendBitcoinsFrame(ArmoryFrame):
       self.lblAutoDetect  = addrWidgets['LBL_DETECT']
       self.getUserChangeScript = addrWidgets['CALLBACK_GETSCRIPT']
 
-      self.chkRememberChng = QCheckBox(self.tr('Remember for future transactions'))
+      self.chkRememberChng = QtWidgets.QCheckBox(self.tr('Remember for future transactions'))
       self.vertLine = VLINE()
 
       self.ttipSendChange = createToolTipWidget(\
@@ -237,9 +228,9 @@ class SendBitcoinsFrame(ArmoryFrame):
       self.ttipUnsigned = createToolTipWidget(\
          self.tr('Check this box to create an unsigned transaction to be signed'
          ' and/or broadcast later.'))
-      self.unsignedCheckbox = QCheckBox(self.tr('Create Unsigned'))
+      self.unsignedCheckbox = QtWidgets.QCheckBox(self.tr('Create Unsigned'))
 
-      self.RBFcheckbox = QCheckBox(self.tr('enable RBF'))
+      self.RBFcheckbox = QtWidgets.QCheckBox(self.tr('enable RBF'))
       self.RBFcheckbox.setChecked(True)
       self.ttipRBF = createToolTipWidget(\
          self.tr('RBF flagged inputs allow to respend the underlying outpoint for a '
@@ -247,8 +238,8 @@ class SendBitcoinsFrame(ArmoryFrame):
                  'unconfirmed. <br><br>'
                  'Checking this box will RBF flag all inputs in this transaction'))
 
-      self.btnSend = QPushButton(self.tr('Send!'))
-      self.btnCancel = QPushButton(self.tr('Cancel'))
+      self.btnSend = QtWidgets.QPushButton(self.tr('Send!'))
+      self.btnCancel = QtWidgets.QPushButton(self.tr('Cancel'))
       self.btnCancel.clicked.connect(parent.reject)
 
       self.btnPreviewTx = QLabelButton("Preview Transaction")
@@ -296,7 +287,7 @@ class SendBitcoinsFrame(ArmoryFrame):
       metaFrm = makeHorizFrame(\
          metaButtonList, STYLE_RAISED, condenseMargins=True)
       buttonFrame = makeHorizFrame(buttonList, condenseMargins=True)
-      btnEnterURI = QPushButton(self.tr('Manually Enter "bitcoin:" Link'))
+      btnEnterURI = QtWidgets.QPushButton(self.tr('Manually Enter "bitcoin:" Link'))
       ttipEnterURI = createToolTipWidget(self.tr(
          'Armory does not always succeed at registering itself to handle '
          'URL links from webpages and email. '
@@ -313,8 +304,8 @@ class SendBitcoinsFrame(ArmoryFrame):
       # In Expert usermode, allow the user to modify source addresses
       if self.main.usermode == USERMODE.Expert:
 
-         sendChangeToFrame = QFrame()
-         sendChangeToLayout = QGridLayout()
+         sendChangeToFrame = QtWidgets.QFrame()
+         sendChangeToLayout = QtWidgets.QGridLayout()
          sendChangeToLayout.addWidget(self.lblChangeAddr,  0,0)
          sendChangeToLayout.addWidget(self.edtChangeAddr,  0,1)
          sendChangeToLayout.addWidget(self.btnChangeAddr,  0,2)
@@ -325,13 +316,13 @@ class SendBitcoinsFrame(ArmoryFrame):
          sendChangeToFrame.setLayout(sendChangeToLayout)
 
 
-         btngrp = QButtonGroup(self)
+         btngrp = QtWidgets.QButtonGroup(self)
          btngrp.addButton(self.radioFeedback)
          btngrp.addButton(self.radioSpecify)
          btngrp.setExclusive(True)
          self.chkDefaultChangeAddr.toggled.connect(self.toggleChngAddr)
          self.radioSpecify.toggled.connect(self.toggleSpecify)
-         frmChngLayout = QGridLayout()
+         frmChngLayout = QtWidgets.QGridLayout()
          i = 0
          frmChngLayout.addWidget(self.chkDefaultChangeAddr, i, 0, 1, 6)
          frmChngLayout.addWidget(self.ttipSendChange,       i, 6, 1, 2)
@@ -354,7 +345,7 @@ class SendBitcoinsFrame(ArmoryFrame):
          frmChngLayout.setColumnStretch(4,1)
          frmChngLayout.setColumnStretch(5,1)
          frmChngLayout.setColumnStretch(6,1)
-         frmChangeAddr = QFrame()
+         frmChangeAddr = QtWidgets.QFrame()
          frmChangeAddr.setLayout(frmChngLayout)
          frmChangeAddr.setFrameStyle(STYLE_SUNKEN)
          fromFrameList.append('Stretch')
@@ -365,14 +356,14 @@ class SendBitcoinsFrame(ArmoryFrame):
          condenseMargins=True)
 
       lblSend = QRichLabel(self.tr('<b>Sending from Wallet:</b>'))
-      lblSend.setAlignment(Qt.AlignLeft | Qt.AlignBottom)
+      lblSend.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignBottom)
 
 
       leftFrame = makeVertFrame([lblSend, frmBottomLeft], condenseMargins=True)
       rightFrame = makeVertFrame(\
          [lblRecip, self.scrollRecipArea, txFrm, metaFrm, buttonFrame],
          condenseMargins=True)
-      layout = QHBoxLayout()
+      layout = QtWidgets.QHBoxLayout()
       layout.addWidget(leftFrame, 0)
       layout.addWidget(rightFrame, 1)
       layout.setContentsMargins(0,0,0,0)
@@ -389,7 +380,7 @@ class SendBitcoinsFrame(ArmoryFrame):
 
       hexgeom = TheSettings.get('SendBtcGeometry')
       if len(hexgeom) > 0:
-         geom = QByteArray(bytes.fromhex(hexgeom))
+         geom = QtCore.QByteArray(bytes.fromhex(hexgeom))
          self.restoreGeometry(geom)
 
    # Use this to fire wallet change after the constructor is complete.
@@ -417,7 +408,7 @@ class SendBitcoinsFrame(ArmoryFrame):
 
    #############################################################################
    def getRBFFlag(self):
-      return self.RBFcheckbox.checkState() == Qt.Checked
+      return self.RBFcheckbox.checkState() == QtCore.Qt.Checked
 
    #############################################################################
    def addOneRecipient(self, addr160, amt, msg, label=None, plainText=None):
@@ -768,9 +759,9 @@ class SendBitcoinsFrame(ArmoryFrame):
 
       numChkFail = sum([1 if len(b)==0 else 0 for b in scripts])
       if not self.freeOfErrors:
-         QMessageBox.critical(self, self.tr('Invalid Address'),
+         QtWidgets.QMessageBox.critical(self, self.tr('Invalid Address'),
                self.tr("You have entered %s invalid addresses. "
-                       "The errors have been highlighted on the entry screen" % str(numChkFail)), QMessageBox.Ok)
+                       "The errors have been highlighted on the entry screen" % str(numChkFail)), QtWidgets.QMessageBox.Ok)
 
          for row in range(len(self.widgetTable)):
             try:
@@ -779,9 +770,9 @@ class SendBitcoinsFrame(ArmoryFrame):
                   net = 'Unknown Network'
                   if addrList[row][0] in NETWORKS:
                      net = NETWORKS[addrList[row][0]]
-                  QMessageBox.warning(self, self.tr('Wrong Network!'), self.tr(
+                  QtWidgets.QMessageBox.warning(self, self.tr('Wrong Network!'), self.tr(
                      'Address %d is for the wrong network!  You are on the <b>%s</b> '
-                     'and the address you supplied is for the the <b>%s</b>!' % (row+1, NETWORKS[ADDRBYTE], net)), QMessageBox.Ok)
+                     'and the address you supplied is for the the <b>%s</b>!' % (row+1, NETWORKS[ADDRBYTE], net)), QtWidgets.QMessageBox.Ok)
             except:
                pass
 
@@ -797,9 +788,9 @@ class SendBitcoinsFrame(ArmoryFrame):
             opreturn_msg = str(widget_obj['QLE_ADDR'].text())
             if len(opreturn_msg) > 80:
                self.updateAddrColor(row, Colors.SlightRed)
-               QMessageBox.critical(self, self.tr('Negative Value'), \
+               QtWidgets.QMessageBox.critical(self, self.tr('Negative Value'), \
                   self.tr('You have specified a OP_RETURN message over 80 bytes long in recipient %d!' % \
-                          (row + 1)), QMessageBox.Ok)
+                          (row + 1)), QtWidgets.QMessageBox.Ok)
                return False
 
             opreturn_list.append(opreturn_msg)
@@ -809,30 +800,30 @@ class SendBitcoinsFrame(ArmoryFrame):
             valueStr = str(self.widgetTable[row]['QLE_AMT'].text()).strip()
             value = str2coin(valueStr, negAllowed=False)
             if value == 0:
-               QMessageBox.critical(self, self.tr('Zero Amount'), \
+               QtWidgets.QMessageBox.critical(self, self.tr('Zero Amount'), \
                   self.tr('You cannot send 0 BTC to any recipients.  <br>Please enter '
-                  'a positive amount for recipient %d.' % (row+1)), QMessageBox.Ok)
+                  'a positive amount for recipient %d.' % (row+1)), QtWidgets.QMessageBox.Ok)
                return False
 
          except NegativeValueError:
-            QMessageBox.critical(self, self.tr('Negative Value'), \
+            QtWidgets.QMessageBox.critical(self, self.tr('Negative Value'), \
                self.tr('You have specified a negative amount for recipient %d. <br>Only '
-               'positive values are allowed!.' % (row + 1)), QMessageBox.Ok)
+               'positive values are allowed!.' % (row + 1)), QtWidgets.QMessageBox.Ok)
             return False
          except TooMuchPrecisionError:
-            QMessageBox.critical(self, self.tr('Too much precision'), \
+            QtWidgets.QMessageBox.critical(self, self.tr('Too much precision'), \
                self.tr('Bitcoins can only be specified down to 8 decimal places. '
                'The smallest value that can be sent is  0.0000 0001 BTC. '
-               'Please enter a new amount for recipient %d.' % (row + 1)), QMessageBox.Ok)
+               'Please enter a new amount for recipient %d.' % (row + 1)), QtWidgets.QMessageBox.Ok)
             return False
          except ValueError:
-            QMessageBox.critical(self, self.tr('Missing recipient amount'), \
-               self.tr('You did not specify an amount to send!'), QMessageBox.Ok)
+            QtWidgets.QMessageBox.critical(self, self.tr('Missing recipient amount'), \
+               self.tr('You did not specify an amount to send!'), QtWidgets.QMessageBox.Ok)
             return False
          except:
-            QMessageBox.critical(self, self.tr('Invalid Value String'), \
+            QtWidgets.QMessageBox.critical(self, self.tr('Invalid Value String'), \
                self.tr('The amount you specified '
-               'to send to address %d is invalid (%s).' % (row + 1, valueStr)), QMessageBox.Ok)
+               'to send to address %d is invalid (%s).' % (row + 1, valueStr)), QtWidgets.QMessageBox.Ok)
             LOGERROR('Invalid amount specified: "%s"', valueStr)
             return False
 
@@ -845,9 +836,9 @@ class SendBitcoinsFrame(ArmoryFrame):
       try:
          utxoSelect = self.getUsableTxOutList()
       except RuntimeError as e:
-         QMessageBox.critical(self, self.tr('Coin Selection Failure'), \
+         QtWidgets.QMessageBox.critical(self, self.tr('Coin Selection Failure'), \
                self.tr('Coin selection failed with error: <b>%s<b/>' % e.message), \
-               QMessageBox.Ok)
+               QtWidgets.QMessageBox.Ok)
          return False
 
       fee = self.coinSelection.getFlatFee()
@@ -857,37 +848,37 @@ class SendBitcoinsFrame(ArmoryFrame):
       if peek == False:
          feebyteStr = "%.2f" % fee_byte
          if fee_byte > 10 * MIN_FEE_BYTE:
-            reply = QMessageBox.warning(self, self.tr('Excessive Fee'), self.tr(
+            reply = QtWidgets.QMessageBox.warning(self, self.tr('Excessive Fee'), self.tr(
                'Your transaction comes with a fee rate of <b>%s satoshis per byte</b>. '
                '</br></br> '
                'This is at least an order of magnitude higher than the minimum suggested fee rate of <b>%s satoshi/Byte</b>. '
                '<br><br>'
                'Are you <i>absolutely sure</i> that you want to send with this '
                'fee? If you do not want to proceed with this fee rate, click "No".' % \
-                  (feebyteStr, str(MIN_FEE_BYTE))), QMessageBox.Yes | QMessageBox.No)
+                  (feebyteStr, str(MIN_FEE_BYTE))), QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
 
-            if not reply==QMessageBox.Yes:
+            if not reply==QtWidgets.QMessageBox.Yes:
                return False
 
          elif fee_byte < MIN_FEE_BYTE:
-            reply = QMessageBox.warning(self, self.tr('Insufficient Fee'), self.tr(
+            reply = QtWidgets.QMessageBox.warning(self, self.tr('Insufficient Fee'), self.tr(
                'Your transaction comes with a fee rate of <b>%s satoshi/Byte</b>. '
                '</br><br> '
                'This is lower than the suggested minimum fee rate of <b>%s satoshi/Byte</b>. '
                '<br><br>'
                'Are you <i>absolutely sure</i> that you want to send with this '
                'fee? If you do not want to proceed with this fee rate, click "No".' % \
-                  (feebyteStr, str(MIN_FEE_BYTE))), QMessageBox.Yes | QMessageBox.No)
+                  (feebyteStr, str(MIN_FEE_BYTE))), QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
 
-            if not reply==QMessageBox.Yes:
+            if not reply==QtWidgets.QMessageBox.Yes:
                return False
 
       if len(utxoSelect) == 0:
-         QMessageBox.critical(self, self.tr('Coin Selection Error'), self.tr(
+         QtWidgets.QMessageBox.critical(self, self.tr('Coin Selection Error'), self.tr(
             'There was an error constructing your transaction, due to a '
             'quirk in the way Bitcoin transactions work.  If you see this '
             'error more than once, try sending your BTC in two or more '
-            'separate transactions.'), QMessageBox.Ok)
+            'separate transactions.'), QtWidgets.QMessageBox.Ok)
          return False
 
       # ## IF we got here, everything is good to go...
@@ -1034,9 +1025,9 @@ class SendBitcoinsFrame(ArmoryFrame):
                         if self.sendCallback:
                            self.sendCallback()
                      else:
-                        QMessageBox.warning(self, self.tr('Error'),
+                        QtWidgets.QMessageBox.warning(self, self.tr('Error'),
                            self.tr('Failed to sign transaction!'),
-                           QMessageBox.Ok)
+                           QtWidgets.QMessageBox.Ok)
                   TheSignalExecution.executeMethod(signTxLastStep, success)
 
                ustx.signTx(self.wlt.uniqueIDB58, finalizeSignTx, self)
@@ -1080,7 +1071,7 @@ class SendBitcoinsFrame(ArmoryFrame):
          txAddrTypesDescr += getNameForAddrType(addrType) + "<br>"
       txAddrTypesDescr += "</pre>"
 
-      QMessageBox.warning(self, self.tr('Change address type mismatch'),
+      QtWidgets.QMessageBox.warning(self, self.tr('Change address type mismatch'),
          self.tr("Could not find a change address type that matches the "
             "outputs in this transaction.<br>"
 
@@ -1093,7 +1084,7 @@ class SendBitcoinsFrame(ArmoryFrame):
             "should consider creating this transaction from a wallet with "
             "address types that match your recipients."
             % (txAddrTypesDescr, changeTypeStr)),
-         QMessageBox.Ok)
+         QtWidgets.QMessageBox.Ok)
 
    #############################################################################
    def getDefaultChangeAddress(self, scriptValPairs, peek):
@@ -1186,8 +1177,8 @@ class SendBitcoinsFrame(ArmoryFrame):
                selectedBehavior = 'Specify'
                changeScript = self.getUserChangeScript()['Script']
                if changeScript is None:
-                  QMessageBox.warning(self, self.tr('Invalid Address'), self.tr(
-                     'You specified an invalid change address for this transcation.'), QMessageBox.Ok)
+                  QtWidgets.QMessageBox.warning(self, self.tr('Invalid Address'), self.tr(
+                     'You specified an invalid change address for this transcation.'), QtWidgets.QMessageBox.Ok)
                   return None
                scrType = getTxOutScriptType(changeScript)
                if scrType in CPP_TXOUT_HAS_ADDRSTR:
@@ -1268,19 +1259,19 @@ class SendBitcoinsFrame(ArmoryFrame):
                txFee = self.coinSelection.getFeeForMaxVal(fee_byte)
 
       except:
-         QMessageBox.warning(self, self.tr('Invalid Input'), \
+         QtWidgets.QMessageBox.warning(self, self.tr('Invalid Input'), \
                self.tr('Cannot compute the maximum amount '
                'because there is an error in the amount '
-               'for recipient %s.' % (r + 1)), QMessageBox.Ok)
+               'for recipient %s.' % (r + 1)), QtWidgets.QMessageBox.Ok)
          return
 
       maxStr = coin2str((bal - (txFee + totalOther)), maxZeros=0)
       if bal < txFee + totalOther:
-         QMessageBox.warning(self, self.tr('Insufficient funds'), \
+         QtWidgets.QMessageBox.warning(self, self.tr('Insufficient funds'), \
                self.tr('You have specified more than your spendable balance to '
                'the other recipients and the transaction fee.  Therefore, the '
                'maximum amount for this recipient would actually be negative.'), \
-               QMessageBox.Ok)
+               QtWidgets.QMessageBox.Ok)
          return
 
       targetWidget['QLE_AMT'].setText(maxStr.strip())
@@ -1289,7 +1280,7 @@ class SendBitcoinsFrame(ArmoryFrame):
 
    #####################################################################
    def createSetMaxButton(self, targWidgetID):
-      newBtn = QCheckBox('MAX')
+      newBtn = QtWidgets.QCheckBox('MAX')
       #newBtn.setMaximumWidth(relaxedSizeStr(self, 'MAX')[0])
       newBtn.setToolTip(self.tr('Fills in the maximum spendable amount minus '
                          'the amounts specified for other recipients '
@@ -1302,9 +1293,9 @@ class SendBitcoinsFrame(ArmoryFrame):
    #####################################################################
    def makeRecipFrame(self, nRecip, is_opreturn=False):
 
-      frmRecip = QFrame()
-      frmRecip.setFrameStyle(QFrame.NoFrame)
-      frmRecipLayout = QVBoxLayout()
+      frmRecip = QtWidgets.QFrame()
+      frmRecip.setFrameStyle(QtWidgets.QFrame.NoFrame)
+      frmRecipLayout = QtWidgets.QVBoxLayout()
 
 
       def recipientAddrChanged(widget_obj):
@@ -1319,7 +1310,7 @@ class SendBitcoinsFrame(ArmoryFrame):
          return callbk
 
       def createAddrWidget(widget_obj, r):
-         widget_obj['LBL_ADDR'] = QLabel('Address %d:' % (r+1))
+         widget_obj['LBL_ADDR'] = QtWidgets.QLabel('Address %d:' % (r+1))
 
          addrEntryWidgets = self.main.createAddressEntryWidgets(self, maxDetectLen=45, boldDetectParts=1)
          widget_obj['FUNC_GETSCRIPT'] = addrEntryWidgets['CALLBACK_GETSCRIPT']
@@ -1334,24 +1325,24 @@ class SendBitcoinsFrame(ArmoryFrame):
          widget_obj['BTN_BOOK'] = addrEntryWidgets['BTN_BOOK']
          widget_obj['LBL_DETECT'] = addrEntryWidgets['LBL_DETECT']
    
-         widget_obj['LBL_AMT'] = QLabel('Amount:')
-         widget_obj['QLE_AMT'] = QLineEdit()
+         widget_obj['LBL_AMT'] = QtWidgets.QLabel('Amount:')
+         widget_obj['QLE_AMT'] = QtWidgets.QLineEdit()
          widget_obj['QLE_AMT'].setFont(GETFONT('Fixed'))
          widget_obj['QLE_AMT'].setMinimumWidth(tightSizeNChar(GETFONT('Fixed'), 14)[0])
          widget_obj['QLE_AMT'].setMaximumHeight(self.maxHeight)
-         widget_obj['QLE_AMT'].setAlignment(Qt.AlignLeft)
+         widget_obj['QLE_AMT'].setAlignment(QtCore.Qt.AlignLeft)
 
          widget_obj['QLE_AMT'].textChanged.connect(\
             recipientValueChanged(widget_obj['UID']))
 
-         widget_obj['LBL_BTC'] = QLabel('BTC')
-         widget_obj['LBL_BTC'].setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+         widget_obj['LBL_BTC'] = QtWidgets.QLabel('BTC')
+         widget_obj['LBL_BTC'].setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
 
          widget_obj['BTN_MAX'] = \
                            self.createSetMaxButton(widget_obj['UID'])
 
-         widget_obj['LBL_COMM'] = QLabel('Comment:')
-         widget_obj['QLE_COMM'] = QLineEdit()
+         widget_obj['LBL_COMM'] = QtWidgets.QLabel('Comment:')
+         widget_obj['QLE_COMM'] = QtWidgets.QLineEdit()
          widget_obj['QLE_COMM'].setFont(GETFONT('var', 9))
          widget_obj['QLE_COMM'].setMaximumHeight(self.maxHeight)
          widget_obj['QLE_COMM'].setMaxLength(MAX_COMMENT_LENGTH)    
@@ -1363,8 +1354,8 @@ class SendBitcoinsFrame(ArmoryFrame):
          return callbk
 
       def createOpReturnWidget(widget_obj):     
-         widget_obj['LBL_ADDR'] = QLabel('OP_RETURN Message:')
-         widget_obj['QLE_ADDR'] = QLineEdit()
+         widget_obj['LBL_ADDR'] = QtWidgets.QLabel('OP_RETURN Message:')
+         widget_obj['QLE_ADDR'] = QtWidgets.QLineEdit()
          widget_obj['OP_RETURN'] = ""
 
          widget_obj['QLE_ADDR'].textChanged.connect(\
@@ -1388,9 +1379,9 @@ class SendBitcoinsFrame(ArmoryFrame):
 
       for widget_obj in self.widgetTable:
 
-         subfrm = QFrame()
+         subfrm = QtWidgets.QFrame()
          subfrm.setFrameStyle(STYLE_RAISED)
-         subLayout = QGridLayout()
+         subLayout = QtWidgets.QGridLayout()
          subLayout.addWidget(widget_obj['LBL_ADDR'],  0,0, 1,1)
          subLayout.addWidget(widget_obj['QLE_ADDR'],  0,1, 1,5)
          try:
@@ -1402,7 +1393,7 @@ class SendBitcoinsFrame(ArmoryFrame):
             subLayout.addWidget(widget_obj['QLE_AMT'],   2,1, 1,2)
             subLayout.addWidget(widget_obj['LBL_BTC'],   2,3, 1,1)
             subLayout.addWidget(widget_obj['BTN_MAX'],   2,4, 1,1)
-            subLayout.addWidget(QLabel(''), 2, 5, 1, 2)
+            subLayout.addWidget(QtWidgets.QLabel(''), 2, 5, 1, 2)
 
             subLayout.addWidget(widget_obj['LBL_COMM'],  3,0, 1,1)
             subLayout.addWidget(widget_obj['QLE_COMM'],  3,1, 1,6)
@@ -1416,19 +1407,19 @@ class SendBitcoinsFrame(ArmoryFrame):
          frmRecipLayout.addWidget(subfrm)
 
 
-      btnFrm = QFrame()
-      btnFrm.setFrameStyle(QFrame.NoFrame)
-      btnLayout = QHBoxLayout()
+      btnFrm = QtWidgets.QFrame()
+      btnFrm.setFrameStyle(QtWidgets.QFrame.NoFrame)
+      btnLayout = QtWidgets.QHBoxLayout()
       lbtnAddRecip = QLabelButton(self.tr('+ Recipient'))
-      lbtnAddRecip.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)  
+      lbtnAddRecip.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)  
       lbtnRmRecip = QLabelButton(self.tr('- Recipient'))
-      lbtnRmRecip.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+      lbtnRmRecip.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
       lbtnAddRecip.linkActivated.connect(lambda: self.makeRecipFrame(nRecip + 1))
       lbtnRmRecip.linkActivated.connect(lambda: self.makeRecipFrame(nRecip - 1))
 
       if self.main.usermode == USERMODE.Expert:
          lbtnAddOpReturn = QLabelButton('+ OP_RETURN')
-         lbtnAddOpReturn.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+         lbtnAddOpReturn.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
          lbtnAddOpReturn.linkActivated.connect(\
             lambda: self.makeRecipFrame(nRecip + 1, True))
 
@@ -1504,8 +1495,8 @@ class SendBitcoinsFrame(ArmoryFrame):
 
    #############################################################################
    def updateWidgetAddrColor(self, widget, color):
-      palette = QPalette()
-      palette.setColor(QPalette.Base, color)
+      palette = QtGui.QPalette()
+      palette.setColor(QtGui.QPalette.Base, color)
       widget['QLE_ADDR'].setPalette(palette)
       widget['QLE_ADDR'].setAutoFillBackground(True)
 

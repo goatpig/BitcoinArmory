@@ -4,16 +4,13 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2022, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
 ##############################################################################
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QPixmap, QFont
-from PySide2.QtWidgets import QLabel, QGridLayout, QSpacerItem, \
-   QPushButton, QDialogButtonBox, QFrame
+from qtpy import QtCore, QtGui, QtWidgets
 
 from armoryengine.ArmoryUtils import CPP_TXOUT_HAS_ADDRSTR, \
    CPP_TXOUT_P2WPKH, CPP_TXOUT_P2WSH, coin2strNZS, coin2str
@@ -63,10 +60,10 @@ class DlgConfirmSend(ArmoryDialog):
    def __init__(self, wlt, scriptValPairs, fee, parent=None, main=None, \
                                           sendNow=False, pytxOrUstx=None):
       super(DlgConfirmSend, self).__init__(parent, main)
-      layout = QGridLayout()
-      lblInfoImg = QLabel()
-      lblInfoImg.setPixmap(QPixmap('./img/MsgBox_info48.png'))
-      lblInfoImg.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+      layout = QtWidgets.QGridLayout()
+      lblInfoImg = QtWidgets.QLabel()
+      lblInfoImg.setPixmap(QtGui.QPixmap('./img/MsgBox_info48.png'))
+      lblInfoImg.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop)
 
       changeRemoved = False
       sendPairs = []
@@ -165,7 +162,7 @@ class DlgConfirmSend(ArmoryDialog):
 
       recipLbls = []
       ffixBold = GETFONT('Fixed')
-      ffixBold.setWeight(QFont.Bold)
+      ffixBold.setWeight(QtGui.QFont.Bold)
       for script,val in sendPairs + returnPairs:
          displayInfo = self.main.getDisplayStringForScript(script, addrColWidth)
          dispStr = (' '+displayInfo['String']).ljust(addrColWidth)
@@ -174,43 +171,43 @@ class DlgConfirmSend(ArmoryDialog):
          if [script,val] in returnPairs:
             dispStr = '*'+dispStr[1:]
 
-         recipLbls.append(QLabel(dispStr + coinStr))
+         recipLbls.append(QtWidgets.QLabel(dispStr + coinStr))
          recipLbls[-1].setFont(ffixBold)
 
 
       if fee > 0:
-         recipLbls.append(QSpacerItem(10, 10))
-         recipLbls.append(QLabel(' Transaction Fee : '.ljust(addrColWidth) +
+         recipLbls.append(QtWidgets.QSpacerItem(10, 10))
+         recipLbls.append(QtWidgets.QLabel(' Transaction Fee : '.ljust(addrColWidth) +
                            coin2str(fee, rJust=True, maxZeros=4)))
          recipLbls[-1].setFont(GETFONT('Fixed'))
 
 
-      recipLbls.append(HLINE(QFrame.Sunken))
+      recipLbls.append(HLINE(QtWidgets.QFrame.Sunken))
       if doShowLeaveWlt:
          # We have a separate message saying "total amount actually leaving wlt is..."
          # We can just give the total of all the outputs in the table above
-         recipLbls.append(QLabel(' Total: '.ljust(addrColWidth) +
+         recipLbls.append(QtWidgets.QLabel(' Total: '.ljust(addrColWidth) +
                            coin2str(totalSend, rJust=True, maxZeros=4)))
       else:
          # The k
-         recipLbls.append(QLabel(' Total Leaving Wallet: '.ljust(addrColWidth) +
+         recipLbls.append(QtWidgets.QLabel(' Total Leaving Wallet: '.ljust(addrColWidth) +
                            coin2str(totalSend, rJust=True, maxZeros=4)))
 
       recipLbls[-1].setFont(GETFONT('Fixed'))
 
       if sendNow:
-         self.btnAccept = QPushButton(self.tr('Send'))
-         lblLastConfirm = QLabel(self.tr('Are you sure you want to execute this transaction?'))
+         self.btnAccept = QtWidgets.QPushButton(self.tr('Send'))
+         lblLastConfirm = QtWidgets.QLabel(self.tr('Are you sure you want to execute this transaction?'))
       else:
-         self.btnAccept = QPushButton(self.tr('Continue'))
-         lblLastConfirm = QLabel(self.tr('Does the above look correct?'))
+         self.btnAccept = QtWidgets.QPushButton(self.tr('Continue'))
+         lblLastConfirm = QtWidgets.QLabel(self.tr('Does the above look correct?'))
 
-      self.btnCancel = QPushButton(self.tr("Cancel"))
+      self.btnCancel = QtWidgets.QPushButton(self.tr("Cancel"))
       self.btnAccept.clicked.connect(self.accept)
       self.btnCancel.clicked.connect(self.reject)
-      buttonBox = QDialogButtonBox()
-      buttonBox.addButton(self.btnAccept, QDialogButtonBox.AcceptRole)
-      buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
+      buttonBox = QtWidgets.QDialogButtonBox()
+      buttonBox.addButton(self.btnAccept, QtWidgets.QDialogButtonBox.AcceptRole)
+      buttonBox.addButton(self.btnCancel, QtWidgets.QDialogButtonBox.RejectRole)
 
       isSigned = pytxOrUstx.verifySigsAllInputs()
       frmBtnSelect = buttonBox

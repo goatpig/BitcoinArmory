@@ -1,5 +1,5 @@
-from PyQt4.Qt import QPushButton, SIGNAL, QTextEdit, QScrollArea, QTabWidget,\
-   QLineEdit
+from PyQt4.QtCore.Qt import QtWidgets.QPushButton, SIGNAL, QtWidgets.QTextEdit, QtWidgets.QScrollArea, QtWidgets.QTabWidget,\
+   QtWidgets.QLineEdit
 
 from qtdefines import QRichLabel, makeHorizFrame, GETFONT, relaxedSizeNChar, \
    makeVertFrame
@@ -46,15 +46,15 @@ class PluginObject(object):
             
       self.main = main
       lblHeader = QRichLabel(tr("""<b>Search Armory: </b>"""), doWrap=False)
-      self.searchButton = QPushButton("Search")
-      self.searchEntry = QLineEdit()
+      self.searchButton = QtWidgets.QPushButton("Search")
+      self.searchEntry = QtWidgets.QLineEdit()
       self.main.connect(self.searchButton, SIGNAL('clicked()'), searchItem)
       topRow =  makeHorizFrame([lblHeader, self.searchEntry, self.searchButton, 'stretch'])
 
 
       self.searchPanel = makeVertFrame([topRow, 'stretch' ])
       # Now set the scrollarea widget to the layout
-      self.tabToDisplay = QScrollArea()
+      self.tabToDisplay = QtWidgets.QScrollArea()
       self.tabToDisplay.setWidgetResizable(True)
       self.tabToDisplay.setWidget(self.searchPanel)
 

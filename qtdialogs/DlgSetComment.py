@@ -4,16 +4,13 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2022, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
 ##############################################################################
 
-from PySide2.QtCore import QObject
-from PySide2.QtGui import QIcon
-from PySide2.QtWidgets import QLabel, QLineEdit, \
-   QDialogButtonBox, QGridLayout
+from qtpy import QtCore, QtGui, QtWidgets
 
 from armoryengine.ArmoryUtils import MAX_COMMENT_LENGTH, isASCII
 from qtdialogs.qtdefines import relaxedSizeNChar, \
@@ -26,21 +23,21 @@ class DlgSetComment(ArmoryDialog):
 
    #############################################################################
    def __init__(self, parent, main, currcomment='',
-      clbl = QObject().tr("Add comment"), maxChars=MAX_COMMENT_LENGTH):
+      clbl = QtCore.QObject().tr("Add comment"), maxChars=MAX_COMMENT_LENGTH):
       super(DlgSetComment, self).__init__(parent, main)
 
 
       self.setWindowTitle(self.tr('Modify Comment'))
-      self.setWindowIcon(QIcon(self.main.iconfile))
+      self.setWindowIcon(QtGui.QIcon(self.main.iconfile))
 
-      buttonbox = QDialogButtonBox(QDialogButtonBox.Ok | \
-                                   QDialogButtonBox.Cancel)
+      buttonbox = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | \
+                                   QtWidgets.QDialogButtonBox.Cancel)
       buttonbox.accepted.connect(self.accept)
       buttonbox.rejected.connect(self.reject)
 
-      layout = QGridLayout()
-      lbl = QLabel('%s' % clbl)
-      self.edtComment = QLineEdit()
+      layout = QtWidgets.QGridLayout()
+      lbl = QtWidgets.QLabel('%s' % clbl)
+      self.edtComment = QtWidgets.QLineEdit()
       self.edtComment.setText(currcomment[:maxChars])
       h, w = relaxedSizeNChar(self, 50)
       self.edtComment.setMinimumSize(h, w)

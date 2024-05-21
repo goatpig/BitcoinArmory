@@ -10,8 +10,7 @@
 #                                                                            #
 ##############################################################################
 
-from PySide2.QtWidgets import QMessageBox, QPushButton, QDialogButtonBox, \
-   QVBoxLayout
+from qtpy import QtWidgets
 
 from qtdialogs.qtdefines import HORIZONTAL
 from qtdialogs.ArmoryDialog import ArmoryDialog
@@ -27,10 +26,10 @@ class DlgWalletSelect(ArmoryDialog):
       self.balAtLeast = atLeast
 
       if self.main and len(self.main.walletMap) == 0:
-         QMessageBox.critical(self, self.tr('No Wallets!'),
+         QtWidgets.QMessageBox.critical(self, self.tr('No Wallets!'),
             self.tr('There are no wallets to select from. '
             'Please create or import a wallet first.'),
-            QMessageBox.Ok)
+            QtWidgets.QMessageBox.Ok)
          self.accept()
          return
 
@@ -38,7 +37,7 @@ class DlgWalletSelect(ArmoryDialog):
          wltIDList = list(self.main.walletIDList)
 
       # Start the layout
-      layout = QVBoxLayout()
+      layout = QtWidgets.QVBoxLayout()
       # Expect to set selectedId
       wltFrame = SelectWalletFrame(self, main,
          HORIZONTAL, firstSelect, onlyMyWallets,
@@ -46,13 +45,13 @@ class DlgWalletSelect(ArmoryDialog):
 
       layout.addWidget(wltFrame)
       self.selectedID = wltFrame.selectedID
-      buttonBox = QDialogButtonBox()
-      btnAccept = QPushButton('OK')
-      btnCancel = QPushButton('Cancel')
+      buttonBox = QtWidgets.QDialogButtonBox()
+      btnAccept = QtWidgets.QPushButton('OK')
+      btnCancel = QtWidgets.QPushButton('Cancel')
       btnAccept.clicked.connect(self.accept)
       btnCancel.clicked.connect(self.reject)
-      buttonBox.addButton(btnAccept, QDialogButtonBox.AcceptRole)
-      buttonBox.addButton(btnCancel, QDialogButtonBox.RejectRole)
+      buttonBox.addButton(btnAccept, QtWidgets.QDialogButtonBox.AcceptRole)
+      buttonBox.addButton(btnCancel, QtWidgets.QDialogButtonBox.RejectRole)
 
       layout.addWidget(buttonBox)
 

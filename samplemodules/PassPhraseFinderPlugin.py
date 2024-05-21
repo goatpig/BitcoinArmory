@@ -1,10 +1,10 @@
 from operator import add, mul
 import os
 
-from PyQt4.Qt import QPushButton, SIGNAL, QTextEdit, QScrollArea, QTabWidget, \
-   QLineEdit, QAbstractTableModel, QModelIndex, Qt, QVariant, QTableView, QIcon,\
-   QDialogButtonBox, QGridLayout, QLabel, QComboBox, QMenu, QCursor, QListWidget,\
-   QListWidgetItem, QMessageBox, QString
+from PyQt4.QtCore.Qt import QtWidgets.QPushButton, SIGNAL, QtWidgets.QTextEdit, QtWidgets.QScrollArea, QtWidgets.QTabWidget, \
+   QtWidgets.QLineEdit, QtCore.QAbstractTableModel, QtCore.QModelIndex, QtCore.Qt, QVariant, QtWidgets.QTableView, QtGui.QIcon,\
+   QtWidgets.QDialogButtonBox, QtWidgets.QGridLayout, QtWidgets.QLabel, QtWidgets.QComboBox, QtWidgets.QMenu, QtGui.QCursor, QListWidget,\
+   QListWidgetItem, QtWidgets.QMessageBox, QString
 
 from armoryengine.ArmoryUtils import RightNow, script_to_addrStr, \
    addrStr_to_hash160, enum, isASCII, PyBackgroundThread
@@ -96,13 +96,13 @@ class PluginObject(object):
                self.stopButton.setEnabled(True)
                self.searchButton.setEnabled(False)
             else:
-               QMessageBox.warning(self.main, tr('Invalid'), tr("""
+               QtWidgets.QMessageBox.warning(self.main, tr('Invalid'), tr("""
                   There are no valid segment combinations to search.
-                  Please add at least one segment and ordering to search."""), QMessageBox.Ok)
+                  Please add at least one segment and ordering to search."""), QtWidgets.QMessageBox.Ok)
          else:
-            QMessageBox.warning(self.main, tr('Invalid'), tr("""
+            QtWidgets.QMessageBox.warning(self.main, tr('Invalid'), tr("""
                No valid wallet is selected. Please select a locked
-               non-watching-only from Available Wallets."""), QMessageBox.Ok)
+               non-watching-only from Available Wallets."""), QtWidgets.QMessageBox.Ok)
 
       def addKnownSegment():
          dlgEnterSegment = DlgEnterSegment(main, main)
@@ -137,27 +137,27 @@ class PluginObject(object):
                self.segOrdStrSet.add(str(dlgSpecifyOrdering.parseOrderingList()).strip('[]'))
                self.updateOrderingListBox()
          else:
-            QMessageBox.warning(self.main, tr('Not Ready'), tr("""
-               No segments have been entered. You must enter some segments before you can order them."""), QMessageBox.Ok)
+            QtWidgets.QMessageBox.warning(self.main, tr('Not Ready'), tr("""
+               No segments have been entered. You must enter some segments before you can order them."""), QtWidgets.QMessageBox.Ok)
 
       
       self.main = main
       self.segDefList = []
       self.segOrdStrSet = set()
       segmentHeader = QRichLabel(tr("""<b>Build segments for pass phrase search: </b>"""), doWrap=False)
-      self.knownButton = QPushButton("Add Known Segment")
-      self.unknownCaseButton = QPushButton("Add Unknown Case Segment")
-      self.unknownOrderButton = QPushButton("Add Unknown Order Segment")
+      self.knownButton = QtWidgets.QPushButton("Add Known Segment")
+      self.unknownCaseButton = QtWidgets.QPushButton("Add Unknown Case Segment")
+      self.unknownOrderButton = QtWidgets.QPushButton("Add Unknown Order Segment")
       self.main.connect(self.knownButton, SIGNAL('clicked()'), addKnownSegment)
       self.main.connect(self.unknownCaseButton, SIGNAL('clicked()'), addUnknownCaseSegment)
       self.main.connect(self.unknownOrderButton, SIGNAL('clicked()'), addUnknownOrderSegment)
       topRow =  makeHorizFrame([segmentHeader, self.knownButton, self.unknownCaseButton, self.unknownOrderButton, 'stretch'])
       
       self.segDefTableModel = SegDefDisplayModel()
-      self.segDefTableView = QTableView()
+      self.segDefTableView = QtWidgets.QTableView()
       self.segDefTableView.setModel(self.segDefTableModel)
-      self.segDefTableView.setSelectionBehavior(QTableView.SelectRows)
-      self.segDefTableView.setSelectionMode(QTableView.SingleSelection)
+      self.segDefTableView.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
+      self.segDefTableView.setSelectionMode(QtWidgets.QTableView.SingleSelection)
       self.segDefTableView.verticalHeader().setDefaultSectionSize(20)
       self.segDefTableView.verticalHeader().hide()
       
@@ -167,10 +167,10 @@ class PluginObject(object):
       initialColResize(self.segDefTableView, [.1, .2, .4, .1, .1, .1])
 
       self.segDefTableView.customContextMenuRequested.connect(self.showSegContextMenu)
-      self.segDefTableView.setContextMenuPolicy(Qt.CustomContextMenu)
+      self.segDefTableView.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
       
       segmentOrderingsHeader = QRichLabel(tr("""<b>Specify orderings for pass phrase search: </b>"""), doWrap=False)
-      self.addOrderingButton = QPushButton("Add Ordering")
+      self.addOrderingButton = QtWidgets.QPushButton("Add Ordering")
       
       
       self.main.connect(self.addOrderingButton, SIGNAL('clicked()'), addOrdering)
@@ -179,16 +179,16 @@ class PluginObject(object):
       self.segOrdListBox  = QListWidget()
       
       self.segOrdListBox.customContextMenuRequested.connect(self.showOrdContextMenu)
-      self.segOrdListBox.setContextMenuPolicy(Qt.CustomContextMenu)
+      self.segOrdListBox.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
       
       
-      self.searchButton = QPushButton("Search")
+      self.searchButton = QtWidgets.QPushButton("Search")
       self.main.connect(self.searchButton, SIGNAL('clicked()'), searchForPassphrase)
-      self.stopButton = QPushButton("Stop Searching")
+      self.stopButton = QtWidgets.QPushButton("Stop Searching")
       self.stopButton.setEnabled(False)
       self.main.connect(self.stopButton, SIGNAL('clicked()'), endSearch)
       totalSearchLabel = QRichLabel(tr("""<b>Total Passphrase Tries To Search: </b>"""), doWrap=False)
-      self.totalSearchTriesDisplay = QLineEdit()
+      self.totalSearchTriesDisplay = QtWidgets.QLineEdit()
       self.totalSearchTriesDisplay.setReadOnly(True)
       self.totalSearchTriesDisplay.setText(QString('0'))
       self.totalSearchTriesDisplay.setFont(GETFONT('Fixed'))
@@ -196,14 +196,14 @@ class PluginObject(object):
       self.totalSearchTriesDisplay.setMaximumWidth(tightSizeNChar(self.totalSearchTriesDisplay, 12)[0])
       searchButtonPanel = makeHorizFrame([self.searchButton, self.stopButton, 'stretch', totalSearchLabel,  self.totalSearchTriesDisplay])
       
-      self.resultsDisplay = QTextEdit()
+      self.resultsDisplay = QtWidgets.QTextEdit()
       self.resultsDisplay.setReadOnly(True)
       self.resultsDisplay.setFont(GETFONT('Fixed'))
       self.resultsDisplay.setMinimumHeight(100)
       self.searchPanel = makeVertFrame([topRow, self.segDefTableView, orderingButtonPanel,
              self.segOrdListBox, searchButtonPanel, self.resultsDisplay, 'stretch'])
       # Now set the scrollarea widget to the layout
-      self.tabToDisplay = QScrollArea()
+      self.tabToDisplay = QtWidgets.QScrollArea()
       self.tabToDisplay.setWidgetResizable(True)
       self.tabToDisplay.setWidget(self.searchPanel)
    
@@ -217,25 +217,25 @@ class PluginObject(object):
       return wlt
    
    def showSegContextMenu(self):
-      menu = QMenu(self.segDefTableView)
+      menu = QtWidgets.QMenu(self.segDefTableView)
       if len(self.segDefTableView.selectedIndexes())==0:
          return
 
       row = self.segDefTableView.selectedIndexes()[0].row()
       deleteSegMenuItem = menu.addAction("Delete Segment")
-      action = menu.exec_(QCursor.pos())
+      action = menu.exec_(QtGui.QCursor.pos())
       
       if action == deleteSegMenuItem:
          self.deleteSegRow(row)
          
    def showOrdContextMenu(self):
-      menu = QMenu(self.segOrdListBox)
+      menu = QtWidgets.QMenu(self.segOrdListBox)
       if len(self.segOrdListBox.selectedItems())==0:
          return
 
       item = self.segOrdListBox.currentItem()
       deleteOrdMenuItem = menu.addAction("Delete Ordering")
-      action = menu.exec_(QCursor.pos())
+      action = menu.exec_(QtGui.QCursor.pos())
       
       if action == deleteOrdMenuItem:
          self.deleteOrdItem(item)
@@ -283,15 +283,15 @@ class DlgSpecifyOrdering(ArmoryDialog):
       super(DlgSpecifyOrdering, self).__init__(parent, main)
       self.maxSeg = maxSeg
       self.setWindowTitle('Enter Ordering')
-      self.setWindowIcon(QIcon(self.main.iconfile))
-      buttonbox = QDialogButtonBox(QDialogButtonBox.Ok | \
-                                   QDialogButtonBox.Cancel)
+      self.setWindowIcon(QtGui.QIcon(self.main.iconfile))
+      buttonbox = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | \
+                                   QtWidgets.QDialogButtonBox.Cancel)
       self.connect(buttonbox, SIGNAL('accepted()'), self.accept)
       self.connect(buttonbox, SIGNAL('rejected()'), self.reject)
 
-      layout = QGridLayout()
-      lbl =  QLabel('Enter Ordering as a comma separated list of segment indices between 1 and %d:' % maxSeg)
-      self.editOrdering = QLineEdit()
+      layout = QtWidgets.QGridLayout()
+      lbl =  QtWidgets.QLabel('Enter Ordering as a comma separated list of segment indices between 1 and %d:' % maxSeg)
+      self.editOrdering = QtWidgets.QLineEdit()
       h, w = relaxedSizeNChar(self, 50)
       self.editOrdering.setMinimumSize(h, w)
       self.editOrdering.setMaxLength(MAX_SEGMENTS)
@@ -313,13 +313,13 @@ class DlgSpecifyOrdering(ArmoryDialog):
    def accept(self):
       orderingList = self.parseOrderingList() 
       if len(orderingList) < 1:
-         QMessageBox.warning(self.main, tr('Invalid'), tr("""
-            Some segment indices are invalid."""), QMessageBox.Ok)
+         QtWidgets.QMessageBox.warning(self.main, tr('Invalid'), tr("""
+            Some segment indices are invalid."""), QtWidgets.QMessageBox.Ok)
          return
       for segIndex in orderingList:
          if segIndex > self.maxSeg or segIndex < 1:
-            QMessageBox.warning(self.main, tr('Invalid'), tr("""
-               Some segment indices are out of range."""), QMessageBox.Ok)
+            QtWidgets.QMessageBox.warning(self.main, tr('Invalid'), tr("""
+               Some segment indices are out of range."""), QtWidgets.QMessageBox.Ok)
             return
       super(DlgSpecifyOrdering, self).accept()  
  
@@ -330,15 +330,15 @@ class DlgEnterSegment(ArmoryDialog):
    def __init__(self, parent, main, isUnknownOrder=False):
       super(DlgEnterSegment, self).__init__(parent, main)
       self.setWindowTitle('Enter Segment')
-      self.setWindowIcon(QIcon(self.main.iconfile))
-      buttonbox = QDialogButtonBox(QDialogButtonBox.Ok | \
-                                   QDialogButtonBox.Cancel)
+      self.setWindowIcon(QtGui.QIcon(self.main.iconfile))
+      buttonbox = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | \
+                                   QtWidgets.QDialogButtonBox.Cancel)
       self.connect(buttonbox, SIGNAL('accepted()'), self.accept)
       self.connect(buttonbox, SIGNAL('rejected()'), self.reject)
 
-      layout = QGridLayout()
-      lbl =  QLabel('Segment Text:')
-      self.editSegment = QLineEdit()
+      layout = QtWidgets.QGridLayout()
+      lbl =  QtWidgets.QLabel('Segment Text:')
+      self.editSegment = QtWidgets.QLineEdit()
       h, w = relaxedSizeNChar(self, 50)
       self.editSegment.setMinimumSize(h, w)
       self.editSegment.setMaxLength(MAX_SEGMENT_LENGTH)
@@ -346,10 +346,10 @@ class DlgEnterSegment(ArmoryDialog):
       layout.addWidget(lbl, 0, 0)
       layout.addWidget(editSegPanel, 0, 1)
    
-      minSelectorLabel = QLabel('Min Length: ')
-      maxSelectorLabel = QLabel('Max Length: ')
-      self.minSelector = QComboBox()
-      self.maxSelector = QComboBox()      
+      minSelectorLabel = QtWidgets.QLabel('Min Length: ')
+      maxSelectorLabel = QtWidgets.QLabel('Max Length: ')
+      self.minSelector = QtWidgets.QComboBox()
+      self.maxSelector = QtWidgets.QComboBox()      
       if isUnknownOrder:
          self.minSelector.setFont(GETFONT('Var', 10, bold=True))
          self.maxSelector.setFont(GETFONT('Var', 10, bold=True))
@@ -530,8 +530,8 @@ class PassPhraseFinder(object):
    def searchForPassPhrase(self, segList, segOrdList, outputCallback, endCallback):
       # if segOrdList is nonempty seglist must be non-empty too
       if len(segOrdList) == 0:
-         QMessageBox.warning(self.main, tr('Invalid'), tr("""
-            No segment orderings have been specified."""), QMessageBox.Ok)
+         QtWidgets.QMessageBox.warning(self.main, tr('Invalid'), tr("""
+            No segment orderings have been specified."""), QtWidgets.QMessageBox.Ok)
       passPhraseCount = self.countPassPhrases(segList, segOrdList)
       startTime = RightNow()
       found = False
@@ -574,7 +574,7 @@ SEGDEFCOLS = enum('index', 'type', 'text', 'minLength', 'maxLength', 'totalCombi
 SEGTYPES = enum('known', 'unknownCase', 'unknownOrder')
 
 ################################################################################
-class SegDefDisplayModel(QAbstractTableModel):
+class SegDefDisplayModel(QtCore.QAbstractTableModel):
    def __init__(self):
       super(SegDefDisplayModel, self).__init__()
       self.segDefList = []
@@ -584,13 +584,13 @@ class SegDefDisplayModel(QAbstractTableModel):
       self.segDefList.extend(segDefList)
       self.reset()
 
-   def rowCount(self, index=QModelIndex()):
+   def rowCount(self, index=QtCore.QModelIndex()):
       return len(self.segDefList)
 
-   def columnCount(self, index=QModelIndex()):
+   def columnCount(self, index=QtCore.QModelIndex()):
       return 6
 
-   def data(self, index, role=Qt.DisplayRole):
+   def data(self, index, role=QtCore.Qt.DisplayRole):
       row,col = index.row(), index.column()
       segDef = self.segDefList[row]
       segType = 'Known' if isinstance(segDef, KnownSeg) else \
@@ -607,33 +607,33 @@ class SegDefDisplayModel(QAbstractTableModel):
       if totalCombinations > BILLION_INT:
          totalCombinations = OVER_BILLION_STR
       
-      if role==Qt.DisplayRole:
+      if role==QtCore.Qt.DisplayRole:
          if col==SEGDEFCOLS.index: return QVariant(row+1)
          if col==SEGDEFCOLS.type: return QVariant(segType)
          if col==SEGDEFCOLS.text:     return QVariant(segText)
          if col==SEGDEFCOLS.minLength: return QVariant(segMinLength)
          if col==SEGDEFCOLS.maxLength: return QVariant(segMaxLength)
          if col==SEGDEFCOLS.totalCombinations: return QVariant(totalCombinations)
-      elif role==Qt.TextAlignmentRole:
-         return QVariant(int(Qt.AlignLeft | Qt.AlignVCenter))
-      elif role==Qt.ForegroundRole:
+      elif role==QtCore.Qt.TextAlignmentRole:
+         return QVariant(int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter))
+      elif role==QtCore.Qt.ForegroundRole:
          return QVariant(Colors.Foreground)
       return QVariant()
 
-   def headerData(self, section, orientation, role=Qt.DisplayRole):
-      if role==Qt.DisplayRole:
-         if orientation==Qt.Horizontal:
+   def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
+      if role==QtCore.Qt.DisplayRole:
+         if orientation==QtCore.Qt.Horizontal:
             if section==SEGDEFCOLS.index: return QVariant('Index')
             if section==SEGDEFCOLS.type: return QVariant('Type')
             if section==SEGDEFCOLS.text: return QVariant('Text')
             if section==SEGDEFCOLS.minLength: return QVariant('Min')
             if section==SEGDEFCOLS.maxLength: return QVariant('Max')
             if section==SEGDEFCOLS.totalCombinations: return QVariant('Total Combinations')
-      elif role==Qt.TextAlignmentRole:
-         if orientation==Qt.Horizontal:
-            return QVariant(int(Qt.AlignLeft | Qt.AlignVCenter))
+      elif role==QtCore.Qt.TextAlignmentRole:
+         if orientation==QtCore.Qt.Horizontal:
+            return QVariant(int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter))
          else:
-            return QVariant(int(Qt.AlignHCenter | Qt.AlignVCenter))
+            return QVariant(int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter))
 
 
 

@@ -4,16 +4,13 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2022, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
 ##############################################################################
 
-from PySide2.QtCore import Qt, QSize, QByteArray
-from PySide2.QtGui import QIcon, QPixmap
-from PySide2.QtWidgets import QPushButton, QCheckBox, QGridLayout, \
-   QTableView, QTabWidget
+from qtpy import QtCore, QtGui, QtWidgets
 
 from armorymodels import AllWalletsDispModel, WLTVIEWCOLS, \
    SentToAddrBookModel, SentAddrSortProxy, ADDRBOOKCOLS, \
@@ -37,13 +34,13 @@ def createAddrBookButton(parent, targWidget, defaultWltID=None, actionStr="Selec
                          selectExistingOnly=False, selectMineOnly=False, getPubKey=False,
                          showLockboxes=True):
    action = parent.tr("Select")
-   btn = QPushButton('')
-   ico = QIcon(QPixmap('./img/addr_book_icon.png'))
+   btn = QtWidgets.QPushButton('')
+   ico = QtGui.QIcon(QtGui.QPixmap('./img/addr_book_icon.png'))
    btn.setIcon(ico)
    def execAddrBook():
       if len(parent.main.walletMap) == 0:
-         QMessageBox.warning(parent, parent.tr('No wallets!'), parent.tr('You have no wallets so '
-            'there is no address book to display.'), QMessageBox.Ok)
+         QtWidgets.QMessageBox.warning(parent, parent.tr('No wallets!'), parent.tr('You have no wallets so '
+            'there is no address book to display.'), QtWidgets.QMessageBox.Ok)
          return
       dlg = DlgAddressBook(parent, parent.main, targWidget, defaultWltID,
                     action, selectExistingOnly, selectMineOnly, getPubKey,
@@ -103,10 +100,10 @@ class DlgAddressBook(ArmoryDialog):
       rowHeight = tightSizeStr(self.font(), 'XygjpHI')[1]
 
       self.wltDispModel = AllWalletsDispModel(self.main)
-      self.wltDispView = QTableView()
+      self.wltDispView = QtWidgets.QTableView()
       self.wltDispView.setModel(self.wltDispModel)
-      self.wltDispView.setSelectionBehavior(QTableView.SelectRows)
-      self.wltDispView.setSelectionMode(QTableView.SingleSelection)
+      self.wltDispView.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
+      self.wltDispView.setSelectionMode(QtWidgets.QTableView.SingleSelection)
       self.wltDispView.horizontalHeader().setStretchLastSection(True)
       self.wltDispView.verticalHeader().setDefaultSectionSize(20)
       self.wltDispView.setMaximumHeight(rowHeight * 7.7)
@@ -126,23 +123,23 @@ class DlgAddressBook(ArmoryDialog):
 
       # DISPLAY sent-to addresses
       self.addrBookTxModel = None
-      self.addrBookTxView = QTableView()
+      self.addrBookTxView = QtWidgets.QTableView()
       self.addrBookTxView.setSortingEnabled(True)
       self.addrBookTxView.doubleClicked.connect(self.dblClickAddressTx)
-      self.addrBookTxView.setContextMenuPolicy(Qt.CustomContextMenu)
+      self.addrBookTxView.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
       self.addrBookTxView.customContextMenuRequested.connect(self.showContextMenuTx)
 
       # DISPLAY receiving addresses
       self.addrBookRxModel = None
-      self.addrBookRxView = QTableView()
+      self.addrBookRxView = QtWidgets.QTableView()
       self.addrBookRxView.setSortingEnabled(True)
       self.addrBookRxView.doubleClicked.connect(self.dblClickAddressRx)
 
-      self.addrBookRxView.setContextMenuPolicy(Qt.CustomContextMenu)
+      self.addrBookRxView.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
       self.addrBookRxView.customContextMenuRequested.connect(self.showContextMenuRx)
 
 
-      self.tabWidget = QTabWidget()
+      self.tabWidget = QtWidgets.QTabWidget()
       self.tabWidget.addTab(self.addrBookRxView, self.tr('Receiving (Mine)'))
       if not selectMineOnly:
          self.tabWidget.addTab(self.addrBookTxView, self.tr('Sending (Other\'s)'))
@@ -154,12 +151,12 @@ class DlgAddressBook(ArmoryDialog):
                                     self.main.getPreferredDateFormat())
          self.lboxProxy = LockboxDisplayProxy(self)
          self.lboxProxy.setSourceModel(self.lboxModel)
-         self.lboxProxy.sort(LOCKBOXCOLS.CreateDate, Qt.DescendingOrder)
-         self.lboxView = QTableView()
+         self.lboxProxy.sort(LOCKBOXCOLS.CreateDate, QtCore.Qt.DescendingOrder)
+         self.lboxView = QtWidgets.QTableView()
          self.lboxView.setModel(self.lboxProxy)
          self.lboxView.setSortingEnabled(True)
-         self.lboxView.setSelectionBehavior(QTableView.SelectRows)
-         self.lboxView.setSelectionMode(QTableView.SingleSelection)
+         self.lboxView.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
+         self.lboxView.setSelectionMode(QtWidgets.QTableView.SingleSelection)
          self.lboxView.verticalHeader().setDefaultSectionSize(18)
          self.lboxView.horizontalHeader().setStretchLastSection(True)
          #maxKeys = max([lb.N for lb in self.main.allLockboxes])
@@ -184,8 +181,8 @@ class DlgAddressBook(ArmoryDialog):
 
 
       self.lblSelectWlt = QRichLabel('', doWrap=False)
-      self.btnSelectWlt = QPushButton(self.tr('No Wallet Selected'))
-      self.useBareMultiSigCheckBox = QCheckBox(self.tr('Use Bare Multi-Sig (No P2SH)'))
+      self.btnSelectWlt = QtWidgets.QPushButton(self.tr('No Wallet Selected'))
+      self.useBareMultiSigCheckBox = QtWidgets.QCheckBox(self.tr('Use Bare Multi-Sig (No P2SH)'))
       self.useBareMultiSigCheckBox.setVisible(False)
       self.ttipBareMS = createToolTipWidget( self.tr(
          'EXPERT OPTION:  Do not check this box unless you know what it means '
@@ -196,16 +193,16 @@ class DlgAddressBook(ArmoryDialog):
 
 
       self.ttipBareMS.setVisible(False)
-      self.btnSelectAddr = QPushButton(self.tr('No Address Selected'))
+      self.btnSelectAddr = QtWidgets.QPushButton(self.tr('No Address Selected'))
       self.btnSelectWlt.setEnabled(False)
       self.btnSelectAddr.setEnabled(False)
-      btnCancel = QPushButton(self.tr('Cancel'))
+      btnCancel = QtWidgets.QPushButton(self.tr('Cancel'))
 
       if self.isBrowsingOnly:
          self.btnSelectWlt.setVisible(False)
          self.btnSelectAddr.setVisible(False)
          self.lblSelectWlt.setVisible(False)
-         btnCancel = QPushButton(self.tr('<<< Go Back'))
+         btnCancel = QtWidgets.QPushButton(self.tr('<<< Go Back'))
          ttipSendAddr.setVisible(False)
 
       if selectExistingOnly:
@@ -220,7 +217,7 @@ class DlgAddressBook(ArmoryDialog):
       btnCancel.clicked.connect(self.reject)
 
 
-      dlgLayout = QGridLayout()
+      dlgLayout = QtWidgets.QGridLayout()
       dlgLayout.addWidget(lblDescr, 0, 0)
       dlgLayout.addWidget(HLINE(), 1, 0)
       dlgLayout.addWidget(lblToWlt, 2, 0)
@@ -238,7 +235,7 @@ class DlgAddressBook(ArmoryDialog):
       dlgLayout.setRowStretch(8, 2)
 
       self.setLayout(dlgLayout)
-      self.sizeHint = lambda: QSize(760, 500)
+      self.sizeHint = lambda: QtCore.QSize(760, 500)
 
       # Auto-select the default wallet, if there is one
       rowNum = 0
@@ -248,7 +245,7 @@ class DlgAddressBook(ArmoryDialog):
       self.wltDispView.setCurrentIndex(rowIndex)
 
       self.setWindowTitle('Address Book')
-      self.setWindowIcon(QIcon(self.main.iconfile))
+      self.setWindowIcon(QtGui.QIcon(self.main.iconfile))
 
       self.setMinimumWidth(300)
 
@@ -258,7 +255,7 @@ class DlgAddressBook(ArmoryDialog):
       txgeom = TheSettings.get('AddrBookTxTbl')
       if len(hexgeom) > 0:
          if type(hexgeom) == str:
-            geom = QByteArray(bytes.fromhex(hexgeom))
+            geom = QtCore.QByteArray(bytes.fromhex(hexgeom))
          else:
             geom = hexgeom
          self.restoreGeometry(geom)
@@ -302,8 +299,8 @@ class DlgAddressBook(ArmoryDialog):
 
       self.addrBookTxView.setModel(self.addrBookTxProxy)
       self.addrBookTxView.setSortingEnabled(True)
-      self.addrBookTxView.setSelectionBehavior(QTableView.SelectRows)
-      self.addrBookTxView.setSelectionMode(QTableView.SingleSelection)
+      self.addrBookTxView.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
+      self.addrBookTxView.setSelectionMode(QtWidgets.QTableView.SingleSelection)
       self.addrBookTxView.horizontalHeader().setStretchLastSection(True)
       self.addrBookTxView.verticalHeader().setDefaultSectionSize(20)
       freqSize = 1.3 * tightSizeStr(self.addrBookTxView, 'Times Used')[0]
@@ -363,8 +360,8 @@ class DlgAddressBook(ArmoryDialog):
       # self.addrBookRxProxy.sort(ADDRESSCOLS.Address)
 
       self.addrBookRxView.setModel(self.addrBookRxProxy)
-      self.addrBookRxView.setSelectionBehavior(QTableView.SelectRows)
-      self.addrBookRxView.setSelectionMode(QTableView.SingleSelection)
+      self.addrBookRxView.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
+      self.addrBookRxView.setSelectionMode(QtWidgets.QTableView.SingleSelection)
       self.addrBookRxView.horizontalHeader().setStretchLastSection(True)
       self.addrBookRxView.verticalHeader().setDefaultSectionSize(20)
       iWidth = tightSizeStr(self.addrBookRxView, 'Imp')[0]
@@ -549,11 +546,11 @@ class DlgAddressBook(ArmoryDialog):
 
       wid = self.main.getWalletForAddrHash(addr160)
       if not wid:
-         QMessageBox.critical(self, self.tr('No Public Key'), self.tr(
+         QtWidgets.QMessageBox.critical(self, self.tr('No Public Key'), self.tr(
             'This operation requires a full public key, not just an address. '
             'Unfortunately, Armory cannot find the public key for the address '
             'you selected.  In general public keys will only be available '
-            'for addresses in your wallet.'), QMessageBox.Ok)
+            'for addresses in your wallet.'), QtWidgets.QMessageBox.Ok)
          return None
 
       wlt = self.main.walletMap[wid]
@@ -564,7 +561,7 @@ class DlgAddressBook(ArmoryDialog):
 
    #############################################################################
    def showContextMenuTx(self, pos):
-      menu = QMenu(self.addrBookTxView)
+      menu = QtWidgets.QMenu(self.addrBookTxView)
       std = (self.main.usermode == USERMODE.Standard)
       adv = (self.main.usermode == USERMODE.Advanced)
       dev = (self.main.usermode == USERMODE.Expert)
@@ -573,7 +570,7 @@ class DlgAddressBook(ArmoryDialog):
       if dev:   actionCopyHash160 = menu.addAction(self.tr("Copy Hash160 (hex)"))
       if True:  actionCopyComment = menu.addAction(self.tr("Copy Comment"))
       idx = self.addrBookTxView.selectedIndexes()[0]
-      action = menu.exec_(QCursor.pos())
+      action = menu.exec_(QtGui.QCursor.pos())
 
       if action == actionCopyAddr:
          s = self.addrBookTxView.model().index(idx.row(), ADDRBOOKCOLS.Address).data().toString()
@@ -588,14 +585,14 @@ class DlgAddressBook(ArmoryDialog):
       else:
          return
 
-      clipb = QApplication.clipboard()
+      clipb = QtWidgets.QApplication.clipboard()
       clipb.clear()
       clipb.setText(str(s).strip())
 
 
    #############################################################################
    def showContextMenuRx(self, pos):
-      menu = QMenu(self.addrBookRxView)
+      menu = QtWidgets.QMenu(self.addrBookRxView)
       std = (self.main.usermode == USERMODE.Standard)
       adv = (self.main.usermode == USERMODE.Advanced)
       dev = (self.main.usermode == USERMODE.Expert)
@@ -604,7 +601,7 @@ class DlgAddressBook(ArmoryDialog):
       if dev:   actionCopyHash160 = menu.addAction(self.tr("Copy Hash160 (hex)"))
       if True:  actionCopyComment = menu.addAction(self.tr("Copy Comment"))
       idx = self.addrBookRxView.selectedIndexes()[0]
-      action = menu.exec_(QCursor.pos())
+      action = menu.exec_(QtGui.QCursor.pos())
 
       if action == actionCopyAddr:
          s = self.addrBookRxView.model().index(idx.row(), ADDRESSCOLS.Address).data().toString()
@@ -619,6 +616,6 @@ class DlgAddressBook(ArmoryDialog):
       else:
          return
 
-      clipb = QApplication.clipboard()
+      clipb = QtWidgets.QApplication.clipboard()
       clipb.clear()
       clipb.setText(str(s).strip())

@@ -1,20 +1,15 @@
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
 ##############################################################################
 #                                                                            #
-# Copyright (C) 2016-17, goatpig                                             #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
-#  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #                                   
+#  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
 ##############################################################################
 
-from PyQt4.QtGui import QFrame
-from PyQt4.QtCore import Qt, QObject
+from qtpy import QtCore, QtGui
 import time
 
-from qtdefines import ArmoryDialog, QLabel, QGridLayout, \
-   SIGNAL, STYLE_RAISED, QRichLabel
-   
+from qtdefines import ArmoryDialog, STYLE_RAISED, QRichLabel
 from armoryengine.ArmoryUtils import PyBackgroundThread
 from armoryengine.CppWalletMirroring import WalletMirroringClass, \
    STATUS_MIRROR, STATUS_SYNC, STATUS_IMPORTS, STATUS_DONE
@@ -56,7 +51,7 @@ class MirrorWalletsDialog(ArmoryDialog):
       self.progress = False
       self.progressThr = None
       
-      self.setWindowFlags(Qt.Dialog)
+      self.setWindowFlags(QtCore.Qt.Dialog)
       
       infoLabel = QRichLabel(self.tr(
       'Starting v0.96, Armory needs to mirror Python '
@@ -72,19 +67,19 @@ class MirrorWalletsDialog(ArmoryDialog):
       '<br><br>'      
       'This process can take up to a few minutes per wallet.<br><br>'))
       
-      self.statusLabel = QLabel('...')     
-      self.statusLabel.setAlignment(Qt.AlignCenter | Qt.AlignVCenter) 
+      self.statusLabel = QtWidgets.QLabel('...')     
+      self.statusLabel.setAlignment(QtCore.Qt.AlignCenter | QtCore.Qt.AlignVCenter) 
       
-      frmProgress = QFrame()
+      frmProgress = QtWidgets.QFrame()
       frmProgress.setFrameStyle(STYLE_RAISED)
-      progressLayout = QGridLayout()
+      progressLayout = QtWidgets.QGridLayout()
       progressLayout.addWidget(self.statusLabel, 0, 0, 1, 1)
       frmProgress.setLayout(progressLayout)
       
       self.connect(self, SIGNAL('UpdateTextStatus'), self.updateTextStatus)
       self.connect(self, SIGNAL('TerminateDlg'), self.shutdown)
       
-      layout = QGridLayout()
+      layout = QtWidgets.QGridLayout()
       layout.addWidget(infoLabel, 0, 0, 3, 1)
       layout.addWidget(frmProgress, 3, 0, 1, 1)
       
@@ -121,11 +116,11 @@ class MirrorWalletsDialog(ArmoryDialog):
    def buildProgressText(self):
       text = ""
       if self.progressStatus == STATUS_MIRROR:
-         text = QObject().tr("Mirroring wallet %s" % self.progressId)
+         text = QtCore.QObject().tr("Mirroring wallet %s" % self.progressId)
       elif self.progressStatus == STATUS_SYNC:
-         text = QObject().tr("Synchronizing wallet %s" % self.progressId)
+         text = QtCore.QObject().tr("Synchronizing wallet %s" % self.progressId)
       elif self.progressStatus == STATUS_IMPORTS:
-         text = QObject().tr("Checking imports for wallet %s" % self.progressId)
+         text = QtCore.QObject().tr("Checking imports for wallet %s" % self.progressId)
                
       dotCount = self.counter % 5
       self.counter += 1

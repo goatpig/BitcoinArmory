@@ -4,17 +4,13 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2022, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
 ##############################################################################
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QPalette, QFont
-from PySide2.QtWidgets import QFrame, QGridLayout, QPushButton, QLabel, \
-   QLineEdit, QHBoxLayout, QDialogButtonBox, QTextEdit, QMessageBox, \
-   QApplication
+from qtpy import QtCore, QtGui, QtWidgets
 
 from armoryengine.ArmoryUtils import DEFAULT_RECEIVE_TYPE
 from armoryengine.BDM import TheBDM, BDM_OFFLINE
@@ -49,14 +45,14 @@ class DlgNewAddressDisp(ArmoryDialog):
       wlttype = determineWalletType(self.wlt, self.main)[0]
       notMyWallet = (wlttype == WLTTYPES.WatchOnly)
 
-      lblDescr = QLabel(self.tr('The following address can be used to receive bitcoins:'))
-      self.edtNewAddr = QLineEdit()
+      lblDescr = QtWidgets.QLabel(self.tr('The following address can be used to receive bitcoins:'))
+      self.edtNewAddr = QtWidgets.QLineEdit()
       self.edtNewAddr.setReadOnly(True)
-      self.edtNewAddr.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
-      btnClipboard = QPushButton(self.tr('Copy to Clipboard'))
-      # lbtnClipboard.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
-      self.lblIsCopied = QLabel(self.tr(' or '))
-      self.lblIsCopied.setTextFormat(Qt.RichText)
+      self.edtNewAddr.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
+      btnClipboard = QtWidgets.QPushButton(self.tr('Copy to Clipboard'))
+      # lbtnClipboard.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
+      self.lblIsCopied = QtWidgets.QLabel(self.tr(' or '))
+      self.lblIsCopied.setTextFormat(QtCore.Qt.RichText)
       btnClipboard.clicked.connect(self.setClipboard)
 
       def openPaymentRequest():
@@ -66,7 +62,7 @@ class DlgNewAddressDisp(ArmoryDialog):
          dlg = DlgRequestPayment(self, self.main, addrTxt, msg=msgTxt)
          dlg.exec_()
 
-      btnLink = QPushButton(self.tr('Create Clickable Link'))
+      btnLink = QtWidgets.QPushButton(self.tr('Create Clickable Link'))
       btnLink.clicked.connect(openPaymentRequest)
 
 
@@ -78,25 +74,25 @@ class DlgNewAddressDisp(ArmoryDialog):
             'improves overall privacy, but there is no security issues '
             'with reusing any address.'))
 
-      frmNewAddr = QFrame()
+      frmNewAddr = QtWidgets.QFrame()
       frmNewAddr.setFrameStyle(STYLE_RAISED)
-      frmNewAddrLayout = QGridLayout()
+      frmNewAddrLayout = QtWidgets.QGridLayout()
       frmNewAddrLayout.addWidget(lblDescr, 0, 0, 1, 2)
       frmNewAddrLayout.addWidget(self.edtNewAddr, 1, 0, 1, 1)
       frmNewAddrLayout.addWidget(tooltip1, 1, 1, 1, 1)
 
       if not notMyWallet:
-         palette = QPalette()
-         palette.setColor(QPalette.Base, Colors.TblWltMine)
+         palette = QtGui.QPalette()
+         palette.setColor(QtGui.QPalette.Base, Colors.TblWltMine)
          boldFont = self.edtNewAddr.font()
-         boldFont.setWeight(QFont.Bold)
+         boldFont.setWeight(QtGui.QFont.Bold)
          self.edtNewAddr.setFont(boldFont)
          self.edtNewAddr.setPalette(palette)
          self.edtNewAddr.setAutoFillBackground(True)
 
-      frmCopy = QFrame()
-      frmCopy.setFrameShape(QFrame.NoFrame)
-      frmCopyLayout = QHBoxLayout()
+      frmCopy = QtWidgets.QFrame()
+      frmCopy.setFrameShape(QtWidgets.QFrame.NoFrame)
+      frmCopyLayout = QtWidgets.QHBoxLayout()
       frmCopyLayout.addStretch()
       frmCopyLayout.addWidget(btnClipboard)
       frmCopyLayout.addWidget(self.lblIsCopied)
@@ -107,18 +103,18 @@ class DlgNewAddressDisp(ArmoryDialog):
       frmNewAddrLayout.addWidget(frmCopy, 2, 0, 1, 2)
       frmNewAddr.setLayout(frmNewAddrLayout)
 
-      lblCommDescr = QLabel(self.tr(
+      lblCommDescr = QtWidgets.QLabel(self.tr(
             '(Optional) Add a label to this address, which will '
             'be shown with any relevant transactions in the '
             '"Transactions" tab.'))
       lblCommDescr.setWordWrap(True)
-      self.edtComm = QTextEdit()
+      self.edtComm = QtWidgets.QTextEdit()
       tightHeight = tightSizeNChar(self.edtComm, 1)[1]
       self.edtComm.setMaximumHeight(tightHeight * 3.2)
 
-      frmComment = QFrame()
-      frmComment.setFrameStyle(QFrame.Shape(STYLE_RAISED))
-      frmCommentLayout = QGridLayout()
+      frmComment = QtWidgets.QFrame()
+      frmComment.setFrameStyle(QtWidgets.QFrame.Shape(STYLE_RAISED))
+      frmCommentLayout = QtWidgets.QGridLayout()
       frmCommentLayout.addWidget(lblCommDescr, 0, 0, 1, 2)
       frmCommentLayout.addWidget(self.edtComm, 1, 0, 2, 2)
       frmComment.setLayout(frmCommentLayout)
@@ -128,23 +124,23 @@ class DlgNewAddressDisp(ArmoryDialog):
             'appear in the wallet:'), doWrap=False)
 
       lblRecvWlt.setWordWrap(True)
-      lblRecvWlt.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+      lblRecvWlt.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop)
       lblRecvWlt.setMinimumWidth(tightSizeStr(lblRecvWlt, lblRecvWlt.text())[0])
 
-      lblRecvWltID = QLabel(\
+      lblRecvWltID = QtWidgets.QLabel(\
             '<b>"%s"</b>  (%s)' % (wlt.labelName, wlt.uniqueIDB58))
       lblRecvWltID.setWordWrap(True)
-      lblRecvWltID.setTextFormat(Qt.RichText)
-      lblRecvWltID.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+      lblRecvWltID.setTextFormat(QtCore.Qt.RichText)
+      lblRecvWltID.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
-      buttonBox = QDialogButtonBox()
-      self.btnDone = QPushButton(self.tr("Done"))
+      buttonBox = QtWidgets.QDialogButtonBox()
+      self.btnDone = QtWidgets.QPushButton(self.tr("Done"))
       self.btnDone.clicked.connect(self.accept)
-      buttonBox.addButton(self.btnDone, QDialogButtonBox.AcceptRole)
+      buttonBox.addButton(self.btnDone, QtWidgets.QDialogButtonBox.AcceptRole)
 
-      frmWlt = QFrame()
-      frmWlt.setFrameShape(QFrame.Shape(STYLE_RAISED))
-      frmWltLayout = QGridLayout()
+      frmWlt = QtWidgets.QFrame()
+      frmWlt.setFrameShape(QtWidgets.QFrame.Shape(STYLE_RAISED))
+      frmWltLayout = QtWidgets.QGridLayout()
       frmWltLayout.addWidget(lblRecvWlt)
       frmWltLayout.addWidget(lblRecvWltID)
       frmWlt.setLayout(frmWltLayout)
@@ -153,13 +149,13 @@ class DlgNewAddressDisp(ArmoryDialog):
       qrdescr = QRichLabel(self.tr(\
          '<b>Scan QR code with phone or other barcode reader</b>'
          '<br><br><font size=2>(Double-click to expand)</font>'))
-      qrdescr.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+      qrdescr.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
       self.edtNewAddr.setText(self.addrStr)
       self.smLabel = QRichLabel('<font size=2>%s</font>' % self.addrStr)
       self.qrcode = QRCodeWidget(self.addrStr, parent=self)
 
-      self.smLabel.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+      self.smLabel.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop)
       frmQRsub2 = makeHorizFrame([STRETCH, self.qrcode, STRETCH ])
       frmQRsub3 = makeHorizFrame([STRETCH, self.smLabel, STRETCH ])
       frmQR = makeVertFrame([STRETCH, qrdescr, frmQRsub2, frmQRsub3, STRETCH ], STYLE_SUNKEN)
@@ -181,7 +177,7 @@ class DlgNewAddressDisp(ArmoryDialog):
       self.addrTypeFrame = AddressLabelFrame(\
          main, setAddressType, self.wlt.getAddressTypes(), self.addrType)
 
-      layout = QGridLayout()
+      layout = QtWidgets.QGridLayout()
       layout.addWidget(frmNewAddr, 0, 0, 1, 1)
       layout.addWidget(self.addrTypeFrame.getFrame(), 2, 0, 1, 1)
       layout.addWidget(frmComment, 4, 0, 1, 1)
@@ -215,7 +211,7 @@ class DlgNewAddressDisp(ArmoryDialog):
       super(DlgNewAddressDisp, self).reject()
 
    def setClipboard(self):
-      clipb = QApplication.clipboard()
+      clipb = QtWidgets.QApplication.clipboard()
       clipb.clear()
       clipb.setText(self.addrStr)
       self.lblIsCopied.setText(self.tr('<i>Copied!</i>'))
@@ -224,7 +220,7 @@ class DlgNewAddressDisp(ArmoryDialog):
 def ShowRecvCoinsWarningIfNecessary(wlt, parent, main):
    numTimesOnline = main.getSettingOrSetDefault("SyncSuccessCount", 0)
    if numTimesOnline < 1 and not TheBDM.getState() == BDM_OFFLINE:
-      result = QMessageBox.warning(main, main.tr('Careful!'), main.tr(
+      result = QtWidgets.QMessageBox.warning(main, main.tr('Careful!'), main.tr(
          'Armory is not online yet, and will eventually need to be online to '
          'access any funds sent to your wallet.  Please <u><b>do not</b></u> '
          'receive Bitcoins to your Armory wallets until you have successfully '
@@ -233,8 +229,8 @@ def ShowRecvCoinsWarningIfNecessary(wlt, parent, main):
          'Armory is still beta software, and some users report difficulty '
          'ever getting online. '
          '<br><br> '
-         'Do you wish to continue? '), QMessageBox.Cancel | QMessageBox.Ok)
-      if not result == QMessageBox.Ok:
+         'Do you wish to continue? '), QtWidgets.QMessageBox.Cancel | QtWidgets.QMessageBox.Ok)
+      if not result == QtWidgets.QMessageBox.Ok:
          return False
 
    wlttype = determineWalletType(wlt, main)[0]

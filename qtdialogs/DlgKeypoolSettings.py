@@ -4,17 +4,15 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2022, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
 ##############################################################################
 
-from PySide2.QtWidgets import QLineEdit, QPushButton, QDialogButtonBox, \
-   QVBoxLayout, QMessageBox
-
 from armorycolors import htmlColor
 
+from qtpy import QtWidgets
 from qtdialogs.qtdefines import relaxedSizeStr, STRETCH, \
    STYLE_SUNKEN, QRichLabel, makeHorizFrame, makeVertFrame
 from qtdialogs.ArmoryDialog import ArmoryDialog
@@ -51,7 +49,7 @@ class DlgKeypoolSettings(ArmoryDialog):
       self.lblAddrCompVal = QRichLabel('%d' % self.wlt.lastComputedChainIndex)
 
       self.lblNumAddr = QRichLabel(self.tr('Compute this many more addresses: '))
-      self.edtNumAddr = QLineEdit()
+      self.edtNumAddr = QtWidgets.QLineEdit()
       self.edtNumAddr.setText('100')
       self.edtNumAddr.setMaximumWidth(relaxedSizeStr(self, '9999999')[0])
 
@@ -61,13 +59,13 @@ class DlgKeypoolSettings(ArmoryDialog):
          'as many as you think you need.'))
 
 
-      buttonBox = QDialogButtonBox()
-      self.btnAccept = QPushButton(self.tr("Compute"))
-      self.btnReject = QPushButton(self.tr("Done"))
+      buttonBox = QtWidgets.QDialogButtonBox()
+      self.btnAccept = QtWidgets.QPushButton(self.tr("Compute"))
+      self.btnReject = QtWidgets.QPushButton(self.tr("Done"))
       self.btnAccept.clicked.connect(self.clickCompute)
       self.btnReject.clicked.connect(self.reject)
-      buttonBox.addButton(self.btnAccept, QDialogButtonBox.AcceptRole)
-      buttonBox.addButton(self.btnReject, QDialogButtonBox.RejectRole)
+      buttonBox.addButton(self.btnAccept, QtWidgets.QDialogButtonBox.AcceptRole)
+      buttonBox.addButton(self.btnReject, QtWidgets.QDialogButtonBox.RejectRole)
 
 
       frmLbl = makeVertFrame([self.lblAddrUsed, self.lblAddrComp])
@@ -79,7 +77,7 @@ class DlgKeypoolSettings(ArmoryDialog):
                                 self.edtNumAddr, \
                                 STRETCH], STYLE_SUNKEN)
 
-      layout = QVBoxLayout()
+      layout = QtWidgets.QVBoxLayout()
       layout.addWidget(self.lblDescr)
       layout.addWidget(subFrm1)
       layout.addWidget(self.lblWarnSpeed)
@@ -92,10 +90,10 @@ class DlgKeypoolSettings(ArmoryDialog):
    #############################################################################
    def clickCompute(self):
       # if TheBDM.getState()==BDM_SCANNING:
-         # QMessageBox.warning(self, 'Armory is Busy', \
+         # QtWidgets.QMessageBox.warning(self, 'Armory is Busy', \
             # 'Armory is in the middle of a scan, and cannot add addresses to '
             # 'any of its wallets until the scan is finished.  Please wait until '
-            # 'the dashboard says that Armory is "online."', QMessageBox.Ok)
+            # 'the dashboard says that Armory is "online."', QtWidgets.QMessageBox.Ok)
          # return
 
 
@@ -106,21 +104,21 @@ class DlgKeypoolSettings(ArmoryDialog):
          err = True
 
       if err or naddr < 1:
-         QMessageBox.critical(self, self.tr('Invalid input'), self.tr(
+         QtWidgets.QMessageBox.critical(self, self.tr('Invalid input'), self.tr(
             'The value you entered is invalid.  Please enter a positive '
-            'number of addresses to generate.'), QMessageBox.Ok)
+            'number of addresses to generate.'), QtWidgets.QMessageBox.Ok)
          return
 
       if naddr >= 1000:
-         confirm = QMessageBox.warning(self, self.tr('Are you sure?'), self.tr(
+         confirm = QtWidgets.QMessageBox.warning(self, self.tr('Are you sure?'), self.tr(
             'You have entered that you want to compute %s more addresses'
             'for this wallet.  This operation will take a very long time, '
             'and Armory will become unresponsive until the computation is '
             'finished.  Armory estimates it will take about %d minutes.'
             '<br><br>Do you want to continue?' % (naddr, int(naddr / 750.))), \
-            QMessageBox.Yes | QMessageBox.No)
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
 
-         if not confirm == QMessageBox.Yes:
+         if not confirm == QtWidgets.QMessageBox.Yes:
             return
 
       cred = htmlColor('TextRed')

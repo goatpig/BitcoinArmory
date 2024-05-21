@@ -8,33 +8,32 @@ from __future__ import (absolute_import, division,
 #                                                                              #
 ################################################################################
 import sys
-from PySide2.QtGui  import QColor, QPalette
-from PySide2.QtWidgets import QApplication
-
+import qtpy
+from qtpy import QtGui, QtWidgets
 
 """
 # Here's what the palette looks like on Ubuntu 10.04, default theme
 
-qp.color(QPalette.Window);           240 235 226 255
-qp.color(QPalette.Background);       240 235 226 255
-qp.color(QPalette.WindowText);        60  59  55 255
-qp.color(QPalette.Foreground);        60  59  55 255
-qp.color(QPalette.Base);             255 255 255 255
-qp.color(QPalette.AlternateBase);    239 239 239 255
-qp.color(QPalette.Text);              58  57  53 255
-qp.color(QPalette.Button);           240 235 226 255
-qp.color(QPalette.BrightText);       255 255 255 255
-qp.color(QPalette.ToolTipBase);      255 255 220 255
-qp.color(QPalette.ToolTipText);      255 255 255 255
-qp.color(QPalette.Light);            255 255 255 255
-qp.color(QPalette.Midlight);         203 199 196 255
-qp.color(QPalette.Dark);             200 196 189 255
-qp.color(QPalette.Mid);              184 181 178 255
-qp.color(QPalette.Shadow);           185 181 174 255
-qp.color(QPalette.Highlight);        198 185 166 255
-qp.color(QPalette.HighlightedText);   50  50  50 255
-qp.color(QPalette.Link);               0   0 255 255
-qp.color(QPalette.LinkVisited);      255   0 255 255
+qp.color(QtGui.QPalette.Window);           240 235 226 255
+qp.color(QtGui.QPalette.Background);       240 235 226 255
+qp.color(QtGui.QPalette.WindowText);        60  59  55 255
+qp.color(QtGui.QPalette.Foreground);        60  59  55 255
+qp.color(QtGui.QPalette.Base);             255 255 255 255
+qp.color(QtGui.QPalette.AlternateBase);    239 239 239 255
+qp.color(QtGui.QPalette.Text);              58  57  53 255
+qp.color(QtGui.QPalette.Button);           240 235 226 255
+qp.color(QtGui.QPalette.BrightText);       255 255 255 255
+qp.color(QtGui.QPalette.ToolTipBase);      255 255 220 255
+qp.color(QtGui.QPalette.ToolTipText);      255 255 255 255
+qp.color(QtGui.QPalette.Light);            255 255 255 255
+qp.color(QtGui.QPalette.Midlight);         203 199 196 255
+qp.color(QtGui.QPalette.Dark);             200 196 189 255
+qp.color(QtGui.QPalette.Mid);              184 181 178 255
+qp.color(QtGui.QPalette.Shadow);           185 181 174 255
+qp.color(QtGui.QPalette.Highlight);        198 185 166 255
+qp.color(QtGui.QPalette.HighlightedText);   50  50  50 255
+qp.color(QtGui.QPalette.Link);               0   0 255 255
+qp.color(QtGui.QPalette.LinkVisited);      255   0 255 255
 """
 
 
@@ -73,10 +72,10 @@ def tweakColor(qcolor, op, tweaks):
    r = tweakChannel(r, tweaks[0])
    g = tweakChannel(g, tweaks[1])
    b = tweakChannel(b, tweaks[2])
-   return QColor(r,g,b)
 
-
-
+   result = QtGui.QColor()
+   result.setRgb(r, g, b)
+   return result
 
 ################################################################################
 def luminance(qcolor):
@@ -85,25 +84,25 @@ def luminance(qcolor):
    return int(0.2*r + 0.6*g + 0.2*b)
 
 
-QAPP = QApplication(sys.argv)
+QAPP = QtWidgets.QApplication(sys.argv)
 qpal = QAPP.palette()
 
 # workaround for https://bugs.launchpad.net/ubuntu/+source/qt4-x11/+bug/877236
-qpal.setColor(QPalette.ToolTipBase, qpal.color(QPalette.Window))
-qpal.setColor(QPalette.ToolTipText, qpal.color(QPalette.WindowText))
+qpal.setColor(QtGui.QPalette.ToolTipBase, qpal.color(QtGui.QPalette.Window))
+qpal.setColor(QtGui.QPalette.ToolTipText, qpal.color(QtGui.QPalette.WindowText))
 QAPP.setPalette(qpal)
 
 # Some of the standard colors to be tweaked
 class ArbitraryStruct: pass
 Colors = ArbitraryStruct()
 
-Colors.Background       = qpal.color(QPalette.Window)
-Colors.Foreground       = qpal.color(QPalette.WindowText)
-Colors.HighlightBG      = qpal.color(QPalette.Highlight)
-Colors.HighlightFG      = qpal.color(QPalette.HighlightedText)
-Colors.Link             = qpal.color(QPalette.Link)
-Colors.Mid              = qpal.color(QPalette.Mid)
-Colors.DisableFG        = qpal.color(QPalette.Disabled, QPalette.WindowText)
+Colors.Background       = qpal.color(QtGui.QPalette.Window)
+Colors.Foreground       = qpal.color(QtGui.QPalette.WindowText)
+Colors.HighlightBG      = qpal.color(QtGui.QPalette.Highlight)
+Colors.HighlightFG      = qpal.color(QtGui.QPalette.HighlightedText)
+Colors.Link             = qpal.color(QtGui.QPalette.Link)
+Colors.Mid              = qpal.color(QtGui.QPalette.Mid)
+Colors.DisableFG        = qpal.color(QtGui.QPalette.Disabled, QtGui.QPalette.WindowText)
 
 Colors.isDarkBkgd       = (luminance(Colors.Background) < 128)
 
@@ -146,7 +145,7 @@ else:
 
 Colors.ToolTipQ         = Colors.LBtnNormalFG
 
-Colors.TextPurple = QColor()
+Colors.TextPurple = QtGui.QColor()
 Colors.TextPurple.setRgb(102, 0, 204, 255)
 
 ################################################################################
@@ -156,8 +155,8 @@ def htmlColor(name):
    for taking one of the above colors and converting to a hex string
    """
    try:
-      qcolor = Colors.__dict__[name]
-      r,g,b = qcolor.red(), qcolor.green(), qcolor.blue()
+      QtGui.QColor = Colors.__dict__[name]
+      r,g,b = QtGui.QColor.red(), QtGui.QColor.green(), QtGui.QColor.blue()
       rstr = hex(r)[2:].encode('ascii').rjust(2, b'0').decode('ascii')
       gstr = hex(g)[2:].encode('ascii').rjust(2, b'0').decode('ascii')
       bstr = hex(b)[2:].encode('ascii').rjust(2, b'0').decode('ascii')
@@ -175,7 +174,7 @@ if __name__== "__main__":
 
    print("Colors in the palette!")
    for name,qc in Colors.__dict__.iteritems():
-      if not isinstance(qc, QColor):
+      if not isinstance(qc, QtGui.QColor):
          continue
       print('\t', end=' ')
       print(('"'+name+'"').ljust(20), end=' ')

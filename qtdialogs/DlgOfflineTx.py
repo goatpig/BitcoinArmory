@@ -4,16 +4,13 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2022, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
 ##############################################################################
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QIcon
-from PySide2.QtWidgets import QVBoxLayout, QPushButton, QTextEdit, \
-   QFrame, QGridLayout, QApplication, QSpacerItem
+from qtpy import QtCore, QtGui, QtWidgets
 
 from armoryengine.ArmoryUtils import OS_WINDOWS, LOGINFO, LOGEXCEPT
 from armoryengine.BDM import TheBDM, BDM_BLOCKCHAIN_READY
@@ -42,16 +39,16 @@ class ReviewOfflineTxFrame(ArmoryDialog):
          'it is perfectly safe to copy-and-paste it into an '
          'email message, or save it to a borrowed USB key.'))
 
-      btnSave = QPushButton(self.tr('Save as file...'))
+      btnSave = QtWidgets.QPushButton(self.tr('Save as file...'))
       btnSave.clicked.connect(self.doSaveFile)
       ttipSave = createToolTipWidget(\
          self.tr('Save this data to a USB key or other device, to be transferred to '
          'a computer that contains the private keys for this wallet.'))
 
-      btnCopy = QPushButton(self.tr('Copy to clipboard'))
+      btnCopy = QtWidgets.QPushButton(self.tr('Copy to clipboard'))
       btnCopy.clicked.connect(self.copyAsciiUSTX)
       self.lblCopied = QRichLabel('  ')
-      self.lblCopied.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+      self.lblCopied.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
       ttipCopy = createToolTipWidget(\
          self.tr('Copy the transaction data to the clipboard, so that it can be '
@@ -65,7 +62,7 @@ class ReviewOfflineTxFrame(ArmoryDialog):
 
       # Wow, I just cannot get the txtEdits to be the right size without
       # forcing them very explicitly
-      self.txtUSTX = QTextEdit()
+      self.txtUSTX = QtWidgets.QTextEdit()
       self.txtUSTX.setFont(GETFONT('Fixed', 8))
       w,h = relaxedSizeNChar(self.txtUSTX, 68)[0], int(12 * 8.2)
       self.txtUSTX.setMinimumWidth(w)
@@ -74,9 +71,9 @@ class ReviewOfflineTxFrame(ArmoryDialog):
 
 
 
-      frmLower = QFrame()
+      frmLower = QtWidgets.QFrame()
       frmLower.setFrameStyle(STYLE_RAISED)
-      frmLowerLayout = QGridLayout()
+      frmLowerLayout = QtWidgets.QGridLayout()
 
       frmLowerLayout.addWidget(frmUTX, 0, 0, 1, 3)
       frmLowerLayout.addWidget(self.txtUSTX, 1, 0, 3, 1)
@@ -107,7 +104,7 @@ class ReviewOfflineTxFrame(ArmoryDialog):
       frmAll.layout().setStretch(4, 1)
       frmAll.layout().setStretch(5, 0)
 
-      dlgLayout = QVBoxLayout()
+      dlgLayout = QtWidgets.QVBoxLayout()
       dlgLayout.addWidget(frmAll)
 
       self.setLayout(dlgLayout)
@@ -153,7 +150,7 @@ class ReviewOfflineTxFrame(ArmoryDialog):
 
 
    def copyAsciiUSTX(self):
-      clipb = QApplication.clipboard()
+      clipb = QtWidgets.QApplication.clipboard()
       clipb.clear()
       clipb.setText(self.txtUSTX.toPlainText())
       self.lblCopied.setText('<i>Copied!</i>')
@@ -181,15 +178,15 @@ class ReviewOfflineTxFrame(ArmoryDialog):
 class DlgOfflineTxCreated(ArmoryDialog):
    def __init__(self, wlt, ustx, parent=None, main=None):
       super(DlgOfflineTxCreated, self).__init__(parent, main)
-      layout = QVBoxLayout()
+      layout = QtWidgets.QVBoxLayout()
 
       reviewOfflineTxFrame = ReviewOfflineTxFrame(\
          self, main, self.tr("Review Offline Transaction"))
       reviewOfflineTxFrame.setWallet(wlt)
       reviewOfflineTxFrame.setUSTX(ustx)
-      continueButton = QPushButton(self.tr('Continue'))
+      continueButton = QtWidgets.QPushButton(self.tr('Continue'))
       continueButton.clicked.connect(self.signBroadcastTx)
-      doneButton = QPushButton(self.tr('Done'))
+      doneButton = QtWidgets.QPushButton(self.tr('Done'))
       doneButton.clicked.connect(self.accept)
 
       ttipDone = createToolTipWidget(self.tr(
@@ -209,7 +206,7 @@ class DlgOfflineTxCreated(ArmoryDialog):
       layout.addWidget(frame)
       self.setLayout(layout)
       self.setWindowTitle(self.tr('Review Offline Transaction'))
-      self.setWindowIcon(QIcon(self.main.iconfile))
+      self.setWindowIcon(QtGui.QIcon(self.main.iconfile))
 
 
    def signBroadcastTx(self):
@@ -243,23 +240,23 @@ class DlgOfflineSelect(ArmoryDialog):
          'reveal some addresses in your wallet, and may represent a breach of '
          '<i>privacy</i> if not protected.'))
 
-      btnCreate = QPushButton(self.tr('Create New Offline Transaction'))
-      broadcastButton = QPushButton(self.tr('Sign and/or Broadcast Transaction'))
+      btnCreate = QtWidgets.QPushButton(self.tr('Create New Offline Transaction'))
+      broadcastButton = QtWidgets.QPushButton(self.tr('Sign and/or Broadcast Transaction'))
       if not TheBDM.getState() == BDM_BLOCKCHAIN_READY:
          btnCreate.setEnabled(False)
          if len(self.main.walletMap) == 0:
-            broadcastButton = QPushButton(self.tr('No wallets available!'))
+            broadcastButton = QtWidgets.QPushButton(self.tr('No wallets available!'))
             broadcastButton.setEnabled(False)
          else:
-            broadcastButton = QPushButton(self.tr('Sign Offline Transaction'))
+            broadcastButton = QtWidgets.QPushButton(self.tr('Sign Offline Transaction'))
       else:
          if len(self.main.getWatchingOnlyWallets()) == 0:
-            btnCreate = QPushButton(self.tr('No watching-only wallets available!'))
+            btnCreate = QtWidgets.QPushButton(self.tr('No watching-only wallets available!'))
             btnCreate.setEnabled(False)
          if len(self.main.walletMap) == 0 and self.main.netMode == NETWORKMODE.Full:
-            broadcastButton = QPushButton('Broadcast Signed Transaction')
+            broadcastButton = QtWidgets.QPushButton('Broadcast Signed Transaction')
 
-      btnCancel = QPushButton(self.tr('<<< Go Back'))
+      btnCancel = QtWidgets.QPushButton(self.tr('<<< Go Back'))
 
       def create():
          self.do_create = True; self.accept()
@@ -283,9 +280,9 @@ class DlgOfflineSelect(ArmoryDialog):
 
       lblBroadc.setMinimumWidth(tightSizeNChar(lblBroadc, 45)[0])
 
-      frmOptions = QFrame()
+      frmOptions = QtWidgets.QFrame()
       frmOptions.setFrameStyle(STYLE_PLAIN)
-      frmOptionsLayout = QGridLayout()
+      frmOptionsLayout = QtWidgets.QGridLayout()
       frmOptionsLayout.addWidget(btnCreate, 0, 0)
       frmOptionsLayout.addWidget(lblCreate, 0, 2)
       frmOptionsLayout.addWidget(HLINE(), 1, 0, 1, 3)
@@ -294,21 +291,21 @@ class DlgOfflineSelect(ArmoryDialog):
       frmOptionsLayout.addWidget(HLINE(), 3, 2, 1, 1)
       frmOptionsLayout.addWidget(lblBroadc, 4, 2)
 
-      frmOptionsLayout.addItem(QSpacerItem(20, 20), 0, 1, 3, 1)
+      frmOptionsLayout.addItem(QtWidgets.QSpacerItem(20, 20), 0, 1, 3, 1)
       frmOptions.setLayout(frmOptionsLayout)
 
       frmDescr = makeLayoutFrame(HORIZONTAL,
          ['Space(10)', lblDescr, 'Space(10)'], STYLE_SUNKEN)
       frmCancel = makeLayoutFrame(HORIZONTAL, [btnCancel, STRETCH])
 
-      dlgLayout = QGridLayout()
+      dlgLayout = QtWidgets.QGridLayout()
       dlgLayout.addWidget(frmDescr, 0, 0, 1, 1)
       dlgLayout.addWidget(frmOptions, 1, 0, 1, 1)
       dlgLayout.addWidget(frmCancel, 2, 0, 1, 1)
 
       self.setLayout(dlgLayout)
       self.setWindowTitle('Select Offline Action')
-      self.setWindowIcon(QIcon(self.main.iconfile))
+      self.setWindowIcon(QtGui.QIcon(self.main.iconfile))
 
 ################################################################################
 class DlgSignBroadcastOfflineTx(ArmoryDialog):
@@ -322,15 +319,15 @@ class DlgSignBroadcastOfflineTx(ArmoryDialog):
       super(DlgSignBroadcastOfflineTx, self).__init__(parent, main)
 
       self.setWindowTitle(self.tr('Review Offline Transaction'))
-      self.setWindowIcon(QIcon(self.main.iconfile))
+      self.setWindowIcon(QtGui.QIcon(self.main.iconfile))
 
       signBroadcastOfflineTxFrame = SignBroadcastOfflineTxFrame(
          self, main, self.tr("Sign or Broadcast Transaction"))
 
-      doneButton = QPushButton(self.tr('Done'))
+      doneButton = QtWidgets.QPushButton(self.tr('Done'))
       doneButton.clicked.connect(self.accept)
       doneForm = makeLayoutFrame(HORIZONTAL, [STRETCH, doneButton])
-      dlgLayout = QVBoxLayout()
+      dlgLayout = QtWidgets.QVBoxLayout()
       dlgLayout.addWidget(signBroadcastOfflineTxFrame)
       dlgLayout.addWidget(doneForm)
       self.setLayout(dlgLayout)

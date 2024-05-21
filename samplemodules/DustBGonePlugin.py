@@ -6,8 +6,8 @@ from __future__ import print_function
 # file can use any utils or objects accessible to functions in ArmoryQt.py.
 from socket import socket
 
-from PyQt4.Qt import QMessageBox, QPushButton, SIGNAL, QLabel, QLineEdit, Qt, \
-   QTableView, QScrollArea, QAbstractTableModel, QModelIndex, QVariant
+from PyQt4.QtCore.Qt import QtWidgets.QMessageBox, QtWidgets.QPushButton, SIGNAL, QtWidgets.QLabel, QtWidgets.QLineEdit, QtCore.Qt, \
+   QtWidgets.QTableView, QtWidgets.QScrollArea, QtCore.QAbstractTableModel, QtCore.QModelIndex, QVariant
 
 from armorycolors import Colors
 from armoryengine.ArmoryUtils import enum, str2coin, NegativeValueError, \
@@ -72,9 +72,9 @@ class PluginObject(object):
                   unlockdlg = DlgUnlockWallet(self.dustTableModel.wlt,
                         self.main, self.main, 'Unlock Wallet to Import')
                   if not unlockdlg.exec_():
-                     QMessageBox.critical(self, 'Wallet is Locked', \
+                     QtWidgets.QMessageBox.critical(self, 'Wallet is Locked', \
                         'Cannot send dust without unlocking the wallet!', \
-                        QMessageBox.Ok)
+                        QtWidgets.QMessageBox.Ok)
                      return
                privKeyMap[scrAddr] = addrObj.binPrivKey32_Plain.copy()
             signedTx = PyCreateAndSignTx(utxiList,
@@ -91,17 +91,17 @@ class PluginObject(object):
                   
 
          except socket.error as err:
-            QMessageBox.critical(self.main, tr('Negative Value'), tr("""
-               Failed to connect to dust-b-gone server: %s""" % err.strerror), QMessageBox.Ok)            
+            QtWidgets.QMessageBox.critical(self.main, tr('Negative Value'), tr("""
+               Failed to connect to dust-b-gone server: %s""" % err.strerror), QtWidgets.QMessageBox.Ok)            
          except NegativeValueError:
-            QMessageBox.critical(self.main, tr('Negative Value'), tr("""
+            QtWidgets.QMessageBox.critical(self.main, tr('Negative Value'), tr("""
                You must enter a positive value of at least 0.0000 0001 
-               and less than %s for the dust limit.""" % MAX_DUST_LIMIT_STR), QMessageBox.Ok)
+               and less than %s for the dust limit.""" % MAX_DUST_LIMIT_STR), QtWidgets.QMessageBox.Ok)
          except TooMuchPrecisionError:
-            QMessageBox.critical(self.main.main, tr('Too much precision'), tr("""
+            QtWidgets.QMessageBox.critical(self.main.main, tr('Too much precision'), tr("""
                Bitcoins can only be specified down to 8 decimal places. 
                The smallest unit of a Bitcoin is 0.0000 0001 BTC. 
-               Please enter a dust limit of at least 0.0000 0001 and less than %s.""" % MAX_DUST_LIMIT_STR), QMessageBox.Ok)
+               Please enter a dust limit of at least 0.0000 0001 and less than %s.""" % MAX_DUST_LIMIT_STR), QtWidgets.QMessageBox.Ok)
          finally:
             for scraddr in privKeyMap:
                privKeyMap[scraddr].destroy()
@@ -112,18 +112,18 @@ class PluginObject(object):
       self.main = main
  
       self.lblHeader    = QRichLabel(tr("""<b>Dust Outputs for Wallet: None Selected</b>"""), doWrap=False)
-      self.beGoneDustButton = QPushButton("Remove Dust")
+      self.beGoneDustButton = QtWidgets.QPushButton("Remove Dust")
       self.beGoneDustButton.setEnabled(False)
       self.main.connect(self.beGoneDustButton, SIGNAL('clicked()'), sendDust)
       topRow =  makeHorizFrame([self.lblHeader,'stretch'])
       secondRow =  makeHorizFrame([self.beGoneDustButton, 'stretch'])
       
-      self.dustLimitLabel = QLabel("Max Dust Value (BTC): ")
-      self.dustLimitText = QLineEdit()
+      self.dustLimitLabel = QtWidgets.QLabel("Max Dust Value (BTC): ")
+      self.dustLimitText = QtWidgets.QLineEdit()
       self.dustLimitText.setFont(GETFONT('Fixed'))
       self.dustLimitText.setMinimumWidth(tightSizeNChar(self.dustLimitText, 6)[0])
       self.dustLimitText.setMaximumWidth(tightSizeNChar(self.dustLimitText, 12)[0])
-      self.dustLimitText.setAlignment(Qt.AlignRight)
+      self.dustLimitText.setAlignment(QtCore.Qt.AlignRight)
       self.dustLimitText.setText(coin2str(DEFAULT_DUST_LIMIT))
       self.main.connect(self.dustLimitText, SIGNAL('textChanged(QString)'), updateDustLimit)
       
@@ -132,9 +132,9 @@ class PluginObject(object):
       
       
       self.dustTableModel = DustDisplayModel()
-      self.dustTableView = QTableView()
+      self.dustTableView = QtWidgets.QTableView()
       self.dustTableView.setModel(self.dustTableModel)
-      self.dustTableView.setSelectionMode(QTableView.NoSelection)
+      self.dustTableView.setSelectionMode(QtWidgets.QTableView.NoSelection)
       self.dustTableView.verticalHeader().setDefaultSectionSize(20)
       self.dustTableView.verticalHeader().hide()
       h = tightSizeNChar(self.dustTableView, 1)[1]
@@ -142,18 +142,18 @@ class PluginObject(object):
       self.dustTableView.setMaximumHeight(10 * (1.3 * h))
       initialColResize(self.dustTableView, [100, .7, .3])
 
-      self.dustTableView.setContextMenuPolicy(Qt.CustomContextMenu)
+      self.dustTableView.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
 
       self.lblTxioInfo = QRichLabel('')
       self.lblTxioInfo.setMinimumWidth(tightSizeNChar(self.lblTxioInfo, 30)[0])
       
-      self.main.connect(self.main.walletsView, SIGNAL('clicked(QModelIndex)'), 
+      self.main.connect(self.main.walletsView, SIGNAL('clicked(QtCore.QModelIndex)'), 
                    updateDustLimit)
 
       self.dustBGoneFrame = makeVertFrame([topRow, secondRow, limitPanel, self.dustTableView, 'stretch'])
 
       # Now set the scrollarea widget to the layout
-      self.tabToDisplay = QScrollArea()
+      self.tabToDisplay = QtWidgets.QScrollArea()
       self.tabToDisplay.setWidgetResizable(True)
       self.tabToDisplay.setWidget(self.dustBGoneFrame)
 
@@ -180,7 +180,7 @@ class PluginObject(object):
 
 
 ################################################################################
-class DustDisplayModel(QAbstractTableModel):
+class DustDisplayModel(QtCore.QAbstractTableModel):
    def __init__(self):
       super(DustDisplayModel, self).__init__()
       self.wlt = None
@@ -195,46 +195,46 @@ class DustDisplayModel(QAbstractTableModel):
             self.dustTxOutlist.append(txout)
       self.reset()
 
-   def rowCount(self, index=QModelIndex()):
+   def rowCount(self, index=QtCore.QModelIndex()):
       return len(self.dustTxOutlist)
 
-   def columnCount(self, index=QModelIndex()):
+   def columnCount(self, index=QtCore.QModelIndex()):
       return 3
 
-   def data(self, index, role=Qt.DisplayRole):
+   def data(self, index, role=QtCore.Qt.DisplayRole):
       row,col = index.row(), index.column()
       txout = self.dustTxOutlist[row]
       addrStr = script_to_addrStr(txout.getScript())
       pyAddr = self.wlt.addrMap[addrStr_to_hash160(addrStr)[1]]
       chainIndex = pyAddr.chainIndex + 1
-      if role==Qt.DisplayRole:
+      if role==QtCore.Qt.DisplayRole:
          if col==DUSTCOLS.chainIndex: return QVariant(chainIndex)
          if col==DUSTCOLS.AddrStr: return QVariant(addrStr)
          if col==DUSTCOLS.Btc:     return QVariant(coin2str(txout.getValue(),maxZeros=8))
-      elif role==Qt.TextAlignmentRole:
-         if col==DUSTCOLS.chainIndex:   return QVariant(int(Qt.AlignLeft | Qt.AlignVCenter))
-         if col==DUSTCOLS.AddrStr:   return QVariant(int(Qt.AlignLeft | Qt.AlignVCenter))
-         if col==DUSTCOLS.Btc:     return QVariant(int(Qt.AlignRight | Qt.AlignVCenter))
-      elif role==Qt.ForegroundRole:
+      elif role==QtCore.Qt.TextAlignmentRole:
+         if col==DUSTCOLS.chainIndex:   return QVariant(int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter))
+         if col==DUSTCOLS.AddrStr:   return QVariant(int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter))
+         if col==DUSTCOLS.Btc:     return QVariant(int(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter))
+      elif role==QtCore.Qt.ForegroundRole:
          return QVariant(Colors.Foreground)
-      elif role==Qt.FontRole:
+      elif role==QtCore.Qt.FontRole:
          if col==DUSTCOLS.Btc:
             return GETFONT('Fixed')
 
       return QVariant()
 
-   def headerData(self, section, orientation, role=Qt.DisplayRole):
-      if role==Qt.DisplayRole:
-         if orientation==Qt.Horizontal:
+   def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
+      if role==QtCore.Qt.DisplayRole:
+         if orientation==QtCore.Qt.Horizontal:
             if section==DUSTCOLS.chainIndex: return QVariant('Chain Index')
             if section==DUSTCOLS.AddrStr:   return QVariant('Recieving Address')
             if section==DUSTCOLS.Btc:     return QVariant('Amount')
-      elif role==Qt.TextAlignmentRole:
-         if orientation==Qt.Horizontal:
-            if section==DUSTCOLS.chainIndex: return QVariant(Qt.AlignHCenter | Qt.AlignVCenter)
-            if section==DUSTCOLS.AddrStr:   return QVariant(Qt.AlignHCenter | Qt.AlignVCenter)
-            if section==DUSTCOLS.Btc:     return QVariant(Qt.AlignHCenter | Qt.AlignVCenter)
-         return QVariant(int(Qt.AlignHCenter | Qt.AlignVCenter))
+      elif role==QtCore.Qt.TextAlignmentRole:
+         if orientation==QtCore.Qt.Horizontal:
+            if section==DUSTCOLS.chainIndex: return QVariant(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
+            if section==DUSTCOLS.AddrStr:   return QVariant(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
+            if section==DUSTCOLS.Btc:     return QVariant(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
+         return QVariant(int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter))
 
 
 

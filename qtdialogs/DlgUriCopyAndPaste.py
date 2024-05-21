@@ -28,17 +28,17 @@ class DlgUriCopyAndPaste(ArmoryDialog):
                             'link and select "Copy Link Location" then paste it '
                             'into the box below. '))
 
-      lblShowExample = QLabel()
-      lblShowExample.setPixmap(QPixmap('./img/armory_rightclickcopy.png'))
+      lblShowExample = QtWidgets.QLabel()
+      lblShowExample.setPixmap(QtGui.QPixmap('./img/armory_rightclickcopy.png'))
 
-      self.txtUriString = QLineEdit()
+      self.txtUriString = QtWidgets.QLineEdit()
       self.txtUriString.setFont(GETFONT('Fixed', 8))
 
-      self.btnOkay = QPushButton(self.tr('Done'))
-      self.btnCancel = QPushButton(self.tr('Cancel'))
-      buttonBox = QDialogButtonBox()
-      buttonBox.addButton(self.btnOkay, QDialogButtonBox.AcceptRole)
-      buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
+      self.btnOkay = QtWidgets.QPushButton(self.tr('Done'))
+      self.btnCancel = QtWidgets.QPushButton(self.tr('Cancel'))
+      buttonBox = QtWidgets.QDialogButtonBox()
+      buttonBox.addButton(self.btnOkay, QtWidgets.QDialogButtonBox.AcceptRole)
+      buttonBox.addButton(self.btnCancel, QtWidgets.QDialogButtonBox.RejectRole)
 
       self.connect(self.btnOkay, SIGNAL(CLICKED), self.clickedOkay)
       self.connect(self.btnCancel, SIGNAL(CLICKED), self.reject)
@@ -46,7 +46,7 @@ class DlgUriCopyAndPaste(ArmoryDialog):
       frmImg = makeHorizFrame([STRETCH, lblShowExample, STRETCH])
 
 
-      layout = QVBoxLayout()
+      layout = QtWidgets.QVBoxLayout()
       layout.addWidget(lblDescr)
       layout.addWidget(HLINE())
       layout.addWidget(frmImg)

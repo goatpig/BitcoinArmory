@@ -1,10 +1,12 @@
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
 ################################################################################
 #                                                                              #
 # Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
 # Distributed under the GNU Affero General Public License (AGPL v3)            #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                         #
+#                                                                              #
+# Copyright (C) 2016-2024, goatpig                                             #
+#  Distributed under the MIT license                                           #
+#  See LICENSE-MIT or https://opensource.org/licenses/MIT                      #
 #                                                                              #
 ################################################################################
 from os import path
@@ -13,15 +15,14 @@ import sys
 
 from armoryengine.ArmoryUtils import enum, DEFAULT_DATE_FORMAT
 
-from PySide2.QtCore import Qt, QAbstractTableModel, QModelIndex, \
-   QSortFilterProxyModel
+from qtpy import QtCore
 
 LOCKBOXCOLS = enum('ID', 'MSType', 'CreateDate', 'LBName', \
                    'Key0', 'Key1', 'Key2', 'Key3', 'Key4', \
                    'NumTx', 'Balance', 'UnixTime')
 
 
-class LockboxDisplayModel(QAbstractTableModel):
+class LockboxDisplayModel(QtCore.QAbstractTableModel):
 
    def __init__(self, main, allLockboxes, dateFormat=DEFAULT_DATE_FORMAT):
       super(LockboxDisplayModel, self).__init__()
@@ -34,10 +35,10 @@ class LockboxDisplayModel(QAbstractTableModel):
    def recomputeMaxKeys(self):
       self.maxN = max([lbox.N for lbox in self.boxList])
 
-   def rowCount(self, index=QModelIndex()):
+   def rowCount(self, index=QtCore.QModelIndex()):
       return len(self.boxList)
 
-   def columnCount(self, index=QModelIndex()):
+   def columnCount(self, index=QtCore.QModelIndex()):
       return 12
 
    def getKeyDisp(self, lbox, i):
@@ -48,7 +49,7 @@ class LockboxDisplayModel(QAbstractTableModel):
          addr = hash160_to_addrStr(lbox.a160List[i])
          return "%s (%s...)" % (addr, pubhex[:20])
 
-   def data(self, index, role=Qt.DisplayRole):
+   def data(self, index, role=QtCore.Qt.DisplayRole):
       row,col = index.row(), index.column()
       lbox = self.boxList[row]
       lbID = lbox.uniqueIDB58
@@ -63,7 +64,7 @@ class LockboxDisplayModel(QAbstractTableModel):
          nTx = "N/A"
          bal = "N/A"
 
-      if role==Qt.DisplayRole:
+      if role==QtCore.Qt.DisplayRole:
          if col==LOCKBOXCOLS.ID: 
             return lbID
          elif col==LOCKBOXCOLS.CreateDate: 
@@ -101,52 +102,52 @@ class LockboxDisplayModel(QAbstractTableModel):
          elif col==LOCKBOXCOLS.UnixTime: 
             return str(lbox.createDate)
 
-      elif role==Qt.TextAlignmentRole:
+      elif role==QtCore.Qt.TextAlignmentRole:
          if col in (LOCKBOXCOLS.MSType, 
                     LOCKBOXCOLS.NumTx,
                     LOCKBOXCOLS.Balance):
-            return int(Qt.AlignHCenter | Qt.AlignVCenter)
+            return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
-         return int(Qt.AlignLeft | Qt.AlignVCenter)
+         return int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
 
-      elif role==Qt.FontRole:
+      elif role==QtCore.Qt.FontRole:
          f = GETFONT('Var')
          if col==LOCKBOXCOLS.Balance:
             f = GETFONT('Fixed')
          if nTx>0:
-            f.setWeight(QFont.Bold)
+            f.setWeight(QtGui.QFont.Bold)
          return f
-      elif role==Qt.BackgroundColorRole:
+      elif role==QtCore.Qt.BackgroundColorRole:
          if bal>0:
             return Colors.SlightGreen
 
       return None
 
 
-   def headerData(self, section, orientation, role=Qt.DisplayRole):
+   def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
       colLabels = ['ID', 'Type', 'Created', 'Info', 
                    'Key #1', 'Key #2', 'Key #3', 'Key #4', 'Key #5', 
                    '#Tx', 'Funds', 'UnixTime']
-      if role==Qt.DisplayRole:
-         if orientation==Qt.Horizontal:
+      if role==QtCore.Qt.DisplayRole:
+         if orientation==QtCore.Qt.Horizontal:
             return colLabels[section]
-      elif role==Qt.TextAlignmentRole:
-         return int(Qt.AlignHCenter | Qt.AlignVCenter)
+      elif role==QtCore.Qt.TextAlignmentRole:
+         return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
 
-   def flags(self, index, role=Qt.DisplayRole):
-      if role == Qt.DisplayRole:
+   def flags(self, index, role=QtCore.Qt.DisplayRole):
+      if role == QtCore.Qt.DisplayRole:
          lbox = self.boxList[index.row()]
          
-         rowFlag = Qt.ItemIsEnabled | Qt.ItemIsSelectable
+         rowFlag = QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable
          
          if lbox.isEnabled is False:      
-            return Qt.ItemFlags()      
+            return QtCore.Qt.ItemFlags()      
             
          return rowFlag      
 
 
-class LockboxDisplayProxy(QSortFilterProxyModel):
+class LockboxDisplayProxy(QtCore.QSortFilterProxyModel):
    """
    A proxy that re-maps indices to the table view so that data appears
    sorted without touching the model 

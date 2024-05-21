@@ -1,8 +1,6 @@
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
- ##############################################################################
+##############################################################################
 #                                                                            #
-# Copyright (C) 2016-17, goatpig                                             #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
@@ -14,10 +12,7 @@ from qtdialogs.qtdefines import QRichLabel, makeHorizFrame, \
 from qtdialogs.ArmoryDialog import ArmoryDialog
 
 from ui.TreeViewGUI import CoinControlTreeModel, RBFTreeModel
-
-from PySide2.QtCore import QByteArray
-from PySide2.QtWidgets import QCheckBox, QTreeView, QPushButton, \
-   QDialogButtonBox, QGridLayout
+from qtpy import QtCore, QtWidgets
 
 ################################################################################
 class CoinControlDlg(ArmoryDialog):
@@ -34,7 +29,7 @@ class CoinControlDlg(ArmoryDialog):
          'used for this transaction by selecting them below, and unchecking '
          'all other addresses.'))
 
-      self.useAllCheckBox = QCheckBox(self.tr("Use all selected UTXOs"))
+      self.useAllCheckBox = QtWidgets.QCheckBox(self.tr("Use all selected UTXOs"))
       useAllToolTip = createToolTipWidget(self.tr(
       'By default, Armory will pick a subset of the UTXOs you chose '
       'explicitly through the coin control feature to best suit the '
@@ -47,33 +42,33 @@ class CoinControlDlg(ArmoryDialog):
       frmCheckAll = makeHorizFrame([self.useAllCheckBox, useAllToolTip, 'Stretch'])
 
       self.ccTreeModel = CoinControlTreeModel(self, wlt)
-      self.ccView = QTreeView()
+      self.ccView = QtWidgets.QTreeView()
       self.ccView.setModel(self.ccTreeModel)
 
       self.setMinimumWidth(400)
       self.setMinimumHeight(300)
 
-      self.btnAccept = QPushButton(self.tr("Accept"))
-      self.btnCancel = QPushButton(self.tr("Cancel"))
+      self.btnAccept = QtWidgets.QPushButton(self.tr("Accept"))
+      self.btnCancel = QtWidgets.QPushButton(self.tr("Cancel"))
       self.btnAccept.clicked.connect(self.accept)
       self.btnCancel.clicked.connect(self.reject)
-      buttonBox = QDialogButtonBox()
-      buttonBox.addButton(self.btnAccept, QDialogButtonBox.AcceptRole)
-      buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
+      buttonBox = QtWidgets.QDialogButtonBox()
+      buttonBox.addButton(self.btnAccept, QtWidgets.QDialogButtonBox.AcceptRole)
+      buttonBox.addButton(self.btnCancel, QtWidgets.QDialogButtonBox.RejectRole)
 
       hexgeom  = TheSettings.get('ccDlgGeometry')
       tblgeom  = TheSettings.get('ccDlgAddrCols')
 
       if len(hexgeom) > 0:
          if type(hexgeom) == str:
-            geom = QByteArray(bytes.fromhex(hexgeom))
+            geom = QtCore.QByteArray(bytes.fromhex(hexgeom))
          else:
             geom = hexgeom
          self.restoreGeometry(geom)
       if len(tblgeom) > 0:
          restoreTableView(self.ccView, tblgeom)
 
-      layout = QGridLayout()
+      layout = QtWidgets.QGridLayout()
       layout.addWidget(lblDescr, 0, 0)
       layout.addWidget(frmCheckAll, 1, 0)
       layout.addWidget(self.ccView, 2, 0)
@@ -149,30 +144,30 @@ class RBFDlg(ArmoryDialog):
 
       self.wlt = wlt
       self.rbfTreeModel = RBFTreeModel(self, wlt)
-      self.rbfView = QTreeView()
+      self.rbfView = QtWidgets.QTreeView()
       self.rbfView.setModel(self.rbfTreeModel)
 
-      self.btnAccept = QPushButton(self.tr("Accept"))
-      self.btnCancel = QPushButton(self.tr("Cancel"))
+      self.btnAccept = QtWidgets.QPushButton(self.tr("Accept"))
+      self.btnCancel = QtWidgets.QPushButton(self.tr("Cancel"))
       self.btnAccept.clicked.connect(self.accept)
       self.btnCancel.clicked.connect(self.reject)
-      buttonBox = QDialogButtonBox()
-      buttonBox.addButton(self.btnAccept, QDialogButtonBox.AcceptRole)
-      buttonBox.addButton(self.btnCancel, QDialogButtonBox.RejectRole)
+      buttonBox = QtWidgets.QDialogButtonBox()
+      buttonBox.addButton(self.btnAccept, QtWidgets.QDialogButtonBox.AcceptRole)
+      buttonBox.addButton(self.btnCancel, QtWidgets.QDialogButtonBox.RejectRole)
 
       hexgeom  = TheSettings.get('rbfDlgGeometry')
       tblgeom  = TheSettings.get('rbfDlgAddrCols')
 
       if len(hexgeom) > 0:
          if type(hexgeom) == str:
-            geom = QByteArray(bytes.fromhex(hexgeom))
+            geom = QtCore.QByteArray(bytes.fromhex(hexgeom))
          else:
             geom = hexgeom
          self.restoreGeometry(geom)
       if len(tblgeom) > 0:
          restoreTableView(self.rbfView, tblgeom)
 
-      layout = QGridLayout()
+      layout = QtWidgets.QGridLayout()
       layout.addWidget(self.rbfView, 1, 0)
       layout.addWidget(buttonBox, 4, 0)
       self.setLayout(layout)

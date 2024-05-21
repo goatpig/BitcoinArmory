@@ -1,19 +1,19 @@
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
 ################################################################################
 #                                                                              #
 # Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
 # Distributed under the GNU Affero General Public License (AGPL v3)            #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                         #
 #                                                                              #
+# Copyright (C) 2016-2024, goatpig                                             #
+#  Distributed under the MIT license                                           #
+#  See LICENSE-MIT or https://opensource.org/licenses/MIT                      #
+#                                                                              #
 ################################################################################
 
 import textwrap
 from io import StringIO
 
-from PySide2.QtWidgets import QApplication, QCheckBox, QComboBox, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLayout, QLineEdit, QMenu, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSpacerItem, QSplitter, QStackedWidget, QTabWidget, QTableView, QTextEdit, QVBoxLayout, QWidget
-from PySide2.QtCore import QByteArray, QUrl, Qt, SIGNAL
-from PySide2.QtGui import QCursor, QDesktopServices, QIcon, QPixmap
+from qtpy import QtCore, QtGui, QtWidgets
 
 from armorycolors import htmlColor
 from qtdialogs.ArmoryDialog import ArmoryDialog
@@ -58,7 +58,7 @@ class DlgLockboxEditor(ArmoryDialog):
 
       lblDescr = QRichLabel(self.tr(
          '<b><u><font size=5 color="%1">Create Multi-signature Lockbox</font></u>' % \
-         htmlColor("TextBlue")), hAlign=Qt.AlignHCenter)
+         htmlColor("TextBlue")), hAlign=QtCore.Qt.AlignHCenter)
 
       lblDescr2 = QRichLabel(self.tr(
          'Create a "lockbox" to hold coins that have signing authority split '
@@ -71,7 +71,7 @@ class DlgLockboxEditor(ArmoryDialog):
          '<a href="None">Click for more info</a>.'))
 
       def openMoreInfo(*args):
-         QMessageBox.information(self, self.tr('Public Key Information'), self.tr(
+         QtWidgets.QMessageBox.information(self, self.tr('Public Key Information'), self.tr(
              'A public key is much longer than an '
              'address string, and always starts with "02", "03" or "04". '
              'Most wallet applications do not provide an easy way to access '
@@ -87,7 +87,7 @@ class DlgLockboxEditor(ArmoryDialog):
              'from the Lockbox Manager dashboard to pick a key and enter '
              'their contact info.  You can use the "Import" button '
              'on each public key line to import the data they send you.'),
-             QMessageBox.Ok)
+             QtWidgets.QMessageBox.Ok)
 
 
 
@@ -98,8 +98,8 @@ class DlgLockboxEditor(ArmoryDialog):
 
       self.createDate = int(RightNow())
       self.loadedID = None
-      self.comboM = QComboBox()
-      self.comboN = QComboBox()
+      self.comboM = QtWidgets.QComboBox()
+      self.comboN = QtWidgets.QComboBox()
       self.maxM = maxM
       self.maxN = maxN
       self.minM = 1
@@ -110,7 +110,7 @@ class DlgLockboxEditor(ArmoryDialog):
                                              self.updateWidgetTable_N)
       self.comboM.setFont(GETFONT('Var', 14, bold=True))
       self.comboN.setFont(GETFONT('Var', 14, bold=True))
-      self.lblMasterIcon = QLabel()
+      self.lblMasterIcon = QtWidgets.QLabel()
 
         # Used to optimize update-on-every-key-press
       self.prevPubKeyStr = ['']*self.maxN
@@ -132,12 +132,12 @@ class DlgLockboxEditor(ArmoryDialog):
       self.widgetMap = {}
       for i in range(self.maxN):
          self.widgetMap[i] = {}
-         self.widgetMap[i]['IMG_ICON'] = QLabel()
+         self.widgetMap[i]['IMG_ICON'] = QtWidgets.QLabel()
          self.widgetMap[i]['LBL_ROWN'] = QRichLabel(self.tr(
-            'Public Key #<font size=4 color="%s">%d</font>:' % (htmlColor('TextBlue'), i+1)), doWrap=False, hAlign=Qt.AlignRight)
+            'Public Key #<font size=4 color="%s">%d</font>:' % (htmlColor('TextBlue'), i+1)), doWrap=False, hAlign=QtCore.Qt.AlignRight)
          self.widgetMap[i]['LBL_WLTN'] = QRichLabel(self.tr('Name or ID:'), \
                                                     doWrap=False, \
-                                                    hAlign=Qt.AlignRight)
+                                                    hAlign=QtCore.Qt.AlignRight)
 
 
          addrWidgets = self.main.createAddressEntryWidgets(self, '', 60, 2,
@@ -184,15 +184,15 @@ class DlgLockboxEditor(ArmoryDialog):
          self.widgetMap[i]['QLE_PUBK'].setMinimumWidth(w)
 
 
-      self.btnCancel   = QPushButton(self.tr('Exit'))
-      self.btnContinue = QPushButton(self.tr('Save Lockbox'))
+      self.btnCancel   = QtWidgets.QPushButton(self.tr('Exit'))
+      self.btnContinue = QtWidgets.QPushButton(self.tr('Save Lockbox'))
         #self.btnContinue.setEnabled(False)
       self.connect(self.btnContinue, SIGNAL('clicked()'), self.doContinue)
       self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
       self.lblFinal = QRichLabel('')
 
 
-      self.edtBoxName = QLineEdit()
+      self.edtBoxName = QtWidgets.QLineEdit()
       w,h = relaxedSizeNChar(self.edtBoxName, 36)
       self.edtBoxName.setMinimumWidth(w)
       self.edtBoxName.setMaxLength(64)
@@ -202,36 +202,36 @@ class DlgLockboxEditor(ArmoryDialog):
       self.connect(self.btnLongDescr, SIGNAL('clicked()'), self.setLongDescr)
 
       frmName = makeHorizFrame(['Stretch',
-                                QLabel('Lockbox Name:'),
+                                QtWidgets.QLabel('Lockbox Name:'),
                                 self.edtBoxName,
                                 self.btnLongDescr,
                                 'Stretch'])
 
 
 
-      layoutPubKeys = QGridLayout()
+      layoutPubKeys = QtWidgets.QGridLayout()
       self.pkFrameList = []
       for i in range(self.maxN):
-         self.pkFrameList.append(QFrame())
-         layoutThisRow = QGridLayout()
+         self.pkFrameList.append(QtWidgets.QFrame())
+         layoutThisRow = QtWidgets.QGridLayout()
          layoutThisRow.addWidget(self.widgetMap[i]['IMG_ICON'],   0,0, 3,1)
          layoutThisRow.addWidget(self.widgetMap[i]['LBL_ROWN'],   0,1)
          layoutThisRow.addWidget(self.widgetMap[i]['LBL_WLTN'],   2,1)
-         layoutThisRow.addItem(QSpacerItem(10,10),                0,2)
+         layoutThisRow.addItem(QtWidgets.QSpacerItem(10,10),                0,2)
          layoutThisRow.addWidget(self.widgetMap[i]['QLE_PUBK'],   0,3)
          layoutThisRow.addWidget(self.widgetMap[i]['BTN_BOOK'],   0,4)
 
 
-         layoutDetect = QHBoxLayout()
+         layoutDetect = QtWidgets.QHBoxLayout()
          layoutDetect.addWidget(self.widgetMap[i]['LBL_DETECT'])
          layoutDetect.addStretch()
-         layoutDetect.addItem(QSpacerItem(5,5))
+         layoutDetect.addItem(QtWidgets.QSpacerItem(5,5))
          layoutDetect.addWidget(self.widgetMap[i]['BTN_IMPORT'])
          layoutThisRow.addLayout(layoutDetect,                    1,3, 1,2)
 
-         layoutName = QHBoxLayout()
+         layoutName = QtWidgets.QHBoxLayout()
          layoutName.addWidget(self.widgetMap[i]['LBL_NAME'])
-         layoutName.addItem(QSpacerItem(5,5))
+         layoutName.addItem(QtWidgets.QSpacerItem(5,5))
          layoutName.addWidget(self.widgetMap[i]['BTN_NAME'])
          layoutName.addStretch()
          layoutThisRow.addLayout(layoutName,                      2,3, 1,2)
@@ -245,7 +245,7 @@ class DlgLockboxEditor(ArmoryDialog):
       self.pkFrameList.append('Stretch')
       frmPubKeys = makeVertFrame( [frmName]+self.pkFrameList, STYLE_RAISED)
 
-      self.scrollPubKeys = QScrollArea()
+      self.scrollPubKeys = QtWidgets.QScrollArea()
       self.scrollPubKeys.setWidget(frmPubKeys)
       self.scrollPubKeys.setWidgetResizable(True)
 
@@ -257,22 +257,22 @@ class DlgLockboxEditor(ArmoryDialog):
         # Create the M,N select frame (stolen from frag-create dialog
       lblMNSelect = QRichLabel(self.tr('<font color="%s" size=4><b>Create '
          'Multi-Sig Lockbox</b></font>' % htmlColor("TextBlue")), \
-         doWrap=False, hAlign=Qt.AlignHCenter)
+         doWrap=False, hAlign=QtCore.Qt.AlignHCenter)
 
       lblBelowM = QRichLabel(self.tr('<b>Required Signatures (M)</b> '), \
-                                       hAlign=Qt.AlignHCenter, doWrap=False)
+                                       hAlign=QtCore.Qt.AlignHCenter, doWrap=False)
       lblBelowN = QRichLabel(self.tr('<b>Total Signers (N)</b> '), \
-                                       hAlign=Qt.AlignHCenter, doWrap=False)
+                                       hAlign=QtCore.Qt.AlignHCenter, doWrap=False)
 
       lblOfStr = QRichLabel(self.tr(' - OF - '))
 
 
-      btnClear  = QPushButton(self.tr('Clear All'))
+      btnClear  = QtWidgets.QPushButton(self.tr('Clear All'))
 
       self.connect(btnClear,  SIGNAL('clicked()'), self.clearAll)
 
 
-      layoutMNSelect = QGridLayout()
+      layoutMNSelect = QtWidgets.QGridLayout()
       layoutMNSelect.addWidget(self.comboM,     1,2)
       layoutMNSelect.addWidget(lblOfStr,        1,4)
       layoutMNSelect.addWidget(self.comboN,     1,6)
@@ -281,7 +281,7 @@ class DlgLockboxEditor(ArmoryDialog):
       layoutMNSelect.setColumnStretch(0,1)
       layoutMNSelect.setColumnStretch(8,1)
       
-      frmMNSelect = QFrame()
+      frmMNSelect = QtWidgets.QFrame()
       frmMNSelect.setFrameStyle(STYLE_RAISED)
       frmMNSelect.setLayout(layoutMNSelect)
 
@@ -292,7 +292,7 @@ class DlgLockboxEditor(ArmoryDialog):
                                   'Stretch',
                                   self.btnContinue])
 
-      layoutMaster = QVBoxLayout()
+      layoutMaster = QtWidgets.QVBoxLayout()
       layoutMaster.addWidget(frmTop)
       layoutMaster.addWidget(frmMNSelect)
       layoutMaster.addWidget(self.scrollPubKeys, 1)
@@ -369,10 +369,10 @@ class DlgLockboxEditor(ArmoryDialog):
 
             self.descr = QPlainTextEdit()
             self.descr.setPlainText(currDescr)
-            btn = QPushButton(self.tr("Done"))
+            btn = QtWidgets.QPushButton(self.tr("Done"))
             self.connect(btn, SIGNAL('clicked()'), self.accept)
 
-            layout = QVBoxLayout()
+            layout = QtWidgets.QVBoxLayout()
             layout.addWidget(lbl)
             layout.addWidget(self.descr, 1)
             layout.addWidget(makeHorizFrame(['Stretch', btn]))
@@ -448,7 +448,7 @@ class DlgLockboxEditor(ArmoryDialog):
     #############################################################################
    def updateWidgetTable(self, M, N):
 
-      self.imgPie = QPixmap(':/frag%df.png' % M)
+      self.imgPie = QtGui.QPixmap(':/frag%df.png' % M)
 
         # Do the bulk of processing stuff
       for i in range(self.maxN):
@@ -508,11 +508,11 @@ class DlgLockboxEditor(ArmoryDialog):
       currN = int(str(self.comboN.currentText()))
 
       if len(str(self.edtBoxName.text()).strip())==0:
-         QMessageBox.warning(self, self.tr('Missing Name'), self.tr(
+         QtWidgets.QMessageBox.warning(self, self.tr('Missing Name'), self.tr(
             'Lockboxes cannot be saved without a name (at the top of '
             'the public key list).  It is also recommended to set the '
             'extended information next to it, for documenting the purpose '
-            'of the lockbox.'), QMessageBox.Ok)
+            'of the lockbox.'), QtWidgets.QMessageBox.Ok)
          return
 
         # If we got here, we already know all the public keys are valid strings
@@ -522,10 +522,10 @@ class DlgLockboxEditor(ArmoryDialog):
          pkHex = str(self.widgetMap[i]['QLE_PUBK'].text()).strip()
 
          if len(pkHex)==0:
-            QMessageBox.critical(self, self.tr('Not Enough Keys'), self.tr(
+            QtWidgets.QMessageBox.critical(self, self.tr('Not Enough Keys'), self.tr(
                'You specified less than <b>%d</b> public keys.  Please enter '
                'a public key into every field before continuing.' % currN),
-               QMessageBox.Ok)
+               QtWidgets.QMessageBox.Ok)
             return
          
          isValid = isLikelyDataType(pkHex, DATATYPE.Hex)
@@ -537,10 +537,10 @@ class DlgLockboxEditor(ArmoryDialog):
 #                        isValid = False
 
          if not isValid:
-            QMessageBox.critical(self, self.tr('Invalid Public Key'), self.tr(
+            QtWidgets.QMessageBox.critical(self, self.tr('Invalid Public Key'), self.tr(
                'The data specified for public key <b>%d</b> is not valid. '
                'Please double-check the data was entered correctly.' % (i+1)),
-               QMessageBox.Ok)
+               QtWidgets.QMessageBox.Ok)
             return
 
          keyComment = str(self.widgetMap[i]['LBL_NAME'].text())
@@ -553,7 +553,7 @@ class DlgLockboxEditor(ArmoryDialog):
             # Finally, throw a warning if the comment is not set
          strComment = str(self.widgetMap[i]['LBL_NAME'].text()).strip()
          if len(strComment)==0 and not acceptedBlankComment:
-            reply =QMessageBox.warning(self, self.tr('Empty Name/ID Field'), self.tr(
+            reply =QtWidgets.QMessageBox.warning(self, self.tr('Empty Name/ID Field'), self.tr(
                'You did not specify a comment/label for one or more '
                'public keys.  Other devices/parties may not be able to '
                'identify them.  If this is a multi-party '
@@ -562,9 +562,9 @@ class DlgLockboxEditor(ArmoryDialog):
                '<br><br>'
                'Continue with some fields blank? '
                '<br>(click "No" to go back and finish filling in the form)'),
-               QMessageBox.Yes | QMessageBox.No)
+               QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
 
-            if reply==QMessageBox.Yes:
+            if reply==QtWidgets.QMessageBox.Yes:
                acceptedBlankComment = True
             else:
                return
@@ -582,7 +582,7 @@ class DlgLockboxEditor(ArmoryDialog):
       lockboxID = calcLockboxID(txOutScript)
       if self.loadedID is not None:
          if not self.loadedID == lockboxID:
-            reply = QMessageBox.warning(self, self.tr('Different Lockbox'), self.tr(
+            reply = QtWidgets.QMessageBox.warning(self, self.tr('Different Lockbox'), self.tr(
                'You originally loaded lockbox (%s) but the edits you made '
                'have caused it to become a new/different lockbox (%s). '
                'Changing the M-value, N-value, or any of the public keys '
@@ -590,24 +590,24 @@ class DlgLockboxEditor(ArmoryDialog):
                '<br><br>'
                '<b>If you click "Ok" a new lockbox will be created</b> instead '
                'of replacing the original.  If you do not need the original, '
-               'you can go the lockbox browser and manually remove it.' % (self.loadedID, lockboxID)), QMessageBox.Ok | QMessageBox.Cancel)
-            if not reply==QMessageBox.Ok:
+               'you can go the lockbox browser and manually remove it.' % (self.loadedID, lockboxID)), QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel)
+            if not reply==QtWidgets.QMessageBox.Ok:
                return
             else:
                self.createDate = int(RightNow())
       
       if not USE_TESTNET and isMofNNonStandardToSpend(currM, currN) and not USE_REGTEST:
-         reply = QMessageBox.warning(self, self.tr('Non-Standard to Spend'), self.tr(
+         reply = QtWidgets.QMessageBox.warning(self, self.tr('Non-Standard to Spend'), self.tr(
             'If you are running any Bitcoin Core version earlier than 0.9.3 '
             'all spending transactions from this lockbox '
             'will be rejected as non-standard.  There will be no problem sending coins '
             '<u>to</u> the lockbox, but subsequent spends <u>from</u> the '
             'lockbox will require you to upgrade Bitcoin Core to at least 0.9.3 or later. '
             '<br><br>'
-            'Do you wish to continue creating the lockbox, anyway?'), QMessageBox.Yes | QMessageBox.No)
+            'Do you wish to continue creating the lockbox, anyway?'), QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
 
 
-         if not reply==QMessageBox.Yes:
+         if not reply==QtWidgets.QMessageBox.Yes:
             return
 
       LOGINFO('Got a valid TxOut script:')
@@ -661,21 +661,21 @@ class DlgLockboxManager(ArmoryDialog):
       super(DlgLockboxManager, self).__init__(parent, main)
 
         #if not USE_TESTNET:
-            #QMessageBox.warning(self, self.tr('Dangerous Feature!'), self.tr(
+            #QtWidgets.QMessageBox.warning(self, self.tr('Dangerous Feature!'), self.tr(
                 #'Multi-signature transactions are an '
                 #'<b>EXPERIMENTAL</b> feature in this version of Armory.  It is '
                 #'<u><b>not</b></u> intended to be used with real money, until all '
                 #'the warnings like this one go away.'
                 #'<br><br>'
-                #'<b>Use at your own risk!</b>'), QMessageBox.Ok)
+                #'<b>Use at your own risk!</b>'), QtWidgets.QMessageBox.Ok)
 
       if len(self.main.allLockboxes) > 0:
          lblDescr = QRichLabel(self.tr(
              '<font color="%s" size=4><b>Manage Multi-Sig Lockboxes</b></font> '
-             '<br>Double-click on a lockbox to edit' % htmlColor('TextBlue')), hAlign=Qt.AlignHCenter)
+             '<br>Double-click on a lockbox to edit' % htmlColor('TextBlue')), hAlign=QtCore.Qt.AlignHCenter)
       else:
          lblDescr = QRichLabel(self.tr(
-             '<font color="%s" size=4><b>Manage Multi-Sig Lockboxes</b></font> ' % htmlColor('TextBlue')), hAlign=Qt.AlignHCenter)
+             '<font color="%s" size=4><b>Manage Multi-Sig Lockboxes</b></font> ' % htmlColor('TextBlue')), hAlign=QtCore.Qt.AlignHCenter)
       
       frmDescr = makeVertFrame([lblDescr], STYLE_RAISED)
 
@@ -691,34 +691,34 @@ class DlgLockboxManager(ArmoryDialog):
       
       self.lboxProxy = LockboxDisplayProxy(self)
       self.lboxProxy.setSourceModel(self.lboxModel)
-      self.lboxProxy.sort(LOCKBOXCOLS.CreateDate, Qt.DescendingOrder)
-      self.lboxView = QTableView()
+      self.lboxProxy.sort(LOCKBOXCOLS.CreateDate, QtCore.Qt.DescendingOrder)
+      self.lboxView = QtWidgets.QTableView()
       self.lboxView.setModel(self.lboxProxy)
       self.lboxView.setSortingEnabled(True)
-      self.lboxView.setSelectionBehavior(QTableView.SelectRows)
-      self.lboxView.setSelectionMode(QTableView.SingleSelection)
+      self.lboxView.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
+      self.lboxView.setSelectionMode(QtWidgets.QTableView.SingleSelection)
       self.lboxView.verticalHeader().setDefaultSectionSize(18)
       self.lboxView.horizontalHeader().setStretchLastSection(True)
-      self.lboxView.setContextMenuPolicy(Qt.CustomContextMenu)
+      self.lboxView.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
       self.lboxView.customContextMenuRequested.connect(self.showLboxContextMenu)
 
       self.connect( \
             self.lboxView,
-            SIGNAL('clicked(QModelIndex)'),
+            SIGNAL('clicked(QtCore.QModelIndex)'),
             self.singleClickLockbox)
       self.connect( \
             self.lboxView,
-            SIGNAL('doubleClicked(QModelIndex)'),
+            SIGNAL('doubleClicked(QtCore.QModelIndex)'),
             self.dblClickLockbox)
 
-      self.txtLockboxInfo = QTextEdit()
+      self.txtLockboxInfo = QtWidgets.QTextEdit()
       self.txtLockboxInfo.acceptRichText()
-      self.txtLockboxInfo.setStyleSheet('QTextEdit { background-color : %s }' %\
+      self.txtLockboxInfo.setStyleSheet('QtWidgets.QTextEdit { background-color : %s }' %\
                                                  htmlColor('SlightBkgdLight'))
       self.txtLockboxInfo.setReadOnly(True)
       self.txtLockboxInfo.setFont(GETFONT('Fixed', 9))
 
-      btnDone = QPushButton(self.tr('Done'))
+      btnDone = QtWidgets.QPushButton(self.tr('Done'))
       frmDone = makeHorizFrame(['Stretch', btnDone])
       self.connect(btnDone, SIGNAL('clicked()'), self.accept)
 
@@ -726,13 +726,13 @@ class DlgLockboxManager(ArmoryDialog):
          self.lboxView.hideColumn(i)
       self.lboxView.hideColumn(LOCKBOXCOLS.UnixTime)
 
-      self.frmLedgUpDown = QFrame()
+      self.frmLedgUpDown = QtWidgets.QFrame()
       self.ledgerView  = ArmoryTableView(self.parent, self.main, self.frmLedgUpDown)
       self.ledgerView.setModel(self.main.lockboxLedgModel)
       self.ledgerView.setSortingEnabled(True)
       self.ledgerView.setItemDelegate(LedgerDispDelegate(self))
-      self.ledgerView.setSelectionBehavior(QTableView.SelectRows)
-      self.ledgerView.setSelectionMode(QTableView.SingleSelection)
+      self.ledgerView.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
+      self.ledgerView.setSelectionMode(QtWidgets.QTableView.SingleSelection)
       self.ledgerView.verticalHeader().setDefaultSectionSize(20)
       self.ledgerView.verticalHeader().hide()
       self.ledgerView.horizontalHeader().setResizeMode(0, QHeaderView.Fixed)
@@ -753,23 +753,23 @@ class DlgLockboxManager(ArmoryDialog):
       initialColResize(self.ledgerView, [cWidth, 0, dateWidth, tWidth, \
                                                             0.30, 0.40, 0.3])
       
-      self.connect(self.ledgerView, SIGNAL('doubleClicked(QModelIndex)'), \
+      self.connect(self.ledgerView, SIGNAL('doubleClicked(QtCore.QModelIndex)'), \
                    self.dblClickLedger)
 
-      self.ledgerView.setContextMenuPolicy(Qt.CustomContextMenu)
+      self.ledgerView.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
       self.ledgerView.customContextMenuRequested.connect(self.showContextMenuLedger)
 
 
         # Setup the details tab
-      self.tabDetails = QWidget()
-      layoutDetails = QHBoxLayout()
+      self.tabDetails = QtWidgets.QWidget()
+      layoutDetails = QtWidgets.QHBoxLayout()
         #layoutDetails.addWidget(frmManageBtns)  # Removed when added dash tab
       layoutDetails.addWidget(self.txtLockboxInfo, 1)
       self.tabDetails.setLayout(layoutDetails)
 
         # Setup the ledger tab
-      self.tabLedger = QWidget()
-      layoutLedger = QVBoxLayout()
+      self.tabLedger = QtWidgets.QWidget()
+      layoutLedger = QtWidgets.QVBoxLayout()
       layoutLedger.addWidget(self.ledgerView)
       bottomRow = makeHorizFrame([STRETCH, self.frmLedgUpDown, STRETCH], condenseMargins=True)
       layoutLedger.addWidget(bottomRow)
@@ -778,7 +778,7 @@ class DlgLockboxManager(ArmoryDialog):
         # Creates self.stkDashboard
       self.createLockboxDashboardTab()
 
-      self.tabbedDisplay = QTabWidget()
+      self.tabbedDisplay = QtWidgets.QTabWidget()
       self.tabbedDisplay.addTab(self.stkDashboard, self.tr("Dashboard"))
       self.tabbedDisplay.addTab(self.tabDetails, self.tr("Info"))
       self.tabbedDisplay.addTab(self.tabLedger, self.tr("Transactions"))
@@ -788,13 +788,13 @@ class DlgLockboxManager(ArmoryDialog):
 
 
       splitter = QSplitter()
-      splitter.setOrientation(Qt.Vertical)
+      splitter.setOrientation(QtCore.Qt.Vertical)
       splitter.addWidget(self.lboxView)
       splitter.addWidget(self.tabbedDisplay)
       splitter.setStretchFactor(0, 1)
       splitter.setStretchFactor(0, 2)
 
-      layout = QGridLayout()
+      layout = QtWidgets.QGridLayout()
       layout.addWidget(frmDescr,            0,0,  1,2)
       layout.addWidget(splitter,            1,0,  1,2)
       layout.addWidget(frmDone,             2,0,  1,2)
@@ -811,7 +811,7 @@ class DlgLockboxManager(ArmoryDialog):
 
       try:
          if len(hexgeom) > 0:
-            geom = QByteArray.fromHex(hexgeom)
+            geom = QtCore.QByteArray.fromHex(hexgeom)
             self.restoreGeometry(geom)
          if len(tblgeom) > 0:
             restoreTableView(self.lboxView, tblgeom)
@@ -1000,8 +1000,8 @@ class DlgLockboxManager(ArmoryDialog):
       self.stkDashboard = QStackedWidget()
 
       simultxt = 'Simulfund'
-      self.chkSimulfundA = QCheckBox(simultxt)
-      self.chkSimulfundB = QCheckBox(simultxt)
+      self.chkSimulfundA = QtWidgets.QCheckBox(simultxt)
+      self.chkSimulfundB = QtWidgets.QCheckBox(simultxt)
 
       ttipSimulTxt = self.tr(
          'If this lockbox will be funded by multiple parties and not all '
@@ -1032,21 +1032,21 @@ class DlgLockboxManager(ArmoryDialog):
       cellStyle = STYLE_RAISED
       def createHeaderCell(headStr, extraWidgList=None):
          lbl = QRichLabel(headStr, bold=True, size=4,
-                                   hAlign=Qt.AlignHCenter,
-                                   vAlign=Qt.AlignVCenter)
+                                   hAlign=QtCore.Qt.AlignHCenter,
+                                   vAlign=QtCore.Qt.AlignVCenter)
 
 
          if extraWidgList is None:
             frm = makeVertFrame([lbl], cellStyle)
          else:
-            botLayout = QHBoxLayout()
+            botLayout = QtWidgets.QHBoxLayout()
             for widg in extraWidgList:
                botLayout.addWidget(widg)
             botLayout.setSpacing(0)
-            cellLayout = QVBoxLayout()
+            cellLayout = QtWidgets.QVBoxLayout()
             cellLayout.addWidget(lbl)
             cellLayout.addLayout(botLayout)
-            frm = QFrame()
+            frm = QtWidgets.QFrame()
             frm.setLayout(cellLayout)
             frm.setFrameStyle(cellStyle)
 
@@ -1056,18 +1056,18 @@ class DlgLockboxManager(ArmoryDialog):
 
       self.updateDashFuncs = []
       def createCell(stk, btnKeyList, direct=HORIZONTAL):
-         layoutMulti = QHBoxLayout() if direct==HORIZONTAL else QVBoxLayout()
+         layoutMulti = QtWidgets.QHBoxLayout() if direct==HORIZONTAL else QtWidgets.QVBoxLayout()
 
          for key in btnKeyList:
-            layout = QGridLayout()
+            layout = QtWidgets.QGridLayout()
             btnMap = self.allDashButtons[stk][key]
-            btnMap['BTN'] = QPushButton(btnMap['button'])
-            btnMap['LBL'] = QRichLabel('', doWrap=True, hAlign=Qt.AlignHCenter, vAlign=Qt.AlignTop)
+            btnMap['BTN'] = QtWidgets.QPushButton(btnMap['button'])
+            btnMap['LBL'] = QRichLabel('', doWrap=True, hAlign=QtCore.Qt.AlignHCenter, vAlign=QtCore.Qt.AlignTop)
             btnMap['TTIP'] = self.main.createToolTipWidget(btnMap['tiptxt'])
             if btnMap['organiz']:
                btnMap['BTN'].setAutoFillBackground(True)
                btnMap['BTN'].setStyleSheet(\
-                   'QPushButton { background-color : %s }' % htmlColor('SlightMoreBlue'))
+                   'QtWidgets.QPushButton { background-color : %s }' % htmlColor('SlightMoreBlue'))
 
             layout.addWidget(btnMap['BTN'],   0,0)
             layout.addWidget(btnMap['TTIP'],  0,1)
@@ -1076,7 +1076,7 @@ class DlgLockboxManager(ArmoryDialog):
             layout.setColumnStretch(1,0)
             self.connect(btnMap['BTN'], SIGNAL('clicked()'), btnMap['callbk'])
 
-            slayout = QHBoxLayout()
+            slayout = QtWidgets.QHBoxLayout()
             slayout.addStretch()
             slayout.addLayout(layout)
             slayout.addStretch()
@@ -1131,7 +1131,7 @@ class DlgLockboxManager(ArmoryDialog):
                 # Add the func to the list of things to call on context change
             self.updateDashFuncs.append(updateWidgets(stk, key))
 
-         frmCell = QFrame()
+         frmCell = QtWidgets.QFrame()
          frmCell.setLayout(layoutMulti)
          frmCell.setFrameStyle(STYLE_RAISED)
 
@@ -1147,16 +1147,16 @@ class DlgLockboxManager(ArmoryDialog):
         ##### REGULAR FUNDING - Special Cell ####
         # This FUND row for regular funding will be totally unlike the others
         # Create it here instead of with the the createCell() function
-      self.lblDispAddr = QRichLabel('', doWrap=False, hAlign=Qt.AlignHCenter)
-      self.lblDispAddr.setTextInteractionFlags(Qt.TextSelectableByMouse | \
-                                               Qt.TextSelectableByKeyboard)
-      self.btnFundRegular = QPushButton(self.tr('Fund from Wallet'))
-      self.btnQRCodeDisp  = QPushButton(self.tr('QR Code'))
-      self.btnFundRequest = QPushButton(self.tr('Request Payment'))
-      self.btnCopyClip = QPushButton(self.tr('Copy Address'))
+      self.lblDispAddr = QRichLabel('', doWrap=False, hAlign=QtCore.Qt.AlignHCenter)
+      self.lblDispAddr.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse | \
+                                               QtCore.Qt.TextSelectableByKeyboard)
+      self.btnFundRegular = QtWidgets.QPushButton(self.tr('Fund from Wallet'))
+      self.btnQRCodeDisp  = QtWidgets.QPushButton(self.tr('QR Code'))
+      self.btnFundRequest = QtWidgets.QPushButton(self.tr('Request Payment'))
+      self.btnCopyClip = QtWidgets.QPushButton(self.tr('Copy Address'))
 
         #segwit checkbox
-      self.chkSegWit = QCheckBox("SegWit")
+      self.chkSegWit = QtWidgets.QCheckBox("SegWit")
       self.chkSegWit.setChecked(False)
       
       def checkSegWit():
@@ -1174,7 +1174,7 @@ class DlgLockboxManager(ArmoryDialog):
          if not lbox:
             return
          self.btnCopyClip.setText('Copied!')
-         clipb = QApplication.clipboard()
+         clipb = QtWidgets.QApplication.clipboard()
          clipb.clear()
          clipb.setText(scrAddr_to_addrStr(lbox.getAddr()))
          TheSignalExecution.callLater(1, lambda: self.btnCopyClip.setText('Copy Address'))
@@ -1236,7 +1236,7 @@ class DlgLockboxManager(ArmoryDialog):
       self.updateDashFuncs.append(updateRegFundCell)
       self.updateDashFuncs.append(setSWCheckBox)
 
-      layoutFundRow = QGridLayout()
+      layoutFundRow = QtWidgets.QGridLayout()
       layoutFundRow.addWidget( self.btnFundRegular,  0,1)
       layoutFundRow.addWidget( self.btnQRCodeDisp,   0,2)
       layoutFundRow.addWidget( self.btnFundRequest,  0,3)
@@ -1251,7 +1251,7 @@ class DlgLockboxManager(ArmoryDialog):
       layoutFundRow.setColumnStretch(5, 0)
       layoutFundRow.setColumnStretch(6, 1)
       layoutFundRow.setColumnStretch(7, 1)
-      frmFundRegCell = QFrame()
+      frmFundRegCell = QtWidgets.QFrame()
       frmFundRegCell.setLayout(layoutFundRow)
       frmFundRegCell.setFrameStyle(STYLE_RAISED)
 
@@ -1259,8 +1259,8 @@ class DlgLockboxManager(ArmoryDialog):
 
 
         # First frame is for regular funding.  Switch to frmMulti if chkSimulfundA
-      frmSingle = QFrame()
-      frmSingleLayout = QGridLayout()
+      frmSingle = QtWidgets.QFrame()
+      frmSingleLayout = QtWidgets.QGridLayout()
 
       firstRow  = createCell(0, ['CreateLB', 'SelectKey', 'ExportLB', 'ImportLB'], HORIZONTAL)
         #secondRow = createCell(0, ['RegFund'], HORIZONTAL)
@@ -1289,8 +1289,8 @@ class DlgLockboxManager(ArmoryDialog):
 
 
         # Second frame is for Simulfunding
-      frmMulti = QFrame()
-      frmMultiLayout = QGridLayout()
+      frmMulti = QtWidgets.QFrame()
+      frmMultiLayout = QtWidgets.QGridLayout()
 
       firstRow  = createCell(1, ['CreateLB', 'SelectKey', 'ExportLB', 'ImportLB'], HORIZONTAL)
       secondRow = createCell(1, ['MergeProm', 'CreateProm'], HORIZONTAL)
@@ -1367,9 +1367,9 @@ class DlgLockboxManager(ArmoryDialog):
             pytx = PyTx().unserialize(cppTx.serialize())
 
       if pytx==None:
-         QMessageBox.critical(self, self.tr('Invalid Tx'),
+         QtWidgets.QMessageBox.critical(self, self.tr('Invalid Tx'),
          self.tr('The transaction you requested be displayed does not exist in '
-         'Armory\'s database.  This is unusual...'), QMessageBox.Ok)
+         'Armory\'s database.  This is unusual...'), QtWidgets.QMessageBox.Ok)
          return
 
       lboxId  = str(self.ledgerView.model().index(row, LEDGERCOLS.WltID).data().toString())
@@ -1386,7 +1386,7 @@ class DlgLockboxManager(ArmoryDialog):
 
     #############################################################################
    def showContextMenuLedger(self):
-      menu = QMenu(self.ledgerView)
+      menu = QtWidgets.QMenu(self.ledgerView)
 
       if len(self.ledgerView.selectedIndexes())==0:
          return
@@ -1409,7 +1409,7 @@ class DlgLockboxManager(ArmoryDialog):
       actViewBlkChn = menu.addAction(blkExploreTitle)
       actComment    = menu.addAction(self.tr("Change Comment"))
       actCopyTxID   = menu.addAction(self.tr("Copy Transaction ID"))
-      action = menu.exec_(QCursor.pos())
+      action = menu.exec_(QtGui.QCursor.pos())
 
 
       if action==actViewTx:
@@ -1419,13 +1419,13 @@ class DlgLockboxManager(ArmoryDialog):
             DlgBrowserWarn(blkExploreURL).exec_()
          except:
             LOGEXCEPT('Failed to open webbrowser')
-            QMessageBox.critical(self, self.tr('Could not open browser'), \
+            QtWidgets.QMessageBox.critical(self, self.tr('Could not open browser'), \
                  self.tr('Armory encountered an error opening your web browser.  To view '
                  'this transaction on blockchain.info, please copy and paste '
                  'the following URL into your browser: '
-                 '<br><br>%s' % blkExploreURL), QMessageBox.Ok)
+                 '<br><br>%s' % blkExploreURL), QtWidgets.QMessageBox.Ok)
       elif action==actCopyTxID:
-         clipb = QApplication.clipboard()
+         clipb = QtWidgets.QApplication.clipboard()
          clipb.clear()
          clipb.setText(txHash)
       elif action==actComment:
@@ -1434,7 +1434,7 @@ class DlgLockboxManager(ArmoryDialog):
 
     #############################################################################
    def showLboxContextMenu(self, pos):
-      menu = QMenu(self.lboxView)
+      menu = QtWidgets.QMenu(self.lboxView)
       std = (self.main.usermode == USERMODE.Standard)
       adv = (self.main.usermode == USERMODE.Advanced)
       dev = (self.main.usermode == USERMODE.Expert)
@@ -1458,7 +1458,7 @@ class DlgLockboxManager(ArmoryDialog):
 
       if len(selectedIndexes)>0:
          idx = selectedIndexes[0]
-         action = menu.exec_(QCursor.pos())
+         action = menu.exec_(QtGui.QCursor.pos())
 
 
             # Get data on a given row, easily
@@ -1479,13 +1479,13 @@ class DlgLockboxManager(ArmoryDialog):
             try:
                DlgBrowserWarn(urlToOpen).exec_()
             except:
-               QMessageBox.critical(self, self.tr('Could not open browser'), self.tr(
+               QtWidgets.QMessageBox.critical(self, self.tr('Could not open browser'), self.tr(
                    'Armory encountered an error opening your web browser.  To view '
                    'this address on %s, please copy and paste '
                    'the following URL into your browser: '
                    '<br><br>'
                    '<a href="%s">%s</a>' % (BLOCKEXPLORE_NAME, urlToOpen,
-                   urlToOpen)), QMessageBox.Ok)
+                   urlToOpen)), QtWidgets.QMessageBox.Ok)
             return
          elif action == actionShowQRCode:
             DlgQRCodeDisplay(self, self.main, p2shAddr, p2shAddr, createLockboxEntryStr(lboxId)).exec_()
@@ -1518,7 +1518,7 @@ class DlgLockboxManager(ArmoryDialog):
             clippy = getModelStr(LOCKBOXCOLS.Balance)
          elif action == actionRemoveLB:
             dispInfo = self.main.getDisplayStringForScript(lbox.getScript())
-            reply = QMessageBox.warning(self, self.tr('Confirm Delete'), self.tr(
+            reply = QtWidgets.QMessageBox.warning(self, self.tr('Confirm Delete'), self.tr(
                '"Removing" a lockbox does not delete any signing keys, so you '
                'maintain signing authority for any coins that are sent there. '
                'However, it will remove it from the list of lockboxes, and you '
@@ -1527,9 +1527,9 @@ class DlgLockboxManager(ArmoryDialog):
                '<br><br>'
                'You are about to remove the following lockbox:'
                '<br><br>'
-               '<font color="%s">%s</font>' % (htmlColor('TextBlue'), dispInfo['String'])), QMessageBox.Yes | QMessageBox.No)
+               '<font color="%s">%s</font>' % (htmlColor('TextBlue'), dispInfo['String'])), QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
 
-            if reply==QMessageBox.Yes:
+            if reply==QtWidgets.QMessageBox.Yes:
                self.main.removeLockbox(lbox)
                self.lboxModel.reset()
                self.singleClickLockbox()
@@ -1538,16 +1538,16 @@ class DlgLockboxManager(ArmoryDialog):
 
             #elif action == actionRescanLB:
             #   dispInfo = self.main.getDisplayStringForScript(lbox.binScript)
-            #   reply = QMessageBox.warning(self, self.tr('Confirm Rescan'), self.tr(
+            #   reply = QtWidgets.QMessageBox.warning(self, self.tr('Confirm Rescan'), self.tr(
             #      'Rescaning a Lockbox will make it unavailable for the duration '
             #      'of the process.'
             #      '<br><br>'
             #      'You are about to rescan the following lockbox: '
             #      '<br><br>'
             #      '<font color="%s">%s</font>' % (htmlColor('TextBlue'),
-            #      dispInfo['String'])), QMessageBox.Yes | QMessageBox.No)
+            #      dispInfo['String'])), QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
             #
-            #   if reply==QMessageBox.Yes:
+            #   if reply==QtWidgets.QMessageBox.Yes:
             #      lwlt = self.main.cppLockboxWltMap[lbox.uniqueIDB58]
             #      lwlt.forceScan()
             #      self.lboxModel.reset()
@@ -1557,7 +1557,7 @@ class DlgLockboxManager(ArmoryDialog):
          else:
             return
 
-         clipb = QApplication.clipboard()
+         clipb = QtWidgets.QApplication.clipboard()
          clipb.clear()
          clipb.setText(str(clippy).strip())
 
@@ -1755,7 +1755,7 @@ class DlgLockboxManager(ArmoryDialog):
       lb = self.getSelectedLockbox()
       dispInfo = self.main.getDisplayStringForScript(lb.binScript, 100, 2,
                                                       prefIDOverAddr=True)
-      reply = QMessageBox.warning(self, self.tr('Confirm Delete'), self.tr(
+      reply = QtWidgets.QMessageBox.warning(self, self.tr('Confirm Delete'), self.tr(
          '"Removing" a lockbox does not delete any signing keys, so you '
          'maintain signing authority for any coins that are sent there. '
          'However, Armory will stop tracking its history and balance, and you '
@@ -1763,9 +1763,9 @@ class DlgLockboxManager(ArmoryDialog):
          '<br><br>'
          'You are about to remove the following lockbox: '
          '<br><br>'
-         '<font color="%s">%s</font>' % (htmlColor('TextBlue'), dispInfo['String'])), QMessageBox.Yes | QMessageBox.No)
+         '<font color="%s">%s</font>' % (htmlColor('TextBlue'), dispInfo['String'])), QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
 
-      if reply==QMessageBox.Yes:
+      if reply==QtWidgets.QMessageBox.Yes:
          lbObj = self.getSelectedLockbox()
          self.main.removeLockbox(lbObj)
          self.lboxModel.reset()
@@ -1778,7 +1778,7 @@ class DlgLockboxManager(ArmoryDialog):
     #############################################################################
    def doFundIt(self):
 
-      reply = QMessageBox.warning(self, self.tr('[WARNING]'), self.tr(
+      reply = QtWidgets.QMessageBox.warning(self, self.tr('[WARNING]'), self.tr(
          '<b><font color="%s">WARNING:</font> </b> '
          'If this lockbox is being used to hold escrow for multiple parties, and '
          'requires being funded by multiple participants, you <u>must</u> use '
@@ -1794,10 +1794,10 @@ class DlgLockboxManager(ArmoryDialog):
          'If the above does not apply to you, please press "Cancel" and '
          'select the "Simulfund" checkbox on the lockbox dashboard.' % \
          htmlColor('TextWarn')),
-         QMessageBox.Ok | QMessageBox.Cancel)
+         QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel)
 
 
-      if not reply==QMessageBox.Ok:
+      if not reply==QtWidgets.QMessageBox.Ok:
          return
 
       lbID = self.getSelectedLBID()
@@ -1904,9 +1904,9 @@ class DlgFundLockbox(ArmoryDialog):
          'Another party or device created the transaction, I just need '
          'to review and sign it.'))
 
-      btnCreate = QPushButton(self.tr("Create Transaction"))
-      btnReview = QPushButton(self.tr("Review and Sign"))
-      btnCancel = QPushButton(self.tr("Cancel"))
+      btnCreate = QtWidgets.QPushButton(self.tr("Create Transaction"))
+      btnReview = QtWidgets.QPushButton(self.tr("Review and Sign"))
+      btnCancel = QtWidgets.QPushButton(self.tr("Cancel"))
 
       self.connect(btnCreate, SIGNAL('clicked()'), self.doCreate)
       self.connect(btnReview, SIGNAL('clicked()'), self.doReview)
@@ -1914,7 +1914,7 @@ class DlgFundLockbox(ArmoryDialog):
 
       frmTop = makeHorizFrame([lblDescr], STYLE_STYLED)
 
-      layoutBot = QGridLayout()
+      layoutBot = QtWidgets.QGridLayout()
       layoutBot.addWidget(btnReview,   0,0)
       layoutBot.addWidget(lblReview,   0,1)
       layoutBot.addWidget(HLINE(),     1,0, 1,2)
@@ -1923,13 +1923,13 @@ class DlgFundLockbox(ArmoryDialog):
 
       layoutBot.setColumnStretch(0, 0)
       layoutBot.setColumnStretch(1, 1)
-      frmBot = QFrame()
+      frmBot = QtWidgets.QFrame()
       frmBot.setLayout(layoutBot)
       frmBot.setFrameStyle(STYLE_STYLED)
 
       frmCancel = makeHorizFrame([btnCancel, 'Stretch'])
 
-      layoutMain = QVBoxLayout()
+      layoutMain = QtWidgets.QVBoxLayout()
       layoutMain.addWidget(frmTop)
       layoutMain.addWidget(frmBot)
       layoutMain.addWidget(frmCancel)
@@ -1960,9 +1960,9 @@ class DlgSpendFromLockbox(ArmoryDialog):
          'review and sign that transaction.  Once it has enough signatures, '
          'any device, can broadcast the transaction to the network.'))
 
-      btnCreate = QPushButton(self.tr("Create Transaction"))
-      btnReview = QPushButton(self.tr("Review and Sign"))
-      btnCancel = QPushButton(self.tr("Cancel"))
+      btnCreate = QtWidgets.QPushButton(self.tr("Create Transaction"))
+      btnReview = QtWidgets.QPushButton(self.tr("Review and Sign"))
+      btnCancel = QtWidgets.QPushButton(self.tr("Cancel"))
 
       if TheBDM.getState()==BDM_BLOCKCHAIN_READY:
          lblCreate = QRichLabel(self.tr(
@@ -1982,7 +1982,7 @@ class DlgSpendFromLockbox(ArmoryDialog):
 
       frmTop = makeHorizFrame([lblDescr], STYLE_STYLED)
 
-      layoutBot = QGridLayout()
+      layoutBot = QtWidgets.QGridLayout()
       layoutBot.addWidget(btnCreate,   0,0)
       layoutBot.addWidget(lblCreate,   0,1)
       layoutBot.addWidget(HLINE(),     1,0, 1,2)
@@ -1992,13 +1992,13 @@ class DlgSpendFromLockbox(ArmoryDialog):
       layoutBot.setColumnStretch(0, 0)
       layoutBot.setColumnStretch(1, 1)
 
-      frmBot = QFrame()
+      frmBot = QtWidgets.QFrame()
       frmBot.setLayout(layoutBot)
       frmBot.setFrameStyle(STYLE_STYLED)
 
       frmCancel = makeHorizFrame([btnCancel, 'Stretch'])
 
-      layoutMain = QVBoxLayout()
+      layoutMain = QtWidgets.QVBoxLayout()
       layoutMain.addWidget(frmTop,    1)
       layoutMain.addWidget(frmBot,    1)
       layoutMain.addWidget(frmCancel, 0)
@@ -2029,7 +2029,7 @@ class DlgSimulfundSelect(ArmoryDialog):
 
       lblTitle = QRichLabel(self.tr(
          '<font color="%s" size=4><b>Simultaneous Lockbox '
-         'Funding</b></font>' % htmlColor('TextBlue')), hAlign=Qt.AlignHCenter)
+         'Funding</b></font>' % htmlColor('TextBlue')), hAlign=QtCore.Qt.AlignHCenter)
 
       lblDescr = QRichLabel(self.tr(
          'To have multiple parties simultaneously fund a lockbox, each party '
@@ -2052,10 +2052,10 @@ class DlgSimulfundSelect(ArmoryDialog):
          '<br>%s.' % dispStr))
 
 
-      btnCreate  = QPushButton(self.tr('Create Promissory Note'))
-      btnCollect = QPushButton(self.tr('Collect and Merge Notes'))
-      btnReview  = QPushButton(self.tr('Sign Simulfunding Transaction'))
-      btnCancel  = QPushButton(self.tr("Cancel"))
+      btnCreate  = QtWidgets.QPushButton(self.tr('Create Promissory Note'))
+      btnCollect = QtWidgets.QPushButton(self.tr('Collect and Merge Notes'))
+      btnReview  = QtWidgets.QPushButton(self.tr('Sign Simulfunding Transaction'))
+      btnCancel  = QtWidgets.QPushButton(self.tr("Cancel"))
 
       if TheBDM.getState()==BDM_BLOCKCHAIN_READY:
          lblCreate = QRichLabel(self.tr('Create a commitment to a Simulfunding transaction'))
@@ -2076,7 +2076,7 @@ class DlgSimulfundSelect(ArmoryDialog):
 
       frmTop = makeVertFrame([lblTitle, lblDescr], STYLE_STYLED)
 
-      layoutBot = QGridLayout()
+      layoutBot = QtWidgets.QGridLayout()
       layoutBot.addWidget(btnCreate,   0,0)
       layoutBot.addWidget(lblCreate,   0,1)
       layoutBot.addWidget(HLINE(),     1,0, 1,2)
@@ -2089,13 +2089,13 @@ class DlgSimulfundSelect(ArmoryDialog):
       layoutBot.setColumnStretch(0, 0)
       layoutBot.setColumnStretch(1, 1)
 
-      frmBot = QFrame()
+      frmBot = QtWidgets.QFrame()
       frmBot.setLayout(layoutBot)
       frmBot.setFrameStyle(STYLE_STYLED)
 
       frmCancel = makeHorizFrame([btnCancel, 'Stretch'])
 
-      layoutMain = QVBoxLayout()
+      layoutMain = QtWidgets.QVBoxLayout()
       layoutMain.addWidget(frmTop,    1)
       layoutMain.addWidget(frmBot,    1)
       layoutMain.addWidget(frmCancel, 0)
@@ -2131,9 +2131,9 @@ class DlgImportAsciiBlock(ArmoryDialog):
       self.txtAscii.setFont(GETFONT('Fixed', 9))
       w,h = relaxedSizeNChar(self.txtAscii, 80)
       self.txtAscii.setMinimumWidth(w)
-      btnLoad = QPushButton(self.tr("Load from file"))
-      btnDone = QPushButton(self.tr("Done"))
-      btnCancel = QPushButton(self.tr("Cancel"))
+      btnLoad = QtWidgets.QPushButton(self.tr("Load from file"))
+      btnDone = QtWidgets.QPushButton(self.tr("Done"))
+      btnCancel = QtWidgets.QPushButton(self.tr("Cancel"))
 
 
       self.connect(btnLoad,   SIGNAL('clicked()'), self.loadfile)
@@ -2143,7 +2143,7 @@ class DlgImportAsciiBlock(ArmoryDialog):
       frmLoadButton = makeHorizFrame(['Stretch', btnLoad])
       frmBottomRow  = makeHorizFrame([btnCancel, 'Stretch', btnDone])
 
-      layout = QVBoxLayout()
+      layout = QtWidgets.QVBoxLayout()
       layout.addWidget(lbl)
       layout.addWidget(frmLoadButton)
       layout.addWidget(self.txtAscii, 1)
@@ -2170,11 +2170,11 @@ class DlgImportAsciiBlock(ArmoryDialog):
          self.returnObj = self.importType().unserializeAscii(txt)
       except:
          LOGEXCEPT('Error reading ASCII block')
-         QMessageBox.warning(self, self.tr('Error'), self.tr(
+         QtWidgets.QMessageBox.warning(self, self.tr('Error'), self.tr(
             'There was an error reading the ASCII block entered.  Please '
             'make sure it was entered/copied correctly, and that you have '
             'copied the header and footer lines that start with "=====".'),
-            QMessageBox.Ok)
+            QtWidgets.QMessageBox.Ok)
          return
 
       self.accept()
@@ -2223,7 +2223,7 @@ class DlgSelectPublicKey(ArmoryDialog):
          'personal savings), specify information that helps you identify which '
          'device is associated with this public key.'))
 
-      self.edtContact = QLineEdit()
+      self.edtContact = QtWidgets.QLineEdit()
       w,h = relaxedSizeNChar(self.edtContact, 60)
       self.edtContact.setMinimumWidth(w)
       
@@ -2237,13 +2237,13 @@ class DlgSelectPublicKey(ArmoryDialog):
       self.lblDetect   = addrWidgets['LBL_DETECT']
       self.lblDetect.setVisible(True)
 
-        #btnExportKey = QPushButton(self.tr('Send to Organizer'))
+        #btnExportKey = QtWidgets.QPushButton(self.tr('Send to Organizer'))
         #self.connect(btnExportKey, SIGNAL('clicked()'), self.doExportKey)
         #frmButtons = makeHorizFrame([QRichLabel(self.tr('When finished:')),
                                      #btnExportKey,
                                      #'Stretch'])
 
-      layoutAddrEntry = QGridLayout()
+      layoutAddrEntry = QtWidgets.QGridLayout()
       layoutAddrEntry.addWidget(lblSelect,                  0,0)
       layoutAddrEntry.addWidget(self.edtPubKey,             0,1)
       layoutAddrEntry.addWidget(self.btnAddrBook,           0,2)
@@ -2255,18 +2255,18 @@ class DlgSelectPublicKey(ArmoryDialog):
       layoutAddrEntry.setColumnStretch(0,0)
       layoutAddrEntry.setColumnStretch(1,1)
       layoutAddrEntry.setColumnStretch(2,0)
-      frmAddrEntry = QFrame()
+      frmAddrEntry = QtWidgets.QFrame()
       frmAddrEntry.setLayout(layoutAddrEntry)
       
 
-      btnDone = QPushButton(self.tr('Continue'))
-      btnCancel = QPushButton(self.tr('Cancel'))
+      btnDone = QtWidgets.QPushButton(self.tr('Continue'))
+      btnCancel = QtWidgets.QPushButton(self.tr('Cancel'))
       self.connect(btnDone,   SIGNAL('clicked()'), self.doDone)
       self.connect(btnCancel, SIGNAL('clicked()'), self.reject)
       frmDone = makeHorizFrame([btnCancel, 'Stretch', btnDone])
       
 
-      mainLayout = QVBoxLayout()
+      mainLayout = QtWidgets.QVBoxLayout()
       mainLayout.addWidget(frmDescr)
       mainLayout.addWidget(frmAddrEntry)
       mainLayout.addWidget(HLINE())
@@ -2275,7 +2275,7 @@ class DlgSelectPublicKey(ArmoryDialog):
       self.setMinimumWidth(600)
 
       self.setWindowTitle(self.tr('Select Public Key for Lockbox'))
-      self.setWindowIcon(QIcon(self.main.iconfile))
+      self.setWindowIcon(QtGui.QIcon(self.main.iconfile))
 
 
     #############################################################################
@@ -2292,11 +2292,11 @@ class DlgSelectPublicKey(ArmoryDialog):
 
       except:
          LOGEXCEPT('Invalid public key entered')
-         QMessageBox.warning(self, self.tr('Invalid Public Key'), self.tr(
+         QtWidgets.QMessageBox.warning(self, self.tr('Invalid Public Key'), self.tr(
             'You must enter a public key into the box, <b>not</b> a regular '
             'Bitcoin address that most users are accustomed to.  A public key '
             'is much longer than a Bitcoin address, and always starts with '
-            '"02", "03" or "04".'), QMessageBox.Ok)
+            '"02", "03" or "04".'), QtWidgets.QMessageBox.Ok)
          return None
 
       comm = str(self.edtContact.text()).strip()
@@ -2358,10 +2358,10 @@ class DlgExportAsciiBlock(ArmoryDialog):
       txt.setReadOnly(True)
 
       self.lblCopyMail = QRichLabel('')
-      btnCopy = QPushButton(self.tr("Copy to Clipboard"))
-      btnSave = QPushButton(self.tr("Save to File"))
-      btnMail = QPushButton(self.tr("Send Email"))
-      btnDone = QPushButton(self.tr("Done"))
+      btnCopy = QtWidgets.QPushButton(self.tr("Copy to Clipboard"))
+      btnSave = QtWidgets.QPushButton(self.tr("Save to File"))
+      btnMail = QtWidgets.QPushButton(self.tr("Send Email"))
+      btnDone = QtWidgets.QPushButton(self.tr("Done"))
 
       self.connect(btnCopy, SIGNAL('clicked()'), self.clipcopy)
       self.connect(btnSave, SIGNAL('clicked()'), self.savefile)
@@ -2373,13 +2373,13 @@ class DlgExportAsciiBlock(ArmoryDialog):
       frmDone = makeHorizFrame(['Stretch', btnDone])
       frmMain = makeVertFrame([lblDescr, txt, frmCopy], STYLE_RAISED)
 
-      layout = QVBoxLayout()
+      layout = QtWidgets.QVBoxLayout()
       layout.addWidget(frmMain)
       layout.addWidget(frmDone)
       self.setLayout(layout)
 
       self.setWindowTitle(title)
-      self.setWindowIcon(QIcon(self.main.iconfile))
+      self.setWindowIcon(QtGui.QIcon(self.main.iconfile))
 
 
    def savefile(self):
@@ -2392,7 +2392,7 @@ class DlgExportAsciiBlock(ArmoryDialog):
 
 
    def clipcopy(self):
-      clipb = QApplication.clipboard()
+      clipb = QtWidgets.QApplication.clipboard()
       clipb.clear()
       clipb.setText(self.asciiBlock)
       self.lblCopyMail.setText('<i>Copied!</i>')
@@ -2411,7 +2411,7 @@ class DlgExportAsciiBlock(ArmoryDialog):
       body = (self.exportObj.EMAILBODY)
       urlText = 'mailto:?subject=%s&body=%s\n\n%s' % (subj, body, self.asciiBlock)
       finalUrl = QUrl(urlText)
-      QDesktopServices.openUrl(finalUrl)
+      QtGui.QDesktopServices.openUrl(finalUrl)
 
       
       if not TheSettings.getSettingOrSetDefault('DNAA_MailtoWarn', False):
@@ -2445,9 +2445,9 @@ class DlgImportLockbox(ArmoryDialog):
       self.txtBoxBlock.setFont(GETFONT('Fixed', 9))
       w,h = relaxedSizeNChar(self.txtBoxBlock, 80)
       self.txtBoxBlock.setMinimumWidth(w)
-      btnLoad = QPushButton(self.tr("Load from file"))
-      btnDone = QPushButton(self.tr("Done"))
-      btnCancel = QPushButton(self.tr("Cancel"))
+      btnLoad = QtWidgets.QPushButton(self.tr("Load from file"))
+      btnDone = QtWidgets.QPushButton(self.tr("Done"))
+      btnCancel = QtWidgets.QPushButton(self.tr("Cancel"))
 
 
       self.connect(btnLoad,   SIGNAL('clicked()'), self.loadfile)
@@ -2457,7 +2457,7 @@ class DlgImportLockbox(ArmoryDialog):
       frmLoadButton = makeHorizFrame(['Stretch', btnLoad])
       frmBottomRow  = makeHorizFrame([btnCancel, 'Stretch', btnDone])
 
-      layout = QVBoxLayout()
+      layout = QtWidgets.QVBoxLayout()
       layout.addWidget(lbl)
       layout.addWidget(frmLoadButton)
       layout.addWidget(self.txtBoxBlock, 1)
@@ -2486,22 +2486,22 @@ class DlgImportLockbox(ArmoryDialog):
       except:
          LOGEXCEPT('Error unserializing the entered text')
       if self.importedLockbox == None:
-         QMessageBox.critical(self, self.tr('Non-lockbox'), self.tr(
+         QtWidgets.QMessageBox.critical(self, self.tr('Non-lockbox'), self.tr(
                 'You are attempting to load something that is not a Lockbox. '
-                'Please clear the display and try again.'), QMessageBox.Ok)
+                'Please clear the display and try again.'), QtWidgets.QMessageBox.Ok)
       else:
          lbID = self.importedLockbox.uniqueIDB58
          if not self.main.getLockboxByID(lbID) is None:
-            reply = QMessageBox.warning(self, self.tr("Duplicate Lockbox"), self.tr(
+            reply = QtWidgets.QMessageBox.warning(self, self.tr("Duplicate Lockbox"), self.tr(
                'You just attempted to import a lockbox with ID, %s.  This '
                'lockbox is already in your available list of lockboxes. '
                '<br><br>'
                'Even with the same ID, the lockbox information '
                'may be different.  Would you like to overwrite the lockbox '
                'information already stored for %s?' % (lbID,lbID)), \
-               QMessageBox.Yes | QMessageBox.Cancel)
+               QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.Cancel)
 
-            if not reply==QMessageBox.Yes:
+            if not reply==QtWidgets.QMessageBox.Yes:
                return
 
          self.accept()
@@ -2537,13 +2537,13 @@ class DlgMultiSpendReview(ArmoryDialog):
       PIEW,PIEH = 32,32
 
         # These need to return copies
-      self.pixGreen = lambda: QPixmap(':/keyhole_green.png').scaled(KEYW,KEYH)
-      self.pixGray  = lambda: QPixmap(':/keyhole_gray.png' ).scaled(KEYW,KEYH)
-      self.pixBlue  = lambda: QPixmap(':/keyhole_blue.png' ).scaled(KEYW,KEYH)
-      self.pixWhite = lambda: QPixmap(':/keyhole_white.png').scaled(KEYW,KEYH)
-      self.pixRed   = lambda: QPixmap(':/keyhole_red.png'  ).scaled(KEYW,KEYH)
-      self.pixChk   = lambda: QPixmap(':/checkmark32.png'  ).scaled(CHKW,CHKH)
-      self.pixPie   = lambda m: QPixmap(':/frag%df.png'%m  ).scaled(PIEW,PIEH)
+      self.pixGreen = lambda: QtGui.QPixmap(':/keyhole_green.png').scaled(KEYW,KEYH)
+      self.pixGray  = lambda: QtGui.QPixmap(':/keyhole_gray.png' ).scaled(KEYW,KEYH)
+      self.pixBlue  = lambda: QtGui.QPixmap(':/keyhole_blue.png' ).scaled(KEYW,KEYH)
+      self.pixWhite = lambda: QtGui.QPixmap(':/keyhole_white.png').scaled(KEYW,KEYH)
+      self.pixRed   = lambda: QtGui.QPixmap(':/keyhole_red.png'  ).scaled(KEYW,KEYH)
+      self.pixChk   = lambda: QtGui.QPixmap(':/checkmark32.png'  ).scaled(CHKW,CHKH)
+      self.pixPie   = lambda m: QtGui.QPixmap(':/frag%df.png'%m  ).scaled(PIEW,PIEH)
 
       self.ustx = ustx
       self.feeAmt = self.ustx.calculateFee()
@@ -2612,7 +2612,7 @@ class DlgMultiSpendReview(ArmoryDialog):
                cpubkey = this_lb.compressedPubKeys[i]
 
                wltID = self.main.getWalletForAddrHash(a160)
-               iBundle.keyholePixmap[i] = QLabel()
+               iBundle.keyholePixmap[i] = QtWidgets.QLabel()
                iBundle.keyholePixmap[i].setPixmap(self.pixWhite())
                if wltID:
                   wlt = self.main.walletMap[wltID]
@@ -2632,7 +2632,7 @@ class DlgMultiSpendReview(ArmoryDialog):
             self.maxN = 1
             if idStr[:3] in ['WLT']:
                canPotentiallySignAny = True
-               iBundle.keyholePixmap[0] = QLabel()
+               iBundle.keyholePixmap[0] = QtWidgets.QLabel()
                wltID = idStr.split(':')[-1]
                wlt = self.main.walletMap[wltID]
                wltType = determineWalletType(wlt, self.main)[0]
@@ -2670,26 +2670,26 @@ class DlgMultiSpendReview(ArmoryDialog):
 
       if not canPotentiallySignAny:
          if not isReceivingAny:
-            QMessageBox.warning(self, self.tr("Unrelated Multi-Spend"), self.tr(
+            QtWidgets.QMessageBox.warning(self, self.tr("Unrelated Multi-Spend"), self.tr(
                 'The signature-collector you loaded appears to be '
                 'unrelated to any of the wallets or lockboxes that you have '
                 'available.  If you were expecting to be able to sign for a '
                 'lockbox input, you need to import the lockbox definition '
                 'first.  Any other person or device with the lockbox loaded '
-                'can export it to be imported by this device.'), QMessageBox.Ok)
+                'can export it to be imported by this device.'), QtWidgets.QMessageBox.Ok)
          else:
-            QMessageBox.warning(self, self.tr("Cannot Sign"), self.tr(
+            QtWidgets.QMessageBox.warning(self, self.tr("Cannot Sign"), self.tr(
                  'The signature-collector you loaded is sending money to one '
                  'of your wallets or lockboxes, but does not have any inputs '
                  'for which you can sign. '
                  'If you were expecting to be able to sign for a '
                  'lockbox input, you need to import the lockbox definition '
                  'first.  Any other person or device with the lockbox loaded '
-                 'can export it to be imported by this device.'), QMessageBox.Ok)
+                 'can export it to be imported by this device.'), QtWidgets.QMessageBox.Ok)
 
 
-      layoutInputs  = QGridLayout()
-      layoutOutputs = QGridLayout()
+      layoutInputs  = QtWidgets.QGridLayout()
+      layoutOutputs = QtWidgets.QGridLayout()
 
       self.iWidgets = {}
       self.oWidgets = {}
@@ -2737,12 +2737,12 @@ class DlgMultiSpendReview(ArmoryDialog):
          iWidgMap['SignBtn'] = [None]*self.maxN
 
          for i in range(self.maxN):
-            iWidgMap['HeadImg'][i] = QLabel()
-            iWidgMap['KeyImg' ][i] = QLabel()
+            iWidgMap['HeadImg'][i] = QtWidgets.QLabel()
+            iWidgMap['KeyImg' ][i] = QtWidgets.QLabel()
             iWidgMap['KeyLbl' ][i] = QRichLabel('', doWrap=False)
-            iWidgMap['ChkImg' ][i] = QLabel()
-            iWidgMap['SignBtn'][i] = QPushButton('')
-            iWidgMap['ChkImg'][i].setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+            iWidgMap['ChkImg' ][i] = QtWidgets.QLabel()
+            iWidgMap['SignBtn'][i] = QtWidgets.QPushButton('')
+            iWidgMap['ChkImg'][i].setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
             # Now actually insert the widgets into a layout
          headerLine = [iWidgMap['HeadLbl']]
@@ -2761,7 +2761,7 @@ class DlgMultiSpendReview(ArmoryDialog):
 
          for i in range(self.maxN):
             row = topRow + 1 + i
-            layoutInputs.addItem(QSpacerItem(20,20),       row,0)
+            layoutInputs.addItem(QtWidgets.QSpacerItem(20,20),       row,0)
             layoutInputs.addWidget(iWidgMap['SignBtn'][i], row,1)
             layoutInputs.addWidget(iWidgMap['ChkImg' ][i], row,1)
             layoutInputs.addWidget(iWidgMap['KeyImg' ][i], row,2)
@@ -2862,7 +2862,7 @@ class DlgMultiSpendReview(ArmoryDialog):
             # These are the pie images
          oWidgMap['HeadImg'] = [None]*N
          for i in range(N):
-            oWidgMap['HeadImg'][i] = QLabel()
+            oWidgMap['HeadImg'][i] = QtWidgets.QLabel()
 
 
             # Now actually insert the widgets into a layout
@@ -2891,11 +2891,11 @@ class DlgMultiSpendReview(ArmoryDialog):
 
 
 
-      frmInputs = QFrame()
+      frmInputs = QtWidgets.QFrame()
       frmInputs.setLayout(layoutInputs)
       frmInputs.setFrameStyle(STYLE_STYLED)
 
-      frmOutputs = QFrame()
+      frmOutputs = QtWidgets.QFrame()
       frmOutputs.setLayout(layoutOutputs)
       frmOutputs.setFrameStyle(STYLE_STYLED)
 
@@ -2903,14 +2903,14 @@ class DlgMultiSpendReview(ArmoryDialog):
 
 
 
-      self.btnLoadImport  = QPushButton(self.tr('Import/Merge'))
+      self.btnLoadImport  = QtWidgets.QPushButton(self.tr('Import/Merge'))
       self.lblFinalMsg    = QRichLabel('')
-      self.lblFinalChk    = QLabel()
-      self.btnFinalBroad  = QPushButton(self.tr('Broadcast'))
-      self.btnFinalExport = QPushButton(self.tr('Export'))
-      self.doneButton = QPushButton(self.tr('Done'))
+      self.lblFinalChk    = QtWidgets.QLabel()
+      self.btnFinalBroad  = QtWidgets.QPushButton(self.tr('Broadcast'))
+      self.btnFinalExport = QtWidgets.QPushButton(self.tr('Export'))
+      self.doneButton = QtWidgets.QPushButton(self.tr('Done'))
       self.lblFinalChk.setMinimumSize(CHKW,CHKH)
-      layoutBtns = QHBoxLayout()
+      layoutBtns = QtWidgets.QHBoxLayout()
       layoutBtns.addWidget(self.btnLoadImport)
       layoutBtns.addStretch()
       layoutBtns.addWidget(self.lblFinalMsg, 1)
@@ -2918,7 +2918,7 @@ class DlgMultiSpendReview(ArmoryDialog):
       layoutBtns.addWidget(self.btnFinalBroad)
       layoutBtns.addWidget(self.btnFinalExport)
       layoutBtns.addWidget(self.doneButton)
-      frmButtons = QFrame()
+      frmButtons = QtWidgets.QFrame()
       frmButtons.setLayout(layoutBtns)
 
       self.connect(self.btnLoadImport,  SIGNAL('clicked()'), self.doImport)
@@ -2943,7 +2943,7 @@ class DlgMultiSpendReview(ArmoryDialog):
         #self.btnLoadImport.setVisible(False)
 
 
-      layoutMain = QVBoxLayout()
+      layoutMain = QtWidgets.QVBoxLayout()
       layoutMain.addWidget(frmMain)
       self.setLayout(layoutMain)
 
@@ -2967,9 +2967,9 @@ class DlgMultiSpendReview(ArmoryDialog):
       if wlt.useEncryption and wlt.isLocked:
          dlg = DlgUnlockWallet(wlt, self, self.main, self.tr('Sign Lockbox'))
          if not dlg.exec_():
-            QMessageBox.critical(self, self.tr('Wallet is locked'),
+            QtWidgets.QMessageBox.critical(self, self.tr('Wallet is locked'),
                self.tr('Cannot sign without unlocking wallet!'),
-               QMessageBox.Ok)
+               QtWidgets.QMessageBox.Ok)
             return
 
       try:
@@ -3006,7 +3006,7 @@ class DlgMultiSpendReview(ArmoryDialog):
          
          self.evalSigStat()
       except SignerException as e:
-         QMessageBox.critical(self, self.tr('Signer Error'), e.message, QMessageBox.Ok)
+         QtWidgets.QMessageBox.critical(self, self.tr('Signer Error'), e.message, QtWidgets.QMessageBox.Ok)
 
 
     #############################################################################
@@ -3086,7 +3086,7 @@ class DlgMultiSpendReview(ArmoryDialog):
                keyImg.setPixmap(self.pixGray())
             elif ib.wltSignRightNow[i]:
                chkLbl.setVisible(False)
-               chkLbl.setPixmap(QPixmap())
+               chkLbl.setPixmap(QtGui.QPixmap())
                signBtn.setVisible(True)
                signBtn.setEnabled(True)
                signBtn.setText('Sign')
@@ -3097,20 +3097,20 @@ class DlgMultiSpendReview(ArmoryDialog):
                wltType = determineWalletType(wlt, self.main)[0]
                if wltType==WLTTYPES.WatchOnly:
                   chkLbl.setVisible(False)
-                  chkLbl.setPixmap(QPixmap())
+                  chkLbl.setPixmap(QtGui.QPixmap())
                   signBtn.setVisible(False)
                   signBtn.setEnabled(False)
                   signBtn.setText('Offline')
                   keyImg.setPixmap(self.pixWhite())
                elif wltType==WLTTYPES.Offline:
                   chkLbl.setVisible(False)
-                  chkLbl.setPixmap(QPixmap())
+                  chkLbl.setPixmap(QtGui.QPixmap())
                   signBtn.setVisible(True)
                   signBtn.setEnabled(False)
                   signBtn.setText('Offline')
                   keyImg.setPixmap(self.pixWhite())
             else:
-               chkLbl.setPixmap(QPixmap())
+               chkLbl.setPixmap(QtGui.QPixmap())
                chkLbl.setVisible(False)
                signBtn.setVisible(True)
                signBtn.setVisible(False)
@@ -3143,7 +3143,7 @@ class DlgMultiSpendReview(ArmoryDialog):
          self.btnFinalBroad.setEnabled(False)
          self.btnFinalExport.setVisible(True)
          self.btnFinalExport.setEnabled(True)
-         self.lblFinalChk.setPixmap(QPixmap())
+         self.lblFinalChk.setPixmap(QtGui.QPixmap())
 
 
 
@@ -3200,14 +3200,14 @@ class DlgMultiSpendReview(ArmoryDialog):
       finalTx = self.ustx.getSignedPyTx(doVerifySigs=True)
       if not finalTx:
             #self.ustx.evaluateSigningStatus().pprint()
-         QMessageBox.critical(self, self.tr('Invalid Signatures'), self.tr(
+         QtWidgets.QMessageBox.critical(self, self.tr('Invalid Signatures'), self.tr(
             'Somehow not all inputs have valid sigantures!  You can choose '
             'to attempt to broadcast anyway, in case you think Armory is '
             'not evaluating the transaction state correctly. '
             '<br><br>'
             'Otherwise, please confirm that you have created signatures '
             'from the correct wallets.  Perhaps try collecting signatures '
-            'again...?'), QMessageBox.Ok)
+            'again...?'), QtWidgets.QMessageBox.Ok)
          
          finalTx = self.ustx.getSignedPyTx(doVerifySigs=False)
 
@@ -3237,7 +3237,7 @@ class DlgCreatePromNote(ArmoryDialog):
       lblDescr  = QRichLabel(self.tr(
          '<font color="%s" size=4><b>Create Simulfunding Promissory Note '
          '</b></font>' % htmlColor('TextBlue')),
-         hAlign=Qt.AlignHCenter, doWrap=False)
+         hAlign=QtCore.Qt.AlignHCenter, doWrap=False)
 
       lblDescr2 = QRichLabel(self.tr(
          'Use this form to create a '
@@ -3295,20 +3295,20 @@ class DlgCreatePromNote(ArmoryDialog):
 
       self.lblAutoDetect.setWordWrap(False)
 
-      self.edtAmountBTC = QLineEdit()
+      self.edtAmountBTC = QtWidgets.QLineEdit()
       self.edtAmountBTC.setFont(GETFONT('Fixed'))
       self.edtAmountBTC.setMinimumWidth(tightSizeNChar(GETFONT('Fixed'), 16)[0])
-      self.edtAmountBTC.setAlignment(Qt.AlignLeft)
+      self.edtAmountBTC.setAlignment(QtCore.Qt.AlignLeft)
 
-      self.edtFeeBTC = QLineEdit()
+      self.edtFeeBTC = QtWidgets.QLineEdit()
       self.edtFeeBTC.setFont(GETFONT('Fixed'))
       self.edtFeeBTC.setMinimumWidth(tightSizeNChar(GETFONT('Fixed'), 16)[0])
-      self.edtFeeBTC.setAlignment(Qt.AlignLeft)
+      self.edtFeeBTC.setAlignment(QtCore.Qt.AlignLeft)
       self.edtFeeBTC.setText('0.0')
 
 
       lblComment  = QRichLabel('Funder Label (optional):')
-      self.edtKeyLabel  = QLineEdit()
+      self.edtKeyLabel  = QtWidgets.QLineEdit()
       self.edtKeyLabel.setMaxLength(144)
       ttipFunder = self.main.createToolTipWidget(self.tr(
          'This label will be attached to the promissory note to help identify '
@@ -3319,14 +3319,14 @@ class DlgCreatePromNote(ArmoryDialog):
       frmKeyComment = makeHorizFrame([lblComment, self.edtKeyLabel, ttipFunder])
 
       gboxIn  = QGroupBox(self.tr('Source of Funding'))
-      gboxInLayout = QVBoxLayout()
+      gboxInLayout = QtWidgets.QVBoxLayout()
       gboxInLayout.addWidget(lblNoteSrc)
       gboxInLayout.addWidget(wltFrame)
       gboxInLayout.addWidget(frmKeyComment)
       gboxIn.setLayout(gboxInLayout)
 
       gboxOut = QGroupBox(self.tr('Funding Destination'))
-      gboxOutLayout = QGridLayout()
+      gboxOutLayout = QtWidgets.QGridLayout()
       gboxOutLayout.addWidget(lblAddress,            0,0)
       gboxOutLayout.addWidget(self.edtFundTarget,    0,1, 1,5)
       gboxOutLayout.addWidget(self.btnSelectTarg,    0,6)
@@ -3348,13 +3348,13 @@ class DlgCreatePromNote(ArmoryDialog):
       gboxOutLayout.setColumnStretch(4, 0)
       gboxOut.setLayout(gboxOutLayout)
 
-      btnExit = QPushButton(self.tr('Cancel'))
-      btnDone = QPushButton(self.tr('Continue'))
+      btnExit = QtWidgets.QPushButton(self.tr('Cancel'))
+      btnDone = QtWidgets.QPushButton(self.tr('Continue'))
       self.connect(btnExit, SIGNAL('clicked()'), self.reject)
       self.connect(btnDone, SIGNAL('clicked()'), self.doContinue)
       frmButtons = makeHorizFrame([btnExit, 'Stretch', btnDone])
 
-      mainLayout = QVBoxLayout()
+      mainLayout = QtWidgets.QVBoxLayout()
       mainLayout.addWidget(lblDescr)
       mainLayout.addWidget(lblDescr2)
       mainLayout.addWidget(HLINE())
@@ -3365,7 +3365,7 @@ class DlgCreatePromNote(ArmoryDialog):
       mainLayout.addWidget(frmButtons)
       self.setLayout(mainLayout)
 
-      self.layout().setSizeConstraint(QLayout.SetFixedSize)
+      self.layout().setSizeConstraint(QtWidgets.QLayout.SetFixedSize)
 
       self.setWindowTitle('Create Promissory Note')
 
@@ -3414,11 +3414,11 @@ class DlgCreatePromNote(ArmoryDialog):
 
       if not TheBDM.getState()==BDM_BLOCKCHAIN_READY:
          LOGERROR('Blockchain not avail for creating prom note')
-         QMessageBox.critical(self, self.tr('Blockchain Not Available'), self.tr(
+         QtWidgets.QMessageBox.critical(self, self.tr('Blockchain Not Available'), self.tr(
             'The blockchain has become unavailable since you opened this '
             'window.  Creation of the promissory note cannot continue.  If '
             'you think you should be online, please try again in a minute, '
-            'or after restarting Armory'), QMessageBox.Ok)
+            'or after restarting Armory'), QtWidgets.QMessageBox.Ok)
          return False
 
         # TODO:  Expand this to allow Simulfunding from lockbox(es)
@@ -3426,15 +3426,15 @@ class DlgCreatePromNote(ArmoryDialog):
       lbox  = self.main.getLockboxByID(self.spendFromWltID)
       if lbox is not None:
          LOGERROR('Simulfunding from lockbox not currently implemented')
-         QMessageBox.critical(self, self.tr('Lockbox Selected'), self.tr(
+         QtWidgets.QMessageBox.critical(self, self.tr('Lockbox Selected'), self.tr(
              'Currently, Armory does not implement Simulfunding with lockbox '
              'inputs.  Please choose a regular wallet as your input'),
-             QMessageBox.Ok)
+             QtWidgets.QMessageBox.Ok)
       elif wlt is None:
          LOGERROR('No wallet in map with ID: "%s"' % self.spendFromWltID)
-         QMessageBox.critical(self, self.tr('No Wallet Selected'), self.tr(
+         QtWidgets.QMessageBox.critical(self, self.tr('No Wallet Selected'), self.tr(
             'The wallet selected is not available.  Select another wallet.'),
-            QMessageBox.Ok)
+            QtWidgets.QMessageBox.Ok)
          return False
 
         # Read the user-supplied BTC value to contribute
@@ -3442,29 +3442,29 @@ class DlgCreatePromNote(ArmoryDialog):
          valueStr = str(self.edtAmountBTC.text())
          valueAmt = str2coin(valueStr)
          if valueAmt == 0:
-            QMessageBox.critical(self, self.tr('Zero Amount'), self.tr(
+            QtWidgets.QMessageBox.critical(self, self.tr('Zero Amount'), self.tr(
                'You cannot promise 0 BTC.   <br>Please enter '
-               'a positive amount.'), QMessageBox.Ok)
+               'a positive amount.'), QtWidgets.QMessageBox.Ok)
             return False
       except NegativeValueError:
-         QMessageBox.critical(self, self.tr('Negative Value'), self.tr(
+         QtWidgets.QMessageBox.critical(self, self.tr('Negative Value'), self.tr(
             'You have specified a negative amount. <br>Only '
-            'positive values are allowed!'), QMessageBox.Ok)
+            'positive values are allowed!'), QtWidgets.QMessageBox.Ok)
          return False
       except TooMuchPrecisionError:
-         QMessageBox.critical(self, self.tr('Too much precision'), self.tr(
+         QtWidgets.QMessageBox.critical(self, self.tr('Too much precision'), self.tr(
             'Bitcoins can only be specified down to 8 decimal places. '
             'The smallest value that can be sent is  0.0000 0001 BTC. '
-            'Please enter a new amount'), QMessageBox.Ok)
+            'Please enter a new amount'), QtWidgets.QMessageBox.Ok)
          return False
       except ValueError:
-         QMessageBox.critical(self, self.tr('Missing amount'), self.tr(
-            'You did not specify an amount to promise!'), QMessageBox.Ok)
+         QtWidgets.QMessageBox.critical(self, self.tr('Missing amount'), self.tr(
+            'You did not specify an amount to promise!'), QtWidgets.QMessageBox.Ok)
          return False
       except:
-         QMessageBox.critical(self, self.tr('Invalid Value String'), self.tr(
+         QtWidgets.QMessageBox.critical(self, self.tr('Invalid Value String'), self.tr(
             'The amount you specified is invalid (%s).' % valueStr),
-            QMessageBox.Ok)
+            QtWidgets.QMessageBox.Ok)
          LOGEXCEPT('Invalid amount specified: "%s"', valueStr)
          return False
 
@@ -3473,24 +3473,24 @@ class DlgCreatePromNote(ArmoryDialog):
          feeStr = str(self.edtFeeBTC.text())
          feeAmt = str2coin(feeStr)
       except NegativeValueError:
-         QMessageBox.critical(self, self.tr('Negative Fee'), self.tr(
+         QtWidgets.QMessageBox.critical(self, self.tr('Negative Fee'), self.tr(
             'You have specified a negative amount. <br>Only '
-            'positive values are allowed!'), QMessageBox.Ok)
+            'positive values are allowed!'), QtWidgets.QMessageBox.Ok)
          return False
       except TooMuchPrecisionError:
-         QMessageBox.critical(self, self.tr('Too much precision'), self.tr(
+         QtWidgets.QMessageBox.critical(self, self.tr('Too much precision'), self.tr(
             'Bitcoins can only be specified down to 8 decimal places. '
             'The smallest value that can be sent is  0.0000 0001 BTC. '
-            'Please enter a new amount'), QMessageBox.Ok)
+            'Please enter a new amount'), QtWidgets.QMessageBox.Ok)
          return False
       except ValueError:
-         QMessageBox.critical(self, self.tr('Missing amount'), self.tr(
-            'You did not specify an amount to promise!'), QMessageBox.Ok)
+         QtWidgets.QMessageBox.critical(self, self.tr('Missing amount'), self.tr(
+            'You did not specify an amount to promise!'), QtWidgets.QMessageBox.Ok)
          return False
       except:
-         QMessageBox.critical(self, self.tr('Invalid Fee String'), self.tr(
+         QtWidgets.QMessageBox.critical(self, self.tr('Invalid Fee String'), self.tr(
             'The amount you specified is invalid (%s).' % feeStr),
-            QMessageBox.Ok)
+            QtWidgets.QMessageBox.Ok)
          LOGEXCEPT('Invalid amount specified: "%s"', feeStr)
          return False
 
@@ -3498,21 +3498,21 @@ class DlgCreatePromNote(ArmoryDialog):
       totalAmt = valueAmt + feeAmt
       availBal = wlt.getBalance('Spendable')
       if totalAmt > availBal:
-         QMessageBox.critical(self, self.tr('Not enough funds!'), self.tr(
+         QtWidgets.QMessageBox.critical(self, self.tr('Not enough funds!'), self.tr(
             'You specified <b>%s</b> BTC (amount + fee), but the selected wallet '
             'only has <b>%s</b> BTC spendable.' % (coin2strNZS(totalAmt),
-            coin2strNZS(availBal))), QMessageBox.Ok)
+            coin2strNZS(availBal))), QtWidgets.QMessageBox.Ok)
          return False
 
       utxoList = wlt.getUTXOListForSpendVal(totalAmt)
       utxoSelect = PySelectCoins(utxoList, valueAmt, feeAmt)
 
       if len(utxoSelect) == 0:
-         QMessageBox.critical(self, self.tr('Coin Selection Error'), self.tr(
+         QtWidgets.QMessageBox.critical(self, self.tr('Coin Selection Error'), self.tr(
             'There was an error constructing your transaction, due to a '
             'quirk in the way Bitcoin transactions work.  If you see this '
             'error more than once, try sending your BTC in two or more '
-            'separate transactions.'), QMessageBox.Ok)
+            'separate transactions.'), QtWidgets.QMessageBox.Ok)
          return False
 
         # Create the target DTXO
@@ -3540,12 +3540,12 @@ class DlgCreatePromNote(ArmoryDialog):
          cppTx = TheBDM.getTxByHash(txHash)
          if not cppTx.isInitialized():
             LOGERROR('UTXO was supplied for which we could not find prev Tx')
-            QMessageBox.warning(self, self.tr('Transaction Not Found'), self.tr(
+            QtWidgets.QMessageBox.warning(self, self.tr('Transaction Not Found'), self.tr(
                'There was an error creating the promissory note -- the selected '
                'coins were not found in the blockchain.  Please go to '
                '"<i>Help</i>"\xe2\x86\x92"<i>Submit Bug Report</i>" from '
                'the main window and submit your log files so the Armory team '
-               'can review this error.'), QMessageBox.Ok)
+               'can review this error.'), QtWidgets.QMessageBox.Ok)
 
          rawTx = cppTx.serialize()
          utxoScrAddr = utxo.getRecipientScrAddr()
@@ -3632,7 +3632,7 @@ class DlgMergePromNotes(ArmoryDialog):
       lblTitle  = QRichLabel(self.tr(
          '<font color="%s" size=4><b>Merge Promissory Notes '
          '</b></font>' % htmlColor('TextBlue')),
-         hAlign=Qt.AlignHCenter, doWrap=False)
+         hAlign=QtCore.Qt.AlignHCenter, doWrap=False)
 
       lblDescr = QRichLabel(self.tr(
          'Collect promissory notes from two or more parties '
@@ -3663,18 +3663,18 @@ class DlgMergePromNotes(ArmoryDialog):
       
 
 
-      gboxTargetLayout = QGridLayout()
+      gboxTargetLayout = QtWidgets.QGridLayout()
       gboxTargetLayout.addWidget(self.lblTarg,      1,0,  1,6)
 
-      gboxTargetLayout.addItem(QSpacerItem(20,20),  2,0)
+      gboxTargetLayout.addItem(QtWidgets.QSpacerItem(20,20),  2,0)
       gboxTargetLayout.addWidget(lblPayText,        2,1)
-      gboxTargetLayout.addItem(QSpacerItem(20,20),  2,2)
+      gboxTargetLayout.addItem(QtWidgets.QSpacerItem(20,20),  2,2)
       gboxTargetLayout.addWidget(self.lblCurrPay,   2,3)
       gboxTargetLayout.addWidget(self.lblPayUnits,  2,4)
 
-      gboxTargetLayout.addItem(QSpacerItem(20,20),  3,0)
+      gboxTargetLayout.addItem(QtWidgets.QSpacerItem(20,20),  3,0)
       gboxTargetLayout.addWidget(lblFeeText,        3,1)
-      gboxTargetLayout.addItem(QSpacerItem(20,20),  3,2)
+      gboxTargetLayout.addItem(QtWidgets.QSpacerItem(20,20),  3,2)
       gboxTargetLayout.addWidget(self.lblCurrFee,   3,3)
       gboxTargetLayout.addWidget(self.lblFeeUnits,  3,4)
       gboxTargetLayout.setColumnStretch(0,0)
@@ -3690,15 +3690,15 @@ class DlgMergePromNotes(ArmoryDialog):
       self.gboxLoaded = QGroupBox(self.tr('Loaded Promissory Notes'))
       lblNoInfo = QRichLabel(self.tr(
          '<font size=4><b>No Promissory Notes Have Been Added</b></font>'),
-         hAlign=Qt.AlignHCenter, vAlign=Qt.AlignVCenter)
-      gboxLayout = QVBoxLayout()
+         hAlign=QtCore.Qt.AlignHCenter, vAlign=QtCore.Qt.AlignVCenter)
+      gboxLayout = QtWidgets.QVBoxLayout()
       gboxLayout.addWidget(lblNoInfo)
       self.gboxLoaded.setLayout(gboxLayout)
       
       self.promModel = PromissoryCollectModel(self.main, self.promNotes)
-      self.promView  = QTableView()
+      self.promView  = QtWidgets.QTableView()
       self.promView.setModel(self.promModel)
-      self.promView.setSelectionMode(QTableView.NoSelection)
+      self.promView.setSelectionMode(QtWidgets.QTableView.NoSelection)
       width0  = relaxedSizeNChar(self.promView,    12)[0]
       width23 = relaxedSizeNChar(GETFONT('Fixed'), 12)[0]
       initialColResize(self.promView, [width0, 300, width23, width23])
@@ -3710,21 +3710,21 @@ class DlgMergePromNotes(ArmoryDialog):
       self.promLoadStacked.addWidget(self.promView)
       self.updatePromTable()
 
-      btnImport = QPushButton(self.tr('Import Promissory Note'))
-      btnCreate = QPushButton(self.tr('Create && Add Promissory Note'))
+      btnImport = QtWidgets.QPushButton(self.tr('Import Promissory Note'))
+      btnCreate = QtWidgets.QPushButton(self.tr('Create && Add Promissory Note'))
       self.connect(btnImport, SIGNAL('clicked()'), self.importNote)
       self.connect(btnCreate, SIGNAL('clicked()'), self.createPromAdd)
       frmImport = makeHorizFrame(['Stretch', btnImport, btnCreate, 'Stretch'])
 
-      btnCancel = QPushButton(self.tr('Cancel'))
-      self.chkBareMS = QCheckBox(self.tr('Use bare multisig (no P2SH)'))
+      btnCancel = QtWidgets.QPushButton(self.tr('Cancel'))
+      self.chkBareMS = QtWidgets.QCheckBox(self.tr('Use bare multisig (no P2SH)'))
       self.ttipBareMS = self.main.createToolTipWidget( self.tr(
          'EXPERT OPTION:  Do not check this box unless you know what it means '
                          'and you need it!  Forces Armory to exposes public '
                          'keys to the blockchain before the funds are spent. '
                          'This is only needed for very specific use cases, '
                          'and otherwise creates blockchain bloat.'))
-      btnFinish = QPushButton(self.tr('Continue'))
+      btnFinish = QtWidgets.QPushButton(self.tr('Continue'))
       self.connect(btnCancel, SIGNAL('clicked()'), self.reject)
       self.connect(btnFinish, SIGNAL('clicked()'), self.mergeNotesCreateUSTX)
       frmButtons = makeHorizFrame([btnCancel,
@@ -3743,7 +3743,7 @@ class DlgMergePromNotes(ArmoryDialog):
          self.msTarget = self.lbox.binScript
 
       
-      mainLayout = QVBoxLayout()
+      mainLayout = QtWidgets.QVBoxLayout()
       mainLayout.addWidget(lblTitle, 0)
       mainLayout.addWidget(lblDescr, 0)
       mainLayout.addWidget(HLINE(), 0)
@@ -3775,8 +3775,8 @@ class DlgMergePromNotes(ArmoryDialog):
             #promnote.pprint()
 
       if not promnote:
-         QMessageBox.critical(self, self.tr('Invalid Promissory Note'), self.tr(
-            'No promissory note was loaded.'), QMessageBox.Ok)
+         QtWidgets.QMessageBox.critical(self, self.tr('Invalid Promissory Note'), self.tr(
+            'No promissory note was loaded.'), QtWidgets.QMessageBox.Ok)
          return
       
 
@@ -3786,10 +3786,10 @@ class DlgMergePromNotes(ArmoryDialog):
     #############################################################################
    def createPromAdd(self):
       if not TheBDM.getState()==BDM_BLOCKCHAIN_READY:
-         QMessageBox.warning(self, self.tr("Not Online"), self.tr(
+         QtWidgets.QMessageBox.warning(self, self.tr("Not Online"), self.tr(
             'Armory is currently in offline mode and cannot create any '
             'transactions or promissory notes.  You can only merge '
-            'pre-existing promissory notes at this time.'), QMessageBox.Ok)
+            'pre-existing promissory notes at this time.'), QtWidgets.QMessageBox.Ok)
          return
 
 
@@ -3814,8 +3814,8 @@ class DlgMergePromNotes(ArmoryDialog):
    def addNote(self, promnote):
       
       if promnote.promID in self.promIDSet:
-         QMessageBox.critical(self, self.tr('Already Loaded'), self.tr('This '
-            'promissory note has already been loaded!'), QMessageBox.Ok)
+         QtWidgets.QMessageBox.critical(self, self.tr('Already Loaded'), self.tr('This '
+            'promissory note has already been loaded!'), QtWidgets.QMessageBox.Ok)
          return
 
         # reduceScript returns the same scrAddr for a bare multi-sig as it does
@@ -3853,10 +3853,10 @@ class DlgMergePromNotes(ArmoryDialog):
 
         # By now, we should always know what target addr ... make sure it matches
       if not promTarget==self.promMustMatch:
-         QMessageBox.critical(self, self.tr('Mismatched Funding Target'), self.tr(
+         QtWidgets.QMessageBox.critical(self, self.tr('Mismatched Funding Target'), self.tr(
             'The promissory note you loaded is for a different funding target. '
             'Please make sure that all promissory notes are for the target '
-            'specified on the previous window'), QMessageBox.Ok)
+            'specified on the previous window'), QtWidgets.QMessageBox.Ok)
          return
 
       self.promNotes.append(promnote)
@@ -3895,13 +3895,13 @@ class DlgMergePromNotes(ArmoryDialog):
    def mergeNotesCreateUSTX(self):
 
       if len(self.promNotes)==0:
-         QMessageBox.warning(self, self.tr('Nothing Loaded'), self.tr(
+         QtWidgets.QMessageBox.warning(self, self.tr('Nothing Loaded'), self.tr(
             'No promissory notes were loaded.  Cannot create Simulfunding '
-            'transaction.'), QMessageBox.Ok)
+            'transaction.'), QtWidgets.QMessageBox.Ok)
          return
 
       if len(self.promNotes)==1:
-         reply = QMessageBox.warning(self, self.tr('Merging One Note'), self.tr(
+         reply = QtWidgets.QMessageBox.warning(self, self.tr('Merging One Note'), self.tr(
             'Only one promissory note was entered, so there '
             'is nothing to merge.'
             '<br><br>'
@@ -3913,9 +3913,9 @@ class DlgMergePromNotes(ArmoryDialog):
             'interface. '
             '<br><br>'
             'Click "Ok" to continue to the multi-signing interface, but there '
-            'will only be one input to sign.'), QMessageBox.Ok)
+            'will only be one input to sign.'), QtWidgets.QMessageBox.Ok)
          
-         if not reply==QMessageBox.Ok:
+         if not reply==QtWidgets.QMessageBox.Ok:
             return
 
       ustxiList = []
@@ -3974,15 +3974,15 @@ class DlgSelectMultiSigOption(ArmoryDialog):
    def __init__(self, parent, main):
       super(DlgSelectMultiSigOption, self).__init__(parent, main)
 
-      self.btnCreate = QPushButton(self.tr('Create/Manage lockboxes'))
-        #self.btnImport = QPushButton(self.tr('Import multi-sig lockbox'))
-      self.btnFund   = QPushButton(self.tr('Fund a lockbox'))
-      self.btnSpend  = QPushButton(self.tr('Spend from a lockbox'))
+      self.btnCreate = QtWidgets.QPushButton(self.tr('Create/Manage lockboxes'))
+        #self.btnImport = QtWidgets.QPushButton(self.tr('Import multi-sig lockbox'))
+      self.btnFund   = QtWidgets.QPushButton(self.tr('Fund a lockbox'))
+      self.btnSpend  = QtWidgets.QPushButton(self.tr('Spend from a lockbox'))
 
       lblDescr  = QRichLabel(self.tr(
          '<font color="%s" size=5><b>Multi-Sig Lockboxes '
          '[EXPERIMENTAL]</b></font>' % htmlColor('TextBlue')),
-         hAlign=Qt.AlignHCenter, doWrap=False)
+         hAlign=QtCore.Qt.AlignHCenter, doWrap=False)
 
       lblDescr2 = QRichLabel(self.tr(
          'The buttons below link you to all the functionality needed to '
@@ -4020,38 +4020,38 @@ class DlgSelectMultiSigOption(ArmoryDialog):
       self.connect(self.btnFund,    SIGNAL('clicked()'), self.openFund)
       self.connect(self.btnSpend,   SIGNAL('clicked()'), self.openSpend)
 
-      layoutTop = QVBoxLayout()
+      layoutTop = QtWidgets.QVBoxLayout()
       layoutTop.addWidget(lblDescr)
       layoutTop.addWidget(HLINE())
       layoutTop.addWidget(lblDescr2, 1)
-      frmTop = QFrame()
+      frmTop = QtWidgets.QFrame()
       frmTop.setFrameStyle(STYLE_RAISED)
       frmTop.setLayout(layoutTop)
 
 
-      layoutBottom = QGridLayout()
-      layoutBottom.addItem(QSpacerItem(10,10),    0,0,  5,1)
-      layoutBottom.addItem(QSpacerItem(10,10),    0,6,  5,1)
+      layoutBottom = QtWidgets.QGridLayout()
+      layoutBottom.addItem(QtWidgets.QSpacerItem(10,10),    0,0,  5,1)
+      layoutBottom.addItem(QtWidgets.QSpacerItem(10,10),    0,6,  5,1)
 
-      layoutBottom.addItem(QSpacerItem(10,10),    0,1)
-      layoutBottom.addItem(QSpacerItem(10,10),    2,1)
-      layoutBottom.addItem(QSpacerItem(10,10),    4,1)
+      layoutBottom.addItem(QtWidgets.QSpacerItem(10,10),    0,1)
+      layoutBottom.addItem(QtWidgets.QSpacerItem(10,10),    2,1)
+      layoutBottom.addItem(QtWidgets.QSpacerItem(10,10),    4,1)
 
       layoutBottom.addWidget(self.btnCreate,      0,2)
       layoutBottom.addWidget(self.btnFund,        2,2)
       layoutBottom.addWidget(self.btnSpend,       4,2)
 
-      layoutBottom.addItem(QSpacerItem(10,10),    0,3)
-      layoutBottom.addItem(QSpacerItem(10,10),    2,3)
-      layoutBottom.addItem(QSpacerItem(10,10),    4,3)
+      layoutBottom.addItem(QtWidgets.QSpacerItem(10,10),    0,3)
+      layoutBottom.addItem(QtWidgets.QSpacerItem(10,10),    2,3)
+      layoutBottom.addItem(QtWidgets.QSpacerItem(10,10),    4,3)
 
       layoutBottom.addWidget(self.lblCreate,      0,4)
       layoutBottom.addWidget(self.lblFund,        2,4)
       layoutBottom.addWidget(self.lblSpend,       4,4)
 
-      layoutBottom.addItem(QSpacerItem(10,10),    0,5)
-      layoutBottom.addItem(QSpacerItem(10,10),    2,5)
-      layoutBottom.addItem(QSpacerItem(10,10),    4,5)
+      layoutBottom.addItem(QtWidgets.QSpacerItem(10,10),    0,5)
+      layoutBottom.addItem(QtWidgets.QSpacerItem(10,10),    2,5)
+      layoutBottom.addItem(QtWidgets.QSpacerItem(10,10),    4,5)
 
       layoutBottom.addWidget(HLINE(),             1,1,  1,4)
       layoutBottom.addWidget(HLINE(),             3,1,  1,4)
@@ -4059,16 +4059,16 @@ class DlgSelectMultiSigOption(ArmoryDialog):
       layoutBottom.setColumnStretch(2, 1)
       layoutBottom.setColumnStretch(4, 2)
 
-      frmBottom = QFrame()
+      frmBottom = QtWidgets.QFrame()
       frmBottom.setFrameStyle(STYLE_RAISED)
       frmBottom.setLayout(layoutBottom)
 
 
-      btnDone = QPushButton(self.tr("Done"))
+      btnDone = QtWidgets.QPushButton(self.tr("Done"))
       self.connect(btnDone, SIGNAL('clicked()'), self.accept)
       frmDone = makeHorizFrame(['Stretch', btnDone])
 
-      layoutMaster = QVBoxLayout()
+      layoutMaster = QtWidgets.QVBoxLayout()
       layoutMaster.addWidget(frmTop)
       layoutMaster.addWidget(frmBottom,1)
       layoutMaster.addWidget(frmDone)

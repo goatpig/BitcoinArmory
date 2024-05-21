@@ -1,17 +1,12 @@
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
 ##############################################################################
 #                                                                            #
-# Copyright (C) 2016-2021, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
 ##############################################################################
 
-from PySide2.QtCore import Qt
-from PySide2.QtWidgets import QPushButton, QGridLayout, QFrame, QLabel, \
-   QRadioButton
-
+from qtpy import QtCore, QtWidgets
 from qtdialogs.qtdefines import STYLE_RAISED, QLabelButton
 from armoryengine.BDM import TheBDM
 from armoryengine.CppBridge import TheBridge
@@ -57,15 +52,15 @@ class AddressTypeSelectDialog(ArmoryDialog):
          self.addTypeFrame(addrType)
 
       #main layout
-      layout = QGridLayout()
+      layout = QtWidgets.QGridLayout()
       n = 0
       for aType in self.radioFrames:
          frm = self.radioFrames[aType][0]
          layout.addWidget(frm, n, 0, 1, 4)
          n += 2
 
-      self.btnOk = QPushButton(self.tr('Apply'))
-      self.btnCancel = QPushButton(self.tr('Cancel'))
+      self.btnOk = QtWidgets.QPushButton(self.tr('Apply'))
+      self.btnCancel = QtWidgets.QPushButton(self.tr('Cancel'))
 
       self.btnOk.clicked.connect(self.accept)
       self.btnCancel.clicked.connect(self.reject)
@@ -82,7 +77,7 @@ class AddressTypeSelectDialog(ArmoryDialog):
    def addTypeFrame(self, addrType):
       #radio button
       addrTypeStr = TheBridge.getNameForAddrType(addrType)
-      radioBtn = QRadioButton(addrTypeStr)
+      radioBtn = QtWidgets.QRadioButton(addrTypeStr)
       def setAddrType():
          self.selectType(addrType)
       radioBtn.clicked.connect(setAddrType)
@@ -92,12 +87,12 @@ class AddressTypeSelectDialog(ArmoryDialog):
          descrStr = selectorDescriptions[addrType]
       else:
          descrStr = self.tr("N/A")
-      descrLbl = QLabel(descrStr)
+      descrLbl = QtWidgets.QLabel(descrStr)
 
       #frame
-      frm = QFrame()
+      frm = QtWidgets.QFrame()
       frm.setFrameStyle(STYLE_RAISED)
-      layout = QGridLayout()
+      layout = QtWidgets.QGridLayout()
       layout.addWidget(radioBtn, 0, 0, 1, 1)
       layout.addWidget(descrLbl, 1, 0, 1, 1)
       frm.setLayout(layout)
@@ -122,14 +117,14 @@ class AddressLabelFrame(object):
       self.main = main
       self.setAddressFunc = setAddressFunc
 
-      self.frmAddrType = QFrame()
+      self.frmAddrType = QtWidgets.QFrame()
       self.frmAddrType.setFrameStyle(STYLE_RAISED)
-      frmAddrTypeLayout = QGridLayout()
+      frmAddrTypeLayout = QtWidgets.QGridLayout()
 
-      addrLabel = QLabel(self.main.tr('Address Type: '))
-      addrLabel.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+      addrLabel = QtWidgets.QLabel(self.main.tr('Address Type: '))
+      addrLabel.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
       self.typeLabel = QLabelButton("")
-      self.typeLabel.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+      self.typeLabel.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
 
       self.typeLabel.linkActivated.connect(self.changeType)
 

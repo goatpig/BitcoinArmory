@@ -4,21 +4,19 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2022, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
 ##############################################################################
 
-from PySide2.QtCore import SIGNAL
-from PySide2.QtWidgets import QComboBox, QLineEdit, QPushButton, QGridLayout, \
-        QMessageBox
+from qtpy import QtCore, QtWidgets
 from armoryengine.BDM import TheBDM
 from armoryengine.ArmoryUtils import str2coin, coin2str, unixTimeToFormatStr, \
-        IGNOREZC, RightNow, hex_to_binary, hex_switchEndian, FORMAT_SYMBOLS, \
-        DEFAULT_DATE_FORMAT
+   IGNOREZC, RightNow, hex_to_binary, hex_switchEndian, FORMAT_SYMBOLS, \
+   DEFAULT_DATE_FORMAT
 from qtdialogs.qtdefines import QRichLabel, HLINE, STRETCH, WLTTYPES, \
-        makeHorizFrame, determineWalletType, createToolTipWidget
+   makeHorizFrame, determineWalletType, createToolTipWidget
 from qtdialogs.ArmoryDialog import ArmoryDialog
 
 from armorymodels import LEDGERCOLS
@@ -33,7 +31,7 @@ class DlgExportTxHistory(ArmoryDialog):
 
       self.reversedLBdict = {v:k for k,v in self.main.lockboxIDMap.items()}
 
-      self.cmbWltSelect = QComboBox()
+      self.cmbWltSelect = QtWidgets.QComboBox()
       self.cmbWltSelect.clear()
       self.cmbWltSelect.addItem(self.tr('My Wallets'))
       self.cmbWltSelect.addItem(self.tr('Offline Wallets'))
@@ -53,13 +51,13 @@ class DlgExportTxHistory(ArmoryDialog):
          self.cmbWltSelect.addItem(self.main.allLockboxes[idx].shortName)
 
 
-      self.cmbSortSelect = QComboBox()
+      self.cmbSortSelect = QtWidgets.QComboBox()
       self.cmbSortSelect.clear()
       self.cmbSortSelect.addItem(self.tr('Date (newest first)'))
       self.cmbSortSelect.addItem(self.tr('Date (oldest first)'))
 
 
-      self.cmbFileFormat = QComboBox()
+      self.cmbFileFormat = QtWidgets.QComboBox()
       self.cmbFileFormat.clear()
       self.cmbFileFormat.addItem(self.tr('Comma-Separated Values (*.csv)'))
 
@@ -69,14 +67,14 @@ class DlgExportTxHistory(ArmoryDialog):
       fmtSymbols = [x[0] + ' = ' + x[1] for x in FORMAT_SYMBOLS]
       ttipStr += '<br>'.join(fmtSymbols)
 
-      self.edtDateFormat = QLineEdit()
+      self.edtDateFormat = QtWidgets.QLineEdit()
       self.edtDateFormat.setText(fmt)
       self.ttipFormatDescr = createToolTipWidget(ttipStr)
 
       self.lblDateExample = QRichLabel('', doWrap=False)
       self.connect(self.edtDateFormat, SIGNAL('textEdited(QString)'), self.doExampleDate)
       self.doExampleDate()
-      self.btnResetFormat = QPushButton(self.tr("Reset to Default"))
+      self.btnResetFormat = QtWidgets.QPushButton(self.tr("Reset to Default"))
 
       def doReset():
          self.edtDateFormat.setText(DEFAULT_DATE_FORMAT)
@@ -86,14 +84,14 @@ class DlgExportTxHistory(ArmoryDialog):
 
 
         # Add the usual buttons
-      self.btnCancel = QPushButton(self.tr("Cancel"))
-      self.btnAccept = QPushButton(self.tr("Export"))
+      self.btnCancel = QtWidgets.QPushButton(self.tr("Cancel"))
+      self.btnAccept = QtWidgets.QPushButton(self.tr("Export"))
       self.connect(self.btnCancel, SIGNAL("clicked()"), self.reject)
       self.connect(self.btnAccept, SIGNAL("clicked()"), self.accept)
       btnBox = makeHorizFrame([STRETCH, self.btnCancel, self.btnAccept])
 
 
-      dlgLayout = QGridLayout()
+      dlgLayout = QtWidgets.QGridLayout()
 
       i = 0
       dlgLayout.addWidget(QRichLabel(self.tr('Export Format:')), i, 0)
@@ -156,9 +154,9 @@ class DlgExportTxHistory(ArmoryDialog):
     #############################################################################
    def createFile_CSV(self):
       if not self.isValidFormat:
-         QMessageBox.warning(self, self.tr('Invalid date format'), \
+         QtWidgets.QMessageBox.warning(self, self.tr('Invalid date format'), \
                   self.tr('Cannot create CSV without a valid format for transaction '
-                  'dates and times'), QMessageBox.Ok)
+                  'dates and times'), QtWidgets.QMessageBox.Ok)
          return False
 
       COL = LEDGERCOLS
