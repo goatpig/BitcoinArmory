@@ -155,15 +155,15 @@ class AllWalletsCheckboxDelegate(QtWidgets.QStyledItemDelegate):
 
    #############################################################################
    def paint(self, painter, option, index):
-      bgcolor = None
+      bgcolor = QtGui.QPalette().color(
+         QtGui.QPalette.Active, QtGui.QPalette.Window)
       if option.state & QtWidgets.QStyle.State_Selected:
          bgcolor = QtWidgets.QApplication.palette().highlight().color()
 
       if index.column() == WLTVIEWCOLS.Visible:
          isVisible = index.model().data(index)
          image=None
-         if bgcolor:
-            painter.fillRect(option.rect, bgcolor)
+         painter.fillRect(option.rect, bgcolor)
          if isVisible:
             image = QtGui.QImage('./img/visible2.png').scaled(self.EYESIZE,self.EYESIZE)
             pixmap = QtGui.QPixmap.fromImage(image)
@@ -921,7 +921,8 @@ class LedgerDispDelegate(QtWidgets.QStyledItemDelegate):
 
 
    def paint(self, painter, option, index):
-      bgcolor = None
+      bgcolor = QtGui.QPalette().color(
+         QtGui.QPalette.Active, QtGui.QPalette.Window)
       if option.state & QtWidgets.QStyle.State_Selected:
          bgcolor = QtWidgets.QApplication.palette().highlight().color()
 
@@ -948,8 +949,7 @@ class LedgerDispDelegate(QtWidgets.QStyledItemDelegate):
                image = QtGui.QImage('./img/conf%dt.png'%nConf)
             else:
                image = QtGui.QImage('./img/conf6t.png')
-         if bgcolor:
-            painter.fillRect(option.rect, bgcolor)
+         painter.fillRect(option.rect, bgcolor)
          pixmap = QtGui.QPixmap.fromImage(image)
          #pixmap.scaled(70, 30, QtCore.Qt.KeepAspectRatio)
          painter.drawPixmap(option.rect, pixmap)
@@ -970,8 +970,7 @@ class LedgerDispDelegate(QtWidgets.QStyledItemDelegate):
             else:
                image = QtGui.QImage('./img/moneyIn.png')
 
-         if bgcolor:
-            painter.fillRect(option.rect, bgcolor)
+         painter.fillRect(option.rect, bgcolor)
          pixmap = QtGui.QPixmap.fromImage(image)
          #pixmap.scaled(70, 30, QtCore.Qt.KeepAspectRatio)
          painter.drawPixmap(option.rect, pixmap)
