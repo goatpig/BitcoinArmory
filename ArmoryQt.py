@@ -1313,8 +1313,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
       self.createCombinedLedger()
 
-
-
    ####################################################
    def openSettings(self):
       LOGDEBUG('openSettings')
@@ -1330,8 +1328,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       self.sysTray.setVisible(True)
       self.sysTray.setToolTip('Armory' + (' [Testnet]' if USE_TESTNET else '') + (' [Regtest]' if USE_REGTEST else ''))
       self.sysTray.messageClicked.connect(self.bringArmoryToFront)
-      #self.connect(self.sysTray, SIGNAL('activated(QtWidgets.QSystemTrayIcon::ActivationReason)'), \
-      #               self.sysTrayActivated)
       self.sysTray.activated.connect(self.sysTrayActivated)
       menu = QtWidgets.QMenu(self)
 
@@ -5138,6 +5134,8 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             except Exception as e:
                #TODO: fix this
                LOGERROR('tx broadcast systray display failed with error: %s' % e)
+               traceback.print_tb(e.__traceback__)
+
 
          if title:
             self.showTrayMsg(title, "\n".join(dispLines), \
@@ -5147,7 +5145,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          # Wait for 5 seconds before processing the next queue object.
          self.notifyBlockedUntil = RightNow() + 5
          return
-
 
    #############################################################################
    def closeEvent(self, event=None):

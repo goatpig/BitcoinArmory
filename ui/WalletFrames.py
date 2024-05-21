@@ -103,24 +103,19 @@ class LockboxSelectFrame(ArmoryFrame):
 
       self.setLayout(layout)
 
-      
-      
-
-
-
 # This class has all of the select wallet display and control functionality for
 # selecting a wallet, and doing coin control. It can be dropped into any dialog
 # and will interface with the dialog with select wlt and coin control callbacks.
 class SelectWalletFrame(ArmoryFrame):
    def __init__(self, parent, main, layoutDir=VERTICAL,
-                                    firstSelect=None,
-                                    onlyMyWallets=False,
-                                    wltIDList=None, 
-                                    atLeast=0, 
-                                    selectWltCallback=None, 
-                                    coinControlCallback=None,
-                                    onlyOfflineWallets=False,
-                                    RBFcallback=None):
+      firstSelect=None,
+      onlyMyWallets=False,
+      wltIDList=None,
+      atLeast=0,
+      selectWltCallback=None,
+      coinControlCallback=None,
+      onlyOfflineWallets=False,
+      RBFcallback=None):
 
       super(SelectWalletFrame, self).__init__(parent, main)
       self.coinControlCallback = coinControlCallback
@@ -130,14 +125,14 @@ class SelectWalletFrame(ArmoryFrame):
       self.dlgrbf = None
 
       self.walletComboBox = QtWidgets.QComboBox()
-      self.walletListBox  = QListWidget()
+      self.walletListBox  = QtWidgets.QListWidget()
       self.balAtLeast = atLeast
       self.selectWltCallback = selectWltCallback
       self.doVerticalLayout = layoutDir==VERTICAL
 
       if self.main and len(self.main.walletMap) == 0:
          QtWidgets.QMessageBox.critical(self, self.tr('No Wallets!'), \
-            self.tr('There are no wallets to select from.  Please create or import '
+            self.tr('There are no wallets to select from. Please create or import '
             'a wallet first.'), QtWidgets.QMessageBox.Ok)
          self.accept()
          return

@@ -4,7 +4,7 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2023, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
@@ -17,7 +17,7 @@ from qtdialogs.ArmoryDialog import ArmoryDialog
 from armoryengine.Settings import TheSettings
 from qtdialogs.qtdefines import makeHorizFrame, STRETCH, \
    MIN_PASSWD_WIDTH, LetterButton, createToolTipWidget
-
+from qtpy import QtWidgets
 
 ################################################################################
 class DlgUnlockWallet(ArmoryDialog):
@@ -26,12 +26,14 @@ class DlgUnlockWallet(ArmoryDialog):
       self.wltID = wltID
 
       ##### Upper layout
-      lblDescr = QtWidgets.QLabel(self.tr("Enter your passphrase to unlock this wallet"))
+      lblDescr = QtWidgets.QLabel(
+         self.tr("Enter your passphrase to unlock this wallet"))
       lblPasswd = QtWidgets.QLabel(self.tr("Passphrase:"))
       self.edtPasswd = QtWidgets.QLineEdit()
       self.edtPasswd.setEchoMode(QtWidgets.QLineEdit.Password)
       self.edtPasswd.setMinimumWidth(MIN_PASSWD_WIDTH(self))
-      self.edtPasswd.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Expanding)
+      self.edtPasswd.setSizePolicy(
+         QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Expanding)
 
       self.btnAccept = QtWidgets.QPushButton(self.tr("Unlock"))
       self.btnCancel = QtWidgets.QPushButton(self.tr("Cancel"))
@@ -76,10 +78,12 @@ class DlgUnlockWallet(ArmoryDialog):
       self.rdoScrambleNone.clicked.connect(self.changeScramble)
       self.rdoScrambleLite.clicked.connect(self.changeScramble)
       self.rdoScrambleFull.clicked.connect(self.changeScramble)
-      btnRowFrm = makeHorizFrame([self.rdoScrambleNone, \
-                                  self.rdoScrambleLite, \
-                                  self.rdoScrambleFull, \
-                                  STRETCH])
+      btnRowFrm = makeHorizFrame([
+         self.rdoScrambleNone,
+         self.rdoScrambleLite,
+         self.rdoScrambleFull,
+         STRETCH
+      ])
 
       self.layoutKeyboard = QtWidgets.QGridLayout()
       self.frmKeyboard = QtWidgets.QFrame()
@@ -93,7 +97,6 @@ class DlgUnlockWallet(ArmoryDialog):
       self.frmLower.setLayout(self.layoutLower)
       self.frmLower.setVisible(showOSD)
 
-
       ##### Expand button
       self.btnShowOSD = QtWidgets.QPushButton(self.tr('Show Keyboard >>>'))
       self.btnShowOSD.setCheckable(True)
@@ -102,7 +105,6 @@ class DlgUnlockWallet(ArmoryDialog):
          self.toggleOSD()
       self.btnShowOSD.toggled.connect(self.toggleOSD)
       frmAccept = makeHorizFrame([self.btnShowOSD, ttipScramble, STRETCH, buttonBox])
-
 
       ##### Complete Layout
       layout = QtWidgets.QVBoxLayout()
@@ -116,7 +118,6 @@ class DlgUnlockWallet(ArmoryDialog):
       self.layout().setSizeConstraint(QtWidgets.QLayout.SetFixedSize)
       self.changeScramble()
       self.redrawKeys()
-
       self.encryptionKeyIds = []
 
    #############################################################################
@@ -315,7 +316,6 @@ class DlgUnlockWallet(ArmoryDialog):
       else:
          self.recycle()
          self.show()
-
 
 ################################################################################
 class UnlockWalletHandler(ServerPush, DlgUnlockWallet):
