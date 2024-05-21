@@ -4,7 +4,7 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2022, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
@@ -40,11 +40,9 @@ class DlgUriCopyAndPaste(ArmoryDialog):
       buttonBox.addButton(self.btnOkay, QtWidgets.QDialogButtonBox.AcceptRole)
       buttonBox.addButton(self.btnCancel, QtWidgets.QDialogButtonBox.RejectRole)
 
-      self.connect(self.btnOkay, SIGNAL(CLICKED), self.clickedOkay)
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.reject)
-
+      self.btnOkay.clicked.connect(self.clickedOkay)
+      self.btnCancel.clicked.connect(self.reject)
       frmImg = makeHorizFrame([STRETCH, lblShowExample, STRETCH])
-
 
       layout = QtWidgets.QVBoxLayout()
       layout.addWidget(lblDescr)
@@ -54,7 +52,6 @@ class DlgUriCopyAndPaste(ArmoryDialog):
       layout.addWidget(self.txtUriString)
       layout.addWidget(buttonBox)
       self.setLayout(layout)
-
 
    def clickedOkay(self):
       uriStr = str(self.txtUriString.text())

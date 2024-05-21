@@ -64,18 +64,22 @@ class DlgIntroMessage(ArmoryDialog):
          buttonBox.addButton(self.btnImport, QtWidgets.QDialogButtonBox.AcceptRole)
          buttonBox.addButton(self.btnCancel, QtWidgets.QDialogButtonBox.RejectRole)
          self.chkDnaaIntroDlg.setVisible(False)
-         frmBtn = makeLayoutFrame(HORIZONTAL, [self.chkDnaaIntroDlg, \
-                                            self.btnCancel, \
-                                            STRETCH, \
-                                            self.btnImport, \
-                                            self.btnCreate])
+         frmBtn = makeLayoutFrame(HORIZONTAL, [
+            self.chkDnaaIntroDlg,
+            self.btnCancel,
+            STRETCH,
+            self.btnImport,
+            self.btnCreate
+         ])
       else:
          self.btnOkay = QtWidgets.QPushButton(self.tr("OK!"))
-         self.connect(self.btnOkay, SIGNAL(CLICKED), self.accept)
+         self.btnOkay.clicked.connect(self.accept)
          buttonBox.addButton(self.btnOkay, QtWidgets.QDialogButtonBox.AcceptRole)
-         frmBtn = makeLayoutFrame(HORIZONTAL, [self.chkDnaaIntroDlg, \
-                                            STRETCH, \
-                                            self.btnOkay])
+         frmBtn = makeLayoutFrame(HORIZONTAL, [
+            self.chkDnaaIntroDlg,
+            STRETCH,
+            self.btnOkay
+         ])
 
       dlgLayout = QtWidgets.QGridLayout()
       dlgLayout.addWidget(frmIcon, 0, 0, 1, 1)

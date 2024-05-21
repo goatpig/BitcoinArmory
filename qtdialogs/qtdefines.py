@@ -702,9 +702,8 @@ def createDirectorySelectButton(parent, targetWidget, title="Select Directory"):
    ico = QtGui.QIcon(QtGui.QPixmap('./img/folder24.png'))
    btn.setIcon(ico)
 
-
    fn = lambda: selectDirectoryForQLineEdit(parent, targetWidget, title)
-   parent.connect(btn, SIGNAL('clicked()'), fn)
+   btn.clicked.connect(fn)
    return btn
 
 #############################################################################

@@ -62,8 +62,8 @@ def MsgBoxCustom(wtype, title, msg, wCancel=False, yesStr=None, noStr=None,
             if not noStr:  noStr = self.tr('&No')
             btnYes = QtWidgets.QPushButton(yesStr)
             btnNo  = QtWidgets.QPushButton(noStr)
-            self.connect(btnYes, SIGNAL('clicked()'), self.accept)
-            self.connect(btnNo,  SIGNAL('clicked()'), self.reject)
+            btnYes.clicked.connect(self.accept)
+            btnNo.clicked.connect(self.reject)
             buttonbox.addButton(btnYes,QtWidgets.QDialogButtonBox.AcceptRole)
             buttonbox.addButton(btnNo, QtWidgets.QDialogButtonBox.RejectRole)
          else:
@@ -71,8 +71,8 @@ def MsgBoxCustom(wtype, title, msg, wCancel=False, yesStr=None, noStr=None,
             yesStr    = self.tr('&OK') if (yesStr is None) else yesStr
             btnOk     = QtWidgets.QPushButton(yesStr)
             btnCancel = QtWidgets.QPushButton(cancelStr)
-            self.connect(btnOk,     SIGNAL('clicked()'), self.accept)
-            self.connect(btnCancel, SIGNAL('clicked()'), self.reject)
+            btnOk.clicked.connect(self.accept)
+            btnCancel.clicked.connect(self.reject)
             buttonbox.addButton(btnOk, QtWidgets.QDialogButtonBox.AcceptRole)
             if cancelStr:
                buttonbox.addButton(btnCancel, QtWidgets.QDialogButtonBox.RejectRole)

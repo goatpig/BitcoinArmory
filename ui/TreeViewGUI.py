@@ -992,7 +992,7 @@ class RBFTreeModel(ArmoryTreeModel):
          node = self.getNodeItem(index)
          node.treeNode.setCheckState(value)
 
-         self.emit(SIGNAL('layoutChanged()'))
+         self.layoutChanged.emit()
          return True
 
       return False

@@ -4,7 +4,7 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2022, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
@@ -19,9 +19,9 @@ class DlgBrowserWarn(ArmoryDialog):
 
       self.link = link
       self.btnCancel = QtWidgets.QPushButton("Cancel")
-      self.connect(self.btnCancel, SIGNAL(CLICKED), self.cancel)
+      self.btnCancel.clicked.connect(self.cancel)
       self.btnContinue = QtWidgets.QPushButton("Continue")
-      self.connect(self.btnContinue, SIGNAL(CLICKED), self.accept)
+      self.btnContinue.clicked.connect(self.accept)
       btnBox = makeHorizFrame([STRETCH, self.btnCancel, self.btnContinue])
 
       lblWarn = QRichLabel(self.tr('Your default browser will now open and go to the following link: %s. Are you sure you want to proceed?' % self.link))

@@ -67,8 +67,7 @@ class DlgChangePassphrase(ArmoryDialog):
 
       self.chkDisableCrypt = QtWidgets.QCheckBox(self.tr('Disable encryption for this wallet'))
       if not noPrevEncrypt:
-         self.connect(self.chkDisableCrypt, SIGNAL('toggled(bool)'), \
-                      self.disablePassphraseBoxes)
+         self.chkDisableCrypt.toggled.connect(self.disablePassphraseBoxes)
          layout.addWidget(self.chkDisableCrypt, 4, 0)
 
 
@@ -88,17 +87,10 @@ class DlgChangePassphrase(ArmoryDialog):
 
       self.setLayout(layout)
 
-      self.connect(self.edtPasswd1, SIGNAL('textChanged(QString)'), \
-                   self.checkPassphrase)
-      self.connect(self.edtPasswd2, SIGNAL('textChanged(QString)'), \
-                   self.checkPassphrase)
-
-      self.connect(self.btnAccept, SIGNAL("clicked()"), \
-                   self.checkPassphraseFinal)
-
-      self.connect(self.btnCancel, SIGNAL("clicked()"), \
-                    self, SLOT('reject()'))
-
+      self.edtPasswd1.textChanged.connect(self.checkPassphrase)
+      self.edtPasswd2.textChanged.connect(self.checkPassphrase)
+      self.btnAccept.clicked.connect(self.checkPassphraseFinal)
+      self.btnCancel.clicked.connect(self.reject)
 
    def disablePassphraseBoxes(self, noEncrypt=True):
       self.edtPasswd1.setEnabled(not noEncrypt)

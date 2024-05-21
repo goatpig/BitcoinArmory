@@ -63,8 +63,8 @@ class FeeSelectionDialog(ArmoryDialog):
       self.edtFeeAmt.setMinimumWidth(tightSizeNChar(self.edtFeeAmt, 6)[0])
       self.edtFeeAmt.setMaximumWidth(tightSizeNChar(self.edtFeeAmt, 12)[0])
 
-      self.connect(self.radioFlatFee, SIGNAL('clicked()'), setFlatFee())
-      self.connect(self.edtFeeAmt, SIGNAL('textChanged(QString)'), updateLbl)
+      self.radioFlatFee.clicked.connect(setFlatFee())
+      self.edtFeeAmt.textChanged.connect(updateLbl)
 
       frmFlatFee = QtWidgets.QFrame()
       frmFlatFee.setFrameStyle(STYLE_RAISED)
@@ -85,8 +85,8 @@ class FeeSelectionDialog(ArmoryDialog):
       self.edtFeeByte.setMinimumWidth(tightSizeNChar(self.edtFeeByte, 6)[0])
       self.edtFeeByte.setMaximumWidth(tightSizeNChar(self.edtFeeByte, 12)[0])
 
-      self.connect(self.radioFeeByte, SIGNAL('clicked()'), setFeeByte())
-      self.connect(self.edtFeeByte, SIGNAL('textChanged(QString)'), updateLbl)
+      self.radioFeeByte.clicked.connect(setFeeByte())
+      self.edtFeeByte.textChanged.connect(updateLbl)
 
       frmFeeByte = QtWidgets.QFrame()
       frmFeeByte.setFrameStyle(STYLE_RAISED)
@@ -105,13 +105,13 @@ class FeeSelectionDialog(ArmoryDialog):
 
       #adjust and close
       self.btnClose = QtWidgets.QPushButton(self.tr('Close'))
-      self.connect(self.btnClose, SIGNAL('clicked()'), self.accept)
+      self.btnClose.clicked.connect(self.accept)
 
       self.checkBoxAdjust = QtWidgets.QCheckBox(self.tr('Adjust fee/byte for privacy'))
       self.checkBoxAdjust.setChecked(\
          TheSettings.getSettingOrSetDefault('AdjustFee', True))
 
-      self.connect(self.checkBoxAdjust, SIGNAL('clicked()'), updateLbl)
+      self.checkBoxAdjust.clicked.connect(updateLbl)
 
       frmClose = makeHorizFrame(\
          [self.checkBoxAdjust, 'Stretch', self.btnClose], STYLE_NONE)
@@ -182,7 +182,7 @@ class FeeSelectionDialog(ArmoryDialog):
 
       self.lblSlider.setText(getSliderLabelTxt())
 
-      self.connect(self.radioAutoFeeByte, SIGNAL('clicked()'), setAutoFeeByte())
+      self.radioAutoFeeByte.clicked.connect(setAutoFeeByte())
       self.sliderAutoFeeByte.valueChanged.connect(updateAutoFeeByte)
       self.sliderAutoFeeByte.setEnabled(False)
 
@@ -289,11 +289,10 @@ class FeeSelectionDialog(ArmoryDialog):
 
       self.lblSlider.setText(getSliderLabelTxt())
 
-      self.connect(self.radioAutoFeeByte, SIGNAL('clicked()'), setAutoFeeByte())
+      self.radioAutoFeeByte.clicked.connect(setAutoFeeByte())
       self.sliderAutoFeeByte.valueChanged.connect(updateAutoFeeByte)
       self.sliderAutoFeeByte.setEnabled(False)
-
-      self.connect(self.comboStrat, SIGNAL('currentIndexChanged(int)'), stratComboChange)
+      self.comboStrat.currentIndexChanged.connect(stratComboChange)
 
       frmAutoFeeByte = QtWidgets.QFrame()
       frmAutoFeeByte.setFrameStyle(STYLE_RAISED)

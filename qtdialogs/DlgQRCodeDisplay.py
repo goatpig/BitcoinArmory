@@ -18,7 +18,7 @@ class DlgQRCodeDisplay(ArmoryDialog):
       super(DlgQRCodeDisplay, self).__init__(parent, main)
 
       btnDone = QtWidgets.QPushButton('Close')
-      self.connect(btnDone, SIGNAL(CLICKED), self.accept)
+      btnDone.clicked.connect(self.accept)
       frmBtn = makeHorizFrame([STRETCH, btnDone, STRETCH])
 
       qrDisp = QRCodeWidget(dataToQR, parent=self)

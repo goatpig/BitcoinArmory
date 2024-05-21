@@ -205,10 +205,8 @@ class SignatureVerificationWidget(QtWidgets.QWidget):
       self.signMessageLayout.addWidget(buttonFrame, 3, 1, 1, 2)
 
       self.setLayout(self.signMessageLayout)
-      self.connect(self.verifySignatureButton, SIGNAL('clicked()'), \
-                   self.verifySignature)
-      self.connect(self.clearFieldsButton, SIGNAL('clicked()'), \
-                   self.clearFields)
+      self.verifySignatureButton.clicked.connect(self.verifySignature)
+      self.clearFieldsButton.clicked.connect(self.clearFields)
 
    # To be implemented by child classes
    def verifySignature(self):

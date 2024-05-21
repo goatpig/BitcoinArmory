@@ -46,19 +46,17 @@ class DlgSettings(ArmoryDialog):
       self.edtArmoryDbdir = QtWidgets.QLineEdit()
 
       self.edtSatoshiExePath.setMinimumWidth(
-              tightSizeNChar(GETFONT('Fixed', 10), 40)[0])
-      self.connect(
-              self.chkManageSatoshi, SIGNAL('clicked()'),
-              self.clickChkManage)
+         tightSizeNChar(GETFONT('Fixed', 10), 40)[0])
+      self.chkManageSatoshi.clicked.connect(self.clickChkManage)
       self.startChk = TheSettings.getSettingOrSetDefault(
-              'ManageSatoshi', not OS_MACOSX)
+         'ManageSatoshi', not OS_MACOSX)
       if self.startChk:
          self.chkManageSatoshi.setChecked(True)
       if OS_MACOSX:
          self.chkManageSatoshi.setEnabled(False)
          lblManageSatoshi = QRichLabel(self.tr(
-              'Bitcoin Core/bitcoind management is not available on Mac/OSX')
-              )
+            'Bitcoin Core/bitcoind management is not available on Mac/OSX')
+         )
       else:
          if self.main.settings.hasSetting('SatoshiExe'):
             satexe = self.main.settings.get('SatoshiExe')
@@ -68,11 +66,11 @@ class DlgSettings(ArmoryDialog):
             sathome = self.main.settings.get('SatoshiDatadir')
 
          lblManageSatoshi = QRichLabel(
-             self.tr('<b>Bitcoin Software Management</b>'
-             '<br><br>'
-             'By default, Armory will manage the Bitcoin engine/software in the '
-             'background.  You can choose to manage it yourself, or tell Armory '
-             'about non-standard installation configuration.'))
+            self.tr('<b>Bitcoin Software Management</b>'
+            '<br><br>'
+            'By default, Armory will manage the Bitcoin engine/software in the '
+            'background.  You can choose to manage it yourself, or tell Armory '
+            'about non-standard installation configuration.'))
       if self.main.settings.hasSetting('SatoshiExe'):
          self.edtSatoshiExePath.setText(self.main.settings.get('SatoshiExe'))
          self.edtSatoshiExePath.home(False)
@@ -137,7 +135,7 @@ class DlgSettings(ArmoryDialog):
       frmPaths = QtWidgets.QFrame()
       frmPaths.setLayout(layoutPath)
 
-        ##########################################################################
+      ##########################################################################
       lblDefaultUriTitle = QRichLabel(self.tr('<b>Set Armory as default URL handler</b>'))
       lblDefaultURI = QRichLabel(self.tr(
          'Set Armory to be the default when you click on "bitcoin:" '
@@ -155,13 +153,13 @@ class DlgSettings(ArmoryDialog):
       def clickRegURI():
          self.main.setupUriRegistration(justDoIt=True)
          QtWidgets.QMessageBox.information(self, self.tr('Registered'), self.tr(
-             'Armory just attempted to register itself to handle "bitcoin:" '
-             'links, but this does not work on all operating systems.'), QtWidgets.QMessageBox.Ok)
+            'Armory just attempted to register itself to handle "bitcoin:" '
+            'links, but this does not work on all operating systems.'), QtWidgets.QMessageBox.Ok)
 
-      self.connect(btnDefaultURI, SIGNAL('clicked()'), clickRegURI)
+      btnDefaultURI.clicked.connect(clickRegURI)
 
-        ###############################################################
-        # Minimize on Close
+      ###############################################################
+      # Minimize on Close
       lblMinimizeDescr = QRichLabel(self.tr(
          '<b>Minimize to System Tray</b> '
          '<br>'
@@ -250,17 +248,17 @@ class DlgSettings(ArmoryDialog):
       self.ttipFormatDescr = createToolTipWidget(ttipStr)
 
       self.lblDateExample = QRichLabel('', doWrap=False)
-      self.connect(self.edtDateFormat, SIGNAL('textEdited(QString)'), self.doExampleDate)
+      self.edtDateFormat.textEdited.connect(self.doExampleDate)
       self.doExampleDate()
       self.btnResetFormat = QtWidgets.QPushButton(self.tr("Reset to Default"))
 
       def doReset():
          self.edtDateFormat.setText(DEFAULT_DATE_FORMAT)
          self.doExampleDate()
-      self.connect(self.btnResetFormat, SIGNAL('clicked()'), doReset)
+      self.btnResetFormat.clicked.connect(doReset)
 
-        # Make a little subframe just for the date format stuff... everything
-        # fits nicer if I do this...
+      # Make a little subframe just for the date format stuff... everything
+      # fits nicer if I do this...
       frmTop = makeHorizFrame([self.lblDateExample, STRETCH, self.ttipFormatDescr])
       frmMid = makeHorizFrame([self.edtDateFormat])
       frmBot = makeHorizFrame([self.btnResetFormat, STRETCH])
@@ -269,19 +267,20 @@ class DlgSettings(ArmoryDialog):
       subFrm = makeHorizFrame([lblStk, STRETCH, fStack])
 
 
-        # Save/Cancel Button
+      # Save/Cancel Button
       self.btnCancel = QtWidgets.QPushButton(self.tr("Cancel"))
       self.btnAccept = QtWidgets.QPushButton(self.tr("Save"))
-      self.connect(self.btnCancel, SIGNAL('clicked()'), self.reject)
-      self.connect(self.btnAccept, SIGNAL('clicked()'), self.accept)
+      self.btnCancel.clicked.connect(self.reject)
+      self.btnAccept.clicked.connect(self.accept)
 
-        ################################################################
-        # User mode selection
+      ################################################################
+      # User mode selection
       self.cmbUsermode = QtWidgets.QComboBox()
       self.cmbUsermode.clear()
       self.cmbUsermode.addItem(self.tr('Standard'))
       self.cmbUsermode.addItem(self.tr('Advanced'))
       self.cmbUsermode.addItem(self.tr('Expert'))
+      self.cmbUsermode.activated.connect(self.setUsermodeDescr)
 
       self.usermodeInit = self.main.usermode
 
@@ -296,10 +295,8 @@ class DlgSettings(ArmoryDialog):
       self.lblUsermodeDescr = QRichLabel('')
       self.setUsermodeDescr()
 
-      self.connect(self.cmbUsermode, SIGNAL('activated(int)'), self.setUsermodeDescr)
-
-        ###############################################################
-        # Language preferences
+      ###############################################################
+      # Language preferences
       self.lblLang = QRichLabel(self.tr('<b>Preferred Language<b>:<br>'))
       self.lblLangDescr = QRichLabel(self.tr(
          'Specify which language you would like Armory to be displayed in.'))
@@ -465,7 +462,7 @@ class DlgSettings(ArmoryDialog):
       labelFee = QRichLabel(self.tr("<b>Fee<br></b>"))
 
       self.radioAutoFee = QtWidgets.QRadioButton(self.tr("Auto fee/byte"))
-      self.connect(self.radioAutoFee, SIGNAL('clicked()'), getCallbck('Auto'))
+      self.radioAutoFee.clicked.connect(getCallbck('Auto'))
       self.sliderAutoFee = QtWidgets.QSlider(QtCore.Qt.Horizontal, self)
       self.sliderAutoFee.setMinimum(2)
       self.sliderAutoFee.setMaximum(6)
@@ -487,12 +484,12 @@ class DlgSettings(ArmoryDialog):
       'Defaults to manual fee/byte on failure.'))
 
       self.radioFeeByte = QtWidgets.QRadioButton(self.tr("Manual fee/byte"))
-      self.connect(self.radioFeeByte, SIGNAL('clicked()'), getCallbck('FeeByte'))
+      self.radioFeeByte.clicked.connect(getCallbck('FeeByte'))
       self.leFeeByte = QtWidgets.QLineEdit(str(feeByte))
       toolTipFeeByte = createToolTipWidget(self.tr('Values in satoshis/byte'))
 
       self.radioFlatFee = QtWidgets.QRadioButton(self.tr("Flat fee"))
-      self.connect(self.radioFlatFee, SIGNAL('clicked()'), getCallbck('FlatFee'))
+      self.radioFlatFee.clicked.connect(getCallbck('FlatFee'))
       self.leFlatFee = QtWidgets.QLineEdit(coin2str(txFee, maxZeros=0))
       toolTipFlatFee = createToolTipWidget(self.tr('Values in BTC'))
 
@@ -569,7 +566,7 @@ class DlgSettings(ArmoryDialog):
       labelChange = QRichLabel(self.tr("<b>Change Address Type<br></b>"))
 
       self.radioAutoChange = QtWidgets.QRadioButton(self.tr("Auto change"))
-      self.connect(self.radioAutoChange, SIGNAL('clicked()'), changeCallbck('Auto'))
+      self.radioAutoChange.clicked.connect(changeCallbck('Auto'))
       toolTipAutoChange = createToolTipWidget(self.tr(
       "Change address type will match the address type of recipient "
       "addresses. <br>"
@@ -583,7 +580,7 @@ class DlgSettings(ArmoryDialog):
       ))
 
       self.radioForce = QtWidgets.QRadioButton(self.tr("Force a script type:"))
-      self.connect(self.radioForce, SIGNAL('clicked()'), changeCallbck('Force'))
+      self.radioForce.clicked.connect(changeCallbck('Force'))
 
       changeRadio(self.changeType)
 
@@ -601,8 +598,8 @@ class DlgSettings(ArmoryDialog):
       self.frmChange.setFrameStyle(STYLE_RAISED)
       self.frmChange.setLayout(frmChangeLayout)
 
-        #########
-        #receive addr type
+      #########
+      #receive addr type
 
       labelAddrType = QRichLabel(self.tr("<b>Preferred Receive Address Type</b>"))
 

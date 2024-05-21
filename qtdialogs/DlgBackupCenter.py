@@ -1029,15 +1029,13 @@ class DlgFragBackup(ArmoryDialog):
          self.updateComboN()
          self.createFragDisplay()
 
-      updateN = self.createFragDisplay
-
-      self.connect(self.comboM, SIGNAL('activated(int)'), updateM)
-      self.connect(self.comboN, SIGNAL('activated(int)'), updateN)
+      self.comboM.activated.connect(updateM)
+      self.comboN.activated.connect(self.createFragDisplay)
       self.comboM.setMinimumWidth(30)
       self.comboN.setMinimumWidth(30)
 
       btnAccept = QtWidgets.QPushButton(self.tr('Close'))
-      self.connect(btnAccept, SIGNAL(CLICKED), self.accept)
+      btnAccept.clicked.connect(self.accept)
       frmBottomBtn = makeHorizFrame([STRETCH, btnAccept])
 
       # We will hold all fragments here, in SBD objects.  Destroy all of them
@@ -1074,7 +1072,7 @@ class DlgFragBackup(ArmoryDialog):
          'All fragments for a given wallet use the '
          'same code.</font>' % (htmlColor('TextWarn'), htmlColor('TextBlue'), \
          self.backupData.sp_pass, htmlColor('TextWarn'))))
-      self.connect(self.chkSecurePrint, SIGNAL(CLICKED), self.clickChkSP)
+      self.chkSecurePrint.clicked.connect(self.clickChkSP)
       self.chkSecurePrint.setChecked(False)
       self.lblSecurePrint.setVisible(False)
       frmChkSP = makeHorizFrame([self.chkSecurePrint, self.ttipSecurePrint, STRETCH])
@@ -1213,8 +1211,8 @@ class DlgFragBackup(ArmoryDialog):
 
       btnPrintFrag = QtWidgets.QPushButton(self.tr('View/Print'))
       btnSaveFrag = QtWidgets.QPushButton(self.tr('Save to File'))
-      self.connect(btnPrintFrag, SIGNAL(CLICKED), fnPrint)
-      self.connect(btnSaveFrag, SIGNAL(CLICKED), fnSave)
+      btnPrintFrag.clicked.connect(fnPrint)
+      btnSaveFrag.clicked.connect(fnSave)
       frmButtons = makeHorizFrame([btnPrintFrag, btnSaveFrag])
 
 

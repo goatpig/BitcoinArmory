@@ -33,7 +33,8 @@ class ArmoryWizard(QtWidgets.QWizard):
       self.main = main
       self.setFont(GETFONT('var'))
       self.setWindowFlags(QtCore.Qt.Window)
-        # Need to adjust the wizard frame size whenever the page changes.
+
+      # Need to adjust the wizard frame size whenever the page changes.
       self.currentIdChanged.connect(self.fitContents)
       if USE_TESTNET:
          self.setWindowTitle('Armory - Bitcoin Wallet Management [TESTNET]')
@@ -64,7 +65,7 @@ class ArmoryWizardPage(QtWidgets.QWizardPage):
       self.pageLayout.addWidget(self.pageFrame)
       self.setLayout(self.pageLayout)
 
-    # override this method to implement validators
+   # override this method to implement validators
    def validatePage(self):
       return True
 
@@ -83,86 +84,95 @@ class WalletWizard(ArmoryWizard):
       self.setWindowTitle(self.tr("Wallet Creation Wizard"))
       self.setOption(QtWidgets.QWizard.HaveFinishButtonOnEarlyPages, on=True)
       self.setOption(QtWidgets.QWizard.IgnoreSubTitles, on=True)
-      
+
       self.walletCreationId, self.manualEntropyId, self.setPassphraseId, self.verifyPassphraseId, self.walletBackupId, self.WOWId = range(6)
 
         # Page 1: Create Wallet
       self.walletCreationPage = WalletCreationPage(self)
       self.setPage(self.walletCreationId, self.walletCreationPage)
 
-        # Page 1.5: Add manual entropy
+      # Page 1.5: Add manual entropy
       self.manualEntropyPage = ManualEntropyPage(self)
       self.setPage(self.manualEntropyId, self.manualEntropyPage)
 
-        # Page 2: Set Passphrase
+      # Page 2: Set Passphrase
       self.setPassphrasePage = SetPassphrasePage(self)
       self.setPage(self.setPassphraseId, self.setPassphrasePage)
 
-        # Page 3: Verify Passphrase
+      # Page 3: Verify Passphrase
       self.verifyPassphrasePage = VerifyPassphrasePage(self)
       self.setPage(self.verifyPassphraseId, self.verifyPassphrasePage)
 
-        # Page 4: Create Paper Backup
+      # Page 4: Create Paper Backup
       self.walletBackupPage = WalletBackupPage(self)
       self.setPage(self.walletBackupId, self.walletBackupPage)
 
-        # Page 5: Create Watching Only Wallet -- but only if expert, or offline
+      # Page 5: Create Watching Only Wallet -- but only if expert, or offline
       self.hasCWOWPage = False
       if self.main.usermode==USERMODE.Expert or TheBDM.getState() == BDM_OFFLINE:
          self.hasCWOWPage = True
          self.createWOWPage = CreateWatchingOnlyWalletPage(self)
          self.setPage(self.WOWId, self.createWOWPage)
 
-      self.setButtonLayout([QtWidgets.QWizard.BackButton,
-                             QtWidgets.QWizard.Stretch,
-                             QtWidgets.QWizard.NextButton,
-                             QtWidgets.QWizard.FinishButton])
+      self.setButtonLayout([
+         QtWidgets.QWizard.BackButton,
+         QtWidgets.QWizard.Stretch,
+         QtWidgets.QWizard.NextButton,
+         QtWidgets.QWizard.FinishButton
+      ])
 
    def initializePage(self, *args, **kwargs):
 
       if self.currentPage() == self.verifyPassphrasePage:
          self.verifyPassphrasePage.setPassphrase(
-                self.setPassphrasePage.pageFrame.getPassphrase())
+            self.setPassphrasePage.pageFrame.getPassphrase())
       elif self.hasCWOWPage and self.currentPage() == self.createWOWPage:
          self.createWOWPage.pageFrame.setWallet(self.newWallet)
 
       if self.currentPage() == self.walletBackupPage:
          self.createNewWalletFromWizard()
          self.walletBackupPage.pageFrame.setPassphrase(
-                  self.setPassphrasePage.pageFrame.getPassphrase())
+            self.setPassphrasePage.pageFrame.getPassphrase())
          self.walletBackupPage.pageFrame.setWallet(self.newWallet)
 
-            # Hide the back button on wallet backup page
-         self.setButtonLayout([QtWidgets.QWizard.Stretch,
-                                 QtWidgets.QWizard.NextButton,
-                                 QtWidgets.QWizard.FinishButton])
+         # Hide the back button on wallet backup page
+         self.setButtonLayout([
+            QtWidgets.QWizard.Stretch,
+            QtWidgets.QWizard.NextButton,
+            QtWidgets.QWizard.FinishButton
+         ])
       elif self.currentPage() == self.walletCreationPage:
-            # Hide the back button on the first page
-         self.setButtonLayout([QtWidgets.QWizard.Stretch,
-                                 QtWidgets.QWizard.NextButton,
-                                 QtWidgets.QWizard.FinishButton])
+         # Hide the back button on the first page
+         self.setButtonLayout([
+            QtWidgets.QWizard.Stretch,
+            QtWidgets.QWizard.NextButton,
+            QtWidgets.QWizard.FinishButton
+         ])
       else:
-         self.setButtonLayout([QtWidgets.QWizard.BackButton,
-                                  QtWidgets.QWizard.Stretch,
-                                  QtWidgets.QWizard.NextButton,
-                                  QtWidgets.QWizard.FinishButton])
+         self.setButtonLayout([
+            QtWidgets.QWizard.BackButton,
+            QtWidgets.QWizard.Stretch,
+            QtWidgets.QWizard.NextButton,
+            QtWidgets.QWizard.FinishButton
+         ])
+
    def done(self, event):
       if self.newWallet and not self.walletBackupPage.pageFrame.isBackupCreated:
          reply = QtWidgets.QMessageBox.question(self, self.tr('Wallet Backup Warning'), self.tr('<qt>'
-               'You have not made a backup for your new wallet.  You only have '
-               'to make a backup of your wallet <u>one time</u> to protect '
-               'all the funds held by this wallet <i>any time in the future</i> '
-               '(it is a backup of the signing keys, not the coins themselves).'
-               '<br><br>'
-               'If you do not make a backup, you will <u>permanently</u> lose '
-               'the money in this wallet if you ever forget your password, or '
-               'suffer from hardware failure.'
-               '<br><br>'
-               'Are you sure that you want to leave this wizard without backing '
-               'up your wallet?</qt>'), \
-               QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+            'You have not made a backup for your new wallet.  You only have '
+            'to make a backup of your wallet <u>one time</u> to protect '
+            'all the funds held by this wallet <i>any time in the future</i> '
+            '(it is a backup of the signing keys, not the coins themselves).'
+            '<br><br>'
+            'If you do not make a backup, you will <u>permanently</u> lose '
+            'the money in this wallet if you ever forget your password, or '
+            'suffer from hardware failure.'
+            '<br><br>'
+            'Are you sure that you want to leave this wizard without backing '
+            'up your wallet?</qt>'), \
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
          if reply == QtWidgets.QMessageBox.No:
-                # Stay in the wizard
+            # Stay in the wizard
             return None
       return super(WalletWizard, self).done(event)
 
@@ -173,40 +183,46 @@ class WalletWizard(ArmoryWizard):
       else:
          entropy = self.main.getExtraEntropyForKeyGen()
       self.newWallet = PyBtcWallet().createNewWallet(
-           passphrase=self.setPassphrasePage.pageFrame.getPassphrase(),
-           kdfTargSec=self.walletCreationPage.pageFrame.getKdfSec(),
-           kdfMaxMem=self.walletCreationPage.pageFrame.getKdfBytes(),
-           shortLabel=self.walletCreationPage.pageFrame.getName(),
-           longLabel=self.walletCreationPage.pageFrame.getDescription(),
-           extraEntropy=entropy)
+         passphrase=self.setPassphrasePage.pageFrame.getPassphrase(),
+         kdfTargSec=self.walletCreationPage.pageFrame.getKdfSec(),
+         kdfMaxMem=self.walletCreationPage.pageFrame.getKdfBytes(),
+         shortLabel=self.walletCreationPage.pageFrame.getName(),
+         longLabel=self.walletCreationPage.pageFrame.getDescription(),
+         extraEntropy=entropy)
 
-        # Reopening from file helps make sure everything is correct -- don't
-        # let the user use a wallet that triggers errors on reading it
+      # Reopening from file helps make sure everything is correct -- don't
+      # let the user use a wallet that triggers errors on reading it
       self.main.addWalletToApplication(self.newWallet, walletIsNew=True)
-   
+
    def cleanupPage(self, *args, **kwargs):
       if self.hasCWOWPage and self.currentPage() == self.createWOWPage:
-         self.setButtonLayout([QtWidgets.QWizard.Stretch,
-                                  QtWidgets.QWizard.NextButton,
-                                  QtWidgets.QWizard.FinishButton])
-        # If we are backing up from setPassphrasePage must be going
-        # to the first page.
+         self.setButtonLayout([
+            QtWidgets.QWizard.Stretch,
+            QtWidgets.QWizard.NextButton,
+            QtWidgets.QWizard.FinishButton
+         ])
+      # If we are backing up from setPassphrasePage must be going
+      # to the first page.
       elif self.currentPage() == self.setPassphrasePage:
-            # Hide the back button on the first page
-         self.setButtonLayout([QtWidgets.QWizard.Stretch,
-                                 QtWidgets.QWizard.NextButton,
-                                 QtWidgets.QWizard.FinishButton])
+         # Hide the back button on the first page
+         self.setButtonLayout([
+            QtWidgets.QWizard.Stretch,
+            QtWidgets.QWizard.NextButton,
+            QtWidgets.QWizard.FinishButton
+         ])
       else:
-         self.setButtonLayout([QtWidgets.QWizard.BackButton,
-                                  QtWidgets.QWizard.Stretch,
-                                  QtWidgets.QWizard.NextButton,
-                                  QtWidgets.QWizard.FinishButton])
+         self.setButtonLayout([
+            QtWidgets.QWizard.BackButton,
+            QtWidgets.QWizard.Stretch,
+            QtWidgets.QWizard.NextButton,
+            QtWidgets.QWizard.FinishButton
+         ])
 
 
 class ManualEntropyPage(ArmoryWizardPage):
    def __init__(self, wizard):
       super(ManualEntropyPage, self).__init__(wizard,
-            CardDeckFrame(wizard, wizard.main, wizard.tr("Shuffle a deck of cards")))
+         CardDeckFrame(wizard, wizard.main, wizard.tr("Shuffle a deck of cards")))
       self.wizard = wizard
       self.setTitle(wizard.tr("Step 1: Add Manual Entropy"))
       self.setSubTitle(wizard.tr('Use a deck of cards to get a new random number for your wallet.'))
@@ -221,14 +237,14 @@ class ManualEntropyPage(ArmoryWizardPage):
 class WalletCreationPage(ArmoryWizardPage):
    def __init__(self, wizard):
       super(WalletCreationPage, self).__init__(wizard,
-            NewWalletFrame(wizard, wizard.main, "Primary Wallet"))
+         NewWalletFrame(wizard, wizard.main, "Primary Wallet"))
       self.wizard = wizard
       self.setTitle(wizard.tr("Step 1: Create Wallet"))
       self.setSubTitle(wizard.tr(
-              'Create a new wallet for managing your funds. '
-              'The name and description can be changed at any time.'))
+         'Create a new wallet for managing your funds. '
+         'The name and description can be changed at any time.'))
 
-    # override this method to implement validators
+   # override this method to implement validators
    def validatePage(self):
       result = True
       if self.pageFrame.getKdfSec() == -1:
@@ -253,7 +269,7 @@ class WalletCreationPage(ArmoryWizardPage):
 class SetPassphrasePage(ArmoryWizardPage):
    def __init__(self, wizard):
       super(SetPassphrasePage, self).__init__(wizard,
-               SetPassphraseFrame(wizard, wizard.main, wizard.tr("Set Passphrase"), self.updateNextButton))
+         SetPassphraseFrame(wizard, wizard.main, wizard.tr("Set Passphrase"), self.updateNextButton))
       self.wizard = wizard
       self.setTitle(wizard.tr("Step 2: Set Passphrase"))
       self.updateNextButton()
@@ -275,15 +291,15 @@ class VerifyPassphrasePage(ArmoryWizardPage):
       self.wizard = wizard
       self.passphrase = None
       self.setTitle(wizard.tr("Step 3: Verify Passphrase"))
-   
+
    def setPassphrase(self, passphrase):
       self.passphrase = passphrase
-   
+
    def validatePage(self):
       result = self.passphrase == str(self.pageFrame.edtPasswd3.text())
       if not result:
          QtWidgets.QMessageBox.critical(self, self.tr('Invalid Passphrase'), \
-             self.tr('You entered your confirmation passphrase incorrectly!'), QtWidgets.QMessageBox.Ok)
+            self.tr('You entered your confirmation passphrase incorrectly!'), QtWidgets.QMessageBox.Ok)
       return result
 
    def nextId(self):
@@ -292,7 +308,7 @@ class VerifyPassphrasePage(ArmoryWizardPage):
 class WalletBackupPage(ArmoryWizardPage):
    def __init__(self, wizard):
       super(WalletBackupPage, self).__init__(wizard,
-                                WalletBackupFrame(wizard, wizard.main, wizard.tr("Backup Wallet")))
+         WalletBackupFrame(wizard, wizard.main, wizard.tr("Backup Wallet")))
       self.wizard = wizard
       self.myWizard = wizard
       self.setTitle(wizard.tr("Step 4: Backup Wallet"))
@@ -307,7 +323,7 @@ class WalletBackupPage(ArmoryWizardPage):
 class CreateWatchingOnlyWalletPage(ArmoryWizardPage):
    def __init__(self, wizard):
       super(CreateWatchingOnlyWalletPage, self).__init__(wizard,
-                  WizardCreateWatchingOnlyWalletFrame(wizard, wizard.main, wizard.tr("Create Watching-Only Wallet")))
+         WizardCreateWatchingOnlyWalletFrame(wizard, wizard.main, wizard.tr("Create Watching-Only Wallet")))
       self.wizard = wizard
       self.setTitle(wizard.tr("Step 5: Create Watching-Only Wallet"))
 
@@ -327,26 +343,28 @@ class TxWizard(ArmoryWizard):
       self.setOption(QtWidgets.QWizard.HaveCustomButton1, on=True)
       self.setOption(QtWidgets.QWizard.HaveFinishButtonOnEarlyPages, on=True)
 
-        # Page 1: Create Offline TX
+      # Page 1: Create Offline TX
       self.createTxPage = CreateTxPage(self, wlt, prefill, onlyOfflineWallets=onlyOfflineWallets)
       self.addPage(self.createTxPage)
 
-        # Page 2: Sign Offline TX
+      # Page 2: Sign Offline TX
       self.reviewOfflineTxPage = ReviewOfflineTxPage(self)
       self.addPage(self.reviewOfflineTxPage)
 
-        # Page 3: Broadcast Offline TX
+      # Page 3: Broadcast Offline TX
       self.signBroadcastOfflineTxPage = SignBroadcastOfflineTxPage(self)
       self.addPage(self.signBroadcastOfflineTxPage)
 
       self.setButtonText(QtWidgets.QWizard.NextButton, self.tr('Create Unsigned Transaction'))
       self.setButtonText(QtWidgets.QWizard.CustomButton1, self.tr('Send!'))
-      self.connect(self, SIGNAL('customButtonClicked(int)'), self.sendClicked)
-      self.setButtonLayout([QtWidgets.QWizard.CancelButton,
-                             QtWidgets.QWizard.BackButton,
-                             QtWidgets.QWizard.Stretch,
-                             QtWidgets.QWizard.NextButton,
-                             QtWidgets.QWizard.CustomButton1])
+      self.customButtonClicked.connect(self.sendClicked)
+      self.setButtonLayout([
+         QtWidgets.QWizard.CancelButton,
+         QtWidgets.QWizard.BackButton,
+         QtWidgets.QWizard.Stretch,
+         QtWidgets.QWizard.NextButton,
+         QtWidgets.QWizard.CustomButton1
+      ])
 
 
 
@@ -355,13 +373,15 @@ class TxWizard(ArmoryWizard):
          self.createTxPage.pageFrame.fireWalletChange()
       elif self.currentPage() == self.reviewOfflineTxPage:
          self.setButtonText(QtWidgets.QWizard.NextButton, self.tr('Next'))
-         self.setButtonLayout([QtWidgets.QWizard.BackButton,
-                            QtWidgets.QWizard.Stretch,
-                            QtWidgets.QWizard.NextButton,
-                            QtWidgets.QWizard.FinishButton])
+         self.setButtonLayout([
+            QtWidgets.QWizard.BackButton,
+            QtWidgets.QWizard.Stretch,
+            QtWidgets.QWizard.NextButton,
+            QtWidgets.QWizard.FinishButton
+         ])
          self.reviewOfflineTxPage.pageFrame.setTxDp(self.createTxPage.txdp)
          self.reviewOfflineTxPage.pageFrame.setWallet(
-                    self.createTxPage.pageFrame.wlt)
+            self.createTxPage.pageFrame.wlt)
 
    def cleanupPage(self, *args, **kwargs):
       if self.currentPage() == self.reviewOfflineTxPage:
@@ -374,30 +394,34 @@ class TxWizard(ArmoryWizard):
 
    def updateOnSelectWallet(self, wlt):
       if wlt.watchingOnly:
-         self.setButtonLayout([QtWidgets.QWizard.CancelButton,
-                             QtWidgets.QWizard.BackButton,
-                             QtWidgets.QWizard.Stretch,
-                             QtWidgets.QWizard.NextButton])
+         self.setButtonLayout([
+            QtWidgets.QWizard.CancelButton,
+            QtWidgets.QWizard.BackButton,
+            QtWidgets.QWizard.Stretch,
+            QtWidgets.QWizard.NextButton
+         ])
       else:
-         self.setButtonLayout([QtWidgets.QWizard.CancelButton,
-                               QtWidgets.QWizard.BackButton,
-                               QtWidgets.QWizard.Stretch,
-                               QtWidgets.QWizard.NextButton,
-                               QtWidgets.QWizard.CustomButton1])
+         self.setButtonLayout([
+            QtWidgets.QWizard.CancelButton,
+            QtWidgets.QWizard.BackButton,
+            QtWidgets.QWizard.Stretch,
+            QtWidgets.QWizard.NextButton,
+            QtWidgets.QWizard.CustomButton1
+         ])
 
 class CreateTxPage(ArmoryWizardPage):
    def __init__(self, wizard, wlt, prefill=None, onlyOfflineWallets=False):
       super(CreateTxPage, self).__init__(wizard,
-               SendBitcoinsFrame(wizard, wizard.main,
-                                 wizard.tr("Create Transaction"), wlt, prefill,
-                                 selectWltCallback=self.updateOnSelectWallet,
-                                 onlyOfflineWallets=onlyOfflineWallets))
+         SendBitcoinsFrame(wizard, wizard.main,
+            wizard.tr("Create Transaction"), wlt, prefill,
+            selectWltCallback=self.updateOnSelectWallet,
+            onlyOfflineWallets=onlyOfflineWallets))
       self.setTitle(self.tr("Step 1: Create Transaction"))
       self.txdp = None
 
    def validatePage(self):
       result = self.pageFrame.validateInputsGetTxDP()
-        # the validator also computes the transaction and returns it or False if not valid
+      # the validator also computes the transaction and returns it or False if not valid
       if result:
          self.txdp = result
          result = True
@@ -409,12 +433,12 @@ class CreateTxPage(ArmoryWizardPage):
 class ReviewOfflineTxPage(ArmoryWizardPage):
    def __init__(self, wizard):
       super(ReviewOfflineTxPage, self).__init__(wizard,
-                  ReviewOfflineTxFrame(wizard, wizard.main, self.tr("Review Offline Transaction")))
+         ReviewOfflineTxFrame(wizard, wizard.main, self.tr("Review Offline Transaction")))
       self.setTitle(self.tr("Step 2: Review Offline Transaction"))
       self.setFinalPage(True)
 
 class SignBroadcastOfflineTxPage(ArmoryWizardPage):
    def __init__(self, wizard):
       super(SignBroadcastOfflineTxPage, self).__init__(wizard,
-                  SignBroadcastOfflineTxFrame(wizard, wizard.main, self.tr("Sign/Broadcast Offline Transaction")))
+         SignBroadcastOfflineTxFrame(wizard, wizard.main, self.tr("Sign/Broadcast Offline Transaction")))
       self.setTitle(self.tr("Step 3: Sign/Broadcast Offline Transaction"))

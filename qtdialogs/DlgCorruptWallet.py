@@ -36,7 +36,7 @@ class DlgCorruptWallet(DlgProgress):
       self.status = 1
       self.isFixing = False
       self.needToSubmitLogs = False
-#        self.checkMode = RECOVERMODE.NotSet
+      #self.checkMode = RECOVERMODE.NotSet
 
       self.lock = threading.Lock()
       self.condVar = threading.Condition(self.lock)

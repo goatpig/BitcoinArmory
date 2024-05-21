@@ -101,8 +101,7 @@ class DlgShowKeyList(ArmoryDialog):
                   'PrivHexBE', 'PubKey', 'ChainIndex']
 
       for name in self.chkList.keys():
-         self.connect(self.chkList[name], SIGNAL('toggled(bool)'), \
-                      self.rewriteList)
+         self.chkList[name].toggled.connect(self.rewriteList)
 
 
       self.chkImportedOnly = QtWidgets.QCheckBox(self.tr('Imported Addresses Only'))
@@ -110,10 +109,10 @@ class DlgShowKeyList(ArmoryDialog):
       self.chkDispRootKey = QtWidgets.QCheckBox(self.tr('Include Paper Backup Root'))
       self.chkOmitSpaces = QtWidgets.QCheckBox(self.tr('Omit spaces in key data'))
       self.chkDispRootKey.setChecked(True)
-      self.connect(self.chkImportedOnly, SIGNAL('toggled(bool)'), self.rewriteList)
-      self.connect(self.chkWithAddrPool, SIGNAL('toggled(bool)'), self.rewriteList)
-      self.connect(self.chkDispRootKey, SIGNAL('toggled(bool)'), self.rewriteList)
-      self.connect(self.chkOmitSpaces, SIGNAL('toggled(bool)'), self.rewriteList)
+      self.chkImportedOnly.toggled.connect(self.rewriteList)
+      self.chkWithAddrPool.toggled.connect(self.rewriteList)
+      self.chkDispRootKey.toggled.connect(self.rewriteList)
+      self.chkOmitSpaces.toggled.connect(self.rewriteList)
       # self.chkCSV = QtWidgets.QCheckBox('Display in CSV format')
 
       if not self.havePriv:
@@ -151,16 +150,18 @@ class DlgShowKeyList(ArmoryDialog):
       btnCopyClip = QtWidgets.QPushButton(self.tr('Copy to Clipboard'))
       self.lblCopied = QRichLabel('')
 
-      self.connect(btnGoBack, SIGNAL(CLICKED), self.accept)
-      self.connect(btnSaveFile, SIGNAL(CLICKED), self.saveToFile)
-      self.connect(btnCopyClip, SIGNAL(CLICKED), self.copyToClipboard)
-      frmGoBack = makeLayoutFrame(HORIZONTAL, [btnGoBack, \
-                                            STRETCH, \
-                                            self.chkOmitSpaces, \
-                                            STRETCH, \
-                                            self.lblCopied, \
-                                            btnCopyClip, \
-                                            btnSaveFile])
+      btnGoBack.clicked.connect(self.accept)
+      btnSaveFile.clicked.connect(self.saveToFile)
+      btnCopyClip.clicked.connect(self.copyToClipboard)
+      frmGoBack = makeLayoutFrame(HORIZONTAL, [
+         btnGoBack,
+         STRETCH,
+         self.chkOmitSpaces,
+         STRETCH,
+         self.lblCopied,
+         btnCopyClip,
+         btnSaveFile
+      ])
 
       frmDescr = makeLayoutFrame(HORIZONTAL, [self.lblDescr], STYLE_SUNKEN)
 

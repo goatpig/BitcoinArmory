@@ -33,7 +33,7 @@ class DlgWltRecoverWallet(ArmoryDialog):
       self.edtWalletPath.setMinimumWidth(edtW)
       self.btnWalletPath = QtWidgets.QPushButton(self.tr('Browse File System'))
 
-      self.connect(self.btnWalletPath, SIGNAL('clicked()'), self.selectFile)
+      self.btnWalletPath.clicked.connect(self.selectFile)
 
       lblDesc = QRichLabel(self.tr(
          '<b>Wallet Recovery Tool: '
@@ -59,7 +59,7 @@ class DlgWltRecoverWallet(ArmoryDialog):
             self.edtWalletPath.setText(wlt.walletPath)
 
       self.btnWltSelect = QtWidgets.QPushButton(self.tr("Select Loaded Wallet"))
-      self.connect(self.btnWltSelect, SIGNAL("clicked()"), doWltSelect)
+      self.btnWltSelect.clicked.connect(doWltSelect)
 
       layoutMgmt = QtWidgets.QGridLayout()
       wltSltQF = QtWidgets.QFrame()
@@ -81,7 +81,7 @@ class DlgWltRecoverWallet(ArmoryDialog):
       layoutMgmt.addWidget(wltSltQF, 2, 0, 3, 4)
 
       self.rdbtnStripped = QtWidgets.QRadioButton('', parent=self)
-      self.connect(self.rdbtnStripped, SIGNAL('event()'), self.rdClicked)
+      self.rdbtnStripped.event.connect(self.rdClicked)
       lblStripped = QtWidgets.QLabel(self.tr('<b>Stripped Recovery</b><br>Only attempts to \
                             recover the wallet\'s rootkey and chaincode'))
       layout_StrippedH = QtWidgets.QGridLayout()
@@ -140,7 +140,7 @@ class DlgWltRecoverWallet(ArmoryDialog):
       def expandOpts():
          wltModeQF.setVisible(True)
          btnShowAllOpts.setVisible(False)
-      self.connect(btnShowAllOpts, SIGNAL('clicked()'), expandOpts)
+      btnShowAllOpts.clicked.connect(expandOpts)
 
       if not self.main.usermode==USERMODE.Expert:
          frmBtn.setVisible(False)
@@ -161,13 +161,13 @@ class DlgWltRecoverWallet(ArmoryDialog):
             self.btnRecover.setToolTip(self.tr('The entered path does not exist'))
 
       updateBtn('')
-      self.connect(self.edtWalletPath, SIGNAL('textChanged(QString)'), updateBtn)
+      self.edtWalletPath.textChanged.connect(updateBtn)
 
 
       layoutMgmt.addLayout(layout_btnH, 14, 1, 1, 2)
 
-      self.connect(self.btnRecover, SIGNAL('clicked()'), self.accept)
-      self.connect(self.btnCancel , SIGNAL('clicked()'), self.reject)
+      self.btnRecover.clicked.connect(self.accept)
+      self.btnCancel.clicked.connect(self.reject)
 
       self.setLayout(layoutMgmt)
       self.layout().setSizeConstraint(QtWidgets.QLayout.SetFixedSize)

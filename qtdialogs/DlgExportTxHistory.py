@@ -24,7 +24,7 @@ from armoryengine.Transaction import getFeeForTx
 from armoryengine.CppBridge import TheBridge
 
 
-#######################################################################
+################################################################################
 class DlgExportTxHistory(ArmoryDialog):
    def __init__(self, parent=None, main=None):
       super(DlgExportTxHistory, self).__init__(parent, main)
@@ -72,22 +72,21 @@ class DlgExportTxHistory(ArmoryDialog):
       self.ttipFormatDescr = createToolTipWidget(ttipStr)
 
       self.lblDateExample = QRichLabel('', doWrap=False)
-      self.connect(self.edtDateFormat, SIGNAL('textEdited(QString)'), self.doExampleDate)
+      self.edtDateForma.textEdited(self.doExampleDate)
       self.doExampleDate()
       self.btnResetFormat = QtWidgets.QPushButton(self.tr("Reset to Default"))
 
       def doReset():
          self.edtDateFormat.setText(DEFAULT_DATE_FORMAT)
          self.doExampleDate()
-      self.connect(self.btnResetFormat, SIGNAL("clicked()"), doReset)
+      self.btnResetFormat.clicked.connect(doReset)
 
 
-
-        # Add the usual buttons
+      # Add the usual buttons
       self.btnCancel = QtWidgets.QPushButton(self.tr("Cancel"))
       self.btnAccept = QtWidgets.QPushButton(self.tr("Export"))
-      self.connect(self.btnCancel, SIGNAL("clicked()"), self.reject)
-      self.connect(self.btnAccept, SIGNAL("clicked()"), self.accept)
+      self.btnCancel.clicked.connect(self.reject)
+      self.btnAccept.clicked.connect(self.accept)
       btnBox = makeHorizFrame([STRETCH, self.btnCancel, self.btnAccept])
 
 
@@ -134,7 +133,7 @@ class DlgExportTxHistory(ArmoryDialog):
       self.setLayout(dlgLayout)
 
 
-    #############################################################################
+   #############################################################################
    def doExampleDate(self, qstr=None):
       fmtstr = str(self.edtDateFormat.text())
       try:
@@ -145,35 +144,35 @@ class DlgExportTxHistory(ArmoryDialog):
          self.lblDateExample.setText(self.tr('Example: [[invalid date format]]'))
          self.isValidFormat = False
 
-    #############################################################################
+   #############################################################################
    def accept(self, *args):
       if self.createFile_CSV():
          super(DlgExportTxHistory, self).accept(*args)
 
 
-    #############################################################################
+   #############################################################################
    def createFile_CSV(self):
       if not self.isValidFormat:
          QtWidgets.QMessageBox.warning(self, self.tr('Invalid date format'), \
-                  self.tr('Cannot create CSV without a valid format for transaction '
-                  'dates and times'), QtWidgets.QMessageBox.Ok)
+            self.tr('Cannot create CSV without a valid format for transaction '
+            'dates and times'), QtWidgets.QMessageBox.Ok)
          return False
 
       COL = LEDGERCOLS
 
-        # This was pretty much copied from the createCombinedLedger method...
-        # I rarely do this, but modularizing this piece is a non-trivial
+      # This was pretty much copied from the createCombinedLedger method...
+      # I rarely do this, but modularizing this piece is a non-trivial
       wltIDList = []
       typelist = [[wid, determineWalletType(self.main.walletMap[wid], self.main)[0]] \
-                                                   for wid in self.main.walletIDList]
+         for wid in self.main.walletIDList]
       currIdx = self.cmbWltSelect.currentIndex()
       if currIdx >= 8:
          idx = currIdx - 8
          if idx < len(self.main.walletIDList):
-                #picked a single wallet
+            #picked a single wallet
             wltIDList = [self.main.walletIDList[idx]]
          else:
-                #picked a single lockbox
+            #picked a single lockbox
             idx -= len(self.main.walletIDList) +1
             wltIDList = [self.reversedLBdict[idx]]
       else:
