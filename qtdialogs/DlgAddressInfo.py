@@ -12,9 +12,10 @@
 
 from qtpy import QtCore, QtWidgets
 
-from armoryengine.ArmoryUtils import BIGENDIAN, LITTLEENDIAN, binary_to_hex
+from armorycolors import htmlColor
+from armoryengine.ArmoryUtils import BIGENDIAN, LITTLEENDIAN, binary_to_hex, coin2str, hex_switchEndian
 from armoryengine.Settings import TheSettings
-from armoryengine.AddressUtils import encodePrivKeyBase58
+from armoryengine.AddressUtils import base58_to_binary, encodePrivKeyBase58
 
 from armorymodels import LedgerDispModelSimple, LedgerDispDelegate, \
    LEDGERCOLS, GETFONT

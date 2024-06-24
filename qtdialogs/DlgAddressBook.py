@@ -15,9 +15,9 @@ from qtpy import QtCore, QtGui, QtWidgets
 from armorymodels import AllWalletsDispModel, WLTVIEWCOLS, \
    SentToAddrBookModel, SentAddrSortProxy, ADDRBOOKCOLS, \
    WalletAddrDispModel, WalletAddrSortProxy, ADDRESSCOLS
-from armoryengine.ArmoryUtils import DEFAULT_RECEIVE_TYPE, P2SHBYTE
+from armoryengine.ArmoryUtils import LOGERROR, LOGWARN, P2SHBYTE, USE_REGTEST, USE_TESTNET, binary_to_hex
 from armoryengine.AddressUtils import addrStr_to_hash160
-from armoryengine.MultiSigUtils import isBareLockbox, isP2SHLockbox
+from armoryengine.MultiSigUtils import createLockboxEntryStr, isBareLockbox, isP2SHLockbox
 from armoryengine.Settings import TheSettings
 
 from qtdialogs.qtdefines import QRichLabel, tightSizeStr, STRETCH, \
