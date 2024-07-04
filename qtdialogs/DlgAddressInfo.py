@@ -12,7 +12,6 @@
 
 from qtpy import QtCore, QtWidgets
 
-from armorycolors import htmlColor
 from armoryengine.ArmoryUtils import BIGENDIAN, LITTLEENDIAN, binary_to_hex
 from armoryengine.Settings import TheSettings
 from armoryengine.AddressUtils import encodePrivKeyBase58
