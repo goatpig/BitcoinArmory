@@ -12,8 +12,8 @@
 
 from qtpy import QtCore, QtGui, QtWidgets
 
-from armoryengine.ArmoryUtils import enum, \
-   CPP_TXOUT_HAS_ADDRSTR, BIGENDIAN, binary_to_hex, \
+from armoryengine.ArmoryUtils import enum, CPP_TXOUT_MULTISIG, \
+   CPP_TXOUT_P2SH, CPP_TXOUT_HAS_ADDRSTR, BIGENDIAN, binary_to_hex, \
    hex_to_binary, coin2str, coin2strNZS, LOGEXCEPT, LOGERROR, \
    CPP_TXIN_SCRIPT_NAMES, CPP_TXOUT_SCRIPT_NAMES, int_to_hex, \
    unixTimeToFormatStr, UINT32_MAX, hash256
@@ -31,7 +31,7 @@ from armoryengine.CppBridge import TheBridge
 from armoryengine.Settings import TheSettings
 
 from armorymodels import TxInDispModel, TxOutDispModel, TXINCOLS, TXOUTCOLS
-from qtdialogs.qtdefines import STYLE_RAISED, USERMODE, VERTICAL, \
+from qtdialogs.qtdefines import STYLE_RAISED, USERMODE, \
    QRichLabel, relaxedSizeStr, GETFONT, tightSizeNChar, STYLE_SUNKEN, \
    HORIZONTAL, makeHorizFrame, initialColResize, makeLayoutFrame, STRETCH, \
    createToolTipWidget

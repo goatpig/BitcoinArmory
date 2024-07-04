@@ -15,7 +15,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 from armoryengine.ArmoryUtils import OS_WINDOWS, LOGINFO, LOGEXCEPT
 from armoryengine.BDM import TheBDM, BDM_BLOCKCHAIN_READY
 
-from qtdialogs.qtdefines import NETWORKMODE, QRichLabel, HORIZONTAL, \
+from qtdialogs.qtdefines import QRichLabel, HORIZONTAL, \
    STYLE_SUNKEN, GETFONT, STYLE_RAISED, VERTICAL, makeLayoutFrame, \
    relaxedSizeNChar, determineWalletType, WLTTYPES, makeHorizFrame, \
    makeVertFrame, STYLE_PLAIN, HLINE, tightSizeNChar, STRETCH, \
