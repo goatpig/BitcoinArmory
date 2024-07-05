@@ -14,17 +14,16 @@ import os
 
 from qtpy import QtCore, QtWidgets
 
-from armoryengine.ArmoryUtils import BTC_HOME_DIR, DEFAULT_ADDR_TYPE, \
+from armoryengine.ArmoryUtils import BTC_HOME_DIR, \
    OS_MACOSX, OS_WINDOWS, ARMORY_DB_DIR, OS_VARIANT, \
    unixTimeToFormatStr, coin2str, str2coin, MIN_FEE_BYTE, \
-   MIN_TX_FEE, DEFAULT_FEE_TYPE, FORMAT_SYMBOLS, \
-   DEFAULT_DATE_FORMAT, DEFAULT_CHANGE_TYPE, DEFAULT_RECEIVE_TYPE
-from armoryengine.Settings import LANGUAGES
+   MIN_TX_FEE, DEFAULT_FEE_TYPE, FORMAT_SYMBOLS, DEFAULT_DATE_FORMAT
+from armoryengine.Settings import LANGUAGES, TheSettings
 from armoryengine.CoinSelection import NBLOCKS_TO_CONFIRM
 
-from qtdialogs.qtdefines import USERMODE, GETFONT, \
-   HLINE, tightSizeStr, tightSizeNChar, STYLE_RAISED, \
-   QRichLabel, createDirectorySelectButton, makeHorizFrame, \
+from qtdialogs.qtdefines import STRETCH, USERMODE, GETFONT, \
+   HLINE, tightSizeNChar, STYLE_RAISED, QRichLabel, \
+   createDirectorySelectButton, makeHorizFrame, \
    makeVertFrame, createToolTipWidget
 from qtdialogs.ArmoryDialog import ArmoryDialog
 from ui.AddressTypeSelectDialog import AddressLabelFrame

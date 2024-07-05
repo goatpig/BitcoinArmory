@@ -11,6 +11,8 @@
 ##############################################################################
 
 from qtpy import QtCore, QtGui, QtWidgets
+from armoryengine.ArmoryUtils import LOGERROR
+from armoryengine.Settings import TheSettings
 from qtdialogs.qtdefines import GETFONT, tightSizeNChar, STRETCH, \
    makeHorizFrame, makeVertFrame, QRichLabel
 from qtdialogs.ArmoryDialog import ArmoryDialog
