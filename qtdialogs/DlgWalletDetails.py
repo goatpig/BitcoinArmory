@@ -522,14 +522,12 @@ class DlgWalletDetails(ArmoryDialog):
             self.labelValues[WLTFIELDS.Secure].setText(self.tr('Encrypted (AES256)'))
             # self.accept()
 
-
    def getNewAddress(self):
       if ShowRecvCoinsWarningIfNecessary(self.wlt, self, self.main):
          loading = LoadingDisp(self, self.main)
          loading.show()
          DlgNewAddressDisp(self.wlt, self, self.main, loading).exec_()
          self.resetTreeView()
-
 
    def execSendBtc(self):
       if TheBDM.getState() in (BDM_OFFLINE, BDM_UNINITIALIZED):

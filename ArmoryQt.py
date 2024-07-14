@@ -1247,7 +1247,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       QtWidgets.QMessageBox.information(self, self.tr('Select Wallet'), self.tr(
          'You must import an address into a specific wallet.  If '
          'you do not want to import the key into any available wallet, '
-         'it is recommeneded you make a new wallet for this purpose.'
+         'it is recommended you make a new wallet for this purpose.'
          '<br><br>'
          'Double-click on the desired wallet from the main window, then '
          'click on "Import/Sweep Private Keys" on the bottom-right '
