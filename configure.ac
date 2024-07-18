@@ -105,6 +105,18 @@ case $host in
         CFLAGS="${CFLAGS} -isysroot ${with_macosx_sdk}"
         CXXFLAGS="${CXXFLAGS} -isysroot ${with_macosx_sdk}"
         OBJC="${OBJC} -isysroot ${with_macosx_sdk}"
+    else
+        AC_CHECK_PROG([XCODEBUILD],xcodebuild, yes)
+        if test x$XCODEBUILD = xyes; then
+            XCODE_SYSROOT=`xcodebuild -version -sdk macosx Path 2>/dev/null`
+            if test x$XCODE_SYSROOT != x ; then
+                if test -d "$XCODE_SYSROOT" ; then
+                    CFLAGS="${CFLAGS} -isysroot ${XCODE_SYSROOT}"
+                    CXXFLAGS="${CXXFLAGS} -isysroot ${XCODE_SYSROOT}"
+                    OBJC="${OBJC} -isysroot ${XCODE_SYSROOT}"
+                fi
+            fi
+        fi
     fi
     AC_ARG_WITH(macosx-version-min,
       [AS_HELP_STRING([--with-macosx-version-min=VERSION],
