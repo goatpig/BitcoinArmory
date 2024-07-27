@@ -32,7 +32,7 @@ namespace Armory
       class AssetWallet_Single;
    };
 
-   namespace Signer
+   namespace Signing
    {
       class ResolverFeed_AssetWalletSingle : public ResolverFeed
       {

@@ -21,7 +21,7 @@
 
 namespace Armory
 {
-   namespace Signer
+   namespace Signing
    {
       class UnsupportedSigHashTypeException : public std::runtime_error
       {

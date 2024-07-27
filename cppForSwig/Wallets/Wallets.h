@@ -35,7 +35,7 @@
 ////
 namespace Armory
 {
-   namespace Signer
+   namespace Signing
    {
       class BIP32_AssetPath;
    }
@@ -340,15 +340,15 @@ namespace Armory
          const SecureBinaryData& getDecryptedPrivateKeyForAsset(
             std::shared_ptr<Assets::AssetEntry_Single>);
          const AssetId& derivePrivKeyFromPath(
-            const Signer::BIP32_AssetPath&);
+            const Signing::BIP32_AssetPath&);
          const SecureBinaryData& getDecryptedPrivateKeyForId(
             const AssetId&) const;
 
          std::shared_ptr<Seeds::EncryptedSeed> getEncryptedSeed(void) const;
 
-         Signer::BIP32_AssetPath getBip32PathForAsset(
+         Signing::BIP32_AssetPath getBip32PathForAsset(
             std::shared_ptr<Assets::AssetEntry>) const;
-         Signer::BIP32_AssetPath getBip32PathForAssetID(
+         Signing::BIP32_AssetPath getBip32PathForAssetID(
             const AssetId&) const;
 
          std::string getXpubForAssetID(const AssetId&) const;

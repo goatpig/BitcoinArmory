@@ -10,7 +10,7 @@
 #include "../Wallets/Assets.h"
 
 using namespace std;
-using namespace Armory::Signer;
+using namespace Armory::Signing;
 using namespace Armory::Assets;
 using namespace Armory::Wallets;
 
@@ -177,28 +177,6 @@ BIP32_AssetPath BIP32_AssetPath::fromPSBT(
       path.emplace_back(valReader.get_uint32_t());
 
    return BIP32_AssetPath(pubKey, path, fingerprint, nullptr);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void BIP32_AssetPath::toProtobuf(
-   Codec_SignerState::PubkeyBIP32Path& protoMsg) const
-{
-   protoMsg.set_pubkey(pubkey_.getCharPtr(), pubkey_.getSize());
-   protoMsg.set_fingerprint(fingerprint_);
-   for (auto& step : path_)
-      protoMsg.add_path(step);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-BIP32_AssetPath BIP32_AssetPath::fromProtobuf(
-   const Codec_SignerState::PubkeyBIP32Path& protoMsg)
-{
-   auto pubkey = BinaryData::fromString(protoMsg.pubkey());
-   vector<uint32_t> path;
-   for (int i=0; i<protoMsg.path_size(); i++)
-      path.push_back(protoMsg.path(i));
-
-   return BIP32_AssetPath(pubkey, path, protoMsg.fingerprint(), nullptr);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

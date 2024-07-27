@@ -13,7 +13,7 @@
 #include "Seeds/Backups.h"
 
 using namespace std;
-using namespace Armory::Signer;
+using namespace Armory::Signing;
 using namespace Armory::Assets;
 using namespace Armory::Accounts;
 using namespace Armory::Wallets;

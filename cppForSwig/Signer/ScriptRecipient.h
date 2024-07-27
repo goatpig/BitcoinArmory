@@ -14,14 +14,14 @@
 #include "BtcUtils.h"
 #include "ResolverFeed.h"
 
-#include "protobuf/Signer.pb.h"
-
 class TxOut;
 
 namespace Armory
 {
-   namespace Signer
+   namespace Signing
    {
+      struct Serializer;
+
       ////
       enum SpendScriptType
       {
@@ -46,6 +46,8 @@ namespace Armory
       //////////////////////////////////////////////////////////////////////////
       class ScriptRecipient
       {
+         friend struct Serializer;
+
       protected:
          const SpendScriptType type_;
          uint64_t value_ = UINT64_MAX;
@@ -84,7 +86,6 @@ namespace Armory
          void addBip32Path(const BIP32_AssetPath&);
          const std::map<BinaryData, BIP32_AssetPath>& getBip32Paths(void) const;
 
-         void toProtobuf(Codec_SignerState::RecipientState&, unsigned) const;
          void toPSBT(BinaryWriter&) const;
          void merge(std::shared_ptr<ScriptRecipient>);
 
@@ -103,8 +104,6 @@ namespace Armory
          static std::shared_ptr<ScriptRecipient> fromScript(BinaryDataRef);
          static std::shared_ptr<ScriptRecipient> fromPSBT(
             BinaryRefReader& brr, const TxOut&);
-         static std::shared_ptr<ScriptRecipient> fromProtobuf(
-            const Codec_SignerState::RecipientState&);
       };
 
       //////////////////////////////////////////////////////////////////////////

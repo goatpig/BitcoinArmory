@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2017, goatpig                                               //
+//  Copyright (C) 2017-2024, goatpig                                           //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -9,18 +9,17 @@
 #include "TxEvalState.h"
 #include "EncryptionUtils.h"
 
-using namespace std;
-using namespace Armory::Signer;
+using namespace Armory;
 
 ////////////////////////////////////////////////////////////////////////////////
-bool TxInEvalState::isValid(void) const
+bool Signing::TxInEvalState::isValid() const
 {
-   if (!validStack_)
+   if (!validStack_) {
       return false;
+   }
 
    unsigned count = 0;
-   for (auto& state : pubKeyState_)
-   {
+   for (const auto& state : pubKeyState_) {
       if (state.second)
          ++count;
    }
@@ -29,43 +28,42 @@ bool TxInEvalState::isValid(void) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-unsigned TxInEvalState::getSigCount(void) const
+unsigned Signing::TxInEvalState::getSigCount() const
 {
    unsigned count = 0;
-   for (auto& state : pubKeyState_)
-   {
-      if (state.second)
+   for (auto& state : pubKeyState_) {
+      if (state.second) {
          ++count;
+      }
    }
 
    return count;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool TxInEvalState::isSignedForPubKey(const BinaryData& pubkey) const
+bool Signing::TxInEvalState::isSignedForPubKey(const BinaryData& pubkey) const
 {
-   if (pubKeyState_.size() == 0)
+   if (pubKeyState_.empty()) {
       return false;
+   }
 
    auto type = getType();
-   if (type == Type_Unkonwn)
-      throw runtime_error("can't establish pub key type");
+   if (type == PubKeyType::Unkonwn) {
+      throw std::runtime_error("can't establish pub key type");
+   }
 
-   if ((pubkey.getSize() == 65 && type == Type_Uncompressed) ||
-      (pubkey.getSize() == 33 && type == Type_Compressed))
-   {
+   if ((pubkey.getSize() == 65 && type == PubKeyType::Uncompressed) ||
+      (pubkey.getSize() == 33 && type == PubKeyType::Compressed)) {
       auto iter = pubKeyState_.find(pubkey);
       if (iter == pubKeyState_.end())
          return false;
 
       return iter->second;
-   }
-   else if (type != Type_Mixed)
-   {
+   } else if (type != PubKeyType::Mixed) {
       BinaryData modified_key;
-      if (type == Type_Compressed)
+      if (type == PubKeyType::Compressed)
          modified_key = CryptoECDSA().CompressPoint(pubkey);
-      else if (type == Type_Uncompressed)
+      else if (type == PubKeyType::Uncompressed)
          modified_key = CryptoECDSA().UncompressPoint(pubkey);
 
       auto iter = pubKeyState_.find(modified_key);
@@ -73,13 +71,11 @@ bool TxInEvalState::isSignedForPubKey(const BinaryData& pubkey) const
          return false;
 
       return iter->second;
-   }
-   else
-   { 
+   } else {
       BinaryData modified_key;
-      if (type == Type_Compressed)
+      if (type == PubKeyType::Compressed)
          modified_key = CryptoECDSA().CompressPoint(pubkey);
-      else if (type == Type_Uncompressed)
+      else if (type == PubKeyType::Uncompressed)
          modified_key = CryptoECDSA().UncompressPoint(pubkey);
 
       auto iter = pubKeyState_.find(pubkey);
@@ -99,43 +95,43 @@ bool TxInEvalState::isSignedForPubKey(const BinaryData& pubkey) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-PubKeyType TxInEvalState::getType() const
+Signing::PubKeyType Signing::TxInEvalState::getType() const
 {
-   if (keyType_ != Type_Unkonwn)
+   if (keyType_ != PubKeyType::Unkonwn) {
       return keyType_;
+   }
 
    bool isCompressed = false;
    bool isUncompressed = false;
 
-   for (auto& key : pubKeyState_)
-   {
+   for (const auto& key : pubKeyState_) {
       if (key.first.getSize() == 65)
          isUncompressed = true;
       else if (key.first.getSize() == 33)
          isCompressed = true;
    }
 
-   if (isCompressed && isUncompressed)
-      keyType_ = Type_Mixed;
-   else if (isCompressed)
-      keyType_ = Type_Compressed;
-   else if (isUncompressed)
-      keyType_ = Type_Uncompressed;
+   if (isCompressed && isUncompressed) {
+      keyType_ = PubKeyType::Mixed;
+   } else if (isCompressed) {
+      keyType_ = PubKeyType::Compressed;
+   } else if (isUncompressed) {
+      keyType_ = PubKeyType::Uncompressed;
+   }
 
    return keyType_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void TxEvalState::updateState(unsigned id, TxInEvalState state)
+void Signing::TxEvalState::updateState(unsigned id, TxInEvalState state)
 {
-   evalMap_.insert(make_pair(id, state));
+   evalMap_.insert(std::make_pair(id, state));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool TxEvalState::isValid(void) const
+bool Signing::TxEvalState::isValid() const
 {
-   for (auto& state : evalMap_)
-   {
+   for (const auto& state : evalMap_) {
       if (!state.second.isValid())
          return false;
    }
@@ -144,11 +140,13 @@ bool TxEvalState::isValid(void) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const TxInEvalState& TxEvalState::getSignedStateForInput(unsigned i) const
+const Signing::TxInEvalState& Signing::TxEvalState::getSignedStateForInput(
+   unsigned i) const
 {
    auto iter = evalMap_.find(i);
-   if (iter == evalMap_.end())
-      throw range_error("invalid input index");
+   if (iter == evalMap_.end()) {
+      throw std::range_error("invalid input index");
+   }
 
    return iter->second;
 }

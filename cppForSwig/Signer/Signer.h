@@ -18,16 +18,17 @@
 #include "ScriptRecipient.h"
 #include "ResolverFeed.h"
 
-#include "protobuf/Signer.pb.h"
-
-#define SCRIPT_SPENDER_VERSION_MAX 1
+#define SCRIPT_SPENDER_VERSION_MAX 2
 #define SCRIPT_SPENDER_VERSION_MIN 0
 #define DEFAULT_RECIPIENT_GROUP 0xFFFFFFFF
 
 namespace Armory
 {
-   namespace Signer
+   namespace Signing
    {
+      struct Serializer;
+      struct Deserializer;
+
       //////////////////////////////////////////////////////////////////////////
       class SignerDeserializationError : public std::runtime_error
       {
@@ -88,6 +89,8 @@ namespace Armory
       class ScriptSpender
       {
          friend class Signer;
+         friend struct Serializer;
+         friend struct Deserializer;
 
       private:
          SpenderStatus segwitStatus_ = SpenderStatus::Unknown;
@@ -140,19 +143,6 @@ namespace Armory
          BinaryDataRef getRedeemScriptFromStack(
             const std::map<unsigned, std::shared_ptr<StackItem>>*) const;
          std::map<BinaryData, BinaryData> getPartialSigs(void) const;
-
-      protected:
-         virtual void serializeStateHeader(
-            Codec_SignerState::ScriptSpenderState&) const;
-         virtual void serializeStateUtxo(
-            Codec_SignerState::ScriptSpenderState&) const;
-         virtual void serializeLegacyState(
-            Codec_SignerState::ScriptSpenderState&) const;
-         virtual void serializeSegwitState(
-            Codec_SignerState::ScriptSpenderState&) const;
-
-         void serializePathData(
-            Codec_SignerState::ScriptSpenderState&) const;
 
       private:
          ScriptSpender(void)
@@ -243,10 +233,6 @@ namespace Armory
          bool isSigned(void) const;
          bool isInitialized(void) const;
 
-         void serializeState(Codec_SignerState::ScriptSpenderState&) const;
-         static std::shared_ptr<ScriptSpender> deserializeState(
-            const Codec_SignerState::ScriptSpenderState&);
-
          bool canBeResolved(void) const;
 
          bool operator==(const ScriptSpender& rhs)
@@ -290,6 +276,7 @@ namespace Armory
       class Signer : public TransactionStub
       {
          friend class SignerProxyFromSigner;
+         friend struct Deserializer;
          using RecipientMap =
             std::map<unsigned, std::vector<std::shared_ptr<ScriptRecipient>>>;
 
@@ -326,9 +313,6 @@ namespace Armory
          BinaryData serializeAvailableResolvedData(void) const;
 
          static Signer createFromState(const std::string&);
-         static Signer createFromState(const Codec_SignerState::SignerState&);
-         void deserializeSupportingTxMap(const Codec_SignerState::SignerState&);
-
          void parseScripts(bool);
          void addBip32Root(std::shared_ptr<BIP32_PublicDerivedRoot>);
          void matchAssetPathsWithRoots(void);
@@ -342,8 +326,6 @@ namespace Armory
          {
             supportingTxMap_ = std::make_shared<std::map<BinaryData, Tx>>();
          }
-
-         Signer(const Codec_SignerState::SignerState&);
 
          /*sigs*/
 
@@ -397,11 +379,10 @@ namespace Armory
          BinaryData getTxId_const(void) const;
 
          //state import/export
-         void deserializeState(const Codec_SignerState::SignerState&);
          void deserializeState_Legacy(const BinaryDataRef&);
          void merge(const Signer& rhs);
 
-         Codec_SignerState::SignerState serializeState(void) const;
+         BinaryData serializeState(void) const;
          BinaryData serializeState_Legacy(void) const;
          std::string getSigCollectID(void) const;
 
