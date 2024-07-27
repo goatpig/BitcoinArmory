@@ -20,7 +20,6 @@ LIBARMORYCLI = libArmoryCLI.la
 LIBLMDBPP = liblmdbpp.la
 LIBSECP256K1 = $(LIBBTC_LIBDIR)/src/secp256k1/libsecp256k1.la
 LIBWEBSOCKETS_STATIC = $(WEBSOCKETS_LIBDIR)/libwebsockets.a
-LIBPROTOBUF_STATIC = -lprotobuf
 if BUILD_OPENSSL_SUPPORT
 LIBCRYPTO_STATIC = $(CRYPTO_LIBDIR)/libcrypto.a
 LIBSSL_STATIC = $(SSL_LIBDIR)/libssl.a
@@ -57,8 +56,8 @@ AM_CXXFLAGS =
 # Source 4: https://stackoverflow.com/a/33862145
 #LDFLAGS += -Wl,-rpath,. -Wl,-rpath,'$$ORIGIN/../more/libs/here' -Wl,-z,origin
 
-protobuf/%.pb.cc protobuf/%.pb.h: protobuf/%.proto
-	protoc --cpp_out=protobuf --proto_path=$(srcdir)/protobuf $<
+capnp/%.capnp.c++ capnp/%.capnp.h: capnp/%.capnp
+	capnp compile -oc++ $<
 
 INCLUDE_FILES = -I$(srcdir)/lmdbpp \
 	-I$(srcdir)/chacha20poly1305 -I$(LIBBTC_LIBDIR)/src/secp256k1/include -I$(LIBBTC_LIBDIR)/src \
@@ -111,7 +110,9 @@ ARMORYSIGNER_SOURCE_FILES = Signer/Script.cpp \
 	Signer/ResolverFeed.cpp \
 	Signer/ResolverFeed_Wallets.cpp \
 	Signer/Transactions.cpp \
-	Signer/TxEvalState.cpp
+	Signer/TxEvalState.cpp \
+	capnp/Signer.capnp.c++ \
+	capnp/Types.capnp.c++
 
 BLOCKCHAINDB_SOURCE_FILES = BlockchainDatabase/Blockchain.cpp \
 	BlockchainDatabase/BlockchainScanner.cpp \
@@ -172,42 +173,6 @@ ARMORYCOMMON_SOURCE_FILES = AsyncClient.cpp \
 	WebSocketClient.cpp \
 	WebSocketMessage.cpp
 
-PROTOBUF_PROTO = protobuf/AddressBook.proto \
-	protobuf/AddressData.proto \
-	protobuf/BDVCommand.proto \
-	protobuf/BridgeProto.proto \
-	protobuf/CommonTypes.proto \
-	protobuf/FeeEstimate.proto \
-	protobuf/LedgerEntry.proto \
-	protobuf/NodeStatus.proto \
-	protobuf/Signer.proto \
-	protobuf/Utxo.proto
-
-PROTOBUF_CC = protobuf/AddressBook.pb.cc \
-	protobuf/AddressData.pb.cc \
-	protobuf/BDVCommand.pb.cc \
-	protobuf/BridgeProto.pb.cc \
-	protobuf/CommonTypes.pb.cc \
-	protobuf/FeeEstimate.pb.cc \
-	protobuf/LedgerEntry.pb.cc \
-	protobuf/NodeStatus.pb.cc \
-	protobuf/Signer.pb.cc \
-	protobuf/Utxo.pb.cc
-
-PROTOBUF_H = protobuf/AddressBook.pb.h \
-	protobuf/AddressData.pb.h \
-	protobuf/BDVCommand.pb.h \
-	protobuf/BridgeProto.pb.h \
-	protobuf/CommonTypes.pb.h \
-	protobuf/FeeEstimate.pb.h \
-	protobuf/LedgerEntry.pb.h \
-	protobuf/NodeStatus.pb.h \
-	protobuf/Signer.pb.h \
-	protobuf/Utxo.pb.h 
-
-# Protobuf files required for distribution but not installation.
-dist_noinst_DATA = $(PROTOBUF_PROTO)
-
 # LMDB (DB used by Armory). On macOS, don't use SYSV semaphores (the default),
 # which cause crashes due to mutex lock/unlock issues. Use POSIX semaphores
 # (same as Linux).
@@ -262,7 +227,6 @@ libBlockchainDb_la_LDFLAGS = $(LDFLAGS)
 # Common functionality across GUI and command line
 noinst_LTLIBRARIES += $(LIBARMORYCOMMON)
 libArmoryCommon_la_SOURCES = $(ARMORYCOMMON_SOURCE_FILES)
-nodist_libArmoryCommon_la_SOURCES = $(PROTOBUF_CC) $(PROTOBUF_H)
 libArmoryCommon_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
 libArmoryCommon_la_CXXFLAGS = $(AM_CXXFLAGS) $(LIBBTC_FLAGS) \
 			      $(UNIT_TEST_CXXFLAGS) -D__STDC_LIMIT_MACROS
@@ -274,7 +238,7 @@ libArmoryCommon_la_LIBADD = $(LIBHKDF) \
 				$(LIBARMORYSIGNER) \
 				$(LIBBLOCKCHAINDB) \
 				-lpthread
-libArmoryCommon_la_LDFLAGS = $(LDFLAGS) $(LWSLDFLAGS) $(PROTOBUF_FLAGS)
+libArmoryCommon_la_LDFLAGS = $(LDFLAGS) $(LWSLDFLAGS)
 
 # Command-line functionality library
 noinst_LTLIBRARIES += $(LIBARMORYCLI)
@@ -315,7 +279,6 @@ ArmoryDB_LDADD = $(LIBARMORYWALLETS) \
 		 $(LIBCHACHA20POLY1305) \
 		 $(LIBLMDBPP) \
 		 -llmdb \
-		 $(LIBPROTOBUF_STATIC) \
 		 $(LIBWEBSOCKETS_STATIC)
 if BUILD_OPENSSL_SUPPORT
 ArmoryDB_LDADD += $(LIBSSL_STATIC) \
@@ -349,7 +312,6 @@ BIP150KeyManager_LDADD = $(LIBARMORYCOMMON) \
 		 $(LIBTREZORCRYPTO) \
 		 $(LIBLMDBPP) \
 		 -llmdb \
-		 $(LIBPROTOBUF_STATIC) \
 		 -lpthread
 BIP150KeyManager_LDFLAGS = $(LWSLDFLAGS) $(LDFLAGS) -static
 
@@ -358,7 +320,7 @@ bin_PROGRAMS += CppBridge
 CppBridge_SOURCES = $(CPPBRIDGE_SOURCE_FILES)
 CppBridge_CXXFLAGS = $(AM_CXXFLAGS) $(LIBBTC_FLAGS) $(UNIT_TEST_CXXFLAGS) \
 		-D__STDC_LIMIT_MACROS
-CppBridge_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES) -Iprotobuf
+CppBridge_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
 CppBridge_LDADD = $(LIBARMORYCOMMON) \
 		 $(LIBARMORYCLI) \
 		 $(LIBHKDF) \
@@ -367,7 +329,6 @@ CppBridge_LDADD = $(LIBARMORYCOMMON) \
 		 $(LIBTREZORCRYPTO) \
 		 $(LIBLMDBPP) \
 		 -llmdb \
-		 $(LIBPROTOBUF_STATIC) \
 		 $(LIBWEBSOCKETS_STATIC)
 if BUILD_OPENSSL_SUPPORT
 CppBridge_LDADD += $(LIBSSL_STATIC) \
@@ -388,15 +349,9 @@ endif
 CppBridge_LDFLAGS = $(LWSLDFLAGS) $(LDFLAGS) -static
 endif
 
-MOSTLYCLEANFILES = $(PROTOBUF_CC) $(PROTOBUF_H)
-BUILT_SOURCES += $(PROTOBUF_CC)
-
 clean-local:
 	rm -f CppBridge
 	rm -f BIP150KeyManager
-
-protobuf_clean:
-	rm -f protobuf/*.pb.*
 
 # .include file prevents gtest subdir from building a second copy of Armory.
 # Also provides a convenient spot to place all test-related materials.
