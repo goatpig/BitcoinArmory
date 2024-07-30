@@ -302,3 +302,48 @@ struct Reply {
       ledger   @7 : LedgerReply;
    }
 }
+
+##### notifications #####
+struct Notification {
+   struct BlockData {
+      height            @0 : UInt32;
+      branchHeight      @1 : UInt32;
+   }
+
+   struct ScanProgress {
+      phase             @0 : UInt32;
+      progress          @1 : Float32;
+      time              @2 : UInt32;
+      numericProgress   @3 : UInt32;
+      ids               @4 : List(Text);
+   }
+
+   struct ServerError {
+      code              @0 : Int32;
+      errStr            @1 : Text;
+      errData           @2 : Data;
+   }
+
+   struct Refresh {
+      type              @0 : UInt32;
+      ids               @1 : List(Data);
+   }
+
+   requestId @0 : Text;
+   union {
+      terminate         @1 : Void;
+      continuePolling   @2 : Void;
+      ready             @3 : BlockData;
+      newBlock          @4 : BlockData;
+      zc                @5 : HistoryPage;
+      invalidatedZc     @6 : List(Data);
+      refresh           @7 : Refresh;
+      nodeStatus        @8 : NodeStatus;
+      progress          @9 : ScanProgress;
+      error             @10: ServerError;
+   }
+}
+
+struct Notifications {
+   notifs @0 : List(Notification);
+}

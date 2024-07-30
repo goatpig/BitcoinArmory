@@ -57,7 +57,7 @@ AM_CXXFLAGS =
 #LDFLAGS += -Wl,-rpath,. -Wl,-rpath,'$$ORIGIN/../more/libs/here' -Wl,-z,origin
 
 capnp/%.capnp.c++ capnp/%.capnp.h: capnp/%.capnp
-	capnp compile -oc++ $<
+	capnp compile --src-prefix=$(srcdir)/capnp -oc++:capnp $<
 
 INCLUDE_FILES = -I$(srcdir)/lmdbpp \
 	-I$(srcdir)/chacha20poly1305 -I$(LIBBTC_LIBDIR)/src/secp256k1/include -I$(LIBBTC_LIBDIR)/src \
@@ -85,6 +85,7 @@ LIBTREZORCRYPTO_SOURCE_FILES = $(LIBBTC_LIBDIR)/src/trezor-crypto/bip39.c \
 	$(LIBBTC_LIBDIR)/src/trezor-crypto/rand.c
 
 ARMORYWALLETS_SOURCE_FILES = Wallets/BIP32_Node.cpp \
+	capnp/Bridge.capnp.c++ \
 	Wallets/Addresses.cpp \
 	Wallets/DecryptedDataContainer.cpp \
 	Wallets/DerivationScheme.cpp \
@@ -104,6 +105,8 @@ ARMORYWALLETS_SOURCE_FILES = Wallets/BIP32_Node.cpp \
 	Wallets/Seeds/Seeds.cpp
 
 ARMORYSIGNER_SOURCE_FILES = Signer/Script.cpp \
+	capnp/Types.capnp.c++ \
+	capnp/Signer.capnp.c++ \
 	Signer/ScriptRecipient.cpp \
 	Signer/Signer.cpp \
 	Signer/LegacySigner.cpp \
@@ -154,7 +157,8 @@ ARMORYCLI_SOURCE_FILES = BDM_mainthread.cpp \
 	TerminalPassphrasePrompt.cpp \
 	gtest/NodeUnitTest.cpp
 
-ARMORYCOMMON_SOURCE_FILES = AsyncClient.cpp \
+ARMORYCOMMON_SOURCE_FILES = capnp/BDV.capnp.c++ \
+	AsyncClient.cpp \
 	BinaryData.cpp \
 	ArmoryConfig.cpp \
 	BtcUtils.cpp \

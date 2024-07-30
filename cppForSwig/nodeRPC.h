@@ -33,7 +33,7 @@ namespace CoreRPC
 ////
 enum NodeState
 {
-   NodeState_Offline,
+   NodeState_Offline = 0,
    NodeState_Online,
    NodeState_OffSync
 };
@@ -41,7 +41,7 @@ enum NodeState
 ////
 enum RpcState
 {
-   RpcState_Disabled,
+   RpcState_Disabled = 0,
    RpcState_BadAuth,
    RpcState_Online,
    RpcState_Error_28
@@ -50,7 +50,7 @@ enum RpcState
 ////
 enum ChainState
 {
-   ChainState_Unknown,
+   ChainState_Unknown = 0,
    ChainState_Syncing,
    ChainState_Ready
 };

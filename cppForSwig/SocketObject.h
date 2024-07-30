@@ -36,9 +36,10 @@ typedef std::function<bool(std::vector<uint8_t>, std::exception_ptr)>  ReadCallb
 struct CallbackReturn
 {
    virtual ~CallbackReturn(void) = 0;
-   virtual void callback(BinaryDataRef bdr) = 0;
+   virtual void callback(BinaryDataRef) = 0;
 };
 
+////
 struct CallbackReturn_CloseBitcoinP2PSocket : public CallbackReturn
 {
 private:

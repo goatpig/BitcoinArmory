@@ -25,6 +25,10 @@ namespace BridgeProto
    class RestoreReply;
 }
 
+namespace capnp {
+   class MessageBuilder;
+}
+
 namespace Armory
 {
    namespace Wallets
@@ -273,8 +277,8 @@ namespace Armory
       ////
       struct Helpers
       {
-         using UserPrompt = std::function<BridgeProto::RestoreReply(
-            BridgeProto::RestorePrompt)>;
+         using UserPrompt = std::function<BinaryDataRef(
+            std::unique_ptr<capnp::MessageBuilder>)>;
 
          //backup methods
          static std::unique_ptr<WalletBackup> getWalletBackup(

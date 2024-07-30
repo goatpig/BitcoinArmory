@@ -20,8 +20,8 @@
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>
-#include "protobuf/Signer.capnp.h"
-#include "protobuf/Types.capnp.h"
+#include "capnp/Signer.capnp.h"
+#include "capnp/Types.capnp.h"
 
 using namespace Armory;
 

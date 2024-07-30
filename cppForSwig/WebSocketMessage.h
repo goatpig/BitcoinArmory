@@ -14,7 +14,6 @@
 #include <memory>
 
 #include "BinaryData.h"
-#include <google/protobuf/message.h>
 #include "SocketObject.h"
 
 #include "BIP150_151.h"
@@ -38,6 +37,10 @@ namespace ArmoryAEAD
    enum class BIP151_PayloadType : uint8_t;
 };
 
+namespace capnp {
+   class MessageReader;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 class WebSocketMessageCodec
 {
@@ -56,10 +59,9 @@ public:
       ArmoryAEAD::BIP151_PayloadType);
 
    static uint32_t getMessageId(const BinaryDataRef&);
-    
-   static bool reconstructFragmentedMessage(
-      const std::map<uint16_t, BinaryDataRef>&, 
-      ::google::protobuf::Message*);
+
+   static std::unique_ptr<capnp::MessageReader> getFragmentedReader(
+      const std::map<uint16_t, BinaryDataRef>&);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -106,7 +108,7 @@ public:
    void reset(void);
    bool parsePacket(const BinaryDataRef&);
    bool isReady(void) const;
-   bool getMessage(::google::protobuf::Message*) const;
+   std::unique_ptr<capnp::MessageReader> getReader(void) const;
    BinaryDataRef getSingleBinaryMessage(void) const;
    const uint32_t& getId(void) const { return id_; }
    ArmoryAEAD::BIP151_PayloadType getType(void) const { return type_; }
@@ -124,7 +126,7 @@ class CallbackReturn_WebSocket : public CallbackReturn
    bool runInCaller_ = false;
 
 private:
-   void callback(BinaryDataRef) {}
+   void callback(BinaryDataRef) {} //this is so bad... redo this later!
 
 public:
    virtual void callback(const WebSocketMessagePartial&) = 0;

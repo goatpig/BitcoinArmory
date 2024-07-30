@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2018-2021, goatpig.                                         //
+//  Copyright (C) 2018-2024, goatpig.                                         //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -21,7 +21,6 @@ Handle codec and socketing for armory client
 #include "TxClasses.h"
 #include "ArmoryConfig.h"
 #include "WebSocketClient.h"
-#include "DBClientClasses.h"
 #include "SocketWritePayload.h"
 #include "Wallets/PassphraseLambda.h"
 
@@ -272,7 +271,7 @@ namespace AsyncClient
 
       uint64_t getTxioCount(void) const { return count_; }
 
-      void getSpendableTxOutList(std::function<void(ReturnMessage<std::vector<UTXO>>)>);
+      void getOutputs(std::function<void(ReturnMessage<std::vector<UTXO>>)>);
       const BinaryData& getScrAddr(void) const { return scrAddr_; }
 
       void setComment(const std::string& comment) { comment_ = comment; }
@@ -289,6 +288,7 @@ namespace AsyncClient
       const std::string walletID_;
       const std::string bdvID_;
       const std::shared_ptr<SocketPrototype> sock_;
+      std::string ledgerID_;
 
    public:
       BtcWallet(const BlockDataViewer&, const std::string&);
@@ -296,34 +296,23 @@ namespace AsyncClient
       void getBalancesAndCount(uint32_t topBlockHeight,
          std::function<void(ReturnMessage<std::vector<uint64_t>>)>);
 
-      void getSpendableTxOutListForValue(uint64_t val, 
+      void getUTXOsForValue(uint64_t val, 
          std::function<void(ReturnMessage<std::vector<UTXO>>)>);
-      void getSpendableZCList(std::function<void(ReturnMessage<std::vector<UTXO>>)>);
-      void getRBFTxOutList(std::function<void(ReturnMessage<std::vector<UTXO>>)>);
 
-      void getAddrTxnCountsFromDB(std::function<void(
-         ReturnMessage<std::map<BinaryData, uint32_t>>)>);
-      void getAddrBalancesFromDB(std::function<void(
-         ReturnMessage<std::map<BinaryData, std::vector<uint64_t>>>)>);
-
-      void getHistoryPage(uint32_t id, 
+      void getHistoryPage(uint32_t id,
          std::function<void(ReturnMessage<std::vector<DBClientClasses::LedgerEntry>>)>);
-      void getLedgerEntryForTxHash(
-         const BinaryData& txhash, 
-         std::function<void(ReturnMessage<std::shared_ptr<DBClientClasses::LedgerEntry>>)>);
-
       ScrAddrObj getScrAddrObjByKey(const BinaryData&,
          uint64_t, uint64_t, uint64_t, uint32_t);
 
-      virtual std::string registerAddresses(
+      virtual void registerAddresses(
          const std::vector<BinaryData>& addrVec, bool isNew);
-      std::string unregisterAddresses(const std::set<BinaryData>&);
-      std::string unregister(void);
+      void unregisterAddresses(const std::set<BinaryData>&);
+      void unregister(void);
 
       void createAddressBook(
          std::function<void(ReturnMessage<std::vector<AddressBookEntry>>)>) const;
 
-      std::string setUnconfirmedTarget(unsigned);
+      void setUnconfirmedTarget(unsigned);
       std::string walletID(void) const { return walletID_; }
    };
 
@@ -349,9 +338,6 @@ namespace AsyncClient
       uint64_t getSpendableBalance(void) const { return spendableBalance_; }
       uint64_t getUnconfirmedBalance(void) const { return unconfirmedBalance_; }
       uint64_t getWltTotalTxnCount(void) const { return txnCount_; }
- 
-      std::string registerAddresses(
-         const std::vector<BinaryData>& addrVec, bool isNew);
    };
 
    /////////////////////////////////////////////////////////////////////////////
@@ -401,13 +387,6 @@ namespace AsyncClient
 
    public:
       ~BlockDataViewer(void);
-
-      //utility
-      static std::unique_ptr<WritePayload_Protobuf> make_payload(
-         ::Codec_BDVCommand::Methods);
-      static std::unique_ptr<WritePayload_Protobuf> make_payload(
-         ::Codec_BDVCommand::StaticMethods);
-      
       BtcWallet instantiateWallet(const std::string& id);
       Lockbox instantiateLockbox(const std::string& id);
 
@@ -428,82 +407,29 @@ namespace AsyncClient
       static std::shared_ptr<BlockDataViewer> getNewBDV(
          const std::string& addr, const std::string& port,
          const std::string& datadir, const PassphraseLambda&,
-         const bool& ephemeralPeers, bool oneWayAuth,
+         bool ephemeralPeers, bool oneWayAuth,
          std::shared_ptr<RemoteCallback> callbackPtr);
 
-      void registerWithDB(BinaryData magic_word);
+      void registerWithDB(const std::string& magic_word);
       void unregisterFromDB(void);
       void shutdown(const std::string&);
       void shutdownNode(const std::string&);
 
       //ledgers
-      void getLedgerDelegateForWallets(
-         std::function<void(ReturnMessage<LedgerDelegate>)>);
-      void getLedgerDelegateForLockboxes(
-         std::function<void(ReturnMessage<LedgerDelegate>)>);
-      void getLedgerDelegateForScrAddr(
-         const std::string&, BinaryDataRef,
-         std::function<void(ReturnMessage<LedgerDelegate>)>);
-
-      void getHistoryForWalletSelection(
-         const std::vector<std::string>&, const std::string& orderingStr,
-         std::function<void(ReturnMessage<std::vector<DBClientClasses::LedgerEntry>>)>);
-
-      void updateWalletsLedgerFilter(const std::vector<BinaryData>& wltIdVec);
+      void updateWalletsLedgerFilter(const std::vector<std::string>& wltIdVec);
 
       //header data
       Blockchain blockchain(void);
 
-      void getRawHeaderForTxHash(
-         const BinaryData& txHash, 
-         std::function<void(ReturnMessage<BinaryData>)>);
-      void getHeaderByHeight(
-         unsigned height, 
-         std::function<void(ReturnMessage<BinaryData>)>);
-
       //node & fee
       void getNodeStatus(
          std::function<void(ReturnMessage<std::shared_ptr<DBClientClasses::NodeStatus>>)>);
-      void estimateFee(unsigned, const std::string&,
-         std::function<void(ReturnMessage<DBClientClasses::FeeEstimateStruct>)>);
       void getFeeSchedule(const std::string&, std::function<void(ReturnMessage<
             std::map<unsigned, DBClientClasses::FeeEstimateStruct>>)>);
 
-      //combined methods
-      void getCombinedBalances(
-         const std::vector<std::string>&,
-         std::function<void(
-            ReturnMessage<std::map<std::string, CombinedBalances>>)>);
-      
-      void getCombinedAddrTxnCounts(
-         const std::vector<std::string>&,
-         std::function<void(
-            ReturnMessage<std::map<std::string, CombinedCounts>>)>);
-
-      void getCombinedSpendableTxOutListForValue(
-         const std::vector<std::string>&, uint64_t value,
-         std::function<void(ReturnMessage<std::vector<UTXO>>)>);
-   
-      void getCombinedSpendableZcOutputs(const std::vector<std::string>&, 
-         std::function<void(ReturnMessage<std::vector<UTXO>>)>);
-
-      void getCombinedRBFTxOuts(const std::vector<std::string>&, 
-         std::function<void(ReturnMessage<std::vector<UTXO>>)>);
-
       //outputs
-      void getOutpointsForAddresses(const std::set<BinaryData>&, 
-         unsigned startHeight, unsigned zcIndexCutoff,
-         std::function<void(ReturnMessage<OutpointBatch>)>);
-
-      void getUTXOsForAddress(const BinaryData&, bool,
+      void getUTXOsForAddress(std::set<BinaryData>&,
          std::function<void(ReturnMessage<std::vector<UTXO>>)>);
-
-      void getSpentnessForOutputs(const std::map<BinaryData, std::set<unsigned>>&,
-         std::function<void(ReturnMessage<std::map<BinaryData, std::map<
-         unsigned, SpentnessResult>>>)>);
-      void getSpentnessForZcOutputs(const std::map<BinaryData, std::set<unsigned>>&,
-         std::function<void(ReturnMessage<std::map<BinaryData, std::map<
-         unsigned, SpentnessResult>>>)>);
 
       void getOutputsForOutpoints(
          const std::map<BinaryData, std::set<unsigned>>&, bool,
@@ -517,439 +443,11 @@ namespace AsyncClient
         come with no ID attached, in which case these notifications are not the
         result of your broadcast.
       */
-      std::string broadcastZC(const BinaryData& rawTx);
-      std::string broadcastZC(const std::vector<BinaryData>& rawTxVec);
-      std::string broadcastThroughRPC(const BinaryData& rawTx);
+      void broadcastZC(const std::vector<BinaryData>& rawTxVec);
+      void broadcastThroughRPC(const BinaryData& rawTx);
 
-      void getTxByHash(const BinaryData& txHash, const TxCallback&);
-      void getTxBatchByHash(
+      void getTxByHash(
          const std::set<BinaryData>&, const TxBatchCallback&);
-   };
-
-   ////////////////////////////////////////////////////////////////////////////
-   void deserialize(::google::protobuf::Message*, 
-      const WebSocketMessagePartial&);
-
-   ///////////////////////////////////////////////////////////////////////////////
-   ///////////////////////////////////////////////////////////////////////////////
-   //// callback structs for async networking
-   ///////////////////////////////////////////////////////////////////////////////
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_BinaryDataRef : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(BinaryDataRef)> userCallbackLambda_;
-
-   public:
-      CallbackReturn_BinaryDataRef(std::function<void(BinaryDataRef)> lbd) :
-         userCallbackLambda_(lbd)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_String : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(ReturnMessage<std::string>)> userCallbackLambda_;
-
-   public:
-      CallbackReturn_String(std::function<void(ReturnMessage<std::string>)> lbd) :
-         userCallbackLambda_(lbd)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_LedgerDelegate : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(ReturnMessage<AsyncClient::LedgerDelegate>)> userCallbackLambda_;
-      std::shared_ptr<SocketPrototype> sockPtr_;
-      const std::string& bdvID_;
-
-   public:
-      CallbackReturn_LedgerDelegate(
-         std::shared_ptr<SocketPrototype> sock, const std::string& bdvid,
-         std::function<void(ReturnMessage<AsyncClient::LedgerDelegate>)> lbd) :
-         userCallbackLambda_(lbd), sockPtr_(sock), bdvID_(bdvid)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_Tx : public CallbackReturn_WebSocket
-   {
-   private:
-      std::shared_ptr<ClientCache> cache_;
-      BinaryData txHash_;
-      TxCallback userCallbackLambda_;
-
-   public:
-      CallbackReturn_Tx(std::shared_ptr<ClientCache> cache,
-         const BinaryData& txHash, const TxCallback& lbd) :
-         cache_(cache), txHash_(txHash), userCallbackLambda_(lbd)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_TxBatch : public CallbackReturn_WebSocket
-   {
-   private:
-      std::shared_ptr<ClientCache> cache_;
-      TxBatchResult cachedTx_;
-      std::map<BinaryData, bool> callMap_;
-      TxBatchCallback userCallbackLambda_;
-
-   public:
-      CallbackReturn_TxBatch(
-         std::shared_ptr<ClientCache> cache, TxBatchResult& cachedTx, 
-         std::map<BinaryData, bool>& callMap, const TxBatchCallback& lbd) :
-         cache_(cache), cachedTx_(std::move(cachedTx)),
-         callMap_(std::move(callMap)),
-         userCallbackLambda_(lbd)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_RawHeader : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(ReturnMessage<BinaryData>)> userCallbackLambda_;
-      std::shared_ptr<ClientCache> cache_;
-      BinaryData txHash_;
-      unsigned height_;
-
-   public:
-      CallbackReturn_RawHeader(
-         std::shared_ptr<ClientCache> cache,
-         unsigned height, const BinaryData& txHash, 
-         std::function<void(ReturnMessage<BinaryData>)> lbd) :
-         userCallbackLambda_(lbd),
-         cache_(cache),txHash_(txHash), height_(height)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   class CallbackReturn_NodeStatus : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(ReturnMessage<std::shared_ptr<DBClientClasses::NodeStatus>>)>
-         userCallbackLambda_;
-
-   public:
-      CallbackReturn_NodeStatus(std::function<void(
-         ReturnMessage<std::shared_ptr<DBClientClasses::NodeStatus>>)> lbd) :
-         userCallbackLambda_(lbd)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_FeeEstimateStruct : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(ReturnMessage<DBClientClasses::FeeEstimateStruct>)>
-         userCallbackLambda_;
-
-   public:
-      CallbackReturn_FeeEstimateStruct(
-         std::function<void(ReturnMessage<DBClientClasses::FeeEstimateStruct>)> lbd) :
-         userCallbackLambda_(lbd)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_FeeSchedule : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(ReturnMessage<std::map<unsigned, DBClientClasses::FeeEstimateStruct>>)>
-         userCallbackLambda_;
-
-   public:
-      CallbackReturn_FeeSchedule(std::function<void(ReturnMessage<
-         std::map<unsigned, DBClientClasses::FeeEstimateStruct>>)> lbd) :
-         userCallbackLambda_(lbd)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_VectorLedgerEntry : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(ReturnMessage<std::vector<DBClientClasses::LedgerEntry>>)>
-         userCallbackLambda_;
-
-   public:
-      CallbackReturn_VectorLedgerEntry(
-         std::function<void(ReturnMessage<std::vector<DBClientClasses::LedgerEntry>>)> lbd) :
-         userCallbackLambda_(lbd)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_UINT64 : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(ReturnMessage<uint64_t>)> userCallbackLambda_;
-
-   public:
-      CallbackReturn_UINT64(
-         std::function<void(ReturnMessage<uint64_t>)> lbd) :
-         userCallbackLambda_(lbd)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_VectorUTXO : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(ReturnMessage<std::vector<UTXO>>)> userCallbackLambda_;
-
-   public:
-      CallbackReturn_VectorUTXO(
-         std::function<void(ReturnMessage<std::vector<UTXO>>)> lbd) :
-         userCallbackLambda_(lbd)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_VectorUINT64 : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(ReturnMessage<std::vector<uint64_t>>)> userCallbackLambda_;
-
-   public:
-      CallbackReturn_VectorUINT64(
-         std::function<void(ReturnMessage<std::vector<uint64_t>>)> lbd) :
-         userCallbackLambda_(lbd)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_Map_BD_U32 : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(ReturnMessage<std::map<BinaryData, uint32_t>>)> userCallbackLambda_;
-
-   public:
-      CallbackReturn_Map_BD_U32(
-         std::function<void(ReturnMessage<std::map<BinaryData, uint32_t>>)> lbd) :
-         userCallbackLambda_(lbd)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_Map_BD_VecU64 : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(ReturnMessage<std::map<BinaryData, std::vector<uint64_t>>>)>
-         userCallbackLambda_;
-
-   public:
-      CallbackReturn_Map_BD_VecU64(
-         std::function<void(ReturnMessage<std::map<BinaryData, std::vector<uint64_t>>>)> lbd) :
-         userCallbackLambda_(lbd)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_LedgerEntry : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(ReturnMessage<std::shared_ptr<DBClientClasses::LedgerEntry>>)>
-         userCallbackLambda_;
-
-   public:
-      CallbackReturn_LedgerEntry(
-         std::function<void(ReturnMessage<std::shared_ptr<DBClientClasses::LedgerEntry>>)> lbd) :
-         userCallbackLambda_(lbd)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_VectorAddressBookEntry : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(ReturnMessage<std::vector<AddressBookEntry>>)> userCallbackLambda_;
-
-   public:
-      CallbackReturn_VectorAddressBookEntry(
-         std::function<void(ReturnMessage<std::vector<AddressBookEntry>>)> lbd) :
-         userCallbackLambda_(lbd)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_Bool : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(ReturnMessage<bool>)> userCallbackLambda_;
-
-   public:
-      CallbackReturn_Bool(std::function<void(ReturnMessage<bool>)> lbd) :
-         userCallbackLambda_(lbd)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_BlockHeader : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(ReturnMessage<DBClientClasses::BlockHeader>)> userCallbackLambda_;
-      const unsigned height_;
-
-   public:
-      CallbackReturn_BlockHeader(unsigned height, 
-         std::function<void(ReturnMessage<DBClientClasses::BlockHeader>)> lbd) :
-         userCallbackLambda_(lbd), height_(height)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_BDVCallback : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(std::shared_ptr<::Codec_BDVCommand::BDVCallback>)>
-         userCallbackLambda_;
-
-   public:
-      CallbackReturn_BDVCallback(
-         std::function<void(std::shared_ptr<::Codec_BDVCommand::BDVCallback>)> lbd) :
-         userCallbackLambda_(lbd)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_CombinedBalances : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(ReturnMessage<std::map<std::string, CombinedBalances>>)> 
-         userCallbackLambda_;
-
-   public:
-      CallbackReturn_CombinedBalances(
-         std::function<void(
-            ReturnMessage<std::map<std::string, CombinedBalances>>)> lbd) :
-         userCallbackLambda_(lbd)
-      {}
-      
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_CombinedCounts : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(ReturnMessage<std::map<std::string, CombinedCounts>>)> 
-         userCallbackLambda_;
-
-   public:
-      CallbackReturn_CombinedCounts(
-         std::function<void(
-            ReturnMessage<std::map<std::string, CombinedCounts>>)> lbd) :
-         userCallbackLambda_(lbd)
-      {}
-      
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_AddrOutpoints : public CallbackReturn_WebSocket
-   {
-   private:
-      std::function<void(ReturnMessage<OutpointBatch>)>
-         userCallbackLambda_;
-
-   public:
-      CallbackReturn_AddrOutpoints(
-         std::function<void(
-            ReturnMessage<OutpointBatch>)> lbd) :
-         userCallbackLambda_(lbd)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
-   };
-
-   ///////////////////////////////////////////////////////////////////////////////
-   struct CallbackReturn_SpentnessData : public CallbackReturn_WebSocket
-   {
-   private:
-
-      std::function<void(
-      ReturnMessage<std::map<BinaryData, std::map<
-         unsigned, SpentnessResult>>>)>
-         userCallbackLambda_;
-
-   public:
-      CallbackReturn_SpentnessData(
-         std::function<void(ReturnMessage<std::map<BinaryData, std::map<
-            unsigned, SpentnessResult>>>)> lbd) :
-         userCallbackLambda_(lbd)
-      {}
-
-      //virtual
-      void callback(const WebSocketMessagePartial&);
    };
 };
 #endif

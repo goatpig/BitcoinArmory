@@ -17,8 +17,6 @@
 #include "BtcUtils.h"
 #include "DBUtils.h"
 
-#include "protobuf/Utxo.pb.h"
-
 //PayStruct flags
 #define USE_FULL_CUSTOM_LIST  1
 #define ADJUST_FEE            2
@@ -393,12 +391,13 @@ struct TxComparator
 ////////////////////////////////////////////////////////////////////////////////
 struct UTXO
 {
-   BinaryData txHash_;
-   uint32_t   txOutIndex_ = UINT32_MAX;
+   uint64_t   value_ = 0;
    uint32_t   txHeight_ = UINT32_MAX;
    uint32_t   txIndex_ = UINT32_MAX;
-   uint64_t   value_ = 0;
+   uint32_t   txOutIndex_ = UINT32_MAX;
+   BinaryData txHash_;
    BinaryData script_;
+
    bool       isMultisigRef_ = false;
    unsigned   preferredSequence_ = UINT32_MAX;
 
@@ -407,7 +406,7 @@ struct UTXO
    unsigned txinRedeemSizeBytes_ = UINT32_MAX;
    unsigned witnessDataSizeBytes_ = UINT32_MAX;
 
-   UTXO(uint64_t value, uint32_t txHeight, uint32_t txIndex, 
+   UTXO(uint64_t value, uint32_t txHeight, uint32_t txIndex,
       uint32_t txOutIndex, BinaryData txHash, BinaryData script) :
       txHash_(std::move(txHash)), txOutIndex_(txOutIndex), 
       txHeight_(txHeight), txIndex_(txIndex),
@@ -473,23 +472,16 @@ struct UTXO
    }
 
    bool isInitialized(void) const { return !script_.empty(); }
-
-   void toProtobuf(Codec_Utxo::Utxo&) const;
-   static UTXO fromProtobuf(const Codec_Utxo::Utxo&);
-};
-
-namespace AsyncClient
-{
-   struct CallbackReturn_VectorAddressBookEntry;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 class AddressBookEntry
 {
-   friend struct AsyncClient::CallbackReturn_VectorAddressBookEntry;
+private:
+   BinaryData scrAddr_;
+   std::vector<BinaryData> txHashList_;
 
 public:
-
    /////
    AddressBookEntry(void) : scrAddr_(BtcUtils::EmptyHash()) {}
    AddressBookEntry(BinaryData scraddr) : scrAddr_(scraddr) {}
@@ -510,10 +502,6 @@ public:
 
    BinaryData serialize(void) const;
    void unserialize(const BinaryData& data);
-
-private:
-   BinaryData scrAddr_;
-   std::vector<BinaryData> txHashList_;
 };
 
 

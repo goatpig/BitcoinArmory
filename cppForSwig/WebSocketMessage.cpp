@@ -9,11 +9,12 @@
 #include "BtcUtils.h"
 #include "WebSocketMessage.h"
 #include "libwebsockets.h"
-#include <google/protobuf/io/zero_copy_stream_impl.h>
 #include "BIP15x_Handshake.h"
 
+#include <capnp/message.h>
+#include <capnp/serialize.h>
+
 using namespace std;
-using namespace ::google::protobuf::io;
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -249,49 +250,26 @@ vector<BinaryData> WebSocketMessageCodec::serialize(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool WebSocketMessageCodec::reconstructFragmentedMessage(
-   const map<uint16_t, BinaryDataRef>& payloadMap, 
-   ::google::protobuf::Message* msg)
+std::unique_ptr<capnp::MessageReader>
+WebSocketMessageCodec::getFragmentedReader(
+   const std::map<uint16_t, BinaryDataRef>& payloadMap)
 {
-   //this method expects packets in order
-
-   if (payloadMap.size() == 0)
-      return false;
-
-   auto count = payloadMap.size();
-
-   //create a zero copy stream from each packet
-   vector<ZeroCopyInputStream*> streams;
-   streams.reserve(count);
-   
-   try
-   {
-      for (auto& data_pair : payloadMap)
-      {
-         auto& dataRef = data_pair.second;
-         auto stream = new ArrayInputStream(
-            dataRef.getPtr(), dataRef.getSize());
-         streams.push_back(stream);
-      }
-   }
-   catch (...)
-   {
-      for (auto& stream : streams)
-         delete stream;
-      return false;
+   if (payloadMap.empty()) {
+      return nullptr;
    }
 
-   //pass it all to concatenating stream
-   ConcatenatingInputStream cStream(&streams[0], streams.size());
+   auto builder = kj::heapArrayBuilder<const kj::ArrayPtr<const capnp::word>>(
+      payloadMap.size());
+   for (auto& data_pair : payloadMap) {
+      auto& dataRef = data_pair.second;
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(dataRef.getPtr()),
+         dataRef.getSize() / sizeof(capnp::word));
+      builder.add(words);
+   }
 
-   //deser message
-   auto result = msg->ParseFromZeroCopyStream(&cStream);
-
-   //cleanup
-   for (auto& stream : streams)
-      delete stream;
-
-   return result;
+   auto array = builder.finish();
+   return std::make_unique<capnp::SegmentArrayMessageReader>(array.asPtr());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -490,7 +468,7 @@ bool WebSocketMessagePartial::parseMessageFragment(const BinaryDataRef& bdr)
 ///////////////////////////////////////////////////////////////////////////////
 bool WebSocketMessagePartial::parseMessageWithoutId(const BinaryDataRef& bdr)
 {
-   /*   
+   /*
    uint8_t type
    nbytes payload
    */
@@ -509,20 +487,22 @@ bool WebSocketMessagePartial::parseMessageWithoutId(const BinaryDataRef& bdr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool WebSocketMessagePartial::getMessage(
-  ::google::protobuf::Message* msgPtr) const
+std::unique_ptr<capnp::MessageReader> WebSocketMessagePartial::getReader() const
 {
    if (!isReady())
-      return false;
+      return nullptr;
 
    if (packets_.size() == 1)
    {
       auto& dataRef = packets_.begin()->second;
-      return msgPtr->ParseFromArray(dataRef.getPtr(), dataRef.getSize());
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(dataRef.getPtr()),
+         dataRef.getSize() / sizeof(capnp::word));
+      return std::make_unique<capnp::FlatArrayMessageReader>(words);
    }
    else
    {
-      return WebSocketMessageCodec::reconstructFragmentedMessage(packets_, msgPtr);
+      return WebSocketMessageCodec::getFragmentedReader(packets_);
    }
 }
 

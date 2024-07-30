@@ -10,30 +10,25 @@
 #define _SOCKET_WRITE_PAYLOAD_H
 
 #include "SocketObject.h"
-#include <google/protobuf/message.h>
-
-///////////////////////////////////////////////////////////////////////////////
-struct WritePayload_Protobuf : public Socket_WritePayload
-{
-   std::unique_ptr<::google::protobuf::Message> message_;
-
-   void serialize(std::vector<uint8_t>&);
-   std::string serializeToText(void);
-   size_t getSerializedSize(void) const {
-      return message_->ByteSizeLong();
-   }
-};
 
 ///////////////////////////////////////////////////////////////////////////////
 struct WritePayload_Raw : public Socket_WritePayload
 {
-   std::vector<uint8_t> data_;
+   std::vector<uint8_t> data;
 
-   void serialize(std::vector<uint8_t>&);
+   WritePayload_Raw(std::vector<uint8_t>& payload) :
+      data(std::move(payload))
+   {}
+
+   WritePayload_Raw(WritePayload_Raw&& lhs) :
+      data(std::move(lhs.data))
+   {}
+
+   void serialize(std::vector<uint8_t>&) override;
    std::string serializeToText(void) {
-      throw SocketError("raw payload cannot serilaize to str");
+      throw SocketError("raw payload cannot seriliaze to str");
    }
-   size_t getSerializedSize(void) const { return data_.size(); };
+   size_t getSerializedSize(void) const { return data.size(); };
 };
 
 ///////////////////////////////////////////////////////////////////////////////

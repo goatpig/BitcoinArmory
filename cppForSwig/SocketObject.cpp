@@ -1087,26 +1087,5 @@ Socket_WritePayload::~Socket_WritePayload(void)
 ///////////////////////////////////////////////////////////////////////////////
 void WritePayload_Raw::serialize(vector<uint8_t>& data)
 {
-   data = move(data_);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-string WritePayload_Protobuf::serializeToText(void)
-{
-   if (message_ == nullptr)
-      return string();
-
-   string str;
-   ::google::protobuf::TextFormat::PrintToString(*message_.get(), &str);
-   return str;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void WritePayload_Protobuf::serialize(vector<uint8_t>& data)
-{
-   if (message_ == nullptr)
-      return;
-
-   data.resize(message_->ByteSizeLong());
-   message_->SerializeToArray(&data[0], data.size());
+   data = move(data);
 }
