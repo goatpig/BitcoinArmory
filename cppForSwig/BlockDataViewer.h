@@ -25,20 +25,23 @@
 #include "bdmenums.h"
 #include "BtcWallet.h"
 #include "ZeroConf.h"
-#include "BDVCodec.h"
 
 typedef enum
 {
    order_ascending,
    order_descending
-}HistoryOrdering;
+} HistoryOrdering;
 
 
 typedef enum
 {
    group_wallet,
    group_lockbox
-}LedgerGroups;
+} LedgerGroups;
+
+namespace capnp {
+   class MessageReader;
+}
 
 class WalletGroup;
 
@@ -72,9 +75,9 @@ public:
    // blockchain in RAM, each scan will take 30-120 seconds.  Registering makes 
    // sure that the intial blockchain scan picks up wallet-relevant stuff as 
    // it goes, and does a full [re-]scan of the blockchain only if necessary.
-   void registerWallet(std::shared_ptr<::Codec_BDVCommand::BDVCommand>);
-   void registerLockbox(std::shared_ptr<::Codec_BDVCommand::BDVCommand>);
-   void registerAddresses(std::shared_ptr<::Codec_BDVCommand::BDVCommand>);
+   void registerWallet(std::shared_ptr<::capnp::MessageReader>);
+   void registerLockbox(std::shared_ptr<::capnp::MessageReader>);
+   void registerAddresses(std::shared_ptr<::capnp::MessageReader>);
    void       unregisterWallet(const std::string& ID);
    void       unregisterLockbox(const std::string& ID);
 
@@ -82,7 +85,7 @@ public:
    bool hasWallet(const std::string &ID) const;
 
    Tx                getTxByHash(BinaryData const & txHash) const;
-   
+
    std::tuple<uint32_t, uint32_t, std::vector<unsigned>> 
                      getTxMetaData(const BinaryDataRef&, bool) const;
 
@@ -91,7 +94,7 @@ public:
 
    BinaryData        getTxHashForDbKey(const BinaryData& dbKey6) const
    { return db_->getTxHashForLdbKey(dbKey6); }
-   
+
    BinaryData        getSenderScrAddr(TxIn & txin) const;
    int64_t           getSentValue(TxIn & txin) const;
 
@@ -123,13 +126,13 @@ public:
    StoredHeader getMainBlockFromDB(uint32_t height) const;
    StoredHeader getBlockFromDB(uint32_t height, uint8_t dupID) const;
    bool scrAddressIsRegistered(const BinaryData& scrAddr) const;
-   
+
    bool isBDMRunning(void) const 
-   { 
+   {
       if (bdmPtr_ == nullptr)
          return false;
       return bdmPtr_->isRunning(); 
-   } 
+   }
 
    void blockUntilBDMisReady(void) const
    {
@@ -265,7 +268,7 @@ public:
    ~WalletGroup();
 
    std::shared_ptr<BtcWallet> getOrSetWallet(const std::string&);
-   void registerAddresses(std::shared_ptr<::Codec_BDVCommand::BDVCommand>);
+   void registerAddresses(std::shared_ptr<::capnp::MessageReader>);
    void unregisterWallet(const std::string& IDstr);
 
    bool hasID(const std::string &ID) const;

@@ -18,13 +18,12 @@
 #include "BlockchainDatabase/BlockObj.h"
 #include "BlockchainDatabase/Blockchain.h"
 #include "BlockchainDatabase/StoredBlockObj.h"
-#include "BDVCodec.h"
 #include "ZeroConf.h"
 
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// LedgerEntry  
+// LedgerEntry
 //
 // LedgerEntry class is used for bother ScrAddresses and BtcWallets.  Members
 // have slightly different meanings (or irrelevant) depending which one it's
@@ -61,6 +60,10 @@
 //    usesWitness - are the marker and flag for segwit set
 //
 ////////////////////////////////////////////////////////////////////////////////
+
+namespace capnp {
+   class MessageReader;
+}
 
 class LMDBBlockDatabase;
 
@@ -145,7 +148,7 @@ public:
    const std::set<BinaryData>& getScrAddrList(void) const
    { return scrAddrSet_; }
 
-   void fillMessage(::Codec_LedgerEntry::LedgerEntry* msg) const;
+   void fillMessage(::capnp::MessageReader* msg) const;
    
 public:
 

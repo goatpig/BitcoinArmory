@@ -1,8 +1,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2018, goatpig.                                              //
+//  Copyright (C) 2018-2024, goatpig.                                          //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                      
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -56,7 +56,7 @@ namespace DBClientClasses
          error_(error), val_(val), isSmart_(isSmart)
       {}
 
-      FeeEstimateStruct(void) 
+      FeeEstimateStruct(void)
       {}
    };
 

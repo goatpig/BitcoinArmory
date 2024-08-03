@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2018, goatpig.                                              //
+//  Copyright (C) 2018-2024, goatpig.                                         //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -14,26 +14,25 @@
 #include <capnp/message.h>
 #include <capnp/serialize.h>
 
-using namespace std;
-
 ////////////////////////////////////////////////////////////////////////////////
 //
 // WebSocketMessageCodec
 //
 ////////////////////////////////////////////////////////////////////////////////
-vector<BinaryData> WebSocketMessageCodec::serialize(
-   const vector<uint8_t>& payload, BIP151Connection* connPtr,
+std::vector<BinaryData> WebSocketMessageCodec::serialize(
+   const std::vector<uint8_t>& payload, BIP151Connection* connPtr,
    ArmoryAEAD::BIP151_PayloadType type, uint32_t id)
 {
    BinaryDataRef bdr;
-   if(payload.size() > 0)
+   if(payload.size() > 0) {
       bdr.setRef(&payload[0], payload.size());
+   }
    return serialize(bdr, connPtr, type, id);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-vector<BinaryData> WebSocketMessageCodec::serialize(
-   const string& payload, BIP151Connection* connPtr,
+std::vector<BinaryData> WebSocketMessageCodec::serialize(
+   const std::string& payload, BIP151Connection* connPtr,
    ArmoryAEAD::BIP151_PayloadType type, uint32_t id)
 {
    BinaryDataRef bdr((uint8_t*)payload.c_str(), payload.size());
@@ -41,7 +40,7 @@ vector<BinaryData> WebSocketMessageCodec::serialize(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-vector<BinaryData> WebSocketMessageCodec::serializePacketWithoutId(
+std::vector<BinaryData> WebSocketMessageCodec::serializePacketWithoutId(
    const BinaryDataRef& payload, BIP151Connection* connPtr,
    ArmoryAEAD::BIP151_PayloadType type)
 {
@@ -54,8 +53,9 @@ vector<BinaryData> WebSocketMessageCodec::serializePacketWithoutId(
 
    uint32_t size = payload.getSize() + 1;
    BinaryData plainText(4 + size + LWS_PRE + POLY1305MACLEN);
-   if (plainText.getSize() > WEBSOCKET_MESSAGE_PACKET_SIZE)
-      throw runtime_error("payload is too large to serialize");
+   if (plainText.getSize() > WEBSOCKET_MESSAGE_PACKET_SIZE) {
+      throw std::runtime_error("payload is too large to serialize");
+   }
    
    //skip LWS_PRE, copy in packet size
    memcpy(plainText.getPtr() + LWS_PRE, &size, 4);
@@ -68,7 +68,7 @@ vector<BinaryData> WebSocketMessageCodec::serializePacketWithoutId(
    memcpy(plainText.getPtr() + LWS_PRE + 5, payload.getPtr(), payload.getSize());
 
    //encrypt if possible
-   vector<BinaryData> result;
+   std::vector<BinaryData> result;
    if (connPtr != nullptr)
    {
       connPtr->assemblePacket(plainText.getPtr() + LWS_PRE, size,
@@ -84,7 +84,7 @@ vector<BinaryData> WebSocketMessageCodec::serializePacketWithoutId(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-vector<BinaryData> WebSocketMessageCodec::serialize(
+std::vector<BinaryData> WebSocketMessageCodec::serialize(
    const BinaryDataRef& payload, BIP151Connection* connPtr,
    ArmoryAEAD::BIP151_PayloadType type, uint32_t id)
 {   
@@ -120,24 +120,20 @@ vector<BinaryData> WebSocketMessageCodec::serialize(
    ***/
    
    //encrypt lambda
-   vector<BinaryData> result;
+   std::vector<BinaryData> result;
    auto encryptAndAdd = [connPtr, &result](BinaryData& data)
    {
       size_t plainTextLen = data.getSize() - LWS_PRE - POLY1305MACLEN;
       size_t cipherTextLen = data.getSize() - LWS_PRE;
 
-      if (connPtr != nullptr)
-      {
+      if (connPtr != nullptr) {
          if (connPtr->assemblePacket(
             data.getPtr() + LWS_PRE, plainTextLen,
-            data.getPtr() + LWS_PRE, cipherTextLen) != 0)
-         {
+            data.getPtr() + LWS_PRE, cipherTextLen) != 0) {
             //failed to encrypt, abort
-            throw runtime_error("failed to encrypt packet, aborting");
+            throw std::runtime_error("failed to encrypt packet, aborting");
          }
-      }
-      else
-      {
+      } else {
          data.resize(cipherTextLen);
       }
 
@@ -184,8 +180,9 @@ vector<BinaryData> WebSocketMessageCodec::serialize(
       if (left_over % fragment_room != 0)
          ++fragment_count32;
 
-      if (fragment_count32 > UINT16_MAX)
-         throw runtime_error("payload too large for serialization");
+      if (fragment_count32 > UINT16_MAX) {
+         throw std::runtime_error("payload too large for serialization");
+      }
       uint16_t fragment_count = (uint16_t)fragment_count32;
 
       BinaryData header_packet(WEBSOCKET_MESSAGE_PACKET_SIZE);
@@ -211,7 +208,7 @@ vector<BinaryData> WebSocketMessageCodec::serialize(
             fragment_overhead += 2;
 
          //figure out data size
-         size_t data_size = min(
+         size_t data_size = std::min(
             WEBSOCKET_MESSAGE_PACKET_SIZE - fragment_overhead, 
             data_len - pos);
 
@@ -287,10 +284,10 @@ uint32_t WebSocketMessageCodec::getMessageId(const BinaryDataRef& packet)
 // SerializedMessage
 //
 ///////////////////////////////////////////////////////////////////////////////
-void SerializedMessage::construct(const vector<uint8_t>& data,
+void SerializedMessage::construct(const std::vector<uint8_t>& data,
    BIP151Connection* connPtr, ArmoryAEAD::BIP151_PayloadType type, uint32_t id)
 {
-   packets_ = move(
+   packets_ = std::move(
       WebSocketMessageCodec::serialize(data, connPtr, type, id));
 }
 
@@ -298,15 +295,15 @@ void SerializedMessage::construct(const vector<uint8_t>& data,
 void SerializedMessage::construct(const BinaryDataRef& data,
    BIP151Connection* connPtr, ArmoryAEAD::BIP151_PayloadType type, uint32_t id)
 {
-   packets_ = move(
+   packets_ = std::move(
       WebSocketMessageCodec::serialize(data, connPtr, type, id));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 BinaryData SerializedMessage::consumeNextPacket()
 {
-   auto& val = packets_[index_++];
-   return move(val);
+   auto val = std::move(packets_[index_++]);
+   return val;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -345,7 +342,6 @@ bool WebSocketMessagePartial::parsePacket(const BinaryDataRef& dataRef)
    BinaryRefReader brrSlice(dataSlice);
 
    auto msgType = (ArmoryAEAD::BIP151_PayloadType)brrSlice.get_uint8_t();
-
    switch (msgType)
    {
    case ArmoryAEAD::BIP151_PayloadType::SinglePacket:
@@ -401,7 +397,7 @@ bool WebSocketMessagePartial::parseSinglePacket(const BinaryDataRef& bdr)
       return false;
 
    id_ = brr.get_uint32_t();
-   packets_.emplace(make_pair(
+   packets_.emplace(std::make_pair(
       0, brr.get_BinaryDataRef(brr.getSizeRemaining())));
 
    packetCount_ = 1;
@@ -431,7 +427,7 @@ bool WebSocketMessagePartial::parseFragmentedMessageHeader(
    id_ = id;
 
    packetCount_ = brr.get_uint16_t();
-   packets_.emplace(make_pair(
+   packets_.emplace(std::make_pair(
       0, brr.get_BinaryDataRef(brr.getSizeRemaining())));
 
    return true;
@@ -459,7 +455,7 @@ bool WebSocketMessagePartial::parseMessageFragment(const BinaryDataRef& bdr)
    id_ = id;
 
    auto packetId = (uint16_t)brr.get_var_int();
-   packets_.emplace(make_pair(
+   packets_.emplace(std::make_pair(
       packetId, brr.get_BinaryDataRef(brr.getSizeRemaining())));
 
    return true;
@@ -479,7 +475,7 @@ bool WebSocketMessagePartial::parseMessageWithoutId(const BinaryDataRef& bdr)
    if (type_ <= ArmoryAEAD::BIP151_PayloadType::Threshold_Begin)
       return false;
 
-   packets_.emplace(make_pair(
+   packets_.emplace(std::make_pair(
       0, brr.get_BinaryDataRef(brr.getSizeRemaining())));
 
    packetCount_ = 1;
@@ -526,7 +522,7 @@ ArmoryAEAD::BIP151_PayloadType WebSocketMessagePartial::getPacketType(
    const BinaryDataRef& bdr)
 {
    if (bdr.getSize() < 5)
-      throw runtime_error("packet is too small to be serialized fragment");
+      throw std::runtime_error("packet is too small to be serialized fragment");
    return (ArmoryAEAD::BIP151_PayloadType)bdr.getPtr()[4];
 }
 
