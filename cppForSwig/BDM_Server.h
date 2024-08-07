@@ -174,7 +174,8 @@ public:
    */
    const std::string& getLedgerDelegate(void); //the bdv itself
    const std::string& getLedgerDelegate(const std::string&); //walletId
-   const std::string& getLedgerDelegate(const BinaryData&); //address
+   const std::string& getLedgerDelegate(
+      const std::string&, const BinaryData&); //walletId, address
 };
 
 ///////////////////////////////////////////////////////////////////////////////

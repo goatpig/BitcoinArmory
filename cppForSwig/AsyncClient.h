@@ -218,7 +218,7 @@ namespace AsyncClient
    public:
       LedgerDelegate(void) {}
 
-      LedgerDelegate(std::shared_ptr<SocketPrototype>, 
+      LedgerDelegate(std::shared_ptr<SocketPrototype>,
          const std::string&, const std::string&);
 
       void getHistoryPage(uint32_t id,

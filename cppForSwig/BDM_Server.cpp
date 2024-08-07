@@ -269,8 +269,13 @@ namespace {
          case WalletRequest::Which::GET_LEDGER_DELEGATE:
          {
             std::string walletId(request.getWalletId());
-            auto delegateId = bdv->getLedgerDelegate(walletId);
-            walletReply.setGetLedgerDelegate(delegateId);
+            try {
+               auto delegateId = bdv->getLedgerDelegate(walletId);
+               walletReply.setGetLedgerDelegate(delegateId);
+            } catch (const std::exception&) {
+               reply.setSuccess(false);
+               reply.setError("invalid id");
+            }
             break;
          }
 
@@ -397,8 +402,14 @@ namespace {
       {
          case AddressRequest::Which::GET_LEDGER_DELEGATE:
          {
-            auto delegateId = bdv->getLedgerDelegate(addrRef);
-            addressReply.setGetLedgerDelegate(delegateId);
+            try {
+               std::string walletId = request.getGetLedgerDelegate();
+               auto delegateId = bdv->getLedgerDelegate(walletId, addrRef);
+               addressReply.setGetLedgerDelegate(delegateId);
+            } catch (const std::exception&) {
+               reply.setSuccess(false);
+               reply.setError("invalid address");
+            }
             break;
          }
 
@@ -1121,9 +1132,49 @@ BDV_PartialMessage BDV_Server_Object::preparePayload(
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+const std::string& BDV_Server_Object::getLedgerDelegate()
+{
+   //return ledger delegate for bdv wallets
+   const auto& id = getID();
+   auto iter = delegateMap_.find(id);
+   if (iter == delegateMap_.end()) {
+      auto delegate = getLedgerDelegateForWallets();
+      iter = delegateMap_.emplace(id, delegate).first;
+   }
+   return iter->first;
+}
+
+////
+const std::string& BDV_Server_Object::getLedgerDelegate(
+   const std::string& wltId)
+{
+   //return ledger delegate for this wallet
+   throw std::runtime_error("!! implement me !!");
+}
+
+////
+const std::string& BDV_Server_Object::getLedgerDelegate(
+   const std::string& walletId, const BinaryData& scrAddr)
+{
+   auto id = scrAddr.toHexStr();
+   auto iter = delegateMap_.find(id);
+   if (iter == delegateMap_.end()) {
+      auto delegate = getLedgerDelegateForScrAddr(walletId, scrAddr);
+      iter = delegateMap_.emplace(id, delegate).first;
+   }
+   return iter->first;
+}
+
+///////////////////////////////////////////////////////////////////////////////
 //
 // Clients
 //
+///////////////////////////////////////////////////////////////////////////////
+BlockDataManagerThread* Clients::bdmT() const
+{
+   return bdmT_;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 void Clients::init(BlockDataManagerThread* bdmT,
    std::function<void(void)> shutdownLambda)

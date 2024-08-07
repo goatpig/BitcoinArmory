@@ -265,7 +265,7 @@ struct AddressRequest {
    union {
       unset                @2 : Void;
 
-      getLedgerDelegate    @3 : Void;
+      getLedgerDelegate    @3 : WalletId;
       getBalanceAndCount   @4 : Void;
       getOutputs           @5 : TxoutRequest;
    }

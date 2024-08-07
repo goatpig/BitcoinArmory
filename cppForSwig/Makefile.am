@@ -212,7 +212,9 @@ libArmorySigner_la_CXXFLAGS = $(AM_CXXFLAGS) $(LIBBTC_FLAGS) \
 			      $(UNIT_TEST_CXXFLAGS) -D__STDC_LIMIT_MACROS
 libArmorySigner_la_LIBADD = $(LIBBTC) \
 				$(LIBSECP256K1) \
-				$(LIBTREZORCRYPTO)
+				$(LIBTREZORCRYPTO) \
+				-lcapnp \
+				-lkj
 libArmorySigner_la_LDFLAGS = $(LDFLAGS)
 
 
@@ -262,7 +264,8 @@ libArmoryCLI_la_LIBADD = $(LIBCHACHA20POLY1305) \
 			 $(LIBSECP256K1) \
 			 $(LIBTREZORCRYPTO) \
 			 -llmdb \
-			 -lpthread
+			 -lcapnp \
+			 -lkj
 libArmoryCLI_la_LDFLAGS = $(LDFLAGS) $(LWSLDFLAGS)
 
 # ArmoryDB binary
@@ -283,7 +286,9 @@ ArmoryDB_LDADD = $(LIBARMORYWALLETS) \
 		 $(LIBCHACHA20POLY1305) \
 		 $(LIBLMDBPP) \
 		 -llmdb \
-		 $(LIBWEBSOCKETS_STATIC)
+		 $(LIBWEBSOCKETS_STATIC) \
+		 -lcapnp \
+		 -lkj
 if BUILD_OPENSSL_SUPPORT
 ArmoryDB_LDADD += $(LIBSSL_STATIC) \
 		 $(LIBCRYPTO_STATIC)
@@ -316,7 +321,9 @@ BIP150KeyManager_LDADD = $(LIBARMORYCOMMON) \
 		 $(LIBTREZORCRYPTO) \
 		 $(LIBLMDBPP) \
 		 -llmdb \
-		 -lpthread
+		 -lpthread \
+		 -lcapnp \
+		 -lkj
 BIP150KeyManager_LDFLAGS = $(LWSLDFLAGS) $(LDFLAGS) -static
 
 if BUILD_CLIENT
