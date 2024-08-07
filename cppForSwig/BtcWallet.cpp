@@ -38,10 +38,10 @@ bool BtcWallet::hasScrAddress(const BinaryDataRef& scrAddr) const
 }
 
 /////////////////////////////////////////////////////////////////////////////
-set<BinaryDataRef> BtcWallet::getAddrSet() const
+set<BinaryData> BtcWallet::getAddrSet() const
 {
    auto addrMap = scrAddrMap_.get();
-   set<BinaryDataRef> addrSet;
+   set<BinaryData> addrSet;
 
    for (auto& addrPair : *addrMap)
       addrSet.emplace(addrPair.first);

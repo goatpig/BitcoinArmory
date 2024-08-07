@@ -215,10 +215,6 @@ public:
    ZcNotificationPacket(const std::string& bdvID) :
       bdvID_(bdvID)
    {}
-
-   void toProtobufNotification(
-      std::shared_ptr<::capnp::MessageReader>,
-      const std::vector<LedgerEntry>&) const;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

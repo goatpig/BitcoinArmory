@@ -11,7 +11,7 @@
 
 using namespace std;
 using namespace Armory::Threading;
-using namespace Armory::Signer;
+using namespace Armory::Signing;
 
 ////////////////////////////////////////////////////////////////////////////////
 int verifyTxSigs(const BinaryData& rawTx, const LMDBBlockDatabase* iface, 
@@ -57,7 +57,7 @@ int verifyTxSigs(const BinaryData& rawTx, const LMDBBlockDatabase* iface,
 
       //grab output from tx, convert to utxo
       auto txOutCopy = zcTx.getTxOutCopy(outpoint.getTxOutIndex());
-      UTXO utxo; 
+      UTXO utxo;
       utxo.unserializeRaw(txOutCopy.serializeRef());
       utxo.txOutIndex_ = outpoint.getTxOutIndex();
 

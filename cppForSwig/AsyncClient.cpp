@@ -956,7 +956,7 @@ void AsyncClient::BtcWallet::getBalancesAndCount(uint32_t blockheight,
    auto walletRequest = payload.initWallet();
    walletRequest.setBdvId(bdvID_);
    walletRequest.setWalletId(walletID_);
-   walletRequest.setGetBalanceAndCount();
+   walletRequest.setGetBalanceAndCount(blockheight);
 
    //serialize and add to payload
    auto write_payload = toWritePayload(message);

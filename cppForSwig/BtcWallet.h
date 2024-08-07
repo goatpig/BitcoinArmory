@@ -62,7 +62,7 @@ public:
    // addScrAddr when blockchain rescan req'd, addNewScrAddr for just-created
    void removeAddressBulk(const std::vector<BinaryDataRef>&);
    bool hasScrAddress(const BinaryDataRef&) const;
-   std::set<BinaryDataRef> getAddrSet(void) const;
+   std::set<BinaryData> getAddrSet(void) const;
 
    // BlkNum is necessary for "unconfirmed" list, since it is dependent
    // on number of confirmations.  But for "spendable" TxOut list, it is

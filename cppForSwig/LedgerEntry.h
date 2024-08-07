@@ -148,8 +148,6 @@ public:
    const std::set<BinaryData>& getScrAddrList(void) const
    { return scrAddrSet_; }
 
-   void fillMessage(::capnp::MessageReader* msg) const;
-   
 public:
 
    static LedgerEntry EmptyLedger_;

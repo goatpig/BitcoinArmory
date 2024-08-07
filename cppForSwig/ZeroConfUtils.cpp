@@ -273,7 +273,7 @@ void finalizeParsedTxResolution(
 ///////////////////////////////////////////////////////////////////////////////
 FilteredZeroConfData filterParsedTx(
    shared_ptr<ParsedTx> parsedTxPtr,
-   shared_ptr<const map<BinaryDataRef, shared_ptr<AddrAndHash>>> mainAddressMap,
+   shared_ptr<const map<BinaryData, shared_ptr<AddrAndHash>>> mainAddressMap,
    ZeroConfCallbacks* bdvCallbacks)
 {
    auto& parsedTx = *parsedTxPtr;

@@ -16,7 +16,6 @@
 #include "BlockchainDatabase/txio.h"
 
 using namespace std;
-using namespace ::Codec_BDVCommand;
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -258,7 +257,7 @@ ZeroConfCallbacks_BDV::ZcNotifRequest::~ZcNotifRequest()
 // ZcNotificationPacket
 //
 ///////////////////////////////////////////////////////////////////////////////
-void ZcNotificationPacket::toProtobufNotification(
+/*void ZcNotificationPacket::toProtobufNotification(
    std::shared_ptr<::Codec_BDVCommand::BDVCallback> protoPtr, 
    const std::vector<LedgerEntry>& leVec) const
 {
@@ -317,4 +316,4 @@ void ZcNotificationPacket::toProtobufNotification(
          idPtr->set_data(id.second.getPtr(), id.second.getSize());
       }
    }
-}
+}*/
