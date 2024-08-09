@@ -416,7 +416,7 @@ private:
    const unsigned maxZcThreadCount_;
 
    std::shared_ptr<Armory::Threading::TransactionalMap<
-      BinaryDataRef, std::shared_ptr<AddrAndHash>>> scrAddrMap_;
+      BinaryData, std::shared_ptr<AddrAndHash>>> scrAddrMap_;
 
    unsigned parserThreadCount_ = 0;
    std::unique_ptr<ZeroConfCallbacks> bdvCallbacks_;

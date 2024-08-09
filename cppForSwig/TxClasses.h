@@ -486,10 +486,10 @@ public:
    AddressBookEntry(void) : scrAddr_(BtcUtils::EmptyHash()) {}
    AddressBookEntry(BinaryData scraddr) : scrAddr_(scraddr) {}
    void addTxHash(const BinaryData& hash) { txHashList_.push_back(hash); }
-   const BinaryData& getScrAddr(void) { return scrAddr_; }
+   const BinaryData& getScrAddr() const { return scrAddr_; }
 
    /////
-   const std::vector<BinaryData>& getTxHashList(void) const
+   const std::vector<BinaryData>& getTxHashList() const
    {
       return txHashList_;
    }

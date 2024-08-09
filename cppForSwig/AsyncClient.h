@@ -218,10 +218,10 @@ namespace AsyncClient
    public:
       LedgerDelegate(void) {}
 
-      LedgerDelegate(std::shared_ptr<SocketPrototype>, 
+      LedgerDelegate(std::shared_ptr<SocketPrototype>,
          const std::string&, const std::string&);
 
-      void getHistoryPage(uint32_t id, 
+      void getHistoryPage(uint32_t id,
          std::function<void(ReturnMessage<std::vector<DBClientClasses::LedgerEntry>>)>);
       void getPageCount(std::function<void(ReturnMessage<uint64_t>)>) const;
 

@@ -1,20 +1,89 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2018, goatpig.                                              //
+//  Copyright (C) 2018-2024, goatpig.                                         //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                      
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "DBClientClasses.h"
 #include "WebSocketClient.h"
-#include "protobuf/BDVCommand.pb.h"
 #include "btc/ecc.h"
 
-using namespace std;
-using namespace DBClientClasses;
-using namespace Codec_BDVCommand;
+#include <capnp/message.h>
+#include <capnp/serialize.h>
+#include "capnp/BDV.capnp.h"
 
+using namespace DBClientClasses;
+
+namespace {
+   std::vector<std::shared_ptr<LedgerEntry>> capnToLedgers(
+      Armory::Codec::BDV::HistoryPage::Reader& page)
+   {
+      std::vector<std::shared_ptr<LedgerEntry>> result;
+      auto ledgers = page.getLedgers();
+      result.reserve(ledgers.size());
+
+      for (const auto& ledger : ledgers) {
+         //tx hash
+         auto capnTxHash = ledger.getTxHash();
+         auto hashBytes = capnTxHash.asBytes();
+         BinaryData txHash(hashBytes.begin(), hashBytes.end());
+
+         //scrAddr list
+         auto capnScrAddrs = ledger.getScrAddrs();
+         std::vector<BinaryData> scrAddrList;
+         scrAddrList.reserve(capnScrAddrs.size());
+         for (const auto& scrAddr : capnScrAddrs) {
+            auto asBytes = scrAddr.asBytes();
+            scrAddrList.emplace_back(BinaryData(
+               scrAddr.begin(), scrAddr.end()
+            ));
+         }
+
+         //instantiate ledger entry
+         result.emplace_back(std::make_shared<LedgerEntry>(
+            ledger.getWalletId(), ledger.getBalance(), ledger.getTxHeight(),
+            txHash, ledger.getTxOutIndex(), ledger.getTxTime(),
+            ledger.getIsCoinbase(), ledger.getIsSTS(),
+            ledger.getIsChangeBack(), ledger.getIsOptInRBF(),
+            ledger.getIsChainedZC(), ledger.getIsWitness(),
+            scrAddrList
+         ));
+      }
+      return result;
+   }
+
+   std::shared_ptr<NodeStatus> capnToNodeStatus(
+      Armory::Codec::BDV::NodeStatus::Reader nodeStatus)
+   {
+      if (nodeStatus.hasChain()) {
+         auto chainCapn = nodeStatus.getChain();
+         NodeChainStatus ncs(
+            CoreRPC::ChainState(chainCapn.getChainState()),
+            chainCapn.getBlockSpeed(), chainCapn.getProgress(),
+            chainCapn.getEta(), chainCapn.getBlocksLeft()
+         );
+
+         auto result = std::make_shared<NodeStatus>(
+            CoreRPC::NodeState(nodeStatus.getNode()),
+            CoreRPC::RpcState(nodeStatus.getRpc()),
+            nodeStatus.getIsSW(), ncs
+         );
+
+         return result;
+      } else {
+         DBClientClasses::NodeChainStatus ncs;
+         auto result = std::make_shared<NodeStatus>(
+            CoreRPC::NodeState(nodeStatus.getNode()),
+            CoreRPC::RpcState(nodeStatus.getRpc()),
+            nodeStatus.getIsSW(), ncs
+         );
+
+         return result;
+      }
+   }
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 void initLibrary()
@@ -54,137 +123,89 @@ void DBClientClasses::BlockHeader::unserialize(uint8_t const * ptr, uint32_t siz
 // LedgerEntry
 //
 ///////////////////////////////////////////////////////////////////////////////
-LedgerEntry::LedgerEntry(shared_ptr<::Codec_LedgerEntry::LedgerEntry> msg) :
-   msgPtr_(msg), ptr_(msg.get())
+DBClientClasses::LedgerEntry::LedgerEntry(const std::string& id, int64_t value,
+   uint32_t blockHeight, BinaryData& txHash, uint32_t txOutIndex,
+   uint32_t timestamp, bool isCoinbase, bool isSentToSelf, bool isChangeBack,
+   bool isOptInRBF, bool isChainedZC, bool isWitness,
+   std::vector<BinaryData>& scrAddrList) :
+   id_(std::move(id)), value_(value), blockHeight_(blockHeight),
+   txHash_(std::move(txHash)), txOutIndex_(txOutIndex), timestamp_(timestamp),
+   isCoinbase_(isCoinbase), isSentToSelf_(isSentToSelf),
+   isChangeBack_(isChangeBack), isOptInRBF_(isOptInRBF),
+   isChainedZC_(isChainedZC), isWitness_(isWitness),
+   scrAddrList_(std::move(scrAddrList))
 {}
 
 ///////////////////////////////////////////////////////////////////////////////
-LedgerEntry::LedgerEntry(BinaryDataRef bdr)
+const std::string& LedgerEntry::getID() const
 {
-   auto msg = make_shared<::Codec_LedgerEntry::LedgerEntry>();
-   msg->ParseFromArray(bdr.getPtr(), bdr.getSize());
-   ptr_ = msg.get();
-   msgPtr_ = msg;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-LedgerEntry::LedgerEntry(
-   shared_ptr<::Codec_LedgerEntry::ManyLedgerEntry> msg, unsigned index) :
-   msgPtr_(msg)
-{
-   ptr_ = &msg->values(index);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-LedgerEntry::LedgerEntry(
-   shared_ptr<::Codec_BDVCommand::BDVCallback> msg, unsigned i, unsigned y) :
-   msgPtr_(msg)
-{
-   auto& notif = msg->notification(i);
-   auto& ledgers = notif.ledgers();
-   ptr_ = &ledgers.values(y);
-}
-
-
-///////////////////////////////////////////////////////////////////////////////
-string LedgerEntry::getID() const
-{
-   if (ptr_ == nullptr)
-      throw runtime_error("uninitialized ledger entry");
-   if (ptr_->has_id())
-      return ptr_->id();
-   return string();
+   return id_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 int64_t LedgerEntry::getValue() const
 {
-   if (ptr_ == nullptr)
-      throw runtime_error("uninitialized ledger entry");
-   return ptr_->balance();
+   return value_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-uint32_t LedgerEntry::getBlockNum() const
+uint32_t LedgerEntry::getBlockHeight() const
 {
-   if (ptr_ == nullptr)
-      throw runtime_error("uninitialized ledger entry");
-   return ptr_->txheight();
+   return blockHeight_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 BinaryDataRef LedgerEntry::getTxHash() const
 {
-   if (ptr_ == nullptr)
-      throw runtime_error("uninitialized ledger entry");
-   auto& val = ptr_->txhash();
-   BinaryDataRef bdr;
-   bdr.setRef(val);
-   return bdr;
+   return BinaryDataRef(txHash_);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-uint32_t LedgerEntry::getIndex() const
+uint32_t LedgerEntry::getTxOutIndex() const
 {
-   if (ptr_ == nullptr)
-      throw runtime_error("uninitialized ledger entry");
-   return ptr_->index();
+   return txOutIndex_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 uint32_t LedgerEntry::getTxTime() const
 {
-   if (ptr_ == nullptr)
-      throw runtime_error("uninitialized ledger entry");
-   return ptr_->txtime();
+   return timestamp_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 bool LedgerEntry::isCoinbase() const
 {
-   if (ptr_ == nullptr)
-      throw runtime_error("uninitialized ledger entry");
-   return ptr_->iscoinbase();
+   return isCoinbase_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 bool LedgerEntry::isSentToSelf() const
 {
-   if (ptr_ == nullptr)
-      throw runtime_error("uninitialized ledger entry");
-   return ptr_->issts();
+   return isSentToSelf_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 bool LedgerEntry::isChangeBack() const
 {
-   if (ptr_ == nullptr)
-      throw runtime_error("uninitialized ledger entry");
-   return ptr_->ischangeback();
+   return isChangeBack_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 bool LedgerEntry::isOptInRBF() const
 {
-   if (ptr_ == nullptr)
-      throw runtime_error("uninitialized ledger entry");
-   return ptr_->optinrbf();
+   return isOptInRBF_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 bool LedgerEntry::isChainedZC() const
 {
-   if (ptr_ == nullptr)
-      throw runtime_error("uninitialized ledger entry");
-   return ptr_->ischainedzc();
+   return isChainedZC_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 bool LedgerEntry::isWitness() const
 {
-   if (ptr_ == nullptr)
-      throw runtime_error("uninitialized ledger entry");
-   return ptr_->iswitness();
+   return isWitness_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -193,28 +214,16 @@ bool LedgerEntry::operator==(const LedgerEntry& rhs)
    if (getTxHash() != rhs.getTxHash())
       return false;
 
-   if (getIndex() != rhs.getIndex())
+   if (getTxOutIndex() != rhs.getTxOutIndex())
       return false;
 
    return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-vector<BinaryData> LedgerEntry::getScrAddrList() const
+const std::vector<BinaryData>& LedgerEntry::getScrAddrList() const
 {
-   if (ptr_ == nullptr)
-      throw runtime_error("uninitialized ledger entry");
-
-   vector<BinaryData> addrList;
-   for (int i = 0; i < ptr_->scraddr_size(); i++)
-   {
-      const auto& addrPtr = ptr_->scraddr(i);
-      BinaryDataRef addrRef; addrRef.setRef(addrPtr);
-
-      addrList.push_back(addrRef);
-   }
-
-   return addrList;
+   return scrAddrList_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -227,169 +236,143 @@ RemoteCallback::~RemoteCallback(void)
 
 ///////////////////////////////////////////////////////////////////////////////
 bool RemoteCallback::processNotifications(
-   shared_ptr<BDVCallback> callback)
+   std::unique_ptr<capnp::MessageReader> reader)
 {
-   for(int i = 0; i<callback->notification_size(); i++)
-   {
-      auto& notif = callback->notification(i);
+   using namespace Armory::Codec;
 
-      switch (notif.type())
-      {
-      case NotificationType::continue_polling:
-         break;
+   auto notifsCapn = reader->getRoot<BDV::Notifications>();
+   auto notifs = notifsCapn.getNotifs();
 
-      case NotificationType::newblock:
+   for (auto notif : notifs) {
+      switch (notif.which())
       {
-         if (!notif.has_newblock())
+         case BDV::Notification::Which::CONTINUE_POLLING:
             break;
 
-         auto newblock = notif.newblock();
-         if (newblock.height() != 0)
+         case BDV::Notification::Which::NEW_BLOCK:
          {
-            BdmNotification bdmNotif(BDMAction_NewBlock);
-
-            bdmNotif.height_ = newblock.height();
-            if (newblock.has_branch_height())
-               bdmNotif.branchHeight_ = newblock.branch_height();
-
-            run(move(bdmNotif));
-         }
-
-         break;
-      }
-
-      case NotificationType::zc:
-      {
-         if (!notif.has_ledgers())
-            break;
-
-         auto& ledgers = notif.ledgers();
-
-         BdmNotification bdmNotif(BDMAction_ZC);
-         for (int y = 0; y < ledgers.values_size(); y++)
-         {
-            auto le = make_shared<LedgerEntry>(callback, i, y);
-            bdmNotif.ledgers_.push_back(le);
-         }
-
-         bdmNotif.requestID_ = notif.requestid();
-         run(move(bdmNotif));
-
-         break;
-      }
-
-      case NotificationType::invalidated_zc:
-      {
-
-         if (!notif.has_ids())
-            break;
-
-         auto& ids = notif.ids();
-         set<BinaryData> idSet;
-
-         BdmNotification bdmNotif(BDMAction_InvalidatedZC);
-         for (int y = 0; y < ids.value_size(); y++)
-         {
-            auto& id_str = ids.value(y).data();
-            BinaryData id_bd((uint8_t*)id_str.c_str(), id_str.size());
-            bdmNotif.invalidatedZc_.emplace(id_bd);
-         }
-
-         run(move(bdmNotif));
-
-         break;
-      }
-
-      case NotificationType::refresh:
-      {
-         if (!notif.has_refresh())
-            break;
-
-         auto& refresh = notif.refresh();
-         auto refreshType = (BDV_refresh)refresh.refreshtype();
-         
-         BdmNotification bdmNotif(BDMAction_Refresh);
-         if (refreshType != BDV_filterChanged)
-         {
-            for (int y = 0; y < refresh.id_size(); y++)
+            auto newblock = notif.getNewBlock();
+            auto height = newblock.getHeight();
+            if (height != 0)
             {
-               auto& str = refresh.id(y);
-               BinaryData bd; bd.copyFrom(str);
-               bdmNotif.ids_.emplace_back(bd);
+               BdmNotification bdmNotif(BDMAction_NewBlock);
+
+               bdmNotif.height_ = height;
+               bdmNotif.branchHeight_ = newblock.getBranchHeight();
+               run(std::move(bdmNotif));
             }
+
+            break;
          }
-         else
+
+         case BDV::Notification::Which::ZC:
          {
-            bdmNotif.ids_.push_back(BinaryData::fromString(FILTER_CHANGE_FLAG));
+            auto page = notif.getZc();
+            BdmNotification bdmNotif(BDMAction_ZC);
+            bdmNotif.ledgers_ = capnToLedgers(page);
+            bdmNotif.requestID_ = notif.getRequestId();
+
+            run(std::move(bdmNotif));
+            break;
          }
 
-         run(move(bdmNotif));
+         case BDV::Notification::Which::INVALIDATED_ZC:
+         {
+            auto ids = notif.getInvalidatedZc();
+            std::set<BinaryData> idSet;
 
-         break;
-      }
+            BdmNotification bdmNotif(BDMAction_InvalidatedZC);
+            for (auto id : ids) {
+               bdmNotif.invalidatedZc_.emplace(BinaryData(
+                  id.begin(), id.end()
+               ));
+            }
 
-      case NotificationType::ready:
-      {
-         if (!notif.has_newblock())
+            run(std::move(bdmNotif));
             break;
+         }
 
-         BdmNotification bdmNotif(BDMAction_Ready);
-         bdmNotif.height_ = notif.newblock().height();
-         run(move(bdmNotif));
+         case BDV::Notification::Which::REFRESH:
+         {
+            auto refresh = notif.getRefresh();
+            auto refreshType = (BDV_refresh)refresh.getType();
+            
+            BdmNotification bdmNotif(BDMAction_Refresh);
+            if (refreshType != BDV_filterChanged) {
+               auto ids = refresh.getIds();
+               for (auto id : ids) {
+                  bdmNotif.ids_.emplace_back(BinaryData(
+                     id.begin(), id.end()
+                  ));
+               }
+            } else {
+               bdmNotif.ids_.push_back(
+                  BinaryData::fromString(FILTER_CHANGE_FLAG));
+            }
 
-         break;
-      }
-
-      case NotificationType::progress:
-      {
-         if (!notif.has_progress())
+            run(std::move(bdmNotif));
             break;
+         }
 
-         auto pd = ProgressData::make_new(callback, i);
-         progress(pd->phase(), pd->wltIDs(), pd->progress(),
-            pd->time(), pd->numericProgress());
+         case BDV::Notification::Which::READY:
+         {
+            BdmNotification bdmNotif(BDMAction_Ready);
+            auto newBlock = notif.getReady();
+            bdmNotif.height_ = newBlock.getHeight();
 
-         break;
-      }
-
-      case NotificationType::terminate:
-      {
-         //shut down command from server
-         return false;
-      }
-
-      case NotificationType::nodestatus:
-      {
-         if (!notif.has_nodestatus())
+            run(std::move(bdmNotif));
             break;
+         }
 
-         BdmNotification bdmNotif(BDMAction_NodeStatus);
-         bdmNotif.nodeStatus_ = 
-            DBClientClasses::NodeStatus::make_new(callback, i);
+         case BDV::Notification::Which::PROGRESS:
+         {
+            auto capnProgress = notif.getProgress();
+            auto capnIds = capnProgress.getIds();
+            std::vector<std::string> ids;
+            ids.reserve(capnIds.size());
+            for (auto capnId : capnIds) {
+               ids.emplace_back(capnId);
+            }
 
-         run(move(bdmNotif));
-         break;
-      }
-
-      case NotificationType::error:
-      {
-         if (!notif.has_error())
+            auto phase = (BDMPhase)capnProgress.getPhase();
+            progress(phase, ids, capnProgress.getProgress(),
+               capnProgress.getTime(), capnProgress.getNumericProgress());
             break;
+         }
 
-         auto& msg = notif.error();
+         case BDV::Notification::Which::TERMINATE:
+         {
+            //shut down command from server
+            return false;
+         }
 
-         BdmNotification bdmNotif(BDMAction_BDV_Error);
-         bdmNotif.error_.errCode_ = msg.code();
-         bdmNotif.error_.errorStr_ = msg.errstr();
-         bdmNotif.error_.errData_ = BinaryData::fromString(msg.errdata());
-         bdmNotif.requestID_ = notif.requestid();
+         case BDV::Notification::Which::NODE_STATUS:
+         {
+            BdmNotification bdmNotif(BDMAction_NodeStatus);
+            auto capnNodeStatus = notif.getNodeStatus();
+            bdmNotif.nodeStatus_ = capnToNodeStatus(capnNodeStatus);
 
-         BinaryDataRef errDataRef; errDataRef.setRef(msg.errdata());
-         bdmNotif.error_.errData_ = errDataRef;
+            run(std::move(bdmNotif));
+            break;
+         }
 
-         run(move(bdmNotif));
-         break;
-      }
+         case BDV::Notification::Which::ERROR:
+         {
+            auto error = notif.getError();
+
+            BdmNotification bdmNotif(BDMAction_BDV_Error);
+            bdmNotif.error_.errCode_ = error.getCode();
+            bdmNotif.error_.errorStr_ = error.getErrStr();
+            bdmNotif.requestID_ = notif.getRequestId();
+
+            auto errData = error.getErrData();
+            bdmNotif.error_.errData_ = BinaryData(
+               errData.begin(), errData.end()
+            );
+
+            run(std::move(bdmNotif));
+            break;
+         }
 
       default:
          continue;
@@ -404,168 +387,78 @@ bool RemoteCallback::processNotifications(
 // NodeStatus
 //
 ///////////////////////////////////////////////////////////////////////////////
-NodeStatus::NodeStatus(BinaryDataRef bdr)
-{
-   auto msg = make_shared<Codec_NodeStatus::NodeStatus>();
-   if (!msg->ParseFromArray(bdr.getPtr(), bdr.getSize()))
-      throw runtime_error("invalid node status protobuf msg");
-   ptr_ = msg.get();
-   msgPtr_ = move(msg);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-NodeStatus::NodeStatus(
-   shared_ptr<Codec_NodeStatus::NodeStatus> msg)
-{
-   msgPtr_ = msg;
-   ptr_ = msg.get();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-NodeStatus::NodeStatus(
-   shared_ptr<Codec_BDVCommand::BDVCallback> msg, unsigned i) :
-   msgPtr_(msg)
-{
-   auto& notif = msg->notification(i);
-   ptr_ = &notif.nodestatus();
-}
+NodeStatus::NodeStatus(CoreRPC::NodeState nodeState,
+   CoreRPC::RpcState rpcState, bool isSW, NodeChainStatus& nodeChainState) :
+   nodeState_(nodeState), rpcState_(rpcState), isSegWitEnabled_(isSW),
+   nodeChainStatus_(std::move(nodeChainState))
+{}
 
 ///////////////////////////////////////////////////////////////////////////////
 CoreRPC::NodeState NodeStatus::state() const
 {
-   return (CoreRPC::NodeState)ptr_->state();
+   return nodeState_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 bool NodeStatus::isSegWitEnabled() const
 {
-   if (ptr_->has_segwitenabled())
-      return ptr_->segwitenabled();
-   return false;
+   return isSegWitEnabled_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 CoreRPC::RpcState NodeStatus::rpcState() const
 {
-   if (ptr_->has_rpcstate())
-      return (CoreRPC::RpcState)ptr_->rpcstate();
-   return CoreRPC::RpcState::RpcState_Disabled;
+   return rpcState_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-NodeChainStatus NodeStatus::chainStatus() const
+const NodeChainStatus& NodeStatus::chainStatus() const
 {
-   return NodeChainStatus(ptr_);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-shared_ptr<NodeStatus> NodeStatus::make_new(
-   shared_ptr<Codec_BDVCommand::BDVCallback> msg, unsigned i)
-{
-   auto nss = make_shared<NodeStatus>(NodeStatus(msg, i));
-   return nss;
+   return nodeChainStatus_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 //
-// NodeChainState
+// NodeChainStatus
 //
 ///////////////////////////////////////////////////////////////////////////////
-NodeChainStatus::NodeChainStatus(
-   const Codec_NodeStatus::NodeStatus* ptr) :
-   ptr_(&ptr->chainstatus())
+NodeChainStatus::NodeChainStatus() :
+   chainState_(CoreRPC::ChainState_Unknown), blockSpeed_(0), progressPct_(0),
+   etaSeconds_(UINT64_MAX), blocksLeft_(UINT32_MAX)
+{}
+
+NodeChainStatus::NodeChainStatus(CoreRPC::ChainState chainState,
+   float speed, float pct, uint64_t eta, unsigned blocksLeft) :
+   chainState_(chainState), blockSpeed_(speed), progressPct_(pct),
+   etaSeconds_(eta), blocksLeft_(blocksLeft)
 {}
 
 ///////////////////////////////////////////////////////////////////////////////
 CoreRPC::ChainState NodeChainStatus::state() const
 {
-   return (CoreRPC::ChainState)ptr_->state();
+   return chainState_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 float NodeChainStatus::getBlockSpeed() const
 {
-   return ptr_->blockspeed();
+   return blockSpeed_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 float NodeChainStatus::getProgressPct() const
 {
-   return ptr_->pct();
+   return progressPct_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 uint64_t NodeChainStatus::getETA() const
 {
-   return ptr_->eta();
+   return etaSeconds_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 unsigned NodeChainStatus::getBlocksLeft() const
 {
-   return ptr_->blocksleft();
+   return blocksLeft_;
 }
-
-///////////////////////////////////////////////////////////////////////////////
-//
-// ProgressData
-//
-///////////////////////////////////////////////////////////////////////////////
-ProgressData::ProgressData(BinaryDataRef)
-{
-   auto msg = make_shared<::Codec_NodeStatus::ProgressData>();
-   ptr_ = msg.get();
-   msgPtr_ = msg;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-ProgressData::ProgressData(
-   shared_ptr<::Codec_BDVCommand::BDVCallback> msg, unsigned i) :
-   msgPtr_(msg)
-{
-   auto& notif = msg->notification(i);
-   ptr_ = &notif.progress();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-BDMPhase ProgressData::phase() const
-{
-   return (BDMPhase)ptr_->phase();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-double ProgressData::progress() const
-{
-   return ptr_->progress();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-unsigned ProgressData::time() const
-{
-   return ptr_->time();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-unsigned ProgressData::numericProgress() const
-{
-   return ptr_->numericprogress();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-vector<string> ProgressData::wltIDs() const
-{
-   vector<string> vec;
-   for (int i = 0; i < ptr_->id_size(); i++)
-      vec.push_back(ptr_->id(i));
-
-   return vec;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<ProgressData> ProgressData::make_new(
-   std::shared_ptr<::Codec_BDVCommand::BDVCallback> msg, unsigned i)
-{
-   auto pd = make_shared<ProgressData>(ProgressData(msg, i));
-   return pd;
-}
-

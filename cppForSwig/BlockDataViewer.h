@@ -25,20 +25,23 @@
 #include "bdmenums.h"
 #include "BtcWallet.h"
 #include "ZeroConf.h"
-#include "BDVCodec.h"
 
 typedef enum
 {
    order_ascending,
    order_descending
-}HistoryOrdering;
+} HistoryOrdering;
 
 
 typedef enum
 {
    group_wallet,
    group_lockbox
-}LedgerGroups;
+} LedgerGroups;
+
+namespace capnp {
+   class MessageReader;
+}
 
 class WalletGroup;
 
@@ -59,6 +62,28 @@ struct OpData
    BinaryData spenderHash_;
 };
 
+enum class WalletRegType : int
+{
+   UNSET    = 0,
+   WALLET   = 1,
+   LOCKBOX  = 2
+};
+
+struct WalletRegistrationRequest
+{
+   const std::string& walletId;
+   const std::vector<BinaryData> addresses;
+   const bool isNew;
+   const WalletRegType type;
+
+   WalletRegistrationRequest(const std::string& wId,
+      std::vector<BinaryData>& addrs,
+      bool isnew, WalletRegType wType) :
+      walletId(wId), addresses(std::move(addrs)),
+      isNew(isnew), type(wType)
+   {}
+};
+
 class BlockDataViewer
 {
 public:
@@ -72,17 +97,15 @@ public:
    // blockchain in RAM, each scan will take 30-120 seconds.  Registering makes 
    // sure that the intial blockchain scan picks up wallet-relevant stuff as 
    // it goes, and does a full [re-]scan of the blockchain only if necessary.
-   void registerWallet(std::shared_ptr<::Codec_BDVCommand::BDVCommand>);
-   void registerLockbox(std::shared_ptr<::Codec_BDVCommand::BDVCommand>);
-   void registerAddresses(std::shared_ptr<::Codec_BDVCommand::BDVCommand>);
+   virtual void registerWallet(WalletRegistrationRequest&);
+   void registerAddresses(WalletRegistrationRequest&);
    void       unregisterWallet(const std::string& ID);
-   void       unregisterLockbox(const std::string& ID);
 
    void scanWallets(std::shared_ptr<BDV_Notification>);
    bool hasWallet(const std::string &ID) const;
 
    Tx                getTxByHash(BinaryData const & txHash) const;
-   
+
    std::tuple<uint32_t, uint32_t, std::vector<unsigned>> 
                      getTxMetaData(const BinaryDataRef&, bool) const;
 
@@ -91,7 +114,7 @@ public:
 
    BinaryData        getTxHashForDbKey(const BinaryData& dbKey6) const
    { return db_->getTxHashForLdbKey(dbKey6); }
-   
+
    BinaryData        getSenderScrAddr(TxIn & txin) const;
    int64_t           getSentValue(TxIn & txin) const;
 
@@ -123,13 +146,13 @@ public:
    StoredHeader getMainBlockFromDB(uint32_t height) const;
    StoredHeader getBlockFromDB(uint32_t height, uint8_t dupID) const;
    bool scrAddressIsRegistered(const BinaryData& scrAddr) const;
-   
+
    bool isBDMRunning(void) const 
-   { 
+   {
       if (bdmPtr_ == nullptr)
          return false;
       return bdmPtr_->isRunning(); 
-   } 
+   }
 
    void blockUntilBDMisReady(void) const
    {
@@ -193,14 +216,14 @@ public:
 
    bool isRBF(const BinaryData& txHash) const;
    bool hasScrAddress(const BinaryDataRef&) const;
-   std::set<BinaryDataRef> getAddrSet(void) const;
+   std::set<BinaryData> getAddrSet(void) const;
 
    std::shared_ptr<BtcWallet> getWalletOrLockbox(const std::string& id) const;
 
    std::tuple<uint64_t, uint64_t> getAddrFullBalance(const BinaryData&);
 
    std::unique_ptr<BDV_Notification_ZC> createZcNotification(
-      const std::set<BinaryDataRef>&);
+      const std::set<BinaryData>&);
 
    virtual const std::string& getID(void) const = 0;
 
@@ -265,8 +288,8 @@ public:
    ~WalletGroup();
 
    std::shared_ptr<BtcWallet> getOrSetWallet(const std::string&);
-   void registerAddresses(std::shared_ptr<::Codec_BDVCommand::BDVCommand>);
-   void unregisterWallet(const std::string& IDstr);
+   void registerAddresses(WalletRegistrationRequest&);
+   bool unregisterWallet(const std::string& IDstr);
 
    bool hasID(const std::string &ID) const;
    std::shared_ptr<BtcWallet> getWalletByID(const std::string& ID) const;
@@ -277,7 +300,7 @@ public:
    std::vector<LedgerEntry> getHistoryPage(uint32_t pageId, unsigned updateID,
       bool rebuildLedger, bool remapWallets);
 
-private:   
+private:
    std::map<uint32_t, uint32_t> computeWalletsSSHSummary(
       bool forcePaging, bool pageAnyway);
    bool pageHistory(bool forcePaging, bool pageAnyway);

@@ -157,13 +157,16 @@
 
 #include "ThreadSafeClasses.h"
 #include "BinaryData.h"
-#include "BDVCodec.h"
 #include "ArmoryErrors.h"
 
 class MempoolSnapshot;
 class LedgerEntry;
 class TxIOPair;
 struct ParsedZCData;
+
+namespace capnp {
+   class MessageReader;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 struct ZcPurgePacket
@@ -212,10 +215,6 @@ public:
    ZcNotificationPacket(const std::string& bdvID) :
       bdvID_(bdvID)
    {}
-
-   void toProtobufNotification(
-      std::shared_ptr<::Codec_BDVCommand::BDVCallback>, 
-      const std::vector<LedgerEntry>&) const;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

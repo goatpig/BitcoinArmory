@@ -1039,7 +1039,7 @@ void BlockchainScanner::updateSSH(bool force, int32_t startHeight)
 
       auto scrAddrMapPtr = scrAddrFilter_->getScanFilterAddrMap();
       auto&& subsshparser_result = parseSubSsh(
-         move(sshIter), startHeight, resolveHashes, 
+         move(sshIter), startHeight, resolveHashes,
          getDupForHeight, scrAddrMapPtr, BinaryData());
 
       //update SSH

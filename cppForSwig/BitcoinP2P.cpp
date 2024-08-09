@@ -1295,11 +1295,10 @@ void BitcoinP2P::processReject(unique_ptr<Payload> payload)
 ////////////////////////////////////////////////////////////////////////////////
 void BitcoinP2P::sendMessage(unique_ptr<Payload> payload)
 {
-   auto&& msg = payload->serialize(getMagicWord());
+   auto msg = payload->serialize(getMagicWord());
 
    unique_lock<mutex> lock(writeMutex_);
-   auto socket_payload = make_unique<WritePayload_Raw>();
-   socket_payload->data_ = move(msg);
+   auto socket_payload = make_unique<WritePayload_Raw>(msg);
    socket_->pushPayload(move(socket_payload), nullptr);
 }
 
@@ -1320,8 +1319,7 @@ void BitcoinP2P::sendMessage(vector<unique_ptr<Payload>> payloadVec)
    }
 
    unique_lock<mutex> lock(writeMutex_);
-   auto socket_payload = make_unique<WritePayload_Raw>();
-   socket_payload->data_ = move(msg);
+   auto socket_payload = make_unique<WritePayload_Raw>(msg);
    socket_->pushPayload(move(socket_payload), nullptr);
 }
 

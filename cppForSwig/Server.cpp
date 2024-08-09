@@ -511,12 +511,13 @@ void WebSocketServer::clientInterruptThread()
 
 ///////////////////////////////////////////////////////////////////////////////
 void WebSocketServer::write(const uint64_t& id, const uint32_t& msgid,
-   shared_ptr<Message> message)
+   BinaryData& payload)
 {
-   if (message == nullptr)
+   if (payload.empty()) {
       return;
+   }
 
-   auto msg = make_unique<PendingMessage>(id, msgid, message);
+   auto msg = make_unique<PendingMessage>(id, msgid, payload);
    auto instance = getInstance();
    instance->msgQueue_.push_back(move(msg));
 }
@@ -524,37 +525,34 @@ void WebSocketServer::write(const uint64_t& id, const uint32_t& msgid,
 ///////////////////////////////////////////////////////////////////////////////
 void WebSocketServer::prepareWriteThread()
 {
-   while (true)
-   {
-      unique_ptr<PendingMessage> msg;
-      try
-      {
+   while (true) {
+      std::unique_ptr<PendingMessage> msg;
+      try {
          msg = msgQueue_.pop_front();
       }
-      catch (StopBlockingLoop&)
-      {
+      catch (const StopBlockingLoop&) {
          break;
       }
 
-      if (msg == nullptr)
+      if (msg == nullptr) {
          continue;
+      }
 
       auto statemap = getConnectionStateMap();
-      auto stateIter = statemap->find(msg->id_);
-      if (stateIter == statemap->end())
+      auto stateIter = statemap->find(msg->id);
+      if (stateIter == statemap->end()) {
          continue;
+      }
       auto statePtr = const_cast<ClientConnection*>(&stateIter->second);
 
       //grab state object lock
       unsigned zero = 0;
-      if(!statePtr->writeLock_->compare_exchange_weak(zero, 1))
-      { 
-         msgQueue_.push_back(move(msg));
+      if (!statePtr->writeLock_->compare_exchange_weak(zero, 1)) { 
+         msgQueue_.push_back(std::move(msg));
          continue;
       }
 
-      if (!statePtr->bip151Connection_->connectionComplete())
-      {
+      if (!statePtr->bip151Connection_->connectionComplete()) {
          //aead session uninitialized, kill connection
          return;
       }
@@ -564,27 +562,25 @@ void WebSocketServer::prepareWriteThread()
          bool needs_rekey = false;
          auto rightnow = chrono::system_clock::now();
 
-         if (statePtr->bip151Connection_->rekeyNeeded(msg->message_->ByteSizeLong()))
-         {
+         if (statePtr->bip151Connection_->rekeyNeeded(
+            msg->payload.getSize())) {
             needs_rekey = true;
-         }
-         else
-         {
-            auto time_sec = chrono::duration_cast<chrono::seconds>(
+         } else {
+            auto time_sec = std::chrono::duration_cast<std::chrono::seconds>(
                rightnow - statePtr->outKeyTimePoint_);
-            if (time_sec.count() >= AEAD_REKEY_INVERVAL_SECONDS)
+            if (time_sec.count() >= AEAD_REKEY_INVERVAL_SECONDS) {
                needs_rekey = true;
+            }
          }
-         
-         if (needs_rekey)
-         {
+
+         if (needs_rekey) {
             //create rekey packet
             BinaryData rekeyPacket(BIP151PUBKEYSIZE);
             memset(rekeyPacket.getPtr(), 0, BIP151PUBKEYSIZE);
             
             SerializedMessage ws_msg;
             ws_msg.construct(
-               rekeyPacket.getDataVector(), 
+               rekeyPacket.getDataVector(),
                statePtr->bip151Connection_.get(),
                ArmoryAEAD::BIP151_PayloadType::Rekey);
 
@@ -599,24 +595,10 @@ void WebSocketServer::prepareWriteThread()
          }
       }
 
-      //serialize arg
-      vector<uint8_t> serializedData;
-      if (msg->message_->ByteSizeLong() > 0)
-      {
-         serializedData.resize(msg->message_->ByteSizeLong());
-         auto result = msg->message_->SerializeToArray(
-            &serializedData[0], serializedData.size());
-         if (!result)
-         {
-            LOGERR << "failed to serialize message";
-            return;
-         }
-      }
-
       SerializedMessage ws_msg;
       ws_msg.construct(
-         serializedData, statePtr->bip151Connection_.get(),
-         ArmoryAEAD::BIP151_PayloadType::FragmentHeader, msg->msgid_);
+         msg->payload, statePtr->bip151Connection_.get(),
+         ArmoryAEAD::BIP151_PayloadType::FragmentHeader, msg->msgid);
 
       //push to write map
       writeToSocket(statePtr->wsiPtr_, ws_msg);
@@ -766,38 +748,30 @@ ClientConnection::ClientConnection(
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void ClientConnection::processReadQueue(shared_ptr<Clients> clients)
+void ClientConnection::processReadQueue(std::shared_ptr<Clients> clients)
 {
-   while (run_->load(memory_order_relaxed) != -1)
-   {
+   while (run_->load(std::memory_order_relaxed) != -1) {
       BinaryData packetData;
-      try
-      {
-         packetData = move(readQueue_->pop_front());
-      }
-      catch (IsEmpty&)
-      {
+      try {
+         packetData = std::move(readQueue_->pop_front());
+      } catch (const IsEmpty&) {
          //end loop condition
          return;
       }
 
-      if (packetData.getSize() == 0)
-      {
+      if (packetData.empty()) {
          LOGWARN << "empty command packet";
          continue;
       }
 
-      if (readLeftOverData_.getSize() != 0)
-      {
+      if (!readLeftOverData_.empty()) {
          readLeftOverData_.append(packetData);
-         packetData = move(readLeftOverData_);
+         packetData = std::move(readLeftOverData_);
          readLeftOverData_.clear();
       }
 
-      if (bip151Connection_->connectionComplete())
-      {
-         if(packetData.getSize() < POLY1305MACLEN + 4)
-         { 
+      if (bip151Connection_->connectionComplete()) {
+         if (packetData.getSize() < POLY1305MACLEN + 4) { 
             //append to the leftover data until we have a packet that's at least
             //as large as the MAC length + the encrypted packet size
             readLeftOverData_ = move(packetData);
@@ -810,10 +784,8 @@ void ClientConnection::processReadQueue(shared_ptr<Clients> clients)
             packetData.getPtr(), packetData.getSize(),
             (uint8_t*)packetData.getPtr(), packetData.getSize());
 
-         if (result != 0)
-         {
-            if (result <= WEBSOCKET_MESSAGE_PACKET_SIZE && result > -1)
-            {
+         if (result != 0) {
+            if (result <= WEBSOCKET_MESSAGE_PACKET_SIZE && result > -1) {
                /*
                lws receives packet in the order the counterpart sent them, but
                it may break down a packet into several payloads, dependent on the
@@ -847,70 +819,31 @@ void ClientConnection::processReadQueue(shared_ptr<Clients> clients)
          packetData.resize(plainTextSize);
       }
 
-      auto msgType =
-         WebSocketMessagePartial::getPacketType(packetData.getRef());
-
-      if (msgType > ArmoryAEAD::BIP151_PayloadType::Threshold_Begin)
-      {
+      auto msgType = WebSocketMessagePartial::getPacketType(
+         packetData.getRef());
+      if (msgType > ArmoryAEAD::BIP151_PayloadType::Threshold_Begin) {
          processAEADHandshake(move(packetData));
          continue;
       }
 
-      if (bip151Connection_->getBIP150State() != BIP150State::SUCCESS)
-      {
+      if (bip151Connection_->getBIP150State() != BIP150State::SUCCESS) {
          //can't get this far without fully setup AEAD
          closeConnection();
          continue;
       }
 
       BinaryDataRef bdr((uint8_t*)&id_, 8);
-      auto&& hexID = bdr.toHexStr();
+      auto hexID = bdr.toHexStr();
       auto bdvPtr = clients->get(hexID);
 
-      if (bdvPtr != nullptr)
-      {
-         //create payload
-         auto bdv_payload = make_shared<BDV_Payload>();
-         bdv_payload->bdvPtr_ = bdvPtr;
-         bdv_payload->packetData_ = move(packetData);
-         bdv_payload->bdvID_ = id_;
+      //create payload
+      auto bdv_payload = std::make_shared<BDV_Payload>();
+      bdv_payload->bdvPtr_ = bdvPtr; //can be nullptr
+      bdv_payload->packetData_ = std::move(packetData);
+      bdv_payload->bdvID_ = id_;
 
-         //queue for clients thread pool to process
-         clients->queuePayload(bdv_payload);
-      }
-      else
-      {
-         //unregistered command
-         WebSocketMessagePartial msgObj;
-         msgObj.parsePacket(packetData);
-         if (msgObj.getType() != ArmoryAEAD::BIP151_PayloadType::SinglePacket)
-         {
-            //invalid msg type, kill connection
-            continue;
-         }
-
-         auto&& messageRef = msgObj.getSingleBinaryMessage();
-
-         if (messageRef.getSize() == 0)
-         {
-            //invalid msg, kill connection
-            continue;
-         }
-
-         //process command 
-         auto message = make_shared<::Codec_BDVCommand::StaticCommand>();
-         if (!message->ParseFromArray(messageRef.getPtr(), messageRef.getSize()))
-         {
-            //invalid msg, kill connection
-            continue;
-         }
-
-         auto&& reply = clients->processUnregisteredCommand(
-            id_, message);
-
-         //reply
-         WebSocketServer::write(id_, msgObj.getId(), reply);
-      }
+      //queue for clients thread pool to process
+      clients->queuePayload(bdv_payload);
    }
 }
 

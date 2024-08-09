@@ -166,8 +166,8 @@ private:
 
 public:
    WebSocketClient(const std::string& addr, const std::string& port,
-      const std::string& datadir, const PassphraseLambda&, 
-      const bool& ephemeralPeers, bool oneWayAuth,
+      const std::string& datadir, const PassphraseLambda&,
+      bool ephemeralPeers, bool oneWayAuth,
       std::shared_ptr<RemoteCallback> cbPtr);
 
    ~WebSocketClient()
@@ -179,7 +179,7 @@ public:
    }
 
    //locals
-   void shutdown(void);   
+   void shutdown(void);
    void cleanUp(void);
    std::pair<unsigned, unsigned> 
       getRekeyCount(void) const { return std::make_pair(outerRekeyCount_, innerRekeyCount_); }

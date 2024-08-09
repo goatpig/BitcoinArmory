@@ -27,8 +27,6 @@ int main(int argc, char* argv[])
    startupBIP151CTX();
    startupBIP150CTX(4);
 
-   GOOGLE_PROTOBUF_VERIFY_VERSION;
-
 #ifdef _WIN32
    WSADATA wsaData;
    WORD wVersion = MAKEWORD(2, 0);
@@ -100,7 +98,6 @@ int main(int argc, char* argv[])
 
    //stop all threads and clean up
    WebSocketServer::shutdown();
-   google::protobuf::ShutdownProtobufLibrary();
 
    shutdownBIP151CTX();
    CryptoECDSA::shutdown();

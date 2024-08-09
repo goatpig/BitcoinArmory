@@ -110,10 +110,17 @@ struct AddressBook {
 }
 
 struct BdvRequest {
+   enum WalletType {
+      unset    @0;
+      wallet   @1;
+      lockbox  @2;
+   }
+
    struct RegisterWalletRequest {
       walletId                   @0 : Text;
       isNew                      @1 : Bool;
       addresses                  @2 : List(Address);
+      walletType                 @3 : WalletType;
    }
 
    struct OutpointRequest {
@@ -140,7 +147,6 @@ struct BdvRequest {
       getOutputsForOutpoints     @7 : OutpointRequest;
       getOutputsForAddress       @8 : List(Address);
       updateWalletsLedgerFilter  @9 : List(WalletId);
-      createAddressBook          @10: Void;
    }
 }
 
@@ -157,7 +163,6 @@ struct BdvReply {
       getOutputsForOutpoints     @6 : List(Types.Output);
       getOutputsForAddress       @7 : List(Types.Output);
       updateWalletsLedgerFilter  @8 : Void;
-      createAddressBook          @9 : AddressBook;
    }
 }
 
@@ -232,7 +237,7 @@ struct WalletRequest {
 
       getLedgerDelegate    @3 : Void;
       createAddressBook    @4 : Void;
-      getBalanceAndCount   @5 : Void;
+      getBalanceAndCount   @5 : UInt32;
       getOutputs           @6 : TxoutRequest;
       setConfTarget        @7 : UInt32;
       unregisterAddresses  @8 : List(Address);
@@ -260,7 +265,7 @@ struct AddressRequest {
    union {
       unset                @2 : Void;
 
-      getLedgerDelegate    @3 : Void;
+      getLedgerDelegate    @3 : WalletId;
       getBalanceAndCount   @4 : Void;
       getOutputs           @5 : TxoutRequest;
    }
