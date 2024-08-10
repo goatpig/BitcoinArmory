@@ -627,7 +627,7 @@ struct ScriptUtilsRequest {
    script @0 : Data;
    # method
    union {
-      getTxinScriptType          @1 : GetTxInScriptType;
+      getTxInScriptType          @1 : GetTxInScriptType;
       getTxOutScriptType         @2 : Void;
 
       getSrcAddrForScript        @3 : Void;
