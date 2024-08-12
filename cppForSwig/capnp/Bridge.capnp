@@ -1,9 +1,52 @@
 @0x98fa84da458428ed;
 
-# using Cxx = import "/capnp/c++.capnp";
-# $Cxx.namespace("Armory::Codec::Bridge");
+using Cxx = import "/capnp/c++.capnp";
+$Cxx.namespace("Armory::Codec::Bridge");
 
 using Types = import "Types.capnp";
+
+###############################
+# WalletData
+###############################
+
+struct WalletData {
+   struct AddressData {
+      index             @0 : Int32;
+      addrType          @1 : UInt32;
+      isUsed            @2 : Bool;
+      isChange          @3 : Bool;
+      assetId           @4 : Data;
+      hasPrivKey        @5 : Bool;
+      usesEncryption    @6 : Bool;
+
+      prefixedHash      @7 : Types.Hash;
+      publicKey         @8 : Data;
+      precursorScript   @9 : Data;
+
+      addressString     @10: Text;
+   }
+
+   struct Comment {
+      key @0 : Data;
+      val @1 : Text;
+   }
+
+   ##
+   id                   @0 : Types.WalletId;
+   useCount             @1 : Int64;
+   lookupCount          @2 : Int64;
+   watchingOnly         @3 : Bool;
+   addressTypes         @4 : List(UInt32);
+   defaultAddressType   @5 : UInt32;
+   usesEncryption       @6 : Bool;
+   kdfMemReq            @7 : UInt32;
+
+   label                @8 : Text;
+   desc                 @9 : Text;
+
+   addressData          @10: List(AddressData);
+   comments             @11: List(Comment);
+}
 
 ## RestoreWallet messages
 struct RestorePrompt {
@@ -38,62 +81,25 @@ struct RestoreWalletPayload {
 # CALLBACKS
 ###############################
 
-struct CallbackPush {
-   struct Ready {
-      height @0 : UInt32;
-   }
+struct Notification {
+   #callbackId is set if this notification is the result
+   #of a RPC request that provided said id
+   callbackId        @0 : Text;
 
-   # Structs below were empty in the original BridgeProto.proto
-   struct SetupDone {}
-   struct Disconnected {}
-
-   struct Registered {
-      id @0 : List(Text);
-   }
-
-   struct Refresh {
-      id @0 : List(Text);
-   }
-
-   struct NewBlock {
-      height @0 : UInt32;
-   }
-
-   struct Progress {
-      phase             @0 : UInt32;
-      progress          @1 : Float32;
-      etaSec            @2 : UInt32;
-      progressNumeric   @3 : UInt32;
-
-      id                @4 : List(Text);
-   }
-
-   struct ZeroConf {
-      ledger @0 : Types.Ledger;
-   }
-
-   struct UnlockRequest {
-      encryptionKeyIds @0 : List(Text);
-   }
-
-   callbackId  @0 : Text;
-   referenceId @1 : UInt32;
-
-   # pushPayload
    union {
-      ready          @2 : Ready;
-      setupDone      @3 : SetupDone;
-      registered     @4 : Registered;
-      refresh        @5 : Refresh;
-      newBlock       @6 : NewBlock;
-      disconnected   @7 : Disconnected;
-      progress       @8 : Progress;
+      unset          @1 : Void;
+      ready          @2 : Types.Height;
+      setupDone      @3 : Void;
+      registered     @4 : List(Text);
+      refresh        @5 : List(Text);
+      newBlock       @6 : Types.Height;
+      disconnected   @7 : Void;
+      progress       @8 : Types.ScanProgress;
       nodeStatus     @9 : Types.NodeStatus;
-      zeroConf       @10 : ZeroConf;
-      error          @11 : Text;
-      cleanup        @12 : Bool;
-      unlockRequest  @13 : UnlockRequest;
-
+      zeroConfs      @10: Types.TxLedger;
+      error          @11: Text;
+      cleanup        @12: Void;
+      unlockRequest  @13: List(Data);
    }
 }
 
@@ -111,118 +117,84 @@ struct CallbackReply
 ###############################
 
 struct BlockchainServiceRequest {
-   struct LoadWallets {
-      callbackId @0 : Text;
-   }
    struct RegisterWallet {
       id    @0 : Text;
       isNew @1 : Bool;
    }
 
-   struct BroadcastTx {
-      rawTx @0 : List(Data); 
-   }
-   struct GetTxByHash {
-      txHash @0 : Data;
-   }
-   struct GetHeaderByHeight {
-      height @0 : UInt32;
-   }
-   struct GetBlockTimeByHeight {
-      height @0 : UInt32;
-   }
-   struct EstimateFee {
-      blocks @0 : UInt32;
-      strat  @1 : Text;
-   }
-
-   struct UpdateWalletsLedgerFilter {
-      walletId @0 : List(Text);
-   }
-
-   struct GetHistoryPageForDelegate {
-      delegateId  @0 : Text;
+   struct HistoryPageRequest {
+      delegateId  @0 : Types.DelegateId;
       pageId      @1 : UInt32;
    }
 
-   struct GetHistoryForWalletSelection {
+   struct HistoryForWalletSelection {
       walletId @0 : List(Text);
       order    @1 : Text;
    }
 
-   
    union {
-      shutdown             @0 : Void;
-      setupDb              @1 : Bool;
-      goOnline             @2 : Bool;
-      getNodeStatus        @3 : Types.NodeStatus;
-      loadWallets          @4 : Void;
-      registerWallets      @5 : Void;
+      unset                         @0 : Void;
 
-      registerWallet       @6 : RegisterWallet;
-      broadcastTx          @7 : BroadcastTx;
-      getTxByHash          @8 : GetTxByHash;
-      getHeaderByHeight    @9 : GetHeaderByHeight;
-      getBlockTimeByHeight @10 : GetBlockTimeByHeight;
-      estimateFee          @11 : EstimateFee;
+      shutdown                      @1 : Void;
+      setupDb                       @2 : Void;
+      goOnline                      @3 : Void;
+      getNodeStatus                 @4 : Types.NodeStatus;
+      loadWallets                   @5 : Void;
+      registerWallets               @6 : Void;
 
-      getLedgerDelegateIdForWallets @12 : Void;
-      updateWalletsLedgerFilter     @13 : UpdateWalletsLedgerFilter;
-      getHistoryPageForDelegate     @14 : GetHistoryPageForDelegate;
-      getHistoryForWalletSelection  @15 : GetHistoryForWalletSelection;
+      registerWallet                @7 : RegisterWallet;
+      broadcastTx                   @8 : List(Types.Tx);
+      getTxsByHash                  @9 : List(Types.Hash);
+      getHeadersByHeight            @10: List(Types.Height);
+      getBlockTimeByHeight          @11: UInt32;
+      getFeeSchedule                @12: Text;
+
+      getLedgerDelegate             @13: Void;
+      getDelegateForWalletSelection @14: HistoryForWalletSelection;
+      updateWalletsLedgerFilter     @15: List(Types.WalletId);
    }
 }
 
 struct BlockchainServiceReply {
-   struct FeeEstimate {
-      feeByte  @0 : Float32;
-      smartFee @1 : Bool;
-   }
-
-   struct LedgerHistory {
-      ledger @0 : List(Types.Ledger);
-   }
-
-   struct Tx {
+   struct TxData {
       raw         @0 : Data;
-      height      @1 : UInt32;
-      txIndex     @2 : UInt32;
-      rbf         @3 : Bool;
-      chainedZc   @4 : Bool;
+      hash        @1 : Types.Hash;
+      height      @2 : Types.Height;
+      txIndex     @3 : UInt32;
+      rbf         @4 : Bool;
+      chainedZc   @5 : Bool;
    }
 
    # reply
    union {
-      blockTime         @0 : UInt32;
-      ledgerDelegateId  @1 : Text;
-      headerData        @2 : Data;
-      feeEstimate       @3 : FeeEstimate;
-      ledgerHistory     @4 : LedgerHistory;
-      tx                @5 : Tx;
-      nodeStatus        @6 : Types.NodeStatus;
+      unset                         @0 : Void;
+
+      getNodeStatus                 @1 : Types.NodeStatus;
+      loadWallets                   @2 : List(WalletData);
+      getTxsByHash                  @3 : List(TxData);
+      getHeadersByHeight            @4 : List(Types.Header);
+      getBlockTimeByHeight          @5 : UInt32;
+      getFeeSchedule                @6 : List(Types.FeeSchedule);
+      getLedgerDelegate             @7 : Types.DelegateId;
+      getDelegateForWalletSelection @8 : Types.DelegateId;
    }
 }
 
 ###############################
 # Wallet
 ###############################
-
 struct WalletRequest {
-   struct GetNewAddress {
-      type @0 : UInt32;
-   }
-
-   struct GetChangeAddress {
-      type @0 : UInt32;
-   }
-
-   struct PeekChangeAddress {
-      type @0 : UInt32;
+   struct AddressRequest {
+      union {
+         new         @0 : Void;
+         change      @1 : Void;
+         peekChange  @2 : Void;
+      }
    }
 
    struct ExtendAddressPool {
       count       @0 : UInt32;
-      callbackId  @1 : Text;
+      callbackId  @1 : Types.CallbackId;
    }
 
    struct SetAddressTypeFor {
@@ -230,16 +202,12 @@ struct WalletRequest {
       addressType   @1 : UInt32;
    }
 
-   struct GetLedgerDelegateIdForSrcAddr {
-      hash @0 : Data;
-   }
-
-   struct SetupNewCoinSelectionInstance {
-      height @0 : UInt32;
-   }
-
-   struct GetUtxosForValue {
-      value @0 : UInt64;
+   struct OutputRequest {
+      union {
+         value @0 : Types.CoinAmount;
+         zc    @1 : Void;
+         rbf   @2 : Void;
+      }
    }
 
    struct SetComment {
@@ -252,60 +220,35 @@ struct WalletRequest {
       description  @1 : Text;
    }
 
-   struct CreateBackupString {
-      callbackId @0 : Text;
-   }
-
-   
-   id @0 : Text;
-   # method
+   id                               @0 : Types.WalletId;
    union {
-      getNewAddress                 @1 : GetNewAddress;
-      getChangeAddress              @2 : GetChangeAddress;
-      peekChangeAddress             @3 : PeekChangeAddress;
+      unset                         @1 : Void;
 
-      getHighestUsedIndex           @4 : Void;
-      extendAddressPool             @5 : ExtendAddressPool;
+      getAddress                    @2 : AddressRequest;
+      getHighestUsedIndex           @3 : Void;
+      extendAddressPool             @4 : ExtendAddressPool;
 
-      createBackupString            @6 : CreateBackupString;
-      delete                        @7 : Void;
-      getData                       @8 : WalletData;
+      createBackupString            @5 : Types.CallbackId;
+      delete                        @6 : Void;
+      getData                       @7 : WalletData;
 
-      getAddrCombinedList           @9 : Void;
-      setAddressTypeFor             @10 : SetAddressTypeFor;
+      getAddrCombinedList           @8 : Void;
+      setAddressTypeFor             @9 : SetAddressTypeFor;
 
-      getLedgerDelegateIdForSrcAddr @11 : GetLedgerDelegateIdForSrcAddr;
-      getBalanceAndCount            @12 : Void;
+      getLedgerDelegateIdForSrcAddr @10: Types.ScrAddr;
+      getBalanceAndCount            @11: Void;
 
-      setupNewCoinSelectionInstance @13 : SetupNewCoinSelectionInstance;
-      getUtxosForValue              @14 : GetUtxosForValue;
-      getSpendableZcList            @15 : Void;
-      getRbfTxOutList               @16 : Void;
+      setupNewCoinSelectionInstance @12: Types.Height;
+      getUtxos                      @13: OutputRequest;
 
-      createAddressBook             @17 : Void;
-      setComment                    @18 : SetComment;
-      setLabels                     @19 : SetLabels;
+      createAddressBook             @14: Void;
+      setComment                    @15: SetComment;
+      setLabels                     @16: SetLabels;
    }
 }
 
+####
 struct WalletReply {
-   struct UtxoList {
-      utxo @0 : List(Types.Utxo);
-   }
-
-   struct AddressBook {
-      struct AddressBookEntry {
-         srcAddr @0 : Data;
-         txHash  @1 : Data;
-      }
-
-      address @0 : List(AddressBookEntry);
-   }
-
-   struct MultipleWalletData {
-      wallet @0 : List(WalletData);
-   }
-
    struct BackupString {
       rootClear   @0 : List(Text);
       chainClear  @1 : List(Text);
@@ -318,78 +261,32 @@ struct WalletReply {
 
    # Address Balance
    struct AddressBalanceData {
-      id       @0 : Data;
-      balance  @1 : BalanceAndCount;
+      scrAddr  @0 : Types.ScrAddr;
+      balances @1 : Types.BalanceAndCount;
    }
 
    struct AddressAndBalanceData {
-      balance        @0 : List(AddressBalanceData);
-      updatedAsset   @1 : List(AddressData);
-   }
-
-   struct BalanceAndCount {
-      full        @0 : UInt64;
-      spendable   @1 : UInt64;
-      uncomfirmed @2 : UInt64;
-      count       @3 : UInt64;
+      balances       @0 : List(AddressBalanceData);
+      updatedAssets  @1 : List(WalletData.AddressData);
    }
 
    # reply
    union {
-      highestUsedIndex        @0 : Int32;
-      coinSelectionId         @1 : Text;
-      ledgerDelegateId        @2 : Text;
-      balanceAndCount         @3 : BalanceAndCount;
-      addressAndBalanceData   @4 : AddressAndBalanceData;
-      utxoList                @5 : UtxoList;
-      addressBook             @6 : AddressBook;
+      unset                         @0 : Void;
 
-      addressData             @7 : AddressData;
-      walletData              @8 : WalletData;
-      multipleWallets         @9 : MultipleWalletData;
-      backupString            @10 : BackupString;
+      getAddress                    @1 : WalletData.AddressData;
+      getHighestUsedIndex           @2 : Int32;
+      extendAddressPool             @3 : WalletData;
+      createBackupString            @4 : BackupString;
+      getData                       @5 : WalletData;
+      getAddressCombinedList        @6 : AddressAndBalanceData;
+      setAddressTypeFor             @7 : WalletData.AddressData;
+      getLedgerDelegateIdForSrcAddr @8 : Types.DelegateId;
+      getBalanceAndCount            @9 : Types.BalanceAndCount;
+      setupNewCoinSelectionInstance @10: Text;
+      getUtxos                      @11: List(Types.Output);
+      createAddressBook             @12: Types.AddressBook;
    }
-}
-
-# Wallet Data
-
-struct AddressData {
-   id                @0 : Int32;
-   addrType          @1 : UInt32;
-   isUsed            @2 : Bool;
-   isChange          @3 : Bool;
-   assetId           @4 : Data;
-   hasPrivKey        @5 : Bool;
-   useEncryption     @6 : Bool;
-
-   prefixedHash      @7 : Data;
-   publicKey         @8 : Data;
-   precursorScript   @9 : Data;
-
-   addressString     @10 : Text;
-}
-
-struct WalletData {
-   id                   @0 : Text;
-   useCount             @1 : Int64;
-   lookupCount          @2 : Int64;
-   watchingOnly         @3 : Bool;
-   addressType          @4 : List(UInt32);
-   defaultAddressType   @5 : UInt32;
-   useEncryption        @6 : Bool;
-   kdfMemReq            @7 : UInt32;
-
-   label                @8 : Text;
-   desc                 @9 : Text;
-
-   addressData          @10 : List(AddressData);
-
-   struct Comment {
-      key @0 : Data;
-      val @1 : Data;
-   }
-
-   comments             @11 : List(Comment);
 }
 
 ###############################
@@ -404,59 +301,56 @@ struct CoinSelectionRequest {
    }
 
    struct SelectUTXOs {
-      flags @0 : UInt32;
-      # fee
-   union {
-         flatFee @1 : UInt64;
-         feeByte @2 : Float32;
+      flags       @0 : UInt32;
+      union {
+         flatFee  @1 : UInt64;
+         feeByte  @2 : Float32;
       }
    }
 
-   struct ProcessCustomUtxoList {
-      utxos @0 : List(Types.Utxo);
-      flags @1 : UInt32;
-      # fee
-   union {
-            flatFee @2 : UInt64;
-            feeByte @3 : Float32;
+   struct CustomUtxoList {
+      utxos       @0 : List(Types.Output);
+      flags       @1 : UInt32;
+      union {
+         flatFee  @2 : UInt64;
+         feeByte  @3 : Float32;
       }
    }
 
-   struct GetFeeForMaxVal {
-      utxos    @0 : List(Types.Utxo);
+   struct FeeForMaxVal {
+      utxos    @0 : List(Types.Output);
       feeByte  @1 : Float32;
    }
-   
+
    id @0 : Text;
-   # method
    union {
-      cleanup                 @1 : Void;
-      reset                   @2 : Void;
+      unset                   @1 : Void;
 
-      setRecipient            @3 : SetRecipient;
-      selectUtxos             @4 : SelectUTXOs;
+      cleanup                 @2 : Void;
+      reset                   @3 : Void;
 
-      getUtxoSelection        @5 : Void;
-      getFlatFee              @6 : Void;
-      getFeeByte              @7 : Void;
-      getSizeEstimate         @8 : Void;
+      setRecipient            @4 : SetRecipient;
+      selectUtxos             @5 : SelectUTXOs;
 
-      processCustomUtxoList   @9 : ProcessCustomUtxoList;
-      getFeeForMaxVal         @10 : GetFeeForMaxVal;
+      getUtxoSelection        @6 : Void;
+      getFlatFee              @7 : Void;
+      getFeeByte              @8 : Void;
+      getSizeEstimate         @9 : Void;
+
+      processCustomUtxoList   @10: CustomUtxoList;
+      getFeeForMaxVal         @11: FeeForMaxVal;
    }
 }
 
 struct CoinSelectionReply {
-   struct UtxoList {
-      utxo @0 : List(Types.Utxo);
-   }
-
-   # reply
    union {
-      flatFee        @0 : UInt64;
-      feeByte        @1 : Float32;
-      sizeEstimate   @2 : UInt32;
-      utxoList       @3 : UtxoList;
+      unset             @0 : Void;
+
+      selectUtxos       @1 : List(Types.Output);
+      getFlatFee        @2 : Types.CoinAmount;
+      getFeeByte        @3 : Float32;
+      getSizeEstimate   @4 : UInt32;
+      getFeeForMaxVal   @5 : Types.CoinAmount;
    }
 }
 
@@ -466,96 +360,84 @@ struct CoinSelectionReply {
 ###############################
 
 struct SignerRequest {
-   struct SetVersion {
-      version @0 : UInt32;
-   }
-   struct SetLockTime {
-      lockTime @0 : UInt32;
-   }
-
    struct AddSpenderByOutpoint {
-      hash     @0 : Data;
+      hash     @0 : Types.Hash;
       txOutId  @1 : UInt32;
       sequence @2 : UInt32;
    }
 
    struct PopulateUtxo {
-      hash     @0 : Data;
+      hash     @0 : Types.Hash;
       script   @1 : Data;
       txOutId  @2 : UInt32;
-      value    @3 : UInt64;
+      value    @3 : Types.CoinAmount;
    }
 
    struct AddRecipient{
       script   @0 : Data;
-      value    @1 : UInt64;
-   }
-
-   struct ToTxSigCollect {
-      ustxType @0 : UInt32;
-   }
-   struct FromTxSigCollect{
-      txSigCollect @0 : Text;
+      value    @1 : Types.CoinAmount;
    }
 
    struct SignTx {
-      walletId    @0 : Text;
+      walletId    @0 : Types.WalletId;
       callbackId  @1 : Text;
    }
-   struct GetSignedStateForInput {
-      inputId @0 : UInt32;
-   }
 
-   struct Resolve {
-      walletId @0 : Text;
-   }
-   struct AddSupportingTx {
-      rawTx @0 : Data;
-   }
-
-   id @0 : Text;
-   # method
+   id                         @0 : Text;
    union {
-      getNew                  @1 : Void;
-      cleanup                 @2 : Void;
+      unset                   @1 : Void;
 
-      setVersion              @3 : SetVersion;
-      setLockTime             @4 : SetLockTime;
+      getNew                  @2 : Void;
+      cleanup                 @3 : Void;
 
-      addSpenderByOutpoint    @5 : AddSpenderByOutpoint;
-      populateUtxo            @6 : PopulateUtxo;
-      addRecipient            @7: AddRecipient;
+      setVersion              @4 : UInt32;
+      setLockTime             @5 : UInt32;
 
-      toTxSigCollect          @8 : ToTxSigCollect;
-      fromTxSigCollect        @9 : FromTxSigCollect;
+      addSpenderByOutpoint    @6 : AddSpenderByOutpoint;
+      populateUtxo            @7 : PopulateUtxo;
+      addRecipient            @8 : AddRecipient;
 
-      signTx                  @10 : SignTx;
-      getSignedTx             @11 : Void;
-      getUnsignedTx           @12 : Void;
-      getSignedStateForInput  @13 : GetSignedStateForInput;
+      toTxSigCollect          @9 : UInt32;
+      fromTxSigCollect        @10: Text;
 
-      resolve                 @14 : Resolve;
-      addSupportingTx         @15 : AddSupportingTx;
+      signTx                  @11: SignTx;
+      getSignedTx             @12: Void;
+      getUnsignedTx           @13: Void;
+      getSignedStateForInput  @14: UInt32;
 
-      fromType                @16 : Bool;
-      canLegacySerialize      @17 : Bool;
+      resolve                 @15: Types.WalletId;
+      addSupportingTx         @16: Types.Tx;
+
+      fromType                @17: Void;
+      canLegacySerialize      @18: Void;
    }
 }
 
 struct SignerReply {
    struct InputSignedState {
-      isValid     @0 : Bool;
-      m           @1 : UInt32;
-      n           @2 : UInt32;
-
-      sigCount    @3 : UInt32;
-
       struct PubKeySignatureState {
          pubKey   @0 : Data;
          hasSig   @1 : Bool;
       }
 
-      signState   @4 : List(PubKeySignatureState);
+      isValid     @0 : Bool;
+      mCount      @1 : UInt32;
+      nCount      @2 : UInt32;
+
+      sigCount    @3 : UInt32;
+      signStates  @4 : List(PubKeySignatureState);
+   }
+
+   union {
+      unset                   @0 : Void;
+
+      getNew                  @1 : Text;
+      toTxSigCollect          @2 : Text;
+      getSignedTx             @3 : Types.Tx;
+      getUnsignedTx           @4 : Types.Tx;
+      getSignedStateForInput  @5 : InputSignedState;
+      fromType                @6 : UInt32;
+      canLegacySerialize      @7 : Bool;
    }
 }
 
@@ -564,20 +446,6 @@ struct SignerReply {
 ###############################
 
 struct UtilsRequest {
-   struct GenerateRandomHex {
-      length @0 : UInt32;
-   }
-   struct GetHash160 {
-      data @0 : Data;
-   }
-
-   struct GetSrcAddrForAddrStr {
-      address @0 : Text;
-   }
-   struct GetNameForAddrType {
-      addressType @0 : Int32;
-   }
-
    struct CreateWalletStruct
    {
       lookup            @0 : UInt32;
@@ -589,105 +457,129 @@ struct UtilsRequest {
       description       @5 : Text;
    }
 
-   # method
    union {
-      generateRandomHex    @0 : GenerateRandomHex;
-      getHash160           @1 : GetHash160;
+      unset                @0 : Void;
 
-      getSrcAddrForAddrStr @2 : GetSrcAddrForAddrStr;
-      getNameForAddrType   @3 : GetNameForAddrType;
-
+      generateRandomHex    @1 : UInt32;
+      getHash160           @2 : Data;
+      getNameForAddrType   @3 : Int32;
       createWallet         @4 : CreateWalletStruct;
    }
 }
 
 struct UtilsReply {
-   # reply
    union {
-      randomHex         @0 : Text;
-      addressTypeName   @1 : Text;
-      walletId          @2 : Text;
-      hash              @3 : Data;
-      srcAddr           @4 : Data;
+      unset                @0 : Void;
+
+      generateRandomHex    @1 : Text;
+      getHash160           @2 : Types.Hash;
+      getNameForAddrType   @3 : Text;
+      createWallet         @4 : Types.WalletId;
    }
 }
-
 
 ###############################
 # Script Utils
 ###############################
 
 struct ScriptUtilsRequest {
+   script                        @0 : Data;
 
-   struct GetTxInScriptType {
-      hash @0 : Data;
-   }
-
-   
-   script @0 : Data;
-   # method
    union {
-      getTxInScriptType          @1 : GetTxInScriptType;
-      getTxOutScriptType         @2 : Void;
+      unset                      @1 : Void;
 
-      getSrcAddrForScript        @3 : Void;
-      getLastPushDataInScript    @4 : Void;
-      getTxOutScriptForSrcAddr   @5 : Void;
-      getAddrStrForSrcAddr       @6 : Void;
+      getTxInScriptType          @2 : Types.Hash;
+      getTxOutScriptType         @3 : Void;
+      getSrcAddrForScript        @4 : Void;
+      getLastPushDataInScript    @5 : Void;
+      getTxOutScriptForScrAddr   @6 : Types.ScrAddr;
+      getAddrStrForScrAddr       @7 : Void;
+      getScrAddrForAddrStr       @8 : Text;
    }
 }
 
 struct ScriptUtilsReply {
-   # reply
    union {
-      txInScriptType    @0 : UInt32;
-      txOutScriptType   @1 : UInt32;
-      addressString     @2 : Text;
-      srcAddr           @3 : Data;
-      pushData          @4 : Data;
-      scriptData        @5 : Data;
+      unset                      @0 : Void;
+
+      getTxInScriptType          @1 : UInt32;
+      getTxOutScriptType         @2 : UInt32;
+      getSrcAddrForScript        @3 : Types.ScrAddr;
+      getLastPushDataInScript    @4 : Data;
+      getTxOutScriptForScrAddr   @5 : Data;
+      getAddrStrForScrAddr       @6 : Text;
+      getScrAddrForAddrStr       @7 : Types.ScrAddr;
    }
 }
 
+###############################
+# Ledger Delegates
+###############################
+struct LedgerDelegateRequest {
+   id                @0 : Types.DelegateId;
+
+   union {
+      unset          @1 : Void;
+
+      getPageCount   @2 : Void;
+      getPages       @3 : Types.PageRequest;
+   }
+}
+
+struct LedgerDelegateReply {
+   union {
+      unset          @0 : Void;
+
+      getPageCount   @1 : UInt32;
+      getPages       @2 : List(Types.TxLedger);
+   }
+}
 
 ###############################
 # Request/Reply
 ###############################
 
-struct Request {
-   referenceId @0 : UInt32;
+struct ToBridge {
+   referenceId @0 : UInt64;
 
    # method
    union {
-      service        @1 : BlockchainServiceRequest;
-      wallet         @2 : WalletRequest;
-      coinSelection  @3 : CoinSelectionRequest;
-      signer         @4 : SignerRequest;
-      utils          @5 : UtilsRequest;
-      scriptUtils    @6 : ScriptUtilsRequest;
-      callbackReply  @7 : CallbackReply;
+      unset          @1 : Void;
+
+      service        @2 : BlockchainServiceRequest;
+      wallet         @3 : WalletRequest;
+      coinSelection  @4 : CoinSelectionRequest;
+      signer         @5 : SignerRequest;
+      utils          @6 : UtilsRequest;
+      scriptUtils    @7 : ScriptUtilsRequest;
+      delegate       @8 : LedgerDelegateRequest;
    }
 }
 
-struct Reply {
-   success        @0 : Bool;
-   referenceId    @1 : UInt32;
-   error          @2 : Text;
+struct RpcReply {
+   success           @0 : Bool;
+   referenceId       @1 : UInt64;
+   error             @2 : Text;
 
    # replyPayload
    union {
-      service        @3 : BlockchainServiceReply;
-      wallet         @4 : WalletReply;
-      coinSelection  @5 : CoinSelectionReply;
-      signer         @6 : SignerReply;
-      utils          @7 : UtilsReply;
-      scriptUtils    @8 : ScriptUtilsReply;
+      unset          @3 : Void;
+
+      service        @4 : BlockchainServiceReply;
+      wallet         @5 : WalletReply;
+      coinSelection  @6 : CoinSelectionReply;
+      signer         @7 : SignerReply;
+      utils          @8 : UtilsReply;
+      scriptUtils    @9 : ScriptUtilsReply;
+      delegate       @10: LedgerDelegateReply;
    }
 }
 
-struct Payload {
+struct FromBridge {
    union {
-      reply    @0 : Reply;
-      callback @1 : CallbackPush;
+      unset          @0 : Void;
+
+      reply          @1 : RpcReply;
+      notification   @2 : Notification;
    }
 }

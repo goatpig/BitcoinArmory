@@ -3,13 +3,25 @@
 using Cxx = import "/capnp/c++.capnp";
 $Cxx.namespace("Armory::Codec::Types");
 
-using Hash     = Data;
-using Header   = Data;
-using Tx       = Data;
+## base types ##
+using Hash        = Data;
+using Header      = Data;
+using Tx          = Data;
+using ScrAddr     = Data;
 
+using WalletId    = Text;
+using SignerId    = Text;
+using DelegateId  = Text;
+using BdvId       = Text;
+using CallbackId  = Text;
+
+using Height      = UInt32;
+using CoinAmount  = UInt64;
+
+## outputs ##
 struct Output {
-   value       @0 : UInt64;
-   txHeight    @1 : UInt32;
+   value       @0 : CoinAmount;
+   txHeight    @1 : Height;
    txIndex     @2 : UInt32;
    txOutIndex  @3 : UInt16;
    txHash      @4 : Hash;
@@ -21,50 +33,102 @@ struct Outpoint {
    index       @1 : UInt16;
 }
 
-###############################
-# DATA TYPES
-###############################
+## bitcoin node & db status ##
+struct ChainStatus
+{
+   enum ChainState {
+      unknown  @0;
+      syncing  @1;
+      ready    @2;
+   }
 
-struct Ledger {
-   value          @0 : Int64;
-   hash           @1 : Data;
-   id             @2 : Text;
-   height         @3 : UInt32;
-   txIndex        @4 : UInt32;
-   txTime         @5 : UInt32;
-   coinbase       @6 : Bool;
-   sentToSelf     @7 : Bool;
-   changeBack     @8 : Bool;
-   chainedZc      @9 : Bool;
-   witness        @10 : Bool;
-   rbf            @11 : Bool;
-   scrAddr        @12 : List(Data);
+   chainState  @0 : ChainState;
+   blockSpeed  @1 : Float32;
+   progress    @2 : Float32;
+   eta         @3 : UInt64;
+   blocksLeft  @4 : UInt32;
 }
 
 struct NodeStatus {
-   struct NodeChainStatus {
-      chainState  @0 : UInt32;
-      blockSpeed  @1 : Float32;
-      progressPct @2 : Float32;
-      eta         @3 : UInt64;
-      blocksLeft  @4 : UInt32;
+   enum NodeState
+   {
+      offline  @0;
+      online   @1;
+      offsync  @2;
    }
 
-   isValid           @0 : Bool;
-   nodeState         @1 : UInt32;
-   isSegwitEnabled   @2 : Bool;
-   rpcState          @3 : UInt32;
-   chainStatus       @4 : NodeChainStatus;
+   enum RpcState
+   {
+      disabled @0;
+      badAuth  @1;
+      online   @2;
+      error28  @3;
+   }
+
+   node        @0 : NodeState;
+   rpc         @1 : RpcState;
+   isSW        @2 : Bool;
+   chain       @3 : ChainStatus;
 }
 
-struct Utxo {
-   txHash      @0 : Data;
-   txOutIndex  @1 : UInt32;
+struct ScanProgress {
+   phase             @0 : UInt32;
+   progress          @1 : Float32;
+   time              @2 : UInt32;
+   numericProgress   @3 : UInt32;
+   ids               @4 : List(Text);
+}
 
-   value       @2 : UInt64;
-   txHeight    @3 : UInt32;
-   txIndex     @4 : UInt32;
+struct FeeSchedule {
+   target   @0 : UInt32;
+   feeByte  @1 : Float32;
+   smartFee @2 : Bool;
+}
 
-   script      @5 : Data;
-   scrAddr     @6 : Data;
+## ledgers ##
+struct PageRequest {
+   #these are page ids
+   from  @0 : UInt32;
+   to    @1 : UInt32;
+}
+
+struct TxLedger {
+   struct LedgerEntry {
+      balance        @0 : Int64;
+
+      txHeight       @1 : Height;
+      txHash         @2 : Hash;
+      txOutIndex     @3 : UInt16;
+      txTime         @4 : UInt32;
+
+      isCoinbase     @5 : Bool;
+      isChangeBack   @6 : Bool;
+      isSTS          @7 : Bool;
+      isOptInRBF     @8 : Bool;
+      isChainedZC    @9 : Bool;
+      isWitness      @10: Bool;
+
+      walletId       @11: WalletId;
+      scrAddrs       @12: List(Data);
+   }
+
+   ledgers           @0 : List(LedgerEntry);
+}
+
+## balance ##
+struct BalanceAndCount {
+   full        @0 : CoinAmount;
+   spendable   @1 : CoinAmount;
+   unconfirmed @2 : CoinAmount;
+   txnCount    @3 : UInt32;
+}
+
+## address book ##
+struct AddressBook {
+   struct Entry {
+      scrAddr  @0 : ScrAddr;
+      txHashes @1 : List(Hash);
+   }
+
+   entries     @0 : List(Entry);
 }
