@@ -108,8 +108,8 @@ public:
 ///////////////////////////////////////////////////////////////////////////////
 struct CombinedBalances
 {
-   BinaryData walletId_;
-      
+   std::string walletId;
+
    /*
    {
       fullBalance,
@@ -118,7 +118,7 @@ struct CombinedBalances
       wltTxnCount
    }
    */
-   std::vector<uint64_t> walletBalanceAndCount_;
+   std::vector<uint64_t> walletBalanceAndCount;
 
    /*
    {
@@ -126,40 +126,21 @@ struct CombinedBalances
          {
             fullBalance,
             spendableBalance,
-            unconfirmedBalance
+            unconfirmedBalance,
+            txnCount
          }
    }
    */
-
-   std::map<BinaryData, std::vector<uint64_t>> addressBalances_;
+   std::map<BinaryData, std::vector<uint64_t>> addressBalances;
 
    bool operator<(const CombinedBalances& rhs) const
    {
-      return walletId_ < rhs.walletId_;
+      return walletId < rhs.walletId;
    }
 
-   bool operator<(const BinaryData& rhs) const
+   bool operator<(const std::string& rhs) const
    {
-      return walletId_ < rhs;
-   }
-};
-
-///////////////////////////////////////////////////////////////////////////////
-struct CombinedCounts
-{
-   BinaryData walletId_;
-      
-   /*
-   {
-      scrAddr (prefixed): txn count
-   }
-   */
-      
-   std::map<BinaryData, uint64_t> addressTxnCounts_;
-
-   bool operator<(const CombinedCounts& rhs) const
-   {
-      return walletId_ < rhs.walletId_;
+      return walletId < rhs;
    }
 };
 
@@ -203,7 +184,7 @@ namespace AsyncClient
    typedef std::function<void(ReturnMessage<TxResult>)> TxCallback;
 
    typedef std::map<BinaryData, TxResult> TxBatchResult;
-   typedef std::function<void(ReturnMessage<TxBatchResult>)> TxBatchCallback; 
+   typedef std::function<void(ReturnMessage<TxBatchResult>)> TxBatchCallback;
 
    class BlockDataViewer;
 
@@ -221,8 +202,9 @@ namespace AsyncClient
       LedgerDelegate(std::shared_ptr<SocketPrototype>,
          const std::string&, const std::string&);
 
-      void getHistoryPage(uint32_t id,
-         std::function<void(ReturnMessage<std::vector<DBClientClasses::LedgerEntry>>)>);
+      void getHistoryPages(uint32_t from, uint32_t to,
+         std::function<void(ReturnMessage<
+            std::vector<DBClientClasses::HistoryPage>>)>);
       void getPageCount(std::function<void(ReturnMessage<uint64_t>)>) const;
 
       const std::string& getID(void) const { return delegateID_; }
@@ -273,6 +255,8 @@ namespace AsyncClient
 
       void getOutputs(std::function<void(ReturnMessage<std::vector<UTXO>>)>);
       const BinaryData& getScrAddr(void) const { return scrAddr_; }
+      void getLedgerDelegate(
+         std::function<void(ReturnMessage<LedgerDelegate>)>);
 
       void setComment(const std::string& comment) { comment_ = comment; }
       const std::string& getComment(void) const { return comment_; }
@@ -296,12 +280,10 @@ namespace AsyncClient
       void getBalancesAndCount(uint32_t topBlockHeight,
          std::function<void(ReturnMessage<std::vector<uint64_t>>)>);
 
-      void getUTXOsForValue(uint64_t val, 
+      void getUTXOs(uint64_t val, bool, bool,
          std::function<void(ReturnMessage<std::vector<UTXO>>)>);
 
-      void getHistoryPage(uint32_t id,
-         std::function<void(ReturnMessage<std::vector<DBClientClasses::LedgerEntry>>)>);
-      ScrAddrObj getScrAddrObjByKey(const BinaryData&,
+      ScrAddrObj getScrAddrObj(const BinaryData&,
          uint64_t, uint64_t, uint64_t, uint32_t);
 
       virtual void registerAddresses(
@@ -311,6 +293,8 @@ namespace AsyncClient
 
       void createAddressBook(
          std::function<void(ReturnMessage<std::vector<AddressBookEntry>>)>) const;
+      void getLedgerDelegate(
+         std::function<void(ReturnMessage<LedgerDelegate>)>);
 
       void setUnconfirmedTarget(unsigned);
       std::string walletID(void) const { return walletID_; }
@@ -349,11 +333,12 @@ namespace AsyncClient
 
    public:
       Blockchain(const BlockDataViewer&);
-      void getHeaderByHash(const BinaryData& hash, 
-         std::function<void(ReturnMessage<DBClientClasses::BlockHeader>)>);
-      void getHeaderByHeight(
-         unsigned height, 
-         std::function<void(ReturnMessage<DBClientClasses::BlockHeader>)>);
+      void getHeadersByHash(const std::set<BinaryDataRef>& hash,
+         std::function<void(
+            ReturnMessage<std::vector<DBClientClasses::BlockHeader>>)>);
+      void getHeadersByHeight(const std::vector<unsigned> heights,
+         std::function<void(
+            ReturnMessage<std::vector<DBClientClasses::BlockHeader>>)>);
    };
 
    /////////////////////////////////////////////////////////////////////////////
@@ -387,8 +372,8 @@ namespace AsyncClient
 
    public:
       ~BlockDataViewer(void);
-      BtcWallet instantiateWallet(const std::string& id);
-      Lockbox instantiateLockbox(const std::string& id);
+      BtcWallet getWalletObj(const std::string& id);
+      Lockbox getLockboxObj(const std::string& id);
 
       //BIP15x
       std::pair<unsigned, unsigned> getRekeyCount(void) const;
@@ -417,6 +402,8 @@ namespace AsyncClient
 
       //ledgers
       void updateWalletsLedgerFilter(const std::vector<std::string>& wltIdVec);
+      void getLedgerDelegate(
+         std::function<void(ReturnMessage<LedgerDelegate>)>);
 
       //header data
       Blockchain blockchain(void);
@@ -427,7 +414,10 @@ namespace AsyncClient
       void getFeeSchedule(const std::string&, std::function<void(ReturnMessage<
             std::map<unsigned, DBClientClasses::FeeEstimateStruct>>)>);
 
-      //outputs
+      //balances & outputs
+      void getCombinedBalances(std::function<void(
+         ReturnMessage<std::map<std::string, CombinedBalances>>)>);
+
       void getUTXOsForAddress(std::set<BinaryData>&,
          std::function<void(ReturnMessage<std::vector<UTXO>>)>);
 
@@ -446,7 +436,7 @@ namespace AsyncClient
       void broadcastZC(const std::vector<BinaryData>& rawTxVec);
       void broadcastThroughRPC(const BinaryData& rawTx);
 
-      void getTxByHash(
+      void getTxsByHash(
          const std::set<BinaryData>&, const TxBatchCallback&);
    };
 };

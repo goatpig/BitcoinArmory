@@ -53,7 +53,7 @@ namespace {
    }
 
    void historyPageToCapn(const std::vector<LedgerEntry>& page,
-      HistoryPage::Builder& result)
+      Codec::Types::TxLedger::Builder& result)
    {
       auto capnLes = result.initLedgers(page.size());
       unsigned i=0;
@@ -925,12 +925,12 @@ void BDV_Server_Object::processNotification(
 
          auto& nodeStatus = payload->status_;
 
-         nodeNotif.setNode((Codec::BDV::NodeStatus::NodeState)nodeStatus.state_);
+         nodeNotif.setNode((Codec::Types::NodeStatus::NodeState)nodeStatus.state_);
          nodeNotif.setIsSW(nodeStatus.SegWitEnabled_);
-         nodeNotif.setRpc((Codec::BDV::NodeStatus::RpcState)nodeStatus.rpcState_);
+         nodeNotif.setRpc((Codec::Types::NodeStatus::RpcState)nodeStatus.rpcState_);
 
          auto chainNotif = nodeNotif.getChain();
-         chainNotif.setChainState((Codec::BDV::ChainStatus::ChainState)
+         chainNotif.setChainState((Codec::Types::ChainStatus::ChainState)
             nodeStatus.chainStatus_.state());
          chainNotif.setBlockSpeed(nodeStatus.chainStatus_.getBlockSpeed());
          chainNotif.setEta(nodeStatus.chainStatus_.getETA());

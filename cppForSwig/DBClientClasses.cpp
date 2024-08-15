@@ -18,7 +18,7 @@ using namespace DBClientClasses;
 
 namespace {
    std::vector<std::shared_ptr<LedgerEntry>> capnToLedgers(
-      Armory::Codec::BDV::HistoryPage::Reader& page)
+      Armory::Codec::Types::TxLedger::Reader& page)
    {
       std::vector<std::shared_ptr<LedgerEntry>> result;
       auto ledgers = page.getLedgers();
@@ -55,7 +55,7 @@ namespace {
    }
 
    std::shared_ptr<NodeStatus> capnToNodeStatus(
-      Armory::Codec::BDV::NodeStatus::Reader nodeStatus)
+      Armory::Codec::Types::NodeStatus::Reader nodeStatus)
    {
       if (nodeStatus.hasChain()) {
          auto chainCapn = nodeStatus.getChain();

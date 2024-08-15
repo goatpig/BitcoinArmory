@@ -41,7 +41,7 @@ endif
 
 LIBBTC_FLAGS =
 
-AM_CXXFLAGS =
+AM_CXXFLAGS = -Wfatal-errors
 
 # Revisit this line later. RPATH is needed for portability purposes. For now,
 # install_name_tool works around portability issues on macOS but RPATH probably
@@ -71,10 +71,9 @@ KEYMANAGER_SOURCE_FILES = KeyManager.cpp
 
 CPPBRIDGE_SOURCE_FILES = BridgeAPI/CppBridge.cpp \
 	BridgeAPI/BridgeMain.cpp \
-	BridgeAPI/ProtobufConversions.cpp \
 	BridgeAPI/BridgeSocket.cpp \
 	BridgeAPI/WalletManager.cpp \
-	BridgeAPI/ProtobufCommandParser.cpp \
+	BridgeAPI/ProtoCommandParser.cpp \
 	BridgeAPI/PassphrasePrompt.cpp
 
 LIBTREZORCRYPTO_SOURCE_FILES = $(LIBBTC_LIBDIR)/src/trezor-crypto/bip39.c \
@@ -85,6 +84,7 @@ LIBTREZORCRYPTO_SOURCE_FILES = $(LIBBTC_LIBDIR)/src/trezor-crypto/bip39.c \
 	$(LIBBTC_LIBDIR)/src/trezor-crypto/rand.c
 
 ARMORYWALLETS_SOURCE_FILES = Wallets/BIP32_Node.cpp \
+	capnp/Types.capnp.c++ \
 	capnp/Bridge.capnp.c++ \
 	Wallets/Addresses.cpp \
 	Wallets/DecryptedDataContainer.cpp \
@@ -157,7 +157,8 @@ ARMORYCLI_SOURCE_FILES = BDM_mainthread.cpp \
 	TerminalPassphrasePrompt.cpp \
 	gtest/NodeUnitTest.cpp
 
-ARMORYCOMMON_SOURCE_FILES = capnp/BDV.capnp.c++ \
+ARMORYCOMMON_SOURCE_FILES = capnp/Types.capnp.c++ \
+	capnp/BDV.capnp.c++ \
 	AsyncClient.cpp \
 	BinaryData.cpp \
 	ArmoryConfig.cpp \

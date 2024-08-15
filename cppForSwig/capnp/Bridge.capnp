@@ -78,38 +78,36 @@ struct RestoreWalletPayload {
 }
 
 ###############################
-# CALLBACKS
+# Notifications
 ###############################
 
 struct Notification {
    #callbackId is set if this notification is the result
    #of a RPC request that provided said id
    callbackId        @0 : Text;
+   counter           @1 : UInt32;
 
    union {
-      unset          @1 : Void;
-      ready          @2 : Types.Height;
-      setupDone      @3 : Void;
-      registered     @4 : List(Text);
-      refresh        @5 : List(Text);
-      newBlock       @6 : Types.Height;
-      disconnected   @7 : Void;
-      progress       @8 : Types.ScanProgress;
-      nodeStatus     @9 : Types.NodeStatus;
-      zeroConfs      @10: Types.TxLedger;
-      error          @11: Text;
-      cleanup        @12: Void;
-      unlockRequest  @13: List(Data);
+      unset          @2 : Void;
+      ready          @3 : Types.Height;
+      setupDone      @4 : Void;
+      registered     @5 : List(Text);
+      refresh        @6 : List(Text);
+      newBlock       @7 : Types.Height;
+      disconnected   @8 : Void;
+      progress       @9 : Types.ScanProgress;
+      nodeStatus     @10: Types.NodeStatus;
+      zeroConfs      @11: Types.TxLedger;
+      error          @12: Text;
+      cleanup        @13: Void;
+      unlockRequest  @14: List(Text);
    }
 }
 
-struct CallbackReply
+struct NotificationReply
 {
    success     @0 : Bool;
-   referenceId @1 : UInt32;
-
-   # Single oneof entry in BridgeProto.proto:
-   passphrase  @2 : Text;
+   passphrase  @1 : Text;
 }
 
 ###############################
@@ -122,24 +120,14 @@ struct BlockchainServiceRequest {
       isNew @1 : Bool;
    }
 
-   struct HistoryPageRequest {
-      delegateId  @0 : Types.DelegateId;
-      pageId      @1 : UInt32;
-   }
-
-   struct HistoryForWalletSelection {
-      walletId @0 : List(Text);
-      order    @1 : Text;
-   }
-
    union {
       unset                         @0 : Void;
 
       shutdown                      @1 : Void;
       setupDb                       @2 : Void;
       goOnline                      @3 : Void;
-      getNodeStatus                 @4 : Types.NodeStatus;
-      loadWallets                   @5 : Void;
+      getNodeStatus                 @4 : Void;
+      loadWallets                   @5 : Text;
       registerWallets               @6 : Void;
 
       registerWallet                @7 : RegisterWallet;
@@ -149,9 +137,8 @@ struct BlockchainServiceRequest {
       getBlockTimeByHeight          @11: UInt32;
       getFeeSchedule                @12: Text;
 
-      getLedgerDelegate             @13: Void;
-      getDelegateForWalletSelection @14: HistoryForWalletSelection;
-      updateWalletsLedgerFilter     @15: List(Types.WalletId);
+      getLedgerDelegateId           @13: Void;
+      updateWalletsLedgerFilter     @14: List(Types.WalletId);
    }
 }
 
@@ -175,8 +162,7 @@ struct BlockchainServiceReply {
       getHeadersByHeight            @4 : List(Types.Header);
       getBlockTimeByHeight          @5 : UInt32;
       getFeeSchedule                @6 : List(Types.FeeSchedule);
-      getLedgerDelegate             @7 : Types.DelegateId;
-      getDelegateForWalletSelection @8 : Types.DelegateId;
+      getLedgerDelegateId           @7 : Types.DelegateId;
    }
 }
 
@@ -185,10 +171,11 @@ struct BlockchainServiceReply {
 ###############################
 struct WalletRequest {
    struct AddressRequest {
+      type           @0 : UInt32;
       union {
-         new         @0 : Void;
-         change      @1 : Void;
-         peekChange  @2 : Void;
+         new         @1 : Void;
+         change      @2 : Void;
+         peekChange  @3 : Void;
       }
    }
 
@@ -211,7 +198,7 @@ struct WalletRequest {
    }
 
    struct SetComment {
-      hashKey @0 : Data;
+      key @0 : Text;
       comment @1 : Text;
    }
 
@@ -235,15 +222,16 @@ struct WalletRequest {
       getAddrCombinedList           @8 : Void;
       setAddressTypeFor             @9 : SetAddressTypeFor;
 
-      getLedgerDelegateIdForSrcAddr @10: Types.ScrAddr;
-      getBalanceAndCount            @11: Void;
+      getLedgerDelegateId           @10: Void;
+      getLedgerDelegateIdForScrAddr @11: Types.ScrAddr;
+      getBalanceAndCount            @12: Void;
 
-      setupNewCoinSelectionInstance @12: Types.Height;
-      getUtxos                      @13: OutputRequest;
+      setupNewCoinSelectionInstance @13: Types.Height;
+      getUtxos                      @14: OutputRequest;
 
-      createAddressBook             @14: Void;
-      setComment                    @15: SetComment;
-      setLabels                     @16: SetLabels;
+      createAddressBook             @15: Void;
+      setComment                    @16: SetComment;
+      setLabels                     @17: SetLabels;
    }
 }
 
@@ -281,11 +269,12 @@ struct WalletReply {
       getData                       @5 : WalletData;
       getAddressCombinedList        @6 : AddressAndBalanceData;
       setAddressTypeFor             @7 : WalletData.AddressData;
-      getLedgerDelegateIdForSrcAddr @8 : Types.DelegateId;
-      getBalanceAndCount            @9 : Types.BalanceAndCount;
-      setupNewCoinSelectionInstance @10: Text;
-      getUtxos                      @11: List(Types.Output);
-      createAddressBook             @12: Types.AddressBook;
+      getLedgerDelegateId           @8 : Types.DelegateId;
+      getLedgerDelegateIdForScrAddr @9 : Types.DelegateId;
+      getBalanceAndCount            @10: Types.BalanceAndCount;
+      setupNewCoinSelectionInstance @11: Text;
+      getUtxos                      @12: List(Types.Output);
+      createAddressBook             @13: Types.AddressBook;
    }
 }
 
@@ -322,7 +311,7 @@ struct CoinSelectionRequest {
       feeByte  @1 : Float32;
    }
 
-   id @0 : Text;
+   id                         @0 : Text;
    union {
       unset                   @1 : Void;
 
@@ -346,7 +335,7 @@ struct CoinSelectionReply {
    union {
       unset             @0 : Void;
 
-      selectUtxos       @1 : List(Types.Output);
+      getUtxoSelection  @1 : List(Types.Output);
       getFlatFee        @2 : Types.CoinAmount;
       getFeeByte        @3 : Float32;
       getSizeEstimate   @4 : UInt32;
@@ -362,14 +351,14 @@ struct CoinSelectionReply {
 struct SignerRequest {
    struct AddSpenderByOutpoint {
       hash     @0 : Types.Hash;
-      txOutId  @1 : UInt32;
+      txOutId  @1 : UInt16;
       sequence @2 : UInt32;
    }
 
    struct PopulateUtxo {
       hash     @0 : Types.Hash;
       script   @1 : Data;
-      txOutId  @2 : UInt32;
+      txOutId  @2 : UInt16;
       value    @3 : Types.CoinAmount;
    }
 
@@ -490,7 +479,7 @@ struct ScriptUtilsRequest {
 
       getTxInScriptType          @2 : Types.Hash;
       getTxOutScriptType         @3 : Void;
-      getSrcAddrForScript        @4 : Void;
+      getScrAddrForScript        @4 : Void;
       getLastPushDataInScript    @5 : Void;
       getTxOutScriptForScrAddr   @6 : Types.ScrAddr;
       getAddrStrForScrAddr       @7 : Void;
@@ -504,7 +493,7 @@ struct ScriptUtilsReply {
 
       getTxInScriptType          @1 : UInt32;
       getTxOutScriptType         @2 : UInt32;
-      getSrcAddrForScript        @3 : Types.ScrAddr;
+      getScrAddrForScript        @3 : Types.ScrAddr;
       getLastPushDataInScript    @4 : Data;
       getTxOutScriptForScrAddr   @5 : Data;
       getAddrStrForScrAddr       @6 : Text;
@@ -553,6 +542,7 @@ struct ToBridge {
       utils          @6 : UtilsRequest;
       scriptUtils    @7 : ScriptUtilsRequest;
       delegate       @8 : LedgerDelegateRequest;
+      notification   @9 : NotificationReply;
    }
 }
 

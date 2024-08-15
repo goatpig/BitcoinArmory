@@ -164,6 +164,7 @@ namespace DBClientClasses
 
       bool operator==(const LedgerEntry& rhs);
    };
+   using HistoryPage = std::vector<LedgerEntry>;
 
    ////////////////////////////////////////////////////////////////////////////
    class NodeChainStatus
