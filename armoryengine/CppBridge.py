@@ -12,7 +12,7 @@ import os
 import errno
 import socket
 from armoryengine import BridgeProto_pb2
-from armoryengine.ArmoryUtils import LOGDEBUG, LOGERROR, LOGWARN, hash256
+from armoryengine.ArmoryUtils import LOGDEBUG, LOGERROR, hash256
 from armoryengine.BinaryPacker import BinaryPacker, \
    UINT32, UINT8, BINARY_CHUNK, VAR_INT
 from struct import unpack
@@ -172,8 +172,6 @@ class BridgeSocket(object):
    ####
    def sendToBridgeProto(self, msg, needsReply: bool,
       callbackFunc, callbackArgs, msgType):
-
-      print("="*10 + "\n", msg, "\n" + "="*10)
 
       msg.referenceId = self.idCounter
       self.idCounter = self.idCounter + 1
