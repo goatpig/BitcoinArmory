@@ -138,7 +138,7 @@ private:
 public:
    PRNG_Fortuna(void);
 
-   SecureBinaryData generateRandom(uint32_t numBytes, 
+   SecureBinaryData generateRandom(uint32_t numBytes,
       const SecureBinaryData& extraEntropy = SecureBinaryData()) const;
 };
 

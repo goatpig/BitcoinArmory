@@ -408,7 +408,7 @@ struct UTXO
 
    UTXO(uint64_t value, uint32_t txHeight, uint32_t txIndex,
       uint32_t txOutIndex, BinaryData txHash, BinaryData script) :
-      txHash_(std::move(txHash)), txOutIndex_(txOutIndex), 
+      txHash_(std::move(txHash)), txOutIndex_(txOutIndex),
       txHeight_(txHeight), txIndex_(txIndex),
       value_(value), script_(std::move(script))
    {}
@@ -472,6 +472,25 @@ struct UTXO
    }
 
    bool isInitialized(void) const { return !script_.empty(); }
+};
+
+////////////////////////////////////////////////////////////////////////////////
+//this is a bit scuffed, shouldnt have a UTXO struct in the first place, but
+// the change is out of the scope of this refactor
+struct Output : public UTXO
+{
+public:
+   BinaryData spenderHash;
+
+public:
+   Output(uint64_t value, uint32_t txHeight, uint32_t txIndex,
+      uint32_t txOutIndex, BinaryData txHash, BinaryData script,
+      BinaryData spender) :
+      UTXO(value, txHeight, txIndex, txOutIndex, txHash, script),
+      spenderHash(spender)
+   {}
+
+   bool isSpent(void) const { return !spenderHash.empty(); }
 };
 
 ////////////////////////////////////////////////////////////////////////////////

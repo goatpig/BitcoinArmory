@@ -34,7 +34,7 @@ namespace {
 
       const auto& hash = utxo.getTxHash();
       result.setTxHash(capnp::Data::Builder(
-         (uint8_t*)hash.getPtr(), script.getSize()
+         (uint8_t*)hash.getPtr(), hash.getSize()
       ));
    }
 
@@ -195,24 +195,45 @@ namespace {
 
          case BdvRequest::Which::GET_OUTPUTS_FOR_ADDRESS:
          {
-            auto addrList = request.getGetOutputsForAddress();
-            std::list<std::vector<UTXO>> utxos;
-            size_t count = 0;
+            auto addrReq = request.getGetOutputsForAddress();
+            auto addrList = addrReq.getAddresses();
 
+            std::set<BinaryDataRef> addrSet;
             for (auto addr : addrList) {
                auto addrData = addr.getBody();
-               auto addrBd = BinaryDataRef(addrData.begin(), addrData.end());
-               auto utxoVec = bdv->getUtxosForAddress(addrBd, true);
-               count += utxoVec.size();
-               utxos.emplace_back(std::move(utxoVec));
+               addrSet.emplace(BinaryDataRef(addrData.begin(), addrData.end()));
             }
 
-            auto capnOutputs = bdvReply.initGetOutputsForAddress(count);
+            auto heightCutoff = addrReq.getHeightCutoff();
+            auto zcCutoff = addrReq.getZcCutoff();
+            auto result = bdv->getAddressOutpoints(addrSet,
+               heightCutoff, zcCutoff);
+
+            auto reply = bdvReply.initGetOutputsForAddress();
+            reply.setHeightCutoff(heightCutoff);
+            reply.setZcCutoff(zcCutoff);
+
+            auto capnAddrs = reply.initAddresses(result.size());
             unsigned i=0;
-            for (const auto& utxoV : utxos) {
-               for (const auto& utxo : utxoV) {
-                  auto capnOutput = capnOutputs[i++];
-                  outputToCapn(utxo, capnOutput);
+            for (const auto& addrOutputs : result) {
+               auto capnAddr = capnAddrs[i++];
+               auto addr = capnAddr.getAddr();
+               addr.setBody(capnp::Data::Builder(
+                  (uint8_t*)addrOutputs.first.getPtr(), addrOutputs.first.getSize()
+               ));
+
+               auto capnOutputs = capnAddr.initOutputs(addrOutputs.second.size());
+               unsigned y=0;
+               for (const auto& output : addrOutputs.second) {
+                  auto capnOutput = capnOutputs[y++];
+                  outputToCapn(output, capnOutput);
+
+                  if (!output.isSpent()) {
+                     continue;
+                  }
+                  capnOutput.setSpenderHash(capnp::Data::Builder(
+                     (uint8_t*)output.spenderHash.getPtr(), output.spenderHash.getSize()
+                  ));
                }
             }
             break;
@@ -323,9 +344,10 @@ namespace {
             std::list<std::vector<UTXO>> utxos;
             size_t count = 0;
 
-            if (opRequest.getSpendable()) {
+            auto targetValue = opRequest.getTargetValue();
+            if (targetValue > 0) {
                auto wltUtxos = wltPtr->getSpendableTxOutListForValue(
-                  opRequest.getTargetValue());
+                  targetValue);
                count += wltUtxos.size();
                utxos.emplace_back(std::move(wltUtxos));
             }
@@ -635,9 +657,9 @@ std::shared_ptr<BDV_Server_Object> Clients::get(const std::string& id) const
 {
    auto bdvmap = BDVs_.get();
    auto iter = bdvmap->find(id);
-   if (iter == bdvmap->end())
+   if (iter == bdvmap->end()) {
       return nullptr;
-
+   }
    return iter->second;
 }
 
@@ -700,9 +722,10 @@ BDV_Server_Object::BDV_Server_Object(
 ///////////////////////////////////////////////////////////////////////////////
 void BDV_Server_Object::startThreads()
 {
-   if (started_.fetch_or(1, std::memory_order_relaxed) != 0)
+   if (started_.fetch_or(1, std::memory_order_relaxed) != 0) {
       return;
-   
+   }
+
    auto initLambda = [this](void)->void
    { this->init(); };
 
@@ -724,8 +747,7 @@ void BDV_Server_Object::haltThreads()
 void BDV_Server_Object::init()
 {
    bdmPtr_->blockUntilReady();
-   while (true)
-   {
+   while (true) {
       std::map<std::string, WalletRegistrationRequest> wltMap;
 
       {
@@ -744,8 +766,7 @@ void BDV_Server_Object::init()
       batch->isNew_ = false;
 
       //fill with addresses from protobuf payloads
-      for (const auto& wlt : wltMap)
-      {
+      for (const auto& wlt : wltMap) {
          for (const auto& addr : wlt.second.addresses) {
             batch->scrAddrSet_.insert(addr);
          }
@@ -754,7 +775,7 @@ void BDV_Server_Object::init()
       //callback only serves to wait on the registration event
       auto promPtr = std::make_shared<std::promise<bool>>();
       auto fut = promPtr->get_future();
-      auto callback = [promPtr](std::set<BinaryData>&)->void
+      auto callback = [promPtr](std::set<BinaryDataRef>&)->void
       {
          promPtr->set_value(true);
       };
@@ -986,8 +1007,7 @@ void BDV_Server_Object::registerWallet(WalletRegistrationRequest& regReq)
    }
 
    //register wallet with BDV
-   auto bdvPtr = (BlockDataViewer*)this;
-   bdvPtr->registerWallet(regReq);
+   registerAWallet(regReq);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1021,9 +1041,10 @@ void BDV_Server_Object::populateWallets(
             throw std::runtime_error("address missing from saf");
          }
 
+         auto addrRef = iter->second->scrAddr_.getRef();
          auto addrObj = std::make_shared<ScrAddrObj>(
-            db_, &blockchain(), zeroConfCont_.get(), iter->first);
-         newAddrMap.emplace(iter->first, addrObj);
+            db_, &blockchain(), zeroConfCont_.get(), addrRef);
+         newAddrMap.emplace(addrRef, addrObj);
       }
 
       if (newAddrMap.empty()) {
@@ -1148,8 +1169,12 @@ const std::string& BDV_Server_Object::getLedgerDelegate()
 const std::string& BDV_Server_Object::getLedgerDelegate(
    const std::string& wltId)
 {
-   //return ledger delegate for this wallet
-   throw std::runtime_error("!! implement me !!");
+   auto iter = delegateMap_.find(wltId);
+   if (iter == delegateMap_.end()) {
+      auto delegate = getLedgerDelegateForWallet(wltId);
+      iter = delegateMap_.emplace(wltId, delegate).first;
+   }
+   return iter->first;
 }
 
 ////

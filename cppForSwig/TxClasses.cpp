@@ -332,20 +332,20 @@ void Tx::unserialize(uint8_t const * ptr, size_t size)
 {
    isInitialized_ = false;
 
-   uint32_t nBytes = BtcUtils::TxCalcLength(ptr, size, 
+   uint32_t nBytes = BtcUtils::TxCalcLength(ptr, size,
       &offsetsTxIn_, &offsetsTxOut_, &offsetsWitness_);
 
-   if(nBytes > size)
+   if (size < 8 || nBytes > size) {
       throw BlockDeserializingException();
-   dataCopy_.copyFrom(ptr,nBytes);
-   if(8 > size)
-      throw BlockDeserializingException();
+   }
+   dataCopy_.copyFrom(ptr, nBytes);
 
    usesWitness_ = BtcUtils::checkSwMarker(ptr + 4);
    uint32_t numWitness = offsetsWitness_.size() - 1;
    version_ = READ_UINT32_LE(ptr);
-   if(4 > size - offsetsWitness_[numWitness])
+   if(4 > size - offsetsWitness_[numWitness]) {
       throw BlockDeserializingException();
+   }
    lockTime_ = READ_UINT32_LE(ptr + offsetsWitness_[numWitness]);
 
 	isInitialized_ = true;

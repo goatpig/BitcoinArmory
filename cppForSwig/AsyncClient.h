@@ -27,34 +27,13 @@ Handle codec and socketing for armory client
 class WalletManager;
 class WalletContainer;
 
-///////////////////////////////////////////////////////////////////////////////
-struct OutpointData
-{
-   BinaryData txHash_;
-   unsigned txOutIndex_;
-   
-   unsigned txHeight_ = UINT32_MAX;
-   unsigned txIndex_ = UINT32_MAX;
-
-   uint64_t value_;
-   bool isSpent_;
-
-   BinaryData spenderHash_;
-
-   //debug
-   void prettyPrint(std::ostream&) const;
-};
-
 ////
-struct OutpointBatch
+struct OutputBatch
 {
-   unsigned heightCutoff_;
-   unsigned zcIndexCutoff_;
+   unsigned heightCutoff;
+   unsigned zcIndexCutoff;
 
-   std::map<BinaryData, std::vector<OutpointData>> outpoints_;
-
-   //debug
-   void prettyPrint(void) const;
+   std::map<BinaryData, std::vector<Output>> addrMap;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -253,7 +232,8 @@ namespace AsyncClient
 
       uint64_t getTxioCount(void) const { return count_; }
 
-      void getOutputs(std::function<void(ReturnMessage<std::vector<UTXO>>)>);
+      void getOutputs(uint64_t, bool, bool,
+         std::function<void(ReturnMessage<std::vector<UTXO>>)>);
       const BinaryData& getScrAddr(void) const { return scrAddr_; }
       void getLedgerDelegate(
          std::function<void(ReturnMessage<LedgerDelegate>)>);
@@ -276,7 +256,6 @@ namespace AsyncClient
 
    public:
       BtcWallet(const BlockDataViewer&, const std::string&);
-      
       void getBalancesAndCount(uint32_t topBlockHeight,
          std::function<void(ReturnMessage<std::vector<uint64_t>>)>);
 
@@ -418,12 +397,11 @@ namespace AsyncClient
       void getCombinedBalances(std::function<void(
          ReturnMessage<std::map<std::string, CombinedBalances>>)>);
 
-      void getUTXOsForAddress(std::set<BinaryData>&,
-         std::function<void(ReturnMessage<std::vector<UTXO>>)>);
-
+      void getOutputsForAddresses(std::set<BinaryData>&, uint32_t, uint32_t,
+         std::function<void(ReturnMessage<OutputBatch>)>);
       void getOutputsForOutpoints(
          const std::map<BinaryData, std::set<unsigned>>&, bool,
-         std::function<void(ReturnMessage<std::vector<UTXO>>)>);
+         std::function<void(ReturnMessage<std::vector<Output>>)>);
 
       /*
       Broadcast methods:

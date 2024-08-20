@@ -103,7 +103,7 @@ struct ParsedTxOut
 
    bool isInitialized(void) const
    {
-      return scrAddr_.getSize() != 0 && value_ != UINT64_MAX; \
+      return scrAddr_.getSize() != 0 && value_ != UINT64_MAX;
    }
 };
 

@@ -26,6 +26,7 @@ struct Output {
    txOutIndex  @3 : UInt16;
    txHash      @4 : Hash;
    script      @5 : Data;
+   spenderHash @6 : Hash;
 }
 
 struct Outpoint {

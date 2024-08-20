@@ -121,7 +121,6 @@ class BDV_Server_Object : public BlockDataViewer
 private:
    std::atomic<unsigned> started_;
    std::thread initT_;
-   std::unique_ptr<Callback> notifications_;
 
    std::string bdvID_;
    BlockDataManagerThread* bdmT_;
@@ -142,6 +141,7 @@ private:
 
 public:
    std::map<std::string, LedgerDelegate> delegateMap_;
+   std::unique_ptr<Callback> notifications_;
 
 private:
    BDV_Server_Object(BDV_Server_Object&) = delete; //no copies
@@ -163,7 +163,7 @@ public:
 
    void startThreads(void);
    const std::string& getID(void) const { return bdvID_; }
-   void registerWallet(WalletRegistrationRequest&) override;
+   void registerWallet(WalletRegistrationRequest&);
    void processNotification(std::shared_ptr<BDV_Notification>);
    void init(void);
    void haltThreads(void);

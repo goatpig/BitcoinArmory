@@ -71,6 +71,72 @@ namespace {
       return result;
    }
 
+   std::vector<Output> capnToOutputVec(
+      capnp::List<Codec::Types::Output, capnp::Kind::STRUCT>::Reader outputs)
+   {
+      std::vector<Output> result;
+      result.reserve(outputs.size());
+      for (auto output : outputs) {
+         auto hashCapn = output.getTxHash();
+         BinaryDataRef txHash(hashCapn.begin(), hashCapn.end());
+
+         auto scriptCapn = output.getScript();
+         BinaryDataRef script(scriptCapn.begin(), scriptCapn.end());
+
+         BinaryDataRef spenderHash;
+         if (output.hasSpenderHash()) {
+            auto capnSpender = output.getSpenderHash();
+            spenderHash = BinaryDataRef(capnSpender.begin(), capnSpender.end());
+         }
+
+         result.emplace_back(Output(
+            output.getValue(), output.getTxHeight(), output.getTxIndex(),
+            output.getTxOutIndex(), txHash, script, spenderHash
+         ));
+      }
+      return result;
+   }
+
+   //
+   OutputBatch capnToOutputMap(
+      Codec::BDV::BdvReply::AddressOutputReply::Reader addrOutputs)
+   {
+      OutputBatch result {
+         addrOutputs.getHeightCutoff(),
+         addrOutputs.getZcCutoff()
+      };
+
+      auto capnAddrs = addrOutputs.getAddresses();
+      for (auto capnAddr : capnAddrs) {
+         auto addrBody = capnAddr.getAddr().getBody();
+         BinaryDataRef addrRef(addrBody.begin(), addrBody.end());
+         auto resultOutputs = result.addrMap.emplace(
+            addrRef, std::vector<Output>{}).first;
+
+         auto outputs = capnAddr.getOutputs();
+         for (auto output : outputs) {
+            auto hashCapn = output.getTxHash();
+            BinaryDataRef txHash(hashCapn.begin(), hashCapn.end());
+
+            auto scriptCapn = output.getScript();
+            BinaryDataRef script(scriptCapn.begin(), scriptCapn.end());
+
+            BinaryDataRef spenderHash;
+            if (output.hasSpenderHash()) {
+               auto capnHash = output.getSpenderHash();
+               spenderHash.setRef(capnHash.begin(), capnHash.end());
+            }
+
+            resultOutputs->second.emplace_back(Output(
+               output.getValue(), output.getTxHeight(), output.getTxIndex(),
+               output.getTxOutIndex(), txHash, script, spenderHash
+            ));
+         }
+      }
+      return result;
+   }
+
+   ////
    std::vector<AddressBookEntry> capnToAddrBook(
       Codec::Types::AddressBook::Reader addrBook)
    {
@@ -290,8 +356,9 @@ std::shared_ptr<BlockDataViewer> BlockDataViewer::getNewBDV(
 ///////////////////////////////////////////////////////////////////////////////
 void BlockDataViewer::registerWithDB(const std::string& magicWord)
 {
-   if (!bdvID_.empty())
+   if (!bdvID_.empty()) {
       throw BDVAlreadyRegistered();
+   }
 
    //create capnp request
    capnp::MallocMessageBuilder message;
@@ -713,7 +780,7 @@ void BlockDataViewer::setCheckServerKeyPromptLambda(
 ///////////////////////////////////////////////////////////////////////////////
 void BlockDataViewer::getOutputsForOutpoints(
    const std::map<BinaryData, std::set<unsigned>>& outpoints, bool withZc,
-   std::function<void(ReturnMessage<std::vector<UTXO>>)> callback)
+   std::function<void(ReturnMessage<std::vector<Output>>)> callback)
 {
    //create capnp request
    capnp::MallocMessageBuilder message;
@@ -767,11 +834,11 @@ void BlockDataViewer::getOutputsForOutpoints(
             }
 
             //convert to utxo vector and fire callback
-            auto result = capnToUtxoVec(bdvReply.getGetOutputsForOutpoints());
-            callback(ReturnMessage<std::vector<UTXO>>(result));
+            auto result = capnToOutputVec(bdvReply.getGetOutputsForOutpoints());
+            callback(ReturnMessage<std::vector<Output>>(result));
          } catch (ClientMessageError& e) {
             //something went wrong, set error message and fire callback
-            callback(ReturnMessage<std::vector<UTXO>>(e));
+            callback(ReturnMessage<std::vector<Output>>(e));
          }
       });
 
@@ -918,6 +985,8 @@ void AsyncClient::BtcWallet::registerAddresses(
    auto addrReq = bdvRequest.initRegisterWallet();
    addrReq.setWalletId(walletID_);
    addrReq.setIsNew(isNew);
+   //TODO: set wallet type based on caller (wallet or lockbox)
+   addrReq.setWalletType(Codec::BDV::BdvRequest::WalletType::WALLET);
 
    addrReq.initAddresses(addrVec.size());
    auto capnAddresses = addrReq.getAddresses();
@@ -1055,7 +1124,6 @@ void AsyncClient::BtcWallet::getUTXOs(uint64_t val, bool zc, bool rbf,
    outputReq.setRbf(rbf);
    if (val > 0) {
       outputReq.setTargetValue(val);
-      outputReq.setSpendable(true);
    }
 
    //serialize and add to payload
@@ -1262,7 +1330,7 @@ ScrAddrObj::ScrAddrObj(AsyncClient::BtcWallet* wlt, const BinaryData& scrAddr,
 {}
 
 ///////////////////////////////////////////////////////////////////////////////
-void ScrAddrObj::getOutputs(
+void ScrAddrObj::getOutputs(uint64_t targetValue, bool zc, bool rbf,
    std::function<void(ReturnMessage<std::vector<UTXO>>)> callback)
 {
    //create capnp request
@@ -1274,7 +1342,10 @@ void ScrAddrObj::getOutputs(
    auto address = addrRequest.getAddress();
    address.setBody(capnp::Data::Builder(
       (uint8_t*)scrAddr_.getPtr(), scrAddr_.getSize()));
-   addrRequest.initGetOutputs();
+   auto outputReq = addrRequest.initGetOutputs();
+   outputReq.setTargetValue(targetValue);
+   outputReq.setZc(zc);
+   outputReq.setRbf(rbf);
 
    //serialize and add to payload
    auto write_payload = toWritePayload(message);
@@ -1558,9 +1629,9 @@ void AsyncClient::BlockDataViewer::getCombinedBalances(std::function<void(
             }
 
             auto bdvReply = reply.getBdv();
-            if (!bdvReply.isGetOutputsForAddress()) {
+            if (!bdvReply.isGetCombinedBalances()) {
                throw ClientMessageError(
-                  "expected getOutputsForAddress reply", WRONG_REPLY_TYPE);
+                  "expected GetCombinedBalances reply", WRONG_REPLY_TYPE);
             }
             //convert to utxo vector and fire callback
             auto result = capnToCombinedBalances(bdvReply.getGetCombinedBalances());
@@ -1576,9 +1647,9 @@ void AsyncClient::BlockDataViewer::getCombinedBalances(std::function<void(
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void AsyncClient::BlockDataViewer::getUTXOsForAddress(
-   std::set<BinaryData>& addrSet,
-   std::function<void(ReturnMessage<std::vector<UTXO>>)> callback)
+void AsyncClient::BlockDataViewer::getOutputsForAddresses(
+   std::set<BinaryData>& addrSet, uint32_t heightCutoff, uint32_t zcCutoff,
+   std::function<void(ReturnMessage<OutputBatch>)> callback)
 {
    //create capnp request
    capnp::MallocMessageBuilder message;
@@ -1586,13 +1657,19 @@ void AsyncClient::BlockDataViewer::getUTXOsForAddress(
 
    auto bdvRequest = payload.initBdv();
    bdvRequest.setBdvId(bdvID_);
-   auto addrs = bdvRequest.initGetOutputsForAddress(addrSet.size());
+   auto addrReq = bdvRequest.initGetOutputsForAddress();
+   addrReq.setHeightCutoff(heightCutoff);
+   addrReq.setZcCutoff(zcCutoff);
+
 
    //populate request data
+   auto capnAddrs = addrReq.initAddresses(addrSet.size());
    unsigned i = 0;
    for (auto& addr : addrSet) {
-      addrs[i++].setBody(
-         capnp::Data::Builder((uint8_t*)addr.getPtr(), addr.getSize()));
+      auto capnAddr = capnAddrs[i++];
+      capnAddr.setBody(capnp::Data::Builder(
+         (uint8_t*)addr.getPtr(), addr.getSize()
+      ));
    }
 
    //serialize and add to payload
@@ -1622,12 +1699,12 @@ void AsyncClient::BlockDataViewer::getUTXOsForAddress(
                   "expected getOutputsForAddress reply", WRONG_REPLY_TYPE);
             }
 
-            //convert to utxo vector and fire callback
-            auto result = capnToUtxoVec(bdvReply.getGetOutputsForAddress());
-            callback(ReturnMessage<std::vector<UTXO>>(result));
+            //convert to output map and fire callback
+            auto result = capnToOutputMap(bdvReply.getGetOutputsForAddress());
+            callback(ReturnMessage<OutputBatch>(std::move(result)));
          } catch (ClientMessageError& e) {
             //something went wrong, set error message and fire callback
-            callback(ReturnMessage<std::vector<UTXO>>(e));
+            callback(ReturnMessage<OutputBatch>(e));
          }
       });
 
@@ -1767,68 +1844,4 @@ const unsigned& ClientCache::getHeightForTxHash(const BinaryData& height) const
       throw NoMatch();
 
    return iter->second;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-//
-// OutpointBatch/Data
-//
-///////////////////////////////////////////////////////////////////////////////
-void OutpointBatch::prettyPrint() const
-{
-   std::stringstream ss;
-
-   ss << " - cutoffs: " << heightCutoff_ << ", " << zcIndexCutoff_ << std::endl;
-   ss << " - address count: " << outpoints_.size() << std::endl;
-   
-   for (const auto& addrPair : outpoints_)
-   {
-      //convert scrAddr to address string
-      auto addrStr = BtcUtils::getAddressStrFromScrAddr(addrPair.first);
-
-      //address & outpoint count
-      ss << "  ." << addrStr << ", op count: " << 
-         addrPair.second.size() << std::endl;
-
-      //outpoint data
-      std::map<unsigned, std::map<BinaryDataRef, std::vector<OutpointData>>> heightHashMap;
-      for (const auto& op : addrPair.second)
-      {
-         auto height = op.txHeight_;
-         const auto& hash = op.txHash_;
-
-         auto& hashMap = heightHashMap[height];
-         auto& opVec = hashMap[hash.getRef()];
-         opVec.emplace_back(op);
-      }
-
-      for (const auto& hashMap : heightHashMap)
-      {
-         ss << "   *height: " << hashMap.first << std::endl;
-         
-         for (const auto& opMap : hashMap.second)
-         {
-            ss << "    .hash: " << opMap.first.toHexStr(true) << std::endl;
-
-            for (const auto& op : opMap.second)
-               op.prettyPrint(ss);
-         }
-      }
-
-      ss << std::endl;
-   }
-
-   std::cout << ss.str();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void OutpointData::prettyPrint(std::ostream& st) const
-{
-   st << "     _id: " << txOutIndex_ << ", value: " << value_ << std::endl;
-
-   st << "      spender: ";
-   if (spenderHash_.empty())
-      st << "N/A" << std::endl;
-   else
-      st << spenderHash_.toHexStr(true) << std::endl;
 }

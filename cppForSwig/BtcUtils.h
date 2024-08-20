@@ -700,7 +700,7 @@ public:
                               std::vector<size_t> * offsetsWitness)
    {
       BinaryRefReader brr(ptr, size);
-      
+
       if (brr.getSizeRemaining() < 4)
          throw BlockDeserializingException();
       // Tx Version;

@@ -50,7 +50,7 @@ struct AddressBatch
 ////
 struct RegistrationBatch : public AddressBatch
 {
-   std::function<void(std::set<BinaryData>&)> callback_;
+   std::function<void(std::set<BinaryDataRef>&)> callback_;
    std::set<BinaryData> scrAddrSet_;
    bool isNew_;
    std::string walletID_;
@@ -174,7 +174,7 @@ private:
       return scanFilterAddrMap_;
    }
 
-   std::set<BinaryData> updateAddrMap(
+   std::set<BinaryDataRef> updateAddrMap(
       const std::set<BinaryData>&, unsigned, bool );
    void setSSHLastScanned(std::set<BinaryData>&, unsigned);
 

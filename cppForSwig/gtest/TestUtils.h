@@ -124,7 +124,8 @@ namespace DBTestUtils
    const std::shared_ptr<BDV_Server_Object> getBDV(Clients* clients, const std::string& id);
    
    void registerWallet(Clients* clients, const std::string& bdvId,
-      const std::vector<BinaryData>& scrAddrs, const std::string& wltName);
+      const std::vector<BinaryData>& scrAddrs, const std::string& wltName,
+      bool isLockbox, bool waitOnReg);
    void regLockbox(Clients* clients, const std::string& bdvId,
       const std::vector<BinaryData>& scrAddrs, const std::string& wltName);
 
@@ -135,13 +136,10 @@ namespace DBTestUtils
       Clients* clients, const std::string& bdvId,
       const std::string& delegateId, uint32_t pageId);
 
-   std::tuple<std::shared_ptr<::Codec_BDVCommand::BDVCallback>, unsigned> waitOnSignal(
-      Clients* clients, const std::string& bdvId,
-      ::Codec_BDVCommand::NotificationType signal);
+   std::tuple<BinaryData, unsigned> waitOnSignal(Clients* clients, const std::string& bdvId, int signal);
    void waitOnBDMReady(Clients* clients, const std::string& bdvId);
 
-   std::tuple<std::shared_ptr<::Codec_BDVCommand::BDVCallback>, unsigned> 
-      waitOnNewBlockSignal(Clients* clients, const std::string& bdvId);
+   std::tuple<BinaryData, unsigned> waitOnNewBlockSignal(Clients* clients, const std::string& bdvId);
    std::pair<std::vector<DBClientClasses::LedgerEntry>, std::set<BinaryData>>
       waitOnNewZcSignal(Clients* clients, const std::string& bdvId);
    void waitOnWalletRefresh(Clients* clients, const std::string& bdvId,
@@ -184,8 +182,7 @@ namespace DBTestUtils
    void updateWalletsLedgerFilter(
       Clients*, const std::string&, const std::vector<std::string> &);
 
-   std::shared_ptr<::google::protobuf::Message> processCommand(
-      Clients* clients, std::shared_ptr<::google::protobuf::Message>);
+   BinaryData processCommand(Clients*, const std::string&, BinaryData);
 
    /////////////////////////////////////////////////////////////////////////////
    AsyncClient::LedgerDelegate getLedgerDelegate(
@@ -199,7 +196,7 @@ namespace DBTestUtils
    uint64_t getPageCount(AsyncClient::LedgerDelegate& del);
 
    std::map<BinaryData, std::vector<uint64_t>> getAddrBalancesFromDB(
-      AsyncClient::BtcWallet&);
+      std::shared_ptr<AsyncClient::BlockDataViewer>, const std::string&);
 
    std::vector<uint64_t> getBalancesAndCount(AsyncClient::BtcWallet& wlt,
       uint32_t blockheight);
@@ -365,7 +362,7 @@ namespace DBTestUtils
                   if (bdrVec.find(id) != bdrVec.end())
                      ++count;
                }
-            }         
+            }
          }
       }
 
@@ -493,13 +490,13 @@ namespace DBTestUtils
 namespace ResolverUtils
 {
    ////////////////////////////////////////////////////////////////////////////////
-   struct TestResolverFeed : public Armory::Signer::ResolverFeed
+   struct TestResolverFeed : public Armory::Signing::ResolverFeed
    {
    private:
       std::map<BinaryData, BinaryData> hashToPreimage_;
       std::map<BinaryData, SecureBinaryData> pubKeyToPrivKey_;
 
-      std::map<BinaryData, Armory::Signer::BIP32_AssetPath> bip32Paths_;
+      std::map<BinaryData, Armory::Signing::BIP32_AssetPath> bip32Paths_;
 
    public:
       BinaryData getByVal(const BinaryData& val) override
@@ -532,7 +529,7 @@ namespace ResolverUtils
          hashToPreimage_.emplace(key, val);
       }
 
-      Armory::Signer::BIP32_AssetPath resolveBip32PathForPubkey(
+      Armory::Signing::BIP32_AssetPath resolveBip32PathForPubkey(
          const BinaryData& pubkey) override
       {
          auto iter = bip32Paths_.find(pubkey);
@@ -543,17 +540,17 @@ namespace ResolverUtils
       }
 
       void setBip32PathForPubkey(
-         const BinaryData& pubkey, const Armory::Signer::BIP32_AssetPath& path)
+         const BinaryData& pubkey, const Armory::Signing::BIP32_AssetPath& path)
       {
          bip32Paths_.emplace(pubkey, path);
       }
    };
 
    ////////////////////////////////////////////////////////////////////////////////
-   class HybridFeed : public Armory::Signer::ResolverFeed
+   class HybridFeed : public Armory::Signing::ResolverFeed
    {
    private:
-      std::shared_ptr<Armory::Signer::ResolverFeed_AssetWalletSingle> feedPtr_;
+      std::shared_ptr<Armory::Signing::ResolverFeed_AssetWalletSingle> feedPtr_;
 
    public:
       TestResolverFeed testFeed_;
@@ -562,7 +559,7 @@ namespace ResolverUtils
       HybridFeed(std::shared_ptr<Armory::Wallets::AssetWallet_Single> wltPtr)
       {
          feedPtr_ = std::make_shared<
-            Armory::Signer::ResolverFeed_AssetWalletSingle>(wltPtr);
+            Armory::Signing::ResolverFeed_AssetWalletSingle>(wltPtr);
       }
 
       BinaryData getByVal(const BinaryData& val) override
@@ -589,18 +586,18 @@ namespace ResolverUtils
          return feedPtr_->getPrivKeyForPubkey(pubkey);
       }
 
-      Armory::Signer::BIP32_AssetPath resolveBip32PathForPubkey(const BinaryData&) override
+      Armory::Signing::BIP32_AssetPath resolveBip32PathForPubkey(const BinaryData&) override
       {
          throw std::runtime_error("invalid pubkey");
       }
 
-      void setBip32PathForPubkey(
-         const BinaryData&, const Armory::Signer::BIP32_AssetPath&) override
+      void setBip32PathForPubkey(const BinaryData&,
+         const Armory::Signing::BIP32_AssetPath&) override
       {}
    };
 
    /////////////////////////////////////////////////////////////////////////////
-   struct CustomFeed : public Armory::Signer::ResolverFeed
+   struct CustomFeed : public Armory::Signing::ResolverFeed
    {
       std::map<BinaryDataRef, BinaryDataRef> hash_to_preimage_;
       std::shared_ptr<ResolverFeed> wltFeed_;
@@ -628,13 +625,13 @@ namespace ResolverUtils
       CustomFeed(std::shared_ptr<AddressEntry> addrPtr,
          std::shared_ptr<Armory::Wallets::AssetWallet_Single> wlt) :
          wltFeed_(std::make_shared<
-            Armory::Signer::ResolverFeed_AssetWalletSingle>(wlt))
+            Armory::Signing::ResolverFeed_AssetWalletSingle>(wlt))
       {
          addAddressEntry(addrPtr);
       }
 
       CustomFeed(std::shared_ptr<AddressEntry> addrPtr,
-         std::shared_ptr<Armory::Signer::ResolverFeed> feed) :
+         std::shared_ptr<Armory::Signing::ResolverFeed> feed) :
          wltFeed_(feed)
       {
          addAddressEntry(addrPtr);
@@ -656,14 +653,14 @@ namespace ResolverUtils
          return wltFeed_->getPrivKeyForPubkey(pubkey);
       }
 
-      Armory::Signer::BIP32_AssetPath resolveBip32PathForPubkey(
+      Armory::Signing::BIP32_AssetPath resolveBip32PathForPubkey(
          const BinaryData&) override
       {
          throw std::runtime_error("invalid pubkey");
       }
 
       void setBip32PathForPubkey(
-         const BinaryData&, const Armory::Signer::BIP32_AssetPath&) override
+         const BinaryData&, const Armory::Signing::BIP32_AssetPath&) override
       {}
    };
 }

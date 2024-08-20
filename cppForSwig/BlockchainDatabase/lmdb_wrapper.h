@@ -114,7 +114,7 @@ class GlobalDBUtilities;
 
 class StoredHeader;
 class StoredTx;
-class StoredTxOut;
+struct StoredTxOut;
 class StoredScriptHistory;
 
 enum ShardFilterType
