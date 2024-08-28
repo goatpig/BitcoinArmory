@@ -6,7 +6,6 @@ $Cxx.namespace("Armory::Codec::Types");
 ## base types ##
 using Hash        = Data;
 using Header      = Data;
-using Tx          = Data;
 using ScrAddr     = Data;
 
 using WalletId    = Text;
@@ -18,7 +17,7 @@ using CallbackId  = Text;
 using Height      = UInt32;
 using CoinAmount  = UInt64;
 
-## outputs ##
+## tx data ##
 struct Output {
    value       @0 : CoinAmount;
    txHeight    @1 : Height;
@@ -32,6 +31,14 @@ struct Output {
 struct Outpoint {
    txHash      @0 : Hash;
    index       @1 : UInt16;
+}
+
+struct Tx {
+   body        @0 : Data;
+   height      @1 : UInt32;
+   index       @2 : UInt32;
+   isChainZc   @3 : Bool;
+   isRbf       @4 : Bool;
 }
 
 ## bitcoin node & db status ##
