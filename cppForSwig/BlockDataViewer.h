@@ -5,9 +5,9 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016, goatpig                                               //            
+//  Copyright (C) 2016-22024, goatpig                                         //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                   
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -73,6 +73,25 @@ struct WalletRegistrationRequest
       walletId(wId), addresses(std::move(addrs)),
       isNew(isnew), type(wType)
    {}
+};
+
+struct CombinedBalances
+{
+   struct BalanceAndCount
+   {
+      const uint64_t full;
+      const uint64_t spendable;
+      const uint64_t unconfirmed;
+      const uint32_t txnCount;
+   };
+
+   struct Wallet
+   {
+      const BalanceAndCount                        bnc;
+      const std::map<BinaryData, BalanceAndCount>  addresses;
+   };
+
+   std::map<std::string, Wallet> wallets;
 };
 
 class BlockDataViewer
@@ -226,6 +245,8 @@ public:
 
    std::vector<std::pair<StoredTxOut, BinaryDataRef>> getOutputsForOutpoints(
       const std::map<BinaryDataRef, std::set<unsigned>>&, bool) const;
+
+   CombinedBalances getCombinedBalances(void) const;
 
 protected:
    static void unregisterAddresses(
