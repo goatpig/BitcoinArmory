@@ -15,7 +15,7 @@ import math
 
 from armoryengine.BDM import TheBDM, BDM_BLOCKCHAIN_READY
 from qtpy import QtCore, QtGui, QtWidgets
-from qtdialogs.qtdefines import ArmoryFrame, VERTICAL, HORIZONTAL, \
+from qtdialogs.qtdefines import AdvancedOptionsFrame, ArmoryFrame, VERTICAL, HORIZONTAL, \
    tightSizeNChar, makeHorizFrame, makeVertFrame, QRichLabel, \
    QPixMapButton, GETFONT, STYLE_SUNKEN, HLINE, determineWalletType, \
    QMoneyLabel, makeLayoutFrame, createToolTipWidget

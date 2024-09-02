@@ -528,9 +528,11 @@ class PyBtcWallet(object):
 
       LOGINFO('***Creating new deterministic wallet')
 
+      addrPoolSize = 10 if USE_TESTNET or USE_REGTEST else CLI_OPTIONS.keypool
+
       #create cpp wallet
       walletId = TheBridge.utils.createWallet(
-         self.addrPoolSize,
+         addrPoolSize,
          passphrase, "",
          #kdfTargSec, kdfMaxMem,
          shortLabel, longLabel,
