@@ -181,7 +181,6 @@ class PyUnspentTxOut(object):
 
    #############################################################################
    def toBridgeUtxo(self):
-      from armoryengine import BridgeProto_pb2
       bridgeUtxo = BridgeProto_pb2.Utxo()
 
       bridgeUtxo.scraddr = self.scrAddr

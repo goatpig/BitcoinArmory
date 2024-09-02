@@ -12,7 +12,6 @@
 
 from qtpy import QtWidgets
 
-from armoryengine import BridgeProto_pb2
 from armoryengine.CppBridge import TheBridge
 from armoryengine.ArmoryUtils import LOGERROR, UINT32_MAX, UINT8_MAX, \
    UNKNOWN

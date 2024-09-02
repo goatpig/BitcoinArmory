@@ -11,7 +11,6 @@ from __future__ import (absolute_import, division, annotations,
 import os
 import errno
 import socket
-from armoryengine import BridgeProto_pb2
 from armoryengine.ArmoryUtils import LOGDEBUG, LOGERROR, hash256
 from armoryengine.BinaryPacker import BinaryPacker, \
    UINT32, UINT8, BINARY_CHUNK, VAR_INT
@@ -25,14 +24,16 @@ from concurrent.futures import ThreadPoolExecutor
 
 from armoryengine.ArmoryUtils import PassphraseError
 from armoryengine.BIP15x import \
-    BIP15xConnection, AEAD_THRESHOLD_BEGIN, AEAD_Error, \
-    CHACHA20POLY1305MAXPACKETSIZE
+   BIP15xConnection, AEAD_THRESHOLD_BEGIN, AEAD_Error, \
+   CHACHA20POLY1305MAXPACKETSIZE
 BRIDGE_CLIENT_HEADER = 1
 
+import sys
+sys.path.append("cppForSwig/capnp")
+
 import capnp
-capnp.remove_import_hook()
-Bridge = capnp.load("./cppForSwig/capnp/Bridge.capnp")
-Types = capnp.load("./cppForSwig/capnp/Types.capnp")
+import Bridge_capnp as Bridge
+import Types_capnp as Types
 
 ################################################################################
 ##
@@ -95,6 +96,9 @@ class BridgeSocket(object):
       self.run = False
       self.rwLock = None
 
+      import random
+      self.port = random.randint(50000, 60000)
+
    ####
    def setCallback(self, key, func):
       self.callbackDict[key] = func
@@ -115,6 +119,7 @@ class BridgeSocket(object):
 
       #append gui pubkey to arg list and spawn bridge
       os.environ['SERVER_PUBKEY'] = self.bip15xConnection.getPubkeyHex()
+      os.environ['BRIDGE_PORT'] = str(self.port)
       self.processFut = self.executor.submit(self.spawnBridge, stringArgs)
 
       #block until listen socket receives bridge connection
@@ -140,12 +145,9 @@ class BridgeSocket(object):
    #############################################################################
    ## bridge management
    def listenOnBridge(self):
-      #setup listener
-
-      portNumber = 46122
       self.listenSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
       self.listenSocket.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR, 1)
-      self.listenSocket.bind(("127.0.0.1", portNumber))
+      self.listenSocket.bind(("127.0.0.1", self.port))
       self.listenSocket.listen()
 
       clientSocket, clientIP = self.listenSocket.accept()
@@ -176,7 +178,7 @@ class BridgeSocket(object):
       msg.referenceId = self.idCounter
       self.idCounter = self.idCounter + 1
 
-      payload = msg.to_bytes_packed()
+      payload = msg.to_bytes()
       result = self.sendToBridgeBinary(payload, msg.referenceId,
          needsReply, callbackFunc, callbackArgs, msgType)
 
@@ -198,7 +200,7 @@ class BridgeSocket(object):
       #payload type header
       bp.put(UINT8, msgType)
 
-      #serialized protobuf message
+      #serialized proto message
       bp.put(BINARY_CHUNK, payload)
 
       #grab read write lock
@@ -283,7 +285,7 @@ class BridgeSocket(object):
             #grab the payload
             payload = response
             payload += self.pollRecv(\
-                payloadSize + self.bip15xConnection.getMacLen())
+               payloadSize + self.bip15xConnection.getMacLen())
 
             #decrypt it
             response = self.bip15xConnection.decrypt(\
@@ -298,7 +300,7 @@ class BridgeSocket(object):
 
             payload = response[1:]
             if len(payload) < payloadSize:
-                payload += self.pollRecv(payloadSize - len(payload))
+               payload += self.pollRecv(payloadSize - len(payload))
 
             try:
                self.bip15xConnection.serverHandshake(header, payload)
@@ -316,53 +318,50 @@ class BridgeSocket(object):
          #grab packet id
          fullPacket = response[1:]
 
-         #deser protobuf reply
-         protoPayload = Bridge.FromBridge.new_message()
-         if not protoPayload.from_bytes_packed(fullPacket):
-            raise BridgeError("failed to parse proto payload")
+         #deser proto reply
+         with Bridge.FromBridge.from_bytes(fullPacket) as protoPayload:
+            #payloads are either replies or callbacks
+            if protoPayload.which() == "reply":
+               reply = protoPayload.reply
+               referenceId = reply.referenceId
 
-         #payloads are either replies or callbacks
-         if protoPayload.which() == "reply":
-            reply = protoPayload.reply
-            referenceId = reply.referenceId
+               #lock and look for future object in response dict
+               self.rwLock.acquire(True)
+               if referenceId not in self.responseDict:
+                  LOGWARN(f"unknown reply referenceId: {referenceId}")
+                  self.rwLock.release()
+                  continue
 
-            #lock and look for future object in response dict
-            self.rwLock.acquire(True)
-            if referenceId not in self.responseDict:
-               LOGWARN(f"unknown reply referenceId: {referenceId}")
+               #TODO: general error handling on reply.success == False
+
+               #grab the future, delete it from dict
+               replyHandler = self.responseDict[referenceId]
+               del self.responseDict[referenceId]
+
+               #fill the promise & release lock
                self.rwLock.release()
-               continue
 
-            #TODO: general error handling on reply.success == False
+               if isinstance(replyHandler, PyPromFut):
+                  replyHandler.setVal(reply)
 
-            #grab the future, delete it from dict
-            replyHandler = self.responseDict[referenceId]
-            del self.responseDict[referenceId]
+               elif isinstance(replyHandler, CallbackWrapper):
+                  replyHandler.execute(reply)
 
-            #fill the promise & release lock
-            self.rwLock.release()
+            elif protoPayload.which() == "notification":
+               callbackData = protoPayload.notification
+               callbackId = callbackData.callbackId
 
-            if isinstance(replyHandler, PyPromFut):
-               replyHandler.setVal(reply)
+               #find the callback listener
+               self.rwLock.acquire(True)
+               if callbackId not in self.callbackDict:
+                  LOGWARN(f"ignoring callback id: {callbackId}")
+                  self.rwLock.release()
+                  continue
 
-            elif isinstance(replyHandler, CallbackWrapper):
-               replyHandler.execute(reply)
-
-         elif protoPayload.which() == "notification":
-            callbackData = protoPayload.notification
-            callbackId = callbackData.callbackId
-
-            #find the callback listener
-            self.rwLock.acquire(True)
-            if callbackId not in self.callbackDict:
-               LOGWARN(f"ignoring callback id: {callbackId}")
+               #call it with the payload
+               callbackFunc = self.callbackDict[callbackId]
                self.rwLock.release()
-               continue
-
-            #call it with the payload
-            callbackFunc = self.callbackDict[callbackId]
-            self.rwLock.release()
-            callbackFunc.process(callbackData)
+               callbackFunc.process(callbackData)
 
 ################################################################################
 ##

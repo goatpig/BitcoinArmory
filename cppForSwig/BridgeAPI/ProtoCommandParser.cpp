@@ -1093,7 +1093,7 @@ bool ProtoCommandParser::processData(
       default:
          capnp::MallocMessageBuilder message;
          auto fromBridge = message.initRoot<FromBridge>();
-         auto reply = fromBridge.getReply();
+         auto reply = fromBridge.initReply();
          reply.setReferenceId(referenceId);
          reply.setSuccess(true);
 

@@ -272,7 +272,7 @@ void WebSocketServer::start(BlockDataManagerThread* bdmT, bool async)
       instance->threads_.push_back(thread(readProcessThread));
    }
 
-   auto port = stoi(Armory::Config::NetworkSettings::listenPort());
+   auto port = stoi(Armory::Config::NetworkSettings::dbPort());
    if (port == 0) {
       port = WEBSOCKET_PORT;
    }

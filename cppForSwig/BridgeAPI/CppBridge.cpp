@@ -384,8 +384,8 @@ BinaryData CppBridge::createWalletsPacket(MessageId msgId)
 {
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<FromBridge>();
-   auto reply = fromBridge.getReply();
-   auto serviceReply = reply.getService();
+   auto reply = fromBridge.initReply();
+   auto serviceReply = reply.initService();
 
    //grab wallet map
    auto accountIdMap = wltManager_->getAccountIdMap();

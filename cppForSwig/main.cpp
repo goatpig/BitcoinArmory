@@ -63,10 +63,10 @@ int main(int argc, char* argv[])
    if (!DBSettings::checkChain())
    {
       //check we can listen on this ip:port
-      if (SimpleSocket::checkSocket("127.0.0.1", NetworkSettings::listenPort()))
+      if (SimpleSocket::checkSocket("127.0.0.1", NetworkSettings::dbPort()))
       {
          LOGERR << "There is already a process listening on port " << 
-            NetworkSettings::listenPort();
+            NetworkSettings::dbPort();
          LOGERR << "ArmoryDB cannot start under these conditions. Shutting down!";
          LOGERR << "Make sure to shutdown the conflicting process" <<
             "before trying again (most likely another ArmoryDB instance)";
