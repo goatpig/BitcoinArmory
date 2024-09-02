@@ -62,7 +62,7 @@ public:
    // addScrAddr when blockchain rescan req'd, addNewScrAddr for just-created
    void removeAddressBulk(const std::vector<BinaryDataRef>&);
    bool hasScrAddress(const BinaryDataRef&) const;
-   std::set<BinaryData> getAddrSet(void) const;
+   std::set<BinaryDataRef> getAddrSet(void) const;
 
    // BlkNum is necessary for "unconfirmed" list, since it is dependent
    // on number of confirmations.  But for "spendable" TxOut list, it is
@@ -98,6 +98,7 @@ public:
    void setWalletID(const std::string &wltId) { walletID_ = wltId; }
    const std::string& walletID() const { return walletID_; }
 
+   const HistoryPager& historyPager(void) const;
    std::shared_ptr<const std::map<BinaryData, LedgerEntry>> getHistoryPage(uint32_t);
    std::vector<LedgerEntry> getHistoryPageAsVector(uint32_t);
    size_t getHistoryPageCount(void) const { return histPages_.getPageCount(); }

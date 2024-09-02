@@ -1023,43 +1023,36 @@ void LMDBBlockDatabase::putStoredScriptHistorySummary(StoredScriptHistory & ssh)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool LMDBBlockDatabase::getStoredScriptHistorySummary( StoredScriptHistory & ssh,
-   BinaryDataRef scrAddrStr) const
+bool LMDBBlockDatabase::getStoredScriptHistorySummary(StoredScriptHistory & ssh,
+   BinaryDataRef scrAddr) const
 {
    ssh.clear();
-
    auto tx = beginTransaction(SSH, LMDB::ReadOnly);
    auto ldbIter = getIterator(SSH);
    bool has = false;
 
-   if (ldbIter->seekToExact(DB_PREFIX_SCRIPT, scrAddrStr))
-   {
+   if (ldbIter->seekToExact(DB_PREFIX_SCRIPT, scrAddr)) {
       ssh.unserializeDBKey(ldbIter->getKeyRef());
       ssh.unserializeDBValue(ldbIter->getValueRef());
       has = true;
    }
-
    return has;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 bool LMDBBlockDatabase::getStoredScriptHistory( StoredScriptHistory & ssh,
-                                               BinaryDataRef scrAddrStr,
-                                               uint32_t startBlock,
-                                               uint32_t endBlock) const
+   BinaryDataRef scrAddr, uint32_t startBlock, uint32_t endBlock) const
 {
-   if (!getStoredScriptHistorySummary(ssh, scrAddrStr))
+   if (!getStoredScriptHistorySummary(ssh, scrAddr)) {
       return false;
+   }
 
-   bool status = 
-      fillStoredSubHistory(ssh, startBlock, endBlock);
-
-   if (!status)
+   if (!fillStoredSubHistory(ssh, startBlock, endBlock)) {
       return false;
+   }
 
    //grab UTXO flags
    getUTXOflags(ssh.subHistMap_);
-
    return true;
 }
 

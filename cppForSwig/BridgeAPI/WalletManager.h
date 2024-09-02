@@ -114,8 +114,8 @@ public:
    Armory::Wallets::AddressAccountId getAccountId(void) const;
 
    void updateBalancesAndCount(uint32_t topBlockHeight);
-   void updateWalletBalanceState(const CombinedBalances&);
-   void updateAddressCountState(const CombinedBalances&);
+   void updateWalletBalanceState(const AsyncClient::CombinedBalances&);
+   void updateAddressCountState(const AsyncClient::CombinedBalances&);
 
    void extendAddressChain(unsigned count)
    {

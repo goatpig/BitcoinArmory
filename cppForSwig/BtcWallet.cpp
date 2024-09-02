@@ -38,13 +38,14 @@ bool BtcWallet::hasScrAddress(const BinaryDataRef& scrAddr) const
 }
 
 /////////////////////////////////////////////////////////////////////////////
-set<BinaryData> BtcWallet::getAddrSet() const
+std::set<BinaryDataRef> BtcWallet::getAddrSet() const
 {
    auto addrMap = scrAddrMap_.get();
-   set<BinaryData> addrSet;
+   std::set<BinaryDataRef> addrSet;
 
-   for (auto& addrPair : *addrMap)
+   for (auto& addrPair : *addrMap) {
       addrSet.emplace(addrPair.first);
+   }
    return addrSet;
 }
 
@@ -713,14 +714,11 @@ map<BinaryData, LedgerEntry> BtcWallet::updateWalletLedgersFromTxio(
 const ScrAddrObj* BtcWallet::getScrAddrObjByKey(const BinaryData& key) const
 {
    auto addrMap = scrAddrMap_.get();
-
    auto saIter = addrMap->find(key);
-   if (saIter == addrMap->end())
-   {
+   if (saIter == addrMap->end()) {
       LOGWARN << "unknown address in btcwallet";
       throw std::runtime_error("unknown address in btcwallet");
    }
-      
    return saIter->second.get();
 }
 
@@ -777,6 +775,11 @@ vector<LedgerEntry> BtcWallet::getHistoryPageAsVector(uint32_t pageId)
       ledgerVec.push_back(ledgerPair.second);
 
    return ledgerVec;
+}
+
+const HistoryPager& BtcWallet::historyPager() const
+{
+   return histPages_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -5,9 +5,9 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016, goatpig                                               //            
+//  Copyright (C) 2016-22024, goatpig                                         //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                   
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -53,15 +53,6 @@ class BDMnotReady : public std::exception
    }
 };
 
-struct OpData
-{
-   unsigned height_;
-   unsigned txindex_;
-   bool isspent_;
-   uint64_t value_;
-   BinaryData spenderHash_;
-};
-
 enum class WalletRegType : int
 {
    UNSET    = 0,
@@ -84,6 +75,25 @@ struct WalletRegistrationRequest
    {}
 };
 
+struct CombinedBalances
+{
+   struct BalanceAndCount
+   {
+      const uint64_t full;
+      const uint64_t spendable;
+      const uint64_t unconfirmed;
+      const uint32_t txnCount;
+   };
+
+   struct Wallet
+   {
+      const BalanceAndCount                        bnc;
+      const std::map<BinaryData, BalanceAndCount>  addresses;
+   };
+
+   std::map<std::string, Wallet> wallets;
+};
+
 class BlockDataViewer
 {
 public:
@@ -97,7 +107,7 @@ public:
    // blockchain in RAM, each scan will take 30-120 seconds.  Registering makes 
    // sure that the intial blockchain scan picks up wallet-relevant stuff as 
    // it goes, and does a full [re-]scan of the blockchain only if necessary.
-   virtual void registerWallet(WalletRegistrationRequest&);
+   void registerAWallet(WalletRegistrationRequest&);
    void registerAddresses(WalletRegistrationRequest&);
    void       unregisterWallet(const std::string& ID);
 
@@ -194,9 +204,10 @@ public:
 
    uint32_t getBlockTimeByHeight(uint32_t) const;
    uint32_t getClosestBlockHeightForTime(uint32_t);
-   
+
    LedgerDelegate getLedgerDelegateForWallets();
    LedgerDelegate getLedgerDelegateForLockboxes();
+   LedgerDelegate getLedgerDelegateForWallet(const std::string&);
    LedgerDelegate getLedgerDelegateForScrAddr(
       const std::string& wltID, const BinaryData& scrAddr);
 
@@ -216,25 +227,26 @@ public:
 
    bool isRBF(const BinaryData& txHash) const;
    bool hasScrAddress(const BinaryDataRef&) const;
-   std::set<BinaryData> getAddrSet(void) const;
+   std::set<BinaryDataRef> getAddrSet(void) const;
 
    std::shared_ptr<BtcWallet> getWalletOrLockbox(const std::string& id) const;
 
    std::tuple<uint64_t, uint64_t> getAddrFullBalance(const BinaryData&);
 
    std::unique_ptr<BDV_Notification_ZC> createZcNotification(
-      const std::set<BinaryData>&);
+      const std::set<BinaryDataRef>&);
 
    virtual const std::string& getID(void) const = 0;
 
    //wallet agnostic methods
    std::vector<UTXO> getUtxosForAddress(const BinaryDataRef&, bool) const;
-   std::map<BinaryData, std::map<BinaryData, std::map<unsigned, OpData>>>
-      getAddressOutpoints(const std::set<BinaryDataRef>&, 
-         unsigned&, unsigned&) const;
+   std::map<BinaryData, std::vector<Output>> getAddressOutpoints(
+      const std::set<BinaryDataRef>&, unsigned&, unsigned&) const;
 
    std::vector<std::pair<StoredTxOut, BinaryDataRef>> getOutputsForOutpoints(
       const std::map<BinaryDataRef, std::set<unsigned>>&, bool) const;
+
+   CombinedBalances getCombinedBalances(void) const;
 
 protected:
    static void unregisterAddresses(
@@ -295,7 +307,6 @@ public:
    std::shared_ptr<BtcWallet> getWalletByID(const std::string& ID) const;
 
    void reset();
-   
    size_t getPageCount(void) const { return hist_.getPageCount(); }
    std::vector<LedgerEntry> getHistoryPage(uint32_t pageId, unsigned updateID,
       bool rebuildLedger, bool remapWallets);

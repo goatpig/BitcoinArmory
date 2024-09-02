@@ -379,6 +379,7 @@ namespace Armory
          BinaryData getTxId_const(void) const;
 
          //state import/export
+         void deserializeState(const BinaryDataRef&);
          void deserializeState_Legacy(const BinaryDataRef&);
          void merge(const Signer& rhs);
 

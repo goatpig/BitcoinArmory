@@ -87,7 +87,7 @@ void DatabaseBuilder::init()
 
    //read all blocks already in DB and populate blockchain
    topBlockOffset_ = loadBlockHeadersFromDB(progress_);
-   
+
    if (DBSettings::reportProgress())
       progress_(BDMPhase_OrganizingChain, 0, UINT32_MAX, 0);
 

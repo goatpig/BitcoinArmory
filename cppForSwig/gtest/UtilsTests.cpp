@@ -16,7 +16,7 @@
 #include "BlockchainDatabase/TxHashFilters.h"
 
 using namespace std;
-using namespace Armory::Signer;
+using namespace Armory::Signing;
 using namespace Armory::Config;
 using namespace Armory::Wallets::Encryption;
 
@@ -6731,13 +6731,11 @@ GTEST_API_ int main(int argc, char **argv)
 {
    #ifdef _MSC_VER
       _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
-   
       WSADATA wsaData;
       WORD wVersion = MAKEWORD(2, 0);
       WSAStartup(wVersion, &wsaData);
    #endif
 
-   GOOGLE_PROTOBUF_VERIFY_VERSION;
    srand(time(0));
    std::cout << "Running main() from gtest_main.cc\n";
 

@@ -69,6 +69,12 @@ struct BdvRequest {
       outpoints      @1 : List(Body);
    }
 
+   struct AddressOutputsRequest {
+      addresses      @0 : List(Address);
+      heightCutoff   @1 : UInt32;
+      zcCutoff       @2 : UInt32;
+   }
+
    bdvId                         @0 : Types.BdvId;
 
    union {
@@ -81,7 +87,7 @@ struct BdvRequest {
       getLedgerDelegate          @5 : Void;
       getTxByHash                @6 : List(Types.Hash);
       getOutputsForOutpoints     @7 : OutpointRequest;
-      getOutputsForAddress       @8 : List(Address);
+      getOutputsForAddress       @8 : AddressOutputsRequest;
       updateWalletsLedgerFilter  @9 : List(Types.WalletId);
       getCombinedBalances        @10: Void;
    }
@@ -99,6 +105,17 @@ struct BdvReply {
       addresses   @2 : List(AddressBalances);
    }
 
+   struct AddressOutputReply {
+      struct AddressOutputs {
+         addr        @0 : Address;
+         outputs     @1 : List(Types.Output);
+      }
+
+      heightCutoff   @0 : UInt32;
+      zcCutoff       @1 : UInt32;
+      addresses      @2 : List(AddressOutputs);
+   }
+
    union {
       unset                      @0 : Void;
 
@@ -109,7 +126,7 @@ struct BdvReply {
       getLedgerDelegate          @4 : Types.DelegateId;
       getTxByHash                @5 : List(Types.Tx);
       getOutputsForOutpoints     @6 : List(Types.Output);
-      getOutputsForAddress       @7 : List(Types.Output);
+      getOutputsForAddress       @7 : AddressOutputReply;
       updateWalletsLedgerFilter  @8 : Void;
       getCombinedBalances        @9 : List(CombinedBalanceAndCount);
    }
@@ -138,10 +155,9 @@ struct LedgerReply {
 
 ##### wallets #####
 struct TxoutRequest {
-   spendable   @0 : Bool;
-   rbf         @1 : Bool;
-   zc          @2 : Bool;
-   targetValue @3 : UInt64;
+   targetValue @0 : UInt64;
+   zc          @1 : Bool;
+   rbf         @2 : Bool;
 }
 
 struct Address {

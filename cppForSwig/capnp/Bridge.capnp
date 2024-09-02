@@ -131,7 +131,7 @@ struct BlockchainServiceRequest {
       registerWallets               @6 : Void;
 
       registerWallet                @7 : RegisterWallet;
-      broadcastTx                   @8 : List(Types.Tx);
+      broadcastTx                   @8 : List(Data);
       getTxsByHash                  @9 : List(Types.Hash);
       getHeadersByHeight            @10: List(Types.Height);
       getBlockTimeByHeight          @11: UInt32;
@@ -395,7 +395,7 @@ struct SignerRequest {
       getSignedStateForInput  @14: UInt32;
 
       resolve                 @15: Types.WalletId;
-      addSupportingTx         @16: Types.Tx;
+      addSupportingTx         @16: Data;
 
       fromType                @17: Void;
       canLegacySerialize      @18: Void;
@@ -422,8 +422,8 @@ struct SignerReply {
 
       getNew                  @1 : Text;
       toTxSigCollect          @2 : Text;
-      getSignedTx             @3 : Types.Tx;
-      getUnsignedTx           @4 : Types.Tx;
+      getSignedTx             @3 : Data;
+      getUnsignedTx           @4 : Data;
       getSignedStateForInput  @5 : InputSignedState;
       fromType                @6 : UInt32;
       canLegacySerialize      @7 : Bool;

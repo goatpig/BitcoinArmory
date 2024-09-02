@@ -206,7 +206,7 @@ void ScrAddrFilter::setSSHLastScanned(unsigned height)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-std::set<BinaryData> ScrAddrFilter::updateAddrMap(
+std::set<BinaryDataRef> ScrAddrFilter::updateAddrMap(
    const std::set<BinaryData>& addrSet, unsigned height, bool remove)
 {
    if (addrSet.empty()) {
@@ -215,23 +215,21 @@ std::set<BinaryData> ScrAddrFilter::updateAddrMap(
 
    if (!remove) {
       //add addresses to both scan and zc filter maps
-      std::set<BinaryData> addrRefSet;
+      std::set<BinaryDataRef> addrRefSet;
       auto scraddrmap = scanFilterAddrMap_->get();
       std::map<BinaryData, std::shared_ptr<AddrAndHash>> updateMap;
 
       for (const auto& sa : addrSet) {
          auto iter = scraddrmap->find(sa);
          if (iter != scraddrmap->end()) {
-            addrRefSet.insert(iter->first);
+            addrRefSet.emplace(iter->second->scrAddr_.getRef());
             continue;
          }
 
          auto aah = std::make_shared<AddrAndHash>(sa);
          aah->scannedHeight_ = height;
-         std::pair<BinaryDataRef, std::shared_ptr<AddrAndHash>> addrPair = {
-            aah->scrAddr_.getRef(), aah };
-         updateMap.insert(std::move(addrPair));
-         addrRefSet.insert(aah->scrAddr_.getRef());
+         updateMap.emplace(aah->scrAddr_, aah);
+         addrRefSet.emplace(aah->scrAddr_.getRef());
       }
 
       scanFilterAddrMap_->update(updateMap);

@@ -29,8 +29,7 @@
 #include "SocketIncludes.h"
 #include "BinaryData.h"
 
-   
-typedef std::function<bool(std::vector<uint8_t>, std::exception_ptr)>  ReadCallback;
+typedef std::function<bool(std::vector<uint8_t>, std::exception_ptr)> ReadCallback;
 
 ///////////////////////////////////////////////////////////////////////////////
 struct CallbackReturn
@@ -80,6 +79,7 @@ struct Socket_WritePayload
    virtual void serialize(std::vector<uint8_t>&) = 0;
    virtual std::string serializeToText(void) = 0;
    virtual size_t getSerializedSize(void) const = 0;
+   virtual bool isSingleSegment(void) const { return true; }
 };
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -125,20 +125,19 @@ public:
 class DualStream : public LogStream
 {
 public:
-   DualStream(void) : noStdout_(false) 
+   DualStream(void) : noStdout_(false)
    {}
 
-   void enableStdOut(bool newbool) { noStdout_ = !newbool; }
+   void enableStdOut(bool);
 
    void setLogFile(std::string logfile, unsigned long long maxSz=MAX_LOG_FILE_SIZE)
-   { 
+   {
       fname_ = logfile;
       truncateFile(fname_, maxSz);
       fout_.open(OS_TranslatePath(fname_.c_str()), std::ios::app); 
       fout_ << "\n\nLog file opened at " << NowTime() << ": " << fname_.c_str() << std::endl;
    }
 
-   
    void truncateFile(std::string logfile, unsigned long long int maxSizeInBytes)
    {
       std::ifstream is(OS_TranslatePath(logfile.c_str()), std::ios::in|std::ios::binary);

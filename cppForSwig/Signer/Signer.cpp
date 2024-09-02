@@ -973,28 +973,23 @@ BinaryData Signing::ScriptSpender::getAvailableInputScript() const
 BinaryData Signing::ScriptSpender::getSerializedInput(
    bool withSig, bool loose) const
 {
-   if (legacyStatus_ == SpenderStatus::Unknown && !loose)
-   {
+   if (legacyStatus_ == SpenderStatus::Unknown && !loose) {
       throw SpenderException("unresolved spender");
    }
 
-   if (withSig)
-   {
-      if (!isSegWit())
-      {
-         if (legacyStatus_ != SpenderStatus::Signed)
+   if (withSig) {
+      if (!isSegWit()) {
+         if (legacyStatus_ != SpenderStatus::Signed) {
             throw SpenderException("spender is missing sigs");
-      }
-      else
-      {
-         if (legacyStatus_ != SpenderStatus::Empty && 
-            legacyStatus_ != SpenderStatus::Resolved)
-         {
+         }
+      } else {
+         if (legacyStatus_ != SpenderStatus::Empty &&
+            legacyStatus_ != SpenderStatus::Resolved) {
             throw SpenderException("invalid legacy state for sw spender");
          }
       }
    }
-   
+
    auto serializedScript = getAvailableInputScript();
 
    BinaryWriter bw;
@@ -3051,8 +3046,9 @@ std::shared_ptr<Signing::ScriptRecipient> Signing::Signer::getRecipient(
 ////////////////////////////////////////////////////////////////////////////////
 BinaryDataRef Signing::Signer::serializeSignedTx(void) const
 {
-   if (serializedSignedTx_.getSize() != 0)
+   if (!serializedSignedTx_.empty()) {
       return serializedSignedTx_.getRef();
+   }
 
    BinaryWriter bw;
 
@@ -3060,52 +3056,52 @@ BinaryDataRef Signing::Signer::serializeSignedTx(void) const
    bw.put_uint32_t(version_);
 
    bool isSW = isSegWit();
-   if (isSW)
-   {
+   if (isSW) {
       //marker and flag
       bw.put_uint8_t(0);
       bw.put_uint8_t(1);
    }
 
    //txin count
-   if (spenders_.size() == 0)
+   if (spenders_.empty()) {
       throw std::runtime_error("no spenders");
+   }
    bw.put_var_int(spenders_.size());
 
    //txins
-   for (auto& spender : spenders_)
+   for (auto& spender : spenders_) {
       bw.put_BinaryData(spender->getSerializedInput(true, false));
+   }
 
    //txout count
    auto recVector = getRecipientVector();
-   if (recVector.size() == 0)
+   if (recVector.empty()) {
       throw std::runtime_error("no recipients");
+   }
    bw.put_var_int(recVector.size());
 
    //txouts
-   for (auto& recipient : recVector)
+   for (auto& recipient : recVector) {
       bw.put_BinaryData(recipient->getSerializedScript());
+   }
 
-   if (isSW)
-   {
+   if (isSW) {
       //witness data
-      for (auto& spender : spenders_)
-      {
+      for (auto& spender : spenders_) {
          BinaryDataRef witnessRef = spender->getFinalizedWitnessData();
          
          //account for empty witness data
-         if (witnessRef.getSize() == 0)
+         if (witnessRef.getSize() == 0) {
             bw.put_uint8_t(0);
-         else
+         } else {
             bw.put_BinaryDataRef(witnessRef);
+         }
       }
    }
 
    //lock time
    bw.put_uint32_t(lockTime_);
-
    serializedSignedTx_ = std::move(bw.getData());
-
    return serializedSignedTx_.getRef();
 }
 
@@ -3421,6 +3417,16 @@ BinaryData Signing::Signer::serializeState() const
    auto flat = capnp::messageToFlatArray(message);
    auto bytes = flat.asBytes();
    return BinaryData(bytes.begin(), bytes.end());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void Signing::Signer::deserializeState(const BinaryDataRef& ref)
+{
+   Signer theSigner;
+   Deserializer::capnToSigner(theSigner, ref);
+   theSigner.fromType_ = SignerStringFormat::TxSigCollect_Modern;
+
+   merge(theSigner);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
