@@ -1,8 +1,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016, goatpig.                                              //
+//  Copyright (C) 2016-2024, goatpig.                                         //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                      
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -11,7 +11,8 @@
 #include <cstring>
 #include <stdexcept>
 
-#include "google/protobuf/text_format.h"
+#include <capnp/message.h>
+#include <capnp/serialize.h>
 
 using namespace std;
 
@@ -1055,16 +1056,16 @@ void ListenServer::acceptProcess(AcceptStruct aStruct)
 void ListenServer::stop()
 {
    listenSocket_->shutdown();
-   if (listenThread_.joinable())
+   if (listenThread_.joinable()) {
       listenThread_.join();
+   }
 
-   for (auto& sockPair : acceptMap_)
-   {
+   for (auto& sockPair : acceptMap_) {
       auto& sockstruct = sockPair.second;
-      
       sockstruct->sock_->shutdown();
-      if (sockstruct->thr_.joinable())
+      if (sockstruct->thr_.joinable()) {
          sockstruct->thr_.join();
+      }
    }
 }
 
@@ -1085,7 +1086,43 @@ Socket_WritePayload::~Socket_WritePayload(void)
 {}
 
 ///////////////////////////////////////////////////////////////////////////////
-void WritePayload_Raw::serialize(vector<uint8_t>& data)
+void WritePayload_Raw::serialize(vector<uint8_t>& destination)
 {
-   data = move(data);
+   destination = std::move(data);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+WritePayload_Capnp::WritePayload_Capnp(
+   std::unique_ptr<capnp::MessageBuilder> builderPtr,
+   std::vector<uint8_t> firstSegment) :
+   builder(std::move(builderPtr)),
+   firstSegment(std::move(firstSegment))
+{}
+
+////
+WritePayload_Capnp::~WritePayload_Capnp()
+{
+   builder.reset();
+   firstSegment.clear();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void WritePayload_Capnp::serialize(std::vector<uint8_t>& dest)
+{
+   //NOTE: this should only ever be used in tests
+   auto flat = capnp::messageToFlatArray(*builder);
+   auto bytes = flat.asBytes();
+   dest = std::vector<uint8_t>(bytes.begin(), bytes.end());
+}
+
+///////////////////////////////////////////////////////////////////////////////
+size_t WritePayload_Capnp::getSerializedSize() const
+{
+   return builder->sizeInWords() * sizeof(capnp::word);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool WritePayload_Capnp::isSingleSegment() const
+{
+   return false;
 }

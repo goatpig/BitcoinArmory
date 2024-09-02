@@ -205,7 +205,7 @@ public:
    //TODO: shouldn't use references for txHashes anymore
    std::map<BinaryDataRef, BinaryDataRef> txHashToDBKey_; //<txHash, zcKey>
    std::map<BinaryData, std::shared_ptr<ParsedTx>> txMap_; //<zcKey, zcTx>
-   
+
    //<txOutKey, bool> (true for valid, false for dropped)
    std::map<BinaryData, bool> txOutsSpentByZC_;
 

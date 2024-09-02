@@ -290,9 +290,13 @@ namespace DBTestUtils
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   string registerBDV(Clients* clients, const BinaryData& magic_word)
+   std::string registerBDV(Clients* clients, const BinaryData& magic_word)
    {
-      return clients->registerBDV(magic_word.toHexStr());
+      std::string bdvID = "0102030405060708";
+      if (!clients->registerBDV(magic_word.toHexStr(), bdvID)) {
+         return {};
+      }
+      return bdvID;
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -699,11 +703,14 @@ namespace DBTestUtils
       auto bdvReply = reply.getBdv();
       auto capnTxs = bdvReply.getGetTxByHash();
       auto capnTx = capnTxs[0];
-      BinaryDataRef rawTx(capnTx.begin(), capnTx.end());
+      auto body = capnTx.getBody();
+      BinaryDataRef rawTx(body.begin(), body.end());
 
       Tx txobj(rawTx);
-      //txobj.setChainedZC(response->ischainedzc());
-      //txobj.setRBF(response->isrbf());
+      txobj.setTxHeight(capnTx.getHeight());
+      txobj.setTxIndex(capnTx.getIndex());
+      txobj.setChainedZC(capnTx.getIsChainZc());
+      txobj.setRBF(capnTx.getIsRbf());
       return txobj;
    }
 
@@ -887,7 +894,13 @@ namespace DBTestUtils
       memset(zero.getPtr(), 0, 8);
       payload->bdvPtr_ = clients->get(bdvId);
 
-      return clients->processCommand(payload);
+      auto reply = clients->processCommand(payload);
+      if (reply == nullptr) {
+         return {};
+      }
+      std::vector<uint8_t> flat;
+      reply->serialize(flat);
+      return BinaryData(flat.data(), flat.size());
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -956,9 +969,9 @@ namespace DBTestUtils
    map<BinaryData, vector<uint64_t>> getAddrBalancesFromDB(
       shared_ptr<AsyncClient::BlockDataViewer> bdv, std::string wltId)
    {
-      auto prom = make_shared<promise<map<std::string, CombinedBalances>>>();
+      auto prom = make_shared<promise<map<std::string, AsyncClient::CombinedBalances>>>();
       auto fut = prom->get_future();
-      auto lbd = [prom](ReturnMessage<map<std::string, CombinedBalances>> msg)
+      auto lbd = [prom](ReturnMessage<map<std::string, AsyncClient::CombinedBalances>> msg)
       {
          prom->set_value(msg.get());
       };

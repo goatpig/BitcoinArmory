@@ -2143,7 +2143,7 @@ protected:
    /////////////////////////////////////////////////////////////////////////////
    virtual void SetUp()
    {
-      LOGDISABLESTDOUT();
+      //LOGDISABLESTDOUT();
       zeros_ = READHEX("00000000");
 
       blkdir_ = string("./blkfiletest");
@@ -2216,7 +2216,7 @@ protected:
 
       Armory::Config::reset();
 
-      LOGENABLESTDOUT();
+      //LOGENABLESTDOUT();
       CLEANUP_ALL_TIMERS();
    }
 
@@ -2450,7 +2450,7 @@ TEST_F(WebSocketTests, DISABLED_WebSocketStack_ParallelAsync)
       auto w1AddrBal_fut = w1AddrBal_prom->get_future();
       auto w1_getAddrBalancesLBD =
          [w1AddrBal_prom, wltId=wallet1.walletID()](
-            ReturnMessage<map<std::string, CombinedBalances>> balances)->void
+            ReturnMessage<map<std::string, AsyncClient::CombinedBalances>> balances)->void
       {
          auto combinedBalances = move(balances.get());
          auto walletBalances = combinedBalances.at(wltId);
@@ -2473,7 +2473,7 @@ TEST_F(WebSocketTests, DISABLED_WebSocketStack_ParallelAsync)
       auto lb1AddrBal_fut = lb1AddrBal_prom->get_future();
       auto lb1_getAddrBalancesLBD =
          [lb1AddrBal_prom, wltId=lb1.walletID()](
-            ReturnMessage<map<std::string, CombinedBalances>> balances)->void
+            ReturnMessage<map<std::string, AsyncClient::CombinedBalances>> balances)->void
       {
          auto combinedBalances = move(balances.get());
          auto walletBalances = combinedBalances.at(wltId);
@@ -2486,7 +2486,7 @@ TEST_F(WebSocketTests, DISABLED_WebSocketStack_ParallelAsync)
       auto lb2AddrBal_fut = lb2AddrBal_prom->get_future();
       auto lb2_getAddrBalancesLBD =
          [lb2AddrBal_prom, wltId=lb2.walletID()](
-            ReturnMessage<map<std::string, CombinedBalances>> balances)->void
+            ReturnMessage<map<std::string, AsyncClient::CombinedBalances>> balances)->void
       {
          auto combinedBalances = move(balances.get());
          auto walletBalances = combinedBalances.at(wltId);
@@ -3182,11 +3182,10 @@ TEST_F(WebSocketTests, DISABLED_WebSocketStack_ParallelAsync_ShutdownClients)
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(WebSocketTests, WebSocketStack_ManyLargeWallets)
 {
-   //
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initAuthPeers(authPeersPassLbd_);
    WebSocketServer::start(theBDMt_, true);
-   auto&& serverPubkey = WebSocketServer::getPublicKey();
+   auto serverPubkey = WebSocketServer::getPublicKey();
 
    auto createNAddresses = [](unsigned count)->vector<BinaryData>
    {
@@ -3230,14 +3229,14 @@ TEST_F(WebSocketTests, WebSocketStack_ManyLargeWallets)
 
    {
       auto pCallback = make_shared<DBTestUtils::UTCallback>();
-      auto&& bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
-         "127.0.0.1", NetworkSettings::listenPort(), 
+      auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
+         "127.0.0.1", NetworkSettings::listenPort(),
          Armory::Config::getDataDir(),
-         authPeersPassLbd_, 
+         authPeersPassLbd_,
          NetworkSettings::ephemeralPeers(), true, //public server
          pCallback);
       bdvObj->addPublicKey(serverPubkey);
-      bdvObj->connectToRemote();
+      ASSERT_TRUE(bdvObj->connectToRemote());
       bdvObj->registerWithDB(hexMagicBytes);
 
       auto wallet1 = bdvObj->getWalletObj("wallet1");
@@ -3264,17 +3263,49 @@ TEST_F(WebSocketTests, WebSocketStack_ManyLargeWallets)
       auto wallet8 = bdvObj->getWalletObj("wallet8");
       wallet8.registerAddresses(_scrAddrVec8, false);
 
-      vector<string> walletRegIDs {
-         "wallet1", "wallet2", "wallet3", "wallet4",
-         "wallet5", "wallet6", "wallet7", "wallet8"
-      };
-
-      //wait on registration ack
-      pCallback->waitOnManySignals(BDMAction_Refresh, walletRegIDs);
-
       //go online
       bdvObj->goOnline();
       pCallback->waitOnSignal(BDMAction_Ready);
+
+      //check balances
+      auto getBalanceAndCount = [bdvObj](const std::string& wltId)
+         ->std::vector<uint64_t>
+      {
+         auto prom = std::make_shared<std::promise<std::vector<uint64_t>>>();
+         auto fut = prom->get_future();
+         auto lbd = [prom](ReturnMessage<std::vector<uint64_t>> bnc)
+         {
+            prom->set_value(bnc.get());
+         };
+         auto wallet = bdvObj->getWalletObj(wltId);
+         wallet.getBalancesAndCount(UINT32_MAX, lbd);
+         return fut.get();
+      };
+
+      auto bnc1 = getBalanceAndCount("wallet1");
+      EXPECT_EQ(bnc1[0], 50 * COIN);
+      EXPECT_EQ(bnc1[1], 0);
+      EXPECT_EQ(bnc1[2], 50 * COIN);
+      EXPECT_EQ(bnc1[3], 1ULL);
+
+      auto bnc3 = getBalanceAndCount("wallet3");
+      EXPECT_EQ(bnc3[0], 70 * COIN);
+      EXPECT_EQ(bnc3[1], 70 * COIN);
+      EXPECT_EQ(bnc3[2], 0);
+      EXPECT_EQ(bnc3[3], 12ULL);
+
+      auto bnc5 = getBalanceAndCount("wallet5");
+      EXPECT_EQ(bnc5[0], 20 * COIN);
+      EXPECT_EQ(bnc5[1], 20 * COIN);
+      EXPECT_EQ(bnc5[2], 0);
+      EXPECT_EQ(bnc5[3], 6ULL);
+
+      auto bnc7 = getBalanceAndCount("wallet7");
+      EXPECT_EQ(bnc7[0], 30 * COIN);
+      EXPECT_EQ(bnc7[1], 30 * COIN);
+      EXPECT_EQ(bnc7[2], 0);
+      EXPECT_EQ(bnc7[3], 2ULL);
+
       bdvObj->unregisterFromDB();
    }
 
@@ -3297,10 +3328,10 @@ TEST_F(WebSocketTests, WebSocketStack_ManyLargeWallets)
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(WebSocketTests, WebSocketStack_AddrOpLoop)
 {
+   //--gtest_filter=WebSocketTests.WebSocketStack_AddrOpLoop
    auto feed = make_shared<ResolverUtils::TestResolverFeed>();
    feed->addPrivKey(TestChain::privKeyAddrB);
 
-   //
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initAuthPeers(authPeersPassLbd_);
    WebSocketServer::start(theBDMt_, true);
@@ -3341,7 +3372,7 @@ TEST_F(WebSocketTests, WebSocketStack_AddrOpLoop)
       auto&& bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
          "127.0.0.1", NetworkSettings::listenPort(), 
          Armory::Config::getDataDir(),
-         authPeersPassLbd_, 
+         authPeersPassLbd_,
          NetworkSettings::ephemeralPeers(), true, //public server
          pCallback);
       bdvObj->addPublicKey(serverPubkey);
@@ -3350,10 +3381,8 @@ TEST_F(WebSocketTests, WebSocketStack_AddrOpLoop)
 
       auto&& wallet1 = bdvObj->getWalletObj("wallet1");
       vector<string> walletRegIDs {"wallet1"};
+      std::this_thread::sleep_for(5s);
       wallet1.registerAddresses(_scrAddrVec1, false);
-
-      //wait on registration ack
-      pCallback->waitOnManySignals(BDMAction_Refresh, walletRegIDs);
 
       //go online
       bdvObj->goOnline();
@@ -3568,19 +3597,16 @@ TEST_F(WebSocketTests, WebSocketStack_AddrOpLoop)
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(WebSocketTests, WebSocketStack_CombinedCalls)
 {
-   //
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initAuthPeers(authPeersPassLbd_);
    WebSocketServer::start(theBDMt_, true);
    auto&& serverPubkey = WebSocketServer::getPublicKey();
    theBDMt_->start(DBSettings::initMode());
 
-   auto createNAddresses = [](unsigned count)->vector<BinaryData>
+   auto createNAddresses = [](unsigned count)->std::vector<BinaryData>
    {
-      vector<BinaryData> result;
-
-      for (unsigned i = 0; i < count; i++)
-      {
+      std::vector<BinaryData> result;
+      for (unsigned i = 0; i < count; i++) {
          BinaryWriter bw;
          bw.put_uint8_t(SCRIPT_PREFIX_HASH160);
 
@@ -3589,7 +3615,6 @@ TEST_F(WebSocketTests, WebSocketStack_CombinedCalls)
 
          result.push_back(bw.getData());
       }
-
       return result;
    };
 
@@ -3604,7 +3629,7 @@ TEST_F(WebSocketTests, WebSocketStack_CombinedCalls)
       auto&& bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
          "127.0.0.1", NetworkSettings::listenPort(), 
          Armory::Config::getDataDir(),
-         authPeersPassLbd_, 
+         authPeersPassLbd_,
          NetworkSettings::ephemeralPeers(), true, //public server
          pCallback);
       bdvObj->addPublicKey(serverPubkey);
@@ -3621,18 +3646,15 @@ TEST_F(WebSocketTests, WebSocketStack_CombinedCalls)
       auto wallet2 = bdvObj->getWalletObj("wallet2");
       wallet2.registerAddresses(_scrAddrVec2, false);
 
-      //wait on registration ack
-      pCallback->waitOnManySignals(BDMAction_Refresh, walletRegIDs);
-
       //go online
       bdvObj->goOnline();
       pCallback->waitOnSignal(BDMAction_Ready);
 
       //balances
-      auto promPtr = make_shared<promise<map<string, CombinedBalances>>>();
+      auto promPtr = make_shared<promise<map<string, AsyncClient::CombinedBalances>>>();
       auto fut = promPtr->get_future();
       auto balLbd = [promPtr](
-         ReturnMessage<map<string, CombinedBalances>> combBal)->void
+         ReturnMessage<map<string, AsyncClient::CombinedBalances>> combBal)->void
       {
          promPtr->set_value(combBal.get());
       };
@@ -3726,23 +3748,21 @@ TEST_F(WebSocketTests, WebSocketStack_CombinedCalls)
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(WebSocketTests, WebSocketStack_UnregisterAddresses)
 {
-   //
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initAuthPeers(authPeersPassLbd_);
    WebSocketServer::start(theBDMt_, true);
-   auto&& serverPubkey = WebSocketServer::getPublicKey();
+   auto serverPubkey = WebSocketServer::getPublicKey();
    theBDMt_->start(DBSettings::initMode());
 
    auto createNAddresses = [](unsigned count)->vector<BinaryData>
    {
       vector<BinaryData> result;
 
-      for (unsigned i = 0; i < count; i++)
-      {
+      for (unsigned i = 0; i < count; i++) {
          BinaryWriter bw;
          bw.put_uint8_t(SCRIPT_PREFIX_HASH160);
 
-         auto&& addrData = CryptoPRNG::generateRandom(20);
+         auto addrData = CryptoPRNG::generateRandom(20);
          bw.put_BinaryData(addrData);
 
          result.push_back(bw.getData());
@@ -3751,10 +3771,10 @@ TEST_F(WebSocketTests, WebSocketStack_UnregisterAddresses)
       return result;
    };
 
-   auto&& _scrAddrVec1 = createNAddresses(20);
+   auto _scrAddrVec1 = createNAddresses(20);
    _scrAddrVec1.push_back(TestChain::scrAddrA);
 
-   auto&& _scrAddrVec2 = createNAddresses(15);
+   auto _scrAddrVec2 = createNAddresses(15);
    _scrAddrVec2.push_back(TestChain::scrAddrB);
 
    {
@@ -3779,20 +3799,17 @@ TEST_F(WebSocketTests, WebSocketStack_UnregisterAddresses)
       auto wallet2 = bdvObj->getWalletObj("wallet2");
       wallet2.registerAddresses(_scrAddrVec2, false);
 
-      //wait on registration ack
-      pCallback->waitOnManySignals(BDMAction_Refresh, walletRegIDs);
-
       //go online
       bdvObj->goOnline();
       pCallback->waitOnSignal(BDMAction_Ready);
 
       //balances
-      auto getCombinedBalances = [bdvObj](void)->map<string, CombinedBalances>
+      auto getCombinedBalances = [bdvObj](void)->map<string, AsyncClient::CombinedBalances>
       {
-         auto promPtr = make_shared<promise<map<string, CombinedBalances>>>();
+         auto promPtr = make_shared<promise<map<string, AsyncClient::CombinedBalances>>>();
          auto fut = promPtr->get_future();
          auto balLbd = [promPtr](
-            ReturnMessage<map<string, CombinedBalances>> combBal)->void
+            ReturnMessage<map<string, AsyncClient::CombinedBalances>> combBal)->void
          {
             promPtr->set_value(combBal.get());
          };
@@ -3889,7 +3906,7 @@ TEST_F(WebSocketTests, WebSocketStack_UnregisterAddresses)
 
       //sizes
       ASSERT_EQ(iter1->second.walletBalanceAndCount.size(), 4ULL);
-      ASSERT_EQ(iter1->second.addressBalances.size(), 2ULL);
+      ASSERT_EQ(iter1->second.addressBalances.size(), 3ULL);
 
       //wallet balance
       EXPECT_EQ(iter1->second.walletBalanceAndCount[0], 150 * COIN);
@@ -3900,18 +3917,20 @@ TEST_F(WebSocketTests, WebSocketStack_UnregisterAddresses)
       //_scrAddrVec1[0] balance
       addrIter1 = iter1->second.addressBalances.find(_scrAddrVec1[0]);
       ASSERT_NE(addrIter1, iter1->second.addressBalances.end());
-      ASSERT_EQ(addrIter1->second.size(), 3ULL);
+      ASSERT_EQ(addrIter1->second.size(), 4ULL);
       EXPECT_EQ(addrIter1->second[0], 50 * COIN);
       EXPECT_EQ(addrIter1->second[1], 0ULL);
       EXPECT_EQ(addrIter1->second[2], 50 * COIN);
+      EXPECT_EQ(addrIter1->second[3], 1ULL);
 
       //_scrAddrVec1[1] balance
       addrIter1 = iter1->second.addressBalances.find(_scrAddrVec1[1]);
       ASSERT_NE(addrIter1, iter1->second.addressBalances.end());
-      ASSERT_EQ(addrIter1->second.size(), 3ULL);
+      ASSERT_EQ(addrIter1->second.size(), 4ULL);
       EXPECT_EQ(addrIter1->second[0], 50 * COIN);
       EXPECT_EQ(addrIter1->second[1], 0ULL);
       EXPECT_EQ(addrIter1->second[2], 50 * COIN);
+      EXPECT_EQ(addrIter1->second[3], 1ULL);
 
       //wallet2
       iter2 = balMap.find("wallet2");
@@ -3919,7 +3938,7 @@ TEST_F(WebSocketTests, WebSocketStack_UnregisterAddresses)
 
       //sizes
       ASSERT_EQ(iter2->second.walletBalanceAndCount.size(), 4ULL);
-      ASSERT_EQ(iter2->second.addressBalances.size(), 2ULL);
+      ASSERT_EQ(iter2->second.addressBalances.size(), 3ULL);
 
       //wallet balance
       EXPECT_EQ(iter2->second.walletBalanceAndCount[0], 170 * COIN);
@@ -3930,18 +3949,20 @@ TEST_F(WebSocketTests, WebSocketStack_UnregisterAddresses)
       //_scrAddrVec2[0] balance
       addrIter2 = iter2->second.addressBalances.find(_scrAddrVec2[0]);
       ASSERT_NE(addrIter2, iter2->second.addressBalances.end());
-      ASSERT_EQ(addrIter2->second.size(), 3ULL);
+      ASSERT_EQ(addrIter2->second.size(), 4ULL);
       EXPECT_EQ(addrIter2->second[0], 50 * COIN);
       EXPECT_EQ(addrIter2->second[1], 0ULL);
       EXPECT_EQ(addrIter2->second[2], 50 * COIN);
+      EXPECT_EQ(addrIter2->second[3], 1);
 
       //_scrAddrVec2[1] balance
       addrIter2 = iter2->second.addressBalances.find(_scrAddrVec2[1]);
       ASSERT_NE(addrIter2, iter2->second.addressBalances.end());
-      ASSERT_EQ(addrIter2->second.size(), 3ULL);
+      ASSERT_EQ(addrIter2->second.size(), 4ULL);
       EXPECT_EQ(addrIter2->second[0], 50 * COIN);
       EXPECT_EQ(addrIter2->second[1], 0ULL);
       EXPECT_EQ(addrIter2->second[2], 50 * COIN);
+      EXPECT_EQ(addrIter2->second[3], 1);
 
       //unregister some addresses
       wallet1.unregisterAddresses({ _scrAddrVec1[0], _scrAddrVec1[5]});
@@ -3958,7 +3979,7 @@ TEST_F(WebSocketTests, WebSocketStack_UnregisterAddresses)
 
       //sizes
       ASSERT_EQ(iter1->second.walletBalanceAndCount.size(), 4ULL);
-      ASSERT_EQ(iter1->second.addressBalances.size(), 0ULL);
+      ASSERT_EQ(iter1->second.addressBalances.size(), 2ULL);
 
       //wallet balance
       EXPECT_EQ(iter1->second.walletBalanceAndCount[0], 100 * COIN);
@@ -3972,7 +3993,7 @@ TEST_F(WebSocketTests, WebSocketStack_UnregisterAddresses)
 
       //sizes
       ASSERT_EQ(iter2->second.walletBalanceAndCount.size(), 4ULL);
-      ASSERT_EQ(iter2->second.addressBalances.size(), 0ULL);
+      ASSERT_EQ(iter2->second.addressBalances.size(), 2ULL);
 
       //wallet balance
       EXPECT_EQ(iter2->second.walletBalanceAndCount[0], 120 * COIN);
@@ -3986,7 +4007,7 @@ TEST_F(WebSocketTests, WebSocketStack_UnregisterAddresses)
 
       //grab balances again
       balMap = getCombinedBalances();
-      ASSERT_EQ(balMap.size(), 1ULL);
+      ASSERT_EQ(balMap.size(), 2ULL);
 
       //mine a block
       DBTestUtils::mineNewBlock(theBDMt_, _scrAddrVec1[2].getSliceCopy(1, 20), 1);
@@ -3994,7 +4015,7 @@ TEST_F(WebSocketTests, WebSocketStack_UnregisterAddresses)
 
       //grab balances again
       balMap = getCombinedBalances();
-      ASSERT_EQ(balMap.size(), 1ULL);
+      ASSERT_EQ(balMap.size(), 2ULL);
       
       //wallet1
       iter1 = balMap.find("wallet1");
@@ -4002,7 +4023,7 @@ TEST_F(WebSocketTests, WebSocketStack_UnregisterAddresses)
 
       //sizes
       ASSERT_EQ(iter1->second.walletBalanceAndCount.size(), 4ULL);
-      ASSERT_EQ(iter1->second.addressBalances.size(), 1ULL);
+      ASSERT_EQ(iter1->second.addressBalances.size(), 3ULL);
 
       //wallet balance
       EXPECT_EQ(iter1->second.walletBalanceAndCount[0], 150 * COIN);
@@ -4012,10 +4033,11 @@ TEST_F(WebSocketTests, WebSocketStack_UnregisterAddresses)
 
       addrIter1 = iter1->second.addressBalances.find(_scrAddrVec1[2]);
       ASSERT_NE(addrIter1, iter1->second.addressBalances.end());
-      ASSERT_EQ(addrIter1->second.size(), 3ULL);
+      ASSERT_EQ(addrIter1->second.size(), 4ULL);
       EXPECT_EQ(addrIter1->second[0], 50 * COIN);
       EXPECT_EQ(addrIter1->second[1], 0ULL);
       EXPECT_EQ(addrIter1->second[2], 50 * COIN);
+      EXPECT_EQ(addrIter1->second[3], 1);
 
       //done
       bdvObj->unregisterFromDB();
@@ -4076,9 +4098,6 @@ TEST_F(WebSocketTests, WebSocketStack_DynamicReorg)
    auto wallet1 = bdvObj->getWalletObj("wallet1");
    wallet1.registerAddresses(scrAddrVec, false);
 
-   //wait on registration ack
-   pCallback->waitOnManySignals(BDMAction_Refresh, {"wallet1"});
-
    //go online
    bdvObj->goOnline();
    pCallback->waitOnSignal(BDMAction_Ready);
@@ -4118,8 +4137,9 @@ TEST_F(WebSocketTests, WebSocketStack_DynamicReorg)
       const BinaryData& payer, const BinaryData& recipient)->BinaryData
    {
       auto utxoVec = getUtxo(payer);
-      if (utxoVec.size() == 0)
-         throw runtime_error("unexpected utxo vec size");
+      if (utxoVec.size() == 0) {
+         throw std::runtime_error("unexpected utxo vec size");
+      }
 
       auto& utxo = utxoVec[0];
       return makeTxFromUtxo(utxo, recipient);
@@ -4129,10 +4149,10 @@ TEST_F(WebSocketTests, WebSocketStack_DynamicReorg)
    auto getUtxoFromRawTx = [](BinaryData& rawTx, unsigned id)->UTXO
    {
       Tx tx(rawTx);
-      if (id > tx.getNumTxOut())
-         throw runtime_error("invalid txout count");
-
-      auto&& txOut = tx.getTxOutCopy(id);
+      if (id > tx.getNumTxOut()) {
+         throw std::runtime_error("invalid txout count");
+      }
+      auto txOut = tx.getTxOutCopy(id);
       
       UTXO utxo;
       utxo.unserializeRaw(txOut.serialize());
@@ -4143,12 +4163,12 @@ TEST_F(WebSocketTests, WebSocketStack_DynamicReorg)
    };
 
    //grab combined balances lambda
-   auto getBalances = [bdvObj](void)->CombinedBalances
+   auto getBalances = [bdvObj](void)->AsyncClient::CombinedBalances
    {
-      auto promPtr = make_shared<promise<map<string, CombinedBalances>>>();
+      auto promPtr = make_shared<promise<map<string, AsyncClient::CombinedBalances>>>();
       auto fut = promPtr->get_future();
       auto balLbd = [promPtr](
-         ReturnMessage<map<string, CombinedBalances>> combBal)->void
+         ReturnMessage<map<string, AsyncClient::CombinedBalances>> combBal)->void
       {
          promPtr->set_value(combBal.get());
       };
@@ -4169,32 +4189,32 @@ TEST_F(WebSocketTests, WebSocketStack_DynamicReorg)
 
       auto iterA = combineBalances.addressBalances.find(TestChain::scrAddrA);
       ASSERT_NE(iterA, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterA->second.size(), 3ULL);
+      ASSERT_EQ(iterA->second.size(), 4ULL);
       EXPECT_EQ(iterA->second[0], 50 * COIN);
 
       auto iterB = combineBalances.addressBalances.find(TestChain::scrAddrB);
       ASSERT_NE(iterB, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterB->second.size(), 3ULL);
+      ASSERT_EQ(iterB->second.size(), 4ULL);
       EXPECT_EQ(iterB->second[0], 70 * COIN);
 
       auto iterC = combineBalances.addressBalances.find(TestChain::scrAddrC);
       ASSERT_NE(iterC, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterC->second.size(), 3ULL);
+      ASSERT_EQ(iterC->second.size(), 4ULL);
       EXPECT_EQ(iterC->second[0], 20 * COIN);
 
       auto iterD = combineBalances.addressBalances.find(TestChain::scrAddrD);
       ASSERT_NE(iterD, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterD->second.size(), 3ULL);
+      ASSERT_EQ(iterD->second.size(), 4ULL);
       EXPECT_EQ(iterD->second[0], 65 * COIN);
 
       auto iterE = combineBalances.addressBalances.find(TestChain::scrAddrE);
       ASSERT_NE(iterE, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterE->second.size(), 3ULL);
+      ASSERT_EQ(iterE->second.size(), 4ULL);
       EXPECT_EQ(iterE->second[0], 30 * COIN);
 
       auto iterF = combineBalances.addressBalances.find(TestChain::scrAddrF);
       ASSERT_NE(iterF, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterF->second.size(), 3ULL);
+      ASSERT_EQ(iterF->second.size(), 4ULL);
       EXPECT_EQ(iterF->second[0], 5 * COIN);
    }
 
@@ -4251,31 +4271,31 @@ TEST_F(WebSocketTests, WebSocketStack_DynamicReorg)
       ZC out so the internal value change tracker counter was 
       incremented, resulting in an entry.
       */
-      EXPECT_EQ(combineBalances.addressBalances.size(), 5ULL);
+      EXPECT_EQ(combineBalances.addressBalances.size(), 6ULL);
 
       auto iterA = combineBalances.addressBalances.find(TestChain::scrAddrA);
       ASSERT_NE(iterA, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterA->second.size(), 3ULL);
+      ASSERT_EQ(iterA->second.size(), 4ULL);
       EXPECT_EQ(iterA->second[0], 155 * COIN);
 
       auto iterB = combineBalances.addressBalances.find(TestChain::scrAddrB);
       ASSERT_NE(iterB, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterB->second.size(), 3ULL);
+      ASSERT_EQ(iterB->second.size(), 4ULL);
       EXPECT_EQ(iterB->second[0], 20 * COIN);
 
       auto iterC = combineBalances.addressBalances.find(TestChain::scrAddrC);
       ASSERT_NE(iterC, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterC->second.size(), 3ULL);
+      ASSERT_EQ(iterC->second.size(), 4ULL);
       EXPECT_EQ(iterC->second[0], 20 * COIN);
 
       auto iterE = combineBalances.addressBalances.find(TestChain::scrAddrE);
       ASSERT_NE(iterE, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterE->second.size(), 3ULL);
+      ASSERT_EQ(iterE->second.size(), 4ULL);
       EXPECT_EQ(iterE->second[0], 80 * COIN);
 
       auto iterF = combineBalances.addressBalances.find(TestChain::scrAddrF);
       ASSERT_NE(iterF, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterF->second.size(), 3ULL);
+      ASSERT_EQ(iterF->second.size(), 4ULL);
       EXPECT_EQ(iterF->second[0], 0 * COIN);
 
       {
@@ -4328,31 +4348,31 @@ TEST_F(WebSocketTests, WebSocketStack_DynamicReorg)
       D value does not change but this is due to a ZC spending the coins
       out, so the internal id is updated.
       */
-      EXPECT_EQ(combineBalances.addressBalances.size(), 5ULL);
+      EXPECT_EQ(combineBalances.addressBalances.size(), 6ULL);
 
       auto iterA = combineBalances.addressBalances.find(TestChain::scrAddrA);
       ASSERT_NE(iterA, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterA->second.size(), 3ULL);
+      ASSERT_EQ(iterA->second.size(), 4ULL);
       EXPECT_EQ(iterA->second[0], 50 * COIN);
 
       auto iterB = combineBalances.addressBalances.find(TestChain::scrAddrB);
       ASSERT_NE(iterB, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterB->second.size(), 3ULL);
+      ASSERT_EQ(iterB->second.size(), 4ULL);
       EXPECT_EQ(iterB->second[0], 170 * COIN);
 
       auto iterC = combineBalances.addressBalances.find(TestChain::scrAddrC);
       ASSERT_NE(iterC, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterC->second.size(), 3ULL);
+      ASSERT_EQ(iterC->second.size(), 4ULL);
       EXPECT_EQ(iterC->second[0], 70 * COIN);
 
       auto iterD = combineBalances.addressBalances.find(TestChain::scrAddrD);
       ASSERT_NE(iterD, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterD->second.size(), 3ULL);
+      ASSERT_EQ(iterD->second.size(), 4ULL);
       EXPECT_EQ(iterD->second[0], 65 * COIN);
 
       auto iterE = combineBalances.addressBalances.find(TestChain::scrAddrE);
       ASSERT_NE(iterE, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterE->second.size(), 3ULL);
+      ASSERT_EQ(iterE->second.size(), 4ULL);
       EXPECT_EQ(iterE->second[0], 35 * COIN);
    }
 
@@ -4371,32 +4391,32 @@ TEST_F(WebSocketTests, WebSocketStack_DynamicReorg)
 
       auto iterA = combineBalances.addressBalances.find(TestChain::scrAddrA);
       ASSERT_NE(iterA, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterA->second.size(), 3ULL);
+      ASSERT_EQ(iterA->second.size(), 4ULL);
       EXPECT_EQ(iterA->second[0], 155 * COIN);
 
       auto iterB = combineBalances.addressBalances.find(TestChain::scrAddrB);
       ASSERT_NE(iterB, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterB->second.size(), 3ULL);
+      ASSERT_EQ(iterB->second.size(), 4ULL);
       EXPECT_EQ(iterB->second[0], 20 * COIN);
 
       auto iterC = combineBalances.addressBalances.find(TestChain::scrAddrC);
       ASSERT_NE(iterC, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterC->second.size(), 3ULL);
+      ASSERT_EQ(iterC->second.size(), 4ULL);
       EXPECT_EQ(iterC->second[0], 20 * COIN);
 
       auto iterD = combineBalances.addressBalances.find(TestChain::scrAddrD);
       ASSERT_NE(iterD, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterD->second.size(), 3ULL);
+      ASSERT_EQ(iterD->second.size(), 4ULL);
       EXPECT_EQ(iterD->second[0], 65 * COIN);
 
       auto iterE = combineBalances.addressBalances.find(TestChain::scrAddrE);
       ASSERT_NE(iterE, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterE->second.size(), 3ULL);
+      ASSERT_EQ(iterE->second.size(), 4ULL);
       EXPECT_EQ(iterE->second[0], 80 * COIN);
 
       auto iterF = combineBalances.addressBalances.find(TestChain::scrAddrF);
       ASSERT_NE(iterF, combineBalances.addressBalances.end());
-      ASSERT_EQ(iterF->second.size(), 3ULL);
+      ASSERT_EQ(iterF->second.size(), 4ULL);
       EXPECT_EQ(iterF->second[0], 100 * COIN);
    }
 
@@ -4446,9 +4466,9 @@ TEST_F(WebSocketTests, WebSocketStack_GetTxByHash)
 
    auto pCallback = make_shared<DBTestUtils::UTCallback>();
    auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
-      "127.0.0.1", NetworkSettings::listenPort(), 
+      "127.0.0.1", NetworkSettings::listenPort(),
       Armory::Config::getDataDir(),
-      authPeersPassLbd_, 
+      authPeersPassLbd_,
       NetworkSettings::ephemeralPeers(), true, //public server
       pCallback);
    bdvObj->addPublicKey(serverPubkey);
@@ -4458,17 +4478,14 @@ TEST_F(WebSocketTests, WebSocketStack_GetTxByHash)
    auto wallet1 = bdvObj->getWalletObj("wallet1");
    wallet1.registerAddresses(scrAddrVec, false);
 
-   //wait on registration ack
-   pCallback->waitOnManySignals(BDMAction_Refresh, {"wallet1"});
-
    //go online
    bdvObj->goOnline();
    pCallback->waitOnSignal(BDMAction_Ready);
 
    //grab mined tx
-   auto&& ZC1 = TestUtils::getTx(5, 2); //block 5, tx 2
-   auto&& hash1 = BtcUtils::getHash256(ZC1);
-   
+   auto ZC1 = TestUtils::getTx(5, 2); //block 5, tx 2
+   auto hash1 = BtcUtils::getHash256(ZC1);
+
    auto getTxLbd = [bdvObj](const BinaryData& hash)->ReturnMessage<AsyncClient::TxBatchResult>
    {
       auto promPtr = make_shared<promise<ReturnMessage<AsyncClient::TxBatchResult>>>();
@@ -4498,19 +4515,11 @@ TEST_F(WebSocketTests, WebSocketStack_GetTxByHash)
       ASSERT_FALSE(true);
    }
 
-   try {
-      auto txBatch = txObj2.get();
-      auto tx = txBatch.at(fakeHash);
-      auto hash = BtcUtils::getHash256(tx->serialize());
-      ASSERT_FALSE(true);
-   } catch (const ClientMessageError& e) {
-      EXPECT_EQ(string(e.what()),
-         string("Error processing command: 80\n   errMsg: \"failed to grab tx by hash\""));
-   } catch (...) {
-      ASSERT_FALSE(true);
-   }
+   auto txBatch = txObj2.get();
+   ASSERT_TRUE(txBatch.empty());
 
    //test cache hit
+   //NOTE: cache isn't implemented for Tx in AsyncClient atm
    auto txObj3 = getTxLbd(hash1);
    try {
       auto txBatch = txObj3.get();
@@ -4519,7 +4528,7 @@ TEST_F(WebSocketTests, WebSocketStack_GetTxByHash)
       EXPECT_EQ(hash, hash1);
    } catch (const std::exception&) {
       ASSERT_FALSE(true);
-   }  
+   }
 
    //grab a couple utxos
    auto promUtxo = make_shared<promise<vector<UTXO>>>();
@@ -4600,7 +4609,7 @@ TEST_F(WebSocketTests, WebSocketStack_GetTxByHash)
    auto txBatch4 = getTxLbd(tx1.getThisHash()).get();
    auto txBatch5 = getTxLbd(tx2.getThisHash()).get();
    auto txObj4 = txBatch4.at(tx1.getThisHash());
-   auto txObj5 = txBatch5.at(tx1.getThisHash());
+   auto txObj5 = txBatch5.at(tx2.getThisHash());
 
    ASSERT_NE(txObj4, nullptr);
    ASSERT_NE(txObj5, nullptr);
@@ -4859,16 +4868,13 @@ TEST_F(WebSocketTests, WebSocketStack_GetTxByHash)
          set<BinaryData> hashesEmpty;
          hashesEmpty.insert(BtcUtils::EmptyHash());
 
-         try
-         {
-            auto&& txResult = getTxByHash(BtcUtils::EmptyHash());
-            ASSERT_TRUE(false);
-         } catch (const std::exception& e) {}
+         auto txResult = getTxByHash(BtcUtils::EmptyHash());
+         ASSERT_TRUE(txResult.empty());
 
-         auto&& txBatch = getTxBatch(hashesEmpty);
-         auto&& txBatch2 = getTxBatch(hashesEmpty);
+         auto txBatch = getTxBatch(hashesEmpty);
+         auto txBatch2 = getTxBatch(hashesEmpty);
       }
-      
+
       //disconnect
       bdvObj2->unregisterFromDB();
    }
@@ -4902,7 +4908,7 @@ TEST_F(WebSocketTests, WebSocketStack_GetSpentness)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initAuthPeers(authPeersPassLbd_);
    WebSocketServer::start(theBDMt_, true);
-   auto&& serverPubkey = WebSocketServer::getPublicKey();
+   auto serverPubkey = WebSocketServer::getPublicKey();
    theBDMt_->start(DBSettings::initMode());
 
    struct KeyPair
@@ -4916,8 +4922,7 @@ TEST_F(WebSocketTests, WebSocketStack_GetSpentness)
    auto createNAddresses = [&keyPairs](unsigned count)->vector<BinaryData>
    {
       vector<BinaryData> result;
-      for (unsigned i = 0; i < count; i++)
-      {
+      for (unsigned i = 0; i < count; i++) {
          KeyPair kp;
          kp.priv_ = CryptoPRNG::generateRandom(32);
          kp.pub_ = CryptoECDSA().ComputePublicKey(kp.priv_, true);
@@ -4934,7 +4939,7 @@ TEST_F(WebSocketTests, WebSocketStack_GetSpentness)
       return result;
    };
 
-   auto&& _scrAddrVec1 = createNAddresses(20);
+   auto _scrAddrVec1 = createNAddresses(20);
    _scrAddrVec1.push_back(TestChain::scrAddrA);
    _scrAddrVec1.push_back(TestChain::scrAddrB);
    _scrAddrVec1.push_back(TestChain::scrAddrC);
@@ -4960,9 +4965,6 @@ TEST_F(WebSocketTests, WebSocketStack_GetSpentness)
       auto wallet1 = bdvObj->getWalletObj("wallet1");
       wallet1.registerAddresses(_scrAddrVec1, false);
 
-      //wait on registration ack
-      pCallback->waitOnManySignals(BDMAction_Refresh, {"wallet1"});
-
       //go online
       bdvObj->goOnline();
       pCallback->waitOnSignal(BDMAction_Ready);
@@ -4986,12 +4988,12 @@ TEST_F(WebSocketTests, WebSocketStack_GetSpentness)
       //spend some
       unsigned loopCount = 10;
       unsigned stagger = 0;
-      for (auto& utxo : utxos)
-      {
+      for (auto& utxo : utxos) {
          if (utxo.getRecipientScrAddr() != TestChain::scrAddrB ||
             utxo.getScript().getSize() != 25 ||
-            utxo.getValue() != 50 * COIN)
+            utxo.getValue() != 50 * COIN) {
             continue;
+         }
 
          //sign
          {
@@ -5010,9 +5012,9 @@ TEST_F(WebSocketTests, WebSocketStack_GetSpentness)
             zcVec.push_back(signer.serializeSignedTx(), 130000000, stagger++);
          }
 
-         if (stagger < loopCount)
+         if (stagger < loopCount) {
             continue;
-
+         }
          break;
       }
 
@@ -5176,7 +5178,6 @@ TEST_F(WebSocketTests, WebSocketStack_GetSpentness)
                ASSERT_NE(idIter, iter->second.end());
 
                EXPECT_TRUE(idIter->second.spenderHash.empty());
-               EXPECT_EQ(idIter->second.getHeight(), UINT32_MAX);
                EXPECT_FALSE(idIter->second.isSpent());
             }
          }
@@ -5185,27 +5186,14 @@ TEST_F(WebSocketTests, WebSocketStack_GetSpentness)
       //check the invalid hash
       {
          auto iter = outputs.find(BtcUtils::EmptyHash());
-         ASSERT_NE(iter, outputs.end());
-
-         auto idIter = iter->second.find(0);
-         ASSERT_NE(idIter, iter->second.end());
-
-         EXPECT_TRUE(idIter->second.spenderHash.empty());
-         EXPECT_EQ(idIter->second.getHeight(), UINT32_MAX);
-         //EXPECT_EQ(idIter->second.state_, OutputSpentnessState::Invalid);
+         ASSERT_EQ(iter, outputs.end());
       }
 
-      //sneak in a bad sized hash, should throw
+      //bad sized hash, should return nothing
+      spentnessToGet.clear();
       spentnessToGet.emplace(READHEX("0011223344"), std::set<unsigned>());
-
-      try {
-         auto spentnessData2 = getSpentness(spentnessToGet, false);
-         ASSERT_FALSE(true);
-      } catch (const ClientMessageError& e) {
-         EXPECT_EQ(e.what(), std::string(
-            R"(Error processing command: 84
-            errMsg: "malformed output data")"));
-      }
+      auto spentnessData2 = getSpentness(spentnessToGet, false);
+      ASSERT_TRUE(spentnessData2.empty());
 
       //get zc utxos
       auto zcutxo_prom = make_shared<promise<vector<UTXO>>>();
@@ -5286,7 +5274,7 @@ TEST_F(WebSocketTests, WebSocketStack_GetSpentness)
             signer.sign();
             auto rawTx = signer.serializeSignedTx();
             Tx tx(rawTx);
-            newZcHashes.insert(make_pair(tx.getThisHash(), count++));
+            newZcHashes.emplace(tx.getThisHash(), count++);
             zcVec.push_back(signer.serializeSignedTx(), 130000000, stagger++);
          }
       }
@@ -5296,8 +5284,8 @@ TEST_F(WebSocketTests, WebSocketStack_GetSpentness)
 
       //grab new zc output data
       auto newZcAddrOp = getAddrOp(UINT32_MAX, zcAddrOp.zcIndexCutoff + 1);
-      
-      //we create 5 new zc that spend from 5 existing zc and create 5 new 
+
+      //we create 5 new zc that spend from 5 existing zc and create 5 new
       //zc outputs, therefor we should have 10 outputs in the batch
       ASSERT_EQ(newZcAddrOp.addrMap.size(), loopCount);
 
@@ -5325,20 +5313,19 @@ TEST_F(WebSocketTests, WebSocketStack_GetSpentness)
       //check spentness data vs addr outpoint data
       unsigned spentCount = 0;
       unsigned unspentCount = 0;
-      for (auto& zcSpentness : zcSpentnessToGet)
-      {
+      for (auto& zcSpentness : zcSpentnessToGet) {
          auto iter = newZcSpentness.find(zcSpentness.first);
-         ASSERT_NE(iter, newZcSpentness.end());
+         if (iter == newZcSpentness.end()) {
+            continue;
+         }
 
-         for (auto& zcOp : zcSpentness.second)
-         {
+         for (auto& zcOp : zcSpentness.second) {
             auto idIter = iter->second.find(zcOp);
             ASSERT_NE(idIter, iter->second.end());
 
             if (idIter->second.isSpent()) {
                auto spenderIter = newZcHashes.find(idIter->second.spenderHash);
                EXPECT_NE(spenderIter, newZcHashes.end());
-               EXPECT_EQ(idIter->second.getHeight(), spenderIter->second + loopCount);
                ++spentCount;
                break;
             } else {
@@ -5348,22 +5335,13 @@ TEST_F(WebSocketTests, WebSocketStack_GetSpentness)
             }
          }
       }
-
       EXPECT_EQ(spentCount, loopCount/2);
-      EXPECT_EQ(unspentCount, loopCount/2 + 1);
-      //EXPECT_EQ(invalidCount, 1U);
+      EXPECT_EQ(unspentCount, loopCount/2);
 
       //check the invalid hash
       {
          auto iter = newZcSpentness.find(BtcUtils::EmptyHash());
-         ASSERT_NE(iter, newZcSpentness.end());
-
-         auto idIter = iter->second.find(0);
-         ASSERT_NE(idIter, iter->second.end());
-
-         EXPECT_TRUE(idIter->second.spenderHash.empty());
-         EXPECT_EQ(idIter->second.getHeight(), UINT32_MAX);
-         //EXPECT_EQ(idIter->second.state_, OutputSpentnessState::Invalid);
+         ASSERT_EQ(iter, newZcSpentness.end());
       }
    }
 

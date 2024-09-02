@@ -73,11 +73,9 @@ struct PendingMessage
 {
    const uint64_t id;
    const uint32_t msgid;
-   const BinaryData payload;
+   std::unique_ptr<Socket_WritePayload> payload;
 
-   PendingMessage(uint64_t id, uint32_t msgid, BinaryData& bd) :
-      id(id), msgid(msgid), payload(std::move(bd))
-   {}
+   PendingMessage(uint64_t, uint32_t, std::unique_ptr<Socket_WritePayload>);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -170,7 +168,8 @@ public:
    static void waitOnShutdown(void);
    static SecureBinaryData getPublicKey(void);
 
-   static void write(const uint64_t&, const uint32_t&, BinaryData&);
+   static void write(const uint64_t&, const uint32_t&,
+      std::unique_ptr<Socket_WritePayload>);
 
    std::shared_ptr<const std::map<uint64_t, ClientConnection>>
       getConnectionStateMap(void) const;

@@ -343,24 +343,22 @@ namespace DBTestUtils
       {
          unsigned count = 0;
          std::set<BinaryDataRef> bdrVec;
-         for (auto& id : ids)
-         {
+         for (auto& id : ids) {
             BinaryDataRef bdr; bdr.setRef(id);
             bdrVec.insert(bdr);
          }
 
-         while (1)
-         {
-            if (count >= ids.size())
+         while (true) {
+            if (count >= ids.size()) {
                break;
+            }
 
-            auto&& action = actionStack_.pop_front();
-            if (action->action_ == signal)
-            {
-               for (auto& id : action->idVec_)
-               {
-                  if (bdrVec.find(id) != bdrVec.end())
+            auto action = actionStack_.pop_front();
+            if (action->action_ == signal) {
+               for (auto& id : action->idVec_) {
+                  if (bdrVec.find(id) != bdrVec.end()) {
                      ++count;
+                  }
                }
             }
          }

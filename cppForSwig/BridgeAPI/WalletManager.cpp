@@ -283,10 +283,10 @@ void WalletManager::updateStateFromDB(const std::function<void(void)>& callback)
 
       //grab wallet balances
       auto promBal = std::make_shared<std::promise<std::map<
-         std::string, CombinedBalances>>>();
+         std::string, AsyncClient::CombinedBalances>>>();
       auto futBal = promBal->get_future();
       auto lbdBal = [promBal]
-         (ReturnMessage<std::map<std::string, CombinedBalances>> result)->void
+         (ReturnMessage<std::map<std::string, AsyncClient::CombinedBalances>> result)->void
       {
          promBal->set_value(result.get());
       };
@@ -396,7 +396,8 @@ void WalletContainer::unregisterFromBDV()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void WalletContainer::updateWalletBalanceState(const CombinedBalances& bal)
+void WalletContainer::updateWalletBalanceState(
+   const AsyncClient::CombinedBalances& bal)
 {
    std::unique_lock<std::mutex> lock(stateMutex_);
 
@@ -432,7 +433,8 @@ Wallets::AssetKeyType WalletContainer::getHighestUsedIndex(void) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void WalletContainer::updateAddressCountState(const CombinedBalances& cnt)
+void WalletContainer::updateAddressCountState(
+   const AsyncClient::CombinedBalances& cnt)
 {
    std::unique_lock<std::mutex> lock(stateMutex_);
 

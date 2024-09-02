@@ -50,6 +50,22 @@ namespace {
       return std::make_unique<WritePayload_Raw>(vec);
    }
 
+   std::unique_ptr<WritePayload_Capnp> initLargePayload()
+   {
+      //4096 - overhead, 8 bytes aligned
+      static uint32_t segmentSize = 4048 / sizeof(capnp::word);
+      std::vector<uint8_t> firstSegment(4048);
+      kj::ArrayPtr<capnp::word> arrayPtr(
+         reinterpret_cast<capnp::word*>(firstSegment.data()),
+         segmentSize
+      );
+
+      auto builder = std::make_unique<capnp::MallocMessageBuilder>(
+         arrayPtr, capnp::AllocationStrategy::FIXED_SIZE);
+      return std::make_unique<WritePayload_Capnp>(
+         std::move(builder), std::move(firstSegment));
+   }
+
    // deser helpers
    std::vector<UTXO> capnToUtxoVec(
       capnp::List<Codec::Types::Output, capnp::Kind::STRUCT>::Reader outputs)
@@ -289,13 +305,21 @@ namespace {
    }
 
    TxBatchResult capnToTxBatch(
-      capnp::List<capnp::Data, capnp::Kind::BLOB>::Reader txs)
+      capnp::List<Codec::Types::Tx, capnp::Kind::STRUCT>::Reader& txs)
    {
       std::map<BinaryData, TxResult> result;
       for (auto capnTx : txs) {
-         BinaryDataRef rawTx(capnTx.begin(), capnTx.end());
-         auto txObj = std::make_shared<const Tx>(rawTx);
-         result.emplace(txObj->getThisHash(), std::move(txObj));
+         auto body = capnTx.getBody();
+         BinaryDataRef rawTx(body.begin(), body.end());
+         try {
+            auto txObj = std::make_shared<Tx>(rawTx);
+            txObj->setTxHeight(capnTx.getHeight());
+            txObj->setTxIndex(capnTx.getIndex());
+            txObj->setChainedZC(capnTx.getIsChainZc());
+            txObj->setRBF(capnTx.getIsRbf());
+
+            result.emplace(txObj->getThisHash(), std::move(txObj));
+         } catch (const BlockDeserializingException&) {}
       }
 
       return result;
@@ -309,13 +333,13 @@ namespace {
 ///////////////////////////////////////////////////////////////////////////////
 
 ///////////////////////////////////////////////////////////////////////////////
-bool BlockDataViewer::hasRemoteDB(void)
+bool BlockDataViewer::hasRemoteDB()
 {
    return sock_->testConnection();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool BlockDataViewer::connectToRemote(void)
+bool BlockDataViewer::connectToRemote()
 {
    return sock_->connectToRemote();
 }
@@ -380,8 +404,9 @@ void BlockDataViewer::registerWithDB(const std::string& magicWord)
       try
       {
          //deser capnp reply
-         auto reader = msg.getReader();
-         auto reply = reader->getRoot<Codec::BDV::Reply>();
+         auto msgReader = msg.getReader();
+         auto capnReader = msgReader->getReader();
+         auto reply = capnReader->getRoot<Codec::BDV::Reply>();
 
          //sanity checks
          if (!reply.getSuccess()) {
@@ -603,8 +628,9 @@ void BlockDataViewer::getTxsByHash(
       std::make_unique<ClientCallback>([callback](const WebSocketMessagePartial& msg){
          try {
             //deser capnp reply
-            auto reader = msg.getReader();
-            auto reply = reader->getRoot<Codec::BDV::Reply>();
+            auto msgReader = msg.getReader();
+            auto capnReader = msgReader->getReader();
+            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
 
             //sanity checks
             if (!reply.getSuccess()) {
@@ -622,7 +648,8 @@ void BlockDataViewer::getTxsByHash(
             }
 
             //convert to utxo vector and fire callback
-            auto result = capnToTxBatch(bdvReply.getGetTxByHash());
+            auto txns = bdvReply.getGetTxByHash();
+            auto result = capnToTxBatch(txns);
             callback(ReturnMessage<TxBatchResult>(result));
          } catch (ClientMessageError& e) {
             //something went wrong, set error message and fire callback
@@ -678,8 +705,9 @@ void BlockDataViewer::getNodeStatus(std::function<
          const WebSocketMessagePartial& msg){
          try {
             //deser capnp reply
-            auto reader = msg.getReader();
-            auto reply = reader->getRoot<Codec::BDV::Reply>();
+            auto msgReader = msg.getReader();
+            auto capnReader = msgReader->getReader();
+            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
 
             //sanity checks
             if (!reply.getSuccess()) {
@@ -733,8 +761,9 @@ void BlockDataViewer::getFeeSchedule(const std::string& strategy,
          const WebSocketMessagePartial& msg){
          try {
             //deser capnp reply
-            auto reader = msg.getReader();
-            auto reply = reader->getRoot<Codec::BDV::Reply>();
+            auto msgReader = msg.getReader();
+            auto capnReader = msgReader->getReader();
+            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
 
             //sanity checks
             if (!reply.getSuccess()) {
@@ -815,8 +844,9 @@ void BlockDataViewer::getOutputsForOutpoints(
       std::make_unique<ClientCallback>([callback](const WebSocketMessagePartial& msg){
          try {
             //deser capnp reply
-            auto reader = msg.getReader();
-            auto reply = reader->getRoot<Codec::BDV::Reply>();
+            auto msgReader = msg.getReader();
+            auto capnReader = msgReader->getReader();
+            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
 
             //sanity checks
             if (!reply.getSuccess()) {
@@ -880,8 +910,9 @@ void LedgerDelegate::getHistoryPages(uint32_t from, uint32_t to,
       std::make_unique<ClientCallback>([callback](const WebSocketMessagePartial& msg){
       try {
          //deser capnp reply
-         auto reader = msg.getReader();
-         auto reply = reader->getRoot<Codec::BDV::Reply>();
+         auto msgReader = msg.getReader();
+         auto capnReader = msgReader->getReader();
+         auto reply = capnReader->getRoot<Codec::BDV::Reply>();
 
          //sanity checks
          if (!reply.getSuccess()) {
@@ -931,8 +962,9 @@ void LedgerDelegate::getPageCount(
       std::make_unique<ClientCallback>([callback](const WebSocketMessagePartial& msg){
          try {
             //deser capnp reply
-            auto reader = msg.getReader();
-            auto reply = reader->getRoot<Codec::BDV::Reply>();
+            auto msgReader = msg.getReader();
+            auto capnReader = msgReader->getReader();
+            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
 
             //sanity checks
             if (!reply.getSuccess()) {
@@ -976,8 +1008,8 @@ void AsyncClient::BtcWallet::registerAddresses(
    const std::vector<BinaryData>& addrVec, bool isNew)
 {
    //create capnp request
-   capnp::MallocMessageBuilder message;
-   auto payload = message.initRoot<Codec::BDV::Request>();
+   auto writePayload = initLargePayload();
+   auto payload = writePayload->builder->initRoot<Codec::BDV::Request>();
 
    auto bdvRequest = payload.initBdv();
    bdvRequest.setBdvId(bdvID_);
@@ -996,11 +1028,8 @@ void AsyncClient::BtcWallet::registerAddresses(
          (uint8_t*)addr.getPtr(), addr.getSize()));
    }
 
-   //serialize and add to payload
-   auto write_payload = toWritePayload(message);
-
    //push to server
-   sock_->pushPayload(move(write_payload), nullptr);
+   sock_->pushPayload(std::move(writePayload), nullptr);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1076,8 +1105,9 @@ void AsyncClient::BtcWallet::getBalancesAndCount(uint32_t blockheight,
       std::make_unique<ClientCallback>([callback](const WebSocketMessagePartial& msg){
          try {
             //deser capnp reply
-            auto reader = msg.getReader();
-            auto reply = reader->getRoot<Codec::BDV::Reply>();
+            auto msgReader = msg.getReader();
+            auto capnReader = msgReader->getReader();
+            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
 
             //sanity checks
             if (!reply.getSuccess()) {
@@ -1119,7 +1149,7 @@ void AsyncClient::BtcWallet::getUTXOs(uint64_t val, bool zc, bool rbf,
    walletRequest.setBdvId(bdvID_);
    walletRequest.setWalletId(walletID_);
 
-   auto outputReq = walletRequest.getGetOutputs();
+   auto outputReq = walletRequest.initGetOutputs();
    outputReq.setZc(zc);
    outputReq.setRbf(rbf);
    if (val > 0) {
@@ -1135,8 +1165,9 @@ void AsyncClient::BtcWallet::getUTXOs(uint64_t val, bool zc, bool rbf,
       std::make_unique<ClientCallback>([callback](const WebSocketMessagePartial& msg){
          try {
             //deser capnp reply
-            auto reader = msg.getReader();
-            auto reply = reader->getRoot<Codec::BDV::Reply>();
+            auto msgReader = msg.getReader();
+            auto capnReader = msgReader->getReader();
+            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
 
             //sanity checks
             if (!reply.getSuccess()) {
@@ -1196,8 +1227,9 @@ void AsyncClient::BtcWallet::createAddressBook(
       std::make_unique<ClientCallback>([callback](const WebSocketMessagePartial& msg){
          try {
             //deser capnp reply
-            auto reader = msg.getReader();
-            auto reply = reader->getRoot<Codec::BDV::Reply>();
+            auto msgReader = msg.getReader();
+            auto capnReader = msgReader->getReader();
+            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
 
             //sanity checks
             if (!reply.getSuccess()) {
@@ -1250,8 +1282,9 @@ void BtcWallet::getLedgerDelegate(
       [sock=sock_, bdvId=bdvID_, callback](const WebSocketMessagePartial& msg){
          try {
             //deser capnp reply
-            auto reader = msg.getReader();
-            auto reply = reader->getRoot<Codec::BDV::Reply>();
+            auto msgReader = msg.getReader();
+            auto capnReader = msgReader->getReader();
+            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
 
             //sanity checks
             if (!reply.getSuccess()) {
@@ -1356,8 +1389,9 @@ void ScrAddrObj::getOutputs(uint64_t targetValue, bool zc, bool rbf,
       std::make_unique<ClientCallback>([callback](const WebSocketMessagePartial& msg){
          try {
             //deser capnp reply
-            auto reader = msg.getReader();
-            auto reply = reader->getRoot<Codec::BDV::Reply>();
+            auto msgReader = msg.getReader();
+            auto capnReader = msgReader->getReader();
+            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
 
             //sanity checks
             if (!reply.getSuccess()) {
@@ -1412,8 +1446,9 @@ void ScrAddrObj::getLedgerDelegate(
       [sock=sock_, bdvId=bdvID_, callback](const WebSocketMessagePartial& msg){
          try {
             //deser capnp reply
-            auto reader = msg.getReader();
-            auto reply = reader->getRoot<Codec::BDV::Reply>();
+            auto msgReader = msg.getReader();
+            auto capnReader = msgReader->getReader();
+            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
 
             //sanity checks
             if (!reply.getSuccess()) {
@@ -1482,8 +1517,9 @@ void AsyncClient::Blockchain::getHeadersByHash(
          const WebSocketMessagePartial& msg){
          try {
             //deser capnp reply
-            auto reader = msg.getReader();
-            auto reply = reader->getRoot<Codec::BDV::Reply>();
+            auto msgReader = msg.getReader();
+            auto capnReader = msgReader->getReader();
+            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
 
             //sanity checks
             if (!reply.getSuccess()) {
@@ -1547,8 +1583,9 @@ void AsyncClient::Blockchain::getHeadersByHeight(
          const WebSocketMessagePartial& msg){
          try {
             //deser capnp reply
-            auto reader = msg.getReader();
-            auto reply = reader->getRoot<Codec::BDV::Reply>();
+            auto msgReader = msg.getReader();
+            auto capnReader = msgReader->getReader();
+            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
 
             //sanity checks
             if (!reply.getSuccess()) {
@@ -1616,8 +1653,9 @@ void AsyncClient::BlockDataViewer::getCombinedBalances(std::function<void(
       [callback](const WebSocketMessagePartial& msg){
          try {
             //deser capnp reply
-            auto reader = msg.getReader();
-            auto reply = reader->getRoot<Codec::BDV::Reply>();
+            auto msgReader = msg.getReader();
+            auto capnReader = msgReader->getReader();
+            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
 
             //sanity checks
             if (!reply.getSuccess()) {
@@ -1661,7 +1699,6 @@ void AsyncClient::BlockDataViewer::getOutputsForAddresses(
    addrReq.setHeightCutoff(heightCutoff);
    addrReq.setZcCutoff(zcCutoff);
 
-
    //populate request data
    auto capnAddrs = addrReq.initAddresses(addrSet.size());
    unsigned i = 0;
@@ -1675,14 +1712,15 @@ void AsyncClient::BlockDataViewer::getOutputsForAddresses(
    //serialize and add to payload
    auto write_payload = toWritePayload(message);
 
-   //reply handling lambda
+   //reply handler
    auto read_payload = std::make_shared<Socket_ReadPayload>();
    read_payload->callbackReturn_ = std::make_unique<ClientCallback>(
       [callback](const WebSocketMessagePartial& msg){
          try {
             //deser capnp reply
-            auto reader = msg.getReader();
-            auto reply = reader->getRoot<Codec::BDV::Reply>();
+            auto msgReader = msg.getReader();
+            auto capnReader = msgReader->getReader();
+            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
 
             //sanity checks
             if (!reply.getSuccess()) {
@@ -1733,8 +1771,9 @@ void AsyncClient::BlockDataViewer::getLedgerDelegate(
       [sock=sock_, bdvId=bdvID_, callback](const WebSocketMessagePartial& msg){
          try {
             //deser capnp reply
-            auto reader = msg.getReader();
-            auto reply = reader->getRoot<Codec::BDV::Reply>();
+            auto msgReader = msg.getReader();
+            auto capnReader = msgReader->getReader();
+            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
 
             //sanity checks
             if (!reply.getSuccess()) {

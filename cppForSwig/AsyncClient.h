@@ -84,49 +84,50 @@ public:
    }
 };
 
+
 ///////////////////////////////////////////////////////////////////////////////
-struct CombinedBalances
+namespace AsyncClient
 {
-   std::string walletId;
-
-   /*
+   ////////////////////////////////////////////////////////////////////////////
+   struct CombinedBalances
    {
-      fullBalance,
-      spendableBalance,
-      unconfirmedBalance,
-      wltTxnCount
-   }
-   */
-   std::vector<uint64_t> walletBalanceAndCount;
+      std::string walletId;
 
-   /*
-   {
-      scrAddr (prefixed):
+      /*
+      {
+         fullBalance,
+         spendableBalance,
+         unconfirmedBalance,
+         wltTxnCount
+      }
+      */
+      std::vector<uint64_t> walletBalanceAndCount;
+
+      /*
+      {
+         scrAddr (prefixed):
          {
             fullBalance,
             spendableBalance,
             unconfirmedBalance,
             txnCount
          }
-   }
-   */
-   std::map<BinaryData, std::vector<uint64_t>> addressBalances;
+      }
+      */
+      std::map<BinaryData, std::vector<uint64_t>> addressBalances;
 
-   bool operator<(const CombinedBalances& rhs) const
-   {
-      return walletId < rhs.walletId;
-   }
+      bool operator<(const CombinedBalances& rhs) const
+      {
+         return walletId < rhs.walletId;
+      }
 
-   bool operator<(const std::string& rhs) const
-   {
-      return walletId < rhs;
-   }
-};
+      bool operator<(const std::string& rhs) const
+      {
+         return walletId < rhs;
+      }
+   };
 
-///////////////////////////////////////////////////////////////////////////////
-namespace AsyncClient
-{
-   ///////////////////////////////////////////////////////////////////////////////
+   ////////////////////////////////////////////////////////////////////////////
    class ClientCache : public Lockable
    {
       friend struct CallbackReturn_Tx;
@@ -159,7 +160,7 @@ namespace AsyncClient
    {};
 
    ///////////////////////////////////////////////////////////////////////////////
-   typedef std::shared_ptr<const Tx> TxResult;
+   typedef std::shared_ptr<Tx> TxResult;
    typedef std::function<void(ReturnMessage<TxResult>)> TxCallback;
 
    typedef std::map<BinaryData, TxResult> TxBatchResult;

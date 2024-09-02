@@ -32,18 +32,13 @@
 
 class BDV_Server_Object;
 
-namespace capnp {
-   class MessageReader;
-   class MessageBuilder;
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 struct RpcBroadcastPacket
 {
    std::shared_ptr<BDV_Server_Object> bdvPtr_;
    std::shared_ptr<BinaryData> rawTx_;
    std::string requestID_;
-   
+
    std::map<std::string, std::shared_ptr<BDV_Server_Object>> extraRequestors_;
 };
 
@@ -54,21 +49,7 @@ struct BDV_Payload
    std::shared_ptr<BDV_Server_Object> bdvPtr_;
    uint32_t messageID_;
    uint64_t bdvID_;
-};
-
-///////////////////////////////////////////////////////////////////////////////
-struct BDV_PartialMessage
-{
-   std::vector<std::shared_ptr<BDV_Payload>> payloads_;
-   WebSocketMessagePartial partialMessage_;
-
-   bool parsePacket(std::shared_ptr<BDV_Payload>);
-   bool isReady(void) const { return partialMessage_.isReady(); }
-   std::shared_ptr<capnp::MessageReader> getReader(void);
-   void reset(void);
-   size_t topId(void) const;
-
-   static unsigned getMessageId(std::shared_ptr<BDV_Payload>);
+   std::string hexID;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -78,7 +59,7 @@ public:
 
    virtual ~Callback() = 0;
 
-   virtual void push(BinaryData&) = 0;
+   virtual void push(std::unique_ptr<Socket_WritePayload>) = 0;
    virtual bool isValid(void) = 0;
    virtual void shutdown(void) = 0;
 };
@@ -94,7 +75,7 @@ public:
       bdvID_(bdvid)
    {}
 
-   void push(BinaryData&) override;
+   void push(std::unique_ptr<Socket_WritePayload>) override;
    bool isValid(void) override { return true; }
    void shutdown(void) override {}
 };
@@ -103,10 +84,10 @@ public:
 class UnitTest_Callback : public Callback
 {
 private:
-   Armory::Threading::BlockingQueue<BinaryData> notifQueue_;
+   Armory::Threading::BlockingQueue<std::unique_ptr<Socket_WritePayload>> notifQueue_;
 
 public:
-   void push(BinaryData&) override;
+   void push(std::unique_ptr<Socket_WritePayload>) override;
    bool isValid(void) override { return true; }
    void shutdown(void) override {}
 
@@ -136,8 +117,9 @@ private:
    std::atomic<unsigned> packetProcess_threadLock_;
    std::atomic<unsigned> notificationProcess_threadLock_;
 
-   std::map<unsigned, BDV_PartialMessage> messageMap_;
+   std::map<unsigned, WebSocketMessagePartial> messageMap_;
    unsigned lastValidMessageId_ = 0;
+   std::vector<uint8_t> scratchPad_;
 
 public:
    std::map<std::string, LedgerDelegate> delegateMap_;
@@ -147,11 +129,7 @@ private:
    BDV_Server_Object(BDV_Server_Object&) = delete; //no copies
    void populateWallets(std::map<std::string, WalletRegistrationRequest>&);
    void setup(void);
-   BDV_PartialMessage preparePayload(std::shared_ptr<BDV_Payload>);
-
-   void flagRefresh(
-      BDV_refresh refresh, const BinaryData& refreshId,
-      std::unique_ptr<BDV_Notification_ZC> zcPtr);
+   WebSocketMessagePartial preparePayload(std::shared_ptr<BDV_Payload>);
 
 public:
    BDV_Server_Object(const std::string& id, BlockDataManagerThread *bdmT);
@@ -167,6 +145,7 @@ public:
    void processNotification(std::shared_ptr<BDV_Notification>);
    void init(void);
    void haltThreads(void);
+   std::vector<uint8_t>& getScratchPad(void);
 
    /*
    Creates a delegate, inserts it in the delegate map and returns the id.
@@ -176,6 +155,10 @@ public:
    const std::string& getLedgerDelegate(const std::string&); //walletId
    const std::string& getLedgerDelegate(
       const std::string&, const BinaryData&); //walletId, address
+
+   void flagRefresh(
+      BDV_refresh refresh, const BinaryData& refreshId,
+      std::unique_ptr<BDV_Notification_ZC> zcPtr);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -212,6 +195,7 @@ private:
    void unregisterBDVThread(void);
 
    void broadcastThroughRPC(void);
+   void parseStandAlonePayload(std::shared_ptr<BDV_Payload>);
 
 public:
    Clients(void)
@@ -227,7 +211,7 @@ public:
       std::function<void(void)> shutdownLambda);
 
    std::shared_ptr<BDV_Server_Object> get(const std::string& id) const;
-   std::string registerBDV(const std::string&);
+   bool registerBDV(const std::string&, const std::string&);
    void unregisterBDV(std::string bdvId);
    void shutdown(void);
    void exitRequestLoop(void);
@@ -238,7 +222,8 @@ public:
       packetQueue_.push_back(move(payload));
    }
 
-   BinaryData processCommand(std::shared_ptr<BDV_Payload>);
+   std::unique_ptr<Socket_WritePayload> processCommand(
+      std::shared_ptr<BDV_Payload>);
    void rpcBroadcast(RpcBroadcastPacket&);
    void p2pBroadcast(const std::string&, std::vector<BinaryDataRef>&);
 };
