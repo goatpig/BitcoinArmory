@@ -1165,7 +1165,8 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
       source3 = bytes()
       try:
-         pixDesk = QtGui.QPixmap.grabWindow(QtWidgets.QApplication.desktop().winId())
+         screen = QtWidgets.QApplication.primaryScreen()
+         pixDesk = screen.grabWindow(QtWidgets.QApplication.desktop().winId())
          pixRaw = QtCore.QByteArray()
          pixBuf = QtCore.QBuffer(pixRaw)
          pixBuf.open(QtCore.QIODevice.WriteOnly)
