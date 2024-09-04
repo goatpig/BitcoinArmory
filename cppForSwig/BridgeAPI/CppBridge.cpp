@@ -504,20 +504,7 @@ void CppBridge::registerWallets()
          walletIds.insert(wai.serialize());
       }
    }
-
-   auto cbPtr = callbackPtr_;
-   auto lbd = [walletIds, cbPtr](void)->void
-   {
-      for (auto& id : walletIds) {
-         cbPtr->waitOnId(id);
-      }
-      cbPtr->notify_SetupRegistrationDone(walletIds);
-   };
-
-   std::thread thr(lbd);
-   if (thr.joinable()) {
-      thr.detach();
-   }
+   callbackPtr_->notify_SetupRegistrationDone(walletIds);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -560,7 +547,7 @@ void CppBridge::createBackupStringForWallet(const std::string& waaId,
 
       capnp::MallocMessageBuilder message;
       auto fromBridge = message.initRoot<FromBridge>();
-      auto reply = fromBridge.getReply();
+      auto reply = fromBridge.initReply();
       reply.setReferenceId(msgId);
       if (backupData == nullptr) {
          //return on error
@@ -895,9 +882,9 @@ void CppBridge::getHistoryPageForDelegate(
 
       capnp::MallocMessageBuilder message;
       auto fromBridge = message.initRoot<FromBridge>();
-      auto reply = fromBridge.getReply();
+      auto reply = fromBridge.initReply();
       reply.setReferenceId(msgId);
-      auto delegate = reply.getDelegate();
+      auto delegate = reply.initDelegate();
       auto pages = delegate.initGetPages(histVec.size());
       ledgersToCapnp(histVec, pages);
 
@@ -927,17 +914,18 @@ BinaryData CppBridge::getNodeStatus(MessageId msgId)
 
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<FromBridge>();
-   auto reply = fromBridge.getReply();
+   auto reply = fromBridge.initReply();
    reply.setReferenceId(msgId);
 
    try {
       auto nodeStatus = fut.get();
       auto serviceReply = reply.initService();
-      auto nodeCapnp = serviceReply.getGetNodeStatus();
+      auto nodeCapnp = serviceReply.initGetNodeStatus();
       nodeStatusToCapnp(nodeStatus, nodeCapnp);
       reply.setSuccess(true);
-   } catch (const std::exception&) {
+   } catch (const std::exception& e) {
       reply.setSuccess(false);
+      reply.setError(e.what());
    }
 
    return serializeCapnp(message);
@@ -952,7 +940,7 @@ BinaryData CppBridge::getBalanceAndCount(const std::string& id, MessageId msgId)
 
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<FromBridge>();
-   auto reply = fromBridge.getReply();
+   auto reply = fromBridge.initReply();
    auto walletReply = reply.initWallet();
    auto bnc = walletReply.initGetBalanceAndCount();
 
@@ -976,9 +964,9 @@ BinaryData CppBridge::getAddrCombinedList(const std::string& id, MessageId msgId
 
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<FromBridge>();
-   auto reply = fromBridge.getReply();
+   auto reply = fromBridge.initReply();
    auto walletReply = reply.initWallet();
-   auto combinedReply = walletReply.initGetAddressCombinedList();
+   auto combinedReply = walletReply.initGetAddrCombinedList();
 
    auto bncReply = combinedReply.initBalances(addrMap.size());
    unsigned i=0;
@@ -1021,7 +1009,7 @@ BinaryData CppBridge::getHighestUsedIndex(const std::string& id, MessageId msgId
 
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<FromBridge>();
-   auto reply = fromBridge.getReply();
+   auto reply = fromBridge.initReply();
    auto walletReply = reply.initWallet();
    walletReply.setGetHighestUsedIndex(wltContainer->getHighestUsedIndex());
 
@@ -1921,6 +1909,7 @@ void BridgeCallback::run(BdmNotification notif)
          capnp::MallocMessageBuilder message;
          auto fromBridge = message.initRoot<FromBridge>();
          auto capnNotif = fromBridge.initNotification();
+         capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
 
          auto capnZCs = capnNotif.initZeroConfs();
          ledgersToCapnp(notif.ledgers_, capnZCs);
@@ -1941,8 +1930,9 @@ void BridgeCallback::run(BdmNotification notif)
          capnp::MallocMessageBuilder message;
          auto fromBridge = message.initRoot<FromBridge>();
          auto capnNotif = fromBridge.initNotification();
-         auto capnRefresh = capnNotif.initRefresh(notif.ids_.size());
+         capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
 
+         auto capnRefresh = capnNotif.initRefresh(notif.ids_.size());
          for (unsigned i=0; i<notif.ids_.size(); i++) {
             auto& id = notif.ids_[i];
             capnRefresh.set(i, capnp::Text::Builder(
@@ -1972,6 +1962,8 @@ void BridgeCallback::run(BdmNotification notif)
          capnp::MallocMessageBuilder message;
          auto fromBridge = message.initRoot<FromBridge>();
          auto capnNotif = fromBridge.initNotification();
+         capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
+
          auto capnNode = capnNotif.initNodeStatus();
          nodeStatusToCapnp(notif.nodeStatus_, capnNode);
 
@@ -1987,6 +1979,14 @@ void BridgeCallback::run(BdmNotification notif)
          LOGINFO << "  code: " << notif.error_.errCode_;
          LOGINFO << "  data: " << notif.error_.errData_.toHexStr();
 
+         capnp::MallocMessageBuilder message;
+         auto fromBridge = message.initRoot<FromBridge>();
+         auto capnNotif = fromBridge.initNotification();
+         capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
+         capnNotif.setError(notif.error_.errorStr_);
+
+         auto serialized = serializeCapnp(message);
+         pushNotifLbd_(serialized);
          break;
       }
 
@@ -2006,6 +2006,7 @@ void BridgeCallback::progress(
    auto fromBridge = message.initRoot<FromBridge>();
    auto capnNotif = fromBridge.initNotification();
    auto capnProgress = capnNotif.initProgress();
+   capnNotif.setCallbackId(BRIDGE_CALLBACK_PROGRESS);
 
    capnProgress.setPhase((uint32_t)phase);
    capnProgress.setProgress(progress);
@@ -2028,6 +2029,7 @@ void BridgeCallback::notify_SetupDone()
    auto fromBridge = message.initRoot<FromBridge>();
    auto capnNotif = fromBridge.initNotification();
    capnNotif.setSetupDone();
+   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
 
    auto serialized = serializeCapnp(message);
    pushNotifLbd_(serialized);
@@ -2040,6 +2042,7 @@ void BridgeCallback::notify_SetupRegistrationDone(
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<FromBridge>();
    auto capnNotif = fromBridge.initNotification();
+   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
 
    auto capnIds = capnNotif.initRegistered(ids.size());
    unsigned i=0;
@@ -2057,6 +2060,7 @@ void BridgeCallback::notify_RegistrationDone(const std::set<std::string>& ids)
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<FromBridge>();
    auto capnNotif = fromBridge.initNotification();
+   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
 
    auto capnIds = capnNotif.initRefresh(ids.size());
    unsigned i=0;
@@ -2075,6 +2079,7 @@ void BridgeCallback::notify_NewBlock(unsigned height)
    auto fromBridge = message.initRoot<FromBridge>();
    auto capnNotif = fromBridge.initNotification();
    capnNotif.setNewBlock(height);
+   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
 
    auto serialized = serializeCapnp(message);
    pushNotifLbd_(serialized);
@@ -2087,6 +2092,7 @@ void BridgeCallback::notify_Ready(unsigned height)
    auto fromBridge = message.initRoot<FromBridge>();
    auto capnNotif = fromBridge.initNotification();
    capnNotif.setReady(height);
+   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
 
    auto serialized = serializeCapnp(message);
    pushNotifLbd_(serialized);
@@ -2099,6 +2105,7 @@ void BridgeCallback::disconnected()
    auto fromBridge = message.initRoot<FromBridge>();
    auto capnNotif = fromBridge.initNotification();
    capnNotif.setDisconnected();
+   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
 
    auto serialized = serializeCapnp(message);
    pushNotifLbd_(serialized);

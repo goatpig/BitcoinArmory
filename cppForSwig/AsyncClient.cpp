@@ -228,7 +228,7 @@ namespace {
    }
 
    std::map<std::string, CombinedBalances> capnToCombinedBalances(
-      capnp::List<Codec::BDV::BdvReply::CombinedBalanceAndCount, capnp::Kind::STRUCT>::Reader builder)
+      capnp::List<Codec::Types::CombinedBalanceAndCount, capnp::Kind::STRUCT>::Reader builder)
    {
       std::map<std::string, CombinedBalances> result;
       for (auto capnBalance : builder) {
@@ -895,11 +895,14 @@ void LedgerDelegate::getHistoryPages(uint32_t from, uint32_t to,
    auto payload = message.initRoot<Codec::BDV::Request>();
 
    auto ledgerRequest = payload.initLedger();
-   ledgerRequest.setLedgerId(bdvID_);
+   ledgerRequest.setLedgerId(delegateID_);
 
-   auto pageReq = ledgerRequest.getGetHistoryPages();
-   pageReq.setFrom(from);
-   pageReq.setTo(to);
+   auto pageReq = ledgerRequest.initGetHistoryPages();
+   pageReq.setFirst(from);
+   if (to < from) {
+      to = from;
+   }
+   pageReq.setLast(to);
 
    //serialize and add to payload
    auto write_payload = toWritePayload(message);
@@ -1004,7 +1007,7 @@ AsyncClient::BtcWallet::BtcWallet(const BlockDataViewer& bdv,
 {}
 
 ///////////////////////////////////////////////////////////////////////////////
-void AsyncClient::BtcWallet::registerAddresses(
+bool AsyncClient::BtcWallet::registerAddresses(
    const std::vector<BinaryData>& addrVec, bool isNew)
 {
    //create capnp request
@@ -1028,8 +1031,21 @@ void AsyncClient::BtcWallet::registerAddresses(
          (uint8_t*)addr.getPtr(), addr.getSize()));
    }
 
+   auto read_payload = std::make_shared<Socket_ReadPayload>();
+   auto prom = std::make_shared<std::promise<bool>>();
+   auto fut = prom->get_future();
+   read_payload->callbackReturn_ =
+      std::make_unique<ClientCallback>([prom](const WebSocketMessagePartial& msg){
+         //deser capnp reply
+         auto msgReader = msg.getReader();
+         auto capnReader = msgReader->getReader();
+         auto reply = capnReader->getRoot<Codec::BDV::Reply>();
+         prom->set_value(reply.getSuccess());
+   });
+
    //push to server
-   sock_->pushPayload(std::move(writePayload), nullptr);
+   sock_->pushPayload(std::move(writePayload), read_payload);
+   return fut.get();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

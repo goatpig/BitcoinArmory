@@ -1910,9 +1910,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          LOGERROR(f"failed to load wallets wit error: {proto.error}")
          raise Exception("failed to load wallets")
 
-      walletsPayload = proto.wallet.multiple_wallets
-
-      for wltProto in walletsPayload.wallet:
+      for wltProto in proto.service.loadWallets:
          wltLoad = PyBtcWallet(proto=wltProto)
          wltID = wltLoad.uniqueIDB58
 
@@ -2381,95 +2379,95 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
    #############################################################################
 
    def convertLedgerToTable(self, ledgerProto, showSentToSelfAmt=True, wltIDIn=None):
-      ledgers = ledgerProto.ledger
       table2D = []
       datefmt = self.getPreferredDateFormat()
-      for le in ledgers:
-         if wltIDIn is None:
-            wltID = le.id
-         else:
-            wltID = wltIDIn
-
-         row = []
-         wlt = self.walletMap.get(wltID)
-
-         if wlt:
-            isWatch = (determineWalletType(wlt, self)[0] == WLTTYPES.WatchOnly)
-            wltName = wlt.getDisplayStr(pref="Wlt")
-            dispComment = self.getCommentForLE(le, wltID)
-         else:
-            lboxId = wltID
-            lbox = self.getLockboxByID(lboxId)
-            if not lbox:
-               continue
-            isWatch = True
-            wltName = '%s-of-%s: %s (%s)' % (lbox.M, lbox.N, lbox.shortName, lboxId)
-            dispComment = self.getCommentForLockboxTx(lboxId, le)
-
-         nConf = TheBDM.getTopBlockHeight() - le.height+1
-         if le.height>=0xffffffff:
-            nConf=0
-
-         # If this was sent-to-self... we should display the actual specified
-         # value when the transaction was executed.  This is pretty difficult
-         # when both "recipient" and "change" are indistinguishable... but
-         # They're actually not because we ALWAYS generate a new address to
-         # for change , which means the change address MUST have a higher
-         # chain index
-         amt = le.value
-         #if le.isSentToSelf() and wlt and showSentToSelfAmt:
-            #amt = determineSentToSelfAmt(le, wlt)[0]
-
-         # NumConf
-         row.append(nConf)
-
-         # UnixTime (needed for sorting)
-         row.append(le.tx_time)
-
-         # Date
-         row.append(str(unixTimeToFormatStr(le.tx_time, datefmt)))
-
-         # TxDir (actually just the amt... use the sign of the amt to determine dir)
-         row.append(coin2str(le.value, maxZeros=2))
-
-         # Wlt Name
-         row.append(wltName)
-
-         # Comment
-         if le.rbf == True:
-            if le.value < 0 or le.sent_to_self:
-               dispComment = self.tr("*Right click to bump fee* ") + dispComment
+      for page in ledgerProto:
+         for le in page.ledgers:
+            if wltIDIn is None:
+               wltID = le.walletId
             else:
-               dispComment = self.tr("*** RBF Flagged *** ") + dispComment
-         elif le.chained_zc == True:
-            dispComment = self.tr("*** Chained ZC *** ") + dispComment
-         row.append(dispComment)
+               wltID = wltIDIn
+
+            row = []
+            wlt = self.walletMap.get(wltID)
+
+            if wlt:
+               isWatch = (determineWalletType(wlt, self)[0] == WLTTYPES.WatchOnly)
+               wltName = wlt.getDisplayStr(pref="Wlt")
+               dispComment = self.getCommentForLE(le, wltID)
+            else:
+               lboxId = wltID
+               lbox = self.getLockboxByID(lboxId)
+               if not lbox:
+                  continue
+               isWatch = True
+               wltName = '%s-of-%s: %s (%s)' % (lbox.M, lbox.N, lbox.shortName, lboxId)
+               dispComment = self.getCommentForLockboxTx(lboxId, le)
+
+            nConf = TheBDM.getTopBlockHeight() - le.txHeight+1
+            if le.txHeight>=0xffffffff:
+               nConf=0
+
+            # If this was sent-to-self... we should display the actual specified
+            # value when the transaction was executed.  This is pretty difficult
+            # when both "recipient" and "change" are indistinguishable... but
+            # They're actually not because we ALWAYS generate a new address to
+            # for change , which means the change address MUST have a higher
+            # chain index
+            amt = le.balance
+            #if le.isSentToSelf() and wlt and showSentToSelfAmt:
+               #amt = determineSentToSelfAmt(le, wlt)[0]
+
+            # NumConf
+            row.append(nConf)
+
+            # UnixTime (needed for sorting)
+            row.append(le.txTime)
+
+            # Date
+            row.append(str(unixTimeToFormatStr(le.txTime, datefmt)))
+
+            # TxDir (actually just the amt... use the sign of the amt to determine dir)
+            row.append(coin2str(le.balance, maxZeros=2))
+
+            # Wlt Name
+            row.append(wltName)
+
+            # Comment
+            if le.isOptInRBF == True:
+               if le.balance < 0 or le.isSTS:
+                  dispComment = self.tr("*Right click to bump fee* ") + dispComment
+               else:
+                  dispComment = self.tr("*** RBF Flagged *** ") + dispComment
+            elif le.isChainedZC == True:
+               dispComment = self.tr("*** Chained ZC *** ") + dispComment
+            row.append(dispComment)
 
 
-         # Amount
-         row.append(coin2str(amt, maxZeros=2))
+            # Amount
+            row.append(coin2str(amt, maxZeros=2))
 
-         # Is this money mine?
-         row.append(isWatch)
+            # Is this money mine?
+            row.append(isWatch)
 
-         # ID to display (this might be the lockbox ID)
-         row.append(wltID)
+            # ID to display (this might be the lockbox ID)
+            row.append(wltID)
 
-         # TxHash
-         row.append(binary_to_hex(le.hash))
+            # TxHash
+            row.append(binary_to_hex(le.txHash))
 
-         # Is this a coinbase/generation transaction
-         row.append(le.coinbase)
+            # Is this a coinbase/generation transaction
+            row.append(le.isCoinbase)
 
-         # Sent-to-self
-         row.append(le.sent_to_self)
+            # Sent-to-self
+            row.append(le.isSTS)
 
-         # RBF and zc chain status
-         row.append(le.rbf)
-         row.append(le.chained_zc)
+            # RBF and zc chain status
+            row.append(le.isOptInRBF)
+            row.append(le.isChainedZC)
 
-         # Finally, attach the row to the table
-         table2D.append(row)
+            # Finally, attach the row to the table
+            table2D.append(row)
 
       return table2D
 
@@ -4230,29 +4228,30 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
    def getSDMStateStr(self):
 
       sdmStr = ""
-      if self.nodeStatus == None or not self.nodeStatus.is_valid:
+      if self.nodeStatus == None:
          return "NodeStatus_Offline"
 
-      if self.nodeStatus.node_state == NodeStatus_Offline:
+      if self.nodeStatus.node == 'offline':
          sdmStr = "NodeStatus_Offline"
 
-         if self.nodeStatus.rpc_state == RpcStatus_Online or \
-            self.nodeStatus.rpc_state == RpcStatus_Error_28:
+         if self.nodeStatus.rpc == 'online' or \
+            self.nodeStatus.rpc == 'error28':
             sdmStr = "NodeStatus_Initializing"
 
       else:
          sdmStr = "NodeStatus_Ready"
 
-         if self.nodeStatus.rpc_state == RpcStatus_Disabled:
+         if self.nodeStatus.rpc == 'disabled':
             return sdmStr
 
-         if self.nodeStatus.rpc_state != RpcStatus_Online:
+         if self.nodeStatus.rpc != 'online':
             sdmStr = "NodeStatus_Initializing"
 
          else:
-            if self.nodeStatus.chain_status.chain_state == ChainStatus_Unknown:
+            chainState = self.nodeStatus.chain
+            if chain.chainState == 'unknown':
                sdmStr = "NodeStatus_Initializing"
-            elif self.nodeStatus.chain_status.chain_state == ChainStatus_Syncing:
+            elif chain.chainState == 'syncing':
                sdmStr = "NodeStatus_Syncing"
 
       return sdmStr
@@ -4622,11 +4621,9 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
    #############################################################################
    def updateStatusBarText(self):
       if self.nodeStatus != None and \
-         self.nodeStatus.node_state == NodeStatus_Online and \
-         self.nodeStatus.is_valid:
+         self.nodeStatus.node== 'online':
 
-         haveRPC = (self.nodeStatus.rpc_state == RpcStatus_Online)
-
+         haveRPC = (self.nodeStatus.rpc == 'online')
          if haveRPC:
             self.lblArmoryStatus.setText(\
                self.tr('<font color=%s>Connected (%s blocks)</font> ' % \
@@ -4647,8 +4644,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          self.lblArmoryStatus.setToolTipLambda(getToolTipTextOnline)
 
       elif self.nodeStatus == None or \
-         self.nodeStatus.node_state == NodeStatus_Offline or \
-         not self.nodeStatus.is_valid:
+         self.nodeStatus.node == 'offline':
          self.lblArmoryStatus.setText(\
                self.tr('<font color=%s><b>Node offline (%d blocks)</b></font> ' % \
                   (htmlColor('TextRed'), TheBDM.getTopBlockHeight())))
@@ -5304,7 +5300,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
    #############################################################################
    def setupBlockchainService_step2(self):
       self.switchNetworkMode(NETWORKMODE.Full)
-
       TheBridge.service.registerWallets()
 
    #############################################################################
@@ -5312,7 +5307,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       self.setupLedgerViews()
       self.loadBlockchainIfNecessary()
       self.setDashboardDetails()
-
       TheBridge.service.goOnline()
 
    #############################################################################

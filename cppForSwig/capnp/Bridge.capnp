@@ -108,6 +108,7 @@ struct NotificationReply
 {
    success     @0 : Bool;
    passphrase  @1 : Text;
+   counter     @2 : UInt32;
 }
 
 ###############################
@@ -267,7 +268,7 @@ struct WalletReply {
       extendAddressPool             @3 : WalletData;
       createBackupString            @4 : BackupString;
       getData                       @5 : WalletData;
-      getAddressCombinedList        @6 : AddressAndBalanceData;
+      getAddrCombinedList           @6 : AddressAndBalanceData;
       setAddressTypeFor             @7 : WalletData.AddressData;
       getLedgerDelegateId           @8 : Types.DelegateId;
       getLedgerDelegateIdForScrAddr @9 : Types.DelegateId;

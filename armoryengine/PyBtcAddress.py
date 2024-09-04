@@ -141,22 +141,22 @@ class PyBtcAddress(object):
       return (self.chainIndex==-1)
 
    #############################################################################
-   def loadFromProtobufPayload(self, payload):
+   def loadFromProto(self, payload):
       self.__init__()
 
-      self.prefixedHash = payload.prefixed_hash
-      self.binPublicKey = payload.public_key
-      self.chainIndex = payload.id
-      self.assetId = payload.asset_id
+      self.prefixedHash = payload.prefixedHash
+      self.binPublicKey = payload.publicKey
+      self.chainIndex = payload.index
+      self.assetId = payload.assetId
       self.isInitialized = True
-      self.addrType = payload.addr_type
-      self.addressString = payload.address_string
-      self.hasPrivKey = payload.has_priv_key
-      self.use_encryption = payload.use_encryption
+      self.addrType = payload.addrType
+      self.addressString = payload.addressString
+      self.hasPrivKey = payload.hasPrivKey
+      self.use_encryption = payload.usesEncryption
 
-      self.precursorScript = payload.precursor_script
-      self.isUsed = payload.is_used
-      self.isChange = payload.is_change
+      self.precursorScript = payload.precursorScript
+      self.isUsed = payload.isUsed
+      self.isChange = payload.isChange
 
    #############################################################################
    def getTxioCount(self):

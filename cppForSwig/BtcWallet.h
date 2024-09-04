@@ -111,7 +111,7 @@ public:
       doneRegisteringCallback_ = lbd;
    }
 
-   void setConfTarget(unsigned, const std::string&);
+   void setConfTarget(unsigned);
 
    std::shared_ptr<const std::map<BinaryDataRef, std::shared_ptr<ScrAddrObj>>>
       getAddrMap(void) const { return scrAddrMap_.get(); }

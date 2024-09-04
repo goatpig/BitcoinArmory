@@ -126,8 +126,6 @@ namespace DBTestUtils
    void registerWallet(Clients* clients, const std::string& bdvId,
       const std::vector<BinaryData>& scrAddrs, const std::string& wltName,
       bool isLockbox, bool waitOnReg);
-   void regLockbox(Clients* clients, const std::string& bdvId,
-      const std::vector<BinaryData>& scrAddrs, const std::string& wltName);
 
    std::vector<uint64_t> getBalanceAndCount(Clients* clients,
       const std::string& bdvId, const std::string& walletId, unsigned blockheight);
@@ -318,21 +316,16 @@ namespace DBTestUtils
       void waitOnSignal(BDMAction signal, std::string id = "")
       {
          BinaryDataRef idRef; idRef.setRef(id);
-         while (1)
-         {
-            auto&& action = actionStack_.pop_front();
-            if (action->action_ == signal)
-            {
-               if (id.size() > 0)
-               {
-                  for (auto& id : action->idVec_)
-                  {
-                     if (id == idRef)
+         while (true) {
+            auto action = std::move(actionStack_.pop_front());
+            if (action->action_ == signal) {
+               if (!id.empty()) {
+                  for (const auto& notifId : action->idVec_) {
+                     if (notifId == idRef) {
                         return;
+                     }
                   }
-               }
-               else
-               {
+               } else {
                   return;
                }
             }

@@ -11,7 +11,7 @@ from __future__ import (absolute_import, division, annotations,
 import os
 import errno
 import socket
-from armoryengine.ArmoryUtils import LOGDEBUG, LOGERROR, hash256
+from armoryengine.ArmoryUtils import LOGDEBUG, LOGERROR, LOGWARN, hash256
 from armoryengine.BinaryPacker import BinaryPacker, \
    UINT32, UINT8, BINARY_CHUNK, VAR_INT
 from struct import unpack
@@ -422,11 +422,11 @@ class BlockchainService(ProtoWrapper):
    ####
    def getLedgerDelegateIdForWallets(self):
       packet = Bridge.ToBridge.new_message()
-      packet.init("service").getLedgerDelegate = None
+      packet.init("service").getLedgerDelegateId = None
 
       fut = self.send(packet)
       response = fut.getVal()
-      return response.service.ledgerDelegateId
+      return response.service.getLedgerDelegateId
 
    ####
    def updateWalletsLedgerFilter(self, ids: list[str]):
@@ -441,11 +441,11 @@ class BlockchainService(ProtoWrapper):
    ####
    def getNodeStatus(self):
       packet = Bridge.ToBridge.new_message()
-      packet.init("service").getNodeStatus = Types.NodeStatus.new_message()
+      packet.init("service").getNodeStatus = None
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.service.nodeStatus
+      return reply.service.getNodeStatus
 
    ####
    def registerWallet(self, walletId: str, isNew: bool):
@@ -460,13 +460,14 @@ class BlockchainService(ProtoWrapper):
    def getHistoryPageForDelegate(self, delegateId: str, pageId: int):
       packet = Bridge.ToBridge.new_message()
       # TODO: Incomplete: HistoryPageRequest is unused
-      method = packet.service.get_history_page_for_delegate
-      method.delegate_id = delegateId
-      method.page_id = pageId
+      request = packet.init("delegate")
+      request.id = delegateId
+      pages = request.init("getPages")
+      pages.first = pageId
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.service.ledgerHistory
+      return reply.delegate.getPages
 
    ####
    def getTxsByHash(self, hashVals: list[bytes]):
@@ -536,7 +537,7 @@ class BlockchainUtils(ProtoWrapper):
          raise BridgeError(
             f"[getNameForAddrType] failed with error: {reply.error}")
 
-      addrTypeStr = reply.utils.address_type_name
+      addrTypeStr = reply.utils.getNameForAddrType
       self.addrTypeStrByType[addrType] = addrTypeStr
       return addrTypeStr
 
@@ -547,7 +548,7 @@ class BlockchainUtils(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.utils.hash
+      return reply.utils.getHash160
 
    ####
    def generateRandomHex(self, size: int):
@@ -556,7 +557,7 @@ class BlockchainUtils(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.utils.randomHex
+      return reply.utils.generateRandomHex
 
    ####
    def createWallet(self, addrPoolSize: int, passphrase: str, controlPassphrase: str,
@@ -602,7 +603,7 @@ class BridgeWalletWrapper(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.wallet.balanceAndCount
+      return reply.wallet.getBalanceAndCount
 
    ####
    def getAddrCombinedList(self):
@@ -611,7 +612,7 @@ class BridgeWalletWrapper(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.wallet.addressAndBalanceData
+      return reply.wallet.getAddrCombinedList
 
    ####
    def getHighestUsedIndex(self):
@@ -620,7 +621,7 @@ class BridgeWalletWrapper(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.wallet.highestUsedIndex
+      return reply.wallet.getHighestUsedIndex
 
    ####
    def extendAddressPool(self, progressId, count, callback):
@@ -1299,14 +1300,14 @@ class ServerPush(ProtoWrapper):
       if protoPacket.which() == "cleanup":
          self.bridgeSocket.unsetCallback(self.callbackId)
 
-      self.refId = protoPacket.referenceId
+      self.refId = protoPacket.counter
       self.parseProtoPacket(protoPacket)
 
    def getNewPacket(self):
       self.packet = Bridge.ToBridge.new_message()
-      self.packet.callbackReply.referenceId = self.refId
+      self.packet.notification.counter = self.refId
       self.refId = 0
-      return self.packet.callbackReply
+      return self.packet.notification
 
    def reply(self):
       self.send(self.packet, needsReply=False)

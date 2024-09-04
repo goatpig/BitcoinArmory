@@ -114,8 +114,8 @@ namespace
             const auto& delegateId = bridge->getLedgerDelegateId();
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
-            auto reply = fromBridge.getReply();
-            auto service = reply.getService();
+            auto reply = fromBridge.initReply();
+            auto service = reply.initService();
 
             service.setGetLedgerDelegateId(delegateId);
             reply.setSuccess(true);
@@ -374,7 +374,7 @@ namespace
       if (cs == nullptr) {
          capnp::MallocMessageBuilder message;
          auto fromBridge = message.initRoot<FromBridge>();
-         auto reply = fromBridge.getReply();
+         auto reply = fromBridge.initReply();
          reply.setSuccess(false);
          reply.setReferenceId(referenceId);
 
@@ -402,7 +402,7 @@ namespace
          {
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
-            auto reply = fromBridge.getReply();
+            auto reply = fromBridge.initReply();
             reply.setReferenceId(referenceId);
 
             auto args = request.getSetRecipient();
@@ -438,7 +438,7 @@ namespace
 
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
-            auto reply = fromBridge.getReply();
+            auto reply = fromBridge.initReply();
             reply.setReferenceId(referenceId);
             reply.setSuccess(success);
 
@@ -452,7 +452,7 @@ namespace
 
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
-            auto reply = fromBridge.getReply();
+            auto reply = fromBridge.initReply();
             reply.setReferenceId(referenceId);
             reply.setSuccess(true);
 
@@ -470,7 +470,7 @@ namespace
 
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
-            auto reply = fromBridge.getReply();
+            auto reply = fromBridge.initReply();
             reply.setReferenceId(referenceId);
             reply.setSuccess(true);
 
@@ -487,7 +487,7 @@ namespace
 
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
-            auto reply = fromBridge.getReply();
+            auto reply = fromBridge.initReply();
             reply.setReferenceId(referenceId);
             reply.setSuccess(true);
 
@@ -504,7 +504,7 @@ namespace
 
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
-            auto reply = fromBridge.getReply();
+            auto reply = fromBridge.initReply();
             reply.setReferenceId(referenceId);
             reply.setSuccess(true);
 
@@ -551,7 +551,7 @@ namespace
 
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
-            auto reply = fromBridge.getReply();
+            auto reply = fromBridge.initReply();
             reply.setReferenceId(referenceId);
             reply.setSuccess(success);
 
@@ -588,7 +588,7 @@ namespace
 
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
-            auto reply = fromBridge.getReply();
+            auto reply = fromBridge.initReply();
             reply.setReferenceId(referenceId);
             reply.setSuccess(true);
 
@@ -615,7 +615,7 @@ namespace
       {
          capnp::MallocMessageBuilder message;
          auto fromBridge = message.initRoot<FromBridge>();
-         auto reply = fromBridge.getReply();
+         auto reply = fromBridge.initReply();
          reply.setSuccess(success);
          reply.setReferenceId(referenceId);
 
@@ -725,7 +725,7 @@ namespace
 
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
-            auto reply = fromBridge.getReply();
+            auto reply = fromBridge.initReply();
             reply.setSuccess(true);
             reply.setReferenceId(referenceId);
 
@@ -757,7 +757,7 @@ namespace
          {
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
-            auto reply = fromBridge.getReply();
+            auto reply = fromBridge.initReply();
             reply.setReferenceId(referenceId);
 
             try {
@@ -780,7 +780,7 @@ namespace
          {
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
-            auto reply = fromBridge.getReply();
+            auto reply = fromBridge.initReply();
             reply.setReferenceId(referenceId);
 
             try {
@@ -819,7 +819,7 @@ namespace
 
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
-            auto reply = fromBridge.getReply();
+            auto reply = fromBridge.initReply();
             reply.setReferenceId(referenceId);
             reply.setSuccess(true);
 
@@ -882,7 +882,7 @@ namespace
 
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
-            auto reply = fromBridge.getReply();
+            auto reply = fromBridge.initReply();
             reply.setReferenceId(referenceId);
             reply.setSuccess(true);
 
@@ -900,7 +900,7 @@ namespace
 
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
-            auto reply = fromBridge.getReply();
+            auto reply = fromBridge.initReply();
             reply.setReferenceId(referenceId);
             reply.setSuccess(true);
 
@@ -926,7 +926,7 @@ namespace
 
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
-            auto reply = fromBridge.getReply();
+            auto reply = fromBridge.initReply();
             reply.setReferenceId(referenceId);
             reply.setSuccess(true);
 
@@ -1014,6 +1014,37 @@ namespace
       return true;
    }
 
+   bool processDelegateCommands(
+      std::shared_ptr<CppBridge> bridge, MessageId referenceId,
+      LedgerDelegateRequest::Reader& request)
+   {
+      std::string delegateId = request.getId();
+      BinaryData response;
+
+      switch (request.which())
+      {
+         case LedgerDelegateRequest::GET_PAGES:
+         {
+            auto getPages = request.getGetPages();
+            bridge->getHistoryPageForDelegate(delegateId,
+               getPages.getFirst(), getPages.getLast(),
+               referenceId);
+            break;
+         }
+
+         case LedgerDelegateRequest::GET_PAGE_COUNT:
+         {
+            break;
+         }
+      }
+
+      if (!response.empty()) {
+         //write response to socket
+         bridge->writeToClient(response);
+      }
+      return true;
+   }
+
    bool processNotificationReply(
       std::shared_ptr<CppBridge> bridge, MessageId referenceId,
       NotificationReply::Reader& notif)
@@ -1081,6 +1112,13 @@ bool ProtoCommandParser::processData(
          auto scriptUtils = toBridge.getScriptUtils();
          return processScriptUtilsCommands(
             bridge, referenceId, scriptUtils);
+      }
+
+      case Codec::Bridge::ToBridge::DELEGATE:
+      {
+         auto delegate = toBridge.getDelegate();
+         return processDelegateCommands(
+            bridge, referenceId, delegate);
       }
 
       case Codec::Bridge::ToBridge::NOTIFICATION:

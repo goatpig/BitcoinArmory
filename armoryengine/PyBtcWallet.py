@@ -271,7 +271,7 @@ class PyBtcWallet(object):
       if uniqueId != None:
          self.bridgeWalletObj = BridgeWalletWrapper(uniqueId)
       elif proto != None:
-         self.loadFromProtobufPayload(proto)
+         self.loadFromProto(proto)
          self.bridgeWalletObj = BridgeWalletWrapper(self.uniqueIDB58)
 
    #############################################################################
@@ -371,7 +371,7 @@ class PyBtcWallet(object):
       self.balance_full = result.full
       self.balance_spendable = result.spendable
       self.balance_unconfirmed = result.unconfirmed
-      self.txnCount = result.count
+      self.txnCount = result.txnCount
 
    #############################################################################
    def getAddrBalance(self, addrHash, balType="Spendable", topBlockHeight=UINT32_MAX):
@@ -1130,9 +1130,9 @@ class PyBtcWallet(object):
    #############################################################################
    def getAddrCommentFromLe(self, le):
       # If we haven't extracted relevant addresses for this tx, yet -- do it
-      txHash = le.hash
+      txHash = le.txHash
       if txHash not in self.txAddrMap:
-         self.txAddrMap[txHash] = le.scraddr
+         self.txAddrMap[txHash] = le.scrAddrs
 
       addrComments = []
       for a160 in self.txAddrMap[txHash]:
@@ -1146,7 +1146,7 @@ class PyBtcWallet(object):
    def getCommentForLE(self, le):
       # Smart comments for LedgerEntry objects:  get any direct comments ...
       # if none, then grab the one for any associated addresses.
-      txHash = le.hash
+      txHash = le.txHash
       if txHash in self.commentsMap:
          comment = self.commentsMap[txHash]
       else:
@@ -1402,7 +1402,7 @@ class PyBtcWallet(object):
       result = self.bridgeWalletObj.getAddrCombinedList()
 
       #update addr map
-      for addrProto in result.updated_asset:
+      for addrProto in result.updatedAssets:
          addrObj = PyBtcAddress()
          addrObj.loadFromProtobufPayload(addrProto)
 
@@ -1410,16 +1410,15 @@ class PyBtcWallet(object):
          self.addrMap[addrHash] = addrObj
 
       #update balances and txio count
-      for i in range(0, len(result.balance)):
-         addrCombinedData = result.balance[i]
-         addr = addrCombinedData.id
+      for addrCombinedData in result.balances:
+         addr = addrCombinedData.scrAddr
          if addr in self.addrMap:
             addrObj = self.addrMap[addr]
 
-            addrObj.fullBalance        = addrCombinedData.balance.full
-            addrObj.spendableBalance   = addrCombinedData.balance.spendable
-            addrObj.unconfirmedBalance = addrCombinedData.balance.unconfirmed
-            addrObj.txioCount          = addrCombinedData.balance.count
+            addrObj.fullBalance        = addrCombinedData.balances.full
+            addrObj.spendableBalance   = addrCombinedData.balances.spendable
+            addrObj.unconfirmedBalance = addrCombinedData.balances.unconfirmed
+            addrObj.txioCount          = addrCombinedData.balances.txnCount
          else:
             print ("[getAddrDataFromDB] missing address " + addr.hex())
 
@@ -1580,24 +1579,24 @@ class PyBtcWallet(object):
       return len(self.importList) != 0
 
    ###############################################################################
-   def loadFromProtobufPayload(self, payload):
+   def loadFromProto(self, payload):
       self.uniqueIDB58 = payload.id
 
       self.labelName   = payload.label
       self.labelDescr  = payload.desc
 
-      self.useEncryption = payload.use_encryption
-      self.lastComputedChainIndex = payload.lookup_count
-      self.highestUsedChainIndex = payload.use_count
-      self.watchingOnly = payload.watching_only
-      self.addressTypes = payload.address_type
-      self.defaultAddressType = payload.default_address_type
-      self.kdfMemoryReq = payload.kdf_mem_req
+      self.useEncryption = payload.usesEncryption
+      self.lastComputedChainIndex = payload.lookupCount
+      self.highestUsedChainIndex = payload.useCount
+      self.watchingOnly = payload.watchingOnly
+      self.addressTypes = payload.addressTypes
+      self.defaultAddressType = payload.defaultAddressType
+      self.kdfMemoryReq = payload.kdfMemReq
 
       #addrMap and chainIndexMap
-      for addr in payload.address_data:
+      for addr in payload.addressData:
          addrObj = PyBtcAddress(self)
-         addrObj.loadFromProtobufPayload(addr)
+         addrObj.loadFromProto(addr)
          self.addAddress(addrObj)
 
       #importList
@@ -1607,7 +1606,7 @@ class PyBtcWallet(object):
 
       #comments
       for commentIt in payload.comments:
-         self.commentsMap[commentIt.key] = commentIt.val.decode('utf-8')
+         self.commentsMap[commentIt.key] = commentIt.val
 
    #############################################################################
    def fillAddressPool(self, numPool, progressId, callback=None):

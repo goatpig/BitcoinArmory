@@ -201,6 +201,7 @@ namespace TestUtils
       std::ofstream o(to, ios::app | ios::binary);
 
       o << i.rdbuf();
+      o.flush();
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -967,7 +968,7 @@ namespace DBTestUtils
 
    /////////////////////////////////////////////////////////////////////////////
    map<BinaryData, vector<uint64_t>> getAddrBalancesFromDB(
-      shared_ptr<AsyncClient::BlockDataViewer> bdv, std::string wltId)
+      shared_ptr<AsyncClient::BlockDataViewer> bdv, const std::string& wltId)
    {
       auto prom = make_shared<promise<map<std::string, AsyncClient::CombinedBalances>>>();
       auto fut = prom->get_future();
