@@ -281,12 +281,21 @@ namespace
    }
 
    void utxosToCapnp(const std::vector<UTXO>& utxos,
-      capnp::List<Codec::Types::Output, capnp::Kind::STRUCT>::Builder& capnOutputs)
+      capnp::List<Codec::Bridge::WalletReply::UTXO, capnp::Kind::STRUCT>::Builder& capnOutputs)
    {
       for (unsigned i=0; i<utxos.size(); i++) {
-         auto capnOutput = capnOutputs[i];
+         auto capnUtxo = capnOutputs[i];
          const auto& utxo = utxos[i];
 
+         //scrAddr
+         const auto& script = utxo.getScript();
+         auto scrAddr = BtcUtils::getScrAddrForScript(script);
+         capnUtxo.setScrAddr(capnp::Data::Builder(
+            (uint8_t*)scrAddr.getPtr(), scrAddr.getSize()
+         ));
+
+         //output body
+         auto capnOutput = capnUtxo.initOutput();
          capnOutput.setValue(utxo.getValue());
          capnOutput.setTxHeight(utxo.getHeight());
          capnOutput.setTxIndex(utxo.getTxIndex());
@@ -297,7 +306,6 @@ namespace
             (uint8_t*)txHash.getPtr(), txHash.getSize()
          ));
 
-         const auto& script = utxo.getScript();
          capnOutput.setScript(capnp::Data::Builder(
             (uint8_t*)script.getPtr(), script.getSize()
          ));

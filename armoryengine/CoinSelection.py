@@ -90,25 +90,26 @@ class PyUnspentTxOut(object):
 
    #############################################################################
    def createFromBridgeUtxo(self, bridgeUtxo):
-      scrAddr= bridgeUtxo.scraddr
-      val    = bridgeUtxo.value
-      conf   = TheBDM.getTopBlockHeight() - bridgeUtxo.tx_height + 1
-      txHash = bridgeUtxo.tx_hash
-      txHashStr = binary_to_hex(bridgeUtxo.tx_hash)
-      txoIdx = bridgeUtxo.txout_index
-      script = bridgeUtxo.script
-      txHeight = bridgeUtxo.tx_height
-      txIndex = bridgeUtxo.tx_index
-      sequence = 2**32-1
+      output = bridgeUtxo.output
+      scrAddr     = bridgeUtxo.scrAddr
+      val         = output.value
+      conf        = TheBDM.getTopBlockHeight() - output.txHeight + 1
+      txHash      = output.txHash
+      txHashStr   = binary_to_hex(output.txHash)
+      txoIdx      = output.txOutIndex
+      script      = output.script
+      txHeight    = output.txHeight
+      txIndex     = output.txIndex
+      sequence    = 2**32-1
 
-      self.initialize(scrAddr, txHash, txHashStr, txHeight, txIndex, 
-                      txoIdx, val, conf, script, sequence)
+      self.initialize(scrAddr, txHash, txHashStr, txHeight, txIndex,
+         txoIdx, val, conf, script, sequence)
       return self
 
    #############################################################################
-   def initialize(self, scrAddr, txHash, txHashStr, txHeight, txIndex, 
-                  txoIdx, val, numConf=None, fullScript=None, 
-                  sequence=2**32-1):
+   def initialize(self, scrAddr, txHash, txHashStr, txHeight, txIndex,
+      txoIdx, val, numConf=None, fullScript=None, 
+      sequence=2**32-1):
       self.scrAddr    = scrAddr
       self.txHash     = txHash
       self.txHashStr  = txHashStr
@@ -123,7 +124,6 @@ class PyUnspentTxOut(object):
          self.binScript = scrAddr_to_script(self.scrAddr)
       else:
          self.binScript = fullScript
-         
       self.checked = True
 
    def getTxHash(self):

@@ -678,7 +678,7 @@ class BridgeWalletWrapper(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return BridgeCoinSelectionWrapper(reply.wallet.coinSelectionId)
+      return BridgeCoinSelectionWrapper(reply.wallet.setupNewCoinSelectionInstance)
 
    ####
    def createAddressBook(self):
@@ -687,17 +687,22 @@ class BridgeWalletWrapper(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.wallet.addressBook
+      return reply.wallet.createAddressBook
 
    ####
-   def getUtxos(self, value):
+   def getUtxos(self, value=0, zc=False, rbf=False):
       packet = self.getPacket()
-      method = packet.wallet.init("getUtxos")
-      method.value = value
+      request = packet.wallet.init("getUtxos")
+      if value > 0:
+         request.value = value
+      elif zc == True:
+         request.zc = None
+      elif rbf == True:
+         request.rbf = None
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.wallet.utxoList
+      return reply.wallet.getUtxos
 
    ####
    def getNewAddress(self):
@@ -706,7 +711,7 @@ class BridgeWalletWrapper(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.wallet.addressData
+      return reply.wallet.getAddress
 
    ####
    def getChangeAddr(self):
@@ -715,7 +720,7 @@ class BridgeWalletWrapper(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.wallet.addressData
+      return reply.wallet.getAddress
 
    ####
    def peekChangeAddress(self):
@@ -724,19 +729,19 @@ class BridgeWalletWrapper(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.wallet.addressData
+      return reply.wallet.getAddress
 
    ####
    def getData(self):
       packet = self.getPacket()
-      
+
       walletData = Bridge.WalletData.new_message()
       method = packet.wallet.init("getData")
       method = walletData
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.wallet.walletData
+      return reply.wallet.getData
 
    ####
    def delete(self):

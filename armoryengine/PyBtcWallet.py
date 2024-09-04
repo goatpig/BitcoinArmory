@@ -435,10 +435,10 @@ class PyBtcWallet(object):
       if not self.doBlockchainSync==BLOCKCHAIN_DONOTUSE:
          #calling this with no value argument will return the full UTXO list
          from armoryengine.CoinSelection import PyUnspentTxOut
-         utxos = self.bridgeWalletObj.getUtxosForValue(2**64 - 1)
+         utxos = self.bridgeWalletObj.getUtxos(value=2**64 - 1)
          utxoList = []
-         for i in range(len(utxos.utxo)):
-            utxoList.append(PyUnspentTxOut().createFromBridgeUtxo(utxos.utxo[i]))
+         for utxo in utxos:
+            utxoList.append(PyUnspentTxOut().createFromBridgeUtxo(utxo))
          return utxoList
       else:
          LOGERROR('***Blockchain is not available for accessing wallet-tx data')
@@ -450,10 +450,10 @@ class PyBtcWallet(object):
       #return full set of unspent ZC outputs
       if not self.doBlockchainSync==BLOCKCHAIN_DONOTUSE:
          from armoryengine.CoinSelection import PyUnspentTxOut
-         utxos = self.bridgeWalletObj.getSpendableZCList()
+         utxos = self.bridgeWalletObj.getUtxos(zc=True)
          utxoList = []
-         for i in range(len(utxos.utxo)):
-            utxoList.append(PyUnspentTxOut().createFromBridgeUtxo(utxos.utxo[i]))
+         for utxo in utxos:
+            utxoList.append(PyUnspentTxOut().createFromBridgeUtxo(utxo))
          return utxoList
       else:
          LOGERROR('***Blockchain is not available for accessing wallet-tx data')
@@ -465,7 +465,7 @@ class PyBtcWallet(object):
       #return full set of unspent ZC outputs
       if not self.doBlockchainSync==BLOCKCHAIN_DONOTUSE:
          from armoryengine.CoinSelection import PyUnspentTxOut
-         utxos = self.bridgeWalletObj.getRBFTxOutList()
+         utxos = self.bridgeWalletObj.getUtxos(rbf=True)
          utxoList = []
          for i in range(len(utxos.utxo)):
             utxoList.append(PyUnspentTxOut().createFromBridgeUtxo(utxos.utxo[i]))

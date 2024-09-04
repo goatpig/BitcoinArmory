@@ -259,6 +259,11 @@ struct WalletReply {
       updatedAssets  @1 : List(WalletData.AddressData);
    }
 
+   struct UTXO {
+      output   @0 : Types.Output;
+      scrAddr  @1 : Types.ScrAddr;
+   }
+
    # reply
    union {
       unset                         @0 : Void;
@@ -274,7 +279,7 @@ struct WalletReply {
       getLedgerDelegateIdForScrAddr @9 : Types.DelegateId;
       getBalanceAndCount            @10: Types.BalanceAndCount;
       setupNewCoinSelectionInstance @11: Text;
-      getUtxos                      @12: List(Types.Output);
+      getUtxos                      @12: List(UTXO);
       createAddressBook             @13: Types.AddressBook;
    }
 }
