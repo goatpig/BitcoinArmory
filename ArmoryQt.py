@@ -1919,6 +1919,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             LOGWARN('***WARNING: Duplicate wallet detected, %s', wltID)
             wo1 = self.walletMap[wltID].watchingOnly
             wo2 = wltLoad.watchingOnly
+            fpath = wltLoad.walletPath
             if wo1 and not wo2:
                prevWltPath = self.walletMap[wltID].walletPath
                self.walletMap[wltID] = wltLoad

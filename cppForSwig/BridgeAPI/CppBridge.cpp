@@ -402,7 +402,7 @@ BinaryData CppBridge::createWalletsPacket(MessageId msgId)
       if (idIt.first.empty() || idIt.second.empty()) {
          continue;
       }
-      ++count;
+      count += idIt.second.size();
    }
    auto wltPackets = serviceReply.initLoadWallets(count);
 
@@ -412,12 +412,11 @@ BinaryData CppBridge::createWalletsPacket(MessageId msgId)
          continue;
       }
 
-      auto capnWallet = wltPackets[i++];
-      auto firstCont = wltManager_->getWalletContainer(
-         idIt.first, *idIt.second.begin());
-      auto wltPtr = firstCont->getWalletPtr();
-      auto commentMap = wltPtr->getCommentMap();
-      for (auto& accId : idIt.second) {
+      for (const auto& accId : idIt.second) {
+         auto capnWallet = wltPackets[i++];
+         auto firstCont = wltManager_->getWalletContainer(idIt.first, accId);
+         auto wltPtr = firstCont->getWalletPtr();
+         auto commentMap = wltPtr->getCommentMap();
          walletToCapnp(wltPtr, accId, commentMap, capnWallet);
       }
    }
@@ -1809,6 +1808,7 @@ void CppBridge::getFeeSchedule(const std::string& strat,
       capnp::MallocMessageBuilder message;
       auto fromBridge = message.initRoot<FromBridge>();
       auto reply = fromBridge.initReply();
+      reply.setReferenceId(msgId);
       try {
          auto feeMap = feeResult.get();
 
@@ -1822,8 +1822,7 @@ void CppBridge::getFeeSchedule(const std::string& strat,
             capnFee.setSmartFee(fee.second.isSmart_);
          }
          reply.setSuccess(true);
-      }
-      catch (const ClientMessageError& e) {
+      } catch (const ClientMessageError& e) {
          reply.setSuccess(false);
          reply.setError(e.what());
       }

@@ -823,6 +823,28 @@ namespace {
             break;
          }
 
+         case StaticRequest::Which::GET_FEE_SCHEDULE:
+         {
+            try {
+               std::string strat = request.getGetFeeSchedule();
+               auto nodePtr = clients->bdmT()->bdm()->nodeRPC_;
+               auto feeSchedule = nodePtr->getFeeSchedule(strat);
+               auto capnFeeSchedule = staticReply.initGetFeeSchedule(feeSchedule.size());
+
+               unsigned i=0;
+               for (const auto& fee : feeSchedule) {
+                  auto capnFee = capnFeeSchedule[i++];
+                  capnFee.setTarget(fee.first);
+                  capnFee.setFeeByte(fee.second.feeByte_);
+                  capnFee.setSmartFee(fee.second.smartFee_);
+               }
+            } catch (const std::exception& e) {
+               reply.setError(e.what());
+               reply.setSuccess(false);
+            }
+            break;
+         }
+
          default:
             reply.setError("invalid static request");
             reply.setSuccess(false);
