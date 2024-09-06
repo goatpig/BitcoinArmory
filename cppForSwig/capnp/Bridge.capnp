@@ -199,8 +199,8 @@ struct WalletRequest {
    }
 
    struct SetComment {
-      key @0 : Text;
-      comment @1 : Text;
+      key      @0 : Text;
+      comment  @1 : Text;
    }
 
    struct SetLabels {
@@ -237,6 +237,11 @@ struct WalletRequest {
 }
 
 ####
+struct UTXO {
+   output   @0 : Types.Output;
+   scrAddr  @1 : Types.ScrAddr;
+}
+
 struct WalletReply {
    struct BackupString {
       rootClear   @0 : List(Text);
@@ -259,10 +264,6 @@ struct WalletReply {
       updatedAssets  @1 : List(WalletData.AddressData);
    }
 
-   struct UTXO {
-      output   @0 : Types.Output;
-      scrAddr  @1 : Types.ScrAddr;
-   }
 
    # reply
    union {
@@ -341,7 +342,7 @@ struct CoinSelectionReply {
    union {
       unset             @0 : Void;
 
-      getUtxoSelection  @1 : List(Types.Output);
+      getUtxoSelection  @1 : List(UTXO);
       getFlatFee        @2 : Types.CoinAmount;
       getFeeByte        @3 : Float32;
       getSizeEstimate   @4 : UInt32;

@@ -280,8 +280,8 @@ namespace
       capnChainState.setBlocksLeft(chainState.getBlocksLeft());
    }
 
-   void utxosToCapnp(const std::vector<UTXO>& utxos,
-      capnp::List<Codec::Bridge::WalletReply::UTXO, capnp::Kind::STRUCT>::Builder& capnOutputs)
+   void utxosToCapnp(const std::vector<::UTXO>& utxos,
+      capnp::List<Codec::Bridge::UTXO, capnp::Kind::STRUCT>::Builder& capnOutputs)
    {
       for (unsigned i=0; i<utxos.size(); i++) {
          auto capnUtxo = capnOutputs[i];
@@ -1230,6 +1230,7 @@ void CppBridge::getTxsByHash(const std::set<BinaryData>& hashes, MessageId msgId
       bool valid = false;
       try {
          txMap = std::move(result.get());
+         valid = true;
       } catch(const std::exception&) {}
 
       capnp::MallocMessageBuilder message;
@@ -1571,11 +1572,11 @@ void CppBridge::setupNewCoinSelectionInstance(const std::string& id,
    auto lbd = [this, wltContainer, csPtr, csId, height, msgId](
       ReturnMessage<std::vector<::AddressBookEntry>> result)->void
    {
-      auto fetchLbd = [wltContainer](uint64_t val)->std::vector<UTXO>
+      auto fetchLbd = [wltContainer](uint64_t val)->std::vector<::UTXO>
       {
-         auto promPtr = std::make_shared<std::promise<std::vector<UTXO>>>();
+         auto promPtr = std::make_shared<std::promise<std::vector<::UTXO>>>();
          auto fut = promPtr->get_future();
-         auto lbd = [promPtr](ReturnMessage<std::vector<UTXO>> result)->void
+         auto lbd = [promPtr](ReturnMessage<std::vector<::UTXO>> result)->void
          {
             promPtr->set_value(result.get());
          };
@@ -1697,7 +1698,7 @@ void CppBridge::getUTXOs(const std::string& id,
    auto wltContainer = wltManager_->getWalletContainer(
       wai.walletId, wai.accountId);
 
-   auto lbd = [this, msgId](ReturnMessage<std::vector<UTXO>> result)->void
+   auto lbd = [this, msgId](ReturnMessage<std::vector<::UTXO>> result)->void
    {
       auto utxoVec = std::move(result.get());
 
@@ -2211,7 +2212,8 @@ bool CppBridgeSignerStruct::resolve(const std::string& wltId)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-BinaryData CppBridgeSignerStruct::getSignedStateForInput(unsigned inputId)
+BinaryData CppBridgeSignerStruct::getSignedStateForInput(
+   unsigned inputId, MessageId referenceId)
 {
    if (signState_ == nullptr) {
       signState_ = std::make_unique<Signing::TxEvalState>(
@@ -2242,6 +2244,8 @@ BinaryData CppBridgeSignerStruct::getSignedStateForInput(unsigned inputId)
       ));
       sig.setHasSig(pubkey.second);
    }
+
    reply.setSuccess(true);
+   reply.setReferenceId(referenceId);
    return serializeCapnp(message);
 }

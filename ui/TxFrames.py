@@ -1057,8 +1057,8 @@ class SendBitcoinsFrame(ArmoryFrame):
       self.resolveCoinSelection()
       utxoVec = self.coinSelection.getUtxoSelection()
       utxoSelect = []
-      for i in range(len(utxoVec.utxo)):
-         pyUtxo = PyUnspentTxOut().createFromBridgeUtxo(utxoVec.utxo[i])
+      for utxo in utxoVec:
+         pyUtxo = PyUnspentTxOut().createFromBridgeUtxo(utxo)
          utxoSelect.append(pyUtxo)
       return utxoSelect
 

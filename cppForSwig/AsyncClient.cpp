@@ -564,8 +564,7 @@ void BlockDataViewer::broadcastZC(const std::vector<BinaryData>& rawTxVec)
    auto txList = staticRequest.initBroadcast(rawTxVec.size());
 
    unsigned i=0;
-   for (auto& rawTx : rawTxVec)
-   {
+   for (auto& rawTx : rawTxVec) {
       auto tx = std::make_shared<Tx>(rawTx);
       cache_->insertTx(tx);
 

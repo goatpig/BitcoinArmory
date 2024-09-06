@@ -91,7 +91,7 @@ namespace Armory
 
          void signTx(const std::string&, const std::string&, MessageId);
          bool resolve(const std::string&);
-         BinaryData getSignedStateForInput(unsigned);
+         BinaryData getSignedStateForInput(unsigned, MessageId);
       };
 
       //////////////////////////////////////////////////////////////////////////

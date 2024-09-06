@@ -267,8 +267,7 @@ class SelectWalletFrame(ArmoryFrame):
    def doCoinCtrl(self):
       wlt = self.main.walletMap[self.getSelectedWltID()]
       if self.dlgcc == None:
-         self.dlgcc = \
-            CoinControlDlg(self, self.main, wlt)
+         self.dlgcc = CoinControlDlg(self, self.main, wlt)
 
       if not self.dlgcc.exec_():
          return

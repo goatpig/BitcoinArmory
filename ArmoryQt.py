@@ -2879,7 +2879,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
          #try:
          LOGINFO('Sending Tx, %s', newTxHash)
-         TheBridge.service.broadcastTx(rawTxData)
+         TheBridge.service.broadcastTx([rawTxData])
          #except:
          #   QtWidgets.QMessageBox.warning(self, self.tr('Broadcast failed'), self.tr(
          #         'The broadcast process failed unexpectedly. Report this error to '
@@ -4250,9 +4250,9 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
          else:
             chainState = self.nodeStatus.chain
-            if chain.chainState == 'unknown':
+            if chainState.chainState == 'unknown':
                sdmStr = "NodeStatus_Initializing"
-            elif chain.chainState == 'syncing':
+            elif chainState.chainState == 'syncing':
                sdmStr = "NodeStatus_Syncing"
 
       return sdmStr

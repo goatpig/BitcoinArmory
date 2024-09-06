@@ -28,13 +28,22 @@ namespace
       return BinaryData(bytes.begin(), bytes.end());
    }
 
-   void utxosToCapnp(const std::vector<UTXO>& utxos,
-      capnp::List<Codec::Types::Output, capnp::Kind::STRUCT>::Builder& capnOutputs)
+   void utxosToCapnp(const std::vector<::UTXO>& utxos,
+      capnp::List<Codec::Bridge::UTXO, capnp::Kind::STRUCT>::Builder& capnOutputs)
    {
       for (unsigned i=0; i<utxos.size(); i++) {
-         auto capnOutput = capnOutputs[i];
+         auto capnUtxo = capnOutputs[i];
          const auto& utxo = utxos[i];
 
+         //scrAddr
+         const auto& script = utxo.getScript();
+         auto scrAddr = BtcUtils::getScrAddrForScript(script);
+         capnUtxo.setScrAddr(capnp::Data::Builder(
+            (uint8_t*)scrAddr.getPtr(), scrAddr.getSize()
+         ));
+
+         //output body
+         auto capnOutput = capnUtxo.initOutput();
          capnOutput.setValue(utxo.getValue());
          capnOutput.setTxHeight(utxo.getHeight());
          capnOutput.setTxIndex(utxo.getTxIndex());
@@ -45,7 +54,6 @@ namespace
             (uint8_t*)txHash.getPtr(), txHash.getSize()
          ));
 
-         const auto& script = utxo.getScript();
          capnOutput.setScript(capnp::Data::Builder(
             (uint8_t*)script.getPtr(), script.getSize()
          ));
@@ -520,7 +528,7 @@ namespace
             auto args = request.getProcessCustomUtxoList();
 
             auto capnUtxos = args.getUtxos();
-            std::vector<UTXO> utxos;
+            std::vector<::UTXO> utxos;
             utxos.reserve(capnUtxos.size());
             for (auto capnUtxo : capnUtxos) {
                auto capnHash = capnUtxo.getTxHash();
@@ -529,9 +537,11 @@ namespace
                auto capnScript = capnUtxo.getScript();
                auto script = BinaryDataRef(capnScript.begin(), capnScript.end());
 
-               utxos.emplace_back(UTXO{capnUtxo.getValue(),
-                  capnUtxo.getTxHeight(), capnUtxo.getTxIndex(), capnUtxo.getTxOutIndex(),
-                  hash, script});
+               utxos.emplace_back(::UTXO{ capnUtxo.getValue(),
+                  capnUtxo.getTxHeight(),
+                  capnUtxo.getTxIndex(), capnUtxo.getTxOutIndex(),
+                  hash, script
+               });
             }
 
             uint64_t flatFee = 0;
@@ -576,7 +586,7 @@ namespace
                   auto capnScript = capnUtxo.getScript();
                   auto script = BinaryDataRef(capnScript.begin(), capnScript.end());
 
-                  UTXO utxo(capnUtxo.getValue(), capnUtxo.getTxHeight(),
+                  ::UTXO utxo(capnUtxo.getValue(), capnUtxo.getTxHeight(),
                      capnUtxo.getTxIndex(), capnUtxo.getTxOutIndex(),
                      hash, script);
                   serUtxos.emplace_back(utxo.serialize());
@@ -626,7 +636,7 @@ namespace
 
       auto signerId = request.getId();
       auto signer = bridge->signerInstance(signerId);
-      if (signer == nullptr) {
+      if (signer == nullptr && request.which() != SignerRequest::GET_NEW) {
          replySuccess(false);
          return true;
       }
@@ -682,7 +692,7 @@ namespace
             auto capnScript = args.getScript();
             BinaryDataRef scriptRef(capnScript.begin(), capnScript.end());
 
-            UTXO utxo(args.getValue(), UINT32_MAX, UINT32_MAX,
+            ::UTXO utxo(args.getValue(), UINT32_MAX, UINT32_MAX,
                args.getTxOutId(), hashRef, scriptRef);
             signer->signer_.populateUtxo(utxo);
 
@@ -809,7 +819,8 @@ namespace
          case SignerRequest::GET_SIGNED_STATE_FOR_INPUT:
          {
             response = signer->getSignedStateForInput(
-               request.getGetSignedStateForInput());
+               request.getGetSignedStateForInput(),
+               referenceId);
             break;
          }
 
@@ -1050,10 +1061,11 @@ namespace
       NotificationReply::Reader& notif)
    {
       try {
-         auto handler = bridge->getCallbackHandler(referenceId);
+         auto handler = bridge->getCallbackHandler(notif.getCounter());
          auto sbdPass = SecureBinaryData::fromString(notif.getPassphrase());
          return handler(notif.getSuccess(), sbdPass);
-      } catch (const std::runtime_error&) {
+      } catch (const std::runtime_error& e) {
+         LOGERR << "failed notif handling with error: " << e.what();
          return false;
       }
    }

@@ -451,7 +451,7 @@ namespace DBTestUtils
       auto ledgerRequest = payload.initLedger();
       ledgerRequest.setLedgerId(delegateId);
       auto pageReq = ledgerRequest.initGetHistoryPages();
-      pageReq.setFrom(pageId);
+      pageReq.setFirst(pageId);
 
 
       auto result = processCommand(clients, bdvId, serializeCapnp(message));

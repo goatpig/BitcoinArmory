@@ -87,7 +87,7 @@ def getScriptForUserStringImpl(userStr, wltMap, lboxList):
             scrAddr = script_to_scrAddr(outScript)
             wltID = getWltIDForScrAddr(a160, wltMap)
       else:
-         scrAddr = TheBridge.utils.getScrAddrForAddrStr(userStr)
+         scrAddr = TheBridge.scriptUtils.getScrAddrForAddrStr(userStr)
          outScript = TheBridge.scriptUtils.getTxOutScriptForScrAddr(scrAddr)
          hasAddrInIt = True
 
@@ -115,7 +115,6 @@ def getScriptForUserStringImpl(userStr, wltMap, lboxList):
               'LboxID': None,
               'ShowID': None,
               'IsBech32' : isBech32}
-
 
 
 ################################################################################

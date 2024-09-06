@@ -545,14 +545,14 @@ class PyBtcWallet(object):
    def loadFromBridge(self, walletId):
       wallet = PyBtcWallet(uniqueId=walletId)
       walletProto = wallet.bridgeWalletObj.getData()
-      wallet.loadFromProtobufPayload(walletProto)
+      wallet.loadFromProto(walletProto)
       return wallet
 
    #############################################################################
    def peekChangeAddr(self, addrType=AddressEntryType_Default):
       newAddrProto = self.bridgeWalletObj.getNewAddress(addrType)
       newAddrObj = PyBtcAddress()
-      newAddrObj.loadFromProtobufPayload(newAddrProto)
+      newAddrObj.loadFromProto(newAddrProto)
 
       return newAddrObj
 
@@ -571,7 +571,7 @@ class PyBtcWallet(object):
    def getNewChangeAddr(self, addrType=AddressEntryType_Default):
       newAddrProto = self.bridgeWalletObj.getNewAddress(addrType)
       newAddrObj = PyBtcAddress()
-      newAddrObj.loadFromProtobufPayload(newAddrProto)
+      newAddrObj.loadFromProto(newAddrProto)
 
       self.addAddress(newAddrObj)
       return newAddrObj
@@ -580,7 +580,7 @@ class PyBtcWallet(object):
    def getNextUnusedAddress(self, addrType=AddressEntryType_Default):
       newAddrProto = self.bridgeWalletObj.getNewAddress(addrType)
       newAddrObj = PyBtcAddress()
-      newAddrObj.loadFromProtobufPayload(newAddrProto)
+      newAddrObj.loadFromProto(newAddrProto)
 
       self.addAddress(newAddrObj)
       return newAddrObj
@@ -1404,7 +1404,7 @@ class PyBtcWallet(object):
       #update addr map
       for addrProto in result.updatedAssets:
          addrObj = PyBtcAddress()
-         addrObj.loadFromProtobufPayload(addrProto)
+         addrObj.loadFromProto(addrProto)
 
          addrHash = addrObj.getPrefixedAddr()
          self.addrMap[addrHash] = addrObj
@@ -1619,7 +1619,7 @@ class PyBtcWallet(object):
       """
 
       def completeProcess(*args):
-         self.loadFromProtobufPayload(*args)
+         self.loadFromProto(*args)
          if callback:
             callback()
 
@@ -1661,7 +1661,7 @@ class PyBtcWallet(object):
 
       protoAddr = self.bridgeWalletObj.setAddressTypeFor(
          addrObj.assetId, addrType)
-      addrObj.loadFromProtobufPayload(protoAddr)
+      addrObj.loadFromProto(protoAddr)
 
    #############################################################################
    def initCoinSelectionInstance(self, height):

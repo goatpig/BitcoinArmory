@@ -91,6 +91,7 @@ class PyUnspentTxOut(object):
    #############################################################################
    def createFromBridgeUtxo(self, bridgeUtxo):
       output = bridgeUtxo.output
+
       scrAddr     = bridgeUtxo.scrAddr
       val         = output.value
       conf        = TheBDM.getTopBlockHeight() - output.txHeight + 1
@@ -180,18 +181,13 @@ class PyUnspentTxOut(object):
       return self.checked
 
    #############################################################################
-   def toBridgeUtxo(self):
-      bridgeUtxo = BridgeProto_pb2.Utxo()
-
-      bridgeUtxo.scraddr = self.scrAddr
+   def toBridgeUtxo(self, bridgeUtxo):
       bridgeUtxo.value = self.val
-      bridgeUtxo.tx_hash = self.txHash
-      bridgeUtxo.txout_index = self.txOutIndex
+      bridgeUtxo.txHash = self.txHash
+      bridgeUtxo.txOutIndex = self.txOutIndex
       bridgeUtxo.script = self.binScript
-      bridgeUtxo.tx_height = self.txHeight
-      bridgeUtxo.tx_index = self.txIndex
-
-      return bridgeUtxo
+      bridgeUtxo.txHeight = self.txHeight
+      bridgeUtxo.txIndex = self.txIndex
 
 ################################################################################
 def sumTxOutList(txoutList):

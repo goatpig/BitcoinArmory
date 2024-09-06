@@ -480,7 +480,7 @@ class BlockchainService(ProtoWrapper):
       reply = fut.getVal()
       if reply.success == False:
          return None
-      return reply.service.tx
+      return reply.service.getTxsByHash
 
    ####
    def getHeadersByHeight(self, heights: list[int]):
@@ -494,16 +494,15 @@ class BlockchainService(ProtoWrapper):
       return reply.service.headerData
 
    ####
-   def getFeeSchedule(self, blocks, strat):
+   def getFeeSchedule(self, strat):
       packet = Bridge.ToBridge.new_message()
-      # TODO: BlockChainServiceRequest.getFeeSchedule takes 1 text argument
-      packet.init("service").getFeeSchedule = blocks
+      packet.init("service").getFeeSchedule = strat
 
       fut = self.send(packet)
       reply = fut.getVal()
       if reply.success == False:
          raise Exception(reply.error)
-      return reply.service.feeSchedule
+      return reply.service.getFeeSchedule
 
    ####
    def broadcastTx(self, rawTxs: list[bytes]):
@@ -659,7 +658,7 @@ class BridgeWalletWrapper(ProtoWrapper):
    def setComment(self, key, val):
       packet = self.getPacket()
       method = packet.wallet.init("setComment")
-      method.hashKey = key
+      method.key = key
       method.comment = val
       self.send(packet, False)
 
@@ -705,27 +704,33 @@ class BridgeWalletWrapper(ProtoWrapper):
       return reply.wallet.getUtxos
 
    ####
-   def getNewAddress(self):
+   def getNewAddress(self, addrType):
       packet = self.getPacket()
-      packet.wallet.init("getAddress").new = None
+      request = packet.wallet.init("getAddress")
+      request.type = addrType
+      request.new = None
 
       fut = self.send(packet)
       reply = fut.getVal()
       return reply.wallet.getAddress
 
    ####
-   def getChangeAddr(self):
+   def getChangeAddr(self, addrType):
       packet = self.getPacket()
-      packet.wallet.init("getAddress").change = None
+      request = packet.wallet.init("getAddress")
+      request.type = addrType
+      request.change = None
 
       fut = self.send(packet)
       reply = fut.getVal()
       return reply.wallet.getAddress
 
    ####
-   def peekChangeAddress(self):
+   def peekChangeAddress(self, addrType):
       packet = self.getPacket()
-      packet.wallet.init("getAddress").peekChange = None
+      request = packet.wallet.init("getAddress")
+      request.type = addrType
+      request.peekChange = None
 
       fut = self.send(packet)
       reply = fut.getVal()
@@ -825,7 +830,7 @@ class BridgeCoinSelectionWrapper(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.coinSelection.utxoList
+      return reply.coinSelection.getUtxoSelection
 
    #############################################################################
    def getFlatFee(self):
@@ -834,7 +839,7 @@ class BridgeCoinSelectionWrapper(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.coinSelection.flatFee
+      return reply.coinSelection.getFlatFee
 
    #############################################################################
    def getFeeByte(self):
@@ -843,7 +848,7 @@ class BridgeCoinSelectionWrapper(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.coinSelection.feeByte
+      return reply.coinSelection.getFeeByte
 
    #############################################################################
    def getSizeEstimate(self):
@@ -852,22 +857,22 @@ class BridgeCoinSelectionWrapper(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.coinSelection.sizeEstimate
+      return reply.coinSelection.getSizeEstimate
 
    #############################################################################
    def processCustomUtxoList(self, utxoList: list, fee: int, feePerByte: float, processFlags: int):
       packet = self.getPacket()
-      method = packet.coinSelection.init("processCustomUtxoList")
-      method.flags = processFlags
+      request = packet.coinSelection.init("processCustomUtxoList")
+      request.flags = processFlags
 
-      methodUtxos = method.init("utxos", len(utxoList))
-      for i, utxo in enumerate(utxoList):
-         methodUtxos[i] = utxo.toBridgeUtxo()
+      capnUtxos = request.init("utxos", len(utxoList))
+      for utxo, capnUtxo in zip(utxoList, capnUtxos):
+         utxo.toBridgeUtxo(capnUtxo)
 
       if fee != 0:
-         method.flatFee = fee
+         request.flatFee = fee
       else:
-         method.feeByte = feePerByte
+         request.feeByte = feePerByte
 
       fut = self.send(packet)
       reply = fut.getVal()
@@ -882,21 +887,21 @@ class BridgeCoinSelectionWrapper(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.coinSelection.flatFee
+      return reply.coinSelection.getFeeForMaxVal
 
    #############################################################################
    def getFeeForMaxValUtxoVector(self, utxoList: list, feePerByte: float):
       packet = self.getPacket()
-      method = packet.coinSelection.init("getFeeForMaxVal")
-      method.feeByte = feePerByte
+      request = packet.coinSelection.init("getFeeForMaxVal")
+      request.feeByte = feePerByte
 
-      methodUtxos = method.init("utxos", len(utxoList))
-      for i, utxo in enumerate(utxoList):
-         methodUtxos.append(utxo.toBridgeUtxo())
+      capnUtxos = request.init("utxos", len(utxoList))
+      for utxo, capnUtxo in zip(utxoList, capnUtxos):
+         utxo.toBridgeUtxo(capnUtxo)
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.coinSelection.flatFee
+      return reply.coinSelection.getFeeForMaxVal
 
 ################################################################################
 class ScriptUtils(ProtoWrapper):
@@ -919,7 +924,7 @@ class ScriptUtils(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.scriptUtils.txOutScriptType
+      return reply.scriptUtils.getTxOutScriptType
 
    ####
    def getTxInScriptType(self, script: bytes, hashVal: bytes):
@@ -928,7 +933,7 @@ class ScriptUtils(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.scriptUtils.txInScriptType
+      return reply.scriptUtils.getTxInScriptType
 
    ####
    def getLastPushDataInScript(self, script: bytes):
@@ -937,7 +942,9 @@ class ScriptUtils(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.scriptUtils.pushData
+      if reply.success == False:
+         return b''
+      return reply.scriptUtils.getLastPushDataInScript
 
    ####
    def getTxOutScriptForScrAddr(self, script: bytes):
@@ -946,16 +953,16 @@ class ScriptUtils(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.scriptUtils.scriptData
+      return reply.scriptUtils.getTxOutScriptForScrAddr
 
    ####
    def getScrAddrForScript(self, script: bytes):
       packet = self.getPacket(script)
-      packet.scriptUtils.getSrcAddrForScript = None
+      packet.scriptUtils.getScrAddrForScript = None
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.scriptUtils.scrAddr
+      return reply.scriptUtils.getScrAddrForScript
 
    ####
    def getAddrStrForScrAddr(self, scrAddr):
@@ -968,7 +975,20 @@ class ScriptUtils(ProtoWrapper):
       if reply.success == False:
          raise BridgeError(f"error in getAddrStrForScrAddr: {reply.error}")
       else:
-         return reply.scriptUtils.addressString
+         return reply.scriptUtils.getAddrStrForScrAddr
+
+   def getScrAddrForAddrStr(self, addrStr):
+      packet = Bridge.ToBridge.new_message()
+      request = packet.init("scriptUtils")
+      request.getScrAddrForAddrStr = addrStr
+
+      fut = self.send(packet)
+      reply = fut.getVal()
+
+      if reply.success == False:
+         raise BridgeError(f"error in getAddrStrForScrAddr: {reply.error}")
+      else:
+         return reply.scriptUtils.getScrAddrForAddrStr
 
 ################################################################################
 class BridgeSigner(ProtoWrapper):
@@ -998,12 +1018,13 @@ class BridgeSigner(ProtoWrapper):
 
       packet = Bridge.ToBridge.new_message()
       packetSigner = packet.init("signer")
-      packetSigner.id = ""
       packetSigner.getNew = None
 
       fut = self.send(packet)
       reply = fut.getVal()
-      self.signerId = reply.signer.signerId
+      if reply.success == False:
+         raise Exception("failed to init new signer!")
+      self.signerId = reply.signer.getNew
 
    #############################################################################
    def cleanup(self):
@@ -1095,7 +1116,7 @@ class BridgeSigner(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.signer.txSigCollect
+      return reply.signer.toTxSigCollect
 
    #############################################################################
    def fromTxSigCollect(self, txSigCollect: str):
@@ -1135,7 +1156,7 @@ class BridgeSigner(ProtoWrapper):
       reply = fut.getVal()
       if reply.success == False:
          return None
-      return reply.signer.txData
+      return reply.signer.getSignedTx
 
    #############################################################################
    def getUnsignedTx(self):
@@ -1146,7 +1167,7 @@ class BridgeSigner(ProtoWrapper):
       reply = fut.getVal()
       if reply.success == False:
          return None
-      return reply.signer.txData
+      return reply.signer.getUnsignedTx
 
    #############################################################################
    def getSignedStateForInput(self, inputId: int):
@@ -1155,7 +1176,7 @@ class BridgeSigner(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.signer.inputSignedState
+      return reply.signer.getSignedStateForInput
 
    #############################################################################
    def fromType(self):
@@ -1310,7 +1331,8 @@ class ServerPush(ProtoWrapper):
 
    def getNewPacket(self):
       self.packet = Bridge.ToBridge.new_message()
-      self.packet.notification.counter = self.refId
+      notif = self.packet.init('notification')
+      notif.counter = self.refId
       self.refId = 0
       return self.packet.notification
 
