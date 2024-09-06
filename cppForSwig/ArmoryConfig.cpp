@@ -107,7 +107,8 @@ void Armory::Config::printHelp(void)
                            commands, like shutdown. Client and server will make
                            use of ephemeral peer keys, ignoring the on disk peer
                            wallet
---listen-port              sets the DB listening port.
+--armorydb-port            DB port to connect to.
+--armorydb-ip              DB IP to connect to.
 --clear-mempool            delete all zero confirmation transactions from the DB.
 --satoshirpc-port          set node rpc port
 --satoshi-port             set Bitcoin node port
@@ -670,14 +671,15 @@ void DBSettings::reset()
 // NetworkSettings
 //
 ////////////////////////////////////////////////////////////////////////////////
-bool NetworkSettings::customListenPort_ = false;
+bool NetworkSettings::customDbPort_ = false;
 bool NetworkSettings::customBtcPort_ = false;
 
 NetworkSettings::NodePair NetworkSettings::bitcoinNodes_;
 NetworkSettings::RpcPtr NetworkSettings::rpcNode_;
 
 string NetworkSettings::btcPort_;
-string NetworkSettings::listenPort_;
+string NetworkSettings::dbPort_;
+string NetworkSettings::dbIP_;
 string NetworkSettings::rpcPort_;
 
 bool NetworkSettings::useCookie_ = false;
@@ -692,89 +694,81 @@ BinaryData NetworkSettings::uiPublicKey_;
 void NetworkSettings::processArgs(const map<string, string>& args,
    ProcessType procType)
 {
-   auto iter = args.find("listen-port");
-   if (iter != args.end())
-   {
-      listenPort_ = SettingsUtils::stripQuotes(iter->second);
+   auto iter = args.find("armorydb-port");
+   if (iter != args.end()) {
+      dbPort_ = SettingsUtils::stripQuotes(iter->second);
       int portInt = 0;
-      stringstream portSS(listenPort_);
+      stringstream portSS(dbPort_);
       portSS >> portInt;
 
-      if (portInt < 1 || portInt > 65535)
-      {
+      if (portInt < 1 || portInt > 65535) {
          cout << "Invalid listen port, falling back to default" << endl;
-         listenPort_ = "";
-      }
-      else
-      {
-         customListenPort_ = true;
+         dbPort_ = "";
+      } else {
+         customDbPort_ = true;
       }
    }
 
+   iter = args.find("armorydb-ip");
+   if (iter != args.end()) {
+      dbIP_ = SettingsUtils::stripQuotes(iter->second);
+   }
+
    iter = args.find("satoshi-port");
-   if (iter != args.end())
-   {
+   if (iter != args.end()) {
       btcPort_ = SettingsUtils::stripQuotes(iter->second);
       customBtcPort_ = true;
    }
 
    //network type
    iter = args.find("testnet");
-   if (iter != args.end())
-   {
+   if (iter != args.end()) {
       selectNetwork(NETWORK_MODE_TESTNET);
-   }
-   else
-   {
+   } else {
       iter = args.find("regtest");
-      if (iter != args.end())
-      {
+      if (iter != args.end()) {
          selectNetwork(NETWORK_MODE_REGTEST);
-      }
-      else
-      {
+      } else {
          selectNetwork(NETWORK_MODE_MAINNET);
       }
    }
 
    //rpc port
    iter = args.find("satoshirpc-port");
-   if (iter != args.end())
-   {
+   if (iter != args.end()) {
       auto value = SettingsUtils::stripQuotes(iter->second);
       int portInt = 0;
       stringstream portSS(value);
       portSS >> portInt;
 
-      if (portInt < 1 || portInt > 65535)
-      {
+      if (portInt < 1 || portInt > 65535) {
          cout << "Invalid satoshi rpc port, falling back to default" << endl;
-      }
-      else
-      {
+      } else {
          rpcPort_ = value;
       }
    }
 
    //public
    iter = args.find("public");
-   if (iter != args.end())
+   if (iter != args.end()) {
       oneWayAuth_ = true;
+   }
 
    //offline
    iter = args.find("offline");
-   if (iter != args.end())
+   if (iter != args.end()) {
       offline_ = true;
+   }
 
    //ui pubkey
    iter = args.find("uiPubKey");
-   if (iter != args.end())
+   if (iter != args.end()) {
       uiPublicKey_ = READHEX(iter->second);
+   }
 
    //cookie
    iter = args.find("cookie");
-   if (iter != args.end())
-   {
+   if (iter != args.end()) {
       useCookie_ = true;
       ephemeralPeers_ = true;
    }
@@ -782,22 +776,21 @@ void NetworkSettings::processArgs(const map<string, string>& args,
    //generate cookie
    cookie_ = BtcUtils::fortuna_.generateRandom(32).toHexStr();
 
-   if (offline_)
+   if (offline_) {
       return;
+   }
 
-   if (useCookie_)
-   {
-      randomizeListenPort();
+   if (useCookie_) {
+      randomizeDbPort();
       createCookie();
-   }
-   else if (DBSettings::getServiceType() == SERVICE_UNITTEST ||
-      DBSettings::getServiceType() == SERVICE_UNITTEST_WITHWS)
-   {
-      randomizeListenPort();
+   } else if (DBSettings::getServiceType() == SERVICE_UNITTEST ||
+      DBSettings::getServiceType() == SERVICE_UNITTEST_WITHWS) {
+      randomizeDbPort();
    }
 
-   if (procType == ProcessType::DB)
+   if (procType == ProcessType::DB) {
       createNodes();
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -808,13 +801,14 @@ void NetworkSettings::selectNetwork(NETWORK_MODE mode)
    case NETWORK_MODE_MAINNET:
    {
       rpcPort_ = SettingsUtils::portToString(RPC_PORT_MAINNET);
-      
-      if (!customListenPort_)
-         listenPort_ = SettingsUtils::portToString(LISTEN_PORT_MAINNET);
 
-      if (!customBtcPort_)
+      if (!customDbPort_) {
+         dbPort_ = SettingsUtils::portToString(LISTEN_PORT_MAINNET);
+      }
+
+      if (!customBtcPort_) {
          btcPort_ = SettingsUtils::portToString(NODE_PORT_MAINNET);
-
+      }
       break;
    }
 
@@ -822,12 +816,13 @@ void NetworkSettings::selectNetwork(NETWORK_MODE mode)
    {
       rpcPort_ = SettingsUtils::portToString(RPC_PORT_TESTNET);
 
-      if (!customListenPort_)
-         listenPort_ = SettingsUtils::portToString(LISTEN_PORT_TESTNET);
+      if (!customDbPort_) {
+         dbPort_ = SettingsUtils::portToString(LISTEN_PORT_TESTNET);
+      }
 
-      if (!customBtcPort_)
+      if (!customBtcPort_) {
          btcPort_ = SettingsUtils::portToString(NODE_PORT_TESTNET);
-
+      }
       break;
    }
 
@@ -835,12 +830,13 @@ void NetworkSettings::selectNetwork(NETWORK_MODE mode)
    {
       rpcPort_ = SettingsUtils::portToString(RPC_PORT_REGTEST);
 
-      if (!customListenPort_)
-         listenPort_ = SettingsUtils::portToString(LISTEN_PORT_REGTEST);
+      if (!customDbPort_) {
+         dbPort_ = SettingsUtils::portToString(LISTEN_PORT_REGTEST);
+      }
 
-      if (!customBtcPort_)
+      if (!customBtcPort_) {
          btcPort_ = SettingsUtils::portToString(NODE_PORT_REGTEST);
-
+      }
       break;
    }
 
@@ -857,9 +853,15 @@ const string& NetworkSettings::btcPort()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const string& NetworkSettings::listenPort()
+const string& NetworkSettings::dbPort()
 {
-   return listenPort_;
+   return dbPort_;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+const string& NetworkSettings::dbIP()
+{
+   return dbIP_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -869,23 +871,22 @@ const string& NetworkSettings::rpcPort()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void NetworkSettings::randomizeListenPort()
+void NetworkSettings::randomizeDbPort()
 {
-   if (customListenPort_)
+   if (customDbPort_) {
       return;
+   }
 
    //no custom listen port was provided and the db was spawned with a 
    //cookie file, listen port will be randomized
    srand(time(0));
-   while (1)
-   {
+   while (true) {
       auto port = rand() % 15000 + 50000;
       stringstream portss;
       portss << port;
 
-      if (!SettingsUtils::testConnection("127.0.0.1", portss.str()))
-      {
-         listenPort_ = portss.str();
+      if (!SettingsUtils::testConnection("127.0.0.1", portss.str())) {
+         dbPort_ = portss.str();
          break;
       }
    }
@@ -949,7 +950,7 @@ void NetworkSettings::createCookie()
    DBUtils::appendPath(cookiePath, ".cookie_");
    fstream fs(cookiePath, ios_base::out | ios_base::trunc);
    fs << cookie_ << endl;
-   fs << listenPort_;
+   fs << dbPort_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -961,7 +962,7 @@ void NetworkSettings::injectUiPubkey(BinaryData& pubkey)
 ////////////////////////////////////////////////////////////////////////////////
 void NetworkSettings::reset()
 {
-   customListenPort_ = false;
+   customDbPort_ = false;
    customBtcPort_ = false;
 
    bitcoinNodes_.first.reset();
@@ -969,7 +970,8 @@ void NetworkSettings::reset()
    rpcNode_.reset();
 
    btcPort_.clear();
-   listenPort_.clear();
+   dbPort_.clear();
+   dbIP_.clear();
    rpcPort_.clear();
 
    cookie_.clear();

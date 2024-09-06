@@ -96,8 +96,8 @@ struct FeeSchedule {
 ## ledgers ##
 struct PageRequest {
    #these are page ids
-   from  @0 : UInt32;
-   to    @1 : UInt32;
+   first @0 : UInt32;
+   last  @1 : UInt32;
 }
 
 struct TxLedger {
@@ -123,7 +123,7 @@ struct TxLedger {
    ledgers           @0 : List(LedgerEntry);
 }
 
-## balance ##
+## balances ##
 struct BalanceAndCount {
    full        @0 : CoinAmount;
    spendable   @1 : CoinAmount;
@@ -139,4 +139,15 @@ struct AddressBook {
    }
 
    entries     @0 : List(Entry);
+}
+
+struct CombinedBalanceAndCount {
+   struct AddressBalances {
+      scrAddr  @0 : ScrAddr;
+      balances @1 : BalanceAndCount;
+   }
+
+   id          @0 : WalletId;
+   balances    @1 : BalanceAndCount;
+   addresses   @2 : List(AddressBalances);
 }

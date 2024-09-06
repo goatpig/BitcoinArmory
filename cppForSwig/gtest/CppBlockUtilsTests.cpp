@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2021, goatpig                                          //
+//  Copyright (C) 2016-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -14,7 +14,7 @@
 #include "hkdf.h"
 
 using namespace std;
-using namespace Armory::Signer;
+using namespace Armory::Signing;
 using namespace Armory::Config;
 using namespace Armory::Wallets;
 
@@ -95,8 +95,9 @@ TEST_F(BlockDir, HeadersFirst)
       TestChain::scrAddrC
    };
 
-   auto&& bdvID = DBTestUtils::registerBDV(clients, BitcoinSettings::getMagicBytes());
-   DBTestUtils::registerWallet(clients, bdvID, scraddrs, "wallet1");
+   auto bdvID = DBTestUtils::registerBDV(clients, BitcoinSettings::getMagicBytes());
+   DBTestUtils::registerWallet(clients, bdvID, scraddrs, "wallet1",
+      false, false);
    auto bdvPtr = DBTestUtils::getBDV(clients, bdvID);
 
    DBTestUtils::goOnline(clients, bdvID);
@@ -141,7 +142,8 @@ TEST_F(BlockDir, HeadersFirstUpdate)
    };
 
    auto&& bdvID = DBTestUtils::registerBDV(clients, BitcoinSettings::getMagicBytes());
-   DBTestUtils::registerWallet(clients, bdvID, scraddrs, "wallet1");
+   DBTestUtils::registerWallet(clients, bdvID, scraddrs, "wallet1",
+      false, false);
    auto bdvPtr = DBTestUtils::getBDV(clients, bdvID);
 
    DBTestUtils::goOnline(clients, bdvID);
@@ -190,8 +192,9 @@ TEST_F(BlockDir, HeadersFirstReorg)
       TestChain::scrAddrC
    };
 
-   auto&& bdvID = DBTestUtils::registerBDV(clients, BitcoinSettings::getMagicBytes());
-   DBTestUtils::registerWallet(clients, bdvID, scraddrs, "wallet1");
+   auto bdvID = DBTestUtils::registerBDV(clients, BitcoinSettings::getMagicBytes());
+   DBTestUtils::registerWallet(clients, bdvID, scraddrs, "wallet1",
+      false, false);
    auto bdvPtr = DBTestUtils::getBDV(clients, bdvID);
 
    DBTestUtils::goOnline(clients, bdvID);
@@ -259,8 +262,9 @@ TEST_F(BlockDir, HeadersFirstUpdateTwice)
       TestChain::scrAddrC
    };
 
-   auto&& bdvID = DBTestUtils::registerBDV(clients, BitcoinSettings::getMagicBytes());
-   DBTestUtils::registerWallet(clients, bdvID, scraddrs, "wallet1");
+   auto bdvID = DBTestUtils::registerBDV(clients, BitcoinSettings::getMagicBytes());
+   DBTestUtils::registerWallet(clients, bdvID, scraddrs, "wallet1",
+      false, false);
    auto bdvPtr = DBTestUtils::getBDV(clients, bdvID);
 
    DBTestUtils::goOnline(clients, bdvID);
@@ -316,8 +320,9 @@ TEST_F(BlockDir, BlockFileSplit)
       TestChain::scrAddrC
    };
 
-   auto&& bdvID = DBTestUtils::registerBDV(clients, BitcoinSettings::getMagicBytes());
-   DBTestUtils::registerWallet(clients, bdvID, scraddrs, "wallet1");
+   auto bdvID = DBTestUtils::registerBDV(clients, BitcoinSettings::getMagicBytes());
+   DBTestUtils::registerWallet(clients, bdvID, scraddrs, "wallet1",
+      false, false);
    auto bdvPtr = DBTestUtils::getBDV(clients, bdvID);
 
    DBTestUtils::goOnline(clients, bdvID);
@@ -361,8 +366,9 @@ TEST_F(BlockDir, BlockFileSplitUpdate)
       TestChain::scrAddrC
    };
 
-   auto&& bdvID = DBTestUtils::registerBDV(clients, BitcoinSettings::getMagicBytes());
-   DBTestUtils::registerWallet(clients, bdvID, scraddrs, "wallet1");
+   auto bdvID = DBTestUtils::registerBDV(clients, BitcoinSettings::getMagicBytes());
+   DBTestUtils::registerWallet(clients, bdvID, scraddrs, "wallet1",
+      false, false);
    auto bdvPtr = DBTestUtils::getBDV(clients, bdvID);
 
    DBTestUtils::goOnline(clients, bdvID);
@@ -528,11 +534,14 @@ TEST_F(BlockUtilsFull, Load5Blocks)
       TestChain::lb2ScrAddrP2SH
    };
 
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1");
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID);
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID);
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+      false, false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
+      true, false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
+      true, false);
 
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
@@ -592,7 +601,8 @@ TEST_F(BlockUtilsFull, Load5Blocks_DamagedBlkFile)
    scrAddrVec.push_back(TestChain::scrAddrA);
    scrAddrVec.push_back(TestChain::scrAddrB);
    scrAddrVec.push_back(TestChain::scrAddrC);
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1");
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+      false, false);
 
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
@@ -643,11 +653,14 @@ TEST_F(BlockUtilsFull, Load4Blocks_Plus2)
       TestChain::lb2ScrAddrP2SH
    };
 
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1");
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID);
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID);
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+      false, false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
+      true, false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
+      true, false);
 
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
@@ -735,13 +748,15 @@ TEST_F(BlockUtilsFull, Load5Blocks_FullReorg)
    scrAddrVec.push_back(TestChain::scrAddrA);
    scrAddrVec.push_back(TestChain::scrAddrB);
    scrAddrVec.push_back(TestChain::scrAddrC);
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1");
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+      false, false);
 
    scrAddrVec.clear();
    scrAddrVec.push_back(TestChain::scrAddrD);
    scrAddrVec.push_back(TestChain::scrAddrE);
    scrAddrVec.push_back(TestChain::scrAddrF);
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet2");
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet2",
+      false, false);
 
    const vector<BinaryData> lb1ScrAddrs
    {
@@ -754,10 +769,12 @@ TEST_F(BlockUtilsFull, Load5Blocks_FullReorg)
       TestChain::lb2ScrAddrP2SH
    };
 
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID);
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
+      true, false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
+      true, false);
 
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
@@ -818,13 +835,15 @@ TEST_F(BlockUtilsFull, Load5Blocks_DoubleReorg)
    scrAddrVec.push_back(TestChain::scrAddrA);
    scrAddrVec.push_back(TestChain::scrAddrB);
    scrAddrVec.push_back(TestChain::scrAddrC);
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1");
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+      false, false);
 
    scrAddrVec.clear();
    scrAddrVec.push_back(TestChain::scrAddrD);
    scrAddrVec.push_back(TestChain::scrAddrE);
    scrAddrVec.push_back(TestChain::scrAddrF);
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet2");
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet2",
+      false, false);
 
    const vector<BinaryData> lb1ScrAddrs
    {
@@ -837,10 +856,12 @@ TEST_F(BlockUtilsFull, Load5Blocks_DoubleReorg)
       TestChain::lb2ScrAddrP2SH
    };
 
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID);
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
+      true, false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
+      true, false);
 
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
@@ -931,13 +952,15 @@ TEST_F(BlockUtilsFull, Load5Blocks_ReloadBDM_Reorg)
    scrAddrVec.push_back(TestChain::scrAddrA);
    scrAddrVec.push_back(TestChain::scrAddrB);
    scrAddrVec.push_back(TestChain::scrAddrC);
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1");
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+      false, false);
 
    vector<BinaryData> scrAddrVec2;
    scrAddrVec2.push_back(TestChain::scrAddrD);
    scrAddrVec2.push_back(TestChain::scrAddrE);
    scrAddrVec2.push_back(TestChain::scrAddrF);
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec2, "wallet2");
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec2, "wallet2",
+      false, false);
 
    const vector<BinaryData> lb1ScrAddrs
    {
@@ -950,10 +973,12 @@ TEST_F(BlockUtilsFull, Load5Blocks_ReloadBDM_Reorg)
       TestChain::lb2ScrAddrP2SH
    };
 
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID);
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
+      true, false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
+      true, false);
 
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
@@ -978,12 +1003,16 @@ TEST_F(BlockUtilsFull, Load5Blocks_ReloadBDM_Reorg)
    theBDMt_->start(DBSettings::initMode());
    bdvID = DBTestUtils::registerBDV(clients_, BitcoinSettings::getMagicBytes());
 
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1");
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec2, "wallet2");
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID);
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID);
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+      false, false);
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec2, "wallet2",
+      false, false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
+      true, false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
+      true, false);
 
    bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
@@ -1039,7 +1068,8 @@ TEST_F(BlockUtilsFull, CorruptedBlock)
    scrAddrVec.push_back(TestChain::scrAddrA);
    scrAddrVec.push_back(TestChain::scrAddrB);
    scrAddrVec.push_back(TestChain::scrAddrC);
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1");
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+      false, false);
 
    const vector<BinaryData> lb1ScrAddrs
    {
@@ -1052,10 +1082,12 @@ TEST_F(BlockUtilsFull, CorruptedBlock)
       TestChain::lb2ScrAddrP2SH
    };
 
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID);
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
+      true, false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
+      true, false);
 
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
@@ -1125,11 +1157,14 @@ TEST_F(BlockUtilsFull, Load5Blocks_RescanOps)
          TestChain::lb2ScrAddrP2SH
       };
 
-      DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1");
-      DBTestUtils::regLockbox(
-         clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID);
-      DBTestUtils::regLockbox(
-         clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID);
+      DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+         false, false);
+      DBTestUtils::registerWallet(
+         clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
+         true, false);
+      DBTestUtils::registerWallet(
+         clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
+         true, false);
 
       auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
@@ -1247,11 +1282,14 @@ TEST_F(BlockUtilsFull, Load5Blocks_RescanEmptyDB)
          TestChain::lb2ScrAddrP2SH
       };
 
-      DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1");
-      DBTestUtils::regLockbox(
-         clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID);
-      DBTestUtils::regLockbox(
-         clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID);
+      DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+         false, false);
+      DBTestUtils::registerWallet(
+         clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
+         true, false);
+      DBTestUtils::registerWallet(
+         clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
+         true, false);
 
       auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
@@ -1324,11 +1362,14 @@ TEST_F(BlockUtilsFull, Load5Blocks_RebuildEmptyDB)
          TestChain::lb2ScrAddrP2SH
       };
 
-      DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1");
-      DBTestUtils::regLockbox(
-         clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID);
-      DBTestUtils::regLockbox(
-         clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID);
+      DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+         false, false);
+      DBTestUtils::registerWallet(
+         clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
+         true, false);
+      DBTestUtils::registerWallet(
+         clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
+         true, false);
 
       auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
@@ -1392,11 +1433,14 @@ TEST_F(BlockUtilsFull, Load5Blocks_SideScan)
       TestChain::lb2ScrAddrP2SH
    };
 
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1");
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID);
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID);
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+      false, false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
+      true, false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
+      true, false);
 
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
@@ -1430,7 +1474,8 @@ TEST_F(BlockUtilsFull, Load5Blocks_SideScan)
    //post-init address registration
    scrAddrVec.clear();
    scrAddrVec.push_back(TestChain::scrAddrD);
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1");
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+      false, false);
 
    scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
    EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
@@ -1479,11 +1524,14 @@ TEST_F(BlockUtilsFull, Load5Blocks_GetUtxos)
       TestChain::lb2ScrAddrP2SH
    };
 
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1");
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID);
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID);
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+      false, false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
+      true, false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
+      true, false);
 
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
@@ -1558,13 +1606,17 @@ TEST_F(BlockUtilsFull, Load5Blocks_CheckWalletFilters)
       TestChain::lb2ScrAddrP2SH
    };
 
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec1, "wallet1");
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec2, "wallet2");
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec1, "wallet1",
+      false, false);
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec2, "wallet2",
+      false, false);
 
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID);
-   DBTestUtils::regLockbox(
-      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
+      true, false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
+      true, false);
 
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
@@ -1664,7 +1716,7 @@ protected:
    /////////////////////////////////////////////////////////////////////////////
    virtual void SetUp()
    {
-      LOGDISABLESTDOUT();
+      //LOGDISABLESTDOUT();
       zeros_ = READHEX("00000000");
 
       blkdir_ = string("./blkfiletest");
@@ -1717,9 +1769,9 @@ protected:
       auto& serverPubkey = serverPeers.getOwnPublicKey();
 
       stringstream serverAddr;
-      serverAddr << "127.0.0.1:" << NetworkSettings::listenPort();
+      serverAddr << "127.0.0.1:" << NetworkSettings::dbPort();
       clientPeers.addPeer(serverPubkey, serverAddr.str());
-      
+
       serverPubkey_ = BinaryData(serverPubkey.pubkey, 33);
       serverAddr_ = serverAddr.str();
 
@@ -1728,6 +1780,7 @@ protected:
       auto nodePtr = dynamic_pointer_cast<NodeUnitTest>(
          NetworkSettings::bitcoinNodes().first);
       nodePtr->setIface(theBDMt_->bdm()->getIFace());
+      hexMagicBytes = BitcoinSettings::getMagicBytes().toHexStr();
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -1769,11 +1822,12 @@ protected:
    string LB2ID;
    BinaryData serverPubkey_;
    string serverAddr_;
+   string hexMagicBytes;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(WebSocketTests_1Way, WebSocketStack)
-{   
+{
    TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
 
    WebSocketServer::initAuthPeers(authPeersPassLbd_);
@@ -1782,13 +1836,13 @@ TEST_F(WebSocketTests_1Way, WebSocketStack)
 
    auto pCallback = make_shared<DBTestUtils::UTCallback>();
    auto&& bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
-      "127.0.0.1", NetworkSettings::listenPort(), 
+      "127.0.0.1", NetworkSettings::dbPort(),
       Armory::Config::getDataDir(),
       authPeersPassLbd_, 
       NetworkSettings::ephemeralPeers(), true, //public server
       pCallback);
    bdvObj->connectToRemote();
-   bdvObj->registerWithDB(BitcoinSettings::getMagicBytes());
+   bdvObj->registerWithDB(hexMagicBytes);
 
    auto createNAddresses = [](unsigned count)->vector<BinaryData>
    {
@@ -1825,28 +1879,24 @@ TEST_F(WebSocketTests_1Way, WebSocketStack)
       TestChain::lb2ScrAddrP2SH
    };
 
-   vector<string> walletRegIDs;
+   vector<string> walletRegIDs {
+      "wallet1", "lb1", "lb2"
+   };
 
-   auto&& wallet1 = bdvObj->instantiateWallet("wallet1");
-   walletRegIDs.push_back(
-      wallet1.registerAddresses(scrAddrVec, false));
+   auto wallet1 = bdvObj->getWalletObj("wallet1");
+   wallet1.registerAddresses(scrAddrVec, false);
 
-   auto&& lb1 = bdvObj->instantiateLockbox("lb1");
-   walletRegIDs.push_back(
-      lb1.registerAddresses(lb1ScrAddrs, false));
+   auto lb1 = bdvObj->getLockboxObj("lb1");
+   lb1.registerAddresses(lb1ScrAddrs, false);
 
-   auto&& lb2 = bdvObj->instantiateLockbox("lb2");
-   walletRegIDs.push_back(
-      lb2.registerAddresses(lb2ScrAddrs, false));
-
-   //wait on registration ack
-   pCallback->waitOnManySignals(BDMAction_Refresh, walletRegIDs);
+   auto lb2 = bdvObj->getLockboxObj("lb2");
+   lb2.registerAddresses(lb2ScrAddrs, false);
 
    //go online
    bdvObj->goOnline();
    pCallback->waitOnSignal(BDMAction_Ready);
 
-   auto w1AddrBalances = DBTestUtils::getAddrBalancesFromDB(wallet1);
+   auto w1AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "wallet1");
    vector<uint64_t> balanceVec;
    balanceVec = w1AddrBalances[TestChain::scrAddrA];
    EXPECT_EQ(balanceVec[0], 50 * COIN);
@@ -1863,13 +1913,13 @@ TEST_F(WebSocketTests_1Way, WebSocketStack)
    EXPECT_EQ(spendableBalance, 65 * COIN);
    EXPECT_EQ(unconfirmedBalance, 165 * COIN);
 
-   auto lb1AddrBalances = DBTestUtils::getAddrBalancesFromDB(lb1);
+   auto lb1AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "lb1");
    balanceVec = lb1AddrBalances[TestChain::lb1ScrAddr];
    EXPECT_EQ(balanceVec[0], 10 * COIN);
    balanceVec = lb1AddrBalances[TestChain::lb1ScrAddrP2SH];
-   EXPECT_EQ(balanceVec.size(), 0ULL);
+   EXPECT_EQ(balanceVec[0], 0);
 
-   auto lb2AddrBalances = DBTestUtils::getAddrBalancesFromDB(lb2);
+   auto lb2AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "lb2");
    balanceVec = lb2AddrBalances[TestChain::lb2ScrAddr];
    EXPECT_EQ(balanceVec[0], 10 * COIN);
    balanceVec = lb2AddrBalances[TestChain::lb2ScrAddrP2SH];
@@ -1907,10 +1957,9 @@ TEST_F(WebSocketTests_1Way, WebSocketStack)
    DBTestUtils::pushNewZc(theBDMt_, zcVec);
    pCallback->waitOnManySignals(BDMAction_ZC, hashVec);
 
-   w1AddrBalances = DBTestUtils::getAddrBalancesFromDB(wallet1);
+   w1AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "wallet1");
    balanceVec = w1AddrBalances[TestChain::scrAddrA];
-   //value didn't change, shouldnt be getting a balance vector for this address
-   EXPECT_EQ(balanceVec.size(), 0ULL);
+   EXPECT_EQ(balanceVec[0], 50 * COIN);
    balanceVec = w1AddrBalances[TestChain::scrAddrB];
    EXPECT_EQ(balanceVec[0], 20 * COIN);
    balanceVec = w1AddrBalances[TestChain::scrAddrC];
@@ -1924,17 +1973,17 @@ TEST_F(WebSocketTests_1Way, WebSocketStack)
    EXPECT_EQ(spendableBalance, 35 * COIN);
    EXPECT_EQ(unconfirmedBalance, 165 * COIN);
 
-   lb1AddrBalances = DBTestUtils::getAddrBalancesFromDB(lb1);
+   lb1AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "lb1");
    balanceVec = lb1AddrBalances[TestChain::lb1ScrAddr];
    EXPECT_EQ(balanceVec[0], 5 * COIN);
    balanceVec = lb1AddrBalances[TestChain::lb1ScrAddrP2SH];
-   EXPECT_EQ(balanceVec.size(), 0ULL);
+   EXPECT_EQ(balanceVec[0], 0);
 
-   lb2AddrBalances = DBTestUtils::getAddrBalancesFromDB(lb2);
+   lb2AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "lb2");
    balanceVec = lb2AddrBalances[TestChain::lb2ScrAddr];
-   EXPECT_EQ(balanceVec.size(), 0ULL);
+   EXPECT_EQ(balanceVec[0], 10 * COIN);
    balanceVec = lb2AddrBalances[TestChain::lb2ScrAddrP2SH];
-   EXPECT_EQ(balanceVec.size(), 0ULL);
+   EXPECT_EQ(balanceVec[0], 5 * COIN);
 
    lb1Balances = DBTestUtils::getBalancesAndCount(lb1, 4);
    EXPECT_EQ(lb1Balances[0], 5 * COIN);
@@ -1944,13 +1993,13 @@ TEST_F(WebSocketTests_1Way, WebSocketStack)
 
    //
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   std::this_thread::sleep_for(1s);
    DBTestUtils::triggerNewBlockNotification(theBDMt_);
    pCallback->waitOnSignal(BDMAction_NewBlock);
 
-   w1AddrBalances = DBTestUtils::getAddrBalancesFromDB(wallet1);
+   w1AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "wallet1");
    balanceVec = w1AddrBalances[TestChain::scrAddrA];
-   //value didn't change, shouldnt be getting a balance vector for this address
-   EXPECT_EQ(balanceVec.size(), 0ULL);
+   EXPECT_EQ(balanceVec[0], 50 * COIN);
    balanceVec = w1AddrBalances[TestChain::scrAddrB];
    EXPECT_EQ(balanceVec[0], 70 * COIN);
    balanceVec = w1AddrBalances[TestChain::scrAddrC];
@@ -1964,13 +2013,13 @@ TEST_F(WebSocketTests_1Way, WebSocketStack)
    EXPECT_EQ(spendableBalance, 70 * COIN);
    EXPECT_EQ(unconfirmedBalance, 170 * COIN);
 
-   lb1AddrBalances = DBTestUtils::getAddrBalancesFromDB(lb1);
+   lb1AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "lb1");
    balanceVec = lb1AddrBalances[TestChain::lb1ScrAddr];
    EXPECT_EQ(balanceVec[0], 5 * COIN);
    balanceVec = lb1AddrBalances[TestChain::lb1ScrAddrP2SH];
    EXPECT_EQ(balanceVec[0], 25 * COIN);
 
-   lb2AddrBalances = DBTestUtils::getAddrBalancesFromDB(lb2);
+   lb2AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "lb2");
    balanceVec = lb2AddrBalances[TestChain::lb2ScrAddr];
    EXPECT_EQ(balanceVec[0], 30 * COIN);
    balanceVec = lb2AddrBalances[TestChain::lb2ScrAddrP2SH];
@@ -1983,10 +2032,8 @@ TEST_F(WebSocketTests_1Way, WebSocketStack)
    EXPECT_EQ(lb2Balances[0], 30 * COIN);
 
    //set wallet unconfirmed balance target to 2 blocks
-   auto&& confId = wallet1.setUnconfirmedTarget(2);
-   vector<string> confIdVec;
-   confIdVec.push_back(confId);
-   pCallback->waitOnManySignals(BDMAction_Refresh, confIdVec);
+   wallet1.setUnconfirmedTarget(2);
+   pCallback->waitOnManySignals(BDMAction_Refresh, {"wallet1"});
 
    //check new wallet balances
    w1Balances = DBTestUtils::getBalancesAndCount(wallet1, 5);
@@ -2000,20 +2047,18 @@ TEST_F(WebSocketTests_1Way, WebSocketStack)
 
    //check rekey count
    auto rekeyCount = bdvObj->getRekeyCount();
-
-   EXPECT_EQ(rekeyCount.first, 2U);
-   EXPECT_EQ(rekeyCount.second, 1U);
+   EXPECT_EQ(rekeyCount.first, 4U);
+   EXPECT_GE(rekeyCount.second, 10U);
 
    //cleanup
    bdvObj->shutdown(NetworkSettings::cookie());
-
    WebSocketServer::waitOnShutdown();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(WebSocketTests_1Way, WebSocketStack_Reconnect)
 {
-   //
+   //--gtest_filter=WebSocketTests_1Way.WebSocketStack_Reconnect
    TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
 
    auto&& firstHash = READHEX("b6b6f145742a9072fd85f96772e63a00eb4101709aa34ec5dd59e8fc904191a7");
@@ -2054,14 +2099,14 @@ TEST_F(WebSocketTests_1Way, WebSocketStack_Reconnect)
    {
       auto pCallback = make_shared<DBTestUtils::UTCallback>();
       auto&& bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
-         "127.0.0.1", NetworkSettings::listenPort(), 
+         "127.0.0.1", NetworkSettings::dbPort(),
          Armory::Config::getDataDir(),
-         authPeersPassLbd_, 
+         authPeersPassLbd_,
          true, true, //public server
          pCallback);
       bdvObj->setCheckServerKeyPromptLambda(pubkeyPrompt);
       bdvObj->connectToRemote();
-      bdvObj->registerWithDB(BitcoinSettings::getMagicBytes());
+      bdvObj->registerWithDB(hexMagicBytes);
 
       scrAddrVec.push_back(TestChain::scrAddrA);
       scrAddrVec.push_back(TestChain::scrAddrB);
@@ -2079,27 +2124,23 @@ TEST_F(WebSocketTests_1Way, WebSocketStack_Reconnect)
          TestChain::lb2ScrAddrP2SH
       };
 
-      vector<string> walletRegIDs;
-      auto&& wallet1 = bdvObj->instantiateWallet("wallet1");
-      walletRegIDs.push_back(
-         wallet1.registerAddresses(scrAddrVec, false));
+      vector<string> walletRegIDs {
+         "wallet1", "lb1", "lb2"
+      };
+      auto wallet1 = bdvObj->getWalletObj("wallet1");
+      wallet1.registerAddresses(scrAddrVec, false);
 
-      auto&& lb1 = bdvObj->instantiateLockbox("lb1");
-      walletRegIDs.push_back(
-         lb1.registerAddresses(lb1ScrAddrs, false));
+      auto lb1 = bdvObj->getLockboxObj("lb1");
+      lb1.registerAddresses(lb1ScrAddrs, false);
 
-      auto&& lb2 = bdvObj->instantiateLockbox("lb2");
-      walletRegIDs.push_back(
-         lb2.registerAddresses(lb2ScrAddrs, false));
-
-      //wait on registration ack
-      pCallback->waitOnManySignals(BDMAction_Refresh, walletRegIDs);
+      auto lb2 = bdvObj->getLockboxObj("lb2");
+      lb2.registerAddresses(lb2ScrAddrs, false);
 
       //go online
       bdvObj->goOnline();
       pCallback->waitOnSignal(BDMAction_Ready);
 
-      auto w1AddrBalances = DBTestUtils::getAddrBalancesFromDB(wallet1);
+      auto w1AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "wallet1");
       vector<uint64_t> balanceVec;
       balanceVec = w1AddrBalances[TestChain::scrAddrA];
       EXPECT_EQ(balanceVec[0], 50 * COIN);
@@ -2116,13 +2157,13 @@ TEST_F(WebSocketTests_1Way, WebSocketStack_Reconnect)
       EXPECT_EQ(spendableBalance, 65 * COIN);
       EXPECT_EQ(unconfirmedBalance, 165 * COIN);
 
-      auto lb1AddrBalances = DBTestUtils::getAddrBalancesFromDB(lb1);
+      auto lb1AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "lb1");
       balanceVec = lb1AddrBalances[TestChain::lb1ScrAddr];
       EXPECT_EQ(balanceVec[0], 10 * COIN);
       balanceVec = lb1AddrBalances[TestChain::lb1ScrAddrP2SH];
       EXPECT_EQ(balanceVec.size(), 0ULL);
 
-      auto lb2AddrBalances = DBTestUtils::getAddrBalancesFromDB(lb2);
+      auto lb2AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "lb2");
       balanceVec = lb2AddrBalances[TestChain::lb2ScrAddr];
       EXPECT_EQ(balanceVec[0], 10 * COIN);
       balanceVec = lb2AddrBalances[TestChain::lb2ScrAddrP2SH];
@@ -2139,7 +2180,7 @@ TEST_F(WebSocketTests_1Way, WebSocketStack_Reconnect)
       DBTestUtils::triggerNewBlockNotification(theBDMt_);
       pCallback->waitOnSignal(BDMAction_NewBlock);
 
-      w1AddrBalances = DBTestUtils::getAddrBalancesFromDB(wallet1);
+      w1AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "wallet1");
       balanceVec = w1AddrBalances[TestChain::scrAddrA];
       //value didn't change, shouldnt be getting a balance vector for this address
       EXPECT_EQ(balanceVec.size(), 0ULL);
@@ -2156,13 +2197,13 @@ TEST_F(WebSocketTests_1Way, WebSocketStack_Reconnect)
       EXPECT_EQ(spendableBalance, 70 * COIN);
       EXPECT_EQ(unconfirmedBalance, 170 * COIN);
 
-      lb1AddrBalances = DBTestUtils::getAddrBalancesFromDB(lb1);
+      lb1AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "lb1");
       balanceVec = lb1AddrBalances[TestChain::lb1ScrAddr];
       EXPECT_EQ(balanceVec[0], 5 * COIN);
       balanceVec = lb1AddrBalances[TestChain::lb1ScrAddrP2SH];
       EXPECT_EQ(balanceVec[0], 25 * COIN);
 
-      lb2AddrBalances = DBTestUtils::getAddrBalancesFromDB(lb2);
+      lb2AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "lb2");
       balanceVec = lb2AddrBalances[TestChain::lb2ScrAddr];
       EXPECT_EQ(balanceVec[0], 30 * COIN);
       balanceVec = lb2AddrBalances[TestChain::lb2ScrAddrP2SH];
@@ -2183,14 +2224,14 @@ TEST_F(WebSocketTests_1Way, WebSocketStack_Reconnect)
 
       auto pCallback = make_shared<DBTestUtils::UTCallback>();
       auto&& bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
-         "127.0.0.1", NetworkSettings::listenPort(), 
+         "127.0.0.1", NetworkSettings::dbPort(),
          Armory::Config::getDataDir(),
          authPeersPassLbd_, 
          true, true, //public server
          pCallback);
       bdvObj->setCheckServerKeyPromptLambda(pubkeyPrompt);
       bdvObj->connectToRemote();
-      bdvObj->registerWithDB(BitcoinSettings::getMagicBytes());
+      bdvObj->registerWithDB(hexMagicBytes);
 
       const vector<BinaryData> lb1ScrAddrs
       {
@@ -2203,28 +2244,20 @@ TEST_F(WebSocketTests_1Way, WebSocketStack_Reconnect)
          TestChain::lb2ScrAddrP2SH
       };
 
-      vector<string> walletRegIDs;
+      auto wallet1 = bdvObj->getWalletObj("wallet1");
+      wallet1.registerAddresses(scrAddrVec, false);
 
-      auto&& wallet1 = bdvObj->instantiateWallet("wallet1");
-      walletRegIDs.push_back(
-         wallet1.registerAddresses(scrAddrVec, false));
+      auto lb1 = bdvObj->getLockboxObj("lb1");
+      lb1.registerAddresses(lb1ScrAddrs, false);
 
-      auto&& lb1 = bdvObj->instantiateLockbox("lb1");
-      walletRegIDs.push_back(
-         lb1.registerAddresses(lb1ScrAddrs, false));
-
-      auto&& lb2 = bdvObj->instantiateLockbox("lb2");
-      walletRegIDs.push_back(
-         lb2.registerAddresses(lb2ScrAddrs, false));
-
-      //wait on registration ack
-      pCallback->waitOnManySignals(BDMAction_Refresh, walletRegIDs);
+      auto lb2 = bdvObj->getLockboxObj("lb2");
+      lb2.registerAddresses(lb2ScrAddrs, false);
 
       //go online
       bdvObj->goOnline();
       pCallback->waitOnSignal(BDMAction_Ready);
 
-      auto w1AddrBalances = DBTestUtils::getAddrBalancesFromDB(wallet1);
+      auto w1AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "wallet1");
       auto balanceVec = w1AddrBalances[TestChain::scrAddrA];
       EXPECT_EQ(balanceVec[0], 50 * COIN);
       balanceVec = w1AddrBalances[TestChain::scrAddrB];
@@ -2240,17 +2273,17 @@ TEST_F(WebSocketTests_1Way, WebSocketStack_Reconnect)
       EXPECT_EQ(spendableBalance, 70 * COIN);
       EXPECT_EQ(unconfirmedBalance, 170 * COIN);
 
-      auto lb1AddrBalances = DBTestUtils::getAddrBalancesFromDB(lb1);
+      auto lb1AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "lb1");
       balanceVec = lb1AddrBalances[TestChain::lb1ScrAddr];
       EXPECT_EQ(balanceVec[0], 5 * COIN);
       balanceVec = lb1AddrBalances[TestChain::lb1ScrAddrP2SH];
       EXPECT_EQ(balanceVec[0], 25 * COIN);
 
-      auto lb2AddrBalances = DBTestUtils::getAddrBalancesFromDB(lb2);
+      auto lb2AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "lb2");
       balanceVec = lb2AddrBalances[TestChain::lb2ScrAddr];
       EXPECT_EQ(balanceVec[0], 30 * COIN);
       balanceVec = lb2AddrBalances[TestChain::lb2ScrAddrP2SH];
-      EXPECT_EQ(balanceVec.size(), 0ULL);
+      EXPECT_EQ(balanceVec[0], 0 * COIN);
 
       auto lb1Balances = DBTestUtils::getBalancesAndCount(lb1, 5);
       EXPECT_EQ(lb1Balances[0], 30 * COIN);
@@ -2271,8 +2304,8 @@ TEST_F(WebSocketTests_1Way, WebSocketStack_Reconnect)
       bdvObj->unregisterFromDB();
    }
 
-   auto&& bdvObj2 = AsyncClient::BlockDataViewer::getNewBDV(
-      "127.0.0.1", NetworkSettings::listenPort(), Armory::Config::getDataDir(),
+   auto bdvObj2 = AsyncClient::BlockDataViewer::getNewBDV(
+      "127.0.0.1", NetworkSettings::dbPort(), Armory::Config::getDataDir(),
      authPeersPassLbd_, true, true, nullptr);
    bdvObj2->setCheckServerKeyPromptLambda(pubkeyPrompt);
    bdvObj2->connectToRemote();
@@ -2354,7 +2387,7 @@ protected:
       auto& clientPubkey = clientPeers.getOwnPublicKey();
 
       stringstream serverAddr;
-      serverAddr << "127.0.0.1:" << NetworkSettings::listenPort();
+      serverAddr << "127.0.0.1:" << NetworkSettings::dbPort();
       clientPeers.addPeer(serverPubkey, serverAddr.str());
       serverPeers.addPeer(clientPubkey, "127.0.0.1");
       
@@ -2362,6 +2395,7 @@ protected:
       serverAddr_ = serverAddr.str();
 
       initBDM();
+      hexMagicBytes = BitcoinSettings::getMagicBytes().toHexStr();
 
       auto nodePtr = dynamic_pointer_cast<NodeUnitTest>(
          NetworkSettings::bitcoinNodes().first);
@@ -2407,6 +2441,7 @@ protected:
    string LB2ID;
    BinaryData serverPubkey_;
    string serverAddr_;
+   string hexMagicBytes;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2421,13 +2456,13 @@ TEST_F(WebSocketTests_2Way, GrabAddrLedger_PostReg)
 
    auto pCallback = make_shared<DBTestUtils::UTCallback>();
    auto&& bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
-      "127.0.0.1", NetworkSettings::listenPort(), 
+      "127.0.0.1", NetworkSettings::dbPort(),
       Armory::Config::getDataDir(),
       authPeersPassLbd_, 
       NetworkSettings::ephemeralPeers(), false, //private server
       pCallback);
    bdvObj->connectToRemote();
-   bdvObj->registerWithDB(BitcoinSettings::getMagicBytes());
+   bdvObj->registerWithDB(hexMagicBytes);
 
    vector<BinaryData> scrAddrVec;
    scrAddrVec.push_back(TestChain::scrAddrA);
@@ -2439,11 +2474,11 @@ TEST_F(WebSocketTests_2Way, GrabAddrLedger_PostReg)
    pCallback->waitOnSignal(BDMAction_Ready);
 
    const auto &walletId = CryptoPRNG::generateRandom(8).toHexStr();
-   auto&& wallet = bdvObj->instantiateWallet(walletId);
-   auto&& registrationId = wallet.registerAddresses(scrAddrVec, false);
-   pCallback->waitOnSignal(BDMAction_Refresh, registrationId);
+   auto wallet = bdvObj->getWalletObj(walletId);
+   wallet.registerAddresses(scrAddrVec, false);
+   pCallback->waitOnSignal(BDMAction_Refresh, walletId);
 
-   auto w1AddrBalances = DBTestUtils::getAddrBalancesFromDB(wallet);
+   auto w1AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, walletId);
    ASSERT_NE(w1AddrBalances.size(), 0ULL);
    vector<uint64_t> balanceVec;
    balanceVec = w1AddrBalances[TestChain::scrAddrA];	// crashes here, too
@@ -2475,13 +2510,13 @@ TEST_F(WebSocketTests_2Way, WebSocketStack_ManyZC)
 
    auto pCallback = make_shared<DBTestUtils::UTCallback>();
    auto&& bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
-      "127.0.0.1", NetworkSettings::listenPort(), 
+      "127.0.0.1", NetworkSettings::dbPort(),
       Armory::Config::getDataDir(),
-      authPeersPassLbd_, 
+      authPeersPassLbd_,
       NetworkSettings::ephemeralPeers(), false, //private server
       pCallback);
    bdvObj->connectToRemote();
-   bdvObj->registerWithDB(BitcoinSettings::getMagicBytes());
+   bdvObj->registerWithDB(hexMagicBytes);
 
    vector<BinaryData> scrAddrVec;
    scrAddrVec.push_back(TestChain::scrAddrA);
@@ -2489,19 +2524,14 @@ TEST_F(WebSocketTests_2Way, WebSocketStack_ManyZC)
    scrAddrVec.push_back(TestChain::scrAddrC);
    scrAddrVec.push_back(TestChain::scrAddrE);
 
-   vector<string> walletRegIDs;
-   auto&& wallet1 = bdvObj->instantiateWallet("wallet1");
-   walletRegIDs.push_back(
-      wallet1.registerAddresses(scrAddrVec, false));
-
-   //wait on registration ack
-   pCallback->waitOnManySignals(BDMAction_Refresh, walletRegIDs);
+   auto wallet1 = bdvObj->getWalletObj("wallet1");
+   wallet1.registerAddresses(scrAddrVec, false);
 
    //go online
    bdvObj->goOnline();
    pCallback->waitOnSignal(BDMAction_Ready);
 
-   auto w1AddrBalances = DBTestUtils::getAddrBalancesFromDB(wallet1);
+   auto w1AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "wallet1");
    vector<uint64_t> balanceVec;
    balanceVec = w1AddrBalances[TestChain::scrAddrA];
    EXPECT_EQ(balanceVec[0], 50 * COIN);
@@ -2634,7 +2664,6 @@ GTEST_API_ int main(int argc, char **argv)
       WSAStartup(wVersion, &wsaData);
    #endif
 
-   GOOGLE_PROTOBUF_VERIFY_VERSION;
    srand(time(0));
    std::cout << "Running main() from gtest_main.cc\n";
 

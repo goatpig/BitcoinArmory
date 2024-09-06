@@ -15,7 +15,7 @@ import math
 
 from armoryengine.BDM import TheBDM, BDM_BLOCKCHAIN_READY
 from qtpy import QtCore, QtGui, QtWidgets
-from qtdialogs.qtdefines import ArmoryFrame, VERTICAL, HORIZONTAL, \
+from qtdialogs.qtdefines import AdvancedOptionsFrame, ArmoryFrame, VERTICAL, HORIZONTAL, \
    tightSizeNChar, makeHorizFrame, makeVertFrame, QRichLabel, \
    QPixMapButton, GETFONT, STYLE_SUNKEN, HLINE, determineWalletType, \
    QMoneyLabel, makeLayoutFrame, createToolTipWidget
@@ -267,8 +267,7 @@ class SelectWalletFrame(ArmoryFrame):
    def doCoinCtrl(self):
       wlt = self.main.walletMap[self.getSelectedWltID()]
       if self.dlgcc == None:
-         self.dlgcc = \
-            CoinControlDlg(self, self.main, wlt)
+         self.dlgcc = CoinControlDlg(self, self.main, wlt)
 
       if not self.dlgcc.exec_():
          return

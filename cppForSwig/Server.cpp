@@ -272,7 +272,7 @@ void WebSocketServer::start(BlockDataManagerThread* bdmT, bool async)
       instance->threads_.push_back(thread(readProcessThread));
    }
 
-   auto port = stoi(Armory::Config::NetworkSettings::listenPort());
+   auto port = stoi(Armory::Config::NetworkSettings::dbPort());
    if (port == 0) {
       port = WEBSOCKET_PORT;
    }
@@ -754,7 +754,7 @@ void ClientConnection::processReadQueue(std::shared_ptr<Clients> clients)
             (uint8_t*)packetData.getPtr(), packetData.getSize());
 
          if (result != 0) {
-            if (result <= 65536 && result > -1) {
+            if (result <= 1048576 && result > -1) {
                /*
                lws receives packet in the order the counterpart sent them, but
                it may break down a packet into several payloads, dependent on the

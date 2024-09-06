@@ -108,6 +108,7 @@ struct NotificationReply
 {
    success     @0 : Bool;
    passphrase  @1 : Text;
+   counter     @2 : UInt32;
 }
 
 ###############################
@@ -198,8 +199,8 @@ struct WalletRequest {
    }
 
    struct SetComment {
-      key @0 : Text;
-      comment @1 : Text;
+      key      @0 : Text;
+      comment  @1 : Text;
    }
 
    struct SetLabels {
@@ -236,6 +237,11 @@ struct WalletRequest {
 }
 
 ####
+struct UTXO {
+   output   @0 : Types.Output;
+   scrAddr  @1 : Types.ScrAddr;
+}
+
 struct WalletReply {
    struct BackupString {
       rootClear   @0 : List(Text);
@@ -258,6 +264,7 @@ struct WalletReply {
       updatedAssets  @1 : List(WalletData.AddressData);
    }
 
+
    # reply
    union {
       unset                         @0 : Void;
@@ -267,13 +274,13 @@ struct WalletReply {
       extendAddressPool             @3 : WalletData;
       createBackupString            @4 : BackupString;
       getData                       @5 : WalletData;
-      getAddressCombinedList        @6 : AddressAndBalanceData;
+      getAddrCombinedList           @6 : AddressAndBalanceData;
       setAddressTypeFor             @7 : WalletData.AddressData;
       getLedgerDelegateId           @8 : Types.DelegateId;
       getLedgerDelegateIdForScrAddr @9 : Types.DelegateId;
       getBalanceAndCount            @10: Types.BalanceAndCount;
       setupNewCoinSelectionInstance @11: Text;
-      getUtxos                      @12: List(Types.Output);
+      getUtxos                      @12: List(UTXO);
       createAddressBook             @13: Types.AddressBook;
    }
 }
@@ -335,7 +342,7 @@ struct CoinSelectionReply {
    union {
       unset             @0 : Void;
 
-      getUtxoSelection  @1 : List(Types.Output);
+      getUtxoSelection  @1 : List(UTXO);
       getFlatFee        @2 : Types.CoinAmount;
       getFeeByte        @3 : Float32;
       getSizeEstimate   @4 : UInt32;

@@ -61,8 +61,8 @@ class InputSignedStatusObject(object):
    def __init__(self, protoData):
       self.proto = protoData
       self.pubKeyMap = {}
-      for pubKeyPair in protoData.sign_state:
-         self.pubKeyMap[pubKeyPair.pub_key] = pubKeyPair.has_sig
+      for pubKeyPair in protoData.signStates:
+         self.pubKeyMap[pubKeyPair.pubKey] = pubKeyPair.hasSig
 
    #############################################################################
    def isSignedForPubKey(self, pubkey):
@@ -1352,8 +1352,8 @@ class UnsignedTxInput(AsciiSerializable):
       inputSignStatus = signerObj.getSignedStateForInput(self.inputID)
       signStatus = InputSigningStatus()
 
-      signStatus.M = inputSignStatus.proto.m
-      signStatus.N = inputSignStatus.proto.n
+      signStatus.M = inputSignStatus.proto.mCount
+      signStatus.N = inputSignStatus.proto.nCount
       signStatus.statusM = [TXIN_SIGSTAT.NO_SIGNATURE]*signStatus.M
       signStatus.statusN = [TXIN_SIGSTAT.NO_SIGNATURE]*signStatus.N
 
@@ -1902,9 +1902,9 @@ class UnsignedTransaction(AsciiSerializable):
       least it all goes through the same construction method.
       """
 
-      pubKeyMap  = {} if not pubKeyMap else pubKeyMap
-      txMap   = {} if not txMap     else txMap
-      p2shMap = {} if not p2shMap   else p2shMap
+      pubKeyMap   = {} if not pubKeyMap else pubKeyMap
+      txMap       = {} if not txMap     else txMap
+      p2shMap     = {} if not p2shMap   else p2shMap
 
 
       if len(txMap)==0 and not TheBDM.getState()==BDM_BLOCKCHAIN_READY:
@@ -1918,37 +1918,52 @@ class UnsignedTransaction(AsciiSerializable):
       dtxoList = []
 
       # Get support tx for each input and create unsignedTx-input for each
-      count = 0
+      prevTxs = {}
+      missingTxHashes = []
       for txin in pytx.inputs:
          # First, make sure that we have the previous Tx data available
          # We can't continue without it, since BIP 0010 will now require
          # the full tx of outputs being spent
          outpt = txin.outpoint
          txhash = outpt.txHash
-         txoIdx  = outpt.txOutIndex
-         pyPrevTx = None
+         if not txhash in prevTxs:
+            prevTxs[txhash] = {
+               'txOuts' : [],
+               'pyTx' : None
+            }
+         prevTxs[txhash]['txOuts'].append(outpt.txOutIndex)
+         if not prevTxs[txhash]['pyTx']:
+            if txhash in txMap:
+               prevTxs[txhash]['pyTx'] = txMap[txhash].copy()
+            else:
+               missingTxHashes.append(txhash)
 
-         # Either the supporting tx was supplied in txMap, or BDM is avail
-         if len(txMap)>0:
-            # If supplied a txMap, we expect it to have everything we need
-            if txhash not in txMap:
-               raise InvalidHashError('Could not find the referenced tx '
-                                        'in supplied txMap')
-            pyPrevTx = txMap[txhash].copy()
-         elif TheBDM.getState()==BDM_BLOCKCHAIN_READY:
-            txRaw = TheBridge.service.getTxByHash(txhash)
-            if not txRaw:
-               raise InvalidHashError('Could not find the referenced tx')
-            pyPrevTx = PyTx().unserialize(txRaw.raw)
-         else:
+      if missingTxHashes:
+         #try to get txdata from db for missing hashes
+         if not TheBDM.getState()==BDM_BLOCKCHAIN_READY:
             raise InvalidScriptError('No previous-tx data available for TxDP')
 
-         ustxiList.append(UnsignedTxInput(pyPrevTx.serializeWithoutWitness(),
-                                          txoIdx,
-                                          {},
-                                          pubKeyMap,
-                                          sequence=txin.intSeq, inputID=count))
-         count = count + 1
+         capnTxns = TheBridge.service.getTxsByHash(missingTxHashes)
+         for capnTx in capnTxns:
+            if not capnTx.hash in prevTxs:
+               raise InvalidHashError('Could not find the referenced tx')
+            prevTxs[capnTx.hash]['pyTx'] = PyTx().unserialize(capnTx.raw)
+
+      count = 0
+      #populate input list with tx data
+      for txHash in prevTxs:
+         pyPrevTx = prevTxs[txHash]['pyTx']
+         if not pyPrevTx:
+            raise InvalidScriptError('No previous-tx data available for TxDP')
+         serializedTx = pyPrevTx.serializeWithoutWitness()
+
+         for txoIdx in prevTxs[txHash]['txOuts']:
+            ustxiList.append(UnsignedTxInput(
+               serializedTx,
+               txoIdx, {},
+               pubKeyMap,
+               sequence=txin.intSeq, inputID=count))
+            count = count + 1
 
 
       # Create the DecoratedTxOut for each output.  Without any

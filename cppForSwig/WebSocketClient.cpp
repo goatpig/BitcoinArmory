@@ -458,7 +458,7 @@ void WebSocketClient::readService()
 
          if (result != 0) {
             //see WebSocketServer::processReadQueue for the explaination
-            if (result <= 65536 && result > -1) {
+            if (result <= 1048576 && result > -1) {
                leftOverData_ = std::move(payload);
                continue;
             }

@@ -327,11 +327,11 @@ class UnlockWalletHandler(ServerPush, DlgUnlockWallet):
    #############################################################################
    def parseProtoPacket(self, protoPacket):
       def processPacket(theDialog, protoPacket):
-         if protoPacket.HasField('cleanup'):
+         if protoPacket.which() == 'cleanup':
             theDialog.reject()
             return
-         elif protoPacket.HasField('unlock_request'):
-            theDialog.setIds(protoPacket.unlock_request.encryption_key_ids)
+         elif protoPacket.which() == 'unlockRequest':
+            theDialog.setIds(protoPacket.unlockRequest)
       TheSignalExecution.executeMethod(processPacket, self, protoPacket)
 
    #############################################################################

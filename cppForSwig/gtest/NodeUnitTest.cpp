@@ -147,8 +147,7 @@ map<unsigned, BinaryData> NodeUnitTest::mineNewBlock(BlockDataManager* bdm,
    unsigned count, ScriptRecipient* recipient, double diff)
 {
    auto diffBits = BtcUtils::convertDoubleToDiffBits(diff);
-   if(header_.prevHash_.getSize() == 0)
-   {
+   if (header_.prevHash_.empty()) {
       auto top = blockchain_->top();
       header_.prevHash_ = top->getThisHash();
       header_.timestamp_ = top->getTimestamp();

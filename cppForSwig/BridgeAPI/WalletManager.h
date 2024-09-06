@@ -286,7 +286,6 @@ public:
    {
       std::unique_lock<std::mutex> lock(mu_);
       auto wltIter = wallets_.find(id);
-      
       return wltIter != wallets_.end();
    }
 

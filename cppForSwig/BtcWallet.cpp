@@ -811,16 +811,13 @@ uint64_t BtcWallet::getWltTotalTxnCount(void) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void BtcWallet::setConfTarget(unsigned confTarget, const string& hash)
+void BtcWallet::setConfTarget(unsigned confTarget)
 {
-   if(confTarget != confTarget_)
+   if(confTarget != confTarget_) {
       confTarget_ = confTarget;
-
-   if (hash.size() != 0)
-   {
-      auto&& hashBd = BinaryData::fromString(hash);
-      bdvPtr_->flagRefresh(BDV_refreshSkipRescan, hashBd, nullptr);
    }
+   BinaryData wltId(walletID_.data(), walletID_.size());
+   bdvPtr_->flagRefresh(BDV_refreshSkipRescan, wltId, nullptr);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

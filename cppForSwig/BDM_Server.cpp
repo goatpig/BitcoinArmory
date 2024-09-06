@@ -182,7 +182,9 @@ namespace {
                addresses, walletRequest.getIsNew(), walletType
             );
             bdv->registerWallet(regReq);
-            break;
+            auto builder = ReplyBuilder::getNew(bdv);
+            auto bdvReply = prepareReply(builder);
+            return builder;
          }
 
          case BdvRequest::Which::UNREGISTER_WALLET:
@@ -503,7 +505,7 @@ namespace {
 
          case WalletRequest::Which::SET_CONF_TARGET:
          {
-            wltPtr->setConfTarget(request.getSetConfTarget(), {});
+            wltPtr->setConfTarget(request.getSetConfTarget());
             break;
          }
 
@@ -648,8 +650,11 @@ namespace {
          {
             auto pagesReq = request.getGetHistoryPages();
             std::list<std::vector<LedgerEntry>> pages;
-            for (unsigned i=pagesReq.getFrom(); i<=pagesReq.getTo(); i++) {
+            for (unsigned i=pagesReq.getFirst(); i<=pagesReq.getLast(); i++) {
                auto page = delegateIter->second.getHistoryPage(i);
+               if (page.empty()) {
+                  break;
+               }
                pages.emplace_back(std::move(page));
             }
 
@@ -796,6 +801,47 @@ namespace {
                rawZcVec.emplace_back(txData.begin(), txData.end());
             }
             clients->p2pBroadcast(bdvId, rawZcVec);
+            break;
+         }
+
+         case StaticRequest::Which::GET_NODE_STATUS:
+         {
+            auto nodeStatus = clients->bdmT()->bdm()->getNodeStatus();
+
+            auto nodeReply = staticReply.initGetNodeStatus();
+            nodeReply.setNode((Codec::Types::NodeStatus::NodeState)nodeStatus.state_);
+            nodeReply.setIsSW(nodeStatus.SegWitEnabled_);
+            nodeReply.setRpc((Codec::Types::NodeStatus::RpcState)nodeStatus.rpcState_);
+
+            auto chainNotif = nodeReply.initChain();
+            chainNotif.setChainState((Codec::Types::ChainStatus::ChainState)
+               nodeStatus.chainStatus_.state());
+            chainNotif.setBlockSpeed(nodeStatus.chainStatus_.getBlockSpeed());
+            chainNotif.setEta(nodeStatus.chainStatus_.getETA());
+            chainNotif.setProgress(nodeStatus.chainStatus_.getProgressPct());
+            chainNotif.setBlocksLeft(nodeStatus.chainStatus_.getBlocksLeft());
+            break;
+         }
+
+         case StaticRequest::Which::GET_FEE_SCHEDULE:
+         {
+            try {
+               std::string strat = request.getGetFeeSchedule();
+               auto nodePtr = clients->bdmT()->bdm()->nodeRPC_;
+               auto feeSchedule = nodePtr->getFeeSchedule(strat);
+               auto capnFeeSchedule = staticReply.initGetFeeSchedule(feeSchedule.size());
+
+               unsigned i=0;
+               for (const auto& fee : feeSchedule) {
+                  auto capnFee = capnFeeSchedule[i++];
+                  capnFee.setTarget(fee.first);
+                  capnFee.setFeeByte(fee.second.feeByte_);
+                  capnFee.setSmartFee(fee.second.smartFee_);
+               }
+            } catch (const std::exception& e) {
+               reply.setError(e.what());
+               reply.setSuccess(false);
+            }
             break;
          }
 
@@ -1157,8 +1203,8 @@ void BDV_Server_Object::processNotification(
          break;
       }
 
-   default:
-      return;
+      default:
+         return;
    }
 
    notifications_->push(

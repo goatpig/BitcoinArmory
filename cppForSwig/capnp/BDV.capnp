@@ -94,17 +94,6 @@ struct BdvRequest {
 }
 
 struct BdvReply {
-   struct CombinedBalanceAndCount {
-      struct AddressBalances {
-         scrAddr  @0 : Types.ScrAddr;
-         balances @1 : Types.BalanceAndCount;
-      }
-
-      id          @0 : Types.WalletId;
-      balances    @1 : Types.BalanceAndCount;
-      addresses   @2 : List(AddressBalances);
-   }
-
    struct AddressOutputReply {
       struct AddressOutputs {
          addr        @0 : Address;
@@ -128,7 +117,7 @@ struct BdvReply {
       getOutputsForOutpoints     @6 : List(Types.Output);
       getOutputsForAddress       @7 : AddressOutputReply;
       updateWalletsLedgerFilter  @8 : Void;
-      getCombinedBalances        @9 : List(CombinedBalanceAndCount);
+      getCombinedBalances        @9 : List(Types.CombinedBalanceAndCount);
    }
 }
 

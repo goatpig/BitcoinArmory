@@ -266,7 +266,7 @@ namespace AsyncClient
       ScrAddrObj getScrAddrObj(const BinaryData&,
          uint64_t, uint64_t, uint64_t, uint32_t);
 
-      virtual void registerAddresses(
+      bool registerAddresses(
          const std::vector<BinaryData>& addrVec, bool isNew);
       void unregisterAddresses(const std::set<BinaryData>&);
       void unregister(void);

@@ -17,7 +17,7 @@ CHACHA20POLY1305MAXPACKETSIZE = 1024 * 1024 * 1024 #1MB
 
 import sys
 sys.path.insert(1, './c20p1305_cffi')
-from c20p1305 import lib, ffi
+from c20p1305_cffi.c20p1305 import lib, ffi
 
 AEAD_THRESHOLD_BEGIN      = 100,
 AEAD_START                = 101,
