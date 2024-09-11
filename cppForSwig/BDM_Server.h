@@ -130,10 +130,11 @@ private:
    void populateWallets(std::map<std::string, WalletRegistrationRequest>&);
    void setup(void);
    WebSocketMessagePartial preparePayload(std::shared_ptr<BDV_Payload>);
+   std::unique_ptr<BDV_Notification_ZC> createZcNotification(
+      const std::set<BinaryDataRef>&);
 
 public:
    BDV_Server_Object(const std::string& id, BlockDataManagerThread *bdmT);
-
    ~BDV_Server_Object(void)
    { 
       haltThreads();

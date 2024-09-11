@@ -4605,7 +4605,7 @@ TEST_F(WebSocketTests, WebSocketStack_GetTxByHash)
    zcAddresses.insert(TestChain::scrAddrC);
    zcAddresses.insert(TestChain::scrAddrE);
 
-   pCallback->waitOnZc(zcHashes, zcAddresses, "");
+   pCallback->waitOnZc(zcHashes, zcAddresses);
 
    //grab them
    auto txBatch4 = getTxLbd(tx1.getThisHash()).get();
@@ -4688,8 +4688,8 @@ TEST_F(WebSocketTests, WebSocketStack_GetTxByHash)
    zcAddresses2.insert(TestChain::scrAddrC);
    zcAddresses2.insert(TestChain::scrAddrE);
 
-   pCallback->waitOnZc({tx3.getThisHash()}, zcAddresses1, {});
-   pCallback->waitOnZc({tx4.getThisHash()}, zcAddresses2, {});
+   pCallback->waitOnZc({tx3.getThisHash()}, zcAddresses1);
+   pCallback->waitOnZc({tx4.getThisHash()}, zcAddresses2);
 
    //grab them
    auto txBatch6 = getTxLbd(tx3.getThisHash()).get();

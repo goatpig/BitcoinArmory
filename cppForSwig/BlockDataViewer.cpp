@@ -1,8 +1,13 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2011-2019, Armory Technologies, Inc.                        //
+//  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
+//                                                                            //
+//                                                                            //
+//  Copyright (C) 2016-2024, goatpig                                          //
+//  Distributed under the MIT license                                         //
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 #include "BlockDataViewer.h"
@@ -794,36 +799,6 @@ tuple<uint64_t, uint64_t> BlockDataViewer::getAddrFullBalance(
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-unique_ptr<BDV_Notification_ZC> BlockDataViewer::createZcNotification(
-   const set<BinaryDataRef>& addrSet)
-{
-   ZcNotificationPacket packet(getID());
-
-   //grab zc map
-   auto ss = zeroConfCont_->getSnapshot();
-   if (ss != nullptr)
-   {
-      for (auto& addr : addrSet)
-      try
-      {
-         const auto& keySet = ss->getTxioKeysForScrAddr(addr);
-
-         auto iter = packet.scrAddrToTxioKeys_.emplace(addr, set<BinaryData>());
-         for (auto& key : keySet)
-            iter.first->second.emplace(key);
-      }
-      catch (range_error&)
-      {
-         continue;
-      }
-   }
-
-   packet.ssPtr_ = ss;
-   auto notifPtr = make_unique<BDV_Notification_ZC>(packet);
-   return notifPtr;
-}
-
-///////////////////////////////////////////////////////////////////////////////
 std::map<BinaryData, std::vector<Output>> BlockDataViewer::getAddressOutpoints(
    const std::set<BinaryDataRef>& scrAddrSet,
    unsigned& heightCutoff, unsigned& zcCutoff) const
@@ -1265,7 +1240,8 @@ void WalletGroup::registerAddresses(WalletRegistrationRequest& request)
       scrAddrSet.emplace(std::move(addr));
    }
 
-   auto callback = [theWallet](std::set<BinaryDataRef>& addrSet)->void
+   auto callback = [theWallet, zcCB=request.zcCallback](
+      std::set<BinaryDataRef>& addrSet)->void
    {
       auto bdvPtr = theWallet->bdvPtr_;
       auto dbPtr = theWallet->bdvPtr_->getDB();
@@ -1285,17 +1261,13 @@ void WalletGroup::registerAddresses(WalletRegistrationRequest& request)
          }
       }
 
-      std::unique_ptr<BDV_Notification_ZC> zcNotifPacket;
       if (!saMap.empty()) {
-         zcNotifPacket = std::move(bdvPtr->createZcNotification(addrSet));
          theWallet->scrAddrMap_.update(saMap);
+         if (zcCB) {
+            zcCB(addrSet);
+         }
       }
       theWallet->setRegistered();
-
-      BinaryDataRef wltIdRef;
-      wltIdRef.setRef(theWallet->walletID());
-      bdvPtr->flagRefresh(
-         BDV_refreshAndRescan, wltIdRef, std::move(zcNotifPacket));
    };
 
    auto batch = make_shared<RegistrationBatch>();
@@ -1473,32 +1445,31 @@ void WalletGroup::updateLedgerFilter(const vector<string>& walletsList)
    ReadWriteLock::ReadLock rl(lock_);
 
    vector<string> enabledIDs;
-   for (auto& wlt_pair : wallets_)
-   {
-      if (wlt_pair.second->uiFilter_)
+   for (auto& wlt_pair : wallets_) {
+      if (wlt_pair.second->uiFilter_) {
          enabledIDs.push_back(wlt_pair.first);
+      }
       wlt_pair.second->uiFilter_ = false;
    }
 
 
-   for (auto walletID : walletsList)
-   {
+   for (auto walletID : walletsList) {
       auto iter = wallets_.find(walletID);
-      if (iter == wallets_.end())
+      if (iter == wallets_.end()) {
          continue;
-
+      }
       iter->second->uiFilter_ = true;
    }
-   
+
    auto vec_copy = walletsList;
    sort(vec_copy.begin(), vec_copy.end());
    sort(enabledIDs.begin(), enabledIDs.end());
 
-   if (vec_copy == enabledIDs)
+   if (vec_copy == enabledIDs) {
       return;
+   }
 
    pageHistory(false, true);
-   bdvPtr_->flagRefresh(BDV_filterChanged, BinaryData(), nullptr);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

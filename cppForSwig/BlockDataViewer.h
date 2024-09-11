@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-22024, goatpig                                         //
+//  Copyright (C) 2016-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -66,12 +66,14 @@ struct WalletRegistrationRequest
    const std::vector<BinaryData> addresses;
    const bool isNew;
    const WalletRegType type;
+   std::function<void(const std::set<BinaryDataRef>&)> zcCallback;
 
    WalletRegistrationRequest(const std::string& wId,
       std::vector<BinaryData>& addrs,
       bool isnew, WalletRegType wType) :
       walletId(wId), addresses(std::move(addrs)),
-      isNew(isnew), type(wType)
+      isNew(isnew), type(wType),
+      zcCallback(nullptr)
    {}
 };
 
@@ -109,24 +111,24 @@ public:
    // it goes, and does a full [re-]scan of the blockchain only if necessary.
    void registerAWallet(WalletRegistrationRequest&);
    void registerAddresses(WalletRegistrationRequest&);
-   void       unregisterWallet(const std::string& ID);
+   void unregisterWallet(const std::string& ID);
 
    void scanWallets(std::shared_ptr<BDV_Notification>);
    bool hasWallet(const std::string &ID) const;
 
-   Tx                getTxByHash(BinaryData const & txHash) const;
+   Tx getTxByHash(BinaryData const & txHash) const;
 
-   std::tuple<uint32_t, uint32_t, std::vector<unsigned>> 
-                     getTxMetaData(const BinaryDataRef&, bool) const;
+   std::tuple<uint32_t, uint32_t, std::vector<unsigned>>
+   getTxMetaData(const BinaryDataRef&, bool) const;
 
-   TxOut             getPrevTxOut(TxIn & txin) const;
-   Tx                getPrevTx(TxIn & txin) const;
+   TxOut getPrevTxOut(TxIn & txin) const;
+   Tx getPrevTx(TxIn & txin) const;
 
-   BinaryData        getTxHashForDbKey(const BinaryData& dbKey6) const
+   BinaryData getTxHashForDbKey(const BinaryData& dbKey6) const
    { return db_->getTxHashForLdbKey(dbKey6); }
 
-   BinaryData        getSenderScrAddr(TxIn & txin) const;
-   int64_t           getSentValue(TxIn & txin) const;
+   BinaryData getSenderScrAddr(TxIn & txin) const;
+   int64_t getSentValue(TxIn & txin) const;
 
    LMDBBlockDatabase* getDB(void) const;
    const Blockchain& blockchain() const  { return *bc_; }
@@ -141,33 +143,29 @@ public:
 
    size_t getWalletsPageCount(void) const;
    std::vector<LedgerEntry> getWalletsHistoryPage(uint32_t,
-                                             bool rebuildLedger, 
-                                             bool remapWallets);
+      bool rebuildLedger, bool remapWallets);
 
    size_t getLockboxesPageCount(void) const;
    std::vector<LedgerEntry> getLockboxesHistoryPage(uint32_t,
-      bool rebuildLedger,
-      bool remapWallets);
-
-   virtual void flagRefresh(
-      BDV_refresh refresh, const BinaryData& refreshId,
-      std::unique_ptr<BDV_Notification_ZC> zcPtr) = 0;
+      bool rebuildLedger, bool remapWallets);
 
    StoredHeader getMainBlockFromDB(uint32_t height) const;
    StoredHeader getBlockFromDB(uint32_t height, uint8_t dupID) const;
    bool scrAddressIsRegistered(const BinaryData& scrAddr) const;
 
-   bool isBDMRunning(void) const 
+   bool isBDMRunning(void) const
    {
-      if (bdmPtr_ == nullptr)
+      if (bdmPtr_ == nullptr) {
          return false;
-      return bdmPtr_->isRunning(); 
+      }
+      return bdmPtr_->isRunning();
    }
 
    void blockUntilBDMisReady(void) const
    {
-      if (bdmPtr_ == nullptr)
+      if (bdmPtr_ == nullptr) {
          throw std::runtime_error("no bdmPtr_");
+      }
       bdmPtr_->blockUntilReady();
    }
 
@@ -228,24 +226,15 @@ public:
    bool isRBF(const BinaryData& txHash) const;
    bool hasScrAddress(const BinaryDataRef&) const;
    std::set<BinaryDataRef> getAddrSet(void) const;
-
    std::shared_ptr<BtcWallet> getWalletOrLockbox(const std::string& id) const;
-
    std::tuple<uint64_t, uint64_t> getAddrFullBalance(const BinaryData&);
-
-   std::unique_ptr<BDV_Notification_ZC> createZcNotification(
-      const std::set<BinaryDataRef>&);
-
-   virtual const std::string& getID(void) const = 0;
 
    //wallet agnostic methods
    std::vector<UTXO> getUtxosForAddress(const BinaryDataRef&, bool) const;
    std::map<BinaryData, std::vector<Output>> getAddressOutpoints(
       const std::set<BinaryDataRef>&, unsigned&, unsigned&) const;
-
    std::vector<std::pair<StoredTxOut, BinaryDataRef>> getOutputsForOutpoints(
       const std::map<BinaryDataRef, std::set<unsigned>>&, bool) const;
-
    CombinedBalances getCombinedBalances(void) const;
 
 protected:

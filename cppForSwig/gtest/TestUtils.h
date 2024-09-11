@@ -358,121 +358,91 @@ namespace DBTestUtils
       }
 
       void waitOnZc(
-         const std::set<BinaryData>& hashes, 
-         std::set<BinaryData> scrAddrSet,
-         const std::string& broadcastID)
+         const std::set<BinaryData>& hashes,
+         std::set<BinaryData> scrAddrSet)
       {
          std::set<BinaryData> addrSet;
-         while (1)
-         {
-            auto&& action = waitOnNotification(BDMAction_ZC);
-
-            if (!broadcastID.empty())
-            {
-               if (action->requestID_ != broadcastID)
-                  continue;
-            }
+         while (true) {
+            auto action = waitOnNotification(BDMAction_ZC);
 
             bool hasHashes = true;
-            for (auto& txHash : action->idVec_)
-            {
-               if (hashes.find(txHash) == hashes.end())
-               {
+            for (const auto& txHash : action->idVec_) {
+               if (hashes.find(txHash) == hashes.end()) {
                   hasHashes = false;
                   break;
                }
             }
-
-            if (!hasHashes)
+            if (!hasHashes) {
                continue;
+            }
 
             addrSet.insert(action->addrSet_.begin(), action->addrSet_.end());
-            if (addrSet == scrAddrSet)
+            if (addrSet == scrAddrSet) {
                break;
+            }
          }
       }
 
-      void waitOnZc_OutOfOrder(
-         const std::set<BinaryData>& hashes, 
-         const std::string& broadcastID)
+      void waitOnZc_OutOfOrder(const std::set<BinaryData>& hashes)
       {
          std::set<BinaryData> hashSet;
 
-         for (auto& pastNotif : zcNotifVec_)
-         {
-            for (auto& txHash : pastNotif.idVec_)
-            {
-               if (hashes.find(txHash) != hashes.end())
+         for (auto& pastNotif : zcNotifVec_) {
+            for (auto& txHash : pastNotif.idVec_) {
+               if (hashes.find(txHash) != hashes.end()) {
                   hashSet.insert(txHash);
+               }
             }
 
-            if (hashSet == hashes)
+            if (hashSet == hashes) {
                return;
+            }
          }
 
-         while (1)
-         {
-            auto&& action = waitOnNotification(BDMAction_ZC);
+         while (true) {
+            auto action = waitOnNotification(BDMAction_ZC);
             zcNotifVec_.push_back(*action);
 
-            if (!broadcastID.empty())
-            {
-               if (action->requestID_ != broadcastID)
-                  continue;
-            }
-
-            for (auto& txHash : action->idVec_)
-            {
-               if (hashes.find(txHash) != hashes.end())
+            for (auto& txHash : action->idVec_) {
+               if (hashes.find(txHash) != hashes.end()) {
                   hashSet.insert(txHash);
+               }
             }
 
-            if (hashSet == hashes)
+            if (hashSet == hashes) {
                break;
+            }
          }
       }
 
-      void waitOnError(const BinaryData& hash, ArmoryErrorCodes errorCode,
-         const std::string& requestID)
+      void waitOnError(const BinaryData& hash, ArmoryErrorCodes errorCode)
       {
-         if (requestID.empty())
-            throw std::runtime_error("empty request id");
+         while (true) {
+            auto action = waitOnNotification(BDMAction_BDV_Error);
 
-         while (true)
-         {
-            auto&& action = waitOnNotification(BDMAction_BDV_Error);
-
-            if (action->requestID_ != requestID)
-               continue;
-
-            if (action->error_.errData_ == hash && 
-               action->error_.errCode_ == (int)errorCode)
+            if (action->error_.errData_ == hash &&
+               action->error_.errCode_ == (int)errorCode) {
                break;
-         }         
+            }
+         }
       }
 
-      void waitOnErrors(const std::map<BinaryData, ArmoryErrorCodes>& errorMap,
-         const std::string& requestID)
+      void waitOnErrors(const std::map<BinaryData, ArmoryErrorCodes>& errorMap)
       {
-         if (requestID.empty())
-            throw std::runtime_error("empty request id");
-
          auto mapCopy = errorMap;
-         while (true)
-         {
-            if (mapCopy.empty())
+         while (true) {
+            if (mapCopy.empty()) {
                return;
+            }
 
-            auto&& action = waitOnNotification(BDMAction_BDV_Error);
-            if (action->requestID_ != requestID)
-               continue;
-
+            auto action = waitOnNotification(BDMAction_BDV_Error);
             auto iter = mapCopy.find(action->error_.errData_);
-            if (iter == mapCopy.end())
+            if (iter == mapCopy.end()) {
                continue;
-            
-            if ((int)iter->second == action->error_.errCode_)
+            }
+            if ((int)iter->second == action->error_.errCode_) {
                mapCopy.erase(iter);
+            }
          }
       }
    };

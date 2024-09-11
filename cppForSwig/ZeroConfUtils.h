@@ -306,7 +306,7 @@ class AddrAndHash;
 
 FilteredZeroConfData filterParsedTx(
    std::shared_ptr<ParsedTx>,
-   std::shared_ptr<const std::map<BinaryData, std::shared_ptr<AddrAndHash>>>,
+   const std::map<BinaryData, std::shared_ptr<AddrAndHash>>&,
    ZeroConfCallbacks*);
 
 

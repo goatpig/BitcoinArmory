@@ -273,7 +273,7 @@ void finalizeParsedTxResolution(
 ///////////////////////////////////////////////////////////////////////////////
 FilteredZeroConfData filterParsedTx(
    shared_ptr<ParsedTx> parsedTxPtr,
-   shared_ptr<const map<BinaryData, shared_ptr<AddrAndHash>>> mainAddressMap,
+   const map<BinaryData, shared_ptr<AddrAndHash>>& mainAddressMap,
    ZeroConfCallbacks* bdvCallbacks)
 {
    auto& parsedTx = *parsedTxPtr;
@@ -291,8 +291,8 @@ FilteredZeroConfData filterParsedTx(
 
       
       //Check if this address is being watched before looking for specific BDVs
-      auto addrIter = mainAddressMap->find(addr.getRef());
-      if (addrIter == mainAddressMap->end())
+      auto addrIter = mainAddressMap.find(addr.getRef());
+      if (addrIter == mainAddressMap.end())
       {
          if (DBSettings::getDbType() == ARMORY_DB_SUPER)
          {

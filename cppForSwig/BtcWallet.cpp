@@ -784,13 +784,15 @@ const HistoryPager& BtcWallet::historyPager() const
 
 ////////////////////////////////////////////////////////////////////////////////
 void BtcWallet::needsRefresh(bool refresh)
-{ 
+{
+   //TODO: fix the flagRefresh logic
+
    //notify BDV
-   if (refresh && isRegistered_)
+   /*if (refresh && isRegistered_)
    {
       bdvPtr_->flagRefresh(
          BDV_refreshAndRescan, BinaryData::fromString(walletID_), nullptr);
-   }
+   }*/
 
    //call custom callback
    doneRegisteringCallback_();
@@ -817,7 +819,7 @@ void BtcWallet::setConfTarget(unsigned confTarget)
       confTarget_ = confTarget;
    }
    BinaryData wltId(walletID_.data(), walletID_.size());
-   bdvPtr_->flagRefresh(BDV_refreshSkipRescan, wltId, nullptr);
+   //bdvPtr_->flagRefresh(BDV_refreshSkipRescan, wltId, nullptr);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

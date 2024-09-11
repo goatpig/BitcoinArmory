@@ -715,7 +715,7 @@ FilteredZeroConfData ZeroConfContainer::filterTransaction(
 
    //parse it
    auto addrMap = scrAddrMap_->get();
-   return filterParsedTx(parsedTx, addrMap, bdvCallbacks_.get());
+   return filterParsedTx(parsedTx, *addrMap, bdvCallbacks_.get());
 }
 
 ///////////////////////////////////////////////////////////////////////////////

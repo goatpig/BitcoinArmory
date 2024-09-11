@@ -329,6 +329,7 @@ namespace {
             }
 
             bdv->updateWalletsLedgerFilter(idVec);
+            bdv->flagRefresh(BDV_filterChanged, {}, nullptr);
             break;
          }
 
@@ -1215,8 +1216,7 @@ void BDV_Server_Object::processNotification(
 ///////////////////////////////////////////////////////////////////////////////
 void BDV_Server_Object::registerWallet(WalletRegistrationRequest& regReq)
 {
-   if (isReadyFuture_.wait_for(0s) != std::future_status::ready)
-   {
+   if (isReadyFuture_.wait_for(0s) != std::future_status::ready) {
       //only run this code if the bdv maintenance thread hasn't started yet
       std::unique_lock<std::mutex> lock(registerWalletMutex_);
 
@@ -1224,6 +1224,15 @@ void BDV_Server_Object::registerWallet(WalletRegistrationRequest& regReq)
       wltRegMap_.emplace(regReq.walletId, std::move(regReq));
       return;
    }
+
+   //set callback to notify of current zc
+   regReq.zcCallback = [this, walletId=regReq.walletId](
+      const std::set<BinaryDataRef>& addrSet)->void
+   {
+      auto zcNotifPacket = createZcNotification(addrSet);
+      BinaryData wltId(walletId.data(), walletId.size());
+      flagRefresh(BDV_refreshAndRescan, wltId, std::move(zcNotifPacket));
+   };
 
    //register wallet with BDV
    registerAWallet(regReq);
@@ -1407,6 +1416,34 @@ const std::string& BDV_Server_Object::getLedgerDelegate(
       iter = delegateMap_.emplace(id, delegate).first;
    }
    return iter->first;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+std::unique_ptr<BDV_Notification_ZC> BDV_Server_Object::createZcNotification(
+   const std::set<BinaryDataRef>& addrSet)
+{
+   ZcNotificationPacket packet(getID());
+
+   //grab zc map
+   auto ss = zeroConfCont_->getSnapshot();
+   if (ss != nullptr) {
+      for (auto& addr : addrSet)
+      try {
+         const auto& keySet = ss->getTxioKeysForScrAddr(addr);
+         auto iter = packet.scrAddrToTxioKeys_.emplace(
+            addr, std::set<BinaryData>());
+
+         for (auto& key : keySet) {
+            iter.first->second.emplace(key);
+         }
+      } catch (const std::range_error&) {
+         continue;
+      }
+   }
+
+   packet.ssPtr_ = ss;
+   auto notifPtr = std::make_unique<BDV_Notification_ZC>(packet);
+   return notifPtr;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
