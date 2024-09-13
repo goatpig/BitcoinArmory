@@ -1944,10 +1944,10 @@ class UnsignedTransaction(AsciiSerializable):
             raise InvalidScriptError('No previous-tx data available for TxDP')
 
          capnTxns = TheBridge.service.getTxsByHash(missingTxHashes)
-         for capnTx in capnTxns:
-            if not capnTx.hash in prevTxs:
+         for txHash in capnTxns:
+            if not txHash in prevTxs:
                raise InvalidHashError('Could not find the referenced tx')
-            prevTxs[capnTx.hash]['pyTx'] = PyTx().unserialize(capnTx.raw)
+            prevTxs[txHash]['pyTx'] = PyTx().unserialize(capnTxns[txHash].raw)
 
       count = 0
       #populate input list with tx data
@@ -2046,7 +2046,21 @@ class UnsignedTransaction(AsciiSerializable):
       return self.createFromUnsignedTxIO(ustxiList, dtxoList, lockTime)
 
    #############################################################################
-   def createFromTxSigCollect(self, txSigCollect):
+   def calculateFee(self):
+      totalIn  = sum([ustxi.value for ustxi in self.ustxInputs ])
+      totalOut = sum([dtxo.value  for dtxo  in self.decorTxOuts])
+      return totalIn-totalOut
+
+   #############################################################################
+   def toTxSigCollect(self, ustxType=USTX_TYPE_MODERN):
+      if self.pytxObj==UNINITIALIZED:
+         LOGERROR('Cannot serialize an uninitialized tx')
+         return None
+
+      return self.signer.toTxSigCollect(ustxType)
+
+   ########
+   def fromTxSigCollect(self, txSigCollect):
       if self.signer != None:
          raise Exception("Initialized signer, cannot overwrite")
 
@@ -2054,35 +2068,7 @@ class UnsignedTransaction(AsciiSerializable):
       self.signer.setup()
       self.signer.fromTxSigCollect(txSigCollect)
       self.pytxObj = self.signer.getUnsignedTx()
-
       return self.createFromPyTx(self.pytxObj)
-
-   #############################################################################
-   def calculateFee(self):
-      totalIn  = sum([ustxi.value for ustxi in self.ustxInputs ])
-      totalOut = sum([dtxo.value  for dtxo  in self.decorTxOuts])
-      return totalIn-totalOut
-
-
-   #############################################################################
-   def serialize(self, ustxType=USTX_TYPE_MODERN):
-      """
-      TODO:  We should consider the idea that we don't even need to serialize
-             the pytxObj at all... it seems there should only be a single,
-             canonical way to construct the tx.
-      """
-      if self.pytxObj==UNINITIALIZED:
-         LOGERROR('Cannot serialize an uninitialized tx')
-         return None
-
-      return self.signer.toTxSigCollect(ustxType)
-
-
-   #############################################################################
-   def unserialize(self, txSigCollect):
-      self.createFromTxSigCollect(txSigCollect)
-      return self
-
 
    #############################################################################
    def toJSONMap(self, lite=False):

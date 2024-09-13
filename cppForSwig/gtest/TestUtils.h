@@ -200,7 +200,7 @@ namespace DBTestUtils
       uint32_t blockheight);
 
    AsyncClient::TxResult getTxByHash(
-      std::shared_ptr<AsyncClient::BlockDataViewer> bdv, 
+      std::shared_ptr<AsyncClient::BlockDataViewer> bdv,
       const BinaryData& hash);
 
    std::vector<UTXO> getSpendableTxOutListForValue(

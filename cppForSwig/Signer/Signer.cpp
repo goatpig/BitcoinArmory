@@ -2579,42 +2579,43 @@ bool Signing::ScriptSpender::haveSupportingTx() const
 ////////////////////////////////////////////////////////////////////////////////
 const Tx& Signing::ScriptSpender::getSupportingTx() const
 {
-   if (txMap_ == nullptr)
+   if (txMap_ == nullptr) {
       throw SpenderException("missing tx map");;
+   }
 
    auto hash = getOutputHash();
    auto iter = txMap_->find(hash);
-   if (iter == txMap_->end())
+   if (iter == txMap_->end()) {
       throw SpenderException("missing supporting tx");
-
+   }
    return iter->second;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 bool Signing::ScriptSpender::canBeResolved() const
 {
-   if (utxo_.isInitialized())
+   if (utxo_.isInitialized()) {
       return true;
-
-   if (outpoint_.getSize() != 36)
+   }
+   if (outpoint_.getSize() != 36) {
       return false;
-
+   }
    return haveSupportingTx();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 uint64_t Signing::ScriptSpender::getValue() const
 {
-   if (utxo_.isInitialized())
+   if (utxo_.isInitialized()) {
       return utxo_.getValue();
-
-   if (!haveSupportingTx())
+   }
+   if (!haveSupportingTx()) {
       throw SpenderException("missing both supporting tx and utxo");
+   }
 
    auto index = getOutputIndex();
    const auto& supportingTx = getSupportingTx();
    auto txOutCopy = supportingTx.getTxOutCopy(index);
-
    return txOutCopy.getValue();
 }
 
@@ -2622,18 +2623,18 @@ uint64_t Signing::ScriptSpender::getValue() const
 void Signing::ScriptSpender::seedResolver(std::shared_ptr<ResolverFeed> feedPtr,
    bool seedLegacyAssets) const
 {
-   for (auto& bip32Path : bip32Paths_)
+   for (auto& bip32Path : bip32Paths_) {
       feedPtr->setBip32PathForPubkey(bip32Path.first, bip32Path.second);
-
-   if (!seedLegacyAssets)
+   }
+   if (!seedLegacyAssets) {
       return;
-
-   if (!bip32Paths_.empty())
+   }
+   if (!bip32Paths_.empty()) {
       return;
-
-   if (!isP2SH())
+   }
+   if (!isP2SH()) {
       return;
-
+   }
    /***
    Covering for a ResolverFeed edge case:
 
@@ -2678,19 +2679,15 @@ void Signing::ScriptSpender::seedResolver(std::shared_ptr<ResolverFeed> feedPtr,
    TODO: carry dedicated identifiers for resolved legacy armory assets
          as part of resolvers and signer states
    ***/
-   if (!utxo_.isInitialized())
-   {
+   if (!utxo_.isInitialized()) {
       LOGWARN << "[seedResolver] missing utxo";
       return;
    }
 
    auto hash = BtcUtils::getTxOutRecipientAddr(utxo_.script_);
-   try
-   {
+   try {
       feedPtr->getByVal(hash);
-   }
-   catch (const std::exception&)
-   {
+   } catch (const std::exception&) {
       LOGWARN << "[seedResolver] failed to preseed cache";
    }
 }
@@ -3520,8 +3517,9 @@ void Signing::Signer::merge(const Signer& rhs)
 ////////////////////////////////////////////////////////////////////////////////
 BinaryData Signing::Signer::serializeState_Legacy() const
 {
-   if (isSegWit())
+   if (isSegWit()) {
       throw std::runtime_error("SW txs cannot be serialized to legacy format");
+   }
 
    BinaryWriter bw;
    auto magicBytes = Config::BitcoinSettings::getMagicBytes();
@@ -3530,32 +3528,21 @@ BinaryData Signing::Signer::serializeState_Legacy() const
 
    //inputs
    bw.put_var_int(spenders_.size());
-   for (const auto& spender : spenders_)
-   {
+   for (const auto& spender : spenders_) {
       BinaryWriter bwTxIn;
       bwTxIn.put_uint32_t(USTXI_VER_LEGACY);
       bwTxIn.put_BinaryData(magicBytes);
       bwTxIn.put_BinaryData(spender->getOutpoint());
 
-      //supporting tx
-      try
-      {
-         const auto& tx = spender->getSupportingTx();
-         bwTxIn.put_var_int(tx.getSize());
-         bwTxIn.put_BinaryData(tx.serialize());
-      }
-      catch (const std::runtime_error&)
-      {
-         bwTxIn.put_var_int(0);
-      }
+      //supporting tx, legacy format needs all supporting transactions
+      const auto& tx = spender->getSupportingTx();
+      bwTxIn.put_var_int(tx.getSize());
+      bwTxIn.put_BinaryData(tx.serialize());
 
       //p2sh map BASE_SCRIPT
-      if (!spender->isP2SH())
-      {
+      if (!spender->isP2SH()) {
          bwTxIn.put_var_int(0);
-      }
-      else
-      {
+      } else {
          //we assume the spender is resolved since it's flagged as p2sh
          if (spender->isSigned())
          {
@@ -3583,8 +3570,7 @@ BinaryData Signing::Signer::serializeState_Legacy() const
       auto pubkeys = spender->getRelevantPubkeys();
       bwTxIn.put_var_int(pubkeys.size());
 
-      for (const auto& pubkeyIt : pubkeys)
-      {
+      for (const auto& pubkeyIt : pubkeys) {
          //pubkey
          bwTxIn.put_var_int(pubkeyIt.second.getSize());
          bwTxIn.put_BinaryData(pubkeyIt.second);
@@ -3607,11 +3593,9 @@ BinaryData Signing::Signer::serializeState_Legacy() const
 
    //outputs
    std::list<BinaryWriter> serializedRecipients;
-   for (const auto& recipientList : recipients_)
-   {
+   for (const auto& recipientList : recipients_) {
       BinaryWriter bwTxOut;
-      for (const auto& recipient : recipientList.second)
-      {
+      for (const auto& recipient : recipientList.second) {
          bwTxOut.put_uint32_t(USTXO_VER_LEGACY);
          bwTxOut.put_BinaryData(magicBytes);
 
@@ -3642,8 +3626,7 @@ BinaryData Signing::Signer::serializeState_Legacy() const
 
    //finalize outputs
    bw.put_var_int(serializedRecipients.size());
-   for (const auto& rec : serializedRecipients)
-   {
+   for (const auto& rec : serializedRecipients) {
       bw.put_var_int(rec.getSize());
       bw.put_BinaryData(rec.getData());
    }
@@ -3662,32 +3645,31 @@ void Signing::Signer::deserializeState_Legacy(const BinaryDataRef& ref)
 
    auto magicBytes = Config::BitcoinSettings::getMagicBytes();
    auto magicBytesRef = brr.get_BinaryDataRef(4);
-   if (magicBytes != magicBytesRef)
+   if (magicBytes != magicBytesRef) {
       throw SignerDeserializationError("legacy deser: magic bytes mismatch!");
+   }
 
    auto emptyBytes = brr.get_uint32_t();
-   if (emptyBytes != 0)
+   if (emptyBytes != 0) {
       throw SignerDeserializationError("legacy deser: missing empty bytes");
+   }
 
    auto spenderCount = brr.get_var_int();
-   for (unsigned i=0; i<spenderCount; i++)
-   {
+   for (unsigned i=0; i<spenderCount; i++) {
       auto spenderDataSize = brr.get_var_int();
       auto spenderData = brr.get_BinaryDataRef(spenderDataSize);
       BinaryRefReader brrSpender(spenderData);
 
       //version
       auto version = brrSpender.get_uint32_t();
-      if (version != USTXI_VER_LEGACY)
-      {
+      if (version != USTXI_VER_LEGACY) {
          throw SignerDeserializationError(
             "legacy deser: ustxi version mismatch");
       }
 
       //magic bytes
       auto ustxi_magic = brrSpender.get_BinaryDataRef(4);
-      if (ustxi_magic != magicBytes)
-      {
+      if (ustxi_magic != magicBytes) {
          throw SignerDeserializationError(
             "legacy deser: ustxi magic bytes mismatch!");
       }
@@ -3705,12 +3687,14 @@ void Signing::Signer::deserializeState_Legacy(const BinaryDataRef& ref)
 
       //contribID & label
       auto contribIdSz = brrSpender.get_var_int();
-      if (contribIdSz != 0)
+      if (contribIdSz != 0) {
          brrSpender.advance(contribIdSz);
+      }
 
       auto labelIdSz = brrSpender.get_var_int();
-      if (labelIdSz != 0)
+      if (labelIdSz != 0) {
          brrSpender.advance(labelIdSz);
+      }
 
       //sequence
       auto sequence = brrSpender.get_uint32_t();
@@ -3726,8 +3710,7 @@ void Signing::Signer::deserializeState_Legacy(const BinaryDataRef& ref)
       auto keyCount = brrSpender.get_var_int();
       keysAndSigs.resize(keyCount);
 
-      for (unsigned y=0; y<keyCount; y++)
-      {
+      for (unsigned y=0; y<keyCount; y++) {
          auto& kas = keysAndSigs[y];
 
          auto pubkeySize = brrSpender.get_var_int();
@@ -3742,39 +3725,38 @@ void Signing::Signer::deserializeState_Legacy(const BinaryDataRef& ref)
 
       //p2sh extended map
       std::map<BinaryData, BinaryData> p2shExtMap;
-      while (brrSpender.getSizeRemaining() != 0)
-      {
+      while (brrSpender.getSizeRemaining() != 0) {
          auto extFlag = brrSpender.get_uint8_t();
          auto extSize = brrSpender.get_var_int();
          auto extRef = brrSpender.get_BinaryDataRef(extSize);
 
          switch (extFlag)
          {
-         case TXIN_EXT_P2SHSCRIPT:
-         {
-            BinaryRefReader brrExt(extRef);
-            auto keyCount = brrExt.get_var_int();
-
-            for (unsigned y=0; y<keyCount; y++)
+            case TXIN_EXT_P2SHSCRIPT:
             {
-               auto keySize = brrExt.get_var_int();
-               auto key = brrExt.get_BinaryData(keySize);
+               BinaryRefReader brrExt(extRef);
+               auto keyCount = brrExt.get_var_int();
 
-               auto valSize = brrExt.get_var_int();
-               auto val = brrExt.get_BinaryData(valSize);
+               for (unsigned y=0; y<keyCount; y++) {
+                  auto keySize = brrExt.get_var_int();
+                  auto key = brrExt.get_BinaryData(keySize);
 
-               p2shExtMap.emplace(key, val);
+                  auto valSize = brrExt.get_var_int();
+                  auto val = brrExt.get_BinaryData(valSize);
+
+                  p2shExtMap.emplace(key, val);
+               }
+               break;
             }
-            break;
-         }
 
-         default:
-            continue;
+            default:
+               continue;
          }
       }
 
-      if (!p2shExtMap.empty())
+      if (!p2shExtMap.empty()) {
          LOGINFO << "spender " << i << "has extended p2sh data";
+      }
 
       //setup spender
       BinaryRefReader brrOutpoint(outpointRef);
@@ -3812,8 +3794,7 @@ void Signing::Signer::deserializeState_Legacy(const BinaryDataRef& ref)
 
       //grab base script
       BinaryDataRef baseScript = output.getScriptRef();
-      if (!p2shPreimage.empty())
-      {
+      if (!p2shPreimage.empty()) {
          /*
          Output script is p2sh, it embeds a hash and we have the preimage
          for it. Grab the hash from the script and add the <hash, preimage>
@@ -3822,8 +3803,9 @@ void Signing::Signer::deserializeState_Legacy(const BinaryDataRef& ref)
 
          //grab hash from nested script
          auto scriptHash = BtcUtils::getTxOutRecipientAddr(baseScript);
-         if (scriptHash == BtcUtils::BadAddress())
+         if (scriptHash == BtcUtils::BadAddress()) {
             throw SignerDeserializationError("invalid nested script");
+         }
 
          //populate feed
          feed->hashMap.emplace(scriptHash, p2shPreimage);
@@ -3837,29 +3819,29 @@ void Signing::Signer::deserializeState_Legacy(const BinaryDataRef& ref)
       auto scriptHash = BtcUtils::getTxOutRecipientAddr(baseScript, scriptType);
       switch (scriptType)
       {
-      case TXOUT_SCRIPT_STDHASH160:
-      {
-         //p2pkh, we should have a pubkey
-         if (keysAndSigs.size() == 1)
-            feed->hashMap.emplace(scriptHash, keysAndSigs.begin()->key);
-         break;
-      }
+         case TXOUT_SCRIPT_STDHASH160:
+         {
+            //p2pkh, we should have a pubkey
+            if (keysAndSigs.size() == 1) {
+               feed->hashMap.emplace(scriptHash, keysAndSigs.begin()->key);
+            }
+            break;
+         }
 
-      case TXOUT_SCRIPT_STDPUBKEY33:
-      case TXOUT_SCRIPT_MULTISIG:
-      {
-         //these script types carry the pubkey directly
-         break;
-      }
+         case TXOUT_SCRIPT_STDPUBKEY33:
+         case TXOUT_SCRIPT_MULTISIG:
+         {
+            //these script types carry the pubkey directly
+            break;
+         }
 
-      default:
-         throw SignerDeserializationError(
-            "unsupported redeem script for legacy utsxi");
+         default:
+            throw SignerDeserializationError(
+               "unsupported redeem script for legacy utsxi");
       }
 
       //resolve the spender
-      try
-      {
+      try {
          StackResolver resolver(spender->getOutputScript(), feed);
          resolver.setFlags(
             SCRIPT_VERIFY_P2SH |
@@ -3867,13 +3849,10 @@ void Signing::Signer::deserializeState_Legacy(const BinaryDataRef& ref)
             SCRIPT_VERIFY_P2SH_SHA256);
 
          spender->parseScripts(resolver);
-      }
-      catch (const std::exception&)
-      {}
+      } catch (const std::exception&) {}
 
       //inject sigs, will throw on failure
-      for (const auto& kas : keysAndSigs)
-      {
+      for (const auto& kas : keysAndSigs) {
          SecureBinaryData sig(kas.sig);
          spender->injectSignature(sig, 0);
       }
@@ -3885,24 +3864,21 @@ void Signing::Signer::deserializeState_Legacy(const BinaryDataRef& ref)
    }
 
    auto recipientCount = brr.get_var_int();
-   for (unsigned i=0; i<recipientCount; i++)
-   {
+   for (unsigned i=0; i<recipientCount; i++) {
       auto recipientDataSize = brr.get_var_int();
       auto recipientData = brr.get_BinaryDataRef(recipientDataSize);
       BinaryRefReader brrRecipient(recipientData);
 
       //version
       auto version = brrRecipient.get_uint32_t();
-      if (version != USTXO_VER_LEGACY)
-      {
+      if (version != USTXO_VER_LEGACY) {
          throw SignerDeserializationError(
             "legacy deser: ustxo version mismatch");
       }
 
       //magic bytes
       auto ustxo_magic = brrRecipient.get_BinaryDataRef(4);
-      if (ustxo_magic != magicBytes)
-      {
+      if (ustxo_magic != magicBytes) {
          throw SignerDeserializationError(
             "legacy deser: ustxo magic bytes mismatch!");
       }
@@ -3924,8 +3900,9 @@ void Signing::Signer::deserializeState_Legacy(const BinaryDataRef& ref)
    }
 
    //lock time
-   if (brr.getSizeRemaining() > 4)
+   if (brr.getSizeRemaining() >= 4) {
       lockTime_ = brr.get_uint32_t();
+   }
 
    //look for legacy signer state in extended data
    auto legacySigner = LegacySigner::Signer::deserExtState(
@@ -3935,11 +3912,10 @@ void Signing::Signer::deserializeState_Legacy(const BinaryDataRef& ref)
    auto sigsFromLegacySigner = legacySigner.getSigs();
 
    //inject them
-   for (auto& sigPair : sigsFromLegacySigner)
-   {
-      if (sigPair.first >= spenders_.size())
+   for (auto& sigPair : sigsFromLegacySigner) {
+      if (sigPair.first >= spenders_.size()) {
          throw SignerDeserializationError("legacy deser: invalid spender id");
-
+      }
       auto& spender = spenders_[sigPair.first];
       spender->injectSignature(sigPair.second, 0);
    }
@@ -3954,8 +3930,7 @@ std::string Signing::Signer::getSigCollectID() const
 
    //inputs
    bw.put_var_int(spenders_.size());
-   for (const auto& spender : spenders_)
-   {
+   for (const auto& spender : spenders_) {
       //outpoint
       bw.put_BinaryData(spender->getOutpoint());
 
@@ -3968,11 +3943,9 @@ std::string Signing::Signer::getSigCollectID() const
 
    //outputs
    std::list<BinaryWriter> serializedRecipients;
-   for (const auto& recipientList : recipients_)
-   {
+   for (const auto& recipientList : recipients_) {
       BinaryWriter bwTxOut;
-      for (const auto& recipient : recipientList.second)
-      {
+      for (const auto& recipient : recipientList.second) {
          auto output = recipient->getSerializedScript();
          auto script = output.getSliceRef(8, output.getSize()-8);
 
@@ -3989,15 +3962,17 @@ std::string Signing::Signer::getSigCollectID() const
 
    //finalize outputs
    bw.put_var_int(serializedRecipients.size());
-   for (const auto& rec : serializedRecipients)
+   for (const auto& rec : serializedRecipients) {
       bw.put_BinaryData(rec.getData());
+   }
 
    //locktime
    bw.put_uint32_t(0);
 
    auto serializedTx = bw.getData();
-   if (serializedTx.getSize() < 4)
+   if (serializedTx.getSize() < 4) {
       throw std::runtime_error("invalid serialized tx");
+   }
 
    auto hashedTxPrefix = BtcUtils::getHash256(serializedTx);
    return BtcUtils::base58_encode(hashedTxPrefix).substr(0, 8);
@@ -4009,28 +3984,28 @@ std::string Signing::Signer::toString(SignerStringFormat ustxFormat) const
    std::string serializedSigner;
    switch (ustxFormat)
    {
-   case SignerStringFormat::TxSigCollect_Modern:
-   {
-      serializedSigner = toTxSigCollect(false);
-      break;
-   }
+      case SignerStringFormat::TxSigCollect_Modern:
+      {
+         serializedSigner = toTxSigCollect(false);
+         break;
+      }
 
-   case SignerStringFormat::TxSigCollect_Legacy:
-   {
-      serializedSigner = toTxSigCollect(true);
-      break;
-   }
+      case SignerStringFormat::TxSigCollect_Legacy:
+      {
+         serializedSigner = toTxSigCollect(true);
+         break;
+      }
 
-   case SignerStringFormat::PSBT:
-   {
-      auto psbtBin = toPSBT();
-      std::string psbtStr(psbtBin.toCharPtr(), psbtBin.getSize());
-      serializedSigner = BtcUtils::base64_encode(psbtStr);
-      break;
-   }
+      case SignerStringFormat::PSBT:
+      {
+         auto psbtBin = toPSBT();
+         std::string psbtStr(psbtBin.toCharPtr(), psbtBin.getSize());
+         serializedSigner = BtcUtils::base64_encode(psbtStr);
+         break;
+      }
 
-   default:
-      throw std::runtime_error("unsupported serialization format");
+      default:
+         throw std::runtime_error("unsupported serialization format");
    }
 
    return serializedSigner;
@@ -4040,20 +4015,18 @@ std::string Signing::Signer::toString(SignerStringFormat ustxFormat) const
 std::string Signing::Signer::toTxSigCollect(bool isLegacy) const
 {
    BinaryWriter signerState;
-   if (isLegacy)
-   {
+   if (isLegacy) {
       auto legacyState = serializeState_Legacy();
 
       //txsig collect version, hardcoded to 1 for legacy
       signerState.put_uint32_t(TXSIGCOLLECT_VER_LEGACY);
       signerState.put_BinaryData(legacyState);
-   }
-   else
-   {
+   } else {
       auto serializedCapn = serializeState();
 
       //txsig collect version
       signerState.put_uint32_t(TXSIGCOLLECT_VER_MODERN);
+      signerState.put_uint32_t(0);
       signerState.put_BinaryData(serializedCapn);
    }
 
@@ -4070,16 +4043,15 @@ std::string Signing::Signer::toTxSigCollect(bool isLegacy) const
 
    size_t offset = 0;
    size_t width = 64;
-   while (offset < stateB64.size())
-   {
+   while (offset < stateB64.size()) {
       size_t charCount = std::min(stateB64.size() - offset, width);
       auto substr = stateB64.substr(offset, charCount);
       txcollect << substr << std::endl;
       offset += charCount;
    }
+
    txcollect << std::setw(64) << std::setfill('=')
       << std::left << "=" << std::endl;
-
    return txcollect.str();
 }
 
@@ -4087,30 +4059,30 @@ std::string Signing::Signer::toTxSigCollect(bool isLegacy) const
 Signing::Signer Signing::Signer::fromString(const std::string& signerState)
 {
    //try a base 64 deser
-   try
-   {
+   try {
       auto binState = BtcUtils::base64_decode(signerState);
       auto signer = Signer::fromPSBT(binState);
       signer.fromType_ = SignerStringFormat::PSBT;
       return signer;
-   }
-   catch (const std::runtime_error&)
-   {
+   } catch (const std::runtime_error&) {
       //not a PSBT, try TxSigCollect instead
    }
 
    auto validateHeader = [](const BinaryDataRef& header)->std::string
    {
       std::string headerStr(header.toCharPtr(), strlen(TXSIGCOLLECT_HEADER));
-      if (headerStr != TXSIGCOLLECT_HEADER)
+      if (headerStr != TXSIGCOLLECT_HEADER) {
          return {};
+      }
 
       unsigned pos=headerStr.size();
-      while (header.toCharPtr()[pos] != '=' && pos < header.getSize())
+      while (header.toCharPtr()[pos] != '=' && pos < header.getSize()) {
          ++pos;
+      }
 
-      if (pos < headerStr.size())
+      if (pos < headerStr.size()) {
          return {};
+      }
 
       return std::string(
          header.toCharPtr() + headerStr.size(),
@@ -4119,31 +4091,35 @@ Signing::Signer Signing::Signer::fromString(const std::string& signerState)
 
    auto validateFooter = [](const BinaryDataRef& footer)->bool
    {
-      if (footer.empty())
+      if (footer.empty()) {
          return false;
+      }
 
       //skip line break if present
       auto footerLen = footer.getSize();
-      if (footer.getPtr()[footerLen - 1] == '\n')
+      if (footer.getPtr()[footerLen - 1] == '\n') {
          --footerLen;
+      }
 
       //check size
-      if (footerLen != TXSIGCOLLECT_WIDTH)
+      if (footerLen != TXSIGCOLLECT_WIDTH) {
          return false;
+      }
 
       //footer should be all '='
-      for (unsigned i = 0; i<footerLen; i++)
-      {
-         if (footer.toCharPtr()[i] != '=')
+      for (unsigned i = 0; i<footerLen; i++) {
+         if (footer.toCharPtr()[i] != '=') {
             return false;
+         }
       }
 
       return true;
    };
 
    //check size for header and footer: 64x2 + 1 for the first line break
-   if (signerState.size() < TXSIGCOLLECT_WIDTH * 2 + 1)
+   if (signerState.size() < TXSIGCOLLECT_WIDTH * 2 + 1) {
       throw SignerDeserializationError("too short to be a TxSigCollect");
+   }
 
    auto header = signerState.substr(0, TXSIGCOLLECT_WIDTH + 1);
 
@@ -4153,19 +4129,20 @@ Signing::Signer Signing::Signer::fromString(const std::string& signerState)
    //header: 64 characters + 1 for the line break
    auto headerRef = brr.get_BinaryDataRef(TXSIGCOLLECT_WIDTH + 1);
    auto sigCollectId = validateHeader(headerRef);
-   if (sigCollectId.empty())
+   if (sigCollectId.empty()) {
       throw SignerDeserializationError("invalid TxSigCollect header");
+   }
 
    //body: rest of the data - last 64 characters (and possibly a line break)
    auto sigCollectSize = sigCollectRef.getSize();
    unsigned footerLength = TXSIGCOLLECT_WIDTH;
-   if (sigCollectRef.getPtr()[sigCollectSize - 1] == '\n')
-   {
+   if (sigCollectRef.getPtr()[sigCollectSize - 1] == '\n') {
       //last character is a line break, account for it
       ++footerLength;
    }
-   if (footerLength > sigCollectSize)
+   if (footerLength > sigCollectSize) {
       throw SignerDeserializationError("invalid TxSigCollect length");
+   }
 
    //get body and footer ref
    auto bodyRef = brr.get_BinaryDataRef(
@@ -4173,14 +4150,14 @@ Signing::Signer Signing::Signer::fromString(const std::string& signerState)
    auto footerRef = brr.get_BinaryDataRef(footerLength);
 
    //validate footer
-   if (!validateFooter(footerRef))
+   if (!validateFooter(footerRef)) {
       throw SignerDeserializationError("invalid TxSigCollect footer");
+   }
 
    //reconstruct base64 string from lines, evict line breaks
    std::string bodyStr;
    unsigned pos = 0;
-   while (pos < bodyRef.getSize())
-   {
+   while (pos < bodyRef.getSize()) {
       //grab the line break as well
       auto len = std::min((size_t)TXSIGCOLLECT_WIDTH + 1, bodyRef.getSize() - pos);
 
@@ -4198,39 +4175,39 @@ Signing::Signer Signing::Signer::fromString(const std::string& signerState)
 
    //version
    auto version = bodyRR.get_uint32_t();
-   auto signerStateRef = bodyRR.get_BinaryDataRef(bodyRR.getSizeRemaining());
    Signer theSigner;
    switch (version)
    {
-   case TXSIGCOLLECT_VER_LEGACY:
-   {
-      //legacy txsig collect
-      theSigner.deserializeState_Legacy(signerStateRef);
-      theSigner.fromType_ = SignerStringFormat::TxSigCollect_Legacy;
-      break;
-   }
+      case TXSIGCOLLECT_VER_LEGACY:
+      {
+         //legacy txsig collect
+         auto signerStateRef = bodyRR.get_BinaryDataRef(bodyRR.getSizeRemaining());
+         theSigner.deserializeState_Legacy(signerStateRef);
+         theSigner.fromType_ = SignerStringFormat::TxSigCollect_Legacy;
+         break;
+      }
 
-   case TXSIGCOLLECT_VER_MODERN:
-   {
-      //regular protobuf packet
-      Deserializer::capnToSigner(theSigner, signerStateRef);
-      theSigner.fromType_ = SignerStringFormat::TxSigCollect_Modern;
-      break;
-   }
+      case TXSIGCOLLECT_VER_MODERN:
+      {
+         //regular proto packet
+         bodyRR.advance(4);
+         auto signerStateRef = bodyRR.get_BinaryDataRef(bodyRR.getSizeRemaining());
+         Deserializer::capnToSigner(theSigner, signerStateRef);
+         theSigner.fromType_ = SignerStringFormat::TxSigCollect_Modern;
+         break;
+      }
 
-   default:
-      throw SignerDeserializationError("unsupported TxSigCollect version");
+      default:
+         throw SignerDeserializationError("unsupported TxSigCollect version");
    }
 
    //check vs signer id
    auto signerId = theSigner.getSigCollectID();
-   if (signerId != sigCollectId)
-   {
+   if (signerId != sigCollectId) {
       std::string errStr("tx sig collect id mismatch, ");
       errStr = errStr + "expected: " + sigCollectId + ", got: " + signerId;
       throw SignerDeserializationError(errStr);
    }
-
    return theSigner;
 }
 
@@ -4671,24 +4648,22 @@ Signing::Signer Signing::Signer::fromPSBT(BinaryDataRef psbtRef)
 ////////////////////////////////////////////////////////////////////////////////
 void Signing::Signer::addSupportingTx(BinaryDataRef rawTxRef)
 {
-   if (rawTxRef.empty())
+   if (rawTxRef.empty()) {
       return;
+   }
 
-   try
-   {
+   try {
       Tx tx(rawTxRef);
       addSupportingTx(std::move(tx));
-   }
-   catch (const std::exception&)
-   {}
+   } catch (const std::exception&) {}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 void Signing::Signer::addSupportingTx(Tx tx)
 {
-   if (!tx.isInitialized())
+   if (!tx.isInitialized()) {
       return;
-
+   }
    supportingTxMap_->emplace(tx.getThisHash(), std::move(tx));
 }
 
@@ -4696,9 +4671,9 @@ void Signing::Signer::addSupportingTx(Tx tx)
 const Tx& Signing::Signer::getSupportingTx(const BinaryData& hash) const
 {
    auto iter = supportingTxMap_->find(hash);
-   if (iter == supportingTxMap_->end())
+   if (iter == supportingTxMap_->end()) {
       throw std::runtime_error("unknown supporting tx hash");
-   
+   }
    return iter->second;
 }
 

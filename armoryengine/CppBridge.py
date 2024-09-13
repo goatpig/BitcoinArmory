@@ -480,7 +480,11 @@ class BlockchainService(ProtoWrapper):
       reply = fut.getVal()
       if reply.success == False:
          return None
-      return reply.service.getTxsByHash
+      txList = reply.service.getTxsByHash
+      txDict = {}
+      for tx in txList:
+         txDict[tx.hash] = tx
+      return txDict
 
    ####
    def getHeadersByHeight(self, heights: list[int]):

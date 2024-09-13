@@ -196,7 +196,7 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
       ustxStr = str(self.txtUSTX.toPlainText())
       if len(ustxStr) > 0:
          try:
-            ustxObj = UnsignedTransaction().unserialize(ustxStr)
+            ustxObj = UnsignedTransaction().fromTxSigCollect(ustxStr)
             self.signerTypeSelect.setUSTX(ustxObj)
 
             self.ustxObj = ustxObj

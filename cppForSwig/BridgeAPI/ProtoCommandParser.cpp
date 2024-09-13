@@ -1057,7 +1057,7 @@ namespace
    }
 
    bool processNotificationReply(
-      std::shared_ptr<CppBridge> bridge, MessageId referenceId,
+      std::shared_ptr<CppBridge> bridge,
       NotificationReply::Reader& notif)
    {
       try {
@@ -1137,7 +1137,7 @@ bool ProtoCommandParser::processData(
       {
          auto notifReply = toBridge.getNotification();
          return processNotificationReply(
-            bridge, referenceId, notifReply);
+            bridge, notifReply);
       }
 
       default:

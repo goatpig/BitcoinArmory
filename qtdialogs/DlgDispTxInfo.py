@@ -936,9 +936,15 @@ def extractTxInfo(pytx, rcvTime=None):
    txOutToList = pytx.makeRecipientsList()
    sumTxOut = sum([t[1] for t in txOutToList])
 
+   hashesToFetch = [txHash]
+   for i in range(pytx.getNumTxIn()):
+      txin = pytx.getTxIn(i)
+      hashesToFetch.append(txin.getOutPoint().txHash)
+   txns = TheBridge.service.getTxsByHash(hashesToFetch)
+
    if TheBDM.getState() == BDM_BLOCKCHAIN_READY and hasTxHash:
-      txProto = TheBridge.service.getTxByHash(txHash)
-      if txProto is not None:
+      if txHash in txns:
+         txProto = txns[txHash]
          hgt = txProto.height
          txWeight = pytx.getTxWeight()
          if hgt <= TheBDM.getTopBlockHeight():
@@ -946,7 +952,7 @@ def extractTxInfo(pytx, rcvTime=None):
             header.unserialize(TheBridge.service.getHeaderByHeight(hgt))
             txTime = unixTimeToFormatStr(header.timestamp)
             txBlk = hgt
-            txIdx = txProto.tx_index
+            txIdx = txProto.txIndex
             txSize = pytx.getSize()
          else:
             if rcvTime == None:
@@ -968,16 +974,16 @@ def extractTxInfo(pytx, rcvTime=None):
          txin = pytx.getTxIn(i)
          prevTxHash = txin.getOutPoint().txHash
          prevTxIndex = txin.getOutPoint().txOutIndex
-         prevTxRaw = TheBridge.service.getTxByHash(prevTxHash)
-         if prevTxRaw != None:
-            prevTx = PyTx().unserialize(prevTxRaw.raw)
+         if prevTxHash in txns:
+            prevTxProto = txns[prevTxHash]
+            prevTx = PyTx().unserialize(prevTxProto.raw)
             prevTxOut = prevTx.getTxOut(prevTxIndex)
             txinFromList[-1].append(prevTxOut.getScrAddressStr())
             txinFromList[-1].append(prevTxOut.getValue())
             if prevTx.isInitialized():
-               txinFromList[-1].append(prevTxRaw.height)
+               txinFromList[-1].append(prevTxProto.height)
                txinFromList[-1].append(prevTxHash)
-               txinFromList[-1].append(prevTxRaw.tx_index)
+               txinFromList[-1].append(prevTxProto.txIndex)
                txinFromList[-1].append(prevTxOut.getScript())
             else:
                LOGERROR('How did we get a bad parent pointer? (extractTxInfo)')

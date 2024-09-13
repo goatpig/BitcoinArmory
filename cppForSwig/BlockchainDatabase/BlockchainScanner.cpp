@@ -1582,23 +1582,20 @@ bool BlockchainScanner::resolveTxHashes()
 
    TIMER_RESTART("resolveHashes");
 
-   if (reportProgress_)
+   if (reportProgress_) {
       progress_(BDMPhase_SearchHashes, 0, UINT32_MAX, 0);
+   }
 
    set<BinaryData> missingHashes;
-   try
-   {
+   try {
       missingHashes = move(scrAddrFilter_->getMissingHashes());
-   }
-   catch (runtime_error&)
-   {
+   } catch (const std::runtime_error&) {
       //no missing hashes entry, return
       TIMER_STOP("resolveHashes");
       return true;
    }
 
-   if (missingHashes.size() == 0)
-   {
+   if (missingHashes.empty()) {
       TIMER_STOP("resolveHashes");
       return true;
    }
@@ -1607,11 +1604,9 @@ bool BlockchainScanner::resolveTxHashes()
    auto originalMissingSet = missingHashes;
 
    auto hashIter = missingHashes.begin();
-   while (hashIter != missingHashes.end())
-   {
+   while (hashIter != missingHashes.end()) {
       auto&& dbkey = db_->getDBKeyForHash(*hashIter);
-      if (dbkey.getSize() == 0)
-      {
+      if (dbkey.empty()) {
          ++hashIter;
          continue;
       }
@@ -1637,33 +1632,25 @@ bool BlockchainScanner::resolveTxHashes()
    set<uint32_t> heights;
    map<uint32_t, map<uint32_t, set<const TxHashHints*>>> resultsByHash;
    unsigned missingIDs = 0;
-   for (auto& fileNumPair : resultMap)
-   {
+   for (auto& fileNumPair : resultMap) {
       auto& block_result_pair = resultsByHash[fileNumPair.first];
 
-      for (auto& filterHits : fileNumPair.second)
-      {
-         for (auto& filterHit : filterHits.filterHits_)
-         {
-            try
-            {
-               auto header =
-                  blockchain_->getHeaderById(filterHit.first);
+      for (auto& filterHits : fileNumPair.second) {
+         for (auto& filterHit : filterHits.filterHits_) {
+            try {
+               auto header = blockchain_->getHeaderById(filterHit.first);
                auto height = header->getBlockHeight();
-         
+
                heights.insert(height);
                block_result_pair[filterHit.first].insert(&filterHits);
-            }
-            catch (...)
-            {
+            } catch (...) {
                ++missingIDs;
             }
          }
       }
    }
 
-   if (missingIDs > 0)
-   {
+   if (missingIDs > 0) {
       LOGINFO << missingIDs << " missing block IDs";
       return false;
    }
@@ -1683,15 +1670,18 @@ bool BlockchainScanner::resolveTxHashes()
 
    auto resolveProgress = [&](size_t count)->void
    {
-      if (!reportProgress_)
+      if (!reportProgress_) {
          return;
+      }
 
       unique_lock<mutex> lock(progressMutex, defer_lock);
-      if (!lock.try_lock())
+      if (!lock.try_lock()) {
          return;
+      }
 
-      if (count > topCount)
+      if (count > topCount) {
          return;
+      }
 
       topCount = count;
       auto intprog = hashCount - count;
@@ -1707,19 +1697,19 @@ bool BlockchainScanner::resolveTxHashes()
          counter, resolverResults, resolveProgress);
    };
 
-   if (reportProgress_)
+   if (reportProgress_) {
       progress_(BDMPhase_ResolveHashes, 0, UINT32_MAX, 0);
+   }
 
-
-   for (unsigned i = 1; i < totalThreadCount_; i++)
+   for (unsigned i = 1; i < totalThreadCount_; i++) {
       resolverThreads.push_back(thread(resolverThr));
+   }
 
    resolverThr();
-
-   for (auto& thr : resolverThreads)
-   {
-      if (thr.joinable())
+   for (auto& thr : resolverThreads) {
+      if (thr.joinable()) {
          thr.join();
+      }
    }
 
    //write the resolved hashes
@@ -1729,20 +1719,18 @@ bool BlockchainScanner::resolveTxHashes()
       map<BinaryData, BinaryWriter> countAndHash;
 
       {
-         auto&& hintTx = db_->beginTransaction(TXHINTS, LMDB::ReadOnly);
-
-         for (auto& result : resolverResults)
-         {
+         auto hintTx = db_->beginTransaction(TXHINTS, LMDB::ReadOnly);
+         for (auto& result : resolverResults) {
             resolvedHashes.insert(result.first);
 
             //get hashPrefix
             auto hashPrefix = result.first.getSliceRef(4, 4);
-
             auto& hintObj = txHints[hashPrefix];
 
             //pull hint if it's fresh
-            if (hintObj.getNumHints() == 0)
+            if (hintObj.getNumHints() == 0) {
                db_->getStoredTxHints(hintObj, hashPrefix);
+            }
 
             //append new key
             hintObj.dbKeyList_.push_back(result.second);
@@ -1758,9 +1746,7 @@ bool BlockchainScanner::resolveTxHashes()
       }
 
       LOGINFO << "found " << resolverResults.size() << " missing hashes";
-
-      for (auto& hint : txHints)
-      {
+      for (auto& hint : txHints) {
          BinaryData hintKey(1);
          hintKey.getPtr()[0] = DB_PREFIX_TXHINTS;
          hintKey.append(hint.first);
@@ -1770,17 +1756,15 @@ bool BlockchainScanner::resolveTxHashes()
 
       //write it
       {
-         auto&& hintTx = db_->beginTransaction(TXHINTS, LMDB::ReadWrite);
+         auto hintTx = db_->beginTransaction(TXHINTS, LMDB::ReadWrite);
 
-         for (auto& toWrite : serializedHints)
-         {
+         for (auto& toWrite : serializedHints) {
             db_->putValue(TXHINTS,
                toWrite.first.getRef(),
                toWrite.second.getDataRef());
          }
 
-         for (auto& toWrite : countAndHash)
-         {
+         for (auto& toWrite : countAndHash) {
             db_->putValue(TXHINTS,
                toWrite.first.getRef(),
                toWrite.second.getDataRef());
@@ -1790,11 +1774,11 @@ bool BlockchainScanner::resolveTxHashes()
 
    //clean up missing hashes in db
    missingHashes.clear();
-   for (auto& hash : originalMissingSet)
-   {
+   for (auto& hash : originalMissingSet) {
       auto resolvedIter = resolvedHashes.find(hash);
-      if (resolvedIter == resolvedHashes.end())
+      if (resolvedIter == resolvedHashes.end()) {
          missingHashes.insert(hash);
+      }
    }
 
    scrAddrFilter_->putMissingHashes(missingHashes);
@@ -1803,8 +1787,8 @@ bool BlockchainScanner::resolveTxHashes()
    auto timeElapsed = TIMER_READ_SEC("resolveHashes");
    LOGINFO << "Resolved missing hashes in " << timeElapsed << "s";
 
-   if (missingHashes.size() > 0)
+   if (!missingHashes.empty()) {
       return false;
-
+   }
    return true;
 }

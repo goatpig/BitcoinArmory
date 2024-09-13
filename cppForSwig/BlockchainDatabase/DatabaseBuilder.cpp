@@ -96,24 +96,22 @@ void DatabaseBuilder::init()
    LOGINFO << "updating branches";
    blockchain_->updateBranchingMaps(db_, initialReorgState);
 
-   try
-   {
+   try {
       //rewind the top block offset to catch on missed blocks for db init
       auto topBlock = blockchain_->top();
       auto rewindHeight = topBlock->getBlockHeight();
-      if (rewindHeight > REWIND_COUNT)
+      if (rewindHeight > REWIND_COUNT) {
          rewindHeight -= REWIND_COUNT;
-      else
+      } else {
          rewindHeight = 1;
+      }
 
       auto rewindBlock = blockchain_->getHeaderByHeight(rewindHeight, 0xFF);
       topBlockOffset_.fileID_ = rewindBlock->getBlockFileNum();
       topBlockOffset_.offset_ = rewindBlock->getOffset();
 
       LOGINFO << "Rewinding " << REWIND_COUNT << " blocks";
-   }
-   catch (exception&)
-   {}
+   } catch (const std::exception&) {}
 
    //update db
    TIMER_START("updateblocksindb");
@@ -125,16 +123,15 @@ void DatabaseBuilder::init()
    double updatetime = TIMER_READ_SEC("updateblocksindb");
    LOGINFO << "updated HEADERS db in " << updatetime << "s";
 
-   if (DBSettings::checkTxHints())
+   if (DBSettings::checkTxHints()) {
       checkTxHintsIntegrity();
-
+   }
    cycleDatabases();
 
    int scanFrom = -1;
    bool reset = false;
 
-   if (DBSettings::getDbType() != ARMORY_DB_SUPER)
-   {
+   if (DBSettings::getDbType() != ARMORY_DB_SUPER) {
       //verifyTxFilters();
 
       //blockchain object now has the longest chain, update address history
@@ -142,8 +139,9 @@ void DatabaseBuilder::init()
       scrAddrFilter_->getAllScrAddrInDB();
 
       //don't scan without any registered addresses
-      if (scrAddrFilter_->getScanFilterAddrMap()->size() == 0)
+      if (scrAddrFilter_->getScanFilterAddrMap()->empty()) {
          return;
+      }
 
       //determine from which block to start scanning
       scrAddrFilter_->getScrAddrCurrentSyncState();
@@ -151,23 +149,19 @@ void DatabaseBuilder::init()
 
       //DatabaseBuilder objects always operate on sdbi index 0
       //BlockchainScanner object depend on the underlying ScrAddrFilter uniqueID
-      auto&& subsshSdbi = db_->getStoredDBInfo(SUBSSH, 0);
-      auto&& sshsdbi = db_->getStoredDBInfo(SSH, 0);
+      auto subsshSdbi = db_->getStoredDBInfo(SUBSSH, 0);
+      auto sshsdbi = db_->getStoredDBInfo(SSH, 0);
 
       //check merkle of registered addresses vs what's in the DB
-      if (!scrAddrFilter_->hasNewAddresses())
-      {
+      if (!scrAddrFilter_->hasNewAddresses()) {
          //no new addresses were registered in between runs.
 
-         if (subsshSdbi.topBlkHgt_ > sshsdbi.topBlkHgt_)
-         {
+         if (subsshSdbi.topBlkHgt_ > sshsdbi.topBlkHgt_) {
             //SUBSSH db has scanned ahead of SSH db, no point rescanning these
             //blocks
             scanFrom = subsshSdbi.topBlkHgt_;
          }
-      }
-      else
-      {
+      } else {
          //we have newly registered addresses this run, force a full rescan
          resetHistory();
          scanFrom = -1;
@@ -175,57 +169,52 @@ void DatabaseBuilder::init()
       }
    }
 
-   if (!reorgState.prevTopStillValid_ && !reset)
-   {
+   if (!reorgState.prevTopStillValid_ && !reset) {
       //reorg
       undoHistory(reorgState);
 
       scanFrom = min(
          scanFrom, (int)reorgState.reorgBranchPoint_->getBlockHeight() + 1);
    }
-   
+
    TIMER_START("scanning");
-   while (1)
-   {
+   while (true) {
       auto topScannedBlockHash = initTransactionHistory(scanFrom);
       cycleDatabases();
 
-      if (topScannedBlockHash == blockchain_->top()->getThisHash())
+      if (topScannedBlockHash == blockchain_->top()->getThisHash()) {
          break;
+      }
 
       //if we got this far the scan failed, diagnose the DB and repair it
 
       LOGWARN << "topScannedBlockHash does match the hash of the current top";
       LOGWARN << "current top is height #" << blockchain_->top()->getBlockHeight();
 
-      try
-      {
+      try {
          auto topscannedblock = blockchain_->getHeaderByHash(topScannedBlockHash);
          LOGWARN << "topScannedBlockHash is height #" << topscannedblock->getBlockHeight();
-      }
-      catch (...)
-      {
+      } catch (...) {
          LOGWARN << "topScannedBlockHash is invalid";
       }
-
 
       LOGINFO << "repairing DB";
 
       //grab top scanned height from SUBSSH DB
-      auto&& sdbi = db_->getStoredDBInfo(SUBSSH, 0);
+      auto sdbi = db_->getStoredDBInfo(SUBSSH, 0);
 
       //get fileID for height
       auto topHeader = blockchain_->getHeaderByHeight(sdbi.topBlkHgt_, 0xFF);
       int fileID = topHeader->getBlockFileNum();
-      
+
       //rewind 5 blk files for the good measure
       fileID -= 5;
-      if (fileID < 0)
+      if (fileID < 0) {
          fileID = 0;
+      }
 
       //reparse these blk files
-      if (!reparseBlkFiles(fileID))
-      {
+      if (!reparseBlkFiles(fileID)) {
          LOGERR << "failed to repair DB, aborting";
          throw runtime_error("failed to repair DB");
       }
@@ -595,8 +584,7 @@ BinaryData DatabaseBuilder::initTransactionHistory(int32_t startHeight)
 BinaryData DatabaseBuilder::scanHistory(int32_t startHeight,
    bool reportprogress, bool init)
 {
-   if (DBSettings::getDbType() != ARMORY_DB_SUPER)
-   {
+   if (DBSettings::getDbType() != ARMORY_DB_SUPER) {
       LOGINFO << "scanning new blocks from #" << startHeight << " to #" <<
          blockchain_->top()->getBlockHeight();
 
@@ -609,22 +597,18 @@ BinaryData DatabaseBuilder::scanHistory(int32_t startHeight,
       bcs.updateSSH(forceRescanSSH_, startHeight);
 
       unsigned count = 0;
-      while (!bcs.resolveTxHashes())
-      {
+      while (!bcs.resolveTxHashes()) {
          ++count;
          //verifyTxFilters();
 
-         if (count > 5)
-         {
+         if (count > 5) {
             LOGERR << "failed to fix filters after 5 attempts";
             break;
          }
       }
 
       return bcs.getTopScannedBlockHash();
-   }
-   else
-   {
+   } else {
       BlockchainScanner_Super bcs(
          blockchain_, db_,
          blockFiles_, init,
