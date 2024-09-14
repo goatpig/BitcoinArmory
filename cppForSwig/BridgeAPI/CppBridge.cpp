@@ -1358,7 +1358,7 @@ BinaryData CppBridge::getLastPushDataInScript(
       reply.setSuccess(false);
    } else {
       auto utilsReply = reply.initScriptUtils();
-      utilsReply.setGetScrAddrForAddrStr(capnp::Data::Builder(
+      utilsReply.setGetLastPushDataInScript(capnp::Data::Builder(
          (uint8_t*)pushData.getPtr(), pushData.getSize()
       ));
       reply.setSuccess(true);

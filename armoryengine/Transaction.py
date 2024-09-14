@@ -19,7 +19,7 @@ from armoryengine.ArmoryUtils import BlockComponent, BIGENDIAN, \
    CPP_TXIN_STDUNCOMPR, CPP_TXIN_STDCOMPR, CPP_TXIN_SPENDP2SH, \
    CPP_TXIN_P2WPKH_P2SH, CPP_TXIN_P2WSH_P2SH, MIN_RELAY_TX_FEE, \
    int_to_binary, SignatureError, indent, binary_to_hex, \
-   hash160, sha256, ONE_BTC
+   hash160, sha256, ONE_BTC, LOGERROR
 from armoryengine.AddressUtils import hash160_to_addrStr, binary_to_base58, \
    CheckHash160, binScript_to_p2shAddrStr, script_to_addrStr, \
    script_to_scrAddr, scrAddr_to_addrStr, BadAddressError

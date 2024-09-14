@@ -530,7 +530,7 @@ void WebSocketClient::readService()
                readPackets_.erase(msgid);
                currentReadMessage_.reset();
             } else {
-               LOGWARN << "invalid msg id";
+               LOGWARN << "invalid msg id: " << msgid;
                currentReadMessage_.reset();
             }
       }
