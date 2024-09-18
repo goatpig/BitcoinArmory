@@ -277,7 +277,7 @@ namespace Armory
       ////
       struct Helpers
       {
-         using UserPrompt = std::function<BinaryDataRef(
+         using UserPrompt = std::function<BinaryData(
             std::unique_ptr<capnp::MessageBuilder>)>;
 
          //backup methods

@@ -50,13 +50,13 @@ struct WalletData {
 
 ## RestoreWallet messages
 struct RestorePrompt {
-   struct WalletId {
+   struct WalletMeta {
       walletId          @0 : Text;
       backupType        @1 : UInt32;
    }
 
    union {
-      checkWalletId     @0 : WalletId;
+      checkWalletId     @0 : WalletMeta;
       getPassphrases    @1 : Void;
       decryptError      @2 : Void;
       typeError         @3 : Text;
