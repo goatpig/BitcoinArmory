@@ -1,16 +1,17 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2011-2021, Armory Technologies, Inc.                        //
+//  Copyright (C) 2011-2016, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-17, goatpig                                            //
+//  Copyright (C) 2016-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 #include <chrono>
+#include <filesystem>
 #include "TestUtils.h"
 #include "hkdf.h"
 #include "BlockchainDatabase/TxHashFilters.h"
@@ -512,8 +513,6 @@ TEST_F(BIP150_151Test, checkData_151_Only)
 // still functional afterwards.
 TEST_F(BIP150_151Test, checkData_150_151)
 {
-   // Get test files from the current (gtest) directory. C++17 would be nice
-   // since filesystem::current_path() has been added. Alas, for now....
    // Test IPv4, and then IPv6 later.
    // Ideally, the code would be smart enough to support two separate contexts
    // so that two separate key sets can be tested. There's no real reason to
@@ -521,16 +520,16 @@ TEST_F(BIP150_151Test, checkData_150_151)
    // now, just cheat and have two "separate" systems with the same input files.
 
    //grab serv private key from peer files
-   auto servFilePath = baseDir_;
-   servFilePath.append("/bip150v0_srv1/identity-key-ipv4");
+   auto servFilePath = std::filesystem::current_path();
+   servFilePath.append("bip150v0_srv1/identity-key-ipv4");
    fstream serv_isf(servFilePath);
    char prvHex[65];
    serv_isf.getline(prvHex, 65);
    SecureBinaryData privServ(READHEX(prvHex));
 
    //grab client private key from peer files
-   auto cliFilePath = baseDir_;
-   cliFilePath.append("/bip150v0_cli1/identity-key-ipv4");
+   auto cliFilePath = std::filesystem::current_path();
+   cliFilePath.append("bip150v0_cli1/identity-key-ipv4");
    fstream cli_isf(cliFilePath);
    char cliHex[65];
    cli_isf.getline(cliHex, 65);
@@ -777,8 +776,6 @@ TEST_F(BIP150_151Test, checkData_150_151)
 
 TEST_F(BIP150_151Test, checkData_150_151_1Way)
 {
-   // Get test files from the current (gtest) directory. C++17 would be nice
-   // since filesystem::current_path() has been added. Alas, for now....
    // Test IPv4, and then IPv6 later.
    // Ideally, the code would be smart enough to support two separate contexts
    // so that two separate key sets can be tested. There's no real reason to
@@ -786,16 +783,16 @@ TEST_F(BIP150_151Test, checkData_150_151_1Way)
    // now, just cheat and have two "separate" systems with the same input files.
 
    //grab serv private key from peer files
-   auto servFilePath = baseDir_;
-   servFilePath.append("/bip150v0_srv1/identity-key-ipv4");
+   auto servFilePath = std::filesystem::current_path();
+   servFilePath.append("bip150v0_srv1/identity-key-ipv4");
    fstream serv_isf(servFilePath);
    char prvHex[65];
    serv_isf.getline(prvHex, 65);
    SecureBinaryData privServ(READHEX(prvHex));
 
    //grab client private key from peer files
-   auto cliFilePath = baseDir_;
-   cliFilePath.append("/bip150v0_cli1/identity-key-ipv4");
+   auto cliFilePath = std::filesystem::current_path();
+   cliFilePath.append("bip150v0_cli1/identity-key-ipv4");
    fstream cli_isf(cliFilePath);
    char cliHex[65];
    cli_isf.getline(cliHex, 65);
@@ -1026,8 +1023,6 @@ TEST_F(BIP150_151Test, checkData_150_151_1Way)
 
 TEST_F(BIP150_151Test, checkData_150_151_privateClientToPublicServer)
 {
-   // Get test files from the current (gtest) directory. C++17 would be nice
-   // since filesystem::current_path() has been added. Alas, for now....
    // Test IPv4, and then IPv6 later.
    // Ideally, the code would be smart enough to support two separate contexts
    // so that two separate key sets can be tested. There's no real reason to
@@ -1035,16 +1030,16 @@ TEST_F(BIP150_151Test, checkData_150_151_privateClientToPublicServer)
    // now, just cheat and have two "separate" systems with the same input files.
 
    //grab serv private key from peer files
-   auto servFilePath = baseDir_;
-   servFilePath.append("/bip150v0_srv1/identity-key-ipv4");
+   auto servFilePath = std::filesystem::current_path();
+   servFilePath.append("bip150v0_srv1/identity-key-ipv4");
    fstream serv_isf(servFilePath);
    char prvHex[65];
    serv_isf.getline(prvHex, 65);
    SecureBinaryData privServ(READHEX(prvHex));
 
    //grab client private key from peer files
-   auto cliFilePath = baseDir_;
-   cliFilePath.append("/bip150v0_cli1/identity-key-ipv4");
+   auto cliFilePath = std::filesystem::current_path();
+   cliFilePath.append("bip150v0_cli1/identity-key-ipv4");
    fstream cli_isf(cliFilePath);
    char cliHex[65];
    cli_isf.getline(cliHex, 65);
@@ -1244,8 +1239,6 @@ TEST_F(BIP150_151Test, checkData_150_151_privateClientToPublicServer)
 
 TEST_F(BIP150_151Test, checkData_150_151_publicClientToPrivateServer)
 {
-   // Get test files from the current (gtest) directory. C++17 would be nice
-   // since filesystem::current_path() has been added. Alas, for now....
    // Test IPv4, and then IPv6 later.
    // Ideally, the code would be smart enough to support two separate contexts
    // so that two separate key sets can be tested. There's no real reason to
@@ -1253,16 +1246,16 @@ TEST_F(BIP150_151Test, checkData_150_151_publicClientToPrivateServer)
    // now, just cheat and have two "separate" systems with the same input files.
 
    //grab serv private key from peer files
-   auto servFilePath = baseDir_;
-   servFilePath.append("/bip150v0_srv1/identity-key-ipv4");
+   auto servFilePath = std::filesystem::current_path();
+   servFilePath.append("bip150v0_srv1/identity-key-ipv4");
    fstream serv_isf(servFilePath);
    char prvHex[65];
    serv_isf.getline(prvHex, 65);
    SecureBinaryData privServ(READHEX(prvHex));
 
    //grab client private key from peer files
-   auto cliFilePath = baseDir_;
-   cliFilePath.append("/bip150v0_cli1/identity-key-ipv4");
+   auto cliFilePath = std::filesystem::current_path();
+   cliFilePath.append("bip150v0_cli1/identity-key-ipv4");
    fstream cli_isf(cliFilePath);
    char cliHex[65];
    cli_isf.getline(cliHex, 65);
