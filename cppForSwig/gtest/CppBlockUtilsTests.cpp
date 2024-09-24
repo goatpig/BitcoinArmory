@@ -1475,7 +1475,7 @@ TEST_F(BlockUtilsFull, Load5Blocks_SideScan)
    scrAddrVec.clear();
    scrAddrVec.push_back(TestChain::scrAddrD);
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false, true);
 
    scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
    EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
@@ -1701,7 +1701,6 @@ class WebSocketTests_1Way : public ::testing::Test
 {
 protected:
    BlockDataManagerThread *theBDMt_;
-   Clients* clients_;
    PassphraseLambda authPeersPassLbd_;
 
    void initBDM(void)
@@ -1710,7 +1709,6 @@ protected:
       iface_ = theBDMt_->bdm()->getIFace();
 
       auto mockedShutdown = [](void)->void {};
-      clients_ = new Clients(theBDMt_, mockedShutdown);
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -1776,7 +1774,6 @@ protected:
       serverAddr_ = serverAddr.str();
 
       initBDM();
-
       auto nodePtr = dynamic_pointer_cast<NodeUnitTest>(
          NetworkSettings::bitcoinNodes().first);
       nodePtr->setIface(theBDMt_->bdm()->getIFace());
@@ -1786,17 +1783,11 @@ protected:
    /////////////////////////////////////////////////////////////////////////////
    virtual void TearDown(void)
    {
-      if (clients_ != nullptr)
-      {
-         clients_->exitRequestLoop();
-         clients_->shutdown();
-      }
+      WebSocketServer::shutdown();
+      WebSocketServer::waitOnShutdown();
 
-      delete clients_;
       delete theBDMt_;
-
       theBDMt_ = nullptr;
-      clients_ = nullptr;
 
       DBUtils::removeDirectory(blkdir_);
       DBUtils::removeDirectory(homedir_);
@@ -1835,10 +1826,10 @@ TEST_F(WebSocketTests_1Way, WebSocketStack)
    theBDMt_->start(DBSettings::initMode());
 
    auto pCallback = make_shared<DBTestUtils::UTCallback>();
-   auto&& bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
+   auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
       "127.0.0.1", NetworkSettings::dbPort(),
       Armory::Config::getDataDir(),
-      authPeersPassLbd_, 
+      authPeersPassLbd_,
       NetworkSettings::ephemeralPeers(), true, //public server
       pCallback);
    bdvObj->connectToRemote();
@@ -1992,7 +1983,7 @@ TEST_F(WebSocketTests_1Way, WebSocketStack)
    EXPECT_EQ(lb2Balances[0], 15 * COIN);
 
    //
-   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   TestUtils::appendBlocks({ "4", "5" }, blk0dat_);
    std::this_thread::sleep_for(1s);
    DBTestUtils::triggerNewBlockNotification(theBDMt_);
    pCallback->waitOnSignal(BDMAction_NewBlock);
@@ -2058,7 +2049,6 @@ TEST_F(WebSocketTests_1Way, WebSocketStack)
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(WebSocketTests_1Way, WebSocketStack_Reconnect)
 {
-   //--gtest_filter=WebSocketTests_1Way.WebSocketStack_Reconnect
    TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
 
    auto&& firstHash = READHEX("b6b6f145742a9072fd85f96772e63a00eb4101709aa34ec5dd59e8fc904191a7");
@@ -2161,7 +2151,11 @@ TEST_F(WebSocketTests_1Way, WebSocketStack_Reconnect)
       balanceVec = lb1AddrBalances[TestChain::lb1ScrAddr];
       EXPECT_EQ(balanceVec[0], 10 * COIN);
       balanceVec = lb1AddrBalances[TestChain::lb1ScrAddrP2SH];
-      EXPECT_EQ(balanceVec.size(), 0ULL);
+      EXPECT_EQ(balanceVec.size(), 4ULL);
+      EXPECT_EQ(balanceVec[0], 0ULL);
+      EXPECT_EQ(balanceVec[1], 0ULL);
+      EXPECT_EQ(balanceVec[2], 0ULL);
+      EXPECT_EQ(balanceVec[3], 2ULL);
 
       auto lb2AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "lb2");
       balanceVec = lb2AddrBalances[TestChain::lb2ScrAddr];
@@ -2182,8 +2176,7 @@ TEST_F(WebSocketTests_1Way, WebSocketStack_Reconnect)
 
       w1AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "wallet1");
       balanceVec = w1AddrBalances[TestChain::scrAddrA];
-      //value didn't change, shouldnt be getting a balance vector for this address
-      EXPECT_EQ(balanceVec.size(), 0ULL);
+      EXPECT_EQ(balanceVec[0], 50 * COIN);
       balanceVec = w1AddrBalances[TestChain::scrAddrB];
       EXPECT_EQ(balanceVec[0], 70 * COIN);
       balanceVec = w1AddrBalances[TestChain::scrAddrC];
@@ -2319,16 +2312,12 @@ class WebSocketTests_2Way : public ::testing::Test
 {
 protected:
    BlockDataManagerThread *theBDMt_;
-   Clients* clients_;
    PassphraseLambda authPeersPassLbd_;
 
    void initBDM(void)
    {
       theBDMt_ = new BlockDataManagerThread();
       iface_ = theBDMt_->bdm()->getIFace();
-
-      auto mockedShutdown = [](void)->void {};
-      clients_ = new Clients(theBDMt_, mockedShutdown);
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -2405,17 +2394,11 @@ protected:
    /////////////////////////////////////////////////////////////////////////////
    virtual void TearDown(void)
    {
-      if (clients_ != nullptr)
-      {
-         clients_->exitRequestLoop();
-         clients_->shutdown();
-      }
+      WebSocketServer::shutdown();
+      WebSocketServer::waitOnShutdown();
 
-      delete clients_;
       delete theBDMt_;
-
       theBDMt_ = nullptr;
-      clients_ = nullptr;
 
       DBUtils::removeDirectory(blkdir_);
       DBUtils::removeDirectory(homedir_);
@@ -2458,7 +2441,7 @@ TEST_F(WebSocketTests_2Way, GrabAddrLedger_PostReg)
    auto&& bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
       "127.0.0.1", NetworkSettings::dbPort(),
       Armory::Config::getDataDir(),
-      authPeersPassLbd_, 
+      authPeersPassLbd_,
       NetworkSettings::ephemeralPeers(), false, //private server
       pCallback);
    bdvObj->connectToRemote();

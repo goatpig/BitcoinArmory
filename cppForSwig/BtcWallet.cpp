@@ -819,7 +819,6 @@ void BtcWallet::setConfTarget(unsigned confTarget)
       confTarget_ = confTarget;
    }
    BinaryData wltId(walletID_.data(), walletID_.size());
-   //bdvPtr_->flagRefresh(BDV_refreshSkipRescan, wltId, nullptr);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

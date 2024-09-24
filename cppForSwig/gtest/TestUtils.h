@@ -98,7 +98,7 @@ namespace TestUtils
    uint64_t getDBBalanceForHash160(
       BlockDataManager &bdm, BinaryDataRef addr160);
 
-   void concatFile(const std::string &from, const std::string &to);
+   void concatFile(const std::vector<std::string> &from, const std::string &to);
    void appendBlocks(const std::vector<std::string> &files, const std::string &to);
    void setBlocks(const std::vector<std::string> &files, const std::string &to);
    void nullProgress(unsigned, double, unsigned, unsigned);

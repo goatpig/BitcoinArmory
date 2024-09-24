@@ -195,20 +195,27 @@ namespace TestUtils
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   void concatFile(const string &from, const string &to)
+   void concatFile(const std::vector<std::string> &from, const string &to)
    {
-      std::ifstream i(from, ios::binary);
       std::ofstream o(to, ios::app | ios::binary);
 
-      o << i.rdbuf();
+      for (const auto& fname : from) {
+         std::ifstream i(fname, ios::binary);
+         o << i.rdbuf();
+      }
+
       o.flush();
+      o.close();
    }
 
    /////////////////////////////////////////////////////////////////////////////
    void appendBlocks(const std::vector<std::string> &files, const std::string &to)
    {
-      for (const std::string &f : files)
-         concatFile(dataDir + "/blk_" + f + ".dat", to);
+      std::vector<std::string> fullFileNames;
+      for (const std::string &f : files) {
+         fullFileNames.push_back(dataDir + "/blk_" + f + ".dat");
+      }
+      concatFile(fullFileNames, to);
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -217,8 +224,11 @@ namespace TestUtils
       std::ofstream o(to, ios::trunc | ios::binary);
       o.close();
 
-      for (const std::string &f : files)
-         concatFile(dataDir + "/blk_" + f + ".dat", to);
+      std::vector<std::string> fullFileNames;
+      for (const std::string &f : files) {
+         fullFileNames.push_back(dataDir + "/blk_" + f + ".dat");
+      }
+      concatFile(fullFileNames, to);
    }
 
    /////////////////////////////////////////////////////////////////////////////

@@ -507,6 +507,10 @@ namespace {
          case WalletRequest::Which::SET_CONF_TARGET:
          {
             wltPtr->setConfTarget(request.getSetConfTarget());
+
+            //push refersh notif for the wallet
+            BinaryData idBd(walletId.data(), walletId.size());
+            bdv->flagRefresh(BDV_refreshSkipRescan, idBd, nullptr);
             break;
          }
 
@@ -858,12 +862,7 @@ namespace {
 ///////////////////////////////////////////////////////////////////////////////
 std::shared_ptr<BDV_Server_Object> Clients::get(const std::string& id) const
 {
-   auto bdvmap = BDVs_.get();
-   auto iter = bdvmap->find(id);
-   if (iter == bdvmap->end()) {
-      return nullptr;
-   }
-   return iter->second;
+   return BDVs_.get(id);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1520,11 +1519,11 @@ void Clients::bdvMaintenanceLoop()
          break;
       }
 
-      auto bdvMap = BDVs_.get();
       const auto& bdvID = notifPtr->bdvID();
       if (bdvID.empty()) {
          //empty bdvID means broadcast notification to all BDVs
-         for (const auto& bdv_pair : *bdvMap) {
+         const auto& bdvs = BDVs_.get();
+         for (const auto& bdv_pair : bdvs) {
             auto notifPacket = std::make_shared<BDV_Notification_Packet>();
             notifPacket->bdvPtr_ = bdv_pair.second;
             notifPacket->notifPtr_ = notifPtr;
@@ -1532,13 +1531,9 @@ void Clients::bdvMaintenanceLoop()
          }
       } else {
          //grab bdv
-         auto iter = bdvMap->find(bdvID);
-         if (iter == bdvMap->end()) {
-            continue;
-         }
-
+         auto bdvPtr = BDVs_.get(bdvID);
          auto notifPacket = std::make_shared<BDV_Notification_Packet>();
-         notifPacket->bdvPtr_ = iter->second;
+         notifPacket->bdvPtr_ = bdvPtr;
          notifPacket->notifPtr_ = notifPtr;
          innerBDVNotifStack_.push_back(std::move(notifPacket));
       }
@@ -1650,12 +1645,11 @@ void Clients::exitRequestLoop()
 ///////////////////////////////////////////////////////////////////////////////
 void Clients::unregisterAllBDVs()
 {
-   auto bdvs = BDVs_.get();
-   BDVs_.clear();
-
-   for (auto& bdv : *bdvs) {
+   std::unique_lock<std::mutex> lock(BDVs_.mu);
+   for (auto& bdv : BDVs_.bdvs) {
       bdv.second->haltThreads();
    }
+   BDVs_.bdvs.clear();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1679,7 +1673,7 @@ bool Clients::registerBDV(const std::string& magicWord,
    newBDV->notifLambda_ = notiflbd;
 
    //add to BDVs map
-   BDVs_.insert(std::make_pair(bdvId, newBDV));
+   BDVs_.add(newBDV);
    LOGINFO << "registered bdv: " << bdvId;
    return true;
 }
@@ -1693,7 +1687,7 @@ void Clients::unregisterBDV(std::string bdvId)
 ///////////////////////////////////////////////////////////////////////////////
 void Clients::unregisterBDVThread()
 {
-   while(true) {
+   while (true) {
       //grab bdv id
       std::string bdvId;
       try {
@@ -1701,19 +1695,19 @@ void Clients::unregisterBDVThread()
       } catch(const Threading::StopBlockingLoop&) {
          break;
       }
-      
+
       //grab bdv ptr
       std::shared_ptr<BDV_Server_Object> bdvPtr;
       {
-         auto bdvMap = BDVs_.get();
-         auto bdvIter = bdvMap->find(bdvId);
-         if (bdvIter == bdvMap->end()) {
+         std::unique_lock<std::mutex> lock(BDVs_.mu);
+         auto bdvIter = BDVs_.bdvs.find(bdvId);
+         if (bdvIter == BDVs_.bdvs.end()) {
             return;
          }
 
          //copy shared_ptr and erase from bdv map
          bdvPtr = bdvIter->second;
-         BDVs_.erase(bdvId);
+         BDVs_.bdvs.erase(bdvId);
       }
 
       if (bdvPtr == nullptr) {
@@ -2013,10 +2007,10 @@ void Clients::broadcastThroughRPC()
                }
 
                if (!watcherEntry->extraRequestors_.empty()) {
-                  auto bdvMap = BDVs_.get();
+                  std::unique_lock<std::mutex> lock(BDVs_.mu);
                   for (auto& extraReq : watcherEntry->extraRequestors_) {
-                     auto bdvIter = bdvMap->find(extraReq.second);
-                     if (bdvIter == bdvMap->end()) {
+                     auto bdvIter = BDVs_.bdvs.find(extraReq.second);
+                     if (bdvIter == BDVs_.bdvs.end()) {
                         continue;
                      }
 
@@ -2148,16 +2142,15 @@ void Clients::p2pBroadcast(
       std::vector<ZeroConfBatchFallbackStruct> zcVec)->void
    {
       std::vector<RpcBroadcastPacket> rpcPackets;
-      auto bdvMap = BDVs_.get();
-      auto bdvPtr = bdvMap->at(bdvId);
+      auto bdvPtr = BDVs_.get(bdvId);
       for (const auto& fallbackStruct : zcVec) {
          std::map<std::string, std::shared_ptr<BDV_Server_Object>> extraRequestors;
          for (const auto& extraBdvId : fallbackStruct.extraRequestors_) {
-            auto iter = bdvMap->find(extraBdvId.second);
-            if (iter == bdvMap->end()) {
+            auto secondBdv = BDVs_.get(extraBdvId.second);
+            if (secondBdv == nullptr) {
                continue;
             }
-            extraRequestors.emplace(extraBdvId.first, iter->second);
+            extraRequestors.emplace(extraBdvId.first, secondBdv);
          }
 
          if (fallbackStruct.err_ != ArmoryErrorCodes::ZcBatch_Timeout) {
@@ -2242,4 +2235,37 @@ BinaryData UnitTest_Callback::getNotification()
    }
    catch (const Threading::StopBlockingLoop&) {}
    return {};
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// BDVMap
+//
+///////////////////////////////////////////////////////////////////////////////
+void BDVMap::add(std::shared_ptr<BDV_Server_Object> bdvObj)
+{
+   std::unique_lock<std::mutex> lock(mu);
+   bdvs.emplace(bdvObj->getID(), bdvObj);
+}
+
+void BDVMap::del(const std::string& bdvId)
+{
+   std::unique_lock<std::mutex> lock(mu);
+   bdvs.erase(bdvId);
+}
+
+std::shared_ptr<BDV_Server_Object> BDVMap::get(const std::string& bdvId) const
+{
+   std::unique_lock<std::mutex> lock(mu);
+   auto iter = bdvs.find(bdvId);
+   if (iter == bdvs.end()) {
+      return nullptr;
+   }
+   return iter->second;
+}
+
+std::map<std::string, std::shared_ptr<BDV_Server_Object>> BDVMap::get() const
+{
+   std::unique_lock<std::mutex> lock(mu);
+   return bdvs;
 }

@@ -115,13 +115,11 @@ struct ProgressData
 ////////////////////////////////////////////////////////////////////////////////
 class BlockDataManager
 {
-private:      
+private:
    LMDBBlockDatabase* iface_ = nullptr;
-   
    BlockFilePosition blkDataPosition_ = {0, 0};
-   
-   // Reorganization details
 
+   // Reorganization details
    class BDM_ScrAddrFilter;
    std::shared_ptr<BDM_ScrAddrFilter> scrAddrData_;
    std::shared_ptr<Blockchain> blockchain_;
@@ -134,7 +132,6 @@ private:
    std::exception_ptr exceptPtr_ = nullptr;
 
    unsigned checkTransactionCount_ = 0;
-   
    mutable std::shared_ptr<std::mutex> nodeStatusPollMutex_;
 
    Armory::Threading::Queue<std::shared_ptr<BDVNotificationHook>> oneTimeHooks_;

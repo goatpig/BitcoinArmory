@@ -163,12 +163,24 @@ public:
 };
 
 ///////////////////////////////////////////////////////////////////////////////
+struct BDVMap
+{
+   std::map<std::string, std::shared_ptr<BDV_Server_Object>> bdvs;
+   mutable std::mutex mu;
+
+   void add(std::shared_ptr<BDV_Server_Object>);
+   void del(const std::string&);
+   std::shared_ptr<BDV_Server_Object> get(const std::string&) const;
+   std::map<std::string, std::shared_ptr<BDV_Server_Object>> get(void) const;
+};
+
+////
 class Clients
 {
    friend class ZeroConfCallbacks_BDV;
 
 private:
-   Armory::Threading::TransactionalMap<std::string, std::shared_ptr<BDV_Server_Object>> BDVs_;
+   BDVMap BDVs_;
    mutable Armory::Threading::BlockingQueue<bool> gcCommands_;
    BlockDataManagerThread* bdmT_ = nullptr;
 
