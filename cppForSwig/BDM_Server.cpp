@@ -1123,13 +1123,34 @@ void BDV_Server_Object::processNotification(
 
       case BDV_ZC:
       {
-         auto notifList = notifs.initNotifs(1);
+         unsigned notifCount = 1;
+         auto payload = std::dynamic_pointer_cast<BDV_Notification_ZC>(notifPtr);
+         if (payload->packet_.purgePacket_ != nullptr &&
+            !payload->packet_.purgePacket_->invalidatedZcKeys_.empty()) {
+            notifCount = 2;
+         }
+
+         //new zc legder entries
+         auto notifList = notifs.initNotifs(notifCount);
          auto notif = notifList[0];
          auto zcNotif = notif.initZc();
-
-         auto payload =
-            std::dynamic_pointer_cast<BDV_Notification_ZC>(notifPtr);
          historyPageToCapn(payload->leVec_, zcNotif);
+
+         if (notifCount == 2) {
+            //invalidated zc hashes
+            const auto& invalidatedHashes =
+               payload->packet_.purgePacket_->invalidatedZcKeys_;
+            auto capnNotif = notifList[1];
+            auto invalNotif = capnNotif.initInvalidatedZc(
+               invalidatedHashes.size());
+
+            unsigned i=0;
+            for (const auto& zcHash : invalidatedHashes) {
+               invalNotif.set(i++, capnp::Data::Builder(
+                  (uint8_t*)zcHash.second.getPtr(), zcHash.second.getSize()
+               ));
+            }
+         }
          break;
       }
 
@@ -1892,13 +1913,12 @@ void Clients::broadcastThroughRPC()
 {
    auto notifyError = [this](
       const BinaryData& hash, std::shared_ptr<BDV_Server_Object> bdvPtr,
-      int errCode, const std::string& verbose,
-      const std::string& requestID)->void
+      int errCode, const std::string& verbose)->void
    {
       auto notifPacket = std::make_shared<BDV_Notification_Packet>();
       notifPacket->bdvPtr_ = bdvPtr;
       notifPacket->notifPtr_ = std::make_shared<BDV_Notification_Error>(
-         bdvPtr->getID(), requestID, errCode, hash, verbose);
+         bdvPtr->getID(), errCode, hash, verbose);
       innerBDVNotifStack_.push_back(std::move(notifPacket));
    };
 
@@ -1916,21 +1936,20 @@ void Clients::broadcastThroughRPC()
       std::vector<BinaryData> hashes = { tx.getThisHash() };
       auto zcPtr = bdmT_->bdm()->zeroConfCont();
 
-      //feed the watcher map with all relevant requestor/bdv ids
+      //feed the watcher map with all relevant bdv ids
       {
          //if this is a RPC fallback from a timed out P2P zc push
          //we may have extra requestors attached to this broadcast
-         std::map<std::string, std::string> extraRequestors;
-         for (auto& reqPair : packet.extraRequestors_) {
-            extraRequestors.emplace(reqPair.first, reqPair.second->getID());
+         std::set<std::string> extraRequestors;
+         for (const auto& exReq : packet.extraRequestors_) {
+            extraRequestors.emplace(exReq->getID());
          }
 
          if (!zcPtr->insertWatcherEntry(
             *hashes.begin(), packet.rawTx_, //tx
-            packet.bdvPtr_->getID(), packet.requestID_, //main requestor
+            packet.bdvPtr_->getID(),
             extraRequestors, //extra requestor, in case this is a fallback
-            false)) //do not process watcher node invs for this entry
-         {
+            false)) { //do not process watcher node invs for this entry
             //there is already a watcher entry for this tx, our request has been 
             //attached to it, skip the RPC broadcast
             continue;
@@ -1942,8 +1961,8 @@ void Clients::broadcastThroughRPC()
          0, //no timeout, this batch promise has to be set to progress
          nullptr, //no error callback
          true,
-         packet.bdvPtr_->getID(),
-         packet.requestID_);
+         packet.bdvPtr_->getID()
+      );
 
       //push to rpc
       std::string verbose;
@@ -1972,10 +1991,9 @@ void Clients::broadcastThroughRPC()
 
             //signal all extra requestors for an already-in-mempool error
             for (auto& requestor : packet.extraRequestors_) {
-               notifyError(*hashes.begin(), requestor.second,
-                  (int)ArmoryErrorCodes::ZcBroadcast_AlreadyInMempool, 
-                  "Extra requestor RPC broadcast error: Already in mempool",
-                  requestor.first);
+               notifyError(*hashes.begin(), requestor,
+                  (int)ArmoryErrorCodes::ZcBroadcast_AlreadyInMempool,
+                  "Extra requestor RPC broadcast error: Already in mempool");
             }
 
             LOGINFO << "rpc broadcast success";
@@ -1989,33 +2007,15 @@ void Clients::broadcastThroughRPC()
             //cleanup watcher map
             auto watcherEntry = zcPtr->eraseWatcherEntry(*hashes.begin());
             if (watcherEntry != nullptr) {
-               /*
-               The watcher entry may have received extra requestors we
-               didn't start with. We need to add those to our RPC packet
-               requestor map. Those carry full on BDV objects so we need
-               to curate the map first (for our own extra requestors), then
-               resolve the IDs to the BDV objects.
-               */
-               auto extraReqIter = watcherEntry->extraRequestors_.begin();
-               while (extraReqIter != watcherEntry->extraRequestors_.end()) {
-                  if (packet.extraRequestors_.find(extraReqIter->first) !=
-                     packet.extraRequestors_.end()) {
-                     watcherEntry->extraRequestors_.erase(extraReqIter++);
-                     continue;
-                  }
-                  ++extraReqIter;
-               }
-
                if (!watcherEntry->extraRequestors_.empty()) {
                   std::unique_lock<std::mutex> lock(BDVs_.mu);
                   for (auto& extraReq : watcherEntry->extraRequestors_) {
-                     auto bdvIter = BDVs_.bdvs.find(extraReq.second);
+                     auto bdvIter = BDVs_.bdvs.find(extraReq);
                      if (bdvIter == BDVs_.bdvs.end()) {
                         continue;
                      }
 
-                     packet.extraRequestors_.emplace(
-                        extraReq.first, bdvIter->second);
+                     packet.extraRequestors_.emplace(bdvIter->second);
                   }
                }
             }
@@ -2028,14 +2028,14 @@ void Clients::broadcastThroughRPC()
             std::stringstream errMsg;
             errMsg << "RPC broadcast error: " << verbose;
             notifyError(*hashes.begin(), packet.bdvPtr_,
-               result, errMsg.str(), packet.requestID_);
+               result, errMsg.str());
 
             //notify extra requestors of the error as well
             for (auto& requestor : packet.extraRequestors_) {
                std::stringstream reqMsg;
                reqMsg << "Extra requestor broadcast error: " << verbose;
-               notifyError(*hashes.begin(), requestor.second,
-                  result, reqMsg.str(), requestor.first);
+               notifyError(*hashes.begin(), requestor,
+                  result, reqMsg.str());
             }
       }
    }
@@ -2126,8 +2126,10 @@ void Clients::p2pBroadcast(
       if (!dbKey.empty()) {
          //notify the bdv of the error
          auto notifPacket = std::make_shared<BDV_Notification_Packet>();
+         notifPacket->bdvPtr_ = BDVs_.get(bdvId);
+
          notifPacket->notifPtr_ = std::make_shared<BDV_Notification_Error>(
-            bdvId, "",
+            bdvId,
             (int)ArmoryErrorCodes::ZcBroadcast_AlreadyInChain,
             hash, "RPC broadcast error: Already in chain"
          );
@@ -2144,13 +2146,13 @@ void Clients::p2pBroadcast(
       std::vector<RpcBroadcastPacket> rpcPackets;
       auto bdvPtr = BDVs_.get(bdvId);
       for (const auto& fallbackStruct : zcVec) {
-         std::map<std::string, std::shared_ptr<BDV_Server_Object>> extraRequestors;
+         std::set<std::shared_ptr<BDV_Server_Object>> extraRequestors;
          for (const auto& extraBdvId : fallbackStruct.extraRequestors_) {
-            auto secondBdv = BDVs_.get(extraBdvId.second);
+            auto secondBdv = BDVs_.get(extraBdvId);
             if (secondBdv == nullptr) {
                continue;
             }
-            extraRequestors.emplace(extraBdvId.first, secondBdv);
+            extraRequestors.emplace(secondBdv);
          }
 
          if (fallbackStruct.err_ != ArmoryErrorCodes::ZcBatch_Timeout) {
@@ -2158,18 +2160,18 @@ void Clients::p2pBroadcast(
             auto notifPacket = std::make_shared<BDV_Notification_Packet>();
             notifPacket->bdvPtr_ = bdvPtr;
             notifPacket->notifPtr_ = std::make_shared<BDV_Notification_Error>(
-               bdvId, "", (int)fallbackStruct.err_,
-               fallbackStruct.txHash_, ""
+               bdvId,
+               (int)fallbackStruct.err_, fallbackStruct.txHash_, std::string{}
             );
             innerBDVNotifStack_.push_back(std::move(notifPacket));
 
             //then signal extra requestors
             for (const auto& extraBDV : extraRequestors) {
                auto notifPacket = std::make_shared<BDV_Notification_Packet>();
-               notifPacket->bdvPtr_ = extraBDV.second;
+               notifPacket->bdvPtr_ = extraBDV;
                notifPacket->notifPtr_ = std::make_shared<BDV_Notification_Error>(
-                  extraBDV.second->getID(), extraBDV.first, (int)fallbackStruct.err_,
-                  fallbackStruct.txHash_, ""
+                  extraBDV->getID(),
+                  (int)fallbackStruct.err_, fallbackStruct.txHash_, std::string{}
                );
                innerBDVNotifStack_.push_back(std::move(notifPacket));
             }
@@ -2198,7 +2200,7 @@ void Clients::p2pBroadcast(
 
    //broadcast
    bdmT()->bdm()->zeroConfCont_->broadcastZC(
-      rawZCs, 5000, errorCallback, bdvId, {});
+      rawZCs, 5000, errorCallback, bdvId);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

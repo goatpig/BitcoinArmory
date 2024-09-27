@@ -37,9 +37,7 @@ struct RpcBroadcastPacket
 {
    std::shared_ptr<BDV_Server_Object> bdvPtr_;
    std::shared_ptr<BinaryData> rawTx_;
-   std::string requestID_;
-
-   std::map<std::string, std::shared_ptr<BDV_Server_Object>> extraRequestors_;
+   std::set<std::shared_ptr<BDV_Server_Object>> extraRequestors_;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

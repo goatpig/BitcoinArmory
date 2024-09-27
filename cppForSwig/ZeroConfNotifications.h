@@ -183,8 +183,8 @@ struct WatcherTxBody
    bool inved_ = false;
    bool ignoreWatcherNodeInv_ = false;
 
-   //<request id, bdv id>
-   std::map<std::string, std::string> extraRequestors_;
+   //<bdv id>
+   std::set<std::string> extraRequestors_;
 
    WatcherTxBody(std::shared_ptr<BinaryData> rawTx) :
       rawTxPtr_(rawTx)
@@ -228,10 +228,10 @@ public:
       std::shared_ptr<MempoolSnapshot>,
       std::shared_ptr<KeyAddrMap>,
       std::map<std::string, ParsedZCData>, //flaggedBDVs
-      const std::string&, const std::string&, //requestor & bdvid
+      const std::string&, //bdvid
       std::map<BinaryData, std::shared_ptr<WatcherTxBody>>&) = 0;
-   virtual void pushZcError(const std::string&, const BinaryData&, 
-      ArmoryErrorCodes, const std::string&, const std::string&) = 0;
+   virtual void pushZcError(const std::string&, const BinaryData&,
+      ArmoryErrorCodes, const std::string&) = 0;
 };
 
 class Clients;
@@ -249,16 +249,13 @@ private:
    struct ZcNotifRequest
    {
       const ZcNotifRequestType type_;
-
-      const std::string requestorId_;
       const std::string bdvId_;
 
       ////
       ZcNotifRequest(
-         ZcNotifRequestType type, 
-         const std::string& requestorId, 
+         ZcNotifRequestType type,
          const std::string& bdvId) :
-         type_(type), requestorId_(requestorId), bdvId_(bdvId)
+         type_(type), bdvId_(bdvId)
       {}
 
       virtual ~ZcNotifRequest(void) = 0;
@@ -272,14 +269,14 @@ private:
       std::map<BinaryData, std::shared_ptr<WatcherTxBody>> watcherMap_;
 
       ////
-      ZcNotifRequest_Success(      
-         const std::string& requestorId, const std::string& bdvId,
+      ZcNotifRequest_Success(
+         const std::string& bdvId,
          std::shared_ptr<MempoolSnapshot> ssPtr,
          std::shared_ptr<KeyAddrMap> newZcKeys,
          std::map<std::string, ParsedZCData> flaggedBDVs,
          std::map<BinaryData, std::shared_ptr<WatcherTxBody>>& watcherMap) :
-         ZcNotifRequest(ZcNotifRequestType::Success, requestorId, bdvId),
-         ssPtr_(ssPtr), newZcKeys_(newZcKeys), 
+         ZcNotifRequest(ZcNotifRequestType::Success, bdvId),
+         ssPtr_(ssPtr), newZcKeys_(newZcKeys),
          flaggedBDVs_(std::move(flaggedBDVs)),
          watcherMap_(std::move(watcherMap))
       {}
@@ -288,15 +285,15 @@ private:
    struct ZcNotifRequest_Error : public ZcNotifRequest
    {
       const BinaryData hash_;
-      ArmoryErrorCodes errCode_; 
+      ArmoryErrorCodes errCode_;
       const std::string verbose_;
 
       ////
       ZcNotifRequest_Error(
-         const std::string& requestorId, const std::string& bdvId,
+         const std::string& bdvId,
          const BinaryData& hash, ArmoryErrorCodes errCode,
          const std::string& verbose) :
-         ZcNotifRequest(ZcNotifRequestType::Error, requestorId, bdvId),
+         ZcNotifRequest(ZcNotifRequestType::Error, bdvId),
          hash_(hash), errCode_(errCode), verbose_(verbose)
       {}
    };
@@ -316,15 +313,14 @@ public:
    ~ZeroConfCallbacks_BDV(void);
 
    std::set<std::string> hasScrAddr(const BinaryDataRef&) const override;
-   void pushZcError(const std::string&, const BinaryData&, 
-      ArmoryErrorCodes, const std::string&, const std::string&) override;
+   void pushZcError(const std::string&, const BinaryData&,
+      ArmoryErrorCodes, const std::string&) override;
 
-   //flagged bdvs, snapshot, requestorID|bdvID, watcherMap
    void pushZcNotification(
       std::shared_ptr<MempoolSnapshot>,
       std::shared_ptr<KeyAddrMap>,
       std::map<std::string, ParsedZCData>,
-      const std::string&, const std::string&,
+      const std::string&,
       std::map<BinaryData, std::shared_ptr<WatcherTxBody>>&) override;
 };
 

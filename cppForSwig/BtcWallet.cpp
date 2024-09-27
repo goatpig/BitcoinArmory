@@ -338,31 +338,29 @@ vector<UTXO> BtcWallet::getRBFTxOutList()
 
    {
       auto addrMap = scrAddrMap_.get();
-      for (auto& scrAddr : *addrMap)
-      {
-         auto&& zcTxioMap = bdvPtr_->getRBFTxIOsforScrAddr(
+      for (auto& scrAddr : *addrMap) {
+         auto zcTxioMap = bdvPtr_->getRBFTxIOsforScrAddr(
             scrAddr.second->getScrAddr());
 
-         for (auto& zcTxio : zcTxioMap)
-         {
-            if (zcTxio.second->hasTxOutZC())
+         for (auto& zcTxio : zcTxioMap) {
+            if (zcTxio.second->hasTxOutZC()) {
                zcKeys.insert(zcTxio.second->getDBKeyOfOutput());
-            else
+            } else {
                txoutKeys.insert(zcTxio.second->getDBKeyOfOutput());
+            }
          }
       }
    }
 
-   auto&& utxoVec = bdvPtr_->getZcUTXOsForKeys(zcKeys);
+   auto utxoVec = bdvPtr_->getZcUTXOsForKeys(zcKeys);
 
    BinaryDataRef prevTxKey;
    BinaryDataRef prevTxHash;
-   for (auto& txoutkey : txoutKeys)
-   {
-      auto&& stxo = bdvPtr_->getStoredTxOut(txoutkey);
+   for (auto& txoutkey : txoutKeys) {
+      auto stxo = bdvPtr_->getStoredTxOut(txoutkey);
       UTXO utxo(
-         stxo.getValue(), stxo.getHeight(), 
-         stxo.txIndex_, stxo.txOutIndex_, 
+         stxo.getValue(), stxo.getHeight(),
+         stxo.txIndex_, stxo.txOutIndex_,
          stxo.parentHash_, stxo.getScriptRef());
 
       utxoVec.emplace_back(move(utxo));

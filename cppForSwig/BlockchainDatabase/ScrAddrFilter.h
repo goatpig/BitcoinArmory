@@ -88,9 +88,9 @@ public:
 
    const BinaryData& getHash(void) const
    {
-      if (addrHash_.getSize() == 0)
+      if (addrHash_.empty()) {
          addrHash_ = std::move(BtcUtils::getHash256(scrAddr_));
-
+      }
       return addrHash_;
    }
 

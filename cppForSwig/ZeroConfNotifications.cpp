@@ -62,13 +62,13 @@ void ZeroConfCallbacks_BDV::pushZcNotification(
    shared_ptr<MempoolSnapshot> ss,
    shared_ptr<KeyAddrMap> newZcKeys,
    map<string, ParsedZCData> flaggedBDVs,
-   const string& requestorId, const string& bdvId,
+   const string& bdvId,
    map<BinaryData, shared_ptr<WatcherTxBody>>& watcherMap)
 {
    auto requestPtr = make_shared<
       ZeroConfCallbacks_BDV::ZcNotifRequest_Success>(
-      requestorId, bdvId,
-      ss, newZcKeys, flaggedBDVs, 
+      bdvId,
+      ss, newZcKeys, flaggedBDVs,
       watcherMap);
 
    requestQueue_.push_back(move(requestPtr));
@@ -76,21 +76,18 @@ void ZeroConfCallbacks_BDV::pushZcNotification(
 
 ///////////////////////////////////////////////////////////////////////////////
 void ZeroConfCallbacks_BDV::pushZcError(
-   const string& bdvID, const BinaryData& hash, 
-   ArmoryErrorCodes errCode, const string& verbose, 
-   const string& requestID)
+   const string& bdvID, const BinaryData& hash,
+   ArmoryErrorCodes errCode, const string& verbose)
 {
    auto requestPtr = make_shared<ZeroConfCallbacks_BDV::ZcNotifRequest_Error>(
-      requestID, bdvID, hash, errCode, verbose);
-
+      bdvID, hash, errCode, verbose);
    requestQueue_.push_back(move(requestPtr));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 void ZeroConfCallbacks_BDV::processNotifRequests()
 {
-   while (true)
-   {
+   while (true) {
       std::shared_ptr<ZeroConfCallbacks_BDV::ZcNotifRequest> notifReqPtr;
       try {
          notifReqPtr = requestQueue_.pop_front();
@@ -107,23 +104,6 @@ void ZeroConfCallbacks_BDV::processNotifRequests()
             if (reqPtr == nullptr) {
                LOGWARN << "zc notification request type mismatch";
                break;
-            }
-
-            //map <bdvID, <txHash, requestID>>
-            map<string, map<BinaryData, string>> idsToHash;
-
-            //prepare requestor id map per bdv
-            if (!reqPtr->requestorId_.empty()) {
-               //only populate this map if we have a primary requestor. there cannot
-               //be secondary requestors without a primary one.
-               for (auto& watcher : reqPtr->watcherMap_) {
-                  //add secondary requestors if any, we only allow one request id for a
-                  //given tx per bdv, this is filtered at broadcast time
-                  for (auto& requestor : watcher.second->extraRequestors_) {
-                     auto& hashMap = idsToHash[requestor.second];
-                     hashMap.emplace(watcher.first, requestor.first);
-                  }
-               }
             }
 
             //build notifications for each BDV
@@ -151,21 +131,15 @@ void ZeroConfCallbacks_BDV::processNotifRequests()
                }
 
                //set invalidated keys
-               if (bdvObj.second.invalidatedKeys_.size() != 0) {
-                  notificationPacket.purgePacket_ = make_shared<ZcPurgePacket>();
+               if (!bdvObj.second.invalidatedKeys_.empty()) {
+                  notificationPacket.purgePacket_ = std::make_shared<ZcPurgePacket>();
                   notificationPacket.purgePacket_->invalidatedZcKeys_ =
-                     move(bdvObj.second.invalidatedKeys_);
-               }
-
-               //set requestor map
-               auto requestorsIter = idsToHash.find(bdvObj.first);
-               if (requestorsIter != idsToHash.end()) {
-                  notificationPacket.requestorMap_ = move(requestorsIter->second);
+                     std::move(bdvObj.second.invalidatedKeys_);
                }
 
                //set the primary requestor if this is the caller bdv
                if (bdvObj.first == reqPtr->bdvId_) {
-                  notificationPacket.primaryRequestor_ = reqPtr->requestorId_;
+                  notificationPacket.primaryRequestor_ = reqPtr->bdvId_;
                }
 
                //set new zc keys
@@ -190,13 +164,12 @@ void ZeroConfCallbacks_BDV::processNotifRequests()
                   continue;
                }
 
-               //tx was added to mempool, report already-in-mempool error to 
+               //tx was added to mempool, report already-in-mempool error to
                //duplicate requestors
                for (auto& extra : watcherObj.second->extraRequestors_) {
-                  pushZcError(extra.second, watcherObj.first, 
-                     ArmoryErrorCodes::ZcBroadcast_AlreadyInMempool, 
-                     "Extra requestor broadcast error: Already in mempool",
-                     extra.first);
+                  pushZcError(extra, watcherObj.first,
+                     ArmoryErrorCodes::ZcBroadcast_AlreadyInMempool,
+                     "Extra requestor broadcast error: Already in mempool");
                }
             }
 
@@ -221,7 +194,7 @@ void ZeroConfCallbacks_BDV::processNotifRequests()
             auto notifPacket = make_shared<BDV_Notification_Packet>();
             notifPacket->bdvPtr_ = bdvPtr;
             notifPacket->notifPtr_ = make_shared<BDV_Notification_Error>(
-               reqPtr->bdvId_, reqPtr->requestorId_,
+               reqPtr->bdvId_,
                (int)reqPtr->errCode_, reqPtr->hash_, reqPtr->verbose_);
             clientsPtr_->innerBDVNotifStack_.push_back(move(notifPacket));
 

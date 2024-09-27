@@ -237,11 +237,9 @@ namespace DBTestUtils
       {
          {
             auto iter = actionDeque_.begin();
-            while (iter != actionDeque_.end())
-            {
-               if ((*iter)->action_ == actionType)
-               {
-                  auto result = move(*iter);
+            while (iter != actionDeque_.end()) {
+               if ((*iter)->action_ == actionType) {
+                  auto result = std::move(*iter);
                   actionDeque_.erase(iter);
                   return result;
                }
@@ -250,13 +248,13 @@ namespace DBTestUtils
             }
          }
 
-         while (true)
-         {
-            auto&& action = actionStack_.pop_front();
-            if (action->action_ == actionType)
-               return move(action);
+         while (true) {
+            auto action = std::move(actionStack_.pop_front());
+            if (action->action_ == actionType) {
+               return action;
+            }
 
-            actionDeque_.push_back(move(action));
+            actionDeque_.push_back(std::move(action));
          }
       }
 
@@ -266,27 +264,20 @@ namespace DBTestUtils
          notif->action_ = bdmNotif.action_;
          notif->requestID_ = bdmNotif.requestID_;
 
-         if (bdmNotif.action_ == BDMAction_Refresh)
-         {
+         if (bdmNotif.action_ == BDMAction_Refresh) {
             notif->idVec_ = bdmNotif.ids_;
-         }
-         else if (bdmNotif.action_ == BDMAction_ZC)
-         {
-            for (auto& le : bdmNotif.ledgers_)
-            {
+         } else if (bdmNotif.action_ == BDMAction_ZC) {
+            for (auto& le : bdmNotif.ledgers_) {
                notif->idVec_.push_back(le->getTxHash());
 
                auto addrVec = le->getScrAddrList();
-               for (auto& addrRef : addrVec)
+               for (auto& addrRef : addrVec) {
                   notif->addrSet_.insert(addrRef);
+               }
             }
-         }
-         else if (bdmNotif.action_ == BDMAction_NewBlock)
-         {
+         } else if (bdmNotif.action_ == BDMAction_NewBlock) {
             notif->reorgHeight_ = bdmNotif.branchHeight_;
-         }
-         else if (bdmNotif.action_ == BDMAction_BDV_Error)
-         {
+         } else if (bdmNotif.action_ == BDMAction_BDV_Error) {
             notif->error_ = bdmNotif.error_;
          }
 
