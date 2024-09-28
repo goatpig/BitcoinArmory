@@ -1261,59 +1261,7 @@ public:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   static std::vector<BinaryDataRef> splitPushOnlyScriptRefs(BinaryDataRef script)
-   {
-      std::list<BinaryDataRef> opList;
-
-      BinaryRefReader brr(script);
-      uint8_t nextOp;
-      
-      while(brr.getSizeRemaining() > 0)
-      {
-         nextOp = brr.get_uint8_t();
-         if(nextOp == 0)
-         {
-            // Implicit pushdata
-            brr.rewind(1);
-            opList.push_back(brr.get_BinaryDataRef(1));
-         }
-         else if(nextOp < 76)
-         {
-            // Implicit pushdata
-            opList.push_back(brr.get_BinaryDataRef(nextOp));
-         }
-         else if(nextOp == 76)
-         {
-            uint8_t nb = brr.get_uint8_t();
-            opList.push_back( brr.get_BinaryDataRef(nb));
-         }
-         else if(nextOp == 77)
-         {
-            uint16_t nb = brr.get_uint16_t();
-            opList.push_back( brr.get_BinaryDataRef(nb));
-         }
-         else if(nextOp == 78)
-         {
-            uint16_t nb = brr.get_uint32_t();
-            opList.push_back( brr.get_BinaryDataRef(nb));
-         }
-         else if(nextOp > 78 && nextOp < 97 && nextOp !=80)
-         {
-            brr.rewind(1);
-            opList.push_back( brr.get_BinaryDataRef(1));
-         }
-         else
-            return std::vector<BinaryDataRef>(0);
-      }
-
-      std::vector<BinaryDataRef> vectOut(opList.size());
-      std::list<BinaryDataRef>::iterator iter;
-      uint32_t i=0;
-      for(iter = opList.begin(); iter != opList.end(); iter++,i++)
-         vectOut[i] = *iter;
-      return vectOut;
-   }
-
+   static std::vector<BinaryDataRef> splitPushOnlyScriptRefs(BinaryDataRef script);
 
    /////////////////////////////////////////////////////////////////////////////
    static std::vector<BinaryData> splitPushOnlyScript(BinaryData const & script)

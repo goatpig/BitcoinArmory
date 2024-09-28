@@ -1482,8 +1482,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_1of3)
       signer2.setFlags(SCRIPT_VERIFY_SEGWIT);
 
       //get utxo list for spend value
-      auto&& unspentVec =
-         ms_wlt->getSpendableTxOutListZC();
+      auto unspentVec = ms_wlt->getSpendableTxOutListZC();
 
       //create feed from asset wallet
       auto feed = make_shared<Armory::Signing::ResolverFeed_AssetWalletSingle_ForMultisig>(wltPtr);
@@ -1533,9 +1532,9 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_1of3)
 
    //call lambda with each wallet
    BinaryData unsignedHash1, unsignedHash2, unsignedHash3;
-   auto&& tx1 = signPerWallet(assetWlt_1, unsignedHash1);
-   auto&& tx2 = signPerWallet(assetWlt_2, unsignedHash2);
-   auto&& tx3 = signPerWallet(assetWlt_3, unsignedHash3);
+   auto tx1 = signPerWallet(assetWlt_1, unsignedHash1);
+   auto tx2 = signPerWallet(assetWlt_2, unsignedHash2);
+   auto tx3 = signPerWallet(assetWlt_3, unsignedHash3);
 
    {
       Tx tx_1(tx1);

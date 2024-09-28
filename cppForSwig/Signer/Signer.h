@@ -86,6 +86,13 @@ namespace Armory
       };
 
       //////////////////////////////////////////////////////////////////////////
+      struct KeyAndSig
+      {
+         BinaryData        pubkey;
+         SecureBinaryData  sig;
+      };
+
+      ////////
       class ScriptSpender
       {
          friend class Signer;
@@ -263,7 +270,7 @@ namespace Armory
 
          const Tx& getSupportingTx(void) const;
          bool haveSupportingTx(void) const;
-         std::map<unsigned, BinaryData> getRelevantPubkeys() const;
+         std::map<unsigned, KeyAndSig> getRelevantPubkeys(void) const;
 
          std::map<BinaryData, BIP32_AssetPath>& getBip32Paths(void)
          { return bip32Paths_; }
