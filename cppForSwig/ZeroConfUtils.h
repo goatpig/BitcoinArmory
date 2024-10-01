@@ -296,7 +296,7 @@ public:
 
 ////////////////////////////////////////////////////////////////////////////////
 void finalizeParsedTxResolution(
-   std::shared_ptr<ParsedTx>, 
+   std::shared_ptr<ParsedTx>,
    LMDBBlockDatabase*, const std::set<BinaryData>&,
    std::shared_ptr<MempoolSnapshot>);
 

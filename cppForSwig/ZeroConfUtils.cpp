@@ -19,17 +19,11 @@ void preprocessTx(ParsedTx& tx, LMDBBlockDatabase* db)
 {
    /*
    Resolves mined outpoints and sets reference fields.
-   
-   exhaustiveSearch affects the txhash resolution process. This argument has
-   no effect in supernode.
-    - false: check narrow set of hashes from known wallet's transaction
-    - true: resolve hash through txhint db
    */
-   auto& txHash = tx.getTxHash();
-   auto&& txref = db->getTxRef(txHash);
 
-   if (txref.isInitialized())
-   {
+   const auto& txHash = tx.getTxHash();
+   auto txref = db->getTxRef(txHash);
+   if (txref.isInitialized()) {
       tx.state_ = ParsedTxStatus::Mined;
       return;
    }
@@ -40,55 +34,53 @@ void preprocessTx(ParsedTx& tx, LMDBBlockDatabase* db)
    auto nTxIn = tx.tx_.getNumTxIn();
    auto nTxOut = tx.tx_.getNumTxOut();
 
-   //try to resolve as many outpoints as we can. unresolved outpoints are 
+   //try to resolve as many outpoints as we can. unresolved outpoints are
    //either invalid or (most likely) children of unconfirmed transactions
-   if (nTxIn != tx.inputs_.size())
-   {
+   if (nTxIn != tx.inputs_.size()) {
       tx.inputs_.clear();
       tx.inputs_.resize(nTxIn);
    }
 
-   if (nTxOut != tx.outputs_.size())
-   {
+   if (nTxOut != tx.outputs_.size()) {
       tx.outputs_.clear();
       tx.outputs_.resize(nTxOut);
    }
 
-   for (uint32_t iin = 0; iin < nTxIn; iin++)
-   {
+   for (uint32_t iin = 0; iin < nTxIn; iin++) {
       auto& txIn = tx.inputs_[iin];
-      if (txIn.isResolved())
+      if (txIn.isResolved()) {
          continue;
+      }
 
       auto& opRef = txIn.opRef_;
-
-      if (!opRef.isInitialized())
-      {
+      if (!opRef.isInitialized()) {
          auto offset = tx.tx_.getTxInOffset(iin);
-         if (offset > len)
-            throw runtime_error("invalid txin offset");
+         if (offset > len) {
+            throw std::runtime_error("invalid txin offset");
+         }
          BinaryDataRef inputDataRef(txStartPtr + offset, len - offset);
          opRef.unserialize(inputDataRef);
       }
 
-      if (!opRef.isResolved())
-      {
+      if (!opRef.isResolved()) {
          //resolve outpoint to dbkey
          txIn.opRef_.resolveDbKey(db);
-         if (!opRef.isResolved())
+         if (!opRef.isResolved()) {
             continue;
+         }
       }
 
       //grab txout
       StoredTxOut stxOut;
-      if (!db->getStoredTxOut(stxOut, opRef.getDbKey()))
+      if (!db->getStoredTxOut(stxOut, opRef.getDbKey())) {
          continue;
+      }
 
-      if (DBSettings::getDbType() == ARMORY_DB_SUPER)
+      if (DBSettings::getDbType() == ARMORY_DB_SUPER) {
          opRef.getDbKey() = stxOut.getDBKey(false);
+      }
 
-      if (stxOut.isSpent())
-      {
+      if (stxOut.isSpent()) {
          tx.state_ = ParsedTxStatus::Invalid;
          return;
       }
@@ -98,11 +90,11 @@ void preprocessTx(ParsedTx& tx, LMDBBlockDatabase* db)
       txIn.value_ = stxOut.getValue();
    }
 
-   for (uint32_t iout = 0; iout < nTxOut; iout++)
-   {
+   for (uint32_t iout = 0; iout < nTxOut; iout++) {
       auto& txOut = tx.outputs_[iout];
-      if (txOut.isInitialized())
+      if (txOut.isInitialized()) {
          continue;
+      }
 
       auto offset = tx.tx_.getTxOutOffset(iout);
       auto len = tx.tx_.getTxOutOffset(iout + 1) - offset;
@@ -122,58 +114,59 @@ void preprocessTx(ParsedTx& tx, LMDBBlockDatabase* db)
 
 
    bool txInResolved = true;
-   for (auto& txin : tx.inputs_)
-   {
-      if (txin.isResolved())
+   for (auto& txin : tx.inputs_) {
+      if (txin.isResolved()) {
          continue;
-
+      }
       txInResolved = false;
       break;
    }
 
-   if (!txInResolved)
+   if (!txInResolved) {
       tx.state_ = ParsedTxStatus::Unresolved;
-   else
+   } else {
       tx.state_ = ParsedTxStatus::Resolved;
+   }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 void preprocessZcMap(
-   const map<BinaryData, shared_ptr<ParsedTx>>& zcMap,
+   const std::map<BinaryData, std::shared_ptr<ParsedTx>>& zcMap,
    LMDBBlockDatabase* db)
 {
    //run threads to preprocess the zcMap
-   auto counter = make_shared<atomic<unsigned>>();
-   counter->store(0, memory_order_relaxed);
+   auto counter = std::make_shared<std::atomic<unsigned>>();
+   counter->store(0, std::memory_order_relaxed);
 
-   vector<shared_ptr<ParsedTx>> txVec;
+   std::vector<std::shared_ptr<ParsedTx>> txVec;
    txVec.reserve(zcMap.size());
 
-   for (const auto& txPair : zcMap)
+   for (const auto& txPair : zcMap) {
       txVec.push_back(txPair.second);
+   }
 
-   auto parserLdb = [db, &txVec, counter](void)->void
+   auto parserLdb = [db, &txVec, counter]()->void
    {
-      while (1)
-      {
-         auto id = counter->fetch_add(1, memory_order_relaxed);
-         if (id >= txVec.size())
+      while (true) {
+         auto id = counter->fetch_add(1, std::memory_order_relaxed);
+         if (id >= txVec.size()) {
             return;
-
+         }
          auto txIter = txVec.begin() + id;
          preprocessTx(*(*txIter), db);
       }
    };
 
-   vector<thread> parserThreads;
-   for (unsigned i = 1; i < thread::hardware_concurrency(); i++)
+   std::vector<std::thread> parserThreads;
+   for (unsigned i = 1; i < thread::hardware_concurrency(); i++) {
       parserThreads.push_back(thread(parserLdb));
+   }
    parserLdb();
 
-   for (auto& thr : parserThreads)
-   {
-      if (thr.joinable())
+   for (auto& thr : parserThreads) {
+      if (thr.joinable()) {
          thr.join();
+      }
    }
 }
 
@@ -424,29 +417,29 @@ FilteredZeroConfData filterParsedTx(
 ////////////////////////////////////////////////////////////////////////////////
 bool FilteredZeroConfData::isValid() const
 {
-   if (txPtr_ == nullptr)
+   if (txPtr_ == nullptr) {
       return false;
+   }
 
    switch (DBSettings::getDbType())
    {
-   case ARMORY_DB_SUPER:
-      return txPtr_->status() == ParsedTxStatus::Resolved && !isEmpty();
+      case ARMORY_DB_SUPER:
+         return txPtr_->status() == ParsedTxStatus::Resolved && !isEmpty();
 
-   case ARMORY_DB_FULL:
-   case ARMORY_DB_BARE:
-   {
-      if (txPtr_->status() == ParsedTxStatus::Invalid ||
-         txPtr_->status() == ParsedTxStatus::Mined ||
-         txPtr_->status() == ParsedTxStatus::Unresolved)
+      case ARMORY_DB_FULL:
+      case ARMORY_DB_BARE:
       {
-         return false;
+         if (txPtr_->status() == ParsedTxStatus::Invalid ||
+            txPtr_->status() == ParsedTxStatus::Mined ||
+            txPtr_->status() == ParsedTxStatus::Unresolved) {
+            return false;
+         }
+
+         return !isEmpty();
       }
 
-      return !isEmpty();
-   }
-
-   default:
-      return false;
+      default:
+         return false;
    }
 }
 
@@ -476,13 +469,14 @@ void OutPointRef::unserialize(BinaryDataRef bdr)
 ////////////////////////////////////////////////////////////////////////////////
 void OutPointRef::resolveDbKey(LMDBBlockDatabase *dbPtr)
 {
-   if (txHash_.getSize() == 0 || txOutIndex_ == UINT16_MAX)
-      throw runtime_error("empty outpoint hash");
+   if (txHash_.empty() || txOutIndex_ == UINT16_MAX) {
+      throw std::runtime_error("empty outpoint hash");
+   }
 
    auto key = dbPtr->getDBKeyForHash(txHash_);
-   if (key.getSize() != 6)
+   if (key.getSize() != 6) {
       return;
-
+   }
    setDbKey(key);
 }
 
@@ -499,9 +493,9 @@ void OutPointRef::setDbKey(const BinaryData& key)
 ////////////////////////////////////////////////////////////////////////////////
 BinaryDataRef OutPointRef::getDbTxKeyRef() const
 {
-   if (!isResolved())
-      throw runtime_error("unresolved outpoint key");
-
+   if (!isResolved()) {
+      throw std::runtime_error("unresolved outpoint key");
+   }
    return dbKey_.getSliceRef(0, 6);
 }
 
@@ -1357,25 +1351,22 @@ void MempoolSnapshot::commitNewZCs()
    //figure out depth and size of each mempool obj, merge if necessary
    if (data_->txioMap_.empty() &&
       data_->scrAddrMap_.empty() &&
-      data_->txioMap_.empty())
-   {
+      data_->txioMap_.empty()) {
       return;
    }
 
-   auto newData = make_shared<MempoolData>();
+   auto newData = std::make_shared<MempoolData>();
    newData->parent_ = data_;
 
-   if (newData->getParentCount() > depth_)
-   {
+   if (newData->getParentCount() > depth_) {
       auto toMerge = newData->parent_;
 
       //find the first parent above the size threshold, use
       //first parent otherwise
       auto objPtr = toMerge;
-      while (objPtr != nullptr)
-      {
-         if (objPtr->txioMap_.size() > threshold_ && objPtr->parent_ != nullptr)
-         {
+      while (objPtr != nullptr) {
+         if (objPtr->txioMap_.size() > threshold_ &&
+            objPtr->parent_ != nullptr) {
             toMerge = objPtr;
             break;
          }
@@ -1384,16 +1375,13 @@ void MempoolSnapshot::commitNewZCs()
       }
 
       //merge this data with its parent
-      if (toMerge != nullptr)
-      {
+      if (toMerge != nullptr) {
          auto mergedData = MempoolData::mergeWithParent(toMerge);
 
          //replace parent with the newly merged data
          auto objPtr = newData;
-         while (objPtr != nullptr)
-         {
-            if (objPtr->parent_ == toMerge)
-            {
+         while (objPtr != nullptr) {
+            if (objPtr->parent_ == toMerge) {
                objPtr->parent_ = mergedData;
                break;
             }
@@ -1405,5 +1393,5 @@ void MempoolSnapshot::commitNewZCs()
       }
    }
 
-   data_ = move(newData);
+   data_ = std::move(newData);
 }
