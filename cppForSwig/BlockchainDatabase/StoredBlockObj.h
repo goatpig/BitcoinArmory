@@ -131,9 +131,8 @@ public:
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-class StoredTxOut
+struct StoredTxOut
 {
-public:
    StoredTxOut(void)
       : txVersion_(UINT32_MAX),
       dataCopy_(0),
@@ -195,6 +194,7 @@ public:
 
    void pprintOneLine(uint32_t indent = 3);
 
+   ////
    uint32_t          txVersion_;
    BinaryData        dataCopy_;
    uint32_t          blockHeight_;
@@ -205,9 +205,8 @@ public:
    TXOUT_SPENTNESS   spentness_;
    bool              isCoinbase_;
    BinaryData        spentByTxInKey_;
-   mutable BinaryData hgtX_;
-   
 
+   mutable BinaryData hgtX_;
    mutable BinaryData scrAddr_;
 
    uint32_t          unserArmVer_;

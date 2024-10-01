@@ -14,24 +14,18 @@
 #include "../Wallets/WalletIdTypes.h"
 #include "../Wallets/PassphraseLambda.h"
 
-namespace BridgeProto
-{
-   class Payload;
-   class CallbackReply;
-};
-
 namespace Armory
 {
    namespace Bridge
    {
-      using CallbackHandler = std::function<bool(const BridgeProto::CallbackReply&)>;
+      using CallbackHandler = std::function<bool(bool, SecureBinaryData&)>;
  
       //////////////////////////////////////////////////////////////////////////
       struct ServerPushWrapper
       {
          const uint32_t referenceId;
          CallbackHandler handler = nullptr;
-         std::unique_ptr<BridgeProto::Payload> payload;
+         BinaryData payload;
       };
 
       //////////////////////////////////////////////////////////////////////////

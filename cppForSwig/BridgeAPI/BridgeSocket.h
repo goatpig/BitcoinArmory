@@ -16,14 +16,6 @@
 class BIP151Connection;
 class AuthorizedPeers;
 
-namespace google
-{
-   namespace protobuf
-   {
-      class Message;
-   };
-};
-
 namespace Armory
 {
    namespace Wallets
@@ -38,7 +30,7 @@ namespace Armory
       /////////////////////////////////////////////////////////////////////////////
       struct WritePayload_Bridge : public Socket_WritePayload
       {
-         std::unique_ptr<google::protobuf::Message> message_;
+         BinaryData data;
 
          void serialize(std::vector<uint8_t>&) override;
          std::string serializeToText(void) override

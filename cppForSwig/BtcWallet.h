@@ -98,6 +98,7 @@ public:
    void setWalletID(const std::string &wltId) { walletID_ = wltId; }
    const std::string& walletID() const { return walletID_; }
 
+   const HistoryPager& historyPager(void) const;
    std::shared_ptr<const std::map<BinaryData, LedgerEntry>> getHistoryPage(uint32_t);
    std::vector<LedgerEntry> getHistoryPageAsVector(uint32_t);
    size_t getHistoryPageCount(void) const { return histPages_.getPageCount(); }
@@ -110,7 +111,7 @@ public:
       doneRegisteringCallback_ = lbd;
    }
 
-   void setConfTarget(unsigned, const std::string&);
+   void setConfTarget(unsigned);
 
    std::shared_ptr<const std::map<BinaryDataRef, std::shared_ptr<ScrAddrObj>>>
       getAddrMap(void) const { return scrAddrMap_.get(); }

@@ -188,7 +188,7 @@ public:
    ScrAddrObj(LMDBBlockDatabase *db, Blockchain *bc, ZeroConfContainer *zc,
       BinaryDataRef addr);
 
-   ScrAddrObj(const ScrAddrObj& rhs) : 
+   ScrAddrObj(const ScrAddrObj& rhs) :
       utxos_(nullptr)
    {
       *this = rhs;

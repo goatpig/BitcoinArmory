@@ -315,9 +315,20 @@ class FeeSelectionDialog(ArmoryDialog):
    #############################################################################
    def getFeeByteFromNode(self, blocksToConfirm, strategy):
       try:
-         feeEstimateResult = TheBridge.service.estimateFee(
-            blocksToConfirm, strategy)
-         return feeEstimateResult.fee_byte * 100000, feeEstimateResult.smart_fee
+         feeEstimateResult = TheBridge.service.getFeeSchedule(strategy)
+         if not feeEstimateResult:
+            raise Exception("no available fee schedule")
+
+         #find target closets to our desired conf count
+         feeTarget = feeEstimateResult[0]
+         for target in feeEstimateResult:
+            if target.target == blocksToConfirm:
+               feeTarget = target
+               break
+            elif target.target > blocksToConfirm:
+               break
+            feeTarget = target
+         return feeTarget.feeByte * 100000, feeTarget.smartFee
       except Exception as e:
          LOGWARN(f"[getFeeByteFromNode] failed with error: {str(e)}")
          self.validAutoFee = False

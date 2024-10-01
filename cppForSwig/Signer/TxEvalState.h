@@ -14,14 +14,14 @@
 
 namespace Armory
 {
-   namespace Signer
+   namespace Signing
    {
-      enum PubKeyType
+      enum class PubKeyType : int
       {
-         Type_Compressed,
-         Type_Uncompressed,
-         Type_Mixed,
-         Type_Unkonwn
+         Compressed = 1,
+         Uncompressed,
+         Mixed,
+         Unkonwn
       };
 
       //////////////////////////////////////////////////////////////////////////
@@ -43,7 +43,7 @@ namespace Armory
 
          std::map<BinaryData, bool> pubKeyState_;
 
-         mutable PubKeyType keyType_ = Type_Unkonwn;
+         mutable PubKeyType keyType_ = PubKeyType::Unkonwn;
 
       private:
          PubKeyType getType(void) const;

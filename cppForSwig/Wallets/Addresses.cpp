@@ -10,7 +10,7 @@
 
 using namespace std;
 using namespace Armory::Config;
-using namespace Armory::Signer;
+using namespace Armory::Signing;
 using namespace Armory::Assets;
 
 ////////////////////////////////////////////////////////////////////////////////

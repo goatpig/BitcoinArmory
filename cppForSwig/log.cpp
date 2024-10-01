@@ -11,6 +11,14 @@
 std::atomic<Log*> Log::theOneLog_ = { nullptr };
 std::mutex Log::mu_;
 
+void DualStream::enableStdOut(bool val)
+{
+   noStdout_ = !val;
+
+   //uncomment to never disable stdout
+   //noStdout_ = false;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 LogStream& DualStream::operator<<(const char * str)
 { 

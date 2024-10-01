@@ -111,9 +111,8 @@ class CoinControlUtxoItem():
          pass
 
    def checkDown(self, val):
-      self.state = val
-
-      if val == QtCore.Qt.Checked:
+      self.state = QtCore.Qt.CheckState(val)
+      if self.state == QtCore.Qt.Checked:
          self.utxo.setChecked(True)
       else:
          self.utxo.setChecked(False)
@@ -588,7 +587,6 @@ class TreeStructure_CoinControl():
 
          for addr in addrDict:
             utxoList = addrDict[addr]
-            
             for utxo in utxoList:
                utxo.setChecked(True)
 
@@ -596,10 +594,10 @@ class TreeStructure_CoinControl():
       addrTypes = self.wallet.getAddressTypes()
 
       self.treeData = {
-         'UTXO':dict(),
-         'RBF':dict(),
-         'CPFP':dict()
-         }
+         'UTXO'   : dict(),
+         'RBF'    : dict(),
+         'CPFP'   : dict()
+      }
 
       utxoDict = self.treeData['UTXO']
       for addrType in addrTypes:
@@ -742,7 +740,7 @@ class NodeItem(object):
          self.depth = parent.depth + 1
          parent.addChild(self)
       else:
-         self.depth = 0 
+         self.depth = 0
 
    def addChild(self, child):
       self.children[child.row] = child
@@ -971,7 +969,6 @@ class RBFTreeModel(ArmoryTreeModel):
       super(RBFTreeModel, self).__init__(main)
 
       self.wlt = wlt
-      
       self.treeStruct = TreeStructure_RBF(self.wlt)
       self.root = NodeItem(0, None, self.treeStruct.root)
 

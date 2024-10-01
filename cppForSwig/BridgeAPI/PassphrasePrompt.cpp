@@ -1,18 +1,21 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2019-2021, goatpig                                          //
+//  Copyright (C) 2019-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
+#include <capnp/message.h>
+#include <capnp/serialize.h>
+#include "capnp/Bridge.capnp.h"
+
 #include "log.h"
-#include "../protobuf/BridgeProto.pb.h"
 #include "PassphrasePrompt.h"
 
+
+using namespace Armory;
 using namespace Armory::Bridge;
-using namespace std;
-using namespace BridgeProto;
 
 uint32_t BridgePassphrasePrompt::referenceCounter_ = 1;
 
@@ -28,58 +31,58 @@ BridgePassphrasePrompt::BridgePassphrasePrompt(const std::string& id,
 
 ////////////////////////////////////////////////////////////////////////////////
 SecureBinaryData BridgePassphrasePrompt::processFeedRequest(
-   const set<Armory::Wallets::EncryptionKeyId>& ids)
+   const std::set<Wallets::EncryptionKeyId>& ids)
 {
-   if (ids.empty())
-   {
+   if (ids.empty()) {
       //exit condition
       cleanup();
       return {};
    }
 
    //cycle the promise & future
-   auto promPtr = make_shared<promise<SecureBinaryData>>();
+   auto promPtr = std::make_shared<std::promise<SecureBinaryData>>();
    auto fut = promPtr->get_future();
-
    auto refId = referenceCounter_++;
 
-   //create protobuf payload
-   auto protoPtr = make_unique<Payload>();
-   auto pushPtr = protoPtr->mutable_callback();
-   pushPtr->set_callback_id(promptId_);
-   pushPtr->set_reference_id(refId);
+   //create payload
+   capnp::MallocMessageBuilder message;
+   auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
+   auto notif = fromBridge.initNotification();
+   notif.setCallbackId(promptId_);
+   notif.setCounter(refId);
 
-   auto unlockPtr = pushPtr->mutable_unlock_request();
-   for (const auto& id : ids)
-      unlockPtr->add_encryption_key_ids(id.toHexStr());
+   auto unlockRequest = notif.initUnlockRequest(ids.size());
+   unsigned i=0;
+   for (const auto& id : ids) {
+      auto idHex = id.toHexStr();
+      unlockRequest.set(i++, idHex);
+   }
+
+   //serialize it
+   auto flat = capnp::messageToFlatArray(message);
+   auto bytes = flat.asBytes();
+   BinaryData serialized(bytes.begin(), bytes.end());
 
    //reply handler
-   auto replyHandler = [promPtr](const CallbackReply& reply)->bool
+   auto replyHandler = [promPtr](bool success, SecureBinaryData& passphrase)->bool
    {
-      if (!reply.success() ||
-         reply.reply_payload_case() != CallbackReply::kPassphrase)
-      {
-         promPtr->set_exception(make_exception_ptr(runtime_error("")));
+      if (!success) {
+         promPtr->set_exception(std::make_exception_ptr(
+            std::runtime_error("unsuccessful reply")));
       }
-      else
-      {
-         promPtr->set_value(SecureBinaryData::fromString(reply.passphrase()));
-      }
-
+      promPtr->set_value(std::move(passphrase));
       return true;
    };
 
    //push over socket
-   ServerPushWrapper wrapper{ refId, replyHandler, move(protoPtr) };
-   writeFunc_(move(wrapper));
+   ServerPushWrapper wrapper{ refId, replyHandler, std::move(serialized) };
+   writeFunc_(std::move(wrapper));
 
    //wait on future
-   try
-   {
+   try {
       return fut.get();
    }
-   catch (const exception&)
-   {
+   catch (const std::exception&) {
       LOGINFO << "cancelled wallet unlock";
       return {};
    }
@@ -88,17 +91,22 @@ SecureBinaryData BridgePassphrasePrompt::processFeedRequest(
 ////////////////////////////////////////////////////////////////////////////////
 void BridgePassphrasePrompt::cleanup()
 {
-   auto protoPtr = make_unique<Payload>();
-   auto pushPtr = protoPtr->mutable_callback();
-   pushPtr->set_callback_id(promptId_);
-   pushPtr->set_cleanup(true);
-   writeFunc_(ServerPushWrapper{0, nullptr, move(protoPtr)});
+   capnp::MallocMessageBuilder message;
+   auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
+   auto notif = fromBridge.initNotification();
+   notif.setCallbackId(promptId_);
+   notif.setCleanup();
+
+   auto flat = capnp::messageToFlatArray(message);
+   auto bytes = flat.asBytes();
+   BinaryData serialized(bytes.begin(), bytes.end());
+   writeFunc_(ServerPushWrapper{0, nullptr, std::move(serialized)});
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 PassphraseLambda BridgePassphrasePrompt::getLambda()
 {
-   return [this](const set<Armory::Wallets::EncryptionKeyId>& ids)->SecureBinaryData
+   return [this](const std::set<Wallets::EncryptionKeyId>& ids)->SecureBinaryData
    {
       return processFeedRequest(ids);
    };

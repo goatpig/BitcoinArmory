@@ -723,10 +723,9 @@ namespace Armory
 
             std::unique_lock<std::mutex> lock(mu_);
             newMap->insert(map_->begin(), map_->end());
-            newMap->insert(std::move(mv));
+            newMap->emplace(std::move(mv));
 
             atomic_store(&map_, newMap);
-
             count_.store(map_->size(), std::memory_order_relaxed);
          }
 
@@ -736,26 +735,25 @@ namespace Armory
 
             std::unique_lock<std::mutex> lock(mu_);
             newMap->insert(map_->begin(), map_->end());
-            newMap->insert(obj);
-            
-            std::atomic_store(&map_, newMap);
+            newMap->emplace(obj);
 
+            std::atomic_store(&map_, newMap);
             count_.store(map_->size(), std::memory_order_relaxed);
          }
 
          void update(std::map<T, U> updatemap)
          {
-            if (updatemap.size() == 0)
+            if (updatemap.empty()) {
                return;
-
+            }
             auto newMap = std::make_shared<std::map<T, U>>(std::move(updatemap));
 
             std::unique_lock<std::mutex> lock(mu_);
-            for (auto& data_pair : *map_)
-               newMap->insert(data_pair);
+            for (auto& data_pair : *map_) {
+               newMap->emplace(data_pair);
+            }
 
             std::atomic_store(&map_, newMap);
-
             count_.store(map_->size(), std::memory_order_relaxed);
          }
 

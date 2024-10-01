@@ -345,33 +345,3 @@ map<BinaryData, LedgerEntry> LedgerEntry::computeLedgerMap(
 
    return leMap;
 }
-
-////////////////////////////////////////////////////////////////////////////////
-void LedgerEntry::fillMessage(::Codec_LedgerEntry::LedgerEntry* msg) const
-{
-   if (msg == nullptr)
-   {
-      LOGERR << "empty ledger msg";
-      return;
-   }
-
-   if (ID_.size() > 0)
-      msg->set_id(ID_); 
-
-   msg->set_balance(value_);
-   msg->set_txheight(blockNum_);
-
-   msg->set_txhash(txHash_.getPtr(), txHash_.getSize());
-   msg->set_index(index_);
-   msg->set_txtime(txTime_);
-
-   msg->set_iscoinbase(isCoinbase_);
-   msg->set_issts(isSentToSelf_);
-   msg->set_ischangeback(isChangeBack_);
-   msg->set_optinrbf(isOptInRBF_);
-   msg->set_ischainedzc(isChainedZC_);
-   msg->set_iswitness(usesWitness_);
-
-   for (auto& scrAddr : scrAddrSet_)
-      msg->add_scraddr(scrAddr.getPtr(), scrAddr.getSize());
-}

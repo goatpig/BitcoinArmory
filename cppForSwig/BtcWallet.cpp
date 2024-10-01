@@ -38,13 +38,14 @@ bool BtcWallet::hasScrAddress(const BinaryDataRef& scrAddr) const
 }
 
 /////////////////////////////////////////////////////////////////////////////
-set<BinaryDataRef> BtcWallet::getAddrSet() const
+std::set<BinaryDataRef> BtcWallet::getAddrSet() const
 {
    auto addrMap = scrAddrMap_.get();
-   set<BinaryDataRef> addrSet;
+   std::set<BinaryDataRef> addrSet;
 
-   for (auto& addrPair : *addrMap)
+   for (auto& addrPair : *addrMap) {
       addrSet.emplace(addrPair.first);
+   }
    return addrSet;
 }
 
@@ -337,31 +338,29 @@ vector<UTXO> BtcWallet::getRBFTxOutList()
 
    {
       auto addrMap = scrAddrMap_.get();
-      for (auto& scrAddr : *addrMap)
-      {
-         auto&& zcTxioMap = bdvPtr_->getRBFTxIOsforScrAddr(
+      for (auto& scrAddr : *addrMap) {
+         auto zcTxioMap = bdvPtr_->getRBFTxIOsforScrAddr(
             scrAddr.second->getScrAddr());
 
-         for (auto& zcTxio : zcTxioMap)
-         {
-            if (zcTxio.second->hasTxOutZC())
+         for (auto& zcTxio : zcTxioMap) {
+            if (zcTxio.second->hasTxOutZC()) {
                zcKeys.insert(zcTxio.second->getDBKeyOfOutput());
-            else
+            } else {
                txoutKeys.insert(zcTxio.second->getDBKeyOfOutput());
+            }
          }
       }
    }
 
-   auto&& utxoVec = bdvPtr_->getZcUTXOsForKeys(zcKeys);
+   auto utxoVec = bdvPtr_->getZcUTXOsForKeys(zcKeys);
 
    BinaryDataRef prevTxKey;
    BinaryDataRef prevTxHash;
-   for (auto& txoutkey : txoutKeys)
-   {
-      auto&& stxo = bdvPtr_->getStoredTxOut(txoutkey);
+   for (auto& txoutkey : txoutKeys) {
+      auto stxo = bdvPtr_->getStoredTxOut(txoutkey);
       UTXO utxo(
-         stxo.getValue(), stxo.getHeight(), 
-         stxo.txIndex_, stxo.txOutIndex_, 
+         stxo.getValue(), stxo.getHeight(),
+         stxo.txIndex_, stxo.txOutIndex_,
          stxo.parentHash_, stxo.getScriptRef());
 
       utxoVec.emplace_back(move(utxo));
@@ -713,14 +712,11 @@ map<BinaryData, LedgerEntry> BtcWallet::updateWalletLedgersFromTxio(
 const ScrAddrObj* BtcWallet::getScrAddrObjByKey(const BinaryData& key) const
 {
    auto addrMap = scrAddrMap_.get();
-
    auto saIter = addrMap->find(key);
-   if (saIter == addrMap->end())
-   {
+   if (saIter == addrMap->end()) {
       LOGWARN << "unknown address in btcwallet";
       throw std::runtime_error("unknown address in btcwallet");
    }
-      
    return saIter->second.get();
 }
 
@@ -779,15 +775,22 @@ vector<LedgerEntry> BtcWallet::getHistoryPageAsVector(uint32_t pageId)
    return ledgerVec;
 }
 
+const HistoryPager& BtcWallet::historyPager() const
+{
+   return histPages_;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 void BtcWallet::needsRefresh(bool refresh)
-{ 
+{
+   //TODO: fix the flagRefresh logic
+
    //notify BDV
-   if (refresh && isRegistered_)
+   /*if (refresh && isRegistered_)
    {
       bdvPtr_->flagRefresh(
          BDV_refreshAndRescan, BinaryData::fromString(walletID_), nullptr);
-   }
+   }*/
 
    //call custom callback
    doneRegisteringCallback_();
@@ -808,16 +811,12 @@ uint64_t BtcWallet::getWltTotalTxnCount(void) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void BtcWallet::setConfTarget(unsigned confTarget, const string& hash)
+void BtcWallet::setConfTarget(unsigned confTarget)
 {
-   if(confTarget != confTarget_)
+   if(confTarget != confTarget_) {
       confTarget_ = confTarget;
-
-   if (hash.size() != 0)
-   {
-      auto&& hashBd = BinaryData::fromString(hash);
-      bdvPtr_->flagRefresh(BDV_refreshSkipRescan, hashBd, nullptr);
    }
+   BinaryData wltId(walletID_.data(), walletID_.size());
 }
 
 ////////////////////////////////////////////////////////////////////////////////

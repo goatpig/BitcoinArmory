@@ -117,7 +117,7 @@ typedef std::pair<std::set<BinaryData>, std::map<BinaryData, StoredScriptHistory
 subSshParserResult parseSubSsh(
    std::unique_ptr<LDBIter>, int32_t scanFrom, bool,
    std::function<uint8_t(unsigned)>,
-   std::shared_ptr<const std::map<BinaryDataRef, std::shared_ptr<AddrAndHash>>>,
+   std::shared_ptr<const std::map<BinaryData, std::shared_ptr<AddrAndHash>>>,
    BinaryData upperBound);
 
 #endif

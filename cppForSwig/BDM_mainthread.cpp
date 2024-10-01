@@ -51,7 +51,6 @@ void BlockDataManagerThread::start(BDM_INIT_MODE mode)
 {
    pimpl->mode = mode;
    pimpl->run = true;
-   
    pimpl->tID = thread(thrun, this);
 }
 
@@ -81,35 +80,31 @@ bool BlockDataManagerThread::shutdown()
 
 void BlockDataManagerThread::join()
 {
-   if (pimpl->run)
-   {
-      if (pimpl->tID.joinable())
+   if (pimpl->run) {
+      if (pimpl->tID.joinable()) {
          pimpl->tID.join();
+      }
    }
 }
 
 void BlockDataManagerThread::run()
-try
-{
+try {
    BlockDataManager *const bdm = this->bdm();
-
-   if (bdm->hasException())
+   if (bdm->hasException()) {
       return;
+   }
 
    promise<bool> isReadyPromise;
    bdm->isReadyFuture_ = isReadyPromise.get_future();
 
    auto updateNodeStatusLambda = [bdm]()->void
    {
-      try
-      {
-         auto&& nodeStatus = bdm->getNodeStatus();
-         auto&& notifPtr =
-            make_unique<BDV_Notification_NodeStatus>(move(nodeStatus));
-         bdm->notificationStack_.push_back(move(notifPtr));
-      }
-      catch (exception& e)
-      {
+      try {
+         auto nodeStatus = bdm->getNodeStatus();
+         auto notifPtr = std::make_unique<BDV_Notification_NodeStatus>(
+            std::move(nodeStatus));
+         bdm->notificationStack_.push_back(std::move(notifPtr));
+      } catch (const std::exception& e) {
          LOGERR << "Can't get node status: " << e.what();
       }
    };
@@ -120,18 +115,14 @@ try
    bdm->watchNode_->connectToNode(true);
 
    //if RPC is running, wait on node init
-   try
-   {
+   try {
       bdm->nodeRPC_->waitOnChainSync(updateNodeStatusLambda);
-   }
-   catch (exception& e)
-   {
+   } catch (const std::exception& e) {
       LOGINFO << "Error occured while querying the RPC for sync status";
       LOGINFO << "Message: " << e.what();
    }
 
    tuple<BDMPhase, double, unsigned, unsigned> lastvalues;
-
    const auto loadProgress
       = [&](BDMPhase phase, double prog, unsigned time, unsigned numericProgress)
    {
@@ -147,51 +138,50 @@ try
 
    switch (mode)
    {
-   case 0:
-      bdm->doInitialSyncOnLoad(loadProgress);
-      break;
+      case 0:
+         bdm->doInitialSyncOnLoad(loadProgress);
+         break;
 
-   case 1:
-      bdm->doInitialSyncOnLoad_Rescan(loadProgress);
-      break;
+      case 1:
+         bdm->doInitialSyncOnLoad_Rescan(loadProgress);
+         break;
 
-   case 2:
-      bdm->doInitialSyncOnLoad_Rebuild(loadProgress);
-      break;
+      case 2:
+         bdm->doInitialSyncOnLoad_Rebuild(loadProgress);
+         break;
 
-   case 3:
-      bdm->doInitialSyncOnLoad_RescanBalance(loadProgress);
-      break;
+      case 3:
+         bdm->doInitialSyncOnLoad_RescanBalance(loadProgress);
+         break;
 
-   default:
-      throw runtime_error("invalid bdm init mode");
+      default:
+         throw runtime_error("invalid bdm init mode");
    }
 
-   if (!DBSettings::checkChain())
+   if (!DBSettings::checkChain()) {
       bdm->enableZeroConf(clearZc);
-
+   }
    isReadyPromise.set_value(true);
 
-   if (DBSettings::checkChain())
+   if (DBSettings::checkChain()) {
       return;
+   }
 
    auto updateChainLambda = [bdm, this]()->void
    {
       LOGINFO << "readBlkFileUpdate";
       auto reorgState = bdm->readBlkFileUpdate();
-      if (reorgState.hasNewTop_)
-      {            
+      if (reorgState.hasNewTop_) {
          //purge zc container
-         auto purgeFuture = 
+         auto purgeFuture =
             bdm->zeroConfCont_->pushNewBlockNotification(reorgState);
          auto purgePacket = purgeFuture.get();
 
          //notify bdvs
-         auto&& notifPtr =
-            make_unique<BDV_Notification_NewBlock>(
-               move(reorgState), purgePacket);
+         auto notifPtr = make_unique<BDV_Notification_NewBlock>(
+            std::move(reorgState), purgePacket);
          bdm->triggerOneTimeHooks(notifPtr.get());
-         bdm->notificationStack_.push_back(move(notifPtr));
+         bdm->notificationStack_.push_back(std::move(notifPtr));
 
          stringstream ss;
          ss << "found new top!" << endl;
@@ -206,22 +196,18 @@ try
    bdm->nodeRPC_->registerNodeStatusLambda(updateNodeStatusLambda);
 
    auto newBlockStack = bdm->processNode_->getInvBlockStack();
-   while (pimpl->run)
-   {
-      try
-      {
+   while (pimpl->run) {
+      try {
          //wait on a new block InvEntry, blocking is on
-         auto&& invVec = newBlockStack->pop_front();
+         auto invVec = newBlockStack->pop_front();
 
          bool hasNewBlocks = true;
-         while (hasNewBlocks)
-         {
+         while (hasNewBlocks) {
             //check blocks on disk, update chain state accordingly
             updateChainLambda();
             hasNewBlocks = false;
 
-            while (true)
-            {
+            while (true) {
                /*
                More new blocks may have appeared while we were parsing the
                current batch. The chain update code will grab as many blocks
@@ -240,32 +226,23 @@ try
                The outer blocking queue wait will then once again act as the 
                signal to check the chain and deplete the queue
                */
-               
-               try
-               {    
-                  //wait on new block entry, do not block for the inner loop     
+
+               try {
+                  //wait on new block entry, do not block for the inner loop
                   invVec = move(newBlockStack->pop_front(false));
                   hasNewBlocks = true;
-               }
-               catch (Armory::Threading::IsEmpty&)
-               {
+               } catch (const Armory::Threading::IsEmpty&) {
                   break;
                }
             }
          }
-      }
-      catch (Armory::Threading::StopBlockingLoop&)
-      {
+      } catch (const Armory::Threading::StopBlockingLoop&) {
          break;
       }
    }
-}
-catch (std::exception &e)
-{
+} catch (const std::exception &e) {
    LOGERR << "BDM thread failed: " << e.what();
-}
-catch (...)
-{
+} catch (...) {
    LOGERR << "BDM thread failed: (unknown exception)";
 }
 

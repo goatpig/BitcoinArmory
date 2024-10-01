@@ -271,7 +271,7 @@ class PyBtcWallet(object):
       if uniqueId != None:
          self.bridgeWalletObj = BridgeWalletWrapper(uniqueId)
       elif proto != None:
-         self.loadFromProtobufPayload(proto)
+         self.loadFromProto(proto)
          self.bridgeWalletObj = BridgeWalletWrapper(self.uniqueIDB58)
 
    #############################################################################
@@ -371,7 +371,7 @@ class PyBtcWallet(object):
       self.balance_full = result.full
       self.balance_spendable = result.spendable
       self.balance_unconfirmed = result.unconfirmed
-      self.txnCount = result.count
+      self.txnCount = result.txnCount
 
    #############################################################################
    def getAddrBalance(self, addrHash, balType="Spendable", topBlockHeight=UINT32_MAX):
@@ -435,10 +435,10 @@ class PyBtcWallet(object):
       if not self.doBlockchainSync==BLOCKCHAIN_DONOTUSE:
          #calling this with no value argument will return the full UTXO list
          from armoryengine.CoinSelection import PyUnspentTxOut
-         utxos = self.bridgeWalletObj.getUtxosForValue(2**64 - 1)
+         utxos = self.bridgeWalletObj.getUtxos(value=2**64 - 1)
          utxoList = []
-         for i in range(len(utxos.utxo)):
-            utxoList.append(PyUnspentTxOut().createFromBridgeUtxo(utxos.utxo[i]))
+         for utxo in utxos:
+            utxoList.append(PyUnspentTxOut().createFromBridgeUtxo(utxo))
          return utxoList
       else:
          LOGERROR('***Blockchain is not available for accessing wallet-tx data')
@@ -450,10 +450,10 @@ class PyBtcWallet(object):
       #return full set of unspent ZC outputs
       if not self.doBlockchainSync==BLOCKCHAIN_DONOTUSE:
          from armoryengine.CoinSelection import PyUnspentTxOut
-         utxos = self.bridgeWalletObj.getSpendableZCList()
+         utxos = self.bridgeWalletObj.getUtxos(zc=True)
          utxoList = []
-         for i in range(len(utxos.utxo)):
-            utxoList.append(PyUnspentTxOut().createFromBridgeUtxo(utxos.utxo[i]))
+         for utxo in utxos:
+            utxoList.append(PyUnspentTxOut().createFromBridgeUtxo(utxo))
          return utxoList
       else:
          LOGERROR('***Blockchain is not available for accessing wallet-tx data')
@@ -465,7 +465,7 @@ class PyBtcWallet(object):
       #return full set of unspent ZC outputs
       if not self.doBlockchainSync==BLOCKCHAIN_DONOTUSE:
          from armoryengine.CoinSelection import PyUnspentTxOut
-         utxos = self.bridgeWalletObj.getRBFTxOutList()
+         utxos = self.bridgeWalletObj.getUtxos(rbf=True)
          utxoList = []
          for i in range(len(utxos.utxo)):
             utxoList.append(PyUnspentTxOut().createFromBridgeUtxo(utxos.utxo[i]))
@@ -528,9 +528,11 @@ class PyBtcWallet(object):
 
       LOGINFO('***Creating new deterministic wallet')
 
+      addrPoolSize = 10 if USE_TESTNET or USE_REGTEST else CLI_OPTIONS.keypool
+
       #create cpp wallet
       walletId = TheBridge.utils.createWallet(
-         self.addrPoolSize,
+         addrPoolSize,
          passphrase, "",
          #kdfTargSec, kdfMaxMem,
          shortLabel, longLabel,
@@ -543,14 +545,14 @@ class PyBtcWallet(object):
    def loadFromBridge(self, walletId):
       wallet = PyBtcWallet(uniqueId=walletId)
       walletProto = wallet.bridgeWalletObj.getData()
-      wallet.loadFromProtobufPayload(walletProto)
+      wallet.loadFromProto(walletProto)
       return wallet
 
    #############################################################################
    def peekChangeAddr(self, addrType=AddressEntryType_Default):
       newAddrProto = self.bridgeWalletObj.getNewAddress(addrType)
       newAddrObj = PyBtcAddress()
-      newAddrObj.loadFromProtobufPayload(newAddrProto)
+      newAddrObj.loadFromProto(newAddrProto)
 
       return newAddrObj
 
@@ -569,7 +571,7 @@ class PyBtcWallet(object):
    def getNewChangeAddr(self, addrType=AddressEntryType_Default):
       newAddrProto = self.bridgeWalletObj.getNewAddress(addrType)
       newAddrObj = PyBtcAddress()
-      newAddrObj.loadFromProtobufPayload(newAddrProto)
+      newAddrObj.loadFromProto(newAddrProto)
 
       self.addAddress(newAddrObj)
       return newAddrObj
@@ -578,7 +580,7 @@ class PyBtcWallet(object):
    def getNextUnusedAddress(self, addrType=AddressEntryType_Default):
       newAddrProto = self.bridgeWalletObj.getNewAddress(addrType)
       newAddrObj = PyBtcAddress()
-      newAddrObj.loadFromProtobufPayload(newAddrProto)
+      newAddrObj.loadFromProto(newAddrProto)
 
       self.addAddress(newAddrObj)
       return newAddrObj
@@ -1128,9 +1130,9 @@ class PyBtcWallet(object):
    #############################################################################
    def getAddrCommentFromLe(self, le):
       # If we haven't extracted relevant addresses for this tx, yet -- do it
-      txHash = le.hash
+      txHash = le.txHash
       if txHash not in self.txAddrMap:
-         self.txAddrMap[txHash] = le.scraddr
+         self.txAddrMap[txHash] = le.scrAddrs
 
       addrComments = []
       for a160 in self.txAddrMap[txHash]:
@@ -1144,7 +1146,7 @@ class PyBtcWallet(object):
    def getCommentForLE(self, le):
       # Smart comments for LedgerEntry objects:  get any direct comments ...
       # if none, then grab the one for any associated addresses.
-      txHash = le.hash
+      txHash = le.txHash
       if txHash in self.commentsMap:
          comment = self.commentsMap[txHash]
       else:
@@ -1400,24 +1402,23 @@ class PyBtcWallet(object):
       result = self.bridgeWalletObj.getAddrCombinedList()
 
       #update addr map
-      for addrProto in result.updated_asset:
+      for addrProto in result.updatedAssets:
          addrObj = PyBtcAddress()
-         addrObj.loadFromProtobufPayload(addrProto)
+         addrObj.loadFromProto(addrProto)
 
          addrHash = addrObj.getPrefixedAddr()
          self.addrMap[addrHash] = addrObj
 
       #update balances and txio count
-      for i in range(0, len(result.balance)):
-         addrCombinedData = result.balance[i]
-         addr = addrCombinedData.id
+      for addrCombinedData in result.balances:
+         addr = addrCombinedData.scrAddr
          if addr in self.addrMap:
             addrObj = self.addrMap[addr]
 
-            addrObj.fullBalance        = addrCombinedData.balance.full
-            addrObj.spendableBalance   = addrCombinedData.balance.spendable
-            addrObj.unconfirmedBalance = addrCombinedData.balance.unconfirmed
-            addrObj.txioCount          = addrCombinedData.balance.count
+            addrObj.fullBalance        = addrCombinedData.balances.full
+            addrObj.spendableBalance   = addrCombinedData.balances.spendable
+            addrObj.unconfirmedBalance = addrCombinedData.balances.unconfirmed
+            addrObj.txioCount          = addrCombinedData.balances.txnCount
          else:
             print ("[getAddrDataFromDB] missing address " + addr.hex())
 
@@ -1578,24 +1579,24 @@ class PyBtcWallet(object):
       return len(self.importList) != 0
 
    ###############################################################################
-   def loadFromProtobufPayload(self, payload):
+   def loadFromProto(self, payload):
       self.uniqueIDB58 = payload.id
 
       self.labelName   = payload.label
       self.labelDescr  = payload.desc
 
-      self.useEncryption = payload.use_encryption
-      self.lastComputedChainIndex = payload.lookup_count
-      self.highestUsedChainIndex = payload.use_count
-      self.watchingOnly = payload.watching_only
-      self.addressTypes = payload.address_type
-      self.defaultAddressType = payload.default_address_type
-      self.kdfMemoryReq = payload.kdf_mem_req
+      self.useEncryption = payload.usesEncryption
+      self.lastComputedChainIndex = payload.lookupCount
+      self.highestUsedChainIndex = payload.useCount
+      self.watchingOnly = payload.watchingOnly
+      self.addressTypes = payload.addressTypes
+      self.defaultAddressType = payload.defaultAddressType
+      self.kdfMemoryReq = payload.kdfMemReq
 
       #addrMap and chainIndexMap
-      for addr in payload.address_data:
+      for addr in payload.addressData:
          addrObj = PyBtcAddress(self)
-         addrObj.loadFromProtobufPayload(addr)
+         addrObj.loadFromProto(addr)
          self.addAddress(addrObj)
 
       #importList
@@ -1605,7 +1606,7 @@ class PyBtcWallet(object):
 
       #comments
       for commentIt in payload.comments:
-         self.commentsMap[commentIt.key] = commentIt.val.decode('utf-8')
+         self.commentsMap[commentIt.key] = commentIt.val
 
    #############################################################################
    def fillAddressPool(self, numPool, progressId, callback=None):
@@ -1618,7 +1619,7 @@ class PyBtcWallet(object):
       """
 
       def completeProcess(*args):
-         self.loadFromProtobufPayload(*args)
+         self.loadFromProto(*args)
          if callback:
             callback()
 
@@ -1660,7 +1661,7 @@ class PyBtcWallet(object):
 
       protoAddr = self.bridgeWalletObj.setAddressTypeFor(
          addrObj.assetId, addrType)
-      addrObj.loadFromProtobufPayload(protoAddr)
+      addrObj.loadFromProto(protoAddr)
 
    #############################################################################
    def initCoinSelectionInstance(self, height):

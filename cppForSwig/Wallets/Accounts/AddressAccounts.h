@@ -32,7 +32,7 @@
 ////
 namespace Armory
 {
-   namespace Signer
+   namespace Signing
    {
       class BIP32_AssetPath;
    };
@@ -243,7 +243,7 @@ namespace Armory
          void initAfterLock(void) {}
          void cleanUpBeforeUnlock(void) {}
 
-         bool hasBip32Path(const Signer::BIP32_AssetPath&) const;
+         bool hasBip32Path(const Signing::BIP32_AssetPath&) const;
          bool isLegacy(void) const;
       };
    }; //namespace Accounts

@@ -1,23 +1,26 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2017, goatpig                                               //
+//  Copyright (C) 2020-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifndef _H_SIGHASHENUM_
-#define _H_SIGHASHENUM_
+#ifndef _PROTO_COMMAND_PARSER_H
+#define _PROTO_COMMAND_PARSER_H
+
+#include "BinaryData.h"
 
 namespace Armory
 {
-   namespace Signing
+   namespace Bridge
    {
-      enum SIGHASH_TYPE
+      class CppBridge;
+      namespace ProtoCommandParser
       {
-         SIGHASH_ALL = 1
-      };
-   };
-};
+         bool processData(std::shared_ptr<CppBridge>, BinaryDataRef);
+      }
+   }; //namespace Bridge
+}; //namespace Armory
 
 #endif

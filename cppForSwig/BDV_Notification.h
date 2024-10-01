@@ -144,13 +144,12 @@ struct BDV_Notification_NodeStatus : public BDV_Notification
 ///////////////////////////////////////////////////////////////////////////////
 struct BDV_Notification_Error : public BDV_Notification
 {
-   const std::string requestID_;
    BDV_Error_Struct errStruct;
 
    BDV_Notification_Error(
-      const std::string& bdvID, const std::string requestID, 
+      const std::string& bdvID,
       int errCode, const BinaryData& errData, const std::string& errStr) :
-      BDV_Notification(bdvID), requestID_(requestID)
+      BDV_Notification(bdvID)
    {
       errStruct.errCode_ = errCode;
       errStruct.errData_ = errData;

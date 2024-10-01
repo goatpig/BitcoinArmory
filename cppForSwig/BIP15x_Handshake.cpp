@@ -346,7 +346,7 @@ HandshakeState BIP15x_Handshake::clientSideHandshake(
       {
          return HandshakeState::Error_GetEncAck;
       }
-      
+
       writeCb(encackPayload, BIP151_PayloadType::EncAck, false);
 
       //start client side encinit

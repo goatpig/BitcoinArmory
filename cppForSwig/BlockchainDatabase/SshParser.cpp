@@ -15,7 +15,7 @@ using namespace std;
 subSshParserResult parseSubSsh(
    unique_ptr<LDBIter> sshIter, int32_t scanFrom, bool resolveHashes,
    function<uint8_t(unsigned)> getDupIDForHeight,
-   shared_ptr<const map<BinaryDataRef, shared_ptr<AddrAndHash>>> scrAddrMapPtr,
+   shared_ptr<const map<BinaryData, shared_ptr<AddrAndHash>>> scrAddrMapPtr,
    BinaryData upperBound)
 {
    map<BinaryData, StoredScriptHistory> sshMap;

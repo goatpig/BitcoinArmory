@@ -122,7 +122,7 @@ namespace Armory
       class PaymentStruct
       {
          using RecipientMap = const std::map<unsigned,
-            std::vector<std::shared_ptr<Signer::ScriptRecipient>>>;
+            std::vector<std::shared_ptr<Signing::ScriptRecipient>>>;
 
       private:
          const RecipientMap& recipients_;
@@ -376,7 +376,7 @@ namespace Armory
          CoinSelection cs_;
 
          using RecipientMap = std::map<unsigned,
-            std::vector<std::shared_ptr<Signer::ScriptRecipient>>>;
+            std::vector<std::shared_ptr<Signing::ScriptRecipient>>>;
          
          RecipientMap recipients_;
          UtxoSelection selection_;
@@ -437,9 +437,9 @@ namespace Armory
          bool isSW(void) const { return selection_.witnessSize_ != 0; }
          void rethrow(void) { cs_.rethrow(); }
 
-         static std::shared_ptr<Signer::ScriptRecipient>
+         static std::shared_ptr<Signing::ScriptRecipient>
             createRecipient(const BinaryData&, uint64_t);
-         static std::shared_ptr<Signer::ScriptRecipient>
+         static std::shared_ptr<Signing::ScriptRecipient>
             createRecipient(const std::string&, uint64_t);
       };
    }; //namespace CoinSelection

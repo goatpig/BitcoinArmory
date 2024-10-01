@@ -179,10 +179,11 @@ namespace Armory
          static RpcPtr rpcNode_;
 
          static std::string btcPort_;
-         static std::string listenPort_;
+         static std::string dbPort_;
+         static std::string dbIP_;
          static std::string rpcPort_;
 
-         static bool customListenPort_;
+         static bool customDbPort_;
          static bool customBtcPort_;
 
          static bool useCookie_;
@@ -206,10 +207,11 @@ namespace Armory
          static void selectNetwork(NETWORK_MODE);
 
          static const std::string& btcPort(void);
-         static const std::string& listenPort(void);
+         static const std::string& dbPort(void);
+         static const std::string& dbIP(void);
          static const std::string& rpcPort(void);
 
-         static void randomizeListenPort(void);
+         static void randomizeDbPort(void);
 
          static const NodePair& bitcoinNodes(void);
          static RpcPtr rpcNode(void);

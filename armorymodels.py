@@ -1410,17 +1410,14 @@ class SentToAddrBookModel(QtCore.QAbstractTableModel):
       # Must use awkwardness to get around iterating a vector<RegisteredTx> in
       # the python code... :(
       addressBook = self.wlt.createAddressBook()
-      nabe = len(addressBook.address)
-      for i in range(nabe):
-         abe = addressBook.address[i]
-
-         scrAddr = abe.scraddr
+      for abe in addressBook.entries:
+         scrAddr = abe.scrAddr
          try:
             addr160 = addrStr_to_hash160(scrAddr_to_addrStr(scrAddr))[1]
 
             # Only grab addresses that are not in any of your Armory wallets
             if not self.main.getWalletForAddrHash(addr160):
-               txHashList = abe.tx_hash
+               txHashList = abe.txHashes
                self.addrBook.append( [scrAddr, txHashList] )
          except Exception as e:
             # This is not necessarily an error. It could be a lock box LOGERROR(str(e))

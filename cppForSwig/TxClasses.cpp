@@ -332,20 +332,20 @@ void Tx::unserialize(uint8_t const * ptr, size_t size)
 {
    isInitialized_ = false;
 
-   uint32_t nBytes = BtcUtils::TxCalcLength(ptr, size, 
+   uint32_t nBytes = BtcUtils::TxCalcLength(ptr, size,
       &offsetsTxIn_, &offsetsTxOut_, &offsetsWitness_);
 
-   if(nBytes > size)
+   if (size < 8 || nBytes > size) {
       throw BlockDeserializingException();
-   dataCopy_.copyFrom(ptr,nBytes);
-   if(8 > size)
-      throw BlockDeserializingException();
+   }
+   dataCopy_.copyFrom(ptr, nBytes);
 
    usesWitness_ = BtcUtils::checkSwMarker(ptr + 4);
    uint32_t numWitness = offsetsWitness_.size() - 1;
    version_ = READ_UINT32_LE(ptr);
-   if(4 > size - offsetsWitness_[numWitness])
+   if(4 > size - offsetsWitness_[numWitness]) {
       throw BlockDeserializingException();
+   }
    lockTime_ = READ_UINT32_LE(ptr + offsetsWitness_[numWitness]);
 
 	isInitialized_ = true;
@@ -677,43 +677,6 @@ unsigned UTXO::getWitnessDataSize(void) const
       throw runtime_error("no witness data size available");
 
    return witnessDataSizeBytes_;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void UTXO::toProtobuf(Codec_Utxo::Utxo& utxoProto) const
-{
-   utxoProto.set_value(value_);
-   utxoProto.set_script(script_.getPtr(), script_.getSize());
-   utxoProto.set_txheight(txHeight_);
-   utxoProto.set_txindex(txIndex_);
-   utxoProto.set_txoutindex(txOutIndex_);
-   utxoProto.set_txhash(txHash_.getPtr(), txHash_.getSize());
-}
-
-////////////////////////////////////////////////////////////////////////////////
-UTXO UTXO::fromProtobuf(const Codec_Utxo::Utxo& utxoProto)
-{
-   UTXO result;
-   
-   result.value_ = utxoProto.value();
-   result.script_ = BinaryData::fromString(utxoProto.script());
-
-   if (utxoProto.has_txheight())
-      result.txHeight_ = utxoProto.txheight();
-
-   if (utxoProto.has_txindex())
-      result.txIndex_ = utxoProto.txindex();
-
-   if (utxoProto.has_txoutindex())
-      result.txOutIndex_ = utxoProto.txoutindex();
-
-   if (utxoProto.has_txhash())
-      result.txHash_ = BinaryData::fromString(utxoProto.txhash());
-
-   if (result.txHash_.getSize() != 32)
-      throw runtime_error("invalid utxo hash size");
-
-   return result;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

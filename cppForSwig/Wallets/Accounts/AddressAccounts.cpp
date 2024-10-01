@@ -1216,7 +1216,7 @@ shared_ptr<AssetEntry_BIP32Root> AddressAccount::getBip32RootForAssetId(
 
 ////////////////////////////////////////////////////////////////////////////////
 bool AddressAccount::hasBip32Path(
-   const Armory::Signer::BIP32_AssetPath& path) const
+   const Armory::Signing::BIP32_AssetPath& path) const
 {
    //look for an account which root's path matches that of our desired path
    for (const auto& accountPair : accountDataMap_)

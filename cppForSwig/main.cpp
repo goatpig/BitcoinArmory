@@ -27,8 +27,6 @@ int main(int argc, char* argv[])
    startupBIP151CTX();
    startupBIP150CTX(4);
 
-   GOOGLE_PROTOBUF_VERIFY_VERSION;
-
 #ifdef _WIN32
    WSADATA wsaData;
    WORD wVersion = MAKEWORD(2, 0);
@@ -65,10 +63,10 @@ int main(int argc, char* argv[])
    if (!DBSettings::checkChain())
    {
       //check we can listen on this ip:port
-      if (SimpleSocket::checkSocket("127.0.0.1", NetworkSettings::listenPort()))
+      if (SimpleSocket::checkSocket("127.0.0.1", NetworkSettings::dbPort()))
       {
          LOGERR << "There is already a process listening on port " << 
-            NetworkSettings::listenPort();
+            NetworkSettings::dbPort();
          LOGERR << "ArmoryDB cannot start under these conditions. Shutting down!";
          LOGERR << "Make sure to shutdown the conflicting process" <<
             "before trying again (most likely another ArmoryDB instance)";
@@ -100,7 +98,6 @@ int main(int argc, char* argv[])
 
    //stop all threads and clean up
    WebSocketServer::shutdown();
-   google::protobuf::ShutdownProtobufLibrary();
 
    shutdownBIP151CTX();
    CryptoECDSA::shutdown();

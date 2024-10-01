@@ -11,7 +11,7 @@
 #include "Signer.h"
 
 using namespace std;
-using namespace Armory::Signer;
+using namespace Armory::Signing;
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -167,38 +167,6 @@ void ScriptRecipient::toPSBT(BinaryWriter& bw) const
 
    //terminate
    bw.put_uint8_t(0);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void ScriptRecipient::toProtobuf(
-   Codec_SignerState::RecipientState& protoMsg, unsigned group) const
-{
-   const auto& script = getSerializedScript();
-   protoMsg.set_data(script.getPtr(), script.getSize());
-   protoMsg.set_groupid(group);
-
-   for (auto& keyPair : bip32Paths_)
-   {
-      auto pathPtr = protoMsg.add_bip32paths();
-      keyPair.second.toProtobuf(*pathPtr);
-   }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-shared_ptr<ScriptRecipient> ScriptRecipient::fromProtobuf(
-   const Codec_SignerState::RecipientState& protoMsg)
-{
-   BinaryDataRef scriptRef;
-   scriptRef.setRef(protoMsg.data());
-   auto recipient = fromScript(scriptRef);
-
-   for (int i=0; i<protoMsg.bip32paths_size(); i++)
-   {
-      auto path = BIP32_AssetPath::fromProtobuf(protoMsg.bip32paths(i));
-      recipient->addBip32Path(path);
-   }
-
-   return recipient;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

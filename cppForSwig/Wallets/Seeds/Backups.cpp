@@ -12,10 +12,13 @@
 #include "../WalletIdTypes.h"
 #include "Seeds.h"
 #include "Wallets.h"
-#include "protobuf/BridgeProto.pb.h"
 extern "C" {
 #include <trezor-crypto/bip39.h>
 }
+
+#include <capnp/message.h>
+#include <capnp/serialize.h>
+#include "capnp/Bridge.capnp.h"
 
 #define EASY16_CHECKSUM_LEN 2
 #define EASY16_INDEX_MAX   15
@@ -27,6 +30,17 @@ using namespace std;
 using namespace Armory::Seeds;
 using namespace Armory::Assets;
 using namespace Armory::Wallets;
+
+namespace
+{
+   capnp::FlatArrayMessageReader getReader(BinaryDataRef raw)
+   {
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(raw.getPtr()),
+         raw.getSize() / sizeof(capnp::word));
+      return capnp::FlatArrayMessageReader(words);
+   }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 const vector<char> Easy16Codec::e16chars_ =
@@ -1055,39 +1069,46 @@ shared_ptr<AssetWallet> Helpers::restoreFromBackup(
 
    if (seed == nullptr)
    {
-      BridgeProto::RestorePrompt prompt;
-      prompt.mutable_type_error()->set_error(
-         "failed to create seed from backup");
-      callback(move(prompt));
+      auto message = std::make_unique<capnp::MallocMessageBuilder>();
+      auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
+      payload.setTypeError("failed to create seed from backup");
+      callback(std::move(message));
       throw RestoreUserException("failed to create seed from backup");
    }
 
    //prompt user to verify id
    {
-      BridgeProto::RestorePrompt prompt;
-      auto checkWltIdMsg = prompt.mutable_check_wallet_id();
-      checkWltIdMsg->set_wallet_id(seed->getWalletId());
-      checkWltIdMsg->set_backup_type((int)bType);
+      auto message = std::make_unique<capnp::MallocMessageBuilder>();
+      auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
+      auto walletId = payload.initCheckWalletId();
+      walletId.setWalletId(seed->getWalletId());
+      walletId.setBackupType((int)bType);
 
-      auto reply = callback(move(prompt));
-      if (!reply.success())
+      auto reply = callback(std::move(message));
+      auto reader = getReader(reply);
+      auto restoreReply = reader.getRoot<Codec::Bridge::RestoreReply>();
+      if (!restoreReply.getSuccess()) {
          throw RestoreUserException("user rejected id");
+      }
    }
 
    //prompt for passwords
    BinaryDataRef pass = params.passphrase.getRef();
    BinaryDataRef control = params.controlPassphrase.getRef();
-   if (pass.empty())
-   {
-      BridgeProto::RestorePrompt prompt;
-      prompt.set_get_passphrases(true);
-      auto reply = callback(move(prompt));
+   if (pass.empty()) {
+      auto message = std::make_unique<capnp::MallocMessageBuilder>();
+      auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
+      payload.setGetPassphrases();
 
-      if (!reply.success())
+      auto reply = callback(std::move(message));
+      auto reader = getReader(reply);
+      auto restoreReply = reader.getRoot<Codec::Bridge::RestoreReply>();
+      if (!restoreReply.getSuccess()) {
          throw RestoreUserException("user did not provide a passphrase");
+      }
 
-      pass.setRef(reply.passphrases().privkey());
-      control.setRef(reply.passphrases().control());
+      pass.setRef(restoreReply.getPrivkey());
+      control.setRef(restoreReply.getControl());
    }
 
    WalletCreationParams paramsCopy{ pass, control,
@@ -1155,21 +1176,23 @@ unique_ptr<ClearTextSeed> Helpers::restoreFromEasy16(
    {
       if (!Easy16Codec::repair(primaryData))
       {
-         BridgeProto::RestorePrompt prompt;
-         auto checksumError = prompt.mutable_checksum_error();
-         checksumError->add_index(primaryData.checksumIndexes_[0]);
-         checksumError->add_index(primaryData.checksumIndexes_[1]);
-         callback(move(prompt));
+         auto message = std::make_unique<capnp::MallocMessageBuilder>();
+         auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
+         auto checksumError = payload.initChecksumError(2);
+         checksumError.set(0, primaryData.checksumIndexes_[0]);
+         checksumError.set(1, primaryData.checksumIndexes_[1]);
+         callback(std::move(message));
          return nullptr;
       }
 
       if (!primaryData.isValid())
       {
-         BridgeProto::RestorePrompt prompt;
-         auto checksumError = prompt.mutable_checksum_error();
-         checksumError->add_index(primaryData.repairedIndexes_[0]);
-         checksumError->add_index(primaryData.repairedIndexes_[1]);
-         callback(move(prompt));
+         auto message = std::make_unique<capnp::MallocMessageBuilder>();
+         auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
+         auto checksumError = payload.initChecksumError(2);
+         checksumError.set(0, primaryData.repairedIndexes_[0]);
+         checksumError.set(1, primaryData.repairedIndexes_[1]);
+         callback(std::move(message));
          return nullptr;
       }
    }
@@ -1179,32 +1202,35 @@ unique_ptr<ClearTextSeed> Helpers::restoreFromEasy16(
    {
       if (!Easy16Codec::repair(secondaryData))
       {
-         BridgeProto::RestorePrompt prompt;
-         auto checksumError = prompt.mutable_checksum_error();
-         checksumError->add_index(secondaryData.checksumIndexes_[0]);
-         checksumError->add_index(secondaryData.checksumIndexes_[1]);
-         callback(move(prompt));
+         auto message = std::make_unique<capnp::MallocMessageBuilder>();
+         auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
+         auto checksumError = payload.initChecksumError(2);
+         checksumError.set(0, secondaryData.checksumIndexes_[0]);
+         checksumError.set(1, secondaryData.checksumIndexes_[1]);
+         callback(std::move(message));
          return nullptr;
       }
 
       if (!secondaryData.isValid())
       {
-         BridgeProto::RestorePrompt prompt;
-         auto checksumError = prompt.mutable_checksum_error();
-         checksumError->add_index(secondaryData.repairedIndexes_[0]);
-         checksumError->add_index(secondaryData.repairedIndexes_[1]);
-         callback(move(prompt));
+         auto message = std::make_unique<capnp::MallocMessageBuilder>();
+         auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
+         auto checksumError = payload.initChecksumError(2);
+         checksumError.set(0, secondaryData.repairedIndexes_[0]);
+         checksumError.set(1, secondaryData.repairedIndexes_[1]);
+         callback(std::move(message));
          return nullptr;
       }
 
       //check chaincode index matches root index
       if (primaryData.getIndex() != secondaryData.getIndex())
       {
-         BridgeProto::RestorePrompt prompt;
-         auto checksumError = prompt.mutable_checksum_mismatch();
-         checksumError->add_index(primaryData.getIndex());
-         checksumError->add_index(secondaryData.getIndex());
-         callback(move(prompt));
+         auto message = std::make_unique<capnp::MallocMessageBuilder>();
+         auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
+         auto checksumError = payload.initChecksumMismatch(2);
+         checksumError.set(0, primaryData.getIndex());
+         checksumError.set(1, secondaryData.getIndex());
+         callback(std::move(message));
          return nullptr;
       }
    }
@@ -1223,9 +1249,10 @@ unique_ptr<ClearTextSeed> Helpers::restoreFromEasy16(
    }
    catch (const exception&)
    {
-      BridgeProto::RestorePrompt prompt;
-      prompt.set_decrypt_error(true);
-      callback(move(prompt));
+      auto message = std::make_unique<capnp::MallocMessageBuilder>();
+      auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
+      payload.setDecryptError();
+      callback(std::move(message));
       throw RestoreUserException("invalid SP pass");
    }
 
@@ -1239,11 +1266,12 @@ unique_ptr<ClearTextSeed> Helpers::restoreFromEasy16(
       if ((BackupType)primaryData.getIndex() != bType)
       {
          //mismatch between easy16 index and backup expected type
-         BridgeProto::RestorePrompt prompt;
-         auto checksumError = prompt.mutable_checksum_mismatch();
-         checksumError->add_index(primaryData.getIndex());
-         checksumError->add_index((int)bType);
-         callback(move(prompt));
+         auto message = std::make_unique<capnp::MallocMessageBuilder>();
+         auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
+         auto checksumError = payload.initChecksumMismatch(2);
+         checksumError.set(0, primaryData.getIndex());
+         checksumError.set(1, (int)bType);
+         callback(std::move(message));
          return nullptr;
       }
    }
