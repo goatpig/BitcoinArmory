@@ -279,26 +279,23 @@ FilteredZeroConfData filterParsedTx(
    auto& parsedTx = *parsedTxPtr;
    auto zcKey = parsedTxPtr->getKeyRef();
 
-   FilteredZeroConfData result; 
+   FilteredZeroConfData result;
    result.txPtr_ = parsedTxPtr;
-   auto& txHash = parsedTx.getTxHash();
+   const auto& txHash = parsedTx.getTxHash();
 
-   auto filter = [mainAddressMap, bdvCallbacks]
-      (const BinaryData& addr)->pair<bool, set<string>>
+   auto filter = [&mainAddressMap, bdvCallbacks]
+      (const BinaryData& addr)->pair<bool, std::set<std::string>>
    {
-      pair<bool, set<string>> flaggedBDVs;
+      std::pair<bool, std::set<string>> flaggedBDVs;
       flaggedBDVs.first = false;
 
-      
       //Check if this address is being watched before looking for specific BDVs
       auto addrIter = mainAddressMap.find(addr.getRef());
-      if (addrIter == mainAddressMap.end())
-      {
-         if (DBSettings::getDbType() == ARMORY_DB_SUPER)
-         {
+      if (addrIter == mainAddressMap.end()) {
+         if (DBSettings::getDbType() == ARMORY_DB_SUPER) {
             /*
             We got this far because no BDV is watching this address and the DB
-            is running as a supernode. In supernode we track all ZC regardless 
+            is running as a supernode. In supernode we track all ZC regardless
             of watch status. Flag as true to process the ZC, but do not attach
             a bdv ID as no clients will be notified of this zc.
             */
@@ -314,37 +311,33 @@ FilteredZeroConfData filterParsedTx(
    };
 
    auto insertNewZc = [&result](const BinaryData& sa,
-      BinaryData txiokey, shared_ptr<TxIOPair> txio,
-      set<string> flaggedBDVs, bool consumesTxOut)->void
+      BinaryData txiokey, std::shared_ptr<TxIOPair> txio,
+      std::set<std::string> flaggedBDVs, bool consumesTxOut)->void
    {
-      if (consumesTxOut)
+      if (consumesTxOut) {
          result.txOutsSpentByZC_.insert(txiokey);
+      }
 
       auto& key_txioPair = result.scrAddrTxioMap_[sa];
-      key_txioPair[txiokey] = move(txio);
+      key_txioPair[txiokey] = std::move(txio);
 
-      for (auto& bdvId : flaggedBDVs)
+      for (auto& bdvId : flaggedBDVs) {
          result.flaggedBDVs_[bdvId].scrAddrs_.insert(sa);
+      }
    };
 
    //spent txios
    unsigned iin = 0;
-   for (auto& input : parsedTx.inputs_)
-   {
+   for (const auto& input : parsedTx.inputs_) {
       bool skipTxIn = false;
       auto inputId = iin++;
-      if (!input.isResolved())
-      {
-         if (DBSettings::getDbType() == ARMORY_DB_SUPER)
-         {
+      if (!input.isResolved()) {
+         if (DBSettings::getDbType() == ARMORY_DB_SUPER) {
             parsedTx.state_ = ParsedTxStatus::Invalid;
             return result;
-         }
-         else
-         {
+         } else {
             parsedTx.state_ = ParsedTxStatus::ResolveAgain;
          }
-
          skipTxIn = true;
       }
 
@@ -352,12 +345,14 @@ FilteredZeroConfData filterParsedTx(
       auto& id_map = result.outPointsSpentByKey_[input.opRef_.getTxHashRef()];
       id_map.insert(make_pair(input.opRef_.getIndex(), zcKey));
 
-      if (skipTxIn)
+      if (skipTxIn) {
          continue;
+      }
 
-      auto&& flaggedBDVs = filter(input.scrAddr_);
-      if (!parsedTx.isChainedZc_ && !flaggedBDVs.first)
+      auto flaggedBDVs = filter(input.scrAddr_);
+      if (!parsedTx.isChainedZc_ && !flaggedBDVs.first) {
          continue;
+      }
 
       auto txio = make_shared<TxIOPair>(
          TxRef(input.opRef_.getDbTxKeyRef()), input.opRef_.getIndex(),
@@ -367,32 +362,37 @@ FilteredZeroConfData filterParsedTx(
       txio->setTxHashOfInput(txHash);
       txio->setValue(input.value_);
       auto tx_time = input.opRef_.getTime();
-      if (tx_time == UINT64_MAX)
+      if (tx_time == UINT64_MAX) {
          tx_time = parsedTx.tx_.getTxTime();
+      }
       txio->setTxTime(tx_time);
       txio->setRBF(parsedTx.isRBF_);
       txio->setChained(parsedTx.isChainedZc_);
 
-      auto&& txioKey = txio->getDBKeyOfOutput();
-      insertNewZc(input.scrAddr_, move(txioKey), move(txio),
-         move(flaggedBDVs.second), true);
+      auto txioKey = txio->getDBKeyOfOutput();
+      insertNewZc(
+         input.scrAddr_,
+         std::move(txioKey),
+         std::move(txio),
+         std::move(flaggedBDVs.second),
+         true
+      );
 
       auto& updateSet = result.keyToSpentScrAddr_[zcKey];
-      if (updateSet == nullptr)
-         updateSet = make_shared<set<BinaryDataRef>>();
-      updateSet->insert(input.scrAddr_.getRef());
+      if (updateSet == nullptr) {
+         updateSet = std::make_shared<std::set<BinaryDataRef>>();
+      }
+      updateSet->emplace(input.scrAddr_.getRef());
    }
 
    //funded txios
    unsigned iout = 0;
-   for (auto& output : parsedTx.outputs_)
-   {
+   for (const auto& output : parsedTx.outputs_) {
       auto outputId = iout++;
 
-      auto&& flaggedBDVs = filter(output.scrAddr_);
-      if (flaggedBDVs.first)
-      {
-         auto txio = make_shared<TxIOPair>(TxRef(zcKey), outputId);
+      auto flaggedBDVs = filter(output.scrAddr_);
+      if (flaggedBDVs.first) {
+         auto txio = std::make_shared<TxIOPair>(TxRef(zcKey), outputId);
 
          txio->setValue(output.value_);
          txio->setTxHashOfOutput(txHash);
@@ -404,9 +404,13 @@ FilteredZeroConfData filterParsedTx(
          auto& fundedScrAddr = result.keyToFundedScrAddr_[zcKey];
          fundedScrAddr.insert(output.scrAddr_.getRef());
 
-         auto&& txioKey = txio->getDBKeyOfOutput();
-         insertNewZc(output.scrAddr_, move(txioKey),
-            move(txio), move(flaggedBDVs.second), false);
+         auto txioKey = txio->getDBKeyOfOutput();
+         insertNewZc(output.scrAddr_,
+            std::move(txioKey),
+            std::move(txio),
+            std::move(flaggedBDVs.second),
+            false
+         );
       }
    }
 

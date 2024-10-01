@@ -542,6 +542,7 @@ void ZeroConfContainer::parseNewZC(
          MEMPOOL_DEPTH, POOL_MERGE_THRESHOLD);
    }
 
+   LOGDEBUG << "parsing " << zcMap.size() << " txns from mempool";
    for (const auto& newZCPair : zcMap) {
       if (DBSettings::getDbType() != ARMORY_DB_SUPER) {
          auto& txHash = newZCPair.second->getTxHash();
@@ -573,11 +574,15 @@ void ZeroConfContainer::parseNewZC(
       //parse the zc
       auto filterResult = filterTransaction(newZCPair.second, ss);
 
-      //check for replacement
-      invalidatedTx = checkForCollisions(filterResult.outPointsSpentByKey_, ss);
-
       //add ZC if its relevant
       if (filterResult.isValid()) {
+         //check for collisions with other valid zcs
+         auto invalidTxs = checkForCollisions(filterResult.outPointsSpentByKey_, ss);
+         for (auto& invalidTx : invalidTxs) {
+            invalidatedTx.emplace(std::move(invalidTx));
+         }
+
+         //add this batch to known valid zcs
          addedZcKeys.insert(newZCPair.first);
          hasChanges = true;
 
@@ -682,19 +687,17 @@ void ZeroConfContainer::parseNewZC(
 
 ///////////////////////////////////////////////////////////////////////////////
 FilteredZeroConfData ZeroConfContainer::filterTransaction(
-   shared_ptr<ParsedTx> parsedTx,
-   shared_ptr<MempoolSnapshot> ss) const
+   std::shared_ptr<ParsedTx> parsedTx,
+   std::shared_ptr<MempoolSnapshot> ss) const
 {
-   if (parsedTx->status() == ParsedTxStatus::Mined || 
+   if (parsedTx->status() == ParsedTxStatus::Mined ||
       parsedTx->status() == ParsedTxStatus::Invalid ||
-      parsedTx->status() == ParsedTxStatus::Skip)
-   {
+      parsedTx->status() == ParsedTxStatus::Skip) {
       return {};
    }
 
    if (parsedTx->status() == ParsedTxStatus::Uninitialized ||
-      parsedTx->status() == ParsedTxStatus::ResolveAgain)
-   {
+      parsedTx->status() == ParsedTxStatus::ResolveAgain) {
       preprocessTx(*parsedTx, db_);
    }
 
@@ -951,21 +954,20 @@ void ZeroConfContainer::updateZCinDB()
 unsigned ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
 {
    unsigned topId = 0;
-   map<BinaryData, shared_ptr<ParsedTx>> zcMap;
+   std::map<BinaryData, std::shared_ptr<ParsedTx>> zcMap;
 
    {
-      auto&& tx = db_->beginTransaction(ZERO_CONF, LMDB::ReadOnly);
+      auto tx = db_->beginTransaction(ZERO_CONF, LMDB::ReadOnly);
       auto dbIter = db_->getIterator(ZERO_CONF);
 
-      if (!dbIter->seekToStartsWith(DB_PREFIX_ZCDATA))
+      if (!dbIter->seekToStartsWith(DB_PREFIX_ZCDATA)) {
          return topId;
+      }
 
-      do
-      {
+      do {
          BinaryDataRef zcKey = dbIter->getKeyRef();
 
-         if (zcKey.getSize() == 7)
-         {
+         if (zcKey.getSize() == 7) {
             //Tx, grab it from DB
             StoredTx zcStx;
             db_->getStoredZcTx(zcStx, zcKey);
@@ -980,19 +982,13 @@ unsigned ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
 
             zcMap.insert(move(make_pair(
                parsedTx->getKeyRef(), move(parsedTx))));
-         }
-         else if (zcKey.getSize() == 9)
-         {
+         } else if (zcKey.getSize() == 9) {
             //TxOut, ignore it
             continue;
-         }
-         else if (zcKey.getSize() == 32)
-         {
+         } else if (zcKey.getSize() == 32) {
             //tx hash
             allZcTxHashes_.insert(zcKey);
-         }
-         else
-         {
+         } else {
             //shouldn't hit this
             LOGERR << "Unknown key found in ZC mempool";
             break;
@@ -1000,8 +996,7 @@ unsigned ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
       } while (dbIter->advanceAndRead(DB_PREFIX_ZCDATA));
    }
 
-   if (clearMempool == true)
-   {
+   if (clearMempool == true) {
       LOGWARN << "Mempool was flagged for deletion!";
       ZcUpdateBatch batch;
       auto fut = batch.getCompletedFuture();
@@ -1011,9 +1006,7 @@ unsigned ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
 
       updateBatch_.push_back(move(batch));
       fut.wait();
-   }
-   else if (zcMap.size())
-   {
+   } else if (zcMap.size()) {
       preprocessZcMap(zcMap, db_);
 
       //set highest used index
