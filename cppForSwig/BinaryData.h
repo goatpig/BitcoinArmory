@@ -1030,7 +1030,7 @@ public:
    // Take the remaining buffer and shift it to the front
    // then return a pointer to where the old data ends
    //
-   //                                      
+   //
    //  Before:                             pos
    //                                       |
    //                                       V
@@ -1040,7 +1040,7 @@ public:
    //               |               |
    //               V               V
    //             [ m n o p q r s t - - - - - - - - - - - -]
-   //                                 
+   //
    //
    std::pair<uint8_t*, size_t> rotateRemaining(void)
    {
@@ -1048,7 +1048,7 @@ public:
       //if(pos_ > nRemain+1)
          //memcpy(bdStr_.getPtr(), bdStr_.getPtr() + pos_, nRemain);
       //else
-         memmove(bdStr_.getPtr(), bdStr_.getPtr() + pos_, nRemain);
+      memmove(bdStr_.getPtr(), bdStr_.getPtr() + pos_, nRemain);
 
       pos_ = 0;
 
@@ -1163,6 +1163,7 @@ public:
    void resetPosition(void);
    size_t getPosition(void) const;
    size_t getSize(void) const;
+   bool empty(void) const;
    size_t getSizeRemaining(void) const;
    bool isEndOfStream(void) const;
    uint8_t const* exposeDataPtr(void);

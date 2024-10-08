@@ -87,11 +87,9 @@ public:
    std::vector<UTXO> getRBFTxOutList(void);
 
    void clearBlkData(void);
-   
-   std::vector<AddressBookEntry> createAddressBook(void);
+   std::vector<AddressBookEntry> createAddressBook(void) const;
 
    void reset(void);
-   
    const ScrAddrObj* getScrAddrObjByKey(const BinaryData& key) const;
    ScrAddrObj& getScrAddrObjRef(const BinaryData& key);
 

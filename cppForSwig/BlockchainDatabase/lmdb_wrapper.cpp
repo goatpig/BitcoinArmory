@@ -1665,28 +1665,23 @@ Tx LMDBBlockDatabase::getFullTxCopy(BinaryData ldbKey6B) const
    uint8_t dup;
    uint16_t txid;
 
-   if (ldbKey6B.getSize() == 6)
-   {
+   if (ldbKey6B.getSize() == 6) {
       BinaryRefReader brr(ldbKey6B);
       DBUtils::readBlkDataKeyNoPrefix(brr, height, dup, txid);
-   }
-   else if (ldbKey6B.getSize() == 7)
-   {
+   } else if (ldbKey6B.getSize() == 7) {
       BinaryRefReader brr(ldbKey6B);
       DBUtils::readBlkDataKey(brr, height, dup, txid);
-   }
-   else
-   {
+   } else {
       LOGERR << "invalid key length";
       throw LmdbWrapperException("invalid key length");
    }
-   
-   shared_ptr<BlockHeader> header;
-   if (getDbType() != ARMORY_DB_SUPER || dup != 0x7F)
-      header = blockchainPtr_->getHeaderByHeight(height, dup);
-   else
-      header = blockchainPtr_->getHeaderById(height);
 
+   std::shared_ptr<BlockHeader> header;
+   if (getDbType() != ARMORY_DB_SUPER || dup != 0x7F) {
+      header = blockchainPtr_->getHeaderByHeight(height, dup);
+   } else {
+      header = blockchainPtr_->getHeaderById(height);
+   }
    return getFullTxCopy(txid, header);
 }
 
@@ -1703,7 +1698,7 @@ Tx LMDBBlockDatabase::getFullTxCopy( uint32_t hgt, uint16_t txIndex) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-Tx LMDBBlockDatabase::getFullTxCopy( 
+Tx LMDBBlockDatabase::getFullTxCopy(
    uint32_t hgt, uint8_t dup, uint16_t txIndex) const
 {
    SCOPED_TIMER("getFullTxCopy");
@@ -1715,14 +1710,17 @@ Tx LMDBBlockDatabase::getFullTxCopy(
 Tx LMDBBlockDatabase::getFullTxCopy(
    uint16_t txIndex, shared_ptr<BlockHeader> bhPtr) const
 {
-   if (bhPtr == nullptr)
+   if (bhPtr == nullptr) {
       throw LmdbWrapperException("null bhPtr");
+   }
 
-   if (txIndex >= bhPtr->getNumTx())
+   if (txIndex >= bhPtr->getNumTx()) {
       throw range_error("txid > numTx");
+   }
 
-   if (blkFolder_.size() == 0)
+   if (blkFolder_.size() == 0) {
       throw LmdbWrapperException("invalid blkFolder");
+   }
 
    //open block file
    BlockDataLoader bdl(blkFolder_);
@@ -1730,8 +1728,10 @@ Tx LMDBBlockDatabase::getFullTxCopy(
    auto fileMapPtr = bdl.get(bhPtr->getBlockFileNum());
    auto dataPtr = fileMapPtr->getPtr();
 
-   auto getID = [bhPtr]
-      (const BinaryData&)->uint32_t {return bhPtr->getThisID(); };
+   auto getID = [bhPtr] (const BinaryData&)->uint32_t
+   {
+      return bhPtr->getThisID();
+   };
 
    auto block = BlockData::deserialize(
       dataPtr + bhPtr->getOffset(),
@@ -1742,7 +1742,6 @@ Tx LMDBBlockDatabase::getFullTxCopy(
    BinaryRefReader brr(bctx->data_, bctx->size_);
    return Tx(brr);
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////
 TxOut LMDBBlockDatabase::getTxOutCopy(
@@ -1757,11 +1756,11 @@ TxOut LMDBBlockDatabase::getTxOutCopy(
    TxOut txoOut;
 
    BinaryRefReader brr;
-   if (ldbKey6B.startsWith(DBUtils::ZeroConfHeader_))
-      return TxOut();
+   if (ldbKey6B.startsWith(DBUtils::ZeroConfHeader_)) {
+      return {};
+   }
 
-   if (getDbType() == ARMORY_DB_SUPER)
-   {
+   if (getDbType() == ARMORY_DB_SUPER) {
       BinaryRefReader brr_key(ldbKey6B);
       unsigned block;
       uint8_t dup;
@@ -1769,12 +1768,11 @@ TxOut LMDBBlockDatabase::getTxOutCopy(
       DBUtils::readBlkDataKeyNoPrefix(brr_key, block, dup, txid);
 
       auto header = blockchainPtr_->getHeaderByHeight(block, dup);
-      auto&& key_super = DBUtils::getBlkDataKeyNoPrefix(
+      auto key_super = DBUtils::getBlkDataKeyNoPrefix(
          header->getThisID(), 0xFF, txid, txOutIdx);
       brr = getValueReader(STXO, key_super);
 
-      if (brr.getSize() == 0)
-      {
+      if (brr.empty()) {
          LOGERR << "TxOut key does not exist in BLKDATA DB";
          return TxOut();
       }
@@ -1784,14 +1782,11 @@ TxOut LMDBBlockDatabase::getTxOutCopy(
       auto&& txout_raw = stxo.getSerializedTxOut();
       txoOut.unserialize(txout_raw, txout_raw.getSize(), txOutIdx);
       return txoOut;
-   }
-   else
-   {
+   } else {
       brr = getValueReader(STXO, DB_PREFIX_TXDATA, ldbKey8);
    }
 
-   if (brr.getSize() == 0)
-   {
+   if (brr.empty()) {
       LOGERR << "TxOut key does not exist in BLKDATA DB";
       return TxOut();
    }
@@ -1804,17 +1799,15 @@ TxOut LMDBBlockDatabase::getTxOutCopy(
 
 
 ////////////////////////////////////////////////////////////////////////////////
-TxIn LMDBBlockDatabase::getTxInCopy( 
+TxIn LMDBBlockDatabase::getTxInCopy(
    BinaryData ldbKey6B, uint16_t txInIdx) const
 {
    SCOPED_TIMER("getTxInCopy");
 
-   if (getDbType() == ARMORY_DB_SUPER)
-   {
+   if (getDbType() == ARMORY_DB_SUPER) {
       TxIn txiOut;
       BinaryRefReader brr = getValueReader(BLKDATA, DB_PREFIX_TXDATA, ldbKey6B);
-      if (brr.getSize() == 0)
-      {
+      if (brr.empty()) {
          LOGERR << "TxOut key does not exist in BLKDATA DB";
          return TxIn();
       }
@@ -1825,23 +1818,17 @@ TxIn LMDBBlockDatabase::getTxInCopy(
       uint16_t txVer = bitunpack.getBits(2);
       (void)txVer;
       uint16_t txSer = bitunpack.getBits(4);
-
       brr.advance(32);
 
-
-      if (txSer != TX_SER_FULL && txSer != TX_SER_FRAGGED)
-      {
+      if (txSer != TX_SER_FULL && txSer != TX_SER_FRAGGED) {
          LOGERR << "Tx not available to retrieve TxIn";
          return TxIn();
-      }
-      else
-      {
+      } else {
          bool isFragged = txSer == TX_SER_FRAGGED;
-         vector<size_t> offsetsIn;
+         std::vector<size_t> offsetsIn;
          BtcUtils::StoredTxCalcLength(brr.getCurrPtr(), 
             brr.getSize(), isFragged, &offsetsIn, nullptr, nullptr);
-         if ((uint32_t)(offsetsIn.size() - 1) < (uint32_t)(txInIdx + 1))
-         {
+         if ((uint32_t)(offsetsIn.size() - 1) < (uint32_t)(txInIdx + 1)) {
             LOGERR << "Requested TxIn with index greater than numTxIn";
             return TxIn();
          }
@@ -1851,9 +1838,7 @@ TxIn LMDBBlockDatabase::getTxInCopy(
          txin.unserialize_checked(txInStart, brr.getSize() - 34 - offsetsIn[txInIdx], txInLength, txInIdx);
          return txin;
       }
-   }
-   else
-   {
+   } else {
       Tx thisTx = getFullTxCopy(ldbKey6B);
       return thisTx.getTxInCopy(txInIdx);
    }
