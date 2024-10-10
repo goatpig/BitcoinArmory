@@ -13,7 +13,6 @@
 #include "BIP15x_Handshake.h"
 
 using namespace std;
-using namespace google::protobuf;
 using namespace Armory::Threading;
 using namespace Armory::Wallets;
 

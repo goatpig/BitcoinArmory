@@ -139,11 +139,6 @@ case $host in
             PKG_CONFIG_PATH="$libevent_prefix/lib/pkgconfig:$PKG_CONFIG_PATH"
             export PKG_CONFIG_PATH
         fi
-        protobuf_prefix=`$BREW --prefix protobuf 2>/dev/null`
-        if test x$protobuf_prefix != x; then
-            PKG_CONFIG_PATH="$protobuf_prefix/lib/pkgconfig:$PKG_CONFIG_PATH"
-            export PKG_CONFIG_PATH
-        fi
     fi
 
     # Just FYI, here are some linker flags, used and unused, that are noteworthy.
@@ -183,21 +178,10 @@ esac
 #    ])
 #fi
 
-# Check for protobuf (protoc in particular is required)
-PKG_CHECK_MODULES_STATIC(PROTOBUF, protobuf >= 2.0.0)
-PKG_CHECK_VAR([PROTOBUF_LIBDIR], [protobuf], [libdir])
-AC_MSG_CHECKING([protobuf lib path])
-AS_IF([test "x$PROTOBUF_LIBDIR" = "x"], [
-  AC_MSG_FAILURE([Unable to identify protobuf lib path.])
-])
-AC_MSG_RESULT($PROTOBUF_LIBDIR)
-AC_SUBST([PROTOBUF_LIBDIR])
-CXXFLAGS="${CXXFLAGS} ${PROTOBUF_CFLAGS}"
-
-dnl Check for protoc (Google Protocol Buffers).
-AC_PATH_PROG([PROTOC], [protoc], [])
-AS_IF([test x"$PROTOC" = x],
-  [AC_MSG_ERROR([cannot find protoc (the Protocol Buffers compiler)])])
+dnl Check for capnproto compiler
+AC_PATH_PROG([CAPNPC], [capnpc], [])
+AS_IF([test x"$CAPNPC" = x],
+  [AC_MSG_ERROR([cannot find capnpc (the capnproto compiler)])])
 
 if test x$use_pkgconfig$with_own_lws = xyesno; then
     PKG_CHECK_MODULES_STATIC([WEBSOCKETS], [libwebsockets_static >= 3.0.1],,[AC_MSG_ERROR(libwebsockets_static >= 3.0.1 not found.)])

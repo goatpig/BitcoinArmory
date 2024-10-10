@@ -27,7 +27,6 @@
 #include "AuthorizedPeers.h"
 
 #include "BIP150_151.h"
-#include <google/protobuf/io/zero_copy_stream_impl_lite.h>
 
 #define SERVER_AUTH_PEER_FILENAME "server.peers"
 
