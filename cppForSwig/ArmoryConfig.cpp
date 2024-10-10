@@ -6,6 +6,8 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
+#include <filesystem>
+
 #include "ArmoryConfig.h"
 #include "BtcUtils.h"
 #include "DBUtils.h"
@@ -19,10 +21,6 @@
 #include "nodeRPC.h"
 
 #include "gtest/NodeUnitTest.h"
-
-#ifndef _WIN32
-#include "sys/stat.h"
-#endif
 
 using namespace std;
 using namespace Armory;
@@ -144,8 +142,7 @@ void Armory::Config::parseArgs(
    const vector<string>& lines, ProcessType procType)
 {
    unique_lock<mutex> lock(BaseSettings::configMutex_);
-   if (BaseSettings::initCount_++ > 0)
-   {
+   if (BaseSettings::initCount_++ > 0) {
       LOGERR << "Trying to override config";
       throw runtime_error("Trying to override config");
    }
@@ -157,12 +154,10 @@ void Armory::Config::parseArgs(
    4. finally, parse arg map for everything else
    */
 
-   try
-   {
+   try {
       //parse command line args
       map<string, string> args;
-      for (const auto& line : lines)
-      {
+      for (const auto& line : lines) {
          if (line == ("--help")) {
             Armory::Config::printHelp();
             exit(0);
@@ -170,10 +165,8 @@ void Armory::Config::parseArgs(
 
          //string prefix and tokenize
          auto strings = SettingsUtils::tokenizeLine(line, "--");
-         for (auto& line : strings)
-         {
+         for (auto& line : strings) {
             auto keyVal = SettingsUtils::getKeyValFromLine(line, '=');
-
             args.insert(make_pair(
                keyVal.first, SettingsUtils::stripQuotes(keyVal.second)));
          }
@@ -186,16 +179,13 @@ void Armory::Config::parseArgs(
       BaseSettings::detectDataDir(args);
 
       //get config file
-      auto configPath = Armory::Config::getDataDir();
-      DBUtils::appendPath(configPath, "armorydb.conf");
-
-      if (SettingsUtils::fileExists(configPath, 2))
-      {
+      auto configPath = std::filesystem::path(Armory::Config::getDataDir()) / "armorydb.conf";
+      if (SettingsUtils::fileExists(configPath, 2)) {
          Config::File cf(configPath);
          auto mapIter = cf.keyvalMap_.find("datadir");
-         if (mapIter != cf.keyvalMap_.end())
+         if (mapIter != cf.keyvalMap_.end()) {
             throw DbErrorMsg("datadir is illegal in .conf file");
-
+         }
          //parse config file for network arg
          BitcoinSettings::processArgs(cf.keyvalMap_);
 
@@ -211,9 +201,7 @@ void Armory::Config::parseArgs(
 
       //db settings
       DBSettings::processArgs(args);
-   }
-   catch (const Config::Error& e)
-   {
+   } catch (const Config::Error& e) {
       cerr << e.what() << endl;
       throw e;
    }
@@ -407,12 +395,11 @@ bool SettingsUtils::testConnection(const string& ip, const string& port)
 string SettingsUtils::getPortFromCookie(const string& datadir)
 {
    //check for cookie file
-   string cookie_path = datadir;
-   DBUtils::appendPath(cookie_path, ".cookie_");
-   auto&& lines = SettingsUtils::getLines(cookie_path);
-   if (lines.size() != 2)
-      return string();
-
+   auto cookie_path = std::filesystem::path(datadir) / ".cookie_";
+   auto lines = SettingsUtils::getLines(cookie_path);
+   if (lines.size() != 2) {
+      return {};
+   }
    return lines[1];
 }
 
@@ -420,25 +407,26 @@ string SettingsUtils::getPortFromCookie(const string& datadir)
 string SettingsUtils::hasLocalDB(const string& datadir, const string& port)
 {
    //check db on provided port
-   if (SettingsUtils::testConnection("127.0.0.1", port))
+   if (SettingsUtils::testConnection("127.0.0.1", port)) {
       return port;
+   }
 
    //check db on default port
    if (SettingsUtils::testConnection(
-      "127.0.0.1", SettingsUtils::portToString(LISTEN_PORT_MAINNET)))
-   {
+      "127.0.0.1", SettingsUtils::portToString(LISTEN_PORT_MAINNET))) {
       return SettingsUtils::portToString(LISTEN_PORT_MAINNET);
    }
 
    //check for cookie file
-   auto&& cookie_port = getPortFromCookie(datadir);
-   if (cookie_port.size() == 0)
-      return string();
+   auto cookie_port = getPortFromCookie(datadir);
+   if (cookie_port.empty()) {
+      return {};
+   }
 
-   if (SettingsUtils::testConnection("127.0.0.1", cookie_port))
+   if (SettingsUtils::testConnection("127.0.0.1", cookie_port)) {
       return cookie_port;
-
-   return string();
+   }
+   return {};
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -455,40 +443,37 @@ void BaseSettings::detectDataDir(map<string, string>& args)
 {
    //figure out the datadir
    auto argIter = args.find("datadir");
-   if (argIter != args.end())
-   {
+   if (argIter != args.end()) {
       dataDir_ = argIter->second;
       args.erase(argIter);
-   }
-   else
-   {
+   } else {
       switch (BitcoinSettings::getMode())
       {
-      case NETWORK_MODE_MAINNET:
-      {
-         dataDir_ = MAINNET_DEFAULT_DATADIR;
-         break;
-      }
+         case NETWORK_MODE_MAINNET:
+         {
+            dataDir_ = MAINNET_DEFAULT_DATADIR;
+            break;
+         }
 
-      case NETWORK_MODE_TESTNET:
-      {
-         dataDir_ = TESTNET_DEFAULT_DATADIR;
-         break;
-      }
+         case NETWORK_MODE_TESTNET:
+         {
+            dataDir_ = TESTNET_DEFAULT_DATADIR;
+            break;
+         }
 
-      case NETWORK_MODE_REGTEST:
-      {
-         dataDir_ = REGTEST_DEFAULT_DATADIR;
-         break;
-      }
+         case NETWORK_MODE_REGTEST:
+         {
+            dataDir_ = REGTEST_DEFAULT_DATADIR;
+            break;
+         }
 
-      default:
-         LOGERR << "unexpected network mode";
-         throw runtime_error("unexpected network mode");
+         default:
+            LOGERR << "unexpected network mode";
+            throw runtime_error("unexpected network mode");
       }
    }
 
-   DBUtils::expandPath(dataDir_);
+   dataDir_ = std::filesystem::absolute(dataDir_);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -622,12 +607,11 @@ void DBSettings::processArgs(const map<string, string>& args)
 ////////////////////////////////////////////////////////////////////////////////
 string DBSettings::getCookie(const string& datadir)
 {
-   string cookie_path = datadir;
-   DBUtils::appendPath(cookie_path, ".cookie_");
-   auto&& lines = SettingsUtils::getLines(cookie_path);
-   if (lines.size() != 2)
-      return string();
-
+   auto cookie_path = std::filesystem::path(datadir) / ".cookie_";
+   auto lines = SettingsUtils::getLines(cookie_path);
+   if (lines.size() != 2) {
+      return {};
+   }
    return lines[0];
 }
 
@@ -636,17 +620,17 @@ string DBSettings::getDbModeStr()
 {
    switch(getDbType())
    {
-   case ARMORY_DB_BARE: 
-      return "DB_BARE";
+      case ARMORY_DB_BARE: 
+         return "DB_BARE";
 
-   case ARMORY_DB_FULL:
-      return "DB_FULL";
-  
-   case ARMORY_DB_SUPER:
-      return "DB_SUPER";
+      case ARMORY_DB_FULL:
+         return "DB_FULL";
+   
+      case ARMORY_DB_SUPER:
+         return "DB_SUPER";
 
-   default:
-      throw runtime_error("invalid db type!");
+      default:
+         throw runtime_error("invalid db type!");
    }
 }
 
@@ -939,15 +923,15 @@ NetworkSettings::RpcPtr NetworkSettings::rpcNode()
 void NetworkSettings::createCookie()
 {
    //cookie file
-   if (!useCookie_)
+   if (!useCookie_) {
       return;
-
+   }
    if (DBSettings::getServiceType() == SERVICE_UNITTEST ||
-      DBSettings::getServiceType() == SERVICE_UNITTEST_WITHWS)
+      DBSettings::getServiceType() == SERVICE_UNITTEST_WITHWS) {
       return;
+   }
 
-   auto cookiePath = Armory::Config::getDataDir();
-   DBUtils::appendPath(cookiePath, ".cookie_");
+   auto cookiePath = std::filesystem::path(Armory::Config::getDataDir()) / ".cookie_";
    fstream fs(cookiePath, ios_base::out | ios_base::trunc);
    fs << cookie_ << endl;
    fs << dbPort_;
@@ -995,44 +979,42 @@ void Pathing::processArgs(const map<string, string>& args, ProcessType procType)
 {
    //paths
    auto iter = args.find("dbdir");
-   if (iter != args.end())
+   if (iter != args.end()) {
       dbDir_ = SettingsUtils::stripQuotes(iter->second);
+   }
 
    iter = args.find("satoshi-datadir");
-   if (iter != args.end())
+   if (iter != args.end()) {
       blkFilePath_ = SettingsUtils::stripQuotes(iter->second);
+   }
 
    bool autoDbDir = false;
-   if (dbDir_.empty())
-   {
-      dbDir_ = Armory::Config::getDataDir();
-      DBUtils::appendPath(dbDir_, DEFAULT_DBDIR_SUFFIX);
+   if (dbDir_.empty()) {
+      dbDir_ = std::filesystem::path(Armory::Config::getDataDir()) / DEFAULT_DBDIR_SUFFIX;
       autoDbDir = true;
    }
 
-   if (blkFilePath_.empty())
-   {
+   if (blkFilePath_.empty()) {
       switch (BitcoinSettings::getMode())
       {
-      case NETWORK_MODE_MAINNET:
-      {
-         blkFilePath_ = MAINNET_DEFAULT_BLOCKPATH;
-         break;
-      }
+         case NETWORK_MODE_MAINNET:
+         {
+            blkFilePath_ = MAINNET_DEFAULT_BLOCKPATH;
+            break;
+         }
 
-      default:
-         blkFilePath_ = TESTNET_DEFAULT_BLOCKPATH;
+         default:
+            blkFilePath_ = TESTNET_DEFAULT_BLOCKPATH;
       }
    }
 
    //expand paths if necessary
-   DBUtils::expandPath(dbDir_);
-   DBUtils::expandPath(blkFilePath_);
+   dbDir_ = std::filesystem::absolute(dbDir_);
+   blkFilePath_ = std::filesystem::absolute(blkFilePath_);
 
    if (blkFilePath_.size() < 6 ||
-      blkFilePath_.substr(blkFilePath_.length() - 6, 6) != "blocks")
-   {
-      DBUtils::appendPath(blkFilePath_, "blocks");
+      blkFilePath_.substr(blkFilePath_.length() - 6, 6) != "blocks") {
+      blkFilePath_ = std::filesystem::path(blkFilePath_) / "blocks";
    }
 
    //test all paths
@@ -1041,41 +1023,31 @@ void Pathing::processArgs(const map<string, string>& args, ProcessType procType)
       return SettingsUtils::fileExists(path, mode);
    };
 
-   if (!testPath(Armory::Config::getDataDir(), 6))
-   {
+   if (!testPath(Armory::Config::getDataDir(), 6)) {
       string errMsg = Armory::Config::getDataDir() +
          " is not a valid datadir path";
       throw DbErrorMsg(errMsg); 
    }
 
-   if (procType != ProcessType::DB)
-   {
+   if (procType != ProcessType::DB) {
       //path checks past this point only apply to ArmoryDB
       return;
    }
 
-   if (NetworkSettings::isOffline())
-   {
+   if (NetworkSettings::isOffline()) {
       //skip checks on block and db folders in offline mode
       return;
    }
 
    //create dbdir if set automatically
-   if (autoDbDir)
-   {
-      if (!testPath(dbDir_, 0))
-      {
-#ifdef _WIN32
-         CreateDirectory(dbDir_.c_str(), NULL);
-#else
-         mkdir(dbDir_.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-#endif
+   if (autoDbDir) {
+      if (!testPath(dbDir_, 0)) {
+         std::filesystem::create_directory(dbDir_);
       }
    }
 
    //now for the regular test, let it throw if it fails
-   if (!testPath(dbDir_, 6))
-   {
+   if (!testPath(dbDir_, 6)) {
       string errMsg = dbDir_ + " is not a valid db path";
       throw DbErrorMsg(errMsg); 
    }
@@ -1085,10 +1057,8 @@ void Pathing::processArgs(const map<string, string>& args, ProcessType procType)
       bitcoind, local manual bitcoind and remote armorydb
    */
 
-   if (!NetworkSettings::isOffline())
-   {
-      if (!testPath(blkFilePath_, 2))
-      {
+   if (!NetworkSettings::isOffline()) {
+      if (!testPath(blkFilePath_, 2)) {
          string errMsg = blkFilePath_ + " is not a valid blockchain data path";
          throw DbErrorMsg(errMsg); 
       }
@@ -1105,7 +1075,8 @@ void Pathing::reset()
 ////////////////////////////////////////////////////////////////////////////////
 string Pathing::logFilePath(const string& logName)
 {
-   return getDataDir() + "/" + logName + ".txt";
+   std::string logFileName = logName + ".txt";
+   return std::filesystem::path(getDataDir()) / logFileName;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1115,18 +1086,16 @@ string Pathing::logFilePath(const string& logName)
 ////////////////////////////////////////////////////////////////////////////////
 Config::File::File(const string& path)
 {
-   auto&& lines = SettingsUtils::getLines(path);
+   auto lines = SettingsUtils::getLines(path);
+   for (auto& line : lines) {
+      auto keyval = SettingsUtils::getKeyValFromLine(line, '=');
 
-   for (auto& line : lines)
-   {
-      auto&& keyval = SettingsUtils::getKeyValFromLine(line, '=');
-
-      if (keyval.first.size() == 0)
+      if (keyval.first.empty()) {
          continue;
-
-      if (keyval.first.compare(0, 1, "#") == 0)
+      }
+      if (keyval.first.compare(0, 1, "#") == 0) {
          continue;
-
+      }
       keyvalMap_.insert(make_pair(
          keyval.first, SettingsUtils::stripQuotes(keyval.second)));
    }
@@ -1137,16 +1106,15 @@ vector<BinaryData> Config::File::fleshOutArgs(
    const string& path, const vector<BinaryData>& argv)
 {
    //sanity check
-   if (path.size() == 0)
+   if (path.empty()) {
       throw runtime_error("invalid config file path");
-
+   }
    //remove first arg
    auto binaryPath = argv.front();
    vector<string> arg_minus_1;
 
    auto argvIter = argv.begin() + 1;
-   while (argvIter != argv.end())
-   {
+   while (argvIter != argv.end()) {
       string argStr((*argvIter).getCharPtr(), (*argvIter).getSize());
       arg_minus_1.push_back(move(argStr));
       ++argvIter;
@@ -1157,48 +1125,49 @@ vector<BinaryData> Config::File::fleshOutArgs(
 
    //complete config file path
    string configFile_path = MAINNET_DEFAULT_DATADIR;
-   if (keyValMap.find("--testnet") != keyValMap.end())
+   if (keyValMap.find("--testnet") != keyValMap.end()) {
       configFile_path = TESTNET_DEFAULT_DATADIR;
-   else if (keyValMap.find("--regtest") != keyValMap.end())
+   } else if (keyValMap.find("--regtest") != keyValMap.end()) {
       configFile_path = REGTEST_DEFAULT_DATADIR;
+   }
 
    auto datadir_iter = keyValMap.find("--datadir");
-   if (datadir_iter != keyValMap.end() && datadir_iter->second.size() > 0)
+   if (datadir_iter != keyValMap.end() && datadir_iter->second.size() > 0) {
       configFile_path = datadir_iter->second;
-
-   DBUtils::appendPath(configFile_path, path);
-   DBUtils::expandPath(configFile_path);
+   }
+   configFile_path = std::filesystem::path(configFile_path) / path;
+   configFile_path = std::filesystem::absolute(configFile_path);
 
    //process config file
    Config::File cfile(configFile_path);
-   if (cfile.keyvalMap_.size() == 0)
+   if (cfile.keyvalMap_.size() == 0) {
       return argv;
+   }
 
    //merge with argv
-   for (auto& keyval : cfile.keyvalMap_)
-   {
+   for (auto& keyval : cfile.keyvalMap_) {
       //skip if argv already has this key
       stringstream argss;
-      if (keyval.first.compare(0, 2, "--") != 0)
+      if (keyval.first.compare(0, 2, "--") != 0) {
          argss << "--";
+      }
       argss << keyval.first;
 
       auto keyiter = keyValMap.find(argss.str());
-      if (keyiter != keyValMap.end())
+      if (keyiter != keyValMap.end()) {
          continue;
-
+      }
       keyValMap.insert(keyval);
    }
 
    //convert back to string list format
-   auto&& newArgs = SettingsUtils::keyValToArgv(keyValMap);
+   auto newArgs = SettingsUtils::keyValToArgv(keyValMap);
 
    //prepend the binary path and return
    vector<BinaryData> fleshedOutArgs;
    fleshedOutArgs.push_back(binaryPath);
    auto newArgsIter = newArgs.begin();
-   while (newArgsIter != newArgs.end())
-   {
+   while (newArgsIter != newArgs.end()) {
       auto&& bdStr = BinaryData::fromString(*newArgsIter);
       fleshedOutArgs.push_back(move(bdStr));
       ++newArgsIter;
@@ -1230,9 +1199,8 @@ BinaryData BDV_Error_Struct::serialize(void) const
 void BDV_Error_Struct::deserialize(const BinaryData& data)
 {
    BinaryRefReader brr(data);
-
    errCode_ = brr.get_int32_t();
-   
+
    auto len = brr.get_var_int();
    errData_ = brr.get_BinaryData(len);
 

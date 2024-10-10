@@ -11,32 +11,6 @@
 
 #include "BinaryData.h"
 
-// This is used to attempt to keep keying material out of swap
-// I am stealing this from bitcoin 0.4.0 src, serialize.h
-#if defined(_MSC_VER) || defined(__MINGW32__)
-   // Note that VirtualLock does not provide this as a guarantee on Windows,
-   // but, in practice, memory that has been VirtualLock'd almost never gets written to
-   // the pagefile except in rare circumstances where memory is extremely low.
-#include <windows.h>
-#include "leveldb_windows_port\win32_posix\mman.h"
-//#define mlock(p, n) VirtualLock((p), (n));
-//#define munlock(p, n) VirtualUnlock((p), (n));
-#else
-#include <sys/mman.h>
-#include <limits.h>
-/* This comes from limits.h if it's not defined there set a sane default */
-#ifndef PAGESIZE
-#include <unistd.h>
-#define PAGESIZE sysconf(_SC_PAGESIZE)
-#endif
-#define mlock(a,b) \
-     mlock(((void *)(((size_t)(a)) & (~((PAGESIZE)-1)))),\
-     (((((size_t)(a)) + (b) - 1) | ((PAGESIZE) - 1)) + 1) - (((size_t)(a)) & (~((PAGESIZE) - 1))))
-#define munlock(a,b) \
-     munlock(((void *)(((size_t)(a)) & (~((PAGESIZE)-1)))),\
-     (((((size_t)(a)) + (b) - 1) | ((PAGESIZE) - 1)) + 1) - (((size_t)(a)) & (~((PAGESIZE) - 1))))
-#endif
-
 ////////////////////////////////////////////////////////////////////////////////
 // Make sure that all crypto information is handled with page-locked data,
 // and overwritten when it's destructor is called.  For simplicity, we will
@@ -114,21 +88,8 @@ public:
    SecureBinaryData getHash256(void) const;
    SecureBinaryData getHash160(void) const;
 
-   void lockData(void)
-   {
-      if (getSize() > 0)
-         mlock(getPtr(), getSize());
-   }
-
-   void destroy(void)
-   {
-      if (getSize() > 0)
-      {
-         fill(0x00);
-         munlock(getPtr(), getSize());
-      }
-      resize(0);
-   }
+   void lockData(void);
+   void destroy(void);
 
    void XOR(const BinaryDataRef& rhs)
    {

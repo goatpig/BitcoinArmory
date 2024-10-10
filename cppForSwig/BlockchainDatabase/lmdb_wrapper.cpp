@@ -27,13 +27,6 @@
 #include "Blockchain.h"
 #include "TxHashFilters.h"
 
-#ifdef _WIN32
-#include "win32_posix.h"
-#else
-#include <sys/stat.h>
-#include <sys/types.h>
-#endif
-
 using namespace std;
 using namespace Armory::Config;
 

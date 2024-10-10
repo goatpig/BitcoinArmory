@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2019, goatpig                                               //
+//  Copyright (C) 2019-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 #include <cstdarg>
+#include <filesystem>
 
 #include "BIP150_151.h"
 #include "BIP32_Node.h"
@@ -29,33 +30,28 @@ AuthorizedPeers::AuthorizedPeers(
    const string& datadir, const string& filename,
    const PassphraseLambda& passLbd)
 {
-   auto path = datadir;
-   DBUtils::appendPath(path, filename);
+   auto path = std::filesystem::path(datadir) / filename;
 
-   try
-   {
+   try {
       //try to load wallet
       loadWallet(path, passLbd);
-   }
-   catch (PeerFileMissing&)
-   {
+   } catch (const PeerFileMissing&) {
       //the wallet hasn't be setup to begin with, create it
       createWallet(datadir, filename, passLbd);
    }
 
-   if (wallet_ == nullptr)
+   if (wallet_ == nullptr) {
       throw AuthorizedPeersException("failed to initialize peer wallet");
-
+   }
    //grab all meta entries, populate public key map
    auto peerAccount = wallet_->getMetaAccount(MetaAccount_AuthPeers);
-   auto&& peerAssets = AuthPeerAssetConversion::getAssetMap(peerAccount.get());
+   auto peerAssets = AuthPeerAssetConversion::getAssetMap(peerAccount.get());
 
    //root signature
-   rootSignature_ = move(peerAssets.rootSignature_);
+   rootSignature_ = std::move(peerAssets.rootSignature_);
 
    //name key pairs
-   for (auto& pubkey : peerAssets.nameKeyPair_)
-   {
+   for (auto& pubkey : peerAssets.nameKeyPair_) {
       btc_pubkey btckey;
       btc_pubkey_init(&btckey);
 
@@ -104,8 +100,8 @@ AuthorizedPeers::AuthorizedPeers(
    }
 
    //compute the public key
-   auto&& ownPubKey = CryptoECDSA().ComputePublicKey(privateKey);
-   auto&& ownPubKey_compressed = CryptoECDSA().CompressPoint(ownPubKey);
+   auto ownPubKey = CryptoECDSA().ComputePublicKey(privateKey);
+   auto ownPubKey_compressed = CryptoECDSA().CompressPoint(ownPubKey);
 
    //add to private keys map
    privateKeys_.emplace(make_pair(BinaryData(ownPubKey_compressed), privateKey));
@@ -127,11 +123,11 @@ AuthorizedPeers::AuthorizedPeers(
 AuthorizedPeers::AuthorizedPeers()
 {
    //No filename was passed, create an ephemral peer db instead
-   auto&& privateKey = CryptoPRNG::generateRandom(32);
+   auto privateKey = CryptoPRNG::generateRandom(32);
 
    //compute the public key
-   auto&& ownPubKey = CryptoECDSA().ComputePublicKey(privateKey);
-   auto&& ownPubKey_compressed = CryptoECDSA().CompressPoint(ownPubKey);
+   auto ownPubKey = CryptoECDSA().ComputePublicKey(privateKey);
+   auto ownPubKey_compressed = CryptoECDSA().CompressPoint(ownPubKey);
 
    //add to private keys map
    privateKeys_.emplace(make_pair(BinaryData(ownPubKey_compressed), privateKey));
@@ -149,9 +145,9 @@ AuthorizedPeers::AuthorizedPeers()
 void AuthorizedPeers::loadWallet(
    const string& path, const PassphraseLambda& passLbd)
 {
-   if (!DBUtils::fileExists(path, 6))
+   if (!DBUtils::fileExists(path, 6)) {
       throw PeerFileMissing();
-
+   }
    wallet_ = AssetWallet::loadMainWalletFromFile(path, passLbd);
 }
 
@@ -162,8 +158,8 @@ void AuthorizedPeers::createWallet(
 {
    //Default peers wallet password. Asset wallets always encrypt private keys,
    //have to provide a password at creation.
-   auto&& password = SecureBinaryData::fromString(PEERS_WALLET_PASSWORD);
-   auto&& controlPassphrase = passLbd({});
+   auto password = SecureBinaryData::fromString(PEERS_WALLET_PASSWORD);
+   auto controlPassphrase = passLbd({});
 
    {
       //Default peers wallet derivation path. Using m/'account/'0.
@@ -182,9 +178,9 @@ void AuthorizedPeers::createWallet(
 
       auto rootBip32 = dynamic_pointer_cast<AssetEntry_BIP32Root>(
          wltSingle->getRoot());
-      if (rootBip32 == nullptr)
+      if (rootBip32 == nullptr) {
          throw AuthorizedPeersException("[createWallet] invalid root");
-
+      }
       auto account = AccountType_BIP32::makeFromDerPaths(
          rootBip32->getSeedFingerprint(false), {derPath});
       account->setMain(true);
@@ -208,13 +204,14 @@ void AuthorizedPeers::createWallet(
    wallet_.reset();
 
    //create desired full path filename
-   auto path = baseDir;
-   DBUtils::appendPath(path, filename);
+   auto path = std::filesystem::path(baseDir) / filename;
 
    //rename peers wallet to desired name
-   if (rename(currentname.c_str(), path.c_str()) != 0)
+   try {
+      std::filesystem::rename(currentname, path);
+   } catch (const std::filesystem::filesystem_error&) {
       throw AuthorizedPeersException("failed to setup peers wallet");
-
+   }
    currentname.append("-lock");
    remove(currentname.c_str());
 

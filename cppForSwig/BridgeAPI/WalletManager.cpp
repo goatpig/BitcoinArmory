@@ -1,21 +1,17 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-2023, goatpig                                          //
+//  Copyright (C) 2016-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
+#include <filesystem>
+
 #include "WalletManager.h"
 #include "Wallets/Seeds/Backups.h"
 #include "PassphrasePrompt.h"
 #include "../Wallets/Seeds/Seeds.h"
-
-#ifdef _WIN32
-#include "leveldb_windows_port\win32_posix\dirent_win32.h"
-#else
-#include "dirent.h"
-#endif
 
 using namespace Armory;
 
@@ -204,35 +200,23 @@ void WalletManager::deleteWallet(const std::string& wltId,
 void WalletManager::loadWallets(const PassphraseLambda& passLbd)
 {
    //list .lmdb files in folder
-   DIR *dir;
-   dir = opendir(path_.c_str());
-   if (dir == nullptr) {
+   if (!DBUtils::isDir(path_)) {
       std::stringstream ss;
       ss << path_ << "is not a valid datadir";
       LOGERR << ss.str();
       throw std::runtime_error(ss.str());
    }
 
-   std::vector<std::string> walletPaths;
-   std::vector<std::string> a135Paths;
-
-   struct dirent *ent;
-   while ((ent = readdir(dir)) != nullptr) {
-      auto dirname = ent->d_name;
-      if (strlen(dirname) > 5) {
-         auto endOfPath = ent->d_name + strlen(ent->d_name) - 5;
-         if (strcmp(endOfPath, ".lmdb") == 0) {
-            std::stringstream ss;
-            ss << path_ << "/" << dirname;
-            walletPaths.push_back(ss.str());
-         } else if (strcmp(endOfPath, "allet") == 0) {
-            std::stringstream ss;
-            ss << path_ << "/" << dirname;
-            a135Paths.push_back(ss.str());
-         }
+   std::vector<std::filesystem::path> walletPaths;
+   std::vector<std::filesystem::path> a135Paths;
+   for (const auto& dirEntry : std::filesystem::directory_iterator{path_} ) {
+      const auto& extention = dirEntry.path();
+      if (extention == ".lmdb") {
+         walletPaths.emplace_back(dirEntry.path());
+      } else if (extention == ".wallet") {
+         a135Paths.emplace_back(dirEntry.path());
       }
    }
-   closedir(dir);
 
    ReentrantLock lock(this);
 
@@ -246,10 +230,8 @@ void WalletManager::loadWallets(const PassphraseLambda& passLbd)
             addWallet(wltPtr, accId);
          }
       } catch (const std::exception& e) {
-         std::stringstream ss;
-         ss << "Failed to open wallet at " << wltPath <<
-            " with error:" << std::endl << e.what();
-         LOGERR << ss.str();
+         LOGERR << "Failed to open wallet at " << wltPath <<
+            " with error:\n" << e.what();
       }
    }
 
@@ -870,8 +852,6 @@ std::shared_ptr<Wallets::AssetWallet_Single> Armory135Header::migrate(
    SecureBinaryData controlPass;
    SecureBinaryData privKeyPass;
 
-   auto folder = DBUtils::getBaseDir(path_);
-
    auto highestIndex = highestUsedIndex_;
    for (auto& addrPair : addrMap_) {
       if (highestIndex < addrPair.second.chainIndex()) {
@@ -929,6 +909,7 @@ std::shared_ptr<Wallets::AssetWallet_Single> Armory135Header::migrate(
    }
 
    //create wallet
+   auto folder = std::filesystem::path(path_).parent_path();
    std::shared_ptr<Wallets::AssetWallet_Single> wallet;
    if (decryptedRoot.empty()) {
       auto pubKeyCopy = rootAddrObj.pubKey();

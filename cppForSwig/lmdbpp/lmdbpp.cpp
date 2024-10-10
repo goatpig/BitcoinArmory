@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
-#include "lmdbpp.h"    
+#include "lmdbpp.h"
 #include "lmdb.h"
 
 #include <unistd.h>
@@ -14,13 +14,6 @@
 #include <algorithm>
 #include <iostream>
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <sys/types.h>
-#include <sys/stat.h>
-#endif
-
 static std::string errorString(int rc)
 {
    return mdb_strerror(rc);
@@ -28,8 +21,7 @@ static std::string errorString(int rc)
 
 inline void LMDB::Iterator::checkHasDb() const
 {
-   if (!db_)
-   {
+   if (!db_) {
       throw std::logic_error("Iterator is not associated with a db");
    }
 }
@@ -37,29 +29,25 @@ inline void LMDB::Iterator::checkHasDb() const
 
 inline void LMDB::Iterator::checkOk() const
 {
-   if (!isValid())
-   {
+   if (!isValid()) {
       throw std::logic_error("Tried to use invalid LMDB Iterator");
    }
-   
-   if (!hasTx)
-   {
+
+   if (!hasTx) {
       const_cast<Iterator*>(this)->openCursor();
-      
       hasTx=true;
-      
-      if (has_)
-      {
+
+      if (has_) {
          CharacterArrayRef keydata(
             key_.mv_size,
             (const char*)key_.mv_data);
 
          const_cast<Iterator*>(this)->seek(keydata);
-         if (!has_)
+         if (!has_) {
             throw LMDBException("Cursor could not be regenerated");
+         }
       }
    }
-   
 }
 
 void LMDB::Iterator::openCursor()
@@ -67,21 +55,20 @@ void LMDB::Iterator::openCursor()
    auto tID = std::this_thread::get_id();
    LMDBEnv *const _env = db_->env;
    std::unique_lock<std::mutex> lock(_env->threadTxMutex_);
-   
+
    auto txnIter = _env->txForThreads_.find(tID);
-   if (txnIter == _env->txForThreads_.end())
+   if (txnIter == _env->txForThreads_.end()) {
       throw std::runtime_error("Iterator must be created within Transaction");
-   
+   }
    lock.unlock();
-   
-   if (txnIter->second.transactionLevel_ == 0)
+
+   if (txnIter->second.transactionLevel_ == 0) {
       throw std::runtime_error("Iterator must be created within Transaction");
-   
+   }
    txnPtr_ = &txnIter->second;
-  
+
    int rc = mdb_cursor_open(txnPtr_->txn_, db_->dbi, &csr_);
-   if (rc != MDB_SUCCESS)
-   {
+   if (rc != MDB_SUCCESS) {
       csr_=nullptr;
       LMDBException e("Failed to open cursor (" + errorString(rc) + ")");
       throw e;

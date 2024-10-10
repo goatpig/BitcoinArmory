@@ -5,9 +5,9 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016, goatpig                                               //            
+//  Copyright (C) 2016, goatpig                                               //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                   
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -92,8 +92,6 @@ public:
       uint16_t txIdx,
       uint16_t txOutIdx);
 
-
-
    /////////////////////////////////////////////////////////////////////////////
    static BLKDATA_TYPE readBlkDataKey(BinaryRefReader & brr,
       uint32_t & height,
@@ -131,8 +129,6 @@ public:
       uint8_t  & dupID,
       uint16_t & txIdx,
       uint16_t & txOutIdx);
-
-
 
    static std::string getPrefixName(uint8_t prefixInt);
    static std::string getPrefixName(DB_PREFIX pref);
@@ -152,15 +148,8 @@ public:
    static FileMap getMmapOfFile(const std::string&, bool write = false);
    
    static int removeDirectory(const std::string&);
-   static struct stat getPathStat(const std::string& path);
-   static struct stat getPathStat(const char* path, unsigned len);
-   static size_t getFileSize(const std::string& path);
    static bool isFile(const std::string& path);
    static bool isDir(const std::string& path);
-
-   static void appendPath(std::string& base, const std::string& add);
-   static void expandPath(std::string& path);
-   static std::string getBaseDir(const std::string& path);
 
    static BinaryDataRef getDataRefForPacket(const BinaryDataRef& packet);
 };

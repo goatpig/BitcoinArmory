@@ -1,11 +1,13 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2017-2021, goatpig                                          //
+//  Copyright (C) 2017-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
+
+#include <filesystem>
 
 #include "TestUtils.h"
 #include "../Wallets/PassphraseLambda.h"
@@ -1899,20 +1901,18 @@ TEST_F(AddressEntryTest, P2WSH)
 class WalletInterfaceTest : public ::testing::Test
 {
 protected:
-   string homedir_;
-   string dbPath_;
+   std::filesystem::path homedir_;
+   std::filesystem::path dbPath_;
    BinaryData allZeroes16_;
 
    /////////////////////////////////////////////////////////////////////////////
    virtual void SetUp()
    {
-      homedir_ = string("./fakehomedir");
+      homedir_ = std::filesystem::path("./fakehomedir");
       DBUtils::removeDirectory(homedir_);
-      mkdir(homedir_);
+      std::filesystem::create_directory(homedir_);
 
-      dbPath_ = homedir_;
-      DBUtils::appendPath(dbPath_, "wallet_test.wallet");
-
+      dbPath_ = homedir_ / "wallet_test.wallet";
       Armory::Config::parseArgs({
          "--offline",
          "--datadir=./fakehomedir" },
@@ -3340,44 +3340,34 @@ TEST_F(WalletInterfaceTest, Passphrase_Test)
 
    {
       //try to open iface with wrong passphrase
-      try
-      {
+      try {
          IO::WalletDBInterface dbIface;
          dbIface.setupEnv(dbPath_, true, passEmpty, 0);
          ASSERT_TRUE(false);
-      }
-      catch (DecryptedDataContainerException& e)
-      {
+      } catch (const DecryptedDataContainerException& e) {
          EXPECT_EQ(e.what(), string("empty passphrase"));
       }
 
       //try to open iface with wrong file flag
-      try
-      {
+      try {
          IO::WalletDBInterface dbIface;
          dbIface.setupEnv(dbPath_, false, passLbd, 0);
          ASSERT_TRUE(false);
-      }
-      catch (IO::WalletInterfaceException& e)
-      {
+      } catch (const IO::WalletInterfaceException& e) {
          EXPECT_EQ(e.what(), string("[openEnv] file flag mismatch"));
       }
 
       //open with proper passphrase
-      try
-      {
+      try {
          IO::WalletDBInterface dbIface;
          dbIface.setupEnv(dbPath_, true, passLbd, 0);
          dbIface.shutdown();
-      }
-      catch(...)
-      {
+      } catch(...) {
          ASSERT_FALSE(true);
       }
    }
 
-   auto dbPath2 = homedir_;
-   DBUtils::appendPath(dbPath2, "db2_test");
+   auto dbPath2 = homedir_ / "db2_test";
 
    {
       //create wallet iface with empty passphrase lambda
@@ -3396,13 +3386,10 @@ TEST_F(WalletInterfaceTest, Passphrase_Test)
 
       //reopen iface, check it won't hit the passphrase lambda
       IO::WalletDBInterface dbIface;
-      try
-      {
+      try {
          dbIface.setupEnv(dbPath2, true, passLbd2, 0);
          dbIface.shutdown();
-      }
-      catch (...)
-      {
+      } catch (...) {
          ASSERT_TRUE(false);
       }
    }
