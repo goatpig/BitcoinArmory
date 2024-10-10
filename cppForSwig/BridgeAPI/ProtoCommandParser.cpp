@@ -293,7 +293,7 @@ namespace
             break;
          }
 
-         case WalletRequest::DELETE:
+         case WalletRequest::DELETE_WALLET:
          {
             auto result = bridge->deleteWallet(walletId);
             capnp::MallocMessageBuilder message;

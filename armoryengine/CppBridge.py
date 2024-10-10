@@ -1,6 +1,6 @@
 ################################################################################
 #                                                                              #
-# Copyright (C) 2019-2023, goatpig.                                            #
+# Copyright (C) 2019-2024, goatpig.                                            #
 #  Distributed under the MIT license                                           #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                      #
 #                                                                              #
@@ -11,7 +11,7 @@ from __future__ import (absolute_import, division, annotations,
 import os
 import errno
 import socket
-from armoryengine.ArmoryUtils import LOGDEBUG, LOGERROR, LOGWARN, hash256
+from armoryengine.ArmoryUtils import LOGDEBUG, LOGERROR, LOGWARN, hash256, LOGINFO
 from armoryengine.BinaryPacker import BinaryPacker, \
    UINT32, UINT8, BINARY_CHUNK, VAR_INT
 from struct import unpack
@@ -755,7 +755,7 @@ class BridgeWalletWrapper(ProtoWrapper):
    ####
    def delete(self):
       packet = self.getPacket()
-      packet.wallet.delete = None
+      packet.wallet.deleteWallet = None
 
       fut = self.send(packet)
       reply = fut.getVal()

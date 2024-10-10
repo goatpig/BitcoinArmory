@@ -91,7 +91,7 @@ struct Notification {
       unset          @2 : Void;
       ready          @3 : Types.Height;
       setupDone      @4 : Void;
-      registered     @5 : List(Text);
+      registerDone   @5 : List(Text);
       refresh        @6 : List(Text);
       newBlock       @7 : Types.Height;
       disconnected   @8 : Void;
@@ -217,7 +217,7 @@ struct WalletRequest {
       extendAddressPool             @4 : ExtendAddressPool;
 
       createBackupString            @5 : Types.CallbackId;
-      delete                        @6 : Void;
+      deleteWallet                  @6 : Void;
       getData                       @7 : WalletData;
 
       getAddrCombinedList           @8 : Void;

@@ -3292,7 +3292,7 @@ bool Signing::Signer::verify() const
    BinaryData txdata;
    try {
       txdata = std::move(serializeSignedTx());
-   } catch(const std::exception& e) {
+   } catch (const std::exception& e) {
       return false;
    }
 

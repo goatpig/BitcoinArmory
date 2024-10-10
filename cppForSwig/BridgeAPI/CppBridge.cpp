@@ -2052,7 +2052,7 @@ void BridgeCallback::notify_SetupRegistrationDone(
    auto capnNotif = fromBridge.initNotification();
    capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
 
-   auto capnIds = capnNotif.initRegistered(ids.size());
+   auto capnIds = capnNotif.initRegisterDone(ids.size());
    unsigned i=0;
    for (const auto& id : ids) {
       capnIds.set(i++, id);

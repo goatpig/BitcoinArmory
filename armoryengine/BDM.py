@@ -274,7 +274,7 @@ class BlockDataManager(object):
       #setup notifs
       elif notifProto.which() == "setupDone":
          act = SETUP_STEP2
-      elif notifProto.which() == "registered":
+      elif notifProto.which() == "registerDone":
          act = SETUP_STEP3
 
       listenerList = self.getListenerList()
