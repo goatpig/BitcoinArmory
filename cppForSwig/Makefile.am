@@ -80,8 +80,7 @@ LIBTREZORCRYPTO_SOURCE_FILES = $(LIBBTC_LIBDIR)/src/trezor-crypto/bip39.c \
 	$(LIBBTC_LIBDIR)/src/trezor-crypto/pbkdf2.c \
 	$(LIBBTC_LIBDIR)/src/trezor-crypto/memzero.c \
 	$(LIBBTC_LIBDIR)/src/trezor-crypto/hmac.c \
-	$(LIBBTC_LIBDIR)/src/trezor-crypto/sha2.c \
-	$(LIBBTC_LIBDIR)/src/trezor-crypto/rand.c
+	$(LIBBTC_LIBDIR)/src/trezor-crypto/sha2.c
 
 ARMORYWALLETS_SOURCE_FILES = Wallets/BIP32_Node.cpp \
 	capnp/Types.capnp.c++ \
@@ -102,7 +101,8 @@ ARMORYWALLETS_SOURCE_FILES = Wallets/BIP32_Node.cpp \
 	Wallets/Wallets.cpp \
 	Wallets/AuthorizedPeers.cpp \
 	Wallets/Seeds/Backups.cpp \
-	Wallets/Seeds/Seeds.cpp
+	Wallets/Seeds/Seeds.cpp \
+	Wallets/random_buffer.c
 
 ARMORYSIGNER_SOURCE_FILES = Signer/Script.cpp \
 	capnp/Types.capnp.c++ \
