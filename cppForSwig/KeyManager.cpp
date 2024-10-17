@@ -122,7 +122,7 @@ int processArgs(std::map<std::string, std::string> args)
    //is this a passphrase change operation?
    iter = args.find("change-pass");
    if (iter != args.end()) {
-      AuthorizedPeers::changeControlPassphrase(fullpath);
+      AuthorizedPeers::changeControlPassphrase(fullpath.string());
       exit(0);
    }
 
@@ -132,7 +132,7 @@ int processArgs(std::map<std::string, std::string> args)
       noPass = true;
    }
 
-   if (DBUtils::fileExists(fullpath, 6)) {
+   if (FileUtils::fileExists(fullpath, 6)) {
       std::cout << "Loading peers db from " << fullpath << std::endl;
    } else {
       std::cout << "Missing peers db, creating a fresh one now." << std::endl;

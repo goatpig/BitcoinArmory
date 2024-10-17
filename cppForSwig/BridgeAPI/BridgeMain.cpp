@@ -25,7 +25,7 @@ int main(int argc, char* argv[])
 
    //enable logs
    STARTLOGGING(
-      Armory::Config::Pathing::logFilePath("bridgeLog"), LogLvlDebug);
+      Armory::Config::Pathing::logFilePath("bridgeLog").string(), LogLvlDebug);
    LOGENABLESTDOUT();
 
    auto pubKeyHex = std::getenv("SERVER_PUBKEY");
@@ -55,7 +55,7 @@ int main(int argc, char* argv[])
       "\n - bridge port: " << bridgePortStr;
 
    STARTLOGGING(
-      Armory::Config::Pathing::logFilePath("bridgeLog"), LogLvlDebug);
+      Armory::Config::Pathing::logFilePath("bridgeLog").string(), LogLvlDebug);
 
    //setup the bridge
    auto bridge = std::make_shared<Armory::Bridge::CppBridge>(

@@ -22,6 +22,7 @@ target_link_libraries(BIP151RekeyTest
     ${GTEST_LIB}
     ArmoryCommon
     ${OS_SPECIFIC_LIBS}
+    ${WINSOCK_LIB}
 )
 
 #add_executable(ContainerTests
@@ -54,6 +55,7 @@ target_link_libraries(CppBlockUtilsTests
     ${GTEST_LIB}
     ArmoryCommon
     ${OS_SPECIFIC_LIBS}
+    ${WINSOCK_LIB}
     capnp
     kj
 )
@@ -88,6 +90,7 @@ target_link_libraries(SignerTests
     ${GTEST_LIB}
     ArmoryCommon
     ${OS_SPECIFIC_LIBS}
+    ${WINSOCK_LIB}
     capnp
     kj
 )
@@ -106,6 +109,7 @@ target_link_libraries(SupernodeTests
     ${GTEST_LIB}
     ArmoryCommon
     ${OS_SPECIFIC_LIBS}
+    ${WINSOCK_LIB}
     capnp
     kj
 )
@@ -124,6 +128,7 @@ target_link_libraries(UtilsTests
     ${GTEST_LIB}
     ArmoryCommon
     ${OS_SPECIFIC_LIBS}
+    ${WINSOCK_LIB}
     capnp
     kj
 )
@@ -144,6 +149,7 @@ target_link_libraries(WalletTests
     ${GTEST_LIB}
     ArmoryCommon
     ${OS_SPECIFIC_LIBS}
+    ${WINSOCK_LIB}
     capnp
     kj
 )
@@ -162,6 +168,7 @@ target_link_libraries(ZeroConfTests
     ${GTEST_LIB}
     ArmoryCommon
     ${OS_SPECIFIC_LIBS}
+    ${WINSOCK_LIB}
     capnp
     kj
 )

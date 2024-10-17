@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-2021, goatpig.                                         //
+//  Copyright (C) 2016-2024, goatpig.                                         //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -10,11 +10,7 @@
 #include "BtcUtils.h"
 #include "TxHashFilters.h"
 
-#ifndef _WIN32
-#include <sys/mman.h>
-#endif
-
-using namespace std;
+namespace fs = std::filesystem;
 
 ////////////////////////////////////////////////////////////////////////////////
 BlockData::BlockData(uint32_t blockid)
@@ -22,14 +18,13 @@ BlockData::BlockData(uint32_t blockid)
 {}
 
 ////////////////////////////////////////////////////////////////////////////////
-shared_ptr<BlockData> BlockData::deserialize(const uint8_t* data, size_t size,
-   const shared_ptr<BlockHeader> blockHeader,
-   function<unsigned int(const BinaryData&)> getID,
+std::shared_ptr<BlockData> BlockData::deserialize(const uint8_t* data, size_t size,
+   const std::shared_ptr<BlockHeader> blockHeader,
+   std::function<unsigned int(const BinaryData&)> getID,
    BlockData::CheckHashes mode)
 {
    //deser header from raw block and run a quick sanity check
-   if (size < HEADER_SIZE)
-   {
+   if (size < HEADER_SIZE) {
       throw BlockDeserializingException(
       "raw data is smaller than HEADER_SIZE");
    }
@@ -38,29 +33,30 @@ shared_ptr<BlockData> BlockData::deserialize(const uint8_t* data, size_t size,
    BlockHeader bh(bdr);
 
    auto uniqueID = UINT32_MAX;
-   if (getID)
+   if (getID) {
       uniqueID = getID(bh.getThisHash());
+   }
 
-   auto result = make_shared<BlockData>(uniqueID);
+   auto result = std::make_shared<BlockData>(uniqueID);
    result->headerPtr_ = blockHeader;
    result->blockHash_ = bh.thisHash_;
 
    BinaryRefReader brr(data + HEADER_SIZE, size - HEADER_SIZE);
    auto numTx = (unsigned)brr.get_var_int();
 
-   if (blockHeader != nullptr)
-   {
-      if (bh.getThisHashRef() != blockHeader->getThisHashRef())
+   if (blockHeader != nullptr) {
+      if (bh.getThisHashRef() != blockHeader->getThisHashRef()) {
          throw BlockDeserializingException(
          "raw data does not match expected block hash");
+      }
 
-      if (numTx != blockHeader->getNumTx())
+      if (numTx != blockHeader->getNumTx()) {
          throw BlockDeserializingException(
          "tx count mismatch in deser header");
+      }
    }
 
-   for (unsigned i = 0; i < numTx; i++)
-   {
+   for (unsigned i = 0; i < numTx; i++) {
       //light tx deserialization, just figure out the offset and size of
       //txins and txouts
       auto tx = BCTX::parse(brr);
@@ -73,7 +69,7 @@ shared_ptr<BlockData> BlockData::deserialize(const uint8_t* data, size_t size,
    result->data_ = data;
    result->size_ = size;
 
-   vector<BinaryData> allHashes;
+   std::vector<BinaryData> allHashes;
    switch (mode)
    {
       case CheckHashes::NoChecks:
@@ -83,10 +79,9 @@ shared_ptr<BlockData> BlockData::deserialize(const uint8_t* data, size_t size,
       case CheckHashes::TxFilters:
       {
          allHashes.reserve(result->txns_.size());
-         for (auto& txn : result->txns_)
-         {
+         for (auto& txn : result->txns_) {
             auto txhash = txn->moveHash();
-            allHashes.emplace_back(move(txhash));
+            allHashes.emplace_back(std::move(txhash));
          }
          break;
       }
@@ -94,8 +89,7 @@ shared_ptr<BlockData> BlockData::deserialize(const uint8_t* data, size_t size,
       case CheckHashes::FullHints:
       {
          allHashes.reserve(result->txns_.size());
-         for (auto& txn : result->txns_)
-         {
+         for (const auto& txn : result->txns_) {
             const auto& txhash = txn->getHash();
             allHashes.emplace_back(txhash);
          }
@@ -105,48 +99,47 @@ shared_ptr<BlockData> BlockData::deserialize(const uint8_t* data, size_t size,
 
    //any form of later txhash filtering implies we check the merkle
    //root, otherwise we would have no guarantees the hashes are valid
-   auto&& merkleroot = BtcUtils::calculateMerkleRoot(allHashes);
-   if (merkleroot != bh.getMerkleRoot())
-   {
+   auto merkleroot = BtcUtils::calculateMerkleRoot(allHashes);
+   if (merkleroot != bh.getMerkleRoot()) {
       LOGERR << "merkle root mismatch!";
       LOGERR << "   header has: " << bh.getMerkleRoot().toHexStr();
       LOGERR << "   block yields: " << merkleroot.toHexStr();
       throw BlockDeserializingException("invalid merkle root");
    }
 
-   if (mode == CheckHashes::TxFilters)
+   if (mode == CheckHashes::TxFilters) {
       result->computeTxFilter(allHashes);
+   }
    return result;
 }
 
 /////////////////////////////////////////////////////////////////////////////
-void BlockData::computeTxFilter(const vector<BinaryData>& allHashes)
+void BlockData::computeTxFilter(const std::vector<BinaryData>& allHashes)
 {
-   if (txFilter_ == nullptr)
-   {
-      txFilter_ = make_shared<BlockHashVector>(uniqueID_);
+   if (txFilter_ == nullptr) {
+      txFilter_ = std::make_shared<BlockHashVector>(uniqueID_);
       txFilter_->isValid_ = true;
    }
    txFilter_->update(allHashes);
 }
 
 ////
-shared_ptr<BlockHashVector> BlockData::getTxFilter() const
+std::shared_ptr<BlockHashVector> BlockData::getTxFilter() const
 {
    return txFilter_;
 }
 
 /////////////////////////////////////////////////////////////////////////////
-shared_ptr<BlockHeader> BlockData::createBlockHeader() const
+std::shared_ptr<BlockHeader> BlockData::createBlockHeader() const
 {
-   if (headerPtr_ != nullptr)
+   if (headerPtr_ != nullptr) {
       return headerPtr_;
+   }
 
-   auto bhPtr = make_shared<BlockHeader>();
+   auto bhPtr = std::make_shared<BlockHeader>();
    auto& bh = *bhPtr;
 
-   bh.dataCopy_ = move(BinaryData(data_, HEADER_SIZE));
-
+   bh.dataCopy_ = std::move(BinaryData(data_, HEADER_SIZE));
    bh.difficultyDbl_ = BtcUtils::convertDiffBitsToDouble(
       BinaryDataRef(data_ + 72, 4));
 
@@ -171,41 +164,41 @@ shared_ptr<BlockHeader> BlockData::createBlockHeader() const
 /////////////////////////////////////////////////////////////////////////////
 void BlockFiles::detectAllBlockFiles()
 {
-   if (folderPath_.size() == 0)
-      throw runtime_error("empty block files folder path");
+   if (folderPath_.empty()) {
+      throw std::runtime_error("empty block files folder path");
+   }
 
    unsigned numBlkFiles = filePaths_.size();
-
-   while (numBlkFiles < UINT16_MAX)
-   {
-      string path = BtcUtils::getBlkFilename(folderPath_, numBlkFiles);
-      uint64_t filesize = BtcUtils::GetFileSize(path);
-      if (filesize == FILE_DOES_NOT_EXIST)
+   while (numBlkFiles < UINT16_MAX) {
+      auto path = FileUtils::getBlkFilename(folderPath_, numBlkFiles);
+      auto filesize = FileUtils::getFileSize(path);
+      if (filesize == SIZE_MAX) {
          break;
+      }
 
-      filePaths_.insert(make_pair(numBlkFiles, path));
-
+      filePaths_.emplace(numBlkFiles, path);
       totalBlockchainBytes_ += filesize;
       numBlkFiles++;
    }
 }
 
 /////////////////////////////////////////////////////////////////////////////
-const string& BlockFiles::getLastFileName(void) const
+const fs::path& BlockFiles::getLastFileName(void) const
 {
-   if (filePaths_.size() == 0)
-      throw runtime_error("empty path map");
-
+   if (filePaths_.empty()) {
+      throw std::runtime_error("empty path map");
+   }
    return filePaths_.rbegin()->second;
 }
 
 /////////////////////////////////////////////////////////////////////////////
-BlockDataLoader::BlockDataLoader(const string& path) :
+BlockDataLoader::BlockDataLoader(const fs::path& path) :
    path_(path), prefix_("blk")
 {}
 
 /////////////////////////////////////////////////////////////////////////////
-shared_ptr<BlockDataFileMap> BlockDataLoader::get(const string& filename)
+std::shared_ptr<BlockDataFileMap> BlockDataLoader::get(
+   const fs::path& filename)
 {
    //convert to int ID
    auto intID = nameToIntID(filename);
@@ -215,74 +208,62 @@ shared_ptr<BlockDataFileMap> BlockDataLoader::get(const string& filename)
 }
 
 /////////////////////////////////////////////////////////////////////////////
-shared_ptr<BlockDataFileMap> BlockDataLoader::get(uint32_t fileid)
+std::shared_ptr<BlockDataFileMap> BlockDataLoader::get(uint32_t fileid)
 {
    //don't have this fileid yet, create it
    return getNewBlockDataMap(fileid);
 }
 
 /////////////////////////////////////////////////////////////////////////////
-uint32_t BlockDataLoader::nameToIntID(const string& filename)
+uint32_t BlockDataLoader::nameToIntID(const fs::path& path)
 {
+   auto filename = path.filename().string();
    if (filename.size() < 3 ||
-      strncmp(prefix_.c_str(), filename.c_str(), 3))
-      throw runtime_error("invalid filename");
+      strncmp(prefix_.c_str(), filename.c_str(), 3)) {
+      throw std::runtime_error("invalid filename");
+   }
 
-   auto&& substr = filename.substr(3);
-   return stoi(substr);
+   auto substr = filename.substr(3);
+   return std::stoi(substr);
 }
 
 /////////////////////////////////////////////////////////////////////////////
-string BlockDataLoader::intIDToName(uint32_t fileid)
-{
-   stringstream filename;
-
-   filename << path_ << "/blk";
-   filename << setw(5) << setfill('0') << fileid;
-   filename << ".dat";
-
-   return filename.str();
-}
-
-/////////////////////////////////////////////////////////////////////////////
-shared_ptr<BlockDataFileMap>
+std::shared_ptr<BlockDataFileMap>
    BlockDataLoader::getNewBlockDataMap(uint32_t fileid)
 {
-   string filename = move(intIDToName(fileid));
-
-   return make_shared<BlockDataFileMap>(filename);
+   auto filename = FileUtils::getBlkFilename(path_, fileid);
+   return std::make_shared<BlockDataFileMap>(filename);
 }
 
 /////////////////////////////////////////////////////////////////////////////
-BlockDataFileMap::BlockDataFileMap(const string& filename)
+// BlockDataFileMap
+/////////////////////////////////////////////////////////////////////////////
+BlockDataFileMap::BlockDataFileMap(const std::filesystem::path& path) :
+   fileMap_(path)
 {
    //relaxed memory order for loads and stores, we only care about 
    //atomicity in these operations
-   useCounter_.store(0, memory_order_relaxed);
-
-   try
-   {
-      auto filemap = DBUtils::getMmapOfFile(filename);
-      fileMap_ = filemap.filePtr_;
-      size_ = filemap.size_;
-   }
-   catch (exception&)
-   {
-      //LOGERR << "Failed to create BlockDataMap with error: " << e.what();
-   }
+   useCounter_.store(0,std:: memory_order_relaxed);
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////
 BlockDataFileMap::~BlockDataFileMap()
+{}
+
+////
+const uint8_t* BlockDataFileMap::data() const
 {
-   //close file mmap
-   if (fileMap_ != nullptr)
-   {
-#ifdef _WIN32
-      UnmapViewOfFile(fileMap_);
-#else
-      munmap(fileMap_, size_);
-#endif
-      fileMap_ = nullptr;
-   }
+   return fileMap_.ptr();
+}
+
+////
+size_t BlockDataFileMap::size() const
+{
+   return fileMap_.size();
+}
+
+////
+bool BlockDataFileMap::valid() const
+{
+   return fileMap_.isValid();
 }

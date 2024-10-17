@@ -46,9 +46,9 @@ ZeroConfContainer::ZeroConfContainer(LMDBBlockDatabase* db,
    //register ZC callbacks
    auto processInvTx = [this](vector<InvEntry> entryVec)->void
    {
-      if (!zcEnabled_.load(memory_order_relaxed))
+      if (!zcEnabled_.load(memory_order_relaxed)) {
          return;
-            
+      }
       auto payload = make_shared<ZcInvPayload>(false);
       payload->invVec_ = move(entryVec);
       zcWatcherQueue_.push_back(move(payload));
@@ -64,8 +64,8 @@ ZeroConfContainer::ZeroConfContainer(LMDBBlockDatabase* db,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool ZeroConfContainer::isEnabled() const 
-{ 
+bool ZeroConfContainer::isEnabled() const
+{
    return zcEnabled_.load(std::memory_order_relaxed);
 }
 
@@ -73,7 +73,7 @@ bool ZeroConfContainer::isEnabled() const
 shared_future<shared_ptr<ZcPurgePacket>>
 ZeroConfContainer::pushNewBlockNotification(
    Blockchain::ReorganizationState reorgState)
-{ 
+{
    return actionQueue_->pushNewBlockNotification(reorgState);
 }
 

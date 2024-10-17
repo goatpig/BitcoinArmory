@@ -21,16 +21,13 @@ ENDIF ()
 IF (WIN32 OR MSVC)
     SET(CMAKE_FIND_LIBRARY_SUFFIXES .lib)
 ELSEIF (UNIX)
-    SET(CMAKE_FIND_LIBRARY_SUFFIXES .a .so)
-    SET(CMAKE_FIND_LIBRARY_PREFIXES lib)
-    SET(CMAKE_LIBRARY_HINTS /usr/lib /usr/include)
+    SET(CMAKE_FIND_LIBRARY_PREFIXES "")
+    SET(CMAKE_FIND_LIBRARY_SUFFIXES .a .so .dll)
+    SET(CMAKE_LIBRARY_HINTS /usr/lib /usr/include /ucrt64/lib /ucrt64/include)
 ENDIF ()
 
-## gmp ##
-FIND_PATH (GMP_INCLUDE_DIR gmp.h HINTS ${CMAKE_LIBRARY_HINTS})
-
 ## lmdb ##
-FIND_LIBRARY (LMDB_LIB lmdb HINTS ${CMAKE_LIBRARY_HINTS})
+FIND_LIBRARY (LMDB_LIB liblmdb HINTS ${CMAKE_LIBRARY_HINTS})
 IF (NOT LMDB_LIB)
     MESSAGE(FATAL_ERROR "Could not find LMDB lib")
 ENDIF ()
@@ -57,25 +54,32 @@ ELSE ()
     SET(WITH_LWS ${CMAKE_SOURCE_DIR}/${WITH_LWS})
 ENDIF ()
 
-FIND_LIBRARY (LIBWEBSOCKETS_LIB websockets HINTS ${WITH_LWS}/lib ${WITH_LWS}/build)
+FIND_LIBRARY (LIBWEBSOCKETS_LIB libwebsockets.dll HINTS ${CMAKE_LIBRARY_HINTS})
 IF (NOT LIBWEBSOCKETS_LIB)
     MESSAGE(FATAL_ERROR "Could not find WS lib")
 ENDIF ()
 SET(LIBWEBSOCKETS_INCLUDE_DIRS ${WITH_LWS}/include)
 
 ## capnproto ##
-FIND_LIBRARY (CAPNPROTO_LIB capnp HINTS ${CMAKE_LIBRARY_HINTS})
+FIND_LIBRARY (CAPNPROTO_LIB libcapnp.dll HINTS ${CMAKE_LIBRARY_HINTS})
 IF (NOT CAPNPROTO_LIB)
     MESSAGE(FATAL_ERROR "Could not find capnproto lib")
 ENDIF ()
 
 ## gtest ##
 IF (ENABLE_TESTS)
-    FIND_LIBRARY(GTEST_LIB gtest HINTS ${CMAKE_LIBRARY_HINTS})
+    FIND_LIBRARY(GTEST_LIB libgtest_main.dll HINTS ${CMAKE_LIBRARY_HINTS})
     IF (NOT GTEST_LIB)
         MESSAGE(FATAL_ERROR "Could not find gtest lib")
     ENDIF ()
+    MESSAGE ("gtest lib: ${GTEST_LIB}")
 ENDIF (ENABLE_TESTS)
+
+## winsock ##
+FIND_LIBRARY (WINSOCK_LIB ws2_32)
+IF (NOT WINSOCK_LIB)
+    MESSAGE (FATAL_ERROR "Could not find Winsock2 lib")
+ENDIF ()
 
 PROJECT(BitcoinArmory C CXX)
 
@@ -83,18 +87,18 @@ IF (NOT CMAKE_BUILD_TYPE)
     SET(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Release with debug info version" FORCE)
 ENDIF ()
 
-include(ArmorySupport)
 include(GCCToolchain)
-include(LLVMToolchain)
-include(LTO)
 include(CompilerColorDiagnostics)
 include(CompilerWarnings)
 
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+IF (CMAKE_SYSTEM_NAME STREQUAL "MSYS")
+    SET(MINGW 1)
+ENDIF ()
 
-if(MSVC)
+SET(CMAKE_POSITION_INDEPENDENT_CODE ON)
+IF (MSVC OR MINGW)
     add_definitions(-DNOMINMAX -D_WINSOCKAPI_)
-endif()
+ENDIF ()
 
 # this is the main project
 add_subdirectory(cppForSwig)

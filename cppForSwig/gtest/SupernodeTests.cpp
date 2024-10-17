@@ -111,7 +111,6 @@ TEST_F(DISABLED_PartialMerkleTest, FullTree)
    EXPECT_EQ(pmtSerFull, pmtSerFull2);
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(DISABLED_PartialMerkleTest, SingleLeaf)
 {
@@ -140,7 +139,6 @@ TEST_F(DISABLED_PartialMerkleTest, SingleLeaf)
       EXPECT_EQ(pmtSer, pmtSer2);
    }
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(DISABLED_PartialMerkleTest, MultiLeaf)
@@ -184,7 +182,6 @@ TEST_F(DISABLED_PartialMerkleTest, MultiLeaf)
       EXPECT_EQ(pmtSer, pmtSer2);
    }
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(DISABLED_PartialMerkleTest, EmptyTree)
@@ -260,20 +257,16 @@ protected:
       LOGDISABLESTDOUT();
       zeros_ = READHEX("00000000");
 
-      blkdir_ = string("./blkfiletest");
-      homedir_ = string("./fakehomedir");
-      ldbdir_ = string("./ldbtestdir");
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory(ldbdir_);
-
-      mkdir(blkdir_ + "/blocks");
-      mkdir(homedir_);
-      mkdir(ldbdir_);
+      FileUtils::createDirectory(blkdir_ / "blocks");
+      FileUtils::createDirectory(homedir_);
+      FileUtils::createDirectory(ldbdir_);
 
       // Put the first 5 blocks into the blkdir
-      blk0dat_ = BtcUtils::getBlkFilename(blkdir_ + "/blocks", 0);
+      blk0dat_ = FileUtils::getBlkFilename(blkdir_ / "blocks", 0);
       TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
 
       initBDM();
@@ -293,13 +286,10 @@ protected:
 
       theBDMt_ = nullptr;
       clients_ = nullptr;
-      
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory("./ldbtestdir");
 
-      mkdir("./ldbtestdir");
-
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
       Armory::Config::reset();
 
       LOGENABLESTDOUT();
@@ -309,10 +299,10 @@ protected:
    LMDBBlockDatabase* iface_;
    BinaryData zeros_;
 
-   string blkdir_;
-   string homedir_;
-   string ldbdir_;
-   string blk0dat_;
+   std::filesystem::path blkdir_{"./blkfiletest"sv};
+   std::filesystem::path homedir_{"./fakehomedir"sv};
+   std::filesystem::path ldbdir_{"./ldbtestdir"sv};
+   std::filesystem::path blk0dat_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1579,20 +1569,16 @@ protected:
       LOGDISABLESTDOUT();
       zeros_ = READHEX("00000000");
 
-      blkdir_ = string("./blkfiletest");
-      homedir_ = string("./fakehomedir");
-      ldbdir_ = string("./ldbtestdir");
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory(ldbdir_);
-
-      mkdir(blkdir_ + "/blocks");
-      mkdir(homedir_);
-      mkdir(ldbdir_);
+      FileUtils::createDirectory(blkdir_ / "blocks");
+      FileUtils::createDirectory(homedir_);
+      FileUtils::createDirectory(ldbdir_);
 
       // Put the first 5 blocks into the blkdir
-      blk0dat_ = BtcUtils::getBlkFilename(blkdir_ + "/blocks", 0);
+      blk0dat_ = FileUtils::getBlkFilename(blkdir_ / "blocks", 0);
       TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
 
       initBDM();
@@ -1615,12 +1601,9 @@ protected:
       theBDMt_ = nullptr;
       clients_ = nullptr;
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory("./ldbtestdir");
-
-      mkdir("./ldbtestdir");
-
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
       Armory::Config::reset();
 
       LOGENABLESTDOUT();
@@ -1630,10 +1613,10 @@ protected:
    LMDBBlockDatabase* iface_;
    BinaryData zeros_;
 
-   string blkdir_;
-   string homedir_;
-   string ldbdir_;
-   string blk0dat_;
+   std::filesystem::path blkdir_{"./blkfiletest"sv};
+   std::filesystem::path homedir_{"./fakehomedir"sv};
+   std::filesystem::path ldbdir_{"./ldbtestdir"sv};
+   std::filesystem::path blk0dat_;
 
    string wallet1id;
 };
@@ -2148,20 +2131,16 @@ protected:
       //LOGDISABLESTDOUT();
       zeros_ = READHEX("00000000");
 
-      blkdir_ = string("./blkfiletest");
-      homedir_ = string("./fakehomedir");
-      ldbdir_ = string("./ldbtestdir");
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory(ldbdir_);
-
-      mkdir(blkdir_ + "/blocks");
-      mkdir(homedir_);
-      mkdir(ldbdir_);
+      FileUtils::createDirectory(blkdir_ / "blocks");
+      FileUtils::createDirectory(homedir_);
+      FileUtils::createDirectory(ldbdir_);
 
       // Put the first 5 blocks into the blkdir
-      blk0dat_ = BtcUtils::getBlkFilename(blkdir_ + "/blocks", 0);
+      blk0dat_ = FileUtils::getBlkFilename(blkdir_ / "blocks", 0);
       TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
 
       startupBIP151CTX();
@@ -2212,10 +2191,9 @@ protected:
       delete theBDMt_;
       theBDMt_ = nullptr;
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory("./ldbtestdir");
-
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
       Armory::Config::reset();
 
       //LOGENABLESTDOUT();
@@ -2225,10 +2203,10 @@ protected:
    LMDBBlockDatabase* iface_;
    BinaryData zeros_;
 
-   string blkdir_;
-   string homedir_;
-   string ldbdir_;
-   string blk0dat_;
+   std::filesystem::path blkdir_{"./blkfiletest"sv};
+   std::filesystem::path homedir_{"./fakehomedir"sv};
+   std::filesystem::path ldbdir_{"./ldbtestdir"sv};
+   std::filesystem::path blk0dat_;
 
    string wallet1id;
    string hexMagicBytes;

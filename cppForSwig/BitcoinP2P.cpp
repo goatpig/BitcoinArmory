@@ -860,8 +860,8 @@ void BitcoinNodeInterface::registerInvTxLambda(
 
 ////////////////////////////////////////////////////////////////////////////////
 void BitcoinNodeInterface::registerNodeStatusLambda(function<void(void)> lbd)
-{ 
-   nodeStatusLambda_ = lbd; 
+{
+   nodeStatusLambda_ = lbd;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -874,8 +874,9 @@ void BitcoinNodeInterface::registerGetTxCallback(
 ////////////////////////////////////////////////////////////////////////////////
 void BitcoinNodeInterface::processInvTx(vector<InvEntry> invVec)
 {
-   if (invTxLambda_)
+   if (invTxLambda_) {
       invTxLambda_(invVec);
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1245,7 +1246,7 @@ void BitcoinP2P::processInv(unique_ptr<Payload> payload)
       }
 
       case Inv_Msg_Witness_Tx:
-      case Inv_Msg_Tx:         
+      case Inv_Msg_Tx:
          processInvTx(move(entryVec.second));
          break;
 

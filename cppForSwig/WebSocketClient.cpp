@@ -35,7 +35,7 @@ static struct lws_protocols protocols[] =
 
 ////////////////////////////////////////////////////////////////////////////////
 WebSocketClient::WebSocketClient(const std::string& addr,
-   const std::string& port, const std::string& datadir,
+   const std::string& port, const std::filesystem::path& datadir,
    const PassphraseLambda& passLbd, bool ephemeralPeers,
    bool oneWayAuth, std::shared_ptr<RemoteCallback> cbPtr) :
    SocketPrototype(addr, port, false),

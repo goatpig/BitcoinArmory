@@ -6,13 +6,9 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#include "EncryptionUtils.h"
-
-using namespace std;
-
 // This is used to attempt to keep keying material out of swap
 // I am stealing this from bitcoin 0.4.0 src, serialize.h
-#if defined(_WIN32) || defined(__MINGW32__)
+#if defined(__MINGW32__) || defined(_MSC_VER)
    // Note that VirtualLock does not provide this as a guarantee on Windows,
    // but, in practice, memory that has been VirtualLock'd almost never gets written to
    // the pagefile except in rare circumstances where memory is extremely low.
@@ -34,6 +30,9 @@ using namespace std;
       munlock(((void *)(((size_t)(a)) & (~((PAGESIZE)-1)))),\
       (((((size_t)(a)) + (b) - 1) | ((PAGESIZE) - 1)) + 1) - (((size_t)(a)) & (~((PAGESIZE) - 1))))
 #endif
+
+#include "SecureBinaryData.h"
+#include "EncryptionUtils.h"
 
 /////////////////////////////////////////////////////////////////////////////
 void SecureBinaryData::lockData()

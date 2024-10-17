@@ -434,22 +434,24 @@ shared_ptr<BlockData> BlockchainScanner::getBlockData(
 {
    //grab block file map
    auto blockheader = blockchain_->getHeaderByHeight(height, 0xFF);
-   auto filenum = blockheader->getBlockFileNum();
-   auto mapIter = batch->fileMaps_.find(filenum);
-   if (mapIter == batch->fileMaps_.end())
-   {
-      LOGERR << "Missing file map for output scan, this is unexpected";
-
-      LOGERR << "Has the following block files:";
-      for (auto& file_pair : batch->fileMaps_)
-         LOGERR << " --- #" << file_pair.first;
-
-      LOGERR << "Was looking for id #" << filenum;
-
-      throw runtime_error("missing file map");
+   if (!blockheader->isInitialized()) {
+      std::stringstream err;
+      err << "blockheader for file " << height << " is not initialized!";
+      LOGERR << err.str();
+      throw std::runtime_error(err.str());
    }
 
-   auto filemap = mapIter->second.get();
+   auto filenum = blockheader->getBlockFileNum();
+   auto mapIter = batch->fileMaps_.find(filenum);
+   if (mapIter == batch->fileMaps_.end()) {
+      LOGERR << "Missing file map for output scan, this is unexpected";
+      LOGERR << "Has the following block files:";
+      for (auto& file_pair : batch->fileMaps_) {
+         LOGERR << " --- #" << file_pair.first;
+      }
+      LOGERR << "Was looking for id #" << filenum;
+      throw std::runtime_error("missing file map");
+   }
 
    //find block and deserialize it
    auto getID = [blockheader](const BinaryData&)->unsigned int
@@ -457,8 +459,14 @@ shared_ptr<BlockData> BlockchainScanner::getBlockData(
       return blockheader->getThisID();
    };
 
+   auto filemap = mapIter->second.get();
+   if (!filemap->valid()) {
+      LOGERR << "Invalid FileMap for height " << height;
+      throw std::runtime_error("Invalid FileMap");
+   }
+
    auto bdata = BlockData::deserialize(
-      filemap->getPtr() + blockheader->getOffset(),
+      filemap->data() + blockheader->getOffset(),
       blockheader->getBlockSize(),
       blockheader, getID, BlockData::CheckHashes::NoChecks);
    return bdata;
@@ -1183,125 +1191,121 @@ void BlockchainScanner::undo(Blockchain::ReorganizationState& reorgState)
    //dont undo subssh, these are skipped by dupID when loading history
 
    auto blockPtr = reorgState.prevTop_;
-   map<uint32_t, shared_ptr<BlockDataFileMap>> fileMaps;
+   std::map<uint32_t, std::shared_ptr<BlockDataFileMap>> fileMaps;
 
-   map<DB_SELECT, set<BinaryData>> keysToDelete;
-   map<BinaryData, StoredScriptHistory> sshMap;
-   set<BinaryData> undoSpentness; //TODO: add spentness DB
+   std::map<DB_SELECT, std::set<BinaryData>> keysToDelete;
+   std::map<BinaryData, StoredScriptHistory> sshMap;
+   std::set<BinaryData> undoSpentness; //TODO: add spentness DB
 
    //TODO: sanity checks on header ptrs from reorgState
    if (reorgState.prevTop_->getBlockHeight() <=
-       reorgState.reorgBranchPoint_->getBlockHeight())
-      throw runtime_error("invalid reorg state");
+      reorgState.reorgBranchPoint_->getBlockHeight()) {
+      throw std::runtime_error("invalid reorg state");
+   }
 
    auto scrAddrMap = scrAddrFilter_->getScanFilterAddrMap();
-
-   while (blockPtr != reorgState.reorgBranchPoint_)
-   {
+   while (blockPtr != reorgState.reorgBranchPoint_) {
       int currentHeight = blockPtr->getBlockHeight();
       auto currentDupId  = blockPtr->getDuplicateID();
 
       //create tx to pull subssh data
-      auto&& sshTx = db_->beginTransaction(SUBSSH, LMDB::ReadOnly);
+      auto sshTx = db_->beginTransaction(SUBSSH, LMDB::ReadOnly);
 
       //grab blocks from previous top until branch point
-      if (blockPtr == nullptr)
-         throw runtime_error("reorg failed while tracing back to "
+      if (blockPtr == nullptr) {
+         throw std::runtime_error("reorg failed while tracing back to "
          "branch point");
+      }
 
       auto filenum = blockPtr->getBlockFileNum();
       auto fileIter = fileMaps.find(filenum);
-      if (fileIter == fileMaps.end())
-      {
-         fileIter = fileMaps.insert(make_pair(
-            filenum, blockDataLoader_.get(filenum))).first;
+      if (fileIter == fileMaps.end()) {
+         fileIter = fileMaps.emplace(
+            filenum, blockDataLoader_.get(filenum)).first;
       }
 
       auto filemap = fileIter->second;
-
       auto getID = [blockPtr]
-         (const BinaryData&)->uint32_t {return blockPtr->getThisID(); };
+         (const BinaryData&)->uint32_t { return blockPtr->getThisID(); };
 
       auto bdata = BlockData::deserialize(
-         filemap.get()->getPtr() + blockPtr->getOffset(),
+         filemap.get()->data() + blockPtr->getOffset(),
          blockPtr->getBlockSize(), blockPtr,
          getID, BlockData::CheckHashes::NoChecks);
 
       const auto& txns = bdata->getTxns();
-      for (unsigned i = 0; i < txns.size(); i++)
-      {
+      for (unsigned i = 0; i < txns.size(); i++) {
          const auto& txn = txns[i];
 
          //undo tx outs added by this block
-         for (unsigned y = 0; y < txn->txouts_.size(); y++)
-         {
+         for (unsigned y = 0; y < txn->txouts_.size(); y++) {
             auto& txout = txn->txouts_[y];
 
             BinaryRefReader brr(
                txn->data_ + txout.first, txout.second);
             brr.advance(8);
             unsigned scriptSize = (unsigned)brr.get_var_int();
-            auto&& scrAddr = BtcUtils::getTxOutScrAddr(
+            auto scrAddr = BtcUtils::getTxOutScrAddr(
                brr.get_BinaryDataRef(scriptSize));
 
             auto saIter = scrAddrMap->find(scrAddr);
-            if (saIter == scrAddrMap->end())
+            if (saIter == scrAddrMap->end()) {
                continue;
+            }
 
             //update ssh value and txio count
             auto& ssh = sshMap[scrAddr];
-            if (!ssh.isInitialized())
+            if (!ssh.isInitialized()) {
                db_->getStoredScriptHistorySummary(ssh, scrAddr);
-
-            if (ssh.scanHeight_ < currentHeight)
+            }
+            if (ssh.scanHeight_ < currentHeight) {
                continue;
-            
+            }
             brr.resetPosition();
             uint64_t value = brr.get_uint64_t();
             ssh.totalUnspent_ -= value;
             ssh.totalTxioCount_--;
-            
+
             //mark stxo key for deletion
-            auto&& txoutKey = DBUtils::getBlkDataKey(
-               currentHeight, currentDupId,
-               i, y);
+            auto txoutKey = DBUtils::getBlkDataKey(
+               currentHeight, currentDupId, i, y);
             keysToDelete[STXO].insert(txoutKey);
 
             //decrement summary count at height, remove entry if necessary
             auto& sum = ssh.subsshSummary_[currentHeight];
             sum--;
-            if (sum <= 0)
+            if (sum <= 0) {
                ssh.subsshSummary_.erase(currentHeight);
+            }
          }
 
          //undo spends from this block
-         for (unsigned y = 0; y < txn->txins_.size(); y++)
-         {
+         for (unsigned y = 0; y < txn->txins_.size(); y++) {
             auto& txin = txn->txins_[y];
-
-            BinaryDataRef outHash(
-               txn->data_ + txin.first, 32);
+            BinaryDataRef outHash(txn->data_ + txin.first, 32);
 
             auto&& txKey = db_->getDBKeyForHash(outHash, currentDupId);
-            if (txKey.getSize() != 6)
+            if (txKey.getSize() != 6) {
                continue;
-
+            }
             uint16_t txOutId = (uint16_t)READ_UINT32_LE(
                txn->data_ + txin.first + 32);
             txKey.append(WRITE_UINT16_BE(txOutId));
 
             StoredTxOut stxo;
-            if (!db_->getStoredTxOut(stxo, txKey))
+            if (!db_->getStoredTxOut(stxo, txKey)) {
                continue;
+            }
 
             //update ssh value and txio count
             auto& scrAddr = stxo.getScrAddress();
             auto& ssh = sshMap[scrAddr];
-            if (!ssh.isInitialized())
+            if (!ssh.isInitialized()) {
                db_->getStoredScriptHistorySummary(ssh, scrAddr);
-
-            if (ssh.scanHeight_ < currentHeight)
+            }
+            if (ssh.scanHeight_ < currentHeight) {
                continue;
+            }
 
             ssh.totalUnspent_ += stxo.getValue();
             ssh.totalTxioCount_--;
@@ -1312,18 +1316,16 @@ void BlockchainScanner::undo(Blockchain::ReorganizationState& reorgState)
             //decrement summary count at height, remove entry if necessary
             auto& sum = ssh.subsshSummary_[currentHeight];
             sum--;
-            if (sum <= 0)
+            if (sum <= 0) {
                ssh.subsshSummary_.erase(currentHeight);
+            }
          }
       }
 
       //set blockPtr to prev block
-      try
-      {
+      try {
          blockPtr = blockchain_->getHeaderByHash(blockPtr->getPrevHashRef());
-      }
-      catch (exception &e)
-      {
+      } catch (const std::exception &e) {
          LOGERR << e.what();
          throw e;
       }
@@ -1334,70 +1336,68 @@ void BlockchainScanner::undo(Blockchain::ReorganizationState& reorgState)
 
    //stxo
    {
-      auto&& tx = db_->beginTransaction(STXO, LMDB::ReadWrite);
+      auto tx = db_->beginTransaction(STXO, LMDB::ReadWrite);
 
       //grab stxos and revert spentness
       map<BinaryData, StoredTxOut> stxos;
-      for (auto& stxoKey : undoSpentness)
-      {
+      for (auto& stxoKey : undoSpentness) {
          auto& stxo = stxos[stxoKey];
-         if (!db_->getStoredTxOut(stxo, stxoKey))
+         if (!db_->getStoredTxOut(stxo, stxoKey)) {
             continue;
+         }
 
          stxo.spentByTxInKey_.clear();
          stxo.spentness_ = TXOUT_UNSPENT;
       }
 
       //put updated stxos
-      for (auto& stxo : stxos)
-      {
-         if (stxo.second.isInitialized())
+      for (auto& stxo : stxos) {
+         if (stxo.second.isInitialized()) {
             db_->putStoredTxOut(stxo.second);
+         }
       }
 
       //delete invalidated stxos
       auto& stxoKeysToDelete = keysToDelete[STXO];
-      for (auto& key : stxoKeysToDelete)
+      for (auto& key : stxoKeysToDelete) {
          db_->deleteValue(STXO, key);
+      }
    }
 
-   int branchPointHeight = 
+   int branchPointHeight =
       reorgState.reorgBranchPoint_->getBlockHeight();
 
    //ssh
    {
-      auto&& tx = db_->beginTransaction(SSH, LMDB::ReadWrite);
+      auto tx = db_->beginTransaction(SSH, LMDB::ReadWrite);
 
       //go thourgh all ssh in scrAddrFilter
-      for (auto& scrAddr : *scrAddrMap)
-      {
+      for (auto& scrAddr : *scrAddrMap) {
          auto& ssh = sshMap[scrAddr.second->scrAddr_];
          
          //if the ssh isn't in our map, pull it from DB
-         if (!ssh.isInitialized())
-         {
+         if (!ssh.isInitialized()) {
             db_->getStoredScriptHistorySummary(ssh, scrAddr.first);
-            if (ssh.uniqueKey_.getSize() == 0)
-            {
+            if (ssh.uniqueKey_.empty()) {
                sshMap.erase(scrAddr.second->scrAddr_);
                continue;
             }
          }
 
          //update alreadyScannedUpToBlk_ to branch point height
-         if (ssh.scanHeight_ > branchPointHeight)
+         if (ssh.scanHeight_ > branchPointHeight) {
             ssh.scanHeight_ = branchPointHeight;
+         }
 
-         if (ssh.tallyHeight_ > branchPointHeight)
+         if (ssh.tallyHeight_ > branchPointHeight) {
             ssh.tallyHeight_ = branchPointHeight;
+         }
       }
 
       //write it all up
-      for (auto& ssh : sshMap)
-      {
+      for (const auto& ssh : sshMap) {
          auto saIter = scrAddrMap->find(ssh.second.uniqueKey_);
-         if (saIter == scrAddrMap->end())
-         {
+         if (saIter == scrAddrMap->end()) {
             LOGWARN << "invalid scrAddr during undo";
             continue;
          }
@@ -1459,7 +1459,7 @@ void BlockchainScanner::processFilterHitsThread(
          try
          {
             bdata = BlockData::deserialize(
-               fileptr->getPtr() + headerPtr->getOffset(),
+               fileptr->data() + headerPtr->getOffset(),
                headerPtr->getBlockSize(),
                headerPtr, getID, BlockData::CheckHashes::NoChecks);
          }

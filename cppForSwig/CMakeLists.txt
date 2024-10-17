@@ -18,36 +18,29 @@ SET(LIBARMORYCOMMON_INCLUDE_DIRECTORIES
     PUBLIC Wallets
     PRIVATE Wallets/Accounts
     PRIVATE ${PROJECT_BINARY_DIR}/cppForSwig
+    PUBLIC /usr/include
 )
-
-IF (MSVC)
-    LIST(APPEND LIBARMORYCOMMON_INCLUDE_DIRECTORIES
-        PUBLIC leveldb_windows_port/win32_posix
-    )
-ENDIF (MSVC)
 
 SET(LIBARMORYCOMMON_LINK_LIBRARIES
     chacha20poly1305
     ${LIBBTC_LIB}
     ${LMDB_LIB}
     ${LIBWEBSOCKETS_LIB}
+    ${CAPNPROTO_LIB}
 )
-
-IF (NOT MSVC)
-    LIST(APPEND LIBARMORYCOMMON_LINK_LIBRARIES
-        pthread
-        cap
-    )
-ENDIF (NOT MSVC)
-
 
 FILE(GLOB LIBARMORYCOMMON_SOURCES *.cpp)
 FILE(GLOB BLOCKDB_SOURCES BlockchainDatabase/*.cpp)
-FILE(GLOB WALLETS_SOURCES Wallets/*.cpp)
 FILE(GLOB ACCOUNTS_SOURCES Wallets/Accounts/*.cpp)
 FILE(GLOB SEEDS_SOURCES Wallets/Seeds/*.cpp)
 FILE(GLOB SIGNER_SOURCES Signer/*.cpp)
 FILE(GLOB BRIDGE_SOURCES BridgeApi/*.cpp)
+
+FILE(GLOB WALLETS_SOURCES Wallets/*.cpp)
+LIST(APPEND WALLETS_SOURCES
+    ${LIBBTC_INCLUDE_DIR}/src/trezor-crypto/bip39.c
+    ${LIBBTC_INCLUDE_DIR}/src/trezor-crypto/pbkdf2.c
+)
 
 LIST(APPEND LIBARMORYCOMMON_SOURCES
     hkdf/hkdf.c
@@ -57,6 +50,7 @@ LIST(APPEND LIBARMORYCOMMON_SOURCES
     ${SEEDS_SOURCES}
     ${SIGNER_SOURCES}
     ${BLOCKDB_SOURCES}
+    gtest/NodeUnitTest.cpp
 )
 
 IF (ENABLE_TESTS)
@@ -66,27 +60,16 @@ IF (ENABLE_TESTS)
     ADD_DEFINITIONS(-DUNIT_TESTS)
 ENDIF ()
 
-IF (MSVC)
-    LIST(APPEND LIBARMORYCOMMON_SOURCES
-        leveldb_windows_port/win32_posix/dirent_win32.cpp
-        leveldb_windows_port/win32_posix/mman.cpp
-        leveldb_windows_port/win32_posix/win32_posix.cc
-    )
+IF (WIN32 OR MINGW)
     LIST(REMOVE_ITEM LIBARMORYCOMMON_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/SocketService_unix.cpp
     )
-
-    SET(OS_SPECIFIC_LIBS )
-
-ELSE (MSVC)
+ELSE ()
     LIST(REMOVE_ITEM LIBARMORYCOMMON_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/SocketService_win32.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/Win_TranslatePath.cpp
     )
-
     SET(OS_SPECIFIC_LIBS gmp)
-
-ENDIF (MSVC)
+ENDIF ()
 
 LIST(REMOVE_ITEM LIBARMORYCOMMON_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
@@ -102,10 +85,6 @@ LIST(APPEND LIBARMORYCOMMON_INCLUDE_DIRECTORIES
     PUBLIC ${LIBWEBSOCKETS_INCLUDE_DIRS}
 )
 
-LIST(APPEND LIBARMORYCOMMON_LINK_LIBRARIES
-    ${LIBWEBSOCKETS_LIBRARIES}
-)
-
 INCLUDE(CheckCXXSymbolExists)
 find_package(PkgConfig)
 
@@ -113,24 +92,12 @@ find_package(PkgConfig)
 check_cxx_symbol_exists(LWS_WITH_TLS lws_config.h LIBWEBSOCKETS_WITH_TLS)
 
 IF (LIBWEBSOCKETS_WITH_TLS)
-    IF (APPLE)
-        SET(OPENSSL_ROOT_DIR /usr/local/opt/openssl)
-    ENDIF ()
-
-    find_package(OpenSSL REQUIRED)
-
-    LIST (APPEND LIBARMORYCOMMON_INCLUDE_DIRECTORIES
-        PUBLIC ${OPENSSL_INCLUDE_DIR}
-    )
-
-    LIST (APPEND LIBARMORYCOMMON_LINK_LIBRARIES
-        ${OPENSSL_LIBRARIES}
-    )
+    SET(OS_SPECIFIC_LIBS ${OS_SPECIFIC_LIBS} ssl crypto)
 ENDIF ()
 
 check_cxx_symbol_exists(LWS_WITH_LIBUV lws_config.h LIBWEBSOCKETS_WITH_LIBUV)
 
-iF (LIBWEBSOCKETS_WITH_LIBUV)
+IF (LIBWEBSOCKETS_WITH_LIBUV)
     pkg_check_modules(LIBUV REQUIRED libuv)
 
     LIST(APPEND LIBARMORYCOMMON_LINK_LIBRARIES
@@ -149,7 +116,6 @@ IF (LIBWEBSOCKETS_WITH_LIBEVENT)
 ENDIF ()
 
 check_cxx_symbol_exists(LWS_WITH_LIBCAP lws_config.h LIBWEBSOCKETS_WITH_LIBCAP)
-
 IF (LIBWEBSOCKETS_WITH_LIBCAP)
     pkg_check_modules(LIBCAP REQUIRED libcap)
 
@@ -168,10 +134,6 @@ ENDIF ()
 
 LIST(APPEND LIBARMORYCOMMON_INCLUDE_DIRECTORIES
     PRIVATE ${CAPNPROTO_INCLUDE_DIRS}
-)
-
-LIST(APPEND LIBARMORYCOMMON_LINK_LIBRARIES
-    ${CAPNP_LIBRARIES}
 )
 
 SET(CAPNPROTO_FILES
@@ -194,7 +156,7 @@ FOREACH(schema ${CAPNPROTO_FILES})
     SET(CAPNP_CC "${schema}.c++")
     ADD_CUSTOM_COMMAND(
         OUTPUT ${CAPNP_FILES}/${CAPNP_CC}
-        COMMAND ${CAPNP_EXECUTABLE} compile --src-prefix=${CMAKE_CURRENT_SOURCE_DIR}/capnp -oc++:capnp ${CMAKE_CURRENT_SOURCE_DIR}/capnp/${schema}
+        COMMAND ${CAPNP_EXECUTABLE} compile --no-standard-import --import-path=/ucrt64/include --src-prefix=${CMAKE_CURRENT_SOURCE_DIR}/capnp -oc++\:capnp ${CMAKE_CURRENT_SOURCE_DIR}/capnp/${schema}
     )
     LIST(APPEND LIBARMORYCOMMON_SOURCES ${CAPNP_FILES}/${CAPNP_CC})
 ENDFOREACH()
@@ -239,16 +201,6 @@ SET(LIBARMORYCLI_SOURCES
     gtest/NodeUnitTest.cpp
 )
 
-IF (MSVC)
-    LIST(APPEND LIBARMORYCLI_SOURCES
-        SocketService_win32.cpp
-    )
-ELSE ()
-    LIST(APPEND LIBARMORYCLI_SOURCES
-        SocketService_unix.cpp
-    )
-ENDIF ()
-
 ADD_LIBRARY(ArmoryCLI
     STATIC
     ${LIBARMORYCLI_SOURCES}
@@ -282,6 +234,7 @@ TARGET_INCLUDE_DIRECTORIES(ArmoryDB
 TARGET_LINK_LIBRARIES(ArmoryDB
     ArmoryCLI
     ${OS_SPECIFIC_LIBS}
+    ${WINSOCK_LIB}
     capnp
     kj
 )
@@ -298,8 +251,6 @@ ADD_EXECUTABLE(CppBridge
     BridgeAPI/PassphrasePrompt.cpp
     BridgeAPI/ProtoCommandParser.cpp
     BridgeAPI/WalletManager.cpp
-    ${LIBBTC_INCLUDE_DIR}/src/trezor-crypto/bip39.c
-    ${LIBBTC_INCLUDE_DIR}/src/trezor-crypto/pbkdf2.c
 )
 
 SET_TARGET_PROPERTIES(CppBridge
@@ -313,6 +264,7 @@ TARGET_INCLUDE_DIRECTORIES(CppBridge
 TARGET_LINK_LIBRARIES(CppBridge
     ArmoryCommon
     ${OS_SPECIFIC_LIBS}
+    ${WINSOCK_LIB}
     capnp
     kj
 )
@@ -335,6 +287,7 @@ TARGET_INCLUDE_DIRECTORIES(BIP150KeyManager
 TARGET_LINK_LIBRARIES(BIP150KeyManager
     ArmoryCLI
     ${OS_SPECIFIC_LIBS}
+    ${WINSOCK_LIB}
 )
 
 INSTALL(TARGETS BIP150KeyManager DESTINATION ${CMAKE_INSTALL_BINDIR})
