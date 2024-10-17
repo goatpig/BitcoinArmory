@@ -115,25 +115,24 @@ namespace TestUtils
 {
 
    /////////////////////////////////////////////////////////////////////////////
-   bool searchFile(const string& filename, BinaryData& data)
+   bool searchFile(const std::filesystem::path& filename, BinaryData& data)
    {
       //create mmap of file
-      auto filemap = DBUtils::getMmapOfFile(filename);
+      auto filemap = FileUtils::FileMap(filename);
 
-      if (data.getSize() < 8)
+      if (data.getSize() < 8) {
          throw runtime_error("only for buffers 8 bytes and larger");
+      }
 
       //search it
       uint64_t sample;
       uint64_t* data_head = (uint64_t*)data.getPtr();
 
       bool result = false;
-      for (unsigned i = 0; i < filemap.size_ - data.getSize(); i++)
-      {
-         memcpy(&sample, filemap.filePtr_ + i, 8);
-         if (sample == *data_head)
-         {
-            BinaryDataRef bdr(filemap.filePtr_ + i, data.getSize());
+      for (unsigned i = 0; i < filemap.size() - data.getSize(); i++) {
+         memcpy(&sample, filemap.ptr() + i, 8);
+         if (sample == *data_head) {
+            BinaryDataRef bdr(filemap.ptr() + i, data.getSize());
             if (bdr == data.getRef())
             {
                result = true;
@@ -141,11 +140,6 @@ namespace TestUtils
             }
          }
       }
-
-      //clean up
-      filemap.unmap();
-
-      //return
       return result;
    }
 
@@ -195,7 +189,8 @@ namespace TestUtils
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   void concatFile(const std::vector<std::string> &from, const string &to)
+   void concatFile(const std::vector<std::filesystem::path> &from,
+      const std::filesystem::path &to)
    {
       std::ofstream o(to, ios::app | ios::binary);
 
@@ -209,24 +204,28 @@ namespace TestUtils
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   void appendBlocks(const std::vector<std::string> &files, const std::string &to)
+   void appendBlocks(const std::vector<std::string> &files,
+      const std::filesystem::path &to)
    {
-      std::vector<std::string> fullFileNames;
+      std::vector<std::filesystem::path> fullFileNames;
       for (const std::string &f : files) {
-         fullFileNames.push_back(dataDir + "/blk_" + f + ".dat");
+         std::filesystem::path filename{"blk_" + f + ".dat"};
+         fullFileNames.emplace_back(dataDir / filename);
       }
       concatFile(fullFileNames, to);
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   void setBlocks(const std::vector<std::string> &files, const std::string &to)
+   void setBlocks(const std::vector<std::string> &files,
+      const std::filesystem::path &to)
    {
       std::ofstream o(to, ios::trunc | ios::binary);
       o.close();
 
-      std::vector<std::string> fullFileNames;
+      std::vector<std::filesystem::path> fullFileNames;
       for (const std::string &f : files) {
-         fullFileNames.push_back(dataDir + "/blk_" + f + ".dat");
+         std::filesystem::path filename{"blk_" + f + ".dat"};
+         fullFileNames.emplace_back(dataDir / filename);
       }
       concatFile(fullFileNames, to);
    }
@@ -238,15 +237,16 @@ namespace TestUtils
    /////////////////////////////////////////////////////////////////////////////
    BinaryData getTx(unsigned height, unsigned id)
    {
-      stringstream ss;
-      ss << dataDir << "/blk_" << height << ".dat";
+      auto path = dataDir / std::filesystem::path{
+         "blk_" + std::to_string(height) + ".dat"
+      };
 
-      ifstream blkfile(ss.str(), ios::binary);
-      blkfile.seekg(0, ios::end);
+      std::ifstream blkfile(path, std::ios::binary);
+      blkfile.seekg(0, std::ios::end);
       auto size = blkfile.tellg();
-      blkfile.seekg(0, ios::beg);
+      blkfile.seekg(0, std::ios::beg);
 
-      vector<char> vec;
+      std::vector<char> vec;
       vec.resize(size);
       blkfile.read(&vec[0], size);
       blkfile.close();
@@ -255,10 +255,11 @@ namespace TestUtils
       StoredHeader sbh;
       sbh.unserializeFullBlock(brr, false, true);
 
-      if (sbh.stxMap_.size() - 1 < id)
+      if (sbh.stxMap_.size() - 1 < id) {
          throw range_error("invalid tx id");
+      }
 
-      auto& stx = sbh.stxMap_[id];
+      const auto& stx = sbh.stxMap_[id];
       return stx.dataCopy_;
    }
 

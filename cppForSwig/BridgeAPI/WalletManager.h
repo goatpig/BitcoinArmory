@@ -14,8 +14,8 @@
 #include <string>
 #include <map>
 #include <iostream>
+#include <filesystem>
 
-#include "log.h"
 #include "Wallets.h"
 #include "Signer.h"
 #include "ArmoryConfig.h"
@@ -208,7 +208,7 @@ class Armory135Header
 {
 private:
    //file system
-   const std::string path_;
+   const std::filesystem::path path_;
 
    //meta data
    std::string walletID_;
@@ -240,7 +240,7 @@ private:
 
 
 public:
-   Armory135Header(const std::string path) :
+   Armory135Header(const std::filesystem::path path) :
       path_(path)
    {
       parseFile();
@@ -260,7 +260,7 @@ public:
 class WalletManager : Lockable
 {
 private:
-   const std::string path_;
+   const std::filesystem::path path_;
    std::map<std::string, std::map<
       Armory::Wallets::AddressAccountId,
          std::shared_ptr<WalletContainer>>> wallets_;
@@ -276,7 +276,7 @@ public:
    void cleanUpBeforeUnlock(void) override {}
 
 public:
-   WalletManager(const std::string& path, const PassphraseLambda& passLbd) :
+   WalletManager(const std::filesystem::path& path, const PassphraseLambda& passLbd) :
       path_(path)
    {
       loadWallets(passLbd);
@@ -312,7 +312,7 @@ public:
    void deleteWallet(const std::string&,
       const Armory::Wallets::AddressAccountId&);
 
-   const std::string& getWalletDir(void) const { return path_; }
+   const std::filesystem::path& getWalletDir(void) const { return path_; }
 };
 
 #endif

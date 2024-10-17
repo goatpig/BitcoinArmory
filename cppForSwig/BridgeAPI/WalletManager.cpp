@@ -200,7 +200,7 @@ void WalletManager::deleteWallet(const std::string& wltId,
 void WalletManager::loadWallets(const PassphraseLambda& passLbd)
 {
    //list .lmdb files in folder
-   if (!DBUtils::isDir(path_)) {
+   if (!FileUtils::isDir(path_)) {
       std::stringstream ss;
       ss << path_ << "is not a valid datadir";
       LOGERR << ss.str();
@@ -230,7 +230,7 @@ void WalletManager::loadWallets(const PassphraseLambda& passLbd)
             addWallet(wltPtr, accId);
          }
       } catch (const std::exception& e) {
-         LOGERR << "Failed to open wallet at " << wltPath <<
+         LOGERR << "Failed to open wallet at " << wltPath.string() <<
             " with error:\n" << e.what();
       }
    }
@@ -701,8 +701,8 @@ void Armory135Header::parseFile()
    uint32_t version = UINT32_MAX;
    try {
       //grab root key & address chain length from python wallet
-      auto fileMap = DBUtils::getMmapOfFile(path_, false);
-      BinaryRefReader brr(fileMap.filePtr_, fileMap.size_);
+      auto fileMap = FileUtils::FileMap(path_, false);
+      BinaryRefReader brr(fileMap.ptr(), fileMap.size());
 
       //file type
       auto fileTypeStr = brr.get_BinaryData(8);
@@ -827,8 +827,8 @@ void Armory135Header::parseFile()
             }
          }
       }
-   } catch(const std::exception& e) {
-      LOGWARN << "failed to load wallet at " << path_ << " with error: ";
+   } catch (const std::exception& e) {
+      LOGWARN << "failed to load wallet at " << path_.string() << " with error: ";
       LOGWARN << "   " << e.what();
       return;
    }

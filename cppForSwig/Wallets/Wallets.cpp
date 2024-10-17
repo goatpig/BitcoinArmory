@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-2019, goatpig                                          //
+//  Copyright (C) 2016-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -56,7 +56,8 @@ AssetWallet::~AssetWallet()
 
 ////////////////////////////////////////////////////////////////////////////////
 shared_ptr<IO::WalletDBInterface> AssetWallet::getIfaceFromFile(
-   const string& path, bool fileExists, const PassphraseLambda& passLbd,
+   const std::filesystem::path& path, bool fileExists,
+   const PassphraseLambda& passLbd,
    uint32_t unlockTime_ms)
 {
    /*
@@ -602,11 +603,12 @@ shared_ptr<AddressAccount> AssetWallet::getAccountForID(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const string& AssetWallet::getDbFilename(void) const
+const std::filesystem::path& AssetWallet::getDbFilename() const
 { 
-   if (iface_ == nullptr)
+   if (iface_ == nullptr) {
       throw WalletException("uninitialized db environment");
-   return iface_->getFilename(); 
+   }
+   return iface_->getFilename();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -778,7 +780,7 @@ shared_ptr<IO::WalletIfaceTransaction> AssetWallet::beginSubDBTransaction(
 
 ////////////////////////////////////////////////////////////////////////////////
 shared_ptr<AssetWallet> AssetWallet::loadMainWalletFromFile(
-   const string& path, const PassphraseLambda& passLbd)
+   const std::filesystem::path& path, const PassphraseLambda& passLbd)
 {
    auto iface = getIfaceFromFile(path.c_str(), true, passLbd, 0);
    auto mainWalletID = getMainWalletID(iface);
@@ -894,54 +896,56 @@ shared_ptr<MetaDataAccount> AssetWallet::getMetaAccount(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-string AssetWallet::forkWatchingOnly(
-   const string& filename, const PassphraseLambda& passLbd)
+std::filesystem::path AssetWallet::forkWatchingOnly(
+   const std::filesystem::path& path, const PassphraseLambda& passLbd)
 {
    //strip '_wallet' extention
+   auto filename = path.filename().string();
    auto underscoreIndex = filename.find_last_of("_");
    auto newname = filename.substr(0, underscoreIndex);
 
    //set WO suffix
    newname.append("_WatchingOnly.lmdb");
+   auto newPath = path.parent_path() / newname;
 
    //check file does not exist
-   if (DBUtils::fileExists(newname, 0))
+   if (FileUtils::fileExists(newPath, 0)) {
       throw WalletException("WO wallet filename already exists");
+   }
 
    //open original wallet db & new
-   auto originIface = getIfaceFromFile(filename, true, passLbd, 0);
+   auto originIface = getIfaceFromFile(path, true, passLbd, 0);
    auto masterID = getMasterID(originIface);
 
-   auto woIface = getIfaceFromFile(newname, false, passLbd, 250);
+   auto woIface = getIfaceFromFile(newPath, false, passLbd, 250);
    woIface->setDbCount(originIface->getDbCount());
    woIface->lockControlContainer(passLbd);
 
    //cycle through wallet metas, copy wallet structure and assets
-   for (auto& metaPtr : originIface->getHeaderMap())
-   {
+   for (auto& metaPtr : originIface->getHeaderMap()) {
       switch (metaPtr.second->type_)
       {
-      case IO::WalletHeaderType_Single:
-      {
-         woIface->addHeader(metaPtr.second);
+         case IO::WalletHeaderType_Single:
+         {
+            woIface->addHeader(metaPtr.second);
 
-         //load wallet
-         auto wltSingle = make_shared<AssetWallet_Single>(
-            originIface, metaPtr.second, masterID);
-         wltSingle->readFromFile();
+            //load wallet
+            auto wltSingle = make_shared<AssetWallet_Single>(
+               originIface, metaPtr.second, masterID);
+            wltSingle->readFromFile();
 
-         //copy content
-         auto wpd = AssetWallet_Single::exportPublicData(wltSingle);
-         AssetWallet_Single::importPublicData(wpd, woIface);
+            //copy content
+            auto wpd = AssetWallet_Single::exportPublicData(wltSingle);
+            AssetWallet_Single::importPublicData(wpd, woIface);
 
-         //close the wallet
-         wltSingle.reset();
-         break;
-      }
+            //close the wallet
+            wltSingle.reset();
+            break;
+         }
 
-      default:
-         LOGWARN << "wallet contains header types that " <<
-            "aren't covered by WO forking";
+         default:
+            LOGWARN << "wallet contains header types that " <<
+               "aren't covered by WO forking";
       }
    }
 
@@ -954,7 +958,7 @@ string AssetWallet::forkWatchingOnly(
    woIface.reset();
 
    //return the file name of the wo wallet
-   return newname;
+   return newPath;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1128,8 +1132,9 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
    std::unique_ptr<ClearTextSeed> seed, const WalletCreationParams& params)
 {
    //sanity check
-   if (seed == nullptr)
+   if (seed == nullptr) {
       throw WalletException("[AssetWallet_Single::createFromSeed] null seed");
+   }
 
    //determine wallet type from seed type
    shared_ptr<AssetWallet_Single> result;
@@ -1166,12 +1171,14 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
 shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
    ClearTextSeed_Armory135* seed, const WalletCreationParams& params)
 {
-   if (seed == nullptr)
+   if (seed == nullptr) {
       throw WalletException("[createFromSeed] null root");
+   }
 
    const auto& privateRoot = seed->getRoot();
-   if (privateRoot.getSize() != 32)
+   if (privateRoot.getSize() != 32) {
       throw WalletException("[createFromSeed] invalid root size");
+   }
 
    /*
    Create control passphrase lambda. It gets wiped after the wallet is setup
@@ -1184,13 +1191,14 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
 
    //create wallet file and dbenv
    const auto& masterId = seed->getMasterId();
-   std::string path{ params.folder + "/armory_" + masterId + "_wallet.lmdb" };
+   auto path = params.folder / std::filesystem::path{
+      "armory_" + masterId + "_wallet.lmdb"
+   };
    auto iface = getIfaceFromFile(path, false, controlPassLbd,
       params.publicUnlockDuration_ms);
 
    auto chaincode = seed->getChaincode();
-   if (chaincode.empty())
-   {
+   if (chaincode.empty()) {
       //seed has no chaincode, generate deterministic one
       chaincode = BtcUtils::computeChainCode_Armory135(privateRoot);
    }
@@ -1212,8 +1220,7 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
    auto account135 = make_shared<AccountType_ArmoryLegacy>();
    account135->setMain(true);
 
-   if (!params.passphrase.empty())
-   {
+   if (!params.passphrase.empty()) {
       //custom passphrase, set prompt lambda for the chain extention
       auto passphraseLambda =
          [&params](const set<EncryptionKeyId>&)->SecureBinaryData
@@ -1270,7 +1277,7 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
       legacyAcc->setMain(true);
       accountTypes.insert(legacyAcc);
    }
-   
+
    {
       //nested sw account: 49
       vector<unsigned> path = { 0x80000031, coinType, 0x80000000 };
@@ -1339,7 +1346,9 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
    //db env
    auto masterId = seed->getMasterId();
    auto walletId = seed->getWalletId();
-   string path = params.folder + "/armory_" + masterId + "_wallet.lmdb";
+   auto path = params.folder / std::filesystem::path{
+      "armory_" + masterId + "_wallet.lmdb"
+   };
    auto iface = getIfaceFromFile(path, false, controlPassLbd,
       params.publicUnlockDuration_ms);
 
@@ -1382,9 +1391,9 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-shared_ptr<AssetWallet_Single>
+std::shared_ptr<AssetWallet_Single>
    AssetWallet_Single::createFromPublicRoot_Armory135(
-   const string& folder,
+   const std::filesystem::path& folder,
    SecureBinaryData& pubRoot,
    SecureBinaryData& chainCode,
    const SecureBinaryData& controlPassphrase,
@@ -1402,9 +1411,10 @@ shared_ptr<AssetWallet_Single>
    };
 
    //create wallet file and dbenv
-   stringstream pathSS;
-   pathSS << folder << "/armory_" << masterID << "_WatchingOnly.lmdb";
-   auto iface = getIfaceFromFile(pathSS.str(), false, controlPassLbd,
+   auto filePath = folder / std::filesystem::path{
+      "armory_" + masterID + "_WatchingOnly.lmdb"
+   };
+   auto iface = getIfaceFromFile(filePath, false, controlPassLbd,
       250);
 
    auto walletID = generateWalletId(pubRoot, chainCode, SeedType::Armory135);
@@ -1433,10 +1443,10 @@ shared_ptr<AssetWallet_Single>
 
 ////////////////////////////////////////////////////////////////////////////////
 shared_ptr<AssetWallet_Single> AssetWallet_Single::createBlank(
-   const string& folder, const string& walletID,
+   const std::filesystem::path& folder, const string& walletID,
    const SecureBinaryData& controlPassphrase)
 {
-   auto&& masterID = walletID;
+   auto masterID = walletID;
 
    /*
    Create control passphrase lambda. It gets wiped after the wallet is setup
@@ -1448,9 +1458,10 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::createBlank(
    };
 
    //create wallet file and dbenv
-   stringstream pathSS;
-   pathSS << folder << "/armory_" << masterID << "_WatchingOnly.lmdb";
-   auto iface = getIfaceFromFile(pathSS.str(), false, controlPassLbd, 250);
+   auto filePath = folder / std::filesystem::path{
+      "armory_" + masterID + "_WatchingOnly.lmdb"
+   };
+   auto iface = getIfaceFromFile(filePath, false, controlPassLbd, 250);
 
    //address accounts
    shared_ptr<AssetWallet_Single> walletPtr = nullptr;

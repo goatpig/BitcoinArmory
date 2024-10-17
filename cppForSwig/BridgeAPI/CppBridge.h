@@ -101,7 +101,7 @@ namespace Armory
       class CppBridge
       {
       private:
-         const std::string path_;
+         const std::filesystem::path path_;
 
          const std::string dbAddr_;
          const std::string dbPort_;
@@ -223,7 +223,7 @@ namespace Armory
          SecureBinaryData generateRandom(size_t) const;
 
       public:
-         CppBridge(const std::string&, const std::string&,
+         CppBridge(const std::filesystem::path&, const std::string&,
             const std::string&, bool, bool);
 
          void writeToClient(BinaryData&) const;

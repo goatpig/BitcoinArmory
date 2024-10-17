@@ -318,7 +318,7 @@ namespace
 ////  CppBridge
 ////
 ////////////////////////////////////////////////////////////////////////////////
-CppBridge::CppBridge(const std::string& path, const std::string& dbAddr,
+CppBridge::CppBridge(const std::filesystem::path& path, const std::string& dbAddr,
    const std::string& dbPort, bool oneWayAuth, bool offline) :
    path_(path), dbAddr_(dbAddr), dbPort_(dbPort),
    dbOneWayAuth_(oneWayAuth), dbOffline_(offline)

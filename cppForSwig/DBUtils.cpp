@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2024, goatpig                                           //
+//  Copyright (C) 2016-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -15,7 +15,10 @@
 #include <fcntl.h>
 #include "DBUtils.h"
 
-#ifdef _WIN32
+namespace fs = std::filesystem;
+
+#if defined(__MINGW32__) || defined(_MSC_VER)
+   #include <windows.h>
    #include <io.h>
 #else
    #include <sys/mman.h>
@@ -256,176 +259,6 @@ BinaryData DBUtils::getMissingHashesKey(uint32_t id)
    return bd;
 }
 
-/////////////////////////////////////////////////////////////////////////////
-bool DBUtils::fileExists(const std::string& path, int mode)
-{
-   using std::filesystem::perms;
-   try {
-      auto result = std::filesystem::status(path);
-      if (result.type() == std::filesystem::file_type::not_found) {
-         return false;
-      }
-      auto filePerms = result.permissions();
-
-      //do we need read permission?
-      if ((mode & 2) && (filePerms & perms::owner_read) == perms::none) {
-         return false;
-      }
-
-      //do we need write permission?
-      if ((mode & 4) && (filePerms & perms::owner_write) == perms::none) {
-         return false;
-      }
-
-      return true;
-   } catch (const std::filesystem::filesystem_error&) {
-      //throw, invalid path/file doesnt exist
-      return false;
-   }
-}
-
-/////////////////////////////////////////////////////////////////////////////
-void FileMap::unmap()
-{
-   if (filePtr_ != nullptr)
-   {
-#ifdef WIN32
-      if (!UnmapViewOfFile(filePtr_))
-         throw std::runtime_error("failed to unmap file");
-#else
-      if (munmap(filePtr_, size_))
-         throw std::runtime_error("failed to unmap file");
-#endif
-
-      filePtr_ = nullptr;
-   }
-}
-
-/////////////////////////////////////////////////////////////////////////////
-FileMap DBUtils::getMmapOfFile(const std::string& path, bool write)
-{
-   int fd = 0;
-   if (!DBUtils::fileExists(path, 2)) {
-      throw std::runtime_error("file does not exist");
-   }
-   FileMap fMap;
-
-   try {
-#ifdef _WIN32
-      auto flag = _O_RDONLY | _O_BINARY;
-      if (write) {
-         flag = _O_RDWR | _O_BINARY;
-      }
-
-      fd = _open(path.c_str(), flag);
-      if (fd == -1) {
-         throw std::runtime_error("failed to open file");
-      }
-
-      auto size = _lseek(fd, 0, SEEK_END);
-      if (size == 0) {
-         stringstream ss;
-         ss << "empty block file under path: " << path;
-         throw ss.str();
-      }
-
-      _lseek(fd, 0, SEEK_SET);
-#else
-      auto flag = O_RDONLY;
-      if (write) {
-         flag = O_RDWR;
-      }
-      fd = open(path.c_str(), flag);
-      if (fd == -1) {
-         throw std::runtime_error("failed to open file");
-      }
-
-      auto size = lseek(fd, 0, SEEK_END);
-      if (size == 0) {
-         std::stringstream ss;
-         ss << "empty block file under path: " << path;
-         throw ss.str();
-      }
-
-      lseek(fd, 0, SEEK_SET);
-#endif
-      fMap.size_ = size;
-
-#ifdef _WIN32
-      //create mmap
-      auto fileHandle = (HANDLE)_get_osfhandle(fd);
-      HANDLE mh;
-
-      uint32_t sizelo = size & 0xffffffff;
-      uint32_t sizehi = size >> 16 >> 16;
-
-      auto mmapflag = PAGE_READONLY;
-      if (write) {
-         mmapflag = PAGE_READWRITE;
-      }
-      mh = CreateFileMapping(fileHandle, NULL, mmapflag,
-         sizehi, sizelo, NULL);
-      if (!mh) {
-         auto errorCode = GetLastError();
-         stringstream errStr;
-         errStr << "Failed to create map of file. Error Code: " <<
-            errorCode << " (" << std::strerror(errorCode) << ")";
-         throw std::runtime_error(errStr.str());
-      }
-
-      auto viewFlag = FILE_MAP_READ;
-      if (write) {
-         viewFlag = FILE_MAP_ALL_ACCESS;
-      }
-      fMap.filePtr_ = (uint8_t*)MapViewOfFileEx(mh, viewFlag, 0, 0, size, NULL);
-      if (fMap.filePtr_ == nullptr) {
-         auto errorCode = GetLastError();
-         std::stringstream errStr;
-         errStr << "Failed to create map of file. Error Code: " <<
-            errorCode << " (" << std::strerror(errorCode) << ")";
-         throw std::runtime_error(errStr.str());
-      }
-
-      CloseHandle(mh);
-      _close(fd);
-#else
-      auto mapFlag = PROT_READ;
-      if (write) {
-         mapFlag |= PROT_WRITE;
-      }
-      fMap.filePtr_ = (uint8_t*)mmap(0, size, mapFlag, MAP_SHARED,
-         fd, 0);
-      if (fMap.filePtr_ == MAP_FAILED) {
-         fMap.filePtr_ = NULL;
-         std::stringstream errStr;
-         errStr << "Failed to create map of file. Error Code: " <<
-            errno << " (" << std::strerror(errno) << ")";
-         std::cout << errStr.str() << std::endl;
-         throw std::runtime_error(errStr.str());
-      }
-
-      close(fd);
-#endif
-      fd = 0;
-   }
-   catch (const std::runtime_error &e)
-   {
-      if (fd != 0)
-      {
-#ifdef _WIN32
-         _close(fd);
-#else
-         close(fd);
-#endif
-         fd = 0;
-      }
-
-      throw e;
-   }
-
-   return fMap;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 BinaryDataRef DBUtils::getDataRefForPacket(
    const BinaryDataRef& packet)
@@ -438,30 +271,294 @@ BinaryDataRef DBUtils::getDataRefForPacket(
    return brr.get_BinaryDataRef(brr.getSizeRemaining());
 }
 
-////////////////////////////////////////////////////////////////////////////////
-bool DBUtils::isFile(const std::string& path)
+/////////////////////////////////////////////////////////////////////////////
+// FileMap
+/////////////////////////////////////////////////////////////////////////////
+FileUtils::FileMap::FileMap(const fs::path& path, bool write)
 {
-   auto result = std::filesystem::status(path);
-   return result.type() == std::filesystem::file_type::regular;
+   int fd = 0;
+   if (!fileExists(path, 2)) {
+      LOGWARN << "FileMap: file " << path.string() << " does not exist";
+      return;
+   }
+
+   try {
+#ifdef _WIN32
+      auto flag = _O_RDONLY | _O_BINARY;
+      if (write) {
+         flag = _O_RDWR | _O_BINARY;
+      }
+
+      fd = _open(path.string().c_str(), flag);
+      if (fd == -1) {
+         throw std::runtime_error("failed to open file");
+      }
+
+      auto size = _lseek(fd, 0, SEEK_END);
+      if (size == 0) {
+         throw std::runtime_error("empty file");
+      }
+
+      _lseek(fd, 0, SEEK_SET);
+#else
+      auto flag = O_RDONLY;
+      if (write) {
+         flag = O_RDWR;
+      }
+      fd = open(path.c_str(), flag);
+      if (fd == -1) {
+         throw std::runtime_error("failed to open");
+      }
+
+      auto size = lseek(fd, 0, SEEK_END);
+      if (size == 0) {
+         throw std::runtime_error("empty file");
+      }
+
+      lseek(fd, 0, SEEK_SET);
+#endif
+      size_ = size;
+
+#ifdef _WIN32
+      //create mmap
+      auto fileHandle = (void*)_get_osfhandle(fd);
+      uint32_t sizelo = size & 0xffffffff;
+      uint32_t sizehi = size >> 16 >> 16;
+
+      auto mmapflag = PAGE_READONLY;
+      if (write) {
+         mmapflag = PAGE_READWRITE;
+      }
+      auto mh = CreateFileMapping(fileHandle, NULL, mmapflag,
+         sizehi, sizelo, NULL);
+      if (!mh) {
+         auto errorCode = GetLastError();
+         std::stringstream errStr;
+         errStr << errorCode << " (" << std::strerror(errorCode) << ")";
+         throw std::runtime_error(errStr.str());
+      }
+
+      auto viewFlag = FILE_MAP_READ;
+      if (write) {
+         viewFlag = FILE_MAP_ALL_ACCESS;
+      }
+      ptr_ = (uint8_t*)MapViewOfFileEx(mh, viewFlag, 0, 0, size, NULL);
+      if (ptr_ == nullptr) {
+         auto errorCode = GetLastError();
+         std::stringstream errStr;
+         errStr << errorCode << " (" << std::strerror(errorCode) << ")";
+         throw std::runtime_error(errStr.str());
+      }
+
+      CloseHandle(mh);
+      _close(fd);
+#else
+      auto mapFlag = PROT_READ;
+      if (write) {
+         mapFlag |= PROT_WRITE;
+      }
+      ptr_ = (uint8_t*)mmap(0, size, mapFlag, MAP_SHARED, fd, 0);
+      if (ptr_ == MAP_FAILED) {
+         ptr_ = nullptr;
+         std::stringstream errStr;
+         errStr << errno << " (" << std::strerror(errno) << ")";
+         throw std::runtime_error(errStr.str());
+      }
+
+      close(fd);
+#endif
+      fd = 0;
+   } catch (const std::runtime_error &e) {
+      if (fd != 0) {
+#ifdef _WIN32
+         _close(fd);
+#else
+         close(fd);
+#endif
+         fd = 0;
+         LOGERR << "FileMap error for path " << path.string() <<
+            ", error: " << e.what();
+      }
+   }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-bool DBUtils::isDir(const std::string& path)
+////
+FileUtils::FileMap::~FileMap()
 {
-   auto result = std::filesystem::status(path);
-   return result.type() == std::filesystem::file_type::directory;
+   if (ptr_ != nullptr) {
+#ifdef _WIN32
+      if (!UnmapViewOfFile(ptr_)) {
+         LOGERR << "failed to unmap file";
+      }
+#else
+      if (munmap(ptr_, size_)) {
+         LOGERR << "failed to unmap file";
+      }
+#endif
+      ptr_ = nullptr;
+   }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-int DBUtils::removeDirectory(const std::string& path)
+////
+bool FileUtils::FileMap::isValid() const
+{
+   return ptr_ != nullptr;
+}
+
+////
+const size_t& FileUtils::FileMap::size() const
+{
+   return size_;
+}
+
+////
+uint8_t* FileUtils::FileMap::ptr() const
+{
+   return ptr_;
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// FileUtils
+/////////////////////////////////////////////////////////////////////////////
+bool FileUtils::fileExists(const fs::path& path, int mode)
+{
+   try {
+      auto result = fs::status(path);
+      if (result.type() == fs::file_type::not_found) {
+         return false;
+      }
+      auto filePerms = result.permissions();
+
+      //do we need read permission?
+      if ((mode & 2) && (filePerms & fs::perms::owner_read) == fs::perms::none) {
+         return false;
+      }
+
+      //do we need write permission?
+      if ((mode & 4) && (filePerms & fs::perms::owner_write) == fs::perms::none) {
+         return false;
+      }
+
+      return true;
+   } catch (const fs::filesystem_error&) {
+      //throw, invalid path/file doesnt exist
+      return false;
+   }
+}
+
+////
+bool FileUtils::isFile(const fs::path& path)
+{
+   auto result = fs::status(path);
+   return result.type() == fs::file_type::regular;
+}
+
+////
+bool FileUtils::isDir(const fs::path& path)
+{
+   auto result = fs::status(path);
+   return result.type() == fs::file_type::directory;
+}
+
+////
+int FileUtils::removeDirectory(const fs::path& path)
 {
    if (!isDir(path)) {
       return -1;
    }
 
    std::error_code ec;
-   if (std::filesystem::remove_all(path, ec) == UINTMAX_MAX) {
+   if (fs::remove_all(path, ec) == UINTMAX_MAX) {
       return -1;
    }
    return 0;
+}
+
+////
+void FileUtils::createDirectory(const fs::path& path)
+{
+   //recursively create directory, inherit parent rights where applicable
+   if (path.empty()) {
+      return;
+   }
+
+   auto result = fs::status(path);
+   if (result.type() == fs::file_type::directory) {
+      //directory exists, nothing to do
+      return;
+   } else if (result.type() != fs::file_type::not_found) {
+      //something that isn't a directory exists under this path, throw
+      throw std::runtime_error("path is not a directory: " + path.string());
+   }
+
+   //check parent exists
+   auto parent = path.parent_path();
+   createDirectory(parent);
+   fs::create_directory(path, parent);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// This got more complicated when Bitcoin Core 0.8 switched from
+// blk0001.dat to blocks/blk00000.dat
+fs::path FileUtils::getBlkFilename(const fs::path& path, uint32_t fblkNum)
+{
+   /// Update:  It's been enough time since the hardfork that just about
+   //           everyone must've upgraded to 0.8+ by now... remove pre-0.8
+   //           compatibility.
+   std::stringstream filename;
+   filename << "blk" << std::setw(5) << std::setfill('0') << fblkNum;
+   filename << ".dat";
+   return path / filename.str();
+}
+
+////
+size_t FileUtils::getFileSize(const fs::path& path)
+{
+   try {
+      return fs::file_size(path);
+   } catch (const std::filesystem::filesystem_error&) {
+      return SIZE_MAX;
+   }
+}
+
+////////////////////
+// Simple method for copying files (works in all OS, probably not efficient)
+bool FileUtils::copy(const fs::path& src, const fs::path& dst, size_t nbytes)
+{
+   auto srcsz = getFileSize(src);
+   if (srcsz == SIZE_MAX) {
+      return false;
+   }
+   srcsz = std::min(srcsz, nbytes);
+   std::vector<char> buffer(srcsz);
+
+   std::ifstream is(src, std::ios::in  | std::ios::binary);
+   is.read(buffer.data(), srcsz);
+
+   std::ofstream os(dst, std::ios::out | std::ios::binary);
+   os.write(buffer.data(), srcsz);
+   os.flush();
+   return true;
+}
+
+////
+bool FileUtils::append(const fs::path& src, const fs::path& dst)
+{
+   if (!fileExists(dst, 2)) {
+      return false;
+   }
+
+   auto srcsz = getFileSize(src);
+   if (srcsz == SIZE_MAX) {
+      return false;
+   }
+   std::vector<char> buffer(srcsz);
+
+   std::ifstream is(src.c_str(), std::ios::in  | std::ios::binary);
+   is.read(buffer.data(), srcsz);
+
+   std::ofstream os(dst.c_str(), std::ios::app | std::ios::binary);
+   os.write(buffer.data(), srcsz);
+   os.flush();
+   return true;
 }

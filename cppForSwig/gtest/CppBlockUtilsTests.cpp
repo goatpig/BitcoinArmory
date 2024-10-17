@@ -23,31 +23,30 @@ using namespace Armory::Wallets;
 class BlockDir : public ::testing::Test
 {
 protected:
-   const string blkdir_  = "./blkfiletest";
-   const string homedir_ = "./fakehomedir";
-   const string ldbdir_  = "./ldbtestdir";
-   
-   string blk0dat_;
+   const std::filesystem::path blkdir_  = "./blkfiletest";
+   const std::filesystem::path homedir_ = "./fakehomedir";
+   const std::filesystem::path ldbdir_  = "./ldbtestdir";
+   std::filesystem::path blk0dat_;
+
    string wallet1id;
 
    /////////////////////////////////////////////////////////////////////////////
    void cleanUp()
    {
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory(ldbdir_);
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
    }
 
    /////////////////////////////////////////////////////////////////////////////
    virtual void SetUp()
    {
       LOGDISABLESTDOUT();
-            
       cleanUp();
 
-      mkdir(blkdir_ + "/blocks");
-      mkdir(homedir_);
-      mkdir(ldbdir_);
+      FileUtils::createDirectory(blkdir_ / "blocks");
+      FileUtils::createDirectory(homedir_);
+      FileUtils::createDirectory(ldbdir_);
 
       DBSettings::setServiceType(SERVICE_UNITTEST);
       Armory::Config::parseArgs({
@@ -62,10 +61,10 @@ protected:
       
       DBTestUtils::init();
 
-      blk0dat_ = BtcUtils::getBlkFilename(blkdir_ + "/blocks", 0);
+      blk0dat_ = FileUtils::getBlkFilename(blkdir_ / "blocks", 0);
       wallet1id = "wallet1";
    }
-   
+
    /////////////////////////////////////////////////////////////////////////////
    virtual void TearDown(void)
    {
@@ -87,7 +86,6 @@ TEST_F(BlockDir, HeadersFirst)
    Clients *clients = new Clients(BDMt, fakeshutdown);
 
    BDMt->start(INIT_RESUME);
-   
    const std::vector<BinaryData> scraddrs
    {
       TestChain::scrAddrA,
@@ -103,7 +101,7 @@ TEST_F(BlockDir, HeadersFirst)
    DBTestUtils::goOnline(clients, bdvID);
    DBTestUtils::waitOnBDMReady(clients, bdvID);
    auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   
+
    const ScrAddrObj *scrobj;
    scrobj = wlt->getScrAddrObjByKey(scraddrs[0]);
    EXPECT_EQ(scrobj->getFullBalance(), 50*COIN);
@@ -303,10 +301,10 @@ TEST_F(BlockDir, HeadersFirstUpdateTwice)
 TEST_F(BlockDir, BlockFileSplit)
 {
    TestUtils::setBlocks({ "0", "1" }, blk0dat_);
-   
-   std::string blk1dat = BtcUtils::getBlkFilename(blkdir_ + "/blocks", 1);
+
+   auto blk1dat = FileUtils::getBlkFilename(blkdir_ / "blocks", 1);
    TestUtils::setBlocks({ "2", "3", "4", "5" }, blk1dat);
-   
+
    BlockDataManagerThread* BDMt = new BlockDataManagerThread();
    auto fakeshutdown = [](void)->void {};
    Clients *clients = new Clients(BDMt, fakeshutdown);
@@ -352,7 +350,7 @@ TEST_F(BlockDir, BlockFileSplit)
 TEST_F(BlockDir, BlockFileSplitUpdate)
 {
    TestUtils::setBlocks({ "0", "1" }, blk0dat_);
-      
+
    BlockDataManagerThread* BDMt = new BlockDataManagerThread();
    auto fakeshutdown = [](void)->void {};
    Clients *clients = new Clients(BDMt, fakeshutdown);
@@ -375,7 +373,7 @@ TEST_F(BlockDir, BlockFileSplitUpdate)
    DBTestUtils::waitOnBDMReady(clients, bdvID);
    auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
 
-   std::string blk1dat = BtcUtils::getBlkFilename(blkdir_, 1);
+   auto blk1dat = FileUtils::getBlkFilename(blkdir_, 1);
    TestUtils::appendBlocks({ "2", "4", "3", "5" }, blk0dat_);
    DBTestUtils::triggerNewBlockNotification(BDMt);
    DBTestUtils::waitOnNewBlockSignal(clients, bdvID);
@@ -443,20 +441,16 @@ protected:
       LOGDISABLESTDOUT();
       zeros_ = READHEX("00000000");
 
-      blkdir_ = string("./blkfiletest");
-      homedir_ = string("./fakehomedir");
-      ldbdir_ = string("./ldbtestdir");
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory(ldbdir_);
-
-      mkdir(blkdir_ + "/blocks");
-      mkdir(homedir_);
-      mkdir(ldbdir_);
+      FileUtils::createDirectory(blkdir_ / "blocks");
+      FileUtils::createDirectory(homedir_);
+      FileUtils::createDirectory(ldbdir_);
 
       // Put the first 5 blocks into the blkdir
-      blk0dat_ = BtcUtils::getBlkFilename(blkdir_ + "/blocks", 0);
+      blk0dat_ = FileUtils::getBlkFilename(blkdir_ / "blocks", 0);
       TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
 
       wallet1id = "wallet1";
@@ -470,8 +464,7 @@ protected:
    /////////////////////////////////////////////////////////////////////////////
    virtual void TearDown(void)
    {
-      if (clients_ != nullptr)
-      {
+      if (clients_ != nullptr) {
          clients_->exitRequestLoop();
          clients_->shutdown();
       }
@@ -483,12 +476,9 @@ protected:
       theBDMt_ = nullptr;
       clients_ = nullptr;
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory("./ldbtestdir");
-      
-      mkdir("./ldbtestdir");
-
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
       Armory::Config::reset();
 
       LOGENABLESTDOUT();
@@ -498,10 +488,10 @@ protected:
    LMDBBlockDatabase* iface_;
    BinaryData zeros_;
 
-   string blkdir_;
-   string homedir_;
-   string ldbdir_;
-   string blk0dat_;
+   std::filesystem::path blkdir_{"./blkfiletest"sv};
+   std::filesystem::path homedir_{"./fakehomedir"sv};
+   std::filesystem::path ldbdir_{"./ldbtestdir"sv};
+   std::filesystem::path blk0dat_;
 
    string wallet1id;
    string wallet2id;
@@ -513,8 +503,8 @@ protected:
 TEST_F(BlockUtilsFull, Load5Blocks)
 {
    theBDMt_->start(DBSettings::initMode());
-   auto&& bdvID = DBTestUtils::registerBDV(clients_, BitcoinSettings::getMagicBytes());
-   
+   auto bdvID = DBTestUtils::registerBDV(
+      clients_, BitcoinSettings::getMagicBytes());
    vector<BinaryData> scrAddrVec;
    scrAddrVec.push_back(TestChain::scrAddrA);
    scrAddrVec.push_back(TestChain::scrAddrB);
@@ -591,8 +581,8 @@ TEST_F(BlockUtilsFull, Load5Blocks)
 TEST_F(BlockUtilsFull, Load5Blocks_DamagedBlkFile)
 {
    // this test should be reworked to be in terms of createTestChain.py
-   string path(TestUtils::dataDir + "/botched_block.dat");
-   BtcUtils::copyFile(path.c_str(), blk0dat_);
+   std::filesystem::path path(TestUtils::dataDir / "botched_block.dat");
+   FileUtils::copy(path, blk0dat_);
 
    theBDMt_->start(DBSettings::initMode());
    auto&& bdvID = DBTestUtils::registerBDV(clients_, BitcoinSettings::getMagicBytes());
@@ -1100,16 +1090,16 @@ TEST_F(BlockUtilsFull, CorruptedBlock)
 
    {
       TestUtils::appendBlocks({ "4A", "5", "5A" }, blk0dat_);
-      const uint64_t srcsz = BtcUtils::GetFileSize(blk0dat_);
+      const uint64_t srcsz = FileUtils::getFileSize(blk0dat_);
       BinaryData temp(srcsz);
       {
          ifstream is(blk0dat_.c_str(), ios::in  | ios::binary);
          is.read((char*)temp.getPtr(), srcsz);
       }
 
-      const std::string dst = blk0dat_;
+      const std::filesystem::path dst = blk0dat_;
 
-      ofstream os(dst.c_str(), ios::out | ios::binary);
+      ofstream os(dst, ios::out | ios::binary);
       os.write((char*)temp.getPtr(), 100);
       os.write((char*)temp.getPtr()+120, srcsz-100-20); // erase 20 bytes
    }
@@ -1717,22 +1707,18 @@ protected:
       //LOGDISABLESTDOUT();
       zeros_ = READHEX("00000000");
 
-      blkdir_ = string("./blkfiletest");
-      homedir_ = string("./fakehomedir");
-      ldbdir_ = string("./ldbtestdir");
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory(ldbdir_);
-
-      mkdir(blkdir_ + "/blocks");
-      mkdir(homedir_);
-      mkdir(ldbdir_);
+      FileUtils::createDirectory(blkdir_ / "blocks");
+      FileUtils::createDirectory(homedir_);
+      FileUtils::createDirectory(ldbdir_);
 
       DBSettings::setServiceType(SERVICE_UNITTEST_WITHWS);
 
       // Put the first 5 blocks into the blkdir
-      blk0dat_ = BtcUtils::getBlkFilename(blkdir_ + "/blocks", 0);
+      blk0dat_ = FileUtils::getBlkFilename(blkdir_ / "blocks", 0);
       TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
 
       Armory::Config::parseArgs({
@@ -1789,10 +1775,9 @@ protected:
       delete theBDMt_;
       theBDMt_ = nullptr;
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory("./ldbtestdir");
-
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
       Armory::Config::reset();
 
       LOGENABLESTDOUT();
@@ -1802,10 +1787,10 @@ protected:
    LMDBBlockDatabase* iface_;
    BinaryData zeros_;
 
-   string blkdir_;
-   string homedir_;
-   string ldbdir_;
-   string blk0dat_;
+   std::filesystem::path blkdir_{"./blkfiletest"sv};
+   std::filesystem::path homedir_{"./fakehomedir"sv};
+   std::filesystem::path ldbdir_{"./ldbtestdir"sv};
+   std::filesystem::path blk0dat_;
 
    string wallet1id;
    string wallet2id;
@@ -1835,42 +1820,38 @@ TEST_F(WebSocketTests_1Way, WebSocketStack)
    bdvObj->connectToRemote();
    bdvObj->registerWithDB(hexMagicBytes);
 
-   auto createNAddresses = [](unsigned count)->vector<BinaryData>
+   auto createNAddresses = [](unsigned count)->std::vector<BinaryData>
    {
-      vector<BinaryData> result;
+      std::vector<BinaryData> result;
+      for (unsigned i = 0; i < count; i++) {
+         auto addrData = CryptoPRNG::generateRandom(20);
 
-      for (unsigned i = 0; i < count; i++)
-      {
          BinaryWriter bw;
          bw.put_uint8_t(SCRIPT_PREFIX_HASH160);
-
-         auto&& addrData = CryptoPRNG::generateRandom(20);
          bw.put_BinaryData(addrData);
-
          result.push_back(bw.getData());
       }
-
       return result;
    };
 
-   auto&& scrAddrVec = createNAddresses(2000);
+   auto scrAddrVec = createNAddresses(2000);
    scrAddrVec.push_back(TestChain::scrAddrA);
    scrAddrVec.push_back(TestChain::scrAddrB);
    scrAddrVec.push_back(TestChain::scrAddrC);
    scrAddrVec.push_back(TestChain::scrAddrE);
 
-   const vector<BinaryData> lb1ScrAddrs
+   const std::vector<BinaryData> lb1ScrAddrs
    {
       TestChain::lb1ScrAddr,
       TestChain::lb1ScrAddrP2SH
    };
-   const vector<BinaryData> lb2ScrAddrs
+   const std::vector<BinaryData> lb2ScrAddrs
    {
       TestChain::lb2ScrAddr,
       TestChain::lb2ScrAddrP2SH
    };
 
-   vector<string> walletRegIDs {
+   std::vector<std::string> walletRegIDs {
       "wallet1", "lb1", "lb2"
    };
 
@@ -1923,17 +1904,17 @@ TEST_F(WebSocketTests_1Way, WebSocketStack)
    EXPECT_EQ(lb2Balances[0], 15 * COIN);
 
    //add ZC
-   string zcPath(TestUtils::dataDir + "/ZCtx.tx");
+   std::filesystem::path zcPath(TestUtils::dataDir / "ZCtx.tx");
    BinaryData rawZC(TestChain::zcTxSize);
-   FILE *ff = fopen(zcPath.c_str(), "rb");
-   fread(rawZC.getPtr(), TestChain::zcTxSize, 1, ff);
-   fclose(ff);
+   std::ifstream zcStream(zcPath, std::ios::in | std::ios::binary);
+   zcStream.read(rawZC.getCharPtr(), TestChain::zcTxSize);
+   zcStream.close();
 
-   string lbPath(TestUtils::dataDir + "/LBZC.tx");
+   std::filesystem::path lbPath(TestUtils::dataDir / "LBZC.tx");
    BinaryData rawLBZC(TestChain::lbZCTxSize);
-   FILE *flb = fopen(lbPath.c_str(), "rb");
-   fread(rawLBZC.getPtr(), TestChain::lbZCTxSize, 1, flb);
-   fclose(flb);
+   std::ifstream lbStream(lbPath, std::ios::in | std::ios::binary);
+   lbStream.read(rawLBZC.getCharPtr(), TestChain::lbZCTxSize);
+   lbStream.close();
 
    DBTestUtils::ZcVector zcVec;
    zcVec.push_back(rawZC, 14000000);
@@ -2326,22 +2307,18 @@ protected:
       LOGDISABLESTDOUT();
       zeros_ = READHEX("00000000");
 
-      blkdir_ = string("./blkfiletest");
-      homedir_ = string("./fakehomedir");
-      ldbdir_ = string("./ldbtestdir");
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory(ldbdir_);
-
-      mkdir(blkdir_ + "/blocks");
-      mkdir(homedir_);
-      mkdir(ldbdir_);
+      FileUtils::createDirectory(blkdir_ / "blocks");
+      FileUtils::createDirectory(homedir_);
+      FileUtils::createDirectory(ldbdir_);
 
       DBSettings::setServiceType(SERVICE_UNITTEST_WITHWS);
 
       // Put the first 5 blocks into the blkdir
-      blk0dat_ = BtcUtils::getBlkFilename(blkdir_ + "/blocks", 0);
+      blk0dat_ = FileUtils::getBlkFilename(blkdir_ / "blocks", 0);
       TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
 
       Armory::Config::parseArgs({
@@ -2400,10 +2377,9 @@ protected:
       delete theBDMt_;
       theBDMt_ = nullptr;
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory("./ldbtestdir");
-
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory("./ldbtestdir");
       Armory::Config::reset();
 
       LOGENABLESTDOUT();
@@ -2413,10 +2389,10 @@ protected:
    LMDBBlockDatabase* iface_;
    BinaryData zeros_;
 
-   string blkdir_;
-   string homedir_;
-   string ldbdir_;
-   string blk0dat_;
+   std::filesystem::path blkdir_{"./blkfiletest"sv};
+   std::filesystem::path homedir_{"./fakehomedir"sv};
+   std::filesystem::path ldbdir_{"./ldbtestdir"sv};
+   std::filesystem::path blk0dat_;
 
    string wallet1id;
    string wallet2id;

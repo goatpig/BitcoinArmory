@@ -5,9 +5,9 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016, goatpig                                               //            
+//  Copyright (C) 2016-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                   
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -161,26 +161,21 @@ protected:
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 BlockDataManager::BlockDataManager()
-{   
+{
    blockchain_ = make_shared<Blockchain>(BitcoinSettings::getGenesisBlockHash());
 
    blockFiles_ = make_shared<BlockFiles>(Pathing::blkFilePath());
-   iface_ = new LMDBBlockDatabase(
-      blockchain_, 
-      Pathing::blkFilePath());
-
+   iface_ = new LMDBBlockDatabase(blockchain_, Pathing::blkFilePath());
    nodeStatusPollMutex_ = make_shared<mutex>();
 
-   try
-   {
+   try {
       openDatabase();
 
       processNode_ = NetworkSettings::bitcoinNodes().first;
       watchNode_ = NetworkSettings::bitcoinNodes().second;
       nodeRPC_ = NetworkSettings::rpcNode();
 
-      if(processNode_ == nullptr)
-      {
+      if(processNode_ == nullptr) {
          throw DbErrorMsg("invalid node type in bdmConfig");
       }
 
@@ -190,9 +185,7 @@ BlockDataManager::BlockDataManager()
 
       scrAddrData_ = make_shared<BDM_ScrAddrFilter>(this);
       scrAddrData_->init();
-   }
-   catch (...)
-   {
+   } catch (...) {
       exceptPtr_ = current_exception();
    }
 }
@@ -200,20 +193,16 @@ BlockDataManager::BlockDataManager()
 /////////////////////////////////////////////////////////////////////////////
 void BlockDataManager::openDatabase()
 {
-   LOGINFO << "blkfile dir: " << Pathing::blkFilePath();
-   LOGINFO << "lmdb dir: " << Pathing::dbDir();
-   if (!BitcoinSettings::isInitialized())
-   {
+   LOGINFO << "blkfile dir: " << Pathing::blkFilePath().string();
+   LOGINFO << "lmdb dir: " << Pathing::dbDir().string();
+   if (!BitcoinSettings::isInitialized()) {
       LOGERR << "ERROR: Genesis Block Hash not set!";
       throw runtime_error("ERROR: Genesis Block Hash not set!");
    }
 
-   try
-   {
+   try {
       iface_->openDatabases(Pathing::dbDir());
-   }
-   catch (runtime_error &e)
-   {
+   } catch (const runtime_error &e) {
       stringstream ss;
       ss << "DB failed to open, reporting the following error: " << e.what();
       throw runtime_error(ss.str());
@@ -229,16 +218,17 @@ BlockDataManager::~BlockDataManager()
    processNode_.reset();
    watchNode_.reset();
    scrAddrData_.reset();
-   
-   if (iface_ != nullptr)
+
+   if (iface_ != nullptr) {
       iface_->closeDatabases();
+   }
    delete iface_;
 }
 
 /////////////////////////////////////////////////////////////////////////////
 BinaryData BlockDataManager::applyBlockRangeToDB(
-   ProgressCallback prog, 
-   uint32_t blk0, 
+   ProgressCallback prog,
+   uint32_t blk0,
    ScrAddrFilter& scrAddrData)
 {
    // Start scanning and timer

@@ -206,22 +206,18 @@ protected:
       gentx_ = READHEX(MAINNET_GENESIS_TX_HASH_HEX);
       zeros_ = READHEX("00000000");
 
-      blkdir_ = string("./blkfiletest");
-      homedir_ = string("./fakehomedir");
-      ldbdir_ = string("./ldbtestdir");
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory(ldbdir_);
-
-      mkdir(blkdir_ + "/blocks");
-      mkdir(homedir_);
-      mkdir(ldbdir_);
+      FileUtils::createDirectory(blkdir_ / "blocks");
+      FileUtils::createDirectory(homedir_);
+      FileUtils::createDirectory(ldbdir_);
 
       DBSettings::setServiceType(SERVICE_UNITTEST);
 
       // Put the first 5 blocks into the blkdir
-      blk0dat_ = BtcUtils::getBlkFilename(blkdir_ + "/blocks", 0);
+      blk0dat_ = FileUtils::getBlkFilename(blkdir_ / "blocks", 0);
       TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
 
       Armory::Config::parseArgs({
@@ -255,9 +251,9 @@ protected:
       theBDMt_ = nullptr;
       clients_ = nullptr;
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory("./ldbtestdir");
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
 
       Armory::Config::reset();
       CLEANUP_ALL_TIMERS();
@@ -268,10 +264,10 @@ protected:
    BinaryData gentx_;
    BinaryData zeros_;
 
-   string blkdir_;
-   string homedir_;
-   string ldbdir_;
-   string blk0dat_;
+   std::filesystem::path blkdir_{"./blkfiletest"sv};
+   std::filesystem::path homedir_{"./fakehomedir"sv};
+   std::filesystem::path ldbdir_{"./ldbtestdir"sv};
+   std::filesystem::path blk0dat_;
 
    string wallet1id;
    string wallet2id;
@@ -4606,7 +4602,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromWOCopy)
    //// create assetWlt ////
 
    auto rawEntropy = CryptoPRNG::generateRandom(32);
-   string woPath, wltPath;
+   std::filesystem::path woPath, wltPath;
 
    WalletCreationParams params{
       {}, {}, homedir_, 0, 1, 1
@@ -4642,7 +4638,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromWOCopy)
       wltPath = assetWlt->getDbFilename();
       woPath = AssetWallet::forkWatchingOnly(wltPath, nullptr);
    }
-   unlink(wltPath.c_str());
+   std::filesystem::remove(wltPath);
    auto wltWO = dynamic_pointer_cast<AssetWallet_Single>(
       AssetWallet::loadMainWalletFromFile(woPath, nullptr));
 
@@ -7929,9 +7925,8 @@ protected:
    /////////////////////////////////////////////////////////////////////////////
    virtual void SetUp()
    {
-      homedir_ = string("./fakehomedir");
-      DBUtils::removeDirectory(homedir_);
-      mkdir(homedir_);
+      FileUtils::removeDirectory(homedir_);
+      std::filesystem::create_directory(homedir_);
 
       DBSettings::setServiceType(SERVICE_UNITTEST);
       Armory::Config::parseArgs({
@@ -7948,14 +7943,13 @@ protected:
    /////////////////////////////////////////////////////////////////////////////
    virtual void TearDown(void)
    {
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
 
       Armory::Config::reset();
       CLEANUP_ALL_TIMERS();
    }
 
-   string blkdir_;
-   string homedir_;
+   std::filesystem::path homedir_{"./fakehomedir"sv};
 
    string wallet1id;
    string wallet2id;
@@ -9641,9 +9635,8 @@ protected:
    /////////////////////////////////////////////////////////////////////////////
    virtual void SetUp()
    {
-      homedir_ = string("./fakehomedir");
-      DBUtils::removeDirectory(homedir_);
-      mkdir(homedir_);
+      FileUtils::removeDirectory(homedir_);
+      std::filesystem::create_directory(homedir_);
 
       DBSettings::setServiceType(SERVICE_UNITTEST);
       Armory::Config::parseArgs({
@@ -9659,14 +9652,13 @@ protected:
    /////////////////////////////////////////////////////////////////////////////
    virtual void TearDown(void)
    {
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
 
       Armory::Config::reset();
       CLEANUP_ALL_TIMERS();
    }
 
-   string blkdir_;
-   string homedir_;
+   std::filesystem::path homedir_{"./fakehomedir"sv};
 
    string wallet1id;
    string wallet2id;
@@ -9706,7 +9698,7 @@ TEST_F(ExtrasTest_Mainnet, Bip32PathDiscovery)
       return SecureBinaryData();
    };
 
-   string wltPath;
+   std::filesystem::path wltPath;
    {
       WalletCreationParams params{
          {}, {}, homedir_, 10, 1, 1

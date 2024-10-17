@@ -345,27 +345,6 @@ public:
          return 9;
    }
 
-
-   /////////////////////////////////////////////////////////////////////////////
-   static uint64_t GetFileSize(char const * filename)
-   {
-      return GetFileSize(std::string(filename));
-   }
-
-   /////////////////////////////////////////////////////////////////////////////
-   static uint64_t GetFileSize(std::string filename)
-   {
-      std::ifstream is(OS_TranslatePath(filename.c_str()), std::ios::in| std::ios::binary);
-      if(!is.is_open())
-         return FILE_DOES_NOT_EXIST;
-   
-      is.seekg(0, std::ios::end);
-      uint64_t filesize = (size_t)is.tellg();
-      is.close();
-      return filesize;
-   }
-
-
    /////////////////////////////////////////////////////////////////////////////
    static std::string numToStrWCommas(int64_t fullNum)
    {
@@ -1285,26 +1264,9 @@ public:
 
    /////////////////////////////////////////////////////////////////////////////
    static double convertDiffBitsToDouble(BinaryData const & diffBitsBinary);
-
-   /////////////////////////////////////////////////////////////////////////////
    static BinaryData convertDoubleToDiffBits(double diff);
 
-   // This got more complicated when Bitcoin Core 0.8 switched from
-   // blk0001.dat to blocks/blk00000.dat
-   static std::string getBlkFilename(std::string dir, uint32_t fblkNum)
-   {
-      /// Update:  It's been enough time since the hardfork that just about 
-      //           everyone must've upgraded to 0.8+ by now... remove pre-0.8
-      //           compatibility.
-      char* fname = new char[1024];
-      sprintf(fname, "%s/blk%05d.dat", dir.c_str(), fblkNum);
-      std::string strName(fname);
-      delete[] fname;
-      return strName;
-   }
-
-
-
+   /////////////////////////////////////////////////////////////////////////////
    static std::string getOpCodeName(OPCODETYPE opcode)
    {
       switch (opcode)
@@ -1501,7 +1463,6 @@ public:
             opList.push_back(getOpCodeName((OPCODETYPE)nextOp));
             i++;
          }
-            
       }
 
       if(error)
@@ -1527,40 +1488,6 @@ public:
       std::vector<std::string> oplist = convertScriptToOpStrings(script);
       for(uint32_t i=0; i<oplist.size(); i++)
          std::cout << "   " << oplist[i] << std::endl;
-   }
-
-
-   /////////////////////////////////////////////////////////////////////////////
-   // Simple method for copying files (works in all OS, probably not efficient)
-   static bool copyFile(std::string src, std::string dst, uint32_t nbytes=UINT32_MAX)
-   {
-      uint64_t srcsz = GetFileSize(src);
-      if(srcsz == FILE_DOES_NOT_EXIST)
-         return false;
-
-      srcsz = std::min((uint32_t)srcsz, nbytes);
-   
-      BinaryData temp((size_t)srcsz);
-      std::ifstream is(src.c_str(), std::ios::in  | std::ios::binary);
-      is.read((char*)temp.getPtr(), srcsz);
-      is.close();
-   
-      std::ofstream os(dst.c_str(), std::ios::out | std::ios::binary);
-      os.write((char*)temp.getPtr(), srcsz);
-      os.close();
-      return true;
-   }
-
-   /////////////////////////////////////////////////////////////////////////////
-   // Simple method for copying files (works in all OS, probably not efficient)
-   static bool appendFile(const std::string& src, const std::string& dst)
-   {
-      std::ifstream is(src.c_str(), std::ios::in  | std::ios::binary);
-      if (!is.is_open())
-         return false;
-      std::ofstream os(dst.c_str(), std::ios::app | std::ios::binary);
-      os << is.rdbuf();
-      return true;
    }
 
    static int cast_to_int(void* in)

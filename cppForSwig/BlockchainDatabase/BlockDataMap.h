@@ -1,8 +1,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016, goatpig.                                              //
+//  Copyright (C) 2016-2024, goatpig.                                         //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                      
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -17,13 +17,14 @@
 #include <memory>
 #include <future>
 #include <atomic>
+#include <map>
+#include <filesystem>
 
 #include <iostream>
 #include <string>
 #include <sstream>
 #include <iomanip>
 
-#include <map>
 
 #include "BlockObj.h"
 #include "BinaryData.h"
@@ -181,6 +182,7 @@ public:
    }
 };
 
+
 ////////////////////////////////////////////////////////////////////////////////
 class BlockData
 {
@@ -287,69 +289,63 @@ struct BlockOffset
 class BlockFiles
 {
 private:
-   std::map<uint32_t, std::string> filePaths_;
-   const std::string folderPath_;
+   std::map<uint32_t, std::filesystem::path> filePaths_;
+   const std::filesystem::path folderPath_;
    size_t totalBlockchainBytes_ = 0;
 
 public:
-   BlockFiles(const std::string& folderPath) :
+   BlockFiles(const std::filesystem::path& folderPath) :
       folderPath_(folderPath)
    {}
 
    void detectAllBlockFiles(void);
-   const std::string& folderPath(void) const { return folderPath_; }
+   const std::filesystem::path& folderPath(void) const { return folderPath_; }
    unsigned fileCount(void) const { return filePaths_.size(); }
-   const std::string& getLastFileName(void) const;
+   const std::filesystem::path& getLastFileName(void) const;
 };
 
 /////////////////////////////////////////////////////////////////////////////
+namespace FileUtils {
+   class FileMap;
+};
+
 class BlockDataFileMap
 {
-   friend class BlockFileMapPointer;
-   friend class BlockDataLoader;
-
 private:
-   uint8_t* fileMap_ = nullptr;
-   size_t size_ = 0;
-
+   FileUtils::FileMap fileMap_;
    std::atomic<int> useCounter_;
 
 public:
-   BlockDataFileMap(const std::string& filename);
+   BlockDataFileMap(const std::filesystem::path& filename);
    ~BlockDataFileMap(void);
 
-   const uint8_t* getPtr() const
-   {
-      return fileMap_;
-   }
-
-   size_t size(void) const { return size_; }
+   bool valid(void) const;
+   const uint8_t* data(void) const;
+   size_t size(void) const;
 };
 
 /////////////////////////////////////////////////////////////////////////////
 class BlockDataLoader
 {
-private:     
-   const std::string path_;
+private:
+   const std::filesystem::path path_;
    const std::string prefix_;
 
-private:   
+private:
 
    BlockDataLoader(const BlockDataLoader&) = delete; //no copies
 
-   uint32_t nameToIntID(const std::string& filename);
-   std::string intIDToName(uint32_t fileid);
-
+   uint32_t nameToIntID(const std::filesystem::path& filename);
    std::shared_ptr<BlockDataFileMap>
       getNewBlockDataMap(uint32_t fileid);
 
 public:
-   BlockDataLoader(const std::string& path);
+   BlockDataLoader(const std::filesystem::path& path);
 
    ~BlockDataLoader(void)
    {}
 
-   std::shared_ptr<BlockDataFileMap> get(const std::string& filename);
+   std::shared_ptr<BlockDataFileMap> get(const std::filesystem::path&);
    std::shared_ptr<BlockDataFileMap> get(uint32_t fileid);
 };
 

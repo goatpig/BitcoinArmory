@@ -20,6 +20,7 @@
 #include <thread>
 #include <tuple>
 #include <list>
+#include <filesystem>
 
 #include "bdmenums.h"
 #include "BinaryData.h"
@@ -60,7 +61,7 @@ namespace Armory
       //////////////////////////////////////////////////////////////////////////
       namespace SettingsUtils
       {
-         std::vector<std::string> getLines(const std::string& path);
+         std::vector<std::string> getLines(const std::filesystem::path& path);
          std::map<std::string, std::string> getKeyValsFromLines(
             const std::vector<std::string>&, char delim);
          std::pair<std::string, std::string> getKeyValFromLine(
@@ -72,9 +73,7 @@ namespace Armory
          std::vector<std::string> tokenizeLine(
             const std::string&, const std::string&);
             
-         bool fileExists(const std::string&, int);
          std::string portToString(unsigned);
-
          bool testConnection(const std::string& ip, const std::string& port);
          std::string getPortFromCookie(const std::string& datadir);
          std::string hasLocalDB(const std::string& datadir,
@@ -85,7 +84,7 @@ namespace Armory
       void printHelp(void);
       void parseArgs(int, char**, ProcessType);
       void parseArgs(const std::vector<std::string>&, ProcessType);
-      const std::string& getDataDir(void);
+      const std::filesystem::path& getDataDir(void);
       void reset(void);
 
       //////////////////////////////////////////////////////////////////////////
@@ -94,11 +93,11 @@ namespace Armory
          friend void Config::parseArgs(
             const std::vector<std::string>&, ProcessType);
          friend void Config::reset(void);
-         friend const std::string& Config::getDataDir(void);
+         friend const std::filesystem::path& Config::getDataDir(void);
 
       private:
          static std::mutex configMutex_;
-         static std::string dataDir_;
+         static std::filesystem::path dataDir_;
          static unsigned initCount_;
 
       private:
@@ -235,8 +234,8 @@ namespace Armory
          friend void Config::reset(void);
 
       private:
-         static std::string blkFilePath_;
-         static std::string dbDir_;
+         static std::filesystem::path blkFilePath_;
+         static std::filesystem::path dbDir_;
 
       private:
          static void processArgs(
@@ -244,9 +243,9 @@ namespace Armory
          static void reset(void);
 
       public:
-         static std::string logFilePath(const std::string&);
-         static const std::string& blkFilePath(void) { return blkFilePath_; }
-         static const std::string& dbDir(void) { return dbDir_; }
+         static std::filesystem::path logFilePath(const std::string&);
+         static const std::filesystem::path& blkFilePath(void) { return blkFilePath_; }
+         static const std::filesystem::path& dbDir(void) { return dbDir_; }
       };
 
       //////////////////////////////////////////////////////////////////////////
@@ -254,8 +253,7 @@ namespace Armory
       {
          std::map<std::string, std::string> keyvalMap_;
 
-         File(const std::string& path);
-
+         File(const std::filesystem::path& path);
          static std::vector<BinaryData> fleshOutArgs(
             const std::string& path, const std::vector<BinaryData>& argv);
       };

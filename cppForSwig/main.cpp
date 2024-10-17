@@ -46,12 +46,14 @@ int main(int argc, char* argv[])
       return -1;
    }
 
-   cout << "logging in " << Pathing::logFilePath(LOG_FILE_NAME) << endl;
-   STARTLOGGING(Pathing::logFilePath(LOG_FILE_NAME), LogLvlDebug);
-   if (!NetworkSettings::useCookie())
+   auto logFilePath = Pathing::logFilePath(LOG_FILE_NAME).string();
+   cout << "logging in " << logFilePath << endl;
+   STARTLOGGING(logFilePath, LogLvlDebug);
+   if (!NetworkSettings::useCookie()) {
       LOGENABLESTDOUT();
-   else
+   } else {
       LOGDISABLESTDOUT();
+   }
 
    LOGINFO << "Running on " << DBSettings::threadCount() << " threads";
    LOGINFO << "Ram usage level: " << DBSettings::ramUsage();
@@ -60,11 +62,9 @@ int main(int argc, char* argv[])
    DBSettings::setServiceType(SERVICE_WEBSOCKET);
    BlockDataManagerThread bdmThread;
 
-   if (!DBSettings::checkChain())
-   {
+   if (!DBSettings::checkChain()) {
       //check we can listen on this ip:port
-      if (SimpleSocket::checkSocket("127.0.0.1", NetworkSettings::dbPort()))
-      {
+      if (SimpleSocket::checkSocket("127.0.0.1", NetworkSettings::dbPort())) {
          LOGERR << "There is already a process listening on port " << 
             NetworkSettings::dbPort();
          LOGERR << "ArmoryDB cannot start under these conditions. Shutting down!";
@@ -78,21 +78,18 @@ int main(int argc, char* argv[])
    {
       //setup remote peers db, this will block the init process until 
       //peers db is unlocked
-      LOGINFO << "datadir: " << Armory::Config::getDataDir();
-      auto&& passLbd = TerminalPassphrasePrompt::getLambda("peers db");
+      LOGINFO << "datadir: " << Armory::Config::getDataDir().string();
+      auto passLbd = TerminalPassphrasePrompt::getLambda("peers db");
       WebSocketServer::initAuthPeers(passLbd);
    }
 
    //start up blockchain service
    bdmThread.start(DBSettings::initMode());
 
-   if (!DBSettings::checkChain())
-   {
+   if (!DBSettings::checkChain()) {
       //start websocket server
       WebSocketServer::start(&bdmThread, false);
-   }
-   else
-   {
+   } else {
       bdmThread.join();
    }
 

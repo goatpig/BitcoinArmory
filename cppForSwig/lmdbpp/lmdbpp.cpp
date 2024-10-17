@@ -341,40 +341,39 @@ bool LMDBEnv::isOpen() const
    return dbenv != nullptr;
 }
 
-void LMDBEnv::open(const char *filename, unsigned flags)
+void LMDBEnv::open(const std::filesystem::path &path, unsigned flags)
 {
-   if (isOpen())
+   if (isOpen()) {
       throw std::logic_error("Database environment already open (close it first)");
-
+   }
    txForThreads_.clear();
-   
-   int rc;
 
+   int rc;
    rc = mdb_env_create(&dbenv);
-   if (rc != MDB_SUCCESS)
+   if (rc != MDB_SUCCESS) {
       throw LMDBException("Failed to load mdb env (" + errorString(rc) + ")");
+   }
    
    rc = mdb_env_set_maxdbs(dbenv, dbCount_);
-   if (rc != MDB_SUCCESS)
+   if (rc != MDB_SUCCESS) {
       throw LMDBException("Failed to set max dbs (" + errorString(rc) + ")");
-   
-   rc = mdb_env_open(dbenv, filename, MDB_NOSUBDIR | flags, 0600);
-   if (rc != MDB_SUCCESS)
-   {
+   }
+
+   rc = mdb_env_open(dbenv, path.string().c_str(), MDB_NOSUBDIR | flags, 0600);
+   if (rc != MDB_SUCCESS) {
       std::stringstream ss;
-      ss << "Failed to open db " << std::string(filename) << 
+      ss << "Failed to open db " << path <<
          " (" + errorString(rc) + ")" << std::endl;
       std::cout << ss.str();
       throw LMDBException(ss.str());
    }
 
-   filename_ = std::string(filename);
+   path_ = path;
 }
 
 void LMDBEnv::close()
 {
-   if (dbenv)
-   {
+   if (dbenv) {
       mdb_env_close(dbenv);
       dbenv = nullptr;
    }
@@ -383,8 +382,7 @@ void LMDBEnv::close()
 void LMDBEnv::setMapSize(size_t sz)
 {
    auto rc = mdb_env_set_mapsize(dbenv, sz);
-   if (rc != MDB_SUCCESS)
-   {
+   if (rc != MDB_SUCCESS) {
       std::stringstream ss;
       ss << "failed to insert set map size, returned following error string: " << 
          errorString(rc) << std::endl;
@@ -393,13 +391,12 @@ void LMDBEnv::setMapSize(size_t sz)
    }
 }
 
-void LMDBEnv::compactCopy(const std::string& fname)
+void LMDBEnv::compactCopy(const std::filesystem::path& fname)
 {
-   auto rc = mdb_env_copy2(dbenv, fname.c_str(), MDB_CP_COMPACT);
-   if (rc != MDB_SUCCESS)
-   {
+   auto rc = mdb_env_copy2(dbenv, fname.string().c_str(), MDB_CP_COMPACT);
+   if (rc != MDB_SUCCESS) {
       std::stringstream ss;
-      ss << "failed to copy env, returned following error string: " << 
+      ss << "failed to copy env, returned following error string: " <<
          errorString(rc) << std::endl;
       std::cout << ss.str();
       throw LMDBException(ss.str());
@@ -410,8 +407,9 @@ void LMDBEnv::compactCopy(const std::string& fname)
 LMDBEnv::Transaction::Transaction(LMDBEnv *_env, LMDB::Mode mode)
    : env(_env), mode_(mode)
 {
-   if (env == nullptr)
+   if (env == nullptr) {
       throw LMDBException("null LMDBEnv");
+   }
    tid_ = std::this_thread::get_id();
    begin();
 }
@@ -419,29 +417,30 @@ LMDBEnv::Transaction::Transaction(LMDBEnv *_env, LMDB::Mode mode)
 LMDBEnv::Transaction::Transaction(Transaction&& mv)
 {
    tid_ = std::this_thread::get_id();
-   if (tid_ != mv.tid_)
+   if (tid_ != mv.tid_) {
       throw LMDBException("cannot move tx accross threads");
+   }
 
    env = mv.env;
    began = mv.began;
    mode_ = mv.mode_;
-
    mv.began = false;
 }
 
 LMDBEnv::Transaction& LMDBEnv::Transaction::operator=(Transaction&& mv)
 {
-   if (this == &mv)
+   if (this == &mv) {
       return *this;
+   }
 
    tid_ = std::this_thread::get_id();
-   if (tid_ != mv.tid_)
+   if (tid_ != mv.tid_) {
       throw LMDBException("cannot move tx accross threads");
+   }
 
    this->env = mv.env;
    this->mode_ = mv.mode_;
    this->began = mv.began;
-
    mv.began = false;
 
    return *this;
@@ -454,8 +453,9 @@ LMDBEnv::Transaction::~Transaction()
 
 void LMDBEnv::Transaction::begin()
 {
-   if (began)
+   if (began) {
       return;
+   }
    
    began = true;
 
@@ -464,28 +464,28 @@ void LMDBEnv::Transaction::begin()
    std::unique_lock<std::mutex> lock(env->threadTxMutex_);
    LMDBThreadTxInfo& thTx = env->txForThreads_[tID];
    lock.unlock();
-   
-   if (thTx.transactionLevel_ != 0 && mode_ == LMDB::ReadWrite && thTx.mode_ == LMDB::ReadOnly)
+
+   if (thTx.transactionLevel_ != 0 && mode_ == LMDB::ReadWrite &&
+      thTx.mode_ == LMDB::ReadOnly) {
       throw LMDBException("Cannot access ReadOnly Transaction in ReadWrite mode");
-   
-   if (thTx.transactionLevel_++ != 0)
+   }
+
+   if (thTx.transactionLevel_++ != 0) {
       return;
-      
-   if (!env->dbenv)
+   }
+   if (!env->dbenv) {
       throw LMDBException("Cannot start transaction without db env");
-      
+   }
    int modef = MDB_RDONLY;
    thTx.mode_ = LMDB::ReadOnly;
-   
-   if (mode_ == LMDB::ReadWrite)
-   {
+
+   if (mode_ == LMDB::ReadWrite) {
       modef = 0;
       thTx.mode_ = LMDB::ReadWrite;
    }
 
    int rc = mdb_txn_begin(env->dbenv, nullptr, modef, &thTx.txn_);
-   if (rc != MDB_SUCCESS)
-   {
+   if (rc != MDB_SUCCESS) {
       lock.lock();
       env->txForThreads_.erase(tID);
       lock.unlock();
@@ -497,9 +497,9 @@ void LMDBEnv::Transaction::begin()
 
 void LMDBEnv::Transaction::open(LMDBEnv *_env, LMDB::Mode mode)
 {
-   if (env)
+   if (env) {
       commit();
-   
+   }
    this->env = _env;
    this->mode_ = mode;
    
@@ -508,9 +508,9 @@ void LMDBEnv::Transaction::open(LMDBEnv *_env, LMDB::Mode mode)
 
 void LMDBEnv::Transaction::commit()
 {
-   if (!began)
+   if (!began) {
       return;
-
+   }
    began=false;
 
    //look for an existing transaction in this thread
@@ -518,27 +518,23 @@ void LMDBEnv::Transaction::commit()
    std::unique_lock<std::mutex> lock(env->threadTxMutex_);
    auto txnIter = env->txForThreads_.find(tID);
 
-   if (txnIter == env->txForThreads_.end())
+   if (txnIter == env->txForThreads_.end()) {
       throw LMDBException("Transaction bound to unknown thread");
+   }
    lock.unlock();
 
    LMDBThreadTxInfo& thTx = txnIter->second;
 
-   if (thTx.transactionLevel_-- == 1)
-   {
+   if (thTx.transactionLevel_-- == 1) {
       int rc = mdb_txn_commit(thTx.txn_);
-      
-      for (LMDB::Iterator *i : thTx.iterators_)
-      {
+      for (LMDB::Iterator *i : thTx.iterators_) {
          i->hasTx=false;
          i->csr_=nullptr;
       }
-      
-      if (rc != MDB_SUCCESS)
-      {
+      if (rc != MDB_SUCCESS) {
          throw LMDBException("Failed to close env tx (" + errorString(rc) +")");
       }
-      
+
       lock.lock();
       env->txForThreads_.erase(txnIter);
    }
@@ -551,12 +547,9 @@ void LMDBEnv::Transaction::rollback()
 
 LMDB::~LMDB()
 {
-   try
-   {
+   try {
       close();
-   }
-   catch(std::exception &e)
-   {
+   } catch(const std::exception &e) {
       std::cerr << "Error: " << e.what() << std::endl;
    }
 }
@@ -564,16 +557,15 @@ LMDB::~LMDB()
 
 void LMDB::close()
 {
-   if (dbi != 0)
-   {
+   if (dbi != 0) {
       {
          std::unique_lock<std::mutex> lock(env->threadTxMutex_);
-         if (!env->txForThreads_.empty())
+         if (!env->txForThreads_.empty()) {
             throw std::runtime_error("Tried to close database with open txes");
+         }
       }
       mdb_dbi_close(env->dbenv, dbi);
       dbi=0;
-      
       env=nullptr;
    }
 }
@@ -585,8 +577,7 @@ bool LMDB::isOpen() const
 
 void LMDB::open(LMDBEnv *_env, const std::string &name)
 {
-   if (isOpen())
-   {
+   if (isOpen()) {
       throw LMDBException("LMDB already open");
    }
    this->env = _env;
@@ -596,13 +587,13 @@ void LMDB::open(LMDBEnv *_env, const std::string &name)
    std::unique_lock<std::mutex> lock(_env->threadTxMutex_);
    auto txnIter = _env->txForThreads_.find(tID);
 
-   if (txnIter == _env->txForThreads_.end())
+   if (txnIter == _env->txForThreads_.end()) {
       throw LMDBException("Failed to insert: need transaction");
+   }
    lock.unlock();
-      
+
    int rc = mdb_open(txnIter->second.txn_, name.c_str(), MDB_CREATE, &dbi);
-   if (rc != MDB_SUCCESS)
-   {
+   if (rc != MDB_SUCCESS) {
       // cleanup here
       throw LMDBException("Failed to open dbi (" + errorString(rc) +")");
    }

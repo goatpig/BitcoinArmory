@@ -6,8 +6,6 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#include <filesystem>
-
 #include "ArmoryConfig.h"
 #include "BtcUtils.h"
 #include "DBUtils.h"
@@ -23,11 +21,12 @@
 #include "gtest/NodeUnitTest.h"
 
 using namespace std;
+namespace fs = std::filesystem;
 using namespace Armory;
 using namespace Armory::Config;
 
 ////////////////////////////////////////////////////////////////////////////////
-#define DEFAULT_DBDIR_SUFFIX "/databases"
+#define DEFAULT_DBDIR_SUFFIX "databases"
 
 #if defined(_WIN32)
 #define MAINNET_DEFAULT_DATADIR "~/Armory"
@@ -121,7 +120,7 @@ void Armory::Config::printHelp(void)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const string& Armory::Config::getDataDir()
+const fs::path& Armory::Config::getDataDir()
 {
    return BaseSettings::dataDir_;
 }
@@ -180,7 +179,7 @@ void Armory::Config::parseArgs(
 
       //get config file
       auto configPath = std::filesystem::path(Armory::Config::getDataDir()) / "armorydb.conf";
-      if (SettingsUtils::fileExists(configPath, 2)) {
+      if (FileUtils::fileExists(configPath, 2)) {
          Config::File cf(configPath);
          auto mapIter = cf.keyvalMap_.find("datadir");
          if (mapIter != cf.keyvalMap_.end()) {
@@ -223,18 +222,16 @@ void Armory::Config::reset()
 // SettingsUtils
 //
 ////////////////////////////////////////////////////////////////////////////////
-vector<string> SettingsUtils::getLines(const string& path)
+vector<string> SettingsUtils::getLines(const fs::path& path)
 {
-   vector<string> output;
-   fstream fs(path, ios_base::in);
+   std::vector<std::string> output;
+   std::fstream fs(path, std::ios_base::in);
 
-   while (fs.good())
-   {
-      string str;
+   while (fs.good()) {
+      std::string str;
       getline(fs, str);
       output.push_back(move(str));
    }
-
    return output;
 }
 
@@ -340,22 +337,6 @@ vector<string> SettingsUtils::keyValToArgv(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool SettingsUtils::fileExists(const string& path, int mode)
-{
-#ifdef _WIN32
-   return _access(path.c_str(), mode) == 0;
-#else
-   auto nixmode = F_OK;
-   if (mode & 2)
-      nixmode |= R_OK;
-   if (mode & 4)
-      nixmode |= W_OK;
-   auto result = access(path.c_str(), nixmode);
-   return result == 0;
-#endif
-}
-
-////////////////////////////////////////////////////////////////////////////////
 string SettingsUtils::portToString(unsigned port)
 {
    stringstream ss;
@@ -434,8 +415,8 @@ string SettingsUtils::hasLocalDB(const string& datadir, const string& port)
 // BaseSettings
 //
 ////////////////////////////////////////////////////////////////////////////////
-mutex BaseSettings::configMutex_;
-string BaseSettings::dataDir_;
+std::mutex BaseSettings::configMutex_;
+fs::path BaseSettings::dataDir_;
 unsigned BaseSettings::initCount_ = 0;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -881,8 +862,7 @@ void NetworkSettings::createNodes()
 {
    auto magicBytes = BitcoinSettings::getMagicBytes();
 
-   if (DBSettings::getServiceType() == SERVICE_WEBSOCKET)
-   {
+   if (DBSettings::getServiceType() == SERVICE_WEBSOCKET) {
       bitcoinNodes_.first =
          make_shared<BitcoinP2P>("127.0.0.1", btcPort_,
          *(uint32_t*)magicBytes.getPtr(), false);
@@ -892,9 +872,7 @@ void NetworkSettings::createNodes()
          *(uint32_t*)magicBytes.getPtr(), true);
 
       rpcNode_ = make_shared<CoreRPC::NodeRPC>();
-   }
-   else
-   {
+   } else {
       auto primary =
          make_shared<NodeUnitTest>(*(uint32_t*)magicBytes.getPtr(), false);
 
@@ -971,8 +949,8 @@ void NetworkSettings::reset()
 // Pathing
 //
 ////////////////////////////////////////////////////////////////////////////////
-string Pathing::blkFilePath_;
-string Pathing::dbDir_;
+fs::path Pathing::blkFilePath_;
+fs::path Pathing::dbDir_;
 
 ////////////////////////////////////////////////////////////////////////////////
 void Pathing::processArgs(const map<string, string>& args, ProcessType procType)
@@ -990,7 +968,7 @@ void Pathing::processArgs(const map<string, string>& args, ProcessType procType)
 
    bool autoDbDir = false;
    if (dbDir_.empty()) {
-      dbDir_ = std::filesystem::path(Armory::Config::getDataDir()) / DEFAULT_DBDIR_SUFFIX;
+      dbDir_ = Armory::Config::getDataDir() / DEFAULT_DBDIR_SUFFIX;
       autoDbDir = true;
    }
 
@@ -1012,21 +990,20 @@ void Pathing::processArgs(const map<string, string>& args, ProcessType procType)
    dbDir_ = std::filesystem::absolute(dbDir_);
    blkFilePath_ = std::filesystem::absolute(blkFilePath_);
 
-   if (blkFilePath_.size() < 6 ||
-      blkFilePath_.substr(blkFilePath_.length() - 6, 6) != "blocks") {
-      blkFilePath_ = std::filesystem::path(blkFilePath_) / "blocks";
+   //check block file path ends in "blocks"
+   if (blkFilePath_.filename() != "blocks") {
+      blkFilePath_ = fs::path(blkFilePath_) / fs::path("blocks");
    }
 
    //test all paths
-   auto testPath = [](const string& path, int mode)->bool
+   auto testPath = [](const fs::path& path, int mode)->bool
    {
-      return SettingsUtils::fileExists(path, mode);
+      return FileUtils::fileExists(path, mode);
    };
 
    if (!testPath(Armory::Config::getDataDir(), 6)) {
-      string errMsg = Armory::Config::getDataDir() +
-         " is not a valid datadir path";
-      throw DbErrorMsg(errMsg); 
+      throw DbErrorMsg({Armory::Config::getDataDir().string() +
+         " is not a valid datadir path"});
    }
 
    if (procType != ProcessType::DB) {
@@ -1048,7 +1025,7 @@ void Pathing::processArgs(const map<string, string>& args, ProcessType procType)
 
    //now for the regular test, let it throw if it fails
    if (!testPath(dbDir_, 6)) {
-      string errMsg = dbDir_ + " is not a valid db path";
+      std::string errMsg = dbDir_.string() + " is not a valid db path";
       throw DbErrorMsg(errMsg); 
    }
 
@@ -1059,7 +1036,7 @@ void Pathing::processArgs(const map<string, string>& args, ProcessType procType)
 
    if (!NetworkSettings::isOffline()) {
       if (!testPath(blkFilePath_, 2)) {
-         string errMsg = blkFilePath_ + " is not a valid blockchain data path";
+         std::string errMsg = blkFilePath_.string() + " is not a valid blockchain data path";
          throw DbErrorMsg(errMsg); 
       }
    }
@@ -1073,10 +1050,9 @@ void Pathing::reset()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-string Pathing::logFilePath(const string& logName)
+fs::path Pathing::logFilePath(const std::string& logName)
 {
-   std::string logFileName = logName + ".txt";
-   return std::filesystem::path(getDataDir()) / logFileName;
+   return fs::path(getDataDir()) / fs::path(logName + ".txt");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1084,7 +1060,7 @@ string Pathing::logFilePath(const string& logName)
 // ConfigFile
 //
 ////////////////////////////////////////////////////////////////////////////////
-Config::File::File(const string& path)
+Config::File::File(const fs::path& path)
 {
    auto lines = SettingsUtils::getLines(path);
    for (auto& line : lines) {
@@ -1124,7 +1100,7 @@ vector<BinaryData> Config::File::fleshOutArgs(
    auto&& keyValMap = SettingsUtils::getKeyValsFromLines(arg_minus_1, '=');
 
    //complete config file path
-   string configFile_path = MAINNET_DEFAULT_DATADIR;
+   auto configFile_path = fs::path(MAINNET_DEFAULT_DATADIR);
    if (keyValMap.find("--testnet") != keyValMap.end()) {
       configFile_path = TESTNET_DEFAULT_DATADIR;
    } else if (keyValMap.find("--regtest") != keyValMap.end()) {
@@ -1135,8 +1111,7 @@ vector<BinaryData> Config::File::fleshOutArgs(
    if (datadir_iter != keyValMap.end() && datadir_iter->second.size() > 0) {
       configFile_path = datadir_iter->second;
    }
-   configFile_path = std::filesystem::path(configFile_path) / path;
-   configFile_path = std::filesystem::absolute(configFile_path);
+   configFile_path = fs::absolute(configFile_path / path);
 
    //process config file
    Config::File cfile(configFile_path);

@@ -85,7 +85,7 @@ namespace Armory
 
 namespace TestUtils
 {
-   const std::string dataDir("../reorgTest");
+   const std::filesystem::path dataDir("../reorgTest");
 
    // This function assumes src to be a zero terminated sanitized string with
    // an even number of [0-9a-f] characters, and target to be sufficiently large
@@ -93,14 +93,17 @@ namespace TestUtils
 
    int char2int(char input);
 
-   bool searchFile(const std::string& filename, BinaryData& data);
+   bool searchFile(const std::filesystem::path& filename, BinaryData& data);
    uint32_t getTopBlockHeightInDB(BlockDataManager &bdm, DB_SELECT db);
    uint64_t getDBBalanceForHash160(
       BlockDataManager &bdm, BinaryDataRef addr160);
 
-   void concatFile(const std::vector<std::string> &from, const std::string &to);
-   void appendBlocks(const std::vector<std::string> &files, const std::string &to);
-   void setBlocks(const std::vector<std::string> &files, const std::string &to);
+   void concatFile(const std::vector<std::filesystem::path> &from,
+      const std::filesystem::path &to);
+   void appendBlocks(const std::vector<std::string> &files,
+      const std::filesystem::path &to);
+   void setBlocks(const std::vector<std::string> &files,
+      const std::filesystem::path &to);
    void nullProgress(unsigned, double, unsigned, unsigned);
    BinaryData getTx(unsigned height, unsigned id);
 
@@ -352,6 +355,7 @@ namespace DBTestUtils
          const std::set<BinaryData>& hashes,
          std::set<BinaryData> scrAddrSet)
       {
+         auto hashesToSee = hashes;
          std::set<BinaryData> addrSet;
          while (true) {
             auto action = waitOnNotification(BDMAction_ZC);
@@ -361,6 +365,8 @@ namespace DBTestUtils
                if (hashes.find(txHash) == hashes.end()) {
                   hasHashes = false;
                   break;
+               } else {
+                  hashesToSee.erase(txHash);
                }
             }
             if (!hasHashes) {
@@ -368,7 +374,7 @@ namespace DBTestUtils
             }
 
             addrSet.insert(action->addrSet_.begin(), action->addrSet_.end());
-            if (addrSet == scrAddrSet) {
+            if (addrSet == scrAddrSet && hashesToSee.empty()) {
                break;
             }
          }

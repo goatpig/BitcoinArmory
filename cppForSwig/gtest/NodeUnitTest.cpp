@@ -832,7 +832,7 @@ void NodeUnitTest::sendMessage(unique_ptr<Payload> payload)
                idIter->second = tx.getThisHash();
 
                //flag replaced tx
-               replacedHashes.insert(idIter->second);               
+               replacedHashes.insert(idIter->second);
             }
 
             if (replaceFailure)

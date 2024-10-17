@@ -8,37 +8,32 @@
 
 #include "TerminalPassphrasePrompt.h"
 
-#ifdef WIN32
-#include <windows.h>
+#if defined(__MINGW32__) || defined(_MSC_VER)
+   #include <windows.h>
 #else
-#include <termios.h>
-#include <unistd.h>
+   #include <termios.h>
+   #include <unistd.h>
 #endif
 
-using namespace std;
 using namespace Armory::Wallets;
 
 ////////////////////////////////////////////////////////////////////////////////
 SecureBinaryData TerminalPassphrasePrompt::prompt(
-   const set<EncryptionKeyId>& idSet)
+   const std::set<EncryptionKeyId>& idSet)
 {
-   unique_lock<mutex> lock(mu_);
+   std::unique_lock<std::mutex> lock(mu_);
 
    //check ids
-   if (idSet.empty())
-   {
+   if (idSet.empty()) {
       //empty ids means we need to prompt for a new passphrase
-      cout << endl;
-      cout << "Set password for " << verbose_ << endl;
+      std::cout << std::endl;
+      std::cout << "Set password for " << verbose_ << std::endl;
 
       return promptNewPass();
-   }
-   else if (idSet.size() == 1)
-   {
+   } else if (idSet.size() == 1) {
       auto iter = idSet.find(CHANGE_PASS_FLAG);
-      if (iter != idSet.end())
-      {
-         cout << "Changing password for " << verbose_ << endl;
+      if (iter != idSet.end()) {
+         std::cout << "Changing password for " << verbose_ << std::endl;
          return promptNewPass();
       }
    }
@@ -50,115 +45,106 @@ SecureBinaryData TerminalPassphrasePrompt::prompt(
 ////////////////////////////////////////////////////////////////////////////////
 SecureBinaryData TerminalPassphrasePrompt::promptNewPass()
 {
-   while (true)
-   {
-      string pass1, pass2;
-      cout << "Enter new password: ";
+   while (true) {
+      std::string pass1, pass2;
+      std::cout << "Enter new password: ";
 
       setEcho(false);
-      std::getline(cin, pass1);
+      std::getline(std::cin, pass1);
       setEcho(true);
-      cout << endl;
+      std::cout << std::endl;
 
-      if (cin.fail()) {
-         cerr << "Can't read password...";
+      if (std::cin.fail()) {
+         std::cerr << "Can't read password...";
          std::exit(1);
       }
 
-      cout << "Repeat new password: ";
+      std::cout << "Repeat new password: ";
 
       setEcho(false);
-      std::getline(cin, pass2);
+      std::getline(std::cin, pass2);
       setEcho(true);
-      cout << endl;
+      std::cout << std::endl;
 
-      if (cin.fail()) {
-         cerr << "Can't read password...";
+      if (std::cin.fail()) {
+         std::cerr << "Can't read password...";
          std::exit(1);
       }
 
-      if (pass1 != pass2)
-      {
-         cout << "Password mismatch, try again!" << endl << endl;
+      if (pass1 != pass2) {
+         std::cout << "Password mismatch, try again!" << std::endl << std::endl;
          continue;
-      }
-      else if (pass1.size() == 0)
-      {
-         cout << "You have provided an empty passphrase." << endl; 
-         cout << "If you continue, this " << verbose_ << " will be unencrypted!" << endl;
-            
-         while (true)
-         {
-            string yn;
-            cout << "Do you wish to continue (Y/n)? ";
-            cin >> yn;
-            if (cin.fail()) 
-            {
-               cerr << "Can't read answer...";
+      } else if (pass1.empty()) {
+         std::cout << "You have provided an empty passphrase." << std::endl;
+         std::cout << "If you continue, this " << verbose_ << " will be unencrypted!" << std::endl;
+
+         while (true) {
+            std::string yn;
+            std::cout << "Do you wish to continue (Y/n)? ";
+            std::cin >> yn;
+            if (std::cin.fail()) {
+               std::cerr << "Can't read answer...";
                std::exit(1);
             }
 
-               if (yn == "n")
-               {
-                  cout << endl;
-                  break;
-               }
-               else if (yn == "Y")
-               {
-                  cout << "The " << verbose_ << " will be unencrypted!" << endl;
-                  return SecureBinaryData();
-               }
+            if (yn == "n") {
+               std::cout << std::endl;
+               break;
+            } else if (yn == "Y") {
+               std::cout << "The " << verbose_ << " will be unencrypted!" << std::endl;
+               return {};
+            }
          }
 
          continue;
       }
-        
       return SecureBinaryData::fromString(pass1);
    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 SecureBinaryData TerminalPassphrasePrompt::promptForPassphrase(
-   const set<EncryptionKeyId>& idSet)
+   const std::set<EncryptionKeyId>& idSet)
 {
-   if (idSet.size() == 0)
-      throw runtime_error("invalid id count");
+   if (idSet.empty()) {
+      throw std::runtime_error("invalid id count");
+   }
 
    bool suppress = false;
-   for (auto& id : idSet)
-   {
+   for (const auto& id : idSet) {
       auto iter = countMap_.find(id);
-      if (iter == countMap_.end())
+      if (iter == countMap_.end()) {
          iter = countMap_.emplace(id, 0).first;
+      }
 
-      if (iter->second > 0)
+      if (iter->second > 0) {
          suppress = true;
+      }
 
-      if (++(iter->second) > 3)
-      {
-         cout << "3 failed attempts, aborting" << endl << endl;
-         exit(2);
+      if (++(iter->second) > 3) {
+         std::cout << "3 failed attempts, aborting" << std::endl << std::endl;
+         std::exit(2);
          return SecureBinaryData();
       }
    }
 
-   if (!suppress)
-   {
-      cout << endl << "Encrypted " << verbose_ << 
-         ", please input the password for either of these key(s): " << endl;
+   if (!suppress) {
+      std::cout << std::endl << "Encrypted " << verbose_ <<
+         ", please input the password for either of these key(s): " << std::endl;
     
       unsigned idCount = 1;
-      for (auto& id : idSet)
-      cout << " ." << idCount++ << ": " << id.toHexStr() << endl;
+      for (const auto& id : idSet) {
+         std::cout << " ." << idCount++ << ": " << id.toHexStr() << std::endl;
+      }
    }
-        
-   cout << " passhrase: ";
 
-   string pass1;
+   std::cout << " passhrase: ";
+
+   std::string pass1;
    setEcho(false);
-   cin >> pass1;
+   std::cin >> pass1;
    setEcho(true);
-   cout << endl;
+   std::cout << std::endl;
 
    return SecureBinaryData::fromString(pass1);
 }
@@ -166,37 +152,37 @@ SecureBinaryData TerminalPassphrasePrompt::promptForPassphrase(
 ////////////////////////////////////////////////////////////////////////////////
 void TerminalPassphrasePrompt::setEcho(bool enable)
 {
-#ifdef WIN32
-   HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE); 
+#ifdef _WIN32
+   HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
    DWORD mode;
    GetConsoleMode(hStdin, &mode);
 
-   if (!enable)
+   if (!enable) {
       mode &= ~ENABLE_ECHO_INPUT;
-   else
+   } else {
       mode |= ENABLE_ECHO_INPUT;
-
+   }
    SetConsoleMode(hStdin, mode );
 #else
    struct termios tty;
    tcgetattr(STDIN_FILENO, &tty);
 
-   if (!enable)
+   if (!enable) {
       tty.c_lflag &= ~ECHO;
-   else
+   } else {
       tty.c_lflag |= ECHO;
-
+   }
    tcsetattr(STDIN_FILENO, TCSANOW, &tty);
 #endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-PassphraseLambda TerminalPassphrasePrompt::getLambda(const string& verbose)
+PassphraseLambda TerminalPassphrasePrompt::getLambda(const std::string& verbose)
 {
    auto ptr = new TerminalPassphrasePrompt(verbose);
-   shared_ptr<TerminalPassphrasePrompt> smartPtr(ptr);
+   std::shared_ptr<TerminalPassphrasePrompt> smartPtr(ptr);
 
-   auto passLbd = [smartPtr](const set<EncryptionKeyId>& idSet)->SecureBinaryData
+   auto passLbd = [smartPtr](const std::set<EncryptionKeyId>& idSet)->SecureBinaryData
    {
       return smartPtr->prompt(idSet);
    };
