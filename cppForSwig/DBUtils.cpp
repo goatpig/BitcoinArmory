@@ -11,8 +11,6 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#include <filesystem>
-#include <fcntl.h>
 #include "DBUtils.h"
 
 namespace fs = std::filesystem;
@@ -20,9 +18,13 @@ namespace fs = std::filesystem;
 #if defined(__MINGW32__) || defined(_MSC_VER)
    #include <windows.h>
    #include <io.h>
+   #include <Shlobj.h>
 #else
    #include <sys/mman.h>
 #endif
+
+#include <filesystem>
+#include <fcntl.h>
 
 ////////////////////////////////////////////////////////////////////////////////
 const BinaryData DBUtils::ZeroConfHeader_ = BinaryData::CreateFromHex("FFFF");
@@ -278,7 +280,9 @@ FileUtils::FileMap::FileMap(const fs::path& path, bool write)
 {
    int fd = 0;
    if (!fileExists(path, 2)) {
-      LOGWARN << "FileMap: file " << path.string() << " does not exist";
+      //false positive warning, we often ask for block files that do not
+      //exists as way to check for exhaustion
+      //LOGWARN << "FileMap: file " << path.string() << " does not exist";
       return;
    }
 
@@ -516,7 +520,7 @@ size_t FileUtils::getFileSize(const fs::path& path)
 {
    try {
       return fs::file_size(path);
-   } catch (const std::filesystem::filesystem_error&) {
+   } catch (const fs::filesystem_error&) {
       return SIZE_MAX;
    }
 }
@@ -561,4 +565,22 @@ bool FileUtils::append(const fs::path& src, const fs::path& dst)
    os.write(buffer.data(), srcsz);
    os.flush();
    return true;
+}
+
+////
+fs::path FileUtils::getUserHomePath()
+{
+#ifdef _WIN32
+   LPWSTR wPath;
+   if (SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &wPath) != S_OK) {
+      throw std::runtime_error("failed to resolve user folder!");
+   }
+
+   fs::path p{wPath};
+   CoTaskMemFree(wPath);
+
+   return p;
+#else
+   return fs::path{std::getenv("HOME")};
+#endif
 }

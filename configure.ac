@@ -368,6 +368,22 @@ AC_CONFIG_FILES(Makefile
 AM_CONDITIONAL([BUILD_BENCH], [test x$want_benchmark = xyes])
 AM_CONDITIONAL([BUILD_TESTS], [test "x$want_tests" = "xyes"])
 
+#link test files over to build folder
+if test x$want_tests = xyes; then
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/blk_0.dat:cppForSwig/reorgTest/blk_0.dat)
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/blk_1.dat:cppForSwig/reorgTest/blk_1.dat)
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/blk_2.dat:cppForSwig/reorgTest/blk_2.dat)
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/blk_3.dat:cppForSwig/reorgTest/blk_3.dat)
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/blk_4.dat:cppForSwig/reorgTest/blk_4.dat)
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/blk_4A.dat:cppForSwig/reorgTest/blk_4A.dat)
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/blk_5.dat:cppForSwig/reorgTest/blk_5.dat)
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/blk_5A.dat:cppForSwig/reorgTest/blk_5A.dat)
+
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/botched_block.dat:cppForSwig/reorgTest/botched_block.dat)
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/LBZC.tx:cppForSwig/reorgTest/LBZC.tx)
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/ZCtx.tx:cppForSwig/reorgTest/ZCtx.tx)
+fi
+
 AC_OUTPUT
 
 echo "  Armory Autotools flags"

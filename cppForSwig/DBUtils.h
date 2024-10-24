@@ -175,5 +175,6 @@ namespace FileUtils
 
    int removeDirectory(const std::filesystem::path&);
    void createDirectory(const std::filesystem::path&);
+   std::filesystem::path getUserHomePath(void);
 };
 #endif
