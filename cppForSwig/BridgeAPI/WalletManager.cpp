@@ -210,11 +210,12 @@ void WalletManager::loadWallets(const PassphraseLambda& passLbd)
    std::vector<std::filesystem::path> walletPaths;
    std::vector<std::filesystem::path> a135Paths;
    for (const auto& dirEntry : std::filesystem::directory_iterator{path_} ) {
-      const auto& extention = dirEntry.path();
-      if (extention == ".lmdb") {
-         walletPaths.emplace_back(dirEntry.path());
-      } else if (extention == ".wallet") {
-         a135Paths.emplace_back(dirEntry.path());
+      const auto& path = dirEntry.path();
+      const auto& extension = path.extension();
+      if (extension == ".lmdb") {
+         walletPaths.emplace_back(path);
+      } else if (extension == ".wallet") {
+         a135Paths.emplace_back(path);
       }
    }
 

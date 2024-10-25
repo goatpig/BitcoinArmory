@@ -183,7 +183,7 @@ string NodeRPC::getAuthString()
    auto getAuthStringFromCookieFile = [&datadir](void)->string
    {
       auto cookiePath = datadir / ".cookie";
-      auto lines = SettingsUtils::getLines(datadir);
+      auto lines = SettingsUtils::getLines(cookiePath);
       if (lines.size() != 1) {
          throw runtime_error("unexpected cookie file content");
       }

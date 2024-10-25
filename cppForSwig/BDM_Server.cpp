@@ -656,11 +656,15 @@ namespace {
             auto pagesReq = request.getGetHistoryPages();
             std::list<std::vector<LedgerEntry>> pages;
             for (unsigned i=pagesReq.getFirst(); i<=pagesReq.getLast(); i++) {
-               auto page = delegateIter->second.getHistoryPage(i);
-               if (page.empty()) {
+               try {
+                  auto page = delegateIter->second.getHistoryPage(i);
+                  if (page.empty()) {
+                     break;
+                  }
+                  pages.emplace_back(std::move(page));
+               } catch (const std::range_error&) {
                   break;
                }
-               pages.emplace_back(std::move(page));
             }
 
             auto builder = ReplyBuilder::getNew(bdv);

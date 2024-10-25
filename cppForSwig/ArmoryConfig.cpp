@@ -229,11 +229,11 @@ void Armory::Config::reset()
 std::vector<std::string> SettingsUtils::getLines(const fs::path& path)
 {
    std::vector<std::string> output;
-   std::fstream fs(path, std::ios_base::in);
+   std::fstream inStream(path, std::ios_base::in);
 
-   while (fs.good()) {
+   while (inStream.good()) {
       std::string str;
-      std::getline(fs, str);
+      std::getline(inStream, str);
       output.emplace_back(std::move(str));
    }
    return output;

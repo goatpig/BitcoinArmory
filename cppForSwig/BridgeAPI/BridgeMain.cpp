@@ -49,6 +49,7 @@ int main(int argc, char* argv[])
       Armory::Config::ProcessType::Bridge);
 
    LOGINFO << "cppbridge args:" <<
+      "\n - datadir: " << Armory::Config::getDataDir().string() <<
       "\n - offline: " << Armory::Config::NetworkSettings::isOffline() <<
       "\n - auth mode: " << Armory::Config::NetworkSettings::oneWayAuth() <<
       "\n - db port: " << Armory::Config::NetworkSettings::dbPort() <<
