@@ -6,7 +6,7 @@ from __future__ import (absolute_import, division,
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2023, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
@@ -41,6 +41,8 @@ import base64
 import socket
 import subprocess
 import binascii
+
+from pathlib import Path
 
 try:
    if os.path.exists('update_version.py') and os.path.exists('.git'):
@@ -125,8 +127,10 @@ parser.add_option("--armorydb-port", dest="armorydb_port", default=ARMORYDB_DEFA
 parser.add_option("--ram-usage", dest="ram_usage", default=-1, type="int", help="Set maximum ram during scans, as 128MB increments. Defaults to 4")
 parser.add_option("--thread-count", dest="thread_count", default=-1, type="int", help="Set max thread count during builds and scans. Defaults to CPU total thread count")
 parser.add_option("--db-type", dest="db_type", default="DB_FULL", type="str", help="Set db mode, defaults to DB_FULL")
-parser.add_option("--language", dest="language", default="en", type="str", help="""Set the language for the client to display in. Use the ISO 639-1 language code to choose a language. 
-                                                                                 Options are da, de, en, es, el, fr, he, hr, id, ru, sv. Default is en. """)
+parser.add_option("--language", dest="language", default="en", type="str", help=
+   """Set the language for the client to display in. Use the ISO 639-1 language code to choose a language.
+      Options are da, de, en, es, el, fr, he, hr, id, ru, sv. Default is en.
+   """)
 
 parser.set_defaults(enableDetSign=True)
 
@@ -161,7 +165,7 @@ MIN_TX_FEE    = 20000
 MIN_RELAY_TX_FEE = 20000
 MIN_FEE_BYTE = 200
 MT_WAIT_TIMEOUT_SEC = 20
-DEFAULT_FEE_TYPE = "Auto" 
+DEFAULT_FEE_TYPE = "Auto"
 DEFAULT_CHANGE_TYPE = 'P2PKH'
 DEFAULT_RECEIVE_TYPE = 'P2PKH'
 
@@ -302,7 +306,7 @@ ENABLE_DETSIGN = CLI_OPTIONS.enableDetSign
 # Figure out the default directories for Satoshi client, and BicoinArmory
 OS_NAME          = ''
 OS_VARIANT       = ''
-USER_HOME_DIR    = ''  
+USER_HOME_DIR    = str(Path.home())
 BTC_HOME_DIR     = ''
 ARMORY_HOME_DIR  = ''
 ARMORY_DB_DIR    = ''
@@ -318,11 +322,6 @@ if OS_WINDOWS:
    OS_NAME         = 'Windows'
    OS_VARIANT      = platform.win32_ver()
 
-   import ctypes
-   buffer = ctypes.create_unicode_buffer(u'\0' * 260)
-   rt = ctypes.windll.shell32.SHGetFolderPathW(0, 26, 0, 0, ctypes.byref(buffer))
-   USER_HOME_DIR = unicode(buffer.value)
-
    if BTC_HOME_DIR == '':
       BTC_HOME_DIR = os.path.join(USER_HOME_DIR, 'Bitcoin')
    if SUBDIR != '':
@@ -335,7 +334,6 @@ elif OS_LINUX:
    import distro
    OS_NAME         = 'Linux'
    OS_VARIANT      = distro.linux_distribution()
-   USER_HOME_DIR   = os.getenv('HOME')
 
    if BTC_HOME_DIR == '':
       BTC_HOME_DIR = os.path.join(USER_HOME_DIR, '.bitcoin')
@@ -349,7 +347,6 @@ elif OS_MACOSX:
    platform.mac_ver()
    OS_NAME         = 'MacOSX'
    OS_VARIANT      = platform.mac_ver()
-   USER_HOME_DIR   = os.path.expanduser('~/Library/Application Support')
 
    if BTC_HOME_DIR == '':
       BTC_HOME_DIR = os.path.join(USER_HOME_DIR, 'Bitcoin')

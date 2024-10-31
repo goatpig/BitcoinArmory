@@ -24,23 +24,58 @@ to those definitions too.
 import cffi
 import os
 import optparse
+import logging
 
 parser = optparse.OptionParser(usage="%prog [options]\n")
-parser.add_option("--libbtc_path", dest="libbtc_path",default="", type="str", help="path to libbtc folder")
+parser.add_option("--libbtc_path", dest="libbtc_path", default="../../libbtc", type="str", help="path to libbtc folder")
+parser.add_option("--build_prefix", dest="build_prefix", default="..", type="str", help="path to build folder")
 
 CLI_OPTIONS = None
 CLI_ARGS = None
 (CLI_OPTIONS, CLI_ARGS) = parser.parse_args()
 
-chachapoly_path = "../cppForSwig/chacha20poly1305"
+hkdf_path = "cppForSwig/hkdf"
 
 #libbtc paths
 libbtc_libpath = os.path.join(CLI_OPTIONS.libbtc_path, ".libs")
 libbtc_includepath = os.path.join(CLI_OPTIONS.libbtc_path, "include")
 libbtc_libfile = os.path.join(libbtc_libpath, "libbtc.a")
 
-#chachapoly paths
-chachapoly_libpath = os.path.join(chachapoly_path, ".libs")
+if not os.path.exists(libbtc_includepath):
+    logging.error(f"could not find libbtc include path (looked for: \"{libbtc_includepath}\")")
+
+if not os.path.exists(libbtc_libfile):
+    logging.error(f"could not find libbtc binary path (looked for: \"{libbtc_libfile}\")")
+
+#chachapoly path
+chachapoly_name = "libchacha20poly1305.a"
+chachapoly_libpath = os.path.join(CLI_OPTIONS.build_prefix, "cppForSwig/chacha20poly1305")
+
+chachapoly_fullpath = os.path.join(chachapoly_libpath, chachapoly_name)
+if not os.path.exists(chachapoly_fullpath):
+    logging.warning(f"could not find chachapoly lib (looked for: \"{chachapoly_fullpath}\")")
+
+    chachapoly_libpath = os.path.join(chachapoly_libpath, ".libs")
+    chachapoly_fullpath = os.path.join(chachapoly_libpath, chachapoly_name)
+    if not os.path.exists(chachapoly_fullpath):
+        logging.error(f"could not find chachapoly lib (looked for: \"{chachapoly_fullpath}\")")
+    else:
+        logging.info(f"  found in \"{chachapoly_fullpath}\"")
+
+#hkdf path
+hkdf_name = "libhkdf.a"
+hkdf_libpath = os.path.join(CLI_OPTIONS.build_prefix, "cppForSwig/hkdf")
+
+hkdf_fullpath = os.path.join(hkdf_libpath, hkdf_name)
+if not os.path.exists(hkdf_fullpath):
+    logging.warning(f"could not find hkdf lib (looked for: \"{hkdf_fullpath}\")")
+
+    hkdf_libpath = os.path.join(hkdf_libpath, ".libs")
+    hkdf_fullpath = os.path.join(hkdf_libpath, hkdf_name)
+    if not os.path.exists(hkdf_fullpath):
+        logging.error(f"could not find hkdf lib (looked for: \"{hkdf_fullpath}\")")
+    else:
+        logging.info(f"  found in \"{hkdf_fullpath}\"")
 
 """
 cffi.FFI.cdef() takes the C declarations of the functions to pythonize (
@@ -88,12 +123,13 @@ ffi.set_source(
     library_dirs = [
         libbtc_libpath,
         chachapoly_libpath,
-        "../cppForSwig/hkdf/.libs"
+        hkdf_libpath,
         ],
 
     #dependencies
     libraries = ["hkdf", "btc", "chacha20poly1305"],
-    runtime_library_dirs = [libbtc_libpath]
-    )
+    runtime_library_dirs = [libbtc_libpath],
+    extra_link_args = ["-static-libgcc", "-static-libstdc++"]
+)
 
 ffi.compile(verbose=True)

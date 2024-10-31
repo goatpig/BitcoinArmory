@@ -12,12 +12,17 @@ IF (CMAKE_SYSTEM_NAME STREQUAL "MSYS")
     SET(MINGW 1)
 ENDIF ()
 
-#### find libraries ####
+#### absolute 3rd party path ####
+IF (NOT IS_ABSOLUTE ${THIRD_PARTY_PATH})
+    GET_FILENAME_COMPONENT (THIRD_PARTY_PATH ${THIRD_PARTY_PATH} REALPATH)
+ENDIF ()
+MESSAGE (" * third party libs path: ${THIRD_PARTY_PATH} * ")
 
+#### find libraries ####
 IF (MINGW)
     SET(CMAKE_FIND_LIBRARY_PREFIXES "")
     SET(CMAKE_FIND_LIBRARY_SUFFIXES .a .so .dll)
-    SET(CMAKE_LIBRARY_HINTS /usr/lib /usr/include /ucrt64/lib /ucrt64/include)
+    SET(CMAKE_LIBRARY_HINTS /usr/lib /usr/include)
 ELSE ()
     SET(CMAKE_FIND_LIBRARY_PREFIXES "lib")
     SET(CMAKE_FIND_LIBRARY_SUFFIXES .a .so)
@@ -29,6 +34,7 @@ FIND_LIBRARY (LMDB_LIB liblmdb HINTS ${THIRD_PARTY_PATH}/lmdb/libraries/liblmdb)
 IF (NOT LMDB_LIB)
     MESSAGE(FATAL_ERROR "Could not find LMDB lib")
 ENDIF ()
+SET(LMDB_INCLUDE_DIRS ${THIRD_PARTY_PATH}/lmdb/libraries/liblmdb)
 
 ## libbtc ##
 IF (IS_ABSOLUTE ${THIRD_PARTY_PATH})
@@ -62,12 +68,11 @@ ELSE ()
 ENDIF ()
 
 FIND_LIBRARY (LIBWEBSOCKETS_LIB libwebsockets_static HINTS
-    ${LWS_PATH}/lib
     ${LWS_PATH}/build/lib)
 IF (NOT LIBWEBSOCKETS_LIB)
     MESSAGE(FATAL_ERROR "Could not find WS lib")
 ENDIF ()
-SET(LIBWEBSOCKETS_INCLUDE_DIRS ${LWS_PATH}/include)
+SET(LIBWEBSOCKETS_INCLUDE_DIRS ${LWS_PATH}/build/include)
 
 ## capnproto ##
 IF (IS_ABSOLUTE ${THIRD_PARTY_PATH})
