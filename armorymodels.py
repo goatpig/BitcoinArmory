@@ -504,23 +504,24 @@ class LedgerDispModelSimple(QtCore.QAbstractTableModel):
 
    def getRawDataEntry(self, filter):
       def filterRawData(rawDataList, filter):
-         for rawData in rawDataList:
-            if filter(rawData):
-               return rawData
+         for data in rawDataList:
+            for ledger in data.ledgers:
+               if filter(ledger):
+                  return ledger
          return None
 
       if self.bottomPage.rawData:
-         result = filterRawData(self.bottomPage.rawData.ledger, filter)
+         result = filterRawData(self.bottomPage.rawData, filter)
          if result:
             return result
 
       if self.currentPage.rawData:
-         result = filterRawData(self.currentPage.rawData.ledger, filter)
+         result = filterRawData(self.currentPage.rawData, filter)
          if result:
             return result
 
       if self.topPage.rawData:
-         result = filterRawData(self.topPage.rawData.ledger, filter)
+         result = filterRawData(self.topPage.rawData, filter)
          if result:
             return result
 

@@ -854,7 +854,52 @@ namespace {
             break;
          }
 
+         case StaticRequest::Which::GET_HEADERS_BY_HEIGHT:
+         {
+            auto bcPtr = clients->bdmT()->bdm()->blockchain();
+            if (bcPtr == nullptr) {
+               reply.setSuccess(false);
+               reply.setError("invalid bcPtr");
+               break;
+            }
+
+            auto headersRequest = request.getGetHeadersByHeight();
+            std::vector<std::shared_ptr<BlockHeader>> headers;
+            headers.reserve(headersRequest.size());
+            for (const auto height : headersRequest) {
+               try {
+                  auto header = bcPtr->getHeaderByHeight(height, 0);
+                  headers.emplace_back(std::move(header));
+               } catch (const std::exception&) {
+                  continue;
+               }
+            }
+
+            auto result = staticReply.initGetHeadersByHeight(headers.size());
+            unsigned i=0;
+            for (const auto& header : headers) {
+               result.set(i++, capnp::Data::Builder(
+                  (uint8_t*)header->getPtr(), header->getSize()
+               ));
+            }
+            break;
+         }
+
+         case StaticRequest::Which::GET_TOP_BLOCK_HEIGHT:
+         {
+            auto bcPtr = clients->bdmT()->bdm()->blockchain();
+            if (bcPtr != nullptr) {
+               auto top = bcPtr->top();
+               staticReply.setGetTopBlockHeight(top->getBlockHeight());
+            } else {
+               reply.setSuccess(false);
+               reply.setError("invalid bcPtr");
+            }
+            break;
+         }
+
          default:
+            std::cout << "request.which(): " << request.which() << std::endl;
             reply.setError("invalid static request");
             reply.setSuccess(false);
       }

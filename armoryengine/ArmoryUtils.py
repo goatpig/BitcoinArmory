@@ -306,7 +306,11 @@ ENABLE_DETSIGN = CLI_OPTIONS.enableDetSign
 # Figure out the default directories for Satoshi client, and BicoinArmory
 OS_NAME          = ''
 OS_VARIANT       = ''
+
 USER_HOME_DIR    = str(Path.home())
+if OS_WINDOWS:
+   USER_HOME_DIR = os.getenv("APPDATA")
+
 BTC_HOME_DIR     = ''
 ARMORY_HOME_DIR  = ''
 ARMORY_DB_DIR    = ''

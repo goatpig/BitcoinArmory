@@ -286,9 +286,9 @@ class DlgDispTxInfo(ArmoryDialog):
          fee = self.data[FIELDS.SumOut] - self.data[FIELDS.SumIn]
 
       if ledgerEntry:
-         txAmt = ledgerEntry.value
+         txAmt = ledgerEntry.balance
 
-         if ledgerEntry.sent_to_self:
+         if ledgerEntry.isSTS:
             txdir = self.tr('Sent-to-Self')
             svPairDisp = []
             if len(self.pytx.outputs)==1:
@@ -305,11 +305,11 @@ class DlgDispTxInfo(ArmoryDialog):
                   else:
                      indicesMakeGray.append(i)
          else:
-            if ledgerEntry.value > 0:
+            if ledgerEntry.balance > 0:
                txdir = self.tr('Received')
                svPairDisp = svPairSelf
                indicesMakeGray.extend(indicesOther)
-            if ledgerEntry.value < 0:
+            if ledgerEntry.balance < 0:
                txdir = self.tr('Sent')
                svPairDisp = svPairOther
                indicesMakeGray.extend(indicesSelf)
@@ -949,7 +949,8 @@ def extractTxInfo(pytx, rcvTime=None):
          txWeight = pytx.getTxWeight()
          if hgt <= TheBDM.getTopBlockHeight():
             header = PyBlockHeader()
-            header.unserialize(TheBridge.service.getHeaderByHeight(hgt))
+            headersProto = TheBridge.service.getHeadersByHeight([hgt])
+            header.unserialize(headersProto[0])
             txTime = unixTimeToFormatStr(header.timestamp)
             txBlk = hgt
             txIdx = txProto.txIndex

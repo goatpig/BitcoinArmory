@@ -2413,12 +2413,13 @@ def determineSentToSelfAmt(le, wlt):
           creative with this tx, this may not actually work.
    """
    amt = 0
-   if le.sent_to_self:
-      txProto = TheBridge.service.getTxByHash(le.hash)
-      if txProto == None:
+   if le.isSTS:
+      txProto = TheBridge.service.getTxsByHash([le.txHash])
+      if txProto == None or len(txProto) == 0:
          return (0, 0)
+      txData = txProto[le.txHash]
 
-      pytx = PyTx().unserialize(txProto.raw)
+      pytx = PyTx().unserialize(txData.raw)
       if pytx.getNumTxOut()==1:
          return (pytx.outputs[0].getValue(), -1)
       maxChainIndex = -5
