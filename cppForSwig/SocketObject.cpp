@@ -573,7 +573,7 @@ void PersistentSocket::socketService_win()
 
       if (networkevents.lNetworkEvents & FD_CLOSE)
       {
-         LOGERR << "socket was closed";
+         LOGERR << "socket was closed: " << int(networkevents.iErrorCode[FD_CLOSE_BIT]);
          break;
       }
    }
@@ -599,27 +599,17 @@ void PersistentSocket::queuePayloadForWrite(vector<uint8_t>& payload)
 ///////////////////////////////////////////////////////////////////////////////
 void PersistentSocket::readService()
 {
-   while (1)
-   {
-      vector<uint8_t> packet;
-      try
-      {
-         packet = move(readQueue_.pop_front());
-      }
-      catch(Armory::Threading::StopBlockingLoop&)
-      {
+   while (true) {
+      try {
+         auto packet = readQueue_.pop_front();
+         respond(packet);
+      } catch (const Armory::Threading::StopBlockingLoop&) {
          //exit condition
          break;
       }
-
-      vector<uint8_t> payload;
-      if (!processPacket(packet, payload))
-         continue;
-
-      respond(payload);
    }
 
-   vector<uint8_t> emptyPacket;
+   std::vector<uint8_t> emptyPacket;
    respond(emptyPacket);
 }
 
@@ -768,9 +758,9 @@ bool PersistentSocket::connectToRemote()
 void PersistentSocket::shutdown()
 {
    unique_lock<mutex> lock(shutdownMutex_);
-   if (shutdownFut_.wait_for(chrono::seconds(0)) == future_status::ready)
+   if (shutdownFut_.wait_for(0s) == future_status::ready) {
       return;
-
+   }
    readQueue_.terminate();
    signalService(1);
 

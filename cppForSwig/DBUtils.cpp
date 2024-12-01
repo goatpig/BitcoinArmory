@@ -17,8 +17,6 @@ namespace fs = std::filesystem;
 
 #if defined(__MINGW32__) || defined(_MSC_VER)
    #include <windows.h>
-   #include <io.h>
-   #include <Shlobj.h>
 #else
    #include <sys/mman.h>
 #endif
@@ -571,15 +569,7 @@ bool FileUtils::append(const fs::path& src, const fs::path& dst)
 fs::path FileUtils::getUserHomePath()
 {
 #ifdef _WIN32
-   LPWSTR wPath;
-   if (SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &wPath) != S_OK) {
-      throw std::runtime_error("failed to resolve user folder!");
-   }
-
-   fs::path p{wPath};
-   CoTaskMemFree(wPath);
-
-   return p;
+   return fs::path(std::getenv("APPDATA"));
 #else
    return fs::path{std::getenv("HOME")};
 #endif

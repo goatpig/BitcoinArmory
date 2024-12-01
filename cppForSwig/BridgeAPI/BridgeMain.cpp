@@ -13,6 +13,12 @@
 ////////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {
+#ifdef _WIN32
+   WSADATA wsaData;
+   WORD wVersion = MAKEWORD(2, 0);
+   WSAStartup(wVersion, &wsaData);
+#endif
+
    CryptoECDSA::setupContext();
    startupBIP151CTX();
    startupBIP150CTX(4);
@@ -55,8 +61,9 @@ int main(int argc, char* argv[])
       "\n - db port: " << Armory::Config::NetworkSettings::dbPort() <<
       "\n - bridge port: " << bridgePortStr;
 
-   STARTLOGGING(
-      Armory::Config::Pathing::logFilePath("bridgeLog").string(), LogLvlDebug);
+   auto bridgeLogPath = Armory::Config::Pathing::logFilePath("bridgeLog");
+   LOGINFO << "bridge log: " << bridgeLogPath.string();
+   STARTLOGGING(bridgeLogPath.string(), LogLvlDebug);
 
    //setup the bridge
    auto bridge = std::make_shared<Armory::Bridge::CppBridge>(

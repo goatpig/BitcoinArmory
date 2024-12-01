@@ -368,7 +368,7 @@ AC_CONFIG_FILES(Makefile
 AM_CONDITIONAL([BUILD_BENCH], [test x$want_benchmark = xyes])
 AM_CONDITIONAL([BUILD_TESTS], [test "x$want_tests" = "xyes"])
 
-#link test files over to build folder
+#symlink test files over to build folder
 if test x$want_tests = xyes; then
     AC_CONFIG_LINKS(cppForSwig/reorgTest/blk_0.dat:cppForSwig/reorgTest/blk_0.dat)
     AC_CONFIG_LINKS(cppForSwig/reorgTest/blk_1.dat:cppForSwig/reorgTest/blk_1.dat)

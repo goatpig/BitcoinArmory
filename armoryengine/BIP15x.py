@@ -16,8 +16,7 @@ CHACHA20POLY1305MAXBYTESSENT = 1200
 CHACHA20POLY1305MAXPACKETSIZE = 1024 * 1024 * 1024 #1MB
 
 import sys
-sys.path.insert(1, './c20p1305_cffi')
-from c20p1305_cffi.c20p1305 import lib, ffi
+from .c20p1305 import lib, ffi
 
 AEAD_THRESHOLD_BEGIN      = 100,
 AEAD_START                = 101,
@@ -97,7 +96,7 @@ class BIP15xConnection(object):
       self.sendToBridgeLbd = sendToBridgeLbd
       self.notifyReadyLbd = None
 
-      self.privkey = lib.generate_random(32)
+      self.privkey = lib.get_new_privkey()
       self.pubkey = lib.compute_pubkey(self.privkey)
 
    #############################################################################
@@ -107,7 +106,6 @@ class BIP15xConnection(object):
 
    #############################################################################
    def __del__(self):
-      print ("bip15x cleanup")
       lib.freeBuffer(self.privkey)
       lib.freeBuffer(self.pubkey)
 
@@ -308,7 +306,7 @@ class BIP15xConnection(object):
 
       decryptionResult = lib.bip15x_decrypt(\
          self.inSession.channel, payload, payloadSize, clearText)
-      if decryptionResult != 0:
+      if decryptionResult == False:
          raise AEAD_Error("failed to decrypt payload: " + str(decryptionResult))
 
       return bytes(clearText)[4:]
