@@ -1,3 +1,5 @@
+*** These instructions are old and are unlikely to work for modern Armory (0.97+). They are kept as is for historical reference, and we'll be updated once I find some kind soul to help with the OSX build ***
+
 # macOS BUILD NOTES
 These notes describe what had to be done on fresh installs of macOS 10.9 - 10.13 in order to compile Armory.
 

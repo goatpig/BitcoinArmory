@@ -16,63 +16,15 @@ Current release target is 0.97. Follow development on projects page: https://git
 
 ## Building Armory From Source
 
-[Instructions for Windows](windowsbuild/Windows_build_notes.md)
-
-`build.bat Debug|Release`
-
-[Instructions for macOS](osxbuild/macOS_build_notes.md)
-[Instructions for Ubuntu and Arch Linux](linuxbuild/Linux_build_notes.md)
-
-```
-mkdir build
-cd build
-cmake ..
-make -j<N>
-```
+Refer to the build_instructions folder for detailed instructions per OS
 
 ### Dependencies
 
-* GNU Compiler Collection
- Linux:   Install package `g++`
-
-* Crypto++
- Linux:   Install package `libcrypto++-dev`
- Windows: [Download](https://www.cryptopp.com/#download)
-
-* SWIG
- Linux:   Install package `swig`
- Windows: [Download](http://www.swig.org/download.html)  
- MSVS: Copy swigwin-2.x directory next to cryptopp as `swigwin`
-
-* Python 2.6/2.7
- Linux:   Install package `python-dev`
- Windows: [Download](https://www.python.org/getit/)
-
-* Python Twisted -- asynchronous networking
- Linux:   Install package `python-twisted`
- Windows: [Download](https://twistedmatrix.com/trac/wiki/Downloads)
-
-* PyQt 4 (for Python 2.X)
- Linux:   Install packages `libqtcore4`, `libqt4-dev`, `python-qt4`, and `pyqt4-dev-tools`
- Windows: [Download](https://riverbankcomputing.com/software/pyqt/download)
-
-* py2exe
- (OPTIONAL - if you want to make a standalone executable in Windows)
- Windows: [Download](http://www.py2exe.org/)
-
-* LMDB - database engine, modified to suit Armory's use cases
-[LMDB page](http://symas.com/mdb/) - No need for external installs by Armory users
-
+* pyside2/6 & qtpy (Qt5/6 for Python 3.X)
+* LMDB
 * libwebsockets
- Linux:   Final instructions TBA.
- Windows: Follow the "Windows binary build" directions [here](https://github.com/warmcat/libwebsockets/blob/master/README.md).
-
-* Google Protocol Buffers (protobuf)
- Linux:   Install the `protobuf` package.
- Windows: Follow the "C++ Installation - Windows" directions [here](https://github.com/google/protobuf/blob/master/src/README.md), downloading only the `protoc` binary.
-
-* macOS
- [Instructions for downloading, verifying, and running Armory on macOS](README_macOS.md).
+* capnproto
+* libbtc
 
 ## Sample Code
 
@@ -90,4 +42,4 @@ See [LICENSE file](LICENSE)
 ## Copyright
 
 Copyright (C) 2011-2015, Armory Technologies, Inc.
-Copyright (C) 2016-2018, goatpig
+Copyright (C) 2016-2024, goatpig
