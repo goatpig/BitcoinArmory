@@ -1,3 +1,72 @@
+*** new build instructions (0.97+) ***
+
+1. Setting up the build environment
+
+1.a. Install the compilers:
+- MSVC Community: https://visualstudio.microsoft.com/downloads/
+- MSYS2: https://www.msys2.org/
+- Python3. You will want to install pyside2/6, qtpy and cffi. I strongly recommend you setup a venv and use pip to install the dependecies (keeps the system python install clean).
+- git: https://gitforwindows.org/
+
+1.b. Set up MSYS2:
+- We exclusively use the MSYS2 MINGW64 environment. From the MSYS2 MINGW64 prompt, install the build tools:
+   ```
+   pacman -S cmake ninja
+   ```
+
+2. Building dependencies
+   Pick a folder in which you will download all dependencies as well as BitcoinArmory's source. From there, run the following commands
+
+2.a libbtc:
+   ```
+   git clone
+   cd libbtc
+   sh autogen.sh
+   ./configure
+   make
+   ```
+
+2.b libwebsockets:
+   ```
+   git clone
+   cd libwebsockets
+   mkdir build & cd build
+   cmake -DLWS_WITH_SSL=OFF ..
+   ninja
+   ```
+
+2.c lmdb:
+   ```
+   git clone
+   cd
+   make
+   ```
+
+2.d capnproto:
+   ```
+   git clone
+   cd
+   mkdir build & cd build
+   cmake ..
+   ninja
+   ```
+
+3. Build Armory
+   ```
+   git clone
+   cd BitcoinArmory
+   mkdir build & cd build
+   cmake ..
+   ninja
+   ```
+
+4. Build c20p1305_cffi
+   Clone the c20p1305_cffi repo and follow the build instructions: https://github.com/goatpig/c20p1305_cffi
+
+
+
+*** old build instructions, kept for historical reference (prior to 0.97) ***
+
 # Setup MSVS 2013 Environment for building Armory in Windows
 
 ### ***You must use 64-bit packages!***
