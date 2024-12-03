@@ -1,6 +1,6 @@
 *** new build instructions (0.97+) ***
 
-1. Setting up the build environment
+### 1. Setting up the build environment ###
 
 1.a. Install the compilers:
 - MSVC Community: https://visualstudio.microsoft.com/downloads/
@@ -14,12 +14,13 @@
    pacman -S cmake ninja
    ```
 
-2. Building dependencies
-   Pick a folder in which you will download all dependencies as well as BitcoinArmory's source. From there, run the following commands
+### 2. Building dependencies ###
+
+Note: pick a folder in which you will download all dependencies as well as BitcoinArmory's source. From there, clone and build the dependencies:
 
 2.a libbtc:
    ```
-   git clone
+   git clone https://github.com/libbtc/libbtc.git
    cd libbtc
    sh autogen.sh
    ./configure
@@ -28,7 +29,7 @@
 
 2.b libwebsockets:
    ```
-   git clone
+   git clone https://github.com/warmcat/libwebsockets.git
    cd libwebsockets
    mkdir build & cd build
    cmake -DLWS_WITH_SSL=OFF ..
@@ -37,30 +38,32 @@
 
 2.c lmdb:
    ```
-   git clone
-   cd
+   git clone https://github.com/LMDB/lmdb.git
+   cd libraries/liblmdb
+   git checkout LMDB_0.9.31
    make
    ```
 
 2.d capnproto:
    ```
-   git clone
-   cd
+   git clone https://github.com/capnproto/capnproto.git
+   cd capnproto
+   git checkout v1.0.2
    mkdir build & cd build
    cmake ..
    ninja
    ```
 
-3. Build Armory
+### 3. Build Armory ###
    ```
-   git clone
+   git clone https://github.com/goatpig/BitcoinArmory
    cd BitcoinArmory
    mkdir build & cd build
    cmake ..
    ninja
    ```
 
-4. Build c20p1305_cffi
+### 4. Build c20p1305_cffi ###
    Clone the c20p1305_cffi repo and follow the build instructions: https://github.com/goatpig/c20p1305_cffi
 
 
