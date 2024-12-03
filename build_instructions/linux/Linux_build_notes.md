@@ -55,7 +55,7 @@ You will need to prepare your build system by installing the following software:
     To start ArmoryQt.py, you need to build and copy the c20p1305_cffi package into armoryengine.
     You can find the source and build instructions here: https://github.com/goatpig/c20p1305_cffi.git
 
-
+------------------------------------------
 *** old instructions, kept for historical look ups (pre 0.97)***
 
 # Building Armory From Source
