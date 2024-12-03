@@ -67,7 +67,7 @@ Note: pick a folder in which you will download all dependencies as well as Bitco
    Clone the c20p1305_cffi repo and follow the build instructions: https://github.com/goatpig/c20p1305_cffi
 
 
-
+------------------------------------
 *** old build instructions, kept for historical reference (prior to 0.97) ***
 
 # Setup MSVS 2013 Environment for building Armory in Windows
