@@ -48,6 +48,7 @@ FILE(GLOB WALLETS_SOURCES Wallets/*.cpp)
 LIST(APPEND WALLETS_SOURCES
     ${LIBBTC_INCLUDE_DIR}/src/trezor-crypto/bip39.c
     ${LIBBTC_INCLUDE_DIR}/src/trezor-crypto/pbkdf2.c
+    Wallets/random_buffer.c
 )
 
 LIST(APPEND LIBARMORYCOMMON_SOURCES

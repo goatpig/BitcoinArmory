@@ -16,6 +16,11 @@
 
 using namespace std;
 
+#ifdef _WIN32
+//i dont know how to get linkage for this with MSYS2 halp T_T
+char *gai_strerrorA(int errcode) { return nullptr; }
+#endif
+
 ///////////////////////////////////////////////////////////////////////////////
 //
 // SocketPrototype
