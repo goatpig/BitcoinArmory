@@ -50,7 +50,7 @@ class BIP15xChannel(object):
 
    #############################################################################
    def __del__(self):
-      lib.freeBuffer(self.channel)
+      lib.bip151_cleanup_channel(self.channel)
       self.channel = None
 
    #############################################################################
@@ -59,7 +59,7 @@ class BIP15xChannel(object):
       pyencinit = ffi.buffer(encinit, 34)
       pyencinit = bytes(AEAD_ENCINIT) + pyencinit
 
-      lib.freeBuffer(encinit)
+      lib.freeCffiBuffer(encinit)
       return pyencinit
 
    #############################################################################
@@ -68,7 +68,7 @@ class BIP15xChannel(object):
       pyencack = ffi.buffer(encack, 33)
       pyencack = bytes(AEAD_ENCACK) + pyencack
 
-      lib.freeBuffer(encack)
+      lib.freeCffiBuffer(encack)
       return pyencack
 
    #############################################################################
@@ -106,8 +106,8 @@ class BIP15xConnection(object):
 
    #############################################################################
    def __del__(self):
-      lib.freeBuffer(self.privkey)
-      lib.freeBuffer(self.pubkey)
+      lib.freeLibBuffer(self.privkey)
+      lib.freeLibBuffer(self.pubkey)
 
       self.privkey = None
       self.pubkey = None
@@ -223,11 +223,11 @@ class BIP15xConnection(object):
              raise AEAD_Error("auth reply failure")
 
          #append header
-         authReplyPy = ffi.buffer(authReply, 64)
-         authReplyPy = bytes(AEAD_REPLY) + bytes(authReplyPy)
+         authReplyPy = bytes(AEAD_REPLY) + \
+            bytes(ffi.buffer(authReply, 64))
 
          #cleanup C buffer
-         lib.freeBuffer(authReply)
+         lib.freeLibBuffer(authReply)
 
          #encrypt & send to client
          encrPayload = self.encrypt(authReplyPy, 65)
@@ -253,11 +253,11 @@ class BIP15xConnection(object):
              raise AEAD_Error("auth reply failure")
 
          #append header
-         authChallengePy = ffi.buffer(authChallenge, 32)
-         authChallengePy = bytes(AEAD_CHALLENGE) + bytes(authChallengePy)
+         authChallengePy = bytes(AEAD_CHALLENGE) + \
+            bytes(ffi.buffer(authChallenge, 32))
 
          #cleanup C buffer
-         lib.freeBuffer(authChallenge)
+         lib.freeLibBuffer(authChallenge)
 
          #encrypt & send to client
          encrPayload = self.encrypt(authChallengePy, 33)
