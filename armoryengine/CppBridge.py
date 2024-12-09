@@ -154,8 +154,8 @@ class BridgeSocket(object):
       return clientSocket
 
    ####
-   def spawnBridge(self, stringArgs):
-      subprocess.run(["./build/CppBridge", stringArgs])
+   def spawnBridge(self, args: list):
+      subprocess.run(["./build/CppBridge", *args])
 
    #############################################################################
    ## socket write
