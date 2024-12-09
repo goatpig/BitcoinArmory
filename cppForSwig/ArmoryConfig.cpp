@@ -21,6 +21,7 @@
 #include "gtest/NodeUnitTest.h"
 
 #include <string_view>
+#include <charconv>
 
 namespace fs = std::filesystem;
 using namespace std::literals::string_view_literals;
@@ -164,15 +165,16 @@ void Armory::Config::parseArgs(
             exit(0);
          }
 
-         //string prefix and tokenize
-         auto strings = SettingsUtils::tokenizeLine(line, "--");
-         for (auto& line : strings) {
-            auto keyVal = SettingsUtils::getKeyValFromLine(line, '=');
-            args.emplace(
-               keyVal.first,
-               SettingsUtils::stripQuotes(keyVal.second)
-            );
+         //strip '--' from the line if present
+         std::string_view lineView(line);
+         if (line.size() > 2 && line[0] == '-' && line[1] == '-') {
+            lineView = std::string_view (&line[2], line.size() - 2);
          }
+         auto keyVal = SettingsUtils::getKeyValFromLine(lineView, '=');
+         args.emplace(
+            keyVal.first,
+            SettingsUtils::stripQuotes(keyVal.second)
+         );
       }
 
       //figure out the network
@@ -251,63 +253,32 @@ std::map<std::string, std::string> SettingsUtils::getKeyValsFromLines(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::pair<std::string, std::string> SettingsUtils::getKeyValFromLine(
-   const std::string& line, char delim)
+std::pair<std::string_view, std::string_view> SettingsUtils::getKeyValFromLine(
+   const std::string_view& line, char delim)
 {
-   std::stringstream ss(line);
-   std::pair<std::string, std::string> output;
+   //std::stringstream ss(line);
+   std::pair<std::string_view, std::string_view> output;
 
    //key
-   std::getline(ss, output.first, delim);
+   auto iter = line.begin();
+   while (iter != line.end()) {
+      if (*iter == delim) {
+         output.first = std::string_view(line.begin(), iter - line.begin());
+         break;
+      }
+      ++iter;
+   }
 
-   //val
-   if (ss.good()) {
-      getline(ss, output.second);
+   if (iter != line.end()) {
+      /* we're not at the end of the line, there's a value to parse */
+      //skip the the delimiter
+      ++iter;
+      output.second = std::string_view(iter, line.end()-iter);
+   } else {
+      /* we're at the end of the line, there's only a key */
+      output.first = line;
    }
    return output;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-std::vector<std::string> SettingsUtils::tokenizeLine(
-   const std::string& line, const std::string& token)
-{
-   if (token.empty() || line.empty()) {
-      return {};
-   }
-   std::vector<std::string> result;
-
-   unsigned i=0;
-   unsigned tkId = 0;
-   while (i < line.size()) {
-      if (line.c_str()[i] == token.c_str()[tkId]) {
-         ++tkId;
-         if (tkId == token.size()) {
-            ++i;
-            auto y = i;
-            while (i < line.size() -1) {
-               if (line.c_str()[i] == ' ') {
-                  break;
-               }
-               ++i;
-            }
-
-            if (i >= y) {
-               //keep last char in the line
-               if (i==line.size() -1) {
-                  ++i;
-               }
-               result.emplace_back(std::string{line.c_str() + y, i-y});
-            }
-
-            tkId = 0;
-         }
-      } else {
-         tkId = 0;
-      }
-
-      ++i;
-   }
-   return result;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -341,13 +312,17 @@ std::string SettingsUtils::portToString(unsigned port)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::string SettingsUtils::stripQuotes(const std::string& input)
+std::string_view SettingsUtils::stripQuotes(const std::string_view& input)
 {
+   if (input.empty()) {
+      return {};
+   }
+
    size_t start = 0;
    size_t len = input.size();
 
-   auto& first_char = input.c_str()[0];
-   auto& last_char = input.c_str()[len - 1];
+   auto& first_char = input[0];
+   auto& last_char = input[len - 1];
 
    if (first_char == '\"' || first_char == '\'') {
       start = 1;
@@ -358,7 +333,7 @@ std::string SettingsUtils::stripQuotes(const std::string& input)
       --len;
    }
 
-   return input.substr(start, len);
+   return std::string_view(input.begin() + start, len);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -696,14 +671,17 @@ void NetworkSettings::processArgs(
    iter = args.find("satoshirpc-port");
    if (iter != args.end()) {
       auto value = SettingsUtils::stripQuotes(iter->second);
-      int portInt = 0;
-      std::stringstream portSS(value);
-      portSS >> portInt;
+      int portInt;
 
-      if (portInt < 1 || portInt > 65535) {
-         std::cout << "Invalid satoshi rpc port, falling back to default" << std::endl;
-      } else {
-         rpcPort_ = value;
+      try {
+         std::from_chars(value.begin(), value.end(), portInt);
+         if (portInt < 1 || portInt > 65535) {
+            std::cout << "Invalid satoshi rpc port, falling back to default" << std::endl;
+         } else {
+            rpcPort_ = value;
+         }
+      } catch (const std::exception&) {
+         std::cout << "satoshi rpc port is not a number, falling back to default" << std::endl;
       }
    }
 

@@ -64,15 +64,13 @@ namespace Armory
          std::vector<std::string> getLines(const std::filesystem::path& path);
          std::map<std::string, std::string> getKeyValsFromLines(
             const std::vector<std::string>&, char delim);
-         std::pair<std::string, std::string> getKeyValFromLine(
-            const std::string&, char delim);
-            
-         std::string stripQuotes(const std::string& input);
+         std::pair<std::string_view, std::string_view> getKeyValFromLine(
+            const std::string_view&, char delim);
+
+         std::string_view stripQuotes(const std::string_view& input);
          std::vector<std::string> keyValToArgv(
             const std::map<std::string, std::string>&);
-         std::vector<std::string> tokenizeLine(
-            const std::string&, const std::string&);
-            
+
          std::string portToString(unsigned);
          bool testConnection(const std::string& ip, const std::string& port);
          std::string getPortFromCookie(const std::string& datadir);
