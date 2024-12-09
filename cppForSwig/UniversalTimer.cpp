@@ -178,7 +178,7 @@ double UniversalTimer::read(string key, string grpstr)
 // Print complete timing results to a file of this name
 void UniversalTimer::printCSV(string filename, bool excludeZeros)
 {
-   ofstream os(OS_TranslatePath(filename.c_str()), ios::out);
+   ofstream os(filename, ios::out);
    printCSV(os, excludeZeros);
    os.close();
 }
@@ -233,7 +233,7 @@ void UniversalTimer::printCSV(ostream & os, bool excludeZeros)
 // Print complete timing results to a file of this name
 void UniversalTimer::print(string filename, bool excludeZeros)
 {
-   ofstream os(OS_TranslatePath(filename.c_str()), ios::out);
+   ofstream os(filename, ios::out);
    print(os, excludeZeros);
    os.close();
 }

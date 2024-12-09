@@ -1523,7 +1523,7 @@ public:
          streamPtr_ = new std::ifstream;
          weOwnTheStream_ = true;
          std::ifstream* ifstreamPtr = static_cast<std::ifstream*>(streamPtr_);
-         ifstreamPtr->open(OS_TranslatePath(filename.c_str()), std::ios::in | std::ios::binary);
+         ifstreamPtr->open(filename.c_str(), std::ios::in | std::ios::binary);
          if( !ifstreamPtr->is_open() )
          {
             std::cerr << "Could not open file for reading!  File: " << filename.c_str() << std::endl;
