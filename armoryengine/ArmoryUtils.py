@@ -2847,7 +2847,7 @@ def getBridgeArgList():
 
    #testnet
    if USE_TESTNET:
-      bridgeArgs.append(["testnet", ""])
+      bridgeArgs.append(["testnet", None])
 
    #db type
    bridgeArgs.append(["db-type", CLI_OPTIONS.db_type])
@@ -2857,20 +2857,19 @@ def getBridgeArgList():
    bridgeArgs.append(["armorydb-port", ARMORYDB_PORT])
 
    #datadir
-   bridgeArgs.append(["datadir", ARMORY_HOME_DIR])
+   bridgeArgs.append(["datadir", '"' + ARMORY_HOME_DIR + '"'])
 
    #enforce --public for now
-   bridgeArgs.append(["public", ""])
+   bridgeArgs.append(["public", None])
 
    #offline
    if CLI_OPTIONS.offline:
-      bridgeArgs.append(["offline", ""])
+      bridgeArgs.append(["offline", None])
 
-   stringArgs = ""
-   for argPair in bridgeArgs:
-      stringArgs += " --"
-      stringArgs += argPair[0]
-      if len(argPair[1]) > 0:
-         stringArgs += "="
-         stringArgs += argPair[1]
-   return stringArgs
+   args = []
+   for argKey, argVal in bridgeArgs:
+      if argVal:
+         args.append("--" + argKey + "=" + argVal)
+      else:
+         args.append("--" + argKey)
+   return args
