@@ -57,6 +57,6 @@ The following dependencies you have to build from source.
     make
     ```
 
-4. [c20p1305_cffi] (https://github.com/goatpig/c20p1305_cffi.git)
+4. [c20p1305_cffi] (https://github.com/goatpig/c20p1305_cffi.git):
     To start ArmoryQt.py, you will need to build the c20p1305_cffi python package.
     Clone the repo and follow the build instructions: https://github.com/goatpig/c20p1305_cffi.git
