@@ -59,7 +59,7 @@ class BIP15xChannel(object):
       pyencinit = ffi.buffer(encinit, 34)
       pyencinit = bytes(AEAD_ENCINIT) + pyencinit
 
-      lib.freeCffiBuffer(encinit)
+      lib.cleanupBuffer(encinit)
       return pyencinit
 
    #############################################################################
@@ -68,7 +68,7 @@ class BIP15xChannel(object):
       pyencack = ffi.buffer(encack, 33)
       pyencack = bytes(AEAD_ENCACK) + pyencack
 
-      lib.freeCffiBuffer(encack)
+      lib.cleanupBuffer(encack)
       return pyencack
 
    #############################################################################
@@ -106,8 +106,8 @@ class BIP15xConnection(object):
 
    #############################################################################
    def __del__(self):
-      lib.freeLibBuffer(self.privkey)
-      lib.freeLibBuffer(self.pubkey)
+      lib.cleanupBuffer(self.privkey)
+      lib.cleanupBuffer(self.pubkey)
 
       self.privkey = None
       self.pubkey = None
@@ -227,7 +227,7 @@ class BIP15xConnection(object):
             bytes(ffi.buffer(authReply, 64))
 
          #cleanup C buffer
-         lib.freeLibBuffer(authReply)
+         lib.cleanupBuffer(authReply)
 
          #encrypt & send to client
          encrPayload = self.encrypt(authReplyPy, 65)
@@ -257,7 +257,7 @@ class BIP15xConnection(object):
             bytes(ffi.buffer(authChallenge, 32))
 
          #cleanup C buffer
-         lib.freeLibBuffer(authChallenge)
+         lib.cleanupBuffer(authChallenge)
 
          #encrypt & send to client
          encrPayload = self.encrypt(authChallengePy, 33)
