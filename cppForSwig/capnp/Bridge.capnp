@@ -218,7 +218,7 @@ struct WalletRequest {
 
       createBackupString            @5 : Types.CallbackId;
       deleteWallet                  @6 : Void;
-      getData                       @7 : WalletData;
+      getData                       @7 : Void;
 
       getAddrCombinedList           @8 : Void;
       setAddressTypeFor             @9 : SetAddressTypeFor;

@@ -582,7 +582,7 @@ class BlockchainUtils(ProtoWrapper):
       if reply.success == False:
          raise BridgeError(
             f"[createWallet] failed with error: {reply.error}")
-      return reply.utils.walletId
+      return reply.utils.createWallet
 
 ################################################################################
 class BridgeWalletWrapper(ProtoWrapper):
@@ -745,8 +745,7 @@ class BridgeWalletWrapper(ProtoWrapper):
       packet = self.getPacket()
 
       walletData = Bridge.WalletData.new_message()
-      method = packet.wallet.init("getData")
-      method = walletData
+      method = packet.wallet.getData = None
 
       fut = self.send(packet)
       reply = fut.getVal()

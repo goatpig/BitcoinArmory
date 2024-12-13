@@ -161,8 +161,8 @@ public:
 
 
    /////////////////////////////////////////////////////////////////////////////
-   // Default max-memory reqt will 
-   void computeKdfParams(double targetComputeSec=0.25,
+   // Default max-memory reqt will
+   void computeKdfParams(double targetComputeSec,
       uint32_t maxMemReqtsBytes=DEFAULT_KDF_MAX_MEMORY,
       bool verbose = false);
 

@@ -885,7 +885,7 @@ namespace
                (uint8_t*)capnEntropy.end()
             );
 
-            auto wltId = bridge->createWallet(
+            auto wai = bridge->createWallet(
                args.getLookup(),
                args.getLabel(), args.getDescription(),
                sbdControl, sbdPass, sbdEntropy
@@ -898,7 +898,7 @@ namespace
             reply.setSuccess(true);
 
             auto utilsReply = reply.initUtils();
-            utilsReply.setCreateWallet(wltId);
+            utilsReply.setCreateWallet(wai.serialize());
 
             response = serializeCapnp(message);
             break;

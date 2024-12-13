@@ -1074,6 +1074,7 @@ WalletAccountIdentifier WalletAccountIdentifier::deserialize(
    }
 
    if (lines.size() != 2) {
+      LOGERR << id << " is not a valid wallet identifier!";
       throw std::runtime_error("[WalletAccountIdentifier::deserialize]");
    }
 

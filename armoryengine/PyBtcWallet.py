@@ -537,12 +537,11 @@ class PyBtcWallet(object):
          #kdfTargSec, kdfMaxMem,
          shortLabel, longLabel,
          extraEntropy)
-
       return PyBtcWallet().loadFromBridge(walletId)
 
    #############################################################################
    @staticmethod
-   def loadFromBridge(self, walletId):
+   def loadFromBridge(walletId):
       wallet = PyBtcWallet(uniqueId=walletId)
       walletProto = wallet.bridgeWalletObj.getData()
       wallet.loadFromProto(walletProto)

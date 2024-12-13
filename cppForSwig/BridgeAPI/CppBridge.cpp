@@ -1117,12 +1117,11 @@ void CppBridge::extendAddressPool(const std::string& wltId,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::string CppBridge::createWallet(uint32_t lookup,
+WalletAccountIdentifier CppBridge::createWallet(uint32_t lookup,
    const std::string& label, const std::string& description,
    const SecureBinaryData& controlPassphrase,
    const SecureBinaryData& passphrase,
-   const SecureBinaryData& extraEntropy
-)
+   const SecureBinaryData& extraEntropy)
 {
    //sanity check
    if (wltManager_ == nullptr) {
@@ -1142,7 +1141,7 @@ std::string CppBridge::createWallet(uint32_t lookup,
       wltPtr->setDescription(description);
    }
 
-   return wltPtr->getID();
+   return WalletAccountIdentifier{wltPtr->getID(), wltPtr->getMainAccountID()};
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1162,7 +1161,7 @@ BinaryData CppBridge::getWalletPacket(const std::string& id, MessageId msgId) co
    reply.setSuccess(true);
 
    auto walletReply = reply.initWallet();
-   auto capnWallet = walletReply.initExtendAddressPool();
+   auto capnWallet = walletReply.initGetData();
    walletToCapnp(wltPtr, wai.accountId, commentMap, capnWallet);
 
    return serializeCapnp(message);
