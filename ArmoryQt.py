@@ -26,7 +26,6 @@ import glob
 from struct import pack
 import qtpy
 from qtpy import QtCore, QtGui, QtWidgets
-import imgList_rc
 
 from armorycolors import Colors, htmlColor, QAPP
 from armoryengine.ArmoryUtils import HMAC256, \
@@ -143,6 +142,9 @@ if OS_MACOSX:
    QtWidgets.QApplication.setDesktopSettingsAware(False)
 
 MODULES_ZIP_DIR_NAME = 'modules'
+
+# Load icons into QResource system
+QtCore.QResource.registerResource("imgList.rcc")
 
 class ArmoryMainWindow(QtWidgets.QMainWindow):
    """ The primary Armory window """
