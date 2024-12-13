@@ -141,10 +141,6 @@ if OS_MACOSX:
 # - Mentions that this must be called before the app (QAPP) is created.
    QtWidgets.QApplication.setDesktopSettingsAware(False)
 
-if OS_WINDOWS:
-   from _winreg import *
-
-
 MODULES_ZIP_DIR_NAME = 'modules'
 
 class ArmoryMainWindow(QtWidgets.QMainWindow):
@@ -3096,9 +3092,14 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
       pytx = None
       txHashBin = hex_to_binary(txHash)
-      txProto = TheBridge.service.getTxByHash(txHashBin)
-      pytx = PyTx().unserialize(txProto.raw)
-      pytx.setRBF(txProto.rbf)
+      txProto = TheBridge.service.getTxsByHash([txHashBin])
+      if not txProto or len(txProto) == 0:
+         QtWidgets.QMessageBox.critical(self, self.tr('Error'), self.tr(
+         f"Could not find a transaction for hash {txHash}!", QtWidgets.QMessageBox.Ok))
+         return
+      txData = txProto[txHashBin]
+      pytx = PyTx().unserialize(txData.raw)
+      pytx.setRBF(txData.rbf)
 
       if pytx==None:
          QtWidgets.QMessageBox.critical(self, self.tr('Invalid Tx'), self.tr(
@@ -3107,7 +3108,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          return
 
       def filter(leProto):
-         return leProto.hash == txHashBin
+         return leProto.txHash == txHashBin
       le = self.ledgerView.model().getRawDataEntry(filter)
 
       DlgDispTxInfo(pytx, self.walletMap[wltID], self, self,

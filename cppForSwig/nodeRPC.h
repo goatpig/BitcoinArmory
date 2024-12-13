@@ -13,6 +13,7 @@
 #include <memory>
 #include <string>
 #include <functional>
+#include <filesystem>
 
 #include "SocketObject.h"
 #include "StringSockets.h"
@@ -188,7 +189,7 @@ private:
 
 private:
    std::string getAuthString(void);
-   std::string getDatadir(void);
+   std::filesystem::path getDatadir(void);
 
    std::string queryRPC(JSON_object&);
    std::string queryRPC(HttpSocket&, JSON_object&);

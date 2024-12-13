@@ -39,22 +39,7 @@
 #include "BitcoinP2p.h"
 #include "BDV_Notification.h"
 
-#ifndef MAXSIZE_T
-   #if defined(_WIN64) || defined(__X86_64__)
-      #define MAXSIZE_T UINT64_MAX
-   #else
-      #define MAXSIZE_T UINT32_MAX
-   #endif
-#endif
-
-#ifndef _MSC_VER
-   #include <fcntl.h>
-   #include <sys/mman.h>
-#endif
-
-
 #define NUM_BLKS_BATCH_THRESH 30
-
 #define NUM_BLKS_IS_DIRTY 2016
 
 class BlockDataManager;

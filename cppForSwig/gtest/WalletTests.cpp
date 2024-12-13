@@ -47,9 +47,9 @@ class AddressTests : public ::testing::Test
 protected:
    virtual void SetUp(void)
    {
-      homedir_ = string("./fakehomedir");
-      DBUtils::removeDirectory(homedir_);
-      mkdir(homedir_);
+      homedir_ = std::filesystem::path("./fakehomedir");
+      FileUtils::removeDirectory(homedir_);
+      std::filesystem::create_directory(homedir_);
 
       Armory::Config::parseArgs({
          "--offline",
@@ -60,10 +60,10 @@ protected:
    virtual void TearDown(void)
    {
       Armory::Config::reset();
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
    }
 
-   string homedir_;
+   std::filesystem::path homedir_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -671,9 +671,9 @@ protected:
 protected:
    virtual void SetUp(void)
    {
-      homedir_ = string("./fakehomedir");
-      DBUtils::removeDirectory(homedir_);
-      mkdir(homedir_);
+      homedir_ = std::filesystem::path("./fakehomedir");
+      FileUtils::removeDirectory(homedir_);
+      std::filesystem::create_directory(homedir_);
 
       Armory::Config::parseArgs({
          "--offline",
@@ -684,10 +684,10 @@ protected:
    virtual void TearDown(void)
    {
       Armory::Config::reset();
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
    }
 
-   string homedir_;
+   std::filesystem::path homedir_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1661,9 +1661,9 @@ class AddressEntryTest : public ::testing::Test
 protected:
    virtual void SetUp(void)
    {
-      homedir_ = string("./fakehomedir");
-      DBUtils::removeDirectory(homedir_);
-      mkdir(homedir_);
+      homedir_ = std::filesystem::path("./fakehomedir");
+      FileUtils::removeDirectory(homedir_);
+      std::filesystem::create_directory(homedir_);
 
       Armory::Config::parseArgs({
          "--offline",
@@ -1674,10 +1674,10 @@ protected:
    virtual void TearDown(void)
    {
       Armory::Config::reset();
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
    }
 
-   string homedir_;
+   std::filesystem::path homedir_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1909,7 +1909,7 @@ protected:
    virtual void SetUp()
    {
       homedir_ = std::filesystem::path("./fakehomedir");
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
       std::filesystem::create_directory(homedir_);
 
       dbPath_ = homedir_ / "wallet_test.wallet";
@@ -1927,7 +1927,7 @@ protected:
    virtual void TearDown(void)
    {
       Armory::Config::reset();
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -4034,16 +4034,16 @@ TEST_F(WalletInterfaceTest, WipeEntries_Test)
 class WalletsTest : public ::testing::Test
 {
 protected:
-   string homedir_;
+   std::filesystem::path homedir_;
    SecureBinaryData controlPass_;
    PassphraseLambda controlLbd_;
 
    /////////////////////////////////////////////////////////////////////////////
    virtual void SetUp()
    {
-      homedir_ = string("./fakehomedir");
-      DBUtils::removeDirectory(homedir_);
-      mkdir(homedir_);
+      homedir_ = std::filesystem::path("./fakehomedir");
+      FileUtils::removeDirectory(homedir_);
+      std::filesystem::create_directory(homedir_);
 
       Armory::Config::parseArgs({
          "--offline",
@@ -4061,7 +4061,7 @@ protected:
    virtual void TearDown(void)
    {
       Armory::Config::reset();
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -4134,7 +4134,7 @@ protected:
 TEST_F(WalletsTest, CreateCloseOpen_Test)
 {
    map<string, vector<BinaryData>> addrMap;
-   map<string, string> filenames;
+   map<string, std::filesystem::path> filenames;
 
    WalletCreationParams params{
       SecureBinaryData::fromString("passphrase"),
@@ -4253,7 +4253,7 @@ TEST_F(WalletsTest, CreateWOCopy_Test)
 
    //delete the underlying file so we can fork anew
    reloadWoWallet.reset();
-   unlink(woFilename.c_str());
+   std::filesystem::remove(woFilename.c_str());
 
    //fork WO from full wallet
    auto forkFilename = AssetWallet_Single::forkWatchingOnly(filename, passLbd);
@@ -4895,7 +4895,7 @@ TEST_F(WalletsTest, ControlPassphrase_Test)
          CryptoPRNG::generateRandom(124)));
    }
 
-   string filename;
+   std::filesystem::path filename;
    set<BinaryData> addrSet;
    {
       WalletCreationParams params{
@@ -5068,7 +5068,7 @@ TEST_F(WalletsTest, ControlPassphrase_Test)
       throw runtime_error("shouldn't get here");
    };
 
-   string filename2;
+   std::filesystem::path filename2;
    {
       WalletCreationParams params{
          SecureBinaryData::fromString("test"), {},
@@ -5143,7 +5143,7 @@ TEST_F(WalletsTest, ControlPassphrase_Test)
 
       //cleanup this WO
       wltWO.reset();
-      unlink(woFilename.c_str());
+      std::filesystem::remove(woFilename);
    }
 
    /***********/
@@ -6015,7 +6015,7 @@ TEST_F(WalletsTest, ChangeControlPassphrase_Test)
       homedir_, 40, 1, 1};
 
    //create wallet
-   string filename;
+   std::filesystem::path filename;
    {
       unique_ptr<Armory::Seeds::ClearTextSeed> seed(
          new Armory::Seeds::ClearTextSeed_BIP32(
@@ -7001,7 +7001,7 @@ TEST_F(WalletsTest, BIP32_SaltedAccount)
    auto salt1 = CryptoPRNG::generateRandom(32);
    auto salt2 = CryptoPRNG::generateRandom(32);
 
-   string filename;
+   std::filesystem::path filename;
    AddressAccountId accountID1;
    AddressAccountId accountID2;
 
@@ -7222,7 +7222,7 @@ TEST_F(WalletsTest, BIP32_SaltedAccount)
 TEST_F(WalletsTest, ECDH_Account)
 {
    //create blank wallet
-   string filename, woFilename;
+   std::filesystem::path filename, woFilename;
 
    auto&& privKey1 = READHEX(
       "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F");
@@ -7545,13 +7545,13 @@ TEST_F(WalletsTest, AssetPathResolution)
 
       auto pubkeyHash = BtcUtils::getHash160(pubkey);
       auto assetPair = resolver->getAssetPairForKey(pubkeyHash);
-      if (assetPair.first == nullptr)
+      if (assetPair.first == nullptr) {
          return false;
-
+      }
       auto assetXPub = wlt_single->getXpubForAssetID(assetPair.first->getID());
-      if (assetXPub != xpubStr)
+      if (assetXPub != xpubStr) {
          return false;
-
+      }
       return true;
    };
 
@@ -7582,7 +7582,7 @@ TEST_F(WalletsTest, AssetPathResolution)
 
       //cleanup original wallet
       wlt.reset();
-      unlink(filename.c_str());
+      std::filesystem::remove(filename);
 
       //check WO wallet
       auto wltWO = AssetWallet_Single::loadMainWalletFromFile(
@@ -7594,7 +7594,7 @@ TEST_F(WalletsTest, AssetPathResolution)
 
       //cleanup WO
       wltWO.reset();
-      unlink(woFilename.c_str());
+      std::filesystem::remove(woFilename);
    }
 
    {
@@ -7689,14 +7689,14 @@ TEST_F(WalletsTest, isAssetIdInUse)
 class WalletMetaDataTest : public ::testing::Test
 {
 protected:
-   string homedir_;
-   
+   std::filesystem::path homedir_;
+
    /////////////////////////////////////////////////////////////////////////////
    virtual void SetUp()
    {
-      homedir_ = string("./fakehomedir");
-      DBUtils::removeDirectory(homedir_);
-      mkdir(homedir_);
+      homedir_ = std::filesystem::path("./fakehomedir");
+      FileUtils::removeDirectory(homedir_);
+      std::filesystem::create_directory(homedir_);
 
       Armory::Config::parseArgs({
          "--offline",
@@ -7709,7 +7709,7 @@ protected:
    {
       Armory::Config::reset();
 
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
    }
 };
 
@@ -8444,7 +8444,7 @@ TEST_F(WalletMetaDataTest, Comments)
    commentMap.insert(make_pair(READHEX("22334455"), "comment3"));
 
    //create regular wallet
-   string filename;
+   std::filesystem::path filename;
    {
       WalletCreationParams params{
          passphrase, controlPass,
@@ -8513,14 +8513,14 @@ TEST_F(WalletMetaDataTest, Comments)
 class BackupTests : public ::testing::Test
 {
 public:
-   string homedir_;
+   std::filesystem::path homedir_;
 
    /////////////////////////////////////////////////////////////////////////////
    virtual void SetUp()
    {
-      homedir_ = string("./fakehomedir");
-      DBUtils::removeDirectory(homedir_);
-      mkdir(homedir_);
+      homedir_ = std::filesystem::path("./fakehomedir");
+      FileUtils::removeDirectory(homedir_);
+      std::filesystem::create_directory(homedir_);
 
       Armory::Config::parseArgs({
          "--offline",
@@ -8534,13 +8534,13 @@ public:
    {
       Armory::Config::reset();
 
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
    }
 
    /////////////////////////////////////////////////////////////////////////////
    bool compareWalletWithBackup(
       std::shared_ptr<AssetWallet_Single> assetWlt,
-      const string& path,
+      const std::filesystem::path& path,
       const std::string& pass, const std::string& control)
    {
       unsigned controlPassCount = 0;
@@ -8994,11 +8994,11 @@ TEST_F(BackupTests, BackupStrings_Legacy)
       return result;
    };
 
-   string newHomeDir("./newhomedir");
-   DBUtils::removeDirectory(newHomeDir);
-   mkdir(newHomeDir);
+   std::filesystem::path newHomeDir("./newhomedir");
+   FileUtils::removeDirectory(newHomeDir);
+   std::filesystem::create_directory(newHomeDir);
 
-   string filename;
+   std::filesystem::path filename;
    {
       //restore wallet
       auto backupCopy = Backup_Easy16::fromLines({
@@ -9033,7 +9033,7 @@ TEST_F(BackupTests, BackupStrings_Legacy)
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass, newCtrl));
-   DBUtils::removeDirectory(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -9100,11 +9100,11 @@ TEST_F(BackupTests, BackupStrings_Legacy_Armory200a)
       return result;
    };
 
-   string newHomeDir("./newhomedir");
-   DBUtils::removeDirectory(newHomeDir);
-   mkdir(newHomeDir);
+   std::filesystem::path newHomeDir("./newhomedir");
+   FileUtils::removeDirectory(newHomeDir);
+   std::filesystem::create_directory(newHomeDir);
 
-   string filename;
+   std::filesystem::path filename;
    {
       //restore wallet
       auto backupCopy = Backup_Easy16::fromLines({
@@ -9139,7 +9139,7 @@ TEST_F(BackupTests, BackupStrings_Legacy_Armory200a)
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass, newCtrl));
-   DBUtils::removeDirectory(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -9207,11 +9207,11 @@ TEST_F(BackupTests, BackupStrings_Legacy_SecurePrint)
       return result;
    };
 
-   string newHomeDir("./newhomedir");
-   DBUtils::removeDirectory(newHomeDir);
-   mkdir(newHomeDir);
+   std::filesystem::path newHomeDir("./newhomedir");
+   FileUtils::removeDirectory(newHomeDir);
+   std::filesystem::create_directory(newHomeDir);
 
-   string filename;
+   std::filesystem::path filename;
    {
       //try without sp pass
       try
@@ -9262,7 +9262,7 @@ TEST_F(BackupTests, BackupStrings_Legacy_SecurePrint)
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass, newCtrl));
-   DBUtils::removeDirectory(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -9479,11 +9479,11 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode_SecurePrint)
       return result;
    };
 
-   string newHomeDir("./newhomedir");
-   DBUtils::removeDirectory(newHomeDir);
-   mkdir(newHomeDir);
+   std::filesystem::path newHomeDir("./newhomedir");
+   FileUtils::removeDirectory(newHomeDir);
+   std::filesystem::create_directory(newHomeDir);
 
-   string filename;
+   std::filesystem::path filename;
    {
       //try without sp pass
       try
@@ -9547,7 +9547,7 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode_SecurePrint)
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass, newCtrl));
-   DBUtils::removeDirectory(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -9615,11 +9615,11 @@ TEST_F(BackupTests, BackupStrings_BIP32)
       return result;
    };
 
-   string newHomeDir("./newhomedir");
-   DBUtils::removeDirectory(newHomeDir);
-   mkdir(newHomeDir);
+   std::filesystem::path newHomeDir("./newhomedir");
+   FileUtils::removeDirectory(newHomeDir);
+   std::filesystem::create_directory(newHomeDir);
 
-   string filename;
+   std::filesystem::path filename;
    {
       //restore wallet
       auto backupCopy = Backup_Easy16::fromLines({
@@ -9654,7 +9654,7 @@ TEST_F(BackupTests, BackupStrings_BIP32)
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass, newCtrl));
-   DBUtils::removeDirectory(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -9725,8 +9725,8 @@ TEST_F(BackupTests, BackupStrings_BIP32_Virgin)
    };
 
    string newHomeDir("./newhomedir");
-   DBUtils::removeDirectory(newHomeDir);
-   mkdir(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
+   std::filesystem::create_directory(newHomeDir);
 
    //restore wallet
    auto backupCopy = Backup_Easy16::fromLines({
@@ -9765,7 +9765,7 @@ TEST_F(BackupTests, BackupStrings_BIP32_Virgin)
 
    EXPECT_EQ(backupEasy16->getWalletId(), backupEasy16_2->getWalletId());
 
-   DBUtils::removeDirectory(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -9816,7 +9816,7 @@ TEST_F(BackupTests, BackupStrings_BIP32_FromBase58)
    };
 
    //create bip32 wallet from xpriv, check it yields same xpriv
-   string filename;
+   std::filesystem::path filename;
    {
       auto backup = Backup_Base58::fromString(b58seed);
       auto wallet = Helpers::restoreFromBackup(
@@ -9869,7 +9869,7 @@ TEST_F(BackupTests, BackupStrings_BIP32_FromBase58)
 TEST_F(BackupTests, BackupStrings_BIP39)
 {
    //create a legacy wallet
-   string filename;
+   std::filesystem::path filename;
    WalletCreationParams params{
       SecureBinaryData::fromString("passphrase"),
       SecureBinaryData::fromString("control"),
@@ -9938,8 +9938,8 @@ TEST_F(BackupTests, BackupStrings_BIP39)
    };
 
    string newHomeDir("./newhomedir");
-   DBUtils::removeDirectory(newHomeDir);
-   mkdir(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
+   std::filesystem::create_directory(newHomeDir);
 
    {
       auto backupE16 = dynamic_cast<Backup_Easy16*>(backupDataArmory200d.get());
@@ -9976,8 +9976,8 @@ TEST_F(BackupTests, BackupStrings_BIP39)
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass, newCtrl));
-   DBUtils::removeDirectory(newHomeDir);
-   mkdir(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
+   std::filesystem::create_directory(newHomeDir);
 
    //restore BIP39 lambda
    auto newPass2 = CryptoPRNG::generateRandom(10).toHexStr();
@@ -10058,7 +10058,7 @@ TEST_F(BackupTests, BackupStrings_BIP39)
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass2, newCtrl2));
-   DBUtils::removeDirectory(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

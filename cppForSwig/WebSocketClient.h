@@ -13,6 +13,7 @@
 #include <future>
 #include <string>
 #include <thread>
+#include <filesystem>
 
 #include "libwebsockets.h"
 #include "ThreadSafeClasses.h"
@@ -21,7 +22,7 @@
 #include "WebSocketMessage.h"
 #include "ArmoryConfig.h"
 #include "DBClientClasses.h"
-#include "AsyncClient.h" //TODO <-- nuke this
+//#include "AsyncClient.h" //TODO <-- nuke this
 
 #include "BIP150_151.h"
 #include "AuthorizedPeers.h"
@@ -134,7 +135,7 @@ private:
 
 public:
    WebSocketClient(const std::string& addr, const std::string& port,
-      const std::string& datadir, const PassphraseLambda&,
+      const std::filesystem::path&, const PassphraseLambda&,
       bool ephemeralPeers, bool oneWayAuth,
       std::shared_ptr<RemoteCallback> cbPtr);
 

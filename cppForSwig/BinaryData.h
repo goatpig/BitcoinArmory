@@ -9,13 +9,14 @@
 #define _BINARYDATA_H_
 
 #include <stdio.h>
-#if defined(_MSC_VER) || defined(__MINGW32__)
+#include <cstring>
+#if defined(__MINGW32__) || defined(_MSC_VER)
 	#if _MSC_PLATFORM_TOOLSET < 110
 		#include <stdint.h>
    #endif
 
    #ifndef ssize_t
-      #ifdef _WIN32
+      #ifdef _MSC_VER
          #define ssize_t SSIZE_T
       #else
          #define ssize_t long
@@ -24,8 +25,7 @@
 
 #else
    #include <stdlib.h>
-   #include <inttypes.h>   
-   #include <cstring>
+   #include <inttypes.h>
    #include <stdint.h>
 
    #ifndef PAGESIZE
@@ -1523,7 +1523,7 @@ public:
          streamPtr_ = new std::ifstream;
          weOwnTheStream_ = true;
          std::ifstream* ifstreamPtr = static_cast<std::ifstream*>(streamPtr_);
-         ifstreamPtr->open(OS_TranslatePath(filename.c_str()), std::ios::in | std::ios::binary);
+         ifstreamPtr->open(filename.c_str(), std::ios::in | std::ios::binary);
          if( !ifstreamPtr->is_open() )
          {
             std::cerr << "Could not open file for reading!  File: " << filename.c_str() << std::endl;

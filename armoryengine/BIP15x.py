@@ -16,8 +16,7 @@ CHACHA20POLY1305MAXBYTESSENT = 1200
 CHACHA20POLY1305MAXPACKETSIZE = 1024 * 1024 * 1024 #1MB
 
 import sys
-sys.path.insert(1, './c20p1305_cffi')
-from c20p1305_cffi.c20p1305 import lib, ffi
+from .c20p1305 import lib, ffi
 
 AEAD_THRESHOLD_BEGIN      = 100,
 AEAD_START                = 101,
@@ -51,7 +50,7 @@ class BIP15xChannel(object):
 
    #############################################################################
    def __del__(self):
-      lib.freeBuffer(self.channel)
+      lib.bip151_cleanup_channel(self.channel)
       self.channel = None
 
    #############################################################################
@@ -60,7 +59,7 @@ class BIP15xChannel(object):
       pyencinit = ffi.buffer(encinit, 34)
       pyencinit = bytes(AEAD_ENCINIT) + pyencinit
 
-      lib.freeBuffer(encinit)
+      lib.cleanupBuffer(encinit)
       return pyencinit
 
    #############################################################################
@@ -69,7 +68,7 @@ class BIP15xChannel(object):
       pyencack = ffi.buffer(encack, 33)
       pyencack = bytes(AEAD_ENCACK) + pyencack
 
-      lib.freeBuffer(encack)
+      lib.cleanupBuffer(encack)
       return pyencack
 
    #############################################################################
@@ -97,7 +96,7 @@ class BIP15xConnection(object):
       self.sendToBridgeLbd = sendToBridgeLbd
       self.notifyReadyLbd = None
 
-      self.privkey = lib.generate_random(32)
+      self.privkey = lib.get_new_privkey()
       self.pubkey = lib.compute_pubkey(self.privkey)
 
    #############################################################################
@@ -107,9 +106,8 @@ class BIP15xConnection(object):
 
    #############################################################################
    def __del__(self):
-      print ("bip15x cleanup")
-      lib.freeBuffer(self.privkey)
-      lib.freeBuffer(self.pubkey)
+      lib.cleanupBuffer(self.privkey)
+      lib.cleanupBuffer(self.pubkey)
 
       self.privkey = None
       self.pubkey = None
@@ -225,11 +223,11 @@ class BIP15xConnection(object):
              raise AEAD_Error("auth reply failure")
 
          #append header
-         authReplyPy = ffi.buffer(authReply, 64)
-         authReplyPy = bytes(AEAD_REPLY) + bytes(authReplyPy)
+         authReplyPy = bytes(AEAD_REPLY) + \
+            bytes(ffi.buffer(authReply, 64))
 
          #cleanup C buffer
-         lib.freeBuffer(authReply)
+         lib.cleanupBuffer(authReply)
 
          #encrypt & send to client
          encrPayload = self.encrypt(authReplyPy, 65)
@@ -255,11 +253,11 @@ class BIP15xConnection(object):
              raise AEAD_Error("auth reply failure")
 
          #append header
-         authChallengePy = ffi.buffer(authChallenge, 32)
-         authChallengePy = bytes(AEAD_CHALLENGE) + bytes(authChallengePy)
+         authChallengePy = bytes(AEAD_CHALLENGE) + \
+            bytes(ffi.buffer(authChallenge, 32))
 
          #cleanup C buffer
-         lib.freeBuffer(authChallenge)
+         lib.cleanupBuffer(authChallenge)
 
          #encrypt & send to client
          encrPayload = self.encrypt(authChallengePy, 33)
@@ -308,7 +306,7 @@ class BIP15xConnection(object):
 
       decryptionResult = lib.bip15x_decrypt(\
          self.inSession.channel, payload, payloadSize, clearText)
-      if decryptionResult != 0:
+      if decryptionResult == False:
          raise AEAD_Error("failed to decrypt payload: " + str(decryptionResult))
 
       return bytes(clearText)[4:]

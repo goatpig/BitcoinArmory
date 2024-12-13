@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2021, goatpig                                          //
+//  Copyright (C) 2016-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -360,17 +360,13 @@ protected:
    /////////////////////////////////////////////////////////////////////////////
    virtual void SetUp()
    {
-      blkdir_ = string("./blkfiletest");
-      homedir_ = string("./fakehomedir");
-      ldbdir_ = string("./ldbtestdir");
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory(ldbdir_);
-
-      mkdir(blkdir_ + "/blocks");
-      mkdir(homedir_);
-      mkdir(ldbdir_);
+      FileUtils::createDirectory(blkdir_ / "blocks");
+      FileUtils::createDirectory(homedir_);
+      FileUtils::createDirectory(ldbdir_);
 
       Armory::Config::reset();
       DBSettings::setServiceType(SERVICE_UNITTEST);
@@ -401,9 +397,9 @@ protected:
    virtual void TearDown(void)
    {
       LOGENABLESTDOUT();
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory(ldbdir_);
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -612,9 +608,9 @@ protected:
    }
 
 protected:
-   string blkdir_;
-   string homedir_;
-   string ldbdir_;
+   std::filesystem::path blkdir_{"./blkfiletest"sv};
+   std::filesystem::path homedir_{"./fakehomedir"sv};
+   std::filesystem::path ldbdir_{"./ldbtestdir"sv};
 
    /*****/
    vector<BinaryData> zcKeys_;
@@ -1293,20 +1289,16 @@ protected:
       LOGDISABLESTDOUT();
       zeros_ = READHEX("00000000");
 
-      blkdir_ = string("./blkfiletest");
-      homedir_ = string("./fakehomedir");
-      ldbdir_ = string("./ldbtestdir");
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory(ldbdir_);
-
-      mkdir(blkdir_ + "/blocks");
-      mkdir(homedir_);
-      mkdir(ldbdir_);
+      FileUtils::createDirectory(blkdir_ / "blocks");
+      FileUtils::createDirectory(homedir_);
+      FileUtils::createDirectory(ldbdir_);
 
       // Put the first 5 blocks into the blkdir
-      blk0dat_ = BtcUtils::getBlkFilename(blkdir_ + "/blocks", 0);
+      blk0dat_ = FileUtils::getBlkFilename(blkdir_ / "blocks", 0);
       TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
 
       wallet1id = "wallet1";
@@ -1338,11 +1330,11 @@ protected:
       theBDMt_ = nullptr;
       clients_ = nullptr;
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory("./ldbtestdir");
-      
-      mkdir("./ldbtestdir");
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory("./ldbtestdir");
+
+      std::filesystem::create_directory("./ldbtestdir");
 
       Armory::Config::reset();
 
@@ -1353,10 +1345,10 @@ protected:
    LMDBBlockDatabase* iface_;
    BinaryData zeros_;
 
-   string blkdir_;
-   string homedir_;
-   string ldbdir_;
-   string blk0dat_;
+   std::filesystem::path blkdir_{"./blkfiletest"sv};
+   std::filesystem::path homedir_{"./fakehomedir"sv};
+   std::filesystem::path ldbdir_{"./ldbtestdir"sv};
+   std::filesystem::path blk0dat_;
 
    string wallet1id;
    string wallet2id;
@@ -1501,19 +1493,19 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ZC_Plus2)
    EXPECT_EQ(wltLB2->getFullBalance(), 15 * COIN);
 
    //add ZC
-   string zcPath(TestUtils::dataDir + "/ZCtx.tx");
+   std::filesystem::path zcPath(TestUtils::dataDir / "ZCtx.tx");
    BinaryData rawZC(TestChain::zcTxSize);
-   FILE *ff = fopen(zcPath.c_str(), "rb");
-   fread(rawZC.getPtr(), TestChain::zcTxSize, 1, ff);
-   fclose(ff);
+   std::ifstream zcStream(zcPath, std::ios::in | std::ios::binary);
+   zcStream.read(rawZC.getCharPtr(), TestChain::zcTxSize);
+   zcStream.close();
    DBTestUtils::ZcVector rawZcVec;
    rawZcVec.push_back(move(rawZC), 0);
 
-   string lbPath(TestUtils::dataDir + "/LBZC.tx");
+   std::filesystem::path lbPath(TestUtils::dataDir / "LBZC.tx");
    BinaryData rawLBZC(TestChain::lbZCTxSize);
-   FILE *flb = fopen(lbPath.c_str(), "rb");
-   fread(rawLBZC.getPtr(), TestChain::lbZCTxSize, 1, flb);
-   fclose(flb);
+   std::ifstream lbStream(lbPath, std::ios::in | std::ios::binary);
+   lbStream.read(rawLBZC.getCharPtr(), TestChain::lbZCTxSize);
+   lbStream.close();
    DBTestUtils::ZcVector rawLBZcVec;
    rawLBZcVec.push_back(move(rawLBZC), 0);
 
@@ -2304,17 +2296,17 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ZC_GetUtxos)
 
 
    //add ZC
-   string zcPath(TestUtils::dataDir + "/ZCtx.tx");
+   std::filesystem::path zcPath(TestUtils::dataDir / "ZCtx.tx");
    BinaryData rawZC(TestChain::zcTxSize);
-   FILE *ff = fopen(zcPath.c_str(), "rb");
-   fread(rawZC.getPtr(), TestChain::zcTxSize, 1, ff);
-   fclose(ff);
+   std::ifstream zcStream(zcPath, std::ios::in | std::ios::binary);
+   zcStream.read(rawZC.getCharPtr(), TestChain::zcTxSize);
+   zcStream.close();
 
-   string lbPath(TestUtils::dataDir + "/LBZC.tx");
+   std::filesystem::path lbPath(TestUtils::dataDir / "LBZC.tx");
    BinaryData rawLBZC(TestChain::lbZCTxSize);
-   FILE *flb = fopen(lbPath.c_str(), "rb");
-   fread(rawLBZC.getPtr(), TestChain::lbZCTxSize, 1, flb);
-   fclose(flb);
+   std::ifstream lbStream(lbPath, std::ios::in | std::ios::binary);
+   lbStream.read(rawLBZC.getCharPtr(), TestChain::lbZCTxSize);
+   lbStream.close();
 
    DBTestUtils::ZcVector zcVec;
    zcVec.push_back(move(rawZC), 0);
@@ -3928,20 +3920,16 @@ protected:
       LOGDISABLESTDOUT();
       zeros_ = READHEX("00000000");
 
-      blkdir_ = string("./blkfiletest");
-      homedir_ = string("./fakehomedir");
-      ldbdir_ = string("./ldbtestdir");
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory(ldbdir_);
-
-      mkdir(blkdir_ + "/blocks");
-      mkdir(homedir_);
-      mkdir(ldbdir_);
+      FileUtils::createDirectory(blkdir_ / "blocks");
+      FileUtils::createDirectory(homedir_);
+      FileUtils::createDirectory(ldbdir_);
 
       // Put the first 5 blocks into the blkdir
-      blk0dat_ = BtcUtils::getBlkFilename(blkdir_ + "/blocks", 0);
+      blk0dat_ = FileUtils::getBlkFilename(blkdir_ / "blocks", 0);
       TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
 
       initBDM();
@@ -3964,11 +3952,11 @@ protected:
       theBDMt_ = nullptr;
       clients_ = nullptr;
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory("./ldbtestdir");
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory("./ldbtestdir");
 
-      mkdir("./ldbtestdir");
+      std::filesystem::create_directory("./ldbtestdir");
 
       Armory::Config::reset();
 
@@ -3979,10 +3967,10 @@ protected:
    LMDBBlockDatabase* iface_;
    BinaryData zeros_;
 
-   string blkdir_;
-   string homedir_;
-   string ldbdir_;
-   string blk0dat_;
+   std::filesystem::path blkdir_{"./blkfiletest"sv};
+   std::filesystem::path homedir_{"./fakehomedir"sv};
+   std::filesystem::path ldbdir_{"./ldbtestdir"sv};
+   std::filesystem::path blk0dat_;
 
    string wallet1id;
 };
@@ -4110,9 +4098,8 @@ TEST_F(ZeroConfTests_Supernode, ZeroConfUpdate)
 TEST_F(ZeroConfTests_Supernode, UnrelatedZC_CheckLedgers)
 {
    TestUtils::setBlocks({ "0", "1", "2", "3", "4" }, blk0dat_);
-
    theBDMt_->start(DBSettings::initMode());
-   auto&& bdvID = DBTestUtils::registerBDV(clients_, BitcoinSettings::getMagicBytes());
+   auto bdvID = DBTestUtils::registerBDV(clients_, BitcoinSettings::getMagicBytes());
 
    vector<BinaryData> scrAddrVec;
    scrAddrVec.push_back(TestChain::scrAddrA);
@@ -4148,7 +4135,7 @@ TEST_F(ZeroConfTests_Supernode, UnrelatedZC_CheckLedgers)
    //a batch along with a ZC that hits our wallets, in order to get the 
    //notification, which comes at the BDV level (i.e. only for registered
    //wallets).
-   
+
    auto&& ZC1 = TestUtils::getTx(5, 2); //block 5, tx 2
    auto&& ZChash1 = BtcUtils::getHash256(ZC1);
 
@@ -5205,20 +5192,16 @@ protected:
       LOGDISABLESTDOUT();
       zeros_ = READHEX("00000000");
 
-      blkdir_ = string("./blkfiletest");
-      homedir_ = string("./fakehomedir");
-      ldbdir_ = string("./ldbtestdir");
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory(ldbdir_);
-
-      mkdir(blkdir_ + "/blocks");
-      mkdir(homedir_);
-      mkdir(ldbdir_);
+      FileUtils::createDirectory(blkdir_ / "blocks");
+      FileUtils::createDirectory(homedir_);
+      FileUtils::createDirectory(ldbdir_);
 
       // Put the first 5 blocks into the blkdir
-      blk0dat_ = BtcUtils::getBlkFilename(blkdir_ + "/blocks", 0);
+      blk0dat_ = FileUtils::getBlkFilename(blkdir_ / "blocks", 0);
       TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
 
       startupBIP151CTX();
@@ -5271,9 +5254,9 @@ protected:
       delete theBDMt_;
       theBDMt_ = nullptr;
 
-      DBUtils::removeDirectory(blkdir_);
-      DBUtils::removeDirectory(homedir_);
-      DBUtils::removeDirectory("./ldbtestdir");
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
 
       Armory::Config::reset();
 
@@ -5284,10 +5267,10 @@ protected:
    LMDBBlockDatabase* iface_;
    BinaryData zeros_;
 
-   string blkdir_;
-   string homedir_;
-   string ldbdir_;
-   string blk0dat_;
+   std::filesystem::path blkdir_{"./blkfiletest"sv};
+   std::filesystem::path homedir_{"./fakehomedir"sv};
+   std::filesystem::path ldbdir_{"./ldbtestdir"sv};
+   std::filesystem::path blk0dat_;
 
    string wallet1id;
 
@@ -5309,7 +5292,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, ZcUpdate)
    TestUtils::setBlocks({ "0", "1" }, blk0dat_);
    WebSocketServer::initAuthPeers(authPeersPassLbd_);
    WebSocketServer::start(theBDMt_, true);
-   auto&& serverPubkey = WebSocketServer::getPublicKey();
+   auto serverPubkey = WebSocketServer::getPublicKey();
 
    vector<BinaryData> scrAddrVec;
    scrAddrVec.push_back(TestChain::scrAddrA);
@@ -5317,7 +5300,6 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, ZcUpdate)
    scrAddrVec.push_back(TestChain::scrAddrC);
 
    theBDMt_->start(DBSettings::initMode());
-
    auto pCallback = make_shared<DBTestUtils::UTCallback>();
    auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
       "127.0.0.1", NetworkSettings::dbPort(),
@@ -5378,29 +5360,17 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, ZcUpdate)
    EXPECT_EQ(historyPage[1].getTxOutIndex(), 0U);
 
    //add the 2 zc
-   auto&& ZC1 = TestUtils::getTx(2, 1); //block 2, tx 1
-   auto&& ZChash1 = BtcUtils::getHash256(ZC1);
+   auto ZC1 = TestUtils::getTx(2, 1); //block 2, tx 1
+   auto ZChash1 = BtcUtils::getHash256(ZC1);
 
-   auto&& ZC2 = TestUtils::getTx(2, 2); //block 2, tx 2
-   auto&& ZChash2 = BtcUtils::getHash256(ZC2);
+   auto ZC2 = TestUtils::getTx(2, 2); //block 2, tx 2
+   auto ZChash2 = BtcUtils::getHash256(ZC2);
 
-   vector<BinaryData> zcVec = {ZC1, ZC2};
-   bdvObj->broadcastZC(zcVec);
+   bdvObj->broadcastZC({ZC1, ZC2});
 
    {
-      set<BinaryData> zcHashes = { ZChash1, ZChash2 };
-      set<BinaryData> scrAddrSet;
-
-      Tx zctx1(ZC1);
-      for (unsigned i = 0; i < zctx1.getNumTxOut(); i++) {
-         scrAddrSet.insert(zctx1.getScrAddrForTxOut(i));
-      }
-
-      Tx zctx2(ZC2);
-      for (unsigned i = 0; i < zctx2.getNumTxOut(); i++) {
-         scrAddrSet.insert(zctx2.getScrAddrForTxOut(i));
-      }
-
+      std::set<BinaryData> zcHashes{ ZChash1, ZChash2 };
+      std::set<BinaryData> scrAddrSet{ TestChain::scrAddrB };
       pCallback->waitOnZc(zcHashes, scrAddrSet);
    }
 
@@ -5646,24 +5616,8 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, ZcUpdate_RPC)
 
    bdvObj->broadcastThroughRPC(ZC1);
    bdvObj->broadcastThroughRPC(ZC2);
-
-   {
-      set<BinaryData> zcHashes = { ZChash1, ZChash2 };
-      set<BinaryData> scrAddrSet1, scrAddrSet2;
-
-      Tx zctx1(ZC1);
-      for (unsigned i = 0; i < zctx1.getNumTxOut(); i++) {
-         scrAddrSet1.insert(zctx1.getScrAddrForTxOut(i));
-      }
-
-      Tx zctx2(ZC2);
-      for (unsigned i = 0; i < zctx2.getNumTxOut(); i++) {
-         scrAddrSet2.insert(zctx2.getScrAddrForTxOut(i));
-      }
-
-      pCallback->waitOnZc({ZChash1}, scrAddrSet1);
-      pCallback->waitOnZc({ZChash2}, scrAddrSet2);
-   }
+   pCallback->waitOnZc({ZChash1}, {TestChain::scrAddrB});
+   pCallback->waitOnZc({ZChash2}, {TestChain::scrAddrB});
 
    //get the new ledgers
    auto ledger2_prom =
@@ -5891,23 +5845,8 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, ZcUpdate_RPC_Fallback)
    nodePtr_->skipZc(2);
    bdvObj->broadcastZC({ZC1});
    bdvObj->broadcastZC({ZC2});
-
-   {
-      set<BinaryData> scrAddrSet1, scrAddrSet2;
-
-      Tx zctx1(ZC1);
-      for (unsigned i = 0; i < zctx1.getNumTxOut(); i++) {
-         scrAddrSet1.insert(zctx1.getScrAddrForTxOut(i));
-      }
-
-      Tx zctx2(ZC2);
-      for (unsigned i = 0; i < zctx2.getNumTxOut(); i++) {
-         scrAddrSet2.insert(zctx2.getScrAddrForTxOut(i));
-      }
-
-      pCallback->waitOnZc({ZChash1}, scrAddrSet1);
-      pCallback->waitOnZc({ZChash2}, scrAddrSet2);
-   }
+   pCallback->waitOnZc({ZChash1}, {TestChain::scrAddrB});
+   pCallback->waitOnZc({ZChash2}, {TestChain::scrAddrB});
 
    //get the new ledgers
    auto ledger2_prom =
@@ -6137,23 +6076,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, ZcUpdate_RPC_Fallback_SingleBatch)
    nodePtr_->skipZc(2);
    vector<BinaryData> zcVec = {ZC1, ZC2};
    bdvObj->broadcastZC(zcVec);
-
-   {
-      set<BinaryData> zcHashes = { ZChash1, ZChash2 };
-      set<BinaryData> scrAddrSet;
-
-      Tx zctx1(ZC1);
-      for (unsigned i = 0; i < zctx1.getNumTxOut(); i++) {
-         scrAddrSet.insert(zctx1.getScrAddrForTxOut(i));
-      }
-
-      Tx zctx2(ZC2);
-      for (unsigned i = 0; i < zctx2.getNumTxOut(); i++) {
-         scrAddrSet.insert(zctx2.getScrAddrForTxOut(i));
-      }
-
-      pCallback->waitOnZc(zcHashes, scrAddrSet);
-   }
+   pCallback->waitOnZc({ZChash1, ZChash2}, {TestChain::scrAddrB});
 
    //get the new ledgers
    auto ledger2_prom =
@@ -6382,23 +6305,8 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, ZcUpdate_AlreadyInMempool)
    //pushZC
    bdvObj->broadcastZC({ZC1});
    bdvObj->broadcastZC({ZC2});
-
-   {
-      set<BinaryData> scrAddrSet1, scrAddrSet2;
-
-      Tx zctx1(ZC1);
-      for (unsigned i = 0; i < zctx1.getNumTxOut(); i++) {
-         scrAddrSet1.insert(zctx1.getScrAddrForTxOut(i));
-      }
-
-      Tx zctx2(ZC2);
-      for (unsigned i = 0; i < zctx2.getNumTxOut(); i++) {
-         scrAddrSet2.insert(zctx2.getScrAddrForTxOut(i));
-      }
-
-      pCallback->waitOnZc({ZChash1}, scrAddrSet1);
-      pCallback->waitOnZc({ZChash2}, scrAddrSet2);
-   }
+   pCallback->waitOnZc({ZChash1}, {TestChain::scrAddrB});
+   pCallback->waitOnZc({ZChash2}, {TestChain::scrAddrB});
 
    //push them again, should get already in mempool error
    bdvObj->broadcastZC({ZC1});
@@ -6633,33 +6541,13 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, ZcUpdate_AlreadyInMempool_Batched)
 
    //push the first zc
    bdvObj->broadcastZC({ZC1});
-   {
-      set<BinaryData> zcHashes = { ZChash1 };
-      set<BinaryData> scrAddrSet;
-
-      Tx zctx1(ZC1);
-      for (unsigned i = 0; i < zctx1.getNumTxOut(); i++) {
-         scrAddrSet.insert(zctx1.getScrAddrForTxOut(i));
-      }
-
-      pCallback->waitOnZc(zcHashes, scrAddrSet);
-   }
+   pCallback->waitOnZc({ZChash1}, {TestChain::scrAddrB});
 
    //push them again, should get already in mempool error for first zc, notif for 2nd
    bdvObj->broadcastZC( { ZC1, ZC2 } );
    pCallback->waitOnError(
       ZChash1, ArmoryErrorCodes::ZcBroadcast_AlreadyInMempool);
-
-   {
-      set<BinaryData> zcHashes = { ZChash2 };
-      set<BinaryData> scrAddrSet;
-
-      Tx zctx2(ZC2);
-      for (unsigned i = 0; i < zctx2.getNumTxOut(); i++) {
-         scrAddrSet.insert(zctx2.getScrAddrForTxOut(i));
-      }
-      pCallback->waitOnZc(zcHashes, scrAddrSet);
-   }
+   pCallback->waitOnZc({ZChash2}, {TestChain::scrAddrB});
 
    //get the new ledgers
    auto ledger2_prom =
@@ -6811,8 +6699,8 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, ZcUpdate_AlreadyInNodeMempool)
    nodePtr_->checkSigs(false);
 
    //grab the first zc
-   auto&& ZC1 = TestUtils::getTx(2, 1); //block 2, tx 1
-   auto&& ZChash1 = BtcUtils::getHash256(ZC1);
+   auto ZC1 = TestUtils::getTx(2, 1); //block 2, tx 1
+   auto ZChash1 = BtcUtils::getHash256(ZC1);
 
    {
       //feed to node mempool while the zc parser is down
@@ -6895,29 +6783,12 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, ZcUpdate_AlreadyInNodeMempool)
    EXPECT_EQ(historyPage[0].getTxOutIndex(), 0U);
 
    //add the 2 zc
-
    auto ZC2 = TestUtils::getTx(2, 2); //block 2, tx 2
    auto ZChash2 = BtcUtils::getHash256(ZC2);
 
    vector<BinaryData> zcVec = {ZC1, ZC2};
    bdvObj->broadcastZC(zcVec);
-
-   {
-      set<BinaryData> zcHashes = { ZChash1, ZChash2 };
-      set<BinaryData> scrAddrSet;
-
-      Tx zctx1(ZC1);
-      for (unsigned i = 0; i < zctx1.getNumTxOut(); i++) {
-         scrAddrSet.insert(zctx1.getScrAddrForTxOut(i));
-      }
-
-      Tx zctx2(ZC2);
-      for (unsigned i = 0; i < zctx2.getNumTxOut(); i++) {
-         scrAddrSet.insert(zctx2.getScrAddrForTxOut(i));
-      }
-
-      pCallback->waitOnZc(zcHashes, scrAddrSet);
-   }
+   pCallback->waitOnZc({ZChash1, ZChash2}, {TestChain::scrAddrB});
 
    //get the new ledgers
    auto ledger2_prom =
@@ -9023,7 +8894,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BatchZcChain_ConflictingChildren)
          signer.addRecipient(recA);
 
          auto recChange = make_shared<Recipient_P2PKH>(
-            TestChain::scrAddrD.getSliceCopy(1, 20), 
+            TestChain::scrAddrD.getSliceCopy(1, 20),
             spender->getValue() - recA->getValue());
          signer.addRecipient(recChange);
 
@@ -9101,7 +8972,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BatchZcChain_ConflictingChildren)
          signer.sign();
          rawTx3 = signer.serializeSignedTx();
       }
-      
+
       Tx tx1_B(rawTx1_B);
       Tx tx1_C(rawTx1_C);
       Tx tx2(rawTx2);
@@ -9109,19 +8980,20 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BatchZcChain_ConflictingChildren)
 
       //batch push all tx
       bdvObj->broadcastZC({ rawTx1_B, rawTx1_C, rawTx2, rawTx3 });
-      set<BinaryData> txHashes;
-      txHashes.insert(tx1_B.getThisHash());
-      txHashes.insert(tx1_C.getThisHash());
-      txHashes.insert(tx2.getThisHash());
-      txHashes.insert(tx3.getThisHash());
+      std::set<BinaryData> txHashes {
+         tx1_B.getThisHash(),
+         tx1_C.getThisHash(),
+         tx2.getThisHash()
+      };
 
-      set<BinaryData> scrAddrSet;
-      scrAddrSet.insert(TestChain::scrAddrA);
-      scrAddrSet.insert(TestChain::scrAddrB);
-      scrAddrSet.insert(TestChain::scrAddrC);
-      scrAddrSet.insert(TestChain::scrAddrD);
-      scrAddrSet.insert(TestChain::scrAddrE);
-      scrAddrSet.insert(TestChain::scrAddrF);
+      std::set<BinaryData> scrAddrSet {
+         TestChain::scrAddrA,
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE,
+         TestChain::scrAddrF
+      };
 
       //wait on zc error for conflicting child
       pCallback->waitOnError(
@@ -9411,34 +9283,33 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BatchZcChain_ConflictingChildren_Alrea
       Tx tx3(rawTx3);
 
       {
-         set<BinaryData> txHashes;
-         txHashes.insert(tx1_B.getThisHash());
-
-         set<BinaryData> scrAddrSet;
-         scrAddrSet.insert(TestChain::scrAddrA);
-         scrAddrSet.insert(TestChain::scrAddrB);
-         scrAddrSet.insert(TestChain::scrAddrD);
+         std::set<BinaryData> scrAddrSet{
+            TestChain::scrAddrA,
+            TestChain::scrAddrB,
+            TestChain::scrAddrD
+         };
 
          //push the first zc
          bdvObj->broadcastZC({rawTx1_B});
 
          //wait on notification
-         pCallback->waitOnZc(txHashes, scrAddrSet);
+         pCallback->waitOnZc({tx1_B.getThisHash()}, scrAddrSet);
       }
 
       //batch push all tx
       bdvObj->broadcastZC({ rawTx1_B, rawTx1_C, rawTx2, rawTx3 });
 
-      set<BinaryData> txHashes;
-      txHashes.insert(tx1_C.getThisHash());
-      txHashes.insert(tx2.getThisHash());
-      txHashes.insert(tx3.getThisHash());
+      std::set<BinaryData> txHashes {
+         tx1_C.getThisHash(),
+         tx2.getThisHash()
+      };
 
-      set<BinaryData> scrAddrSet;
-      scrAddrSet.insert(TestChain::scrAddrC);
-      scrAddrSet.insert(TestChain::scrAddrD);
-      scrAddrSet.insert(TestChain::scrAddrE);
-      scrAddrSet.insert(TestChain::scrAddrF);
+      std::set<BinaryData> scrAddrSet {
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE,
+         TestChain::scrAddrF
+      };
 
       //wait on zc error for conflicting child
       pCallback->waitOnError(
@@ -11597,16 +11468,15 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BroadcastSameZC_RPCThenP2P)
 
    //create N side instances
    vector<shared_ptr<WSClient>> sideInstances;
-   for (unsigned i=0; i<N; i++)
-      sideInstances.emplace_back(setupBDV());   
+   for (unsigned i=0; i<N; i++) {
+      sideInstances.emplace_back(setupBDV());
+   }
 
    //get addresses for tx lambda
    auto getAddressesForRawTx = [&outputMap](const Tx& tx)->set<BinaryData>
    {
-      set<BinaryData> addrSet;
-
-      for (unsigned i=0; i<tx.getNumTxIn(); i++)
-      {
+      std::set<BinaryData> addrSet;
+      for (unsigned i=0; i<tx.getNumTxIn(); i++) {
          auto txin = tx.getTxInCopy(i);
          auto op = txin.getOutPoint();
 
@@ -11620,8 +11490,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BroadcastSameZC_RPCThenP2P)
          addrSet.insert(utxo.getRecipientScrAddr());
       }
 
-      for (unsigned i=0; i<tx.getNumTxOut(); i++)
-      {
+      for (unsigned i=0; i<tx.getNumTxOut(); i++) {
          auto txout = tx.getTxOutCopy(i);
          addrSet.insert(txout.getScrAddressStr());
       }
@@ -11629,17 +11498,16 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BroadcastSameZC_RPCThenP2P)
       return addrSet;
    };
 
-   set<BinaryData> mainScrAddrSet;
-   set<BinaryData> mainHashes;   
+   std::set<BinaryData> mainScrAddrSet;
+   std::set<BinaryData> mainHashes;
    {
-      vector<unsigned> zcIds = {1, 2};
-      for (auto& id : zcIds)
-      {
+      std::vector<unsigned> zcIds = {1, 2};
+      for (auto& id : zcIds) {
          Tx tx(rawTxVec[id - 1]);
          mainHashes.insert(tx.getThisHash());
          auto localAddrSet = getAddressesForRawTx(tx);
          mainScrAddrSet.insert(localAddrSet.begin(), localAddrSet.end());
-      }   
+      }
    }
 
    //case 1
@@ -11648,13 +11516,12 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BroadcastSameZC_RPCThenP2P)
       auto instance = sideInstances[instanceId];
 
       //push 1-2, 3
-      vector<unsigned> zcIds = {1, 2, 3};
+      std::vector<unsigned> zcIds = {1, 2, 3};
 
-      vector<BinaryData> zcs;
-      set<BinaryData> addrSet;
-      set<BinaryData> hashSet;
-      for (auto& id : zcIds)
-      {
+      std::vector<BinaryData> zcs;
+      std::set<BinaryData> addrSet;
+      std::set<BinaryData> hashSet;
+      for (auto& id : zcIds) {
          zcs.push_back(rawTxVec[id - 1]);
          Tx tx(rawTxVec[id - 1]);
          hashSet.insert(tx.getThisHash());
@@ -11665,7 +11532,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BroadcastSameZC_RPCThenP2P)
       instance->callbackPtr_->waitOnZc(hashSet, addrSet);
 
       //wait on broadcast errors
-      map<BinaryData, ArmoryErrorCodes> errorMap;
+      std::map<BinaryData, ArmoryErrorCodes> errorMap;
       errorMap.emplace(zcHashes[0], ArmoryErrorCodes::ZcBroadcast_AlreadyInMempool);
       instance->callbackPtr_->waitOnErrors(errorMap);
    };
@@ -11678,7 +11545,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BroadcastSameZC_RPCThenP2P)
 
       //push 1-2
 
-      set<BinaryData> scrAddrSet1, scrAddrSet2;
+      std::set<BinaryData> scrAddrSet1, scrAddrSet2;
       BinaryData hash1, hash2;
       {
          Tx tx(rawTxVec[0]);
@@ -11699,11 +11566,11 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BroadcastSameZC_RPCThenP2P)
       delay for 1 second before starting side jobs to make sure the 
       primary broadcast is first in line
       */
-      this_thread::sleep_for(chrono::seconds(1));
+      std::this_thread::sleep_for(1s);
 
       //start the side jobs
-      vector<thread> threads;
-      threads.push_back(thread(case1, 0));
+      std::vector<std::thread> threads;
+      threads.emplace_back(std::thread(case1, 0));
 
       //wait on zc
       mainInstance->callbackPtr_->waitOnZc({hash1}, scrAddrSet1);

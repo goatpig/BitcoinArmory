@@ -16,6 +16,7 @@
 #include <string>
 #include <mutex>
 #include <functional>
+#include <filesystem>
 
 #include "lmdbpp.h"
 #include "BinaryData.h"
@@ -154,7 +155,7 @@ namespace Armory
             //wallet structure
             std::map<std::string, std::shared_ptr<WalletHeader>> headerMap_;
 
-            std::string path_;
+            std::filesystem::path path_;
             unsigned dbCount_ = 0;
 
             std::unique_ptr<Encryption::DecryptedDataContainer> decryptedData_;
@@ -189,7 +190,7 @@ namespace Armory
             void closeEnv(void);
 
             void compactFile();
-            static void wipeAndDeleteFile(const std::string&);
+            static void wipeAndDeleteFile(const std::filesystem::path&);
 
          public:
             //tors
@@ -197,12 +198,12 @@ namespace Armory
             ~WalletDBInterface(void);
 
             //setup
-            void setupEnv(const std::string&, bool,
+            void setupEnv(const std::filesystem::path&, bool,
                const PassphraseLambda&, uint32_t);
             void shutdown(void);
             void eraseFromDisk(void);
 
-            const std::string& getFilename(void) const;
+            const std::filesystem::path& getFilename(void) const;
 
             //headers
             static MasterKeyStruct initWalletHeaderObject(

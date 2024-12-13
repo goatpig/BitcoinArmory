@@ -13,6 +13,12 @@
 ////////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {
+#ifdef _WIN32
+   WSADATA wsaData;
+   WORD wVersion = MAKEWORD(2, 0);
+   WSAStartup(wVersion, &wsaData);
+#endif
+
    CryptoECDSA::setupContext();
    startupBIP151CTX();
    startupBIP150CTX(4);
@@ -23,11 +29,7 @@ int main(int argc, char* argv[])
       args[i] = argv[i];
    }
 
-   //enable logs
-   STARTLOGGING(
-      Armory::Config::Pathing::logFilePath("bridgeLog"), LogLvlDebug);
-   LOGENABLESTDOUT();
-
+   //append pubkey to arg list
    auto pubKeyHex = std::getenv("SERVER_PUBKEY");
    if (pubKeyHex == nullptr) {
       LOGERR << "could not find pubkey env var, aborting!";
@@ -36,6 +38,7 @@ int main(int argc, char* argv[])
    auto pubKeyStr = std::string("--uiPubKey=") + pubKeyHex;
    args[argc] = (char*)pubKeyStr.c_str();
 
+   //grab ephemeral GUI server port
    auto bridgePortChar = std::getenv("BRIDGE_PORT");
    if (bridgePortChar == nullptr) {
       LOGERR << "could not find bridge port env var, aborting!";
@@ -44,18 +47,21 @@ int main(int argc, char* argv[])
    std::string bridgePortStr(bridgePortChar);
 
    //init static configuration variables
-   LOGINFO << "parsing arguments";
    Armory::Config::parseArgs(count, args,
       Armory::Config::ProcessType::Bridge);
 
+   //turn on logging
+   auto bridgeLogPath = Armory::Config::Pathing::logFilePath("bridgeLog");
+   STARTLOGGING(bridgeLogPath.string(), LogLvlDebug);
+   LOGENABLESTDOUT();
+
+   LOGINFO << "bridge log: " << bridgeLogPath.string();
    LOGINFO << "cppbridge args:" <<
+      "\n - datadir: " << Armory::Config::getDataDir().string() <<
       "\n - offline: " << Armory::Config::NetworkSettings::isOffline() <<
       "\n - auth mode: " << Armory::Config::NetworkSettings::oneWayAuth() <<
       "\n - db port: " << Armory::Config::NetworkSettings::dbPort() <<
       "\n - bridge port: " << bridgePortStr;
-
-   STARTLOGGING(
-      Armory::Config::Pathing::logFilePath("bridgeLog"), LogLvlDebug);
 
    //setup the bridge
    auto bridge = std::make_shared<Armory::Bridge::CppBridge>(

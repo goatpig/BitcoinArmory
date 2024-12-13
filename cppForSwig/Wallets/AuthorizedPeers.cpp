@@ -8,7 +8,6 @@
 
 #include <stdio.h>
 #include <cstdarg>
-#include <filesystem>
 
 #include "BIP150_151.h"
 #include "BIP32_Node.h"
@@ -27,7 +26,7 @@ using namespace Armory::Seeds;
 
 ////////////////////////////////////////////////////////////////////////////////
 AuthorizedPeers::AuthorizedPeers(
-   const string& datadir, const string& filename,
+   const std::filesystem::path& datadir, const string& filename,
    const PassphraseLambda& passLbd)
 {
    auto path = std::filesystem::path(datadir) / filename;
@@ -143,9 +142,9 @@ AuthorizedPeers::AuthorizedPeers()
 
 ////////////////////////////////////////////////////////////////////////////////
 void AuthorizedPeers::loadWallet(
-   const string& path, const PassphraseLambda& passLbd)
+   const std::filesystem::path& path, const PassphraseLambda& passLbd)
 {
-   if (!DBUtils::fileExists(path, 6)) {
+   if (!FileUtils::fileExists(path, 6)) {
       throw PeerFileMissing();
    }
    wallet_ = AssetWallet::loadMainWalletFromFile(path, passLbd);
@@ -153,7 +152,7 @@ void AuthorizedPeers::loadWallet(
 
 ////////////////////////////////////////////////////////////////////////////////
 void AuthorizedPeers::createWallet(
-   const string& baseDir, const string& filename,
+   const std::filesystem::path& baseDir, const string& filename,
    const PassphraseLambda& passLbd)
 {
    //Default peers wallet password. Asset wallets always encrypt private keys,
@@ -213,7 +212,7 @@ void AuthorizedPeers::createWallet(
       throw AuthorizedPeersException("failed to setup peers wallet");
    }
    currentname.append("-lock");
-   remove(currentname.c_str());
+   std::filesystem::remove(currentname);
 
    //load from new file path in order to have valid db object
    //capture the controlPass in local lambda to avoid prompting the user again

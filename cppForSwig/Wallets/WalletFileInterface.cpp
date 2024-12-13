@@ -41,13 +41,13 @@ WalletDBInterface::~WalletDBInterface()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void WalletDBInterface::setupEnv(const string& path, bool fileExists,
-   const PassphraseLambda& passLbd, uint32_t lockTime_ms)
+void WalletDBInterface::setupEnv(const std::filesystem::path& path,
+   bool fileExists, const PassphraseLambda& passLbd, uint32_t lockTime_ms)
 {
    auto lock = unique_lock<mutex>(setupMutex_);
-   if (dbEnv_ != nullptr)
+   if (dbEnv_ != nullptr) {
       return;
-
+   }
    path_ = path;
    dbCount_ = 2;
 
@@ -244,11 +244,11 @@ void WalletDBInterface::openDB(std::shared_ptr<WalletHeader> headerPtr,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const string& WalletDBInterface::getFilename() const
+const std::filesystem::path& WalletDBInterface::getFilename() const
 {
-   if (dbEnv_ == nullptr)
+   if (dbEnv_ == nullptr) {
       throw WalletInterfaceException("null dbEnv");
-
+   }
    return dbEnv_->getFilename();
 }
 
@@ -587,11 +587,13 @@ void WalletDBInterface::setDbCount(unsigned count)
 ////////////////////////////////////////////////////////////////////////////////
 void WalletDBInterface::openDbEnv(bool fileExists)
 {
-   if (DBUtils::fileExists(path_, 0) != fileExists)
+   if (FileUtils::fileExists(path_, 0) != fileExists) {
       throw WalletInterfaceException("[openEnv] file flag mismatch");
+   }
 
-   if (dbEnv_ != nullptr)
+   if (dbEnv_ != nullptr) {
       throw WalletInterfaceException("[openEnv] dbEnv already instantiated");
+   }
 
    dbEnv_ = make_unique<LMDBEnv>(dbCount_);
    dbEnv_->open(path_, MDB_NOTLS);
@@ -757,18 +759,18 @@ void WalletDBInterface::compactFile()
    //create copy name
    auto fullDbPath = getFilename();
    auto swapFolder = std::filesystem::path(fullDbPath).replace_filename(COMPACT_FILE_FOLDER);
-   if (!DBUtils::fileExists(swapFolder, 0)) {
+   if (!FileUtils::fileExists(swapFolder, 0)) {
       if (!std::filesystem::create_directory(swapFolder)) {
          throw WalletInterfaceException("could not create wallet swap folder");
       }
    }
 
-   string copyName;
+   std::filesystem::path copyName;
    while (true) {
       stringstream ss;
       ss << COMPACT_FILE_COPY_NAME << "-" << fortuna_->generateRandom(16).toHexStr();
       auto fullpath = swapFolder / std::filesystem::path(ss.str());
-      if (!DBUtils::fileExists(fullpath, 0)) {
+      if (!FileUtils::fileExists(fullpath, 0)) {
          copyName = fullpath;
          break;
       }
@@ -781,14 +783,12 @@ void WalletDBInterface::compactFile()
    closeEnv();
 
    //swap files
-   string swapPath;
-
-
+   std::filesystem::path swapPath;
    while (true) {
       stringstream ss;
       ss << COMPACT_FILE_SWAP_NAME << "-" << fortuna_->generateRandom(16).toHexStr();
       auto fullpath = swapFolder / std::filesystem::path(ss.str());
-      if (DBUtils::fileExists(fullpath, 0)) {
+      if (FileUtils::fileExists(fullpath, 0)) {
          continue;
       }
       swapPath = fullpath;
@@ -814,16 +814,15 @@ void WalletDBInterface::compactFile()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void WalletDBInterface::wipeAndDeleteFile(const string& path)
+void WalletDBInterface::wipeAndDeleteFile(const std::filesystem::path& path)
 {
    if (path.empty()) {
       return;
    }
 
    {
-      auto fileMap = DBUtils::getMmapOfFile(path, true);
-      memset(fileMap.filePtr_, 0, fileMap.size_);
-      fileMap.unmap();
+      FileUtils::FileMap fileMap(path, true);
+      memset(fileMap.ptr(), 0, fileMap.size());
    }
 
    if (!std::filesystem::remove(path)) {

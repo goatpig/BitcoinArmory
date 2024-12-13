@@ -1,12 +1,10 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-2021, goatpig                                          //
+//  Copyright (C) 2016-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
-
-#include <filesystem>
 
 #include "ArmoryConfig.h"
 #include "BtcUtils.h"
@@ -22,21 +20,25 @@
 
 #include "gtest/NodeUnitTest.h"
 
-using namespace std;
+#include <string_view>
+#include <charconv>
+
+namespace fs = std::filesystem;
+using namespace std::literals::string_view_literals;
 using namespace Armory;
 using namespace Armory::Config;
 
 ////////////////////////////////////////////////////////////////////////////////
-#define DEFAULT_DBDIR_SUFFIX "/databases"
+#define DEFAULT_DBDIR_SUFFIX "databases"
 
 #if defined(_WIN32)
-#define MAINNET_DEFAULT_DATADIR "~/Armory"
-#define TESTNET_DEFAULT_DATADIR "~/Armory/testnet3"
-#define REGTEST_DEFAULT_DATADIR "~/Armory/regtest"
+#define MAINNET_DEFAULT_DATADIR "Armory"
+#define TESTNET_DEFAULT_DATADIR "Armory/testnet3"
+#define REGTEST_DEFAULT_DATADIR "Armory/regtest"
 
-#define MAINNET_DEFAULT_BLOCKPATH "~/Bitcoin/blocks"
-#define TESTNET_DEFAULT_BLOCKPATH "~/Bitcoin/testnet3/blocks"
-#define REGTEST_DEFAULT_BLOCKPATH "~/Bitcoin/regtest/blocks"
+#define MAINNET_DEFAULT_BLOCKPATH "Bitcoin/blocks"
+#define TESTNET_DEFAULT_BLOCKPATH "Bitcoin/testnet3/blocks"
+#define REGTEST_DEFAULT_BLOCKPATH "Bitcoin/regtest/blocks"
 
 #elif defined(__APPLE__)
 #define MAINNET_DEFAULT_DATADIR "~/Library/Application Support/Armory"
@@ -48,20 +50,20 @@ using namespace Armory::Config;
 #define REGTEST_DEFAULT_BLOCKPATH "~/Library/Application Support/Bitcoin/regtest/blocks"
 
 #else
-#define MAINNET_DEFAULT_DATADIR "~/.armory"
-#define TESTNET_DEFAULT_DATADIR "~/.armory/testnet3"
-#define REGTEST_DEFAULT_DATADIR "~/.armory/regtest"
+#define MAINNET_DEFAULT_DATADIR ".armory"
+#define TESTNET_DEFAULT_DATADIR ".armory/testnet3"
+#define REGTEST_DEFAULT_DATADIR ".armory/regtest"
 
-#define MAINNET_DEFAULT_BLOCKPATH "~/.bitcoin/blocks"
-#define TESTNET_DEFAULT_BLOCKPATH "~/.bitcoin/testnet3/blocks"
-#define REGTEST_DEFAULT_BLOCKPATH "~/.bitcoin/regtest/blocks"
+#define MAINNET_DEFAULT_BLOCKPATH ".bitcoin/blocks"
+#define TESTNET_DEFAULT_BLOCKPATH ".bitcoin/testnet3/blocks"
+#define REGTEST_DEFAULT_BLOCKPATH ".bitcoin/regtest/blocks"
 
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
 void Armory::Config::printHelp(void)
 {
-  static std::string helpMsg = R"(
+  static std::string_view helpMsg = R"(
 --help                     print help message and exit
 --testnet                  run db against testnet bitcoin network
 --regtest                  run db against regression test network
@@ -113,15 +115,15 @@ void Armory::Config::printHelp(void)
 --public                   BIP150 auth will allow for anonymous requesters.
                            While only clients can be anon (servers/responders are
                            always auth'ed), both sides need to enable public
-                           channels for the handshake to succeed)   
+                           channels for the handshake to succeed)
 --offline                  Do not seek to connect with the ArmoryDB blockchain
-                           service)";
+                           service)"sv;
 
-   cerr << helpMsg << endl;
+   std::cerr << helpMsg << std::endl;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const string& Armory::Config::getDataDir()
+const fs::path& Armory::Config::getDataDir()
 {
    return BaseSettings::dataDir_;
 }
@@ -129,22 +131,22 @@ const string& Armory::Config::getDataDir()
 ////////////////////////////////////////////////////////////////////////////////
 void Armory::Config::parseArgs(int argc, char* argv[], ProcessType procType)
 {
-   vector<string> lines;
+   std::vector<std::string> lines;
    lines.reserve(argc);
-   for (int i=1; i<argc; i++)
+   for (int i=1; i<argc; i++) {
       lines.emplace_back(argv[i], strlen(argv[i]));
-
+   }
    Armory::Config::parseArgs(lines, procType);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 void Armory::Config::parseArgs(
-   const vector<string>& lines, ProcessType procType)
+   const std::vector<std::string>& lines, ProcessType procType)
 {
-   unique_lock<mutex> lock(BaseSettings::configMutex_);
+   std::unique_lock<std::mutex> lock(BaseSettings::configMutex_);
    if (BaseSettings::initCount_++ > 0) {
       LOGERR << "Trying to override config";
-      throw runtime_error("Trying to override config");
+      throw std::runtime_error("Trying to override config");
    }
 
    /*
@@ -156,20 +158,23 @@ void Armory::Config::parseArgs(
 
    try {
       //parse command line args
-      map<string, string> args;
+      std::map<std::string, std::string> args;
       for (const auto& line : lines) {
          if (line == ("--help")) {
             Armory::Config::printHelp();
             exit(0);
          }
 
-         //string prefix and tokenize
-         auto strings = SettingsUtils::tokenizeLine(line, "--");
-         for (auto& line : strings) {
-            auto keyVal = SettingsUtils::getKeyValFromLine(line, '=');
-            args.insert(make_pair(
-               keyVal.first, SettingsUtils::stripQuotes(keyVal.second)));
+         //strip '--' from the line if present
+         std::string_view lineView(line);
+         if (line.size() > 2 && line[0] == '-' && line[1] == '-') {
+            lineView = std::string_view (&line[2], line.size() - 2);
          }
+         auto keyVal = SettingsUtils::getKeyValFromLine(lineView, '=');
+         args.emplace(
+            keyVal.first,
+            SettingsUtils::stripQuotes(keyVal.second)
+         );
       }
 
       //figure out the network
@@ -179,8 +184,8 @@ void Armory::Config::parseArgs(
       BaseSettings::detectDataDir(args);
 
       //get config file
-      auto configPath = std::filesystem::path(Armory::Config::getDataDir()) / "armorydb.conf";
-      if (SettingsUtils::fileExists(configPath, 2)) {
+      auto configPath = fs::path(Armory::Config::getDataDir()) / "armorydb.conf";
+      if (FileUtils::fileExists(configPath, 2)) {
          Config::File cf(configPath);
          auto mapIter = cf.keyvalMap_.find("datadir");
          if (mapIter != cf.keyvalMap_.end()) {
@@ -202,7 +207,7 @@ void Armory::Config::parseArgs(
       //db settings
       DBSettings::processArgs(args);
    } catch (const Config::Error& e) {
-      cerr << e.what() << endl;
+      std::cerr << e.what() << std::endl;
       throw e;
    }
 }
@@ -210,7 +215,7 @@ void Armory::Config::parseArgs(
 ////////////////////////////////////////////////////////////////////////////////
 void Armory::Config::reset()
 {
-   unique_lock<mutex> lock(BaseSettings::configMutex_);
+   std::unique_lock<std::mutex> lock(BaseSettings::configMutex_);
 
    NetworkSettings::reset();
    Pathing::reset();
@@ -223,179 +228,126 @@ void Armory::Config::reset()
 // SettingsUtils
 //
 ////////////////////////////////////////////////////////////////////////////////
-vector<string> SettingsUtils::getLines(const string& path)
+std::vector<std::string> SettingsUtils::getLines(const fs::path& path)
 {
-   vector<string> output;
-   fstream fs(path, ios_base::in);
+   std::vector<std::string> output;
+   std::fstream inStream(path, std::ios_base::in);
 
-   while (fs.good())
-   {
-      string str;
-      getline(fs, str);
-      output.push_back(move(str));
+   while (inStream.good()) {
+      std::string str;
+      std::getline(inStream, str);
+      output.emplace_back(std::move(str));
    }
-
    return output;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-map<string, string> SettingsUtils::getKeyValsFromLines(
-   const vector<string>& lines, char delim)
+std::map<std::string, std::string> SettingsUtils::getKeyValsFromLines(
+   const std::vector<std::string>& lines, char delim)
 {
-   map<string, string> output;
-   for (auto& line : lines)
-      output.insert(move(getKeyValFromLine(line, delim)));
-
+   std::map<std::string, std::string> output;
+   for (auto& line : lines) {
+      output.emplace(getKeyValFromLine(line, delim));
+   }
    return output;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-pair<string, string> SettingsUtils::getKeyValFromLine(
-   const string& line, char delim)
+std::pair<std::string_view, std::string_view> SettingsUtils::getKeyValFromLine(
+   const std::string_view& line, char delim)
 {
-   stringstream ss(line);
-   pair<string, string> output;
+   //std::stringstream ss(line);
+   std::pair<std::string_view, std::string_view> output;
 
    //key
-   getline(ss, output.first, delim);
+   auto iter = line.begin();
+   while (iter != line.end()) {
+      if (*iter == delim) {
+         output.first = std::string_view(line.begin(), iter - line.begin());
+         break;
+      }
+      ++iter;
+   }
 
-   //val
-   if (ss.good())
-      getline(ss, output.second);
-
+   if (iter != line.end()) {
+      /* we're not at the end of the line, there's a value to parse */
+      //skip the the delimiter
+      ++iter;
+      output.second = std::string_view(iter, line.end()-iter);
+   } else {
+      /* we're at the end of the line, there's only a key */
+      output.first = line;
+   }
    return output;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-vector<string> SettingsUtils::tokenizeLine(
-   const string& line, const string& token)
+std::vector<std::string> SettingsUtils::keyValToArgv(
+   const std::map<std::string, std::string>& keyValMap)
 {
-   if (token.empty() || line.empty())
-      return {};
+   std::vector<std::string> argv;
+   argv.reserve(keyValMap.size());
 
-   vector<string> result;
-
-   unsigned i=0;
-   unsigned tkId = 0;
-   while (i < line.size())
-   {
-      if (line.c_str()[i] == token.c_str()[tkId])
-      {
-         ++tkId;
-         if (tkId == token.size())
-         {
-            ++i;
-            auto y = i;
-            while (i < line.size() -1)
-            {
-               if (line.c_str()[i] == ' ')
-                  break;
-               ++i;
-            }
-
-            if (i >= y)
-            {
-               //keep last char in the line
-               if (i==line.size() -1)
-                  ++i;
-               
-               string str(line.c_str() + y, i-y);
-               result.emplace_back(move(str));
-            }
-
-            tkId = 0;
-         }
-      }
-      else
-      {
-         tkId = 0;
-      }
-
-      ++i;
-   }
-
-   return result;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-vector<string> SettingsUtils::keyValToArgv(
-   const map<string, string>& keyValMap)
-{
-   vector<string> argv;
-
-   for (auto& keyval : keyValMap)
-   {
-      stringstream ss;
-      if (keyval.first.compare(0, 2, "--") != 0)
+   for (const auto& keyval : keyValMap) {
+      std::stringstream ss;
+      if (keyval.first.compare(0, 2, "--") != 0) {
          ss << "--";
+      }
       ss << keyval.first;
 
-      if (keyval.second.size() != 0)
+      if (!keyval.second.empty()) {
          ss << "=" << keyval.second;
-
-      argv.push_back(ss.str());
+      }
+      argv.emplace_back(ss.str());
    }
-
    return argv;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool SettingsUtils::fileExists(const string& path, int mode)
+std::string SettingsUtils::portToString(unsigned port)
 {
-#ifdef _WIN32
-   return _access(path.c_str(), mode) == 0;
-#else
-   auto nixmode = F_OK;
-   if (mode & 2)
-      nixmode |= R_OK;
-   if (mode & 4)
-      nixmode |= W_OK;
-   auto result = access(path.c_str(), nixmode);
-   return result == 0;
-#endif
-}
-
-////////////////////////////////////////////////////////////////////////////////
-string SettingsUtils::portToString(unsigned port)
-{
-   stringstream ss;
+   std::stringstream ss;
    ss << port;
    return ss.str();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-string SettingsUtils::stripQuotes(const string& input)
+std::string_view SettingsUtils::stripQuotes(const std::string_view& input)
 {
+   if (input.empty()) {
+      return {};
+   }
+
    size_t start = 0;
    size_t len = input.size();
 
-   auto& first_char = input.c_str()[0];
-   auto& last_char = input.c_str()[len - 1];
+   auto& first_char = input[0];
+   auto& last_char = input[len - 1];
 
-   if (first_char == '\"' || first_char == '\'')
-   {
+   if (first_char == '\"' || first_char == '\'') {
       start = 1;
       --len;
    }
 
-   if (last_char == '\"' || last_char == '\'')
+   if (last_char == '\"' || last_char == '\'') {
       --len;
+   }
 
-   return input.substr(start, len);
+   return std::string_view(input.begin() + start, len);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool SettingsUtils::testConnection(const string& ip, const string& port)
+bool SettingsUtils::testConnection(const std::string& ip, const std::string& port)
 {
    SimpleSocket testSock(ip, port);
    return testSock.testConnection();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-string SettingsUtils::getPortFromCookie(const string& datadir)
+std::string SettingsUtils::getPortFromCookie(const std::string& datadir)
 {
    //check for cookie file
-   auto cookie_path = std::filesystem::path(datadir) / ".cookie_";
+   auto cookie_path = fs::path(datadir) / ".cookie_";
    auto lines = SettingsUtils::getLines(cookie_path);
    if (lines.size() != 2) {
       return {};
@@ -404,7 +356,8 @@ string SettingsUtils::getPortFromCookie(const string& datadir)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-string SettingsUtils::hasLocalDB(const string& datadir, const string& port)
+std::string SettingsUtils::hasLocalDB(
+   const std::string& datadir, const std::string& port)
 {
    //check db on provided port
    if (SettingsUtils::testConnection("127.0.0.1", port)) {
@@ -434,14 +387,15 @@ string SettingsUtils::hasLocalDB(const string& datadir, const string& port)
 // BaseSettings
 //
 ////////////////////////////////////////////////////////////////////////////////
-mutex BaseSettings::configMutex_;
-string BaseSettings::dataDir_;
+std::mutex BaseSettings::configMutex_;
+fs::path BaseSettings::dataDir_;
 unsigned BaseSettings::initCount_ = 0;
 
 ////////////////////////////////////////////////////////////////////////////////
-void BaseSettings::detectDataDir(map<string, string>& args)
+void BaseSettings::detectDataDir(std::map<std::string, std::string>& args)
 {
    //figure out the datadir
+   bool isAuto = false;
    auto argIter = args.find("datadir");
    if (argIter != args.end()) {
       dataDir_ = argIter->second;
@@ -469,11 +423,20 @@ void BaseSettings::detectDataDir(map<string, string>& args)
 
          default:
             LOGERR << "unexpected network mode";
-            throw runtime_error("unexpected network mode");
+            throw std::runtime_error("unexpected network mode");
       }
+
+      dataDir_ = FileUtils::getUserHomePath() / dataDir_;
+      isAuto = true;
    }
 
-   dataDir_ = std::filesystem::absolute(dataDir_);
+   dataDir_ = fs::absolute(dataDir_);
+   if (!isAuto) {
+      return;
+   }
+
+   //we are using the default datadir, let's check if it exists
+   FileUtils::createDirectory(dataDir_);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -493,7 +456,7 @@ ARMORY_DB_TYPE DBSettings::armoryDbType_ = ARMORY_DB_FULL;
 SOCKET_SERVICE DBSettings::service_ = SERVICE_WEBSOCKET;
 
 unsigned DBSettings::ramUsage_ = 4;
-unsigned DBSettings::threadCount_ = thread::hardware_concurrency();
+unsigned DBSettings::threadCount_ = std::thread::hardware_concurrency();
 unsigned DBSettings::zcThreadCount_ = DEFAULT_ZCTHREAD_COUNT;
 
 bool DBSettings::reportProgress_ = true;
@@ -502,53 +465,51 @@ bool DBSettings::clearMempool_ = false;
 bool DBSettings::checkTxHints_ = false;
 
 ////////////////////////////////////////////////////////////////////////////////
-void DBSettings::processArgs(const map<string, string>& args)
+void DBSettings::processArgs(const std::map<std::string, std::string>& args)
 {
    //db init options
    auto iter = args.find("rescanSSH");
-   if (iter != args.end())
+   if (iter != args.end()) {
       initMode_ = INIT_SSH;
+   }
 
    iter = args.find("rescan");
-   if (iter != args.end())
+   if (iter != args.end()) {
       initMode_ = INIT_RESCAN;
+   }
 
    iter = args.find("rebuild");
-   if (iter != args.end())
+   if (iter != args.end()) {
       initMode_ = INIT_REBUILD;
+   }
 
    iter = args.find("checkchain");
-   if (iter != args.end())
+   if (iter != args.end()) {
       checkChain_ = true;
+   }
 
    iter = args.find("clear-mempool");
-   if (iter != args.end())
+   if (iter != args.end()) {
       clearMempool_ = true;
+   }
 
    iter = args.find("check-txhints");
-   if (iter != args.end())
+   if (iter != args.end()) {
       checkTxHints_ = true;
+   }
 
    //db type
    iter = args.find("db-type");
-   if (iter != args.end())
-   {
-      if (iter->second == "DB_BARE")
-      {
-         throw runtime_error("deprecated");
+   if (iter != args.end()) {
+      if (iter->second == "DB_BARE") {
+         throw std::runtime_error("deprecated");
          armoryDbType_ = ARMORY_DB_BARE;
-      }
-      else if (iter->second == "DB_FULL")
-      {
+      } else if (iter->second == "DB_FULL") {
          armoryDbType_ = ARMORY_DB_FULL;
-      }
-      else if (iter->second == "DB_SUPER")
-      {
+      } else if (iter->second == "DB_SUPER") {
          armoryDbType_ = ARMORY_DB_SUPER;
-      }
-      else
-      {
-         cout << "Error: unexpected DB type: " << iter->second << endl;
+      } else {
+         std::cout << "Error: unexpected DB type: " << iter->second << std::endl;
          printHelp();
          exit(0);
       }
@@ -556,58 +517,46 @@ void DBSettings::processArgs(const map<string, string>& args)
 
    //resource control
    iter = args.find("thread-count");
-   if (iter != args.end())
-   {
+   if (iter != args.end()) {
       int val = 0;
-      try
-      {
-         val = stoi(iter->second);
-      }
-      catch (...)
-      {
-      }
+      try {
+         val = stoi(iter->second); }
+      catch (...) {}
 
-      if (val > 0)
+      if (val > 0) {
          threadCount_ = val;
+      }
    }
 
    iter = args.find("ram-usage");
-   if (iter != args.end())
-   {
+   if (iter != args.end()) {
       int val = 0;
-      try
-      {
+      try {
          val = stoi(iter->second);
-      }
-      catch (...)
-      {
-      }
+      } catch (...) {}
 
-      if (val > 0)
+      if (val > 0) {
          ramUsage_ = val;
+      }
    }
 
    iter = args.find("zcthread-count");
-   if (iter != args.end())
-   {
+   if (iter != args.end()) {
       int val = 0;
-      try
-      {
+      try {
          val = stoi(iter->second);
-      }
-      catch (...)
-      {
-      }
+      } catch (...) {}
 
-      if (val > 0)
+      if (val > 0) {
          zcThreadCount_ = val;
+      }
    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-string DBSettings::getCookie(const string& datadir)
+std::string DBSettings::getCookie(const std::string& datadir)
 {
-   auto cookie_path = std::filesystem::path(datadir) / ".cookie_";
+   auto cookie_path = fs::path(datadir) / ".cookie_";
    auto lines = SettingsUtils::getLines(cookie_path);
    if (lines.size() != 2) {
       return {};
@@ -616,11 +565,11 @@ string DBSettings::getCookie(const string& datadir)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-string DBSettings::getDbModeStr()
+std::string DBSettings::getDbModeStr()
 {
    switch(getDbType())
    {
-      case ARMORY_DB_BARE: 
+      case ARMORY_DB_BARE:
          return "DB_BARE";
 
       case ARMORY_DB_FULL:
@@ -630,7 +579,7 @@ string DBSettings::getDbModeStr()
          return "DB_SUPER";
 
       default:
-         throw runtime_error("invalid db type!");
+         throw std::runtime_error("invalid db type!");
    }
 }
 
@@ -642,10 +591,10 @@ void DBSettings::reset()
    service_ = SERVICE_WEBSOCKET;
 
    ramUsage_ = 4;
-   threadCount_ = thread::hardware_concurrency();
+   threadCount_ = std::thread::hardware_concurrency();
    zcThreadCount_ = DEFAULT_ZCTHREAD_COUNT;
 
-   reportProgress_ = true;  
+   reportProgress_ = true;
    checkChain_ = false;
    clearMempool_ = false;
 }
@@ -661,32 +610,33 @@ bool NetworkSettings::customBtcPort_ = false;
 NetworkSettings::NodePair NetworkSettings::bitcoinNodes_;
 NetworkSettings::RpcPtr NetworkSettings::rpcNode_;
 
-string NetworkSettings::btcPort_;
-string NetworkSettings::dbPort_;
-string NetworkSettings::dbIP_;
-string NetworkSettings::rpcPort_;
+std::string NetworkSettings::btcPort_;
+std::string NetworkSettings::dbPort_;
+std::string NetworkSettings::dbIP_;
+std::string NetworkSettings::rpcPort_;
 
 bool NetworkSettings::useCookie_ = false;
 bool NetworkSettings::ephemeralPeers_;
 bool NetworkSettings::oneWayAuth_ = false;
 bool NetworkSettings::offline_ = false;
 
-string NetworkSettings::cookie_;
+std::string NetworkSettings::cookie_;
 BinaryData NetworkSettings::uiPublicKey_;
 
 ////////////////////////////////////////////////////////////////////////////////
-void NetworkSettings::processArgs(const map<string, string>& args,
+void NetworkSettings::processArgs(
+   const std::map<std::string, std::string>& args,
    ProcessType procType)
 {
    auto iter = args.find("armorydb-port");
    if (iter != args.end()) {
       dbPort_ = SettingsUtils::stripQuotes(iter->second);
       int portInt = 0;
-      stringstream portSS(dbPort_);
+      std::stringstream portSS(dbPort_);
       portSS >> portInt;
 
       if (portInt < 1 || portInt > 65535) {
-         cout << "Invalid listen port, falling back to default" << endl;
+         std::cout << "Invalid listen port, falling back to default" << std::endl;
          dbPort_ = "";
       } else {
          customDbPort_ = true;
@@ -721,14 +671,17 @@ void NetworkSettings::processArgs(const map<string, string>& args,
    iter = args.find("satoshirpc-port");
    if (iter != args.end()) {
       auto value = SettingsUtils::stripQuotes(iter->second);
-      int portInt = 0;
-      stringstream portSS(value);
-      portSS >> portInt;
+      int portInt;
 
-      if (portInt < 1 || portInt > 65535) {
-         cout << "Invalid satoshi rpc port, falling back to default" << endl;
-      } else {
-         rpcPort_ = value;
+      try {
+         std::from_chars(value.begin(), value.end(), portInt);
+         if (portInt < 1 || portInt > 65535) {
+            std::cout << "Invalid satoshi rpc port, falling back to default" << std::endl;
+         } else {
+            rpcPort_ = value;
+         }
+      } catch (const std::exception&) {
+         std::cout << "satoshi rpc port is not a number, falling back to default" << std::endl;
       }
    }
 
@@ -782,74 +735,74 @@ void NetworkSettings::selectNetwork(NETWORK_MODE mode)
 {
    switch (mode)
    {
-   case NETWORK_MODE_MAINNET:
-   {
-      rpcPort_ = SettingsUtils::portToString(RPC_PORT_MAINNET);
+      case NETWORK_MODE_MAINNET:
+      {
+         rpcPort_ = SettingsUtils::portToString(RPC_PORT_MAINNET);
 
-      if (!customDbPort_) {
-         dbPort_ = SettingsUtils::portToString(LISTEN_PORT_MAINNET);
+         if (!customDbPort_) {
+            dbPort_ = SettingsUtils::portToString(LISTEN_PORT_MAINNET);
+         }
+
+         if (!customBtcPort_) {
+            btcPort_ = SettingsUtils::portToString(NODE_PORT_MAINNET);
+         }
+         break;
       }
 
-      if (!customBtcPort_) {
-         btcPort_ = SettingsUtils::portToString(NODE_PORT_MAINNET);
-      }
-      break;
-   }
+      case NETWORK_MODE_TESTNET:
+      {
+         rpcPort_ = SettingsUtils::portToString(RPC_PORT_TESTNET);
 
-   case NETWORK_MODE_TESTNET:
-   {
-      rpcPort_ = SettingsUtils::portToString(RPC_PORT_TESTNET);
+         if (!customDbPort_) {
+            dbPort_ = SettingsUtils::portToString(LISTEN_PORT_TESTNET);
+         }
 
-      if (!customDbPort_) {
-         dbPort_ = SettingsUtils::portToString(LISTEN_PORT_TESTNET);
-      }
-
-      if (!customBtcPort_) {
-         btcPort_ = SettingsUtils::portToString(NODE_PORT_TESTNET);
-      }
-      break;
-   }
-
-   case NETWORK_MODE_REGTEST:
-   {
-      rpcPort_ = SettingsUtils::portToString(RPC_PORT_REGTEST);
-
-      if (!customDbPort_) {
-         dbPort_ = SettingsUtils::portToString(LISTEN_PORT_REGTEST);
+         if (!customBtcPort_) {
+            btcPort_ = SettingsUtils::portToString(NODE_PORT_TESTNET);
+         }
+         break;
       }
 
-      if (!customBtcPort_) {
-         btcPort_ = SettingsUtils::portToString(NODE_PORT_REGTEST);
-      }
-      break;
-   }
+      case NETWORK_MODE_REGTEST:
+      {
+         rpcPort_ = SettingsUtils::portToString(RPC_PORT_REGTEST);
 
-   default:
-      LOGERR << "unexpected network mode!";
-      throw runtime_error("unxecpted network mode");
+         if (!customDbPort_) {
+            dbPort_ = SettingsUtils::portToString(LISTEN_PORT_REGTEST);
+         }
+
+         if (!customBtcPort_) {
+            btcPort_ = SettingsUtils::portToString(NODE_PORT_REGTEST);
+         }
+         break;
+      }
+
+      default:
+         LOGERR << "unexpected network mode!";
+         throw std::runtime_error("unxecpted network mode");
    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const string& NetworkSettings::btcPort()
+const std::string& NetworkSettings::btcPort()
 {
    return btcPort_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const string& NetworkSettings::dbPort()
+const std::string& NetworkSettings::dbPort()
 {
    return dbPort_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const string& NetworkSettings::dbIP()
+const std::string& NetworkSettings::dbIP()
 {
    return dbIP_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const string& NetworkSettings::rpcPort()
+const std::string& NetworkSettings::rpcPort()
 {
    return rpcPort_;
 }
@@ -861,12 +814,12 @@ void NetworkSettings::randomizeDbPort()
       return;
    }
 
-   //no custom listen port was provided and the db was spawned with a 
+   //no custom listen port was provided and the db was spawned with a
    //cookie file, listen port will be randomized
    srand(time(0));
    while (true) {
       auto port = rand() % 15000 + 50000;
-      stringstream portss;
+      std::stringstream portss;
       portss << port;
 
       if (!SettingsUtils::testConnection("127.0.0.1", portss.str())) {
@@ -881,29 +834,30 @@ void NetworkSettings::createNodes()
 {
    auto magicBytes = BitcoinSettings::getMagicBytes();
 
-   if (DBSettings::getServiceType() == SERVICE_WEBSOCKET)
-   {
-      bitcoinNodes_.first =
-         make_shared<BitcoinP2P>("127.0.0.1", btcPort_,
-         *(uint32_t*)magicBytes.getPtr(), false);
+   if (DBSettings::getServiceType() == SERVICE_WEBSOCKET) {
+      bitcoinNodes_.first = std::make_shared<BitcoinP2P>(
+         "127.0.0.1", btcPort_,
+         *(uint32_t*)magicBytes.getPtr(), false
+      );
 
-      bitcoinNodes_.second =
-         make_shared<BitcoinP2P>("127.0.0.1", btcPort_,
-         *(uint32_t*)magicBytes.getPtr(), true);
+      bitcoinNodes_.second = std::make_shared<BitcoinP2P>(
+         "127.0.0.1", btcPort_,
+         *(uint32_t*)magicBytes.getPtr(), true
+      );
 
-      rpcNode_ = make_shared<CoreRPC::NodeRPC>();
-   }
-   else
-   {
-      auto primary =
-         make_shared<NodeUnitTest>(*(uint32_t*)magicBytes.getPtr(), false);
+      rpcNode_ = std::make_shared<CoreRPC::NodeRPC>();
+   } else {
+      auto primary = std::make_shared<NodeUnitTest>(
+         *(uint32_t*)magicBytes.getPtr(), false
+      );
 
-      auto watcher =
-         make_shared<NodeUnitTest>(*(uint32_t*)magicBytes.getPtr(), true);
+      auto watcher = std::make_shared<NodeUnitTest>(
+         *(uint32_t*)magicBytes.getPtr(), true
+      );
 
       bitcoinNodes_.first = primary;
       bitcoinNodes_.second = watcher;
-      rpcNode_ = make_shared<NodeRPC_UnitTest>(primary, watcher);
+      rpcNode_ = std::make_shared<NodeRPC_UnitTest>(primary, watcher);
    }
 }
 
@@ -931,16 +885,16 @@ void NetworkSettings::createCookie()
       return;
    }
 
-   auto cookiePath = std::filesystem::path(Armory::Config::getDataDir()) / ".cookie_";
-   fstream fs(cookiePath, ios_base::out | ios_base::trunc);
-   fs << cookie_ << endl;
-   fs << dbPort_;
+   auto cookiePath = fs::path(Armory::Config::getDataDir()) / ".cookie_";
+   std::fstream outStream(cookiePath, std::ios_base::out | std::ios_base::trunc);
+   outStream << cookie_ << std::endl;
+   outStream << dbPort_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 void NetworkSettings::injectUiPubkey(BinaryData& pubkey)
 {
-   uiPublicKey_ = move(pubkey);
+   uiPublicKey_ = std::move(pubkey);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -971,11 +925,12 @@ void NetworkSettings::reset()
 // Pathing
 //
 ////////////////////////////////////////////////////////////////////////////////
-string Pathing::blkFilePath_;
-string Pathing::dbDir_;
+fs::path Pathing::blkFilePath_;
+fs::path Pathing::dbDir_;
 
 ////////////////////////////////////////////////////////////////////////////////
-void Pathing::processArgs(const map<string, string>& args, ProcessType procType)
+void Pathing::processArgs(const std::map<std::string, std::string>& args,
+   ProcessType procType)
 {
    //paths
    auto iter = args.find("dbdir");
@@ -990,7 +945,7 @@ void Pathing::processArgs(const map<string, string>& args, ProcessType procType)
 
    bool autoDbDir = false;
    if (dbDir_.empty()) {
-      dbDir_ = std::filesystem::path(Armory::Config::getDataDir()) / DEFAULT_DBDIR_SUFFIX;
+      dbDir_ = Armory::Config::getDataDir() / DEFAULT_DBDIR_SUFFIX;
       autoDbDir = true;
    }
 
@@ -1006,27 +961,27 @@ void Pathing::processArgs(const map<string, string>& args, ProcessType procType)
          default:
             blkFilePath_ = TESTNET_DEFAULT_BLOCKPATH;
       }
+      blkFilePath_ = FileUtils::getUserHomePath() / blkFilePath_;
    }
 
    //expand paths if necessary
-   dbDir_ = std::filesystem::absolute(dbDir_);
-   blkFilePath_ = std::filesystem::absolute(blkFilePath_);
+   dbDir_ = fs::absolute(dbDir_);
+   blkFilePath_ = fs::absolute(blkFilePath_);
 
-   if (blkFilePath_.size() < 6 ||
-      blkFilePath_.substr(blkFilePath_.length() - 6, 6) != "blocks") {
-      blkFilePath_ = std::filesystem::path(blkFilePath_) / "blocks";
+   //check block file path ends in "blocks"
+   if (blkFilePath_.filename() != "blocks") {
+      blkFilePath_ = fs::path(blkFilePath_) / fs::path("blocks");
    }
 
    //test all paths
-   auto testPath = [](const string& path, int mode)->bool
+   auto testPath = [](const fs::path& path, int mode)->bool
    {
-      return SettingsUtils::fileExists(path, mode);
+      return FileUtils::fileExists(path, mode);
    };
 
    if (!testPath(Armory::Config::getDataDir(), 6)) {
-      string errMsg = Armory::Config::getDataDir() +
-         " is not a valid datadir path";
-      throw DbErrorMsg(errMsg); 
+      throw DbErrorMsg({Armory::Config::getDataDir().string() +
+         " is not a valid datadir path"});
    }
 
    if (procType != ProcessType::DB) {
@@ -1042,13 +997,13 @@ void Pathing::processArgs(const map<string, string>& args, ProcessType procType)
    //create dbdir if set automatically
    if (autoDbDir) {
       if (!testPath(dbDir_, 0)) {
-         std::filesystem::create_directory(dbDir_);
+         fs::create_directory(dbDir_);
       }
    }
 
    //now for the regular test, let it throw if it fails
    if (!testPath(dbDir_, 6)) {
-      string errMsg = dbDir_ + " is not a valid db path";
+      std::string errMsg = dbDir_.string() + " is not a valid db path";
       throw DbErrorMsg(errMsg); 
    }
 
@@ -1059,7 +1014,7 @@ void Pathing::processArgs(const map<string, string>& args, ProcessType procType)
 
    if (!NetworkSettings::isOffline()) {
       if (!testPath(blkFilePath_, 2)) {
-         string errMsg = blkFilePath_ + " is not a valid blockchain data path";
+         std::string errMsg = blkFilePath_.string() + " is not a valid blockchain data path";
          throw DbErrorMsg(errMsg); 
       }
    }
@@ -1073,10 +1028,9 @@ void Pathing::reset()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-string Pathing::logFilePath(const string& logName)
+fs::path Pathing::logFilePath(const std::string& logName)
 {
-   std::string logFileName = logName + ".txt";
-   return std::filesystem::path(getDataDir()) / logFileName;
+   return fs::path(getDataDir()) / fs::path(logName + ".txt");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1084,7 +1038,7 @@ string Pathing::logFilePath(const string& logName)
 // ConfigFile
 //
 ////////////////////////////////////////////////////////////////////////////////
-Config::File::File(const string& path)
+Config::File::File(const fs::path& path)
 {
    auto lines = SettingsUtils::getLines(path);
    for (auto& line : lines) {
@@ -1102,29 +1056,30 @@ Config::File::File(const string& path)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-vector<BinaryData> Config::File::fleshOutArgs(
-   const string& path, const vector<BinaryData>& argv)
+std::vector<BinaryData> Config::File::fleshOutArgs(
+   const std::string& path, const std::vector<BinaryData>& argv)
 {
    //sanity check
    if (path.empty()) {
-      throw runtime_error("invalid config file path");
+      throw std::runtime_error("invalid config file path");
    }
    //remove first arg
    auto binaryPath = argv.front();
-   vector<string> arg_minus_1;
+   std::vector<std::string> arg_minus_1;
 
    auto argvIter = argv.begin() + 1;
    while (argvIter != argv.end()) {
-      string argStr((*argvIter).getCharPtr(), (*argvIter).getSize());
-      arg_minus_1.push_back(move(argStr));
+      arg_minus_1.emplace_back(std::string{
+         (*argvIter).getCharPtr(), (*argvIter).getSize()
+      });
       ++argvIter;
    }
 
    //break down string vector
-   auto&& keyValMap = SettingsUtils::getKeyValsFromLines(arg_minus_1, '=');
+   auto keyValMap = SettingsUtils::getKeyValsFromLines(arg_minus_1, '=');
 
    //complete config file path
-   string configFile_path = MAINNET_DEFAULT_DATADIR;
+   auto configFile_path = fs::path(MAINNET_DEFAULT_DATADIR);
    if (keyValMap.find("--testnet") != keyValMap.end()) {
       configFile_path = TESTNET_DEFAULT_DATADIR;
    } else if (keyValMap.find("--regtest") != keyValMap.end()) {
@@ -1135,19 +1090,18 @@ vector<BinaryData> Config::File::fleshOutArgs(
    if (datadir_iter != keyValMap.end() && datadir_iter->second.size() > 0) {
       configFile_path = datadir_iter->second;
    }
-   configFile_path = std::filesystem::path(configFile_path) / path;
-   configFile_path = std::filesystem::absolute(configFile_path);
+   configFile_path = fs::absolute(configFile_path / path);
 
    //process config file
    Config::File cfile(configFile_path);
-   if (cfile.keyvalMap_.size() == 0) {
+   if (cfile.keyvalMap_.empty()) {
       return argv;
    }
 
    //merge with argv
    for (auto& keyval : cfile.keyvalMap_) {
       //skip if argv already has this key
-      stringstream argss;
+      std::stringstream argss;
       if (keyval.first.compare(0, 2, "--") != 0) {
          argss << "--";
       }
@@ -1157,22 +1111,20 @@ vector<BinaryData> Config::File::fleshOutArgs(
       if (keyiter != keyValMap.end()) {
          continue;
       }
-      keyValMap.insert(keyval);
+      keyValMap.emplace(keyval);
    }
 
    //convert back to string list format
    auto newArgs = SettingsUtils::keyValToArgv(keyValMap);
 
    //prepend the binary path and return
-   vector<BinaryData> fleshedOutArgs;
-   fleshedOutArgs.push_back(binaryPath);
-   auto newArgsIter = newArgs.begin();
-   while (newArgsIter != newArgs.end()) {
-      auto&& bdStr = BinaryData::fromString(*newArgsIter);
-      fleshedOutArgs.push_back(move(bdStr));
-      ++newArgsIter;
+   std::vector<BinaryData> fleshedOutArgs;
+   fleshedOutArgs.reserve(newArgs.size() + 1);
+   fleshedOutArgs.emplace_back(binaryPath);
+   for (const auto& newArg : newArgs) {
+      auto bdStr = BinaryData::fromString(newArg);
+      fleshedOutArgs.emplace_back(std::move(bdStr));
    }
-
    return fleshedOutArgs;
 }
 

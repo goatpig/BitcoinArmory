@@ -6,8 +6,6 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#include <filesystem>
-
 #include "ArmoryErrors.h"
 #include "nodeRPC.h"
 #include "DBUtils.h"
@@ -167,31 +165,25 @@ RpcState NodeRPC::testConnection()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-string NodeRPC::getDatadir()
+std::filesystem::path NodeRPC::getDatadir()
 {
-   string datadir = Pathing::blkFilePath();
-   auto len = datadir.size();
-
-   if (len >= 6)
-   {
-      auto&& term = datadir.substr(len - 6, 6);
-      if (term == "blocks")
-         datadir = datadir.substr(0, len - 6);
+   auto datadir = Pathing::blkFilePath();
+   if (datadir.filename() == "blocks") {
+      datadir = datadir.parent_path();
    }
-
    return datadir;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 string NodeRPC::getAuthString()
 {
-   auto datadir = std::filesystem::path(getDatadir());
+   auto datadir = getDatadir();
    auto confPath = datadir / "bitcoin.conf";
 
    auto getAuthStringFromCookieFile = [&datadir](void)->string
    {
       auto cookiePath = datadir / ".cookie";
-      auto lines = SettingsUtils::getLines(datadir);
+      auto lines = SettingsUtils::getLines(cookiePath);
       if (lines.size() != 1) {
          throw runtime_error("unexpected cookie file content");
       }

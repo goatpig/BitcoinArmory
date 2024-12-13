@@ -42,13 +42,13 @@ class BlockHeader
 public:
 
    /////////////////////////////////////////////////////////////////////////////
-   BlockHeader(void) : 
-      isInitialized_(false), 
-      isMainBranch_(false), 
+   BlockHeader(void) :
+      isInitialized_(false),
+      isMainBranch_(false),
       isOrphan_(false),
       isFinishedCalc_(false),
       duplicateID_(UINT8_MAX),
-      numTx_(UINT32_MAX), 
+      numTx_(UINT32_MAX),
       numBlockBytes_(UINT32_MAX)
    { }
 

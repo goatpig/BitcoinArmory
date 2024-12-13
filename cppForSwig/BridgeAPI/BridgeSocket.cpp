@@ -49,7 +49,10 @@ CppBridgeSocket::CppBridgeSocket(
    {
       const auto& ownKey = authPeers_->getOwnPublicKey();
       std::fstream file;
-      file.open("./client_cookie", std::ios::out);
+
+      //on windows, we need to explicitly open the cookie file in binary
+      //for writing, or it will stop at the first null byte
+      file.open("./client_cookie", std::ios::out | std::ios::binary);
       file.write((const char*)ownKey.pubkey, 33);
    }
 

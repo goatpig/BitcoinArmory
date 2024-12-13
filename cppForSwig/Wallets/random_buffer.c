@@ -16,6 +16,6 @@ always feed explicit seeds.
 
 void random_buffer(uint8_t*, size_t)
 {
-   fprintf(stderr, "bip39.c never call random_buffer");
+   fprintf(stderr, "bip39.c never calls random_buffer");
    exit(EXIT_FAILURE);
 }
