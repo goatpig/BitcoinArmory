@@ -26,6 +26,7 @@ import glob
 from struct import pack
 import qtpy
 from qtpy import QtCore, QtGui, QtWidgets
+import imgList_rc
 
 from armorycolors import Colors, htmlColor, QAPP
 from armoryengine.ArmoryUtils import HMAC256, \
@@ -1137,13 +1138,14 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
          # A simple listing of the directory files, sizes and times is good
          if os.path.exists(tempDir):
-            for fname in os.listdir(tempDir):
-               fullpath = os.path.join(tempDir, fname)
-               sz = os.path.getsize(fullpath)
-               tm = os.path.getmtime(fullpath)
-               source2.write(fname.encode('utf-8'))
-               source2.write(pack('Q', sz))
-               source2.write(pack('d', tm))
+            with os.scandir(tempDir) as entries:
+               for entry in entries:
+                  if entry.is_file():
+                     sz = entry.stat().st_size
+                     tm = entry.stat().st_mtime
+                     source2.write(entry.name.encode('utf-8'))
+                     source2.write(pack('Q', sz))
+                     source2.write(pack('d', tm))
 
          # On Linux we also throw in Xorg.0.log
          for f in extraFiles:
@@ -1161,12 +1163,12 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       source3 = bytes()
       try:
          screen = QtWidgets.QApplication.primaryScreen()
-         pixDesk = screen.grabWindow(QtWidgets.QApplication.desktop().winId())
+         pixDesk = screen.grabWindow(0)
          pixRaw = QtCore.QByteArray()
          pixBuf = QtCore.QBuffer(pixRaw)
          pixBuf.open(QtCore.QIODevice.WriteOnly)
          pixDesk.save(pixBuf, 'PNG')
-         source3 = bytes(pixBuf.buffer())
+         source3 = bytes(pixBuf.data())
       except:
          LOGEXCEPT('Third source of entropy (desktop screenshot) failed')
 
