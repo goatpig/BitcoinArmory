@@ -21,7 +21,7 @@ class DlgIntroMessage(ArmoryDialog):
       super(DlgIntroMessage, self).__init__(parent, main)
 
       lblInfoImg = QtWidgets.QLabel()
-      lblInfoImg.setPixmap(QtGui.QPixmap('./img/MsgBox_info48.png'))
+      lblInfoImg.setPixmap(QtGui.QPixmap(':/MsgBox_info48.png'))
       lblInfoImg.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop)
       lblInfoImg.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
       lblInfoImg.setMaximumWidth(50)

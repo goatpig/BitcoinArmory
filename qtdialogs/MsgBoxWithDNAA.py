@@ -28,19 +28,19 @@ def MsgBoxWithDNAA(parent, main, wtype, title, msg, dnaaMsg, wCancel=False, \
          msgIcon = QtWidgets.QLabel()
          fpix = ''
          if dtype==MSGBOX.Info:
-            fpix = './img/MsgBox_info48.png'
+            fpix = ':/MsgBox_info48.png'
             if not dmsg:  dmsg = self.tr('Do not show this message again')
          if dtype==MSGBOX.Question:
-            fpix = './img/MsgBox_question64.png'
+            fpix = ':/MsgBox_question64.png'
             if not dmsg:  dmsg = self.tr('Do not ask again')
          if dtype==MSGBOX.Warning:
-            fpix = './img/MsgBox_warning48.png'
+            fpix = ':/MsgBox_warning48.png'
             if not dmsg:  dmsg = self.tr('Do not show this warning again')
          if dtype==MSGBOX.Critical:
-            fpix = './img/MsgBox_critical64.png'
+            fpix = ':/MsgBox_critical64.png'
             if not dmsg:  dmsg = None  # should always show crits
          if dtype==MSGBOX.Error:
-            fpix = './img/MsgBox_error64.png'
+            fpix = ':/MsgBox_error64.png'
             if not dmsg:  dmsg = None  # should always show errors
 
 

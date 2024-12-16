@@ -162,22 +162,22 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       self.lblLogoIcon = QtWidgets.QLabel()
       if USE_TESTNET:
          self.setWindowTitle('Armory - Bitcoin Wallet Management [TESTNET] dlgMain')
-         self.iconfile = './img/armory_icon_green_32x32.png'
-         self.lblLogoIcon.setPixmap(QtGui.QPixmap('./img/armory_logo_green_h56.png'))
+         self.iconfile = ':/armory_icon_green_32x32.png'
+         self.lblLogoIcon.setPixmap(QtGui.QPixmap(':/armory_logo_green_h56.png'))
          if Colors.isDarkBkgd:
-            self.lblLogoIcon.setPixmap(QtGui.QPixmap('./img/armory_logo_white_text_green_h56.png'))
+            self.lblLogoIcon.setPixmap(QtGui.QPixmap(':/armory_logo_white_text_green_h56.png'))
       elif USE_REGTEST:
          self.setWindowTitle('Armory - Bitcoin Wallet Management [REGTEST] dlgMain')
-         self.iconfile = './img/armory_icon_green_32x32.png'
-         self.lblLogoIcon.setPixmap(QtGui.QPixmap('./img/armory_logo_green_h56.png'))
+         self.iconfile = ':/armory_icon_green_32x32.png'
+         self.lblLogoIcon.setPixmap(QtGui.QPixmap(':/armory_logo_green_h56.png'))
          if Colors.isDarkBkgd:
-            self.lblLogoIcon.setPixmap(QtGui.QPixmap('./img/armory_logo_white_text_green_h56.png'))
+            self.lblLogoIcon.setPixmap(QtGui.QPixmap(':/armory_logo_white_text_green_h56.png'))
       else:
          self.setWindowTitle('Armory - Bitcoin Wallet Management')
-         self.iconfile = './img/armory_icon_32x32.png'
-         self.lblLogoIcon.setPixmap(QtGui.QPixmap('./img/armory_logo_h44.png'))
+         self.iconfile = ':/armory_icon_32x32.png'
+         self.lblLogoIcon.setPixmap(QtGui.QPixmap(':/armory_logo_h44.png'))
          if Colors.isDarkBkgd:
-            self.lblLogoIcon.setPixmap(QtGui.QPixmap('./img/armory_logo_white_text_h56.png'))
+            self.lblLogoIcon.setPixmap(QtGui.QPixmap(':/armory_logo_white_text_h56.png'))
 
       # OS X requires some Objective-C code if we're switching to the testnet
       # (green) icon. We should also use a larger icon. Otherwise, Info.plist
@@ -186,7 +186,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          self.setWindowIcon(QtGui.QIcon(self.iconfile))
       else:
          if USE_TESTNET or USE_REGTEST:
-            self.iconfile = './img/armory_icon_green_fullres.png'
+            self.iconfile = ':/armory_icon_green_fullres.png'
          ArmoryMac.MacDockIconHandler.instance().setMainWindow(self)
          ArmoryMac.MacDockIconHandler.instance().setIcon(QtGui.QIcon(self.iconfile))
       self.lblLogoIcon.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
@@ -4511,7 +4511,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
       if self.lblBusy.isVisible():
          self.numHeartBeat += 1
-         self.lblBusy.setPixmap(QtGui.QPixmap('./img/loadicon_%d.png' % \
+         self.lblBusy.setPixmap(QtGui.QPixmap(':/loadicon_%d.png' % \
                                              (self.numHeartBeat%6)))
 
    #############################################################################
@@ -5403,13 +5403,13 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
       self.btnLedgUp = QLabelButton('')
       self.btnLedgUp.setMaximumHeight(20)
-      self.btnLedgUp.setPixmap(QtGui.QPixmap('./img/scroll_up_18.png'))
+      self.btnLedgUp.setPixmap(QtGui.QPixmap(':/scroll_up_18.png'))
       self.btnLedgUp.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignHCenter)
       self.btnLedgUp.setVisible(False)
 
       self.btnLedgDn = QLabelButton('')
       self.btnLedgDn.setMaximumHeight(20)
-      self.btnLedgDn.setPixmap(QtGui.QPixmap('./img/scroll_down_18.png'))
+      self.btnLedgDn.setPixmap(QtGui.QPixmap(':/scroll_down_18.png'))
       self.btnLedgDn.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignHCenter)
 
 
@@ -5553,9 +5553,9 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
 if 1:
    #setup splash screen
-   pixLogo = QtGui.QPixmap('./img/splashlogo.png')
+   pixLogo = QtGui.QPixmap(':/splashlogo.png')
    if USE_TESTNET or USE_REGTEST:
-      pixLogo = QtGui.QPixmap('./img/splashlogo_testnet.png')
+      pixLogo = QtGui.QPixmap(':/splashlogo_testnet.png')
    SPLASH = ArmorySplashScreen(pixLogo)
    SPLASH.setMask(pixLogo.mask())
 

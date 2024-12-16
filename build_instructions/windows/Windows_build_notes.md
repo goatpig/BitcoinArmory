@@ -77,5 +77,10 @@ ninja
 > [!WARNING]
 > If you have cloned and built the dependencies to a folder that is NOT shared with BitcoinArmory, this will fail! In order to make it work, build BitcoinArmory using `cmake -G Ninja .. -DTHIRD_PARTY_PATH=path/to/dependencies`.
 
+Next, compile all the icons and images:
+```
+pyside6-rcc --binary imgList.xml -o imgList.rcc
+```
+
 # 6. Building c20p1305_cffi
 Follow the instructions under https://github.com/goatpig/c20p1305_cffi.

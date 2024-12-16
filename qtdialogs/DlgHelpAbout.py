@@ -22,7 +22,7 @@ class DlgHelpAbout(ArmoryDialog):
       super(DlgHelpAbout, self).__init__(parent, main)
 
       imgLogo = QtWidgets.QLabel()
-      imgLogo.setPixmap(QtGui.QPixmap('./img/armory_logo_h56.png'))
+      imgLogo.setPixmap(QtGui.QPixmap(':/armory_logo_h56.png'))
       imgLogo.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
 #        if BTCARMORY_BUILD != None:

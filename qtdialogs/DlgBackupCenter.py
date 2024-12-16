@@ -557,7 +557,7 @@ class DlgPrintBackup(ArmoryDialog):
 
       self.setLayout(layout)
 
-      self.setWindowIcon(QtGui.QIcon('./img/printer_icon.png'))
+      self.setWindowIcon(QtGui.QIcon(':/printer_icon.png'))
       self.setWindowTitle('Print Wallet Backup')
 
       # Apparently I can't programmatically scroll until after it's painted
@@ -715,9 +715,9 @@ class DlgPrintBackup(ArmoryDialog):
       doMask = self.chkSecurePrint.isChecked()
 
       if USE_TESTNET or USE_REGTEST:
-         self.scene.drawPixmapFile('./img/armory_logo_green_h56.png')
+         self.scene.drawPixmapFile(':/armory_logo_green_h56.png')
       else:
-         self.scene.drawPixmapFile('./img/armory_logo_h36.png')
+         self.scene.drawPixmapFile(':/armory_logo_h36.png')
       self.scene.newLine()
 
       self.scene.drawText('Paper Backup for Armory Wallet', GETFONT('Var', 11))
@@ -964,7 +964,7 @@ class DlgPrintBackup(ArmoryDialog):
          pieSize = min(72., maxPieHeight, maxPieWidth)
          for i in range(N):
             startX, startY = self.scene.getCursorXY()
-            drawSize = self.scene.drawPixmapFile('./img/frag%df.png' % M, sizePx=pieSize)
+            drawSize = self.scene.drawPixmapFile(':/frag%df.png' % M, sizePx=pieSize)
             self.scene.moveCursor(10, 0)
             if i == printData:
                returnX, returnY = self.scene.getCursorXY()
@@ -1397,7 +1397,7 @@ class DlgFragBackup(ArmoryDialog):
       self.M, self.N = M, N
       self.fragPrefixStr = ComputeFragIDBase58(self.M, \
                               base58_to_binary(self.uniqueFragSetID))
-      self.fragPixmapFn = './img/frag%df.png' % M
+      self.fragPixmapFn = ':/frag%df.png' % M
 
 
    #############################################################################

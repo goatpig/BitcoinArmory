@@ -704,7 +704,7 @@ class DlgRestoreFragged(ArmoryDialog):
          showRightFrm = True
          M, fnum, setIDBin, doMask, idBase58 = ReadFragIDLineBin(data[0])
          self.lblRightFrm.setText(self.tr('<b><u>Wallet Being Restored:</u></b>'))
-         self.imgPie.setPixmap(QtGui.QPixmap('./img/frag%df.png' % M).scaled(96,96))
+         self.imgPie.setPixmap(QtGui.QPixmap(':/frag%df.png' % M).scaled(96,96))
          self.lblReqd.setText(self.tr('<b>Frags Needed:</b> %s' % M))
          self.lblFragID.setText(self.tr('<b>Fragments:</b> %s' % idBase58.split('-')[0]))
          self.btnRestore.setEnabled(len(self.fragDataMap) >= M)

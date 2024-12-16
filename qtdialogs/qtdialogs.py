@@ -1100,7 +1100,7 @@ class DlgVerifySweep(ArmoryDialog):
       self.connect(bbox, SIGNAL('rejected()'), self.reject)
 
       lblWarnImg = QtWidgets.QLabel()
-      lblWarnImg.setPixmap(QtGui.QPixmap('./img/MsgBox_warning48.png'))
+      lblWarnImg.setPixmap(QtGui.QPixmap(':/MsgBox_warning48.png'))
       lblWarnImg.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop)
 
       layout = QtWidgets.QHBoxLayout()
@@ -1454,10 +1454,10 @@ class DlgRemoveWallet(ArmoryDialog):
 
       # Add two WARNING images on either side of dialog
       lblWarnImg = QtWidgets.QLabel()
-      lblWarnImg.setPixmap(QtGui.QPixmap('./img/MsgBox_warning48.png'))
+      lblWarnImg.setPixmap(QtGui.QPixmap(':/MsgBox_warning48.png'))
       lblWarnImg.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
       lblWarnImg2 = QtWidgets.QLabel()
-      lblWarnImg2.setPixmap(QtGui.QPixmap('./img/MsgBox_warning48.png'))
+      lblWarnImg2.setPixmap(QtGui.QPixmap(':/MsgBox_warning48.png'))
       lblWarnImg2.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
       # Add the warning text and images to the top of the dialog
@@ -1735,10 +1735,10 @@ class DlgRemoveAddress(ArmoryDialog):
 
       # Add two WARNING images on either side of dialog
       lblWarnImg = QtWidgets.QLabel()
-      lblWarnImg.setPixmap(QtGui.QPixmap('./img/MsgBox_warning48.png'))
+      lblWarnImg.setPixmap(QtGui.QPixmap(':/MsgBox_warning48.png'))
       lblWarnImg.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
       lblWarnImg2 = QtWidgets.QLabel()
-      lblWarnImg2.setPixmap(QtGui.QPixmap('./img/MsgBox_warning48.png'))
+      lblWarnImg2.setPixmap(QtGui.QPixmap(':/MsgBox_warning48.png'))
       lblWarnImg2.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
       # Add the warning text and images to the top of the dialog
@@ -1844,7 +1844,7 @@ class DlgBadConnection(ArmoryDialog):
 
       layout = QtWidgets.QGridLayout()
       lblWarnImg = QtWidgets.QLabel()
-      lblWarnImg.setPixmap(QtGui.QPixmap('./img/MsgBox_warning48.png'))
+      lblWarnImg.setPixmap(QtGui.QPixmap(':/MsgBox_warning48.png'))
       lblWarnImg.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop)
 
       lblDescr = QtWidgets.QLabel()
@@ -2647,7 +2647,7 @@ class DlgWODataPrintBackup(ArmoryDialog):
       layout.addWidget(frmButtons)
       setLayoutStretch(layout, 0, 1, 0)
       self.setLayout(layout)
-      self.setWindowIcon(QtGui.QIcon('./img/printer_icon.png'))
+      self.setWindowIcon(QtGui.QIcon(':/printer_icon.png'))
       self.setWindowTitle('Print Watch-Only Root')
 
       # Apparently I can't programmatically scroll until after it's painted
@@ -2697,9 +2697,9 @@ class DlgWODataPrintBackup(ArmoryDialog):
 
       # Start drawing the page.
       if USE_TESTNET or USE_REGTEST:
-         self.scene.drawPixmapFile('./img/armory_logo_green_h56.png')
+         self.scene.drawPixmapFile(':/armory_logo_green_h56.png')
       else:
-         self.scene.drawPixmapFile('./img/armory_logo_h36.png')
+         self.scene.drawPixmapFile(':/armory_logo_h36.png')
       self.scene.newLine()
 
       warnMsg = self.tr(
@@ -2867,8 +2867,8 @@ class DlgShowTestResults(ArmoryDialog):
             'Fragments <b>%s</b> and <b>%s</b> produce a '
             'wallet with ID "<b>%s</b>"' % (subText, subStrs[-1], ID))
 
-         chk = lambda: QtGui.QPixmap('./img/checkmark32.png').scaled(20, 20)
-         _X_ = lambda: QtGui.QPixmap('./img/red_X.png').scaled(16, 16)
+         chk = lambda: QtGui.QPixmap(':/checkmark32.png').scaled(20, 20)
+         _X_ = lambda: QtGui.QPixmap(':/red_X.png').scaled(16, 16)
 
          lblTxt = QRichLabel(dispTxt)
          lblTxt.setWordWrap(False)
