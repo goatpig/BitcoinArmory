@@ -8618,10 +8618,9 @@ public:
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(BackupTests, Easy16)
 {
-   for (const auto& index : Armory::Seeds::Easy16Codec::eligibleIndexes_)
-   {
+   for (const auto& index : Armory::Seeds::Easy16Codec::eligibleIndexes_) {
       auto root = CryptoPRNG::generateRandom(32);
-      
+
       //encode the root
       auto encoded = Armory::Seeds::Easy16Codec::encode(root.getRef(), index);
       ASSERT_EQ(encoded.size(), 2ULL);

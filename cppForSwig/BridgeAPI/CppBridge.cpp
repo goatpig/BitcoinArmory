@@ -547,7 +547,9 @@ void CppBridge::createBackupStringForWallet(const std::string& waaId,
 
          //grab root
          backupData = move(wltContainer->getBackupStrings(lbd));
-      } catch (const std::exception&) {}
+      } catch (const std::exception&) {
+         backupData = nullptr;
+      }
 
       //wind down passphrase prompt
       passPromptObj->cleanup();
@@ -570,7 +572,7 @@ void CppBridge::createBackupStringForWallet(const std::string& waaId,
          throw std::runtime_error("[createBackupStringForWallet]"
             " invalid backup type");
       }
-      auto walletReply = reply.getWallet();
+      auto walletReply = reply.initWallet();
       auto backupStringCapnp = walletReply.initCreateBackupString();
 
       //cleartext root

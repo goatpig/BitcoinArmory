@@ -148,6 +148,15 @@ Colors.ToolTipQ         = Colors.LBtnNormalFG
 Colors.TextPurple = QtGui.QColor()
 Colors.TextPurple.setRgb(102, 0, 204, 255)
 
+Colors.Black = QtGui.QColor()
+Colors.Black.setRgb(0, 0, 0)
+
+Colors.White = QtGui.QColor()
+Colors.White.setRgb(255, 255, 255)
+
+Colors.Red = QtGui.QColor()
+Colors.Red.setRgb(180, 0, 0)
+
 ################################################################################
 def htmlColor(name):
    """
