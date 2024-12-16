@@ -150,7 +150,11 @@ vector<SecureBinaryData> Easy16Codec::encode(
    {
       //get hash
       auto h256 = getHash(chunk16, index);
-      SecureBinaryData result(46);
+      SecureBinaryData result(47);
+
+      //capnp strings require null terminated buffers
+      //easy16 lines are ultimately passed as strings to the client
+      result[46] = 0;
 
       //encode the chunk
       unsigned charCount = 0;
@@ -215,33 +219,41 @@ BackupEasy16DecodeResult Easy16Codec::decode(
 }
 
 ////
-BackupEasy16DecodeResult Easy16Codec::decode(const vector<BinaryDataRef>& lines)
+BackupEasy16DecodeResult Easy16Codec::decode(const std::vector<BinaryDataRef>& lines)
 {
-   if (lines.size() == 0)
-      throw runtime_error("empty easy16 code");
+   if (lines.empty()) {
+      throw std::runtime_error("empty easy16 code");
+   }
 
    //setup character to value lookup map
-   map<char, uint8_t> easy16Vals;
-   for (unsigned i=0; i<e16chars_.size(); i++)
+   std::map<char, uint8_t> easy16Vals;
+   for (unsigned i=0; i<e16chars_.size(); i++) {
       easy16Vals.emplace(e16chars_[i], i);
+   }
 
    auto isSpace = [](const char* str)->bool
    {
       return (*str == ' ');
    };
 
-   auto decodeCharacters = [&easy16Vals](
-      uint8_t& result, const char* str)->void
+   auto isNull = [](const char* str)->bool
+   {
+      return (*str == 0);
+   };
+
+   auto decodeCharacters = [&easy16Vals](uint8_t& result, const char* str)->void
    {
       //convert characters to value, ignore effect of invalid ones
       result = 0;
       auto iter1 = easy16Vals.find(str[0]);
-      if (iter1 != easy16Vals.end())
+      if (iter1 != easy16Vals.end()) {
          result = iter1->second << 4;
+      }
 
       auto iter2 = easy16Vals.find(str[1]);
-      if (iter2 != easy16Vals.end())
+      if (iter2 != easy16Vals.end()) {
          result += iter2->second;
+      }
    };
 
    /*
@@ -251,9 +263,9 @@ BackupEasy16DecodeResult Easy16Codec::decode(const vector<BinaryDataRef>& lines)
    Error values:
     . -1: checksum mismatch
     . -2: invalid checksum data
-    . -3: not enough room in  the result buffer
+    . -3: not enough room in the result buffer
    */
-   auto decodeLine = [&isSpace, &decodeCharacters](
+   auto decodeLine = [&isSpace, &isNull, &decodeCharacters](
       uint8_t* result, size_t& len,
       const BinaryDataRef& line, BinaryData& checksum)->int
    {
@@ -261,17 +273,19 @@ BackupEasy16DecodeResult Easy16Codec::decode(const vector<BinaryDataRef>& lines)
       len = 0;
       auto ptr = line.toCharPtr();
 
-      unsigned i=0;
-      for (; i<line.getSize() - (EASY16_CHECKSUM_LEN * 2); i++)
-      {
+      //decode the entire line
+      SecureBinaryData decodedLine(line.getSize());
+      for (unsigned i=0; i<line.getSize(); i++) {
          //skip spaces
-         if (isSpace(ptr + i))
+         if (isSpace(ptr + i)) {
             continue;
+         } else if (isNull(ptr + i)) {
+            //null char, we're done
+            break;
+         }
 
-         if (len >= maxlen)
-            return -3;
-
-         decodeCharacters(result[len], ptr + i);
+         //this will read the next 2 characters into a single uint8_t
+         decodeCharacters(decodedLine.getPtr()[len], ptr + i);
 
          //increment result length
          ++len;
@@ -280,26 +294,23 @@ BackupEasy16DecodeResult Easy16Codec::decode(const vector<BinaryDataRef>& lines)
          ++i;
       }
 
-      //grab checksum
-      checksum.resize(EASY16_CHECKSUM_LEN);
-      uint8_t* checksumPtr = checksum.getPtr();
-      size_t checksumLen = 0;
-      for (; i<line.getSize(); i++)
-      {
-         //skip spaces
-         if (isSpace(ptr + i))
-            continue;
+      if (len <= EASY16_CHECKSUM_LEN) {
+         //decoded line cannot fit the checksum
+         return -2;
+      }
+      len -= EASY16_CHECKSUM_LEN;
 
-         if (checksumLen >= EASY16_CHECKSUM_LEN)
-            return -2;
-         
-         decodeCharacters(*(checksumPtr + checksumLen), ptr + i);
-         ++checksumLen;
-         ++i;
+      if (len > maxlen) {
+         //not enough room in the result buffer
+         return -3;
       }
 
-      if (checksumLen != EASY16_CHECKSUM_LEN)
-         return -2;
+      //copy decoded line
+      memcpy(result, decodedLine.getPtr(), len);
+
+      //copy checksum
+      checksum.resize(EASY16_CHECKSUM_LEN);
+      memcpy(checksum.getPtr(), decodedLine.getPtr() + len, EASY16_CHECKSUM_LEN);
 
       //hash data
       BinaryDataRef decodedChunk(result, len);
@@ -313,8 +324,7 @@ BackupEasy16DecodeResult Easy16Codec::decode(const vector<BinaryDataRef>& lines)
 
    auto dataPtr = data.getPtr();
    size_t pos = 0;
-   for (unsigned i=0; i<lines.size(); i++)
-   {
+   for (unsigned i=0; i<lines.size(); i++) {
       const auto& line = lines[i];
       size_t len = fullSize - pos;
       auto result = decodeLine(dataPtr + pos, len, line, checksums[i]);
@@ -323,32 +333,30 @@ BackupEasy16DecodeResult Easy16Codec::decode(const vector<BinaryDataRef>& lines)
 
       switch (result)
       {
-      case -1: //could not match checksum
-      case -2: //invalid checksum length
-      {
-         checksumIndexes.push_back(result);
-         break;
+         case -1: //could not match checksum
+         case -2: //invalid checksum length
+         {
+            checksumIndexes.push_back(result);
+            break;
+         }
+
+         case -3:
+         {
+            //ran out of space in result buffer
+            throw runtime_error("easy16 decode buffer is too short");
+         }
+
+         default:
+            //valid checksum
+            checksumIndexes.push_back(result);
       }
 
-      case -3:
-      {
-         //ran out of space in result buffer
-         throw runtime_error("easy16 decode buffer is too short");
-      }
-
-      default:
-         //valid checksum
-         checksumIndexes.push_back(result);
-      }
-
-      if (len > EASY16_LINE_LENGTH)
-      {
-         throw runtime_error("easy16 line is too long");
-      }
-      else if (len < EASY16_LINE_LENGTH)
-      {
-         if (i != lines.size() - 1)
-            throw runtime_error("easy16 line is too short");
+      if (len > EASY16_LINE_LENGTH) {
+         throw std::runtime_error("easy16 line is too long");
+      } else if (len < EASY16_LINE_LENGTH) {
+         if (i != lines.size() - 1) {
+            throw std::runtime_error("easy16 line is too short");
+         }
 
          //last line doesn't have to be EASY16_LINE_LENGTH bytes long
          data.resize(pos);
@@ -356,9 +364,9 @@ BackupEasy16DecodeResult Easy16Codec::decode(const vector<BinaryDataRef>& lines)
    }
 
    BackupEasy16DecodeResult result;
-   result.checksumIndexes_ = move(checksumIndexes);
-   result.checksums_ = move(checksums);
-   result.data_ = move(data);
+   result.checksumIndexes_ = std::move(checksumIndexes);
+   result.checksums_ = std::move(checksums);
+   result.data_ = std::move(data);
    return result;
 }
 
@@ -1443,7 +1451,9 @@ string_view Backup_Easy16::getRoot(LineIndex li, bool encrypted) const
       }
    }
 
-   return string_view(iter->toCharPtr(), iter->getSize());
+   //all e16 backup strings come with a padded null byte, capnp expects this
+   //byte at buffer[size], so we do not cover it with the string_view
+   return string_view(iter->toCharPtr(), iter->getSize() - 1);
 }
 
 string_view Backup_Easy16::getChaincode(LineIndex li, bool encrypted) const
