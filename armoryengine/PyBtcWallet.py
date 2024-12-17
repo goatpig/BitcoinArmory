@@ -1675,6 +1675,15 @@ class PyBtcWallet(object):
    def getKdfMemoryReqtBytes(self):
       return self.kdfMemoryReq
 
+   #############################################################################
+   def getWalletId(self):
+      wltId, sep, accId = str.partition(self.uniqueIDB58, ':')
+      return wltId
+
+   def getAccountId(self):
+      wltId, sep, accId = str.partition(self.uniqueIDB58, ':')
+      return accId
+
 ###############################################################################
 def getSuffixedPath(walletPath, nameSuffix):
    fpath = walletPath

@@ -36,7 +36,7 @@ class DlgBackupCenter(ArmoryDialog):
       super(DlgBackupCenter, self).__init__(parent, main)
 
       self.wlt = wlt
-      wltID = wlt.uniqueIDB58
+      wltID = wlt.getWalletId()
       wltName = wlt.labelName
 
       self.walletBackupFrame = WalletBackupFrame(parent, main)
@@ -163,8 +163,8 @@ class SimplePrintableGraphicsScene(object):
       self.PAPER_A4_HEIGHT = 11.0 * self.INCH
       self.MARGIN_PIXELS = 0.6 * self.INCH
 
-      self.PAGE_BKGD_COLOR = Colors.Black
-      self.PAGE_TEXT_COLOR = Colors.White
+      self.PAGE_BKGD_COLOR = Colors.White
+      self.PAGE_TEXT_COLOR = Colors.Black
 
       self.fontFix = GETFONT('Courier', 9)
       self.fontVar = GETFONT('Times', 10)
@@ -734,7 +734,7 @@ class DlgPrintBackup(ArmoryDialog):
                                                    'Wallet Name:', 'Backup Type:'])
          self.scene.moveCursor(15, 0)
          suf = 'c' if self.noNeedChaincode else 'a'
-         colRect, rowHgt = self.scene.drawColumn(['1.35' + suf, self.wlt.uniqueIDB58, \
+         colRect, rowHgt = self.scene.drawColumn(['1.35' + suf, self.wlt.getWalletId(), \
                                                    self.wlt.labelName, bType])
          self.scene.moveCursor(15, colRect.y() + colRect.height(), absolute=True)
       else:
@@ -746,7 +746,7 @@ class DlgPrintBackup(ArmoryDialog):
          fragID = '<b>%s-<font color="%s">#%d</font></b>' % (baseID, htmlColor('TextBlue'), fragNum)
          self.scene.moveCursor(15, 0)
          suf = 'c' if self.noNeedChaincode else 'a'
-         colRect, rowHgt = self.scene.drawColumn(['1.35' + suf, self.wlt.uniqueIDB58, \
+         colRect, rowHgt = self.scene.drawColumn(['1.35' + suf, self.wlt.getWalletId(), \
                                                    self.wlt.labelName, bType, fragID])
          self.scene.moveCursor(15, colRect.y() + colRect.height(), absolute=True)
 
@@ -971,7 +971,6 @@ class DlgPrintBackup(ArmoryDialog):
                self.scene.moveCursor(returnX, returnY, absolute=True)
 
 
-
       vbar = self.view.verticalScrollBar()
       vbar.setValue(vbar.minimum())
       self.view.update()
@@ -986,7 +985,7 @@ class DlgFragBackup(ArmoryDialog):
       self.wlt = wlt
 
       lblDescrTitle = QRichLabel(self.tr(
-         '<b><u>Create M-of-N Fragmented Backup</u> of "%s" (%s)</b>' % (wlt.labelName, wlt.uniqueIDB58)), doWrap=False)
+         '<b><u>Create M-of-N Fragmented Backup</u> of "%s" (%s)</b>' % (wlt.labelName, wlt.getWalletId())), doWrap=False)
       lblDescrTitle.setContentsMargins(5, 5, 5, 5)
 
       self.lblAboveFrags = QRichLabel('')
@@ -1263,7 +1262,7 @@ class DlgFragBackup(ArmoryDialog):
             return
 
 
-      wid = self.wlt.uniqueIDB58
+      wid = self.wlt.getWalletId()
       pref = self.fragPrefixStr
       fnum = zindex + 1
       M = self.M
