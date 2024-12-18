@@ -29,14 +29,6 @@
 
 #define SIDESCAN_ID 0x100000ff
 
-namespace google
-{
-   namespace protobuf
-   {
-      class Message;
-   };
-};
-
 ////////////////////////////////////////////////////////////////////////////////
 enum AddressBatchType
 {
@@ -59,12 +51,11 @@ struct AddressBatch
 struct RegistrationBatch : public AddressBatch
 {
    std::function<void(std::set<BinaryDataRef>&)> callback_;
-   std::set<BinaryDataRef> scrAddrSet_;
-   std::shared_ptr<::google::protobuf::Message> msg_;
+   std::set<BinaryData> scrAddrSet_;
    bool isNew_;
    std::string walletID_;
 
-   RegistrationBatch(void) : 
+   RegistrationBatch(void) :
       AddressBatch(AddressBatch_register)
    {}
 };
@@ -97,9 +88,9 @@ public:
 
    const BinaryData& getHash(void) const
    {
-      if (addrHash_.getSize() == 0)
+      if (addrHash_.empty()) {
          addrHash_ = std::move(BtcUtils::getHash256(scrAddr_));
-
+      }
       return addrHash_;
    }
 
@@ -163,7 +154,7 @@ private:
    LMDBBlockDatabase *const lmdb_;
 
    std::shared_ptr<Armory::Threading::TransactionalMap<
-      BinaryDataRef, std::shared_ptr<AddrAndHash>>> scanFilterAddrMap_;
+      BinaryData, std::shared_ptr<AddrAndHash>>> scanFilterAddrMap_;
 
    Armory::Threading::BlockingQueue<
       std::shared_ptr<AddressBatch>> registrationStack_;
@@ -178,14 +169,14 @@ private:
    void registrationThread(void);
 
    std::shared_ptr<Armory::Threading::TransactionalMap<
-      BinaryDataRef, std::shared_ptr<AddrAndHash>>> getZcFilterMapPtr(void) const
+      BinaryData, std::shared_ptr<AddrAndHash>>> getZcFilterMapPtr(void) const
    {
       return scanFilterAddrMap_;
    }
 
    std::set<BinaryDataRef> updateAddrMap(
-      const std::set<BinaryDataRef>&, unsigned, bool );
-   void setSSHLastScanned(std::set<BinaryDataRef>&, unsigned);
+      const std::set<BinaryData>&, unsigned, bool );
+   void setSSHLastScanned(std::set<BinaryData>&, unsigned);
 
 protected:
    std::function<void(
@@ -199,7 +190,7 @@ public:
    {
       scanFilterAddrMap_ = std::make_shared<
          Armory::Threading::TransactionalMap<
-         BinaryDataRef, std::shared_ptr<AddrAndHash>>>();
+         BinaryData, std::shared_ptr<AddrAndHash>>>();
    }
 
    virtual ~ScrAddrFilter() { shutdown(); }
@@ -207,10 +198,10 @@ public:
    LMDBBlockDatabase* db() { return lmdb_; }
 
    ////
-   std::shared_ptr<const std::map<BinaryDataRef, std::shared_ptr<AddrAndHash>>>
+   std::shared_ptr<const std::map<BinaryData, std::shared_ptr<AddrAndHash>>>
       getScanFilterAddrMap(void) const
    {
-      return scanFilterAddrMap_->get(); 
+      return scanFilterAddrMap_->get();
    }
 
    size_t getScanFilterAddrCount(void) const

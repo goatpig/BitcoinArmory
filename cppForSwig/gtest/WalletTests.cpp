@@ -1,21 +1,26 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2017-2021, goatpig                                          //
+//  Copyright (C) 2017-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
+
+#include <filesystem>
 
 #include "TestUtils.h"
 #include "../Wallets/PassphraseLambda.h"
 #include "../Wallets/Seeds/Backups.h"
 #include "../Wallets/Seeds/Seeds.h"
 #include "../Wallets/WalletFileInterface.h"
-#include "protobuf/BridgeProto.pb.h"
+
+#include <capnp/message.h>
+#include <capnp/serialize.h>
+#include "capnp/Bridge.capnp.h"
 
 using namespace std;
-using namespace Armory::Signer;
+using namespace Armory::Signing;
 using namespace Armory::Config;
 using namespace Armory::Assets;
 using namespace Armory::Accounts;
@@ -42,9 +47,9 @@ class AddressTests : public ::testing::Test
 protected:
    virtual void SetUp(void)
    {
-      homedir_ = string("./fakehomedir");
-      DBUtils::removeDirectory(homedir_);
-      mkdir(homedir_);
+      homedir_ = std::filesystem::path("./fakehomedir");
+      FileUtils::removeDirectory(homedir_);
+      std::filesystem::create_directory(homedir_);
 
       Armory::Config::parseArgs({
          "--offline",
@@ -55,10 +60,10 @@ protected:
    virtual void TearDown(void)
    {
       Armory::Config::reset();
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
    }
 
-   string homedir_;
+   std::filesystem::path homedir_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -666,9 +671,9 @@ protected:
 protected:
    virtual void SetUp(void)
    {
-      homedir_ = string("./fakehomedir");
-      DBUtils::removeDirectory(homedir_);
-      mkdir(homedir_);
+      homedir_ = std::filesystem::path("./fakehomedir");
+      FileUtils::removeDirectory(homedir_);
+      std::filesystem::create_directory(homedir_);
 
       Armory::Config::parseArgs({
          "--offline",
@@ -679,10 +684,10 @@ protected:
    virtual void TearDown(void)
    {
       Armory::Config::reset();
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
    }
 
-   string homedir_;
+   std::filesystem::path homedir_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1656,9 +1661,9 @@ class AddressEntryTest : public ::testing::Test
 protected:
    virtual void SetUp(void)
    {
-      homedir_ = string("./fakehomedir");
-      DBUtils::removeDirectory(homedir_);
-      mkdir(homedir_);
+      homedir_ = std::filesystem::path("./fakehomedir");
+      FileUtils::removeDirectory(homedir_);
+      std::filesystem::create_directory(homedir_);
 
       Armory::Config::parseArgs({
          "--offline",
@@ -1669,10 +1674,10 @@ protected:
    virtual void TearDown(void)
    {
       Armory::Config::reset();
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
    }
 
-   string homedir_;
+   std::filesystem::path homedir_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1896,20 +1901,18 @@ TEST_F(AddressEntryTest, P2WSH)
 class WalletInterfaceTest : public ::testing::Test
 {
 protected:
-   string homedir_;
-   string dbPath_;
+   std::filesystem::path homedir_;
+   std::filesystem::path dbPath_;
    BinaryData allZeroes16_;
 
    /////////////////////////////////////////////////////////////////////////////
    virtual void SetUp()
    {
-      homedir_ = string("./fakehomedir");
-      DBUtils::removeDirectory(homedir_);
-      mkdir(homedir_);
+      homedir_ = std::filesystem::path("./fakehomedir");
+      FileUtils::removeDirectory(homedir_);
+      std::filesystem::create_directory(homedir_);
 
-      dbPath_ = homedir_;
-      DBUtils::appendPath(dbPath_, "wallet_test.wallet");
-
+      dbPath_ = homedir_ / "wallet_test.wallet";
       Armory::Config::parseArgs({
          "--offline",
          "--datadir=./fakehomedir" },
@@ -1924,7 +1927,7 @@ protected:
    virtual void TearDown(void)
    {
       Armory::Config::reset();
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -3337,44 +3340,34 @@ TEST_F(WalletInterfaceTest, Passphrase_Test)
 
    {
       //try to open iface with wrong passphrase
-      try
-      {
+      try {
          IO::WalletDBInterface dbIface;
          dbIface.setupEnv(dbPath_, true, passEmpty, 0);
          ASSERT_TRUE(false);
-      }
-      catch (DecryptedDataContainerException& e)
-      {
+      } catch (const DecryptedDataContainerException& e) {
          EXPECT_EQ(e.what(), string("empty passphrase"));
       }
 
       //try to open iface with wrong file flag
-      try
-      {
+      try {
          IO::WalletDBInterface dbIface;
          dbIface.setupEnv(dbPath_, false, passLbd, 0);
          ASSERT_TRUE(false);
-      }
-      catch (IO::WalletInterfaceException& e)
-      {
+      } catch (const IO::WalletInterfaceException& e) {
          EXPECT_EQ(e.what(), string("[openEnv] file flag mismatch"));
       }
 
       //open with proper passphrase
-      try
-      {
+      try {
          IO::WalletDBInterface dbIface;
          dbIface.setupEnv(dbPath_, true, passLbd, 0);
          dbIface.shutdown();
-      }
-      catch(...)
-      {
+      } catch(...) {
          ASSERT_FALSE(true);
       }
    }
 
-   auto dbPath2 = homedir_;
-   DBUtils::appendPath(dbPath2, "db2_test");
+   auto dbPath2 = homedir_ / "db2_test";
 
    {
       //create wallet iface with empty passphrase lambda
@@ -3393,13 +3386,10 @@ TEST_F(WalletInterfaceTest, Passphrase_Test)
 
       //reopen iface, check it won't hit the passphrase lambda
       IO::WalletDBInterface dbIface;
-      try
-      {
+      try {
          dbIface.setupEnv(dbPath2, true, passLbd2, 0);
          dbIface.shutdown();
-      }
-      catch (...)
-      {
+      } catch (...) {
          ASSERT_TRUE(false);
       }
    }
@@ -4044,16 +4034,16 @@ TEST_F(WalletInterfaceTest, WipeEntries_Test)
 class WalletsTest : public ::testing::Test
 {
 protected:
-   string homedir_;
+   std::filesystem::path homedir_;
    SecureBinaryData controlPass_;
    PassphraseLambda controlLbd_;
 
    /////////////////////////////////////////////////////////////////////////////
    virtual void SetUp()
    {
-      homedir_ = string("./fakehomedir");
-      DBUtils::removeDirectory(homedir_);
-      mkdir(homedir_);
+      homedir_ = std::filesystem::path("./fakehomedir");
+      FileUtils::removeDirectory(homedir_);
+      std::filesystem::create_directory(homedir_);
 
       Armory::Config::parseArgs({
          "--offline",
@@ -4071,7 +4061,7 @@ protected:
    virtual void TearDown(void)
    {
       Armory::Config::reset();
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -4144,7 +4134,7 @@ protected:
 TEST_F(WalletsTest, CreateCloseOpen_Test)
 {
    map<string, vector<BinaryData>> addrMap;
-   map<string, string> filenames;
+   map<string, std::filesystem::path> filenames;
 
    WalletCreationParams params{
       SecureBinaryData::fromString("passphrase"),
@@ -4263,7 +4253,7 @@ TEST_F(WalletsTest, CreateWOCopy_Test)
 
    //delete the underlying file so we can fork anew
    reloadWoWallet.reset();
-   unlink(woFilename.c_str());
+   std::filesystem::remove(woFilename.c_str());
 
    //fork WO from full wallet
    auto forkFilename = AssetWallet_Single::forkWatchingOnly(filename, passLbd);
@@ -4905,7 +4895,7 @@ TEST_F(WalletsTest, ControlPassphrase_Test)
          CryptoPRNG::generateRandom(124)));
    }
 
-   string filename;
+   std::filesystem::path filename;
    set<BinaryData> addrSet;
    {
       WalletCreationParams params{
@@ -5078,7 +5068,7 @@ TEST_F(WalletsTest, ControlPassphrase_Test)
       throw runtime_error("shouldn't get here");
    };
 
-   string filename2;
+   std::filesystem::path filename2;
    {
       WalletCreationParams params{
          SecureBinaryData::fromString("test"), {},
@@ -5153,7 +5143,7 @@ TEST_F(WalletsTest, ControlPassphrase_Test)
 
       //cleanup this WO
       wltWO.reset();
-      unlink(woFilename.c_str());
+      std::filesystem::remove(woFilename);
    }
 
    /***********/
@@ -6025,7 +6015,7 @@ TEST_F(WalletsTest, ChangeControlPassphrase_Test)
       homedir_, 40, 1, 1};
 
    //create wallet
-   string filename;
+   std::filesystem::path filename;
    {
       unique_ptr<Armory::Seeds::ClearTextSeed> seed(
          new Armory::Seeds::ClearTextSeed_BIP32(
@@ -7011,7 +7001,7 @@ TEST_F(WalletsTest, BIP32_SaltedAccount)
    auto salt1 = CryptoPRNG::generateRandom(32);
    auto salt2 = CryptoPRNG::generateRandom(32);
 
-   string filename;
+   std::filesystem::path filename;
    AddressAccountId accountID1;
    AddressAccountId accountID2;
 
@@ -7232,7 +7222,7 @@ TEST_F(WalletsTest, BIP32_SaltedAccount)
 TEST_F(WalletsTest, ECDH_Account)
 {
    //create blank wallet
-   string filename, woFilename;
+   std::filesystem::path filename, woFilename;
 
    auto&& privKey1 = READHEX(
       "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F");
@@ -7540,28 +7530,28 @@ TEST_F(WalletsTest, AssetPathResolution)
       fullPath.push_back(5);
 
       auto wlt_single = dynamic_pointer_cast<AssetWallet_Single>(wltPtr);
-      auto resolver = make_shared<Armory::Signer::ResolverFeed_AssetWalletSingle>(wlt_single);
+      auto resolver = make_shared<Armory::Signing::ResolverFeed_AssetWalletSingle>(wlt_single);
       auto assetPath = resolver->resolveBip32PathForPubkey(pubkey);
       auto pathFromSeed = assetPath.getDerivationPathFromSeed();
 
-      if (fullPath.size() != pathFromSeed.size())
+      if (fullPath.size() != pathFromSeed.size()) {
          return false;
+      }
 
-      for (unsigned i=0; i<pathFromSeed.size(); i++)
-      {
+      for (unsigned i=0; i<pathFromSeed.size(); i++) {
          if (pathFromSeed[i] != fullPath[i])
             return false;
       }
 
       auto pubkeyHash = BtcUtils::getHash160(pubkey);
       auto assetPair = resolver->getAssetPairForKey(pubkeyHash);
-      if (assetPair.first == nullptr)
+      if (assetPair.first == nullptr) {
          return false;
-
+      }
       auto assetXPub = wlt_single->getXpubForAssetID(assetPair.first->getID());
-      if (assetXPub != xpubStr)
+      if (assetXPub != xpubStr) {
          return false;
-
+      }
       return true;
    };
 
@@ -7592,7 +7582,7 @@ TEST_F(WalletsTest, AssetPathResolution)
 
       //cleanup original wallet
       wlt.reset();
-      unlink(filename.c_str());
+      std::filesystem::remove(filename);
 
       //check WO wallet
       auto wltWO = AssetWallet_Single::loadMainWalletFromFile(
@@ -7604,7 +7594,7 @@ TEST_F(WalletsTest, AssetPathResolution)
 
       //cleanup WO
       wltWO.reset();
-      unlink(woFilename.c_str());
+      std::filesystem::remove(woFilename);
    }
 
    {
@@ -7699,14 +7689,14 @@ TEST_F(WalletsTest, isAssetIdInUse)
 class WalletMetaDataTest : public ::testing::Test
 {
 protected:
-   string homedir_;
-   
+   std::filesystem::path homedir_;
+
    /////////////////////////////////////////////////////////////////////////////
    virtual void SetUp()
    {
-      homedir_ = string("./fakehomedir");
-      DBUtils::removeDirectory(homedir_);
-      mkdir(homedir_);
+      homedir_ = std::filesystem::path("./fakehomedir");
+      FileUtils::removeDirectory(homedir_);
+      std::filesystem::create_directory(homedir_);
 
       Armory::Config::parseArgs({
          "--offline",
@@ -7719,7 +7709,7 @@ protected:
    {
       Armory::Config::reset();
 
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
    }
 };
 
@@ -8454,7 +8444,7 @@ TEST_F(WalletMetaDataTest, Comments)
    commentMap.insert(make_pair(READHEX("22334455"), "comment3"));
 
    //create regular wallet
-   string filename;
+   std::filesystem::path filename;
    {
       WalletCreationParams params{
          passphrase, controlPass,
@@ -8523,14 +8513,14 @@ TEST_F(WalletMetaDataTest, Comments)
 class BackupTests : public ::testing::Test
 {
 public:
-   string homedir_;
+   std::filesystem::path homedir_;
 
    /////////////////////////////////////////////////////////////////////////////
    virtual void SetUp()
    {
-      homedir_ = string("./fakehomedir");
-      DBUtils::removeDirectory(homedir_);
-      mkdir(homedir_);
+      homedir_ = std::filesystem::path("./fakehomedir");
+      FileUtils::removeDirectory(homedir_);
+      std::filesystem::create_directory(homedir_);
 
       Armory::Config::parseArgs({
          "--offline",
@@ -8544,21 +8534,21 @@ public:
    {
       Armory::Config::reset();
 
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
    }
 
    /////////////////////////////////////////////////////////////////////////////
    bool compareWalletWithBackup(
       std::shared_ptr<AssetWallet_Single> assetWlt,
-      const string& path,
-      const SecureBinaryData& pass, const SecureBinaryData& control)
+      const std::filesystem::path& path,
+      const std::string& pass, const std::string& control)
    {
       unsigned controlPassCount = 0;
       auto controlPassLbd = [&controlPassCount, &control](
          const set<EncryptionKeyId>&)->SecureBinaryData
       {
          ++controlPassCount;
-         return control;
+         return SecureBinaryData::fromString(control);
       };
 
       //load it, newCtrl should work for the control passphrase
@@ -8585,7 +8575,7 @@ public:
          const set<EncryptionKeyId>&)->SecureBinaryData
       {
          ++keyPassCount;
-         return pass;
+         return SecureBinaryData::fromString(pass);
       };
 
       assetWlt->setPassphrasePromptLambda(oldPassLbd);
@@ -8962,45 +8952,53 @@ TEST_F(BackupTests, BackupStrings_Legacy)
    auto backupData = Armory::Seeds::Helpers::getWalletBackup(assetWlt);
    auto backupEasy16 = dynamic_cast<Backup_Easy16*>(backupData.get());
 
-   auto newPass = CryptoPRNG::generateRandom(10);
-   auto newCtrl = CryptoPRNG::generateRandom(10);
+   auto newPass = CryptoPRNG::generateRandom(10).toHexStr();
+   auto newCtrl = CryptoPRNG::generateRandom(10).toHexStr();
    auto callback = [&backupData, &newPass, &newCtrl](
-      BridgeProto::RestorePrompt prompt)->BridgeProto::RestoreReply
+      std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
    {
-      BridgeProto::RestoreReply reply;
-      switch (prompt.prompt_case())
+      capnp::MallocMessageBuilder reply;
+      auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
+      auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
+
+      switch (capnpPrompt.which())
       {
-      case BridgeProto::RestorePrompt::kGetPassphrases:
-      {
-         auto passphrases = reply.mutable_passphrases();
-         passphrases->set_privkey(newPass.toCharPtr(), newPass.getSize());
-         passphrases->set_control(newCtrl.toCharPtr(), newCtrl.getSize());
-         reply.set_success(true);
-         break;
+         case Armory::Codec::Bridge::RestorePrompt::GET_PASSPHRASES:
+         {
+            replyRoot.setPrivkey(newPass);
+            replyRoot.setControl(newCtrl);
+            replyRoot.setSuccess(true);
+            break;
+         }
+
+         case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+         {
+            auto walletMeta = capnpPrompt.getCheckWalletId();
+            auto capnWltId = walletMeta.getWalletId();
+            std::string strWltId(capnWltId.begin(), capnWltId.end());
+            EXPECT_EQ(strWltId, backupData->getWalletId());
+
+            EXPECT_EQ(walletMeta.getBackupType(),
+               (uint32_t)Armory::Seeds::BackupType::Armory135);
+            replyRoot.setSuccess(true);
+            break;
+         }
+
+         default:
+            replyRoot.setSuccess(false);
       }
 
-      case BridgeProto::RestorePrompt::kCheckWalletId:
-      {
-         auto checkWalleIdMsg = prompt.check_wallet_id();
-         EXPECT_EQ(checkWalleIdMsg.wallet_id(), backupData->getWalletId());
-
-         EXPECT_EQ(checkWalleIdMsg.backup_type(),
-            (int)Armory::Seeds::BackupType::Armory135);
-         reply.set_success(true);
-         break;
-      }
-
-      default:
-         reply.set_success(false);
-      }
-      return reply;
+      auto flat = capnp::messageToFlatArray(reply);
+      auto bytes = flat.asBytes();
+      BinaryData result(bytes.begin(), bytes.end());
+      return result;
    };
 
-   string newHomeDir("./newhomedir");
-   DBUtils::removeDirectory(newHomeDir);
-   mkdir(newHomeDir);
+   std::filesystem::path newHomeDir("./newhomedir");
+   FileUtils::removeDirectory(newHomeDir);
+   std::filesystem::create_directory(newHomeDir);
 
-   string filename;
+   std::filesystem::path filename;
    {
       //restore wallet
       auto backupCopy = Backup_Easy16::fromLines({
@@ -9009,12 +9007,14 @@ TEST_F(BackupTests, BackupStrings_Legacy)
       });
       auto newWltPtr = Armory::Seeds::Helpers::restoreFromBackup(
          move(backupCopy), callback, WalletCreationParams{
-            {}, {}, newHomeDir, 10, 1, 1 });
+            SecureBinaryData::fromString(newPass),
+            SecureBinaryData::fromString(newCtrl),
+            newHomeDir, 10, 1, 1 });
       EXPECT_NE(newWltPtr, nullptr);
 
       auto passLbd2 = [&newPass](const set<EncryptionKeyId>&)->SecureBinaryData
       {
-         return newPass;
+         return SecureBinaryData::fromString(newPass);
       };
       newWltPtr->setPassphrasePromptLambda(passLbd2);
 
@@ -9033,7 +9033,7 @@ TEST_F(BackupTests, BackupStrings_Legacy)
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass, newCtrl));
-   DBUtils::removeDirectory(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -9058,45 +9058,53 @@ TEST_F(BackupTests, BackupStrings_Legacy_Armory200a)
    auto backupData = Armory::Seeds::Helpers::getWalletBackup(assetWlt);
    auto backupEasy16 = dynamic_cast<Backup_Easy16*>(backupData.get());
 
-   auto newPass = CryptoPRNG::generateRandom(10);
-   auto newCtrl = CryptoPRNG::generateRandom(10);
+   auto newPass = CryptoPRNG::generateRandom(10).toHexStr();
+   auto newCtrl = CryptoPRNG::generateRandom(10).toHexStr();
    auto callback = [&backupData, &newPass, &newCtrl](
-      BridgeProto::RestorePrompt prompt)->BridgeProto::RestoreReply
+      std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
    {
-      BridgeProto::RestoreReply reply;
-      switch (prompt.prompt_case())
+      capnp::MallocMessageBuilder reply;
+      auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
+      auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
+
+      switch (capnpPrompt.which())
       {
-      case BridgeProto::RestorePrompt::kGetPassphrases:
-      {
-         auto passphrases = reply.mutable_passphrases();
-         passphrases->set_privkey(newPass.toCharPtr(), newPass.getSize());
-         passphrases->set_control(newCtrl.toCharPtr(), newCtrl.getSize());
-         reply.set_success(true);
-         break;
+         case Armory::Codec::Bridge::RestorePrompt::GET_PASSPHRASES:
+         {
+            replyRoot.setPrivkey(newPass);
+            replyRoot.setControl(newCtrl);
+            replyRoot.setSuccess(true);
+            break;
+         }
+
+         case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+         {
+            auto walletMeta = capnpPrompt.getCheckWalletId();
+            auto capnWltId = walletMeta.getWalletId();
+            std::string strWltId(capnWltId.begin(), capnWltId.end());
+            EXPECT_EQ(strWltId, backupData->getWalletId());
+
+            EXPECT_EQ(walletMeta.getBackupType(),
+               (uint32_t)Armory::Seeds::BackupType::Armory200a);
+            replyRoot.setSuccess(true);
+            break;
+         }
+
+         default:
+            replyRoot.setSuccess(false);
       }
 
-      case BridgeProto::RestorePrompt::kCheckWalletId:
-      {
-         auto checkWalleIdMsg = prompt.check_wallet_id();
-         EXPECT_EQ(checkWalleIdMsg.wallet_id(), backupData->getWalletId());
-
-         EXPECT_EQ(checkWalleIdMsg.backup_type(),
-            (int)Armory::Seeds::BackupType::Armory200a);
-         reply.set_success(true);
-         break;
-      }
-
-      default:
-         reply.set_success(false);
-      }
-      return reply;
+      auto flat = capnp::messageToFlatArray(reply);
+      auto bytes = flat.asBytes();
+      BinaryData result(bytes.begin(), bytes.end());
+      return result;
    };
 
-   string newHomeDir("./newhomedir");
-   DBUtils::removeDirectory(newHomeDir);
-   mkdir(newHomeDir);
+   std::filesystem::path newHomeDir("./newhomedir");
+   FileUtils::removeDirectory(newHomeDir);
+   std::filesystem::create_directory(newHomeDir);
 
-   string filename;
+   std::filesystem::path filename;
    {
       //restore wallet
       auto backupCopy = Backup_Easy16::fromLines({
@@ -9105,12 +9113,14 @@ TEST_F(BackupTests, BackupStrings_Legacy_Armory200a)
       });
       auto newWltPtr = Armory::Seeds::Helpers::restoreFromBackup(
          move(backupCopy), callback, WalletCreationParams{
-            {}, {}, newHomeDir, 10, 1, 1});
+            SecureBinaryData::fromString(newPass),
+            SecureBinaryData::fromString(newCtrl),
+            newHomeDir, 10, 1, 1});
       EXPECT_NE(newWltPtr, nullptr);
 
       auto passLbd2 = [&newPass](const set<EncryptionKeyId>&)->SecureBinaryData
       {
-         return newPass;
+         return SecureBinaryData::fromString(newPass);
       };
       newWltPtr->setPassphrasePromptLambda(passLbd2);
 
@@ -9129,7 +9139,7 @@ TEST_F(BackupTests, BackupStrings_Legacy_Armory200a)
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass, newCtrl));
-   DBUtils::removeDirectory(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -9156,43 +9166,52 @@ TEST_F(BackupTests, BackupStrings_Legacy_SecurePrint)
    auto backupData = Armory::Seeds::Helpers::getWalletBackup(assetWlt);
    auto backupEasy16 = dynamic_cast<Backup_Easy16*>(backupData.get());
 
-   auto newPass = CryptoPRNG::generateRandom(10);
-   auto newCtrl = CryptoPRNG::generateRandom(10);
+   auto newPass = CryptoPRNG::generateRandom(10).toHexStr();
+   auto newCtrl = CryptoPRNG::generateRandom(10).toHexStr();
    auto callback = [&backupData, &newPass, &newCtrl](
-      BridgeProto::RestorePrompt prompt)->BridgeProto::RestoreReply
+      std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
    {
-      BridgeProto::RestoreReply reply;
-      switch (prompt.prompt_case())
+      capnp::MallocMessageBuilder reply;
+      auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
+      auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
+
+      switch (capnpPrompt.which())
       {
-      case BridgeProto::RestorePrompt::kGetPassphrases:
-      {
-         auto passphrases = reply.mutable_passphrases();
-         passphrases->set_privkey(newPass.toCharPtr(), newPass.getSize());
-         passphrases->set_control(newCtrl.toCharPtr(), newCtrl.getSize());
-         reply.set_success(true);
-         break;
+         case Armory::Codec::Bridge::RestorePrompt::GET_PASSPHRASES:
+         {
+            replyRoot.setPrivkey(newPass);
+            replyRoot.setControl(newCtrl);
+            replyRoot.setSuccess(true);
+            break;
+         }
+
+         case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+         {
+            auto walletMeta = capnpPrompt.getCheckWalletId();
+            auto capnWltId = walletMeta.getWalletId();
+            std::string strWltId(capnWltId.begin(), capnWltId.end());
+
+            EXPECT_EQ(walletMeta.getBackupType(),
+               (uint32_t)Armory::Seeds::BackupType::Armory135);
+            replyRoot.setSuccess(strWltId == backupData->getWalletId());
+            break;
+         }
+
+         default:
+            replyRoot.setSuccess(false);
       }
 
-      case BridgeProto::RestorePrompt::kCheckWalletId:
-      {
-         auto checkWalleIdMsg = prompt.check_wallet_id();
-         EXPECT_EQ(checkWalleIdMsg.backup_type(),
-            (int)Armory::Seeds::BackupType::Armory135);
-         reply.set_success(checkWalleIdMsg.wallet_id() == backupData->getWalletId());
-         break;
-      }
-
-      default:
-         reply.set_success(false);
-      }
-      return reply;
+      auto flat = capnp::messageToFlatArray(reply);
+      auto bytes = flat.asBytes();
+      BinaryData result(bytes.begin(), bytes.end());
+      return result;
    };
 
-   string newHomeDir("./newhomedir");
-   DBUtils::removeDirectory(newHomeDir);
-   mkdir(newHomeDir);
+   std::filesystem::path newHomeDir("./newhomedir");
+   FileUtils::removeDirectory(newHomeDir);
+   std::filesystem::create_directory(newHomeDir);
 
-   string filename;
+   std::filesystem::path filename;
    {
       //try without sp pass
       try
@@ -9203,11 +9222,11 @@ TEST_F(BackupTests, BackupStrings_Legacy_SecurePrint)
          });
          Armory::Seeds::Helpers::restoreFromBackup(
             move(backupCopy), callback, WalletCreationParams{
-            {}, {}, newHomeDir, 10, 1, 1});
+            SecureBinaryData::fromString(newPass),
+            SecureBinaryData::fromString(newCtrl),
+            newHomeDir, 10, 1, 1});
          ASSERT_TRUE(false);
-      }
-      catch (const Armory::Seeds::RestoreUserException& e)
-      {
+      } catch (const Armory::Seeds::RestoreUserException& e) {
          EXPECT_EQ(e.what(), string("user rejected id"));
       }
 
@@ -9218,12 +9237,14 @@ TEST_F(BackupTests, BackupStrings_Legacy_SecurePrint)
          backupEasy16->getSpPass());
       auto newWltPtr = Armory::Seeds::Helpers::restoreFromBackup(
          move(backupCopy), callback, WalletCreationParams{
-            {}, {}, newHomeDir, 10, 1, 1});
+            SecureBinaryData::fromString(newPass),
+            SecureBinaryData::fromString(newCtrl),
+            newHomeDir, 10, 1, 1});
       EXPECT_NE(newWltPtr, nullptr);
 
       auto passLbd2 = [&newPass](const set<EncryptionKeyId>&)->SecureBinaryData
       {
-         return newPass;
+         return SecureBinaryData::fromString(newPass);
       };
       newWltPtr->setPassphrasePromptLambda(passLbd2);
 
@@ -9241,7 +9262,7 @@ TEST_F(BackupTests, BackupStrings_Legacy_SecurePrint)
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass, newCtrl));
-   DBUtils::removeDirectory(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -9300,7 +9321,7 @@ TEST_F(BackupTests, Easy16_AutoRepair)
    {
       auto root = prng.generateRandom(32);
       auto wltID = computeWalletID(root);
-      
+
       //encode the root
       auto encoded = Easy16Codec::encode(root.getRef(), BackupType::Armory135);
       ASSERT_EQ(encoded.size(), 2ULL);
@@ -9337,34 +9358,45 @@ TEST_F(BackupTests, Easy16_AutoRepair)
       try
       {
          auto userPrompt = [&wltID, &decoded, &succesfulRepairs](
-            BridgeProto::RestorePrompt prompt)->BridgeProto::RestoreReply
+            std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
          {
-            BridgeProto::RestoreReply reply;
-            switch (prompt.prompt_case())
+            capnp::MallocMessageBuilder reply;
+            auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
+            auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
+
+            switch (capnpPrompt.which())
             {
-            case BridgeProto::RestorePrompt::kChecksumError:
-            {
-               EXPECT_EQ(prompt.checksum_error().index(0), decoded.checksumIndexes_[0]);
-               EXPECT_EQ(prompt.checksum_error().index(1), decoded.checksumIndexes_[1]);
-               reply.set_success(false);
-               break;
+               case Armory::Codec::Bridge::RestorePrompt::CHECKSUM_ERROR:
+               {
+                  auto chksumErrors = capnpPrompt.getChecksumError();
+                  EXPECT_EQ(chksumErrors[0], decoded.checksumIndexes_[0]);
+                  EXPECT_EQ(chksumErrors[1], decoded.checksumIndexes_[1]);
+                  replyRoot.setSuccess(false);
+                  break;
+               }
+
+               case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+               {
+                  auto walletMeta = capnpPrompt.getCheckWalletId();
+                  EXPECT_EQ(walletMeta.getBackupType(), (uint32_t)BackupType::Armory135);
+                  auto capnWltId = walletMeta.getWalletId();
+                  std::string strWltId(capnWltId.begin(), capnWltId.end());
+                  if (strWltId == wltID) {
+                     ++succesfulRepairs;
+                  }
+
+                  replyRoot.setSuccess(false);
+                  break;
+               }
+
+               default:
+                  replyRoot.setSuccess(true);
             }
 
-            case BridgeProto::RestorePrompt::kCheckWalletId:
-            {
-               EXPECT_EQ(prompt.check_wallet_id().backup_type(),
-                  (int)BackupType::Armory135);
-               if (prompt.check_wallet_id().wallet_id() == wltID)
-                  ++succesfulRepairs;
-
-               reply.set_success(false);
-               break;
-            }
-
-            default:
-               reply.set_success(true);
-            }
-            return reply;
+            auto flat = capnp::messageToFlatArray(reply);
+            auto bytes = flat.asBytes();
+            BinaryData result(bytes.begin(), bytes.end());
+            return result;
          };
 
          auto backup = Backup_Easy16::fromLines({
@@ -9406,43 +9438,52 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode_SecurePrint)
    auto backupData = Armory::Seeds::Helpers::getWalletBackup(assetWlt);
    auto backupEasy16 = dynamic_cast<Backup_Easy16*>(backupData.get());
 
-   auto newPass = CryptoPRNG::generateRandom(10);
-   auto newCtrl = CryptoPRNG::generateRandom(10);
+   auto newPass = CryptoPRNG::generateRandom(10).toHexStr();
+   auto newCtrl = CryptoPRNG::generateRandom(10).toHexStr();
    auto callback = [&backupData, &newPass, &newCtrl](
-      BridgeProto::RestorePrompt prompt)->BridgeProto::RestoreReply
+      std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
    {
-      BridgeProto::RestoreReply reply;
-      switch (prompt.prompt_case())
+      capnp::MallocMessageBuilder reply;
+      auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
+      auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
+
+      switch (capnpPrompt.which())
       {
-      case BridgeProto::RestorePrompt::kGetPassphrases:
-      {
-         auto passphrases = reply.mutable_passphrases();
-         passphrases->set_privkey(newPass.toCharPtr(), newPass.getSize());
-         passphrases->set_control(newCtrl.toCharPtr(), newCtrl.getSize());
-         reply.set_success(true);
-         break;
+         case Armory::Codec::Bridge::RestorePrompt::GET_PASSPHRASES:
+         {
+            replyRoot.setPrivkey(newPass);
+            replyRoot.setControl(newCtrl);
+            replyRoot.setSuccess(true);
+            break;
+         }
+
+         case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+         {
+            auto walletMeta = capnpPrompt.getCheckWalletId();
+            auto capnWltId = walletMeta.getWalletId();
+            std::string strWltId(capnWltId.begin(), capnWltId.end());
+
+            EXPECT_EQ(walletMeta.getBackupType(),
+               (uint32_t)Armory::Seeds::BackupType::Armory135);
+            replyRoot.setSuccess(strWltId == backupData->getWalletId());
+            break;
+         }
+
+         default:
+            replyRoot.setSuccess(false);
       }
 
-      case BridgeProto::RestorePrompt::kCheckWalletId:
-      {
-         auto checkWalleIdMsg = prompt.check_wallet_id();
-         EXPECT_EQ(checkWalleIdMsg.backup_type(),
-            (int)Armory::Seeds::BackupType::Armory135);
-         reply.set_success(checkWalleIdMsg.wallet_id() == backupData->getWalletId());
-         break;
-      }
-
-      default:
-         reply.set_success(false);
-      }
-      return reply;
+      auto flat = capnp::messageToFlatArray(reply);
+      auto bytes = flat.asBytes();
+      BinaryData result(bytes.begin(), bytes.end());
+      return result;
    };
 
-   string newHomeDir("./newhomedir");
-   DBUtils::removeDirectory(newHomeDir);
-   mkdir(newHomeDir);
+   std::filesystem::path newHomeDir("./newhomedir");
+   FileUtils::removeDirectory(newHomeDir);
+   std::filesystem::create_directory(newHomeDir);
 
-   string filename;
+   std::filesystem::path filename;
    {
       //try without sp pass
       try
@@ -9455,7 +9496,9 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode_SecurePrint)
          });
          Armory::Seeds::Helpers::restoreFromBackup(
             move(backupCopy), callback, WalletCreationParams{
-               {}, {}, newHomeDir, 10, 1, 1});
+               SecureBinaryData::fromString(newPass),
+               SecureBinaryData::fromString(newCtrl),
+               newHomeDir, 10, 1, 1});
          ASSERT_TRUE(false);
       }
       catch (const Armory::Seeds::RestoreUserException& e)
@@ -9473,12 +9516,14 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode_SecurePrint)
       );
       auto newWltPtr = Armory::Seeds::Helpers::restoreFromBackup(
          move(backupCopy), callback, WalletCreationParams{
-            {}, {}, newHomeDir, 10, 1, 1});
+            SecureBinaryData::fromString(newPass),
+            SecureBinaryData::fromString(newCtrl),
+            newHomeDir, 10, 1, 1});
       EXPECT_NE(newWltPtr, nullptr);
 
       auto passLbd2 = [&newPass](const set<EncryptionKeyId>&)->SecureBinaryData
       {
-         return newPass;
+         return SecureBinaryData::fromString(newPass);
       };
       newWltPtr->setPassphrasePromptLambda(passLbd2);
 
@@ -9502,7 +9547,7 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode_SecurePrint)
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass, newCtrl));
-   DBUtils::removeDirectory(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -9528,45 +9573,53 @@ TEST_F(BackupTests, BackupStrings_BIP32)
    auto backupData = Armory::Seeds::Helpers::getWalletBackup(assetWlt);
    auto backupEasy16 = dynamic_cast<Backup_Easy16*>(backupData.get());
 
-   auto newPass = CryptoPRNG::generateRandom(10);
-   auto newCtrl = CryptoPRNG::generateRandom(10);
+   auto newPass = CryptoPRNG::generateRandom(10).toHexStr();
+   auto newCtrl = CryptoPRNG::generateRandom(10).toHexStr();
    auto callback = [&backupData, &newPass, &newCtrl](
-      BridgeProto::RestorePrompt prompt)->BridgeProto::RestoreReply
+      std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
    {
-      BridgeProto::RestoreReply reply;
-      switch (prompt.prompt_case())
+      capnp::MallocMessageBuilder reply;
+      auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
+      auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
+
+      switch (capnpPrompt.which())
       {
-      case BridgeProto::RestorePrompt::kGetPassphrases:
-      {
-         auto passphrases = reply.mutable_passphrases();
-         passphrases->set_privkey(newPass.toCharPtr(), newPass.getSize());
-         passphrases->set_control(newCtrl.toCharPtr(), newCtrl.getSize());
-         reply.set_success(true);
-         break;
+         case Armory::Codec::Bridge::RestorePrompt::GET_PASSPHRASES:
+         {
+            replyRoot.setPrivkey(newPass);
+            replyRoot.setControl(newCtrl);
+            replyRoot.setSuccess(true);
+            break;
+         }
+
+         case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+         {
+            auto walletMeta = capnpPrompt.getCheckWalletId();
+            auto capnWltId = walletMeta.getWalletId();
+            std::string strWltId(capnWltId.begin(), capnWltId.end());
+            EXPECT_EQ(strWltId, backupData->getWalletId());
+
+            EXPECT_EQ(walletMeta.getBackupType(),
+               (uint32_t)Armory::Seeds::BackupType::Armory200b);
+            replyRoot.setSuccess(true);
+            break;
+         }
+
+         default:
+            replyRoot.setSuccess(false);
       }
 
-      case BridgeProto::RestorePrompt::kCheckWalletId:
-      {
-         auto checkWalleIdMsg = prompt.check_wallet_id();
-         EXPECT_EQ(checkWalleIdMsg.wallet_id(), backupData->getWalletId());
-
-         EXPECT_EQ(checkWalleIdMsg.backup_type(),
-            (int)Armory::Seeds::BackupType::Armory200b);
-         reply.set_success(true);
-         break;
-      }
-
-      default:
-         reply.set_success(false);
-      }
-      return reply;
+      auto flat = capnp::messageToFlatArray(reply);
+      auto bytes = flat.asBytes();
+      BinaryData result(bytes.begin(), bytes.end());
+      return result;
    };
 
-   string newHomeDir("./newhomedir");
-   DBUtils::removeDirectory(newHomeDir);
-   mkdir(newHomeDir);
+   std::filesystem::path newHomeDir("./newhomedir");
+   FileUtils::removeDirectory(newHomeDir);
+   std::filesystem::create_directory(newHomeDir);
 
-   string filename;
+   std::filesystem::path filename;
    {
       //restore wallet
       auto backupCopy = Backup_Easy16::fromLines({
@@ -9575,12 +9628,14 @@ TEST_F(BackupTests, BackupStrings_BIP32)
       });
       auto newWltPtr = Armory::Seeds::Helpers::restoreFromBackup(
          move(backupCopy), callback, WalletCreationParams{
-            {}, {}, newHomeDir, 10, 1, 1});
+            SecureBinaryData::fromString(newPass),
+            SecureBinaryData::fromString(newCtrl),
+            newHomeDir, 10, 1, 1});
       ASSERT_NE(newWltPtr, nullptr);
 
       auto passLbd2 = [&newPass](const set<EncryptionKeyId>&)->SecureBinaryData
       {
-         return newPass;
+         return SecureBinaryData::fromString(newPass);
       };
       newWltPtr->setPassphrasePromptLambda(passLbd2);
 
@@ -9599,7 +9654,7 @@ TEST_F(BackupTests, BackupStrings_BIP32)
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass, newCtrl));
-   DBUtils::removeDirectory(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -9627,43 +9682,51 @@ TEST_F(BackupTests, BackupStrings_BIP32_Virgin)
    auto backupEasy16 = dynamic_cast<Armory::Seeds::Backup_Easy16*>(
       backupData.get());
 
-   auto newPass = CryptoPRNG::generateRandom(10);
-   auto newCtrl = CryptoPRNG::generateRandom(10);
+   auto newPass = CryptoPRNG::generateRandom(10).toHexStr();
+   auto newCtrl = CryptoPRNG::generateRandom(10).toHexStr();
    auto callback = [&backupData, &newPass, &newCtrl](
-      BridgeProto::RestorePrompt prompt)->BridgeProto::RestoreReply
+      std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
    {
-      BridgeProto::RestoreReply reply;
-      switch (prompt.prompt_case())
+      capnp::MallocMessageBuilder reply;
+      auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
+      auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
+
+      switch (capnpPrompt.which())
       {
-      case BridgeProto::RestorePrompt::kGetPassphrases:
-      {
-         auto passphrases = reply.mutable_passphrases();
-         passphrases->set_privkey(newPass.toCharPtr(), newPass.getSize());
-         passphrases->set_control(newCtrl.toCharPtr(), newCtrl.getSize());
-         reply.set_success(true);
-         break;
+         case Armory::Codec::Bridge::RestorePrompt::GET_PASSPHRASES:
+         {
+            replyRoot.setPrivkey(newPass);
+            replyRoot.setControl(newCtrl);
+            replyRoot.setSuccess(true);
+            break;
+         }
+
+         case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+         {
+            auto walletMeta = capnpPrompt.getCheckWalletId();
+            auto capnWltId = walletMeta.getWalletId();
+            std::string strWltId(capnWltId.begin(), capnWltId.end());
+            EXPECT_EQ(strWltId, backupData->getWalletId());
+
+            EXPECT_EQ(walletMeta.getBackupType(),
+               (uint32_t)Armory::Seeds::BackupType::Armory200c);
+            replyRoot.setSuccess(true);
+            break;
+         }
+
+         default:
+            replyRoot.setSuccess(false);
       }
 
-      case BridgeProto::RestorePrompt::kCheckWalletId:
-      {
-         auto checkWalleIdMsg = prompt.check_wallet_id();
-         EXPECT_EQ(checkWalleIdMsg.wallet_id(), backupData->getWalletId());
-
-         EXPECT_EQ(checkWalleIdMsg.backup_type(),
-            (int)Armory::Seeds::BackupType::Armory200c);
-         reply.set_success(true);
-         break;
-      }
-
-      default:
-         reply.set_success(false);
-      }
-      return reply;
+      auto flat = capnp::messageToFlatArray(reply);
+      auto bytes = flat.asBytes();
+      BinaryData result(bytes.begin(), bytes.end());
+      return result;
    };
 
    string newHomeDir("./newhomedir");
-   DBUtils::removeDirectory(newHomeDir);
-   mkdir(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
+   std::filesystem::create_directory(newHomeDir);
 
    //restore wallet
    auto backupCopy = Backup_Easy16::fromLines({
@@ -9672,7 +9735,9 @@ TEST_F(BackupTests, BackupStrings_BIP32_Virgin)
    });
    auto newWltPtr = Armory::Seeds::Helpers::restoreFromBackup(
       move(backupCopy), callback, WalletCreationParams{
-         {}, {}, newHomeDir, 10, 1, 1});
+         SecureBinaryData::fromString(newPass),
+         SecureBinaryData::fromString(newCtrl),
+         newHomeDir, 10, 1, 1});
    ASSERT_NE(newWltPtr, nullptr);
 
    //check wallet id
@@ -9684,7 +9749,7 @@ TEST_F(BackupTests, BackupStrings_BIP32_Virgin)
 
    auto passLbd2 = [&newPass](const set<EncryptionKeyId>&)->SecureBinaryData
    {
-      return newPass;
+      return SecureBinaryData::fromString(newPass);
    };
    newWltPtr->setPassphrasePromptLambda(passLbd2);
 
@@ -9700,7 +9765,7 @@ TEST_F(BackupTests, BackupStrings_BIP32_Virgin)
 
    EXPECT_EQ(backupEasy16->getWalletId(), backupEasy16_2->getWalletId());
 
-   DBUtils::removeDirectory(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -9709,51 +9774,61 @@ TEST_F(BackupTests, BackupStrings_BIP32_FromBase58)
    auto b58seed = string_view{
       "tprv8ZgxMBicQKsPd9TeAdPADNnSyH9SSUUbTVeFszDE23Ki6TBB5nCefAdHkK8Fm3qMQR6sHwA56zqRmKmxnHk37JkiFzvncDqoKmPWubu7hDF"};
 
-   auto newPass = CryptoPRNG::generateRandom(10);
-   auto newCtrl = CryptoPRNG::generateRandom(10);
+   auto newPass = CryptoPRNG::generateRandom(10).toHexStr();
+   auto newCtrl = CryptoPRNG::generateRandom(10).toHexStr();
    auto callback = [&newPass, &newCtrl](
-      BridgeProto::RestorePrompt prompt)->BridgeProto::RestoreReply
+      std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
    {
-      BridgeProto::RestoreReply reply;
-      switch (prompt.prompt_case())
+      capnp::MallocMessageBuilder reply;
+      auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
+      auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
+
+      switch (capnpPrompt.which())
       {
-      case BridgeProto::RestorePrompt::kGetPassphrases:
-      {
-         auto passphrases = reply.mutable_passphrases();
-         passphrases->set_privkey(newPass.toCharPtr(), newPass.getSize());
-         passphrases->set_control(newCtrl.toCharPtr(), newCtrl.getSize());
-         reply.set_success(true);
-         break;
+         case Armory::Codec::Bridge::RestorePrompt::GET_PASSPHRASES:
+         {
+            replyRoot.setPrivkey(newPass);
+            replyRoot.setControl(newCtrl);
+            replyRoot.setSuccess(true);
+            break;
+         }
+
+         case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+         {
+            auto walletMeta = capnpPrompt.getCheckWalletId();
+            auto capnWltId = walletMeta.getWalletId();
+            std::string strWltId(capnWltId.begin(), capnWltId.end());
+            EXPECT_EQ(strWltId, "poUtmfmp");
+
+            EXPECT_EQ(walletMeta.getBackupType(), (uint32_t)BackupType::Base58);
+            replyRoot.setSuccess(true);
+            break;
+         }
+
+         default:
+            replyRoot.setSuccess(false);
       }
 
-      case BridgeProto::RestorePrompt::kCheckWalletId:
-      {
-         auto checkWalleIdMsg = prompt.check_wallet_id();
-         EXPECT_EQ(checkWalleIdMsg.wallet_id(), "poUtmfmp");
-
-         EXPECT_EQ(checkWalleIdMsg.backup_type(), (int)BackupType::Base58);
-         reply.set_success(true);
-         break;
-      }
-
-      default:
-         reply.set_success(false);
-      }
-      return reply;
+      auto flat = capnp::messageToFlatArray(reply);
+      auto bytes = flat.asBytes();
+      BinaryData result(bytes.begin(), bytes.end());
+      return result;
    };
 
    //create bip32 wallet from xpriv, check it yields same xpriv
-   string filename;
+   std::filesystem::path filename;
    {
       auto backup = Backup_Base58::fromString(b58seed);
       auto wallet = Helpers::restoreFromBackup(
          move(backup), callback, WalletCreationParams{
-            {}, {}, homedir_, 10, 1, 1});
+            SecureBinaryData::fromString(newPass),
+            SecureBinaryData::fromString(newCtrl),
+            homedir_, 10, 1, 1});
       ASSERT_NE(wallet, nullptr);
 
       auto passLbd = [newPass](const set<EncryptionKeyId>&)->SecureBinaryData
       {
-         return newPass;
+         return SecureBinaryData::fromString(newPass);
       };
       wallet->setPassphrasePromptLambda(passLbd);
 
@@ -9769,7 +9844,7 @@ TEST_F(BackupTests, BackupStrings_BIP32_FromBase58)
       auto controlPassLbd = [&newCtrl](
          const set<EncryptionKeyId>&)->SecureBinaryData
       {
-         return newCtrl;
+         return SecureBinaryData::fromString(newCtrl);
       };
 
       //load it, newCtrl should work for the control passphrase
@@ -9779,7 +9854,7 @@ TEST_F(BackupTests, BackupStrings_BIP32_FromBase58)
 
       auto passLbd = [newPass](const set<EncryptionKeyId>&)->SecureBinaryData
       {
-         return newPass;
+         return SecureBinaryData::fromString(newPass);
       };
       loadedWlt->setPassphrasePromptLambda(passLbd);
 
@@ -9794,7 +9869,7 @@ TEST_F(BackupTests, BackupStrings_BIP32_FromBase58)
 TEST_F(BackupTests, BackupStrings_BIP39)
 {
    //create a legacy wallet
-   string filename;
+   std::filesystem::path filename;
    WalletCreationParams params{
       SecureBinaryData::fromString("passphrase"),
       SecureBinaryData::fromString("control"),
@@ -9820,41 +9895,51 @@ TEST_F(BackupTests, BackupStrings_BIP39)
    EXPECT_EQ(walletId, backupDataArmory200d->getWalletId());
 
    //restore Armory200d lambda
-   auto newPass = CryptoPRNG::generateRandom(10);
-   auto newCtrl = CryptoPRNG::generateRandom(10);
+   auto newPass = CryptoPRNG::generateRandom(10).toHexStr();
+   auto newCtrl = CryptoPRNG::generateRandom(10).toHexStr();
    auto callback = [&walletId, &newPass, &newCtrl](
-      BridgeProto::RestorePrompt prompt)->BridgeProto::RestoreReply
+      std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
    {
-      BridgeProto::RestoreReply reply;
-      switch (prompt.prompt_case())
+      capnp::MallocMessageBuilder reply;
+      auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
+      auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
+
+      switch (capnpPrompt.which())
       {
-      case BridgeProto::RestorePrompt::kGetPassphrases:
-      {
-         auto passphrases = reply.mutable_passphrases();
-         passphrases->set_privkey(newPass.toCharPtr(), newPass.getSize());
-         passphrases->set_control(newCtrl.toCharPtr(), newCtrl.getSize());
-         reply.set_success(true);
-         break;
+         case Armory::Codec::Bridge::RestorePrompt::GET_PASSPHRASES:
+         {
+            replyRoot.setPrivkey(newPass);
+            replyRoot.setControl(newCtrl);
+            replyRoot.setSuccess(true);
+            break;
+         }
+
+         case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+         {
+            auto walletMeta = capnpPrompt.getCheckWalletId();
+            auto capnWltId = walletMeta.getWalletId();
+            std::string strWltId(capnWltId.begin(), capnWltId.end());
+            EXPECT_EQ(strWltId, walletId);
+
+            EXPECT_EQ(walletMeta.getBackupType(),
+               (uint32_t)Armory::Seeds::BackupType::Armory200d);
+            replyRoot.setSuccess(true);
+            break;
+         }
+
+         default:
+            replyRoot.setSuccess(false);
       }
 
-      case BridgeProto::RestorePrompt::kCheckWalletId:
-      {
-         auto checkWalleIdMsg = prompt.check_wallet_id();
-         EXPECT_EQ(checkWalleIdMsg.wallet_id(), walletId);
-         EXPECT_EQ(checkWalleIdMsg.backup_type(), (int)BackupType::Armory200d);
-         reply.set_success(true);
-         break;
-      }
-
-      default:
-         reply.set_success(false);
-      }
-      return reply;
+      auto flat = capnp::messageToFlatArray(reply);
+      auto bytes = flat.asBytes();
+      BinaryData result(bytes.begin(), bytes.end());
+      return result;
    };
 
    string newHomeDir("./newhomedir");
-   DBUtils::removeDirectory(newHomeDir);
-   mkdir(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
+   std::filesystem::create_directory(newHomeDir);
 
    {
       auto backupE16 = dynamic_cast<Backup_Easy16*>(backupDataArmory200d.get());
@@ -9865,12 +9950,14 @@ TEST_F(BackupTests, BackupStrings_BIP39)
       });
       auto newWltPtr = Armory::Seeds::Helpers::restoreFromBackup(
          move(backupE16Copy), callback, WalletCreationParams{
-            {}, {}, newHomeDir, 10, 1, 1});
+            SecureBinaryData::fromString(newPass),
+            SecureBinaryData::fromString(newCtrl),
+            newHomeDir, 10, 1, 1});
       ASSERT_NE(newWltPtr, nullptr);
 
       auto passLbd2 = [&newPass](const set<EncryptionKeyId>&)->SecureBinaryData
       {
-         return newPass;
+         return SecureBinaryData::fromString(newPass);
       };
       newWltPtr->setPassphrasePromptLambda(passLbd2);
 
@@ -9889,40 +9976,49 @@ TEST_F(BackupTests, BackupStrings_BIP39)
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass, newCtrl));
-   DBUtils::removeDirectory(newHomeDir);
-   mkdir(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
+   std::filesystem::create_directory(newHomeDir);
 
    //restore BIP39 lambda
-   auto newPass2 = CryptoPRNG::generateRandom(10);
-   auto newCtrl2 = CryptoPRNG::generateRandom(10);
+   auto newPass2 = CryptoPRNG::generateRandom(10).toHexStr();
+   auto newCtrl2 = CryptoPRNG::generateRandom(10).toHexStr();
    auto callbackBip39 = [&walletId, &newPass2, &newCtrl2](
-      BridgeProto::RestorePrompt prompt)->BridgeProto::RestoreReply
+      std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
    {
-      BridgeProto::RestoreReply reply;
-      switch (prompt.prompt_case())
+      capnp::MallocMessageBuilder reply;
+      auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
+      auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
+
+      switch (capnpPrompt.which())
       {
-      case BridgeProto::RestorePrompt::kGetPassphrases:
-      {
-         auto passphrases = reply.mutable_passphrases();
-         passphrases->set_privkey(newPass2.toCharPtr(), newPass2.getSize());
-         passphrases->set_control(newCtrl2.toCharPtr(), newCtrl2.getSize());
-         reply.set_success(true);
-         break;
+         case Armory::Codec::Bridge::RestorePrompt::GET_PASSPHRASES:
+         {
+            replyRoot.setPrivkey(newPass2);
+            replyRoot.setControl(newCtrl2);
+            replyRoot.setSuccess(true);
+            break;
+         }
+
+         case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+         {
+            auto walletMeta = capnpPrompt.getCheckWalletId();
+            auto capnWltId = walletMeta.getWalletId();
+            std::string strWltId(capnWltId.begin(), capnWltId.end());
+            EXPECT_EQ(strWltId, walletId);
+
+            EXPECT_EQ(walletMeta.getBackupType(), (uint32_t)BackupType::BIP39);
+            replyRoot.setSuccess(true);
+            break;
+         }
+
+         default:
+            replyRoot.setSuccess(false);
       }
 
-      case BridgeProto::RestorePrompt::kCheckWalletId:
-      {
-         auto checkWalleIdMsg = prompt.check_wallet_id();
-         EXPECT_EQ(checkWalleIdMsg.wallet_id(), walletId);
-         EXPECT_EQ(checkWalleIdMsg.backup_type(), (int)BackupType::BIP39);
-         reply.set_success(true);
-         break;
-      }
-
-      default:
-         reply.set_success(false);
-      }
-      return reply;
+      auto flat = capnp::messageToFlatArray(reply);
+      auto bytes = flat.asBytes();
+      BinaryData result(bytes.begin(), bytes.end());
+      return result;
    };
 
    //restore from mnemonic string
@@ -9935,12 +10031,14 @@ TEST_F(BackupTests, BackupStrings_BIP39)
          backupBIP39->getMnemonicString());
       auto newWltPtr = Armory::Seeds::Helpers::restoreFromBackup(
          move(backupBIP39Copy), callbackBip39, WalletCreationParams{
-            {}, {}, newHomeDir, 10, 1, 1});
+            SecureBinaryData::fromString(newPass2),
+            SecureBinaryData::fromString(newCtrl2),
+            newHomeDir, 10, 1, 1});
       ASSERT_NE(newWltPtr, nullptr);
 
       auto passLbd2 = [&newPass2](const set<EncryptionKeyId>&)->SecureBinaryData
       {
-         return newPass2;
+         return SecureBinaryData::fromString(newPass2);
       };
       newWltPtr->setPassphrasePromptLambda(passLbd2);
 
@@ -9960,7 +10058,7 @@ TEST_F(BackupTests, BackupStrings_BIP39)
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass2, newCtrl2));
-   DBUtils::removeDirectory(newHomeDir);
+   FileUtils::removeDirectory(newHomeDir);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -9979,7 +10077,6 @@ GTEST_API_ int main(int argc, char **argv)
 
    CryptoECDSA::setupContext();
 
-   GOOGLE_PROTOBUF_VERIFY_VERSION;
    srand(time(0));
    std::cout << "Running main() from gtest_main.cc\n";
 
@@ -9992,7 +10089,6 @@ GTEST_API_ int main(int argc, char **argv)
 
    FLUSHLOG();
    CLEANUPLOG();
-   google::protobuf::ShutdownProtobufLibrary();
 
    CryptoECDSA::shutdown();
    return exitCode;

@@ -2,7 +2,7 @@
 //                                                                            //
 //  Copyright (C) 2016, goatpig.                                              //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                      
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -29,16 +29,16 @@
 #include "SocketIncludes.h"
 #include "BinaryData.h"
 
-   
-typedef std::function<bool(std::vector<uint8_t>, std::exception_ptr)>  ReadCallback;
+typedef std::function<bool(std::vector<uint8_t>, std::exception_ptr)> ReadCallback;
 
 ///////////////////////////////////////////////////////////////////////////////
 struct CallbackReturn
 {
    virtual ~CallbackReturn(void) = 0;
-   virtual void callback(BinaryDataRef bdr) = 0;
+   virtual void callback(BinaryDataRef) = 0;
 };
 
+////
 struct CallbackReturn_CloseBitcoinP2PSocket : public CallbackReturn
 {
 private:
@@ -79,6 +79,7 @@ struct Socket_WritePayload
    virtual void serialize(std::vector<uint8_t>&) = 0;
    virtual std::string serializeToText(void) = 0;
    virtual size_t getSerializedSize(void) const = 0;
+   virtual bool isSingleSegment(void) const { return true; }
 };
 
 ///////////////////////////////////////////////////////////////////////////////

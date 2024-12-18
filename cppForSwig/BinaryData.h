@@ -9,13 +9,14 @@
 #define _BINARYDATA_H_
 
 #include <stdio.h>
-#if defined(_MSC_VER) || defined(__MINGW32__)
+#include <cstring>
+#if defined(__MINGW32__) || defined(_MSC_VER)
 	#if _MSC_PLATFORM_TOOLSET < 110
 		#include <stdint.h>
    #endif
 
    #ifndef ssize_t
-      #ifdef _WIN32
+      #ifdef _MSC_VER
          #define ssize_t SSIZE_T
       #else
          #define ssize_t long
@@ -24,8 +25,7 @@
 
 #else
    #include <stdlib.h>
-   #include <inttypes.h>   
-   #include <cstring>
+   #include <inttypes.h>
    #include <stdint.h>
 
    #ifndef PAGESIZE
@@ -1030,7 +1030,7 @@ public:
    // Take the remaining buffer and shift it to the front
    // then return a pointer to where the old data ends
    //
-   //                                      
+   //
    //  Before:                             pos
    //                                       |
    //                                       V
@@ -1040,7 +1040,7 @@ public:
    //               |               |
    //               V               V
    //             [ m n o p q r s t - - - - - - - - - - - -]
-   //                                 
+   //
    //
    std::pair<uint8_t*, size_t> rotateRemaining(void)
    {
@@ -1048,7 +1048,7 @@ public:
       //if(pos_ > nRemain+1)
          //memcpy(bdStr_.getPtr(), bdStr_.getPtr() + pos_, nRemain);
       //else
-         memmove(bdStr_.getPtr(), bdStr_.getPtr() + pos_, nRemain);
+      memmove(bdStr_.getPtr(), bdStr_.getPtr() + pos_, nRemain);
 
       pos_ = 0;
 
@@ -1163,6 +1163,7 @@ public:
    void resetPosition(void);
    size_t getPosition(void) const;
    size_t getSize(void) const;
+   bool empty(void) const;
    size_t getSizeRemaining(void) const;
    bool isEndOfStream(void) const;
    uint8_t const* exposeDataPtr(void);
@@ -1522,7 +1523,7 @@ public:
          streamPtr_ = new std::ifstream;
          weOwnTheStream_ = true;
          std::ifstream* ifstreamPtr = static_cast<std::ifstream*>(streamPtr_);
-         ifstreamPtr->open(OS_TranslatePath(filename.c_str()), std::ios::in | std::ios::binary);
+         ifstreamPtr->open(filename.c_str(), std::ios::in | std::ios::binary);
          if( !ifstreamPtr->is_open() )
          {
             std::cerr << "Could not open file for reading!  File: " << filename.c_str() << std::endl;

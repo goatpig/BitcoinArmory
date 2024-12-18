@@ -66,7 +66,6 @@
 #include <memory>
 #include <chrono>
 #include <atomic>
-#include "OS_TranslatePath.h"
 
 #define FILEANDLINE "(" << __FILE__ << ":" << __LINE__ << ") "
 #define LOGERR    (LoggerObj(LogLvlError ).getLogStream() << FILEANDLINE )
@@ -125,23 +124,22 @@ public:
 class DualStream : public LogStream
 {
 public:
-   DualStream(void) : noStdout_(false) 
+   DualStream(void) : noStdout_(false)
    {}
 
-   void enableStdOut(bool newbool) { noStdout_ = !newbool; }
+   void enableStdOut(bool);
 
    void setLogFile(std::string logfile, unsigned long long maxSz=MAX_LOG_FILE_SIZE)
-   { 
+   {
       fname_ = logfile;
       truncateFile(fname_, maxSz);
-      fout_.open(OS_TranslatePath(fname_.c_str()), std::ios::app); 
+      fout_.open(fname_.c_str(), std::ios::app); 
       fout_ << "\n\nLog file opened at " << NowTime() << ": " << fname_.c_str() << std::endl;
    }
 
-   
    void truncateFile(std::string logfile, unsigned long long int maxSizeInBytes)
    {
-      std::ifstream is(OS_TranslatePath(logfile.c_str()), std::ios::in|std::ios::binary);
+      std::ifstream is(logfile.c_str(), std::ios::in|std::ios::binary);
 
       // If file does not exist, nothing to do
       if(!is.is_open())
@@ -170,19 +168,14 @@ public:
          
          // Create temporary file and dump the bytes there
          std::string tempfile = logfile + std::string("temp");
-         std::ofstream os(OS_TranslatePath(tempfile.c_str()), std::ios::out| std::ios::binary);
+         std::ofstream os(tempfile.c_str(), std::ios::out| std::ios::binary);
          os.write(lastBytes, bytesToCopy);
          os.close();
          delete[] lastBytes;
 
          // Remove the original and rename the temp file to original
-			#ifndef _MSC_VER
-				remove(logfile.c_str());
-				rename(tempfile.c_str(), logfile.c_str());
-			#else
-				_wunlink(OS_TranslatePath(logfile).c_str());
-				_wrename(OS_TranslatePath(tempfile).c_str(), OS_TranslatePath(logfile).c_str());
-			#endif
+         remove(logfile.c_str());
+         rename(tempfile.c_str(), logfile.c_str());
       }
    }
 

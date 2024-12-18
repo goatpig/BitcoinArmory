@@ -6,6 +6,8 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
+#include <filesystem>
+
 #include "WalletFileInterface.h"
 #include "BtcUtils.h"
 #include "DBUtils.h"
@@ -21,14 +23,6 @@ using namespace Armory::Wallets::Encryption;
 #define COMPACT_FILE_SWAP_NAME "swapOld"
 #define COMPACT_FILE_COPY_NAME "compactCopy"
 #define COMPACT_FILE_FOLDER    "_delete_me"
-
-#ifdef _WIN32
-#include "leveldb_windows_port/win32_posix/win32_posix.h"
-#define mkdir mkdir_win32
-#else
-#include <sys/stat.h>
-#include <sys/types.h>
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -47,13 +41,13 @@ WalletDBInterface::~WalletDBInterface()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void WalletDBInterface::setupEnv(const string& path, bool fileExists,
-   const PassphraseLambda& passLbd, uint32_t lockTime_ms)
+void WalletDBInterface::setupEnv(const std::filesystem::path& path,
+   bool fileExists, const PassphraseLambda& passLbd, uint32_t lockTime_ms)
 {
    auto lock = unique_lock<mutex>(setupMutex_);
-   if (dbEnv_ != nullptr)
+   if (dbEnv_ != nullptr) {
       return;
-
+   }
    path_ = path;
    dbCount_ = 2;
 
@@ -250,11 +244,11 @@ void WalletDBInterface::openDB(std::shared_ptr<WalletHeader> headerPtr,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const string& WalletDBInterface::getFilename() const
+const std::filesystem::path& WalletDBInterface::getFilename() const
 {
-   if (dbEnv_ == nullptr)
+   if (dbEnv_ == nullptr) {
       throw WalletInterfaceException("null dbEnv");
-
+   }
    return dbEnv_->getFilename();
 }
 
@@ -593,11 +587,13 @@ void WalletDBInterface::setDbCount(unsigned count)
 ////////////////////////////////////////////////////////////////////////////////
 void WalletDBInterface::openDbEnv(bool fileExists)
 {
-   if (DBUtils::fileExists(path_, 0) != fileExists)
+   if (FileUtils::fileExists(path_, 0) != fileExists) {
       throw WalletInterfaceException("[openEnv] file flag mismatch");
+   }
 
-   if (dbEnv_ != nullptr)
+   if (dbEnv_ != nullptr) {
       throw WalletInterfaceException("[openEnv] dbEnv already instantiated");
+   }
 
    dbEnv_ = make_unique<LMDBEnv>(dbCount_);
    dbEnv_->open(path_, MDB_NOTLS);
@@ -762,31 +758,19 @@ void WalletDBInterface::compactFile()
 
    //create copy name
    auto fullDbPath = getFilename();
-   auto basePath = DBUtils::getBaseDir(fullDbPath);
-
-   auto swapFolder = basePath;
-   DBUtils::appendPath(swapFolder, string(COMPACT_FILE_FOLDER));
-   if (!DBUtils::fileExists(swapFolder, 0))
-   {
-      #ifdef _WIN32
-      if (mkdir(swapFolder) != 0)
+   auto swapFolder = std::filesystem::path(fullDbPath).replace_filename(COMPACT_FILE_FOLDER);
+   if (!FileUtils::fileExists(swapFolder, 0)) {
+      if (!std::filesystem::create_directory(swapFolder)) {
          throw WalletInterfaceException("could not create wallet swap folder");
-      #else
-      if (mkdir(swapFolder.c_str(), S_IWUSR | S_IRUSR | S_IXUSR) != 0)
-         throw WalletInterfaceException("could not create wallet swap folder");
-      #endif
+      }
    }
 
-   string copyName;
-   while (true)
-   {
+   std::filesystem::path copyName;
+   while (true) {
       stringstream ss;
       ss << COMPACT_FILE_COPY_NAME << "-" << fortuna_->generateRandom(16).toHexStr();
-      auto fullpath = swapFolder;
-      DBUtils::appendPath(fullpath, ss.str());
-      
-      if (!DBUtils::fileExists(fullpath, 0))
-      {
+      auto fullpath = swapFolder / std::filesystem::path(ss.str());
+      if (!FileUtils::fileExists(fullpath, 0)) {
          copyName = fullpath;
          break;
       }
@@ -799,35 +783,24 @@ void WalletDBInterface::compactFile()
    closeEnv();
 
    //swap files
-   string swapPath;
-
-
-   while (true)
-   {
+   std::filesystem::path swapPath;
+   while (true) {
       stringstream ss;
       ss << COMPACT_FILE_SWAP_NAME << "-" << fortuna_->generateRandom(16).toHexStr();
-      auto fullpath = swapFolder;
-      DBUtils::appendPath(fullpath, ss.str());
-
-      if (DBUtils::fileExists(fullpath, 0))
+      auto fullpath = swapFolder / std::filesystem::path(ss.str());
+      if (FileUtils::fileExists(fullpath, 0)) {
          continue;
-
+      }
       swapPath = fullpath;
 
       //rename old file to swap
-      if (rename(fullDbPath.c_str(), swapPath.c_str()) != 0)
-      {
+      try {
+         std::filesystem::rename(fullDbPath, swapPath);
+         std::filesystem::rename(copyName, fullDbPath);
+      } catch (const std::filesystem::filesystem_error&) {
          throw WalletInterfaceException(
             "failed to swap file during wipe operation");
       }
-
-      //rename new file to old
-      if (rename(copyName.c_str(), fullDbPath.c_str()) != 0)
-      {
-         throw WalletInterfaceException(
-            "failed to swap file during wipe operation");
-      }
-
       break;
    }
 
@@ -841,26 +814,18 @@ void WalletDBInterface::compactFile()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void WalletDBInterface::wipeAndDeleteFile(const string& path)
+void WalletDBInterface::wipeAndDeleteFile(const std::filesystem::path& path)
 {
-   if (path.empty())
+   if (path.empty()) {
       return;
-
-   {
-      auto fileMap = DBUtils::getMmapOfFile(path, true);
-      memset(fileMap.filePtr_, 0, fileMap.size_);
-      fileMap.unmap();
    }
 
-   int unlinkResult;
-#ifdef _WIN32
-   unlinkResult = _unlink(path.c_str());
-#else
-   unlinkResult = unlink(path.c_str());
-#endif
-
-   if (unlinkResult != 0)
    {
+      FileUtils::FileMap fileMap(path, true);
+      memset(fileMap.ptr(), 0, fileMap.size());
+   }
+
+   if (!std::filesystem::remove(path)) {
       throw WalletInterfaceException(
          "failed to delete file during wipe operation");
    }
@@ -920,8 +885,9 @@ WalletIfaceTransaction::WalletIfaceTransaction(
    WalletDBInterface* ifacePtr, DBInterface* dbPtr, bool mode) :
    DBIfaceTransaction(), ifacePtr_(ifacePtr), dbPtr_(dbPtr), commit_(mode)
 {
-   if (!insertTx(this))
+   if (!insertTx(this)) {
       throw WalletInterfaceException("failed to create db tx");
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -945,10 +911,9 @@ void WalletIfaceTransaction::closeTx()
    {
       auto lock = unique_lock<mutex>(txMutex_);
       writeTxLock = move(eraseTx(this));
-         
-      if (writeTxLock == nullptr || !commit_)
+      if (writeTxLock == nullptr || !commit_) {
          return;
-
+      }
       tx = make_unique<LMDBEnv::Transaction>(dbPtr_->dbEnv_, LMDB::ReadWrite);
    }
 
@@ -956,26 +921,24 @@ void WalletIfaceTransaction::closeTx()
    bool needsWiped = false;
 
    //this is the top tx, need to commit all this data to the db object
-   for (unsigned i=0; i < insertVec_.size(); i++)
-   {
+   for (unsigned i=0; i < insertVec_.size(); i++) {
       auto dataPtr = insertVec_[i];
 
       //is this operation is the last for this data key?
       auto effectIter = keyToDataMap_.find(dataPtr->key_);
-      if (effectIter == keyToDataMap_.end())
-      {   
+      if (effectIter == keyToDataMap_.end()) {
          throw WalletInterfaceException(
             "insert operation is not mapped to data key!");
       }
 
       //skip if this isn't the last effect
-      if (i != effectIter->second)
+      if (i != effectIter->second) {
          continue;
+      }
 
       BinaryData dbKey;
       auto keyExists = dataMapCopy->resolveDataKey(dataPtr->key_, dbKey);
-      if (keyExists)
-      {
+      if (keyExists) {
          //erase the key
          CharacterArrayRef carKey(dbKey.getSize(), dbKey.getPtr());
          dbPtr_->db_.erase(carKey);
@@ -1000,8 +963,7 @@ void WalletIfaceTransaction::closeTx()
          dbPtr_->db_.insert(carKey2, carData);
 
          //move on to next piece of data if there is nothing to write
-         if (!dataPtr->write_)
-         {
+         if (!dataPtr->write_) {
             //update dataKeyToDbKey
             dataMapCopy->dataKeyToDbKey_.erase(dataPtr->key_);
             continue;
@@ -1012,14 +974,15 @@ void WalletIfaceTransaction::closeTx()
       }
 
       //sanity check
-      if (!dataPtr->write_)
+      if (!dataPtr->write_) {
          throw WalletInterfaceException("key marked for deletion when it does not exist");
+      }
 
       //update dataKeyToDbKey
       dataMapCopy->dataKeyToDbKey_[dataPtr->key_] = dbKey;
 
       //bundle key and val together, key by dbkey
-      auto&& dbVal = DBInterface::createDataPacket(
+      auto dbVal = DBInterface::createDataPacket(
          dbKey, dataPtr->key_, dataPtr->value_, 
          dbPtr_->encrPubKey_, dbPtr_->macKey_, dbPtr_->encrVersion_);
       CharacterArrayRef carKey(dbKey.getSize(), dbKey.getPtr());
@@ -1035,11 +998,12 @@ void WalletIfaceTransaction::closeTx()
    atomic_store_explicit(
       &dbPtr_->dataMapPtr_, dataMapCopy, memory_order_release);
 
-   if (!needsWiped)
+   if (!needsWiped) {
       return;
-
-   if (ifacePtr_ == nullptr)
+   }
+   if (ifacePtr_ == nullptr) {
       return;
+   }
 
    //close the write tx, we still hold the write mutex
    tx.reset();
@@ -1051,14 +1015,13 @@ void WalletIfaceTransaction::closeTx()
 ////////////////////////////////////////////////////////////////////////////////
 bool WalletIfaceTransaction::insertTx(WalletIfaceTransaction* txPtr)
 {
-   if (txPtr == nullptr)
+   if (txPtr == nullptr) {
       throw WalletInterfaceException("null tx ptr");
-
+   }
    auto lock = unique_lock<mutex>(txMutex_);
 
    auto dbIter = dbMap_.find(txPtr->dbPtr_->getName());
-   if (dbIter == dbMap_.end())
-   {
+   if (dbIter == dbMap_.end()) {
       auto structPtr = make_shared<DbTxStruct>();
       dbIter = dbMap_.insert(make_pair(
          txPtr->dbPtr_->getName(), structPtr)).first;
@@ -1070,8 +1033,7 @@ bool WalletIfaceTransaction::insertTx(WalletIfaceTransaction* txPtr)
    //save tx by thread id
    auto thrId = this_thread::get_id();
    auto iter = txMap.find(thrId);
-   if (iter != txMap.end())
-   {
+   if (iter != txMap.end()) {
       /*we already have a tx for this thread, we will nest the new one within it*/
       
       //make sure the commit type between parent and nested tx match
@@ -1100,16 +1062,15 @@ bool WalletIfaceTransaction::insertTx(WalletIfaceTransaction* txPtr)
    //release the dbMap lock
    lock.unlock();
 
-   if (txPtr->commit_)
-   {
+   if (txPtr->commit_) {
       //write tx, lock db write mutex
       ptx->writeLock_ = make_unique<unique_lock<recursive_mutex>>(writeMutex_);
 
       auto insertLbd = [thrId, txPtr](const BinaryData& key, BothBinaryDatas& val)
       {
-         if (thrId != this_thread::get_id())
+         if (thrId != this_thread::get_id()) {
             throw WalletInterfaceException("insert operation thread id mismatch");
-
+         }
          auto dataPtr = make_shared<InsertData>();
          dataPtr->key_ = key;
          dataPtr->value_ = move(val);
@@ -1123,15 +1084,16 @@ bool WalletIfaceTransaction::insertTx(WalletIfaceTransaction* txPtr)
          the final effect for each key.
          */
          auto insertPair = txPtr->keyToDataMap_.insert(make_pair(key, vecSize));
-         if (!insertPair.second)
+         if (!insertPair.second) {
             insertPair.first->second = vecSize;
+         }
       };
 
       auto eraseLbd = [thrId, txPtr](const BinaryData& key)
       {
-         if (thrId != this_thread::get_id())
+         if (thrId != this_thread::get_id()) {
             throw WalletInterfaceException("insert operation thread id mismatch");
-
+         }
          auto dataPtr = make_shared<InsertData>();
          dataPtr->key_ = key;
          dataPtr->write_ = false; //set to false to signal deletion
@@ -1140,17 +1102,18 @@ bool WalletIfaceTransaction::insertTx(WalletIfaceTransaction* txPtr)
          txPtr->insertVec_.emplace_back(dataPtr);
 
          auto insertPair = txPtr->keyToDataMap_.insert(make_pair(key, vecSize));
-         if (!insertPair.second)
+         if (!insertPair.second) {
             insertPair.first->second = vecSize;
+         }
       };
 
       auto getDataLbd = [thrId, txPtr](const BinaryData& key)->
          const shared_ptr<InsertData>&
       {
          auto iter = txPtr->keyToDataMap_.find(key);
-         if (iter == txPtr->keyToDataMap_.end())
+         if (iter == txPtr->keyToDataMap_.end()) {
             throw NoDataInDB();
-
+         }
          return txPtr->insertVec_[iter->second];
       };
 
@@ -1166,7 +1129,6 @@ bool WalletIfaceTransaction::insertTx(WalletIfaceTransaction* txPtr)
    ptx->dataMapPtr_ = atomic_load_explicit(
       &txPtr->dbPtr_->dataMapPtr_, memory_order_acquire);
    txPtr->dataMapPtr_ = ptx->dataMapPtr_;
-   
    return true;
 }
 
@@ -1174,26 +1136,27 @@ bool WalletIfaceTransaction::insertTx(WalletIfaceTransaction* txPtr)
 unique_ptr<unique_lock<recursive_mutex>> WalletIfaceTransaction::eraseTx(
    WalletIfaceTransaction* txPtr)
 {
-   if (txPtr == nullptr)
+   if (txPtr == nullptr) {
       throw WalletInterfaceException("null tx ptr");
-   
+   }
+
    //we should have this db name in the tx map
    auto dbIter = dbMap_.find(txPtr->dbPtr_->getName());
-   if (dbIter == dbMap_.end())
+   if (dbIter == dbMap_.end()) {
       throw WalletInterfaceException("missing db name in tx map");
-
+   }
    auto& txStruct = dbIter->second;
    auto& txMap = txStruct->txMap_;
 
    //thread id has to be present too
    auto thrId = this_thread::get_id();
    auto iter = txMap.find(thrId);
-   if (iter == txMap.end())
+   if (iter == txMap.end()) {
       throw WalletInterfaceException("missing thread id in tx map");
+   }
 
    --txStruct->txCount_;
-   if (iter->second->counter_ > 1)
-   {
+   if (iter->second->counter_ > 1) {
       //this is a nested tx, decrement and return false
       --iter->second->counter_;
       return nullptr;
@@ -1208,9 +1171,9 @@ unique_ptr<unique_lock<recursive_mutex>> WalletIfaceTransaction::eraseTx(
 ////////////////////////////////////////////////////////////////////////////////
 void WalletIfaceTransaction::insert(const BinaryData& key, BinaryData& val)
 {
-   if (!insertLbd_)
+   if (!insertLbd_) {
       throw WalletInterfaceException("insert lambda is not set");
-
+   }
    BothBinaryDatas bbdVal(val);
    insertLbd_(key, bbdVal);
 }
@@ -1219,9 +1182,9 @@ void WalletIfaceTransaction::insert(const BinaryData& key, BinaryData& val)
 void WalletIfaceTransaction::insert(
    const BinaryData& key, const BinaryData& val)
 {
-   if (!insertLbd_)
+   if (!insertLbd_) {
       throw WalletInterfaceException("insert lambda is not set");
-
+   }
    BothBinaryDatas bbdVal(val);
    insertLbd_(key, bbdVal);
 }
@@ -1230,9 +1193,9 @@ void WalletIfaceTransaction::insert(
 void WalletIfaceTransaction::insert(
    const BinaryData& key, SecureBinaryData& val)
 {
-   if (!insertLbd_)
+   if (!insertLbd_) {
       throw WalletInterfaceException("insert lambda is not set");
-
+   }
    BothBinaryDatas bbdVal(val);
    insertLbd_(key, bbdVal);
 }
@@ -1240,18 +1203,18 @@ void WalletIfaceTransaction::insert(
 ////////////////////////////////////////////////////////////////////////////////
 void WalletIfaceTransaction::erase(const BinaryData& key)
 {
-   if (!eraseLbd_)
+   if (!eraseLbd_) {
       throw WalletInterfaceException("erase lambda is not set");
-
+   }
    eraseLbd_(key);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 std::shared_ptr<DBIfaceIterator> WalletIfaceTransaction::getIterator() const
 {
-   if (commit_)
+   if (commit_) {
       throw WalletInterfaceException("cannot iterate over a write transaction");
-
+   }
    return make_shared<WalletIfaceIterator>(this);
 }
 
@@ -1259,23 +1222,19 @@ std::shared_ptr<DBIfaceIterator> WalletIfaceTransaction::getIterator() const
 const BinaryDataRef WalletIfaceTransaction::getDataRef(
    const BinaryData& key) const
 {
-   if (commit_)
-   {
+   if (commit_) {
       /*
       A write transaction may carry data that overwrites the db object data map.
       Check the modification map first.
       */
 
-      try
-      {
+      try {
          auto& dataPtr = getInsertDataForKey(key);
-         if (!dataPtr->write_)
+         if (!dataPtr->write_) {
             return BinaryDataRef();
-
+         }
          return dataPtr->value_.getRef();
-      }
-      catch (NoDataInDB&)
-      {
+      } catch (const NoDataInDB&) {
          /*
          Will throw if there's no data in the write tx.
          Look for it in the db instead.
@@ -1284,8 +1243,9 @@ const BinaryDataRef WalletIfaceTransaction::getDataRef(
    }
 
    auto iter = dataMapPtr_->dataMap_.find(key);
-   if (iter == dataMapPtr_->dataMap_.end())
+   if (iter == dataMapPtr_->dataMap_.end()) {
       return BinaryDataRef();
+   }
    return iter->second.getRef();
 }
 
@@ -1293,8 +1253,8 @@ const BinaryDataRef WalletIfaceTransaction::getDataRef(
 const std::shared_ptr<InsertData>& WalletIfaceTransaction::getInsertDataForKey(
    const BinaryData& key) const
 {
-   if (!getDataLbd_)
+   if (!getDataLbd_) {
       throw WalletInterfaceException("tx is missing get lbd");
-
+   }
    return getDataLbd_(key);
 }

@@ -5,40 +5,31 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016, goatpig                                               //            
+//  Copyright (C) 2016-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                   
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "DBUtils.h"
-#ifdef _WIN32
-#include <Windows.h>
-#include <io.h>
-#include <fcntl.h>
-#include <dirent_win32.h>
-#include <ShlObj.h>
 
-#define unlink _unlink
-#define access _access
+namespace fs = std::filesystem;
+
+#if defined(__MINGW32__) || defined(_MSC_VER)
+   #include <windows.h>
 #else
-#include <errno.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <dirent.h>
-#include <wordexp.h>
+   #include <sys/mman.h>
 #endif
 
-using namespace std;
+#include <filesystem>
+#include <fcntl.h>
 
 ////////////////////////////////////////////////////////////////////////////////
 const BinaryData DBUtils::ZeroConfHeader_ = BinaryData::CreateFromHex("FFFF");
 
 ////////////////////////////////////////////////////////////////////////////////
-BLKDATA_TYPE DBUtils::readBlkDataKey(BinaryRefReader & brr,
-   uint32_t & height,
-   uint8_t  & dupID)
+BLKDATA_TYPE DBUtils::readBlkDataKey(BinaryRefReader& brr,
+   uint32_t& height, uint8_t& dupID)
 {
    uint16_t tempTxIdx;
    uint16_t tempTxOutIdx;
@@ -46,10 +37,8 @@ BLKDATA_TYPE DBUtils::readBlkDataKey(BinaryRefReader & brr,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-BLKDATA_TYPE DBUtils::readBlkDataKey(BinaryRefReader & brr,
-   uint32_t & height,
-   uint8_t  & dupID,
-   uint16_t & txIdx)
+BLKDATA_TYPE DBUtils::readBlkDataKey(BinaryRefReader& brr,
+   uint32_t& height, uint8_t& dupID, uint16_t& txIdx)
 {
    uint16_t tempTxOutIdx;
    return readBlkDataKey(brr, height, dupID, txIdx, tempTxOutIdx);
@@ -57,14 +46,10 @@ BLKDATA_TYPE DBUtils::readBlkDataKey(BinaryRefReader & brr,
 
 ////////////////////////////////////////////////////////////////////////////////
 BLKDATA_TYPE DBUtils::readBlkDataKey(BinaryRefReader & brr,
-   uint32_t & height,
-   uint8_t  & dupID,
-   uint16_t & txIdx,
-   uint16_t & txOutIdx)
+   uint32_t& height, uint8_t& dupID, uint16_t& txIdx, uint16_t& txOutIdx)
 {
    uint8_t prefix = brr.get_uint8_t();
-   if (prefix != (uint8_t)DB_PREFIX_TXDATA)
-   {
+   if (prefix != (uint8_t)DB_PREFIX_TXDATA) {
       height = 0xffffffff;
       dupID = 0xff;
       txIdx = 0xffff;
@@ -76,10 +61,8 @@ BLKDATA_TYPE DBUtils::readBlkDataKey(BinaryRefReader & brr,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-BLKDATA_TYPE DBUtils::readBlkDataKeyNoPrefix(
-   BinaryRefReader & brr,
-   uint32_t & height,
-   uint8_t  & dupID)
+BLKDATA_TYPE DBUtils::readBlkDataKeyNoPrefix(BinaryRefReader& brr,
+   uint32_t& height, uint8_t& dupID)
 {
    uint16_t tempTxIdx;
    uint16_t tempTxOutIdx;
@@ -88,115 +71,97 @@ BLKDATA_TYPE DBUtils::readBlkDataKeyNoPrefix(
 
 ////////////////////////////////////////////////////////////////////////////////
 BLKDATA_TYPE DBUtils::readBlkDataKeyNoPrefix(
-   BinaryRefReader & brr,
-   uint32_t & height,
-   uint8_t  & dupID,
-   uint16_t & txIdx)
+   BinaryRefReader& brr, uint32_t& height, uint8_t& dupID, uint16_t& txIdx)
 {
    uint16_t tempTxOutIdx;
    return readBlkDataKeyNoPrefix(brr, height, dupID, txIdx, tempTxOutIdx);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-BLKDATA_TYPE DBUtils::readBlkDataKeyNoPrefix(
-   BinaryRefReader & brr,
-   uint32_t & height,
-   uint8_t  & dupID,
-   uint16_t & txIdx,
-   uint16_t & txOutIdx)
+BLKDATA_TYPE DBUtils::readBlkDataKeyNoPrefix(BinaryRefReader & brr,
+   uint32_t& height, uint8_t& dupID, uint16_t& txIdx, uint16_t& txOutIdx)
 {
    BinaryData hgtx = brr.get_BinaryData(4);
    height = hgtxToHeight(hgtx);
    dupID = hgtxToDupID(hgtx);
 
-   if (brr.getSizeRemaining() == 0)
-   {
+   if (brr.getSizeRemaining() == 0) {
       txIdx = 0xffff;
       txOutIdx = 0xffff;
       return BLKDATA_HEADER;
-   }
-   else if (brr.getSizeRemaining() == 2)
-   {
+   } else if (brr.getSizeRemaining() == 2) {
       txIdx = brr.get_uint16_t(BE);
       txOutIdx = 0xffff;
       return BLKDATA_TX;
-   }
-   else if (brr.getSizeRemaining() == 4)
-   {
+   } else if (brr.getSizeRemaining() == 4) {
       txIdx = brr.get_uint16_t(BE);
       txOutIdx = brr.get_uint16_t(BE);
       return BLKDATA_TXOUT;
-   }
-   else
-   {
+   } else {
       LOGERR << "Unexpected bytes remaining: " << brr.getSizeRemaining();
       return NOT_BLKDATA;
    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-string DBUtils::getPrefixName(uint8_t prefixInt)
+std::string DBUtils::getPrefixName(uint8_t prefixInt)
 {
    return getPrefixName((DB_PREFIX)prefixInt);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-string DBUtils::getPrefixName(DB_PREFIX pref)
+std::string DBUtils::getPrefixName(DB_PREFIX pref)
 {
    switch (pref)
    {
-   case DB_PREFIX_DBINFO:    return string("DBINFO");
-   case DB_PREFIX_TXDATA:    return string("TXDATA");
-   case DB_PREFIX_SCRIPT:    return string("SCRIPT");
-   case DB_PREFIX_TXHINTS:   return string("TXHINTS");
-   case DB_PREFIX_TRIENODES: return string("TRIENODES");
-   case DB_PREFIX_HEADHASH:  return string("HEADHASH");
-   case DB_PREFIX_HEADHGT:   return string("HEADHGT");
-   case DB_PREFIX_UNDODATA:  return string("UNDODATA");
-   default:                  return string("<unknown>");
+      case DB_PREFIX_DBINFO:    return std::string("DBINFO");
+      case DB_PREFIX_TXDATA:    return std::string("TXDATA");
+      case DB_PREFIX_SCRIPT:    return std::string("SCRIPT");
+      case DB_PREFIX_TXHINTS:   return std::string("TXHINTS");
+      case DB_PREFIX_TRIENODES: return std::string("TRIENODES");
+      case DB_PREFIX_HEADHASH:  return std::string("HEADHASH");
+      case DB_PREFIX_HEADHGT:   return std::string("HEADHGT");
+      case DB_PREFIX_UNDODATA:  return std::string("UNDODATA");
+      default:                  return std::string("<unknown>");
    }
 }
 
 /////////////////////////////////////////////////////////////////////////////
-bool DBUtils::checkPrefixByteWError(BinaryRefReader & brr,
-   DB_PREFIX prefix,
-   bool rewindWhenDone)
+bool DBUtils::checkPrefixByteWError(BinaryRefReader& brr,
+   DB_PREFIX prefix, bool rewindWhenDone)
 {
    uint8_t oneByte = brr.get_uint8_t();
    bool out;
-   if (oneByte == (uint8_t)prefix)
+   if (oneByte == (uint8_t)prefix) {
       out = true;
-   else
-   {
+   } else {
       LOGERR << "Unexpected prefix byte: "
          << "Expected: " << getPrefixName(prefix)
          << "Received: " << getPrefixName(oneByte);
       out = false;
    }
 
-   if (rewindWhenDone)
+   if (rewindWhenDone) {
       brr.rewind(1);
-
+   }
    return out;
 }
 
 /////////////////////////////////////////////////////////////////////////////
-bool DBUtils::checkPrefixByte(BinaryRefReader & brr,
-   DB_PREFIX prefix,
-   bool rewindWhenDone)
+bool DBUtils::checkPrefixByte(BinaryRefReader& brr,
+   DB_PREFIX prefix, bool rewindWhenDone)
 {
    uint8_t oneByte = brr.get_uint8_t();
    bool out = (oneByte == (uint8_t)prefix);
 
-   if (rewindWhenDone)
+   if (rewindWhenDone) {
       brr.rewind(1);
-
+   }
    return out;
 }
 
 /////////////////////////////////////////////////////////////////////////////
-BinaryData DBUtils::getBlkDataKey(uint32_t height,
-   uint8_t  dup)
+BinaryData DBUtils::getBlkDataKey(uint32_t height, uint8_t dup)
 {
    BinaryWriter bw(5);
    bw.put_uint8_t(DB_PREFIX_TXDATA);
@@ -206,8 +171,7 @@ BinaryData DBUtils::getBlkDataKey(uint32_t height,
 
 /////////////////////////////////////////////////////////////////////////////
 BinaryData DBUtils::getBlkDataKey(uint32_t height,
-   uint8_t  dup,
-   uint16_t txIdx)
+   uint8_t dup, uint16_t txIdx)
 {
    BinaryWriter bw(7);
    bw.put_uint8_t(DB_PREFIX_TXDATA);
@@ -218,9 +182,7 @@ BinaryData DBUtils::getBlkDataKey(uint32_t height,
 
 /////////////////////////////////////////////////////////////////////////////
 BinaryData DBUtils::getBlkDataKey(uint32_t height,
-   uint8_t  dup,
-   uint16_t txIdx,
-   uint16_t txOutIdx)
+   uint8_t dup, uint16_t txIdx, uint16_t txOutIdx)
 {
    BinaryWriter bw(9);
    bw.put_uint8_t(DB_PREFIX_TXDATA);
@@ -231,16 +193,14 @@ BinaryData DBUtils::getBlkDataKey(uint32_t height,
 }
 
 /////////////////////////////////////////////////////////////////////////////
-BinaryData DBUtils::getBlkDataKeyNoPrefix(uint32_t height,
-   uint8_t  dup)
+BinaryData DBUtils::getBlkDataKeyNoPrefix(uint32_t height, uint8_t dup)
 {
    return heightAndDupToHgtx(height, dup);
 }
 
 /////////////////////////////////////////////////////////////////////////////
 BinaryData DBUtils::getBlkDataKeyNoPrefix(uint32_t height,
-   uint8_t  dup,
-   uint16_t txIdx)
+   uint8_t dup, uint16_t txIdx)
 {
    BinaryWriter bw(6);
    bw.put_BinaryData(heightAndDupToHgtx(height, dup));
@@ -250,9 +210,7 @@ BinaryData DBUtils::getBlkDataKeyNoPrefix(uint32_t height,
 
 /////////////////////////////////////////////////////////////////////////////
 BinaryData DBUtils::getBlkDataKeyNoPrefix(uint32_t height,
-   uint8_t  dup,
-   uint16_t txIdx,
-   uint16_t txOutIdx)
+   uint8_t dup, uint16_t txIdx, uint16_t txOutIdx)
 {
    BinaryWriter bw(8);
    bw.put_BinaryData(heightAndDupToHgtx(height, dup));
@@ -265,7 +223,6 @@ BinaryData DBUtils::getBlkDataKeyNoPrefix(uint32_t height,
 uint32_t DBUtils::hgtxToHeight(const BinaryData& hgtx)
 {
    return (READ_UINT32_BE(hgtx) >> 8);
-
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -296,168 +253,10 @@ BinaryData DBUtils::getMissingHashesKey(uint32_t id)
 
    id &= 0x00FFFFFF; //24bit ids top
    id |= DB_PREFIX_MISSING_HASHES << 24;
-   
+
    auto keyPtr = (uint32_t*)bd.getPtr();
    *keyPtr = id;
-
    return bd;
-}
-
-/////////////////////////////////////////////////////////////////////////////
-bool DBUtils::fileExists(const string& path, int mode)
-{
-#ifdef _WIN32
-   return _access(path.c_str(), mode) == 0;
-#else
-      auto nixmode = F_OK;
-      if (mode & 2)
-         nixmode |= R_OK;
-      if (mode & 4)
-         nixmode |= W_OK;
-      return access(path.c_str(), nixmode) == 0;
-#endif
-}
-
-/////////////////////////////////////////////////////////////////////////////
-void FileMap::unmap()
-{
-   if (filePtr_ != nullptr)
-   {
-#ifdef WIN32
-      if (!UnmapViewOfFile(filePtr_))
-         throw std::runtime_error("failed to unmap file");
-#else
-      if (munmap(filePtr_, size_))
-         throw std::runtime_error("failed to unmap file");
-#endif
-
-      filePtr_ = nullptr;
-   }
-}
-
-/////////////////////////////////////////////////////////////////////////////
-FileMap DBUtils::getMmapOfFile(const string& path, bool write)
-{
-   int fd = 0;
-   if (!DBUtils::fileExists(path, 2))
-      throw runtime_error("file does not exist");
-
-   FileMap fMap;
-
-   try
-   {
-#ifdef _WIN32
-      auto flag = _O_RDONLY | _O_BINARY;
-      if (write)
-         flag = _O_RDWR | _O_BINARY;
-      
-      fd = _open(path.c_str(), flag);
-      if (fd == -1)
-         throw runtime_error("failed to open file");
-
-      auto size = _lseek(fd, 0, SEEK_END);
-
-      if (size == 0)
-      {
-         stringstream ss;
-         ss << "empty block file under path: " << path;
-         throw ss.str();
-      }
-
-      _lseek(fd, 0, SEEK_SET);
-#else
-      auto flag = O_RDONLY;
-      if (write)
-         flag = O_RDWR;
-      fd = open(path.c_str(), flag);
-      if (fd == -1)
-         throw runtime_error("failed to open file");
-
-      auto size = lseek(fd, 0, SEEK_END);
-
-      if (size == 0)
-      {
-         stringstream ss;
-         ss << "empty block file under path: " << path;
-         throw ss.str();
-      }
-
-      lseek(fd, 0, SEEK_SET);
-#endif
-      fMap.size_ = size;
-
-#ifdef _WIN32
-      //create mmap
-      auto fileHandle = (HANDLE)_get_osfhandle(fd);
-      HANDLE mh;
-
-      uint32_t sizelo = size & 0xffffffff;
-      uint32_t sizehi = size >> 16 >> 16;
-
-      auto mmapflag = PAGE_READONLY;
-      if (write)
-         mmapflag = PAGE_READWRITE;
-      mh = CreateFileMapping(fileHandle, NULL, mmapflag,
-         sizehi, sizelo, NULL);
-      if (!mh)
-      {
-         auto errorCode = GetLastError();
-         stringstream errStr;
-         errStr << "Failed to create map of file. Error Code: " <<
-            errorCode << " (" << strerror(errorCode) << ")";
-         throw runtime_error(errStr.str());
-      }
-
-      auto viewFlag = FILE_MAP_READ;
-      if (write)
-         viewFlag = FILE_MAP_ALL_ACCESS;
-      fMap.filePtr_ = (uint8_t*)MapViewOfFileEx(mh, viewFlag, 0, 0, size, NULL);
-      if (fMap.filePtr_ == nullptr)
-      {
-         auto errorCode = GetLastError();
-         stringstream errStr;
-         errStr << "Failed to create map of file. Error Code: " <<
-            errorCode << " (" << strerror(errorCode) << ")";
-         throw runtime_error(errStr.str());
-      }
-
-      CloseHandle(mh);
-      _close(fd);
-#else
-      auto mapFlag = PROT_READ;
-      if (write)
-         mapFlag |= PROT_WRITE;
-      fMap.filePtr_ = (uint8_t*)mmap(0, size, mapFlag, MAP_SHARED,
-         fd, 0);
-      if (fMap.filePtr_ == MAP_FAILED) {
-         fMap.filePtr_ = NULL;
-         stringstream errStr;
-         errStr << "Failed to create map of file. Error Code: " <<
-            errno << " (" << strerror(errno) << ")";
-         cout << errStr.str() << endl;
-         throw runtime_error(errStr.str());
-      }
-
-      close(fd);
-#endif
-      fd = 0;
-   }
-   catch (runtime_error &e)
-   {
-      if (fd != 0)
-      {
-#ifdef _WIN32
-         _close(fd);
-#else
-         close(fd);
-#endif
-         fd = 0;
-      }
-
-      throw e;
-   }
-
-   return fMap;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -466,199 +265,312 @@ BinaryDataRef DBUtils::getDataRefForPacket(
 {
    BinaryRefReader brr(packet);
    auto len = brr.get_var_int();
-   if (len != brr.getSizeRemaining())
-      throw runtime_error("on disk data length mismatch");
-
+   if (len != brr.getSizeRemaining()) {
+      throw std::runtime_error("on disk data length mismatch");
+   }
    return brr.get_BinaryDataRef(brr.getSizeRemaining());
 }
 
-////////////////////////////////////////////////////////////////////////////////
-struct stat DBUtils::getPathStat(const char* path, unsigned len)
+/////////////////////////////////////////////////////////////////////////////
+// FileMap
+/////////////////////////////////////////////////////////////////////////////
+FileUtils::FileMap::FileMap(const fs::path& path, bool write)
 {
-   if (path == nullptr || len == 0)
-      throw runtime_error("invalid path");
-
-   if(strlen(path) != len)
-      throw runtime_error("invalid path");
-
-   if (access(path, 0) != 0)
-      throw runtime_error("invalid path");
-
-   struct stat status;
-   stat(path, &status);
-   return status;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-struct stat DBUtils::getPathStat(const string& path)
-{
-   return getPathStat(path.c_str(), path.size());
-}
-
-////////////////////////////////////////////////////////////////////////////////
-bool DBUtils::isFile(const string& path)
-{
-   struct stat status;
-   try
-   {
-      status = move(getPathStat(path));
-   }
-   catch (exception&)
-   {
-      return false;
+   int fd = 0;
+   if (!fileExists(path, 2)) {
+      //false positive warning, we often ask for block files that do not
+      //exists as way to check for exhaustion
+      //LOGWARN << "FileMap: file " << path.string() << " does not exist";
+      return;
    }
 
-   return status.st_mode & S_IFREG;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-bool DBUtils::isDir(const string& path)
-{
-   struct stat status;
-   try
-   {
-      status = move(getPathStat(path));
-   }
-   catch (exception&)
-   {
-      return false;
-   }
-
-   return status.st_mode & S_IFDIR;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-int DBUtils::removeDirectory(const string& path)
-{
-   if (!isDir(path))
-      return -1;
-
-   DIR* current_dir = opendir(path.c_str());
-   if (current_dir == nullptr)
-      return -1;
-
-   //gather paths in dir
-   vector<string> file_vec;
-   dirent* filename = nullptr;
-   while ((filename = readdir(current_dir)) != nullptr)
-      file_vec.push_back(string(filename->d_name));
-
-   string dot(".");
-   string dotdot("..");
-   vector<string> path_vec;
-   for (auto val : file_vec)
-   {
-      if (val == dot || val == dotdot)
-         continue;
-
-      stringstream path_ss;
-      path_ss << path << "/" << val;
-
-      path_vec.push_back(path_ss.str());
-   }
-
-   closedir(current_dir);
-
-   for (auto& filepath : path_vec)
-   {
-      if (isDir(filepath))
-      {
-         auto result = removeDirectory(filepath);
-         if (result != 0)
-            return result;
-
-         continue;
+   try {
+#ifdef _WIN32
+      auto flag = _O_RDONLY | _O_BINARY;
+      if (write) {
+         flag = _O_RDWR | _O_BINARY;
       }
 
-      auto result = unlink(filepath.c_str());
-      if (result != 0)
-         return result;
-   }
+      fd = _open(path.string().c_str(), flag);
+      if (fd == -1) {
+         throw std::runtime_error("failed to open file");
+      }
+
+      auto size = _lseek(fd, 0, SEEK_END);
+      if (size == 0) {
+         throw std::runtime_error("empty file");
+      }
+
+      _lseek(fd, 0, SEEK_SET);
+#else
+      auto flag = O_RDONLY;
+      if (write) {
+         flag = O_RDWR;
+      }
+      fd = open(path.c_str(), flag);
+      if (fd == -1) {
+         throw std::runtime_error("failed to open");
+      }
+
+      auto size = lseek(fd, 0, SEEK_END);
+      if (size == 0) {
+         throw std::runtime_error("empty file");
+      }
+
+      lseek(fd, 0, SEEK_SET);
+#endif
+      size_ = size;
 
 #ifdef _WIN32
-   if (RemoveDirectory(path.c_str()) == 0)
-      return -1;
-#else
-   return rmdir(path.c_str());
-#endif
+      //create mmap
+      auto fileHandle = (void*)_get_osfhandle(fd);
+      uint32_t sizelo = size & 0xffffffff;
+      uint32_t sizehi = size >> 16 >> 16;
 
+      auto mmapflag = PAGE_READONLY;
+      if (write) {
+         mmapflag = PAGE_READWRITE;
+      }
+      auto mh = CreateFileMapping(fileHandle, NULL, mmapflag,
+         sizehi, sizelo, NULL);
+      if (!mh) {
+         auto errorCode = GetLastError();
+         std::stringstream errStr;
+         errStr << errorCode << " (" << std::strerror(errorCode) << ")";
+         throw std::runtime_error(errStr.str());
+      }
+
+      auto viewFlag = FILE_MAP_READ;
+      if (write) {
+         viewFlag = FILE_MAP_ALL_ACCESS;
+      }
+      ptr_ = (uint8_t*)MapViewOfFileEx(mh, viewFlag, 0, 0, size, NULL);
+      if (ptr_ == nullptr) {
+         auto errorCode = GetLastError();
+         std::stringstream errStr;
+         errStr << errorCode << " (" << std::strerror(errorCode) << ")";
+         throw std::runtime_error(errStr.str());
+      }
+
+      CloseHandle(mh);
+      _close(fd);
+#else
+      auto mapFlag = PROT_READ;
+      if (write) {
+         mapFlag |= PROT_WRITE;
+      }
+      ptr_ = (uint8_t*)mmap(0, size, mapFlag, MAP_SHARED, fd, 0);
+      if (ptr_ == MAP_FAILED) {
+         ptr_ = nullptr;
+         std::stringstream errStr;
+         errStr << errno << " (" << std::strerror(errno) << ")";
+         throw std::runtime_error(errStr.str());
+      }
+
+      close(fd);
+#endif
+      fd = 0;
+   } catch (const std::runtime_error &e) {
+      if (fd != 0) {
+#ifdef _WIN32
+         _close(fd);
+#else
+         close(fd);
+#endif
+         fd = 0;
+         LOGERR << "FileMap error for path " << path.string() <<
+            ", error: " << e.what();
+      }
+   }
+}
+
+////
+FileUtils::FileMap::~FileMap()
+{
+   if (ptr_ != nullptr) {
+#ifdef _WIN32
+      if (!UnmapViewOfFile(ptr_)) {
+         LOGERR << "failed to unmap file";
+      }
+#else
+      if (munmap(ptr_, size_)) {
+         LOGERR << "failed to unmap file";
+      }
+#endif
+      ptr_ = nullptr;
+   }
+}
+
+////
+bool FileUtils::FileMap::isValid() const
+{
+   return ptr_ != nullptr;
+}
+
+////
+const size_t& FileUtils::FileMap::size() const
+{
+   return size_;
+}
+
+////
+uint8_t* FileUtils::FileMap::ptr() const
+{
+   return ptr_;
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// FileUtils
+/////////////////////////////////////////////////////////////////////////////
+bool FileUtils::fileExists(const fs::path& path, int mode)
+{
+   try {
+      auto result = fs::status(path);
+      if (result.type() == fs::file_type::not_found) {
+         return false;
+      }
+      auto filePerms = result.permissions();
+
+      //do we need read permission?
+      if ((mode & 2) && (filePerms & fs::perms::owner_read) == fs::perms::none) {
+         return false;
+      }
+
+      //do we need write permission?
+      if ((mode & 4) && (filePerms & fs::perms::owner_write) == fs::perms::none) {
+         return false;
+      }
+
+      return true;
+   } catch (const fs::filesystem_error&) {
+      //throw, invalid path/file doesnt exist
+      return false;
+   }
+}
+
+////
+bool FileUtils::isFile(const fs::path& path)
+{
+   auto result = fs::status(path);
+   return result.type() == fs::file_type::regular;
+}
+
+////
+bool FileUtils::isDir(const fs::path& path)
+{
+   auto result = fs::status(path);
+   return result.type() == fs::file_type::directory;
+}
+
+////
+int FileUtils::removeDirectory(const fs::path& path)
+{
+   if (!isDir(path)) {
+      return -1;
+   }
+
+   std::error_code ec;
+   if (fs::remove_all(path, ec) == UINTMAX_MAX) {
+      return -1;
+   }
    return 0;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-size_t DBUtils::getFileSize(const string& path)
+////
+void FileUtils::createDirectory(const fs::path& path)
 {
-   auto stat_struct = getPathStat(path);
-   return stat_struct.st_size;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void DBUtils::appendPath(string& base, const string& add)
-{
-   if (add.size() == 0)
+   //recursively create directory, inherit parent rights where applicable
+   if (path.empty()) {
       return;
-
-   auto firstChar = add.c_str()[0];
-   if (base.size() > 0)
-   {
-      auto lastChar = base.c_str()[base.size() - 1];
-      if (firstChar != '\\' && firstChar != '/')
-         if (lastChar != '\\' && lastChar != '/')
-            base.append("/");
    }
 
-   base.append(add);
+   auto result = fs::status(path);
+   if (result.type() == fs::file_type::directory) {
+      //directory exists, nothing to do
+      return;
+   } else if (result.type() != fs::file_type::not_found) {
+      //something that isn't a directory exists under this path, throw
+      throw std::runtime_error("path is not a directory: " + path.string());
+   }
+
+   //check parent exists
+   auto parent = path.parent_path();
+   createDirectory(parent);
+   fs::create_directory(path, parent);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void DBUtils::expandPath(string& path)
+// This got more complicated when Bitcoin Core 0.8 switched from
+// blk0001.dat to blocks/blk00000.dat
+fs::path FileUtils::getBlkFilename(const fs::path& path, uint32_t fblkNum)
 {
-   if (path.c_str()[0] != '~')
-      return;
+   /// Update:  It's been enough time since the hardfork that just about
+   //           everyone must've upgraded to 0.8+ by now... remove pre-0.8
+   //           compatibility.
+   std::stringstream filename;
+   filename << "blk" << std::setw(5) << std::setfill('0') << fblkNum;
+   filename << ".dat";
+   return path / filename.str();
+}
 
-   //resolve ~
+////
+size_t FileUtils::getFileSize(const fs::path& path)
+{
+   try {
+      return fs::file_size(path);
+   } catch (const fs::filesystem_error&) {
+      return SIZE_MAX;
+   }
+}
+
+////////////////////
+// Simple method for copying files (works in all OS, probably not efficient)
+bool FileUtils::copy(const fs::path& src, const fs::path& dst, size_t nbytes)
+{
+   auto srcsz = getFileSize(src);
+   if (srcsz == SIZE_MAX) {
+      return false;
+   }
+   srcsz = std::min(srcsz, nbytes);
+   std::vector<char> buffer(srcsz);
+
+   std::ifstream is(src, std::ios::in  | std::ios::binary);
+   is.read(buffer.data(), srcsz);
+
+   std::ofstream os(dst, std::ios::out | std::ios::binary);
+   os.write(buffer.data(), srcsz);
+   os.flush();
+   return true;
+}
+
+////
+bool FileUtils::append(const fs::path& src, const fs::path& dst)
+{
+   if (!fileExists(dst, 2)) {
+      return false;
+   }
+
+   auto srcsz = getFileSize(src);
+   if (srcsz == SIZE_MAX) {
+      return false;
+   }
+   std::vector<char> buffer(srcsz);
+
+   std::ifstream is(src.c_str(), std::ios::in  | std::ios::binary);
+   is.read(buffer.data(), srcsz);
+
+   std::ofstream os(dst.c_str(), std::ios::app | std::ios::binary);
+   os.write(buffer.data(), srcsz);
+   os.flush();
+   return true;
+}
+
+////
+fs::path FileUtils::getUserHomePath()
+{
 #ifdef _WIN32
-   char* pathPtr = new char[MAX_PATH + 1];
-   if (SHGetFolderPath(0, CSIDL_APPDATA, 0, 0, pathPtr) != S_OK)
-   {
-      delete[] pathPtr;
-      throw runtime_error("failed to resolve appdata path");
-   }
-
-   string userPath(pathPtr);
-   delete[] pathPtr;
+   return fs::path(std::getenv("APPDATA"));
 #else
-   wordexp_t wexp;
-   wordexp("~", &wexp, 0);
-
-   if (wexp.we_wordc == 0)
-      throw runtime_error("failed to resolve home path");
-
-   string userPath(wexp.we_wordv[0]);
-   wordfree(&wexp);
+   return fs::path{std::getenv("HOME")};
 #endif
-
-   appendPath(userPath, path.substr(1));
-   path = move(userPath);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-string DBUtils::getBaseDir(const string& path)
-{
-   //crawl back until folder market is hit
-   int pos = -1;
-   for (int i=path.size() - 1; i>-1; i--)
-   {
-      auto charPtr = path.c_str() + i;
-      if (*charPtr == '/' || *charPtr == '\\')
-      {
-         pos = i;
-         break;
-      }
-   }
-
-   if (pos == -1)
-      return string();
-
-   return path.substr(0, pos);
 }

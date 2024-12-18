@@ -14,6 +14,8 @@
 #include <unordered_map>
 #include <thread>
 #include <mutex>
+#include <filesystem>
+
 #include "lmdb.h"
 
 struct MDB_env;
@@ -79,8 +81,8 @@ public:
 private:
    LMDBEnv *env=nullptr;
    unsigned int dbi=0;
-      
-   friend class Iterator;   
+
+   friend class Iterator;
 
 public:
    // this class can be used like a C++ iterator,
@@ -90,28 +92,27 @@ public:
    {
       friend class LMDBEnv;
       friend class LMDB;
-      
+
+   private:
       LMDB *db_=nullptr;
       mutable MDB_cursor *csr_=nullptr;
-      
+
       mutable bool hasTx=true;
       bool has_=false;
       LMDBThreadTxInfo* txnPtr_=nullptr;
       MDB_val key_, val_;
-         
+
+   private:
       void reset();
       void checkHasDb() const;
       void checkOk() const;
-      
       void openCursor();
-      
       Iterator(LMDB *db);
 
-      
    public:
       Iterator() { }
       ~Iterator();
-      
+
       // copying permitted (encouraged!)
       Iterator(const Iterator &copy);
       Iterator(Iterator &&move);
@@ -127,14 +128,14 @@ public:
       {
          return !operator==(other);
       }
-      
+
       enum SeekBy
       {
          Seek_EQ,
          Seek_GE,
          Seek_LE
       };
-      
+
       // move this iterator such that, if the exact key is not found:
       // for e == Seek_EQ
       // The cursor is left as Invalid.
@@ -143,7 +144,7 @@ public:
       // larger than (key). If the database contains no keys larger than
       // (key), the cursor is left as Invalid.
       void seek(const CharacterArrayRef &key, SeekBy e = Seek_EQ);
-      
+
       // is the cursor pointing to a valid location?
       bool isValid() const { return has_; }
       operator bool() const { return isValid(); }
@@ -153,47 +154,45 @@ public:
       // the postfix increment operator is not defined for performance reasons
       Iterator& operator++() { advance(); return *this; }
       void advance();
-      
+
       Iterator& operator--() { retreat(); return *this; }
       void retreat();
-      
+
       // seek this iterator to the first sequence
       void toFirst();
       void toLast();
-      
+
       // returns the key currently pointed to, if no key is being pointed to
       // std::logic_error is returned (not LSMException). LSMException may
       // be thrown for other reasons. You can avoid logic_error by
       // calling isValid() first
       const MDB_val& key() const { return key_; }
-      
+
       // returns the value currently pointed to. Exceptions are thrown
       // under the same conditions as key()
       const MDB_val& value() const { return val_; }
    };
-   
-   LMDB() { }
-   LMDB(LMDBEnv *_env, const std::string &name=std::string())
+
+   LMDB(void) {}
+   LMDB(LMDBEnv* _env, const std::string& name = {})
    {
       open(_env, name);
    }
-   
+
    ~LMDB();
-   
-   void open(LMDBEnv *env, const std::string &name=std::string());
+
+   void open(LMDBEnv*, const std::string& name = {});
    bool isOpen(void) const;
-   
    void close();
-   
    void drop();
-      
+
    // insert a value into the database, replacing
    // the one with a matching key if it is already there
    void insert(
       const CharacterArrayRef& key,
       const CharacterArrayRef& value
    );
-   
+
    // delete the entry with the given key, doing nothing
    // if such a key does not exist
    void erase(const CharacterArrayRef& key);
@@ -208,7 +207,7 @@ public:
    // data even once. The return object has a pointer to the
    // location in memory
    CharacterArrayRef get_NoCopy(const CharacterArrayRef& key) const;
-   
+
    // create a cursor for scanning the database that points to the first
    // item
    Iterator begin() const
@@ -223,7 +222,7 @@ public:
       Iterator c(const_cast<LMDB*>(this));
       return c;
    }
-   
+
    template<class T>
    Iterator find(const T &t) const
    {
@@ -231,7 +230,7 @@ public:
       c.seek(t);
       return c;
    }
-   
+
    // Create an iterator that points to an invalid item.
    // like end(), the iterator can be repositioned to
    // become a valid entry
@@ -262,10 +261,10 @@ private:
    MDB_env *dbenv=nullptr;
    unsigned dbCount_ = 1;
 
-   std::string filename_;
+   std::filesystem::path path_;
    std::mutex threadTxMutex_;
    std::unordered_map<std::thread::id, LMDBThreadTxInfo> txForThreads_;
-   
+
    friend class LMDB;
 
 public:
@@ -273,14 +272,14 @@ public:
    {
       friend class LMDB;
 
+   private:
       LMDBEnv *env=nullptr;
       bool began=false;
       LMDB::Mode mode_;
-      
+
       std::thread::id tid_;
 
    public:
-      
       Transaction() { }
       // begin a transaction
       Transaction(LMDBEnv *env, LMDB::Mode mode = LMDB::ReadWrite);
@@ -289,10 +288,10 @@ public:
 
       Transaction(Transaction&&);
       Transaction& operator=(Transaction&&);
-      
+
       // commit the current transaction, create a new one, and begin it
       void open(LMDBEnv *env, LMDB::Mode mode = LMDB::ReadWrite);
-      
+
       // commit a transaction, if it exists, doing nothing otherwise.
       // after this function completes, no transaction exists
       void commit();
@@ -310,20 +309,17 @@ public:
    LMDBEnv() { }
    LMDBEnv(unsigned dbCount) { dbCount_ = dbCount; }
    ~LMDBEnv();
-   
-   // open a database by filename
-   void open(const char *filename, unsigned flags);
-   void open(const std::string &filename, unsigned flags = 0)
-      { open(filename.c_str(), flags); }
 
+   // open a database by filename
+   void open(const std::filesystem::path&, unsigned flags = 0);
    bool isOpen(void) const;
 
    // close a database, doing nothing if one is presently not open
    void close();
 
-   const std::string& getFilename(void) const { return filename_; }
+   const std::filesystem::path& getFilename(void) const { return path_; }
    void setMapSize(size_t);
-   void compactCopy(const std::string& fname);
+   void compactCopy(const std::filesystem::path& fname);
    
 private:
    LMDBEnv(const LMDBEnv&); // disallow copy

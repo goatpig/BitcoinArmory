@@ -27,13 +27,13 @@ namespace Armory
       struct StackItem
       {
       public:
-         const Armory::Signer::StackItemType type_;
+         const Signing::StackItemType type_;
 
       protected:
          const unsigned id_;
 
       public:
-         StackItem(Armory::Signer::StackItemType type, unsigned id) :
+         StackItem(Signing::StackItemType type, unsigned id) :
             type_(type), id_(id)
          {}
 
@@ -51,7 +51,7 @@ namespace Armory
          const BinaryData data_;
 
          StackItem_PushData(unsigned id, BinaryData&& data) :
-            StackItem(Armory::Signer::StackItemType_PushData, id),
+            StackItem(Signing::StackItemType::PushData, id),
             data_(std::move(data))
          {}
 
@@ -64,7 +64,7 @@ namespace Armory
          const SecureBinaryData data_;
 
          StackItem_Sig(unsigned id, SecureBinaryData&& data) :
-            StackItem(Armory::Signer::StackItemType_Sig, id),
+            StackItem(Signing::StackItemType::Sig, id),
             data_(std::move(data))
          {}
 
@@ -78,7 +78,7 @@ namespace Armory
          const unsigned m_;
 
          StackItem_MultiSig(unsigned id, unsigned m) :
-            StackItem(Armory::Signer::StackItemType_MultiSig, id), m_(m)
+            StackItem(Signing::StackItemType::MultiSig, id), m_(m)
          {}
 
          void setSig(unsigned id, SecureBinaryData& sig)
@@ -97,7 +97,7 @@ namespace Armory
          const uint8_t opcode_;
 
          StackItem_OpCode(unsigned id, uint8_t opcode) :
-            StackItem(Armory::Signer::StackItemType_OpCode, id),
+            StackItem(Signing::StackItemType::OpCode, id),
             opcode_(opcode)
          {}
 
@@ -110,7 +110,7 @@ namespace Armory
          const BinaryData data_;
 
          StackItem_SerializedScript(unsigned id, BinaryData&& data) :
-            StackItem(Armory::Signer::StackItemType_SerializedScript, id),
+            StackItem(Signing::StackItemType::SerializedScript, id),
             data_(std::move(data))
          {}
 

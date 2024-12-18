@@ -240,41 +240,41 @@ class BlockDataManager(object):
       arglist = []
 
       # AOTODO replace with constants
-      if notifProto.HasField("ready"):
+      if notifProto.which() == "ready":
          print('BDM is ready!')
          act = FINISH_LOAD_BLOCKCHAIN_ACTION
-         TheBDM.topBlockHeight = notifProto.ready.height
+         TheBDM.topBlockHeight = notifProto.ready
          TheBDM.setState(BDM_BLOCKCHAIN_READY)
 
-      elif notifProto.HasField("zero_conf"):
+      elif notifProto.which() == "zeroConfs":
          act = NEW_ZC_ACTION
-         arglist = notifProto.zero_conf.ledger
+         arglist = notifProto.zeroConfs
 
-      elif notifProto.HasField("new_block"):
+      elif notifProto.which() == "newBlock":
          act = NEW_BLOCK_ACTION
-         arglist.append(notifProto.new_block.height)
-         TheBDM.topBlockHeight = notifProto.new_block.height
+         arglist.append(notifProto.newBlock)
+         TheBDM.topBlockHeight = notifProto.newBlock
 
-      elif notifProto.HasField("refresh"):
+      elif notifProto.which() == "refresh":
          act = REFRESH_ACTION
-         arglist = notifProto.refresh.id
+         arglist = notifProto.refresh
 
-      elif notifProto.HasField("error"):
+      elif notifProto.which() == "error":
          act = WARNING_ACTION
          arglist.append(notifProto.error)
 
-      elif notifProto.HasField("node_status"):
+      elif notifProto.which() == "nodeStatus":
          act = NODESTATUS_UPDATE
-         arglist.append(notifProto.node_status)
+         arglist.append(notifProto.nodeStatus)
 
-      elif notifProto.HasField("disconnected"):
+      elif notifProto.which() == "disconnected":
          TheBDM.setState(BDM_OFFLINE)
          act = BDV_DISCONNECTED
 
       #setup notifs
-      elif notifProto.HasField("setup_done"):
+      elif notifProto.which() == "setupDone":
          act = SETUP_STEP2
-      elif notifProto.HasField("registered"):
+      elif notifProto.which() == "registerDone":
          act = SETUP_STEP3
 
       listenerList = self.getListenerList()
@@ -285,9 +285,9 @@ class BlockDataManager(object):
    def reportProgress(self, notifProto):
       phase = notifProto.progress.phase
       prog = notifProto.progress.progress
-      seconds = notifProto.progress.eta_sec
-      progressNumeric = notifProto.progress.progress_numeric
-      walletVec = notifProto.progress.id
+      seconds = notifProto.progress.time
+      progressNumeric = notifProto.progress.numericProgress
+      walletVec = notifProto.progress.ids
 
       try:
          if len(walletVec) == 0:

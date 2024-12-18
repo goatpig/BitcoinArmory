@@ -16,6 +16,7 @@
 #include "ArmoryErrors.h"
 
 using namespace std;
+using namespace std::chrono_literals;
 using namespace Armory::Threading;
 using namespace Armory::Config;
 
@@ -45,9 +46,9 @@ ZeroConfContainer::ZeroConfContainer(LMDBBlockDatabase* db,
    //register ZC callbacks
    auto processInvTx = [this](vector<InvEntry> entryVec)->void
    {
-      if (!zcEnabled_.load(memory_order_relaxed))
+      if (!zcEnabled_.load(memory_order_relaxed)) {
          return;
-            
+      }
       auto payload = make_shared<ZcInvPayload>(false);
       payload->invVec_ = move(entryVec);
       zcWatcherQueue_.push_back(move(payload));
@@ -63,17 +64,17 @@ ZeroConfContainer::ZeroConfContainer(LMDBBlockDatabase* db,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool ZeroConfContainer::isEnabled() const 
-{ 
+bool ZeroConfContainer::isEnabled() const
+{
    return zcEnabled_.load(std::memory_order_relaxed);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-shared_future<shared_ptr<ZcPurgePacket>> 
+shared_future<shared_ptr<ZcPurgePacket>>
 ZeroConfContainer::pushNewBlockNotification(
    Blockchain::ReorganizationState reorgState)
-{ 
-   return actionQueue_->pushNewBlockNotification(reorgState); 
+{
+   return actionQueue_->pushNewBlockNotification(reorgState);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -94,25 +95,25 @@ shared_ptr<MempoolSnapshot> ZeroConfContainer::getSnapshot() const
 Tx ZeroConfContainer::getTxByHash(const BinaryData& txHash) const
 {
    auto ss = getSnapshot();
-   if (ss == nullptr)
-      return Tx();
+   if (ss == nullptr) {
+      return {};
+   }
 
    auto parsedTxPtr = ss->getTxByHash(txHash);
-   if (parsedTxPtr == nullptr)
-      return Tx();
+   if (parsedTxPtr == nullptr) {
+      return {};
+   }
 
    //copy base tx, add txhash map
    auto txCopy = parsedTxPtr->tx_;
-   
+
    //get zc outpoints id
-   for (unsigned i=0; i<txCopy.getNumTxIn(); i++)
-   {
+   for (unsigned i=0; i<txCopy.getNumTxIn(); i++) {
       auto&& txin = txCopy.getTxInCopy(i);
       auto&& op = txin.getOutPoint();
 
       auto opKey = ss->getKeyForHash(op.getTxHashRef());
-      if (opKey.empty())
-      {
+      if (opKey.empty()) {
          txCopy.pushBackOpId(0);
          continue;
       }
@@ -146,37 +147,37 @@ map<BinaryData, shared_ptr<ParsedTx>> ZeroConfContainer::purgeToBranchpoint(
       - return all reorged ZC for reparsing
    */
 
-   if (reorgState.prevTopStillValid_)
+   if (reorgState.prevTopStillValid_) {
       return {};
+   }
 
-   set<BinaryData> keysToDelete;
+   std::set<BinaryData> keysToDelete;
    auto bcPtr = db_->blockchain();
    auto currentHeader = reorgState.prevTop_;
 
    //loop over headers
-   while (currentHeader != reorgState.reorgBranchPoint_)
-   {
+   while (currentHeader != reorgState.reorgBranchPoint_) {
       //grab block
-      auto&& rawBlock = db_->getRawBlock(currentHeader);
-
+      auto rawBlock = db_->getRawBlock(currentHeader);
       auto block = BlockData::deserialize(
          rawBlock.getPtr(), rawBlock.getSize(),
          currentHeader, nullptr,
          BlockData::CheckHashes::NoChecks);
       const auto& txns = block->getTxns();
 
-      for (unsigned txid = 0; txid < txns.size(); txid++)
-      {
+      for (unsigned txid = 0; txid < txns.size(); txid++) {
          const auto& txn = txns[txid];
          const auto& txHash = txn->getHash();
 
          //look for ZC spending from this tx hash
          auto hashIter = outPointsSpentByKey_.find(txHash);
-         if (hashIter == outPointsSpentByKey_.end())
+         if (hashIter == outPointsSpentByKey_.end()) {
             continue;
+         }
 
-         for (const auto& opid : hashIter->second)
+         for (const auto& opid : hashIter->second) {
             keysToDelete.emplace(opid.second.getSliceCopy(0, 6));
+         }
       }
 
       const auto& bhash = currentHeader->getPrevHash();
@@ -187,9 +188,9 @@ map<BinaryData, shared_ptr<ParsedTx>> ZeroConfContainer::purgeToBranchpoint(
    auto droppedZC = dropZCs(ss, keysToDelete);
 
    //reset all mined input resolution in dropped zc and return
-   for (auto& zcPtr : droppedZC)
+   for (auto& zcPtr : droppedZC) {
       zcPtr.second->resetInputResolution(InputResolution::Mined);
-
+   }
    return droppedZC;
 }
 
@@ -214,57 +215,57 @@ map<BinaryData, shared_ptr<ParsedTx>> ZeroConfContainer::purge(
     * reorgs are first handled in purgeToBranchpoint
    */
 
-   map<BinaryData, shared_ptr<ParsedTx>> txsToReparse;
-
-   if (db_ == nullptr || outPointsSpentByKey_.empty())
+   //sanity check
+   if (db_ == nullptr || outPointsSpentByKey_.empty()) {
       return {};
+   }
 
-   set<BinaryData> keysToDelete;
+   std::map<BinaryData, std::shared_ptr<ParsedTx>> txsToReparse;
+   std::set<BinaryData> keysToDelete;
 
    //purge zc map per block
    auto resolveInvalidatedZCs =
       [&keysToDelete, &reorgState, this](
-         map<BinaryDataRef, set<unsigned>>& spentOutpoints)->void
+         std::map<BinaryDataRef, std::set<unsigned>>& spentOutpoints)->void
    {
       //find zc spender for these spent outpoints
-      for (auto& opIdMap : spentOutpoints)
-      {
+      for (const auto& opIdMap : spentOutpoints) {
          auto hashIter = outPointsSpentByKey_.find(opIdMap.first);
-         if (hashIter == outPointsSpentByKey_.end())
+         if (hashIter == outPointsSpentByKey_.end()) {
             continue;
+         }
 
-         for (auto& opid : opIdMap.second)
-         {
+         for (const auto& opid : opIdMap.second) {
             auto idIter = hashIter->second.find(opid);
-            if (idIter == hashIter->second.end())
+            if (idIter == hashIter->second.end()) {
                continue;
-
+            }
             keysToDelete.emplace(idIter->second);
          }
       }
    };
 
    //handle reorgs
-   if (!reorgState.prevTopStillValid_)
-      txsToReparse = move(purgeToBranchpoint(reorgState, ss));
+   if (!reorgState.prevTopStillValid_) {
+      txsToReparse = purgeToBranchpoint(reorgState, ss);
+   }
 
    //get all txhashes for the new blocks
    ZcUpdateBatch batch;
    auto bcPtr = db_->blockchain();
 
    auto currentHeader = reorgState.prevTop_;
-   if (!reorgState.prevTopStillValid_)
+   if (!reorgState.prevTopStillValid_) {
       currentHeader = reorgState.reorgBranchPoint_;
+   }
 
    //get the next header
    currentHeader = bcPtr->getHeaderByHash(currentHeader->getNextHash());
 
    //loop over headers
-   while (currentHeader != nullptr)
-   {
+   while (currentHeader != nullptr) {
       //grab block
-      auto&& rawBlock = db_->getRawBlock(currentHeader);
-
+      auto rawBlock = db_->getRawBlock(currentHeader);
       auto block = BlockData::deserialize(
          rawBlock.getPtr(), rawBlock.getSize(),
          currentHeader, nullptr,
@@ -272,12 +273,10 @@ map<BinaryData, shared_ptr<ParsedTx>> ZeroConfContainer::purge(
       const auto& txns = block->getTxns();
 
       //gather all outpoints spent by this block
-      map<BinaryDataRef, set<unsigned>> spentOutpoints;
-      for (unsigned txid = 1; txid < txns.size(); txid++)
-      {
-         auto& txn = txns[txid];
-         for (unsigned iin = 0; iin < txn->txins_.size(); iin++)
-         {
+      std::map<BinaryDataRef, std::set<unsigned>> spentOutpoints;
+      for (unsigned txid = 1; txid < txns.size(); txid++) {
+         const auto& txn = txns[txid];
+         for (unsigned iin = 0; iin < txn->txins_.size(); iin++) {
             auto txInRef = txn->getTxInRef(iin);
             BinaryRefReader brr(txInRef);
             auto hash = brr.get_BinaryDataRef(32);
@@ -292,8 +291,9 @@ map<BinaryData, shared_ptr<ParsedTx>> ZeroConfContainer::purge(
       resolveInvalidatedZCs(spentOutpoints);
 
       //next block
-      if (currentHeader->getThisHash() == reorgState.newTop_->getThisHash())
+      if (currentHeader->getThisHash() == reorgState.newTop_->getThisHash()) {
          break;
+      }
 
       const auto& bhash = currentHeader->getNextHash();
       currentHeader = bcPtr->getHeaderByHash(bhash);
@@ -303,8 +303,9 @@ map<BinaryData, shared_ptr<ParsedTx>> ZeroConfContainer::purge(
    auto invalidatedZCs = dropZCs(ss, keysToDelete);
 
    //reset direct descendants' unconfirmed input resolution
-   for (auto& zcPtr : invalidatedZCs)
+   for (auto& zcPtr : invalidatedZCs) {
       zcPtr.second->resetInputResolution(InputResolution::Unconfirmed);
+   }
 
    //add to set of transactions to reparse (might have reorged ZCs)
    txsToReparse.insert(invalidatedZCs.begin(), invalidatedZCs.end());
@@ -323,8 +324,8 @@ void ZeroConfContainer::reset()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-map<BinaryData, shared_ptr<ParsedTx>> ZeroConfContainer::dropZC(
-   shared_ptr<MempoolSnapshot> ss, const BinaryDataRef& key)
+std::map<BinaryData, std::shared_ptr<ParsedTx>> ZeroConfContainer::dropZC(
+   std::shared_ptr<MempoolSnapshot> ss, const BinaryDataRef& key)
 {
    /*
    ZeroConfSharedSnapshot will drop the tx and its children and return them.
@@ -333,28 +334,25 @@ map<BinaryData, shared_ptr<ParsedTx>> ZeroConfContainer::dropZC(
    of its children.
    */
    auto droppedZCs = ss->dropZc(key);
-
-   for (auto& zcPair : droppedZCs)
-   {
+   for (const auto& zcPair : droppedZCs) {
       auto txPtr = zcPair.second;
-      if (txPtr == nullptr)
+      if (txPtr == nullptr) {
          return {};
+      }
 
       //drop from outPointsSpentByKey_
       outPointsSpentByKey_.erase(txPtr->getTxHash());
-      for (auto& input : txPtr->inputs_)
-      {
-         auto opIter = 
-            outPointsSpentByKey_.find(input.opRef_.getTxHashRef());
-         if (opIter == outPointsSpentByKey_.end())
+      for (auto& input : txPtr->inputs_) {
+         auto opIter = outPointsSpentByKey_.find(input.opRef_.getTxHashRef());
+         if (opIter == outPointsSpentByKey_.end()) {
             continue;
+         }
 
          //erase the index
          opIter->second.erase(input.opRef_.getIndex());
 
          //erase the txhash if the index map is empty
-         if (opIter->second.size() == 0)
-         {
+         if (opIter->second.empty()) {
             minedTxHashes_.erase(opIter->first);
             outPointsSpentByKey_.erase(opIter);
          }
@@ -372,14 +370,13 @@ map<BinaryData, shared_ptr<ParsedTx>> ZeroConfContainer::dropZC(
 map<BinaryData, shared_ptr<ParsedTx>> ZeroConfContainer::dropZCs(
    shared_ptr<MempoolSnapshot> ss, const set<BinaryData>& zcKeys)
 {
-   if (zcKeys.size() == 0)
+   if (zcKeys.empty()) {
       return {};
+   }
 
-   map<BinaryData, shared_ptr<ParsedTx>> droppedZCs;
-
+   std::map<BinaryData, std::shared_ptr<ParsedTx>> droppedZCs;
    auto rIter = zcKeys.rbegin();
-   while (rIter != zcKeys.rend())
-   {
+   while (rIter != zcKeys.rend()) {
       auto dropped = dropZC(ss, *rIter++);
       droppedZCs.insert(dropped.begin(), dropped.end());
    }
@@ -388,8 +385,7 @@ map<BinaryData, shared_ptr<ParsedTx>> ZeroConfContainer::dropZCs(
 
    ZcUpdateBatch batch;
    batch.keysToDelete_ = zcKeys;
-   updateBatch_.push_back(move(batch));
-
+   updateBatch_.push_back(std::move(batch));
    return droppedZCs;
 }
 
@@ -457,63 +453,61 @@ void ZeroConfContainer::finalizePurgePacket(
 void ZeroConfContainer::parseNewZC(ZcActionStruct zcAction)
 {
    bool notify = true;
-
    auto ss = MempoolSnapshot::copy(
       snapshot_, MEMPOOL_DEPTH, POOL_MERGE_THRESHOLD);
 
-   map<BinaryData, shared_ptr<ParsedTx>> zcMap;
-   map<BinaryData, shared_ptr<WatcherTxBody>> watcherMap;
-   pair<string, string> requestor;
+   std::map<BinaryData, std::shared_ptr<ParsedTx>> zcMap;
+   std::map<BinaryData, std::shared_ptr<WatcherTxBody>> watcherMap;
+   std::string requestor;
 
    switch (zcAction.action_)
    {
-   case Zc_Purge:
-   {
-      //purge mined zc
-      auto result = purge(zcAction.reorgState_, ss);
-      notify = false;
-
-      ss->commitNewZCs();
-
-      //setup batch with all tracked zc
-      if (zcAction.batch_ == nullptr)
-         zcAction.batch_ = make_shared<ZeroConfBatch>(false);
-      zcAction.batch_->zcMap_ = result;
-      zcAction.batch_->isReadyPromise_->set_value(ArmoryErrorCodes::Success);
-
-      [[fallthrough]];
-   }
-
-   case Zc_NewTx:
-   {
-      try
+      case Zc_Purge:
       {
-         auto batchTxMap = move(getBatchTxMap(zcAction.batch_, ss));
-         zcMap = move(batchTxMap.txMap_);
-         watcherMap = move(batchTxMap.watcherMap_);
-         requestor = move(batchTxMap.requestor_);
+         //purge mined zc
+         auto result = purge(zcAction.reorgState_, ss);
+         notify = false;
+
+         ss->commitNewZCs();
+
+         //setup batch with all tracked zc
+         if (zcAction.batch_ == nullptr) {
+            zcAction.batch_ = make_shared<ZeroConfBatch>(false);
+         }
+         zcAction.batch_->zcMap_ = result;
+         zcAction.batch_->isReadyPromise_->set_value(ArmoryErrorCodes::Success);
+
+         [[fallthrough]];
       }
-      catch (ZcBatchError&)
+
+      case Zc_NewTx:
       {
+         try {
+            auto batchTxMap = std::move(getBatchTxMap(zcAction.batch_, ss));
+            zcMap = std::move(batchTxMap.txMap_);
+            watcherMap = std::move(batchTxMap.watcherMap_);
+            requestor = std::move(batchTxMap.requestor_);
+         } catch (const ZcBatchError&) {
+            return;
+         }
+
+         break;
+      }
+
+      case Zc_Shutdown:
+      {
+         reset();
          return;
       }
 
-      break;
+      default:
+         return;
    }
 
-   case Zc_Shutdown:
-   {
-      reset();
-      return;
+   parseNewZC(std::move(zcMap), ss, true, notify, requestor, watcherMap);
+   if (zcAction.resultPromise_ != nullptr) {
+      finalizePurgePacket(std::move(zcAction), ss);
    }
-
-   default:
-      return;
-   }
-
-   parseNewZC(move(zcMap), ss, true, notify, requestor, watcherMap);
-   if (zcAction.resultPromise_ != nullptr)
-      finalizePurgePacket(move(zcAction), ss);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -521,136 +515,141 @@ void ZeroConfContainer::parseNewZC(
    map<BinaryData, shared_ptr<ParsedTx>> zcMap,
    shared_ptr<MempoolSnapshot> ss,
    bool updateDB, bool notify,
-   const pair<string, string>& requestor,
+   const std::string& requestor,
    std::map<BinaryData, shared_ptr<WatcherTxBody>>& watcherMap)
 {
-   unique_lock<mutex> lock(parserMutex_);
+   std::unique_lock<std::mutex> lock(parserMutex_);
    ZcUpdateBatch batch;
 
    auto iter = zcMap.begin();
-   while (iter != zcMap.end())
-   {
+   while (iter != zcMap.end()) {
       if (iter->second->status() == ParsedTxStatus::Mined ||
-         iter->second->status() == ParsedTxStatus::Invalid || 
-         iter->second->status() == ParsedTxStatus::Skip)
+         iter->second->status() == ParsedTxStatus::Invalid ||
+         iter->second->status() == ParsedTxStatus::Skip) {
          zcMap.erase(iter++);
-      else
+      } else {
          ++iter;
+      }
    }
 
-   if (ss == nullptr)
-      ss = make_shared<MempoolSnapshot>(MEMPOOL_DEPTH, POOL_MERGE_THRESHOLD);
+   if (ss == nullptr) {
+      ss = std::make_shared<MempoolSnapshot>(
+         MEMPOOL_DEPTH, POOL_MERGE_THRESHOLD);
+   }
 
-   for (auto& newZCPair : zcMap)
-   {
-      if (DBSettings::getDbType() != ARMORY_DB_SUPER)
-      {
-         auto& txHash = newZCPair.second->getTxHash();
-         auto insertIter = allZcTxHashes_.insert(txHash);
-         if (!insertIter.second)
+   for (const auto& newZCPair : zcMap) {
+      if (DBSettings::getDbType() != ARMORY_DB_SUPER) {
+         const auto& txHash = newZCPair.second->getTxHash();
+         auto insertIter = allZcTxHashes_.emplace(txHash);
+         if (!insertIter.second) {
             continue;
-      }
-      else
-      {
-         if (ss->getTxByKey(newZCPair.first) != nullptr)
+         }
+      } else {
+         if (ss->getTxByKey(newZCPair.first) != nullptr) {
             continue;
+         }
       }
 
-      batch.zcToWrite_.insert(newZCPair);
+      batch.zcToWrite_.emplace(newZCPair);
    }
 
    bool hasChanges = false;
-   map<string, ParsedZCData> flaggedBDVs;
-   map<BinaryData, shared_ptr<ParsedTx>> invalidatedTx;
+   std::map<std::string, ParsedZCData> flaggedBDVs;
+   std::map<BinaryData, std::shared_ptr<ParsedTx>> invalidatedTx;
 
    //zc logic
-   set<BinaryDataRef> addedZcKeys;
-   for (auto& newZCPair : zcMap)
-   {
-      auto&& txHash = newZCPair.second->getTxHash().getRef();
-      if (!ss->getKeyForHash(txHash).empty())
+   std::set<BinaryDataRef> addedZcKeys;
+   std::set<BinaryData> droppedZcKeys;
+   for (const auto& newZCPair : zcMap) {
+      auto txHash = newZCPair.second->getTxHash().getRef();
+      if (!ss->getKeyForHash(txHash).empty()) {
          continue;
-
-      //parse the zc
-      auto&& filterResult = filterTransaction(newZCPair.second, ss);
-
-      //check for replacement
-      invalidatedTx = checkForCollisions(filterResult.outPointsSpentByKey_, ss);
+      }
 
       //add ZC if its relevant
-      if (filterResult.isValid())
-      {
+      auto filterResult = filterTransaction(newZCPair.second, ss);
+      if (filterResult.isValid()) {
+         //check for collisions with other valid zcs
+         auto invalidTxs = checkForCollisions(filterResult.outPointsSpentByKey_, ss);
+         for (auto& invalidTx : invalidTxs) {
+            invalidatedTx.emplace(std::move(invalidTx));
+         }
+
+         //add this tx to known valid zcs
          addedZcKeys.insert(newZCPair.first);
          hasChanges = true;
 
-         for (auto& idmap : filterResult.outPointsSpentByKey_)
-         {
+         for (auto& idmap : filterResult.outPointsSpentByKey_) {
             //is this owner hash already in the map?
             auto& opMap = outPointsSpentByKey_[idmap.first];
             opMap.insert(idmap.second.begin(), idmap.second.end());
          }
 
          //merge scrAddr spent by key
-         for (auto& sa_pair : filterResult.keyToSpentScrAddr_)
-         {
+         for (auto& sa_pair : filterResult.keyToSpentScrAddr_) {
             auto insertResult = keyToSpentScrAddr_.insert(sa_pair);
-            if (insertResult.second == false)
+            if (insertResult.second == false) {
                insertResult.first->second = move(sa_pair.second);
+            }
          }
 
          //merge scrAddr funded by key
-         typedef map<BinaryDataRef, set<BinaryDataRef>>::iterator mapbd_setbd_iter;
+         typedef std::map<BinaryDataRef, std::set<BinaryDataRef>>::iterator mapbd_setbd_iter;
          keyToFundedScrAddr_.insert(
-            move_iterator<mapbd_setbd_iter>(filterResult.keyToFundedScrAddr_.begin()),
-            move_iterator<mapbd_setbd_iter>(filterResult.keyToFundedScrAddr_.end()));
+            std::move_iterator<mapbd_setbd_iter>(filterResult.keyToFundedScrAddr_.begin()),
+            std::move_iterator<mapbd_setbd_iter>(filterResult.keyToFundedScrAddr_.end()));
 
          ss->stageNewZC(newZCPair.second, filterResult);
 
          //flag affected BDVs
-         for (auto& bdvMap : filterResult.flaggedBDVs_)
-         {
+         for (auto& bdvMap : filterResult.flaggedBDVs_) {
             auto& parserResult = flaggedBDVs[bdvMap.first];
             parserResult.mergeTxios(bdvMap.second);
          }
+      } else {
+         if (DBSettings::getDbType() == ARMORY_DB_SUPER) {
+            continue;
+         }
+         //in bare/full node, zcs that cannot be resolved do not affect
+         //our list of addresses, drop them
+         droppedZcKeys.emplace(newZCPair.first);
       }
    }
 
-   if (updateDB && batch.hasData())
-   {
+   //get rid of invalid zc, only applies to bare/full node
+   dropZCs(ss, droppedZcKeys);
+
+   if (updateDB && batch.hasData()) {
       //post new zc for writing to db, no need to wait on it
       updateBatch_.push_back(move(batch));
    }
 
    //find BDVs affected by invalidated keys
-   if (invalidatedTx.size() > 0)
-   {
+   if (!invalidatedTx.empty()) {
       //TODO: multi thread this at some point
 
-      for (auto& tx_pair : invalidatedTx)
-      {
+      for (const auto& tx_pair : invalidatedTx) {
          //gather all scrAddr from invalidated tx
-         set<BinaryDataRef> addrRefs;
+         std::set<BinaryDataRef> addrRefs;
 
-         for (auto& input : tx_pair.second->inputs_)
-         {
-            if (!input.isResolved())
+         for (auto& input : tx_pair.second->inputs_) {
+            if (!input.isResolved()) {
                continue;
-
+            }
             addrRefs.insert(input.scrAddr_.getRef());
          }
 
-         for (auto& output : tx_pair.second->outputs_)
+         for (const auto& output : tx_pair.second->outputs_) {
             addrRefs.insert(output.scrAddr_.getRef());
+         }
 
          //flag relevant BDVs
-         for (auto& addrRef : addrRefs)
-         {
-            auto&& bdvid_set = bdvCallbacks_->hasScrAddr(addrRef);
-            for (auto& bdvid : bdvid_set)
-            {
+         for (const auto& addrRef : addrRefs) {
+            auto bdvid_set = bdvCallbacks_->hasScrAddr(addrRef);
+            for (const auto& bdvid : bdvid_set) {
                auto& bdv = flaggedBDVs[bdvid];
                bdv.invalidatedKeys_.insert(
-                  make_pair(tx_pair.first, tx_pair.second->getTxHash()));
+                  std::make_pair(tx_pair.first, tx_pair.second->getTxHash()));
                hasChanges = true;
             }
          }
@@ -658,52 +657,50 @@ void ZeroConfContainer::parseNewZC(
    }
 
    //swap in new state
-   atomic_store_explicit(&snapshot_, ss, memory_order_release);
+   std::atomic_store_explicit(&snapshot_, ss, std::memory_order_release);
 
    //notify bdvs
-   if (!hasChanges)
+   if (!hasChanges) {
       return;
+   }
 
-   if (!notify)
+   if (!notify) {
       return;
+   }
 
    //prepare notifications
    auto newZcKeys =
-      make_shared<map<BinaryData, shared_ptr<set<BinaryDataRef>>>>();
-   for (auto& newKey : addedZcKeys)
-   {
+      std::make_shared<std::map<BinaryData, std::shared_ptr<std::set<BinaryDataRef>>>>();
+   for (const auto& newKey : addedZcKeys) {
       //fill key to spent scrAddr map
-      shared_ptr<set<BinaryDataRef>> spentScrAddr = nullptr;
+      std::shared_ptr<std::set<BinaryDataRef>> spentScrAddr = nullptr;
       auto iter = keyToSpentScrAddr_.find(newKey);
-      if (iter != keyToSpentScrAddr_.end())
+      if (iter != keyToSpentScrAddr_.end()) {
          spentScrAddr = iter->second;
-
-      auto addr_pair = make_pair(newKey, move(spentScrAddr));
-      newZcKeys->insert(move(addr_pair));
+      }
+      newZcKeys->emplace(newKey, std::move(spentScrAddr));
    }
 
    bdvCallbacks_->pushZcNotification(
       ss, newZcKeys,
-      flaggedBDVs, 
-      requestor.first, requestor.second, 
+      flaggedBDVs,
+      requestor,
       watcherMap);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 FilteredZeroConfData ZeroConfContainer::filterTransaction(
-   shared_ptr<ParsedTx> parsedTx,
-   shared_ptr<MempoolSnapshot> ss) const
+   std::shared_ptr<ParsedTx> parsedTx,
+   std::shared_ptr<MempoolSnapshot> ss) const
 {
-   if (parsedTx->status() == ParsedTxStatus::Mined || 
+   if (parsedTx->status() == ParsedTxStatus::Mined ||
       parsedTx->status() == ParsedTxStatus::Invalid ||
-      parsedTx->status() == ParsedTxStatus::Skip)
-   {
+      parsedTx->status() == ParsedTxStatus::Skip) {
       return {};
    }
 
    if (parsedTx->status() == ParsedTxStatus::Uninitialized ||
-      parsedTx->status() == ParsedTxStatus::ResolveAgain)
-   {
+      parsedTx->status() == ParsedTxStatus::ResolveAgain) {
       preprocessTx(*parsedTx, db_);
    }
 
@@ -715,7 +712,7 @@ FilteredZeroConfData ZeroConfContainer::filterTransaction(
 
    //parse it
    auto addrMap = scrAddrMap_->get();
-   return filterParsedTx(parsedTx, addrMap, bdvCallbacks_.get());
+   return filterParsedTx(parsedTx, *addrMap, bdvCallbacks_.get());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -960,21 +957,20 @@ void ZeroConfContainer::updateZCinDB()
 unsigned ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
 {
    unsigned topId = 0;
-   map<BinaryData, shared_ptr<ParsedTx>> zcMap;
+   std::map<BinaryData, std::shared_ptr<ParsedTx>> zcMap;
 
    {
-      auto&& tx = db_->beginTransaction(ZERO_CONF, LMDB::ReadOnly);
+      auto tx = db_->beginTransaction(ZERO_CONF, LMDB::ReadOnly);
       auto dbIter = db_->getIterator(ZERO_CONF);
 
-      if (!dbIter->seekToStartsWith(DB_PREFIX_ZCDATA))
+      if (!dbIter->seekToStartsWith(DB_PREFIX_ZCDATA)) {
          return topId;
+      }
 
-      do
-      {
+      do {
          BinaryDataRef zcKey = dbIter->getKeyRef();
 
-         if (zcKey.getSize() == 7)
-         {
+         if (zcKey.getSize() == 7) {
             //Tx, grab it from DB
             StoredTx zcStx;
             db_->getStoredZcTx(zcStx, zcKey);
@@ -989,19 +985,13 @@ unsigned ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
 
             zcMap.insert(move(make_pair(
                parsedTx->getKeyRef(), move(parsedTx))));
-         }
-         else if (zcKey.getSize() == 9)
-         {
+         } else if (zcKey.getSize() == 9) {
             //TxOut, ignore it
             continue;
-         }
-         else if (zcKey.getSize() == 32)
-         {
+         } else if (zcKey.getSize() == 32) {
             //tx hash
             allZcTxHashes_.insert(zcKey);
-         }
-         else
-         {
+         } else {
             //shouldn't hit this
             LOGERR << "Unknown key found in ZC mempool";
             break;
@@ -1009,8 +999,7 @@ unsigned ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
       } while (dbIter->advanceAndRead(DB_PREFIX_ZCDATA));
    }
 
-   if (clearMempool == true)
-   {
+   if (clearMempool == true) {
       LOGWARN << "Mempool was flagged for deletion!";
       ZcUpdateBatch batch;
       auto fut = batch.getCompletedFuture();
@@ -1020,9 +1009,8 @@ unsigned ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
 
       updateBatch_.push_back(move(batch));
       fut.wait();
-   }
-   else if (zcMap.size())
-   {
+   } else if (!zcMap.empty()) {
+      LOGDEBUG << "parsing " << zcMap.size() << " txns from mempool";
       preprocessZcMap(zcMap, db_);
 
       //set highest used index
@@ -1031,12 +1019,11 @@ unsigned ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
       topId = READ_UINT32_BE(topZcKey.getSliceCopy(2, 4)) + 1;
 
       //no need to update the db nor notify bdvs on init
-      map<BinaryData, shared_ptr<WatcherTxBody>> emptyWatcherMap;
+      std::map<BinaryData, std::shared_ptr<WatcherTxBody>> emptyWatcherMap;
       parseNewZC(
-         move(zcMap), nullptr, false, false, 
-         make_pair(string(), string()), 
+         std::move(zcMap), nullptr, false, false,
+         std::string{},
          emptyWatcherMap);
-
       snapshot_->commitNewZCs();
    }
 
@@ -1055,7 +1042,7 @@ void ZeroConfContainer::init(shared_ptr<ScrAddrFilter> saf, bool clearMempool)
    {
       this->parseNewZC(move(zas));
    };
-   actionQueue_ = make_unique<ZcActionQueue>(
+   actionQueue_ = std::make_unique<ZcActionQueue>(
       newZcPacketLbd, zcPreprocessQueue_, topId);
 
    auto updateZcThread = [this](void)->void
@@ -1072,142 +1059,131 @@ void ZeroConfContainer::init(shared_ptr<ScrAddrFilter> saf, bool clearMempool)
    parserThreads_.push_back(thread(invTxThread));
    increaseParserThreadPool(1);
 
-   zcEnabled_.store(true, memory_order_relaxed);
+   zcEnabled_.store(true, std::memory_order_relaxed);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 void ZeroConfContainer::pushZcPreprocessVec(shared_ptr<RequestZcPacket> req)
 {
-   if (req->hashes_.size() == 0)
+   if (req->hashes_.empty()) {
       return;
+   }
 
    //register batch with main zc processing thread
    actionQueue_->initiateZcBatch(
-      req->hashes_, ZC_GETDATA_TIMEOUT_MS, {}, false);
+      req->hashes_, ZC_GETDATA_TIMEOUT_MS, {}, false, {});
 
    //queue up individual requests for parser threads to process
-   zcPreprocessQueue_->push_back(move(req));
+   zcPreprocessQueue_->push_back(std::move(req));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 void ZeroConfContainer::handleInvTx()
 {
-   shared_ptr<RequestZcPacket> request = nullptr;
+   std::shared_ptr<RequestZcPacket> request = nullptr;
 
-   while (true)
-   {
-      shared_ptr<ZcPreprocessPacket> packet;
+   while (true) {
+      std::shared_ptr<ZcPreprocessPacket> packet;
       ZcPreprocessPacketType packetType;
-      try
-      {
+      try {
          //pop every seconds
-         packet = move(zcWatcherQueue_.pop_front(
-            std::chrono::milliseconds(1000)));
+         packet = std::move(zcWatcherQueue_.pop_front(1s));
          packetType = packet->type();
-      }
-      catch (const StackTimedOutException&)
-      {
+      } catch (const StackTimedOutException&) {
          //progress with an empty packet
          packetType = ZcPreprocessPacketType_Inv;
-      }
-      catch (const StopBlockingLoop&)
-      {
+      } catch (const StopBlockingLoop&) {
          break;
       }
 
       switch (packetType)
       {
-      case ZcPreprocessPacketType_Inv:
-      {
-         //skip this entirely if there are no addresses to scan the ZCs against
-         if (scrAddrMap_->size() == 0 &&
-            DBSettings::getDbType() != ARMORY_DB_SUPER)
-            continue;
-
-         auto invPayload = dynamic_pointer_cast<ZcInvPayload>(packet);
-         if (invPayload != nullptr && invPayload->watcher_)
+         case ZcPreprocessPacketType_Inv:
          {
-            /*
-            This is an inv tx payload from the watcher node, check it against 
-            our outstanding broadcasts
-            */
-            SingleLock lock(&watcherMapMutex_);
-            for (auto& invEntry : invPayload->invVec_)
-            {
-               BinaryData bd(invEntry.hash, sizeof(invEntry.hash));
-               auto iter = watcherMap_.find(bd);
-               if (iter == watcherMap_.end() || 
-                  iter->second->inved_ ||
-                  iter->second->ignoreWatcherNodeInv_)
-               {
-                  continue;
-               }
-
-               //mark as fetched
-               iter->second->inved_ = true;
-
-               //set parsedTx tx body
-               auto payloadTx = make_shared<ProcessPayloadTxPacket>(bd);
-               payloadTx->rawTx_ = iter->second->rawTxPtr_;
-
-               //push to preprocess threads
-               actionQueue_->queueGetDataResponse(move(payloadTx));
+            //skip this entirely if there are no addresses to scan the ZCs against
+            if (scrAddrMap_->size() == 0 &&
+               DBSettings::getDbType() != ARMORY_DB_SUPER) {
+               continue;
             }
-         }
-         else
-         {         
-            /*
-            inv tx from the process node, send a getdata request for these hashes
-            */
 
-            if (request == nullptr)
-               request = make_shared<RequestZcPacket>();
-
-            if (invPayload != nullptr)
-            {
-               auto& invVec = invPayload->invVec_;
-               if (parserThreadCount_ < invVec.size() &&
-                  parserThreadCount_ < maxZcThreadCount_)
-                  increaseParserThreadPool(invVec.size());
-
+            auto invPayload = std::dynamic_pointer_cast<ZcInvPayload>(packet);
+            if (invPayload != nullptr && invPayload->watcher_) {
+               /*
+               This is an inv tx payload from the watcher node, check it against
+               our outstanding broadcasts
+               */
                SingleLock lock(&watcherMapMutex_);
-
-               for (auto& entry : invVec)
-               {
-                  BinaryDataRef hash(entry.hash, sizeof(entry.hash));
-
-                  /*
-                  Skip this hash if it's in our watcher map. Invs from the network 
-                  will never trigger this condition. Invs from the tx we broadcast
-                  through the p2p interface neither, as we present the hash to 
-                  kickstart the chain of events (node won't inv back a hash it was
-                  inv'ed to).
-
-                  Only a native RPC broadcast can trigger this condition, as the
-                  node will inv all peers it has not received this hash from. We do
-                  not want to create an unnecessary batch for native RPC pushes, so
-                  we skip those.
-                  */
-                  if (watcherMap_.find(hash) != watcherMap_.end())
+               for (const auto& invEntry : invPayload->invVec_) {
+                  BinaryDataRef bdRef(invEntry.hash, sizeof(invEntry.hash));
+                  auto iter = watcherMap_.find(bdRef);
+                  if (iter == watcherMap_.end() ||
+                     iter->second->inved_ ||
+                     iter->second->ignoreWatcherNodeInv_) {
                      continue;
+                  }
 
-                  request->hashes_.emplace_back(hash);
+                  //mark as fetched
+                  iter->second->inved_ = true;
+
+                  //set parsedTx tx body
+                  auto payloadTx = std::make_shared<ProcessPayloadTxPacket>(bdRef);
+                  payloadTx->rawTx_ = iter->second->rawTxPtr_;
+
+                  //push to preprocess threads
+                  actionQueue_->queueGetDataResponse(std::move(payloadTx));
                }
-            }
-         
-            if (!request->ready())
-               break;
+            } else {
+               /*
+               inv tx from the process node, send a getdata request for these hashes
+               */
 
-            pushZcPreprocessVec(request);
-            request.reset();
+               if (request == nullptr) {
+                  request = std::make_shared<RequestZcPacket>();
+               }
+
+               if (invPayload != nullptr) {
+                  const auto& invVec = invPayload->invVec_;
+                  if (parserThreadCount_ < invVec.size() &&
+                     parserThreadCount_ < maxZcThreadCount_) {
+                     increaseParserThreadPool(invVec.size());
+                  }
+
+                  SingleLock lock(&watcherMapMutex_);
+                  for (const auto& entry : invVec) {
+                     BinaryDataRef hash(entry.hash, sizeof(entry.hash));
+
+                     /*
+                     Skip this hash if it's in our watcher map. Invs from the network
+                     will never trigger this condition. Invs from the tx we broadcast
+                     through the p2p interface neither, as we present the hash to
+                     kickstart the chain of events (node won't inv back a hash it was
+                     inv'ed to).
+
+                     Only a native RPC broadcast can trigger this condition, as the
+                     node will inv all peers it has not received this hash from. We do
+                     not want to create an unnecessary batch for native RPC pushes, so
+                     we skip those.
+                     */
+                     if (watcherMap_.find(hash) != watcherMap_.end()) {
+                        continue;
+                     }
+                     request->hashes_.emplace_back(hash);
+                  }
+               }
+
+               if (!request->ready()) {
+                  break;
+               }
+               pushZcPreprocessVec(request);
+               request.reset();
+            }
+
+            //register batch with main zc processing thread
+            break;
          }
 
-         //register batch with main zc processing thread
-         break;
-      }
-
-      default: 
-         throw runtime_error("invalid packet");
+         default:
+            throw std::runtime_error("invalid packet");
       }
    }
 }
@@ -1215,51 +1191,49 @@ void ZeroConfContainer::handleInvTx()
 ///////////////////////////////////////////////////////////////////////////////
 void ZeroConfContainer::handleZcProcessingStructThread(void)
 {
-   while (1)
-   {
-      shared_ptr<ZcGetPacket> packet;
-      try
-      {
+   while (true) {
+      std::shared_ptr<ZcGetPacket> packet;
+      try {
          packet = move(zcPreprocessQueue_->pop_front());
-      }
-      catch (StopBlockingLoop&)
-      {
+      } catch (const StopBlockingLoop&) {
          break;
       }
 
       switch (packet->type_)
       {
-      case ZcGetPacketType_Request:
-      {
-         auto request = dynamic_pointer_cast<RequestZcPacket>(packet);
-         if (request != nullptr)
-            requestTxFromNode(*request);
-
-         break;
-      }
-
-      case ZcGetPacketType_Payload:
-      {
-         auto payloadTx = dynamic_pointer_cast<ProcessPayloadTxPacket>(packet);
-         if (payloadTx == nullptr)
-            throw runtime_error("unexpected payload type");
-
-         processPayloadTx(payloadTx);
-         break;
-      }
-
-      case ZcGetPacketType_Broadcast:
-      {
-         auto broadcastPacket = dynamic_pointer_cast<ZcBroadcastPacket>(packet);
-         if (broadcastPacket == nullptr)
+         case ZcGetPacketType_Request:
+         {
+            auto request = std::dynamic_pointer_cast<RequestZcPacket>(packet);
+            if (request != nullptr) {
+               requestTxFromNode(*request);
+            }
             break;
-            
-         pushZcPacketThroughP2P(*broadcastPacket);
-         break;
-      }
+         }
 
-      default:
-         break;
+         case ZcGetPacketType_Payload:
+         {
+            auto payloadTx = std::dynamic_pointer_cast<ProcessPayloadTxPacket>(packet);
+            if (payloadTx == nullptr) {
+               throw std::runtime_error("unexpected payload type");
+            }
+
+            processPayloadTx(payloadTx);
+            break;
+         }
+
+         case ZcGetPacketType_Broadcast:
+         {
+            auto broadcastPacket = std::dynamic_pointer_cast<ZcBroadcastPacket>(packet);
+            if (broadcastPacket == nullptr) {
+               break;
+            }
+
+            pushZcPacketThroughP2P(*broadcastPacket);
+            break;
+         }
+
+         default:
+            break;
       } //switch
    } //while
 }
@@ -1356,40 +1330,36 @@ void ZeroConfContainer::processPayloadTx(
 
 ///////////////////////////////////////////////////////////////////////////////
 void ZeroConfContainer::broadcastZC(
-   const vector<BinaryDataRef>& rawZcVec, uint32_t timeout_ms,
-   const ZcBroadcastCallback& cbk, 
-   const string& bdvID, const string& requestID)
+   const std::vector<BinaryDataRef>& rawZcVec, uint32_t timeout_ms,
+   const ZcBroadcastCallback& cbk, const std::string& bdvID)
 {
-   auto zcPacket = make_shared<ZcBroadcastPacket>();
+   auto zcPacket = std::make_shared<ZcBroadcastPacket>();
    zcPacket->hashes_.reserve(rawZcVec.size());
    zcPacket->zcVec_.reserve(rawZcVec.size());
 
-   for (auto& rawZcRef : rawZcVec)
-   {
-      if (rawZcRef.getSize() == 0)
+   for (auto& rawZcRef : rawZcVec) {
+      if (rawZcRef.empty()) {
          continue;
-
-      auto rawZcPtr = make_shared<BinaryData>(rawZcRef);
+      }
+      auto rawZcPtr = std::make_shared<BinaryData>(rawZcRef);
       Tx tx(*rawZcPtr);
 
       zcPacket->hashes_.push_back(tx.getThisHash());
       zcPacket->zcVec_.push_back(rawZcPtr);
    }
 
-   if (zcPacket->zcVec_.empty())
+   if (zcPacket->zcVec_.empty()) {
       return;
+   }
 
    {
       //update the watcher map
       ReentrantLock lock(&watcherMapMutex_);
-      for (unsigned i=0; i < zcPacket->hashes_.size(); i++)
-      {
+      for (unsigned i=0; i < zcPacket->hashes_.size(); i++) {
          auto& hash = zcPacket->hashes_[i];
-         map<string, string> emptyMap;
          if (insertWatcherEntry(
             hash, zcPacket->zcVec_[i],
-            bdvID, requestID, emptyMap))
-         {
+            bdvID, std::set<std::string>{})) {
             continue;
          }
 
@@ -1400,8 +1370,7 @@ void ZeroConfContainer::broadcastZC(
 
    //sets up & queues the zc batch for us
    if (actionQueue_->initiateZcBatch(
-      zcPacket->hashes_, timeout_ms, cbk, true, bdvID, requestID) == nullptr)
-   {
+      zcPacket->hashes_, timeout_ms, cbk, true, bdvID) == nullptr) {
       //return if no batch was created
       return;
    }
@@ -1412,44 +1381,38 @@ void ZeroConfContainer::broadcastZC(
 
 ///////////////////////////////////////////////////////////////////////////////
 bool ZeroConfContainer::insertWatcherEntry(
-   const BinaryData& hash, shared_ptr<BinaryData> rawTxPtr, 
-   const std::string& bdvID, const std::string& requestID,
-   std::map<std::string, std::string>& extraRequestors,
+   const BinaryData& hash, shared_ptr<BinaryData> rawTxPtr,
+   const std::string& bdvID, std::set<std::string> extraRequestors,
    bool watchEntry)
 {
-   //lock 
+   //lock
    ReentrantLock lock(&watcherMapMutex_);
 
-   auto iter = watcherMap_.find(hash);
-
    //try to insert
-   if (iter == watcherMap_.end())
-   {
+   auto iter = watcherMap_.find(hash);
+   if (iter == watcherMap_.end()) {
       auto insertIter = watcherMap_.emplace(
-         hash, 
-         make_shared<WatcherTxBody>(rawTxPtr));
+         hash,
+         std::make_shared<WatcherTxBody>(rawTxPtr));
 
       //set the watcher node flag
       insertIter.first->second->ignoreWatcherNodeInv_ = !watchEntry;
 
       //set extra requestors
-      if (!extraRequestors.empty())
+      if (!extraRequestors.empty()) {
          insertIter.first->second->extraRequestors_ = move(extraRequestors);
+      }
 
       //return true for successful insertion
       return true;
-   }
-   else
-   {
+   } else {
       //already have this hash, do not change the watcher node flag
 
       //tie this request to the existing watcher entry
-      iter->second->extraRequestors_.emplace(
-         requestID, bdvID);
-      
+      iter->second->extraRequestors_.emplace(bdvID);
+
       //add the extra requestors if any
-      if (!extraRequestors.empty())
-      {
+      if (!extraRequestors.empty()) {
          iter->second->extraRequestors_.insert(
             extraRequestors.begin(), extraRequestors.end());
       }
@@ -1460,39 +1423,38 @@ bool ZeroConfContainer::insertWatcherEntry(
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-shared_ptr<WatcherTxBody> ZeroConfContainer::eraseWatcherEntry(
+std::shared_ptr<WatcherTxBody> ZeroConfContainer::eraseWatcherEntry(
    const BinaryData& hash)
 {
-   //lock 
+   //lock
    ReentrantLock lock(&watcherMapMutex_);
 
    auto iter = watcherMap_.find(hash);
-   if (iter == watcherMap_.end())
+   if (iter == watcherMap_.end()) {
       return nullptr;
+   }
 
-   auto objPtr = move(iter->second);   
+   auto objPtr = move(iter->second);
    watcherMap_.erase(iter);
-   
    return objPtr;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 std::shared_ptr<ZeroConfBatch> ZeroConfContainer::initiateZcBatch(
-   const vector<BinaryData>& zcHashes, unsigned timeout, 
+   const vector<BinaryData>& zcHashes, unsigned timeout,
    const ZcBroadcastCallback& cbk, bool hasWatcherEntries,
-   const std::string& bdvId, const std::string& requestId)
+   const std::string& bdvId)
 {
    return actionQueue_->initiateZcBatch(
-      zcHashes, timeout, 
-      cbk, hasWatcherEntries, 
-      bdvId, requestId);
+      zcHashes, timeout,
+      cbk, hasWatcherEntries,
+      bdvId);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 void ZeroConfContainer::pushZcPacketThroughP2P(ZcBroadcastPacket& packet)
 {
-   if (!networkNode_->connected())
-   {
+   if (!networkNode_->connected()) {
       LOGWARN << "node is offline, cannot broadcast";
 
       //TODO: report node down errors to batch
@@ -1502,16 +1464,15 @@ void ZeroConfContainer::pushZcPacketThroughP2P(ZcBroadcastPacket& packet)
    }
 
    //create inv payload
-   vector<InvEntry> invVec;
-   map<BinaryData, shared_ptr<BitcoinP2P::getDataPayload>> getDataPair;
+   std::vector<InvEntry> invVec;
+   std::map<BinaryData, std::shared_ptr<BitcoinP2P::getDataPayload>> getDataPair;
 
-   for (unsigned i=0; i<packet.hashes_.size(); i++)
-   {
-      auto& hash = packet.hashes_[i];
-      if (hash.empty())
+   for (unsigned i=0; i<packet.hashes_.size(); i++) {
+      const auto& hash = packet.hashes_[i];
+      if (hash.empty()) {
          continue;
-         
-      auto& rawZc = packet.zcVec_[i];
+      }
+      const auto& rawZc = packet.zcVec_[i];
 
       //create inv entry, this announces the zc by its hash to the node
       InvEntry entry;
@@ -1521,14 +1482,14 @@ void ZeroConfContainer::pushZcPacketThroughP2P(ZcBroadcastPacket& packet)
 
       //create getData payload packet, this is the zc body for the node to
       //grab once it knows of the hash
-      auto&& payload = make_unique<Payload_Tx>();
+      auto&& payload = std::make_unique<Payload_Tx>();
       vector<uint8_t> rawtx;
       rawtx.resize(rawZc->getSize());
       memcpy(&rawtx[0], rawZc->getPtr(), rawZc->getSize());
 
-      payload->setRawTx(move(rawtx));
-      auto getDataPayload = make_shared<BitcoinP2P::getDataPayload>();
-      getDataPayload->payload_ = move(payload);
+      payload->setRawTx(std::move(rawtx));
+      auto getDataPayload = std::make_shared<BitcoinP2P::getDataPayload>();
+      getDataPayload->payload_ = std::move(payload);
 
       getDataPair.emplace(hash, getDataPayload);
    }
@@ -1537,27 +1498,28 @@ void ZeroConfContainer::pushZcPacketThroughP2P(ZcBroadcastPacket& packet)
    networkNode_->getDataPayloadMap_.update(move(getDataPair));
 
    //send inv packet
-   auto payload_inv = make_unique<Payload_Inv>();
+   auto payload_inv = std::make_unique<Payload_Inv>();
    payload_inv->setInvVector(invVec);
-   networkNode_->sendMessage(move(payload_inv));
+   networkNode_->sendMessage(std::move(payload_inv));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 void ZeroConfContainer::shutdown()
 {
-   if (actionQueue_ != nullptr)
+   if (actionQueue_ != nullptr) {
       actionQueue_->shutdown();
+   }
 
    zcWatcherQueue_.terminate();
    zcPreprocessQueue_->terminate();
    updateBatch_.terminate();
 
-   vector<thread::id> idVec;
-   for (auto& parser : parserThreads_)
-   {
+   std::vector<std::thread::id> idVec;
+   for (auto& parser : parserThreads_) {
       idVec.push_back(parser.get_id());
-      if (parser.joinable())
+      if (parser.joinable()) {
          parser.join();
+      }
    }
 }
 
@@ -1598,30 +1560,28 @@ void ZeroConfContainer::setWatcherNode(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-BatchTxMap ZeroConfContainer::getBatchTxMap(shared_ptr<ZeroConfBatch> batch, 
-   shared_ptr<MempoolSnapshot> ss)
+BatchTxMap ZeroConfContainer::getBatchTxMap(std::shared_ptr<ZeroConfBatch> batch,
+   std::shared_ptr<MempoolSnapshot> ss)
 {
-   if (batch == nullptr)
+   if (batch == nullptr) {
       throw ZcBatchError();
+   }
 
-   //wait on the batch for the duration of the 
+   //wait on the batch for the duration of the
    //timeout minus time elapsed since creation
    unsigned timeLeft = 0;
-   auto delay = chrono::duration_cast<chrono::milliseconds>(
-      chrono::system_clock::now() - batch->creationTime_);
-   if (delay.count() < batch->timeout_)
+   auto delay = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now() - batch->creationTime_);
+   if (delay.count() < batch->timeout_) {
       timeLeft = batch->timeout_ - delay.count();
-
-   auto timeLeftMs = chrono::milliseconds(timeLeft);
+   }
+   auto timeLeftMs = std::chrono::milliseconds(timeLeft);
 
    ArmoryErrorCodes batchResult;
-   if (batch->timeout_ > 0 && 
-      batch->isReadyFut_.wait_for(timeLeftMs) != future_status::ready)
-   {
+   if (batch->timeout_ > 0 &&
+      batch->isReadyFut_.wait_for(timeLeftMs) != future_status::ready) {
       batchResult = ArmoryErrorCodes::ZcBatch_Timeout;
-   }
-   else
-   {
+   } else {
       batchResult = batch->isReadyFut_.get();
    }
 
@@ -1629,14 +1589,11 @@ BatchTxMap ZeroConfContainer::getBatchTxMap(shared_ptr<ZeroConfBatch> batch,
    result.requestor_ = batch->requestor_;
 
    //purge the watcher map of the hashes this batch registered
-   if (batch->hasWatcherEntries_)
-   {
+   if (batch->hasWatcherEntries_) {
       SingleLock lock(&watcherMapMutex_);
-      for (auto& keyPair : batch->hashToKeyMap_)
-      {
+      for (const auto& keyPair : batch->hashToKeyMap_) {
          auto iter = watcherMap_.find(keyPair.first);
-         if (iter == watcherMap_.end())
-         {
+         if (iter == watcherMap_.end()) {
             LOGERR << "missing watcher entry, this should not happen!";
             LOGERR << "skipping this timed out batch, this needs reported to a dev";
             throw ZcBatchError();
@@ -1656,34 +1613,31 @@ BatchTxMap ZeroConfContainer::getBatchTxMap(shared_ptr<ZeroConfBatch> batch,
       }
    }
 
-   if (batchResult != ArmoryErrorCodes::Success)
-   {
+   if (batchResult != ArmoryErrorCodes::Success) {
       /*
       Failed to get transactions for batch, fire the error callback
       */
       
       //skip if this batch doesn't have a callback
-      if (!batch->errorCallback_ || !batch->hasWatcherEntries_)
+      if (!batch->errorCallback_ || !batch->hasWatcherEntries_) {
          throw ZcBatchError();
+      }
 
       unsigned invedZcCount = 0;
-      vector<ZeroConfBatchFallbackStruct> txVec;
-      set<BinaryDataRef> purgedHashes;
+      std::vector<ZeroConfBatchFallbackStruct> txVec;
+      std::set<BinaryDataRef> purgedHashes;
       txVec.reserve(batch->zcMap_.size());
 
       //purge the batch of missing tx and their children
-      for (auto& txPair : batch->zcMap_)
-      {
+      for (auto& txPair : batch->zcMap_) {
          bool purge = false;
 
          //does this tx depend on a purged predecessor?
-         for (auto& txInObj : txPair.second->inputs_)
-         {
-            auto parentIter = purgedHashes.find(
-               txInObj.opRef_.getTxHashRef());
-
-            if (parentIter == purgedHashes.end())
+         for (auto& txInObj : txPair.second->inputs_) {
+            auto parentIter = purgedHashes.find(txInObj.opRef_.getTxHashRef());
+            if (parentIter == purgedHashes.end()) {
                continue;
+            }
 
             //this zc depends on a purged zc, purge it too
             purge = true;
@@ -1696,19 +1650,15 @@ BatchTxMap ZeroConfContainer::getBatchTxMap(shared_ptr<ZeroConfBatch> batch,
 
          //map consistency is assured in the watcherMap purge 
          //scope, this iterator is guaranteed valid
-         if (!iter->second->inved_)
-         {
+         if (!iter->second->inved_) {
             inved = false;
             purge = true;
          }
-                        
-         if (!purge)
-         {
+
+         if (!purge) {
             //sanity check
-            if (!inved)
-            {
-               LOGWARN << "keeping zc from timed out batch"
-                  << " that wasn't inved";
+            if (!inved) {
+               LOGWARN << "keeping zc from timed out batch that wasn't inved";
             }
 
             //we're keeping this tx
@@ -1719,21 +1669,18 @@ BatchTxMap ZeroConfContainer::getBatchTxMap(shared_ptr<ZeroConfBatch> batch,
          //create the fallback struct
          ZeroConfBatchFallbackStruct fallbackStruct;
          fallbackStruct.txHash_ = iter->first;
-         fallbackStruct.rawTxPtr_ = move(iter->second->rawTxPtr_);
+         fallbackStruct.rawTxPtr_ = std::move(iter->second->rawTxPtr_);
          fallbackStruct.err_ = batchResult;
-         fallbackStruct.extraRequestors_ = move(iter->second->extraRequestors_);
+         fallbackStruct.extraRequestors_ = std::move(iter->second->extraRequestors_);
 
          //check snapshot for collisions
-         if (ss->hasHash(iter->first.getRef()))
-         {
+         if (ss->hasHash(iter->first.getRef())) {
             //already have this tx in our mempool, report to callback
             //but don't flag hash as purged (children need to be processed if any)
             fallbackStruct.err_ = ArmoryErrorCodes::ZcBroadcast_AlreadyInMempool;
-         }
-         else
-         {
+         } else {
             //keep track of purged zc hashes
-            purgedHashes.insert(iter->first.getRef());
+            purgedHashes.emplace(iter->first.getRef());
          }
 
          //flag tx to be skipped by parser
@@ -1742,22 +1689,21 @@ BatchTxMap ZeroConfContainer::getBatchTxMap(shared_ptr<ZeroConfBatch> batch,
          //add to vector for error callback
          txVec.emplace_back(move(fallbackStruct));
       }
-
       batch->errorCallback_(move(txVec));
 
       //don't forward the batch if it has no zc ready to be parsed
-      if (invedZcCount == 0)
+      if (invedZcCount == 0) {
          throw ZcBatchError();
+      }
 
       //we have some inv'ed zc to parse but the batch timed out, we need to
       //wait on the counter to match our local count of valid tx.
-      while (batch->zcMap_.size() - batch->counter_->load(memory_order_acquire) < 
-         invedZcCount)
-      {
+      while (batch->zcMap_.size() - batch->counter_->load(memory_order_acquire) <
+         invedZcCount) {
          LOGWARN << "timedout batch waiting on " << invedZcCount << " inved tx: ";
          LOGWARN << "batch size: " << batch->zcMap_.size() << ", counter: " << 
             batch->counter_->load(memory_order_acquire);
-         this_thread::sleep_for(chrono::milliseconds(100));
+         std::this_thread::sleep_for(100ms);
       }
    }
 
@@ -1767,8 +1713,8 @@ BatchTxMap ZeroConfContainer::getBatchTxMap(shared_ptr<ZeroConfBatch> batch,
 
 ///////////////////////////////////////////////////////////////////////////////
 unsigned ZeroConfContainer::getMatcherMapSize(void) const 
-{ 
-   return actionQueue_->getMatcherMapSize(); 
+{
+   return actionQueue_->getMatcherMapSize();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1788,18 +1734,18 @@ unsigned ZeroConfContainer::getMergeCount(void) const
 ////////////////////////////////////////////////////////////////////////////////
 void ZcActionQueue::start()
 {
-   auto processZcThread = [this](void)->void
+   auto processZcThread = [this]()->void
    {
       processNewZcQueue();
    };
 
-   auto matcherThread = [this](void)->void
+   auto matcherThread = [this]()->void
    {
       getDataToBatchMatcherThread();
    };
 
-   processThreads_.push_back(thread(processZcThread));
-   processThreads_.push_back(thread(matcherThread));
+   processThreads_.push_back(std::thread(processZcThread));
+   processThreads_.push_back(std::thread(matcherThread));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1807,10 +1753,10 @@ void ZcActionQueue::shutdown()
 {
    newZcQueue_.terminate();
    getDataResponseQueue_.terminate();
-   for (auto& thr : processThreads_)
-   {
-      if (thr.joinable())
+   for (auto& thr : processThreads_) {
+      if (thr.joinable()) {
          thr.join();
+      }
    }
 }
 
@@ -1820,51 +1766,48 @@ BinaryData ZcActionQueue::getNewZCkey()
    uint32_t newId = topId_.fetch_add(1, memory_order_relaxed);
    BinaryData newKey = READHEX("ffff");
    newKey.append(WRITE_UINT32_BE(newId));
-
    return newKey;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 shared_ptr<ZeroConfBatch> ZcActionQueue::initiateZcBatch(
-   const vector<BinaryData>& zcHashes, unsigned timeout, 
+   const std::vector<BinaryData>& zcHashes, unsigned timeout,
    const ZcBroadcastCallback& cbk, bool hasWatcherEntries,
-   const std::string& bdvId, const std::string& requestId)
+   const std::string& bdvId)
 {
-   auto batch = make_shared<ZeroConfBatch>(hasWatcherEntries);
-   batch->requestor_ = make_pair(requestId, bdvId);
+   auto batch = std::make_shared<ZeroConfBatch>(hasWatcherEntries);
+   batch->requestor_ = bdvId;
 
-   for (auto& hash : zcHashes)
-   {
+   for (auto& hash : zcHashes) {
       //skip if hash is empty
-      if (hash.empty())
+      if (hash.empty()) {
          continue;
+      }
 
-      auto&& key = getNewZCkey();
-      auto ptx = make_shared<ParsedTx>(key);
+      auto key = getNewZCkey();
+      auto ptx = std::make_shared<ParsedTx>(key);
       ptx->setTxHash(hash);
 
-      batch->hashToKeyMap_.emplace(
-         make_pair(ptx->getTxHash().getRef(), ptx->getKeyRef()));
-      batch->zcMap_.emplace(make_pair(ptx->getKeyRef(), ptx));
+      batch->hashToKeyMap_.emplace(ptx->getTxHash().getRef(), ptx->getKeyRef());
+      batch->zcMap_.emplace(ptx->getKeyRef(), ptx);
    }
 
-   if (batch->zcMap_.empty())
-   {
+   if (batch->zcMap_.empty()) {
       //empty batch, skip
       return nullptr;
    }
 
-   batch->counter_->store(batch->zcMap_.size(), memory_order_relaxed);
+   batch->counter_->store(batch->zcMap_.size(), std::memory_order_relaxed);
    batch->timeout_ = timeout; //in milliseconds
    batch->errorCallback_ = cbk;
 
    ZcActionStruct zac;
    zac.action_ = Zc_NewTx;
    zac.batch_ = batch;
-   newZcQueue_.push_back(move(zac));
+   newZcQueue_.push_back(std::move(zac));
 
    auto batchCopy = batch;
-   batchQueue_.push_back(move(batchCopy));
+   batchQueue_.push_back(std::move(batchCopy));
 
    return batch;
 }
@@ -1872,16 +1815,12 @@ shared_ptr<ZeroConfBatch> ZcActionQueue::initiateZcBatch(
 ////////////////////////////////////////////////////////////////////////////////
 void ZcActionQueue::processNewZcQueue()
 {
-   while (1)
-   {
+   while (true) {
       ZcActionStruct zcAction;
-      map<BinaryData, shared_ptr<ParsedTx>> zcMap;
-      try
-      {
-         zcAction = move(newZcQueue_.pop_front());
-      }
-      catch (StopBlockingLoop&)
-      {
+      std::map<BinaryData, std::shared_ptr<ParsedTx>> zcMap;
+      try {
+         zcAction = std::move(newZcQueue_.pop_front());
+      } catch (const StopBlockingLoop&) {
          break;
       }
 
@@ -1889,166 +1828,149 @@ void ZcActionQueue::processNewZcQueue()
       Populate local map with batch's zcMap_ so that we can cleanup the
       hashes from the request map after parsing.
       */
-      if (zcAction.batch_ != nullptr)
-      {
+      if (zcAction.batch_ != nullptr) {
          /*
          We can't just grab the hash reference since the object referred to is
-         held by a ParsedTx and that has no guarantee of surviving the parsing 
+         held by a ParsedTx and that has no guarantee of surviving the parsing
          function, hence copying the entire map.
          */
          zcMap = zcAction.batch_->zcMap_;
       }
 
-      newZcFunction_(move(zcAction));
-
-      if (zcMap.empty())
+      newZcFunction_(std::move(zcAction));
+      if (zcMap.empty()) {
          continue;
+      }
 
       //cleanup request map
-      set<BinaryData> hashSet;
-      for (auto& zcPair : zcMap)
+      std::set<BinaryData> hashSet;
+      for (auto& zcPair : zcMap) {
          hashSet.insert(zcPair.second->getTxHash());
-      hashesToClear_.push_back(move(hashSet));
+      }
+      hashesToClear_.push_back(std::move(hashSet));
    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-shared_future<shared_ptr<ZcPurgePacket>> 
+std::shared_future<std::shared_ptr<ZcPurgePacket>>
 ZcActionQueue::pushNewBlockNotification(
    Blockchain::ReorganizationState reorgState)
 {
    ZcActionStruct zcaction;
    zcaction.action_ = Zc_Purge;
    zcaction.resultPromise_ =
-      make_unique<promise<shared_ptr<ZcPurgePacket>>>();
+      std::make_unique<std::promise<std::shared_ptr<ZcPurgePacket>>>();
    zcaction.reorgState_ = reorgState;
 
    auto fut = zcaction.resultPromise_->get_future();
-   newZcQueue_.push_back(move(zcaction));
-   
+   newZcQueue_.push_back(std::move(zcaction));
    return fut;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 void ZcActionQueue::queueGetDataResponse(std::shared_ptr<ZcGetPacket> payloadTx)
 {
-   getDataResponseQueue_.push_back(move(payloadTx));
+   getDataResponseQueue_.push_back(std::move(payloadTx));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 void ZcActionQueue::getDataToBatchMatcherThread()
 {
    bool run = true;
-   map<BinaryData, shared_ptr<ZeroConfBatch>> hashToBatchMap;
-   while (run)
-   {
-      //queue of outstanding node getdata packets that need matched with 
+   std::map<BinaryData, std::shared_ptr<ZeroConfBatch>> hashToBatchMap;
+   while (run) {
+      //queue of outstanding node getdata packets that need matched with
       //their parent batch - blocking
-      shared_ptr<ZcGetPacket> zcPacket;
-      try
-      {    
+      std::shared_ptr<ZcGetPacket> zcPacket;
+      try {
          zcPacket = getDataResponseQueue_.pop_front();
-      }
-      catch (const StopBlockingLoop&)
-      {
+      } catch (const StopBlockingLoop&) {
          run = false;
       }
 
       //queue of new batches - non blocking
-      while (true)
-      {
-         try
-         {
-            auto batch = batchQueue_.pop_front();
-
-            //populate local map with hashes from this batch, do not
-            //overwrite existing entries (older batches should get 
+      while (true) {
+         try {
+            //populate local map with hashes from each batch, do not
+            //overwrite existing entries (older batches should get
             //precedence over a shared tx hash)
-            for (auto& hashPair : batch->hashToKeyMap_)
+            auto batch = batchQueue_.pop_front();
+            for (auto& hashPair : batch->hashToKeyMap_) {
                hashToBatchMap.emplace(hashPair.first, batch);
-         }
-         catch (const IsEmpty&)
-         {
+            }
+         } catch (const IsEmpty&) {
             break;
          }
       }
 
-      if (zcPacket != nullptr)
-      {
+      if (zcPacket != nullptr) {
          switch (zcPacket->type_)
          {
-         case ZcGetPacketType_Payload:
-         {
-            auto payloadTx = dynamic_pointer_cast<ProcessPayloadTxPacket>(zcPacket);
-            if (payloadTx == nullptr)
-               break;
-
-            //look for parent batch in local map
-            auto iter = hashToBatchMap.find(payloadTx->txHash_);
-            if (iter != hashToBatchMap.end())
+            case ZcGetPacketType_Payload:
             {
-               //tie the tx to its batch
-               payloadTx->batchCtr_ = iter->second->counter_;
-               payloadTx->batchProm_ = iter->second->isReadyPromise_;
-                  
-               auto keyIter = iter->second->hashToKeyMap_.find(
-                  payloadTx->txHash_.getRef());
-               if (keyIter != iter->second->hashToKeyMap_.end())
-               { 
-                  auto txIter = iter->second->zcMap_.find(keyIter->second);
-                  if (txIter != iter->second->zcMap_.end())
-                  {
-                     payloadTx->pTx_ = txIter->second;
-                     zcPreprocessQueue_->push_back(payloadTx);
-                  }
+               auto payloadTx = std::dynamic_pointer_cast<ProcessPayloadTxPacket>(zcPacket);
+               if (payloadTx == nullptr) {
+                  break;
                }
 
-               hashToBatchMap.erase(iter);
-            }
+               //look for parent batch in local map
+               auto iter = hashToBatchMap.find(payloadTx->txHash_);
+               if (iter != hashToBatchMap.end()) {
+                  //tie the tx to its batch
+                  payloadTx->batchCtr_ = iter->second->counter_;
+                  payloadTx->batchProm_ = iter->second->isReadyPromise_;
 
-            break;
-         }
+                  auto keyIter = iter->second->hashToKeyMap_.find(
+                     payloadTx->txHash_.getRef());
+                  if (keyIter != iter->second->hashToKeyMap_.end()) {
+                     auto txIter = iter->second->zcMap_.find(keyIter->second);
+                     if (txIter != iter->second->zcMap_.end()) {
+                        payloadTx->pTx_ = txIter->second;
+                        zcPreprocessQueue_->push_back(payloadTx);
+                     }
+                  }
 
-         case ZcGetPacketType_Reject:
-         {
-            auto rejectPacket = dynamic_pointer_cast<RejectPacket>(zcPacket);
-            if (rejectPacket == nullptr)
+                  hashToBatchMap.erase(iter);
+               }
                break;
-
-            //grab the batch
-            auto iter = hashToBatchMap.find(rejectPacket->txHash_);
-            if (iter != hashToBatchMap.end())
-            {
-               iter->second->isReadyPromise_->set_value(
-                  ArmoryErrorCodes(rejectPacket->code_));
-               
-               hashToBatchMap.erase(iter);
             }
 
-            break;
-         }
+            case ZcGetPacketType_Reject:
+            {
+               auto rejectPacket = std::dynamic_pointer_cast<RejectPacket>(zcPacket);
+               if (rejectPacket == nullptr) {
+                  break;
+               }
 
-         default:
-            break;
+               //grab the batch
+               auto iter = hashToBatchMap.find(rejectPacket->txHash_);
+               if (iter != hashToBatchMap.end()) {
+                  iter->second->isReadyPromise_->set_value(
+                     ArmoryErrorCodes(rejectPacket->code_));
+
+                  hashToBatchMap.erase(iter);
+               }
+               break;
+            }
+
+            default:
+               break;
          }
       }
 
       //queue of hashes to purge from the local map
-      while (true)
-      {
-         try
-         {
-            auto&& hashSet = hashesToClear_.pop_front();
-            for (auto& hash : hashSet)
+      while (true) {
+         try {
+            auto hashSet = std::move(hashesToClear_.pop_front());
+            for (const auto& hash : hashSet) {
                hashToBatchMap.erase(hash);
-         }
-         catch (const IsEmpty&)
-         {
+            }
+         } catch (const IsEmpty&) {
             break;
          }
       }
 
-      matcherMapSize_.store(hashToBatchMap.size(), memory_order_relaxed);
+      matcherMapSize_.store(hashToBatchMap.size(), std::memory_order_relaxed);
    }
 }
 
@@ -2057,7 +1979,7 @@ void ZcActionQueue::getDataToBatchMatcherThread()
 //// ZeroConfCallbacks
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-ZeroConfCallbacks::~ZeroConfCallbacks() 
+ZeroConfCallbacks::~ZeroConfCallbacks()
 {}
 
 ////////////////////////////////////////////////////////////////////////////////

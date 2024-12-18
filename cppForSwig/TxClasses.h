@@ -17,8 +17,6 @@
 #include "BtcUtils.h"
 #include "DBUtils.h"
 
-#include "protobuf/Utxo.pb.h"
-
 //PayStruct flags
 #define USE_FULL_CUSTOM_LIST  1
 #define ADJUST_FEE            2
@@ -393,12 +391,13 @@ struct TxComparator
 ////////////////////////////////////////////////////////////////////////////////
 struct UTXO
 {
-   BinaryData txHash_;
-   uint32_t   txOutIndex_ = UINT32_MAX;
+   uint64_t   value_ = 0;
    uint32_t   txHeight_ = UINT32_MAX;
    uint32_t   txIndex_ = UINT32_MAX;
-   uint64_t   value_ = 0;
+   uint32_t   txOutIndex_ = UINT32_MAX;
+   BinaryData txHash_;
    BinaryData script_;
+
    bool       isMultisigRef_ = false;
    unsigned   preferredSequence_ = UINT32_MAX;
 
@@ -407,9 +406,9 @@ struct UTXO
    unsigned txinRedeemSizeBytes_ = UINT32_MAX;
    unsigned witnessDataSizeBytes_ = UINT32_MAX;
 
-   UTXO(uint64_t value, uint32_t txHeight, uint32_t txIndex, 
+   UTXO(uint64_t value, uint32_t txHeight, uint32_t txIndex,
       uint32_t txOutIndex, BinaryData txHash, BinaryData script) :
-      txHash_(std::move(txHash)), txOutIndex_(txOutIndex), 
+      txHash_(std::move(txHash)), txOutIndex_(txOutIndex),
       txHeight_(txHeight), txIndex_(txIndex),
       value_(value), script_(std::move(script))
    {}
@@ -473,31 +472,43 @@ struct UTXO
    }
 
    bool isInitialized(void) const { return !script_.empty(); }
-
-   void toProtobuf(Codec_Utxo::Utxo&) const;
-   static UTXO fromProtobuf(const Codec_Utxo::Utxo&);
 };
 
-namespace AsyncClient
+////////////////////////////////////////////////////////////////////////////////
+//this is a bit scuffed, shouldnt have a UTXO struct in the first place, but
+// the change is out of the scope of this refactor
+struct Output : public UTXO
 {
-   struct CallbackReturn_VectorAddressBookEntry;
+public:
+   BinaryData spenderHash;
+
+public:
+   Output(uint64_t value, uint32_t txHeight, uint32_t txIndex,
+      uint32_t txOutIndex, BinaryData txHash, BinaryData script,
+      BinaryData spender) :
+      UTXO(value, txHeight, txIndex, txOutIndex, txHash, script),
+      spenderHash(spender)
+   {}
+
+   bool isSpent(void) const { return !spenderHash.empty(); }
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 class AddressBookEntry
 {
-   friend struct AsyncClient::CallbackReturn_VectorAddressBookEntry;
+private:
+   BinaryData scrAddr_;
+   std::vector<BinaryData> txHashList_;
 
 public:
-
    /////
    AddressBookEntry(void) : scrAddr_(BtcUtils::EmptyHash()) {}
    AddressBookEntry(BinaryData scraddr) : scrAddr_(scraddr) {}
    void addTxHash(const BinaryData& hash) { txHashList_.push_back(hash); }
-   const BinaryData& getScrAddr(void) { return scrAddr_; }
+   const BinaryData& getScrAddr() const { return scrAddr_; }
 
    /////
-   const std::vector<BinaryData>& getTxHashList(void) const
+   const std::vector<BinaryData>& getTxHashList() const
    {
       return txHashList_;
    }
@@ -510,10 +521,6 @@ public:
 
    BinaryData serialize(void) const;
    void unserialize(const BinaryData& data);
-
-private:
-   BinaryData scrAddr_;
-   std::vector<BinaryData> txHashList_;
 };
 
 

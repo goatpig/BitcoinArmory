@@ -12,6 +12,8 @@
 #include <memory>
 #include <string>
 #include <map>
+#include <filesystem>
+
 #include "btc/ecc_key.h"
 #include "EncryptionUtils.h"
 #include "Wallets.h"
@@ -65,8 +67,8 @@ namespace Armory
             std::pair<std::string, unsigned>> peerRootKeys_;
 
       private:
-         void loadWallet(const std::string&, const PassphraseLambda&);
-         void createWallet(const std::string&, const std::string&,
+         void loadWallet(const std::filesystem::path&, const PassphraseLambda&);
+         void createWallet(const std::filesystem::path&, const std::string&,
             const PassphraseLambda&);
 
          void addPeer(const SecureBinaryData&,
@@ -77,7 +79,7 @@ namespace Armory
 
       public:
          AuthorizedPeers(
-            const std::string&, const std::string&, const PassphraseLambda&);
+            const std::filesystem::path&, const std::string&, const PassphraseLambda&);
          AuthorizedPeers(void);
 
          const std::map<std::string, btc_pubkey>& getPeerNameMap(void) const;

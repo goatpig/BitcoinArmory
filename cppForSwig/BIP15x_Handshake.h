@@ -62,6 +62,8 @@ enum class BIP151_PayloadType : uint8_t
    SinglePacket         = 1,
    FragmentHeader       = 2,
    FragmentPacket       = 3,
+   FirstSegment         = 4,
+   Segment              = 5,
 
    Threshold_Begin      = 100,
    Start                = 101,

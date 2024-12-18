@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2019-20, goatpig                                            //
+//  Copyright (C) 2019-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -10,10 +10,9 @@
 #include "CppBridge.h"
 #include "BIP15x_Handshake.h"
 #include "BIP150_151.h"
+#include "ProtoCommandParser.h"
 
-#include <google/protobuf/message.h>
-
-using namespace std;
+using namespace Armory;
 using namespace Armory::Bridge;
 
 #define BRIDGE_SOCKET_MAXLEN 1024 * 1024 * 1024 //1MB
@@ -24,63 +23,62 @@ using namespace Armory::Bridge;
 ////
 ////////////////////////////////////////////////////////////////////////////////
 CppBridgeSocket::CppBridgeSocket(
-   const string& addr, const string& port,
-   shared_ptr<CppBridge> bridgePtr) :
+   const std::string& addr, const std::string& port,
+   std::shared_ptr<CppBridge> bridgePtr) :
    PersistentSocket(addr, port), bridgePtr_(bridgePtr),
    serverName_(addr + ":" + port)
 {
    //setup auth peers db
-   authPeers_ = make_shared<Armory::Wallets::AuthorizedPeers>();
+   authPeers_ = std::make_shared<Wallets::AuthorizedPeers>();
 
-   auto uiPubKey = Armory::Config::NetworkSettings::uiPublicKey();
-   if (uiPubKey.getSize() != 33)
-   {
+   auto uiPubKey = Config::NetworkSettings::uiPublicKey();
+   if (uiPubKey.getSize() != 33) {
       LOGERR << "Invalid UI pubkey!";
       LOGERR << "The UI pubkey must be 33 bytes long (66 hexits), " <<
          "passed through --uiPubKey";
-      throw runtime_error("invalid UI pubkey");
+      throw std::runtime_error("invalid UI pubkey");
    }
 
    //inject UI key (UI is the server, bridge connects to it)
-   vector<string> peerNames = { serverName_ };
+   std::vector<std::string> peerNames = { serverName_ };
    authPeers_->addPeer(uiPubKey, peerNames);
-   auto lbds = Armory::Wallets::AuthorizedPeers::getAuthPeersLambdas(
+   auto lbds = Wallets::AuthorizedPeers::getAuthPeersLambdas(
       authPeers_);
 
    //write own public key to cookie file
    {
       const auto& ownKey = authPeers_->getOwnPublicKey();
-      fstream file;
-      file.open("./client_cookie", ios::out);
+      std::fstream file;
+
+      //on windows, we need to explicitly open the cookie file in binary
+      //for writing, or it will stop at the first null byte
+      file.open("./client_cookie", std::ios::out | std::ios::binary);
       file.write((const char*)ownKey.pubkey, 33);
    }
 
    //init bip15x channel
-   bip151Connection_ = make_shared<BIP151Connection>(lbds, false);
+   bip151Connection_ = std::make_shared<BIP151Connection>(lbds, false);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void CppBridgeSocket::respond(vector<uint8_t>& data)
+void CppBridgeSocket::respond(std::vector<uint8_t>& data)
 {
-   if (data.empty())
-   {
+   if (data.empty()) {
       //shutdown condition
       shutdown();
       return;
    }
 
    //append data to leftovers from previous iteration if applicable
-   if (!leftOverData_.empty())
-   {
+   if (!leftOverData_.empty()) {
       leftOverData_.insert(leftOverData_.end(), data.begin(), data.end());
-      data = move(leftOverData_);
+      data = std::move(leftOverData_);
 
       //leftoverData_ should be empty cause of the move operation
       assert(leftOverData_.empty());
    }
 
-   while (!data.empty())
-   {
+   while (!data.empty()) {
       //for data that isn't encrypted, assume the payload is
       //a single whole packet
       bool encr = false;
@@ -89,25 +87,22 @@ void CppBridgeSocket::respond(vector<uint8_t>& data)
       BinaryDataRef dataRef(&data[0], data.size());
       auto packetSize = dataRef.getSize();
 
-      if (bip151Connection_->connectionComplete())
-      {
+      if (bip151Connection_->connectionComplete()) {
          //get decrypted length
          auto decrLen = bip151Connection_->decryptPacket(
             &data[0], POLY1305MACLEN + AUTHASSOCDATAFIELDLEN,
             nullptr, POLY1305MACLEN + AUTHASSOCDATAFIELDLEN);
 
-         if (decrLen == -1 || decrLen > BRIDGE_SOCKET_MAXLEN)
-         {
+         if (decrLen == -1 || decrLen > BRIDGE_SOCKET_MAXLEN) {
             //fatal error
             LOGERR << "packet exceeds BRIDGE_SOCKET_MAXLEN, aborting";
             shutdown();
             return;
          }
 
-         if (decrLen > (ssize_t)data.size() + POLY1305MACLEN)
-         {
+         if (decrLen > (ssize_t)data.size() + POLY1305MACLEN) {
             //not enough data to decrypt, save it and continue
-            leftOverData_ = move(data);
+            leftOverData_ = std::move(data);
             return;
          }
 
@@ -120,16 +115,14 @@ void CppBridgeSocket::respond(vector<uint8_t>& data)
 
          //keep track of this packet's size
          if ((ssize_t)data.size() >
-            decrLen + AUTHASSOCDATAFIELDLEN + POLY1305MACLEN)
-         {
+            decrLen + AUTHASSOCDATAFIELDLEN + POLY1305MACLEN) {
             packetSize = decrLen + AUTHASSOCDATAFIELDLEN + POLY1305MACLEN;
          }
 
          encr = true;
       }
 
-      if (dataRef.empty())
-      {
+      if (dataRef.empty()) {
          //handshake failure
          LOGERR << "invalid packet size, aborting";
          shutdown();
@@ -137,28 +130,24 @@ void CppBridgeSocket::respond(vector<uint8_t>& data)
       }
 
       auto dataType = (ArmoryAEAD::BIP151_PayloadType)dataRef[0];
-      if (encr && dataType < ArmoryAEAD::BIP151_PayloadType::Threshold_Begin)
-      {
+      if (encr && dataType < ArmoryAEAD::BIP151_PayloadType::Threshold_Begin) {
          //we can only process user messages after the AEAD channel is auth'ed
          //and the data is encrypted
-         if (bip151Connection_->getBIP150State() != BIP150State::SUCCESS)
-         {
+         if (bip151Connection_->getBIP150State() != BIP150State::SUCCESS) {
             shutdown();
             return;
          }
 
-         if (!bridgePtr_->processData(dataRef))
-         {
+         BinaryData requestBody(dataRef.getSize() - 1);
+         memcpy(requestBody.getPtr(), dataRef.getPtr() + 1, requestBody.getSize());
+         if (!ProtoCommandParser::processData(bridgePtr_, requestBody)) {
             shutdown();
             return;
          }
-      }
-      else
-      {
+      } else {
          //we can only get here if the data is part of an ongoing AEAD
          //handhsake or an incoming channel rekey
-         if (!processAEADHandshake(dataRef))
-         {
+         if (!processAEADHandshake(dataRef)) {
             //handshake failure
             LOGERR << "AEAD handshake failed, aborting";
             shutdown();
@@ -166,48 +155,47 @@ void CppBridgeSocket::respond(vector<uint8_t>& data)
          }
       }
 
-      if (data.size() == packetSize)
+      if (data.size() == packetSize) {
          return;
+      }
 
       //payload is bigger than the packet we just processed, remove leading
       //packet from data and iterate over what's left
-      data = vector<uint8_t>(data.begin() + packetSize, data.end());
+      data = std::vector<uint8_t>(data.begin() + packetSize, data.end());
    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 void CppBridgeSocket::pushPayload(
-   unique_ptr<Socket_WritePayload> write_payload,
-   shared_ptr<Socket_ReadPayload>)
+   std::unique_ptr<Socket_WritePayload> write_payload,
+   std::shared_ptr<Socket_ReadPayload>)
 {
-   if (write_payload == nullptr)
+   if (write_payload == nullptr) {
       return;
+   }
 
    //lock write mutex
-   unique_lock<mutex> lock(writeMutex_);
+   std::unique_lock<std::mutex> lock(writeMutex_);
 
    //check for rekeys
    {
       bool needs_rekey = false;
-      auto rightnow = chrono::system_clock::now();
+      auto rightnow = std::chrono::system_clock::now();
 
-      if (bip151Connection_->rekeyNeeded(write_payload->getSerializedSize()))
-      {
+      if (bip151Connection_->rekeyNeeded(write_payload->getSerializedSize())) {
          needs_rekey = true;
-      }
-      else
-      {
-         auto time_sec = chrono::duration_cast<chrono::seconds>(
+      } else {
+         auto time_sec = std::chrono::duration_cast<std::chrono::seconds>(
             rightnow - outKeyTimePoint_);
-         if (time_sec.count() >= AEAD_REKEY_INVERVAL_SECONDS)
-         needs_rekey = true;
+         if (time_sec.count() >= AEAD_REKEY_INVERVAL_SECONDS) {
+            needs_rekey = true;
+         }
       }
 
-      if (needs_rekey)
-      {
-         vector<uint8_t> rekeyPacket(BIP151PUBKEYSIZE + 5 + POLY1305MACLEN);
+      if (needs_rekey) {
+         std::vector<uint8_t> rekeyPacket(BIP151PUBKEYSIZE + 5 + POLY1305MACLEN);
          memset(&rekeyPacket[5], 0, BIP151PUBKEYSIZE);
-         
+
          uint32_t rekeyPacketLen = BIP151PUBKEYSIZE + 1;
          memcpy(&rekeyPacket[0], &rekeyPacketLen, sizeof(uint32_t));
          memset(&rekeyPacket[4],
@@ -224,7 +212,7 @@ void CppBridgeSocket::pushPayload(
    }
 
    //serialize payload
-   vector<uint8_t> data;
+   std::vector<uint8_t> data;
    write_payload->serialize(data);
 
    //set data flag
@@ -247,11 +235,10 @@ bool CppBridgeSocket::processAEADHandshake(BinaryDataRef data)
    {
       //prepend message type to payload
       size_t packetSize = 5 + payload.getSize() + POLY1305MACLEN;
-      vector<uint8_t> cipherText(packetSize);
+      std::vector<uint8_t> cipherText(packetSize);
 
       unsigned index = 0;
-      if (encrypt)
-      {
+      if (encrypt) {
          uint32_t sizeHeader = payload.getSize() + 1;
          memcpy(&cipherText[0], &sizeHeader, sizeof(uint32_t));
          index = 4;
@@ -261,14 +248,11 @@ bool CppBridgeSocket::processAEADHandshake(BinaryDataRef data)
       memcpy(&cipherText[index + 1], payload.getPtr(), payload.getSize());
 
       //encrypt if necessary
-      if (encrypt)
-      {
+      if (encrypt) {
          bip151Connection_->assemblePacket(
             &cipherText[0], packetSize - POLY1305MACLEN,
             &cipherText[0], packetSize);
-      }
-      else
-      {
+      } else {
          cipherText.resize(payload.getSize() + 1);
       }
 
@@ -278,17 +262,16 @@ bool CppBridgeSocket::processAEADHandshake(BinaryDataRef data)
 
    //first byte is the AEAD sequence
    auto seqId = (ArmoryAEAD::BIP151_PayloadType)data[0];
-
    switch (seqId)
    {
-   case ArmoryAEAD::BIP151_PayloadType::PresentPubKey:
-   {
-      LOGERR << "Server presented pubkey, bridge does not tolerate 1-way auth";
-      return false;
-   }
+      case ArmoryAEAD::BIP151_PayloadType::PresentPubKey:
+      {
+         LOGERR << "Server presented pubkey, bridge does not tolerate 1-way auth";
+         return false;
+      }
 
-   default:
-      break;
+      default:
+         break;
    }
 
    //common client side handshake
@@ -300,20 +283,20 @@ bool CppBridgeSocket::processAEADHandshake(BinaryDataRef data)
 
    switch (status)
    {
-   case ArmoryAEAD::HandshakeState::StepSuccessful:
-   case ArmoryAEAD::HandshakeState::RekeySuccessful:
-      return true;
+      case ArmoryAEAD::HandshakeState::StepSuccessful:
+      case ArmoryAEAD::HandshakeState::RekeySuccessful:
+         return true;
 
-   case ArmoryAEAD::HandshakeState::Completed:
-   {
-      outKeyTimePoint_ = chrono::system_clock::now();
+      case ArmoryAEAD::HandshakeState::Completed:
+      {
+         outKeyTimePoint_ = std::chrono::system_clock::now();
 
-      //flag connection as ready
-      return true;
-   }
+         //flag connection as ready
+         return true;
+      }
 
-   default:
-      return false;
+      default:
+         return false;
    }
 }
 
@@ -322,24 +305,23 @@ bool CppBridgeSocket::processAEADHandshake(BinaryDataRef data)
 ////  WritePayload_Bridge
 ////
 ////////////////////////////////////////////////////////////////////////////////
-void WritePayload_Bridge::serialize(std::vector<uint8_t>& data)
+void WritePayload_Bridge::serialize(std::vector<uint8_t>& payload)
 {
-   if (message_ == nullptr)
+   if (data.empty()) {
       return;
-
-   auto msgSize = message_->ByteSizeLong();
-   data.resize(msgSize + 5 + POLY1305MACLEN);
+   }
+   payload.resize(data.getSize() + 5 + POLY1305MACLEN);
 
    //set packet size
-   uint32_t sizeVal = msgSize + 1;
-   memcpy(&data[0], &sizeVal, sizeof(uint32_t));
+   uint32_t sizeVal = data.getSize() + 1;
+   memcpy(&payload[0], &sizeVal, sizeof(uint32_t));
 
    //serialize protobuf message
-   message_->SerializeToArray(&data[5], msgSize);
+   memcpy(&payload[5], data.getPtr(), data.getSize());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 size_t WritePayload_Bridge::getSerializedSize(void) const
 {
-   return message_->ByteSizeLong() + 5 + POLY1305MACLEN;
+   return data.getSize() + 5 + POLY1305MACLEN;
 }

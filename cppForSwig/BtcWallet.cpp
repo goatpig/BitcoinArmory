@@ -38,13 +38,14 @@ bool BtcWallet::hasScrAddress(const BinaryDataRef& scrAddr) const
 }
 
 /////////////////////////////////////////////////////////////////////////////
-set<BinaryDataRef> BtcWallet::getAddrSet() const
+std::set<BinaryDataRef> BtcWallet::getAddrSet() const
 {
    auto addrMap = scrAddrMap_.get();
-   set<BinaryDataRef> addrSet;
+   std::set<BinaryDataRef> addrSet;
 
-   for (auto& addrPair : *addrMap)
+   for (auto& addrPair : *addrMap) {
       addrSet.emplace(addrPair.first);
+   }
    return addrSet;
 }
 
@@ -337,31 +338,29 @@ vector<UTXO> BtcWallet::getRBFTxOutList()
 
    {
       auto addrMap = scrAddrMap_.get();
-      for (auto& scrAddr : *addrMap)
-      {
-         auto&& zcTxioMap = bdvPtr_->getRBFTxIOsforScrAddr(
+      for (auto& scrAddr : *addrMap) {
+         auto zcTxioMap = bdvPtr_->getRBFTxIOsforScrAddr(
             scrAddr.second->getScrAddr());
 
-         for (auto& zcTxio : zcTxioMap)
-         {
-            if (zcTxio.second->hasTxOutZC())
+         for (auto& zcTxio : zcTxioMap) {
+            if (zcTxio.second->hasTxOutZC()) {
                zcKeys.insert(zcTxio.second->getDBKeyOfOutput());
-            else
+            } else {
                txoutKeys.insert(zcTxio.second->getDBKeyOfOutput());
+            }
          }
       }
    }
 
-   auto&& utxoVec = bdvPtr_->getZcUTXOsForKeys(zcKeys);
+   auto utxoVec = bdvPtr_->getZcUTXOsForKeys(zcKeys);
 
    BinaryDataRef prevTxKey;
    BinaryDataRef prevTxHash;
-   for (auto& txoutkey : txoutKeys)
-   {
-      auto&& stxo = bdvPtr_->getStoredTxOut(txoutkey);
+   for (auto& txoutkey : txoutKeys) {
+      auto stxo = bdvPtr_->getStoredTxOut(txoutkey);
       UTXO utxo(
-         stxo.getValue(), stxo.getHeight(), 
-         stxo.txIndex_, stxo.txOutIndex_, 
+         stxo.getValue(), stxo.getHeight(),
+         stxo.txIndex_, stxo.txOutIndex_,
          stxo.parentHash_, stxo.getScriptRef());
 
       utxoVec.emplace_back(move(utxo));
@@ -376,70 +375,75 @@ vector<UTXO> BtcWallet::getRBFTxOutList()
 //
 // TODO: make this scalable!
 //
-vector<AddressBookEntry> BtcWallet::createAddressBook(void)
+std::vector<AddressBookEntry> BtcWallet::createAddressBook() const
 {
    // Collect all data into a map -- later converted to vector and sort it
-   map<BinaryData, set<BinaryData>> sentToMap;
-   map<BinaryData, BinaryData> keyToHash;
+   std::map<BinaryData, std::set<BinaryData>> sentToMap;
+   std::map<BinaryData, BinaryData> keyToHash;
 
    auto scrAddrMap = scrAddrMap_.get();
+   auto db = bdvPtr_->getDB();
 
-   for (auto& saPair : *scrAddrMap)
-   {
-      auto&& txioMap = saPair.second->getTxios();
+   for (const auto& saPair : *scrAddrMap) {
+      auto txioMap = saPair.second->getTxios();
 
-      for (auto& txioPair : txioMap)
-      {
+      for (auto& txioPair : txioMap) {
          //skip unspent and zc spends
-         if (!txioPair.second.hasTxIn() || txioPair.second.hasTxInZC())
+         if (!txioPair.second.hasTxIn() || txioPair.second.hasTxInZC()) {
             continue;
+         }
 
          //skip already processed tx
-         auto&& dbKey = txioPair.second.getDBKeyOfInput();
+         auto dbKey = txioPair.second.getDBKeyOfInput();
          auto& txHash = keyToHash[dbKey];
-         if (txHash.getSize() == 32)
+         if (txHash.getSize() == 32) {
             continue;
+         }
 
          //grab tx
-         auto&& fullTx = bdvPtr_->getDB()->getFullTxCopy(dbKey.getSliceRef(0, 6));
-         txHash = fullTx.getThisHash();
+         try {
+            auto fullTx = db->getFullTxCopy(dbKey.getSliceRef(0, 6));
+            txHash = fullTx.getThisHash();
 
-         auto nOut = fullTx.getNumTxOut();
-         auto txPtr = fullTx.getPtr();
+            auto nOut = fullTx.getNumTxOut();
+            auto txPtr = fullTx.getPtr();
 
-         for (unsigned i = 0; i < nOut; i++)
-         {
-            unsigned offset = fullTx.getTxOutOffset(i);
-            unsigned outputSize = fullTx.getTxOutOffset(i + 1) - offset;
-            BinaryDataRef outputRef(txPtr + offset + 8, outputSize);
-            
-            BinaryRefReader brr(outputRef);
-            auto scriptSize = brr.get_var_int();
+            for (unsigned i = 0; i < nOut; i++) {
+               unsigned offset = fullTx.getTxOutOffset(i);
+               unsigned outputSize = fullTx.getTxOutOffset(i + 1) - offset;
+               BinaryDataRef outputRef(txPtr + offset + 8, outputSize);
 
-            auto&& scrRef = 
-               BtcUtils::getTxOutScrAddrNoCopy(brr.get_BinaryDataRef(scriptSize));
-            auto&& scrAddr = scrRef.getScrAddr();
+               BinaryRefReader brr(outputRef);
+               auto scriptSize = brr.get_var_int();
 
-            if (hasScrAddress(scrRef.getScrAddr()))
-               continue;
+               auto scrRef = BtcUtils::getTxOutScrAddrNoCopy(
+                  brr.get_BinaryDataRef(scriptSize));
+               auto scrAddr = scrRef.getScrAddr();
 
-            auto&& hashSet = sentToMap[scrAddr];
-            hashSet.insert(txHash);
+               if (hasScrAddress(scrRef.getScrAddr())) {
+                  continue;
+               }
+               auto& hashSet = sentToMap[scrAddr];
+               hashSet.emplace(txHash);
+            }
+         } catch (const std::exception& e) {
+            LOGWARN << "failed to grab tx for key: " << dbKey.toHexStr() <<
+               " with error: " << e.what();
          }
       }
    }
 
-   vector<AddressBookEntry> outputVect;
-   for (const auto &entry : sentToMap)
-   {
+   std::vector<AddressBookEntry> outputVect;
+   outputVect.reserve(sentToMap.size());
+   for (const auto &entry : sentToMap) {
       AddressBookEntry abe(entry.first);
-      for (auto& hash : entry.second)
-         abe.addTxHash(move(hash));
-
-      outputVect.push_back(move(abe));
+      for (auto& hash : entry.second) {
+         abe.addTxHash(std::move(hash));
+      }
+      outputVect.emplace_back(std::move(abe));
    }
 
-   sort(outputVect.begin(), outputVect.end());
+   std::sort(outputVect.begin(), outputVect.end());
    return outputVect;
 }
 
@@ -705,7 +709,7 @@ map<BinaryData, LedgerEntry> BtcWallet::updateWalletLedgersFromTxio(
    const map<BinaryData, TxIOPair>& txioMap,
    uint32_t startBlock, uint32_t endBlock) const
 {
-   return LedgerEntry::computeLedgerMap(txioMap, startBlock, endBlock, 
+   return LedgerEntry::computeLedgerMap(txioMap, startBlock, endBlock,
       walletID_, bdvPtr_->getDB(), &bdvPtr_->blockchain(), bdvPtr_->zcContainer());
 }
 
@@ -713,14 +717,11 @@ map<BinaryData, LedgerEntry> BtcWallet::updateWalletLedgersFromTxio(
 const ScrAddrObj* BtcWallet::getScrAddrObjByKey(const BinaryData& key) const
 {
    auto addrMap = scrAddrMap_.get();
-
    auto saIter = addrMap->find(key);
-   if (saIter == addrMap->end())
-   {
+   if (saIter == addrMap->end()) {
       LOGWARN << "unknown address in btcwallet";
       throw std::runtime_error("unknown address in btcwallet");
    }
-      
    return saIter->second.get();
 }
 
@@ -779,15 +780,22 @@ vector<LedgerEntry> BtcWallet::getHistoryPageAsVector(uint32_t pageId)
    return ledgerVec;
 }
 
+const HistoryPager& BtcWallet::historyPager() const
+{
+   return histPages_;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 void BtcWallet::needsRefresh(bool refresh)
-{ 
+{
+   //TODO: fix the flagRefresh logic
+
    //notify BDV
-   if (refresh && isRegistered_)
+   /*if (refresh && isRegistered_)
    {
       bdvPtr_->flagRefresh(
          BDV_refreshAndRescan, BinaryData::fromString(walletID_), nullptr);
-   }
+   }*/
 
    //call custom callback
    doneRegisteringCallback_();
@@ -808,16 +816,12 @@ uint64_t BtcWallet::getWltTotalTxnCount(void) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void BtcWallet::setConfTarget(unsigned confTarget, const string& hash)
+void BtcWallet::setConfTarget(unsigned confTarget)
 {
-   if(confTarget != confTarget_)
+   if(confTarget != confTarget_) {
       confTarget_ = confTarget;
-
-   if (hash.size() != 0)
-   {
-      auto&& hashBd = BinaryData::fromString(hash);
-      bdvPtr_->flagRefresh(BDV_refreshSkipRescan, hashBd, nullptr);
    }
+   BinaryData wltId(walletID_.data(), walletID_.size());
 }
 
 ////////////////////////////////////////////////////////////////////////////////

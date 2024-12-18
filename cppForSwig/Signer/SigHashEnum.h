@@ -11,7 +11,7 @@
 
 namespace Armory
 {
-   namespace Signer
+   namespace Signing
    {
       enum SIGHASH_TYPE
       {

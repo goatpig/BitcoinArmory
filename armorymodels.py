@@ -504,23 +504,24 @@ class LedgerDispModelSimple(QtCore.QAbstractTableModel):
 
    def getRawDataEntry(self, filter):
       def filterRawData(rawDataList, filter):
-         for rawData in rawDataList:
-            if filter(rawData):
-               return rawData
+         for data in rawDataList:
+            for ledger in data.ledgers:
+               if filter(ledger):
+                  return ledger
          return None
 
       if self.bottomPage.rawData:
-         result = filterRawData(self.bottomPage.rawData.ledger, filter)
+         result = filterRawData(self.bottomPage.rawData, filter)
          if result:
             return result
 
       if self.currentPage.rawData:
-         result = filterRawData(self.currentPage.rawData.ledger, filter)
+         result = filterRawData(self.currentPage.rawData, filter)
          if result:
             return result
 
       if self.topPage.rawData:
-         result = filterRawData(self.topPage.rawData.ledger, filter)
+         result = filterRawData(self.topPage.rawData, filter)
          if result:
             return result
 
@@ -1410,17 +1411,14 @@ class SentToAddrBookModel(QtCore.QAbstractTableModel):
       # Must use awkwardness to get around iterating a vector<RegisteredTx> in
       # the python code... :(
       addressBook = self.wlt.createAddressBook()
-      nabe = len(addressBook.address)
-      for i in range(nabe):
-         abe = addressBook.address[i]
-
-         scrAddr = abe.scraddr
+      for abe in addressBook.entries:
+         scrAddr = abe.scrAddr
          try:
             addr160 = addrStr_to_hash160(scrAddr_to_addrStr(scrAddr))[1]
 
             # Only grab addresses that are not in any of your Armory wallets
             if not self.main.getWalletForAddrHash(addr160):
-               txHashList = abe.tx_hash
+               txHashList = abe.txHashes
                self.addrBook.append( [scrAddr, txHashList] )
          except Exception as e:
             # This is not necessarily an error. It could be a lock box LOGERROR(str(e))

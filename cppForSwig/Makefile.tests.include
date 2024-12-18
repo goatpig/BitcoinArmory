@@ -67,6 +67,70 @@ endif
 gtest_UtilsTests_LDFLAGS = $(AM_LDFLAGS) $(LWSLDFLAGS) $(LDFLAGS) -static
 TESTS += gtest/UtilsTests
 
+#SignerTests
+bin_PROGRAMS += gtest/SignerTests
+gtest_SignerTests_SOURCES = gtest/SignerTests.cpp
+gtest_SignerTests_CXXFLAGS = $(AM_CXXFLAGS) $(UNIT_TEST_CXXFLAGS) $(LIBBTC_FLAGS)
+gtest_SignerTests_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+gtest_SignerTests_LDADD = gtest/libgtest.la \
+			$(LIBARMORYCOMMON) \
+			$(LIBARMORYCLI) \
+			$(LIBHKDF) \
+			$(LIBBTC) \
+			$(LIBCHACHA20POLY1305) \
+			$(LIBLMDBPP) \
+			$(LIBTREZORCRYPTO) \
+			-llmdb \
+			$(LIBPROTOBUF_STATIC) \
+			$(LIBWEBSOCKETS_STATIC)
+if BUILD_OPENSSL_SUPPORT
+gtest_SignerTests_LDADD += $(LIBSSL_STATIC) \
+		 $(LIBCRYPTO_STATIC)
+endif
+if BUILD_LIBUV_SUPPORT
+gtest_SignerTests_LDADD += $(LIBUV_STATIC)
+endif
+if BUILD_LIBEVENT_SUPPORT
+gtest_SignerTests_LDADD += $(LIBEVENT_STATIC)
+endif
+if BUILD_LIBCAP_SUPPORT
+gtest_SignerTests_LDADD += $(LIBCAP_LIBS)
+endif
+gtest_SignerTests_LDFLAGS = $(AM_LDFLAGS) $(LWSLDFLAGS) $(LDFLAGS) -static
+TESTS += gtest/SignerTests
+
+# WalletTests
+bin_PROGRAMS += gtest/WalletTests
+gtest_WalletTests_SOURCES = gtest/WalletTests.cpp
+gtest_WalletTests_CXXFLAGS = $(AM_CXXFLAGS) $(UNIT_TEST_CXXFLAGS) $(LIBBTC_FLAGS)
+gtest_WalletTests_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+gtest_WalletTests_LDADD = gtest/libgtest.la \
+			$(LIBARMORYCOMMON) \
+			$(LIBCHACHA20POLY1305) \
+			$(LIBARMORYCLI) \
+			$(LIBHKDF) \
+			$(LIBBTC) \
+			$(LIBLMDBPP) \
+			$(LIBTREZORCRYPTO) \
+			-llmdb \
+			$(LIBPROTOBUF_STATIC) \
+			$(LIBWEBSOCKETS_STATIC)
+if BUILD_OPENSSL_SUPPORT
+gtest_WalletTests_LDADD += $(LIBSSL_STATIC) \
+		 $(LIBCRYPTO_STATIC)
+endif
+if BUILD_LIBUV_SUPPORT
+gtest_WalletTests_LDADD += $(LIBUV_STATIC)
+endif
+if BUILD_LIBEVENT_SUPPORT
+gtest_WalletTests_LDADD += $(LIBEVENT_STATIC)
+endif
+if BUILD_LIBCAP_SUPPORT
+gtest_WalletTests_LDADD += $(LIBCAP_LIBS)
+endif
+gtest_WalletTests_LDFLAGS = $(AM_LDFLAGS) $(LWSLDFLAGS) $(LDFLAGS) -static
+TESTS += gtest/WalletTests
+
 # DB1kIterTest - useless test
 #bin_PROGRAMS += gtest/DB1kIterTest
 #gtest_DB1kIterTest_SOURCES = gtest/DB1kIterTest.cpp
@@ -200,67 +264,3 @@ gtest_ZeroConfTests_LDADD += $(LIBCAP_LIBS)
 endif
 gtest_ZeroConfTests_LDFLAGS = $(AM_LDFLAGS) $(LWSLDFLAGS) $(LDFLAGS) -static
 TESTS += gtest/ZeroConfTests
-
-# WalletTests
-bin_PROGRAMS += gtest/WalletTests
-gtest_WalletTests_SOURCES = gtest/WalletTests.cpp
-gtest_WalletTests_CXXFLAGS = $(AM_CXXFLAGS) $(UNIT_TEST_CXXFLAGS) $(LIBBTC_FLAGS)
-gtest_WalletTests_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
-gtest_WalletTests_LDADD = gtest/libgtest.la \
-			$(LIBARMORYCOMMON) \
-			$(LIBCHACHA20POLY1305) \
-			$(LIBARMORYCLI) \
-			$(LIBHKDF) \
-			$(LIBBTC) \
-			$(LIBLMDBPP) \
-			$(LIBTREZORCRYPTO) \
-			-llmdb \
-			$(LIBPROTOBUF_STATIC) \
-			$(LIBWEBSOCKETS_STATIC)
-if BUILD_OPENSSL_SUPPORT
-gtest_WalletTests_LDADD += $(LIBSSL_STATIC) \
-		 $(LIBCRYPTO_STATIC)
-endif
-if BUILD_LIBUV_SUPPORT
-gtest_WalletTests_LDADD += $(LIBUV_STATIC)
-endif
-if BUILD_LIBEVENT_SUPPORT
-gtest_WalletTests_LDADD += $(LIBEVENT_STATIC)
-endif
-if BUILD_LIBCAP_SUPPORT
-gtest_WalletTests_LDADD += $(LIBCAP_LIBS)
-endif
-gtest_WalletTests_LDFLAGS = $(AM_LDFLAGS) $(LWSLDFLAGS) $(LDFLAGS) -static
-TESTS += gtest/WalletTests
-
-#SignerTests
-bin_PROGRAMS += gtest/SignerTests
-gtest_SignerTests_SOURCES = gtest/SignerTests.cpp
-gtest_SignerTests_CXXFLAGS = $(AM_CXXFLAGS) $(UNIT_TEST_CXXFLAGS) $(LIBBTC_FLAGS)
-gtest_SignerTests_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
-gtest_SignerTests_LDADD = gtest/libgtest.la \
-			$(LIBARMORYCOMMON) \
-			$(LIBARMORYCLI) \
-			$(LIBHKDF) \
-			$(LIBBTC) \
-			$(LIBCHACHA20POLY1305) \
-			$(LIBLMDBPP) \
-			$(LIBTREZORCRYPTO) \
-			-llmdb \
-			$(LIBPROTOBUF_STATIC) \
-			$(LIBWEBSOCKETS_STATIC)
-if BUILD_OPENSSL_SUPPORT
-gtest_SignerTests_LDADD += $(LIBSSL_STATIC) \
-		 $(LIBCRYPTO_STATIC)
-endif
-if BUILD_LIBUV_SUPPORT
-gtest_SignerTests_LDADD += $(LIBUV_STATIC)
-endif
-if BUILD_LIBEVENT_SUPPORT
-gtest_SignerTests_LDADD += $(LIBEVENT_STATIC)
-endif
-if BUILD_LIBCAP_SUPPORT
-gtest_SignerTests_LDADD += $(LIBCAP_LIBS)
-endif
-gtest_SignerTests_LDFLAGS = $(AM_LDFLAGS) $(LWSLDFLAGS) $(LDFLAGS) -static
-TESTS += gtest/SignerTests

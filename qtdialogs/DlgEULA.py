@@ -10,6 +10,9 @@
 #                                                                            #
 ##############################################################################
 
+from armoryengine.ArmoryUtils import LOGERROR
+from armoryengine.Settings import TheSettings
+
 from qtpy import QtCore, QtGui, QtWidgets
 from armoryengine.ArmoryUtils import LOGERROR
 from armoryengine.Settings import TheSettings

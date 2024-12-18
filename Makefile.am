@@ -16,12 +16,6 @@ copy-script:
 	cp cppForSwig/BIP150KeyManager ./BIP150KeyManager
 	cp cppForSwig/CppBridge ./CppBridge
 
-# protobuf formas for python
-if BUILD_CLIENT
-	protoc --python_out=$(srcdir)/armoryengine --proto_path=$(srcdir)/cppForSwig/protobuf $(srcdir)/cppForSwig/protobuf/BridgeProto.proto
-#TODO: build c20p1305 CFFI python lib
-endif
-
 .PHONY: copy-script lrelease qrc_img_resources.py
 
 all-local: copy-script lrelease qrc_img_resources.py

@@ -10,47 +10,129 @@
 #include "BIP15x_Handshake.h"
 
 using namespace std;
-using namespace Codec_BDVCommand;
 
 using namespace Armory::Assets;
 using namespace Armory::Wallets;
+using namespace Armory;
+
+#include <capnp/message.h>
+#include <capnp/serialize.h>
+#include "capnp/BDV.capnp.h"
+#include "capnp/Types.capnp.h"
 
 #if ! defined(_MSC_VER) && ! defined(__MINGW32__)
 
-   /////////////////////////////////////////////////////////////////////////////
-   void mkdir(string newdir)
-   {
-      char* syscmd = new char[4096];
-      sprintf(syscmd, "mkdir -p %s", newdir.c_str());
-      system(syscmd);
-      delete[] syscmd;
-   }
+/////////////////////////////////////////////////////////////////////////////
+void mkdir(string newdir)
+{
+   char* syscmd = new char[4096];
+   sprintf(syscmd, "mkdir -p %s", newdir.c_str());
+   system(syscmd);
+   delete[] syscmd;
+}
+
 #endif
+
+namespace {
+   BinaryData serializeCapnp(capnp::MallocMessageBuilder& builder)
+   {
+      auto flat = capnp::messageToFlatArray(builder);
+      auto bytes = flat.asBytes();
+      return BinaryData(bytes.begin(), bytes.end());
+   }
+
+   DBClientClasses::HistoryPage capnToLedgers(
+      capnp::List<Codec::Types::TxLedger::LedgerEntry, capnp::Kind::STRUCT>::Reader& ledgers)
+   {
+      DBClientClasses::HistoryPage result;
+      result.reserve(ledgers.size());
+      for (const auto& ledger : ledgers) {
+         //tx hash
+         auto capnTxHash = ledger.getTxHash();
+         auto hashBytes = capnTxHash.asBytes();
+         BinaryData txHash(hashBytes.begin(), hashBytes.end());
+
+         //scrAddr list
+         auto capnScrAddrs = ledger.getScrAddrs();
+         std::vector<BinaryData> scrAddrList;
+         scrAddrList.reserve(capnScrAddrs.size());
+         for (const auto& scrAddr : capnScrAddrs) {
+            auto asBytes = scrAddr.asBytes();
+            scrAddrList.emplace_back(BinaryData(
+               scrAddr.begin(), scrAddr.end()
+            ));
+         }
+
+         //instantiate ledger entry
+         result.emplace_back(DBClientClasses::LedgerEntry(
+            ledger.getWalletId(), ledger.getBalance(), ledger.getTxHeight(),
+            txHash, ledger.getTxOutIndex(), ledger.getTxTime(),
+            ledger.getIsCoinbase(), ledger.getIsSTS(),
+            ledger.getIsChangeBack(), ledger.getIsOptInRBF(),
+            ledger.getIsChainedZC(), ledger.getIsWitness(),
+            scrAddrList
+         ));
+      }
+      return result;
+   }
+
+   std::vector<DBClientClasses::HistoryPage> capnToHistoryPages(
+      capnp::List<Codec::Types::TxLedger, capnp::Kind::STRUCT>::Reader& pages)
+   {
+      std::vector<DBClientClasses::HistoryPage> result;
+      result.reserve(pages.size());
+      for (auto page : pages) {
+         auto ledgers = page.getLedgers();
+         auto dbPage = capnToLedgers(ledgers);
+         result.emplace_back(std::move(dbPage));
+      }
+      return result;
+   }
+
+   std::vector<UTXO> capnToUtxoVec(
+      capnp::List<Codec::Types::Output, capnp::Kind::STRUCT>::Reader outputs)
+   {
+      std::vector<UTXO> result;
+      result.reserve(outputs.size());
+      for (auto output : outputs) {
+         auto hashCapn = output.getTxHash();
+         BinaryDataRef txHash(hashCapn.begin(), hashCapn.end());
+
+         auto scriptCapn = output.getScript();
+         BinaryDataRef script(scriptCapn.begin(), scriptCapn.end());
+
+         result.emplace_back(UTXO(
+            output.getValue(), output.getTxHeight(), output.getTxIndex(),
+            output.getTxOutIndex(), txHash, script
+         ));
+      }
+      return result;
+   }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 namespace TestUtils
 {
 
    /////////////////////////////////////////////////////////////////////////////
-   bool searchFile(const string& filename, BinaryData& data)
+   bool searchFile(const std::filesystem::path& filename, BinaryData& data)
    {
       //create mmap of file
-      auto filemap = DBUtils::getMmapOfFile(filename);
+      auto filemap = FileUtils::FileMap(filename);
 
-      if (data.getSize() < 8)
+      if (data.getSize() < 8) {
          throw runtime_error("only for buffers 8 bytes and larger");
+      }
 
       //search it
       uint64_t sample;
       uint64_t* data_head = (uint64_t*)data.getPtr();
 
       bool result = false;
-      for (unsigned i = 0; i < filemap.size_ - data.getSize(); i++)
-      {
-         memcpy(&sample, filemap.filePtr_ + i, 8);
-         if (sample == *data_head)
-         {
-            BinaryDataRef bdr(filemap.filePtr_ + i, data.getSize());
+      for (unsigned i = 0; i < filemap.size() - data.getSize(); i++) {
+         memcpy(&sample, filemap.ptr() + i, 8);
+         if (sample == *data_head) {
+            BinaryDataRef bdr(filemap.ptr() + i, data.getSize());
             if (bdr == data.getRef())
             {
                result = true;
@@ -58,11 +140,6 @@ namespace TestUtils
             }
          }
       }
-
-      //clean up
-      filemap.unmap();
-
-      //return
       return result;
    }
 
@@ -112,29 +189,45 @@ namespace TestUtils
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   void concatFile(const string &from, const string &to)
+   void concatFile(const std::vector<std::filesystem::path> &from,
+      const std::filesystem::path &to)
    {
-      std::ifstream i(from, ios::binary);
       std::ofstream o(to, ios::app | ios::binary);
 
-      o << i.rdbuf();
+      for (const auto& fname : from) {
+         std::ifstream i(fname, ios::binary);
+         o << i.rdbuf();
+      }
+
+      o.flush();
+      o.close();
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   void appendBlocks(const std::vector<std::string> &files, const std::string &to)
+   void appendBlocks(const std::vector<std::string> &files,
+      const std::filesystem::path &to)
    {
-      for (const std::string &f : files)
-         concatFile(dataDir + "/blk_" + f + ".dat", to);
+      std::vector<std::filesystem::path> fullFileNames;
+      for (const std::string &f : files) {
+         std::filesystem::path filename{"blk_" + f + ".dat"};
+         fullFileNames.emplace_back(dataDir / filename);
+      }
+      concatFile(fullFileNames, to);
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   void setBlocks(const std::vector<std::string> &files, const std::string &to)
+   void setBlocks(const std::vector<std::string> &files,
+      const std::filesystem::path &to)
    {
       std::ofstream o(to, ios::trunc | ios::binary);
       o.close();
 
-      for (const std::string &f : files)
-         concatFile(dataDir + "/blk_" + f + ".dat", to);
+      std::vector<std::filesystem::path> fullFileNames;
+      for (const std::string &f : files) {
+         std::filesystem::path filename{"blk_" + f + ".dat"};
+         fullFileNames.emplace_back(dataDir / filename);
+      }
+      concatFile(fullFileNames, to);
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -144,15 +237,16 @@ namespace TestUtils
    /////////////////////////////////////////////////////////////////////////////
    BinaryData getTx(unsigned height, unsigned id)
    {
-      stringstream ss;
-      ss << dataDir << "/blk_" << height << ".dat";
+      auto path = dataDir / std::filesystem::path{
+         "blk_" + std::to_string(height) + ".dat"
+      };
 
-      ifstream blkfile(ss.str(), ios::binary);
-      blkfile.seekg(0, ios::end);
+      std::ifstream blkfile(path, std::ios::binary);
+      blkfile.seekg(0, std::ios::end);
       auto size = blkfile.tellg();
-      blkfile.seekg(0, ios::beg);
+      blkfile.seekg(0, std::ios::beg);
 
-      vector<char> vec;
+      std::vector<char> vec;
       vec.resize(size);
       blkfile.read(&vec[0], size);
       blkfile.close();
@@ -161,10 +255,11 @@ namespace TestUtils
       StoredHeader sbh;
       sbh.unserializeFullBlock(brr, false, true);
 
-      if (sbh.stxMap_.size() - 1 < id)
+      if (sbh.stxMap_.size() - 1 < id) {
          throw range_error("invalid tx id");
+      }
 
-      auto& stx = sbh.stxMap_[id];
+      const auto& stx = sbh.stxMap_[id];
       return stx.dataCopy_;
    }
 
@@ -207,27 +302,26 @@ namespace DBTestUtils
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   string registerBDV(Clients* clients, const BinaryData& magic_word)
+   std::string registerBDV(Clients* clients, const BinaryData& magic_word)
    {
-      auto message = make_shared<StaticCommand>();
-      message->set_method(StaticMethods::registerBDV);
-      message->set_magicword(magic_word.getPtr(), magic_word.getSize());
-
-      auto&& result = clients->processUnregisteredCommand(0, message);
-      auto response =
-         dynamic_pointer_cast<::Codec_CommonTypes::BinaryData>(result);
-
-      return response->data();
+      std::string bdvID = "0102030405060708";
+      if (!clients->registerBDV(magic_word.toHexStr(), bdvID)) {
+         return {};
+      }
+      return bdvID;
    }
 
    /////////////////////////////////////////////////////////////////////////////
    void goOnline(Clients* clients, const string& id)
    {
-      auto message = make_shared<BDVCommand>();
-      message->set_method(Methods::goOnline);
-      message->set_bdvid(id);
+      capnp::MallocMessageBuilder message(128);
+      auto payload = message.getRoot<Codec::BDV::Request>();
 
-      processCommand(clients, message);
+      auto bdvRequest = payload.initBdv();
+      bdvRequest.setBdvId(id);
+      bdvRequest.setGoOnline();
+
+      processCommand(clients, id, serializeCapnp(message));
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -238,231 +332,241 @@ namespace DBTestUtils
 
    /////////////////////////////////////////////////////////////////////////////
    void registerWallet(Clients* clients, const string& bdvId,
-      const vector<BinaryData>& scrAddrs, const string& wltName)
+      const vector<BinaryData>& scrAddrs, const string& wltName,
+      bool isLockbox, bool waitOnReg)
    {
-      auto message = make_shared<BDVCommand>();
-      message->set_method(Methods::registerWallet);
-      message->set_bdvid(bdvId);
-      message->set_walletid(wltName);
-      message->set_flag(false);
-      auto&& id = CryptoPRNG::generateRandom(5).toHexStr();
-      message->set_hash(id);
+      capnp::MallocMessageBuilder message;
+      auto payload = message.initRoot<Codec::BDV::Request>();
 
-      for (auto& scrAddr : scrAddrs)
-         message->add_bindata(scrAddr.getPtr(), scrAddr.getSize());
+      auto bdvRequest = payload.initBdv();
+      bdvRequest.setBdvId(bdvId);
 
-      processCommand(clients, message);
-      while (1)
-      {
-         auto&& callbackPtr = waitOnSignal(clients, bdvId, NotificationType::refresh);
-         auto& notif = get<0>(callbackPtr)->notification(get<1>(callbackPtr));
-         
-         if (!notif.has_refresh())
+      auto regReq = bdvRequest.initRegisterWallet();
+      regReq.setWalletId(wltName);
+      regReq.setIsNew(false);
+      if (isLockbox) {
+         regReq.setWalletType(Codec::BDV::BdvRequest::WalletType::LOCKBOX);
+      } else {
+         regReq.setWalletType(Codec::BDV::BdvRequest::WalletType::WALLET);
+      }
+
+      regReq.initAddresses(scrAddrs.size());
+      auto capnAddresses = regReq.getAddresses();
+      for (unsigned i=0; i<scrAddrs.size(); i++) {
+         const auto& addr = scrAddrs[i];
+         auto capnAddr = capnAddresses[i];
+         capnAddr.setBody(capnp::Data::Builder(
+            (uint8_t*)addr.getPtr(), addr.getSize()));
+      }
+      processCommand(clients, bdvId, serializeCapnp(message));
+      if (!waitOnReg) {
+         return;
+      }
+
+      BinaryDataRef wltNameRef;
+      wltNameRef.setRef(wltName);
+      while (true) {
+         auto cbReply = waitOnSignal(clients, bdvId,
+            (int)Codec::BDV::Notification::REFRESH);
+
+         auto rawNotifs = get<0>(cbReply);
+         kj::ArrayPtr<const capnp::word> words(
+            reinterpret_cast<const capnp::word*>(rawNotifs.getPtr()),
+            rawNotifs.getSize() / sizeof(capnp::word));
+         capnp::FlatArrayMessageReader reader(words);
+         auto notifs = reader.getRoot<Codec::BDV::Notifications>();
+         auto notifList = notifs.getNotifs();
+         auto capnpNotif = notifList[get<1>(cbReply)];
+         if (!capnpNotif.isRefresh()) {
             continue;
+         }
 
-         auto& refresh = notif.refresh();
-         for (int i = 0; i < refresh.id_size(); i++)
-         {
-            if (refresh.id(i) == id)
+         auto refresh = capnpNotif.getRefresh();
+         auto refreshIds = refresh.getIds();
+         for (auto refreshId : refreshIds) {
+            BinaryData idRef(refreshId.begin(), refreshId.end());
+            if (idRef == wltNameRef) {
                return;
+            }
          }
       }
    }
 
    /////////////////////////////////////////////////////////////////////////////
    void regLockbox(Clients* clients, const string& bdvId,
-      const vector<BinaryData>& scrAddrs, const string& wltName)
+      const vector<BinaryData>& scrAddrs, const string& wltName, bool waitOnReg)
    {
-      auto message = make_shared<BDVCommand>();
-      message->set_method(Methods::registerLockbox);
-      message->set_bdvid(bdvId);
-      message->set_walletid(wltName);
-      message->set_flag(false);
-      auto&& id = CryptoPRNG::generateRandom(5).toHexStr();
-      message->set_hash(id);
-
-      for (auto& scrAddr : scrAddrs)
-         message->add_bindata(scrAddr.getPtr(), scrAddr.getSize());
-
-      processCommand(clients, message);
-      while (1)
-      {
-         auto&& callbackPtr = waitOnSignal(clients, bdvId, NotificationType::refresh);
-         auto& notif = get<0>(callbackPtr)->notification(get<1>(callbackPtr));
-
-         if (!notif.has_refresh())
-            continue;
-
-         auto& refresh = notif.refresh();
-         for (int i = 0; i < refresh.id_size(); i++)
-         {
-            if (refresh.id(i) == id)
-               return;
-         }
-      }
+      registerWallet(clients, bdvId, scrAddrs, wltName, true, waitOnReg);
    }
 
    /////////////////////////////////////////////////////////////////////////////
    vector<uint64_t> getBalanceAndCount(Clients* clients,
       const string& bdvId, const string& walletId, unsigned blockheight)
    {
-      auto message = make_shared<BDVCommand>();
-      message->set_method(Methods::getBalancesAndCount);
-      message->set_bdvid(bdvId);
-      message->set_walletid(walletId);
-      message->set_height(blockheight);
+      capnp::MallocMessageBuilder message;
+      auto payload = message.initRoot<Codec::BDV::Request>();
 
-      auto&& result = processCommand(clients, message);
-      auto response =
-         dynamic_pointer_cast<::Codec_CommonTypes::ManyUnsigned>(result);
+      auto walletRequest = payload.initWallet();
+      walletRequest.setBdvId(bdvId);
+      walletRequest.setWalletId(walletId);
+      walletRequest.setGetBalanceAndCount(blockheight);
 
-      auto&& balance_full = response->value(0);
-      auto&& balance_spen = response->value(1);
-      auto&& balance_unco = response->value(2);
-      auto&& count = response->value(3);
+      auto result = processCommand(clients, bdvId, serializeCapnp(message));
 
-      vector<uint64_t> balanceVec;
-      balanceVec.push_back(balance_full);
-      balanceVec.push_back(balance_spen);
-      balanceVec.push_back(balance_unco);
-      balanceVec.push_back(count);
+      //parse reply
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(result.getPtr()),
+         result.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto reply = reader.getRoot<Codec::BDV::Reply>();
+      auto wltReply = reply.getWallet();
+      auto balances = wltReply.getGetBalanceAndCount();
 
-      return balanceVec;
+      return vector<uint64_t> {
+         balances.getFull(),
+         balances.getSpendable(),
+         balances.getUnconfirmed(),
+         balances.getTxnCount()
+      };
    }
 
    /////////////////////////////////////////////////////////////////////////////
    string getLedgerDelegate(Clients* clients, const string& bdvId)
    {
-      auto message = make_shared<BDVCommand>();
-      message->set_method(Methods::getLedgerDelegateForWallets);
-      message->set_bdvid(bdvId);
+      capnp::MallocMessageBuilder message;
+      auto payload = message.initRoot<Codec::BDV::Request>();
 
-      //check result
-      auto&& result = processCommand(clients, message);
-      auto response =
-         dynamic_pointer_cast<::Codec_CommonTypes::Strings>(result);
-      return response->data(0);
+      auto bdvRequest = payload.initBdv();
+      bdvRequest.setBdvId(bdvId);
+      bdvRequest.setGetLedgerDelegate();
+
+      //parse reply
+      auto result = processCommand(clients, bdvId, serializeCapnp(message));
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(result.getPtr()),
+         result.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto reply = reader.getRoot<Codec::BDV::Reply>();
+      auto bdvReply = reply.getBdv();
+      return bdvReply.getGetLedgerDelegate();
    }
 
    /////////////////////////////////////////////////////////////////////////////
    vector<DBClientClasses::LedgerEntry> getHistoryPage(
-      Clients* clients, const string& bdvId,
+      Clients* clients, const std::string& bdvId,
       const string& delegateId, uint32_t pageId)
    {
-      auto message = make_shared<BDVCommand>();
-      message->set_method(Methods::getHistoryPage);
-      message->set_bdvid(bdvId);
-      message->set_delegateid(delegateId);
-      message->set_pageid(pageId);
+      capnp::MallocMessageBuilder message;
+      auto payload = message.initRoot<Codec::BDV::Request>();
+
+      auto ledgerRequest = payload.initLedger();
+      ledgerRequest.setLedgerId(delegateId);
+      auto pageReq = ledgerRequest.initGetHistoryPages();
+      pageReq.setFirst(pageId);
 
 
-      auto&& result = processCommand(clients, message);
-      auto response =
-         dynamic_pointer_cast<Codec_LedgerEntry::ManyLedgerEntry>(result);
+      auto result = processCommand(clients, bdvId, serializeCapnp(message));
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(result.getPtr()),
+         result.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto reply = reader.getRoot<Codec::BDV::Reply>();
+      auto ledgerReply = reply.getLedger();
+      auto pages = ledgerReply.getGetHistoryPages();
 
-      vector<DBClientClasses::LedgerEntry> levData;
-      for (int i = 0; i < response->values_size(); i++)
-      {
-         DBClientClasses::LedgerEntry led(response, i);
-         levData.push_back(led);
-      }
-
-      return levData;
+      //hard yolo return by index
+      auto theResult = capnToHistoryPages(pages);
+      return theResult[0];
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   tuple<shared_ptr<BDVCallback>, unsigned> waitOnSignal(
-      Clients* clients, const string& bdvId, NotificationType signal)
+   std::tuple<BinaryData, unsigned> waitOnSignal(
+      Clients* clients, const string& bdvId, int signal)
    {
-      shared_ptr<BDVCallback> callbackPtr;
-      unsigned index;
-
-      auto processCallback =
-      [&](shared_ptr<::google::protobuf::Message> cmd)->bool
+      auto processCallback = [signal](const BinaryData& packet)->int
       {
-         auto notifPtr = dynamic_pointer_cast<BDVCallback>(cmd);
-         for (int i = 0; i < notifPtr->notification_size(); i++)
-         {
-            auto& notif = notifPtr->notification(i);
-            if (notif.type() == signal)
-            {
-               callbackPtr = notifPtr;
-               index = i;
-               return true;
+         kj::ArrayPtr<const capnp::word> words(
+            reinterpret_cast<const capnp::word*>(packet.getPtr()),
+            packet.getSize() / sizeof(capnp::word));
+         capnp::FlatArrayMessageReader reader(words);
+         auto notifs = reader.getRoot<Codec::BDV::Notifications>();
+         auto capnNotifs = notifs.getNotifs();
+
+         for (int i = 0; i < capnNotifs.size(); i++) {
+            auto capnNotif = capnNotifs[i];
+            if ((int)capnNotif.which() == signal) {
+               return i;
             }
          }
-
-         return false;
+         return -1;
       };
 
       auto bdv_obj = clients->get(bdvId);
-      auto cbPtr = bdv_obj->cb_.get();
+      auto cbPtr = bdv_obj->notifications_.get();
       auto unittest_cbptr = dynamic_cast<UnitTest_Callback*>(cbPtr);
-      if (unittest_cbptr == nullptr)
+      if (unittest_cbptr == nullptr) {
          throw runtime_error("unexpected callback ptr type");
+      }
 
-      while (true)
-      {
-         auto&& notifPtr = unittest_cbptr->getNotification();
-         if (processCallback(notifPtr))
-            return make_tuple(callbackPtr, index);
+      while (true) {
+         auto rawNotif = std::move(unittest_cbptr->getNotification());
+         auto index = processCallback(rawNotif);
+         if (index > -1) {
+            return make_tuple(rawNotif, index);
+         }
       }
    }
 
    /////////////////////////////////////////////////////////////////////////////
    void waitOnBDMReady(Clients* clients, const string& bdvId)
    {
-      waitOnSignal(clients, bdvId, NotificationType::ready);
+      waitOnSignal(clients, bdvId, (int)Codec::BDV::Notification::READY);
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   tuple<shared_ptr<BDVCallback>, unsigned> waitOnNewBlockSignal(
+   std::tuple<BinaryData, unsigned> waitOnNewBlockSignal(
       Clients* clients, const string& bdvId)
    {
-      return waitOnSignal(clients, bdvId, NotificationType::newblock);
+      return waitOnSignal(clients, bdvId, (int)Codec::BDV::Notification::NEW_BLOCK);
    }
 
    /////////////////////////////////////////////////////////////////////////////
    pair<vector<DBClientClasses::LedgerEntry>, set<BinaryData>> waitOnNewZcSignal(
       Clients* clients, const string& bdvId)
    {
-      auto&& result = waitOnSignal(
-         clients, bdvId, NotificationType::zc);
+      auto result = waitOnSignal(clients, bdvId,
+         (int)Codec::BDV::Notification::ZC);
 
-      auto& callbackPtr = get<0>(result);
-      auto& index = get<1>(result);
-      auto& notif = callbackPtr->notification(index);
+      const auto& packet = get<0>(result);
+      const auto& index = get<1>(result);
 
-      if (!notif.has_ledgers())
-      {
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(packet.getPtr()),
+         packet.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto notifs = reader.getRoot<Codec::BDV::Notifications>();
+      auto notifList = notifs.getNotifs();
+
+      auto zcNotif = notifList[index];
+      if (zcNotif.which() != Codec::BDV::Notification::ZC) {
          cout << "invalid result vector size in waitOnNewZcSignal";
          throw runtime_error("");
       }
 
-      auto lev = notif.ledgers();
+      auto capnPage = zcNotif.getZc();
+      auto capnLedgers = capnPage.getLedgers();
 
       pair<vector<DBClientClasses::LedgerEntry>, set<BinaryData>> levData;
-      for (int i = 0; i < lev.values_size(); i++)
-      {
-         DBClientClasses::LedgerEntry led(callbackPtr, index, i);
-         levData.first.push_back(led);
-      }
+      levData.first = capnToLedgers(capnLedgers);
 
-      if (callbackPtr->notification_size() >= (int)index + 2)
-      {
-         auto& invalidated_notif = callbackPtr->notification(index + 1);
-         if (invalidated_notif.has_ids())
-         {
-            auto ids = invalidated_notif.ids();
-            for (int i = 0; i < ids.value_size(); i++)
-            {
-               auto& id_str = ids.value(i).data();
-               BinaryData id_bd((uint8_t*)id_str.c_str(), id_str.size());
-               levData.second.insert(id_bd);
-            }
+      if (notifList.size() >= (int)index + 2) {
+         auto invalidatedNotif = notifList[index + 1];
+         auto invalidatedZCs = invalidatedNotif.getInvalidatedZc();
+         for (auto zcHash : invalidatedZCs) {
+            BinaryDataRef hashRef(zcHash.begin(), zcHash.end());
+            levData.second.insert(hashRef);
          }
       }
-
       return levData;
    }
 
@@ -470,32 +574,33 @@ namespace DBTestUtils
    void waitOnWalletRefresh(Clients* clients, const string& bdvId,
       const BinaryData& wltId)
    {
-      while (1)
-      {
-         auto&& result = waitOnSignal(
-            clients, bdvId, NotificationType::refresh);
-
-         if (wltId.getSize() == 0)
+      while (true) {
+         auto result = waitOnSignal(clients, bdvId,
+            (int)Codec::BDV::Notification::REFRESH);
+         if (wltId.empty()) {
             return;
+         }
 
-         auto& callbackPtr = get<0>(result);
-         auto& index = get<1>(result);
-         auto& notif = callbackPtr->notification(index);
-         
-         if (!notif.has_refresh())
-         {
+         auto rawNotifs = get<0>(result);
+         kj::ArrayPtr<const capnp::word> words(
+            reinterpret_cast<const capnp::word*>(rawNotifs.getPtr()),
+            rawNotifs.getSize() / sizeof(capnp::word));
+         capnp::FlatArrayMessageReader reader(words);
+         auto notifs = reader.getRoot<Codec::BDV::Notifications>();
+         auto notifList = notifs.getNotifs();
+         auto notif = notifList[get<1>(result)];
+         if (notif.which() != Codec::BDV::Notification::REFRESH) {
             cout << "invalid result vector size in waitOnWalletRefresh";
             throw runtime_error("");
          }
 
-         auto& refresh = notif.refresh();
-         for (int i = 0; i < refresh.id_size(); i++)
-         {
-            auto& id = notif.refresh().id(i);
-            BinaryDataRef bdr;
-            bdr.setRef(id);
-            if (bdr == wltId)
+         auto refresh = notif.getRefresh();
+         auto ids = refresh.getIds();
+         for (auto id : ids) {
+            BinaryDataRef idRef(id.begin(), id.end());
+            if (idRef == wltId) {
                return;
+            }
          }
       }
    }
@@ -592,58 +697,63 @@ namespace DBTestUtils
    Tx getTxByHash(Clients* clients, const string bdvId,
       const BinaryData& txHash)
    {
-      auto message = make_shared<BDVCommand>();
-      message->set_method(Methods::getTxByHash);
-      message->set_bdvid(bdvId);
-      message->set_hash(txHash.getPtr(), txHash.getSize());
+      capnp::MallocMessageBuilder message;
+      auto payload = message.initRoot<Codec::BDV::Request>();
 
-      auto&& result = processCommand(clients, message);
-      auto response =
-         dynamic_pointer_cast<::Codec_CommonTypes::TxWithMetaData>(result);
-      if (response == nullptr)
-         throw runtime_error("getTxByHash failed");
-      
-      auto& txstr = response->rawtx();
-      BinaryDataRef txbdr; txbdr.setRef(txstr);
-      Tx txobj(txbdr);
-      txobj.setChainedZC(response->ischainedzc());
-      txobj.setRBF(response->isrbf());
+      auto bdvRequest = payload.initBdv();
+      bdvRequest.setBdvId(bdvId);
+      auto hashReq = bdvRequest.initGetTxByHash(1);
+      hashReq.set(0, capnp::Data::Builder(
+         (uint8_t*)txHash.getPtr(), txHash.getSize()));
+
+      auto result = processCommand(clients, bdvId, serializeCapnp(message));
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(result.getPtr()),
+         result.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto reply = reader.getRoot<Codec::BDV::Reply>();
+      auto bdvReply = reply.getBdv();
+      auto capnTxs = bdvReply.getGetTxByHash();
+      auto capnTx = capnTxs[0];
+      auto body = capnTx.getBody();
+      BinaryDataRef rawTx(body.begin(), body.end());
+
+      Tx txobj(rawTx);
+      txobj.setTxHeight(capnTx.getHeight());
+      txobj.setTxIndex(capnTx.getIndex());
+      txobj.setChainedZC(capnTx.getIsChainZc());
+      txobj.setRBF(capnTx.getIsRbf());
       return txobj;
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   std::vector<UTXO> getUtxoForAddress(Clients* clients, const string bdvId, 
+   std::vector<UTXO> getUtxoForAddress(Clients* clients, const string bdvId,
       const BinaryData& scrAddr, bool withZc)
    {
-      auto message = make_shared<BDVCommand>();
-      message->set_method(Methods::getUTXOsForAddress);
-      message->set_bdvid(bdvId);
-      message->set_scraddr(scrAddr.getCharPtr(), scrAddr.getSize());
-      message->set_flag(withZc);
+      //create capnp request
+      capnp::MallocMessageBuilder message;
+      auto payload = message.initRoot<Codec::BDV::Request>();
 
-      auto&& result = processCommand(clients, message);
-      auto response =
-         dynamic_pointer_cast<::Codec_Utxo::ManyUtxo>(result);
-      if (response == nullptr)
-         throw runtime_error("getUtxoForAddress failed");
-      
-      vector<UTXO> utxovec(response->value_size());
-      for (int i = 0; i < response->value_size(); i++)
-      {
-         auto& proto_utxo = response->value(i);
-         auto& utxo = utxovec[i];
+      auto addrReq = payload.initAddress();
+      addrReq.setBdvId(bdvId);
+      auto capnAddr = addrReq.getAddress();
+      capnAddr.setBody(capnp::Data::Builder(
+         (uint8_t*)scrAddr.getPtr(), scrAddr.getSize()
+      ));
+      auto outputReq = addrReq.initGetOutputs();
+      outputReq.setTargetValue(UINT64_MAX);
+      outputReq.setZc(withZc);
 
-         utxo.value_ = proto_utxo.value();
-         utxo.script_.copyFrom(proto_utxo.script());
-         utxo.txHeight_ = proto_utxo.txheight();
-         utxo.txIndex_ = proto_utxo.txindex();
-         utxo.txOutIndex_ = proto_utxo.txoutindex();
-         utxo.txHash_.copyFrom(proto_utxo.txhash());
-      }
-
-      return utxovec;
+      auto result = processCommand(clients, bdvId, serializeCapnp(message));
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(result.getPtr()),
+         result.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto reply = reader.getRoot<Codec::BDV::Reply>();
+      auto bdvReply = reply.getAddress();
+      auto utxoReply = bdvReply.getGetOutputs();
+      return capnToUtxoVec(utxoReply);
    }
-
 
    /////////////////////////////////////////////////////////////////////////////
    void addTxioToSsh(StoredScriptHistory& ssh, 
@@ -742,13 +852,16 @@ namespace DBTestUtils
    void updateWalletsLedgerFilter(
       Clients* clients, const string& bdvId, const vector<string>& idVec)
    {
-      auto message = make_shared<BDVCommand>();
-      message->set_method(Methods::updateWalletsLedgerFilter);
-      message->set_bdvid(bdvId);
-      for (auto id : idVec)
-         message->add_bindata(id);
+      capnp::MallocMessageBuilder message;
+      auto payload = message.initRoot<Codec::BDV::Request>();
 
-      processCommand(clients, message);
+      auto bdvRequest = payload.initBdv();
+      bdvRequest.setBdvId(bdvId);
+      auto walletIds = bdvRequest.initUpdateWalletsLedgerFilter(idVec.size());
+      for (unsigned i=0; i<idVec.size(); i++) {
+         walletIds.set(i, idVec[i]);
+      }
+      processCommand(clients, bdvId, serializeCapnp(message));
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -769,18 +882,16 @@ namespace DBTestUtils
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   shared_ptr<::google::protobuf::Message> processCommand(
-      Clients* clients, shared_ptr<::google::protobuf::Message> msg)
+   BinaryData processCommand(Clients* clients, const std::string& bdvId,
+      BinaryData msg)
    {
-      auto len = msg->ByteSizeLong();
-      vector<uint8_t> buffer(len);
-      msg->SerializeToArray(&buffer[0], len);
-      auto&& bdVec = WebSocketMessageCodec::serialize(
-         buffer, nullptr,
+      auto bdVec = WebSocketMessageCodec::serialize(
+         msg, nullptr,
          ArmoryAEAD::BIP151_PayloadType::FragmentHeader, commandCtr_++);
 
-      if (bdVec.size() > 1)
+      if (bdVec.size() > 1) {
          LOGWARN << "large message in unit tests";
+      }
 
       auto payload = make_shared<BDV_Payload>();
       payload->messageID_ = 0;
@@ -793,9 +904,15 @@ namespace DBTestUtils
       BinaryData zero;
       zero.resize(8);
       memset(zero.getPtr(), 0, 8);
-      payload->bdvPtr_ = clients->get(zero.toHexStr());
+      payload->bdvPtr_ = clients->get(bdvId);
 
-      return clients->processCommand(payload);
+      auto reply = clients->processCommand(payload);
+      if (reply == nullptr) {
+         return {};
+      }
+      std::vector<uint8_t> flat;
+      reply->serialize(flat);
+      return BinaryData(flat.data(), flat.size());
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -809,7 +926,7 @@ namespace DBTestUtils
       {
          prom->set_value(msg.get());
       };
-      bdv->getLedgerDelegateForWallets(getDelegate);
+      bdv->getLedgerDelegate(getDelegate);
       return fut.get();
    }
 
@@ -825,7 +942,9 @@ namespace DBTestUtils
       {
          prom->set_value(msg.get());
       };
-      bdv->getLedgerDelegateForScrAddr(walletId, scrAddr, getDelegate);
+      auto walletObj = bdv->getWalletObj(walletId);
+      auto addrObj = walletObj.getScrAddrObj(scrAddr, 0, 0, 0, 0);
+      addrObj.getLedgerDelegate(getDelegate);
       return fut.get();
    }
 
@@ -833,15 +952,15 @@ namespace DBTestUtils
    vector<DBClientClasses::LedgerEntry> getHistoryPage(
       AsyncClient::LedgerDelegate& del, uint32_t id)
    {
-      auto prom = make_shared<promise<vector<DBClientClasses::LedgerEntry>>>();
+      auto prom = make_shared<promise<vector<DBClientClasses::HistoryPage>>>();
       auto fut = prom->get_future();
-      auto lbd = [prom](ReturnMessage<vector<DBClientClasses::LedgerEntry>> msg)
+      auto lbd = [prom](ReturnMessage<vector<DBClientClasses::HistoryPage>> msg)
       {
          prom->set_value(msg.get());
       };
-      del.getHistoryPage(id, lbd);
-
-      return fut.get();
+      del.getHistoryPages(id, 0, lbd);
+      auto result = fut.get();
+      return result[0];
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -860,17 +979,20 @@ namespace DBTestUtils
 
    /////////////////////////////////////////////////////////////////////////////
    map<BinaryData, vector<uint64_t>> getAddrBalancesFromDB(
-      AsyncClient::BtcWallet& wlt)
+      shared_ptr<AsyncClient::BlockDataViewer> bdv, const std::string& wltId)
    {
-      auto prom = make_shared<promise<map<BinaryData, vector<uint64_t>>>>();
+      auto prom = make_shared<promise<map<std::string, AsyncClient::CombinedBalances>>>();
       auto fut = prom->get_future();
-      auto lbd = [prom](ReturnMessage<map<BinaryData, vector<uint64_t>>> msg)
+      auto lbd = [prom](ReturnMessage<map<std::string, AsyncClient::CombinedBalances>> msg)
       {
          prom->set_value(msg.get());
       };
 
-      wlt.getAddrBalancesFromDB(lbd);
-      return fut.get();
+      bdv->getCombinedBalances(lbd);
+      auto combinedBalances = fut.get();
+
+      auto wltData = combinedBalances.at(wltId);
+      return wltData.addressBalances;
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -892,14 +1014,15 @@ namespace DBTestUtils
    AsyncClient::TxResult getTxByHash(
       shared_ptr<AsyncClient::BlockDataViewer> bdv, const BinaryData& hash)
    {
-      auto prom = make_shared<promise<AsyncClient::TxResult>>();
+      auto prom = make_shared<promise<AsyncClient::TxBatchResult>>();
       auto fut = prom->get_future();
-      auto lbd = [prom](ReturnMessage<AsyncClient::TxResult> msg)->void
+      auto lbd = [prom](ReturnMessage<AsyncClient::TxBatchResult> msg)->void
       {
          prom->set_value(msg.get());
       };
-      bdv->getTxByHash(hash, lbd);
-      return fut.get();
+      bdv->getTxsByHash({hash}, lbd);
+      auto result = fut.get();
+      return result.at(hash);
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -912,7 +1035,7 @@ namespace DBTestUtils
       {
          prom->set_value(msg.get());
       };
-      wlt.getSpendableTxOutListForValue(value, lbd);
+      wlt.getUTXOs(value, false, false, lbd);
 
       return fut.get();
    }
@@ -926,7 +1049,7 @@ namespace DBTestUtils
       {
          prom->set_value(msg.get());
       };
-      wlt.getSpendableZCList(lbd);
+      wlt.getUTXOs(0, true, false, lbd);
 
       return fut.get();
    }

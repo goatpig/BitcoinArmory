@@ -1,22 +1,23 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2011-2021, Armory Technologies, Inc.                        //
+//  Copyright (C) 2011-2016, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-17, goatpig                                            //
+//  Copyright (C) 2016-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 #include <chrono>
+#include <filesystem>
 #include "TestUtils.h"
 #include "hkdf.h"
 #include "BlockchainDatabase/TxHashFilters.h"
 
 using namespace std;
-using namespace Armory::Signer;
+using namespace Armory::Signing;
 using namespace Armory::Config;
 using namespace Armory::Wallets::Encryption;
 
@@ -512,8 +513,6 @@ TEST_F(BIP150_151Test, checkData_151_Only)
 // still functional afterwards.
 TEST_F(BIP150_151Test, checkData_150_151)
 {
-   // Get test files from the current (gtest) directory. C++17 would be nice
-   // since filesystem::current_path() has been added. Alas, for now....
    // Test IPv4, and then IPv6 later.
    // Ideally, the code would be smart enough to support two separate contexts
    // so that two separate key sets can be tested. There's no real reason to
@@ -521,25 +520,25 @@ TEST_F(BIP150_151Test, checkData_150_151)
    // now, just cheat and have two "separate" systems with the same input files.
 
    //grab serv private key from peer files
-   auto servFilePath = baseDir_;
-   servFilePath.append("/bip150v0_srv1/identity-key-ipv4");
+   auto servFilePath = std::filesystem::current_path();
+   servFilePath.append("input_files/bip150v0_srv1/identity-key-ipv4");
    fstream serv_isf(servFilePath);
    char prvHex[65];
    serv_isf.getline(prvHex, 65);
    SecureBinaryData privServ(READHEX(prvHex));
 
    //grab client private key from peer files
-   auto cliFilePath = baseDir_;
-   cliFilePath.append("/bip150v0_cli1/identity-key-ipv4");
+   auto cliFilePath = std::filesystem::current_path();
+   cliFilePath.append("input_files/bip150v0_cli1/identity-key-ipv4");
    fstream cli_isf(cliFilePath);
    char cliHex[65];
    cli_isf.getline(cliHex, 65);
    SecureBinaryData privCli(READHEX(cliHex));
-   
+
    //compute public keys
    auto&& pubServ = CryptoECDSA().ComputePublicKey(privServ);
    pubServ = CryptoECDSA().CompressPoint(pubServ);
-   
+
    auto&& pubCli = CryptoECDSA().ComputePublicKey(privCli);
    pubCli = CryptoECDSA().CompressPoint(pubCli);
 
@@ -777,8 +776,6 @@ TEST_F(BIP150_151Test, checkData_150_151)
 
 TEST_F(BIP150_151Test, checkData_150_151_1Way)
 {
-   // Get test files from the current (gtest) directory. C++17 would be nice
-   // since filesystem::current_path() has been added. Alas, for now....
    // Test IPv4, and then IPv6 later.
    // Ideally, the code would be smart enough to support two separate contexts
    // so that two separate key sets can be tested. There's no real reason to
@@ -786,16 +783,16 @@ TEST_F(BIP150_151Test, checkData_150_151_1Way)
    // now, just cheat and have two "separate" systems with the same input files.
 
    //grab serv private key from peer files
-   auto servFilePath = baseDir_;
-   servFilePath.append("/bip150v0_srv1/identity-key-ipv4");
+   auto servFilePath = std::filesystem::current_path();
+   servFilePath.append("input_files/bip150v0_srv1/identity-key-ipv4");
    fstream serv_isf(servFilePath);
    char prvHex[65];
    serv_isf.getline(prvHex, 65);
    SecureBinaryData privServ(READHEX(prvHex));
 
    //grab client private key from peer files
-   auto cliFilePath = baseDir_;
-   cliFilePath.append("/bip150v0_cli1/identity-key-ipv4");
+   auto cliFilePath = std::filesystem::current_path();
+   cliFilePath.append("input_files/bip150v0_cli1/identity-key-ipv4");
    fstream cli_isf(cliFilePath);
    char cliHex[65];
    cli_isf.getline(cliHex, 65);
@@ -1026,8 +1023,6 @@ TEST_F(BIP150_151Test, checkData_150_151_1Way)
 
 TEST_F(BIP150_151Test, checkData_150_151_privateClientToPublicServer)
 {
-   // Get test files from the current (gtest) directory. C++17 would be nice
-   // since filesystem::current_path() has been added. Alas, for now....
    // Test IPv4, and then IPv6 later.
    // Ideally, the code would be smart enough to support two separate contexts
    // so that two separate key sets can be tested. There's no real reason to
@@ -1035,16 +1030,16 @@ TEST_F(BIP150_151Test, checkData_150_151_privateClientToPublicServer)
    // now, just cheat and have two "separate" systems with the same input files.
 
    //grab serv private key from peer files
-   auto servFilePath = baseDir_;
-   servFilePath.append("/bip150v0_srv1/identity-key-ipv4");
+   auto servFilePath = std::filesystem::current_path();
+   servFilePath.append("input_files/bip150v0_srv1/identity-key-ipv4");
    fstream serv_isf(servFilePath);
    char prvHex[65];
    serv_isf.getline(prvHex, 65);
    SecureBinaryData privServ(READHEX(prvHex));
 
    //grab client private key from peer files
-   auto cliFilePath = baseDir_;
-   cliFilePath.append("/bip150v0_cli1/identity-key-ipv4");
+   auto cliFilePath = std::filesystem::current_path();
+   cliFilePath.append("input_files/bip150v0_cli1/identity-key-ipv4");
    fstream cli_isf(cliFilePath);
    char cliHex[65];
    cli_isf.getline(cliHex, 65);
@@ -1244,8 +1239,6 @@ TEST_F(BIP150_151Test, checkData_150_151_privateClientToPublicServer)
 
 TEST_F(BIP150_151Test, checkData_150_151_publicClientToPrivateServer)
 {
-   // Get test files from the current (gtest) directory. C++17 would be nice
-   // since filesystem::current_path() has been added. Alas, for now....
    // Test IPv4, and then IPv6 later.
    // Ideally, the code would be smart enough to support two separate contexts
    // so that two separate key sets can be tested. There's no real reason to
@@ -1253,16 +1246,16 @@ TEST_F(BIP150_151Test, checkData_150_151_publicClientToPrivateServer)
    // now, just cheat and have two "separate" systems with the same input files.
 
    //grab serv private key from peer files
-   auto servFilePath = baseDir_;
-   servFilePath.append("/bip150v0_srv1/identity-key-ipv4");
+   auto servFilePath = std::filesystem::current_path();
+   servFilePath.append("input_files/bip150v0_srv1/identity-key-ipv4");
    fstream serv_isf(servFilePath);
    char prvHex[65];
    serv_isf.getline(prvHex, 65);
    SecureBinaryData privServ(READHEX(prvHex));
 
    //grab client private key from peer files
-   auto cliFilePath = baseDir_;
-   cliFilePath.append("/bip150v0_cli1/identity-key-ipv4");
+   auto cliFilePath = std::filesystem::current_path();
+   cliFilePath.append("input_files/bip150v0_cli1/identity-key-ipv4");
    fstream cli_isf(cliFilePath);
    char cliHex[65];
    cli_isf.getline(cliHex, 65);
@@ -2792,10 +2785,10 @@ class BtcUtilsTest : public ::testing::Test
 protected:
    virtual void SetUp(void) 
    {
-      homedir_ = string("./fakehomedir");
-      DBUtils::removeDirectory(homedir_);
-      mkdir(homedir_);
-         
+      homedir_ = std::filesystem::path("./fakehomedir");
+      FileUtils::removeDirectory(homedir_);
+      std::filesystem::create_directory(homedir_);
+
       Armory::Config::parseArgs({
          "--datadir=./fakehomedir",
          "--offline" },
@@ -2823,7 +2816,7 @@ protected:
 
    virtual void TearDown(void)
    {
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
       Armory::Config::reset();
    }
 
@@ -2837,7 +2830,7 @@ protected:
    BinaryData prevHashCB_;
    BinaryData prevHashReg_;
 
-   string homedir_;
+   std::filesystem::path homedir_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -5342,10 +5335,9 @@ class LMDBTest : public ::testing::Test
 protected:
    virtual void SetUp(void) 
    {
-      homedir_ = string("./fakehomedir");
-      DBUtils::removeDirectory(homedir_);
-      mkdir(homedir_);
-      mkdir(homedir_ + "/databases");
+      homedir_ = std::filesystem::path("./fakehomedir");
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::createDirectory(homedir_ / "databases");
 
       zeros_ = READHEX("00000000");
          
@@ -5369,7 +5361,7 @@ protected:
       headHashBE_ = READHEX(
          "000000000000479de7df494b25c838f0e102d696e08ad2bb74066d7a7ae69511");
 
-      rawTx0_ = READHEX( 
+      rawTx0_ = READHEX(
          "01000000016290dce984203b6a5032e543e9e272d8bce934c7de4d15fa0fe44d"
          "d49ae4ece9010000008b48304502204f2fa458d439f957308bca264689aa175e"
          "3b7c5f78a901cb450ebd20936b2c500221008ea3883a5b80128e55c9c6070aa6"
@@ -5379,7 +5371,7 @@ protected:
          "00001976a914c1b4695d53b6ee57a28647ce63e45665df6762c288ac80d1f008"
          "000000001976a9140e0aec36fe2545fb31a41164fb6954adcd96b34288ac0000"
          "0000");
-      rawTx1_ = READHEX( 
+      rawTx1_ = READHEX(
          "0100000001f658dbc28e703d86ee17c9a2d3b167a8508b082fa0745f55be5144"
          "a4369873aa010000008c49304602210041e1186ca9a41fdfe1569d5d807ca7ff"
          "6c5ffd19d2ad1be42f7f2a20cdc8f1cc0221003366b5d64fe81e53910e156914"
@@ -5553,7 +5545,7 @@ protected:
       delete iface_;
       iface_ = NULL;
 
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
       Armory::Config::reset();
 
       CLEANUP_ALL_TIMERS();
@@ -5673,7 +5665,7 @@ protected:
    BinaryData magic_;
    BinaryData zeros_;
 
-   string homedir_;
+   std::filesystem::path homedir_;
 
    BinaryData rawHead_;
    BinaryData headHashLE_;
@@ -6146,10 +6138,10 @@ class TestTxHashFilters : public ::testing::Test
 protected:
    virtual void SetUp(void)
    {
-      homedir_ = string("./fakehomedir");
-      DBUtils::removeDirectory(homedir_);
-      mkdir(homedir_);
-      mkdir(homedir_ + "/databases");
+      homedir_ = std::filesystem::path("./fakehomedir");
+      FileUtils::removeDirectory(homedir_);
+      std::filesystem::create_directory(homedir_);
+      std::filesystem::create_directory(homedir_ / "databases");
 
       Armory::Config::parseArgs({
          "--datadir=./fakehomedir",
@@ -6165,7 +6157,7 @@ protected:
       delete iface_;
       iface_ = NULL;
 
-      DBUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(homedir_);
       Armory::Config::reset();
 
       CLEANUP_ALL_TIMERS();
@@ -6178,7 +6170,7 @@ protected:
    }
 
    LMDBBlockDatabase* iface_;
-   string homedir_;
+   std::filesystem::path homedir_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -6731,13 +6723,11 @@ GTEST_API_ int main(int argc, char **argv)
 {
    #ifdef _MSC_VER
       _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
-   
       WSADATA wsaData;
       WORD wVersion = MAKEWORD(2, 0);
       WSAStartup(wVersion, &wsaData);
    #endif
 
-   GOOGLE_PROTOBUF_VERIFY_VERSION;
    srand(time(0));
    std::cout << "Running main() from gtest_main.cc\n";
 
@@ -6752,7 +6742,6 @@ GTEST_API_ int main(int argc, char **argv)
 
    FLUSHLOG();
    CLEANUPLOG();
-   google::protobuf::ShutdownProtobufLibrary();
 
    return exitCode;
 }

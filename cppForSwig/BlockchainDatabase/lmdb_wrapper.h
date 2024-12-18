@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2021, goatpig                                          //
+//  Copyright (C) 2016-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -16,6 +16,8 @@
 
 #include <list>
 #include <vector>
+#include <filesystem>
+
 #include "log.h"
 #include "BinaryData.h"
 #include "BtcUtils.h"
@@ -114,7 +116,7 @@ class GlobalDBUtilities;
 
 class StoredHeader;
 class StoredTx;
-class StoredTxOut;
+struct StoredTxOut;
 class StoredScriptHistory;
 
 enum ShardFilterType
@@ -228,7 +230,7 @@ public:
    {}
 
    LMDBEnv::Transaction beginTransaction(LMDB::Mode mode);
-   void open(const std::string& path, const std::string& dbName);
+   void open(const std::filesystem::path& path, const std::string& dbName);
    void close(void);
 
    BinaryDataRef getValue(BinaryDataRef keyWithPrefix) const;
@@ -274,7 +276,7 @@ protected:
    const DB_SELECT dbSelect_;
 
 public:
-   static std::string baseDir_;
+   static std::filesystem::path baseDir_;
    static BinaryData magicBytes_;
 
 public:
@@ -286,8 +288,8 @@ public:
    virtual ~DatabaseContainer(void) = 0;
 
    //static
-   static std::string getDbPath(DB_SELECT);
-   static std::string getDbPath(const std::string&);
+   static std::filesystem::path getDbPath(DB_SELECT);
+   static std::filesystem::path getDbPath(const std::string&);
    static std::string getDbName(DB_SELECT);
 
    //virtual
@@ -428,11 +430,11 @@ private:
    }
    
 public:
-   LMDBBlockDatabase(std::shared_ptr<Blockchain>, const std::string&);
+   LMDBBlockDatabase(std::shared_ptr<Blockchain>, const std::filesystem::path&);
    ~LMDBBlockDatabase(void);
 
    /////////////////////////////////////////////////////////////////////////////
-   void openDatabases(const std::string &basedir);
+   void openDatabases(const std::filesystem::path &basedir);
 
    /////////////////////////////////////////////////////////////////////////////
    void closeDatabases();
@@ -446,7 +448,7 @@ public:
       return dbObj->beginTransaction(mode);
    }
 
-   ARMORY_DB_TYPE getDbType(void) const 
+   ARMORY_DB_TYPE getDbType(void) const
    { 
       return Armory::Config::DBSettings::getDbType(); 
    }
@@ -687,8 +689,8 @@ public:
    ARMORY_DB_TYPE armoryDbType(void) const
    { return Armory::Config::DBSettings::getDbType(); }
 
-   const std::string& baseDir(void) const { return DatabaseContainer::baseDir_; }
-   void setBlkFolder(const std::string& path) { blkFolder_ = path; }
+   const std::filesystem::path& baseDir(void) const { return DatabaseContainer::baseDir_; }
+   void setBlkFolder(const std::filesystem::path& path) { blkFolder_ = path; }
 
    void closeDB(DB_SELECT db);
    StoredDBInfo openDB(DB_SELECT);
@@ -731,9 +733,9 @@ private:
    // In this case, a address is any TxOut script, which is usually
    // just a 25-byte script.  But this generically captures all types
    // of addresses including pubkey-only, P2SH, 
-   std::map<BinaryData, StoredScriptHistory>   registeredSSHs_;
-   const std::shared_ptr<Blockchain> blockchainPtr_;   
-   std::string blkFolder_;
+   std::map<BinaryData, StoredScriptHistory> registeredSSHs_;
+   const std::shared_ptr<Blockchain> blockchainPtr_;
+   std::filesystem::path blkFolder_;
    const static std::set<DB_SELECT> supernodeDBs_;
 
    Armory::Threading::TransactionalMap<unsigned, unsigned> heightToBatchId_;

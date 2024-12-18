@@ -116,7 +116,8 @@ class ReviewOfflineTxFrame(ArmoryDialog):
       self.update()
 
    def update(self):
-      self.txtUSTX.setText(self.ustx.serialize(self.signerTypeSelector.selectedType()))
+      self.txtUSTX.setText(
+         self.ustx.toTxSigCollect(self.signerTypeSelector.selectedType()))
 
    def setWallet(self, wlt):
       self.wlt = wlt

@@ -31,12 +31,9 @@
 #include "TxEvalState.h"
 #include "ResolverFeed.h"
 
-#include "protobuf/Signer.pb.h"
-
-
 namespace Armory
 {
-   namespace Signer
+   namespace Signing
    {
       class TransactionStub;
       class SigHashData;
@@ -938,24 +935,23 @@ namespace Armory
       };
 
       //////////////////////////////////////////////////////////////////////////
-      enum StackItemType
+      enum class StackItemType : int
       {
-         StackItemType_PushData,
-         StackItemType_OpCode,
-         StackItemType_Sig,
-         StackItemType_MultiSig,
-         StackItemType_SerializedScript
+         PushData = 1,
+         OpCode,
+         Sig,
+         MultiSig,
+         SerializedScript
       };
 
       ////
-      struct StackItem
+      class StackItem
       {
       protected:
+         const StackItemType type_;
          const unsigned id_;
 
       public:
-         const StackItemType type_;
-
          StackItem(StackItemType type, unsigned id) :
             id_(id), type_(type)
          {}
@@ -963,12 +959,9 @@ namespace Armory
          virtual ~StackItem(void) = 0;
          virtual bool isSame(const StackItem* obj) const = 0;
          unsigned getId(void) const { return id_; }
+         StackItemType type(void) const;
 
          virtual bool isValid(void) const { return true; }
-         virtual void serialize(Codec_SignerState::StackEntryState&) const = 0;
-
-         static std::shared_ptr<StackItem> deserialize(
-            const Codec_SignerState::StackEntryState&);
       };
 
       ////
@@ -977,11 +970,10 @@ namespace Armory
          const BinaryData data_;
 
          StackItem_PushData(unsigned id, BinaryData&& data) :
-            StackItem(StackItemType_PushData, id), data_(std::move(data))
+            StackItem(StackItemType::PushData, id), data_(std::move(data))
          {}
 
          bool isSame(const StackItem* obj) const override;
-         void serialize(Codec_SignerState::StackEntryState&) const override;
          bool isValid(void) const override { return !data_.empty(); }
       };
 
@@ -993,21 +985,20 @@ namespace Armory
          SecureBinaryData sig_;
 
          StackItem_Sig(unsigned id, BinaryData& pubkey, BinaryData& script) :
-            StackItem(StackItemType_Sig, id), 
-            pubkey_(std::move(pubkey)), 
+            StackItem(StackItemType::Sig, id),
+            pubkey_(std::move(pubkey)),
             script_(std::move(script))
          {}
 
          bool isSame(const StackItem* obj) const override; 
          void merge(const StackItem* obj);
-         void serialize(Codec_SignerState::StackEntryState&) const override;
          void injectSig(SecureBinaryData& sig)
          {
             sig_ = std::move(sig);
          }
-         bool isValid(void) const override 
+         bool isValid(void) const override
          { 
-            return !sig_.empty(); 
+            return !sig_.empty();
          }
 
       };
@@ -1032,35 +1023,36 @@ namespace Armory
          void merge(const StackItem* obj);
 
          bool isValid(void) const override { return sigs_.size() == m_; }
-         void serialize(Codec_SignerState::StackEntryState&) const override;
       };
 
       ////
       struct StackItem_OpCode : public StackItem
       {
+         friend class Serializer;
+
          const uint8_t opcode_;
 
          StackItem_OpCode(unsigned id, uint8_t opcode) :
-            StackItem(StackItemType_OpCode, id), 
+            StackItem(StackItemType::OpCode, id),
             opcode_(opcode)
          {}
 
          bool isSame(const StackItem* obj) const override;
-         void serialize(Codec_SignerState::StackEntryState&) const override;
       };
 
       ////
       struct StackItem_SerializedScript : public StackItem
       {
+         friend class Serializer;
+
          const BinaryData data_;
 
          StackItem_SerializedScript(unsigned id, BinaryData&& data) :
-            StackItem(StackItemType_SerializedScript, id), 
+            StackItem(StackItemType::SerializedScript, id),
             data_(std::move(data))
          {}
 
          bool isSame(const StackItem* obj) const;
-         void serialize(Codec_SignerState::StackEntryState&) const;
       };
 
       //////////////////////////////////////////////////////////////////////////

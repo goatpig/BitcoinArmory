@@ -1,0 +1,12 @@
+SET (HKDF_SOURCES
+    hkdf.c
+)
+
+ADD_LIBRARY (hkdf
+    ${HKDF_SOURCES}
+)
+
+TARGET_INCLUDE_DIRECTORIES (hkdf
+    PUBLIC .
+    PRIVAET ${LIBBTC_INCLUDE_DIR}/include
+)

@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2017, goatpig                                               //
+//  Copyright (C) 2017-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -11,12 +11,6 @@
 #include "DBUtils.h"
 #include "ArmoryConfig.h"
 #include "SocketWritePayload.h"
-
-#ifdef _WIN32
-#include "leveldb_windows_port\win32_posix\dirent_win32.h"
-#else
-#include "dirent.h"
-#endif
 
 using namespace std;
 using namespace CoreRPC;
@@ -34,7 +28,6 @@ NodeRPCInterface::~NodeRPCInterface()
 const NodeChainStatus& NodeRPCInterface::getChainStatus(void) const
 {
    ReentrantLock lock(this);
-   
    return nodeChainStatus_;
 }
 
@@ -172,42 +165,32 @@ RpcState NodeRPC::testConnection()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-string NodeRPC::getDatadir()
+std::filesystem::path NodeRPC::getDatadir()
 {
-   string datadir = Pathing::blkFilePath();
-   auto len = datadir.size();
-
-   if (len >= 6)
-   {
-      auto&& term = datadir.substr(len - 6, 6);
-      if (term == "blocks")
-         datadir = datadir.substr(0, len - 6);
+   auto datadir = Pathing::blkFilePath();
+   if (datadir.filename() == "blocks") {
+      datadir = datadir.parent_path();
    }
-
    return datadir;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 string NodeRPC::getAuthString()
 {
-   auto&& datadir = getDatadir();
-
-   auto confPath = datadir;
-   DBUtils::appendPath(confPath, "bitcoin.conf");
+   auto datadir = getDatadir();
+   auto confPath = datadir / "bitcoin.conf";
 
    auto getAuthStringFromCookieFile = [&datadir](void)->string
    {
-      DBUtils::appendPath(datadir, ".cookie");
-      auto&& lines = SettingsUtils::getLines(datadir);
-      if (lines.size() != 1)
-      {
+      auto cookiePath = datadir / ".cookie";
+      auto lines = SettingsUtils::getLines(cookiePath);
+      if (lines.size() != 1) {
          throw runtime_error("unexpected cookie file content");
       }
 
-      auto&& keyVals = SettingsUtils::getKeyValsFromLines(lines, ':');
+      auto keyVals = SettingsUtils::getKeyValsFromLines(lines, ':');
       auto keyIter = keyVals.find("__cookie__");
-      if (keyIter == keyVals.end())
-      {
+      if (keyIter == keyVals.end()) {
          throw runtime_error("unexpected cookie file content");
       }
 
@@ -215,31 +198,28 @@ string NodeRPC::getAuthString()
    };
 
    //open and parse .conf file
-   try
-   {
-      auto&& lines = SettingsUtils::getLines(confPath);
-      auto&& keyVals = SettingsUtils::getKeyValsFromLines(lines, '=');
-      
+   try {
+      auto lines = SettingsUtils::getLines(confPath);
+      auto keyVals = SettingsUtils::getKeyValsFromLines(lines, '=');
+
       //get rpcuser
       auto userIter = keyVals.find("rpcuser");
-      if (userIter == keyVals.end())
+      if (userIter == keyVals.end()) {
          return getAuthStringFromCookieFile();
-
+      }
       string authStr = userIter->second;
 
       //get rpcpassword
       auto passIter = keyVals.find("rpcpassword");
-      if (passIter == keyVals.end())
+      if (passIter == keyVals.end()) {
          return getAuthStringFromCookieFile();
-
+      }
       authStr.append(":");
       authStr.append(passIter->second);
 
       return authStr;
-   }
-   catch (...)
-   {
-      return string();
+   } catch (...) {
+      return {};
    }
 }
 

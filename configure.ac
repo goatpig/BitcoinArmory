@@ -139,11 +139,6 @@ case $host in
             PKG_CONFIG_PATH="$libevent_prefix/lib/pkgconfig:$PKG_CONFIG_PATH"
             export PKG_CONFIG_PATH
         fi
-        protobuf_prefix=`$BREW --prefix protobuf 2>/dev/null`
-        if test x$protobuf_prefix != x; then
-            PKG_CONFIG_PATH="$protobuf_prefix/lib/pkgconfig:$PKG_CONFIG_PATH"
-            export PKG_CONFIG_PATH
-        fi
     fi
 
     # Just FYI, here are some linker flags, used and unused, that are noteworthy.
@@ -183,21 +178,10 @@ esac
 #    ])
 #fi
 
-# Check for protobuf (protoc in particular is required)
-PKG_CHECK_MODULES_STATIC(PROTOBUF, protobuf >= 2.0.0)
-PKG_CHECK_VAR([PROTOBUF_LIBDIR], [protobuf], [libdir])
-AC_MSG_CHECKING([protobuf lib path])
-AS_IF([test "x$PROTOBUF_LIBDIR" = "x"], [
-  AC_MSG_FAILURE([Unable to identify protobuf lib path.])
-])
-AC_MSG_RESULT($PROTOBUF_LIBDIR)
-AC_SUBST([PROTOBUF_LIBDIR])
-CXXFLAGS="${CXXFLAGS} ${PROTOBUF_CFLAGS}"
-
-dnl Check for protoc (Google Protocol Buffers).
-AC_PATH_PROG([PROTOC], [protoc], [])
-AS_IF([test x"$PROTOC" = x],
-  [AC_MSG_ERROR([cannot find protoc (the Protocol Buffers compiler)])])
+dnl Check for capnproto compiler
+AC_PATH_PROG([CAPNPC], [capnpc], [])
+AS_IF([test x"$CAPNPC" = x],
+  [AC_MSG_ERROR([cannot find capnpc (the capnproto compiler)])])
 
 if test x$use_pkgconfig$with_own_lws = xyesno; then
     PKG_CHECK_MODULES_STATIC([WEBSOCKETS], [libwebsockets_static >= 3.0.1],,[AC_MSG_ERROR(libwebsockets_static >= 3.0.1 not found.)])
@@ -338,8 +322,7 @@ AC_LANG_POP([C++])
 AC_MSG_RESULT($LWS_HAVE_LIBCAP_FOUND)
 
 if test x$LWS_HAVE_LIBCAP_FOUND = xyes; then
-    PKG_CHECK_MODULES_STATIC([LIBCAP], [libcap],, [AC_MSG_ERROR(libcap not found.)])
-    AC_SUBST([LIBCAP_LIBS])
+    AC_SUBST([LIBCAP_LIBS], "-lcap")
 fi
 
 AM_CONDITIONAL([BUILD_OPENSSL_SUPPORT], [test x$LWS_WITH_TLS_FOUND = xyes])
@@ -384,6 +367,22 @@ AC_CONFIG_FILES(Makefile
 
 AM_CONDITIONAL([BUILD_BENCH], [test x$want_benchmark = xyes])
 AM_CONDITIONAL([BUILD_TESTS], [test "x$want_tests" = "xyes"])
+
+#symlink test files over to build folder
+if test x$want_tests = xyes; then
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/blk_0.dat:cppForSwig/reorgTest/blk_0.dat)
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/blk_1.dat:cppForSwig/reorgTest/blk_1.dat)
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/blk_2.dat:cppForSwig/reorgTest/blk_2.dat)
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/blk_3.dat:cppForSwig/reorgTest/blk_3.dat)
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/blk_4.dat:cppForSwig/reorgTest/blk_4.dat)
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/blk_4A.dat:cppForSwig/reorgTest/blk_4A.dat)
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/blk_5.dat:cppForSwig/reorgTest/blk_5.dat)
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/blk_5A.dat:cppForSwig/reorgTest/blk_5A.dat)
+
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/botched_block.dat:cppForSwig/reorgTest/botched_block.dat)
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/LBZC.tx:cppForSwig/reorgTest/LBZC.tx)
+    AC_CONFIG_LINKS(cppForSwig/reorgTest/ZCtx.tx:cppForSwig/reorgTest/ZCtx.tx)
+fi
 
 AC_OUTPUT
 

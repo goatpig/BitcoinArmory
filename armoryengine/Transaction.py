@@ -19,7 +19,7 @@ from armoryengine.ArmoryUtils import BlockComponent, BIGENDIAN, \
    CPP_TXIN_STDUNCOMPR, CPP_TXIN_STDCOMPR, CPP_TXIN_SPENDP2SH, \
    CPP_TXIN_P2WPKH_P2SH, CPP_TXIN_P2WSH_P2SH, MIN_RELAY_TX_FEE, \
    int_to_binary, SignatureError, indent, binary_to_hex, \
-   hash160, sha256, ONE_BTC
+   hash160, sha256, ONE_BTC, LOGERROR
 from armoryengine.AddressUtils import hash160_to_addrStr, binary_to_base58, \
    CheckHash160, binScript_to_p2shAddrStr, script_to_addrStr, \
    script_to_scrAddr, scrAddr_to_addrStr, BadAddressError
@@ -61,8 +61,8 @@ class InputSignedStatusObject(object):
    def __init__(self, protoData):
       self.proto = protoData
       self.pubKeyMap = {}
-      for pubKeyPair in protoData.sign_state:
-         self.pubKeyMap[pubKeyPair.pub_key] = pubKeyPair.has_sig
+      for pubKeyPair in protoData.signStates:
+         self.pubKeyMap[pubKeyPair.pubKey] = pubKeyPair.hasSig
 
    #############################################################################
    def isSignedForPubKey(self, pubkey):
@@ -1352,8 +1352,8 @@ class UnsignedTxInput(AsciiSerializable):
       inputSignStatus = signerObj.getSignedStateForInput(self.inputID)
       signStatus = InputSigningStatus()
 
-      signStatus.M = inputSignStatus.proto.m
-      signStatus.N = inputSignStatus.proto.n
+      signStatus.M = inputSignStatus.proto.mCount
+      signStatus.N = inputSignStatus.proto.nCount
       signStatus.statusM = [TXIN_SIGSTAT.NO_SIGNATURE]*signStatus.M
       signStatus.statusN = [TXIN_SIGSTAT.NO_SIGNATURE]*signStatus.N
 
@@ -1902,9 +1902,9 @@ class UnsignedTransaction(AsciiSerializable):
       least it all goes through the same construction method.
       """
 
-      pubKeyMap  = {} if not pubKeyMap else pubKeyMap
-      txMap   = {} if not txMap     else txMap
-      p2shMap = {} if not p2shMap   else p2shMap
+      pubKeyMap   = {} if not pubKeyMap else pubKeyMap
+      txMap       = {} if not txMap     else txMap
+      p2shMap     = {} if not p2shMap   else p2shMap
 
 
       if len(txMap)==0 and not TheBDM.getState()==BDM_BLOCKCHAIN_READY:
@@ -1918,37 +1918,52 @@ class UnsignedTransaction(AsciiSerializable):
       dtxoList = []
 
       # Get support tx for each input and create unsignedTx-input for each
-      count = 0
+      prevTxs = {}
+      missingTxHashes = []
       for txin in pytx.inputs:
          # First, make sure that we have the previous Tx data available
          # We can't continue without it, since BIP 0010 will now require
          # the full tx of outputs being spent
          outpt = txin.outpoint
          txhash = outpt.txHash
-         txoIdx  = outpt.txOutIndex
-         pyPrevTx = None
+         if not txhash in prevTxs:
+            prevTxs[txhash] = {
+               'txOuts' : [],
+               'pyTx' : None
+            }
+         prevTxs[txhash]['txOuts'].append(outpt.txOutIndex)
+         if not prevTxs[txhash]['pyTx']:
+            if txhash in txMap:
+               prevTxs[txhash]['pyTx'] = txMap[txhash].copy()
+            else:
+               missingTxHashes.append(txhash)
 
-         # Either the supporting tx was supplied in txMap, or BDM is avail
-         if len(txMap)>0:
-            # If supplied a txMap, we expect it to have everything we need
-            if txhash not in txMap:
-               raise InvalidHashError('Could not find the referenced tx '
-                                        'in supplied txMap')
-            pyPrevTx = txMap[txhash].copy()
-         elif TheBDM.getState()==BDM_BLOCKCHAIN_READY:
-            txRaw = TheBridge.service.getTxByHash(txhash)
-            if not txRaw:
-               raise InvalidHashError('Could not find the referenced tx')
-            pyPrevTx = PyTx().unserialize(txRaw.raw)
-         else:
+      if missingTxHashes:
+         #try to get txdata from db for missing hashes
+         if not TheBDM.getState()==BDM_BLOCKCHAIN_READY:
             raise InvalidScriptError('No previous-tx data available for TxDP')
 
-         ustxiList.append(UnsignedTxInput(pyPrevTx.serializeWithoutWitness(),
-                                          txoIdx,
-                                          {},
-                                          pubKeyMap,
-                                          sequence=txin.intSeq, inputID=count))
-         count = count + 1
+         capnTxns = TheBridge.service.getTxsByHash(missingTxHashes)
+         for txHash in capnTxns:
+            if not txHash in prevTxs:
+               raise InvalidHashError('Could not find the referenced tx')
+            prevTxs[txHash]['pyTx'] = PyTx().unserialize(capnTxns[txHash].raw)
+
+      count = 0
+      #populate input list with tx data
+      for txHash in prevTxs:
+         pyPrevTx = prevTxs[txHash]['pyTx']
+         if not pyPrevTx:
+            raise InvalidScriptError('No previous-tx data available for TxDP')
+         serializedTx = pyPrevTx.serializeWithoutWitness()
+
+         for txoIdx in prevTxs[txHash]['txOuts']:
+            ustxiList.append(UnsignedTxInput(
+               serializedTx,
+               txoIdx, {},
+               pubKeyMap,
+               sequence=txin.intSeq, inputID=count))
+            count = count + 1
 
 
       # Create the DecoratedTxOut for each output.  Without any
@@ -2031,7 +2046,21 @@ class UnsignedTransaction(AsciiSerializable):
       return self.createFromUnsignedTxIO(ustxiList, dtxoList, lockTime)
 
    #############################################################################
-   def createFromTxSigCollect(self, txSigCollect):
+   def calculateFee(self):
+      totalIn  = sum([ustxi.value for ustxi in self.ustxInputs ])
+      totalOut = sum([dtxo.value  for dtxo  in self.decorTxOuts])
+      return totalIn-totalOut
+
+   #############################################################################
+   def toTxSigCollect(self, ustxType=USTX_TYPE_MODERN):
+      if self.pytxObj==UNINITIALIZED:
+         LOGERROR('Cannot serialize an uninitialized tx')
+         return None
+
+      return self.signer.toTxSigCollect(ustxType)
+
+   ########
+   def fromTxSigCollect(self, txSigCollect):
       if self.signer != None:
          raise Exception("Initialized signer, cannot overwrite")
 
@@ -2039,35 +2068,7 @@ class UnsignedTransaction(AsciiSerializable):
       self.signer.setup()
       self.signer.fromTxSigCollect(txSigCollect)
       self.pytxObj = self.signer.getUnsignedTx()
-
       return self.createFromPyTx(self.pytxObj)
-
-   #############################################################################
-   def calculateFee(self):
-      totalIn  = sum([ustxi.value for ustxi in self.ustxInputs ])
-      totalOut = sum([dtxo.value  for dtxo  in self.decorTxOuts])
-      return totalIn-totalOut
-
-
-   #############################################################################
-   def serialize(self, ustxType=USTX_TYPE_MODERN):
-      """
-      TODO:  We should consider the idea that we don't even need to serialize
-             the pytxObj at all... it seems there should only be a single,
-             canonical way to construct the tx.
-      """
-      if self.pytxObj==UNINITIALIZED:
-         LOGERROR('Cannot serialize an uninitialized tx')
-         return None
-
-      return self.signer.toTxSigCollect(ustxType)
-
-
-   #############################################################################
-   def unserialize(self, txSigCollect):
-      self.createFromTxSigCollect(txSigCollect)
-      return self
-
 
    #############################################################################
    def toJSONMap(self, lite=False):
@@ -2412,12 +2413,13 @@ def determineSentToSelfAmt(le, wlt):
           creative with this tx, this may not actually work.
    """
    amt = 0
-   if le.sent_to_self:
-      txProto = TheBridge.service.getTxByHash(le.hash)
-      if txProto == None:
+   if le.isSTS:
+      txProto = TheBridge.service.getTxsByHash([le.txHash])
+      if txProto == None or len(txProto) == 0:
          return (0, 0)
+      txData = txProto[le.txHash]
 
-      pytx = PyTx().unserialize(txProto.raw)
+      pytx = PyTx().unserialize(txData.raw)
       if pytx.getNumTxOut()==1:
          return (pytx.outputs[0].getValue(), -1)
       maxChainIndex = -5

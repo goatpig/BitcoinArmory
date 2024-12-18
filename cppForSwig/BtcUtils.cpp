@@ -823,3 +823,42 @@ map<BinaryDataRef, BinaryDataRef> BtcUtils::getPSBTDataPairs(
 
    return result;
 }
+
+/////////////////////////////////////////////////////////////////////////////
+std::vector<BinaryDataRef> BtcUtils::splitPushOnlyScriptRefs(
+   BinaryDataRef script)
+{
+   std::vector<BinaryDataRef> opList;
+   opList.reserve(4);
+
+   BinaryRefReader brr(script);
+   uint8_t nextOp;
+   while (brr.getSizeRemaining() > 0) {
+      nextOp = brr.get_uint8_t();
+      if(nextOp == 0) {
+         // Implicit pushdata
+         brr.rewind(1);
+         opList.emplace_back(brr.get_BinaryDataRef(1));
+      } else if(nextOp < 76) {
+         // Implicit pushdata
+         opList.emplace_back(brr.get_BinaryDataRef(nextOp));
+      } else if(nextOp == 76) {
+         uint8_t nb = brr.get_uint8_t();
+         opList.emplace_back( brr.get_BinaryDataRef(nb));
+      } else if(nextOp == 77) {
+         uint16_t nb = brr.get_uint16_t();
+         opList.emplace_back( brr.get_BinaryDataRef(nb));
+      } else if(nextOp == 78) {
+         uint16_t nb = brr.get_uint32_t();
+         opList.push_back( brr.get_BinaryDataRef(nb));
+      }
+      else if(nextOp > 78 && nextOp < 97 && nextOp !=80) {
+         brr.rewind(1);
+         opList.push_back( brr.get_BinaryDataRef(1));
+      } else {
+         return {};
+      }
+   }
+
+   return opList;
+}

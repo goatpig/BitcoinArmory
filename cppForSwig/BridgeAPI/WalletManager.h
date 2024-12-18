@@ -14,8 +14,8 @@
 #include <string>
 #include <map>
 #include <iostream>
+#include <filesystem>
 
-#include "log.h"
 #include "Wallets.h"
 #include "Signer.h"
 #include "ArmoryConfig.h"
@@ -104,7 +104,7 @@ private:
    void eraseFromDisk(void);
 
 public:
-   std::string registerWithBDV(bool isNew);
+   void registerWithBDV(bool isNew);
    void unregisterFromBDV(void);
 
    virtual std::shared_ptr<Armory::Wallets::AssetWallet>
@@ -113,56 +113,9 @@ public:
       getAddressAccount(void) const;
    Armory::Wallets::AddressAccountId getAccountId(void) const;
 
-   void updateBalancesAndCount(uint32_t topBlockHeight)
-   {
-      auto lbd = [this](ReturnMessage<std::vector<uint64_t>> vec)
-      {
-         std::unique_lock<std::mutex> lock(stateMutex_);
-         
-         auto&& balVec = vec.get();
-         totalBalance_ = balVec[0];
-         spendableBalance_ = balVec[1];
-         unconfirmedBalance_ = balVec[2];
-      };
-      asyncWlt_->getBalancesAndCount(topBlockHeight, lbd);
-   }
-
-   void updateAddrTxCount(void)
-   {
-      auto lbd = [this](
-         ReturnMessage<std::map<BinaryData, uint32_t>> countMap)->void
-      {
-         std::unique_lock<std::mutex> lock(stateMutex_);
-
-         auto&& cmap = countMap.get();
-         for (auto& cpair : cmap)
-            countMap_[cpair.first] = cpair.second;
-      };
-      asyncWlt_->getAddrTxnCountsFromDB(lbd);
-   }
-
-   void updateAddrBalancesFromDB(void)
-   {
-      auto lbd = [this](ReturnMessage<
-         std::map<BinaryData, std::vector<uint64_t>>> result)->void
-      {
-         std::unique_lock<std::mutex> lock(stateMutex_);
-
-         auto&& balancemap = result.get();
-         for (auto& balVec : balancemap)
-         {
-            if (balVec.first.getSize() == 0)
-               continue;
-
-            balanceMap_[balVec.first] = balVec.second;
-         }
-      };
-
-      asyncWlt_->getAddrBalancesFromDB(lbd);
-   }
-
-   void updateWalletBalanceState(const CombinedBalances&);
-   void updateAddressCountState(const CombinedCounts&);
+   void updateBalancesAndCount(uint32_t topBlockHeight);
+   void updateWalletBalanceState(const AsyncClient::CombinedBalances&);
+   void updateAddressCountState(const AsyncClient::CombinedBalances&);
 
    void extendAddressChain(unsigned count)
    {
@@ -170,41 +123,16 @@ public:
    }
 
    void extendAddressChainToIndex(
-      const Armory::Wallets::AddressAccountId& id, unsigned count)
-   {
-      wallet_->extendPublicChainToIndex(id, count);
-   }
-
-   bool hasAddress(const BinaryData& addr)
-   {
-      return wallet_->hasScrAddr(addr);
-   }
-
-   bool hasAddress(const std::string& addr)
-   {
-      return wallet_->hasAddrStr(addr);
-   }
+      const Armory::Wallets::AddressAccountId& id,
+      unsigned count);
+   bool hasAddress(const BinaryData& addr);
+   bool hasAddress(const std::string& addr);
 
    void createAddressBook(
       const std::function<void(ReturnMessage<std::vector<AddressBookEntry>>)>&);
 
-   void getSpendableTxOutListForValue(uint64_t val, 
-      const std::function<void(ReturnMessage<std::vector<UTXO>>)>& lbd)
-   {
-      asyncWlt_->getSpendableTxOutListForValue(val, lbd);
-   }
-
-   void getSpendableZcTxOutList(
-      const std::function<void(ReturnMessage<std::vector<UTXO>>)>& lbd)
-   {
-      asyncWlt_->getSpendableZCList(lbd);
-   }
-
-   void getRBFTxOutList(
-      const std::function<void(ReturnMessage<std::vector<UTXO>>)>& lbd)
-   {
-      asyncWlt_->getRBFTxOutList(lbd);
-   }
+   void getUTXOs(uint64_t, bool, bool,
+      const std::function<void(ReturnMessage<std::vector<UTXO>>)>& lbd);
 
    uint64_t getFullBalance(void) const { return totalBalance_; }
    uint64_t getSpendableBalance(void) const { return spendableBalance_; }
@@ -280,7 +208,7 @@ class Armory135Header
 {
 private:
    //file system
-   const std::string path_;
+   const std::filesystem::path path_;
 
    //meta data
    std::string walletID_;
@@ -312,7 +240,7 @@ private:
 
 
 public:
-   Armory135Header(const std::string path) :
+   Armory135Header(const std::filesystem::path path) :
       path_(path)
    {
       parseFile();
@@ -332,7 +260,7 @@ public:
 class WalletManager : Lockable
 {
 private:
-   const std::string path_;
+   const std::filesystem::path path_;
    std::map<std::string, std::map<
       Armory::Wallets::AddressAccountId,
          std::shared_ptr<WalletContainer>>> wallets_;
@@ -348,7 +276,7 @@ public:
    void cleanUpBeforeUnlock(void) override {}
 
 public:
-   WalletManager(const std::string& path, const PassphraseLambda& passLbd) :
+   WalletManager(const std::filesystem::path& path, const PassphraseLambda& passLbd) :
       path_(path)
    {
       loadWallets(passLbd);
@@ -358,7 +286,6 @@ public:
    {
       std::unique_lock<std::mutex> lock(mu_);
       auto wltIter = wallets_.find(id);
-      
       return wltIter != wallets_.end();
    }
 
@@ -370,9 +297,8 @@ public:
       const std::string&, const Armory::Wallets::AddressAccountId&) const;
 
    void setBdvPtr(std::shared_ptr<AsyncClient::BlockDataViewer>);
-   std::set<std::string> registerWallets();
-
-   std::string registerWallet(const std::string&,
+   void registerWallets(void);
+   void registerWallet(const std::string&,
       const Armory::Wallets::AddressAccountId&, bool);
 
    std::shared_ptr<WalletContainer> addWallet(
@@ -386,7 +312,7 @@ public:
    void deleteWallet(const std::string&,
       const Armory::Wallets::AddressAccountId&);
 
-   const std::string& getWalletDir(void) const { return path_; }
+   const std::filesystem::path& getWalletDir(void) const { return path_; }
 };
 
 #endif

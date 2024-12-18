@@ -33,13 +33,15 @@ BinaryDataRef BinaryData::getRef(void) const
 ////////////////////////////////////////////////////////////////////////////////
 BinaryData & BinaryData::append(BinaryDataRef const & bd2)
 {
-   if(bd2.getSize()==0) 
+   if (bd2.empty()) {
       return (*this);
-   
-   if(getSize()==0) 
+   }
+
+   if (empty()) {
       copyFrom(bd2.getPtr(), bd2.getSize());
-   else
+   } else {
       data_.insert(data_.end(), bd2.getPtr(), bd2.getPtr()+bd2.getSize());
+   }
 
    return (*this);
 }
@@ -664,6 +666,12 @@ size_t BinaryRefReader::getPosition() const
 size_t BinaryRefReader::getSize() const
 {
    return totalSize_;
+}
+
+/////////////////////////////////////////////////////////////////////////////
+bool BinaryRefReader::empty() const
+{
+   return totalSize_ == 0;
 }
 
 /////////////////////////////////////////////////////////////////////////////

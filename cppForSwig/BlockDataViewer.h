@@ -5,9 +5,9 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016, goatpig                                               //            
+//  Copyright (C) 2016-2024, goatpig                                          //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                   
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -25,20 +25,23 @@
 #include "bdmenums.h"
 #include "BtcWallet.h"
 #include "ZeroConf.h"
-#include "BDVCodec.h"
 
 typedef enum
 {
    order_ascending,
    order_descending
-}HistoryOrdering;
+} HistoryOrdering;
 
 
 typedef enum
 {
    group_wallet,
    group_lockbox
-}LedgerGroups;
+} LedgerGroups;
+
+namespace capnp {
+   class MessageReader;
+}
 
 class WalletGroup;
 
@@ -50,13 +53,47 @@ class BDMnotReady : public std::exception
    }
 };
 
-struct OpData
+enum class WalletRegType : int
 {
-   unsigned height_;
-   unsigned txindex_;
-   bool isspent_;
-   uint64_t value_;
-   BinaryData spenderHash_;
+   UNSET    = 0,
+   WALLET   = 1,
+   LOCKBOX  = 2
+};
+
+struct WalletRegistrationRequest
+{
+   const std::string& walletId;
+   const std::vector<BinaryData> addresses;
+   const bool isNew;
+   const WalletRegType type;
+   std::function<void(const std::set<BinaryDataRef>&)> zcCallback;
+
+   WalletRegistrationRequest(const std::string& wId,
+      std::vector<BinaryData>& addrs,
+      bool isnew, WalletRegType wType) :
+      walletId(wId), addresses(std::move(addrs)),
+      isNew(isnew), type(wType),
+      zcCallback(nullptr)
+   {}
+};
+
+struct CombinedBalances
+{
+   struct BalanceAndCount
+   {
+      const uint64_t full;
+      const uint64_t spendable;
+      const uint64_t unconfirmed;
+      const uint32_t txnCount;
+   };
+
+   struct Wallet
+   {
+      const BalanceAndCount                        bnc;
+      const std::map<BinaryData, BalanceAndCount>  addresses;
+   };
+
+   std::map<std::string, Wallet> wallets;
 };
 
 class BlockDataViewer
@@ -72,28 +109,26 @@ public:
    // blockchain in RAM, each scan will take 30-120 seconds.  Registering makes 
    // sure that the intial blockchain scan picks up wallet-relevant stuff as 
    // it goes, and does a full [re-]scan of the blockchain only if necessary.
-   void registerWallet(std::shared_ptr<::Codec_BDVCommand::BDVCommand>);
-   void registerLockbox(std::shared_ptr<::Codec_BDVCommand::BDVCommand>);
-   void registerAddresses(std::shared_ptr<::Codec_BDVCommand::BDVCommand>);
-   void       unregisterWallet(const std::string& ID);
-   void       unregisterLockbox(const std::string& ID);
+   void registerAWallet(WalletRegistrationRequest&);
+   void registerAddresses(WalletRegistrationRequest&);
+   void unregisterWallet(const std::string& ID);
 
    void scanWallets(std::shared_ptr<BDV_Notification>);
    bool hasWallet(const std::string &ID) const;
 
-   Tx                getTxByHash(BinaryData const & txHash) const;
-   
-   std::tuple<uint32_t, uint32_t, std::vector<unsigned>> 
-                     getTxMetaData(const BinaryDataRef&, bool) const;
+   Tx getTxByHash(BinaryData const & txHash) const;
 
-   TxOut             getPrevTxOut(TxIn & txin) const;
-   Tx                getPrevTx(TxIn & txin) const;
+   std::tuple<uint32_t, uint32_t, std::vector<unsigned>>
+   getTxMetaData(const BinaryDataRef&, bool) const;
 
-   BinaryData        getTxHashForDbKey(const BinaryData& dbKey6) const
+   TxOut getPrevTxOut(TxIn & txin) const;
+   Tx getPrevTx(TxIn & txin) const;
+
+   BinaryData getTxHashForDbKey(const BinaryData& dbKey6) const
    { return db_->getTxHashForLdbKey(dbKey6); }
-   
-   BinaryData        getSenderScrAddr(TxIn & txin) const;
-   int64_t           getSentValue(TxIn & txin) const;
+
+   BinaryData getSenderScrAddr(TxIn & txin) const;
+   int64_t getSentValue(TxIn & txin) const;
 
    LMDBBlockDatabase* getDB(void) const;
    const Blockchain& blockchain() const  { return *bc_; }
@@ -108,33 +143,29 @@ public:
 
    size_t getWalletsPageCount(void) const;
    std::vector<LedgerEntry> getWalletsHistoryPage(uint32_t,
-                                             bool rebuildLedger, 
-                                             bool remapWallets);
+      bool rebuildLedger, bool remapWallets);
 
    size_t getLockboxesPageCount(void) const;
    std::vector<LedgerEntry> getLockboxesHistoryPage(uint32_t,
-      bool rebuildLedger,
-      bool remapWallets);
-
-   virtual void flagRefresh(
-      BDV_refresh refresh, const BinaryData& refreshId,
-      std::unique_ptr<BDV_Notification_ZC> zcPtr) = 0;
+      bool rebuildLedger, bool remapWallets);
 
    StoredHeader getMainBlockFromDB(uint32_t height) const;
    StoredHeader getBlockFromDB(uint32_t height, uint8_t dupID) const;
    bool scrAddressIsRegistered(const BinaryData& scrAddr) const;
-   
-   bool isBDMRunning(void) const 
-   { 
-      if (bdmPtr_ == nullptr)
+
+   bool isBDMRunning(void) const
+   {
+      if (bdmPtr_ == nullptr) {
          return false;
-      return bdmPtr_->isRunning(); 
-   } 
+      }
+      return bdmPtr_->isRunning();
+   }
 
    void blockUntilBDMisReady(void) const
    {
-      if (bdmPtr_ == nullptr)
+      if (bdmPtr_ == nullptr) {
          throw std::runtime_error("no bdmPtr_");
+      }
       bdmPtr_->blockUntilReady();
    }
 
@@ -171,9 +202,10 @@ public:
 
    uint32_t getBlockTimeByHeight(uint32_t) const;
    uint32_t getClosestBlockHeightForTime(uint32_t);
-   
+
    LedgerDelegate getLedgerDelegateForWallets();
    LedgerDelegate getLedgerDelegateForLockboxes();
+   LedgerDelegate getLedgerDelegateForWallet(const std::string&);
    LedgerDelegate getLedgerDelegateForScrAddr(
       const std::string& wltID, const BinaryData& scrAddr);
 
@@ -194,24 +226,16 @@ public:
    bool isRBF(const BinaryData& txHash) const;
    bool hasScrAddress(const BinaryDataRef&) const;
    std::set<BinaryDataRef> getAddrSet(void) const;
-
    std::shared_ptr<BtcWallet> getWalletOrLockbox(const std::string& id) const;
-
    std::tuple<uint64_t, uint64_t> getAddrFullBalance(const BinaryData&);
-
-   std::unique_ptr<BDV_Notification_ZC> createZcNotification(
-      const std::set<BinaryDataRef>&);
-
-   virtual const std::string& getID(void) const = 0;
 
    //wallet agnostic methods
    std::vector<UTXO> getUtxosForAddress(const BinaryDataRef&, bool) const;
-   std::map<BinaryData, std::map<BinaryData, std::map<unsigned, OpData>>>
-      getAddressOutpoints(const std::set<BinaryDataRef>&, 
-         unsigned&, unsigned&) const;
-
+   std::map<BinaryData, std::vector<Output>> getAddressOutpoints(
+      const std::set<BinaryDataRef>&, unsigned&, unsigned&) const;
    std::vector<std::pair<StoredTxOut, BinaryDataRef>> getOutputsForOutpoints(
       const std::map<BinaryDataRef, std::set<unsigned>>&, bool) const;
+   CombinedBalances getCombinedBalances(void) const;
 
 protected:
    static void unregisterAddresses(
@@ -265,19 +289,18 @@ public:
    ~WalletGroup();
 
    std::shared_ptr<BtcWallet> getOrSetWallet(const std::string&);
-   void registerAddresses(std::shared_ptr<::Codec_BDVCommand::BDVCommand>);
-   void unregisterWallet(const std::string& IDstr);
+   void registerAddresses(WalletRegistrationRequest&);
+   bool unregisterWallet(const std::string& IDstr);
 
    bool hasID(const std::string &ID) const;
    std::shared_ptr<BtcWallet> getWalletByID(const std::string& ID) const;
 
    void reset();
-   
    size_t getPageCount(void) const { return hist_.getPageCount(); }
    std::vector<LedgerEntry> getHistoryPage(uint32_t pageId, unsigned updateID,
       bool rebuildLedger, bool remapWallets);
 
-private:   
+private:
    std::map<uint32_t, uint32_t> computeWalletsSSHSummary(
       bool forcePaging, bool pageAnyway);
    bool pageHistory(bool forcePaging, bool pageAnyway);

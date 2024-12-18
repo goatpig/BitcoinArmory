@@ -11,7 +11,7 @@
 
 using namespace std;
 using namespace Armory::Threading;
-using namespace Armory::Signer;
+using namespace Armory::Signing;
 
 ////////////////////////////////////////////////////////////////////////////////
 int verifyTxSigs(const BinaryData& rawTx, const LMDBBlockDatabase* iface, 
@@ -57,7 +57,7 @@ int verifyTxSigs(const BinaryData& rawTx, const LMDBBlockDatabase* iface,
 
       //grab output from tx, convert to utxo
       auto txOutCopy = zcTx.getTxOutCopy(outpoint.getTxOutIndex());
-      UTXO utxo; 
+      UTXO utxo;
       utxo.unserializeRaw(txOutCopy.serializeRef());
       utxo.txOutIndex_ = outpoint.getTxOutIndex();
 
@@ -147,8 +147,7 @@ map<unsigned, BinaryData> NodeUnitTest::mineNewBlock(BlockDataManager* bdm,
    unsigned count, ScriptRecipient* recipient, double diff)
 {
    auto diffBits = BtcUtils::convertDoubleToDiffBits(diff);
-   if(header_.prevHash_.getSize() == 0)
-   {
+   if (header_.prevHash_.empty()) {
       auto top = blockchain_->top();
       header_.prevHash_ = top->getThisHash();
       header_.timestamp_ = top->getTimestamp();
@@ -833,7 +832,7 @@ void NodeUnitTest::sendMessage(unique_ptr<Payload> payload)
                idIter->second = tx.getThisHash();
 
                //flag replaced tx
-               replacedHashes.insert(idIter->second);               
+               replacedHashes.insert(idIter->second);
             }
 
             if (replaceFailure)

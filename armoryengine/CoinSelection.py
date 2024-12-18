@@ -90,25 +90,27 @@ class PyUnspentTxOut(object):
 
    #############################################################################
    def createFromBridgeUtxo(self, bridgeUtxo):
-      scrAddr= bridgeUtxo.scraddr
-      val    = bridgeUtxo.value
-      conf   = TheBDM.getTopBlockHeight() - bridgeUtxo.tx_height + 1
-      txHash = bridgeUtxo.tx_hash
-      txHashStr = binary_to_hex(bridgeUtxo.tx_hash)
-      txoIdx = bridgeUtxo.txout_index
-      script = bridgeUtxo.script
-      txHeight = bridgeUtxo.tx_height
-      txIndex = bridgeUtxo.tx_index
-      sequence = 2**32-1
+      output = bridgeUtxo.output
 
-      self.initialize(scrAddr, txHash, txHashStr, txHeight, txIndex, 
-                      txoIdx, val, conf, script, sequence)
+      scrAddr     = bridgeUtxo.scrAddr
+      val         = output.value
+      conf        = TheBDM.getTopBlockHeight() - output.txHeight + 1
+      txHash      = output.txHash
+      txHashStr   = binary_to_hex(output.txHash)
+      txoIdx      = output.txOutIndex
+      script      = output.script
+      txHeight    = output.txHeight
+      txIndex     = output.txIndex
+      sequence    = 2**32-1
+
+      self.initialize(scrAddr, txHash, txHashStr, txHeight, txIndex,
+         txoIdx, val, conf, script, sequence)
       return self
 
    #############################################################################
-   def initialize(self, scrAddr, txHash, txHashStr, txHeight, txIndex, 
-                  txoIdx, val, numConf=None, fullScript=None, 
-                  sequence=2**32-1):
+   def initialize(self, scrAddr, txHash, txHashStr, txHeight, txIndex,
+      txoIdx, val, numConf=None, fullScript=None, 
+      sequence=2**32-1):
       self.scrAddr    = scrAddr
       self.txHash     = txHash
       self.txHashStr  = txHashStr
@@ -123,7 +125,6 @@ class PyUnspentTxOut(object):
          self.binScript = scrAddr_to_script(self.scrAddr)
       else:
          self.binScript = fullScript
-         
       self.checked = True
 
    def getTxHash(self):
@@ -180,19 +181,13 @@ class PyUnspentTxOut(object):
       return self.checked
 
    #############################################################################
-   def toBridgeUtxo(self):
-      from armoryengine import BridgeProto_pb2
-      bridgeUtxo = BridgeProto_pb2.Utxo()
-
-      bridgeUtxo.scraddr = self.scrAddr
+   def toBridgeUtxo(self, bridgeUtxo):
       bridgeUtxo.value = self.val
-      bridgeUtxo.tx_hash = self.txHash
-      bridgeUtxo.txout_index = self.txOutIndex
+      bridgeUtxo.txHash = self.txHash
+      bridgeUtxo.txOutIndex = self.txOutIndex
       bridgeUtxo.script = self.binScript
-      bridgeUtxo.tx_height = self.txHeight
-      bridgeUtxo.tx_index = self.txIndex
-
-      return bridgeUtxo
+      bridgeUtxo.txHeight = self.txHeight
+      bridgeUtxo.txIndex = self.txIndex
 
 ################################################################################
 def sumTxOutList(txoutList):

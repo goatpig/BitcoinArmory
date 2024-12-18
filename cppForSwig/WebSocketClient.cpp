@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2018-2021, goatpig.                                         //
+//  Copyright (C) 2018-2024, goatpig.                                         //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -9,8 +9,11 @@
 #include "WebSocketClient.h"
 #include "BIP15x_Handshake.h"
 
-using namespace std;
-using namespace Armory::Wallets;
+#include <capnp/message.h>
+#include <capnp/serialize.h>
+#include "capnp/BDV.capnp.h"
+
+using namespace Armory;
 
 ////////////////////////////////////////////////////////////////////////////////
 static struct lws_protocols protocols[] =
@@ -31,49 +34,46 @@ static struct lws_protocols protocols[] =
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-WebSocketClient::WebSocketClient(const string& addr, const string& port,
-   const string& datadir, const PassphraseLambda& passLbd, 
-   const bool& ephemeralPeers, bool oneWayAuth,
-   shared_ptr<RemoteCallback> cbPtr) :
-   SocketPrototype(addr, port, false), 
+WebSocketClient::WebSocketClient(const std::string& addr,
+   const std::string& port, const std::filesystem::path& datadir,
+   const PassphraseLambda& passLbd, bool ephemeralPeers,
+   bool oneWayAuth, std::shared_ptr<RemoteCallback> cbPtr) :
+   SocketPrototype(addr, port, false),
    servName_(addr_ + ":" + port_), callbackPtr_(cbPtr)
 {
    count_.store(0, std::memory_order_relaxed);
    requestID_.store(0, std::memory_order_relaxed);
-   contextPtr_.store(0, memory_order_release);
+   contextPtr_.store(0, std::memory_order_release);
 
-   if (!ephemeralPeers)
-   {
+   if (!ephemeralPeers) {
       std::string filename(CLIENT_AUTH_PEER_FILENAME);
-      authPeers_ = make_shared<AuthorizedPeers>(
+      authPeers_ = std::make_shared<Wallets::AuthorizedPeers>(
          datadir, filename, passLbd);
-   }
-   else
-   {
-      authPeers_ = make_shared<AuthorizedPeers>();
+   } else {
+      authPeers_ = std::make_shared<Wallets::AuthorizedPeers>();
    }
 
-   auto lbds = AuthorizedPeers::getAuthPeersLambdas(authPeers_);
-   bip151Connection_ = make_shared<BIP151Connection>(lbds, oneWayAuth);
+   auto lbds = Wallets::AuthorizedPeers::getAuthPeersLambdas(authPeers_);
+   bip151Connection_ = std::make_shared<BIP151Connection>(lbds, oneWayAuth);
 }
 
 
 ////////////////////////////////////////////////////////////////////////////////
 void WebSocketClient::pushPayload(
-   unique_ptr<Socket_WritePayload> write_payload,
-   shared_ptr<Socket_ReadPayload> read_payload)
+   std::unique_ptr<Socket_WritePayload> write_payload,
+   std::shared_ptr<Socket_ReadPayload> read_payload)
 {
-   if (run_.load(memory_order_relaxed) == 0)
+   if (run_.load(std::memory_order_relaxed) == 0)
       throw LWS_Error("lws client down");
 
-   unsigned id = requestID_.fetch_add(1, memory_order_relaxed);
+   unsigned id = requestID_.fetch_add(1, std::memory_order_relaxed);
    if (read_payload != nullptr)
    {
       //create response object
-      auto response = make_shared<WriteAndReadPacket>(id, read_payload);
+      auto response = std::make_shared<WriteAndReadPacket>(id, read_payload);
 
       //set response id
-      readPackets_.insert(make_pair(id, move(response)));   
+      readPackets_.insert(make_pair(id, move(response)));
    }
 
    write_payload->id_ = id;
@@ -83,44 +83,35 @@ void WebSocketClient::pushPayload(
 ////////////////////////////////////////////////////////////////////////////////
 void WebSocketClient::writeService()
 {
-   while (true)
-   {
-      unique_ptr<Socket_WritePayload> message;
-      try
-      {
-         message = move(writeSerializationQueue_.pop_front());
-      }
-      catch (Armory::Threading::StopBlockingLoop&)
-      {
+   while (true) {
+      std::unique_ptr<Socket_WritePayload> message;
+      try {
+         message = std::move(writeSerializationQueue_.pop_front());
+      } catch (const Threading::StopBlockingLoop&) {
          break;
       }
 
-      vector<uint8_t> data;
-      message->serialize(data);
-
       //push packets to write queue
-      if (!bip151Connection_->connectionComplete())
+      if (!bip151Connection_->connectionComplete()) {
          throw LWS_Error("invalid aead state");
+      }
 
       //check for rekey
       {
          bool needs_rekey = false;
-         auto rightnow = chrono::system_clock::now();
+         auto rightnow = std::chrono::system_clock::now();
 
-         if (bip151Connection_->rekeyNeeded(message->getSerializedSize()))
-         {
+         if (bip151Connection_->rekeyNeeded(message->getSerializedSize())) {
             needs_rekey = true;
-         }
-         else
-         {
-            auto time_sec = chrono::duration_cast<chrono::seconds>(
+         } else {
+            auto time_sec = std::chrono::duration_cast<std::chrono::seconds>(
                rightnow - outKeyTimePoint_);
-            if (time_sec.count() >= AEAD_REKEY_INVERVAL_SECONDS)
+            if (time_sec.count() >= AEAD_REKEY_INVERVAL_SECONDS) {
                needs_rekey = true;
+            }
          }
 
-         if (needs_rekey)
-         {
+         if (needs_rekey) {
             BinaryData rekeyPacket(BIP151PUBKEYSIZE);
             memset(rekeyPacket.getPtr(), 0, BIP151PUBKEYSIZE);
 
@@ -138,11 +129,9 @@ void WebSocketClient::writeService()
       }
 
       SerializedMessage ws_msg;
-      ws_msg.construct(data,
+      ws_msg.construct(std::move(message),
          bip151Connection_.get(),
-         ArmoryAEAD::BIP151_PayloadType::FragmentHeader,
          message->id_);
-
       writeQueue_->push_back(ws_msg);
    }
 }
@@ -150,7 +139,7 @@ void WebSocketClient::writeService()
 ////////////////////////////////////////////////////////////////////////////////
 struct lws_context* WebSocketClient::init()
 {
-   run_.store(1, memory_order_relaxed);
+   run_.store(1, std::memory_order_relaxed);
    currentReadMessage_.reset();
 
    //setup context
@@ -173,7 +162,7 @@ struct lws_context* WebSocketClient::init()
    struct lws_client_connect_info i;
    memset(&i, 0, sizeof(i));
 
-   int port = stoi(port_);
+   int port = std::stoi(port_);
    if (port == 0)
       port = WEBSOCKET_PORT;
    i.port = port;
@@ -201,7 +190,7 @@ struct lws_context* WebSocketClient::init()
    struct lws* wsiptr;
    //i.pwsi = &wsiptr;
    wsiptr = lws_client_connect_via_info(&i);
-   wsiPtr_.store(wsiptr, memory_order_release);
+   wsiPtr_.store(wsiptr, std::memory_order_release);
 
    return contextptr;
 }
@@ -218,23 +207,22 @@ bool WebSocketClient::connectToRemote()
          this->readService();
       };
 
-      readThr_ = thread(readLBD);
+      readThr_ = std::thread(readLBD);
 
       auto writeLBD = [this](void)->void
       {
          this->writeService();
       };
 
-      writeThr_ = thread(writeLBD);
+      writeThr_ = std::thread(writeLBD);
 
       auto contextPtr = init();
-      contextPtr_.store(contextPtr, memory_order_release);
-      writeQueue_ = make_unique<WSClientWriteQueue>(contextPtr);
+      contextPtr_.store(contextPtr, std::memory_order_release);
+      writeQueue_ = std::make_unique<WSClientWriteQueue>(contextPtr);
       this->service(contextPtr);
    };
 
-   serviceThr_ = thread(serviceLBD);
-
+   serviceThr_ = std::thread(serviceLBD);
    return connectedFut.get();
 }
 
@@ -242,31 +230,31 @@ bool WebSocketClient::connectToRemote()
 void WebSocketClient::service(lws_context* contextPtr)
 {
    int n = 0;
-   auto wsiPtr = (struct lws*)wsiPtr_.load(memory_order_acquire);
+   auto wsiPtr = (struct lws*)wsiPtr_.load(std::memory_order_acquire);
 
-   while (run_.load(memory_order_relaxed) != 0 && n >= 0)
-   {
+   while (run_.load(std::memory_order_relaxed) != 0 && n >= 0) {
       n = lws_service(contextPtr, 500);
-      if (!currentWriteMessage_.isDone() || !writeQueue_->empty())
+      if (!currentWriteMessage_.isDone() || !writeQueue_->empty()) {
          lws_callback_on_writable(wsiPtr);
+      }
    }
 
    lws_context_destroy(contextPtr);
-   contextPtr_.store(0, memory_order_release);
+   contextPtr_.store(0, std::memory_order_release);
    cleanUp();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 void WebSocketClient::shutdown()
 {
-   if (run_.load(memory_order_relaxed) == 0)
+   if (run_.load(std::memory_order_relaxed) == 0)
       return;
 
-   auto context = (struct lws_context*)contextPtr_.load(memory_order_acquire);
+   auto context = (struct lws_context*)contextPtr_.load(std::memory_order_acquire);
    if (context == nullptr)
       return;
 
-   run_.store(0, memory_order_relaxed);
+   run_.store(0, std::memory_order_relaxed);
    lws_cancel_service(context);
 }
 
@@ -285,39 +273,39 @@ void WebSocketClient::cleanUp()
       if(readThr_.joinable())
          readThr_.join();
    }
-   catch(system_error& e)
+   catch(std::system_error& e)
    {
       LOGERR << "failed to join on client threads with error:";
       LOGERR << e.what();
 
       throw e;
    }
-   
    readPackets_.clear();
 
    //create error message to send to all outsanding read callbacks
-   ::Codec_BDVCommand::BDV_Error errMsg;
-   errMsg.set_code(-1);
-   errMsg.set_errstr("LWS client disconnected");
+   capnp::MallocMessageBuilder message;
+   auto payload = message.initRoot<Armory::Codec::BDV::Notifications>();
+   auto notifs = payload.initNotifs(1);
+   auto error = notifs[0].initError();
+   error.setCode(-1);
+   error.setErrStr("LWS client disconnected");
 
-   BinaryData errPacket(errMsg.ByteSizeLong());
-   if (!errMsg.SerializeToArray(
-      errPacket.getPtr(), errPacket.getSize()))
-   {
-      throw LWS_Error("error during shutdown");
-   }
+   auto flat = capnp::messageToFlatArray(message);
+   auto bytes = flat.asBytes();
+   BinaryDataRef errPacket(bytes.begin(), bytes.end());
 
    BinaryWriter msgBW;
    msgBW.put_uint32_t(5 + errPacket.getSize());
    msgBW.put_uint8_t((uint8_t)ArmoryAEAD::BIP151_PayloadType::SinglePacket);
    msgBW.put_uint32_t(0);
-   msgBW.put_BinaryData(errPacket, errPacket.getSize());
+   msgBW.put_BinaryDataRef(errPacket);
 
    WebSocketMessagePartial errObj;
-   errObj.parsePacket(msgBW.getDataRef());
+   auto errMsg = msgBW.getData();
+   errObj.parsePacket(errMsg);
 
    //trigger callbacks for all outstanding query operations
-   vector<thread> threads;
+   std::vector<std::thread> threads;
    {
       auto readMap = readPackets_.get();
       for (auto& readPair : *readMap)
@@ -334,7 +322,7 @@ void WebSocketClient::cleanUp()
             callbackPtr->callback(errObj);
          };
 
-         threads.push_back(thread(callbackLbd));
+         threads.push_back(std::thread(callbackLbd));
       }
    }
 
@@ -349,113 +337,93 @@ void WebSocketClient::cleanUp()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-int WebSocketClient::callback(struct lws *wsi, 
+int WebSocketClient::callback(struct lws *wsi,
    enum lws_callback_reasons reason, void *user, void *in, size_t len)
 {
    auto instance = (WebSocketClient*)user;
-
    switch (reason)
    {
-
-   case LWS_CALLBACK_CLIENT_ESTABLISHED:
-   {
-      //ws connection established with server
-      if (instance != nullptr)
-         instance->connected_.store(true, memory_order_release);
-
-      break;
-   }
-
-   case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
-   {
-      LOGERR << "lws client connection error";
-      if (len > 0)
+      case LWS_CALLBACK_CLIENT_ESTABLISHED:
       {
-         auto errstr = (char*)in;
-         LOGERR << "   error message: " << errstr;
-      }
-      else
-      {
-         LOGERR << "no error message was provided by lws";
+         //ws connection established with server
+         if (instance != nullptr) {
+            instance->connected_.store(true, std::memory_order_release);
+         }
+         break;
       }
 
-      [[fallthrough]];
-   }
-
-   case LWS_CALLBACK_CLIENT_CLOSED:
-   case LWS_CALLBACK_CLOSED:
-   {
-      try
+      case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
       {
-         instance->connected_.store(false, memory_order_release);
-         if (instance->callbackPtr_ != nullptr)
-         {
-            instance->callbackPtr_->disconnected();
-            try
-            {
-               instance->connectionReadyProm_.set_value(false);
+         LOGERR << "lws client connection error";
+         if (len > 0) {
+            auto errstr = (char*)in;
+            LOGERR << "   error message: " << errstr;
+         } else {
+            LOGERR << "no error message was provided by lws";
+         }
+         [[fallthrough]];
+      }
+
+      case LWS_CALLBACK_CLIENT_CLOSED:
+      case LWS_CALLBACK_CLOSED:
+      {
+         try {
+            instance->connected_.store(false, std::memory_order_release);
+            if (instance->callbackPtr_ != nullptr) {
+               instance->callbackPtr_->disconnected();
+               try {
+                  instance->connectionReadyProm_.set_value(false);
+               } catch(const std::future_error&) {}
             }
-            catch(future_error&)
-            { }
+
+            instance->shutdown();
+         } catch (const LWS_Error&) {}
+         break;
+      }
+
+      case LWS_CALLBACK_CLIENT_RECEIVE:
+      {
+         BinaryData bdData;
+         bdData.resize(len);
+         memcpy(bdData.getPtr(), in, len);
+
+         instance->readQueue_.push_back(std::move(bdData));
+         break;
+      }
+
+      case LWS_CALLBACK_CLIENT_WRITEABLE:
+      {
+         if (instance->currentWriteMessage_.isDone()) {
+            try {
+               instance->currentWriteMessage_ =
+                  std::move(instance->writeQueue_->pop_front());
+            } catch (const Threading::IsEmpty&) {
+               break;
+            }
          }
 
-         instance->shutdown();
-      }
-      catch(LWS_Error&)
-      { }
+         auto packet = instance->currentWriteMessage_.consumeNextPacket();
+         auto body = (uint8_t*)packet.getPtr() + LWS_PRE;
+         auto m = lws_write(wsi,
+            body, packet.getSize() - LWS_PRE,
+            LWS_WRITE_BINARY);
 
-      break;
-   }
-
-   case LWS_CALLBACK_CLIENT_RECEIVE:
-   {
-      BinaryData bdData;
-      bdData.resize(len);
-      memcpy(bdData.getPtr(), in, len);
-
-      instance->readQueue_.push_back(move(bdData));
-      break;
-   }
-
-   case LWS_CALLBACK_CLIENT_WRITEABLE:
-   {
-      if (instance->currentWriteMessage_.isDone())
-      {
-         try
-         {
-            instance->currentWriteMessage_ =
-               move(instance->writeQueue_->pop_front());
+         if (m != (int)packet.getSize() - (int)LWS_PRE) {
+            LOGERR << "failed to send packet of size";
+            LOGERR << "packet is " << packet.getSize() <<
+               " bytes, sent " << m << " bytes";
          }
-         catch (Armory::Threading::IsEmpty&)
-         {
-            break;
+
+         if (instance->currentWriteMessage_.isDone()) {
+            instance->currentWriteMessage_.clear();
+            instance->count_.fetch_add(1, std::memory_order_relaxed);
          }
+
+         break;
       }
 
-      auto&& packet = instance->currentWriteMessage_.consumeNextPacket();
-      auto body = (uint8_t*)packet.getPtr() + LWS_PRE;
-      auto m = lws_write(wsi, 
-         body, packet.getSize() - LWS_PRE,
-         LWS_WRITE_BINARY);
-
-      if (m != (int)packet.getSize() - (int)LWS_PRE)
-      {
-         LOGERR << "failed to send packet of size";
-         LOGERR << "packet is " << packet.getSize() <<
-            " bytes, sent " << m << " bytes";
-      }
-
-      if (instance->currentWriteMessage_.isDone())
-      {
-         instance->currentWriteMessage_.clear();
-         instance->count_.fetch_add(1, memory_order_relaxed);
-      }
-
-      break;
-   }
-
-   default:
-      break;
+      default:
+         break;
    }
 
    return 0;
@@ -464,38 +432,31 @@ int WebSocketClient::callback(struct lws *wsi,
 ////////////////////////////////////////////////////////////////////////////////
 void WebSocketClient::readService()
 {
-   while (1)
+   while (true)
    {
       BinaryData payload;
-      try
-      {
-         payload = move(readQueue_.pop_front());
-      }
-      catch (Armory::Threading::StopBlockingLoop&)
-      {
+      try {
+         payload = std::move(readQueue_.pop_front());
+      } catch (const Threading::StopBlockingLoop&) {
          break;
       }
 
-      if (leftOverData_.getSize() != 0)
-      {
+      if (!leftOverData_.empty()) {
          leftOverData_.append(payload);
-         payload = move(leftOverData_);
+         payload = std::move(leftOverData_);
          leftOverData_.clear();
       }
 
-      if (bip151Connection_->connectionComplete())
-      {
+      if (bip151Connection_->connectionComplete()) {
          //decrypt packet
          auto result = bip151Connection_->decryptPacket(
             payload.getPtr(), payload.getSize(),
             payload.getPtr(), payload.getSize());
 
-         if (result != 0)
-         {
+         if (result != 0) {
             //see WebSocketServer::processReadQueue for the explaination
-            if (result <= WEBSOCKET_MESSAGE_PACKET_SIZE && result > -1)
-            {
-               leftOverData_ = move(payload);
+            if (result <= 1048576 && result > -1) {
+               leftOverData_ = std::move(payload);
                continue;
             }
 
@@ -507,23 +468,18 @@ void WebSocketClient::readService()
       }
 
       //deser packet
-      auto payloadRef = currentReadMessage_.insertDataAndGetRef(payload);
-      auto result = 
-         currentReadMessage_.message_.parsePacket(payloadRef);
-      if (!result)
-      {
+      if (!currentReadMessage_.parsePacket(payload)) {
          currentReadMessage_.reset();
          continue;
       }
 
-      if (!currentReadMessage_.message_.isReady())
+      if (!currentReadMessage_.isReady()) {
          continue;
+      }
 
-      if (currentReadMessage_.message_.getType() >
-         ArmoryAEAD::BIP151_PayloadType::Threshold_Begin)
-      {
-         if (!processAEADHandshake(currentReadMessage_.message_))
-         {
+      if (currentReadMessage_.getType() >
+         ArmoryAEAD::BIP151_PayloadType::Threshold_Begin) {
+         if (!processAEADHandshake(currentReadMessage_)) {
             //invalid AEAD message, kill connection
             shutdown();
             return;
@@ -533,58 +489,47 @@ void WebSocketClient::readService()
          continue;
       }
 
-      if (bip151Connection_->getBIP150State() != BIP150State::SUCCESS)
-      {
+      if (bip151Connection_->getBIP150State() != BIP150State::SUCCESS) {
          LOGWARN << "encryption layer is uninitialized, aborting connection";
          shutdown();
          return;
       }
 
       //figure out request id, fulfill promise
-      auto& msgid = currentReadMessage_.message_.getId();
+      auto msgid = currentReadMessage_.getId();
       switch (msgid)
       {
-      case WEBSOCKET_CALLBACK_ID:
-      {
-         if (callbackPtr_ == nullptr)
+         case WEBSOCKET_CALLBACK_ID:
          {
-            currentReadMessage_.reset();
-            continue;
-         }
-
-         auto msgptr = make_shared<::Codec_BDVCommand::BDVCallback>();
-         if (!currentReadMessage_.message_.getMessage(msgptr.get()))
-         {
-            currentReadMessage_.reset();
-            continue;
-         }
-
-         callbackPtr_->processNotifications(msgptr);
-         currentReadMessage_.reset();
-
-         break;
-      }
-
-      default:
-         auto readMap = readPackets_.get();
-         auto iter = readMap->find(msgid);
-         if (iter != readMap->end())
-         {
-            auto& msgObjPtr = iter->second;
-            auto callbackPtr = dynamic_cast<CallbackReturn_WebSocket*>(
-               msgObjPtr->payload_->callbackReturn_.get());
-            if (callbackPtr == nullptr)
+            if (callbackPtr_ == nullptr) {
+               currentReadMessage_.reset();
                continue;
+            }
 
-            callbackPtr->callback(currentReadMessage_.message_);
-            readPackets_.erase(msgid);
+            auto msgReader = currentReadMessage_.getReader();
+            callbackPtr_->processNotifications(msgReader->getReader());
             currentReadMessage_.reset();
+            break;
          }
-         else
-         {
-            LOGWARN << "invalid msg id";
-            currentReadMessage_.reset();
-         }
+
+         default:
+            auto readMap = readPackets_.get();
+            auto iter = readMap->find(msgid);
+            if (iter != readMap->end()) {
+               auto& msgObjPtr = iter->second;
+               auto callbackPtr = dynamic_cast<CallbackReturn_WebSocket*>(
+                  msgObjPtr->payload_->callbackReturn_.get());
+               if (callbackPtr == nullptr) {
+                  continue;
+               }
+
+               callbackPtr->callback(currentReadMessage_);
+               readPackets_.erase(msgid);
+               currentReadMessage_.reset();
+            } else {
+               LOGWARN << "invalid msg id: " << msgid;
+               currentReadMessage_.reset();
+            }
       }
    }
 }
@@ -598,15 +543,14 @@ bool WebSocketClient::processAEADHandshake(const WebSocketMessagePartial& msgObj
    {
       SerializedMessage msg;
       BIP151Connection* connPtr = nullptr;
-      if (encrypt)
+      if (encrypt) {
          connPtr = bip151Connection_.get();
-
+      }
       msg.construct(payload.getDataVector(), connPtr, type);
       writeQueue_->push_back(msg);
    };
 
-   if (serverPubkeyProm_ != nullptr)
-   {
+   if (serverPubkeyProm_ != nullptr) {
       //wait on server pubkey announce ACK/nACK
       auto fut = serverPubkeyProm_->get_future();
       fut.wait();
@@ -617,42 +561,39 @@ bool WebSocketClient::processAEADHandshake(const WebSocketMessagePartial& msgObj
    auto msgbdr = msgObj.getSingleBinaryMessage();
    switch (msgObj.getType())
    {
-   case ArmoryAEAD::BIP151_PayloadType::PresentPubKey:
-   {
-      serverPubkeyAnnounce_ = true;
-
-      /*packet is server's pubkey, do we have it?*/
-      if (!bip151Connection_->isOneWayAuth())
+      case ArmoryAEAD::BIP151_PayloadType::PresentPubKey:
       {
-         LOGERR << "Trying to connect to 1-way server as a 2-way client." <<
-            " Aborting!";
-         return false;
-      }
-      
-      if (!bip151Connection_->havePublicKey(msgbdr, servName_))
-      {
-         //we don't have this key, setup promise and prompt user
-         serverPubkeyProm_ = make_shared<promise<bool>>();
-         promptUser(msgbdr, servName_);
-      }
+         serverPubkeyAnnounce_ = true;
 
-      return true;
-   }
+         /*packet is server's pubkey, do we have it?*/
+         if (!bip151Connection_->isOneWayAuth()) {
+            LOGERR << "Trying to connect to 1-way server as a 2-way client." <<
+               " Aborting!";
+            return false;
+         }
 
-   case ArmoryAEAD::BIP151_PayloadType::EncInit:
-   {
-      if (bip151Connection_->isOneWayAuth() && !serverPubkeyAnnounce_)
-      {
-         LOGERR << "trying to connect to 2-way server as 1-way client." <<
-            " Aborting!";
-         return false;
+         if (!bip151Connection_->havePublicKey(msgbdr, servName_)) {
+            //we don't have this key, setup promise and prompt user
+            serverPubkeyProm_ = std::make_shared<std::promise<bool>>();
+            promptUser(msgbdr, servName_);
+         }
+
+         return true;
       }
 
-      break;
-   }
+      case ArmoryAEAD::BIP151_PayloadType::EncInit:
+      {
+         if (bip151Connection_->isOneWayAuth() && !serverPubkeyAnnounce_) {
+            LOGERR << "trying to connect to 2-way server as 1-way client." <<
+               " Aborting!";
+            return false;
+         }
 
-   default: 
-      break;
+         break;
+      }
+
+      default:
+         break;
    }
 
    //regular client side AEAD handshake processing
@@ -662,33 +603,33 @@ bool WebSocketClient::processAEADHandshake(const WebSocketMessagePartial& msgObj
 
    switch (status)
    {
-   case ArmoryAEAD::HandshakeState::StepSuccessful:
-      return true;
+      case ArmoryAEAD::HandshakeState::StepSuccessful:
+         return true;
 
-   case ArmoryAEAD::HandshakeState::RekeySuccessful:
-   {
-      ++innerRekeyCount_;
-      return true;
-   }
+      case ArmoryAEAD::HandshakeState::RekeySuccessful:
+      {
+         ++innerRekeyCount_;
+         return true;
+      }
 
-   case ArmoryAEAD::HandshakeState::Completed:
-   {
-      outKeyTimePoint_ = chrono::system_clock::now();
+      case ArmoryAEAD::HandshakeState::Completed:
+      {
+         outKeyTimePoint_ = std::chrono::system_clock::now();
 
-      //flag connection as ready
-      connectionReadyProm_.set_value(true);
-      return true;
-   }
+         //flag connection as ready
+         connectionReadyProm_.set_value(true);
+         return true;
+      }
 
-   default:
-      return false;
+      default:
+         return false;
    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 void WebSocketClient::addPublicKey(const SecureBinaryData& pubkey)
 {
-   stringstream ss;
+   std::stringstream ss;
    ss << addr_ << ":" << port_;
 
    authPeers_->addPeer(pubkey, ss.str());
@@ -703,7 +644,7 @@ void WebSocketClient::setPubkeyPromptLambda(
 
 ///////////////////////////////////////////////////////////////////////////////
 void WebSocketClient::promptUser(
-   const BinaryDataRef& keyRef, const string& name)
+   const BinaryDataRef& keyRef, const std::string& name)
 {
    //is prompt lambda set?
    if (!userPromptLambda_)
@@ -734,7 +675,7 @@ void WebSocketClient::promptUser(
    };
 
    //run prompt in new thread
-   thread thr(promptLbd);
+   std::thread thr(promptLbd);
    if (thr.joinable())
       thr.detach();
 }
@@ -746,14 +687,14 @@ void WebSocketClient::promptUser(
 ///////////////////////////////////////////////////////////////////////////////
 void WSClientWriteQueue::push_back(SerializedMessage& msg)
 {
-   writeQueue_.push_back(move(msg));
+   writeQueue_.push_back(std::move(msg));
    lws_cancel_service(contextPtr_);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 SerializedMessage WSClientWriteQueue::pop_front()
 {
-   return move(writeQueue_.pop_front());
+   return std::move(writeQueue_.pop_front());
 }
 
 ///////////////////////////////////////////////////////////////////////////////

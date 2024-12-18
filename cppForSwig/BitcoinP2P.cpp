@@ -860,8 +860,8 @@ void BitcoinNodeInterface::registerInvTxLambda(
 
 ////////////////////////////////////////////////////////////////////////////////
 void BitcoinNodeInterface::registerNodeStatusLambda(function<void(void)> lbd)
-{ 
-   nodeStatusLambda_ = lbd; 
+{
+   nodeStatusLambda_ = lbd;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -874,8 +874,9 @@ void BitcoinNodeInterface::registerGetTxCallback(
 ////////////////////////////////////////////////////////////////////////////////
 void BitcoinNodeInterface::processInvTx(vector<InvEntry> invVec)
 {
-   if (invTxLambda_)
+   if (invTxLambda_) {
       invTxLambda_(invVec);
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1245,7 +1246,7 @@ void BitcoinP2P::processInv(unique_ptr<Payload> payload)
       }
 
       case Inv_Msg_Witness_Tx:
-      case Inv_Msg_Tx:         
+      case Inv_Msg_Tx:
          processInvTx(move(entryVec.second));
          break;
 
@@ -1295,11 +1296,10 @@ void BitcoinP2P::processReject(unique_ptr<Payload> payload)
 ////////////////////////////////////////////////////////////////////////////////
 void BitcoinP2P::sendMessage(unique_ptr<Payload> payload)
 {
-   auto&& msg = payload->serialize(getMagicWord());
+   auto msg = payload->serialize(getMagicWord());
 
    unique_lock<mutex> lock(writeMutex_);
-   auto socket_payload = make_unique<WritePayload_Raw>();
-   socket_payload->data_ = move(msg);
+   auto socket_payload = make_unique<WritePayload_Raw>(msg);
    socket_->pushPayload(move(socket_payload), nullptr);
 }
 
@@ -1320,8 +1320,7 @@ void BitcoinP2P::sendMessage(vector<unique_ptr<Payload>> payloadVec)
    }
 
    unique_lock<mutex> lock(writeMutex_);
-   auto socket_payload = make_unique<WritePayload_Raw>();
-   socket_payload->data_ = move(msg);
+   auto socket_payload = make_unique<WritePayload_Raw>(msg);
    socket_->pushPayload(move(socket_payload), nullptr);
 }
 

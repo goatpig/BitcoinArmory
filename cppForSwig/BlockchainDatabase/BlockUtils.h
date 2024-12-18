@@ -39,22 +39,7 @@
 #include "BitcoinP2p.h"
 #include "BDV_Notification.h"
 
-#ifndef MAXSIZE_T
-   #if defined(_WIN64) || defined(__X86_64__)
-      #define MAXSIZE_T UINT64_MAX
-   #else
-      #define MAXSIZE_T UINT32_MAX
-   #endif
-#endif
-
-#ifndef _MSC_VER
-   #include <fcntl.h>
-   #include <sys/mman.h>
-#endif
-
-
 #define NUM_BLKS_BATCH_THRESH 30
-
 #define NUM_BLKS_IS_DIRTY 2016
 
 class BlockDataManager;
@@ -115,13 +100,11 @@ struct ProgressData
 ////////////////////////////////////////////////////////////////////////////////
 class BlockDataManager
 {
-private:      
+private:
    LMDBBlockDatabase* iface_ = nullptr;
-   
    BlockFilePosition blkDataPosition_ = {0, 0};
-   
-   // Reorganization details
 
+   // Reorganization details
    class BDM_ScrAddrFilter;
    std::shared_ptr<BDM_ScrAddrFilter> scrAddrData_;
    std::shared_ptr<Blockchain> blockchain_;
@@ -134,7 +117,6 @@ private:
    std::exception_ptr exceptPtr_ = nullptr;
 
    unsigned checkTransactionCount_ = 0;
-   
    mutable std::shared_ptr<std::mutex> nodeStatusPollMutex_;
 
    Armory::Threading::Queue<std::shared_ptr<BDVNotificationHook>> oneTimeHooks_;

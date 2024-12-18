@@ -11,7 +11,7 @@
 #include "Signer.h"
 
 using namespace std;
-using namespace Armory::Signer;
+using namespace Armory::Signing;
 
 //dtors
 StackValue::~StackValue()
@@ -21,6 +21,12 @@ StackValue::~StackValue()
 ////////////////////////////////////////////////////////////////////////////////
 //// StackItem
 ////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+StackItemType StackItem::type() const
+{
+   return type_;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 bool StackItem_PushData::isSame(const StackItem* obj) const
 {
@@ -79,15 +85,18 @@ void StackItem_Sig::merge(const StackItem *obj)
    if (obj_cast == nullptr)
       throw ScriptException("unexpected StackItem type");
 
-   if (script_.empty())
+   if (script_.empty()) {
       script_ = obj_cast->script_;
-   else if (script_ != obj_cast->script_)
+   } else if (script_ != obj_cast->script_) {
       throw ScriptException("sig item script mismatch");
-   
-   if (pubkey_.empty())
+   }
+
+   if (pubkey_.empty()) {
       pubkey_ = obj_cast->pubkey_;
-   else if (pubkey_ != obj_cast->pubkey_)
+   }
+   else if (pubkey_ != obj_cast->pubkey_) {
       throw ScriptException("sig item pubkey mismatch");
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -104,160 +113,8 @@ void StackItem_MultiSig::merge(const StackItem* obj)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void StackItem_PushData::serialize(
-   Codec_SignerState::StackEntryState& protoMsg) const
-{
-   protoMsg.set_entry_type(Codec_SignerState::StackEntryState_Types::PushData);
-   protoMsg.set_entry_id(id_);
-
-   protoMsg.set_stackentry_data(data_.getPtr(), data_.getSize());
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void StackItem_Sig::serialize(
-   Codec_SignerState::StackEntryState& protoMsg) const
-{
-   protoMsg.set_entry_type(Codec_SignerState::StackEntryState_Types::SingleSig);
-   protoMsg.set_entry_id(id_);
-
-   auto sigEntry = protoMsg.mutable_sig_data();
-   sigEntry->set_pubkey(pubkey_.getPtr(), pubkey_.getSize());
-   sigEntry->set_script(script_.getPtr(), script_.getSize());
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void StackItem_MultiSig::serialize(
-   Codec_SignerState::StackEntryState& protoMsg) const
-{
-   protoMsg.set_entry_type(Codec_SignerState::StackEntryState_Types::MultiSig);
-   protoMsg.set_entry_id(id_);
-   
-   auto stackEntry = protoMsg.mutable_multisig_data();
-   stackEntry->set_script(script_.getPtr(), script_.getSize());
-
-   for (auto& sig_pair : sigs_)
-   {
-      stackEntry->add_sig_index(sig_pair.first);
-      stackEntry->add_sig_data(
-         sig_pair.second.getPtr(), sig_pair.second.getSize());
-   }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void StackItem_OpCode::serialize(
-   Codec_SignerState::StackEntryState& protoMsg) const
-{
-   protoMsg.set_entry_type(Codec_SignerState::StackEntryState_Types::OpCode);
-   protoMsg.set_entry_id(id_);
-
-   protoMsg.set_opcode(opcode_);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void StackItem_SerializedScript::serialize(
-   Codec_SignerState::StackEntryState& protoMsg) const
-{
-   protoMsg.set_entry_type(Codec_SignerState::StackEntryState_Types::Script);
-   protoMsg.set_entry_id(id_);
-
-   protoMsg.set_stackentry_data(data_.getPtr(), data_.getSize());
-}
-
-////////////////////////////////////////////////////////////////////////////////
-shared_ptr<StackItem> StackItem::deserialize(
-   const Codec_SignerState::StackEntryState& protoMsg)
-{
-   shared_ptr<StackItem> itemPtr;
-
-   auto id = protoMsg.entry_id();
-
-   switch (protoMsg.entry_type())
-   {
-   case Codec_SignerState::StackEntryState_Types::PushData:
-   {
-      if (!protoMsg.has_stackentry_data())
-         throw runtime_error("missing push data field");
-
-      auto&& data = BinaryDataRef::fromString(protoMsg.stackentry_data());
-      itemPtr = make_shared<StackItem_PushData>(id, move(data));
-
-      break;
-   }
-
-   case Codec_SignerState::StackEntryState_Types::SingleSig:
-   {
-      if (!protoMsg.has_sig_data())
-         throw runtime_error("missing sig data field");
-
-      const auto& sigData = protoMsg.sig_data();
-
-      auto pubkey = BinaryData::fromString(sigData.pubkey());
-      auto script = BinaryData::fromString(sigData.script());
-
-      itemPtr = make_shared<StackItem_Sig>(id, pubkey, script);
-      break;
-   }
-
-   case Codec_SignerState::StackEntryState_Types::MultiSig:
-   {
-      if (!protoMsg.has_multisig_data())
-         throw runtime_error("missing multisig data field");
-
-      const auto& msData = protoMsg.multisig_data();
-      if (msData.sig_data_size() != msData.sig_index_size())
-         throw runtime_error("multisig data mismatch");
-
-      //script
-      auto script = BinaryData::fromString(msData.script());
-
-      //instantiate stack object
-      auto itemMs = make_shared<StackItem_MultiSig>(id, script);
-
-      //fill it with carried over sigs
-      for (int i = 0; i < msData.sig_index_size(); i++)
-      {
-         auto pos = msData.sig_index(i);
-         auto&& data = SecureBinaryData::fromString(msData.sig_data(i));
-
-         itemMs->setSig(pos, data);
-      }
-
-      itemPtr = itemMs;
-      break;
-   }
-
-   case Codec_SignerState::StackEntryState_Types::OpCode:
-   {
-      if (!protoMsg.has_opcode())
-         throw runtime_error("missing opcode data field");
-      
-      auto opcode = protoMsg.opcode();
-      itemPtr = make_shared<StackItem_OpCode>(id, opcode);
-
-      break;
-   }
-
-   case Codec_SignerState::StackEntryState_Types::Script:
-   {
-      if (!protoMsg.has_stackentry_data())
-         throw runtime_error("missing push data field");
-
-      auto&& data = BinaryDataRef::fromString(protoMsg.stackentry_data());
-      itemPtr = make_shared<StackItem_SerializedScript>(id, move(data));
-
-      break;
-   }
-
-   default:
-      throw runtime_error("unexpected stack item prefix");
-   }
-
-   return itemPtr;
-}
-
-////////////////////////////////////////////////////////////////////////////////
 StackItem_MultiSig::StackItem_MultiSig(unsigned id, BinaryData& script) :
-   StackItem(StackItemType_MultiSig, id), script_(std::move(script))
+   StackItem(StackItemType::MultiSig, id), script_(std::move(script))
 {
    m_ = BtcUtils::getMultisigPubKeyList(script_, pubkeyVec_);
 

@@ -27,7 +27,6 @@
 #include "AuthorizedPeers.h"
 
 #include "BIP150_151.h"
-#include <google/protobuf/io/zero_copy_stream_impl_lite.h>
 
 #define SERVER_AUTH_PEER_FILENAME "server.peers"
 
@@ -71,14 +70,11 @@ struct BDV_packet
 ///////////////////////////////////////////////////////////////////////////////
 struct PendingMessage
 {
-   const uint64_t id_;
-   const uint32_t msgid_;
-   std::shared_ptr <::google::protobuf::Message> message_;
+   const uint64_t id;
+   const uint32_t msgid;
+   std::unique_ptr<Socket_WritePayload> payload;
 
-   PendingMessage(uint64_t id, uint32_t msgid, 
-      std::shared_ptr<::google::protobuf::Message> msg) :
-      id_(id), msgid_(msgid), message_(msg)
-   {}
+   PendingMessage(uint64_t, uint32_t, std::unique_ptr<Socket_WritePayload>);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -137,7 +133,7 @@ private:
 
    std::set<struct lws*> pendingWrites_;
    std::set<struct lws*>::const_iterator pendingWritesIter_;
-   
+
    //default to 2-way auth
    bool oneWayAuth_ = false;
 
@@ -172,7 +168,7 @@ public:
    static SecureBinaryData getPublicKey(void);
 
    static void write(const uint64_t&, const uint32_t&,
-      std::shared_ptr<::google::protobuf::Message>);
+      std::unique_ptr<Socket_WritePayload>);
 
    std::shared_ptr<const std::map<uint64_t, ClientConnection>>
       getConnectionStateMap(void) const;
