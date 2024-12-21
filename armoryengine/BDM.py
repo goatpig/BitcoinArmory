@@ -112,7 +112,6 @@ class BlockDataManager(object):
       self.topBlockHeight = 0
       self.cppNotificationListenerList = []
       self.cppPromptListeners = []
-      self.pythonPrompts = {}
 
       self.progressComplete=0
       self.secondsRemaining=0
@@ -145,32 +144,14 @@ class BlockDataManager(object):
 
    #############################################################################
    @ActLikeASingletonBDM
-   def registerUserPrompt(self, prompt):
-      self.cppPromptListeners.append(prompt)
+   def registerPrompt(self, prompt):
+      wrapper = BDMCallbackWrapper(None, prompt)
+      return wrapper.callbackId
 
    #############################################################################
    @ActLikeASingletonBDM
-   def registerCustomPrompt(self, prompt):
-      while True:
-         random.seed()
-         id = bytes(random.getrandbits(8) for _ in range(10))
-
-         if id in self.pythonPrompts:
-            continue
-
-         print ("registering callback id: " + id.hex())
-         self.pythonPrompts[id] = prompt
-         return id
-
-   #############################################################################
-   @ActLikeASingletonBDM
-   def unregisterCustomPrompt(self, id):
-      if id not in self.pythonPrompts:
-         LOGWARN("id missing from pythonPrompts")
-         return
-
-      print ("deleting callback id: " + id.hex())
-      del self.pythonPrompts[id]
+   def unregisterPrompt(self, id):
+      TheBridge.bridgeSocket.unsetCallback(id)
 
    #############################################################################
    @ActLikeASingletonBDM
@@ -310,35 +291,9 @@ class BlockDataManager(object):
          print(sys.exc_info())
 
    #############################################################################
-   def pushFromBridge(self, payloadType, payload, uniqueId, callerId):
-
-      if payloadType == OpaquePayloadType.Value("commandWithCallback"):
-         if len(uniqueId) == 0 or uniqueId not in self.pythonPrompts:
-            LOGWARN("Unknown prompt id")
-            return
-         
-         customCallback = self.pythonPrompts[uniqueId]
-         customCallback(payload, callerId)
-
-      elif payloadType == OpaquePayloadType.Value("prompt"):
-
-         promptProto = UnlockPromptCallback()
-         promptProto.ParseFromString(payload)
-
-         for prompt in self.cppPromptListeners:
-            prompt(\
-               promptProto.promptID, promptProto.promptType, \
-               promptProto.verbose, promptProto.walletID, promptProto.state)
-      else:
-         LOGWARN("Unknown prompt data type")
-
-   #############################################################################
    def startBridge(self, stringArgs, notifyReadyLbd):
-      pushNotifCallback = BDMCallbackWrapper(
-         CPP_BDM_NOTIF_ID, self.pushNotification)
-      reportProgressCallback = BDMCallbackWrapper(
-         CPP_PROGRESS_NOTIF_ID, self.reportProgress)
-
+      BDMCallbackWrapper(CPP_BDM_NOTIF_ID, self.pushNotification)
+      BDMCallbackWrapper(CPP_PROGRESS_NOTIF_ID, self.reportProgress)
       TheBridge.start(stringArgs, notifyReadyLbd)
 
 ################################################################################

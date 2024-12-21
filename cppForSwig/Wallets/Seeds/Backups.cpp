@@ -114,11 +114,11 @@ BinaryData Easy16Codec::getHash(const BinaryDataRef& data, uint8_t hint)
 uint8_t Easy16Codec::verifyChecksum(
    const BinaryDataRef& data, const BinaryDataRef& checksum)
 {
-   for (const auto& indexCandidate : eligibleIndexes_)
-   {
+   for (const auto& indexCandidate : eligibleIndexes_) {
       auto hash = getHash(data, (uint8_t)indexCandidate);
-      if (hash.getSliceRef(0, EASY16_CHECKSUM_LEN) == checksum)
+      if (hash.getSliceRef(0, EASY16_CHECKSUM_LEN) == checksum) {
          return (uint8_t)indexCandidate;
+      }
    }
 
    return EASY16_INVALID_CHECKSUM_INDEX;
@@ -621,18 +621,18 @@ bool BackupEasy16DecodeResult::isInitialized() const
 ////
 int BackupEasy16DecodeResult::getIndex() const
 {
-   if (!isInitialized())
+   if (!isInitialized()) {
       return -1;
-
-   if (repairedIndexes_.size() == 2)
-   {
-      if (repairedIndexes_[0] == repairedIndexes_[1])
-         return repairedIndexes_[0];
    }
-   else
-   {
-      if (checksumIndexes_[0] == checksumIndexes_[1])
+
+   if (repairedIndexes_.size() == 2) {
+      if (repairedIndexes_[0] == repairedIndexes_[1]) {
+         return repairedIndexes_[0];
+      }
+   } else {
+      if (checksumIndexes_[0] == checksumIndexes_[1]) {
          return checksumIndexes_[0];
+      }
    }
 
    return -1;
@@ -640,8 +640,9 @@ int BackupEasy16DecodeResult::getIndex() const
 
 bool BackupEasy16DecodeResult::isValid() const
 {
-   if (!isInitialized())
+   if (!isInitialized()) {
       return false;
+   }
 
    auto iter = Easy16Codec::eligibleIndexes_.find((BackupType)getIndex());
    return (iter != Easy16Codec::eligibleIndexes_.end());
@@ -1075,27 +1076,20 @@ shared_ptr<AssetWallet> Helpers::restoreFromBackup(
          break;
    }
 
-   if (seed == nullptr)
-   {
-      auto message = std::make_unique<capnp::MallocMessageBuilder>();
-      auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
-      payload.setTypeError("failed to create seed from backup");
-      callback(std::move(message));
-      throw RestoreUserException("failed to create seed from backup");
+   if (seed == nullptr) {
+      RestorePrompt prompt{RestorePromptType::TypeError};
+      prompt.error = "failed to create seed from backup"sv;
+      callback(prompt);
+      throw RestoreUserException(prompt.error);
    }
 
    //prompt user to verify id
    {
-      auto message = std::make_unique<capnp::MallocMessageBuilder>();
-      auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
-      auto walletId = payload.initCheckWalletId();
-      walletId.setWalletId(seed->getWalletId());
-      walletId.setBackupType((int)bType);
-
-      auto reply = callback(std::move(message));
-      auto reader = getReader(reply);
-      auto restoreReply = reader.getRoot<Codec::Bridge::RestoreReply>();
-      if (!restoreReply.getSuccess()) {
+      RestorePrompt prompt{RestorePromptType::Id};
+      prompt.walletId = seed->getWalletId();
+      prompt.backupType = bType;
+      auto reply = callback(prompt);
+      if (!reply.success) {
          throw RestoreUserException("user rejected id");
       }
    }
@@ -1104,19 +1098,13 @@ shared_ptr<AssetWallet> Helpers::restoreFromBackup(
    BinaryDataRef pass = params.passphrase.getRef();
    BinaryDataRef control = params.controlPassphrase.getRef();
    if (pass.empty()) {
-      auto message = std::make_unique<capnp::MallocMessageBuilder>();
-      auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
-      payload.setGetPassphrases();
-
-      auto reply = callback(std::move(message));
-      auto reader = getReader(reply);
-      auto restoreReply = reader.getRoot<Codec::Bridge::RestoreReply>();
-      if (!restoreReply.getSuccess()) {
+      auto reply = callback(RestorePrompt{RestorePromptType::Passphrases});
+      if (!reply.success) {
          throw RestoreUserException("user did not provide a passphrase");
       }
 
-      pass.setRef(restoreReply.getPrivkey());
-      control.setRef(restoreReply.getControl());
+      pass.setRef(reply.privPass);
+      control.setRef(reply.controlPass);
    }
 
    WalletCreationParams paramsCopy{ pass, control,
@@ -1133,8 +1121,9 @@ unique_ptr<ClearTextSeed> Helpers::restoreFromEasy16(
    BackupType& bType)
 {
    auto backupE16 = dynamic_cast<Backup_Easy16*>(backup.get());
-   if (backupE16 == nullptr)
+   if (backupE16 == nullptr) {
       return nullptr;
+   }
    bool isEncrypted = !backupE16->getSpPass().empty();
 
    /* decode data */
@@ -1154,14 +1143,14 @@ unique_ptr<ClearTextSeed> Helpers::restoreFromEasy16(
       (uint8_t*)secondLine.data(), secondLine.size()));
 
    auto primaryData = Easy16Codec::decode(first2Lines);
-   if (!primaryData.isInitialized())
+   if (!primaryData.isInitialized()) {
       return nullptr;
+   }
 
    //chaincode
    BackupEasy16DecodeResult secondaryData;
-   if (backupE16->hasChaincode())
-   {
-      vector<BinaryDataRef> next2Lines;
+   if (backupE16->hasChaincode()) {
+      std::vector<BinaryDataRef> next2Lines;
       auto thirdLine = backupE16->getChaincode(
          Backup_Easy16::LineIndex::One, isEncrypted);
       next2Lines.emplace_back(BinaryDataRef(
@@ -1173,113 +1162,84 @@ unique_ptr<ClearTextSeed> Helpers::restoreFromEasy16(
          (uint8_t*)fourthLine.data(), fourthLine.size()));
 
       secondaryData = Easy16Codec::decode(next2Lines);
-      if (!secondaryData.isInitialized())
+      if (!secondaryData.isInitialized()) {
          return nullptr;
+      }
    }
 
    /* checksums & repair */
 
    //root
-   if (!primaryData.isValid())
-   {
-      if (!Easy16Codec::repair(primaryData))
-      {
-         auto message = std::make_unique<capnp::MallocMessageBuilder>();
-         auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
-         auto checksumError = payload.initChecksumError(2);
-         checksumError.set(0, primaryData.checksumIndexes_[0]);
-         checksumError.set(1, primaryData.checksumIndexes_[1]);
-         callback(std::move(message));
+   if (!primaryData.isValid()) {
+      if (!Easy16Codec::repair(primaryData)) {
+         RestorePrompt prompt{RestorePromptType::ChecksumError};
+         prompt.checksumResult = primaryData.checksumIndexes_;
+         callback(prompt);
          return nullptr;
       }
 
-      if (!primaryData.isValid())
-      {
-         auto message = std::make_unique<capnp::MallocMessageBuilder>();
-         auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
-         auto checksumError = payload.initChecksumError(2);
-         checksumError.set(0, primaryData.repairedIndexes_[0]);
-         checksumError.set(1, primaryData.repairedIndexes_[1]);
-         callback(std::move(message));
+      if (!primaryData.isValid()) {
+         RestorePrompt prompt{RestorePromptType::ChecksumError};
+         prompt.checksumResult = primaryData.repairedIndexes_;
+         callback(prompt);
          return nullptr;
       }
    }
 
    //chaincode
-   if (secondaryData.isInitialized())
-   {
-      if (!Easy16Codec::repair(secondaryData))
-      {
-         auto message = std::make_unique<capnp::MallocMessageBuilder>();
-         auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
-         auto checksumError = payload.initChecksumError(2);
-         checksumError.set(0, secondaryData.checksumIndexes_[0]);
-         checksumError.set(1, secondaryData.checksumIndexes_[1]);
-         callback(std::move(message));
+   if (secondaryData.isInitialized()) {
+      if (!Easy16Codec::repair(secondaryData)) {
+         RestorePrompt prompt{RestorePromptType::ChecksumError};
+         prompt.checksumResult = secondaryData.checksumIndexes_;
+         callback(prompt);
          return nullptr;
       }
 
-      if (!secondaryData.isValid())
-      {
-         auto message = std::make_unique<capnp::MallocMessageBuilder>();
-         auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
-         auto checksumError = payload.initChecksumError(2);
-         checksumError.set(0, secondaryData.repairedIndexes_[0]);
-         checksumError.set(1, secondaryData.repairedIndexes_[1]);
-         callback(std::move(message));
+      if (!secondaryData.isValid()) {
+         RestorePrompt prompt{RestorePromptType::ChecksumError};
+         prompt.checksumResult = secondaryData.repairedIndexes_;
+         callback(prompt);
          return nullptr;
       }
 
       //check chaincode index matches root index
-      if (primaryData.getIndex() != secondaryData.getIndex())
-      {
-         auto message = std::make_unique<capnp::MallocMessageBuilder>();
-         auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
-         auto checksumError = payload.initChecksumMismatch(2);
-         checksumError.set(0, primaryData.getIndex());
-         checksumError.set(1, secondaryData.getIndex());
-         callback(std::move(message));
+      if (primaryData.getIndex() != secondaryData.getIndex()) {
+         RestorePrompt prompt{RestorePromptType::ChecksumError};
+         prompt.checksumResult.reserve(2);
+         prompt.checksumResult.push_back(primaryData.getIndex());
+         prompt.checksumResult.push_back(secondaryData.getIndex());
+         callback(prompt);
          return nullptr;
       }
    }
 
    /* SecurePrint */
-   if (isEncrypted)
-   try
-   {
-      SecurePrint sp;
-      auto pass = backupE16->getSpPass();
-      BinaryDataRef passRef((uint8_t*)pass.data(), pass.size());
-      primaryData.data_ = move(sp.decrypt(primaryData.data_, passRef));
+   if (isEncrypted) {
+      try {
+         SecurePrint sp;
+         auto pass = backupE16->getSpPass();
+         BinaryDataRef passRef((uint8_t*)pass.data(), pass.size());
+         primaryData.data_ = std::move(sp.decrypt(primaryData.data_, passRef));
 
-      if (secondaryData.isInitialized())
-         secondaryData.data_ = move(sp.decrypt(secondaryData.data_, passRef));
-   }
-   catch (const exception&)
-   {
-      auto message = std::make_unique<capnp::MallocMessageBuilder>();
-      auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
-      payload.setDecryptError();
-      callback(std::move(message));
-      throw RestoreUserException("invalid SP pass");
+         if (secondaryData.isInitialized()) {
+            secondaryData.data_ = move(sp.decrypt(secondaryData.data_, passRef));
+         }
+      } catch (const std::exception&) {
+         callback(RestorePrompt{RestorePromptType::DecryptError});
+         throw RestoreUserException("invalid SP pass");
+      }
    }
 
    /* backup type */
-   if (bType == BackupType::Easy16_Unkonwn)
-   {
+   if (bType == BackupType::Easy16_Unkonwn) {
       bType = (BackupType)primaryData.getIndex();
-   }
-   else
-   {
-      if ((BackupType)primaryData.getIndex() != bType)
-      {
-         //mismatch between easy16 index and backup expected type
-         auto message = std::make_unique<capnp::MallocMessageBuilder>();
-         auto payload = message->initRoot<Codec::Bridge::RestorePrompt>();
-         auto checksumError = payload.initChecksumMismatch(2);
-         checksumError.set(0, primaryData.getIndex());
-         checksumError.set(1, (int)bType);
-         callback(std::move(message));
+   } else {
+      if ((BackupType)primaryData.getIndex() != bType) {
+         RestorePrompt prompt{RestorePromptType::ChecksumMismatch};
+         prompt.checksumResult.reserve(2);
+         prompt.checksumResult.push_back(primaryData.getIndex());
+         prompt.checksumResult.push_back((int)bType);
+         callback(prompt);
          return nullptr;
       }
    }
@@ -1568,4 +1528,18 @@ unique_ptr<Backup_BIP39> Backup_BIP39::fromMnemonicString(string_view strV)
 string_view Backup_BIP39::getMnemonicString() const
 {
    return string_view(mnemonicString_.toCharPtr(), mnemonicString_.getSize());
+}
+
+///////////////////////////////// RestorePrompt ////////////////////////////////
+bool RestorePrompt::needsReply() const
+{
+   switch (promptType)
+   {
+      case RestorePromptType::Passphrases:
+      case RestorePromptType::Id:
+         return true;
+
+      default:
+         return false;
+   }
 }

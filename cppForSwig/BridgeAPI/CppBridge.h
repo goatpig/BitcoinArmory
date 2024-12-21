@@ -21,6 +21,11 @@ namespace AsyncClient
 
 namespace Armory
 {
+   namespace Seeds
+   {
+      struct PromptReply;
+   }
+
    namespace Bridge
    {
       struct ServerPushWrapper;
@@ -95,8 +100,7 @@ namespace Armory
       };
 
       //////////////////////////////////////////////////////////////////////////
-      using CallbackHandler = std::function<bool(
-         bool, SecureBinaryData&)>;
+      using CallbackHandler = std::function<bool(const Seeds::PromptReply&)>;
 
       class CppBridge
       {
@@ -160,7 +164,10 @@ namespace Armory
             const SecureBinaryData&);
          void createBackupStringForWallet(const std::string&,
             const std::string&, MessageId);
-         void restoreWallet(const BinaryDataRef&);
+         void restoreWallet(
+            const std::vector<std::string_view>&,
+            const std::string_view&,
+            const std::string_view&);
 
          //ledgers
          const std::string& getLedgerDelegateId(void);

@@ -338,5 +338,6 @@ class UnlockWalletHandler(ServerPush, DlgUnlockWallet):
    def reply(self, passphrase):
       packet = self.getNewPacket()
       packet.success = bool(len(passphrase) != 0)
-      packet.passphrase = passphrase
+      packet.init("passphrases", 1)
+      packet.passphrases[0] = passphrase
       super().reply()

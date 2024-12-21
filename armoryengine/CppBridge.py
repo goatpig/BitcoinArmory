@@ -104,7 +104,8 @@ class BridgeSocket(object):
       self.callbackDict[key] = func
 
    def unsetCallback(self, key):
-      del self.callbackDict[key]
+      if key in self.callbackDict:
+         del self.callbackDict[key]
 
    #############################################################################
    ## listen socket setup
@@ -315,8 +316,8 @@ class BridgeSocket(object):
             #non AEAD data is only tolerated after channels are setup
             raise BridgeError("Received user data before AEAD is ready")
 
-         #grab packet id
-         fullPacket = response[1:]
+         #grab full packet
+         fullPacket = response[4:]
 
          #deser proto reply
          with Bridge.FromBridge.from_bytes(fullPacket) as protoPayload:
@@ -1258,26 +1259,31 @@ class ArmoryBridge(object):
       return blockTime
 
    #############################################################################
-   def restoreWallet(self, root: list[str], chaincode: list[str], spPass: str, callbackId):
-      opaquePayload = Bridge.RestoreWalletPayload.new_message()
-      
-      payloadRoot = opaquePayload.init("root", len(root))
-      for i, r in enumerate(root):
-         payloadRoot[i] = r
+   def restoreWallet(self, root: list[str], chaincode: list[str],
+      spPass: str, callbackId: str):
+      restorePayload = Bridge.RestoreWalletPayload.new_message()
 
-      payloadSecondary = opaquePayload.init("secondary", len(chaincode))
-      for i, c in enumerate(chaincode):
-         payloadSecondary[i] = c
+      #root
+      if len(root) > 0:
+         payloadRoot = restorePayload.init("root", len(root))
+         for i, r in enumerate(root):
+            payloadRoot[i] = r
 
-      opaquePayload.spPass = spPass
+      #chaincode
+      if len(chaincode) > 0:
+         payloadChaincode = restorePayload.init("chaincode", len(chaincode))
+         for i, c in enumerate(chaincode):
+            payloadChaincode[i] = c
+
+      #passphrase
+      if spPass:
+         restorePayload.spPass = spPass
 
       packet = Bridge.ToBridge.new_message()
-      packet.method = BridgeProto_pb2.methodWithCallback
-      packet.methodWithCallback = BridgeProto_pb2.restoreWallet
-
-      packet.byteArgs.append(callbackId)
-      packet.byteArgs.append(opaquePayload.SerializeToString())
-
+      utilsRequest = packet.init("utils")
+      restoreStruct = utilsRequest.init("restoreWallet")
+      restoreStruct.payload = restorePayload
+      restoreStruct.callbackId = callbackId
       self.send(packet, False)
 
    #############################################################################
@@ -1313,7 +1319,7 @@ class ServerPush(ProtoWrapper):
    def __init__(self, callbackId=""):
       super().__init__(TheBridge.bridgeSocket)
 
-      if len(callbackId) == 0:
+      if not callbackId:
          self.callbackId = base64.b16encode(os.urandom(10)).decode('utf-8')
       else:
          self.callbackId = callbackId

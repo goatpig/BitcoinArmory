@@ -310,18 +310,18 @@ void WritePayload_Bridge::serialize(std::vector<uint8_t>& payload)
    if (data.empty()) {
       return;
    }
-   payload.resize(data.getSize() + 5 + POLY1305MACLEN);
+   payload.resize(data.getSize() + 8 + POLY1305MACLEN);
 
    //set packet size
-   uint32_t sizeVal = data.getSize() + 1;
+   uint32_t sizeVal = data.getSize() + 4;
    memcpy(&payload[0], &sizeVal, sizeof(uint32_t));
 
    //serialize protobuf message
-   memcpy(&payload[5], data.getPtr(), data.getSize());
+   memcpy(&payload[8], data.getPtr(), data.getSize());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 size_t WritePayload_Bridge::getSerializedSize(void) const
 {
-   return data.getSize() + 5 + POLY1305MACLEN;
+   return data.getSize() + 8 + POLY1305MACLEN;
 }

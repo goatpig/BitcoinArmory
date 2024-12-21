@@ -632,134 +632,162 @@ void CppBridge::createBackupStringForWallet(const std::string& waaId,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void CppBridge::restoreWallet(const BinaryDataRef& msgRef)
+void CppBridge::restoreWallet(
+   const std::vector<std::string_view>& lines_sv,
+   const std::string_view& spPass_sv,
+   const std::string_view& callbackId)
 {
+   //NOTE: easy16 only for now, will need a dedicated call for BIP39
+
    /*
    Needs 2 lines for the root, possibly another 2 for the chaincode, possibly
    1 more for the SecurePrint passphrase.
 
-   This call will block waiting on user replies to the prompt for the different 
+   This call will block waiting on user replies to the prompt for the different
    steps in the wallet restoration process (checking id, checkums, passphrase
    requests). It has to run in its own thread.
    */
 
-   //TODO: fix me
-
-   #if 0
-   RestoreWalletPayload msg;
-   msg.ParseFromArray(msgRef.getPtr(), msgRef.getSize());
-
-   if (msg.root_size() != 2)
-      throw runtime_error("[restoreWallet] invalid root lines count");
+   auto backup = Seeds::Backup_Easy16::fromLines(lines_sv, spPass_sv);
 
    //
-   auto restoreLbd = [this](RestoreWalletPayload msg)
+   auto restoreLbd = [this](
+      std::unique_ptr<Seeds::Backup_Easy16> backup,
+      const std::string callbackId)
    {
-      auto createCallbackMessage = [](
-         int promptType,
-         const vector<int> chkResults,
-         SecureBinaryData& extra)->unique_ptr<BridgeProto::Payload>
+      auto createCallbackMessage = [callbackId](
+         const Seeds::RestorePrompt& prompt, uint32_t notifCounter)->BinaryData
       {
-         RestorePrompt opaqueMsg;
-         opaqueMsg.set_prompttype((RestorePromptType)promptType);
-         for (auto& chk : chkResults)
-            opaqueMsg.add_checksums(chk);
+         capnp::MallocMessageBuilder message;
+         auto promptCapnp = message.initRoot<FromBridge>();
+         auto notifCapnp = promptCapnp.initNotification();
+         notifCapnp.setCallbackId(callbackId);
+         notifCapnp.setCounter(notifCounter);
 
-         if (!extra.empty())
-            opaqueMsg.set_extra(extra.toCharPtr(), extra.getSize());
-
-         //wrap in opaque payload
-         auto payload = make_unique<BridgeProto::Payload>();
-         auto callback = payload->mutable_callback();
-         callback->set_callback_id(
-            handler->id().getCharPtr(), handler->id().getSize());
-
-         /*callbackMsg->set_payloadtype(OpaquePayloadType::commandWithCallback);
-
-         string serializedOpaqueData;
-         opaqueMsg.SerializeToString(&serializedOpaqueData);
-         callbackMsg->set_payload(serializedOpaqueData);*/
-
-         return payload;
-      };
-
-      auto callback = [this, handler, createCallbackMessage](
-         Armory::Backups::RestorePromptType promptType,
-         const vector<int> chkResults,
-         SecureBinaryData& extra)->bool
-      {
-         //convert prompt args to protobuf
-         auto callbackMsg = createCallbackMessage(
-            promptType, chkResults, extra);
-
-         //setup reply lambda
-         auto prom = make_shared<promise<BinaryData>>();
-         auto fut = prom->get_future();
-         auto replyLbd = [prom](BinaryData data)->void
+         auto restore = notifCapnp.initRestore();
+         switch (prompt.promptType)
          {
-            prom->set_value(data);
-         };
+            case Seeds::RestorePromptType::FormatError:
+            case Seeds::RestorePromptType::Failure:
+            {
+               restore.setFailure();
+               break;
+            }
 
-         //register reply lambda will callbacks handler
-         //auto callbackId = handler->addCallback(replyLbd);
-         //callbackMsg->mutable_callback()->set_callback_id(callbackId);
-         writeToClient(move(callbackMsg));
+            case Seeds::RestorePromptType::ChecksumError:
+            {
+               auto chksumCapnp = restore.initChecksumError(
+                  prompt.checksumResult.size());
+               for (unsigned i=0; i<prompt.checksumResult.size(); i++) {
+                  chksumCapnp.set(i, prompt.checksumResult[i]);
+               }
+               break;
+            }
 
-         //wait on reply
-         auto&& data = fut.get();
+            case Seeds::RestorePromptType::ChecksumMismatch:
+            {
+               auto chksumCapnp = restore.initChecksumMismatch(
+                  prompt.checksumResult.size());
+               for (unsigned i=0; i<prompt.checksumResult.size(); i++) {
+                  chksumCapnp.set(i, prompt.checksumResult[i]);
+               }
+               break;
+            }
 
-         //process it
-         RestoreReply reply;
-         reply.ParseFromArray(data.getPtr(), data.getSize());
+            case Seeds::RestorePromptType::DecryptError:
+            {
+               restore.setDecryptError();
+               break;
+            }
 
-         if (!reply.extra().empty())
-            extra = move(SecureBinaryData::fromString(reply.extra()));
+            case Seeds::RestorePromptType::Passphrases:
+            {
+               restore.setGetPassphrases();
+               break;
+            }
 
-         return reply.result();
+            case Seeds::RestorePromptType::Id:
+            {
+               auto metaCapnp = restore.initCheckWalletId();
+               metaCapnp.setWalletId(prompt.walletId);
+               metaCapnp.setBackupType((int)prompt.backupType);
+               break;
+            }
+
+            case Seeds::RestorePromptType::TypeError:
+            {
+               restore.setTypeError(prompt.error);
+               break;
+            }
+
+            case Seeds::RestorePromptType::Success:
+            {
+               restore.setSuccess();
+               break;
+            }
+
+            default:
+               throw std::runtime_error("invalid prompt type");
+         }
+         return serializeCapnp(message);
       };
 
-      //grab passphrase
-      BinaryDataRef passphrase;
-      passphrase.setRef(msg.sppass());
-
-      //grab backup lines
-      vector<BinaryDataRef> lines;
-      for (unsigned i=0; i<2; i++)
+      auto callback = [this, createCallbackMessage](
+         const Seeds::RestorePrompt& prompt)->Seeds::PromptReply
       {
-         const auto& line = msg.root(i);
-         lines.emplace_back((const uint8_t*)line.c_str(), line.size());
-      }
+         if (prompt.needsReply()) {
+            auto counterBd = BtcUtils::fortuna_.generateRandom(4);
+            auto notifCounter = *(uint32_t*)counterBd.getPtr();
+            auto message = createCallbackMessage(prompt, notifCounter);
 
-      for (int i=0; i<msg.secondary_size(); i++)
-      {
-         const auto& line = msg.secondary(i);
-         lines.emplace_back((const uint8_t*)line.c_str(), line.size());
-      }
+            //setup reply lambda
+            auto prom = std::make_shared<std::promise<Seeds::PromptReply>>();
+            auto fut = prom->get_future();
+            auto replyLbd = [prom](const Seeds::PromptReply& reply)->bool
+            {
+               prom->set_value(reply);
+               return true;
+            };
 
-      try
-      {
+            //push prompt to caller
+            ServerPushWrapper wrapper{notifCounter, replyLbd, std::move(message)};
+            callbackWriter(wrapper);
+
+            //wait on reply
+            return fut.get();
+         } else {
+            auto message = createCallbackMessage(prompt, 0);
+            ServerPushWrapper wrapper{0, nullptr, std::move(message)};
+            callbackWriter(wrapper);
+            return {false};
+         }
+      };
+
+      try {
          //create wallet from backup
-         auto wltPtr = Armory::Backups::Helpers::restoreFromBackup(
-            lines, passphrase, wltManager_->getWalletDir(), callback);
+         Wallets::WalletCreationParams params{
+            {}, //passphrase, leave empty so that it prompts the user
+            {}, //control passphrase, same treatment
+            wltManager_->getWalletDir() //folder where the wallet is created
+            //TODO: add kdf params and lookup
+         };
+         auto wltPtr = Armory::Seeds::Helpers::restoreFromBackup(
+            std::move(backup), callback, params);
 
-         if (wltPtr == nullptr)
-            throw runtime_error("empty wallet");
+         if (wltPtr == nullptr) {
+            throw std::runtime_error("empty wallet");
+         }
 
          //add wallet to manager
          auto accIds = wltPtr->getAccountIDs();
-         for (const auto& accId : accIds)
+         for (const auto& accId : accIds) {
             wltManager_->addWallet(wltPtr, accId);
+         }
 
          //signal caller of success
          SecureBinaryData dummy;
-         auto successMsg = createCallbackMessage(
-            RestorePromptType::Success, {}, dummy);
-         successMsg->mutable_callback()->set_callback_id(
-            BRIDGE_CALLBACK_PROMPTUSER);
-         writeToClient(move(successMsg));
-      }
-      catch (const Armory::Backups::RestoreUserException& e)
-      {
+         callback(Seeds::RestorePrompt{Seeds::RestorePromptType::Success});
+      } catch (const Armory::Seeds::RestoreUserException& e) {
          /*
          These type of errors are the result of user actions. They should have
          an opportunity to fix the issue. Consequently, no error flag will be 
@@ -767,41 +795,24 @@ void CppBridge::restoreWallet(const BinaryDataRef& msgRef)
          */
 
          LOGWARN << "[restoreFromBackup] user exception: " << e.what();
-      }
-      catch (const exception& e)
-      {
+      } catch (const std::exception& e) {
          LOGERR << "[restoreFromBackup] fatal error: " << e.what();
 
          /*
          Report error to client. This will catch throws in the
          callbacks reply handler too.
          */
-         /*auto errorMsg = make_unique<OpaquePayload>();
-         errorMsg->set_payloadtype(OpaquePayloadType::commandWithCallback);
-         errorMsg->set_uniqueid(
-            handler->id().getPtr(), handler->id().getSize());
-         errorMsg->set_intid(UINT32_MAX); //error flag
-
-         BridgeProto::Strings errorVerbose;
-         errorVerbose.add_reply(e.what());
-
-         string serializedOpaqueData;
-         errorVerbose.SerializeToString(&serializedOpaqueData);
-         errorMsg->set_payload(serializedOpaqueData);*/
-
-         auto payload = make_unique<BridgeProto::Payload>();
-         auto callback = payload->mutable_callback();
-         callback->set_callback_id(
-            handler->id().toCharPtr(), handler->id().getSize());
-         callback->set_error(e.what());
-         writeToClient(move(payload));
+         Seeds::RestorePrompt errorPrompt{Seeds::RestorePromptType::Success};
+         errorPrompt.error = e.what();
+         callback(errorPrompt);
       }
-
-      handler->flagForCleanup();
    };
-   #endif
 
-   //handler->methodThr_ = thread(restoreLbd, move(msg));
+   auto worker = std::thread(restoreLbd,
+      std::move(backup), std::string{callbackId});
+   if (worker.joinable()) {
+      worker.detach();
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

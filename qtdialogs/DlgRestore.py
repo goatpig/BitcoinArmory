@@ -161,7 +161,7 @@ class DlgRestoreSingle(ArmoryDialog):
 
       self.setMinimumWidth(500)
       self.layout().setSizeConstraint(QtWidgets.QLayout.SetFixedSize)
-      self.changeType(self.backupTypeButtonGroup.checkedId())
+      self.changeType(self.backupTypeButtonGroup.checkedButton())
 
    #############################################################################
    # Hide advanced options whenver the restored wallet is unencrypted
@@ -170,25 +170,26 @@ class DlgRestoreSingle(ArmoryDialog):
 
    #############################################################################
    def accept(self):
-      TheBDM.unregisterCustomPrompt(self.callbackId)
+      TheBDM.unregisterPrompt(self.callbackId)
       super(ArmoryDialog, self).accept()
 
    #############################################################################
    def reject(self):
-      TheBDM.unregisterCustomPrompt(self.callbackId)
+      TheBDM.unregisterPrompt(self.callbackId)
       super(ArmoryDialog, self).reject()
 
    #############################################################################
    def changeType(self, sel):
-      if   sel == self.backupTypeButtonGroup.id(self.version135Button):
+      print (f" selection: {sel}")
+      if   sel == self.version135Button:
          visList = [0, 1, 1, 1, 1]
-      elif sel == self.backupTypeButtonGroup.id(self.version135aButton):
+      elif sel == self.version135aButton:
          visList = [0, 1, 1, 1, 1]
-      elif sel == self.backupTypeButtonGroup.id(self.version135aSPButton):
+      elif sel == self.version135aSPButton:
          visList = [1, 1, 1, 1, 1]
-      elif sel == self.backupTypeButtonGroup.id(self.version135cButton):
+      elif sel == self.version135cButton:
          visList = [0, 1, 1, 0, 0]
-      elif sel == self.backupTypeButtonGroup.id(self.version135cSPButton):
+      elif sel == self.version135cSPButton:
          visList = [1, 1, 1, 0, 0]
       else:
          LOGERROR('What the heck backup type is selected?  %d', sel)
@@ -203,7 +204,8 @@ class DlgRestoreSingle(ArmoryDialog):
       self.isLongForm = (visList[-1] == 1)
 
    #############################################################################
-   def processCallback(self, payload, callerId):
+   def processCallback(self, payload):
+
 
       if callerId == UINT32_MAX:
          errorMsg = "N/A"
@@ -226,7 +228,7 @@ class DlgRestoreSingle(ArmoryDialog):
 
       result, extra = self.processCallbackPayload(payload)
       if result == False:
-         TheBDM.unregisterCustomPrompt(self.callbackId)
+         TheBDM.unregisterPrompt(self.callbackId)
 
       reply = BridgeProto_pb2.RestoreReply()
       reply.result = result
@@ -389,16 +391,15 @@ class DlgRestoreSingle(ArmoryDialog):
       with branches.
 
       A dedicated callbackId is generated for this interaction and passed to
-      TheBDM callback map along with a py side method to handle the protobuf
+      TheBDM callback map along with a py side method to handle the proto
       packet from the C++ side.
 
       The C++ method is called with that id.
       '''
       def callback(payload, callerId):
-         TheSignalExecution.executeMethod(self.processCallback,
-            [payload, callerId])
+         TheSignalExecution.executeMethod(self.processCallback, payload, callerId)
 
-      self.callbackId = TheBDM.registerCustomPrompt(callback)
+      self.callbackId = TheBDM.registerPrompt(callback)
       TheBridge.restoreWallet(root, chaincode, spPass, self.callbackId)
 
       '''
@@ -410,19 +411,18 @@ class DlgRestoreSingle(ArmoryDialog):
          QtWidgets.QMessageBox.critical(self, self.tr('Invalid Max Memory Usage'), \
             self.tr('You entered Max Memory Usage incorrectly.\n\nEnter: <Number> (kB, MB)'), QtWidgets.QMessageBox.Ok)
          return
-        if nError > 0:
-            pluralStr = 'error' if nError == 1 else 'errors'
 
-            msg = self.tr(
-               'Detected errors in the data you entered. '
-               'Armory attempted to fix the errors but it is not '
-               'always right.  Be sure to verify the "Wallet Unique ID" '
-               'closely on the next window.')
+      if nError > 0:
+         pluralStr = 'error' if nError == 1 else 'errors'
+         msg = self.tr(
+            'Detected errors in the data you entered. '
+            'Armory attempted to fix the errors but it is not '
+            'always right.  Be sure to verify the "Wallet Unique ID" '
+            'closely on the next window.')
 
-            QtWidgets.QMessageBox.question(self, self.tr('Errors Corrected'), msg, \
-               QtWidgets.QMessageBox.Ok)
+         QtWidgets.QMessageBox.question(self, self.tr('Errors Corrected'), msg, \
+            QtWidgets.QMessageBox.Ok)
       '''
-
 
 ################################################################################
 class DlgRestoreFragged(ArmoryDialog):
@@ -1122,20 +1122,20 @@ class DlgEnterOneFrag(ArmoryDialog):
    #############################################################################
    def changeType(self, sel):
       #            |-- X --| |-- Y --| |-- F --|
-      if sel == self.backupTypeButtonGroup.id(self.version0Button):
+      if sel == self.version0Button:
          visList = [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0]
-      elif sel == self.backupTypeButtonGroup.id(self.version135aButton) or \
-           sel == self.backupTypeButtonGroup.id(self.version135aSPButton):
+      elif sel == self.version135aButton or \
+           sel == self.version135aSPButton:
          visList = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1]
-      elif sel == self.backupTypeButtonGroup.id(self.version135cButton) or \
-           sel == self.backupTypeButtonGroup.id(self.version135cSPButton):
+      elif sel == self.version135cButton or \
+           sel == self.version135cSPButton:
          visList = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0]
       else:
          LOGERROR('What the heck backup type is selected?  %d', sel)
          return
 
-      self.frmSP.setVisible(sel == self.backupTypeButtonGroup.id(self.version135aSPButton) or \
-                            sel == self.backupTypeButtonGroup.id(self.version135cSPButton))
+      self.frmSP.setVisible(sel == self.version135aSPButton or \
+                            sel == self.version135cSPButton)
       for i in range(12):
          self.prfxList[i].setVisible(visList[i] == 1)
          self.edtList[ i].setVisible(visList[i] == 1)
@@ -1161,18 +1161,18 @@ class DlgEnterOneFrag(ArmoryDialog):
 
       sel = self.backupTypeButtonGroup.checkedId()
       rng = [-1]
-      if   sel == self.backupTypeButtonGroup.id(self.version0Button):
+      if   sel == self.version0Button:
          rng = range(8)
-      elif sel == self.backupTypeButtonGroup.id(self.version135aButton) or \
-           sel == self.backupTypeButtonGroup.id(self.version135aSPButton):
+      elif sel == self.version135aButton or \
+           sel == self.version135aSPButton:
          rng = range(8, 12)
-      elif sel == self.backupTypeButtonGroup.id(self.version135cButton) or \
-           sel == self.backupTypeButtonGroup.id(self.version135cSPButton):
+      elif sel == self.version135cButton or \
+           sel == self.version135cSPButton:
          rng = range(8, 10)
 
 
-      if sel == self.backupTypeButtonGroup.id(self.version135aSPButton) or \
-         sel == self.backupTypeButtonGroup.id(self.version135cSPButton):
+      if sel == self.version135aSPButton or \
+         sel == self.version135cSPButton:
          # Prepare the key mask parameters
          SECPRINT = HardcodedKeyMaskParams()
          securePrintCode = str(self.editSecurePrint.text()).strip()

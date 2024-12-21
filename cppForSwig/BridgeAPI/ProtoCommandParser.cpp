@@ -8,6 +8,7 @@
 
 #include "ProtoCommandParser.h"
 #include "CppBridge.h"
+#include "Wallets/Seeds/Backups.h"
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>
@@ -904,6 +905,34 @@ namespace
             break;
          }
 
+         case UtilsRequest::RESTORE_WALLET:
+         {
+            auto walletRequest = request.getRestoreWallet();
+            auto payload = walletRequest.getPayload();
+
+            auto roots = payload.getRoot();
+            auto chaincodes = payload.getChaincode();
+            std::vector<std::string_view> lines;
+            lines.reserve(roots.size() + chaincodes.size());
+            for (const auto& root : roots) {
+               lines.emplace_back(
+                  std::string_view{root.begin(), root.size()});
+            }
+            for (const auto& chaincode : chaincodes) {
+               lines.emplace_back(
+                  std::string_view{chaincode.begin(), chaincode.size()});
+            }
+
+            auto spPassCapnp = payload.getSpPass();
+            std::string_view spPass{spPassCapnp.begin(), spPassCapnp.size()};
+
+            auto callbackIdCapnp = walletRequest.getCallbackId();
+            std::string_view callbackId{callbackIdCapnp.begin(), callbackIdCapnp.size()};
+
+            bridge->restoreWallet(lines, spPass, callbackId);
+            break;
+         }
+
          case UtilsRequest::GENERATE_RANDOM_HEX:
          {
             auto str = bridge->generateRandom(
@@ -1061,9 +1090,23 @@ namespace
       NotificationReply::Reader& notif)
    {
       try {
+         std::vector<SecureBinaryData> passphrases;
+         auto capnpPasses = notif.getPassphrases();
+         passphrases.reserve(capnpPasses.size());
+         for (const auto& capnpPass : capnpPasses) {
+            passphrases.emplace_back(SecureBinaryData{
+               (uint8_t*)capnpPass.begin(),
+               (uint8_t*)capnpPass.end()
+            });
+         }
+
+         Seeds::PromptReply promptReply{
+            notif.getSuccess(),
+            passphrases.size() > 0 ? std::move(passphrases[0]) : SecureBinaryData{},
+            passphrases.size() > 1 ? std::move(passphrases[1]) : SecureBinaryData{},
+         };
          auto handler = bridge->getCallbackHandler(notif.getCounter());
-         auto sbdPass = SecureBinaryData::fromString(notif.getPassphrase());
-         return handler(notif.getSuccess(), sbdPass);
+         return handler(promptReply);
       } catch (const std::runtime_error& e) {
          LOGERR << "failed notif handling with error: " << e.what();
          return false;

@@ -12,6 +12,7 @@
 
 #include "log.h"
 #include "PassphrasePrompt.h"
+#include "Wallets/Seeds/Backups.h"
 
 
 using namespace Armory;
@@ -30,7 +31,7 @@ BridgePassphrasePrompt::BridgePassphrasePrompt(const std::string& id,
 {}
 
 ////////////////////////////////////////////////////////////////////////////////
-SecureBinaryData BridgePassphrasePrompt::processFeedRequest(
+Seeds::PromptReply BridgePassphrasePrompt::processFeedRequest(
    const std::set<Wallets::EncryptionKeyId>& ids)
 {
    if (ids.empty()) {
@@ -40,7 +41,7 @@ SecureBinaryData BridgePassphrasePrompt::processFeedRequest(
    }
 
    //cycle the promise & future
-   auto promPtr = std::make_shared<std::promise<SecureBinaryData>>();
+   auto promPtr = std::make_shared<std::promise<Seeds::PromptReply>>();
    auto fut = promPtr->get_future();
    auto refId = referenceCounter_++;
 
@@ -64,13 +65,13 @@ SecureBinaryData BridgePassphrasePrompt::processFeedRequest(
    BinaryData serialized(bytes.begin(), bytes.end());
 
    //reply handler
-   auto replyHandler = [promPtr](bool success, SecureBinaryData& passphrase)->bool
+   auto replyHandler = [promPtr](const Seeds::PromptReply& reply)->bool
    {
-      if (!success) {
+      if (!reply.success) {
          promPtr->set_exception(std::make_exception_ptr(
             std::runtime_error("unsuccessful reply")));
       }
-      promPtr->set_value(std::move(passphrase));
+      promPtr->set_value(std::move(reply));
       return true;
    };
 
@@ -80,11 +81,10 @@ SecureBinaryData BridgePassphrasePrompt::processFeedRequest(
 
    //wait on future
    try {
-      return fut.get();
-   }
-   catch (const std::exception&) {
+      return std::move(fut.get());
+   } catch (const std::exception&) {
       LOGINFO << "cancelled wallet unlock";
-      return {};
+      return {false};
    }
 }
 
@@ -108,6 +108,7 @@ PassphraseLambda BridgePassphrasePrompt::getLambda()
 {
    return [this](const std::set<Wallets::EncryptionKeyId>& ids)->SecureBinaryData
    {
-      return processFeedRequest(ids);
+      auto reply = processFeedRequest(ids);
+      return std::move(reply.privPass);
    };
 }

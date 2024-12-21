@@ -258,7 +258,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             action, *arglist)
 
       TheBDM.registerCppNotification(cppNotifySignal)
-      TheBDM.registerUserPrompt(self.promptUser)
       self.progressCallbacks = {}
 
       # We want to determine whether the user just upgraded to a new version
@@ -5485,55 +5484,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       dlgSpend = DlgSendBitcoins(None, self, self)
       dlgSpend.frame.prefill(prefill)
       dlgSpend.exec_()
-
-   #############################################################################
-   def promptUser(self, promptID, promptType, verbose, wltID, state):
-      TheSignalExecution.executeMethod(self.promptDialogSetup,
-         promptID, promptType, verbose, wltID, state)
-
-   #############################################################################
-   def promptDialogSetup(self, promptID, promptType, verbose, wltID, state):
-      '''
-      Check if we already have a dialog for this promptID.
-      This method is only ever called in the GUI thread (since it calls exec_
-      on a QtCore.Qt dialog), so we use it to manage the promptID map as well
-      '''
-
-      if state == BridgeProto_pb2.UnlockPromptState.Value('start'):
-         if promptID in self.promptMap:
-            raise Exception("already have this prompt ID")
-
-         if promptType == BridgeProto_pb2.UnlockPromptType.Value('decrypt'):
-            ppDlg = DlgUnlockWallet(\
-               promptID, wltID, self, self, verbose, False)
-
-         elif promptType == BridgeProto_pb2.UnlockPromptType.Value('migrate'):
-            ppDlg = DlgMigrateWallet(\
-               promptID, wltID, verbose, self, self)
-
-         self.promptMap[promptID] = ppDlg
-         ppDlg.exec_()
-
-      elif state == BridgeProto_pb2.UnlockPromptState.Value('cycle'):
-         if promptID in self.promptMap:
-            ppDlg = self.promptMap[promptID]
-            ppDlg.show()
-            ppDlg.recycle()
-
-      elif state == BridgeProto_pb2.UnlockPromptState.Value('stop'):
-         if promptID in self.promptMap:
-            ppDlg = self.promptMap[promptID]
-            ppDlg.accept()
-
-   #############################################################################
-   def cleanupPrompt(self, promptID):
-      '''
-      Same as above, only ever called in the GUI thread
-      '''
-
-      if promptID not in self.promptMap:
-         raise Exception("missing prompt ID")
-      del self.promptMap[promptID]
 
    #############################################################################
    def registerProgressCallback(self, progressObj):

@@ -16,10 +16,15 @@
 
 namespace Armory
 {
+   namespace Seeds
+   {
+      struct PromptReply;
+   }
+
    namespace Bridge
    {
-      using CallbackHandler = std::function<bool(bool, SecureBinaryData&)>;
- 
+      using CallbackHandler = std::function<bool(const Seeds::PromptReply&)>;
+
       //////////////////////////////////////////////////////////////////////////
       struct ServerPushWrapper
       {
@@ -38,7 +43,7 @@ namespace Armory
          std::function<void(ServerPushWrapper)> writeFunc_;
 
       private:
-         SecureBinaryData processFeedRequest(
+         Seeds::PromptReply processFeedRequest(
             const std::set<Armory::Wallets::EncryptionKeyId>&);
 
       public:

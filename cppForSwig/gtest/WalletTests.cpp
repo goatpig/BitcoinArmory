@@ -8948,49 +8948,33 @@ TEST_F(BackupTests, BackupStrings_Legacy)
       return SecureBinaryData::fromString("passphrase");
    };
    assetWlt->setPassphrasePromptLambda(passLbd);
-   auto backupData = Armory::Seeds::Helpers::getWalletBackup(assetWlt);
+   auto backupData = Helpers::getWalletBackup(assetWlt);
    auto backupEasy16 = dynamic_cast<Backup_Easy16*>(backupData.get());
 
    auto newPass = CryptoPRNG::generateRandom(10).toHexStr();
    auto newCtrl = CryptoPRNG::generateRandom(10).toHexStr();
    auto callback = [&backupData, &newPass, &newCtrl](
-      std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
+      const RestorePrompt& prompt)->PromptReply
    {
       capnp::MallocMessageBuilder reply;
-      auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
-      auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
-
-      switch (capnpPrompt.which())
+      switch (prompt.promptType)
       {
-         case Armory::Codec::Bridge::RestorePrompt::GET_PASSPHRASES:
-         {
-            replyRoot.setPrivkey(newPass);
-            replyRoot.setControl(newCtrl);
-            replyRoot.setSuccess(true);
-            break;
-         }
+         case RestorePromptType::Passphrases:
+            return PromptReply{true,
+               SecureBinaryData::fromString(newPass),
+               SecureBinaryData::fromString(newCtrl)
+            };
 
-         case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+         case RestorePromptType::Id:
          {
-            auto walletMeta = capnpPrompt.getCheckWalletId();
-            auto capnWltId = walletMeta.getWalletId();
-            std::string strWltId(capnWltId.begin(), capnWltId.end());
-            EXPECT_EQ(strWltId, backupData->getWalletId());
-
-            EXPECT_EQ(walletMeta.getBackupType(),
-               (uint32_t)Armory::Seeds::BackupType::Armory135);
-            replyRoot.setSuccess(true);
-            break;
+            EXPECT_EQ(prompt.walletId, backupData->getWalletId());
+            EXPECT_EQ(prompt.backupType, BackupType::Armory135);
+            return PromptReply{true};
          }
 
          default:
-            replyRoot.setSuccess(false);
+            return PromptReply{false};
       }
-
-      auto flat = capnp::messageToFlatArray(reply);
-      auto bytes = flat.asBytes();
-      BinaryData result(bytes.begin(), bytes.end());
-      return result;
    };
 
    std::filesystem::path newHomeDir("./newhomedir");
@@ -9060,43 +9044,26 @@ TEST_F(BackupTests, BackupStrings_Legacy_Armory200a)
    auto newPass = CryptoPRNG::generateRandom(10).toHexStr();
    auto newCtrl = CryptoPRNG::generateRandom(10).toHexStr();
    auto callback = [&backupData, &newPass, &newCtrl](
-      std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
+      const RestorePrompt& prompt)->PromptReply
    {
-      capnp::MallocMessageBuilder reply;
-      auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
-      auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
-
-      switch (capnpPrompt.which())
+      switch (prompt.promptType)
       {
-         case Armory::Codec::Bridge::RestorePrompt::GET_PASSPHRASES:
-         {
-            replyRoot.setPrivkey(newPass);
-            replyRoot.setControl(newCtrl);
-            replyRoot.setSuccess(true);
-            break;
-         }
+         case RestorePromptType::Passphrases:
+            return PromptReply{true,
+               SecureBinaryData::fromString(newPass),
+               SecureBinaryData::fromString(newCtrl)
+            };
 
-         case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+         case RestorePromptType::Id:
          {
-            auto walletMeta = capnpPrompt.getCheckWalletId();
-            auto capnWltId = walletMeta.getWalletId();
-            std::string strWltId(capnWltId.begin(), capnWltId.end());
-            EXPECT_EQ(strWltId, backupData->getWalletId());
-
-            EXPECT_EQ(walletMeta.getBackupType(),
-               (uint32_t)Armory::Seeds::BackupType::Armory200a);
-            replyRoot.setSuccess(true);
-            break;
+            EXPECT_EQ(prompt.walletId, backupData->getWalletId());
+            EXPECT_EQ(prompt.backupType, BackupType::Armory200a);
+            return PromptReply{true};
          }
 
          default:
-            replyRoot.setSuccess(false);
+            return PromptReply{false};
       }
-
-      auto flat = capnp::messageToFlatArray(reply);
-      auto bytes = flat.asBytes();
-      BinaryData result(bytes.begin(), bytes.end());
-      return result;
    };
 
    std::filesystem::path newHomeDir("./newhomedir");
@@ -9168,42 +9135,25 @@ TEST_F(BackupTests, BackupStrings_Legacy_SecurePrint)
    auto newPass = CryptoPRNG::generateRandom(10).toHexStr();
    auto newCtrl = CryptoPRNG::generateRandom(10).toHexStr();
    auto callback = [&backupData, &newPass, &newCtrl](
-      std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
+      const RestorePrompt& prompt)->PromptReply
    {
-      capnp::MallocMessageBuilder reply;
-      auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
-      auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
-
-      switch (capnpPrompt.which())
+      switch (prompt.promptType)
       {
-         case Armory::Codec::Bridge::RestorePrompt::GET_PASSPHRASES:
-         {
-            replyRoot.setPrivkey(newPass);
-            replyRoot.setControl(newCtrl);
-            replyRoot.setSuccess(true);
-            break;
-         }
+         case RestorePromptType::Passphrases:
+            return PromptReply{true,
+               SecureBinaryData::fromString(newPass),
+               SecureBinaryData::fromString(newCtrl)
+            };
 
-         case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+         case RestorePromptType::Id:
          {
-            auto walletMeta = capnpPrompt.getCheckWalletId();
-            auto capnWltId = walletMeta.getWalletId();
-            std::string strWltId(capnWltId.begin(), capnWltId.end());
-
-            EXPECT_EQ(walletMeta.getBackupType(),
-               (uint32_t)Armory::Seeds::BackupType::Armory135);
-            replyRoot.setSuccess(strWltId == backupData->getWalletId());
-            break;
+            EXPECT_EQ(prompt.backupType, BackupType::Armory135);
+            return PromptReply{prompt.walletId == backupData->getWalletId()};
          }
 
          default:
-            replyRoot.setSuccess(false);
+            return PromptReply{false};
       }
-
-      auto flat = capnp::messageToFlatArray(reply);
-      auto bytes = flat.asBytes();
-      BinaryData result(bytes.begin(), bytes.end());
-      return result;
    };
 
    std::filesystem::path newHomeDir("./newhomedir");
@@ -9357,45 +9307,29 @@ TEST_F(BackupTests, Easy16_AutoRepair)
       try
       {
          auto userPrompt = [&wltID, &decoded, &succesfulRepairs](
-            std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
+            const RestorePrompt& prompt)->PromptReply
          {
-            capnp::MallocMessageBuilder reply;
-            auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
-            auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
-
-            switch (capnpPrompt.which())
+            switch (prompt.promptType)
             {
-               case Armory::Codec::Bridge::RestorePrompt::CHECKSUM_ERROR:
+               case RestorePromptType::ChecksumError:
                {
-                  auto chksumErrors = capnpPrompt.getChecksumError();
-                  EXPECT_EQ(chksumErrors[0], decoded.checksumIndexes_[0]);
-                  EXPECT_EQ(chksumErrors[1], decoded.checksumIndexes_[1]);
-                  replyRoot.setSuccess(false);
-                  break;
+                  EXPECT_EQ(prompt.checksumResult[0], decoded.checksumIndexes_[0]);
+                  EXPECT_EQ(prompt.checksumResult[1], decoded.checksumIndexes_[1]);
+                  return PromptReply{false};
                }
 
-               case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+               case RestorePromptType::Id:
                {
-                  auto walletMeta = capnpPrompt.getCheckWalletId();
-                  EXPECT_EQ(walletMeta.getBackupType(), (uint32_t)BackupType::Armory135);
-                  auto capnWltId = walletMeta.getWalletId();
-                  std::string strWltId(capnWltId.begin(), capnWltId.end());
-                  if (strWltId == wltID) {
+                  EXPECT_EQ(prompt.backupType, BackupType::Armory135);
+                  if (prompt.walletId == wltID) {
                      ++succesfulRepairs;
                   }
-
-                  replyRoot.setSuccess(false);
-                  break;
+                  return PromptReply{false};
                }
 
                default:
-                  replyRoot.setSuccess(true);
+                  return PromptReply{false};
             }
-
-            auto flat = capnp::messageToFlatArray(reply);
-            auto bytes = flat.asBytes();
-            BinaryData result(bytes.begin(), bytes.end());
-            return result;
          };
 
          auto backup = Backup_Easy16::fromLines({
@@ -9440,42 +9374,25 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode_SecurePrint)
    auto newPass = CryptoPRNG::generateRandom(10).toHexStr();
    auto newCtrl = CryptoPRNG::generateRandom(10).toHexStr();
    auto callback = [&backupData, &newPass, &newCtrl](
-      std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
+      const RestorePrompt& prompt)->PromptReply
    {
-      capnp::MallocMessageBuilder reply;
-      auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
-      auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
-
-      switch (capnpPrompt.which())
+      switch (prompt.promptType)
       {
-         case Armory::Codec::Bridge::RestorePrompt::GET_PASSPHRASES:
-         {
-            replyRoot.setPrivkey(newPass);
-            replyRoot.setControl(newCtrl);
-            replyRoot.setSuccess(true);
-            break;
-         }
+         case RestorePromptType::Passphrases:
+            return PromptReply{true,
+               SecureBinaryData::fromString(newPass),
+               SecureBinaryData::fromString(newCtrl)
+            };
 
-         case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+         case RestorePromptType::Id:
          {
-            auto walletMeta = capnpPrompt.getCheckWalletId();
-            auto capnWltId = walletMeta.getWalletId();
-            std::string strWltId(capnWltId.begin(), capnWltId.end());
-
-            EXPECT_EQ(walletMeta.getBackupType(),
-               (uint32_t)Armory::Seeds::BackupType::Armory135);
-            replyRoot.setSuccess(strWltId == backupData->getWalletId());
-            break;
+            EXPECT_EQ(prompt.backupType, BackupType::Armory135);
+            return PromptReply{prompt.walletId == backupData->getWalletId()};
          }
 
          default:
-            replyRoot.setSuccess(false);
+            return PromptReply{false};
       }
-
-      auto flat = capnp::messageToFlatArray(reply);
-      auto bytes = flat.asBytes();
-      BinaryData result(bytes.begin(), bytes.end());
-      return result;
    };
 
    std::filesystem::path newHomeDir("./newhomedir");
@@ -9575,43 +9492,26 @@ TEST_F(BackupTests, BackupStrings_BIP32)
    auto newPass = CryptoPRNG::generateRandom(10).toHexStr();
    auto newCtrl = CryptoPRNG::generateRandom(10).toHexStr();
    auto callback = [&backupData, &newPass, &newCtrl](
-      std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
+      const RestorePrompt& prompt)->PromptReply
    {
-      capnp::MallocMessageBuilder reply;
-      auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
-      auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
-
-      switch (capnpPrompt.which())
+      switch (prompt.promptType)
       {
-         case Armory::Codec::Bridge::RestorePrompt::GET_PASSPHRASES:
-         {
-            replyRoot.setPrivkey(newPass);
-            replyRoot.setControl(newCtrl);
-            replyRoot.setSuccess(true);
-            break;
-         }
+         case RestorePromptType::Passphrases:
+            return PromptReply{true,
+               SecureBinaryData::fromString(newPass),
+               SecureBinaryData::fromString(newCtrl)
+            };
 
-         case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+         case RestorePromptType::Id:
          {
-            auto walletMeta = capnpPrompt.getCheckWalletId();
-            auto capnWltId = walletMeta.getWalletId();
-            std::string strWltId(capnWltId.begin(), capnWltId.end());
-            EXPECT_EQ(strWltId, backupData->getWalletId());
-
-            EXPECT_EQ(walletMeta.getBackupType(),
-               (uint32_t)Armory::Seeds::BackupType::Armory200b);
-            replyRoot.setSuccess(true);
-            break;
+            EXPECT_EQ(prompt.walletId, backupData->getWalletId());
+            EXPECT_EQ(prompt.backupType, BackupType::Armory200b);
+            return PromptReply{true};
          }
 
          default:
-            replyRoot.setSuccess(false);
+            return PromptReply{false};
       }
-
-      auto flat = capnp::messageToFlatArray(reply);
-      auto bytes = flat.asBytes();
-      BinaryData result(bytes.begin(), bytes.end());
-      return result;
    };
 
    std::filesystem::path newHomeDir("./newhomedir");
@@ -9684,43 +9584,26 @@ TEST_F(BackupTests, BackupStrings_BIP32_Virgin)
    auto newPass = CryptoPRNG::generateRandom(10).toHexStr();
    auto newCtrl = CryptoPRNG::generateRandom(10).toHexStr();
    auto callback = [&backupData, &newPass, &newCtrl](
-      std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
+      const RestorePrompt& prompt)->PromptReply
    {
-      capnp::MallocMessageBuilder reply;
-      auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
-      auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
-
-      switch (capnpPrompt.which())
+      switch (prompt.promptType)
       {
-         case Armory::Codec::Bridge::RestorePrompt::GET_PASSPHRASES:
-         {
-            replyRoot.setPrivkey(newPass);
-            replyRoot.setControl(newCtrl);
-            replyRoot.setSuccess(true);
-            break;
-         }
+         case RestorePromptType::Passphrases:
+            return PromptReply{true,
+               SecureBinaryData::fromString(newPass),
+               SecureBinaryData::fromString(newCtrl)
+            };
 
-         case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+         case RestorePromptType::Id:
          {
-            auto walletMeta = capnpPrompt.getCheckWalletId();
-            auto capnWltId = walletMeta.getWalletId();
-            std::string strWltId(capnWltId.begin(), capnWltId.end());
-            EXPECT_EQ(strWltId, backupData->getWalletId());
-
-            EXPECT_EQ(walletMeta.getBackupType(),
-               (uint32_t)Armory::Seeds::BackupType::Armory200c);
-            replyRoot.setSuccess(true);
-            break;
+            EXPECT_EQ(prompt.walletId, backupData->getWalletId());
+            EXPECT_EQ(prompt.backupType, BackupType::Armory200c);
+            return PromptReply{true};
          }
 
          default:
-            replyRoot.setSuccess(false);
+            return PromptReply{false};
       }
-
-      auto flat = capnp::messageToFlatArray(reply);
-      auto bytes = flat.asBytes();
-      BinaryData result(bytes.begin(), bytes.end());
-      return result;
    };
 
    string newHomeDir("./newhomedir");
@@ -9776,42 +9659,26 @@ TEST_F(BackupTests, BackupStrings_BIP32_FromBase58)
    auto newPass = CryptoPRNG::generateRandom(10).toHexStr();
    auto newCtrl = CryptoPRNG::generateRandom(10).toHexStr();
    auto callback = [&newPass, &newCtrl](
-      std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
+      const RestorePrompt& prompt)->PromptReply
    {
-      capnp::MallocMessageBuilder reply;
-      auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
-      auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
-
-      switch (capnpPrompt.which())
+      switch (prompt.promptType)
       {
-         case Armory::Codec::Bridge::RestorePrompt::GET_PASSPHRASES:
-         {
-            replyRoot.setPrivkey(newPass);
-            replyRoot.setControl(newCtrl);
-            replyRoot.setSuccess(true);
-            break;
-         }
+         case RestorePromptType::Passphrases:
+            return PromptReply{true,
+               SecureBinaryData::fromString(newPass),
+               SecureBinaryData::fromString(newCtrl)
+            };
 
-         case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+         case RestorePromptType::Id:
          {
-            auto walletMeta = capnpPrompt.getCheckWalletId();
-            auto capnWltId = walletMeta.getWalletId();
-            std::string strWltId(capnWltId.begin(), capnWltId.end());
-            EXPECT_EQ(strWltId, "poUtmfmp");
-
-            EXPECT_EQ(walletMeta.getBackupType(), (uint32_t)BackupType::Base58);
-            replyRoot.setSuccess(true);
-            break;
+            EXPECT_EQ(prompt.walletId, "poUtmfmp");
+            EXPECT_EQ(prompt.backupType, BackupType::Base58);
+            return PromptReply{true};
          }
 
          default:
-            replyRoot.setSuccess(false);
+            return PromptReply{false};
       }
-
-      auto flat = capnp::messageToFlatArray(reply);
-      auto bytes = flat.asBytes();
-      BinaryData result(bytes.begin(), bytes.end());
-      return result;
    };
 
    //create bip32 wallet from xpriv, check it yields same xpriv
@@ -9897,43 +9764,26 @@ TEST_F(BackupTests, BackupStrings_BIP39)
    auto newPass = CryptoPRNG::generateRandom(10).toHexStr();
    auto newCtrl = CryptoPRNG::generateRandom(10).toHexStr();
    auto callback = [&walletId, &newPass, &newCtrl](
-      std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
+      const RestorePrompt& prompt)->PromptReply
    {
-      capnp::MallocMessageBuilder reply;
-      auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
-      auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
-
-      switch (capnpPrompt.which())
+      switch (prompt.promptType)
       {
-         case Armory::Codec::Bridge::RestorePrompt::GET_PASSPHRASES:
-         {
-            replyRoot.setPrivkey(newPass);
-            replyRoot.setControl(newCtrl);
-            replyRoot.setSuccess(true);
-            break;
-         }
+         case RestorePromptType::Passphrases:
+            return PromptReply{true,
+               SecureBinaryData::fromString(newPass),
+               SecureBinaryData::fromString(newCtrl)
+            };
 
-         case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+         case RestorePromptType::Id:
          {
-            auto walletMeta = capnpPrompt.getCheckWalletId();
-            auto capnWltId = walletMeta.getWalletId();
-            std::string strWltId(capnWltId.begin(), capnWltId.end());
-            EXPECT_EQ(strWltId, walletId);
-
-            EXPECT_EQ(walletMeta.getBackupType(),
-               (uint32_t)Armory::Seeds::BackupType::Armory200d);
-            replyRoot.setSuccess(true);
-            break;
+            EXPECT_EQ(prompt.walletId, walletId);
+            EXPECT_EQ(prompt.backupType, BackupType::Armory200d);
+            return PromptReply{true};
          }
 
          default:
-            replyRoot.setSuccess(false);
+            return PromptReply{false};
       }
-
-      auto flat = capnp::messageToFlatArray(reply);
-      auto bytes = flat.asBytes();
-      BinaryData result(bytes.begin(), bytes.end());
-      return result;
    };
 
    string newHomeDir("./newhomedir");
@@ -9982,42 +9832,26 @@ TEST_F(BackupTests, BackupStrings_BIP39)
    auto newPass2 = CryptoPRNG::generateRandom(10).toHexStr();
    auto newCtrl2 = CryptoPRNG::generateRandom(10).toHexStr();
    auto callbackBip39 = [&walletId, &newPass2, &newCtrl2](
-      std::unique_ptr<capnp::MessageBuilder> prompt)->BinaryData
+      const RestorePrompt& prompt)->PromptReply
    {
-      capnp::MallocMessageBuilder reply;
-      auto replyRoot = reply.initRoot<Armory::Codec::Bridge::RestoreReply>();
-      auto capnpPrompt = prompt->getRoot<Armory::Codec::Bridge::RestorePrompt>();
-
-      switch (capnpPrompt.which())
+      switch (prompt.promptType)
       {
-         case Armory::Codec::Bridge::RestorePrompt::GET_PASSPHRASES:
-         {
-            replyRoot.setPrivkey(newPass2);
-            replyRoot.setControl(newCtrl2);
-            replyRoot.setSuccess(true);
-            break;
-         }
+         case RestorePromptType::Passphrases:
+            return PromptReply{true,
+               SecureBinaryData::fromString(newPass2),
+               SecureBinaryData::fromString(newCtrl2)
+            };
 
-         case Armory::Codec::Bridge::RestorePrompt::CHECK_WALLET_ID:
+         case RestorePromptType::Id:
          {
-            auto walletMeta = capnpPrompt.getCheckWalletId();
-            auto capnWltId = walletMeta.getWalletId();
-            std::string strWltId(capnWltId.begin(), capnWltId.end());
-            EXPECT_EQ(strWltId, walletId);
-
-            EXPECT_EQ(walletMeta.getBackupType(), (uint32_t)BackupType::BIP39);
-            replyRoot.setSuccess(true);
-            break;
+            EXPECT_EQ(prompt.walletId, walletId);
+            EXPECT_EQ(prompt.backupType, BackupType::BIP39);
+            return PromptReply{true};
          }
 
          default:
-            replyRoot.setSuccess(false);
+            return PromptReply{false};
       }
-
-      auto flat = capnp::messageToFlatArray(reply);
-      auto bytes = flat.asBytes();
-      BinaryData result(bytes.begin(), bytes.end());
-      return result;
    };
 
    //restore from mnemonic string

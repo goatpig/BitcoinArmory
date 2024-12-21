@@ -59,21 +59,17 @@ struct RestorePrompt {
       checkWalletId     @0 : WalletMeta;
       getPassphrases    @1 : Void;
       decryptError      @2 : Void;
-      typeError         @3 : Text;
-      checksumError     @4 : List(Int32);
-      checksumMismatch  @5 : List(Int32);
+      failure           @3 : Void;
+      success           @4 : Void;
+      typeError         @5 : Text;
+      checksumError     @6 : List(Int32);
+      checksumMismatch  @7 : List(Int32);
    }
-}
-
-struct RestoreReply {
-   success @0 : Bool;
-   control @1 : Text;
-   privkey @2 : Text;
 }
 
 struct RestoreWalletPayload {
    root        @0 : List(Text);
-   secondary   @1 : List(Text);
+   chaincode   @1 : List(Text);
    spPass      @2 : Text;
 }
 
@@ -101,14 +97,15 @@ struct Notification {
       error          @12: Text;
       cleanup        @13: Void;
       unlockRequest  @14: List(Text);
+      restore        @15: RestorePrompt;
    }
 }
 
 struct NotificationReply
 {
    success     @0 : Bool;
-   passphrase  @1 : Text;
-   counter     @2 : UInt32;
+   counter     @1 : UInt32;
+   passphrases @2 : List(Text);
 }
 
 ###############################
@@ -453,6 +450,12 @@ struct UtilsRequest {
       description       @5 : Text;
    }
 
+   struct RestoreWalletStruct
+   {
+      payload     @0 : RestoreWalletPayload;
+      callbackId  @1 : Text;
+   }
+
    union {
       unset                @0 : Void;
 
@@ -460,6 +463,7 @@ struct UtilsRequest {
       getHash160           @2 : Data;
       getNameForAddrType   @3 : Int32;
       createWallet         @4 : CreateWalletStruct;
+      restoreWallet        @5 : RestoreWalletStruct;
    }
 }
 
