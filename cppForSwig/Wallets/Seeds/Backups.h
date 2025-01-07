@@ -273,7 +273,7 @@ namespace Armory
       struct RestorePrompt
       {
          const RestorePromptType promptType;
-         std::vector<int> checksumResult{};
+         std::map<uint8_t, int> checksumResult{};
          std::string walletId{};
          BackupType backupType{};
          std::string error{};

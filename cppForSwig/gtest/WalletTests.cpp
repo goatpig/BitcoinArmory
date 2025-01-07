@@ -9313,8 +9313,8 @@ TEST_F(BackupTests, Easy16_AutoRepair)
             {
                case RestorePromptType::ChecksumError:
                {
-                  EXPECT_EQ(prompt.checksumResult[0], decoded.checksumIndexes_[0]);
-                  EXPECT_EQ(prompt.checksumResult[1], decoded.checksumIndexes_[1]);
+                  EXPECT_EQ(prompt.checksumResult.at(0), decoded.checksumIndexes_[0]);
+                  EXPECT_EQ(prompt.checksumResult.at(1), decoded.checksumIndexes_[1]);
                   return PromptReply{false};
                }
 

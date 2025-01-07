@@ -1077,10 +1077,9 @@ shared_ptr<AssetWallet> Helpers::restoreFromBackup(
    }
 
    if (seed == nullptr) {
-      RestorePrompt prompt{RestorePromptType::TypeError};
-      prompt.error = "failed to create seed from backup"sv;
-      callback(prompt);
-      throw RestoreUserException(prompt.error);
+      //could not generate a seed from this backup, halt the call
+      throw RestoreUserException(
+         std::string{"failed to create seed from backup"sv});
    }
 
    //prompt user to verify id
@@ -1173,14 +1172,18 @@ unique_ptr<ClearTextSeed> Helpers::restoreFromEasy16(
    if (!primaryData.isValid()) {
       if (!Easy16Codec::repair(primaryData)) {
          RestorePrompt prompt{RestorePromptType::ChecksumError};
-         prompt.checksumResult = primaryData.checksumIndexes_;
+         for (unsigned i=0; i<primaryData.checksumIndexes_.size(); i++) {
+            prompt.checksumResult.emplace(i, primaryData.checksumIndexes_[i]);
+         }
          callback(prompt);
          return nullptr;
       }
 
       if (!primaryData.isValid()) {
          RestorePrompt prompt{RestorePromptType::ChecksumError};
-         prompt.checksumResult = primaryData.repairedIndexes_;
+         for (unsigned i=0; i<primaryData.repairedIndexes_.size(); i++) {
+            prompt.checksumResult.emplace(i, primaryData.repairedIndexes_[i]);
+         }
          callback(prompt);
          return nullptr;
       }
@@ -1190,24 +1193,27 @@ unique_ptr<ClearTextSeed> Helpers::restoreFromEasy16(
    if (secondaryData.isInitialized()) {
       if (!Easy16Codec::repair(secondaryData)) {
          RestorePrompt prompt{RestorePromptType::ChecksumError};
-         prompt.checksumResult = secondaryData.checksumIndexes_;
+         for (unsigned i=0; i<primaryData.checksumIndexes_.size(); i++) {
+            prompt.checksumResult.emplace(i+2, secondaryData.checksumIndexes_[i]);
+         }
          callback(prompt);
          return nullptr;
       }
 
       if (!secondaryData.isValid()) {
          RestorePrompt prompt{RestorePromptType::ChecksumError};
-         prompt.checksumResult = secondaryData.repairedIndexes_;
+         for (unsigned i=0; i<primaryData.repairedIndexes_.size(); i++) {
+            prompt.checksumResult.emplace(i+2, secondaryData.repairedIndexes_[i]);
+         }
          callback(prompt);
          return nullptr;
       }
 
       //check chaincode index matches root index
       if (primaryData.getIndex() != secondaryData.getIndex()) {
-         RestorePrompt prompt{RestorePromptType::ChecksumError};
-         prompt.checksumResult.reserve(2);
-         prompt.checksumResult.push_back(primaryData.getIndex());
-         prompt.checksumResult.push_back(secondaryData.getIndex());
+         RestorePrompt prompt{RestorePromptType::ChecksumMismatch};
+         prompt.checksumResult.emplace(0, primaryData.getIndex());
+         prompt.checksumResult.emplace(1, secondaryData.getIndex());
          callback(prompt);
          return nullptr;
       }
@@ -1236,9 +1242,8 @@ unique_ptr<ClearTextSeed> Helpers::restoreFromEasy16(
    } else {
       if ((BackupType)primaryData.getIndex() != bType) {
          RestorePrompt prompt{RestorePromptType::ChecksumMismatch};
-         prompt.checksumResult.reserve(2);
-         prompt.checksumResult.push_back(primaryData.getIndex());
-         prompt.checksumResult.push_back((int)bType);
+         prompt.checksumResult.emplace(0, primaryData.getIndex());
+         prompt.checksumResult.emplace(UINT8_MAX, (int)bType);
          callback(prompt);
          return nullptr;
       }

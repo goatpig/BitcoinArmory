@@ -670,7 +670,7 @@ void CppBridge::restoreWallet(
             case Seeds::RestorePromptType::FormatError:
             case Seeds::RestorePromptType::Failure:
             {
-               restore.setFailure();
+               restore.setFailure(prompt.error);
                break;
             }
 
@@ -678,8 +678,12 @@ void CppBridge::restoreWallet(
             {
                auto chksumCapnp = restore.initChecksumError(
                   prompt.checksumResult.size());
-               for (unsigned i=0; i<prompt.checksumResult.size(); i++) {
-                  chksumCapnp.set(i, prompt.checksumResult[i]);
+
+               unsigned i=0;
+               for (const auto& chkResult : prompt.checksumResult) {
+                  auto capnChkResult = chksumCapnp[i++];
+                  capnChkResult.setLineId(chkResult.first);
+                  capnChkResult.setValue(chkResult.second);
                }
                break;
             }
@@ -688,8 +692,12 @@ void CppBridge::restoreWallet(
             {
                auto chksumCapnp = restore.initChecksumMismatch(
                   prompt.checksumResult.size());
-               for (unsigned i=0; i<prompt.checksumResult.size(); i++) {
-                  chksumCapnp.set(i, prompt.checksumResult[i]);
+
+               unsigned i=0;
+               for (const auto& chkResult : prompt.checksumResult) {
+                  auto capnChkResult = chksumCapnp[i++];
+                  capnChkResult.setLineId(chkResult.first);
+                  capnChkResult.setValue(chkResult.second);
                }
                break;
             }
@@ -785,12 +793,11 @@ void CppBridge::restoreWallet(
          }
 
          //signal caller of success
-         SecureBinaryData dummy;
          callback(Seeds::RestorePrompt{Seeds::RestorePromptType::Success});
       } catch (const Armory::Seeds::RestoreUserException& e) {
          /*
          These type of errors are the result of user actions. They should have
-         an opportunity to fix the issue. Consequently, no error flag will be 
+         an opportunity to fix the issue. Consequently, no error flag will be
          pushed to the client.
          */
 
@@ -799,10 +806,9 @@ void CppBridge::restoreWallet(
          LOGERR << "[restoreFromBackup] fatal error: " << e.what();
 
          /*
-         Report error to client. This will catch throws in the
-         callbacks reply handler too.
+         Report error to client
          */
-         Seeds::RestorePrompt errorPrompt{Seeds::RestorePromptType::Success};
+         Seeds::RestorePrompt errorPrompt{Seeds::RestorePromptType::Failure};
          errorPrompt.error = e.what();
          callback(errorPrompt);
       }

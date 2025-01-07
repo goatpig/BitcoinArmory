@@ -100,8 +100,8 @@ class BridgeSocket(object):
       self.port = random.randint(50000, 60000)
 
    ####
-   def setCallback(self, key, func):
-      self.callbackDict[key] = func
+   def setCallback(self, key, callback):
+      self.callbackDict[key] = callback
 
    def unsetCallback(self, key):
       if key in self.callbackDict:
@@ -1328,13 +1328,13 @@ class ServerPush(ProtoWrapper):
       self.refId = 0
       self.packet = None
 
+   def __del__(self):
+      self.bridgeSocket.unsetCallback(self.callbackId)
+
    def parseProtoPacket(self, protoPacket):
       raise Exception("override me")
 
    def process(self, protoPacket):
-      if protoPacket.which() == "cleanup":
-         self.bridgeSocket.unsetCallback(self.callbackId)
-
       self.refId = protoPacket.counter
       self.parseProtoPacket(protoPacket)
 

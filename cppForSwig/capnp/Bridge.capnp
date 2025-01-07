@@ -55,15 +55,20 @@ struct RestorePrompt {
       backupType        @1 : UInt32;
    }
 
+   struct ChecksumResult {
+      lineId            @0 : UInt32;
+      value             @1 : Int32;
+   }
+
    union {
       checkWalletId     @0 : WalletMeta;
       getPassphrases    @1 : Void;
       decryptError      @2 : Void;
-      failure           @3 : Void;
+      failure           @3 : Text; #error verbose
       success           @4 : Void;
       typeError         @5 : Text;
-      checksumError     @6 : List(Int32);
-      checksumMismatch  @7 : List(Int32);
+      checksumError     @6 : List(ChecksumResult);
+      checksumMismatch  @7 : List(ChecksumResult);
    }
 }
 
