@@ -263,27 +263,10 @@ public:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   // This is about as efficient as we're going to get...
-   BinaryData & append(BinaryData const & bd2)
-   {
-      if(bd2.getSize()==0) 
-         return (*this);
-   
-      if(getSize()==0) 
-         copyFrom(bd2.getPtr(), bd2.getSize());
-      else
-         data_.insert(data_.end(), bd2.data_.begin(), bd2.data_.end());
-      return (*this);
-   }
-
-   /////////////////////////////////////////////////////////////////////////////
-   BinaryData & append(BinaryDataRef const & bd2);
-
-   /////////////////////////////////////////////////////////////////////////////
-   BinaryData & append(uint8_t const * str, size_t sz);
-
-   /////////////////////////////////////////////////////////////////////////////
-   BinaryData & append(uint8_t byte)
+   BinaryData& append(const BinaryData&);
+   BinaryData& append(const BinaryDataRef&);
+   BinaryData& append(const uint8_t*, size_t);
+   BinaryData& append(uint8_t byte)
    {
       data_.insert(data_.end(), byte);
       return (*this);
@@ -468,19 +451,14 @@ public:
    static INTTYPE StrToIntLE(BinaryData binstr)
    {
       uint8_t const SZ = sizeof(INTTYPE);
-      if(binstr.getSize() != SZ)
-      {
+      if (binstr.getSize() != SZ) {
          LOGERR << "StrToInt: strsz: " << binstr.getSize() << " intsz: " << SZ;
          return (INTTYPE)0;
       }
-      
-      /*INTTYPE out = 0;
-      for(uint8_t i=0; i<SZ; i++)
-         out |= ((INTTYPE)binstr[i]) << (8*i);*/
 
-      auto intPtr = (INTTYPE*)binstr.getPtr();
-
-      return *intPtr;
+      INTTYPE result;
+      memcpy(&result, binstr.getPtr(), sizeof(INTTYPE));
+      return result;
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -506,7 +484,7 @@ public:
    static INTTYPE StrToIntLE(uint8_t const * ptr)
    {
       //return  *((INTTYPE*)ptr);
-      //the kind of typecasts are undefined behavior, use memcpy 
+      //these kind of typecasts are undefined behavior, use memcpy
       //instead, TBAA will optimize it away
 
       INTTYPE result;
