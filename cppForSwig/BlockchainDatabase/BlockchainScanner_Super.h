@@ -1,8 +1,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2017, goatpig.                                              //
+//  Copyright (C) 2017-2025, goatpig.                                         //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                      
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -52,19 +52,19 @@ struct BlockDataBatch
    const int start_;
    const int end_;
 
-   std::map<unsigned, std::shared_ptr<BlockDataFileMap>> fileMaps_;
+   std::map<unsigned, std::shared_ptr<FileUtils::FileMap>> fileMaps_;
    std::map<unsigned, std::shared_ptr<BlockData>> blockMap_;
 
    std::set<unsigned> blockDataFileIDs_;
-   BlockDataLoader* blockDataLoader_;
+   std::shared_ptr<BlockFiles> blockFiles_;
    std::shared_ptr<Blockchain> blockchain_;
 
    BlockDataBatch(int start, int end, std::set<unsigned>& ids,
       BLOCKDATA_ORDER order,
-      BlockDataLoader* bdl, std::shared_ptr<Blockchain> bcPtr) :
+      std::shared_ptr<BlockFiles> bfl, std::shared_ptr<Blockchain> bcPtr) :
       order_(order),
       start_(start), end_(end), blockDataFileIDs_(std::move(ids)),
-      blockDataLoader_(bdl), blockchain_(bcPtr)
+      blockFiles_(bfl), blockchain_(bcPtr)
    {}
 
    void populateFileMap(void);
@@ -164,7 +164,7 @@ private:
 
    std::shared_ptr<Blockchain> blockchain_;
    LMDBBlockDatabase* db_;
-   BlockDataLoader blockDataLoader_;
+   std::shared_ptr<BlockFiles> blockFiles_;
 
    Armory::Threading::BlockingQueue<
       std::unique_ptr<ParserBatch_Ssh>> commitQueue_;
@@ -184,16 +184,13 @@ private:
 
    BinaryData topScannedBlockHash_;
 
-   ProgressCallback progress_ =
-      [](BDMPhase, double, unsigned, unsigned)->void{};
+   ProgressCallback progress_ = nullptr;
    bool reportProgress_ = false;
-
    std::atomic<unsigned> completedBatches_;
    std::atomic<uint64_t> addrPrefixCounter_;
-   
    std::map<unsigned, unsigned> heightToId_;
 
-private:  
+private:
    void commitSshBatch(void);
    void writeSubSsh(ParserBatch_Ssh*);
 
@@ -218,16 +215,10 @@ private:
 
 public:
    BlockchainScanner_Super(
-      std::shared_ptr<Blockchain> bc, LMDBBlockDatabase* db,
-      BlockFiles& bf, bool init,
+      std::shared_ptr<Blockchain>, LMDBBlockDatabase*,
+      std::shared_ptr<BlockFiles>, bool init,
       unsigned threadcount, unsigned,
-      ProgressCallback prg, bool reportProgress) :
-      init_(init), blockchain_(bc), db_(db),
-      blockDataLoader_(bf.folderPath()),
-      totalThreadCount_(threadcount), writeQueueDepth_(1/*queue_depth*/),
-      totalBlockFileCount_(bf.fileCount()),
-      progress_(prg), reportProgress_(reportProgress)
-   {}
+      ProgressCallback prg, bool reportProgress);
 
    void scan(void);
    void scanSpentness(void);

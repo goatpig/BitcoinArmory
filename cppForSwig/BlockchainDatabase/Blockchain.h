@@ -41,10 +41,12 @@ struct HeightAndDup
 //
 class Blockchain
 {
+   using HeaderPtr = std::shared_ptr<BlockHeader>;
+
 public:
    Blockchain(const HashString &genesisHash);
    void clear();
-   
+
    struct ReorganizationState
    {
       bool prevTopStillValid_ = false;
@@ -53,14 +55,17 @@ public:
       std::shared_ptr<BlockHeader> newTop_;
       std::shared_ptr<BlockHeader> reorgBranchPoint_;
    };
-   
-   /**
-    * Adds a block to the chain
-    **/
-   std::set<uint32_t> addBlocksInBulk(
-      const std::map<HashString, std::shared_ptr<BlockHeader>>&, bool flag);
-   void forceAddBlocksInBulk(std::map<HashString, std::shared_ptr<BlockHeader>>&);
 
+   /**
+    * check/add blocks to the chain
+   **/
+   std::set<uint32_t> checkForNewBlocks(const std::deque<HeaderPtr>&);
+   void addBlocksInBulk(const std::deque<std::deque<HeaderPtr>>&, bool flag);
+   void forceAddBlocksInBulk(std::map<BinaryData, HeaderPtr>&);
+
+   /**
+    * organize/reorganize chain
+   **/
    ReorganizationState organize(bool verbose);
    ReorganizationState forceOrganize();
    ReorganizationState findReorgPointFromBlock(const BinaryData& blkHash);
@@ -106,18 +111,17 @@ private:
    double traceChainDown(std::shared_ptr<BlockHeader> bhpStart);
 
 private:
-   //TODO: make this whole class thread safe
+   //TODO: get rid of this shyte!
+   //use std::unordered_map, manage access in class getters, not at container level
+   //they lead to too many copies, it slows down header parsing to a crawl
 
    const BinaryData genesisHash_;
-   Armory::Threading::TransactionalMap<
-      BinaryData, std::shared_ptr<BlockHeader>> headerMap_;
-   Armory::Threading::TransactionalMap<
-      unsigned, std::shared_ptr<BlockHeader>> headersById_;
-   Armory::Threading::TransactionalMap<
-      unsigned, std::shared_ptr<BlockHeader>> headersByHeight_;
+   Armory::Threading::TransactionalMap<BinaryData, HeaderPtr> headerMap_;
+   Armory::Threading::TransactionalMap<unsigned, HeaderPtr> headersById_;
+   Armory::Threading::TransactionalMap<unsigned, HeaderPtr> headersByHeight_;
 
-   std::vector<std::shared_ptr<BlockHeader>> newlyParsedBlocks_;
-   std::shared_ptr<BlockHeader> topBlockPtr_;
+   std::vector<HeaderPtr> newlyParsedBlocks_;
+   HeaderPtr topBlockPtr_;
    unsigned topBlockId_ = 0;
    Blockchain(const Blockchain&); // not defined
 

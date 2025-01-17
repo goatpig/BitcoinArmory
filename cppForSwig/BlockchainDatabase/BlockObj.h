@@ -28,7 +28,7 @@
 #include "TxClasses.h"
 
 ////////////////////////////////////////////////////////////////////////////////
-class LMDBBlockDatabase; 
+class LMDBBlockDatabase;
 class Tx;
 class TxIn;
 class TxOut;
@@ -57,9 +57,6 @@ public:
    explicit BlockHeader(BinaryDataRef str)        { unserialize(str); }
    explicit BlockHeader(BinaryData const & str)   { unserialize(str); }
 
-   // SWIG needs a non-overloaded method
-   BlockHeader & unserialize_1_(BinaryData const & str) { unserialize(str); return *this; }
-
    uint32_t           getVersion(void) const      { return READ_UINT32_LE(getPtr() );   }
    BinaryData const & getThisHash(void) const     { return thisHash_;                   }
    BinaryData         getPrevHash(void) const     { return BinaryData(getPtr()+4 ,32);  }
@@ -86,6 +83,7 @@ public:
    const std::string&  getFileName(void) const { return blkFile_; }
    uint64_t       getOffset(void) const { return blkFileOffset_; }
    uint32_t       getBlockFileNum(void) const { return blkFileNum_; }
+
    /////////////////////////////////////////////////////////////////////////////
    uint8_t const * getPtr(void) const  {
       assert(isInitialized_);
@@ -95,10 +93,10 @@ public:
       assert(isInitialized_);
       return dataCopy_.getSize();
    }
-   bool            isInitialized(void) const { return isInitialized_; }
-   uint32_t        getBlockSize(void) const { return numBlockBytes_; }
-   void            setBlockSize(uint32_t sz) { numBlockBytes_ = sz; }
-   void            setNumTx(uint32_t ntx) { numTx_ = ntx; }
+   bool           isInitialized(void) const { return isInitialized_; }
+   uint32_t       getBlockSize(void) const { return numBlockBytes_; }
+   void           setBlockSize(uint32_t sz) { numBlockBytes_ = sz; }
+   void           setNumTx(uint32_t ntx) { numTx_ = ntx; }
 
    /////////////////////////////////////////////////////////////////////////////
    void           setBlockFile(std::string filename)     {blkFile_       = filename;}
@@ -106,8 +104,8 @@ public:
    void           setBlockFileOffset(uint64_t offs) {blkFileOffset_ = offs;}
 
    /////////////////////////////////////////////////////////////////////////////
-   void          pprint(std::ostream & os= std::cout, int nIndent=0, bool pBigendian=true) const;
-   void          pprintAlot(std::ostream & os= std::cout);
+   void           pprint(std::ostream & os= std::cout, int nIndent=0, bool pBigendian=true) const;
+   void           pprintAlot(std::ostream & os= std::cout);
 
    /////////////////////////////////////////////////////////////////////////////
    const BinaryData& serialize(void) const   { return dataCopy_; }

@@ -233,7 +233,7 @@ BinaryData BlockDataManager::applyBlockRangeToDB(
 {
    // Start scanning and timer
    BlockchainScanner bcs(blockchain_, iface_, &scrAddrData,
-      *blockFiles_.get(),
+      blockFiles_,
       DBSettings::threadCount(), DBSettings::ramUsage(),
       prog, DBSettings::reportProgress());
    bcs.scan_nocheck(blk0);
@@ -322,11 +322,10 @@ void BlockDataManager::doInitialSyncOnLoad_RescanBalance(
 ////////////////////////////////////////////////////////////////////////////////
 void BlockDataManager::loadDiskState(const ProgressCallback &progress,
    bool forceRescanSSH)
-{  
+{
    BDMstate_ = BDM_initializing;
-         
    dbBuilder_ = make_shared<DatabaseBuilder>(
-      *blockFiles_, *this, progress, forceRescanSSH);
+      blockFiles_, *this, progress, forceRescanSSH);
    dbBuilder_->init();
 
    if (DBSettings::checkChain())

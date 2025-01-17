@@ -24,6 +24,13 @@ namespace fs = std::filesystem;
 #include <filesystem>
 #include <fcntl.h>
 
+#include <string_view>
+using namespace std::string_view_literals;
+
+namespace {
+   auto blkFilePrefix = "blk"sv;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 const BinaryData DBUtils::ZeroConfHeader_ = BinaryData::CreateFromHex("FFFF");
 
@@ -274,13 +281,13 @@ BinaryDataRef DBUtils::getDataRefForPacket(
 /////////////////////////////////////////////////////////////////////////////
 // FileMap
 /////////////////////////////////////////////////////////////////////////////
-FileUtils::FileMap::FileMap(const fs::path& path, bool write)
+FileUtils::FileMap::FileMap(const fs::path& path, bool write, size_t offset)
+   : offset_(offset)
 {
    int fd = 0;
    if (!fileExists(path, 2)) {
       //false positive warning, we often ask for block files that do not
       //exists as way to check for exhaustion
-      //LOGWARN << "FileMap: file " << path.string() << " does not exist";
       return;
    }
 
@@ -320,6 +327,9 @@ FileUtils::FileMap::FileMap(const fs::path& path, bool write)
       lseek(fd, 0, SEEK_SET);
 #endif
       size_ = size;
+      if (offset_ > size_) {
+         throw std::runtime_error("offset is too large");
+      }
 
 #ifdef _WIN32
       //create mmap
@@ -369,7 +379,6 @@ FileUtils::FileMap::FileMap(const fs::path& path, bool write)
 
       close(fd);
 #endif
-      fd = 0;
    } catch (const std::runtime_error &e) {
       if (fd != 0) {
 #ifdef _WIN32
@@ -377,10 +386,10 @@ FileUtils::FileMap::FileMap(const fs::path& path, bool write)
 #else
          close(fd);
 #endif
-         fd = 0;
-         LOGERR << "FileMap error for path " << path.string() <<
-            ", error: " << e.what();
       }
+
+      LOGERR << "FileMap error for path " << path.string() <<
+         ", error: " << e.what();
    }
 }
 
@@ -408,16 +417,96 @@ bool FileUtils::FileMap::isValid() const
 }
 
 ////
-const size_t& FileUtils::FileMap::size() const
+size_t FileUtils::FileMap::size() const
 {
-   return size_;
+   return size_ - offset_;
 }
 
 ////
 uint8_t* FileUtils::FileMap::ptr() const
 {
-   return ptr_;
+   return ptr_ + offset_;
 }
+
+/////////////////////////////////////////////////////////////////////////////
+// FileCopy
+/////////////////////////////////////////////////////////////////////////////
+FileUtils::FileCopy::FileCopy(const fs::path& path, size_t offset)
+   : offset_(offset)
+{
+   int fd = 0;
+   try {
+#ifdef _WIN32
+      auto flag = _O_RDONLY | _O_BINARY;
+      fd = _open(path.c_str(), flag);
+      if (fd == -1) {
+         throw std::runtime_error("failed to open file");
+      }
+
+      auto size = _lseek(fd, 0, SEEK_END);
+      if (size == 0) {
+         throw std::runtime_error("empty file");
+      }
+      _lseek(fd, offset_, SEEK_SET);
+#else
+      auto flag = O_RDONLY;
+      fd = open(path.c_str(), flag);
+      if (fd == -1) {
+         throw std::runtime_error("failed to open");
+      }
+
+      auto size = lseek(fd, 0, SEEK_END);
+      if (size == 0) {
+         throw std::runtime_error("empty file");
+      }
+      lseek(fd, offset_, SEEK_SET);
+#endif
+      if (offset_ > size) {
+         throw std::runtime_error("offset is too large");
+      }
+
+      data_.resize(size-offset);
+
+#ifdef _WIN32
+      _read(fd, &data_[0], size-offset_);
+      _close(fd);
+#else
+      read(fd, &data_[0], size-offset_);
+      close(fd);
+#endif
+
+   } catch (const std::runtime_error &e) {
+      if (fd != 0) {
+#ifdef _WIN32
+         _close(fd);
+#else
+         close(fd);
+#endif
+      }
+
+      LOGERR << "FileCopy error for path: \"" << path.string() <<
+         "\" - error: " << e.what();
+   }
+}
+
+////
+bool FileUtils::FileCopy::isValid() const
+{
+   return !data_.empty();
+}
+
+////
+size_t FileUtils::FileCopy::size() const
+{
+   return data_.size();
+}
+
+////
+const uint8_t* FileUtils::FileCopy::ptr() const
+{
+   return data_.data();
+}
+
 
 /////////////////////////////////////////////////////////////////////////////
 // FileUtils
@@ -508,12 +597,24 @@ fs::path FileUtils::getBlkFilename(const fs::path& path, uint32_t fblkNum)
    //           everyone must've upgraded to 0.8+ by now... remove pre-0.8
    //           compatibility.
    std::stringstream filename;
-   filename << "blk" << std::setw(5) << std::setfill('0') << fblkNum;
-   filename << ".dat";
+   filename << "blk" << std::setw(5) << std::setfill('0') << fblkNum << ".dat";
    return path / filename.str();
 }
 
-////
+///
+uint32_t FileUtils::blkPathToIntID(const fs::path& path)
+{
+   auto stem = path.stem().string();
+   if (stem.size() < 8 ||
+      strncmp(stem.c_str(), blkFilePrefix.data(), 3)) {
+      throw std::runtime_error("invalid filename");
+   }
+
+   std::string substr{stem.c_str() + 3, 5};
+   return std::stoi(substr);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 size_t FileUtils::getFileSize(const fs::path& path)
 {
    try {
@@ -525,6 +626,7 @@ size_t FileUtils::getFileSize(const fs::path& path)
 
 ////////////////////
 // Simple method for copying files (works in all OS, probably not efficient)
+// This only used in tests so far
 bool FileUtils::copy(const fs::path& src, const fs::path& dst, size_t nbytes)
 {
    auto srcsz = getFileSize(src);

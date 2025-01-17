@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-2021, goatpig.                                         //
+//  Copyright (C) 2016-2025, goatpig.                                         //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -13,6 +13,20 @@
 
 using namespace std;
 using namespace Armory::Threading;
+
+////////////////////////////////////////////////////////////////////////////////
+BlockchainScanner::BlockchainScanner(
+   std::shared_ptr<Blockchain> bc, LMDBBlockDatabase* db,
+   ScrAddrFilter* saf,
+   std::shared_ptr<BlockFiles> bf,
+   unsigned threadcount, unsigned queue_depth,
+   ProgressCallback prg, bool reportProgress) :
+   blockchain_(bc), db_(db), scrAddrFilter_(saf),
+   blockFiles_(bf),
+   totalThreadCount_(threadcount), writeQueueDepth_(queue_depth),
+   totalBlockFileCount_(bf->fileCount()),
+   progress_(prg), reportProgress_(reportProgress)
+{}
 
 ////////////////////////////////////////////////////////////////////////////////
 void BlockchainScanner::scan(int32_t scanFrom)
@@ -239,33 +253,27 @@ void BlockchainScanner::processOutputs()
       this->processOutputsThread(batch);
    };
 
-   map<unsigned, shared_ptr<BlockDataFileMap>> localFileMap;
-
+   std::map<unsigned, std::shared_ptr<FileUtils::FileMap>> localFileMap;
    auto preloadBlockDataFiles = [&](ParserBatch* batch)->void
    {
-      if (batch == nullptr)
+      if (batch == nullptr) {
          return;
+      }
 
       TIMER_START("preload");
 
-      auto file_id = batch->startBlockFileID_;
-      while (file_id <= batch->targetBlockFileID_)
-      {
-         auto local_iter = localFileMap.find(file_id);
-         if (local_iter != localFileMap.end())
-         {
-            batch->fileMaps_.insert(
-               make_pair(file_id, local_iter->second));
+      auto fileId = batch->startBlockFileID_;
+      while (fileId <= batch->targetBlockFileID_) {
+         auto local_iter = localFileMap.find(fileId);
+         if (local_iter != localFileMap.end()) {
+            batch->fileMaps_.emplace(fileId, local_iter->second);
+         } else {
+            auto filePath = blockFiles_->getFilePathForID(fileId);
+            batch->fileMaps_.emplace(fileId,
+               std::make_shared<FileUtils::FileMap>(filePath));
          }
-         else
-         {
-            batch->fileMaps_.insert(
-               make_pair(file_id, blockDataLoader_.get(file_id)));
-         }
-
-         ++file_id;
+         ++fileId;
       }
-
       localFileMap = batch->fileMaps_;
 
       TIMER_STOP("preload");
@@ -427,7 +435,6 @@ void BlockchainScanner::processInputs()
    commitQueue_.completed();
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
 shared_ptr<BlockData> BlockchainScanner::getBlockData(
    ParserBatch* batch, unsigned height)
@@ -460,13 +467,13 @@ shared_ptr<BlockData> BlockchainScanner::getBlockData(
    };
 
    auto filemap = mapIter->second.get();
-   if (!filemap->valid()) {
+   if (!filemap->isValid()) {
       LOGERR << "Invalid FileMap for height " << height;
       throw std::runtime_error("Invalid FileMap");
    }
 
    auto bdata = BlockData::deserialize(
-      filemap->data() + blockheader->getOffset(),
+      filemap->ptr() + blockheader->getOffset(),
       blockheader->getBlockSize(),
       blockheader, getID, BlockData::CheckHashes::NoChecks);
    return bdata;
@@ -1191,7 +1198,7 @@ void BlockchainScanner::undo(Blockchain::ReorganizationState& reorgState)
    //dont undo subssh, these are skipped by dupID when loading history
 
    auto blockPtr = reorgState.prevTop_;
-   std::map<uint32_t, std::shared_ptr<BlockDataFileMap>> fileMaps;
+   std::map<uint32_t, std::shared_ptr<FileUtils::FileMap>> fileMaps;
 
    std::map<DB_SELECT, std::set<BinaryData>> keysToDelete;
    std::map<BinaryData, StoredScriptHistory> sshMap;
@@ -1220,8 +1227,9 @@ void BlockchainScanner::undo(Blockchain::ReorganizationState& reorgState)
       auto filenum = blockPtr->getBlockFileNum();
       auto fileIter = fileMaps.find(filenum);
       if (fileIter == fileMaps.end()) {
-         fileIter = fileMaps.emplace(
-            filenum, blockDataLoader_.get(filenum)).first;
+         auto filePath = blockFiles_->getFilePathForID(filenum);
+         fileIter = fileMaps.emplace(filenum,
+            std::make_shared<FileUtils::FileMap>(filePath)).first;
       }
 
       auto filemap = fileIter->second;
@@ -1229,7 +1237,7 @@ void BlockchainScanner::undo(Blockchain::ReorganizationState& reorgState)
          (const BinaryData&)->uint32_t { return blockPtr->getThisID(); };
 
       auto bdata = BlockData::deserialize(
-         filemap.get()->data() + blockPtr->getOffset(),
+         filemap->ptr() + blockPtr->getOffset(),
          blockPtr->getBlockSize(), blockPtr,
          getID, BlockData::CheckHashes::NoChecks);
 
@@ -1433,7 +1441,8 @@ void BlockchainScanner::processFilterHitsThread(
       map<uint32_t, set<const TxHashHints*>> filterHit,
       set<BinaryData>& hashSet)->void
    {
-      auto fileptr = blockDataLoader_.get(fileNum);
+      auto filePath = blockFiles_->getFilePathForID(fileNum);
+      FileUtils::FileMap fileMap(filePath);
 
       for (auto& blockkey : filterHit)
       {
@@ -1459,7 +1468,7 @@ void BlockchainScanner::processFilterHitsThread(
          try
          {
             bdata = BlockData::deserialize(
-               fileptr->data() + headerPtr->getOffset(),
+               fileMap.ptr() + headerPtr->getOffset(),
                headerPtr->getBlockSize(),
                headerPtr, getID, BlockData::CheckHashes::NoChecks);
          }
