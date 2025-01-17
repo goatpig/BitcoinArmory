@@ -180,7 +180,6 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
 
    #############################################################################
    def changeType(self, sel):
-      print (f" selection: {sel}")
       if   sel == self.version135Button:
          visList = [0, 1, 1, 1, 1]
       elif sel == self.version135aButton:
@@ -202,6 +201,26 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
          self.edtList[ i].setVisible(visList[i + 1] == 1)
 
       self.isLongForm = (visList[-1] == 1)
+
+   #############################################################################
+   def flagEditLine(self, lineId):
+      self.edtList[lineId].setStyleSheet(
+         '''
+         QLineEdit {
+            color: rgb(180, 0, 0)
+         }
+         '''
+      )
+
+   def resetEditLines(self):
+      for edtLine in self.edtList:
+         edtLine.setStyleSheet(
+         '''
+         QLineEdit {
+            color: rgb(0, 0, 0)
+         }
+         '''
+      )
 
    #############################################################################
    def processCallback(self, payload):
@@ -261,15 +280,14 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
          checksums = restorePayload.checksumError
          for chkResult in checksums:
             if chkResult.value < 0 or chkResult.value == UINT8_MAX:
-               self.prfxList[chkResult.lineId].setText(
-                  f'<font color="red">{str(self.prfxList[chkResult.lineId].text())}</font>')
+               self.flagEditLine(chkResult.lineId)
 
          reply = QtWidgets.QMessageBox.critical(self, self.tr('Invalid Data'), self.tr(
             'There is an error in the data you entered that could not be '
             'fixed automatically.  Please double-check that you entered the '
             'text exactly as it appears on the wallet-backup page.'), \
             QtWidgets.QMessageBox.Ok)
-         LOGERROR('Error in wallet restore field')
+         LOGWARN('Bad input in wallet restore field')
          return
 
       elif which == 'checksumMismatch':
@@ -310,8 +328,8 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
 
       elif which == "failure":
          QtWidgets.QMessageBox.critical(self, self.tr('Failure'), self.tr(
-            f'Backup process failed with error:\n\n{restorePayload.failure}\n. Aborting.', \
-            QtWidgets.QMessageBox.Ok))
+            f'Backup process failed with error:\n\n{restorePayload.failure}\n. Aborting.'), \
+            QtWidgets.QMessageBox.Ok)
          self.reject()
 
       elif which == "decryptError":
@@ -334,6 +352,8 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
 
    #############################################################################
    def verifyUserInput(self):
+      #reset flagged inputs if any
+      self.resetEditLines()
 
       root = []
       for i in range(2):
