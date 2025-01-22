@@ -31,17 +31,17 @@ def MsgBoxCustom(wtype, title, msg, wCancel=False, yesStr=None, noStr=None,
          msgIcon = QtWidgets.QLabel()
          fpix = ''
          if dtype==MSGBOX.Good:
-            fpix = './img/MsgBox_good48.png'
+            fpix = ':/MsgBox_good48.png'
          if dtype==MSGBOX.Info:
-            fpix = './img/MsgBox_info48.png'
+            fpix = ':/MsgBox_info48.png'
          if dtype==MSGBOX.Question:
-            fpix = './img/MsgBox_question64.png'
+            fpix = ':/MsgBox_question64.png'
          if dtype==MSGBOX.Warning:
-            fpix = './img/MsgBox_warning48.png'
+            fpix = ':/MsgBox_warning48.png'
          if dtype==MSGBOX.Critical:
-            fpix = './img/MsgBox_critical64.png'
+            fpix = ':/MsgBox_critical64.png'
          if dtype==MSGBOX.Error:
-            fpix = './img/MsgBox_error64.png'
+            fpix = ':/MsgBox_error64.png'
 
 
          if len(fpix)>0:

@@ -21,7 +21,7 @@ class DlgPasswd3(ArmoryDialog):
 
 
       lblWarnImgL = QtWidgets.QLabel()
-      lblWarnImgL.setPixmap(QtGui.QPixmap('./img/MsgBox_warning48.png'))
+      lblWarnImgL.setPixmap(QtGui.QPixmap(':/MsgBox_warning48.png'))
       lblWarnImgL.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
       lblWarnTxt1 = QRichLabel(\

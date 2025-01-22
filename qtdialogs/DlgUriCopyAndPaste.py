@@ -29,7 +29,7 @@ class DlgUriCopyAndPaste(ArmoryDialog):
                             'into the box below. '))
 
       lblShowExample = QtWidgets.QLabel()
-      lblShowExample.setPixmap(QtGui.QPixmap('./img/armory_rightclickcopy.png'))
+      lblShowExample.setPixmap(QtGui.QPixmap(':/armory_rightclickcopy.png'))
 
       self.txtUriString = QtWidgets.QLineEdit()
       self.txtUriString.setFont(GETFONT('Fixed', 8))

@@ -699,7 +699,7 @@ def selectDirectoryForQLineEdit(par, qObj, title="Select Directory"):
 def createDirectorySelectButton(parent, targetWidget, title="Select Directory"):
 
    btn = QtWidgets.QPushButton('')
-   ico = QtGui.QIcon(QtGui.QPixmap('./img/folder24.png'))
+   ico = QtGui.QIcon(QtGui.QPixmap(':/folder24.png'))
    btn.setIcon(ico)
 
    fn = lambda: selectDirectoryForQLineEdit(parent, targetWidget, title)

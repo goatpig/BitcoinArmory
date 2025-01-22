@@ -35,7 +35,7 @@ def createAddrBookButton(parent, targWidget, defaultWltID=None, actionStr="Selec
                          showLockboxes=True):
    action = parent.tr("Select")
    btn = QtWidgets.QPushButton('')
-   ico = QtGui.QIcon(QtGui.QPixmap('./img/addr_book_icon.png'))
+   ico = QtGui.QIcon(QtGui.QPixmap(':/addr_book_icon.png'))
    btn.setIcon(ico)
    def execAddrBook():
       if len(parent.main.walletMap) == 0:

@@ -165,7 +165,7 @@ class AllWalletsCheckboxDelegate(QtWidgets.QStyledItemDelegate):
          image=None
          painter.fillRect(option.rect, bgcolor)
          if isVisible:
-            image = QtGui.QImage('./img/visible2.png').scaled(self.EYESIZE,self.EYESIZE)
+            image = QtGui.QImage(':/visible2.png').scaled(self.EYESIZE,self.EYESIZE)
             pixmap = QtGui.QPixmap.fromImage(image)
             painter.drawPixmap(option.rect, pixmap)
       else:
@@ -942,14 +942,14 @@ class LedgerDispDelegate(QtWidgets.QStyledItemDelegate):
          if isCoinbase:
             if nConf<120:
                effectiveNConf = int(6*float(nConf)/120.)
-               image = QtGui.QImage('./img/conf%dt_nonum.png'%effectiveNConf)
+               image = QtGui.QImage(':/conf%dt_nonum.png'%effectiveNConf)
             else:
-               image = QtGui.QImage('./img/conf6t.png')
+               image = QtGui.QImage(':/conf6t.png')
          else:
             if nConf<6:
-               image = QtGui.QImage('./img/conf%dt.png'%nConf)
+               image = QtGui.QImage(':/conf%dt.png'%nConf)
             else:
-               image = QtGui.QImage('./img/conf6t.png')
+               image = QtGui.QImage(':/conf6t.png')
          painter.fillRect(option.rect, bgcolor)
          pixmap = QtGui.QPixmap.fromImage(image)
          #pixmap.scaled(70, 30, QtCore.Qt.KeepAspectRatio)
@@ -961,15 +961,15 @@ class LedgerDispDelegate(QtWidgets.QStyledItemDelegate):
 
          # isCoinbase still needs to be flagged in the C++ utils
          if isCoinbase:
-            image = QtGui.QImage('./img/moneyCoinbase.png')
+            image = QtGui.QImage(':/moneyCoinbase.png')
          elif toSelf:
-            image = QtGui.QImage('./img/moneySelf.png')
+            image = QtGui.QImage(':/moneySelf.png')
          else:
             txdir = str(index.model().data(index)).strip()
             if txdir[0].startswith('-'):
-               image = QtGui.QImage('./img/moneyOut.png')
+               image = QtGui.QImage(':/moneyOut.png')
             else:
-               image = QtGui.QImage('./img/moneyIn.png')
+               image = QtGui.QImage(':/moneyIn.png')
 
          painter.fillRect(option.rect, bgcolor)
          pixmap = QtGui.QPixmap.fromImage(image)

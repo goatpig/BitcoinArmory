@@ -62,7 +62,7 @@ class DlgConfirmSend(ArmoryDialog):
       super(DlgConfirmSend, self).__init__(parent, main)
       layout = QtWidgets.QGridLayout()
       lblInfoImg = QtWidgets.QLabel()
-      lblInfoImg.setPixmap(QtGui.QPixmap('./img/MsgBox_info48.png'))
+      lblInfoImg.setPixmap(QtGui.QPixmap(':/MsgBox_info48.png'))
       lblInfoImg.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop)
 
       changeRemoved = False
