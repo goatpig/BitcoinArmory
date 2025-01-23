@@ -100,6 +100,12 @@ std::shared_ptr<BlockData> BlockData::deserialize(
 
    if (blockHeader != nullptr) {
       if (bh.getThisHashRef() != blockHeader->getThisHashRef()) {
+         LOGERR << "expected header hash mismatch!";
+         LOGERR << " current: " << bh.getThisHashRef().toHexStr(true);
+         LOGERR << " expected: " << blockHeader->getThisHashRef().toHexStr(true);
+         LOGERR << " file: " << blockHeader->getBlockFileNum() <<
+            ", offset: " << blockHeader->getOffset();
+
          throw BlockDeserializingException(
             "raw data does not match expected block hash");
       }
@@ -294,6 +300,7 @@ BlockDataLoader::BlockDataLoader(
    auto iter = files->paths_.begin();
    if (startOffset.fileID != UINT16_MAX) {
       iter = files->paths_.find(startOffset.fileID);
+      startFileId_ = startOffset.fileID;
    }
 
    if (iter == files->paths_.end()) {
@@ -326,7 +333,7 @@ BlockDataLoader::BlockDataCopy BlockDataLoader::getNextCopy()
       return BlockDataCopy{UINT16_MAX, {}};
    }
    const auto& file = paf_[id];
-   return { id, file };
+   return { id + startFileId_, file };
 }
 
 /////////////////////////////////////////////////////////////////////////////

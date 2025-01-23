@@ -449,6 +449,8 @@ shared_ptr<BlockData> BlockchainScanner::getBlockData(
    }
 
    auto filenum = blockheader->getBlockFileNum();
+   //LOGINFO << "grabbing header from file " << filenum;
+
    auto mapIter = batch->fileMaps_.find(filenum);
    if (mapIter == batch->fileMaps_.end()) {
       LOGERR << "Missing file map for output scan, this is unexpected";

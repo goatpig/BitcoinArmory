@@ -1722,14 +1722,18 @@ Tx LMDBBlockDatabase::getFullTxCopy(
       return bhPtr->getThisID();
    };
 
-   auto block = BlockData::deserialize(
-      fileMap.ptr() + bhPtr->getOffset(),
-      bhPtr->getBlockSize(), bhPtr, getID,
-      BlockData::CheckHashes::NoChecks);
+   try {
+      auto block = BlockData::deserialize(
+         fileMap.ptr() + bhPtr->getOffset(),
+         bhPtr->getBlockSize(), bhPtr, getID,
+         BlockData::CheckHashes::NoChecks);
 
-   const auto& bctx = block->getTxns()[txIndex];
-   BinaryRefReader brr(bctx->data_, bctx->size_);
-   return Tx(brr);
+      const auto& bctx = block->getTxns()[txIndex];
+      BinaryRefReader brr(bctx->data_, bctx->size_);
+      return Tx(brr);
+   } catch (const BlockDeserializingException&) {
+      throw LmdbWrapperException("failed to tx");
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

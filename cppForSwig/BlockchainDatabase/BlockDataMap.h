@@ -332,6 +332,7 @@ public:
 private:
    std::atomic_uint_fast16_t counter_;
    std::vector<PathAndOffset> paf_;
+   uint16_t startFileId_ = 0;
 
 private:
    BlockDataLoader(const BlockDataLoader&) = delete; //no copies
