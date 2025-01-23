@@ -397,23 +397,27 @@ void BlockDataManager::disableZeroConf(void)
 ////////////////////////////////////////////////////////////////////////////////
 CoreRPC::NodeStatus BlockDataManager::getNodeStatus() const
 {
+   if (processNode_ == nullptr) {
+      return {};
+   }
+
    CoreRPC::NodeStatus nss;
-   if (processNode_ == nullptr)
-      return nss;
-   
-   if(processNode_->connected())
+   if (processNode_->connected()) {
       nss.state_ = CoreRPC::NodeState_Online;
+   }
 
-   if (processNode_->isSegWit())
+   if (processNode_->isSegWit()) {
       nss.SegWitEnabled_ = true;
+   }
 
-   if (nodeRPC_ == nullptr)
+   if (nodeRPC_ == nullptr) {
       return nss;
+   }
 
    nss.rpcState_ = nodeRPC_->testConnection();
-   if (nss.rpcState_ != CoreRPC::RpcState_Online)
+   if (nss.rpcState_ != CoreRPC::RpcState_Online) {
       pollNodeStatus();
-
+   }
    nss.chainStatus_ = nodeRPC_->getChainStatus();
    return nss;
 }

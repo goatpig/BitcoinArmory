@@ -1,8 +1,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016, goatpig.                                              //
+//  Copyright (C) 2016-2025, goatpig.                                         //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                      
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1333,11 +1333,11 @@ int64_t BitcoinP2P::getTimeStamp() const
 ////////////////////////////////////////////////////////////////////////////////
 void BitcoinP2P::shutdown()
 {
-   if (!run_.load(memory_order_relaxed))
+   if (!run_.load(memory_order_relaxed)) {
       return;
+   }
 
-   if (socket_ != nullptr)
-   {
+   if (socket_ != nullptr) {
       socket_->shutdown();
 
       //wait until connect loop exists
@@ -1348,8 +1348,13 @@ void BitcoinP2P::shutdown()
 ////////////////////////////////////////////////////////////////////////////////
 void BitcoinP2P::updateNodeStatus(bool connected)
 {
-   nodeConnected_.store(connected, memory_order_release);
+   nodeConnected_.store(connected, std::memory_order_relaxed);
    callback();
+}
+
+bool BitcoinP2P::connected() const
+{
+   return nodeConnected_.load(std::memory_order_relaxed);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1360,10 +1365,11 @@ void BitcoinP2P::updateNodeStatus(bool connected)
 void  BitcoinP2PSocket::respond(vector<uint8_t>& packet)
 {
 
-   if (packet.size() > 0)
-      readDataStack_->push_back(move(packet));
-   else
+   if (!packet.empty()) {
+      readDataStack_->push_back(std::move(packet));
+   } else {
       readDataStack_->terminate();
+   }
 }
 
 
@@ -1372,10 +1378,10 @@ void BitcoinP2PSocket::pushPayload(
    unique_ptr<Socket_WritePayload> write_payload,
    shared_ptr<Socket_ReadPayload>)
 {
-   if (write_payload == nullptr)
+   if (write_payload == nullptr) {
       return;
-
-   vector<uint8_t> data;
+   }
+   std::vector<uint8_t> data;
    write_payload->serialize(data);
    queuePayloadForWrite(data);
 }

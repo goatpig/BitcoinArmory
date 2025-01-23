@@ -1,10 +1,12 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016, goatpig.                                              //
+//  Copyright (C) 2016-2025, goatpig.                                         //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                      
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
+
+//TODO: replace with something like nlohmann json
 
 #include "JSON_codec.h"
 
@@ -387,21 +389,22 @@ bool JSON_object::isResponseValid(int id)
    auto idVal = getValForKey("id");
    auto id_obj = dynamic_pointer_cast<JSON_number>(idVal);
 
-   if (id_obj == nullptr)
+   if (id_obj == nullptr) {
       return false;
-
-   if (int(id_obj->val_) != id)
+   }
+   if (int(id_obj->val_) != id) {
       return false;
+   }
 
    //check "error": null
    auto errorVal = getValForKey("error");
    auto error_obj = dynamic_pointer_cast<JSON_state>(errorVal);
 
-   if (error_obj == nullptr)
+   if (error_obj == nullptr) {
+      return true;
+   }
+   if (error_obj->state_ != JSON_null) {
       return false;
-
-   if (error_obj->state_ != JSON_null)
-      return false;
-
+   }
    return true;
 }
