@@ -1270,8 +1270,8 @@ void WalletGroup::registerAddresses(WalletRegistrationRequest& request)
       theWallet->setRegistered();
    };
 
-   auto batch = make_shared<RegistrationBatch>();
-   batch->scrAddrSet_ = move(scrAddrSet);
+   auto batch = std::make_shared<RegistrationBatch>();
+   batch->scrAddrSet_ = std::move(scrAddrSet);
    batch->isNew_ = request.isNew;
    batch->callback_ = callback;
 

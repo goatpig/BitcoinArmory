@@ -2039,9 +2039,11 @@ void BridgeCallback::progress(
    capnProgress.setTime(secondsRem);
    capnProgress.setNumericProgress(progressNumeric);
 
-   auto capnIds = capnProgress.initIds(walletIdVec.size());
-   for (unsigned i=0; i<walletIdVec.size(); i++) {
-      capnIds.set(i, walletIdVec[i]);
+   if (!walletIdVec.empty()) {
+      auto capnIds = capnProgress.initIds(walletIdVec.size());
+      for (unsigned i=0; i<walletIdVec.size(); i++) {
+         capnIds.set(i, walletIdVec[i]);
+      }
    }
 
    auto serialized = serializeCapnp(message);

@@ -88,19 +88,15 @@ protected:
    {
       return bdm_->BDMstate_ != BDM_offline;
    }
-   
+
    virtual BinaryData applyBlockRangeToDB(
-      uint32_t startBlock, 
-      const vector<string>& wltIDs, bool reportProgress
-   )
+      uint32_t startBlock, const vector<string>& wltIDs,
+      bool reportProgress)
    {
       //make sure sdbis are initialized (fresh ids wont have sdbi entries)
-      try
-      {
-         auto&& sdbi = getSshSDBI();
-      }
-      catch (runtime_error&)
-      {
+      try {
+         getSshSDBI();
+      } catch (const std::runtime_error&) {
          StoredDBInfo sdbi;
          sdbi.magic_ = BitcoinSettings::getMagicBytes();
          sdbi.metaHash_ = BtcUtils::EmptyHash_;
@@ -111,12 +107,9 @@ protected:
          putSshSDBI(sdbi);
       }
 
-      try
-      {
-         auto&& sdbi = getSubSshSDBI();
-      }
-      catch (runtime_error&)
-      {
+      try {
+         getSubSshSDBI();
+      } catch (const std::runtime_error&) {
          StoredDBInfo sdbi;
          sdbi.magic_ = BitcoinSettings::getMagicBytes();
          sdbi.metaHash_ = BtcUtils::EmptyHash_;
@@ -126,22 +119,21 @@ protected:
          //write sdbi
          putSubSshSDBI(sdbi);
       }
-      
+
       const auto progress
          = [&](BDMPhase phase, double prog, unsigned time, unsigned numericProgress)
       {
-         if (!reportProgress)
+         if (!reportProgress) {
             return;
+         }
 
-         auto&& notifPtr = make_unique<BDV_Notification_Progress>(
+         auto notifPtr = std::make_unique<BDV_Notification_Progress>(
             phase, prog, time, numericProgress, wltIDs);
-
          bdm_->notificationStack_.push_back(move(notifPtr));
       };
-
       return bdm_->applyBlockRangeToDB(progress, startBlock, *this);
    }
-   
+
    shared_ptr<Blockchain> blockchain(void) const
    {
       return bdm_->blockchain();

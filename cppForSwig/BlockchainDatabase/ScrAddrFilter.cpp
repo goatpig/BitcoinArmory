@@ -309,7 +309,9 @@ void ScrAddrFilter::registrationThread()
 
             //scan the batch
             std::vector<std::string> walletIDs;
-            walletIDs.push_back(batchPtr->walletID_);
+            if (!batchPtr->walletID_.empty()) {
+               walletIDs.push_back(batchPtr->walletID_);
+            }
             auto saf = getNew(SIDESCAN_ID);
             saf->updateAddrMap(addrSet, 0, false);
             saf->applyBlockRangeToDB(0, walletIDs, true);

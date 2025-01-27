@@ -565,8 +565,9 @@ void DatabaseBuilder::parseBlockFile(
 BinaryData DatabaseBuilder::initTransactionHistory(int32_t startHeight)
 {
    //Scan history
-   auto topScannedBlockHash = 
-      scanHistory(startHeight, DBSettings::reportProgress(), true);
+   auto topScannedBlockHash = scanHistory(
+      startHeight, DBSettings::reportProgress(), true
+   );
 
    //return the hash of the last scanned block
    return topScannedBlockHash;

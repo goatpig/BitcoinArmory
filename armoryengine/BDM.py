@@ -260,7 +260,7 @@ class BlockDataManager(object):
 
       listenerList = self.getListenerList()
       for cppNotificationListener in listenerList:
-         cppNotificationListener(act, *arglist)
+         cppNotificationListener(act, arglist)
 
    #############################################################################
    def reportProgress(self, notifProto):
@@ -280,9 +280,9 @@ class BlockDataManager(object):
             self.bdmState = BDM_SCANNING
 
             for cppNotificationListener in self.getListenerList():
-               cppNotificationListener(BDM_SCAN_PROGRESS, [None, None])
+               cppNotificationListener(BDM_SCAN_PROGRESS, (None, None))
          else:
-            progInfo = [walletVec, prog, phase]
+            progInfo = (walletVec, prog, phase)
             for cppNotificationListener in self.getListenerList():
                cppNotificationListener(SCAN_ACTION, progInfo)
 

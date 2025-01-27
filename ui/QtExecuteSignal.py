@@ -40,7 +40,8 @@ class QtExecuteSignal(QtCore.QObject):
 
    ###########################################################################
    def methodSlot(self, execList):
-      execList[0]['callable'](*(execList[0]['args']))
+      args = execList[0]['args']
+      execList[0]['callable'](*args)
 
    ###########################################################################
    def callLater(self, delay, _callable, *_args):

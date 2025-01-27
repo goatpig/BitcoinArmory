@@ -122,15 +122,15 @@ try {
       LOGINFO << "Message: " << e.what();
    }
 
-   tuple<BDMPhase, double, unsigned, unsigned> lastvalues;
    const auto loadProgress
       = [&](BDMPhase phase, double prog, unsigned time, unsigned numericProgress)
    {
       //pass empty walletID for main build&scan calls
-      auto&& notifPtr = make_unique<BDV_Notification_Progress>(
-         phase, prog, time, numericProgress, vector<string>());
-
-      bdm->notificationStack_.push_back(move(notifPtr));
+      auto notifPtr = std::make_unique<BDV_Notification_Progress>(
+         phase, prog, time, numericProgress,
+         std::vector<std::string>{}
+      );
+      bdm->notificationStack_.push_back(std::move(notifPtr));
    };
 
    unsigned mode = pimpl->mode & 0x00000003;

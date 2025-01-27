@@ -160,18 +160,15 @@ public:
 
 private:
    void loadDiskState(const ProgressCallback &progress, bool forceRescanSSH = false);
-
    void pollNodeStatus() const;
-   
+
 public:
    Blockchain::ReorganizationState readBlkFileUpdate(void);
 
-   BinaryData applyBlockRangeToDB(ProgressCallback, 
-                            uint32_t blk0,
-                            ScrAddrFilter& scrAddrData);
+   BinaryData applyBlockRangeToDB(ProgressCallback,
+      uint32_t blk0, ScrAddrFilter& scrAddrData);
 
    uint32_t getTopBlockHeight() const {return blockchain_->top()->getBlockHeight();}
-      
    uint8_t getValidDupIDForHeight(uint32_t blockHgt) const
    { return iface_->getValidDupIDForHeight(blockHgt); }
 

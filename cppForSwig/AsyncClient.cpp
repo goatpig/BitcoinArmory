@@ -1649,6 +1649,8 @@ std::pair<unsigned, unsigned> AsyncClient::BlockDataViewer::getRekeyCount() cons
 
    return wsSocket->getRekeyCount();
 }
+
+///////////////////////////////////////////////////////////////////////////////
 void AsyncClient::BlockDataViewer::getCombinedBalances(std::function<void(
    ReturnMessage<std::map<std::string, CombinedBalances>>)> callback)
 {

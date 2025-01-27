@@ -253,9 +253,9 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       '''
 
       #push model BDM notify signal
-      def cppNotifySignal(action, *arglist):
+      def cppNotifySignal(action, arglist):
          TheSignalExecution.executeMethod(self.handleCppNotification,
-            action, *arglist)
+            action, arglist)
 
       TheBDM.registerCppNotification(cppNotifySignal)
       self.progressCallbacks = {}
@@ -4797,9 +4797,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          os._exit(0)
 
       elif action == SCAN_ACTION:
-         idList = args[0]
-         prog = args[1]
-
+         idList, prog, phase = args[0]
          hasWallet = False
          hasLockbox = False
 
@@ -4821,7 +4819,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
                elif progId in self.progressCallbacks:
                   progressObj = self.progressCallbacks[progId]
-                  progressObj.UpdateDlg(HBar=prog*100, phase=args[2])
+                  progressObj.UpdateDlg(HBar=prog*100, phase=phase)
 
                else:
                   LOGWARN("Unknown progress callback id")
@@ -4859,7 +4857,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             self.updateStatusBarText()
 
          self.updateSyncProgress()
-
 
       elif action == BDM_SCAN_PROGRESS:
          self.setDashboardDetails()
