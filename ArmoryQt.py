@@ -2853,8 +2853,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
                                                           not OS_MACOSX)
 
          le = leVec[i]
-         if (le.value <= 0 and notifyOut) or \
-                  (le.value > 0 and notifyIn):
+         if (le.balance <= 0 and notifyOut) or (le.balance > 0 and notifyIn):
             self.notifyQueue.append([le.id, le, False])
 
       self.doTheSystemTrayThing()
@@ -4714,7 +4713,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
             if self.netMode==NETWORKMODE.Full:
                LOGINFO('Current block number: %d', TheBDM.getTopBlockHeight())
-
 
             # Update the wallet view to immediately reflect new balances
             self.walletModel.reset()

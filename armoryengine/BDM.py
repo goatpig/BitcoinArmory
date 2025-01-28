@@ -218,7 +218,7 @@ class BlockDataManager(object):
    #############################################################################
    def pushNotification(self, notifProto):
       act = ''
-      arglist = []
+      args = None
 
       # AOTODO replace with constants
       if notifProto.which() == "ready":
@@ -229,24 +229,24 @@ class BlockDataManager(object):
 
       elif notifProto.which() == "zeroConfs":
          act = NEW_ZC_ACTION
-         arglist = notifProto.zeroConfs
+         args = notifProto.zeroConfs
 
       elif notifProto.which() == "newBlock":
          act = NEW_BLOCK_ACTION
-         arglist.append(notifProto.newBlock)
+         args = notifProto.newBlock
          TheBDM.topBlockHeight = notifProto.newBlock
 
       elif notifProto.which() == "refresh":
          act = REFRESH_ACTION
-         arglist = notifProto.refresh
+         args = notifProto.refresh
 
       elif notifProto.which() == "error":
          act = WARNING_ACTION
-         arglist.append(notifProto.error)
+         args = notifProto.error
 
       elif notifProto.which() == "nodeStatus":
          act = NODESTATUS_UPDATE
-         arglist.append(notifProto.nodeStatus)
+         args = notifProto.nodeStatus
 
       elif notifProto.which() == "disconnected":
          TheBDM.setState(BDM_OFFLINE)
@@ -260,7 +260,7 @@ class BlockDataManager(object):
 
       listenerList = self.getListenerList()
       for cppNotificationListener in listenerList:
-         cppNotificationListener(act, arglist)
+         cppNotificationListener(act, (args))
 
    #############################################################################
    def reportProgress(self, notifProto):
