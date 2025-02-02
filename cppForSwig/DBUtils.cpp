@@ -298,7 +298,7 @@ FileUtils::FileMap::FileMap(const fs::path& path, bool write, size_t offset)
          flag = _O_RDWR | _O_BINARY;
       }
 
-      fd = _open(path.string().c_str(), flag);
+      fd = _wopen(path.c_str(), flag);
       if (fd == -1) {
          throw std::runtime_error("failed to open file");
       }
@@ -438,7 +438,7 @@ FileUtils::FileCopy::FileCopy(const fs::path& path, size_t offset)
    try {
 #ifdef _WIN32
       auto flag = _O_RDONLY | _O_BINARY;
-      fd = _open(path.c_str(), flag);
+      fd = _wopen(path.c_str(), flag);
       if (fd == -1) {
          throw std::runtime_error("failed to open file");
       }
