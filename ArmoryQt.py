@@ -2838,29 +2838,22 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          self.broadcastTransaction(finishedTx, dryRun=False)
 
    #############################################################################
-   def notifyNewZeroConf(self, leVec):
+   def notifyNewZeroConf(self, txLegder):
       '''
       Function that looks at an incoming zero-confirmation transaction queue and
       determines if any incoming transactions were created by Armory. If so, the
       transaction will be passed along to a user notification queue.
       '''
+      notifyIn = TheSettings.getSettingOrSetDefault('NotifyBtcIn', not OS_MACOSX)
+      notifyOut = TheSettings.getSettingOrSetDefault('NotifyBtcOut', not OS_MACOSX)
 
-      vlen = len(leVec)
-      for i in range(0, vlen):
-         notifyIn = TheSettings.getSettingOrSetDefault('NotifyBtcIn', \
-                                                      not OS_MACOSX)
-         notifyOut = TheSettings.getSettingOrSetDefault('NotifyBtcOut', \
-                                                          not OS_MACOSX)
-
-         le = leVec[i]
+      for le in txLedger.ledgers:
          if (le.balance <= 0 and notifyOut) or (le.balance > 0 and notifyIn):
             self.notifyQueue.append([le.id, le, False])
-
       self.doTheSystemTrayThing()
 
    #############################################################################
    def broadcastTransaction(self, pytx, dryRun=False):
-
       if dryRun:
          #DlgDispTxInfo(pytx, None, self, self).exec_()
          return
@@ -4685,6 +4678,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             LOGERROR("Failed update wallet data with error: %s" % e)
             return
 
+         zcList = args[0]
          self.notifyNewZeroConf(args)
          self.createCombinedLedger()
 

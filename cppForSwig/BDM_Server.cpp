@@ -810,7 +810,7 @@ namespace {
                rawZcVec.emplace_back(txData.begin(), txData.end());
             }
             clients->p2pBroadcast(bdvId, rawZcVec);
-            break;
+            return nullptr;
          }
 
          case StaticRequest::Which::GET_NODE_STATUS:
