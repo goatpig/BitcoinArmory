@@ -13,6 +13,7 @@
 from qtpy import QtCore, QtGui, QtWidgets
 
 from armoryengine.ArmoryUtils import DEFAULT_RECEIVE_TYPE
+from armoryengine.Settings import TheSettings
 from armoryengine.BDM import TheBDM, BDM_OFFLINE
 
 from armorycolors import Colors
@@ -218,9 +219,9 @@ class DlgNewAddressDisp(ArmoryDialog):
 
 ################################################################################
 def ShowRecvCoinsWarningIfNecessary(wlt, parent, main):
-   numTimesOnline = main.getSettingOrSetDefault("SyncSuccessCount", 0)
+   numTimesOnline = TheSettings.getSettingOrSetDefault("SyncSuccessCount", 0)
    if numTimesOnline < 1 and not TheBDM.getState() == BDM_OFFLINE:
-      result = QtWidgets.QMessageBox.warning(main, main.tr('Careful!'), main.tr(
+      result = QtWidgets.QMessageBox.warning(main, self.tr('Careful!'), self.tr(
          'Armory is not online yet, and will eventually need to be online to '
          'access any funds sent to your wallet.  Please <u><b>do not</b></u> '
          'receive Bitcoins to your Armory wallets until you have successfully '
@@ -237,7 +238,7 @@ def ShowRecvCoinsWarningIfNecessary(wlt, parent, main):
    notMyWallet = (wlttype == WLTTYPES.WatchOnly)
    offlineWallet = (wlttype == WLTTYPES.Offline)
    dnaaPropName = 'Wallet_%s_%s' % (wlt.uniqueIDB58, 'DNAA_RecvOther')
-   dnaaThisWallet = main.getSettingOrSetDefault(dnaaPropName, False)
+   dnaaThisWallet = TheSettings.getSettingOrSetDefault(dnaaPropName, False)
    if notMyWallet and not dnaaThisWallet:
       result = MsgBoxWithDNAA(parent, main, MSGBOX.Warning, parent.tr('This is not your wallet!'), parent.tr(
             'You are getting an address for a wallet that '
@@ -249,7 +250,7 @@ def ShowRecvCoinsWarningIfNecessary(wlt, parent, main):
             'wallet on a separate computer), then please change the '
             '"Belongs To" field in the wallet-properties for this wallet.'), \
             parent.tr('Do not show this warning again'), wCancel=True)
-      main.writeSetting(dnaaPropName, result[1])
+      TheSettings.writeSetting(dnaaPropName, result[1])
       return result[0]
 
    if offlineWallet and not dnaaThisWallet:
@@ -264,6 +265,6 @@ def ShowRecvCoinsWarningIfNecessary(wlt, parent, main):
             'address.  Instead, change the wallet properties "Belongs To" field '
             'to specify that this wallet is not actually yours.'), \
             parent.tr('Do not show this warning again'), wCancel=True)
-      main.writeSetting(dnaaPropName, result[1])
+      TheSettings.writeSetting(dnaaPropName, result[1])
       return result[0]
    return True
