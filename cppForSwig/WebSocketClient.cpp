@@ -432,8 +432,7 @@ int WebSocketClient::callback(struct lws *wsi,
 ////////////////////////////////////////////////////////////////////////////////
 void WebSocketClient::readService()
 {
-   while (true)
-   {
+   while (true) {
       BinaryData payload;
       try {
          payload = std::move(readQueue_.pop_front());

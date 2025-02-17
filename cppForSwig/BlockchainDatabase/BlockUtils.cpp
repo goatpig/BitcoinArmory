@@ -88,19 +88,15 @@ protected:
    {
       return bdm_->BDMstate_ != BDM_offline;
    }
-   
+
    virtual BinaryData applyBlockRangeToDB(
-      uint32_t startBlock, 
-      const vector<string>& wltIDs, bool reportProgress
-   )
+      uint32_t startBlock, const vector<string>& wltIDs,
+      bool reportProgress)
    {
       //make sure sdbis are initialized (fresh ids wont have sdbi entries)
-      try
-      {
-         auto&& sdbi = getSshSDBI();
-      }
-      catch (runtime_error&)
-      {
+      try {
+         getSshSDBI();
+      } catch (const std::runtime_error&) {
          StoredDBInfo sdbi;
          sdbi.magic_ = BitcoinSettings::getMagicBytes();
          sdbi.metaHash_ = BtcUtils::EmptyHash_;
@@ -111,12 +107,9 @@ protected:
          putSshSDBI(sdbi);
       }
 
-      try
-      {
-         auto&& sdbi = getSubSshSDBI();
-      }
-      catch (runtime_error&)
-      {
+      try {
+         getSubSshSDBI();
+      } catch (const std::runtime_error&) {
          StoredDBInfo sdbi;
          sdbi.magic_ = BitcoinSettings::getMagicBytes();
          sdbi.metaHash_ = BtcUtils::EmptyHash_;
@@ -126,22 +119,21 @@ protected:
          //write sdbi
          putSubSshSDBI(sdbi);
       }
-      
+
       const auto progress
          = [&](BDMPhase phase, double prog, unsigned time, unsigned numericProgress)
       {
-         if (!reportProgress)
+         if (!reportProgress) {
             return;
+         }
 
-         auto&& notifPtr = make_unique<BDV_Notification_Progress>(
+         auto notifPtr = std::make_unique<BDV_Notification_Progress>(
             phase, prog, time, numericProgress, wltIDs);
-
          bdm_->notificationStack_.push_back(move(notifPtr));
       };
-
       return bdm_->applyBlockRangeToDB(progress, startBlock, *this);
    }
-   
+
    shared_ptr<Blockchain> blockchain(void) const
    {
       return bdm_->blockchain();
@@ -233,7 +225,7 @@ BinaryData BlockDataManager::applyBlockRangeToDB(
 {
    // Start scanning and timer
    BlockchainScanner bcs(blockchain_, iface_, &scrAddrData,
-      *blockFiles_.get(),
+      blockFiles_,
       DBSettings::threadCount(), DBSettings::ramUsage(),
       prog, DBSettings::reportProgress());
    bcs.scan_nocheck(blk0);
@@ -322,11 +314,10 @@ void BlockDataManager::doInitialSyncOnLoad_RescanBalance(
 ////////////////////////////////////////////////////////////////////////////////
 void BlockDataManager::loadDiskState(const ProgressCallback &progress,
    bool forceRescanSSH)
-{  
+{
    BDMstate_ = BDM_initializing;
-         
    dbBuilder_ = make_shared<DatabaseBuilder>(
-      *blockFiles_, *this, progress, forceRescanSSH);
+      blockFiles_, *this, progress, forceRescanSSH);
    dbBuilder_->init();
 
    if (DBSettings::checkChain())
@@ -398,23 +389,27 @@ void BlockDataManager::disableZeroConf(void)
 ////////////////////////////////////////////////////////////////////////////////
 CoreRPC::NodeStatus BlockDataManager::getNodeStatus() const
 {
+   if (processNode_ == nullptr) {
+      return {};
+   }
+
    CoreRPC::NodeStatus nss;
-   if (processNode_ == nullptr)
-      return nss;
-   
-   if(processNode_->connected())
+   if (processNode_->connected()) {
       nss.state_ = CoreRPC::NodeState_Online;
+   }
 
-   if (processNode_->isSegWit())
+   if (processNode_->isSegWit()) {
       nss.SegWitEnabled_ = true;
+   }
 
-   if (nodeRPC_ == nullptr)
+   if (nodeRPC_ == nullptr) {
       return nss;
+   }
 
    nss.rpcState_ = nodeRPC_->testConnection();
-   if (nss.rpcState_ != CoreRPC::RpcState_Online)
+   if (nss.rpcState_ != CoreRPC::RpcState_Online) {
       pollNodeStatus();
-
+   }
    nss.chainStatus_ = nodeRPC_->getChainStatus();
    return nss;
 }

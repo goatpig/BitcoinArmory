@@ -253,9 +253,9 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       '''
 
       #push model BDM notify signal
-      def cppNotifySignal(action, *arglist):
+      def cppNotifySignal(action, arglist):
          TheSignalExecution.executeMethod(self.handleCppNotification,
-            action, *arglist)
+            action, arglist)
 
       TheBDM.registerCppNotification(cppNotifySignal)
       self.progressCallbacks = {}
@@ -2838,30 +2838,22 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          self.broadcastTransaction(finishedTx, dryRun=False)
 
    #############################################################################
-   def notifyNewZeroConf(self, leVec):
+   def notifyNewZeroConf(self, txLegder):
       '''
       Function that looks at an incoming zero-confirmation transaction queue and
       determines if any incoming transactions were created by Armory. If so, the
       transaction will be passed along to a user notification queue.
       '''
+      notifyIn = TheSettings.getSettingOrSetDefault('NotifyBtcIn', not OS_MACOSX)
+      notifyOut = TheSettings.getSettingOrSetDefault('NotifyBtcOut', not OS_MACOSX)
 
-      vlen = len(leVec)
-      for i in range(0, vlen):
-         notifyIn = TheSettings.getSettingOrSetDefault('NotifyBtcIn', \
-                                                      not OS_MACOSX)
-         notifyOut = TheSettings.getSettingOrSetDefault('NotifyBtcOut', \
-                                                          not OS_MACOSX)
-
-         le = leVec[i]
-         if (le.value <= 0 and notifyOut) or \
-                  (le.value > 0 and notifyIn):
+      for le in txLedger.ledgers:
+         if (le.balance <= 0 and notifyOut) or (le.balance > 0 and notifyIn):
             self.notifyQueue.append([le.id, le, False])
-
       self.doTheSystemTrayThing()
 
    #############################################################################
    def broadcastTransaction(self, pytx, dryRun=False):
-
       if dryRun:
          #DlgDispTxInfo(pytx, None, self, self).exec_()
          return
@@ -4686,6 +4678,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             LOGERROR("Failed update wallet data with error: %s" % e)
             return
 
+         zcList = args[0]
          self.notifyNewZeroConf(args)
          self.createCombinedLedger()
 
@@ -4714,7 +4707,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
             if self.netMode==NETWORKMODE.Full:
                LOGINFO('Current block number: %d', TheBDM.getTopBlockHeight())
-
 
             # Update the wallet view to immediately reflect new balances
             self.walletModel.reset()
@@ -4797,9 +4789,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          os._exit(0)
 
       elif action == SCAN_ACTION:
-         idList = args[0]
-         prog = args[1]
-
+         idList, prog, phase = args[0]
          hasWallet = False
          hasLockbox = False
 
@@ -4821,7 +4811,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
                elif progId in self.progressCallbacks:
                   progressObj = self.progressCallbacks[progId]
-                  progressObj.UpdateDlg(HBar=prog*100, phase=args[2])
+                  progressObj.UpdateDlg(HBar=prog*100, phase=phase)
 
                else:
                   LOGWARN("Unknown progress callback id")
@@ -4859,7 +4849,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             self.updateStatusBarText()
 
          self.updateSyncProgress()
-
 
       elif action == BDM_SCAN_PROGRESS:
          self.setDashboardDetails()

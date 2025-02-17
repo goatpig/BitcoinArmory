@@ -155,7 +155,8 @@ class SelectWalletFrame(ArmoryFrame):
             if self.doVerticalLayout:
                self.walletComboBox.addItem(wlt.getDisplayStr())
             else:
-               self.walletListBox.addItem(QListWidgetItem(wlt.getDisplayStr()))
+               self.walletListBox.addItem(
+                  QtWidgets.QListWidgetItem(wlt.getDisplayStr()))
 
             if wltID == firstSelect:
                selectedWltIndex = wltItems

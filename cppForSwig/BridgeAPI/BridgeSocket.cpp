@@ -71,11 +71,13 @@ void CppBridgeSocket::respond(std::vector<uint8_t>& data)
 
    //append data to leftovers from previous iteration if applicable
    if (!leftOverData_.empty()) {
-      leftOverData_.insert(leftOverData_.end(), data.begin(), data.end());
-      data = std::move(leftOverData_);
+      std::vector<uint8_t> copy;
+      copy.resize(leftOverData_.size() + data.size());
+      memcpy(&copy[0], &leftOverData_[0], leftOverData_.size());
+      memcpy(&copy[0] + leftOverData_.size(), &data[0], data.size());
 
-      //leftoverData_ should be empty cause of the move operation
-      assert(leftOverData_.empty());
+      data = std::move(copy);
+      leftOverData_.clear();
    }
 
    while (!data.empty()) {

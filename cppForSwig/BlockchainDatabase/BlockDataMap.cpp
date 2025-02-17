@@ -9,16 +9,70 @@
 #include "BlockDataMap.h"
 #include "BtcUtils.h"
 #include "TxHashFilters.h"
+#include <string_view>
 
 namespace fs = std::filesystem;
+using namespace std::string_view_literals;
 
+namespace {
+   fs::path blkFileExt{".dat"sv};
+   auto blkFilePrefix = "blk"sv;
+
+   std::shared_ptr<FileUtils::FileCopy> getFileCopy(
+      uint16_t id, const BlockDataLoader::PathAndOffset& path)
+   {
+      if (id == UINT16_MAX) {
+         return nullptr;
+      }
+      return std::make_shared<FileUtils::FileCopy>(path.path, path.offset);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// BlockOffset
+////////////////////////////////////////////////////////////////////////////////
+BlockOffset::BlockOffset() :
+   fileID(UINT16_MAX), offset(0)
+{}
+
+BlockOffset::BlockOffset(uint16_t fileID, size_t offset) :
+   fileID(fileID), offset(offset)
+{}
+
+BlockOffset::BlockOffset(const BlockOffset& bo) :
+   fileID(bo.fileID), offset(bo.offset)
+{}
+
+bool BlockOffset::operator>(const BlockOffset& rhs) const
+{
+   if (fileID == UINT16_MAX) {
+      if (rhs.fileID == UINT16_MAX) {
+         return false;
+      }
+      return true;
+   } else if (fileID == rhs.fileID) {
+      return offset > rhs.offset;
+   }
+   return fileID > rhs.fileID;
+}
+
+BlockOffset& BlockOffset::operator=(const BlockOffset& rhs)
+{
+   this->fileID = rhs.fileID;
+   this->offset = rhs.offset;
+   return *this;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// BlockData
 ////////////////////////////////////////////////////////////////////////////////
 BlockData::BlockData(uint32_t blockid)
    : uniqueID_(blockid)
 {}
 
 ////////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<BlockData> BlockData::deserialize(const uint8_t* data, size_t size,
+std::shared_ptr<BlockData> BlockData::deserialize(
+   const uint8_t* data, size_t size,
    const std::shared_ptr<BlockHeader> blockHeader,
    std::function<unsigned int(const BinaryData&)> getID,
    BlockData::CheckHashes mode)
@@ -26,7 +80,7 @@ std::shared_ptr<BlockData> BlockData::deserialize(const uint8_t* data, size_t si
    //deser header from raw block and run a quick sanity check
    if (size < HEADER_SIZE) {
       throw BlockDeserializingException(
-      "raw data is smaller than HEADER_SIZE");
+         "raw data is smaller than HEADER_SIZE");
    }
 
    BinaryDataRef bdr(data, HEADER_SIZE);
@@ -46,16 +100,23 @@ std::shared_ptr<BlockData> BlockData::deserialize(const uint8_t* data, size_t si
 
    if (blockHeader != nullptr) {
       if (bh.getThisHashRef() != blockHeader->getThisHashRef()) {
+         LOGERR << "expected header hash mismatch!";
+         LOGERR << " current: " << bh.getThisHashRef().toHexStr(true);
+         LOGERR << " expected: " << blockHeader->getThisHashRef().toHexStr(true);
+         LOGERR << " file: " << blockHeader->getBlockFileNum() <<
+            ", offset: " << blockHeader->getOffset();
+
          throw BlockDeserializingException(
-         "raw data does not match expected block hash");
+            "raw data does not match expected block hash");
       }
 
       if (numTx != blockHeader->getNumTx()) {
          throw BlockDeserializingException(
-         "tx count mismatch in deser header");
+            "tx count mismatch in deser header");
       }
    }
 
+   result->txns_.reserve(numTx);
    for (unsigned i = 0; i < numTx; i++) {
       //light tx deserialization, just figure out the offset and size of
       //txins and txouts
@@ -63,7 +124,7 @@ std::shared_ptr<BlockData> BlockData::deserialize(const uint8_t* data, size_t si
       brr.advance(tx->size_);
 
       //move it to BlockData object vector
-      result->txns_.push_back(move(tx));
+      result->txns_.emplace_back(std::move(tx));
    }
 
    result->data_ = data;
@@ -161,90 +222,147 @@ std::shared_ptr<BlockHeader> BlockData::createBlockHeader() const
    return bhPtr;
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+// BlockFiles
+////////////////////////////////////////////////////////////////////////////////
 void BlockFiles::detectAllBlockFiles()
 {
    if (folderPath_.empty()) {
       throw std::runtime_error("empty block files folder path");
    }
 
-   unsigned numBlkFiles = filePaths_.size();
-   while (numBlkFiles < UINT16_MAX) {
-      auto path = FileUtils::getBlkFilename(folderPath_, numBlkFiles);
-      auto filesize = FileUtils::getFileSize(path);
-      if (filesize == SIZE_MAX) {
+   for (const auto& entry : fs::directory_iterator{folderPath_}) {
+      if (!entry.is_regular_file()) {
+         continue;
+      }
+
+      const auto& filePath = entry.path();
+      try {
+         auto fileId = FileUtils::blkPathToIntID(filePath);
+         auto filesize = FileUtils::getFileSize(filePath);
+         if (filesize == SIZE_MAX) {
+            continue;
+         }
+
+         paths_.emplace(fileId, filePath);
+         totalBlockchainBytes_ += filesize;
+      } catch (const std::exception&) {
+         continue;
+      }
+   }
+}
+
+void BlockFiles::detectNewBlockFiles()
+{
+   //we expect consecutive new block files
+   auto lastFilePath = getLastFilePath();
+   auto fileID = FileUtils::blkPathToIntID(lastFilePath);
+   while (++fileID < UINT16_MAX) {
+      auto filePath = FileUtils::getBlkFilename(folderPath_, fileID);
+      auto fileSize = FileUtils::getFileSize(filePath);
+      if (fileSize == SIZE_MAX) {
          break;
       }
 
-      filePaths_.emplace(numBlkFiles, path);
-      totalBlockchainBytes_ += filesize;
-      numBlkFiles++;
+      paths_.emplace(fileID, filePath);
+      totalBlockchainBytes_ += fileSize;
    }
 }
 
 /////////////////////////////////////////////////////////////////////////////
-const fs::path& BlockFiles::getLastFileName(void) const
+const fs::path& BlockFiles::getLastFilePath() const
 {
-   if (filePaths_.empty()) {
+   if (paths_.empty()) {
       throw std::runtime_error("empty path map");
    }
-   return filePaths_.rbegin()->second;
+   return paths_.rbegin()->second;
 }
 
 /////////////////////////////////////////////////////////////////////////////
-BlockDataLoader::BlockDataLoader(const fs::path& path) :
-   path_(path), prefix_("blk")
-{}
-
-/////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<BlockDataFileMap> BlockDataLoader::get(
-   const fs::path& filename)
+const fs::path& BlockFiles::getFilePathForID(uint16_t fileID) const
 {
-   //convert to int ID
-   auto intID = nameToIntID(filename);
-
-   //get with int ID
-   return get(intID);
+   auto iter = paths_.find(fileID);
+   if (iter == paths_.end()) {
+      LOGERR << "no file path for id " << fileID;
+      throw std::range_error("unexpected fileID");
+   }
+   return iter->second;
 }
 
-/////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<BlockDataFileMap> BlockDataLoader::get(uint32_t fileid)
+////////////////////////////////////////////////////////////////////////////////
+// BlockDataLoader
+////////////////////////////////////////////////////////////////////////////////
+BlockDataLoader::BlockDataLoader(
+   std::shared_ptr<BlockFiles> files,
+   const BlockOffset& startOffset)
 {
-   //don't have this fileid yet, create it
-   return getNewBlockDataMap(fileid);
-}
-
-/////////////////////////////////////////////////////////////////////////////
-uint32_t BlockDataLoader::nameToIntID(const fs::path& path)
-{
-   auto filename = path.filename().string();
-   if (filename.size() < 3 ||
-      strncmp(prefix_.c_str(), filename.c_str(), 3)) {
-      throw std::runtime_error("invalid filename");
+   counter_.store(0, std::memory_order_relaxed);
+   auto iter = files->paths_.begin();
+   if (startOffset.fileID != UINT16_MAX) {
+      iter = files->paths_.find(startOffset.fileID);
+      startFileId_ = startOffset.fileID;
    }
 
-   auto substr = filename.substr(3);
-   return std::stoi(substr);
+   if (iter == files->paths_.end()) {
+      throw std::runtime_error("could not find first file index!");
+   }
+
+   paf_.emplace_back(PathAndOffset{iter->second, startOffset.offset});
+   while (++iter != files->paths_.end()) {
+      paf_.emplace_back(PathAndOffset{iter->second, 0});
+   }
 }
 
 /////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<BlockDataFileMap>
-   BlockDataLoader::getNewBlockDataMap(uint32_t fileid)
+std::shared_ptr<FileUtils::FileMap> BlockDataLoader::getNextMap()
 {
-   auto filename = FileUtils::getBlkFilename(path_, fileid);
-   return std::make_shared<BlockDataFileMap>(filename);
+   auto id = counter_.fetch_add(1, std::memory_order_relaxed);
+   if (id >= paf_.size()) {
+      return nullptr;
+   }
+
+   const auto& file = paf_[id];
+   return std::make_shared<FileUtils::FileMap>(file.path, file.offset);
 }
+
+/////////////////////////////////////////////////////////////////////////////
+BlockDataLoader::BlockDataCopy BlockDataLoader::getNextCopy()
+{
+   uint16_t id = counter_.fetch_add(1, std::memory_order_relaxed);
+   if (id >= paf_.size()) {
+      return BlockDataCopy{UINT16_MAX, {}};
+   }
+   const auto& file = paf_[id];
+   return { id + startFileId_, file };
+}
+
+/////////////////////////////////////////////////////////////////////////////
+size_t BlockDataLoader::size() const
+{
+   return paf_.size();
+}
+
+bool BlockDataLoader::isValid() const
+{
+   auto counter = counter_.load(std::memory_order_relaxed);
+   return counter < paf_.size();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// BlockDataCopy
+/////////////////////////////////////////////////////////////////////////////
+BlockDataLoader::BlockDataCopy::BlockDataCopy(uint16_t id,
+   const PathAndOffset& path) :
+   fileID(id), offset(path.offset),
+   data(getFileCopy(id, path))
+{}
 
 /////////////////////////////////////////////////////////////////////////////
 // BlockDataFileMap
 /////////////////////////////////////////////////////////////////////////////
 BlockDataFileMap::BlockDataFileMap(const std::filesystem::path& path) :
    fileMap_(path)
-{
-   //relaxed memory order for loads and stores, we only care about 
-   //atomicity in these operations
-   useCounter_.store(0,std:: memory_order_relaxed);
-}
+{}
 
 ////
 BlockDataFileMap::~BlockDataFileMap()

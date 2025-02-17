@@ -305,8 +305,8 @@ map<unsigned, BinaryData> NodeUnitTest::mineNewBlock(BlockDataManager* bdm,
          /* append to blocks data file */
 
          //get file stream
-         auto lastFileName = filesPtr_->getLastFileName();
-         auto fStream = ofstream(lastFileName, ios::binary | ios::app);
+         auto lastFilePath = filesPtr_->getLastFilePath();
+         auto fStream = ofstream(lastFilePath, ios::binary | ios::app);
 
          BinaryWriter bwHeader;
 

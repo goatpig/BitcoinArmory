@@ -810,7 +810,7 @@ namespace {
                rawZcVec.emplace_back(txData.begin(), txData.end());
             }
             clients->p2pBroadcast(bdvId, rawZcVec);
-            break;
+            return nullptr;
          }
 
          case StaticRequest::Which::GET_NODE_STATUS:
@@ -1021,7 +1021,7 @@ void BDV_Server_Object::init()
       auto batch = std::make_shared<RegistrationBatch>();
       batch->isNew_ = false;
 
-      //fill with addresses from protobuf payloads
+      //fill with addresses from proto payloads
       for (const auto& wlt : wltMap) {
          for (const auto& addr : wlt.second.addresses) {
             batch->scrAddrSet_.insert(addr);
@@ -1046,7 +1046,7 @@ void BDV_Server_Object::init()
       populateWallets(wltMap);
    }
 
-   //could a wallet registration event get lost in between the init loop 
+   //could a wallet registration event get lost in between the init loop
    //and setting the promise?
 
    //init wallets
@@ -1059,7 +1059,7 @@ void BDV_Server_Object::init()
    auto zcAction = dynamic_cast<BDV_Notification_ZC*>(zcstruct.get());
    if (zcAction != nullptr &&
       !zcAction->packet_.scrAddrToTxioKeys_.empty()) {
-      scanWallets(move(zcstruct));
+      scanWallets(std::move(zcstruct));
    }
 
    //mark bdv object as ready
@@ -1217,6 +1217,9 @@ void BDV_Server_Object::processNotification(
          progressNotif.setTime(payload->time_);
          progressNotif.setNumericProgress(payload->numericProgress_);
 
+         if (payload->walletIDs_.empty()) {
+            break;
+         }
          auto progressIds = progressNotif.initIds(payload->walletIDs_.size());
          unsigned i=0;
          for (const auto& id : payload->walletIDs_) {

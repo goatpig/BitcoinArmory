@@ -1,8 +1,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2017, goatpig.                                              //
+//  Copyright (C) 2017-2025, goatpig.                                         //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                      
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -14,14 +14,26 @@ using namespace std;
 using namespace Armory::Threading;
 
 ////////////////////////////////////////////////////////////////////////////////
+BlockchainScanner_Super::BlockchainScanner_Super(
+   std::shared_ptr<Blockchain> bc, LMDBBlockDatabase* db,
+   std::shared_ptr<BlockFiles> bf, bool init,
+   unsigned threadcount, unsigned queue_depth,
+   ProgressCallback prg, bool reportProgress) :
+   init_(init), blockchain_(bc), db_(db),
+   blockFiles_(bf),
+   totalThreadCount_(threadcount), writeQueueDepth_(queue_depth),
+   totalBlockFileCount_(bf->fileCount()),
+   progress_(prg), reportProgress_(reportProgress)
+{}
+
+////////////////////////////////////////////////////////////////////////////////
 void BlockchainScanner_Super::scan()
 {
    TIMER_RESTART("scan");
    unsigned scanFrom = 0;
    auto&& subsshSdbi = db_->getStoredDBInfo(SUBSSH, 0);
 
-   try
-   {
+   try {
       auto topScannedBlock =
          blockchain_->getHeaderByHash(subsshSdbi.topScannedBlkHash_);
 
@@ -32,14 +44,11 @@ void BlockchainScanner_Super::scan()
       }
 
       scanFrom = topScannedBlock->getBlockHeight() + 1;
-   }
-   catch (range_error&)
-   { }
+   } catch (const range_error&) {}
 
    auto topBlock = blockchain_->top();
 
-   if (scanFrom > topBlock->getBlockHeight())
-   {
+   if (scanFrom > topBlock->getBlockHeight()) {
       topScannedBlockHash_ = topBlock->getThisHash();
       return;
    }
@@ -63,8 +72,7 @@ void BlockchainScanner_Super::scan()
 
       auto dbIter = db_->getIterator(SUBSSH_META);
       if (dbIter->seekToBefore(lastKey.getDataRef()) != false &&
-         dbIter->getKeyRef().getSize() == 8)
-      {
+         dbIter->getKeyRef().getSize() == 8) {
          auto&& keyReader = dbIter->getKeyReader();
          batch_counter_ = keyReader.get_uint32_t(BE) + 1;
       }
@@ -82,57 +90,48 @@ void BlockchainScanner_Super::scan()
    completedBatches_.store(0, memory_order_relaxed);
 
    //loop until there are no more blocks available
-   try
-   {
-      while (startHeight <= topBlock->getBlockHeight())
-      {
+   try {
+      while (startHeight <= topBlock->getBlockHeight()) {
          //figure out how many blocks to pull for this batch
          //batches try to grab up nBlockFilesPerBatch_ worth of block data
          unsigned targetHeight = startHeight;
          size_t targetSize = BATCH_SIZE_SUPER;
          size_t tallySize;
-         set<unsigned> blockFileIDs;
-         try
-         {
+         std::set<unsigned> blockFileIDs;
+         try {
             shared_ptr<BlockHeader> currentHeader =
                blockchain_->getHeaderByHeight(startHeight, 0xFF);
             blockFileIDs.insert(currentHeader->getBlockFileNum());
             tallySize = currentHeader->getBlockSize();
 
-            while (tallySize < targetSize)
-            {
+            while (tallySize < targetSize) {
                currentHeader = blockchain_->getHeaderByHeight(++targetHeight, 0xFF);
                tallySize += currentHeader->getBlockSize();
                blockFileIDs.insert(currentHeader->getBlockFileNum());
             }
-         }
-         catch (range_error& e)
-         {
+         } catch (const std::range_error& e) {
             //if getHeaderByHeight throws before targetHeight is topBlock's height,
             //something went wrong. Otherwise we just hit the end of the chain.
 
-            if (targetHeight < topBlock->getBlockHeight())
-            {
+            if (targetHeight < topBlock->getBlockHeight()) {
                LOGERR << e.what();
                throw e;
-            }
-            else
-            {
+            } else {
                targetHeight = topBlock->getBlockHeight();
                blockFileIDs.insert(topBlock->getBlockFileNum());
 
-               if (_count == 0)
+               if (_count == 0) {
                   withUpdateSshHints_ = true;
+               }
             }
          }
-
          endHeight = targetHeight;
 
          //create batch
          auto blockDataBatch = make_unique<BlockDataBatch>(
-            startHeight, endHeight, blockFileIDs, 
+            startHeight, endHeight, blockFileIDs,
             BD_ORDER_INCREMENT,
-            &blockDataLoader_, blockchain_);
+            blockFiles_, blockchain_);
          auto batch = make_unique<ParserBatch_Ssh>(move(blockDataBatch));
 
          shared_future<bool> batch_fut = batch->completedPromise_.get_future();
@@ -144,17 +143,13 @@ void BlockchainScanner_Super::scan()
          processInputs(batch.get());
          serializeSubSsh(move(batch));
 
-         if (_count > 
-            completedBatches_.load(memory_order_relaxed) + writeQueueDepth_)
-         {
-            try
-            {
-               auto futIter = completedFutures.begin() + 
+         if (_count >
+            completedBatches_.load(memory_order_relaxed) + writeQueueDepth_) {
+            try {
+               auto futIter = completedFutures.begin() +
                   (_count - writeQueueDepth_);
                futIter->get();
-            }
-            catch (future_error &e)
-            {
+            } catch (const std::future_error &e) {
                LOGERR << "future error";
                throw e;
             }
@@ -163,31 +158,27 @@ void BlockchainScanner_Super::scan()
          ++_count;
          startHeight = endHeight + 1;
       }
-   }
-   catch (range_error&)
-   {
+   } catch (const std::range_error&) {
       LOGERR << "failed to grab block data starting height: " << startHeight;
-      if (startHeight == scanFrom)
+      if (startHeight == scanFrom) {
          LOGERR << "no block data was scanned";
-   }
-   catch (...)
-   {
+      }
+   } catch (...) {
       LOGWARN << "scanning halted unexpectedly";
       //let the scan terminate
    }
 
    //mark all queues complete
    commitQueue_.completed();
-   if (commit_tID.joinable())
+   if (commit_tID.joinable()) {
       commit_tID.join();
+   }
 
    TIMER_STOP("scan");
-   if (topBlock->getBlockHeight() - scanFrom > 100)
-   {
+   if (topBlock->getBlockHeight() - scanFrom > 100) {
       auto timeSpent = TIMER_READ_SEC("scan");
       LOGINFO << "scanned transaction history in " << timeSpent << "s";
    }
-
    db_->updateHeightToIdMap(heightToId_);
 }
 
@@ -898,7 +889,7 @@ void BlockchainScanner_Super::scanSpentness()
       auto blockDataBatch = make_unique<BlockDataBatch>(
          start, currentHeader->getBlockHeight(), blockFileIDs,
          BD_ORDER_DECREMENT,
-         &blockDataLoader_, blockchain_);
+         blockFiles_, blockchain_);
       auto batch = make_unique<ParserBatch_Spentness>(move(blockDataBatch));
       batchFutures.push_back(batch->prom_.get_future());
 
@@ -1222,80 +1213,74 @@ void BlockchainScanner_Super::undo(Blockchain::ReorganizationState& reorgState)
 {
    //TODO: sanity checks on header ptrs from reorgState
    if (reorgState.prevTop_->getBlockHeight() <=
-      reorgState.reorgBranchPoint_->getBlockHeight())
-   {
-      stringstream ss; 
-      ss << "Invalid reorg state:" << endl << endl <<
-         "  previous top height: " << 
+      reorgState.reorgBranchPoint_->getBlockHeight()) {
+      std::stringstream ss;
+      ss << "Invalid reorg state:" << std::endl << std::endl <<
+         "  previous top height: " <<
          reorgState.prevTop_->getBlockHeight() <<
-         "  branch point height: " << 
-         reorgState.reorgBranchPoint_->getBlockHeight() << endl;
+         "  branch point height: " <<
+         reorgState.reorgBranchPoint_->getBlockHeight() << std::endl;
 
       auto&& errStr = ss.str();
-      LOGERR << errStr; 
-      throw runtime_error(errStr);
+      LOGERR << errStr;
+      throw std::runtime_error(errStr);
    }
 
    auto blockPtr = reorgState.prevTop_;
-   map<uint32_t, shared_ptr<BlockDataFileMap>> fileMaps_;
-   set<BinaryData> undoSpentness;
+   std::map<uint32_t, std::shared_ptr<FileUtils::FileMap>> fileMaps_;
+   std::set<BinaryData> undoSpentness;
+   std::set<unsigned> undoneHeights;
 
-   set<unsigned> undoneHeights;
-
-   while (blockPtr != reorgState.reorgBranchPoint_)
-   {
+   while (blockPtr != reorgState.reorgBranchPoint_) {
       int currentHeight = blockPtr->getBlockHeight();
-      auto&& hintsTx = db_->beginTransaction(TXHINTS, LMDB::ReadOnly);
+      auto hintsTx = db_->beginTransaction(TXHINTS, LMDB::ReadOnly);
 
       //grab blocks from previous top until branch point
-      if (blockPtr == nullptr)
-         throw runtime_error("reorg failed while tracing back to "
-            "branch point");
+      if (blockPtr == nullptr) {
+         throw std::runtime_error(
+            "reorg failed while tracing back to "
+            "branch point"
+         );
+      }
 
       auto filenum = blockPtr->getBlockFileNum();
       auto fileIter = fileMaps_.find(filenum);
-      if (fileIter == fileMaps_.end())
-      {
-         fileIter = fileMaps_.insert(make_pair(
-            filenum, blockDataLoader_.get(filenum))).first;
+      if (fileIter == fileMaps_.end()) {
+         auto filePath = blockFiles_->getFilePathForID(filenum);
+         fileIter = fileMaps_.emplace(filenum,
+            std::make_shared<FileUtils::FileMap>(filePath)).first;
       }
 
       auto filemap = fileIter->second;
-
-      auto getID = [blockPtr]
-         (const BinaryData&)->uint32_t {return blockPtr->getThisID(); };
+      auto getID = [blockPtr](const BinaryData&)->uint32_t
+      { return blockPtr->getThisID(); };
 
       auto bdata = BlockData::deserialize(
-         filemap.get()->data() + blockPtr->getOffset(),
+         filemap->ptr() + blockPtr->getOffset(),
          blockPtr->getBlockSize(), blockPtr, getID,
-         BlockData::CheckHashes::NoChecks);
+         BlockData::CheckHashes::NoChecks
+      );
 
+      //undo spends from this block
       const auto& txns = bdata->getTxns();
-      for (unsigned i = 0; i < txns.size(); i++)
-      {
-         const auto& txn = txns[i];
-
-         //undo spends from this block
-         for (unsigned y = 0; y < txn->txins_.size(); y++)
-         {
+      for (const auto& txn : txns) {
+         for (unsigned y = 0; y < txn->txins_.size(); y++) {
             const auto& txin = txn->txins_[y];
 
-            BinaryDataRef outHash(
-               txn->data_ + txin.first, 32);
-
-            if (outHash == BtcUtils::EmptyHash_)
+            BinaryDataRef outHash(txn->data_ + txin.first, 32);
+            if (outHash == BtcUtils::EmptyHash_) {
                continue;
+            }
 
             uint16_t txOutId = (uint16_t)READ_UINT32_LE(
                txn->data_ + txin.first + 32);
 
             StoredTxOut stxo;
-            if (!db_->getStoredTxOut(stxo, outHash, txOutId))
-            {
+            if (!db_->getStoredTxOut(stxo, outHash, txOutId)) {
                LOGERR << "failed to grab stxo";
-               throw runtime_error("failed to grab stxo");
+               throw std::runtime_error("failed to grab stxo");
             }
-            
+
             //mark spentness entry for deletion
             undoSpentness.insert(move(stxo.getSpentnessKey()));
          }
@@ -1306,14 +1291,13 @@ void BlockchainScanner_Super::undo(Blockchain::ReorganizationState& reorgState)
       blockPtr = blockchain_->getHeaderByHash(blockPtr->getPrevHashRef());
    }
 
-   int branchPointHeight =
-      reorgState.reorgBranchPoint_->getBlockHeight();
-
+   int branchPointHeight = reorgState.reorgBranchPoint_->getBlockHeight();
    {
       //spentness
-      auto&& spentness_tx = db_->beginTransaction(SPENTNESS, LMDB::ReadWrite);
-      for (auto& spentness_key : undoSpentness)
+      auto spentness_tx = db_->beginTransaction(SPENTNESS, LMDB::ReadWrite);
+      for (const auto& spentness_key : undoSpentness) {
          db_->deleteValue(SPENTNESS, spentness_key);
+      }
 
       auto sdbi = move(db_->getStoredDBInfo(SPENTNESS, UINT32_MAX));
       sdbi.metaInt_ = branchPointHeight;
@@ -1321,15 +1305,15 @@ void BlockchainScanner_Super::undo(Blockchain::ReorganizationState& reorgState)
    }
 
    {
-      //update SSH sdbi      
-      auto&& tx = db_->beginTransaction(SSH, LMDB::ReadWrite);
-      auto&& sdbi = db_->getStoredDBInfo(SSH, 0);
+      //update SSH sdbi
+      auto tx = db_->beginTransaction(SSH, LMDB::ReadWrite);
+      auto sdbi = db_->getStoredDBInfo(SSH, 0);
       sdbi.topScannedBlkHash_ = reorgState.reorgBranchPoint_->getThisHash();
       sdbi.topBlkHgt_ = branchPointHeight;
       db_->putStoredDBInfo(SSH, sdbi, 0);
    }
 
-   ShardedSshParser sshParser(db_, *undoneHeights.begin(), 
+   ShardedSshParser sshParser(db_, *undoneHeights.begin(),
       totalThreadCount_, false);
    sshParser.undo();
 }
@@ -1379,19 +1363,20 @@ BinaryData StxoRef::getDBKey() const
 void BlockDataBatch::populateFileMap()
 {
    resetCounter();
-   if (blockDataFileIDs_.size() == 0)
+   if (blockDataFileIDs_.empty()) {
       return;
+   }
 
-   for(auto& id : blockDataFileIDs_)
-   {
-      fileMaps_.insert(
-         make_pair(id, blockDataLoader_->get(id)));
+   for (const auto& id : blockDataFileIDs_) {
+      auto path = blockFiles_->getFilePathForID(id);
+      fileMaps_.emplace(id, std::make_shared<FileUtils::FileMap>(path));
    }
 
    auto begin = min(start_, end_);
    auto end = max(start_, end_);
-   for (int i = begin; i <= end; i++)
+   for (int i = begin; i <= end; i++) {
       blockMap_.insert(make_pair((unsigned)i, nullptr));
+   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1441,7 +1426,7 @@ shared_ptr<BlockData> BlockDataBatch::getBlockData(unsigned height)
    };
 
    auto bdata = BlockData::deserialize(
-      filemap->data() + blockheader->getOffset(),
+      filemap->ptr() + blockheader->getOffset(),
       blockheader->getBlockSize(),
       blockheader, getID, BlockData::CheckHashes::NoChecks);
 

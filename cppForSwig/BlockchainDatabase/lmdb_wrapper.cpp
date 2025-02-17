@@ -1715,23 +1715,25 @@ Tx LMDBBlockDatabase::getFullTxCopy(
    }
 
    //open block file
-   BlockDataLoader bdl(blkFolder_);
-   auto fileMapPtr = bdl.get(bhPtr->getBlockFileNum());
-   auto dataPtr = fileMapPtr->data();
-
+   auto path = FileUtils::getBlkFilename(blkFolder_, bhPtr->getBlockFileNum());
+   auto fileMap = FileUtils::FileMap(path, false);
    auto getID = [bhPtr] (const BinaryData&)->uint32_t
    {
       return bhPtr->getThisID();
    };
 
-   auto block = BlockData::deserialize(
-      dataPtr + bhPtr->getOffset(),
-      bhPtr->getBlockSize(), bhPtr, getID,
-      BlockData::CheckHashes::NoChecks);
+   try {
+      auto block = BlockData::deserialize(
+         fileMap.ptr() + bhPtr->getOffset(),
+         bhPtr->getBlockSize(), bhPtr, getID,
+         BlockData::CheckHashes::NoChecks);
 
-   const auto& bctx = block->getTxns()[txIndex];
-   BinaryRefReader brr(bctx->data_, bctx->size_);
-   return Tx(brr);
+      const auto& bctx = block->getTxns()[txIndex];
+      BinaryRefReader brr(bctx->data_, bctx->size_);
+      return Tx(brr);
+   } catch (const BlockDeserializingException&) {
+      throw LmdbWrapperException("failed to tx");
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1926,11 +1928,9 @@ bool LMDBBlockDatabase::getStoredHeader(
          throw LmdbWrapperException("invalid blkFolder");
       }
       //open block file
-      BlockDataLoader bdl(blkFolder_);
-
-      auto fileMapPtr = bdl.get(bh->getBlockFileNum());
-      auto dataPtr = fileMapPtr->data();
-      BinaryRefReader brr(dataPtr + bh->getOffset(), bh->getBlockSize());
+      auto path = FileUtils::getBlkFilename(blkFolder_, bh->getBlockFileNum());
+      auto fileMap = FileUtils::FileMap(path, false);
+      BinaryRefReader brr(fileMap.ptr() + bh->getOffset(), bh->getBlockSize());
 
       if (withTx) {
          sbh.unserializeFullBlock(brr, false, false);
@@ -1960,11 +1960,9 @@ BinaryData LMDBBlockDatabase::getRawBlock(shared_ptr<BlockHeader> bh) const
    if (blkFolder_.empty()) {
       throw LmdbWrapperException("invalid blkFolder");
    }
-   BlockDataLoader bdl(blkFolder_);
-
-   auto fileMapPtr = bdl.get(bh->getBlockFileNum());
-   auto dataPtr = fileMapPtr->data();
-   return BinaryData(dataPtr + bh->getOffset(), bh->getBlockSize());
+   auto path = FileUtils::getBlkFilename(blkFolder_, bh->getBlockFileNum());
+   auto fileMap = FileUtils::FileMap(path, false);
+   return BinaryData(fileMap.ptr() + bh->getOffset(), bh->getBlockSize());
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -18,8 +18,7 @@ typedef std::function<void(BDMPhase, double, unsigned, unsigned)> ProgressCallba
 class ProgressReporter
 {
 public:
-   virtual ~ProgressReporter() { }
-   
+   virtual ~ProgressReporter() {}
    virtual void progress(
       double progress, unsigned secondsRemaining
    )=0;
