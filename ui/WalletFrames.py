@@ -14,10 +14,11 @@ import sys
 import math
 
 from armoryengine.BDM import TheBDM, BDM_BLOCKCHAIN_READY
+from armoryengine.WalletUtils import determineWalletType
 from qtpy import QtCore, QtGui, QtWidgets
 from qtdialogs.qtdefines import AdvancedOptionsFrame, ArmoryFrame, VERTICAL, HORIZONTAL, \
    tightSizeNChar, makeHorizFrame, makeVertFrame, QRichLabel, \
-   QPixMapButton, GETFONT, STYLE_SUNKEN, HLINE, determineWalletType, \
+   QPixMapButton, GETFONT, STYLE_SUNKEN, HLINE, \
    QMoneyLabel, makeLayoutFrame, createToolTipWidget
 
 from armorycolors import htmlColor

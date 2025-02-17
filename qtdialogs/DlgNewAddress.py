@@ -15,11 +15,12 @@ from qtpy import QtCore, QtGui, QtWidgets
 from armoryengine.ArmoryUtils import DEFAULT_RECEIVE_TYPE
 from armoryengine.Settings import TheSettings
 from armoryengine.BDM import TheBDM, BDM_OFFLINE
+from armoryengine.WalletUtils import WalletTypes, determineWalletType
 
 from armorycolors import Colors
-from qtdialogs.qtdefines import determineWalletType, STRETCH, \
+from qtdialogs.qtdefines import STRETCH, \
    STYLE_RAISED, QRichLabel, tightSizeStr, makeHorizFrame, \
-   makeVertFrame, WLTTYPES, tightSizeNChar, STYLE_SUNKEN, MSGBOX, \
+   makeVertFrame, tightSizeNChar, STYLE_SUNKEN, MSGBOX, \
    createToolTipWidget
 from qtdialogs.ArmoryDialog import ArmoryDialog
 from qtdialogs.QRCodeWidget import QRCodeWidget
@@ -44,7 +45,7 @@ class DlgNewAddressDisp(ArmoryDialog):
 
       self.addrStr = self.addr.getAddressString()
       wlttype = determineWalletType(self.wlt, self.main)[0]
-      notMyWallet = (wlttype == WLTTYPES.WatchOnly)
+      notMyWallet = (wlttype == WalletTypes.WatchOnly)
 
       lblDescr = QtWidgets.QLabel(self.tr('The following address can be used to receive bitcoins:'))
       self.edtNewAddr = QtWidgets.QLineEdit()
@@ -235,8 +236,8 @@ def ShowRecvCoinsWarningIfNecessary(wlt, parent, main):
          return False
 
    wlttype = determineWalletType(wlt, main)[0]
-   notMyWallet = (wlttype == WLTTYPES.WatchOnly)
-   offlineWallet = (wlttype == WLTTYPES.Offline)
+   notMyWallet = (wlttype == WalletTypes.WatchOnly)
+   offlineWallet = (wlttype == WalletTypes.Offline)
    dnaaPropName = 'Wallet_%s_%s' % (wlt.uniqueIDB58, 'DNAA_RecvOther')
    dnaaThisWallet = TheSettings.getSettingOrSetDefault(dnaaPropName, False)
    if notMyWallet and not dnaaThisWallet:

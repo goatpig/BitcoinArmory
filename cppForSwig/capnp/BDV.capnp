@@ -249,7 +249,7 @@ struct Notification {
 
    struct Refresh {
       type              @0 : UInt32;
-      ids               @1 : List(Data);
+      ids               @1 : List(Text);
    }
 
    requestId @0 : Text;

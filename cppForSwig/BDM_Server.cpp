@@ -509,8 +509,7 @@ namespace {
             wltPtr->setConfTarget(request.getSetConfTarget());
 
             //push refersh notif for the wallet
-            BinaryData idBd(walletId.data(), walletId.size());
-            bdv->flagRefresh(BDV_refreshSkipRescan, idBd, nullptr);
+            bdv->flagRefresh(BDV_refreshSkipRescan, walletId, nullptr);
             break;
          }
 
@@ -527,8 +526,7 @@ namespace {
             wltPtr->unregisterAddresses(addresses);
 
             //push refersh notif for the wallet
-            BinaryData idBd(walletId.data(), walletId.size());
-            bdv->flagRefresh(BDV_registrationCompleted, idBd, nullptr);
+            bdv->flagRefresh(BDV_registrationCompleted, walletId, nullptr);
             break;
          }
 
@@ -1162,11 +1160,8 @@ void BDV_Server_Object::processNotification(
          auto payload =
             std::dynamic_pointer_cast<BDV_Notification_Refresh>(notifPtr);
          refreshNotif.setType((uint32_t)payload->refresh_);
-
-         const auto& bdId = payload->refreshID_;
          auto refreshIds = refreshNotif.initIds(1);
-         refreshIds.set(0, capnp::Data::Builder(
-            (uint8_t*)bdId.getPtr(), bdId.getSize()));
+         refreshIds.set(0, payload->refreshID_);
          break;
       }
 
@@ -1302,8 +1297,7 @@ void BDV_Server_Object::registerWallet(WalletRegistrationRequest& regReq)
       const std::set<BinaryDataRef>& addrSet)->void
    {
       auto zcNotifPacket = createZcNotification(addrSet);
-      BinaryData wltId(walletId.data(), walletId.size());
-      flagRefresh(BDV_refreshAndRescan, wltId, std::move(zcNotifPacket));
+      flagRefresh(BDV_refreshAndRescan, walletId, std::move(zcNotifPacket));
    };
 
    //register wallet with BDV
@@ -1357,7 +1351,7 @@ void BDV_Server_Object::populateWallets(
 
 ////////////////////////////////////////////////////////////////////////////////
 void BDV_Server_Object::flagRefresh(
-   BDV_refresh refresh, const BinaryData& refreshID,
+   BDV_refresh refresh, const std::string& refreshID,
    std::unique_ptr<BDV_Notification_ZC> zcPtr)
 {
    auto notif = std::make_unique<BDV_Notification_Refresh>(

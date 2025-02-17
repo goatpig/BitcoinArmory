@@ -4,7 +4,7 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2024, goatpig                                           #
+# Copyright (C) 2016-2025, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
@@ -30,10 +30,10 @@ from armoryengine.CppBridge import TheBridge
 from armoryengine.AddressUtils import Hash160ToScrAddr, addrStr_to_hash160, \
    scrAddr_to_addrStr
 from armoryengine.Settings import TheSettings
+from armoryengine.WalletUtils import WalletTypes, determineWalletType
 
 from armorycolors import Colors
-from qtdialogs.qtdefines import determineWalletType, WLTTYPES, \
-   GETFONT, CHANGE_ADDR_DESCR_STRING
+from qtdialogs.qtdefines import GETFONT, CHANGE_ADDR_DESCR_STRING
 
 from qtdialogs.ArmoryDialog import ArmoryDialog
 
@@ -55,13 +55,12 @@ PAGE_LOAD_OFFSET = 10
 class AllWalletsDispModel(QtCore.QAbstractTableModel):
 
    # The columns enumeration
-
-   def __init__(self, mainWindow):
+   def __init__(self, wallets):
       super(AllWalletsDispModel, self).__init__()
-      self.main = mainWindow
+      self.wallets = wallets
 
    def rowCount(self, index=QtCore.QModelIndex()):
-      return len(self.main.walletMap)
+      return self.wallets.count()
 
    def columnCount(self, index=QtCore.QModelIndex()):
       return 5
@@ -70,18 +69,19 @@ class AllWalletsDispModel(QtCore.QAbstractTableModel):
       bdmState = TheBDM.getState()
       COL = WLTVIEWCOLS
       row,col = index.row(), index.column()
-      wlt = self.main.walletMap[self.main.walletIDList[row]]
-      wltID = wlt.uniqueIDB58
+      wlt = self.wallets.getByIndex(row)
+      wltID = wlt.walletId
+      mainWnd = self.wallets.parent
 
       if role==QtCore.Qt.DisplayRole:
          if col==COL.Visible:
-            return self.main.walletVisibleList[row]
+            return self.wallets.isVisible(row)
          elif col==COL.ID:
             return str(wltID)
          elif col==COL.Name:
             return str(wlt.labelName.ljust(32))
          elif col==COL.Secure:
-            wtype,typestr = determineWalletType(wlt, self.main)
+            wtype,typestr = determineWalletType(wlt, mainWnd)
             return str(typestr)
          elif col==COL.Bal:
             if not bdmState==BDM_BLOCKCHAIN_READY:
@@ -94,7 +94,7 @@ class AllWalletsDispModel(QtCore.QAbstractTableModel):
                   dispStr = coin2str(bal, maxZeros=2)
                   return str(dispStr)
             else:
-               dispStr = 'Scanning: %d%%' % (self.main.walletSideScanProgress[wltID])
+               dispStr = 'Scanning: %d%%' % (mainWnd.walletSideScanProgress[wltID])
                return str(dispStr)
 
       elif role==QtCore.Qt.TextAlignmentRole:
@@ -108,10 +108,10 @@ class AllWalletsDispModel(QtCore.QAbstractTableModel):
             else:
                return int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
       elif role==QtCore.Qt.BackgroundColorRole:
-         t = determineWalletType(wlt, self.main)[0]
-         if t==WLTTYPES.WatchOnly:
+         t = determineWalletType(wlt, mainWnd)[0]
+         if t==WalletTypes.WatchOnly:
             return Colors.TblWltOther
-         elif t==WLTTYPES.Offline:
+         elif t==WalletTypes.Offline:
             return Colors.TblWltOffline
          else:
             return Colors.TblWltMine
@@ -130,13 +130,11 @@ class AllWalletsDispModel(QtCore.QAbstractTableModel):
 
    def flags(self, index, role=QtCore.Qt.DisplayRole):
       if role == QtCore.Qt.DisplayRole:
-         wlt = self.main.walletMap[self.main.walletIDList[index.row()]]
+         wlt = self.wallets.getByIndex(index.row())
 
          rowFlag = QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable
-
          if wlt.isEnabled is False:
             return QtCore.Qt.ItemFlags()
-
          return rowFlag
 
    def reset(self):
@@ -215,7 +213,7 @@ class LedgerDispModelSimple(QtCore.QAbstractTableModel):
       rowData = self.ledger[row]
       nConf = rowData[LEDGERCOLS.NumConf]
       wltID = rowData[LEDGERCOLS.WltID]
-      wlt = self.main.walletMap.get(wltID)
+      wlt = self.main.wallets.get(wltID)
       optInRBF = rowData[LEDGERCOLS.optInRBF]
       isChainedZC = rowData[LEDGERCOLS.isChainedZC]
       amount = float(rowData[LEDGERCOLS.Amount])
@@ -225,9 +223,9 @@ class LedgerDispModelSimple(QtCore.QAbstractTableModel):
       highlighted = optInRBF or isChainedZC
 
       if wlt:
-         wtype = determineWalletType(self.main.walletMap[wltID], self.main)[0]
+         wtype = determineWalletType(wlt, self.main)[0]
       else:
-         wtype = WLTTYPES.WatchOnly
+         wtype = WalletTypes.WatchOnly
 
       if role==QtCore.Qt.DisplayRole:
          return str(rowData[col])
@@ -248,9 +246,9 @@ class LedgerDispModelSimple(QtCore.QAbstractTableModel):
                return Colors.optInRBF
          elif isChainedZC is True:
             return Colors.chainedZC
-         elif wtype==WLTTYPES.WatchOnly:
+         elif wtype==WalletTypes.WatchOnly:
             return Colors.TblWltOther
-         elif wtype==WLTTYPES.Offline:
+         elif wtype==WalletTypes.Offline:
             return Colors.TblWltOffline
          else:
             return Colors.TblWltMine
@@ -1272,9 +1270,9 @@ class TxInDispModel(QtCore.QAbstractTableModel):
       elif role==QtCore.Qt.BackgroundColorRole:
          if self.dispTable[row][COLS.WltID] and wltID in self.main.walletMap:
             wtype = determineWalletType(self.main.walletMap[wltID], self.main)[0]
-            if wtype==WLTTYPES.WatchOnly:
+            if wtype==WalletTypes.WatchOnly:
                return Colors.TblWltOther
-            elif wtype==WLTTYPES.Offline:
+            elif wtype==WalletTypes.Offline:
                return Colors.TblWltOffline
             else:
                return Colors.TblWltMine
@@ -1365,9 +1363,9 @@ class TxOutDispModel(QtCore.QAbstractTableModel):
       elif role==QtCore.Qt.BackgroundColorRole:
          if wltID and wltID in self.main.walletMap:
             wtype = determineWalletType(self.main.walletMap[wltID], self.main)[0]
-            if wtype==WLTTYPES.WatchOnly:
+            if wtype==WalletTypes.WatchOnly:
                return Colors.TblWltOther
-            if wtype==WLTTYPES.Offline:
+            if wtype==WalletTypes.Offline:
                return Colors.TblWltOffline
             else:
                return Colors.TblWltMine

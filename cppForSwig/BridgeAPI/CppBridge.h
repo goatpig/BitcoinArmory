@@ -70,7 +70,7 @@ namespace Armory
          //local notifications
          void notify_SetupDone(void);
          void notify_RegistrationDone(const std::set<std::string>&);
-         void notify_SetupRegistrationDone(const std::set<std::string>&);
+         void notify_SetupRegistrationDone(void);
          void notify_NewBlock(unsigned);
          void notify_Ready(unsigned);
 
@@ -140,25 +140,33 @@ namespace Armory
          void loadWallets(const std::string&, MessageId);
          BinaryData createWalletsPacket(MessageId);
          bool deleteWallet(const std::string&);
-         BinaryData getWalletPacket(const std::string&, MessageId) const;
+         BinaryData getWalletPacket(const std::string&,
+            const Wallets::AddressAccountId&, MessageId) const;
 
          //AsyncClient::BlockDataViewer setup
          void setupDB(void);
          void registerWallets(void);
-         void registerWallet(const std::string&, bool isNew);
+         void registerWallet(const std::string&,
+            const Wallets::AddressAccountId&, bool isNew);
 
          BinaryData getNodeStatus(MessageId);
 
          //balance and counts
-         BinaryData getBalanceAndCount(const std::string&, MessageId);
-         BinaryData getAddrCombinedList(const std::string&, MessageId);
-         BinaryData getHighestUsedIndex(const std::string&, MessageId);
+         BinaryData getBalanceAndCount(const std::string&,
+            const Wallets::AddressAccountId&, MessageId);
+         BinaryData getAddrCombinedList(const std::string&,
+            const Wallets::AddressAccountId&, MessageId);
+         BinaryData getHighestUsedIndex(const std::string&,
+            const Wallets::AddressAccountId&, MessageId);
 
          //wallet & addresses
-         void extendAddressPool(const std::string&, unsigned,
+         void extendAddressPool(const std::string&,
+            const Wallets::AddressAccountId&, unsigned,
             const std::string&, MessageId);
-         BinaryData getAddress(const std::string&, uint32_t, uint32_t, MessageId);
-         WalletAccountIdentifier createWallet(uint32_t,
+         BinaryData getAddress(const std::string&,
+            const Wallets::AddressAccountId&, uint32_t,
+            uint32_t, MessageId);
+         std::string createWallet(uint32_t,
             const std::string&, const std::string&,
             const SecureBinaryData&, const SecureBinaryData&,
             const SecureBinaryData&);
@@ -171,12 +179,15 @@ namespace Armory
 
          //ledgers
          const std::string& getLedgerDelegateId(void);
-         const std::string& getLedgerDelegateIdForWallet(const std::string&);
+         const std::string& getLedgerDelegateIdForWallet(
+            const std::string&, const Wallets::AddressAccountId&);
          const std::string& getLedgerDelegateIdForScrAddr(
-            const std::string&, const BinaryDataRef&);
+            const std::string&, const Wallets::AddressAccountId&,
+            const BinaryDataRef&);
          void getHistoryPageForDelegate(const std::string&,
             unsigned, unsigned, MessageId);
-         void createAddressBook(const std::string&, MessageId);
+         void createAddressBook(const std::string&,
+            const Wallets::AddressAccountId&, MessageId);
          void setComment(const std::string&,
             const std::string&, const std::string&);
          void setWalletLabels(const std::string&,
@@ -187,11 +198,13 @@ namespace Armory
          void getHeadersByHeight(const std::vector<unsigned>&, MessageId);
 
          //utxos
-         void getUTXOs(const std::string&, uint64_t, bool, bool, MessageId);
+         void getUTXOs(const std::string&,
+            const Wallets::AddressAccountId&,
+            uint64_t, bool, bool, MessageId);
 
          //coin selection
-         void setupNewCoinSelectionInstance(
-            const std::string&, unsigned, MessageId);
+         void setupNewCoinSelectionInstance(const std::string&,
+            const Wallets::AddressAccountId&, unsigned, MessageId);
          void destroyCoinSelectionInstance(const std::string&);
          std::shared_ptr<CoinSelection::CoinSelectionInstance>
             coinSelectionInstance(const std::string&) const;
@@ -217,7 +230,8 @@ namespace Armory
          BinaryData getTxOutScriptForScrAddr(const BinaryData&, MessageId) const;
          BinaryData getAddrStrForScrAddr(const BinaryData&, MessageId) const;
          std::string getNameForAddrType(int) const;
-         BinaryData setAddressTypeFor(const std::string&, const BinaryDataRef&,
+         BinaryData setAddressTypeFor(const std::string&,
+            const Wallets::AddressAccountId&, const BinaryDataRef&,
             uint32_t, MessageId) const;
          void getBlockTimeByHeight(uint32_t, MessageId) const;
          void getFeeSchedule(const std::string&, MessageId) const;

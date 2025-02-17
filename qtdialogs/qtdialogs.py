@@ -34,7 +34,7 @@ from ui.QrCodeMatrix import CreateQRMatrix
 from armoryengine.Block import PyBlockHeader
 
 from qtdialogs.qtdefines import USERMODE, GETFONT, tightSizeStr, \
-   determineWalletType, WLTTYPES, MSGBOX, QRichLabel
+   MSGBOX, QRichLabel
 
 from qtdialogs.ArmoryDialog import ArmoryDialog
 from qtdialogs.MsgBoxCustom import MsgBoxCustom

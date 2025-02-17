@@ -219,7 +219,7 @@ struct BdmNotification
    std::set<BinaryData> invalidatedZc_;
    std::vector<std::shared_ptr<DBClientClasses::LedgerEntry>> ledgers_;
 
-   std::vector<BinaryData> ids_;
+   std::vector<std::string> ids_;
 
    std::shared_ptr<DBClientClasses::NodeStatus> nodeStatus_;
    BDV_Error_Struct error_;

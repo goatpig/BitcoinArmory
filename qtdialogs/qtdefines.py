@@ -32,7 +32,6 @@ SETTINGS_PATH   = os.path.join(ARMORY_HOME_DIR, 'ArmorySettings.txt')
 USERMODE        = enum('Standard', 'Advanced', 'Expert')
 SATOSHIMODE     = enum('Auto', 'User')
 NETWORKMODE     = enum('Offline', 'Full', 'Disconnected')
-WLTTYPES        = enum('Plain', 'Crypt', 'WatchOnly', 'Offline')
 WLTFIELDS       = enum('Name', 'Descr', 'WltID', 'NumAddr', 'Secure', \
                        'BelongsTo', 'Crypto', 'Time', 'Mem', 'Version')
 MSGBOX          = enum('Good','Info', 'Question', 'Warning', 'Critical', 'Error')
@@ -73,8 +72,6 @@ def VLINE(style=QtWidgets.QFrame.Plain):
    qf.setFrameStyle(QtWidgets.QFrame.VLine | style)
    return qf
 
-
-
 # Setup fixed-width and var-width fonts
 def GETFONT(ftype, sz=10, bold=False, italic=False):
    fnt = None
@@ -112,7 +109,6 @@ def GETFONT(ftype, sz=10, bold=False, italic=False):
 
    return fnt
 
-
 def UnicodeErrorBox(parent):
    QtWidgets.QMessageBox.warning(parent, 'ASCII Error', \
       toUnicode('Armory does not currently support non-ASCII characters in '
@@ -120,9 +116,6 @@ def UnicodeErrorBox(parent):
       'Please use only letters found '
       'on an English(US) keyboard.  This will be fixed in an upcoming '
       'release'), QtWidgets.QMessageBox.Ok)
-
-
-
 
 #######
 def UserModeStr(parent, mode):
@@ -132,7 +125,6 @@ def UserModeStr(parent, mode):
       return parent.tr('Advanced User')
    elif mode==USERMODE.Expert:
       return parent.tr('Expert User')
-
 
 #######
 def tightSizeNChar(obj, nChar):
@@ -185,22 +177,6 @@ def relaxedSizeNChar(obj, nChar):
    szWidth,szHeight = fm.boundingRect('abcfg ijklm').width(), fm.height()
    szWidth = int(szWidth * nChar/10.0 + 0.5)
    return (10 + szWidth*1.05), 1.5*szHeight
-
-#############################################################################
-def determineWalletType(wlt, wndw):
-   if wlt.watchingOnly:
-      if wndw.getWltSetting(wlt.uniqueIDB58, 'IsMine'):
-         return [WLTTYPES.Offline, wndw.tr('Offline')]
-      else:
-         return [WLTTYPES.WatchOnly, wndw.tr('Watching-Only')]
-   elif wlt.useEncryption:
-      return [WLTTYPES.Crypt, wndw.tr('Encrypted')]
-   else:
-      return [WLTTYPES.Plain, wndw.tr('No Encryption')]
-
-
-
-
 
 #############################################################################
 def initialColResize(tblViewObj, sizeList):

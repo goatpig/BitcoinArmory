@@ -301,13 +301,10 @@ bool RemoteCallback::processNotifications(
             if (refreshType != BDV_filterChanged) {
                auto ids = refresh.getIds();
                for (auto id : ids) {
-                  bdmNotif.ids_.emplace_back(BinaryData(
-                     id.begin(), id.end()
-                  ));
+                  bdmNotif.ids_.emplace_back(id);
                }
             } else {
-               bdmNotif.ids_.push_back(
-                  BinaryData::fromString(FILTER_CHANGE_FLAG));
+               bdmNotif.ids_.emplace_back(FILTER_CHANGE_FLAG);
             }
 
             run(std::move(bdmNotif));

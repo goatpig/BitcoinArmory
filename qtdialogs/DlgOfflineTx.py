@@ -14,10 +14,11 @@ from qtpy import QtCore, QtGui, QtWidgets
 
 from armoryengine.ArmoryUtils import OS_WINDOWS, LOGINFO, LOGEXCEPT
 from armoryengine.BDM import TheBDM, BDM_BLOCKCHAIN_READY
+from armoryengine.WalletUtils import WalletTypes, determineWalletType
 
 from qtdialogs.qtdefines import QRichLabel, HORIZONTAL, \
    STYLE_SUNKEN, GETFONT, STYLE_RAISED, VERTICAL, makeLayoutFrame, \
-   relaxedSizeNChar, determineWalletType, WLTTYPES, makeHorizFrame, \
+   relaxedSizeNChar, makeHorizFrame, \
    makeVertFrame, STYLE_PLAIN, HLINE, tightSizeNChar, STRETCH, \
    createToolTipWidget
 from qtdialogs.ArmoryDialog import ArmoryDialog
@@ -122,7 +123,7 @@ class ReviewOfflineTxFrame(ArmoryDialog):
    def setWallet(self, wlt):
       self.wlt = wlt
       if determineWalletType(\
-         wlt, self.main)[0] in [ WLTTYPES.Offline, WLTTYPES.WatchOnly ]:
+         wlt, self.main)[0] in [ WalletTypes.Offline, WalletTypes.WatchOnly ]:
          self.lblDescr.setText(self.tr(
             'The block of data shown below is the complete transaction you '
             'just requested, but is invalid because it does not contain any '

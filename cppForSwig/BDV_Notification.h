@@ -89,11 +89,11 @@ struct BDV_Notification_ZC : public BDV_Notification
 struct BDV_Notification_Refresh : public BDV_Notification
 {
    const BDV_refresh refresh_;
-   const BinaryData refreshID_;
+   const std::string refreshID_;
    ZcNotificationPacket zcPacket_;
 
    BDV_Notification_Refresh(const std::string& bdvID,
-      BDV_refresh refresh, const BinaryData& refreshID) :
+      BDV_refresh refresh, const std::string& refreshID) :
       BDV_Notification(bdvID),
       refresh_(refresh), refreshID_(refreshID), zcPacket_(bdvID)
    {}

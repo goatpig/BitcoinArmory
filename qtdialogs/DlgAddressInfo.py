@@ -149,8 +149,8 @@ class DlgAddressInfo(ArmoryDialog):
 
       for i in range(len(lbls)):
          for j in range(1, 3):
-            lbls[i][j].setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse | \
-                                                QtCore.Qt.TextSelectableByKeyboard)
+            lbls[i][j].setTextInteractionFlags(
+               QtCore.Qt.TextSelectableByMouse | QtCore.Qt.TextSelectableByKeyboard)
          for j in range(3):
             if (i, j) == (0, 2):
                frmInfoLayout.addWidget(lbls[i][j], i, j, 1, 2)
@@ -172,8 +172,7 @@ class DlgAddressInfo(ArmoryDialog):
       self.ledgerModel.setLedgerDelegateId(delegateId)
 
       def ledgerToTableScrAddr(ledger):
-         return self.main.convertLedgerToTable(
-            ledger, wltIDIn=self.wlt.uniqueIDB58)
+         return self.main.convertLedgerToTable(ledger, wltIDIn=self.wlt.dbId)
       self.ledgerModel.setConvertLedgerMethod(ledgerToTableScrAddr)
 
       self.frmLedgUpDown = QtWidgets.QFrame()

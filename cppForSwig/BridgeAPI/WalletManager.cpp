@@ -28,7 +28,8 @@ WalletManager::getAccountIdMap() const
 {
    std::map<std::string, std::set<Wallets::AddressAccountId>> result;
    for (const auto& wltIt : wallets_) {
-      auto wltIter = result.emplace(wltIt.first, std::set<Wallets::AddressAccountId>());
+      auto wltIter = result.emplace(
+         wltIt.first, std::set<Wallets::AddressAccountId>{});
       for (const auto& accIt : wltIt.second) {
          wltIter.first->second.emplace(accIt.first);
       }
@@ -113,8 +114,8 @@ std::shared_ptr<WalletContainer> WalletManager::addWallet(
    //check we dont have this wallet
    auto wltIter = wallets_.find(wltPtr->getID());
    if (wltIter == wallets_.end()) {
-      wltIter = wallets_.emplace(wltPtr->getID(), std::map<
-         Wallets::AddressAccountId, std::shared_ptr<WalletContainer>>()).first;
+      wltIter = wallets_.emplace(wltPtr->getID(),
+         std::map<Wallets::AddressAccountId, std::shared_ptr<WalletContainer>>{}).first;
    }
 
    auto accIter = wltIter->second.find(accId);
@@ -135,6 +136,7 @@ std::shared_ptr<WalletContainer> WalletManager::addWallet(
    //set & add to map
    wltCont->setWalletPtr(wltPtr, accId);
    wltIter->second.emplace(accId, wltCont);
+   walletsByDbId_.emplace(wltCont->getDbId(), wltCont);
 
    //return it
    return wltCont;
@@ -162,38 +164,21 @@ std::shared_ptr<WalletContainer> WalletManager::createNewWallet(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void WalletManager::deleteWallet(const std::string& wltId,
-   const Wallets::AddressAccountId& accId)
+void WalletManager::deleteWallet(const std::string& wltId)
 {
    ReentrantLock lock(this);
-   std::shared_ptr<WalletContainer> wltPtr;
-   {
-      auto wltIter = wallets_.find(wltId);
-      if (wltIter == wallets_.end()) {
-         return;
-      }
-
-      auto accIter = wltIter->second.find(accId);
-      if (accIter == wltIter->second.end()) {
-         return;
-      }
-
-      wltPtr = move(accIter->second);
-      wltIter->second.erase(accIter);
-      if (wltIter->second.empty()) {
-         wallets_.erase(wltIter);
-      }
-   }
+   auto wltCont = getWalletContainer(wltId);
+   wallets_.erase(wltId);
 
    //delete from disk
-   wltPtr->eraseFromDisk();
+   wltCont->eraseFromDisk();
    try {
       //unregister from db
-      wltPtr->unregisterFromBDV();
+      wltCont->unregisterFromBDV();
    } catch (const std::exception&) {
       //we do not care if the unregister operation fails
    }
-   wltPtr.reset();
+   wltCont.reset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -278,13 +263,12 @@ void WalletManager::updateStateFromDB(const std::function<void(void)>& callback)
 
       //update wallet balances
       for (const auto& wltBalance : balances) {
-         auto wai = WalletAccountIdentifier::deserialize(wltBalance.first);
-         auto wltCont = getWalletContainer(wai.walletId, wai.accountId);
-         if (wltCont == nullptr) {
+         auto wltContIter = walletsByDbId_.find(wltBalance.first);
+         if (wltContIter == walletsByDbId_.end()) {
             continue;
          }
-         wltCont->updateWalletBalanceState(wltBalance.second);
-         wltCont->updateAddressCountState(wltBalance.second);
+         wltContIter->second->updateWalletBalanceState(wltBalance.second);
+         wltContIter->second->updateAddressCountState(wltBalance.second);
       }
 
       //fire the lambda
@@ -302,6 +286,20 @@ void WalletManager::updateStateFromDB(const std::function<void(void)>& callback)
 //// WalletContainer
 ////
 ////////////////////////////////////////////////////////////////////////////////
+WalletContainer::WalletContainer(const std::string& wltId,
+   const Armory::Wallets::AddressAccountId& accId) :
+   wltId_(wltId), accountId_(accId)
+{
+   dbId_ = BtcUtils::fortuna_.generateRandom(6).toHexStr();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+const std::string& WalletContainer::getDbId() const
+{
+   return dbId_;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 void WalletContainer::setWalletPtr(std::shared_ptr<Wallets::AssetWallet> wltPtr,
    const Wallets::AddressAccountId& accId)
 {
@@ -316,6 +314,13 @@ void WalletContainer::setWalletPtr(std::shared_ptr<Wallets::AssetWallet> wltPtr,
       }
       highestUsedIndex_.emplace(aaId, accPtr->getHighestUsedIndex());
    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void WalletContainer::setBdvPtr(std::shared_ptr<AsyncClient::BlockDataViewer> bdv)
+{
+   std::unique_lock<std::mutex> lock(stateMutex_);
+   bdvPtr_ = bdv;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -363,9 +368,8 @@ void WalletContainer::registerWithBDV(bool isNew)
    std::vector<BinaryData> addrVec;
    addrVec.insert(addrVec.end(), addrSet.begin(), addrSet.end());
 
-   WalletAccountIdentifier wai(wallet_->getID(), accountId_);
    asyncWlt_ = std::make_shared<AsyncClient::BtcWallet>(
-      bdvPtr_->getWalletObj(wai.serialize()));
+      bdvPtr_->getWalletObj(dbId_));
    asyncWlt_->registerAddresses(addrVec, isNew);
 }
 
@@ -1050,41 +1054,4 @@ void Armory135Address::parseFromRef(const BinaryDataRef& bdr)
    pubKey_              = brrScrAddr.get_BinaryData(65);
    auto pubKeyChecksum  = brrScrAddr.get_BinaryDataRef(4);
    Armory135Header::verifyChecksum(pubKey_, pubKeyChecksum);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-////
-//// WalletAccountIdentifier
-////
-////////////////////////////////////////////////////////////////////////////////
-WalletAccountIdentifier::WalletAccountIdentifier(const std::string& wId,
-   const Wallets::AddressAccountId& aId) :
-   walletId(wId), accountId(aId)
-{}
-
-////////////////////////////////////////////////////////////////////////////////
-WalletAccountIdentifier WalletAccountIdentifier::deserialize(
-   const std::string& id)
-{
-   std::vector<std::string> lines;
-   std::istringstream ss(id);
-
-   for (std::string line; getline(ss, line, ':');) {
-      lines.emplace_back(std::move(line));
-   }
-
-   if (lines.size() != 2) {
-      LOGERR << id << " is not a valid wallet identifier!";
-      throw std::runtime_error("[WalletAccountIdentifier::deserialize]");
-   }
-
-   auto accId = Wallets::AddressAccountId::fromHex(lines[1]);
-   return WalletAccountIdentifier(lines[0], accId);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-std::string WalletAccountIdentifier::serialize() const
-{
-   std::string result = walletId + ":" + accountId.toHexStr();
-   return result;
 }

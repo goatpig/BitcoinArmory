@@ -45,20 +45,6 @@ namespace Armory
    };
 };
 
-
-////////////////////////////////////////////////////////////////////////////////
-struct WalletAccountIdentifier
-{
-   const std::string walletId;
-   const Armory::Wallets::AddressAccountId accountId;
-
-   WalletAccountIdentifier(const std::string&,
-      const Armory::Wallets::AddressAccountId&);
-
-   static WalletAccountIdentifier deserialize(const std::string&);
-   std::string serialize(void) const;
-};
-
 ////////////////////////////////////////////////////////////////////////////////
 class WalletContainer
 {
@@ -66,8 +52,9 @@ class WalletContainer
 
 private:
    const std::string wltId_;
-   std::shared_ptr<Armory::Wallets::AssetWallet> wallet_;
    const Armory::Wallets::AddressAccountId accountId_;
+   std::string dbId_;
+   std::shared_ptr<Armory::Wallets::AssetWallet> wallet_;
 
    std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr_;
    std::shared_ptr<AsyncClient::BtcWallet> asyncWlt_;
@@ -87,18 +74,9 @@ private:
    std::map<BinaryData, std::shared_ptr<AddressEntry>> updatedAddressMap_;
 
 private:
-   WalletContainer(const std::string& wltId,
-      const Armory::Wallets::AddressAccountId& accId) :
-      wltId_(wltId), accountId_(accId)
-   {}
-
+   WalletContainer(const std::string&, const Armory::Wallets::AddressAccountId&);
    void resetCache(void);
-   void setBdvPtr(std::shared_ptr<AsyncClient::BlockDataViewer> bdv)
-   {
-      std::unique_lock<std::mutex> lock(stateMutex_);
-      bdvPtr_ = bdv;
-   }
-
+   void setBdvPtr(std::shared_ptr<AsyncClient::BlockDataViewer>);
    void setWalletPtr(std::shared_ptr<Armory::Wallets::AssetWallet>,
       const Armory::Wallets::AddressAccountId&);
    void eraseFromDisk(void);
@@ -106,6 +84,7 @@ private:
 public:
    void registerWithBDV(bool isNew);
    void unregisterFromBDV(void);
+   const std::string& getDbId(void) const;
 
    virtual std::shared_ptr<Armory::Wallets::AssetWallet>
       getWalletPtr(void) const;
@@ -264,6 +243,7 @@ private:
    std::map<std::string, std::map<
       Armory::Wallets::AddressAccountId,
          std::shared_ptr<WalletContainer>>> wallets_;
+   std::map<std::string, std::shared_ptr<WalletContainer>> walletsByDbId_;
 
    PassphraseLambda passphraseLbd_;
    std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr_;
@@ -309,8 +289,7 @@ public:
    std::shared_ptr<WalletContainer> createNewWallet(
       const SecureBinaryData&, const SecureBinaryData&, //pass, control pass
       const SecureBinaryData&, unsigned); //extra entropy, address lookup
-   void deleteWallet(const std::string&,
-      const Armory::Wallets::AddressAccountId&);
+   void deleteWallet(const std::string&);
 
    const std::filesystem::path& getWalletDir(void) const { return path_; }
 };

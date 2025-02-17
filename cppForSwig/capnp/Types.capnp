@@ -9,6 +9,7 @@ using Header      = Data;
 using ScrAddr     = Data;
 
 using WalletId    = Text;
+using AccountId   = Text;
 using SignerId    = Text;
 using DelegateId  = Text;
 using BdvId       = Text;

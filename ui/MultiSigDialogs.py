@@ -34,7 +34,6 @@ from armoryengine.BDM import BDM_BLOCKCHAIN_READY, TheBDM
 from armoryengine.CoinSelection import PySelectCoins, sumTxOutList
 from armoryengine.Transaction import BASE_SCRIPT, DecoratedTxOut, PyTx, TXIN_SIGSTAT, UnsignedTransaction, UnsignedTxInput, convertScriptToOpStrings, getTxOutScriptType
 from armorymodels import ArmoryTableView, LEDGERCOLS, LedgerDispDelegate, PromissoryCollectModel
-#from CppBlockUtils import CryptoECDSA, SecureBinaryData
 from qtdialogs.DlgBrowserWarn import DlgBrowserWarn
 from qtdialogs.DlgDispTxInfo import DlgDispTxInfo
 from qtdialogs.DlgQRCodeDisplay import DlgQRCodeDisplay
@@ -42,7 +41,11 @@ from qtdialogs.DlgRequestPayment import DlgRequestPayment
 from qtdialogs.DlgSendBitcoins import DlgSendBitcoins
 from qtdialogs.DlgSetComment import DlgSetComment
 from qtdialogs.DlgUnlockWallet import DlgUnlockWallet
-from qtdialogs.qtdefines import GETFONT, HLINE, HORIZONTAL, MSGBOX, NETWORKMODE, QLabelButton, QMoneyLabel, QRichLabel, STRETCH, STYLE_RAISED, STYLE_STYLED, STYLE_SUNKEN, USERMODE, VERTICAL, WLTTYPES, determineWalletType, initialColResize, makeHorizFrame, makeVertFrame, relaxedSizeNChar, restoreTableView, saveTableView, tightSizeNChar, tightSizeStr
+from qtdialogs.qtdefines import GETFONT, HLINE, HORIZONTAL, MSGBOX, \
+   NETWORKMODE, QLabelButton, QMoneyLabel, QRichLabel, \
+   STRETCH, STYLE_RAISED, STYLE_STYLED, STYLE_SUNKEN, USERMODE, VERTICAL, \
+   initialColResize, makeHorizFrame, makeVertFrame, \
+   relaxedSizeNChar, restoreTableView, saveTableView, tightSizeNChar, tightSizeStr
 from qtdialogs.MsgBoxWithDNAA import MsgBoxWithDNAA
 from ui.MultiSigModels import LOCKBOXCOLS, LockboxDisplayModel, LockboxDisplayProxy
 from ui.WalletFrames import SelectWalletFrame

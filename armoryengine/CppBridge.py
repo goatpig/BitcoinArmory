@@ -589,14 +589,17 @@ class BlockchainUtils(ProtoWrapper):
 class BridgeWalletWrapper(ProtoWrapper):
    #############################################################################
    ## setup ##
-   def __init__(self, walletId):
+   def __init__(self, walletId, accountId):
       super().__init__(TheBridge.bridgeSocket)
       self.walletId = walletId
+      self.accountId = accountId
 
    ####
    def getPacket(self):
       packet = Bridge.ToBridge.new_message()
-      packet.init("wallet").id = self.walletId
+      wltCapn = packet.init("wallet")
+      wltCapn.walletId  = self.walletId
+      wltCapn.accountId = self.accountId
       return packet
 
    #############################################################################
@@ -764,11 +767,11 @@ class BridgeWalletWrapper(ProtoWrapper):
    ####
    def getLedgerDelegateIdForScrAddr(self, scrAddr: bytes):
       packet = self.getPacket()
-      packet.wallet.getLedgerDelegateIdForSrcAddr = scrAddr
+      packet.wallet.getLedgerDelegateIdForScrAddr = scrAddr
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.wallet.ledgerDelegateId
+      return reply.wallet.getLedgerDelegateIdForScrAddr
 
 ################################################################################
 class BridgeCoinSelectionWrapper(ProtoWrapper):

@@ -247,7 +247,7 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
             else:
                #return result of id comparison
                dlgOwnWlt = None
-               if newWltID in self.main.walletMap:
+               if self.main.wallets.hasWallet(newWltId):
                   dlgOwnWlt = DlgReplaceWallet(newWltID, self.parent, self.main)
 
                   if (dlgOwnWlt.exec_()):
@@ -256,7 +256,6 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
                   else:
                      #user rejected request to replace wallet
                      pass
-
                else:
                   userAccept = QtWidgets.QMessageBox.question(self, self.tr('Verify Wallet ID'), \
                      self.tr('The data you entered corresponds to a wallet with a wallet ID: \n\n'

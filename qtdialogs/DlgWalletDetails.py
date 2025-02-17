@@ -4,7 +4,7 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2024, goatpig                                           #
+# Copyright (C) 2016-2025, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
@@ -17,17 +17,19 @@ from armoryengine.AddressUtils import addrStr_to_hash160
 from armoryengine.BDM import TheBDM, BDM_UNINITIALIZED, BDM_OFFLINE, \
    BDM_SCANNING
 from armoryengine.Settings import TheSettings
+from armoryengine.WalletUtils import WalletTypes, determineWalletType
 from armorycolors import htmlColor
 from ui.TreeViewGUI import AddressTreeModel
 
-from qtdialogs.qtdefines import USERMODE, determineWalletType, \
+from qtdialogs.qtdefines import USERMODE, \
    relaxedSizeNChar, relaxedSizeStr, QLabelButton, STYLE_SUNKEN, STYLE_NONE, \
-   QRichLabel, makeHorizFrame, restoreTableView, WLTTYPES, \
+   QRichLabel, makeHorizFrame, restoreTableView, \
    WLTFIELDS, tightSizeStr, saveTableView, tightSizeNChar, \
    UnicodeErrorBox, STRETCH, createToolTipWidget, MSGBOX
 
 from qtdialogs.ArmoryDialog import ArmoryDialog
 from qtdialogs.MsgBoxWithDNAA import MsgBoxWithDNAA
+from qtdialogs.DlgSetComment import DlgSetComment
 
 from qtdialogs.qtdialogs import LoadingDisp
 from qtdialogs.DlgNewAddress import \
@@ -287,14 +289,12 @@ class DlgWalletDetails(ArmoryDialog):
             '<a href="https://bitcointalk.org/index.php?topic=152151.0">'
             'Read more about Armory backups</a>'), None, yesStr='Ok', \
             dnaaStartChk=True)
-         self.main.setWltSetting(wlt.uniqueIDB58, 'DNAA_RemindBackup', result[1])
-
-
+         wlt.setSetting('DNAA_RemindBackup', result[1])
 
       wltType = determineWalletType(wlt, main)[0]
       chkLoad = (TheSettings.getSettingOrSetDefault('Load_Count', 1) % 5 == 0)
-      chkType = not wltType in (WLTTYPES.Offline, WLTTYPES.WatchOnly)
-      chkDNAA = not self.main.getWltSetting(wlt.uniqueIDB58, 'DNAA_RemindBackup')
+      chkType = not wltType in [WalletTypes.Offline, WalletTypes.WatchOnly]
+      chkDNAA = not wlt.getSetting('DNAA_RemindBackup')
       chkDont = not TheSettings.getSettingOrSetDefault('DNAA_AllBackupWarn', False)
       if chkLoad and chkType and chkDNAA and chkDont:
          self.callLater(1, remindBackup)
@@ -406,7 +406,7 @@ class DlgWalletDetails(ArmoryDialog):
                '<a href="%s">%s</a>' % (blkchnURL, blkchnURL)), QtWidgets.QMessageBox.Ok)
          return
       elif action == actionShowQRCode:
-         wltstr = 'Wallet: %s (%s)' % (self.wlt.labelName, self.wlt.uniqueIDB58)
+         wltstr = 'Wallet: %s (%s)' % (self.wlt.labelName, self.wlt.walletId)
          DlgQRCodeDisplay(self, self.main, addr, addr, wltstr).exec_()
          return
       elif action == actionReqPayment:
@@ -432,7 +432,6 @@ class DlgWalletDetails(ArmoryDialog):
    #############################################################################
    def dblClickAddressView(self, index):
       from ui.TreeViewGUI import COL_TREE, COL_COMMENT
-
       nodeItem = self.wltAddrTreeModel.getNodeItem(index)
       try:
          if not nodeItem.treeNode.canDoubleClick():
@@ -440,31 +439,22 @@ class DlgWalletDetails(ArmoryDialog):
       except:
          return
 
-      cppAddrObj = nodeItem.treeNode.getAddrObj()
-
+      addrObj = nodeItem.treeNode.getAddrObj()
       if index.column() == COL_COMMENT:
          # Update the address's comment. We apparently need to reset the model
          # to get an immediate comment update on OS X, unlike Linux or Windows.
-         currComment = cppAddrObj.getComment()
-
-
+         currComment = addrObj.getComment()
          if not currComment:
             dialog = DlgSetComment(self, self.main, currComment, self.tr('Add Address Comment'))
          else:
             dialog = DlgSetComment(self, self.main, currComment, self.tr('Change Address Comment'))
          if dialog.exec_():
             newComment = str(dialog.edtComment.text())
-            addr160 = cppAddrObj.getAddrHash()
-            self.wlt.setComment(addr160[1:], newComment)
-            cppAddrObj.setComment(newComment)
-
-            if OS_MACOSX:
-               self.wltAddrView.reset()
-
+            addr160 = addrObj.getAddr160()
+            self.wlt.setComment(addr160, newComment)
       else:
-         dlg = DlgAddressInfo(self.wlt, cppAddrObj, self, self.main)
+         dlg = DlgAddressInfo(self.wlt, addrObj, self, self.main)
          dlg.exec_()
-
 
    #############################################################################
    def changeLabels(self):
@@ -478,7 +468,6 @@ class DlgWalletDetails(ArmoryDialog):
 
          self.labelValues[WLTFIELDS.Name].setText(newName)
          self.labelValues[WLTFIELDS.Descr].setText(newDescr)
-
 
    #############################################################################
    def changeEncryption(self):
@@ -686,7 +675,7 @@ class DlgWalletDetails(ArmoryDialog):
    def setWltDetailsFrame(self):
       dispCrypto = self.wlt.useEncryption and \
          self.usermode in [USERMODE.Advanced, USERMODE.Expert]
-      self.wltID = self.wlt.uniqueIDB58
+      self.wltID = self.wlt.walletId
 
       if dispCrypto:
          mem = self.wlt.getKdfMemoryReqtBytes()
@@ -788,7 +777,7 @@ class DlgWalletDetails(ArmoryDialog):
       self.labelValues[WLTFIELDS.Name] = QtWidgets.QLabel(self.wlt.labelName)
       self.labelValues[WLTFIELDS.Descr] = QtWidgets.QLabel(self.wlt.labelDescr)
 
-      self.labelValues[WLTFIELDS.WltID] = QtWidgets.QLabel(self.wlt.uniqueIDB58)
+      self.labelValues[WLTFIELDS.WltID] = QtWidgets.QLabel(self.wlt.walletId)
       self.labelValues[WLTFIELDS.Secure] = QtWidgets.QLabel(self.typestr)
       self.labelValues[WLTFIELDS.BelongsTo] = QtWidgets.QLabel('')
       self.labelValues[WLTFIELDS.Version] = QtWidgets.QLabel(getVersionString(self.wlt.version))

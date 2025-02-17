@@ -156,7 +156,7 @@ public:
       const std::string&, const BinaryData&); //walletId, address
 
    void flagRefresh(
-      BDV_refresh refresh, const BinaryData& refreshId,
+      BDV_refresh refresh, const std::string& refreshId,
       std::unique_ptr<BDV_Notification_ZC> zcPtr);
 };
 

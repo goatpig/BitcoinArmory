@@ -182,7 +182,6 @@ class PyBtcAddress(object):
    def getComment(self):
       if self.parentWallet is None:
          return ''
-
       return self.parentWallet.getCommentForAddr(self.getAddr160())
 
    #############################################################################

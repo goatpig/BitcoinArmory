@@ -599,7 +599,7 @@ LedgerDelegate BlockDataViewer::getLedgerDelegateForScrAddr(
    }
 
    if (wlt == nullptr) {
-      throw runtime_error("Unregistered wallet ID");
+      throw std::runtime_error("Unregistered wallet ID");
    }
 
    ScrAddrObj& sca = wlt->getScrAddrObjRef(scrAddr);

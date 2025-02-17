@@ -11,17 +11,19 @@
 ##############################################################################
 
 from qtpy import QtCore, QtWidgets
+from armoryengine.Transaction import getFeeForTx
+from armoryengine.CppBridge import TheBridge
 from armoryengine.BDM import TheBDM
 from armoryengine.ArmoryUtils import str2coin, coin2str, unixTimeToFormatStr, \
    IGNOREZC, RightNow, hex_to_binary, hex_switchEndian, FORMAT_SYMBOLS, \
    DEFAULT_DATE_FORMAT
-from qtdialogs.qtdefines import QRichLabel, HLINE, STRETCH, WLTTYPES, \
-   makeHorizFrame, determineWalletType, createToolTipWidget
+from armoryengine.WalletUtils import WalletTypes, determineWalletType
+
+from qtdialogs.qtdefines import QRichLabel, HLINE, STRETCH, \
+   makeHorizFrame, createToolTipWidget
 from qtdialogs.ArmoryDialog import ArmoryDialog
 
 from armorymodels import LEDGERCOLS
-from armoryengine.Transaction import getFeeForTx
-from armoryengine.CppBridge import TheBridge
 
 
 ################################################################################
@@ -176,10 +178,10 @@ class DlgExportTxHistory(ArmoryDialog):
             idx -= len(self.main.walletIDList) +1
             wltIDList = [self.reversedLBdict[idx]]
       else:
-         listOffline = [t[0] for t in filter(lambda x: x[1] == WLTTYPES.Offline, typelist)]
-         listWatching = [t[0] for t in filter(lambda x: x[1] == WLTTYPES.WatchOnly, typelist)]
-         listCrypt = [t[0] for t in filter(lambda x: x[1] == WLTTYPES.Crypt, typelist)]
-         listPlain = [t[0] for t in filter(lambda x: x[1] == WLTTYPES.Plain, typelist)]
+         listOffline = [t[0] for t in filter(lambda x: x[1] == WalletTypes.Offline, typelist)]
+         listWatching = [t[0] for t in filter(lambda x: x[1] == WalletTypes.WatchOnly, typelist)]
+         listCrypt = [t[0] for t in filter(lambda x: x[1] == WalletTypes.Crypt, typelist)]
+         listPlain = [t[0] for t in filter(lambda x: x[1] == WalletTypes.Plain, typelist)]
          lockboxIDList = [t for t in self.main.lockboxIDMap]
 
          if currIdx == 0:

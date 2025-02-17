@@ -113,8 +113,10 @@ namespace
          case BlockchainServiceRequest::REGISTER_WALLET:
          {
             auto regWallet = request.getRegisterWallet();
-            auto id = regWallet.getId();
-            bridge->registerWallet(id, regWallet.getIsNew());
+            auto wltId = regWallet.getWalletId();
+            auto accIdCapn = regWallet.getAccountId();
+            auto accId = Wallets::AddressAccountId::fromHex(accIdCapn);
+            bridge->registerWallet(wltId, accId, regWallet.getIsNew());
             break;
          }
 
@@ -209,7 +211,9 @@ namespace
       std::shared_ptr<CppBridge> bridge, MessageId referenceId,
       WalletRequest::Reader& request)
    {
-      auto walletId = request.getId();
+      auto walletId = request.getWalletId();
+      auto accountIdStr = request.getAccountId();
+      auto accountId = Wallets::AddressAccountId::fromHex(accountIdStr);
 
       BinaryData response;
       switch (request.which())
@@ -224,8 +228,8 @@ namespace
 
          case WalletRequest::GET_LEDGER_DELEGATE_ID:
          {
-            const auto& delegateId =
-               bridge->getLedgerDelegateIdForWallet(walletId);
+            const auto& delegateId = bridge->getLedgerDelegateIdForWallet(
+               walletId, accountId);
 
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
@@ -243,8 +247,8 @@ namespace
          {
             auto capnAddr = request.getGetLedgerDelegateIdForScrAddr();
             BinaryDataRef addr(capnAddr.begin(), capnAddr.end());
-            const auto& delegateId =
-               bridge->getLedgerDelegateIdForScrAddr(walletId, addr);
+            const auto& delegateId = bridge->getLedgerDelegateIdForScrAddr(
+               walletId, accountId, addr);
 
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
@@ -261,13 +265,13 @@ namespace
          case WalletRequest::GET_BALANCE_AND_COUNT:
          {
             response = bridge->getBalanceAndCount(
-               walletId, referenceId);
+               walletId, accountId, referenceId);
             break;
          }
 
          case WalletRequest::SETUP_NEW_COIN_SELECTION_INSTANCE:
          {
-            bridge->setupNewCoinSelectionInstance(walletId,
+            bridge->setupNewCoinSelectionInstance(walletId, accountId,
                request.getSetupNewCoinSelectionInstance(), referenceId);
             break;
          }
@@ -275,22 +279,22 @@ namespace
          case WalletRequest::GET_ADDR_COMBINED_LIST:
          {
             response = bridge->getAddrCombinedList(
-               walletId, referenceId);
+               walletId, accountId, referenceId);
             break;
          }
 
          case WalletRequest::GET_HIGHEST_USED_INDEX:
          {
             response = bridge->getHighestUsedIndex(
-               walletId, referenceId);
+               walletId, accountId, referenceId);
             break;
          }
 
          case WalletRequest::EXTEND_ADDRESS_POOL:
          {
             auto args = request.getExtendAddressPool();
-            bridge->extendAddressPool(walletId, args.getCount(),
-               args.getCallbackId(), referenceId);
+            bridge->extendAddressPool(walletId, accountId,
+               args.getCount(), args.getCallbackId(), referenceId);
             break;
          }
 
@@ -310,7 +314,7 @@ namespace
          case WalletRequest::GET_DATA:
          {
             response = bridge->getWalletPacket(
-               walletId, referenceId);
+               walletId, accountId, referenceId);
             break;
          }
 
@@ -320,14 +324,14 @@ namespace
             auto capnAssetId = args.getAssetId();
             BinaryDataRef assetId(capnAssetId.begin(), capnAssetId.end());
 
-            response = bridge->setAddressTypeFor(
-               walletId, assetId, args.getAddressType(), referenceId);
+            response = bridge->setAddressTypeFor(walletId, accountId,
+               assetId, args.getAddressType(), referenceId);
             break;
          }
 
          case WalletRequest::CREATE_ADDRESS_BOOK:
          {
-            bridge->createAddressBook(walletId, referenceId);
+            bridge->createAddressBook(walletId, accountId, referenceId);
             break;
          }
 
@@ -353,7 +357,7 @@ namespace
             if (args.isValue()) {
                value = args.getValue();
             }
-            bridge->getUTXOs(walletId,
+            bridge->getUTXOs(walletId, accountId,
                value, args.isZc(), args.isRbf(),
                referenceId);
             break;
@@ -362,7 +366,7 @@ namespace
          case WalletRequest::GET_ADDRESS:
          {
             auto args = request.getGetAddress();
-            response = bridge->getAddress(walletId,
+            response = bridge->getAddress(walletId, accountId,
                args.getType(), args.which(), referenceId);
             break;
          }
@@ -886,7 +890,7 @@ namespace
                (uint8_t*)capnEntropy.end()
             );
 
-            auto wai = bridge->createWallet(
+            auto wltId = bridge->createWallet(
                args.getLookup(),
                args.getLabel(), args.getDescription(),
                sbdControl, sbdPass, sbdEntropy
@@ -899,7 +903,7 @@ namespace
             reply.setSuccess(true);
 
             auto utilsReply = reply.initUtils();
-            utilsReply.setCreateWallet(wai.serialize());
+            utilsReply.setCreateWallet(wltId);
 
             response = serializeCapnp(message);
             break;
