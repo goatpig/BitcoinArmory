@@ -510,8 +510,7 @@ void CppBridge::registerWallet(const std::string& wltId,
    const Wallets::AddressAccountId& accId, bool isNew)
 {
    try {
-      wltManager_->registerWallet(wltId, accId, isNew);
-      callbackPtr_->waitOnId(wltId);
+      auto dbId = wltManager_->registerWallet(wltId, accId, isNew);
    } catch (const std::exception& e) {
       LOGERR << "failed to register wallet with error: " << e.what();
    }
@@ -1156,10 +1155,19 @@ std::string CppBridge::createWallet(uint32_t lookup,
 
 ////////////////////////////////////////////////////////////////////////////////
 BinaryData CppBridge::getWalletPacket(const std::string& wltId,
-   const Wallets::AddressAccountId& accId, MessageId msgId) const
+   Wallets::AddressAccountId accId, MessageId msgId) const
 {
-   auto wltContainer = wltManager_->getWalletContainer(wltId, accId);
+   std::shared_ptr<WalletContainer> wltContainer = nullptr;
+   if (accId.isValid()) {
+      wltContainer = wltManager_->getWalletContainer(wltId, accId);
+   } else {
+      wltContainer = wltManager_->getWalletContainer(wltId);
+      accId = wltContainer->getAccountId();
+   }
 
+   if (wltContainer == nullptr) {
+      throw std::runtime_error("could not get wallet container");
+   }
    auto wltPtr = wltContainer->getWalletPtr();
    auto commentMap = wltPtr->getCommentMap();
 

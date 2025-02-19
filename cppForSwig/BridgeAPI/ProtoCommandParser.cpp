@@ -213,7 +213,12 @@ namespace
    {
       auto walletId = request.getWalletId();
       auto accountIdStr = request.getAccountId();
-      auto accountId = Wallets::AddressAccountId::fromHex(accountIdStr);
+      Wallets::AddressAccountId accountId;
+      try {
+         accountId = Wallets::AddressAccountId::fromHex(accountIdStr);
+      } catch (const Wallets::IdException&) {
+         //nothing to do, accountId wont be set
+      }
 
       BinaryData response;
       switch (request.which())

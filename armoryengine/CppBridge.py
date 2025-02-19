@@ -449,12 +449,12 @@ class BlockchainService(ProtoWrapper):
       return reply.service.getNodeStatus
 
    ####
-   def registerWallet(self, walletId: str, isNew: bool):
+   def registerWallet(self, walletId: str, accountId: str, isNew: bool):
       packet = Bridge.ToBridge.new_message()
       packetMethod = packet.init("service").init("registerWallet")
-      packetMethod.id = walletId
+      packetMethod.walletId = walletId
+      packetMethod.accountId = accountId
       packetMethod.isNew = isNew
-
       self.send(packet, needsReply=False)
 
    ####
@@ -599,7 +599,8 @@ class BridgeWalletWrapper(ProtoWrapper):
       packet = Bridge.ToBridge.new_message()
       wltCapn = packet.init("wallet")
       wltCapn.walletId  = self.walletId
-      wltCapn.accountId = self.accountId
+      if self.accountId:
+         wltCapn.accountId = self.accountId
       return packet
 
    #############################################################################

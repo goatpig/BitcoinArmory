@@ -242,29 +242,6 @@ class PyBtcWallet(object):
       self.lastComputedChainIndex   = 0
       self.highestUsedChainIndex    = 0
 
-      # All PyBtcAddress serializations are exact same size, figure it out now
-      self.pybtcaddrSize = 237
-
-      # Finally, a bunch of offsets that tell us where data is stored in the
-      # file: this can be generated automatically on unpacking (meaning it
-      # doesn't require manually updating offsets if I change the format), and
-      # will save us a couple lines of code later, when we need to update things
-      self.offsetWltFlags  = -1
-      self.offsetLabelName = -1
-      self.offsetLabelDescr  = -1
-      self.offsetTopUsed   = -1
-      self.offsetRootAddr  = -1
-      self.offsetKdfParams = -1
-      self.offsetCrypto    = -1
-
-      # These flags are ONLY for unit-testing the walletFileSafeUpdate function
-      self.interruptTest1  = False
-      self.interruptTest2  = False
-      self.interruptTest3  = False
-
-      #flags the wallet if it has off chain imports (from a consistency repair)
-      self.hasNegativeImports = False
-
       #To enable/disable wallet row in wallet table model
       self.isEnabled = True
 
@@ -284,8 +261,6 @@ class PyBtcWallet(object):
          self.bridgeWalletObj = BridgeWalletWrapper(wltId, accId)
       elif proto != None:
          self.loadFromProto(proto)
-         self.bridgeWalletObj = BridgeWalletWrapper(
-            self.walletId, self.accountId)
 
    #############################################################################
    def isWltSigningAnyLockbox(self, lockboxList):
@@ -555,7 +530,7 @@ class PyBtcWallet(object):
    #############################################################################
    @staticmethod
    def loadFromBridge(walletId):
-      wallet = PyBtcWallet(uniqueId=walletId)
+      wallet = PyBtcWallet(wltId=walletId)
       walletProto = wallet.bridgeWalletObj.getData()
       wallet.loadFromProto(walletProto)
       return wallet
@@ -1573,10 +1548,11 @@ class PyBtcWallet(object):
 
    ###############################################################################
    def loadFromProto(self, payload):
-      self._walletId    = payload.walletId
-      self._accountId   = payload.accountId
-      self._dbId        = payload.dbId
-      self._settingsId  = computeSettingsId(self._walletId, self._accountId)
+      self._walletId       = payload.walletId
+      self._accountId      = payload.accountId
+      self._dbId           = payload.dbId
+      self._settingsId     = computeSettingsId(self._walletId, self._accountId)
+      self.bridgeWalletObj = BridgeWalletWrapper(self._walletId, self._accountId)
 
       self.labelName   = payload.label
       self.labelDescr  = payload.desc
@@ -1624,7 +1600,7 @@ class PyBtcWallet(object):
 
    #############################################################################
    def register(self, isNew):
-      TheBridge.service.registerWallet(self.uniqueIDB58, isNew)
+      TheBridge.service.registerWallet(self.walletId, self.accountId, isNew)
 
    #############################################################################
    def createBackupString(self, unlockHandler, callback):

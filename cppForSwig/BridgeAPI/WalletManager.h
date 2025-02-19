@@ -90,7 +90,7 @@ public:
       getWalletPtr(void) const;
    std::shared_ptr<Armory::Accounts::AddressAccount>
       getAddressAccount(void) const;
-   Armory::Wallets::AddressAccountId getAccountId(void) const;
+   const Armory::Wallets::AddressAccountId& getAccountId(void) const;
 
    void updateBalancesAndCount(uint32_t topBlockHeight);
    void updateWalletBalanceState(const AsyncClient::CombinedBalances&);
@@ -278,7 +278,7 @@ public:
 
    void setBdvPtr(std::shared_ptr<AsyncClient::BlockDataViewer>);
    void registerWallets(void);
-   void registerWallet(const std::string&,
+   const std::string& registerWallet(const std::string&,
       const Armory::Wallets::AddressAccountId&, bool);
 
    std::shared_ptr<WalletContainer> addWallet(

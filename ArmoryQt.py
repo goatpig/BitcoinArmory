@@ -2424,28 +2424,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       self.wallets.add(newWallet)
       newWallet.register(walletIsNew)
 
-      '''
-      # Update the maps/dictionaries
-      newWltID = newWallet.uniqueIDB58
-
-      if newWltID in self.walletMap:
-         return
-
-      self.walletMap[newWltID] = newWallet
-      self.walletIndices[newWltID] = len(self.walletMap)-1
-
-      # Maintain some linear lists of wallet info
-      self.walletIDSet.add(newWltID)
-      self.walletIDList.append(newWltID)
-
-
-      showByDefault = (determineWalletType(newWallet, self)[0] != WLTTYPES.WatchOnly)
-      self.walletVisibleList.append(showByDefault)
-      self.setWltSetting(newWltID, 'LedgerShow', showByDefault)
-
-      self.walletListChanged()
-      '''
-
    #############################################################################
    def removeWalletFromApplication(self, wltID):
       LOGINFO('removeWalletFromApplication')
@@ -2456,8 +2434,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          LOGERROR('Invalid wallet ID passed to "removeWalletFromApplication"')
          raise WalletExistsError
 
-      #self.walletMap[wltID].unregisterWallet()
-
+      self.walletMap[wltID].unregisterWallet()
       del self.walletMap[wltID]
       del self.walletIndices[wltID]
       self.walletIDSet.remove(wltID)
@@ -4524,12 +4501,13 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             LOGERROR("Failed update wallet data with error: %s" % e)
             return
 
-         reset  = False
-         if len(args) == 0:
+         reset = False
+         idList = args[0]
+         if len(idList) == 0:
             self.createCombinedLedger()
             return
 
-         for wltID in args:
+         for wltID in idList:
             if len(wltID) > 0:
                if wltID == "wallet_filter_changed":
                   reset = True

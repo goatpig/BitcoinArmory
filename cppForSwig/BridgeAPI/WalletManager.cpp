@@ -88,7 +88,7 @@ void WalletManager::registerWallets()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void WalletManager::registerWallet(const std::string& wltId,
+const std::string& WalletManager::registerWallet(const std::string& wltId,
    const Wallets::AddressAccountId& accId, bool isNew)
 {
    auto wltIter = wallets_.find(wltId);
@@ -102,6 +102,7 @@ void WalletManager::registerWallet(const std::string& wltId,
    }
 
    accIter->second->registerWithBDV(isNew);
+   return accIter->second->getDbId();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -297,6 +298,12 @@ WalletContainer::WalletContainer(const std::string& wltId,
 const std::string& WalletContainer::getDbId() const
 {
    return dbId_;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+const Armory::Wallets::AddressAccountId& WalletContainer::getAccountId() const
+{
+   return accountId_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

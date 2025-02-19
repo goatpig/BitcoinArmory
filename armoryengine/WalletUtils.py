@@ -158,9 +158,7 @@ class WalletMap(object):
          dbId = self._wltIdToDbId[wId][accId]
 
       if dbId not in self._walletMap:
-         error = f"missing wallet for dbId {dbId}"
-         LOGERROR(error)
-         raise Exception(error)
+         raise Exception(f"missing wallet for dbId {dbId}")
       return self._walletMap[dbId]
 
    def getByIndex(self, index):

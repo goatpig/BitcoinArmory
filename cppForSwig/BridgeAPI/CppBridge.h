@@ -141,7 +141,7 @@ namespace Armory
          BinaryData createWalletsPacket(MessageId);
          bool deleteWallet(const std::string&);
          BinaryData getWalletPacket(const std::string&,
-            const Wallets::AddressAccountId&, MessageId) const;
+            Wallets::AddressAccountId, MessageId) const;
 
          //AsyncClient::BlockDataViewer setup
          void setupDB(void);

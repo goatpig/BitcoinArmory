@@ -109,8 +109,6 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
 
       inpMask = '<AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA!'
       self.edtList = [MaskedInputLineEdit(inpMask) for i in range(4)]
-
-
       self.frmSP = makeHorizFrame([STRETCH, self.lblSP, self.editSecurePrint])
 
       frmAllInputs = QtWidgets.QFrame()
@@ -148,7 +146,6 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
       layout.addWidget(walletRestoreTabs)
       layout.addWidget(bottomFrm)
       self.setLayout(layout)
-
 
       self.chkEncrypt.setChecked(not thisIsATest)
       self.chkEncrypt.setVisible(not thisIsATest)
@@ -247,7 +244,7 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
             else:
                #return result of id comparison
                dlgOwnWlt = None
-               if self.main.wallets.hasWallet(newWltId):
+               if self.main.wallets.hasWallet(newWltID):
                   dlgOwnWlt = DlgReplaceWallet(newWltID, self.parent, self.main)
 
                   if (dlgOwnWlt.exec_()):
@@ -321,8 +318,7 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
             LOGERROR("wallet import did not yield an id")
             raise Exception("wallet import did not yield an id")
 
-         self.newWallet = PyBtcWallet()
-         self.newWallet.loadFromBridge(self.newWltID)
+         self.newWallet = PyBtcWallet().loadFromBridge(self.newWltID)
          self.accept()
 
       elif which == "failure":
