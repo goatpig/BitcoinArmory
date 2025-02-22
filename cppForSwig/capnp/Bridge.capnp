@@ -110,9 +110,18 @@ struct Notification {
 
 struct NotificationReply
 {
-   success     @0 : Bool;
-   counter     @1 : UInt32;
-   passphrases @2 : List(Text);
+   enum RestoreMode {
+      overwrite   @0;
+      merge       @1;
+   }
+
+   success        @0 : Bool;
+   counter        @1 : UInt32;
+
+   union {
+      restore     @2 : RestoreMode;
+      passphrases @3 : List(Text);
+   }
 }
 
 ###############################

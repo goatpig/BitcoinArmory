@@ -190,8 +190,15 @@ namespace FileUtils
    bool append(const std::filesystem::path&,
       const std::filesystem::path&);
 
+   //folder stuff
    int removeDirectory(const std::filesystem::path&);
    void createDirectory(const std::filesystem::path&);
    std::filesystem::path getUserHomePath(void);
+
+   //filename manipulation
+   std::filesystem::path appendTagToPath(
+      const std::filesystem::path&,
+      const std::string&
+   );
 };
 #endif

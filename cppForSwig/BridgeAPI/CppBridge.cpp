@@ -759,25 +759,57 @@ void CppBridge::restoreWallet(
          }
       };
 
+      auto tempDir = wltManager_->getWalletDir() / "temp";
       try {
+         //create a a temp folder where the wallet will be generated
+         FileUtils::createDirectory(tempDir);
+
          //create wallet from backup
          Wallets::WalletCreationParams params{
             {}, //passphrase, leave empty so that it prompts the user
             {}, //control passphrase, same treatment
-            wltManager_->getWalletDir() //folder where the wallet is created
+            tempDir //folder where the wallet is created
             //TODO: add kdf params and lookup
          };
-         auto wltPtr = Armory::Seeds::Helpers::restoreFromBackup(
+
+         auto restoreResult = Armory::Seeds::Helpers::restoreFromBackup(
             std::move(backup), callback, params);
 
-         if (wltPtr == nullptr) {
+         if (restoreResult.wltPtr == nullptr) {
             throw std::runtime_error("empty wallet");
          }
 
-         //add wallet to manager
-         auto accIds = wltPtr->getAccountIDs();
-         for (const auto& accId : accIds) {
-            wltManager_->addWallet(wltPtr, accId);
+         //have we already loaded this wallet?
+         std::filesystem::path oldWltPath;
+         if (wltManager_->hasWallet(restoreResult.wltPtr->getID())) {
+            if (restoreResult.merge == true) {
+               //we want to merge the old one in the new on
+            }
+
+            //unload old wallet & rename it
+            oldWltPath = wltManager_->unloadWallet(restoreResult.wltPtr->getID());
+            oldWltPath = FileUtils::appendTagToPath(oldWltPath, "_old");
+         }
+
+         //unload new wallet
+         auto newWltPath = restoreResult.wltPtr->getDbFilename();
+         auto newPath = wltManager_->getWalletDir() / newWltPath.filename();
+         restoreResult.wltPtr.reset();
+
+         //move it to wallet folder
+         std::filesystem::rename(newWltPath, newPath);
+
+         //reload new wallet
+         auto passLbd = [&restoreResult](
+            const std::set<Armory::Wallets::EncryptionKeyId>&)->SecureBinaryData
+         {
+            return restoreResult.controlPass;
+         };
+         wltManager_->loadWallet(newPath, passLbd);
+
+         //delete old wallet if there's one
+         if (!oldWltPath.empty() && std::filesystem::exists(oldWltPath)) {
+            std::filesystem::remove(oldWltPath);
          }
 
          //signal caller of success
@@ -800,6 +832,9 @@ void CppBridge::restoreWallet(
          errorPrompt.error = e.what();
          callback(errorPrompt);
       }
+
+      //delete the temp folder
+      FileUtils::removeDirectory(tempDir);
    };
 
    auto worker = std::thread(restoreLbd,

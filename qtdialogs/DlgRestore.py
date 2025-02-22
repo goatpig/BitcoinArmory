@@ -48,7 +48,6 @@ class MaskedInputLineEdit(QtWidgets.QLineEdit):
 
 ################################################################################
 class DlgRestoreSingle(ArmoryDialog, ServerPush):
-   #############################################################################
    def __init__(self, parent, main, thisIsATest=False, expectWltID=None):
       ServerPush.__init__(self)
       ArmoryDialog.__init__(self, parent, main)
@@ -56,26 +55,23 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
       self.newWltID = None
       self.thisIsATest = thisIsATest
       self.testWltID = expectWltID
-      headerStr = ''
       if thisIsATest:
          lblDescr = QRichLabel(self.tr(
-          '<b><u><font color="blue" size="4">Test a Paper Backup</font></u></b> '
-          '<br><br>'
-          'Use this window to test a single-sheet paper backup.  If your '
-          'backup includes imported keys, those will not be covered by this test.'))
+            '<b><u><font color="blue" size="4">Test a Paper Backup</font></u></b> '
+            '<br><br>'
+            'Use this window to test a single-sheet paper backup.  If your '
+            'backup includes imported keys, those will not be covered by this test.'))
       else:
          lblDescr = QRichLabel(self.tr(
-          '<b><u>Restore a Wallet from Paper Backup</u></b> '
-          '<br><br>'
-          'Use this window to restore a single-sheet paper backup. '
-          'If your backup includes extra pages with '
-          'imported keys, please restore the base wallet first, then '
-          'double-click the restored wallet and select "Import Private '
-          'Keys" from the right-hand menu.'))
-
+            '<b><u>Restore a Wallet from Paper Backup</u></b> '
+            '<br><br>'
+            'Use this window to restore a single-sheet paper backup. '
+            'If your backup includes extra pages with '
+            'imported keys, please restore the base wallet first, then '
+            'double-click the restored wallet and select "Import Private '
+            'Keys" from the right-hand menu.'))
 
       lblType = QRichLabel(self.tr('<b>Backup Type:</b>'), doWrap=False)
-
       self.version135Button = QtWidgets.QRadioButton(self.tr('Version 1.35 (4 lines)'), self)
       self.version135aButton = QtWidgets.QRadioButton(self.tr('Version 1.35a (4 lines Unencrypted)'), self)
       self.version135aSPButton = QtWidgets.QRadioButton(self.tr(u'Version 1.35a (4 lines + SecurePrint\u200b\u2122)'), self)
@@ -230,45 +226,48 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
       restorePayload = payload.restore
       which = restorePayload.which()
       if which == 'checkWalletId':
-         reply = self.getNewPacket()
-
          newWltID = restorePayload.checkWalletId.walletId
+         if not newWltID:
+            LOGWARN("empty wallet id in backup restore process")
+
+         '''
          #TODO: also check/test backup type
          wltType = restorePayload.checkWalletId.backupType
+         '''
 
-         reply.success = False
-         if newWltID:
+         replyToBridge = self.getNewPacket()
+         replyToBridge.success = False
+
+         #ask the user to check the restored wallet id
+         userAccept = QtWidgets.QMessageBox.question(self, self.tr('Verify Wallet ID'),
+            self.tr("The data you entered corresponds to a wallet with a wallet ID:"
+            f"\n\n{newWltID}\n\n"
+            'Does this ID match the "Wallet Unique ID" printed on your paper backup?'
+            'If not, click "No" and reenter key and chain-code data again.'),
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+
+         if userAccept == QtWidgets.QMessageBox.Yes:
             if self.thisIsATest:
                #stop here if this was just a test
                verifyRecoveryTestID(self, newWltID, self.testWltID)
             else:
-               #return result of id comparison
+               self.newWltID = newWltID
+               replyToBridge.success = True
+
+               #check if this wallet is already loaded
                dlgOwnWlt = None
                if self.main.wallets.hasWallet(newWltID):
                   dlgOwnWlt = DlgReplaceWallet(newWltID, self.parent, self.main)
-
                   if (dlgOwnWlt.exec_()):
-                     #TODO: deal with replacement code
-                     pass
+                     #should we merge with the old wallet or overwrite it?
+                     if dlgOwnWlt.output == 2:
+                        replyToBridge.restore = 'merge'
+                     else:
+                        replyToBridge.restore = 'overwrite'
                   else:
-                     #user rejected request to replace wallet
-                     pass
-               else:
-                  userAccept = QtWidgets.QMessageBox.question(self, self.tr('Verify Wallet ID'), \
-                     self.tr('The data you entered corresponds to a wallet with a wallet ID: \n\n'
-                     '%s\n\nDoes this ID match the "Wallet Unique ID" '
-                     'printed on your paper backup?  If not, click "No" and reenter '
-                     'key and chain-code data again.' % newWltID), \
-                     QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
-                  if userAccept == QtWidgets.QMessageBox.Yes:
-                     #return true to caller to proceed with restore operation
-                     self.newWltID = newWltID
-                     reply.success = True
-         else:
-            LOGWARN("empty wallet id in backup restore process")
+                     replyToBridge.success = False
 
-         #reply to bridge with success flag
-         if reply.success == False:
+         if replyToBridge.success == False:
             self.reject()
          self.reply()
 

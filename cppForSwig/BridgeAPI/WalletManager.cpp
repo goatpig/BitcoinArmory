@@ -7,6 +7,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include <filesystem>
+#include <string_view>
 
 #include "WalletManager.h"
 #include "Wallets/Seeds/Backups.h"
@@ -14,6 +15,7 @@
 #include "../Wallets/Seeds/Seeds.h"
 
 using namespace Armory;
+using namespace std::string_view_literals;
 
 #define WALLET_135_HEADER "\xbaWALLET\x00"
 #define PYBTC_ADDRESS_SIZE 237
@@ -22,6 +24,22 @@ using namespace Armory;
 ////
 //// WalletManager
 ////
+////////////////////////////////////////////////////////////////////////////////
+WalletManager::WalletManager(const std::filesystem::path& path,
+   const PassphraseLambda& passLbd) :
+   path_(path)
+{
+   loadWallets(passLbd);
+}
+
+////
+bool WalletManager::hasWallet(const std::string& id)
+{
+   std::unique_lock<std::mutex> lock(mu_);
+   auto wltIter = wallets_.find(id);
+   return wltIter != wallets_.end();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 std::map<std::string, std::set<Wallets::AddressAccountId>>
 WalletManager::getAccountIdMap() const
@@ -43,7 +61,9 @@ std::shared_ptr<WalletContainer> WalletManager::getWalletContainer(
 {
    auto iter = wallets_.find(wltId);
    if (iter == wallets_.end()) {
-      throw std::runtime_error("[WalletManager::getWalletContainer]");
+      std::string errStr{"no wallet for id "sv};
+      errStr += wltId;
+      throw std::runtime_error(errStr);
    }
    return iter->second.begin()->second;
 }
@@ -54,12 +74,16 @@ std::shared_ptr<WalletContainer> WalletManager::getWalletContainer(
 {
    auto wltIter = wallets_.find(wltId);
    if (wltIter == wallets_.end()) {
-      throw std::runtime_error("[WalletManager::getWalletContainer]");
+      std::string errStr{"i do not know wallet "sv};
+      errStr += wltId;
+      throw std::runtime_error(errStr);
    }
 
    auto accIter = wltIter->second.find(accId);
    if (accIter == wltIter->second.end()) {
-      throw std::runtime_error("[WalletManager::getWalletContainer]");
+      std::string errStr{"there is no account "sv};
+      errStr += accId.toHexStr() + std::string{" for wallet "sv} + wltId;
+      throw std::runtime_error(errStr);
    }
 
    return accIter->second;
@@ -165,6 +189,24 @@ std::shared_ptr<WalletContainer> WalletManager::createNewWallet(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+std::filesystem::path WalletManager::unloadWallet(const std::string& wltId)
+{
+   ReentrantLock lock(this);
+   auto wltCont = getWalletContainer(wltId);
+   wallets_.erase(wltId);
+
+   try {
+      //unregister from db
+      wltCont->unregisterFromBDV();
+   } catch (const std::exception&) {
+      //we do not care if the unregister operation fails
+   }
+   auto path = wltCont->getWalletPtr()->getDbFilename();
+   wltCont.reset();
+   return path;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 void WalletManager::deleteWallet(const std::string& wltId)
 {
    ReentrantLock lock(this);
@@ -180,6 +222,22 @@ void WalletManager::deleteWallet(const std::string& wltId)
       //we do not care if the unregister operation fails
    }
    wltCont.reset();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void WalletManager::loadWallet(const std::filesystem::path& path,
+   const PassphraseLambda& passLbd)
+{
+   try {
+      auto wltPtr = Wallets::AssetWallet::loadMainWalletFromFile(path, passLbd);
+      const auto& accIds = wltPtr->getAccountIDs();
+      for (const auto& accId : accIds) {
+         addWallet(wltPtr, accId);
+      }
+   } catch (const std::exception& e) {
+      LOGERR << "Failed to open wallet at " << path.string() <<
+         " with error:\n" << e.what();
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -209,17 +267,7 @@ void WalletManager::loadWallets(const PassphraseLambda& passLbd)
 
    //read the files
    for (const auto& wltPath : walletPaths) {
-      try {
-         auto wltPtr = Wallets::AssetWallet::loadMainWalletFromFile(
-            wltPath, passLbd);
-         const auto& accIds = wltPtr->getAccountIDs();
-         for (const auto& accId : accIds) {
-            addWallet(wltPtr, accId);
-         }
-      } catch (const std::exception& e) {
-         LOGERR << "Failed to open wallet at " << wltPath.string() <<
-            " with error:\n" << e.what();
-      }
+      loadWallet(wltPath, passLbd);
    }
 
    //parse the potential armory 1.35 wallet files
@@ -385,6 +433,9 @@ void WalletContainer::unregisterFromBDV()
 {
    if (bdvPtr_ == nullptr) {
       throw std::runtime_error("bdvPtr is not set");
+   }
+   if (asyncWlt_ == nullptr) {
+      throw std::runtime_error("asyncWlt is not set");
    }
    asyncWlt_->unregister();
 }

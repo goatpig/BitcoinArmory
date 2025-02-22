@@ -363,8 +363,6 @@ namespace DBTestUtils
          return;
       }
 
-      BinaryDataRef wltNameRef;
-      wltNameRef.setRef(wltName);
       while (true) {
          auto cbReply = waitOnSignal(clients, bdvId,
             (int)Codec::BDV::Notification::REFRESH);
@@ -384,8 +382,7 @@ namespace DBTestUtils
          auto refresh = capnpNotif.getRefresh();
          auto refreshIds = refresh.getIds();
          for (auto refreshId : refreshIds) {
-            BinaryData idRef(refreshId.begin(), refreshId.end());
-            if (idRef == wltNameRef) {
+            if (refreshId == wltName) {
                return;
             }
          }
@@ -572,7 +569,7 @@ namespace DBTestUtils
 
    /////////////////////////////////////////////////////////////////////////////
    void waitOnWalletRefresh(Clients* clients, const string& bdvId,
-      const BinaryData& wltId)
+      const std::string& wltId)
    {
       while (true) {
          auto result = waitOnSignal(clients, bdvId,
@@ -597,8 +594,7 @@ namespace DBTestUtils
          auto refresh = notif.getRefresh();
          auto ids = refresh.getIds();
          for (auto id : ids) {
-            BinaryDataRef idRef(id.begin(), id.end());
-            if (idRef == wltId) {
+            if (id == wltId) {
                return;
             }
          }

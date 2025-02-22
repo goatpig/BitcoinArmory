@@ -8960,7 +8960,7 @@ TEST_F(BackupTests, BackupStrings_Legacy)
       switch (prompt.promptType)
       {
          case RestorePromptType::Passphrases:
-            return PromptReply{true,
+            return PromptReply{true, false,
                SecureBinaryData::fromString(newPass),
                SecureBinaryData::fromString(newCtrl)
             };
@@ -8988,20 +8988,20 @@ TEST_F(BackupTests, BackupStrings_Legacy)
          backupEasy16->getRoot(Backup_Easy16::LineIndex::One, false),
          backupEasy16->getRoot(Backup_Easy16::LineIndex::Two, false),
       });
-      auto newWltPtr = Armory::Seeds::Helpers::restoreFromBackup(
+      auto restoreResult = Armory::Seeds::Helpers::restoreFromBackup(
          move(backupCopy), callback, WalletCreationParams{
             SecureBinaryData::fromString(newPass),
             SecureBinaryData::fromString(newCtrl),
             newHomeDir, 10, 1, 1 });
-      EXPECT_NE(newWltPtr, nullptr);
+      EXPECT_NE(restoreResult.wltPtr, nullptr);
 
       auto passLbd2 = [&newPass](const set<EncryptionKeyId>&)->SecureBinaryData
       {
          return SecureBinaryData::fromString(newPass);
       };
-      newWltPtr->setPassphrasePromptLambda(passLbd2);
+      restoreResult.wltPtr->setPassphrasePromptLambda(passLbd2);
 
-      auto newWalletSingle = dynamic_pointer_cast<AssetWallet_Single>(newWltPtr);
+      auto newWalletSingle = std::dynamic_pointer_cast<AssetWallet_Single>(restoreResult.wltPtr);
       auto backupData2 = Armory::Seeds::Helpers::getWalletBackup(newWalletSingle);
       auto backupEasy16_2 = dynamic_cast<Backup_Easy16*>(backupData2.get());
 
@@ -9011,8 +9011,7 @@ TEST_F(BackupTests, BackupStrings_Legacy)
          backupEasy16_2->getRoot(Backup_Easy16::LineIndex::Two, false));
 
       EXPECT_EQ(backupEasy16->getWalletId(), backupEasy16_2->getWalletId());
-
-      filename = newWltPtr->getDbFilename();
+      filename = restoreResult.wltPtr->getDbFilename();
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass, newCtrl));
@@ -9049,7 +9048,7 @@ TEST_F(BackupTests, BackupStrings_Legacy_Armory200a)
       switch (prompt.promptType)
       {
          case RestorePromptType::Passphrases:
-            return PromptReply{true,
+            return PromptReply{true, false,
                SecureBinaryData::fromString(newPass),
                SecureBinaryData::fromString(newCtrl)
             };
@@ -9077,20 +9076,20 @@ TEST_F(BackupTests, BackupStrings_Legacy_Armory200a)
          backupEasy16->getRoot(Backup_Easy16::LineIndex::One, false),
          backupEasy16->getRoot(Backup_Easy16::LineIndex::Two, false),
       });
-      auto newWltPtr = Armory::Seeds::Helpers::restoreFromBackup(
+      auto restoreResult = Armory::Seeds::Helpers::restoreFromBackup(
          move(backupCopy), callback, WalletCreationParams{
             SecureBinaryData::fromString(newPass),
             SecureBinaryData::fromString(newCtrl),
             newHomeDir, 10, 1, 1});
-      EXPECT_NE(newWltPtr, nullptr);
+      EXPECT_NE(restoreResult.wltPtr, nullptr);
 
       auto passLbd2 = [&newPass](const set<EncryptionKeyId>&)->SecureBinaryData
       {
          return SecureBinaryData::fromString(newPass);
       };
-      newWltPtr->setPassphrasePromptLambda(passLbd2);
+      restoreResult.wltPtr->setPassphrasePromptLambda(passLbd2);
 
-      auto newWalletSingle = dynamic_pointer_cast<AssetWallet_Single>(newWltPtr);
+      auto newWalletSingle = dynamic_pointer_cast<AssetWallet_Single>(restoreResult.wltPtr);
       auto backupData2 = Armory::Seeds::Helpers::getWalletBackup(newWalletSingle);
       auto backupEasy16_2 = dynamic_cast<Backup_Easy16*>(backupData2.get());
 
@@ -9100,8 +9099,7 @@ TEST_F(BackupTests, BackupStrings_Legacy_Armory200a)
          backupEasy16_2->getRoot(Backup_Easy16::LineIndex::Two, false));
 
       EXPECT_EQ(backupEasy16->getWalletId(), backupEasy16_2->getWalletId());
-
-      filename = newWltPtr->getDbFilename();
+      filename = restoreResult.wltPtr->getDbFilename();
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass, newCtrl));
@@ -9140,7 +9138,7 @@ TEST_F(BackupTests, BackupStrings_Legacy_SecurePrint)
       switch (prompt.promptType)
       {
          case RestorePromptType::Passphrases:
-            return PromptReply{true,
+            return PromptReply{true, false,
                SecureBinaryData::fromString(newPass),
                SecureBinaryData::fromString(newCtrl)
             };
@@ -9184,20 +9182,20 @@ TEST_F(BackupTests, BackupStrings_Legacy_SecurePrint)
          backupEasy16->getRoot(Backup_Easy16::LineIndex::One, true),
          backupEasy16->getRoot(Backup_Easy16::LineIndex::Two, true)},
          backupEasy16->getSpPass());
-      auto newWltPtr = Armory::Seeds::Helpers::restoreFromBackup(
+      auto restoreResult = Armory::Seeds::Helpers::restoreFromBackup(
          move(backupCopy), callback, WalletCreationParams{
             SecureBinaryData::fromString(newPass),
             SecureBinaryData::fromString(newCtrl),
             newHomeDir, 10, 1, 1});
-      EXPECT_NE(newWltPtr, nullptr);
+      EXPECT_NE(restoreResult.wltPtr, nullptr);
 
       auto passLbd2 = [&newPass](const set<EncryptionKeyId>&)->SecureBinaryData
       {
          return SecureBinaryData::fromString(newPass);
       };
-      newWltPtr->setPassphrasePromptLambda(passLbd2);
+      restoreResult.wltPtr->setPassphrasePromptLambda(passLbd2);
 
-      auto newWalletSingle = dynamic_pointer_cast<AssetWallet_Single>(newWltPtr);
+      auto newWalletSingle = dynamic_pointer_cast<AssetWallet_Single>(restoreResult.wltPtr);
       auto backupData2 = Armory::Seeds::Helpers::getWalletBackup(newWalletSingle);
       auto backupEasy16_2 = dynamic_cast<Backup_Easy16*>(backupData2.get());
 
@@ -9207,7 +9205,7 @@ TEST_F(BackupTests, BackupStrings_Legacy_SecurePrint)
          backupEasy16_2->getRoot(Backup_Easy16::LineIndex::Two, true));
       EXPECT_EQ(backupEasy16->getWalletId(), backupEasy16_2->getWalletId());
 
-      filename = newWltPtr->getDbFilename();
+      filename = restoreResult.wltPtr->getDbFilename();
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass, newCtrl));
@@ -9410,7 +9408,7 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode)
       switch (prompt.promptType)
       {
          case RestorePromptType::Passphrases:
-            return PromptReply{true,
+            return PromptReply{true, false,
                SecureBinaryData::fromString(newPass),
                SecureBinaryData::fromString(newCtrl)
             };
@@ -9491,20 +9489,20 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode)
       //try with valid backup now
       auto validBackup = Backup_Easy16::fromLines({
          backupLines[0], backupLines[1], backupLines[2], backupLines[3]});
-      auto newWltPtr = Armory::Seeds::Helpers::restoreFromBackup(
+      auto restoreResult = Armory::Seeds::Helpers::restoreFromBackup(
          move(validBackup), callback, WalletCreationParams{
             SecureBinaryData::fromString(newPass),
             SecureBinaryData::fromString(newCtrl),
             newHomeDir, 10, 1, 1});
-      EXPECT_NE(newWltPtr, nullptr);
+      EXPECT_NE(restoreResult.wltPtr, nullptr);
 
-      auto passLbd2 = [&newPass](const set<EncryptionKeyId>&)->SecureBinaryData
+      auto passLbd2 = [&newPass](const std::set<EncryptionKeyId>&)->SecureBinaryData
       {
          return SecureBinaryData::fromString(newPass);
       };
-      newWltPtr->setPassphrasePromptLambda(passLbd2);
+      restoreResult.wltPtr->setPassphrasePromptLambda(passLbd2);
 
-      auto newWalletSingle = dynamic_pointer_cast<AssetWallet_Single>(newWltPtr);
+      auto newWalletSingle = dynamic_pointer_cast<AssetWallet_Single>(restoreResult.wltPtr);
       auto backupData2 = Armory::Seeds::Helpers::getWalletBackup(newWalletSingle);
       auto backupEasy16_2 = dynamic_cast<Backup_Easy16*>(backupData2.get());
 
@@ -9519,7 +9517,7 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode)
          backupEasy16_2->getChaincode(Backup_Easy16::LineIndex::Two, false));
 
       EXPECT_EQ(backupEasy16->getWalletId(), backupEasy16_2->getWalletId());
-      filename = newWltPtr->getDbFilename();
+      filename = restoreResult.wltPtr->getDbFilename();
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass, newCtrl));
@@ -9558,7 +9556,7 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode_SecurePrint)
       switch (prompt.promptType)
       {
          case RestorePromptType::Passphrases:
-            return PromptReply{true,
+            return PromptReply{true, false,
                SecureBinaryData::fromString(newPass),
                SecureBinaryData::fromString(newCtrl)
             };
@@ -9609,20 +9607,20 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode_SecurePrint)
          backupEasy16->getChaincode(Backup_Easy16::LineIndex::Two, true)},
          backupEasy16->getSpPass()
       );
-      auto newWltPtr = Armory::Seeds::Helpers::restoreFromBackup(
+      auto restoreResult = Armory::Seeds::Helpers::restoreFromBackup(
          move(backupCopy), callback, WalletCreationParams{
             SecureBinaryData::fromString(newPass),
             SecureBinaryData::fromString(newCtrl),
             newHomeDir, 10, 1, 1});
-      EXPECT_NE(newWltPtr, nullptr);
+      EXPECT_NE(restoreResult.wltPtr, nullptr);
 
       auto passLbd2 = [&newPass](const set<EncryptionKeyId>&)->SecureBinaryData
       {
          return SecureBinaryData::fromString(newPass);
       };
-      newWltPtr->setPassphrasePromptLambda(passLbd2);
+      restoreResult.wltPtr->setPassphrasePromptLambda(passLbd2);
 
-      auto newWalletSingle = dynamic_pointer_cast<AssetWallet_Single>(newWltPtr);
+      auto newWalletSingle = dynamic_pointer_cast<AssetWallet_Single>(restoreResult.wltPtr);
       auto backupData2 = Armory::Seeds::Helpers::getWalletBackup(newWalletSingle);
       auto backupEasy16_2 = dynamic_cast<Backup_Easy16*>(backupData2.get());
 
@@ -9637,8 +9635,7 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode_SecurePrint)
          backupEasy16_2->getChaincode(Backup_Easy16::LineIndex::Two, true));
 
       EXPECT_EQ(backupEasy16->getWalletId(), backupEasy16_2->getWalletId());
-
-      filename = newWltPtr->getDbFilename();
+      filename = restoreResult.wltPtr->getDbFilename();
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass, newCtrl));
@@ -9676,7 +9673,7 @@ TEST_F(BackupTests, BackupStrings_BIP32)
       switch (prompt.promptType)
       {
          case RestorePromptType::Passphrases:
-            return PromptReply{true,
+            return PromptReply{true, false,
                SecureBinaryData::fromString(newPass),
                SecureBinaryData::fromString(newCtrl)
             };
@@ -9704,20 +9701,20 @@ TEST_F(BackupTests, BackupStrings_BIP32)
          backupEasy16->getRoot(Backup_Easy16::LineIndex::One, false),
          backupEasy16->getRoot(Backup_Easy16::LineIndex::Two, false),
       });
-      auto newWltPtr = Armory::Seeds::Helpers::restoreFromBackup(
+      auto restoreResult = Armory::Seeds::Helpers::restoreFromBackup(
          move(backupCopy), callback, WalletCreationParams{
             SecureBinaryData::fromString(newPass),
             SecureBinaryData::fromString(newCtrl),
             newHomeDir, 10, 1, 1});
-      ASSERT_NE(newWltPtr, nullptr);
+      ASSERT_NE(restoreResult.wltPtr, nullptr);
 
       auto passLbd2 = [&newPass](const set<EncryptionKeyId>&)->SecureBinaryData
       {
          return SecureBinaryData::fromString(newPass);
       };
-      newWltPtr->setPassphrasePromptLambda(passLbd2);
+      restoreResult.wltPtr->setPassphrasePromptLambda(passLbd2);
 
-      auto newWalletSingle = dynamic_pointer_cast<AssetWallet_Single>(newWltPtr);
+      auto newWalletSingle = dynamic_pointer_cast<AssetWallet_Single>(restoreResult.wltPtr);
       auto backupData2 = Armory::Seeds::Helpers::getWalletBackup(newWalletSingle);
       auto backupEasy16_2 = dynamic_cast<Backup_Easy16*>(backupData2.get());
 
@@ -9727,8 +9724,7 @@ TEST_F(BackupTests, BackupStrings_BIP32)
          backupEasy16_2->getRoot(Backup_Easy16::LineIndex::Two, false));
 
       EXPECT_EQ(backupEasy16->getWalletId(), backupEasy16_2->getWalletId());
-
-      filename = newWltPtr->getDbFilename();
+      filename = restoreResult.wltPtr->getDbFilename();
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass, newCtrl));
@@ -9768,7 +9764,7 @@ TEST_F(BackupTests, BackupStrings_BIP32_Virgin)
       switch (prompt.promptType)
       {
          case RestorePromptType::Passphrases:
-            return PromptReply{true,
+            return PromptReply{true, false,
                SecureBinaryData::fromString(newPass),
                SecureBinaryData::fromString(newCtrl)
             };
@@ -9794,27 +9790,27 @@ TEST_F(BackupTests, BackupStrings_BIP32_Virgin)
       backupEasy16->getRoot(Backup_Easy16::LineIndex::One, false),
       backupEasy16->getRoot(Backup_Easy16::LineIndex::Two, false),
    });
-   auto newWltPtr = Armory::Seeds::Helpers::restoreFromBackup(
+   auto restoreResult = Armory::Seeds::Helpers::restoreFromBackup(
       move(backupCopy), callback, WalletCreationParams{
          SecureBinaryData::fromString(newPass),
          SecureBinaryData::fromString(newCtrl),
          newHomeDir, 10, 1, 1});
-   ASSERT_NE(newWltPtr, nullptr);
+   ASSERT_NE(restoreResult.wltPtr, nullptr);
 
    //check wallet id
-   EXPECT_EQ(assetWlt->getID(), newWltPtr->getID());
+   EXPECT_EQ(assetWlt->getID(), restoreResult.wltPtr->getID());
 
    //compare account types between original and restored
-   auto loadedIDs = newWltPtr->getAccountIDs();
+   auto loadedIDs = restoreResult.wltPtr->getAccountIDs();
    EXPECT_EQ(loadedIDs.size(), 0ULL);
 
    auto passLbd2 = [&newPass](const set<EncryptionKeyId>&)->SecureBinaryData
    {
       return SecureBinaryData::fromString(newPass);
    };
-   newWltPtr->setPassphrasePromptLambda(passLbd2);
+   restoreResult.wltPtr->setPassphrasePromptLambda(passLbd2);
 
-   auto newWalletSingle = dynamic_pointer_cast<AssetWallet_Single>(newWltPtr);
+   auto newWalletSingle = dynamic_pointer_cast<AssetWallet_Single>(restoreResult.wltPtr);
    auto backupData2 = Armory::Seeds::Helpers::getWalletBackup(newWalletSingle);
    auto backupEasy16_2 = dynamic_cast<Armory::Seeds::Backup_Easy16*>(
       backupData2.get());
@@ -9843,7 +9839,7 @@ TEST_F(BackupTests, BackupStrings_BIP32_FromBase58)
       switch (prompt.promptType)
       {
          case RestorePromptType::Passphrases:
-            return PromptReply{true,
+            return PromptReply{true, false,
                SecureBinaryData::fromString(newPass),
                SecureBinaryData::fromString(newCtrl)
             };
@@ -9864,24 +9860,24 @@ TEST_F(BackupTests, BackupStrings_BIP32_FromBase58)
    std::filesystem::path filename;
    {
       auto backup = Backup_Base58::fromString(b58seed);
-      auto wallet = Helpers::restoreFromBackup(
+      auto restoreResult = Helpers::restoreFromBackup(
          move(backup), callback, WalletCreationParams{
             SecureBinaryData::fromString(newPass),
             SecureBinaryData::fromString(newCtrl),
             homedir_, 10, 1, 1});
-      ASSERT_NE(wallet, nullptr);
+      ASSERT_NE(restoreResult.wltPtr, nullptr);
 
       auto passLbd = [newPass](const set<EncryptionKeyId>&)->SecureBinaryData
       {
          return SecureBinaryData::fromString(newPass);
       };
-      wallet->setPassphrasePromptLambda(passLbd);
+      restoreResult.wltPtr->setPassphrasePromptLambda(passLbd);
 
-      auto walletSingle = dynamic_pointer_cast<AssetWallet_Single>(wallet);
+      auto walletSingle = dynamic_pointer_cast<AssetWallet_Single>(restoreResult.wltPtr);
       auto backupData = Helpers::getWalletBackup(walletSingle);
       auto backupBase58 = dynamic_cast<Backup_Base58*>(backupData.get());
       EXPECT_EQ(backupBase58->getBase58String(), b58seed);
-      filename = wallet->getDbFilename();
+      filename = restoreResult.wltPtr->getDbFilename();
    }
 
    //load wallet from file and check xpriv again
@@ -9948,7 +9944,7 @@ TEST_F(BackupTests, BackupStrings_BIP39)
       switch (prompt.promptType)
       {
          case RestorePromptType::Passphrases:
-            return PromptReply{true,
+            return PromptReply{true, false,
                SecureBinaryData::fromString(newPass),
                SecureBinaryData::fromString(newCtrl)
             };
@@ -9976,20 +9972,20 @@ TEST_F(BackupTests, BackupStrings_BIP39)
          backupE16->getRoot(Backup_Easy16::LineIndex::One, false),
          backupE16->getRoot(Backup_Easy16::LineIndex::Two, false),
       });
-      auto newWltPtr = Armory::Seeds::Helpers::restoreFromBackup(
+      auto restoreResult = Armory::Seeds::Helpers::restoreFromBackup(
          move(backupE16Copy), callback, WalletCreationParams{
             SecureBinaryData::fromString(newPass),
             SecureBinaryData::fromString(newCtrl),
             newHomeDir, 10, 1, 1});
-      ASSERT_NE(newWltPtr, nullptr);
+      ASSERT_NE(restoreResult.wltPtr, nullptr);
 
       auto passLbd2 = [&newPass](const set<EncryptionKeyId>&)->SecureBinaryData
       {
          return SecureBinaryData::fromString(newPass);
       };
-      newWltPtr->setPassphrasePromptLambda(passLbd2);
+      restoreResult.wltPtr->setPassphrasePromptLambda(passLbd2);
 
-      auto newWalletSingle = dynamic_pointer_cast<AssetWallet_Single>(newWltPtr);
+      auto newWalletSingle = dynamic_pointer_cast<AssetWallet_Single>(restoreResult.wltPtr);
       auto backupData2 = Armory::Seeds::Helpers::getWalletBackup(
          newWalletSingle, BackupType::Armory200d);
       auto backupE16_2 = dynamic_cast<Backup_Easy16*>(backupData2.get());
@@ -9999,8 +9995,7 @@ TEST_F(BackupTests, BackupStrings_BIP39)
       EXPECT_EQ(backupE16->getRoot(Backup_Easy16::LineIndex::Two, false),
          backupE16_2->getRoot(Backup_Easy16::LineIndex::Two, false));
       EXPECT_EQ(backupE16->getWalletId(), backupE16_2->getWalletId());
-
-      filename = newWltPtr->getDbFilename();
+      filename = restoreResult.wltPtr->getDbFilename();
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass, newCtrl));
@@ -10016,7 +10011,7 @@ TEST_F(BackupTests, BackupStrings_BIP39)
       switch (prompt.promptType)
       {
          case RestorePromptType::Passphrases:
-            return PromptReply{true,
+            return PromptReply{true, false,
                SecureBinaryData::fromString(newPass2),
                SecureBinaryData::fromString(newCtrl2)
             };
@@ -10041,32 +10036,32 @@ TEST_F(BackupTests, BackupStrings_BIP39)
 
       auto backupBIP39Copy = Backup_BIP39::fromMnemonicString(
          backupBIP39->getMnemonicString());
-      auto newWltPtr = Armory::Seeds::Helpers::restoreFromBackup(
+      auto restoreResult = Armory::Seeds::Helpers::restoreFromBackup(
          move(backupBIP39Copy), callbackBip39, WalletCreationParams{
             SecureBinaryData::fromString(newPass2),
             SecureBinaryData::fromString(newCtrl2),
             newHomeDir, 10, 1, 1});
-      ASSERT_NE(newWltPtr, nullptr);
+      ASSERT_NE(restoreResult.wltPtr, nullptr);
 
       auto passLbd2 = [&newPass2](const set<EncryptionKeyId>&)->SecureBinaryData
       {
          return SecureBinaryData::fromString(newPass2);
       };
-      newWltPtr->setPassphrasePromptLambda(passLbd2);
+      restoreResult.wltPtr->setPassphrasePromptLambda(passLbd2);
 
-      auto newWalletSingle = dynamic_pointer_cast<AssetWallet_Single>(newWltPtr);
+      auto newWalletSingle = dynamic_pointer_cast<AssetWallet_Single>(restoreResult.wltPtr);
       auto backupData2 = Armory::Seeds::Helpers::getWalletBackup(newWalletSingle);
       auto backupBIP39_2 = dynamic_cast<Backup_BIP39*>(backupData2.get());
 
       EXPECT_EQ(backupBIP39->getMnemonicString(), backupBIP39_2->getMnemonicString());
       EXPECT_EQ(backupBIP39->getWalletId(), backupBIP39_2->getWalletId());
-
-      filename = newWltPtr->getDbFilename();
+      filename = restoreResult.wltPtr->getDbFilename();
 
       //grab 10 addresses from restored wallet to get in sync with original
-      //otherwise the comparision will fail
-      for (int i=0; i<10; i++)
-         newWltPtr->getNewAddress();
+      //otherwise the comparison will fail
+      for (int i=0; i<10; i++) {
+         restoreResult.wltPtr->getNewAddress();
+      }
    }
 
    EXPECT_TRUE(compareWalletWithBackup(assetWlt, filename, newPass2, newCtrl2));

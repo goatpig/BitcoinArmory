@@ -236,7 +236,7 @@ public:
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-class WalletManager : Lockable
+class WalletManager : public Lockable
 {
 private:
    const std::filesystem::path path_;
@@ -256,18 +256,10 @@ public:
    void cleanUpBeforeUnlock(void) override {}
 
 public:
-   WalletManager(const std::filesystem::path& path, const PassphraseLambda& passLbd) :
-      path_(path)
-   {
-      loadWallets(passLbd);
-   }
+   WalletManager(const std::filesystem::path&, const PassphraseLambda&);
 
-   bool hasWallet(const std::string& id)
-   {
-      std::unique_lock<std::mutex> lock(mu_);
-      auto wltIter = wallets_.find(id);
-      return wltIter != wallets_.end();
-   }
+   bool hasWallet(const std::string&);
+   void loadWallet(const std::filesystem::path&, const PassphraseLambda&);
 
    std::map<std::string, std::set<Armory::Wallets::AddressAccountId>>
       getAccountIdMap(void) const;
@@ -289,6 +281,8 @@ public:
    std::shared_ptr<WalletContainer> createNewWallet(
       const SecureBinaryData&, const SecureBinaryData&, //pass, control pass
       const SecureBinaryData&, unsigned); //extra entropy, address lookup
+
+   std::filesystem::path unloadWallet(const std::string&);
    void deleteWallet(const std::string&);
 
    const std::filesystem::path& getWalletDir(void) const { return path_; }

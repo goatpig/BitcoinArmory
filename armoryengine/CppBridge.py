@@ -1353,7 +1353,5 @@ class ServerPush(ProtoWrapper):
       self.send(self.packet, needsReply=False)
       self.packet = None
 
-
-
 ####
 TheBridge = ArmoryBridge()

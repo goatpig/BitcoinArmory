@@ -1667,8 +1667,7 @@ TEST_F(BlockUtilsFull, Load5Blocks_CheckWalletFilters)
    vector<string> idVec;
    idVec.push_back(wallet1id);
    DBTestUtils::updateWalletsLedgerFilter(clients_, bdvID, idVec);
-   BinaryData emptyBD;
-   DBTestUtils::waitOnWalletRefresh(clients_, bdvID, emptyBD);
+   DBTestUtils::waitOnWalletRefresh(clients_, bdvID, {});
 
    auto&& delegateLedger2 = DBTestUtils::getHistoryPage(clients_, bdvID, delegateID, 0);
 
@@ -1923,8 +1922,8 @@ TEST_F(WebSocketTests_1Way, WebSocketStack)
    vector<string> hashVec;
    auto hash1 = BtcUtils::getHash256(rawZC);
    auto hash2 = BtcUtils::getHash256(rawLBZC);
-   hashVec.push_back(string(hash1.getCharPtr(), hash1.getSize()));
-   hashVec.push_back(string(hash2.getCharPtr(), hash2.getSize()));
+   hashVec.push_back(hash1.toHexStr());
+   hashVec.push_back(hash2.toHexStr());
 
    DBTestUtils::pushNewZc(theBDMt_, zcVec);
    pCallback->waitOnManySignals(BDMAction_ZC, hashVec);
@@ -2585,7 +2584,7 @@ TEST_F(WebSocketTests_2Way, WebSocketStack_ManyZC)
       auto&& ZCHash = BtcUtils::getHash256(rawTx);
       allZcHash.push_back(ZCHash);
       DBTestUtils::pushNewZc(theBDMt_, zcVec);
-      pCallback->waitOnSignal(BDMAction_ZC, string(ZCHash.toCharPtr(), ZCHash.getSize()));
+      pCallback->waitOnSignal(BDMAction_ZC, ZCHash.toHexStr());
    }
 
    //grab ledger, check all zc hash are in there

@@ -144,7 +144,7 @@ namespace DBTestUtils
    std::pair<std::vector<DBClientClasses::LedgerEntry>, std::set<BinaryData>>
       waitOnNewZcSignal(Clients* clients, const std::string& bdvId);
    void waitOnWalletRefresh(Clients* clients, const std::string& bdvId,
-      const BinaryData& wltId);
+      const std::string& wltId);
    void triggerNewBlockNotification(BlockDataManagerThread* bdmt);
    void mineNewBlock(BlockDataManagerThread* bdmt, const BinaryData& h160,
       unsigned count);
@@ -220,7 +220,7 @@ namespace DBTestUtils
       struct BdmNotif
       {
          BDMAction action_;
-         std::vector<BinaryData> idVec_;
+         std::vector<std::string> idVec_;
          std::set<BinaryData> addrSet_;
          unsigned reorgHeight_ = UINT32_MAX;
          BDV_Error_Struct error_;
@@ -271,7 +271,7 @@ namespace DBTestUtils
             notif->idVec_ = bdmNotif.ids_;
          } else if (bdmNotif.action_ == BDMAction_ZC) {
             for (auto& le : bdmNotif.ledgers_) {
-               notif->idVec_.push_back(le->getTxHash());
+               notif->idVec_.push_back(le->getTxHash().toHexStr());
 
                auto addrVec = le->getScrAddrList();
                for (auto& addrRef : addrVec) {
@@ -309,13 +309,12 @@ namespace DBTestUtils
 
       void waitOnSignal(BDMAction signal, std::string id = "")
       {
-         BinaryDataRef idRef; idRef.setRef(id);
          while (true) {
             auto action = std::move(actionStack_.pop_front());
             if (action->action_ == signal) {
                if (!id.empty()) {
                   for (const auto& notifId : action->idVec_) {
-                     if (notifId == idRef) {
+                     if (notifId == id) {
                         return;
                      }
                   }
@@ -328,13 +327,11 @@ namespace DBTestUtils
 
       void waitOnManySignals(BDMAction signal, std::vector<std::string> ids)
       {
-         unsigned count = 0;
-         std::set<BinaryDataRef> bdrVec;
+         std::set<std::string> idSet;
          for (auto& id : ids) {
-            BinaryDataRef bdr; bdr.setRef(id);
-            bdrVec.insert(bdr);
+            idSet.emplace(id);
          }
-
+         unsigned count = 0;
          while (true) {
             if (count >= ids.size()) {
                break;
@@ -343,7 +340,7 @@ namespace DBTestUtils
             auto action = actionStack_.pop_front();
             if (action->action_ == signal) {
                for (auto& id : action->idVec_) {
-                  if (bdrVec.find(id) != bdrVec.end()) {
+                  if (idSet.find(id) != idSet.end()) {
                      ++count;
                   }
                }
@@ -355,14 +352,18 @@ namespace DBTestUtils
          const std::set<BinaryData>& hashes,
          std::set<BinaryData> scrAddrSet)
       {
-         auto hashesToSee = hashes;
+         std::set<std::string> strHashes;
+         for (const auto& hash : hashes) {
+            strHashes.emplace(hash.toHexStr());
+         }
+         auto hashesToSee = strHashes;
          std::set<BinaryData> addrSet;
          while (true) {
             auto action = waitOnNotification(BDMAction_ZC);
 
             bool hasHashes = true;
             for (const auto& txHash : action->idVec_) {
-               if (hashes.find(txHash) == hashes.end()) {
+               if (strHashes.find(txHash) == strHashes.end()) {
                   hasHashes = false;
                   break;
                } else {
@@ -382,16 +383,20 @@ namespace DBTestUtils
 
       void waitOnZc_OutOfOrder(const std::set<BinaryData>& hashes)
       {
-         std::set<BinaryData> hashSet;
+         std::set<std::string> hashSet;
+         std::set<std::string> strHashes;
+         for (const auto& hash : hashes) {
+            strHashes.emplace(hash.toHexStr());
+         }
 
          for (auto& pastNotif : zcNotifVec_) {
             for (auto& txHash : pastNotif.idVec_) {
-               if (hashes.find(txHash) != hashes.end()) {
+               if (strHashes.find(txHash) != strHashes.end()) {
                   hashSet.insert(txHash);
                }
             }
 
-            if (hashSet == hashes) {
+            if (hashSet == strHashes) {
                return;
             }
          }
@@ -401,12 +406,12 @@ namespace DBTestUtils
             zcNotifVec_.push_back(*action);
 
             for (auto& txHash : action->idVec_) {
-               if (hashes.find(txHash) != hashes.end()) {
+               if (strHashes.find(txHash) != strHashes.end()) {
                   hashSet.insert(txHash);
                }
             }
 
-            if (hashSet == hashes) {
+            if (hashSet == strHashes) {
                break;
             }
          }

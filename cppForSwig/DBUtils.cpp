@@ -507,7 +507,6 @@ const uint8_t* FileUtils::FileCopy::ptr() const
    return data_.data();
 }
 
-
 /////////////////////////////////////////////////////////////////////////////
 // FileUtils
 /////////////////////////////////////////////////////////////////////////////
@@ -675,4 +674,12 @@ fs::path FileUtils::getUserHomePath()
 #else
    return fs::path{std::getenv("HOME")};
 #endif
+}
+
+fs::path FileUtils::appendTagToPath(const fs::path& orig, const std::string& tag)
+{
+   auto ext = orig.extension();
+   auto taggedName = fs::path(orig.stem().c_str() + tag + ext.c_str());
+   auto origCopy = orig;
+   return origCopy.replace_filename(taggedName);
 }

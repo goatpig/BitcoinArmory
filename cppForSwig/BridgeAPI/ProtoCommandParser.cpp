@@ -1100,17 +1100,36 @@ namespace
    {
       try {
          std::vector<SecureBinaryData> passphrases;
-         auto capnpPasses = notif.getPassphrases();
-         passphrases.reserve(capnpPasses.size());
-         for (const auto& capnpPass : capnpPasses) {
-            passphrases.emplace_back(SecureBinaryData{
-               (uint8_t*)capnpPass.begin(),
-               (uint8_t*)capnpPass.end()
-            });
+         bool merge = false;
+         switch (notif.which())
+         {
+            case NotificationReply::PASSPHRASES:
+            {
+               auto capnpPasses = notif.getPassphrases();
+               passphrases.reserve(capnpPasses.size());
+               for (const auto& capnpPass : capnpPasses) {
+                  passphrases.emplace_back(SecureBinaryData{
+                     (uint8_t*)capnpPass.begin(),
+                     (uint8_t*)capnpPass.end()
+                  });
+               }
+               break;
+            }
+
+            case NotificationReply::RESTORE:
+            {
+               if (notif.getRestore() == NotificationReply::RestoreMode::MERGE) {
+                  merge = true;
+               }
+               break;
+            }
+
+            default:
+               throw std::runtime_error("invalid NotificationReply which");
          }
 
          Seeds::PromptReply promptReply{
-            notif.getSuccess(),
+            notif.getSuccess(), merge,
             passphrases.size() > 0 ? std::move(passphrases[0]) : SecureBinaryData{},
             passphrases.size() > 1 ? std::move(passphrases[1]) : SecureBinaryData{},
          };

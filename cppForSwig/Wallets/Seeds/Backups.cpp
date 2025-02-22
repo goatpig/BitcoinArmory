@@ -1047,7 +1047,7 @@ unique_ptr<Backup_Base58> Helpers::getBase58BackupString(
 }
 
 ////////////////////////////// -- restore methods -- ///////////////////////////
-shared_ptr<AssetWallet> Helpers::restoreFromBackup(
+RestoreResult Helpers::restoreFromBackup(
    unique_ptr<WalletBackup> backup, const UserPrompt& callback,
    const WalletCreationParams& params)
 {
@@ -1083,6 +1083,7 @@ shared_ptr<AssetWallet> Helpers::restoreFromBackup(
    }
 
    //prompt user to verify id
+   bool merge = false;
    {
       RestorePrompt prompt{RestorePromptType::Id};
       prompt.walletId = seed->getWalletId();
@@ -1090,6 +1091,8 @@ shared_ptr<AssetWallet> Helpers::restoreFromBackup(
       auto reply = callback(prompt);
       if (!reply.success) {
          throw RestoreUserException("user rejected id");
+      } else if (reply.merge) {
+         merge = true;
       }
    }
 
@@ -1111,7 +1114,8 @@ shared_ptr<AssetWallet> Helpers::restoreFromBackup(
       params.publicUnlockDuration_ms, params.privateUnlockDuration_ms };
 
    //return wallet
-   return AssetWallet_Single::createFromSeed(std::move(seed), paramsCopy);
+   auto wlt = AssetWallet_Single::createFromSeed(std::move(seed), paramsCopy);
+   return {wlt, merge, SecureBinaryData{control}};
 }
 
 ////////

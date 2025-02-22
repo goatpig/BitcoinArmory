@@ -284,8 +284,16 @@ namespace Armory
       struct PromptReply
       {
          const bool success;
+         const bool merge;
          SecureBinaryData privPass{};
          SecureBinaryData controlPass{};
+      };
+
+      struct RestoreResult
+      {
+         std::shared_ptr<Wallets::AssetWallet> wltPtr;
+         const bool merge;
+         const SecureBinaryData controlPass;
       };
 
       ////
@@ -306,10 +314,13 @@ namespace Armory
          static std::unique_ptr<Backup_Base58> getBase58BackupString(
             std::unique_ptr<ClearTextSeed>);
 
-         //restore methods
-         static std::shared_ptr<Wallets::AssetWallet> restoreFromBackup(
+         //primary restore call
+         static RestoreResult restoreFromBackup(
             std::unique_ptr<WalletBackup>, const UserPrompt&,
-               const Wallets::WalletCreationParams&);
+            const Wallets::WalletCreationParams&
+         );
+
+         //seed restore methods
          static std::unique_ptr<ClearTextSeed> restoreFromEasy16(
             std::unique_ptr<WalletBackup>, const UserPrompt&, BackupType&);
          static std::unique_ptr<ClearTextSeed> restoreFromBase58(
