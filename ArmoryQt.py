@@ -1828,13 +1828,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
    #############################################################################
    def loadWallets(self, proto):
       self.wallets.setupFromProto(proto)
-
-      # Get the last directory
-      savedDir = TheSettings.get('LastDirectory')
-      if not savedDir or not os.path.exists(savedDir):
-         savedDir = ARMORY_HOME_DIR
-      self.lastDirectory = savedDir
-      TheSettings.set('LastDirectory', savedDir)
       self.setupBlockchainService_step1()
       TheSignalExecution.executeMethod(self.finalizeLoadWallets)
 
@@ -2211,7 +2204,12 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
                wltID = wltIDIn
 
             row = []
-            wlt = self.wallets.get(wltID)
+            try:
+               wlt = self.wallets.get(wltID)
+            except:
+               #skip if the dbId isn't known
+               continue
+
             if wlt:
                isWatch = (determineWalletType(wlt, self)[0] == WalletTypes.WatchOnly)
                wltName = wlt.getDisplayStr(pref="")
@@ -2297,7 +2295,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       self.populateLedgerComboBox()
       self.changeWltFilter()
 
-   #############################################################################
+   ####
    def populateLedgerComboBox(self):
       try:
          comboIdx = self.comboWltSelect.currentIndex()
@@ -2422,30 +2420,15 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
    def addWalletToApplication(self, newWallet, walletIsNew=False):
       LOGINFO('addWalletToApplication')
       self.wallets.add(newWallet)
+      self.walletListChanged()
       newWallet.register(walletIsNew)
 
    #############################################################################
    def removeWalletFromApplication(self, wltID):
       LOGINFO('removeWalletFromApplication')
-      idx = -1
-      try:
-         idx = self.walletIndices[wltID]
-      except KeyError:
-         LOGERROR('Invalid wallet ID passed to "removeWalletFromApplication"')
-         raise WalletExistsError
-
-      self.walletMap[wltID].unregisterWallet()
-      del self.walletMap[wltID]
-      del self.walletIndices[wltID]
-      self.walletIDSet.remove(wltID)
-      del self.walletIDList[idx]
-      del self.walletVisibleList[idx]
-
-      # Reconstruct walletIndices
-      for i,wltID in enumerate(self.walletIDList):
-         self.walletIndices[wltID] = i
-
+      self.wallets.unloadWallet(wltID)
       self.walletListChanged()
+      self.createCombinedLedger()
 
    #############################################################################
    def RecoverWallet(self):
@@ -4494,7 +4477,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          #The wallet ledgers have been updated from an event outside of new ZC
          #or new blocks (usually a wallet or address was imported, or the
          #wallet filter was modified)
-
          try:
             self.wallets.updateBalanceAndCount()
          except Exception as e:
@@ -4508,39 +4490,42 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             return
 
          for wltID in idList:
-            if len(wltID) > 0:
-               if wltID == "wallet_filter_changed":
-                  reset = True
-                  continue
+            if not wltID:
+               continue
 
-               try:
-                  wlt = self.wallets.get(wltID)
-                  wlt.isEnabled = True
-                  self.walletModel.reset()
-                  wlt.doAfterScan()
-                  self.changeWltFilter()
-               except:
-                  #not a known dbId, try something else
-                  pass
+            if wltID == "wallet_filter_changed":
+               reset = True
+               continue
 
-               if wltID in self.oneTimeScanAction:
-                  postScanAction = self.oneTimeScanAction[wltID]
-                  del self.oneTimeScanAction[wltID]
-                  if callable(postScanAction):
-                     postScanAction()
+            try:
+               wlt = self.wallets.get(wltID)
+               wlt.isEnabled = True
+               self.walletModel.reset()
+               wlt.doAfterScan()
+               self.changeWltFilter()
+            except:
+               #not a known dbId, try something else
+               LOGWARN(f"got refresh for unknown wallet: {wltID}")
+               pass
 
-               elif wltID in self.lockboxIDMap:
-                  lbID = self.lockboxIDMap[wltID]
-                  self.allLockboxes[lbID].isEnabled = True
+            if wltID in self.oneTimeScanAction:
+               postScanAction = self.oneTimeScanAction[wltID]
+               del self.oneTimeScanAction[wltID]
+               if callable(postScanAction):
+                  postScanAction()
 
-                  if self.lbDialogModel != None:
-                     self.lbDialogModel.reset()
+            elif wltID in self.lockboxIDMap:
+               lbID = self.lockboxIDMap[wltID]
+               self.allLockboxes[lbID].isEnabled = True
 
-                  if self.lbDialog != None:
-                     self.lbDialog.changeLBFilter()
+               if self.lbDialogModel != None:
+                  self.lbDialogModel.reset()
 
-               if wltID in self.walletSideScanProgress:
-                  del self.walletSideScanProgress[wltID]
+               if self.lbDialog != None:
+                  self.lbDialog.changeLBFilter()
+
+            if wltID in self.walletSideScanProgress:
+               del self.walletSideScanProgress[wltID]
 
          self.createCombinedLedger(reset)
 

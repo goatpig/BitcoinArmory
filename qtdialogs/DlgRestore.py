@@ -259,7 +259,8 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
                if self.main.wallets.hasWallet(newWltID):
                   dlgOwnWlt = DlgReplaceWallet(newWltID, self.parent, self.main)
                   if (dlgOwnWlt.exec_()):
-                     #should we merge with the old wallet or overwrite it?
+                     #unload existing wallet
+                     self.main.removeWalletFromApplication(newWltID)
                      if dlgOwnWlt.output == 2:
                         replyToBridge.restore = 'merge'
                      else:
@@ -292,7 +293,7 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
          return
 
       elif which == 'getPassphrases':
-         #returns new wallet's private keys password
+         #prompts user to set private keys password
          #TODO: add UI for control pass submission
          reply = self.getNewPacket()
 
@@ -338,7 +339,7 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
 
       else:
          #TODO: unknown error
-         LOGWARN("backup restore unhandled callback which")
+         LOGWARN("backup restore unhandled callback.which")
          self.reject()
 
    def parseProtoPacket(self, payload):

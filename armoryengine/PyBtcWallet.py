@@ -1375,9 +1375,7 @@ class PyBtcWallet(object):
       for addrProto in result.updatedAssets:
          addrObj = PyBtcAddress()
          addrObj.loadFromProto(addrProto)
-
-         addrHash = addrObj.getPrefixedAddr()
-         self.addrMap[addrHash] = addrObj
+         self.addAddress(addrObj)
 
       #update balances and txio count
       for addrCombinedData in result.balances:

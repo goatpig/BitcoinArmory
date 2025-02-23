@@ -32,50 +32,61 @@ namespace Armory
       struct WritePayload_Bridge;
 
       //////////////////////////////////////////////////////////////////////////
-      typedef std::function<void(BinaryData&)> notifLbd;
+      enum class BridgeNotifType : int
+      {
+         PUSH,
+         UPDATE
+      };
+
+      struct BridgeNotifStruct
+      {
+         const BridgeNotifType type;
+
+         //set when type is PUSH
+         BinaryData packet;
+
+         //set when type is UPDATE
+         std::function<void(void)> lbd;
+      };
+      typedef std::function<void(BridgeNotifStruct)> notifLbd;
+
+      ////
       using MessageId = uint64_t;
 
       ////
       class BridgeCallback : public RemoteCallback
       {
       private:
-         std::shared_ptr<WalletManager> wltManager_;
-
          //to push packets to the gui
          notifLbd pushNotifLbd_;
 
          //id members
-         Armory::Threading::BlockingQueue<std::string> idQueue_;
-         std::set<std::string> validIds_;
          std::mutex idMutex_;
+         std::unordered_map<std::string, std::function<void(void)>> idCallbacks_;
+
+      private:
+         void processRefreshCallbacks(std::set<std::string>&);
 
       public:
-         BridgeCallback(
-            std::shared_ptr<WalletManager> mgr, const notifLbd& lbd) :
-            RemoteCallback(), wltManager_(mgr), pushNotifLbd_(lbd)
+         BridgeCallback(const notifLbd& lbd) :
+            RemoteCallback(), pushNotifLbd_(lbd)
          {}
 
          //virtuals
          void run(BdmNotification) override;
-
          void progress(
             BDMPhase phase,
             const std::vector<std::string> &walletIdVec,
             float progress, unsigned secondsRem,
             unsigned progressNumeric
          ) override;
-
          void disconnected(void) override;
 
-         //local notifications
-         void notify_SetupDone(void);
-         void notify_RegistrationDone(const std::set<std::string>&);
-         void notify_SetupRegistrationDone(void);
-         void notify_NewBlock(unsigned);
-         void notify_Ready(unsigned);
-
-         //
-         void waitOnId(const std::string&);
+         void notifySetupDone(void);
+         void notifySetupRegistrationDone(void);
+         void notifyRefresh(const std::set<std::string>&);
+         void registerRefreshCallback(const std::string&,
+            const std::function<void(void)>&);
       };
 
       //////////////////////////////////////////////////////////////////////////
@@ -105,29 +116,33 @@ namespace Armory
       class CppBridge
       {
       private:
+         PRNG_Fortuna fortuna_;
+
+         //where wallets are loaded from
          const std::filesystem::path path_;
 
+         //armorydb config
          const std::string dbAddr_;
          const std::string dbPort_;
+         const bool dbOneWayAuth_;
+         const bool dbOffline_;
 
+         //to write to the bridge client
+         std::function<void(std::unique_ptr<WritePayload_Bridge>)> writeLambda_;
+
+         //these objects are the core of the bridge
          std::shared_ptr<WalletManager> wltManager_;
+         std::shared_ptr<BridgeCallback> callbackPtr_;
          std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr_;
 
-         std::shared_ptr<BridgeCallback> callbackPtr_;
-
+         //various states cache
          std::map<std::string, AsyncClient::LedgerDelegate> delegateMap_;
          std::map<std::string,
             std::shared_ptr<CoinSelection::CoinSelectionInstance>> csMap_;
          std::map<std::string,
             std::shared_ptr<CppBridgeSignerStruct>> signerMap_;
 
-         PRNG_Fortuna fortuna_;
-
-         std::function<void(std::unique_ptr<WritePayload_Bridge>)> writeLambda_;
-
-         const bool dbOneWayAuth_;
-         const bool dbOffline_;
-
+         //UI related ad hoc callbacks
          std::mutex callbackHandlerMu_;
          std::map<uint32_t, CallbackHandler> callbackHandlers_;
 

@@ -219,12 +219,12 @@ namespace DBTestUtils
    {
       struct BdmNotif
       {
-         BDMAction action_;
-         std::vector<std::string> idVec_;
-         std::set<BinaryData> addrSet_;
-         unsigned reorgHeight_ = UINT32_MAX;
-         BDV_Error_Struct error_;
-         std::string requestID_;
+         BDMAction action;
+         std::set<std::string> idSet;
+         std::set<BinaryData> addrSet;
+         unsigned reorgHeight = UINT32_MAX;
+         BDV_Error_Struct error;
+         std::string requestID;
       };
 
    private:
@@ -241,7 +241,7 @@ namespace DBTestUtils
          {
             auto iter = actionDeque_.begin();
             while (iter != actionDeque_.end()) {
-               if ((*iter)->action_ == actionType) {
+               if ((*iter)->action == actionType) {
                   auto result = std::move(*iter);
                   actionDeque_.erase(iter);
                   return result;
@@ -253,7 +253,7 @@ namespace DBTestUtils
 
          while (true) {
             auto action = std::move(actionStack_.pop_front());
-            if (action->action_ == actionType) {
+            if (action->action == actionType) {
                return action;
             }
 
@@ -264,24 +264,24 @@ namespace DBTestUtils
       void run(BdmNotification bdmNotif)
       {
          auto notif = std::make_unique<BdmNotif>();
-         notif->action_ = bdmNotif.action_;
-         notif->requestID_ = bdmNotif.requestID_;
+         notif->action = bdmNotif.action;
+         notif->requestID = bdmNotif.requestID;
 
-         if (bdmNotif.action_ == BDMAction_Refresh) {
-            notif->idVec_ = bdmNotif.ids_;
-         } else if (bdmNotif.action_ == BDMAction_ZC) {
-            for (auto& le : bdmNotif.ledgers_) {
-               notif->idVec_.push_back(le->getTxHash().toHexStr());
+         if (bdmNotif.action == BDMAction_Refresh) {
+            notif->idSet = bdmNotif.ids;
+         } else if (bdmNotif.action == BDMAction_ZC) {
+            for (auto& le : bdmNotif.ledgers) {
+               notif->idSet.emplace(le->getTxHash().toHexStr());
 
                auto addrVec = le->getScrAddrList();
                for (auto& addrRef : addrVec) {
-                  notif->addrSet_.insert(addrRef);
+                  notif->addrSet.insert(addrRef);
                }
             }
-         } else if (bdmNotif.action_ == BDMAction_NewBlock) {
-            notif->reorgHeight_ = bdmNotif.branchHeight_;
-         } else if (bdmNotif.action_ == BDMAction_BDV_Error) {
-            notif->error_ = bdmNotif.error_;
+         } else if (bdmNotif.action == BDMAction_NewBlock) {
+            notif->reorgHeight = bdmNotif.branchHeight;
+         } else if (bdmNotif.action == BDMAction_BDV_Error) {
+            notif->error = bdmNotif.error;
          }
 
          actionStack_.push_back(move(notif));
@@ -299,10 +299,10 @@ namespace DBTestUtils
          while (1)
          {
             auto&& action = actionStack_.pop_front();
-            if (action->action_ == BDMAction_NewBlock)
+            if (action->action == BDMAction_NewBlock)
             {
-               if (action->reorgHeight_ != UINT32_MAX)
-                  return action->reorgHeight_;
+               if (action->reorgHeight != UINT32_MAX)
+                  return action->reorgHeight;
             }
          }
       }
@@ -311,9 +311,9 @@ namespace DBTestUtils
       {
          while (true) {
             auto action = std::move(actionStack_.pop_front());
-            if (action->action_ == signal) {
+            if (action->action == signal) {
                if (!id.empty()) {
-                  for (const auto& notifId : action->idVec_) {
+                  for (const auto& notifId : action->idSet) {
                      if (notifId == id) {
                         return;
                      }
@@ -338,8 +338,8 @@ namespace DBTestUtils
             }
 
             auto action = actionStack_.pop_front();
-            if (action->action_ == signal) {
-               for (auto& id : action->idVec_) {
+            if (action->action == signal) {
+               for (auto& id : action->idSet) {
                   if (idSet.find(id) != idSet.end()) {
                      ++count;
                   }
@@ -362,7 +362,7 @@ namespace DBTestUtils
             auto action = waitOnNotification(BDMAction_ZC);
 
             bool hasHashes = true;
-            for (const auto& txHash : action->idVec_) {
+            for (const auto& txHash : action->idSet) {
                if (strHashes.find(txHash) == strHashes.end()) {
                   hasHashes = false;
                   break;
@@ -374,7 +374,7 @@ namespace DBTestUtils
                continue;
             }
 
-            addrSet.insert(action->addrSet_.begin(), action->addrSet_.end());
+            addrSet.insert(action->addrSet.begin(), action->addrSet.end());
             if (addrSet == scrAddrSet && hashesToSee.empty()) {
                break;
             }
@@ -390,7 +390,7 @@ namespace DBTestUtils
          }
 
          for (auto& pastNotif : zcNotifVec_) {
-            for (auto& txHash : pastNotif.idVec_) {
+            for (auto& txHash : pastNotif.idSet) {
                if (strHashes.find(txHash) != strHashes.end()) {
                   hashSet.insert(txHash);
                }
@@ -405,7 +405,7 @@ namespace DBTestUtils
             auto action = waitOnNotification(BDMAction_ZC);
             zcNotifVec_.push_back(*action);
 
-            for (auto& txHash : action->idVec_) {
+            for (auto& txHash : action->idSet) {
                if (strHashes.find(txHash) != strHashes.end()) {
                   hashSet.insert(txHash);
                }
@@ -422,8 +422,8 @@ namespace DBTestUtils
          while (true) {
             auto action = waitOnNotification(BDMAction_BDV_Error);
 
-            if (action->error_.errData_ == hash &&
-               action->error_.errCode_ == (int)errorCode) {
+            if (action->error.errData_ == hash &&
+               action->error.errCode_ == (int)errorCode) {
                break;
             }
          }
@@ -438,11 +438,11 @@ namespace DBTestUtils
             }
 
             auto action = waitOnNotification(BDMAction_BDV_Error);
-            auto iter = mapCopy.find(action->error_.errData_);
+            auto iter = mapCopy.find(action->error.errData_);
             if (iter == mapCopy.end()) {
                continue;
             }
-            if ((int)iter->second == action->error_.errCode_) {
+            if ((int)iter->second == action->error.errCode_) {
                mapCopy.erase(iter);
             }
          }

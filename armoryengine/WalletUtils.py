@@ -89,6 +89,39 @@ class WalletMap(object):
             'visible' : True
          })
 
+   def unloadWallet(self, wltId: str, accId: str=None):
+      dbIds = []
+
+      #gather all affected dbIds, cleanup the map as we go
+      if wltId not in self._wltIdToDbId:
+         return
+
+      if accId:
+         if not accId in self._wltIdToDbId[wltId]:
+            return
+
+         dbIds.append(self._wltIdToDbId[wltId][accId].dbId)
+         del self._wltIdToDbId[wltId][accId]
+         if not self._wltIdToDbId[wltId]:
+            del self._wltIdToDbId[wltId]
+      else:
+         for accountId in self._wltIdToDbId[wltId]:
+            dbIds.append(self._wltIdToDbId[wltId][accountId].dbId)
+         del self._wltIdToDbId[wltId]
+
+      if not dbIds:
+         return
+
+      #drop all affected wallets
+      #NOTE: we do not need to unregister them, just ignore the dbIds
+      for dbId in dbIds:
+         del self._walletMap[dbId]
+         for i in range(0, len(self._dbIdList)):
+            if self._dbIdList[i]['id'] == dbId:
+               del self._dbIdList[i]
+               break
+
+
    def setupFromProto(self, proto):
       LOGINFO('Loading wallets...')
       if not proto.success:

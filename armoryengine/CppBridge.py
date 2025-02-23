@@ -611,6 +611,8 @@ class BridgeWalletWrapper(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
+      if reply.success == False:
+         raise Exception(f"getBalanceAndCount failed with error: {reply.error}")
       return reply.wallet.getBalanceAndCount
 
    ####

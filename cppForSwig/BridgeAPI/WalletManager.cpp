@@ -192,17 +192,26 @@ std::shared_ptr<WalletContainer> WalletManager::createNewWallet(
 std::filesystem::path WalletManager::unloadWallet(const std::string& wltId)
 {
    ReentrantLock lock(this);
-   auto wltCont = getWalletContainer(wltId);
-   wallets_.erase(wltId);
-
-   try {
-      //unregister from db
-      wltCont->unregisterFromBDV();
-   } catch (const std::exception&) {
-      //we do not care if the unregister operation fails
+   auto iter = wallets_.find(wltId);
+   if (iter == wallets_.end()) {
+      return {};
    }
-   auto path = wltCont->getWalletPtr()->getDbFilename();
-   wltCont.reset();
+
+   //unregister all accounts
+   std::filesystem::path path;
+   for (auto& acc : iter->second) {
+      try {
+         if (path.empty()) {
+            path = acc.second->getWalletPtr()->getDbFilename();
+         }
+         acc.second->unregisterFromBDV();
+      } catch (const std::exception&) {
+         //we do not care if the unregister operation fails
+      }
+   }
+
+   //remove containers from map, this should unload the underlying AssetWallet
+   wallets_.erase(wltId);
    return path;
 }
 
