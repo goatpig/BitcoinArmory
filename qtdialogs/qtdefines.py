@@ -442,7 +442,6 @@ def makeVertFrame(widgetList, style=QtWidgets.QFrame.NoFrame, condenseMargins=Fa
 def makeHorizFrame(widgetList, style=QtWidgets.QFrame.NoFrame, condenseMargins=False):
    return makeLayoutFrame(HORIZONTAL, widgetList, style, condenseMargins)
 
-
 def QImageLabel(imgfn, size=None, stretch='NoStretch'):
 
    lbl = QtWidgets.QLabel()
@@ -454,9 +453,6 @@ def QImageLabel(imgfn, size=None, stretch='NoStretch'):
 
    lbl.setPixmap(px)
    return lbl
-
-
-
 
 def restoreTableView(qtbl, hexBytes):
    try:
@@ -477,7 +473,6 @@ def restoreTableView(qtbl, hexBytes):
       pass
       # Don't want to crash the program just because couldn't load tbl data
 
-
 def saveTableView(qtbl):
    if qtbl.model() is None:
       return
@@ -494,7 +489,6 @@ def saveTableView(qtbl):
    first = int_to_hex(nCol)
    rest  = [int_to_hex(s, widthBytes=2) for s in sz]
    return 'ff' + first + ''.join(rest)
-
 
 ################################################################################
 class QRadioButtonBackupCtr(QtWidgets.QRadioButton):

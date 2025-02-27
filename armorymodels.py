@@ -1391,38 +1391,24 @@ class TxOutDispModel(QtCore.QAbstractTableModel):
             if section==COLS.ScrType: return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
          return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
-
-
-
-
 ################################################################################
 class SentToAddrBookModel(QtCore.QAbstractTableModel):
-   def __init__(self, wltID, main):
+   def __init__(self, wlt, main):
       super(SentToAddrBookModel, self).__init__()
       self.main  = main
-      self.wlt   = self.main.walletMap[wltID]
-
+      self.wlt   = wlt
       self.addrBook = []
-
-      # SWIG BUG!
-      # http://sourceforge.net/tracker/?func=detail&atid=101645&aid=3403085&group_id=1645
-      # Must use awkwardness to get around iterating a vector<RegisteredTx> in
-      # the python code... :(
       addressBook = self.wlt.createAddressBook()
       for abe in addressBook.entries:
          scrAddr = abe.scrAddr
          try:
-            addr160 = addrStr_to_hash160(scrAddr_to_addrStr(scrAddr))[1]
-
             # Only grab addresses that are not in any of your Armory wallets
-            if not self.main.getWalletForAddrHash(addr160):
+            if not self.main.wallets.getWltForScrAddr(scrAddr):
                txHashList = abe.txHashes
                self.addrBook.append( [scrAddr, txHashList] )
          except Exception as e:
             # This is not necessarily an error. It could be a lock box LOGERROR(str(e))
             pass
-
-
 
    def rowCount(self, index=QtCore.QModelIndex()):
       return len(self.addrBook)
@@ -1440,7 +1426,8 @@ class SentToAddrBookModel(QtCore.QAbstractTableModel):
       else:
          addrB58 = ''
          addr160 = ''
-      wltID    = self.main.getWalletForAddrHash(scrAddr)
+      wlt      = self.main.wallets.getWltForScrAddr(scrAddr)
+      wltID    = wlt.walletId
       txList   = self.addrBook[row][1]
       numSent  = len(txList)
       comment  = self.wlt.getCommentForTxList(scrAddr, txList)
@@ -1463,7 +1450,6 @@ class SentToAddrBookModel(QtCore.QAbstractTableModel):
       elif role==QtCore.Qt.FontRole:
          isFreqAddr = (numSent>1)
          return GETFONT('Var', bold=isFreqAddr)
-
       return None
 
    def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
@@ -1486,7 +1472,6 @@ class SentToAddrBookModel(QtCore.QAbstractTableModel):
       self.beginResetModel()
       self.endResetModel()
 
-
 ################################################################################
 class SentAddrSortProxy(QtCore.QSortFilterProxyModel):
    def lessThan(self, idxLeft, idxRight):
@@ -1495,25 +1480,17 @@ class SentAddrSortProxy(QtCore.QSortFilterProxyModel):
       strLeft  = self.sourceModel().data(idxLeft)
       strRight = self.sourceModel().data(idxRight)
 
-
-      #ADDRBOOKCOLS = enum('Address', 'WltID', 'NumSent', 'Comment')
-
       if thisCol==COL.Address:
          return (strLeft.lower() < strRight.lower())
       else:
          return super(SentAddrSortProxy, self).lessThan(idxLeft, idxRight)
 
-
 ################################################################################
 class PromissoryCollectModel(QtCore.QAbstractTableModel):
-
-   # The columns enumeration
-
    def __init__(self, main, promNoteList):
       super(PromissoryCollectModel, self).__init__()
       self.main = main
       self.promNoteList = promNoteList
-
 
    def rowCount(self, index=QtCore.QModelIndex()):
       return len(self.promNoteList)
@@ -1521,14 +1498,10 @@ class PromissoryCollectModel(QtCore.QAbstractTableModel):
    def columnCount(self, index=QtCore.QModelIndex()):
       return 4
 
-
    def data(self, index, role=QtCore.Qt.DisplayRole):
       COL = PROMCOLS
       row,col = index.row(), index.column()
       prom = self.promNoteList[row]
-
-      #PROMCOLS = enum('PromID', 'Label', 'PayAmt', 'FeeAmt')
-
       if role==QtCore.Qt.DisplayRole:
          if col==COL.PromID:
             return prom.promID
@@ -1555,8 +1528,6 @@ class PromissoryCollectModel(QtCore.QAbstractTableModel):
             return GETFONT('Fixed')
 
       return None
-
-
 
    def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
       colLabels = [self.tr('Note ID'), self.tr('Label'), self.tr('Funding'), self.tr('Fee')]
