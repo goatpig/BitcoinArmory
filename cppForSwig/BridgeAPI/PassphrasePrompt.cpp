@@ -70,6 +70,7 @@ Seeds::PromptReply BridgePassphrasePrompt::processFeedRequest(
       if (!reply.success) {
          promPtr->set_exception(std::make_exception_ptr(
             std::runtime_error("unsuccessful reply")));
+         return true;
       }
       promPtr->set_value(std::move(reply));
       return true;
@@ -81,7 +82,7 @@ Seeds::PromptReply BridgePassphrasePrompt::processFeedRequest(
 
    //wait on future
    try {
-      return std::move(fut.get());
+      return fut.get();
    } catch (const std::exception&) {
       LOGINFO << "cancelled wallet unlock";
       return {false};

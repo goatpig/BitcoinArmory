@@ -306,14 +306,17 @@ class DlgUnlockWallet(ArmoryDialog):
 
    #############################################################################
    def setIds(self, ids):
-      if len(ids) == 0:
+      if not ids:
          self.reject()
-      elif len(self.encryptionKeyIds) == 0:
+
+      if not self.encryptionKeyIds:
          self.encryptionKeyIds = ids
+
+      if self.encryptionKeyIds == ids:
+         #success
          self.exec_()
-      elif self.encryptionKeyIds != ids:
-         raise Exception("encryption key ids mismtach")
       else:
+         #failure
          self.recycle()
          self.show()
 

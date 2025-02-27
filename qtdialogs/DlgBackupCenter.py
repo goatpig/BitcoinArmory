@@ -12,7 +12,8 @@
 
 from qtpy import QtCore, QtGui, QtWidgets
 
-from armoryengine.ArmoryUtils import toUnicode, USE_TESTNET, USE_REGTEST
+from armoryengine.ArmoryUtils import toUnicode, USE_TESTNET, \
+   USE_REGTEST, LOGEXCEPT
 from armoryengine.AddressUtils import binary_to_base58, encodePrivKeyBase58, \
    hash160_to_addrStr
 from armorycolors import htmlColor, Colors
@@ -36,7 +37,7 @@ class DlgBackupCenter(ArmoryDialog):
       super(DlgBackupCenter, self).__init__(parent, main)
 
       self.wlt = wlt
-      wltID = wlt.getWalletId()
+      wltID = wlt.walletId
       wltName = wlt.labelName
 
       self.walletBackupFrame = WalletBackupFrame(parent, main)
@@ -409,7 +410,7 @@ class DlgPrintBackup(ArmoryDialog):
             self.backupData = reply.wallet.createBackupString
          self.executeMethod(self.setup)
 
-      unlockHandler = UnlockWalletHandler(self.wlt.uniqueIDB58,
+      unlockHandler = UnlockWalletHandler(self.wlt.walletId,
          "Create Backup", self)
       self.wlt.createBackupString(unlockHandler, resumeSetup)
 
@@ -422,6 +423,7 @@ class DlgPrintBackup(ArmoryDialog):
          QtWidgets.QMessageBox.critical(self, self.tr("Error Creating Backup"), self.tr(
             'There was an error with the backup creator.  The operation is being '
             'canceled to avoid making bad backups!'), QtWidgets.QMessageBox.Ok)
+         self.reject()
          return
 
       # A self-evident check of whether we need to print the chaincode.
@@ -734,7 +736,7 @@ class DlgPrintBackup(ArmoryDialog):
                                                    'Wallet Name:', 'Backup Type:'])
          self.scene.moveCursor(15, 0)
          suf = 'c' if self.noNeedChaincode else 'a'
-         colRect, rowHgt = self.scene.drawColumn(['1.35' + suf, self.wlt.getWalletId(), \
+         colRect, rowHgt = self.scene.drawColumn(['1.35' + suf, self.wlt.walletId, \
                                                    self.wlt.labelName, bType])
          self.scene.moveCursor(15, colRect.y() + colRect.height(), absolute=True)
       else:
@@ -746,7 +748,7 @@ class DlgPrintBackup(ArmoryDialog):
          fragID = '<b>%s-<font color="%s">#%d</font></b>' % (baseID, htmlColor('TextBlue'), fragNum)
          self.scene.moveCursor(15, 0)
          suf = 'c' if self.noNeedChaincode else 'a'
-         colRect, rowHgt = self.scene.drawColumn(['1.35' + suf, self.wlt.getWalletId(), \
+         colRect, rowHgt = self.scene.drawColumn(['1.35' + suf, self.wlt.walletId, \
                                                    self.wlt.labelName, bType, fragID])
          self.scene.moveCursor(15, colRect.y() + colRect.height(), absolute=True)
 
@@ -985,7 +987,7 @@ class DlgFragBackup(ArmoryDialog):
       self.wlt = wlt
 
       lblDescrTitle = QRichLabel(self.tr(
-         '<b><u>Create M-of-N Fragmented Backup</u> of "%s" (%s)</b>' % (wlt.labelName, wlt.getWalletId())), doWrap=False)
+         '<b><u>Create M-of-N Fragmented Backup</u> of "%s" (%s)</b>' % (wlt.labelName, wlt.walletId)), doWrap=False)
       lblDescrTitle.setContentsMargins(5, 5, 5, 5)
 
       self.lblAboveFrags = QRichLabel('')
@@ -1167,7 +1169,6 @@ class DlgFragBackup(ArmoryDialog):
 
       lblFragID = QRichLabel(self.tr('<b>Fragment ID:<br>%s-%s</b>' % \
                                     (str(self.fragPrefixStr), str(idx + 1))))
-      # lblWltID = QRichLabel('(%s)' % self.wlt.uniqueIDB58)
       lblFragPix = QImageLabel(self.fragPixmapFn, size=(72, 72))
       if doMask:
          ys = self.secureMtrxCrypt[idx][1].toBinStr()[:42]
@@ -1262,7 +1263,7 @@ class DlgFragBackup(ArmoryDialog):
             return
 
 
-      wid = self.wlt.getWalletId()
+      wid = self.wlt.walletId
       pref = self.fragPrefixStr
       fnum = zindex + 1
       M = self.M
