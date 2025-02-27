@@ -65,9 +65,6 @@ def CheckWalletRegistration(func):
          return func(*args, **kwargs)
    return inner
 
-def buildWltFileName(uniqueIDB58):
-   return 'armory_%s_.wallet' % uniqueIDB58
-
 def computeSettingsId(wltId, accId):
    #armory's py implementation of hmac mangles the 2nd half but
    #we don't care for the purpose of concatenating ids
@@ -387,24 +384,6 @@ class PyBtcWallet(object):
       ledg = []
       ledg.extend(ledgBlkChain)
       return ledg
-
-   #############################################################################
-   @CheckWalletRegistration
-   def getUTXOListForSpendVal(self, valToSpend = 2**64 - 1):
-      """ Returns UnspentTxOut/C++ objects 
-      returns a set of unspent TxOuts to cover for the value to spend 
-      """
-
-      if not self.doBlockchainSync==BLOCKCHAIN_DONOTUSE:
-         from armoryengine.CoinSelection import PyUnspentTxOut
-         utxos = self.bridgeWalletObj.getUtxosForValue(self.uniqueIDB58, valToSpend)
-         utxoList = []
-         for i in range(len(utxos)):
-            utxoList.append(PyUnspentTxOut().createFromBridgeUtxo(utxos[i]))
-         return utxoList
-      else:
-         LOGERROR('***Blockchain is not available for accessing wallet-tx data')
-         return []
 
    #############################################################################
    @CheckWalletRegistration
@@ -1267,7 +1246,7 @@ class PyBtcWallet(object):
    #############################################################################
    def pprint(self, indent='', allAddrInfo=True):
       raise NotImplementedError("deprecated")
-      print(indent + 'PyBtcWallet  :', self.uniqueIDB58)
+      print(indent + 'PyBtcWallet  :', self.walletId)
       print(indent + '   useEncrypt:', self.useEncryption)
       print(indent + '   watchOnly :', self.watchingOnly)
       print(indent + '   isLocked  :', self.isLocked)
@@ -1289,7 +1268,8 @@ class PyBtcWallet(object):
    #############################################################################
    def isEqualTo(self, wlt2, debug=False):
       isEqualTo = True
-      isEqualTo = isEqualTo and (self.uniqueIDB58 == wlt2.uniqueIDB58)
+      isEqualTo = isEqualTo and (self.walletId == wlt2.walletId and \
+         self.accountId == wlt2.accountId)
       isEqualTo = isEqualTo and (self.labelName  == wlt2.labelName )
       isEqualTo = isEqualTo and (self.labelDescr == wlt2.labelDescr)
       try:
@@ -1399,7 +1379,7 @@ class PyBtcWallet(object):
 
       bal = self.getBalance('full')
       bal = bal  / float(100000000)
-      file.write("%s,%f,%s,#%d\n" % (self.uniqueIDB58, bal, chainCode, currentTop))
+      file.write("%s,%f,%s,#%d\n" % (self.walletId, bal, chainCode, currentTop))
 
 
       for i,addr160,addrObj in sortedAddrList:

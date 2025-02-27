@@ -31,8 +31,8 @@ from ui.MultiSigModels import LockboxDisplayModel, LockboxDisplayProxy, \
 
 ################################################################################
 def createAddrBookButton(parent, targWidget, defaultWltID=None, actionStr="Select",
-                         selectExistingOnly=False, selectMineOnly=False, getPubKey=False,
-                         showLockboxes=True):
+   selectExistingOnly=False, selectMineOnly=False, getPubKey=False,
+   showLockboxes=True):
    action = parent.tr("Select")
    btn = QtWidgets.QPushButton('')
    ico = QtGui.QIcon(QtGui.QPixmap('./img/addr_book_icon.png'))
@@ -43,8 +43,8 @@ def createAddrBookButton(parent, targWidget, defaultWltID=None, actionStr="Selec
             'there is no address book to display.'), QtWidgets.QMessageBox.Ok)
          return
       dlg = DlgAddressBook(parent, parent.main, targWidget, defaultWltID,
-                    action, selectExistingOnly, selectMineOnly, getPubKey,
-                           showLockboxes)
+         action, selectExistingOnly, selectMineOnly, getPubKey,
+         showLockboxes)
       dlg.exec_()
 
    btn.setMaximumWidth(24)
@@ -61,8 +61,8 @@ class DlgAddressBook(ArmoryDialog):
    and then close itself.
    """
    def __init__(self, parent, main, putResultInWidget=None, \
-                                    defaultWltID=None, \
-                                    actionStr='Select', \
+      defaultWltID=None, \
+      actionStr='Select', \
                                     selectExistingOnly=False, \
                                     selectMineOnly=False, \
                                     getPubKey=False,
@@ -76,9 +76,9 @@ class DlgAddressBook(ArmoryDialog):
       self.isBrowsingOnly = (self.target == None)
 
       if defaultWltID == None:
-         defaultWltID = self.main.walletIDList[0]
-
-      wltObj = self.main.walletMap[defaultWltID]
+         wltObj = self.main.wallets.getByIndex(0)
+      else:
+         wltObj = self.main.wallets.get(defaultWltID)
 
       lblDescr = QRichLabel(self.tr('Choose an address from your transaction history, '
                             'or your own wallet.  If you choose to send to one '

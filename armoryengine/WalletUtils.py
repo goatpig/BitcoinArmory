@@ -208,7 +208,7 @@ class WalletMap(object):
 
    def getWalletType(self, wlt):
       if wlt.watchingOnly:
-         if self.getWltSetting(wlt.walletId, parent.tr('IsMine')):
+         if wlt.getSetting('IsMine'):
             return WalletTypes.Offline
          else:
             return WalletTypes.WatchOnly
@@ -216,6 +216,21 @@ class WalletMap(object):
          return WalletTypes.Crypt
       else:
          return WalletTypes.Plain
+
+   def getWalletIdList(self, watchingOnly: bool=False):
+      result = []
+      for entry in self._dbIdList:
+         wlt = self._walletMap[entry['id']]
+         if watchingOnly and not wlt.watchingOnly:
+            continue
+         result.append(entry['id'])
+      return result
+
+   def getWltForScrAddr(self, scrAddr):
+      for iterID,iterWlt in self._walletMap.items():
+         if iterWlt.hasAddrHash(scrAddr):
+            return iterWlt
+      return None
 
    def hasWallet(self, wltId: str):
       return wltId in self._wltIdToDbId

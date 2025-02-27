@@ -130,7 +130,7 @@ class DlgNewAddressDisp(ArmoryDialog):
       lblRecvWlt.setMinimumWidth(tightSizeStr(lblRecvWlt, lblRecvWlt.text())[0])
 
       lblRecvWltID = QtWidgets.QLabel(\
-            '<b>"%s"</b>  (%s)' % (wlt.labelName, wlt.uniqueIDB58))
+            '<b>"%s"</b>  (%s)' % (wlt.labelName, wlt.getDisplayStr()))
       lblRecvWltID.setWordWrap(True)
       lblRecvWltID.setTextFormat(QtCore.Qt.RichText)
       lblRecvWltID.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
@@ -238,7 +238,7 @@ def ShowRecvCoinsWarningIfNecessary(wlt, parent, main):
    wlttype = determineWalletType(wlt, main)[0]
    notMyWallet = (wlttype == WalletTypes.WatchOnly)
    offlineWallet = (wlttype == WalletTypes.Offline)
-   dnaaPropName = 'Wallet_%s_%s' % (wlt.uniqueIDB58, 'DNAA_RecvOther')
+   dnaaPropName = 'Wallet_%s_%s' % (wlt.getDisplayStr(), 'DNAA_RecvOther')
    dnaaThisWallet = TheSettings.getSettingOrSetDefault(dnaaPropName, False)
    if notMyWallet and not dnaaThisWallet:
       result = MsgBoxWithDNAA(parent, main, MSGBOX.Warning, parent.tr('This is not your wallet!'), parent.tr(

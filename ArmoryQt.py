@@ -780,14 +780,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       TheBridge.service.loadWallets(self.loadWallets, pushObj)
 
    #############################################################################
-   def getWatchingOnlyWallets(self):
-      result = []
-      for wltID in self.walletIDList:
-         if self.walletMap[wltID].watchingOnly:
-            result.append(wltID)
-      return result
-
-   #############################################################################
    def changeWltFilter(self):
       if self.netMode == NETWORKMODE.Offline:
          return
@@ -2610,8 +2602,10 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          self.broadcastTransaction(finishedTx, dryRun=False)
 
    #############################################################################
-   def notifyNewZeroConf(self, txLedger):
+   def notifyNewZeroConf(self, ledgTuple):
       '''
+      fuck python
+
       Function that looks at an incoming zero-confirmation transaction queue and
       determines if any incoming transactions were created by Armory. If so, the
       transaction will be passed along to a user notification queue.
@@ -2619,11 +2613,10 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       notifyIn = TheSettings.getSettingOrSetDefault('NotifyBtcIn', not OS_MACOSX)
       notifyOut = TheSettings.getSettingOrSetDefault('NotifyBtcOut', not OS_MACOSX)
 
-      print (f' -- txledgers: {txLedger} --')
-
-      for le in txLedger.ledgers:
+      txLedgers = ledgTuple[0]
+      for le in txLedgers.ledgers:
          if (le.balance <= 0 and notifyOut) or (le.balance > 0 and notifyIn):
-            self.notifyQueue.append([le.id, le, False])
+            self.notifyQueue.append([le.walletId, le, False])
       self.doTheSystemTrayThing()
 
    #############################################################################
@@ -2937,14 +2930,15 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
    #############################################################################
    def getSelectedWallet(self):
       wltID = None
-      if len(self.walletMap) > 0:
-         wltID = list(self.walletMap)[0]
       wltSelect = self.walletsView.selectedIndexes()
       if len(wltSelect) > 0:
          row = wltSelect[0].row()
-         wltID = str(self.walletsView.model().index(row, WLTVIEWCOLS.ID).data())
-      # Starting the send dialog  with or without a wallet
-      return None if wltID == None else self.walletMap[wltID]
+         return self.wallets.getByIndex(row)
+      else:
+         try:
+            return self.wallets.getByIndex(0)
+         except:
+            return None
 
    #############################################################################
    def clickSendBitcoins(self):
@@ -2967,7 +2961,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.Ok)
          return
 
-      if len(self.walletMap)==0:
+      if self.wallets.empty():
          reply = QtWidgets.QMessageBox.information(self, self.tr('No Wallets!'), self.tr(
             'You cannot send any bitcoins until you create a wallet and '
             'receive some coins.  Would you like to create a wallet?'), \
@@ -4273,7 +4267,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
    #############################################################################
    def createAddressEntryWidgets(self, parent, initString='', maxDetectLen=128,
-                                           boldDetectParts=0, **cabbKWArgs):
+         boldDetectParts=0, **cabbKWArgs):
       """
       If you are putting the LBL_DETECT somewhere that is space-constrained,
       set maxDetectLen to a smaller value.  It will limit the number of chars
@@ -4296,8 +4290,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       addrEntryObjs['QLE_ADDR'] = QtWidgets.QLineEdit()
       addrEntryObjs['QLE_ADDR'].setText(initString)
       addrEntryObjs['BTN_BOOK']  = createAddrBookButton(parent,
-                                                        addrEntryObjs['QLE_ADDR'],
-                                                        **cabbKWArgs)
+         addrEntryObjs['QLE_ADDR'], **cabbKWArgs)
       addrEntryObjs['LBL_DETECT'] = QRichLabel('')
       addrEntryObjs['CALLBACK_GETSCRIPT'] = None
 
@@ -4350,19 +4343,16 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       addrEntryObjs['CALLBACK_GETSCRIPT'] = getScript
       return addrEntryObjs
 
-
-
    #############################################################################
    def getScriptForUserString(self, userStr):
-      return getScriptForUserStringImpl(userStr, self.walletMap, self.allLockboxes)
-
+      return getScriptForUserStringImpl(userStr, self.wallets, self.allLockboxes)
 
    #############################################################################
    def getDisplayStringForScript(self, binScript, maxChars=256,
       doBold=0, prefIDOverAddr=False, lblTrunc=12, lastTrunc=12):
       if binScript not in self.scriptDispStrings:
          dispString = getDisplayStringForScriptImpl(
-            binScript, self.walletMap,
+            binScript, self.wallets,
             self.allLockboxes, maxChars, doBold,
             prefIDOverAddr, lblTrunc, lastTrunc)
          self.scriptDispStrings[binScript] = dispString

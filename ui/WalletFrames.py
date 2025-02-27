@@ -131,7 +131,7 @@ class SelectWalletFrame(ArmoryFrame):
       self.selectWltCallback = selectWltCallback
       self.doVerticalLayout = layoutDir==VERTICAL
 
-      if self.main and len(self.main.walletMap) == 0:
+      if self.main and self.main.wallets.empty():
          QtWidgets.QMessageBox.critical(self, self.tr('No Wallets!'), \
             self.tr('There are no wallets to select from. Please create or import '
             'a wallet first.'), QtWidgets.QMessageBox.Ok)
@@ -147,12 +147,12 @@ class SelectWalletFrame(ArmoryFrame):
       if len(self.wltIDList) > 0:
          self.selectedID = self.wltIDList[0]
          for wltID in self.wltIDList:
-            wlt = self.main.walletMap[wltID]
+            wlt = self.main.wallets.get(wltID)
             wlttype = determineWalletType(wlt, self.main)[0]
             if onlyMyWallets and wlttype == WLTTYPES.WatchOnly:
                continue
 
-            self.displayIDs.append(wltID)
+            self.displayIDs.append(wlt.dbId)
             if self.doVerticalLayout:
                self.walletComboBox.addItem(wlt.getDisplayStr())
             else:
@@ -247,7 +247,6 @@ class SelectWalletFrame(ArmoryFrame):
       # Make sure this is called once so that the default selection is displayed
       self.updateOnWalletChange()
 
-
    def getWalletIdList(self, onlyOfflineWallets):
       result = []
       if onlyOfflineWallets:
@@ -255,8 +254,6 @@ class SelectWalletFrame(ArmoryFrame):
       else:
          result = list(self.main.walletIDList)
       return result
-
-
    def getSelectedWltID(self):
       idx = -1
       if self.doVerticalLayout:
@@ -267,7 +264,7 @@ class SelectWalletFrame(ArmoryFrame):
       return '' if idx<0 else self.displayIDs[idx]
 
    def doCoinCtrl(self):
-      wlt = self.main.walletMap[self.getSelectedWltID()]
+      wlt = self.main.wallets.get(self.getSelectedWltID())
       if self.dlgcc == None:
          self.dlgcc = CoinControlDlg(self, self.main, wlt)
 
@@ -340,7 +337,7 @@ class SelectWalletFrame(ArmoryFrame):
       wltID = self.getSelectedWltID()
 
       if len(wltID) > 0:
-         wlt = self.main.walletMap[wltID]
+         wlt = self.main.wallets.get(wltID)
 
          self.dispID.setText(wltID)
          self.dispName.setText(wlt.labelName)
@@ -374,12 +371,12 @@ class SelectWalletFrame(ArmoryFrame):
             self.updateOnCoinControl()
 
    def updateOnCoinControl(self):
-      wlt = self.main.walletMap[self.getSelectedWltID()]
+      wlt = self.main.wallets.get(self.getSelectedWltID())
       fullBal = wlt.getBalance('Spendable')
       useAllAddr = (self.altBalance == fullBal or self.altBalance == None)
 
       if useAllAddr:
-         self.dispID.setText(wlt.uniqueIDB58)
+         self.dispID.setText(wlt.getDisplayStr())
          self.dispName.setText(wlt.labelName)
          self.dispDescr.setText(wlt.labelDescr)
          if fullBal == 0:
@@ -387,13 +384,13 @@ class SelectWalletFrame(ArmoryFrame):
          else:
             self.dispBal.setValueText(fullBal, wBold=True)
       else:
-         self.dispID.setText(wlt.uniqueIDB58 + '*')
+         self.dispID.setText(wlt.getDisplayStr() + '*')
          self.dispName.setText(wlt.labelName + '*')
          self.dispDescr.setText(self.tr('*Coin Control Subset*'), color='TextBlue', bold=True)
          self.dispBal.setText(coin2str(self.altBalance, maxZeros=0), color='TextBlue')
          rawValTxt = str(self.dispBal.text())
          self.dispBal.setText(rawValTxt + ' <font color="%s">(of %s)</font>' % \
-                                    (htmlColor('DisableFG'), coin2str(fullBal, maxZeros=0)))
+            (htmlColor('DisableFG'), coin2str(fullBal, maxZeros=0)))
 
       if not TheBDM.getState() == BDM_BLOCKCHAIN_READY:
          self.dispBal.setText(self.tr('(available when online)'), color='DisableFG')
@@ -858,7 +855,7 @@ class WalletBackupFrame(ArmoryFrame):
    #############################################################################
    def setWallet(self, wlt):
       self.wlt = wlt
-      wltID = wlt.uniqueIDB58
+      wltID = wlt.getDisplayStr()
       wltName = wlt.labelName
       self.hasImportedAddr = self.wlt.hasAnyImported()
       # Highlight imported-addr feature if their wallet contains them

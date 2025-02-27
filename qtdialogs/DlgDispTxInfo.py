@@ -71,7 +71,7 @@ class DlgDisplayTxIn(ArmoryDialog):
          wltID  = self.main.getWalletForAddrHash(addrStr_to_hash160(senderAddr)[1])
          if wltID:
             wlt = self.main.walletMap[wltID]
-            srcStr = self.tr('Wallet "%s" (%s)' % (wlt.labelName, wlt.uniqueIDB58))
+            srcStr = self.tr('Wallet "%s" (%s)' % (wlt.labelName, wlt.getDisplayStr()))
          else:
             lbox = self.main.getLockboxByP2SHAddrStr(senderAddr)
             if lbox:

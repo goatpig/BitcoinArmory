@@ -48,12 +48,6 @@ def getScriptForUserStringImpl(userStr, wltMap, lboxList):
    if an ID was entered.
    """
 
-   def getWltIDForScrAddr(scrAddr, walletMap):
-      for iterID,iterWlt in walletMap.items():
-         if iterWlt.hasAddrHash(scrAddr):
-            return iterID
-      return None
-
    # Now try to figure it out
    try:
       userStr = userStr.strip()
@@ -85,14 +79,18 @@ def getScriptForUserStringImpl(userStr, wltMap, lboxList):
 
             # Check if it's ours
             scrAddr = script_to_scrAddr(outScript)
-            wltID = getWltIDForScrAddr(a160, wltMap)
+            wlt = wltMap.getWltForScrAddr(scrAddr)
+            if wlt:
+               wltID = wlt.dbId
       else:
          scrAddr = TheBridge.scriptUtils.getScrAddrForAddrStr(userStr)
          outScript = TheBridge.scriptUtils.getTxOutScriptForScrAddr(scrAddr)
          hasAddrInIt = True
 
          # Check if it's a wallet scrAddr
-         wltID = getWltIDForScrAddr(scrAddr, wltMap)
+         wlt = wltMap.getWltForScrAddr(scrAddr)
+         if wlt:
+            wltID = wlt.dbId
 
          # Check if it's a known P2SH
          for lbox in lboxList:
@@ -104,17 +102,17 @@ def getScriptForUserStringImpl(userStr, wltMap, lboxList):
       wltID  = None if not wltID  else wltID
       lboxID = None if not lboxID else lboxID
       return {'Script': outScript,
-              'WltID':  wltID,
-              'LboxID': lboxID,
-              'ShowID': hasAddrInIt,
-              'IsBech32' : isBech32}
+         'WltID':  wltID,
+         'LboxID': lboxID,
+         'ShowID': hasAddrInIt,
+         'IsBech32' : isBech32}
    except Exception as e:
       #LOGEXCEPT('Invalid user string entered')
       return {'Script': None,
-              'WltID':  None,
-              'LboxID': None,
-              'ShowID': None,
-              'IsBech32' : isBech32}
+         'WltID':  None,
+         'LboxID': None,
+         'ShowID': None,
+         'IsBech32' : isBech32}
 
 
 ################################################################################
@@ -172,12 +170,7 @@ def getDisplayStringForScriptImpl(binScript, wltMap, lboxList, maxChars=256,
    scrAddr = script_to_scrAddr(binScript)
 
    if scriptType != CPP_TXOUT_OPRETURN:
-      wlt = None
-      for iterID,iterWlt in wltMap.items():
-         if iterWlt.hasAddrHash(scrAddr):
-            wlt = iterWlt
-            break
-   
+      wlt = wltMap.getWltForScrAddr(scrAddr)
       lbox = None
       if wlt is None:
          searchScrAddr = scrAddr
@@ -193,7 +186,7 @@ def getDisplayStringForScriptImpl(binScript, wltMap, lboxList, maxChars=256,
       lbox = None
 
    # Return these with the display string
-   wltID  = wlt.uniqueIDB58  if wlt  else None
+   wltID  = wlt.walletId  if wlt  else None
    lboxID = lbox.uniqueIDB58 if lbox else None
 
 
@@ -204,8 +197,8 @@ def getDisplayStringForScriptImpl(binScript, wltMap, lboxList, maxChars=256,
       if scriptType in CPP_TXOUT_HAS_ADDRSTR:
          addrStr = scrAddr_to_addrStr(scrAddr)
 
-      strLast = wlt.uniqueIDB58 if addrStr is None else addrStr
-      strLast = wlt.uniqueIDB58 if prefIDOverAddr else strLast
+      strLast = wlt.walletId if addrStr is None else addrStr
+      strLast = wlt.walletId if prefIDOverAddr else strLast
    elif lbox is not None:
       strType  = 'Lockbox %d-of-%d:' % (lbox.M, lbox.N)
       strLabel = lbox.shortName

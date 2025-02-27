@@ -145,7 +145,7 @@ class DlgConfirmSend(ArmoryDialog):
       lblMsg = QRichLabel(self.tr(
          'This transaction will spend <b>%s BTC</b> from '
          '<font color="%s">Wallet "<b>%s</b>" (%s)</font> to the following '
-         'recipients:' % (totalSendStr, htmlColor('TextBlue'), wlt.labelName, wlt.uniqueIDB58)))
+         'recipients:' % (totalSendStr, htmlColor('TextBlue'), wlt.labelName, wlt.getDisplayStr())))
 
       if doShowLeaveWlt:
          lblAfterBox.setText(self.tr(
