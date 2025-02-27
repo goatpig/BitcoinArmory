@@ -68,7 +68,7 @@ def CheckWalletRegistration(func):
 def computeSettingsId(wltId, accId):
    #armory's py implementation of hmac mangles the 2nd half but
    #we don't care for the purpose of concatenating ids
-   hmacStr = HMAC256(wltId, accId)
+   hmacStr = HMAC256(wltId.encode('ascii'), accId.encode('ascii'))
    b58Str = binary_to_base58(hmacStr)
    return b58Str[0:7]
 

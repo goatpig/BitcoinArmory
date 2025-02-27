@@ -1101,7 +1101,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       except:
          LOGEXCEPT('Error getting extra entropy from filesystem')
 
-
       source3 = bytes()
       try:
          screen = QtWidgets.QApplication.primaryScreen()
@@ -1115,19 +1114,18 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          LOGEXCEPT('Third source of entropy (desktop screenshot) failed')
 
       if len(source3)==0:
-         LOGWARN('Error getting extra entropy from screenshot')
+         LOGWARN('Failed to get extra entropy from desktop screenshot')
 
       LOGINFO('Adding %d keypress events to the entropy pool', len(source1)//3)
       LOGINFO('Adding %s bytes of filesystem data to the entropy pool',
-                  bytesToHumanSize(source2.tell()))
+         bytesToHumanSize(source2.tell()))
       LOGINFO('Adding %s bytes from desktop screenshot to the entropy pool',
-                  bytesToHumanSize(len(str(source3))//2))
+         bytesToHumanSize(len(str(source3))//2))
 
       allEntropy = BytesIO()
       allEntropy.write(source1)
       allEntropy.write(source2.getvalue())
       allEntropy.write(source3)
-      raise Exception("fix me! armorypy hmac is busted")
       return HMAC256(b'Armory Entropy', allEntropy.getvalue())
 
    ####################################################

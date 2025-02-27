@@ -41,6 +41,7 @@ import base64
 import socket
 import subprocess
 import binascii
+import hmac, hashlib
 
 from pathlib import Path
 
@@ -1486,22 +1487,11 @@ def hash160(s):
    from armoryengine.CppBridge import TheBridge
    return TheBridge.utils.getHash160(s)
 
-def HMAC(key, msg, hashfunc=sha512, hashsz=None):
-   ### WARNING:
-   #  This implementation is busted; it mangles the 2nd half of the HMAC
-   #  It's kept around for legacy purposes
-   ###
+def HMAC(key, msg, hashfunc=hashlib.sha512, hashsz=None):
+   return hmac.HMAC(key, msg, hashfunc).digest()
 
-   """ This is intended to be simple, not fast.  For speed, use HDWalletCrypto() """
-   hashsz = len(hashfunc(b'')) if hashsz==None else hashsz
-   key = (hashfunc(key) if len(key)>hashsz else key.encode('ascii'))
-   key = key.ljust(hashsz, b'\x00')
-   okey = b''.join([pack('B', ord(b'\x5c')^(ord(c) if isinstance(c, str) else c)) for c in key])
-   ikey = b''.join([pack('B', ord(b'\x36')^(ord(c) if isinstance(c, str) else c)) for c in key])
-   return hashfunc( okey + hashfunc(ikey + msg.encode('ascii')) )
-
-HMAC256 = lambda key,msg: HMAC(key, msg, sha256, 32)
-HMAC512 = lambda key,msg: HMAC(key, msg, sha512, 64)
+HMAC256 = lambda key,msg: HMAC(key, msg, hashlib.sha256, 32)
+HMAC512 = lambda key,msg: HMAC(key, msg, hashlib.sha512, 64)
 
 
 ################################################################################
