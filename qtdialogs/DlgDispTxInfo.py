@@ -77,8 +77,6 @@ class DlgDisplayTxIn(ArmoryDialog):
             if lbox:
                srcStr = self.tr('Lockbox %d-of-%d "%s" (%s)' % (lbox.M, lbox.N, lbox.shortName, lbox.uniqueIDB58))
 
-
-
       dispLines = []
       dispLines.append(self.tr('<font size=4><u><b>Information on TxIn</b></u></font>:'))
       dispLines.append(self.tr('   <b>TxIn Index:</b>         %s' % txiIndex))
@@ -936,7 +934,7 @@ def extractTxInfo(pytx, rcvTime=None):
    txOutToList = pytx.makeRecipientsList()
    sumTxOut = sum([t[1] for t in txOutToList])
 
-   hashesToFetch = [txHash]
+   hashesToFetch = [txHash] if txHash else []
    for i in range(pytx.getNumTxIn()):
       txin = pytx.getTxIn(i)
       hashesToFetch.append(txin.getOutPoint().txHash)

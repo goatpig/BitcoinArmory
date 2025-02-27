@@ -564,7 +564,7 @@ TEST_F(SignerTest, SpendTest_SizeEstimates)
 
       float desiredFeeByte = 200.0f;
       csi.selectUTXOs(0, desiredFeeByte, 0);
-      auto&& utxoSelect = csi.getUtxoSelection();
+      auto utxoSelect = csi.getUtxoSelection();
 
       //create feed from asset wallet
       auto assetFeed = make_shared<Armory::Signing::ResolverFeed_AssetWalletSingle>(assetWlt);
@@ -689,7 +689,7 @@ TEST_F(SignerTest, SpendTest_SizeEstimates)
       csi.updateRecipient(recipientID, TestChain::scrAddrD, spendVal);
 
       csi.selectUTXOs(0, desiredFeeByte, 0);
-      auto&& utxoSelect = csi.getUtxoSelection();
+      auto utxoSelect = csi.getUtxoSelection();
 
       //create feed from asset wallet
       auto assetFeed = make_shared<Armory::Signing::ResolverFeed_AssetWalletSingle>(assetWlt);

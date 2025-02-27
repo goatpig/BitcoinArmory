@@ -4354,7 +4354,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             self.allLockboxes, maxChars, doBold,
             prefIDOverAddr, lblTrunc, lastTrunc)
          self.scriptDispStrings[binScript] = dispString
-
       return self.scriptDispStrings[binScript]
 
    #############################################################################

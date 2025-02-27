@@ -433,13 +433,12 @@ class DlgAddressBook(ArmoryDialog):
          self.acceptAddrSelection()
          return
 
-      wlt = self.main.walletMap[self.selectedWltID]
-
+      wlt = self.main.wallets.getByIndex(self.selectedWltIndex)
       if not self.selectedCmmt:
-         dialog = DlgSetComment(self, self.main, self.selectedCmmt, \
+         dialog = DlgSetComment(self, self.main, self.selectedCmmt,
             self.tr('Add Address Comment'))
       else:
-         dialog = DlgSetComment(self, self.main, self.selectedCmmt, \
+         dialog = DlgSetComment(self, self.main, self.selectedCmmt,
             self.tr('Change Address Comment'))
 
       if dialog.exec_():

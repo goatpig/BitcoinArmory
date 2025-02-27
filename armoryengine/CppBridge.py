@@ -473,9 +473,13 @@ class BlockchainService(ProtoWrapper):
    ####
    def getTxsByHash(self, hashVals: list[bytes]):
       packet = Bridge.ToBridge.new_message()
-      packetHashes = packet.init("service").init("getTxsByHash", len(hashVals))
-      for i, hash in enumerate(hashVals):
-         packetHashes[i] = hash
+      serviceReq = packet.init("service")
+      packet.service.init("getTxsByHash", len(hashVals))
+      for i, hashVal in enumerate(hashVals):
+         if not hashVal:
+            LOGWARN("trying to fetch tx by empty hash")
+            continue
+         packet.service.getTxsByHash[i] = hashVal
 
       fut = self.send(packet)
       reply = fut.getVal()

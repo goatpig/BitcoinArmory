@@ -1256,6 +1256,10 @@ class TxInDispModel(QtCore.QAbstractTableModel):
    def data(self, index, role=QtCore.Qt.DisplayRole):
       COLS = TXINCOLS
       row,col = index.row(), index.column()
+      try:
+         wlt = self.main.wallets.getByIndex(row)
+      except:
+         wlt = None
 
       wltID = self.dispTable[row][COLS.WltID]
       if role==QtCore.Qt.DisplayRole:
@@ -1268,8 +1272,8 @@ class TxInDispModel(QtCore.QAbstractTableModel):
          elif col in (COLS.Btc,):
             return int(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
       elif role==QtCore.Qt.BackgroundColorRole:
-         if self.dispTable[row][COLS.WltID] and wltID in self.main.walletMap:
-            wtype = determineWalletType(self.main.walletMap[wltID], self.main)[0]
+         if self.dispTable[row][COLS.WltID] and wlt:
+            wtype = determineWalletType(wlt, self.main)[0]
             if wtype==WalletTypes.WatchOnly:
                return Colors.TblWltOther
             elif wtype==WalletTypes.Offline:
@@ -1339,7 +1343,6 @@ class TxOutDispModel(QtCore.QAbstractTableModel):
       elif dispInfo['LboxID']:
          wltID = dispInfo['LboxID']
 
-
       stype = dispInfo['ScrType']
       stypeStr = CPP_TXOUT_SCRIPT_NAMES[stype]
       if stype==CPP_TXOUT_MULTISIG:
@@ -1361,8 +1364,9 @@ class TxOutDispModel(QtCore.QAbstractTableModel):
          if row in self.idxGray:
             return Colors.Mid
       elif role==QtCore.Qt.BackgroundColorRole:
-         if wltID and wltID in self.main.walletMap:
-            wtype = determineWalletType(self.main.walletMap[wltID], self.main)[0]
+         if dispInfo['dbId']:
+            wlt = self.main.wallets.get(dispInfo['dbId'])
+            wtype = determineWalletType(wlt, self.main)[0]
             if wtype==WalletTypes.WatchOnly:
                return Colors.TblWltOther
             if wtype==WalletTypes.Offline:

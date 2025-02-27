@@ -116,9 +116,8 @@ def getScriptForUserStringImpl(userStr, wltMap, lboxList):
 
 
 ################################################################################
-def getDisplayStringForScriptImpl(binScript, wltMap, lboxList, maxChars=256, 
-                              doBold=0, prefIDOverAddr=False, 
-                              lblTrunc=12, lastTrunc=12):
+def getDisplayStringForScriptImpl(binScript, wltMap, lboxList, maxChars=256,
+   doBold=0, prefIDOverAddr=False, lblTrunc=12, lastTrunc=12):
    """
    NOTE: This was originally in ArmoryQt.py, but we really needed this to be
    more widely accessible.  And it's easier to test when this is in ArmoryUtils.  
@@ -176,7 +175,7 @@ def getDisplayStringForScriptImpl(binScript, wltMap, lboxList, maxChars=256,
          searchScrAddr = scrAddr
          if scriptType==CPP_TXOUT_MULTISIG:
             searchScrAddr = script_to_scrAddr(script_to_p2sh_script(binScript))
-            
+
          for iterLbox in lboxList:
             if iterLbox.hasScrAddr(searchScrAddr):
                lbox = iterLbox
@@ -184,11 +183,6 @@ def getDisplayStringForScriptImpl(binScript, wltMap, lboxList, maxChars=256,
    else:
       wlt = None
       lbox = None
-
-   # Return these with the display string
-   wltID  = wlt.walletId  if wlt  else None
-   lboxID = lbox.uniqueIDB58 if lbox else None
-
 
    if wlt is not None:
       strType = 'Wallet:'
@@ -209,8 +203,6 @@ def getDisplayStringForScriptImpl(binScript, wltMap, lboxList, maxChars=256,
       strLabel = ''
       strLast = ''
       addrStr = None
-
-
 
    def truncateStr(theStr, maxLen):
       if len(theStr) <= (int)(maxLen):
@@ -258,13 +250,12 @@ def getDisplayStringForScriptImpl(binScript, wltMap, lboxList, maxChars=256,
       if doBold>1:   strLabel = '<b>%s</b>' % strLabel
       if doBold>2:   strLast  = '<b>%s</b>' % strLast
       displayStr = ''.join([strType, strLabel, strLast])
-      return {'String':  displayStr,
-              'WltID':   wltID,
-              'LboxID':  lboxID,
-              'AddrStr': addrStr,
-              'ScrType': scriptType}
-
-
+      return {'String': displayStr,
+         'WltID': wlt.walletId if wlt else None,
+         'dbId' : wlt.dbId if wlt else None,
+         'LboxID': lbox.uniqueIDB58 if lbox else None,
+         'AddrStr': addrStr,
+         'ScrType': scriptType}
 
    # If we're here, it didn't match any loaded wlt or lockbox
    dispStr = ''
@@ -305,7 +296,8 @@ def getDisplayStringForScriptImpl(binScript, wltMap, lboxList, maxChars=256,
          dispStr = dispStr[:maxChars-3] + '...'
 
    return {'String':  dispStr,
-           'WltID':   None,
-           'LboxID':  None,
-           'AddrStr': addrStr,
-           'ScrType': scriptType}
+      'WltID': None,
+      'dbId' : None,
+      'LboxID': None,
+      'AddrStr': addrStr,
+      'ScrType': scriptType}

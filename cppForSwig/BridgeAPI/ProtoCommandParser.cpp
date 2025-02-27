@@ -452,14 +452,18 @@ namespace
                   feeByte = args.getFeeByte();
                   break;
             }
-            auto success = cs->selectUTXOs(flatFee, feeByte, args.getFlags());
 
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
             auto reply = fromBridge.initReply();
             reply.setReferenceId(referenceId);
-            reply.setSuccess(success);
-
+            try {
+               cs->selectUTXOs(flatFee, feeByte, args.getFlags());
+               reply.setSuccess(true);
+            } catch (const std::exception& e) {
+               reply.setSuccess(true);
+               reply.setError(e.what());
+            }
             response = serializeCapnp(message);
             break;
          }
