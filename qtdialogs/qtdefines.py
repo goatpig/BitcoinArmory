@@ -200,18 +200,16 @@ def initialColResize(tblViewObj, sizeList):
          pctCols.append( (col, colVal) )
 
    for c,sz in fixedCols:
-      tblViewObj.horizontalHeader().resizeSection(c, sz)
+      tblViewObj.horizontalHeader().resizeSection(c, int(sz))
 
    totalFixed = sum([sz[1] for sz in fixedCols])
    szRemain = totalWidth-totalFixed
    for c,pct in pctCols:
-      tblViewObj.horizontalHeader().resizeSection(c, pct*szRemain)
+      tblViewObj.horizontalHeader().resizeSection(c, int(pct*szRemain))
 
    tblViewObj.horizontalHeader().setStretchLastSection(True)
 
-
-
-
+#############################################################################
 class QRichLabel(QtWidgets.QLabel):
    def __init__(self, txt, doWrap=True, \
                            hAlign=QtCore.Qt.AlignLeft, \
