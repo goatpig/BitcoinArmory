@@ -54,7 +54,7 @@ def MsgBoxCustom(wtype, title, msg, wCancel=False, yesStr=None, noStr=None,
          lblMsg.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
          lblMsg.setOpenExternalLinks(True)
          w,h = tightSizeNChar(lblMsg, 70)
-         lblMsg.setMinimumSize( w, 3.2*h )
+         lblMsg.setMinimumSize( w, int(3.2*h) )
          buttonbox = QtWidgets.QDialogButtonBox()
 
          if dtype==MSGBOX.Question:
@@ -88,7 +88,7 @@ def MsgBoxCustom(wtype, title, msg, wCancel=False, yesStr=None, noStr=None,
             optionalTextLabel.setTextFormat(QtCore.Qt.RichText)
             optionalTextLabel.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
             w,h = tightSizeNChar(optionalTextLabel, 70)
-            optionalTextLabel.setMinimumSize( w, 3.2*h )
+            optionalTextLabel.setMinimumSize( w, int(3.2*h ))
             layout.addWidget(optionalTextLabel, 2,0,1,2)
          layout.addWidget(buttonbox, 3,0, 1,2)
          layout.setSpacing(20)

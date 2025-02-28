@@ -1102,7 +1102,7 @@ class DlgLockboxManager(ArmoryDialog):
          # This was calibrated to linux, but at least it will work on one OS
          # The alternative was squished text on every OS
          w,h = tightSizeNChar(btnMap['LBL'], 30)
-         frmCell.setMinimumHeight(5.5*h)
+         frmCell.setMinimumHeight(int(5.5*h))
 
          return frmCell
 

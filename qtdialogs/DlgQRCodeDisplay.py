@@ -42,4 +42,4 @@ class DlgQRCodeDisplay(ArmoryDialog):
 
       w1, h1 = relaxedSizeStr(lblUp, descrUp)
       w2, h2 = relaxedSizeStr(lblDn, descrDown)
-      self.setMinimumWidth(1.2 * max(w1, w2))
+      self.setMinimumWidth(int(1.2 * max(w1, w2)))

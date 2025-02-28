@@ -55,7 +55,7 @@ def MsgBoxWithDNAA(parent, main, wtype, title, msg, dnaaMsg, wCancel=False, \
          lblMsg.setWordWrap(True)
          lblMsg.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
          w,h = tightSizeNChar(lblMsg, 50)
-         lblMsg.setMinimumSize( w, 3.2*h )
+         lblMsg.setMinimumSize( w, int(3.2*h) )
          lblMsg.setOpenExternalLinks(True)
 
          buttonbox = QtWidgets.QDialogButtonBox()

@@ -141,7 +141,7 @@ def tightSizeNChar(obj, nChar):
       fm = QtGui.QFontMetricsF(QtGui.QFont())
    szWidth,szHeight = fm.boundingRect('abcfgijklm').width(), fm.height()
    szWidth = int(szWidth * nChar/10.0 + 0.5)
-   return szWidth, szHeight
+   return szWidth, int(szHeight)
 
 #######
 def tightSizeStr(obj, theStr):
@@ -151,7 +151,7 @@ def tightSizeStr(obj, theStr):
    except AttributeError:
       fm = QtGui.QFontMetricsF(QtGui.QFont())
    szWidth,szHeight = fm.boundingRect(theStr).width(), fm.height()
-   return szWidth, szHeight
+   return int(szWidth), int(szHeight)
 
 #######
 def relaxedSizeStr(obj, theStr):
@@ -163,7 +163,7 @@ def relaxedSizeStr(obj, theStr):
    except AttributeError:
       fm = QtGui.QFontMetricsF(QtGui.QFont())
    szWidth,szHeight = fm.boundingRect(theStr).width(), fm.height()
-   return (10 + szWidth*1.05), 1.5*szHeight
+   return int(10 + szWidth*1.05), int(1.5*szHeight)
 
 #######
 def relaxedSizeNChar(obj, nChar):
@@ -176,7 +176,7 @@ def relaxedSizeNChar(obj, nChar):
       fm = QtGui.QFontMetricsF(QtGui.QFont())
    szWidth,szHeight = fm.boundingRect('abcfg ijklm').width(), fm.height()
    szWidth = int(szWidth * nChar/10.0 + 0.5)
-   return (10 + szWidth*1.05), 1.5*szHeight
+   return int(10 + szWidth*1.05), int(1.5*szHeight)
 
 #############################################################################
 def initialColResize(tblViewObj, sizeList):

@@ -992,7 +992,7 @@ class DlgChangeLabels(ArmoryDialog):
 
       self.edtDescr = QtWidgets.QTextEdit()
       tightHeight = tightSizeNChar(self.edtDescr, 1)[1]
-      self.edtDescr.setMaximumHeight(tightHeight * 4.2)
+      self.edtDescr.setMaximumHeight(int(tightHeight * 4.2))
       lblDescr = QtWidgets.QLabel(self.tr("Wallet &description:"))
       lblDescr.setAlignment(QtCore.Qt.AlignVCenter)
       lblDescr.setBuddy(self.edtDescr)

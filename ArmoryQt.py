@@ -334,17 +334,17 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       self.walletsView  = QtWidgets.QTableView(self)
 
       w,h = tightSizeNChar(self.walletsView, 55)
-      viewWidth  = 1.2*w
-      sectionSz  = 1.3*h
-      viewHeight = 4.4*sectionSz
+      viewWidth  = int(1.2*w)
+      sectionSz  = int(1.3*h)
+      viewHeight = int(4.4*sectionSz)
 
       self.loadSettings()
 
       self.walletsView.setModel(self.walletModel)
       self.walletsView.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
       self.walletsView.setSelectionMode(QtWidgets.QTableView.SingleSelection)
-      self.walletsView.verticalHeader().setDefaultSectionSize(int(sectionSz))
-      self.walletsView.setMinimumSize(int(viewWidth), int(viewHeight))
+      self.walletsView.verticalHeader().setDefaultSectionSize(sectionSz)
+      self.walletsView.setMinimumSize(viewWidth, viewHeight)
       self.walletsView.setItemDelegate(AllWalletsCheckboxDelegate(self))
       #self.walletsView.horizontalHeader().setResizeMode(0, QHeaderView.Fixed)
 

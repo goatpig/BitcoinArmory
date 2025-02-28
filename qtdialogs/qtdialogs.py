@@ -581,8 +581,8 @@ class DlgImportAddress(ArmoryDialog):
       self.txtPrivBulk = QtWidgets.QTextEdit()
       w, h = tightSizeStr(self.edtPrivData, 'X' * 70)
       self.txtPrivBulk.setMinimumWidth(w)
-      self.txtPrivBulk.setMinimumHeight(2.2 * h)
-      self.txtPrivBulk.setMaximumHeight(4.2 * h)
+      self.txtPrivBulk.setMinimumHeight(int(2.2 * h))
+      self.txtPrivBulk.setMaximumHeight(int(4.2 * h))
       frmMid = makeHorizFrame([lblPrivMany, self.txtPrivBulk, ttipPrivMany])
       stkMany = makeVertFrame([HLINE(), lblDescrMany, frmMid])
       self.stackedImport.addWidget(stkMany)
@@ -1140,7 +1140,7 @@ class DlgConfirmBulkImport(ArmoryDialog):
       txtDispAddr.setFont(fnt)
       txtDispAddr.setReadOnly(True)
       txtDispAddr.setMinimumWidth(min(w, 700))
-      txtDispAddr.setMinimumHeight(16.2 * h)
+      txtDispAddr.setMinimumHeight(int(16.2 * h))
       txtDispAddr.setText('\n'.join(addrList))
 
       buttonBox = QtWidgets.QDialogButtonBox()
@@ -1185,7 +1185,7 @@ class DlgDuplicateAddr(ArmoryDialog):
       txtDispAddr.setFont(fnt)
       txtDispAddr.setReadOnly(True)
       txtDispAddr.setMinimumWidth(w)
-      txtDispAddr.setMinimumHeight(8.2 * h)
+      txtDispAddr.setMinimumHeight(int(8.2 * h))
       txtDispAddr.setText('\n'.join(addrList))
 
       lblWarn = QRichLabel(self.tr(
@@ -2481,7 +2481,7 @@ class DlgExpWOWltData(ArmoryDialog):
       self.txtLongDescr.setFont(GETFONT('Fixed', 9))
       self.txtLongDescr.setHtml(self.dispText)
       w,h = tightSizeNChar(self.txtLongDescr, 20)
-      self.txtLongDescr.setMaximumHeight(9.5*h)
+      self.txtLongDescr.setMaximumHeight(int(9.5*h))
 
       def clippy():
          clipb = QtWidgets.QApplication.clipboard()

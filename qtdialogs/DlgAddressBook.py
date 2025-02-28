@@ -106,10 +106,10 @@ class DlgAddressBook(ArmoryDialog):
       self.wltDispView.setSelectionMode(QtWidgets.QTableView.SingleSelection)
       self.wltDispView.horizontalHeader().setStretchLastSection(True)
       self.wltDispView.verticalHeader().setDefaultSectionSize(20)
-      self.wltDispView.setMaximumHeight(rowHeight * 7.7)
+      self.wltDispView.setMaximumHeight(int(rowHeight * 7.7))
       self.wltDispView.hideColumn(WLTVIEWCOLS.Visible)
       initialColResize(self.wltDispView, [0.15, 0.30, 0.2, 0.20])
-      self.wltDispView.selectionModel().currentChanged.connect(\
+      self.wltDispView.selectionModel().currentChanged.connect(
          self.wltTableClicked)
 
       def toggleAddrType(addrtype):

@@ -112,7 +112,7 @@ class DlgNewAddressDisp(ArmoryDialog):
       lblCommDescr.setWordWrap(True)
       self.edtComm = QtWidgets.QTextEdit()
       tightHeight = tightSizeNChar(self.edtComm, 1)[1]
-      self.edtComm.setMaximumHeight(tightHeight * 3.2)
+      self.edtComm.setMaximumHeight(int(tightHeight * 3.2))
 
       frmComment = QtWidgets.QFrame()
       frmComment.setFrameStyle(QtWidgets.QFrame.Shape(STYLE_RAISED))
