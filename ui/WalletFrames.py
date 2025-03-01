@@ -600,7 +600,7 @@ class VerifyPassphraseFrame(ArmoryFrame):
    def __init__(self, parent, main, initLabel=''):
       super(VerifyPassphraseFrame, self).__init__(parent, main)
       lblWarnImgL = QtWidgets.QLabel()
-      lblWarnImgL.setPixmap(QtGui.QPixmap(':/MsgBox_warning48.png'))
+      lblWarnImgL.setPixmap(QtGui.QPixmap('img/MsgBox_warning48.png'))
       lblWarnImgL.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
       lblWarnTxt1 = QRichLabel(\
@@ -901,8 +901,8 @@ class WalletBackupFrame(ArmoryFrame):
                'have not yet been used).')
 
 
-         chk = lambda: QtGui.QPixmap(':/checkmark32.png').scaled(20, 20)
-         _X_ = lambda: QtGui.QPixmap(':/red_X.png').scaled(16, 16)
+         chk = lambda: QtGui.QPixmap('img/checkmark32.png').scaled(20, 20)
+         _X_ = lambda: QtGui.QPixmap('img/red_X.png').scaled(16, 16)
          if index == self.OPTIONS.Paper1:
             self.lblSelFeat.setText(self.tr('Single-Sheet Paper Backup'), bold=True)
             self.featuresImgs[self.FEATURES.ProtGen   ].setPixmap(chk())

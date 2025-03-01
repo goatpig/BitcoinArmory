@@ -42,13 +42,13 @@ class ArmoryWizard(QtWidgets.QWizard):
       self.currentIdChanged.connect(self.fitContents)
       if USE_TESTNET:
          self.setWindowTitle('Armory - Bitcoin Wallet Management [TESTNET]')
-         self.setWindowIcon(QtGui.QIcon(':/armory_icon_green_32x32.png'))
+         self.setWindowIcon(QtGui.QIcon('img/armory_icon_green_32x32.png'))
       elif USE_REGTEST:
          self.setWindowTitle('Armory - Bitcoin Wallet Management [REGTEST]')
-         self.setWindowIcon(QtGui.QIcon(':/armory_icon_green_32x32.png'))
+         self.setWindowIcon(QtGui.QIcon('img/armory_icon_green_32x32.png'))
       else:
          self.setWindowTitle('Armory - Bitcoin Wallet Management')
-         self.setWindowIcon(QtGui.QIcon(':/armory_icon_32x32.png'))
+         self.setWindowIcon(QtGui.QIcon('img/armory_icon_32x32.png'))
 
    def fitContents(self):
       self.adjustSize()
