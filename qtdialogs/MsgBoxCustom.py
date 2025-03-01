@@ -4,22 +4,21 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2024, goatpig                                           #
+# Copyright (C) 2016-2025, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
 ##############################################################################
 
 from qtpy import QtCore, QtGui, QtWidgets
-
 from qtdialogs.ArmoryDialog import ArmoryDialog
 from qtdialogs.qtdefines import MSGBOX, tightSizeNChar
 
 ################################################################################
 # The optionalMsg argument is not word wrapped so the caller is responsible for limiting
 # the length of the longest line in the optionalMsg
-def MsgBoxCustom(wtype, title, msg, wCancel=False, yesStr=None, noStr=None,
-                                                     optionalMsg=None):
+def MsgBoxCustom(wtype, title: str, msg: str, wCancel: bool=False,
+   yesStr: str=None, noStr: str=None, optionalMsg: str=None):
    """
    Creates a message box with custom button text and icon
    """

@@ -1042,6 +1042,8 @@ class BridgeSigner(ProtoWrapper):
 
    #############################################################################
    def cleanup(self):
+      if not self.signerId:
+         return
       packet = self.getPacket()
       packet.signer.cleanup = None
 

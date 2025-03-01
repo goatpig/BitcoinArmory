@@ -32,9 +32,8 @@ SETTINGS_PATH   = os.path.join(ARMORY_HOME_DIR, 'ArmorySettings.txt')
 USERMODE        = enum('Standard', 'Advanced', 'Expert')
 SATOSHIMODE     = enum('Auto', 'User')
 NETWORKMODE     = enum('Offline', 'Full', 'Disconnected')
-WLTFIELDS       = enum('Name', 'Descr', 'WltID', 'NumAddr', 'Secure', \
-                       'BelongsTo', 'Crypto', 'Time', 'Mem', 'Version')
-MSGBOX          = enum('Good','Info', 'Question', 'Warning', 'Critical', 'Error')
+WLTFIELDS       = enum('Name', 'Descr', 'WltID', 'NumAddr', 'Secure',
+   'BelongsTo', 'Crypto', 'Time', 'Mem', 'Version')
 MSGBOX          = enum('Good','Info', 'Question', 'Warning', 'Critical', 'Error')
 DASHBTNS        = enum('Close', 'Browse', 'Settings')
 
@@ -361,7 +360,7 @@ class QLabelButton(QtWidgets.QLabel):
 
    def sizeHint(self):
       w,h = relaxedSizeStr(self, self.plainText)
-      return QtCore.QSize(w,1.2*h)
+      return QtCore.QSize(w, int(1.2*h))
 
    def mousePressEvent(self, ev):
       # Prevent click-bleed-through to dialogs being opened

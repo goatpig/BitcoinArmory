@@ -465,7 +465,7 @@ class PyBtcWallet(object):
    @staticmethod
    def createNewWallet(passphrase=None, \
       kdfTargSec=DEFAULT_COMPUTE_TIME_TARGET, kdfMaxMem=DEFAULT_MAXMEM_LIMIT, \
-      shortLabel='', longLabel='', extraEntropy=None):
+      shortLabel: str='', longLabel: str='', extraEntropy: bytes=None):
 
       """
       This method will create a new wallet, using as much customizability

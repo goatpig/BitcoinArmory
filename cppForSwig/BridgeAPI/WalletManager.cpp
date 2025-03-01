@@ -173,8 +173,9 @@ std::shared_ptr<WalletContainer> WalletManager::createNewWallet(
    const SecureBinaryData& extraEntropy, unsigned lookup)
 {
    auto root = CryptoPRNG::generateRandom(32);
-   if (extraEntropy.getSize() >= 32) {
-      root.XOR(extraEntropy);
+   if (!extraEntropy.empty()) {
+      auto hashTropy = BtcUtils::getHash256(extraEntropy);
+      root.XOR(hashTropy);
    }
 
    auto seed = std::make_unique<Seeds::ClearTextSeed_Armory135>(

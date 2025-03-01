@@ -13,14 +13,18 @@
 from qtpy import QtCore, QtGui, QtWidgets
 
 from armoryengine.ArmoryUtils import USE_TESTNET, USE_REGTEST, int_to_binary
-from ui.WalletFrames import NewWalletFrame, SetPassphraseFrame, VerifyPassphraseFrame,\
-   WalletBackupFrame, WizardCreateWatchingOnlyWalletFrame, CardDeckFrame
+from ui.WalletFrames import NewWalletFrame, SetPassphraseFrame, \
+   VerifyPassphraseFrame,WalletBackupFrame, \
+   WizardCreateWatchingOnlyWalletFrame, CardDeckFrame
 from ui.TxFrames import SendBitcoinsFrame
 from ui.TxFramesOffline import SignBroadcastOfflineTxFrame
-from qtdialogs.qtdefines import USERMODE, GETFONT, AddToRunningDialogsList
 from armoryengine.PyBtcWallet import PyBtcWallet
 from armoryengine.BDM import TheBDM, BDM_OFFLINE, BDM_UNINITIALIZED
+
+from qtdialogs.qtdefines import AddToRunningDialogsList, \
+   USERMODE, GETFONT, MSGBOX
 from qtdialogs.DlgOfflineTx import ReviewOfflineTxFrame
+from qtdialogs.MsgBoxCustom import MsgBoxCustom
 
 # This class is intended to be an abstract Wizard class that
 # will hold all of the functionality that is common to all
@@ -218,7 +222,6 @@ class WalletWizard(ArmoryWizard):
             QtWidgets.QWizard.FinishButton
          ])
 
-
 class ManualEntropyPage(ArmoryWizardPage):
    def __init__(self, wizard):
       super(ManualEntropyPage, self).__init__(wizard,
@@ -228,11 +231,16 @@ class ManualEntropyPage(ArmoryWizardPage):
       self.setSubTitle(wizard.tr('Use a deck of cards to get a new random number for your wallet.'))
 
    def validatePage(self):
-      return self.pageFrame.hasGoodEntropy()
+      isReady = self.pageFrame.hasGoodEntropy()
+      if not isReady:
+         MsgBoxCustom(MSGBOX.Info,
+            title="Not enough entropy",
+            msg="Pick at least 39 cards to progress further")
+         return False
+      return True
 
    def nextId(self):
       return self.wizard.setPassphraseId
-
 
 class WalletCreationPage(ArmoryWizardPage):
    def __init__(self, wizard):
@@ -282,7 +290,6 @@ class SetPassphrasePage(ArmoryWizardPage):
 
    def nextId(self):
       return self.wizard.verifyPassphraseId
-
 
 class VerifyPassphrasePage(ArmoryWizardPage):
    def __init__(self, wizard):
