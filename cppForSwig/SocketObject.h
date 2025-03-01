@@ -146,6 +146,9 @@ public:
    virtual SocketType type(void) const = 0;
    const std::string& getAddrStr(void) const { return addr_; }
    const std::string& getPortStr(void) const { return port_; }
+
+   //override me
+   virtual bool running(void) const { return true; }
 };
 
 ///////////////////////////////////////////////////////////////////////////////

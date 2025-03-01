@@ -866,7 +866,7 @@ class AddressTreeModel(ArmoryTreeModel):
       #this method repopulates the underlying tree view map, only use
       #when that data changed
       self.treeStruct = TreeStructure_AddressDisplay(self.wlt, self)
-      self.root = NodeItem(0, None, self.treeStruct.root)     
+      self.root = NodeItem(0, None, self.treeStruct.root)
 
 
 ################################################################################ 

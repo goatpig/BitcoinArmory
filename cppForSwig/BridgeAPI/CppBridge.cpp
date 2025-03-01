@@ -340,6 +340,18 @@ void CppBridge::reset()
    callbackPtr_.reset();
 }
 
+bool CppBridge::isOffline() const
+{
+   if (dbOffline_) {
+      return true;
+   }
+
+   if (bdvPtr_ == nullptr) {
+      return true;
+   }
+   return !bdvPtr_->isValid();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 void CppBridge::writeToClient(BinaryData& payload) const
 {
@@ -537,6 +549,11 @@ void CppBridge::registerWallets()
 void CppBridge::registerWallet(const std::string& wltId,
    const Wallets::AddressAccountId& accId, bool isNew)
 {
+   if (isOffline()) {
+      LOGDEBUG << "Armory is offline, cannot register wallet";
+      return;
+   }
+
    try {
       auto dbId = wltManager_->registerWallet(wltId, accId, isNew);
       auto finalLbd = [cbPtr = callbackPtr_, dbId]()
@@ -816,32 +833,48 @@ void CppBridge::restoreWallet(
             throw std::runtime_error("empty wallet");
          }
 
-         //have we already loaded this wallet?
-         std::filesystem::path oldWltPath;
-         if (wltManager_->hasWallet(restoreResult.wltPtr->getID())) {
-            if (restoreResult.merge == true) {
-               //we want to merge the old one in the new on
-            }
-
-            //unload old wallet & rename it
-            oldWltPath = wltManager_->unloadWallet(restoreResult.wltPtr->getID());
-            if (!oldWltPath.empty()) {
-               oldWltPath = FileUtils::appendTagToPath(oldWltPath, "_old");
-            }
-         }
-
-         //unload new wallet & move it to wallet folder
-         auto newWltPath = restoreResult.wltPtr->getDbFilename();
-         auto newPath = wltManager_->getWalletDir() / newWltPath.filename();
-         restoreResult.wltPtr.reset();
-         std::filesystem::rename(newWltPath, newPath);
-
-         //reload new wallet
+         //lambda to reload new wallet
          auto passLbd = [&restoreResult](
             const std::set<Armory::Wallets::EncryptionKeyId>&)->SecureBinaryData
          {
             return restoreResult.controlPass;
          };
+
+         //get new wallet path and unload it
+         auto newWltID = restoreResult.wltPtr->getID();
+         auto newWltPath = restoreResult.wltPtr->getDbFilename();
+         restoreResult.wltPtr.reset();
+
+         //have we already loaded this wallet?
+         std::filesystem::path oldWltPath;
+         if (wltManager_->hasWallet(newWltID)) {
+            if (restoreResult.merge == true) {
+               //we want to merge the old wallet data in the new one
+               auto oldWlt = wltManager_->getWalletContainer(newWltID);
+               auto oldWltSingle =
+                  std::dynamic_pointer_cast<Wallets::AssetWallet_Single>(oldWlt);
+               if (oldWltSingle == nullptr) {
+                  LOGWARN << "replaced wallet is not single, cannot merge";
+               } else {
+                  auto oldWltData = Wallets::AssetWallet_Single::exportPublicData(
+                     oldWltSingle);
+                  Wallets::AssetWallet_Single::mergePublicData(
+                     newWltPath, passLbd, oldWltData);
+               }
+            }
+
+            //unload old wallet & rename it
+            oldWltPath = wltManager_->unloadWallet(newWltID);
+            if (!oldWltPath.empty()) {
+               oldWltPath = FileUtils::appendTagToPath(oldWltPath, "_old");
+            }
+         }
+
+         //move new wallet
+         auto newPath = wltManager_->getWalletDir() / newWltPath.filename();
+         std::filesystem::rename(newWltPath, newPath);
+
+         //reload new wallet
          wltManager_->loadWallet(newPath, passLbd);
 
          //delete old wallet if there's one

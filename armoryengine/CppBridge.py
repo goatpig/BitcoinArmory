@@ -75,6 +75,8 @@ class PyPromFut(object):
       while self.has is False:
          self.cv.wait()
       self.cv.release()
+      if self.data.success == False:
+         raise Exception(self.data.error)
       return self.data
 
 

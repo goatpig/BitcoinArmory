@@ -1696,7 +1696,7 @@ class DlgRemoveAddress(ArmoryDialog):
       self.wlt = wlt
       importStr = wlt.linearAddr160List[importIndex]
       self.addr = wlt.addrMap[importStr]
-      self.comm = wlt.getCommentForAddress(addr160)
+      self.comm = wlt.getComment(addr160)
 
       lblWarning = QtWidgets.QLabel(self.tr('<b>!!! WARNING !!!</b>\n\n'))
       lblWarning.setTextFormat(QtCore.Qt.RichText)

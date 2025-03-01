@@ -221,6 +221,21 @@ namespace
       }
 
       BinaryData response;
+      auto checkOnline = [&response, &referenceId, bridge](void)->bool
+      {
+         if (bridge->isOffline()) {
+            capnp::MallocMessageBuilder message;
+            auto fromBridge = message.initRoot<FromBridge>();
+            auto reply = fromBridge.initReply();
+            reply.setSuccess(false);
+            reply.setReferenceId(referenceId);
+            reply.setError("Armory is offline");
+            response = serializeCapnp(message);
+            return false;
+         }
+         return true;
+      };
+
       switch (request.which())
       {
          case WalletRequest::CREATE_BACKUP_STRING:
@@ -233,6 +248,10 @@ namespace
 
          case WalletRequest::GET_LEDGER_DELEGATE_ID:
          {
+            if (!checkOnline()) {
+               break;
+            }
+
             const auto& delegateId = bridge->getLedgerDelegateIdForWallet(
                walletId, accountId);
 
@@ -250,6 +269,10 @@ namespace
 
          case WalletRequest::GET_LEDGER_DELEGATE_ID_FOR_SCR_ADDR:
          {
+            if (!checkOnline()) {
+               break;
+            }
+
             auto capnAddr = request.getGetLedgerDelegateIdForScrAddr();
             BinaryDataRef addr(capnAddr.begin(), capnAddr.end());
             const auto& delegateId = bridge->getLedgerDelegateIdForScrAddr(
@@ -269,6 +292,10 @@ namespace
 
          case WalletRequest::GET_BALANCE_AND_COUNT:
          {
+            if (!checkOnline()) {
+               break;
+            }
+
             response = bridge->getBalanceAndCount(
                walletId, accountId, referenceId);
             break;
@@ -283,6 +310,10 @@ namespace
 
          case WalletRequest::GET_ADDR_COMBINED_LIST:
          {
+            if (!checkOnline()) {
+               break;
+            }
+
             response = bridge->getAddrCombinedList(
                walletId, accountId, referenceId);
             break;
@@ -290,6 +321,10 @@ namespace
 
          case WalletRequest::GET_HIGHEST_USED_INDEX:
          {
+            if (!checkOnline()) {
+               break;
+            }
+
             response = bridge->getHighestUsedIndex(
                walletId, accountId, referenceId);
             break;
@@ -336,6 +371,10 @@ namespace
 
          case WalletRequest::CREATE_ADDRESS_BOOK:
          {
+            if (!checkOnline()) {
+               break;
+            }
+
             bridge->createAddressBook(walletId, accountId, referenceId);
             break;
          }
@@ -357,6 +396,10 @@ namespace
 
          case WalletRequest::GET_UTXOS:
          {
+            if (!checkOnline()) {
+               break;
+            }
+
             auto args = request.getGetUtxos();
             uint64_t value = 0;
             if (args.isValue()) {

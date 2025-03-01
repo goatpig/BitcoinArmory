@@ -1014,7 +1014,7 @@ class WalletAddrDispModel(QtCore.QAbstractTableModel):
          addrList = filter(hasBalance, addrList)
 
       if self.noChange:
-         notChange = lambda a: (self.wlt.getCommentForAddress(a.getAddr160()) != CHANGE_ADDR_DESCR_STRING)
+         notChange = lambda a: (self.wlt.getComment(a.getAddr160()) != CHANGE_ADDR_DESCR_STRING)
          addrList = filter(notChange, addrList)
 
       if self.usedOnly and TheBDM.getState()==BDM_BLOCKCHAIN_READY:

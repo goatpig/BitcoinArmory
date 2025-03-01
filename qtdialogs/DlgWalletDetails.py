@@ -29,6 +29,7 @@ from qtdialogs.qtdefines import USERMODE, \
 
 from qtdialogs.ArmoryDialog import ArmoryDialog
 from qtdialogs.MsgBoxWithDNAA import MsgBoxWithDNAA
+from qtdialogs.MsgBoxCustom import MsgBoxCustom
 from qtdialogs.DlgSetComment import DlgSetComment
 
 from qtdialogs.qtdialogs import LoadingDisp
@@ -247,7 +248,6 @@ class DlgWalletDetails(ArmoryDialog):
       layout.setColumnStretch(0, 1)
       layout.setColumnStretch(1, 0)
       self.setLayout(layout)
-
       self.setWindowTitle(self.tr('Wallet Properties'))
 
       #self.doFilterAddr()
@@ -383,7 +383,6 @@ class DlgWalletDetails(ArmoryDialog):
          qstr = model.index(idx.row(), col).data().toString()
          return str(qstr).strip()
 
-
       addr = getModelStr(ADDRESSCOLS.Address)
       if action == actionCopyAddr:
          clippy = addr
@@ -447,8 +446,12 @@ class DlgWalletDetails(ArmoryDialog):
             addr160 = addrObj.getAddr160()
             self.wlt.setComment(addr160, newComment)
       else:
-         dlg = DlgAddressInfo(self.wlt, addrObj, self, self.main)
-         dlg.exec_()
+         try:
+            dlg = DlgAddressInfo(self.wlt, addrObj, self, self.main)
+            dlg.exec_()
+         except Exception as e:
+            MsgBoxCustom(MSGBOX.Error, title="Error", msg=str(e))
+            return
 
    #############################################################################
    def changeLabels(self):

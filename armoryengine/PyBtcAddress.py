@@ -1,12 +1,17 @@
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
 ################################################################################
 #                                                                              #
 # Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
 # Distributed under the GNU Affero General Public License (AGPL v3)            #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                         #
 #                                                                              #
+# Copyright (C) 2016-2025, goatpig                                             #
+#  Distributed under the MIT license                                           #
+#  See LICENSE-MIT or https://opensource.org/licenses/MIT                      #
+#                                                                              #
 ################################################################################
+from __future__ import (absolute_import, division,
+   print_function, unicode_literals)
+
 from armoryengine.ArmoryUtils import ADDRBYTE, hash256, \
    KeyDataError, RightNow, LOGERROR, ChecksumError, convertKeyDataToAddress, \
    verifyChecksum, WalletLockError, createDERSigFromRS, binary_to_int, \
@@ -163,7 +168,6 @@ class PyBtcAddress(object):
       from armoryengine.BDM import TheBDM, BDM_OFFLINE, BDM_UNINITIALIZED
       if TheBDM.getState() in (BDM_OFFLINE,BDM_UNINITIALIZED):
          return "N/A"
-
       return self.txioCount
 
    #############################################################################
@@ -182,7 +186,7 @@ class PyBtcAddress(object):
    def getComment(self):
       if self.parentWallet is None:
          return ''
-      return self.parentWallet.getCommentForAddr(self.getAddr160())
+      return self.parentWallet.getComment(self.getAddr160())
 
    #############################################################################
    def filter(self, filterType, isUsed, isChange):

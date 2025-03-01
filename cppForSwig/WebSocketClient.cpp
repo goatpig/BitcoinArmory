@@ -57,18 +57,22 @@ WebSocketClient::WebSocketClient(const std::string& addr,
    bip151Connection_ = std::make_shared<BIP151Connection>(lbds, oneWayAuth);
 }
 
+bool WebSocketClient::running() const
+{
+   return run_.load(std::memory_order_relaxed) != 0;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 void WebSocketClient::pushPayload(
    std::unique_ptr<Socket_WritePayload> write_payload,
    std::shared_ptr<Socket_ReadPayload> read_payload)
 {
-   if (run_.load(std::memory_order_relaxed) == 0)
+   if (!running()) {
       throw LWS_Error("lws client down");
+   }
 
    unsigned id = requestID_.fetch_add(1, std::memory_order_relaxed);
-   if (read_payload != nullptr)
-   {
+   if (read_payload != nullptr) {
       //create response object
       auto response = std::make_shared<WriteAndReadPacket>(id, read_payload);
 

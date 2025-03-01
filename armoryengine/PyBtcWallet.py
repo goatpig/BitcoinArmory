@@ -1,16 +1,16 @@
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
 ################################################################################
 #                                                                              #
 # Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
 # Distributed under the GNU Affero General Public License (AGPL v3)            #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                         #
 #                                                                              #
-# Copyright (C) 2016-2023, goatpig                                             #
+# Copyright (C) 2016-2025, goatpig                                             #
 #  Distributed under the MIT license                                           #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                      #
 #                                                                              #
 ################################################################################
+from __future__ import (absolute_import, division,
+   print_function, unicode_literals)
 import os.path
 import shutil
 
@@ -523,6 +523,8 @@ class PyBtcWallet(object):
 
    #############################################################################
    def addAddress(self, addrObj):
+      if addrObj.parentWallet == None:
+         addrObj.parentWallet = self
       prefixedHash = addrObj.getPrefixedAddr()
       self.addrMap[prefixedHash] = addrObj
       self.linearAddr160List.append(prefixedHash)
@@ -1017,24 +1019,10 @@ class PyBtcWallet(object):
       return '%s"%s" (%s)' % (pref, self.labelName, self.walletId)
 
    #############################################################################
-   def getCommentForAddress(self, addr160):
-      try:
-         assetIndex = self.cppWallet.getAssetIndexForAddr(addr160)
-         hashList = self.cppWallet.getScriptHashVectorForIndex(assetIndex)
-      except:
-         return ''
-
-      for _hash in hashList:
-         if _hash in self.commentsMap:
-            return self.commentsMap[_hash]
-
-      return ''
-
-   #############################################################################
    def getComment(self, hashVal):
       """
       This method is used for both address comments, as well as tx comments
-      In the first case, use the 20-byte binary pubkeyhash.  Use 32-byte tx
+      In the first case, use the 20-byte addr160. Use 32-byte tx
       hash for the tx-comment case.
       """
       if hashVal in self.commentsMap:
@@ -1046,10 +1034,9 @@ class PyBtcWallet(object):
    def setComment(self, hashVal, newComment):
       """
       This method is used for both address comments, as well as tx comments
-      In the first case, use the 20-byte binary pubkeyhash.  Use 32-byte tx
+      In the first case, use the 20-byte addr160. Use 32-byte tx
       hash for the tx-comment case.
       """
-
       self.commentsMap[hashVal] = newComment
       self.bridgeWalletObj.setComment(hashVal, newComment)
 

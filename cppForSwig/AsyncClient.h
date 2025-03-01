@@ -339,7 +339,6 @@ namespace AsyncClient
    private:
       BlockDataViewer(void);
       BlockDataViewer(std::shared_ptr<SocketPrototype> sock);
-      bool isValid(void) const { return sock_ != nullptr; }
 
       const BlockDataViewer& operator=(const BlockDataViewer& rhs)
       {
@@ -352,6 +351,7 @@ namespace AsyncClient
 
    public:
       ~BlockDataViewer(void);
+      bool isValid(void) const;
       BtcWallet getWalletObj(const std::string& id);
       Lockbox getLockboxObj(const std::string& id);
 

@@ -250,13 +250,15 @@ namespace Armory
             uint32_t, MessageId) const;
          void getBlockTimeByHeight(uint32_t, MessageId) const;
          void getFeeSchedule(const std::string&, MessageId) const;
+         SecureBinaryData generateRandom(size_t) const;
 
          //custom callback handlers
          void callbackWriter(ServerPushWrapper&);
          void setCallbackHandler(ServerPushWrapper&);
          CallbackHandler getCallbackHandler(uint32_t);
 
-         SecureBinaryData generateRandom(size_t) const;
+         //sanity checks
+         bool isOffline(void) const;
 
       public:
          CppBridge(const std::filesystem::path&, const std::string&,
