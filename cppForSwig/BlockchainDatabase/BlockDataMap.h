@@ -249,6 +249,7 @@ public:
    void computeTxFilter(const std::vector<BinaryData>&);
    std::shared_ptr<BlockHashVector> getTxFilter(void) const;
    uint32_t uniqueID(void) const { return uniqueID_; }
+   void setUniqueID(uint32_t);
    std::shared_ptr<BlockHeader> getHeaderPtr(void) const { return headerPtr_; }
 };
 
@@ -315,24 +316,25 @@ class BlockDataLoader
 public:
    struct PathAndOffset
    {
-      std::filesystem::path path;
-      size_t offset=0;
+      const std::filesystem::path path;
+      const uint16_t fileID;
+      const size_t offset;
    };
 
    struct BlockDataCopy
    {
-      const uint16_t fileID;
-      const size_t offset;
-      const std::shared_ptr<FileUtils::FileCopy> data;
+      const uint16_t fileID = UINT16_MAX;
+      const size_t offset = SIZE_MAX;
+      const std::shared_ptr<FileUtils::FileCopy> data=nullptr;
 
-      BlockDataCopy(uint16_t, const PathAndOffset&);
+      BlockDataCopy(const PathAndOffset&);
+      BlockDataCopy(void);
       bool isValid(void) const { return fileID != UINT16_MAX; }
    };
 
 private:
-   std::atomic_uint_fast16_t counter_;
+   std::atomic_uint64_t counter_;
    std::vector<PathAndOffset> paf_;
-   uint16_t startFileId_ = 0;
 
 private:
    BlockDataLoader(const BlockDataLoader&) = delete; //no copies
@@ -340,6 +342,7 @@ private:
 
 public:
    BlockDataLoader(std::shared_ptr<BlockFiles>, const BlockOffset&);
+   BlockDataLoader(std::shared_ptr<BlockFiles>, const std::set<uint32_t>&);
 
    std::shared_ptr<FileUtils::FileMap> getNextMap(void);
    BlockDataCopy getNextCopy(void);

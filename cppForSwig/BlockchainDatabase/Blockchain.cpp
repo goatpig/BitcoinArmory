@@ -13,6 +13,7 @@
 
 #include "Blockchain.h"
 #include "util.h"
+#include "BlockDataMap.h"
 #include <unordered_set>
 
 using namespace std;
@@ -52,7 +53,7 @@ void Blockchain::clear()
    headerMap_.insert(genesisPair);
    topBlockId_ = 0;
 
-   topID_.store(0, memory_order_relaxed);
+   topID_.store(1, memory_order_relaxed);
 }
 
 Blockchain::ReorganizationState Blockchain::organize(bool verbose)
@@ -516,81 +517,69 @@ void Blockchain::putBareHeaders(LMDBBlockDatabase *db, bool updateDupID)
    ***/
 
    auto headermap = headerMap_.get();
-   for (auto& block : *headermap)
-   {
+   for (auto& block : *headermap) {
       StoredHeader sbh;
       sbh.createFromBlockHeader(*(block.second));
       uint8_t dup = db->putBareHeader(sbh, updateDupID);
-      block.second->setDuplicateID(dup);  // make sure headerMap_ and DB agree
+
+      // make sure headerMap_ and DB agree
+      block.second->setDuplicateID(dup);
    }
 }
 
 /////////////////////////////////////////////////////////////////////////////
 void Blockchain::putNewBareHeaders(LMDBBlockDatabase *db)
 {
-   unique_lock<mutex> lock(mu_);
-
-   if (newlyParsedBlocks_.size() == 0)
+   std::unique_lock<std::mutex> lock(mu_);
+   if (newlyParsedBlocks_.empty()) {
       return;
+   }
 
-   map<unsigned, uint8_t> dupIdMap;
-   map<unsigned, bool> blockIdMap;
+   std::map<unsigned, uint8_t> dupIdMap;
+   std::map<unsigned, bool> blockIdMap;
+   std::vector<std::shared_ptr<BlockHeader>> unputHeaders;
 
    //create transaction here to batch the write
-   auto&& tx = db->beginTransaction(HEADERS, LMDB::ReadWrite);
-
-   vector<shared_ptr<BlockHeader>> unputHeaders;
-   for (auto& block : newlyParsedBlocks_)
-   {
-      if (block->blockHeight_ != UINT32_MAX)
-      {
+   auto tx = db->beginTransaction(HEADERS, LMDB::ReadWrite);
+   for (auto& block : newlyParsedBlocks_) {
+      if (block->blockHeight_ != UINT32_MAX) {
          StoredHeader sbh;
          sbh.createFromBlockHeader(*block);
-         //don't update SDBI, we'll do it here once instead
          uint8_t dup = db->putBareHeader(sbh, true, false);
-         block->setDuplicateID(dup);  // make sure headerMap_ and DB agree
-         
-         if (block->isMainBranch())
-            dupIdMap.insert(make_pair(block->blockHeight_, dup));
+         block->setDuplicateID(dup); // make sure headerMap_ and DB agree
 
-         blockIdMap.insert(
-            make_pair(block->getThisID(), block->isMainBranch()));
-      }
-      else
-      {
-         unputHeaders.push_back(block);
+         if (block->isMainBranch()) {
+            dupIdMap.emplace(block->blockHeight_, dup);
+         }
+         blockIdMap.emplace(block->getThisID(), block->isMainBranch());
+      } else {
+         unputHeaders.emplace_back(block);
       }
    }
 
    //update SDBI, keep within the batch transaction
-   auto&& sdbiH = db->getStoredDBInfo(HEADERS, 0);
-
-   if (topBlockPtr_ == nullptr)
-   {
+   auto sdbiH = db->getStoredDBInfo(HEADERS, 0);
+   if (topBlockPtr_ == nullptr) {
       LOGINFO << "No known top block, didn't update SDBI";
       return;
    }
 
-   if (topBlockPtr_->blockHeight_ >= sdbiH.topBlkHgt_)
-   {
+   if (topBlockPtr_->blockHeight_ >= sdbiH.topBlkHgt_) {
       sdbiH.topBlkHgt_ = topBlockPtr_->blockHeight_;
       sdbiH.topScannedBlkHash_ = topBlockPtr_->thisHash_;
       db->putStoredDBInfo(HEADERS, sdbiH, 0);
    }
 
-
    //once commited to the DB, they aren't considered new anymore, 
    //so clean up the container
-   newlyParsedBlocks_ = move(unputHeaders);
+   newlyParsedBlocks_ = std::move(unputHeaders);
 
-   {
-      /*
-      We need to keep track of the highest assigned
-      topID across runs so we manually update it instead of relying on 
-      headers in the db.
-      */
-      updateTopIdInDb(db);
-   }
+   /*
+   We need to keep track of the highest assigned
+   topID across runs so we manually update it instead of relying on
+   headers in the db.
+   */
+   updateTopIdInDb(db);
 
    db->setValidDupIDForHeight(dupIdMap);
    db->setBlockIDBranch(blockIdMap);
@@ -671,21 +660,24 @@ void Blockchain::updateTopIdInDb(LMDBBlockDatabase *db)
 
 /////////////////////////////////////////////////////////////////////////////
 std::set<uint32_t> Blockchain::checkForNewBlocks(
-   const std::deque<HeaderPtr>& headers)
+   const std::vector<std::shared_ptr<BlockData>>& blocks)
 {
    std::set<uint32_t> result;
    auto headermap = headerMap_.get();
-   for (const auto header : headers) {
-      const auto& headerHash = header->getThisHash();
+   for (const auto block : blocks) {
+      const auto& headerHash = block->getHash();
       auto iter = headermap->find(headerHash);
       if (iter != headermap->end()) {
          if (iter->second->dataCopy_.getSize() == HEADER_SIZE) {
             continue;
          }
       }
-      result.emplace(header->getThisID());
-   }
 
+      if (block->uniqueID() == UINT32_MAX) {
+         block->setUniqueID(getNewUniqueID());
+      }
+      result.emplace(block->uniqueID());
+   }
    return result;
 }
 
@@ -698,25 +690,45 @@ void Blockchain::addBlocksInBulk(
    }
 
    std::unique_lock<std::mutex> lock(mu_);
-
-   map<BinaryData, shared_ptr<BlockHeader>> toAddMap;
-   map<unsigned, shared_ptr<BlockHeader>> idMap;
+   std::map<BinaryData, HeaderPtr> toAddMap;
+   std::map<unsigned, HeaderPtr> idMap;
 
    {
       auto headermap = headerMap_.get();
-      for (const auto& headers : headerLists) {
-         for (const auto& header : headers) {
+      for (auto& headers : headerLists) {
+         for (auto& header : headers) {
+            bool commitHeader = false;
             const auto& headerHash = header->getThisHash();
             auto iter = headermap->find(headerHash);
             if (iter != headermap->end()) {
                if (iter->second->dataCopy_.getSize() == HEADER_SIZE) {
-                  continue;
+                  //we already have this block, has the file/offset changed?
+                  if (iter->second->getBlockFileNum() == header->getBlockFileNum() &&
+                     iter->second->getOffset() == header->getOffset()) {
+                     continue;
+                  }
+
+                  //header will be replaced, carry the uniqueID over
+                  LOGWARN << "header " << headerHash.toHexStr(true) <<
+                     " file and offset were replaced!";
+                  LOGWARN << "  . fileID - old: " << iter->second->getBlockFileNum() <<
+                     ", new: " << header->getBlockFileNum();
+                  LOGWARN << "  . offset - old: " << iter->second->getOffset() <<
+                     ", new: " << header->getOffset();
+                  header->setUniqueID(iter->second->getThisID());
+                  commitHeader = true;
                }
+            }
+
+            //assign uniqueID if necessary
+            if (header->getThisID() == UINT32_MAX) {
+               header->setUniqueID(getNewUniqueID());
+               commitHeader = true;
             }
 
             toAddMap.emplace(headerHash, header);
             idMap.emplace(header->getThisID(), header);
-            if (areNew) {
+            if (areNew || commitHeader) {
                newlyParsedBlocks_.emplace_back(header);
             }
          }
@@ -731,7 +743,6 @@ void Blockchain::addBlocksInBulk(
 
       It is crucial block IDs are not reused.
       */
-
       unsigned topID = topID_.load(memory_order_relaxed);
       for (const auto& headers : headerLists) {
          for (const auto& header : headers) {
@@ -797,4 +808,14 @@ map<unsigned, HeightAndDup> Blockchain::getHeightAndDupMap(void) const
    }
 
    return hd_map;
+}
+
+/////////////////////////////////////////////////////////////////////////////
+void Blockchain::flagBlockHeader(std::shared_ptr<BlockHeader> header,
+   LMDBBlockDatabase *db)
+{
+   if (db->getOrSetFlaggedBlockFile(header->getBlockFileNum())) {
+      LOGINFO << "flagging block file " << header->getBlockFileNum() <<
+         " for reparsing";
+   }
 }

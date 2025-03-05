@@ -398,6 +398,69 @@ TEST_F(BlockDir, BlockFileSplitUpdate)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(BlockDir, FixBlockDataOffsets)
+{
+   /* 1. setup regular test, check balances */
+
+   TestUtils::setBlocks({ "0", "1", "2", "4", "3", "5" }, blk0dat_);
+
+   //setup BDM
+   BlockDataManagerThread* BDMt = new BlockDataManagerThread();
+   auto fakeshutdown = [](void)->void {};
+   Clients *clients = new Clients(BDMt, fakeshutdown);
+
+   BDMt->start(INIT_RESUME);
+   const std::vector<BinaryData> scraddrs
+   {
+      TestChain::scrAddrA,
+      TestChain::scrAddrB,
+      TestChain::scrAddrC
+   };
+
+   auto bdvID = DBTestUtils::registerBDV(clients, BitcoinSettings::getMagicBytes());
+   DBTestUtils::registerWallet(clients, bdvID, scraddrs, "wallet1",
+      false, false);
+   auto bdvPtr = DBTestUtils::getBDV(clients, bdvID);
+
+   DBTestUtils::goOnline(clients, bdvID);
+   DBTestUtils::waitOnBDMReady(clients, bdvID);
+
+   //check balances
+   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
+   const ScrAddrObj *scrobj;
+   scrobj = wlt->getScrAddrObjByKey(scraddrs[0]);
+   EXPECT_EQ(scrobj->getFullBalance(), 50*COIN);
+   scrobj = wlt->getScrAddrObjByKey(scraddrs[1]);
+   EXPECT_EQ(scrobj->getFullBalance(), 70*COIN);
+   scrobj = wlt->getScrAddrObjByKey(scraddrs[2]);
+   EXPECT_EQ(scrobj->getFullBalance(), 20*COIN);
+
+   //cleanup
+   bdvPtr.reset();
+   wlt.reset();
+   clients->exitRequestLoop();
+   clients->shutdown();
+
+   delete clients;
+   delete BDMt;
+
+   /* 2. mangle chain data, append mangled block at the end of the file */
+   ASSERT_TRUE(false) << "implement me!";
+
+   //mangle a block
+
+   //append the correct block for db to find later
+
+   //setup BDM
+
+   //register new address, will trigger scan and detect bad block data
+
+   //BDM should warn user and shutdown gracefully
+
+   /* 3. restart BDM, should fix mangled data and get through scan */
+}
+
+////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 class BlockUtilsFull : public ::testing::Test
@@ -1052,22 +1115,20 @@ TEST_F(BlockUtilsFull, CorruptedBlock)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4" }, blk0dat_);
 
    theBDMt_->start(DBSettings::initMode());
-   auto&& bdvID = DBTestUtils::registerBDV(clients_, BitcoinSettings::getMagicBytes());
+   auto bdvID = DBTestUtils::registerBDV(clients_, BitcoinSettings::getMagicBytes());
 
-   vector<BinaryData> scrAddrVec;
-   scrAddrVec.push_back(TestChain::scrAddrA);
-   scrAddrVec.push_back(TestChain::scrAddrB);
-   scrAddrVec.push_back(TestChain::scrAddrC);
+   std::vector<BinaryData> scrAddrVec;
+   scrAddrVec.emplace_back(TestChain::scrAddrA);
+   scrAddrVec.emplace_back(TestChain::scrAddrB);
+   scrAddrVec.emplace_back(TestChain::scrAddrC);
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
       false, false);
 
-   const vector<BinaryData> lb1ScrAddrs
-   {
+   const std::vector<BinaryData> lb1ScrAddrs{
       TestChain::lb1ScrAddr,
       TestChain::lb1ScrAddrP2SH
    };
-   const vector<BinaryData> lb2ScrAddrs
-   {
+   const std::vector<BinaryData> lb2ScrAddrs{
       TestChain::lb2ScrAddr,
       TestChain::lb2ScrAddrP2SH
    };
@@ -1091,15 +1152,13 @@ TEST_F(BlockUtilsFull, CorruptedBlock)
    {
       TestUtils::appendBlocks({ "4A", "5", "5A" }, blk0dat_);
       const uint64_t srcsz = FileUtils::getFileSize(blk0dat_);
-      BinaryData temp(srcsz);
-      {
-         ifstream is(blk0dat_.c_str(), ios::in  | ios::binary);
+      BinaryData temp(srcsz); {
+         std::ifstream is(blk0dat_.c_str(), std::ios::in | std::ios::binary);
          is.read((char*)temp.getPtr(), srcsz);
       }
 
       const std::filesystem::path dst = blk0dat_;
-
-      ofstream os(dst, ios::out | ios::binary);
+      std::ofstream os(dst, std::ios::out | std::ios::binary);
       os.write((char*)temp.getPtr(), 100);
       os.write((char*)temp.getPtr()+120, srcsz-100-20); // erase 20 bytes
    }
@@ -1107,12 +1166,10 @@ TEST_F(BlockUtilsFull, CorruptedBlock)
    DBTestUtils::triggerNewBlockNotification(theBDMt_);
    DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
 
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
+   auto scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
    EXPECT_EQ(scrObj->getFullBalance(), 50*COIN);
    scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
    EXPECT_EQ(scrObj->getFullBalance(), 70*COIN);
-
    EXPECT_EQ(wlt->getFullBalance(), 140*COIN);
 }
 

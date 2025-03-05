@@ -80,12 +80,12 @@ public:
    BinaryDataRef  getDiffBitsRef(void) const   { return BinaryDataRef(getPtr()+72,4 ); }
    uint32_t       getNumTx(void) const         { return numTx_; }
 
-   const std::string&  getFileName(void) const { return blkFile_; }
-   uint64_t       getOffset(void) const { return blkFileOffset_; }
-   uint32_t       getBlockFileNum(void) const { return blkFileNum_; }
+   const std::string&   getFileName(void) const { return blkFile_; }
+   uint64_t             getOffset(void) const { return blkFileOffset_; }
+   uint32_t             getBlockFileNum(void) const { return blkFileNum_; }
 
    /////////////////////////////////////////////////////////////////////////////
-   uint8_t const * getPtr(void) const  {
+   uint8_t const * getPtr(void) const {
       assert(isInitialized_);
       return dataCopy_.getPtr();
    }
@@ -108,7 +108,7 @@ public:
    void           pprintAlot(std::ostream & os= std::cout);
 
    /////////////////////////////////////////////////////////////////////////////
-   const BinaryData& serialize(void) const   { return dataCopy_; }
+   const BinaryData& serialize(void) const { return dataCopy_; }
 
    bool hasFilePos(void) const { return blkFileNum_ != UINT32_MAX; }
 
@@ -131,7 +131,7 @@ public:
    }
 
    unsigned int getThisID(void) const { return uniqueID_; }
-   void setUniqueID(unsigned int& ID) { uniqueID_ = ID; }
+   void setUniqueID(unsigned int ID) { uniqueID_ = ID; }
 
 private:
    BinaryData     dataCopy_;

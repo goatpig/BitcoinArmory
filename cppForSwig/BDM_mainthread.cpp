@@ -183,11 +183,10 @@ try {
          bdm->triggerOneTimeHooks(notifPtr.get());
          bdm->notificationStack_.push_back(std::move(notifPtr));
 
-         stringstream ss;
+         std::stringstream ss;
          ss << "found new top!" << endl;
-         ss << "  hash: " << reorgState.newTop_->getThisHash().toHexStr() << endl;
+         ss << "  hash: " << reorgState.newTop_->getThisHash().toHexStr() << std::endl;
          ss << "  height: " << reorgState.newTop_->getBlockHeight();
-
          LOGINFO << ss.str();
       }
    };
@@ -211,19 +210,19 @@ try {
                /*
                More new blocks may have appeared while we were parsing the
                current batch. The chain update code will grab as many blocks
-               as it sees in a single call. Therefor, while N new blocks 
-               generate N new block notifications, a single call to 
+               as it sees in a single call. Therefor, while N new blocks
+               generate N new block notifications, a single call to
                updateChainLambda would cover them all.
 
                updateChainLambda is an expensive call and it is unnecessary to
                run it as many times as we have pending new block notifications.
-               The notifications just indicate that updateChainLamda should be 
+               The notifications just indicate that updateChainLamda should be
                ran, not how often. Hence after a run to updateChainLambda, we
                want to deplete the block notification queue, run
                updateChainLambda one more time for good measure, and break out
                of the inner, non blocking queue wait loop once it is empty.
 
-               The outer blocking queue wait will then once again act as the 
+               The outer blocking queue wait will then once again act as the
                signal to check the chain and deplete the queue
                */
 

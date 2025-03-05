@@ -997,7 +997,16 @@ void CppBridge::getHistoryPageForDelegate(
 {
    auto iter = delegateMap_.find(id);
    if (iter == delegateMap_.end()) {
-      throw std::runtime_error("unknown delegate: " + id);
+      capnp::MallocMessageBuilder message;
+      auto fromBridge = message.initRoot<FromBridge>();
+      auto reply = fromBridge.initReply();
+      reply.setReferenceId(msgId);
+      reply.setSuccess(false);
+      reply.setError(std::string{"unknown delegate id: "} + id);
+
+      auto payload = serializeCapnp(message);
+      this->writeToClient(payload);
+      return;
    }
 
    auto lbd = [this, msgId](
@@ -1012,6 +1021,7 @@ void CppBridge::getHistoryPageForDelegate(
       auto delegate = reply.initDelegate();
       auto pages = delegate.initGetPages(histVec.size());
       ledgersToCapnp(histVec, pages);
+      reply.setSuccess(true);
 
       auto payload = serializeCapnp(message);
       this->writeToClient(payload);

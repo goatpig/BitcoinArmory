@@ -34,6 +34,8 @@ struct HeightAndDup
    {}
 };
 
+class BlockData;
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // Manages the blockchain, keeping track of all the block headers
@@ -59,7 +61,7 @@ public:
    /**
     * check/add blocks to the chain
    **/
-   std::set<uint32_t> checkForNewBlocks(const std::deque<HeaderPtr>&);
+   std::set<uint32_t> checkForNewBlocks(const std::vector<std::shared_ptr<BlockData>>&);
    void addBlocksInBulk(const std::deque<std::deque<HeaderPtr>>&, bool flag);
    void forceAddBlocksInBulk(std::map<BinaryData, HeaderPtr>&);
 
@@ -100,6 +102,7 @@ public:
 
    std::map<unsigned, std::set<unsigned>> mapIDsPerBlockFile(void) const;
    std::map<unsigned, HeightAndDup> getHeightAndDupMap(void) const;
+   void flagBlockHeader(std::shared_ptr<BlockHeader>, LMDBBlockDatabase*);
 
 private:
    std::shared_ptr<BlockHeader> organizeChain(bool forceRebuild = false, bool verbose = false);

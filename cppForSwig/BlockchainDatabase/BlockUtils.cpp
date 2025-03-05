@@ -329,21 +329,19 @@ void BlockDataManager::loadDiskState(const ProgressCallback &progress,
 
 ////////////////////////////////////////////////////////////////////////////////
 Blockchain::ReorganizationState BlockDataManager::readBlkFileUpdate()
-{ 
+{
    return dbBuilder_->update();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 StoredHeader BlockDataManager::getBlockFromDB(uint32_t hgt, uint8_t dup) const
 {
-
    // Get the full block from the DB
    StoredHeader returnSBH;
-   if(!iface_->getStoredHeader(returnSBH, hgt, dup))
+   if (!iface_->getStoredHeader(returnSBH, hgt, dup)) {
       return {};
-
+   }
    return returnSBH;
-
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -352,7 +350,7 @@ StoredHeader BlockDataManager::getMainBlockFromDB(uint32_t hgt) const
    uint8_t dupMain = iface_->getValidDupIDForHeight(hgt);
    return getBlockFromDB(hgt, dupMain);
 }
-   
+
 ////////////////////////////////////////////////////////////////////////////////
 shared_ptr<ScrAddrFilter> BlockDataManager::getScrAddrFilter(void) const
 {

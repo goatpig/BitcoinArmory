@@ -36,7 +36,6 @@ private:
    void loadBlockHeadersFromDB(const ProgressCallback&);
    std::deque<std::shared_ptr<BlockHeader>> addBlocksToDB(
       const BlockDataLoader::BlockDataCopy&,
-      std::shared_ptr<BlockOffset>,
       bool fullHints
    );
    void parseBlockFile(
@@ -47,7 +46,8 @@ private:
    );
 
    Blockchain::ReorganizationState updateBlocksInDB(
-      const ProgressCallback &progress, bool verbose, bool fullHints);
+      const ProgressCallback&, bool verbose, bool fullHints,
+      std::shared_ptr<BlockDataLoader> bdl=nullptr);
    BinaryData initTransactionHistory(int32_t startHeight);
    BinaryData scanHistory(int32_t startHeight, bool reportprogress, bool init);
    void undoHistory(Blockchain::ReorganizationState& reorgState);

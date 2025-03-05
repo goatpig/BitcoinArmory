@@ -474,67 +474,68 @@ shared_ptr<BlockData> BlockchainScanner::getBlockData(
       throw std::runtime_error("Invalid FileMap");
    }
 
-   auto bdata = BlockData::deserialize(
-      filemap->ptr() + blockheader->getOffset(),
-      blockheader->getBlockSize(),
-      blockheader, getID, BlockData::CheckHashes::NoChecks);
-   return bdata;
+   try {
+      auto bdata = BlockData::deserialize(
+         filemap->ptr() + blockheader->getOffset(),
+         blockheader->getBlockSize(),
+         blockheader, getID, BlockData::CheckHashes::NoChecks);
+      return bdata;
+   } catch (const BlockDeserializingException&) {
+      blockchain_->flagBlockHeader(blockheader, db_);
+      return nullptr;
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 void BlockchainScanner::processOutputsThread(ParserBatch* batch)
 {
-   map<unsigned, shared_ptr<BlockData>> blockMap;
-   map<BinaryData, map<unsigned, StoredTxOut>> outputMap;
-   map<BinaryData, map<BinaryData, StoredSubHistory>> sshMap;
+   std::map<unsigned, std::shared_ptr<BlockData>> blockMap;
+   std::map<BinaryData, std::map<unsigned, StoredTxOut>> outputMap;
+   std::map<BinaryData, std::map<BinaryData, StoredSubHistory>> sshMap;
 
-   while (1)
-   {
-      auto currentBlock =
-         batch->blockCounter_.fetch_add(1, memory_order_relaxed);
+   while (true) {
+      auto currentBlock = batch->blockCounter_.fetch_add(
+         1, std::memory_order_relaxed);
 
-      if (currentBlock > batch->end_)
+      if (currentBlock > batch->end_) {
          break;
+      }
 
       auto blockdata = getBlockData(batch, currentBlock);
-      if (!blockdata->isInitialized())
-      {
+      if (blockdata == nullptr || !blockdata->isInitialized()) {
          LOGERR << "Could not get block data for height #" << currentBlock;
          return;
       }
-
-      blockMap.insert(make_pair(currentBlock, blockdata));
+      blockMap.emplace(currentBlock, blockdata);
 
       //TODO: flag isMultisig
       const auto header = blockdata->header();
 
-      auto& txns = blockdata->getTxns();
-      for (unsigned i = 0; i < txns.size(); i++)
-      {
+      const auto& txns = blockdata->getTxns();
+      for (unsigned i = 0; i < txns.size(); i++) {
          const BCTX& txn = *(txns[i].get());
-         for (unsigned y = 0; y < txn.txouts_.size(); y++)
-         {
-            auto& txout = txn.txouts_[y];
+         for (unsigned y = 0; y < txn.txouts_.size(); y++) {
+            const auto& txout = txn.txouts_[y];
 
             BinaryRefReader brr(
                txn.data_ + txout.first, txout.second);
             brr.advance(8);
             unsigned scriptSize = (unsigned)brr.get_var_int();
-            auto&& scrRef = BtcUtils::getTxOutScrAddrNoCopy(
+            //probably better to copy this, cause of the non aligned read
+            auto scrRef = BtcUtils::getTxOutScrAddrNoCopy(
                brr.get_BinaryDataRef(scriptSize));
 
             auto saIter = batch->scriptRefMap_->find(scrRef);
-            if (saIter == batch->scriptRefMap_->end())
+            if (saIter == batch->scriptRefMap_->end()) {
                continue;
-
-            if (saIter->second >= (int)blockdata->header()->getBlockHeight())
+            }
+            if (saIter->second >= (int)blockdata->header()->getBlockHeight()) {
                continue;
-
+            }
             //if we got this far, this txout is ours
             //get tx hash
-            auto& txHash = txn.getHash();
-
-            auto&& scrAddr = scrRef.getScrAddr();
+            const auto& txHash = txn.getHash();
+            auto scrAddr = scrRef.getScrAddr();
 
             //construct StoredTxOut
             StoredTxOut stxo;
@@ -551,16 +552,16 @@ void BlockchainScanner::processOutputsThread(ParserBatch* batch)
             stxo.isCoinbase_ = txn.isCoinbase_;
             auto value = stxo.getValue();
 
-            auto&& hgtx = DBUtils::heightAndDupToHgtx(
+            auto hgtx = DBUtils::heightAndDupToHgtx(
                stxo.blockHeight_, stxo.duplicateID_);
 
-            auto&& txioKey = DBUtils::getBlkDataKeyNoPrefix(
+            auto txioKey = DBUtils::getBlkDataKeyNoPrefix(
                stxo.blockHeight_, stxo.duplicateID_,
                i, y);
 
             //update utxos_
             auto& stxoHashMap = outputMap[txHash];
-            stxoHashMap.insert(make_pair(y, move(stxo)));
+            stxoHashMap.emplace(y, std::move(stxo));
 
             //update ssh_
             auto& ssh = sshMap[scrAddr];
@@ -571,28 +572,27 @@ void BlockchainScanner::processOutputsThread(ParserBatch* batch)
             txio.setValue(value);
             txio.setTxOut(txioKey);
             txio.setFromCoinbase(txn.isCoinbase_);
-            subssh.txioMap_.insert(make_pair(txioKey, move(txio)));
+            subssh.txioMap_.emplace(txioKey, std::move(txio));
          }
       }
    }
 
    //grab batch mutex and merge processed data in
-   unique_lock<mutex> lock(batch->mergeMutex_);
+   std::unique_lock<std::mutex> lock(batch->mergeMutex_);
 
    batch->blockMap_.insert(blockMap.begin(), blockMap.end());
    batch->outputMap_.insert(outputMap.begin(), outputMap.end());
 
-   for (auto& ssh_pair : sshMap)
-   {
+   for (auto& ssh_pair : sshMap) {
       auto ssh_iter = batch->sshMap_.find(ssh_pair.first);
-      if (ssh_iter == batch->sshMap_.end())
-      {
-         batch->sshMap_.insert(move(ssh_pair));
+      if (ssh_iter == batch->sshMap_.end()) {
+         batch->sshMap_.emplace(std::move(ssh_pair));
          continue;
       }
 
-      for (auto& subssh_pair : ssh_pair.second)
-         ssh_iter->second.insert(move(subssh_pair));
+      for (auto& subssh_pair : ssh_pair.second) {
+         ssh_iter->second.emplace(std::move(subssh_pair));
+      }
    }
 }
 

@@ -92,65 +92,60 @@ bool LDBIter::advanceAndRead(DB_PREFIX prefix)
 
 ////////////////////////////////////////////////////////////////////////////////
 BinaryData LDBIter::getKey(void) const
-{ 
-   if(isDirty_)
-   {
+{
+   if(isDirty_) {
       LOGERR << "Returning dirty key ref";
-      return BinaryData(0);
+      return {};
    }
    return currKey_;
 }
-   
+
 ////////////////////////////////////////////////////////////////////////////////
 BinaryData LDBIter::getValue(void) const
-{ 
-   if(isDirty_)
-   {
+{
+   if(isDirty_) {
       LOGERR << "Returning dirty value ref";
-      return BinaryData(0);
+      return {};
    }
    return currValue_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 BinaryDataRef LDBIter::getKeyRef(void) const
-{ 
-   if(isDirty_)
-   {
+{
+   if(isDirty_) {
       LOGERR << "Returning dirty key ref";
-      return BinaryDataRef();
+      return {};
    }
    return currKeyReader_.getRawRef();
 }
    
 ////////////////////////////////////////////////////////////////////////////////
 BinaryDataRef LDBIter::getValueRef(void) const
-{ 
-   if(isDirty_)
-   {
+{
+   if(isDirty_) {
       LOGERR << "Returning dirty value ref";
-      return BinaryDataRef();
+      return {};
    }
    return currValueReader_.getRawRef();
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
 BinaryRefReader& LDBIter::getKeyReader(void) const
-{ 
-   if(isDirty_)
+{
+   if(isDirty_) {
       LOGERR << "Returning dirty key reader";
-   return currKeyReader_; 
+   }
+   return currKeyReader_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 BinaryRefReader& LDBIter::getValueReader(void) const
-{ 
+{
    if(isDirty_)
       LOGERR << "Returning dirty value reader";
-   return currValueReader_; 
+   return currValueReader_;
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////
 bool LDBIter::seekTo(DB_PREFIX pref, BinaryDataRef key)
@@ -502,8 +497,7 @@ void LMDBBlockDatabase::cycleDatabase(DB_SELECT db)
 ////////////////////////////////////////////////////////////////////////////////
 void LMDBBlockDatabase::resetHistoryDatabases(void)
 {
-   if (getDbType() != ARMORY_DB_SUPER)
-   {
+   if (getDbType() != ARMORY_DB_SUPER) {
       resetSSHdb();
 
       auto db_subssh = getDbPtr(SUBSSH);
@@ -514,9 +508,7 @@ void LMDBBlockDatabase::resetHistoryDatabases(void)
       db_subssh->eraseOnDisk();
       db_hints->eraseOnDisk();
       db_stxo->eraseOnDisk();
-   }
-   else
-   {
+   } else {
       auto db_subssh = getDbPtr(SUBSSH);
       auto db_subssh_meta = getDbPtr(SUBSSH_META);
       auto db_ssh = getDbPtr(SSH);
@@ -528,7 +520,6 @@ void LMDBBlockDatabase::resetHistoryDatabases(void)
       db_ssh->eraseOnDisk();
       db_spentness->eraseOnDisk();
    }
-   
    openDatabases(DatabaseContainer::baseDir_);
 }
 
@@ -777,28 +768,24 @@ unsigned LMDBBlockDatabase::getHeightForTxHash(
 
 /////////////////////////////////////////////////////////////////////////////
 // Put value based on BinaryData key.  If batch writing, pass in the batch
-void LMDBBlockDatabase::putValue(DB_SELECT db, 
-                                  BinaryDataRef key, 
-                                  BinaryDataRef value)
+void LMDBBlockDatabase::putValue(DB_SELECT db,
+   BinaryDataRef key, BinaryDataRef value)
 {
    auto dbPtr = getDbPtr(db);
    dbPtr->putValue(key, value);
 }
 
 /////////////////////////////////////////////////////////////////////////////
-void LMDBBlockDatabase::putValue(DB_SELECT db, 
-                              BinaryData const & key, 
-                              BinaryData const & value)
+void LMDBBlockDatabase::putValue(DB_SELECT db,
+   BinaryData const & key, BinaryData const & value)
 {
    putValue(db, key.getRef(), value.getRef());
 }
 
 /////////////////////////////////////////////////////////////////////////////
 // Put value based on BinaryData key.  If batch writing, pass in the batch
-void LMDBBlockDatabase::putValue(DB_SELECT db, 
-                                  DB_PREFIX prefix,
-                                  BinaryDataRef key, 
-                                  BinaryDataRef value)
+void LMDBBlockDatabase::putValue(DB_SELECT db, DB_PREFIX prefix,
+   BinaryDataRef key, BinaryDataRef value)
 {
    BinaryWriter bw;
    bw.put_uint8_t((uint8_t)prefix);
@@ -808,8 +795,7 @@ void LMDBBlockDatabase::putValue(DB_SELECT db,
 
 /////////////////////////////////////////////////////////////////////////////
 // Delete value based on BinaryData key.  If batch writing, pass in the batch
-void LMDBBlockDatabase::deleteValue(DB_SELECT db, 
-                                 BinaryDataRef key)                 
+void LMDBBlockDatabase::deleteValue(DB_SELECT db, BinaryDataRef key)
 {
    auto dbPtr = getDbPtr(db);
    dbPtr->deleteValue(key);
@@ -817,9 +803,8 @@ void LMDBBlockDatabase::deleteValue(DB_SELECT db,
 
 /////////////////////////////////////////////////////////////////////////////
 // Delete Put value based on BinaryData key.  If batch writing, pass in the batch
-void LMDBBlockDatabase::deleteValue(DB_SELECT db, 
-                                 DB_PREFIX prefix,
-                                 BinaryDataRef key)
+void LMDBBlockDatabase::deleteValue(DB_SELECT db, DB_PREFIX prefix,
+   BinaryDataRef key)
 {
    BinaryWriter bw;
    bw.put_uint8_t((uint8_t)prefix);
@@ -828,15 +813,12 @@ void LMDBBlockDatabase::deleteValue(DB_SELECT db,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool LMDBBlockDatabase::fillStoredSubHistory(
-   StoredScriptHistory& ssh, unsigned start, unsigned end) const
+bool LMDBBlockDatabase::fillStoredSubHistory(StoredScriptHistory& ssh,
+   unsigned start, unsigned end) const
 {
-   if (DBSettings::getDbType() == ARMORY_DB_SUPER)
-   {
+   if (DBSettings::getDbType() == ARMORY_DB_SUPER) {
       return fillStoredSubHistory_Super(ssh, start, end);
-   }
-   else
-   {
+   } else {
       auto subsshtx = beginTransaction(SUBSSH, LMDB::ReadOnly);
       auto subsshIter = getIterator(SUBSSH);
 
@@ -844,58 +826,58 @@ bool LMDBBlockDatabase::fillStoredSubHistory(
       dbkey_withHgtX.put_uint8_t(DB_PREFIX_SCRIPT);
       dbkey_withHgtX.put_BinaryData(ssh.uniqueKey_);
 
-      if (start != 0)
-      {
+      if (start != 0) {
          dbkey_withHgtX.put_BinaryData(DBUtils::heightAndDupToHgtx(start, 0));
       }
 
-      if (!subsshIter->seekTo(dbkey_withHgtX.getDataRef()))
+      if (!subsshIter->seekTo(dbkey_withHgtX.getDataRef())) {
          return false;
+      }
+
       // Now start iterating over the sub histories
-      map<BinaryData, StoredSubHistory>::iterator iter;
+      std::map<BinaryData, StoredSubHistory>::iterator iter;
       size_t numTxioRead = 0;
-      do
-      {
+      do {
          size_t _sz = subsshIter->getKeyRef().getSize();
          BinaryDataRef keyNoPrefix = subsshIter->getKeyRef().getSliceRef(1, _sz - 1);
-         if (!keyNoPrefix.startsWith(ssh.uniqueKey_))
+         if (!keyNoPrefix.startsWith(ssh.uniqueKey_)) {
             break;
-
-         pair<BinaryData, StoredSubHistory> keyValPair;
+         }
+         std::pair<BinaryData, StoredSubHistory> keyValPair;
          keyValPair.first = keyNoPrefix.getSliceCopy(_sz - 5, 4);
          keyValPair.second.unserializeDBKey(subsshIter->getKeyRef());
 
          //iter is at the right ssh, make sure hgtX <= endBlock
-         if (keyValPair.second.height_ > end)
+         if (keyValPair.second.height_ > end) {
             break;
-
+         }
          //skip invalid dupIDs
          if (keyValPair.second.dupID_ !=
-            getValidDupIDForHeight(keyValPair.second.height_))
+            getValidDupIDForHeight(keyValPair.second.height_)) {
             continue;
-
+         }
          keyValPair.second.unserializeDBValue(subsshIter->getValueReader());
          iter = ssh.subHistMap_.insert(keyValPair).first;
          numTxioRead += iter->second.txioMap_.size();
       } while (subsshIter->advanceAndRead(DB_PREFIX_SCRIPT));
-
       return true;
-   }     
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 unsigned LMDBBlockDatabase::getShardIdForHeight(unsigned height) const
 {
    auto hiMap = heightToBatchId_.get();
-   if (hiMap->size() == 0)
+   if (hiMap->empty()) {
       return UINT32_MAX;
-
+   }
    auto height_iter = hiMap->lower_bound(height);
-   if (height_iter == hiMap->end())
+   if (height_iter == hiMap->end()) {
       return hiMap->rbegin()->second;
-
-   if (height_iter->first > height && height_iter != hiMap->begin())
+   }
+   if (height_iter->first > height && height_iter != hiMap->begin()) {
       --height_iter;
+   }
    return height_iter->second;
 }
 
@@ -904,9 +886,9 @@ unsigned LMDBBlockDatabase::getNextShardIdForHeight(unsigned height) const
 {
    auto hiMap = heightToBatchId_.get();
    auto height_iter = hiMap->upper_bound(height);
-   if (height_iter == hiMap->end())
+   if (height_iter == hiMap->end()) {
       return UINT32_MAX;
-
+   }
    return height_iter->second;
 }
 
@@ -2957,29 +2939,89 @@ void LMDBBlockDatabase::loadHeightToIdMap()
    auto tx = beginTransaction(SUBSSH_META, LMDB::ReadOnly);
    auto dbIter = getIterator(SUBSSH_META);
 
-   map<unsigned, unsigned> heightToIdMap;
-   
+   std::map<unsigned, unsigned> heightToIdMap;
    BinaryWriter bw_key(8);
-   bw_key.put_uint32_t(0);
-   bw_key.put_uint32_t(0);
-      
-   if (!dbIter->seekToExact(bw_key.getDataRef()))
+   bw_key.put_uint64_t(0);
+   if (!dbIter->seekToExact(bw_key.getDataRef())) {
       return;
+   }
 
-   do
-   {
+   do {
       auto brr_value = dbIter->getValueReader();
       auto height = brr_value.get_uint32_t();
 
       auto brr_key = dbIter->getKeyReader();
       auto ctr = brr_key.get_uint32_t(BE);
 
-      heightToIdMap.insert(make_pair(height, ctr));
+      heightToIdMap.emplace(height, ctr);
       ++ctr;
-   } 
-   while (dbIter->advanceAndRead());
+   } while (dbIter->advanceAndRead());
+   heightToBatchId_.update(std::move(heightToIdMap));
+}
 
-   heightToBatchId_.update(move(heightToIdMap));
+////////////////////////////////////////////////////////////////////////////////
+bool LMDBBlockDatabase::getOrSetFlaggedBlockFile(uint32_t fileNum)
+{
+   BinaryWriter bw_key(5);
+   bw_key.put_uint8_t((uint8_t)DB_PREFIX_FLAGGED_BLOCKFILES);
+   bw_key.put_uint32_t(fileNum, BE);
+
+   auto tx = beginTransaction(HEADERS, LMDB::ReadWrite);
+   auto dbIter = getIterator(HEADERS);
+
+   if (!dbIter->seekToExact(bw_key.getDataRef())) {
+      //missing this file num, add it
+      putValue(HEADERS, bw_key.getDataRef(), {});
+      return true;
+   } else {
+      //nothing to set, return false
+      return false;
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+std::vector<uint32_t> LMDBBlockDatabase::getFlaggedFileNums() const
+{
+   auto tx = beginTransaction(HEADERS, LMDB::ReadOnly);
+   auto dbIter = getIterator(HEADERS);
+
+   if (!dbIter->seekToStartsWith(DB_PREFIX_FLAGGED_BLOCKFILES)) {
+      return {};
+   }
+
+   std::vector<uint32_t> result;
+   do {
+      if (!dbIter->verifyPrefix(DB_PREFIX_FLAGGED_BLOCKFILES)) {
+         break;
+      }
+
+      auto keyReader = dbIter->getKeyReader();
+      result.emplace_back(keyReader.get_uint32_t(BE));
+   } while (dbIter->advanceAndRead());
+   return result;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void LMDBBlockDatabase::clearFlaggedFileNums()
+{
+   auto tx = beginTransaction(HEADERS, LMDB::ReadWrite);
+   auto dbIter = getIterator(HEADERS);
+
+   if (!dbIter->seekToStartsWith(DB_PREFIX_FLAGGED_BLOCKFILES)) {
+      return;
+   }
+
+   std::set<BinaryData> keysToDelete;
+   do {
+      if (!dbIter->verifyPrefix(DB_PREFIX_FLAGGED_BLOCKFILES)) {
+         break;
+      }
+      keysToDelete.emplace(dbIter->getKey());
+   } while (dbIter->advanceAndRead());
+
+   for (const auto& key : keysToDelete) {
+      deleteValue(HEADERS, key);
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

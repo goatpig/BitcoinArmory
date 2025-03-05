@@ -1115,8 +1115,6 @@ namespace
       LedgerDelegateRequest::Reader& request)
    {
       std::string delegateId = request.getId();
-      BinaryData response;
-
       switch (request.which())
       {
          case LedgerDelegateRequest::GET_PAGES:
@@ -1130,13 +1128,9 @@ namespace
 
          case LedgerDelegateRequest::GET_PAGE_COUNT:
          {
+            LOGWARN << "[GET_PAGE_COUNT] implement me!";
             break;
          }
-      }
-
-      if (!response.empty()) {
-         //write response to socket
-         bridge->writeToClient(response);
       }
       return true;
    }

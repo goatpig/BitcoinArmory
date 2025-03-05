@@ -19,9 +19,9 @@ namespace {
    auto blkFilePrefix = "blk"sv;
 
    std::shared_ptr<FileUtils::FileCopy> getFileCopy(
-      uint16_t id, const BlockDataLoader::PathAndOffset& path)
+      const BlockDataLoader::PathAndOffset& path)
    {
-      if (id == UINT16_MAX) {
+      if (path.fileID == UINT16_MAX) {
          return nullptr;
       }
       return std::make_shared<FileUtils::FileCopy>(path.path, path.offset);
@@ -175,6 +175,15 @@ std::shared_ptr<BlockData> BlockData::deserialize(
 }
 
 /////////////////////////////////////////////////////////////////////////////
+void BlockData::setUniqueID(uint32_t id)
+{
+   uniqueID_ = id;
+   if (txFilter_ != nullptr) {
+      txFilter_->blockKey_ = id;
+   }
+}
+
+/////////////////////////////////////////////////////////////////////////////
 void BlockData::computeTxFilter(const std::vector<BinaryData>& allHashes)
 {
    if (txFilter_ == nullptr) {
@@ -200,7 +209,7 @@ std::shared_ptr<BlockHeader> BlockData::createBlockHeader() const
    auto bhPtr = std::make_shared<BlockHeader>();
    auto& bh = *bhPtr;
 
-   bh.dataCopy_ = std::move(BinaryData(data_, HEADER_SIZE));
+   bh.dataCopy_ = std::move(BinaryData{data_, HEADER_SIZE});
    bh.difficultyDbl_ = BtcUtils::convertDiffBitsToDouble(
       BinaryDataRef(data_ + 72, 4));
 
@@ -210,7 +219,7 @@ std::shared_ptr<BlockHeader> BlockData::createBlockHeader() const
    bh.difficultySum_ = -1;
    bh.isMainBranch_ = false;
    bh.isOrphan_ = true;
-   
+
    bh.numBlockBytes_ = size_;
    bh.numTx_ = txns_.size();
 
@@ -300,16 +309,32 @@ BlockDataLoader::BlockDataLoader(
    auto iter = files->paths_.begin();
    if (startOffset.fileID != UINT16_MAX) {
       iter = files->paths_.find(startOffset.fileID);
-      startFileId_ = startOffset.fileID;
    }
 
    if (iter == files->paths_.end()) {
       throw std::runtime_error("could not find first file index!");
    }
 
-   paf_.emplace_back(PathAndOffset{iter->second, startOffset.offset});
+   paf_.emplace_back(PathAndOffset{iter->second,
+      startOffset.fileID, startOffset.offset});
    while (++iter != files->paths_.end()) {
-      paf_.emplace_back(PathAndOffset{iter->second, 0});
+      paf_.emplace_back(PathAndOffset{iter->second, iter->first, 0});
+   }
+}
+
+/////////////////////////////////////////////////////////////////////////////
+BlockDataLoader::BlockDataLoader(std::shared_ptr<BlockFiles> files,
+   const std::set<uint32_t>& fileIDs)
+{
+   counter_.store(0, std::memory_order_relaxed);
+   for (const auto& fileID : fileIDs) {
+      auto iter = files->paths_.find(fileID);
+      if (iter == files->paths_.end()) {
+         //this bdl ctor is permissive, simply ignore ids for which there
+         //is no associated file
+         continue;
+      }
+      paf_.emplace_back(PathAndOffset{iter->second, fileID, 0});
    }
 }
 
@@ -330,10 +355,10 @@ BlockDataLoader::BlockDataCopy BlockDataLoader::getNextCopy()
 {
    uint16_t id = counter_.fetch_add(1, std::memory_order_relaxed);
    if (id >= paf_.size()) {
-      return BlockDataCopy{UINT16_MAX, {}};
+      return {};
    }
    const auto& file = paf_[id];
-   return { id + startFileId_, file };
+   return {file};
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -351,10 +376,13 @@ bool BlockDataLoader::isValid() const
 /////////////////////////////////////////////////////////////////////////////
 // BlockDataCopy
 /////////////////////////////////////////////////////////////////////////////
-BlockDataLoader::BlockDataCopy::BlockDataCopy(uint16_t id,
-   const PathAndOffset& path) :
-   fileID(id), offset(path.offset),
-   data(getFileCopy(id, path))
+BlockDataLoader::BlockDataCopy::BlockDataCopy(const PathAndOffset& path) :
+   fileID(path.fileID), offset(path.offset),
+   data(getFileCopy(path))
+{}
+
+////
+BlockDataLoader::BlockDataCopy::BlockDataCopy()
 {}
 
 /////////////////////////////////////////////////////////////////////////////
