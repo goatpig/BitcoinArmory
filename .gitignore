@@ -141,3 +141,6 @@ _CppBlockUtils.*
 /cppForSwig/x64*
 /cppForSwig/LMDB_Win/x64*
 /cppForSwig/x64/*.*
+
+# Visual Studio cache/options directory
+.vs/
