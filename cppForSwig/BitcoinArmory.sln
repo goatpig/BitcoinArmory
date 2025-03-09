@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Express 2013 for Windows Desktop
-VisualStudioVersion = 12.0.40629.0
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.35818.85 d17.13
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "guardian", "guardian\guardian.vcxproj", "{D35F732D-55D7-4037-9C6D-E141F740F802}"
 EndProject
@@ -23,8 +23,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BDM_Client", "BDM_Client\BDM_Client.vcxproj", "{F7B56CDA-B8DF-4AE6-81DE-D0B3DCA226DA}"
 	ProjectSection(ProjectDependencies) = postProject
-		{D35F732D-55D7-4037-9C6D-E141F740F802} = {D35F732D-55D7-4037-9C6D-E141F740F802}
 		{2DAEB6BF-8CF7-43D5-AEA9-BF824BBC8AE4} = {2DAEB6BF-8CF7-43D5-AEA9-BF824BBC8AE4}
+		{B1055DA3-83CE-47BF-98E6-2850E3411D39} = {B1055DA3-83CE-47BF-98E6-2850E3411D39}
+		{D35F732D-55D7-4037-9C6D-E141F740F802} = {D35F732D-55D7-4037-9C6D-E141F740F802}
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ContainerTests", "ContainerTests\ContainerTests.vcxproj", "{BCBFED48-7330-493F-B2CA-65109046D74A}"
