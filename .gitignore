@@ -132,6 +132,7 @@ _CppBlockUtils.*
 
 /cppForSwig/BDM_Client/build*
 /cppForSwig/BDM_Client/x64*
+/cppForSwig/BDM_Client/MSVCP90.dll
 /cppForSwig/BitcoinArmory_CppTests/x64*
 /cppForSwig/BlockDataManager/x64*
 /cppForSwig/ContainerTests/Release*
@@ -141,3 +142,6 @@ _CppBlockUtils.*
 /cppForSwig/x64*
 /cppForSwig/LMDB_Win/x64*
 /cppForSwig/x64/*.*
+
+# Visual Studio cache/options directory
+.vs/

@@ -396,7 +396,7 @@ bool JSON_object::isResponseValid(int id)
    auto error_obj = dynamic_pointer_cast<JSON_state>(errorVal);
 
    if (error_obj == nullptr)
-      return false;
+      return true;
 
    if (error_obj->state_ != JSON_null)
       return false;

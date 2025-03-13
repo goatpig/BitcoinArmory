@@ -4,8 +4,8 @@ mkdir ..\..\ArmoryStandalone
 copy ..\Release\guardian.exe ..\..\ArmoryStandalone
 
 python ..\..\update_version.py
-copy ..\libs\x64\BDM_Client.dll ..\..\_CppBlockUtils.pyd 
-C:\Python27_64\Lib\site-packages\PyQt4\pyrcc4.exe -o ..\..\qrc_img_resources.py ..\..\imgList.xml
+copy ..\libs\x64\BDM_Client.dll ..\..\_CppBlockUtils.pyd
+C:\Python27\Lib\site-packages\PyQt4\pyrcc4.exe -o ..\..\qrc_img_resources.py ..\..\imgList.xml
 python ..\..\setup.py py2exe --includes sip,hashlib -d ..\..\ArmoryStandalone
 copy ..\x64\Release\BlockDataManager.exe ..\..\ArmoryStandalone\ArmoryDB.exe
 
