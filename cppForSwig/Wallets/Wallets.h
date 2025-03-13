@@ -298,8 +298,6 @@ namespace Armory
             std::shared_ptr<Assets::AssetEntry_Single> pubRoot);
 
       private:
-         static WalletPublicData exportPublicData(
-            std::shared_ptr<AssetWallet_Single>);
          static void importPublicData(const WalletPublicData&,
             std::shared_ptr<IO::WalletDBInterface>);
 
@@ -377,6 +375,13 @@ namespace Armory
             const std::filesystem::path& folder,
             const std::string& walletID,
             const SecureBinaryData& controlPassphrase);
+
+         static WalletPublicData exportPublicData(
+            std::shared_ptr<AssetWallet_Single>);
+         static void mergePublicData(
+            const std::filesystem::path&,
+            const PassphraseLambda&,
+            const WalletPublicData&);
       };
 
       //////////////////////////////////////////////////////////////////////////
@@ -388,7 +393,6 @@ namespace Armory
          std::atomic<unsigned> chainLength_;
 
       protected:
-
          //virtual
          void readFromFile(void);
          const SecureBinaryData& getDecryptedValue(
@@ -400,16 +404,15 @@ namespace Armory
             std::shared_ptr<IO::WalletHeader>, const std::string&);
 
          //virtual
-         bool setImport(int importID, const SecureBinaryData& pubkey);
          std::shared_ptr<Assets::AssetEntry> getRoot(void) const override
          { return nullptr; }
 
+         //static
          static std::shared_ptr<AssetWallet> createFromWallets(
             std::vector<std::shared_ptr<AssetWallet>> wallets,
             unsigned M,
             unsigned lookup = UINT32_MAX);
 
-         //local
       };
    }; //namespace Wallets
 }; //namespace Armory

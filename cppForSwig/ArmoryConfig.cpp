@@ -18,7 +18,7 @@
 #include "BitcoinSettings.h"
 #include "nodeRPC.h"
 
-#include "gtest/NodeUnitTest.h"
+#include "gtest/MockedNode.h"
 
 #include <string_view>
 #include <charconv>
@@ -90,6 +90,8 @@ void Armory::Config::printHelp(void)
 --zcthread-count           defines the maximum number on threads the zc parser
                            can create for processing incoming transcations from
                            the network node
+--rewind-blocks            sets an amount of blocks to rescan from the top on
+                           restart. Defaults at 100.
 --db-type                  sets the db type:
                            DB_BARE:  tracks wallet history only. Smallest DB.
                            DB_FULL:  tracks wallet history and resolves all
@@ -458,6 +460,7 @@ SOCKET_SERVICE DBSettings::service_ = SERVICE_WEBSOCKET;
 unsigned DBSettings::ramUsage_ = 4;
 unsigned DBSettings::threadCount_ = std::thread::hardware_concurrency();
 unsigned DBSettings::zcThreadCount_ = DEFAULT_ZCTHREAD_COUNT;
+unsigned DBSettings::rewindCount_ = 100;
 
 bool DBSettings::reportProgress_ = true;
 bool DBSettings::checkChain_ = false;
@@ -549,6 +552,18 @@ void DBSettings::processArgs(const std::map<std::string, std::string>& args)
 
       if (val > 0) {
          zcThreadCount_ = val;
+      }
+   }
+
+   iter = args.find("rewind-blocks");
+   if (iter != args.end()) {
+      int val = -1;
+      try {
+         val = stoi(iter->second);
+      } catch (...) {}
+
+      if (val > -1) {
+         rewindCount_ = val;
       }
    }
 }

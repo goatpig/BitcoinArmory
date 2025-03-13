@@ -1,7 +1,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2021, goatpig                                          //
+//  Copyright (C) 2016-2025, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -363,8 +363,6 @@ namespace DBTestUtils
          return;
       }
 
-      BinaryDataRef wltNameRef;
-      wltNameRef.setRef(wltName);
       while (true) {
          auto cbReply = waitOnSignal(clients, bdvId,
             (int)Codec::BDV::Notification::REFRESH);
@@ -384,8 +382,7 @@ namespace DBTestUtils
          auto refresh = capnpNotif.getRefresh();
          auto refreshIds = refresh.getIds();
          for (auto refreshId : refreshIds) {
-            BinaryData idRef(refreshId.begin(), refreshId.end());
-            if (idRef == wltNameRef) {
+            if (refreshId == wltName) {
                return;
             }
          }
@@ -505,14 +502,31 @@ namespace DBTestUtils
       auto cbPtr = bdv_obj->notifications_.get();
       auto unittest_cbptr = dynamic_cast<UnitTest_Callback*>(cbPtr);
       if (unittest_cbptr == nullptr) {
-         throw runtime_error("unexpected callback ptr type");
+         throw std::runtime_error("unexpected callback ptr type");
       }
 
       while (true) {
          auto rawNotif = std::move(unittest_cbptr->getNotification());
          auto index = processCallback(rawNotif);
          if (index > -1) {
-            return make_tuple(rawNotif, index);
+            return std::make_tuple(rawNotif, index);
+         }
+      }
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   void waitOnBDMSignal(std::shared_ptr<BlockDataManager> bdm, BDV_Action action)
+   {
+      while (true) {
+            try {
+            auto notif = std::move(bdm->notificationStack_.pop_front());
+            if (notif == nullptr) {
+               continue;
+            } else if (notif->action_type() == action) {
+               return;
+            }
+         } catch (...) {
+            return;
          }
       }
    }
@@ -521,6 +535,12 @@ namespace DBTestUtils
    void waitOnBDMReady(Clients* clients, const string& bdvId)
    {
       waitOnSignal(clients, bdvId, (int)Codec::BDV::Notification::READY);
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   void waitOnBDMError(std::shared_ptr<BlockDataManager> bdm)
+   {
+      waitOnBDMSignal(bdm, BDV_Action::BDV_Error);
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -572,7 +592,7 @@ namespace DBTestUtils
 
    /////////////////////////////////////////////////////////////////////////////
    void waitOnWalletRefresh(Clients* clients, const string& bdvId,
-      const BinaryData& wltId)
+      const std::string& wltId)
    {
       while (true) {
          auto result = waitOnSignal(clients, bdvId,
@@ -597,8 +617,7 @@ namespace DBTestUtils
          auto refresh = notif.getRefresh();
          auto ids = refresh.getIds();
          for (auto id : ids) {
-            BinaryDataRef idRef(id.begin(), id.end());
-            if (idRef == wltId) {
+            if (id == wltId) {
                return;
             }
          }
@@ -868,10 +887,10 @@ namespace DBTestUtils
    void init(void)
    {
       /*
-      Need a counter to increment the message id of the packets sent to the 
-      BDV object. This counter has to be reset when the BDM is reset. Since 
+      Need a counter to increment the message id of the packets sent to the
+      BDV object. This counter has to be reset when the BDM is reset. Since
       the counter is global to the namespace, this means this test interface
-      cannot sustain multiple concurent BDVs. 
+      cannot sustain multiple concurent BDVs.
 
       Use the websocket interface to have multiple clients instead.
 

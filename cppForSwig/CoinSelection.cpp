@@ -123,25 +123,28 @@ UtxoSelection CoinSelection::getUtxoSelectionForRecipients(
 
 ////////////////////////////////////////////////////////////////////////////////
 UtxoSelection CoinSelection::getUtxoSelection(
-   PaymentStruct& payStruct, const vector<UTXO>& utxoVec)
+   PaymentStruct& payStruct, const std::vector<UTXO>& utxoVec)
 {
+   if (utxoVec.empty()) {
+      throw CoinSelectionException("cannot select from empty utxos");
+   }
+
    //sanity check
    auto utxoVecVal = tallyValue(utxoVec);
-   if (utxoVecVal < payStruct.spendVal())
+   if (utxoVecVal < payStruct.spendVal()) {
       throw CoinSelectionException("spend value > usable balance");
+   }
 
-   if (topHeight_ == UINT32_MAX)
+   if (topHeight_ == UINT32_MAX) {
       throw CoinSelectionException("uninitialized top height");
+   }
 
-   vector<UtxoSelection> selections;
-
+   std::vector<UtxoSelection> selections;
    bool useExhaustiveList = payStruct.flags() & USE_FULL_CUSTOM_LIST;
-   if (!useExhaustiveList)
-   {
+   if (!useExhaustiveList) {
       uint64_t compiledFee_oneOutput = payStruct.fee();
       uint64_t compiledFee_manyOutputs = payStruct.fee();
-      if (payStruct.fee() == 0 && payStruct.fee_byte() > 0.0f)
-      {
+      if (payStruct.fee() == 0 && payStruct.fee_byte() > 0.0f) {
          //no flat fee but a fee_byte is available
 
          //1 uncompressed p2pkh input + txoutSizeByte + 1 change output
@@ -149,109 +152,103 @@ UtxoSelection CoinSelection::getUtxoSelection(
 
          //figure out average txin count
          float valPct = float(payStruct.spendVal()) / float(utxoVecVal);
-         if (valPct > 1.0f)
+         if (valPct > 1.0f) {
             valPct = 1.0f;
-
+         }
          auto averageTxInCount = unsigned(valPct * float(utxoVec.size()));
 
          //medianTxInCount p2pkh inputs + txoutSizeByte + 1 change output
-         compiledFee_manyOutputs = 10 + 
+         compiledFee_manyOutputs = 10 +
             float(averageTxInCount * 180 + 35 + payStruct.size()) * payStruct.fee_byte();
       }
 
       //create deterministic selections
-      for (unsigned i = 0; i < 8; i++)
-      {
-         auto&& sortedVec = CoinSorting::sortCoins(utxoVec, topHeight_, i);
+      for (unsigned i = 0; i < 8; i++) {
+         auto sortedVec = CoinSorting::sortCoins(utxoVec, topHeight_, i);
 
          //one utxo, single val
-         auto&& utxos1 = CoinSubSelection::selectOneUtxo_SingleSpendVal(
+         auto utxos1 = CoinSubSelection::selectOneUtxo_SingleSpendVal(
             sortedVec, payStruct.spendVal(), compiledFee_oneOutput);
-         if (utxos1.size() > 0)
-            selections.push_back(move(UtxoSelection(utxos1)));
+         if (!utxos1.empty()) {
+            selections.emplace_back(UtxoSelection{utxos1});
+         }
 
          //one utxo, double val
-         auto&& utxos2 = CoinSubSelection::selectOneUtxo_DoubleSpendVal(
+         auto utxos2 = CoinSubSelection::selectOneUtxo_DoubleSpendVal(
             sortedVec, payStruct.spendVal(), compiledFee_oneOutput);
-         if (utxos2.size())
-            selections.push_back(move(UtxoSelection(utxos2)));
+         if (!utxos2.empty()) {
+            selections.emplace_back(UtxoSelection{utxos2});
+         }
 
          //many utxos, single val
-         auto&& utxos3 = CoinSubSelection::selectManyUtxo_SingleSpendVal(
+         auto utxos3 = CoinSubSelection::selectManyUtxo_SingleSpendVal(
             sortedVec, payStruct.spendVal(), compiledFee_manyOutputs);
-         if (utxos3.size() > 0)
-            selections.push_back(move(UtxoSelection(utxos3)));
+         if (!utxos3.empty()) {
+            selections.emplace_back(UtxoSelection{utxos3});
+         }
 
          //many utxos, double val
-         auto&& utxos4 = CoinSubSelection::selectManyUtxo_DoubleSpendVal(
+         auto utxos4 = CoinSubSelection::selectManyUtxo_DoubleSpendVal(
             sortedVec, payStruct.spendVal(), compiledFee_manyOutputs);
-         if (utxos4.size() > 0)
-            selections.push_back(move(UtxoSelection(utxos4)));
+         if (!utxos4.empty()) {
+            selections.emplace_back(UtxoSelection{utxos4});
+         }
       }
 
       //create random selections
-      for (unsigned i = 8; i < 10; i++)
-      {
-         for (unsigned y = 0; y < RANDOM_ITER_COUNT; y++)
-         {
-            auto&& sortedVec = CoinSorting::sortCoins(utxoVec, topHeight_, i);
+      for (unsigned i = 8; i < 10; i++) {
+         for (unsigned y = 0; y < RANDOM_ITER_COUNT; y++) {
+            auto sortedVec = CoinSorting::sortCoins(utxoVec, topHeight_, i);
 
             //many utxo, single val
-            auto&& utxos5 = CoinSubSelection::selectManyUtxo_SingleSpendVal(
+            auto utxos5 = CoinSubSelection::selectManyUtxo_SingleSpendVal(
                sortedVec, payStruct.spendVal(), compiledFee_manyOutputs);
-            if (utxos5.size() > 0)
-               selections.push_back(move(UtxoSelection(utxos5)));
+            if (!utxos5.empty()) {
+               selections.emplace_back(UtxoSelection{utxos5});
+            }
 
             //many utxos, double val
-            auto&& utxos6 = CoinSubSelection::selectManyUtxo_DoubleSpendVal(
+            auto utxos6 = CoinSubSelection::selectManyUtxo_DoubleSpendVal(
                sortedVec, payStruct.spendVal(), compiledFee_manyOutputs);
-            if (utxos6.size() > 0)
-               selections.push_back(move(UtxoSelection(utxos6)));
+            if (utxos6.empty()) {
+               selections.emplace_back(UtxoSelection{utxos6});
+            }
          }
       }
-   }
-   else
-   {
+   } else {
       auto copyUtxoVec = utxoVec;
-      UtxoSelection utxoSelect(copyUtxoVec);
-      selections.push_back(move(utxoSelect));
+      selections.emplace_back(UtxoSelection{copyUtxoVec});
    }
 
    //score them, pick top one
    float topScore = 0.0f;
    UtxoSelection* selectPtr = nullptr;
-
-   for (auto& selection : selections)
-   {
-      try
-      {
-         auto score =
-            SelectionScoring::computeScore(selection, payStruct, topHeight_);
-
-         if (score > topScore || selectPtr == nullptr)
-         {
+   for (auto& selection : selections) {
+      try {
+         auto score = SelectionScoring::computeScore(
+            selection, payStruct, topHeight_);
+         if (score > topScore || selectPtr == nullptr) {
             topScore = score;
             selectPtr = &selection;
          }
-      }
-      catch (exception&)
-      { 
+      } catch (const std::exception&) {
          continue;
       }
    }
 
    //sanity check
-   if (selectPtr == nullptr)
+   if (selectPtr == nullptr) {
       throw CoinSelectionException("failed to select utxos");
+   }
 
    //consolidate in case our selection hits addresses with several utxos
    fleshOutSelection(utxoVec, *selectPtr, payStruct);
 
    //one last shuffle for the good measure
    bool shuffle = payStruct.flags() & SHUFFLE_ENTRIES;
-   if (shuffle)
+   if (shuffle) {
       selectPtr->shuffle();
-
+   }
    return *selectPtr;
 }
 
@@ -841,27 +838,25 @@ float SelectionScoring::computeScore(
    UtxoSelection& utxoSelect, const PaymentStruct& payStruct,
    unsigned topHeight)
 {
-   if (utxoSelect.utxoVec_.size() == 0)
+   if (utxoSelect.utxoVec_.empty()) {
       throw CoinSelectionException("empty utxovec");
-
+   }
    Scores score;
-
    static float priorityThreshold = ONE_BTC * 144.0f / 250.0f;
 
    //tally some values
    set<BinaryData> addrSet;
    uint64_t valConf = 0;
 
-   for (auto& utxo : utxoSelect.utxoVec_)
-   {
+   for (auto& utxo : utxoSelect.utxoVec_) {
       auto val = utxo.getValue();
       auto nConf = utxo.getNumConfirm(topHeight);
       valConf += val*nConf;
 
-      if (nConf == 0)
+      if (nConf == 0) {
          score.hasZC_ = 1.0f;
-
-      addrSet.insert(utxo.getRecipientScrAddr());
+      }
+      addrSet.emplace(utxo.getRecipientScrAddr());
    }
 
    //get tx size
@@ -877,59 +872,60 @@ float SelectionScoring::computeScore(
    auto spendVal_zeroCount = (int)getTrailingZeroCount(payStruct.spendVal());
 
    //compute outAnonFactor
-   if (changeVal == 0)
+   if (changeVal == 0) {
       score.outAnonFactor_ = 1.0f;
-   else
-   {
+   } else {
       int zeroDiff = spendVal_zeroCount - changeVal_zeroCount;
-      
-      if (zeroDiff == 2)
+
+      if (zeroDiff == 2) {
          score.outAnonFactor_ = 0.2f;
-      else if (zeroDiff == 1)
+      } else if (zeroDiff == 1) {
          score.outAnonFactor_ = 0.7f;
-      else if (zeroDiff < 1)
+      } else if (zeroDiff < 1) {
          score.outAnonFactor_ = float(abs(zeroDiff) + 1);
+      }
    }
 
-   if (score.outAnonFactor_ > 0 && changeVal != 0)
-   {
+   if (score.outAnonFactor_ > 0 && changeVal != 0) {
       auto outValDiff = abs(int64_t(changeVal - targetVal));
       float diffPct = float(outValDiff) / max(changeVal, targetVal);
-      if (diffPct < 0.2f)
+      if (diffPct < 0.2f) {
          score.outAnonFactor_ *= 1.0f;
-      else if (diffPct < 0.5f)
+      } else if (diffPct < 0.5f) {
          score.outAnonFactor_ *= 0.7f;
-      else if (diffPct < 1.0f)
+      } else if (diffPct < 1.0f) {
          score.outAnonFactor_ *= 0.3f;
-      else
+      } else {
          score.outAnonFactor_ = 0;
+      }
    }
 
    //compute input priority
-   if (score.hasZC_ != 0.0f)
-   {
+   if (score.hasZC_ != 0.0f) {
       float fPriority = float(valConf)/float(utxoSelect.size_);
 
-      if (fPriority < priorityThreshold)
+      if (fPriority < priorityThreshold) {
          score.priorityFactor_ = 0.0f;
-      else if (fPriority < 10.0f*priorityThreshold)
+      } else if (fPriority < 10.0f*priorityThreshold) {
          score.priorityFactor_ = 0.7f;
-      else if (fPriority < 100.0f*priorityThreshold)
+      } else if (fPriority < 100.0f*priorityThreshold) {
          score.priorityFactor_ = 0.9f;
-      else
+      } else {
          score.priorityFactor_ = 1.0f;
+      }
    }
 
    //compute tx size factor
    unsigned numKb = utxoSelect.size_ / 1024;
-   if (numKb < 1)
+   if (numKb < 1) {
       score.txSizeFactor_ = 1.0f;
-   else if (numKb < 2)
+   } else if (numKb < 2) {
       score.txSizeFactor_ = 0.2f;
-   else if (numKb < 3)
+   } else if (numKb < 3) {
       score.txSizeFactor_ = 0.1f;
-   else
+   } else {
       score.txSizeFactor_ = -1.0f;
+   }
 
    return score.compileValue();
 }
@@ -937,23 +933,20 @@ float SelectionScoring::computeScore(
 ////////////////////////////////////////////////////////////////////////////////
 unsigned SelectionScoring::getTrailingZeroCount(uint64_t val)
 {
-   if (val == 0)
+   if (val == 0) {
       return 0;
-
+   }
    unsigned i = 10;
    unsigned count = 0;
-   while (1)
-   {
-      if (val % i != 0)
+   while (true) {
+      if (val % i != 0) {
          break;
-
+      }
       i *= 10;
       count++;
    }
-
    return count;
 };
-
 
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
@@ -969,14 +962,13 @@ void UtxoSelection::computeSizeAndFee(
    size_t txInSize = 0;
    bool sw = false;
 
-   for (auto& utxo : utxoVec_)
-   {
+   for (const auto& utxo : utxoVec_) {
       value_ += utxo.getValue();
       txInSize += utxo.getInputRedeemSize();
 
-      if (!utxo.isSegWit())
+      if (!utxo.isSegWit()) {
          continue;
-
+      }
       witnessSize_ += utxo.getWitnessDataSize();
       sw = true;
    }
@@ -985,40 +977,34 @@ void UtxoSelection::computeSizeAndFee(
 
    //version + locktime + txin count + txout count + txinSize + txoutSize
    unsigned txSize = 10 + txInSize + txOutSize;
-   if (sw)
-   {
+   if (sw) {
       //witness data size + 1 varint per utxo + flag & marker
       txSize += witnessSize_ + utxoVec_.size() + 2;
    }
 
    bool forcedFee = false;
    uint64_t compiled_fee = payStruct.fee();
-   if (compiled_fee != 0)
-   {
+   if (compiled_fee != 0) {
       fee_byte_ = float(compiled_fee) / float(txSize - witnessSize_ * 0.75f);
       forcedFee = true;
-   }
-   else if (payStruct.fee_byte() > 0.0f)
-   {
+   } else if (payStruct.fee_byte() > 0.0f) {
       compiled_fee = uint64_t(float(txSize - witnessSize_) * payStruct.fee_byte());
       compiled_fee += uint64_t(float(witnessSize_) * payStruct.fee_byte() * 0.25f);
-
       fee_byte_ = payStruct.fee_byte();
    }
-
    fee_ = compiled_fee;
+   if (fee_ > value_ + payStruct.spendVal()) {
+      throw CoinSelectionException("fee > value");
+   }
 
    //figure out change + sanity check
    uint64_t targetVal = payStruct.spendVal() + fee_;
 
    uint64_t changeVal = value_ - targetVal;
-   if (changeVal < fee_ && !forcedFee)
-   {
+   if (changeVal < fee_ && !forcedFee) {
       //figure out the fee cost of spending this tiny changeVal
       auto spendChangeValTxFee = uint64_t(fee_byte_ * 225.0f);
-
-      if (changeVal < spendChangeValTxFee * 2)
-      {
+      if (changeVal < spendChangeValTxFee * 2) {
          compiled_fee += changeVal;
          changeVal = 0;
 
@@ -1028,54 +1014,49 @@ void UtxoSelection::computeSizeAndFee(
          targetVal = payStruct.spendVal() + compiled_fee;
       }
    }
-   
-   if (changeVal != 0)
-   {
+
+   if (changeVal != 0) {
       //size between p2pkh and p2sh doesn't vary enough to matter
       txOutSize += 35;
-      if (!forcedFee)
-      {
+      if (!forcedFee) {
          compiled_fee += uint64_t(35 * fee_byte_);
          fee_ = compiled_fee;
       }
-
       hasChange_ = true;
    }
 
-   if (targetVal > value_)
+   if (targetVal > value_) {
       throw CoinSelectionException("targetVal > value");
+   }
 
    size_ = 10 + txOutSize + txInSize;
-   if (sw)
+   if (sw) {
       size_ += 2 + witnessSize_ + utxoVec_.size();
-
+   }
    targetVal = payStruct.spendVal() + fee_;
    changeVal = value_ - targetVal;
 
    bool adjustFee = payStruct.flags() & ADJUST_FEE;
-
-      if (adjustFee && !forcedFee && changeVal > 0)
-   {
-      auto spendVal_ZeroCount = 
+   if (adjustFee && !forcedFee && changeVal > 0) {
+      auto spendVal_ZeroCount =
          (int)SelectionScoring::getTrailingZeroCount(payStruct.spendVal());
 
-      auto change_ZeroCount = 
+      auto change_ZeroCount =
          (int)SelectionScoring::getTrailingZeroCount(changeVal);
 
-      while (1)
-      {
-         if (change_ZeroCount >= spendVal_ZeroCount)
+      while (true) {
+         if (change_ZeroCount >= spendVal_ZeroCount) {
             return;
-
+         }
          unsigned factor = unsigned(pow(10, spendVal_ZeroCount--));
          unsigned value_off = changeVal / factor;
          value_off *= factor;
 
          unsigned stripped_val = changeVal - value_off;
          auto bumpPct = float(stripped_val) / float(compiled_fee);
-         if (bumpPct > 0.10f)
+         if (bumpPct > 0.10f) {
             continue;
-
+         }
          bumpPct_ = bumpPct;
          fee_ += stripped_val;
          return;
@@ -1086,9 +1067,9 @@ void UtxoSelection::computeSizeAndFee(
 ////////////////////////////////////////////////////////////////////////////////
 void UtxoSelection::shuffle()
 {
-   if (utxoVec_.size() < 2)
+   if (utxoVec_.size() < 2) {
       return;
-
+   }
    std::random_device rd;
    std::mt19937 g(rd());
    std::shuffle(utxoVec_.begin(), utxoVec_.end(), g);
@@ -1101,24 +1082,22 @@ void UtxoSelection::shuffle()
 ////////////////////////////////////////////////////////////////////////////////
 void PaymentStruct::init()
 {
-   if (getRecipientCount() == 0)
+   if (getRecipientCount() == 0) {
       throw CoinSelectionException("empty recipients map");
-
+   }
    spendVal_ = 0;
    size_ = 0;
 
-   for (const auto& group : recipients_)
-   {
-      for (auto& recipient : group.second)
-      {
+   for (const auto& group : recipients_) {
+      for (auto& recipient : group.second) {
          auto rcVal = recipient->getValue();
-         if (rcVal == 0)
-         {
-            auto rc_opreturn = 
-               dynamic_pointer_cast<Recipient_OPRETURN>(recipient);
+         if (rcVal == 0) {
+            auto rc_opreturn =
+               std::dynamic_pointer_cast<Recipient_OPRETURN>(recipient);
 
-            if (rc_opreturn == nullptr)
+            if (rc_opreturn == nullptr) {
                throw CoinSelectionException("recipient has null value");
+            }
          }
 
          spendVal_ += rcVal;
@@ -1131,9 +1110,9 @@ void PaymentStruct::init()
 size_t PaymentStruct::getRecipientCount() const
 {
    size_t count = 0;
-   for (const auto& group : recipients_)
+   for (const auto& group : recipients_) {
       count += group.second.size();
-   
+   }
    return count;
 }
 
@@ -1209,7 +1188,7 @@ void CoinSelectionInstance::decorateUTXOs(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void CoinSelectionInstance::selectUTXOs(vector<UTXO>& vecUtxo, 
+void CoinSelectionInstance::selectUTXOs(vector<UTXO>& vecUtxo,
    uint64_t fee, float fee_byte, unsigned flags)
 {
    uint64_t spendableVal = 0;
@@ -1230,24 +1209,19 @@ void CoinSelectionInstance::selectUTXOs(vector<UTXO>& vecUtxo,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool CoinSelectionInstance::selectUTXOs(uint64_t fee, float fee_byte, 
+bool CoinSelectionInstance::selectUTXOs(uint64_t fee, float fee_byte,
    unsigned flags)
 {
-   //sanity check
-   try
-   {
+   try {
+      //sanity check
       checkSpendVal(spendableBalance_);
-
       state_utxoVec_.clear();
-      PaymentStruct payStruct(recipients_, fee, fee_byte, flags);
-      selection_ = move(
-         cs_.getUtxoSelectionForRecipients(payStruct, vector<UTXO>()));
-      
-      return true;
-   }
-   catch (CoinSelectionException&)
-   {}
 
+      PaymentStruct payStruct(recipients_, fee, fee_byte, flags);
+      selection_ = std::move(
+         cs_.getUtxoSelectionForRecipients(payStruct, vector<UTXO>()));
+      return true;
+   } catch (const CoinSelectionException&) {}
    return false;
 }
 

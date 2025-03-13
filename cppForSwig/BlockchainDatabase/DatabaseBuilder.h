@@ -1,8 +1,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016, goatpig.                                              //
+//  Copyright (C) 2016-2025, goatpig.                                         //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                      
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -21,7 +21,7 @@ typedef std::function<void(BDMPhase, double, unsigned, unsigned)> ProgressCallba
 class DatabaseBuilder
 {
 private:
-   BlockFiles& blockFiles_;
+   std::shared_ptr<BlockFiles> blockFiles_;
    std::shared_ptr<Blockchain> blockchain_;
    LMDBBlockDatabase* db_;
    std::shared_ptr<ScrAddrFilter> scrAddrFilter_;
@@ -33,31 +33,30 @@ private:
    const bool forceRescanSSH_;
 
 private:
-   BlockOffset loadBlockHeadersFromDB(const ProgressCallback &progress);
-   
-   bool addBlocksToDB(
-      BlockDataLoader& bdl, uint16_t fileID, size_t startOffset,
-      std::shared_ptr<BlockOffset> bo, bool fullHints);
-   void parseBlockFile(const uint8_t* fileMap, size_t fileSize, size_t startOffset,
-      std::function<bool(const uint8_t* data, size_t size, size_t offset)>);
+   void loadBlockHeadersFromDB(const ProgressCallback&);
+   std::deque<std::shared_ptr<BlockHeader>> addBlocksToDB(
+      const BlockDataLoader::BlockDataCopy&);
+   void parseBlockFile(
+      const BlockDataLoader::BlockDataCopy&,
+      const std::function<bool(
+         const uint8_t* data, size_t size, size_t offset
+      )>&
+   );
 
    Blockchain::ReorganizationState updateBlocksInDB(
-      const ProgressCallback &progress, bool verbose, bool fullHints);
+      const ProgressCallback&,
+      std::shared_ptr<BlockDataLoader> bdl=nullptr);
    BinaryData initTransactionHistory(int32_t startHeight);
    BinaryData scanHistory(int32_t startHeight, bool reportprogress, bool init);
    void undoHistory(Blockchain::ReorganizationState& reorgState);
 
    void resetHistory(void);
-   bool reparseBlkFiles(unsigned fromID);
-   std::map<BinaryData, std::shared_ptr<BlockHeader>> assessBlkFile(BlockDataLoader& bdl,
-      unsigned fileID);
-
    void verifyTransactions(void);
    void commitAllTxHints(
-      const std::map<uint32_t, std::shared_ptr<BlockData>>&,
+      const std::vector<std::shared_ptr<BlockData>>&,
       const std::set<unsigned>&);
    void commitAllStxos(
-      const std::map<uint32_t, std::shared_ptr<BlockData>>&,
+      const std::vector<std::shared_ptr<BlockData>>&,
       const std::set<unsigned>&);
 
    //void repairTxFilters(const std::set<unsigned>&);
@@ -66,10 +65,11 @@ private:
    void cycleDatabases(void);
 
 public:
-   DatabaseBuilder(BlockFiles&, BlockDataManager&,
+   DatabaseBuilder(std::shared_ptr<BlockFiles>,
+      BlockDataManager&,
       const ProgressCallback&, bool);
 
-   void init(void);
+   bool init(void);
    Blockchain::ReorganizationState update(void);
 
    void verifyChain(void);

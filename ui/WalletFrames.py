@@ -14,10 +14,11 @@ import sys
 import math
 
 from armoryengine.BDM import TheBDM, BDM_BLOCKCHAIN_READY
+from armoryengine.WalletUtils import determineWalletType
 from qtpy import QtCore, QtGui, QtWidgets
 from qtdialogs.qtdefines import AdvancedOptionsFrame, ArmoryFrame, VERTICAL, HORIZONTAL, \
    tightSizeNChar, makeHorizFrame, makeVertFrame, QRichLabel, \
-   QPixMapButton, GETFONT, STYLE_SUNKEN, HLINE, determineWalletType, \
+   QPixMapButton, GETFONT, STYLE_SUNKEN, HLINE, \
    QMoneyLabel, makeLayoutFrame, createToolTipWidget
 
 from armorycolors import htmlColor
@@ -130,7 +131,7 @@ class SelectWalletFrame(ArmoryFrame):
       self.selectWltCallback = selectWltCallback
       self.doVerticalLayout = layoutDir==VERTICAL
 
-      if self.main and len(self.main.walletMap) == 0:
+      if self.main and self.main.wallets.empty():
          QtWidgets.QMessageBox.critical(self, self.tr('No Wallets!'), \
             self.tr('There are no wallets to select from. Please create or import '
             'a wallet first.'), QtWidgets.QMessageBox.Ok)
@@ -146,16 +147,17 @@ class SelectWalletFrame(ArmoryFrame):
       if len(self.wltIDList) > 0:
          self.selectedID = self.wltIDList[0]
          for wltID in self.wltIDList:
-            wlt = self.main.walletMap[wltID]
+            wlt = self.main.wallets.get(wltID)
             wlttype = determineWalletType(wlt, self.main)[0]
             if onlyMyWallets and wlttype == WLTTYPES.WatchOnly:
                continue
 
-            self.displayIDs.append(wltID)
+            self.displayIDs.append(wlt.dbId)
             if self.doVerticalLayout:
                self.walletComboBox.addItem(wlt.getDisplayStr())
             else:
-               self.walletListBox.addItem(QListWidgetItem(wlt.getDisplayStr()))
+               self.walletListBox.addItem(
+                  QtWidgets.QListWidgetItem(wlt.getDisplayStr()))
 
             if wltID == firstSelect:
                selectedWltIndex = wltItems
@@ -245,7 +247,6 @@ class SelectWalletFrame(ArmoryFrame):
       # Make sure this is called once so that the default selection is displayed
       self.updateOnWalletChange()
 
-
    def getWalletIdList(self, onlyOfflineWallets):
       result = []
       if onlyOfflineWallets:
@@ -253,8 +254,6 @@ class SelectWalletFrame(ArmoryFrame):
       else:
          result = list(self.main.walletIDList)
       return result
-
-
    def getSelectedWltID(self):
       idx = -1
       if self.doVerticalLayout:
@@ -265,7 +264,7 @@ class SelectWalletFrame(ArmoryFrame):
       return '' if idx<0 else self.displayIDs[idx]
 
    def doCoinCtrl(self):
-      wlt = self.main.walletMap[self.getSelectedWltID()]
+      wlt = self.main.wallets.get(self.getSelectedWltID())
       if self.dlgcc == None:
          self.dlgcc = CoinControlDlg(self, self.main, wlt)
 
@@ -338,7 +337,7 @@ class SelectWalletFrame(ArmoryFrame):
       wltID = self.getSelectedWltID()
 
       if len(wltID) > 0:
-         wlt = self.main.walletMap[wltID]
+         wlt = self.main.wallets.get(wltID)
 
          self.dispID.setText(wltID)
          self.dispName.setText(wlt.labelName)
@@ -372,12 +371,12 @@ class SelectWalletFrame(ArmoryFrame):
             self.updateOnCoinControl()
 
    def updateOnCoinControl(self):
-      wlt = self.main.walletMap[self.getSelectedWltID()]
+      wlt = self.main.wallets.get(self.getSelectedWltID())
       fullBal = wlt.getBalance('Spendable')
       useAllAddr = (self.altBalance == fullBal or self.altBalance == None)
 
       if useAllAddr:
-         self.dispID.setText(wlt.uniqueIDB58)
+         self.dispID.setText(wlt.getDisplayStr())
          self.dispName.setText(wlt.labelName)
          self.dispDescr.setText(wlt.labelDescr)
          if fullBal == 0:
@@ -385,13 +384,13 @@ class SelectWalletFrame(ArmoryFrame):
          else:
             self.dispBal.setValueText(fullBal, wBold=True)
       else:
-         self.dispID.setText(wlt.uniqueIDB58 + '*')
+         self.dispID.setText(wlt.getDisplayStr() + '*')
          self.dispName.setText(wlt.labelName + '*')
          self.dispDescr.setText(self.tr('*Coin Control Subset*'), color='TextBlue', bold=True)
          self.dispBal.setText(coin2str(self.altBalance, maxZeros=0), color='TextBlue')
          rawValTxt = str(self.dispBal.text())
          self.dispBal.setText(rawValTxt + ' <font color="%s">(of %s)</font>' % \
-                                    (htmlColor('DisableFG'), coin2str(fullBal, maxZeros=0)))
+            (htmlColor('DisableFG'), coin2str(fullBal, maxZeros=0)))
 
       if not TheBDM.getState() == BDM_BLOCKCHAIN_READY:
          self.dispBal.setText(self.tr('(available when online)'), color='DisableFG')
@@ -419,7 +418,6 @@ class SelectWalletFrame(ArmoryFrame):
 # Advanced options have just been moved to their own frame to be used in 
 # the restore wallet dialog as well.
 class NewWalletFrame(ArmoryFrame):
-
    def __init__(self, parent, main, initLabel=''):
       super(NewWalletFrame, self).__init__(parent, main)
       self.editName = QtWidgets.QLineEdit()
@@ -442,21 +440,20 @@ class NewWalletFrame(ArmoryFrame):
       lblManualEntropy.setAlignment(QtCore.Qt.AlignVCenter)
       lblManualEntropy.setBuddy(self.useManualEntropy)
 
-   
       # breaking this up into tabs
       frameLayout = QtWidgets.QVBoxLayout()
       newWalletTabs = QtWidgets.QTabWidget()
-      
+
       #### Basic Tab
       nameFrame = makeHorizFrame([lblName, STRETCH, self.editName])
-      descriptionFrame = makeHorizFrame([lblDescription,
-                                         STRETCH, self.editDescription])
-      entropyFrame = makeHorizFrame([self.useManualEntropy,
-                                     lblManualEntropy, STRETCH])
-      basicQTab = makeVertFrame([nameFrame, descriptionFrame,
-                                 entropyFrame, STRETCH])
+      descriptionFrame = makeHorizFrame(
+         [lblDescription, STRETCH, self.editDescription])
+      entropyFrame = makeHorizFrame(
+         [self.useManualEntropy, lblManualEntropy, STRETCH])
+      basicQTab = makeVertFrame(
+         [nameFrame, descriptionFrame, entropyFrame, STRETCH])
       newWalletTabs.addTab(basicQTab, self.tr("Configure"))
-      
+
       # Fork watching-only wallet
       self.advancedOptionsTab = AdvancedOptionsFrame(parent, main)
       newWalletTabs.addTab(self.advancedOptionsTab, self.tr("Advanced Options"))
@@ -468,7 +465,6 @@ class NewWalletFrame(ArmoryFrame):
       # to be used for wallet creation
       self.main.registerWidgetActivateTime(self)
 
-      
    def getKdfSec(self):
       return self.advancedOptionsTab.getKdfSec()
 
@@ -477,7 +473,7 @@ class NewWalletFrame(ArmoryFrame):
 
    def getManualEncryption(self):
       return self.useManualEntropy.isChecked()
-   
+
    def getName(self):
       return str(self.editName.text())
 
@@ -489,19 +485,21 @@ class CardDeckFrame(ArmoryFrame):
       super(CardDeckFrame, self).__init__(parent, main)
 
       layout = QtWidgets.QGridLayout()
-      
-      lblDlgDescr = QtWidgets.QLabel(self.tr('Please shuffle a deck of cards and enter the first 40 cards in order below to get at least 192 bits of entropy to properly randomize.\n\n'))
+      lblDlgDescr = QtWidgets.QLabel(self.tr(
+         'Please shuffle a deck of cards and enter the first'
+         ' 39 cards in order below to get at least 192 bits'
+         ' of entropy to properly randomize.\n\n'
+      ))
       lblDlgDescr.setWordWrap(True)
       layout.addWidget(lblDlgDescr, 0, 0, 1, 13)
 
+      self.cardCount = 0
       self.cards = []
-
       for row, suit in enumerate('shdc'):
          for col, rank in enumerate('A23456789TJQK'):
-            card = QPixMapButton(':%s%s.png' %(rank,suit))
+            card = QPixMapButton(f'img/{rank}{suit}.png')
             card.nameText = rank + suit
             card.clicked.connect(self.cardClicked)
-
             layout.addWidget(card,row+1, col, 1, 1)
             self.cards.append(card)
 
@@ -509,9 +507,6 @@ class CardDeckFrame(ArmoryFrame):
       layout.addWidget(self.currentDeck, 5,0,1,13)
       self.currentNum = QtWidgets.QLabel("")
       layout.addWidget(self.currentNum, 6,0,1,13)
-
-      self.cardCount = 0
-
       self.setLayout(layout)
 
    def cardClicked(self):
@@ -528,34 +523,21 @@ class CardDeckFrame(ArmoryFrame):
       self.currentNum.setText(self.tr("Entropy: %d bits" % bits))
 
    def getEntropy(self):
-      cards = filter(lambda x: x != '', str(self.currentDeck.text()).split(' '))
-      
-      orderedCards = []
-      for suit in 'shdc':
-         for rank in 'A23456789TJQK':
-            orderedCards.append(rank+suit)
-
-      num = 0
-      for card in cards:
-         num *= len(orderedCards)
-         curIndex = orderedCards.index(card)
-         orderedCards = orderedCards[:curIndex] + orderedCards[curIndex+1:]
-         num += curIndex
-      return num
+      return self.currentDeck.text()
 
    def hasGoodEntropy(self):
       # 52!/13! > 2**192
       return self.cardCount >= 39
 
-      
 class SetPassphraseFrame(ArmoryFrame):
    def __init__(self, parent, main, initLabel='', passphraseCallback=None):
       super(SetPassphraseFrame, self).__init__(parent, main)
       self.passphraseCallback = passphraseCallback
       layout = QtWidgets.QGridLayout()
-      lblDlgDescr = QtWidgets.QLabel(self.tr('Please enter a passphrase for wallet encryption.\n\n'
-                           'A good passphrase consists of at least 10 or more\n'
-                           'random letters, or 6 or more random words.\n'))
+      lblDlgDescr = QtWidgets.QLabel(self.tr(
+         'Please enter a passphrase for wallet encryption.\n\n'
+         'A good passphrase consists of at least 10 or more\n'
+         'random letters, or 6 or more random words.\n'))
       lblDlgDescr.setWordWrap(True)
       layout.addWidget(lblDlgDescr, 0, 0, 1, 2)
       lblPwd1 = QtWidgets.QLabel(self.tr("New Passphrase:"))
@@ -580,11 +562,9 @@ class SetPassphraseFrame(ArmoryFrame):
       self.editPasswd1.textChanged.connect(self.checkPassphrase)
       self.editPasswd2.textChanged.connect(self.checkPassphrase)
 
-
       # These help us collect entropy as the user goes through the wizard
       # to be used for wallet creation
       self.main.registerWidgetActivateTime(self)
-
 
    # This function is multi purpose. It updates the screen and validates the passphrase
    def checkPassphrase(self, sideEffects=True):
@@ -620,7 +600,7 @@ class VerifyPassphraseFrame(ArmoryFrame):
    def __init__(self, parent, main, initLabel=''):
       super(VerifyPassphraseFrame, self).__init__(parent, main)
       lblWarnImgL = QtWidgets.QLabel()
-      lblWarnImgL.setPixmap(QtGui.QPixmap(':/MsgBox_warning48.png'))
+      lblWarnImgL.setPixmap(QtGui.QPixmap('img/MsgBox_warning48.png'))
       lblWarnImgL.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
       lblWarnTxt1 = QRichLabel(\
@@ -856,7 +836,7 @@ class WalletBackupFrame(ArmoryFrame):
    #############################################################################
    def setWallet(self, wlt):
       self.wlt = wlt
-      wltID = wlt.uniqueIDB58
+      wltID = wlt.getDisplayStr()
       wltName = wlt.labelName
       self.hasImportedAddr = self.wlt.hasAnyImported()
       # Highlight imported-addr feature if their wallet contains them
@@ -921,8 +901,8 @@ class WalletBackupFrame(ArmoryFrame):
                'have not yet been used).')
 
 
-         chk = lambda: QtGui.QPixmap(':/checkmark32.png').scaled(20, 20)
-         _X_ = lambda: QtGui.QPixmap(':/red_X.png').scaled(16, 16)
+         chk = lambda: QtGui.QPixmap('img/checkmark32.png').scaled(20, 20)
+         _X_ = lambda: QtGui.QPixmap('img/red_X.png').scaled(16, 16)
          if index == self.OPTIONS.Paper1:
             self.lblSelFeat.setText(self.tr('Single-Sheet Paper Backup'), bold=True)
             self.featuresImgs[self.FEATURES.ProtGen   ].setPixmap(chk())

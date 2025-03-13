@@ -512,7 +512,7 @@ namespace Armory
          }
 
          void completed(std::exception_ptr exceptptr = nullptr)
-         {      
+         {
             if (exceptptr == nullptr)
                exceptptr = std::make_exception_ptr(StopBlockingLoop());
 

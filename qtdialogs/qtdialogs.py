@@ -34,7 +34,7 @@ from ui.QrCodeMatrix import CreateQRMatrix
 from armoryengine.Block import PyBlockHeader
 
 from qtdialogs.qtdefines import USERMODE, GETFONT, tightSizeStr, \
-   determineWalletType, WLTTYPES, MSGBOX, QRichLabel
+   MSGBOX, QRichLabel
 
 from qtdialogs.ArmoryDialog import ArmoryDialog
 from qtdialogs.MsgBoxCustom import MsgBoxCustom
@@ -581,8 +581,8 @@ class DlgImportAddress(ArmoryDialog):
       self.txtPrivBulk = QtWidgets.QTextEdit()
       w, h = tightSizeStr(self.edtPrivData, 'X' * 70)
       self.txtPrivBulk.setMinimumWidth(w)
-      self.txtPrivBulk.setMinimumHeight(2.2 * h)
-      self.txtPrivBulk.setMaximumHeight(4.2 * h)
+      self.txtPrivBulk.setMinimumHeight(int(2.2 * h))
+      self.txtPrivBulk.setMaximumHeight(int(4.2 * h))
       frmMid = makeHorizFrame([lblPrivMany, self.txtPrivBulk, ttipPrivMany])
       stkMany = makeVertFrame([HLINE(), lblDescrMany, frmMid])
       self.stackedImport.addWidget(stkMany)
@@ -1140,7 +1140,7 @@ class DlgConfirmBulkImport(ArmoryDialog):
       txtDispAddr.setFont(fnt)
       txtDispAddr.setReadOnly(True)
       txtDispAddr.setMinimumWidth(min(w, 700))
-      txtDispAddr.setMinimumHeight(16.2 * h)
+      txtDispAddr.setMinimumHeight(int(16.2 * h))
       txtDispAddr.setText('\n'.join(addrList))
 
       buttonBox = QtWidgets.QDialogButtonBox()
@@ -1185,7 +1185,7 @@ class DlgDuplicateAddr(ArmoryDialog):
       txtDispAddr.setFont(fnt)
       txtDispAddr.setReadOnly(True)
       txtDispAddr.setMinimumWidth(w)
-      txtDispAddr.setMinimumHeight(8.2 * h)
+      txtDispAddr.setMinimumHeight(int(8.2 * h))
       txtDispAddr.setText('\n'.join(addrList))
 
       lblWarn = QRichLabel(self.tr(
@@ -1696,7 +1696,7 @@ class DlgRemoveAddress(ArmoryDialog):
       self.wlt = wlt
       importStr = wlt.linearAddr160List[importIndex]
       self.addr = wlt.addrMap[importStr]
-      self.comm = wlt.getCommentForAddress(addr160)
+      self.comm = wlt.getComment(addr160)
 
       lblWarning = QtWidgets.QLabel(self.tr('<b>!!! WARNING !!!</b>\n\n'))
       lblWarning.setTextFormat(QtCore.Qt.RichText)
@@ -2481,7 +2481,7 @@ class DlgExpWOWltData(ArmoryDialog):
       self.txtLongDescr.setFont(GETFONT('Fixed', 9))
       self.txtLongDescr.setHtml(self.dispText)
       w,h = tightSizeNChar(self.txtLongDescr, 20)
-      self.txtLongDescr.setMaximumHeight(9.5*h)
+      self.txtLongDescr.setMaximumHeight(int(9.5*h))
 
       def clippy():
          clipb = QtWidgets.QApplication.clipboard()

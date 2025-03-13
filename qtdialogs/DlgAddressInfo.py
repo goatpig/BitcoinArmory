@@ -4,7 +4,7 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2024, goatpig                                           #
+# Copyright (C) 2016-2025, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
@@ -33,7 +33,6 @@ class DlgAddressInfo(ArmoryDialog):
       self.wlt = wlt
       self.addrObj = addrObj
       scrAddr = addrObj.getPrefixedAddr()
-
       self.ledgerTable = []
 
       self.mode = mode
@@ -43,7 +42,6 @@ class DlgAddressInfo(ArmoryDialog):
          else:
             self.mode = self.main.usermode
 
-
       dlgLayout = QtWidgets.QGridLayout()
       addrStr = addrObj.getAddressString()
 
@@ -52,13 +50,11 @@ class DlgAddressInfo(ArmoryDialog):
       frmInfoLayout = QtWidgets.QGridLayout()
 
       lbls = []
-
-      # Hash160
       if mode in (USERMODE.Advanced, USERMODE.Expert):
          bin25 = base58_to_binary(addrStr)
          lbls.append([])
          lbls[-1].append(createToolTipWidget(\
-                   self.tr('This is the computer-readable form of the address')))
+            self.tr('This is the computer-readable form of the address')))
          lbls[-1].append(QRichLabel(self.tr('<b>Public Key Hash</b>')))
          h160Str = binary_to_hex(bin25[1:-4])
          if mode == USERMODE.Expert:
@@ -67,8 +63,6 @@ class DlgAddressInfo(ArmoryDialog):
             addrChk = binary_to_hex(bin25[   -4:])
             h160Str += self.tr('%s (Network: %s / Checksum: %s)' % (hash160, network, addrChk))
          lbls[-1].append(QtWidgets.QLabel(h160Str))
-
-
 
       lbls.append([])
       lbls[-1].append(QtWidgets.QLabel(''))
@@ -79,7 +73,6 @@ class DlgAddressInfo(ArmoryDialog):
       lbls[-1].append(QtWidgets.QLabel(''))
       lbls[-1].append(QRichLabel(self.tr('<b>Address:</b>')))
       lbls[-1].append(QtWidgets.QLabel(addrStr))
-
 
       lbls.append([])
       lbls[-1].append(createToolTipWidget(self.tr(
@@ -107,7 +100,6 @@ class DlgAddressInfo(ArmoryDialog):
       else:
          lbls[-1].append(QtWidgets.QLabel(self.tr("Imported")))
 
-
       # Current Balance of address
       lbls.append([])
       lbls[-1].append(createToolTipWidget(self.tr(
@@ -125,7 +117,6 @@ class DlgAddressInfo(ArmoryDialog):
             lbls[-1].append(QRichLabel(balStr.strip() + ' BTC'))
       except:
          lbls[-1].append(QRichLabel("N/A"))
-
 
       lbls.append([])
       lbls[-1].append(QtWidgets.QLabel(''))
@@ -146,11 +137,10 @@ class DlgAddressInfo(ArmoryDialog):
       except:
          lbls[-1].append(QtWidgets.QLabel("N/A"))
 
-
       for i in range(len(lbls)):
          for j in range(1, 3):
-            lbls[i][j].setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse | \
-                                                QtCore.Qt.TextSelectableByKeyboard)
+            lbls[i][j].setTextInteractionFlags(
+               QtCore.Qt.TextSelectableByMouse | QtCore.Qt.TextSelectableByKeyboard)
          for j in range(3):
             if (i, j) == (0, 2):
                frmInfoLayout.addWidget(lbls[i][j], i, j, 1, 2)
@@ -172,8 +162,7 @@ class DlgAddressInfo(ArmoryDialog):
       self.ledgerModel.setLedgerDelegateId(delegateId)
 
       def ledgerToTableScrAddr(ledger):
-         return self.main.convertLedgerToTable(
-            ledger, wltIDIn=self.wlt.uniqueIDB58)
+         return self.main.convertLedgerToTable(ledger, wltIDIn=self.wlt.dbId)
       self.ledgerModel.setConvertLedgerMethod(ledgerToTableScrAddr)
 
       self.frmLedgUpDown = QtWidgets.QFrame()
@@ -202,11 +191,11 @@ class DlgAddressInfo(ArmoryDialog):
       initialColResize(self.ledgerView, [20, 0, dateWidth, 72, 0, 0.45, 0.3])
 
       ttipLedger = createToolTipWidget(self.tr(
-            'Unlike the wallet-level ledger, this table shows every '
-            'transaction <i>input</i> and <i>output</i> as a separate entry. '
-            'Therefore, there may be multiple entries for a single transaction, '
-            'which will happen if money was sent-to-self (explicitly, or as '
-            'the change-back-to-self address).'))
+         'Unlike the wallet-level ledger, this table shows every '
+         'transaction <i>input</i> and <i>output</i> as a separate entry. '
+         'Therefore, there may be multiple entries for a single transaction, '
+         'which will happen if money was sent-to-self (explicitly, or as '
+         'the change-back-to-self address).'))
       lblLedger = QtWidgets.QLabel(self.tr('All Address Activity:'))
 
       lblstrip = makeLayoutFrame(HORIZONTAL, [lblLedger, ttipLedger, STRETCH])
@@ -243,7 +232,6 @@ class DlgAddressInfo(ArmoryDialog):
          'represent only partial transactions.  Do not worry if these entries '
          'do not look familiar.'))
 
-
       optLayout = QtWidgets.QVBoxLayout()
       if True:           optLayout.addWidget(lbtnCopyAddr)
       if adv:            optLayout.addWidget(lbtnViewKeys)
@@ -252,7 +240,6 @@ class DlgAddressInfo(ArmoryDialog):
       if True:           optLayout.addWidget(self.lblCopied)
 
       optLayout.addWidget(self.lblLedgerWarning)
-
       optLayout.addStretch()
       optFrame.setLayout(optLayout)
 
@@ -264,7 +251,6 @@ class DlgAddressInfo(ArmoryDialog):
 
       self.setLayout(dlgLayout)
       self.setWindowTitle(self.tr('Address Information'))
-
       self.ledgerModel.reset()
 
    def copyAddr(self):

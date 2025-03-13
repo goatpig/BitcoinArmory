@@ -31,18 +31,29 @@ BinaryDataRef BinaryData::getRef(void) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+BinaryData& BinaryData::append(BinaryData const & bd2)
+{
+   return this->append(BinaryDataRef{bd2});
+}
+
+////////////////////////////////////////////////////////////////////////////////
 BinaryData & BinaryData::append(BinaryDataRef const & bd2)
 {
    if (bd2.empty()) {
       return (*this);
    }
-
    if (empty()) {
       copyFrom(bd2.getPtr(), bd2.getSize());
    } else {
-      data_.insert(data_.end(), bd2.getPtr(), bd2.getPtr()+bd2.getSize());
-   }
+      auto originSize = data_.size();
+      if (data_.capacity() < originSize + bd2.getSize()) {
+         //we have to enlarge the recipient vector's capacity
+         data_.reserve((originSize + bd2.getSize()) * 2);
+      }
 
+      data_.resize(originSize + bd2.getSize());
+      memcpy(&data_[0] + originSize, bd2.getPtr(), bd2.getSize());
+   }
    return (*this);
 }
 

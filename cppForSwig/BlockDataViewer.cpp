@@ -5,25 +5,24 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2024, goatpig                                          //
+//  Copyright (C) 2016-2025, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 #include "BlockDataViewer.h"
+#include "BlockchainDatabase/BlockUtils.h"
 
 using namespace std;
 
 /////////////////////////////////////////////////////////////////////////////
-BlockDataViewer::BlockDataViewer(BlockDataManager* bdm) :
-   rescanZC_(false), zeroConfCont_(bdm->zeroConfCont())
+BlockDataViewer::BlockDataViewer(std::shared_ptr<BlockDataManager> bdm) :
+   bdm_(bdm), rescanZC_(false), zeroConfCont_(bdm->zeroConfCont())
 {
    db_ = bdm->getIFace();
    bc_ = bdm->blockchain();
    saf_ = bdm->getScrAddrFilter().get();
    zc_ = bdm->zeroConfCont().get();
-
-   bdmPtr_ = bdm;
 
    groups_.push_back(WalletGroup(this, saf_));
    groups_.push_back(WalletGroup(this, saf_));
@@ -35,6 +34,33 @@ BlockDataViewer::BlockDataViewer(BlockDataManager* bdm) :
 BlockDataViewer::~BlockDataViewer()
 {
    groups_.clear();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+bool BlockDataViewer::isBDMRunning() const
+{
+   if (bdm_ == nullptr) {
+      return false;
+   }
+   return bdm_->isRunning();
+}
+
+////
+void BlockDataViewer::blockUntilBDMisReady() const
+{
+   if (bdm_ == nullptr) {
+      throw std::runtime_error("no bdmPtr_");
+   }
+   bdm_->blockUntilReady();
+}
+
+////
+bool BlockDataViewer::isZcEnabled() const
+{
+   if (bdm_ == nullptr) {
+      return false;
+   }
+   return bdm_->isZcEnabled();
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -599,7 +625,7 @@ LedgerDelegate BlockDataViewer::getLedgerDelegateForScrAddr(
    }
 
    if (wlt == nullptr) {
-      throw runtime_error("Unregistered wallet ID");
+      throw std::runtime_error("Unregistered wallet ID");
    }
 
    ScrAddrObj& sca = wlt->getScrAddrObjRef(scrAddr);
@@ -1241,8 +1267,12 @@ void WalletGroup::registerAddresses(WalletRegistrationRequest& request)
    }
 
    auto callback = [theWallet, zcCB=request.zcCallback](
-      std::set<BinaryDataRef>& addrSet)->void
+      std::set<BinaryDataRef> addrSet, bool success)->void
    {
+      if (!success) {
+         return;
+      }
+
       auto bdvPtr = theWallet->bdvPtr_;
       auto dbPtr = theWallet->bdvPtr_->getDB();
       auto bcPtr = &theWallet->bdvPtr_->blockchain();
@@ -1270,8 +1300,8 @@ void WalletGroup::registerAddresses(WalletRegistrationRequest& request)
       theWallet->setRegistered();
    };
 
-   auto batch = make_shared<RegistrationBatch>();
-   batch->scrAddrSet_ = move(scrAddrSet);
+   auto batch = std::make_shared<RegistrationBatch>();
+   batch->scrAddrSet_ = std::move(scrAddrSet);
    batch->isNew_ = request.isNew;
    batch->callback_ = callback;
 

@@ -203,9 +203,7 @@ GTEST_API_ int main(int argc, char **argv)
 
    std::cout << "Running main() from gtest_main.cc\n";
 
-   // Setup the log file
-   STARTLOGGING("cppTestsLog.txt", LogLvlDebug2);
-   //LOGDISABLESTDOUT();
+   LOGDISABLESTDOUT();
 
    // Required by libbtc.
    CryptoECDSA::setupContext();

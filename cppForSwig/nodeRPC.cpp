@@ -72,19 +72,19 @@ bool NodeRPC::setupConnection(HttpSocket& sock)
    ReentrantLock lock(this);
 
    //test the socket
-   if(!sock.connectToRemote())
+   if(!sock.connectToRemote()) {
       return false;
-
-   if (basicAuthString64_.size() == 0)
-   {
-      auto&& authString = getAuthString();
-      if (authString.size() == 0)
-         return false;
-
-      basicAuthString64_ = move(BtcUtils::base64_encode(authString));
    }
 
-   stringstream auth_header;
+   if (basicAuthString64_.empty()) {
+      auto authString = getAuthString();
+      if (authString.empty()) {
+         return false;
+      }
+      basicAuthString64_ = std::move(BtcUtils::base64_encode(authString));
+   }
+
+   std::stringstream auth_header;
    auth_header << "Authorization: Basic " << basicAuthString64_;
    auto header_str = auth_header.str();
    sock.precacheHttpHeader(header_str);
@@ -108,55 +108,41 @@ RpcState NodeRPC::testConnection()
    JSON_object json_obj;
    json_obj.add_pair("method", "getblockcount");
 
-   try
-   {
-      auto&& response = queryRPC(json_obj);
-      auto&& response_obj = JSON_decode(response);
+   try {
+      auto response = queryRPC(json_obj);
+      auto response_obj = JSON_decode(response);
 
-      if (response_obj.isResponseValid(json_obj.id_))
-      {
+      if (response_obj.isResponseValid(json_obj.id_)) {
          state = RpcState_Online;
-      }
-      else
-      {
+      } else {
          auto error_ptr = response_obj.getValForKey("error");
          auto error_obj = dynamic_pointer_cast<JSON_object>(error_ptr);
-         if (error_obj != nullptr)
-         {
+         if (error_obj != nullptr) {
             auto error_code_ptr = error_obj->getValForKey("code");
             auto error_code = dynamic_pointer_cast<JSON_number>(error_code_ptr);
 
-            if (error_code == nullptr)
+            if (error_code == nullptr) {
                throw JSON_Exception("failed to get error code");
+            }
 
-            if ((int)error_code->val_ == -28)
-            {
+            if ((int)error_code->val_ == -28) {
                state = RpcState_Error_28;
             }
-         }
-         else
-         {
+         } else {
             state = RpcState_Disabled;
 
             auto error_val = dynamic_pointer_cast<JSON_string>(error_ptr);
-            if (error_val != nullptr)
-            {
+            if (error_val != nullptr) {
                LOGWARN << "Rpc connection test failed with error: " <<
                   error_val->val_;
             }
          }
       }
-   }
-   catch (RpcError&)
-   {
+   } catch (const RpcError&) {
       state = RpcState_Disabled;
-   }
-   catch (SocketError&)
-   {
+   } catch (const SocketError&) {
       state = RpcState_Disabled;
-   }
-   catch (JSON_Exception& e)
-   {
+   } catch (const JSON_Exception& e) {
       LOGERR << "RPC connection test error: " << e.what();
       state = RpcState_BadAuth;
    }
@@ -185,13 +171,13 @@ string NodeRPC::getAuthString()
       auto cookiePath = datadir / ".cookie";
       auto lines = SettingsUtils::getLines(cookiePath);
       if (lines.size() != 1) {
-         throw runtime_error("unexpected cookie file content");
+         throw std::runtime_error("unexpected cookie file content");
       }
 
       auto keyVals = SettingsUtils::getKeyValsFromLines(lines, ':');
       auto keyIter = keyVals.find("__cookie__");
       if (keyIter == keyVals.end()) {
-         throw runtime_error("unexpected cookie file content");
+         throw std::runtime_error("unexpected cookie file content");
       }
 
       return lines[0];

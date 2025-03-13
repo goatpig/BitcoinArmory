@@ -155,7 +155,7 @@ ARMORYCLI_SOURCE_FILES = BDM_mainthread.cpp \
 	ZeroConf.cpp \
 	ZeroConfNotifications.cpp \
 	TerminalPassphrasePrompt.cpp \
-	gtest/NodeUnitTest.cpp
+	gtest/MockedNode.cpp
 
 ARMORYCOMMON_SOURCE_FILES = capnp/Types.capnp.c++ \
 	capnp/BDV.capnp.c++ \

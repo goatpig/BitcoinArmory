@@ -5,7 +5,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(TEST_SOURCES
     TestUtils.cpp
-    NodeUnitTest.cpp
+    MockedNode.cpp
 )
 
 add_executable(BIP151RekeyTest

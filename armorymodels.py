@@ -4,7 +4,7 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2024, goatpig                                           #
+# Copyright (C) 2016-2025, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
@@ -30,10 +30,10 @@ from armoryengine.CppBridge import TheBridge
 from armoryengine.AddressUtils import Hash160ToScrAddr, addrStr_to_hash160, \
    scrAddr_to_addrStr
 from armoryengine.Settings import TheSettings
+from armoryengine.WalletUtils import WalletTypes, determineWalletType
 
 from armorycolors import Colors
-from qtdialogs.qtdefines import determineWalletType, WLTTYPES, \
-   GETFONT, CHANGE_ADDR_DESCR_STRING
+from qtdialogs.qtdefines import GETFONT, CHANGE_ADDR_DESCR_STRING
 
 from qtdialogs.ArmoryDialog import ArmoryDialog
 
@@ -55,13 +55,12 @@ PAGE_LOAD_OFFSET = 10
 class AllWalletsDispModel(QtCore.QAbstractTableModel):
 
    # The columns enumeration
-
-   def __init__(self, mainWindow):
+   def __init__(self, wallets):
       super(AllWalletsDispModel, self).__init__()
-      self.main = mainWindow
+      self.wallets = wallets
 
    def rowCount(self, index=QtCore.QModelIndex()):
-      return len(self.main.walletMap)
+      return self.wallets.count()
 
    def columnCount(self, index=QtCore.QModelIndex()):
       return 5
@@ -70,18 +69,19 @@ class AllWalletsDispModel(QtCore.QAbstractTableModel):
       bdmState = TheBDM.getState()
       COL = WLTVIEWCOLS
       row,col = index.row(), index.column()
-      wlt = self.main.walletMap[self.main.walletIDList[row]]
-      wltID = wlt.uniqueIDB58
+      wlt = self.wallets.getByIndex(row)
+      wltID = wlt.walletId
+      mainWnd = self.wallets.parent
 
       if role==QtCore.Qt.DisplayRole:
          if col==COL.Visible:
-            return self.main.walletVisibleList[row]
+            return self.wallets.isVisible(row)
          elif col==COL.ID:
             return str(wltID)
          elif col==COL.Name:
             return str(wlt.labelName.ljust(32))
          elif col==COL.Secure:
-            wtype,typestr = determineWalletType(wlt, self.main)
+            wtype,typestr = determineWalletType(wlt, mainWnd)
             return str(typestr)
          elif col==COL.Bal:
             if not bdmState==BDM_BLOCKCHAIN_READY:
@@ -94,7 +94,7 @@ class AllWalletsDispModel(QtCore.QAbstractTableModel):
                   dispStr = coin2str(bal, maxZeros=2)
                   return str(dispStr)
             else:
-               dispStr = 'Scanning: %d%%' % (self.main.walletSideScanProgress[wltID])
+               dispStr = 'Scanning: %d%%' % (mainWnd.walletSideScanProgress[wltID])
                return str(dispStr)
 
       elif role==QtCore.Qt.TextAlignmentRole:
@@ -108,10 +108,10 @@ class AllWalletsDispModel(QtCore.QAbstractTableModel):
             else:
                return int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
       elif role==QtCore.Qt.BackgroundColorRole:
-         t = determineWalletType(wlt, self.main)[0]
-         if t==WLTTYPES.WatchOnly:
+         t = determineWalletType(wlt, mainWnd)[0]
+         if t==WalletTypes.WatchOnly:
             return Colors.TblWltOther
-         elif t==WLTTYPES.Offline:
+         elif t==WalletTypes.Offline:
             return Colors.TblWltOffline
          else:
             return Colors.TblWltMine
@@ -130,13 +130,11 @@ class AllWalletsDispModel(QtCore.QAbstractTableModel):
 
    def flags(self, index, role=QtCore.Qt.DisplayRole):
       if role == QtCore.Qt.DisplayRole:
-         wlt = self.main.walletMap[self.main.walletIDList[index.row()]]
+         wlt = self.wallets.getByIndex(index.row())
 
          rowFlag = QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable
-
          if wlt.isEnabled is False:
             return QtCore.Qt.ItemFlags()
-
          return rowFlag
 
    def reset(self):
@@ -215,7 +213,7 @@ class LedgerDispModelSimple(QtCore.QAbstractTableModel):
       rowData = self.ledger[row]
       nConf = rowData[LEDGERCOLS.NumConf]
       wltID = rowData[LEDGERCOLS.WltID]
-      wlt = self.main.walletMap.get(wltID)
+      wlt = self.main.wallets.get(wltID)
       optInRBF = rowData[LEDGERCOLS.optInRBF]
       isChainedZC = rowData[LEDGERCOLS.isChainedZC]
       amount = float(rowData[LEDGERCOLS.Amount])
@@ -225,9 +223,9 @@ class LedgerDispModelSimple(QtCore.QAbstractTableModel):
       highlighted = optInRBF or isChainedZC
 
       if wlt:
-         wtype = determineWalletType(self.main.walletMap[wltID], self.main)[0]
+         wtype = determineWalletType(wlt, self.main)[0]
       else:
-         wtype = WLTTYPES.WatchOnly
+         wtype = WalletTypes.WatchOnly
 
       if role==QtCore.Qt.DisplayRole:
          return str(rowData[col])
@@ -248,9 +246,9 @@ class LedgerDispModelSimple(QtCore.QAbstractTableModel):
                return Colors.optInRBF
          elif isChainedZC is True:
             return Colors.chainedZC
-         elif wtype==WLTTYPES.WatchOnly:
+         elif wtype==WalletTypes.WatchOnly:
             return Colors.TblWltOther
-         elif wtype==WLTTYPES.Offline:
+         elif wtype==WalletTypes.Offline:
             return Colors.TblWltOffline
          else:
             return Colors.TblWltMine
@@ -1016,7 +1014,7 @@ class WalletAddrDispModel(QtCore.QAbstractTableModel):
          addrList = filter(hasBalance, addrList)
 
       if self.noChange:
-         notChange = lambda a: (self.wlt.getCommentForAddress(a.getAddr160()) != CHANGE_ADDR_DESCR_STRING)
+         notChange = lambda a: (self.wlt.getComment(a.getAddr160()) != CHANGE_ADDR_DESCR_STRING)
          addrList = filter(notChange, addrList)
 
       if self.usedOnly and TheBDM.getState()==BDM_BLOCKCHAIN_READY:
@@ -1258,6 +1256,10 @@ class TxInDispModel(QtCore.QAbstractTableModel):
    def data(self, index, role=QtCore.Qt.DisplayRole):
       COLS = TXINCOLS
       row,col = index.row(), index.column()
+      try:
+         wlt = self.main.wallets.getByIndex(row)
+      except:
+         wlt = None
 
       wltID = self.dispTable[row][COLS.WltID]
       if role==QtCore.Qt.DisplayRole:
@@ -1270,11 +1272,11 @@ class TxInDispModel(QtCore.QAbstractTableModel):
          elif col in (COLS.Btc,):
             return int(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
       elif role==QtCore.Qt.BackgroundColorRole:
-         if self.dispTable[row][COLS.WltID] and wltID in self.main.walletMap:
-            wtype = determineWalletType(self.main.walletMap[wltID], self.main)[0]
-            if wtype==WLTTYPES.WatchOnly:
+         if self.dispTable[row][COLS.WltID] and wlt:
+            wtype = determineWalletType(wlt, self.main)[0]
+            if wtype==WalletTypes.WatchOnly:
                return Colors.TblWltOther
-            elif wtype==WLTTYPES.Offline:
+            elif wtype==WalletTypes.Offline:
                return Colors.TblWltOffline
             else:
                return Colors.TblWltMine
@@ -1341,7 +1343,6 @@ class TxOutDispModel(QtCore.QAbstractTableModel):
       elif dispInfo['LboxID']:
          wltID = dispInfo['LboxID']
 
-
       stype = dispInfo['ScrType']
       stypeStr = CPP_TXOUT_SCRIPT_NAMES[stype]
       if stype==CPP_TXOUT_MULTISIG:
@@ -1363,11 +1364,12 @@ class TxOutDispModel(QtCore.QAbstractTableModel):
          if row in self.idxGray:
             return Colors.Mid
       elif role==QtCore.Qt.BackgroundColorRole:
-         if wltID and wltID in self.main.walletMap:
-            wtype = determineWalletType(self.main.walletMap[wltID], self.main)[0]
-            if wtype==WLTTYPES.WatchOnly:
+         if dispInfo['dbId']:
+            wlt = self.main.wallets.get(dispInfo['dbId'])
+            wtype = determineWalletType(wlt, self.main)[0]
+            if wtype==WalletTypes.WatchOnly:
                return Colors.TblWltOther
-            if wtype==WLTTYPES.Offline:
+            if wtype==WalletTypes.Offline:
                return Colors.TblWltOffline
             else:
                return Colors.TblWltMine
@@ -1393,38 +1395,24 @@ class TxOutDispModel(QtCore.QAbstractTableModel):
             if section==COLS.ScrType: return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
          return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
-
-
-
-
 ################################################################################
 class SentToAddrBookModel(QtCore.QAbstractTableModel):
-   def __init__(self, wltID, main):
+   def __init__(self, wlt, main):
       super(SentToAddrBookModel, self).__init__()
       self.main  = main
-      self.wlt   = self.main.walletMap[wltID]
-
+      self.wlt   = wlt
       self.addrBook = []
-
-      # SWIG BUG!
-      # http://sourceforge.net/tracker/?func=detail&atid=101645&aid=3403085&group_id=1645
-      # Must use awkwardness to get around iterating a vector<RegisteredTx> in
-      # the python code... :(
       addressBook = self.wlt.createAddressBook()
       for abe in addressBook.entries:
          scrAddr = abe.scrAddr
          try:
-            addr160 = addrStr_to_hash160(scrAddr_to_addrStr(scrAddr))[1]
-
             # Only grab addresses that are not in any of your Armory wallets
-            if not self.main.getWalletForAddrHash(addr160):
+            if not self.main.wallets.getWltForScrAddr(scrAddr):
                txHashList = abe.txHashes
                self.addrBook.append( [scrAddr, txHashList] )
          except Exception as e:
             # This is not necessarily an error. It could be a lock box LOGERROR(str(e))
             pass
-
-
 
    def rowCount(self, index=QtCore.QModelIndex()):
       return len(self.addrBook)
@@ -1442,7 +1430,8 @@ class SentToAddrBookModel(QtCore.QAbstractTableModel):
       else:
          addrB58 = ''
          addr160 = ''
-      wltID    = self.main.getWalletForAddrHash(scrAddr)
+      wlt      = self.main.wallets.getWltForScrAddr(scrAddr)
+      wltID    = wlt.walletId
       txList   = self.addrBook[row][1]
       numSent  = len(txList)
       comment  = self.wlt.getCommentForTxList(scrAddr, txList)
@@ -1465,7 +1454,6 @@ class SentToAddrBookModel(QtCore.QAbstractTableModel):
       elif role==QtCore.Qt.FontRole:
          isFreqAddr = (numSent>1)
          return GETFONT('Var', bold=isFreqAddr)
-
       return None
 
    def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
@@ -1488,7 +1476,6 @@ class SentToAddrBookModel(QtCore.QAbstractTableModel):
       self.beginResetModel()
       self.endResetModel()
 
-
 ################################################################################
 class SentAddrSortProxy(QtCore.QSortFilterProxyModel):
    def lessThan(self, idxLeft, idxRight):
@@ -1497,25 +1484,17 @@ class SentAddrSortProxy(QtCore.QSortFilterProxyModel):
       strLeft  = self.sourceModel().data(idxLeft)
       strRight = self.sourceModel().data(idxRight)
 
-
-      #ADDRBOOKCOLS = enum('Address', 'WltID', 'NumSent', 'Comment')
-
       if thisCol==COL.Address:
          return (strLeft.lower() < strRight.lower())
       else:
          return super(SentAddrSortProxy, self).lessThan(idxLeft, idxRight)
 
-
 ################################################################################
 class PromissoryCollectModel(QtCore.QAbstractTableModel):
-
-   # The columns enumeration
-
    def __init__(self, main, promNoteList):
       super(PromissoryCollectModel, self).__init__()
       self.main = main
       self.promNoteList = promNoteList
-
 
    def rowCount(self, index=QtCore.QModelIndex()):
       return len(self.promNoteList)
@@ -1523,14 +1502,10 @@ class PromissoryCollectModel(QtCore.QAbstractTableModel):
    def columnCount(self, index=QtCore.QModelIndex()):
       return 4
 
-
    def data(self, index, role=QtCore.Qt.DisplayRole):
       COL = PROMCOLS
       row,col = index.row(), index.column()
       prom = self.promNoteList[row]
-
-      #PROMCOLS = enum('PromID', 'Label', 'PayAmt', 'FeeAmt')
-
       if role==QtCore.Qt.DisplayRole:
          if col==COL.PromID:
             return prom.promID
@@ -1557,8 +1532,6 @@ class PromissoryCollectModel(QtCore.QAbstractTableModel):
             return GETFONT('Fixed')
 
       return None
-
-
 
    def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
       colLabels = [self.tr('Note ID'), self.tr('Label'), self.tr('Funding'), self.tr('Fee')]

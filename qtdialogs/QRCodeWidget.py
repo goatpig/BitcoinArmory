@@ -56,10 +56,10 @@ class QRCodeWidget(QtWidgets.QWidget):
       return
 
    def getSize(self):
-      return self.pxScale*self.modCt
+      return int(self.pxScale*self.modCt)
 
    def sizeHint(self):
-      sz1d = self.pxScale*self.modCt
+      sz1d = self.getSize()
       return QtCore.QSize(sz1d, sz1d)
 
    def paintEvent(self, e):

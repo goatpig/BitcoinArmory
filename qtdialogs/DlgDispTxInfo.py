@@ -71,13 +71,11 @@ class DlgDisplayTxIn(ArmoryDialog):
          wltID  = self.main.getWalletForAddrHash(addrStr_to_hash160(senderAddr)[1])
          if wltID:
             wlt = self.main.walletMap[wltID]
-            srcStr = self.tr('Wallet "%s" (%s)' % (wlt.labelName, wlt.uniqueIDB58))
+            srcStr = self.tr('Wallet "%s" (%s)' % (wlt.labelName, wlt.getDisplayStr()))
          else:
             lbox = self.main.getLockboxByP2SHAddrStr(senderAddr)
             if lbox:
                srcStr = self.tr('Lockbox %d-of-%d "%s" (%s)' % (lbox.M, lbox.N, lbox.shortName, lbox.uniqueIDB58))
-
-
 
       dispLines = []
       dispLines.append(self.tr('<font size=4><u><b>Information on TxIn</b></u></font>:'))
@@ -610,7 +608,7 @@ class DlgDispTxInfo(ArmoryDialog):
       self.txInView.verticalHeader().setDefaultSectionSize(20)
       self.txInView.verticalHeader().hide()
       w, h = tightSizeNChar(self.txInView, 1)
-      self.txInView.setMinimumHeight(2 * (1.4 * h))
+      self.txInView.setMinimumHeight(int(2 * 1.4 * h))
       #self.txInView.setMaximumHeight(5 * (1.4 * h))
       self.txInView.hideColumn(TXINCOLS.OutPt)
       self.txInView.hideColumn(TXINCOLS.OutIdx)
@@ -644,7 +642,7 @@ class DlgDispTxInfo(ArmoryDialog):
       self.txOutView.setSelectionMode(QtWidgets.QTableView.SingleSelection)
       self.txOutView.verticalHeader().setDefaultSectionSize(20)
       self.txOutView.verticalHeader().hide()
-      self.txOutView.setMinimumHeight(2 * (1.3 * h))
+      self.txOutView.setMinimumHeight(int(2 * 1.3 * h))
       #self.txOutView.setMaximumHeight(5 * (1.3 * h))
       initialColResize(self.txOutView, [wWlt, 0.8 * wAddr, wAmt, 0.25, 0])
       self.txOutView.hideColumn(TXOUTCOLS.Script)
@@ -936,7 +934,7 @@ def extractTxInfo(pytx, rcvTime=None):
    txOutToList = pytx.makeRecipientsList()
    sumTxOut = sum([t[1] for t in txOutToList])
 
-   hashesToFetch = [txHash]
+   hashesToFetch = [txHash] if txHash else []
    for i in range(pytx.getNumTxIn()):
       txin = pytx.getTxIn(i)
       hashesToFetch.append(txin.getOutPoint().txHash)

@@ -71,11 +71,13 @@ void CppBridgeSocket::respond(std::vector<uint8_t>& data)
 
    //append data to leftovers from previous iteration if applicable
    if (!leftOverData_.empty()) {
-      leftOverData_.insert(leftOverData_.end(), data.begin(), data.end());
-      data = std::move(leftOverData_);
+      std::vector<uint8_t> copy;
+      copy.resize(leftOverData_.size() + data.size());
+      memcpy(&copy[0], &leftOverData_[0], leftOverData_.size());
+      memcpy(&copy[0] + leftOverData_.size(), &data[0], data.size());
 
-      //leftoverData_ should be empty cause of the move operation
-      assert(leftOverData_.empty());
+      data = std::move(copy);
+      leftOverData_.clear();
    }
 
    while (!data.empty()) {
@@ -310,18 +312,18 @@ void WritePayload_Bridge::serialize(std::vector<uint8_t>& payload)
    if (data.empty()) {
       return;
    }
-   payload.resize(data.getSize() + 5 + POLY1305MACLEN);
+   payload.resize(data.getSize() + 8 + POLY1305MACLEN);
 
    //set packet size
-   uint32_t sizeVal = data.getSize() + 1;
+   uint32_t sizeVal = data.getSize() + 4;
    memcpy(&payload[0], &sizeVal, sizeof(uint32_t));
 
    //serialize protobuf message
-   memcpy(&payload[5], data.getPtr(), data.getSize());
+   memcpy(&payload[8], data.getPtr(), data.getSize());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 size_t WritePayload_Bridge::getSerializedSize(void) const
 {
-   return data.getSize() + 5 + POLY1305MACLEN;
+   return data.getSize() + 8 + POLY1305MACLEN;
 }

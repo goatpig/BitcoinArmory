@@ -81,17 +81,14 @@ class DlgUniversalRestoreSelect(ArmoryDialog):
          self.chkTest.setEnabled(True)
 
    def clickedOkay(self):
-        # ## Test backup option
-
+      ### Test backup option
       doTest = self.chkTest.isChecked()
-
       if self.rdoSingle.isChecked():
          self.accept()
          dlg = DlgRestoreSingle(self.parent, self.main, doTest)
          if dlg.exec_():
             self.main.addWalletToApplication(dlg.newWallet)
             LOGINFO('Wallet Restore Complete!')
-
       elif self.rdoFragged.isChecked():
          self.accept()
          dlg = DlgRestoreFragged(self.parent, self.main, doTest)

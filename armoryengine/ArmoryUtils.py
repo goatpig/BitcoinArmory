@@ -41,6 +41,7 @@ import base64
 import socket
 import subprocess
 import binascii
+import hmac, hashlib
 
 from pathlib import Path
 
@@ -445,8 +446,6 @@ if not CLI_OPTIONS.armoryDBDir==DEFAULT:
       # can be displayed
       pass
 
-
-
 # Change the log file to use
 ARMORY_LOG_FILE = os.path.join(ARMORY_HOME_DIR, 'armorylog.txt')
 ARMCPP_LOG_FILE = os.path.join(ARMORY_HOME_DIR, 'armorycpplog.txt')
@@ -454,7 +453,6 @@ ARMDB_LOG_FILE = os.path.join(ARMORY_HOME_DIR, 'dbLog.txt')
 if not sys.argv[0] in ['ArmoryQt.py', 'ArmoryQt.exe', 'Armory.exe']:
    basename = os.path.basename(sys.argv[0])
    CLI_OPTIONS.logFile = os.path.join(ARMORY_HOME_DIR, '%s.log.txt' % basename)
-
 
 # Change the settings file to use
 if CLI_OPTIONS.settingsPath==DEFAULT:
@@ -468,12 +466,10 @@ if CLI_OPTIONS.logFile==DEFAULT:
       basename = os.path.basename(sys.argv[0])
       CLI_OPTIONS.logFile = os.path.join(ARMORY_HOME_DIR, '%s.log.txt' % basename)
 
-
 SETTINGS_PATH   = CLI_OPTIONS.settingsPath
 MULT_LOG_FILE   = os.path.join(ARMORY_HOME_DIR, 'multipliers.txt')
 MULTISIG_FILE_NAME   = 'multisigs.txt'
 MULTISIG_FILE   = os.path.join(ARMORY_HOME_DIR, MULTISIG_FILE_NAME)
-
 
 if not CLI_OPTIONS.multisigFile==DEFAULT:
    if not os.path.exists(CLI_OPTIONS.multisigFile):
@@ -481,12 +477,9 @@ if not CLI_OPTIONS.multisigFile==DEFAULT:
    else:
       MULTISIG_FILE  = CLI_OPTIONS.multisigFile
 
-
-
 # If this is the first Armory has been run, create directories
 if ARMORY_HOME_DIR and not os.path.exists(ARMORY_HOME_DIR):
    os.makedirs(ARMORY_HOME_DIR)
-
 
 if not os.path.exists(ARMORY_DB_DIR):
    os.makedirs(ARMORY_DB_DIR)
@@ -636,7 +629,6 @@ if not CLI_OPTIONS.rpcport == DEFAULT:
       raise TypeError('Invalid RPC port for armoryd ' + str(ARMORY_RPC_PORT))
 
 
-
 if sys.argv[0]=='ArmoryQt.py':
    print('********************************************************************************')
    print('Loading Armory Engine:')
@@ -702,7 +694,6 @@ def launchProcess(cmd, useStartInfo=True, *args, **kwargs):
                      stdout=PIPE, \
                      stderr=PIPE, \
                      **kwargs)
-
 
 #########  INITIALIZE LOGGING UTILITIES  ##########
 #
@@ -793,7 +784,7 @@ def chopLogFile(filename, size):
       logLines = logFile.readlines()
       logFile.close()
 
-      nBytes,nLines = 0,0;
+      nBytes,nLines = 0,0
       for line in logLines[::-1]:
          nBytes += len(line)
          nLines += 1
@@ -808,11 +799,9 @@ def chopLogFile(filename, size):
 # Cut down the log file to just the most recent 1 MB
 chopLogFile(ARMORY_LOG_FILE, MEGABYTE)
 
-
 # Now set loglevels
 DEFAULT_CONSOLE_LOGTHRESH = logging.WARNING
 DEFAULT_FILE_LOGTHRESH    = logging.INFO
-
 DEFAULT_PPRINT_LOGLEVEL   = logging.DEBUG
 
 rootLogger = logging.getLogger('')
@@ -824,7 +813,6 @@ if CLI_OPTIONS.doDebug or CLI_OPTIONS.netlog or CLI_OPTIONS.mtdebug:
 if CLI_OPTIONS.logDisable:
    DEFAULT_CONSOLE_LOGTHRESH  += 100
    DEFAULT_FILE_LOGTHRESH     += 100
-
 
 DateFormat = '%Y-%m-%d %H:%M:%S'
 logging.getLogger('').setLevel(logging.DEBUG)
@@ -841,8 +829,6 @@ consoleHandler.setLevel(DEFAULT_CONSOLE_LOGTHRESH)
 consoleHandler.setFormatter( consoleFormatter )
 logging.getLogger('').addHandler(consoleHandler)
 
-
-
 class stringAggregator(object):
    def __init__(self):
       self.theStr = ''
@@ -850,7 +836,6 @@ class stringAggregator(object):
       return self.theStr
    def write(self, theStr):
       self.theStr += theStr
-
 
 # A method to redirect pprint() calls to the log file
 # Need a way to take a pprint-able object, and redirect its output to file
@@ -871,20 +856,17 @@ if CLI_OPTIONS.logDisable:
    print('Logging is disabled')
    rootLogger.disabled = True
 
-
-
 def logexcept_override(_type, value, tback):
    try:
       strList = traceback.format_exception(_type,value,tback)
       logging.error(''.join([s for s in strList]))
    except:
       pass
-   
+
    # then call the default handler
    sys.__excepthook__(_type, value, tback)
 
 sys.excepthook = logexcept_override
-
 
 # If there is a rebuild or rescan flag, let's do the right thing.
 fileRedownload  = os.path.join(ARMORY_HOME_DIR, 'redownload.flag')
@@ -944,14 +926,12 @@ if os.path.exists(fileClrMempool):
 
    CLI_OPTIONS.clearMempool = True
 
-
 # Separately, we may want to delete the settings file, which couldn't
 # be done easily from the GUI, because it frequently gets rewritten to
 # file before shutdown is complete.  The best way is to delete it on start.
 if os.path.exists(fileDelSettings):
    os.remove(SETTINGS_PATH)
    os.remove(fileDelSettings)
-
 
 
 ################################################################################
@@ -976,14 +956,11 @@ def deleteBitcoindDBs():
             LOGINFO('   Removing file: %s' % fullPath)
             os.remove(fullPath)
 
-
-
 #####
 if CLI_OPTIONS.redownload:
    deleteBitcoindDBs()
    if os.path.exists(fileRedownload):
       os.remove(fileRedownload)
-
 
 #####
 if CLI_OPTIONS.rebuild and os.path.exists(ARMORY_DB_DIR):
@@ -1023,7 +1000,6 @@ def GetSystemDetails():
       #   if line.strip().lower().startswith(b'model name'):
       #      out.CpuStr = str(line.split(b':')[1].strip())
       #      break
-
 
    elif OS_WINDOWS:
       import ctypes
@@ -1136,7 +1112,6 @@ for val in CLI_ARGS:
    LOGINFO('    %s', val)
 LOGINFO('************************************************************')
 
-
 def GetExecDir():
    """
    Return the path from where armoryengine was imported.  Inspect method
@@ -1158,9 +1133,6 @@ def GetExecDir():
       LOGERROR('Continuing anyway...' % srcpath)
 
    return srcpath
-
-
-
 
 ################################################################################
 def coin2str(nSatoshi, ndec=8, rJust=True, maxZeros=8):
@@ -1237,7 +1209,6 @@ def makeAsciiBlock(binStr, headStr='', wid=64, newline='\n'):
    lines.append("="*wid)
    return newline.join(lines)
 
-
 ################################################################################
 def readAsciiBlock(ablock, headStr=''):
    headStr = ''
@@ -1255,9 +1226,6 @@ def readAsciiBlock(ablock, headStr=''):
       rawData = base64.b64decode(''.join(lines[1:-1]))
 
    return (headStr, rawData)
-
-
-
 
 ################################################################################
 def replacePlurals(txt, *args):
@@ -1306,8 +1274,6 @@ def replacePlurals(txt, *args):
 
    return txt
 
-
-
 ################################################################################
 def formatWithPlurals(txt, replList=None, pluralList=None):
    """
@@ -1330,7 +1296,6 @@ def formatWithPlurals(txt, replList=None, pluralList=None):
       txt = replacePlurals(txt, *pluralList)
 
    return txt
-
 
 ################################################################################
 # A bunch of convenience methods for converting between:
@@ -1358,7 +1323,6 @@ def hash160_to_p2pkhash_script(binStr20):
                           getOpCode('OP_EQUALVERIFY'), \
                           getOpCode('OP_CHECKSIG'   )])
    return outScript
-
 
 ################################################################################
 # Convert a 20-byte hash to a "pay-to-script-hash" script to be inserted
@@ -1392,7 +1356,6 @@ def pubkey_to_p2pk_script(binStr33or65):
    serPubKey = scriptPushData(binStr33or65)
    outScript = serPubKey + getOpCode('OP_CHECKSIG')
    return outScript
-
 
 ################################################################################
 # Convert a list of public keys to an OP_CHECKMULTISIG script.  There will be
@@ -1442,7 +1405,6 @@ def isASCII(theStr):
       LOGEXCEPT('What was passed to this function? %s', theStr)
       return False
 
-
 def toBytes(theStr, theEncoding=DEFAULT_ENCODING):
    if isinstance(theStr, str):
       return theStr.encode(theEncoding)
@@ -1453,7 +1415,6 @@ def toBytes(theStr, theEncoding=DEFAULT_ENCODING):
          return theStr.encode(theEncoding)
       except:
          raise Exception('toBytes() not been defined for input: %s', str(type(theStr)))
-
 
 def toUnicode(theStr, theEncoding=DEFAULT_ENCODING):
    if isinstance(theStr, str):
@@ -1466,13 +1427,11 @@ def toUnicode(theStr, theEncoding=DEFAULT_ENCODING):
       except:
          LOGEXCEPT('toUnicode() not defined for %s', str(type(theStr)))
 
-
 def toPreferred(theStr):
    if OS_WINDOWS:
       return theStr.encode('utf-8')
    else:
       return toUnicode(theStr).encode(locale.getpreferredencoding())
-
 
 def lenBytes(theStr, theEncoding=DEFAULT_ENCODING):
    return len(toBytes(theStr, theEncoding))
@@ -1481,7 +1440,6 @@ def lenBytes(theStr, theEncoding=DEFAULT_ENCODING):
 def unicode_truncate(theStr, length, encoding='utf-8'):
     encoded = theStr.encode(encoding)[:length]
     return encoded.decode(encoding, 'ignore')
-
 
 # This is a sweet trick for create enum-like dictionaries.
 # Either automatically numbers (*args), or name-val pairs (**kwargs)
@@ -1498,7 +1456,6 @@ if CLI_OPTIONS.logDisable:
    print('Logging is disabled')
    rootLogger.disabled = True
 
-
 # Some time methods (RightNow() return local unix timestamp)
 RightNow = time.time
 def RightNowUTC():
@@ -1506,7 +1463,6 @@ def RightNowUTC():
 
 def RightNowStr(fmt=DEFAULT_DATE_FORMAT):
    return unixTimeToFormatStr(RightNow(), fmt)
-
 
 # Define all the hashing functions we're going to need.  We don't actually
 # use any of the first three directly (sha1, sha256, ripemd160), we only
@@ -1531,18 +1487,11 @@ def hash160(s):
    from armoryengine.CppBridge import TheBridge
    return TheBridge.utils.getHash160(s)
 
+def HMAC(key, msg, hashfunc=hashlib.sha512, hashsz=None):
+   return hmac.HMAC(key, msg, hashfunc).digest()
 
-def HMAC(key, msg, hashfunc=sha512, hashsz=None):
-   """ This is intended to be simple, not fast.  For speed, use HDWalletCrypto() """
-   hashsz = len(hashfunc(b'')) if hashsz==None else hashsz
-   key = (hashfunc(key) if len(key)>hashsz else key)
-   key = key.ljust(hashsz, b'\x00')
-   okey = b''.join([pack('B', ord(b'\x5c')^(ord(c) if isinstance(c, str) else c)) for c in key])
-   ikey = b''.join([pack('B', ord(b'\x36')^(ord(c) if isinstance(c, str) else c)) for c in key])
-   return hashfunc( okey + hashfunc(ikey + msg) )
-
-HMAC256 = lambda key,msg: HMAC(key, msg, sha256, 32)
-HMAC512 = lambda key,msg: HMAC(key, msg, sha512, 64)
+HMAC256 = lambda key,msg: HMAC(key, msg, hashlib.sha256, 32)
+HMAC512 = lambda key,msg: HMAC(key, msg, hashlib.sha512, 64)
 
 
 ################################################################################
@@ -1564,7 +1513,6 @@ def prettyHex(theStr, indent='', withAddr=True, major=8, minor=8):
       outStr += theStr[i*minor:(i+1)*minor] + ' '
    return outStr
 
-
 ################################################################################
 def pprintHex(theStr, indent='', withAddr=True, major=8, minor=8):
    """
@@ -1578,7 +1526,6 @@ def pprintHex(theStr, indent='', withAddr=True, major=8, minor=8):
    grouping size (major * minor = hexCharsPerRow)
    """
    print(prettyHex(theStr, indent, withAddr, major, minor))
-
 
 def pprintDiff(str1, str2, indent=''):
    if not len(str1)==len(str2):
@@ -1594,7 +1541,6 @@ def pprintDiff(str1, str2, indent=''):
 
    pprintHex(''.join(byteDiff), indent=indent)
 
-
 ##### Switch endian-ness #####
 def hex_switchEndian(s):
    """ Switches the endianness of a hex string (in pairs of hex chars) """
@@ -1603,7 +1549,6 @@ def hex_switchEndian(s):
 def binary_switchEndian(s):
    """ Switches the endianness of a binary string """
    return s[::-1]
-
 
 ##### INT/HEXSTR #####
 def int_to_hex(i, widthBytes=0, endOut=LITTLEENDIAN):
@@ -1625,7 +1570,6 @@ def int_to_hex(i, widthBytes=0, endOut=LITTLEENDIAN):
       h = hex_switchEndian(h)
    return h
 
-
 def hex_to_int(h, endIn=LITTLEENDIAN):
    """
    Convert hex-string to integer (or long).  Default behavior is to interpret
@@ -1635,7 +1579,6 @@ def hex_to_int(h, endIn=LITTLEENDIAN):
    if endIn==LITTLEENDIAN:
       hstr = hex_switchEndian(hstr)
    return( int(hstr, 16) )
-
 
 ##### HEXSTR/BINARYSTR #####
 def hex_to_binary(h, endIn=LITTLEENDIAN, endOut=LITTLEENDIAN):
@@ -1647,7 +1590,6 @@ def hex_to_binary(h, endIn=LITTLEENDIAN, endOut=LITTLEENDIAN):
    if not endIn==endOut:
       bout = hex_switchEndian(bout)
    return codecs.decode(bout, 'hex_codec')
-
 
 def binary_to_hex(b, endOut=LITTLEENDIAN, endIn=LITTLEENDIAN):
    """
@@ -1699,7 +1641,6 @@ def bitset_to_int(bitset):
    return n
 
 EmptyHash = hex_to_binary('00'*32)
-
 
 ###### Typing-friendly Base16 #####
 #  Implements "hexadecimal" encoding but using only easy-to-type
@@ -1848,9 +1789,6 @@ def unpackVarInt(hvi):
    elif code == 0xff: return [unpack('<Q',hvi[1:9])[0], 9]
    else: assert(False)
 
-
-
-
 def fixChecksumError(binaryStr, chksum, hashFunc=hash256):
    """
    Will only try to correct one byte, as that would be the most
@@ -1864,12 +1802,10 @@ def fixChecksumError(binaryStr, chksum, hashFunc=hash256):
          binaryArray[byte] = chr(val)
          if hashFunc(''.join(binaryArray)).startswith(chksum):
             return ''.join(binaryArray)
-
    return ''
 
 def computeChecksum(binaryStr, nBytes=4, hashFunc=hash256):
    return hashFunc(binaryStr)[:nBytes]
-
 
 def verifyChecksum(binaryStr, chksum, hashFunc=hash256, fixIfNecessary=True, \
                                                               beQuiet=False):
@@ -1892,7 +1828,6 @@ def verifyChecksum(binaryStr, chksum, hashFunc=hash256, fixIfNecessary=True, \
    bin1 = str(binaryStr)
    bin2 = binary_switchEndian(binaryStr)
 
-
    if hashFunc(bin1).startswith(chksum):
       return bin1
    elif hashFunc(bin2).startswith(chksum):
@@ -1913,7 +1848,6 @@ def verifyChecksum(binaryStr, chksum, hashFunc=hash256, fixIfNecessary=True, \
             if not beQuiet: LOGWARN('fixed!')
             return ''
 
-
    # ID a checksum byte error...
    origHash = hashFunc(bin1)
    for i in range(len(chksum)):
@@ -1926,7 +1860,6 @@ def verifyChecksum(binaryStr, chksum, hashFunc=hash256, fixIfNecessary=True, \
 
    LOGWARN('Checksum fix failed')
    return ''
-
 
 # Taken directly from rpc.cpp in reference bitcoin client, 0.3.24
 def binaryBits_to_difficulty(b):
@@ -1941,7 +1874,6 @@ def binaryBits_to_difficulty(b):
       dDiff /= 256.0
       nShift -= 1
    return dDiff
-
 
 # TODO:  I don't actually know how to do this, yet...
 def difficulty_to_binaryBits(i):
@@ -2077,7 +2009,6 @@ class FiniteField(object):
       sz = len(mtrx)
       return [[self.divide(adj[i][j],det) for j in range(sz)] for i in range(sz)]
 
-
 ################################################################################
 def SplitSecret(secret, needed, pieces, nbytes=None):
    if not isinstance(secret, basestring):
@@ -2126,7 +2057,6 @@ def SplitSecret(secret, needed, pieces, nbytes=None):
    fragments = [ [int_to_binary(p, nbytes, BIGENDIAN) for p in frag] for frag in fragments]
    return fragments
 
-
 ################################################################################
 def ReconstructSecret(fragments, needed, nbytes):
 
@@ -2145,7 +2075,6 @@ def ReconstructSecret(fragments, needed, nbytes):
    minv = ff.mtrxinv(m)
    outvect = ff.mtrxmultvect(minv,v)
    return int_to_binary(outvect[0], nbytes, BIGENDIAN)
-
 
 ################################################################################
 def createTestingSubsets( fragIndices, M, maxTestCount=20):
@@ -2190,8 +2119,6 @@ def createTestingSubsets( fragIndices, M, maxTestCount=20):
 
          return (True, sorted(subs))
 
-
-
 ################################################################################
 def testReconstructSecrets(fragMap, M, maxTestCount=20):
    # If fragMap has X elements, then it will test all X-choose-M subsets of
@@ -2224,7 +2151,6 @@ def stripJSONStrChars(inStr):
    # "Hello" becomes "u'Hello'". We want to get the original string.
    return inStr[2:-1]
 
-
 ################################################################################
 def checkAddrType(addrBin):
    """ Gets the network byte of the address.  Returns -1 if chksum fails """
@@ -2247,15 +2173,12 @@ def checkAddrBinValid(addrBin, validPrefixes=None):
    prefix = checkAddrType(addrBin)
    return (prefix in validPrefixes)
 
-
-
 ################################################################################
 def checkAddrStrValid(addrStr, validPrefixes=[ADDRBYTE, P2SHBYTE]):
    """ Check that a Base58 address-string is valid on this network """
    if(addrStr == ''):
       return False
    return checkAddrBinValid(base58_to_binary(addrStr), validPrefixes)
-
 
 ################################################################################
 def convertKeyDataToAddress(privKey=None, pubKey=None):
@@ -2275,8 +2198,6 @@ def convertKeyDataToAddress(privKey=None, pubKey=None):
       pubKey = SecureBinaryData(pubKey)
    return pubKey.getHash160()
 
-
-
 ################################################################################
 def decodeMiniPrivateKey(keyStr):
    """
@@ -2295,7 +2216,6 @@ def decodeMiniPrivateKey(keyStr):
       raise KeyDataError('Invalid mini private key... double check the entry')
 
    return sha256(keyStr)
-
 
 ################################################################################
 def parsePrivateKeyData(theStr):
@@ -2353,9 +2273,7 @@ def parsePrivateKeyData(theStr):
          raise CompressedKeyError('Compressed Public keys not supported!')
       return binEntry, keyType
 
-
 URI_VERSION_STR = '1.0'
-
 
 ################################################################################
 # Take in a "bitcoin:" URI string and parse the data out into a dictionary. If
@@ -2391,7 +2309,6 @@ def parseBitcoinURI(uriStr):
 
    return data
 
-
 ################################################################################
 def uriReservedToPercent(theStr):
    """
@@ -2403,7 +2320,6 @@ def uriReservedToPercent(theStr):
    for c in reserved:
       theStr = theStr.replace(c, '%%%s' % int_to_hex(ord(c)))
    return theStr
-
 
 ################################################################################
 def uriPercentToReserved(theStr):
@@ -2417,7 +2333,6 @@ def uriPercentToReserved(theStr):
       for p in parts[1:]:
          parts[0] += chr( hex_to_int(p[:2]) ) + p[2:]
    return parts[0][:]
-
 
 ################################################################################
 def createBitcoinURI(addr, amt=None, msg=None):
@@ -2435,7 +2350,6 @@ def createBitcoinURI(addr, amt=None, msg=None):
       uriStr += 'label=%s' % uriReservedToPercent(msg)
 
    return uriStr
-
 
 ################################################################################
 def createDERSigFromRS(rBin, sBin):
@@ -2459,7 +2373,6 @@ def createDERSigFromRS(rBin, sBin):
                '\x02' + rSize + rBin + \
                '\x02' + sSize + sBin
    return sigScript
-
 
 ################################################################################
 def getRSFromDERSig(derSig):
@@ -2488,7 +2401,6 @@ def getRSFromDERSig(derSig):
    rFinal = r.lstrip('\x00').rjust(32, '\x00')
    sFinal = s.lstrip('\x00').rjust(32, '\x00')
    return rFinal, sFinal
-
 
 #############################################################################
 def notifyOnSurpriseTx(blk0, blk1, wltMap, lboxWltMap, isGui, bdm, notifyQueue, settings ):
@@ -2532,7 +2444,6 @@ def notifyOnSurpriseTx(blk0, blk1, wltMap, lboxWltMap, isGui, bdm, notifyQueue, 
             else:
                # There should be a log message here.
                pass
-
 
 ################################################################################
 class PyBackgroundThread(threading.Thread):
@@ -2649,7 +2560,6 @@ class PyBackgroundThread(threading.Thread):
       self.reset()
       self.start()
 
-
 # Define a decorator that allows the function to be called asynchronously
 def AllowAsync(func):
    def wrappedFunc(*args, **kwargs):
@@ -2669,7 +2579,6 @@ def AllowAsync(func):
          return thr
 
    return wrappedFunc
-
 
 def emptyFunc(*args, **kwargs):
    return
@@ -2699,7 +2608,6 @@ def isValidPK(inPK, inStr=False):
               (len(inPK), binary_to_hex(inPK)))
 
    return retVal
-
 
 ################################################################################
 # Function that extracts IDs from a given text block and returns a list of all
@@ -2804,7 +2712,6 @@ def send_email(send_from, server, password, send_to, subject, text):
    mailServer.login(send_from, password)
    mailServer.sendmail(send_from, send_to, msg.as_string())
    mailServer.close()
-
 
 #############################################################################
 def getLastBytesOfFile(filename, nBytes=500*1024):

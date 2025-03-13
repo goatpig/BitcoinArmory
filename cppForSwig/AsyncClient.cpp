@@ -331,6 +331,13 @@ namespace {
 // BlockDataViewer
 //
 ///////////////////////////////////////////////////////////////////////////////
+bool BlockDataViewer::isValid() const
+{
+   if (sock_ == nullptr) {
+      return false;
+   }
+   return sock_->running();
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 bool BlockDataViewer::hasRemoteDB()
@@ -1649,6 +1656,8 @@ std::pair<unsigned, unsigned> AsyncClient::BlockDataViewer::getRekeyCount() cons
 
    return wsSocket->getRekeyCount();
 }
+
+///////////////////////////////////////////////////////////////////////////////
 void AsyncClient::BlockDataViewer::getCombinedBalances(std::function<void(
    ReturnMessage<std::map<std::string, CombinedBalances>>)> callback)
 {

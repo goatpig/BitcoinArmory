@@ -32,10 +32,8 @@ SETTINGS_PATH   = os.path.join(ARMORY_HOME_DIR, 'ArmorySettings.txt')
 USERMODE        = enum('Standard', 'Advanced', 'Expert')
 SATOSHIMODE     = enum('Auto', 'User')
 NETWORKMODE     = enum('Offline', 'Full', 'Disconnected')
-WLTTYPES        = enum('Plain', 'Crypt', 'WatchOnly', 'Offline')
-WLTFIELDS       = enum('Name', 'Descr', 'WltID', 'NumAddr', 'Secure', \
-                       'BelongsTo', 'Crypto', 'Time', 'Mem', 'Version')
-MSGBOX          = enum('Good','Info', 'Question', 'Warning', 'Critical', 'Error')
+WLTFIELDS       = enum('Name', 'Descr', 'WltID', 'NumAddr', 'Secure',
+   'BelongsTo', 'Crypto', 'Time', 'Mem', 'Version')
 MSGBOX          = enum('Good','Info', 'Question', 'Warning', 'Critical', 'Error')
 DASHBTNS        = enum('Close', 'Browse', 'Settings')
 
@@ -72,8 +70,6 @@ def VLINE(style=QtWidgets.QFrame.Plain):
    qf = QtWidgets.QFrame()
    qf.setFrameStyle(QtWidgets.QFrame.VLine | style)
    return qf
-
-
 
 # Setup fixed-width and var-width fonts
 def GETFONT(ftype, sz=10, bold=False, italic=False):
@@ -112,7 +108,6 @@ def GETFONT(ftype, sz=10, bold=False, italic=False):
 
    return fnt
 
-
 def UnicodeErrorBox(parent):
    QtWidgets.QMessageBox.warning(parent, 'ASCII Error', \
       toUnicode('Armory does not currently support non-ASCII characters in '
@@ -120,9 +115,6 @@ def UnicodeErrorBox(parent):
       'Please use only letters found '
       'on an English(US) keyboard.  This will be fixed in an upcoming '
       'release'), QtWidgets.QMessageBox.Ok)
-
-
-
 
 #######
 def UserModeStr(parent, mode):
@@ -132,7 +124,6 @@ def UserModeStr(parent, mode):
       return parent.tr('Advanced User')
    elif mode==USERMODE.Expert:
       return parent.tr('Expert User')
-
 
 #######
 def tightSizeNChar(obj, nChar):
@@ -149,7 +140,7 @@ def tightSizeNChar(obj, nChar):
       fm = QtGui.QFontMetricsF(QtGui.QFont())
    szWidth,szHeight = fm.boundingRect('abcfgijklm').width(), fm.height()
    szWidth = int(szWidth * nChar/10.0 + 0.5)
-   return szWidth, szHeight
+   return szWidth, int(szHeight)
 
 #######
 def tightSizeStr(obj, theStr):
@@ -159,7 +150,7 @@ def tightSizeStr(obj, theStr):
    except AttributeError:
       fm = QtGui.QFontMetricsF(QtGui.QFont())
    szWidth,szHeight = fm.boundingRect(theStr).width(), fm.height()
-   return szWidth, szHeight
+   return int(szWidth), int(szHeight)
 
 #######
 def relaxedSizeStr(obj, theStr):
@@ -171,7 +162,7 @@ def relaxedSizeStr(obj, theStr):
    except AttributeError:
       fm = QtGui.QFontMetricsF(QtGui.QFont())
    szWidth,szHeight = fm.boundingRect(theStr).width(), fm.height()
-   return (10 + szWidth*1.05), 1.5*szHeight
+   return int(10 + szWidth*1.05), int(1.5*szHeight)
 
 #######
 def relaxedSizeNChar(obj, nChar):
@@ -184,23 +175,7 @@ def relaxedSizeNChar(obj, nChar):
       fm = QtGui.QFontMetricsF(QtGui.QFont())
    szWidth,szHeight = fm.boundingRect('abcfg ijklm').width(), fm.height()
    szWidth = int(szWidth * nChar/10.0 + 0.5)
-   return (10 + szWidth*1.05), 1.5*szHeight
-
-#############################################################################
-def determineWalletType(wlt, wndw):
-   if wlt.watchingOnly:
-      if wndw.getWltSetting(wlt.uniqueIDB58, 'IsMine'):
-         return [WLTTYPES.Offline, wndw.tr('Offline')]
-      else:
-         return [WLTTYPES.WatchOnly, wndw.tr('Watching-Only')]
-   elif wlt.useEncryption:
-      return [WLTTYPES.Crypt, wndw.tr('Encrypted')]
-   else:
-      return [WLTTYPES.Plain, wndw.tr('No Encryption')]
-
-
-
-
+   return int(10 + szWidth*1.05), int(1.5*szHeight)
 
 #############################################################################
 def initialColResize(tblViewObj, sizeList):
@@ -224,18 +199,16 @@ def initialColResize(tblViewObj, sizeList):
          pctCols.append( (col, colVal) )
 
    for c,sz in fixedCols:
-      tblViewObj.horizontalHeader().resizeSection(c, sz)
+      tblViewObj.horizontalHeader().resizeSection(c, int(sz))
 
    totalFixed = sum([sz[1] for sz in fixedCols])
    szRemain = totalWidth-totalFixed
    for c,pct in pctCols:
-      tblViewObj.horizontalHeader().resizeSection(c, pct*szRemain)
+      tblViewObj.horizontalHeader().resizeSection(c, int(pct*szRemain))
 
    tblViewObj.horizontalHeader().setStretchLastSection(True)
 
-
-
-
+#############################################################################
 class QRichLabel(QtWidgets.QLabel):
    def __init__(self, txt, doWrap=True, \
                            hAlign=QtCore.Qt.AlignLeft, \
@@ -387,7 +360,7 @@ class QLabelButton(QtWidgets.QLabel):
 
    def sizeHint(self):
       w,h = relaxedSizeStr(self, self.plainText)
-      return QtCore.QSize(w,1.2*h)
+      return QtCore.QSize(w, int(1.2*h))
 
    def mousePressEvent(self, ev):
       # Prevent click-bleed-through to dialogs being opened
@@ -466,7 +439,6 @@ def makeVertFrame(widgetList, style=QtWidgets.QFrame.NoFrame, condenseMargins=Fa
 def makeHorizFrame(widgetList, style=QtWidgets.QFrame.NoFrame, condenseMargins=False):
    return makeLayoutFrame(HORIZONTAL, widgetList, style, condenseMargins)
 
-
 def QImageLabel(imgfn, size=None, stretch='NoStretch'):
 
    lbl = QtWidgets.QLabel()
@@ -478,9 +450,6 @@ def QImageLabel(imgfn, size=None, stretch='NoStretch'):
 
    lbl.setPixmap(px)
    return lbl
-
-
-
 
 def restoreTableView(qtbl, hexBytes):
    try:
@@ -501,7 +470,6 @@ def restoreTableView(qtbl, hexBytes):
       pass
       # Don't want to crash the program just because couldn't load tbl data
 
-
 def saveTableView(qtbl):
    if qtbl.model() is None:
       return
@@ -518,7 +486,6 @@ def saveTableView(qtbl):
    first = int_to_hex(nCol)
    rest  = [int_to_hex(s, widthBytes=2) for s in sz]
    return 'ff' + first + ''.join(rest)
-
 
 ################################################################################
 class QRadioButtonBackupCtr(QtWidgets.QRadioButton):

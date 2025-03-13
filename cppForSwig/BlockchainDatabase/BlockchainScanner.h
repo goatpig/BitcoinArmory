@@ -1,8 +1,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-17, goatpig.                                           //
+//  Copyright (C) 2016-2025, goatpig.                                         //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                      
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -43,7 +43,7 @@ struct TxOutScrRef;
 struct ParserBatch
 {
 public:
-   std::map<unsigned, std::shared_ptr<BlockDataFileMap>> fileMaps_;
+   std::map<unsigned, std::shared_ptr<FileUtils::FileMap>> fileMaps_;
 
    std::atomic<unsigned> blockCounter_;
    std::mutex mergeMutex_;
@@ -71,9 +71,9 @@ public:
       startBlockFileID_(startID), targetBlockFileID_(endID),
       scriptRefMap_(scriptRefMap)
    {
-      if (end < start)
+      if (end < start) {
          throw std::runtime_error("end > start");
-
+      }
       blockCounter_.store(start_, std::memory_order_relaxed);
    }
 };
@@ -85,7 +85,7 @@ private:
    std::shared_ptr<Blockchain> blockchain_;
    LMDBBlockDatabase* db_;
    ScrAddrFilter* scrAddrFilter_;
-   BlockDataLoader blockDataLoader_;
+   std::shared_ptr<BlockFiles> blockFiles_;
 
    const unsigned totalThreadCount_;
    const unsigned writeQueueDepth_;
@@ -93,8 +93,7 @@ private:
 
    BinaryData topScannedBlockHash_;
 
-   ProgressCallback progress_ = 
-      [](BDMPhase, double, unsigned, unsigned)->void{};
+   ProgressCallback progress_ = nullptr;
    bool reportProgress_ = false;
 
    //only for relevant utxos
@@ -109,6 +108,7 @@ private:
    Armory::Threading::BlockingQueue<std::unique_ptr<ParserBatch>> commitQueue_;
 
    std::atomic<unsigned> completedBatches_;
+   std::atomic_uint32_t fatalError_;
 
 private:
    void writeBlockData(void);
@@ -133,22 +133,15 @@ private:
    void processInputs(void);
    void processInputsThread(ParserBatch*);
 
-
 public:
-   BlockchainScanner(std::shared_ptr<Blockchain> bc, LMDBBlockDatabase* db,
-      ScrAddrFilter* saf,
-      BlockFiles& bf,
-      unsigned threadcount, unsigned queue_depth, 
-      ProgressCallback prg, bool reportProgress) :
-      blockchain_(bc), db_(db), scrAddrFilter_(saf),
-      blockDataLoader_(bf.folderPath()),
-      totalThreadCount_(threadcount), writeQueueDepth_(queue_depth),
-      totalBlockFileCount_(bf.fileCount()),
-      progress_(prg), reportProgress_(reportProgress)
-   {}
+   BlockchainScanner(std::shared_ptr<Blockchain> bc,
+      LMDBBlockDatabase* db, ScrAddrFilter* saf,
+      std::shared_ptr<BlockFiles> bf,
+      unsigned threadcount, unsigned queue_depth,
+      ProgressCallback prg, bool reportProgress);
 
-   void scan(int32_t startHeight);
-   void scan_nocheck(int32_t startHeight);
+   bool scan(int32_t startHeight);
+   bool scan_nocheck(int32_t startHeight);
 
    void undo(Blockchain::ReorganizationState& reorgState);
    void updateSSH(bool, int32_t startHeight);

@@ -4,7 +4,7 @@
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2024, goatpig                                           #
+# Copyright (C) 2016-2025, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
@@ -31,20 +31,22 @@ from ui.MultiSigModels import LockboxDisplayModel, LockboxDisplayProxy, \
 
 ################################################################################
 def createAddrBookButton(parent, targWidget, defaultWltID=None, actionStr="Select",
-                         selectExistingOnly=False, selectMineOnly=False, getPubKey=False,
-                         showLockboxes=True):
+   selectExistingOnly=False, selectMineOnly=False, getPubKey=False,
+   showLockboxes=True):
    action = parent.tr("Select")
    btn = QtWidgets.QPushButton('')
    ico = QtGui.QIcon(QtGui.QPixmap('./img/addr_book_icon.png'))
    btn.setIcon(ico)
    def execAddrBook():
-      if len(parent.main.walletMap) == 0:
-         QtWidgets.QMessageBox.warning(parent, parent.tr('No wallets!'), parent.tr('You have no wallets so '
-            'there is no address book to display.'), QtWidgets.QMessageBox.Ok)
+      if parent.main.wallets.empty():
+         QtWidgets.QMessageBox.warning(parent, parent.tr('No wallets!'),
+         parent.tr('You have no wallets so there is no address book to display.'),
+         QtWidgets.QMessageBox.Ok)
          return
+
       dlg = DlgAddressBook(parent, parent.main, targWidget, defaultWltID,
-                    action, selectExistingOnly, selectMineOnly, getPubKey,
-                           showLockboxes)
+         action, selectExistingOnly, selectMineOnly, getPubKey,
+         showLockboxes)
       dlg.exec_()
 
    btn.setMaximumWidth(24)
@@ -60,13 +62,10 @@ class DlgAddressBook(ArmoryDialog):
    user selects the address, this dialog will enter the text into the widget
    and then close itself.
    """
-   def __init__(self, parent, main, putResultInWidget=None, \
-                                    defaultWltID=None, \
-                                    actionStr='Select', \
-                                    selectExistingOnly=False, \
-                                    selectMineOnly=False, \
-                                    getPubKey=False,
-                                    showLockboxes=True):
+   def __init__(self, parent, main, putResultInWidget=None,
+      defaultWltID=None, actionStr='Select',
+      selectExistingOnly=False, selectMineOnly=False,
+      getPubKey=False, showLockboxes=True):
       super(DlgAddressBook, self).__init__(parent, main)
 
       self.target = putResultInWidget
@@ -76,40 +75,41 @@ class DlgAddressBook(ArmoryDialog):
       self.isBrowsingOnly = (self.target == None)
 
       if defaultWltID == None:
-         defaultWltID = self.main.walletIDList[0]
+         wltObj = self.main.wallets.getByIndex(0)
+      else:
+         wltObj = self.main.wallets.get(defaultWltID)
 
-      wltObj = self.main.walletMap[defaultWltID]
-
-      lblDescr = QRichLabel(self.tr('Choose an address from your transaction history, '
-                            'or your own wallet.  If you choose to send to one '
-                            'of your own wallets, the next unused address in '
-                            'that wallet will be used.'))
+      lblDescr = QRichLabel(self.tr(
+         'Choose an address from your transaction history, '
+         'or your own wallet.  If you choose to send to one '
+         'of your own wallets, the next unused address in '
+         'that wallet will be used.')
+      )
 
       if self.isBrowsingOnly or selectExistingOnly:
          lblDescr = QRichLabel(self.tr('Browse all receiving addresses in '
-                               'this wallet, and all addresses to which this '
-                               'wallet has sent bitcoins.'))
+            'this wallet, and all addresses to which this '
+            'wallet has sent bitcoins.')
+         )
 
       lblToWlt = QRichLabel(self.tr('<b>Send to Wallet:</b>'))
       lblToAddr = QRichLabel(self.tr('<b>Send to Address:</b>'))
       if self.isBrowsingOnly:
          lblToWlt.setVisible(False)
          lblToAddr.setVisible(False)
-
-
       rowHeight = tightSizeStr(self.font(), 'XygjpHI')[1]
 
-      self.wltDispModel = AllWalletsDispModel(self.main)
+      self.wltDispModel = AllWalletsDispModel(self.main.wallets)
       self.wltDispView = QtWidgets.QTableView()
       self.wltDispView.setModel(self.wltDispModel)
       self.wltDispView.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
       self.wltDispView.setSelectionMode(QtWidgets.QTableView.SingleSelection)
       self.wltDispView.horizontalHeader().setStretchLastSection(True)
       self.wltDispView.verticalHeader().setDefaultSectionSize(20)
-      self.wltDispView.setMaximumHeight(rowHeight * 7.7)
+      self.wltDispView.setMaximumHeight(int(rowHeight * 7.7))
       self.wltDispView.hideColumn(WLTVIEWCOLS.Visible)
       initialColResize(self.wltDispView, [0.15, 0.30, 0.2, 0.20])
-      self.wltDispView.selectionModel().currentChanged.connect(\
+      self.wltDispView.selectionModel().currentChanged.connect(
          self.wltTableClicked)
 
       def toggleAddrType(addrtype):
@@ -146,9 +146,10 @@ class DlgAddressBook(ArmoryDialog):
       # DISPLAY Lockboxes - Regardles off what showLockboxes says only show
       # Lockboxes in Expert mode
       if showLockboxes and self.main.usermode == USERMODE.Expert:
-         self.lboxModel = LockboxDisplayModel(self.main, \
-                                    self.main.allLockboxes, \
-                                    self.main.getPreferredDateFormat())
+         self.lboxModel = LockboxDisplayModel(self.main,
+            self.main.allLockboxes,
+            self.main.getPreferredDateFormat()
+         )
          self.lboxProxy = LockboxDisplayProxy(self)
          self.lboxProxy.setSourceModel(self.lboxModel)
          self.lboxProxy.sort(LOCKBOXCOLS.CreateDate, QtCore.Qt.DescendingOrder)
@@ -172,8 +173,6 @@ class DlgAddressBook(ArmoryDialog):
       self.tabWidget.currentChanged.connect(self.tabChanged)
       self.tabWidget.setCurrentIndex(0)
 
-
-
       ttipSendWlt = createToolTipWidget(\
          self.tr('The next unused address in that wallet will be calculated and selected. '))
       ttipSendAddr = createToolTipWidget(\
@@ -185,12 +184,12 @@ class DlgAddressBook(ArmoryDialog):
       self.useBareMultiSigCheckBox = QtWidgets.QCheckBox(self.tr('Use Bare Multi-Sig (No P2SH)'))
       self.useBareMultiSigCheckBox.setVisible(False)
       self.ttipBareMS = createToolTipWidget( self.tr(
-         'EXPERT OPTION:  Do not check this box unless you know what it means '
-                         'and you need it!  Forces Armory to exposes public '
-                         'keys to the blockchain before the funds are spent. '
-                         'This is only needed for very specific use cases, '
-                         'and otherwise creates blockchain bloat.'))
-
+         'EXPERT OPTION: Do not check this box unless you know what it means '
+         'and you need it!  Forces Armory to exposes public '
+         'keys to the blockchain before the funds are spent. '
+         'This is only needed for very specific use cases, '
+         'and otherwise creates blockchain bloat.')
+      )
 
       self.ttipBareMS.setVisible(False)
       self.btnSelectAddr = QtWidgets.QPushButton(self.tr('No Address Selected'))
@@ -216,19 +215,27 @@ class DlgAddressBook(ArmoryDialog):
       self.useBareMultiSigCheckBox.clicked.connect(self.useP2SHClicked)
       btnCancel.clicked.connect(self.reject)
 
-
       dlgLayout = QtWidgets.QGridLayout()
       dlgLayout.addWidget(lblDescr, 0, 0)
       dlgLayout.addWidget(HLINE(), 1, 0)
       dlgLayout.addWidget(lblToWlt, 2, 0)
       dlgLayout.addWidget(self.wltDispView, 3, 0)
-      dlgLayout.addWidget(makeHorizFrame([self.lblSelectWlt, \
-                                          self.addrTypeSelectFrame.getFrame(), \
-                                          self.btnSelectWlt]), 4, 0)
+      dlgLayout.addWidget(makeHorizFrame([
+         self.lblSelectWlt,
+         self.addrTypeSelectFrame.getFrame(),
+         self.btnSelectWlt]),
+         4, 0
+      )
       dlgLayout.addWidget(HLINE(), 6, 0)
       dlgLayout.addWidget(lblToAddr, 7, 0)
       dlgLayout.addWidget(self.tabWidget, 8, 0)
-      dlgLayout.addWidget(makeHorizFrame([STRETCH, self.useBareMultiSigCheckBox, self.ttipBareMS, self.btnSelectAddr]), 9, 0)
+      dlgLayout.addWidget(makeHorizFrame([
+         STRETCH,
+         self.useBareMultiSigCheckBox,
+         self.ttipBareMS,
+         self.btnSelectAddr]),
+         9, 0
+      )
       dlgLayout.addWidget(HLINE(), 10, 0)
       dlgLayout.addWidget(makeHorizFrame([btnCancel, STRETCH]), 11, 0)
       dlgLayout.setRowStretch(3, 1)
@@ -246,7 +253,6 @@ class DlgAddressBook(ArmoryDialog):
 
       self.setWindowTitle('Address Book')
       self.setWindowIcon(QtGui.QIcon(self.main.iconfile))
-
       self.setMinimumWidth(300)
 
       hexgeom = TheSettings.get('AddrBookGeometry')
@@ -289,10 +295,8 @@ class DlgAddressBook(ArmoryDialog):
       super(DlgAddressBook, self).reject(*args)
 
    #############################################################################
-   def setAddrBookTxModel(self, wltID):
-      self.addrBookTxModel = SentToAddrBookModel(wltID, self.main)
-
-      #
+   def setAddrBookTxModel(self, wlt):
+      self.addrBookTxModel = SentToAddrBookModel(wlt, self.main)
       self.addrBookTxProxy = SentAddrSortProxy(self)
       self.addrBookTxProxy.setSourceModel(self.addrBookTxModel)
       # self.addrBookTxProxy.sort(ADDRBOOKCOLS.Address)
@@ -315,7 +319,6 @@ class DlgAddressBook(ArmoryDialog):
       self.btnSelectAddr.setEnabled(False)
       self.useBareMultiSigCheckBox.setChecked(False)
       self.useBareMultiSigCheckBox.setEnabled(False)
-
 
    #############################################################################
    # Update the controls when the tab changes
@@ -349,16 +352,12 @@ class DlgAddressBook(ArmoryDialog):
             else:
                self.addrTableRxClicked(selection[0])
 
-
    #############################################################################
-   def setAddrBookRxModel(self, wltID):
-      wlt = self.main.walletMap[wltID]
+   def setAddrBookRxModel(self, wlt):
       self.addrBookRxModel = WalletAddrDispModel(wlt, self)
 
       self.addrBookRxProxy = WalletAddrSortProxy(self)
       self.addrBookRxProxy.setSourceModel(self.addrBookRxModel)
-      # self.addrBookRxProxy.sort(ADDRESSCOLS.Address)
-
       self.addrBookRxView.setModel(self.addrBookRxProxy)
       self.addrBookRxView.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
       self.addrBookRxView.setSelectionMode(QtWidgets.QTableView.SingleSelection)
@@ -375,15 +374,13 @@ class DlgAddressBook(ArmoryDialog):
          return
 
       self.btnSelectWlt.setEnabled(True)
-      row = currIndex.row()
-      self.selectedWltID = currIndex.model().index(row, WLTVIEWCOLS.ID).data()
-
-      self.setAddrBookTxModel(self.selectedWltID)
-      self.setAddrBookRxModel(self.selectedWltID)
+      self.selectedWltIndex = currIndex.row()
+      wlt = self.main.wallets.getByIndex(self.selectedWltIndex)
+      self.setAddrBookTxModel(wlt)
+      self.setAddrBookRxModel(wlt)
 
       if not self.isBrowsingOnly:
-         wlt = self.main.walletMap[self.selectedWltID]
-         self.btnSelectWlt.setText(self.tr('%s Wallet: %s' % (self.actStr, self.selectedWltID)))
+         self.btnSelectWlt.setText(self.tr('%s Wallet: %s' % (self.actStr, wlt.walletId)))
 
          # If switched wallet selection, de-select address so it doesn't look
          # like the currently-selected address is for this different wallet
@@ -394,10 +391,9 @@ class DlgAddressBook(ArmoryDialog):
       self.addrBookTxModel.reset()
 
       #update address type frame
-      wltObj = self.main.walletMap[self.selectedWltID]
-      self.addrType = wltObj.getDefaultAddressType()
+      self.addrType = wlt.getDefaultAddressType()
       self.addrTypeSelectFrame.updateAddressTypes(
-         wltObj.getAddressTypes(), self.addrType)
+         wlt.getAddressTypes(), self.addrType)
 
    #############################################################################
    def addrTableTxClicked(self, currIndex, prevIndex=None):
@@ -414,7 +410,6 @@ class DlgAddressBook(ArmoryDialog):
       if not self.isBrowsingOnly:
          self.btnSelectAddr.setText(self.tr(\
             '%s Address: %s...' % (self.actStr, self.selectedAddr[:10])))
-
 
    #############################################################################
    def addrTableRxClicked(self, currIndex, prevIndex=None):
@@ -438,13 +433,12 @@ class DlgAddressBook(ArmoryDialog):
          self.acceptAddrSelection()
          return
 
-      wlt = self.main.walletMap[self.selectedWltID]
-
+      wlt = self.main.wallets.getByIndex(self.selectedWltIndex)
       if not self.selectedCmmt:
-         dialog = DlgSetComment(self, self.main, self.selectedCmmt, \
+         dialog = DlgSetComment(self, self.main, self.selectedCmmt,
             self.tr('Add Address Comment'))
       else:
-         dialog = DlgSetComment(self, self.main, self.selectedCmmt, \
+         dialog = DlgSetComment(self, self.main, self.selectedCmmt,
             self.tr('Change Address Comment'))
 
       if dialog.exec_():
@@ -471,13 +465,12 @@ class DlgAddressBook(ArmoryDialog):
          return
 
       row = currIndex.row()
-
       if not self.isBrowsingOnly:
          self.btnSelectAddr.setEnabled(True)
          self.useBareMultiSigCheckBox.setEnabled(True)
          selectedLockBoxId = str(currIndex.model().index(row, LOCKBOXCOLS.ID).data().toString())
-         self.btnSelectAddr.setText( createLockboxEntryStr(selectedLockBoxId,
-                                      self.useBareMultiSigCheckBox.isChecked()))
+         self.btnSelectAddr.setText(createLockboxEntryStr(selectedLockBoxId,
+            self.useBareMultiSigCheckBox.isChecked()))
 
          # Disable Bare multisig if mainnet and N>3
          lb = self.main.getLockboxByID(selectedLockBoxId)
@@ -496,8 +489,7 @@ class DlgAddressBook(ArmoryDialog):
          self.acceptAddrSelection()
          return
 
-      wlt = self.main.walletMap[self.selectedWltID]
-
+      wlt = self.main.wallets.getByIndex(self.selectedWltIndex)
       if not self.selectedCmmt:
          dialog = DlgSetComment(self, self.main, self.selectedCmmt, self.tr('Add Address Comment'))
       else:
@@ -509,16 +501,18 @@ class DlgAddressBook(ArmoryDialog):
 
    #############################################################################
    def acceptWltSelection(self):
-      wltID = self.selectedWltID
-      addrObj = self.main.walletMap[wltID].getNextUnusedAddress()
+      wlt = self.main.wallets.getByIndex(self.selectedWltIndex)
+      addrObj = wlt.getNextUnusedAddress()
       self.target.setText(addrObj.getAddressString())
       self.target.setCursorPosition(0)
       self.accept()
 
    #############################################################################
    def useP2SHClicked(self):
-      self.btnSelectAddr.setText( createLockboxEntryStr(self.getSelectedLBID(),
-                                                    self.useBareMultiSigCheckBox.isChecked()))
+      self.btnSelectAddr.setText(createLockboxEntryStr(
+         self.getSelectedLBID(),
+         self.useBareMultiSigCheckBox.isChecked())
+      )
 
    #############################################################################
    def acceptAddrSelection(self):
@@ -534,8 +528,10 @@ class DlgAddressBook(ArmoryDialog):
    #############################################################################
    def acceptLockBoxSelection(self):
       if self.target:
-         self.target.setText( createLockboxEntryStr(self.getSelectedLBID(),
-                                                    self.useBareMultiSigCheckBox.isChecked()))
+         self.target.setText(createLockboxEntryStr(
+            self.getSelectedLBID(),
+            self.useBareMultiSigCheckBox.isChecked())
+         )
          self.target.setCursorPosition(0)
          self.accept()
 
@@ -555,9 +551,6 @@ class DlgAddressBook(ArmoryDialog):
 
       wlt = self.main.walletMap[wid]
       return wlt.getAddrByHash160(addr160).binPublicKey65.toHexStr()
-
-
-
 
    #############################################################################
    def showContextMenuTx(self, pos):
@@ -588,7 +581,6 @@ class DlgAddressBook(ArmoryDialog):
       clipb = QtWidgets.QApplication.clipboard()
       clipb.clear()
       clipb.setText(str(s).strip())
-
 
    #############################################################################
    def showContextMenuRx(self, pos):

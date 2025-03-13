@@ -124,6 +124,7 @@ private:
 
 public:
    std::atomic<int> count_;
+   bool serverPubkeyAnnounce_ = false;
 
 private:
    struct lws_context* init();
@@ -150,6 +151,7 @@ public:
    //locals
    void shutdown(void);
    void cleanUp(void);
+   bool running(void) const override;
    std::pair<unsigned, unsigned> 
       getRekeyCount(void) const { return std::make_pair(outerRekeyCount_, innerRekeyCount_); }
    void addPublicKey(const SecureBinaryData&);
@@ -162,10 +164,8 @@ public:
       std::shared_ptr<Socket_ReadPayload>);
    bool connectToRemote(void);
 
-   bool serverPubkeyAnnounce_ = false;
-
    static int callback(
-      struct lws *wsi, enum lws_callback_reasons reason, 
+      struct lws *wsi, enum lws_callback_reasons reason,
       void *user, void *in, size_t len);
 };
 

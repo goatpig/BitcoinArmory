@@ -43,8 +43,6 @@ class DlgIntroMessage(ArmoryDialog):
 
       spacer = lambda: QtWidgets.QSpacerItem(20, 20, QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Expanding)
       frmText = makeLayoutFrame(VERTICAL, [lblWelcome, spacer(), lblDescr])
-
-
       self.chkDnaaIntroDlg = QtWidgets.QCheckBox(self.tr('Do not show this window again'))
 
       self.requestCreate = False
@@ -53,7 +51,7 @@ class DlgIntroMessage(ArmoryDialog):
       frmIcon = makeLayoutFrame(VERTICAL, [lblInfoImg, STRETCH])
       frmIcon.setMaximumWidth(60)
 
-      if len(self.main.walletMap) == 0:
+      if self.main.wallets.empty():
          self.btnCreate = QtWidgets.QPushButton(self.tr("Create Your First Wallet!"))
          self.btnImport = QtWidgets.QPushButton(self.tr("Import Existing Wallet"))
          self.btnCancel = QtWidgets.QPushButton(self.tr("Skip"))

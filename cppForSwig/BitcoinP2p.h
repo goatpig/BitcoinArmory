@@ -1,8 +1,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016, goatpig.                                              //
+//  Copyright (C) 2016-2025, goatpig.                                         //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                      
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -651,9 +651,7 @@ public:
    void shutdown(void) override;
 
    void sendMessage(std::unique_ptr<Payload>) override;
-   bool connected(void) const override 
-   { return nodeConnected_.load(std::memory_order_acquire); }
-   
+   bool connected(void) const override;
    void updateNodeStatus(bool connected);
 };
 

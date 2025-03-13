@@ -135,47 +135,48 @@ public:
          &offsetIns, &offsetOuts, &offsetsWitness);
 
       auto txPtr = std::make_shared<BCTX>(data, txlen);
-
-      //create BCTX object and fill it up
       txPtr->version_ = READ_UINT32_LE(data);
 
       // Check the marker and flag for witness transaction
       txPtr->usesWitness_ = BtcUtils::checkSwMarker(data + 4);
 
       //convert offsets to offset + size pairs
-      for (unsigned int y = 0; y < offsetIns.size() - 1; y++)
-         txPtr->txins_.push_back(
-            std::make_pair(
-         offsetIns[y],
-         offsetIns[y + 1] - offsetIns[y]));
+      txPtr->txins_.reserve(offsetIns.size() - 1);
+      for (unsigned int y = 0; y < offsetIns.size() - 1; y++) {
+         txPtr->txins_.emplace_back(OffsetAndSize{
+            offsetIns[y],
+            offsetIns[y + 1] - offsetIns[y]
+         });
+      }
 
-      for (unsigned int y = 0; y < offsetOuts.size() - 1; y++)
-         txPtr->txouts_.push_back(
-            std::make_pair(
-         offsetOuts[y],
-         offsetOuts[y + 1] - offsetOuts[y]));
+      txPtr->txouts_.reserve(offsetOuts.size() - 1);
+      for (unsigned int y = 0; y < offsetOuts.size() - 1; y++) {
+         txPtr->txouts_.emplace_back(OffsetAndSize{
+            offsetOuts[y],
+            offsetOuts[y + 1] - offsetOuts[y]
+         });
+      }
 
-      if (txPtr->usesWitness_)
-      {
-         for (unsigned int y = 0; y < offsetsWitness.size() - 1; y++)
-            txPtr->witnesses_.push_back(
-               std::make_pair(
-            offsetsWitness[y],
-            offsetsWitness[y + 1] - offsetsWitness[y]));
+      if (txPtr->usesWitness_) {
+         txPtr->witnesses_.reserve(offsetsWitness.size() - 1);
+         for (unsigned int y = 0; y < offsetsWitness.size() - 1; y++) {
+            txPtr->witnesses_.emplace_back(OffsetAndSize{
+               offsetsWitness[y],
+               offsetsWitness[y + 1] - offsetsWitness[y]
+            });
+         }
       }
 
       txPtr->lockTime_ = READ_UINT32_LE(data + offsetsWitness.back());
 
-      if (id != UINT32_MAX)
-      {
+      if (id != UINT32_MAX) {
          txPtr->isCoinbase_ = (id == 0);
-      }
-      else if (txPtr->txins_.size() == 1)
-      {
+      } else if (txPtr->txins_.size() == 1) {
          auto txinref = txPtr->getTxInRef(0);
          auto bdr = txinref.getSliceRef(0, 32);
-         if (bdr == BtcUtils::EmptyHash_)
+         if (bdr == BtcUtils::EmptyHash_) {
             txPtr->isCoinbase_ = true;
+         }
       }
 
       return txPtr;
@@ -248,48 +249,31 @@ public:
    void computeTxFilter(const std::vector<BinaryData>&);
    std::shared_ptr<BlockHashVector> getTxFilter(void) const;
    uint32_t uniqueID(void) const { return uniqueID_; }
+   void setUniqueID(uint32_t);
    std::shared_ptr<BlockHeader> getHeaderPtr(void) const { return headerPtr_; }
 };
 
 /////////////////////////////////////////////////////////////////////////////
 struct BlockOffset
 {
-   uint16_t fileID_;
-   size_t offset_;
+   uint16_t fileID;
+   size_t offset;
 
-   BlockOffset(uint16_t fileID, size_t offset) :
-      fileID_(fileID), offset_(offset)
-   {}
+   BlockOffset(void);
+   BlockOffset(uint16_t, size_t);
+   BlockOffset(const BlockOffset&);
 
-   BlockOffset(const BlockOffset& bo) :
-      fileID_(bo.fileID_), offset_(bo.offset_)
-   {}
-
-   bool operator>(const BlockOffset& rhs)
-   {
-      if (fileID_ == rhs.fileID_)
-         return offset_ > rhs.offset_;
-
-      return fileID_ > rhs.fileID_;
-   }
-
-   BlockOffset& operator=(const BlockOffset& rhs)
-   {
-      if (this != &rhs)
-      {
-         this->fileID_ = rhs.fileID_;
-         this->offset_ = rhs.offset_;
-      }
-
-      return *this;
-   }
+   bool operator>(const BlockOffset&) const;
+   BlockOffset& operator=(const BlockOffset&);
 };
 
 /////////////////////////////////////////////////////////////////////////////
 class BlockFiles
 {
+   friend class BlockDataLoader;
+
 private:
-   std::map<uint32_t, std::filesystem::path> filePaths_;
+   std::map<uint16_t, std::filesystem::path> paths_;
    const std::filesystem::path folderPath_;
    size_t totalBlockchainBytes_ = 0;
 
@@ -299,21 +283,23 @@ public:
    {}
 
    void detectAllBlockFiles(void);
+   void detectNewBlockFiles(void);
    const std::filesystem::path& folderPath(void) const { return folderPath_; }
-   unsigned fileCount(void) const { return filePaths_.size(); }
-   const std::filesystem::path& getLastFileName(void) const;
+   unsigned fileCount(void) const { return paths_.size(); }
+   const std::filesystem::path& getLastFilePath(void) const;
+   const std::filesystem::path& getFilePathForID(uint16_t) const;
 };
 
 /////////////////////////////////////////////////////////////////////////////
 namespace FileUtils {
    class FileMap;
+   class FileCopy;
 };
 
 class BlockDataFileMap
 {
 private:
-   FileUtils::FileMap fileMap_;
-   std::atomic<int> useCounter_;
+   const FileUtils::FileMap fileMap_;
 
 public:
    BlockDataFileMap(const std::filesystem::path& filename);
@@ -327,26 +313,41 @@ public:
 /////////////////////////////////////////////////////////////////////////////
 class BlockDataLoader
 {
-private:
-   const std::filesystem::path path_;
-   const std::string prefix_;
+public:
+   struct PathAndOffset
+   {
+      const std::filesystem::path path;
+      const uint16_t fileID;
+      const size_t offset;
+   };
+
+   struct BlockDataCopy
+   {
+      const uint16_t fileID = UINT16_MAX;
+      const size_t offset = SIZE_MAX;
+      const std::shared_ptr<FileUtils::FileCopy> data=nullptr;
+
+      BlockDataCopy(const PathAndOffset&);
+      BlockDataCopy(void);
+      bool isValid(void) const { return fileID != UINT16_MAX; }
+   };
 
 private:
+   std::atomic_uint64_t counter_;
+   std::vector<PathAndOffset> paf_;
 
+private:
    BlockDataLoader(const BlockDataLoader&) = delete; //no copies
-
-   uint32_t nameToIntID(const std::filesystem::path& filename);
-   std::shared_ptr<BlockDataFileMap>
-      getNewBlockDataMap(uint32_t fileid);
+   std::shared_ptr<BlockDataFileMap> getNewBlockDataMap(uint32_t fileid);
 
 public:
-   BlockDataLoader(const std::filesystem::path& path);
+   BlockDataLoader(std::shared_ptr<BlockFiles>, const BlockOffset&);
+   BlockDataLoader(std::shared_ptr<BlockFiles>, const std::set<uint32_t>&);
 
-   ~BlockDataLoader(void)
-   {}
-
-   std::shared_ptr<BlockDataFileMap> get(const std::filesystem::path&);
-   std::shared_ptr<BlockDataFileMap> get(uint32_t fileid);
+   std::shared_ptr<FileUtils::FileMap> getNextMap(void);
+   BlockDataCopy getNextCopy(void);
+   size_t size(void) const;
+   bool isValid(void) const;
 };
 
 #endif

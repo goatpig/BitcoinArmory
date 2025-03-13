@@ -65,7 +65,7 @@ struct BlockHashVector
 {
 public:
    bool isValid_{false};
-   const uint32_t blockKey_;
+   uint32_t blockKey_;
    size_t len_ = SIZE_MAX;
 
    std::vector<uint32_t> filterVector_;

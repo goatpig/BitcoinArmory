@@ -16,7 +16,6 @@
 #include "BDM_Server.h"
 #include "TerminalPassphrasePrompt.h"
 
-using namespace std;
 using namespace Armory::Config;
 
 #define LOG_FILE_NAME "dbLog"
@@ -33,21 +32,18 @@ int main(int argc, char* argv[])
    WSAStartup(wVersion, &wsaData);
 #endif
 
-   try
-   {
+   try {
       Armory::Config::parseArgs(argc, argv, Armory::Config::ProcessType::DB);
-   }
-   catch (const DbErrorMsg& e)
-   {
-      cout << "Failed to setup with error:" << endl;
-      cout << "   " << e.what() << endl;
-      cout << "Aborting!" << endl;
+   } catch (const DbErrorMsg& e) {
+      std::cout << "Failed to setup with error:" << std::endl;
+      std::cout << "   " << e.what() << std::endl;
+      std::cout << "Aborting!" << std::endl;
 
       return -1;
    }
 
    auto logFilePath = Pathing::logFilePath(LOG_FILE_NAME).string();
-   cout << "logging in " << logFilePath << endl;
+   std::cout << "logging in " << logFilePath << std::endl;
    STARTLOGGING(logFilePath, LogLvlDebug);
    if (!NetworkSettings::useCookie()) {
       LOGENABLESTDOUT();
@@ -70,7 +66,6 @@ int main(int argc, char* argv[])
          LOGERR << "ArmoryDB cannot start under these conditions. Shutting down!";
          LOGERR << "Make sure to shutdown the conflicting process" <<
             "before trying again (most likely another ArmoryDB instance)";
-
          exit(1);
       }
    }
@@ -83,18 +78,17 @@ int main(int argc, char* argv[])
       WebSocketServer::initAuthPeers(passLbd);
    }
 
-   //start up blockchain service
+   //start blockchain service
    bdmThread.start(DBSettings::initMode());
-
    if (!DBSettings::checkChain()) {
-      //start websocket server
-      WebSocketServer::start(&bdmThread, false);
+      WebSocketServer::start(bdmThread.bdm(), false);
    } else {
       bdmThread.join();
    }
 
    //stop all threads and clean up
    WebSocketServer::shutdown();
+   bdmThread.shutdown();
 
    shutdownBIP151CTX();
    CryptoECDSA::shutdown();

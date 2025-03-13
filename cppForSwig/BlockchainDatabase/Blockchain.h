@@ -34,6 +34,8 @@ struct HeightAndDup
    {}
 };
 
+class BlockData;
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // Manages the blockchain, keeping track of all the block headers
@@ -41,10 +43,12 @@ struct HeightAndDup
 //
 class Blockchain
 {
+   using HeaderPtr = std::shared_ptr<BlockHeader>;
+
 public:
    Blockchain(const HashString &genesisHash);
    void clear();
-   
+
    struct ReorganizationState
    {
       bool prevTopStillValid_ = false;
@@ -53,36 +57,31 @@ public:
       std::shared_ptr<BlockHeader> newTop_;
       std::shared_ptr<BlockHeader> reorgBranchPoint_;
    };
-   
-   /**
-    * Adds a block to the chain
-    **/
-   std::set<uint32_t> addBlocksInBulk(
-      const std::map<HashString, std::shared_ptr<BlockHeader>>&, bool flag);
-   void forceAddBlocksInBulk(std::map<HashString, std::shared_ptr<BlockHeader>>&);
 
-   ReorganizationState organize(bool verbose);
+   /**
+    * check/add blocks to the chain
+   **/
+   std::set<uint32_t> checkForNewBlocks(const std::vector<std::shared_ptr<BlockData>>&);
+   void addBlocksInBulk(const std::deque<std::deque<HeaderPtr>>&, bool flag);
+   void forceAddBlocksInBulk(std::map<BinaryData, HeaderPtr>&);
+
+   /**
+    * organize/reorganize chain
+   **/
+   ReorganizationState organize(bool);
    ReorganizationState forceOrganize();
-   ReorganizationState findReorgPointFromBlock(const BinaryData& blkHash);
+   ReorganizationState findReorgPointFromBlock(const BinaryData&);
 
    void updateBranchingMaps(LMDBBlockDatabase*, ReorganizationState&);
 
-   std::shared_ptr<BlockHeader> top() const;
-   std::shared_ptr<BlockHeader> getGenesisBlock() const;
+   std::shared_ptr<BlockHeader> top(void) const;
+   std::shared_ptr<BlockHeader> getGenesisBlock(void) const;
    const std::shared_ptr<BlockHeader> getHeaderByHeight(
       unsigned height, uint8_t dupId) const;
    bool hasHeaderByHeight(unsigned height) const;
-   
-   const std::shared_ptr<BlockHeader> getHeaderByHash(HashString const & blkHash) const;
-   std::shared_ptr<BlockHeader> getHeaderById(uint32_t id) const;
 
-   bool hasHeaderWithHash(BinaryData const & txHash) const;
-   const std::shared_ptr<BlockHeader> getHeaderPtrForTxRef(const TxRef &txr) const;
-   
-   std::shared_ptr<const std::map<HashString, std::shared_ptr<BlockHeader>>> allHeaders(void) const
-   {
-      return headerMap_.get();
-   }
+   HeaderPtr getHeaderByHash(const BinaryData&) const;
+   HeaderPtr getHeaderById(uint32_t) const;
 
    void putBareHeaders(LMDBBlockDatabase *db, bool updateDupID=true);
    void putNewBareHeaders(LMDBBlockDatabase *db);
@@ -95,6 +94,7 @@ public:
 
    std::map<unsigned, std::set<unsigned>> mapIDsPerBlockFile(void) const;
    std::map<unsigned, HeightAndDup> getHeightAndDupMap(void) const;
+   void flagBlockHeader(std::shared_ptr<BlockHeader>, LMDBBlockDatabase*);
 
 private:
    std::shared_ptr<BlockHeader> organizeChain(bool forceRebuild = false, bool verbose = false);
@@ -106,18 +106,17 @@ private:
    double traceChainDown(std::shared_ptr<BlockHeader> bhpStart);
 
 private:
-   //TODO: make this whole class thread safe
+   //TODO: get rid of this shyte!
+   //use std::unordered_map, manage access in class getters, not at container level
+   //they lead to too many copies, it slows down header parsing to a crawl
 
    const BinaryData genesisHash_;
-   Armory::Threading::TransactionalMap<
-      BinaryData, std::shared_ptr<BlockHeader>> headerMap_;
-   Armory::Threading::TransactionalMap<
-      unsigned, std::shared_ptr<BlockHeader>> headersById_;
-   Armory::Threading::TransactionalMap<
-      unsigned, std::shared_ptr<BlockHeader>> headersByHeight_;
+   Armory::Threading::TransactionalMap<BinaryData, HeaderPtr> headerMap_;
+   Armory::Threading::TransactionalMap<unsigned, HeaderPtr> headersById_;
+   Armory::Threading::TransactionalMap<unsigned, HeaderPtr> headersByHeight_;
 
-   std::vector<std::shared_ptr<BlockHeader>> newlyParsedBlocks_;
-   std::shared_ptr<BlockHeader> topBlockPtr_;
+   std::vector<HeaderPtr> newlyParsedBlocks_;
+   HeaderPtr topBlockPtr_;
    unsigned topBlockId_ = 0;
    Blockchain(const Blockchain&); // not defined
 
@@ -125,6 +124,7 @@ private:
    static const BinaryData topIdKey_;
 
    mutable std::mutex mu_;
+   bool forceRebuildFlag_ = false;
 };
 
 #endif

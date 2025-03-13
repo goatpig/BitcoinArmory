@@ -231,11 +231,9 @@ std::set<BinaryDataRef> ScrAddrFilter::updateAddrMap(
          updateMap.emplace(aah->scrAddr_, aah);
          addrRefSet.emplace(aah->scrAddr_.getRef());
       }
-
       scanFilterAddrMap_->update(updateMap);
       return addrRefSet;
    }
-
    return {};
 }
 
@@ -269,7 +267,7 @@ void ScrAddrFilter::registrationThread()
             if (Armory::Config::DBSettings::getDbType() == ARMORY_DB_SUPER) {
                //no scanning required in supernode, just update the address map
                auto scaSet = updateAddrMap(batchPtr->scrAddrSet_, 0, false);
-               batchPtr->callback_(scaSet);
+               batchPtr->callback_(scaSet, true);
                continue;
             }
 
@@ -290,7 +288,7 @@ void ScrAddrFilter::registrationThread()
                //all addresses are already registered
                //or db isn't running yet
                auto scaSet = updateAddrMap(batchPtr->scrAddrSet_, 0, false);
-               batchPtr->callback_(scaSet);
+               batchPtr->callback_(scaSet, true);
                continue;
             }
 
@@ -303,16 +301,18 @@ void ScrAddrFilter::registrationThread()
                //clean of history. Update the map and continue
                auto scaSet = updateAddrMap(batchPtr->scrAddrSet_, 0, false);
                setSSHLastScanned(addrSet, topBlockHeight);
-               batchPtr->callback_(scaSet);
+               batchPtr->callback_(scaSet, true);
                continue;
             }
 
             //scan the batch
             std::vector<std::string> walletIDs;
-            walletIDs.push_back(batchPtr->walletID_);
+            if (!batchPtr->walletID_.empty()) {
+               walletIDs.push_back(batchPtr->walletID_);
+            }
             auto saf = getNew(SIDESCAN_ID);
             saf->updateAddrMap(addrSet, 0, false);
-            saf->applyBlockRangeToDB(0, walletIDs, true);
+            auto scanResult = saf->applyBlockRangeToDB(0, walletIDs, true);
 
             //merge with main address filter
             std::set<BinaryDataRef> newAddrSet;
@@ -323,18 +323,25 @@ void ScrAddrFilter::registrationThread()
             scanFilterAddrMap_->update(*newMap);
             updateAddressMerkleInDB();
 
-            //final scan to sync all addresses to same height
-            applyBlockRangeToDB(topBlockHeight + 1, walletIDs, false);
-            
-            //cleanup
+            //cleanup side scan context
             saf->cleanUpSdbis();
 
-            //notify
-            for (const auto& wID : walletIDs)
-               LOGINFO << "Completed scan of wallet " << wID;
+            //was the scan successful?
+            if (scanResult == false) {
+               //no, fire callback and exit thread
+               batchPtr->callback_({}, false);
+               return;
+            }
 
-            auto&& scaSet = updateAddrMap(batchPtr->scrAddrSet_, 0, false);
-            batchPtr->callback_(scaSet);
+            //final scan to sync all addresses to same height
+            applyBlockRangeToDB(topBlockHeight + 1, walletIDs, false);
+
+            //notify
+            for (const auto& wID : walletIDs) {
+               LOGINFO << "Completed scan of wallet " << wID;
+            }
+            auto scaSet = updateAddrMap(batchPtr->scrAddrSet_, 0, false);
+            batchPtr->callback_(scaSet, true);
             break;
          }
 
@@ -412,7 +419,7 @@ void ScrAddrFilter::getAllScrAddrInDB()
       aah->scannedHeight_ = ssh.scanHeight_;
       scrAddrMap.insert(
          std::move(std::make_pair(aah->scrAddr_, aah)));
-   } 
+   }
 
    //the zc filter map is only update once when users register address explictly
    scanFilterAddrMap_->update(scrAddrMap);

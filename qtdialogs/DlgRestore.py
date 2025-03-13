@@ -12,9 +12,9 @@
 
 from qtpy import QtWidgets
 
-from armoryengine.CppBridge import TheBridge
-from armoryengine.ArmoryUtils import LOGERROR, UINT32_MAX, UINT8_MAX, \
-   UNKNOWN
+from armoryengine.CppBridge import TheBridge, ServerPush
+from armoryengine.ArmoryUtils import LOGERROR, LOGWARN, \
+   UINT32_MAX, UINT8_MAX, UNKNOWN
 from armoryengine.BDM import TheBDM
 from armoryengine.PyBtcWallet import PyBtcWallet
 from armoryengine.AddressUtils import binary_to_base58
@@ -47,35 +47,31 @@ class MaskedInputLineEdit(QtWidgets.QLineEdit):
 
 
 ################################################################################
-class DlgRestoreSingle(ArmoryDialog):
-   #############################################################################
+class DlgRestoreSingle(ArmoryDialog, ServerPush):
    def __init__(self, parent, main, thisIsATest=False, expectWltID=None):
-      super(DlgRestoreSingle, self).__init__(parent, main)
+      ServerPush.__init__(self)
+      ArmoryDialog.__init__(self, parent, main)
 
       self.newWltID = None
-      self.callbackId = None
       self.thisIsATest = thisIsATest
       self.testWltID = expectWltID
-      headerStr = ''
       if thisIsATest:
          lblDescr = QRichLabel(self.tr(
-          '<b><u><font color="blue" size="4">Test a Paper Backup</font></u></b> '
-          '<br><br>'
-          'Use this window to test a single-sheet paper backup.  If your '
-          'backup includes imported keys, those will not be covered by this test.'))
+            '<b><u><font color="blue" size="4">Test a Paper Backup</font></u></b> '
+            '<br><br>'
+            'Use this window to test a single-sheet paper backup.  If your '
+            'backup includes imported keys, those will not be covered by this test.'))
       else:
          lblDescr = QRichLabel(self.tr(
-          '<b><u>Restore a Wallet from Paper Backup</u></b> '
-          '<br><br>'
-          'Use this window to restore a single-sheet paper backup. '
-          'If your backup includes extra pages with '
-          'imported keys, please restore the base wallet first, then '
-          'double-click the restored wallet and select "Import Private '
-          'Keys" from the right-hand menu.'))
-
+            '<b><u>Restore a Wallet from Paper Backup</u></b> '
+            '<br><br>'
+            'Use this window to restore a single-sheet paper backup. '
+            'If your backup includes extra pages with '
+            'imported keys, please restore the base wallet first, then '
+            'double-click the restored wallet and select "Import Private '
+            'Keys" from the right-hand menu.'))
 
       lblType = QRichLabel(self.tr('<b>Backup Type:</b>'), doWrap=False)
-
       self.version135Button = QtWidgets.QRadioButton(self.tr('Version 1.35 (4 lines)'), self)
       self.version135aButton = QtWidgets.QRadioButton(self.tr('Version 1.35a (4 lines Unencrypted)'), self)
       self.version135aSPButton = QtWidgets.QRadioButton(self.tr(u'Version 1.35a (4 lines + SecurePrint\u200b\u2122)'), self)
@@ -109,8 +105,6 @@ class DlgRestoreSingle(ArmoryDialog):
 
       inpMask = '<AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA!'
       self.edtList = [MaskedInputLineEdit(inpMask) for i in range(4)]
-
-
       self.frmSP = makeHorizFrame([STRETCH, self.lblSP, self.editSecurePrint])
 
       frmAllInputs = QtWidgets.QFrame()
@@ -149,7 +143,6 @@ class DlgRestoreSingle(ArmoryDialog):
       layout.addWidget(bottomFrm)
       self.setLayout(layout)
 
-
       self.chkEncrypt.setChecked(not thisIsATest)
       self.chkEncrypt.setVisible(not thisIsATest)
       self.advancedOptionsTab.setEnabled(not thisIsATest)
@@ -161,7 +154,7 @@ class DlgRestoreSingle(ArmoryDialog):
 
       self.setMinimumWidth(500)
       self.layout().setSizeConstraint(QtWidgets.QLayout.SetFixedSize)
-      self.changeType(self.backupTypeButtonGroup.checkedId())
+      self.changeType(self.backupTypeButtonGroup.checkedButton())
 
    #############################################################################
    # Hide advanced options whenver the restored wallet is unencrypted
@@ -170,25 +163,25 @@ class DlgRestoreSingle(ArmoryDialog):
 
    #############################################################################
    def accept(self):
-      TheBDM.unregisterCustomPrompt(self.callbackId)
+      TheBDM.unregisterPrompt(self.callbackId)
       super(ArmoryDialog, self).accept()
 
    #############################################################################
    def reject(self):
-      TheBDM.unregisterCustomPrompt(self.callbackId)
+      TheBDM.unregisterPrompt(self.callbackId)
       super(ArmoryDialog, self).reject()
 
    #############################################################################
    def changeType(self, sel):
-      if   sel == self.backupTypeButtonGroup.id(self.version135Button):
+      if   sel == self.version135Button:
          visList = [0, 1, 1, 1, 1]
-      elif sel == self.backupTypeButtonGroup.id(self.version135aButton):
+      elif sel == self.version135aButton:
          visList = [0, 1, 1, 1, 1]
-      elif sel == self.backupTypeButtonGroup.id(self.version135aSPButton):
+      elif sel == self.version135aSPButton:
          visList = [1, 1, 1, 1, 1]
-      elif sel == self.backupTypeButtonGroup.id(self.version135cButton):
+      elif sel == self.version135cButton:
          visList = [0, 1, 1, 0, 0]
-      elif sel == self.backupTypeButtonGroup.id(self.version135cSPButton):
+      elif sel == self.version135cSPButton:
          visList = [1, 1, 1, 0, 0]
       else:
          LOGERROR('What the heck backup type is selected?  %d', sel)
@@ -203,167 +196,159 @@ class DlgRestoreSingle(ArmoryDialog):
       self.isLongForm = (visList[-1] == 1)
 
    #############################################################################
-   def processCallback(self, payload, callerId):
+   def flagEditLine(self, lineId):
+      self.edtList[lineId].setStyleSheet(
+         '''
+         QLineEdit {
+            color: rgb(180, 0, 0)
+         }
+         '''
+      )
 
-      if callerId == UINT32_MAX:
-         errorMsg = "N/A"
-         try:
-            errorVerbose = BridgeProto_pb2.ReplyStrings()
-            errorVerbose.ParseFromString(payload)
-            errorMsg = errorVerbose.reply[0]
-         except:
-            pass
+   def resetEditLines(self):
+      for edtLine in self.edtList:
+         edtLine.setStyleSheet(
+         '''
+         QLineEdit {
+            color: rgb(0, 0, 0)
+         }
+         '''
+      )
 
-         LOGERROR("C++ side unhandled error in RestoreWallet: " + errorMsg)
-         QtWidgets.QMessageBox.critical(self, self.tr('Unhandled Error'), \
-            self.tr(\
-               'The import operation failed with the following error: '
-               '<br><br><b>%s</b>' % errorMsg \
-               ), QtWidgets.QMessageBox.Ok)
-
+   #############################################################################
+   def processCallback(self, payload):
+      if payload.which() != 'restore':
+         #unexpected callback type
+         LOGERROR(f"unexpected backup restore callback which: {payload.which()}")
          self.reject()
          return
 
-      result, extra = self.processCallbackPayload(payload)
-      if result == False:
-         TheBDM.unregisterCustomPrompt(self.callbackId)
+      restorePayload = payload.restore
+      which = restorePayload.which()
+      if which == 'checkWalletId':
+         newWltID = restorePayload.checkWalletId.walletId
+         if not newWltID:
+            LOGWARN("empty wallet id in backup restore process")
 
-      reply = BridgeProto_pb2.RestoreReply()
-      reply.result = result
+         '''
+         #TODO: also check/test backup type
+         wltType = restorePayload.checkWalletId.backupType
+         '''
 
-      if extra != None:
-         reply.extra = bytes(extra, 'utf-8')
+         replyToBridge = self.getNewPacket()
+         replyToBridge.success = False
 
-      TheBridge.callbackFollowUp(reply, self.callbackId, callerId)
+         #ask the user to check the restored wallet id
+         userAccept = QtWidgets.QMessageBox.question(self, self.tr('Verify Wallet ID'),
+            self.tr("The data you entered corresponds to a wallet with a wallet ID:"
+            f"\n\n{newWltID}\n\n"
+            'Does this ID match the "Wallet Unique ID" printed on your paper backup?'
+            'If not, click "No" and reenter key and chain-code data again.'),
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
 
-   #############################################################################
-   def processCallbackPayload(self, payload):
-      msg = BridgeProto_pb2.RestorePrompt()
-      msg.ParseFromString(payload)
-
-      if msg.promptType == BridgeProto_pb2.RestorePromptType.Value("Id") or \
-           msg.promptType == BridgeProto_pb2.RestorePromptType.Value("ChecksumError"):
-            #check the id generated by this backup
-
-         newWltID = msg.extra
-         if len(newWltID) > 0:
+         if userAccept == QtWidgets.QMessageBox.Yes:
             if self.thisIsATest:
-               # Stop here if this was just a test
+               #stop here if this was just a test
                verifyRecoveryTestID(self, newWltID, self.testWltID)
-
-                    #return false to caller to end the restore process
-               return False, None
-
-            # return result of id comparison
-            dlgOwnWlt = None
-            if newWltID in self.main.walletMap:
-               dlgOwnWlt = DlgReplaceWallet(newWltID, self.parent, self.main)
-
-               if (dlgOwnWlt.exec_()):
-                  #TODO: deal with replacement code
-                  if dlgOwnWlt.output == 0:
-                     return False, None
-               else:
-                  return False, None
             else:
-               reply = QtWidgets.QMessageBox.question(self, self.tr('Verify Wallet ID'), \
-                        self.tr('The data you entered corresponds to a wallet with a wallet ID: \n\n'
-                        '%s\n\nDoes this ID match the "Wallet Unique ID" '
-                        'printed on your paper backup?  If not, click "No" and reenter '
-                        'key and chain-code data again.' % newWltID), \
-                        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
-               if reply == QtWidgets.QMessageBox.Yes:
-                  #return true to caller to proceed with restore operation
-                  self.newWltID = newWltID
-                  return True, None
+               self.newWltID = newWltID
+               replyToBridge.success = True
 
-         #reconstructed wallet id is invalid if we get this far
-         lineNumber = -1
-         canBeSalvaged = True
-         if len(msg.checksums) != self.lineCount:
-            canBeSalvaged = False
+               #check if this wallet is already loaded
+               dlgOwnWlt = None
+               if self.main.wallets.hasWallet(newWltID):
+                  dlgOwnWlt = DlgReplaceWallet(newWltID, self.parent, self.main)
+                  if (dlgOwnWlt.exec_()):
+                     #unload existing wallet
+                     self.main.removeWalletFromApplication(newWltID)
+                     if dlgOwnWlt.output == 2:
+                        replyToBridge.restore = 'merge'
+                     else:
+                        replyToBridge.restore = 'overwrite'
+                  else:
+                     replyToBridge.success = False
 
-         for i in range(0, len(msg.checksums)):
-            if msg.checksums[i] < 0 or msg.checksums[i] == UINT8_MAX:
-               lineNumber = i + 1
-               break
-
-         if lineNumber == -1 or canBeSalvaged == False:
-            QtWidgets.QMessageBox.critical(self, self.tr('Unknown Error'), self.tr(
-               'Encountered an unkonwn error when restoring this backup. Aborting.'), \
-               QtWidgets.QMessageBox.Ok)
-
+         if replyToBridge.success == False:
             self.reject()
-            return False, None
+         self.reply()
+
+      elif which == 'checksumError':
+         checksums = restorePayload.checksumError
+         for chkResult in checksums:
+            if chkResult.value < 0 or chkResult.value == UINT8_MAX:
+               self.flagEditLine(chkResult.lineId)
 
          reply = QtWidgets.QMessageBox.critical(self, self.tr('Invalid Data'), self.tr(
             'There is an error in the data you entered that could not be '
             'fixed automatically.  Please double-check that you entered the '
-            'text exactly as it appears on the wallet-backup page.  <br><br> '
-            'The error occured on <font color="red">line #%d</font>.' % lineNumber), \
+            'text exactly as it appears on the wallet-backup page.'), \
             QtWidgets.QMessageBox.Ok)
-         LOGERROR('Error in wallet restore field')
-         self.prfxList[i].setText(\
-            '<font color="red">' + str(self.prfxList[i].text()) + '</font>')
+         LOGWARN('Bad input in wallet restore field')
+         return
 
-         return False, None
+      elif which == 'checksumMismatch':
+         #TODO: deal with backup type mismatch
+         LOGWARN("restore backup type mismatch")
+         self.reject()
+         return
 
-      if msg.promptType == BridgeProto_pb2.RestorePromptType.Value("Passphrase"):
-         #return new wallet's private keys password
+      elif which == 'getPassphrases':
+         #prompts user to set private keys password
+         #TODO: add UI for control pass submission
+         reply = self.getNewPacket()
+
          passwd = []
          if self.chkEncrypt.isChecked():
             dlgPasswd = DlgChangePassphrase(self, self.main)
             if dlgPasswd.exec_():
-               passwd = str(dlgPasswd.edtPasswd1.text())
-               return True, passwd
+               reply.success = True
+               reply.init('passphrases', 1)
+               reply.passphrases[0] = str(dlgPasswd.edtPasswd1.text())
             else:
                QtWidgets.QMessageBox.critical(self, self.tr('Cannot Encrypt'), \
                   self.tr('You requested your restored wallet be encrypted, but no '
-                  'valid passphrase was supplied.  Aborting wallet recovery.'), \
+                  'valid passphrase was supplied. Aborting wallet recovery.'), \
                   QtWidgets.QMessageBox.Ok)
+               reply.success = False
                self.reject()
-               return False, None
+         self.reply()
 
-      if msg.promptType == BridgeProto_pb2.RestorePromptType.Value("Control"):
-         #TODO: need UI to input control passphrase
-         return True, None
-
-      if msg.promptType == BridgeProto_pb2.RestorePromptType.Value("Success"):
-         if self.newWltID == None or len(self.newWltID) == 0:
+      elif which == 'success':
+         if not self.newWltID:
             LOGERROR("wallet import did not yield an id")
             raise Exception("wallet import did not yield an id")
 
-         self.newWallet = PyBtcWallet()
-         self.newWallet.loadFromBridge(self.newWltID)
+         self.newWallet = PyBtcWallet().loadFromBridge(self.newWltID)
          self.accept()
 
-         return True, None
-
-      if msg.promptType == BridgeProto_pb2.RestorePromptType.Value("FormatError") or \
-         sg.promptType == BridgeProto_pb2.RestorePromptType.Value("Failure"):
-
-         QtWidgets.QMessageBox.critical(self, self.tr('Unknown Error'), self.tr(
-            'Encountered an unkonwn error when restoring this backup. Aborting.', \
-            QtWidgets.QMessageBox.Ok))
-
+      elif which == "failure":
+         QtWidgets.QMessageBox.critical(self, self.tr('Failure'), self.tr(
+            f'Backup process failed with error:\n\n{restorePayload.failure}\n. Aborting.'), \
+            QtWidgets.QMessageBox.Ok)
          self.reject()
-         return False, None
 
-      if msg.promptType == BridgeProto_pb2.RestorePromptType.Value("DecryptError"):
+      elif which == "decryptError":
          #TODO: notify of invalid SP pass
-         pass
+         LOGWARN("backup restore decrypt error")
+         self.reject()
 
-      if msg.promptType == BridgeProto_pb2.RestorePromptType.Value("TypeError"):
+      elif which == "typeError":
          #TODO: wallet type conveyed by backup is unknown
-         pass
+         LOGWARN("backup restore type error")
+         self.reject()
 
       else:
          #TODO: unknown error
-         return False, None
+         LOGWARN("backup restore unhandled callback.which")
+         self.reject()
 
+   def parseProtoPacket(self, payload):
+      TheSignalExecution.executeMethod(self.processCallback, payload)
 
    #############################################################################
    def verifyUserInput(self):
+      #reset flagged inputs if any
+      self.resetEditLines()
 
       root = []
       for i in range(2):
@@ -389,16 +374,11 @@ class DlgRestoreSingle(ArmoryDialog):
       with branches.
 
       A dedicated callbackId is generated for this interaction and passed to
-      TheBDM callback map along with a py side method to handle the protobuf
+      TheBDM callback map along with a py side method to handle the proto
       packet from the C++ side.
 
       The C++ method is called with that id.
       '''
-      def callback(payload, callerId):
-         TheSignalExecution.executeMethod(self.processCallback,
-            [payload, callerId])
-
-      self.callbackId = TheBDM.registerCustomPrompt(callback)
       TheBridge.restoreWallet(root, chaincode, spPass, self.callbackId)
 
       '''
@@ -410,19 +390,18 @@ class DlgRestoreSingle(ArmoryDialog):
          QtWidgets.QMessageBox.critical(self, self.tr('Invalid Max Memory Usage'), \
             self.tr('You entered Max Memory Usage incorrectly.\n\nEnter: <Number> (kB, MB)'), QtWidgets.QMessageBox.Ok)
          return
-        if nError > 0:
-            pluralStr = 'error' if nError == 1 else 'errors'
 
-            msg = self.tr(
-               'Detected errors in the data you entered. '
-               'Armory attempted to fix the errors but it is not '
-               'always right.  Be sure to verify the "Wallet Unique ID" '
-               'closely on the next window.')
+      if nError > 0:
+         pluralStr = 'error' if nError == 1 else 'errors'
+         msg = self.tr(
+            'Detected errors in the data you entered. '
+            'Armory attempted to fix the errors but it is not '
+            'always right.  Be sure to verify the "Wallet Unique ID" '
+            'closely on the next window.')
 
-            QtWidgets.QMessageBox.question(self, self.tr('Errors Corrected'), msg, \
-               QtWidgets.QMessageBox.Ok)
+         QtWidgets.QMessageBox.question(self, self.tr('Errors Corrected'), msg, \
+            QtWidgets.QMessageBox.Ok)
       '''
-
 
 ################################################################################
 class DlgRestoreFragged(ArmoryDialog):
@@ -1122,20 +1101,20 @@ class DlgEnterOneFrag(ArmoryDialog):
    #############################################################################
    def changeType(self, sel):
       #            |-- X --| |-- Y --| |-- F --|
-      if sel == self.backupTypeButtonGroup.id(self.version0Button):
+      if sel == self.version0Button:
          visList = [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0]
-      elif sel == self.backupTypeButtonGroup.id(self.version135aButton) or \
-           sel == self.backupTypeButtonGroup.id(self.version135aSPButton):
+      elif sel == self.version135aButton or \
+           sel == self.version135aSPButton:
          visList = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1]
-      elif sel == self.backupTypeButtonGroup.id(self.version135cButton) or \
-           sel == self.backupTypeButtonGroup.id(self.version135cSPButton):
+      elif sel == self.version135cButton or \
+           sel == self.version135cSPButton:
          visList = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0]
       else:
          LOGERROR('What the heck backup type is selected?  %d', sel)
          return
 
-      self.frmSP.setVisible(sel == self.backupTypeButtonGroup.id(self.version135aSPButton) or \
-                            sel == self.backupTypeButtonGroup.id(self.version135cSPButton))
+      self.frmSP.setVisible(sel == self.version135aSPButton or \
+                            sel == self.version135cSPButton)
       for i in range(12):
          self.prfxList[i].setVisible(visList[i] == 1)
          self.edtList[ i].setVisible(visList[i] == 1)
@@ -1161,18 +1140,18 @@ class DlgEnterOneFrag(ArmoryDialog):
 
       sel = self.backupTypeButtonGroup.checkedId()
       rng = [-1]
-      if   sel == self.backupTypeButtonGroup.id(self.version0Button):
+      if   sel == self.version0Button:
          rng = range(8)
-      elif sel == self.backupTypeButtonGroup.id(self.version135aButton) or \
-           sel == self.backupTypeButtonGroup.id(self.version135aSPButton):
+      elif sel == self.version135aButton or \
+           sel == self.version135aSPButton:
          rng = range(8, 12)
-      elif sel == self.backupTypeButtonGroup.id(self.version135cButton) or \
-           sel == self.backupTypeButtonGroup.id(self.version135cSPButton):
+      elif sel == self.version135cButton or \
+           sel == self.version135cSPButton:
          rng = range(8, 10)
 
 
-      if sel == self.backupTypeButtonGroup.id(self.version135aSPButton) or \
-         sel == self.backupTypeButtonGroup.id(self.version135cSPButton):
+      if sel == self.version135aSPButton or \
+         sel == self.version135cSPButton:
          # Prepare the key mask parameters
          SECPRINT = HardcodedKeyMaskParams()
          securePrintCode = str(self.editSecurePrint.text()).strip()

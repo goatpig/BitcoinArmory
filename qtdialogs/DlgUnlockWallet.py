@@ -306,14 +306,17 @@ class DlgUnlockWallet(ArmoryDialog):
 
    #############################################################################
    def setIds(self, ids):
-      if len(ids) == 0:
+      if not ids:
          self.reject()
-      elif len(self.encryptionKeyIds) == 0:
+
+      if not self.encryptionKeyIds:
          self.encryptionKeyIds = ids
+
+      if self.encryptionKeyIds == ids:
+         #success
          self.exec_()
-      elif self.encryptionKeyIds != ids:
-         raise Exception("encryption key ids mismtach")
       else:
+         #failure
          self.recycle()
          self.show()
 
@@ -338,5 +341,6 @@ class UnlockWalletHandler(ServerPush, DlgUnlockWallet):
    def reply(self, passphrase):
       packet = self.getNewPacket()
       packet.success = bool(len(passphrase) != 0)
-      packet.passphrase = passphrase
+      packet.init("passphrases", 1)
+      packet.passphrases[0] = passphrase
       super().reply()

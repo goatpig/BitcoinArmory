@@ -32,20 +32,22 @@ struct WalletData {
    }
 
    ##
-   id                   @0 : Types.WalletId;
-   useCount             @1 : Int64;
-   lookupCount          @2 : Int64;
-   watchingOnly         @3 : Bool;
-   addressTypes         @4 : List(UInt32);
-   defaultAddressType   @5 : UInt32;
-   usesEncryption       @6 : Bool;
-   kdfMemReq            @7 : UInt32;
+   walletId             @0 : Types.WalletId;
+   accountId            @1 : Types.AccountId;
+   dbId                 @2 : Text;
+   useCount             @3 : Int64;
+   lookupCount          @4 : Int64;
+   watchingOnly         @5 : Bool;
+   addressTypes         @6 : List(UInt32);
+   defaultAddressType   @7 : UInt32;
+   usesEncryption       @8 : Bool;
+   kdfMemReq            @9 : UInt32;
 
-   label                @8 : Text;
-   desc                 @9 : Text;
+   label                @10: Text;
+   desc                 @11: Text;
 
-   addressData          @10: List(AddressData);
-   comments             @11: List(Comment);
+   addressData          @12: List(AddressData);
+   comments             @13: List(Comment);
 }
 
 ## RestoreWallet messages
@@ -55,25 +57,26 @@ struct RestorePrompt {
       backupType        @1 : UInt32;
    }
 
+   struct ChecksumResult {
+      lineId            @0 : UInt32;
+      value             @1 : Int32;
+   }
+
    union {
       checkWalletId     @0 : WalletMeta;
       getPassphrases    @1 : Void;
       decryptError      @2 : Void;
-      typeError         @3 : Text;
-      checksumError     @4 : List(Int32);
-      checksumMismatch  @5 : List(Int32);
+      failure           @3 : Text; #error verbose
+      success           @4 : Void;
+      typeError         @5 : Text;
+      checksumError     @6 : List(ChecksumResult);
+      checksumMismatch  @7 : List(ChecksumResult);
    }
-}
-
-struct RestoreReply {
-   success @0 : Bool;
-   control @1 : Text;
-   privkey @2 : Text;
 }
 
 struct RestoreWalletPayload {
    root        @0 : List(Text);
-   secondary   @1 : List(Text);
+   chaincode   @1 : List(Text);
    spPass      @2 : Text;
 }
 
@@ -91,7 +94,7 @@ struct Notification {
       unset          @2 : Void;
       ready          @3 : Types.Height;
       setupDone      @4 : Void;
-      registerDone   @5 : List(Text);
+      registerDone   @5 : Void;
       refresh        @6 : List(Text);
       newBlock       @7 : Types.Height;
       disconnected   @8 : Void;
@@ -101,14 +104,24 @@ struct Notification {
       error          @12: Text;
       cleanup        @13: Void;
       unlockRequest  @14: List(Text);
+      restore        @15: RestorePrompt;
    }
 }
 
 struct NotificationReply
 {
-   success     @0 : Bool;
-   passphrase  @1 : Text;
-   counter     @2 : UInt32;
+   enum RestoreMode {
+      overwrite   @0;
+      merge       @1;
+   }
+
+   success        @0 : Bool;
+   counter        @1 : UInt32;
+
+   union {
+      restore     @2 : RestoreMode;
+      passphrases @3 : List(Text);
+   }
 }
 
 ###############################
@@ -117,8 +130,9 @@ struct NotificationReply
 
 struct BlockchainServiceRequest {
    struct RegisterWallet {
-      id    @0 : Text;
-      isNew @1 : Bool;
+      walletId    @0 : Types.WalletId;
+      accountId   @1 : Types.AccountId;
+      isNew       @2 : Bool;
    }
 
    union {
@@ -208,31 +222,32 @@ struct WalletRequest {
       description  @1 : Text;
    }
 
-   id                               @0 : Types.WalletId;
+   walletId                         @0 : Types.WalletId;
+   accountId                        @1 : Types.AccountId;
    union {
-      unset                         @1 : Void;
+      unset                         @2 : Void;
 
-      getAddress                    @2 : AddressRequest;
-      getHighestUsedIndex           @3 : Void;
-      extendAddressPool             @4 : ExtendAddressPool;
+      getAddress                    @3 : AddressRequest;
+      getHighestUsedIndex           @4 : Void;
+      extendAddressPool             @5 : ExtendAddressPool;
 
-      createBackupString            @5 : Types.CallbackId;
-      deleteWallet                  @6 : Void;
-      getData                       @7 : WalletData;
+      createBackupString            @6 : Types.CallbackId;
+      deleteWallet                  @7 : Void;
+      getData                       @8 : Void;
 
-      getAddrCombinedList           @8 : Void;
-      setAddressTypeFor             @9 : SetAddressTypeFor;
+      getAddrCombinedList           @9 : Void;
+      setAddressTypeFor             @10: SetAddressTypeFor;
 
-      getLedgerDelegateId           @10: Void;
-      getLedgerDelegateIdForScrAddr @11: Types.ScrAddr;
-      getBalanceAndCount            @12: Void;
+      getLedgerDelegateId           @11: Void;
+      getLedgerDelegateIdForScrAddr @12: Types.ScrAddr;
+      getBalanceAndCount            @13: Void;
 
-      setupNewCoinSelectionInstance @13: Types.Height;
-      getUtxos                      @14: OutputRequest;
+      setupNewCoinSelectionInstance @14: Types.Height;
+      getUtxos                      @15: OutputRequest;
 
-      createAddressBook             @15: Void;
-      setComment                    @16: SetComment;
-      setLabels                     @17: SetLabels;
+      createAddressBook             @16: Void;
+      setComment                    @17: SetComment;
+      setLabels                     @18: SetLabels;
    }
 }
 
@@ -453,6 +468,12 @@ struct UtilsRequest {
       description       @5 : Text;
    }
 
+   struct RestoreWalletStruct
+   {
+      payload     @0 : RestoreWalletPayload;
+      callbackId  @1 : Text;
+   }
+
    union {
       unset                @0 : Void;
 
@@ -460,6 +481,7 @@ struct UtilsRequest {
       getHash160           @2 : Data;
       getNameForAddrType   @3 : Int32;
       createWallet         @4 : CreateWalletStruct;
+      restoreWallet        @5 : RestoreWalletStruct;
    }
 }
 

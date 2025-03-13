@@ -75,6 +75,8 @@ class PyPromFut(object):
       while self.has is False:
          self.cv.wait()
       self.cv.release()
+      if self.data.success == False:
+         raise Exception(self.data.error)
       return self.data
 
 
@@ -100,11 +102,12 @@ class BridgeSocket(object):
       self.port = random.randint(50000, 60000)
 
    ####
-   def setCallback(self, key, func):
-      self.callbackDict[key] = func
+   def setCallback(self, key, callback):
+      self.callbackDict[key] = callback
 
    def unsetCallback(self, key):
-      del self.callbackDict[key]
+      if key in self.callbackDict:
+         del self.callbackDict[key]
 
    #############################################################################
    ## listen socket setup
@@ -315,8 +318,8 @@ class BridgeSocket(object):
             #non AEAD data is only tolerated after channels are setup
             raise BridgeError("Received user data before AEAD is ready")
 
-         #grab packet id
-         fullPacket = response[1:]
+         #grab full packet
+         fullPacket = response[4:]
 
          #deser proto reply
          with Bridge.FromBridge.from_bytes(fullPacket) as protoPayload:
@@ -448,12 +451,12 @@ class BlockchainService(ProtoWrapper):
       return reply.service.getNodeStatus
 
    ####
-   def registerWallet(self, walletId: str, isNew: bool):
+   def registerWallet(self, walletId: str, accountId: str, isNew: bool):
       packet = Bridge.ToBridge.new_message()
       packetMethod = packet.init("service").init("registerWallet")
-      packetMethod.id = walletId
+      packetMethod.walletId = walletId
+      packetMethod.accountId = accountId
       packetMethod.isNew = isNew
-
       self.send(packet, needsReply=False)
 
    ####
@@ -472,9 +475,13 @@ class BlockchainService(ProtoWrapper):
    ####
    def getTxsByHash(self, hashVals: list[bytes]):
       packet = Bridge.ToBridge.new_message()
-      packetHashes = packet.init("service").init("getTxsByHash", len(hashVals))
-      for i, hash in enumerate(hashVals):
-         packetHashes[i] = hash
+      serviceReq = packet.init("service")
+      packet.service.init("getTxsByHash", len(hashVals))
+      for i, hashVal in enumerate(hashVals):
+         if not hashVal:
+            LOGWARN("trying to fetch tx by empty hash")
+            continue
+         packet.service.getTxsByHash[i] = hashVal
 
       fut = self.send(packet)
       reply = fut.getVal()
@@ -582,20 +589,24 @@ class BlockchainUtils(ProtoWrapper):
       if reply.success == False:
          raise BridgeError(
             f"[createWallet] failed with error: {reply.error}")
-      return reply.utils.walletId
+      return reply.utils.createWallet
 
 ################################################################################
 class BridgeWalletWrapper(ProtoWrapper):
    #############################################################################
    ## setup ##
-   def __init__(self, walletId):
+   def __init__(self, walletId, accountId):
       super().__init__(TheBridge.bridgeSocket)
       self.walletId = walletId
+      self.accountId = accountId
 
    ####
    def getPacket(self):
       packet = Bridge.ToBridge.new_message()
-      packet.init("wallet").id = self.walletId
+      wltCapn = packet.init("wallet")
+      wltCapn.walletId  = self.walletId
+      if self.accountId:
+         wltCapn.accountId = self.accountId
       return packet
 
    #############################################################################
@@ -606,6 +617,8 @@ class BridgeWalletWrapper(ProtoWrapper):
 
       fut = self.send(packet)
       reply = fut.getVal()
+      if reply.success == False:
+         raise Exception(f"getBalanceAndCount failed with error: {reply.error}")
       return reply.wallet.getBalanceAndCount
 
    ####
@@ -745,8 +758,7 @@ class BridgeWalletWrapper(ProtoWrapper):
       packet = self.getPacket()
 
       walletData = Bridge.WalletData.new_message()
-      method = packet.wallet.init("getData")
-      method = walletData
+      method = packet.wallet.getData = None
 
       fut = self.send(packet)
       reply = fut.getVal()
@@ -764,11 +776,11 @@ class BridgeWalletWrapper(ProtoWrapper):
    ####
    def getLedgerDelegateIdForScrAddr(self, scrAddr: bytes):
       packet = self.getPacket()
-      packet.wallet.getLedgerDelegateIdForSrcAddr = scrAddr
+      packet.wallet.getLedgerDelegateIdForScrAddr = scrAddr
 
       fut = self.send(packet)
       reply = fut.getVal()
-      return reply.wallet.ledgerDelegateId
+      return reply.wallet.getLedgerDelegateIdForScrAddr
 
 ################################################################################
 class BridgeCoinSelectionWrapper(ProtoWrapper):
@@ -1032,6 +1044,8 @@ class BridgeSigner(ProtoWrapper):
 
    #############################################################################
    def cleanup(self):
+      if not self.signerId:
+         return
       packet = self.getPacket()
       packet.signer.cleanup = None
 
@@ -1259,26 +1273,31 @@ class ArmoryBridge(object):
       return blockTime
 
    #############################################################################
-   def restoreWallet(self, root: list[str], chaincode: list[str], spPass: str, callbackId):
-      opaquePayload = Bridge.RestoreWalletPayload.new_message()
-      
-      payloadRoot = opaquePayload.init("root", len(root))
-      for i, r in enumerate(root):
-         payloadRoot[i] = r
+   def restoreWallet(self, root: list[str], chaincode: list[str],
+      spPass: str, callbackId: str):
+      restorePayload = Bridge.RestoreWalletPayload.new_message()
 
-      payloadSecondary = opaquePayload.init("secondary", len(chaincode))
-      for i, c in enumerate(chaincode):
-         payloadSecondary[i] = c
+      #root
+      if len(root) > 0:
+         payloadRoot = restorePayload.init("root", len(root))
+         for i, r in enumerate(root):
+            payloadRoot[i] = r
 
-      opaquePayload.spPass = spPass
+      #chaincode
+      if len(chaincode) > 0:
+         payloadChaincode = restorePayload.init("chaincode", len(chaincode))
+         for i, c in enumerate(chaincode):
+            payloadChaincode[i] = c
+
+      #passphrase
+      if spPass:
+         restorePayload.spPass = spPass
 
       packet = Bridge.ToBridge.new_message()
-      packet.method = BridgeProto_pb2.methodWithCallback
-      packet.methodWithCallback = BridgeProto_pb2.restoreWallet
-
-      packet.byteArgs.append(callbackId)
-      packet.byteArgs.append(opaquePayload.SerializeToString())
-
+      utilsRequest = packet.init("utils")
+      restoreStruct = utilsRequest.init("restoreWallet")
+      restoreStruct.payload = restorePayload
+      restoreStruct.callbackId = callbackId
       self.send(packet, False)
 
    #############################################################################
@@ -1314,7 +1333,7 @@ class ServerPush(ProtoWrapper):
    def __init__(self, callbackId=""):
       super().__init__(TheBridge.bridgeSocket)
 
-      if len(callbackId) == 0:
+      if not callbackId:
          self.callbackId = base64.b16encode(os.urandom(10)).decode('utf-8')
       else:
          self.callbackId = callbackId
@@ -1323,13 +1342,13 @@ class ServerPush(ProtoWrapper):
       self.refId = 0
       self.packet = None
 
+   def __del__(self):
+      self.bridgeSocket.unsetCallback(self.callbackId)
+
    def parseProtoPacket(self, protoPacket):
       raise Exception("override me")
 
    def process(self, protoPacket):
-      if protoPacket.which() == "cleanup":
-         self.bridgeSocket.unsetCallback(self.callbackId)
-
       self.refId = protoPacket.counter
       self.parseProtoPacket(protoPacket)
 
@@ -1343,8 +1362,6 @@ class ServerPush(ProtoWrapper):
    def reply(self):
       self.send(self.packet, needsReply=False)
       self.packet = None
-
-
 
 ####
 TheBridge = ArmoryBridge()

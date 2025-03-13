@@ -257,8 +257,8 @@ bool RemoteCallback::processNotifications(
             {
                BdmNotification bdmNotif(BDMAction_NewBlock);
 
-               bdmNotif.height_ = height;
-               bdmNotif.branchHeight_ = newblock.getBranchHeight();
+               bdmNotif.height = height;
+               bdmNotif.branchHeight = newblock.getBranchHeight();
                run(std::move(bdmNotif));
             }
 
@@ -269,8 +269,8 @@ bool RemoteCallback::processNotifications(
          {
             auto page = notif.getZc();
             BdmNotification bdmNotif(BDMAction_ZC);
-            bdmNotif.ledgers_ = capnToLedgers(page);
-            bdmNotif.requestID_ = notif.getRequestId();
+            bdmNotif.ledgers = capnToLedgers(page);
+            bdmNotif.requestID = notif.getRequestId();
 
             run(std::move(bdmNotif));
             break;
@@ -283,7 +283,7 @@ bool RemoteCallback::processNotifications(
 
             BdmNotification bdmNotif(BDMAction_InvalidatedZC);
             for (auto id : ids) {
-               bdmNotif.invalidatedZc_.emplace(BinaryData(
+               bdmNotif.invalidatedZc.emplace(BinaryData(
                   id.begin(), id.end()
                ));
             }
@@ -301,13 +301,10 @@ bool RemoteCallback::processNotifications(
             if (refreshType != BDV_filterChanged) {
                auto ids = refresh.getIds();
                for (auto id : ids) {
-                  bdmNotif.ids_.emplace_back(BinaryData(
-                     id.begin(), id.end()
-                  ));
+                  bdmNotif.ids.emplace(id);
                }
             } else {
-               bdmNotif.ids_.push_back(
-                  BinaryData::fromString(FILTER_CHANGE_FLAG));
+               bdmNotif.ids.emplace(FILTER_CHANGE_FLAG);
             }
 
             run(std::move(bdmNotif));
@@ -318,7 +315,7 @@ bool RemoteCallback::processNotifications(
          {
             BdmNotification bdmNotif(BDMAction_Ready);
             auto newBlock = notif.getReady();
-            bdmNotif.height_ = newBlock.getHeight();
+            bdmNotif.height = newBlock.getHeight();
 
             run(std::move(bdmNotif));
             break;
@@ -350,7 +347,7 @@ bool RemoteCallback::processNotifications(
          {
             BdmNotification bdmNotif(BDMAction_NodeStatus);
             auto capnNodeStatus = notif.getNodeStatus();
-            bdmNotif.nodeStatus_ = capnToNodeStatus(capnNodeStatus);
+            bdmNotif.nodeStatus = capnToNodeStatus(capnNodeStatus);
 
             run(std::move(bdmNotif));
             break;
@@ -361,12 +358,12 @@ bool RemoteCallback::processNotifications(
             auto error = notif.getError();
 
             BdmNotification bdmNotif(BDMAction_BDV_Error);
-            bdmNotif.error_.errCode_ = error.getCode();
-            bdmNotif.error_.errorStr_ = error.getErrStr();
-            bdmNotif.requestID_ = notif.getRequestId();
+            bdmNotif.error.errCode_ = error.getCode();
+            bdmNotif.error.errorStr_ = error.getErrStr();
+            bdmNotif.requestID = notif.getRequestId();
 
             auto errData = error.getErrData();
-            bdmNotif.error_.errData_ = BinaryData(
+            bdmNotif.error.errData_ = BinaryData(
                errData.begin(), errData.end()
             );
 

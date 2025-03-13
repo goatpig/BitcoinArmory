@@ -211,23 +211,23 @@ namespace DBClientClasses
 ///////////////////////////////////////////////////////////////////////////////
 struct BdmNotification
 {
-   const BDMAction action_;
+   const BDMAction action;
 
-   unsigned height_;
-   unsigned branchHeight_ = UINT32_MAX;
+   unsigned height;
+   unsigned branchHeight = UINT32_MAX;
 
-   std::set<BinaryData> invalidatedZc_;
-   std::vector<std::shared_ptr<DBClientClasses::LedgerEntry>> ledgers_;
+   std::set<BinaryData> invalidatedZc;
+   std::vector<std::shared_ptr<DBClientClasses::LedgerEntry>> ledgers;
 
-   std::vector<BinaryData> ids_;
+   std::set<std::string> ids;
 
-   std::shared_ptr<DBClientClasses::NodeStatus> nodeStatus_;
-   BDV_Error_Struct error_;
+   std::shared_ptr<DBClientClasses::NodeStatus> nodeStatus;
+   BDV_Error_Struct error;
 
-   std::string requestID_;
+   std::string requestID;
 
    BdmNotification(BDMAction action) :
-      action_(action)
+      action(action)
    {}
 };
 

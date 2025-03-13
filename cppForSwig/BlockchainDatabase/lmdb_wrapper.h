@@ -717,6 +717,11 @@ public:
    unsigned getShardIdForHeight(unsigned) const;
    unsigned getNextShardIdForHeight(unsigned) const;
 
+   //// block files flagged for reparsing
+   bool getOrSetFlaggedBlockFile(uint32_t);
+   std::vector<uint32_t> getFlaggedFileNums(void) const;
+   void clearFlaggedFileNums(void);
+
 public:
    std::map<DB_SELECT, std::shared_ptr<DatabaseContainer>> dbMap_;
    const static std::map<std::string, size_t> mapSizes_;

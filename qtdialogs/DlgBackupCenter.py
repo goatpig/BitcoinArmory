@@ -12,10 +12,11 @@
 
 from qtpy import QtCore, QtGui, QtWidgets
 
-from armoryengine.ArmoryUtils import toUnicode, USE_TESTNET, USE_REGTEST
+from armoryengine.ArmoryUtils import toUnicode, USE_TESTNET, \
+   USE_REGTEST, LOGEXCEPT
 from armoryengine.AddressUtils import binary_to_base58, encodePrivKeyBase58, \
    hash160_to_addrStr
-from armorycolors import htmlColor
+from armorycolors import htmlColor, Colors
 
 from ui.WalletFrames import WalletBackupFrame
 from ui.QrCodeMatrix import CreateQRMatrix
@@ -36,7 +37,7 @@ class DlgBackupCenter(ArmoryDialog):
       super(DlgBackupCenter, self).__init__(parent, main)
 
       self.wlt = wlt
-      wltID = wlt.uniqueIDB58
+      wltID = wlt.walletId
       wltName = wlt.labelName
 
       self.walletBackupFrame = WalletBackupFrame(parent, main)
@@ -163,13 +164,13 @@ class SimplePrintableGraphicsScene(object):
       self.PAPER_A4_HEIGHT = 11.0 * self.INCH
       self.MARGIN_PIXELS = 0.6 * self.INCH
 
-      self.PAGE_BKGD_COLOR = QtGui.QColor(255, 255, 255)
-      self.PAGE_TEXT_COLOR = QtGui.QColor(0, 0, 0)
+      self.PAGE_BKGD_COLOR = Colors.White
+      self.PAGE_TEXT_COLOR = Colors.Black
 
       self.fontFix = GETFONT('Courier', 9)
       self.fontVar = GETFONT('Times', 10)
 
-      self.gfxScene = QtGui.QGraphicsScene(self.parent)
+      self.gfxScene = QtWidgets.QGraphicsScene(self.parent)
       self.gfxScene.setSceneRect(0, 0, self.PAPER_A4_WIDTH, self.PAPER_A4_HEIGHT)
       self.gfxScene.setBackgroundBrush(self.PAGE_BKGD_COLOR)
 
@@ -183,7 +184,6 @@ class SimplePrintableGraphicsScene(object):
 
       self.cursorPos = QtCore.QPointF(self.MARGIN_PIXELS, self.MARGIN_PIXELS)
       self.lastCursorMove = (0, 0)
-
 
    def getCursorXY(self):
       return (self.cursorPos.x(), self.cursorPos.y())
@@ -210,14 +210,12 @@ class SimplePrintableGraphicsScene(object):
          self.cursorPos = QtCore.QPointF(xOld + dx, yOld + dy)
          self.lastCursorMove = (dx, dy)
 
-
    def resetScene(self):
       self.gfxScene.clear()
       self.resetCursor()
 
    def resetCursor(self):
       self.cursorPos = QtCore.QPointF(self.MARGIN_PIXELS, self.MARGIN_PIXELS)
-
 
    def newLine(self, extra_dy=0):
       xOld, yOld = self.getCursorXY()
@@ -230,7 +228,7 @@ class SimplePrintableGraphicsScene(object):
       if width == None:
          width = 3 * self.INCH
       currX, currY = self.getCursorXY()
-      lineItem = QtGui.QGraphicsLineItem(currX, currY, currX + width, currY)
+      lineItem = QtWidgets.QGraphicsLineItem(currX, currY, currX + width, currY)
       pen = QtGui.QPen()
       pen.setWidth(penWidth)
       lineItem.setPen(pen)
@@ -240,8 +238,8 @@ class SimplePrintableGraphicsScene(object):
       self.moveCursor(rect.width(), 0)
       return self.lastItemSize
 
-   def drawRect(self, w, h, edgeColor=QtGui.QColor(0, 0, 0), fillColor=None, penWidth=1):
-      rectItem = QtGui.QGraphicsRectItem(self.cursorPos.x(), self.cursorPos.y(), w, h)
+   def drawRect(self, w, h, edgeColor=Colors.Black, fillColor=None, penWidth=1):
+      rectItem = QtWidgets.QGraphicsRectItem(self.cursorPos.x(), self.cursorPos.y(), w, h)
       if edgeColor == None:
          rectItem.setPen(QtGui.QPen(QtCore.Qt.NoPen))
       else:
@@ -284,9 +282,8 @@ class SimplePrintableGraphicsScene(object):
       pix = QtGui.QPixmap(pixFn)
       if not sizePx == None:
          pix = pix.scaled(sizePx, sizePx)
-      pixItem = QGraphicsPixmapItem(pix)
+      pixItem = QtWidgets.QGraphicsPixmapItem(pix)
       pixItem.setPos(self.cursorPos)
-      pixItem.setMatrix(QtGui.QMatrix())
       self.gfxScene.addItem(pixItem)
       rect = pixItem.boundingRect()
       self.lastItemSize = (rect.width(), rect.height())
@@ -296,7 +293,6 @@ class SimplePrintableGraphicsScene(object):
    def drawQR(self, qrdata, size=150):
       objQR = GfxItemQRCode(qrdata, size)
       objQR.setPos(self.cursorPos)
-      objQR.setMatrix(QtGui.QMatrix())
       self.gfxScene.addItem(objQR)
       rect = objQR.boundingRect()
       self.lastItemSize = (rect.width(), rect.height())
@@ -372,7 +368,7 @@ class GfxItemQRCode(QtWidgets.QGraphicsItem):
 
    def paint(self, painter, option, widget=None):
       painter.setPen(QtCore.Qt.NoPen)
-      painter.setBrush(QtGui.QBrush(QtGui.QColor(0, 0, 0)))
+      painter.setBrush(QtGui.QBrush(Colors.Black))
 
       for r in range(self.modCt):
          for c in range(self.modCt):
@@ -408,20 +404,15 @@ class DlgPrintBackup(ArmoryDialog):
          self.doMultiFrag = len(fragData['Range']) > 1
 
       self.backupData = None
-      def resumeSetup(rootData):
-         success = rootData.success
-         if not rootData.HasField("wallet") or \
-            not rootData.wallet.HasField("backup_string"):
-            success = False
-
+      def resumeSetup(reply):
          self.backupData = None
-         if success:
-            self.backupData = rootData.wallet.backup_string
+         if reply.success:
+            self.backupData = reply.wallet.createBackupString
          self.executeMethod(self.setup)
 
-      unlockHandler = UnlockWalletHandler(self.wlt.uniqueIDB58,
+      unlockHandler = UnlockWalletHandler(self.wlt.walletId,
          "Create Backup", self)
-      rootData = self.wlt.createBackupString(unlockHandler, resumeSetup)
+      self.wlt.createBackupString(unlockHandler, resumeSetup)
 
    ###
    def setup(self):
@@ -432,12 +423,13 @@ class DlgPrintBackup(ArmoryDialog):
          QtWidgets.QMessageBox.critical(self, self.tr("Error Creating Backup"), self.tr(
             'There was an error with the backup creator.  The operation is being '
             'canceled to avoid making bad backups!'), QtWidgets.QMessageBox.Ok)
+         self.reject()
          return
 
       # A self-evident check of whether we need to print the chaincode.
       # If we derive the chaincode from the private key, and it matches
       # what's already in the wallet, we obviously don't need to print it!
-      self.noNeedChaincode = (len(self.backupData.chain_clear) == 0)
+      self.noNeedChaincode = (len(self.backupData.chainClear) == 0)
 
       # Save off imported addresses in case they need to be printed, too
       for a160, addr in self.wlt.addrMap.items():
@@ -498,7 +490,7 @@ class DlgPrintBackup(ArmoryDialog):
          u'encryption code on each printed backup page!  Your SecurePrint\u200b\u2122 code is </font> '
          '<font color="%s">%s</font>.  <font color="%s">Your backup will not work '
          'if this code is lost!</font>' % (htmlColor('TextWarn'), htmlColor('TextBlue'), \
-         self.backupData.sp_pass, htmlColor('TextWarn'))))
+         self.backupData.spPass, htmlColor('TextWarn'))))
 
       self.chkSecurePrint.clicked.connect(self.redrawBackup)
 
@@ -705,7 +697,7 @@ class DlgPrintBackup(ArmoryDialog):
       self.scene.resetCursor()
 
       pr = self.scene.pageRect()
-      self.scene.drawRect(pr.width(), pr.height(), edgeColor=None, fillColor=QtGui.QColor(255, 255, 255))
+      self.scene.drawRect(pr.width(), pr.height(), edgeColor=None, fillColor=Colors.White)
       self.scene.resetCursor()
 
 
@@ -744,7 +736,7 @@ class DlgPrintBackup(ArmoryDialog):
                                                    'Wallet Name:', 'Backup Type:'])
          self.scene.moveCursor(15, 0)
          suf = 'c' if self.noNeedChaincode else 'a'
-         colRect, rowHgt = self.scene.drawColumn(['1.35' + suf, self.wlt.uniqueIDB58, \
+         colRect, rowHgt = self.scene.drawColumn(['1.35' + suf, self.wlt.walletId, \
                                                    self.wlt.labelName, bType])
          self.scene.moveCursor(15, colRect.y() + colRect.height(), absolute=True)
       else:
@@ -756,7 +748,7 @@ class DlgPrintBackup(ArmoryDialog):
          fragID = '<b>%s-<font color="%s">#%d</font></b>' % (baseID, htmlColor('TextBlue'), fragNum)
          self.scene.moveCursor(15, 0)
          suf = 'c' if self.noNeedChaincode else 'a'
-         colRect, rowHgt = self.scene.drawColumn(['1.35' + suf, self.wlt.uniqueIDB58, \
+         colRect, rowHgt = self.scene.drawColumn(['1.35' + suf, self.wlt.walletId, \
                                                    self.wlt.labelName, bType, fragID])
          self.scene.moveCursor(15, colRect.y() + colRect.height(), absolute=True)
 
@@ -830,7 +822,7 @@ class DlgPrintBackup(ArmoryDialog):
          self.scene.moveCursor(4.0 * INCH, 0)
          spWid, spHgt = 2.75 * INCH, 1.5 * INCH,
          if doMask:
-            self.scene.drawRect(spWid, spHgt, edgeColor=QtGui.QColor(180, 0, 0), penWidth=3)
+            self.scene.drawRect(spWid, spHgt, edgeColor=Colors.Black, penWidth=3)
 
          self.scene.resetCursor()
          self.scene.moveCursor(4.07 * INCH, 0.07 * INCH)
@@ -907,11 +899,11 @@ class DlgPrintBackup(ArmoryDialog):
       else:
          # Single-sheet backup
          if doMask:
-            code12 = self.backupData.root_encr
-            code34 = self.backupData.chain_encr
+            code12 = self.backupData.rootEncr
+            code34 = self.backupData.chainEncr
          else:
-            code12 = self.backupData.root_clear
-            code34 = self.backupData.chain_clear
+            code12 = self.backupData.rootClear
+            code34 = self.backupData.chainClear
 
 
          Lines = []
@@ -936,7 +928,7 @@ class DlgPrintBackup(ArmoryDialog):
 
       self.scene.moveCursor(MARGIN, colRect.y() - 2, absolute=True)
       width = self.scene.pageRect().width() - 2 * MARGIN
-      self.scene.drawRect(width, colRect.height() + 7, edgeColor=QtGui.QColor(0, 0, 0), fillColor=None)
+      self.scene.drawRect(width, colRect.height() + 7, edgeColor=Colors.White, fillColor=None)
 
       self.scene.newLine(extra_dy=30)
       self.scene.drawText(self.tr(
@@ -981,7 +973,6 @@ class DlgPrintBackup(ArmoryDialog):
                self.scene.moveCursor(returnX, returnY, absolute=True)
 
 
-
       vbar = self.view.verticalScrollBar()
       vbar.setValue(vbar.minimum())
       self.view.update()
@@ -996,7 +987,7 @@ class DlgFragBackup(ArmoryDialog):
       self.wlt = wlt
 
       lblDescrTitle = QRichLabel(self.tr(
-         '<b><u>Create M-of-N Fragmented Backup</u> of "%s" (%s)</b>' % (wlt.labelName, wlt.uniqueIDB58)), doWrap=False)
+         '<b><u>Create M-of-N Fragmented Backup</u> of "%s" (%s)</b>' % (wlt.labelName, wlt.walletId)), doWrap=False)
       lblDescrTitle.setContentsMargins(5, 5, 5, 5)
 
       self.lblAboveFrags = QRichLabel('')
@@ -1071,7 +1062,7 @@ class DlgFragBackup(ArmoryDialog):
          '<font color="%s">%s</font><font color="%s">. '
          'All fragments for a given wallet use the '
          'same code.</font>' % (htmlColor('TextWarn'), htmlColor('TextBlue'), \
-         self.backupData.sp_pass, htmlColor('TextWarn'))))
+         self.backupData.spPass, htmlColor('TextWarn'))))
       self.chkSecurePrint.clicked.connect(self.clickChkSP)
       self.chkSecurePrint.setChecked(False)
       self.lblSecurePrint.setVisible(False)
@@ -1178,7 +1169,6 @@ class DlgFragBackup(ArmoryDialog):
 
       lblFragID = QRichLabel(self.tr('<b>Fragment ID:<br>%s-%s</b>' % \
                                     (str(self.fragPrefixStr), str(idx + 1))))
-      # lblWltID = QRichLabel('(%s)' % self.wlt.uniqueIDB58)
       lblFragPix = QImageLabel(self.fragPixmapFn, size=(72, 72))
       if doMask:
          ys = self.secureMtrxCrypt[idx][1].toBinStr()[:42]
@@ -1273,7 +1263,7 @@ class DlgFragBackup(ArmoryDialog):
             return
 
 
-      wid = self.wlt.uniqueIDB58
+      wid = self.wlt.walletId
       pref = self.fragPrefixStr
       fnum = zindex + 1
       M = self.M
@@ -1330,7 +1320,7 @@ class DlgFragBackup(ArmoryDialog):
             '<br><br>'
             'The above code <u><b>is</b></u> case-sensitive!' \
             % (htmlColor('TextWarn'), htmlColor('TextBlue'), \
-            self.backupData.sp_pass))
+            self.backupData.spPass))
 
       QtWidgets.QMessageBox.information(self, self.tr('Success'), qmsg, QtWidgets.QMessageBox.Ok)
 

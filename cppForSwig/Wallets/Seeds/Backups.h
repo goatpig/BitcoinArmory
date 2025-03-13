@@ -19,12 +19,6 @@
 
 #define EASY16_INVALID_CHECKSUM_INDEX UINT8_MAX
 
-namespace BridgeProto
-{
-   class RestorePrompt;
-   class RestoreReply;
-}
-
 namespace capnp {
    class MessageBuilder;
 }
@@ -248,7 +242,7 @@ namespace Armory
       };
 
       ////////
-      enum RestorePromptType
+      enum class RestorePromptType : int
       {
          //invalid backup format
          FormatError = 1,
@@ -258,27 +252,54 @@ namespace Armory
 
          ChecksumError = 3,
 
+         //mismatch between expected backup type and resolved type
+         ChecksumMismatch = 4,
+
          //failed to decrypt secure print string
-         DecryptError = 4,
+         DecryptError = 5,
 
-         //requesting wallet's new passphrase
-         Passphrase = 5,
-
-         //requesting wallet's new control passphrase
-         Control = 6,
+         //requesting wallet privkey & control passphrases
+         Passphrases = 6,
 
          //present restored wallet's id
          Id = 7,
 
          //unknown wallet type
          TypeError = 8,
+
+         Success = 9
+      };
+
+      struct RestorePrompt
+      {
+         const RestorePromptType promptType;
+         std::map<uint8_t, int> checksumResult{};
+         std::string walletId{};
+         BackupType backupType{};
+         std::string error{};
+
+         bool needsReply(void) const;
+      };
+
+      struct PromptReply
+      {
+         const bool success;
+         const bool merge;
+         SecureBinaryData privPass{};
+         SecureBinaryData controlPass{};
+      };
+
+      struct RestoreResult
+      {
+         std::shared_ptr<Wallets::AssetWallet> wltPtr;
+         const bool merge;
+         const SecureBinaryData controlPass;
       };
 
       ////
       struct Helpers
       {
-         using UserPrompt = std::function<BinaryData(
-            std::unique_ptr<capnp::MessageBuilder>)>;
+         using UserPrompt = std::function<PromptReply(const RestorePrompt&)>;
 
          //backup methods
          static std::unique_ptr<WalletBackup> getWalletBackup(
@@ -293,10 +314,13 @@ namespace Armory
          static std::unique_ptr<Backup_Base58> getBase58BackupString(
             std::unique_ptr<ClearTextSeed>);
 
-         //restore methods
-         static std::shared_ptr<Wallets::AssetWallet> restoreFromBackup(
+         //primary restore call
+         static RestoreResult restoreFromBackup(
             std::unique_ptr<WalletBackup>, const UserPrompt&,
-               const Wallets::WalletCreationParams&);
+            const Wallets::WalletCreationParams&
+         );
+
+         //seed restore methods
          static std::unique_ptr<ClearTextSeed> restoreFromEasy16(
             std::unique_ptr<WalletBackup>, const UserPrompt&, BackupType&);
          static std::unique_ptr<ClearTextSeed> restoreFromBase58(

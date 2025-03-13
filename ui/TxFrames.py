@@ -149,7 +149,6 @@ class SendBitcoinsFrame(ArmoryFrame):
       self.altBalance = None
       self.useCustomListInFull = False
       self.wlt = wlt
-      self.wltID = wlt.uniqueIDB58 if wlt else None
       self.wltIDList = wltIDList
       self.selectWltCallback = selectWltCallback
       self.sendCallback = sendCallback
@@ -166,17 +165,9 @@ class SendBitcoinsFrame(ArmoryFrame):
       self.shuffleEntries = True
       self.freeOfErrors = True
 
-      def getWalletIdList(onlyOfflineWallets):
-         result = []
-         if onlyOfflineWallets:
-            result = self.main.getWatchingOnlyWallets()
-         else:
-            result = list(self.main.walletIDList)
-         return result
-
       self.wltIDList = wltIDList
       if wltIDList == None:
-         self.wltIDList = getWalletIdList(onlyOfflineWallets)
+         self.wltIDList = self.main.wallets.getWalletIdList(onlyOfflineWallets)
 
       feetip = createToolTipWidget(\
             self.tr('Transaction fees go to users who contribute computing power to '
@@ -199,8 +190,8 @@ class SendBitcoinsFrame(ArmoryFrame):
       self.radioSpecify = QtWidgets.QRadioButton(self.tr('Specify a change address'))
       self.lblChangeAddr = QRichLabel(self.tr('Change:'))
 
-      addrWidgets = self.main.createAddressEntryWidgets(\
-         self, maxDetectLen=36, defaultWltID=self.wltID)
+      addrWidgets = self.main.createAddressEntryWidgets(self,
+         maxDetectLen=36, defaultWltID=self.wlt.dbId)
       self.edtChangeAddr  = addrWidgets['QLE_ADDR']
       self.btnChangeAddr  = addrWidgets['BTN_BOOK']
       self.lblAutoDetect  = addrWidgets['LBL_DETECT']
@@ -251,13 +242,13 @@ class SendBitcoinsFrame(ArmoryFrame):
          coinControlCallback = self.coinControlUpdate if self.main.usermode == USERMODE.Expert else None
          RBFcallback = self.RBFupdate if self.main.usermode == USERMODE.Expert else None
          self.frmSelectedWlt = SelectWalletFrame(parent, main,
-                     VERTICAL,
-                     self.wltID,
-                     wltIDList=self.wltIDList,
-                     selectWltCallback=self.setWallet, \
-                     coinControlCallback=coinControlCallback,
-                     onlyOfflineWallets=self.onlyOfflineWallets,
-                     RBFcallback=RBFcallback)
+            VERTICAL,
+            self.wlt.dbId,
+            wltIDList=self.wltIDList,
+            selectWltCallback=self.setWallet, \
+            coinControlCallback=coinControlCallback,
+            onlyOfflineWallets=self.onlyOfflineWallets,
+            RBFcallback=RBFcallback)
       else:
          self.frmSelectedWlt = LockboxSelectFrame(\
             parent, main, VERTICAL, self.lbox.uniqueIDB58)
@@ -454,15 +445,14 @@ class SendBitcoinsFrame(ArmoryFrame):
    # isDoubleClick is unused - do not accept or close dialog on double click
    def setWallet(self, wlt, isDoubleClick=False):
       self.wlt = wlt
-      self.wltID = wlt.uniqueIDB58 if wlt else None
       self.setupCoinSelectionInstance()
 
       if not TheBDM.getState() == BDM_BLOCKCHAIN_READY:
          self.lblSummaryBal.setText('(available when online)', color='DisableFG')
       if self.main.usermode == USERMODE.Expert:
          # Pre-set values based on settings
-         chngBehave = self.main.getWltSetting(self.wltID, 'ChangeBehavior')
-         chngAddr = self.main.getWltSetting(self.wltID, 'ChangeAddr')
+         chngBehave = wlt.getSetting('ChangeBehavior')
+         chngAddr = wlt.getSetting('ChangeAddr')
          if chngBehave == 'Feedback':
             self.chkDefaultChangeAddr.setChecked(True)
             self.radioFeedback.setChecked(True)
@@ -974,7 +964,7 @@ class SendBitcoinsFrame(ArmoryFrame):
             ustx.addOpReturnOutput(str(msg))
 
          #resolve signer before returning it
-         ustx.resolveSigner(self.wlt.uniqueIDB58)
+         ustx.resolveSigner(self.wlt.walletId)
 
       txValues = [totalSend, fee, totalChange]
       if not peek:
@@ -1030,7 +1020,7 @@ class SendBitcoinsFrame(ArmoryFrame):
                            QtWidgets.QMessageBox.Ok)
                   TheSignalExecution.executeMethod(signTxLastStep, success)
 
-               ustx.signTx(self.wlt.uniqueIDB58, finalizeSignTx, self)
+               ustx.signTx(self.wlt.walletId, finalizeSignTx, self)
 
             except:
                LOGEXCEPT('Problem sending transaction!')
@@ -1168,7 +1158,7 @@ class SendBitcoinsFrame(ArmoryFrame):
 
       if self.main.usermode == USERMODE.Expert:
          if not self.chkDefaultChangeAddr.isChecked():
-            self.main.setWltSetting(self.wltID, 'ChangeBehavior', selectedBehavior)
+            self.wlt.setSetting('ChangeBehavior', selectedBehavior)
          else:
             if self.radioFeedback.isChecked():
                selectedBehavior = 'Feedback'
@@ -1188,11 +1178,11 @@ class SendBitcoinsFrame(ArmoryFrame):
                   changeAddrStr = script_to_addrStr(scrP2SH)
 
       if self.main.usermode == USERMODE.Expert and self.chkRememberChng.isChecked():
-         self.main.setWltSetting(self.wltID, 'ChangeBehavior', selectedBehavior)
+         self.wlt.setSetting('ChangeBehavior', selectedBehavior)
          if selectedBehavior == 'Specify' and len(changeAddrStr) > 0:
-            self.main.setWltSetting(self.wltID, 'ChangeAddr', changeAddrStr)
+            self.wlt.setSetting('ChangeAddr', changeAddrStr)
       else:
-         self.main.setWltSetting(self.wltID, 'ChangeBehavior', 'NewAddr')
+         self.wlt.setSetting('ChangeBehavior', 'NewAddr')
 
       return changeScript,selectedBehavior
 

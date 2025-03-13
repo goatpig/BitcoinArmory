@@ -58,12 +58,12 @@ LIST(APPEND LIBARMORYCOMMON_SOURCES
     ${SEEDS_SOURCES}
     ${SIGNER_SOURCES}
     ${BLOCKDB_SOURCES}
-    gtest/NodeUnitTest.cpp
+    gtest/MockedNode.cpp
 )
 
 IF (ENABLE_TESTS)
     LIST(APPEND LIBARMORYCOMMON_SOURCES
-        gtest/NodeUnitTest.cpp
+        gtest/MockedNode.cpp
     )
     ADD_DEFINITIONS(-DUNIT_TESTS)
 ENDIF ()
@@ -190,7 +190,7 @@ SET(LIBARMORYCLI_SOURCES
     Server.cpp
     StringSockets.cpp
     ZeroConf.cpp
-    gtest/NodeUnitTest.cpp
+    gtest/MockedNode.cpp
 )
 
 ADD_LIBRARY(ArmoryCLI

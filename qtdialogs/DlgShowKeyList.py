@@ -75,7 +75,7 @@ class DlgShowKeyList(ArmoryDialog):
       self.txtBox.setFont(txtFont)
       self.txtBox.setMinimumWidth(w)
       self.txtBox.setMaximumWidth(w)
-      self.txtBox.setMinimumHeight(h * 3.2)
+      self.txtBox.setMinimumHeight(int(h * 3.2))
       self.txtBox.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Preferred)
 
       # Create a list of checkboxes and then some ID word to identify what

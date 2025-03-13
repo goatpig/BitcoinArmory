@@ -27,18 +27,16 @@ class DlgReplaceWallet(ArmoryDialog):
       super(DlgReplaceWallet, self).__init__(parent, main)
 
       lblDesc = QtWidgets.QLabel(self.tr(
-                       '<b>You already have this wallet loaded!</b><br>'
-                       'You can choose to:<br>'
-                       '- Cancel wallet restore operation<br>'
-                       '- Set new password and fix any errors<br>'
-                       '- Overwrite old wallet (delete comments & labels)<br>'))
+         '<b>You already have this wallet loaded!</b><br>'
+         'You can choose to:<br>'
+         '- Cancel wallet restore operation<br>'
+         '- Set new password and fix any errors<br>'
+         '- Overwrite old wallet (delete comments & labels)<br>'))
 
       self.WalletID = WalletID
       self.main = main
       self.Meta = None
       self.output = 0
-
-      self.wltPath = main.walletMap[WalletID].walletPath
 
       self.btnAbort = QtWidgets.QPushButton(self.tr('Cancel'))
       self.btnReplace = QtWidgets.QPushButton(self.tr('Overwrite'))
@@ -60,43 +58,10 @@ class DlgReplaceWallet(ArmoryDialog):
 
    #########
    def Replace(self):
-      self.main.removeWalletFromApplication(self.WalletID)
-
-      datestr = RightNowStr('%Y-%m-%d-%H%M')
-      homedir = os.path.dirname(self.wltPath)
-
-      oldpath = os.path.join(homedir, self.WalletID, datestr)
-      try:
-         if not os.path.exists(oldpath):
-            os.makedirs(oldpath)
-      except:
-         LOGEXCEPT('Cannot create new folder in dataDir! Missing credentials?')
-         self.reject()
-         return
-
-      oldname = os.path.basename(self.wltPath)
-      self.newname = os.path.join(oldpath, '%s_old.wallet' % (oldname[0:-7]))
-
-      os.rename(self.wltPath, self.newname)
-
-      backup = '%s_backup.wallet' % (self.wltPath[0:-7])
-      if os.path.exists(backup):
-         os.remove(backup)
-
-      self.output =1
+      self.output = 1
       self.accept()
 
    #########
    def SaveMeta(self):
-      raise Exception("regression, fix me")
-      '''
-      from armoryengine.PyBtcWalletRecovery import PyBtcWalletRecovery
-
-      metaProgress = DlgProgress(self, self.main, Title=self.tr('Ripping Meta Data'))
-      getMeta = PyBtcWalletRecovery()
-      self.Meta = metaProgress.exec_(getMeta.ProcessWallet,
-                                     WalletPath=self.wltPath,
-                                     Mode=RECOVERMODE.Meta,
-                                     Progress=metaProgress.UpdateText)
-      self.Replace()
-      '''
+      self.output = 2
+      self.accept()

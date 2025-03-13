@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2021, goatpig                                          //
+//  Copyright (C) 2016-2025, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -25,6 +25,8 @@
 #define RPC_PORT_MAINNET 8332
 #define RPC_PORT_TESTNET 18332
 #define RPC_PORT_REGTEST 18443
+
+#define BDM_FATAL_ERROR_CODE INT_MIN
 
 enum BDMPhase
 {

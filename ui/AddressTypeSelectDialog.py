@@ -22,6 +22,10 @@ selectorDescriptions[AddressEntryType_P2PKH] = str(
       'Legacy address type. Backwards compatible.'
    )
 
+selectorDescriptions[AddressEntryType_P2PKH + AddressEntryType_Uncompressed] = str(
+      'Legacy address type. Backwards compatible.'
+   )
+
 selectorDescriptions[(AddressEntryType_P2SH + AddressEntryType_P2WPKH)] = str(
       'P2WPKH (SegWit script) nested in P2SH script. Any wallet can pay to '
       'this address type. Only wallets supporting SegWit can spend from it.'
@@ -76,7 +80,7 @@ class AddressTypeSelectDialog(ArmoryDialog):
 
    def addTypeFrame(self, addrType):
       #radio button
-      addrTypeStr = TheBridge.getNameForAddrType(addrType)
+      addrTypeStr = TheBridge.utils.getNameForAddrType(addrType)
       radioBtn = QtWidgets.QRadioButton(addrTypeStr)
       def setAddrType():
          self.selectType(addrType)

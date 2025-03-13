@@ -13,12 +13,14 @@
 from qtpy import QtCore, QtGui, QtWidgets
 
 from armoryengine.ArmoryUtils import DEFAULT_RECEIVE_TYPE
+from armoryengine.Settings import TheSettings
 from armoryengine.BDM import TheBDM, BDM_OFFLINE
+from armoryengine.WalletUtils import WalletTypes, determineWalletType
 
 from armorycolors import Colors
-from qtdialogs.qtdefines import determineWalletType, STRETCH, \
+from qtdialogs.qtdefines import STRETCH, \
    STYLE_RAISED, QRichLabel, tightSizeStr, makeHorizFrame, \
-   makeVertFrame, WLTTYPES, tightSizeNChar, STYLE_SUNKEN, MSGBOX, \
+   makeVertFrame, tightSizeNChar, STYLE_SUNKEN, MSGBOX, \
    createToolTipWidget
 from qtdialogs.ArmoryDialog import ArmoryDialog
 from qtdialogs.QRCodeWidget import QRCodeWidget
@@ -43,7 +45,7 @@ class DlgNewAddressDisp(ArmoryDialog):
 
       self.addrStr = self.addr.getAddressString()
       wlttype = determineWalletType(self.wlt, self.main)[0]
-      notMyWallet = (wlttype == WLTTYPES.WatchOnly)
+      notMyWallet = (wlttype == WalletTypes.WatchOnly)
 
       lblDescr = QtWidgets.QLabel(self.tr('The following address can be used to receive bitcoins:'))
       self.edtNewAddr = QtWidgets.QLineEdit()
@@ -110,7 +112,7 @@ class DlgNewAddressDisp(ArmoryDialog):
       lblCommDescr.setWordWrap(True)
       self.edtComm = QtWidgets.QTextEdit()
       tightHeight = tightSizeNChar(self.edtComm, 1)[1]
-      self.edtComm.setMaximumHeight(tightHeight * 3.2)
+      self.edtComm.setMaximumHeight(int(tightHeight * 3.2))
 
       frmComment = QtWidgets.QFrame()
       frmComment.setFrameStyle(QtWidgets.QFrame.Shape(STYLE_RAISED))
@@ -128,7 +130,7 @@ class DlgNewAddressDisp(ArmoryDialog):
       lblRecvWlt.setMinimumWidth(tightSizeStr(lblRecvWlt, lblRecvWlt.text())[0])
 
       lblRecvWltID = QtWidgets.QLabel(\
-            '<b>"%s"</b>  (%s)' % (wlt.labelName, wlt.uniqueIDB58))
+            '<b>"%s"</b>  (%s)' % (wlt.labelName, wlt.getDisplayStr()))
       lblRecvWltID.setWordWrap(True)
       lblRecvWltID.setTextFormat(QtCore.Qt.RichText)
       lblRecvWltID.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
@@ -218,9 +220,9 @@ class DlgNewAddressDisp(ArmoryDialog):
 
 ################################################################################
 def ShowRecvCoinsWarningIfNecessary(wlt, parent, main):
-   numTimesOnline = main.getSettingOrSetDefault("SyncSuccessCount", 0)
+   numTimesOnline = TheSettings.getSettingOrSetDefault("SyncSuccessCount", 0)
    if numTimesOnline < 1 and not TheBDM.getState() == BDM_OFFLINE:
-      result = QtWidgets.QMessageBox.warning(main, main.tr('Careful!'), main.tr(
+      result = QtWidgets.QMessageBox.warning(main, self.tr('Careful!'), self.tr(
          'Armory is not online yet, and will eventually need to be online to '
          'access any funds sent to your wallet.  Please <u><b>do not</b></u> '
          'receive Bitcoins to your Armory wallets until you have successfully '
@@ -234,10 +236,10 @@ def ShowRecvCoinsWarningIfNecessary(wlt, parent, main):
          return False
 
    wlttype = determineWalletType(wlt, main)[0]
-   notMyWallet = (wlttype == WLTTYPES.WatchOnly)
-   offlineWallet = (wlttype == WLTTYPES.Offline)
-   dnaaPropName = 'Wallet_%s_%s' % (wlt.uniqueIDB58, 'DNAA_RecvOther')
-   dnaaThisWallet = main.getSettingOrSetDefault(dnaaPropName, False)
+   notMyWallet = (wlttype == WalletTypes.WatchOnly)
+   offlineWallet = (wlttype == WalletTypes.Offline)
+   dnaaPropName = 'Wallet_%s_%s' % (wlt.getDisplayStr(), 'DNAA_RecvOther')
+   dnaaThisWallet = TheSettings.getSettingOrSetDefault(dnaaPropName, False)
    if notMyWallet and not dnaaThisWallet:
       result = MsgBoxWithDNAA(parent, main, MSGBOX.Warning, parent.tr('This is not your wallet!'), parent.tr(
             'You are getting an address for a wallet that '
@@ -249,7 +251,7 @@ def ShowRecvCoinsWarningIfNecessary(wlt, parent, main):
             'wallet on a separate computer), then please change the '
             '"Belongs To" field in the wallet-properties for this wallet.'), \
             parent.tr('Do not show this warning again'), wCancel=True)
-      main.writeSetting(dnaaPropName, result[1])
+      TheSettings.writeSetting(dnaaPropName, result[1])
       return result[0]
 
    if offlineWallet and not dnaaThisWallet:
@@ -264,6 +266,6 @@ def ShowRecvCoinsWarningIfNecessary(wlt, parent, main):
             'address.  Instead, change the wallet properties "Belongs To" field '
             'to specify that this wallet is not actually yours.'), \
             parent.tr('Do not show this warning again'), wCancel=True)
-      main.writeSetting(dnaaPropName, result[1])
+      TheSettings.writeSetting(dnaaPropName, result[1])
       return result[0]
    return True

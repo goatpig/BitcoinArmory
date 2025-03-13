@@ -9,6 +9,7 @@
 #include "BDM_Server.h"
 #include "ArmoryErrors.h"
 #include "SocketWritePayload.h"
+#include "BlockchainDatabase/BlockUtils.h"
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>
@@ -372,6 +373,7 @@ namespace {
          default:
             auto builder = ReplyBuilder::getNew(bdv);
             auto bdvReply = prepareReply(builder);
+
             builder.setError("invalid bdv request");
             return builder;
       }
@@ -509,8 +511,7 @@ namespace {
             wltPtr->setConfTarget(request.getSetConfTarget());
 
             //push refersh notif for the wallet
-            BinaryData idBd(walletId.data(), walletId.size());
-            bdv->flagRefresh(BDV_refreshSkipRescan, idBd, nullptr);
+            bdv->flagRefresh(BDV_refreshSkipRescan, walletId, nullptr);
             break;
          }
 
@@ -527,8 +528,7 @@ namespace {
             wltPtr->unregisterAddresses(addresses);
 
             //push refersh notif for the wallet
-            BinaryData idBd(walletId.data(), walletId.size());
-            bdv->flagRefresh(BDV_registrationCompleted, idBd, nullptr);
+            bdv->flagRefresh(BDV_registrationCompleted, walletId, nullptr);
             break;
          }
 
@@ -734,19 +734,16 @@ namespace {
       {
          case StaticRequest::Which::SHUTDOWN:
          {
+            std::string theirCookie = request.getCookie();
             const auto& thisCookie = Armory::Config::NetworkSettings::cookie();
-            if (thisCookie.empty()) {
+            if (thisCookie.empty() || thisCookie != theirCookie) {
                //we do not inform the caller whether we accept cookies or not
                break;
             }
 
-            auto shutdownLambda = [clients](void)->void
-            {
-               clients->exitRequestLoop();
-            };
             //run shutdown sequence in its own thread so that the server listen
             //loop can exit properly.
-            std::thread shutdownThr(shutdownLambda);
+            std::thread shutdownThr([]{ WebSocketServer::shutdown(); });
             if (shutdownThr.joinable()) {
                shutdownThr.detach();
             }
@@ -755,8 +752,8 @@ namespace {
 
          case StaticRequest::Which::SHUTDOWN_NODE:
          {
-            if (clients->bdmT()->bdm()->nodeRPC_ != nullptr) {
-               clients->bdmT()->bdm()->nodeRPC_->shutdown();
+            if (clients->bdm()->nodeRPC_ != nullptr) {
+               clients->bdm()->nodeRPC_->shutdown();
             }
             break;
          }
@@ -810,12 +807,12 @@ namespace {
                rawZcVec.emplace_back(txData.begin(), txData.end());
             }
             clients->p2pBroadcast(bdvId, rawZcVec);
-            break;
+            return nullptr;
          }
 
          case StaticRequest::Which::GET_NODE_STATUS:
          {
-            auto nodeStatus = clients->bdmT()->bdm()->getNodeStatus();
+            auto nodeStatus = clients->bdm()->getNodeStatus();
 
             auto nodeReply = staticReply.initGetNodeStatus();
             nodeReply.setNode((Codec::Types::NodeStatus::NodeState)nodeStatus.state_);
@@ -836,7 +833,7 @@ namespace {
          {
             try {
                std::string strat = request.getGetFeeSchedule();
-               auto nodePtr = clients->bdmT()->bdm()->nodeRPC_;
+               auto nodePtr = clients->bdm()->nodeRPC_;
                auto feeSchedule = nodePtr->getFeeSchedule(strat);
                auto capnFeeSchedule = staticReply.initGetFeeSchedule(feeSchedule.size());
 
@@ -856,7 +853,7 @@ namespace {
 
          case StaticRequest::Which::GET_HEADERS_BY_HEIGHT:
          {
-            auto bcPtr = clients->bdmT()->bdm()->blockchain();
+            auto bcPtr = clients->bdm()->blockchain();
             if (bcPtr == nullptr) {
                reply.setSuccess(false);
                reply.setError("invalid bcPtr");
@@ -887,7 +884,7 @@ namespace {
 
          case StaticRequest::Which::GET_TOP_BLOCK_HEIGHT:
          {
-            auto bcPtr = clients->bdmT()->bdm()->blockchain();
+            auto bcPtr = clients->bdm()->blockchain();
             if (bcPtr != nullptr) {
                auto top = bcPtr->top();
                staticReply.setGetTopBlockHeight(top->getBlockHeight());
@@ -969,8 +966,8 @@ std::vector<uint8_t>& BDV_Server_Object::getScratchPad()
 
 ///////////////////////////////////////////////////////////////////////////////
 BDV_Server_Object::BDV_Server_Object(
-   const std::string& id, BlockDataManagerThread *bdmT) :
-   BlockDataViewer(bdmT->bdm()), bdvID_(id), bdmT_(bdmT)
+   const std::string& id, std::shared_ptr<BlockDataManager> bdm) :
+   BlockDataViewer(bdm), bdvID_(id)
 {
    setup();
 }
@@ -981,11 +978,7 @@ void BDV_Server_Object::startThreads()
    if (started_.fetch_or(1, std::memory_order_relaxed) != 0) {
       return;
    }
-
-   auto initLambda = [this](void)->void
-   { this->init(); };
-
-   initT_ = std::thread(initLambda);
+   initT_ = std::thread([this]{ this->init(); });
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1002,7 +995,7 @@ void BDV_Server_Object::haltThreads()
 ///////////////////////////////////////////////////////////////////////////////
 void BDV_Server_Object::init()
 {
-   bdmPtr_->blockUntilReady();
+   bdm_->blockUntilReady();
    while (true) {
       std::map<std::string, WalletRegistrationRequest> wltMap;
 
@@ -1021,7 +1014,7 @@ void BDV_Server_Object::init()
       auto batch = std::make_shared<RegistrationBatch>();
       batch->isNew_ = false;
 
-      //fill with addresses from protobuf payloads
+      //fill with addresses from proto payloads
       for (const auto& wlt : wltMap) {
          for (const auto& addr : wlt.second.addresses) {
             batch->scrAddrSet_.insert(addr);
@@ -1031,22 +1024,24 @@ void BDV_Server_Object::init()
       //callback only serves to wait on the registration event
       auto promPtr = std::make_shared<std::promise<bool>>();
       auto fut = promPtr->get_future();
-      auto callback = [promPtr](std::set<BinaryDataRef>&)->void
+      auto callback = [promPtr](std::set<BinaryDataRef>, bool success)->void
       {
-         promPtr->set_value(true);
+         promPtr->set_value(success);
       };
       batch->callback_ = callback;
 
       //register the batch
-      auto saf = bdmPtr_->getScrAddrFilter();
+      auto saf = bdm_->getScrAddrFilter();
       saf->pushAddressBatch(batch);
-      fut.get();
+      if (fut.get() == false) {
+         return;
+      }
 
       //addresses are now registered, populate the wallet maps
       populateWallets(wltMap);
    }
 
-   //could a wallet registration event get lost in between the init loop 
+   //could a wallet registration event get lost in between the init loop
    //and setting the promise?
 
    //init wallets
@@ -1059,7 +1054,7 @@ void BDV_Server_Object::init()
    auto zcAction = dynamic_cast<BDV_Notification_ZC*>(zcstruct.get());
    if (zcAction != nullptr &&
       !zcAction->packet_.scrAddrToTxioKeys_.empty()) {
-      scanWallets(move(zcstruct));
+      scanWallets(std::move(zcstruct));
    }
 
    //mark bdv object as ready
@@ -1162,11 +1157,8 @@ void BDV_Server_Object::processNotification(
          auto payload =
             std::dynamic_pointer_cast<BDV_Notification_Refresh>(notifPtr);
          refreshNotif.setType((uint32_t)payload->refresh_);
-
-         const auto& bdId = payload->refreshID_;
          auto refreshIds = refreshNotif.initIds(1);
-         refreshIds.set(0, capnp::Data::Builder(
-            (uint8_t*)bdId.getPtr(), bdId.getSize()));
+         refreshIds.set(0, payload->refreshID_);
          break;
       }
 
@@ -1217,6 +1209,9 @@ void BDV_Server_Object::processNotification(
          progressNotif.setTime(payload->time_);
          progressNotif.setNumericProgress(payload->numericProgress_);
 
+         if (payload->walletIDs_.empty()) {
+            break;
+         }
          auto progressIds = progressNotif.initIds(payload->walletIDs_.size());
          unsigned i=0;
          for (const auto& id : payload->walletIDs_) {
@@ -1299,8 +1294,7 @@ void BDV_Server_Object::registerWallet(WalletRegistrationRequest& regReq)
       const std::set<BinaryDataRef>& addrSet)->void
    {
       auto zcNotifPacket = createZcNotification(addrSet);
-      BinaryData wltId(walletId.data(), walletId.size());
-      flagRefresh(BDV_refreshAndRescan, wltId, std::move(zcNotifPacket));
+      flagRefresh(BDV_refreshAndRescan, walletId, std::move(zcNotifPacket));
    };
 
    //register wallet with BDV
@@ -1354,7 +1348,7 @@ void BDV_Server_Object::populateWallets(
 
 ////////////////////////////////////////////////////////////////////////////////
 void BDV_Server_Object::flagRefresh(
-   BDV_refresh refresh, const BinaryData& refreshID,
+   BDV_refresh refresh, const std::string& refreshID,
    std::unique_ptr<BDV_Notification_ZC> zcPtr)
 {
    auto notif = std::make_unique<BDV_Notification_Refresh>(
@@ -1520,18 +1514,19 @@ std::unique_ptr<BDV_Notification_ZC> BDV_Server_Object::createZcNotification(
 // Clients
 //
 ///////////////////////////////////////////////////////////////////////////////
-BlockDataManagerThread* Clients::bdmT() const
+Clients::Clients(std::shared_ptr<BlockDataManager> bdm) :
+   bdm_(bdm)
+{}
+
+///////////////////////////////////////////////////////////////////////////////
+std::shared_ptr<BlockDataManager> Clients::bdm() const
 {
-   return bdmT_;
+   return bdm_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void Clients::init(BlockDataManagerThread* bdmT,
-   std::function<void(void)> shutdownLambda)
+void Clients::init()
 {
-   bdmT_ = bdmT;
-   shutdownCallback_ = shutdownLambda;
-
    run_.store(true, std::memory_order_relaxed);
 
    auto mainthread = [this](void)->void {
@@ -1574,7 +1569,7 @@ void Clients::init(BlockDataManagerThread* bdmT,
    }
 
    auto callbackPtr = std::make_unique<ZeroConfCallbacks_BDV>(this);
-   bdmT_->bdm()->registerZcCallbacks(std::move(callbackPtr));
+   bdm_->registerZcCallbacks(std::move(callbackPtr));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1653,7 +1648,7 @@ void Clients::shutdown()
    if (!lock.try_lock()) {
       return;
    }
-   
+
    /*shutdown sequence*/
    if (!run_.load(std::memory_order_relaxed)) {
       return;
@@ -1683,32 +1678,12 @@ void Clients::shutdown()
    packetQueue_.terminate();
 
    //exit BDM maintenance thread
-   if (!bdmT_->shutdown()) {
-      return;
-   }
+   bdm_->shutdown();
 
-   std::vector<std::thread::id> idVec;
    for (auto& thr : controlThreads_) {
-      idVec.push_back(thr.get_id());
       if (thr.joinable()) {
          thr.join();
       }
-   }
-
-   //shutdown ZC container
-   bdmT_->bdm()->disableZeroConf();
-   bdmT_->bdm()->getScrAddrFilter()->shutdown();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void Clients::exitRequestLoop()
-{
-   /*terminate request processing loop*/
-   LOGINFO << "proceeding to shutdown";
-
-   //shutdown loop on server side
-   if (shutdownCallback_) {
-      shutdownCallback_();
    }
 }
 
@@ -1735,7 +1710,7 @@ bool Clients::registerBDV(const std::string& magicWord,
       return false;
    }
 
-   auto newBDV = std::make_shared<BDV_Server_Object>(bdvId, bdmT_);
+   auto newBDV = std::make_shared<BDV_Server_Object>(bdvId, bdm_);
    auto notiflbd = [this](std::unique_ptr<BDV_Notification> notifPtr)
    {
       this->outerBDVNotifStack_.push_back(std::move(notifPtr));
@@ -1795,10 +1770,10 @@ void Clients::unregisterBDVThread()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void Clients::notificationThread() const
+void Clients::notificationThread()
 {
-   if (bdmT_ == nullptr) {
-      throw std::runtime_error("invalid BDM thread ptr");
+   if (bdm_ == nullptr) {
+      throw std::runtime_error("BDM is null!");
    }
 
    while (true) {
@@ -1806,19 +1781,13 @@ void Clients::notificationThread() const
       std::shared_ptr<BDV_Notification> notifPtr;
 
       try {
-         notifPtr = std::move(bdmT_->bdm()->notificationStack_.pop_front(60s));
-         if (notifPtr == nullptr) {
-            continue;
-         }
+         notifPtr = std::move(bdm_->notificationStack_.pop_front(60s));
          timedout = false;
-      }
-      catch (const Threading::StackTimedOutException&) {
+      } catch (const Threading::StackTimedOutException&) {
          //nothing to do
-      }
-      catch (const Threading::StopBlockingLoop&) {
+      } catch (const Threading::StopBlockingLoop&) {
          return;
-      }
-      catch (const Threading::IsEmpty&) {
+      } catch (const Threading::IsEmpty&) {
          LOGERR << "caught isEmpty in Clients maintenance loop";
          continue;
       }
@@ -1828,12 +1797,20 @@ void Clients::notificationThread() const
          gcCommands_.push_back(true);
       }
 
-      //don't go any futher if there is no new top
-      if (timedout) {
+      //grab notif type and move it to bdv notif queue
+      if (notifPtr == nullptr) {
          continue;
       }
-
+      auto aType = notifPtr->action_type();
+      auto fatal = notifPtr->fatal();
       outerBDVNotifStack_.push_back(std::move(notifPtr));
+
+      //is this a fatal error notif?
+      if (aType == BDV_Error && fatal) {
+         std::thread shutdownThr([this]{ this->shutdown(); });
+         shutdownThr.detach();
+         return;
+      }
    }
 }
 
@@ -1983,7 +1960,7 @@ void Clients::broadcastThroughRPC()
       //create & set a zc batch for this tx
       Tx tx(*packet.rawTx_);
       std::vector<BinaryData> hashes = { tx.getThisHash() };
-      auto zcPtr = bdmT_->bdm()->zeroConfCont();
+      auto zcPtr = bdm_->zeroConfCont();
 
       //feed the watcher map with all relevant bdv ids
       {
@@ -2015,9 +1992,8 @@ void Clients::broadcastThroughRPC()
 
       //push to rpc
       std::string verbose;
-      auto result = bdmT_->bdm()->nodeRPC_->broadcastTx(
+      auto result = bdm_->nodeRPC_->broadcastTx(
          packet.rawTx_->getRef(), verbose);
-
       switch (ArmoryErrorCodes(result))
       {
          case ArmoryErrorCodes::Success:
@@ -2166,7 +2142,7 @@ void Clients::p2pBroadcast(
    const std::string& bdvId, std::vector<BinaryDataRef>& rawZCs)
 {
    //run through submitted ZCs, prune already mined ones
-   auto db = bdmT()->bdm()->getIFace();
+   auto db = bdm_->getIFace();
    for (auto& rawZcRef : rawZCs) {
       Tx tx(rawZcRef);
       auto hash = tx.getThisHash();
@@ -2248,7 +2224,7 @@ void Clients::p2pBroadcast(
    };
 
    //broadcast
-   bdmT()->bdm()->zeroConfCont_->broadcastZC(
+   bdm_->zeroConfCont_->broadcastZC(
       rawZCs, 5000, errorCallback, bdvId);
 }
 
