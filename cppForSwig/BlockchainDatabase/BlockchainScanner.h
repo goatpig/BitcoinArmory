@@ -71,9 +71,9 @@ public:
       startBlockFileID_(startID), targetBlockFileID_(endID),
       scriptRefMap_(scriptRefMap)
    {
-      if (end < start)
+      if (end < start) {
          throw std::runtime_error("end > start");
-
+      }
       blockCounter_.store(start_, std::memory_order_relaxed);
    }
 };
@@ -108,6 +108,7 @@ private:
    Armory::Threading::BlockingQueue<std::unique_ptr<ParserBatch>> commitQueue_;
 
    std::atomic<unsigned> completedBatches_;
+   std::atomic_uint32_t fatalError_;
 
 private:
    void writeBlockData(void);
@@ -139,8 +140,8 @@ public:
       unsigned threadcount, unsigned queue_depth,
       ProgressCallback prg, bool reportProgress);
 
-   void scan(int32_t startHeight);
-   void scan_nocheck(int32_t startHeight);
+   bool scan(int32_t startHeight);
+   bool scan_nocheck(int32_t startHeight);
 
    void undo(Blockchain::ReorganizationState& reorgState);
    void updateSSH(bool, int32_t startHeight);

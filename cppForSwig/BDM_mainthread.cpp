@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2021, goatpig                                          //
+//  Copyright (C) 2016-2025, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -13,13 +13,10 @@
 
 #include "BDM_mainthread.h"
 #include "BlockDataViewer.h"
-
 #include "nodeRPC.h"
 #include "BitcoinP2p.h"
-
 #include <ctime>
 
-using namespace std;
 using namespace Armory::Config;
 
 BDM_CallBack::~BDM_CallBack()
@@ -27,23 +24,21 @@ BDM_CallBack::~BDM_CallBack()
 
 BlockDataManagerThread::BlockDataManagerThread()
 {
-   pimpl = new BlockDataManagerThreadImpl;
-   pimpl->bdm = new BlockDataManager();
+   pimpl = std::make_unique<BlockDataManagerThreadImpl>();
+   pimpl->bdm = std::make_shared<BlockDataManager>([this]()->bool{
+      return this->shutdown();
+   });
 }
 
 BlockDataManagerThread::~BlockDataManagerThread()
 {
-   if (pimpl == nullptr)
+   if (pimpl == nullptr) {
       return;
-
-   if (pimpl->run)
-   {
-      LOGERR << "Destroying BlockDataManagerThread without shutting down first";
    }
-   else
-   {
-      delete pimpl;
-      pimpl = nullptr;
+   if (pimpl->run) {
+      LOGERR << "Destroying BlockDataManagerThread without shutting down first";
+   } else {
+      pimpl.reset();
    }
 }
 
@@ -51,50 +46,54 @@ void BlockDataManagerThread::start(BDM_INIT_MODE mode)
 {
    pimpl->mode = mode;
    pimpl->run = true;
-   pimpl->tID = thread(thrun, this);
+   pimpl->tID = std::thread(thrun, this);
 }
 
-BlockDataManager *BlockDataManagerThread::bdm()
+std::shared_ptr<BlockDataManager> BlockDataManagerThread::bdm()
 {
    return pimpl->bdm;
 }
 
 bool BlockDataManagerThread::shutdown()
 {
-   if (pimpl == nullptr)
+   if (pimpl == nullptr) {
       return false;
-   
-   pimpl->bdm->shutdownNotifications();
+   }
+   if (pimpl->run) {
+      pimpl->run = false;
 
-   if (!pimpl->run)
-      return true;
+      auto shutdownLbd = [bdmPtr=pimpl->bdm]()
+      {
+         bdmPtr->shutdown();
+         bdmPtr->cleanup();
+      };
+      std::thread shutdownThr(shutdownLbd);
+      if (shutdownThr.joinable()) {
+         shutdownThr.join();
+      }
+   }
 
-   pimpl->run = false;
-   pimpl->bdm->shutdownNode();
-
-   if (pimpl->tID.joinable())
+   if (pimpl->tID.joinable()) {
       pimpl->tID.join();
-
+   }
    return true;
 }
 
 void BlockDataManagerThread::join()
 {
-   if (pimpl->run) {
-      if (pimpl->tID.joinable()) {
-         pimpl->tID.join();
-      }
+   if (pimpl->tID.joinable()) {
+      pimpl->tID.join();
    }
 }
 
 void BlockDataManagerThread::run()
 try {
-   BlockDataManager *const bdm = this->bdm();
+   const auto bdm = this->bdm();
    if (bdm->hasException()) {
       return;
    }
 
-   promise<bool> isReadyPromise;
+   std::promise<bool> isReadyPromise;
    bdm->isReadyFuture_ = isReadyPromise.get_future();
 
    auto updateNodeStatusLambda = [bdm]()->void
@@ -136,26 +135,32 @@ try {
    unsigned mode = pimpl->mode & 0x00000003;
    bool clearZc = DBSettings::clearMempool();
 
+   bool success = false;
    switch (mode)
    {
       case 0:
-         bdm->doInitialSyncOnLoad(loadProgress);
+         success = bdm->doInitialSyncOnLoad(loadProgress);
          break;
 
       case 1:
-         bdm->doInitialSyncOnLoad_Rescan(loadProgress);
+         success = bdm->doInitialSyncOnLoad_Rescan(loadProgress);
          break;
 
       case 2:
-         bdm->doInitialSyncOnLoad_Rebuild(loadProgress);
+         success = bdm->doInitialSyncOnLoad_Rebuild(loadProgress);
          break;
 
       case 3:
-         bdm->doInitialSyncOnLoad_RescanBalance(loadProgress);
+         success = bdm->doInitialSyncOnLoad_RescanBalance(loadProgress);
          break;
 
       default:
-         throw runtime_error("invalid bdm init mode");
+         throw std::runtime_error("invalid bdm init mode");
+   }
+
+   if (!success) {
+      //db init failed, exit
+      return;
    }
 
    if (!DBSettings::checkChain()) {
@@ -178,13 +183,13 @@ try {
          auto purgePacket = purgeFuture.get();
 
          //notify bdvs
-         auto notifPtr = make_unique<BDV_Notification_NewBlock>(
+         auto notifPtr = std::make_unique<BDV_Notification_NewBlock>(
             std::move(reorgState), purgePacket);
          bdm->triggerOneTimeHooks(notifPtr.get());
          bdm->notificationStack_.push_back(std::move(notifPtr));
 
          std::stringstream ss;
-         ss << "found new top!" << endl;
+         ss << "found new top!" << std::endl;
          ss << "  hash: " << reorgState.newTop_->getThisHash().toHexStr() << std::endl;
          ss << "  height: " << reorgState.newTop_->getBlockHeight();
          LOGINFO << ss.str();
@@ -252,7 +257,3 @@ void* BlockDataManagerThread::thrun(void *_self)
    self->run();
    return 0;
 }
-
-
-// kate: indent-width 3; replace-tabs on;
-

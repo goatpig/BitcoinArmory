@@ -66,6 +66,7 @@
 #include <memory>
 #include <chrono>
 #include <atomic>
+#include <filesystem>
 
 #define FILEANDLINE "(" << __FILE__ << ":" << __LINE__ << ") "
 #define LOGERR    (LoggerObj(LogLvlError ).getLogStream() << FILEANDLINE )
@@ -76,14 +77,14 @@
 #define LOGDEBUG2 (LoggerObj(LogLvlDebug2).getLogStream() << FILEANDLINE )
 #define LOGDEBUG3 (LoggerObj(LogLvlDebug3).getLogStream() << FILEANDLINE )
 #define LOGDEBUG4 (LoggerObj(LogLvlDebug4).getLogStream() << FILEANDLINE )
-#define STARTLOGGING(LOGFILE, LOGLEVEL)         \
-                  Log::SetLogFile(LOGFILE);     \
-                  Log::SetLogLevel(LOGLEVEL);
-#define LOGDISABLESTDOUT()  Log::SuppressStdout(true)
-#define LOGENABLESTDOUT()   Log::SuppressStdout(false)
-#define SETLOGLEVEL(LOGLVL) Log::SetLogLevel(LOGLVL)
-#define FLUSHLOG()          Log::FlushStreams()
-#define CLEANUPLOG()        Log::CleanUp()
+#define STARTLOGGING(LOGFILE, LOGLEVEL) \
+   Log::setLogFile(LOGFILE); \
+   Log::setLogLevel(LOGLEVEL);
+#define LOGDISABLESTDOUT()  Log::suppressStdout(true)
+#define LOGENABLESTDOUT()   Log::suppressStdout(false)
+#define SETLOGLEVEL(LOGLVL) Log::setLogLevel(LOGLVL)
+#define FLUSHLOG()          Log::flush()
+#define CLEANUPLOG()        Log::cleanUp()
 
 #define LOGTIMEBUFLEN 30
 #define MAX_LOG_FILE_SIZE (500*1024)
@@ -108,247 +109,91 @@ typedef enum
 class LogStream
 {
 public:
-   virtual LogStream& operator<<(const char * str) = 0;
    virtual LogStream& operator<<(std::string const & str) = 0;
-   virtual LogStream& operator<<(int i) = 0;
-   virtual LogStream& operator<<(unsigned int i) = 0;
-   virtual LogStream& operator<<(unsigned long long int i) = 0;
-   virtual LogStream& operator<<(float f) = 0;
-   virtual LogStream& operator<<(double d) = 0;
-#if !defined(_MSC_VER) && !defined(__MINGW32__) && defined(__LP64__)
-   virtual LogStream& operator<<(size_t i) = 0;
-#endif
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 class DualStream : public LogStream
 {
+private:
+   std::ofstream           fout_;
+   std::filesystem::path   path_;
+   bool                    noStdout_;
+   std::mutex              mu_;
+
 public:
    DualStream(void) : noStdout_(false)
    {}
 
    void enableStdOut(bool);
+   void setLogFile(const std::filesystem::path&, size_t maxSz=MAX_LOG_FILE_SIZE);
+   void truncateFile(const std::filesystem::path&, size_t);
+   void flush(void);
+   void close(void);
+   bool isOpen(void);
+   const std::filesystem::path& path(void) const;
 
-   void setLogFile(std::string logfile, unsigned long long maxSz=MAX_LOG_FILE_SIZE)
-   {
-      fname_ = logfile;
-      truncateFile(fname_, maxSz);
-      fout_.open(fname_.c_str(), std::ios::app); 
-      fout_ << "\n\nLog file opened at " << NowTime() << ": " << fname_.c_str() << std::endl;
-   }
-
-   void truncateFile(std::string logfile, unsigned long long int maxSizeInBytes)
-   {
-      std::ifstream is(logfile.c_str(), std::ios::in|std::ios::binary);
-
-      // If file does not exist, nothing to do
-      if(!is.is_open())
-         return;
-   
-      // Check the filesize
-      is.seekg(0, std::ios::end);
-      unsigned long long int fsize = (size_t)is.tellg();
-      is.close();
-
-      if(fsize < maxSizeInBytes)
-      {
-         // If it's already smaller than max, we're done
-         return;
-      }
-      else
-      {
-         // Otherwise, seek to <maxSize> before end of log file
-         is.seekg(fsize - maxSizeInBytes);
-
-         // Allocate buffer to hold the rest of the file (about maxSizeInBytes)
-         unsigned long long int bytesToCopy = fsize - is.tellg();
-         char* lastBytes = new char[(unsigned int)bytesToCopy];
-         is.read(lastBytes, bytesToCopy);
-         is.close();
-         
-         // Create temporary file and dump the bytes there
-         std::string tempfile = logfile + std::string("temp");
-         std::ofstream os(tempfile.c_str(), std::ios::out| std::ios::binary);
-         os.write(lastBytes, bytesToCopy);
-         os.close();
-         delete[] lastBytes;
-
-         // Remove the original and rename the temp file to original
-         remove(logfile.c_str());
-         rename(tempfile.c_str(), logfile.c_str());
-      }
-   }
-
-   LogStream& operator<<(const char * str) override;
    LogStream& operator<<(std::string const & str) override;
-   LogStream& operator<<(int i) override;
-   LogStream& operator<<(unsigned int i) override;
-   LogStream& operator<<(unsigned long long int i) override;
-   LogStream& operator<<(float f) override;
-   LogStream& operator<<(double d) override;
-#if !defined(_MSC_VER) && !defined(__MINGW32__) && defined(__LP64__)
-   LogStream& operator<<(size_t i) override;
-#endif
-
-   void FlushStreams(void) {std::cout.flush(); fout_.flush();}
-
-   void newline(void) { *this << "\n"; }
-   void close(void) { fout_.close(); }
-
-   std::ofstream fout_;
-   std::string   fname_;
-   bool     noStdout_;
-   std::mutex mu_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 class NullStream : public LogStream
 {
 public:
-   LogStream& operator<<(const char *) override { return *this; }
    LogStream& operator<<(std::string const &) override { return *this; }
-   LogStream& operator<<(int) override { return *this; }
-   LogStream& operator<<(unsigned int) override { return *this; }
-   LogStream& operator<<(unsigned long long int) override { return *this; }
-   LogStream& operator<<(float) override { return *this; }
-   LogStream& operator<<(double) override { return *this; }
-#if !defined(_MSC_VER) && !defined(__MINGW32__) && defined(__LP64__)
-   LogStream& operator<<(size_t) override { return *this; }
-#endif
-
-   void FlushStreams(void) {}
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 class Log
 {
+private:
+   Log(const Log&);
+   Log& operator=(const Log&);
+
 public:
-   Log(void) : isInitialized_(false), disableStdout_(false) {}
+   Log(void);
+   ~Log(void);
 
-   static Log & GetInstance(const char * filename=nullptr)
-   {
-      while (true)
-      {
-         //lock free check and return if instance is valid
-         auto logPtr = theOneLog_.load(std::memory_order_acquire);
-         if (logPtr != nullptr)
-            return *logPtr;
+   LogStream& get(LogLevel level=LogLvlInfo);
 
-         //lock and instantiate
-         std::unique_lock<std::mutex> lock(mu_, std::defer_lock);
-         if (!lock.try_lock())
-            continue;
-    
-         // Create a Log object
-         Log* newLogPtr = new Log;
-    
-         // Open the filestream if available
-         if (filename != nullptr)
-         {
-            newLogPtr->ds_.setLogFile(std::string(filename));
-            newLogPtr->isInitialized_ = true;
-         }
+   static Log& getInstance(const std::filesystem::path& path={});
+   static void setLogFile(const std::filesystem::path&);
+   static void closeLogFile(void);
+   static void setLogLevel(LogLevel);
+   static void suppressStdout(bool b=true);
+   static const std::string_view& toString(LogLevel);
 
-         theOneLog_.store(newLogPtr, std::memory_order_release);
-         lock.unlock();
-
-         return *newLogPtr;
-      }
-   }
-
-   ~Log(void)
-   {
-      CloseLogFile();
-   }
-
-   LogStream& Get(LogLevel level = LogLvlInfo)
-   {
-      if((int)level > logLevel_ || !isInitialized_)
-         return ns_;
-      else 
-         return ds_;
-   }
-
-   static void SetLogFile(std::string logfile) { GetInstance(logfile.c_str()); }
-   static void CloseLogFile(void)
-   { 
-      GetInstance().ds_.FlushStreams();
-      GetInstance().ds_ << "Closing logfile.\n";
-      GetInstance().ds_.close();
-      // This doesn't actually seem to stop the StdOut logging... not sure why yet
-      GetInstance().isInitialized_ = false;
-      GetInstance().logLevel_ = LogLvlDisabled;
-   }
-
-   static void SetLogLevel(LogLevel level) { GetInstance().logLevel_ = (int)level; }
-   static void SuppressStdout(bool b=true) { GetInstance().ds_.enableStdOut(!b);}
-
-   static std::string ToString(LogLevel level)
-   {
-	   static const char* const buffer[] = {"DISABLED", "ERROR ", "WARN  ", "INFO  ", "DEBUG ", "DEBUG1", "DEBUG2", "DEBUG3", "DEBUG4"};
-      return buffer[level];
-   }
-
-    static bool isOpen(void) {return GetInstance().ds_.fout_.is_open();}
-    static std::string filename(void) {return GetInstance().ds_.fname_;}
-    static void FlushStreams(void) {GetInstance().ds_.FlushStreams();}
-
-    static void CleanUp(void) { delete &GetInstance(); }
+   static bool isOpen(void);
+   static const std::filesystem::path& filename(void);
+   static void flush(void);
+   static void cleanUp(void);
 
 protected:
-    DualStream ds_;
-    NullStream ns_;
-    int logLevel_ = LogLvlInfo;
-    bool isInitialized_ = false;
-    bool disableStdout_;
-private:
-    Log(const Log&);
-    Log& operator =(const Log&);
-    
-private:
-    static std::atomic<Log*> theOneLog_;
-    static std::mutex mu_;
+   DualStream ds_;
+   NullStream ns_;
+   LogLevel logLevel_ = LogLvlInfo;
+   bool isInitialized_ = false;
+   bool disableStdout_;
 
+private:
+   static std::atomic<Log*> theOneLog_;
+   static std::mutex mu_;
 };
-
-////////////////////////////////////////////////////////////////////////////////
-class StreamBuffer : public LogStream
-{
-private:
-   std::stringstream ss_;
-
-public:
-   StreamBuffer(void)
-   {}
-
-   LogStream& operator<<(const char * str) { ss_ << str; return *this; }
-   LogStream& operator<<(std::string const & str) { ss_ << str.c_str(); return *this; }
-   LogStream& operator<<(int i) { ss_ << i; return *this; }
-   LogStream& operator<<(unsigned int i) { ss_ << i; return *this; }
-   LogStream& operator<<(unsigned long long int i) { ss_ << i; return *this; }
-   LogStream& operator<<(float f) { ss_ << f; return *this; }
-   LogStream& operator<<(double d) { ss_ << d; return *this; }
-#if !defined(_MSC_VER) && !defined(__MINGW32__) && defined(__LP64__)
-   LogStream& operator<<(size_t i) { ss_ << i; return *this; }
-#endif
-
-   std::string str(void) { return ss_.str(); }
-};
-
 
 ////////////////////////////////////////////////////////////////////////////////
 class LoggerObj
 {
 private:
-   StreamBuffer buffer_;
+   std::stringstream buffer_;
+   LogLevel logLevel_;
 
 public:
    LoggerObj(LogLevel lvl) : logLevel_(lvl)
    {}
 
-   LogStream & getLogStream(void)
-   { 
-      buffer_ << "-" << Log::ToString(logLevel_);
+   std::stringstream& getLogStream(void)
+   {
+      buffer_ << "-" << Log::toString(logLevel_);
       buffer_ << "- " << NowTime() << ": ";
       return buffer_;
    }
@@ -359,15 +204,9 @@ public:
       buffer_ << "\n";
 
       //push buffer to log stream
-      LogStream & lg = Log::GetInstance().Get(logLevel_);
+      LogStream & lg = Log::getInstance().get(logLevel_);
       lg << buffer_.str();
-
-      //flush streams
-      //Log::GetInstance().FlushStreams();
    }
-
-private:
-   LogLevel logLevel_;
 };
 
 inline std::string NowTime()

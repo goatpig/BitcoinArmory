@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-2021, goatpig                                          //
+//  Copyright (C) 2016-2025, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -35,6 +35,7 @@ public:
    virtual BDV_Action action_type(void) = 0;
 
    const std::string& bdvID(void) const { return bdvID_; }
+   virtual bool fatal(void) const { return false; }
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -146,8 +147,7 @@ struct BDV_Notification_Error : public BDV_Notification
 {
    BDV_Error_Struct errStruct;
 
-   BDV_Notification_Error(
-      const std::string& bdvID,
+   BDV_Notification_Error(const std::string& bdvID,
       int errCode, const BinaryData& errData, const std::string& errStr) :
       BDV_Notification(bdvID)
    {
@@ -159,6 +159,11 @@ struct BDV_Notification_Error : public BDV_Notification
    BDV_Action action_type(void)
    {
       return BDV_Action::BDV_Error;
+   }
+
+   bool fatal(void) const override
+   {
+      return errStruct.errCode_ == BDM_FATAL_ERROR_CODE;
    }
 };
 

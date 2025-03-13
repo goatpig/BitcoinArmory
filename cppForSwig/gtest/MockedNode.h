@@ -101,9 +101,11 @@ public:
    void watcherProcess(void);
 
    std::map<unsigned, BinaryData> mineNewBlock(
-      BlockDataManager* bdm, unsigned count, const BinaryData& h160, double diff = 1.0);
+      std::shared_ptr<BlockDataManager> bdm,
+      unsigned count, const BinaryData& h160, double diff = 1.0);
    std::map<unsigned, BinaryData> mineNewBlock(
-      BlockDataManager* bdm, unsigned, Armory::Signing::ScriptRecipient*, double diff = 1.0);
+      std::shared_ptr<BlockDataManager> bdm,
+      unsigned, Armory::Signing::ScriptRecipient*, double diff = 1.0);
 
    std::vector<UnitTestBlock> getMinedBlocks(void) const { return blocks_; }
    void setReorgBranchPoint(std::shared_ptr<BlockHeader>);

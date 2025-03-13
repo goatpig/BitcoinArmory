@@ -66,7 +66,6 @@ int main(int argc, char* argv[])
          LOGERR << "ArmoryDB cannot start under these conditions. Shutting down!";
          LOGERR << "Make sure to shutdown the conflicting process" <<
             "before trying again (most likely another ArmoryDB instance)";
-
          exit(1);
       }
    }
@@ -79,18 +78,17 @@ int main(int argc, char* argv[])
       WebSocketServer::initAuthPeers(passLbd);
    }
 
-   //start up blockchain service
+   //start blockchain service
    bdmThread.start(DBSettings::initMode());
-
    if (!DBSettings::checkChain()) {
-      //start websocket server
-      WebSocketServer::start(&bdmThread, false);
+      WebSocketServer::start(bdmThread.bdm(), false);
    } else {
       bdmThread.join();
    }
 
    //stop all threads and clean up
    WebSocketServer::shutdown();
+   bdmThread.shutdown();
 
    shutdownBIP151CTX();
    CryptoECDSA::shutdown();

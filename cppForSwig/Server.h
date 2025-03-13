@@ -1,8 +1,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-18, goatpig.                                           //
+//  Copyright (C) 2016-2025, goatpig.                                         //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                      
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -31,7 +31,7 @@
 #define SERVER_AUTH_PEER_FILENAME "server.peers"
 
 class Clients;
-class BlockDataManagerThread;
+class BlockDataManager;
 
 ///////////////////////////////////////////////////////////////////////////////
 struct per_session_data__http {
@@ -162,7 +162,7 @@ public:
       void *user, void *in, size_t len);
 
    static void initAuthPeers(const PassphraseLambda&);
-   static void start(BlockDataManagerThread* bdmT, bool async);
+   static void start(std::shared_ptr<BlockDataManager>, bool);
    static void shutdown(void);
    static void waitOnShutdown(void);
    static SecureBinaryData getPublicKey(void);

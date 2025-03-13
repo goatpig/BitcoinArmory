@@ -50,7 +50,7 @@ struct AddressBatch
 ////
 struct RegistrationBatch : public AddressBatch
 {
-   std::function<void(std::set<BinaryDataRef>&)> callback_;
+   std::function<void(std::set<BinaryDataRef>, bool)> callback_;
    std::set<BinaryData> scrAddrSet_;
    bool isNew_;
    std::string walletID_;
@@ -148,7 +148,7 @@ class ScrAddrFilter
    4) Signal the wallet that the address is ready. Wallet object will take it
    up from there.
    ***/
-   
+
 private:
    const unsigned sdbiKey_;
    LMDBBlockDatabase *const lmdb_;
@@ -184,7 +184,6 @@ protected:
       scanThreadProgressCallback_;
 
 public:
-
    ScrAddrFilter(LMDBBlockDatabase* lmdb, unsigned sdbiKey)
       : sdbiKey_(sdbiKey), lmdb_(lmdb)
    {
@@ -244,8 +243,8 @@ public:
 //virtuals
 protected:
    virtual std::shared_ptr<ScrAddrFilter> getNew(unsigned) = 0;
-   virtual BinaryData applyBlockRangeToDB(
-      uint32_t startBlock, const std::vector<std::string>& wltIDs,
+   virtual bool applyBlockRangeToDB(uint32_t startBlock,
+      const std::vector<std::string>& wltIDs,
       bool reportProgress)=0;
    virtual std::shared_ptr<Blockchain> blockchain(void) const = 0;
    virtual bool bdmIsRunning(void) const = 0;

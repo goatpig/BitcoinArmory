@@ -52,7 +52,7 @@ int main(int argc, char* argv[])
 
    //turn on logging
    auto bridgeLogPath = Armory::Config::Pathing::logFilePath("bridgeLog");
-   STARTLOGGING(bridgeLogPath.string(), LogLvlDebug);
+   STARTLOGGING(bridgeLogPath, LogLvlDebug);
    LOGENABLESTDOUT();
 
    LOGINFO << "bridge log: " << bridgeLogPath.string();

@@ -81,57 +81,49 @@ Blockchain::ReorganizationState Blockchain::forceOrganize()
 void Blockchain::updateBranchingMaps(
    LMDBBlockDatabase* db, ReorganizationState& reorgState)
 {
-   map<unsigned, uint8_t> dupIDs;
-   map<unsigned, bool> blockIDs;
+   std::map<unsigned, uint8_t> dupIDs;
+   std::map<unsigned, bool> blockIDs;
 
-   try
-   {
-      shared_ptr<BlockHeader> headerPtr;
-      if (reorgState.prevTopStillValid_)
+   try {
+      HeaderPtr headerPtr;
+      if (reorgState.prevTopStillValid_) {
          headerPtr = reorgState.prevTop_;
-      else
+      } else {
          headerPtr = reorgState.reorgBranchPoint_;
-
-      if (!headerPtr->isInitialized())
+      }
+      if (!headerPtr->isInitialized()) {
          headerPtr = getGenesisBlock();
+      }
 
-      while(headerPtr->getThisHash() != reorgState.newTop_->getNextHash())
-      {
-         dupIDs.insert(make_pair(
-            headerPtr->getBlockHeight(), headerPtr->getDuplicateID()));
-         blockIDs.insert(make_pair(
-            headerPtr->getThisID(), headerPtr->isMainBranch()));
-         
+      while (headerPtr->getThisHash() != reorgState.newTop_->getNextHash()) {
+         dupIDs.emplace(
+            headerPtr->getBlockHeight(), headerPtr->getDuplicateID());
+         blockIDs.emplace(
+            headerPtr->getThisID(), headerPtr->isMainBranch());
+         if (headerPtr->getNextHash().empty()) {
+            break;
+         }
          headerPtr = getHeaderByHash(headerPtr->getNextHash());
       }
-   }
-   catch(exception&)
-   { 
+   } catch (const std::exception&) {
       LOGERR << "could not trace chain form prev top to new top";
    }
 
-   if (!reorgState.prevTopStillValid_)
-   {
-      try
-      {
+   if (!reorgState.prevTopStillValid_) {
+      try {
          auto headerPtr = reorgState.prevTop_;
-         while (headerPtr != reorgState.reorgBranchPoint_)
-         {
-            blockIDs.insert(make_pair(
-               headerPtr->getThisID(), headerPtr->isMainBranch()));
-
+         while (headerPtr != reorgState.reorgBranchPoint_) {
+            blockIDs.emplace(
+               headerPtr->getThisID(), headerPtr->isMainBranch());
             headerPtr = getHeaderByHash(headerPtr->getPrevHash());
          }
-      }
-      catch(exception&)
-      {
+      } catch (const std::exception&) {
          LOGERR << "could not trace chain form prev top to branch point";
       }
    }
 
    db->setValidDupIDForHeight(dupIDs);
    db->setBlockIDBranch(blockIDs);
-
    initTopBlockId(db);
 }
 
@@ -210,69 +202,50 @@ bool Blockchain::hasHeaderByHeight(unsigned height) const
    return true;
 }
 
-const shared_ptr<BlockHeader> Blockchain::getHeaderByHash(HashString const & blkHash) const
+////////////////////////////////////////////////////////////////////////////////
+Blockchain::HeaderPtr Blockchain::getHeaderByHash(const BinaryData& blkHash) const
 {
    auto headermap = headerMap_.get();
-
    auto it = headermap->find(blkHash);
-   if(it == headermap->end())
-      throw std::range_error("Cannot find block with hash " + blkHash.copySwapEndian().toHexStr());
-
+   if(it == headermap->end()) {
+      throw std::range_error(
+         "Cannot find block with hash " + blkHash.copySwapEndian().toHexStr());
+   }
    return it->second;
 }
 
-shared_ptr<BlockHeader> Blockchain::getHeaderById(uint32_t id) const
+////////////////////////////////////////////////////////////////////////////////
+Blockchain::HeaderPtr Blockchain::getHeaderById(uint32_t id) const
 {
    auto headermap = headersById_.get();
-
    auto headerIter = headermap->find(id);
-   if (headerIter == headermap->end())
-   {
+   if (headerIter == headermap->end()) {
       LOGERR << "cannot find block for id: " << id;
       throw std::range_error("Cannot find block by id");
    }
-
    return headerIter->second;
-}
-
-bool Blockchain::hasHeaderWithHash(BinaryData const & txHash) const
-{
-   auto headermap = headerMap_.get();
-   auto it = headermap->find(txHash);
-   if (it == headermap->end())
-      return false;
-
-   return true;
-}
-
-const shared_ptr<BlockHeader> Blockchain::getHeaderPtrForTxRef(const TxRef &txr) const
-{
-   if(txr.isNull())
-      throw std::range_error("Null TxRef");
-
-   uint32_t hgt = txr.getBlockHeight();
-   uint8_t  dup = txr.getDuplicateID();
-   auto bh = getHeaderByHeight(hgt, dup);
-   if(bh->getDuplicateID() != dup)
-   {
-      throw runtime_error("Requested txref not on main chain (BH dupID is diff)");
-   }
-   return bh;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Returns nullptr if the new top block is a direct follower of
 // the previous top. Returns the branch point if we had to reorg
-// TODO:  Figure out if there is an elegant way to deal with a forked 
-//        blockchain containing two equal-length chains
+// TODO: Figure out if there is an elegant way to deal with a forked
+//   blockchain containing two equal-length chains
 shared_ptr<BlockHeader> Blockchain::organizeChain(bool forceRebuild, bool verbose)
 {
+   std::unique_lock<std::mutex> lock(mu_);
+   if (forceRebuildFlag_) {
+      forceRebuild = true;
+      forceRebuildFlag_ = false;
+      LOGINFO << "chain was flagged for a forced rebuild";
+   }
+
    if (verbose) {
       TIMER_START("orgChain");
       LOGINFO << "Organizing chain " << (forceRebuild ? "w/ rebuild" : "");
    }
 
-   // If rebuild, we zero out any original organization data and do a 
+   // If rebuild, we zero out any original organization data and do a
    // rebuild of the chain from scratch.  This will need to be done in
    // the event that our first call to organizeChain returns false, which
    // means part of blockchain that was previously valid, has become
@@ -280,7 +253,7 @@ shared_ptr<BlockHeader> Blockchain::organizeChain(bool forceRebuild, bool verbos
    // than a second, anyway.
 
    auto headermap = headerMap_.get();
-   if(forceRebuild) {
+   if (forceRebuild) {
       for (const auto& headerPair : *headermap) {
          headerPair.second->difficultySum_  = -1;
          headerPair.second->blockHeight_ = 0;
@@ -320,9 +293,9 @@ shared_ptr<BlockHeader> Blockchain::organizeChain(bool forceRebuild, bool verbos
    orphans.clear();
 
    // Iterate over all blocks, track the maximum difficulty-sum block
-   for (auto &header_pair : *headermap) {
+   for (const auto& header_pair : *headermap) {
       // *** Walk down the chain following prevHash fields, until
-      //     you find a "solved" block.  Then walk back up and 
+      //     you find a "solved" block. Then walk back up and
       //     fill in the difficulty-sum values (do not set next-
       //     hash ptrs, as we don't know if this is the main branch)
       //     Method returns instantly if block is already "solved"
@@ -383,7 +356,7 @@ shared_ptr<BlockHeader> Blockchain::organizeChain(bool forceRebuild, bool verbos
       auto childIter = headermap->find(prevHash);
       if (childIter == headermap->end()) {
          LOGERR << "failed to get prev header by hash";
-         throw runtime_error("failed to get prev header by hash");
+         throw std::runtime_error("failed to get prev header by hash");
       }
 
       childIter->second->nextHash_ = thisHeaderPtr->getThisHash();
@@ -401,17 +374,18 @@ shared_ptr<BlockHeader> Blockchain::organizeChain(bool forceRebuild, bool verbos
    topBlockId_ = newTopBlock->getThisID();
    std::atomic_store(&topBlockPtr_, newTopBlock);
 
+   //cleanup helper containers
+   orphans.clear();
+
    // Force a full rebuild to make sure everything is marked properly
    // On a full rebuild, prevChainStillValid should ALWAYS be true
    if (!prevChainStillValid) {
+      // force-rebuild blockchain (takes less than 1s)
       LOGWARN << "Reorg detected!";
-
-      organizeChain(true); // force-rebuild blockchain (takes less than 1s)
+      lock.unlock();
+      organizeChain(true);
       return thisHeaderPtr;
    }
-
-   //cleanup helper containers
-   orphans.clear();
 
    if (verbose) {
       TIMER_STOP("orgChain");
@@ -570,7 +544,7 @@ void Blockchain::putNewBareHeaders(LMDBBlockDatabase *db)
       db->putStoredDBInfo(HEADERS, sdbiH, 0);
    }
 
-   //once commited to the DB, they aren't considered new anymore, 
+   //once commited to the DB, they aren't considered new anymore,
    //so clean up the container
    newlyParsedBlocks_ = std::move(unputHeaders);
 
@@ -717,6 +691,7 @@ void Blockchain::addBlocksInBulk(
                      ", new: " << header->getOffset();
                   header->setUniqueID(iter->second->getThisID());
                   commitHeader = true;
+                  forceRebuildFlag_ = true;
                }
             }
 

@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2024, goatpig                                          //
+//  Copyright (C) 2016-2025, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -17,7 +17,6 @@
 #include <stdint.h>
 #include <string>
 
-#include "BlockchainDatabase/BlockUtils.h"
 #include "BlockchainDatabase/txio.h"
 #include "BDV_Notification.h"
 #include "ZeroConf.h"
@@ -99,7 +98,7 @@ struct CombinedBalances
 class BlockDataViewer
 {
 public:
-   BlockDataViewer(BlockDataManager* bdm);
+   BlockDataViewer(std::shared_ptr<BlockDataManager> bdm);
    ~BlockDataViewer(void);
 
    /////////////////////////////////////////////////////////////////////////////
@@ -153,21 +152,8 @@ public:
    StoredHeader getBlockFromDB(uint32_t height, uint8_t dupID) const;
    bool scrAddressIsRegistered(const BinaryData& scrAddr) const;
 
-   bool isBDMRunning(void) const
-   {
-      if (bdmPtr_ == nullptr) {
-         return false;
-      }
-      return bdmPtr_->isRunning();
-   }
-
-   void blockUntilBDMisReady(void) const
-   {
-      if (bdmPtr_ == nullptr) {
-         throw std::runtime_error("no bdmPtr_");
-      }
-      bdmPtr_->blockUntilReady();
-   }
+   bool isBDMRunning(void) const;
+   void blockUntilBDMisReady(void) const;
 
    bool isTxOutSpentByZC(const BinaryData& dbKey) const
    { return zeroConfCont_->isTxOutSpentByZC(dbKey); }
@@ -215,7 +201,7 @@ public:
 
    Tx getSpenderTxForTxOut(uint32_t height, uint32_t txindex, uint16_t txoutid) const;
 
-   bool isZcEnabled() const { return bdmPtr_->isZcEnabled(); }
+   bool isZcEnabled(void) const;
 
    void flagRescanZC(bool flag)
    { rescanZC_.store(flag, std::memory_order_release); }
@@ -244,21 +230,15 @@ protected:
 protected:
    std::atomic<bool> rescanZC_;
 
-   BlockDataManager* bdmPtr_ = nullptr;
-   LMDBBlockDatabase*        db_;
-   std::shared_ptr<Blockchain>    bc_;
-   ZeroConfContainer*        zc_;
-   ScrAddrFilter*            saf_;
-
-   //Wanna keep the BtcWallet non copyable so the only existing object for
-   //a given wallet is in the registered* map. Don't want to save pointers
-   //to avoid cleanup snafus. Time for smart pointers
+   std::shared_ptr<BlockDataManager>   bdm_;
+   LMDBBlockDatabase*                  db_;
+   std::shared_ptr<Blockchain>         bc_;
+   ZeroConfContainer*                  zc_;
+   ScrAddrFilter*                      saf_;
 
    std::vector<WalletGroup> groups_;
-   
    uint32_t lastScanned_ = 0;
    const std::shared_ptr<ZeroConfContainer> zeroConfCont_;
-
    int32_t updateID_ = 0;
 };
 

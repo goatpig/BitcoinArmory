@@ -446,10 +446,11 @@ void LMDBBlockDatabase::openDatabases(const std::filesystem::path& basedir)
 }
 
 /////////////////////////////////////////////////////////////////////////////
-void LMDBBlockDatabase::closeDatabases(void)
+void LMDBBlockDatabase::closeDatabases()
 {
-   for (auto& dbPair : dbMap_)
+   for (auto& dbPair : dbMap_) {
       dbPair.second->close();
+   }
    dbMap_.clear();
    dbIsOpen_ = false;
 }
@@ -459,10 +460,7 @@ void LMDBBlockDatabase::replaceDatabases(
    DB_SELECT db, const string& swap_path)
 {
    /*replace a db underlying file with file [swap_path]*/
-
    auto full_swap_path = DatabaseContainer::getDbPath(swap_path);
-
-   //close db
    closeDB(db);
 
    //delete underlying files
@@ -479,7 +477,6 @@ void LMDBBlockDatabase::replaceDatabases(
    //rename lock file
    auto swap_lock = full_swap_path;
    swap_lock.append("-lock");
-
    std::filesystem::rename(swap_lock.c_str(), lock_name.c_str());
 
    //open db
@@ -495,7 +492,7 @@ void LMDBBlockDatabase::cycleDatabase(DB_SELECT db)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void LMDBBlockDatabase::resetHistoryDatabases(void)
+void LMDBBlockDatabase::resetHistoryDatabases()
 {
    if (getDbType() != ARMORY_DB_SUPER) {
       resetSSHdb();
@@ -1238,31 +1235,27 @@ void LMDBBlockDatabase::readAllHeaders(
 uint8_t LMDBBlockDatabase::getValidDupIDForHeight(uint32_t blockHgt) const
 {
    auto dupmap = validDupByHeight_.get();
-
    auto iter = dupmap->find(blockHgt);
-   if(iter == dupmap->end())
-   {
+   if (iter == dupmap->end()) {
       LOGERR << "Block height exceeds DupID lookup table";
       return UINT8_MAX;
    }
-
    return iter->second;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 void LMDBBlockDatabase::setValidDupIDForHeight(uint32_t blockHgt, uint8_t dup,
-                                               bool overwrite)
+   bool overwrite)
 {
-   if (!overwrite)
-   {
+   if (!overwrite) {
       auto dupmap = validDupByHeight_.get();
       auto iter = dupmap->find(blockHgt);
-
-      if(iter != dupmap->end() && iter->second != UINT8_MAX)
+      if(iter != dupmap->end() && iter->second != UINT8_MAX) {
          return;
+      }
    }
 
-   map<unsigned, uint8_t> updateMap;
+   std::map<unsigned, uint8_t> updateMap;
    updateMap[blockHgt] = dup;
    validDupByHeight_.update(updateMap);
 }

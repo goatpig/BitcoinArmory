@@ -47,7 +47,7 @@
 #include "../BitcoinP2p.h"
 #include "btc/ecc.h"
 
-#include "NodeUnitTest.h"
+#include "MockedNode.h"
 
 #ifdef _MSC_VER
 #ifdef mlock
@@ -137,8 +137,11 @@ namespace DBTestUtils
       Clients* clients, const std::string& bdvId,
       const std::string& delegateId, uint32_t pageId);
 
-   std::tuple<BinaryData, unsigned> waitOnSignal(Clients* clients, const std::string& bdvId, int signal);
+   std::tuple<BinaryData, unsigned> waitOnSignal(
+      Clients* clients, const std::string& bdvId, int signal);
+   void waitOnBDMSignal(std::shared_ptr<BlockDataManager>, BDV_Action);
    void waitOnBDMReady(Clients* clients, const std::string& bdvId);
+   void waitOnBDMError(std::shared_ptr<BlockDataManager>);
 
    std::tuple<BinaryData, unsigned> waitOnNewBlockSignal(Clients* clients, const std::string& bdvId);
    std::pair<std::vector<DBClientClasses::LedgerEntry>, std::set<BinaryData>>

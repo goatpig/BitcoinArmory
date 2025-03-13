@@ -17,7 +17,7 @@ endif
 noinst_LTLIBRARIES += gtest/libgtest.la
 gtest_libgtest_la_CXXFLAGS = $(AM_CXXFLAGS) $(UNIT_TEST_CXXFLAGS) $(LIBBTC_FLAGS)
 gtest_libgtest_la_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
-gtest_libgtest_la_SOURCES = gtest/TestUtils.cpp gtest/NodeUnitTest.cpp
+gtest_libgtest_la_SOURCES = gtest/TestUtils.cpp gtest/MockedNode.cpp
 gtest_libgtest_la_LIBADD = $(LIBARMORYCOMMON) $(LIBARMORYCLI) \
 				$(LIBBTC) \
 				-lgtest

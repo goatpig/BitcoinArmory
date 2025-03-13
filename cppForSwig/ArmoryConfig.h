@@ -119,6 +119,7 @@ namespace Armory
          static unsigned ramUsage_;
          static unsigned threadCount_;
          static unsigned zcThreadCount_;
+         static unsigned rewindCount_; 
 
          static bool reportProgress_;
          static bool checkChain_;
@@ -151,6 +152,7 @@ namespace Armory
          static unsigned threadCount(void) { return threadCount_; }
          static unsigned ramUsage(void) { return ramUsage_; }
          static unsigned zcThreadCount(void) { return zcThreadCount_; }
+         static unsigned rewindCount(void) { return rewindCount_; }
 
          static bool checkChain(void) { return checkChain_; }
          static BDM_INIT_MODE initMode(void) { return initMode_; }

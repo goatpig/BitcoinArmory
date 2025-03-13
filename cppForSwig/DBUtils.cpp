@@ -628,6 +628,7 @@ size_t FileUtils::getFileSize(const fs::path& path)
 // This only used in tests so far
 bool FileUtils::copy(const fs::path& src, const fs::path& dst, size_t nbytes)
 {
+   //TODO: force unbuffered read
    auto srcsz = getFileSize(src);
    if (srcsz == SIZE_MAX) {
       return false;
@@ -679,7 +680,7 @@ fs::path FileUtils::getUserHomePath()
 fs::path FileUtils::appendTagToPath(const fs::path& orig, const std::string& tag)
 {
    auto ext = orig.extension();
-   auto taggedName = fs::path(orig.stem().c_str() + tag + ext.c_str());
+   auto taggedName = fs::path{std::string(orig.stem().c_str() + tag + ext.c_str())};
    auto origCopy = orig;
    return origCopy.replace_filename(taggedName);
 }

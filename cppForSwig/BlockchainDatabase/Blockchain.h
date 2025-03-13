@@ -68,28 +68,20 @@ public:
    /**
     * organize/reorganize chain
    **/
-   ReorganizationState organize(bool verbose);
+   ReorganizationState organize(bool);
    ReorganizationState forceOrganize();
-   ReorganizationState findReorgPointFromBlock(const BinaryData& blkHash);
+   ReorganizationState findReorgPointFromBlock(const BinaryData&);
 
    void updateBranchingMaps(LMDBBlockDatabase*, ReorganizationState&);
 
-   std::shared_ptr<BlockHeader> top() const;
-   std::shared_ptr<BlockHeader> getGenesisBlock() const;
+   std::shared_ptr<BlockHeader> top(void) const;
+   std::shared_ptr<BlockHeader> getGenesisBlock(void) const;
    const std::shared_ptr<BlockHeader> getHeaderByHeight(
       unsigned height, uint8_t dupId) const;
    bool hasHeaderByHeight(unsigned height) const;
-   
-   const std::shared_ptr<BlockHeader> getHeaderByHash(HashString const & blkHash) const;
-   std::shared_ptr<BlockHeader> getHeaderById(uint32_t id) const;
 
-   bool hasHeaderWithHash(BinaryData const & txHash) const;
-   const std::shared_ptr<BlockHeader> getHeaderPtrForTxRef(const TxRef &txr) const;
-   
-   std::shared_ptr<const std::map<HashString, std::shared_ptr<BlockHeader>>> allHeaders(void) const
-   {
-      return headerMap_.get();
-   }
+   HeaderPtr getHeaderByHash(const BinaryData&) const;
+   HeaderPtr getHeaderById(uint32_t) const;
 
    void putBareHeaders(LMDBBlockDatabase *db, bool updateDupID=true);
    void putNewBareHeaders(LMDBBlockDatabase *db);
@@ -132,6 +124,7 @@ private:
    static const BinaryData topIdKey_;
 
    mutable std::mutex mu_;
+   bool forceRebuildFlag_ = false;
 };
 
 #endif
