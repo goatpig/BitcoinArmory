@@ -29,10 +29,6 @@ Unlike most open source projects, development takes place in the dev branch and 
 * GNU Compiler Collection  
  Linux:   Install package `g++`
 
-* Crypto++  
- Linux:   Install package `libcrypto++-dev`  
- Windows: [Download](https://www.cryptopp.com/#download)   
-
 * SWIG  
  Linux:   Install package `swig`  
  Windows: [Download](http://www.swig.org/download.html)  
@@ -41,6 +37,9 @@ Unlike most open source projects, development takes place in the dev branch and 
 * Python 2.6/2.7  
  Linux:   Install package `python-dev`  
  Windows: [Download](https://www.python.org/getit/)  
+
+* Python process management utilities
+ Linux:   Install package `python-psutil`
 
 * Python Twisted -- asynchronous networking  
  Linux:   Install package `python-twisted`  
@@ -51,7 +50,8 @@ Unlike most open source projects, development takes place in the dev branch and 
  Windows: [Download](https://riverbankcomputing.com/software/pyqt/download) 
 
 * qt4reactor.py -- combined eventloop for PyQt and Twisted  
- All OS:  [Download](https://launchpad.net/qt4reactor)  
+ Linux:   Install package `python-qt4reactor`
+ Windows:  [Download](https://launchpad.net/qt4reactor)
 
 * pywin32  
  Windows Only:  qt4reactor relies on pywin32 (for win32event module). [Download](https://sourceforge.net/projects/pywin32/files/pywin32/)  
@@ -60,8 +60,14 @@ Unlike most open source projects, development takes place in the dev branch and 
  (OPTIONAL - if you want to make a standalone executable in Windows)  
  Windows: [Download](http://www.py2exe.org/)  
 
-* LMDB - database engine, modified to suit Armory's use cases
-[LMDB page](http://symas.com/mdb/)
+* Crypto++ - crypto utilities, modified to suit Armory's use cases.
+It is included with the Armory source.  The original package can be
+found at the [Cryptopp page](https://www.cryptopp.com/).
+
+* LMDB - database engine, modified to suit Armory's use cases.
+It is included with the Armory source.  The original package can be
+found at the [LMDB page](http://symas.com/mdb/).
+
 
 * macOS
  [Instructions for downloading, verifying, and running Armory on macOS](README_macOS.md).
