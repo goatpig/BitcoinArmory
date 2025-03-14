@@ -20,8 +20,8 @@
 # macx-clang-libc++ option like Qt. (macx-g++ is all it can muster for now.)
 # NB: The "version" values must be updated alongside build-app.py!!!
 QTVER = 4.8.7
-SIPVER = 4.19.12
-PYVER = 2.7.15
+SIPVER = 4.19.13
+PYVER = 2.7.17
 QT_UNPACK_BASE = ../workspace/unpackandbuild/qt-everywhere-opensource-src-$${QTVER}
 SIP_UNPACK_BASE = ../workspace/unpackandbuild/sip-$${SIPVER}
 PYTHON_UNPACK_BASE = ../workspace/unpackandbuild/Python-$${PYVER}
@@ -56,8 +56,8 @@ QMAKE_LFLAGS += "-undefined dynamic_lookup"
 # Source: http://stackoverflow.com/questions/2355056/how-to-mix-qt-c-and-obj-c-cocoa
 # Source: http://el-tramo.be/blog/mixing-cocoa-and-qt
 # Source: http://stackoverflow.com/questions/18768219/sdl-framework-include-on-macos-qt
-QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.8
-QMAKE_OBJECTIVE_CFLAGS += -std=c++11 -Xarch_x86_64 -mmacosx-version-min=$${QMAKE_MACOSX_DEPLOYMENT_TARGET} -O2 -arch x86_64 -mssse3 -Wall -W -fPIC
+QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.9
+QMAKE_OBJECTIVE_CFLAGS += -std=c++11 -stdlib=libc++ -Xarch_x86_64 -mmacosx-version-min=$${QMAKE_MACOSX_DEPLOYMENT_TARGET} -O2 -arch x86_64 -mssse3 -Wall -W -fPIC
 OBJECTIVE_SOURCES += macdockiconhandler.mm macnotificationhandler.mm macutils.mm
 HEADERS += ./ArmoryMac.h
 LIBS += -framework Foundation

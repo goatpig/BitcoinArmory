@@ -18,26 +18,26 @@ from subprocess import Popen, PIPE
 from tempfile import mkstemp
 
 # Set some constants up front
-minOSXVer     = '10.8'
-pythonVer     = '2.7.15' # NB: ArmoryMac.pro must also be kept up to date!!!
+minOSXVer     = '10.9'
+pythonVer     = '2.7.17' # NB: ArmoryMac.pro must also be kept up to date!!!
 pyMajorVer    = '2.7'
 setToolVer    = '40.1.0'
 setToolSubdir = '5a/df/b2e3d9693bb0dcbeac516a73dd7a9eb82b126ae52e4a74605a9b01beddd5'
 pipVer        = '18.0'
 pipSubdir     = '69/81/52b68d0a4de760a2f1979b0931ba7889202f302072cc7a0d614211bc7579'
-psutilVer     = '5.4.7'
-psutilSubdir  = '7d/9a/1e93d41708f8ed2b564395edfa3389f0fd6d567597401c2e5e2775118d8b'
-libpngVer     = '1.6.35'
+psutilVer     = '5.6.7'
+psutilSubdir  = '73/93/4f8213fbe66fc20cb904f35e6e04e20b47b85bee39845cc66a0bcf5ccdcb'
+libpngVer     = '1.6.37'
 qtVer         = '4.8.7'   # NB: ArmoryMac.pro must also be kept up to date!!!
                           # Possibly "sipFlags" below too.
-sipVer        = '4.19.12' # NB: ArmoryMac.pro must also be kept up to date!!!
-pyQtVer       = '4.12.1'  # NB: When I'm upgraded, SIP might be upgraded too.
+sipVer        = '4.19.13' # NB: ArmoryMac.pro must also be kept up to date!!!
+pyQtVer       = '4.12.3'  # NB: When I'm upgraded, SIP might be upgraded too.
                           #     4.12.2 is final version & changes build method.
                           #     Just ignore it.
 
 # Used only if compiling a version that supports armoryd
-twistedVer    = '18.7.0'
-twistedSubdir = '90/50/4c315ce5d119f67189d1819629cae7908ca0b0a6c572980df5cc6942bc22'
+twistedVer    = '19.10.0'
+twistedSubdir = '0b/95/5fff90cd4093c79759d736e5f7c921c8eb7e5057a70d753cdb4e8e5895d7'
 
 # Various paths and build materials related to Armory.
 LOGFILE        = 'build-app.log.txt'
@@ -339,7 +339,7 @@ distfiles = []
 distfiles.append( [ 'Python', \
                     "Python-%s.tar.xz" % pythonVer, \
                     "https://python.org/ftp/python/%s/Python-%s.tar.xz" % (pythonVer, pythonVer), \
-                    "f99348a095ec4a6411c84c0d15343d11920c9724" ] )
+                    "dc5784d11d09c29fbf3fc155e2f242b3d3309454" ] )
 
 distfiles.append( [ 'setuptools', \
                     "setuptools-%s.zip" % setToolVer, \
@@ -354,12 +354,12 @@ distfiles.append( [ 'Pip', \
 distfiles.append( [ "psutil", \
                     "psutil-%s.tar.gz" % psutilVer, \
                     "https://pypi.python.org/packages/%s/psutil-%s.tar.gz" % (psutilSubdir, psutilVer), \
-                    "4c7c8cb5a4915eb7148a1080030f9097be87d3e4" ] )
+                    "96b5d98ec385b6ab08d703f8b75a8d371261437f" ] )
 
 distfiles.append( [ 'libpng', \
                     "libpng-%s.tar.xz" % libpngVer, \
                     "https://sourceforge.net/projects/libpng/files/libpng16/%s/libpng-%s.tar.xz" % (libpngVer, libpngVer), \
-                    "0df1561aa1da610e892239348970d574b14deed0" ] )
+                    "3ab93fabbf4c27e1c4724371df408d9a1bd3f656" ] )
 
 # When we upgrade to Qt5....
 #distfiles.append( [ "Qt", \
@@ -375,7 +375,7 @@ distfiles.append( [ "Qt", \
 distfiles.append( [ "sip", \
                     "sip-%s.tar.gz" % sipVer, \
                     "https://sourceforge.net/projects/pyqt/files/sip/sip-%s/sip-%s.tar.gz" % (sipVer, sipVer), \
-                    '9f4d0f05ab814ddcde767669cfb6bc184bba931d' ] )
+                    'acb826ca1a49742d17686cef246cceabcc87e3b9' ] )
 
 # When we upgrade to Qt5....
 #distfiles.append( [ "pyqt", \
@@ -386,12 +386,12 @@ distfiles.append( [ "sip", \
 distfiles.append( [ "pyqt", \
                     "PyQt4_gpl_mac-%s.tar.gz" % pyQtVer, \
                     "https://sourceforge.net/projects/pyqt/files/PyQt4/PyQt-%s/PyQt4_gpl_mac-%s.tar.gz" % (pyQtVer, pyQtVer), \
-                    '028f3fc979428687e8e8fd78288b41f1b5735a7c' ] )
+                    '5d4bb6eeb1a6fe6ba37b55c41d04dc2b5e5ebfba' ] )
 
 distfiles.append( [ 'Twisted', \
                     "Twisted-%s.tar.bz2" % twistedVer, \
                     "https://files.pythonhosted.org/packages/%s/Twisted-%s.tar.bz2" % (twistedSubdir, twistedVer), \
-                    "949c75da0426ca139a3128fecb484eeb7513087e" ] )
+                    "38a7f1b9c63ba0d2db553e2d210af2fd01b3ed21" ] )
 
 # Now repack the information in distfiles
 tarfilesToDL = {}
@@ -520,6 +520,10 @@ def compile_qt():
    execAndWait('patch -p1 < %s' % path.join(os.getcwd(), 'qt_cocoa_helpers_mac.patch'), cwd=qtBuildDir)
    # Xcode 9.3 (clang 9.1) breaks Qt4.
    execAndWait('patch -p1 < %s' % path.join(os.getcwd(), 'qt_clang9.1_fix.patch'), cwd=qtBuildDir)
+   # Disable SSLv3.
+   execAndWait('patch -p1 < %s' % path.join(os.getcwd(), 'qt4-no-ssl3.patch'), cwd=qtBuildDir)
+   # Homebrew only provides openssl 1.1 as 1.0 is deprecated.
+   execAndWait('patch -p1 < %s' % path.join(os.getcwd(), 'qt4-openssl-1.1.patch'), cwd=qtBuildDir)
 
    # Configure Qt. http://wiki.phisys.com/index.php/Compiling_Phi has an example
    # that can be checked for ideas.
@@ -533,6 +537,9 @@ def compile_qt():
    command += ' -opensource -nomake demos -nomake examples -nomake docs -cocoa '
    command += '-fast -release -no-webkit -no-javascript-jit -nomake tools '
    command += '-nomake tests -no-qt3support -arch x86_64 -no-3dnow -no-phonon '
+   command += '-no-sql-db2 -no-sql-ibase -no-sql-mysql -no-sql-oci -no-sql-odbc '
+   command += '-no-sql-psql -no-sql-sqlite -no-sql-sqlite2 -no-sql-sqlite_symbian '
+   command += '-no-sql-symsql -no-sql-tds '
    command += '-I %s/include -L %s/lib -platform unsupported/macx-clang-libc++'
    execAndWait(command % (qtInstDir, opensslPath, opensslPath), cwd=qtBuildDir)
 
@@ -573,6 +580,7 @@ def compile_sip():
    else:
       sipPath = unpack(tarfilesToDL['sip'])
       command  = 'python2 configure.py'
+      command += ' --arch x86_64'
       command += ' --destdir="%s"' % PYSITEPKGS
       command += ' --bindir="%s/bin"' % PYFRAMEBASE
       command += ' --incdir="%s/include"' % PYFRAMEBASE
@@ -667,7 +675,17 @@ def compile_objc_library():
    # For some reason, qmake mangles LFLAGS when LFLAGS is built. The exact cause
    # is unknown but probably has to do with a conf file included in
    # mkspecs/unsupported/macx-clang-libc++/qmake.conf. Patch the output for now.
-   execAndWait('patch -p0 < %s' % path.join(os.getcwd(), 'qmake_LFLAGS.patch'), cwd=OBJCDIR)
+   qmakeMakeile = path.join(OBJCDIR, 'Makefile')
+   with open(qmakeMakeile) as origFile:
+      makefileText = origFile.read()
+   makefileText = makefileText.replace("CFLAGS        = -pipe -mmacosx-version-min=10.7 -O2 -arch x86_64 -Wall -W -fPIC $(DEFINES)",
+    "CFLAGS        = -pipe -mmacosx-version-min=%s -O2 -arch x86_64 -Wall -W -fPIC $(DEFINES)" % minOSXVer, 1)
+   makefileText = makefileText.replace("CXXFLAGS      = -pipe -stdlib=libc++ -mmacosx-version-min=10.7 -fno-exceptions -pipe -std=c++11 -stdlib=libc++ -Xarch_x86_64 -mmacosx-version-min=%s -O2 -arch x86_64 -mssse3 -Wall -W -fPIC -O2 -arch x86_64 -Wall -W -fPIC $(DEFINES)" % minOSXVer,
+    "CXXFLAGS      = -pipe -fno-exceptions -pipe -std=c++11 -stdlib=libc++ -Xarch_x86_64 -mmacosx-version-min=%s -O2 -arch x86_64 -mssse3 -Wall -W -fPIC -O2 -arch x86_64 -Wall -W -fPIC $(DEFINES)" % minOSXVer, 1)
+   makefileText = makefileText.replace("LFLAGS        = -headerpad_max_install_names -stdlib=libc++ -mmacosx-version-min=10.7 -lc++ -undefined dynamic_lookup -arch x86_64 -single_module -dynamiclib",
+    "LFLAGS        = -headerpad_max_install_names -stdlib=libc++ -Xarch_x86_64 -mmacosx-version-min=%s -lc++ -undefined dynamic_lookup -single_module -dynamiclib -arch x86_64" % minOSXVer, 1)
+   with open(qmakeMakeile, "w") as origFile:
+      origFile.write(makefileText)
    execAndWait('make %s' % MAKEFLAGS, cwd=OBJCDIR)
 
 
