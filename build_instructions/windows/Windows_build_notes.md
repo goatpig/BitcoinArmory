@@ -8,7 +8,7 @@
 As you will be exclusively using **MSYS2 MINGW64**, make sure you have opened that and not the UCRT/MSYS/CLANG terminal.
 ```
 pacman -Syu
-pacman -S autoconf automake libtoolize mingw-w64-x86_64-gcc mingw-w64-x86_64-libevent mingw-w64-x86_64-make mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja git
+pacman -S autoconf automake libtool mingw-w64-x86_64-gcc mingw-w64-x86_64-libevent mingw-w64-x86_64-make mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja git
 ```
 Next, create a symlink for the cmake binary in order to use the cmake command in MinGW64:
 
@@ -53,7 +53,7 @@ It is strongly recommended to pick a single folder in which you will download al
    **Note**: Make sure you build off of the mdb.master branch, or else mmap will eat up all your free disk space!
    ```
    git clone https://github.com/LMDB/lmdb.git
-   cd libraries/liblmdb
+   cd lmdb/libraries/liblmdb
    make
    ```
 4. [Cap'n Proto](https://github.com/capnproto/capnproto):
@@ -67,6 +67,7 @@ It is strongly recommended to pick a single folder in which you will download al
    ninja
    ```
 # 5. Building BitcoinArmory
+  **Note**: Currently, make sure you build off of the loading_wallets branch, or else the build will fail!
 ```
 git clone https://github.com/goatpig/BitcoinArmory
 cd BitcoinArmory
