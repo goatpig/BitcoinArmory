@@ -185,3 +185,4 @@ armoryengine/c20*
 
 /build
 *.rcc
+armoryengine/libc20p1305deps.dll
