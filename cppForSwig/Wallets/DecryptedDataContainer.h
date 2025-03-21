@@ -96,7 +96,7 @@ namespace Armory
             /*
             The default encryption key is used to encrypt the master encryption
             in case no passphrase was provided at wallet creation. This is to
-            prevent for the master key being written in plain text on disk. It
+            prevent the master key being written in plain text on disk. It
             is encryption but does not effectively result in the wallet being
             protected by encryption, since the default encryption key is written
             on disk in plain text.
@@ -109,7 +109,6 @@ namespace Armory
 
             const SecureBinaryData defaultKdfId_;
             const EncryptionKeyId masterEncryptionKeyId_;
-
 
          protected:
             std::map<EncryptionKeyId,
@@ -162,6 +161,7 @@ namespace Armory
             std::shared_ptr<KeyDerivationFunction> getKdf(
                const SecureBinaryData&) const;
             void addEncryptionKey(std::shared_ptr<EncryptionKey>);
+            std::shared_ptr<EncryptionKey> getEncryptionKey(const EncryptionKeyId&) const;
 
             void updateOnDisk(void);
             void updateOnDisk(std::unique_ptr<IO::DBIfaceTransaction>);
@@ -182,7 +182,8 @@ namespace Armory
             void resetPassphraseLambda(void) { getPassphraseLambda_ = nullptr; }
 
             void encryptEncryptionKey(
-               const EncryptionKeyId& keyID, const BinaryData& kdfID,
+               const EncryptionKeyId&,
+               const BinaryData&, const BinaryData&, //kdf in, out
                const std::function<SecureBinaryData(void)>&, bool replace = true);
             void eraseEncryptionKey(
                const EncryptionKeyId& keyID, const BinaryData& kdfID);

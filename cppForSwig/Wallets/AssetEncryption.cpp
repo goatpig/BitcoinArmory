@@ -25,9 +25,11 @@ KeyDerivationFunction::~KeyDerivationFunction()
 {}
 
 ////////////////////////////////////////////////////////////////////////////////
+// KeyDerivationFunction_Romix
+////////////////////////////////////////////////////////////////////////////////
 KeyDerivationFunction_Romix::KeyDerivationFunction_Romix(
-   uint32_t unlockTime_ms) :
-   KeyDerivationFunction(), salt_((initialize(unlockTime_ms)))
+   const std::chrono::milliseconds& unlockTime) :
+   KeyDerivationFunction(), salt_((initialize(unlockTime)))
 {}
 
 ////
@@ -55,10 +57,11 @@ BinaryData KeyDerivationFunction_Romix::computeID() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-BinaryData KeyDerivationFunction_Romix::initialize(uint32_t unlockTime_ms)
+BinaryData KeyDerivationFunction_Romix::initialize(
+   const std::chrono::milliseconds& unlockTime)
 {
    KdfRomix kdf;
-   kdf.computeKdfParams(unlockTime_ms);
+   kdf.computeKdfParams(unlockTime);
    iterations_ = kdf.getNumIterations();
    memTarget_ = kdf.getMemoryReqtBytes();
    return kdf.getSalt();
@@ -148,19 +151,21 @@ BinaryData KeyDerivationFunction_Romix::serialize() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const BinaryData& KeyDerivationFunction_Romix::getId(void) const
+const BinaryData& KeyDerivationFunction_Romix::getId() const
 {
-   if (id_.getSize() == 0)
-      id_ = move(computeID());
+   if (id_.empty()) {
+      id_ = std::move(computeID());
+   }
    return id_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool KeyDerivationFunction_Romix::isSame(KeyDerivationFunction* const kdf) const
+bool KeyDerivationFunction_Romix::isSame(const KeyDerivationFunction* kdf) const
 {
-   auto kdfromix = dynamic_cast<KeyDerivationFunction_Romix*>(kdf);
-   if (kdfromix == nullptr)
+   auto kdfromix = dynamic_cast<const KeyDerivationFunction_Romix*>(kdf);
+   if (kdfromix == nullptr) {
       return false;
+   }
 
    return iterations_ == kdfromix->iterations_ &&
       memTarget_ == kdfromix->memTarget_ &&
@@ -187,6 +192,38 @@ void KeyDerivationFunction_Romix::prettyPrint() const
    cout << "   Memory/thread: " << memTarget_ << " bytes" << endl;
    cout << "   NumIterations: " << iterations_ << endl;
    cout << "   Salt         : " << salt_.toHexStr() << endl;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// KeyDerivationFunction_Passthrough
+////////////////////////////////////////////////////////////////////////////////
+KeyDerivationFunction_Passthrough::KeyDerivationFunction_Passthrough() :
+   KeyDerivationFunction(), id_{BinaryData::fromString(passthroughKdfId)}
+{}
+
+KeyDerivationFunction_Passthrough::~KeyDerivationFunction_Passthrough()
+{}
+
+const BinaryData& KeyDerivationFunction_Passthrough::getId() const
+{
+   return id_;
+}
+
+SecureBinaryData KeyDerivationFunction_Passthrough::deriveKey(
+   const SecureBinaryData& key) const
+{
+   return key;
+}
+
+bool KeyDerivationFunction_Passthrough::isSame(
+   const KeyDerivationFunction* rhs) const
+{
+   return rhs->getId() == getId();
+}
+
+BinaryData KeyDerivationFunction_Passthrough::serialize() const
+{
+   throw std::runtime_error("passthrough kdf cannot be serialized");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -500,9 +537,8 @@ bool EncryptionKey::removeCipherData(const EncryptionKeyId& id)
 ////////////////////////////////////////////////////////////////////////////////
 bool EncryptionKey::addCipherData(std::unique_ptr<CipherData> dataPtr)
 {
-   auto insertIter = cipherDataMap_.insert(make_pair(
-      dataPtr->cipher_->getEncryptionKeyId(), move(dataPtr)));
-
+   auto insertIter = cipherDataMap_.emplace(
+      dataPtr->cipher_->getEncryptionKeyId(), move(dataPtr));
    return insertIter.second;
 }
 
@@ -592,29 +628,36 @@ unique_ptr<EncryptionKey> EncryptionKey::deserialize(const BinaryDataRef& data)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+std::set<BinaryData> EncryptionKey::getKdfIds() const
+{
+   std::set<BinaryData> result;
+   for (const auto& cipherData : cipherDataMap_) {
+      result.emplace(cipherData.second->cipher_->getKdfId());
+   }
+   return result;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 //
 //// ClearTextEncryptionKey
 //
 ////////////////////////////////////////////////////////////////////////////////
 void ClearTextEncryptionKey::deriveKey(
-   shared_ptr<Encryption::KeyDerivationFunction> kdf)
+   std::shared_ptr<Encryption::KeyDerivationFunction> kdf)
 {
-   if (derivedKeys_.find(kdf->getId()) != derivedKeys_.end())
+   if (derivedKeys_.find(kdf->getId()) != derivedKeys_.end()) {
       return;
-
-   auto&& derivedkey = kdf->deriveKey(rawKey_);
-   auto&& keypair = make_pair(kdf->getId(), move(derivedkey));
-   derivedKeys_.insert(move(keypair));
+   }
+   auto derivedkey = kdf->deriveKey(rawKey_);
+   derivedKeys_.emplace(kdf->getId(), std::move(derivedkey));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 unique_ptr<ClearTextEncryptionKey> ClearTextEncryptionKey::copy() const
 {
    auto key_copy = rawKey_;
-   auto copy_ptr = make_unique<ClearTextEncryptionKey>(key_copy);
-
+   auto copy_ptr = std::make_unique<ClearTextEncryptionKey>(key_copy);
    copy_ptr->derivedKeys_ = derivedKeys_;
-
    return copy_ptr;
 }
 
@@ -623,9 +666,9 @@ EncryptionKeyId ClearTextEncryptionKey::getId(
    const BinaryData& kdfId) const
 {
    const auto keyIter = derivedKeys_.find(kdfId);
-   if (keyIter == derivedKeys_.end())
-      throw runtime_error("couldn't find derivation for kdfid");
-
+   if (keyIter == derivedKeys_.end()) {
+      throw std::runtime_error("couldn't find derivation for kdfid");
+   }
    return computeId(keyIter->second);
 }
 
@@ -633,9 +676,11 @@ EncryptionKeyId ClearTextEncryptionKey::getId(
 EncryptionKeyId ClearTextEncryptionKey::computeId(
    const SecureBinaryData& key) const
 {
+   //NOTE: this only ever uses the kdf id, why?
+
    //treat value as scalar, get pubkey for it
-   auto&& hashedKey = BtcUtils::hash256(key);
-   auto&& pubkey = CryptoECDSA().ComputePublicKey(hashedKey);
+   auto hashedKey = BtcUtils::hash256(key);
+   auto pubkey = CryptoECDSA().ComputePublicKey(hashedKey);
 
    //HMAC the pubkey, get last 16 bytes as ID
    return EncryptionKeyId(

@@ -3183,10 +3183,12 @@ TEST_F(WalletInterfaceTest, Passphrase_Test)
       //create wallet iface with empty passphrase lambda
       start = std::chrono::system_clock::now();
       IO::WalletDBInterface dbIface;
-      dbIface.setupEnv(IO::OpenFileParams{
-         dbPath2, passEmpty, 600ms, false});
-      auto end = std::chrono::system_clock::now();
-      EXPECT_LE(end-start, 50ms);
+      dbIface.setupEnv(IO::OpenFileParams{dbPath2, passEmpty, 600ms, false});
+      end = std::chrono::system_clock::now();
+
+      //it should take 600ms since even though the kdf isn't used, it has to be setup
+      EXPECT_GE(end-start, 600ms);
+      EXPECT_LE(end-start, 650ms);
 
       //close iface
       dbIface.shutdown();
@@ -3204,6 +3206,9 @@ TEST_F(WalletInterfaceTest, Passphrase_Test)
          start = std::chrono::system_clock::now();
          dbIface.setupEnv(IO::OpenFileParams{dbPath2, passLbd2});
          auto end = std::chrono::system_clock::now();
+
+         //it should be almost instant, since the 600ms kdf will not be used,
+         //as no passphrase was set
          EXPECT_LE(end-start, 50ms);
 
          dbIface.shutdown();
@@ -5468,14 +5473,16 @@ TEST_F(WalletsTest, ChangePassphrase_FromUnencryptedWallet_Test)
    //create wallet from priv key
    IO::CreationParams params{
       homedir_,
-      {}, 1ms,
-      SecureBinaryData::fromString("control"), 1ms,
+      {}, 1200ms,
+      SecureBinaryData::fromString("control"), 100ms,
       4
    };
 
    auto rawEntropy = CryptoPRNG::generateRandom(32);
    std::unique_ptr<Armory::Seeds::ClearTextSeed> seed(
       new Armory::Seeds::ClearTextSeed_Armory135(rawEntropy));
+   auto seed135 = dynamic_cast<ClearTextSeed_Armory135*>(seed.get());
+   auto clearRoot = seed135->getRoot();
    auto assetWlt = AssetWallet_Single::createFromSeed(
       std::move(seed), params);
 
@@ -5488,18 +5495,34 @@ TEST_F(WalletsTest, ChangePassphrase_FromUnencryptedWallet_Test)
    auto asset0_single = std::dynamic_pointer_cast<AssetEntry_Single>(asset0);
    ASSERT_NE(asset0_single, nullptr);
 
-   //check the wallet has no passphrase
-   auto emptyPassLbd = []
-      (const std::set<EncryptionKeyId>&)->SecureBinaryData
-   {
-      return {};
-   };
+   auto root = assetWlt->getRoot();
+   auto root_single = std::dynamic_pointer_cast<AssetEntry_Single>(root);
+   ASSERT_NE(root_single, nullptr);
 
-   assetWlt->setPassphrasePromptLambda(emptyPassLbd);
+   //check the wallet has no passphrase
+   assetWlt->setPassphrasePromptLambda(
+      [](const std::set<EncryptionKeyId>&)->SecureBinaryData {
+         throw std::runtime_error("should not get this far");
+      });
+
    {
+      //decrypt the root, should not hit the lambda
       auto lock = assetWlt->lockDecryptedContainer();
+      auto start = std::chrono::system_clock::now();
+      auto& decryptedKey = assetWlt->getDecryptedValue(root_single->getPrivKey());
+      auto end = std::chrono::system_clock::now();
+      ASSERT_EQ(decryptedKey, clearRoot);
+      EXPECT_LE(end-start, 50ms);
+   }
+
+   {
+      //decrypt an asset, should not hit the lambda
+      auto lock = assetWlt->lockDecryptedContainer();
+      auto start = std::chrono::system_clock::now();
       auto& decryptedKey = assetWlt->getDecryptedValue(asset0_single->getPrivKey());
+      auto end = std::chrono::system_clock::now();
       ASSERT_EQ(decryptedKey, privkey_ex);
+      EXPECT_LE(end-start, 50ms);
    }
 
    //try to add passhrase to an unencrypted wallet, should fail
@@ -5516,12 +5539,31 @@ TEST_F(WalletsTest, ChangePassphrase_FromUnencryptedWallet_Test)
    }
 
    //encrypt with new pass
-   assetWlt->changePrivateKeyPassphrase(changePassLbd);
+   {
+      auto start = std::chrono::system_clock::now();
+      assetWlt->changePrivateKeyPassphrase(changePassLbd);
+      auto end = std::chrono::system_clock::now();
+      EXPECT_GE(end-start, 1200ms);
+      EXPECT_LE(end-start, 1350ms);
+   }
 
    //check the wallet can't be decrypted without a passphrase anymore
+   assetWlt->setPassphrasePromptLambda(
+      [](const std::set<EncryptionKeyId>&)->SecureBinaryData {
+         return {};
+      });
+
    try {
       auto lock = assetWlt->lockDecryptedContainer();
       assetWlt->getDecryptedValue(asset0_single->getPrivKey());
+      ASSERT_TRUE(false);
+   } catch (const DecryptedDataContainerException& e) {
+      EXPECT_EQ(e.what(), std::string{"empty passphrase"});
+   }
+
+   try {
+      auto lock = assetWlt->lockDecryptedContainer();
+      assetWlt->getDecryptedValue(root_single->getPrivKey());
       ASSERT_TRUE(false);
    } catch (const DecryptedDataContainerException& e) {
       EXPECT_EQ(e.what(), std::string{"empty passphrase"});
@@ -5533,20 +5575,32 @@ TEST_F(WalletsTest, ChangePassphrase_FromUnencryptedWallet_Test)
    {
       return newPass;
    };
-
    assetWlt->setPassphrasePromptLambda(newPassLbd);
    {
+      auto start = std::chrono::system_clock::now();
       auto lock = assetWlt->lockDecryptedContainer();
       auto& decryptedKey = assetWlt->getDecryptedValue(asset0_single->getPrivKey());
+      auto end = std::chrono::system_clock::now();
       ASSERT_EQ(decryptedKey, privkey_ex);
+      EXPECT_GE(end-start, 1200ms);
+      EXPECT_LE(end-start, 1300ms);
+   }
+
+   {
+      auto start = std::chrono::system_clock::now();
+      auto lock = assetWlt->lockDecryptedContainer();
+      auto& decryptedKey = assetWlt->getDecryptedValue(root_single->getPrivKey());
+      auto end = std::chrono::system_clock::now();
+      ASSERT_EQ(decryptedKey, clearRoot);
+      EXPECT_GE(end-start, 1200ms);
+      EXPECT_LE(end-start, 1300ms);
    }
 
    //try to add the same passphrase
    try {
       assetWlt->addPrivateKeyPassphrase(changePassLbd);
       ASSERT_TRUE(false);
-   } catch (const DecryptedDataContainerException& e)
-   {
+   } catch (const DecryptedDataContainerException& e) {
       EXPECT_EQ(e.what(), std::string{"cipher data already present in encryption key"});
    }
 
@@ -5563,13 +5617,25 @@ TEST_F(WalletsTest, ChangePassphrase_FromUnencryptedWallet_Test)
    {
       return newPass2;
    };
-   assetWlt->addPrivateKeyPassphrase(changePass2Lbd);
+   {
+      auto start = std::chrono::system_clock::now();
+      assetWlt->addPrivateKeyPassphrase(changePass2Lbd);
+      auto end = std::chrono::system_clock::now();
+      EXPECT_GE(end-start, 2400ms);
+      EXPECT_LE(end-start, 2600ms);
+   }
 
    //check old pass works
    {
+      auto start = std::chrono::system_clock::now();
       auto lock = assetWlt->lockDecryptedContainer();
-      auto& decryptedKey = assetWlt->getDecryptedValue(asset0_single->getPrivKey());
+      auto decryptedKey = assetWlt->getDecryptedValue(asset0_single->getPrivKey());
       ASSERT_EQ(decryptedKey, privkey_ex);
+      decryptedKey = assetWlt->getDecryptedValue(root_single->getPrivKey());
+      ASSERT_EQ(decryptedKey, clearRoot);
+      auto end = std::chrono::system_clock::now();
+      EXPECT_GE(end-start, 1200ms);
+      EXPECT_LE(end-start, 1300ms);
    }
 
    //check new pass works
@@ -5581,9 +5647,15 @@ TEST_F(WalletsTest, ChangePassphrase_FromUnencryptedWallet_Test)
 
    assetWlt->setPassphrasePromptLambda(newPass2Lbd);
    {
+      auto start = std::chrono::system_clock::now();
       auto lock = assetWlt->lockDecryptedContainer();
-      auto& decryptedKey = assetWlt->getDecryptedValue(asset0_single->getPrivKey());
+      auto decryptedKey = assetWlt->getDecryptedValue(asset0_single->getPrivKey());
       ASSERT_EQ(decryptedKey, privkey_ex);
+      decryptedKey = assetWlt->getDecryptedValue(root_single->getPrivKey());
+      ASSERT_EQ(decryptedKey, clearRoot);
+      auto end = std::chrono::system_clock::now();
+      EXPECT_GE(end-start, 1200ms);
+      EXPECT_LE(end-start, 1300ms);
    }
 
    //delete old pass
@@ -5611,12 +5683,36 @@ TEST_F(WalletsTest, ChangePassphrase_FromUnencryptedWallet_Test)
       EXPECT_EQ(counter, 5U);
    }
 
+   counter=0;
+   try {
+      auto lock = assetWlt->lockDecryptedContainer();
+      assetWlt->getDecryptedValue(root_single->getPrivKey());
+      ASSERT_TRUE(false);
+   } catch (const DecryptedDataContainerException& e) {
+      EXPECT_EQ(e.what(), std::string{"empty passphrase"});
+      EXPECT_EQ(counter, 5U);
+   }
+
    //check new pass works
    assetWlt->setPassphrasePromptLambda(newPass2Lbd);
    {
+      auto start = std::chrono::system_clock::now();
       auto lock = assetWlt->lockDecryptedContainer();
       auto& decryptedKey = assetWlt->getDecryptedValue(asset0_single->getPrivKey());
+      auto end = std::chrono::system_clock::now();
       ASSERT_EQ(decryptedKey, privkey_ex);
+      EXPECT_GE(end-start, 1200ms);
+      EXPECT_LE(end-start, 1300ms);
+   }
+
+   {
+      auto start = std::chrono::system_clock::now();
+      auto lock = assetWlt->lockDecryptedContainer();
+      auto& decryptedKey = assetWlt->getDecryptedValue(root_single->getPrivKey());
+      auto end = std::chrono::system_clock::now();
+      ASSERT_EQ(decryptedKey, clearRoot);
+      EXPECT_GE(end-start, 1200ms);
+      EXPECT_LE(end-start, 1300ms);
    }
 
    //delete new pass
@@ -5624,20 +5720,35 @@ TEST_F(WalletsTest, ChangePassphrase_FromUnencryptedWallet_Test)
    assetWlt->erasePrivateKeyPassphrase();
 
    counter = 0;
-   auto emptyPassLbd2 = [&counter](const std::set<EncryptionKeyId>&)->SecureBinaryData
+   auto emptyPassLbd2 = [&counter]
+      (const std::set<EncryptionKeyId>&)->SecureBinaryData
    {
       ++counter;
-      return SecureBinaryData();
+      return {};
    };
    assetWlt->setPassphrasePromptLambda(emptyPassLbd2);
 
    //check wallet is unencrypted
    {
+      auto start = std::chrono::system_clock::now();
       auto lock = assetWlt->lockDecryptedContainer();
       auto& decryptedKey = assetWlt->getDecryptedValue(asset0_single->getPrivKey());
+      auto end = std::chrono::system_clock::now();
 
       ASSERT_EQ(decryptedKey, privkey_ex);
       EXPECT_EQ(counter, 0U);
+      EXPECT_LE(end-start, 50ms);
+   }
+
+   {
+      auto start = std::chrono::system_clock::now();
+      auto lock = assetWlt->lockDecryptedContainer();
+      auto& decryptedKey = assetWlt->getDecryptedValue(root_single->getPrivKey());
+      auto end = std::chrono::system_clock::now();
+
+      ASSERT_EQ(decryptedKey, clearRoot);
+      EXPECT_EQ(counter, 0U);
+      EXPECT_LE(end-start, 50ms);
    }
 }
 

@@ -87,8 +87,12 @@ std::shared_ptr<AddressAccount> AssetWallet::createAccount(
       prog(std::move(prg));
    }
 
-   auto cipher = make_unique<Encryption::Cipher_AES>(
-      decryptedData_->getDefaultKdfId(),
+   /*
+   There is no need to apply a KDF to the master encryption key,
+   it's a 256 bits rng pull already
+   */
+   auto cipher = std::make_unique<Encryption::Cipher_AES>(
+      BinaryData::fromString(Encryption::passthroughKdfId),
       decryptedData_->getMasterEncryptionKeyId());
 
    //instantiate AddressAccount object from AccountType
@@ -1716,36 +1720,59 @@ const AssetId& AssetWallet_Single::derivePrivKeyFromPath(
 void AssetWallet_Single::changePrivateKeyPassphrase(
    const std::function<SecureBinaryData(void)>& newPassLbd)
 {
-   auto&& masterKeyId = decryptedData_->getMasterEncryptionKeyId();
-   auto&& kdfId = decryptedData_->getDefaultKdfId();
+   auto masterKeyId = decryptedData_->getMasterEncryptionKeyId();
+   auto masterKey = decryptedData_->getEncryptionKey(masterKeyId);
 
+   //get kdf ids from master key cipher
+   //NOTE: changePrivatePassphrase expects the master key to have only
+   //one encryption passphrase
+   auto kdfIdSet = masterKey->getKdfIds();
+   if (kdfIdSet.size() != 1) {
+      throw std::runtime_error(
+         "can only change passphrase when only 1 exists");
+   }
+   const auto& currentKdfId = *kdfIdSet.begin();
+
+   auto defaultKdfId = decryptedData_->getDefaultKdfId();
    decryptedData_->encryptEncryptionKey(
-      masterKeyId, kdfId, newPassLbd, true);
+      masterKeyId,
+      currentKdfId, defaultKdfId,
+      newPassLbd, true);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 void AssetWallet_Single::addPrivateKeyPassphrase(
    const function<SecureBinaryData(void)>& newPassLbd)
 {
-   if (root_ == nullptr || !root_->hasPrivateKey())
+   if (root_ == nullptr || !root_->hasPrivateKey()) {
       throw WalletException("wallet has no private root");
+   }
+   auto masterKeyId = root_->getPrivateEncryptionKeyId();
+   auto masterKey = decryptedData_->getEncryptionKey(masterKeyId);
+   auto masterKdfId = root_->getKdfId();
 
-   auto&& masterKeyId = root_->getPrivateEncryptionKeyId();
-   auto&& masterKdfId = root_->getKdfId();
+   //get kdf ids from master key cipher
+   auto kdfIdSet = masterKey->getKdfIds();
+   BinaryData currentKdfId;
+   if (kdfIdSet.empty()) {
+      currentKdfId = masterKdfId;
+   } else {
+      currentKdfId = *kdfIdSet.begin();
+   }
 
    decryptedData_->encryptEncryptionKey(
-      masterKeyId, masterKdfId, newPassLbd, false);
+      masterKeyId, masterKdfId, currentKdfId, newPassLbd, false);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 void AssetWallet_Single::erasePrivateKeyPassphrase()
 {
-   if (root_ == nullptr || !root_->hasPrivateKey())
+   if (root_ == nullptr || !root_->hasPrivateKey()) {
       throw WalletException("wallet has no private root");
+   }
 
-   auto&& masterKeyId = root_->getPrivateEncryptionKeyId();
-   auto&& masterKdfId = root_->getKdfId();
-
+   auto masterKeyId = root_->getPrivateEncryptionKeyId();
+   auto masterKdfId = root_->getKdfId();
    decryptedData_->eraseEncryptionKey(masterKeyId, masterKdfId);
 }
 
@@ -2065,6 +2092,7 @@ void AssetWallet_Single::setSeed(unique_ptr<ClearTextSeed> seedPtr,
    //create encrypted seed object
    {
       auto lock = lockDecryptedContainer();
+      //TODO: make sure this uses passthrough KDF
       seed_ = EncryptedSeed::fromClearTextSeed(std::move(seedPtr),
          std::move(cipherCopy), decryptedData_);
    }

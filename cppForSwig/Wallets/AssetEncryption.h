@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2017, goatpig                                               //
+//  Copyright (C) 2017-2025, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -10,6 +10,7 @@
 #define _H_ASSET_ENCRYPTION
 
 #include <memory>
+#include <string_view>
 #include "BinaryData.h"
 #include "EncryptionUtils.h"
 #include "WalletIdTypes.h"
@@ -45,6 +46,9 @@ namespace Armory
          struct ClearTextEncryptionKey;
          class ClearTextAssetData;
 
+         using namespace std::string_view_literals;
+         constexpr std::string_view passthroughKdfId = "PASSTHROUGH_SENTINEL"sv;
+
          ///////////////////////////////////////////////////////////////////////
          class KeyDerivationFunction
          {
@@ -55,7 +59,7 @@ namespace Armory
             virtual ~KeyDerivationFunction(void) = 0;
             virtual SecureBinaryData deriveKey(
                const SecureBinaryData& rawKey) const = 0;
-            virtual bool isSame(KeyDerivationFunction* const) const = 0;
+            virtual bool isSame(const KeyDerivationFunction*) const = 0;
 
             bool operator<(const KeyDerivationFunction& rhs)
             {
@@ -75,20 +79,22 @@ namespace Armory
             mutable BinaryData id_;
             unsigned iterations_;
             unsigned memTarget_;
+
+            //NOTE: consider cycling salt per kdf, even though this is likely unnecessary
             const BinaryData salt_;
 
          private:
             BinaryData computeID(void) const;
-            BinaryData initialize(uint32_t);
+            BinaryData initialize(const std::chrono::milliseconds&);
 
          public:
-            KeyDerivationFunction_Romix(uint32_t);
+            KeyDerivationFunction_Romix(const std::chrono::milliseconds&);
             KeyDerivationFunction_Romix(unsigned, unsigned, SecureBinaryData);
             ~KeyDerivationFunction_Romix(void) override;
 
             //overrides
             SecureBinaryData deriveKey(const SecureBinaryData&) const override;
-            bool isSame(KeyDerivationFunction* const) const override;
+            bool isSame(const KeyDerivationFunction*) const override;
             BinaryData serialize(void) const override;
             const BinaryData& getId(void) const override;
 
@@ -96,6 +102,22 @@ namespace Armory
             unsigned memTarget(void) const;
             unsigned iterations(void) const;
             void prettyPrint(void) const;
+         };
+
+         ////////
+         class KeyDerivationFunction_Passthrough : public KeyDerivationFunction
+         {
+            const BinaryData id_;
+
+         public:
+            KeyDerivationFunction_Passthrough(void);
+            ~KeyDerivationFunction_Passthrough(void) override;
+
+            //overrides
+            SecureBinaryData deriveKey(const SecureBinaryData&) const override;
+            bool isSame(const KeyDerivationFunction*) const override;
+            BinaryData serialize(void) const override;
+            const BinaryData& getId(void) const override;
          };
 
          ///////////////////////////////////////////////////////////////////////
@@ -179,7 +201,7 @@ namespace Armory
             virtual BinaryData serialize(void) const = 0;
             virtual std::unique_ptr<Cipher> getCopy(void) const = 0;
             virtual std::unique_ptr<Cipher> getCopy(
-               const EncryptionKeyId& keyId) const = 0;
+               const EncryptionKeyId&) const = 0;
             virtual bool isSame(Cipher* const) const = 0;
 
             virtual SecureBinaryData encrypt(
@@ -291,6 +313,7 @@ namespace Armory
             BinaryData serialize(void) const;
             static std::unique_ptr<EncryptionKey> deserialize(
                const BinaryDataRef&);
+            std::set<BinaryData> getKdfIds(void) const;
 
             /*
             TODO:
@@ -298,10 +321,8 @@ namespace Armory
                otherwise the return type is always ClearTextAssetData)
                - dedicated encryption key id
             */
-
             std::unique_ptr<ClearTextAssetData> decrypt(
                const SecureBinaryData& key) const;
-            CipherData* getCipherDataPtr(void) const;
          };
 
          //////////////////////////////////////////////////////////////////////////

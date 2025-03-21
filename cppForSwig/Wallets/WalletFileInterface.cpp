@@ -176,12 +176,12 @@ void WalletDBInterface::loadHeaders()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void WalletDBInterface::openControlDb(void)
+void WalletDBInterface::openControlDb()
 {
-   if (controlDb_ != nullptr)
+   if (controlDb_ != nullptr) {
       throw WalletInterfaceException("controlDb is not null");
-
-   controlDb_ = make_unique<LMDB>();
+   }
+   controlDb_ = std::make_unique<LMDB>();
    auto tx = LMDBEnv::Transaction(dbEnv_.get(), LMDB::ReadWrite);
    controlDb_->open(dbEnv_.get(), CONTROL_DB_NAME.data());
 }
@@ -366,6 +366,13 @@ MasterKeyStruct WalletDBInterface::initWalletHeaderObject(
    auto masterEncryptionKeyId = mks.decryptedMasterKey_->getId(passthroughKdf->getId());
 
    /*
+   setup master key kdf even if end up not using it, user may
+   add a passphrase later
+   */
+   mks.kdf_ = std::make_shared<KeyDerivationFunction_Romix>(unlockTime);
+   headerPtr->defaultKdfId_ = mks.kdf_->getId();
+
+   /*
    create cipher, tie it to master encryption key
    */
    mks.cipher_ = std::make_unique<Cipher_AES>(
@@ -392,9 +399,6 @@ MasterKeyStruct WalletDBInterface::initWalletHeaderObject(
    default key
    */
    if (!passphrase.empty()) {
-      //we have a passphrase, setup kdf for it
-      mks.kdf_ = std::make_shared<KeyDerivationFunction_Romix>(unlockTime);
-
       //create encryption key from passphrase and kdf
       auto topEncryptionKey = std::make_unique<ClearTextEncryptionKey>(passphrase);
       topEncryptionKey->deriveKey(mks.kdf_);
@@ -420,7 +424,6 @@ MasterKeyStruct WalletDBInterface::initWalletHeaderObject(
 
       //set the ids in header
       headerPtr->masterEncryptionKeyId_ = mks.masterKey_->getId();
-      headerPtr->defaultKdfId_ = mks.kdf_->getId();
    } else {
       /*
       No passphrase was provided, use the default key instead to encrypt the
@@ -447,7 +450,6 @@ MasterKeyStruct WalletDBInterface::initWalletHeaderObject(
 
       //set the ids in header
       headerPtr->masterEncryptionKeyId_ = mks.masterKey_->getId();
-      headerPtr->defaultKdfId_ = passthroughKdf->getId();
    }
 
    /*
@@ -507,6 +509,7 @@ shared_ptr<WalletHeader_Control> WalletDBInterface::setupControlDB(
       BinaryWriter seedKey;
       seedKey.put_uint32_t(WALLET_SEED_KEY);
       auto seedVal = encrSeed->serialize();
+      //NOTE: review this, why is there a seed in control db?
       tx->insert(seedKey.getData(), seedVal);
 
       //write meta ptr to disk
@@ -687,39 +690,63 @@ void WalletDBInterface::unlockControlContainer()
 
 ////////////////////////////////////////////////////////////////////////////////
 void WalletDBInterface::changeControlPassphrase(
-   const function<SecureBinaryData(void)>& newPassLbd, 
+   const std::function<SecureBinaryData(void)>& newPassLbd,
    const PassphraseLambda& passLbd)
 {
-   try
-   {
+   try {
       openControlDb();
-      
       /*
-      No need to set the control db after opening it, decryptedData_ is 
+      No need to set the control db after opening it, decryptedData_ is
       instantiated with the db's shared_ptr, which is not cleaned up
       after the controldb is shut down.
       */
-   }
-   catch(WalletInterfaceException&)
-   {
+   } catch (const WalletInterfaceException&) {
       //control db is already opened, nothing to do
    }
-   
+
    //hold tx write mutex until the file is compacted
-   unique_lock<recursive_mutex> lock(DBIfaceTransaction::writeMutex_);
+   std::unique_lock<std::recursive_mutex> lock(DBIfaceTransaction::writeMutex_);
 
    //set the lambda to unlock the control encryption key
    decryptedData_->setPassphrasePromptLambda(passLbd);
 
-   //change the passphrase
-   auto& masterKeyId = decryptedData_->getMasterEncryptionKeyId();
-   auto& kdfId = decryptedData_->getDefaultKdfId();
-   decryptedData_->encryptEncryptionKey(masterKeyId, kdfId, newPassLbd);
+   //grab the encryption key
+   const auto& masterKeyId = decryptedData_->getMasterEncryptionKeyId();
+   auto masterKey = decryptedData_->getEncryptionKey(masterKeyId);
+
+   /*
+   To change a passphrase, we need to tell container which kdf the old
+   passphrase was derived with (so that it can decrypt the key) and which
+   kdf we want to derive the new passphrase with.
+
+   For the control db, a kdf is generated at creation, but it is not necessarely
+   in use, as often users leave the db unencrypted. An unencrypted db uses the
+   default encryption key, which has no kdf applied.
+   We want to guarantee a kdf is applied to the new passphrase, so we cannot
+   blindly pass the kdf used for the current passphrase. We will use the default
+   kdf instead, until code is introduced to change that kdf too.
+   */
+
+   //look for the kdf used for the current encryption of the master key
+   //NOTE: there should only be 1!
+   auto kdfIdSet = masterKey->getKdfIds();
+   if (kdfIdSet.size() != 1) {
+      throw std::runtime_error(
+         "control db master key is encrypted by more than 1 passphrase!");
+   }
+   const auto& currentKdfId = *kdfIdSet.begin();
+
+   auto& defaultKdfId = decryptedData_->getDefaultKdfId();
+   decryptedData_->encryptEncryptionKey(
+      masterKeyId,
+      currentKdfId, defaultKdfId,
+      newPassLbd
+   );
 
    //clear the lambda
    decryptedData_->resetPassphraseLambda();
 
-   //wipe the db
+   //cleanup deleted data placeholders
    compactFile();
 }
 
