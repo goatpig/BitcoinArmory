@@ -721,21 +721,21 @@ const CipherData* EncryptedAssetData::getCipherDataPtr() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-unique_ptr<ClearTextAssetData> EncryptedAssetData::decrypt(
+std::unique_ptr<ClearTextAssetData> EncryptedAssetData::decrypt(
    const SecureBinaryData& key) const
 {
    auto cipherDataPtr = getCipherDataPtr();
-   auto&& decryptedData = cipherDataPtr->cipher_->decrypt(
+   auto decryptedData = cipherDataPtr->cipher_->decrypt(
       key, cipherDataPtr->cipherText_);
-   auto decrPtr = make_unique<ClearTextAssetData>(getAssetId(), decryptedData);
+   auto decrPtr = std::make_unique<ClearTextAssetData>(getAssetId(), decryptedData);
    return decrPtr;
 }
 
 bool EncryptedAssetData::isSame(EncryptedAssetData* const asset) const
 {
-   if (asset == nullptr)
+   if (asset == nullptr) {
       return false;
-
+   }
    return cipherData_->isSame(asset->cipherData_.get());
 }
 

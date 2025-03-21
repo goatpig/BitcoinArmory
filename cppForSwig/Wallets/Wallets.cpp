@@ -2078,14 +2078,12 @@ void AssetWallet_Single::setSeed(unique_ptr<ClearTextSeed> seedPtr,
       root_->getPrivKey()->getCipherDataPtr()->cipher_->getCopy();
 
    //if custom passphrase, set prompt lambda prior to encryption
-   if (!passphrase.empty())
-   {
+   if (!passphrase.empty()) {
       auto passphraseLambda =
-         [&passphrase](const set<EncryptionKeyId>&)->SecureBinaryData
+         [&passphrase](const std::set<EncryptionKeyId>&)->SecureBinaryData
       {
          return passphrase;
       };
-
       decryptedData_->setPassphrasePromptLambda(passphraseLambda);
    }
 
@@ -2099,12 +2097,10 @@ void AssetWallet_Single::setSeed(unique_ptr<ClearTextSeed> seedPtr,
 
    //write to disk
    {
-      auto&& tx = iface_->beginWriteTransaction(dbName_);
-
+      auto tx = iface_->beginWriteTransaction(dbName_);
       BinaryWriter bwKey;
       bwKey.put_uint32_t(WALLET_SEED_KEY);
-      auto&& serData = seed_->serialize();
-
+      auto serData = seed_->serialize();
       tx->insert(bwKey.getData(), serData);
    }
 

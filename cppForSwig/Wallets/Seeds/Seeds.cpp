@@ -167,14 +167,15 @@ std::unique_ptr<EncryptedSeed> EncryptedSeed::fromClearTextSeed(
    std::shared_ptr<Wallets::Encryption::DecryptedDataContainer> decrCont)
 {
    //sanity checks
-   if (seed == nullptr)
-      throw runtime_error("[fromClearTextSeed] null seed");
-
-   if (cipher == nullptr)
-      throw runtime_error("[fromClearTextSeed] null cipher");
-
-   if (decrCont == nullptr)
-      throw runtime_error("[fromClearTextSeed] null decrypted data container");
+   if (seed == nullptr) {
+      throw std::runtime_error("[fromClearTextSeed] null seed");
+   }
+   if (cipher == nullptr) {
+      throw std::runtime_error("[fromClearTextSeed] null cipher");
+   }
+   if (decrCont == nullptr) {
+      throw std::runtime_error("[fromClearTextSeed] null decrypted data container");
+   }
 
    //copy the cipher to cycle the IV
    auto cipherCopy = cipher->getCopy();
@@ -185,11 +186,11 @@ std::unique_ptr<EncryptedSeed> EncryptedSeed::fromClearTextSeed(
 
    //encrypt it
    auto cipherText = decrCont->encryptData(cipherCopy.get(), bw.getData());
-   auto cipherData = make_unique<Encryption::CipherData>(
-      cipherText, move(cipherCopy));
+   auto cipherData = std::make_unique<Encryption::CipherData>(
+      cipherText, std::move(cipherCopy));
 
    //instantiate encrypted seed object
-   return make_unique<EncryptedSeed>(move(cipherData), seed->type());
+   return std::make_unique<EncryptedSeed>(std::move(cipherData), seed->type());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
