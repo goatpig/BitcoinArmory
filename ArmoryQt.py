@@ -1,16 +1,16 @@
 #! /usr/bin/python
 # -*- coding: UTF-8 -*-
-##############################################################################
-#                                                                            #
-# Copyright (C) 2011-2015, Armory Technologies, Inc.                         #
-# Distributed under the GNU Affero General Public License (AGPL v3)          #
-# See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
-#                                                                            #
-# Copyright (C) 2016-2025, goatpig                                           #
-#  Distributed under the MIT license                                         #
-#  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
-#                                                                            #
-##############################################################################
+################################################################################
+#                                                                              #
+# Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
+# Distributed under the GNU Affero General Public License (AGPL v3)            #
+# See LICENSE or http://www.gnu.org/licenses/agpl.html                         #
+#                                                                              #
+# Copyright (C) 2016-2025, goatpig                                             #
+#  Distributed under the MIT license                                           #
+#  See LICENSE-MIT or https://opensource.org/licenses/MIT                      #
+#                                                                              #
+################################################################################
 from io import BytesIO
 from binascii import hexlify, unhexlify
 import logging
@@ -2042,10 +2042,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
    #############################################################################
    def getWalletForAddrHash(self, addrHash):
-      for wltID, wlt in self.walletMap.items():
-         if wlt.hasAddrHash(addrHash):
-            return wltID
-      return ''
+      return self.wallets.getWltForScrAddr(addrHash)
 
    #############################################################################
    def getWalletForAddressString(self, addrStr):
@@ -4803,35 +4800,25 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          self.notifyQueue[i][2] = True
 
          # Catch condition that somehow the tx isn't related to us
-         if le.hash==b'\x00'*32:
+         if le.txHash==b'\x00'*32:
             continue
 
          # Make sure the wallet ID or lockbox ID keys are actually valid before
          # using them to grab the appropriate C++ wallet.
-         pywlt = self.walletMap.get(moneyID)
-         lbox  = self.getLockboxByID(moneyID)
+         pywlt = self.wallets.get(moneyID)
 
          # If we couldn't find a matching wallet or lbox, bail
-         if pywlt is None and lbox is None:
+         if pywlt is None:
             LOGERROR('Could not find moneyID = %s; skipping notify' % moneyID)
             continue
 
-
          if pywlt:
-            wname = self.walletMap[moneyID].labelName
+            wname = self.wallets[moneyID].labelName
             if len(wname)>20:
                wname = wname[:17] + '...'
             wltName = self.tr('Wallet "%s" (%s)' % (wname, moneyID))
-         else:
-            lbox   = self.getLockboxByID(moneyID)
-            M      = self.getLockboxByID(moneyID).M
-            N      = self.getLockboxByID(moneyID).N
-            lname  = self.getLockboxByID(moneyID).shortName
-            if len(lname) > 20:
-               lname = lname[:17] + '...'
-            wltName = self.tr('Lockbox %d-of-%d "%s" (%s)' % (M, N, lname, moneyID))
 
-         if le.sent_to_self:
+         if le.isSTS:
             # Used to display the sent-to-self amount, but if this is a lockbox
             # we only have a cppWallet, and the determineSentToSelfAmt() func
             # only operates on python wallets.  Oh well, the user can double-
@@ -4847,20 +4834,20 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
          # If coins were either received or sent from the loaded wlt/lbox
          dispLines = []
-         totalStr = coin2strNZS(abs(le.value))
+         totalStr = coin2strNZS(abs(le.balance))
          title = None
-         if le.value > 0:
+         if le.balance > 0:
             title = self.tr('Bitcoins Received!')
             dispLines.append(self.tr('Amount:  %s BTC' % totalStr))
             dispLines.append(self.tr('From:    %s' % wltName))
-         elif le.value < 0:
+         elif le.balance < 0:
             try:
                recipStr = ''
-               for addr in le.scraddr:
+               for addr in le.scrAddrs:
                   if pywlt.hasAddrString(addr):
                      continue
                   if len(recipStr)==0:
-                     recipStr = TheBridge.utils.getScrAddrForAddrStr(addr)
+                     recipStr = TheBridge.scriptUtils.getScrAddrForAddrStr(addr)
                   else:
                      recipStr = self.tr('<Multiple Recipients>')
 
@@ -4876,7 +4863,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
          if title:
             self.showTrayMsg(title, "\n".join(dispLines), \
-                       QtWidgets.QSystemTrayIcon.Information, 10000)
+               QtWidgets.QSystemTrayIcon.Information, 10000)
             LOGINFO(title + '\n' + "\n".join(dispLines))
 
          # Wait for 5 seconds before processing the next queue object.
@@ -5178,7 +5165,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
    #############################################################################
    def bumpFee(self, walletId, txHash):
       #grab wallet
-      wlt = self.walletMap[walletId]
+      wlt = self.wallets[walletId]
 
       #grab ZC from DB
       txHashBin = hex_to_binary(txHash)

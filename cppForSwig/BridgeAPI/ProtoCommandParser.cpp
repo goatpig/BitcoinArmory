@@ -686,6 +686,7 @@ namespace
          auto fromBridge = message.initRoot<FromBridge>();
          auto reply = fromBridge.initReply();
          reply.setSuccess(success);
+         reply.setError("generic signer error message");
          reply.setReferenceId(referenceId);
 
          //serialize & push reply
@@ -837,7 +838,8 @@ namespace
                signerReply.setGetSignedTx(capnp::Data::Builder(
                   (uint8_t*)signedTx.getPtr(), signedTx.getSize()
                ));
-            } catch (const std::exception&) {
+            } catch (const std::exception& e) {
+               reply.setError(e.what());
                reply.setSuccess(false);
             }
 
@@ -860,7 +862,8 @@ namespace
                signerReply.setGetUnsignedTx(capnp::Data::Builder(
                   (uint8_t*)signedTx.getPtr(), signedTx.getSize()
                ));
-            } catch (const std::exception&) {
+            } catch (const std::exception& e) {
+               reply.setError(e.what());
                reply.setSuccess(false);
             }
 

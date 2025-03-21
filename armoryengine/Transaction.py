@@ -2269,9 +2269,7 @@ class UnsignedTransaction(AsciiSerializable):
    def getBroadcastTxIfReady(self):
       try:
          return self.getSignedPyTx()
-      except SignatureError as msg:
-         return None
-      except KeyError:
+      except Exception:
          return None
 
    #############################################################################

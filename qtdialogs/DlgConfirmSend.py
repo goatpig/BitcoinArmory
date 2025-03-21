@@ -134,11 +134,10 @@ class DlgConfirmSend(ArmoryDialog):
       showAllMsg = ''
       if doShowAllMsg or (pytxOrUstx and self.main.usermode==USERMODE.Expert):
          showAllMsg = self.tr('To see complete transaction details '
-                             '<a href="None">click here</a></font>')
+            '<a href="None">click here</a></font>')
 
          def openDlgTxInfo(*args):
             DlgDispTxInfo(pytxOrUstx, wlt, self.parent, self.main).exec_()
-
          lblAfterBox.linkActivated.connect(openDlgTxInfo)
 
 

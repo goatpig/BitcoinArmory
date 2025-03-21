@@ -1,12 +1,10 @@
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
 ##############################################################################
 #                                                                            #
 # Copyright (C) 2011-2015, Armory Technologies, Inc.                         #
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2024, goatpig                                           #
+# Copyright (C) 2016-2025, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
@@ -15,6 +13,7 @@ import os
 import struct
 from tempfile import mkstemp
 import urllib
+import traceback
 
 from qtpy import QtCore, QtGui, QtWidgets
 
@@ -465,8 +464,7 @@ def restoreTableView(qtbl, hexBytes):
       for i,c in toRestore[:-1]:
          qtbl.setColumnWidth(i, c)
    except Exception as e:
-      print('- Error loading table view -')
-      print(e)
+      traceback.print_tb(e.__traceback__)
       pass
       # Don't want to crash the program just because couldn't load tbl data
 

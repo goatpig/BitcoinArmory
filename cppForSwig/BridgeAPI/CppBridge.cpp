@@ -1323,6 +1323,7 @@ BinaryData CppBridge::getAddress(const std::string& wltId,
    auto fromBridge = message.initRoot<FromBridge>();
    auto reply = fromBridge.initReply();
    reply.setReferenceId(msgId);
+   reply.setSuccess(true);
 
    auto wltContainer = wltManager_->getWalletContainer(wltId, accId);
    auto wltPtr = wltContainer->getWalletPtr();

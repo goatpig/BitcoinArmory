@@ -1,15 +1,15 @@
-##############################################################################
-#                                                                            #
-# Copyright (C) 2016-2025, goatpig                                           #
-#  Distributed under the MIT license                                         #
-#  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
-#                                                                            #
-##############################################################################
+################################################################################
+#                                                                              #
+# Copyright (C) 2016-2025, goatpig                                             #
+#  Distributed under the MIT license                                           #
+#  See LICENSE-MIT or https://opensource.org/licenses/MIT                      #
+#                                                                              #
+################################################################################
 import enum
 from armoryengine.ArmoryUtils import LOGINFO, LOGWARN, LOGERROR
 from armoryengine.PyBtcWallet import PyBtcWallet
 
-##############################################################################
+################################################################################
 class WalletTypes(enum.Enum):
    Plain       = 0
    Crypt       = 1
@@ -24,7 +24,7 @@ class WalletFilter(enum.Enum):
    ALL      = 3
    SINGLE   = 4
 
-#############################################################################
+################################################################################
 def determineWalletType(wlt, parent):
    if wlt.watchingOnly:
       if wlt.getSetting(parent.tr('IsMine')):
@@ -36,7 +36,7 @@ def determineWalletType(wlt, parent):
    else:
       return [WalletTypes.Plain, parent.tr('No Encryption')]
 
-##############################################################################
+################################################################################
 ## This class tracks and manages the wallets loaded by the application
 class WalletMap(object):
    def __init__(self, parent):
@@ -120,7 +120,6 @@ class WalletMap(object):
             if self._dbIdList[i]['id'] == dbId:
                del self._dbIdList[i]
                break
-
 
    def setupFromProto(self, proto):
       LOGINFO('Loading wallets...')
@@ -241,7 +240,8 @@ class WalletMap(object):
          raise Exception(f"index {index} is too large")
       return self._dbIdList[index]['visible']
 
-   def updateVisibilityFilter(self, mode: WalletFilter=WalletFilter.SINGLE, index=None):
+   def updateVisibilityFilter(self,
+      mode: WalletFilter=WalletFilter.SINGLE, index=None):
       for i in range(0, len(self._dbIdList)):
          dbId = self._dbIdList[i]['id']
          wlt = self._walletMap[dbId]
@@ -278,12 +278,6 @@ class WalletMap(object):
       for _, wlt in self._walletMap.items():
          wlt.updateBalancesAndCount()
          wlt.getAddrDataFromDB()
-
-      '''
-      for lbid in self.cppLockboxWltMap:
-         self.cppLockboxWltMap[lbid].getBalancesAndCountFromDB(\
-            TheBDM.topBlockHeight, IGNOREZC)
-      '''
 
    def getBalances(self):
       total=0

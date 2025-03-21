@@ -129,13 +129,11 @@ class AddressLabelFrame(object):
       addrLabel.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
       self.typeLabel = QLabelButton("")
       self.typeLabel.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-
       self.typeLabel.linkActivated.connect(self.changeType)
 
       frmAddrTypeLayout.addWidget(addrLabel, 0, 0, 1, 1)
       frmAddrTypeLayout.addWidget(self.typeLabel, 0, 1, 1, 2)
       self.frmAddrType.setLayout(frmAddrTypeLayout)
-
       self.updateAddressTypes(addressTypes, currentAddrType)
 
    def updateAddressTypes(self, addrTypes, currType):
@@ -144,16 +142,18 @@ class AddressLabelFrame(object):
 
    def setType(self, _type):
       self.addrType = _type
-      addrTypeStr = TheBridge.utils.getNameForAddrType(_type)
-      self.typeLabel.setText(\
-         self.main.tr("<u><font color='blue'>%s</font></u>" \
-         % addrTypeStr))
+      if not isinstance(_type, str):
+         addrTypeStr = TheBridge.utils.getNameForAddrType(_type)
+      else:
+         addrTypeStr = _type
+      self.typeLabel.setText(
+         self.main.tr("<u><font color='blue'>%s</font></u>" % addrTypeStr))
 
    def getType(self):
       return self.addrType
 
    def changeType(self):
-      dlg = AddressTypeSelectDialog(self.main, self.main, \
+      dlg = AddressTypeSelectDialog(self.main, self.main,
          self.addressTypes, self.addrType)
       if dlg.exec_():
          self.setType(dlg.getType())

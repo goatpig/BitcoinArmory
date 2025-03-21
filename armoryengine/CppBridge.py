@@ -537,16 +537,11 @@ class BlockchainUtils(ProtoWrapper):
    def getNameForAddrType(self, addrType: int):
       if addrType in self.addrTypeStrByType:
          return self.addrTypeStrByType[addrType]
-
       packet = Bridge.ToBridge.new_message()
       packet.init("utils").getNameForAddrType = addrType
 
       fut = self.send(packet)
       reply = fut.getVal()
-      if not reply.success:
-         raise BridgeError(
-            f"[getNameForAddrType] failed with error: {reply.error}")
-
       addrTypeStr = reply.utils.getNameForAddrType
       self.addrTypeStrByType[addrType] = addrTypeStr
       return addrTypeStr

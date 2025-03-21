@@ -1431,10 +1431,10 @@ class SentToAddrBookModel(QtCore.QAbstractTableModel):
          addrB58 = ''
          addr160 = ''
       wlt      = self.main.wallets.getWltForScrAddr(scrAddr)
-      wltID    = wlt.walletId
       txList   = self.addrBook[row][1]
       numSent  = len(txList)
-      comment  = self.wlt.getCommentForTxList(scrAddr, txList)
+      wltID = wlt.walletId if wlt else ''
+      comment = self.wlt.getCommentForTxList(scrAddr, txList) if wlt else ''
 
       #ADDRBOOKCOLS = enum('Address', 'WltID', 'NumSent', 'Comment')
       if role==QtCore.Qt.DisplayRole:
