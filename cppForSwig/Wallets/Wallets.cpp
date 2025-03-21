@@ -26,9 +26,9 @@ using namespace Armory::Seeds;
 ////////////////////////////////////////////////////////////////////////////////
 AssetWallet::AssetWallet(
    shared_ptr<IO::WalletDBInterface> iface,
-   shared_ptr<IO::WalletHeader> headerPtr, 
+   shared_ptr<IO::WalletHeader> headerPtr,
    const string& masterID) :
-   iface_(iface), 
+   iface_(iface),
    dbName_(headerPtr->getDbName()),
    walletID_(headerPtr->walletID_)
 {
@@ -55,19 +55,19 @@ AssetWallet::~AssetWallet()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-shared_ptr<IO::WalletDBInterface> AssetWallet::getIfaceFromFile(
-   const std::filesystem::path& path, bool fileExists,
-   const PassphraseLambda& passLbd,
-   uint32_t unlockTime_ms)
+std::shared_ptr<IO::WalletDBInterface> AssetWallet::getIfaceFromFile(
+   const IO::OpenFileParams& params, const Progress::Func& prog)
 {
    /*
    This passphrase lambda is used to prompt the user for the wallet file's
    passphrase. Private keys use a different passphrase, with its own prompt.
    */
-
+   if (prog) {
+      auto prg = std::make_unique<Progress::CreateFile>(params.filePath);
+      prog(std::move(prg));
+   }
    auto iface = make_shared<IO::WalletDBInterface>();
-   iface->setupEnv(path, fileExists, passLbd, unlockTime_ms);
-
+   iface->setupEnv(params);
    return iface;
 }
 
@@ -78,9 +78,15 @@ std::shared_ptr<IO::WalletDBInterface> AssetWallet::getIface() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-shared_ptr<AddressAccount> AssetWallet::createAccount(
-   shared_ptr<AccountType> accountType)
+std::shared_ptr<AddressAccount> AssetWallet::createAccount(
+   std::shared_ptr<AccountType> accountType,
+   const Progress::Func& prog)
 {
+   if (prog) {
+      auto prg = std::make_unique<Progress::CreateAccount>(accountType);
+      prog(std::move(prg));
+   }
+
    auto cipher = make_unique<Encryption::Cipher_AES>(
       decryptedData_->getDefaultKdfId(),
       decryptedData_->getMasterEncryptionKeyId());
@@ -93,7 +99,7 @@ shared_ptr<AddressAccount> AssetWallet::createAccount(
    };
 
    auto account_ptr = AddressAccount::make_new(
-      dbName_, accountType, decryptedData_, move(cipher), getRootLbd);
+      dbName_, accountType, decryptedData_, std::move(cipher), getRootLbd);
 
    auto accID = account_ptr->getID();
    if (accounts_.find(accID) != accounts_.end())
@@ -102,8 +108,7 @@ shared_ptr<AddressAccount> AssetWallet::createAccount(
    //commit to disk
    account_ptr->commit(iface_);
 
-   if (accountType->isMain())
-   {
+   if (accountType->isMain()) {
       mainAccount_ = account_ptr->getID();
 
       BinaryWriter bwKey;
@@ -112,12 +117,12 @@ shared_ptr<AddressAccount> AssetWallet::createAccount(
       BinaryWriter bwData;
       mainAccount_.serializeValue(bwData);
 
-      auto&& tx = iface_->beginWriteTransaction(dbName_);
+      auto tx = iface_->beginWriteTransaction(dbName_);
       tx->insert(bwKey.getData(), bwData.getData());
    }
 
-   shared_ptr<AddressAccount> sharedAcc(move(account_ptr));
-   accounts_.insert(make_pair(accID, sharedAcc));
+   std::shared_ptr<AddressAccount> sharedAcc(std::move(account_ptr));
+   accounts_.emplace(accID, sharedAcc);
    return sharedAcc;
 }
 
@@ -780,9 +785,9 @@ shared_ptr<IO::WalletIfaceTransaction> AssetWallet::beginSubDBTransaction(
 
 ////////////////////////////////////////////////////////////////////////////////
 shared_ptr<AssetWallet> AssetWallet::loadMainWalletFromFile(
-   const std::filesystem::path& path, const PassphraseLambda& passLbd)
+   const IO::OpenFileParams& params)
 {
-   auto iface = getIfaceFromFile(path, true, passLbd, 0);
+   auto iface = getIfaceFromFile(params);
    auto mainWalletID = getMainWalletID(iface);
    auto headerPtr = iface->getWalletHeader(mainWalletID);
 
@@ -790,28 +795,28 @@ shared_ptr<AssetWallet> AssetWallet::loadMainWalletFromFile(
 
    switch (headerPtr->type_)
    {
-   case IO::WalletHeaderType_Single:
-   {
-      auto wltSingle = make_shared<AssetWallet_Single>(
-         iface, headerPtr, string());
-      wltSingle->readFromFile();
+      case IO::WalletHeaderType_Single:
+      {
+         auto wltSingle = std::make_shared<AssetWallet_Single>(
+            iface, headerPtr, std::string{});
+         wltSingle->readFromFile();
 
-      wltPtr = wltSingle;
-      break;
-   }
+         wltPtr = wltSingle;
+         break;
+      }
 
-   case IO::WalletHeaderType_Multisig:
-   {
-      auto wltMS = make_shared<AssetWallet_Multisig>(
-         iface, headerPtr, string());
-      wltMS->readFromFile();
+      case IO::WalletHeaderType_Multisig:
+      {
+         auto wltMS = std::make_shared<AssetWallet_Multisig>(
+            iface, headerPtr, std::string{});
+         wltMS->readFromFile();
 
-      wltPtr = wltMS;
-      break;
-   }
+         wltPtr = wltMS;
+         break;
+      }
 
-   default:
-      throw WalletException("unexpected main wallet type");
+      default:
+         throw WalletException("unexpected main wallet type");
    }
 
    return wltPtr;
@@ -897,16 +902,16 @@ shared_ptr<MetaDataAccount> AssetWallet::getMetaAccount(
 
 ////////////////////////////////////////////////////////////////////////////////
 std::filesystem::path AssetWallet::forkWatchingOnly(
-   const std::filesystem::path& path, const PassphraseLambda& passLbd)
+   const IO::OpenFileParams& params)
 {
    //strip '_wallet' extention
-   auto filename = path.filename().string();
+   auto filename = params.filePath.stem().string();
    auto underscoreIndex = filename.find_last_of("_");
    auto newname = filename.substr(0, underscoreIndex);
 
    //set WO suffix
    newname.append("_WatchingOnly.lmdb");
-   auto newPath = path.parent_path() / newname;
+   auto newPath = params.filePath.parent_path() / newname;
 
    //check file does not exist
    if (FileUtils::fileExists(newPath, 0)) {
@@ -914,12 +919,13 @@ std::filesystem::path AssetWallet::forkWatchingOnly(
    }
 
    //open original wallet db & new
-   auto originIface = getIfaceFromFile(path, true, passLbd, 0);
+   auto originIface = getIfaceFromFile(params);
    auto masterID = getMasterID(originIface);
 
-   auto woIface = getIfaceFromFile(newPath, false, passLbd, 250);
+   auto woIface = getIfaceFromFile(IO::OpenFileParams{
+      newPath, params.controlPassFunc, 250ms, false});
    woIface->setDbCount(originIface->getDbCount());
-   woIface->lockControlContainer(passLbd);
+   woIface->lockControlContainer(params.controlPassFunc);
 
    //cycle through wallet metas, copy wallet structure and assets
    for (auto& metaPtr : originIface->getHeaderMap()) {
@@ -1111,25 +1117,29 @@ AssetWallet_Single::AssetWallet_Single(shared_ptr<IO::WalletDBInterface> iface,
 
 ////////////////////////////////////////////////////////////////////////////////
 const AddressAccountId& AssetWallet_Single::createBIP32Account(
-   std::shared_ptr<AccountType_BIP32> accTypePtr)
+   std::shared_ptr<AccountType_BIP32> accTypePtr,
+   const Progress::Func& prog)
 {
-   auto accountPtr = createAccount(accTypePtr);
-   if (!isWatchingOnly())
-   {
-      accountPtr->extendPrivateChain(iface_,
-         decryptedData_, accTypePtr->getAddressLookup());
-   }
-   else
-   {
-      accountPtr->extendPublicChain(iface_, accTypePtr->getAddressLookup());
+   auto accountPtr = createAccount(accTypePtr, prog);
+
+   if (prog) {
+      auto prg = std::make_unique<Progress::ExtendChain>(
+         accTypePtr->getAddressLookup());
+      prog(std::move(prg));
    }
 
+   if (!isWatchingOnly()) {
+      accountPtr->extendPrivateChain(iface_,
+         decryptedData_, accTypePtr->getAddressLookup());
+   } else {
+      accountPtr->extendPublicChain(iface_, accTypePtr->getAddressLookup());
+   }
    return accountPtr->getID();
 }
 
 /////////////////////////////-- wallet creation --//////////////////////////////
-shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
-   std::unique_ptr<ClearTextSeed> seed, const WalletCreationParams& params)
+std::shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
+   std::unique_ptr<ClearTextSeed> seed, const IO::CreationParams& params)
 {
    //sanity check
    if (seed == nullptr) {
@@ -1137,7 +1147,7 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
    }
 
    //determine wallet type from seed type
-   shared_ptr<AssetWallet_Single> result;
+   std::shared_ptr<AssetWallet_Single> result;
    switch (seed->type())
    {
       case Seeds::SeedType::Armory135:
@@ -1169,7 +1179,7 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
 
 ////////////////////////////////////////////////////////////////////////////////
 shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
-   ClearTextSeed_Armory135* seed, const WalletCreationParams& params)
+   ClearTextSeed_Armory135* seed, const IO::CreationParams& params)
 {
    if (seed == nullptr) {
       throw WalletException("[createFromSeed] null root");
@@ -1180,22 +1190,10 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
       throw WalletException("[createFromSeed] invalid root size");
    }
 
-   /*
-   Create control passphrase lambda. It gets wiped after the wallet is setup
-   */
-   auto controlPassLbd =
-      [&params](const set<EncryptionKeyId>&)->SecureBinaryData
-   {
-      return params.controlPassphrase;
-   };
-
    //create wallet file and dbenv
    const auto& masterId = seed->getMasterId();
-   auto path = params.folder / std::filesystem::path{
-      "armory_" + masterId + "_wallet.lmdb"
-   };
-   auto iface = getIfaceFromFile(path, false, controlPassLbd,
-      params.publicUnlockDuration_ms);
+   auto openParams = params.getOpenFileParams(masterId);
+   auto iface = getIfaceFromFile(openParams, params.progressFunc);
 
    auto chaincode = seed->getChaincode();
    if (chaincode.empty()) {
@@ -1217,38 +1215,47 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
    setMainWallet(iface, walletId);
 
    //create account
-   auto account135 = make_shared<AccountType_ArmoryLegacy>();
+   auto account135 = std::make_shared<AccountType_ArmoryLegacy>();
    account135->setMain(true);
 
    if (!params.passphrase.empty()) {
       //custom passphrase, set prompt lambda for the chain extention
       auto passphraseLambda =
-         [&params](const set<EncryptionKeyId>&)->SecureBinaryData
+         [&params](const std::set<EncryptionKeyId>&)->SecureBinaryData
       {
          return params.passphrase;
       };
       walletPtr->decryptedData_->setPassphrasePromptLambda(passphraseLambda);
    }
 
-   auto accountPtr = walletPtr->createAccount(account135);
+   //add primary account
+   auto accountPtr = walletPtr->createAccount(account135, params.progressFunc);
+
+   //compute lookup worth of address in primary account
+   if (params.progressFunc) {
+      auto prg = std::make_unique<Progress::ExtendChain>(params.lookup);
+      params.progressFunc(std::move(prg));
+   }
    accountPtr->extendPrivateChain(
       iface, walletPtr->decryptedData_, params.lookup - 1);
 
+   //clean up and return wallet
    walletPtr->resetPassphrasePromptLambda();
    return walletPtr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
-   Seeds::ClearTextSeed_BIP32* seed, const WalletCreationParams& params)
+   Seeds::ClearTextSeed_BIP32* seed, const IO::CreationParams& params)
 {
-   if (seed == nullptr)
+   if (seed == nullptr) {
       throw WalletException("[createFromSeed] null seed");
+   }
    auto rootNode = seed->getRootNode();
    auto coinType = Armory::Config::BitcoinSettings::getCoinType();
 
    //address accounts
-   set<shared_ptr<AccountType_BIP32>> accountTypes;
+   std::set<shared_ptr<AccountType_BIP32>> accountTypes;
 
    {
       //legacy account: 44
@@ -1280,10 +1287,10 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
 
    {
       //nested sw account: 49
-      vector<unsigned> path = { 0x80000031, coinType, 0x80000000 };
+      std::vector<unsigned> path = { 0x80000031, coinType, 0x80000000 };
       auto nestedAcc = AccountType_BIP32::makeFromDerPaths(
          rootNode->getThisFingerprint(), {path});
-         
+
       //nodes
       nestedAcc->setNodes({
          BIP32_OUTER_ACCOUNT_DERIVATIONID,
@@ -1301,13 +1308,12 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
          AddressEntryType(AddressEntryType_P2SH | AddressEntryType_P2WPKH));
       nestedAcc->setDefaultAddressType(
          AddressEntryType(AddressEntryType_P2SH | AddressEntryType_P2WPKH));
-
       accountTypes.insert(nestedAcc);
    }
 
    {
       //sw account: 84
-      vector<unsigned> path = { 0x80000054, coinType, 0x80000000 };
+      std::vector<unsigned> path = { 0x80000054, coinType, 0x80000000 };
       auto segwitAcc = AccountType_BIP32::makeFromDerPaths(
          rootNode->getThisFingerprint(), {path});
 
@@ -1326,33 +1332,28 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
       //address types
       segwitAcc->addAddressType(AddressEntryType_P2WPKH);
       segwitAcc->setDefaultAddressType(AddressEntryType_P2WPKH);
-
       accountTypes.insert(segwitAcc);
    }
 
    //create wallet file and dbenv
-   if (rootNode->isPublic())
-   {
+   if (rootNode->isPublic()) {
       throw WalletException("[createFromSeed]"
          " BIP32 seeds cannot lead to WO wallets");
    }
 
    auto controlPassLbd =
-      [&params](const set<EncryptionKeyId>&)->SecureBinaryData
+      [&params](const std::set<EncryptionKeyId>&)->SecureBinaryData
    {
       return params.controlPassphrase;
    };
 
    //db env
    auto masterId = seed->getMasterId();
-   auto walletId = seed->getWalletId();
-   auto path = params.folder / std::filesystem::path{
-      "armory_" + masterId + "_wallet.lmdb"
-   };
-   auto iface = getIfaceFromFile(path, false, controlPassLbd,
-      params.publicUnlockDuration_ms);
+   auto openFileParams = params.getOpenFileParams(masterId);
+   auto iface = getIfaceFromFile(openFileParams, params.progressFunc);
 
    //wallet object
+   auto walletId = seed->getWalletId();
    auto walletPtr = initWalletDb(iface,
       masterId, walletId,
       rootNode->getPrivateKey(),
@@ -1365,7 +1366,7 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
 
    //add accounts
    auto passLbd =[&params](
-      const set<EncryptionKeyId>&)->SecureBinaryData
+      const std::set<EncryptionKeyId>&)->SecureBinaryData
    {
       return params.passphrase;
    };
@@ -1376,14 +1377,15 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
       case SeedType::BIP32_Structured:
       case SeedType::BIP39:
       {
-         for (auto accountPtr : accountTypes)
-            walletPtr->createBIP32Account(accountPtr);
+         for (auto accountPtr : accountTypes) {
+            walletPtr->createBIP32Account(accountPtr, params.progressFunc);
+         }
          break;
       }
 
-   default:
-      //no accounts structure for these seeds
-      break;
+      default:
+         //no accounts structure for these seeds
+         break;
    }
 
    walletPtr->resetPassphrasePromptLambda();
@@ -1392,12 +1394,9 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
 
 ////////////////////////////////////////////////////////////////////////////////
 std::shared_ptr<AssetWallet_Single>
-   AssetWallet_Single::createFromPublicRoot_Armory135(
-   const std::filesystem::path& folder,
-   SecureBinaryData& pubRoot,
-   SecureBinaryData& chainCode,
-   const SecureBinaryData& controlPassphrase,
-   unsigned lookup)
+AssetWallet_Single::createFromPublicRoot_Armory135(
+   SecureBinaryData& pubRoot, SecureBinaryData& chainCode,
+   const IO::CreationParams& params)
 {
    auto masterID = generateMasterId(pubRoot, chainCode);
 
@@ -1405,17 +1404,15 @@ std::shared_ptr<AssetWallet_Single>
    Create control passphrase lambda. It gets wiped after the wallet is setup
    */
    auto controlPassLbd =
-      [&controlPassphrase](const set<EncryptionKeyId>&)->SecureBinaryData
+      [&controlPassphrase=params.controlPassphrase]
+      (const std::set<EncryptionKeyId>&)->SecureBinaryData
    {
       return controlPassphrase;
    };
 
    //create wallet file and dbenv
-   auto filePath = folder / std::filesystem::path{
-      "armory_" + masterID + "_WatchingOnly.lmdb"
-   };
-   auto iface = getIfaceFromFile(filePath, false, controlPassLbd,
-      250);
+   auto openFileParams = params.getOpenFileParams(masterID, "WatchingOnly");
+   auto iface = getIfaceFromFile(openFileParams, params.progressFunc);
 
    auto walletID = generateWalletId(pubRoot, chainCode, SeedType::Armory135);
    auto rootPtr = make_shared<AssetEntry_ArmoryLegacyRoot>(
@@ -1423,28 +1420,28 @@ std::shared_ptr<AssetWallet_Single>
 
    //create wallet
    auto walletPtr = initWalletDbWithPubRoot(
-      iface,
-      controlPassphrase,
-      masterID, walletID,
-      rootPtr);
+      iface, masterID, walletID,
+      rootPtr, params);
 
    //set as main
    setMainWallet(iface, walletID);
 
    //add account
-   auto account135 = make_shared<AccountType_ArmoryLegacy>();
+   auto account135 = std::make_shared<AccountType_ArmoryLegacy>();
    account135->setMain(true);
 
-   auto accountPtr = walletPtr->createAccount(account135);
-   accountPtr->extendPublicChain(iface, lookup - 1);
-
+   auto accountPtr = walletPtr->createAccount(account135, params.progressFunc);
+   if (params.progressFunc) {
+      auto prg = std::make_unique<Progress::ExtendChain>(params.lookup);
+      params.progressFunc(std::move(prg));
+   }
+   accountPtr->extendPublicChain(iface, params.lookup - 1);
    return walletPtr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 shared_ptr<AssetWallet_Single> AssetWallet_Single::createBlank(
-   const std::filesystem::path& folder, const string& walletID,
-   const SecureBinaryData& controlPassphrase)
+   const string& walletID, const IO::CreationParams& params)
 {
    auto masterID = walletID;
 
@@ -1452,30 +1449,24 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::createBlank(
    Create control passphrase lambda. It gets wiped after the wallet is setup
    */
    auto controlPassLbd =
-      [&controlPassphrase](const set<EncryptionKeyId>&)->SecureBinaryData
+      [&controlPassphrase = params.controlPassphrase]
+      (const std::set<EncryptionKeyId>&)->SecureBinaryData
    {
       return controlPassphrase;
    };
 
    //create wallet file and dbenv
-   auto filePath = folder / std::filesystem::path{
-      "armory_" + masterID + "_WatchingOnly.lmdb"
-   };
-   auto iface = getIfaceFromFile(filePath, false, controlPassLbd, 250);
-
-   //address accounts
-   shared_ptr<AssetWallet_Single> walletPtr = nullptr;
+   auto openFileParams = params.getOpenFileParams(masterID, "WatchingOnly");
+   auto iface = getIfaceFromFile(openFileParams, params.progressFunc);
 
    //ctors move the arguments in, gotta create copies first
-   walletPtr = initWalletDbWithPubRoot(
+   auto walletPtr = initWalletDbWithPubRoot(
       iface,
-      controlPassphrase,
       masterID, walletID,
-      nullptr);
+      nullptr, params);
 
    //set as main
    setMainWallet(iface, walletID);
-
    return walletPtr;
 }
 
@@ -1485,16 +1476,21 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::initWalletDb(
    const string& masterID, const string& walletID,
    const SecureBinaryData& privateRoot,
    const SecureBinaryData& chaincode,
-   const WalletCreationParams& params,
+   const IO::CreationParams& params,
    uint32_t seedFingerprint)
 {
-   auto headerPtr = make_shared<IO::WalletHeader_Single>(
+   if (params.progressFunc) {
+      auto prg = std::make_unique<Progress::InitFile>(masterID);
+      params.progressFunc(std::move(prg));
+   }
+
+   auto headerPtr = std::make_shared<IO::WalletHeader_Single>(
       Armory::Config::BitcoinSettings::getMagicBytes());
    headerPtr->walletID_ = walletID;
 
    //init headerPtr object
    auto masterKeyStruct = IO::WalletDBInterface::initWalletHeaderObject(
-      headerPtr, params.passphrase, params.privateUnlockDuration_ms);
+      headerPtr, params.passphrase, params.privateUnlock);
 
    //copy cipher to cycle the IV then encrypt the private root
    auto rootCipher = masterKeyStruct.cipher_->getCopy(
@@ -1504,41 +1500,38 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::initWalletDb(
       rootCipher->getKdfId(), privateRoot);
 
    //compute public root
-   auto&& pubkey = CryptoECDSA().ComputePublicKey(privateRoot);
+   auto pubkey = CryptoECDSA().ComputePublicKey(privateRoot);
 
    //create encrypted object
    AssetId rootAssetId = AssetId::getRootAssetId();
-   auto cipherData = make_unique<Encryption::CipherData>(
-      encryptedRoot, move(rootCipher));
-   auto rootAsset = make_shared<Asset_PrivateKey>(
-      rootAssetId, move(cipherData));
+   auto cipherData = std::make_unique<Encryption::CipherData>(
+      encryptedRoot, std::move(rootCipher));
+   auto rootAsset = std::make_shared<Asset_PrivateKey>(
+      rootAssetId, std::move(cipherData));
 
-   unique_ptr<AssetEntry> rootAssetEntry;
-   if (seedFingerprint != 0)
-   {
+      std::unique_ptr<AssetEntry> rootAssetEntry;
+   if (seedFingerprint != 0) {
       //bip32 root
-      rootAssetEntry = make_unique<AssetEntry_BIP32Root>(
+      rootAssetEntry = std::make_unique<AssetEntry_BIP32Root>(
          rootAssetId,
          pubkey, rootAsset,
-         chaincode, 0, 0, 0, seedFingerprint, vector<uint32_t>());
-   }
-   else
-   {
+         chaincode, 0, 0, 0, seedFingerprint, std::vector<uint32_t>());
+   } else {
       //legacy armory root
-      rootAssetEntry = make_unique<AssetEntry_ArmoryLegacyRoot>(
+      rootAssetEntry = std::make_unique<AssetEntry_ArmoryLegacyRoot>(
          rootAssetId,
          pubkey, rootAsset, chaincode);
    }
 
    //create wallet
-   auto walletPtr = make_shared<AssetWallet_Single>(iface, headerPtr, masterID);
+   auto walletPtr = std::make_shared<AssetWallet_Single>(iface, headerPtr, masterID);
 
    //add kdf & master key
    walletPtr->decryptedData_->addKdf(masterKeyStruct.kdf_);
    walletPtr->decryptedData_->addEncryptionKey(masterKeyStruct.masterKey_);
 
    auto controlPassLbd =
-      [&params](const set<EncryptionKeyId>&)->SecureBinaryData
+      [&params](const std::set<EncryptionKeyId>&)->SecureBinaryData
    {
       return params.controlPassphrase;
    };
@@ -1550,7 +1543,7 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::initWalletDb(
 
    //insert the original entries
    {
-      auto&& tx = iface->beginWriteTransaction(walletPtr->dbName_);
+      auto tx = iface->beginWriteTransaction(walletPtr->dbName_);
 
       {
          //decrypted data container
@@ -1562,7 +1555,7 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::initWalletDb(
          BinaryWriter bwKey;
          bwKey.put_uint32_t(ROOTASSET_KEY);
 
-         auto&& data = rootAssetEntry->serialize();
+         auto data = rootAssetEntry->serialize();
          tx->insert(bwKey.getData(), data);
       }
 
@@ -1574,31 +1567,44 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::initWalletDb(
    }
 
    //init walletptr from file
+   if (params.progressFunc) {
+      auto prg = std::make_unique<Progress::ReadFile>(masterID);
+      params.progressFunc(std::move(prg));
+   }
    walletPtr->readFromFile();
    return walletPtr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-shared_ptr<AssetWallet_Single> AssetWallet_Single::initWalletDbWithPubRoot(
+std::shared_ptr<AssetWallet_Single> AssetWallet_Single::initWalletDbWithPubRoot(
    shared_ptr<IO::WalletDBInterface> iface,
-   const SecureBinaryData& controlPassphrase,
-   const string& masterID, const string& walletID,
-   shared_ptr<AssetEntry_Single> pubRoot)
+   const std::string& masterID, const std::string& walletID,
+   std::shared_ptr<AssetEntry_Single> pubRoot,
+   const IO::CreationParams& params)
 {
-   if (pubRoot != nullptr)
-   {
-      if (pubRoot->hasPrivateKey())
+   if (pubRoot != nullptr) {
+      if (pubRoot->hasPrivateKey()) {
          throw WalletException("[initWalletDbWithPubRoot] root has priv key");
+      }
    }
 
-   auto headerPtr = make_shared<IO::WalletHeader_Single>(
+   if (params.progressFunc) {
+      auto prg = std::make_unique<Progress::InitFile>(masterID);
+      params.progressFunc(std::move(prg));
+   }
+
+   auto headerPtr = std::make_shared<IO::WalletHeader_Single>(
       Armory::Config::BitcoinSettings::getMagicBytes());
    headerPtr->walletID_ = walletID;
-   IO::WalletDBInterface::initWalletHeaderObject(headerPtr, {}, 0);
-   auto walletPtr = make_shared<AssetWallet_Single>(iface, headerPtr, masterID);
 
-   auto controlPassLbd = 
-      [&controlPassphrase](const set<EncryptionKeyId>&)->SecureBinaryData
+   IO::WalletDBInterface::initWalletHeaderObject(headerPtr,
+      params.controlPassphrase, params.publicUnlock);
+   auto walletPtr = std::make_shared<AssetWallet_Single>(
+      iface, headerPtr, masterID);
+
+   auto controlPassLbd =
+      [&controlPassphrase=params.controlPassphrase]
+      (const std::set<EncryptionKeyId>&)->SecureBinaryData
    {
       return controlPassphrase;
    };
@@ -1609,16 +1615,14 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::initWalletDbWithPubRoot(
 
    /**insert the original entries**/
    {
-      auto&& tx = iface->beginWriteTransaction(walletPtr->dbName_);
+      auto tx = iface->beginWriteTransaction(walletPtr->dbName_);
 
-      if (pubRoot != nullptr)
-      {
+      if (pubRoot != nullptr) {
          //root asset
          BinaryWriter bwKey;
          bwKey.put_uint32_t(ROOTASSET_KEY);
 
-         auto&& data = pubRoot->serialize();
-
+         auto data = pubRoot->serialize();
          tx->insert(bwKey.getData(), data);
       }
 
@@ -1630,13 +1634,17 @@ shared_ptr<AssetWallet_Single> AssetWallet_Single::initWalletDbWithPubRoot(
    }
 
    //init walletptr from file
+   if (params.progressFunc) {
+      auto prg = std::make_unique<Progress::ReadFile>(masterID);
+      params.progressFunc(std::move(prg));
+   }
    walletPtr->readFromFile();
    return walletPtr;
 }
 
 //////////////// -- decrypt private key methods -- /////////////////////////////
 const SecureBinaryData& AssetWallet_Single::getDecryptedValue(
-   shared_ptr<Encryption::EncryptedAssetData> assetPtr)
+   std::shared_ptr<Encryption::EncryptedAssetData> assetPtr)
 {
    //have to lock the decryptedData object before calling this method
    return decryptedData_->getClearTextAssetData(assetPtr);
@@ -1647,14 +1655,11 @@ const SecureBinaryData& AssetWallet_Single::getDecryptedPrivateKeyForAsset(
    std::shared_ptr<AssetEntry_Single> assetPtr)
 {
    auto assetPrivKey = assetPtr->getPrivKey();
-
-   if (assetPrivKey == nullptr)
-   {
+   if (assetPrivKey == nullptr) {
       auto account = getAccountForID(assetPtr->getID().getAddressAccountId());
       assetPrivKey = account->fillPrivateKey(iface_,
          decryptedData_, assetPtr->getID());
    }
-
    return getDecryptedValue(assetPrivKey);
 }
 
@@ -1955,7 +1960,7 @@ void AssetWallet_Single::importPublicData(const WalletPublicData& wpd,
       }
 
       //create the account
-      auto newAcc = wltWO->createAccount(accTypePtr);
+      auto newAcc = wltWO->createAccount(accTypePtr, nullptr);
 
       //check the created account matches the public data we're importing from
       if (newAcc->addressTypes_ != accData.addressTypes_ ||
@@ -1998,10 +2003,10 @@ void AssetWallet_Single::importPublicData(const WalletPublicData& wpd,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void AssetWallet_Single::mergePublicData(const std::filesystem::path& path,
-   const PassphraseLambda& lbd, const WalletPublicData& wpd)
+void AssetWallet_Single::mergePublicData(const IO::OpenFileParams& params,
+   const WalletPublicData& wpd)
 {
-   auto iface = getIfaceFromFile(path, true, lbd, 0);
+   auto iface = getIfaceFromFile(params);
    importPublicData(wpd, iface);
 }
 

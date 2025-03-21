@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2019, goatpig                                               //
+//  Copyright (C) 2019-2025, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -19,6 +19,7 @@
 #include "Wallets.h"
 #include "DBUtils.h"
 #include "ArmoryConfig.h"
+#include "IOHeader.h"
 
 #define PEERS_WALLET_PASSWORD "password"
 #define PEERS_WALLET_BIP32_ACCOUNT 0xFF005618
@@ -67,7 +68,7 @@ namespace Armory
             std::pair<std::string, unsigned>> peerRootKeys_;
 
       private:
-         void loadWallet(const std::filesystem::path&, const PassphraseLambda&);
+         void loadWallet(const IO::OpenFileParams&);
          void createWallet(const std::filesystem::path&, const std::string&,
             const PassphraseLambda&);
 

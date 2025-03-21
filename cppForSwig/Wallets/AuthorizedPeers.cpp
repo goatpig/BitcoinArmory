@@ -33,7 +33,7 @@ AuthorizedPeers::AuthorizedPeers(
 
    try {
       //try to load wallet
-      loadWallet(path, passLbd);
+      loadWallet(IO::OpenFileParams{path, passLbd});
    } catch (const PeerFileMissing&) {
       //the wallet hasn't be setup to begin with, create it
       createWallet(datadir, filename, passLbd);
@@ -141,13 +141,12 @@ AuthorizedPeers::AuthorizedPeers()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void AuthorizedPeers::loadWallet(
-   const std::filesystem::path& path, const PassphraseLambda& passLbd)
+void AuthorizedPeers::loadWallet(const IO::OpenFileParams& params)
 {
-   if (!FileUtils::fileExists(path, 6)) {
+   if (!FileUtils::fileExists(params.filePath, 6)) {
       throw PeerFileMissing();
    }
-   wallet_ = AssetWallet::loadMainWalletFromFile(path, passLbd);
+   wallet_ = AssetWallet::loadMainWalletFromFile(params);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -168,11 +167,13 @@ void AuthorizedPeers::createWallet(
 
       //generate bip32 node from random seed
       wallet_ = AssetWallet_Single::createFromSeed(
-         make_unique<ClearTextSeed_BIP32>(
+         std::make_unique<ClearTextSeed_BIP32>(
             CryptoPRNG::generateRandom(32), SeedType::BIP32_Virgin),
-         WalletCreationParams{
-            password, controlPassphrase, baseDir, 0, 100, 250
-         });
+         IO::CreationParams{ baseDir,
+            password, 100ms,
+            controlPassphrase, 250ms,
+            0
+      });
       auto wltSingle = dynamic_pointer_cast<AssetWallet_Single>(wallet_);
 
       auto rootBip32 = dynamic_pointer_cast<AssetEntry_BIP32Root>(
@@ -190,7 +191,7 @@ void AuthorizedPeers::createWallet(
          return password;
       };
       wallet_->setPassphrasePromptLambda(privKeyPassLbd);
-      wltSingle->createBIP32Account(account);
+      wltSingle->createBIP32Account(account, nullptr);
    }
 
    //add the peers meta account
@@ -198,7 +199,7 @@ void AuthorizedPeers::createWallet(
 
    //grab wallet filename
    auto currentname = wallet_->getDbFilename();
-   
+
    //destroying the wallet will shutdown the underlying db object
    wallet_.reset();
 
@@ -221,7 +222,8 @@ void AuthorizedPeers::createWallet(
    {
       return controlPassphrase;
    };
-   wallet_ = AssetWallet::loadMainWalletFromFile(path, passLbdCycle);
+   wallet_ = AssetWallet::loadMainWalletFromFile(
+      IO::OpenFileParams{path, passLbdCycle});
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -645,14 +647,15 @@ void AuthorizedPeers::changeControlPassphrase(const string& path)
 {
    //get a terminal prompt lambda
    auto promptPtr = TerminalPassphrasePrompt::getLambda("peers db");
-   
+
    //load the wallet
-   auto wlt = AssetWallet::loadMainWalletFromFile(path, promptPtr);
+   auto wlt = AssetWallet::loadMainWalletFromFile(
+      IO::OpenFileParams{path, promptPtr});
 
    //change passphrase lambda
    auto changeLbd = [&promptPtr](void)->SecureBinaryData
-   {      
-      return promptPtr({ BinaryData::fromString("change-pass") });
+   {
+      return promptPtr({ BinaryData::fromString("change-pass"sv) });
    };
 
    //change the passphrase

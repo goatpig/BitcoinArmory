@@ -331,8 +331,8 @@ TEST_F(BIP150_151Test, checkData_151_Only)
    // Check the encinit/encack data the client sends on its outbound session.
    BinaryData expectedCliEncinitData(34);
    std::copy(pubKeyClientOut.getPtr(),
-             pubKeyClientOut.getPtr() + 33,
-             expectedCliEncinitData.getPtr());
+      pubKeyClientOut.getPtr() + 33,
+      expectedCliEncinitData.getPtr());
    expectedCliEncinitData[BIP151PUBKEYSIZE] = \
       static_cast<uint8_t>(BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(pubKeyClientIn, cliInEncackCliData);
@@ -341,8 +341,8 @@ TEST_F(BIP150_151Test, checkData_151_Only)
    // Check the encinit/encack data the server sends on its outbound session.
    BinaryData expectedSrvEncinitData(34);
    std::copy(pubKeyServerOut.getPtr(),
-             pubKeyServerOut.getPtr() + 33,
-             expectedSrvEncinitData.getPtr());
+      pubKeyServerOut.getPtr() + 33,
+      expectedSrvEncinitData.getPtr());
    expectedSrvEncinitData[BIP151PUBKEYSIZE] = \
       static_cast<uint8_t>(BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(pubKeyServerIn, cliOutEncackCliData);
@@ -356,14 +356,14 @@ TEST_F(BIP150_151Test, checkData_151_Only)
 
    // Get that the size of the encrypted packet will be correct. The message
    // buffer is intentionally missized at first.
-   auto&& cmd = BinaryData::fromString("fake");
+   auto&& cmd = BinaryData::fromString("fake"sv);
    std::array<uint8_t, 4> payload = {0xde, 0xad, 0xbe, 0xef};
    BinaryData testMsgData(50);
    size_t finalMsgSize;
    BIP151Message testMsg(cmd.getPtr(), cmd.getSize(),
-                         payload.data(), payload.size());
+      payload.data(), payload.size());
    testMsg.getEncStructMsg(testMsgData.getPtr(), testMsgData.getSize(),
-                           finalMsgSize);
+      finalMsgSize);
    testMsgData.resize(finalMsgSize);
    EXPECT_EQ(finalMsgSize, 17ULL);
    EXPECT_EQ(msg, testMsgData);
@@ -1560,7 +1560,7 @@ TEST_F(BinaryDataTest, Constructor)
    BinaryData c(ptr, 2);
    BinaryData d(ptr, 4);
    BinaryData e(b);
-   auto&& f = BinaryData::fromString("xyza");
+   auto&& f = BinaryData::fromString("xyza"sv);
 
    EXPECT_EQ(a.getSize(), 0ULL);
    EXPECT_EQ(b.getSize(), 4ULL);
@@ -3044,8 +3044,8 @@ TEST_F(BtcUtilsTest, BotchedArmoryHMAC)
    auto sha_efgh = READHEX("e5e088a0b66163a0a26a5e053d2a4496dc16ab6e0e3dd1adf2d16aa84a078c9d");
    auto hmac_1 = READHEX("edd2c945dc57a5eecdb4dbb2db8ae4f33f9669046e47acb517c8f6bcdf6ee591");
 
-   auto abcd = BinaryData::fromString("abcd");
-   auto efgh = BinaryData::fromString("efgh");
+   auto abcd = BinaryData::fromString("abcd"sv);
+   auto efgh = BinaryData::fromString("efgh"sv);
 
    EXPECT_EQ(BtcUtils::getSha256(abcd), sha_abcd);
    EXPECT_EQ(BtcUtils::getSha256(efgh), sha_efgh);
@@ -6654,10 +6654,10 @@ protected:
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(KdfTests, Romix)
 {
-   uint32_t targetUnlock_ms = 2000;
+   auto targetUnlock = 2000ms;
 
    //create a KDF object
-   KeyDerivationFunction_Romix kdfRom(targetUnlock_ms);
+   KeyDerivationFunction_Romix kdfRom(targetUnlock);
    EXPECT_GE(kdfRom.memTarget(), 8092);
 
    //derive key with it, check it takes over 2sec
@@ -6669,8 +6669,8 @@ TEST_F(KdfTests, Romix)
 
       EXPECT_NE(derivedKey, keyToDerive);
       auto diff = chrono::duration_cast<chrono::milliseconds>(end - start);
-      EXPECT_GE(diff.count(), targetUnlock_ms);
-      EXPECT_LE(diff.count(), targetUnlock_ms + 1000);
+      EXPECT_GE(diff.count(), targetUnlock.count());
+      EXPECT_LE(diff.count(), targetUnlock.count() + 1000);
    }
    kdfRom.prettyPrint();
 
@@ -6689,8 +6689,8 @@ TEST_F(KdfTests, Romix)
 
       EXPECT_NE(derivedKey, keyToDerive);
       auto diff = chrono::duration_cast<chrono::milliseconds>(end - start);
-      EXPECT_GE(diff.count(), targetUnlock_ms);
-      EXPECT_LE(diff.count(), targetUnlock_ms + 1000);
+      EXPECT_GE(diff.count(), targetUnlock.count());
+      EXPECT_LE(diff.count(), targetUnlock.count() + 1000);
    }
    kdfRom2->prettyPrint();
 
@@ -6709,8 +6709,8 @@ TEST_F(KdfTests, Romix)
 
       EXPECT_NE(derivedKey, keyToDerive);
       auto diff = chrono::duration_cast<chrono::milliseconds>(end - start);
-      EXPECT_GE(diff.count(), targetUnlock_ms);
-      EXPECT_LE(diff.count(), targetUnlock_ms + 1000);
+      EXPECT_GE(diff.count(), targetUnlock.count());
+      EXPECT_LE(diff.count(), targetUnlock.count() + 1000);
    }
    kdfRom3.prettyPrint();
 }
@@ -6719,7 +6719,7 @@ TEST_F(KdfTests, Romix)
 ////////////////////////////////////////////////////////////////////////////////
 // Now actually execute all the tests
 ////////////////////////////////////////////////////////////////////////////////
-GTEST_API_ int main(int argc, char **argv) 
+GTEST_API_ int main(int argc, char **argv)
 {
    #ifdef _MSC_VER
       _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);

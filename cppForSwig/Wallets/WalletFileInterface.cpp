@@ -41,36 +41,33 @@ WalletDBInterface::~WalletDBInterface()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void WalletDBInterface::setupEnv(const std::filesystem::path& path,
-   bool fileExists, const PassphraseLambda& passLbd, uint32_t lockTime_ms)
+void WalletDBInterface::setupEnv(const OpenFileParams& params)
 {
-   auto lock = unique_lock<mutex>(setupMutex_);
+   auto lock = std::unique_lock<mutex>(setupMutex_);
    if (dbEnv_ != nullptr) {
       return;
    }
-   path_ = path;
+   path_ = params.filePath;
    dbCount_ = 2;
 
    //open env for control and meta dbs
-   openDbEnv(fileExists);
+   openDbEnv(params.fileExists);
 
    //open control db
    openControlDb();
 
+   //get control header
    bool isNew = false;
-   shared_ptr<WalletHeader_Control> controlHeader;
-   try
-   {
-      //get control header
-      controlHeader = dynamic_pointer_cast<WalletHeader_Control>(
+   std::shared_ptr<WalletHeader_Control> controlHeader;
+   try {
+      controlHeader = std::dynamic_pointer_cast<WalletHeader_Control>(
          loadControlHeader());
-      if (controlHeader == nullptr)
+      if (controlHeader == nullptr) {
          throw WalletException("invalid control header");
-   }
-   catch (NoEntryInWalletException&)
-   {
+      }
+   } catch (const NoEntryInWalletException&) {
       //no control header, this is a fresh wallet, set it up
-      controlHeader = setupControlDB(passLbd, lockTime_ms);
+      controlHeader = setupControlDB(params);
       isNew = true;
    }
 
@@ -81,15 +78,15 @@ void WalletDBInterface::setupEnv(const std::filesystem::path& path,
    loadSeed(controlHeader);
 
    /*
-   The passphrase prompt will be called a 3rd time out of 3 in this 
-   scope to decrypt the control seed and generate the encrypted 
+   The passphrase prompt will be called a 3rd time out of 3 in this
+   scope to decrypt the control seed and generate the encrypted
    header DB.
    */
 
    //decrypt control seed
-   lockControlContainer(passLbd);
-   auto& rootEncrKey = 
-      decryptedData_->getClearTextAssetData(controlSeed_.get());
+   lockControlContainer(params.controlPassFunc);
+   auto& rootEncrKey = decryptedData_->getClearTextAssetData(
+      controlSeed_.get());
 
    //load wallet header db
    {
@@ -102,13 +99,10 @@ void WalletDBInterface::setupEnv(const std::filesystem::path& path,
 
    //load wallet header objects
    unsigned dbCount;
-   if (!isNew)
-   {
+   if (!isNew) {
       loadHeaders();
       dbCount = headerMap_.size() + 2;
-   }
-   else
-   {
+   } else {
       dbCount = 3;
    }
 
@@ -116,8 +110,9 @@ void WalletDBInterface::setupEnv(const std::filesystem::path& path,
    setDbCount(dbCount, false);
 
    //open all dbs listed in header map
-   for (auto& headerPtr : headerMap_)
+   for (auto& headerPtr : headerMap_) {
       openDB(headerPtr.second, rootEncrKey, encryptionVersion_);
+   }
 
    //clean up
    unlockControlContainer();
@@ -188,7 +183,7 @@ void WalletDBInterface::openControlDb(void)
 
    controlDb_ = make_unique<LMDB>();
    auto tx = LMDBEnv::Transaction(dbEnv_.get(), LMDB::ReadWrite);
-   controlDb_->open(dbEnv_.get(), CONTROL_DB_NAME);
+   controlDb_->open(dbEnv_.get(), CONTROL_DB_NAME.data());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -296,14 +291,14 @@ shared_ptr<WalletHeader> WalletDBInterface::loadControlHeader()
    //grab meta object
    BinaryWriter bw;
    bw.put_uint8_t(WALLETHEADER_PREFIX);
-   bw.put_String(CONTROL_DB_NAME);
+   bw.put_String(CONTROL_DB_NAME.data());
    auto& headerKey = bw.getData();
 
-   auto&& tx = beginReadTransaction(CONTROL_DB_NAME);
+   auto tx = beginReadTransaction(CONTROL_DB_NAME.data());
    auto headerVal = getDataRefForKey(tx.get(), headerKey);
-   if (headerVal.getSize() == 0)
+   if (headerVal.empty()) {
       throw WalletInterfaceException("missing control db entry");
-
+   }
    return WalletHeader::deserialize(headerKey, headerVal);
 }
 
@@ -342,9 +337,8 @@ void WalletDBInterface::loadSeed(shared_ptr<WalletHeader> headerPtr)
 
 ////////////////////////////////////////////////////////////////////////////////
 MasterKeyStruct WalletDBInterface::initWalletHeaderObject(
-   shared_ptr<WalletHeader> headerPtr,
-   const SecureBinaryData& passphrase,
-   uint32_t unlockTime_ms)
+   std::shared_ptr<WalletHeader> headerPtr, SecureBinaryData passphrase,
+   const std::chrono::milliseconds& unlockTime)
 {
    /*
    Setup master and top encryption key.
@@ -363,143 +357,165 @@ MasterKeyStruct WalletDBInterface::initWalletHeaderObject(
    MasterKeyStruct mks;
 
    /*
-   generate master encryption key, derive id
+   generate master encryption key, do not apply a kdf
    */
-   mks.kdf_ = make_shared<KeyDerivationFunction_Romix>(unlockTime_ms);
-   auto&& masterKeySBD = CryptoPRNG::generateRandom(32);
-   mks.decryptedMasterKey_ = make_shared<ClearTextEncryptionKey>(masterKeySBD);
-   mks.decryptedMasterKey_->deriveKey(mks.kdf_);
-   auto&& masterEncryptionKeyId = mks.decryptedMasterKey_->getId(mks.kdf_->getId());
+   auto passthroughKdf = std::make_shared<KeyDerivationFunction_Passthrough>();
+   auto masterKeySBD = CryptoPRNG::generateRandom(32);
+   mks.decryptedMasterKey_ = std::make_shared<ClearTextEncryptionKey>(masterKeySBD);
+   mks.decryptedMasterKey_->deriveKey(passthroughKdf);
+   auto masterEncryptionKeyId = mks.decryptedMasterKey_->getId(passthroughKdf->getId());
 
    /*
    create cipher, tie it to master encryption key
    */
-   mks.cipher_ = make_unique<Cipher_AES>(mks.kdf_->getId(),
-      masterEncryptionKeyId);
+   mks.cipher_ = std::make_unique<Cipher_AES>(
+      passthroughKdf->getId(),
+      masterEncryptionKeyId
+   );
 
    /*
-   setup default encryption key, only ever used if no user passphrase is
-   provided
+   setup default encryption key, only ever used if no user passphrase is provided
    */
-   headerPtr->defaultEncryptionKey_ = move(CryptoPRNG::generateRandom(32));
+   headerPtr->defaultEncryptionKey_ = CryptoPRNG::generateRandom(32);
+
+   //build clear key object from const reference cause ctor moves the key in
    auto defaultKey = headerPtr->getDefaultEncryptionKey();
-   auto defaultEncryptionKeyPtr = make_unique<ClearTextEncryptionKey>(defaultKey);
-   defaultEncryptionKeyPtr->deriveKey(mks.kdf_);
-   headerPtr->defaultEncryptionKeyId_ =
-      defaultEncryptionKeyPtr->getId(mks.kdf_->getId());
+   auto defaultEncryptionKeyPtr = std::make_unique<ClearTextEncryptionKey>(defaultKey);
+
+   //do not apply a kdf
+   defaultEncryptionKeyPtr->deriveKey(passthroughKdf);
+   headerPtr->defaultEncryptionKeyId_ = defaultEncryptionKeyPtr->getId(
+      passthroughKdf->getId());
 
    /*
    encrypt master encryption key with passphrase if present, otherwise use
    default key
    */
-   unique_ptr<ClearTextEncryptionKey> topEncryptionKey;
-   if (!passphrase.empty())
-   {
-      //copy passphrase
-      auto&& passphraseCopy = passphrase.copy();
-      topEncryptionKey = make_unique<ClearTextEncryptionKey>(passphraseCopy);
-   }
-   else
-   {
+   if (!passphrase.empty()) {
+      //we have a passphrase, setup kdf for it
+      mks.kdf_ = std::make_shared<KeyDerivationFunction_Romix>(unlockTime);
+
+      //create encryption key from passphrase and kdf
+      auto topEncryptionKey = std::make_unique<ClearTextEncryptionKey>(passphrase);
+      topEncryptionKey->deriveKey(mks.kdf_);
+      auto topEncryptionKeyId = topEncryptionKey->getId(mks.kdf_->getId());
+
+      //create cipher for key and kdf ids
+      auto masterKeyCipher = std::make_unique<Cipher_AES>(
+         mks.kdf_->getId(),
+         topEncryptionKeyId
+      );
+
+      //encrypt the master key
+      auto encrMasterKey = masterKeyCipher->encrypt(
+         topEncryptionKey.get(), mks.kdf_->getId(),
+         mks.decryptedMasterKey_.get());
+
+      //create encryption key object
+      mks.masterKey_ = std::make_shared<EncryptionKey>(
+         masterEncryptionKeyId,
+         encrMasterKey,
+         std::move(masterKeyCipher)
+      );
+
+      //set the ids in header
+      headerPtr->masterEncryptionKeyId_ = mks.masterKey_->getId();
+      headerPtr->defaultKdfId_ = mks.kdf_->getId();
+   } else {
+      /*
+      No passphrase was provided, use the default key instead to encrypt the
+      master key. This has no real effect on the key but it avoids a big
+      deviation in implementation.
+      */
       LOGWARN << "No control passphrase provided, wallet file will not be encrypted";
-      topEncryptionKey = move(defaultEncryptionKeyPtr);
+
+      //create copy of master key struct cipher to cycle the IV
+      auto masterKeyCipher = mks.cipher_->getCopy(
+         headerPtr->defaultEncryptionKeyId_);
+
+      //encrypt the master key
+      auto encrMasterKey = masterKeyCipher->encrypt(
+         defaultEncryptionKeyPtr.get(), passthroughKdf->getId(),
+         mks.decryptedMasterKey_.get());
+
+      //create encryption key object
+      mks.masterKey_ = std::make_shared<EncryptionKey>(
+         masterEncryptionKeyId,
+         encrMasterKey,
+         std::move(masterKeyCipher)
+      );
+
+      //set the ids in header
+      headerPtr->masterEncryptionKeyId_ = mks.masterKey_->getId();
+      headerPtr->defaultKdfId_ = passthroughKdf->getId();
    }
-
-   /*
-   derive encryption key id
-   */
-   topEncryptionKey->deriveKey(mks.kdf_);
-   auto&& topEncryptionKeyId = topEncryptionKey->getId(mks.kdf_->getId());
-
-   /*
-   create cipher for top encryption key
-   */
-   auto&& masterKeyCipher = mks.cipher_->getCopy(topEncryptionKeyId);
-
-   /*
-   encrypt the master encryption key with the top encryption key
-   */
-   auto&& encrMasterKey = masterKeyCipher->encrypt(
-      topEncryptionKey.get(), mks.kdf_->getId(), 
-      mks.decryptedMasterKey_.get());
-
-   /*
-   create encryption key object
-   */
-   mks.masterKey_ = make_shared<EncryptionKey>(masterEncryptionKeyId,
-      encrMasterKey, move(masterKeyCipher));
-
-   /*
-   set master encryption key relevant ids in the WalletMeta object
-   */
-   headerPtr->masterEncryptionKeyId_ = mks.masterKey_->getId();
-   headerPtr->defaultKdfId_ = mks.kdf_->getId();
 
    /*
    setup control salt
    */
    headerPtr->controlSalt_ = CryptoPRNG::generateRandom(32);
-
    return mks;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 shared_ptr<WalletHeader_Control> WalletDBInterface::setupControlDB(
-   const PassphraseLambda& passLbd, uint32_t unlockTime_ms)
+   const OpenFileParams& params)
 {
-   //prompt for passphrase
-   SecureBinaryData passphrase;
-   if (passLbd)
-      passphrase = passLbd({});
-
    //create control meta object
-   auto headerPtr = make_shared<WalletHeader_Control>();
+   auto headerPtr = std::make_shared<WalletHeader_Control>();
    headerPtr->walletID_ = CONTROL_DB_NAME;
-   auto keyStruct = initWalletHeaderObject(headerPtr, passphrase, unlockTime_ms);
+   SecureBinaryData controlPass;
+   if (params.controlPassFunc) {
+      controlPass = params.controlPassFunc({});
+   }
+   auto keyStruct = initWalletHeaderObject(headerPtr,
+      std::move(controlPass), params.unlock);
 
    //setup controlDB decrypted data container
-   auto decryptedData = make_shared<DecryptedDataContainer>(
-      nullptr, CONTROL_DB_NAME,
+   auto decryptedData = std::make_shared<DecryptedDataContainer>(
+      nullptr, CONTROL_DB_NAME.data(),
       headerPtr->defaultEncryptionKey_,
       headerPtr->defaultEncryptionKeyId_,
       headerPtr->defaultKdfId_,
       headerPtr->masterEncryptionKeyId_);
    decryptedData->addEncryptionKey(keyStruct.masterKey_);
-   decryptedData->addKdf(keyStruct.kdf_);
+   if (keyStruct.kdf_) {
+      decryptedData->addKdf(keyStruct.kdf_);
+   }
 
    /*
    The lambda will be called to trigger the encryption of the control seed.
    This will be the second out of 3 calls to the passphrase lambda during
    wallet creation.
    */
-   decryptedData->setPassphrasePromptLambda(passLbd);
+   decryptedData->setPassphrasePromptLambda(params.controlPassFunc);
 
    {
       //create encrypted seed object
-      auto&& seed = CryptoPRNG::generateRandom(32);
-      auto&& lock = ReentrantLock(decryptedData.get());
+      auto seed = CryptoPRNG::generateRandom(32);
+      auto lock = ReentrantLock(decryptedData.get());
 
       auto cipherCopy = keyStruct.cipher_->getCopy();
       auto cipherText = decryptedData->encryptData(cipherCopy.get(), seed);
-      auto cipherData = make_unique<CipherData>(cipherText, move(cipherCopy));
-      auto encrSeed = make_shared<EncryptedSeed>(
-         move(cipherData), SeedType::Raw);
+      auto cipherData = std::make_unique<CipherData>(cipherText, move(cipherCopy));
+      auto encrSeed = std::make_shared<EncryptedSeed>(
+         std::move(cipherData), SeedType::Raw);
 
       //write seed to disk
-      auto&& tx = beginWriteTransaction(CONTROL_DB_NAME);
+      auto tx = beginWriteTransaction(CONTROL_DB_NAME.data());
 
       BinaryWriter seedKey;
       seedKey.put_uint32_t(WALLET_SEED_KEY);
-      auto&& seedVal = encrSeed->serialize();
+      auto seedVal = encrSeed->serialize();
       tx->insert(seedKey.getData(), seedVal);
 
       //write meta ptr to disk
-      auto&& metaKey = headerPtr->getDbKey();
-      auto&& metaVal = headerPtr->serialize();
+      auto metaKey = headerPtr->getDbKey();
+      auto metaVal = headerPtr->serialize();
       tx->insert(metaKey, metaVal);
 
       //write decrypted data container to disk
-      decryptedData->updateOnDisk(move(tx));
+      decryptedData->updateOnDisk(std::move(tx));
    }
 
    return headerPtr;

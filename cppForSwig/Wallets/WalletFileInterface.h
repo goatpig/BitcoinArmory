@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2019-2021, goatpig                                          //
+//  Copyright (C) 2019-2025, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -23,8 +23,9 @@
 #include "SecureBinaryData.h"
 #include "EncryptedDB.h"
 #include "PassphraseLambda.h"
+#include "IOHeader.h"
 
-#define CONTROL_DB_NAME "control_db"
+#define CONTROL_DB_NAME "control_db"sv
 
 ////////////////////////////////////////////////////////////////////////////////
 class PRNG_Fortuna;
@@ -182,7 +183,7 @@ namespace Armory
             //header methods
             void openControlDb(void);
             std::shared_ptr<WalletHeader_Control> setupControlDB(
-               const PassphraseLambda&, uint32_t);
+               const OpenFileParams&);
             void putHeader(std::shared_ptr<WalletHeader>);
 
             void openDbEnv(bool);
@@ -198,8 +199,7 @@ namespace Armory
             ~WalletDBInterface(void);
 
             //setup
-            void setupEnv(const std::filesystem::path&, bool,
-               const PassphraseLambda&, uint32_t);
+            void setupEnv(const OpenFileParams&);
             void shutdown(void);
             void eraseFromDisk(void);
 
@@ -207,9 +207,8 @@ namespace Armory
 
             //headers
             static MasterKeyStruct initWalletHeaderObject(
-               std::shared_ptr<WalletHeader>,
-               const SecureBinaryData&,
-               uint32_t);
+               std::shared_ptr<WalletHeader>, SecureBinaryData,
+               const std::chrono::milliseconds&);
             void addHeader(std::shared_ptr<WalletHeader>);
             std::shared_ptr<WalletHeader> getWalletHeader(
                const std::string&) const;

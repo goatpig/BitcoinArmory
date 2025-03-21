@@ -1750,7 +1750,7 @@ TEST_F(BlockUtilsWithWalletTest, MultipleSigners_2of3_NativeP2WSH)
    };
 
    //// create 3 assetWlt ////
-   WalletCreationParams params{{}, {}, homedir_, 3, 1, 1};
+   IO::CreationParams params{homedir_, {}, 1ms, {}, 1ms, 3};
 
    //create a root private key
    std::unique_ptr<Armory::Seeds::ClearTextSeed> seed1(

@@ -2339,7 +2339,7 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
    };
 
    //// create assetWlt ////
-   WalletCreationParams params{{}, {}, homedir_, 10, 1, 1};
+   IO::CreationParams params{homedir_, {}, 1ms, {}, 1ms, 10};
 
    //create a root private key
    std::unique_ptr<Armory::Seeds::ClearTextSeed> seed(
@@ -2834,7 +2834,7 @@ TEST_F(ZeroConfTests_FullNode, RegisterAddress_AfterZC)
    };
 
    //// create assetWlt ////
-   WalletCreationParams params{{}, {}, homedir_, 3, 1, 1};
+   IO::CreationParams params{homedir_, {}, 1ms, {}, 1ms, 3};
    std::unique_ptr<Armory::Seeds::ClearTextSeed> seed(
       new Armory::Seeds::ClearTextSeed_Armory135());
    auto assetWlt = AssetWallet_Single::createFromSeed(
@@ -3045,7 +3045,7 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
    };
 
    //// create assetWlt ////
-   WalletCreationParams params{{}, {}, homedir_, 10, 1, 1};
+   IO::CreationParams params{homedir_, {}, 1ms, {}, 1ms, 10};
    std::unique_ptr<Armory::Seeds::ClearTextSeed> seed(
       new Armory::Seeds::ClearTextSeed_Armory135());
    auto assetWlt = AssetWallet_Single::createFromSeed(
@@ -3513,7 +3513,7 @@ TEST_F(ZeroConfTests_FullNode, TwoZC_CheckLedgers)
    };
 
    //// create assetWlt ////
-   WalletCreationParams params{{}, {}, homedir_, 5, 1, 1};
+   IO::CreationParams params{homedir_, {}, 1ms, {}, 1ms, 5};
    std::unique_ptr<Armory::Seeds::ClearTextSeed> seed(
       new Armory::Seeds::ClearTextSeed_Armory135());
    auto assetWlt = AssetWallet_Single::createFromSeed(
@@ -4288,7 +4288,7 @@ TEST_F(ZeroConfTests_Supernode, ZC_Reorg)
    theBDMt_->start(DBSettings::initMode());
    auto bdvID = DBTestUtils::registerBDV(clients_, BitcoinSettings::getMagicBytes());
 
-   WalletCreationParams params{{}, {}, homedir_, 3, 1, 1};
+   IO::CreationParams params{homedir_, {}, 1ms, {}, 1ms, 3};
    std::unique_ptr<Armory::Seeds::ClearTextSeed> seed(
       new Armory::Seeds::ClearTextSeed_Armory135());
    auto assetWlt = AssetWallet_Single::createFromSeed(
@@ -4462,7 +4462,7 @@ TEST_F(ZeroConfTests_Supernode, ChainZC_RBFchild_Test)
    };
 
    //// create assetWlt ////
-   WalletCreationParams params{{}, {}, homedir_, 10, 1, 1};
+   IO::CreationParams params{homedir_, {}, 1ms, {}, 1ms, 10};
    std::unique_ptr<Armory::Seeds::ClearTextSeed> seed(
       new Armory::Seeds::ClearTextSeed_Armory135());
    auto assetWlt = AssetWallet_Single::createFromSeed(

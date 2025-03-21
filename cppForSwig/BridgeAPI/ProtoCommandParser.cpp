@@ -9,6 +9,7 @@
 #include "ProtoCommandParser.h"
 #include "CppBridge.h"
 #include "Wallets/Seeds/Backups.h"
+#include "Wallets/IOHeader.h"
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>
@@ -16,6 +17,7 @@
 
 using namespace Armory;
 using namespace Armory::Bridge;
+using namespace std::chrono_literals;
 
 namespace
 {
@@ -943,9 +945,14 @@ namespace
             );
 
             auto wltId = bridge->createWallet(
-               args.getLookup(),
                args.getLabel(), args.getDescription(),
-               sbdControl, sbdPass, sbdEntropy
+               sbdEntropy, Wallets::IO::CreationParams {
+                  bridge->getDataDir(),
+                  sbdPass, 2000ms,
+                  sbdControl, 250ms,
+                  args.getLookup(),
+                  nullptr
+               }
             );
 
             capnp::MallocMessageBuilder message;

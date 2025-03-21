@@ -24,7 +24,7 @@ namespace Armory
    namespace Seeds
    {
       struct PromptReply;
-   }
+   };
 
    namespace Bridge
    {
@@ -152,6 +152,7 @@ namespace Armory
 
       public:
          //wallet setup
+         const std::filesystem::path& getDataDir(void) const;
          void loadWallets(const std::string&, MessageId);
          BinaryData createWalletsPacket(MessageId);
          bool deleteWallet(const std::string&);
@@ -181,10 +182,10 @@ namespace Armory
          BinaryData getAddress(const std::string&,
             const Wallets::AddressAccountId&, uint32_t,
             uint32_t, MessageId);
-         std::string createWallet(uint32_t,
-            const std::string&, const std::string&,
-            const SecureBinaryData&, const SecureBinaryData&,
-            const SecureBinaryData&);
+         std::string createWallet(
+            const std::string&, const std::string&, //label, descr
+            const SecureBinaryData&, //extra entropy
+            const Wallets::IO::CreationParams&);
          void createBackupStringForWallet(const std::string&,
             const std::string&, MessageId);
          void restoreWallet(

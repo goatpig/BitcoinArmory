@@ -162,13 +162,12 @@ public:
 
    /////////////////////////////////////////////////////////////////////////////
    // Default max-memory reqt will
-   void computeKdfParams(double targetComputeSec,
+   void computeKdfParams(const std::chrono::milliseconds&,
       uint32_t maxMemReqtsBytes=DEFAULT_KDF_MAX_MEMORY,
       bool verbose = false);
 
    /////////////////////////////////////////////////////////////////////////////
-   void usePrecomputedKdfParams(uint32_t memReqts,
-      uint32_t numIter,
+   void usePrecomputedKdfParams(uint32_t memReqts, uint32_t numIter,
       SecureBinaryData salt);
 
    /////////////////////////////////////////////////////////////////////////////
@@ -185,7 +184,7 @@ public:
    uint32_t     getMemoryReqtBytes(void) const  { return memoryReqtBytes_; }
    uint32_t     getNumIterations(void) const    { return numIterations_; }
    SecureBinaryData   getSalt(void) const       { return salt_; }
-   
+
 private:
 
    std::string   hashFunctionName_;  // name of hash function to use (only one)

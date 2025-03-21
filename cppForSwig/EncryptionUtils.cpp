@@ -264,27 +264,26 @@ SecureBinaryData CryptoAES::EncryptCBC(const SecureBinaryData & data,
 
 /////////////////////////////////////////////////////////////////////////////
 // Same as above, but only changing the AES mode of operation (CBC, not CFB)
-SecureBinaryData CryptoAES::DecryptCBC(const SecureBinaryData & data, 
-                                       const SecureBinaryData & key,
-                                       const SecureBinaryData & iv  )
+SecureBinaryData CryptoAES::DecryptCBC(const SecureBinaryData& data,
+   const SecureBinaryData& key, const SecureBinaryData& iv)
 {
-   if(data.getSize() == 0)
-      return SecureBinaryData(0);
+   if(data.empty()) {
+      return {};
+   }
 
    SecureBinaryData unencrData(data.getSize());
-
    auto size = aes256_cbc_decrypt(
       key.getPtr(), iv.getPtr(),
       data.getPtr(), data.getSize(),
       1, //PKCS #5 padding
       unencrData.getPtr());
 
-   if (size == 0)
-      throw runtime_error("failed to decrypt packet");
-
-   if (size < (ssize_t)unencrData.getSize())
+   if (size == 0) {
+      throw std::runtime_error("failed to decrypt packet");
+   }
+   if (size < (ssize_t)unencrData.getSize()) {
       unencrData.resize(size);
-
+   }
    return unencrData;
 }
 

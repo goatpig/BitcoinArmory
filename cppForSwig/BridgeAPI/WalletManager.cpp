@@ -16,8 +16,9 @@
 
 using namespace Armory;
 using namespace std::string_view_literals;
+using namespace std::chrono_literals;
 
-#define WALLET_135_HEADER "\xbaWALLET\x00"
+#define WALLET_135_HEADER "\xbaWALLET\x00"sv
 #define PYBTC_ADDRESS_SIZE 237
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -169,8 +170,8 @@ std::shared_ptr<WalletContainer> WalletManager::addWallet(
 
 ////////////////////////////////////////////////////////////////////////////////
 std::shared_ptr<WalletContainer> WalletManager::createNewWallet(
-   const SecureBinaryData& pass, const SecureBinaryData& controlPass,
-   const SecureBinaryData& extraEntropy, unsigned lookup)
+   const SecureBinaryData& extraEntropy,
+   const Wallets::IO::CreationParams& params)
 {
    auto root = CryptoPRNG::generateRandom(32);
    if (!extraEntropy.empty()) {
@@ -181,11 +182,7 @@ std::shared_ptr<WalletContainer> WalletManager::createNewWallet(
    auto seed = std::make_unique<Seeds::ClearTextSeed_Armory135>(
       root, Seeds::ClearTextSeed_Armory135::LegacyType::Armory200);
    auto wallet = Wallets::AssetWallet_Single::createFromSeed(
-      std::move(seed),
-      Wallets::WalletCreationParams{
-         pass, controlPass, path_, lookup
-      });
-
+      std::move(seed), params);
    return addWallet(wallet, wallet->getMainAccountID());
 }
 
@@ -239,7 +236,8 @@ void WalletManager::loadWallet(const std::filesystem::path& path,
    const PassphraseLambda& passLbd)
 {
    try {
-      auto wltPtr = Wallets::AssetWallet::loadMainWalletFromFile(path, passLbd);
+      auto wltPtr = Wallets::AssetWallet::loadMainWalletFromFile(
+         Wallets::IO::OpenFileParams{path, passLbd});
       const auto& accIds = wltPtr->getAccountIDs();
       for (const auto& accId : accIds) {
          addWallet(wltPtr, accId);
@@ -843,7 +841,7 @@ void Armory135Header::parseFile()
       auto rootAddrRef = brr.get_BinaryDataRef(PYBTC_ADDRESS_SIZE);
       Armory135Address rootAddrObj;
       rootAddrObj.parseFromRef(rootAddrRef);
-      addrMap_.emplace(BinaryData::fromString("ROOT"), rootAddrObj);
+      addrMap_.emplace(BinaryData::fromString("ROOT"sv), rootAddrObj);
 
       //1024 bytes skip
       brr.advance(1024);
@@ -913,7 +911,7 @@ void Armory135Header::parseFile()
 std::shared_ptr<Wallets::AssetWallet_Single> Armory135Header::migrate(
    const PassphraseLambda& passLbd) const
 {
-   auto rootKey = BinaryData::fromString("ROOT");
+   auto rootKey = BinaryData::fromString("ROOT"sv);
    auto rootAddrIter = addrMap_.find(rootKey);
    if (rootAddrIter == addrMap_.end()) {
       throw std::runtime_error("no root entry");
@@ -921,9 +919,6 @@ std::shared_ptr<Wallets::AssetWallet_Single> Armory135Header::migrate(
 
    auto& rootAddrObj = rootAddrIter->second;
    auto chaincodeCopy = rootAddrObj.chaincode();
-
-   SecureBinaryData controlPass;
-   SecureBinaryData privKeyPass;
 
    auto highestIndex = highestUsedIndex_;
    for (auto& addrPair : addrMap_) {
@@ -934,10 +929,10 @@ std::shared_ptr<Wallets::AssetWallet_Single> Armory135Header::migrate(
    ++highestIndex;
 
    //try to decrypt the private root
+   SecureBinaryData privKeyPass;
    SecureBinaryData decryptedRoot;
    {
-      if (isEncrypted_ && rootAddrObj.hasPrivKey() &&
-         rootAddrObj.isEncrypted()) {
+      if (isEncrypted_ && rootAddrObj.hasPrivKey() && rootAddrObj.isEncrypted()) {
          //decrypt lbd
          auto decryptPrivKey = [this, &privKeyPass](
             const PassphraseLambda& passLbd,
@@ -982,13 +977,18 @@ std::shared_ptr<Wallets::AssetWallet_Single> Armory135Header::migrate(
    }
 
    //create wallet
-   auto folder = std::filesystem::path(path_).parent_path();
+   auto params = Wallets::IO::CreationParams{
+      path_.parent_path(),
+      privKeyPass, 2000ms,
+      {}, 250ms,
+      (size_t)highestIndex, nullptr
+   };
+
    std::shared_ptr<Wallets::AssetWallet_Single> wallet;
    if (decryptedRoot.empty()) {
       auto pubKeyCopy = rootAddrObj.pubKey();
       wallet = Wallets::AssetWallet_Single::createFromPublicRoot_Armory135(
-         folder, pubKeyCopy, chaincodeCopy,
-         controlPass, highestIndex);
+         pubKeyCopy, chaincodeCopy, params);
    } else {
       std::unique_ptr<Seeds::ClearTextSeed> seed(
          new Seeds::ClearTextSeed_Armory135(
@@ -996,10 +996,7 @@ std::shared_ptr<Wallets::AssetWallet_Single> Armory135Header::migrate(
             chaincodeCopy
       ));
       wallet = Wallets::AssetWallet_Single::createFromSeed(
-         std::move(seed),
-         Wallets::WalletCreationParams{
-            privKeyPass, controlPass, folder, (uint32_t)highestIndex
-      });
+         std::move(seed), params);
    }
 
    //main account id, check it matches armory wallet id

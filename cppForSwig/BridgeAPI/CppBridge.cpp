@@ -23,6 +23,7 @@ using namespace Armory;
 using namespace Armory::Codec::Bridge;
 using namespace Armory::Codec::Types;
 using namespace Armory::Bridge;
+using namespace std::chrono_literals;
 
 enum CppBridgeState
 {
@@ -350,6 +351,11 @@ bool CppBridge::isOffline() const
       return true;
    }
    return !bdvPtr_->isValid();
+}
+
+const std::filesystem::path& CppBridge::getDataDir() const
+{
+   return path_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -819,11 +825,14 @@ void CppBridge::restoreWallet(
          FileUtils::createDirectory(tempDir);
 
          //create wallet from backup
-         Wallets::WalletCreationParams params{
-            {}, //passphrase, leave empty so that it prompts the user
-            {}, //control passphrase, same treatment
-            tempDir //folder where the wallet is created
-            //TODO: add kdf params and lookup
+         Wallets::IO::CreationParams params{
+            tempDir,
+            //passphrase + default unlock time, leave empty to prompts the user
+            {}, 2000ms,
+            //control passphrase + default unlock time, same treatment
+            {}, 250ms,
+            100, //address lookup
+            nullptr //progress callback
          };
 
          auto restoreResult = Armory::Seeds::Helpers::restoreFromBackup(
@@ -859,7 +868,7 @@ void CppBridge::restoreWallet(
                   auto oldWltData = Wallets::AssetWallet_Single::exportPublicData(
                      oldWltSingle);
                   Wallets::AssetWallet_Single::mergePublicData(
-                     newWltPath, passLbd, oldWltData);
+                     Wallets::IO::OpenFileParams{newWltPath, passLbd}, oldWltData);
                }
             }
 
@@ -1247,11 +1256,10 @@ void CppBridge::extendAddressPool(const std::string& wltId,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::string CppBridge::createWallet(uint32_t lookup,
+std::string CppBridge::createWallet(
    const std::string& label, const std::string& description,
-   const SecureBinaryData& controlPassphrase,
-   const SecureBinaryData& passphrase,
-   const SecureBinaryData& extraEntropy)
+   const SecureBinaryData& extraEntropy,
+   const Wallets::IO::CreationParams& params)
 {
    //sanity check
    if (wltManager_ == nullptr) {
@@ -1259,8 +1267,7 @@ std::string CppBridge::createWallet(uint32_t lookup,
    }
 
    //create wallet
-   auto wallet = wltManager_->createNewWallet(
-      passphrase, controlPassphrase, extraEntropy, lookup);
+   auto wallet = wltManager_->createNewWallet(extraEntropy, params);
 
    //set labels
    auto wltPtr = wallet->getWalletPtr();

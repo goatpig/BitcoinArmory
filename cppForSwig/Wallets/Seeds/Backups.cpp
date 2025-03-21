@@ -12,6 +12,7 @@
 #include "../WalletIdTypes.h"
 #include "Seeds.h"
 #include "Wallets.h"
+#include "IOHeader.h"
 extern "C" {
 #include <trezor-crypto/bip39.h>
 }
@@ -1049,7 +1050,7 @@ unique_ptr<Backup_Base58> Helpers::getBase58BackupString(
 ////////////////////////////// -- restore methods -- ///////////////////////////
 RestoreResult Helpers::restoreFromBackup(
    unique_ptr<WalletBackup> backup, const UserPrompt& callback,
-   const WalletCreationParams& params)
+   const IO::CreationParams& params)
 {
    unique_ptr<ClearTextSeed> seed = nullptr;
    auto bType = backup->type();
@@ -1109,9 +1110,11 @@ RestoreResult Helpers::restoreFromBackup(
       control.setRef(reply.controlPass);
    }
 
-   WalletCreationParams paramsCopy{ pass, control,
-      params.folder, params.lookup,
-      params.publicUnlockDuration_ms, params.privateUnlockDuration_ms };
+   IO::CreationParams paramsCopy{ params.folder,
+      pass, params.privateUnlock,
+      control, params.publicUnlock,
+      params.lookup, params.progressFunc
+   };
 
    //return wallet
    auto wlt = AssetWallet_Single::createFromSeed(std::move(seed), paramsCopy);

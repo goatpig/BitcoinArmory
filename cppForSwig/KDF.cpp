@@ -32,9 +32,8 @@ KdfRomix::KdfRomix(uint32_t memReqts, uint32_t numIter, SecureBinaryData salt) :
 
 /////////////////////////////////////////////////////////////////////////////
 void KdfRomix::computeKdfParams(
-   double targetComputeMSec,
-   uint32_t maxMemReqts,
-   bool verbose)
+   const std::chrono::milliseconds& targetCompute,
+   uint32_t maxMemReqts, bool verbose)
 {
    // Create a random salt, even though this is probably unnecessary:
    // the variation in numIter and memReqts is probably effective enough
@@ -42,8 +41,8 @@ void KdfRomix::computeKdfParams(
 
    // If target compute is 0s, then this method really only generates
    // a random salt, and sets the other params to default minimum.
-   if (targetComputeMSec <= 4)
-   {
+   auto targetComputeMSec = targetCompute.count();
+   if (targetComputeMSec <= 4) {
       numIterations_ = 1;
       memoryReqtBytes_ = 1024;
       return;
@@ -62,17 +61,16 @@ void KdfRomix::computeKdfParams(
    memoryReqtBytes_ = 1024;
    uint64_t approxMSec = 0;
    while (approxMSec <= targetComputeMSec / 4 &&
-      memoryReqtBytes_ < maxMemReqts)
-   {
+      memoryReqtBytes_ < maxMemReqts) {
       memoryReqtBytes_ *= 2;
 
       sequenceCount_ = memoryReqtBytes_ / hashOutputBytes_;
       lookupTable_.resize(memoryReqtBytes_);
 
-      auto start = chrono::system_clock::now();
+      auto start = std::chrono::system_clock::now();
       testKey = DeriveKey_OneIter(testKey);
-      auto end = chrono::system_clock::now();
-      approxMSec = chrono::duration_cast<chrono::milliseconds>(
+      auto end = std::chrono::system_clock::now();
+      approxMSec = std::chrono::duration_cast<std::chrono::milliseconds>(
          end - start).count();
    }
 
@@ -80,36 +78,33 @@ void KdfRomix::computeKdfParams(
    sequenceCount_ = memoryReqtBytes_ / hashOutputBytes_;
    lookupTable_.resize(memoryReqtBytes_);
 
-
    // Depending on the search above (or if a low max memory was chosen,
    // we may need to do multiple iterations to achieve the desired compute
    // time on this system.
    uint64_t allItersMSec = 0;
    uint32_t numTest = 1;
-   while (allItersMSec < 100)
-   {
+   while (allItersMSec < 100) {
       numTest *= 2;
-      auto start = chrono::system_clock::now();
+      auto start = std::chrono::system_clock::now();
       for (uint32_t i = 0; i < numTest; i++)
       {
          auto&& _testKey = testKey;
          _testKey = DeriveKey_OneIter(_testKey);
       }
-      auto end = chrono::system_clock::now();
-      allItersMSec = chrono::duration_cast<chrono::milliseconds>(
+      auto end = std::chrono::system_clock::now();
+      allItersMSec = std::chrono::duration_cast<std::chrono::milliseconds>(
          end - start).count();
    }
 
    uint64_t perIterMSec = allItersMSec / numTest;
    numIterations_ = (uint32_t)(targetComputeMSec / (perIterMSec + 1));
    numIterations_ = (numIterations_ < 1 ? 1 : numIterations_ + 1);
-   if (verbose)
-   {
-      cout << "System speed test results    :  " << endl;
-      cout << "   Total test of the KDF took:  " << allItersMSec << " ms" << endl;
-      cout << "                   to execute:  " << numTest << " iterations" << endl;
-      cout << "   Target computation time is:  " << targetComputeMSec << " ms" << endl;
-      cout << "   Setting numIterations to:    " << numIterations_ << endl;
+   if (verbose) {
+      std::cout << "System speed test results    :  " << std::endl;
+      std::cout << "   Total test of the KDF took:  " << allItersMSec << " ms" << std::endl;
+      std::cout << "                   to execute:  " << numTest << " iterations" << std::endl;
+      std::cout << "   Target computation time is:  " << targetComputeMSec << " ms" << std::endl;
+      std::cout << "   Setting numIterations to  :  " << numIterations_ << std::endl;
    }
 }
 

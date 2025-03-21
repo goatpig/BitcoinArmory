@@ -27,7 +27,10 @@ namespace Armory
 {
    namespace Wallets
    {
-      struct WalletCreationParams;
+      namespace IO
+      {
+         struct CreationParams;
+      }
    }
 
    namespace Seeds
@@ -317,7 +320,7 @@ namespace Armory
          //primary restore call
          static RestoreResult restoreFromBackup(
             std::unique_ptr<WalletBackup>, const UserPrompt&,
-            const Wallets::WalletCreationParams&
+            const Wallets::IO::CreationParams&
          );
 
          //seed restore methods

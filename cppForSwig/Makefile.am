@@ -100,6 +100,7 @@ ARMORYWALLETS_SOURCE_FILES = Wallets/BIP32_Node.cpp \
 	Wallets/AssetEncryption.cpp \
 	Wallets/Wallets.cpp \
 	Wallets/AuthorizedPeers.cpp \
+	Wallets/Progress.cpp \
 	Wallets/Seeds/Backups.cpp \
 	Wallets/Seeds/Seeds.cpp \
 	Wallets/random_buffer.c

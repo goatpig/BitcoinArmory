@@ -42,6 +42,11 @@ namespace Armory
       class AddressAccountId;
       class AssetWallet;
       class EncryptionKeyId;
+
+      namespace IO
+      {
+         struct CreationParams;
+      }
    };
 };
 
@@ -279,8 +284,8 @@ public:
 
    void updateStateFromDB(const std::function<void(void)>&);
    std::shared_ptr<WalletContainer> createNewWallet(
-      const SecureBinaryData&, const SecureBinaryData&, //pass, control pass
-      const SecureBinaryData&, unsigned); //extra entropy, address lookup
+      const SecureBinaryData&, //extra entropy
+      const Armory::Wallets::IO::CreationParams&);
 
    std::filesystem::path unloadWallet(const std::string&);
    void deleteWallet(const std::string&);
