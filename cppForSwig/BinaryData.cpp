@@ -19,9 +19,42 @@ BinaryData::BinaryData(BinaryDataRef const & bdRef)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void BinaryData::copyFrom(BinaryDataRef const & bdr)
+// copyFrom
+////////////////////////////////////////////////////////////////////////////////
+void BinaryData::copyFrom(uint8_t const * start, uint8_t const * end)
 {
-   copyFrom( bdr.getPtr(), bdr.getSize() );
+   // [start, end)
+   copyFrom(start, (end-start));
+}
+
+void BinaryData::copyFrom(const std::string& str)
+{
+   copyFrom(str.c_str(), str.size());
+}
+
+void BinaryData::copyFrom(const BinaryDataRef& bdr)
+{
+   copyFrom(bdr.getPtr(), bdr.getSize());
+}
+
+void  BinaryData::copyFrom(const BinaryData& bd)
+{
+   copyFrom(bd.getPtr(), bd.getSize());
+}
+
+void  BinaryData::copyFrom(const char* inData, size_t sz)
+{
+   copyFrom((uint8_t*)inData, sz);
+}
+
+void BinaryData::copyFrom(const uint8_t* inData, size_t sz)
+{
+   if (inData==NULL || sz == 0) {
+      alloc(0);
+   } else {
+      alloc(sz);
+      memcpy(&data_[0], inData, sz);
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -192,6 +225,28 @@ BinaryData BinaryData::getSliceCopy(ssize_t start_pos, size_t nChar) const
       return BinaryData();
    }
    return BinaryData(getPtr()+start_pos, nChar);
+}
+
+/////////////////////////////////////////////////////////////////////////////
+BinaryData BinaryData::fromString(const std::string& str, size_t len)
+{
+   if (len == SIZE_MAX) {
+      len = str.size();
+   }
+   BinaryData data;
+   data.copyFrom(str.c_str(), len);
+   return data;
+}
+
+/////////////////////////////////////////////////////////////////////////////
+BinaryData BinaryData::fromString(const std::string_view& str, size_t len)
+{
+   if (len == SIZE_MAX) {
+      len = str.size();
+   }
+   BinaryData data;
+   data.copyFrom(str.data(), len);
+   return data;
 }
 
 /////////////////////////////////////////////////////////////////////////////

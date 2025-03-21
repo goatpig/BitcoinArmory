@@ -578,9 +578,9 @@ EncryptionKeyId::EncryptionKeyId(const EncryptionKeyId& id) :
 ////////////////////////////////////////////////////////////////////////////////
 EncryptionKeyId::EncryptionKeyId(const BinaryData& data)
 {
-   if (data.getSize() != EncryptionKeyIdLength)
+   if (data.getSize() != EncryptionKeyIdLength) {
       throw IdException("[EncryptionKeyId] invalid key size");
-
+   }
    data_ = data;
 }
 

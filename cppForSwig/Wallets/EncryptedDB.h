@@ -21,8 +21,8 @@
 #include "SecureBinaryData.h"
 #include "ReentrantLock.h"
 
-#define ERASURE_PLACE_HOLDER "erased"
-#define KEY_CYCLE_FLAG "cycle"
+#define ERASURE_PLACE_HOLDER "erased"sv
+#define KEY_CYCLE_FLAG "cycle"sv
 
 namespace Armory
 {

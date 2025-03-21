@@ -236,7 +236,7 @@ SecureBinaryData BtcUtils::computeChainCode_Armory135(
    */
 
    auto hmacKey = BtcUtils::hash256(privateRoot);
-   auto hmacMsg = BinaryData::fromString("Derive Chaincode from Root Key");
+   auto hmacMsg = BinaryData::fromString("Derive Chaincode from Root Key"sv);
 
    //use key as is for invalid armory hmac256: armory erroneously uses the
    //output size for sha256 (32 bytes) instead of the block size (64 bytes)

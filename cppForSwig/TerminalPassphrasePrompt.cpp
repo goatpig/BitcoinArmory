@@ -1,8 +1,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2019, goatpig.                                              //
+//  Copyright (C) 2019-2025, goatpig.                                         //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                      
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -16,6 +16,12 @@
 #endif
 
 using namespace Armory::Wallets;
+using namespace std::string_view_literals;
+
+namespace {
+   //has to be 16 characters long to match enforced encryption key id length
+   BinaryData changePassFlag = BinaryData::fromString("change-pass     "sv);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 SecureBinaryData TerminalPassphrasePrompt::prompt(
@@ -31,7 +37,7 @@ SecureBinaryData TerminalPassphrasePrompt::prompt(
 
       return promptNewPass();
    } else if (idSet.size() == 1) {
-      auto iter = idSet.find(CHANGE_PASS_FLAG);
+      auto iter = idSet.find(changePassFlag);
       if (iter != idSet.end()) {
          std::cout << "Changing password for " << verbose_ << std::endl;
          return promptNewPass();

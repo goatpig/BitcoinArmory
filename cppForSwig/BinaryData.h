@@ -193,33 +193,12 @@ public:
    
    /////////////////////////////////////////////////////////////////////////////
    // We allocate space as necesssary
-   void copyFrom(uint8_t const * start, uint8_t const * end) 
-                  { copyFrom( start, (end-start)); }  // [start, end)
-   
-   void copyFrom(const std::string& str)
-   {
-      copyFrom(str.c_str(), str.size());
-   }
-
-   void copyFrom(BinaryData const & bd)
-                  { copyFrom( bd.getPtr(), bd.getSize() ); }
-   void copyFrom(BinaryDataRef const & bdr);
-
-   void copyFrom(char const * inData, size_t sz)
-   {
-      copyFrom((uint8_t*)inData, sz);
-   }
-
-   void copyFrom(uint8_t const * inData, size_t sz)
-   { 
-      if(inData==NULL || sz == 0)
-         alloc(0);
-      else
-      {
-         alloc(sz); 
-         memcpy( &(data_[0]), inData, sz);
-      }
-   }
+   void copyFrom(const uint8_t*, const uint8_t*);
+   void copyFrom(const std::string&);
+   void copyFrom(const BinaryData&);
+   void copyFrom(const BinaryDataRef&);
+   void copyFrom(const char*, size_t);
+   void copyFrom(const uint8_t*, size_t);
 
    /////////////////////////////////////////////////////////////////////////////
    // UNSAFE -- you don't know if outData holds enough space for this
@@ -506,15 +485,8 @@ public:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   static BinaryData fromString(const std::string& str, size_t len = SIZE_MAX)
-   {
-      if (len == SIZE_MAX)
-         len = str.size();
-         
-      BinaryData data;
-      data.copyFrom(str.c_str(), len);
-      return data;
-   }
+   static BinaryData fromString(const std::string&, size_t len=SIZE_MAX);
+   static BinaryData fromString(const std::string_view&, size_t len=SIZE_MAX);
 
    /////////////////////////////////////////////////////////////////////////////
    void createFromHex(const std::string& str);

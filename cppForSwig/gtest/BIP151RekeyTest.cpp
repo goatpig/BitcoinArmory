@@ -1,14 +1,14 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2018, goatpig                                               //
+//  Copyright (C) 2018-2025, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
-#include <stdexcept>
-
 #include "TestUtils.h"
 
+#include <stdexcept>
+using namespace std::string_view_literals;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Test the BIP 151 auto-rekey code here. Because the timer code isn't in place
@@ -104,7 +104,7 @@ TEST_F(BIP151RekeyTest, rekeyRequired)
    // Our packet is 17 bytes. Over the course of 1200 bytes (unit test value 
    // to trigger rekeys, default is 1GB), we need 69 loops before we have 
    // to rekey.
-   auto cmd = BinaryData::fromString("fake");
+   auto cmd = BinaryData::fromString("fake"sv);
    std::array<uint8_t, 4> payload = {0xde, 0xad, 0xbe, 0xef};
    BinaryData testMsgData(17);
    size_t finalMsgSize;
