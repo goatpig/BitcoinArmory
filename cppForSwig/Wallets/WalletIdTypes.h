@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2021-2021, goatpig                                          //
+//  Copyright (C) 2021-2025, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -13,6 +13,8 @@
 #include <stdexcept>
 #include "../BinaryData.h"
 #include "../BtcUtils.h"
+
+#define KDF_PREFIX 0xC1
 
 namespace Armory
 {

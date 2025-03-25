@@ -30,12 +30,13 @@ SecureBinaryData CryptoPRNG::generateRandom(uint32_t numBytes,
 {
    SecureBinaryData sbd(numBytes);
    btc_random_init();
-   if (!btc_random_bytes(sbd.getPtr(), numBytes, 0))
+   if (!btc_random_bytes(sbd.getPtr(), numBytes, 0)) {
       throw runtime_error("failed to generate random value");
+   }
 
-   if (extraEntropy.getSize() != 0)
+   if (!extraEntropy.empty()) {
       sbd.XOR(extraEntropy);
-
+   }
    return sbd;
 }
 
@@ -78,11 +79,9 @@ SecureBinaryData PRNG_Fortuna::generateRandom(uint32_t numBytes,
    AES256_init(&aes_ctx, keyPtr->getPtr());
 
    //main body
-   for (unsigned i=0; i<blockCount; i++)
-   {
+   for (unsigned i=0; i<blockCount; i++) {
       //set counters in plain text block
-      for (unsigned y=0; y<4; y++)
-      {
+      for (unsigned y=0; y<4; y++) {
          auto ptr = (uint32_t*)plainText;
          *ptr = counter_.fetch_add(1, memory_order_relaxed);
       }
@@ -92,8 +91,7 @@ SecureBinaryData PRNG_Fortuna::generateRandom(uint32_t numBytes,
       AES256_encrypt(&aes_ctx, 1, resultPtr, plainText);
 
       //xor with extra entropy if available
-      if (extraEntropy.getSize() >= (i + 1) * AES_BLOCK_SIZE)
-      {
+      if (extraEntropy.getSize() >= (i + 1) * AES_BLOCK_SIZE) {
          auto entropyPtr = extraEntropy.getPtr() + (i * AES_BLOCK_SIZE);
          for (unsigned z=0; z<AES_BLOCK_SIZE; z++)
             resultPtr[z] ^= entropyPtr[z];
@@ -101,21 +99,18 @@ SecureBinaryData PRNG_Fortuna::generateRandom(uint32_t numBytes,
    }
 
    //return if we have no spill
-   if (spill > 0)
-   {
+   if (spill > 0) {
       //deal with spill block
-      for (unsigned y=0; y<4; y++)
-      {
+      for (unsigned y=0; y<4; y++) {
          auto ptr = (uint32_t*)plainText;
          *ptr = counter_.fetch_add(1, memory_order_relaxed);
       }
 
       unsigned char lastBlock[AES_BLOCK_SIZE];
       AES256_encrypt(&aes_ctx, 1, lastBlock, plainText); 
-      
-      if (extraEntropy.getSize() >= numBytes)
-      {
-         auto entropyPtr = 
+
+      if (extraEntropy.getSize() >= numBytes) {
+         auto entropyPtr =
             extraEntropy.getPtr() + blockCount * AES_BLOCK_SIZE;
 
          for (unsigned z=0; z<spill; z++)
@@ -130,9 +125,9 @@ SecureBinaryData PRNG_Fortuna::generateRandom(uint32_t numBytes,
    nBytes_.fetch_add(numBytes, memory_order_relaxed);
 
    //reseed after 1MB
-   if (nBytes_.load(memory_order_relaxed) >= 1048576)
+   if (nBytes_.load(memory_order_relaxed) >= 1048576) {
       reseed();
-
+   }
    return result;
 }
 
@@ -140,29 +135,28 @@ SecureBinaryData PRNG_Fortuna::generateRandom(uint32_t numBytes,
 //// CryptoAES
 /////////////////////////////////////////////////////////////////////////////
 // Implement AES encryption using AES mode, CFB
-SecureBinaryData CryptoAES::EncryptCFB(const SecureBinaryData & clearText, 
-                                       const SecureBinaryData & key,
-                                       const SecureBinaryData & iv)
+SecureBinaryData CryptoAES::EncryptCFB(const SecureBinaryData& clearText,
+   const SecureBinaryData& key, const SecureBinaryData& iv)
 {
    //TODO: needs test coverage
-   
+
    /*
    Not gonna bother with padding with CFB, this is only to decrypt Armory 
    v1.35 wallet root keys (always 32 bytes)
    */
 
-   if(clearText.getSize() == 0 || clearText.getSize() % AES_BLOCK_SIZE)
+   if(clearText.getSize() == 0 || clearText.getSize() % AES_BLOCK_SIZE) {
       throw std::runtime_error("invalid data size");
+   }
    AES256_ctx aes_ctx;
    AES256_init(&aes_ctx, key.getPtr());
 
    SecureBinaryData cipherText(clearText.getSize());
    SecureBinaryData intermediaryCipherText(AES_BLOCK_SIZE);
    const uint8_t* dataToEncrypt = iv.getPtr();
-   
+
    auto blockCount = clearText.getSize() / AES_BLOCK_SIZE;
-   for (unsigned i=0; i<blockCount; i++)
-   {
+   for (unsigned i=0; i<blockCount; i++) {
       AES256_encrypt(
          &aes_ctx, 1, 
          intermediaryCipherText.getPtr(),
@@ -170,31 +164,29 @@ SecureBinaryData CryptoAES::EncryptCFB(const SecureBinaryData & clearText,
       
       auto clearTextPtr = clearText.getPtr() + i * AES_BLOCK_SIZE;
       auto cipherTextPtr = cipherText.getPtr() + i * AES_BLOCK_SIZE;
-      for (unsigned y=0; y<AES_BLOCK_SIZE; y++)
-      {
-         cipherTextPtr[y] = 
+      for (unsigned y=0; y<AES_BLOCK_SIZE; y++) {
+         cipherTextPtr[y] =
             clearTextPtr[y] ^ intermediaryCipherText.getPtr()[y];
       }
 
       dataToEncrypt = cipherTextPtr;
    }
-
    return cipherText;
 }
 
 /////////////////////////////////////////////////////////////////////////////
 // Implement AES decryption using AES mode, CFB
-SecureBinaryData CryptoAES::DecryptCFB(const SecureBinaryData & cipherText, 
-                                       const SecureBinaryData & key,
-                                       const SecureBinaryData & iv  )
+SecureBinaryData CryptoAES::DecryptCFB(const SecureBinaryData& cipherText,
+   const SecureBinaryData& key, const SecureBinaryData& iv  )
 {
    /*
    Not gonna bother with padding with CFB, this is only to decrypt Armory 
    v1.35 wallet root keys (always 32 bytes)
    */
 
-   if(cipherText.getSize() == 0 || cipherText.getSize() % AES_BLOCK_SIZE)
+   if(cipherText.empty() || cipherText.getSize() % AES_BLOCK_SIZE) {
       throw std::runtime_error("invalid data size");
+   }
 
    SecureBinaryData clearText(cipherText.getSize());
 
@@ -204,61 +196,54 @@ SecureBinaryData CryptoAES::DecryptCFB(const SecureBinaryData & cipherText,
    auto blockCount = cipherText.getSize() / AES_BLOCK_SIZE;
    const uint8_t* dataToDecrypt = iv.getPtr();
    SecureBinaryData intermediaryCipherText(AES_BLOCK_SIZE);
-   for (unsigned i=0; i<blockCount; i++)
-   {
+   for (unsigned i=0; i<blockCount; i++) {
       AES256_encrypt(
-         &aes_ctx, 1, 
+         &aes_ctx, 1,
          intermediaryCipherText.getPtr(),
          dataToDecrypt);
-      
+
       auto clearTextPtr = clearText.getPtr() + i * AES_BLOCK_SIZE;
       auto cipherTextPtr = cipherText.getPtr() + i * AES_BLOCK_SIZE;
-      for (unsigned y=0; y<AES_BLOCK_SIZE; y++)
-      {
+      for (unsigned y=0; y<AES_BLOCK_SIZE; y++) {
          clearTextPtr[y] = 
             cipherTextPtr[y] ^ intermediaryCipherText.getPtr()[y];
       }
 
       dataToDecrypt = cipherTextPtr;
    }
-
    return clearText;
 }
 
 /////////////////////////////////////////////////////////////////////////////
 // Same as above, but only changing the AES mode of operation (CBC, not CFB)
-SecureBinaryData CryptoAES::EncryptCBC(const SecureBinaryData & data, 
-                                       const SecureBinaryData & key,
-                                       const SecureBinaryData & iv)
+SecureBinaryData CryptoAES::EncryptCBC(const SecureBinaryData& data,
+   const SecureBinaryData& key, const SecureBinaryData& iv)
 {
-   if(data.getSize() == 0)
-      return SecureBinaryData(0);
-
+   if(data.empty()) {
+      return {};
+   }
    size_t packet_count = data.getSize() / AES_BLOCK_SIZE + 1;
 
    SecureBinaryData encrData(packet_count * AES_BLOCK_SIZE);
 
    //sanity check
-   if (iv.getSize() != AES_BLOCK_SIZE)
+   if (iv.getSize() != AES_BLOCK_SIZE) {
       throw std::runtime_error("invalid IV size!");
+   }
 
    auto result = aes256_cbc_encrypt(
       key.getPtr(), iv.getPtr(),
       data.getPtr(), data.getSize(),
       1, //PKCS #5 padding
       encrData.getPtr());
-      
-   if (result == 0)
-   {
+
+   if (result == 0) {
       LOGERR << "AES CBC encryption failed!";
       throw std::runtime_error("AES CBC encryption failed!");
-   }
-   else if (result != (ssize_t)encrData.getSize())
-   {
+   } else if (result != (ssize_t)encrData.getSize()) {
       LOGERR << "Encrypted data size mismatch!";
       throw std::runtime_error("Encrypted data size mismatch!");
    }
-
    return encrData;
 }
 
@@ -481,21 +466,18 @@ SecureBinaryData CryptoECDSA::ComputeChainedPrivateKey(
 /////////////////////////////////////////////////////////////////////////////
 // Deterministically generate new public key using a chaincode
 SecureBinaryData CryptoECDSA::ComputeChainedPublicKey(
-   SecureBinaryData const & binPubKey, SecureBinaryData const & chainCode,
-   SecureBinaryData* multiplierOut)
+   const SecureBinaryData& binPubKey, const SecureBinaryData& chainCode)
 {
    secp256k1_pubkey pubkey;
    if (!secp256k1_ec_pubkey_parse(
-      crypto_ecdsa_ctx, &pubkey, binPubKey.getPtr(), binPubKey.getSize()))
-   {
-      throw runtime_error("[ComputeChainedPublicKey] invalid pubkey");
+      crypto_ecdsa_ctx, &pubkey, binPubKey.getPtr(), binPubKey.getSize())) {
+      throw std::runtime_error("[ComputeChainedPublicKey] invalid pubkey");
    }
 
-   if(CRYPTO_DEBUG)
-   {
-      cout << "ComputeChainedPUBLICKey:" << endl;
-      cout << "   BinPub: " << binPubKey.toHexStr() << endl;
-      cout << "   BinChn: " << chainCode.toHexStr() << endl;
+   if (CRYPTO_DEBUG) {
+      std::cout << "ComputeChainedPUBLICKey:" << std::endl;
+      std::cout << "   BinPub: " << binPubKey.toHexStr() << std::endl;
+      std::cout << "   BinChn: " << chainCode.toHexStr() << std::endl;
    }
 
    // Added extra entropy to chaincode by xor'ing with hash256 of pubkey
@@ -503,8 +485,7 @@ SecureBinaryData CryptoECDSA::ComputeChainedPublicKey(
    BinaryData chainOrig = chainCode.getRawCopy();
    BinaryData chainXor(32);
 
-   for(uint8_t i=0; i<8; i++)
-   {
+   for (uint8_t i=0; i<8; i++) {
       uint8_t offset = 4*i;
       *(uint32_t*)(chainXor.getPtr()+offset) =
          *(uint32_t*)( chainMod.getPtr()+offset) ^
@@ -512,23 +493,18 @@ SecureBinaryData CryptoECDSA::ComputeChainedPublicKey(
    }
 
    if (!secp256k1_ec_pubkey_tweak_mul(
-      crypto_ecdsa_ctx, &pubkey, chainXor.getPtr()))
-   {
-      throw runtime_error(
+      crypto_ecdsa_ctx, &pubkey, chainXor.getPtr())) {
+      throw std::runtime_error(
          "[ComputeChainedPublicKey] failed to multiply pubkey");
    }
-
-   if(multiplierOut != NULL)
-      (*multiplierOut) = SecureBinaryData(chainXor);
 
    SecureBinaryData pubKeyResult(binPubKey.getSize());
    size_t outputLen = binPubKey.getSize();
    if (!secp256k1_ec_pubkey_serialize(
       crypto_ecdsa_ctx, pubKeyResult.getPtr(), &outputLen, &pubkey,
       binPubKey.getSize() == 65 ?
-         SECP256K1_EC_UNCOMPRESSED : SECP256K1_EC_COMPRESSED))
-   {
-      throw runtime_error(
+         SECP256K1_EC_UNCOMPRESSED : SECP256K1_EC_COMPRESSED)) {
+      throw std::runtime_error(
          "[ComputeChainedPublicKey] failed to serialize pubkey");
    }
    return pubKeyResult;

@@ -11,6 +11,7 @@
 #include "WalletFileInterface.h"
 #include "Seeds/Seeds.h"
 #include "Seeds/Backups.h"
+#include "KDF.h"
 
 using namespace std;
 using namespace Armory::Signing;

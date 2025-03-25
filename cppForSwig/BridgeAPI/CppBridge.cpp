@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2019-2024, goatpig                                          //
+//  Copyright (C) 2019-2025, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -13,6 +13,7 @@
 #include "../Wallets/Seeds/Backups.h"
 #include "../Signer/ResolverFeed_Wallets.h"
 #include "../Wallets/WalletIdTypes.h"
+#include "../Wallets/KDF.h"
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>

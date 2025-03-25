@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2020 - 2023, goatpig                                        //
+//  Copyright (C) 2020 - 2025, goatpig                                        //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -10,6 +10,7 @@
 #include "EncryptionUtils.h"
 #include "BtcUtils.h"
 #include "../WalletIdTypes.h"
+#include "../KDF.h"
 #include "Seeds.h"
 #include "Wallets.h"
 #include "IOHeader.h"
@@ -663,7 +664,6 @@ SecurePrint::SecurePrint()
 
    salt_ = move(BtcUtils::getHash256(
       (const uint8_t*)digits_e_.c_str(), digits_e_.size()));
-   kdf_.usePrecomputedKdfParams(kdfBytes_, 1, salt_);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -724,8 +724,8 @@ pair<SecureBinaryData, SecureBinaryData> SecurePrint::encrypt(
    /*
    2. extend the passphrase
    */
-
-   auto encryptionKey = kdf_.DeriveKey(passphrase_);
+   Encryption::KdfRomix kdf{kdfBytes_, 1, salt_};
+   auto encryptionKey = kdf.DeriveKey(passphrase_);
 
    /*
    3. Encrypt the data. We use the libbtc call directly because
@@ -814,9 +814,10 @@ SecureBinaryData SecurePrint::decrypt(
       LOGERR << "invalid ciphertext size for SecurePrint";
       throw runtime_error("invalid ciphertext size for SecurePrint");
    }
-   
+
    //kdf the passphrase
-   auto encryptionKey = kdf_.DeriveKey(passphrase);
+   Encryption::KdfRomix kdf{kdfBytes_, 1, salt_};
+   auto encryptionKey = kdf.DeriveKey(passphrase);
 
    //
    auto decrypt = [this, &encryptionKey](

@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2020 - 2023, goatpig                                        //
+//  Copyright (C) 2020 - 2025, goatpig                                        //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -145,8 +145,6 @@ namespace Armory
 
          BinaryData iv16_;
          BinaryData salt_;
-         mutable KdfRomix kdf_;
-
          SecureBinaryData passphrase_;
 
       public:

@@ -12,11 +12,8 @@
 #include <memory>
 #include <string_view>
 #include "BinaryData.h"
-#include "EncryptionUtils.h"
 #include "WalletIdTypes.h"
 
-#define KDF_PREFIX               0xC1
-#define KDF_ROMIX_PREFIX         0xC100
 #define CIPHER_BYTE              0xB2
 
 #define PRIVKEY_BYTE             0x82
@@ -45,80 +42,7 @@ namespace Armory
       {
          struct ClearTextEncryptionKey;
          class ClearTextAssetData;
-
-         using namespace std::string_view_literals;
-         constexpr std::string_view passthroughKdfId = "PASSTHROUGH_SENTINEL"sv;
-
-         ///////////////////////////////////////////////////////////////////////
-         class KeyDerivationFunction
-         {
-         public:
-            KeyDerivationFunction(void)
-            {}
-
-            virtual ~KeyDerivationFunction(void) = 0;
-            virtual SecureBinaryData deriveKey(
-               const SecureBinaryData& rawKey) const = 0;
-            virtual bool isSame(const KeyDerivationFunction*) const = 0;
-
-            bool operator<(const KeyDerivationFunction& rhs)
-            {
-               return getId() < rhs.getId();
-            }
-
-            virtual const KdfId& getId(void) const = 0;
-            virtual BinaryData serialize(void) const = 0;
-            static std::shared_ptr<KeyDerivationFunction>
-               deserialize(const BinaryDataRef&);
-         };
-
-         ////////
-         class KeyDerivationFunction_Romix : public KeyDerivationFunction
-         {
-         private:
-            mutable KdfId id_;
-            unsigned iterations_;
-            unsigned memTarget_;
-
-            //NOTE: consider cycling salt per kdf, even though this is likely unnecessary
-            const BinaryData salt_;
-
-         private:
-            KdfId computeID(void) const;
-            BinaryData initialize(const std::chrono::milliseconds&);
-
-         public:
-            KeyDerivationFunction_Romix(const std::chrono::milliseconds&);
-            KeyDerivationFunction_Romix(unsigned, unsigned, SecureBinaryData);
-            ~KeyDerivationFunction_Romix(void) override;
-
-            //overrides
-            SecureBinaryData deriveKey(const SecureBinaryData&) const override;
-            bool isSame(const KeyDerivationFunction*) const override;
-            BinaryData serialize(void) const override;
-            const KdfId& getId(void) const override;
-
-            //locals
-            unsigned memTarget(void) const;
-            unsigned iterations(void) const;
-            void prettyPrint(void) const;
-         };
-
-         ////////
-         class KeyDerivationFunction_Passthrough : public KeyDerivationFunction
-         {
-            const KdfId id_;
-
-         public:
-            KeyDerivationFunction_Passthrough(void);
-            ~KeyDerivationFunction_Passthrough(void) override;
-
-            //overrides
-            SecureBinaryData deriveKey(const SecureBinaryData&) const override;
-            bool isSame(const KeyDerivationFunction*) const override;
-            BinaryData serialize(void) const override;
-            const KdfId& getId(void) const override;
-         };
+         class KeyDerivationFunction;
 
          ///////////////////////////////////////////////////////////////////////
          class CipherException : public std::runtime_error
@@ -344,8 +268,7 @@ namespace Armory
                rawKey_(std::move(key))
             {}
 
-            void deriveKey(
-               std::shared_ptr<KeyDerivationFunction> kdf);
+            void deriveKey(std::shared_ptr<KeyDerivationFunction>);
             EncryptionKeyId getId(const KdfId& kdfid) const;
 
             std::unique_ptr<ClearTextEncryptionKey> copy(void) const;

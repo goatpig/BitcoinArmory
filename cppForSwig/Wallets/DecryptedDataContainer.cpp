@@ -9,6 +9,7 @@
 #include "DecryptedDataContainer.h"
 #include "EncryptedDB.h"
 #include "AssetEncryption.h"
+#include "KDF.h"
 
 using namespace Armory::Wallets;
 using namespace Armory::Wallets::Encryption;

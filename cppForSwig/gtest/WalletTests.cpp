@@ -1,6 +1,5 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//                                                                            //
 //  Copyright (C) 2017-2025, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
@@ -28,6 +27,7 @@ using namespace Armory::Wallets::Encryption;
 using namespace Armory::Seeds;
 
 using namespace std::chrono_literals;
+using namespace std::string_view_literals;
 
 ////////////////////////////////////////////////////////////////////////////////
 #define METHOD_ASSERT_EQ(a, b) \
@@ -3188,7 +3188,7 @@ TEST_F(WalletInterfaceTest, Passphrase_Test)
 
       //it should take 600ms since even though the kdf isn't used, it has to be setup
       EXPECT_GE(end-start, 600ms);
-      EXPECT_LE(end-start, 650ms);
+      EXPECT_LE(end-start, 650ms) << (end-start).count();
 
       //close iface
       dbIface.shutdown();

@@ -163,9 +163,8 @@ shared_ptr<AssetEntry_Single>
    DerivationScheme_ArmoryLegacy::computeNextPublicEntry(
    const SecureBinaryData& pubKey, AssetId id)
 {
-   auto&& nextPubkey = CryptoECDSA().ComputeChainedPublicKey(
-      pubKey, chainCode_, nullptr);
-
+   auto nextPubkey = CryptoECDSA().ComputeChainedPublicKey(
+      pubKey, chainCode_);
    return make_shared<AssetEntry_Single>(id, nextPubkey, nullptr);
 }
 

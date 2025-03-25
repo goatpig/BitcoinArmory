@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2019, goatpig                                               //
+//  Copyright (C) 2019-2025, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -14,6 +14,7 @@
 #include "WalletHeader.h"
 #include "DecryptedDataContainer.h"
 #include "Seeds/Seeds.h"
+#include "KDF.h"
 
 using namespace std;
 using namespace Armory::Seeds;

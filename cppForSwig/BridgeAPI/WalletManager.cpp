@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-2024, goatpig                                          //
+//  Copyright (C) 2016-2025, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -13,6 +13,7 @@
 #include "Wallets/Seeds/Backups.h"
 #include "PassphrasePrompt.h"
 #include "../Wallets/Seeds/Seeds.h"
+#include "../Wallets/KDF.h"
 
 using namespace Armory;
 using namespace std::string_view_literals;
@@ -949,7 +950,8 @@ std::shared_ptr<Wallets::AssetWallet_Single> Armory135Header::migrate(
                }
 
                //kdf it
-               KdfRomix myKdf(kdfMem_, kdfIter_, kdfSalt_);
+               Wallets::Encryption::KdfRomix myKdf{
+                  kdfMem_, kdfIter_, kdfSalt_};
                auto derivedPass = myKdf.DeriveKey(passphrase);
 
                //decrypt the privkey

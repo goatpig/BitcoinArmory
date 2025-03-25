@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2024, goatpig                                          //
+//  Copyright (C) 2016-2025, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -15,6 +15,7 @@
 #include "TestUtils.h"
 #include "hkdf.h"
 #include "BlockchainDatabase/TxHashFilters.h"
+#include "../Wallets/KDF.h"
 
 using namespace std;
 using namespace Armory::Signing;

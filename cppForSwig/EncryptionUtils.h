@@ -70,13 +70,6 @@
 #include <btc/aes256_cbc.h>
 #include <btc/ecc_key.h>
 
-// We will look for a high memory value to use in the KDF
-// But as a safety check, we should probably put a cap
-// on how much memory the KDF can use -- 32 MB is good
-// If a KDF uses 32 MB of memory, it is undeniably easier
-// to compute on a CPU than a GPU.
-#define DEFAULT_KDF_MAX_MEMORY 32*1024*1024
-
 #define CRYPTO_DEBUG false
 
 // libbtc doesn't have some #defines AES bits, so we'll make them.
@@ -143,91 +136,21 @@ public:
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// A memory-bound key-derivation function -- uses a variation of Colin 
-// Percival's ROMix algorithm: http://www.tarsnap.com/scrypt/scrypt.pdf
-//
-// The computeKdfParams method takes in a target time, T, for computation
-// on the computer executing the test.  The final KDF should take somewhere
-// between T/2 and T seconds.
-class KdfRomix
-{
-public:
-
-   /////////////////////////////////////////////////////////////////////////////
-   KdfRomix(void);
-
-   /////////////////////////////////////////////////////////////////////////////
-   KdfRomix(uint32_t memReqts, uint32_t numIter, SecureBinaryData salt);
-
-
-   /////////////////////////////////////////////////////////////////////////////
-   // Default max-memory reqt will
-   void computeKdfParams(const std::chrono::milliseconds&,
-      uint32_t maxMemReqtsBytes=DEFAULT_KDF_MAX_MEMORY,
-      bool verbose = false);
-
-   /////////////////////////////////////////////////////////////////////////////
-   void usePrecomputedKdfParams(uint32_t memReqts, uint32_t numIter,
-      SecureBinaryData salt);
-
-   /////////////////////////////////////////////////////////////////////////////
-   void printKdfParams(void);
-
-   /////////////////////////////////////////////////////////////////////////////
-   SecureBinaryData DeriveKey_OneIter(SecureBinaryData const & password);
-
-   /////////////////////////////////////////////////////////////////////////////
-   SecureBinaryData DeriveKey(SecureBinaryData const & password);
-
-   /////////////////////////////////////////////////////////////////////////////
-   std::string       getHashFunctionName(void) const { return hashFunctionName_; }
-   uint32_t     getMemoryReqtBytes(void) const  { return memoryReqtBytes_; }
-   uint32_t     getNumIterations(void) const    { return numIterations_; }
-   SecureBinaryData   getSalt(void) const       { return salt_; }
-
-private:
-
-   std::string   hashFunctionName_;  // name of hash function to use (only one)
-   uint32_t hashOutputBytes_;
-   uint32_t kdfOutputBytes_;    // size of final key data
-
-   uint32_t memoryReqtBytes_;
-   uint32_t sequenceCount_;
-   SecureBinaryData lookupTable_;
-   SecureBinaryData salt_;            // prob not necessary amidst numIter, memReqts
-                                // but I guess it can't hurt
-
-   uint32_t numIterations_;     // We set the ROMIX params for a given memory 
-                                // req't. Then run it numIter times to meet
-                                // the computation-time req't
-};
-
-
-////////////////////////////////////////////////////////////////////////////////
 class CryptoAES
 {
 public:
-   /////////////////////////////////////////////////////////////////////////////
-   static SecureBinaryData EncryptCFB(const SecureBinaryData & data, 
-                               const SecureBinaryData & key,
-                               const SecureBinaryData & iv);
+   static SecureBinaryData EncryptCFB(const SecureBinaryData& data,
+      const SecureBinaryData& key, const SecureBinaryData& iv);
 
-   /////////////////////////////////////////////////////////////////////////////
-   static SecureBinaryData DecryptCFB(const SecureBinaryData & data, 
-                               const SecureBinaryData & key,
-                               const SecureBinaryData& iv);
+   static SecureBinaryData DecryptCFB(const SecureBinaryData& data,
+      const SecureBinaryData& key, const SecureBinaryData& iv);
 
-   /////////////////////////////////////////////////////////////////////////////
-   static SecureBinaryData EncryptCBC(const SecureBinaryData & data, 
-                               const SecureBinaryData & key,
-                               const SecureBinaryData & iv);
+   static SecureBinaryData EncryptCBC(const SecureBinaryData & data,
+      const SecureBinaryData& key, const SecureBinaryData& iv);
 
-   /////////////////////////////////////////////////////////////////////////////
-   static SecureBinaryData DecryptCBC(const SecureBinaryData & data, 
-                               const SecureBinaryData & key,
-                               const SecureBinaryData & iv);
+   static SecureBinaryData DecryptCBC(const SecureBinaryData& data,
+      const SecureBinaryData& key, const SecureBinaryData& iv);
 };
-
 
 /*
 Serialize a pubkey object into a serialized byte sequence.
@@ -274,33 +197,32 @@ public:
    static void shutdown(void);
 
    /////////////////////////////////////////////////////////////////////////////
-   static bool checkPrivKeyIsValid(const SecureBinaryData& privKey);
+   static bool checkPrivKeyIsValid(const SecureBinaryData&);
 
    /////////////////////////////////////////////////////////////////////////////
    static SecureBinaryData createNewPrivateKey(
       SecureBinaryData extraEntropy = SecureBinaryData())
    {
-      while(true)
-      {
-         auto&& privKey = CryptoPRNG::generateRandom(32, extraEntropy);
-         if (checkPrivKeyIsValid(privKey))
+      while(true) {
+         auto privKey = CryptoPRNG::generateRandom(32, extraEntropy);
+         if (checkPrivKeyIsValid(privKey)) {
             return privKey;
+         }
       }
    }
    
    /////////////////////////////////////////////////////////////////////////////
    static bool CheckPubPrivKeyMatch(SecureBinaryData const & cppPrivKey,
-                                    SecureBinaryData  const & cppPubKey)
+      SecureBinaryData  const & cppPubKey)
    {
-      auto&& pubkey = CryptoECDSA().ComputePublicKey(cppPrivKey);
+      auto pubkey = CryptoECDSA().ComputePublicKey(cppPrivKey);
       return pubkey == cppPubKey;
    }
 
-   
    /////////////////////////////////////////////////////////////////////////////
    // For signing and verification, pass in original, UN-HASHED binary string.
    // For signing, k-value can use a PRNG or deterministic value (RFC 6979).
-   static SecureBinaryData SignData(BinaryData const & binToSign, 
+   static SecureBinaryData SignData(BinaryData const & binToSign,
       SecureBinaryData const & cppPrivKey, const bool& detSign = true);
 
    /////////////////////////////////////////////////////////////////////////////
@@ -317,8 +239,7 @@ public:
 
    /////////////////////////////////////////////////////////////////////////////
    bool VerifyData(BinaryData const & binMessage,
-      const BinaryData& sig,
-      BinaryData const & cppPubKey) const;
+      const BinaryData& sig, BinaryData const & cppPubKey) const;
 
 
    /////////////////////////////////////////////////////////////////////////////
@@ -329,16 +250,15 @@ public:
    //           hurt to add some extra entropy/non-linearity to the chain
    //           generation process)
    SecureBinaryData ComputeChainedPrivateKey(
-                           SecureBinaryData const & binPrivKey,
-                           SecureBinaryData const & chainCode,
-                           SecureBinaryData* computedMultiplier=NULL);
-                               
+      SecureBinaryData const & binPrivKey,
+      SecureBinaryData const & chainCode,
+      SecureBinaryData* computedMultiplier=NULL);
+
    /////////////////////////////////////////////////////////////////////////////
    // Deterministically generate new private key using a chaincode
    SecureBinaryData ComputeChainedPublicKey(
-                           SecureBinaryData const & binPubKey,
-                           SecureBinaryData const & chainCode,
-                           SecureBinaryData* multiplierOut=NULL);
+      SecureBinaryData const & binPubKey,
+      SecureBinaryData const & chainCode);
 
    /////////////////////////////////////////////////////////////////////////////
    // We need some direct access to Crypto++ math functions
@@ -347,8 +267,7 @@ public:
    /////////////////////////////////////////////////////////////////////////////
    // Some standard ECC operations
    ////////////////////////////////////////////////////////////////////////////////
-   bool ECVerifyPoint(BinaryData const & x,
-                      BinaryData const & y);
+   bool ECVerifyPoint(BinaryData const & x, BinaryData const & y);
 
    /////////////////////////////////////////////////////////////////////////////
    // For Point-compression
@@ -373,7 +292,7 @@ public:
       const BinaryDataRef& msg, 
       const SecureBinaryData& privKey, 
       bool compressedPubKey);
-   
+
    static BinaryData VerifyBitcoinMessage(
       const BinaryDataRef& msg,
       const BinaryDataRef& sig);

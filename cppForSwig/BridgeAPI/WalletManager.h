@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-20, goatpig                                            //
+//  Copyright (C) 2016-2025, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -209,7 +209,7 @@ private:
    bool watchingOnly_ = false;
 
    //encryption data
-   uint64_t kdfMem_ = UINT64_MAX;
+   uint32_t kdfMem_ = UINT32_MAX;
    uint32_t kdfIter_;
    SecureBinaryData kdfSalt_;
 

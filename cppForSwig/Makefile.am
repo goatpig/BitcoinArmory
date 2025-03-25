@@ -103,6 +103,7 @@ ARMORYWALLETS_SOURCE_FILES = Wallets/BIP32_Node.cpp \
 	Wallets/Progress.cpp \
 	Wallets/Seeds/Backups.cpp \
 	Wallets/Seeds/Seeds.cpp \
+	Wallets/KDF.cpp \
 	Wallets/random_buffer.c
 
 ARMORYSIGNER_SOURCE_FILES = Signer/Script.cpp \
@@ -167,7 +168,6 @@ ARMORYCOMMON_SOURCE_FILES = capnp/Types.capnp.c++ \
 	DBClientClasses.cpp \
 	CoinSelection.cpp \
 	EncryptionUtils.cpp \
-	KDF.cpp \
 	log.cpp \
 	BitcoinSettings.cpp \
 	ReentrantLock.cpp \
