@@ -81,7 +81,7 @@ namespace Armory
             SecureBinaryData defaultEncryptionKey_;
             EncryptionKeyId defaultEncryptionKeyId_;
 
-            SecureBinaryData defaultKdfId_;
+            KdfId defaultKdfId_;
             EncryptionKeyId masterEncryptionKeyId_;
 
             SecureBinaryData controlSalt_;

@@ -277,7 +277,7 @@ namespace Armory
          bool hasPrivateKey(void) const;
          const Wallets::EncryptionKeyId&
             getPrivateEncryptionKeyId(void) const override;
-         const BinaryData& getKdfId(void) const;
+         const Wallets::KdfId& getKdfId(void) const;
 
          virtual std::shared_ptr<AssetEntry_Single> getPublicCopy(void);
       };

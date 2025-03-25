@@ -362,9 +362,9 @@ BinaryData AssetEntry_BIP32Root::serialize() const
       bw.put_uint32_t(step);
 
    bw.put_BinaryData(pubkey->serialize());
-   if (privkey != nullptr && privkey->hasData())
+   if (privkey != nullptr && privkey->hasData()) {
       bw.put_BinaryData(privkey->serialize());
-
+   }
    BinaryWriter finalBw;
 
    finalBw.put_var_int(bw.getSize());
@@ -376,44 +376,43 @@ BinaryData AssetEntry_BIP32Root::serialize() const
 ////////////////////////////////////////////////////////////////////////////////
 bool AssetEntry_Single::hasPrivateKey() const
 {
-   if (privkey_ != nullptr)
+   if (privkey_ != nullptr) {
       return privkey_->hasData();
-
+   }
    return false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 const EncryptionKeyId& AssetEntry_Single::getPrivateEncryptionKeyId() const
 {
-   if (!hasPrivateKey())
-      throw runtime_error("no private key in this asset");
-
+   if (!hasPrivateKey()) {
+      throw std::runtime_error("no private key in this asset");
+   }
    return privkey_->getEncryptionKeyId();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const BinaryData& AssetEntry_Single::getKdfId() const
+const KdfId& AssetEntry_Single::getKdfId() const
 {
-   if (!hasPrivateKey())
-      throw runtime_error("no private key in this asset");
-
+   if (!hasPrivateKey()) {
+      throw std::runtime_error("no private key in this asset");
+   }
    return privkey_->getKdfId();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 bool AssetEntry_Multisig::hasPrivateKey() const
 {
-   for (auto& asset_pair : assetMap_)
-   {
-      auto asset_single =
-         dynamic_pointer_cast<AssetEntry_Single>(asset_pair.second);
-      if (asset_single == nullptr)
+   for (auto& asset_pair : assetMap_) {
+      auto asset_single = std::dynamic_pointer_cast<AssetEntry_Single>(
+         asset_pair.second);
+      if (asset_single == nullptr) {
          throw runtime_error("unexpected asset entry type");
-
-      if (!asset_single->hasPrivateKey())
+      }
+      if (!asset_single->hasPrivateKey()) {
          return false;
+      }
    }
-
    return true;
 }
 

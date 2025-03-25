@@ -4,13 +4,15 @@
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
+//  Copyright (C) 2016-2025, goatpig                                          //
+//  Distributed under the MIT license                                         //
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
+//                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "EncryptionUtils.h"
 
-using namespace std;
-
-/////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 KdfRomix::KdfRomix(void) :
    hashFunctionName_("sha512"),
    hashOutputBytes_(64),
@@ -21,7 +23,7 @@ KdfRomix::KdfRomix(void) :
    // Nothing to do here
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 KdfRomix::KdfRomix(uint32_t memReqts, uint32_t numIter, SecureBinaryData salt) :
    hashFunctionName_("sha512"),
    hashOutputBytes_(64),
@@ -30,7 +32,7 @@ KdfRomix::KdfRomix(uint32_t memReqts, uint32_t numIter, SecureBinaryData salt) :
    usePrecomputedKdfParams(memReqts, numIter, salt);
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 void KdfRomix::computeKdfParams(
    const std::chrono::milliseconds& targetCompute,
    uint32_t maxMemReqts, bool verbose)
@@ -108,7 +110,7 @@ void KdfRomix::computeKdfParams(
    }
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 void KdfRomix::usePrecomputedKdfParams(uint32_t memReqts,
    uint32_t numIter,
    SecureBinaryData salt)
@@ -119,20 +121,19 @@ void KdfRomix::usePrecomputedKdfParams(uint32_t memReqts,
    salt_ = salt;
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 void KdfRomix::printKdfParams(void)
 {
    // SHA512 computes 64-byte outputs
-   cout << "KDF Parameters:" << endl;
-   cout << "   HashFunction : " << hashFunctionName_ << endl;
-   cout << "   Memory/thread: " << memoryReqtBytes_ << " bytes" << endl;
-   cout << "   SequenceCount: " << sequenceCount_ << endl;
-   cout << "   NumIterations: " << numIterations_ << endl;
-   cout << "   Salt         : " << salt_.toHexStr() << endl;
+   std::cout << "KDF Parameters:" << std::endl;
+   std::cout << "   HashFunction : " << hashFunctionName_ << std::endl;
+   std::cout << "   Memory/thread: " << memoryReqtBytes_ << " bytes" << std::endl;
+   std::cout << "   SequenceCount: " << sequenceCount_ << std::endl;
+   std::cout << "   NumIterations: " << numIterations_ << std::endl;
+   std::cout << "   Salt         : " << salt_.toHexStr() << std::endl;
 }
 
-
-/////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 SecureBinaryData KdfRomix::DeriveKey_OneIter(SecureBinaryData const & password)
 {
    // Concatenate the salt/IV to the password
@@ -151,8 +152,7 @@ SecureBinaryData KdfRomix::DeriveKey_OneIter(SecureBinaryData const & password)
 
    // Compute <sequenceCount_> consecutive hashes of the passphrase
    // Every iteration is stored in the next 64-bytes in the Lookup table
-   for (uint32_t nByte = 0; nByte < memoryReqtBytes_ - HSZ; nByte += HSZ)
-   {
+   for (uint32_t nByte = 0; nByte < memoryReqtBytes_ - HSZ; nByte += HSZ) {
       // Compute hash of slot i, put result in slot i+1
       nextRead = frontOfLUT + nByte;
       nextWrite = nextRead + hashOutputBytes_;
@@ -180,8 +180,7 @@ SecureBinaryData KdfRomix::DeriveKey_OneIter(SecureBinaryData const & password)
    // the scrypt algorithm -- it is basically ROMix, modified for more 
    // flexibility in controlling compute-time vs memory-usage).
    uint32_t const nLookups = sequenceCount_ / 2;
-   for (uint32_t nSeq = 0; nSeq < nLookups; nSeq++)
-   {
+   for (uint32_t nSeq = 0; nSeq < nLookups; nSeq++) {
       // Interpret last 4 bytes of last result (mod seqCt) as next LUT index
       newIndex = *(uint32_t*)(X.getPtr() + HSZ - 4) % sequenceCount_;
 
@@ -189,8 +188,9 @@ SecureBinaryData KdfRomix::DeriveKey_OneIter(SecureBinaryData const & password)
       V64ptr = (uint64_t*)(frontOfLUT + HSZ * newIndex);
 
       // xor X with V, and store the result in X
-      for (uint32_t i = 0; i < nXorOps; i++)
+      for (uint32_t i = 0; i < nXorOps; i++) {
          *(Y64ptr + i) = *(X64ptr + i) ^ *(V64ptr + i);
+      }
 
       // Hash the xor'd data to get the next index for lookup
       BinaryDataRef bdrY(Y.getPtr(), HSZ);
@@ -201,12 +201,12 @@ SecureBinaryData KdfRomix::DeriveKey_OneIter(SecureBinaryData const & password)
    return X.getSliceCopy(0, kdfOutputBytes_);
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 SecureBinaryData KdfRomix::DeriveKey(SecureBinaryData const & password)
 {
    SecureBinaryData masterKey(password);
-   for (uint32_t i = 0; i < numIterations_; i++)
+   for (uint32_t i = 0; i < numIterations_; i++) {
       masterKey = DeriveKey_OneIter(masterKey);
-
+   }
    return masterKey;
 }

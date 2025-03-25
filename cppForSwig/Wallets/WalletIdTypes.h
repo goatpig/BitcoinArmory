@@ -196,6 +196,32 @@ namespace Armory
       };
 
       ////////////////////////////////////////////////////////////////////////
+      class KdfId
+      {
+      private:
+         BinaryData data_;
+
+      private:
+         KdfId(const std::string&);
+
+      public:
+         KdfId(void);
+         KdfId(const std::string_view&);
+         KdfId(const KdfId&);
+
+         bool operator<(const KdfId&) const;
+         bool operator==(const KdfId&) const;
+         KdfId& operator=(const KdfId&);
+
+         bool isValid(void) const;
+         bool toHexStr(void) const;
+         const BinaryData& data(void) const;
+
+         BinaryData getSerializedKey(void) const;
+         static KdfId fromBinaryData(BinaryData&);
+      };
+
+      ////////////////////////////////////////////////////////////////////////
       std::string generateWalletId(std::shared_ptr<Assets::DerivationScheme>,
          std::shared_ptr<Assets::AssetEntry>, Seeds::SeedType);
       std::string generateWalletId(SecureBinaryData, SecureBinaryData,

@@ -44,7 +44,7 @@ KeyDerivationFunction_Romix::~KeyDerivationFunction_Romix()
 {}
 
 ////////////////////////////////////////////////////////////////////////////////
-BinaryData KeyDerivationFunction_Romix::computeID() const
+KdfId KeyDerivationFunction_Romix::computeID() const
 {
    BinaryWriter bw;
    bw.put_BinaryData(salt_);
@@ -53,7 +53,7 @@ BinaryData KeyDerivationFunction_Romix::computeID() const
 
    BinaryData bd(32);
    CryptoSHA2::getHash256(bw.getData(), bd.getPtr());
-   return bd;
+   return KdfId::fromBinaryData(bd);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -151,9 +151,9 @@ BinaryData KeyDerivationFunction_Romix::serialize() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const BinaryData& KeyDerivationFunction_Romix::getId() const
+const KdfId& KeyDerivationFunction_Romix::getId() const
 {
-   if (id_.empty()) {
+   if (!id_.isValid()) {
       id_ = std::move(computeID());
    }
    return id_;
@@ -198,13 +198,13 @@ void KeyDerivationFunction_Romix::prettyPrint() const
 // KeyDerivationFunction_Passthrough
 ////////////////////////////////////////////////////////////////////////////////
 KeyDerivationFunction_Passthrough::KeyDerivationFunction_Passthrough() :
-   KeyDerivationFunction(), id_{BinaryData::fromString(passthroughKdfId)}
+   KeyDerivationFunction(), id_{passthroughKdfId}
 {}
 
 KeyDerivationFunction_Passthrough::~KeyDerivationFunction_Passthrough()
 {}
 
-const BinaryData& KeyDerivationFunction_Passthrough::getId() const
+const KdfId& KeyDerivationFunction_Passthrough::getId() const
 {
    return id_;
 }
@@ -249,16 +249,15 @@ unsigned Cipher::getBlockSize(CipherType type)
    unsigned blockSize;
    switch (type)
    {
-   case CipherType_AES:
-   {
-      blockSize = AES_BLOCK_SIZE;
-      break;
-   }
+      case CipherType_AES:
+      {
+         blockSize = AES_BLOCK_SIZE;
+         break;
+      }
 
-   default:
-      throw runtime_error("cannot get block size for unexpected cipher type");
+      default:
+         throw std::runtime_error("cannot get block size for unexpected cipher type");
    }
-
    return blockSize;
 }
 
@@ -269,51 +268,49 @@ SecureBinaryData Cipher::generateIV(void) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-unique_ptr<Cipher> Cipher::deserialize(BinaryRefReader& brr)
+std::unique_ptr<Cipher> Cipher::deserialize(BinaryRefReader& brr)
 {
-   unique_ptr<Cipher> cipher;
+   std::unique_ptr<Cipher> cipher;
    auto version = brr.get_uint32_t();
 
    switch (version)
    {
-   case 0x00000001:
-   {
-      auto prefix = brr.get_uint8_t();
-      if (prefix != CIPHER_BYTE)
-         throw runtime_error("invalid serialized cipher prefix");
-
-      auto type = brr.get_uint8_t();
-
-      auto len = brr.get_var_int();
-      auto&& kdfId = brr.get_BinaryData(len);
-
-      len = brr.get_var_int();
-      auto&& encryptionKeyId = brr.get_BinaryData(len);
-
-      len = brr.get_var_int();
-      auto&& iv = SecureBinaryData(brr.get_BinaryDataRef(len));
-
-      switch (type)
+      case 0x00000001:
       {
-      case CipherType_AES:
-      {
-         cipher = move(make_unique<Cipher_AES>(
-            kdfId, encryptionKeyId, iv));
+         auto prefix = brr.get_uint8_t();
+         if (prefix != CIPHER_BYTE) {
+            throw std::runtime_error("invalid serialized cipher prefix");
+         }
+         auto type = brr.get_uint8_t();
 
+         auto len = brr.get_var_int();
+         auto kdfBd = brr.get_BinaryData(len);
+         auto kdfId = KdfId::fromBinaryData(kdfBd);
+
+         len = brr.get_var_int();
+         auto encryptionKeyId = brr.get_BinaryData(len);
+
+         len = brr.get_var_int();
+         auto iv = SecureBinaryData(brr.get_BinaryDataRef(len));
+
+         switch (type)
+         {
+            case CipherType_AES:
+            {
+               cipher = std::move(std::make_unique<Cipher_AES>(
+                  kdfId, encryptionKeyId, iv));
+               break;
+            }
+
+            default:
+               throw CipherException("unexpected cipher type");
+         }
          break;
       }
 
       default:
-         throw CipherException("unexpected cipher type");
-      }
-
-      break;
+         throw CipherException("unknown cipher version");
    }
-
-   default:
-      throw CipherException("unknown cipher version");
-   }
-
    return cipher;
 }
 
@@ -326,8 +323,8 @@ BinaryData Cipher_AES::serialize() const
    bw.put_uint8_t(CIPHER_BYTE);
    bw.put_uint8_t(getType());
 
-   bw.put_var_int(kdfId_.getSize());
-   bw.put_BinaryData(kdfId_);
+   bw.put_var_int(kdfId_.data().getSize());
+   bw.put_BinaryData(kdfId_.data());
 
    encryptionKeyId_.serializeValue(bw);
 
@@ -338,36 +335,37 @@ BinaryData Cipher_AES::serialize() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-unique_ptr<Cipher> Cipher_AES::getCopy() const
+std::unique_ptr<Cipher> Cipher_AES::getCopy() const
 {
-   return make_unique<Cipher_AES>(kdfId_, encryptionKeyId_);
+   return std::make_unique<Cipher_AES>(kdfId_, encryptionKeyId_);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-unique_ptr<Cipher> Cipher_AES::getCopy(const EncryptionKeyId& keyId) const
+std::unique_ptr<Cipher> Cipher_AES::getCopy(const EncryptionKeyId& keyId) const
 {
-   return make_unique<Cipher_AES>(kdfId_, keyId);
+   return std::make_unique<Cipher_AES>(kdfId_, keyId);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 SecureBinaryData Cipher_AES::encrypt(ClearTextEncryptionKey* const key,
-   const BinaryData& kdfId, const SecureBinaryData& data) const
+   const KdfId& kdfId, const SecureBinaryData& data) const
 {
-   if (key == nullptr)
-      throw runtime_error("null key ptr");
-
+   if (key == nullptr) {
+      throw std::runtime_error("null key ptr");
+   }
    auto& encryptionKey = key->getDerivedKey(kdfId);
 
-   CryptoAES aes_cipher;
-   return aes_cipher.EncryptCBC(data, encryptionKey, iv_);
+   CryptoAES cipher;
+   return cipher.EncryptCBC(data, encryptionKey, iv_);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 SecureBinaryData Cipher_AES::encrypt(ClearTextEncryptionKey* const key,
-   const BinaryData& kdfId, ClearTextEncryptionKey* const data) const
+   const KdfId& kdfId, ClearTextEncryptionKey* const data) const
 {
-   if (data == nullptr)
-      throw runtime_error("null data ptr");
+   if (data == nullptr) {
+      throw std::runtime_error("null data ptr");
+   }
    return encrypt(key, kdfId, data->getData());
 }
 
@@ -383,8 +381,9 @@ SecureBinaryData Cipher_AES::decrypt(const SecureBinaryData& key,
 bool Cipher_AES::isSame(Cipher* const cipher) const
 {
    auto cipher_aes = dynamic_cast<Cipher_AES*>(cipher);
-   if (cipher_aes == nullptr)
+   if (cipher_aes == nullptr) {
       return false;
+   }
 
    return kdfId_ == cipher_aes->kdfId_ &&
       encryptionKeyId_ == cipher_aes->encryptionKeyId_ &&
@@ -406,11 +405,13 @@ CipherData::CipherData(SecureBinaryData& cipherText,
    unique_ptr<Cipher> cipher) :
    cipherText_(move(cipherText)), cipher_(move(cipher))
 {
-   if (cipherText_.empty())
+   if (cipherText_.empty()) {
       throw CipherException("empty cipher text");
+   }
 
-   if (cipher_ == nullptr)
+   if (cipher_ == nullptr) {
       throw CipherException("null cipher for privkey");
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -439,35 +440,37 @@ BinaryData CipherData::serialize(void) const
 ////////////////////////////////////////////////////////////////////////////////
 unique_ptr<CipherData> CipherData::deserialize(BinaryRefReader& brr)
 {
-   unique_ptr<CipherData> cipherDataPtr = nullptr;
+   std::unique_ptr<CipherData> cipherDataPtr = nullptr;
 
    auto version = brr.get_uint32_t();
    switch (version)
    {
-   case 0x00000001:
-   {
-      auto len = brr.get_var_int();
-      if (len > brr.getSizeRemaining())
-         throw CipherException("invalid ciphertext length");
+      case 0x00000001:
+      {
+         auto len = brr.get_var_int();
+         if (len > brr.getSizeRemaining()) {
+            throw CipherException("invalid ciphertext length");
+         }
 
-      auto&& cipherText = brr.get_SecureBinaryData(len);
+         auto cipherText = brr.get_SecureBinaryData(len);
+         len = brr.get_var_int();
+         if (len > brr.getSizeRemaining()) {
+            throw CipherException("invalid cipher length");
+         }
 
-      len = brr.get_var_int();
-      if (len > brr.getSizeRemaining())
-         throw CipherException("invalid cipher length");
+         auto cipher = Cipher::deserialize(brr);
+         cipherDataPtr = std::make_unique<CipherData>(
+            cipherText, std::move(cipher));
+         break;
+      }
 
-      auto&& cipher = Cipher::deserialize(brr);
-      cipherDataPtr = make_unique<CipherData>(cipherText, move(cipher));
-
-      break;
+      default:
+         throw CipherException("unsupported cipher data version");
    }
 
-   default:
-      throw CipherException("unsupported cipher data version");
-   }
-
-   if (cipherDataPtr == nullptr)
+   if (cipherDataPtr == nullptr) {
       throw CipherException("failed to deser cipher data");
+   }
    return cipherDataPtr;
 }
 
@@ -628,9 +631,9 @@ unique_ptr<EncryptionKey> EncryptionKey::deserialize(const BinaryDataRef& data)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::set<BinaryData> EncryptionKey::getKdfIds() const
+std::set<KdfId> EncryptionKey::getKdfIds() const
 {
-   std::set<BinaryData> result;
+   std::set<KdfId> result;
    for (const auto& cipherData : cipherDataMap_) {
       result.emplace(cipherData.second->cipher_->getKdfId());
    }
@@ -662,8 +665,7 @@ unique_ptr<ClearTextEncryptionKey> ClearTextEncryptionKey::copy() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-EncryptionKeyId ClearTextEncryptionKey::getId(
-   const BinaryData& kdfId) const
+EncryptionKeyId ClearTextEncryptionKey::getId(const KdfId& kdfId) const
 {
    const auto keyIter = derivedKeys_.find(kdfId);
    if (keyIter == derivedKeys_.end()) {
@@ -676,8 +678,6 @@ EncryptionKeyId ClearTextEncryptionKey::getId(
 EncryptionKeyId ClearTextEncryptionKey::computeId(
    const SecureBinaryData& key) const
 {
-   //NOTE: this only ever uses the kdf id, why?
-
    //treat value as scalar, get pubkey for it
    auto hashedKey = BtcUtils::hash256(key);
    auto pubkey = CryptoECDSA().ComputePublicKey(hashedKey);
@@ -689,12 +689,12 @@ EncryptionKeyId ClearTextEncryptionKey::computeId(
 
 ////////////////////////////////////////////////////////////////////////////////
 const SecureBinaryData& ClearTextEncryptionKey::getDerivedKey(
-   const BinaryData& id) const
+   const KdfId& id) const
 {
    auto iter = derivedKeys_.find(id);
-   if (iter == derivedKeys_.end())
+   if (iter == derivedKeys_.end()) {
       throw runtime_error("invalid key");
-
+   }
    return iter->second;
 }
 
@@ -761,7 +761,7 @@ const EncryptionKeyId& EncryptedAssetData::getEncryptionKeyId() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const BinaryData& EncryptedAssetData::getKdfId() const
+const KdfId& EncryptedAssetData::getKdfId() const
 {
    auto ptr = getCipherDataPtr();
    return ptr->cipher_->getKdfId();

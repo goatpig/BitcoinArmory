@@ -66,7 +66,7 @@ namespace Armory
             };
 
          private:
-            std::map<BinaryData, std::shared_ptr<KeyDerivationFunction>> kdfMap_;
+            std::map<KdfId, std::shared_ptr<KeyDerivationFunction>> kdfMap_;
             std::unique_ptr<DecryptedDataMaps> lockedDecryptedData_ = nullptr;
 
             struct OtherLockedContainer
@@ -76,12 +76,10 @@ namespace Armory
 
                OtherLockedContainer(std::shared_ptr<DecryptedDataContainer> obj)
                {
-                  if (obj == nullptr)
-                  {
+                  if (obj == nullptr) {
                      throw std::runtime_error(
                         "emtpy DecryptedDataContainer ptr");
                   }
-
                   lock_ = std::make_unique<ReentrantLock>(obj.get());
                }
             };
@@ -107,7 +105,7 @@ namespace Armory
             const SecureBinaryData defaultEncryptionKey_;
             const EncryptionKeyId defaultEncryptionKeyId_;
 
-            const SecureBinaryData defaultKdfId_;
+            const KdfId defaultKdfId_;
             const EncryptionKeyId masterEncryptionKeyId_;
 
          protected:
@@ -119,11 +117,9 @@ namespace Armory
 
          private:
             std::unique_ptr<ClearTextEncryptionKey> deriveEncryptionKey(
-               std::unique_ptr<ClearTextEncryptionKey>,
-               const BinaryData& kdfid) const;
-
+               std::unique_ptr<ClearTextEncryptionKey>, const KdfId&) const;
             std::unique_ptr<ClearTextEncryptionKey> promptPassphrase(
-               const std::map<EncryptionKeyId, BinaryData>&) const;
+               const std::map<EncryptionKeyId, KdfId>&) const;
 
             void initAfterLock(void);
             void cleanUpBeforeUnlock(void);
@@ -140,7 +136,7 @@ namespace Armory
                const std::string dbName,
                const SecureBinaryData& defaultEncryptionKey,
                const EncryptionKeyId& defaultEncryptionKeyId,
-               const SecureBinaryData& defaultKdfId,
+               const KdfId& defaultKdfId,
                const EncryptionKeyId& masterKeyId);
 
             const SecureBinaryData& getClearTextAssetData(
@@ -153,15 +149,15 @@ namespace Armory
                const uint8_t*, size_t);
 
             SecureBinaryData encryptData(Cipher* const, const SecureBinaryData&);
-
             EncryptionKeyId populateEncryptionKey(
-               const std::map<EncryptionKeyId, BinaryData>&);
+               const std::map<EncryptionKeyId, KdfId>&);
 
             void addKdf(std::shared_ptr<KeyDerivationFunction>);
             std::shared_ptr<KeyDerivationFunction> getKdf(
-               const SecureBinaryData&) const;
+               const KdfId&) const;
             void addEncryptionKey(std::shared_ptr<EncryptionKey>);
-            std::shared_ptr<EncryptionKey> getEncryptionKey(const EncryptionKeyId&) const;
+            std::shared_ptr<EncryptionKey> getEncryptionKey(
+               const EncryptionKeyId&) const;
 
             void updateOnDisk(void);
             void updateOnDisk(std::unique_ptr<IO::DBIfaceTransaction>);
@@ -172,7 +168,8 @@ namespace Armory
             void updateOnDisk(std::shared_ptr<IO::DBIfaceTransaction>,
                const EncryptionKeyId&,
                std::shared_ptr<EncryptionKey>);
-            void deleteFromDisk(std::shared_ptr<IO::DBIfaceTransaction>, const BinaryData&);
+            void deleteFromDisk(std::shared_ptr<IO::DBIfaceTransaction>,
+               const BinaryData&);
 
             void setPassphrasePromptLambda(const PassphraseLambda& lambda)
             {
@@ -183,14 +180,12 @@ namespace Armory
 
             void encryptEncryptionKey(
                const EncryptionKeyId&,
-               const BinaryData&, const BinaryData&, //kdf in, out
-               const std::function<SecureBinaryData(void)>&, bool replace = true);
-            void eraseEncryptionKey(
-               const EncryptionKeyId& keyID, const BinaryData& kdfID);
+               const KdfId&, const KdfId&, //kdf in, out
+               const std::function<SecureBinaryData(void)>&, bool replace=true);
+            void eraseEncryptionKey(const EncryptionKeyId&, const KdfId&);
 
             void lockOther(std::shared_ptr<DecryptedDataContainer> other);
-
-            const SecureBinaryData& getDefaultKdfId(void) const { return defaultKdfId_; }
+            const KdfId& getDefaultKdfId(void) const { return defaultKdfId_; }
             const EncryptionKeyId& getMasterEncryptionKeyId(void) const
             {
                return masterEncryptionKeyId_;

@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2017, goatpig                                               //
+//  Copyright (C) 2017-2025, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -10,7 +10,6 @@
 #include "EncryptedDB.h"
 #include "AssetEncryption.h"
 
-using namespace std;
 using namespace Armory::Wallets;
 using namespace Armory::Wallets::Encryption;
 
@@ -24,7 +23,7 @@ DecryptedDataContainer::DecryptedDataContainer(
    const std::string dbName,
    const SecureBinaryData& defaultEncryptionKey,
    const EncryptionKeyId& defaultEncryptionKeyId,
-   const SecureBinaryData& defaultKdfId,
+   const KdfId& defaultKdfId,
    const EncryptionKeyId& masterKeyId) :
    getWriteTx_(getWriteTx), dbName_(dbName),
    defaultEncryptionKey_(defaultEncryptionKey),
@@ -64,7 +63,7 @@ void DecryptedDataContainer::cleanUpBeforeUnlock()
 
 ////////////////////////////////////////////////////////////////////////////////
 void DecryptedDataContainer::lockOther(
-   shared_ptr<DecryptedDataContainer> other)
+   std::shared_ptr<DecryptedDataContainer> other)
 {
    if (!ownsLock()) {
       throw DecryptedDataContainerException(
@@ -90,7 +89,7 @@ void DecryptedDataContainer::addKdf(
 
 ////////////////////////////////////////////////////////////////////////////////
 std::shared_ptr<KeyDerivationFunction> DecryptedDataContainer::getKdf(
-   const SecureBinaryData& kdfId) const
+   const KdfId& kdfId) const
 {
    auto iter = kdfMap_.find(kdfId);
    if (iter == kdfMap_.end()) {
@@ -118,9 +117,9 @@ void DecryptedDataContainer::addEncryptionKey(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-unique_ptr<ClearTextEncryptionKey> DecryptedDataContainer::deriveEncryptionKey(
-   unique_ptr<ClearTextEncryptionKey> decrKey,
-   const BinaryData& kdfid) const
+std::unique_ptr<ClearTextEncryptionKey>
+DecryptedDataContainer::deriveEncryptionKey(
+   std::unique_ptr<ClearTextEncryptionKey> decrKey, const KdfId& kdfid) const
 {
    //sanity check
    if (!ownsLock()) {
@@ -227,8 +226,7 @@ const SecureBinaryData& DecryptedDataContainer::getClearTextAssetData(
    const auto& encryptionKeyId = cipherPtr->getEncryptionKeyId();
    const auto& kdfId = cipherPtr->getKdfId();
 
-   std::map<EncryptionKeyId, BinaryData> encrKeyMap;
-   encrKeyMap.emplace(encryptionKeyId, kdfId);
+   std::map<EncryptionKeyId, KdfId> encrKeyMap{ {encryptionKeyId, kdfId} };
    populateEncryptionKey(encrKeyMap);
 
    auto decrKeyIter =
@@ -290,16 +288,16 @@ const AssetId& DecryptedDataContainer::insertClearTextAssetData(
    SecureBinaryData sbd(len);
    memcpy(sbd.getPtr(), data, len);
 
-   auto decrDataPtr = make_unique<ClearTextAssetData>(dummyId, sbd);
+   auto decrDataPtr = std::make_unique<ClearTextAssetData>(dummyId, sbd);
 
    auto insertIter = lockedDecryptedData_->assetData_.emplace(
-      move(dummyId), move(decrDataPtr));
+      std::move(dummyId), std::move(decrDataPtr));
    return insertIter.first->first;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 EncryptionKeyId DecryptedDataContainer::populateEncryptionKey(
-   const std::map<EncryptionKeyId, BinaryData>& keyMap)
+   const std::map<EncryptionKeyId, KdfId>& keyMap)
 {
    /*
    This method looks for existing encryption keys in the container. It will
@@ -315,7 +313,7 @@ EncryptionKeyId DecryptedDataContainer::populateEncryptionKey(
    */
 
    EncryptionKeyId keyId, decryptId;
-   BinaryData kdfId;
+   KdfId kdfId;
 
    //sanity check
    if (!ownsLock()) {
@@ -363,7 +361,7 @@ EncryptionKeyId DecryptedDataContainer::populateEncryptionKey(
          auto encrKeyIter = encryptedKeys_.find(keyPair.first);
          if (encrKeyIter != encryptedKeys_.end()) {
             //found the encrypted key, need to decrypt it first
-            std::map<EncryptionKeyId, BinaryData> parentKeyMap;
+            std::map<EncryptionKeyId, KdfId> parentKeyMap;
             for (auto& cipherPair : encrKeyIter->second->cipherDataMap_) {
                auto cipherDataPtr = cipherPair.second.get();
                if (cipherDataPtr == nullptr) {
@@ -469,7 +467,7 @@ SecureBinaryData DecryptedDataContainer::encryptData(
          "nullptr lock! how did we get this far?");
    }
 
-   std::map<EncryptionKeyId, BinaryData> keyMap {
+   std::map<EncryptionKeyId, KdfId> keyMap {
       {cipher->getEncryptionKeyId(), cipher->getKdfId()}
    };
    populateEncryptionKey(keyMap);
@@ -482,7 +480,7 @@ SecureBinaryData DecryptedDataContainer::encryptData(
 
 ////////////////////////////////////////////////////////////////////////////////
 std::unique_ptr<ClearTextEncryptionKey> DecryptedDataContainer::promptPassphrase(
-   const std::map<EncryptionKeyId, BinaryData>& keyMap) const
+   const std::map<EncryptionKeyId, KdfId>& keyMap) const
 {
    if (!getPassphraseLambda_) {
       throw DecryptedDataContainerException("empty passphrase lambda");
@@ -512,8 +510,8 @@ std::unique_ptr<ClearTextEncryptionKey> DecryptedDataContainer::promptPassphrase
 
 ////////////////////////////////////////////////////////////////////////////////
 void DecryptedDataContainer::updateOnDisk(
-   shared_ptr<IO::DBIfaceTransaction> tx,
-   const EncryptionKeyId& key, shared_ptr<EncryptionKey> dataPtr)
+   std::shared_ptr<IO::DBIfaceTransaction> tx,
+   const EncryptionKeyId& key, std::shared_ptr<EncryptionKey> dataPtr)
 {
    //serialize db key
    auto dbKey = key.getSerializedKey(ENCRYPTIONKEY_PREFIX);
@@ -522,41 +520,42 @@ void DecryptedDataContainer::updateOnDisk(
 
 ////////////////////////////////////////////////////////////////////////////////
 void DecryptedDataContainer::updateOnDiskRaw(
-   shared_ptr<IO::DBIfaceTransaction> tx,
-   const BinaryData& dbKey, shared_ptr<EncryptionKey> dataPtr)
+   std::shared_ptr<IO::DBIfaceTransaction> tx,
+   const BinaryData& dbKey, std::shared_ptr<EncryptionKey> dataPtr)
 {
    //check if data is on disk already
-   auto&& dataRef = tx->getDataRef(dbKey);
+   auto dataRef = tx->getDataRef(dbKey);
 
-   if (!dataRef.empty())
-   {
+   if (!dataRef.empty()) {
       //already have this key, is it the same data?
       auto onDiskData = EncryptionKey::deserialize(dataRef);
 
       //data has not changed, no need to commit
-      if (onDiskData->isSame(dataPtr.get()))
+      if (onDiskData->isSame(dataPtr.get())) {
          return;
+      }
 
       //data has changed, wipe the existing data
       deleteFromDisk(tx, dbKey);
    }
 
-   auto&& serializedData = dataPtr->serialize();
+   auto serializedData = dataPtr->serialize();
    tx->insert(dbKey, serializedData);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 void DecryptedDataContainer::updateOnDisk()
 {
-   if (getWriteTx_ == nullptr)
-      throw runtime_error("empty write tx lambda");
-
+   if (getWriteTx_ == nullptr) {
+      throw std::runtime_error("empty write tx lambda");
+   }
    auto tx = getWriteTx_(dbName_);
    updateOnDisk(move(tx));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void DecryptedDataContainer::updateOnDisk(std::unique_ptr<IO::DBIfaceTransaction> tx)
+void DecryptedDataContainer::updateOnDisk(
+   std::unique_ptr<IO::DBIfaceTransaction> tx)
 {
    //encryption keys
    std::shared_ptr<IO::DBIfaceTransaction> sharedTx(std::move(tx));
@@ -564,25 +563,18 @@ void DecryptedDataContainer::updateOnDisk(std::unique_ptr<IO::DBIfaceTransaction
       updateOnDisk(sharedTx, key.first, key.second);
    }
 
-   BinaryDataRef passthroughId{
-      (const uint8_t*)passthroughKdfId.data(),
-      passthroughKdfId.size()
-   };
 
    //kdf
+   KdfId passthroughId(passthroughKdfId);
    for (const auto& key : kdfMap_) {
       if (key.first == passthroughId) {
          //do not save passthrough kdf on disk
          continue;
       }
 
-      //get db key
-      auto dbKey = WRITE_UINT8_BE(KDF_PREFIX);
-      dbKey.append(key.first);
-
-      //fetch from db
+      //get db key, fetch from db
+      auto dbKey = key.first.getSerializedKey();
       auto dataRef = sharedTx->getDataRef(dbKey);
-
       if (!dataRef.empty()) {
          //already have this key, is it the same data?
          auto onDiskData = KeyDerivationFunction::deserialize(dataRef);
@@ -602,11 +594,10 @@ void DecryptedDataContainer::updateOnDisk(std::unique_ptr<IO::DBIfaceTransaction
 
 ////////////////////////////////////////////////////////////////////////////////
 void DecryptedDataContainer::deleteFromDisk(
-   shared_ptr<IO::DBIfaceTransaction> tx, const BinaryData& key)
+   std::shared_ptr<IO::DBIfaceTransaction> tx, const BinaryData& key)
 {
    //sanity checks
-   if (!ownsLock())
-   {
+   if (!ownsLock()) {
       throw DecryptedDataContainerException(
          "[DecryptedDataContainer::deleteFromDisk]"
          " unlocked/does not own lock");
@@ -617,7 +608,8 @@ void DecryptedDataContainer::deleteFromDisk(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void DecryptedDataContainer::readFromDisk(shared_ptr<IO::DBIfaceTransaction> tx)
+void DecryptedDataContainer::readFromDisk(
+   std::shared_ptr<IO::DBIfaceTransaction> tx)
 {
    //encryption key and kdf entries
    auto dbIter = tx->getIterator();
@@ -631,10 +623,10 @@ void DecryptedDataContainer::readFromDisk(shared_ptr<IO::DBIfaceTransaction> tx)
       auto itervalue = dbIter->value();
 
       if (iterkey.getSize() < 2) {
-         throw runtime_error("empty db key");
+         throw std::runtime_error("empty db key");
       }
-      if (itervalue.getSize() < 1) {
-         throw runtime_error("empty value");
+      if (itervalue.empty()) {
+         throw std::runtime_error("empty value");
       }
       auto prefix = (uint8_t*)iterkey.getPtr();
       switch (*prefix)
@@ -650,7 +642,8 @@ void DecryptedDataContainer::readFromDisk(shared_ptr<IO::DBIfaceTransaction> tx)
          case KDF_PREFIX:
          {
             auto kdfPtr = KeyDerivationFunction::deserialize(itervalue);
-            if (iterkey.getSliceRef(1, iterkey.getSize() - 1) != kdfPtr->getId()) {
+            const auto& kdfId = kdfPtr->getId();
+            if (iterkey.getSliceRef(1, iterkey.getSize() - 1) != kdfId.data()) {
                throw std::runtime_error("kdf id mismatch");
             }
 
@@ -665,7 +658,7 @@ void DecryptedDataContainer::readFromDisk(shared_ptr<IO::DBIfaceTransaction> tx)
 ////////////////////////////////////////////////////////////////////////////////
 void DecryptedDataContainer::encryptEncryptionKey(
    const EncryptionKeyId& keyID,
-   const BinaryData& kdfIdIn, const BinaryData& kdfIdOut,
+   const KdfId& kdfIdIn, const KdfId& kdfIdOut,
    const std::function<SecureBinaryData(void)>& newPassLbd, bool replace)
 {
    /***
@@ -712,7 +705,7 @@ void DecryptedDataContainer::encryptEncryptionKey(
    auto encryptedKey = std::dynamic_pointer_cast<EncryptionKey>(keyIter->second);
 
    //decrypt master encryption key
-   std::map<EncryptionKeyId, BinaryData> encrKeyMap{ {keyID, kdfIdIn} };
+   std::map<EncryptionKeyId, KdfId> encrKeyMap{ {keyID, kdfIdIn} };
    auto decryptionKeyId = populateEncryptionKey(encrKeyMap);
 
    //grab decrypted key
@@ -791,7 +784,7 @@ void DecryptedDataContainer::encryptEncryptionKey(
    auto perm_key = keyID.getSerializedKey(ENCRYPTIONKEY_PREFIX);
    {
       auto tx = getWriteTx_(dbName_);
-      shared_ptr<IO::DBIfaceTransaction> sharedTx(move(tx));
+      std::shared_ptr<IO::DBIfaceTransaction> sharedTx(std::move(tx));
 
       //wipe old object from disk
       deleteFromDisk(sharedTx, perm_key);
@@ -810,7 +803,7 @@ void DecryptedDataContainer::encryptEncryptionKey(
 
 ////////////////////////////////////////////////////////////////////////////////
 void DecryptedDataContainer::eraseEncryptionKey(
-   const EncryptionKeyId& keyID, const BinaryData& kdfID)
+   const EncryptionKeyId& keyID, const KdfId& kdfID)
 {
    /***
    Removes a passphrase from an encrypted key designated by keyID. 
@@ -849,7 +842,7 @@ void DecryptedDataContainer::eraseEncryptionKey(
       keyIter->second);
 
    //decrypt master encryption key
-   std::map<EncryptionKeyId, BinaryData> encrKeyMap {{keyID, kdfID}};
+   std::map<EncryptionKeyId, KdfId> encrKeyMap {{keyID, kdfID}};
    auto decryptionKeyId = populateEncryptionKey(encrKeyMap);
 
    //check key was decrypted
@@ -876,8 +869,7 @@ void DecryptedDataContainer::eraseEncryptionKey(
       //create new cipher, pointing to the default encryption key
       //and passthrough kdf
       auto newCipher = std::make_unique<Cipher_AES>(
-         BinaryData::fromString(passthroughKdfId),
-         defaultEncryptionKeyId_
+         KdfId{passthroughKdfId}, defaultEncryptionKeyId_
       );
 
       //encrypt master key

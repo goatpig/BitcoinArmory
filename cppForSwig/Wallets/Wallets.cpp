@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-2024, goatpig                                          //
+//  Copyright (C) 2016-2025, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -92,12 +92,12 @@ std::shared_ptr<AddressAccount> AssetWallet::createAccount(
    it's a 256 bits rng pull already
    */
    auto cipher = std::make_unique<Encryption::Cipher_AES>(
-      BinaryData::fromString(Encryption::passthroughKdfId),
+      KdfId{Encryption::passthroughKdfId},
       decryptedData_->getMasterEncryptionKeyId());
 
    //instantiate AddressAccount object from AccountType
    auto ifaceCopy = iface_;
-   auto getRootLbd = [this]()->shared_ptr<AssetEntry>
+   auto getRootLbd = [this]()->std::shared_ptr<AssetEntry>
    {
       return this->getRoot();
    };
@@ -106,8 +106,9 @@ std::shared_ptr<AddressAccount> AssetWallet::createAccount(
       dbName_, accountType, decryptedData_, std::move(cipher), getRootLbd);
 
    auto accID = account_ptr->getID();
-   if (accounts_.find(accID) != accounts_.end())
+   if (accounts_.find(accID) != accounts_.end()) {
       throw WalletException("already have an address account with this path");
+   }
 
    //commit to disk
    account_ptr->commit(iface_);
@@ -1753,7 +1754,7 @@ void AssetWallet_Single::addPrivateKeyPassphrase(
 
    //get kdf ids from master key cipher
    auto kdfIdSet = masterKey->getKdfIds();
-   BinaryData currentKdfId;
+   KdfId currentKdfId;
    if (kdfIdSet.empty()) {
       currentKdfId = masterKdfId;
    } else {

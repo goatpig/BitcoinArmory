@@ -66,7 +66,7 @@ namespace Armory
                return getId() < rhs.getId();
             }
 
-            virtual const BinaryData& getId(void) const = 0;
+            virtual const KdfId& getId(void) const = 0;
             virtual BinaryData serialize(void) const = 0;
             static std::shared_ptr<KeyDerivationFunction>
                deserialize(const BinaryDataRef&);
@@ -76,7 +76,7 @@ namespace Armory
          class KeyDerivationFunction_Romix : public KeyDerivationFunction
          {
          private:
-            mutable BinaryData id_;
+            mutable KdfId id_;
             unsigned iterations_;
             unsigned memTarget_;
 
@@ -84,7 +84,7 @@ namespace Armory
             const BinaryData salt_;
 
          private:
-            BinaryData computeID(void) const;
+            KdfId computeID(void) const;
             BinaryData initialize(const std::chrono::milliseconds&);
 
          public:
@@ -96,7 +96,7 @@ namespace Armory
             SecureBinaryData deriveKey(const SecureBinaryData&) const override;
             bool isSame(const KeyDerivationFunction*) const override;
             BinaryData serialize(void) const override;
-            const BinaryData& getId(void) const override;
+            const KdfId& getId(void) const override;
 
             //locals
             unsigned memTarget(void) const;
@@ -107,7 +107,7 @@ namespace Armory
          ////////
          class KeyDerivationFunction_Passthrough : public KeyDerivationFunction
          {
-            const BinaryData id_;
+            const KdfId id_;
 
          public:
             KeyDerivationFunction_Passthrough(void);
@@ -117,7 +117,7 @@ namespace Armory
             SecureBinaryData deriveKey(const SecureBinaryData&) const override;
             bool isSame(const KeyDerivationFunction*) const override;
             BinaryData serialize(void) const override;
-            const BinaryData& getId(void) const override;
+            const KdfId& getId(void) const override;
          };
 
          ///////////////////////////////////////////////////////////////////////
@@ -151,7 +151,7 @@ namespace Armory
             const CipherType type_;
 
          protected:
-            const BinaryData kdfId_;
+            const KdfId kdfId_;
             const EncryptionKeyId encryptionKeyId_;
             const SecureBinaryData iv_;
 
@@ -163,21 +163,21 @@ namespace Armory
 
             //tors
             Cipher(CipherType type,
-               const BinaryData& kdfId,
-               const EncryptionKeyId& encryptionKeyId) :
+               const KdfId& kdfId,
+               const EncryptionKeyId& keyId) :
                type_(type), kdfId_(kdfId),
-               encryptionKeyId_(encryptionKeyId),
+               encryptionKeyId_(keyId),
                iv_(generateIV())
             {
                //General purpose ctor, IV is generated on the fly
             }
 
             Cipher(CipherType type,
-               const BinaryData& kdfId,
-               const EncryptionKeyId& encryptionKeyId,
+               const KdfId& kdfId,
+               const EncryptionKeyId& keyId,
                SecureBinaryData& iv) :
                type_(type), kdfId_(kdfId),
-               encryptionKeyId_(encryptionKeyId),
+               encryptionKeyId_(keyId),
                iv_(std::move(iv))
             {
                //for setting up a cipher object from existing
@@ -191,7 +191,7 @@ namespace Armory
 
             //locals
             CipherType getType(void) const { return type_; }
-            const BinaryData& getKdfId(void) const { return kdfId_; }
+            const KdfId& getKdfId(void) const { return kdfId_; }
             const EncryptionKeyId& getEncryptionKeyId(void) const;
             const SecureBinaryData& getIV(void) const { return iv_; }
             SecureBinaryData generateIV(void) const;
@@ -206,13 +206,12 @@ namespace Armory
 
             virtual SecureBinaryData encrypt(
                ClearTextEncryptionKey* const,
-               const BinaryData&, const SecureBinaryData&) const = 0;
+               const KdfId&, const SecureBinaryData&) const = 0;
             virtual SecureBinaryData encrypt(
                ClearTextEncryptionKey* const,
-               const BinaryData&,
-               ClearTextEncryptionKey* const) const = 0;
+               const KdfId&, ClearTextEncryptionKey* const) const = 0;
 
-            virtual SecureBinaryData decrypt(const SecureBinaryData& key,
+            virtual SecureBinaryData decrypt(const SecureBinaryData&,
                const SecureBinaryData&) const = 0;
 
             //statics
@@ -225,12 +224,12 @@ namespace Armory
          {
          public:
             //tors
-            Cipher_AES(const BinaryData& kdfId,
+            Cipher_AES(const KdfId& kdfId,
                const EncryptionKeyId& encryptionKeyId) :
                Cipher(CipherType_AES, kdfId, encryptionKeyId)
             {}
 
-            Cipher_AES(const BinaryData& kdfId,
+            Cipher_AES(const KdfId& kdfId,
                const EncryptionKeyId& encryptionKeyId,
                SecureBinaryData& iv) :
                Cipher(CipherType_AES, kdfId, encryptionKeyId, iv)
@@ -240,20 +239,18 @@ namespace Armory
             BinaryData serialize(void) const override;
             std::unique_ptr<Cipher> getCopy(void) const override;
             std::unique_ptr<Cipher> getCopy(
-               const EncryptionKeyId& keyId) const override;
+               const EncryptionKeyId&) const override;
             bool isSame(Cipher* const) const override;
 
             //encrypt
             SecureBinaryData encrypt(ClearTextEncryptionKey* const,
-               const BinaryData& kdfId,
-               const SecureBinaryData& data) const override;
+               const KdfId&, const SecureBinaryData&) const override;
             SecureBinaryData encrypt(ClearTextEncryptionKey* const,
-               const BinaryData& kdfId,
-               ClearTextEncryptionKey* const data) const override;
+               const KdfId&, ClearTextEncryptionKey* const) const override;
 
             //decrypt
-            SecureBinaryData decrypt(const SecureBinaryData& key,
-               const SecureBinaryData& data) const override;
+            SecureBinaryData decrypt(const SecureBinaryData&,
+               const SecureBinaryData&) const override;
 
             //utils
             unsigned getBlockSize(void) const;
@@ -313,7 +310,7 @@ namespace Armory
             BinaryData serialize(void) const;
             static std::unique_ptr<EncryptionKey> deserialize(
                const BinaryDataRef&);
-            std::set<BinaryData> getKdfIds(void) const;
+            std::set<KdfId> getKdfIds(void) const;
 
             /*
             TODO:
@@ -335,12 +332,12 @@ namespace Armory
 
          private:
             const SecureBinaryData rawKey_;
-            std::map<BinaryData, SecureBinaryData> derivedKeys_;
+            std::map<KdfId, SecureBinaryData> derivedKeys_;
 
          private:
             EncryptionKeyId computeId(const SecureBinaryData& key) const;
             const SecureBinaryData& getData(void) const { return rawKey_; }
-            const SecureBinaryData& getDerivedKey(const BinaryData& id) const;
+            const SecureBinaryData& getDerivedKey(const KdfId&) const;
 
          public:
             ClearTextEncryptionKey(SecureBinaryData& key) :
@@ -349,7 +346,7 @@ namespace Armory
 
             void deriveKey(
                std::shared_ptr<KeyDerivationFunction> kdf);
-            EncryptionKeyId getId(const BinaryData& kdfid) const;
+            EncryptionKeyId getId(const KdfId& kdfid) const;
 
             std::unique_ptr<ClearTextEncryptionKey> copy(void) const;
             bool hasData(void) const { return !rawKey_.empty(); }
@@ -415,7 +412,7 @@ namespace Armory
             const SecureBinaryData& getCipherText(void) const;
             const SecureBinaryData& getIV(void) const;
             const EncryptionKeyId& getEncryptionKeyId(void) const;
-            const BinaryData& getKdfId(void) const;
+            const KdfId& getKdfId(void) const;
 
             bool hasData(void) const;
             const CipherData* getCipherDataPtr(void) const;

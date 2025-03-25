@@ -648,15 +648,70 @@ BinaryData EncryptionKeyId::getSerializedKey(uint8_t prefix) const
 ////////////////////////////////////////////////////////////////////////////////
 EncryptionKeyId EncryptionKeyId::deserializeValue(BinaryRefReader& brr)
 {
-   try
-   {
+   try {
       auto len = brr.get_var_int();
       return EncryptionKeyId(brr.get_BinaryData(len));
-   }
-   catch (const VarIntException&)
-   {
+   } catch (const VarIntException&) {
       throw IdException("EncryptionKeyId::deserializeValue");
    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// KdfId
+//
+////////////////////////////////////////////////////////////////////////////////
+KdfId::KdfId()
+{}
+
+KdfId::KdfId(const std::string_view& strV) :
+   data_(BinaryData::fromString(strV))
+{}
+
+KdfId::KdfId(const KdfId& rhs) :
+   data_(rhs.data_)
+{}
+
+BinaryData KdfId::getSerializedKey() const
+{
+   auto dbKey = WRITE_UINT8_BE(KDF_PREFIX);
+   dbKey.append(data_);
+   return dbKey;
+}
+
+KdfId& KdfId::operator=(const KdfId& rhs)
+{
+   if (this != &rhs) {
+      this->data_ = rhs.data_;
+   }
+   return *this;
+}
+
+KdfId KdfId::fromBinaryData(BinaryData& bd)
+{
+   KdfId result;
+   result.data_ = std::move(bd);
+   return result;
+}
+
+const BinaryData& KdfId::data() const
+{
+   return data_;
+}
+
+bool KdfId::isValid() const
+{
+   return !data_.empty();
+}
+
+bool KdfId::operator==(const KdfId& rhs) const
+{
+   return data_ == rhs.data_;
+}
+
+bool KdfId::operator<(const KdfId& rhs) const
+{
+   return data_ < rhs.data_;
 }
 
 ///////////////////////// - wallet & master id - ///////////////////////////////
