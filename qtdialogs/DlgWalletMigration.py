@@ -6,7 +6,7 @@
 #                                                                            #
 ##############################################################################
 
-from armoryengine.CppBridge import ServerPush
+from armoryengine.CppBridge import ServerPush, TheBridge
 from armoryengine.ArmoryUtils import unixTimeToFormatStr
 from ui.QtExecuteSignal import TheSignalExecution
 from ui.Wizards import SetPassphrasePage, VerifyPassphrasePage, \
@@ -76,16 +76,10 @@ class DlgUnlockMigratingWallet(DlgUnlockWallet):
    def reply(self, passphrase):
       """Handle the reply with the entered passphrase."""
       self.passphrase = passphrase
-      packet = self.parent.getNewPacket()
-      packet.unlockRequest = passphrase
-      packet.success = True
-      self.parent.reply()
-
-   def getPassphrase(self):
-      """Retrieve the stored passphrase."""
-      if not self.passphrase:
-         raise Exception("do not have passphrase for migrated wallet!")
-      return self.passphrase
+      if passphrase:
+         self.accept()
+      else:
+         self.reject()
 
    def rejectPassphrase(self):
       """Handle cancellation of passphrase entry."""
@@ -112,7 +106,6 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
       """Initialize all member variables with default values."""
       self.walletPath = wltPath
       self.walletData = walletData
-      self.dlgUnlock = None
       self.storedPassphrase = None
       self.doneBtn = None
       self.resultLabel = None
@@ -402,16 +395,15 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
       if self.migrationComplete:
          return
 
-      # Always use DlgUnlockMigratingWallet for migration unlock dialogs
-      if not self.dlgUnlock:
-         self.dlgUnlock = DlgUnlockMigratingWallet(
-            parent=self, main=self.main)
-         self.dlgUnlock.finished.connect(self.onUnlockDialogClosed)
-      self.dlgUnlock.setIds(ids)
-
-   def onUnlockDialogClosed(self):
-      """Clean up unlock dialog resources when it's closed."""
-      self.dlgUnlock = None
+      dlgUnlock = DlgUnlockMigratingWallet(parent=self, main=self.main)
+      dlgUnlock.setIds(ids)
+      
+      if dlgUnlock.passphrase:
+         self.storedPassphrase = dlgUnlock.passphrase
+         packet = self.getNewPacket()
+         packet.unlockRequest = dlgUnlock.passphrase
+         packet.success = True
+         self.reply()
 
    ####
    def processSetNewPassphrase(self, isPriv, reusePassphrase=False):
@@ -465,9 +457,6 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
       """Process callbacks from the backend during wallet migration."""
       if payload.which() == 'cleanup':
          self.migrationComplete = True
-         if self.dlgUnlock:
-            self.dlgUnlock.close()
-            self.dlgUnlock = None
          self.stack.setCurrentWidget(self.walletProgressPage)
          self.walletProgressPage.pageFrame.progressBar.hide()
 
@@ -510,15 +499,9 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
          return
 
       elif payload.which() == 'setPassphrase':
-         # No need to close unlock dialog or get passphrase here; already handled
+         # Passphrase already stored by unlock dialog in self.storedPassphrase
          notif = payload.setPassphrase
          if notif.which() == 'controlPass':
-            # Store passphrase before cleaning up unlock dialog for potential reuse
-            if self.dlgUnlock:
-               self.storedPassphrase = self.dlgUnlock.getPassphrase()
-               self.dlgUnlock.accept()
-               del self.dlgUnlock
-               self.dlgUnlock = None
             self.processSetNewPassphrase(False)
          elif notif.which() == 'privatePass':
             choice = self.promptPassphraseReuseChoice()
@@ -576,15 +559,15 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
       # Mark migration as started
       self.migrationStarted = True
 
-      def doneCallback(success, error):
-         if success:
-            self.migrationComplete = True
-         else:
+      def wrapperFunc(capnReply):
+         if capnReply.success == False:
             self.migrationFailed = True
+         else:
+            self.migrationComplete = True
 
-      self.main.wallets.migrateWallet(
+      TheBridge.wltManager.migrateWallet(
          self.walletPath,
-         self.callbackId, doneCallback)
+         self.callbackId, wrapperFunc)
 
    ####
    def reject(self):

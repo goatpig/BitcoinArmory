@@ -165,7 +165,7 @@ class DlgExportTxHistory(ArmoryDialog):
       # This was pretty much copied from the createCombinedLedger method...
       # I rarely do this, but modularizing this piece is a non-trivial
       wltIDList = []
-      typelist = [[wid, determineWalletType(self.main.walletMap[wid], self.main)[0]] \
+      typelist = [[wid, determineWalletType(self.main.walletMap[wid])] \
          for wid in self.main.walletIDList]
       currIdx = self.cmbWltSelect.currentIndex()
       if currIdx >= 8:

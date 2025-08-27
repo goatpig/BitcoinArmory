@@ -11,21 +11,22 @@
 ##############################################################################
 import os
 import struct
-from tempfile import mkstemp
-import urllib
 import traceback
+from tempfile import mkstemp
 
 from qtpy import QtCore, QtGui, QtWidgets
 
+# Capture the original QColor class before any downstream utilities
+# alter QtGui.QColor
+BaseQColor = QtGui.QColor
+
 from armoryengine.ArmoryUtils import enum, ARMORY_HOME_DIR, OS_MACOSX, \
    USE_TESTNET, USE_REGTEST, OS_WINDOWS, coin2str, int_to_hex, toBytes, \
-   hex_to_binary
+   hex_to_binary, LOGERROR, toUnicode
 from armoryengine.BinaryUnpacker import BinaryUnpacker, UINT8, UINT16
 
 from armorycolors import Colors, htmlColor
 from ui.QrCodeMatrix import CreateQRMatrix
-
-import gettext
 
 SETTINGS_PATH   = os.path.join(ARMORY_HOME_DIR, 'ArmorySettings.txt')
 USERMODE        = enum('Standard', 'Advanced', 'Expert')
@@ -33,8 +34,10 @@ SATOSHIMODE     = enum('Auto', 'User')
 NETWORKMODE     = enum('Offline', 'Full', 'Disconnected')
 WLTFIELDS       = enum('Name', 'Descr', 'WltID', 'NumAddr', 'Secure',
    'BelongsTo', 'Crypto', 'Time', 'Mem', 'Version')
-MSGBOX          = enum('Good','Info', 'Question', 'Warning', 'Critical', 'Error')
+MSGBOX          = enum('Good','Info', 'Question', 'Warning',
+   'Critical', 'Error')
 DASHBTNS        = enum('Close', 'Browse', 'Settings')
+WLTLISTCOLS     = enum('Checkbox', 'WalletID', 'Filename', 'Type', 'Action')
 
 STYLE_SUNKEN = QtWidgets.QFrame.Box | QtWidgets.QFrame.Sunken
 STYLE_RAISED = QtWidgets.QFrame.Box | QtWidgets.QFrame.Raised
@@ -60,6 +63,298 @@ def AddToRunningDialogsList(func):
    return wrapper
 
 ################################################################################
+# Shared UI constants and styles for dialogs and widgets
+
+# Layout spacings and margins for consistent UI
+UI_DIALOG_SPACING = 8
+UI_FRAME_MARGIN = 24
+UI_FRAME_PADDING = 16
+UI_BUTTON_SPACING = 8
+UI_GRID_SPACING = 8
+
+# Base dialog/tab styles derived from theme colors
+UI_STYLE_DIALOG_BASE = """
+   QDialog {
+      background-color: %(bg)s;
+   }
+   QTabWidget::pane {
+      border: none;
+      background-color: %(bg)s;
+   }
+   QTabBar::tab {
+      background-color: %(tab_bg)s;
+      color: %(fg)s;
+      border: none;
+      padding: 8px 16px;
+      min-width: 100px;
+   }
+   QTabBar::tab:selected {
+      background-color: %(tab_sel)s;
+      color: %(fg)s;
+   }
+   QTabBar::tab:hover:!selected {
+      background-color: %(tab_hover)s;
+   }
+""" % {
+   'bg': htmlColor('Background'),
+   'fg': htmlColor('Foreground'),
+   'tab_bg': htmlColor('SlightBkgdDark'),
+   'tab_sel': htmlColor('SlightBkgdLight'),
+   'tab_hover': htmlColor('SlightBkgdLight')
+}
+
+def applyDialogBaseStyle(widget):
+   widget.setStyleSheet(UI_STYLE_DIALOG_BASE)
+
+# Buttons
+UI_STYLE_BUTTON_STANDARD = """
+   QPushButton {
+      background-color: %(bg)s;
+      color: %(fg)s;
+      border: 1px solid %(border)s;
+      border-radius: 2px;
+      padding: 6px 12px;
+   }
+   QPushButton:hover {
+      background-color: %(hover)s;
+   }
+   QPushButton:pressed {
+      background-color: %(pressed)s;
+   }
+   QPushButton:disabled {
+      background-color: %(bg)s;
+      color: %(fg_disabled)s;
+      border: 1px solid %(border_disabled)s;
+   }
+""" % {
+   'bg': htmlColor('SlightBkgdDark'),
+   'fg': htmlColor('Foreground'),
+   'border': htmlColor('Mid'),
+   'hover': htmlColor('SlightBkgdLight'),
+   'pressed': htmlColor('SlightBkgdDark'),
+   'fg_disabled': htmlColor('DisableFG'),
+   'border_disabled': htmlColor('SlightBkgdDark')
+}
+
+UI_STYLE_BUTTON_DIALOG = """
+   QPushButton {
+      background-color: %(bg)s;
+      color: %(fg)s;
+      border: 1px solid %(border)s;
+      border-radius: 2px;
+      padding: 6px 16px;
+      min-width: 100px;
+   }
+   QPushButton:hover {
+      background-color: %(hover)s;
+   }
+   QPushButton:pressed {
+      background-color: %(pressed)s;
+   }
+""" % {
+   'bg': htmlColor('SlightBkgdDark'),
+   'fg': htmlColor('Foreground'),
+   'border': htmlColor('Mid'),
+   'hover': htmlColor('SlightBkgdLight'),
+   'pressed': htmlColor('SlightBkgdDark')
+}
+
+# Inputs
+UI_STYLE_INPUT = """
+   QLineEdit {
+      background-color: %(bg)s;
+      color: %(fg)s;
+      border: 1px solid %(border)s;
+      border-radius: 2px;
+      padding: 6px;
+   }
+   QLineEdit:disabled {
+      background-color: %(bg)s;
+      color: %(fg_disabled)s;
+      border: 1px solid %(border_disabled)s;
+      border-radius: 2px;
+      padding: 6px;
+   }
+""" % {
+   'bg': htmlColor('SlightBkgdDark'),
+   'fg': htmlColor('Foreground'),
+   'border': htmlColor('Mid'),
+   'fg_disabled': htmlColor('DisableFG'),
+   'border_disabled': htmlColor('SlightBkgdDark')
+}
+
+# Combobox
+UI_STYLE_COMBOBOX = """
+   QComboBox {
+      background-color: %(bg)s;
+      color: %(fg)s;
+      border: 1px solid %(border)s;
+      border-radius: 2px;
+      padding: 6px;
+   }
+""" % {
+   'bg': htmlColor('SlightBkgdDark'),
+   'fg': htmlColor('Foreground'),
+   'border': htmlColor('Mid'),
+   'bg_drop': htmlColor('SlightBkgdDark')
+}
+
+# Frames
+UI_STYLE_FRAME = """
+   QFrame {
+      background-color: %(bg)s;
+      border: 1px solid %(border)s;
+      border-radius: 4px;
+   }
+   QLabel {
+      border: none;
+      background: transparent;
+      padding: 0px;
+      margin: 0px;
+   }
+""" % {
+   'bg': htmlColor('SlightBkgdDark'),
+   'border': htmlColor('Mid')
+}
+
+# Tree view
+UI_STYLE_TREEWIDGET = """
+   QTreeWidget {
+      background: %(bg)s;
+      border: 1px solid %(border)s;
+      color: %(fg)s;
+      show-decoration-selected: 0;
+   }
+   QTreeWidget::item {
+      height: 30px;
+      border: none;
+      padding: 4px;
+   }
+   QTreeWidget::item:hover {
+      background: %(hover)s;
+   }
+""" % {
+   'bg': htmlColor('SlightBkgdDark'),
+   'border': htmlColor('Mid'),
+   'fg': htmlColor('Foreground'),
+   'hover': htmlColor('SlightBkgdLight')
+}
+
+# Shared UI helper widgets
+def createStyledLabel(text, color='Foreground'):
+   lbl = QtWidgets.QLabel(text)
+   try:
+      if isinstance(color, str) and not color.startswith('#'):
+         lbl.setStyleSheet('color: %s;' % htmlColor(color))
+      else:
+         lbl.setStyleSheet('color: %s;' % color)
+   except Exception:
+      lbl.setStyleSheet('color: %s;' % htmlColor('Foreground'))
+   return lbl
+
+def createButtonLayout(*buttons):
+   layout = QtWidgets.QHBoxLayout()
+   layout.setSpacing(UI_BUTTON_SPACING)
+   layout.addStretch(1)
+   for b in buttons:
+      layout.addWidget(b)
+   return layout
+
+def createInputField(width=None, style=None):
+   field = QtWidgets.QLineEdit()
+   if width:
+      field.setFixedWidth(width)
+   field.setStyleSheet(style if style else UI_STYLE_INPUT)
+   return field
+
+def createStyledButton(text, width=None, style=None):
+   btn = QtWidgets.QPushButton(text)
+   if width:
+      btn.setFixedWidth(width)
+   btn.setStyleSheet(style if style else UI_STYLE_BUTTON_STANDARD)
+   return btn
+
+class ArmoryComboBox(QtWidgets.QComboBox):
+   def paintEvent(self, event):
+      # Only default painting. Arrow will be drawn by ComboBoxStyle
+      # to avoid artifacts
+      super(ArmoryComboBox, self).paintEvent(event)
+
+def createStyledCombo(width=None, style=None):
+   combo = ArmoryComboBox()
+   if width:
+      combo.setFixedWidth(width)
+   combo.setStyleSheet(style if style else UI_STYLE_COMBOBOX)
+   return combo
+
+class ComboBoxStyle(QtWidgets.QProxyStyle):
+   def drawComplexControl(self, control, option, painter, widget=None):
+      if control == QtWidgets.QStyle.CC_ComboBox:
+         # Let base style draw the control first
+         super().drawComplexControl(control, option, painter, widget)
+
+         # Then paint a clear arrow indicator in the arrow subcontrol rect
+         arrow_rect = self.subControlRect(
+            QtWidgets.QStyle.CC_ComboBox,
+            option,
+            QtWidgets.QStyle.SC_ComboBoxArrow,
+            widget,
+         )
+         if not arrow_rect.isValid():
+            return
+         painter.save()
+         try:
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+         except Exception:
+            pass
+         # Mask the native arrow background to avoid any overlap artifacts
+         bg = BaseQColor(htmlColor('SlightBkgdDark'))
+         painter.fillRect(arrow_rect, bg)
+
+         color = BaseQColor(htmlColor('Foreground'))
+         painter.setPen(QtCore.Qt.NoPen)
+         painter.setBrush(color)
+
+         size = max(6, int(min(arrow_rect.width(), arrow_rect.height()) * 0.35))
+         cx, cy = arrow_rect.center().x(), arrow_rect.center().y()
+         tri = QtGui.QPolygonF([
+            QtCore.QPointF(cx - size, cy - size * 0.5),
+            QtCore.QPointF(cx + size, cy - size * 0.5),
+            QtCore.QPointF(cx,        cy + size * 0.6),
+         ])
+         painter.drawPolygon(tri)
+         painter.restore()
+         return
+      else:
+         super().drawComplexControl(control, option, painter, widget)
+
+   def drawPrimitive(self, element, option, painter, widget=None):
+      if element == QtWidgets.QStyle.PE_IndicatorArrowDown:
+         # Draw a high-contrast down arrow so it is clearly visible
+         # on dark themes
+         rect = option.rect.adjusted(0, 0, -2, -2)
+         painter.save()
+         try:
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+         except Exception:
+            pass
+         color = BaseQColor(htmlColor('Foreground'))
+         painter.setPen(QtCore.Qt.NoPen)
+         painter.setBrush(color)
+
+         size = max(6, int(min(rect.width(), rect.height()) * 0.35))
+         cx, cy = rect.center().x(), rect.center().y()
+         tri = QtGui.QPolygonF([
+            QtCore.QPointF(cx - size, cy - size * 0.5),
+            QtCore.QPointF(cx + size, cy - size * 0.5),
+            QtCore.QPointF(cx,        cy + size * 0.6),
+         ])
+         painter.drawPolygon(tri)
+         painter.restore()
+         return
+      else:
+         super().drawPrimitive(element, option, painter, widget)
+
 def HLINE(style=QtWidgets.QFrame.Plain):
    qf = QtWidgets.QFrame()
    qf.setFrameStyle(QtWidgets.QFrame.HLine | style)
@@ -209,10 +504,12 @@ def initialColResize(tblViewObj, sizeList):
 
 #############################################################################
 class QRichLabel(QtWidgets.QLabel):
-   def __init__(self, txt, doWrap=True,
-      hAlign=QtCore.Qt.AlignLeft,
-      vAlign=QtCore.Qt.AlignVCenter,
-      **kwargs):
+   def __init__(self,
+         txt,
+         doWrap=True,
+         hAlign=QtCore.Qt.AlignLeft,
+         vAlign=QtCore.Qt.AlignVCenter,
+         **kwargs):
       super(QRichLabel, self).__init__(txt)
       self.setTextFormat(QtCore.Qt.RichText)
       self.setWordWrap(doWrap)
@@ -220,7 +517,8 @@ class QRichLabel(QtWidgets.QLabel):
       self.setText(txt, **kwargs)
       # Fixes a problem with QtWidgets.QLabel resizing based on content
       # ACR:  ... and makes other problems.  Removing for now.
-      #self.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.MinimumExpanding)
+      # self.setSizePolicy(QtWidgets.QSizePolicy.Preferred,
+      # QtWidgets.QSizePolicy.MinimumExpanding)
       #self.setMinimumHeight(int(relaxedSizeStr(self, 'QWERTYqypgj')[1]))
 
    def setText(self, text, color=None, size=None, bold=None, italic=None):
@@ -245,14 +543,17 @@ class QRichLabel(QtWidgets.QLabel):
    def setItalic(self):
       self.setText('<i>' + self.text() + '</i>')
 
-#############################################################################
 class QRichLabel_AutoToolTip(QRichLabel):
-   def __init__(self, txt, doWrap=True,
-      hAlign=QtCore.Qt.AlignLeft,
-      vAlign=QtCore.Qt.AlignVCenter,
-      **kwargs):
-      super(QRichLabel_AutoToolTip, self).__init__(txt,
-         doWrap, hAlign, vAlign, **kwargs)
+   def __init__(self,
+         txt,
+         doWrap=True,
+         hAlign=QtCore.Qt.AlignLeft,
+         vAlign=QtCore.Qt.AlignVCenter,
+         **kwargs):
+      super(QRichLabel_AutoToolTip, self).__init__(
+         txt, doWrap, hAlign, vAlign, **kwargs
+      )
+
       self.toolTipMethod = None
 
    def setToolTipLambda(self, toolTipMethod):
@@ -264,12 +565,12 @@ class QRichLabel_AutoToolTip(QRichLabel):
          if self.toolTipMethod != None:
             txt = self.toolTipMethod()
             self.setToolTip(txt)
+
       return QtWidgets.QLabel.event(self,event)
 
-#############################################################################
 class QMoneyLabel(QRichLabel):
    def __init__(self, nSatoshi, ndec=8, maxZeros=2, wColor=True,
-      wBold=False, txtSize=10):
+      wBold=None, txtSize=10):
       QtWidgets.QLabel.__init__(self, coin2str(nSatoshi))
 
       self.nSatoshi = nSatoshi
@@ -293,7 +594,6 @@ class QMoneyLabel(QRichLabel):
       if not wBold is None:
          self.bold = wBold
 
-
       theFont = GETFONT("Fixed", txtSize)
       if self.bold:
          theFont.setWeight(QtGui.QFont.Bold)
@@ -311,7 +611,6 @@ class QMoneyLabel(QRichLabel):
          self.setText('%s' % valStr)
       self.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
 
-#############################################################################
 def setLayoutStretchRows(layout, *args):
    for i,st in enumerate(args):
       layout.setRowStretch(i, st)
@@ -320,7 +619,8 @@ def setLayoutStretchCols(layout, *args):
    for i,st in enumerate(args):
       layout.setColumnStretch(i, st)
 
-# Use this for QtWidgets.QHBoxLayout and QtWidgets.QVBoxLayout, where you don't specify dimension
+# Use this for QtWidgets.QHBoxLayout and QtWidgets.QVBoxLayout,
+# where you don't specify dimension
 def setLayoutStretch(layout, *args):
    for i,st in enumerate(args):
       layout.setStretch(i, st)
@@ -351,7 +651,7 @@ class QLabelButton(QtWidgets.QLabel):
 
    def __init__(self, txt):
       colorStr = htmlColor('LBtnNormalFG')
-      QtWidgets.QLabel.__init__(self, '<font color=%s>%s</u></font>' % (colorStr, txt))
+      super().__init__('<font color=%s>%s</u></font>' % (colorStr, txt))
       self.plainText = txt
       self.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
@@ -371,15 +671,18 @@ class QLabelButton(QtWidgets.QLabel):
          self.linkActivated.emit(ev)
 
    def enterEvent(self, ev):
-      ssStr = "QtWidgets.QLabel { background-color : %s }" % htmlColor('LBtnHoverBG')
+      ssStr = "QtWidgets.QLabel { background-color : %s }" % \
+         htmlColor('LBtnHoverBG')
       self.setStyleSheet(ssStr)
 
    def leaveEvent(self, ev):
-      ssStr = "QtWidgets.QLabel { background-color : %s }" % htmlColor('LBtnNormalBG')
+      ssStr = "QtWidgets.QLabel { background-color : %s }" % \
+         htmlColor('LBtnNormalBG')
       self.setStyleSheet(ssStr)
 
 ################################################################################
-def makeLayoutFrame(dirStr, widgetList, style=QtWidgets.QFrame.NoFrame, condenseMargins=False):
+def makeLayoutFrame(dirStr, widgetList, style=QtWidgets.QFrame.NoFrame,
+   condenseMargins=False):
    frm = QtWidgets.QFrame()
    frm.setFrameStyle(style)
 
@@ -400,9 +703,11 @@ def makeLayoutFrame(dirStr, widgetList, style=QtWidgets.QFrame.NoFrame, condense
          elif w.lower().startswith('line'):
             frmLine = QtWidgets.QFrame()
             if dirStr.lower().startswith(VERTICAL):
-               frmLine.setFrameStyle(QtWidgets.QFrame.HLine | QtWidgets.QFrame.Plain)
+               frmLine.setFrameStyle(
+                  QtWidgets.QFrame.HLine | QtWidgets.QFrame.Plain)
             else:
-               frmLine.setFrameStyle(QtWidgets.QFrame.VLine | QtWidgets.QFrame.Plain)
+               frmLine.setFrameStyle(
+                  QtWidgets.QFrame.VLine | QtWidgets.QFrame.Plain)
             frmLayout.addWidget(frmLine)
          elif w.lower().startswith('strut'):
             first = w.index('(')+1
@@ -425,7 +730,6 @@ def makeLayoutFrame(dirStr, widgetList, style=QtWidgets.QFrame.NoFrame, condense
       frmLayout.setContentsMargins(5,5,5,5)
    frm.setLayout(frmLayout)
    return frm
-
 
 def addFrame(widget, style=STYLE_SUNKEN, condenseMargins=False):
    return makeLayoutFrame(HORIZONTAL, [widget], style, condenseMargins)
@@ -463,7 +767,6 @@ def restoreTableView(qtbl, hexBytes):
          qtbl.setColumnWidth(i, c)
    except Exception as e:
       traceback.print_tb(e.__traceback__)
-      pass
       # Don't want to crash the program just because couldn't load tbl data
 
 def saveTableView(qtbl):
@@ -501,7 +804,6 @@ class QRadioButtonBackupCtr(QtWidgets.QRadioButton):
       # self.parent.setDispFrame(-1)
       # self.setStyleSheet('QtWidgets.QRadioButton { background-color : %s }' % \
                                           # htmlColor('Background'))
-
 
 ################################################################################
 # This class is intended to be an abstract frame class that
@@ -572,7 +874,6 @@ def bmp_pack_color(red, green, blue):
    '''accepts values from 0-255 for each value, returns a packed string'''
    return struct.pack('<BBB',blue,green,red)
 
-
 ###################################
 BMP_TEMPFILE = -1
 def createBitmap(imgMtrx2D, writeToFile=-1, returnBinary=True):
@@ -621,40 +922,46 @@ def createBitmap(imgMtrx2D, writeToFile=-1, returnBinary=True):
       except:
          return False
 
-
-
-def selectFileForQLineEdit(parent, qObj, title="Select File", existing=False, \
-                           ffilter=[]):
+def selectFileForQLineEdit(parent, qObj, title="Select File", existing=False,
+   ffilter=[]):
+   initPath = ARMORY_HOME_DIR
+   currText = str(qObj.text()).strip()
+   if currText:
+      if os.path.exists(currText):
+         initPath = currText
 
    types = list(ffilter)
    types.append('All files (*)')
    typesStr = ';; '.join(types)
    if not OS_MACOSX:
-      fullPath = unicode(QtWidgets.QFileDialog.getOpenFileName(parent, \
-         title, ARMORY_HOME_DIR, typesStr))
+      fullPath, _ = QtWidgets.QFileDialog.getOpenFileName(parent,
+         title, ARMORY_HOME_DIR, typesStr)
    else:
-      fullPath = unicode(QtWidgets.QFileDialog.getOpenFileName(parent, \
-         title, ARMORY_HOME_DIR, typesStr, options=QtWidgets.QFileDialog.DontUseNativeDialog))
+      fullPath, _ = QtWidgets.QFileDialog.getOpenFileName(parent,
+         title, ARMORY_HOME_DIR, typesStr,
+         options=QtWidgets.QFileDialog.DontUseNativeDialog)
 
    if fullPath:
-      qObj.setText( fullPath)
-
+      qObj.setText(fullPath)
 
 def selectDirectoryForQLineEdit(par, qObj, title="Select Directory"):
    initPath = ARMORY_HOME_DIR
-   currText = unicode(qObj.text()).strip()
-   if len(currText)>0:
+   currText = str(qObj.text()).strip()
+   if currText:
       if os.path.exists(currText):
          initPath = currText
 
    if not OS_MACOSX:
-      fullPath = unicode(QtWidgets.QFileDialog.getExistingDirectory(par, title, initPath))
+      fullPath = QtWidgets.QFileDialog.getExistingDirectory(par, title, initPath)
    else:
-      fullPath = unicode(QtWidgets.QFileDialog.getExistingDirectory(par, title, initPath, \
-                                       options=QtWidgets.QFileDialog.DontUseNativeDialog))
+      fullPath = QtWidgets.QFileDialog.getExistingDirectory(
+         par, title, initPath,
+         options=QtWidgets.QFileDialog.DontUseNativeDialog
+      )
    if fullPath:
-      qObj.setText( fullPath)
-
+      if isinstance(fullPath, list):
+         fullPath = fullPath[0]
+      qObj.setText(fullPath)
 
 def createDirectorySelectButton(parent, targetWidget, title="Select Directory"):
 
@@ -724,11 +1031,11 @@ def createToolTipWidget(tiptext, iconSz=2):
    lbl = QtWidgets.QLabel('<font size=%d color=%s>(?)</font>' % (iconSz, fgColor))
    lbl.setMaximumWidth(int(relaxedSizeStr(lbl, '(?)')[0]))
 
-   def setAllText(wself, txt):
+   def setAllText(widget, txt):
       def pressEv(ev):
-         QtWidgets.QWhatsThis.showText(ev.globalPos(), txt)
-      wself.mousePressEvent = pressEv
-      wself.setToolTip('<u></u>' + txt)
+         QtWidgets.QWhatsThis.showText(ev.globalPos(), txt, widget)
+      widget.mousePressEvent = pressEv
+      widget.setToolTip('<u></u>' + txt)
 
    # Calling setText on this widget will update both the tooltip and QWT
    from types import MethodType
@@ -752,7 +1059,7 @@ class AdvancedOptionsFrame(ArmoryFrame):
                   'to unlock your wallet after you enter your passphrase. '
                   '(the actual time used will be less than the specified '
                   'time, but more than one half of it).  '))
-      
+
       # Set maximum compute time
       self.editComputeTime = QtWidgets.QLineEdit()
       self.editComputeTime.setText('250 ms')
@@ -777,7 +1084,7 @@ class AdvancedOptionsFrame(ArmoryFrame):
 
       self.editComputeTime.setMaximumWidth( tightSizeNChar(self, 20)[0] )
       self.editComputeMem.setMaximumWidth( tightSizeNChar(self, 20)[0] )
-      
+
       entryFrame = QtWidgets.QFrame()
       entryLayout = QtWidgets.QGridLayout()
       entryLayout.addWidget(timeDescriptionTip,        0, 0,  1, 1)
@@ -792,7 +1099,7 @@ class AdvancedOptionsFrame(ArmoryFrame):
       layout.addWidget(entryFrame)
       layout.addStretch()
       self.setLayout(layout)
-   
+
    def getKdfSec(self):
       # return -1 if the input is invalid
       kdfSec = -1
@@ -818,3 +1125,31 @@ class AdvancedOptionsFrame(ArmoryFrame):
       except:
          pass
       return kdfBytes
+################################################################################
+# Generic cell helpers for tree/list widgets
+################################################################################
+def makeCenteredCell(childWidget):
+   """Wrap a widget in a zero-margin, center-aligned container for cells."""
+   wrapper = QtWidgets.QWidget()
+   layout = QtWidgets.QHBoxLayout(wrapper)
+   layout.setContentsMargins(0, 0, 0, 0)
+   layout.setAlignment(QtCore.Qt.AlignCenter)
+   layout.addWidget(childWidget)
+   return wrapper
+
+def makeCheckboxCell(enabled, checked, onToggled=None):
+   """Create a centered checkbox cell; returns (cellWidget, checkbox)."""
+   cb = QtWidgets.QCheckBox()
+   cb.setEnabled(bool(enabled))
+   cb.setChecked(bool(checked))
+   if onToggled is not None:
+      cb.stateChanged.connect(onToggled)
+   return makeCenteredCell(cb), cb
+
+def addPlaceholderRow(treeWidget, texts):
+   """Add a placeholder top-level row to a QTreeWidget with given column texts."""
+   item = QtWidgets.QTreeWidgetItem()
+   for idx, txt in enumerate(texts):
+      item.setText(idx, txt)
+   treeWidget.addTopLevelItem(item)
+   return item

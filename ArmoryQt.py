@@ -59,8 +59,8 @@ from armoryengine.BDM import TheBDM, \
 
 from armoryengine.PyBtcWallet import PyBtcWallet
 from armoryengine.Transaction import PyTx
-from armoryengine.WalletUtils import WalletMap, \
-   WalletTypes, WalletFilter, determineWalletType
+from armoryengine.WalletUtils import WalletTypes, WalletFilter, \
+   determineWalletType
 
 from qtdialogs.qtdefines import GETFONT, NETWORKMODE, \
    QRichLabel_AutoToolTip, tightSizeNChar, USERMODE, initialColResize, \
@@ -93,6 +93,7 @@ from qtdialogs.MsgBoxCustom import MsgBoxCustom
 from qtdialogs.MsgBoxWithDNAA import MsgBoxWithDNAA
 from qtdialogs.DlgUniversalRestoreSelect import DlgUniversalRestoreSelect
 from qtdialogs.DlgWalletMigration import DlgWalletMigration
+from qtdialogs.DlgSetupManager import DlgSetupManager
 
 from ui.QtExecuteSignal import TheSignalExecution
 from armorymodels import AllWalletsDispModel, AllWalletsCheckboxDelegate, \
@@ -149,8 +150,8 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
    scriptDispStrings = {}
 
    #############################################################################
-   def __init__(self, parent=None, splashScreen=None):
-      super(ArmoryMainWindow, self).__init__(parent)
+   def __init__(self, wallets):
+      super().__init__()
 
       self.isShuttingDown = False
       self.ledgerView = None
@@ -215,7 +216,8 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       self.lockboxIDMap = {}
       self.cppLockboxWltMap = {}
       self.broadcasting = {}
-      self.wallets = WalletMap(self)
+      self.wallets = wallets
+      self.walletModel = AllWalletsDispModel(self.wallets, self)
 
       self.nodeStatus = None
       self.numHeartBeat = 0
@@ -331,7 +333,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       self.statusBar().insertPermanentWidget(0, self.lblArmoryStatus)
 
       # Table for all the wallets
-      self.walletModel = AllWalletsDispModel(self.wallets)
+      self.walletModel = AllWalletsDispModel(self.wallets, self)
       self.walletsView  = QtWidgets.QTableView(self)
 
       w,h = tightSizeNChar(self.walletsView, 55)
@@ -772,10 +774,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
          if reply[1]==True:
             TheSettings.set('DNAA_DeleteLevelDB', True)
-
-   #############################################################################
-   def networkReadyCallback(self):
-      self.loadWallets()
 
    #############################################################################
    def changeWltFilter(self):
@@ -1814,17 +1812,8 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       self.promptMap = {}
 
    #############################################################################
-   def loadWallets(self):
-      def loadWltsLbd():
-         wltList = TheBridge.wltManager.listWallets()
-         wltsProto = TheBridge.wltManager.loadWallets()
-         self.wallets.setupFromProto(wltsProto)
-         self.setupBlockchainService_step1()
-         TheSignalExecution.executeMethod(self.finalizeLoadWallets)
-      TheSignalExecution.executeMethod(loadWltsLbd)
-
-   #############################################################################
    def finalizeLoadWallets(self):
+      self.setupBlockchainService_step1()
       self.walletModel.reset()
       if self.wallets.empty():
          self.execIntroDialog()
@@ -2193,7 +2182,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
                continue
 
             if wlt:
-               isWatch = (determineWalletType(wlt, self)[0] == WalletTypes.WatchOnly)
+               isWatch = (determineWalletType(wlt) == WalletTypes.WatchOnly)
                wltName = wlt.getDisplayStr(pref="")
                dispComment = self.getCommentForLE(le, wltID)
             else:
@@ -3059,7 +3048,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             selectionMade = False
 
       if selectionMade:
-         wlttype = determineWalletType(wlt, self)[0]
+         wlttype = determineWalletType(wlt)
          if ShowRecvCoinsWarningIfNecessary(wlt, self, self):
             QAPP.processEvents()
             dlg = DlgNewAddressDisp(wlt, self, self, loading)
@@ -5048,39 +5037,50 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
 ################################################################################
 if 1:
-   #setup splash screen
+   # 1) Show splash screen during actual loading (bridge startup)
    pixLogo = QtGui.QPixmap('./img/splashlogo.png')
    if USE_TESTNET or USE_REGTEST:
       pixLogo = QtGui.QPixmap('./img/splashlogo_testnet.png')
    SPLASH = ArmorySplashScreen(pixLogo)
    SPLASH.setMask(pixLogo.mask())
-
    SPLASH.show()
    QAPP.processEvents()
 
    # Will make this customizable
    QAPP.setFont(GETFONT('var'))
 
-   # Setup translations
+   # Setup translations before any dialogs
    translator = QtCore.QTranslator(QAPP)
-   app_dir = "./"
-   try:
-      app_dir = os.path.dirname(os.path.realpath(__file__))
-   except:
-      if OS_WINDOWS and getattr(sys, 'frozen', False):
-         app_dir = os.path.dirname(sys.executable)
-   translator.load(TheSettings.getGuiLanguage(), os.path.join(app_dir, "lang/"))
+   # Determine app directory for translations
+   app_dir = os.path.dirname(os.path.realpath(__file__))
+
+   translator.load(TheSettings.getGuiLanguage(), 
+      os.path.join(app_dir, "lang/"))
    QAPP.installTranslator(translator)
 
-   #setup main dialog
-   armoryMainWindow = ArmoryMainWindow(splashScreen=SPLASH)
+   # 2) Start bridge with ready handler - sequential process per maintainer
+   dlg = DlgSetupManager(parent=None, main=None)
 
-   #start cppbridge
-   TheBDM.startBridge(getBridgeArgList(), armoryMainWindow.networkReadyCallback)
+   def spawnMainWindow(wallets):
+      armoryMainWindow = ArmoryMainWindow(wallets)
+      TheSignalExecution.executeMethod(armoryMainWindow.finalizeLoadWallets)
+      armoryMainWindow.show()
+      return armoryMainWindow
 
-   #show main dialog
-   armoryMainWindow.show()
+   dlg.mainWindowSpawner = spawnMainWindow
 
-   SPLASH.finish(armoryMainWindow)
+   def bridgeReadyHandler():
+      # Bridge is ready - explicitly call wallet listing and close splash
+      TheSignalExecution.executeMethod(dlg.onBridgeReady)
+      def closeSplash():
+         SPLASH.close()
+      TheSignalExecution.executeMethod(closeSplash)
+
+   TheBDM.startBridge(getBridgeArgList(), bridgeReadyHandler)
+
+   # Show setup manager (wallet list will populate when bridge ready)
+   if dlg.exec_() != QtWidgets.QDialog.Accepted:
+      TheBridge.service.shutdown()
+      sys.exit(1)
    QAPP.setQuitOnLastWindowClosed(True)
    os._exit(QAPP.exec_())
