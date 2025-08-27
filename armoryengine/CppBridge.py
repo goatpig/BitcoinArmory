@@ -658,6 +658,16 @@ class WalletManagerWrapper(ProtoWrapper):
       reply = fut.getVal(nothrow=True)
       return reply.success
 
+   ####
+   def unlockControlHeader(self, 
+      walletPath: str, callbackId: str, callbackFunc: callable):
+      """Unlock wallet using proper unlock control header pattern."""
+      packet = Bridge.ToBridge.new_message()
+      request = packet.init("walletManager").init("unlockControlHeader")
+      request.walletPath = walletPath
+      request.callbackId = callbackId
+      self.send(packet, callback=callbackFunc)
+
 ################################################################################
 class BridgeWalletWrapper(ProtoWrapper):
    #############################################################################
