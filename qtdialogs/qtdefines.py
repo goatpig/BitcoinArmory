@@ -1,10 +1,12 @@
+from __future__ import (absolute_import, division,
+                        print_function, unicode_literals)
 ##############################################################################
 #                                                                            #
 # Copyright (C) 2011-2015, Armory Technologies, Inc.                         #
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2025, goatpig                                           #
+# Copyright (C) 2016-2024, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
@@ -13,7 +15,7 @@ import os
 import struct
 from tempfile import mkstemp
 import urllib
-import traceback
+import logging
 
 from qtpy import QtCore, QtGui, QtWidgets
 
@@ -60,6 +62,237 @@ def AddToRunningDialogsList(func):
    return wrapper
 
 ################################################################################
+# Shared UI constants and styles for dialogs and widgets
+
+# Layout spacings and margins for consistent UI
+UI_DIALOG_SPACING = 8
+UI_FRAME_MARGIN = 24
+UI_FRAME_PADDING = 16
+UI_BUTTON_SPACING = 8
+UI_GRID_SPACING = 8
+
+# Base dialog/tab styles derived from theme colors
+UI_STYLE_DIALOG_BASE = """
+   QDialog {
+      background-color: %(bg)s;
+   }
+   QTabWidget::pane {
+      border: none;
+      background-color: %(bg)s;
+   }
+   QTabBar::tab {
+      background-color: %(tab_bg)s;
+      color: %(fg)s;
+      border: none;
+      padding: 8px 16px;
+      min-width: 100px;
+   }
+   QTabBar::tab:selected {
+      background-color: %(tab_sel)s;
+      color: %(fg)s;
+   }
+   QTabBar::tab:hover:!selected {
+      background-color: %(tab_hover)s;
+   }
+""" % {
+   'bg': htmlColor('Background'),
+   'fg': htmlColor('Foreground'),
+   'tab_bg': htmlColor('SlightBkgdDark'),
+   'tab_sel': htmlColor('SlightBkgdLight'),
+   'tab_hover': htmlColor('SlightBkgdLight')
+}
+
+def apply_dialog_base_style(widget):
+   widget.setStyleSheet(UI_STYLE_DIALOG_BASE)
+
+# Buttons
+UI_STYLE_BUTTON_STANDARD = """
+   QPushButton {
+      background-color: %(bg)s;
+      color: %(fg)s;
+      border: 1px solid %(border)s;
+      border-radius: 2px;
+      padding: 6px 12px;
+   }
+   QPushButton:hover {
+      background-color: %(hover)s;
+   }
+   QPushButton:pressed {
+      background-color: %(pressed)s;
+   }
+   QPushButton:disabled {
+      background-color: %(bg)s;
+      color: %(fg_disabled)s;
+      border: 1px solid %(border_disabled)s;
+   }
+""" % {
+   'bg': htmlColor('SlightBkgdDark'),
+   'fg': htmlColor('Foreground'),
+   'border': htmlColor('Mid'),
+   'hover': htmlColor('SlightBkgdLight'),
+   'pressed': htmlColor('SlightBkgdDark'),
+   'fg_disabled': htmlColor('DisableFG'),
+   'border_disabled': htmlColor('SlightBkgdDark')
+}
+
+UI_STYLE_BUTTON_DIALOG = """
+   QPushButton {
+      background-color: %(bg)s;
+      color: %(fg)s;
+      border: 1px solid %(border)s;
+      border-radius: 2px;
+      padding: 6px 16px;
+      min-width: 100px;
+   }
+   QPushButton:hover {
+      background-color: %(hover)s;
+   }
+   QPushButton:pressed {
+      background-color: %(pressed)s;
+   }
+""" % {
+   'bg': htmlColor('SlightBkgdDark'),
+   'fg': htmlColor('Foreground'),
+   'border': htmlColor('Mid'),
+   'hover': htmlColor('SlightBkgdLight'),
+   'pressed': htmlColor('SlightBkgdDark')
+}
+
+# Inputs
+UI_STYLE_INPUT = """
+   QLineEdit {
+      background-color: %(bg)s;
+      color: %(fg)s;
+      border: 1px solid %(border)s;
+      border-radius: 2px;
+      padding: 6px;
+   }
+   QLineEdit:disabled {
+      background-color: %(bg)s;
+      color: %(fg_disabled)s;
+      border: 1px solid %(border_disabled)s;
+      border-radius: 2px;
+      padding: 6px;
+   }
+""" % {
+   'bg': htmlColor('SlightBkgdDark'),
+   'fg': htmlColor('Foreground'),
+   'border': htmlColor('Mid'),
+   'fg_disabled': htmlColor('DisableFG'),
+   'border_disabled': htmlColor('SlightBkgdDark')
+}
+
+# Combobox
+UI_STYLE_COMBOBOX = """
+   QComboBox {
+      background-color: %(bg)s;
+      color: %(fg)s;
+      border: 1px solid %(border)s;
+      border-radius: 2px;
+      padding: 6px;
+   }
+   QComboBox::drop-down {
+      border-left: 1px solid %(border)s;
+      background-color: %(bg_drop)s;
+      width: 20px;
+   }
+""" % {
+   'bg': htmlColor('SlightBkgdDark'),
+   'fg': htmlColor('Foreground'),
+   'border': htmlColor('Mid'),
+   'bg_drop': htmlColor('SlightBkgdDark')
+}
+
+# Frames
+UI_STYLE_FRAME = """
+   QFrame {
+      background-color: %(bg)s;
+      border: 1px solid %(border)s;
+      border-radius: 4px;
+   }
+   QLabel {
+      border: none;
+      background: transparent;
+      padding: 0px;
+      margin: 0px;
+   }
+""" % {
+   'bg': htmlColor('SlightBkgdDark'),
+   'border': htmlColor('Mid')
+}
+
+# Tree view
+UI_STYLE_TREEWIDGET = """
+   QTreeWidget {
+      background: %(bg)s;
+      border: 1px solid %(border)s;
+      color: %(fg)s;
+      show-decoration-selected: 0;
+   }
+   QTreeWidget::item {
+      height: 30px;
+      border: none;
+      padding: 4px;
+   }
+   QTreeWidget::item:hover {
+      background: %(hover)s;
+   }
+""" % {
+   'bg': htmlColor('SlightBkgdDark'),
+   'border': htmlColor('Mid'),
+   'fg': htmlColor('Foreground'),
+   'hover': htmlColor('SlightBkgdLight')
+}
+
+# Shared UI helper widgets
+def createStyledLabel(text, color='Foreground'):
+   lbl = QtWidgets.QLabel(text)
+   try:
+      if isinstance(color, str) and not color.startswith('#'):
+         lbl.setStyleSheet('color: %s;' % htmlColor(color))
+      else:
+         lbl.setStyleSheet('color: %s;' % color)
+   except Exception:
+      lbl.setStyleSheet('color: %s;' % htmlColor('Foreground'))
+   return lbl
+
+def createButtonLayout(*buttons):
+   layout = QtWidgets.QHBoxLayout()
+   layout.setSpacing(UI_BUTTON_SPACING)
+   layout.addStretch(1)
+   for b in buttons:
+      layout.addWidget(b)
+   return layout
+
+def createInputField(width=None, style=None):
+   field = QtWidgets.QLineEdit()
+   if width:
+      field.setFixedWidth(width)
+   field.setStyleSheet(style if style else UI_STYLE_INPUT)
+   return field
+
+def createStyledButton(text, width=None, style=None):
+   btn = QtWidgets.QPushButton(text)
+   if width:
+      btn.setFixedWidth(width)
+   btn.setStyleSheet(style if style else UI_STYLE_BUTTON_STANDARD)
+   return btn
+
+def createStyledCombo(width=None, style=None):
+   combo = QtWidgets.QComboBox()
+   if width:
+      combo.setFixedWidth(width)
+   combo.setStyleSheet(style if style else UI_STYLE_COMBOBOX)
+   return combo
+
+class ComboBoxStyle(QtWidgets.QProxyStyle):
+   def drawPrimitive(self, element, option, painter, widget=None):
+      if element == QtWidgets.QStyle.PE_IndicatorArrowDown:
+         option.rect.adjust(0, 0, -2, -2)
+         super().drawPrimitive(element, option, painter, widget)
+      else:
+         super().drawPrimitive(element, option, painter, widget)
+
 def HLINE(style=QtWidgets.QFrame.Plain):
    qf = QtWidgets.QFrame()
    qf.setFrameStyle(QtWidgets.QFrame.HLine | style)
@@ -209,10 +442,10 @@ def initialColResize(tblViewObj, sizeList):
 
 #############################################################################
 class QRichLabel(QtWidgets.QLabel):
-   def __init__(self, txt, doWrap=True,
-      hAlign=QtCore.Qt.AlignLeft,
-      vAlign=QtCore.Qt.AlignVCenter,
-      **kwargs):
+   def __init__(self, txt, doWrap=True, \
+                           hAlign=QtCore.Qt.AlignLeft, \
+                           vAlign=QtCore.Qt.AlignVCenter, \
+                           **kwargs):
       super(QRichLabel, self).__init__(txt)
       self.setTextFormat(QtCore.Qt.RichText)
       self.setWordWrap(doWrap)
@@ -245,14 +478,14 @@ class QRichLabel(QtWidgets.QLabel):
    def setItalic(self):
       self.setText('<i>' + self.text() + '</i>')
 
-#############################################################################
 class QRichLabel_AutoToolTip(QRichLabel):
-   def __init__(self, txt, doWrap=True,
-      hAlign=QtCore.Qt.AlignLeft,
-      vAlign=QtCore.Qt.AlignVCenter,
-      **kwargs):
-      super(QRichLabel_AutoToolTip, self).__init__(txt,
-         doWrap, hAlign, vAlign, **kwargs)
+   def __init__(self, txt, doWrap=True, \
+                           hAlign=QtCore.Qt.AlignLeft, \
+                           vAlign=QtCore.Qt.AlignVCenter, \
+                           **kwargs):
+      super(QRichLabel_AutoToolTip, self).__init__(txt, \
+            doWrap, hAlign, vAlign, **kwargs)
+
       self.toolTipMethod = None
 
    def setToolTipLambda(self, toolTipMethod):
@@ -264,19 +497,21 @@ class QRichLabel_AutoToolTip(QRichLabel):
          if self.toolTipMethod != None:
             txt = self.toolTipMethod()
             self.setToolTip(txt)
+
       return QtWidgets.QLabel.event(self,event)
 
-#############################################################################
+
 class QMoneyLabel(QRichLabel):
    def __init__(self, nSatoshi, ndec=8, maxZeros=2, wColor=True,
-      wBold=False, txtSize=10):
+                              wBold=False, txtSize=10):
       QtWidgets.QLabel.__init__(self, coin2str(nSatoshi))
 
       self.nSatoshi = nSatoshi
       self.setValueText(nSatoshi, ndec, maxZeros, wColor, wBold, txtSize)
 
+
    def setValueText(self, nSatoshi, ndec=None, maxZeros=None, wColor=None,
-      wBold=None, txtSize=10):
+                                             wBold=None, txtSize=10):
       """
       When we set the text of the QMoneyLabel, remember previous values unless
       explicitly respecified
@@ -311,7 +546,7 @@ class QMoneyLabel(QRichLabel):
          self.setText('%s' % valStr)
       self.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
 
-#############################################################################
+
 def setLayoutStretchRows(layout, *args):
    for i,st in enumerate(args):
       layout.setRowStretch(i, st)
@@ -462,7 +697,8 @@ def restoreTableView(qtbl, hexBytes):
       for i,c in toRestore[:-1]:
          qtbl.setColumnWidth(i, c)
    except Exception as e:
-      traceback.print_tb(e.__traceback__)
+      print('- Error loading table view -')
+      print(e)
       pass
       # Don't want to crash the program just because couldn't load tbl data
 
@@ -519,6 +755,9 @@ class ArmoryFrame(QtWidgets.QFrame):
       # Subclasses should implement a method that returns a boolean to control
       # when done, accept, next, or final button should be enabled.
       self.isComplete = None
+
+
+
 
 # Pure-python BMP creator taken from:
 #
@@ -625,35 +864,40 @@ def createBitmap(imgMtrx2D, writeToFile=-1, returnBinary=True):
 
 def selectFileForQLineEdit(parent, qObj, title="Select File", existing=False, \
                            ffilter=[]):
+   initPath = ARMORY_HOME_DIR
+   currText = str(qObj.text()).strip()
+   if len(currText)>0:
+      if os.path.exists(currText):
+         initPath = currText
 
-   types = list(ffilter)
-   types.append('All files (*)')
-   typesStr = ';; '.join(types)
+   typesStr = ' '.join(ffilter)
    if not OS_MACOSX:
-      fullPath = unicode(QtWidgets.QFileDialog.getOpenFileName(parent, \
-         title, ARMORY_HOME_DIR, typesStr))
+      fullPath, _ = QtWidgets.QFileDialog.getOpenFileName(parent, \
+         title, ARMORY_HOME_DIR, typesStr)
    else:
-      fullPath = unicode(QtWidgets.QFileDialog.getOpenFileName(parent, \
-         title, ARMORY_HOME_DIR, typesStr, options=QtWidgets.QFileDialog.DontUseNativeDialog))
+      fullPath, _ = QtWidgets.QFileDialog.getOpenFileName(parent, \
+         title, ARMORY_HOME_DIR, typesStr, options=QtWidgets.QFileDialog.DontUseNativeDialog)
 
    if fullPath:
-      qObj.setText( fullPath)
+      qObj.setText(fullPath)
 
 
 def selectDirectoryForQLineEdit(par, qObj, title="Select Directory"):
    initPath = ARMORY_HOME_DIR
-   currText = unicode(qObj.text()).strip()
+   currText = str(qObj.text()).strip()
    if len(currText)>0:
       if os.path.exists(currText):
          initPath = currText
 
    if not OS_MACOSX:
-      fullPath = unicode(QtWidgets.QFileDialog.getExistingDirectory(par, title, initPath))
+      fullPath = QtWidgets.QFileDialog.getExistingDirectory(par, title, initPath)
    else:
-      fullPath = unicode(QtWidgets.QFileDialog.getExistingDirectory(par, title, initPath, \
-                                       options=QtWidgets.QFileDialog.DontUseNativeDialog))
+      fullPath = QtWidgets.QFileDialog.getExistingDirectory(par, title, initPath, \
+                                       options=QtWidgets.QFileDialog.DontUseNativeDialog)
    if fullPath:
-      qObj.setText( fullPath)
+      if isinstance(fullPath, list):
+         fullPath = fullPath[0]
+      qObj.setText(fullPath)
 
 
 def createDirectorySelectButton(parent, targetWidget, title="Select Directory"):
@@ -724,11 +968,11 @@ def createToolTipWidget(tiptext, iconSz=2):
    lbl = QtWidgets.QLabel('<font size=%d color=%s>(?)</font>' % (iconSz, fgColor))
    lbl.setMaximumWidth(int(relaxedSizeStr(lbl, '(?)')[0]))
 
-   def setAllText(wself, txt):
+   def setAllText(widget, txt):
       def pressEv(ev):
-         QtWidgets.QWhatsThis.showText(ev.globalPos(), txt)
-      wself.mousePressEvent = pressEv
-      wself.setToolTip('<u></u>' + txt)
+         QtWidgets.QWhatsThis.showText(ev.globalPos(), txt, widget)
+      widget.mousePressEvent = pressEv
+      widget.setToolTip('<u></u>' + txt)
 
    # Calling setText on this widget will update both the tooltip and QWT
    from types import MethodType
@@ -818,3 +1062,10 @@ class AdvancedOptionsFrame(ArmoryFrame):
       except:
          pass
       return kdfBytes
+
+LOGERROR = logging.error
+
+def toUnicode(text):
+   if isinstance(text, bytes):
+      return text.decode('utf-8')
+   return str(text)

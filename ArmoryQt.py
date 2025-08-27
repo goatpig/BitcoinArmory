@@ -93,6 +93,7 @@ from qtdialogs.MsgBoxCustom import MsgBoxCustom
 from qtdialogs.MsgBoxWithDNAA import MsgBoxWithDNAA
 from qtdialogs.DlgUniversalRestoreSelect import DlgUniversalRestoreSelect
 from qtdialogs.DlgWalletMigration import DlgWalletMigration
+from qtdialogs.DlgSetupManager import DlgSetupManager
 
 from ui.QtExecuteSignal import TheSignalExecution
 from armorymodels import AllWalletsDispModel, AllWalletsCheckboxDelegate, \
@@ -559,11 +560,13 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
       actExportTx    = self.createAction(self.tr('&Export Transactions...'), exportTx)
       actSettings    = self.createAction(self.tr('&Settings...'), self.openSettings)
+      actSetupManager = self.createAction(self.tr('Setup &Manager...'), self.openSetupManager)
       actMinimApp    = self.createAction(self.tr('&Minimize Armory'), self.minimizeArmory)
       actExportLog   = self.createAction(self.tr('Export &Log File...'), self.exportLogFile)
       actCloseApp    = self.createAction(self.tr('&Quit Armory'), self.closeForReal)
       self.menusList[MENUS.File].addAction(actExportTx)
       self.menusList[MENUS.File].addAction(actSettings)
+      self.menusList[MENUS.File].addAction(actSetupManager)
       self.menusList[MENUS.File].addAction(actMinimApp)
       self.menusList[MENUS.File].addAction(actExportLog)
       self.menusList[MENUS.File].addAction(actCloseApp)
@@ -776,6 +779,11 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
    #############################################################################
    def networkReadyCallback(self):
       self.loadWallets()
+
+   #############################################################################
+   def openSetupManager(self):
+      dlg = DlgSetupManager(parent=self, main=self)
+      dlg.exec_()
 
    #############################################################################
    def changeWltFilter(self):
@@ -5212,13 +5220,17 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 ############################################
 
 if 1:
-   #setup splash screen
+   # 1) Show Setup Manager (modal and focused)
+   #    Start the bridge while the dialog is presented
+   if DlgSetupManager.run(parent=None, main=None) != QtWidgets.QDialog.Accepted:
+      sys.exit(1)
+
+   # 2) Splash screen appears
    pixLogo = QtGui.QPixmap('./img/splashlogo.png')
    if USE_TESTNET or USE_REGTEST:
       pixLogo = QtGui.QPixmap('./img/splashlogo_testnet.png')
    SPLASH = ArmorySplashScreen(pixLogo)
    SPLASH.setMask(pixLogo.mask())
-
    SPLASH.show()
    QAPP.processEvents()
 
@@ -5236,15 +5248,21 @@ if 1:
    translator.load(TheSettings.getGuiLanguage(), os.path.join(app_dir, "lang/"))
    QAPP.installTranslator(translator)
 
-   #setup main dialog
+   # 3) Create main window after setup manager is closed
    armoryMainWindow = ArmoryMainWindow(splashScreen=SPLASH)
 
-   #start cppbridge
-   TheBDM.startBridge(getBridgeArgList(), armoryMainWindow.networkReadyCallback)
+   #    Start cppbridge now and wire the callback (skip if already started during setup)
+   try:
+      from armoryengine.CppBridge import TheBridge
+      if not getattr(TheBridge.bridgeSocket, 'run', False):
+         TheBDM.startBridge(getBridgeArgList(), armoryMainWindow.networkReadyCallback)
+   except Exception:
+      TheBDM.startBridge(getBridgeArgList(), armoryMainWindow.networkReadyCallback)
 
-   #show main dialog
+   #    Show main dialog
    armoryMainWindow.show()
 
+   # 4) Finish splash screen
    SPLASH.finish(armoryMainWindow)
    QAPP.setQuitOnLastWindowClosed(True)
    os._exit(QAPP.exec_())
