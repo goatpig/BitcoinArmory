@@ -9,25 +9,20 @@
 import os
 from qtpy import QtCore, QtWidgets
 from armoryengine.ArmoryUtils import BTC_HOME_DIR, ARMORY_DB_DIR, ARMORY_HOME_DIR, \
-   OS_MACOSX, OS_WINDOWS, CLI_OPTIONS, getBridgeArgList, LOGINFO, LOGEXCEPT
+   CLI_OPTIONS, LOGEXCEPT, LOGINFO
 from armoryengine.Settings import TheSettings
 from armoryengine.CppBridge import TheBridge
 from armoryengine.BDM import TheBDM
+from ui.QtExecuteSignal import TheSignalExecution
 
 from qtdialogs.ArmoryDialog import ArmoryDialog
-from armorycolors import htmlColor
-from qtdialogs.DlgMigrateWallet import DlgMigrateWallet
+from qtdialogs.DlgWalletMigration import DlgWalletMigration
 from qtdialogs.DlgUnlockWallet import UnlockWalletHandler
-from qtdialogs.qtdefines import (
-   UI_DIALOG_SPACING, UI_FRAME_MARGIN, UI_FRAME_PADDING, UI_BUTTON_SPACING, UI_GRID_SPACING,
-   UI_STYLE_BUTTON_STANDARD, UI_STYLE_BUTTON_DIALOG, UI_STYLE_INPUT, UI_STYLE_COMBOBOX,
-   UI_STYLE_FRAME, UI_STYLE_TREEWIDGET, apply_dialog_base_style,
-   createStyledLabel, createButtonLayout, createInputField, createStyledButton, createStyledCombo,
-   ComboBoxStyle
-)
+from qtdialogs.qtdefines import QRichLabel, applyDialogBaseStyle, makeCenteredCell, \
+   makeCheckboxCell, makeButtonCell, addPlaceholderRow
 
 # --- Dialog-specific constants ---
-MINIMUM_DIALOG_WIDTH = 850
+MINIMUM_DIALOG_WIDTH = 350
 MINIMUM_DIALOG_HEIGHT = 500
 
 ###############################################################################
@@ -35,25 +30,29 @@ class DlgSetupManager(ArmoryDialog):
    def __init__(self, parent=None, main=None, testing=False):
       """Initialize the setup manager dialog."""
       super().__init__(parent)
-      
+
       self.initMemberVariables(main)
       self.setupDialogProperties()
       self.initTabs()
       self.setupMainLayout()
       self.loadSettings(testing)
       self.connectSignals()
-      self.loadWalletList()
-
-      # Display dialog unless in testing mode
-      if not testing:
-         self.show()
+      # Initial populate will be done by onBridgeReady callback
+      # Check if bridge is already ready, otherwise wait for callback
+      try:
+         from armoryengine.CppBridge import TheBridge
+         if TheBridge.bridgeSocket.bip15xConnection.ready():
+            self.loadWalletList()
+      except Exception:
+         # Bridge not ready yet, will be called by onBridgeReady callback
+         pass
 
    def initMemberVariables(self, main):
       """Initialize all member variables with default values."""
       self.main = main
-      self.comboStyle = ComboBoxStyle()
-      self.bitcoinCoreProcess = None
-      
+      # Visual custom styles removed; use standard Qt widgets
+      # Core lifecycle is handled by the bridge; no local process object
+
       # UI component references
       self.tabWidget = None
       self.walletTab = None
@@ -61,7 +60,7 @@ class DlgSetupManager(ArmoryDialog):
       self.databaseTab = None
       self.acceptButton = None
       self.cancelButton = None
-      
+
       # Widget references for settings
       self.satoshiHomePath = None
       self.satoshiBrowseButton = None
@@ -84,56 +83,54 @@ class DlgSetupManager(ArmoryDialog):
       self.remoteUserEdit = None
       self.remotePasswordEdit = None
       self.testConnectionButton = None
+      self.walletIdToCheckbox = {}
+      self.bridgeReady = False
 
    def setupDialogProperties(self):
       """Configure basic dialog properties and styling."""
       self.setMinimumWidth(MINIMUM_DIALOG_WIDTH)
       self.setMinimumHeight(MINIMUM_DIALOG_HEIGHT)
       self.setWindowTitle(self.tr('Armory Setup Manager'))
-      self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.WindowStaysOnTopHint)
+      self.setWindowFlags(QtCore.Qt.Window)
       self.setModal(True)
-      # Apply base dialog styling
-      apply_dialog_base_style(self)
+      # Use default dialog styling (match DlgWalletMigration look)
+      try:
+         applyDialogBaseStyle(self)
+      except Exception:
+         pass
 
    def initTabs(self):
       """Initialize all tab widgets."""
       try:
          # Create and style the tab container
          self.tabWidget = QtWidgets.QTabWidget()
-         self.tabWidget.setContentsMargins(UI_FRAME_PADDING, UI_FRAME_PADDING, UI_FRAME_PADDING, UI_FRAME_PADDING)
+         self.tabWidget.setContentsMargins(14, 6, 14, 8)
 
          # Initialize individual tab widgets
-         LOGINFO("Creating wallet tab...")
-         # Ensure the bridge is running so wallet listing works in this dialog
-         try:
-            if (TheBDM is not None and
-               not getattr(TheBridge.bridgeSocket, 'run', False)):
-               TheBDM.startBridge(getBridgeArgList(), lambda *_: None)
-         except Exception:
-            pass
+         # build wallet tab
          self.walletTab = self.createWalletTab()
-         
-         LOGINFO("Creating core tab...")
+
+         # build core tab
          self.coreTab = self.createCoreTab()
-         
-         LOGINFO("Creating database tab...")
+
+         # build database tab
          self.databaseTab = self.createDatabaseTab()
 
          # Configure tab order
          self.tabWidget.addTab(self.walletTab, self.tr('Wallet Settings'))
          self.tabWidget.addTab(self.coreTab, self.tr('Core Settings'))
          self.tabWidget.addTab(self.databaseTab, self.tr('Database Settings'))
-         
-         LOGINFO("Tabs created successfully")
-         
+
+         # tabs created
+
       except Exception as e:
-         LOGEXCEPT("Error creating tabs: %s", str(e))
+         # bubble up; upstream logger handles it
          raise
 
    def setupMainLayout(self):
       """Set up the main layout with tabs and buttons."""
       mainLayout = QtWidgets.QVBoxLayout()
-      mainLayout.setSpacing(UI_DIALOG_SPACING)
+      mainLayout.setSpacing(8)
       mainLayout.setContentsMargins(0, 0, 0, 0)
 
       # Add tab widget to main layout
@@ -149,8 +146,8 @@ class DlgSetupManager(ArmoryDialog):
       """Create the bottom frame containing Accept/Cancel buttons."""
       bottomFrame = QtWidgets.QFrame()
       bottomLayout = QtWidgets.QHBoxLayout(bottomFrame)
-      bottomLayout.setContentsMargins(UI_FRAME_MARGIN, UI_FRAME_PADDING, UI_FRAME_MARGIN, UI_FRAME_PADDING)
-      bottomLayout.setSpacing(UI_BUTTON_SPACING)
+      bottomLayout.setContentsMargins(14, 6, 14, 8)
+      bottomLayout.setSpacing(8)
 
       # Configure Accept/Cancel buttons
       buttonBox = QtWidgets.QDialogButtonBox()
@@ -159,9 +156,7 @@ class DlgSetupManager(ArmoryDialog):
       self.cancelButton = buttonBox.addButton(self.tr('Cancel'), 
          QtWidgets.QDialogButtonBox.RejectRole)
 
-      # Style the buttons
-      self.acceptButton.setStyleSheet(UI_STYLE_BUTTON_DIALOG)
-      self.cancelButton.setStyleSheet(UI_STYLE_BUTTON_DIALOG)
+      # Default button styling (no custom stylesheet)
       self.acceptButton.setFixedWidth(100)
       self.cancelButton.setFixedWidth(100)
 
@@ -182,7 +177,8 @@ class DlgSetupManager(ArmoryDialog):
       if self.scenarioCombo:
          self.scenarioCombo.currentIndexChanged.connect(self.scenarioChanged)
       if self.networkModeCombo:
-         self.networkModeCombo.currentIndexChanged.connect(self.networkModeChanged)
+         self.networkModeCombo.currentIndexChanged.connect(
+            self.networkModeChanged)
 
       # Wallet tab signals  
       if self.refreshButton:
@@ -197,8 +193,8 @@ class DlgSetupManager(ArmoryDialog):
    def accept(self):
       """Validate and save settings, then accept dialog if successful."""
       try:
-         # Validate user inputs and ensure directories exist
-         if not self.validateSettings(interactive=True):
+         # Validate grouped settings with local sanity checks
+         if not self.validateAllSettings():
             return
 
          # Persist settings
@@ -222,66 +218,62 @@ class DlgSetupManager(ArmoryDialog):
       TheSettings.set('SetupManagerCompleted', False)
 
    def closeEvent(self, event):
-      """Handle dialog close event to gracefully shut down Bitcoin Core if needed."""
-      try:
-         if self.bitcoinCoreProcess is not None:
-            # Send SIGTERM signal to gracefully shut down
-            self.bitcoinCoreProcess.terminate()
-            # Wait for process to terminate
-            self.bitcoinCoreProcess.wait(timeout=30)
-      except Exception as e:
-         LOGEXCEPT("Error shutting down Bitcoin Core: %s", str(e))
-      finally:
-         super().closeEvent(event)
+      """Handle dialog close event."""
+      super().closeEvent(event)
 
    def createCoreTab(self):
       """Create the Core settings tab with directory and network configuration."""
       try:
          tab = QtWidgets.QWidget()
          mainLayout = QtWidgets.QVBoxLayout()
-         mainLayout.setContentsMargins(UI_FRAME_MARGIN, UI_FRAME_MARGIN, UI_FRAME_MARGIN, UI_FRAME_MARGIN)
-         mainLayout.setSpacing(UI_FRAME_PADDING)
+         mainLayout.setContentsMargins(14, 6, 14, 8)
+         mainLayout.setSpacing(8)
+
+         # Header
+         title = QRichLabel(self.tr('<span style="font-size:14pt;"><b>Core Settings</b></span>'))
+         title.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop)
+         mainLayout.addWidget(title)
+         # Remove decorative horizontal lines for a cleaner look
 
          # Directory Settings Frame
-         LOGINFO("Creating directory frame...")
          dirFrame = self.createDirectoryFrame()
          mainLayout.addWidget(dirFrame)
 
          # Core Settings Frame  
-         LOGINFO("Creating core settings frame...")
          coreFrame = self.createCoreSettingsFrame()
          mainLayout.addWidget(coreFrame)
-         
+
+         # No footer line
+
          mainLayout.addStretch()
          tab.setLayout(mainLayout)
-         
-         LOGINFO("Core tab created successfully")
+
+         # core tab created
          return tab
 
       except Exception as e:
-         LOGEXCEPT("Error creating core tab: %s", str(e))
          raise
 
    def createDirectoryFrame(self):
       """Create the directory settings frame for the Core tab."""
-      dirFrame = QtWidgets.QFrame()
-      dirFrame.setStyleSheet(UI_STYLE_FRAME)
+      dirFrame = QtWidgets.QGroupBox(self.tr('Bitcoin Core Data'))
       dirFrameLayout = QtWidgets.QVBoxLayout(dirFrame)
-      dirFrameLayout.setContentsMargins(UI_FRAME_PADDING, UI_FRAME_PADDING, UI_FRAME_PADDING, UI_FRAME_PADDING)
-      dirFrameLayout.setSpacing(UI_GRID_SPACING)
+      dirFrameLayout.setContentsMargins(12, 12, 12, 12)
+      dirFrameLayout.setSpacing(8)
 
       # Create grid layout for directory settings
       dirGrid = QtWidgets.QGridLayout()
-      dirGrid.setSpacing(UI_GRID_SPACING)
+      dirGrid.setSpacing(8)
 
       # Bitcoin Core Data Directory
-      coreDirLabel = createStyledLabel(self.tr("Bitcoin Core Data Directory"))
+      coreDirLabel = QtWidgets.QLabel(self.tr("Bitcoin Core Data Directory"))
 
       dirInputLayout = QtWidgets.QHBoxLayout()
-      dirInputLayout.setSpacing(UI_GRID_SPACING)
-      self.satoshiHomePath = createInputField(width=400, style=UI_STYLE_INPUT)
-      self.satoshiBrowseButton = createStyledButton(
-         self.tr("Browse..."), width=100, style=UI_STYLE_BUTTON_STANDARD)
+      dirInputLayout.setSpacing(8)
+      self.satoshiHomePath = QtWidgets.QLineEdit()
+      self.satoshiHomePath.setFixedWidth(400)
+      self.satoshiBrowseButton = QtWidgets.QPushButton(self.tr("Browse..."))
+      self.satoshiBrowseButton.setFixedWidth(100)
 
       dirInputLayout.addWidget(self.satoshiHomePath)
       dirInputLayout.addWidget(self.satoshiBrowseButton)
@@ -297,43 +289,41 @@ class DlgSetupManager(ArmoryDialog):
 
    def createCoreSettingsFrame(self):
       """Create the core settings frame with operation mode and network options."""
-      coreFrame = QtWidgets.QFrame()
-      coreFrame.setStyleSheet(UI_STYLE_FRAME)
+      coreFrame = QtWidgets.QGroupBox(self.tr('Operation'))
       coreFrameLayout = QtWidgets.QVBoxLayout(coreFrame)
-      coreFrameLayout.setContentsMargins(UI_FRAME_PADDING, UI_FRAME_PADDING, UI_FRAME_PADDING, UI_FRAME_PADDING)
-      coreFrameLayout.setSpacing(UI_GRID_SPACING)
+      coreFrameLayout.setContentsMargins(12, 12, 12, 12)
+      coreFrameLayout.setSpacing(8)
 
       # Create grid layout for core settings
       grid = QtWidgets.QGridLayout()
-      grid.setSpacing(UI_GRID_SPACING)
+      grid.setSpacing(8)
 
       # Operation Mode
-      operationLabel = createStyledLabel(self.tr("Operation Mode"))
-      self.scenarioCombo = createStyledCombo(width=200, style=UI_STYLE_COMBOBOX)
+      operationLabel = QtWidgets.QLabel(self.tr("Operation Mode"))
+      self.scenarioCombo = QtWidgets.QComboBox()
+      self.scenarioCombo.setFixedWidth(200)
       self.scenarioCombo.addItem(self.tr("Let Armory Automate It"))
       self.scenarioCombo.addItem(self.tr("Run Manually"))
-      self.scenarioCombo.setStyle(self.comboStyle)
-      self.scenarioCombo.view().setStyleSheet(
-         f"background-color: {htmlColor('SlightBkgdDark')}; color: {htmlColor('Foreground')};")
       self.scenarioCombo.setEditable(False)
-      self.scenarioCombo.setFrame(False)
 
       # Network Mode
-      networkLabel = createStyledLabel(self.tr("Network Mode"))
-      self.networkModeCombo = createStyledCombo(width=200, style=UI_STYLE_COMBOBOX)
+      networkLabel = QtWidgets.QLabel(self.tr("Network Mode"))
+      self.networkModeCombo = QtWidgets.QComboBox()
+      self.networkModeCombo.setFixedWidth(200)
       self.networkModeCombo.addItem(self.tr("Mainnet"))
       self.networkModeCombo.addItem(self.tr("Testnet"))
       self.networkModeCombo.addItem(self.tr("Regtest"))
-      self.networkModeCombo.setStyle(self.comboStyle)
 
       # Bitcoin P2P Port
-      p2pPortLabel = createStyledLabel(self.tr("Bitcoin P2P Port"))
-      self.p2pPortInput = createInputField(width=100, style=UI_STYLE_INPUT)
+      p2pPortLabel = QtWidgets.QLabel(self.tr("Bitcoin P2P Port"))
+      self.p2pPortInput = QtWidgets.QLineEdit()
+      self.p2pPortInput.setFixedWidth(100)
       self.p2pPortInput.setText("8333")
 
       # RPC Port (grayed out placeholder)
-      rpcPortLabel = createStyledLabel(self.tr("RPC Port"), color="DisableFG")
-      self.rpcPortInput = createInputField(width=100, style=UI_STYLE_INPUT)
+      rpcPortLabel = QtWidgets.QLabel(self.tr("RPC Port"))
+      self.rpcPortInput = QtWidgets.QLineEdit()
+      self.rpcPortInput.setFixedWidth(100)
       self.rpcPortInput.setEnabled(False)
       self.rpcPortInput.setToolTip("Standard Bitcoin Core RPC port (not configurable in Armory)")
 
@@ -350,154 +340,35 @@ class DlgSetupManager(ArmoryDialog):
 
       coreFrameLayout.addLayout(grid)
 
-      # Auto-detect button
-      autoDetectButton = createStyledButton(
-         self.tr("Auto-detect Core Settings"), width=200, style=UI_STYLE_BUTTON_STANDARD)
-      autoDetectButton.clicked.connect(self.autoDetectCoreSettings)
-
-      # Add button with center alignment
-      buttonLayout = createButtonLayout(autoDetectButton)
-      coreFrameLayout.addLayout(buttonLayout)
-
       return coreFrame
 
    def scenarioChanged(self, index):
       """Handle changes to the scenario selection."""
-      if index == 0:  # Let Armory Automate It
+      if index == 0 or index == 1:
+         # Ports are managed by the backend/bridge; keep inputs disabled
          self.p2pPortInput.setEnabled(False)
-         self.rpcPortInput.setEnabled(False)  # Keep RPC port disabled
-      elif index == 1:  # Run Manually
-         self.p2pPortInput.setEnabled(True)
-         self.rpcPortInput.setEnabled(False)  # Keep RPC port disabled
-
-   def autoDetectCoreSettings(self):
-      """Attempt to auto-detect existing Bitcoin Core settings and manage the node."""
-      try:
-         # Try to find Bitcoin Core data directory
-         if OS_WINDOWS:
-            defaultDir = os.path.expanduser('~\\AppData\\Roaming\\Bitcoin')
-         elif OS_MACOSX:
-            defaultDir = os.path.expanduser('~/Library/Application Support/Bitcoin')
-         else:
-            defaultDir = os.path.expanduser('~/.bitcoin')
-
-         if os.path.exists(defaultDir):
-            self.satoshiHomePath.setText(defaultDir)
-
-            # Check if Bitcoin Core is already running
-            isRunning = self.checkBitcoinCoreRunning()
-
-            if isRunning:
-               # Focus on existing instance
-               self.focusBitcoinCoreInstance()
-            else:
-               # Start Bitcoin Core node
-               self.startBitcoinCoreNode()
-
-            # Try to read bitcoin.conf for RPC settings
-            confPath = os.path.join(defaultDir, 'bitcoin.conf')
-            if os.path.exists(confPath):
-               with open(confPath, 'r') as f:
-                  for line in f:
-                     if line.startswith('rpcport='):
-                        self.rpcPortInput.setText(line.strip().split('=')[1])
-                     elif line.startswith('testnet='):
-                        if line.strip().split('=')[1] == '1':
-                           self.networkModeCombo.setCurrentText('Testnet')
-                     elif line.startswith('regtest='):
-                        if line.strip().split('=')[1] == '1':
-                           self.networkModeCombo.setCurrentText('Regtest')
-
-            QtWidgets.QMessageBox.information(
-               self,
-               self.tr('Settings Detected'),
-               self.tr('Bitcoin Core settings have been auto-detected. Please verify the values.')
-            )
-         else:
-            QtWidgets.QMessageBox.warning(
-               self,
-               self.tr('Settings Not Found'),
-               self.tr('Could not find Bitcoin Core settings. Please enter them manually.')
-            )
-      except Exception as e:
-         QtWidgets.QMessageBox.critical(
-            self,
-            self.tr('Error'),
-            self.tr('Failed to auto-detect settings: {}').format(str(e))
-         )
-
-   def checkBitcoinCoreRunning(self):
-      """Check if Bitcoin Core is already running."""
-      try:
-         # Try to connect to the RPC interface
-         if OS_WINDOWS:
-            import psutil
-            for proc in psutil.process_iter(['name']):
-               if proc.info['name'] == 'bitcoind.exe':
-                  return True
-         else:
-            import psutil
-            for proc in psutil.process_iter(['name']):
-               if proc.info['name'] == 'bitcoind':
-                  return True
-         return False
-      except Exception:
-         return False
-
-   def focusBitcoinCoreInstance(self):
-      """Focus on the existing Bitcoin Core instance."""
-      try:
-         if OS_WINDOWS:
-            import win32gui
-            import win32con
-            hwnd = win32gui.FindWindow(None, "Bitcoin Core")
-            if hwnd:
-               win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-               win32gui.SetForegroundWindow(hwnd)
-      except Exception as e:
-         LOGEXCEPT("Error focusing Bitcoin Core window: %s", str(e))
-
-   def startBitcoinCoreNode(self):
-      """Start the Bitcoin Core node."""
-      try:
-         # Get the Bitcoin Core executable path
-         if OS_WINDOWS:
-            bitcoindPath = os.path.join(os.path.dirname(self.satoshiHomePath.text()), 'bitcoind.exe')
-         else:
-            bitcoindPath = 'bitcoind'
-
-         if not os.path.exists(bitcoindPath):
-            QtWidgets.QMessageBox.warning(
-               self,
-               self.tr('Bitcoin Core Not Found'),
-               self.tr('Could not find Bitcoin Core executable. Please install Bitcoin Core first.')
-            )
-            return False
-
-         # Start Bitcoin Core with appropriate arguments
-         import subprocess
-         args = [bitcoindPath, '-datadir=' + self.satoshiHomePath.text()]
-
-         # Add network mode arguments
-         if self.networkModeCombo.currentText() == 'Testnet':
-            args.append('-testnet')
-         elif self.networkModeCombo.currentText() == 'Regtest':
-            args.append('-regtest')
-
-         # Start the process
-         self.bitcoinCoreProcess = subprocess.Popen(args)
-         return True
-      except Exception as e:
-         LOGEXCEPT("Error starting Bitcoin Core: %s", str(e))
-         return False
+         self.rpcPortInput.setEnabled(False)
 
    def showEvent(self, event):
       """Handle show event to ensure the dialog is properly displayed."""
       super().showEvent(event)
       # Make sure the dialog is visible and active
-      self.setWindowState(self.windowState() & ~QtCore.Qt.WindowMinimized | QtCore.Qt.WindowActive)
+      self.setWindowState(
+         self.windowState() & ~QtCore.Qt.WindowMinimized
+         | QtCore.Qt.WindowActive
+      )
       self.activateWindow()
       self.raise_()
+
+   @QtCore.Slot()
+   def onBridgeReady(self):
+      # Called by bridge-ready callback; now populate list and enable refresh
+      try:
+         if self.refreshButton:
+            self.refreshButton.setEnabled(True)
+      except Exception:
+         pass
+      self.loadWalletList()
 
    def browseSatoshiHome(self):
       """Open a directory dialog to select the Bitcoin Core data directory."""
@@ -531,48 +402,44 @@ class DlgSetupManager(ArmoryDialog):
       """Create the wallet settings tab with directory input and wallet list."""
       tab = QtWidgets.QWidget()
       mainLayout = QtWidgets.QVBoxLayout()
-      mainLayout.setContentsMargins(UI_FRAME_MARGIN, UI_FRAME_MARGIN, UI_FRAME_MARGIN, UI_FRAME_MARGIN)
-      mainLayout.setSpacing(UI_FRAME_PADDING)
+      mainLayout.setContentsMargins(14, 6, 14, 8)
+      mainLayout.setSpacing(8)
+
+      # Header
+      title = QRichLabel(self.tr(
+         '<span style="font-size:14pt;"><b>Wallet Setup</b></span>'))
+      title.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop)
+      mainLayout.addWidget(title)
+      # No decorative line under header
 
       # Directory Settings Frame
-      dirFrame = QtWidgets.QFrame()
-      dirFrame.setStyleSheet(UI_STYLE_FRAME)
+      dirFrame = QtWidgets.QGroupBox(self.tr('Armory Data'))
       dirFrameLayout = QtWidgets.QVBoxLayout(dirFrame)
-      dirFrameLayout.setContentsMargins(UI_FRAME_PADDING, UI_FRAME_PADDING, UI_FRAME_PADDING, UI_FRAME_PADDING)
-      dirFrameLayout.setSpacing(UI_GRID_SPACING)
+      dirFrameLayout.setContentsMargins(12, 12, 12, 12)
+      dirFrameLayout.setSpacing(8)
 
       # Create grid layout for directory settings
       dirGrid = QtWidgets.QGridLayout()
-      dirGrid.setSpacing(UI_GRID_SPACING)
+      dirGrid.setSpacing(8)
 
       # Armory Data Directory
       dirLabel = QtWidgets.QLabel(self.tr("Armory Data Directory"))
-      dirLabel.setStyleSheet("color: white;")
-      dirLabel.setToolTip(
-         'The directory where Armory will store all wallet files and settings.\n\n'
-         'This directory should be:\n'
-         '• On a secure drive\n'
-         '• Regularly backed up\n'
-         '• Have sufficient free space'
-      )
+      dirLabel.setToolTip('The directory where Armory will store all wallet '
+         'files and settings.\n\nThis directory should be:\n• On a secure '
+         'drive\n• Regularly backed up\n• Have sufficient free space')
 
       dirInputLayout = QtWidgets.QHBoxLayout()
-      dirInputLayout.setSpacing(UI_GRID_SPACING)
+      dirInputLayout.setSpacing(8)
       self.armoryDataDirEdit = QtWidgets.QLineEdit()
       self.armoryDataDirEdit.setMinimumWidth(400)
-      self.armoryDataDirEdit.setStyleSheet(UI_STYLE_INPUT)
 
       browseBtn = QtWidgets.QPushButton(self.tr("Browse..."))
       browseBtn.setFixedWidth(100)  # Match Accept/Cancel buttons
-      browseBtn.clicked.connect(lambda: self.browseDirDialog(self.armoryDataDirEdit))
-      browseBtn.setStyleSheet(UI_STYLE_BUTTON_STANDARD)
-      browseBtn.setToolTip(
-         'Click to browse for a directory to store Armory data.\n\n'
-         'Choose a location that is:\n'
-         '• Secure and private\n'
-         '• Has sufficient space\n'
-         '• Is on a reliable drive'
-      )
+      browseBtn.clicked.connect(lambda: self.browseDirDialog(
+         self.armoryDataDirEdit))
+      browseBtn.setToolTip('Click to browse for a directory to store Armory '
+         'data.\n\nChoose a location that is:\n• Secure and private\n• Has '
+         'sufficient space\n• Is on a reliable drive')
 
       dirInputLayout.addWidget(self.armoryDataDirEdit)
       dirInputLayout.addWidget(browseBtn)
@@ -589,44 +456,34 @@ class DlgSetupManager(ArmoryDialog):
       mainLayout.addWidget(dirFrame)
 
       # Wallet List Frame
-      walletFrame = QtWidgets.QFrame()
-      walletFrame.setStyleSheet(UI_STYLE_FRAME)
+      walletFrame = QtWidgets.QGroupBox(self.tr('Available Wallets'))
       walletFrameLayout = QtWidgets.QVBoxLayout(walletFrame)
-      walletFrameLayout.setContentsMargins(UI_FRAME_PADDING, UI_FRAME_PADDING, UI_FRAME_PADDING, UI_FRAME_PADDING)
-      walletFrameLayout.setSpacing(UI_GRID_SPACING)
+      walletFrameLayout.setContentsMargins(12, 12, 12, 12)
+      walletFrameLayout.setSpacing(8)
 
       # Create grid layout for wallet list settings
       walletGrid = QtWidgets.QGridLayout()
-      walletGrid.setSpacing(UI_GRID_SPACING)
+      walletGrid.setSpacing(8)
 
       # Wallet List Title
-      walletTitle = QtWidgets.QLabel(self.tr("Available Wallets"))
-      walletTitle.setStyleSheet("""
-         QLabel {
-            color: white;
-            font-size: 14px;
-            font-weight: bold;
-         }
-      """)
-      walletTitle.setToolTip(
-         'Displays all Bitcoin wallets found in the selected directory.\n\n'
-         'The list shows:\n'
-         '• Wallet IDs - Unique identifiers for each wallet\n'
-         '• Names - Custom labels for easy identification\n'
-         '• Types - Standard, Offline, or Backup\n'
-         '• Actions - Load or Decrypt options'
-      )
+      walletTitle = QtWidgets.QLabel(self.tr("Wallets Found"))
+      walletTitle.setToolTip('Displays all Bitcoin wallets found in the '
+         'selected directory.\n\nThe list shows:\n• Wallet IDs - Unique '
+         'identifiers for each wallet\n• Names - Custom labels for easy '
+         'identification\n• Types - Standard, Offline, or Backup\n• Actions '
+         '- Load or Decrypt options')
 
       # Wallet List
       self.walletList = QtWidgets.QTreeWidget()
-      self.walletList.setHeaderLabels(['Wallet ID', 'Name', 'Type', 'Actions'])
-      self.walletList.setColumnWidth(0, 200)
-      self.walletList.setColumnWidth(1, 150)
-      self.walletList.setColumnWidth(2, 100)
+      self.walletList.setHeaderLabels(['', 'Wallet ID', 'Type', 'Action'])
+      self.walletList.setColumnWidth(0, 28)
+      self.walletList.setColumnWidth(1, 260)
+      self.walletList.setColumnWidth(2, 120)
+      self.walletList.setColumnWidth(3, 240)
       self.walletList.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
       self.walletList.setIndentation(0)
       self.walletList.setRootIsDecorated(False)
-      self.walletList.setStyleSheet(UI_STYLE_TREEWIDGET)
+      # Avoid style hacks that can blank the viewport on some Qt builds
 
       # Add wallet list to grid
       walletGrid.addWidget(walletTitle, 0, 0)
@@ -640,14 +497,13 @@ class DlgSetupManager(ArmoryDialog):
       self.refreshButton = QtWidgets.QPushButton(self.tr('Refresh Wallet List'))
       self.refreshButton.setFixedWidth(200)
       self.refreshButton.clicked.connect(self.loadWalletList)
-      self.refreshButton.setStyleSheet(UI_STYLE_BUTTON_STANDARD)
-      self.refreshButton.setToolTip(
-         'Click to refresh the list of available wallets.\n\n'
-         'Use this when you:\n'
-         '• Add new wallets to the directory\n'
-         '• Remove wallets from the directory\n'
-         '• Want to ensure the list is up to date'
-      )
+      self.refreshButton.setEnabled(True)
+      # Keep enabled; loadWalletList handles readiness gracefully
+      # No footer line
+      self.refreshButton.setToolTip('Click to refresh the list of available '
+         'wallets.\n\nUse this when you:\n• Add new wallets to the '
+         'directory\n• Remove wallets from the directory\n• Want to ensure '
+         'the list is up to date')
 
       # Add button to wallet frame with center alignment
       buttonLayout = QtWidgets.QHBoxLayout()
@@ -666,143 +522,298 @@ class DlgSetupManager(ArmoryDialog):
    def loadWalletList(self):
       """Query bridge for wallets and render actions per type/state."""
       self.walletList.clear()
+      self.walletIdToCheckbox.clear()
       try:
-         # Ask bridge; if bridge not ready, show a placeholder and exit
-         if (TheBDM is None or
-            not getattr(TheBridge.bridgeSocket, 'run', False) or
-            not TheBridge.bridgeSocket.bip15xConnection.ready()):
-            placeholder = QtWidgets.QTreeWidgetItem()
-            placeholder.setText(0, self.tr('Bridge is not running yet'))
-            placeholder.setText(1, '')
-            placeholder.setText(2, '')
-            placeholder.setText(3, '')
-            self.walletList.addTopLevelItem(placeholder)
+         addedAny = False
+         # Single bridge query; if it raises, show placeholder and return
+         try:
+            wltList = TheBridge.wltManager.listWallets()
+         except Exception as e:
+            addPlaceholderRow(self.walletList, ['', self.tr('Bridge not ready'), '', ''])
             return
 
-         # List wallets using wallet manager (returns a List of WalletFileData)
-         wltList = TheBridge.wltManager.listWallets()
-         # Iterate by index to satisfy capnp dynamic list reader
-         for idx in range(len(wltList)):
-            entry = wltList[idx]
-            # Derive display values
-            walletPath = getattr(entry, 'path', '')
-            fileName = os.path.basename(walletPath) if walletPath else ''
-            walletId = getattr(entry, 'walletId', '')
-            loadState = getattr(entry, 'state', 0)
+         # Iterate directly; capnp lists are iterable
+         for entry in wltList:
+            if self._createWalletRow(entry):
+               addedAny = True
 
-            # Create row
-            item = QtWidgets.QTreeWidgetItem()
-            item.setText(0, walletId if walletId else fileName)
-            item.setText(1, getattr(entry, 'title', walletId or fileName))
-
-            # Determine state and action
-            # WalletManagerReply.WalletLoadState: 1=legacy, 3=encrypted, 4=ready
-            # loadState is a capnp enum; rely on underlying numeric value via string compare
-            loadStateStr = str(loadState)
-            isLegacy = (loadStateStr.endswith('.legacy')) or (not bool(walletId))
-            if isLegacy:
-               stateText = 'Legacy'
-            elif loadStateStr.endswith('.encrypted'):
-               stateText = 'Encrypted (locked)'
-            else:
-               stateText = 'Ready'
-            item.setText(2, stateText)
-
-            # Action widget
-            actionWidget = QtWidgets.QWidget()
-            actionLayout = QtWidgets.QHBoxLayout(actionWidget)
-            actionLayout.setContentsMargins(0, 0, 0, 0)
-            actionBtn = QtWidgets.QPushButton()
-            actionBtn.setStyleSheet(UI_STYLE_BUTTON_STANDARD)
-
-            fullPath = walletPath if walletPath else os.path.join(self.armoryDataDirEdit.text(), fileName)
-
-            if isLegacy:
-               actionBtn.setText(self.tr('Migrate'))
-               actionBtn.clicked.connect(lambda _, p=fullPath: self._migrateWallet(p))
-            elif loadStateStr.endswith('.encrypted'):
-               actionBtn.setText(self.tr('Decrypt'))
-               actionBtn.clicked.connect(lambda _, wid=walletId: self._unlockWallet(wid))
-            else:
-               actionBtn.setText(self.tr('Load'))
-               actionBtn.clicked.connect(lambda _, wid=walletId: self._loadWallet(wid))
-
-            actionLayout.addWidget(actionBtn)
-            self.walletList.addTopLevelItem(item)
-            self.walletList.setItemWidget(item, 3, actionWidget)
+         # If still nothing, show guidance
+         if not addedAny:
+            addPlaceholderRow(self.walletList, [
+               self.tr(''),
+               self.tr('No wallets found.'),
+               self.tr(''),
+               self.tr('')
+            ])
 
       except Exception as e:
          LOGEXCEPT('Error loading wallet list: %s', str(e))
 
-   def _migrateWallet(self, walletPath):
-      try:
-         # DlgMigrateWallet(promptId, wltID, verbose, parent=None, main=None)
-         DlgMigrateWallet(None, walletPath, self.tr('Migrate'), self, self).exec_()
-         TheBridge.wltManager.loadWallets()
-         self.loadWalletList()
-      except Exception as e:
-         QtWidgets.QMessageBox.warning(self, self.tr('Migration Failed'), str(e))
+   def _createWalletRow(self, entry):
+      """Create and add a wallet row from a bridge entry.
 
-   def _unlockWallet(self, walletId):
+      Returns True if the row is rendered successfully; False otherwise.
+      """
       try:
-         # Control header unlock requires a path; list again to find the entry
-         wltList = TheBridge.wltManager.listWallets()
+         walletPath = entry.path
+         fileName = os.path.basename(walletPath) if walletPath else ''
+         walletId = entry.walletId
+         # Create row
+         item = QtWidgets.QTreeWidgetItem()
+         # Use walletId as display name (wallet name); fallback to filename if absent
+         displayName = walletId if walletId else os.path.splitext(fileName)[0]
+         item.setText(1, displayName)
+         # Determine state label via helper
+         stateText, isLegacy, isEncrypted = self._walletStateLabel(
+            entry, walletId)
+         item.setText(2, stateText)
+
+         # Add the row before attaching widgets
+         self.walletList.addTopLevelItem(item)
+
+         # Column 0: selector checkbox (only for loadable wallets)
+         if isLegacy or isEncrypted or not walletId:
+            cell, _ = makeCheckboxCell(False, False)
+            self.walletList.setItemWidget(item, 0, cell)
+         else:
+            cell, cb = makeCheckboxCell(True, True, lambda state,
+               wid=walletId: self.onStageCheckboxChanged(
+               wid, state == QtCore.Qt.Checked))
+            
+            self.walletList.setItemWidget(item, 0, cell)
+            self.walletIdToCheckbox[walletId] = cb
+
+         fullPath = walletPath if walletPath else os.path.join(self.armoryDataDirEdit.text(), fileName)
+
+         # Persist metadata on the row for later handlers
+         stagedFlag = bool(entry.staged)
+         item.setData(0, QtCore.Qt.UserRole, {
+            'walletId': walletId,
+            'path': fullPath,
+            'staged': stagedFlag
+         })
+
+         # Column 3: status (Ready/Unlock/Migrate)
+         if isLegacy:
+            cell, _ = makeButtonCell(
+               self.tr('Migrate'),
+               lambda _, p=fullPath: self.migrateWallet(p)
+            )
+            self.walletList.setItemWidget(item, 3, cell)
+         elif isEncrypted:
+            cell, _ = makeButtonCell(
+               self.tr('Unlock'),
+               lambda _, wid=walletId: self.unlockWallet(wid)
+            )
+            self.walletList.setItemWidget(item, 3, cell)
+         else:
+            self.walletList.setItemWidget(item, 3, QtWidgets.QLabel(self.tr('Ready')))
+
+         return True
+      except Exception as e:
+         LOGEXCEPT('Error creating wallet row: %s', str(e))
+         return False
+
+   def _walletStateLabel(self, entry, walletId):
+      """Map bridge state to UI label and flags.
+
+      Returns (label, isLegacy, isEncrypted). Avoids per-row imports by using
+      the bridge-provided enum: unknown(0), legacy(1), migrated(2), encrypted(3),
+      ready(4), loaded(5).
+      """
+      label = self.tr('Ready')
+      isLegacy = False
+      isEncrypted = False
+
+      try:
+         stateVal = entry.state
+         # Handle numeric enums and string fallbacks defensively
+         if isinstance(stateVal, int):
+            if stateVal == 1:
+               label = self.tr('Legacy')
+               isLegacy = True
+            elif stateVal == 3:
+               label = self.tr('Encrypted')
+               isEncrypted = True
+            elif stateVal == 5:
+               # treat loaded as ready for this setup view
+               label = self.tr('Ready')
+            elif stateVal in (2, 4):
+               label = self.tr('Ready')
+            elif stateVal == 0:
+               label = self.tr('Unknown')
+         else:
+            s = str(stateVal).lower()
+            if s == 'legacy':
+               label = self.tr('Legacy')
+               isLegacy = True
+            elif s == 'encrypted':
+               label = self.tr('Encrypted')
+               isEncrypted = True
+            elif s == 'loaded':
+               label = self.tr('Ready')
+            elif s in ('migrated', 'ready'):
+               label = self.tr('Ready')
+            elif s == 'unknown':
+               label = self.tr('Unknown')
+      except Exception:
+         # Default to Ready on any unexpected schema
+         label = self.tr('Ready')
+         isLegacy = False
+         isEncrypted = False
+
+      return (label, isLegacy, isEncrypted)
+
+   def migrateWallet(self, walletPath):
+      """Start migration for a legacy wallet.
+
+      - If a valid main window is available, use the full migration dialog.
+      - Otherwise, fall back to bridge-driven migration with a simple callback.
+      """
+      try:
+         if self.main is not None:
+            walletData = TheBridge.utils.importWallet(walletPath)
+            dlg = DlgWalletMigration(self, self.main, walletPath, walletData)
+            dlg.exec_()
+            return
+
+         # Fallback: run migration directly via the bridge (no wizard UI)
+         import uuid
+         callbackId = str(uuid.uuid4())
+
+         def migrationCallback(success, result):
+            TheSignalExecution.executeMethod(
+               self.onMigrationComplete, success, str(result))
+
+         TheBridge.wltManager.migrateWallet(walletPath, callbackId, migrationCallback)
+         QtWidgets.QMessageBox.information(
+            self,
+            self.tr('Migration Started'),
+            self.tr('Wallet migration has started. Please wait...')
+         )
+      except Exception as e:
+         QtWidgets.QMessageBox.warning(
+            self,
+            self.tr('Migration Failed'),
+            self.tr('Failed to start migration: {}').format(str(e))
+         )
+
+   @QtCore.Slot(bool, str)
+   def onMigrationComplete(self, success, result):
+      """Handle migration completion callback and inform the user."""
+      if success:
+         QtWidgets.QMessageBox.information(
+            self,
+            self.tr('Migration Complete'),
+            self.tr('Wallet migration completed successfully.')
+         )
+      else:
+         QtWidgets.QMessageBox.warning(
+            self,
+            self.tr('Migration Failed'),
+            self.tr('Migration failed: {}').format(result)
+         )
+
+   def unlockWallet(self, walletId):
+      """Unlock an encrypted wallet's public data when prompted by backend."""
+      try:
+         # Use row metadata instead of refetching from backend
          pathForId = None
-         for key in wltList:
-            entry = wltList[key]
-            if getattr(entry, 'walletId', '') == walletId:
-               pathForId = key
+         rowMeta = None
+         for i in range(self.walletList.topLevelItemCount()):
+            itm = self.walletList.topLevelItem(i)
+            meta = itm.data(0, QtCore.Qt.UserRole)
+            if meta and meta.get('walletId') == walletId:
+               pathForId = meta.get('path')
+               rowMeta = meta
                break
          if not pathForId:
-            QtWidgets.QMessageBox.warning(self, self.tr('Unlock Failed'), self.tr('Wallet not found.'))
+            QtWidgets.QMessageBox.warning(
+               self,
+               self.tr('Unlock Failed'),
+               self.tr('Wallet not found.')
+            )
             return
-         # Use UnlockWalletHandler which integrates with bridge prompts
-         dlg = UnlockWalletHandler(walletId, self.tr('Unlock Wallet'), self)
-         dlg.exec_()
-         TheBridge.wltManager.loadWallets()
-         self.loadWalletList()
+
+         # If we have a walletId, temporarily stage it (if not already), trigger
+         # a regular load to let the backend push an unlockRequest, and display the
+         # dialog to catch that prompt.
+         originallyStaged = bool(rowMeta.get('staged')) if rowMeta else False
+         try:
+            if walletId and not originallyStaged:
+               TheBridge.wltManager.stageWallet(walletId, True)
+
+            # Prepare the dialog first so it can receive the callback
+            dlg = UnlockWalletHandler(walletId, self.tr('Unlock Wallet'), self)
+
+            # Kick off backend load asynchronously so the prompt arrives while
+            # dialog is up
+            QtCore.QTimer.singleShot(
+               0, lambda: TheBridge.wltManager.loadWallets())
+
+            dlg.exec_()
+         finally:
+            # Restore original staging if we changed it
+            try:
+               if walletId and not originallyStaged:
+                  TheBridge.wltManager.stageWallet(walletId, False)
+            except Exception:
+               pass
+
+         # rely on backend state propagation; no explicit refresh here
       except Exception as e:
          QtWidgets.QMessageBox.warning(self, self.tr('Unlock Failed'), str(e))
 
-   def _loadWallet(self, walletId):
+   def stageWallet(self, walletId):
       try:
-         # Stage and refresh
+         # Stage only; bulk loading is handled elsewhere
          TheBridge.wltManager.stageWallet(walletId, True)
-         TheBridge.wltManager.loadWallets()
-         self.loadWalletList()
       except Exception as e:
-         QtWidgets.QMessageBox.warning(self, self.tr('Load Failed'), str(e))
+         QtWidgets.QMessageBox.warning(self, self.tr('Stage Failed'), str(e))
+
+   def onStageCheckboxChanged(self, walletId, checked):
+      try:
+         TheBridge.wltManager.stageWallet(walletId, checked)
+      except Exception as e:
+         cb = self.walletIdToCheckbox.get(walletId)
+         if cb:
+            cb.blockSignals(True)
+            cb.setChecked(not checked)
+            cb.blockSignals(False)
+         QtWidgets.QMessageBox.warning(self, self.tr('Stage Failed'), str(e))
 
    def createDatabaseTab(self):
       tab = QtWidgets.QWidget()
       mainLayout = QtWidgets.QVBoxLayout()
-      mainLayout.setContentsMargins(UI_FRAME_MARGIN, UI_FRAME_MARGIN, UI_FRAME_MARGIN, UI_FRAME_MARGIN)
-      mainLayout.setSpacing(UI_FRAME_PADDING)
+      mainLayout.setContentsMargins(14, 6, 14, 8)
+      mainLayout.setSpacing(8)
+
+      # Header
+      title = QRichLabel(self.tr('<span style="font-size:14pt;"><b>Database Settings</b></span>'))
+      title.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop)
+      mainLayout.addWidget(title)
+      # No decorative line under header
 
       # Directory Settings Frame
-      dirFrame = QtWidgets.QFrame()
-      dirFrame.setStyleSheet(UI_STYLE_FRAME)
+      dirFrame = QtWidgets.QGroupBox(self.tr('Database Directory'))
       dirFrameLayout = QtWidgets.QVBoxLayout(dirFrame)
-      dirFrameLayout.setContentsMargins(UI_FRAME_PADDING, UI_FRAME_PADDING, UI_FRAME_PADDING, UI_FRAME_PADDING)
-      dirFrameLayout.setSpacing(UI_GRID_SPACING)
+      dirFrameLayout.setContentsMargins(12, 12, 12, 12)
+      dirFrameLayout.setSpacing(8)
 
       # Database Directory
       dirGrid = QtWidgets.QGridLayout()
       dirGrid.setSpacing(8)
 
-      dbDirLabel = QtWidgets.QLabel(self.tr("Database Directory"))
-      dbDirLabel.setStyleSheet("color: white;")
+      dbDirLabel = QtWidgets.QLabel(self.tr("Location"))
 
       dirInputLayout = QtWidgets.QHBoxLayout()
       dirInputLayout.setSpacing(8)
       self.databaseDirEdit = QtWidgets.QLineEdit()
       self.databaseDirEdit.setMinimumWidth(400)
-      self.databaseDirEdit.setStyleSheet(UI_STYLE_INPUT)
 
       dbDirButton = QtWidgets.QPushButton(self.tr("Browse..."))
       dbDirButton.setFixedWidth(100)
       dbDirButton.clicked.connect(lambda: self.browseDirDialog(self.databaseDirEdit))
-      dbDirButton.setStyleSheet(UI_STYLE_BUTTON_STANDARD)
 
       dirInputLayout.addWidget(self.databaseDirEdit)
       dirInputLayout.addWidget(dbDirButton)
@@ -815,22 +826,19 @@ class DlgSetupManager(ArmoryDialog):
       mainLayout.addWidget(dirFrame)
 
       # Scenario Selection Frame
-      scenarioFrame = QtWidgets.QFrame()
-      scenarioFrame.setStyleSheet(UI_STYLE_FRAME)
+      scenarioFrame = QtWidgets.QGroupBox(self.tr('Database Scenario'))
       scenarioLayout = QtWidgets.QVBoxLayout(scenarioFrame)
-      scenarioLayout.setContentsMargins(16, 16, 16, 16)
+      scenarioLayout.setContentsMargins(12, 12, 12, 12)
       scenarioLayout.setSpacing(8)
 
       scenarioGrid = QtWidgets.QGridLayout()
       scenarioGrid.setSpacing(8)
 
       # Database Scenario
-      dbScenarioLabel = QtWidgets.QLabel(self.tr("Database Scenario"))
-      dbScenarioLabel.setStyleSheet("color: white;")
+      dbScenarioLabel = QtWidgets.QLabel(self.tr("Mode"))
       self.databaseScenarioCombo = QtWidgets.QComboBox()
       self.databaseScenarioCombo.setFixedWidth(200)
-      self.databaseScenarioCombo.addItems(["Run Local Database", "Connect to Remote Database", "No Database"])
-      self.databaseScenarioCombo.setStyleSheet(UI_STYLE_COMBOBOX)
+      self.databaseScenarioCombo.addItems(["Local Database", "Remote Database", "No Database"])
       self.databaseScenarioCombo.currentIndexChanged.connect(self.handleDatabaseScenarioChange)
 
       scenarioGrid.addWidget(dbScenarioLabel, 0, 0)
@@ -841,10 +849,9 @@ class DlgSetupManager(ArmoryDialog):
       mainLayout.addWidget(scenarioFrame)
 
       # Local Database Settings Frame
-      self.localDatabaseFrame = QtWidgets.QFrame()
-      self.localDatabaseFrame.setStyleSheet(UI_STYLE_FRAME)
+      self.localDatabaseFrame = QtWidgets.QGroupBox(self.tr('Local Database Settings'))
       localDbLayout = QtWidgets.QVBoxLayout(self.localDatabaseFrame)
-      localDbLayout.setContentsMargins(16, 16, 16, 16)
+      localDbLayout.setContentsMargins(12, 12, 12, 12)
       localDbLayout.setSpacing(8)
 
       localDbGrid = QtWidgets.QGridLayout()
@@ -852,25 +859,19 @@ class DlgSetupManager(ArmoryDialog):
 
       # Database Type
       dbTypeLabel = QtWidgets.QLabel(self.tr("Database Type"))
-      dbTypeLabel.setStyleSheet("color: white;")
       self.databaseTypeCombo = QtWidgets.QComboBox()
       self.databaseTypeCombo.setFixedWidth(200)
       self.databaseTypeCombo.addItems(["Full Database", "Supernode"])
-      self.databaseTypeCombo.setStyleSheet(UI_STYLE_COMBOBOX)
 
       # RAM Usage
       ramLabel = QtWidgets.QLabel(self.tr("RAM Usage (MB)"))
-      ramLabel.setStyleSheet("color: white;")
       self.ramUsageEdit = QtWidgets.QLineEdit()
       self.ramUsageEdit.setFixedWidth(100)
-      self.ramUsageEdit.setStyleSheet(UI_STYLE_INPUT)
 
       # Thread Count
       threadLabel = QtWidgets.QLabel(self.tr("Thread Count"))
-      threadLabel.setStyleSheet("color: white;")
       self.threadCountEdit = QtWidgets.QLineEdit()
       self.threadCountEdit.setFixedWidth(100)
-      self.threadCountEdit.setStyleSheet(UI_STYLE_INPUT)
 
       localDbGrid.addWidget(dbTypeLabel, 0, 0)
       localDbGrid.addWidget(self.databaseTypeCombo, 0, 1)
@@ -884,10 +885,9 @@ class DlgSetupManager(ArmoryDialog):
       mainLayout.addWidget(self.localDatabaseFrame)
 
       # Remote Connection Frame
-      self.remoteFrame = QtWidgets.QFrame()
-      self.remoteFrame.setStyleSheet(UI_STYLE_FRAME)
+      self.remoteFrame = QtWidgets.QGroupBox(self.tr('Remote Connection'))
       remoteLayout = QtWidgets.QVBoxLayout(self.remoteFrame)
-      remoteLayout.setContentsMargins(16, 16, 16, 16)
+      remoteLayout.setContentsMargins(12, 12, 12, 12)
       remoteLayout.setSpacing(8)
 
       remoteGrid = QtWidgets.QGridLayout()
@@ -895,32 +895,24 @@ class DlgSetupManager(ArmoryDialog):
 
       # Remote Host
       hostLabel = QtWidgets.QLabel(self.tr("Remote Host"))
-      hostLabel.setStyleSheet("color: white;")
       self.remoteHostEdit = QtWidgets.QLineEdit()
       self.remoteHostEdit.setFixedWidth(200)
-      self.remoteHostEdit.setStyleSheet(UI_STYLE_INPUT)
 
       # Remote Port
       portLabel = QtWidgets.QLabel(self.tr("Remote Port"))
-      portLabel.setStyleSheet("color: white;")
       self.remotePortEdit = QtWidgets.QLineEdit()
       self.remotePortEdit.setFixedWidth(100)
-      self.remotePortEdit.setStyleSheet(UI_STYLE_INPUT)
 
       # Remote Username
       userLabel = QtWidgets.QLabel(self.tr("Username"))
-      userLabel.setStyleSheet("color: white;")
       self.remoteUserEdit = QtWidgets.QLineEdit()
       self.remoteUserEdit.setFixedWidth(200)
-      self.remoteUserEdit.setStyleSheet(UI_STYLE_INPUT)
 
       # Remote Password
       passLabel = QtWidgets.QLabel(self.tr("Password"))
-      passLabel.setStyleSheet("color: white;")
       self.remotePasswordEdit = QtWidgets.QLineEdit()
       self.remotePasswordEdit.setFixedWidth(200)
       self.remotePasswordEdit.setEchoMode(QtWidgets.QLineEdit.Password)
-      self.remotePasswordEdit.setStyleSheet(UI_STYLE_INPUT)
 
       remoteGrid.addWidget(hostLabel, 0, 0)
       remoteGrid.addWidget(self.remoteHostEdit, 0, 1)
@@ -938,8 +930,7 @@ class DlgSetupManager(ArmoryDialog):
       self.testConnectionButton = QtWidgets.QPushButton(self.tr("Test Connection"))
       self.testConnectionButton.setFixedWidth(200)
       self.testConnectionButton.clicked.connect(self.testRemoteConnection)
-      self.testConnectionButton.setStyleSheet(UI_STYLE_BUTTON_STANDARD)
-      
+
       buttonLayout = QtWidgets.QHBoxLayout()
       buttonLayout.addStretch()
       buttonLayout.addWidget(self.testConnectionButton)
@@ -970,54 +961,20 @@ class DlgSetupManager(ArmoryDialog):
       self.databaseDirEdit.parentWidget().setEnabled(True)  # Always keep directory frame visible
 
    def testRemoteConnection(self):
-      """Test the connection to the remote database."""
+      """Delegate connection setup to the bridge; no local management."""
       try:
-         # Get connection details
-         host = self.remoteHostEdit.text()
-         port = self.remotePortEdit.text()
-         user = self.remoteUserEdit.text()
-         password = self.remotePasswordEdit.text()
-
-         if not all([host, port, user, password]):
-            QtWidgets.QMessageBox.warning(
-               self,
-               self.tr('Missing Information'),
-               self.tr('Please fill in all remote database connection details.')
-            )
-            return
-
-         # Attempt to connect to the remote database
-         import socket
-         try:
-            # Create a socket and attempt to connect
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(5)  # 5 second timeout
-            result = sock.connect_ex((host, int(port)))
-            sock.close()
-
-            if result == 0:
-               QtWidgets.QMessageBox.information(
-                  self,
-                  self.tr('Connection Test'),
-                  self.tr('Successfully connected to remote database.')
-               )
-            else:
-               QtWidgets.QMessageBox.warning(
-                  self,
-                  self.tr('Connection Test'),
-                  self.tr('Could not connect to {}:{}'.format(host, port))
-               )
-         except ValueError:
-            QtWidgets.QMessageBox.warning(
-               self,
-               self.tr('Connection Test'),
-               self.tr('Invalid port number. Please enter a valid integer.')
-            )
+         TheBridge.service.setupDB()
+         QtWidgets.QMessageBox.information(
+            self,
+            self.tr('Connection Test'),
+            self.tr('Requested bridge to (re)connect to the database. Check main status.')
+         )
       except Exception as e:
+         LOGEXCEPT('DB setup request failed: %s', str(e))
          QtWidgets.QMessageBox.critical(
             self,
             self.tr('Connection Error'),
-            self.tr('Failed to connect to remote database: {}').format(str(e))
+            self.tr('Failed to request DB setup via bridge: {}').format(str(e))
          )
 
    def loadSettings(self, testing=False):
@@ -1026,14 +983,20 @@ class DlgSetupManager(ArmoryDialog):
       Args:
           testing: Whether this is being used for testing (uses empty defaults if True)
       """
-      # Load directory paths with appropriate defaults based on testing mode
-      # Always display current effective paths, defaulting to engine defaults
-      self.satoshiHomePath.setText(os.path.normpath(
-         TheSettings.getSettingOrSetDefault('CoreDataDir', BTC_HOME_DIR)))
-      self.armoryDataDirEdit.setText(os.path.normpath(
-         TheSettings.getSettingOrSetDefault('ArmoryDataDir', ARMORY_HOME_DIR)))
-      self.databaseDirEdit.setText(os.path.normpath(
-         TheSettings.getSettingOrSetDefault('DBDir', ARMORY_DB_DIR)))
+      # Seed directory paths from engine/bridge (source of truth), not from TheSettings
+      try:
+         btcDir = TheBDM.btcdir
+      except Exception:
+         btcDir = BTC_HOME_DIR
+      self.satoshiHomePath.setText(os.path.normpath(btcDir))
+      try:
+         self.armoryDataDirEdit.setText(os.path.normpath(ARMORY_HOME_DIR))
+      except Exception:
+         self.armoryDataDirEdit.setText('')
+      try:
+         self.databaseDirEdit.setText(os.path.normpath(ARMORY_DB_DIR))
+      except Exception:
+         self.databaseDirEdit.setText('')
 
       # Determine if we have existing Core settings
       hasCoreSettings = bool(self.satoshiHomePath.text() and os.path.exists(self.satoshiHomePath.text()))
@@ -1042,10 +1005,13 @@ class DlgSetupManager(ArmoryDialog):
       # Load Core settings
       networkMode = TheSettings.getSettingOrSetDefault('NetworkMode', 'Mainnet')
       self.networkModeCombo.setCurrentText(networkMode)
-      
+
       # Load database configuration settings
       dbScenario = TheSettings.getSettingOrSetDefault('DBScenario', 'Run Local Database')
       self.databaseScenarioCombo.setCurrentText(dbScenario)
+
+      # Ensure frames reflect the loaded scenario
+      self.handleDatabaseScenarioChange(self.databaseScenarioCombo.currentIndex())
 
       # Hide remote frame by default
       self.remoteFrame.setVisible(False)
@@ -1060,17 +1026,18 @@ class DlgSetupManager(ArmoryDialog):
          self.ramUsageEdit.setText(str(TheSettings.getSettingOrSetDefault('RAMUsage', 50)))
          self.threadCountEdit.setText(str(TheSettings.getSettingOrSetDefault('ThreadCount', 4)))
       elif dbScenario == 'Connect to Remote Database':
-         self.remoteHostEdit.setText(TheSettings.getSettingOrSetDefault('RemoteDBHost', ''))
-         self.remotePortEdit.setText(TheSettings.getSettingOrSetDefault('RemoteDBPort', ''))
-         self.remoteUserEdit.setText(TheSettings.getSettingOrSetDefault('RemoteDBUser', ''))
-         self.remotePasswordEdit.setText(TheSettings.getSettingOrSetDefault('RemoteDBPass', ''))
+         # Do not prefill credentials from settings per security/UX policy
+         self.remoteHostEdit.setText('')
+         self.remotePortEdit.setText('')
+         self.remoteUserEdit.setText('')
+         self.remotePasswordEdit.setText('')
 
    def validateSettings(self, interactive=True):
-      """Validate directory paths and create them if they don't exist. Shows appropriate dialogs for user interaction."""
-      # Get current directory paths from input fields
-      corePath = self.satoshiHomePath.text()
-      armoryPath = self.armoryDataDirEdit.text()
-      dbPath = self.databaseDirEdit.text()
+      """Validate directory paths group and create as needed (interactive)."""
+      paths = self._collectPathsGroup()
+      corePath = paths['core']
+      armoryPath = paths['armory']
+      dbPath = paths['db']
 
       # For non-interactive validation (unit tests), just check if paths exist
       if not interactive:
@@ -1135,56 +1102,153 @@ class DlgSetupManager(ArmoryDialog):
 
       return True
 
+   def validateAllSettings(self):
+      """Run grouped validators and surface the first failing message."""
+      # Paths (interactive create flow)
+      if not self.validateSettings(interactive=True):
+         return False
+
+      # Core group
+      if not self._validateCoreGroup():
+         return False
+
+      # Wallets group (soft check; warn if bridge down)
+      if not self._validateWalletsGroup():
+         return False
+
+      # DB group
+      if not self._validateDbGroup():
+         return False
+
+      return True
+
+   def _validateCoreGroup(self):
+      try:
+         scenarioOk = self.scenarioCombo.currentIndex() in (0, 1)
+         modeOk = self.networkModeCombo.currentText() in ('Mainnet', 'Testnet', 'Regtest')
+         if not (scenarioOk and modeOk):
+            QtWidgets.QMessageBox.warning(
+               self,
+               self.tr('Invalid Core Settings'),
+               self.tr('Please select a valid scenario and network mode.')
+            )
+            return False
+         # Keep inputs disabled regardless
+         self.p2pPortInput.setEnabled(False)
+         self.rpcPortInput.setEnabled(False)
+         return True
+      except Exception:
+         return False
+
+   def _validateWalletsGroup(self):
+      try:
+         # Do not probe bridge readiness here; UI handles it during listing
+         return True
+      except Exception:
+         return True
+
+   def _validateDbGroup(self):
+      try:
+         db = self._collectDbGroup()
+         if db['scenario'] == 'Connect to Remote Database':
+            host = db['remoteHost']
+            portText = db['remotePort']
+            if not host or not portText:
+                QtWidgets.QMessageBox.warning(
+                   self,
+                   self.tr('Missing Remote DB Info'),
+                   self.tr('Please provide host and port for the remote database.')
+                )
+                return False
+            try:
+               port = int(portText)
+               if port < 1 or port > 65535:
+                  raise ValueError()
+            except ValueError:
+               QtWidgets.QMessageBox.warning(
+                  self,
+                  self.tr('Invalid Port'),
+                  self.tr('Remote DB port must be an integer between 1 and 65535.')
+               )
+               return False
+         return True
+      except Exception:
+         return False
+
+   # ----------------------
+   # Feature groups helpers
+   # ----------------------
+   def _collectPathsGroup(self):
+      """Return current paths from UI as a dict."""
+      return {
+         'core': self.satoshiHomePath.text(),
+         'armory': self.armoryDataDirEdit.text(),
+         'db': self.databaseDirEdit.text(),
+      }
+
+   def _collectCoreGroup(self):
+      """Return current core settings from UI as a dict."""
+      return {
+         'networkMode': self.networkModeCombo.currentText(),
+         'manageSatoshi': (self.scenarioCombo.currentIndex() == 0),
+      }
+
+   def _collectDbGroup(self):
+      """Return current database config from UI as a dict."""
+      dbScenario = self.databaseScenarioCombo.currentText()
+      dbTypeDisp = self.databaseTypeCombo.currentText() if dbScenario == 'Run Local Database' else ''
+      return {
+         'scenario': dbScenario,
+         'typeDisp': dbTypeDisp,
+         'remoteHost': self.remoteHostEdit.text() if dbScenario == 'Connect to Remote Database' else '',
+         'remotePort': self.remotePortEdit.text() if dbScenario == 'Connect to Remote Database' else '',
+         'remoteUser': self.remoteUserEdit.text() if dbScenario == 'Connect to Remote Database' else '',
+         'remotePass': self.remotePasswordEdit.text() if dbScenario == 'Connect to Remote Database' else '',
+         'ram': self.ramUsageEdit.text() if dbScenario == 'Run Local Database' else '',
+         'threads': self.threadCountEdit.text() if dbScenario == 'Run Local Database' else '',
+      }
+
+   def _applySettingsGroups(self, paths, core, db):
+      """Persist settings and propagate runtime options based on grouped dicts."""
+      try:
+         # Paths
+         TheSettings.set('CoreDataDir', paths['core'])
+         TheSettings.set('ArmoryDataDir', paths['armory'])
+         TheSettings.set('DBDir', paths['db'])
+
+         # Core
+         TheSettings.set('SatoshiDatadir', paths['core'])
+         TheSettings.set('ManageSatoshi', core['manageSatoshi'])
+         TheSettings.set('NetworkMode', core['networkMode'])
+
+         # DB scenario
+         TheSettings.set('DBScenario', db['scenario'])
+         if db['scenario'] == 'Run Local Database':
+            dbTypeVal = 'DB_SUPER' if db['typeDisp'] == 'Supernode' else 'DB_FULL'
+            TheSettings.set('DBType', dbTypeVal)
+            if db['ram']:
+               TheSettings.set('RAMUsage', int(db['ram']))
+            if db['threads']:
+               TheSettings.set('ThreadCount', int(db['threads']))
+         elif db['scenario'] == 'Connect to Remote Database':
+            # Do not persist credentials in settings; bridge will manage runtime
+            pass
+
+         # Notify main (best-effort)
+         try:
+            # Main window implements setSatoshiPaths; call best-effort
+            self.main.setSatoshiPaths()
+         except Exception:
+            pass
+      except Exception:
+         pass
+
    def saveSettings(self):
       """Save directory paths, database settings, and update bridge arguments in the configuration."""
-      try:
-         # Save directory paths to configuration
-         TheSettings.set('CoreDataDir', self.satoshiHomePath.text())
-         TheSettings.set('ArmoryDataDir', self.armoryDataDirEdit.text())
-         TheSettings.set('DBDir', self.databaseDirEdit.text())
-
-         # Ensure backend-consumed keys are set for Bitcoin Core path management
-         TheSettings.set('SatoshiDatadir', self.satoshiHomePath.text())
-         # ManageSatoshi: enable when automation selected
-         TheSettings.set('ManageSatoshi', self.scenarioCombo.currentIndex() == 0)
-
-         # Save Core settings
-         TheSettings.set('NetworkMode', self.networkModeCombo.currentText())
-
-         # Save database configuration settings
-         dbScenario = self.databaseScenarioCombo.currentText()
-         TheSettings.set('DBScenario', dbScenario)
-
-         if dbScenario == 'Run Local Database':
-            # Map display to backend value
-            dbTypeDisp = self.databaseTypeCombo.currentText()
-            dbTypeVal = 'DB_SUPER' if dbTypeDisp == 'Supernode' else 'DB_FULL'
-            TheSettings.set('DBType', dbTypeVal)
-            # Propagate to CLI options used by bridge args
-            CLI_OPTIONS.db_type = dbTypeVal
-            TheSettings.set('RAMUsage', int(self.ramUsageEdit.text()))
-            TheSettings.set('ThreadCount', int(self.threadCountEdit.text()))
-         elif dbScenario == 'Connect to Remote Database':
-            TheSettings.set('RemoteDBHost', self.remoteHostEdit.text())
-            TheSettings.set('RemoteDBPort', self.remotePortEdit.text())
-            TheSettings.set('RemoteDBUser', self.remoteUserEdit.text())
-            TheSettings.set('RemoteDBPass', self.remotePasswordEdit.text())
-            # Propagate to CLI options used by bridge args
-            CLI_OPTIONS.armorydb_ip = self.remoteHostEdit.text()
-            CLI_OPTIONS.armorydb_port = self.remotePortEdit.text()
-
-         # Propagate paths to CLI options for bridge
-         CLI_OPTIONS.datadir = self.armoryDataDirEdit.text()
-         CLI_OPTIONS.armoryDBDir = self.databaseDirEdit.text()
-
-         # Update bridge paths in main window (non-fatal if not available)
-         try:
-            if self.main and hasattr(self.main, 'setSatoshiPaths'):
-               self.main.setSatoshiPaths()
-         except Exception:
-            LOGEXCEPT('Failed to notify main window to refresh Satoshi paths')
-      except Exception as e:
-         LOGEXCEPT("Error saving settings: %s", str(e))
+      paths = self._collectPathsGroup()
+      core = self._collectCoreGroup()
+      db = self._collectDbGroup()
+      self._applySettingsGroups(paths, core, db)
 
    @staticmethod
    def run(parent=None, main=None, testing=False):

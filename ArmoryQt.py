@@ -5220,9 +5220,34 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 ############################################
 
 if 1:
-   # 1) Show Setup Manager (modal and focused)
-   #    Start the bridge while the dialog is presented
-   if DlgSetupManager.run(parent=None, main=None) != QtWidgets.QDialog.Accepted:
+   # 1) Start the bridge BEFORE anything else (singleton) so dialogs can query it
+   #    Start with a no-op callback; we'll wire readiness to the dialog instance
+   #    below to avoid overwriting global callbacks.
+   TheBDM.startBridge(getBridgeArgList(), lambda *args, **kwargs: None)
+
+   #    Show Setup Manager (modal and focused)
+   #    Bridge is already running; dialog must not try to start it
+   from qtdialogs.DlgSetupManager import DlgSetupManager
+
+   dlg = DlgSetupManager(parent=None, main=None)
+   try:
+      from armoryengine.CppBridge import TheBridge
+      if TheBridge.bridgeSocket.bip15xConnection.ready():
+         QtCore.QMetaObject.invokeMethod(
+            dlg, 'onBridgeReady', QtCore.Qt.QueuedConnection)
+      else:
+         TheBridge.bridgeSocket.bip15xConnection.setNotifyReadyLbd(
+            lambda: QtCore.QMetaObject.invokeMethod(
+               dlg, 'onBridgeReady', QtCore.Qt.QueuedConnection))
+   except Exception:
+      pass
+
+   if dlg.exec_() != QtWidgets.QDialog.Accepted:
+      try:
+         from armoryengine.CppBridge import TheBridge
+         TheBridge.service.shutdown()
+      except Exception:
+         pass
       sys.exit(1)
 
    # 2) Splash screen appears
@@ -5242,22 +5267,30 @@ if 1:
    app_dir = "./"
    try:
       app_dir = os.path.dirname(os.path.realpath(__file__))
-   except:
-      if OS_WINDOWS and getattr(sys, 'frozen', False):
-         app_dir = os.path.dirname(sys.executable)
+   except Exception:
+      try:
+         # On frozen builds (Windows), sys.frozen is set to True
+         if OS_WINDOWS and sys.frozen:
+            app_dir = os.path.dirname(sys.executable)
+      except Exception:
+         pass
    translator.load(TheSettings.getGuiLanguage(), os.path.join(app_dir, "lang/"))
    QAPP.installTranslator(translator)
 
    # 3) Create main window after setup manager is closed
    armoryMainWindow = ArmoryMainWindow(splashScreen=SPLASH)
 
-   #    Start cppbridge now and wire the callback (skip if already started during setup)
+   # Bridge already started; ensure the main window receives the ready callback
    try:
       from armoryengine.CppBridge import TheBridge
-      if not getattr(TheBridge.bridgeSocket, 'run', False):
-         TheBDM.startBridge(getBridgeArgList(), armoryMainWindow.networkReadyCallback)
+      if TheBridge.bridgeSocket.bip15xConnection.ready():
+         armoryMainWindow.networkReadyCallback()
+      else:
+         TheBridge.bridgeSocket.bip15xConnection.setNotifyReadyLbd(
+            lambda: QtCore.QMetaObject.invokeMethod(
+               armoryMainWindow, 'networkReadyCallback', QtCore.Qt.QueuedConnection))
    except Exception:
-      TheBDM.startBridge(getBridgeArgList(), armoryMainWindow.networkReadyCallback)
+      pass
 
    #    Show main dialog
    armoryMainWindow.show()

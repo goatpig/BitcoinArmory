@@ -19,6 +19,9 @@ import logging
 
 from qtpy import QtCore, QtGui, QtWidgets
 
+# Capture the original QColor class before any downstream utilities alter QtGui.QColor
+BaseQColor = QtGui.QColor
+
 from armoryengine.ArmoryUtils import enum, ARMORY_HOME_DIR, OS_MACOSX, \
    USE_TESTNET, USE_REGTEST, OS_WINDOWS, coin2str, int_to_hex, toBytes, \
    hex_to_binary
@@ -102,7 +105,7 @@ UI_STYLE_DIALOG_BASE = """
    'tab_hover': htmlColor('SlightBkgdLight')
 }
 
-def apply_dialog_base_style(widget):
+def applyDialogBaseStyle(widget):
    widget.setStyleSheet(UI_STYLE_DIALOG_BASE)
 
 # Buttons
@@ -191,11 +194,6 @@ UI_STYLE_COMBOBOX = """
       border-radius: 2px;
       padding: 6px;
    }
-   QComboBox::drop-down {
-      border-left: 1px solid %(border)s;
-      background-color: %(bg_drop)s;
-      width: 20px;
-   }
 """ % {
    'bg': htmlColor('SlightBkgdDark'),
    'fg': htmlColor('Foreground'),
@@ -278,18 +276,82 @@ def createStyledButton(text, width=None, style=None):
    btn.setStyleSheet(style if style else UI_STYLE_BUTTON_STANDARD)
    return btn
 
+class ArmoryComboBox(QtWidgets.QComboBox):
+   def paintEvent(self, event):
+      # Only default painting. Arrow will be drawn by ComboBoxStyle to avoid artifacts
+      super(ArmoryComboBox, self).paintEvent(event)
+
 def createStyledCombo(width=None, style=None):
-   combo = QtWidgets.QComboBox()
+   combo = ArmoryComboBox()
    if width:
       combo.setFixedWidth(width)
    combo.setStyleSheet(style if style else UI_STYLE_COMBOBOX)
    return combo
 
 class ComboBoxStyle(QtWidgets.QProxyStyle):
+   def drawComplexControl(self, control, option, painter, widget=None):
+      if control == QtWidgets.QStyle.CC_ComboBox:
+         # Let base style draw the control first
+         super().drawComplexControl(control, option, painter, widget)
+
+         # Then paint a clear arrow indicator in the arrow subcontrol rect
+         arrow_rect = self.subControlRect(
+            QtWidgets.QStyle.CC_ComboBox,
+            option,
+            QtWidgets.QStyle.SC_ComboBoxArrow,
+            widget,
+         )
+         if not arrow_rect.isValid():
+            return
+         painter.save()
+         try:
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+         except Exception:
+            pass
+         # Mask the native arrow background to avoid any overlap artifacts
+         bg = BaseQColor(htmlColor('SlightBkgdDark'))
+         painter.fillRect(arrow_rect, bg)
+
+         color = BaseQColor(htmlColor('Foreground'))
+         painter.setPen(QtCore.Qt.NoPen)
+         painter.setBrush(color)
+
+         size = max(6, int(min(arrow_rect.width(), arrow_rect.height()) * 0.35))
+         cx, cy = arrow_rect.center().x(), arrow_rect.center().y()
+         tri = QtGui.QPolygonF([
+            QtCore.QPointF(cx - size, cy - size * 0.5),
+            QtCore.QPointF(cx + size, cy - size * 0.5),
+            QtCore.QPointF(cx,        cy + size * 0.6),
+         ])
+         painter.drawPolygon(tri)
+         painter.restore()
+         return
+      else:
+         super().drawComplexControl(control, option, painter, widget)
+
    def drawPrimitive(self, element, option, painter, widget=None):
       if element == QtWidgets.QStyle.PE_IndicatorArrowDown:
-         option.rect.adjust(0, 0, -2, -2)
-         super().drawPrimitive(element, option, painter, widget)
+         # Draw a high-contrast down arrow so it is clearly visible on dark themes
+         rect = option.rect.adjusted(0, 0, -2, -2)
+         painter.save()
+         try:
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+         except Exception:
+            pass
+         color = BaseQColor(htmlColor('Foreground'))
+         painter.setPen(QtCore.Qt.NoPen)
+         painter.setBrush(color)
+
+         size = max(6, int(min(rect.width(), rect.height()) * 0.35))
+         cx, cy = rect.center().x(), rect.center().y()
+         tri = QtGui.QPolygonF([
+            QtCore.QPointF(cx - size, cy - size * 0.5),
+            QtCore.QPointF(cx + size, cy - size * 0.5),
+            QtCore.QPointF(cx,        cy + size * 0.6),
+         ])
+         painter.drawPolygon(tri)
+         painter.restore()
+         return
       else:
          super().drawPrimitive(element, option, painter, widget)
 
@@ -442,10 +504,12 @@ def initialColResize(tblViewObj, sizeList):
 
 #############################################################################
 class QRichLabel(QtWidgets.QLabel):
-   def __init__(self, txt, doWrap=True, \
-                           hAlign=QtCore.Qt.AlignLeft, \
-                           vAlign=QtCore.Qt.AlignVCenter, \
-                           **kwargs):
+   def __init__(self,
+         txt,
+         doWrap=True,
+         hAlign=QtCore.Qt.AlignLeft,
+         vAlign=QtCore.Qt.AlignVCenter,
+         **kwargs):
       super(QRichLabel, self).__init__(txt)
       self.setTextFormat(QtCore.Qt.RichText)
       self.setWordWrap(doWrap)
@@ -479,12 +543,15 @@ class QRichLabel(QtWidgets.QLabel):
       self.setText('<i>' + self.text() + '</i>')
 
 class QRichLabel_AutoToolTip(QRichLabel):
-   def __init__(self, txt, doWrap=True, \
-                           hAlign=QtCore.Qt.AlignLeft, \
-                           vAlign=QtCore.Qt.AlignVCenter, \
-                           **kwargs):
-      super(QRichLabel_AutoToolTip, self).__init__(txt, \
-            doWrap, hAlign, vAlign, **kwargs)
+   def __init__(self,
+         txt,
+         doWrap=True,
+         hAlign=QtCore.Qt.AlignLeft,
+         vAlign=QtCore.Qt.AlignVCenter,
+         **kwargs):
+      super(QRichLabel_AutoToolTip, self).__init__(
+         txt, doWrap, hAlign, vAlign, **kwargs
+      )
 
       self.toolTipMethod = None
 
@@ -696,10 +763,8 @@ def restoreTableView(qtbl, hexBytes):
 
       for i,c in toRestore[:-1]:
          qtbl.setColumnWidth(i, c)
-   except Exception as e:
-      print('- Error loading table view -')
-      print(e)
-      pass
+   except Exception:
+      logging.error('Error loading table view', exc_info=True)
       # Don't want to crash the program just because couldn't load tbl data
 
 def saveTableView(qtbl):
@@ -892,8 +957,10 @@ def selectDirectoryForQLineEdit(par, qObj, title="Select Directory"):
    if not OS_MACOSX:
       fullPath = QtWidgets.QFileDialog.getExistingDirectory(par, title, initPath)
    else:
-      fullPath = QtWidgets.QFileDialog.getExistingDirectory(par, title, initPath, \
-                                       options=QtWidgets.QFileDialog.DontUseNativeDialog)
+      fullPath = QtWidgets.QFileDialog.getExistingDirectory(
+         par, title, initPath,
+         options=QtWidgets.QFileDialog.DontUseNativeDialog
+      )
    if fullPath:
       if isinstance(fullPath, list):
          fullPath = fullPath[0]
@@ -1069,3 +1136,39 @@ def toUnicode(text):
    if isinstance(text, bytes):
       return text.decode('utf-8')
    return str(text)
+
+################################################################################
+# Generic cell helpers for tree/list widgets
+################################################################################
+def makeCenteredCell(childWidget):
+   """Wrap a widget in a zero-margin, center-aligned container for cells."""
+   wrapper = QtWidgets.QWidget()
+   layout = QtWidgets.QHBoxLayout(wrapper)
+   layout.setContentsMargins(0, 0, 0, 0)
+   layout.setAlignment(QtCore.Qt.AlignCenter)
+   layout.addWidget(childWidget)
+   return wrapper
+
+def makeCheckboxCell(enabled, checked, onToggled=None):
+   """Create a centered checkbox cell; returns (cellWidget, checkbox)."""
+   cb = QtWidgets.QCheckBox()
+   cb.setEnabled(bool(enabled))
+   cb.setChecked(bool(checked))
+   if onToggled is not None:
+      cb.stateChanged.connect(onToggled)
+   return makeCenteredCell(cb), cb
+
+def makeButtonCell(text, onClicked):
+   """Create a centered button cell; returns (cellWidget, button)."""
+   btn = QtWidgets.QPushButton(text)
+   if onClicked is not None:
+      btn.clicked.connect(onClicked)
+   return makeCenteredCell(btn), btn
+
+def addPlaceholderRow(treeWidget, texts):
+   """Add a placeholder top-level row to a QTreeWidget with given column texts."""
+   item = QtWidgets.QTreeWidgetItem()
+   for idx, txt in enumerate(texts):
+      item.setText(idx, txt)
+   treeWidget.addTopLevelItem(item)
+   return item
