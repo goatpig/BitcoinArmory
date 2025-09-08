@@ -38,14 +38,7 @@ class DlgSetupManager(ArmoryDialog):
       self.loadSettings(testing)
       self.connectSignals()
       # Initial populate will be done by onBridgeReady callback
-      # Check if bridge is already ready, otherwise wait for callback
-      try:
-         from armoryengine.CppBridge import TheBridge
-         if TheBridge.bridgeSocket.bip15xConnection.ready():
-            self.loadWalletList()
-      except Exception:
-         # Bridge not ready yet, will be called by onBridgeReady callback
-         pass
+      # Bridge readiness will be handled by callback from main script
 
    def initMemberVariables(self, main):
       """Initialize all member variables with default values."""
@@ -60,6 +53,9 @@ class DlgSetupManager(ArmoryDialog):
       self.databaseTab = None
       self.acceptButton = None
       self.cancelButton = None
+
+      # Callback for spawning main window
+      self.mainWindowSpawner = None
 
       # Widget references for settings
       self.satoshiHomePath = None
@@ -94,10 +90,7 @@ class DlgSetupManager(ArmoryDialog):
       self.setWindowFlags(QtCore.Qt.Window)
       self.setModal(True)
       # Use default dialog styling (match DlgWalletMigration look)
-      try:
-         applyDialogBaseStyle(self)
-      except Exception:
-         pass
+      applyDialogBaseStyle(self)
 
    def initTabs(self):
       """Initialize all tab widgets."""
@@ -203,6 +196,11 @@ class DlgSetupManager(ArmoryDialog):
          # Mark setup as completed and close dialog
          TheSettings.set('SetupManagerCompleted', True)
          super(DlgSetupManager, self).accept()
+
+         # Spawn main window if spawner callback is provided
+         if self.mainWindowSpawner and callable(self.mainWindowSpawner):
+            self.mainWindowSpawner()
+
       except Exception as e:
          LOGEXCEPT("Error during accept: %s", str(e))
          QtWidgets.QMessageBox.critical(
@@ -222,7 +220,7 @@ class DlgSetupManager(ArmoryDialog):
       super().closeEvent(event)
 
    def createCoreTab(self):
-      """Create the Core settings tab with directory and network configuration."""
+      """Create the Core settings tab with directory and network config."""
       try:
          tab = QtWidgets.QWidget()
          mainLayout = QtWidgets.QVBoxLayout()
@@ -288,7 +286,7 @@ class DlgSetupManager(ArmoryDialog):
       return dirFrame
 
    def createCoreSettingsFrame(self):
-      """Create the core settings frame with operation mode and network options."""
+      """Create core settings frame with operation mode and network options."""
       coreFrame = QtWidgets.QGroupBox(self.tr('Operation'))
       coreFrameLayout = QtWidgets.QVBoxLayout(coreFrame)
       coreFrameLayout.setContentsMargins(12, 12, 12, 12)
@@ -325,7 +323,8 @@ class DlgSetupManager(ArmoryDialog):
       self.rpcPortInput = QtWidgets.QLineEdit()
       self.rpcPortInput.setFixedWidth(100)
       self.rpcPortInput.setEnabled(False)
-      self.rpcPortInput.setToolTip("Standard Bitcoin Core RPC port (not configurable in Armory)")
+      self.rpcPortInput.setToolTip(
+         "Standard Bitcoin Core RPC port (not configurable in Armory)")
 
       # Add widgets to grid layout
       grid.addWidget(operationLabel, 0, 0)
@@ -363,11 +362,8 @@ class DlgSetupManager(ArmoryDialog):
    @QtCore.Slot()
    def onBridgeReady(self):
       # Called by bridge-ready callback; now populate list and enable refresh
-      try:
-         if self.refreshButton:
-            self.refreshButton.setEnabled(True)
-      except Exception:
-         pass
+      if self.refreshButton:
+         self.refreshButton.setEnabled(True)
       self.loadWalletList()
 
    def browseSatoshiHome(self):
@@ -435,8 +431,9 @@ class DlgSetupManager(ArmoryDialog):
 
       browseBtn = QtWidgets.QPushButton(self.tr("Browse..."))
       browseBtn.setFixedWidth(100)  # Match Accept/Cancel buttons
-      browseBtn.clicked.connect(lambda: self.browseDirDialog(
-         self.armoryDataDirEdit))
+      def browseArmoryDataDir():
+         self.browseDirDialog(self.armoryDataDirEdit)
+      browseBtn.clicked.connect(browseArmoryDataDir)
       browseBtn.setToolTip('Click to browse for a directory to store Armory '
          'data.\n\nChoose a location that is:\n• Secure and private\n• Has '
          'sufficient space\n• Is on a reliable drive')
@@ -576,9 +573,11 @@ class DlgSetupManager(ArmoryDialog):
             cell, _ = makeCheckboxCell(False, False)
             self.walletList.setItemWidget(item, 0, cell)
          else:
-            cell, cb = makeCheckboxCell(True, True, lambda state,
-               wid=walletId: self.onStageCheckboxChanged(
-               wid, state == QtCore.Qt.Checked))
+            def makeStageCheckboxHandler(walletId):
+               def handler(state):
+                  self.onStageCheckboxChanged(walletId, state == QtCore.Qt.Checked)
+               return handler
+            cell, cb = makeCheckboxCell(True, True, makeStageCheckboxHandler(walletId))
             
             self.walletList.setItemWidget(item, 0, cell)
             self.walletIdToCheckbox[walletId] = cb
@@ -595,15 +594,23 @@ class DlgSetupManager(ArmoryDialog):
 
          # Column 3: status (Ready/Unlock/Migrate)
          if isLegacy:
+            def makeMigrateHandler(walletPath):
+               def handler(_):
+                  self.migrateWallet(walletPath)
+               return handler
             cell, _ = makeButtonCell(
                self.tr('Migrate'),
-               lambda _, p=fullPath: self.migrateWallet(p)
+               makeMigrateHandler(fullPath)
             )
             self.walletList.setItemWidget(item, 3, cell)
          elif isEncrypted:
+            def makeUnlockHandler(walletId):
+               def handler(_):
+                  self.unlockWallet(walletId)
+               return handler
             cell, _ = makeButtonCell(
                self.tr('Unlock'),
-               lambda _, wid=walletId: self.unlockWallet(wid)
+               makeUnlockHandler(walletId)
             )
             self.walletList.setItemWidget(item, 3, cell)
          else:
@@ -748,17 +755,15 @@ class DlgSetupManager(ArmoryDialog):
 
             # Kick off backend load asynchronously so the prompt arrives while
             # dialog is up
-            QtCore.QTimer.singleShot(
-               0, lambda: TheBridge.wltManager.loadWallets())
+            def loadWalletsAsync():
+               TheBridge.wltManager.loadWallets()
+            TheSignalExecution.callLater(0, loadWalletsAsync)
 
             dlg.exec_()
          finally:
             # Restore original staging if we changed it
-            try:
-               if walletId and not originallyStaged:
-                  TheBridge.wltManager.stageWallet(walletId, False)
-            except Exception:
-               pass
+            if walletId and not originallyStaged:
+               TheBridge.wltManager.stageWallet(walletId, False)
 
          # rely on backend state propagation; no explicit refresh here
       except Exception as e:
@@ -813,7 +818,9 @@ class DlgSetupManager(ArmoryDialog):
 
       dbDirButton = QtWidgets.QPushButton(self.tr("Browse..."))
       dbDirButton.setFixedWidth(100)
-      dbDirButton.clicked.connect(lambda: self.browseDirDialog(self.databaseDirEdit))
+      def browseDatabaseDir():
+         self.browseDirDialog(self.databaseDirEdit)
+      dbDirButton.clicked.connect(browseDatabaseDir)
 
       dirInputLayout.addWidget(self.databaseDirEdit)
       dirInputLayout.addWidget(dbDirButton)
@@ -838,8 +845,10 @@ class DlgSetupManager(ArmoryDialog):
       dbScenarioLabel = QtWidgets.QLabel(self.tr("Mode"))
       self.databaseScenarioCombo = QtWidgets.QComboBox()
       self.databaseScenarioCombo.setFixedWidth(200)
-      self.databaseScenarioCombo.addItems(["Local Database", "Remote Database", "No Database"])
-      self.databaseScenarioCombo.currentIndexChanged.connect(self.handleDatabaseScenarioChange)
+      self.databaseScenarioCombo.addItems([
+         "Local Database", "Remote Database", "No Database"])
+      self.databaseScenarioCombo.currentIndexChanged.connect(
+         self.handleDatabaseScenarioChange)
 
       scenarioGrid.addWidget(dbScenarioLabel, 0, 0)
       scenarioGrid.addWidget(self.databaseScenarioCombo, 0, 1)
@@ -1209,7 +1218,7 @@ class DlgSetupManager(ArmoryDialog):
       }
 
    def _applySettingsGroups(self, paths, core, db):
-      """Persist settings and propagate runtime options based on grouped dicts."""
+      """Persist settings and propagate runtime options from grouped dicts."""
       try:
          # Paths
          TheSettings.set('CoreDataDir', paths['core'])
@@ -1235,16 +1244,14 @@ class DlgSetupManager(ArmoryDialog):
             pass
 
          # Notify main (best-effort)
-         try:
+         if self.main:
             # Main window implements setSatoshiPaths; call best-effort
             self.main.setSatoshiPaths()
-         except Exception:
-            pass
-      except Exception:
-         pass
+      except Exception as e:
+         LOGEXCEPT("Error applying settings: %s", str(e))
 
    def saveSettings(self):
-      """Save directory paths, database settings, and update bridge arguments in the configuration."""
+      """Save directory paths, database settings, and update bridge args."""
       paths = self._collectPathsGroup()
       core = self._collectCoreGroup()
       db = self._collectDbGroup()

@@ -5220,37 +5220,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 ############################################
 
 if 1:
-   # 1) Start the bridge BEFORE anything else (singleton) so dialogs can query it
-   #    Start with a no-op callback; we'll wire readiness to the dialog instance
-   #    below to avoid overwriting global callbacks.
-   TheBDM.startBridge(getBridgeArgList(), lambda *args, **kwargs: None)
-
-   #    Show Setup Manager (modal and focused)
-   #    Bridge is already running; dialog must not try to start it
-   from qtdialogs.DlgSetupManager import DlgSetupManager
-
-   dlg = DlgSetupManager(parent=None, main=None)
-   try:
-      from armoryengine.CppBridge import TheBridge
-      if TheBridge.bridgeSocket.bip15xConnection.ready():
-         QtCore.QMetaObject.invokeMethod(
-            dlg, 'onBridgeReady', QtCore.Qt.QueuedConnection)
-      else:
-         TheBridge.bridgeSocket.bip15xConnection.setNotifyReadyLbd(
-            lambda: QtCore.QMetaObject.invokeMethod(
-               dlg, 'onBridgeReady', QtCore.Qt.QueuedConnection))
-   except Exception:
-      pass
-
-   if dlg.exec_() != QtWidgets.QDialog.Accepted:
-      try:
-         from armoryengine.CppBridge import TheBridge
-         TheBridge.service.shutdown()
-      except Exception:
-         pass
-      sys.exit(1)
-
-   # 2) Splash screen appears
+   # 1) Show splash screen during actual loading (bridge startup)
    pixLogo = QtGui.QPixmap('./img/splashlogo.png')
    if USE_TESTNET or USE_REGTEST:
       pixLogo = QtGui.QPixmap('./img/splashlogo_testnet.png')
@@ -5262,40 +5232,39 @@ if 1:
    # Will make this customizable
    QAPP.setFont(GETFONT('var'))
 
-   # Setup translations
+   # Setup translations before any dialogs
    translator = QtCore.QTranslator(QAPP)
-   app_dir = "./"
-   try:
-      app_dir = os.path.dirname(os.path.realpath(__file__))
-   except Exception:
-      try:
-         # On frozen builds (Windows), sys.frozen is set to True
-         if OS_WINDOWS and sys.frozen:
-            app_dir = os.path.dirname(sys.executable)
-      except Exception:
-         pass
-   translator.load(TheSettings.getGuiLanguage(), os.path.join(app_dir, "lang/"))
+   # Determine app directory for translations
+   app_dir = os.path.dirname(os.path.realpath(__file__))
+   
+   translator.load(TheSettings.getGuiLanguage(), 
+                   os.path.join(app_dir, "lang/"))
    QAPP.installTranslator(translator)
 
-   # 3) Create main window after setup manager is closed
-   armoryMainWindow = ArmoryMainWindow(splashScreen=SPLASH)
+   # 2) Start bridge with ready handler - sequential process per maintainer
+   dlg = DlgSetupManager(parent=None, main=None)
+   
+   def spawnMainWindow():
+      armoryMainWindow = ArmoryMainWindow()
+      TheSignalExecution.executeMethod(
+         armoryMainWindow.networkReadyCallback)
+      armoryMainWindow.show()
+      return armoryMainWindow
 
-   # Bridge already started; ensure the main window receives the ready callback
-   try:
-      from armoryengine.CppBridge import TheBridge
-      if TheBridge.bridgeSocket.bip15xConnection.ready():
-         armoryMainWindow.networkReadyCallback()
-      else:
-         TheBridge.bridgeSocket.bip15xConnection.setNotifyReadyLbd(
-            lambda: QtCore.QMetaObject.invokeMethod(
-               armoryMainWindow, 'networkReadyCallback', QtCore.Qt.QueuedConnection))
-   except Exception:
-      pass
+   dlg.mainWindowSpawner = spawnMainWindow
+   
+   def bridgeReadyHandler():
+      # Bridge is ready - explicitly call wallet listing and close splash
+      TheSignalExecution.executeMethod(dlg.onBridgeReady)
+      def closeSplash():
+         SPLASH.close()
+      TheSignalExecution.executeMethod(closeSplash)
 
-   #    Show main dialog
-   armoryMainWindow.show()
-
-   # 4) Finish splash screen
-   SPLASH.finish(armoryMainWindow)
+   TheBDM.startBridge(getBridgeArgList(), bridgeReadyHandler)
+   
+   # Show setup manager (wallet list will populate when bridge ready)
+   if dlg.exec_() != QtWidgets.QDialog.Accepted:
+      TheBridge.service.shutdown()
+      sys.exit(1)
    QAPP.setQuitOnLastWindowClosed(True)
    os._exit(QAPP.exec_())
