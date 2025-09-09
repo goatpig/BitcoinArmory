@@ -6,7 +6,7 @@ from __future__ import (absolute_import, division,
 # Distributed under the GNU Affero General Public License (AGPL v3)          #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
 #                                                                            #
-# Copyright (C) 2016-2024, goatpig                                           #
+# Copyright (C) 2016-2025, goatpig                                           #
 #  Distributed under the MIT license                                         #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
 #                                                                            #
@@ -15,16 +15,16 @@ import os
 import struct
 from tempfile import mkstemp
 import urllib
-import logging
 
 from qtpy import QtCore, QtGui, QtWidgets
 
-# Capture the original QColor class before any downstream utilities alter QtGui.QColor
+# Capture the original QColor class before any downstream utilities
+# alter QtGui.QColor
 BaseQColor = QtGui.QColor
 
 from armoryengine.ArmoryUtils import enum, ARMORY_HOME_DIR, OS_MACOSX, \
    USE_TESTNET, USE_REGTEST, OS_WINDOWS, coin2str, int_to_hex, toBytes, \
-   hex_to_binary
+   hex_to_binary, LOGERROR
 from armoryengine.BinaryUnpacker import BinaryUnpacker, UINT8, UINT16
 
 from armorycolors import Colors, htmlColor
@@ -38,7 +38,8 @@ SATOSHIMODE     = enum('Auto', 'User')
 NETWORKMODE     = enum('Offline', 'Full', 'Disconnected')
 WLTFIELDS       = enum('Name', 'Descr', 'WltID', 'NumAddr', 'Secure',
    'BelongsTo', 'Crypto', 'Time', 'Mem', 'Version')
-MSGBOX          = enum('Good','Info', 'Question', 'Warning', 'Critical', 'Error')
+MSGBOX          = enum('Good','Info', 'Question', 'Warning',
+   'Critical', 'Error')
 DASHBTNS        = enum('Close', 'Browse', 'Settings')
 
 STYLE_SUNKEN = QtWidgets.QFrame.Box | QtWidgets.QFrame.Sunken
@@ -278,7 +279,8 @@ def createStyledButton(text, width=None, style=None):
 
 class ArmoryComboBox(QtWidgets.QComboBox):
    def paintEvent(self, event):
-      # Only default painting. Arrow will be drawn by ComboBoxStyle to avoid artifacts
+      # Only default painting. Arrow will be drawn by ComboBoxStyle
+      # to avoid artifacts
       super(ArmoryComboBox, self).paintEvent(event)
 
 def createStyledCombo(width=None, style=None):
@@ -331,7 +333,8 @@ class ComboBoxStyle(QtWidgets.QProxyStyle):
 
    def drawPrimitive(self, element, option, painter, widget=None):
       if element == QtWidgets.QStyle.PE_IndicatorArrowDown:
-         # Draw a high-contrast down arrow so it is clearly visible on dark themes
+         # Draw a high-contrast down arrow so it is clearly visible
+         # on dark themes
          rect = option.rect.adjusted(0, 0, -2, -2)
          painter.save()
          try:
@@ -517,7 +520,8 @@ class QRichLabel(QtWidgets.QLabel):
       self.setText(txt, **kwargs)
       # Fixes a problem with QtWidgets.QLabel resizing based on content
       # ACR:  ... and makes other problems.  Removing for now.
-      #self.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.MinimumExpanding)
+      # self.setSizePolicy(QtWidgets.QSizePolicy.Preferred,
+      # QtWidgets.QSizePolicy.MinimumExpanding)
       #self.setMinimumHeight(int(relaxedSizeStr(self, 'QWERTYqypgj')[1]))
 
    def setText(self, text, color=None, size=None, bold=None, italic=None):
@@ -567,18 +571,16 @@ class QRichLabel_AutoToolTip(QRichLabel):
 
       return QtWidgets.QLabel.event(self,event)
 
-
 class QMoneyLabel(QRichLabel):
-   def __init__(self, nSatoshi, ndec=8, maxZeros=2, wColor=True,
-                              wBold=False, txtSize=10):
+   def __init__(self, nSatoshi, ndec=8, maxZeros=2, wColor=True, 
+      wBold=None, txtSize=10):
       QtWidgets.QLabel.__init__(self, coin2str(nSatoshi))
 
       self.nSatoshi = nSatoshi
       self.setValueText(nSatoshi, ndec, maxZeros, wColor, wBold, txtSize)
 
-
    def setValueText(self, nSatoshi, ndec=None, maxZeros=None, wColor=None,
-                                             wBold=None, txtSize=10):
+      wBold=None, txtSize=10):
       """
       When we set the text of the QMoneyLabel, remember previous values unless
       explicitly respecified
@@ -594,7 +596,6 @@ class QMoneyLabel(QRichLabel):
 
       if not wBold is None:
          self.bold = wBold
-
 
       theFont = GETFONT("Fixed", txtSize)
       if self.bold:
@@ -613,7 +614,6 @@ class QMoneyLabel(QRichLabel):
          self.setText('%s' % valStr)
       self.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
 
-
 def setLayoutStretchRows(layout, *args):
    for i,st in enumerate(args):
       layout.setRowStretch(i, st)
@@ -622,7 +622,8 @@ def setLayoutStretchCols(layout, *args):
    for i,st in enumerate(args):
       layout.setColumnStretch(i, st)
 
-# Use this for QtWidgets.QHBoxLayout and QtWidgets.QVBoxLayout, where you don't specify dimension
+# Use this for QtWidgets.QHBoxLayout and QtWidgets.QVBoxLayout,
+# where you don't specify dimension
 def setLayoutStretch(layout, *args):
    for i,st in enumerate(args):
       layout.setStretch(i, st)
@@ -653,7 +654,8 @@ class QLabelButton(QtWidgets.QLabel):
 
    def __init__(self, txt):
       colorStr = htmlColor('LBtnNormalFG')
-      QtWidgets.QLabel.__init__(self, '<font color=%s>%s</u></font>' % (colorStr, txt))
+      QtWidgets.QLabel.__init__(
+         self, '<font color=%s>%s</u></font>' % (colorStr, txt))
       self.plainText = txt
       self.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
 
@@ -673,15 +675,18 @@ class QLabelButton(QtWidgets.QLabel):
          self.linkActivated.emit(ev)
 
    def enterEvent(self, ev):
-      ssStr = "QtWidgets.QLabel { background-color : %s }" % htmlColor('LBtnHoverBG')
+      ssStr = "QtWidgets.QLabel { background-color : %s }" % \
+         htmlColor('LBtnHoverBG')
       self.setStyleSheet(ssStr)
 
    def leaveEvent(self, ev):
-      ssStr = "QtWidgets.QLabel { background-color : %s }" % htmlColor('LBtnNormalBG')
+      ssStr = "QtWidgets.QLabel { background-color : %s }" % \
+         htmlColor('LBtnNormalBG')
       self.setStyleSheet(ssStr)
 
 ################################################################################
-def makeLayoutFrame(dirStr, widgetList, style=QtWidgets.QFrame.NoFrame, condenseMargins=False):
+def makeLayoutFrame(dirStr, widgetList, style=QtWidgets.QFrame.NoFrame,
+   condenseMargins=False):
    frm = QtWidgets.QFrame()
    frm.setFrameStyle(style)
 
@@ -702,7 +707,8 @@ def makeLayoutFrame(dirStr, widgetList, style=QtWidgets.QFrame.NoFrame, condense
          elif w.lower().startswith('line'):
             frmLine = QtWidgets.QFrame()
             if dirStr.lower().startswith(VERTICAL):
-               frmLine.setFrameStyle(QtWidgets.QFrame.HLine | QtWidgets.QFrame.Plain)
+               frmLine.setFrameStyle(
+                  QtWidgets.QFrame.HLine | QtWidgets.QFrame.Plain)
             else:
                frmLine.setFrameStyle(QtWidgets.QFrame.VLine | QtWidgets.QFrame.Plain)
             frmLayout.addWidget(frmLine)
@@ -727,7 +733,6 @@ def makeLayoutFrame(dirStr, widgetList, style=QtWidgets.QFrame.NoFrame, condense
       frmLayout.setContentsMargins(5,5,5,5)
    frm.setLayout(frmLayout)
    return frm
-
 
 def addFrame(widget, style=STYLE_SUNKEN, condenseMargins=False):
    return makeLayoutFrame(HORIZONTAL, [widget], style, condenseMargins)
@@ -803,7 +808,6 @@ class QRadioButtonBackupCtr(QtWidgets.QRadioButton):
       # self.setStyleSheet('QtWidgets.QRadioButton { background-color : %s }' % \
                                           # htmlColor('Background'))
 
-
 ################################################################################
 # This class is intended to be an abstract frame class that
 # will hold all of the functionality that is common to all
@@ -820,9 +824,6 @@ class ArmoryFrame(QtWidgets.QFrame):
       # Subclasses should implement a method that returns a boolean to control
       # when done, accept, next, or final button should be enabled.
       self.isComplete = None
-
-
-
 
 # Pure-python BMP creator taken from:
 #
@@ -876,7 +877,6 @@ def bmp_pack_color(red, green, blue):
    '''accepts values from 0-255 for each value, returns a packed string'''
    return struct.pack('<BBB',blue,green,red)
 
-
 ###################################
 BMP_TEMPFILE = -1
 def createBitmap(imgMtrx2D, writeToFile=-1, returnBinary=True):
@@ -925,8 +925,6 @@ def createBitmap(imgMtrx2D, writeToFile=-1, returnBinary=True):
       except:
          return False
 
-
-
 def selectFileForQLineEdit(parent, qObj, title="Select File", existing=False, \
                            ffilter=[]):
    initPath = ARMORY_HOME_DIR
@@ -946,7 +944,6 @@ def selectFileForQLineEdit(parent, qObj, title="Select File", existing=False, \
    if fullPath:
       qObj.setText(fullPath)
 
-
 def selectDirectoryForQLineEdit(par, qObj, title="Select Directory"):
    initPath = ARMORY_HOME_DIR
    currText = str(qObj.text()).strip()
@@ -965,7 +962,6 @@ def selectDirectoryForQLineEdit(par, qObj, title="Select Directory"):
       if isinstance(fullPath, list):
          fullPath = fullPath[0]
       qObj.setText(fullPath)
-
 
 def createDirectorySelectButton(parent, targetWidget, title="Select Directory"):
 
@@ -1103,7 +1099,7 @@ class AdvancedOptionsFrame(ArmoryFrame):
       layout.addWidget(entryFrame)
       layout.addStretch()
       self.setLayout(layout)
-   
+
    def getKdfSec(self):
       # return -1 if the input is invalid
       kdfSec = -1
@@ -1129,8 +1125,6 @@ class AdvancedOptionsFrame(ArmoryFrame):
       except:
          pass
       return kdfBytes
-
-LOGERROR = logging.error
 
 def toUnicode(text):
    if isinstance(text, bytes):
