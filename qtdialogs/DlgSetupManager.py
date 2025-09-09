@@ -7,23 +7,25 @@
 ##############################################################################
 
 import os
-import uuid
-from qtpy import QtCore, QtWidgets
+from io import BytesIO
+from struct import pack
+from types import MethodType
+from qtpy import QtCore, QtWidgets, QtGui
 from armoryengine.ArmoryUtils import BTC_HOME_DIR, ARMORY_DB_DIR, ARMORY_HOME_DIR, \
-   CLI_OPTIONS, LOGEXCEPT, LOGINFO
+   CLI_OPTIONS, LOGEXCEPT, LOGINFO, RightNow
 from armoryengine.Settings import TheSettings
 from armoryengine.CppBridge import TheBridge
 from armoryengine.BDM import TheBDM
+from armoryengine.WalletUtils import WalletMap
 from ui.QtExecuteSignal import TheSignalExecution
 
 from qtdialogs.ArmoryDialog import ArmoryDialog
 from qtdialogs.DlgWalletMigration import DlgWalletMigration
-from qtdialogs.DlgUnlockWallet import UnlockWalletHandler
 from qtdialogs.qtdefines import QRichLabel, applyDialogBaseStyle, makeCenteredCell, \
    makeCheckboxCell, makeButtonCell, addPlaceholderRow, selectDirectoryForQLineEdit
 
 # --- Dialog-specific constants ---
-MINIMUM_DIALOG_WIDTH = 350
+MINIMUM_DIALOG_WIDTH = 300
 MINIMUM_DIALOG_HEIGHT = 500
 
 # Wallet state enums (from bridge)
@@ -64,6 +66,17 @@ class DlgSetupManager(ArmoryDialog):
 
       # Callback for spawning main window
       self.mainWindowSpawner = None
+
+      # Create wallet manager for migration functionality
+      # This allows DlgWalletMigration to work without requiring ArmoryMainWindow
+      self.walletManager = WalletMap(self)
+
+      # Alias for compatibility with DlgWalletMigration expectations
+      self.wallets = self.walletManager
+
+      # Entropy accumulator for DlgWalletMigration compatibility
+      # This is used by registerWidgetActivateTime for cryptographic randomness
+      self.entropyAccum = BytesIO()
 
       # Widget references for settings
       self.satoshiHomePath = None
@@ -119,8 +132,6 @@ class DlgSetupManager(ArmoryDialog):
          self.tabWidget.addTab(self.walletTab, self.tr('Wallet Settings'))
          self.tabWidget.addTab(self.coreTab, self.tr('Core Settings'))
          self.tabWidget.addTab(self.databaseTab, self.tr('Database Settings'))
-
-         # tabs created
 
       except Exception as e:
          # bubble up; upstream logger handles it
@@ -375,6 +386,14 @@ class DlgSetupManager(ArmoryDialog):
       """Open directory chooser into the given QLineEdit using shared helper."""
       selectDirectoryForQLineEdit(self, lineEdit, title=self.tr('Select Directory'))
 
+   def browseArmoryDataDir(self):
+      """Browse for Armory data directory."""
+      self.browseDirDialog(self.armoryDataDirEdit)
+
+   def browseDatabaseDir(self):
+      """Browse for database directory."""
+      self.browseDirDialog(self.databaseDirEdit)
+
    def networkModeChanged(self, index):
       """Handle changes to the network mode selection."""
       # NOTE: Network mode cannot be changed after bridge has started
@@ -426,9 +445,7 @@ class DlgSetupManager(ArmoryDialog):
 
       browseBtn = QtWidgets.QPushButton(self.tr("Browse..."))
       browseBtn.setFixedWidth(100)  # Match Accept/Cancel buttons
-      def browseArmoryDataDir():
-         self.browseDirDialog(self.armoryDataDirEdit)
-      browseBtn.clicked.connect(browseArmoryDataDir)
+      browseBtn.clicked.connect(self.browseArmoryDataDir)
       browseBtn.setToolTip('Click to browse for a directory to store Armory '
          'data.\n\nChoose a location that is:\n• Secure and private\n• Has '
          'sufficient space\n• Is on a reliable drive')
@@ -457,30 +474,30 @@ class DlgSetupManager(ArmoryDialog):
       walletGrid = QtWidgets.QGridLayout()
       walletGrid.setSpacing(8)
 
-      # Wallet List Title
-      walletTitle = QtWidgets.QLabel(self.tr("Wallets Found"))
-      walletTitle.setToolTip('Displays all Bitcoin wallets found in the '
-         'selected directory.\n\nThe list shows:\n• Wallet IDs - Unique '
-         'identifiers for each wallet\n• Names - Custom labels for easy '
-         'identification\n• Types - Standard, Offline, or Backup\n• Actions '
-         '- Load or Decrypt options')
 
       # Wallet List
       self.walletList = QtWidgets.QTreeWidget()
-      self.walletList.setHeaderLabels(['', 'Wallet ID', 'Type', 'Action'])
-      self.walletList.setColumnWidth(0, 28)
-      self.walletList.setColumnWidth(1, 260)
-      self.walletList.setColumnWidth(2, 120)
-      self.walletList.setColumnWidth(3, 240)
+      self.walletList.setHeaderLabels(['', 'Wallet ID', 'File Name', 'Type', 'Action'])
+      self.walletList.setColumnWidth(0, 30)   # Checkbox column
+      self.walletList.setColumnWidth(1, 120)  # Wallet ID - reduced more
+      self.walletList.setColumnWidth(2, 200)  # File Name - wider to show full names
+      self.walletList.setColumnWidth(3, 100)   # Type column
+      self.walletList.setColumnWidth(4, 40)   # Action column - narrower
       self.walletList.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
       self.walletList.setIndentation(0)
       self.walletList.setRootIsDecorated(False)
+      # Improve header alignment
+      header = self.walletList.header()
+      header.setDefaultAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+      # Set reasonable size constraints for better proportions
+      self.walletList.setMinimumHeight(100)
+      self.walletList.setMaximumHeight(200)
       # Avoid style hacks that can blank the viewport on some Qt builds
 
-      # Add wallet list to grid
-      walletGrid.addWidget(walletTitle, 0, 0)
-      walletGrid.addWidget(self.walletList, 1, 0)
-      walletGrid.setRowStretch(1, 1)
+      # Add wallet list to grid (no title needed)
+      walletGrid.addWidget(self.walletList, 0, 0)
+      # Remove row stretch to prevent excessive expansion
+      walletGrid.setRowStretch(0, 0)
 
       # Add grid to wallet frame
       walletFrameLayout.addLayout(walletGrid)
@@ -493,6 +510,53 @@ class DlgSetupManager(ArmoryDialog):
 
       tab.setLayout(mainLayout)
       return tab
+
+   def loadWallets(self):
+      """Load wallets method required by WalletMap for migration."""
+      # This method is called by WalletMap.migrateWallet after successful migration
+      # CRITICAL: This may be called from bridge thread, so use TheSignalExecution
+      # to ensure UI updates happen in the main thread
+      TheSignalExecution.executeMethod(self.loadWalletList)
+
+   def getWalletManager(self):
+      """Return the wallet manager for transfer to main window."""
+      return self.walletManager
+
+   def logEntropy(self):
+      """Log entropy for cryptographic randomness - required by DlgWalletMigration."""
+      try:
+         self.entropyAccum.write(pack('d', RightNow()))
+         self.entropyAccum.write(pack('i', QtGui.QCursor.pos().x()))
+         self.entropyAccum.write(pack('i', QtGui.QCursor.pos().y()))
+      except Exception as e:
+         LOGEXCEPT('Error logging keypress entropy in setup manager: %s', str(e))
+
+   def registerWidgetActivateTime(self, widget):
+      """Register widget for entropy accumulation - required by DlgWalletMigration."""
+      # This patches widget event handlers to log entropy from user interactions
+      # Required for DlgWalletMigration's SetPassphraseFrame
+      setupManager = self
+
+      def newKPE(wself, event=None):
+         setupManager.logEntropy()
+         super(wself.__class__, wself).keyPressEvent(event)
+
+      def newKRE(wself, event=None):
+         setupManager.logEntropy()
+         super(wself.__class__, wself).keyReleaseEvent(event)
+
+      def newMPE(wself, event=None):
+         setupManager.logEntropy()
+         super(wself.__class__, wself).mousePressEvent(event)
+
+      def newMRE(wself, event=None):
+         setupManager.logEntropy()
+         super(wself.__class__, wself).mouseReleaseEvent(event)
+
+      widget.keyPressEvent     = MethodType(newKPE, widget)
+      widget.keyReleaseEvent   = MethodType(newKRE, widget)
+      widget.mousePressEvent   = MethodType(newMPE, widget)
+      widget.mouseReleaseEvent = MethodType(newMRE, widget)
 
    def loadWalletList(self):
       """Query bridge for wallets and render actions per type/state."""
@@ -507,9 +571,20 @@ class DlgSetupManager(ArmoryDialog):
             addPlaceholderRow(self.walletList, ['', self.tr('Bridge not ready'), '', ''])
             return
 
+         # Pre-process to find migrated versions
+         migratedWalletIds = set()
+         for entry in wltList:
+            try:
+               walletId = entry.walletId
+               isStaged = entry.staged
+               if walletId and isStaged:
+                  migratedWalletIds.add(walletId)
+            except Exception:
+               continue
+
          # Iterate directly; capnp lists are iterable
          for entry in wltList:
-            if self._createWalletRow(entry):
+            if self._createWalletRow(entry, migratedWalletIds):
                addedAny = True
 
          # If still nothing, show guidance
@@ -524,7 +599,19 @@ class DlgSetupManager(ArmoryDialog):
       except Exception as e:
          LOGEXCEPT('Error loading wallet list: %s', str(e))
 
-   def _createWalletRow(self, entry):
+   def _addActionButton(self, item, text, handler):
+      """Create and add a left-aligned action button to the wallet list item."""
+      btn = QtWidgets.QPushButton(text)
+      btn.clicked.connect(handler)
+      btn.setMaximumWidth(60)  # Compact button
+      cellWidget = QtWidgets.QWidget()
+      layout = QtWidgets.QHBoxLayout(cellWidget)
+      layout.setContentsMargins(2, 2, 2, 2)  # Small margins
+      layout.addWidget(btn)
+      layout.addStretch()  # Push button to left
+      self.walletList.setItemWidget(item, 4, cellWidget)
+
+   def _createWalletRow(self, entry, migratedWalletIds=None):
       """Create and add a wallet row from a bridge entry.
 
       Returns True if the row is rendered successfully; False otherwise.
@@ -533,15 +620,37 @@ class DlgSetupManager(ArmoryDialog):
          walletPath = entry.path
          fileName = os.path.basename(walletPath) if walletPath else ''
          walletId = entry.walletId
+
+         # Check if this is a legacy wallet that has been migrated
+         # Per BridgeTests.cpp: after migration, there are 2 wallets with same walletId:
+         # - Legacy: staged=false, loadState=1 (original file) <- Hide this one
+         # - Migrated: staged=true, loadState=4 (new file) <- Show this one
+         try:
+            isStaged = entry.staged
+         except AttributeError:
+            isStaged = False
+         try:
+            loadState = entry.loadState
+         except AttributeError:
+            loadState = 0
+
+         # Hide legacy wallets ONLY if there's a migrated version
+         # Since loadState doesn't exist in capnp, just use staged status
+         if not isStaged and migratedWalletIds:
+            # Check if there's a staged wallet with the same walletId (migrated version)
+            if walletId in migratedWalletIds:
+               return False  # Skip the legacy version
          # Create row
          item = QtWidgets.QTreeWidgetItem()
          # Use walletId as display name (wallet name); fallback to filename if absent
          displayName = walletId if walletId else os.path.splitext(fileName)[0]
          item.setText(1, displayName)
+         # Set file name in column 2 (just the filename, not full path)
+         item.setText(2, fileName)
          # Determine state label via helper
          stateText, isLegacy, isEncrypted = self._walletStateLabel(
             entry, walletId)
-         item.setText(2, stateText)
+         item.setText(3, stateText)
 
          # Add the row before attaching widgets
          self.walletList.addTopLevelItem(item)
@@ -551,12 +660,10 @@ class DlgSetupManager(ArmoryDialog):
             cell, _ = makeCheckboxCell(False, False)
             self.walletList.setItemWidget(item, 0, cell)
          else:
-            def makeStageCheckboxHandler(walletId):
-               def handler(state):
-                  self.onStageCheckboxChanged(walletId, state == QtCore.Qt.Checked)
-               return handler
-            cell, cb = makeCheckboxCell(True, True, makeStageCheckboxHandler(walletId))
-            
+            def stageCheckboxHandler(state):
+               self.onStageCheckboxChanged(walletId, state == QtCore.Qt.Checked)
+            cell, cb = makeCheckboxCell(True, True, stageCheckboxHandler)
+
             self.walletList.setItemWidget(item, 0, cell)
             self.walletIdToCheckbox[walletId] = cb
 
@@ -568,29 +675,18 @@ class DlgSetupManager(ArmoryDialog):
             'staged': stagedFlag
          })
 
-         # Column 3: status (Ready/Unlock/Migrate)
-         if isLegacy:
-            def makeMigrateHandler(walletPath):
-               def handler(_):
+            # Column 4: Action buttons (left-aligned for better appearance)
+            if isLegacy:
+               def migrateHandler(_):
                   self.migrateWallet(walletPath)
-               return handler
-            cell, _ = makeButtonCell(
-               self.tr('Migrate'),
-               makeMigrateHandler(walletPath)
-            )
-            self.walletList.setItemWidget(item, 3, cell)
-         elif isEncrypted:
-            def makeUnlockHandler(walletId):
-               def handler(_):
+               self._addActionButton(item, self.tr('Migrate'), migrateHandler)
+            elif isEncrypted:
+               def unlockHandler(_):
                   self.unlockWallet(walletId)
-               return handler
-            cell, _ = makeButtonCell(
-               self.tr('Unlock'),
-               makeUnlockHandler(walletId)
-            )
-            self.walletList.setItemWidget(item, 3, cell)
-         else:
-            self.walletList.setItemWidget(item, 3, QtWidgets.QLabel(self.tr('Ready')))
+               self._addActionButton(item, self.tr('Unlock'), unlockHandler)
+            else:
+               # Render nothing in Action column for ready wallets
+               pass
 
          return True
       except Exception as e:
@@ -648,109 +744,69 @@ class DlgSetupManager(ArmoryDialog):
       return (label, isLegacy, isEncrypted)
 
    def migrateWallet(self, walletPath):
-      """Start migration for a legacy wallet using setup manager as main."""
+      """Start migration using clean dependency injection pattern."""
       try:
-         # Use setup manager as main window for migration dialog
+         # Import wallet data through bridge
          walletData = TheBridge.utils.importWallet(walletPath)
+
+         # Launch migration dialog with setup manager as main reference
+         # DlgSetupManager provides wallet management interface via self.wallets
          dlg = DlgWalletMigration(self, self, walletPath, walletData)
-         dlg.exec_()
-         # Reload wallet list after migration
-         self.loadWalletList()
-         return
+         result = dlg.exec_()
+
+         # Reload wallet list after migration dialog closes
+         TheSignalExecution.executeMethod(self.loadWalletList)
+
+         if result == QtWidgets.QDialog.Accepted:
+            LOGINFO("Wallet migration completed successfully")
+         else:
+            LOGINFO("Wallet migration cancelled by user")
 
       except Exception as e:
-         LOGEXCEPT("Migration dialog failed: %s", str(e))
-         # Fallback: run migration directly via the bridge (no wizard UI)
-         callbackId = str(uuid.uuid4())
-
-         def migrationCallback(success, result):
-            TheSignalExecution.executeMethod(
-               self.onMigrationComplete, success, str(result))
-
-         TheBridge.wltManager.migrateWallet(walletPath, callbackId, migrationCallback)
-         QtWidgets.QMessageBox.information(
-            self,
-            self.tr('Migration Started'),
-            self.tr('Wallet migration has started. Please wait...')
-         )
-      except Exception as e:
+         LOGEXCEPT("Migration failed: %s", str(e))
          QtWidgets.QMessageBox.warning(
             self,
             self.tr('Migration Failed'),
             self.tr('Failed to start migration: {}').format(str(e))
          )
 
-   @QtCore.Slot(bool, str)
-   def onMigrationComplete(self, success, result):
-      """Handle migration completion callback and refresh wallet list."""
-      if not success:
-         QtWidgets.QMessageBox.warning(
-            self,
-            self.tr('Migration Failed'),
-            self.tr('Migration failed: {}').format(result)
-         )
-      # Refresh wallet list to reflect changes
-      self.loadWalletList()
-
    def unlockWallet(self, walletId):
-      """Unlock an encrypted wallet's public data when prompted by backend."""
+      """Unlock wallet by staging and loading - bridge handles unlock prompts."""
       try:
-         # Use row metadata instead of refetching from backend
-         pathForId = None
-         rowMeta = None
-         for i in range(self.walletList.topLevelItemCount()):
-            itm = self.walletList.topLevelItem(i)
-            meta = itm.data(0, QtCore.Qt.UserRole)
-            if meta and meta.get('walletId') == walletId:
-               pathForId = meta.get('path')
-               rowMeta = meta
-               break
-         if not pathForId:
-            QtWidgets.QMessageBox.warning(
-               self,
-               self.tr('Unlock Failed'),
-               self.tr('Wallet not found.')
-            )
-            return
-
-         # If we have a walletId, temporarily stage it (if not already), trigger
-         # a regular load to let the backend push an unlockRequest, and display the
-         # dialog to catch that prompt.
-         originallyStaged = bool(rowMeta.get('staged')) if rowMeta else False
-         try:
-            if walletId and not originallyStaged:
-               TheBridge.wltManager.stageWallet(walletId, True)
-
-            # Prepare the dialog first so it can receive the callback
-            dlg = UnlockWalletHandler(walletId, self.tr('Unlock Wallet'), self)
-
-            # Kick off backend load asynchronously so the prompt arrives while
-            # dialog is up
-            def loadWalletsAsync():
-               TheBridge.wltManager.loadWallets()
-            TheSignalExecution.callLater(0, loadWalletsAsync)
-
-            dlg.exec_()
-         finally:
-            # Restore original staging if we changed it
-            if walletId and not originallyStaged:
-               TheBridge.wltManager.stageWallet(walletId, False)
-
-         # rely on backend state propagation; no explicit refresh here
-      except Exception as e:
-         QtWidgets.QMessageBox.warning(self, self.tr('Unlock Failed'), str(e))
-
-   def stageWallet(self, walletId):
-      try:
-         # Stage only; bulk loading is handled elsewhere
+         # Stage the wallet - this triggers unlock prompts via bridge notifications
+         # Bridge will automatically handle passphrase prompts and unlock process
          TheBridge.wltManager.stageWallet(walletId, True)
+
+         # Trigger wallet loading - bridge will prompt for unlock if needed
+         def loadWalletsAsync():
+            TheBridge.wltManager.loadWallets()
+            # Refresh UI after load completes
+            TheSignalExecution.executeMethod(self.loadWalletList)
+
+         TheSignalExecution.callLater(100, loadWalletsAsync)
+
       except Exception as e:
+         LOGEXCEPT("Unlock wallet failed: %s", str(e))
+         QtWidgets.QMessageBox.warning(
+            self, self.tr('Unlock Failed'), str(e))
+
+   def stageWallet(self, walletId, stage=True):
+      """Stage/unstage wallet and rely on bridge state propagation."""
+      try:
+         TheBridge.wltManager.stageWallet(walletId, stage)
+         # Bridge state will propagate - no manual refresh needed
+      except Exception as e:
+         LOGEXCEPT("Stage wallet failed: %s", str(e))
          QtWidgets.QMessageBox.warning(self, self.tr('Stage Failed'), str(e))
 
    def onStageCheckboxChanged(self, walletId, checked):
+      """Handle staging checkbox with proper error recovery."""
       try:
          TheBridge.wltManager.stageWallet(walletId, checked)
+         # Bridge state propagation will update UI automatically
       except Exception as e:
+         LOGEXCEPT("Stage toggle failed: %s", str(e))
+         # Revert checkbox state on failure
          cb = self.walletIdToCheckbox.get(walletId)
          if cb:
             cb.blockSignals(True)
@@ -789,9 +845,7 @@ class DlgSetupManager(ArmoryDialog):
 
       dbDirButton = QtWidgets.QPushButton(self.tr("Browse..."))
       dbDirButton.setFixedWidth(100)
-      def browseDatabaseDir():
-         self.browseDirDialog(self.databaseDirEdit)
-      dbDirButton.clicked.connect(browseDatabaseDir)
+      dbDirButton.clicked.connect(self.browseDatabaseDir)
 
       dirInputLayout.addWidget(self.databaseDirEdit)
       dirInputLayout.addWidget(dbDirButton)
