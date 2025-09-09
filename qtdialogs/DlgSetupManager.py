@@ -7,6 +7,7 @@
 ##############################################################################
 
 import os
+import uuid
 from qtpy import QtCore, QtWidgets
 from armoryengine.ArmoryUtils import BTC_HOME_DIR, ARMORY_DB_DIR, ARMORY_HOME_DIR, \
    CLI_OPTIONS, LOGEXCEPT, LOGINFO
@@ -19,11 +20,18 @@ from qtdialogs.ArmoryDialog import ArmoryDialog
 from qtdialogs.DlgWalletMigration import DlgWalletMigration
 from qtdialogs.DlgUnlockWallet import UnlockWalletHandler
 from qtdialogs.qtdefines import QRichLabel, applyDialogBaseStyle, makeCenteredCell, \
-   makeCheckboxCell, makeButtonCell, addPlaceholderRow
+   makeCheckboxCell, makeButtonCell, addPlaceholderRow, selectDirectoryForQLineEdit
 
 # --- Dialog-specific constants ---
 MINIMUM_DIALOG_WIDTH = 350
 MINIMUM_DIALOG_HEIGHT = 500
+
+# Wallet state enums (from bridge)
+WALLET_STATE_UNKNOWN = 0
+WALLET_STATE_LEGACY = 1
+WALLET_STATE_MIGRATED = 2
+WALLET_STATE_ENCRYPTED = 3
+WALLET_STATE_LOADED = 5
 
 ###############################################################################
 class DlgSetupManager(ArmoryDialog):
@@ -66,7 +74,6 @@ class DlgSetupManager(ArmoryDialog):
       self.rpcPortInput = None
       self.armoryDataDirEdit = None
       self.walletList = None
-      self.refreshButton = None
       self.databaseDirEdit = None
       self.databaseScenarioCombo = None
       self.databaseTypeCombo = None
@@ -77,7 +84,6 @@ class DlgSetupManager(ArmoryDialog):
       self.remoteHostEdit = None
       self.remotePortEdit = None
       self.remoteUserEdit = None
-      self.remotePasswordEdit = None
       self.testConnectionButton = None
       self.walletIdToCheckbox = {}
       self.bridgeReady = False
@@ -173,9 +179,7 @@ class DlgSetupManager(ArmoryDialog):
          self.networkModeCombo.currentIndexChanged.connect(
             self.networkModeChanged)
 
-      # Wallet tab signals  
-      if self.refreshButton:
-         self.refreshButton.clicked.connect(self.loadWalletList)
+      # Wallet tab signals (auto-refresh on bridge ready)
 
       # Database tab signals
       if self.databaseScenarioCombo:
@@ -193,8 +197,7 @@ class DlgSetupManager(ArmoryDialog):
          # Persist settings
          self.saveSettings()
 
-         # Mark setup as completed and close dialog
-         TheSettings.set('SetupManagerCompleted', True)
+         # Close dialog
          super(DlgSetupManager, self).accept()
 
          # Spawn main window if spawner callback is provided
@@ -212,12 +215,6 @@ class DlgSetupManager(ArmoryDialog):
    def reject(self):
       """Handle dialog rejection without marking setup as completed."""
       super(DlgSetupManager, self).reject()
-      # Don't set SetupManagerCompleted to True when rejected
-      TheSettings.set('SetupManagerCompleted', False)
-
-   def closeEvent(self, event):
-      """Handle dialog close event."""
-      super().closeEvent(event)
 
    def createCoreTab(self):
       """Create the Core settings tab with directory and network config."""
@@ -361,29 +358,27 @@ class DlgSetupManager(ArmoryDialog):
 
    @QtCore.Slot()
    def onBridgeReady(self):
-      # Called by bridge-ready callback; now populate list and enable refresh
-      if self.refreshButton:
-         self.refreshButton.setEnabled(True)
+      # Called by bridge-ready callback; now populate list
       self.loadWalletList()
 
    def browseSatoshiHome(self):
       """Open a directory dialog to select the Bitcoin Core data directory."""
-      dir = QtWidgets.QFileDialog.getExistingDirectory(
+      directory = QtWidgets.QFileDialog.getExistingDirectory(
          self,
          self.tr('Select Bitcoin Core Data Directory'),
          os.path.expanduser('~')
       )
-      if dir:
-         self.satoshiHomePath.setText(dir)
+      if directory:
+         self.satoshiHomePath.setText(directory)
 
    def browseDirDialog(self, lineEdit):
       """Open directory chooser into the given QLineEdit using shared helper."""
-      from qtdialogs.qtdefines import selectDirectoryForQLineEdit
       selectDirectoryForQLineEdit(self, lineEdit, title=self.tr('Select Directory'))
 
    def networkModeChanged(self, index):
       """Handle changes to the network mode selection."""
-      # Update P2P port based on network mode
+      # NOTE: Network mode cannot be changed after bridge has started
+      # This is for display/validation purposes only
       if index == 0:  # Mainnet
          self.p2pPortInput.setText("8333")
          self.rpcPortInput.setText("")  # Clear RPC port
@@ -490,24 +485,7 @@ class DlgSetupManager(ArmoryDialog):
       # Add grid to wallet frame
       walletFrameLayout.addLayout(walletGrid)
 
-      # Refresh button with center alignment
-      self.refreshButton = QtWidgets.QPushButton(self.tr('Refresh Wallet List'))
-      self.refreshButton.setFixedWidth(200)
-      self.refreshButton.clicked.connect(self.loadWalletList)
-      self.refreshButton.setEnabled(True)
-      # Keep enabled; loadWalletList handles readiness gracefully
-      # No footer line
-      self.refreshButton.setToolTip('Click to refresh the list of available '
-         'wallets.\n\nUse this when you:\n• Add new wallets to the '
-         'directory\n• Remove wallets from the directory\n• Want to ensure '
-         'the list is up to date')
-
-      # Add button to wallet frame with center alignment
-      buttonLayout = QtWidgets.QHBoxLayout()
-      buttonLayout.addStretch()
-      buttonLayout.addWidget(self.refreshButton)
-      buttonLayout.addStretch()
-      walletFrameLayout.addLayout(buttonLayout)
+      # Wallet list auto-refreshes when bridge is ready
 
       # Add wallet frame to main layout
       mainLayout.addWidget(walletFrame)
@@ -582,13 +560,11 @@ class DlgSetupManager(ArmoryDialog):
             self.walletList.setItemWidget(item, 0, cell)
             self.walletIdToCheckbox[walletId] = cb
 
-         fullPath = walletPath if walletPath else os.path.join(self.armoryDataDirEdit.text(), fileName)
-
          # Persist metadata on the row for later handlers
          stagedFlag = bool(entry.staged)
          item.setData(0, QtCore.Qt.UserRole, {
             'walletId': walletId,
-            'path': fullPath,
+            'path': walletPath,
             'staged': stagedFlag
          })
 
@@ -600,7 +576,7 @@ class DlgSetupManager(ArmoryDialog):
                return handler
             cell, _ = makeButtonCell(
                self.tr('Migrate'),
-               makeMigrateHandler(fullPath)
+               makeMigrateHandler(walletPath)
             )
             self.walletList.setItemWidget(item, 3, cell)
          elif isEncrypted:
@@ -636,18 +612,18 @@ class DlgSetupManager(ArmoryDialog):
          stateVal = entry.state
          # Handle numeric enums and string fallbacks defensively
          if isinstance(stateVal, int):
-            if stateVal == 1:
+            if stateVal == WALLET_STATE_LEGACY:
                label = self.tr('Legacy')
                isLegacy = True
-            elif stateVal == 3:
+            elif stateVal == WALLET_STATE_ENCRYPTED:
                label = self.tr('Encrypted')
                isEncrypted = True
-            elif stateVal == 5:
+            elif stateVal == WALLET_STATE_LOADED:
                # treat loaded as ready for this setup view
                label = self.tr('Ready')
-            elif stateVal in (2, 4):
+            elif stateVal in (WALLET_STATE_MIGRATED, 4):
                label = self.tr('Ready')
-            elif stateVal == 0:
+            elif stateVal == WALLET_STATE_UNKNOWN:
                label = self.tr('Unknown')
          else:
             s = str(stateVal).lower()
@@ -672,20 +648,19 @@ class DlgSetupManager(ArmoryDialog):
       return (label, isLegacy, isEncrypted)
 
    def migrateWallet(self, walletPath):
-      """Start migration for a legacy wallet.
-
-      - If a valid main window is available, use the full migration dialog.
-      - Otherwise, fall back to bridge-driven migration with a simple callback.
-      """
+      """Start migration for a legacy wallet using setup manager as main."""
       try:
-         if self.main is not None:
-            walletData = TheBridge.utils.importWallet(walletPath)
-            dlg = DlgWalletMigration(self, self.main, walletPath, walletData)
-            dlg.exec_()
-            return
+         # Use setup manager as main window for migration dialog
+         walletData = TheBridge.utils.importWallet(walletPath)
+         dlg = DlgWalletMigration(self, self, walletPath, walletData)
+         dlg.exec_()
+         # Reload wallet list after migration
+         self.loadWalletList()
+         return
 
+      except Exception as e:
+         LOGEXCEPT("Migration dialog failed: %s", str(e))
          # Fallback: run migration directly via the bridge (no wizard UI)
-         import uuid
          callbackId = str(uuid.uuid4())
 
          def migrationCallback(success, result):
@@ -707,19 +682,15 @@ class DlgSetupManager(ArmoryDialog):
 
    @QtCore.Slot(bool, str)
    def onMigrationComplete(self, success, result):
-      """Handle migration completion callback and inform the user."""
-      if success:
-         QtWidgets.QMessageBox.information(
-            self,
-            self.tr('Migration Complete'),
-            self.tr('Wallet migration completed successfully.')
-         )
-      else:
+      """Handle migration completion callback and refresh wallet list."""
+      if not success:
          QtWidgets.QMessageBox.warning(
             self,
             self.tr('Migration Failed'),
             self.tr('Migration failed: {}').format(result)
          )
+      # Refresh wallet list to reflect changes
+      self.loadWalletList()
 
    def unlockWallet(self, walletId):
       """Unlock an encrypted wallet's public data when prompted by backend."""
@@ -917,11 +888,10 @@ class DlgSetupManager(ArmoryDialog):
       self.remoteUserEdit = QtWidgets.QLineEdit()
       self.remoteUserEdit.setFixedWidth(200)
 
-      # Remote Password
-      passLabel = QtWidgets.QLabel(self.tr("Password"))
-      self.remotePasswordEdit = QtWidgets.QLineEdit()
-      self.remotePasswordEdit.setFixedWidth(200)
-      self.remotePasswordEdit.setEchoMode(QtWidgets.QLineEdit.Password)
+      # Password will be handled by bridge unlock callback
+      passLabel = QtWidgets.QLabel(self.tr("Password (handled by bridge)"))
+      passInfo = QtWidgets.QLabel(self.tr("Bridge will prompt for password when needed"))
+      passInfo.setStyleSheet("color: gray; font-style: italic;")
 
       remoteGrid.addWidget(hostLabel, 0, 0)
       remoteGrid.addWidget(self.remoteHostEdit, 0, 1)
@@ -930,7 +900,7 @@ class DlgSetupManager(ArmoryDialog):
       remoteGrid.addWidget(userLabel, 2, 0)
       remoteGrid.addWidget(self.remoteUserEdit, 2, 1)
       remoteGrid.addWidget(passLabel, 3, 0)
-      remoteGrid.addWidget(self.remotePasswordEdit, 3, 1)
+      remoteGrid.addWidget(passInfo, 3, 1)
       remoteGrid.setColumnStretch(1, 1)
 
       remoteLayout.addLayout(remoteGrid)
@@ -1039,7 +1009,6 @@ class DlgSetupManager(ArmoryDialog):
          self.remoteHostEdit.setText('')
          self.remotePortEdit.setText('')
          self.remoteUserEdit.setText('')
-         self.remotePasswordEdit.setText('')
 
    def validateSettings(self, interactive=True):
       """Validate directory paths group and create as needed (interactive)."""
@@ -1212,7 +1181,7 @@ class DlgSetupManager(ArmoryDialog):
          'remoteHost': self.remoteHostEdit.text() if dbScenario == 'Connect to Remote Database' else '',
          'remotePort': self.remotePortEdit.text() if dbScenario == 'Connect to Remote Database' else '',
          'remoteUser': self.remoteUserEdit.text() if dbScenario == 'Connect to Remote Database' else '',
-         'remotePass': self.remotePasswordEdit.text() if dbScenario == 'Connect to Remote Database' else '',
+         # remotePass removed - bridge handles password prompts
          'ram': self.ramUsageEdit.text() if dbScenario == 'Run Local Database' else '',
          'threads': self.threadCountEdit.text() if dbScenario == 'Run Local Database' else '',
       }

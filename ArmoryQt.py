@@ -5236,14 +5236,14 @@ if 1:
    translator = QtCore.QTranslator(QAPP)
    # Determine app directory for translations
    app_dir = os.path.dirname(os.path.realpath(__file__))
-   
+
    translator.load(TheSettings.getGuiLanguage(), 
-                   os.path.join(app_dir, "lang/"))
+      os.path.join(app_dir, "lang/"))
    QAPP.installTranslator(translator)
 
    # 2) Start bridge with ready handler - sequential process per maintainer
    dlg = DlgSetupManager(parent=None, main=None)
-   
+
    def spawnMainWindow():
       armoryMainWindow = ArmoryMainWindow()
       TheSignalExecution.executeMethod(
@@ -5252,7 +5252,7 @@ if 1:
       return armoryMainWindow
 
    dlg.mainWindowSpawner = spawnMainWindow
-   
+
    def bridgeReadyHandler():
       # Bridge is ready - explicitly call wallet listing and close splash
       TheSignalExecution.executeMethod(dlg.onBridgeReady)
@@ -5261,7 +5261,7 @@ if 1:
       TheSignalExecution.executeMethod(closeSplash)
 
    TheBDM.startBridge(getBridgeArgList(), bridgeReadyHandler)
-   
+
    # Show setup manager (wallet list will populate when bridge ready)
    if dlg.exec_() != QtWidgets.QDialog.Accepted:
       TheBridge.service.shutdown()
