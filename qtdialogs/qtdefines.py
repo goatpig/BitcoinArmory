@@ -569,7 +569,7 @@ class QRichLabel_AutoToolTip(QRichLabel):
       return QtWidgets.QLabel.event(self,event)
 
 class QMoneyLabel(QRichLabel):
-   def __init__(self, nSatoshi, ndec=8, maxZeros=2, wColor=True, 
+   def __init__(self, nSatoshi, ndec=8, maxZeros=2, wColor=True,
       wBold=None, txtSize=10):
       QtWidgets.QLabel.__init__(self, coin2str(nSatoshi))
 
@@ -706,7 +706,8 @@ def makeLayoutFrame(dirStr, widgetList, style=QtWidgets.QFrame.NoFrame,
                frmLine.setFrameStyle(
                   QtWidgets.QFrame.HLine | QtWidgets.QFrame.Plain)
             else:
-               frmLine.setFrameStyle(QtWidgets.QFrame.VLine | QtWidgets.QFrame.Plain)
+               frmLine.setFrameStyle(
+                  QtWidgets.QFrame.VLine | QtWidgets.QFrame.Plain)
             frmLayout.addWidget(frmLine)
          elif w.lower().startswith('strut'):
             first = w.index('(')+1
@@ -921,21 +922,24 @@ def createBitmap(imgMtrx2D, writeToFile=-1, returnBinary=True):
       except:
          return False
 
-def selectFileForQLineEdit(parent, qObj, title="Select File", existing=False, \
-                           ffilter=[]):
+def selectFileForQLineEdit(parent, qObj, title="Select File", existing=False,
+   ffilter=[]):
    initPath = ARMORY_HOME_DIR
    currText = str(qObj.text()).strip()
    if currText:
       if os.path.exists(currText):
          initPath = currText
 
-   typesStr = ' '.join(ffilter)
+   types = list(ffilter)
+   types.append('All files (*)')
+   typesStr = ';; '.join(types)
    if not OS_MACOSX:
-      fullPath, _ = QtWidgets.QFileDialog.getOpenFileName(parent, \
+      fullPath, _ = QtWidgets.QFileDialog.getOpenFileName(parent,
          title, ARMORY_HOME_DIR, typesStr)
    else:
-      fullPath, _ = QtWidgets.QFileDialog.getOpenFileName(parent, \
-         title, ARMORY_HOME_DIR, typesStr, options=QtWidgets.QFileDialog.DontUseNativeDialog)
+      fullPath, _ = QtWidgets.QFileDialog.getOpenFileName(parent,
+         title, ARMORY_HOME_DIR, typesStr,
+         options=QtWidgets.QFileDialog.DontUseNativeDialog)
 
    if fullPath:
       qObj.setText(fullPath)
@@ -1055,7 +1059,7 @@ class AdvancedOptionsFrame(ArmoryFrame):
                   'to unlock your wallet after you enter your passphrase. '
                   '(the actual time used will be less than the specified '
                   'time, but more than one half of it).  '))
-      
+
       # Set maximum compute time
       self.editComputeTime = QtWidgets.QLineEdit()
       self.editComputeTime.setText('250 ms')
@@ -1080,7 +1084,7 @@ class AdvancedOptionsFrame(ArmoryFrame):
 
       self.editComputeTime.setMaximumWidth( tightSizeNChar(self, 20)[0] )
       self.editComputeMem.setMaximumWidth( tightSizeNChar(self, 20)[0] )
-      
+
       entryFrame = QtWidgets.QFrame()
       entryLayout = QtWidgets.QGridLayout()
       entryLayout.addWidget(timeDescriptionTip,        0, 0,  1, 1)

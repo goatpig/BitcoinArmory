@@ -1813,6 +1813,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
    #############################################################################
    def finalizeLoadWallets(self):
+      self.setupBlockchainService_step1()
       self.walletModel.reset()
       if self.wallets.empty():
          self.execIntroDialog()
@@ -5062,7 +5063,6 @@ if 1:
 
    def spawnMainWindow(wallets):
       armoryMainWindow = ArmoryMainWindow(wallets)
-      armoryMainWindow.setupBlockchainService_step1()
       TheSignalExecution.executeMethod(armoryMainWindow.finalizeLoadWallets)
       armoryMainWindow.show()
       return armoryMainWindow

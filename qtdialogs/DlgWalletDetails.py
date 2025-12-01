@@ -55,8 +55,8 @@ class DlgWalletDetails(ArmoryDialog):
       self.wlt = wlt
       self.usermode = usermode
       self.wlttype = determineWalletType(wlt)
-      self.typestr = self.tr(getWalletTypeStr(self.wlttype))
-      if self.typestr == self.tr('Encrypted'):
+      self.typestr = getWalletTypeStr(self.wlttype, self)
+      if self.wlttype == WalletTypes.Crypt:
          self.typestr = self.tr('Encrypted (AES256)')
 
       self.labels = [wlt.labelName, wlt.labelDescr]
