@@ -74,7 +74,7 @@ class DlgExportTxHistory(ArmoryDialog):
       self.ttipFormatDescr = createToolTipWidget(ttipStr)
 
       self.lblDateExample = QRichLabel('', doWrap=False)
-      self.edtDateForma.textEdited(self.doExampleDate)
+      self.edtDateFormat.textEdited.connect(self.doExampleDate)
       self.doExampleDate()
       self.btnResetFormat = QtWidgets.QPushButton(self.tr("Reset to Default"))
 
@@ -276,16 +276,26 @@ class DlgExportTxHistory(ArmoryDialog):
 
          f.write(','.join(str(header) for header in headerRow) + '\n')
 
-         #get history
-         historyLedger = TheBridge.getHistoryForWalletSelection(wltIDList, order)
+         #get history using delegate API
+         TheBridge.service.updateWalletsLedgerFilter(wltIDList)
+         delegateId = TheBridge.service.getLedgerDelegateIdForWallets()
+         pageCount = TheBridge.service.getPageCountForDelegate(delegateId)
+         historyPages = []
+         for pageIdx in range(pageCount):
+            pageData = TheBridge.service.getHistoryPageForDelegate(
+               delegateId, pageIdx)
+            historyPages.extend(pageData)
 
          # Each value in COL.Amount will be exactly how much the wallet balance
          # increased or decreased as a result of this transaction.
-         ledgerTable = self.main.convertLedgerToTable(historyLedger,
-                                                         showSentToSelfAmt=True)
+         ledgerTable = self.main.convertLedgerToTable(historyPages,
+            showSentToSelfAmt=True)
 
-         # Sort the data chronologically first, compute the running balance for
-         # each row, then sort it the way that was requested by the user.
+         # Sort by UnixTime based on user's selection
+         ascending = (order == "ascending")
+         ledgerTable.sort(key=lambda row: row[COL.UnixTime], reverse=not ascending)
+
+         # Compute the running balance for each row
          for row in ledgerTable:
             if row[COL.toSelf] == False:
                rawAmt = str2coin(row[COL.Amount])

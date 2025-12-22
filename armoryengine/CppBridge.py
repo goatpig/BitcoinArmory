@@ -447,6 +447,17 @@ class BlockchainService(ProtoWrapper):
       self.send(packet, needsReply=False)
 
    ####
+   def getPageCountForDelegate(self, delegateId: str):
+      packet = Bridge.ToBridge.new_message()
+      request = packet.init("delegate")
+      request.id = delegateId
+      request.getPageCount = None
+
+      fut = self.send(packet)
+      reply = fut.getVal()
+      return reply.delegate.getPageCount
+
+   ####
    def getHistoryPageForDelegate(self, delegateId: str, pageId: int):
       packet = Bridge.ToBridge.new_message()
       # TODO: Incomplete: HistoryPageRequest is unused
@@ -1346,22 +1357,6 @@ class ArmoryBridge(object):
 
       self.blockTimeByHeightCache[height] = blockTime
       return blockTime
-
-   #############################################################################
-   def getHistoryForWalletSelection(self, wltIDList, order):
-      packet = Bridge.ToBridge.new_message()
-      packet.method = BridgeProto_pb2.getHistoryForWalletSelection
-      packet.stringArgs.append(order)
-      for wltID in wltIDList:
-         packet.stringArgs.append(wltID)
-
-      fut = self.send(packet)
-      socketResponse = fut.getVal()
-
-      response = BridgeProto_pb2.BridgeLedgers()
-      response.ParseFromString(socketResponse)
-
-      return response
 
 ################################################################################
 class CallbackWrapper(object):
