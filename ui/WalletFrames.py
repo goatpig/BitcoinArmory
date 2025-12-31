@@ -432,6 +432,16 @@ class NewWalletFrame(ArmoryFrame):
       lblManualEntropy.setAlignment(QtCore.Qt.AlignVCenter)
       lblManualEntropy.setBuddy(self.useManualEntropy)
 
+      lblWalletType = QtWidgets.QLabel(self.tr("<b>Wallet Type:</b>"))
+      self.radioBIP32 = QtWidgets.QRadioButton(
+         self.tr("BIP32/BIP39 (Modern HD wallet - recommended)"))
+      self.radioLegacy = QtWidgets.QRadioButton(
+         self.tr("Legacy Armory (Classic format)"))
+      self.radioBIP32.setChecked(True)
+      self.walletTypeGroup = QtWidgets.QButtonGroup()
+      self.walletTypeGroup.addButton(self.radioBIP32)
+      self.walletTypeGroup.addButton(self.radioLegacy)
+
       # breaking this up into tabs
       frameLayout = QtWidgets.QVBoxLayout()
       newWalletTabs = QtWidgets.QTabWidget()
@@ -440,10 +450,12 @@ class NewWalletFrame(ArmoryFrame):
       nameFrame = makeHorizFrame([lblName, STRETCH, self.editName])
       descriptionFrame = makeHorizFrame(
          [lblDescription, STRETCH, self.editDescription])
+      walletTypeFrame = makeVertFrame([
+         lblWalletType, self.radioBIP32, self.radioLegacy])
       entropyFrame = makeHorizFrame(
          [self.useManualEntropy, lblManualEntropy, STRETCH])
       basicQTab = makeVertFrame(
-         [nameFrame, descriptionFrame, entropyFrame, STRETCH])
+         [nameFrame, descriptionFrame, walletTypeFrame, entropyFrame, STRETCH])
       newWalletTabs.addTab(basicQTab, self.tr("Configure"))
 
       # Fork watching-only wallet
@@ -471,6 +483,11 @@ class NewWalletFrame(ArmoryFrame):
 
    def getDescription(self):
       return str(self.editDescription.toPlainText())
+
+   def getWalletType(self):
+      if self.radioBIP32.isChecked():
+         return 'structuredBip32'
+      return 'legacy'
 
 ################################################################################
 class CardDeckFrame(ArmoryFrame):
@@ -733,10 +750,12 @@ class WalletBackupFrame(ArmoryFrame):
    # Some static enums, and a QtWidgets.QRadioButton with mouse-enter/mouse-leave events
    FEATURES = enum('ProtGen', 'ProtImport', 'LostPass', 'Durable', \
       'Visual', 'Physical', 'Count')
-   OPTIONS = enum('Paper1', 'PaperN', 'DigPlain', 'DigCrypt', 'Export', 'Count')
+   OPTIONS = enum('Paper1', 'PaperN', 'DigPlain', 'DigCrypt', 'Export',
+      'SeedPhrase', 'Count')
    def __init__(self, parent, main, initLabel=''):
       super(WalletBackupFrame, self).__init__(parent, main)
       # Don't have a wallet yet so assume false.
+      self.wlt = None
       self.hasImportedAddr = False
       self.isBackupCreated = False
       self.passphrase = None
@@ -761,10 +780,13 @@ class WalletBackupFrame(ArmoryFrame):
          self.tr('Encrypted'), self.OPTIONS.DigCrypt)
       self.optIndivKeyListTop = QRadioButtonBackupCtr(self,
          self.tr('Export Key Lists'), self.OPTIONS.Export)
+      self.optSeedPhraseTop = QRadioButtonBackupCtr(self,
+         self.tr('Seed Phrase'), self.OPTIONS.SeedPhrase)
 
       self.optPaperBackupTop.setFont(GETFONT('Var', bold=True))
       self.optDigitalBackupTop.setFont(GETFONT('Var', bold=True))
       self.optIndivKeyListTop.setFont(GETFONT('Var', bold=True))
+      self.optSeedPhraseTop.setFont(GETFONT('Var', bold=True))
 
       # I need to be able to unset the sub-options when they become disabled
       self.optPaperBackupNONE = QtWidgets.QRadioButton('')
@@ -774,6 +796,7 @@ class WalletBackupFrame(ArmoryFrame):
       btngrpTop.addButton(self.optPaperBackupTop)
       btngrpTop.addButton(self.optDigitalBackupTop)
       btngrpTop.addButton(self.optIndivKeyListTop)
+      btngrpTop.addButton(self.optSeedPhraseTop)
       btngrpTop.setExclusive(True)
 
       btngrpPaper = QtWidgets.QButtonGroup(self)
@@ -795,6 +818,7 @@ class WalletBackupFrame(ArmoryFrame):
       self.optDigitalBackupPlain.clicked.connect(self.optionClicked)
       self.optDigitalBackupCrypt.clicked.connect(self.optionClicked)
       self.optIndivKeyListTop.clicked.connect(self.optionClicked)
+      self.optSeedPhraseTop.clicked.connect(self.optionClicked)
 
       spacer = lambda: QtWidgets.QSpacerItem(20, 1,
          QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Expanding)
@@ -806,6 +830,7 @@ class WalletBackupFrame(ArmoryFrame):
       layoutOpts.addItem(spacer(), 4, 0)
       layoutOpts.addItem(spacer(), 5, 0)
       layoutOpts.addWidget(self.optIndivKeyListTop, 6, 0, 1, 2)
+      layoutOpts.addWidget(self.optSeedPhraseTop, 7, 0, 1, 2)
 
       layoutOpts.addWidget(self.optPaperBackupOne, 1, 1)
       layoutOpts.addWidget(self.optPaperBackupFrag, 2, 1)
@@ -919,6 +944,8 @@ class WalletBackupFrame(ArmoryFrame):
 
    #############################################################################
    def setWallet(self, wlt):
+      if wlt is None:
+         return
       self.wlt = wlt
       wltId = wlt.getDisplayStr()
       wltName = wlt.labelName
@@ -1032,6 +1059,24 @@ class WalletBackupFrame(ArmoryFrame):
             self.featuresImgs[self.FEATURES.Visual    ].setPixmap(_X_())
             self.featuresImgs[self.FEATURES.Physical  ].setPixmap(_X_())
             self.lblDescrSelected.setText(txtIndivKeys)
+         elif index == self.OPTIONS.SeedPhrase:
+            self.lblSelFeat.setText(self.tr('Seed Phrase Backup'), bold=True)
+            self.featuresImgs[self.FEATURES.ProtGen   ].setPixmap(chk())
+            self.featuresImgs[self.FEATURES.ProtImport].setPixmap(_X_())
+            self.featuresImgs[self.FEATURES.LostPass  ].setPixmap(chk())
+            self.featuresImgs[self.FEATURES.Durable   ].setPixmap(chk())
+            self.featuresImgs[self.FEATURES.Visual    ].setPixmap(chk())
+            self.featuresImgs[self.FEATURES.Physical  ].setPixmap(_X_())
+            txtSeedPhrase = self.tr(
+               'Export your wallet seed as a mnemonic phrase. '
+               '<br><br>'
+               '<b>BIP39 format</b> can be imported into other wallet software. '
+               '<b>Easy16 format</b> (Armory native) preserves account structure '
+               'but can only be restored in Armory. '
+               '<br><br>'
+               '<font color="red"><b>WARNING:</b></font> Anyone with access to '
+               'your seed phrase has full control of your bitcoins!')
+            self.lblDescrSelected.setText(txtSeedPhrase)
          else:
             LOGERROR('What index was sent to setDispFrame? %d', index)
 
@@ -1051,6 +1096,8 @@ class WalletBackupFrame(ArmoryFrame):
          return self.OPTIONS.DigPlain
       elif self.optIndivKeyListTop.isChecked():
          return self.OPTIONS.Export
+      elif self.optSeedPhraseTop.isChecked():
+         return self.OPTIONS.SeedPhrase
       else:
          return 0
 
@@ -1086,6 +1133,18 @@ class WalletBackupFrame(ArmoryFrame):
          self.optDigitalBackupNONE.setChecked(True)
          self.optPaperBackupNONE.setChecked(True)
          self.btnDoIt.setText(self.tr('Export Key Lists'))
+      elif self.optSeedPhraseTop.isChecked():
+         self.optPaperBackupOne.setEnabled(False)
+         self.optPaperBackupFrag.setEnabled(False)
+         self.optPaperBackupOne.setChecked(False)
+         self.optPaperBackupFrag.setChecked(False)
+         self.optDigitalBackupPlain.setEnabled(False)
+         self.optDigitalBackupCrypt.setEnabled(False)
+         self.optDigitalBackupPlain.setChecked(False)
+         self.optDigitalBackupCrypt.setChecked(False)
+         self.optDigitalBackupNONE.setChecked(True)
+         self.optPaperBackupNONE.setChecked(True)
+         self.btnDoIt.setText(self.tr('View Seed Phrase'))
       self.setDispFrame(-1)
 
    def setPassphrase(self, passphrase):
@@ -1133,6 +1192,16 @@ class WalletBackupFrame(ArmoryFrame):
                      return
          DlgShowKeyList(self.wlt, self.parent(), self.main).exec_()
          isBackupCreated = True
+      elif self.optSeedPhraseTop.isChecked():
+         if self.wlt is None:
+            QtWidgets.QMessageBox.warning(self, self.tr('No Wallet'),
+               self.tr('No wallet is available for backup.'),
+               QtWidgets.QMessageBox.Ok)
+            return
+         from qtdialogs.DlgBackupCenter import DlgShowSeedPhrase
+         dlg = DlgShowSeedPhrase(self.parent(), self.main, self.wlt)
+         if dlg.exec_():
+            isBackupCreated = True
       if isBackupCreated:
          self.isBackupCreated = True
 

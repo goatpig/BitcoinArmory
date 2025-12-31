@@ -482,7 +482,8 @@ class PyBtcWallet(object):
    ## create/export
    @staticmethod
    def createNewWallet(replyCallback: callable, callbackId: str,
-      shortLabel: str='', longLabel: str='', extraEntropy: bytes=None):
+      shortLabel: str='', longLabel: str='', extraEntropy: bytes=None,
+      walletType: str='legacy'):
 
       """
       This method will create a new wallet, using as much customizability
@@ -507,6 +508,8 @@ class PyBtcWallet(object):
       We skip the atomic file operations since we don't even have
       a wallet file yet to safely update.
 
+      walletType: 'legacy', 'structuredBip32', 'rawBip32', or 'virgin'
+
       DO NOT CALL THIS FROM BDM METHOD.  IT MAY DEADLOCK.
       """
       LOGINFO('***Creating new deterministic wallet')
@@ -515,7 +518,7 @@ class PyBtcWallet(object):
       TheBridge.utils.createWallet(
          addrPoolSize,
          shortLabel, longLabel, extraEntropy,
-         callbackId, replyCallback
+         callbackId, replyCallback, walletType
       )
 
    ####
@@ -846,6 +849,21 @@ class PyBtcWallet(object):
       for instance, the wallet was just imported but has been used before.
       """
       return self.lastComputedChainIndex
+
+   ####
+   def hasAnyImported(self):
+      """
+      Returns True if wallet has any imported addresses (chainIndex < 0).
+      For BIP32/BIP39 wallets, this returns False as imported addresses
+      are not supported in the same way as legacy wallets.
+      """
+      for a160 in self.linearAddr160List:
+         if str(a160) == str('ROOT'):
+            continue
+         addr = self.addrMap.get(a160)
+         if addr is not None and addr.chainIndex < 0:
+            return True
+      return False
 
    ####
    def getWalletVersion(self):

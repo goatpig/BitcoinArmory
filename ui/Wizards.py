@@ -281,12 +281,16 @@ class WalletWizard(ArmoryWizard):
 
       def finalizeInner(reply):
          if reply.success == False:
-            LOGDEBUG(f"create wallet failed with error: {reply.error}")
+            LOGERROR(f"create wallet failed with error: {reply.error}")
+            QtWidgets.QMessageBox.critical(self, self.tr('Wallet Creation Failed'),
+               self.tr('Failed to create wallet: %s') % str(reply.error),
+               QtWidgets.QMessageBox.Ok)
             self.reject()
          else:
             wltId = reply.utils.createWallet
             self.newWallet = PyBtcWallet().loadFromBridge(wltId)
             self.main.addWalletToApplication(self.newWallet, walletIsNew=True)
+            self.button(QtWidgets.QWizard.NextButton).setEnabled(True)
 
       def finalizeCb(reply):
          TheSignalExecution.executeMethod(finalizeInner, reply)
@@ -296,7 +300,8 @@ class WalletWizard(ArmoryWizard):
          replyCallback=finalizeCb, callbackId=handler.callbackId,
          shortLabel=self.walletCreationPage.pageFrame.getName(),
          longLabel=self.walletCreationPage.pageFrame.getDescription(),
-         extraEntropy=entropy)
+         extraEntropy=entropy,
+         walletType=self.walletCreationPage.pageFrame.getWalletType())
 
    def cleanupPage(self, *args, **kwargs):
       if self.hasCWOWPage and self.currentPage() == self.createWOWPage:

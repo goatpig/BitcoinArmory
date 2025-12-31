@@ -22,9 +22,7 @@ from ui.WalletFrames import WalletBackupFrame
 from ui.QrCodeMatrix import CreateQRMatrix
 from ui.QtExecuteSignal import TheSignalExecution
 
-from qtdialogs.qtdefines import makeHorizFrame, QRichLabel, \
-   makeVertFrame, QImageLabel, HLINE, GETFONT, STYLE_RAISED, tightSizeStr, \
-   setLayoutStretch, STRETCH, createToolTipWidget, MSGBOX
+import qtdialogs.qtdefines as qtdefines
 from qtdialogs.ArmoryDialog import ArmoryDialog
 from qtdialogs.DlgUnlockWallet import UnlockWalletHandler
 from qtdialogs.DlgRestore import getBackupTypeString, \
@@ -44,7 +42,7 @@ class DlgBackupCenter(ArmoryDialog):
       self.walletBackupFrame.setWallet(wlt)
       self.btnDone = QtWidgets.QPushButton(self.tr('Done'))
       self.btnDone.clicked.connect(self.reject)
-      frmBottomBtns = makeHorizFrame([STRETCH, self.btnDone])
+      frmBottomBtns = qtdefines.makeHorizFrame([qtdefines.STRETCH, self.btnDone])
 
       layoutDialog = QtWidgets.QVBoxLayout()
       layoutDialog.addWidget(self.walletBackupFrame)
@@ -60,10 +58,10 @@ class DlgSimpleBackup(ArmoryDialog):
       super(DlgSimpleBackup, self).__init__(parent, main)
       self.wlt = wlt
 
-      lblDescrTitle = QRichLabel(self.tr(
+      lblDescrTitle = qtdefines.QRichLabel(self.tr(
          '<b>Protect Your Bitcoins -- Make a Wallet Backup!</b>'))
 
-      lblDescr = QRichLabel(self.tr(
+      lblDescr = qtdefines.QRichLabel(self.tr(
          'A failed hard-drive or forgotten passphrase will lead to '
          '<u>permanent loss of bitcoins</u>!  Luckily, Armory wallets only '
          'need to be backed up <u>one time</u>, and protect you in both '
@@ -71,12 +69,12 @@ class DlgSimpleBackup(ArmoryDialog):
          'a hardware failure, make a backup!'))
 
       # ## Paper
-      lblPaper = QRichLabel(self.tr(
+      lblPaper = qtdefines.QRichLabel(self.tr(
          'Use a printer or pen-and-paper to write down your wallet "seed."'))
       btnPaper = QtWidgets.QPushButton(self.tr('Make Paper Backup'))
 
       # ## Digital
-      lblDigital = QRichLabel(self.tr(
+      lblDigital = qtdefines.QRichLabel(self.tr(
          'Create an unencrypted copy of your wallet file, including imported '
          'addresses.'))
       btnDigital = QtWidgets.QPushButton(self.tr('Make Digital Backup'))
@@ -97,33 +95,33 @@ class DlgSimpleBackup(ArmoryDialog):
          self.accept()
          DlgBackupCenter(self, self.main, self.wlt).exec_()
 
-      btnPaper.connect.clicked(backupPaper)
-      btnDigital.connect.clicked(backupDigital)
-      btnOther.connect.clicked(backupOther)
+      btnPaper.clicked.connect(backupPaper)
+      btnDigital.clicked.connect(backupDigital)
+      btnOther.clicked.connect(backupOther)
 
       layout = QtWidgets.QGridLayout()
       layout.addWidget(lblPaper, 0, 0)
       layout.addWidget(btnPaper, 0, 2)
-      layout.addWidget(HLINE(), 1, 0, 1, 3)
+      layout.addWidget(qtdefines.HLINE(), 1, 0, 1, 3)
       layout.addWidget(lblDigital, 2, 0)
       layout.addWidget(btnDigital, 2, 2)
-      layout.addWidget(HLINE(), 3, 0, 1, 3)
-      layout.addWidget(makeHorizFrame([STRETCH, btnOther, STRETCH]), 4, 0, 1, 3)
+      layout.addWidget(qtdefines.HLINE(), 3, 0, 1, 3)
+      layout.addWidget(qtdefines.makeHorizFrame([qtdefines.STRETCH, btnOther, qtdefines.STRETCH]), 4, 0, 1, 3)
       # layout.addWidget( VLINE(),      0,1, 5,1)
 
       layout.setContentsMargins(10, 5, 10, 5)
-      setLayoutStretchRows(layout, 1, 0, 1, 0, 0)
-      setLayoutStretchCols(layout, 1, 0, 0)
+      qtdefines.setLayoutStretchRows(layout, 1, 0, 1, 0, 0)
+      qtdefines.setLayoutStretchCols(layout, 1, 0, 0)
 
       frmGrid = QtWidgets.QFrame()
-      frmGrid.setFrameStyle(STYLE_PLAIN)
+      frmGrid.setFrameStyle(qtdefines.STYLE_PLAIN)
       frmGrid.setLayout(layout)
 
       btnClose = QtWidgets.QPushButton(self.tr('Done'))
-      btnClose.connect.clicked(self.accept)
-      frmClose = makeHorizFrame([STRETCH, btnClose])
+      btnClose.clicked.connect(self.accept)
+      frmClose = qtdefines.makeHorizFrame([qtdefines.STRETCH, btnClose])
 
-      frmAll = makeVertFrame([lblDescrTitle, lblDescr, frmGrid, frmClose])
+      frmAll = qtdefines.makeVertFrame([lblDescrTitle, lblDescr, frmGrid, frmClose])
       layoutAll = QtWidgets.QVBoxLayout()
       layoutAll.addWidget(frmAll)
       self.setLayout(layoutAll)
@@ -153,8 +151,8 @@ class SimplePrintableGraphicsScene(object):
       self.PAGE_BKGD_COLOR = Colors.White
       self.PAGE_TEXT_COLOR = Colors.Black
 
-      self.fontFix = GETFONT('Courier', 9)
-      self.fontVar = GETFONT('Times', 10)
+      self.fontFix = qtdefines.GETFONT('Courier', 9)
+      self.fontVar = qtdefines.GETFONT('Times', 10)
 
       self.gfxScene = QtWidgets.QGraphicsScene(self.parent)
       self.gfxScene.setSceneRect(0, 0, self.PAPER_A4_WIDTH, self.PAPER_A4_HEIGHT)
@@ -244,7 +242,7 @@ class SimplePrintableGraphicsScene(object):
 
    def drawText(self, txt, font=None, wrapWidth=None, useHtml=True):
       if font == None:
-         font = GETFONT('Var', 9)
+         font = qtdefines.GETFONT('Var', 9)
       txtItem = QtWidgets.QGraphicsTextItem('')
       if useHtml:
          txtItem.setHtml(toUnicode(txt))
@@ -429,7 +427,7 @@ class DlgPrintBackup(ArmoryDialog):
 
       tempTxtItem = QtWidgets.QGraphicsTextItem('')
       tempTxtItem.setPlainText(toUnicode('0123QAZjqlmYy'))
-      tempTxtItem.setFont(GETFONT('Fix', 7))
+      tempTxtItem.setFont(qtdefines.GETFONT('Fix', 7))
       self.importHgt = tempTxtItem.boundingRect().height() - 5
 
       # Create the scene and the view.
@@ -441,9 +439,9 @@ class DlgPrintBackup(ArmoryDialog):
       self.chkImportPrint = QtWidgets.QCheckBox(self.tr('Print imported keys'))
       self.chkImportPrint.clicked.connect(self.clickImportChk)
 
-      self.lblPageStr = QRichLabel(self.tr('Page:'))
+      self.lblPageStr = qtdefines.QRichLabel(self.tr('Page:'))
       self.comboPageNum = QtWidgets.QComboBox()
-      self.lblPageMaxStr = QRichLabel('')
+      self.lblPageMaxStr = qtdefines.QRichLabel('')
       self.comboPageNum.activated.connect(self.redrawBackup)
 
       # We enable printing of imported addresses but not frag'ing them.... way
@@ -462,7 +460,7 @@ class DlgPrintBackup(ArmoryDialog):
       if(self.doPrintFrag):
          self.chkSecurePrint.setChecked(self.fragData['Secure'])
 
-      self.ttipSecurePrint = createToolTipWidget(self.tr(
+      self.ttipSecurePrint = qtdefines.createToolTipWidget(self.tr(
          u'SecurePrint\u200b\u2122 encrypts your backup with a code displayed on '
          'the screen, so that no other devices on your network see the sensitive '
          'data when you send it to the printer.  If you turn on '
@@ -470,7 +468,7 @@ class DlgPrintBackup(ArmoryDialog):
          'it is done printing!</u>  There is no point in using this feature if '
          'you copy the data by hand.'))
 
-      self.lblSecurePrint = QRichLabel(self.tr(
+      self.lblSecurePrint = qtdefines.QRichLabel(self.tr(
          u'<b><font color="%s"><u>IMPORTANT:</u></b>  You must write the SecurePrint\u200b\u2122 '
          u'encryption code on each printed backup page!  Your SecurePrint\u200b\u2122 code is </font> '
          '<font color="%s">%s</font>.  <font color="%s">Your backup will not work '
@@ -479,14 +477,14 @@ class DlgPrintBackup(ArmoryDialog):
       self.chkSecurePrint.clicked.connect(self.redrawBackup)
 
       self.btnPrint = QtWidgets.QPushButton('&Print...')
-      self.btnPrint.setMinimumWidth(3 * tightSizeStr(self.btnPrint, 'Print...')[0])
+      self.btnPrint.setMinimumWidth(3 * qtdefines.tightSizeStr(self.btnPrint, 'Print...')[0])
       self.btnCancel = QtWidgets.QPushButton('&Cancel')
       self.btnPrint.clicked.connect(self.print_)
       self.btnCancel.clicked.connect(self.accept)
 
       if self.doPrintFrag:
          M, N = self.fragData['M'], self.fragData['N']
-         lblDescr = QRichLabel(self.tr(
+         lblDescr = qtdefines.QRichLabel(self.tr(
             '<b><u>Print Wallet Backup Fragments</u></b><br><br> '
             'When any %s of these fragments are combined, all <u>previous '
             '<b>and</b> future</u> addresses generated by this wallet will be '
@@ -497,7 +495,7 @@ class DlgPrintBackup(ArmoryDialog):
             'of <b>4 characters each</b> (excluding "ID" lines).' % M))
       else:
          withChain = '' if self.noNeedChaincode else 'and "Chaincode"'
-         lblDescr = QRichLabel(self.tr(
+         lblDescr = qtdefines.QRichLabel(self.tr(
             '<b><u>Print a Forever-Backup</u></b><br><br> '
             'Printing this sheet protects all <u>previous <b>and</b> future</u> addresses '
             'generated by this wallet!  You can copy the "Root Key" %s '
@@ -506,23 +504,23 @@ class DlgPrintBackup(ArmoryDialog):
             'of <b>4 characters each</b>.' % withChain))
 
       lblDescr.setContentsMargins(5, 5, 5, 5)
-      frmDescr = makeHorizFrame([lblDescr], STYLE_RAISED)
+      frmDescr = qtdefines.makeHorizFrame([lblDescr], qtdefines.STYLE_RAISED)
 
       self.redrawBackup()
-      frmChkImport = makeHorizFrame([
+      frmChkImport = qtdefines.makeHorizFrame([
          self.chkImportPrint,
-         STRETCH,
+         qtdefines.STRETCH,
          self.lblPageStr,
          self.comboPageNum,
          self.lblPageMaxStr
       ])
 
-      frmSecurePrint = makeHorizFrame([
+      frmSecurePrint = qtdefines.makeHorizFrame([
          self.chkSecurePrint,
          self.ttipSecurePrint,
-         STRETCH
+         qtdefines.STRETCH
       ])
-      frmButtons = makeHorizFrame([self.btnCancel, STRETCH, self.btnPrint])
+      frmButtons = qtdefines.makeHorizFrame([self.btnCancel, qtdefines.STRETCH, self.btnPrint])
 
       layout = QtWidgets.QVBoxLayout()
       layout.addWidget(frmDescr)
@@ -531,7 +529,7 @@ class DlgPrintBackup(ArmoryDialog):
       layout.addWidget(frmSecurePrint)
       layout.addWidget(self.lblSecurePrint)
       layout.addWidget(frmButtons)
-      setLayoutStretch(layout, 0, 1, 0, 0, 0)
+      qtdefines.setLayoutStretch(layout, 0, 1, 0, 0, 0)
 
       self.setLayout(layout)
       self.setWindowIcon(QtGui.QIcon('./img/printer_icon.png'))
@@ -692,7 +690,7 @@ class DlgPrintBackup(ArmoryDialog):
       self.scene.newLine()
 
       ## title ##
-      self.scene.drawText('Paper Backup for Armory Wallet', GETFONT('Var', 11))
+      self.scene.drawText('Paper Backup for Armory Wallet', qtdefines.GETFONT('Var', 11))
       self.scene.newLine()
 
       ## separator ##
@@ -764,7 +762,7 @@ class DlgPrintBackup(ArmoryDialog):
 
       wrap = 0.9 * self.scene.pageRect().width()
       self.scene.newLine()
-      self.scene.drawText(warnMsg, GETFONT('Var', 9), wrapWidth=wrap)
+      self.scene.drawText(warnMsg, qtdefines.GETFONT('Var', 9), wrapWidth=wrap)
 
       # separation
       self.scene.newLine(extra_dy=20)
@@ -802,7 +800,7 @@ class DlgPrintBackup(ArmoryDialog):
             'The following is fragment <font color="%s"><b>#%s</b></font> for this '
             'wallet.' % (htmlColor('TextBlue'), str(printData + 1)))
 
-      self.scene.drawText(descrMsg, GETFONT('var', 8), wrapWidth=wrap)
+      self.scene.drawText(descrMsg, qtdefines.GETFONT('var', 8), wrapWidth=wrap)
       self.scene.newLine(extra_dy=10)
 
       ## Draw the SecurePrint box if needed, frag pie, then return cursor ##
@@ -823,7 +821,7 @@ class DlgPrintBackup(ArmoryDialog):
             '<b><font color="#770000">CRITICAL:</font>  This backup will not '
             u'work without the SecurePrint\u200b\u2122 '
             'code displayed on the screen during printing. '
-            'Copy it here in ink:'), wrapWidth=spWid * 0.93, font=GETFONT('Var', 7))
+            'Copy it here in ink:'), wrapWidth=spWid * 0.93, font=qtdefines.GETFONT('Var', 7))
 
          self.scene.newLine(extra_dy=8)
          self.scene.moveCursor(4.07 * INCH, 0)
@@ -850,9 +848,9 @@ class DlgPrintBackup(ArmoryDialog):
             prprv = encodePrivKeyBase58(priv.toBinStr() + comprByte)
             toPrint = [prprv[i * 6:(i + 1) * 6] for i in range((len(prprv) + 5) / 6)]
             addrHint = '  (%s...)' % hash160_to_addrStr(a160)[:12]
-            self.scene.drawText(' '.join(toPrint), GETFONT('Fix', 7))
+            self.scene.drawText(' '.join(toPrint), qtdefines.GETFONT('Fix', 7))
             self.scene.moveCursor(0.02 * INCH, 0)
-            self.scene.drawText(addrHint, GETFONT('Var', 7))
+            self.scene.drawText(addrHint, qtdefines.GETFONT('Var', 7))
             self.scene.newLine(extra_dy=-3)
             prprv = None
          return
@@ -906,7 +904,7 @@ class DlgPrintBackup(ArmoryDialog):
       nudgeDown = 2  # because the differing font size makes it look unaligned
       self.scene.moveCursor(20, nudgeDown)
       self.scene.drawColumn(Lines,
-         font=GETFONT('Fixed', 8, bold=True),
+         font=qtdefines.GETFONT('Fixed', 8, bold=True),
          rowHeight=rowHgt,
          useHtml=False)
 
@@ -953,7 +951,7 @@ class DlgPrintBackup(ArmoryDialog):
                self.scene.newLine()
                self.scene.moveCursor(startX - MARGIN, 0)
                self.scene.drawText('<font color="%s">#%d</font>' %
-                  (htmlColor('TextBlue'), fragNum), GETFONT('Var', 10))
+                  (htmlColor('TextBlue'), fragNum), qtdefines.GETFONT('Var', 10))
                self.scene.moveCursor(returnX, returnY, absolute=True)
 
       vbar = self.view.verticalScrollBar()
@@ -966,16 +964,16 @@ class DlgFragBackup(ArmoryDialog):
       super(DlgFragBackup, self).__init__(parent, main)
       self.wlt = wlt
 
-      lblDescrTitle = QRichLabel(self.tr(
+      lblDescrTitle = qtdefines.QRichLabel(self.tr(
          '<b><u>Create M-of-N Fragmented Backup</u> of "%s" (%s)</b>' %
          (wlt.labelName, wlt.walletId)), doWrap=False)
       lblDescrTitle.setContentsMargins(5, 5, 5, 5)
 
-      self.lblAboveFrags = QRichLabel('')
+      self.lblAboveFrags = qtdefines.QRichLabel('')
       self.lblAboveFrags.setContentsMargins(10, 0, 10, 0)
 
-      frmDescr = makeVertFrame([lblDescrTitle, self.lblAboveFrags],
-         STYLE_RAISED)
+      frmDescr = qtdefines.makeVertFrame([lblDescrTitle, self.lblAboveFrags],
+         qtdefines.STYLE_RAISED)
 
       self.fragDisplayLastN = 0
       self.fragDisplayLastM = 0
@@ -1008,7 +1006,7 @@ class DlgFragBackup(ArmoryDialog):
 
       btnAccept = QtWidgets.QPushButton(self.tr('Close'))
       btnAccept.clicked.connect(self.accept)
-      frmBottomBtn = makeHorizFrame([STRETCH, btnAccept])
+      frmBottomBtn = qtdefines.makeHorizFrame([qtdefines.STRETCH, btnAccept])
 
       # We will hold all fragments here, in SBD objects.  Destroy all of them
       # before the dialog exits
@@ -1030,13 +1028,13 @@ class DlgFragBackup(ArmoryDialog):
       self.createFragDisplay()
       self.scrollArea.setWidgetResizable(True)
 
-      self.ttipSecurePrint = createToolTipWidget(self.tr(
+      self.ttipSecurePrint = qtdefines.createToolTipWidget(self.tr(
          u'SecurePrint\u200b\u2122 encrypts your backup with a code displayed on '
          'the screen, so that no other devices or processes has access to the '
          'unencrypted private keys (either network devices when printing, or '
          'other applications if you save a fragment to disk or USB device). '
          u'<u>You must keep the SecurePrint\u200b\u2122 code with the backup!</u>'))
-      self.lblSecurePrint = QRichLabel(self.tr(
+      self.lblSecurePrint = qtdefines.QRichLabel(self.tr(
          '<b><font color="%s"><u>IMPORTANT:</u>  You must keep the '
          u'SecurePrint\u200b\u2122 encryption code with your backup! '
          u'Your SecurePrint\u200b\u2122 code is </font> '
@@ -1047,7 +1045,7 @@ class DlgFragBackup(ArmoryDialog):
       self.chkSecurePrint.clicked.connect(self.clickChkSP)
       self.chkSecurePrint.setChecked(False)
       self.lblSecurePrint.setVisible(False)
-      frmChkSP = makeHorizFrame([self.chkSecurePrint, self.ttipSecurePrint, STRETCH])
+      frmChkSP = qtdefines.makeHorizFrame([self.chkSecurePrint, self.ttipSecurePrint, qtdefines.STRETCH])
 
       dlgLayout = QtWidgets.QVBoxLayout()
       dlgLayout.addWidget(frmDescr)
@@ -1055,7 +1053,7 @@ class DlgFragBackup(ArmoryDialog):
       dlgLayout.addWidget(frmChkSP)
       dlgLayout.addWidget(self.lblSecurePrint)
       dlgLayout.addWidget(frmBottomBtn)
-      setLayoutStretch(dlgLayout, 0, 1, 0, 0, 0)
+      qtdefines.setLayoutStretch(dlgLayout, 0, 1, 0, 0, 0)
 
       self.setLayout(dlgLayout)
       self.setMinimumWidth(650)
@@ -1096,22 +1094,22 @@ class DlgFragBackup(ArmoryDialog):
       self.fragDisplayLastN = N
       self.fragDisplayLastM = M
 
-      lblAboveM = QRichLabel(self.tr('<u><b>Required Fragments</b></u> '),
+      lblAboveM = qtdefines.QRichLabel(self.tr('<u><b>Required Fragments</b></u> '),
          hAlign=QtCore.Qt.AlignHCenter, doWrap=False)
-      lblAboveN = QRichLabel(self.tr('<u><b>Total Fragments</b></u> '),
+      lblAboveN = qtdefines.QRichLabel(self.tr('<u><b>Total Fragments</b></u> '),
          hAlign=QtCore.Qt.AlignHCenter)
-      frmComboM = makeHorizFrame([STRETCH, QtWidgets.QLabel('M:'), self.comboM, STRETCH])
-      frmComboN = makeHorizFrame([STRETCH, QtWidgets.QLabel('N:'), self.comboN, STRETCH])
+      frmComboM = qtdefines.makeHorizFrame([qtdefines.STRETCH, QtWidgets.QLabel('M:'), self.comboM, qtdefines.STRETCH])
+      frmComboN = qtdefines.makeHorizFrame([qtdefines.STRETCH, QtWidgets.QLabel('N:'), self.comboN, qtdefines.STRETCH])
 
       btnPrintAll = QtWidgets.QPushButton(self.tr('Print All Fragments'))
-      btnPrintAll.connect.clicked(self.clickPrintAll)
-      leftFrame = makeVertFrame([
-         STRETCH,
+      btnPrintAll.clicked.connect(self.clickPrintAll)
+      leftFrame = qtdefines.makeVertFrame([
+         qtdefines.STRETCH,
          lblAboveM, frmComboM,
          lblAboveN, frmComboN,
-         STRETCH, HLINE(),
+         qtdefines.STRETCH, qtdefines.HLINE(),
          btnPrintAll,
-         STRETCH], STYLE_STYLED)
+         qtdefines.STRETCH], qtdefines.STYLE_STYLED)
 
       layout = QtWidgets.QHBoxLayout()
       layout.addWidget(leftFrame)
@@ -1120,7 +1118,7 @@ class DlgFragBackup(ArmoryDialog):
          layout.addWidget(self.createFragFrm(f))
 
       frmScroll = QtWidgets.QFrame()
-      frmScroll.setFrameStyle(STYLE_SUNKEN)
+      frmScroll.setFrameStyle(qtdefines.STYLE_SUNKEN)
       frmScroll.setStyleSheet('QtWidgets.QFrame { background-color : %s  }' %
          htmlColor('SlightBkgdDark'))
       frmScroll.setLayout(layout)
@@ -1141,9 +1139,9 @@ class DlgFragBackup(ArmoryDialog):
       M = int(str(self.comboM.currentText()))
       N = int(str(self.comboN.currentText()))
 
-      lblFragID = QRichLabel(self.tr('<b>Fragment ID:<br>%s-%s</b>' % 
+      lblFragID = qtdefines.QRichLabel(self.tr('<b>Fragment ID:<br>%s-%s</b>' % 
          (str(self.fragPrefixStr), str(idx + 1))))
-      lblFragPix = QImageLabel(self.fragPixmapFn, size=(72, 72))
+      lblFragPix = qtdefines.QImageLabel(self.fragPixmapFn, size=(72, 72))
       if doMask:
          ys = self.secureMtrxCrypt[idx][1].toBinStr()[:42]
       else:
@@ -1158,16 +1156,16 @@ class DlgFragBackup(ArmoryDialog):
       fragPreview = 'ID: %s...<br>' % ID[:12]
       fragPreview += 'F1: %s...<br>' % easyYs1[:12]
       fragPreview += 'F2: %s...    ' % easyYs2[:12]
-      lblPreview = QRichLabel(fragPreview)
-      lblPreview.setFont(GETFONT('Fixed', 9))
+      lblPreview = qtdefines.QRichLabel(fragPreview)
+      lblPreview.setFont(qtdefines.GETFONT('Fixed', 9))
 
-      lblFragIdx = QRichLabel('#%d' % (idx + 1), size=4, color='TextBlue',
+      lblFragIdx = qtdefines.QRichLabel('#%d' % (idx + 1), size=4, color='TextBlue',
          hAlign=QtCore.Qt.AlignHCenter)
 
-      frmTopLeft = makeVertFrame([lblFragID, lblFragIdx, STRETCH])
-      frmTopRight = makeVertFrame([lblFragPix, STRETCH])
+      frmTopLeft = qtdefines.makeVertFrame([lblFragID, lblFragIdx, qtdefines.STRETCH])
+      frmTopRight = qtdefines.makeVertFrame([lblFragPix, qtdefines.STRETCH])
 
-      frmPaper = makeVertFrame([lblPreview])
+      frmPaper = qtdefines.makeVertFrame([lblPreview])
       frmPaper.setStyleSheet('QtWidgets.QFrame { background-color : #ffffff  }')
 
       fnPrint = lambda: self.clickPrintFrag(idx)
@@ -1177,7 +1175,7 @@ class DlgFragBackup(ArmoryDialog):
       btnSaveFrag = QtWidgets.QPushButton(self.tr('Save to File'))
       btnPrintFrag.clicked.connect(fnPrint)
       btnSaveFrag.clicked.connect(fnSave)
-      frmButtons = makeHorizFrame([btnPrintFrag, btnSaveFrag])
+      frmButtons = qtdefines.makeHorizFrame([btnPrintFrag, btnSaveFrag])
 
       layout = QtWidgets.QGridLayout()
       layout.addWidget(frmTopLeft, 0, 0, 1, 1)
@@ -1187,7 +1185,7 @@ class DlgFragBackup(ArmoryDialog):
       layout.setSizeConstraint(QtWidgets.QLayout.SetFixedSize)
 
       outFrame = QtWidgets.QFrame()
-      outFrame.setFrameStyle(STYLE_STYLED)
+      outFrame.setFrameStyle(qtdefines.STYLE_STYLED)
       outFrame.setLayout(layout)
       return outFrame
 
@@ -1392,7 +1390,7 @@ def OpenPaperBackupDialog(backupType, parent, main, wlt, passphrase: str=None):
          'same for all fragments.')
 
    if result:
-      doTest = MsgBoxCustom(MSGBOX.Warning, parent.tr('Verify Your Backup!'),
+      doTest = MsgBoxCustom(qtdefines.MSGBOX.Warning, parent.tr('Verify Your Backup!'),
          parent.tr(
             '<b><u>Verify your backup!</u></b> '
             '<br><br>'
@@ -1419,3 +1417,158 @@ def OpenPaperBackupDialog(backupType, parent, main, wlt, passphrase: str=None):
          elif backupType == 'Frag':
             DlgRestoreFragged(parent, main, True, wlt.walletId).exec_()
    return result
+
+################################################################################
+class DlgShowSeedPhrase(ArmoryDialog):
+   def __init__(self, parent, main, wlt):
+      super().__init__(parent, main)
+      self.wlt = wlt
+      self.backupData = None
+      self.seedDisplay = None
+
+      self.lblLoading = QtWidgets.QLabel(self.tr('Loading seed phrase...'))
+      self.lblLoading.setAlignment(QtCore.Qt.AlignCenter)
+      layout = QtWidgets.QVBoxLayout()
+      layout.addStretch()
+      layout.addWidget(self.lblLoading)
+      layout.addStretch()
+      self.setLayout(layout)
+      self.setWindowTitle(self.tr('Seed Phrase Backup'))
+      self.setMinimumWidth(500)
+      self.setMinimumHeight(300)
+
+      def resumeSetup(reply):
+         self.backupData = None
+         if reply.success:
+            self.backupData = reply.wallet.createBackupString
+         self.executeMethod(self.setup)
+
+      unlockHandler = UnlockWalletHandler(
+         self.wlt.walletId, "View Seed Phrase", self)
+      self.wlt.createBackupString(resumeSetup, unlockHandler=unlockHandler)
+
+   def setup(self):
+      # Qt C++ objects can be deleted while Python callbacks are pending.
+      # Calling methods on deleted objects raises RuntimeError.
+      try:
+         if not self.isVisible():
+            return
+      except RuntimeError:
+         return
+
+      if self.backupData is None:
+         LOGERROR("Failed to get backup data for seed phrase display")
+         QtWidgets.QMessageBox.critical(self, self.tr("Error"),
+            self.tr('Could not retrieve seed phrase. The wallet may be '
+            'locked or an error occurred.'), QtWidgets.QMessageBox.Ok)
+         self.reject()
+         return
+
+      self.lblLoading.setVisible(False)
+      oldLayout = self.layout()
+      if oldLayout is not None:
+         QtWidgets.QWidget().setLayout(oldLayout)
+
+      wltId = self.wlt.walletId
+      wltName = self.wlt.labelName
+
+      lblTitle = qtdefines.QRichLabel(self.tr(
+         '<b><u>Seed Phrase for "%s" (%s)</u></b>') % (wltName, wltId))
+      lblTitle.setAlignment(QtCore.Qt.AlignHCenter)
+
+      lblWarn = qtdefines.QRichLabel(self.tr(
+         '<font color="red"><b>WARNING:</b></font> Anyone who sees this seed '
+         'phrase can steal all your bitcoins! Keep it secret and secure.'))
+      lblWarn.setAlignment(QtCore.Qt.AlignHCenter)
+
+      backupType = getBackupTypeString(self.backupData.backupType)
+      isBIP39 = (self.backupData.backupType == 'bip39')
+
+      if isBIP39:
+         formatDesc = self.tr(
+            'Format: <b>BIP39 Mnemonic</b><br>'
+            '<font color="green">&#10003;</font> Universal - can be imported '
+            'into other wallet software')
+      else:
+         formatDesc = self.tr(
+            'Format: <b>Armory Easy16 (%s)</b><br>'
+            '<font color="orange">&#9888;</font> Armory-only - can only be '
+            'restored in Armory') % backupType
+      lblFormat = qtdefines.QRichLabel(formatDesc)
+
+      self.seedDisplay = qtdefines.SeedPhraseDisplayWidget()
+      seedText = self.getSeedText()
+      self.seedDisplay.setText(seedText)
+      self.seedDisplay.revealStateChanged.connect(self.onRevealStateChanged)
+
+      self.btnReveal = QtWidgets.QPushButton(self.tr('Reveal Seed Phrase'))
+      self.btnReveal.clicked.connect(self.seedDisplay.toggleReveal)
+
+      self.btnCopy = QtWidgets.QPushButton(self.tr('Copy to Clipboard'))
+      self.btnCopy.clicked.connect(self.copySeed)
+      self.btnCopy.setEnabled(False)
+
+      btnDone = QtWidgets.QPushButton(self.tr('Done'))
+      btnDone.clicked.connect(self.accept)
+
+      frmButtons = qtdefines.makeHorizFrame([
+         self.btnReveal, self.btnCopy, qtdefines.STRETCH, btnDone])
+
+      layout = QtWidgets.QVBoxLayout()
+      layout.addWidget(lblTitle)
+      layout.addWidget(qtdefines.HLINE())
+      layout.addWidget(lblWarn)
+      layout.addWidget(lblFormat)
+      layout.addWidget(self.seedDisplay)
+      layout.addWidget(frmButtons)
+
+      self.setLayout(layout)
+      self.setWindowTitle(self.tr('Seed Phrase Backup'))
+      self.setMinimumWidth(500)
+      self.setMinimumHeight(300)
+
+   def onRevealStateChanged(self, revealed):
+      if revealed:
+         self.btnReveal.setText(self.tr('Hide Seed Phrase'))
+         self.btnCopy.setEnabled(True)
+      else:
+         self.btnReveal.setText(self.tr('Reveal Seed Phrase'))
+         self.btnCopy.setEnabled(False)
+
+   def getSeedText(self):
+      if self.backupData.backupType == 'bip39':
+         return self.backupData.rootClear[0] if self.backupData.rootClear else ''
+      rootLines = self.backupData.rootClear
+      chainLines = self.backupData.chainClear
+      lines = []
+      if rootLines:
+         lines.append('Root Key:')
+         for line in rootLines:
+            lines.append('  ' + line)
+      if chainLines:
+         lines.append('Chaincode:')
+         for line in chainLines:
+            lines.append('  ' + line)
+      return '\n'.join(lines)
+
+   def copySeed(self):
+      seedText = self.seedDisplay.getText()
+      clipboard = QtWidgets.QApplication.clipboard()
+      clipboard.setText(seedText)
+      QtWidgets.QMessageBox.information(self, self.tr('Copied'),
+         self.tr('Seed phrase copied to clipboard. '
+         '<b>Clear your clipboard after use!</b>'),
+         QtWidgets.QMessageBox.Ok)
+
+   def cleanup(self):
+      self.backupData = None
+      if self.seedDisplay is not None:
+         self.seedDisplay.clear()
+
+   def accept(self):
+      self.cleanup()
+      super().accept()
+
+   def reject(self):
+      self.cleanup()
+      super().reject()

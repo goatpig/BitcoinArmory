@@ -818,3 +818,192 @@ class AdvancedOptionsFrame(ArmoryFrame):
       except:
          pass
       return kdfBytes
+
+
+################################################################################
+class SeedPhraseDisplayWidget(QtWidgets.QFrame):
+   """
+   A widget for displaying seed phrases with blur/reveal functionality.
+   Used for both BIP39 mnemonic and Armory Easy16 format display.
+   """
+   revealStateChanged = QtCore.Signal(bool)
+
+   def __init__(self, parent=None):
+      super().__init__(parent)
+      self.setFrameStyle(STYLE_RAISED)
+      self.isRevealed = False
+      self.seedText = ''
+
+      self.lblContent = QtWidgets.QLabel()
+      self.lblContent.setFont(GETFONT('Fix', 11))
+      self.lblContent.setWordWrap(True)
+      self.lblContent.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+      self.lblContent.setMinimumHeight(100)
+      self.lblContent.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+
+      self.blurEffect = QtWidgets.QGraphicsBlurEffect()
+      self.blurEffect.setBlurRadius(8)
+      self.lblContent.setGraphicsEffect(self.blurEffect)
+
+      layout = QtWidgets.QVBoxLayout()
+      layout.addWidget(self.lblContent)
+      self.setLayout(layout)
+
+   def setText(self, text):
+      self.seedText = text
+      self.lblContent.setText(text)
+
+   def getText(self):
+      return self.seedText
+
+   def reveal(self):
+      if not self.isRevealed:
+         self.blurEffect.setBlurRadius(0)
+         self.isRevealed = True
+         self.revealStateChanged.emit(True)
+
+   def hide_(self):
+      if self.isRevealed:
+         self.blurEffect.setBlurRadius(8)
+         self.isRevealed = False
+         self.revealStateChanged.emit(False)
+
+   def toggleReveal(self):
+      if self.isRevealed:
+         self.hide_()
+      else:
+         self.reveal()
+
+   def clear(self):
+      self.seedText = ''
+      self.lblContent.setText('')
+      self.hide_()
+
+
+################################################################################
+class SeedPhraseInputWidget(QtWidgets.QFrame):
+   """
+   A widget for entering seed phrases (BIP39 mnemonic or Easy16).
+   Provides real-time word count feedback.
+   """
+   textChanged = QtCore.Signal()
+
+   def __init__(self, parent=None):
+      super().__init__(parent)
+      self.setFrameStyle(STYLE_RAISED)
+
+      self.lblInstr = QtWidgets.QLabel()
+      self.lblInstr.setText(
+         'Enter your 12 or 24 word seed phrase, separated by spaces:')
+
+      self.editSeed = QtWidgets.QTextEdit()
+      self.editSeed.setPlaceholderText(
+         'word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 '
+         'word11 word12 ...')
+      self.editSeed.setFixedHeight(80)
+      self.editSeed.setFont(GETFONT('Fix', 10))
+      self.editSeed.textChanged.connect(self.onTextChanged)
+
+      self.lblWordCount = QtWidgets.QLabel()
+      self.lblWordCount.setStyleSheet('color: gray;')
+      self.updateWordCount()
+
+      layout = QtWidgets.QVBoxLayout()
+      layout.addWidget(self.lblInstr)
+      layout.addWidget(self.editSeed)
+      layout.addWidget(self.lblWordCount)
+      self.setLayout(layout)
+
+   def onTextChanged(self):
+      self.updateWordCount()
+      self.textChanged.emit()
+
+   def updateWordCount(self):
+      words = self.getWords()
+      count = len(words)
+      if count == 0:
+         self.lblWordCount.setText('0 words')
+         self.lblWordCount.setStyleSheet('color: gray;')
+      elif count in [12, 24]:
+         self.lblWordCount.setText('%d words ✓' % count)
+         self.lblWordCount.setStyleSheet('color: green;')
+      else:
+         self.lblWordCount.setText('%d words (need 12 or 24)' % count)
+         self.lblWordCount.setStyleSheet('color: orange;')
+
+   def getText(self):
+      return str(self.editSeed.toPlainText()).strip()
+
+   def getWords(self):
+      text = self.getText()
+      if not text:
+         return []
+      return text.split()
+
+   def getWordCount(self):
+      return len(self.getWords())
+
+   def isValidWordCount(self):
+      return self.getWordCount() in [12, 24]
+
+   def clear(self):
+      self.editSeed.clear()
+
+   def setInstructionText(self, text):
+      self.lblInstr.setText(text)
+
+
+################################################################################
+class AccountSelectionWidget(QtWidgets.QFrame):
+   """
+   A widget for selecting BIP account types (BIP44/BIP49/BIP84).
+   Used during BIP39 seed restore to choose which account types to create.
+   """
+
+   def __init__(self, parent=None):
+      super().__init__(parent)
+
+      self.lblTitle = QtWidgets.QLabel('<b>Account Types to Create:</b>')
+
+      self.chkBIP44 = QtWidgets.QCheckBox(
+         'BIP44 - Legacy (addresses start with 1)')
+      self.chkBIP49 = QtWidgets.QCheckBox(
+         'BIP49 - Nested SegWit (addresses start with 3)')
+      self.chkBIP84 = QtWidgets.QCheckBox(
+         'BIP84 - Native SegWit (addresses start with bc1q)')
+      self.chkBIP84.setChecked(True)
+
+      layout = QtWidgets.QVBoxLayout()
+      layout.addWidget(self.lblTitle)
+
+      layoutChk = QtWidgets.QHBoxLayout()
+      layoutChk.addWidget(self.chkBIP44)
+      layoutChk.addWidget(self.chkBIP49)
+      layoutChk.addWidget(self.chkBIP84)
+      layoutChk.addStretch()
+      layout.addLayout(layoutChk)
+      self.setLayout(layout)
+
+   def isBIP44Selected(self):
+      return self.chkBIP44.isChecked()
+
+   def isBIP49Selected(self):
+      return self.chkBIP49.isChecked()
+
+   def isBIP84Selected(self):
+      return self.chkBIP84.isChecked()
+
+   def isAnySelected(self):
+      return self.chkBIP44.isChecked() or \
+         self.chkBIP49.isChecked() or \
+         self.chkBIP84.isChecked()
+
+   def getSelectedTypes(self):
+      types = []
+      if self.chkBIP44.isChecked():
+         types.append('BIP44')
+      if self.chkBIP49.isChecked():
+         types.append('BIP49')
+      if self.chkBIP84.isChecked():
+         types.append('BIP84')
+      return types

@@ -554,7 +554,7 @@ class BlockchainUtils(ProtoWrapper):
    #############################################################################
    def createWallet(self, addrPoolSize: int,
       shortLabel: str, longLabel: str, extraEntropy: bytes,
-      callbackId: str, successCb: callable):
+      callbackId: str, successCb: callable, walletType: str='legacy'):
       packet = Bridge.ToBridge.new_message()
 
       method = packet.init("utils").init("createWallet")
@@ -564,6 +564,19 @@ class BlockchainUtils(ProtoWrapper):
       method.description = longLabel
       if extraEntropy is not None:
          method.extraEntropy = extraEntropy
+
+      # Map string to capnp enum value
+      walletTypeEnum = Bridge.UtilsRequest.WalletType
+      if walletType == 'structuredBip32':
+         method.walletType = walletTypeEnum.structuredBip32
+      elif walletType == 'rawBip32':
+         method.walletType = walletTypeEnum.rawBip32
+      elif walletType == 'virgin':
+         method.walletType = walletTypeEnum.virgin
+      else:
+         method.walletType = walletTypeEnum.legacy
+
+      LOGINFO(f"Creating wallet with type: {walletType} -> {method.walletType}")
       self.send(packet, callback=successCb)
 
    #############################################################################
@@ -721,12 +734,14 @@ class BridgeWalletWrapper(ProtoWrapper):
       callbackFunc, passphrase, serverPushObj):
       packet = self._getPacket()
       req = packet.wallet.init("createBackupString")
-      if passphrase:
-         req.passphrase = passphrase
-      elif serverPushObj:
-         req.callbackId = serverPushObj.callbackId
+      if serverPushObj:
+         req.private = serverPushObj.callbackId
+      elif passphrase is None:
+         req.public = None
       else:
-         raise Exception("[createBackupStringForWallet] invalid args")
+         raise Exception(
+            "[createBackupStringForWallet] direct passphrase not supported, "
+            "use unlockHandler instead")
       self.send(packet, callback=callbackFunc)
 
    ####

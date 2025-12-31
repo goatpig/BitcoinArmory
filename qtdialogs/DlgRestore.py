@@ -24,9 +24,7 @@ from qtdialogs.ArmoryDialog import ArmoryDialog
 from qtdialogs.DlgChangePassphrase import DlgChangePassphrase
 from qtdialogs import DlgReplaceWallet as ReplaceWallet
 from qtdialogs.MsgBoxCustom import MsgBoxCustom
-from qtdialogs.qtdefines import HLINE, QRichLabel, STRETCH, STYLE_RAISED, \
-   makeHorizFrame, makeVertFrame, MSGBOX, GETFONT, tightSizeStr, \
-   AdvancedOptionsFrame
+import qtdialogs.qtdefines as qtdefines
 
 ################################################################################
 def getBackupTypeString(capnBType):
@@ -56,9 +54,9 @@ class MaskedInputLineEdit(QtWidgets.QLineEdit):
    def __init__(self, inputMask):
       super(MaskedInputLineEdit, self).__init__()
       self.setInputMask(inputMask)
-      fixFont = GETFONT('Fix', 9)
+      fixFont = qtdefines.GETFONT('Fix', 9)
       self.setFont(fixFont)
-      self.setMinimumWidth(tightSizeStr(fixFont, inputMask)[0] + 10)
+      self.setMinimumWidth(qtdefines.tightSizeStr(fixFont, inputMask)[0] + 10)
       self.cursorPositionChanged.connect(self.controlCursor)
 
    def controlCursor(self, oldpos, newpos):
@@ -74,14 +72,15 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
       self.newWltID = None
       self.thisIsATest = thisIsATest
       self.testWltID = expectWltID
+      self.isSeedPhrase = False
       if thisIsATest:
-         lblDescr = QRichLabel(self.tr(
+         lblDescr = qtdefines.QRichLabel(self.tr(
             '<b><u><font color="blue" size="4">Test a Paper Backup</font></u></b> '
             '<br><br>'
             'Use this window to test a single-sheet paper backup.  If your '
             'backup includes imported keys, those will not be covered by this test.'))
       else:
-         lblDescr = QRichLabel(self.tr(
+         lblDescr = qtdefines.QRichLabel(self.tr(
             '<b><u>Restore a Wallet from Paper Backup</u></b> '
             '<br><br>'
             'Use this window to restore a single-sheet paper backup. '
@@ -90,7 +89,7 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
             'double-click the restored wallet and select "Import Private '
             'Keys" from the right-hand menu.'))
 
-      lblType = QRichLabel(self.tr('<b>Backup Type:</b>'), doWrap=False)
+      lblType = qtdefines.QRichLabel(self.tr('<b>Backup Type:</b>'), doWrap=False)
       self.version135Button = QtWidgets.QRadioButton(
          self.tr('Version 1.35 (4 lines)'), self)
       self.version135aButton = QtWidgets.QRadioButton(
@@ -101,12 +100,15 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
          self.tr('Version 1.35c (2 lines Unencrypted)'), self)
       self.version135cSPButton = QtWidgets.QRadioButton(
          self.tr(u'Version 1.35c (2 lines + SecurePrint\u200b\u2122)'), self)
+      self.seedPhraseButton = QtWidgets.QRadioButton(
+         self.tr('Seed Phrase (BIP39 / 12-24 words)'), self)
       self.backupTypeButtonGroup = QtWidgets.QButtonGroup(self)
       self.backupTypeButtonGroup.addButton(self.version135Button)
       self.backupTypeButtonGroup.addButton(self.version135aButton)
       self.backupTypeButtonGroup.addButton(self.version135aSPButton)
       self.backupTypeButtonGroup.addButton(self.version135cButton)
       self.backupTypeButtonGroup.addButton(self.version135cSPButton)
+      self.backupTypeButtonGroup.addButton(self.seedPhraseButton)
       self.version135cButton.setChecked(True)
       self.backupTypeButtonGroup.buttonClicked.connect(self.changeType)
 
@@ -116,14 +118,15 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
       layoutRadio.addWidget(self.version135aSPButton)
       layoutRadio.addWidget(self.version135cButton)
       layoutRadio.addWidget(self.version135cSPButton)
+      layoutRadio.addWidget(self.seedPhraseButton)
       layoutRadio.setSpacing(0)
 
       radioButtonFrame = QtWidgets.QFrame()
       radioButtonFrame.setLayout(layoutRadio)
 
-      frmBackupType = makeVertFrame([lblType, radioButtonFrame])
+      frmBackupType = qtdefines.makeVertFrame([lblType, radioButtonFrame])
 
-      self.lblSP = QRichLabel(self.tr(u'SecurePrint\u200b\u2122 Code:'), doWrap=False)
+      self.lblSP = qtdefines.QRichLabel(self.tr(u'SecurePrint\u200b\u2122 Code:'), doWrap=False)
       self.editSecurePrint = QtWidgets.QLineEdit()
       self.prfxList = [
          QtWidgets.QLabel(self.tr('Root Key:')),
@@ -134,16 +137,27 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
 
       inpMask = '<AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA!'
       self.edtList = [MaskedInputLineEdit(inpMask) for i in range(4)]
-      self.frmSP = makeHorizFrame([STRETCH, self.lblSP, self.editSecurePrint])
+      self.frmSP = qtdefines.makeHorizFrame([qtdefines.STRETCH, self.lblSP, self.editSecurePrint])
 
-      frmAllInputs = QtWidgets.QFrame()
-      frmAllInputs.setFrameStyle(STYLE_RAISED)
+      self.frmEasy16Inputs = QtWidgets.QFrame()
+      self.frmEasy16Inputs.setFrameStyle(qtdefines.STYLE_RAISED)
       layoutAllInp = QtWidgets.QGridLayout()
       layoutAllInp.addWidget(self.frmSP, 0, 0, 1, 2)
       for i in range(4):
          layoutAllInp.addWidget(self.prfxList[i], i + 1, 0)
          layoutAllInp.addWidget(self.edtList[i], i + 1, 1)
-      frmAllInputs.setLayout(layoutAllInp)
+      self.frmEasy16Inputs.setLayout(layoutAllInp)
+
+      self.seedPhraseInput = qtdefines.SeedPhraseInputWidget()
+      self.accountSelection = qtdefines.AccountSelectionWidget()
+
+      self.frmSeedPhraseInputs = QtWidgets.QFrame()
+      self.frmSeedPhraseInputs.setFrameStyle(qtdefines.STYLE_RAISED)
+      layoutSeedPhrase = QtWidgets.QVBoxLayout()
+      layoutSeedPhrase.addWidget(self.seedPhraseInput)
+      layoutSeedPhrase.addWidget(self.accountSelection)
+      self.frmSeedPhraseInputs.setLayout(layoutSeedPhrase)
+      self.frmSeedPhraseInputs.setVisible(False)
 
       doItText = self.tr('Test Backup') if thisIsATest else self.tr('Restore Wallet')
       self.btnAccept = QtWidgets.QPushButton(doItText)
@@ -156,17 +170,18 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
 
       self.chkEncrypt = QtWidgets.QCheckBox(self.tr('Encrypt Wallet'))
       self.chkEncrypt.setChecked(True)
-      bottomFrm = makeHorizFrame([self.chkEncrypt, buttonBox])
+      bottomFrm = qtdefines.makeHorizFrame([self.chkEncrypt, buttonBox])
 
       walletRestoreTabs = QtWidgets.QTabWidget()
-      backupTypeFrame = makeVertFrame([frmBackupType, frmAllInputs])
+      backupTypeFrame = qtdefines.makeVertFrame([
+         frmBackupType, self.frmEasy16Inputs, self.frmSeedPhraseInputs])
       walletRestoreTabs.addTab(backupTypeFrame, self.tr("Backup"))
-      self.advancedOptionsTab = AdvancedOptionsFrame(parent, main)
+      self.advancedOptionsTab = qtdefines.AdvancedOptionsFrame(parent, main)
       walletRestoreTabs.addTab(self.advancedOptionsTab, self.tr("Advanced Options"))
 
       layout = QtWidgets.QVBoxLayout()
       layout.addWidget(lblDescr)
-      layout.addWidget(HLINE())
+      layout.addWidget(qtdefines.HLINE())
       layout.addWidget(walletRestoreTabs)
       layout.addWidget(bottomFrm)
       self.setLayout(layout)
@@ -191,6 +206,17 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
 
    #############################################################################
    def changeType(self, sel):
+      self.isSeedPhrase = (sel == self.seedPhraseButton)
+      if self.isSeedPhrase:
+         self.frmEasy16Inputs.setVisible(False)
+         self.frmSeedPhraseInputs.setVisible(True)
+         self.doMask = False
+         self.isLongForm = False
+         return
+
+      self.frmEasy16Inputs.setVisible(True)
+      self.frmSeedPhraseInputs.setVisible(False)
+
       if   sel == self.version135Button:
          visList = [0, 1, 1, 1, 1]
       elif sel == self.version135aButton:
@@ -390,6 +416,10 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
 
    #############################################################################
    def verifyUserInput(self):
+      if self.isSeedPhrase:
+         self.verifySeedPhraseInput()
+         return
+
       #reset flagged inputs if any
       self.resetEditLines()
 
@@ -459,6 +489,27 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
             QtWidgets.QMessageBox.Ok)
       '''
 
+   #############################################################################
+   def verifySeedPhraseInput(self):
+      if not self.seedPhraseInput.isValidWordCount():
+         wordCount = self.seedPhraseInput.getWordCount()
+         QtWidgets.QMessageBox.critical(self, self.tr('Invalid Seed Phrase'),
+            self.tr('Seed phrase must be exactly 12 or 24 words. '
+            'You entered %d words.') % wordCount, QtWidgets.QMessageBox.Ok)
+         return
+
+      if not self.accountSelection.isAnySelected():
+         QtWidgets.QMessageBox.critical(self, self.tr('No Account Selected'),
+            self.tr('Please select at least one account type to create.'),
+            QtWidgets.QMessageBox.Ok)
+         return
+
+      QtWidgets.QMessageBox.information(self, self.tr('Not Yet Supported'),
+         self.tr('BIP39 seed phrase restore is not yet supported. '
+         'This feature requires additional backend implementation. '
+         'Please use the Easy16 paper backup format for now.'),
+         QtWidgets.QMessageBox.Ok)
+
 ################################################################################
 class DlgRestoreFragged(ArmoryDialog):
    def __init__(self, parent, main, thisIsATest=False, expectWltID=None):
@@ -487,9 +538,9 @@ class DlgRestoreFragged(ArmoryDialog):
              'and Armory will test all subsets of the entered fragments to verify '
              'that each one still recovers the wallet successfully.</b>')
 
-      lblDescr = QRichLabel(descr)
+      lblDescr = qtdefines.QRichLabel(descr)
 
-      frmDescr = makeHorizFrame([lblDescr], STYLE_RAISED)
+      frmDescr = qtdefines.makeHorizFrame([lblDescr], qtdefines.STYLE_RAISED)
 
         # HLINE
 
@@ -497,7 +548,7 @@ class DlgRestoreFragged(ArmoryDialog):
       self.scrollFragInput.setWidgetResizable(True)
       self.scrollFragInput.setMinimumHeight(150)
 
-      lblFragList = QRichLabel(self.tr('Input Fragments Below:'), doWrap=False, bold=True)
+      lblFragList = qtdefines.QRichLabel(self.tr('Input Fragments Below:'), doWrap=False, bold=True)
       self.btnAddFrag = QtWidgets.QPushButton(self.tr('+Frag'))
       self.btnRmFrag = QtWidgets.QPushButton(self.tr('-Frag'))
       self.btnRmFrag.setVisible(False)
@@ -505,7 +556,7 @@ class DlgRestoreFragged(ArmoryDialog):
       self.btnRmFrag.clicked.connect(self.removeFragment)
       self.chkEncrypt = QtWidgets.QCheckBox(self.tr('Encrypt Restored Wallet'))
       self.chkEncrypt.setChecked(True)
-      frmAddRm = makeHorizFrame([self.chkEncrypt, STRETCH, self.btnRmFrag, self.btnAddFrag])
+      frmAddRm = qtdefines.makeHorizFrame([self.chkEncrypt, qtdefines.STRETCH, self.btnRmFrag, self.btnAddFrag])
 
       self.fragDataMap = {}
       self.tableSize = 2
@@ -518,38 +569,38 @@ class DlgRestoreFragged(ArmoryDialog):
       self.btnRestore = QtWidgets.QPushButton(doItText)
       btnExit.clicked.connect(self.reject)
       self.btnRestore.clicked.connect(self.processFrags)
-      frmBtns = makeHorizFrame([btnExit, STRETCH, self.btnRestore])
+      frmBtns = qtdefines.makeHorizFrame([btnExit, qtdefines.STRETCH, self.btnRestore])
 
-      self.lblRightFrm = QRichLabel('', hAlign=QtCore.Qt.AlignHCenter)
-      self.lblSecureStr = QRichLabel(self.trUtf8(u'SecurePrint\u200b\u2122 Code:'), \
+      self.lblRightFrm = qtdefines.QRichLabel('', hAlign=QtCore.Qt.AlignHCenter)
+      self.lblSecureStr = qtdefines.QRichLabel(self.trUtf8(u'SecurePrint\u200b\u2122 Code:'), \
                                      hAlign=QtCore.Qt.AlignHCenter,
                                      doWrap=False,
                                      color='TextWarn')
       self.displaySecureString = QtWidgets.QLineEdit()
-      self.imgPie = QRichLabel('', hAlign=QtCore.Qt.AlignHCenter)
+      self.imgPie = qtdefines.QRichLabel('', hAlign=QtCore.Qt.AlignHCenter)
       self.imgPie.setMinimumWidth(96)
       self.imgPie.setMinimumHeight(96)
-      self.lblReqd = QRichLabel('', hAlign=QtCore.Qt.AlignHCenter)
-      self.lblWltID = QRichLabel('', doWrap=False, hAlign=QtCore.Qt.AlignHCenter)
-      self.lblFragID = QRichLabel('', doWrap=False, hAlign=QtCore.Qt.AlignHCenter)
+      self.lblReqd = qtdefines.QRichLabel('', hAlign=QtCore.Qt.AlignHCenter)
+      self.lblWltID = qtdefines.QRichLabel('', doWrap=False, hAlign=QtCore.Qt.AlignHCenter)
+      self.lblFragID = qtdefines.QRichLabel('', doWrap=False, hAlign=QtCore.Qt.AlignHCenter)
       self.lblSecureStr.setVisible(False)
       self.displaySecureString.setVisible(False)
       self.displaySecureString.setMaximumWidth(relaxedSizeNChar(self.displaySecureString, 16)[0])
         # The Secure String is now edited in DlgEnterOneFrag, It is only displayed here
       self.displaySecureString.setEnabled(False)
-      frmSecPair = makeVertFrame([self.lblSecureStr, self.displaySecureString])
-      frmSecCtr = makeHorizFrame([STRETCH, frmSecPair, STRETCH])
+      frmSecPair = qtdefines.makeVertFrame([self.lblSecureStr, self.displaySecureString])
+      frmSecCtr = qtdefines.makeHorizFrame([qtdefines.STRETCH, frmSecPair, qtdefines.STRETCH])
 
-      frmWltInfo = makeVertFrame([STRETCH,
+      frmWltInfo = qtdefines.makeVertFrame([qtdefines.STRETCH,
                                    self.lblRightFrm,
                                    self.imgPie,
                                    self.lblReqd,
                                    self.lblWltID,
                                    self.lblFragID,
-                                   HLINE(),
+                                   qtdefines.HLINE(),
                                    frmSecCtr,
                                    'Strut(200)',
-                                   STRETCH], STYLE_SUNKEN)
+                                   qtdefines.STRETCH], qtdefines.STYLE_SUNKEN)
 
 
       fragmentsLayout = QtWidgets.QGridLayout()
@@ -563,7 +614,7 @@ class DlgRestoreFragged(ArmoryDialog):
       fragmentsFrame = QtWidgets.QFrame()
       fragmentsFrame.setLayout(fragmentsLayout)
       walletRestoreTabs.addTab(fragmentsFrame, self.tr("Fragments"))
-      self.advancedOptionsTab = AdvancedOptionsFrame(parent, main)
+      self.advancedOptionsTab = qtdefines.AdvancedOptionsFrame(parent, main)
       walletRestoreTabs.addTab(self.advancedOptionsTab, self.tr("Advanced Options"))
 
       self.chkEncrypt.setChecked(not thisIsATest)
@@ -595,12 +646,12 @@ class DlgRestoreFragged(ArmoryDialog):
       newLayout = QtWidgets.QGridLayout()
       newFrame = QtWidgets.QFrame()
       self.fragsDone = []
-      newLayout.addWidget(HLINE(), 0, 0, 1, 5)
+      newLayout.addWidget(qtdefines.HLINE(), 0, 0, 1, 5)
       for i in range(self.tableSize):
          btnEnter = QtWidgets.QPushButton(self.tr('Type Data'))
          btnLoad = QtWidgets.QPushButton(self.tr('Load File'))
          btnClear = QtWidgets.QPushButton(self.tr('Clear'))
-         lblFragID = QRichLabel('', doWrap=False)
+         lblFragID = qtdefines.QRichLabel('', doWrap=False)
          lblSecure = QtWidgets.QLabel('')
          if i in self.fragDataMap:
             M, fnum, wltID, doMask, fid = ReadFragIDLineBin(self.fragDataMap[i][0])
@@ -620,12 +671,12 @@ class DlgRestoreFragged(ArmoryDialog):
          newLayout.addWidget(btnClear, 2 * i + 1, 2)
          newLayout.addWidget(lblFragID, 2 * i + 1, 3)
          newLayout.addWidget(lblSecure, 2 * i + 1, 4)
-         newLayout.addWidget(HLINE(), 2 * i + 2, 0, 1, 5)
+         newLayout.addWidget(qtdefines.HLINE(), 2 * i + 2, 0, 1, 5)
 
       btnFrame = QtWidgets.QFrame()
       btnFrame.setLayout(newLayout)
 
-      frmFinal = makeVertFrame([btnFrame, STRETCH], STYLE_SUNKEN)
+      frmFinal = qtdefines.makeVertFrame([btnFrame, qtdefines.STRETCH], qtdefines.STYLE_SUNKEN)
       self.scrollFragInput.setWidget(frmFinal)
 
       self.btnAddFrag.setVisible(self.tableSize < 12)
@@ -1032,7 +1083,7 @@ class DlgEnterOneFrag(ArmoryDialog):
          replStr = '[' + ','.join(strList[:]) + ']'
          already = self.tr('You have entered fragments %s, so far.' % replStr)
 
-      lblDescr = QRichLabel(self.tr(
+      lblDescr = qtdefines.QRichLabel(self.tr(
          '<b><u>Enter Another Fragment...</u></b> <br><br> %s '
          'The fragments can be entered in any order, as long as you provide '
          'enough of them to restore the wallet.  If any fragments use a '
@@ -1082,7 +1133,7 @@ class DlgEnterOneFrag(ArmoryDialog):
          else:
             self.version135cButton.setChecked(True)
 
-      lblType = QRichLabel(self.tr('<b>Backup Type:</b>'), doWrap=False)
+      lblType = qtdefines.QRichLabel(self.tr('<b>Backup Type:</b>'), doWrap=False)
 
       layoutRadio = QtWidgets.QVBoxLayout()
       layoutRadio.addWidget(self.version0Button)
@@ -1095,7 +1146,7 @@ class DlgEnterOneFrag(ArmoryDialog):
       radioButtonFrame = QtWidgets.QFrame()
       radioButtonFrame.setLayout(layoutRadio)
 
-      frmBackupType = makeVertFrame([lblType, radioButtonFrame])
+      frmBackupType = qtdefines.makeVertFrame([lblType, radioButtonFrame])
 
       self.prfxList = ['x1:', 'x2:', 'x3:', 'x4:', \
                        'y1:', 'y2:', 'y3:', 'y4:', \
@@ -1105,21 +1156,21 @@ class DlgEnterOneFrag(ArmoryDialog):
       self.edtList = [MaskedInputLineEdit(inpMask) for i in range(12)]
 
       inpMaskID = '<HHHH\ HHHH\ HHHH\ HHHH!'
-      self.lblID = QRichLabel('ID:')
+      self.lblID = qtdefines.QRichLabel('ID:')
       self.edtID = MaskedInputLineEdit(inpMaskID)
 
       frmAllInputs = QtWidgets.QFrame()
-      frmAllInputs.setFrameStyle(STYLE_RAISED)
+      frmAllInputs.setFrameStyle(qtdefines.STYLE_RAISED)
       layoutAllInp = QtWidgets.QGridLayout()
 
       # Add Secure Print row - Use supplied securePrintCode and
       # disable text entry if it is not None
-      self.lblSP = QRichLabel(self.tr(u'SecurePrint\u200b\u2122 Code:'), doWrap=False)
+      self.lblSP = qtdefines.QRichLabel(self.tr(u'SecurePrint\u200b\u2122 Code:'), doWrap=False)
       self.editSecurePrint = QtWidgets.QLineEdit()
       self.editSecurePrint.setEnabled(not securePrintCode)
       if (securePrintCode):
          self.editSecurePrint.setText(securePrintCode)
-      self.frmSP = makeHorizFrame([STRETCH, self.lblSP, self.editSecurePrint])
+      self.frmSP = qtdefines.makeHorizFrame([qtdefines.STRETCH, self.lblSP, self.editSecurePrint])
       layoutAllInp.addWidget(self.frmSP, 0, 0, 1, 2)
 
       layoutAllInp.addWidget(self.lblID, 1, 0, 1, 1)
@@ -1139,7 +1190,7 @@ class DlgEnterOneFrag(ArmoryDialog):
 
       layout = QtWidgets.QVBoxLayout()
       layout.addWidget(lblDescr)
-      layout.addWidget(HLINE())
+      layout.addWidget(qtdefines.HLINE())
       layout.addWidget(frmBackupType)
       layout.addWidget(frmAllInputs)
       layout.addWidget(buttonBox)
@@ -1268,14 +1319,14 @@ class DlgRestoreWOData(ArmoryDialog):
 
       # Write the text at the top of the window.
       if thisIsATest:
-         lblDescr = QRichLabel(self.tr(
+         lblDescr = qtdefines.QRichLabel(self.tr(
             '<b><u><font color="blue" size="4">Test a Watch-Only Wallet Restore '
             '</font></u></b><br><br>'
             'Use this window to test the restoration of a watch-only wallet using '
             'the wallet\'s data. You can either type the data on a root data '
             'printout or import the data from a file.'))
       else:
-         lblDescr = QRichLabel(self.tr(
+         lblDescr = qtdefines.QRichLabel(self.tr(
             '<b><u><font color="blue" size="4">Restore a Watch-Only Wallet '
             '</font></u></b><br><br>'
             'Use this window to restore a watch-only wallet using the wallet\'s '
@@ -1283,25 +1334,25 @@ class DlgRestoreWOData(ArmoryDialog):
             'the data from a file.'))
 
       # Create the line that will contain the imported ID.
-      self.rootIDLabel = QRichLabel(self.tr('Watch-Only Root ID:'), doWrap=False)
+      self.rootIDLabel = qtdefines.QRichLabel(self.tr('Watch-Only Root ID:'), doWrap=False)
       inpMask = '<AAAA\ AAAA\ AAAA\ AAAA\ AA!'
       self.rootIDLine = MaskedInputLineEdit(inpMask)
-      self.rootIDLine.setFont(GETFONT('Fixed', 9))
-      self.rootIDFrame = makeHorizFrame([STRETCH, self.rootIDLabel, self.rootIDLine])
+      self.rootIDLine.setFont(qtdefines.GETFONT('Fixed', 9))
+      self.rootIDFrame = qtdefines.makeHorizFrame([qtdefines.STRETCH, self.rootIDLabel, self.rootIDLine])
 
       # Create the lines that will contain the imported key/code data.
       self.pkccLList = [QtWidgets.QLabel(self.tr('Data:')),
          QtWidgets.QLabel(''), QtWidgets.QLabel(''), QtWidgets.QLabel('')]
       for y in self.pkccLList:
-         y.setFont(GETFONT('Fixed', 9))
+         y.setFont(qtdefines.GETFONT('Fixed', 9))
       inpMask = '<AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA!'
       self.pkccList = [MaskedInputLineEdit(inpMask) for i in range(4)]
       for x in self.pkccList:
-         x.setFont(GETFONT('Fixed', 9))
+         x.setFont(qtdefines.GETFONT('Fixed', 9))
 
       # Build the frame that will contain both the ID and the key/code data.
       frmAllInputs = QtWidgets.QFrame()
-      frmAllInputs.setFrameStyle(STYLE_RAISED)
+      frmAllInputs.setFrameStyle(qtdefines.STYLE_RAISED)
       layoutAllInp = QtWidgets.QGridLayout()
       layoutAllInp.addWidget(self.rootIDFrame, 0, 0, 1, 2)
       for i in range(4):
@@ -1325,10 +1376,10 @@ class DlgRestoreWOData(ArmoryDialog):
       # Set the final window layout.
       finalLayout = QtWidgets.QVBoxLayout()
       finalLayout.addWidget(lblDescr)
-      finalLayout.addWidget(makeHorizFrame(['Stretch',self.btnLoad]))
-      finalLayout.addWidget(HLINE())
+      finalLayout.addWidget(qtdefines.makeHorizFrame(['Stretch',self.btnLoad]))
+      finalLayout.addWidget(qtdefines.HLINE())
       finalLayout.addWidget(frmAllInputs)
-      finalLayout.addWidget(makeHorizFrame([self.btnCancel, 'Stretch', self.btnAccept]))
+      finalLayout.addWidget(qtdefines.makeHorizFrame([self.btnCancel, 'Stretch', self.btnAccept]))
       finalLayout.setStretch(0, 0)
       finalLayout.setStretch(1, 0)
       finalLayout.setStretch(2, 0)
@@ -1500,14 +1551,14 @@ class DlgEnterSecurePrintCode(ArmoryDialog):
    def __init__(self, parent, main):
       super(DlgEnterSecurePrintCode, self).__init__(parent, main)
 
-      lblSecurePrintCodeDescr = QRichLabel(self.tr(
+      lblSecurePrintCodeDescr = qtdefines.QRichLabel(self.tr(
          u'This fragment file requires a SecurePrint\u200b\u2122 code. '
          'You will only have to enter this code once since it is the same '
          'on all fragments.'))
       lblSecurePrintCodeDescr.setMinimumWidth(440)
-      self.lblSP = QRichLabel(self.tr(u'SecurePrint\u200b\u2122 Code: '), doWrap=False)
+      self.lblSP = qtdefines.QRichLabel(self.tr(u'SecurePrint\u200b\u2122 Code: '), doWrap=False)
       self.editSecurePrint = QtWidgets.QLineEdit()
-      spFrame = makeHorizFrame([self.lblSP, self.editSecurePrint, STRETCH])
+      spFrame = qtdefines.makeHorizFrame([self.lblSP, self.editSecurePrint, qtdefines.STRETCH])
 
       self.btnAccept = QtWidgets.QPushButton(self.tr("Done"))
       self.btnCancel = QtWidgets.QPushButton(self.tr("Cancel"))
@@ -1555,7 +1606,7 @@ def verifyRecoveryTestID(parent, computedWltID, expectedWltID=None):
             'Wallet ID of the data you entered: %s <br>' % computedWltID), \
             QtWidgets.QMessageBox.Ok)
       elif yesno == QtWidgets.QMessageBox.Yes:
-         MsgBoxCustom(MSGBOX.Good, parent.tr('Backup is Good!'), parent.tr(
+         MsgBoxCustom(qtdefines.MSGBOX.Good, parent.tr('Backup is Good!'), parent.tr(
             '<b>Your backup works!</b> '
             '<br><br>'
             'The wallet ID is computed from a combination of the root '
@@ -1578,7 +1629,7 @@ def verifyRecoveryTestID(parent, computedWltID, expectedWltID=None):
             'one you just made?' % (computedWltID, expectedWltID)), \
             QtWidgets.QMessageBox.Ok)
       else:
-         MsgBoxCustom(MSGBOX.Good, parent.tr('Backup is Good!'), parent.tr(
+         MsgBoxCustom(qtdefines.MSGBOX.Good, parent.tr('Backup is Good!'), parent.tr(
             'Your backup works! '
             '<br><br> '
             'The wallet ID computed from the data you entered matches '
