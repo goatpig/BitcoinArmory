@@ -60,7 +60,7 @@ from armoryengine.BDM import TheBDM, \
 from armoryengine.PyBtcWallet import PyBtcWallet
 from armoryengine.Transaction import PyTx
 from armoryengine.WalletUtils import WalletTypes, WalletFilter, \
-   determineWalletType
+   determineWalletType, loadWalletsForMainApp
 
 from qtdialogs.qtdefines import GETFONT, NETWORKMODE, \
    QRichLabel_AutoToolTip, tightSizeNChar, USERMODE, initialColResize, \
@@ -5061,14 +5061,6 @@ if 1:
    # 2) Start bridge with ready handler - sequential process per maintainer
    dlg = DlgSetupManager(parent=None, main=None)
 
-   def spawnMainWindow(wallets):
-      armoryMainWindow = ArmoryMainWindow(wallets)
-      TheSignalExecution.executeMethod(armoryMainWindow.finalizeLoadWallets)
-      armoryMainWindow.show()
-      return armoryMainWindow
-
-   dlg.mainWindowSpawner = spawnMainWindow
-
    def bridgeReadyHandler():
       # Bridge is ready - explicitly call wallet listing and close splash
       TheSignalExecution.executeMethod(dlg.onBridgeReady)
@@ -5082,5 +5074,12 @@ if 1:
    if dlg.exec_() != QtWidgets.QDialog.Accepted:
       TheBridge.service.shutdown()
       sys.exit(1)
+
+   # Spawn main window after setup accepted
+   wallets = loadWalletsForMainApp()
+   armoryMainWindow = ArmoryMainWindow(wallets)
+   TheSignalExecution.executeMethod(armoryMainWindow.finalizeLoadWallets)
+   armoryMainWindow.show()
+
    QAPP.setQuitOnLastWindowClosed(True)
    os._exit(QAPP.exec_())

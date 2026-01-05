@@ -9,11 +9,12 @@
 import os
 
 from qtpy import QtCore, QtWidgets
-from armoryengine.ArmoryUtils import ARMORY_DB_DIR, ARMORY_HOME_DIR, LOGINFO, LOGERROR
+from armoryengine.ArmoryUtils import ARMORY_DB_DIR, ARMORY_HOME_DIR, LOGINFO, \
+   LOGERROR, CLI_OPTIONS
 from armoryengine.Settings import TheSettings
 from armoryengine.BDM import TheBDM
 from armoryengine.CppBridge import TheBridge
-from armoryengine.WalletUtils import WalletList, loadWalletsForMainApp
+from armoryengine.WalletUtils import WalletList
 from ui.QtExecuteSignal import TheSignalExecution
 
 from qtdialogs.ArmoryDialog import ArmoryDialog
@@ -32,7 +33,7 @@ SCENARIO_CORE_MANUAL = 1    # "Run Manually"
 # Database scenario constants
 SCENARIO_DB_LOCAL = 0   # "Local Database"
 SCENARIO_DB_REMOTE = 1  # "Remote Database"
-SCENARIO_DB_NONE = 2    # "No Database"
+SCENARIO_DB_NONE = 2    # "Offline"
 
 ################################################################################
 class DlgSetupManager(ArmoryDialog):
@@ -54,7 +55,7 @@ class DlgSetupManager(ArmoryDialog):
       self.databaseTab = None
       self.acceptButton = None
       self.cancelButton = None
-      self.mainWindowSpawner = None
+      self.bottomFrame = None
       self.walletListData = WalletList()
       self.satoshiHomePath = None
       self.satoshiBrowseButton = None
@@ -76,6 +77,7 @@ class DlgSetupManager(ArmoryDialog):
       self.remoteUserEdit = None
       self.testConnectionButton = None
       self.walletIdToCheckbox = {}
+      self.noWalletsLabel = None
       self.coreDirectoryFrame = None
       self.coreSettingsFrame = None
       self.dbBootstrapLabel = None
@@ -105,6 +107,11 @@ class DlgSetupManager(ArmoryDialog):
       self.tabWidget.addTab(self.walletTab, self.tr('Wallet Settings'))
       self.tabWidget.addTab(self.coreTab, self.tr('Core Settings'))
       self.tabWidget.addTab(self.databaseTab, self.tr('Database Settings'))
+      if CLI_OPTIONS.offline:
+         self.tabWidget.setTabEnabled(1, False)
+         self.tabWidget.setTabEnabled(2, False)
+         self.tabWidget.setTabText(1, self.tr('Core Settings (Offline)'))
+         self.tabWidget.setTabText(2, self.tr('Database Settings (Offline)'))
 
    def setupMainLayout(self):
       """Set up the main layout with tabs and buttons."""
@@ -112,14 +119,14 @@ class DlgSetupManager(ArmoryDialog):
       mainLayout.setSpacing(8)
       mainLayout.setContentsMargins(0, 0, 0, 0)
       mainLayout.addWidget(self.tabWidget)
-      bottomFrame = self.createBottomButtonFrame()
-      mainLayout.addWidget(bottomFrame)
+      self.createBottomButtonFrame()
+      mainLayout.addWidget(self.bottomFrame)
       self.setLayout(mainLayout)
 
    def createBottomButtonFrame(self):
       """Create the bottom frame containing Accept/Cancel buttons."""
-      bottomFrame = QtWidgets.QFrame()
-      bottomLayout = QtWidgets.QHBoxLayout(bottomFrame)
+      self.bottomFrame = QtWidgets.QFrame()
+      bottomLayout = QtWidgets.QHBoxLayout(self.bottomFrame)
       bottomLayout.setContentsMargins(14, 6, 14, 8)
       bottomLayout.setSpacing(8)
       buttonBox = QtWidgets.QDialogButtonBox()
@@ -131,7 +138,6 @@ class DlgSetupManager(ArmoryDialog):
       self.cancelButton.setFixedWidth(100)
       bottomLayout.addStretch(1)
       bottomLayout.addWidget(buttonBox)
-      return bottomFrame
 
    def connectSignals(self):
       """Connect all signals to their handlers."""
@@ -171,9 +177,6 @@ class DlgSetupManager(ArmoryDialog):
          )
          return
       super().accept()
-      if self.mainWindowSpawner and callable(self.mainWindowSpawner):
-         wallets = loadWalletsForMainApp()
-         self.mainWindowSpawner(wallets)
 
    ###########################################################################
    def initCoreTab(self):
@@ -368,12 +371,9 @@ class DlgSetupManager(ArmoryDialog):
       walletFrameLayout.setContentsMargins(12, 12, 12, 12)
       walletFrameLayout.setSpacing(8)
 
-      walletGrid = QtWidgets.QGridLayout()
-      walletGrid.setSpacing(8)
-      walletGrid.addWidget(self.walletList, 0, 0)
-      walletGrid.setRowStretch(0, 0)
+      walletFrameLayout.addWidget(self.walletList)
+      walletFrameLayout.addWidget(self.noWalletsLabel)
 
-      walletFrameLayout.addLayout(walletGrid)
       mainLayout.addWidget(walletFrame)
 
       mainLayout.addStretch()
@@ -398,6 +398,13 @@ class DlgSetupManager(ArmoryDialog):
       header.setDefaultAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
       self.walletList.setMinimumHeight(100)
       self.walletList.setMaximumHeight(200)
+      self.noWalletsLabel = qtdefines.QRichLabel(
+         self.tr('N/A'), doWrap=False,
+         hAlign=QtCore.Qt.AlignHCenter, vAlign=QtCore.Qt.AlignVCenter)
+      self.noWalletsLabel.setText(self.tr('N/A'), size=4, bold=True,
+         color='DisableFG')
+      self.noWalletsLabel.setMinimumHeight(100)
+      self.noWalletsLabel.hide()
 
    def registerWidgetActivateTime(self, widget):
       """Stub for entropy collection - no-op during setup since no main window exists yet."""
@@ -408,13 +415,10 @@ class DlgSetupManager(ArmoryDialog):
       wallets = self.walletListData.getFilteredList()
       self.walletList.clear()
       self.walletIdToCheckbox.clear()
-      if not wallets:
-         qtdefines.addPlaceholderRow(self.walletList, [
-            self.tr(''),
-            self.tr('No wallets found.'),
-            self.tr(''),
-            self.tr('')
-         ])
+      hasWallets = bool(wallets)
+      self.walletList.setVisible(hasWallets)
+      self.noWalletsLabel.setVisible(not hasWallets)
+      if not hasWallets:
          return
 
       for walletEntry in wallets:
@@ -453,7 +457,7 @@ class DlgSetupManager(ArmoryDialog):
          elif walletEntry.isEncrypted:
             self._addActionButton(
                item, self.tr('Unlock'),
-               lambda _, wid=walletEntry.walletId: self.unlockWallet(wid))
+               lambda _, entry=walletEntry: self.unlockWallet(entry))
 
    def _addActionButton(self, item, text, handler):
       """Create and add a left-aligned action button to the wallet list item."""
@@ -496,55 +500,43 @@ class DlgSetupManager(ArmoryDialog):
             dlg.deleteLater()
             dlg = None
 
-   def unlockWallet(self, walletId):
+   def unlockWallet(self, walletEntry):
       """Unlock wallet using proper unlock control header pattern."""
-      for i in range(self.walletList.topLevelItemCount()):
-         item = self.walletList.topLevelItem(i)
-         walletEntry = item.data(qtdefines.WLTLISTCOLS.Checkbox, QtCore.Qt.UserRole)
-         if walletEntry and walletEntry.walletId == walletId:
+      walletId = walletEntry.walletId
+      try:
+         unlockDlg = UnlockWalletHandler(walletId, self.tr('Unlock Wallet'), self)
+
+         def handleUnlockResult(replyObj):
+            """Handle unlock control header reply."""
             try:
-               unlockDlg = UnlockWalletHandler(
-                  walletId, self.tr('Unlock Wallet'), self)
-
-               def handleUnlockResult(replyObj):
-                  """Handle unlock control header reply."""
-                  try:
-                     if replyObj.success:
-                        LOGINFO(f"Wallet {walletId} unlocked successfully")
-                        unlockDlg.accept()
-                        self.loadWalletList()
-                     else:
-                        error_msg = (replyObj.error if replyObj.error 
-                           else "Unknown error")
-                        LOGINFO(
-                           f"Failed to unlock wallet {walletId}: {error_msg}")
-                        unlockDlg.reject()
-                        QtWidgets.QMessageBox.warning(
-                           self,
-                           self.tr('Unlock Failed'),
-                           self.tr('Failed to unlock wallet: {}').format(
-                              error_msg))
-                  except Exception as e:
-                     LOGINFO(f"Unlock callback error: {e}")
-                     unlockDlg.reject()
-
-               TheBridge.wltManager.unlockControlHeader(
-                  walletEntry.filename,
-                  unlockDlg.callbackId,
-                  lambda x: TheSignalExecution.executeMethod(
-                     lambda: handleUnlockResult(x)))
-               unlockDlg.exec_()
-
+               if replyObj.success:
+                  LOGINFO(f"Wallet {walletId} unlocked successfully")
+                  unlockDlg.accept()
+                  self.loadWalletList()
+               else:
+                  error_msg = replyObj.error if replyObj.error else "Unknown error"
+                  LOGINFO(f"Failed to unlock wallet {walletId}: {error_msg}")
+                  unlockDlg.reject()
+                  QtWidgets.QMessageBox.warning(
+                     self,
+                     self.tr('Unlock Failed'),
+                     self.tr('Failed to unlock wallet: {}').format(error_msg))
             except Exception as e:
-               LOGINFO(f"Failed to unlock wallet {walletId}: {e}")
-               QtWidgets.QMessageBox.warning(
-                  self,
-                  self.tr('Unlock Failed'),
-                  self.tr('Failed to unlock wallet: {}').format(str(e))
-               )
-            return
+               LOGINFO(f"Unlock callback error: {e}")
+               unlockDlg.reject()
 
-      LOGINFO(f"Could not find wallet for walletId: {walletId}")
+         TheBridge.wltManager.unlockControlHeader(
+            walletEntry.filename,
+            unlockDlg.callbackId,
+            lambda x: TheSignalExecution.executeMethod(handleUnlockResult, x))
+         unlockDlg.exec_()
+
+      except Exception as e:
+         LOGINFO(f"Failed to unlock wallet {walletId}: {e}")
+         QtWidgets.QMessageBox.warning(
+            self,
+            self.tr('Unlock Failed'),
+            self.tr('Failed to unlock wallet: {}').format(str(e)))
 
    ###########################################################################
    def initDatabaseTab(self):
@@ -686,7 +678,7 @@ class DlgSetupManager(ArmoryDialog):
       self.databaseScenarioCombo = QtWidgets.QComboBox()
       self.databaseScenarioCombo.setFixedWidth(200)
       self.databaseScenarioCombo.addItems([
-         "Local Database", "Remote Database", "No Database"])
+         "Local Database", "Remote Database", "Offline"])
       self.localDatabaseFrame = QtWidgets.QGroupBox(
          self.tr('Local Database Configuration'))
       self.databaseTypeCombo = QtWidgets.QComboBox()
@@ -796,7 +788,7 @@ class DlgSetupManager(ArmoryDialog):
          dbDir = TheSettings.getSettingOrSetDefault('DBType', 'DB_FULL')
          if dbDir and os.path.exists(ARMORY_DB_DIR):
             dbFiles = os.listdir(ARMORY_DB_DIR)
-            dbIsBootstrapped = len([f for f in dbFiles 
+            dbIsBootstrapped = len([f for f in dbFiles
                if f.endswith('.db') or f.endswith('.ldb')]) > 0
       except Exception:
          pass
@@ -839,38 +831,21 @@ class DlgSetupManager(ArmoryDialog):
       dbPath = paths['db']
 
       if not os.path.exists(corePath):
-         reply = QtWidgets.QMessageBox.question(
+         reply = QtWidgets.QMessageBox.warning(
             self,
-            self.tr('Create Directory?'),
+            self.tr('Invalid Directory'),
             self.tr('Bitcoin Core data directory does not exist. '
-               'Would you like to create it?'),
-            (QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No |
-             QtWidgets.QMessageBox.Cancel)
-         )
-
-         if reply == QtWidgets.QMessageBox.Yes:
-            try:
-               os.makedirs(corePath)
-            except Exception as e:
-               QtWidgets.QMessageBox.critical(
-                  self,
-                  self.tr('Error'),
-                  self.tr('Could not create Bitcoin Core data directory: '
-                     '{}').format(str(e))
-               )
-               return False
-         elif reply == QtWidgets.QMessageBox.No:
+               'Please select a valid directory.'),
+            QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel)
+         if reply == QtWidgets.QMessageBox.Ok:
             newDir = QtWidgets.QFileDialog.getExistingDirectory(
                self,
                self.tr('Select Bitcoin Core Data Directory'),
-               os.path.expanduser('~')
-            )
+               os.path.expanduser('~'))
             if newDir:
                self.satoshiHomePath.setText(newDir)
                return self.validateSettings()
-            return False
-         else:
-            return False
+         return False
 
       if not os.path.exists(armoryPath):
          try:

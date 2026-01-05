@@ -659,7 +659,7 @@ class WalletManagerWrapper(ProtoWrapper):
       return reply.success
 
    ####
-   def unlockControlHeader(self, 
+   def unlockControlHeader(self,
       walletPath: str, callbackId: str, callbackFunc: callable):
       """Unlock wallet using proper unlock control header pattern."""
       packet = Bridge.ToBridge.new_message()

@@ -30,11 +30,11 @@ from armoryengine.CppBridge import TheBridge
 from armoryengine.AddressUtils import Hash160ToScrAddr, addrStr_to_hash160, \
    scrAddr_to_addrStr
 from armoryengine.Settings import TheSettings
-from armoryengine.WalletUtils import WalletTypes, determineWalletType, \
-   getWalletTypeStr
+from armoryengine.WalletUtils import WalletTypes, determineWalletType
 
 from armorycolors import Colors
-from qtdialogs.qtdefines import GETFONT, CHANGE_ADDR_DESCR_STRING
+from qtdialogs.qtdefines import GETFONT, CHANGE_ADDR_DESCR_STRING, \
+   getWalletTypeStr
 
 from qtdialogs.ArmoryDialog import ArmoryDialog
 
@@ -84,7 +84,7 @@ class AllWalletsDispModel(QtCore.QAbstractTableModel):
             return str(wlt.labelName.ljust(32))
          elif col==COL.Secure:
             wtype = determineWalletType(wlt)
-            return str(getWalletTypeStr(wtype, self))
+            return str(getWalletTypeStr(wtype))
          elif col==COL.Bal:
             if not bdmState==BDM_BLOCKCHAIN_READY:
                return str('(...)')

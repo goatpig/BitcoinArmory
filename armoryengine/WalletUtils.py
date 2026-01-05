@@ -39,22 +39,6 @@ def determineWalletType(wlt):
       return WalletTypes.Plain
 
 ################################################################################
-def getWalletTypeStr(wtype, context):
-   """Return human-readable string for wallet type enum.
-
-   Used for GUI display. Caller must pass Qt context for translation."""
-   if wtype == WalletTypes.Offline:
-      return context.tr('Offline')
-   elif wtype == WalletTypes.WatchOnly:
-      return context.tr('Watching-Only')
-   elif wtype == WalletTypes.Crypt:
-      return context.tr('Encrypted')
-   elif wtype == WalletTypes.Plain:
-      return context.tr('No Encryption')
-   else:
-      raise ValueError(f"Unknown wallet type: {wtype}")
-
-################################################################################
 ## This class tracks and manages the wallets loaded by the application
 class WalletMap(object):
    def __init__(self):

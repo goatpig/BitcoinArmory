@@ -17,8 +17,7 @@ from armoryengine.AddressUtils import addrStr_to_hash160
 from armoryengine.BDM import TheBDM, BDM_UNINITIALIZED, BDM_OFFLINE, \
    BDM_SCANNING
 from armoryengine.Settings import TheSettings
-from armoryengine.WalletUtils import WalletTypes, determineWalletType, \
-   getWalletTypeStr
+from armoryengine.WalletUtils import WalletTypes, determineWalletType
 from armorycolors import htmlColor
 from ui.TreeViewGUI import AddressTreeModel
 from ui.QtExecuteSignal import TheSignalExecution
@@ -27,7 +26,7 @@ from qtdialogs.qtdefines import USERMODE, \
    relaxedSizeNChar, relaxedSizeStr, QLabelButton, STYLE_SUNKEN, STYLE_NONE, \
    QRichLabel, makeHorizFrame, restoreTableView, \
    WLTFIELDS, tightSizeStr, saveTableView, tightSizeNChar, \
-   UnicodeErrorBox, STRETCH, createToolTipWidget, MSGBOX
+   UnicodeErrorBox, STRETCH, createToolTipWidget, MSGBOX, getWalletTypeStr
 
 from qtdialogs.ArmoryDialog import ArmoryDialog
 from qtdialogs.MsgBoxWithDNAA import MsgBoxWithDNAA
@@ -55,7 +54,7 @@ class DlgWalletDetails(ArmoryDialog):
       self.wlt = wlt
       self.usermode = usermode
       self.wlttype = determineWalletType(wlt)
-      self.typestr = getWalletTypeStr(self.wlttype, self)
+      self.typestr = getWalletTypeStr(self.wlttype)
       if self.wlttype == WalletTypes.Crypt:
          self.typestr = self.tr('Encrypted (AES256)')
 

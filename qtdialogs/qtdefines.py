@@ -24,6 +24,7 @@ from armoryengine.ArmoryUtils import enum, ARMORY_HOME_DIR, OS_MACOSX, \
    USE_TESTNET, USE_REGTEST, OS_WINDOWS, coin2str, int_to_hex, toBytes, \
    hex_to_binary, LOGERROR, toUnicode
 from armoryengine.BinaryUnpacker import BinaryUnpacker, UINT8, UINT16
+from armoryengine.WalletUtils import WalletTypes
 
 from armorycolors import Colors, htmlColor
 from ui.QrCodeMatrix import CreateQRMatrix
@@ -61,6 +62,20 @@ def AddToRunningDialogsList(func):
       runningDialogsList.remove(args[0])
       return result
    return wrapper
+
+################################################################################
+def getWalletTypeStr(wtype):
+   """Return human-readable string for wallet type enum."""
+   tr = lambda s: QtWidgets.QApplication.translate('WalletTypes', s)
+   if wtype == WalletTypes.Offline:
+      return tr('Offline')
+   elif wtype == WalletTypes.WatchOnly:
+      return tr('Watching-Only')
+   elif wtype == WalletTypes.Crypt:
+      return tr('Encrypted')
+   elif wtype == WalletTypes.Plain:
+      return tr('No Encryption')
+   raise ValueError(f"Unknown wallet type: {wtype}")
 
 ################################################################################
 # Shared UI constants and styles for dialogs and widgets
