@@ -27,13 +27,17 @@ MINIMUM_DIALOG_WIDTH = 300
 MINIMUM_DIALOG_HEIGHT = 500
 
 # Core operation scenarios
-SCENARIO_CORE_AUTOMATE = 0  # "Let Armory Automate It"
-SCENARIO_CORE_MANUAL = 1    # "Run Manually"
+SCENARIO_CORE_AUTOMATE = "Let Armory Automate It"
+SCENARIO_CORE_MANUAL = "Run Manually"
 
 # Database scenario constants
-SCENARIO_DB_LOCAL = 0   # "Local Database"
-SCENARIO_DB_REMOTE = 1  # "Remote Database"
-SCENARIO_DB_NONE = 2    # "Offline"
+SCENARIO_DB_LOCAL = "Local Database"
+SCENARIO_DB_REMOTE = "Remote Database"
+SCENARIO_DB_NONE = "Offline"
+
+# Validation limits
+MAX_RAM_USAGE = 256      # Max RAM in 128MB increments (~32GB)
+MAX_THREAD_COUNT = 64    # Max threads for DB operations
 
 ################################################################################
 class DlgSetupManager(ArmoryDialog):
@@ -240,8 +244,7 @@ class DlgSetupManager(ArmoryDialog):
       operationLabel = QtWidgets.QLabel(self.tr("Operation Mode"))
       self.scenarioCombo = QtWidgets.QComboBox()
       self.scenarioCombo.setFixedWidth(200)
-      self.scenarioCombo.addItem(self.tr("Let Armory Automate It"))
-      self.scenarioCombo.addItem(self.tr("Run Manually"))
+      self.scenarioCombo.addItems([SCENARIO_CORE_AUTOMATE, SCENARIO_CORE_MANUAL])
       self.scenarioCombo.setEditable(False)
 
       networkLabel = QtWidgets.QLabel(self.tr("Network Mode"))
@@ -282,7 +285,8 @@ class DlgSetupManager(ArmoryDialog):
 
    def onScenarioChanged(self, index):
       """Handle changes to the scenario selection."""
-      if index == SCENARIO_CORE_AUTOMATE or index == SCENARIO_CORE_MANUAL:
+      scenario = self.scenarioCombo.itemText(index)
+      if scenario == SCENARIO_CORE_AUTOMATE or scenario == SCENARIO_CORE_MANUAL:
          self.p2pPortInput.setEnabled(False)
          self.rpcPortInput.setEnabled(False)
 
@@ -678,7 +682,7 @@ class DlgSetupManager(ArmoryDialog):
       self.databaseScenarioCombo = QtWidgets.QComboBox()
       self.databaseScenarioCombo.setFixedWidth(200)
       self.databaseScenarioCombo.addItems([
-         "Local Database", "Remote Database", "Offline"])
+         SCENARIO_DB_LOCAL, SCENARIO_DB_REMOTE, SCENARIO_DB_NONE])
       self.localDatabaseFrame = QtWidgets.QGroupBox(
          self.tr('Local Database Configuration'))
       self.databaseTypeCombo = QtWidgets.QComboBox()
@@ -705,10 +709,10 @@ class DlgSetupManager(ArmoryDialog):
 
    def updateCliCommandDisplay(self):
       """Update the CLI command display based on current database settings."""
-      dbScenarioIndex = self.databaseScenarioCombo.currentIndex()
-      if dbScenarioIndex == SCENARIO_DB_LOCAL:
+      dbScenario = self.databaseScenarioCombo.currentText()
+      if dbScenario == SCENARIO_DB_LOCAL:
          dbType = self.databaseTypeCombo.currentText()
-         ramUsage = self.ramUsageEdit.text() or '4096'
+         ramUsage = self.ramUsageEdit.text() or '4'
          threadCount = self.threadCountEdit.text() or '4'
          dbDir = self.databaseDirEdit.text() or '/path/to/db'
          dbTypeArg = 'DB_SUPER' if dbType == 'Supernode' else 'DB_FULL'
@@ -719,7 +723,7 @@ class DlgSetupManager(ArmoryDialog):
             f'--thread-count={threadCount}',
             f'--datadir="{dbDir}"'
          ]
-      elif dbScenarioIndex == SCENARIO_DB_REMOTE:
+      elif dbScenario == SCENARIO_DB_REMOTE:
          host = self.remoteHostEdit.text() or 'localhost'
          port = self.remotePortEdit.text() or '9001'
 
@@ -735,8 +739,9 @@ class DlgSetupManager(ArmoryDialog):
 
    def handleDatabaseScenarioChange(self, index):
       """Handle changes to the database scenario selection."""
-      isLocal = index == SCENARIO_DB_LOCAL
-      isRemote = index == SCENARIO_DB_REMOTE
+      dbScenario = self.databaseScenarioCombo.itemText(index)
+      isLocal = dbScenario == SCENARIO_DB_LOCAL
+      isRemote = dbScenario == SCENARIO_DB_REMOTE
       self.localDatabaseFrame.setVisible(isLocal)
       self.remoteFrame.setVisible(isRemote)
       self.databaseDirEdit.setEnabled(isLocal)
@@ -775,7 +780,8 @@ class DlgSetupManager(ArmoryDialog):
 
       hasCoreSettings = bool(self.satoshiHomePath.text() and
          os.path.exists(self.satoshiHomePath.text()))
-      self.scenarioCombo.setCurrentIndex(0 if hasCoreSettings else 1)
+      self.scenarioCombo.setCurrentText(
+         SCENARIO_CORE_AUTOMATE if hasCoreSettings else SCENARIO_CORE_MANUAL)
 
       # Database configuration
       dbScenario = TheSettings.getSettingOrSetDefault(
@@ -784,14 +790,10 @@ class DlgSetupManager(ArmoryDialog):
 
       # Check if database has already been bootstrapped
       dbIsBootstrapped = False
-      try:
-         dbDir = TheSettings.getSettingOrSetDefault('DBType', 'DB_FULL')
-         if dbDir and os.path.exists(ARMORY_DB_DIR):
-            dbFiles = os.listdir(ARMORY_DB_DIR)
-            dbIsBootstrapped = len([f for f in dbFiles
-               if f.endswith('.db') or f.endswith('.ldb')]) > 0
-      except Exception:
-         pass
+      if os.path.exists(ARMORY_DB_DIR):
+         dbFiles = os.listdir(ARMORY_DB_DIR)
+         dbIsBootstrapped = any(f.endswith('.db') or f.endswith('.ldb')
+            for f in dbFiles)
 
       if dbIsBootstrapped:
          self.databaseScenarioCombo.setEnabled(False)
@@ -807,8 +809,8 @@ class DlgSetupManager(ArmoryDialog):
       self.remoteFrame.setVisible(False)
 
       # Scenario-specific settings
-      dbScenarioIndex = self.databaseScenarioCombo.currentIndex()
-      if dbScenarioIndex == SCENARIO_DB_LOCAL:
+      dbScenario = self.databaseScenarioCombo.currentText()
+      if dbScenario == SCENARIO_DB_LOCAL:
          dbTypeSetting = TheSettings.getSettingOrSetDefault('DBType', 'DB_FULL')
          if dbTypeSetting == 'DB_SUPER':
             self.databaseTypeCombo.setCurrentText('Supernode')
@@ -818,9 +820,11 @@ class DlgSetupManager(ArmoryDialog):
             str(TheSettings.getSettingOrSetDefault('RAMUsage', 50)))
          self.threadCountEdit.setText(
             str(TheSettings.getSettingOrSetDefault('ThreadCount', 4)))
-      elif dbScenarioIndex == SCENARIO_DB_REMOTE:
-         self.remoteHostEdit.clear()
-         self.remotePortEdit.clear()
+      elif dbScenario == SCENARIO_DB_REMOTE:
+         savedHost = TheSettings.get('RemoteDBHost')
+         savedPort = TheSettings.get('RemoteDBPort')
+         self.remoteHostEdit.setText(savedHost if savedHost else '')
+         self.remotePortEdit.setText(str(savedPort) if savedPort else '')
          self.remoteUserEdit.clear()
 
    def validateSettings(self):
@@ -882,7 +886,8 @@ class DlgSetupManager(ArmoryDialog):
       return True
 
    def _validateCoreGroup(self):
-      scenarioOk = self.scenarioCombo.currentIndex() in (0, 1)
+      scenario = self.scenarioCombo.currentText()
+      scenarioOk = scenario in (SCENARIO_CORE_AUTOMATE, SCENARIO_CORE_MANUAL)
       modeOk = str(self.networkModeCombo.currentText()) in (
          'Mainnet', 'Testnet', 'Regtest')
       if not (scenarioOk and modeOk):
@@ -897,16 +902,39 @@ class DlgSetupManager(ArmoryDialog):
       return True
 
    def _validateDbGroup(self):
-      dbScenarioIndex = self.databaseScenarioCombo.currentIndex()
-      if dbScenarioIndex == SCENARIO_DB_REMOTE:
+      dbScenario = self.databaseScenarioCombo.currentText()
+      if dbScenario == SCENARIO_DB_LOCAL:
+         ramText = str(self.ramUsageEdit.text()).strip()
+         threadText = str(self.threadCountEdit.text()).strip()
+         if ramText:
+            try:
+               ram = int(ramText)
+               if ram < 1 or ram > MAX_RAM_USAGE:
+                  raise ValueError()
+            except ValueError:
+               msg = self.tr('RAM usage must be an integer between 1 and {}.')
+               QtWidgets.QMessageBox.warning(self, self.tr('Invalid RAM Usage'),
+                  msg.format(MAX_RAM_USAGE))
+               return False
+         if threadText:
+            try:
+               threads = int(threadText)
+               if threads < 1 or threads > MAX_THREAD_COUNT:
+                  raise ValueError()
+            except ValueError:
+               msg = self.tr('Thread count must be an integer between 1 and {}.')
+               QtWidgets.QMessageBox.warning(
+                  self, self.tr('Invalid Thread Count'),
+                  msg.format(MAX_THREAD_COUNT))
+               return False
+      elif dbScenario == SCENARIO_DB_REMOTE:
          host = str(self.remoteHostEdit.text())
          portText = str(self.remotePortEdit.text())
          if not host or not portText:
             QtWidgets.QMessageBox.warning(
                self,
                self.tr('Missing Remote DB Info'),
-               self.tr('Please provide host and port for the remote database.')
-            )
+               self.tr('Please provide host and port for the remote database.'))
             return False
          try:
             port = int(portText)
@@ -916,8 +944,7 @@ class DlgSetupManager(ArmoryDialog):
             QtWidgets.QMessageBox.warning(
                self,
                self.tr('Invalid Port'),
-               self.tr('Remote DB port must be an integer between 1 and 65535.')
-            )
+               self.tr('Remote DB port must be an integer between 1 and 65535.'))
             return False
       return True
 
@@ -946,14 +973,14 @@ class DlgSetupManager(ArmoryDialog):
       """Return current core settings from UI as a dict."""
       return {
          'networkMode': str(self.networkModeCombo.currentText()),
-         'manageSatoshi': (self.scenarioCombo.currentIndex() == 0),
+         'manageSatoshi': (self.scenarioCombo.currentText() == SCENARIO_CORE_AUTOMATE),
       }
 
    def _collectDbGroup(self):
       """Return current database config from UI as a dict."""
-      dbScenarioIndex = self.databaseScenarioCombo.currentIndex()
-      isLocal = dbScenarioIndex == SCENARIO_DB_LOCAL
-      isRemote = dbScenarioIndex == SCENARIO_DB_REMOTE
+      dbScenario = self.databaseScenarioCombo.currentText()
+      isLocal = dbScenario == SCENARIO_DB_LOCAL
+      isRemote = dbScenario == SCENARIO_DB_REMOTE
       return {
          'scenario': str(self.databaseScenarioCombo.currentText()),
          'typeDisp': str(self.databaseTypeCombo.currentText()) if isLocal else '',
@@ -980,17 +1007,20 @@ class DlgSetupManager(ArmoryDialog):
       self._setSettingIfChanged('SatoshiDatadir', paths['core'])
       self._setSettingIfChanged('ManageSatoshi', core['manageSatoshi'])
       self._setSettingIfChanged('NetworkMode', core['networkMode'])
-      dbScenarioIndex = self.databaseScenarioCombo.currentIndex()
+      dbScenario = self.databaseScenarioCombo.currentText()
       self._setSettingIfChanged('DBScenario', db['scenario'])
-      if dbScenarioIndex == SCENARIO_DB_LOCAL:
+      if dbScenario == SCENARIO_DB_LOCAL:
          dbTypeVal = 'DB_SUPER' if db['typeDisp'] == 'Supernode' else 'DB_FULL'
          self._setSettingIfChanged('DBType', dbTypeVal)
          if db['ram']:
             self._setSettingIfChanged('RAMUsage', int(db['ram']))
          if db['threads']:
             self._setSettingIfChanged('ThreadCount', int(db['threads']))
-      elif dbScenarioIndex == SCENARIO_DB_REMOTE:
-         pass
+      elif dbScenario == SCENARIO_DB_REMOTE:
+         if db['remoteHost']:
+            self._setSettingIfChanged('RemoteDBHost', db['remoteHost'])
+         if db['remotePort']:
+            self._setSettingIfChanged('RemoteDBPort', db['remotePort'])
       if self.main:
          self.main.setSatoshiPaths()
 

@@ -5068,7 +5068,19 @@ if 1:
          SPLASH.close()
       TheSignalExecution.executeMethod(closeSplash)
 
-   TheBDM.startBridge(getBridgeArgList(), bridgeReadyHandler)
+   #build bridge args with settings-based additions
+   bridgeArgs = getBridgeArgList()
+   if CLI_OPTIONS.ram_usage == -1 and TheSettings.hasSetting('RAMUsage'):
+      ramUsage = TheSettings.get('RAMUsage')
+      if ramUsage > 0:
+         bridgeArgs.append(f"--ram-usage={ramUsage}")
+   if CLI_OPTIONS.thread_count == -1 and TheSettings.hasSetting('ThreadCount'):
+      threadCount = TheSettings.get('ThreadCount')
+      if threadCount > 0:
+         bridgeArgs.append(f"--thread-count={threadCount}")
+   if TheSettings.hasSetting('ManageSatoshi') and TheSettings.get('ManageSatoshi'):
+      bridgeArgs.append("--automateDb")
+   TheBDM.startBridge(bridgeArgs, bridgeReadyHandler)
 
    # Show setup manager (wallet list will populate when bridge ready)
    if dlg.exec_() != QtWidgets.QDialog.Accepted:
