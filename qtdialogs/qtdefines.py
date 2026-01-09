@@ -1168,3 +1168,27 @@ def addPlaceholderRow(treeWidget, texts):
       item.setText(idx, txt)
    treeWidget.addTopLevelItem(item)
    return item
+
+################################################################################
+# Setup dialog helpers
+################################################################################
+def createTabTitle(text):
+   """Create a centered, bold title label for tab headers."""
+   title = QRichLabel(f'<span style="font-size:14pt;"><b>{text}</b></span>')
+   title.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop)
+   return title
+
+def createDirectoryInputLayout(parent, lineEdit, browseTitle="Select Directory"):
+   """
+   Create a directory input layout with browse button.
+   Returns (layout, browseButton) tuple.
+   """
+   browseBtn = QtWidgets.QPushButton(parent.tr("Browse..."))
+   browseBtn.setFixedWidth(100)
+   browseBtn.clicked.connect(
+      lambda: selectDirectoryForQLineEdit(parent, lineEdit, browseTitle))
+   layout = QtWidgets.QHBoxLayout()
+   layout.setSpacing(8)
+   layout.addWidget(lineEdit)
+   layout.addWidget(browseBtn)
+   return layout, browseBtn
