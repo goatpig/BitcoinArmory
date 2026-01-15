@@ -13,55 +13,10 @@ from ui.Wizards import SetPassphrasePage, VerifyPassphrasePage, \
    WalletProgressPage
 
 from qtpy import QtCore, QtWidgets
-from qtdialogs.qtdefines import QRichLabel, HLINE, \
-   AdvancedOptionsFrame
+import qtdialogs.qtdefines as qtdefines
 from qtdialogs.ArmoryDialog import ArmoryDialog
 from qtdialogs.DlgUnlockWallet import DlgUnlockWallet
 from armorycolors import htmlColor
-
-# --- Constants for UI layout ---
-gridHSpacing = 10
-gridVSpacing = 6
-
-################################################################################
-def styledLabel(text):
-   """Creates a styled label with consistent formatting for field labels."""
-   lbl = QtWidgets.QLabel(text)
-   lbl.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-   lbl.setStyleSheet('font-size: 9pt; font-weight: 500;')
-   lbl.setWordWrap(False)
-   lbl.setSizePolicy(QtWidgets.QSizePolicy.Minimum,
-      QtWidgets.QSizePolicy.Minimum)
-   return lbl
-
-####
-def styledValue(text):
-   """Creates a styled label with consistent formatting for field values."""
-   val = QtWidgets.QLabel(str(text))
-   val.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-   val.setStyleSheet('font-size: 9pt;')
-   val.setWordWrap(True)
-   val.setSizePolicy(QtWidgets.QSizePolicy.Preferred,
-      QtWidgets.QSizePolicy.Minimum)
-   return val
-
-####
-def createHeadingLabel(text):
-   """Creates a styled heading label for dialog sections."""
-   lbl = QRichLabel(text)
-   lbl.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop)
-   lbl.setContentsMargins(0, 0, 0, 0)
-   lbl.setWordWrap(False)
-   return lbl
-
-####
-def createSubtextLabel(text):
-   """Creates a styled subtext label for additional information."""
-   lbl = QRichLabel(text)
-   lbl.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop)
-   lbl.setContentsMargins(0, 0, 0, 0)
-   lbl.setWordWrap(False)
-   return lbl
 
 ################################################################################
 class DlgUnlockMigratingWallet(DlgUnlockWallet):
@@ -160,14 +115,14 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
       tabWidget = QtWidgets.QTabWidget()
 
       # Add the original passphrase frame as the first tab
-      tabWidget.addTab(self.setPassphrasePage.pageFrame, self.tr("Set Passphrase"))
+      tabWidget.addTab(
+         self.setPassphrasePage.pageFrame, self.tr("Set Passphrase"))
 
       # Add the KDF options as the second tab
-      self.advancedOptionsTab = AdvancedOptionsFrame(self, self.main)
+      self.advancedOptionsTab = qtdefines.AdvancedOptionsFrame(self, self.main)
       tabWidget.addTab(self.advancedOptionsTab, self.tr("Advanced Options"))
 
-      # Create button layout
-      btnLayout = self.createButtonLayout(cancelBtn, nextBtn)
+      btnLayout = qtdefines.createButtonLayout(cancelBtn, nextBtn)
 
       # Add both tab widget and buttons directly to the page's layout
       # WITHOUT calling setLayout (which would destroy existing widgets)
@@ -202,8 +157,7 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
       cancelBtn = QtWidgets.QPushButton(self.tr('Cancel'))
       cancelBtn.clicked.connect(self.cancelPassphraseSetup)
 
-      # Create button layout
-      btnLayout = self.createButtonLayout(cancelBtn, doneBtn)
+      btnLayout = qtdefines.createButtonLayout(cancelBtn, doneBtn)
 
       verifyLayout = self.verifyPassphrasePage.pageFrame.layout()
       row = verifyLayout.rowCount()
@@ -230,16 +184,6 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
       self.btnNext.clicked.connect(self.proceedWithMigration)
       self.btnCancel.clicked.connect(self.reject)
 
-   ####
-   def createButtonLayout(self, *buttons):
-      """Create a horizontal layout with buttons aligned to the right."""
-      btnLayout = QtWidgets.QHBoxLayout()
-      btnLayout.setSpacing(6)  # Reduce spacing between buttons (default is usually 12-15)
-      btnLayout.addStretch(1)  # Pushes buttons to the right
-      for btn in buttons:
-         btnLayout.addWidget(btn)
-      return btnLayout
-
    def createFailureLabel(self, message):
       """Create and display a failure label with consistent styling."""
       self.resultLabel = QtWidgets.QLabel(message)
@@ -265,18 +209,19 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
       layout.setSpacing(8)
 
       # Header
-      title = createHeadingLabel(self.tr
-         ('<span style="font-size:16pt;"><b>Wallet Details</b></span>'))
+      title = qtdefines.createDialogHeading(self.tr(
+         '<span style="font-size:16pt;"><b>Wallet Details</b></span>'))
       layout.addWidget(title, alignment=QtCore.Qt.AlignHCenter)
-      subtitle = createSubtextLabel(self.tr
-         ('<span style="font-size:10pt;">Review the details of the wallet you selected</span>'))
+      subtitle = qtdefines.createDialogHeading(self.tr(
+         '<span style="font-size:10pt;">'
+         'Review the details of the wallet you selected</span>'))
       layout.addWidget(subtitle, alignment=QtCore.Qt.AlignHCenter)
       layout.addSpacing(2)
 
       # Top horizontal line
       hline1 = QtWidgets.QHBoxLayout()
       hline1.setContentsMargins(14, 6, 14, 0)
-      hline1.addWidget(HLINE())
+      hline1.addWidget(qtdefines.HLINE())
       layout.addLayout(hline1)
       layout.addSpacing(6)
 
@@ -287,19 +232,31 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
       vbox.setSpacing(8)
       grid = QtWidgets.QGridLayout()
       grid.setContentsMargins(0, 0, 0, 0)
-      grid.setHorizontalSpacing(gridHSpacing)
-      grid.setVerticalSpacing(gridVSpacing)
+      grid.setHorizontalSpacing(qtdefines.UI_GRID_H_SPACING)
+      grid.setVerticalSpacing(qtdefines.UI_GRID_V_SPACING)
       grid.setColumnStretch(0, 0)
       grid.setColumnStretch(1, 0)
       row = 0
-      grid.addWidget(styledLabel(self.tr('Wallet ID:')), row, 0, QtCore.Qt.AlignLeft)
-      grid.addWidget(styledValue(self.walletData.walletId), row, 1, QtCore.Qt.AlignLeft)
+      grid.addWidget(
+         qtdefines.createFormLabel(self.tr('Wallet ID:')),
+         row, 0, QtCore.Qt.AlignLeft)
+      grid.addWidget(
+         qtdefines.createFormValue(self.walletData.walletId),
+         row, 1, QtCore.Qt.AlignLeft)
       row += 1
-      grid.addWidget(styledLabel(self.tr('Wallet Type:')), row, 0, QtCore.Qt.AlignLeft)
-      grid.addWidget(styledValue(self.walletData.which()), row, 1, QtCore.Qt.AlignLeft)
+      grid.addWidget(
+         qtdefines.createFormLabel(self.tr('Wallet Type:')),
+         row, 0, QtCore.Qt.AlignLeft)
+      grid.addWidget(
+         qtdefines.createFormValue(self.walletData.which()),
+         row, 1, QtCore.Qt.AlignLeft)
       row += 1
-      grid.addWidget(styledLabel(self.tr('Version:')), row, 0, QtCore.Qt.AlignLeft)
-      grid.addWidget(styledValue(self.walletData.seedVersion), row, 1, QtCore.Qt.AlignLeft)
+      grid.addWidget(
+         qtdefines.createFormLabel(self.tr('Version:')),
+         row, 0, QtCore.Qt.AlignLeft)
+      grid.addWidget(
+         qtdefines.createFormValue(self.walletData.seedVersion),
+         row, 1, QtCore.Qt.AlignLeft)
       row += 1
 
       # Determine security status
@@ -310,14 +267,26 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
       else:
          securityStatus = self.tr('No Encryption')
 
-      grid.addWidget(styledLabel(self.tr('Security:')), row, 0, QtCore.Qt.AlignLeft)
-      grid.addWidget(styledValue(securityStatus), row, 1, QtCore.Qt.AlignLeft)
+      grid.addWidget(
+         qtdefines.createFormLabel(self.tr('Security:')),
+         row, 0, QtCore.Qt.AlignLeft)
+      grid.addWidget(
+         qtdefines.createFormValue(securityStatus),
+         row, 1, QtCore.Qt.AlignLeft)
       row += 1
-      grid.addWidget(styledLabel(self.tr('Label:')), row, 0, QtCore.Qt.AlignLeft)
-      grid.addWidget(styledValue(self.walletData.label), row, 1, QtCore.Qt.AlignLeft)
+      grid.addWidget(
+         qtdefines.createFormLabel(self.tr('Label:')),
+         row, 0, QtCore.Qt.AlignLeft)
+      grid.addWidget(
+         qtdefines.createFormValue(self.walletData.label),
+         row, 1, QtCore.Qt.AlignLeft)
       row += 1
-      grid.addWidget(styledLabel(self.tr('Description:')), row, 0, QtCore.Qt.AlignLeft)
-      grid.addWidget(styledValue(self.walletData.description), row, 1, QtCore.Qt.AlignLeft)
+      grid.addWidget(
+         qtdefines.createFormLabel(self.tr('Description:')),
+         row, 0, QtCore.Qt.AlignLeft)
+      grid.addWidget(
+         qtdefines.createFormValue(self.walletData.description),
+         row, 1, QtCore.Qt.AlignLeft)
       row += 1
 
       # Address count with N/A handling for invalid values
@@ -327,8 +296,12 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
       else:
          addressCountDisplay = str(addressCount)
 
-      grid.addWidget(styledLabel(self.tr('Address count:')), row, 0, QtCore.Qt.AlignLeft)
-      grid.addWidget(styledValue(addressCountDisplay), row, 1, QtCore.Qt.AlignLeft)
+      grid.addWidget(
+         qtdefines.createFormLabel(self.tr('Address count:')),
+         row, 0, QtCore.Qt.AlignLeft)
+      grid.addWidget(
+         qtdefines.createFormValue(addressCountDisplay),
+         row, 1, QtCore.Qt.AlignLeft)
       row += 1
 
       # Top used address with N/A handling for invalid values
@@ -338,18 +311,27 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
       else:
          highestUsedIndexDisplay = str(highestUsedIndex)
 
-      grid.addWidget(styledLabel(self.tr('Top used address:')), row, 0, QtCore.Qt.AlignLeft)
-      grid.addWidget(styledValue(highestUsedIndexDisplay), row, 1, QtCore.Qt.AlignLeft)
+      grid.addWidget(
+         qtdefines.createFormLabel(self.tr('Top used address:')),
+         row, 0, QtCore.Qt.AlignLeft)
+      grid.addWidget(
+         qtdefines.createFormValue(highestUsedIndexDisplay),
+         row, 1, QtCore.Qt.AlignLeft)
       row += 1
 
       # Last used timestamp with N/A handling for invalid values
       try:
-         lastUsedDisplay = unixTimeToFormatStr(self.walletData.timestamp, '%Y/%m/%d %H:%M')
-      except:
+         lastUsedDisplay = unixTimeToFormatStr(
+            self.walletData.timestamp, '%Y/%m/%d %H:%M')
+      except Exception:
          lastUsedDisplay = self.tr('N/A')
 
-      grid.addWidget(styledLabel(self.tr('Last Modified:')), row, 0, QtCore.Qt.AlignLeft)
-      grid.addWidget(styledValue(lastUsedDisplay), row, 1, QtCore.Qt.AlignLeft)
+      grid.addWidget(
+         qtdefines.createFormLabel(self.tr('Last Modified:')),
+         row, 0, QtCore.Qt.AlignLeft)
+      grid.addWidget(
+         qtdefines.createFormValue(lastUsedDisplay),
+         row, 1, QtCore.Qt.AlignLeft)
       row += 1
       vbox.addLayout(grid)
       groupBox.setLayout(vbox)
@@ -358,7 +340,7 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
       # Bottom horizontal line
       hline2 = QtWidgets.QHBoxLayout()
       hline2.setContentsMargins(14, 6, 14, 0)
-      hline2.addWidget(HLINE())
+      hline2.addWidget(qtdefines.HLINE())
       layout.addLayout(hline2)
       layout.addSpacing(6)
 
@@ -371,7 +353,7 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
       return page1
 
    def createPage1Buttons(self):
-      """Creates the button row for page 1 based on wallet type and encryption."""
+      """Creates the button row for page 1."""
       # Create all buttons here to ensure they exist before being added
 
       # Set button text based on wallet type
@@ -397,7 +379,7 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
 
       dlgUnlock = DlgUnlockMigratingWallet(parent=self, main=self.main)
       dlgUnlock.setIds(ids)
-      
+
       if dlgUnlock.passphrase:
          self.storedPassphrase = dlgUnlock.passphrase
          packet = self.getNewPacket()
@@ -413,7 +395,7 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
 
       if isPriv:
          # private keys passphrase, do we reuse old one or get a fresh one?
-         if reusePassphrase == False:
+         if not reusePassphrase:
             # User went through wizard to create new passphrase
             packet.success = True
             passPacket.passphrase = self.newPassphrase
@@ -434,7 +416,8 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
          else:
             # user wants to reuse old passphrase, feed that instead
             if not self.storedPassphrase:
-               raise Exception("Reuse passphrase requested but no passphrase stored")
+               raise Exception(
+                  "Reuse passphrase requested but no passphrase stored")
 
             packet.success = True
             passPacket.passphrase = self.storedPassphrase
@@ -535,14 +518,15 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
             self.walletProgressPage.pageFrame.updateProgress(
                f"setting up master record (id: {notif.initFile})")
          elif notif.which() == 'readFile':
-            self.walletProgressPage.pageFrame.updateProgress("populating master record")
+            self.walletProgressPage.pageFrame.updateProgress(
+               "populating master record")
          elif notif.which() == 'createAccount':
             self.walletProgressPage.pageFrame.updateProgress(
                f"adding account: {notif.createAccount}")
          elif notif.which() == 'extendChain':
             chainProg = notif.extendChain
-            self.walletProgressPage.pageFrame.updateProgress("extending address chain: "
-               f"{chainProg.current}/{chainProg.total}")
+            self.walletProgressPage.pageFrame.updateProgress(
+               f"extending address chain: {chainProg.current}/{chainProg.total}")
          return
 
    ####
@@ -560,7 +544,7 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
       self.migrationStarted = True
 
       def wrapperFunc(capnReply):
-         if capnReply.success == False:
+         if not capnReply.success:
             self.migrationFailed = True
          else:
             self.migrationComplete = True
@@ -629,7 +613,7 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
             QtWidgets.QMessageBox.Ok)
          return
 
-      # Passphrase verification successful, now process it through the standard flow
+      # Passphrase verification successful, process through standard flow
       self.processSetNewPassphrase(True, reusePassphrase=False)
       self.navigateToProgressPage()
 
@@ -691,7 +675,8 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
       self.walletProgressPage.pageFrame.progressBar.hide()
       # Show failure message
       if not self.resultLabel:
-         self.createFailureLabel(f"Migration of Wallet {self.walletData.walletId} failed!")
+         self.createFailureLabel(
+            f"Migration of Wallet {self.walletData.walletId} failed!")
       self.doneBtn.setEnabled(True)
 
    ####

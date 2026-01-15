@@ -10,28 +10,18 @@
 #                                                                            #
 ##############################################################################
 import os
-import struct
 import traceback
-from tempfile import mkstemp
 
 from qtpy import QtCore, QtGui, QtWidgets
 
-# Capture the original QColor class before any downstream utilities
-# alter QtGui.QColor
-BaseQColor = QtGui.QColor
-
 from armoryengine.ArmoryUtils import enum, ARMORY_HOME_DIR, OS_MACOSX, \
-   USE_TESTNET, USE_REGTEST, OS_WINDOWS, coin2str, int_to_hex, toBytes, \
-   hex_to_binary, LOGERROR, toUnicode
+   OS_WINDOWS, coin2str, int_to_hex, toBytes, hex_to_binary, LOGERROR, toUnicode
 from armoryengine.BinaryUnpacker import BinaryUnpacker, UINT8, UINT16
 from armoryengine.WalletUtils import WalletTypes
 
-from armorycolors import Colors, htmlColor
-from ui.QrCodeMatrix import CreateQRMatrix
+from armorycolors import htmlColor
 
-SETTINGS_PATH   = os.path.join(ARMORY_HOME_DIR, 'ArmorySettings.txt')
 USERMODE        = enum('Standard', 'Advanced', 'Expert')
-SATOSHIMODE     = enum('Auto', 'User')
 NETWORKMODE     = enum('Offline', 'Full', 'Disconnected')
 WLTFIELDS       = enum('Name', 'Descr', 'WltID', 'NumAddr', 'Secure',
    'BelongsTo', 'Crypto', 'Time', 'Mem', 'Version')
@@ -81,11 +71,9 @@ def getWalletTypeStr(wtype):
 # Shared UI constants and styles for dialogs and widgets
 
 # Layout spacings and margins for consistent UI
-UI_DIALOG_SPACING = 8
-UI_FRAME_MARGIN = 24
-UI_FRAME_PADDING = 16
 UI_BUTTON_SPACING = 8
-UI_GRID_SPACING = 8
+UI_GRID_H_SPACING = 10
+UI_GRID_V_SPACING = 6
 
 # Base dialog/tab styles derived from theme colors
 UI_STYLE_DIALOG_BASE = """
@@ -151,29 +139,6 @@ UI_STYLE_BUTTON_STANDARD = """
    'border_disabled': htmlColor('SlightBkgdDark')
 }
 
-UI_STYLE_BUTTON_DIALOG = """
-   QPushButton {
-      background-color: %(bg)s;
-      color: %(fg)s;
-      border: 1px solid %(border)s;
-      border-radius: 2px;
-      padding: 6px 16px;
-      min-width: 100px;
-   }
-   QPushButton:hover {
-      background-color: %(hover)s;
-   }
-   QPushButton:pressed {
-      background-color: %(pressed)s;
-   }
-""" % {
-   'bg': htmlColor('SlightBkgdDark'),
-   'fg': htmlColor('Foreground'),
-   'border': htmlColor('Mid'),
-   'hover': htmlColor('SlightBkgdLight'),
-   'pressed': htmlColor('SlightBkgdDark')
-}
-
 # Inputs
 UI_STYLE_INPUT = """
    QLineEdit {
@@ -214,59 +179,7 @@ UI_STYLE_COMBOBOX = """
    'bg_drop': htmlColor('SlightBkgdDark')
 }
 
-# Frames
-UI_STYLE_FRAME = """
-   QFrame {
-      background-color: %(bg)s;
-      border: 1px solid %(border)s;
-      border-radius: 4px;
-   }
-   QLabel {
-      border: none;
-      background: transparent;
-      padding: 0px;
-      margin: 0px;
-   }
-""" % {
-   'bg': htmlColor('SlightBkgdDark'),
-   'border': htmlColor('Mid')
-}
-
-# Tree view
-UI_STYLE_TREEWIDGET = """
-   QTreeWidget {
-      background: %(bg)s;
-      border: 1px solid %(border)s;
-      color: %(fg)s;
-      show-decoration-selected: 0;
-   }
-   QTreeWidget::item {
-      height: 30px;
-      border: none;
-      padding: 4px;
-   }
-   QTreeWidget::item:hover {
-      background: %(hover)s;
-   }
-""" % {
-   'bg': htmlColor('SlightBkgdDark'),
-   'border': htmlColor('Mid'),
-   'fg': htmlColor('Foreground'),
-   'hover': htmlColor('SlightBkgdLight')
-}
-
 # Shared UI helper widgets
-def createStyledLabel(text, color='Foreground'):
-   lbl = QtWidgets.QLabel(text)
-   try:
-      if isinstance(color, str) and not color.startswith('#'):
-         lbl.setStyleSheet('color: %s;' % htmlColor(color))
-      else:
-         lbl.setStyleSheet('color: %s;' % color)
-   except Exception:
-      lbl.setStyleSheet('color: %s;' % htmlColor('Foreground'))
-   return lbl
-
 def createButtonLayout(*buttons):
    layout = QtWidgets.QHBoxLayout()
    layout.setSpacing(UI_BUTTON_SPACING)
@@ -275,100 +188,30 @@ def createButtonLayout(*buttons):
       layout.addWidget(b)
    return layout
 
-def createInputField(width=None, style=None):
-   field = QtWidgets.QLineEdit()
-   if width:
-      field.setFixedWidth(width)
-   field.setStyleSheet(style if style else UI_STYLE_INPUT)
-   return field
+def createFormLabel(text):
+   lbl = QtWidgets.QLabel(text)
+   lbl.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+   lbl.setStyleSheet('font-size: 9pt; font-weight: 500;')
+   lbl.setWordWrap(False)
+   lbl.setSizePolicy(
+      QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
+   return lbl
 
-def createStyledButton(text, width=None, style=None):
-   btn = QtWidgets.QPushButton(text)
-   if width:
-      btn.setFixedWidth(width)
-   btn.setStyleSheet(style if style else UI_STYLE_BUTTON_STANDARD)
-   return btn
+def createFormValue(text):
+   val = QtWidgets.QLabel(str(text))
+   val.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+   val.setStyleSheet('font-size: 9pt;')
+   val.setWordWrap(True)
+   val.setSizePolicy(
+      QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Minimum)
+   return val
 
-class ArmoryComboBox(QtWidgets.QComboBox):
-   def paintEvent(self, event):
-      # Only default painting. Arrow will be drawn by ComboBoxStyle
-      # to avoid artifacts
-      super(ArmoryComboBox, self).paintEvent(event)
-
-def createStyledCombo(width=None, style=None):
-   combo = ArmoryComboBox()
-   if width:
-      combo.setFixedWidth(width)
-   combo.setStyleSheet(style if style else UI_STYLE_COMBOBOX)
-   return combo
-
-class ComboBoxStyle(QtWidgets.QProxyStyle):
-   def drawComplexControl(self, control, option, painter, widget=None):
-      if control == QtWidgets.QStyle.CC_ComboBox:
-         # Let base style draw the control first
-         super().drawComplexControl(control, option, painter, widget)
-
-         # Then paint a clear arrow indicator in the arrow subcontrol rect
-         arrow_rect = self.subControlRect(
-            QtWidgets.QStyle.CC_ComboBox,
-            option,
-            QtWidgets.QStyle.SC_ComboBoxArrow,
-            widget,
-         )
-         if not arrow_rect.isValid():
-            return
-         painter.save()
-         try:
-            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-         except Exception:
-            pass
-         # Mask the native arrow background to avoid any overlap artifacts
-         bg = BaseQColor(htmlColor('SlightBkgdDark'))
-         painter.fillRect(arrow_rect, bg)
-
-         color = BaseQColor(htmlColor('Foreground'))
-         painter.setPen(QtCore.Qt.NoPen)
-         painter.setBrush(color)
-
-         size = max(6, int(min(arrow_rect.width(), arrow_rect.height()) * 0.35))
-         cx, cy = arrow_rect.center().x(), arrow_rect.center().y()
-         tri = QtGui.QPolygonF([
-            QtCore.QPointF(cx - size, cy - size * 0.5),
-            QtCore.QPointF(cx + size, cy - size * 0.5),
-            QtCore.QPointF(cx,        cy + size * 0.6),
-         ])
-         painter.drawPolygon(tri)
-         painter.restore()
-         return
-      else:
-         super().drawComplexControl(control, option, painter, widget)
-
-   def drawPrimitive(self, element, option, painter, widget=None):
-      if element == QtWidgets.QStyle.PE_IndicatorArrowDown:
-         # Draw a high-contrast down arrow so it is clearly visible
-         # on dark themes
-         rect = option.rect.adjusted(0, 0, -2, -2)
-         painter.save()
-         try:
-            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-         except Exception:
-            pass
-         color = BaseQColor(htmlColor('Foreground'))
-         painter.setPen(QtCore.Qt.NoPen)
-         painter.setBrush(color)
-
-         size = max(6, int(min(rect.width(), rect.height()) * 0.35))
-         cx, cy = rect.center().x(), rect.center().y()
-         tri = QtGui.QPolygonF([
-            QtCore.QPointF(cx - size, cy - size * 0.5),
-            QtCore.QPointF(cx + size, cy - size * 0.5),
-            QtCore.QPointF(cx,        cy + size * 0.6),
-         ])
-         painter.drawPolygon(tri)
-         painter.restore()
-         return
-      else:
-         super().drawPrimitive(element, option, painter, widget)
+def createDialogHeading(text):
+   lbl = QRichLabel(text)
+   lbl.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop)
+   lbl.setContentsMargins(0, 0, 0, 0)
+   lbl.setWordWrap(False)
+   return lbl
 
 def HLINE(style=QtWidgets.QFrame.Plain):
    qf = QtWidgets.QFrame()
@@ -395,10 +238,6 @@ def GETFONT(ftype, sz=10, bold=False, italic=False):
          fnt = QtGui.QFont("Lucida Grande", sz)
       else:
          fnt = QtGui.QFont("Verdana", sz)
-      #if OS_WINDOWS:
-         #fnt = QtGui.QFont("Tahoma", sz)
-      #else:
-         #fnt = QtGui.QFont("Sans", sz)
    elif ftype.lower().startswith('money'):
       if OS_WINDOWS:
          fnt = QtGui.QFont("Courier", sz)
@@ -644,21 +483,9 @@ def setLayoutStretch(layout, *args):
 def QPixMapButton(img):
    btn = QtWidgets.QPushButton('')
    px = QtGui.QPixmap(img)
-   btn.setIcon( QtGui.QIcon(px))
+   btn.setIcon(QtGui.QIcon(px))
    btn.setIconSize(px.rect().size())
    return btn
-
-################################################################################
-def QAcceptButton():
-   return QPixMapButton('img/btnaccept.png')
-def QCancelButton():
-   return QPixMapButton('img/btncancel.png')
-def QBackButton():
-   return QPixMapButton('img/btnback.png')
-def QOkButton():
-   return QPixMapButton('img/btnok.png')
-def QDoneButton():
-   return QPixMapButton('img/btndone.png')
 
 ################################################################################
 class QLabelButton(QtWidgets.QLabel):
@@ -707,8 +534,8 @@ def makeLayoutFrame(dirStr, widgetList, style=QtWidgets.QFrame.NoFrame,
 
    for w in widgetList:
       if w is None:
-         frmLayout.addWidget(w)
-      elif issubclass(type(w),QtWidgets.QWidget):
+         continue
+      elif issubclass(type(w), QtWidgets.QWidget):
          frmLayout.addWidget(w)
       elif issubclass(type(w),QtWidgets.QLayoutItem):
          frmLayout.addItem(w)
@@ -746,13 +573,12 @@ def makeLayoutFrame(dirStr, widgetList, style=QtWidgets.QFrame.NoFrame,
    frm.setLayout(frmLayout)
    return frm
 
-def addFrame(widget, style=STYLE_SUNKEN, condenseMargins=False):
-   return makeLayoutFrame(HORIZONTAL, [widget], style, condenseMargins)
-
-def makeVertFrame(widgetList, style=QtWidgets.QFrame.NoFrame, condenseMargins=False):
+def makeVertFrame(widgetList,
+   style=QtWidgets.QFrame.NoFrame, condenseMargins=False):
    return makeLayoutFrame(VERTICAL, widgetList, style, condenseMargins)
 
-def makeHorizFrame(widgetList, style=QtWidgets.QFrame.NoFrame, condenseMargins=False):
+def makeHorizFrame(widgetList,
+   style=QtWidgets.QFrame.NoFrame, condenseMargins=False):
    return makeLayoutFrame(HORIZONTAL, widgetList, style, condenseMargins)
 
 def QImageLabel(imgfn, size=None, stretch='NoStretch'):
@@ -810,15 +636,9 @@ class QRadioButtonBackupCtr(QtWidgets.QRadioButton):
 
    def enterEvent(self, ev):
       pass
-      # self.parent.setDispFrame(self.index)
-      # self.setStyleSheet('QtWidgets.QRadioButton { background-color : %s }' % \
-                                          # htmlColor('SlightBkgdDark'))
 
    def leaveEvent(self, ev):
       pass
-      # self.parent.setDispFrame(-1)
-      # self.setStyleSheet('QtWidgets.QRadioButton { background-color : %s }' % \
-                                          # htmlColor('Background'))
 
 ################################################################################
 # This class is intended to be an abstract frame class that
@@ -836,128 +656,6 @@ class ArmoryFrame(QtWidgets.QFrame):
       # Subclasses should implement a method that returns a boolean to control
       # when done, accept, next, or final button should be enabled.
       self.isComplete = None
-
-# Pure-python BMP creator taken from:
-#
-#     http://pseentertainmentcorp.com/smf/index.php?topic=2034.0
-#
-# This will take a 2D array of ones-and-zeros and convert it to a binary
-# bitmap image, which will be stored in a temporary file.  This temporary
-# file can be used for display and copy-and-paste into email.
-
-def bmp_binary(header, pixels):
-   '''It takes a header (based on default_bmp_header),
-   the pixel data (from structs, as produced by get_color and row_padding),
-   and writes it to filename'''
-   header_str = ""
-   header_str += struct.pack('<B', header['mn1'])
-   header_str += struct.pack('<B', header['mn2'])
-   header_str += struct.pack('<L', header['filesize'])
-   header_str += struct.pack('<H', header['undef1'])
-   header_str += struct.pack('<H', header['undef2'])
-   header_str += struct.pack('<L', header['offset'])
-   header_str += struct.pack('<L', header['headerlength'])
-   header_str += struct.pack('<L', header['width'])
-   header_str += struct.pack('<L', header['height'])
-   header_str += struct.pack('<H', header['colorplanes'])
-   header_str += struct.pack('<H', header['colordepth'])
-   header_str += struct.pack('<L', header['compression'])
-   header_str += struct.pack('<L', header['imagesize'])
-   header_str += struct.pack('<L', header['res_hor'])
-   header_str += struct.pack('<L', header['res_vert'])
-   header_str += struct.pack('<L', header['palette'])
-   header_str += struct.pack('<L', header['importantcolors'])
-   return header_str + pixels
-
-def bmp_write(header, pixels, filename):
-   out = open(filename, 'wb')
-   out.write(bmp_binary(header, pixels))
-   out.close()
-
-def bmp_row_padding(width, colordepth):
-   '''returns any necessary row padding'''
-   byte_length = width*colordepth/8
-   # how many bytes are needed to make byte_length evenly divisible by 4?
-   padding = (4-byte_length)%4
-   padbytes = ''
-   for i in range(padding):
-      x = struct.pack('<B',0)
-      padbytes += x
-   return padbytes
-
-def bmp_pack_color(red, green, blue):
-   '''accepts values from 0-255 for each value, returns a packed string'''
-   return struct.pack('<BBB',blue,green,red)
-
-###################################
-BMP_TEMPFILE = -1
-def createBitmap(imgMtrx2D, writeToFile=-1, returnBinary=True):
-   try:
-      h,w = len(imgMtrx2D), len(imgMtrx2D[0])
-   except:
-      LOGERROR('Error creating BMP object')
-      raise
-
-   header = {'mn1':66,
-             'mn2':77,
-             'filesize':0,
-             'undef1':0,
-             'undef2':0,
-             'offset':54,
-             'headerlength':40,
-             'width':w,
-             'height':h,
-             'colorplanes':0,
-             'colordepth':24,
-             'compression':0,
-             'imagesize':0,
-             'res_hor':0,
-             'res_vert':0,
-             'palette':0,
-             'importantcolors':0}
-
-   pixels = ''
-   black = bmp_pack_color(  0,  0,  0)
-   white = bmp_pack_color(255,255,255)
-   for row in range(header['height']-1,-1,-1):# (BMPs are L to R from the bottom L row)
-      for col in range(header['width']):
-         pixels += black if imgMtrx2D[row][col] else white
-      pixels += bmp_row_padding(header['width'], header['colordepth'])
-
-   if returnBinary:
-      return bmp_binary(header,pixels)
-   elif writeToFile==BMP_TEMPFILE:
-      handle,temppath = mkstemp(suffix='.bmp')
-      bmp_write(header, pixels, temppath)
-      return temppath
-   else:
-      try:
-         bmp_write(header, pixels, writeToFile)
-         return True
-      except:
-         return False
-
-def selectFileForQLineEdit(parent, qObj, title="Select File", existing=False,
-   ffilter=[]):
-   initPath = ARMORY_HOME_DIR
-   currText = str(qObj.text()).strip()
-   if currText:
-      if os.path.exists(currText):
-         initPath = currText
-
-   types = list(ffilter)
-   types.append('All files (*)')
-   typesStr = ';; '.join(types)
-   if not OS_MACOSX:
-      fullPath, _ = QtWidgets.QFileDialog.getOpenFileName(parent,
-         title, ARMORY_HOME_DIR, typesStr)
-   else:
-      fullPath, _ = QtWidgets.QFileDialog.getOpenFileName(parent,
-         title, ARMORY_HOME_DIR, typesStr,
-         options=QtWidgets.QFileDialog.DontUseNativeDialog)
-
-   if fullPath:
-      qObj.setText(fullPath)
 
 def selectDirectoryForQLineEdit(par, qObj, title="Select Directory"):
    initPath = ARMORY_HOME_DIR
@@ -1038,12 +736,13 @@ class LetterButton(QtWidgets.QPushButton):
 #############################################################################
 def createToolTipWidget(tiptext, iconSz=2):
    """
-   The <u></u> is to signal to QtCore.Qt that it should be interpretted as HTML/Rich
-   text even if no HTML tags are used.  This appears to be necessary for QtCore.Qt
-   to wrap the tooltip text
+   The <u></u> signals to Qt that it should be interpretted as HTML/Rich
+   text even if no HTML tags are used. This appears to be necessary for
+   Qt to wrap the tooltip text.
    """
    fgColor = htmlColor('ToolTipQ')
-   lbl = QtWidgets.QLabel('<font size=%d color=%s>(?)</font>' % (iconSz, fgColor))
+   lbl = QtWidgets.QLabel(
+      '<font size=%d color=%s>(?)</font>' % (iconSz, fgColor))
    lbl.setMaximumWidth(int(relaxedSizeStr(lbl, '(?)')[0]))
 
    def setAllText(widget, txt):
@@ -1062,32 +761,33 @@ def createToolTipWidget(tiptext, iconSz=2):
 class AdvancedOptionsFrame(ArmoryFrame):
    def __init__(self, parent, main, initLabel=''):
       super(AdvancedOptionsFrame, self).__init__(parent, main)
-      lblComputeDescription = QRichLabel( \
-                  self.tr('Armory will test your system\'s speed to determine the most '
-                  'challenging encryption settings that can be applied '
-                  'in a given amount of time.  High settings make it much harder '
-                  'for someone to guess your passphrase.  This is used for all '
-                  'encrypted wallets, but the default parameters can be changed below.\n'))
+      lblComputeDescription = QRichLabel(self.tr(
+         'Armory will test your system\'s speed to determine the most '
+         'challenging encryption settings that can be applied '
+         'in a given amount of time.  High settings make it much harder '
+         'for someone to guess your passphrase.  This is used for all '
+         'encrypted wallets, but the default parameters can be changed '
+         'below.\n'))
       lblComputeDescription.setWordWrap(True)
-      timeDescriptionTip = createToolTipWidget( \
-                  self.tr('This is the amount of time it will take for your computer '
-                  'to unlock your wallet after you enter your passphrase. '
-                  '(the actual time used will be less than the specified '
-                  'time, but more than one half of it).  '))
+      timeDescriptionTip = createToolTipWidget(self.tr(
+         'This is the amount of time it will take for your computer '
+         'to unlock your wallet after you enter your passphrase. '
+         '(the actual time used will be less than the specified '
+         'time, but more than one half of it).  '))
 
       # Set maximum compute time
       self.editComputeTime = QtWidgets.QLineEdit()
       self.editComputeTime.setText('250 ms')
       self.editComputeTime.setMaxLength(12)
       lblComputeTime = QtWidgets.QLabel(self.tr('Target compute &time (s, ms):'))
-      memDescriptionTip = createToolTipWidget( \
-                  self.tr('This is the <b>maximum</b> memory that will be '
-                  'used as part of the encryption process.  The actual value used '
-                  'may be lower, depending on your system\'s speed.  If a '
-                  'low value is chosen, Armory will compensate by chaining '
-                  'together more calculations to meet the target time.  High '
-                  'memory target will make GPU-acceleration useless for '
-                  'guessing your passphrase.'))
+      memDescriptionTip = createToolTipWidget(self.tr(
+         'This is the <b>maximum</b> memory that will be '
+         'used as part of the encryption process.  The actual value used '
+         'may be lower, depending on your system\'s speed.  If a '
+         'low value is chosen, Armory will compensate by chaining '
+         'together more calculations to meet the target time.  High '
+         'memory target will make GPU-acceleration useless for '
+         'guessing your passphrase.'))
       lblComputeTime.setBuddy(self.editComputeTime)
 
       # Set maximum memory usage
@@ -1124,7 +824,7 @@ class AdvancedOptionsFrame(ArmoryFrame):
             kdfSec = float(kdfT) / 1000.
          elif kdfUnit.lower() in ('s', 'sec', 'seconds'):
             kdfSec = float(kdfT)
-      except:
+      except Exception:
          pass
       return kdfSec
 
@@ -1137,7 +837,7 @@ class AdvancedOptionsFrame(ArmoryFrame):
             kdfBytes = round(float(kdfM) * (1024.0 ** 2))
          elif kdfUnit.lower() == 'kb':
             kdfBytes = round(float(kdfM) * (1024.0))
-      except:
+      except Exception:
          pass
       return kdfBytes
 ################################################################################
@@ -1162,7 +862,7 @@ def makeCheckboxCell(enabled, checked, onToggled=None):
    return makeCenteredCell(cb), cb
 
 def addPlaceholderRow(treeWidget, texts):
-   """Add a placeholder top-level row to a QTreeWidget with given column texts."""
+   """Add a placeholder top-level row to a QTreeWidget."""
    item = QtWidgets.QTreeWidgetItem()
    for idx, txt in enumerate(texts):
       item.setText(idx, txt)
