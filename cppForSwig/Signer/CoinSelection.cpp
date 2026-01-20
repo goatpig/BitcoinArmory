@@ -76,7 +76,7 @@ std::vector<UTXO> RestrictedUtxoSet::getUtxoSelection() const
 
 ////////////////////////////////////////////////////////////////////////////////
 // CoinSelection
-std::vector<UTXO> CoinSelection::CoinSelection::checkForRecipientReuse(
+std::vector<UTXO> Armory::CoinSelection::CoinSelection::checkForRecipientReuse(
    PaymentStruct& payStruct, const std::vector<UTXO>& utxoVec)
 {
    //look for recipient reuse
@@ -144,7 +144,7 @@ std::vector<UTXO> CoinSelection::CoinSelection::checkForRecipientReuse(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-UtxoSelection CoinSelection::CoinSelection::getUtxoSelectionForRecipients(
+UtxoSelection Armory::CoinSelection::CoinSelection::getUtxoSelectionForRecipients(
    PaymentStruct& payStruct, const std::vector<UTXO>& utxoVec)
 {
    try {
@@ -167,7 +167,7 @@ UtxoSelection CoinSelection::CoinSelection::getUtxoSelectionForRecipients(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-UtxoSelection CoinSelection::CoinSelection::getUtxoSelection(
+UtxoSelection Armory::CoinSelection::CoinSelection::getUtxoSelection(
    PaymentStruct& payStruct, const std::vector<UTXO>& utxoVec)
 {
    if (utxoVec.empty()) {
@@ -298,7 +298,7 @@ UtxoSelection CoinSelection::CoinSelection::getUtxoSelection(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void CoinSelection::CoinSelection::updateUtxoVector(uint64_t value)
+void Armory::CoinSelection::CoinSelection::updateUtxoVector(uint64_t value)
 {
    if (utxoVecValue_ >= value) {
       return;
@@ -312,7 +312,7 @@ void CoinSelection::CoinSelection::updateUtxoVector(uint64_t value)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-uint64_t CoinSelection::CoinSelection::tallyValue(
+uint64_t Armory::CoinSelection::CoinSelection::tallyValue(
    const std::vector<UTXO>& utxoVec)
 {
    uint64_t val = 0;
@@ -323,7 +323,7 @@ uint64_t CoinSelection::CoinSelection::tallyValue(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-uint64_t CoinSelection::CoinSelection::getFeeForMaxVal(
+uint64_t Armory::CoinSelection::CoinSelection::getFeeForMaxVal(
    size_t txOutSize, float fee_byte,
    const std::vector<UTXO>& coinControlVec)
 {
@@ -359,7 +359,7 @@ uint64_t CoinSelection::CoinSelection::getFeeForMaxVal(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void CoinSelection::CoinSelection::fleshOutSelection(
+void Armory::CoinSelection::CoinSelection::fleshOutSelection(
    const std::vector<UTXO>& utxoVec,
    UtxoSelection& utxoSelect, PaymentStruct& payStruct)
 {

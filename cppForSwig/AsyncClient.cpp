@@ -1677,7 +1677,7 @@ void AsyncClient::BlockDataViewer::getCombinedBalances(std::function<void(
 
 ///////////////////////////////////////////////////////////////////////////////
 void AsyncClient::BlockDataViewer::getOutputsForAddresses(
-   std::set<BinaryData>& addrSet, uint32_t heightCutoff, uint32_t zcCutoff,
+   const std::set<BinaryData>& addrSet, uint32_t heightCutoff, uint32_t zcCutoff,
    std::function<void(ReturnMessage<OutputBatch>)> callback)
 {
    //create capnp request
@@ -1692,7 +1692,7 @@ void AsyncClient::BlockDataViewer::getOutputsForAddresses(
    //populate request data
    auto capnAddrs = addrReq.initAddresses(addrSet.size());
    unsigned i = 0;
-   for (auto& addr : addrSet) {
+   for (const auto& addr : addrSet) {
       auto capnAddr = capnAddrs[i++];
       capnAddr.setBody(capnp::Data::Builder(
          (uint8_t*)addr.getPtr(), addr.getSize()

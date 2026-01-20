@@ -34,7 +34,7 @@ const BinaryData BtcUtils::BadAddress = BinaryData::CreateFromHex(
 const BinaryData BtcUtils::EmptyHash  = BinaryData::CreateFromHex(
    "0000000000000000000000000000000000000000000000000000000000000000");
 
-constexpr char BtcUtils::base64Chars[]{
+static const char BtcUtils::base64Chars[]{
    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"};
 
 const std::map<char, uint8_t> BtcUtils::base64Vals = {

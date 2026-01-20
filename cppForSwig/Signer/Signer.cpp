@@ -1102,7 +1102,7 @@ std::shared_ptr<SigHashData> Signer::getSigHashDataForSpender(bool sw) const
    return SHD;
 }
 
-std::unique_ptr<TransactionVerifier> Signer::getVerifier(
+std::unique_ptr<Armory::Signing::TransactionVerifier> Signer::getVerifier(
    std::shared_ptr<BCTX> bctx,
    std::map<BinaryData, std::map<unsigned, UTXO>>& utxoMap)
 {

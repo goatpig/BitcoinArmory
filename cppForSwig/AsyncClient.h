@@ -393,7 +393,7 @@ namespace AsyncClient
       void getCombinedBalances(std::function<void(
          ReturnMessage<std::map<std::string, CombinedBalances>>)>);
 
-      void getOutputsForAddresses(std::set<BinaryData>&, uint32_t, uint32_t,
+      void getOutputsForAddresses(const std::set<BinaryData>&, uint32_t, uint32_t,
          std::function<void(ReturnMessage<OutputBatch>)>);
       void getOutputsForOutpoints(
          const std::map<BinaryData, std::set<unsigned>>&, bool,

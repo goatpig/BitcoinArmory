@@ -15,9 +15,9 @@
    #include <windows.h>
 #else
    #include <sys/mman.h>
+   #include <unistd.h>
 #endif
 #include <fcntl.h>
-#include <unistd.h>
 #include <filesystem>
 #include <string_view>
 #include <cstring>
@@ -263,37 +263,36 @@ BinaryDataRef DBUtils::getDataRefForPacket(
 FileUtils::FileMap::FileMap(const fs::path& path, bool write, size_t offset)
    : offset_(offset)
 {
-   int fd = 0;
    if (!fileExists(path, 2)) {
       //false positive warning, we often ask for block files that do not
       //exists as way to check for exhaustion
       return;
    }
-
+#ifdef _WIN32
+   FILE* f{ nullptr };
+#else
+   int fd = 0;
+#endif
    try {
 #ifdef _WIN32
-      auto flag = _O_RDONLY | _O_BINARY;
-      if (write) {
-         flag = _O_RDWR | _O_BINARY;
-      }
-
-      fd = _wopen(path.c_str(), flag);
-      if (fd == -1) {
+      const char* flag = write ? "a+b" : "rb";
+      f = std::fopen(path.string().c_str(), flag);
+      if (!f) {
          throw std::runtime_error("failed to open file");
       }
 
-      auto size = _lseek(fd, 0, SEEK_END);
+      auto size = std::fseek(f, 0, SEEK_END);
       if (size == 0) {
          throw std::runtime_error("empty file");
       }
 
-      _lseek(fd, 0, SEEK_SET);
+      std::fseek(f, 0, SEEK_SET);
 #else
       auto flag = O_RDONLY;
       if (write) {
          flag = O_RDWR;
       }
-      fd = open(path.c_str(), flag);
+      auto fd = open(path.c_str(), flag);
       if (fd == -1) {
          throw std::runtime_error("failed to open");
       }
@@ -312,7 +311,7 @@ FileUtils::FileMap::FileMap(const fs::path& path, bool write, size_t offset)
 
 #ifdef _WIN32
       //create mmap
-      auto fileHandle = (void*)_get_osfhandle(fd);
+      auto fileHandle = (void*)f;
       uint32_t sizelo = size & 0xffffffff;
       uint32_t sizehi = size >> 16 >> 16;
 
@@ -342,7 +341,7 @@ FileUtils::FileMap::FileMap(const fs::path& path, bool write, size_t offset)
       }
 
       CloseHandle(mh);
-      _close(fd);
+      std::fclose(f);
 #else
       auto mapFlag = PROT_READ;
       if (write) {
@@ -359,14 +358,14 @@ FileUtils::FileMap::FileMap(const fs::path& path, bool write, size_t offset)
       close(fd);
 #endif
    } catch (const std::runtime_error &e) {
-      if (fd != 0) {
 #ifdef _WIN32
-         _close(fd);
+      if (f) {
+         std::fclose(f);
 #else
+      if (fd != 0) {
          close(fd);
 #endif
       }
-
       LOGERR << "FileMap error for path " << path.string() <<
          ", error: " << e.what();
    }
@@ -412,20 +411,23 @@ uint8_t* FileUtils::FileMap::ptr() const
 FileUtils::FileCopy::FileCopy(const fs::path& path, size_t offset)
    : offset_(offset)
 {
+#ifdef _WIN32
+   FILE* f{ nullptr };
+#else
    int fd = 0;
+#endif
    try {
 #ifdef _WIN32
-      auto flag = _O_RDONLY | _O_BINARY;
-      fd = _wopen(path.c_str(), flag);
-      if (fd == -1) {
+      f = std::fopen(path.string().c_str(), "rb");
+      if (!f) {
          throw std::runtime_error("failed to open file");
       }
 
-      auto size = _lseek(fd, 0, SEEK_END);
+      auto size = std::fseek(f, 0, SEEK_END);
       if (size == 0) {
          throw std::runtime_error("empty file");
       }
-      _lseek(fd, offset_, SEEK_SET);
+      std::fseek(f, offset_, SEEK_SET);
 #else
       auto flag = O_RDONLY;
       fd = open(path.c_str(), flag);
@@ -446,18 +448,19 @@ FileUtils::FileCopy::FileCopy(const fs::path& path, size_t offset)
       data_.resize(size-offset);
 
 #ifdef _WIN32
-      _read(fd, &data_[0], size-offset_);
-      _close(fd);
+      std::fread(&data_[0], 1, size-offset_, f);
+      std::fclose(f);
 #else
       read(fd, &data_[0], size-offset_);
       close(fd);
 #endif
 
-   } catch (const std::runtime_error &e) {
-      if (fd != 0) {
+   } catch (const std::runtime_error& e) {
 #ifdef _WIN32
-         _close(fd);
+      if (f) {
+         std::fclose(f);
 #else
+      if (fd != 0) {
          close(fd);
 #endif
       }

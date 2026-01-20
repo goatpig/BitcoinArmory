@@ -1,14 +1,15 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2011-2025, Armory Technologies, Inc.                        //
+//  Copyright (C) 2011-2026, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 #include "lmdbpp.h"
 #include "lmdb.h"
-
-#include <unistd.h>
+#ifndef _WIN32
+#  include <unistd.h>
+#endif
 #include <sstream>
 #include <cstring>
 #include <algorithm>
