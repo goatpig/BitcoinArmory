@@ -339,7 +339,7 @@ BlockDataLoader::BlockDataLoader(std::shared_ptr<BlockFiles> files,
          //is no associated file
          continue;
       }
-      paf_.emplace_back(PathAndOffset{iter->second, fileID, 0});
+      paf_.emplace_back(PathAndOffset{iter->second, (uint16_t)fileID, 0});
    }
 }
 

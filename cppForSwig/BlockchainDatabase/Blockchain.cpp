@@ -408,7 +408,7 @@ double Blockchain::traceChainDown(std::shared_ptr<BlockHeader> bhpStart)
    TODO: check difficulty target matches for each block
    */
 
-   if (bhpStart->difficultySum_ > 0.0d) {
+   if (bhpStart->difficultySum_ > 0.0) {
       return bhpStart->difficultySum_;
    } else if (bhpStart->isFinishedCalc_) {
       return std::numeric_limits<double>::max();
@@ -420,7 +420,7 @@ double Blockchain::traceChainDown(std::shared_ptr<BlockHeader> bhpStart)
    std::deque<HeaderPtr> headerList;
 
    auto thisPtr = bhpStart;
-   while (thisPtr->difficultySum_ < 0.0d) {
+   while (thisPtr->difficultySum_ < 0.0) {
       headerList.emplace_front(thisPtr);
 
       auto prevHash = thisPtr->getPrevHash();

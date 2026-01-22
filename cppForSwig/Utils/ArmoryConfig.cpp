@@ -854,7 +854,9 @@ void NetworkSettings::createNodes()
       );
 
       rpcNode_ = std::make_shared<CoreRPC::NodeRPC>();
-   } else {
+   }
+#ifdef BUILD_ARMORY_TESTS
+   else {
       auto primary = std::make_shared<NodeUnitTest>(
          *(uint32_t*)magicBytes.getPtr(), false
       );
@@ -867,6 +869,7 @@ void NetworkSettings::createNodes()
       bitcoinNodes_.second = watcher;
       rpcNode_ = std::make_shared<NodeRPC_UnitTest>(primary, watcher);
    }
+#endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////
