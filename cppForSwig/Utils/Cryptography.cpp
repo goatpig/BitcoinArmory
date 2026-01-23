@@ -29,10 +29,10 @@ std::once_flag contexFlag;
 using namespace Cryptography;
 using namespace std::string_view_literals;
 
-static const std::string_view ECDSA::bitcoinMessageMagic{
+const std::string_view ECDSA::bitcoinMessageMagic{
    "Bitcoin Signed Message:\n"
 };
-static const size_t Encryption::AES::BLOCK_SIZE = AES_BLOCK_SIZE;
+const size_t Encryption::AES::BLOCK_SIZE = AES_BLOCK_SIZE;
 secp256k1_context* ECDSA::crypto_ecdsa_ctx = nullptr;
 const PRNG::Fortuna PRNG::fortuna;
 
