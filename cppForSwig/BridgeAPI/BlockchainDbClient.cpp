@@ -332,7 +332,7 @@ std::shared_ptr<Armory::Wallets::AuthorizedPeers> Armory::Bridge::spawnDb()
       }};
 
    //open file and lock it
-   auto fd = open(keyFilePath.c_str(), O_CREAT | O_EXCL | O_RSYNC | O_RDWR);
+   auto fd = open(keyFilePath.c_str(), O_CREAT | O_EXCL | O_RSYNC | O_RDWR, 0644);
    if (fd == -1) {
       throw std::runtime_error("failed to create autodb key file");
    }
