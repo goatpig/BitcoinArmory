@@ -378,6 +378,8 @@ BIP150KeyManager_LDADD = $(LIBARMORYCOMMON) \
 	$(LIBLMDBPP) \
 	-llmdb \
 	$(LIBWEBSOCKETS_STATIC) \
+        $(LIBSSL_STATIC) \
+	$(LIBCRYPTO_STATIC) \
 	-lpthread \
 	-lcapnp \
 	-lkj
