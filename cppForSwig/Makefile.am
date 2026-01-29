@@ -20,8 +20,7 @@ LIBARMORYGUI = libArmoryGUI.la
 LIBARMORYCLI = libArmoryCLI.la
 LIBLMDBPP = liblmdbpp.la
 LIBSECP256K1 = $(LIBBTC_LIBDIR)/src/secp256k1/libsecp256k1.la
-#LIBWEBSOCKETS_STATIC = $(WEBSOCKETS_LIBDIR)/libwebsockets.a #setting WEBSOCKETS_LIBDIR results in no/lib in any case
-LIBWEBSOCKETS_STATIC = /lib/x86_64-linux-gnu/libwebsockets.a
+LIBWEBSOCKETS_STATIC = $(WEBSOCKETS_LIBDIR)/libwebsockets.a
 if BUILD_OPENSSL_SUPPORT
 LIBCRYPTO_STATIC = $(CRYPTO_LIBDIR)/libcrypto.a
 LIBSSL_STATIC = $(SSL_LIBDIR)/libssl.a
@@ -36,7 +35,7 @@ endif
 SUBDIRS = chacha20poly1305 hkdf $(MAYBE_BUILD)
 
 # Unit test flags.
-UNIT_TEST_CXXFLAGS=
+UNIT_TEST_CXXFLAGS= -DBUILD_ARMORY_TESTS
 if BUILD_TESTS
 UNIT_TEST_CXXFLAGS += -DUNIT_TESTS -Wunused-parameter
 endif

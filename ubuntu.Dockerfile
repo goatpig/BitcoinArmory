@@ -39,6 +39,5 @@ WORKDIR /app
 RUN ./autogen.sh
 RUN export PKG_CONFIG=pkg-config
 RUN export CFLAGS="-I`pwd`/libbtc/include"
-RUN export WEBSOCKETS_LIBDIR=/lib/x86_64-linux-gnu
 RUN ./configure --with-own-libbtc=`pwd`/libbtc
 RUN make -j`nproc`
