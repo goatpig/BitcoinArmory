@@ -1,0 +1,3 @@
+[submodule "libbtc"]
+	path = libbtc
+	url = https://github.com/sergey-chernikov/libbtc
