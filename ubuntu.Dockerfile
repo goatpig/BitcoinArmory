@@ -1,4 +1,4 @@
-FROM ubuntu:22.04 as blocksettledb_build_machine
+FROM ubuntu:24.04 as armorydb_build_machine
 
 ENV TZ="Etc/UTC"
 
@@ -15,15 +15,16 @@ RUN sed -Ei 's/^# deb-src /deb-src /' /etc/apt/sources.list \
     libx11-xcb-dev libxcb-xkb-dev libxcb-xinput-dev libxcb-sync-dev libxcb-render-util0-dev libxcb-xfixes0-dev \    
     libxcb-xinerama0-dev libxcb-randr0-dev libxcb-image0-dev libxcb-keysyms1-dev libxcb-icccm4-dev libxcb-glx0-dev libxkbcommon-x11-dev \
     libudev-dev libxi-dev libsm-dev libxrender-dev libdbus-1-dev \
+    # some new stuff
+    liblmdb-dev libuv1-dev libwebsockets-dev libcapnp-dev capnproto \
+    # we probably don't need this package
+    #libwebsockets-evlib-uv \
+    # for libbtc
+    build-essential libevent-dev \
     # free up space
     #&& rm -rf /var/lib/apt/lists/* \
+    # link python
     && ln -s /usr/bin/python3 /usr/bin/python
-
-RUN apt install -y liblmdb-dev
-RUN apt install -y libuv1-dev libwebsockets-dev
-RUN apt install -y libcapnp-dev capnproto
-# for libbtc
-RUN apt install -y build-essential libevent-dev
 
 WORKDIR /app
 
