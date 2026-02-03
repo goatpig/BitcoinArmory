@@ -20,7 +20,7 @@ RUN sed -Ei 's/^# deb-src /deb-src /' /etc/apt/sources.list \
     && ln -s /usr/bin/python3 /usr/bin/python
 
 RUN apt install -y liblmdb-dev
-RUN apt install -y libuv1-dev libwebsockets-evlib-uv libwebsockets-dev
+RUN apt install -y libuv1-dev libwebsockets-dev
 RUN apt install -y libcapnp-dev capnproto
 # for libbtc
 RUN apt install -y build-essential libevent-dev
