@@ -14,14 +14,13 @@ RUN sed -Ei 's/^# deb-src /deb-src /' /etc/apt/sources.list \
     qttools5-dev-tools libfreetype-dev libfontconfig-dev libcups2-dev xcb \
     libx11-xcb-dev libxcb-xkb-dev libxcb-xinput-dev libxcb-sync-dev libxcb-render-util0-dev libxcb-xfixes0-dev \    
     libxcb-xinerama0-dev libxcb-randr0-dev libxcb-image0-dev libxcb-keysyms1-dev libxcb-icccm4-dev libxcb-glx0-dev libxkbcommon-x11-dev \
-    libudev-dev libxi-dev libsm-dev libxrender-dev libdbus-1-dev
-#    && pip install wget requests pathlib \
+    libudev-dev libxi-dev libsm-dev libxrender-dev libdbus-1-dev \
     # free up space
     #&& rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/bin/python3 /usr/bin/python
 
 RUN apt install -y liblmdb-dev
-RUN apt install -y libwebsockets-dev
+RUN apt install -y libuv1-dev libwebsockets-evlib-uv libwebsockets-dev
 RUN apt install -y libcapnp-dev capnproto
 # for libbtc
 RUN apt install -y build-essential libevent-dev
