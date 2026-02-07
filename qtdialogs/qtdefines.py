@@ -19,7 +19,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 
 from armoryengine.ArmoryUtils import enum, ARMORY_HOME_DIR, OS_MACOSX, \
    USE_TESTNET, USE_REGTEST, OS_WINDOWS, coin2str, int_to_hex, toBytes, \
-   hex_to_binary
+   hex_to_binary, touchFile
 from armoryengine.BinaryUnpacker import BinaryUnpacker, UINT8, UINT16
 
 from armorycolors import Colors, htmlColor
@@ -630,11 +630,11 @@ def selectFileForQLineEdit(parent, qObj, title="Select File", existing=False, \
    types.append('All files (*)')
    typesStr = ';; '.join(types)
    if not OS_MACOSX:
-      fullPath = unicode(QtWidgets.QFileDialog.getOpenFileName(parent, \
-         title, ARMORY_HOME_DIR, typesStr))
+      fullPath = QtWidgets.QFileDialog.getOpenFileName(parent, \
+         title, ARMORY_HOME_DIR, typesStr)
    else:
-      fullPath = unicode(QtWidgets.QFileDialog.getOpenFileName(parent, \
-         title, ARMORY_HOME_DIR, typesStr, options=QtWidgets.QFileDialog.DontUseNativeDialog))
+      fullPath = QtWidgets.QFileDialog.getOpenFileName(parent, \
+         title, ARMORY_HOME_DIR, typesStr, options=QtWidgets.QFileDialog.DontUseNativeDialog)
 
    if fullPath:
       qObj.setText( fullPath)
@@ -642,16 +642,16 @@ def selectFileForQLineEdit(parent, qObj, title="Select File", existing=False, \
 
 def selectDirectoryForQLineEdit(par, qObj, title="Select Directory"):
    initPath = ARMORY_HOME_DIR
-   currText = unicode(qObj.text()).strip()
+   currText = qObj.text().strip()
    if len(currText)>0:
       if os.path.exists(currText):
          initPath = currText
 
    if not OS_MACOSX:
-      fullPath = unicode(QtWidgets.QFileDialog.getExistingDirectory(par, title, initPath))
+      fullPath = QtWidgets.QFileDialog.getExistingDirectory(par, title, initPath)
    else:
-      fullPath = unicode(QtWidgets.QFileDialog.getExistingDirectory(par, title, initPath, \
-                                       options=QtWidgets.QFileDialog.DontUseNativeDialog))
+      fullPath = QtWidgets.QFileDialog.getExistingDirectory(par, title, initPath, \
+                                       options=QtWidgets.QFileDialog.DontUseNativeDialog)
    if fullPath:
       qObj.setText( fullPath)
 

@@ -655,7 +655,7 @@ class DlgSettings(ArmoryDialog):
 
       # Check path is supplied for bitcoind home directory
       pathHome = str(self.edtSatoshiHomePath.text()).strip()
-      if pathHome > 0:
+      if pathHome:
          if not os.path.exists(pathHome):
             QtWidgets.QMessageBox.warning(self, self.tr('Invalid Path'), self.tr(
                   'The path you specified for the Bitcoin software home directory '
@@ -671,7 +671,7 @@ class DlgSettings(ArmoryDialog):
 
       # Check path is supplied for armory db directory
       pathDbdir = str(self.edtArmoryDbdir.text()).strip()
-      if pathDbdir > 0:
+      if pathDbdir:
          if not os.path.exists(pathDbdir):
             QtWidgets.QMessageBox.warning(self, self.tr('Invalid Path'), self.tr(
                   'The path you specified for Armory\'s database directory '
@@ -729,7 +729,7 @@ class DlgSettings(ArmoryDialog):
          self.main.createCombinedLedger()
       except:
          pass
-      super(DlgSettings, self).accept(*args)
+      super(DlgSettings, self).accept()
 
    #############################################################################
    def setUsermodeDescr(self):

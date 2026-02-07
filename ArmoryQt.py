@@ -37,7 +37,8 @@ from armoryengine.ArmoryUtils import HMAC256, \
    unixTimeToFormatStr, binary_to_hex, BTC_HOME_DIR, secondsToHumanTime, \
    LEVELDB_BLKDATA, LOGPPRINT, hex_to_binary, \
    getRandomHexits_NotSecure, coin2strNZS, bytesToHumanSize, hash256, \
-   DEFAULT_ADDR_TYPE, hex_switchEndian, BLOCKEXPLORE_NAME, getBridgeArgList
+   DEFAULT_ADDR_TYPE, hex_switchEndian, BLOCKEXPLORE_NAME, getBridgeArgList, \
+   touchFile
 from armoryengine.Settings import TheSettings
 from armoryengine.AddressUtils import base58_to_binary, Hash160ToScrAddr, \
    hash160_to_addrStr, addrStr_to_hash160, scrAddr_to_script, \
@@ -4868,8 +4869,8 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       # Table to display ledger/activity
       w,h = tightSizeNChar(self.walletsView, 55)
       viewWidth  = 1.2*w
-      sectionSz  = 1.3*h
-      viewHeight = 4.4*sectionSz
+      sectionSz  = int(1.3*h)
+      viewHeight = int(4.4*sectionSz)
 
       self.ledgerTable = []
       self.ledgerModel = LedgerDispModelSimple(self.ledgerTable, self, self)
