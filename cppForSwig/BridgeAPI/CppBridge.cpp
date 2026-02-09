@@ -8,6 +8,7 @@
 
 #include "CppBridge.h"
 #include "BridgeSocket.h"
+#include "../SocketIncludes.h"
 #include "./Wallets/Manager.h"
 
 #include <Utils/ArmoryConfig.h>

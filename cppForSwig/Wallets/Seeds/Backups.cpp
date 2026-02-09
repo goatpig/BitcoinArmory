@@ -48,7 +48,7 @@ const std::set<BackupType> Easy16Codec::eligibleIndexes{
    BackupType::Armory200d
 };
 
-constexpr char Easy16Codec::characters[]{"asdfghjkwertuion"};
+const char Easy16Codec::characters[]{"asdfghjkwertuion"};
 const std::map<char, uint8_t> Easy16Codec::easy16Vals{
    {'a', 0}, {'s', 1}, {'d', 2}, {'f', 3},
    {'g', 4}, {'h', 5}, {'j', 6}, {'k', 7},
@@ -1646,7 +1646,7 @@ Backup_Easy16Public::Backup_Easy16Public(BackupType bType,
    bw.put_BinaryData(walletId);
 
    //compute the easy16 line
-   uint typeInt = (bType == BackupType::Armory135c) ? 0 : (uint8_t)bType;
+   uint8_t typeInt = (bType == BackupType::Armory135c) ? 0 : (uint8_t)bType;
    backupId_ = encodeEasy16Line(bw.getDataRef(), typeInt, false);
 
    //compressed pubkey is turned to easy16 without the leading sign byte

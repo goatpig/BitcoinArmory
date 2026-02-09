@@ -7,6 +7,9 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
+#ifdef WIN32
+#include <WinSock2.h>
+#endif
 #include "AsyncClient.h"
 #include <Utils/BtcUtils.h>
 #include <Utils/varint.h>

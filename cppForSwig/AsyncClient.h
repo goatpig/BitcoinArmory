@@ -12,7 +12,6 @@
 #include <list>
 
 #include "Utils/ReentrantLock.h"
-#include "StringSockets.h"
 #include "WebSocketClient.h"
 #include "SocketWritePayload.h"
 #include "TxClasses.h"

@@ -9,6 +9,7 @@
 #pragma once
 
 #include <memory>
+
 class BinaryDataRef;
 
 namespace Armory

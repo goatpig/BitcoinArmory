@@ -11,8 +11,8 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#if defined(__MINGW32__) || defined(_MSC_VER)
-   #include <windows.h>
+#ifdef _WIN32
+   #include <Windows.h>
 #else
    #include <sys/mman.h>
    #include <unistd.h>

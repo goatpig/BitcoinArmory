@@ -9,10 +9,10 @@
 #include <cstdlib>
 #include <errno.h>
 #include <sys/stat.h>
-#include <sys/file.h>
 #include <random>
 
 #ifndef _WIN32
+   #include <sys/file.h>
    #include <sys/wait.h>
    #include "spawn.h"
 #endif
@@ -117,7 +117,7 @@ std::shared_ptr<Armory::Wallets::AuthorizedPeers> Armory::Bridge::spawnDb()
 
    //2. randomize a file name
    std::filesystem::path keyFilePath{ Armory::Config::getDataDir() /
-      std::string{ "keyFile_" + BtcUtils::fortuna_.generateRandom(7).toHexStr() }};
+      std::string{ "keyFile_" + Cryptography::PRNG::generateRandomStrong(7).toHexStr() }};
 
    //1. use CreateFile to generate a inheritable file handle
    SECURITY_DESCRIPTOR secDep;
