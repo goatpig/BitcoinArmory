@@ -425,12 +425,13 @@ pair<BinaryData, BothBinaryDatas> DBInterface::readDataPacket(
       data.append(dbKey);
 
       //compute hmac
-      auto computedHmac = BtcUtils::getHMAC256(macKey, data);
+      const auto computedHmac = BtcUtils::getHMAC256(macKey, data);
 
       //check hmac
-      if (computedHmac != hmac)
-         throw EncryptedDBException("mac mismatch");
-
+      if (computedHmac != hmac) {
+         throw EncryptedDBException("mac mismatch: " + computedHmac.toHexStr()
+            + " vs " + hmac.toHexStr());
+      }
       break;
    }
 
