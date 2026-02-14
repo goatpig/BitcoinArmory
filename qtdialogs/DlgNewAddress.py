@@ -45,7 +45,7 @@ class DlgNewAddressDisp(ArmoryDialog):
          loading.setValue(80)
 
       self.addrStr = self.addr.getAddressString()
-      wlttype = determineWalletType(self.wlt, self.main)[0]
+      wlttype = determineWalletType(self.wlt)
       notMyWallet = (wlttype == WalletTypes.WatchOnly)
 
       lblDescr = QtWidgets.QLabel(self.tr('The following address can be used to receive bitcoins:'))
@@ -235,7 +235,7 @@ def ShowRecvCoinsWarningIfNecessary(wlt, parent, main):
       if not result == QtWidgets.QMessageBox.Ok:
          return False
 
-   wlttype = determineWalletType(wlt, main)[0]
+   wlttype = determineWalletType(wlt)
    notMyWallet = (wlttype == WalletTypes.WatchOnly)
    offlineWallet = (wlttype == WalletTypes.Offline)
    dnaaPropName = 'Wallet_%s_%s' % (wlt.getDisplayStr(), 'DNAA_RecvOther')

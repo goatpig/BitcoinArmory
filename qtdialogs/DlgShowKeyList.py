@@ -12,6 +12,7 @@
 
 from qtdialogs.ArmoryDialog import ArmoryDialog
 from armoryengine.AddressUtils import encodePrivKeyBase58
+from armoryengine.WalletUtils import determineWalletType, WalletTypes
 
 ################################################################################
 class DlgShowKeyList(ArmoryDialog):
@@ -22,8 +23,8 @@ class DlgShowKeyList(ArmoryDialog):
 
       self.havePriv = ((not self.wlt.useEncryption) or not (self.wlt.isLocked))
 
-      wltType = determineWalletType(self.wlt, self.main)[0]
-      if wltType in (WLTTYPES.Offline, WLTTYPES.WatchOnly):
+      wltType = determineWalletType(self.wlt)
+      if wltType in (WalletTypes.Offline, WalletTypes.WatchOnly):
          self.havePriv = False
 
 
