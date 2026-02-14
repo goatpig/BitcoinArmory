@@ -144,6 +144,9 @@ void Callback::processRefreshCallbacks(std::set<std::string>& ids)
 ////////////////////////////////////////////////////////////////////////////////
 void Callback::run(BdmNotification notif)
 {
+   LOGINFO << "event: " << notif.action;
+   std::cout << "event: " << notif.action << "\n";
+
    switch (notif.action)
    {
       case BDMAction_NewBlock:
