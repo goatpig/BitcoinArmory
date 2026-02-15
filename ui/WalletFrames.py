@@ -14,7 +14,7 @@ import sys
 import math
 
 from armoryengine.BDM import TheBDM, BDM_BLOCKCHAIN_READY
-from armoryengine.WalletUtils import determineWalletType
+from armoryengine.WalletUtils import determineWalletType, WalletTypes
 from armoryengine.ArmoryUtils import enum, isASCII, coin2str
 from armoryengine.CppBridge import TheBridge
 
@@ -147,8 +147,8 @@ class SelectWalletFrame(ArmoryFrame):
          self.selectedID = self.wltIDList[0]
          for wltID in self.wltIDList:
             wlt = self.main.wallets.get(wltID)
-            wlttype = determineWalletType(wlt, self.main)[0]
-            if onlyMyWallets and wlttype == WLTTYPES.WatchOnly:
+            wlttype = determineWalletType(wlt)
+            if onlyMyWallets and wlttype == WalletTypes.WatchOnly:
                continue
 
             self.displayIDs.append(wlt.dbId)

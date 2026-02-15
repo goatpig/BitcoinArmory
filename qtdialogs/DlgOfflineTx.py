@@ -122,8 +122,8 @@ class ReviewOfflineTxFrame(ArmoryDialog):
 
    def setWallet(self, wlt):
       self.wlt = wlt
-      if determineWalletType(\
-         wlt, self.main)[0] in [ WalletTypes.Offline, WalletTypes.WatchOnly ]:
+      if determineWalletType(wlt) in [WalletTypes.Offline, 
+         WalletTypes.WatchOnly]:
          self.lblDescr.setText(self.tr(
             'The block of data shown below is the complete transaction you '
             'just requested, but is invalid because it does not contain any '

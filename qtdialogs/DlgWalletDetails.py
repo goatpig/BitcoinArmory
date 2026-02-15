@@ -17,7 +17,8 @@ from armoryengine.AddressUtils import addrStr_to_hash160
 from armoryengine.BDM import TheBDM, BDM_UNINITIALIZED, BDM_OFFLINE, \
    BDM_SCANNING
 from armoryengine.Settings import TheSettings
-from armoryengine.WalletUtils import WalletTypes, determineWalletType
+from armoryengine.WalletUtils import WalletTypes, determineWalletType, \
+   getWalletTypeStr
 from armorycolors import htmlColor
 from ui.TreeViewGUI import AddressTreeModel
 from ui.QtExecuteSignal import TheSignalExecution
@@ -53,9 +54,10 @@ class DlgWalletDetails(ArmoryDialog):
 
       self.wlt = wlt
       self.usermode = usermode
-      self.wlttype, self.typestr = determineWalletType(wlt, parent)
-      if self.typestr == 'Encrypted':
-         self.typestr = 'Encrypted (AES256)'
+      self.wlttype = determineWalletType(wlt)
+      self.typestr = getWalletTypeStr(self.wlttype, self)
+      if self.wlttype == WalletTypes.Crypt:
+         self.typestr = self.tr('Encrypted (AES256)')
 
       self.labels = [wlt.labelName, wlt.labelDescr]
       self.passphrase = ''
@@ -285,7 +287,7 @@ class DlgWalletDetails(ArmoryDialog):
             dnaaStartChk=True)
          wlt.setSetting('DNAA_RemindBackup', result[1])
 
-      wltType = determineWalletType(wlt, main)[0]
+      wltType = determineWalletType(wlt)
       chkLoad = (TheSettings.getSettingOrSetDefault('Load_Count', 1) % 5 == 0)
       chkType = not wltType in [WalletTypes.Offline, WalletTypes.WatchOnly]
       chkDNAA = not wlt.getSetting('DNAA_RemindBackup')
