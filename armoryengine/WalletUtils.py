@@ -6,6 +6,7 @@
 #                                                                              #
 ################################################################################
 import enum
+
 from armoryengine.ArmoryUtils import LOGINFO, LOGWARN, LOGERROR
 from armoryengine.PyBtcWallet import PyBtcWallet
 from armoryengine.CppBridge import TheBridge
@@ -26,22 +27,21 @@ class WalletFilter(enum.Enum):
    SINGLE   = 4
 
 ################################################################################
-def determineWalletType(wlt, parent):
+def determineWalletType(wlt):
    if wlt.watchingOnly:
-      if wlt.getSetting(parent.tr('IsMine')):
-         return [WalletTypes.Offline, parent.tr('Offline')]
+      if wlt.getSetting('IsMine'):
+         return WalletTypes.Offline
       else:
-         return [WalletTypes.WatchOnly, parent.tr('Watching-Only')]
+         return WalletTypes.WatchOnly
    elif wlt.useEncryption:
-      return [WalletTypes.Crypt, parent.tr('Encrypted')]
+      return WalletTypes.Crypt
    else:
-      return [WalletTypes.Plain, parent.tr('No Encryption')]
+      return WalletTypes.Plain
 
 ################################################################################
 ## This class tracks and manages the wallets loaded by the application
 class WalletMap(object):
-   def __init__(self, parent):
-      self._parent = parent
+   def __init__(self):
 
       #pybtcwallet objects keyed by dbId
       self._walletMap = {}
@@ -52,56 +52,28 @@ class WalletMap(object):
       #index tracking
       self._dbIdList = []
 
-   @property
-   def parent(self):
-      return self._parent
-
    def add(self, wallet: PyBtcWallet):
       if wallet.dbId in self._walletMap:
          LOGWARN(f"trying to add a wallet we already have ({wallet.dbId})")
-         return
+         for i in range(len(self._dbIdList)):
+            if self._dbIdList[i]['id'] == wallet.dbId:
+               del self._dbIdList[i]
+               break
 
-      #track by dbId
       self._walletMap[wallet.dbId] = wallet
-
-      #check wlt/accId to dbId relationship
       if wallet.walletId not in self._wltIdToDbId:
          self._wltIdToDbId[wallet.walletId] = {}
-      if wallet.accountId in self._wltIdToDbId:
-         #we're replacing an existing wallet, find the old dbId
+
+      if wallet.accountId in self._wltIdToDbId[wallet.walletId]:
          oldWallet = self._wltIdToDbId[wallet.walletId][wallet.accountId]
          oldDbId = oldWallet.dbId
-
-         #replace in idToId map
-         self._wltIdToDbId[wallet.walletId][wallet.accountId] = wallet
-
-         #replace in linear list
-         for entry in self._dbIdList:
-            if entry['id'] == oldDbId:
-               entry['id'] = wallet.dbId
+         for i in range(len(self._dbIdList)):
+            if self._dbIdList[i]['id'] == oldDbId:
+               del self._dbIdList[i]
                break
-      else:
-         #new wallet, track wlt/accId relationship to dbId
-         self._wltIdToDbId[wallet.walletId][wallet.accountId] = wallet
 
-         #also append to linear dbId list
-         self._dbIdList.append({
-            'id' : wallet.dbId,
-            'visible' : True
-         })
-
-   def migrateWallet(self, path, callbackId, cbFunc):
-      def wrapperFunc(capnReply):
-         if capnReply.success == False:
-            cbFunc(False, capnReply.error)
-         else:
-            try:
-               self.parent.loadWallets()  # This reloads all wallets, registering the new one
-               dbId = capnReply.walletManager.migrateWallet
-               cbFunc(True, dbId)
-            except Exception as e:
-               cbFunc(False, str(e))
-      TheBridge.wltManager.migrateWallet(path, callbackId, wrapperFunc)
+      self._wltIdToDbId[wallet.walletId][wallet.accountId] = wallet
+      self._dbIdList.append({'id': wallet.dbId, 'visible': True})
 
    def unloadWallet(self, wltId: str, accId: str=None):
       dbIds = []
@@ -130,7 +102,7 @@ class WalletMap(object):
       #NOTE: we do not need to unregister them, just ignore the dbIds
       for dbId in dbIds:
          del self._walletMap[dbId]
-         for i in range(0, len(self._dbIdList)):
+         for i in range(len(self._dbIdList)):
             if self._dbIdList[i]['id'] == dbId:
                del self._dbIdList[i]
                break
@@ -138,40 +110,12 @@ class WalletMap(object):
    def setupFromProto(self, protoPacket):
       LOGINFO('Loading wallets...')
       if not protoPacket.success:
-         LOGERROR(f"failed to load wallets wit error: {protoPacket.error}")
+         LOGERROR(f"failed to load wallets with error: {protoPacket.error}")
          raise Exception("failed to load wallets")
 
       for wltProto in protoPacket.walletManager.loadWallets:
          wltLoad = PyBtcWallet(proto=wltProto)
-         dbId = wltLoad.dbId
-
-         wltLoaded = True
-         if dbId in self._walletMap:
-            LOGWARN('***WARNING: Duplicate wallet detected, %s', wltLoad.walletId)
-            wo1 = self._walletMap[dbId].watchingOnly
-            wo2 = wltLoad.watchingOnly
-            fpath = wltLoad.walletPath
-            if wo1 and not wo2:
-               prevWltPath = self._walletMap[dbId].walletPath
-               self._walletMap[dbId] = wltLoad
-               LOGWARN('First wallet is more useful than the second one...')
-               LOGWARN('     Wallet 1 (loaded):  %s', fpath)
-               LOGWARN('     Wallet 2 (skipped): %s', prevWltPath)
-            else:
-               wltLoaded = False
-               LOGWARN('Second wallet is more useful than the first one...')
-               LOGWARN('     Wallet 1 (skipped): %s', fpath)
-               LOGWARN('     Wallet 2 (loaded):  %s', self._walletMap[dbId].walletPath)
-         else:
-            # Update the maps/dictionaries
-            self.add(wltLoad)
-
-            # Maintain some linear lists of wallet info
-            wtype = determineWalletType(wltLoad, self._parent)[0]
-            notWatch = (not wtype == WalletTypes.WatchOnly)
-
-         if wltLoaded is False:
-            continue
+         self.add(wltLoad)
 
       LOGINFO('Number of wallets read in: %d', len(self._walletMap))
       for _, wlt in self._walletMap.items():
@@ -188,9 +132,6 @@ class WalletMap(object):
          self.loadLockboxesFromFile(MULTISIG_FILE)
       '''
 
-   def syncWalletData(self, dbId: str):
-      self._walletMap[dbId].syncData()
-
    ## getters ##
    def get(self, wId: str, accId: str=None):
       if not accId:
@@ -204,7 +145,7 @@ class WalletMap(object):
          wltMap = self._wltIdToDbId[wId]
          if accId not in wltMap:
             raise Exception(f"no account for id {accId} in wallet {wId}")
-         dbId = self._wltIdToDbId[wId][accId]
+         dbId = self._wltIdToDbId[wId][accId].dbId
 
       if dbId not in self._walletMap:
          raise Exception(f"missing wallet for dbId {dbId}")
@@ -222,17 +163,6 @@ class WalletMap(object):
    def empty(self):
       return self.count() == 0
 
-   def getWalletType(self, wlt):
-      if wlt.watchingOnly:
-         if wlt.getSetting('IsMine'):
-            return WalletTypes.Offline
-         else:
-            return WalletTypes.WatchOnly
-      elif wlt.useEncryption:
-         return WalletTypes.Crypt
-      else:
-         return WalletTypes.Plain
-
    def getWalletIdList(self, watchingOnly: bool=False):
       result = []
       for entry in self._dbIdList:
@@ -243,7 +173,7 @@ class WalletMap(object):
       return result
 
    def getWltForScrAddr(self, scrAddr):
-      for iterID,iterWlt in self._walletMap.items():
+      for _, iterWlt in self._walletMap.items():
          if iterWlt.hasAddrHash(scrAddr):
             return iterWlt
       return None
@@ -259,10 +189,10 @@ class WalletMap(object):
 
    def updateVisibilityFilter(self,
       mode: WalletFilter=WalletFilter.SINGLE, index=None):
-      for i in range(0, len(self._dbIdList)):
+      for i in range(len(self._dbIdList)):
          dbId = self._dbIdList[i]['id']
          wlt = self._walletMap[dbId]
-         wtype = self.getWalletType(wlt)
+         wtype = determineWalletType(wlt)
 
          doShow = False
          if mode == WalletFilter.MINE:
@@ -297,9 +227,9 @@ class WalletMap(object):
          wlt.getAddrDataFromDB()
 
    def getBalances(self):
-      total=0
-      spend=0
-      unconf=0
+      total = 0
+      spend = 0
+      unconf = 0
       for entry in self._dbIdList:
          if not entry['visible']:
             continue
@@ -311,3 +241,121 @@ class WalletMap(object):
          spend += wlt.getBalance('Spendable')
          unconf += wlt.getBalance('Unconfirmed')
       return total, spend, unconf
+
+   def detectHighestUsedIndex(self):
+      for _, wlt in self._walletMap.items():
+         wlt.detectHighestUsedIndex()
+
+################################################################################
+## Wallet Data Classes
+class WalletImportPreview(object):
+   """Preview data for legacy wallets in the wallet list before loading.
+
+   Contains extended metadata for wallets that could be migrated and loaded
+   into the WalletMap. This is not a loaded wallet object."""
+
+   def __init__(self, previewProto):
+      self.walletId = previewProto.walletId
+      self.label = previewProto.label
+      self.description = previewProto.description
+      self.watchingOnly = previewProto.watchingOnly
+      self.encrypted = previewProto.encrypted
+      self.timestamp = previewProto.timestamp
+      self.highestUsedIndex = previewProto.highestUsedIndex
+      self.addressCount = previewProto.addressCount
+      self.seedVersion = previewProto.seedVersion
+      self.kdfMem = previewProto.kdfMem
+      self.previewType = previewProto.which()
+
+   def which(self):
+      return self.previewType
+
+################################################################################
+class WalletListEntry(object):
+   """Wallet list entry representing a wallet that could be loaded.
+
+   Contains metadata about wallets available for loading. These are not
+   loaded wallet objects; WalletMap contains the actual loaded wallets."""
+
+   def __init__(self, entry):
+      self.walletId = entry.walletId
+      self.filename = entry.path
+      self.staged = entry.staged or False
+
+      self.stateName = str(entry.state).lower()
+      self.isLegacy = (self.stateName == 'legacy')
+      self.isEncrypted = (self.stateName == 'encrypted')
+      self.isReady = (self.stateName == 'ready')
+
+      if self.walletId:
+         self.displayName = self.walletId
+      else:
+         self.displayName = self.filename.rsplit('.', 1)[0]
+      self.watchingOnly = entry.watchingOnly
+
+      self.importPreview = None
+      if entry.which() == 'legacy':
+         self.importPreview = WalletImportPreview(entry.legacy)
+
+################################################################################
+## WalletList Class - Handles all wallet data fetching and preparation
+class WalletList(object):
+   """
+   Handles wallet data fetching and formatting for UI rendering.
+   NO GUI code - pure data processing only.
+   """
+
+   def __init__(self):
+      self.wallets = []
+
+   def update(self):
+      """Fetch and process wallet list, updating internal state."""
+      self.wallets = []
+      try:
+         rawWalletData = TheBridge.wltManager.listWallets()
+      except Exception as e:
+         LOGERROR(f"Failed to fetch wallet list: {e}")
+         raise e
+
+      bestByWalletId = {}
+      for entry in rawWalletData:
+         walletEntry = WalletListEntry(entry)
+         if walletEntry.isEncrypted:
+            self.wallets.append(walletEntry)
+            continue
+
+         if not walletEntry.walletId:
+            raise Exception(f"Wallet entry missing walletId: {walletEntry.filename}")
+         if walletEntry.walletId not in bestByWalletId:
+            bestByWalletId[walletEntry.walletId] = walletEntry
+         else:
+            existingEntry = bestByWalletId[walletEntry.walletId]
+            if replaceEntry(existingEntry, walletEntry):
+               bestByWalletId[walletEntry.walletId] = walletEntry
+
+      for walletEntry in bestByWalletId.values():
+         self.wallets.append(walletEntry)
+
+   def getFilteredList(self):
+      """Return the filtered wallet list for UI rendering."""
+      self.update()
+      return self.wallets
+
+def replaceEntry(existingEntry, newEntry):
+   """
+   Check if newEntry should replace existingEntry.
+   Priority: ready (full) > ready (watch-only) > legacy
+   """
+   if newEntry.isReady:
+      if not existingEntry.isReady or not newEntry.watchingOnly:
+         return True
+   return False
+
+################################################################################
+## Centralized wallet listing functions to eliminate duplicate bridge calls
+def loadWalletsForMainApp():
+   """Load and return populated WalletMap for main application."""
+   walletManager = WalletMap()
+   protoPacket = TheBridge.wltManager.loadWallets()
+   walletManager.setupFromProto(protoPacket)
+   return walletManager
