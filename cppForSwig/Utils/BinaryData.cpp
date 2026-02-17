@@ -665,9 +665,7 @@ BinaryData& BinaryData::swapEndian(size_t pos1, size_t pos2)
 
    size_t totalBytes = pos2-pos1;
    for (size_t i=0; i<(totalBytes/2); i++) {
-      uint8_t d1    = data_[pos1+i];
-      data_[pos1+i] = data_[pos2-(i+1)];
-      data_[pos2-(i+1)] = d1;
+      std::swap(data_[pos1 + i], data_[pos2 - (i + 1)]);
    }
    return *this;
 }
