@@ -663,8 +663,8 @@ BinaryData& BinaryData::swapEndian(size_t pos1, size_t pos2)
       pos2 = getSize();
    }
 
-   size_t totalBytes = pos2-pos1;
-   for (size_t i=0; i<(totalBytes/2); i++) {
+   const size_t halfSize = (pos2 - pos1) / 2;
+   for (size_t i = 0; i < halfSize; i++) {
       std::swap(data_[pos1 + i], data_[pos2 - (i + 1)]);
    }
    return *this;
