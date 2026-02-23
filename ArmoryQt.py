@@ -3554,10 +3554,10 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          if showPct:
             if phase==BDMPhase_BlockHeaders or phase==BDMPhase_BlockData or phase==BDMPhase_DBHeaders:
                self.lblTimeLeftBuild.setText(tstring)
-               self.barProgressBuild.setValue(pvalue)
+               self.barProgressBuild.setValue(int(pvalue))
             elif phase==BDMPhase_Rescan or BDMPhase_ResolveHashes:
                self.lblTimeLeftScan.setText(tstring)
-               self.barProgressScan.setValue(pvalue)
+               self.barProgressScan.setValue(int(pvalue))
                self.lblTimeLeftScan.setVisible(True)
 
       elif sdmStr in ['NodeStatus_Initializing','NodeStatus_Syncing']:
@@ -3582,9 +3582,9 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
 
          if sdmStr == 'NodeStatus_Syncing':
-            sdmPercent = self.nodeStatus.chain_state.progress_pct * 100
+            sdmPercent = self.nodeStatus.chain.progress * 100
             self.lblTimeLeftSync.setText(\
-               "%d blocks remaining" % self.nodeStatus.chain_state.blocks_left)
+               "%d blocks remaining" % self.nodeStatus.chain.blocksLeft)
 
          elif sdmStr == 'NodeStatus_Initializing':
             sdmPercent = 0
@@ -4563,12 +4563,12 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
       elif action == NODESTATUS_UPDATE:
          prevStatus = None
-         if self.nodeStatus != None and self.nodeStatus.is_valid:
-            prevStatus = self.nodeStatus.node_state
+         if self.nodeStatus is not None and hasattr(self.nodeStatus, 'node'):
+            prevStatus = self.nodeStatus.node
          self.nodeStatus = args
 
-         if prevStatus != self.nodeStatus.node_state:
-            if self.nodeStatus.node_state == NodeStatus_Offline:
+         if prevStatus != self.nodeStatus.node:
+            if self.nodeStatus.node == 'offline':
                self.showTrayMsg(self.tr('Disconnected'),
                   self.tr('Connection to Bitcoin Core '
                      'client lost!  Armory cannot send nor '
@@ -4887,7 +4887,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       self.ledgerView.setSelectionMode(QtWidgets.QTableView.SingleSelection)
 
 
-      self.ledgerView.verticalHeader().setDefaultSectionSize(sectionSz)
+      self.ledgerView.verticalHeader().setDefaultSectionSize(int(sectionSz))
       self.ledgerView.verticalHeader().hide()
       #self.ledgerView.horizontalHeader().setResizeMode(0, QHeaderView.Fixed)
       #self.ledgerView.horizontalHeader().setResizeMode(3, QHeaderView.Fixed)

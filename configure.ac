@@ -196,6 +196,8 @@ if test x$use_pkgconfig$with_own_lws = xno; then
     AC_MSG_RESULT($WEBSOCKETS_LIBDIR)
     AC_SUBST([WEBSOCKETS_LIBDIR])
     CXXFLAGS="${CXXFLAGS} ${WEBSOCKETS_CFLAGS}"
+    AC_SUBST([LWS_CFLAGS], ["${WEBSOCKETS_CFLAGS}"])
+    AC_SUBST([LWSLDFLAGS], ["${WEBSOCKETS_LIBS}"])
 else
     # Even if libraries don't directly use LWS, they may rely on libraries that do
     # rely on LWS. This causes the "child" libraries to rely on LWS too! Be sure to
@@ -203,6 +205,8 @@ else
     # "parent".
     AC_SUBST([WEBSOCKETS_LIBDIR], ["$with_own_lws/lib"])
     CXXFLAGS="${CXXFLAGS} -I$with_own_lws/include"
+    AC_SUBST([LWS_CFLAGS], ["-I$with_own_lws/include"])
+    AC_SUBST([LWSLDFLAGS], [""])
 fi
 
 if test x$with_own_libbtc = xno; then
