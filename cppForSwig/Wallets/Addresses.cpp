@@ -10,8 +10,17 @@
 #include <Utils/ArmoryConfig.h>
 #include <Utils/BtcUtils.h>
 #include <Utils/OpCodes.h>
+#include <Signer/ScriptRecipient.h>
+#include "Assets.h"
+
 
 using namespace Armory;
+
+////////////////////////////////////////////////////////////////////////////////
+// exceptions
+AddressException::AddressException(const std::string& err) :
+   std::runtime_error(err)
+{}
 
 ////////////////////////////////////////////////////////////////////////////////
 // AddressEntry
@@ -34,7 +43,7 @@ size_t AddressEntry::getWitnessDataSize() const
 
 ////////////////////////////////////////////////////////////////////////////////
 AddressEntry_WithAsset::AddressEntry_WithAsset(
-   std::shared_ptr<Armory::Assets::AssetEntry> asset,
+   std::shared_ptr<Assets::AssetEntry> asset,
    bool isCompressed) :
    asset_(asset), isCompressed_(isCompressed)
 {}
@@ -42,7 +51,7 @@ AddressEntry_WithAsset::AddressEntry_WithAsset(
 AddressEntry_WithAsset::~AddressEntry_WithAsset()
 {}
 
-const std::shared_ptr<Armory::Assets::AssetEntry>
+const std::shared_ptr<Assets::AssetEntry>
 AddressEntry_WithAsset::getAsset() const
 {
    return asset_;
@@ -74,15 +83,18 @@ std::shared_ptr<AddressEntry> AddressEntry_Nested::getPredecessor() const
 ////////////////////////////////////////////////////////////////////////////////
 // P2PKH
 AddressEntry_P2PKH::AddressEntry_P2PKH(
-   std::shared_ptr<Armory::Assets::AssetEntry> asset,
+   std::shared_ptr<Assets::AssetEntry> asset,
    bool isCompressed) :
    AddressEntry(WITH_COMPRESSED_FLAG(AddressEntryType::P2PKH, isCompressed)),
    AddressEntry_WithAsset(asset, isCompressed)
 {
-   auto asset_single = std::dynamic_pointer_cast<
-      Armory::Assets::AssetEntry_Single>(asset);
-   if (asset_single == nullptr) {
-      throw AddressException("[AddressEntry_P2PKH] unexpected asset type");
+   switch (asset->getType()) {
+      case Assets::AssetEntryType::Single:
+      case Assets::AssetEntryType::ScriptHash:
+         break;
+
+      default:
+         throw AddressException("[AddressEntry_P2PKH] unexpected asset type");
    }
 }
 
@@ -104,14 +116,29 @@ const BinaryData& AddressEntry_P2PKH::getPreimage() const
 const BinaryData& AddressEntry_P2PKH::getHash() const
 {
    if (hash_.empty()) {
-      const auto& preimage = getPreimage();
-      auto hash1 = BtcUtils::getHash160(preimage);
-      auto hash2 = BtcUtils::getHash160(preimage);
-
-      if (hash1 != hash2) {
-         throw AddressException("failed to hash preimage");
+      switch (getAsset()->getType())
+      {
+      case Assets::AssetEntryType::ScriptHash:
+      {
+         auto assetSingle =
+            std::dynamic_pointer_cast<Assets::AssetEntry_ScriptHash>(getAsset());
+         if (assetSingle == nullptr) {
+            throw AddressException("expected script hash asset");
+         }
+         hash_ = BinaryData{assetSingle->getScriptHash()};
+         break;
       }
-      hash_ = hash1;
+
+      default:
+         const auto& preimage = getPreimage();
+         auto hash1 = BtcUtils::getHash160(preimage);
+         auto hash2 = BtcUtils::getHash160(preimage);
+
+         if (hash1 != hash2) {
+            throw AddressException("failed to hash preimage");
+         }
+         hash_ = hash1;
+      }
    }
    return hash_;
 }
@@ -290,7 +317,7 @@ const BinaryData& AddressEntry_P2WPKH::getPrefixedHash() const
       const auto& hash = getHash();
 
       //get and prepend network byte
-      auto networkByte = uint8_t(Armory::ScriptPrefix::P2WPKH);
+      auto networkByte = uint8_t(ScriptPrefix::P2WPKH);
       prefixedHash_.append(networkByte);
       prefixedHash_.append(hash);
    }
@@ -404,14 +431,13 @@ size_t AddressEntry_Multisig::getInputSize() const
    return SIZE_MAX;
 }
 
-const Armory::Wallets::AssetId& AddressEntry_Multisig::getID() const
+const Wallets::AssetId& AddressEntry_Multisig::getID() const
 {
    return getAsset()->getID();
 }
 
 const BinaryData& AddressEntry_Multisig::getScript() const
 {
-   using namespace Armory;
    if (script_.empty()) {
       auto asset_ms = std::dynamic_pointer_cast<Assets::AssetEntry_Multisig>(
          getAsset());
@@ -458,6 +484,117 @@ const BinaryData& AddressEntry_Multisig::getScript() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// ScriptHash
+AddressEntry_ScriptHash::AddressEntry_ScriptHash(
+   std::shared_ptr<Assets::AssetEntry> assetPtr) :
+   AddressEntry(AddressEntryType::ScriptHash),
+   AddressEntry_WithAsset(assetPtr, false)
+{
+   if (assetPtr->getType() != Assets::AssetEntryType::ScriptHash) {
+      throw AddressException("expected ScriptHash asset");
+   }
+}
+
+const Wallets::AssetId& AddressEntry_ScriptHash::getID() const
+{
+   return getAsset()->getID();
+}
+
+const std::string& AddressEntry_ScriptHash::getAddress() const
+{
+   throw AddressException("invalid for AddressEntry_ScriptHash");
+}
+
+std::shared_ptr<Signing::ScriptRecipient>
+AddressEntry_ScriptHash::getRecipient(uint64_t) const
+{
+   throw AddressException("invalid for AddressEntry_ScriptHash");
+}
+
+const BinaryData& AddressEntry_ScriptHash::getHash() const
+{
+   auto assetSingle =
+      std::dynamic_pointer_cast<Assets::AssetEntry_ScriptHash>(getAsset());
+   return assetSingle->getScriptHash();
+}
+
+const BinaryData& AddressEntry_ScriptHash::getPrefixedHash() const
+{
+   throw AddressException("invalid for AddressEntry_ScriptHash");
+}
+
+const BinaryData& AddressEntry_ScriptHash::getPreimage() const
+{
+   throw AddressException("invalid for AddressEntry_ScriptHash");
+}
+
+const BinaryData& AddressEntry_ScriptHash::getScript() const
+{
+   throw AddressException("invalid for AddressEntry_ScriptHash");
+}
+
+size_t AddressEntry_ScriptHash::getInputSize() const
+{
+   throw AddressException("invalid for AddressEntry_ScriptHash");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// RawScript
+AddressEntry_RawScript::AddressEntry_RawScript(
+   std::shared_ptr<Assets::AssetEntry> assetPtr) :
+   AddressEntry(AddressEntryType::RawScript),
+   AddressEntry_WithAsset(assetPtr, false)
+{
+   if (assetPtr->getType() != Assets::AssetEntryType::RawScript) {
+      throw AddressException("expected RawScript asset");
+   }
+}
+
+const Wallets::AssetId& AddressEntry_RawScript::getID() const
+{
+   return getAsset()->getID();
+}
+
+const std::string& AddressEntry_RawScript::getAddress() const
+{
+   throw AddressException("invalid for AddressEntry_RawScript");
+}
+
+std::shared_ptr<Signing::ScriptRecipient>
+AddressEntry_RawScript::getRecipient(uint64_t amount) const
+{
+   return std::make_shared<Signing::Recipient_Universal>(
+      getScript(), amount);
+}
+
+const BinaryData& AddressEntry_RawScript::getHash() const
+{
+   throw AddressException("invalid for AddressEntry_RawScript");
+}
+
+const BinaryData& AddressEntry_RawScript::getPrefixedHash() const
+{
+   throw AddressException("invalid for AddressEntry_RawScript");
+}
+
+const BinaryData& AddressEntry_RawScript::getPreimage() const
+{
+   throw AddressException("invalid for AddressEntry_RawScript");
+}
+
+const BinaryData& AddressEntry_RawScript::getScript() const
+{
+   auto assetSingle =
+      std::dynamic_pointer_cast<Assets::AssetEntry_RawScript>(getAsset());
+   return assetSingle->getScript();
+}
+
+size_t AddressEntry_RawScript::getInputSize() const
+{
+   throw AddressException("invalid for AddressEntry_RawScript");
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // P2SH
 AddressEntry_P2SH::AddressEntry_P2SH(std::shared_ptr<AddressEntry> addrPtr) :
    AddressEntry(AddressEntryType::P2SH), AddressEntry_Nested(addrPtr)
@@ -478,14 +615,25 @@ const BinaryData& AddressEntry_P2SH::getPreimage() const
 const BinaryData& AddressEntry_P2SH::getHash() const
 {
    if (hash_.empty()) {
-      const auto& preimage = getPreimage();
-      auto hash1 = BtcUtils::getHash160(preimage);
-      auto hash2 = BtcUtils::getHash160(preimage);
+      auto predecessor = getPredecessor();
+      switch (predecessor->getType())
+      {
+         case AddressEntryType::ScriptHash:
+         {
+            hash_ = predecessor->getHash();
+            break;
+         }
 
-      if (hash1 != hash2) {
-         throw AddressException("failed to hash preimage");
+         default:
+            const auto& preimage = getPreimage();
+            auto hash1 = BtcUtils::getHash160(preimage);
+            auto hash2 = BtcUtils::getHash160(preimage);
+
+            if (hash1 != hash2) {
+               throw AddressException("failed to hash preimage");
+            }
+            hash_ = hash1;
       }
-      hash_ = hash1;
    }
    return hash_;
 }
@@ -502,7 +650,7 @@ const BinaryData& AddressEntry_P2SH::getPrefixedHash() const
    return prefixedHash_;
 }
 
-const Armory::Wallets::AssetId& AddressEntry_P2SH::getID() const
+const Wallets::AssetId& AddressEntry_P2SH::getID() const
 {
    if (getPredecessor() == nullptr) {
       throw AddressException("missing predecessor");
@@ -589,7 +737,7 @@ const BinaryData& AddressEntry_P2WSH::getPrefixedHash() const
       const auto& hash = getHash();
 
       //get and prepend network byte
-      auto networkByte = uint8_t(Armory::ScriptPrefix::P2WSH);
+      auto networkByte = uint8_t(ScriptPrefix::P2WSH);
       prefixedHash_.append(networkByte);
       prefixedHash_.append(hash);
    }
@@ -679,6 +827,18 @@ std::shared_ptr<AddressEntry> AddressEntry::instantiate(
       {
          addressPtr = std::make_shared<AddressEntry_Multisig>(
             assetPtr, isCompressed);
+         break;
+      }
+
+      case AddressEntryType::ScriptHash:
+      {
+         addressPtr = std::make_shared<AddressEntry_ScriptHash>(assetPtr);
+         break;
+      }
+
+      case AddressEntryType::RawScript:
+      {
+         addressPtr = std::make_shared<AddressEntry_RawScript>(assetPtr);
          break;
       }
 
@@ -803,6 +963,14 @@ std::string Armory::getNameForAddrType(int addrTypeInt)
 
       case AddressEntryType::Multisig:
          result += "Multisig";
+         break;
+
+      case AddressEntryType::ScriptHash:
+         result += "RawScriptHash";
+         break;
+
+      case AddressEntryType::RawScript:
+         result += "RawScript";
          break;
 
       default:

@@ -280,7 +280,7 @@ DerivationScheme_ArmoryLegacy::extendPrivateChain(
 
       return computeNextPrivateEntry(
          ddc, privkeyData,
-         std::move(privkey->getCipherDataPtr()->cipher_->getCopy()),
+         std::move(privkey->getCipherDataPtr()->cipher->getCopy()),
          AssetId(assetSingle->getAccountID(), assetSingle->getIndex() + 1)
       );
    };
@@ -413,7 +413,7 @@ DerivationScheme_BIP32::extendPrivateChain(
 
       return computeNextPrivateEntry(
          ddc, privkeyData,
-         std::move(privkey->getCipherDataPtr()->cipher_->getCopy()),
+         std::move(privkey->getCipherDataPtr()->cipher->getCopy()),
          AssetId(account_id, derivationIndex));
    };
 
@@ -851,7 +851,7 @@ DerivationScheme_ECDH::extendPrivateChain(
 
       return computeNextPrivateEntry(
          ddc,
-         privkeyData, move(privkey->getCipherDataPtr()->cipher_->getCopy()),
+         privkeyData, move(privkey->getCipherDataPtr()->cipher->getCopy()),
          AssetId(rootAsset_single->getAccountID(), derivationIndex));
    };
 

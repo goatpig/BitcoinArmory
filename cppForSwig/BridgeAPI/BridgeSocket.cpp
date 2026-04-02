@@ -45,10 +45,9 @@ CppBridgeSocket::CppBridgeSocket(
    }
 
    //inject UI key (UI is the server, bridge connects to it)
-   std::vector<std::string> peerNames = { serverName_ };
-   authPeers_->addPeer(uiPubKey.getRef(), peerNames);
+   authPeers_->addPeer(uiPubKey.getRef(), {serverName_}, {}, false);
    auto lbds = Wallets::AuthorizedPeers::getAuthPeersLambdas(
-      authPeers_);
+      authPeers_, false);
 
    //write own public key to cookie file
    {

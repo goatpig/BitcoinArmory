@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig.                                         //
+//  Copyright (C) 2016-2026, goatpig.                                         //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -8,403 +8,538 @@
 
 //TODO: replace with something like nlohmann json
 
+#include <iostream>
+#include <cstring>
 #include "JSON_codec.h"
 
-using namespace std;
+using namespace JSON;
+using namespace std::string_view_literals;
 
-int JSON_object::id_counter_ = 0;
-
-////////////////////////////////////////////////////////////////////////////////
-JSON_value::~JSON_value()
+Exception::Exception(const std::string& str) :
+   std::runtime_error(str)
 {}
 
 ////////////////////////////////////////////////////////////////////////////////
-string JSON_encode(JSON_object& json_obj)
-{
-   //make sure json_obj has jsonrpc, params and id key
-   auto rpciter = json_obj.keyval_pairs_.find(string("jsonrpc"));
-   if (rpciter == json_obj.keyval_pairs_.end())
-      json_obj.add_pair("jsonrpc", "2.0");
+// Value
+Value::~Value()
+{}
 
-   auto paramsiter = json_obj.keyval_pairs_.find(string("params"));
-   if (paramsiter == json_obj.keyval_pairs_.end())
-   {
-      JSON_array arr;
-      json_obj.add_pair("params", arr);
+////////////////////////////////////////////////////////////////////////////////
+// String
+String::String(const std::string_view& val) :
+   val(val)
+{}
+
+////////
+void String::serialize(std::ostream& s) const
+{
+   s << "\"" << val << "\"";
+}
+
+String String::unserialize(std::istream& s)
+{
+   auto val = s.get();
+   if (val != '\"') {
+      throw Exception("invalid string encapsulation");
    }
 
-   auto iditer = json_obj.keyval_pairs_.find(string("id"));
-   if (iditer == json_obj.keyval_pairs_.end())
-      json_obj.add_pair("id", json_obj.id_);
+   std::string result;
+   while (true) {
+      std::string str;
+      std::getline(s, str, '\"');
+      if (s.rdstate() != std::ios_base::goodbit) {
+         throw Exception("invalid string encapsulation");
+      }
+      result.append(str);
 
-   stringstream ss;
-   json_obj.serialize(ss);
-   return ss.str();
+      //make sure that delimiting '\"' was no exited
+      auto len = str.size();
+      if (!str.empty() && str.c_str()[len - 1] != '\\') {
+         break;
+      }
+      result.append("\"");
+   }
+   return String{result};
+}
+
+bool String::Comparator::operator()(
+   const String& lhs, const String& rhs) const
+{
+   return lhs.val < rhs.val;
+}
+
+bool String::Comparator::operator()(
+   const String& lhs, const std::string_view& rhs) const
+{
+   return lhs.val < rhs;
+}
+
+bool String::Comparator::operator()(
+   const std::string_view& lhs, const String& rhs) const
+{
+   return lhs < rhs.val;
+}
+
+bool String::Comparator::operator()(
+   const String& lhs, const std::string& rhs) const
+{
+   return lhs.val < rhs;
+}
+
+bool String::Comparator::operator()(
+   const std::string& lhs, const String& rhs) const
+{
+   return lhs < rhs.val;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void JSON_object::serialize(ostream& s) const
+// Number
+Number::Number(double val) :
+   val(val)
+{}
+
+Number::Number(int val) :
+   val(double(val))
+{}
+
+Number::Number(unsigned val) :
+   val(double(val))
+{}
+
+void Number::serialize(std::ostream& s) const
+{
+   s << val;
+}
+
+Number Number::unserialize(std::istream& s)
+{
+   double val;
+   s >> val;
+   return Number{val};
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// State
+State::State(StateEnum s) :
+   state(s)
+{}
+
+void State::serialize(std::ostream& s) const
+{
+   switch (state)
+   {
+      case StateEnum::Null:
+         s << "null";
+         break;
+
+      case StateEnum::True:
+         s << "true";
+         break;
+
+      case StateEnum::False:
+         s << "false";
+         break;
+   }
+}
+
+State State::unserialize(std::istream& s)
+{
+   auto c = s.peek();
+   switch (c)
+   {
+      case 'n':
+      {
+         char val_null[4];
+         s.read(val_null, 4);
+         if (std::memcmp(val_null, "null", 4) != 0) {
+            throw Exception("invalid state");
+         }
+         return State{StateEnum::Null};
+      }
+
+      case 't':
+      {
+         char val_true[4];
+         s.read(val_true, 4);
+         if (std::memcmp(val_true, "true", 4) != 0) {
+            throw Exception("invalid state");
+         }
+         return State{StateEnum::True};
+      }
+
+      case 'f':
+      {
+         char val_false[5];
+         s.read(val_false, 5);
+         if (std::memcmp(val_false, "false", 5) != 0) {
+            throw Exception("invalid state");
+         }
+         return State{StateEnum::False};
+      }
+
+      default:
+      {
+         if (s.fail()) {
+            s.clear();
+         }
+         throw Exception("unexpected state at deser");
+      }
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Array
+void Array::append(const std::string& val)
+{
+   values.emplace_back(std::make_shared<String>(val));
+}
+
+void Array::append(unsigned val)
+{
+   values.emplace_back(std::make_shared<Number>(val));
+}
+
+void Array::append(std::shared_ptr<Value> valptr)
+{
+   values.emplace_back(valptr);
+}
+
+////////
+void Array::serialize(std::ostream& s) const
+{
+   s << "[";
+   if (!values.empty()) {
+      auto iter = values.begin();
+      while (true) {
+         (*iter)->serialize(s);
+         ++iter;
+         if (iter == values.end()) {
+            break;
+         }
+         s << ", ";
+      }
+   }
+   s << "]";
+}
+
+Array Array::unserialize(std::istream& s)
+{
+   auto val = s.get();
+   if (val != '[') {
+      throw Exception("invalid array encapsulation");
+   }
+
+   Array result;
+   while (s.rdstate() == std::ios_base::goodbit) {
+      auto c = s.peek();
+      switch (c)
+      {
+         case ' ':
+         case ',':
+         {
+            s.get();
+            continue;
+         }
+
+         case '\"':
+         {
+            auto strPtr = std::make_shared<String>(
+               std::move(String::unserialize(s)));
+            result.append(strPtr);
+            break;
+         }
+
+         case '[':
+         {
+            auto arrayPtr = std::make_shared<Array>(
+               std::move(Array::unserialize(s)));
+            result.append(arrayPtr);
+            break;
+         }
+
+         case ']':
+         {
+            s.get();
+            return result;
+         }
+
+         case '{':
+         {
+            auto objPtr = std::make_shared<Object>(
+               std::move(Object::unserialize(s)));
+            result.append(objPtr);
+            break;
+         }
+
+         case '0':
+         case '1':
+         case '2':
+         case '3':
+         case '4':
+         case '5':
+         case '6':
+         case '7':
+         case '8':
+         case '9':
+         case '-':
+         {
+            auto numPtr = std::make_shared<Number>(\
+               std::move(Number::unserialize(s)));
+            result.append(numPtr);
+            break;
+            break;
+         }
+
+         default:
+            throw Exception("unexpected encapsulation");
+      }
+   }
+   return result;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Object
+int Object::idCounter_ = 0;
+
+Object::Object() :
+   id(idCounter_++)
+{
+   if (idCounter_ > 10000) {
+      idCounter_ = 0;
+   }
+}
+
+Object::Object(const std::string_view& key, const std::string_view& val) :
+   id(idCounter_++)
+{
+   if (idCounter_ > 10000) {
+      idCounter_ = 0;
+   }
+   append(key, val);
+}
+
+////////
+bool Object::append(const std::string_view& key, std::shared_ptr<Value> val)
+{
+   auto iter = kvMap_.emplace(String{key}, val);
+   return iter.second;
+}
+
+bool Object::append(const std::string_view& key, const std::string_view& val)
+{
+   return append(key, std::make_shared<String>(val));
+}
+
+bool Object::append(const std::string& key, Array& val)
+{
+   return append(key, std::make_shared<Array>(std::move(val)));
+}
+
+bool Object::append(const std::string& key, float val)
+{
+   return append(key, std::make_shared<Number>(val));
+}
+
+bool Object::append(const std::string& key, int val)
+{
+   return append(key, std::make_shared<Number>(val));
+}
+
+////////
+std::shared_ptr<Value> Object::getValForKey(const std::string_view& key) const
+{
+   auto pairIter = kvMap_.find(key);
+   if (pairIter == kvMap_.end()) {
+      return nullptr;
+   }
+   return pairIter->second;
+}
+
+bool Object::isResponseValid(int id)
+{
+   //check id
+   auto idVal = getValForKey("id"sv);
+   auto idObj = std::dynamic_pointer_cast<Number>(idVal);
+   if (idObj == nullptr) {
+      return false;
+   }
+   if (int(idObj->val) != id) {
+      return false;
+   }
+
+   //check "error": null
+   auto errorVal = getValForKey("error"sv);
+   auto errorObj = std::dynamic_pointer_cast<State>(errorVal);
+
+   if (errorObj == nullptr) {
+      return true;
+   }
+   if (errorObj->state != StateEnum::Null) {
+      return false;
+   }
+   return true;
+}
+
+////////
+void Object::serialize(std::ostream& s) const
 {
    s << "{";
+   if (!kvMap_.empty()) {
+      auto iter = kvMap_.begin();
 
-   if (keyval_pairs_.size() > 0)
-   {
-      auto iter = keyval_pairs_.begin();
-
-      while (1)
-      {
+      while (true) {
          iter->first.serialize(s);
          s << ": ";
          iter->second->serialize(s);
 
          ++iter;
-         if (iter == keyval_pairs_.end())
+         if (iter == kvMap_.end()) {
             break;
-
+         }
          s << ", ";
       }
    }
-
    s << "}";
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void JSON_object::unserialize(istream& s)
+Object Object::unserialize(std::istream& s)
 {
-   keyval_pairs_.clear();
-
    auto val = s.get();
-   if (val != '{')
-      throw JSON_Exception("invalid object encapsulation");
+   if (val != '{') {
+      throw Exception("invalid object encapsulation");
+   }
+   Object result;
 
-   auto addPair = [this](JSON_string& key, shared_ptr<JSON_value> val)->void
-   {
-      auto&& keyval = make_pair(move(key), val);
-      keyval_pairs_.insert(move(keyval));
-   };
-
-   vector<JSON_string> value_vector;
-
-   while (s.good())
-   {
+   std::vector<std::string> keys;
+   while (s.good()) {
       auto c = s.peek();
-
       switch (c)
       {
-      case ' ':
-      case ':':
-      case ',':
-      {
-         s.get();
-         continue;
-      }
-
-      case '\"':
-      {
-         auto json_string = make_shared<JSON_string>();
-         json_string->unserialize(s);
-
-         if (value_vector.size() == 0)
+         case ' ':
+         case ':':
+         case ',':
          {
-            value_vector.push_back(json_string->val_);
+            s.get();
+            continue;
+         }
+
+         case '\"':
+         {
+            auto jString = String::unserialize(s);
+            if (keys.empty()) {
+               keys.emplace_back(jString.val);
+               break;
+            }
+
+            const auto& key = keys.back();
+            result.append(key, std::make_shared<String>(std::move(jString)));
+            keys.pop_back();
             break;
          }
 
-         auto key = value_vector.back();
-         addPair(key, json_string);
-         value_vector.pop_back();
+         case '[':
+         {
+            if (keys.empty()) {
+               throw Exception("missing object key");
+            }
 
-         break;
-      }
+            auto jArray = Array::unserialize(s);
+            auto key = keys.back();
+            result.append(key, std::make_shared<Array>(std::move(jArray)));
+            keys.pop_back();
+            break;
+         }
 
-      case '[':
-      {
-         if (value_vector.size() == 0)
-            throw JSON_Exception("missing object key");
+         case '{':
+         {
+            if (keys.empty()) {
+               throw Exception("missing object key");
+            }
 
-         auto json_array = make_shared<JSON_array>();
-         json_array->unserialize(s);
+            auto jObject = Object::unserialize(s);
+            auto key = keys.back();
+            result.append(key, std::make_shared<Object>(std::move(jObject)));
+            keys.pop_back();
+            break;
+         }
 
-         auto key = value_vector.back();
-         addPair(key, json_array);
-         value_vector.pop_back();
+         case '}':
+         {
+            s.get();
+            return result;
+         }
 
-         break;
-      }
+         case '0':
+         case '1':
+         case '2':
+         case '3':
+         case '4':
+         case '5':
+         case '6':
+         case '7':
+         case '8':
+         case '9':
+         case '-':
+         {
+            if (keys.empty()) {
+               throw Exception("missing object key");
+            }
 
-      case '{':
-      {
-         if (value_vector.size() == 0)
-            throw JSON_Exception("missing object key");
+            auto jNum = Number::unserialize(s);
+            auto key = keys.back();
+            result.append(key, std::make_shared<Number>(std::move(jNum)));
+            keys.pop_back();
+            break;
+         }
 
-         auto json_object = make_shared<JSON_object>();
-         json_object->unserialize(s);
+         case 't':
+         case 'n':
+         case 'f':
+         {
+            if (keys.empty()) {
+               throw Exception("missing object key");
+            }
 
-         auto key = value_vector.back();
-         addPair(key, json_object);
-         value_vector.pop_back();
+            auto jState = State::unserialize(s);
+            auto key = keys.back();
+            result.append(key, std::make_shared<State>(std::move(jState)));
+            keys.pop_back();
+            break;
+         }
 
-         break;
-      }
-
-      case '}':
-      {
-         s.get();
-         return;
-      }
-
-      case '0':
-      case '1':
-      case '2':
-      case '3':
-      case '4':
-      case '5':
-      case '6':
-      case '7':
-      case '8':
-      case '9':
-      case '-':
-      {
-         if (value_vector.size() == 0)
-            throw JSON_Exception("missing object key");
-
-         auto json_number = make_shared<JSON_number>();
-         json_number->unserialize(s);
-
-         auto key = value_vector.back();
-         addPair(key, json_number);
-         value_vector.pop_back();
-
-         break;
-      }
-
-      case 't':
-      case 'n':
-      case 'f':
-      {
-         if (value_vector.size() == 0)
-            throw JSON_Exception("missing object key");
-
-         auto json_state = make_shared<JSON_state>();
-         json_state->unserialize(s);
-
-         auto key = value_vector.back();
-         addPair(key, json_state);
-         value_vector.pop_back();
-
-         break;
-      }
-
-      default:
-         throw JSON_Exception("unexpected encapsulation");
+         default:
+            throw Exception("unexpected encapsulation");
       }
    }
+   return result;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void JSON_string::unserialize(istream& s)
+std::string JSON::encode(Object& jObj)
 {
-   val_.clear();
-
-   auto val = s.get();
-   if (val != '\"')
-      throw JSON_Exception("invalid string encapsulation");
-
-   while (1)
-   {
-      string str;
-      getline(s, str, '\"');
-      if (s.rdstate() != ios_base::goodbit)
-         throw JSON_Exception("invalid string encapsulation");
-
-      val_.append(str);
-
-      //make sure that delimiting '\"' was no exited
-      auto len = str.size();
-      if (str.c_str()[len - 1] != '\\')
-         break;
-
-      val_.append("\"");
+   //make sure json_obj has jsonrpc, params and id key
+   auto rpcVer = jObj.getValForKey("jsonrpc"sv);
+   if (rpcVer == nullptr) {
+      jObj.append("jsonrpc", "2.0");
    }
+
+   auto params = jObj.getValForKey("params"sv);
+   if (params == nullptr) {
+      jObj.append("params", std::make_shared<Array>());
+   }
+
+   auto idPtr = jObj.getValForKey("id"sv);
+   if (idPtr == nullptr) {
+      jObj.append("id", jObj.id);
+   }
+
+   std::stringstream ss;
+   jObj.serialize(ss);
+   return ss.str();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void JSON_array::unserialize(istream& s)
+Object JSON::decode(const std::string& str)
 {
-   values_.clear();
-
-   auto val = s.get();
-   if (val != '[')
-      throw JSON_Exception("invalid string encapsulation");
-
-   while (s.rdstate() == ios_base::goodbit)
-   {
-      auto c = s.peek();
-
-      switch (c)
-      {
-      case ' ':
-      case ',':
-      {
-         s.get();
-         continue;
-      }
-
-      case '\"':
-      {
-         auto json_string = make_shared<JSON_string>();
-         json_string->unserialize(s);
-         values_.push_back(json_string);
-         
-         break;
-      }
-
-      case '[':
-      {
-         auto json_array = make_shared<JSON_array>();
-         json_array->unserialize(s);
-         values_.push_back(json_array);
-
-         break;
-      }
-
-      case ']':
-      {
-         s.get();
-         return;
-      }
-
-      case '{':
-      {
-         auto json_object = make_shared<JSON_object>();
-         json_object->unserialize(s);
-         values_.push_back(json_object);
-
-         break;
-      }
-
-      case '0':
-      case '1':
-      case '2':
-      case '3':
-      case '4':
-      case '5':
-      case '6':
-      case '7':
-      case '8':
-      case '9':
-      case '-':
-      {
-         auto json_number = make_shared<JSON_number>();
-         json_number->unserialize(s);
-         values_.push_back(json_number);
-
-         break;
-      }
-
-      default:
-         throw JSON_Exception("unexpected encapsulation");
-      }
-   }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void JSON_state::unserialize(istream& s)
-{
-   auto c = s.peek();
-
-   switch (c)
-   {
-   case 'n':
-   {
-      string val_null;
-      val_null.resize(4);
-      s.read(&val_null[0], 5);
-
-      if (val_null != "null")
-         throw JSON_Exception("invalid state");
-
-      state_ = JSON_null;
-      break;
-   }
-
-   case 't':
-   {
-      string val_true;
-      val_true.resize(4);
-      s.getline(&val_true[0], 5);
-
-      if (val_true != "true")
-         throw JSON_Exception("invalid state");
-
-      state_ = JSON_true;
-      break;
-   }
-
-   case 'f':
-   {
-      string val_false;
-      val_false.resize(5);
-      s.getline(&val_false[0], 6);
-
-      if (val_false != "false")
-         throw JSON_Exception("invalid state");
-
-      state_ = JSON_false;
-      break;
-   }
-
-   default:
-      throw JSON_Exception("unexpected state at deser");
-   }
-
-   if (s.fail())
-      s.clear();
-}
-
-////////////////////////////////////////////////////////////////////////////////
-JSON_object JSON_decode(const string& json_str)
-{
-   JSON_object obj;
-   stringstream ss(json_str);
-   obj.unserialize(ss);
-   return obj;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-shared_ptr<JSON_value> JSON_object::getValForKey(const string& key)
-{
-   auto&& keyStr = JSON_string(string(key));
-   auto pairIter = keyval_pairs_.find(keyStr);
-   if (pairIter == keyval_pairs_.end())
-      return nullptr;
-
-   return pairIter->second;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-bool JSON_object::isResponseValid(int id)
-{
-   //check id
-   auto idVal = getValForKey("id");
-   auto id_obj = dynamic_pointer_cast<JSON_number>(idVal);
-
-   if (id_obj == nullptr) {
-      return false;
-   }
-   if (int(id_obj->val_) != id) {
-      return false;
-   }
-
-   //check "error": null
-   auto errorVal = getValForKey("error");
-   auto error_obj = dynamic_pointer_cast<JSON_state>(errorVal);
-
-   if (error_obj == nullptr) {
-      return true;
-   }
-   if (error_obj->state_ != JSON_null) {
-      return false;
-   }
-   return true;
+   std::stringstream ss(str);
+   return Object::unserialize(ss);
 }

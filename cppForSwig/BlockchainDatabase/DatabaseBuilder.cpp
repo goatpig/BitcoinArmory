@@ -20,6 +20,7 @@
 #include "ScrAddrFilter.h"
 #include "Transactions.h"
 #include "TxHashFilters.h"
+#include "txio.h"
 #include "StoredBlockObj.h"
 
 #define REWIND_COUNT 100
@@ -195,10 +196,10 @@ bool DatabaseBuilder::init()
       //check merkle of registered addresses vs what's in the DB
       if (!scrAddrFilter_->hasNewAddresses() && chainIsSain) {
          //no new addresses were registered in between runs.
-         if (subsshSdbi.topBlkHgt_ > sshsdbi.topBlkHgt_) {
+         if (subsshSdbi.topBlkHgt > sshsdbi.topBlkHgt) {
             //SUBSSH db has scanned ahead of SSH db, no point rescanning these
             //blocks
-            scanFrom = subsshSdbi.topBlkHgt_;
+            scanFrom = subsshSdbi.topBlkHgt;
          }
       } else {
          //we have newly registered addresses this run, force a full rescan
@@ -735,12 +736,12 @@ void DatabaseBuilder::commitAllTxHints(
    auto addTxHint = [&](StoredTxHints& stxh, const BinaryData& txkey)->void
    {
       //make sure key isn't already in there
-      for (const auto& key : stxh.dbKeyList_) {
+      for (const auto& key : stxh.dbKeyList) {
          if (key == txkey) {
             return;
          }
       }
-      stxh.dbKeyList_.push_back(txkey);
+      stxh.dbKeyList.emplace_back(txkey);
    };
 
    //The readwrite db transactions makes sure only one thread is batching
@@ -758,11 +759,11 @@ void DatabaseBuilder::commitAllTxHints(
 
          //pull txHint from memory first, don't want to overwrite
          //existing hints
-         if (stxh.isNull()) {
+         if (!stxh.isInitialized()) {
             db_->getStoredTxHints(stxh, txHashPrefix);
          }
          addTxHint(stxh, txkey);
-         stxh.preferredDBKey_ = stxh.dbKeyList_.front();
+         stxh.preferredDBKey = stxh.dbKeyList.front();
       };
 
       for (const auto& block : blocks) {

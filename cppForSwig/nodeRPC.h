@@ -1,219 +1,193 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2017, goatpig                                               //
+//  Copyright (C) 2017-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifndef _H_NODERPC_
-#define _H_NODERPC_
+#pragma once
 
-#include <mutex>
+#include <condition_variable>
 #include <memory>
 #include <list>
 #include <string>
+#include <map>
 #include <functional>
 #include <filesystem>
 
-#include "SocketObject.h"
-#include "StringSockets.h"
+#include <Utils/BinaryData.h>
+#include <Utils/ReentrantLock.h>
 
-#include "Utils/JSON_codec.h"
-#include "Utils/ReentrantLock.h"
+class HttpSocket;
+
+namespace JSON
+{
+   class Object;
+}
 
 namespace CoreRPC
 {
    /***
-   Node: "state" suffix is for enums
-         "status" suffix is for classes/structs
+   NOTE:
+      "state" suffix is for enums
+      "status" suffix is for classes/structs
    ***/
 
-////
-enum NodeState
-{
-   NodeState_Offline = 0,
-   NodeState_Online,
-   NodeState_OffSync
-};
+   static constexpr std::string_view FEE_STRAT_CONSERVATIVE{"CONSERVATIVE"};
+   static constexpr std::string_view FEE_STRAT_ECONOMICAL{"ECONOMICAL"};
 
-////
-enum RpcState
-{
-   RpcState_Disabled = 0,
-   RpcState_BadAuth,
-   RpcState_Online,
-   RpcState_Error_28
-};
-
-////
-enum ChainState
-{
-   ChainState_Unknown = 0,
-   ChainState_Syncing,
-   ChainState_Ready
-};
-
-////
-class RpcError : public std::runtime_error
-{
-public:
-   RpcError(void) :
-      std::runtime_error("RpcError")
-   {}
-
-   RpcError(const std::string& err) :
-      std::runtime_error(err)
-   {}
-};
-
-class ConfMismatch
-{
-   const unsigned expected_;
-   const unsigned actual_;
-
-public:
-   ConfMismatch(unsigned expected, unsigned actual) :
-      expected_(expected), actual_(actual)
-   {}
-
-   unsigned expected(void) const { return expected_; }
-   unsigned actual(void) const { return actual_; }
-};
-
-////////////////////////////////////////////////////////////////////////////////
-struct FeeEstimateResult
-{
-   bool smartFee_ = false;
-   float feeByte_ = 0;
-
-   std::string error_;
-};
-
-typedef std::map<std::string, std::map<unsigned, FeeEstimateResult>> EstimateCache;
-
-////////////////////////////////////////////////////////////////////////////////
-class NodeChainStatus
-{
-   friend class NodeRPC;
-
-private:
-   std::list<std::tuple<unsigned, uint64_t, uint64_t> > heightTimeVec_;
-   ChainState state_ = ChainState_Unknown;
-   float blockSpeed_ = 0.0f;
-   uint64_t eta_ = 0;
-   float pct_ = 0.0f;
-   unsigned blocksLeft_ = 0;
-
-   unsigned prev_pct_int_ = 0;
-
-private:
-   bool processState(std::shared_ptr<JSON_object> const getblockchaininfo_obj);
-
-public:
-   void appendHeightAndTime(unsigned, uint64_t);
-   unsigned getTopBlock(void) const;
-   ChainState state(void) const { return state_; }
-   float getBlockSpeed(void) const { return blockSpeed_; }
-
-   void reset();
-
-   float getProgressPct(void) const { return pct_; }
-   uint64_t getETA(void) const { return eta_; }
-   unsigned getBlocksLeft(void) const { return blocksLeft_; }
-};
-
-////////////////////////////////////////////////////////////////////////////////
-struct NodeStatus
-{
-   NodeState state_ = NodeState_Offline;
-   bool SegWitEnabled_ = false;
-   RpcState rpcState_ = RpcState_Disabled;
-   NodeChainStatus chainStatus_;
-};
-
-////////////////////////////////////////////////////////////////////////////////
-class NodeRPCInterface : public Lockable
-{
-protected:
-   std::function<void(void)> nodeStatusLambda_;
-   NodeChainStatus nodeChainStatus_;
-   std::shared_ptr<EstimateCache> currentEstimateCache_ = nullptr;
-
-private:
-   void initAfterLock(void) override {}
-   void cleanUpBeforeUnlock(void) override {}
-
-protected:
-   void callback(void)
+   enum class NodeState : int
    {
-      if (nodeStatusLambda_)
-         nodeStatusLambda_();
-   }
+      Offline = 0,
+      Online,
+      OffSync
+   };
 
-public:
-   virtual ~NodeRPCInterface(void) = 0;
-   virtual void shutdown(void) = 0;
+   enum class RpcState : int
+   {
+      Disabled = 0,
+      BadAuth,
+      Online,
+      Error_28
+   };
 
-   virtual int broadcastTx(const BinaryDataRef&, std::string&) = 0;
-   virtual bool canPoll(void) const = 0;
-   virtual RpcState testConnection() = 0;
-   virtual void waitOnChainSync(std::function<void(void)>) = 0;
+   enum class ChainState : int
+   {
+      Unknown = 0,
+      Syncing,
+      Ready
+   };
 
-   virtual FeeEstimateResult getFeeByte(
-      unsigned confTarget, const std::string& strategy) = 0;
+   ////////
+   class RpcError : public std::runtime_error
+   {
+   public:
+      RpcError(void);
+      RpcError(const std::string&);
+   };
 
-   //locals
-   const NodeChainStatus& getChainStatus(void) const;
-   void registerNodeStatusLambda(std::function<void(void)> lbd) 
-   { nodeStatusLambda_ = lbd; }
+   ////////
+   struct FeeEstimateResult
+   {
+      bool smartFee = false;
+      float feeByte = 0.0f;
+      std::string error;
+   };
 
-   std::map<unsigned, FeeEstimateResult> getFeeSchedule(
-      const std::string& strategy); 
-};
+   using EstimateCache = std::map<std::string,
+      std::map<unsigned, FeeEstimateResult>>;
 
-////////////////////////////////////////////////////////////////////////////////
-class NodeRPC : public NodeRPCInterface
-{
-private:
-   std::string basicAuthString64_;
+   ////////
+   class NodeChainStatus
+   {
+      friend class NodeRPC;
 
-   RpcState previousState_ = RpcState_Disabled;
-   std::condition_variable pollCondVar_;
-   std::vector<std::thread> thrVec_;
-   std::atomic<bool> run_ = { true };
+   private:
+      std::list<std::tuple<unsigned, uint64_t, uint64_t>> heightTimeVec_;
+      ChainState state_ = ChainState::Unknown;
+      float blockSpeed_ = 0.0f;
+      uint64_t eta_ = 0;
+      float pct_ = 0.0f;
+      unsigned blocksLeft_ = 0;
+      unsigned prevPctInt_ = 0;
 
-private:
-   std::string getAuthString(void);
-   std::filesystem::path getDatadir(void);
+   private:
+      bool processState(const JSON::Object&);
 
-   std::string queryRPC(JSON_object&);
-   std::string queryRPC(HttpSocket&, JSON_object&);
-   void pollThread(void);
-   
-   float queryFeeByte(HttpSocket&, unsigned);
-   FeeEstimateResult queryFeeByteSmart(HttpSocket&,
-      unsigned& confTarget, std::string& strategy);
-   void aggregateFeeEstimates(void);
-   void resetAuthString(void);
-   bool updateChainStatus(void);
+   public:
+      void reset(void);
+      void appendHeightAndTime(unsigned, uint64_t);
 
-public:
-   NodeRPC(void);
-   ~NodeRPC(void);
-   
-   bool setupConnection(HttpSocket&);
+      unsigned getTopBlock(void) const;
+      ChainState state(void) const;
+      float getBlockSpeed(void) const;
+      float getProgressPct(void) const;
+      uint64_t getETA(void) const;
+      unsigned getBlocksLeft(void) const;
+   };
 
-   //virtuals
-   void shutdown(void) override;
-   RpcState testConnection() override;
-   bool canPoll(void) const override { return true; }
+   ////////
+   struct NodeStatus
+   {
+      NodeState state = NodeState::Offline;
+      RpcState rpcState = RpcState::Disabled;
+      bool segWitEnabled = false;
+      NodeChainStatus chainStatus;
+   };
 
-   FeeEstimateResult getFeeByte(
-      unsigned confTarget, const std::string& strategy) override;
+   ////////
+   class NodeRPCInterface : public Lockable
+   {
+   protected:
+      std::function<void(void)> nodeStatusLambda_;
+      NodeChainStatus nodeChainStatus_;
+      std::shared_ptr<EstimateCache> currentEstimateCache_ = nullptr;
 
-   int broadcastTx(const BinaryDataRef&, std::string&) override;
-   void waitOnChainSync(std::function<void(void)>) override;
-};
-}; //namespace CoreRPC
-#endif
+   private:
+      void initAfterLock(void) override {}
+      void cleanUpBeforeUnlock(void) override {}
+
+   protected:
+      void callback(void) const;
+
+   public:
+      virtual ~NodeRPCInterface(void) = 0;
+      virtual void shutdown(void) = 0;
+
+      virtual int broadcastTx(const BinaryDataRef&, std::string&) = 0;
+      virtual bool canPoll(void) const = 0;
+      virtual RpcState testConnection() = 0;
+      virtual void waitOnChainSync(std::function<void(void)>) = 0;
+      virtual FeeEstimateResult getFeeByte(
+         unsigned, const std::string&) const = 0;
+
+      //locals
+      const NodeChainStatus& getChainStatus(void) const;
+      void registerNodeStatusLambda(const std::function<void(void)>&);
+      const std::map<unsigned, FeeEstimateResult>& getFeeSchedule(
+         const std::string&) const;
+   };
+
+   ////////
+   class NodeRPC : public NodeRPCInterface
+   {
+   private:
+      std::string basicAuthString64_;
+
+      RpcState previousState_ = RpcState::Disabled;
+      std::condition_variable pollCondVar_;
+      std::vector<std::thread> thrVec_;
+      std::atomic<bool> run_ = { true };
+
+   private:
+      std::string getAuthString(void);
+      std::filesystem::path getDatadir(void);
+
+      std::string queryRPC(JSON::Object&);
+      std::string queryRPC(HttpSocket&, JSON::Object&);
+      void pollThread(void);
+      
+      float queryFeeByte(HttpSocket&, unsigned);
+      FeeEstimateResult queryFeeByteSmart(
+         HttpSocket&, unsigned&, const std::string&);
+      void aggregateFeeEstimates(void);
+      void resetAuthString(void);
+      bool updateChainStatus(void);
+
+   public:
+      NodeRPC(void);
+      ~NodeRPC(void);
+
+      bool setupConnection(HttpSocket&);
+
+      //virtuals
+      void shutdown(void) override;
+      RpcState testConnection(void) override;
+      bool canPoll(void) const override;
+
+      FeeEstimateResult getFeeByte(unsigned, const std::string&) const override;
+      int broadcastTx(const BinaryDataRef&, std::string&) override;
+      void waitOnChainSync(std::function<void(void)>) override;
+   };
+} //namespace CoreRPC

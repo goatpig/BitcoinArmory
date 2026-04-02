@@ -8,17 +8,18 @@
 
 #include "ProtoCommandParser.h"
 
-#include "Utils/log.h"
-#include "Utils/BtcUtils.h"
+#include <Utils/log.h>
+#include <Utils/BtcUtils.h>
 
-#include "Wallets/IOHeader.h"
-#include "Wallets/WalletIdTypes.h"
-#include "Wallets/Seeds/Backups.h"
-#include "Signer/Signer.h"
+#include <Wallets/IOHeader.h>
+#include <Wallets/WalletIdTypes.h>
+#include <Wallets/Seeds/Backups.h>
+#include <Wallets/Seeds/Seeds.h>
+#include <Signer/Signer.h>
+#include <Signer/CoinSelection.h>
+#include <AsyncClient.h>
 
 #include "CppBridge.h"
-#include "AsyncClient.h"
-#include "CoinSelection.h"
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>
@@ -31,6 +32,7 @@ using namespace std::chrono_literals;
 namespace
 {
    using namespace Codec::Bridge;
+   Cryptography::PRNG::Fortuna fortuna;
 
    // helpers //
    BinaryData serializeCapnp(capnp::MallocMessageBuilder& msg)
@@ -73,6 +75,136 @@ namespace
    }
 
    // switchers //
+   bool processDbSetupCommands(
+      std::shared_ptr<CppBridge> bridge, MessageId referenceId,
+      Codec::Bridge::DbSetupRequest::Reader& request)
+   {
+      BinaryData response;
+      switch (request.which())
+      {
+         case DbSetupRequest::AUTOMATE_DB:
+         {
+            auto autoDbReq = request.getAutomateDb();
+            std::filesystem::path satoshiPath{std::string(autoDbReq.getSatoshiPath())};
+            std::filesystem::path dbDir{std::string(autoDbReq.getDbDir())};
+
+            std::thread thr([bridge, satoshiPath, dbDir, referenceId]{
+               bridge->automateDb(satoshiPath, dbDir, referenceId);});
+            if (thr.joinable()) {
+               thr.detach();
+            }
+            return true;
+         }
+
+         case DbSetupRequest::CONNECT_TO_IP:
+         {
+            auto connectReq = request.getConnectToIp();
+            std::string ip = connectReq.getIp();
+            std::string port = connectReq.getPort();
+            std::string callbackId = connectReq.getCallbackId();
+
+            std::thread thr([bridge, ip, port, callbackId, referenceId]{
+               bridge->connectToIp(ip, port, callbackId, referenceId);});
+            if (thr.joinable()) {
+               thr.detach();
+            }
+            return true;
+         }
+
+         case DbSetupRequest::CONNECT_TO_PEER:
+         {
+            std::string key = request.getConnectToPeer();
+
+            std::thread thr([bridge, key=std::move(key), referenceId]{
+               bridge->connectToPeer(key, referenceId);});
+            if (thr.joinable()) {
+               thr.detach();
+            }
+            return true;
+         }
+
+         case DbSetupRequest::CLEANUP_DB:
+         {
+            std::thread thr([bridge, referenceId]{
+               bridge->cleanupDb(referenceId);});
+            if (thr.joinable()) {
+               thr.detach();
+            }
+            return true;
+         }
+
+         case DbSetupRequest::GO_ONLINE:
+         {
+            bridge->goOnline();
+            break;
+         }
+
+         case DbSetupRequest::DISCONNECT:
+         {
+            bridge->disconnect();
+            break;
+         }
+
+         case DbSetupRequest::SHUTDOWN:
+         {
+            bridge->reset();
+            return false;
+         }
+
+         case DbSetupRequest::LOAD_PEERS_DB:
+         {
+            std::string callbackId(request.getLoadPeersDb());
+            std::thread thr([bridge, callbackId, referenceId]() {
+               bridge->loadPeersDb(callbackId, referenceId);
+            });
+            if (thr.joinable()) {
+               thr.detach();
+            }
+            return true;
+         }
+
+         case DbSetupRequest::LIST_PEERS:
+         {
+            bridge->listPeers(referenceId);
+            return true;
+         }
+
+         case DbSetupRequest::ADD_PEER:
+         {
+            auto peerReq = request.getAddPeer();
+            std::vector<std::string> names;
+            for (auto capnName : peerReq.getNames()) {
+               names.emplace_back(std::string(capnName));
+            }
+            bridge->addPeer(peerReq.getKey(),
+               names, peerReq.getLabel(), referenceId);
+            return true;
+         }
+
+         case DbSetupRequest::REMOVE_PEER:
+         {
+            auto peer = std::string(request.getRemovePeer());
+            bridge->removePeer(peer, referenceId);
+            return true;
+         }
+
+         case DbSetupRequest::SET_LABEL:
+         {
+            auto labelReq = request.getSetLabel();
+            bridge->setPeerLabel(
+               labelReq.getKey(), labelReq.getLabel(), referenceId);
+            return true;
+         }
+      }
+
+      if (!response.empty()) {
+         //write response to socket
+         bridge->writeToClient(response);
+      }
+
+      return true;
+   }
+
    bool processBlockchainServiceCommands(
       std::shared_ptr<CppBridge> bridge, MessageId referenceId,
       Codec::Bridge::BlockchainServiceRequest::Reader& request)
@@ -85,38 +217,6 @@ namespace
             auto strat = request.getGetFeeSchedule();
             bridge->getFeeSchedule(strat, referenceId);
             break;
-         }
-
-         case BlockchainServiceRequest::SETUP_DB:
-         {
-            std::thread thr([bridge, referenceId]{
-               bridge->setupDB(referenceId);});
-            if (thr.joinable()) {
-               thr.detach();
-            }
-            return true;
-         }
-
-         case BlockchainServiceRequest::CLEANUP_DB:
-         {
-            std::thread thr([bridge, referenceId]{
-               bridge->cleanupDb(referenceId);});
-            if (thr.joinable()) {
-               thr.detach();
-            }
-            return true;
-         }
-
-         case BlockchainServiceRequest::GO_ONLINE:
-         {
-            bridge->goOnline();
-            break;
-         }
-
-         case BlockchainServiceRequest::SHUTDOWN:
-         {
-            bridge->reset();
-            return false;
          }
 
          case BlockchainServiceRequest::REGISTER_WALLETS:
@@ -173,10 +273,9 @@ namespace
          case BlockchainServiceRequest::GET_HEADERS_BY_HEIGHT:
          {
             auto capnHeights = request.getGetHeadersByHeight();
-            std::vector<unsigned> heights;
-            heights.reserve(capnHeights.size());
+            std::set<unsigned> heights;
             for (const auto& height : capnHeights) {
-               heights.emplace_back(height);
+               heights.emplace(height);
             }
             bridge->getHeadersByHeight(heights, referenceId);
             break;
@@ -195,15 +294,20 @@ namespace
 
          case BlockchainServiceRequest::BROADCAST_TX:
          {
-            auto capnTxs = request.getBroadcastTx();
-            std::vector<BinaryData> bdVec;
-            bdVec.reserve(capnTxs.size());
-            for (auto capnTx : capnTxs) {
-               bdVec.emplace_back(
-                  BinaryData(capnTx.begin(), capnTx.end()));
-            }
+            auto broadcastObj = request.getBroadcastTx();
 
-            bridge->broadcastTx(bdVec);
+            auto capnTxs = broadcastObj.getRawTxs();
+            std::vector<BinaryData> rawTxs;
+            rawTxs.reserve(capnTxs.size());
+            for (auto capnTx : capnTxs) {
+               rawTxs.emplace_back(
+                  BinaryData{capnTx.begin(), capnTx.end()});
+            }
+            bool isRPC = broadcastObj.which() ==
+               BlockchainServiceRequest::BroadcastRequest::VIA_RPC ?
+               true : false;
+
+            bridge->broadcastTxs(rawTxs, isRPC);
             break;
          }
 
@@ -458,23 +562,19 @@ namespace
             break;
          }
 
-         case WalletRequest::GET_HIGHEST_USED_INDEX:
-         {
-            if (!checkOnline()) {
-               break;
-            }
-
-            response = bridge->getHighestUsedIndex(
-               walletId, accountId, referenceId);
-            break;
-         }
-
          case WalletRequest::EXTEND_ADDRESS_POOL:
          {
             auto args = request.getExtendAddressPool();
             bridge->extendAddressPool(walletId, accountId,
                args.getCount(), args.getIsNew(), args.getCallbackId(),
                referenceId);
+            break;
+         }
+
+         case WalletRequest::GET_ACCOUNT_IDS:
+         {
+            response = bridge->getAccountIds(
+               walletId, referenceId);
             break;
          }
 
@@ -600,12 +700,26 @@ namespace
          case CoinSelectionRequest::CLEANUP:
          {
             bridge->destroyCoinSelectionInstance(csId);
+
+            capnp::MallocMessageBuilder message;
+            auto fromBridge = message.initRoot<FromBridge>();
+            auto reply = fromBridge.initReply();
+            reply.setSuccess(true);
+            reply.setReferenceId(referenceId);
+            response = serializeCapnp(message);
             break;
          }
 
          case CoinSelectionRequest::RESET:
          {
             cs->resetRecipients();
+
+            capnp::MallocMessageBuilder message;
+            auto fromBridge = message.initRoot<FromBridge>();
+            auto reply = fromBridge.initReply();
+            reply.setSuccess(true);
+            reply.setReferenceId(referenceId);
+            response = serializeCapnp(message);
             break;
          }
 
@@ -861,6 +975,7 @@ namespace
          case SignerRequest::CLEANUP:
          {
             bridge->destroySigner(signerId);
+            replySuccess(true);
             break;
          }
 
@@ -1089,8 +1204,24 @@ namespace
                (uint8_t*)capnEntropy.end()
             };
 
+            auto seedType = Seeds::SeedType::Raw;
+            switch (args.getWalletType())
+            {
+               case UtilsRequest::WalletType::LEGACY:
+                  seedType = Seeds::SeedType::ArmoryLegacy;
+                  break;
+
+               case UtilsRequest::WalletType::STRUCTURED_BIP32:
+                  seedType = Seeds::SeedType::BIP32_Structured;
+                  break;
+
+               case UtilsRequest::WalletType::RAW_BIP32:
+                  seedType = Seeds::SeedType::BIP32_Virgin;
+                  break;
+            }
+
             bridge->createWallet(
-               std::move(sbdEntropy),
+               seedType, std::move(sbdEntropy),
                Wallets::IO::CreateWalletParams{
                   bridge->getDataDir(),
                   Passphrase::SetNew{}, Passphrase::SetNew{},
@@ -1105,31 +1236,34 @@ namespace
          case UtilsRequest::RESTORE_WALLET:
          {
             auto walletRequest = request.getRestoreWallet();
-
-            auto roots = walletRequest.getRoot();
-            auto chaincodes = walletRequest.getChaincode();
-            auto backupId = walletRequest.getBackupId();
             std::vector<std::string_view> lines;
-            lines.reserve(roots.size() + chaincodes.size() + 1);
+            lines.reserve(5);
 
-            if (backupId.size() != 0) {
+            if (walletRequest.hasBackupId()) {
+               auto backupId = walletRequest.getBackupId();
                lines.emplace_back(std::string_view{
                   backupId.begin(), backupId.size()});
             }
-            for (const auto& root : roots) {
-               lines.emplace_back(std::string_view{
-                  root.begin(), root.size()});
+
+            if (walletRequest.hasRoot()) {
+               for (const auto& root : walletRequest.getRoot()) {
+                  lines.emplace_back(std::string_view{
+                     root.begin(), root.size()});
+               }
             }
-            for (const auto& chaincode : chaincodes) {
-               lines.emplace_back(std::string_view{
-                  chaincode.begin(), chaincode.size()});
+
+            if (walletRequest.hasChaincode()) {
+               for (const auto& chaincode : walletRequest.getChaincode()) {
+                  lines.emplace_back(std::string_view{
+                     chaincode.begin(), chaincode.size()});
+               }
             }
 
             auto spPassCapnp = walletRequest.getSpPass();
             std::string_view spPass{spPassCapnp.begin(), spPassCapnp.size()};
 
-            auto callbackIdCapnp = walletRequest.getCallbackId();
-            std::string_view callbackId{callbackIdCapnp.begin(), callbackIdCapnp.size()};
+            auto cbIdCapnp = walletRequest.getCallbackId();
+            std::string callbackId{cbIdCapnp.begin(), cbIdCapnp.size()};
 
             bridge->restoreWallet(lines, spPass,
                callbackId, referenceId);
@@ -1145,7 +1279,7 @@ namespace
 
          case UtilsRequest::GENERATE_RANDOM_HEX:
          {
-            auto str = bridge->generateRandom(
+            auto str = fortuna.generateRandom(
                request.getGenerateRandomHex()).toHexStr();
 
             capnp::MallocMessageBuilder message;
@@ -1303,20 +1437,40 @@ namespace
                auto pass = SecureBinaryData::fromString(
                   capnpPassStruct.getPassphrase());
 
-               if (capnpPassStruct.getReuseKdf()) {
+               if (notif.getSuccess() == false) {
                   return handler(Seeds::PromptReply{
-                     notif.getSuccess(), false,
-                     Passphrase::Params{std::move(pass), true}
+                     false, false, Passphrase::Params{}
                   });
-               } else {
-                  auto kdfMs = std::chrono::milliseconds{
-                     capnpPassStruct.getKdfTargetMs()};
-                  return handler(Seeds::PromptReply{
-                     notif.getSuccess(), false,
-                     Passphrase::Params{
-                        kdfMs, capnpPassStruct.getKdfTargetMB(),
-                        std::move(pass)
-                     }});
+               }
+
+               switch (capnpPassStruct.which())
+               {
+                  case NotificationReply::SetPassphraseReply::KDF_TARGET_MS:
+                  {
+                     auto kdfMs = std::chrono::milliseconds{
+                        capnpPassStruct.getKdfTargetMs()};
+                     return handler(Seeds::PromptReply{
+                        true, false, Passphrase::Params{
+                           kdfMs, 1, std::move(pass) }
+                     });
+                  }
+
+                  case NotificationReply::SetPassphraseReply::KDF_TARGET_M_B:
+                  {
+                     uint32_t kdfMB = capnpPassStruct.getKdfTargetMB();
+                     return handler(Seeds::PromptReply{
+                        true, false, Passphrase::Params{
+                           1ms, kdfMB, std::move(pass) }
+                     });
+                  }
+
+                  case NotificationReply::SetPassphraseReply::REUSE_KDF:
+                  {
+                     return handler(Seeds::PromptReply{
+                        true, false, Passphrase::Params{
+                           std::move(pass), true }
+                     });
+                  }
                }
             }
 
@@ -1336,6 +1490,11 @@ namespace
                   notif.getSuccess(), false,
                   Passphrase::Params{std::move(pass)}
                });
+            }
+
+            case NotificationReply::PRESENT_PUBKEY:
+            {
+               return handler(Seeds::PromptReply{notif.getSuccess(), false, {}});
             }
 
             default:
@@ -1362,6 +1521,13 @@ bool ProtoCommandParser::processData(
 
    switch (toBridge.which())
    {
+      case Codec::Bridge::ToBridge::SETUP:
+      {
+         auto setup = toBridge.getSetup();
+         return processDbSetupCommands(
+            bridge, referenceId, setup);
+      }
+
       case Codec::Bridge::ToBridge::SERVICE:
       {
          auto service = toBridge.getService();

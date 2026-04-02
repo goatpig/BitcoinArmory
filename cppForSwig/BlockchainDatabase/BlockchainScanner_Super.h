@@ -33,7 +33,7 @@ enum BLOCKDATA_ORDER
    BD_ORDER_DECREMENT
 };
 
-class StoredSubHistory;
+struct StoredSubHistory;
 class BlockData;
 class BlockFiles;
 class Blockchain;

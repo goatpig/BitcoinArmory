@@ -13,14 +13,18 @@
 #include <map>
 #include <filesystem>
 
-#include "Utils/ReentrantLock.h"
+#include <Utils/ReentrantLock.h>
 #include "Loader.h"
 #include "Container.h"
+
+class Tx;
+class NewBlockNotif;
 
 namespace Armory
 {
    namespace Seeds
    {
+      enum class SeedType : int;
       class WalletBackup;
    };
 
@@ -43,10 +47,19 @@ namespace Armory
       }
    };
 
+   namespace Ledgers
+   {
+      class Entry;
+      class Delegate;
+      class DBCache;
+   }
+
    ////////
    namespace Bridge
    {
       class Callback;
+      class TxIOCache;
+      struct NotifStruct;
 
       class WalletManager : public Lockable
       {
@@ -61,6 +74,10 @@ namespace Armory
 
          std::shared_ptr<Callback> callbackPtr_;
          std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr_;
+
+         //history
+         std::shared_ptr<TxIOCache> txioCache_;
+         std::map<std::string, Ledgers::Delegate> delegateMap_;
 
       private:
          void initAfterLock(void) override {}
@@ -96,7 +113,8 @@ namespace Armory
 
          /* utils */
          const std::filesystem::path& getWalletDir(void) const;
-         void updateStateFromDB(const std::function<void(void)>&);
+         void updateStateFromDB(std::shared_ptr<NotifStruct>);
+         std::shared_ptr<const TxIOCache> txioCache(void) const;
 
          /* loaded wallet getters */
          bool hasWallet(const Wallets::WalletId&);
@@ -104,12 +122,15 @@ namespace Armory
             const Wallets::WalletId&) const;
          std::shared_ptr<WalletContainer> getWalletContainer(
             const Wallets::WalletId&, const Wallets::AddressAccountId&) const;
-         std::map<Wallets::WalletId, std::set<Wallets::AddressAccountId>>
-            getAccountIdMap(void) const;
+         const std::map<std::string, std::shared_ptr<WalletContainer>>&
+         getWalletContainerMap(void) const;
+         std::set<Wallets::AddressAccountId> getAddressAccountIds(
+            const Wallets::WalletId&) const;
 
          /* wallet add/create/delete */
          void loadWallet(const Wallets::IO::ReadOnlyFileParams&);
-         std::shared_ptr<WalletContainer> createNewWallet(
+         Wallets::WalletId createNewWallet(
+            Seeds::SeedType,
             const SecureBinaryData&, //extra entropy
             const Wallets::IO::CreateWalletParams&);
 
@@ -126,6 +147,19 @@ namespace Armory
             const Wallets::WalletId&,
             const Wallets::AddressAccountId&,
             uint32_t, uint32_t);
+
+         /* ledgers */
+         std::shared_ptr<const Ledgers::DBCache> getDbCache(void) const;
+         const std::string& getDelegateId(void);
+         const std::string& getDelegateIdForWallet(
+            const Wallets::WalletId&, const Wallets::AddressAccountId&);
+         const std::string& getDelegateIdForScrAddr(
+            const Wallets::WalletId&, const Wallets::AddressAccountId&,
+            const BinaryData&);
+
+         uint32_t getPageCountForDelegate(const std::string&) const;
+         std::vector<Ledgers::Entry> getPageForDelegate(
+            const std::string&, uint32_t) const;
       };
    } //namespace Bridge
 } //namespace Armory

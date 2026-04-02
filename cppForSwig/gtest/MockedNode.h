@@ -165,7 +165,8 @@ public:
    bool canPoll(void) const override;
    void waitOnChainSync(std::function<void(void)>);
    int broadcastTx(const BinaryDataRef&, std::string&) override;
-   CoreRPC::FeeEstimateResult getFeeByte(unsigned, const std::string&) override;
+   CoreRPC::FeeEstimateResult getFeeByte(
+      unsigned, const std::string&) const override;
 
    //locals
    void stallNextZc(unsigned);

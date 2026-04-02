@@ -18,6 +18,9 @@
 //#include "BitcoinP2P.h"
 #include "LedgerEntry.h"
 
+using namespace Armory;
+using namespace Armory::Ledgers;
+
 uint32_t HistoryPager::txnPerPage_ = 100;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -74,10 +77,10 @@ void HistoryPager::addPage(std::vector<std::shared_ptr<Page>>& pages,
    pages.emplace_back(std::make_shared<Page>(count, bottom, top));
 }
 
-std::shared_ptr<const std::map<BinaryData, LedgerEntry>>
+std::shared_ptr<const std::map<BinaryData, Entry>>
 HistoryPager::getPageLedgerMap(
    std::function<std::map<BinaryData, TxIOPair>(uint32_t, uint32_t) > getTxio,
-   std::function<std::map<BinaryData, LedgerEntry>(
+   std::function<std::map<BinaryData, Entry>(
       const std::map<BinaryData, TxIOPair>&, uint32_t, uint32_t) > buildLedgers,
    uint32_t pageId, unsigned updateID,
    std::map<BinaryData, TxIOPair>* txioMap)
@@ -123,7 +126,7 @@ HistoryPager::getPageLedgerMap(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<const std::map<BinaryData, LedgerEntry>>
+std::shared_ptr<const std::map<BinaryData, Entry>>
 HistoryPager::getPageLedgerMap(uint32_t pageId)
 {
    if (!isInitialized_->load(std::memory_order_relaxed)) {

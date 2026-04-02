@@ -62,7 +62,7 @@ namespace Armory
 
          /*
          easy16, seed (2 lines), hash index defines seed type:
-            - a: Armory legacy derivation, P2PKH + P2WPK + P2SH-2WPKH
+            - a: Armory legacy derivation, P2PKH/P2WPK/P2SH-P2WPKH
                  addresses in a single address account
             - b: BIP32 with BIP44/49/84 chains, as individual address accounts
             - c: BIP32 with no accounts

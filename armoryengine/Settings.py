@@ -164,18 +164,17 @@ class SettingsFile(object):
       # Automatically convert settings to numeric if possible
       def castVal(v):
          v = v.strip()
-         a,b = v.isdigit(), v.replace(b'.',b'').isdigit()
-         if a:
+         if v.isdigit():
             return int(v)
-         elif b:
+         try:
             return float(v)
-         else:
-            if v.lower()==b'true':
-               return True
-            elif v.lower()==b'false':
-               return False
-            else:
-               return toUnicode(v)
+         except ValueError:
+            pass
+         if v.lower()==b'true':
+            return True
+         elif v.lower()==b'false':
+            return False
+         return toUnicode(v)
 
 
       sdata = [line.strip() for line in sdata.split(b'\n')]

@@ -15,8 +15,9 @@
 #include <cstring>
 
 #include "TxClasses.h"
-#include <Utils/BtcUtils.h>
 #include <Utils/varint.h>
+#include <Utils/BtcUtils.h>
+#include <Utils/DBUtils.h>
 
 using namespace Armory;
 
@@ -665,14 +666,14 @@ uint32_t Tx::getTxHeight() const
    return txHeight_;
 }
 
+uint8_t Tx::getDupId() const
+{
+   return dupId_;
+}
+
 uint32_t Tx::getTxIndex() const
 {
    return txIndex_;
-}
-
-const std::vector<uint32_t> Tx::getOpIdVec() const
-{
-   return outpointIdVec_;
 }
 
 ////////
@@ -707,6 +708,11 @@ void Tx::setTxHeight(uint32_t height) const
    txHeight_ = height;
 }
 
+void Tx::setDupId(uint8_t dupId) const
+{
+   dupId_ = dupId;
+}
+
 void Tx::setTxIndex(uint32_t index) const
 {
    txIndex_ = index;
@@ -715,11 +721,6 @@ void Tx::setTxIndex(uint32_t index) const
 void Tx::setTxTime(uint32_t txtime)
 {
    txTime_ = txtime;
-}
-
-void Tx::pushBackOpId(uint32_t id) const
-{
-   outpointIdVec_.push_back(id);
 }
 
 ////////
@@ -767,8 +768,14 @@ const BinaryData& Tx::getThisHash() const
 
 BinaryData Tx::getScrAddrForTxOut(uint32_t txOutIndex) const
 {
-   TxOut txout = getTxOutCopy(txOutIndex);
-   return BtcUtils::getTxOutScrAddr(txout.getScript());
+   BinaryDataRef txOutRef{
+      dataCopy_.getPtr() + offsetsTxOut_[txOutIndex],
+      offsetsTxOut_[txOutIndex + 1] - offsetsTxOut_[txOutIndex]
+   };
+   auto scriptOffset = 8 + BtcUtils::readVarIntLength(txOutRef.getPtr() + 8);
+   auto scriptRef = txOutRef.getSliceRef(
+      scriptOffset, txOutRef.getSize() - scriptOffset);
+   return BtcUtils::getTxOutScrAddr(scriptRef);
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -798,7 +805,6 @@ TxOut Tx::getTxOutCopy(uint32_t i) const
       throw std::range_error(errStr);
    }
 
-   uint32_t txoutSize = offsetsTxOut_[i + 1] - offsetsTxOut_[i];
    return {
       dataCopy_.getPtr() + offsetsTxOut_[i],
       offsetsTxOut_[i + 1] - offsetsTxOut_[i], i
@@ -869,59 +875,17 @@ unsigned Tx::getZcIndex() const
 }
 
 ////////
-void Tx::pprint(std::ostream& os, int nIndent, bool pBigendian) const
+BinaryData Tx::getDBKey() const
 {
-   std::string indent = "";
-   for (int i = 0; i<nIndent; i++) {
-      indent = indent + "   ";
+   if (txHeight_ == UINT32_MAX && txIndex_ != UINT32_MAX) {
+      //this is a zc
+      BinaryWriter bw;
+      bw.reserve(6);
+      bw.put_uint16_t(0xFFFF);
+      bw.put_uint32_t(txIndex_, BE);
+      return bw.getData();
    }
-
-   os << indent << "Tx:   " << thisHash_.toHexStr(pBigendian)
-      << (pBigendian ? " (BE)" : " (LE)") << std::endl;
-
-   os << indent << "   TxSize:      " << getSize() << " bytes" << std::endl;
-   os << indent << "   NumInputs:   " << getNumTxIn() << std::endl;
-   os << indent << "   NumOutputs:  " << getNumTxOut() << std::endl;
-   os << std::endl;
-   for (uint32_t i = 0; i < getNumTxIn(); i++) {
-      getTxInCopy(i).pprint(os, nIndent + 1, pBigendian);
-   }
-   os << std::endl;
-   for (uint32_t i = 0; i < getNumTxOut(); i++) {
-      getTxOutCopy(i).pprint(os, nIndent + 1, pBigendian);
-   }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Need a serious debugging method, that will touch all pointers that are
-// supposed to be not NULL. I'd like to try to force a segfault here, if it
-// is going to happen, instead of letting it kill my program where I don't
-// know what happened.
-void Tx::pprintAlot(std::ostream&) const
-{
-   std::cout << "Tx hash:   " << thisHash_.toHexStr(true) << std::endl;
-
-   std::cout << std::endl << "NumTxIn:   " << getNumTxIn() << std::endl;
-   for (uint32_t i = 0; i < getNumTxIn(); i++) {
-      TxIn txin = getTxInCopy(i);
-      std::cout << "   TxIn: " << i << std::endl;
-      std::cout << "      Siz:  " << txin.getSize() << std::endl;
-      std::cout << "      Scr:  " << txin.getScriptSize() << "  Type: "
-         << (int)txin.getScriptType() << std::endl;
-      std::cout << "      OPR:  " << txin.getOutPoint().getTxHash().toHexStr(true)
-         << txin.getOutPoint().getTxOutIndex() << std::endl;
-      std::cout << "      Seq:  " << txin.getSequence() << std::endl;
-   }
-
-   std::cout << std::endl << "NumTxOut:   " << getNumTxOut() << std::endl;
-   for (uint32_t i = 0; i<getNumTxOut(); i++) {
-      TxOut txout = getTxOutCopy(i);
-      std::cout << "   TxOut: " << i << std::endl;
-      std::cout << "      Siz:  " << txout.getSize() << std::endl;
-      std::cout << "      Scr:  " << txout.getScriptSize() << "  Type: "
-         << (int)txout.getScriptType() << std::endl;
-      std::cout << "      Val:  " << txout.getValue() << std::endl;
-   }
+   return DBUtils::getBlkDataKeyNoPrefix(txHeight_, dupId_, txIndex_);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

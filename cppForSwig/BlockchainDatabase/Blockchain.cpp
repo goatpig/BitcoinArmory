@@ -540,9 +540,9 @@ void Blockchain::putNewBareHeaders(LMDBBlockDatabase *db)
       return;
    }
 
-   if (topBlockPtr_->blockHeight_ >= sdbiH.topBlkHgt_) {
-      sdbiH.topBlkHgt_ = topBlockPtr_->blockHeight_;
-      sdbiH.topScannedBlkHash_ = topBlockPtr_->thisHash_;
+   if (topBlockPtr_->blockHeight_ >= sdbiH.topBlkHgt) {
+      sdbiH.topBlkHgt = topBlockPtr_->blockHeight_;
+      sdbiH.topScannedBlkHash = topBlockPtr_->thisHash_;
       db->putStoredDBInfo(DB_SELECT::HEADERS, sdbiH, 0);
    }
 

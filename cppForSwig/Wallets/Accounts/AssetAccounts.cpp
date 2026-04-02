@@ -1,21 +1,25 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2017-2025, goatpig                                          //
+//  Copyright (C) 2017-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#include "Utils/DBUtils.h"
-#include "AccountTypes.h"
 #include "AssetAccounts.h"
+
+#include <Utils/DBUtils.h>
+#include <Utils/BtcUtils.h>
+#include <Utils/Cryptography.h>
+
+#include "AccountTypes.h"
 #include "../EncryptedDB.h"
 #include "../DerivationScheme.h"
 #include "../WalletFileInterface.h"
+#include "../DecryptedDataContainer.h"
 
-using namespace Armory::Assets;
+using namespace Armory;
 using namespace Armory::Accounts;
-using namespace Armory::Wallets;
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -71,14 +75,15 @@ AssetAccountType AssetAccount::type() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const AssetAccountId& AssetAccount::getID(void) const
+const Wallets::AssetAccountId& AssetAccount::getID() const
 {
    return data_->id_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-size_t AssetAccount::writeAssetEntry(std::shared_ptr<AssetEntry> entryPtr,
-   std::shared_ptr<IO::WalletDBInterface> iface)
+size_t AssetAccount::writeAssetEntry(
+   std::shared_ptr<Assets::AssetEntry> entryPtr,
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface)
 {
    if (!entryPtr->needsCommit()) {
       return SIZE_MAX;
@@ -98,7 +103,7 @@ size_t AssetAccount::writeAssetEntry(std::shared_ptr<AssetEntry> entryPtr,
 
 ////////////////////////////////////////////////////////////////////////////////
 void AssetAccount::updateOnDiskAssets(
-   std::shared_ptr<IO::WalletDBInterface> iface)
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface)
 {
    if (iface == nullptr) {
       throw AccountException("updateOnDiskAssets: null iface");
@@ -113,7 +118,7 @@ void AssetAccount::updateOnDiskAssets(
 
 ////////////////////////////////////////////////////////////////////////////////
 void AssetAccount::updateAssetCount(
-   std::shared_ptr<IO::WalletDBInterface> iface)
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface)
 {
    if (iface == nullptr) {
       throw AccountException("updateAssetCount: null iface");
@@ -131,7 +136,7 @@ void AssetAccount::updateAssetCount(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void AssetAccount::commit(std::shared_ptr<IO::WalletDBInterface> iface)
+void AssetAccount::commit(std::shared_ptr<Wallets::IO::WalletDBInterface> iface)
 {
    if (iface == nullptr) {
       throw AccountException("commit: null iface");
@@ -179,13 +184,15 @@ void AssetAccount::commit(std::shared_ptr<IO::WalletDBInterface> iface)
 
 ////////////////////////////////////////////////////////////////////////////////
 std::shared_ptr<AssetAccountData> AssetAccount::loadFromDisk(
-   const BinaryData& key, std::shared_ptr<IO::WalletIfaceTransaction> tx)
+   const BinaryData& key,
+   std::shared_ptr<Wallets::IO::WalletIfaceTransaction> tx)
 {
    //sanity checks
    if (tx == nullptr) {
       throw AccountException("[loadFromDisk] invalid db tx");
    }
-   auto account_id = AssetAccountId::deserializeKey(key, ASSET_ACCOUNT_PREFIX);
+   auto account_id = Wallets::AssetAccountId::deserializeKey(
+      key, ASSET_ACCOUNT_PREFIX);
    auto diskDataRef = tx->getDataRef(key);
    BinaryRefReader brr(diskDataRef);
 
@@ -196,13 +203,15 @@ std::shared_ptr<AssetAccountData> AssetAccount::loadFromDisk(
    brr.get_var_int();
 
    //der scheme
-   std::shared_ptr<DerivationScheme> derScheme = nullptr;
+   std::shared_ptr<Assets::DerivationScheme> derScheme = nullptr;
    auto len = brr.get_var_int();
    if (len > 0) {
-      auto derSchemeBDR = DBUtils::getDataRefForPacket(brr.get_BinaryDataRef(len));
-      derScheme = DerivationScheme::deserialize(derSchemeBDR);
-      if (derScheme->getType() == DerivationSchemeType::ECDH) {
-         auto derECDH = std::dynamic_pointer_cast<DerivationScheme_ECDH>(derScheme);
+      auto derSchemeBDR = DBUtils::getDataRefForPacket(
+         brr.get_BinaryDataRef(len));
+      derScheme = Assets::DerivationScheme::deserialize(derSchemeBDR);
+      if (derScheme->getType() == Assets::DerivationSchemeType::ECDH) {
+         auto derECDH = std::dynamic_pointer_cast<Assets::DerivationScheme_ECDH>(
+            derScheme);
          if (derECDH == nullptr) {
             throw AccountException("[loadFromDisk] ecdh der scheme snafu");
          }
@@ -270,8 +279,8 @@ std::shared_ptr<AssetAccountData> AssetAccount::loadFromDisk(
    bwAssetKey.put_BinaryDataRef(key.getSliceRef(1, key.getSize() - 1));
 
    //asset key
-   std::shared_ptr<AssetEntry> rootEntry = nullptr;
-   std::map<AssetKeyType, std::shared_ptr<AssetEntry>> assetMap;
+   std::shared_ptr<Assets::AssetEntry> rootEntry = nullptr;
+   std::map<Wallets::AssetKeyType, std::shared_ptr<Assets::AssetEntry>> assetMap;
 
    //get all assets
    {
@@ -294,12 +303,12 @@ std::shared_ptr<AssetAccountData> AssetAccount::loadFromDisk(
          }
 
          //instantiate and insert asset
-         auto assetPtr = AssetEntry::deserialize(
+         auto assetPtr = Assets::AssetEntry::deserialize(
             key_bdr,
             DBUtils::getDataRefForPacket(value_bdr));
 
-         if (assetPtr->getIndex() != AssetId::getRootKey()) {
-            assetMap.insert(make_pair(assetPtr->getIndex(), assetPtr));
+         if (assetPtr->getIndex() != Wallets::AssetId::getRootKey()) {
+            assetMap.emplace(assetPtr->getIndex(), assetPtr);
          } else {
             rootEntry = assetPtr;
          }
@@ -324,7 +333,8 @@ std::shared_ptr<AssetAccountData> AssetAccount::loadFromDisk(
 int AssetAccount::getLastComputedIndex() const
 {
    if (data_ == nullptr) {
-      throw AssetException("[getLastComputedIndex] empty asset account data");
+      throw Assets::AssetException(
+         "[getLastComputedIndex] empty asset account data");
    }
 
    ReentrantLock lock(this);
@@ -341,7 +351,7 @@ int AssetAccount::getHighestUsedIndex() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool AssetAccount::isAssetInUse(const AssetId& id) const
+bool AssetAccount::isAssetInUse(const Wallets::AssetId& id) const
 {
    return id.getAssetKey() <= getHighestUsedIndex();
 }
@@ -355,7 +365,7 @@ size_t AssetAccount::getAssetCount() const
 
 ////////////////////////////////////////////////////////////////////////////////
 void AssetAccount::extendPublicChain(
-   std::shared_ptr<IO::WalletDBInterface> iface, int32_t count,
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface, int32_t count,
    const std::function<void(int)>& progressCallback)
 {
    if (count <= 0) {
@@ -364,7 +374,7 @@ void AssetAccount::extendPublicChain(
    ReentrantLock lock(this);
 
    //add *count* entries to address chain
-   std::shared_ptr<AssetEntry> assetPtr = nullptr;
+   std::shared_ptr<Assets::AssetEntry> assetPtr = nullptr;
    if (!data_->assets_.empty()) {
       assetPtr = data_->assets_.rbegin()->second;
    } else {
@@ -375,7 +385,7 @@ void AssetAccount::extendPublicChain(
 
 ////////////////////////////////////////////////////////////////////////////////
 void AssetAccount::extendPublicChainToIndex(
-   std::shared_ptr<IO::WalletDBInterface> iface, int32_t index,
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface, int32_t index,
    const std::function<void(int)>& progressCallback)
 {
    ReentrantLock lock(this);
@@ -394,8 +404,8 @@ void AssetAccount::extendPublicChainToIndex(
 
 ////////////////////////////////////////////////////////////////////////////////
 void AssetAccount::extendPublicChain(
-   std::shared_ptr<IO::WalletDBInterface> iface,
-   std::shared_ptr<AssetEntry> assetPtr, int32_t count,
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface,
+   std::shared_ptr<Assets::AssetEntry> assetPtr, int32_t count,
    const std::function<void(int)>& progressCallback)
 {
    if (count <= 0) {
@@ -423,15 +433,16 @@ void AssetAccount::extendPublicChain(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::vector<std::shared_ptr<AssetEntry>> AssetAccount::extendPublicChain(
-   std::shared_ptr<AssetEntry> assetPtr, int32_t start, int32_t end,
+std::vector<std::shared_ptr<Assets::AssetEntry>>
+AssetAccount::extendPublicChain(
+   std::shared_ptr<Assets::AssetEntry> assetPtr, int32_t start, int32_t end,
    const std::function<void(int)>& progressCallback)
 {
-   std::vector<std::shared_ptr<AssetEntry>> result;
+   std::vector<std::shared_ptr<Assets::AssetEntry>> result;
 
    switch (data_->derScheme_->getType())
    {
-      case DerivationSchemeType::ArmoryLegacy:
+      case Assets::DerivationSchemeType::ArmoryLegacy:
       {
          //Armory legacy derivation operates from the last valid asset
          result = std::move(data_->derScheme_->extendPublicChain(
@@ -439,9 +450,9 @@ std::vector<std::shared_ptr<AssetEntry>> AssetAccount::extendPublicChain(
          break;
       }
 
-      case DerivationSchemeType::BIP32:
-      case DerivationSchemeType::BIP32_Salted:
-      case DerivationSchemeType::ECDH:
+      case Assets::DerivationSchemeType::BIP32:
+      case Assets::DerivationSchemeType::BIP32_Salted:
+      case Assets::DerivationSchemeType::ECDH:
       {
          //BIP32 operates from the node's root asset
          result = std::move(data_->derScheme_->extendPublicChain(
@@ -457,12 +468,12 @@ std::vector<std::shared_ptr<AssetEntry>> AssetAccount::extendPublicChain(
 
 ////////////////////////////////////////////////////////////////////////////////
 void AssetAccount::extendPrivateChain(
-   std::shared_ptr<IO::WalletDBInterface> iface,
-   std::shared_ptr<Encryption::DecryptedDataContainer> ddc,
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface,
+   std::shared_ptr<Wallets::Encryption::DecryptedDataContainer> ddc,
    int32_t count)
 {
    ReentrantLock lock(this);
-   std::shared_ptr<AssetEntry> topAsset = nullptr;
+   std::shared_ptr<Assets::AssetEntry> topAsset = nullptr;
 
    try {
       topAsset = getLastAssetWithPrivateKey();
@@ -472,12 +483,12 @@ void AssetAccount::extendPrivateChain(
 
 ////////////////////////////////////////////////////////////////////////////////
 void AssetAccount::extendPrivateChainToIndex(
-   std::shared_ptr<IO::WalletDBInterface> iface,
-   std::shared_ptr<Encryption::DecryptedDataContainer> ddc,
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface,
+   std::shared_ptr<Wallets::Encryption::DecryptedDataContainer> ddc,
    int32_t id)
 {
    ReentrantLock lock(this);
-   std::shared_ptr<AssetEntry> topAsset = nullptr;
+   std::shared_ptr<Assets::AssetEntry> topAsset = nullptr;
    int topIndex = 0;
 
    try {
@@ -493,9 +504,9 @@ void AssetAccount::extendPrivateChainToIndex(
 
 ////////////////////////////////////////////////////////////////////////////////
 void AssetAccount::extendPrivateChain(
-   std::shared_ptr<IO::WalletDBInterface> iface,
-   std::shared_ptr<Encryption::DecryptedDataContainer> ddc,
-   std::shared_ptr<AssetEntry> assetPtr, int32_t count)
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface,
+   std::shared_ptr<Wallets::Encryption::DecryptedDataContainer> ddc,
+   std::shared_ptr<Assets::AssetEntry> assetPtr, int32_t count)
 {
    if (count <= 0) {
       return;
@@ -530,15 +541,16 @@ void AssetAccount::extendPrivateChain(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::vector<std::shared_ptr<AssetEntry>> AssetAccount::extendPrivateChain(
-   std::shared_ptr<Encryption::DecryptedDataContainer> ddc,
-   std::shared_ptr<AssetEntry> assetPtr,
+std::vector<std::shared_ptr<Assets::AssetEntry>>
+AssetAccount::extendPrivateChain(
+   std::shared_ptr<Wallets::Encryption::DecryptedDataContainer> ddc,
+   std::shared_ptr<Assets::AssetEntry> assetPtr,
    int32_t start, int32_t end)
 {
-   std::vector<std::shared_ptr<AssetEntry>> result;
+   std::vector<std::shared_ptr<Assets::AssetEntry>> result;
    switch (data_->derScheme_->getType())
    {
-      case DerivationSchemeType::ArmoryLegacy:
+      case Assets::DerivationSchemeType::ArmoryLegacy:
       {
          //Armory legacy derivation operates from the last valid asset
          result = std::move(data_->derScheme_->extendPrivateChain(
@@ -546,9 +558,9 @@ std::vector<std::shared_ptr<AssetEntry>> AssetAccount::extendPrivateChain(
          break;
       }
 
-      case DerivationSchemeType::BIP32:
-      case DerivationSchemeType::BIP32_Salted:
-      case DerivationSchemeType::ECDH:
+      case Assets::DerivationSchemeType::BIP32:
+      case Assets::DerivationSchemeType::BIP32_Salted:
+      case Assets::DerivationSchemeType::ECDH:
       {
          //BIP32 operates from the node's root asset
          result = std::move(data_->derScheme_->extendPrivateChain(
@@ -563,7 +575,8 @@ std::vector<std::shared_ptr<AssetEntry>> AssetAccount::extendPrivateChain(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<AssetEntry> AssetAccount::getLastAssetWithPrivateKey() const
+std::shared_ptr<Assets::AssetEntry>
+AssetAccount::getLastAssetWithPrivateKey() const
 {
    ReentrantLock lock(this);
    auto assetIter = data_->assets_.rbegin();
@@ -579,7 +592,7 @@ std::shared_ptr<AssetEntry> AssetAccount::getLastAssetWithPrivateKey() const
 
 ////////////////////////////////////////////////////////////////////////////////
 void AssetAccount::updateHighestUsedIndex(
-   std::shared_ptr<IO::WalletDBInterface> iface)
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface)
 {
    if (iface == nullptr) {
       throw AccountException("updateHighestUsedIndex: null iface");
@@ -596,9 +609,8 @@ void AssetAccount::updateHighestUsedIndex(
    tx->insert(idKey, bwData.getData());
 }
 
-////////////////////////////////////////////////////////////////////////////////
 unsigned AssetAccount::getAndBumpHighestUsedIndex(
-   std::shared_ptr<IO::WalletDBInterface> iface)
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface)
 {
    ReentrantLock lock(this);
 
@@ -607,9 +619,24 @@ unsigned AssetAccount::getAndBumpHighestUsedIndex(
    return data_->lastUsedIndex_;
 }
 
+void AssetAccount::setHighestUsedIndex(
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface,
+   const Wallets::AssetKeyType& assetId)
+{
+   auto entryIter = data_->assets_.find(assetId);
+   if (entryIter == data_->assets_.end()) {
+      throw AccountException("requested index has not been computed");
+   }
+   if (data_->lastUsedIndex_ > assetId) {
+      return;
+   }
+   data_->lastUsedIndex_ = assetId;
+   updateHighestUsedIndex(iface);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<AssetEntry> AssetAccount::getOrSetAssetAtIndex(
-   std::shared_ptr<IO::WalletDBInterface> iface, unsigned index,
+std::shared_ptr<Assets::AssetEntry> AssetAccount::getOrSetAssetAtIndex(
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface, unsigned index,
    const ProgressFunc& progFunc)
 {
    ReentrantLock lock(this);
@@ -626,8 +653,8 @@ std::shared_ptr<AssetEntry> AssetAccount::getOrSetAssetAtIndex(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<AssetEntry> AssetAccount::getNewAsset(
-   std::shared_ptr<IO::WalletDBInterface> iface,
+std::shared_ptr<Assets::AssetEntry> AssetAccount::getNewAsset(
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface,
    const ProgressFunc& progFunc)
 {
    auto index = getAndBumpHighestUsedIndex(iface);
@@ -635,8 +662,8 @@ std::shared_ptr<AssetEntry> AssetAccount::getNewAsset(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<AssetEntry> AssetAccount::peekNextAsset(
-   std::shared_ptr<IO::WalletDBInterface> iface,
+std::shared_ptr<Assets::AssetEntry> AssetAccount::peekNextAsset(
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface,
    const ProgressFunc& progFunc)
 {
    auto index = data_->lastUsedIndex_ + 1;
@@ -644,7 +671,8 @@ std::shared_ptr<AssetEntry> AssetAccount::peekNextAsset(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<AssetEntry> AssetAccount::getAssetForID(const AssetId& ID) const
+std::shared_ptr<Assets::AssetEntry> AssetAccount::getAssetForID(
+   const Wallets::AssetId& ID) const
 {
    if (!ID.isValid()) {
       throw std::runtime_error("invalid asset ID");
@@ -658,15 +686,15 @@ std::shared_ptr<AssetEntry> AssetAccount::getAssetForID(const AssetId& ID) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<AssetEntry> AssetAccount::getAssetForKey(
-   const AssetKeyType& key) const
+std::shared_ptr<Assets::AssetEntry> AssetAccount::getAssetForKey(
+   const Wallets::AssetKeyType& key) const
 {
-   AssetId id(data_->id_, key);
+   Wallets::AssetId id(data_->id_, key);
    return getAssetForID(id);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool AssetAccount::isAssetIDValid(const AssetId& id) const
+bool AssetAccount::isAssetIDValid(const Wallets::AssetId& id) const
 {
    auto assetIt = data_->assets_.find(id.getAssetKey());
    return assetIt != data_->assets_.end();
@@ -734,10 +762,10 @@ const SecureBinaryData& AssetAccount::getChaincode() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<Asset_PrivateKey> AssetAccount::fillPrivateKey(
-   std::shared_ptr<IO::WalletDBInterface> iface,
-   std::shared_ptr<Encryption::DecryptedDataContainer> ddc,
-   const AssetId& id)
+std::shared_ptr<Assets::Asset_PrivateKey> AssetAccount::fillPrivateKey(
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface,
+   std::shared_ptr<Wallets::Encryption::DecryptedDataContainer> ddc,
+   const Wallets::AssetId& id)
 {
    if (!id.isValid()) {
       throw AccountException("unexpected asset id length");
@@ -749,7 +777,8 @@ std::shared_ptr<Asset_PrivateKey> AssetAccount::fillPrivateKey(
    if (iter == data_->assets_.end()) {
       throw AccountException("invalid asset id");
    }
-   auto thisAsset = std::dynamic_pointer_cast<AssetEntry_Single>(iter->second);
+   auto thisAsset = std::dynamic_pointer_cast<Assets::AssetEntry_Single>(
+      iter->second);
    if (thisAsset == nullptr) {
       throw AccountException("unexpected asset type in map");
    }
@@ -761,8 +790,8 @@ std::shared_ptr<Asset_PrivateKey> AssetAccount::fillPrivateKey(
 
    //reverse iter through the map, find closest previous asset with priv key
    //this is only necessary for armory 1.35 derivation
-   std::shared_ptr<AssetEntry> prevAssetWithKey = nullptr;
-   std::map<AssetKeyType, std::shared_ptr<AssetEntry>>::reverse_iterator rIter(iter);
+   std::shared_ptr<Assets::AssetEntry> prevAssetWithKey = nullptr;
+   std::map<Wallets::AssetKeyType, std::shared_ptr<Assets::AssetEntry>>::reverse_iterator rIter(iter);
    while (rIter != data_->assets_.rend()) {
       if (rIter->second->hasPrivateKey()) {
          prevAssetWithKey = rIter->second;
@@ -791,7 +820,7 @@ std::shared_ptr<Asset_PrivateKey> AssetAccount::fillPrivateKey(
       throw AccountException("fillPrivateKey failed");
    }
 
-   auto assetSingle = std::dynamic_pointer_cast<AssetEntry_Single>(
+   auto assetSingle = std::dynamic_pointer_cast<Assets::AssetEntry_Single>(
       privKeyIter->second);
    if (assetSingle == nullptr) {
       throw AccountException("fillPrivateKey failed");
@@ -806,7 +835,7 @@ unsigned AssetAccount::getLookup(void) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<AssetEntry> AssetAccount::getRoot() const
+std::shared_ptr<Assets::AssetEntry> AssetAccount::getRoot() const
 {
    return data_->root_;
 }
@@ -833,11 +862,11 @@ AssetAccountType AssetAccount_ECDH::type() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-AssetKeyType AssetAccount_ECDH::addSalt(
-   std::shared_ptr<IO::WalletIfaceTransaction> tx,
+Wallets::AssetKeyType AssetAccount_ECDH::addSalt(
+   std::shared_ptr<Wallets::IO::WalletIfaceTransaction> tx,
    const SecureBinaryData& salt)
 {
-   auto derScheme = std::dynamic_pointer_cast<DerivationScheme_ECDH>(
+   auto derScheme = std::dynamic_pointer_cast<Assets::DerivationScheme_ECDH>(
       data_->derScheme_);
 
    if (derScheme == nullptr) {
@@ -847,9 +876,10 @@ AssetKeyType AssetAccount_ECDH::addSalt(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-AssetKeyType AssetAccount_ECDH::getSaltIndex(const SecureBinaryData& salt) const
+Wallets::AssetKeyType AssetAccount_ECDH::getSaltIndex(
+   const SecureBinaryData& salt) const
 {
-   auto derScheme = std::dynamic_pointer_cast<DerivationScheme_ECDH>(
+   auto derScheme = std::dynamic_pointer_cast<Assets::DerivationScheme_ECDH>(
       data_->derScheme_);
 
    if (derScheme == nullptr) {
@@ -859,13 +889,14 @@ AssetKeyType AssetAccount_ECDH::getSaltIndex(const SecureBinaryData& salt) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void AssetAccount_ECDH::commit(std::shared_ptr<IO::WalletDBInterface> iface)
+void AssetAccount_ECDH::commit(
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface)
 {
    if (iface == nullptr) {
       throw AccountException("commit: null iface");
    }
 
-   auto schemeECDH = std::dynamic_pointer_cast<DerivationScheme_ECDH>(
+   auto schemeECDH = std::dynamic_pointer_cast<Assets::DerivationScheme_ECDH>(
       data_->derScheme_);
    if (schemeECDH == nullptr) {
       throw AccountException("expected ECDH derScheme");
@@ -874,7 +905,7 @@ void AssetAccount_ECDH::commit(std::shared_ptr<IO::WalletDBInterface> iface)
    auto uniqueTx = iface->beginWriteTransaction(data_->dbName_);
    AssetAccount::commit(iface);
 
-   std::shared_ptr<IO::DBIfaceTransaction> sharedTx(std::move(uniqueTx));
+   std::shared_ptr<Wallets::IO::DBIfaceTransaction> sharedTx(std::move(uniqueTx));
    schemeECDH->putAllSalts(sharedTx);
 }
 
@@ -900,12 +931,39 @@ AssetAccountType AssetAccount_Imports::type() const
 }
 
 ////
-AssetId AssetAccount_Imports::importPrivateKey(
-   std::shared_ptr<IO::WalletIfaceTransaction>,
-   std::shared_ptr<Encryption::DecryptedDataContainer>,
-   const SecureBinaryData&)
+Wallets::AssetId AssetAccount_Imports::importPrivateKey(
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface,
+   std::shared_ptr<Wallets::Encryption::DecryptedDataContainer> ddc,
+   const SecureBinaryData& privKey,
+   std::unique_ptr<Wallets::Encryption::Cipher> cipher)
 {
-   throw std::runtime_error("[importPrivateKey] implement me!");
+   //get asset key
+   Wallets::AssetKeyType keyId = 0;
+   auto lastEntry = data_->assets_.rbegin();
+   if (lastEntry != data_->assets_.rend()) {
+      keyId = lastEntry->first+1;
+   }
+   Wallets::AssetId assetId{data_->id_, keyId};
+
+   //encrypt the private key
+   auto encryptedPrivKey = ddc->encryptData(
+      cipher.get(), privKey);
+
+   //create privkey asset
+   auto cipherData = std::make_unique<Wallets::Encryption::CipherData>(
+      encryptedPrivKey, std::move(cipher));
+   auto privKeyAsset = std::make_shared<Assets::Asset_PrivateKey>(
+      assetId, std::move(cipherData));
+
+   //create asset
+   auto pubkey = Cryptography::ECDSA::computePublicKey(privKey, true);
+   auto assetPtr = std::make_shared<Assets::AssetEntry_Single>(
+      assetId, pubkey, privKeyAsset);
+   data_->assets_.emplace(keyId, assetPtr);
+   ++data_->lastUsedIndex_;
+
+   commit(iface);
+   return assetId;
 }
 
 ////////
@@ -917,9 +975,50 @@ void AssetAccount_Imports::updateAddressHashMap(
 
 ////
 void AssetAccount_Imports::updateAddressHashMap(
-   const std::map<Wallets::AssetId, AddressEntryType>&)
+   const std::map<Wallets::AssetId, AddressEntryType>& addrTypeMap)
 {
-   throw std::runtime_error("[updateAddressHashMap] implement me");
+   //set iterator to last hashed asset
+   auto assetIter = data_->assets_.find(data_->lastHashedAsset_);
+   if (assetIter == data_->assets_.end()) {
+      assetIter = data_->assets_.begin();
+   } else {
+      ++assetIter;
+      if (assetIter == data_->assets_.end()) {
+         return;
+      }
+   }
+
+   while (assetIter != data_->assets_.end()) {
+      //does this asset have an entry in the type map?
+      Wallets::AssetId assetId{data_->id_, assetIter->first};
+      auto typeIter = addrTypeMap.find(assetId);
+      if (typeIter == addrTypeMap.end()) {
+         ++assetIter;
+         continue;
+      }
+
+      //find the entry for this asset
+      auto hashMapiter = data_->addrHashMap_.find(assetId);
+      if (hashMapiter == data_->addrHashMap_.end()) {
+         hashMapiter = data_->addrHashMap_.emplace(
+            assetId,
+            std::map<AddressEntryType, BinaryData>{}
+         ).first;
+      } else if (hashMapiter->second.find(typeIter->second) !=
+         hashMapiter->second.end()) {
+         //skip if we already have a hash for this address type
+         ++assetIter;
+         continue;
+      }
+
+      auto addrPtr = AddressEntry::instantiate(
+         assetIter->second, typeIter->second);
+      auto addrHash = addrPtr->getPrefixedHash();
+      data_->addrHashMap_[assetIter->second->getID()].emplace(
+         typeIter->second, addrHash);
+      data_->lastHashedAsset_ = assetIter->first;
+      ++assetIter;
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -945,20 +1044,64 @@ AssetAccountType AssetAccount_ImportsWO::type() const
 }
 
 ////
-AssetId AssetAccount_ImportsWO::importPublicKey(
-   std::shared_ptr<IO::WalletDBInterface> iface,
+Wallets::AssetId AssetAccount_ImportsWO::importPublicKey(
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface,
    SecureBinaryData& pubKey)
 {
    //get last key
-   AssetKeyType keyId = 0;
+   Wallets::AssetKeyType keyId = 0;
    auto lastEntry = data_->assets_.rbegin();
    if (lastEntry != data_->assets_.rend()) {
       keyId = lastEntry->first+1;
    }
 
-   AssetId assetId{data_->id_, keyId};
-   auto assetPtr = std::make_shared<AssetEntry_Single>(
+   Wallets::AssetId assetId{data_->id_, keyId};
+   auto assetPtr = std::make_shared<Assets::AssetEntry_Single>(
       assetId, pubKey, nullptr);
+   data_->assets_.emplace(keyId, assetPtr);
+   ++data_->lastUsedIndex_;
+
+   commit(iface);
+   return assetId;
+}
+
+Wallets::AssetId AssetAccount_ImportsWO::importScriptHash(
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface,
+   const BinaryData& scriptHash)
+{
+   //get last key
+   Wallets::AssetKeyType keyId = 0;
+   auto lastEntry = data_->assets_.rbegin();
+   if (lastEntry != data_->assets_.rend()) {
+      keyId = lastEntry->first+1;
+   }
+
+   SecureBinaryData scrHashSBD{scriptHash};
+   Wallets::AssetId assetId{data_->id_, keyId};
+   auto assetPtr = std::make_shared<Assets::AssetEntry_ScriptHash>(
+      assetId, scrHashSBD);
+   data_->assets_.emplace(keyId, assetPtr);
+   ++data_->lastUsedIndex_;
+
+   commit(iface);
+   return assetId;
+}
+
+Wallets::AssetId AssetAccount_ImportsWO::importRawScript(
+   std::shared_ptr<Wallets::IO::WalletDBInterface> iface,
+   const BinaryData& script)
+{
+   //get last key
+   Wallets::AssetKeyType keyId = 0;
+   auto lastEntry = data_->assets_.rbegin();
+   if (lastEntry != data_->assets_.rend()) {
+      keyId = lastEntry->first+1;
+   }
+
+   SecureBinaryData scrHashSBD{script};
+   Wallets::AssetId assetId{data_->id_, keyId};
+   auto assetPtr = std::make_shared<Assets::AssetEntry_RawScript>(
+      assetId, scrHashSBD);
    data_->assets_.emplace(keyId, assetPtr);
    ++data_->lastUsedIndex_;
 
@@ -992,9 +1135,10 @@ void AssetAccount_ImportsWO::updateAddressHashMap(
 
    while (assetIter != data_->assets_.end()) {
       //does this asset have an entry in the type map?
-      AssetId assetId{data_->id_, assetIter->first};
+      Wallets::AssetId assetId{data_->id_, assetIter->first};
       auto typeIter = addrTypeMap.find(assetId);
       if (typeIter == addrTypeMap.end()) {
+         ++assetIter;
          continue;
       }
 
@@ -1005,17 +1149,21 @@ void AssetAccount_ImportsWO::updateAddressHashMap(
             assetId,
             std::map<AddressEntryType, BinaryData>{}
          ).first;
-      }
-
-      //skip if we already have a hash for this address type
-      if (hashMapiter->second.find(typeIter->second) !=
+      } else if (hashMapiter->second.find(typeIter->second) !=
          hashMapiter->second.end()) {
+         //skip if we already have a hash for this address type
+         ++assetIter;
          continue;
       }
 
       auto addrPtr = AddressEntry::instantiate(
          assetIter->second, typeIter->second);
-      auto& addrHash = addrPtr->getPrefixedHash();
+      BinaryData addrHash;
+      if (typeIter->second != AddressEntryType::RawScript) {
+         addrHash = addrPtr->getPrefixedHash();
+      } else {
+         addrHash = addrPtr->getScript();
+      }
       data_->addrHashMap_[assetIter->second->getID()].emplace(
          typeIter->second, addrHash);
       data_->lastHashedAsset_ = assetIter->first;

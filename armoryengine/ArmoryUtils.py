@@ -2744,35 +2744,44 @@ def getNameForAddrType(addrType):
 def getRandomHexits_NotSecure(count):
    return ''.join([random.choice(BASE16CHARS_NOCAPS) for x in range(count)])
 
-#################
+################################################################################
 # bridge setup
-#################
+################################################################################
 
 def getBridgeArgList():
-   #gather cli args for bridge
+   """
+   Build CLI args for CppBridge startup.
+
+   Note: Database connection is now handled via explicit bridge API calls
+   (automateDb, connectToIp, connectToPeer) after the setup dialog,
+   not via CLI arguments at startup.
+
+   This function only provides basic args:
+   - datadir: Armory data directory
+   - Network mode (testnet/regtest if applicable)
+   """
    bridgeArgs = []
 
-   #testnet
+   # Normalize paths to use forward slashes for C++ compatibility
+   dataDir = ARMORY_HOME_DIR.replace('\\', '/')
+
+   # Network mode
    if USE_TESTNET:
       bridgeArgs.append(["testnet", None])
+   if USE_REGTEST:
+      bridgeArgs.append(["regtest", None])
 
-   #db type
-   bridgeArgs.append(["db-type", CLI_OPTIONS.db_type])
+   # Always provide datadir
+   bridgeArgs.append(["datadir", dataDir])
 
-   #db ip & port
-   bridgeArgs.append(["armorydb-ip", ARMORYDB_IP])
-   bridgeArgs.append(["armorydb-port", ARMORYDB_PORT])
-
-   #datadir
-   bridgeArgs.append(["datadir", '"' + ARMORY_HOME_DIR + '"'])
-
-   #enforce --public for now
-   bridgeArgs.append(["public", None])
-
-   #offline
+   # Offline mode from CLI overrides everything
    if CLI_OPTIONS.offline:
       bridgeArgs.append(["offline", None])
 
+   return _formatBridgeArgs(bridgeArgs)
+
+def _formatBridgeArgs(bridgeArgs):
+   """Format bridge args list into CLI argument strings."""
    args = []
    for argKey, argVal in bridgeArgs:
       if argVal:

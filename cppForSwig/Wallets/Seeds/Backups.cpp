@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2020 - 2025, goatpig                                        //
+//  Copyright (C) 2020 - 2026, goatpig                                        //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -9,11 +9,13 @@
 #include "Backups.h"
 #include <Utils/Cryptography.h>
 #include <Utils/BtcUtils.h>
-#include "WalletIdTypes.h"
-#include "KDF.h"
+#include "../KDF.h"
+#include "../WalletIdTypes.h"
+#include "../Wallets.h"
+#include "../IOHeader.h"
+#include "../Assets.h"
 #include "Seeds.h"
-#include "Wallets.h"
-#include "IOHeader.h"
+
 
 #include <btc/aes256_cbc.h>
 
@@ -1264,15 +1266,13 @@ std::unique_ptr<ClearTextSeed> Helpers::restoreFromEasy16(
    std::vector<BinaryDataRef> first2Lines;
    first2Lines.reserve(2);
 
-   auto firstLine = backupE16->getRoot(
-      LineIndex::One, isEncrypted);
-   first2Lines.emplace_back(BinaryDataRef(
-      (uint8_t*)firstLine.data(), firstLine.size()));
+   auto firstLine = backupE16->getRoot(LineIndex::One, isEncrypted);
+   first2Lines.emplace_back(BinaryDataRef{
+      (uint8_t*)firstLine.data(), firstLine.size()});
 
-   auto secondLine = backupE16->getRoot(
-      LineIndex::Two, isEncrypted);
-   first2Lines.emplace_back(BinaryDataRef(
-      (uint8_t*)secondLine.data(), secondLine.size()));
+   auto secondLine = backupE16->getRoot(LineIndex::Two, isEncrypted);
+   first2Lines.emplace_back(BinaryDataRef{
+      (uint8_t*)secondLine.data(), secondLine.size()});
 
    auto primaryData = Easy16Codec::decode(first2Lines);
    if (!primaryData.isInitialized()) {
@@ -1283,15 +1283,13 @@ std::unique_ptr<ClearTextSeed> Helpers::restoreFromEasy16(
    BackupEasy16DecodeResult secondaryData;
    if (backupE16->hasChaincode()) {
       std::vector<BinaryDataRef> next2Lines;
-      auto thirdLine = backupE16->getChaincode(
-         LineIndex::One, isEncrypted);
-      next2Lines.emplace_back(BinaryDataRef(
-         (uint8_t*)thirdLine.data(), thirdLine.size()));
+      auto thirdLine = backupE16->getChaincode(LineIndex::One, isEncrypted);
+      next2Lines.emplace_back(BinaryDataRef{
+         (uint8_t*)thirdLine.data(), thirdLine.size()});
 
-      auto fourthLine = backupE16->getChaincode(
-         LineIndex::Two, isEncrypted);
-      next2Lines.emplace_back(BinaryDataRef(
-         (uint8_t*)fourthLine.data(), fourthLine.size()));
+      auto fourthLine = backupE16->getChaincode(LineIndex::Two, isEncrypted);
+      next2Lines.emplace_back(BinaryDataRef{
+         (uint8_t*)fourthLine.data(), fourthLine.size()});
 
       secondaryData = Easy16Codec::decode(next2Lines);
       if (!secondaryData.isInitialized()) {
@@ -1357,7 +1355,7 @@ std::unique_ptr<ClearTextSeed> Helpers::restoreFromEasy16(
       try {
          SecurePrint sp;
          auto pass = backupE16->getSpPass();
-         BinaryDataRef passRef((uint8_t*)pass.data(), pass.size());
+         BinaryDataRef passRef{(uint8_t*)pass.data(), pass.size()};
          primaryData.data = std::move(sp.decrypt(primaryData.data, passRef));
 
          if (secondaryData.isInitialized()) {

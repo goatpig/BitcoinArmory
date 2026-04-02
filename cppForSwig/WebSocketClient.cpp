@@ -48,7 +48,7 @@ WebSocketClient::WebSocketClient(const std::string& addr,
    requestID_.store(0, std::memory_order_relaxed);
    contextPtr_.store(0, std::memory_order_release);
 
-   auto lbds = Wallets::AuthorizedPeers::getAuthPeersLambdas(authPeers_);
+   auto lbds = Wallets::AuthorizedPeers::getAuthPeersLambdas(authPeers_, oneWayAuth);
    bip151Connection_ = std::make_shared<BIP151Connection>(lbds, oneWayAuth);
 }
 
@@ -625,15 +625,15 @@ bool WebSocketClient::processAEADHandshake(const WebSocketMessagePartial& msgObj
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void WebSocketClient::addPublicKey(const SecureBinaryData& pubkey)
+void WebSocketClient::addPublicKey(const SecureBinaryData& pubkey, bool oneWay)
 {
    const std::string addrPort{ addr_ + ":" + port_ };
-   authPeers_->addPeer(pubkey, addrPort);
+   authPeers_->addPeer(pubkey, {addrPort}, {}, oneWay);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 void WebSocketClient::setPubkeyPromptLambda(
-   std::function<bool(const BinaryData&, const std::string&)> lbd)
+   const std::function<bool(const BinaryData&)>& lbd)
 {
    userPromptLambda_ = lbd;
 }
@@ -648,18 +648,15 @@ void WebSocketClient::promptUser(
       return;
    }
 
-
    //create lambda to handle user prompt
-   auto promptLbd = [this, key_copy=SecureBinaryData{keyRef}, name](void)->void
+   auto promptLbd = [this, key_copy=SecureBinaryData{keyRef}, name]()
    {
-      if (this->userPromptLambda_(key_copy, name)) {
+      if (this->userPromptLambda_(key_copy)) {
          //the lambda returns true, the user accepted the key, add it to peers
-         std::vector<std::string> nameVec;
-         nameVec.push_back(name);
-         this->authPeers_->addPeer(key_copy, nameVec);
+         this->authPeers_->addPeer(key_copy, {name}, {}, true);
          serverPubkeyProm_->set_value(true);
       } else {
-         //otherwise, we still have to set the promise so that the auth 
+         //otherwise, we still have to set the promise so that the auth
          //challenge leg can progress
          serverPubkeyProm_->set_value(false);
       }

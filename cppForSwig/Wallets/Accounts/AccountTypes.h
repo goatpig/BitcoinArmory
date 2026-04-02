@@ -1,14 +1,18 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2017-2021, goatpig                                          //
+//  Copyright (C) 2017-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifndef _H_ACCOUNT_TYPES
-#define _H_ACCOUNT_TYPES
+#pragma once
 
+#include <set>
+#include <map>
+#include <string>
+
+#include <Utils/SecureBinaryData.h>
 #include "../WalletIdTypes.h"
 #include "../Addresses.h"
 
@@ -381,5 +385,3 @@ namespace Armory
       };
    }; //namespace Accounts
 }; //namespace Armory
-
-#endif

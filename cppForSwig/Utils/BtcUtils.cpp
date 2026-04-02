@@ -1366,13 +1366,13 @@ BinaryData BtcUtils::getTxOutRecipientAddr(const BinaryDataRef& script,
 
 ////////////////////////////////////////////////////////////////////////////////
 // base64
-std::string BtcUtils::base64_encode(const std::string& in)
+std::string BtcUtils::base64_encode(const std::string_view& in)
 {
    size_t main_count = in.size() / 3;
    std::string result;
    result.reserve(main_count * 4 + 5);
 
-   auto ptr = (const uint8_t*)in.c_str();
+   auto ptr = (const uint8_t*)in.data();
    for (unsigned i = 0; i < main_count; i++) {
       uint32_t bits24 = ptr[i * 3] << 24 | ptr[i*3+1] << 16 | ptr[i*3+2] << 8;
       for (unsigned y = 0; y < 4; y++) {

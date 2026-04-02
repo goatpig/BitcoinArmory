@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2017-2025, goatpig                                          //
+//  Copyright (C) 2017-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -9,12 +9,14 @@
 #include <Utils/BinaryData.h>
 #include <Utils/SecureBinaryData.h>
 #include <Utils/Cryptography.h>
+#include <Signer/ResolverFeed.h>
 #include "AccountTypes.h"
 #include "Assets.h"
 #include "AddressAccounts.h"
 #include "../EncryptedDB.h"
 #include "../WalletFileInterface.h"
 #include "../DecryptedDataContainer.h"
+#include "../BIP32_Node.h"
 
 using namespace Armory::Assets;
 using namespace Armory::Accounts;
@@ -745,7 +747,6 @@ AddressAccount::getAssetIDPairForAddr(const BinaryData& scrAddr)
    return iter->second;
 }
 
-////////////////////////////////////////////////////////////////////////////////
 const std::pair<AssetId, AddressEntryType>&
 AddressAccount::getAssetIDPairForAddrUnprefixed(const BinaryData& scrAddr)
 {
@@ -775,6 +776,14 @@ AddressAccount::getAssetIDPairForAddrUnprefixed(const BinaryData& scrAddr)
    throw AccountException("unknown scrAddr");
 }
 
+void AddressAccount::markAssetAsHighestUsed(
+   std::shared_ptr<IO::WalletDBInterface> iface,
+   const Wallets::AssetId& assetId)
+{
+   auto assetAccount = getAccountForID(assetId);
+   assetAccount->setHighestUsedIndex(iface, assetId.getAssetKey());
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 void AddressAccount::updateAddressHashMap()
 {
@@ -787,7 +796,7 @@ void AddressAccount::updateAddressHashMap()
          accountPtr->updateAddressHashMap(instantiatedAddressTypes_);
       }
 
-      auto& hashMap = accountPtr->getAddressHashMap();
+      const auto& hashMap = accountPtr->getAddressHashMap();
       if (hashMap.empty()) {
          continue;
       }
@@ -807,8 +816,8 @@ void AddressAccount::updateAddressHashMap()
 
       while (hashMapIter != hashMap.end()) {
          for (auto& hash : hashMapIter->second) {
-            auto inner_pair = std::make_pair(hashMapIter->first, hash.first);
-            addressHashes_.emplace(hash.second, std::move(inner_pair));
+            addressHashes_.emplace(hash.second,
+               std::make_pair(hashMapIter->first, hash.first));
          }
          ++hashMapIter;
       }
@@ -1149,7 +1158,7 @@ std::shared_ptr<AddressEntry> AddressAccount::getAddressEntryForID(
    if (!account->isAssetIDValid(ID)) {
       throw UnrequestedAddressException();
    }
-   //have we instantiated in address with this ID already?
+   //have we instantiated an address with this ID already?
    AddressEntryType aeType = defaultAddressEntryType_;
    auto addrIter = instantiatedAddressTypes_.find(ID);
    if (addrIter != instantiatedAddressTypes_.end()) {

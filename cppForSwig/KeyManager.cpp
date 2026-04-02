@@ -168,7 +168,7 @@ int processArgs(std::map<std::string, std::string> args)
    iter = args.find("show-keys");
    if (iter != args.end()) {
       std::map<BinaryDataRef, std::set<std::string>> keyToNames;
-      auto& nameMap = authPeers.getPeerNameMap();
+      auto& nameMap = authPeers.getPeerNameMap(true);
       for (auto& namePair : nameMap) {
          if (namePair.first == "own") {
             continue;
@@ -232,7 +232,7 @@ int processArgs(std::map<std::string, std::string> args)
 
       std::vector<std::string> keyNames;
       keyNames.insert(keyNames.end(), names.begin() + 1, names.end());
-      authPeers.addPeer(key_compressed, keyNames);
+      authPeers.addPeer(key_compressed, keyNames, {}, true);
 
       return 0;
    }

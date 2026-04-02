@@ -203,7 +203,7 @@ namespace Armory
 
          //keep a reference to the snapshot so that other references live as long 
          //as this object
-         std::shared_ptr<MempoolSnapshot> ssPtr;
+         std::shared_ptr<const MempoolSnapshot> ssPtr;
 
       public:
          ZcNotificationPacket(BdvIdKey);

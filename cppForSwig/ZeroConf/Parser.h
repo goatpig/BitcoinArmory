@@ -48,7 +48,7 @@ struct ReorganizationState;
 class Tx;
 class TxIOPair;
 class TxOut;
-class UTXO;
+struct UTXO;
 
 namespace Armory
 {
@@ -427,7 +427,6 @@ namespace Armory
          std::shared_ptr<ZeroConfBatch> initiateZcBatch(
             const std::vector<BinaryData>&, unsigned,
             const ZcBroadcastCallback&, bool, uint64_t);
-         //
 
          //getters
          bool hasTxByHash(const BinaryData&) const;
@@ -441,7 +440,7 @@ namespace Armory
 
          std::vector<TxOut> getZcTxOutsForKey(const std::set<BinaryData>&) const;
          std::vector<UTXO> getZcUTXOsForKey(const std::set<BinaryData>&) const;
-         std::shared_ptr<MempoolSnapshot> getSnapshot(void) const;
+         std::shared_ptr<const MempoolSnapshot> getSnapshot(void) const;
 
          //for unit tests
          unsigned getMergeCount(void) const;

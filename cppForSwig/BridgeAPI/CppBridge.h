@@ -30,6 +30,7 @@ namespace Armory
    namespace Seeds
    {
       struct PromptReply;
+      enum class SeedType : int;
    };
 
    namespace Signing
@@ -48,6 +49,7 @@ namespace Armory
       class WalletId;
       class AddressAccountId;
       class AssetWallet;
+      class AuthorizedPeers;
 
       namespace IO
       {
@@ -63,13 +65,13 @@ namespace Armory
 
       ////
       using MessageId = uint64_t;
+      using CallbackId = std::string;
 
       //////////////////////////////////////////////////////////////////////////
       using WalletPtr = std::shared_ptr<Armory::Wallets::AssetWallet>;
       class CppBridgeSignerStruct
       {
       private:
-         std::unique_ptr<Signing::TxEvalState> signState_{};
          const std::function<WalletPtr(const Wallets::WalletId&)> getWalletFunc_;
          const std::function<void(ServerPushWrapper)> writeFunc_;
 
@@ -80,7 +82,7 @@ namespace Armory
          CppBridgeSignerStruct(std::function<WalletPtr(const Wallets::WalletId&)>,
             std::function<void(ServerPushWrapper)>);
 
-         void signTx(const Wallets::WalletId&, const std::string&, MessageId);
+         void signTx(const Wallets::WalletId&, const CallbackId&, MessageId);
          bool resolve(const Wallets::WalletId&);
          BinaryData getSignedStateForInput(unsigned, MessageId);
       };
@@ -94,8 +96,9 @@ namespace Armory
          //datadir
          const std::filesystem::path path_;
 
-         //armorydb config
+         //armorydb stuff
          const bool dbOffline_;
+         std::shared_ptr<Wallets::AuthorizedPeers> peersDb_;
 
          //to write to the bridge client
          std::function<void(std::unique_ptr<WritePayload_Bridge>)> writeLambda_;
@@ -115,32 +118,49 @@ namespace Armory
          std::mutex callbackHandlerMu_;
          std::map<uint32_t, CallbackHandler> callbackHandlers_;
 
-      public:
-         std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr(void) const;
-         void reset(void);
+      private:
+         std::shared_ptr<Wallets::AuthorizedPeers> getPeersDb(void);
 
       public:
+         void reset(void);
+         std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr(void) const;
+
          //wallet manager init methods
          BinaryData listWallets(MessageId);
-         void unlockControlHeader(const std::string&, const std::string&,
+         void unlockControlHeader(const std::string&, const CallbackId&,
             MessageId);
          bool stageWallet(const Wallets::WalletId&, bool);
          void migrateWallet(const std::filesystem::path&,
-            const std::string&, MessageId);
+            const CallbackId&, MessageId);
          BinaryData loadWallets(MessageId);
 
-         //wallet setup
+         //wallets
          const std::filesystem::path& getDataDir(void) const;
          BinaryData createWalletsPacket(MessageId);
          bool unloadWallet(const Wallets::WalletId&);
          bool deleteWallet(const Wallets::WalletId&);
+         BinaryData getAccountIds(const Wallets::WalletId&, MessageId) const;
          BinaryData getWalletPacket(const Wallets::WalletId&,
             Wallets::AddressAccountId, MessageId) const;
 
          //db setup
-         void setupDB(MessageId);
+         void connectToIp(const std::string&, const std::string&,
+            const CallbackId&, MessageId);
+         void connectToPeer(const std::string&, MessageId);
+         void automateDb(
+            const std::filesystem::path&,
+            const std::filesystem::path&,
+            MessageId);
          void cleanupDb(MessageId);
          void goOnline(void);
+         void disconnect(void);
+
+         void loadPeersDb(const CallbackId&, MessageId);
+         void listPeers(MessageId);
+         void addPeer(const std::string&,
+            std::vector<std::string>&, const std::string&, MessageId);
+         void removePeer(const std::string&, MessageId);
+         void setPeerLabel(const std::string&, const std::string&, MessageId);
 
          //wallet registration
          void registerWallets(void);
@@ -153,32 +173,31 @@ namespace Armory
             const Wallets::AddressAccountId&, MessageId);
          BinaryData getAddrCombinedList(const Wallets::WalletId&,
             const Wallets::AddressAccountId&, MessageId);
-         BinaryData getHighestUsedIndex(const Wallets::WalletId&,
-            const Wallets::AddressAccountId&, MessageId);
 
          //create/generate wallet & addresses
          void extendAddressPool(const Wallets::WalletId&,
             const Wallets::AddressAccountId&, unsigned, bool,
-            const std::string&, MessageId);
+            const CallbackId&, MessageId);
          void getAddress(const Wallets::WalletId&,
             const Wallets::AddressAccountId&, uint32_t,
             uint32_t, MessageId);
          void createWallet(
+            Seeds::SeedType,
             SecureBinaryData, //extra entropy
             Wallets::IO::CreateWalletParams,
-            const std::string&, //callbackId
+            const CallbackId&,
             MessageId);
          void createBackupStringForWallet(const Wallets::WalletId&,
-            bool, const std::string&, MessageId);
+            bool, const CallbackId&, MessageId);
          void changeWalletPassphrase(const Wallets::WalletId&,
-            const std::string&, bool, MessageId);
+            const CallbackId&, bool, MessageId);
          void restoreWallet(
             const std::vector<std::string_view>&,
             const std::string_view&,
-            const std::string_view&, MessageId);
+            const CallbackId&, MessageId);
          void importWallet(const std::filesystem::path&, MessageId);
          void forkWatchingOnly(const Wallets::WalletId&,
-            const std::string&, MessageId);
+            const CallbackId&, MessageId);
 
          //ledgers
          const std::string& getLedgerDelegateId(void);
@@ -199,7 +218,7 @@ namespace Armory
 
          //txs & headers
          void getTxsByHash(const std::set<BinaryData>&, MessageId);
-         void getHeadersByHeight(const std::vector<unsigned>&, MessageId);
+         void getHeadersByHeight(const std::set<unsigned>&, MessageId);
 
          //utxos
          void getUTXOs(const Wallets::WalletId&,
@@ -230,7 +249,7 @@ namespace Armory
 
          //utils
          BinaryData getHash160(const BinaryDataRef&, MessageId) const;
-         void broadcastTx(const std::vector<BinaryData>&);
+         void broadcastTxs(const std::vector<BinaryData>&, bool);
          BinaryData getTxOutScriptForScrAddr(const BinaryData&, MessageId) const;
          BinaryData getAddrStrForScrAddr(const BinaryData&, MessageId) const;
          std::string getNameForAddrType(int) const;
@@ -257,7 +276,6 @@ namespace Armory
          void writeToClient(BinaryData&) const;
          void setWriteLambda(
             const std::function<void(std::unique_ptr<WritePayload_Bridge>)>&);
-         SecureBinaryData generateRandom(size_t) const;
       };
    } //namespace Bridge
 } //namespace Armory

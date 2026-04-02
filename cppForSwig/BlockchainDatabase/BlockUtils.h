@@ -29,7 +29,7 @@ class DatabaseBuilder;
 struct BDV_Notification;
 struct BDVNotificationHook;
 struct ReorganizationState;
-class StoredHeader;
+struct StoredHeader;
 
 namespace Armory
 {

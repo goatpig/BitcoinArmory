@@ -30,7 +30,7 @@
 #define WEIGHT_OUTANON  30.0f
 
 class BinaryData;
-class UTXO;
+struct UTXO;
 
 namespace Armory
 {
@@ -137,7 +137,7 @@ namespace Armory
       };
 
       //////////////////////////////////////////////////////////////////////////
-      class CoinSelection
+      class Selector
       {
       private:
          std::vector<UTXO> utxoVec_;
@@ -147,48 +147,31 @@ namespace Armory
          unsigned topHeight_ = UINT32_MAX;
 
          std::set<AddressBookEntry, AddressBookEntry::Comparator> addrBook_;
-
          std::exception_ptr except_ptr_ = nullptr;
 
-      protected:
+      private:
          UtxoSelection getUtxoSelection(
-            PaymentStruct&, const std::vector<UTXO>&);
+            PaymentStruct&, const std::vector<UTXO>&) const;
 
          void fleshOutSelection(const std::vector<UTXO>&,
-            UtxoSelection& utxoSelect,
-            PaymentStruct& payStruct);
+            UtxoSelection&,
+            PaymentStruct&) const;
 
-         void updateUtxoVector(uint64_t value);
+         void updateUtxoVector(uint64_t);
          static uint64_t tallyValue(const std::vector<UTXO>&);
 
          std::vector<UTXO> checkForRecipientReuse(
-            PaymentStruct&, const std::vector<UTXO>&);
+            PaymentStruct&, const std::vector<UTXO>&) const;
 
       public:
-         CoinSelection(std::function<std::vector<UTXO>(uint64_t val)> func,
-            const std::vector<AddressBookEntry>& addrBook,
-            uint64_t spendableValue, uint32_t topHeight) :
-            getUTXOsForVal_(func),
-            spendableValue_(spendableValue),
-            topHeight_(topHeight)
-         {
-            //for random shuffling
-            srand(time(0));
-            for (auto& entry : addrBook)
-               addrBook_.insert(entry);
-         }
+         Selector(std::function<std::vector<UTXO>(uint64_t val)>,
+            const std::vector<AddressBookEntry>&, uint64_t, uint32_t);
 
          UtxoSelection getUtxoSelectionForRecipients(
-            PaymentStruct& payStruct, const std::vector<UTXO>&);
-
+            PaymentStruct&, const std::vector<UTXO>&);
          uint64_t getFeeForMaxVal(
-            size_t txOutSize, float fee_byte, const std::vector<UTXO>&);
-
-         void rethrow(void)
-         {
-            if (except_ptr_ != nullptr)
-               std::rethrow_exception(except_ptr_);
-         }
+            size_t, float, const std::vector<UTXO>&);
+         void rethrow(void) const;
       };
 
       //////////////////////////////////////////////////////////////////////////
@@ -324,7 +307,7 @@ namespace Armory
       class CoinSelectionInstance
       {
       private:
-         CoinSelection cs_;
+         Selector cs_;
 
          using RecipientMap = std::map<unsigned,
             std::vector<std::shared_ptr<Signing::ScriptRecipient>>>;
@@ -355,8 +338,7 @@ namespace Armory
       public:
          CoinSelectionInstance(std::shared_ptr<Wallets::AssetWallet>,
             std::function<std::vector<UTXO>(uint64_t)>,
-            const std::vector<AddressBookEntry>& addrBook,
-            uint64_t spendableBalance, unsigned topHeight);
+            const std::vector<AddressBookEntry>&, uint64_t, unsigned);
 
          unsigned addRecipient(const BinaryData&, uint64_t);
          void updateRecipient(unsigned, const BinaryData&, uint64_t);

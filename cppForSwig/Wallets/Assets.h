@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2017-2019, goatpig                                          //
+//  Copyright (C) 2017-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -80,18 +80,12 @@ namespace Armory
       ////
       enum class AssetEntryType : int
       {
-         Single = 0x01,
-         Multisig,
-         BIP32Root,
-         ArmoryLegacyRoot
-      };
-
-      enum ScriptHashType
-      {
-         ScriptHash_P2PKH_Uncompressed,
-         ScriptHash_P2PKH_Compressed,
-         ScriptHash_P2WPKH,
-         ScriptHash_Nested_P2PK
+         Single = 1,
+         Multisig = 2,
+         BIP32Root = 3,
+         ArmoryLegacyRoot = 4,
+         ScriptHash = 5,
+         RawScript = 6
       };
 
       //////////////////////////////////////////////////////////////////////////
@@ -340,6 +334,44 @@ namespace Armory
       };
 
       //////////////////////////////////////////////////////////////////////////
+      class AssetEntry_ScriptHash : public AssetEntry
+      {
+      private:
+         SecureBinaryData scriptHash_;
+
+      public:
+         AssetEntry_ScriptHash(const Wallets::AssetId&, SecureBinaryData&);
+
+         //virtuals
+         BinaryData serialize(void) const override;
+         bool hasPrivateKey(void) const override;
+         const Wallets::EncryptionKeyId&
+            getPrivateEncryptionKeyId(void) const override;
+
+         //locals
+         const SecureBinaryData& getScriptHash(void) const;
+      };
+
+      //////////////////////////////////////////////////////////////////////////
+      class AssetEntry_RawScript : public AssetEntry
+      {
+      private:
+         SecureBinaryData script_;
+
+      public:
+         AssetEntry_RawScript(const Wallets::AssetId&, SecureBinaryData&);
+
+         //virtuals
+         BinaryData serialize(void) const override;
+         bool hasPrivateKey(void) const override;
+         const Wallets::EncryptionKeyId&
+            getPrivateEncryptionKeyId(void) const override;
+
+         //locals
+         const SecureBinaryData& getScript(void) const;
+      };
+
+      //////////////////////////////////////////////////////////////////////////
       //////////////////////////////////////////////////////////////////////////
       struct MetaData
       {
@@ -383,6 +415,8 @@ namespace Armory
       private:
          std::set<std::string> names_; //IPs, domain names
          SecureBinaryData publicKey_;
+         std::string label_;
+         bool oneWay_;
 
       public:
          PeerPublicData(const BinaryData&, uint32_t);
@@ -398,10 +432,14 @@ namespace Armory
          void addName(const std::string&);
          bool eraseName(const std::string&);
          void setPublicKey(const SecureBinaryData&);
+         void setLabel(const std::string&);
+         void setOneWay(bool);
 
          //
          const std::set<std::string>& getNames(void) const;
          const SecureBinaryData& getPublicKey(void) const;
+         const std::string& getLabel(void) const;
+         bool oneWay(void) const;
       };
 
       //////////////////////////////////////////////////////////////////////////

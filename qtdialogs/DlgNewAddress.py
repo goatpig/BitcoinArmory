@@ -1,14 +1,14 @@
-##############################################################################
-#                                                                            #
-# Copyright (C) 2011-2015, Armory Technologies, Inc.                         #
-# Distributed under the GNU Affero General Public License (AGPL v3)          #
-# See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
-#                                                                            #
-# Copyright (C) 2016-2024, goatpig                                           #
-#  Distributed under the MIT license                                         #
-#  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
-#                                                                            #
-##############################################################################
+################################################################################
+#                                                                              #
+# Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
+# Distributed under the GNU Affero General Public License (AGPL v3)            #
+# See LICENSE or http://www.gnu.org/licenses/agpl.html                         #
+#                                                                              #
+# Copyright (C) 2016-2026, goatpig                                             #
+#  Distributed under the MIT license                                           #
+#  See LICENSE-MIT or https://opensource.org/licenses/MIT                      #
+#                                                                              #
+################################################################################
 
 from qtpy import QtCore, QtGui, QtWidgets
 
@@ -45,7 +45,7 @@ class DlgNewAddressDisp(ArmoryDialog):
          loading.setValue(80)
 
       self.addrStr = self.addr.getAddressString()
-      wlttype = determineWalletType(self.wlt, self.main)[0]
+      wlttype = determineWalletType(self.wlt)
       notMyWallet = (wlttype == WalletTypes.WatchOnly)
 
       lblDescr = QtWidgets.QLabel(self.tr('The following address can be used to receive bitcoins:'))
@@ -222,7 +222,7 @@ class DlgNewAddressDisp(ArmoryDialog):
 def ShowRecvCoinsWarningIfNecessary(wlt, parent, main):
    numTimesOnline = TheSettings.getSettingOrSetDefault("SyncSuccessCount", 0)
    if numTimesOnline < 1 and not TheBDM.getState() == BDM_OFFLINE:
-      result = QtWidgets.QMessageBox.warning(main, self.tr('Careful!'), self.tr(
+      result = QtWidgets.QMessageBox.warning(main, main.tr('Careful!'), main.tr(
          'Armory is not online yet, and will eventually need to be online to '
          'access any funds sent to your wallet.  Please <u><b>do not</b></u> '
          'receive Bitcoins to your Armory wallets until you have successfully '
@@ -235,7 +235,7 @@ def ShowRecvCoinsWarningIfNecessary(wlt, parent, main):
       if not result == QtWidgets.QMessageBox.Ok:
          return False
 
-   wlttype = determineWalletType(wlt, main)[0]
+   wlttype = determineWalletType(wlt)
    notMyWallet = (wlttype == WalletTypes.WatchOnly)
    offlineWallet = (wlttype == WalletTypes.Offline)
    dnaaPropName = 'Wallet_%s_%s' % (wlt.getDisplayStr(), 'DNAA_RecvOther')
@@ -251,7 +251,7 @@ def ShowRecvCoinsWarningIfNecessary(wlt, parent, main):
             'wallet on a separate computer), then please change the '
             '"Belongs To" field in the wallet-properties for this wallet.'), \
             parent.tr('Do not show this warning again'), wCancel=True)
-      TheSettings.writeSetting(dnaaPropName, result[1])
+      TheSettings.set(dnaaPropName, result[1])
       return result[0]
 
    if offlineWallet and not dnaaThisWallet:
@@ -266,6 +266,6 @@ def ShowRecvCoinsWarningIfNecessary(wlt, parent, main):
             'address.  Instead, change the wallet properties "Belongs To" field '
             'to specify that this wallet is not actually yours.'), \
             parent.tr('Do not show this warning again'), wCancel=True)
-      TheSettings.writeSetting(dnaaPropName, result[1])
+      TheSettings.set(dnaaPropName, result[1])
       return result[0]
    return True

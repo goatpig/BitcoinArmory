@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2025, goatpig                                               //
+//  Copyright (C) 2025-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -14,29 +14,71 @@
 #include <set>
 #include <string>
 
-#include "../DBClientClasses.h"
+#include <DBClientClasses.h>
 
 namespace Armory
 {
+   namespace Ledgers
+   {
+      class Entry;
+   }
+
    namespace Bridge
    {
       enum class NotifType : int
       {
          PUSH,
-         UPDATE
+         NEWBLOCK,
+         ZC,
+         REFRESH
       };
 
       struct NotifStruct
       {
          const NotifType type;
-
-         //set when type is PUSH
-         BinaryData packet;
-
-         //set when type is UPDATE
-         std::function<void(void)> lbd;
+         NotifStruct(NotifType);
+         virtual ~NotifStruct(void) = 0;
+         virtual bool syncWalletState(void) const;
       };
-      typedef std::function<void(NotifStruct)> NotifFunc;
+      typedef std::function<void(std::shared_ptr<NotifStruct>)> NotifFunc;
+
+      struct NotifStruct_Push : public NotifStruct
+      {
+         BinaryData packet;
+         NotifStruct_Push(BinaryData);
+      };
+
+      struct NotifStruct_NewBlock : public NotifStruct
+      {
+         const NewBlockNotif blockNotif;
+         const bool isReadyNotif;
+         const std::function<void(void)> callback;
+
+         NotifStruct_NewBlock(
+            const NewBlockNotif&, const std::function<void(void)>&, bool);
+         bool syncWalletState(void) const override;
+      };
+
+      struct NotifStruct_ZC : public NotifStruct
+      {
+         std::vector<TxIOPair> txios;
+         std::set<BinaryData> invalidatedZCs;
+         const std::function<void(
+            const std::vector<Ledgers::Entry>&,
+            const std::set<BinaryData>&)> callback;
+         NotifStruct_ZC(std::vector<TxIOPair>, std::set<BinaryData>,
+            const std::function<void(
+               const std::vector<Ledgers::Entry>&,
+               const std::set<BinaryData>&)>&
+         );
+      };
+
+      struct NotifStruct_Refresh : public NotifStruct
+      {
+         const std::function<void(void)> callback;
+         NotifStruct_Refresh(const std::function<void(void)>&);
+         bool syncWalletState(void) const override;
+      };
 
       ////////
       class Callback : public RemoteCallback
@@ -58,10 +100,9 @@ namespace Armory
          //virtuals
          void run(BdmNotification) override;
          void progress(
-            BDMPhase phase,
-            const std::vector<std::string> &walletIdVec,
-            float progress, unsigned secondsRem,
-            unsigned progressNumeric
+            BDMPhase,
+            const std::vector<std::string>&,
+            float, unsigned, unsigned
          ) override;
          void disconnected(void) override;
 

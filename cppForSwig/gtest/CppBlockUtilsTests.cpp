@@ -13,6 +13,7 @@
 #include "TestUtils.h"
 #include <reorgTest/blkdata.h>
 #include <hkdf.h>
+#include <Ledgers/LedgerEntry.h>
 
 #include <Utils/ArmoryConfig.h>
 #include <Utils/DBUtils.h>
@@ -540,7 +541,6 @@ protected:
          "--datadir=./fakehomedir",
          "--dbdir=./ldbtestdir",
          "--satoshi-datadir=./blkfiletest",
-         "--public",
          "--db-type=DB_FULL",
          "--thread-count=3",
          "--public"},
@@ -1810,6 +1810,121 @@ TEST_F(BlockUtilsFull, Load5Blocks_CheckWalletFilters)
    EXPECT_EQ(wlt2_count, 0U);
 }
 
+TEST_F(BlockUtilsFull, PPrintTestChain)
+{
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "4A", "5", "5A" }, blk0dat_);
+   std::vector<std::pair<uint32_t, uint8_t>> blockIds {
+      { 0, 0 }, { 1, 0 }, { 2, 0 }, { 3, 0 }, { 4, 1 }, { 5, 1 }
+   };
+
+   clients_->init();
+   theBDMt_->start(Config::DBSettings::initMode());
+   auto bdvID = DBTestUtils::registerBDV(
+      clients_, Config::BitcoinSettings::getMagicBytes());
+
+   DBTestUtils::goOnline(clients_, bdvID);
+   DBTestUtils::waitOnBDMReady(clients_, bdvID);
+   auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
+   auto db = bdvPtr->getDB();
+
+   std::map<BinaryData, std::string> knownAddrs{
+      { TestChain::scrAddrA, "scrAddrA" },
+      { TestChain::scrAddrB, "scrAddrB" },
+      { TestChain::scrAddrC, "scrAddrC" },
+      { TestChain::scrAddrD, "scrAddrD" },
+      { TestChain::scrAddrE, "scrAddrE" },
+      { TestChain::scrAddrF, "scrAddrF" },
+      { TestChain::lb1ScrAddr, "lb1" },
+      { TestChain::lb1ScrAddrP2SH, "lb1P2SH" },
+      { TestChain::lb2ScrAddr, "lb2" },
+      { TestChain::lb2ScrAddrP2SH, "lb2P2SH" },
+
+   };
+
+   struct IdAndAmounts
+   {
+      std::string id;
+      std::vector<std::pair<uint64_t, std::string>> amounts;
+   };
+   std::map<BinaryData, IdAndAmounts> knownTxHashes;
+   for (const auto& blockId : blockIds) {
+      StoredHeader block;
+      ASSERT_TRUE(db->getStoredHeader(block, blockId.first, blockId.second, true));
+
+      //header
+      auto header = block.getBlockHeaderCopy();
+      std::string hgtx = std::to_string(blockId.first) + "|" + std::to_string(blockId.second);
+      std::cout << "Block #" << hgtx << ", " << header.getThisHash().toHexStr() << std::endl;
+      std::cout << "   Prev: " << header.getPrevHash().toHexStr() << std::endl;
+      std::cout << "   Txs: " << header.getNumTx() << std::endl;
+      std::cout << "   Timestamp: " << header.getTimestamp() << std::endl << std::endl;
+
+      //transactions
+      for (unsigned y = 0; y < block.getNumTx(); y++) {
+         auto tx = block.getTxCopy(y);
+         std::string txId = hgtx + ":" + std::to_string(y);
+         std::cout << "   * Tx [" << txId << "], " <<
+            tx.getThisHash().toHexStr() << std::endl;
+         std::cout << "      inputs: " << tx.getNumTxIn() <<
+            ", outputs: " << tx.getNumTxOut() << std::endl << std::endl;
+
+         //inputs
+         if (y == 0) {
+            std::cout << "      + Coinbase" << std::endl;
+            std::cout << "         amount: 50" << std::endl;
+         } else {
+            for (unsigned z = 0; z < tx.getNumTxIn(); z++) {
+               auto txIn = tx.getTxInCopy(z);
+               std::cout << "      + TxIn #" << z << std::endl;
+
+               auto outpoint = txIn.getOutPoint();
+               auto opHash = outpoint.getTxHash();
+               std::cout << "         Outpoint: ";
+               try {
+                  auto idAndAmounts = knownTxHashes.at(opHash);
+                  auto index = outpoint.getTxOutIndex();
+                  std::cout << "[" << idAndAmounts.id << "-" << index << "]" << std::endl;
+                  std::cout << "         amount: " << idAndAmounts.amounts[index].first << std::endl;
+                  std::cout << "         addr: " << idAndAmounts.amounts[index].second << std::endl;
+               } catch (const std::out_of_range&) {
+                  std::cout << opHash.toHexStr() << ", index: " << outpoint.getTxOutIndex() << std::endl;
+                  std::cout << "         amount: N/A" << std::endl;
+                  std::cout << "         addr: N/A" << std::endl;
+               }
+            }
+         }
+
+         //outputs
+         std::cout << std::endl;
+         std::vector<std::pair<uint64_t, std::string>> txAmounts;
+         for (unsigned z = 0; z < tx.getNumTxOut(); z++) {
+            auto txOut = tx.getTxOutCopy(z);
+            std::string txOutId = txId + "-" + std::to_string(z);
+            std::cout << "      - TxOut [" << txOutId << "]" << std::endl;
+
+            auto scrAddr = txOut.getScrAddressStr();
+            std::string addrStr;
+            try {
+               addrStr = knownAddrs.at(scrAddr);
+            } catch (const std::out_of_range&) {
+               addrStr = BtcUtils::scrAddrToBase58(scrAddr);
+            }
+
+            std::cout << "         dest: " << addrStr << std::endl;
+            auto value = txOut.getValue() / COIN;
+            std::cout << "         amount: " << value << std::endl;
+            txAmounts.emplace_back(std::make_pair(value, addrStr));
+         }
+
+         std::cout << std::endl;
+         knownTxHashes.emplace(tx.getThisHash(),
+            IdAndAmounts{txId, txAmounts});
+      }
+
+      std::cout << std::endl;
+   }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 class WebSocketTests_1Way : public ::testing::Test
 {
@@ -1840,6 +1955,7 @@ protected:
       blk0dat_ = FileUtils::getBlkFilename(blkdir_ / "blocks", 0);
       TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
 
+      WebSocketServer::init();
       Config::parseArgs({
          "--datadir=./fakehomedir",
          "--dbdir=./ldbtestdir",
@@ -1885,7 +2001,7 @@ protected:
 
       std::stringstream serverAddr;
       serverAddr << "127.0.0.1:" << Config::NetworkSettings::dbPort();
-      clientPeers.addPeer(serverPubkey, serverAddr.str());
+      clientPeers.addPeer(serverPubkey, {serverAddr.str()}, {}, true);
 
       serverPubkey_ = BinaryData(serverPubkey.pubkey, 33);
       serverAddr_ = serverAddr.str();
@@ -2056,14 +2172,11 @@ TEST_F(WebSocketTests_1Way, WebSocketStack)
    zcVec.push_back(rawZC, 14000000);
    zcVec.push_back(rawLBZC, 14100000);
 
-   std::vector<std::string> hashVec;
    auto hash1 = BtcUtils::getHash256(rawZC);
    auto hash2 = BtcUtils::getHash256(rawLBZC);
-   hashVec.push_back(hash1.toHexStr());
-   hashVec.push_back(hash2.toHexStr());
 
    DBTestUtils::pushNewZc(theBDMt_, zcVec);
-   pCallback->waitOnManySignals(BDMAction_ZC, hashVec);
+   pCallback->waitOnZc(theBDMt_->bdm()->zeroConfCont(), {hash1, hash2});
 
    w1AddrBalances = DBTestUtils::getAddrBalancesFromDB(bdvObj, "wallet1");
    balanceVec = w1AddrBalances[TestChain::scrAddrA];
@@ -2174,12 +2287,9 @@ TEST_F(WebSocketTests_1Way, WebSocketStack_Reconnect)
    WebSocketServer::start(theBDMt_->bdm(), true);
 
 
-   auto pubkeyPrompt = [this](const BinaryData& pubkey, const std::string& name)->bool
+   auto pubkeyPrompt = [this](const BinaryData& pubkey)->bool
    {
-      if (pubkey != serverPubkey_ || name != serverAddr_) {
-         return false;
-      }
-      return true;
+      return pubkey == serverPubkey_;
    };
 
    auto createNAddresses = [](unsigned count)->std::vector<BinaryData>
@@ -2447,6 +2557,7 @@ protected:
       blk0dat_ = FileUtils::getBlkFilename(blkdir_ / "blocks", 0);
       TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
 
+      WebSocketServer::init();
       Config::parseArgs({
          "--datadir=./fakehomedir",
          "--dbdir=./ldbtestdir",
@@ -2492,8 +2603,8 @@ protected:
 
       std::stringstream serverAddr;
       serverAddr << "127.0.0.1:" << Config::NetworkSettings::dbPort();
-      clientPeers.addPeer(serverPubkey, serverAddr.str());
-      serverPeers.addPeer(clientPubkey, "127.0.0.1");
+      clientPeers.addPeer(serverPubkey, {serverAddr.str()}, {}, false);
+      serverPeers.addPeer(clientPubkey, {"127.0.0.1"}, {}, false);
       serverPeers.setMasterKey(clientPubkey);
 
       serverPubkey_ = BinaryData(serverPubkey.pubkey, 33);
@@ -2724,7 +2835,7 @@ TEST_F(WebSocketTests_2Way, WebSocketStack_ManyZC)
       auto ZCHash = BtcUtils::getHash256(rawTx);
       allZcHash.push_back(ZCHash);
       DBTestUtils::pushNewZc(theBDMt_, zcVec);
-      pCallback->waitOnSignal(BDMAction_ZC, ZCHash.toHexStr());
+      pCallback->waitOnZc(theBDMt_->bdm()->zeroConfCont(), {ZCHash});
    }
 
    //grab ledger, check all zc hash are in there

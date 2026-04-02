@@ -1,13 +1,12 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2017-2025, goatpig                                          //
+//  Copyright (C) 2017-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifndef _H_ASSET_ENCRYPTION
-#define _H_ASSET_ENCRYPTION
+#pragma once
 
 #include <map>
 #include <Utils/SecureBinaryData.h>
@@ -30,8 +29,6 @@ enum CipherType
    CipherType_Serpent
 };
 
-class PRNG_Fortuna;
-
 namespace Armory
 {
    namespace Passphrase
@@ -46,7 +43,7 @@ namespace Armory
 
       namespace Encryption
       {
-         struct ClearTextEncryptionKey;
+         class ClearTextEncryptionKey;
          class ClearTextAssetData;
          class KeyDerivationFunction;
 
@@ -54,9 +51,7 @@ namespace Armory
          class CipherException : public std::runtime_error
          {
          public:
-            CipherException(const std::string& msg) :
-               std::runtime_error(msg)
-            {}
+            CipherException(const std::string&);
          };
 
          ////
@@ -92,40 +87,18 @@ namespace Armory
          public:
 
             //tors
-            Cipher(CipherType type,
-               const KdfId& kdfId,
-               const EncryptionKeyId& keyId) :
-               type_(type), kdfId_(kdfId),
-               encryptionKeyId_(keyId),
-               iv_(generateIV())
-            {
-               //General purpose ctor, IV is generated on the fly
-            }
-
-            Cipher(CipherType type,
-               const KdfId& kdfId,
-               const EncryptionKeyId& keyId,
-               SecureBinaryData& iv) :
-               type_(type), kdfId_(kdfId),
-               encryptionKeyId_(keyId),
-               iv_(std::move(iv))
-            {
-               //for setting up a cipher object from existing
-               //data (i.e. load from disk)
-
-               if(iv_.getSize() != getBlockSize())
-                  throw CipherException("invalid iv length");
-            }
-
+            Cipher(CipherType, const KdfId&, const EncryptionKeyId&);
+            Cipher(CipherType, const KdfId&, const EncryptionKeyId&,
+               SecureBinaryData&);
             virtual ~Cipher(void) = 0;
 
             //locals
-            CipherType getType(void) const { return type_; }
-            const KdfId& getKdfId(void) const { return kdfId_; }
+            CipherType getType(void) const;
+            const KdfId& getKdfId(void) const;
             const EncryptionKeyId& getEncryptionKeyId(void) const;
-            const SecureBinaryData& getIV(void) const { return iv_; }
+            const SecureBinaryData& getIV(void) const;
             SecureBinaryData generateIV(void) const;
-            unsigned getBlockSize(void) const { return getBlockSize(getType()); }
+            unsigned getBlockSize(void) const;
 
             //virtuals
             virtual BinaryData serialize(void) const = 0;
@@ -145,7 +118,7 @@ namespace Armory
                const SecureBinaryData&) const = 0;
 
             //statics
-            static std::unique_ptr<Cipher> deserialize(BinaryRefReader& brr);
+            static std::unique_ptr<Cipher> deserialize(BinaryRefReader&);
             static unsigned getBlockSize(CipherType);
          };
 
@@ -154,16 +127,10 @@ namespace Armory
          {
          public:
             //tors
-            Cipher_AES(const KdfId& kdfId,
-               const EncryptionKeyId& encryptionKeyId) :
-               Cipher(CipherType_AES, kdfId, encryptionKeyId)
-            {}
+            Cipher_AES(const KdfId&, const EncryptionKeyId&);
 
-            Cipher_AES(const KdfId& kdfId,
-               const EncryptionKeyId& encryptionKeyId,
-               SecureBinaryData& iv) :
-               Cipher(CipherType_AES, kdfId, encryptionKeyId, iv)
-            {}
+            Cipher_AES(const KdfId&, const EncryptionKeyId&,
+               SecureBinaryData&);
 
             //virtuals
             BinaryData serialize(void) const override;
@@ -193,8 +160,8 @@ namespace Armory
             Cipher text and its relevant cipher object
             */
 
-            const SecureBinaryData cipherText_;
-            std::unique_ptr<Cipher> cipher_;
+            const SecureBinaryData cipherText;
+            std::unique_ptr<Cipher> cipher;
 
             CipherData(SecureBinaryData&, std::unique_ptr<Cipher>);
 
@@ -243,10 +210,10 @@ namespace Armory
                otherwise the return type is always ClearTextAssetData)
             */
             std::unique_ptr<ClearTextAssetData> decrypt(
-               const SecureBinaryData& key) const;
+               const SecureBinaryData&) const;
          };
 
-         //////////////////////////////////////////////////////////////////////////
+         ///////////////////////////////////////////////////////////////////////
          class ClearTextEncryptionKey
          {
             friend class DecryptedDataContainer;
@@ -259,8 +226,8 @@ namespace Armory
             std::map<KdfId, SecureBinaryData> derivedKeys_;
 
          private:
-            EncryptionKeyId computeId(const SecureBinaryData& key) const;
-            const SecureBinaryData& getData(void) const { return rawKey_; }
+            EncryptionKeyId computeId(const SecureBinaryData&) const;
+            const SecureBinaryData& getData(void) const;
             const SecureBinaryData& getDerivedKey(const KdfId&) const;
 
          public:
@@ -268,10 +235,10 @@ namespace Armory
             ClearTextEncryptionKey(Passphrase::SetNew&);
 
             void deriveKey(std::shared_ptr<KeyDerivationFunction>);
-            EncryptionKeyId getId(const KdfId& kdfid) const;
+            EncryptionKeyId getId(const KdfId&) const;
 
             std::unique_ptr<ClearTextEncryptionKey> copy(void) const;
-            bool hasData(void) const { return !rawKey_.empty(); }
+            bool hasData(void) const;
          };
 
          ///////////////////////////////////////////////////////////////////////
@@ -282,14 +249,11 @@ namespace Armory
             const SecureBinaryData clearText_;
 
          public:
-            ClearTextAssetData(const AssetId& id,
-               SecureBinaryData& clearText) :
-               id_(id), clearText_(std::move(clearText))
-            {}
+            ClearTextAssetData(const AssetId&, SecureBinaryData&);
 
-            bool hasData(void) const { return !clearText_.empty(); }
-            const AssetId& getId(void) const { return id_; }
-            const SecureBinaryData& getData(void) const { return clearText_; }
+            bool hasData(void) const;
+            const AssetId& getId(void) const;
+            const SecureBinaryData& getData(void) const;
          };
 
          ///////////////////////////////////////////////////////////////////////
@@ -311,14 +275,7 @@ namespace Armory
             const std::unique_ptr<CipherData> cipherData_;
 
          public:
-            EncryptedAssetData(
-               std::unique_ptr<CipherData> cipherData) :
-               encryptionKeyId_(cipherData->cipher_->getEncryptionKeyId()),
-               cipherData_(std::move(cipherData))
-            {
-               if (cipherData_ == nullptr)
-                  throw std::runtime_error("nullptr cipher data");
-            }
+            EncryptedAssetData(std::unique_ptr<CipherData>);
 
             //virtual
             virtual ~EncryptedAssetData(void) = 0;
@@ -343,5 +300,3 @@ namespace Armory
       }; //namespace Encryption
    }; //namespace Wallets
 }; //namespace Armory
-
-#endif

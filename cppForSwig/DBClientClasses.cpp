@@ -20,43 +20,6 @@ using namespace DBClientClasses;
 using namespace Armory;
 
 namespace {
-   std::vector<std::shared_ptr<LedgerEntry>> capnToLedgers(
-      Armory::Codec::Types::TxLedger::Reader& page)
-   {
-      std::vector<std::shared_ptr<LedgerEntry>> result;
-      auto ledgers = page.getLedgers();
-      result.reserve(ledgers.size());
-
-      for (const auto& ledger : ledgers) {
-         //tx hash
-         auto capnTxHash = ledger.getTxHash();
-         auto hashBytes = capnTxHash.asBytes();
-         BinaryData txHash(hashBytes.begin(), hashBytes.end());
-
-         //scrAddr list
-         auto capnScrAddrs = ledger.getScrAddrs();
-         std::vector<BinaryData> scrAddrList;
-         scrAddrList.reserve(capnScrAddrs.size());
-         for (const auto& scrAddr : capnScrAddrs) {
-            auto asBytes = scrAddr.asBytes();
-            scrAddrList.emplace_back(BinaryData(
-               scrAddr.begin(), scrAddr.end()
-            ));
-         }
-
-         //instantiate ledger entry
-         result.emplace_back(std::make_shared<LedgerEntry>(
-            ledger.getWalletId(), ledger.getBalance(), ledger.getTxHeight(),
-            txHash, ledger.getTxOutIndex(), ledger.getTxTime(),
-            ledger.getIsCoinbase(), ledger.getIsSTS(),
-            ledger.getIsChangeBack(), ledger.getIsOptInRBF(),
-            ledger.getIsChainedZC(), ledger.getIsWitness(),
-            scrAddrList
-         ));
-      }
-      return result;
-   }
-
    std::shared_ptr<NodeStatus> capnToNodeStatus(
       Armory::Codec::Types::NodeStatus::Reader nodeStatus)
    {
@@ -86,6 +49,33 @@ namespace {
          return result;
       }
    }
+
+   std::vector<TxIOPair> capnToTxios(
+      const capnp::List<Codec::Types::TxioPair, capnp::Kind::STRUCT>::Reader& capnTxios)
+   {
+      std::vector<TxIOPair> txios;
+      txios.reserve(capnTxios.size());
+
+      for (auto capnTxio : capnTxios) {
+         auto capnTxOut = capnTxio.getTxOut();
+         BinaryData txOutKey(capnTxOut.begin(), capnTxOut.end());
+         auto amount = capnTxio.getAmount();
+         TxIOPair txio{txOutKey, amount};
+
+         if (capnTxio.hasTxIn()) {
+            auto capnTxIn = capnTxio.getTxIn();
+            BinaryData txInKey(capnTxIn.begin(), capnTxIn.end());
+            txio.setTxIn(txInKey);
+         }
+
+         txio.setTxOutFromSelf(capnTxio.getFromSelf());
+         txio.setFromCoinbase(capnTxio.getCoinbase());
+         txio.setRBF(capnTxio.getRbf());
+         txio.setMultisig(capnTxio.getMultisig());
+         txios.emplace_back(std::move(txio));
+      }
+      return txios;
+   }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -102,10 +92,10 @@ void initLibrary()
 //
 ///////////////////////////////////////////////////////////////////////////////
 BlockHeader::BlockHeader(
-   const BinaryData& rawheader, unsigned height)
+   BinaryDataRef rawheader, uint32_t height, uint8_t dupId) :
+   blockHeight_{height}, duplicateId_{dupId}
 {
-   unserialize(rawheader.getRef());
-   blockHeight_ = height;
+   unserialize(rawheader);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -119,7 +109,6 @@ void BlockHeader::unserialize(uint8_t const * ptr, uint32_t size)
    difficultyDbl_ = BtcUtils::convertDiffBitsToDouble(
       BinaryDataRef(dataCopy_.getPtr() + 72, 4));
    isInitialized_ = true;
-   blockHeight_ = UINT32_MAX;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -235,7 +224,11 @@ const std::vector<BinaryData>& LedgerEntry::getScrAddrList() const
 // RemoteCallback
 //
 ///////////////////////////////////////////////////////////////////////////////
-RemoteCallback::~RemoteCallback(void)
+RemoteCallback::~RemoteCallback()
+{}
+
+BdmNotification::BdmNotification(BDMAction action) :
+   action(action)
 {}
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -247,56 +240,73 @@ bool RemoteCallback::processNotifications(
    auto notifsCapn = reader->getRoot<BDV::Notifications>();
    auto notifs = notifsCapn.getNotifs();
 
-   for (auto notif : notifs) {
+   for (unsigned i = 0; i < notifs.size(); i++) {
+      auto notif = notifs[i];
       switch (notif.which())
       {
-         case BDV::Notification::Which::CONTINUE_POLLING:
+         case BDV::Notification::CONTINUE_POLLING:
             break;
 
-         case BDV::Notification::Which::NEW_BLOCK:
+         case BDV::Notification::NEW_BLOCK:
          {
             auto newblock = notif.getNewBlock();
             auto height = newblock.getHeight();
             if (height != 0)
             {
                BdmNotification bdmNotif(BDMAction_NewBlock);
-
-               bdmNotif.height = height;
-               bdmNotif.branchHeight = newblock.getBranchHeight();
+               bdmNotif.newBlock = NewBlockNotif{
+                  height, newblock.getBranchHeight()};
                run(std::move(bdmNotif));
             }
 
             break;
          }
 
-         case BDV::Notification::Which::ZC:
+         case BDV::Notification::ZC:
          {
-            auto page = notif.getZc();
+            auto zcTxios = notif.getZc();
             BdmNotification bdmNotif(BDMAction_ZC);
-            bdmNotif.ledgers = capnToLedgers(page);
+            bdmNotif.txios = capnToTxios(zcTxios);
             bdmNotif.requestID = notif.getRequestId();
 
-            run(std::move(bdmNotif));
-            break;
-         }
+            //zc notifs are sometimes delivered along with an
+            //invalidated zc notif, let's package both together
+            if (i < notifs.size() - 1) {
+               auto peekNext = notifs[i+1];
+               if (peekNext.which() != BDV::Notification::INVALIDATED_ZC) {
+                  continue;
+               }
+               ++i;
 
-         case BDV::Notification::Which::INVALIDATED_ZC:
-         {
-            auto ids = notif.getInvalidatedZc();
-            std::set<BinaryData> idSet;
-
-            BdmNotification bdmNotif(BDMAction_InvalidatedZC);
-            for (auto id : ids) {
-               bdmNotif.invalidatedZc.emplace(BinaryData(
-                  id.begin(), id.end()
-               ));
+               auto ids = peekNext.getInvalidatedZc();
+               for (auto id : ids) {
+                  bdmNotif.invalidatedZc.emplace(BinaryData{
+                     id.begin(), id.end()
+                  });
+               }
             }
 
             run(std::move(bdmNotif));
             break;
          }
 
-         case BDV::Notification::Which::REFRESH:
+         case BDV::Notification::INVALIDATED_ZC:
+         {
+            auto ids = notif.getInvalidatedZc();
+            std::set<BinaryData> idSet;
+
+            BdmNotification bdmNotif(BDMAction_InvalidatedZC);
+            for (auto id : ids) {
+               bdmNotif.invalidatedZc.emplace(BinaryData{
+                  id.begin(), id.end()
+               });
+            }
+
+            run(std::move(bdmNotif));
+            break;
+         }
+
+         case BDV::Notification::REFRESH:
          {
             auto refresh = notif.getRefresh();
             auto refreshType = (BDV_refresh)refresh.getType();
@@ -315,17 +325,17 @@ bool RemoteCallback::processNotifications(
             break;
          }
 
-         case BDV::Notification::Which::READY:
+         case BDV::Notification::READY:
          {
             BdmNotification bdmNotif(BDMAction_Ready);
             auto newBlock = notif.getReady();
-            bdmNotif.height = newBlock.getHeight();
-
+            bdmNotif.newBlock = NewBlockNotif{
+               newBlock.getHeight(), newBlock.getBranchHeight()};
             run(std::move(bdmNotif));
             break;
          }
 
-         case BDV::Notification::Which::PROGRESS:
+         case BDV::Notification::PROGRESS:
          {
             auto capnProgress = notif.getProgress();
             auto capnIds = capnProgress.getIds();
@@ -341,13 +351,13 @@ bool RemoteCallback::processNotifications(
             break;
          }
 
-         case BDV::Notification::Which::TERMINATE:
+         case BDV::Notification::TERMINATE:
          {
             //shut down command from server
             return false;
          }
 
-         case BDV::Notification::Which::NODE_STATUS:
+         case BDV::Notification::NODE_STATUS:
          {
             BdmNotification bdmNotif(BDMAction_NodeStatus);
             auto capnNodeStatus = notif.getNodeStatus();
@@ -357,7 +367,7 @@ bool RemoteCallback::processNotifications(
             break;
          }
 
-         case BDV::Notification::Which::ERROR:
+         case BDV::Notification::ERROR:
          {
             auto error = notif.getError();
 
@@ -424,7 +434,7 @@ const NodeChainStatus& NodeStatus::chainStatus() const
 //
 ///////////////////////////////////////////////////////////////////////////////
 NodeChainStatus::NodeChainStatus() :
-   chainState_(CoreRPC::ChainState_Unknown), blockSpeed_(0), progressPct_(0),
+   chainState_(CoreRPC::ChainState::Unknown), blockSpeed_(0), progressPct_(0),
    etaSeconds_(UINT64_MAX), blocksLeft_(UINT32_MAX)
 {}
 
@@ -491,4 +501,36 @@ void BDV_Error_Struct::deserialize(const BinaryData& data)
 
    len = brr.get_var_int();
    errorStr_ = brr.get_String(len);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// NewBlockNotif
+NewBlockNotif::NewBlockNotif(uint32_t hgt, uint32_t branch) :
+   height_(hgt), branchHeight_(branch)
+{}
+
+bool NewBlockNotif::isValid() const
+{
+   return height_ != UINT32_MAX;
+}
+
+bool NewBlockNotif::isReorg() const
+{
+   return isValid() && branchHeight_ != UINT32_MAX;
+}
+
+uint32_t NewBlockNotif::getHeight() const
+{
+   if (!isValid()) {
+      throw std::runtime_error("invalid block notif");
+   }
+   return height_;
+}
+
+uint32_t NewBlockNotif::getBranchHeight() const
+{
+   if (!isReorg()) {
+      throw std::runtime_error("not a reorg!");
+   }
+   return branchHeight_;
 }

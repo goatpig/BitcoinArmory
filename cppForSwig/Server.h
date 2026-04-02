@@ -89,7 +89,7 @@ struct PendingMessage
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-struct ClientConnection
+class ClientConnection
 {
 public:
    struct lws *wsiPtr_ = nullptr;
@@ -114,6 +114,7 @@ public:
 
    void closeConnection(void);
    void processReadQueue(std::shared_ptr<Clients>);
+   bool isMaster(void) const;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -158,7 +159,7 @@ private:
 
    void prepareWriteThread(void);
 
-   AuthPeersLambdas getAuthPeerLambda(void) const;
+   AuthPeersLambdas getAuthPeerLambda(bool) const;
    void closeClientConnection(uint64_t);
    void clientInterruptThread(void);
 
@@ -172,6 +173,7 @@ public:
       struct lws *wsi, enum lws_callback_reasons reason,
       void *user, void *in, size_t len);
 
+   static void init(void);
    static void initAuthPeers(const Armory::Wallets::IO::ReadOnlyFileParams&);
    static void initAuthPeers(std::shared_ptr<Armory::Wallets::AuthorizedPeers>);
    static void start(std::shared_ptr<BlockDataManager>, bool);

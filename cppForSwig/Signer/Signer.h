@@ -78,7 +78,6 @@ namespace Armory
          BinaryData serializeAvailableResolvedData(void) const;
 
          static Signer createFromState(const std::string&);
-         void parseScripts(bool);
 
       public:
          Signer(void);

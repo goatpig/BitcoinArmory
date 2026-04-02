@@ -23,6 +23,9 @@ SET(LIBARMORYCOMMON_INCLUDE_DIRECTORIES
     PUBLIC ${LIBWEBSOCKETS_INCLUDE_DIRS}
     PUBLIC Signer
     PUBLIC Wallets
+    PUBLIC Utils
+    PUBLIC Ledgers
+    PUBLIC ZeroConf
     PRIVATE Wallets/Accounts
     PRIVATE ${PROJECT_BINARY_DIR}/cppForSwig
     PUBLIC /usr/include
@@ -42,6 +45,9 @@ FILE(GLOB BLOCKDB_SOURCES BlockchainDatabase/*.cpp)
 FILE(GLOB ACCOUNTS_SOURCES Wallets/Accounts/*.cpp)
 FILE(GLOB SEEDS_SOURCES Wallets/Seeds/*.cpp)
 FILE(GLOB SIGNER_SOURCES Signer/*.cpp)
+FILE(GLOB UTILS_SOURCES Utils/*.cpp)
+FILE(GLOB LEDGERS_SOURCES Ledgers/*.cpp)
+FILE(GLOB ZEROCONF_SOURCES ZeroConf/*.cpp)
 
 FILE(GLOB WALLETS_SOURCES Wallets/*.cpp)
 LIST(APPEND WALLETS_SOURCES
@@ -52,11 +58,14 @@ LIST(APPEND WALLETS_SOURCES
 
 LIST(APPEND LIBARMORYCOMMON_SOURCES
     lmdbpp/lmdbpp.cpp
+    ${UTILS_SOURCES}
     ${WALLETS_SOURCES}
     ${ACCOUNTS_SOURCES}
     ${SEEDS_SOURCES}
     ${SIGNER_SOURCES}
     ${BLOCKDB_SOURCES}
+    ${ZEROCONF_SOURCES}
+    ${LEDGERS_SOURCES}
     gtest/MockedNode.cpp
 )
 
@@ -168,32 +177,26 @@ TARGET_INCLUDE_DIRECTORIES(ArmoryCommon
 
 TARGET_LINK_LIBRARIES(ArmoryCommon
     ${LIBARMORYCOMMON_LINK_LIBRARIES}
+    ${LIBWEBSOCKETS_LIB}
 )
 
 SET(LIBARMORYCLI_SOURCES
-    ArmoryConfig.cpp
     BDM_mainthread.cpp
     BDM_Server.cpp
-    BIP150_151.cpp
-    BIP15x_Handshake.cpp
     BitcoinP2P.cpp
     BlockDataViewer.cpp
     BtcWallet.cpp
-    HistoryPager.cpp
-    HttpMessage.cpp
-    JSON_codec.cpp
-    LedgerEntry.cpp
     nodeRPC.cpp
     Progress.cpp
     ScrAddrObj.cpp
     Server.cpp
     StringSockets.cpp
-    ZeroConf.cpp
     gtest/MockedNode.cpp
 )
 
 ADD_LIBRARY(ArmoryCLI
     STATIC
+    ${LIBARMORYUTILS_SOURCES}
     ${LIBARMORYCLI_SOURCES}
 )
 
@@ -219,6 +222,7 @@ ADD_LIBRARY(BridgeLib
     BridgeAPI/Wallets/Container.cpp
     BridgeAPI/Wallets/Manager.cpp
     BridgeAPI/Wallets/Notifications.cpp
+    BridgeAPI/Wallets/TxIOCache.cpp
     BridgeAPI/BlockchainDbClient.cpp
 )
 
@@ -294,6 +298,7 @@ TARGET_INCLUDE_DIRECTORIES(BIP150KeyManager
 
 TARGET_LINK_LIBRARIES(BIP150KeyManager
     ArmoryCLI
+    ${LIBWEBSOCKETS_LIB}
     ${OS_SPECIFIC_LIBS}
 )
 

@@ -17,10 +17,9 @@
 #include <stdint.h>
 #include <string>
 
-#include "BlockchainDatabase/txio.h"
+#include <Ledgers/HistoryPager.h>
 #include "BDV_Notification.h"
 #include "bdmenums.h"
-#include "BtcWallet.h"
 
 typedef enum
 {
@@ -81,13 +80,28 @@ struct CombinedBalances
 
 class ScrAddrFilter;
 class Blockchain;
-class LedgerDelegate;
+class BtcWallet;
+class BlockDataManager;
+struct StoredHeader;
+class Tx;
+class TxOut;
+class TxIn;
+struct StoredTxOut;
+struct ScanWalletStruct;
+struct UTXO;
+struct Output;
 
 namespace Armory
 {
    namespace ZeroConf
    {
       class ZeroConfContainer;
+   }
+
+   namespace Ledgers
+   {
+      class Delegate;
+      class HistoryPager;
    }
 }
 
@@ -111,7 +125,8 @@ public:
 
    void scanWallets(std::shared_ptr<BDV_Notification>);
    bool hasWallet(const std::string&) const;
-   Tx getTxByHash(const BinaryData&) const;
+   Tx getTxByHash(BinaryDataRef) const;
+   Tx getTxByKey(BinaryDataRef) const;
 
    std::tuple<uint32_t, uint32_t, std::vector<unsigned>>
    getTxMetaData(const BinaryDataRef&, bool) const;
@@ -130,11 +145,11 @@ public:
    std::shared_ptr<BlockHeader> getHeaderByHash(const BinaryData&) const;
 
    size_t getWalletsPageCount(void) const;
-   std::vector<LedgerEntry> getWalletsHistoryPage(uint32_t,
+   std::vector<Armory::Ledgers::Entry> getWalletsHistoryPage(uint32_t,
       bool rebuildLedger, bool remapWallets);
 
    size_t getLockboxesPageCount(void) const;
-   std::vector<LedgerEntry> getLockboxesHistoryPage(uint32_t,
+   std::vector<Armory::Ledgers::Entry> getLockboxesHistoryPage(uint32_t,
       bool rebuildLedger, bool remapWallets);
 
    StoredHeader getMainBlockFromDB(uint32_t height) const;
@@ -162,10 +177,10 @@ public:
    uint32_t getBlockTimeByHeight(uint32_t) const;
    uint32_t getClosestBlockHeightForTime(uint32_t);
 
-   LedgerDelegate getLedgerDelegateForWallets();
-   LedgerDelegate getLedgerDelegateForLockboxes();
-   LedgerDelegate getLedgerDelegateForWallet(const std::string&);
-   LedgerDelegate getLedgerDelegateForScrAddr(
+   Armory::Ledgers::Delegate getLedgerDelegateForWallets(void);
+   Armory::Ledgers::Delegate getLedgerDelegateForLockboxes(void);
+   Armory::Ledgers::Delegate getLedgerDelegateForWallet(const std::string&);
+   Armory::Ledgers::Delegate getLedgerDelegateForScrAddr(
       const std::string& wltID, const BinaryData& scrAddr);
 
    TxOut getTxOutCopy(const BinaryData& txHash, uint16_t index) const;
@@ -196,6 +211,9 @@ public:
       const std::map<BinaryDataRef, std::set<unsigned>>&, bool) const;
    CombinedBalances getCombinedBalances(void) const;
 
+   std::map<BinaryData, TxIOPair> getTxioForRange(uint32_t) const;
+   std::map<BinaryData, std::shared_ptr<const TxIOPair>> getZcTxios(void) const;
+
 protected:
    static void unregisterAddresses(
       std::set<BinaryData>, const std::function<void(void)>&);
@@ -206,7 +224,6 @@ protected:
    std::shared_ptr<BlockDataManager> bdm_;
    LMDBBlockDatabase* db_;
    std::shared_ptr<Blockchain> bc_;
-   Armory::ZeroConf::ZeroConfContainer* zc_;
    ScrAddrFilter* saf_;
 
    std::vector<WalletGroup> groups_;
@@ -314,8 +331,11 @@ public:
 
    void reset();
    size_t getPageCount(void) const { return hist_.getPageCount(); }
-   std::vector<LedgerEntry> getHistoryPage(uint32_t pageId, unsigned updateID,
+   std::vector<Armory::Ledgers::Entry> getHistoryPage(
+      uint32_t pageId, unsigned updateID,
       bool rebuildLedger, bool remapWallets);
+
+   std::map<BinaryData, TxIOPair> getTxioForRange(uint32_t, uint32_t) const;
 
 private:
    std::map<uint32_t, uint32_t> computeWalletsSSHSummary(
@@ -339,7 +359,7 @@ private:
    //a single one), the globalLedger does not merge wallet level txn. It
    //can thus have several entries under the same transaction. Thus, this
    //cannot be a map nor a set.
-   HistoryPager hist_;
+   Armory::Ledgers::HistoryPager hist_;
    HistoryOrdering order_ = order_descending;
 
    BlockDataViewer* bdvPtr_ = nullptr;

@@ -123,13 +123,13 @@ void ScrAddrFilter::updateAddressMerkleInDB()
    try {
       sshSdbi = std::move(lmdb_->getStoredDBInfo(DB_SELECT::SSH, sdbiKey_));
    } catch (const std::runtime_error&) {
-      sshSdbi.magic_ = Armory::Config::BitcoinSettings::getMagicBytes();
-      sshSdbi.metaHash_ = BtcUtils::EmptyHash;
-      sshSdbi.topBlkHgt_ = 0;
-      sshSdbi.armoryType_ = ARMORY_DB_TYPE::Bare;
+      sshSdbi.magic = Armory::Config::BitcoinSettings::getMagicBytes();
+      sshSdbi.metaHash = BtcUtils::EmptyHash;
+      sshSdbi.topBlkHgt = 0;
+      sshSdbi.armoryType = ARMORY_DB_TYPE::Bare;
    }
 
-   sshSdbi.metaHash_ = addrMerkle;
+   sshSdbi.metaHash = addrMerkle;
    lmdb_->putStoredDBInfo(DB_SELECT::SSH, sshSdbi, sdbiKey_);
 }
 
@@ -185,7 +185,7 @@ void ScrAddrFilter::getScrAddrCurrentSyncState()
    for (const auto& scrAddr : *scraddrmap) {
       StoredScriptHistory ssh;
       lmdb_->getStoredScriptHistorySummary(ssh, scrAddr.first);
-      scrAddr.second->scannedHeight_ = ssh.scanHeight_;
+      scrAddr.second->scannedHeight_ = ssh.scanHeight;
    }
 }
 
@@ -198,9 +198,9 @@ void ScrAddrFilter::setSSHLastScanned(std::set<BinaryData>& addrSet,
       StoredScriptHistory ssh;
       lmdb_->getStoredScriptHistorySummary(ssh, scrAddr);
       if (!ssh.isInitialized()) {
-         ssh.uniqueKey_ = scrAddr;
+         ssh.uniqueKey = scrAddr;
       }
-      ssh.scanHeight_ = height;
+      ssh.scanHeight = height;
       lmdb_->putStoredScriptHistorySummary(ssh);
    }
 }
@@ -211,7 +211,7 @@ void ScrAddrFilter::setSSHLastScanned(unsigned height)
    std::set<BinaryData> addrSet;
    auto addrMap = scanFilterAddrMap_->get();
    for (auto& addr : *addrMap) {
-      addrSet.insert(addr.first);
+      addrSet.emplace(addr.first);
    }
    setSSHLastScanned(addrSet, height);
 }
@@ -407,8 +407,8 @@ void ScrAddrFilter::resetSshDB()
    for (const auto& regScrAddr : *scraddrmap) {
       regScrAddr.second->scannedHeight_ = 0;
       StoredScriptHistory ssh;
-      ssh.uniqueKey_ = regScrAddr.first;
-      ssh.scanHeight_ = -1;
+      ssh.uniqueKey = regScrAddr.first;
+      ssh.scanHeight = -1;
       lmdb_->putStoredScriptHistorySummary(ssh);
    }
 }
@@ -426,10 +426,9 @@ void ScrAddrFilter::getAllScrAddrInDB()
       ssh.unserializeDBKey(dbIter->getKeyRef());
       ssh.unserializeDBValue(dbIter->getValueReader());
 
-      auto aah = std::make_shared<AddrAndHash>(ssh.uniqueKey_.getRef());
-      aah->scannedHeight_ = ssh.scanHeight_;
-      scrAddrMap.insert(
-         std::move(std::make_pair(aah->scrAddr_, aah)));
+      auto aah = std::make_shared<AddrAndHash>(ssh.uniqueKey.getRef());
+      aah->scannedHeight_ = ssh.scanHeight;
+      scrAddrMap.emplace(aah->scrAddr_, aah);
    }
 
    //the zc filter map is only update once when users register address explictly
@@ -454,33 +453,34 @@ BinaryData ScrAddrFilter::getAddressMapMerkle(void) const
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool ScrAddrFilter::hasNewAddresses(void) const
+bool ScrAddrFilter::hasNewAddresses() const
 {
-   if (scanFilterAddrMap_->size() == 0)
+   if (scanFilterAddrMap_->empty()) {
       return false;
+   }
 
    //do not run before getAllScrAddrInDB
    auto&& currentmerkle = getAddressMapMerkle();
    BinaryData dbMerkle;
 
    {
-      auto&& tx = lmdb_->beginTransaction(DB_SELECT::SSH, LMDB::Mode::ReadOnly);
-      auto&& sdbi = getSshSDBI();
-      dbMerkle = sdbi.metaHash_;
+      auto tx = lmdb_->beginTransaction(DB_SELECT::SSH, LMDB::Mode::ReadOnly);
+      auto sdbi = getSshSDBI();
+      dbMerkle = sdbi.metaHash;
    }
 
-   if (dbMerkle == currentmerkle)
+   if (dbMerkle == currentmerkle) {
       return false;
+   }
 
    //merkles don't match, check height in each address
    auto scraddrmap = scanFilterAddrMap_->get();
    auto scanfrom = scraddrmap->begin()->second;
-   for (const auto& scrAddr : *scraddrmap)
-   {
-      if (scanfrom != scrAddr.second)
+   for (const auto& scrAddr : *scraddrmap) {
+      if (scanfrom != scrAddr.second) {
          return true;
+      }
    }
-
    return false;
 }
 

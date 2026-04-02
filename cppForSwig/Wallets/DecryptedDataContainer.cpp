@@ -125,7 +125,7 @@ std::shared_ptr<KeyDerivationFunction> DecryptedDataContainer::getMasterKdf() co
    */
    const auto& cipherDataMap = keyIter->second->cipherDataMap_;
    for (const auto& cipherDataPair : cipherDataMap) {
-      auto kdfId = cipherDataPair.second->cipher_->getKdfId();
+      auto kdfId = cipherDataPair.second->cipher->getKdfId();
       if (kdfId == passthroughKdfId) {
          /*
          Passthrough kdf means the outer key isnt derived. This is
@@ -154,7 +154,7 @@ bool DecryptedDataContainer::isMasterKeyEncrypted() const
    */
    const auto& cipherDataMap = keyIter->second->cipherDataMap_;
    for (const auto& cipherDataPair : cipherDataMap) {
-      auto kdfId = cipherDataPair.second->cipher_->getKdfId();
+      auto kdfId = cipherDataPair.second->cipher->getKdfId();
       if (kdfId == passthroughKdfId) {
          return false;
       }
@@ -311,7 +311,7 @@ const SecureBinaryData& DecryptedDataContainer::getClearTextAssetData(
    }
 
    //check cipher
-   if (dataPtr->getCipherDataPtr()->cipher_ == nullptr) {
+   if (dataPtr->getCipherDataPtr()->cipher == nullptr) {
       //null cipher, data is not encrypted, create entry and return it
       auto dataCopy = dataPtr->getCipherText();
       auto decrData = std::make_unique<ClearTextAssetData>(
@@ -320,7 +320,7 @@ const SecureBinaryData& DecryptedDataContainer::getClearTextAssetData(
    }
 
    //we have a valid cipher, grab the encryption key
-   const auto* cipherPtr = dataPtr->getCipherDataPtr()->cipher_.get();
+   const auto* cipherPtr = dataPtr->getCipherDataPtr()->cipher.get();
    const auto& encryptionKeyId = cipherPtr->getEncryptionKeyId();
    const auto& kdfId = cipherPtr->getKdfId();
 
@@ -481,8 +481,8 @@ DecryptedDataContainer::populateEncryptionKey(
             continue;
          }
          parentKeyMap.emplace(
-            cipherDataPtr->cipher_->getEncryptionKeyId(),
-            cipherDataPtr->cipher_->getKdfId()
+            cipherDataPtr->cipher->getEncryptionKeyId(),
+            cipherDataPtr->cipher->getKdfId()
          );
       }
       auto resultingIds = populateEncryptionKey(parentKeyMap);
@@ -498,9 +498,9 @@ DecryptedDataContainer::populateEncryptionKey(
          lockedDecryptedData_->encryptionKeys_.at(decryptId);
 
       //decrypt the encrypted key
-      auto rawDecryptedKey = cipherData->cipher_->decrypt(
-         decryptionKey->getDerivedKey(cipherData->cipher_->getKdfId()),
-         cipherData->cipherText_);
+      auto rawDecryptedKey = cipherData->cipher->decrypt(
+         decryptionKey->getDerivedKey(cipherData->cipher->getKdfId()),
+         cipherData->cipherText);
       decryptedKey = std::make_unique<ClearTextEncryptionKey>(
          rawDecryptedKey);
 

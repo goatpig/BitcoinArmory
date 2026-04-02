@@ -9,16 +9,21 @@
 #include "BDM_Server.h"
 #include <Utils/ArmoryErrors.h>
 #include <Utils/ArmoryConfig.h>
+#include <Utils/DBUtils.h>
 #include <BlockchainDatabase/BlockUtils.h>
 #include <BlockchainDatabase/lmdb_wrapper.h>
+#include <BlockchainDatabase/txio.h>
+#include <BlockchainDatabase/StoredBlockObj.h>
 #include <ZeroConf/Parser.h>
 #include <ZeroConf/Utils.h>
 #include <ZeroConf/Notifications.h>
+#include <Ledgers/LedgerEntry.h>
 #include <btc/ecc.h>
 
 #include "SocketWritePayload.h"
 #include "Server.h"
 #include "WebSocketMessage.h"
+#include "BtcWallet.h"
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>
@@ -68,24 +73,24 @@ namespace {
       Codec::Types::Output::Builder& result)
    {
       result.setValue(output.getValue());
-      result.setTxHeight(output.blockHeight_);
-      result.setTxIndex(output.txIndex_);
-      result.setTxOutIndex(output.txOutIndex_);
+      result.setTxHeight(output.blockHeight);
+      result.setTxIndex(output.txIndex);
+      result.setTxOutIndex(output.txOutIndex);
 
       auto script = output.getScriptRef();
       result.setScript(capnp::Data::Builder(
          (uint8_t*)script.getPtr(), script.getSize()
       ));
 
-      if (!output.spenderHash_.empty()) {
+      if (!output.spenderHash.empty()) {
          result.setSpenderHash(capnp::Data::Builder(
-            (uint8_t*)output.spenderHash_.getPtr(),
-            output.spenderHash_.getSize()
+            (uint8_t*)output.spenderHash.getPtr(),
+            output.spenderHash.getSize()
          ));
       }
    }
 
-   void historyPageToCapn(const std::vector<LedgerEntry>& page,
+   void historyPageToCapn(const std::vector<Ledgers::Entry>& page,
       Codec::Types::TxLedger::Builder& result)
    {
       auto capnLes = result.initLedgers(page.size());
@@ -120,6 +125,27 @@ namespace {
             ));
          }
       }
+   }
+
+   void txioToCapn(const TxIOPair& txio,
+      Codec::Types::TxioPair::Builder& capnTxio)
+   {
+      capnTxio.setAmount(txio.getValue());
+
+      auto outputKey = txio.getDBKeyOfOutput();
+      capnTxio.setTxOut(capnp::Data::Builder(
+         (uint8_t*)outputKey.getPtr(), outputKey.getSize()));
+
+      if (txio.hasTxIn()) {
+         auto inputKey = txio.getDBKeyOfInput();
+         capnTxio.setTxIn(capnp::Data::Builder(
+            (uint8_t*)inputKey.getPtr(), inputKey.getSize()));
+      }
+
+      capnTxio.setFromSelf(txio.isTxOutFromSelf());
+      capnTxio.setCoinbase(txio.isFromCoinbase());
+      capnTxio.setRbf(txio.isRBF());
+      capnTxio.setMultisig(txio.isMultisig());
    }
 
    ////
@@ -220,16 +246,15 @@ namespace {
             return builder;
          }
 
-         case BdvRequest::Which::GET_TX_BY_HASH:
+         case BdvRequest::Which::GET_TXS_BY_HASH:
          {
-
-            auto txHashList = request.getGetTxByHash();
+            auto txHashList = request.getGetTxsByHash();
             std::vector<Tx> results;
             results.reserve(txHashList.size());
             for (auto txHash : txHashList) {
-               BinaryDataRef hashBd(txHash.begin(), txHash.end());
+               BinaryDataRef hashBdr(txHash.begin(), txHash.end());
                try {
-                  auto tx = bdv->getTxByHash(hashBd);
+                  auto tx = bdv->getTxByHash(hashBdr);
                   results.emplace_back(std::move(tx));
                } catch (const std::exception&) {
                   //could not get the tx, ignore
@@ -239,17 +264,59 @@ namespace {
 
             auto builder = ReplyBuilder::getNew(bdv);
             auto bdvReply = prepareReply(builder);
-            auto txHashResults = bdvReply.initGetTxByHash(results.size());
-            for (unsigned i=0; i<results.size(); i++) {
+            auto txHashResults = bdvReply.initGetTxsByHash(results.size());
+            for (unsigned i=0; i < results.size(); i++) {
                const auto& tx = results[i];
                auto txHashResult = txHashResults[i];
                txHashResult.setBody(capnp::Data::Builder(
                   (uint8_t*)tx.getPtr(), tx.getSize()
                ));
                txHashResult.setHeight(tx.getTxHeight());
+               txHashResult.setDupId(tx.getDupId());
                txHashResult.setIndex(tx.getTxIndex());
                txHashResult.setIsChainZc(tx.isChained());
                txHashResult.setIsRbf(tx.isRBF());
+            }
+            return builder;
+         }
+
+         case BdvRequest::GET_TXS_BY_KEY:
+         {
+            auto txKeyList = request.getGetTxsByKey();
+            auto mempool = bdv->zcContainer()->getSnapshot();
+            std::vector<Tx> results;
+            results.reserve(txKeyList.size());
+            for (auto txKey : txKeyList) {
+               BinaryDataRef keyBdr(txKey.begin(), txKey.end());
+               if (!DBUtils::keyIsZC(keyBdr)) {
+                  try {
+                     auto tx = bdv->getTxByKey(keyBdr);
+                     results.emplace_back(std::move(tx));
+                  } catch (const std::exception&) {
+                     //could not get the tx, ignore
+                  }
+               } else {
+                  auto tx = mempool->getTxByKey(keyBdr);
+                  if (tx != nullptr) {
+                     results.emplace_back(tx->getTxObj());
+                  }
+               }
+            }
+
+            auto builder = ReplyBuilder::getNew(bdv);
+            auto bdvReply = prepareReply(builder);
+            auto txKeyResults = bdvReply.initGetTxsByKey(results.size());
+            for (unsigned i=0; i < results.size(); i++) {
+               const auto& tx = results[i];
+               auto txKeyResult = txKeyResults[i];
+               txKeyResult.setBody(capnp::Data::Builder(
+                  (uint8_t*)tx.getPtr(), tx.getSize()
+               ));
+               txKeyResult.setHeight(tx.getTxHeight());
+               txKeyResult.setDupId(tx.getDupId());
+               txKeyResult.setIndex(tx.getTxIndex());
+               txKeyResult.setIsChainZc(tx.isChained());
+               txKeyResult.setIsRbf(tx.isRBF());
             }
             return builder;
          }
@@ -378,6 +445,28 @@ namespace {
                   capnBal.setUnconfirmed(addr.second.unconfirmed);
                   capnBal.setTxnCount(addr.second.txnCount);
                }
+            }
+            return builder;
+         }
+
+         case BdvRequest::Which::GET_TXIOS:
+         {
+            auto from = request.getGetTxios();
+            auto txioMap = bdv->getTxioForRange(from);
+            auto zcTxioMap = bdv->getZcTxios();
+
+            auto builder = ReplyBuilder::getNew(bdv);
+            auto bdvReply = prepareReply(builder);
+            auto txiosReply = bdvReply.initGetTxios(
+               txioMap.size() + zcTxioMap.size());
+            unsigned i=0;
+            for (const auto& txioPair : txioMap) {
+               auto capnTxio = txiosReply[i++];
+               txioToCapn(txioPair.second, capnTxio);
+            }
+            for (const auto& txioPair : zcTxioMap) {
+               auto capnTxio = txiosReply[i++];
+               txioToCapn(*txioPair.second, capnTxio);
             }
             return builder;
          }
@@ -666,7 +755,7 @@ namespace {
          case LedgerRequest::Which::GET_HISTORY_PAGES:
          {
             auto pagesReq = request.getGetHistoryPages();
-            std::list<std::vector<LedgerEntry>> pages;
+            std::list<std::vector<Ledgers::Entry>> pages;
             for (unsigned i=pagesReq.getFirst(); i<=pagesReq.getLast(); i++) {
                try {
                   auto page = delegateIter->second.getHistoryPage(i);
@@ -758,7 +847,7 @@ namespace {
             if (shutdownThr.joinable()) {
                shutdownThr.detach();
             }
-            break;
+            return nullptr;
          }
 
          case StaticRequest::Which::SHUTDOWN_NODE:
@@ -832,18 +921,18 @@ namespace {
 
             auto nodeReply = staticReply.initGetNodeStatus();
             nodeReply.setNode(
-               (Codec::Types::NodeStatus::NodeState)nodeStatus->state_);
-            nodeReply.setIsSW(nodeStatus->SegWitEnabled_);
+               (Codec::Types::NodeStatus::NodeState)nodeStatus->state);
+            nodeReply.setIsSW(nodeStatus->segWitEnabled);
             nodeReply.setRpc(
-               (Codec::Types::NodeStatus::RpcState)nodeStatus->rpcState_);
+               (Codec::Types::NodeStatus::RpcState)nodeStatus->rpcState);
 
             auto chainNotif = nodeReply.initChain();
             chainNotif.setChainState((Codec::Types::ChainStatus::ChainState)
-               nodeStatus->chainStatus_.state());
-            chainNotif.setBlockSpeed(nodeStatus->chainStatus_.getBlockSpeed());
-            chainNotif.setEta(nodeStatus->chainStatus_.getETA());
-            chainNotif.setProgress(nodeStatus->chainStatus_.getProgressPct());
-            chainNotif.setBlocksLeft(nodeStatus->chainStatus_.getBlocksLeft());
+               nodeStatus->chainStatus.state());
+            chainNotif.setBlockSpeed(nodeStatus->chainStatus.getBlockSpeed());
+            chainNotif.setEta(nodeStatus->chainStatus.getETA());
+            chainNotif.setProgress(nodeStatus->chainStatus.getProgressPct());
+            chainNotif.setBlocksLeft(nodeStatus->chainStatus.getBlocksLeft());
             break;
          }
 
@@ -859,8 +948,8 @@ namespace {
                for (const auto& fee : feeSchedule) {
                   auto capnFee = capnFeeSchedule[i++];
                   capnFee.setTarget(fee.first);
-                  capnFee.setFeeByte(fee.second.feeByte_);
-                  capnFee.setSmartFee(fee.second.smartFee_);
+                  capnFee.setFeeByte(fee.second.feeByte);
+                  capnFee.setSmartFee(fee.second.smartFee);
                }
             } catch (const std::exception& e) {
                reply.setError(e.what());
@@ -883,19 +972,21 @@ namespace {
             headers.reserve(headersRequest.size());
             for (const auto height : headersRequest) {
                try {
-                  auto header = bcPtr->getHeaderByHeight(height, 0);
+                  auto header = bcPtr->getHeaderByHeight(height, 0xFF);
                   headers.emplace_back(std::move(header));
                } catch (const std::exception&) {
                   continue;
                }
             }
 
-            auto result = staticReply.initGetHeadersByHeight(headers.size());
-            unsigned i=0;
+            auto capnHeaders = staticReply.initGetHeadersByHeight(headers.size());
+            unsigned i = 0;
             for (const auto& header : headers) {
-               result.set(i++, capnp::Data::Builder(
-                  (uint8_t*)header->getPtr(), header->getSize()
-               ));
+               auto capnHeader = capnHeaders[i++];
+               capnHeader.setRawData(capnp::Data::Builder(
+                  (uint8_t*)header->getPtr(), header->getSize()));
+               capnHeader.setHeight(header->getBlockHeight());
+               capnHeader.setDupId(header->getDuplicateID());
             }
             break;
          }
@@ -1039,6 +1130,16 @@ BDV_Server_Object::BDV_Server_Object(
    setup();
 }
 
+BDV_Server_Object::~BDV_Server_Object()
+{
+   haltThreads();
+}
+
+BdvIdKey BDV_Server_Object::getID() const
+{
+   return bdvID_;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 void BDV_Server_Object::startThreads()
 {
@@ -1141,6 +1242,7 @@ void BDV_Server_Object::init()
    auto notif = notifList[0];
    auto readyNotif = notif.initReady();
    readyNotif.setHeight(blockchain().top()->getBlockHeight());
+   readyNotif.setBranchHeight(UINT32_MAX);
 
    //we expect this message to be smaller than our scratchpad
    auto flat = capnp::messageToFlatArray(message);
@@ -1197,6 +1299,8 @@ void BDV_Server_Object::processNotification(
          if (!payload->reorgState.prevTopStillValid) {
             blockData.setBranchHeight(
                payload->reorgState.reorgBranchPoint->getBlockHeight());
+         } else {
+            blockData.setBranchHeight(UINT32_MAX);
          }
 
          //invalidated zc ids
@@ -1241,8 +1345,12 @@ void BDV_Server_Object::processNotification(
          //new zc legder entries
          auto notifList = notifs.initNotifs(notifCount);
          auto notif = notifList[0];
-         auto zcNotif = notif.initZc();
-         historyPageToCapn(payload->leVec, zcNotif);
+         auto zcNotif = notif.initZc(payload->txios.size());
+         unsigned i = 0;
+         for (const auto& txio : payload->txios) {
+            auto capnTxio = zcNotif[i++];
+            txioToCapn(txio, capnTxio);
+         }
 
          if (notifCount == 2) {
             //invalidated zc hashes
@@ -1297,17 +1405,17 @@ void BDV_Server_Object::processNotification(
             std::dynamic_pointer_cast<BDV_Notification_NodeStatus>(notifPtr);
          auto& nodeStatus = payload->status;
 
-         nodeNotif.setNode((Codec::Types::NodeStatus::NodeState)nodeStatus->state_);
-         nodeNotif.setIsSW(nodeStatus->SegWitEnabled_);
-         nodeNotif.setRpc((Codec::Types::NodeStatus::RpcState)nodeStatus->rpcState_);
+         nodeNotif.setNode((Codec::Types::NodeStatus::NodeState)nodeStatus->state);
+         nodeNotif.setIsSW(nodeStatus->segWitEnabled);
+         nodeNotif.setRpc((Codec::Types::NodeStatus::RpcState)nodeStatus->rpcState);
 
          auto chainNotif = nodeNotif.getChain();
          chainNotif.setChainState((Codec::Types::ChainStatus::ChainState)
-            nodeStatus->chainStatus_.state());
-         chainNotif.setBlockSpeed(nodeStatus->chainStatus_.getBlockSpeed());
-         chainNotif.setEta(nodeStatus->chainStatus_.getETA());
-         chainNotif.setProgress(nodeStatus->chainStatus_.getProgressPct());
-         chainNotif.setBlocksLeft(nodeStatus->chainStatus_.getBlocksLeft());
+            nodeStatus->chainStatus.state());
+         chainNotif.setBlockSpeed(nodeStatus->chainStatus.getBlockSpeed());
+         chainNotif.setEta(nodeStatus->chainStatus.getETA());
+         chainNotif.setProgress(nodeStatus->chainStatus.getProgressPct());
+         chainNotif.setBlocksLeft(nodeStatus->chainStatus.getBlocksLeft());
          break;
       }
 
@@ -1581,7 +1689,9 @@ std::unique_ptr<BDV_Notification_ZC> BDV_Server_Object::createZcNotification(
 // Clients
 Clients::Clients(std::shared_ptr<BlockDataManager> bdm) :
    bdm_(bdm)
-{}
+{
+   masterIsConnected_.store(false, std::memory_order_relaxed);
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 std::shared_ptr<BlockDataManager> Clients::bdm() const
@@ -1635,6 +1745,21 @@ void Clients::init()
 
    auto callbackPtr = std::make_unique<ZeroConf::ZeroConfCallbacks_BDV>(this);
    bdm_->registerZcCallbacks(std::move(callbackPtr));
+
+   if (Config::NetworkSettings::ephemeralPeers()) {
+      //shutdown within 5sec of starting an ephemeral db if the master client
+      //has yet to connect
+      auto masterCheckThr = std::thread([this](){
+         std::this_thread::sleep_for(5s);
+         if (masterIsConnected_.load(std::memory_order_relaxed) == false) {
+            LOGERR << "master client did not connect within imparted time, exiting";
+            WebSocketServer::shutdown();
+         }
+      });
+      if (masterCheckThr.joinable()) {
+         masterCheckThr.detach();
+      }
+   }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1747,6 +1872,21 @@ void Clients::shutdown()
    for (auto& thr : controlThreads_) {
       if (thr.joinable()) {
          thr.join();
+      }
+   }
+}
+
+void Clients::setMasterIsConnected(bool isConnected)
+{
+   if (isConnected) {
+      masterIsConnected_.store(true, std::memory_order_relaxed);
+   } else if (masterIsConnected_.load(std::memory_order_relaxed) == true &&
+      Config::NetworkSettings::ephemeralPeers()) {
+      //master disconnected from ephemeral db, time to shut it down
+      masterIsConnected_.store(false, std::memory_order_relaxed);
+      std::thread shutdownThr([]{ WebSocketServer::shutdown(); });
+      if (shutdownThr.joinable()) {
+         shutdownThr.detach();
       }
    }
 }
@@ -1912,7 +2052,7 @@ void Clients::parseStandAlonePayload(std::shared_ptr<BDV_Payload> payloadPtr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void Clients::messageParserThread(void)
+void Clients::messageParserThread()
 {
    while (true) {
       std::shared_ptr<BDV_Payload> payloadPtr;

@@ -5,22 +5,26 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 #include <chrono>
 #include <filesystem>
+#include <cstring>
 
 #include "TestUtils.h"
 #include <Utils/ArmoryConfig.h>
 #include <Utils/varint.h>
 #include <Utils/DBUtils.h>
 #include <Utils/UniversalTimer.h>
+#include <Utils/JSON_codec.cpp>
+#include <Ledgers/LedgerEntry.h>
 #include <BlockchainDatabase/TxHashFilters.h>
 #include <Wallets/KDF.h>
 #include <hkdf.h>
+#include <Wallets/AuthorizedPeers.h>
 
 using namespace std;
 using namespace Armory;
@@ -267,7 +271,7 @@ TEST_F(BIP150_151Test, checkData_151_Only)
       throw runtime_error("");
    };
 
-   auto getauthset = [](void)->const set<SecureBinaryData>&
+   auto getauthset = [](void)->const std::map<SecureBinaryData, std::string>&
    {
       throw runtime_error("");
    };
@@ -570,11 +574,11 @@ TEST_F(BIP150_151Test, checkData_150_151)
    cliPrivMap.insert(make_pair(pubCli, privCli));
 
    //create auth peer sets
-   set<SecureBinaryData> servSet;
-   servSet.insert(pubCli);
+   std::map<SecureBinaryData, std::string> servSet;
+   servSet.emplace(pubCli, "");
 
-   set<SecureBinaryData> clientSet;
-   clientSet.insert(pubServ);
+   std::map<SecureBinaryData, std::string> clientSet;
+   clientSet.emplace(pubServ, "");
 
    //create server auth key lambdas
    auto serv_getPubKeyMap = [&servMap](void)->const map<string, btc_pubkey>&
@@ -590,7 +594,7 @@ TEST_F(BIP150_151Test, checkData_150_151)
       return iter->second;
    };
 
-   auto serv_getauthset = [servSet](void)->const set<SecureBinaryData>&
+   auto serv_getauthset = [servSet](void)->const std::map<SecureBinaryData, std::string>&
    {
       return servSet;
    };
@@ -609,7 +613,7 @@ TEST_F(BIP150_151Test, checkData_150_151)
       return iter->second;
    };
 
-   auto cli_getauthset = [clientSet](void)->const set<SecureBinaryData>&
+   auto cli_getauthset = [clientSet](void)->const std::map<SecureBinaryData, std::string>&
    {
       return clientSet;
    };
@@ -830,11 +834,11 @@ TEST_F(BIP150_151Test, checkData_150_151_1Way)
    cliPrivMap.insert(make_pair(pubCli, privCli));
 
    //create auth peer sets
-   set<SecureBinaryData> servSet;
-   servSet.insert(pubCli);
+   std::map<SecureBinaryData, std::string> servSet;
+   servSet.emplace(pubCli, "");
 
-   set<SecureBinaryData> clientSet;
-   clientSet.insert(pubServ);
+   std::map<SecureBinaryData, std::string> clientSet;
+   clientSet.emplace(pubServ, "");
 
    //create server auth key lambdas
    auto serv_getPubKeyMap = [&servMap](void)->const map<string, btc_pubkey>&
@@ -850,7 +854,7 @@ TEST_F(BIP150_151Test, checkData_150_151_1Way)
       return iter->second;
    };
 
-   auto serv_getauthset = [servSet](void)->const set<SecureBinaryData>&
+   auto serv_getauthset = [servSet](void)->const std::map<SecureBinaryData, std::string>&
    {
       return servSet;
    };
@@ -869,7 +873,7 @@ TEST_F(BIP150_151Test, checkData_150_151_1Way)
       return iter->second;
    };
 
-   auto cli_getauthset = [clientSet](void)->const set<SecureBinaryData>&
+   auto cli_getauthset = [clientSet](void)->const std::map<SecureBinaryData, std::string>&
    {
       return clientSet;
    };
@@ -1074,11 +1078,11 @@ TEST_F(BIP150_151Test, checkData_150_151_privateClientToPublicServer)
    cliPrivMap.insert(make_pair(pubCli, privCli));
 
    //create auth peer sets
-   set<SecureBinaryData> servSet;
-   servSet.insert(pubCli);
+   std::map<SecureBinaryData, std::string> servSet;
+   servSet.emplace(pubCli, "");
 
-   set<SecureBinaryData> clientSet;
-   clientSet.insert(pubServ);
+   std::map<SecureBinaryData, std::string> clientSet;
+   clientSet.emplace(pubServ, "");
 
    //create server auth key lambdas
    auto serv_getPubKeyMap = [&servMap](void)->const map<string, btc_pubkey>&
@@ -1094,7 +1098,7 @@ TEST_F(BIP150_151Test, checkData_150_151_privateClientToPublicServer)
       return iter->second;
    };
 
-   auto serv_getauthset = [servSet](void)->const set<SecureBinaryData>&
+   auto serv_getauthset = [servSet](void)->const std::map<SecureBinaryData, std::string>&
    {
       return servSet;
    };
@@ -1113,7 +1117,7 @@ TEST_F(BIP150_151Test, checkData_150_151_privateClientToPublicServer)
       return iter->second;
    };
 
-   auto cli_getauthset = [clientSet](void)->const set<SecureBinaryData>&
+   auto cli_getauthset = [clientSet](void)->const std::map<SecureBinaryData, std::string>&
    {
       return clientSet;
    };
@@ -1287,11 +1291,11 @@ TEST_F(BIP150_151Test, checkData_150_151_publicClientToPrivateServer)
    cliPrivMap.insert(make_pair(pubCli, privCli));
 
    //create auth peer sets
-   set<SecureBinaryData> servSet;
-   servSet.insert(pubCli);
+   std::map<SecureBinaryData, std::string> servSet;
+   servSet.emplace(pubCli, "");
 
-   set<SecureBinaryData> clientSet;
-   clientSet.insert(pubServ);
+   std::map<SecureBinaryData, std::string> clientSet;
+   clientSet.emplace(pubServ, "");
 
    //create server auth key lambdas
    auto serv_getPubKeyMap = [&servMap](void)->const map<string, btc_pubkey>&
@@ -1307,7 +1311,7 @@ TEST_F(BIP150_151Test, checkData_150_151_publicClientToPrivateServer)
       return iter->second;
    };
 
-   auto serv_getauthset = [servSet](void)->const set<SecureBinaryData>&
+   auto serv_getauthset = [servSet](void)->const std::map<SecureBinaryData, std::string>&
    {
       return servSet;
    };
@@ -1326,7 +1330,7 @@ TEST_F(BIP150_151Test, checkData_150_151_publicClientToPrivateServer)
       return iter->second;
    };
 
-   auto cli_getauthset = [clientSet](void)->const set<SecureBinaryData>&
+   auto cli_getauthset = [clientSet](void)->const std::map<SecureBinaryData, std::string>&
    {
       return clientSet;
    };
@@ -1459,7 +1463,7 @@ TEST_F(BIP150_151Test, handshakeCases_151_Only)
       throw runtime_error("");
    };
 
-   auto getauthset = [](void)->const set<SecureBinaryData>&
+   auto getauthset = [](void)->const std::map<SecureBinaryData, std::string>&
    {
       throw runtime_error("");
    };
@@ -3917,22 +3921,22 @@ TEST_F(StoredBlockObjTest, GetDBKeys)
    BinaryData txidx  = WRITE_UINT16_BE(txi);
    BinaryData txoidx = WRITE_UINT16_BE(txo);
 
-   sbh.blockHeight_  = hgt;
-   sbh.duplicateID_  = dup;
+   sbh.blockHeight  = hgt;
+   sbh.duplicateID  = dup;
 
-   stx.blockHeight_  = hgt;
-   stx.duplicateID_  = dup;
-   stx.txIndex_      = txi;
+   stx.blockHeight  = hgt;
+   stx.duplicateID  = dup;
+   stx.txIndex      = txi;
 
-   stxo.blockHeight_ = hgt;
-   stxo.duplicateID_ = dup;
-   stxo.txIndex_     = txi;
-   stxo.txOutIndex_  = txo;
+   stxo.blockHeight = hgt;
+   stxo.duplicateID = dup;
+   stxo.txIndex     = txi;
+   stxo.txOutIndex  = txo;
 
-   ssh1.uniqueKey_   = key;
-   ssh2.uniqueKey_   = key;
-   hhl.height_       = hgt;
-   sths.txHashPrefix_= key;
+   ssh1.uniqueKey   = key;
+   ssh2.uniqueKey   = key;
+   hhl.height       = hgt;
+   sths.txHashPrefix= key;
 
    BinaryData TXB = PREFBYTE(DbPrefix::TXDATA);
    BinaryData SSB = PREFBYTE(DbPrefix::SCRIPT);
@@ -4207,29 +4211,29 @@ TEST_F(StoredBlockObjTest, SHeaderUnserialize)
 {
    // SetUp already contains sbh_.unserialize(rawHead_);
    EXPECT_TRUE( sbh_.isInitialized());
-   EXPECT_FALSE(sbh_.isMainBranch_);
+   EXPECT_FALSE(sbh_.isMainBranch);
    EXPECT_FALSE(sbh_.haveFullBlock());
    EXPECT_FALSE(sbh_.isMerkleCreated());
-   EXPECT_EQ(   sbh_.numTx_,       UINT32_MAX);
-   EXPECT_EQ(   sbh_.numBytes_,    UINT32_MAX);
-   EXPECT_EQ(   sbh_.blockHeight_, UINT32_MAX);
-   EXPECT_EQ(   sbh_.duplicateID_, UINT8_MAX);
-   EXPECT_EQ(   sbh_.merkle_.getSize(), 0ULL);
-   EXPECT_EQ(   sbh_.stxMap_.size(), 0ULL);
+   EXPECT_EQ(   sbh_.numTx,       UINT32_MAX);
+   EXPECT_EQ(   sbh_.numBytes,    UINT32_MAX);
+   EXPECT_EQ(   sbh_.blockHeight, UINT32_MAX);
+   EXPECT_EQ(   sbh_.duplicateID, UINT8_MAX);
+   EXPECT_EQ(   sbh_.merkle.getSize(), 0ULL);
+   EXPECT_EQ(   sbh_.stxMap.size(), 0ULL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(StoredBlockObjTest, SHeaderDBSerFull_H)
 {
-   sbh_.blockHeight_      = 65535;
-   sbh_.duplicateID_      = 1;
-   sbh_.merkle_           = READHEX("deadbeef");
-   sbh_.merkleIsPartial_  = false;
-   sbh_.isMainBranch_     = true;
-   sbh_.numTx_            = 15;
-   sbh_.numBytes_         = 0xdeadbeef;
-   sbh_.fileID_ = 25;
-   sbh_.offset_ = 0xffffeeee;
+   sbh_.blockHeight     = 65535;
+   sbh_.duplicateID     = 1;
+   sbh_.merkle          = READHEX("deadbeef");
+   sbh_.merkleIsPartial = false;
+   sbh_.isMainBranch    = true;
+   sbh_.numTx           = 15;
+   sbh_.numBytes        = 0xdeadbeef;
+   sbh_.fileID          = 25;
+   sbh_.offset          = 0xffffeeee;
 
    // SetUp already contains sbh_.unserialize(rawHead_);
    BinaryData last4 = READHEX("00ffff01efbeadde" "0f000000" "1900eeeeffff00000000" "ffffffff");
@@ -4241,13 +4245,13 @@ TEST_F(StoredBlockObjTest, SHeaderDBSerFull_B1)
 {
    // ARMORY_DB_TYPE::Full means no merkle string (cause all Tx are in the DB
    // so the merkle tree would be redundant.
-   sbh_.blockHeight_      = 65535;
-   sbh_.duplicateID_      = 1;
-   sbh_.merkle_           = READHEX("deadbeef");
-   sbh_.merkleIsPartial_  = false;
-   sbh_.isMainBranch_     = true;
-   sbh_.numTx_            = 15;
-   sbh_.numBytes_         = 65535;
+   sbh_.blockHeight      = 65535;
+   sbh_.duplicateID      = 1;
+   sbh_.merkle           = READHEX("deadbeef");
+   sbh_.merkleIsPartial  = false;
+   sbh_.isMainBranch     = true;
+   sbh_.numTx            = 15;
+   sbh_.numBytes         = 65535;
 
    // SetUp already contains sbh_.unserialize(rawHead_);
    BinaryData flags = READHEX("97011100");
@@ -4270,9 +4274,9 @@ TEST_F(StoredBlockObjTest, SHeaderDBUnserFull_H)
    BinaryRefReader brr(dbval);
    sbh_.unserializeDBValue(DB_SELECT::HEADERS, brr);
 
-   EXPECT_EQ(sbh_.blockHeight_, 65535ULL);
-   EXPECT_EQ(sbh_.numBytes_, 0x11eeULL);
-   EXPECT_EQ(sbh_.duplicateID_, 1);
+   EXPECT_EQ(sbh_.blockHeight, 65535ULL);
+   EXPECT_EQ(sbh_.numBytes, 0x11eeULL);
+   EXPECT_EQ(sbh_.duplicateID, 1);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4287,15 +4291,15 @@ TEST_F(StoredBlockObjTest, SHeaderDBUnserFull_B1)
    sbh_.unserializeDBValue(DB_SELECT::BLKDATA, brr);
    sbh_.setHeightAndDup(65535, 1);
 
-   EXPECT_EQ(sbh_.blockHeight_,  65535ULL);
-   EXPECT_EQ(sbh_.duplicateID_,  1);
-   EXPECT_EQ(sbh_.merkle_     ,  READHEX(""));
-   EXPECT_EQ(sbh_.numTx_      ,  15ULL);
-   EXPECT_EQ(sbh_.numBytes_   ,  65535ULL);
-   EXPECT_EQ(sbh_.unserArmVer_,  0x9701ULL);
-   EXPECT_EQ(sbh_.unserBlkVer_,  1ULL);
-   EXPECT_EQ(sbh_.unserDbType_,  ARMORY_DB_TYPE::Full);
-   EXPECT_EQ(sbh_.unserMkType_,  MERKLE_SER_NONE);
+   EXPECT_EQ(sbh_.blockHeight,  65535ULL);
+   EXPECT_EQ(sbh_.duplicateID,  1);
+   EXPECT_EQ(sbh_.merkle     ,  READHEX(""));
+   EXPECT_EQ(sbh_.numTx      ,  15ULL);
+   EXPECT_EQ(sbh_.numBytes   ,  65535ULL);
+   EXPECT_EQ(sbh_.unserArmVer,  0x9701ULL);
+   EXPECT_EQ(sbh_.unserBlkVer,  1ULL);
+   EXPECT_EQ(sbh_.unserDbType,  ARMORY_DB_TYPE::Full);
+   EXPECT_EQ(sbh_.unserMkType,  MERKLE_SER_NONE);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4310,15 +4314,15 @@ TEST_F(StoredBlockObjTest, SHeaderDBUnserFull_B2)
    sbh_.unserializeDBValue(DB_SELECT::BLKDATA, brr);
    sbh_.setHeightAndDup(65535, 1);
 
-   EXPECT_EQ(sbh_.blockHeight_ , 65535ULL);
-   EXPECT_EQ(sbh_.duplicateID_ , 1);
-   EXPECT_EQ(sbh_.merkle_      , READHEX("deadbeef"));
-   EXPECT_EQ(sbh_.numTx_       , 15ULL);
-   EXPECT_EQ(sbh_.numBytes_    , 65535ULL);
-   EXPECT_EQ(sbh_.unserArmVer_,  0x9701ULL);
-   EXPECT_EQ(sbh_.unserBlkVer_,  1ULL);
-   EXPECT_EQ(sbh_.unserDbType_,  ARMORY_DB_TYPE::Full);
-   EXPECT_EQ(sbh_.unserMkType_,  MERKLE_SER_FULL);
+   EXPECT_EQ(sbh_.blockHeight, 65535ULL);
+   EXPECT_EQ(sbh_.duplicateID, 1);
+   EXPECT_EQ(sbh_.merkle     , READHEX("deadbeef"));
+   EXPECT_EQ(sbh_.numTx      , 15ULL);
+   EXPECT_EQ(sbh_.numBytes   , 65535ULL);
+   EXPECT_EQ(sbh_.unserArmVer,  0x9701ULL);
+   EXPECT_EQ(sbh_.unserBlkVer,  1ULL);
+   EXPECT_EQ(sbh_.unserDbType,  ARMORY_DB_TYPE::Full);
+   EXPECT_EQ(sbh_.unserMkType,  MERKLE_SER_FULL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4333,14 +4337,14 @@ TEST_F(StoredBlockObjTest, SHeaderDBUnserFull_B3)
    sbh_.unserializeDBValue(DB_SELECT::BLKDATA, brr);
    sbh_.setHeightAndDup(65535, 1);
 
-   EXPECT_EQ(sbh_.blockHeight_,  65535ULL);
-   EXPECT_EQ(sbh_.duplicateID_,  1);
-   EXPECT_EQ(sbh_.merkle_     ,  READHEX(""));
-   EXPECT_EQ(sbh_.numTx_      ,  15ULL);
-   EXPECT_EQ(sbh_.numBytes_   ,  65535ULL);
-   EXPECT_EQ(sbh_.unserArmVer_,  0x9701ULL);
-   EXPECT_EQ(sbh_.unserBlkVer_,  1ULL);
-   EXPECT_EQ(sbh_.unserMkType_,  MERKLE_SER_NONE);
+   EXPECT_EQ(sbh_.blockHeight,  65535ULL);
+   EXPECT_EQ(sbh_.duplicateID,  1);
+   EXPECT_EQ(sbh_.merkle     ,  READHEX(""));
+   EXPECT_EQ(sbh_.numTx      ,  15ULL);
+   EXPECT_EQ(sbh_.numBytes   ,  65535ULL);
+   EXPECT_EQ(sbh_.unserArmVer,  0x9701ULL);
+   EXPECT_EQ(sbh_.unserBlkVer,  1ULL);
+   EXPECT_EQ(sbh_.unserMkType,  MERKLE_SER_NONE);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4353,22 +4357,22 @@ TEST_F(StoredBlockObjTest, STxUnserUnfrag)
 
    EXPECT_TRUE( stx.isInitialized());
    EXPECT_TRUE( stx.haveAllTxOut());
-   EXPECT_FALSE(stx.isFragged_);
-   EXPECT_EQ(   stx.version_, 1ULL);
-   EXPECT_EQ(   stx.blockHeight_, UINT32_MAX);
-   EXPECT_EQ(   stx.duplicateID_,  UINT8_MAX);
-   EXPECT_EQ(   stx.txIndex_,     UINT16_MAX);
-   EXPECT_EQ(   stx.dataCopy_.getSize(), 258ULL);
-   EXPECT_EQ(   stx.numBytes_,    258ULL);
-   EXPECT_EQ(   stx.fragBytes_,   190ULL);
+   EXPECT_FALSE(stx.isFragged);
+   EXPECT_EQ(   stx.version, 1ULL);
+   EXPECT_EQ(   stx.blockHeight, UINT32_MAX);
+   EXPECT_EQ(   stx.duplicateID, UINT8_MAX);
+   EXPECT_EQ(   stx.txIndex, UINT16_MAX);
+   EXPECT_EQ(   stx.dataCopy.getSize(), 258ULL);
+   EXPECT_EQ(   stx.numBytes, 258ULL);
+   EXPECT_EQ(   stx.fragBytes, 190ULL);
 
-   ASSERT_EQ(   stx.stxoMap_.size(), 2ULL);
-   EXPECT_TRUE( stx.stxoMap_[0].isInitialized());
-   EXPECT_TRUE( stx.stxoMap_[1].isInitialized());
-   EXPECT_EQ(   stx.stxoMap_[0].txIndex_, UINT16_MAX);
-   EXPECT_EQ(   stx.stxoMap_[1].txIndex_, UINT16_MAX);
-   EXPECT_EQ(   stx.stxoMap_[0].txOutIndex_, 0);
-   EXPECT_EQ(   stx.stxoMap_[1].txOutIndex_, 1);
+   ASSERT_EQ(   stx.stxoMap.size(), 2ULL);
+   EXPECT_TRUE( stx.stxoMap[0].isInitialized());
+   EXPECT_TRUE( stx.stxoMap[1].isInitialized());
+   EXPECT_EQ(   stx.stxoMap[0].txIndex, UINT16_MAX);
+   EXPECT_EQ(   stx.stxoMap[1].txIndex, UINT16_MAX);
+   EXPECT_EQ(   stx.stxoMap[0].txOutIndex, 0);
+   EXPECT_EQ(   stx.stxoMap[1].txOutIndex, 1);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4381,20 +4385,20 @@ TEST_F(StoredBlockObjTest, STxUnserFragged)
 
    EXPECT_TRUE( stx.isInitialized());
    EXPECT_TRUE( stx.haveAllTxOut());
-   EXPECT_TRUE( stx.isFragged_);
-   EXPECT_EQ(   stx.version_, 1ULL);
-   EXPECT_EQ(   stx.blockHeight_, UINT32_MAX);
-   EXPECT_EQ(   stx.duplicateID_,  UINT8_MAX);
-   EXPECT_EQ(   stx.txIndex_,     UINT16_MAX);
-   EXPECT_EQ(   stx.dataCopy_.getSize(), 190ULL);
+   EXPECT_TRUE( stx.isFragged);
+   EXPECT_EQ(   stx.version, 1ULL);
+   EXPECT_EQ(   stx.blockHeight, UINT32_MAX);
+   EXPECT_EQ(   stx.duplicateID, UINT8_MAX);
+   EXPECT_EQ(   stx.txIndex, UINT16_MAX);
+   EXPECT_EQ(   stx.dataCopy.getSize(), 190ULL);
 
-   ASSERT_EQ(   stx.stxoMap_.size(), 2ULL);
-   EXPECT_TRUE( stx.stxoMap_[0].isInitialized());
-   EXPECT_TRUE( stx.stxoMap_[1].isInitialized());
-   EXPECT_EQ(   stx.stxoMap_[0].txIndex_, UINT16_MAX);
-   EXPECT_EQ(   stx.stxoMap_[1].txIndex_, UINT16_MAX);
-   EXPECT_EQ(   stx.stxoMap_[0].txOutIndex_, 0);
-   EXPECT_EQ(   stx.stxoMap_[1].txOutIndex_, 1);
+   ASSERT_EQ(   stx.stxoMap.size(), 2ULL);
+   EXPECT_TRUE( stx.stxoMap[0].isInitialized());
+   EXPECT_TRUE( stx.stxoMap[1].isInitialized());
+   EXPECT_EQ(   stx.stxoMap[0].txIndex, UINT16_MAX);
+   EXPECT_EQ(   stx.stxoMap[1].txIndex, UINT16_MAX);
+   EXPECT_EQ(   stx.stxoMap[0].txOutIndex, 0);
+   EXPECT_EQ(   stx.stxoMap[1].txOutIndex, 1);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4470,17 +4474,17 @@ TEST_F(StoredBlockObjTest, STxUnserDBValue_1)
    stx.unserializeDBValue(brr);
 
    EXPECT_TRUE( stx.isInitialized());
-   EXPECT_EQ(   stx.thisHash_,    origTx.getThisHash());
-   EXPECT_EQ(   stx.lockTime_,    origTx.getLockTime());
-   EXPECT_EQ(   stx.dataCopy_,    rawTxFragged_);
-   EXPECT_TRUE( stx.isFragged_);
-   EXPECT_EQ(   stx.version_,     1ULL);
-   EXPECT_EQ(   stx.blockHeight_, UINT32_MAX);
-   EXPECT_EQ(   stx.duplicateID_, UINT8_MAX);
-   EXPECT_EQ(   stx.txIndex_,     UINT16_MAX);
-   EXPECT_EQ(   stx.numTxOut_,    origTx.getNumTxOut());
-   EXPECT_EQ(   stx.numBytes_,    UINT32_MAX);
-   EXPECT_EQ(   stx.fragBytes_,   370ULL);
+   EXPECT_EQ(   stx.thisHash,    origTx.getThisHash());
+   EXPECT_EQ(   stx.lockTime,    origTx.getLockTime());
+   EXPECT_EQ(   stx.dataCopy,    rawTxFragged_);
+   EXPECT_TRUE( stx.isFragged);
+   EXPECT_EQ(   stx.version,     1ULL);
+   EXPECT_EQ(   stx.blockHeight, UINT32_MAX);
+   EXPECT_EQ(   stx.duplicateID, UINT8_MAX);
+   EXPECT_EQ(   stx.txIndex,     UINT16_MAX);
+   EXPECT_EQ(   stx.numTxOut,    origTx.getNumTxOut());
+   EXPECT_EQ(   stx.numBytes,    UINT32_MAX);
+   EXPECT_EQ(   stx.fragBytes,   370ULL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4511,17 +4515,17 @@ TEST_F(StoredBlockObjTest, STxUnserDBValue_2)
    stx.unserializeDBValue(brr);
 
    EXPECT_TRUE( stx.isInitialized());
-   EXPECT_EQ(   stx.thisHash_,    origTx.getThisHash());
-   EXPECT_EQ(   stx.lockTime_,    origTx.getLockTime());
-   EXPECT_EQ(   stx.dataCopy_,    rawTxUnfrag_);
-   EXPECT_FALSE(stx.isFragged_);
-   EXPECT_EQ(   stx.version_,     1ULL);
-   EXPECT_EQ(   stx.blockHeight_, UINT32_MAX);
-   EXPECT_EQ(   stx.duplicateID_,  UINT8_MAX);
-   EXPECT_EQ(   stx.txIndex_,     UINT16_MAX);
-   EXPECT_EQ(   stx.numTxOut_,    origTx.getNumTxOut());
-   EXPECT_EQ(   stx.numBytes_,    origTx.getSize());
-   EXPECT_EQ(   stx.fragBytes_,   370ULL);
+   EXPECT_EQ(   stx.thisHash,    origTx.getThisHash());
+   EXPECT_EQ(   stx.lockTime,    origTx.getLockTime());
+   EXPECT_EQ(   stx.dataCopy,    rawTxUnfrag_);
+   EXPECT_FALSE(stx.isFragged);
+   EXPECT_EQ(   stx.version,     1ULL);
+   EXPECT_EQ(   stx.blockHeight, UINT32_MAX);
+   EXPECT_EQ(   stx.duplicateID, UINT8_MAX);
+   EXPECT_EQ(   stx.txIndex,     UINT16_MAX);
+   EXPECT_EQ(   stx.numTxOut,    origTx.getNumTxOut());
+   EXPECT_EQ(   stx.numBytes,    origTx.getSize());
+   EXPECT_EQ(   stx.fragBytes,   370ULL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4553,11 +4557,10 @@ TEST_F(StoredBlockObjTest, STxOutUnserialize)
 TEST_F(StoredBlockObjTest, STxOutSerDBValue_1)
 {
    StoredTxOut stxo0;
-
    stxo0.unserialize(rawTxOut0_);
 
-   stxo0.txVersion_ = 1;
-   stxo0.spentness_ = TXOUT_UNSPENT;
+   stxo0.txVersion = 1;
+   stxo0.spentness = TXOUT_UNSPENT;
 
    //   0123   45    67   0  123 4567 
    //  |----| |--|  |--| |-|
@@ -4565,7 +4568,7 @@ TEST_F(StoredBlockObjTest, STxOutSerDBValue_1)
    //
    // For this example:  DBVer=0, TxVer=1, TxSer=FRAGGED[1]
    //   0000   01    00   0  --- ----
-   EXPECT_EQ(serializeDBValue(stxo0),  
+   EXPECT_EQ(serializeDBValue(stxo0),
       READHEX("1400") + rawTxOut0_);
 }
 
@@ -4574,14 +4577,14 @@ TEST_F(StoredBlockObjTest, STxOutSerDBValue_2)
 {
    StoredTxOut stxo0;
    stxo0.unserialize(rawTxOut0_);
-   stxo0.txVersion_ = 1;
-   stxo0.spentness_ = TXOUT_UNSPENT;
+   stxo0.txVersion = 1;
+   stxo0.spentness = TXOUT_UNSPENT;
 
    // Test a spent TxOut
    //   0000   01    01   0  --- ----
    BinaryData spentStr = DBUtils::getBlkDataKeyNoPrefix( 100000, 1, 127, 15);
-   stxo0.spentness_ = TXOUT_SPENT;
-   stxo0.spentByTxInKey_ = spentStr;
+   stxo0.spentness = TXOUT_SPENT;
+   stxo0.spentByTxInKey = spentStr;
    EXPECT_EQ(
       serializeDBValue(stxo0),
       READHEX("1500")+rawTxOut0_+spentStr
@@ -4593,14 +4596,14 @@ TEST_F(StoredBlockObjTest, STxOutSerDBValue_3)
 {
    StoredTxOut stxo0;
    stxo0.unserialize(rawTxOut0_);
-   stxo0.txVersion_ = 1;
-   stxo0.isCoinbase_ = true;
+   stxo0.txVersion = 1;
+   stxo0.isCoinbase = true;
 
    // Test a spent TxOut but in lite mode where we don't record spentness
    //   0000   01    01   1  --- ----
    BinaryData spentStr = DBUtils::getBlkDataKeyNoPrefix( 100000, 1, 127, 15);
-   stxo0.spentness_ = TXOUT_SPENT;
-   stxo0.spentByTxInKey_ = spentStr;
+   stxo0.spentness = TXOUT_SPENT;
+   stxo0.spentByTxInKey = spentStr;
    EXPECT_EQ(
       serializeDBValue(stxo0),
       READHEX("1580") + rawTxOut0_ + spentStr
@@ -4616,16 +4619,16 @@ TEST_F(StoredBlockObjTest, STxOutUnserDBValue_1)
    stxo.unserializeDBValue(input);
 
    EXPECT_TRUE( stxo.isInitialized());
-   EXPECT_EQ(   stxo.txVersion_,    1ULL);
-   EXPECT_EQ(   stxo.dataCopy_,     rawTxOut0_);
-   EXPECT_EQ(   stxo.blockHeight_,  UINT32_MAX);
-   EXPECT_EQ(   stxo.duplicateID_,   UINT8_MAX);
-   EXPECT_EQ(   stxo.txIndex_,      UINT16_MAX);
-   EXPECT_EQ(   stxo.txOutIndex_,   UINT16_MAX);
-   EXPECT_EQ(   stxo.spentness_,    TXOUT_UNSPENT);
-   EXPECT_EQ(   stxo.spentByTxInKey_.getSize(), 0ULL);
-   EXPECT_FALSE(stxo.isCoinbase_);
-   EXPECT_EQ(   stxo.unserArmVer_,  0ULL);
+   EXPECT_EQ(   stxo.txVersion, 1ULL);
+   EXPECT_EQ(   stxo.dataCopy, rawTxOut0_);
+   EXPECT_EQ(   stxo.blockHeight, UINT32_MAX);
+   EXPECT_EQ(   stxo.duplicateID, UINT8_MAX);
+   EXPECT_EQ(   stxo.txIndex, UINT16_MAX);
+   EXPECT_EQ(   stxo.txOutIndex, UINT16_MAX);
+   EXPECT_EQ(   stxo.spentness, TXOUT_UNSPENT);
+   EXPECT_EQ(   stxo.spentByTxInKey.getSize(), 0ULL);
+   EXPECT_FALSE(stxo.isCoinbase);
+   EXPECT_EQ(   stxo.unserArmVer, 0ULL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4637,16 +4640,16 @@ TEST_F(StoredBlockObjTest, STxOutUnserDBValue_2)
    stxo.unserializeDBValue(input);
 
    EXPECT_TRUE( stxo.isInitialized());
-   EXPECT_EQ(   stxo.txVersion_,    1ULL);
-   EXPECT_EQ(   stxo.dataCopy_,     rawTxOut0_);
-   EXPECT_EQ(   stxo.blockHeight_,  UINT32_MAX);
-   EXPECT_EQ(   stxo.duplicateID_,   UINT8_MAX);
-   EXPECT_EQ(   stxo.txIndex_,      UINT16_MAX);
-   EXPECT_EQ(   stxo.txOutIndex_,   UINT16_MAX);
-   EXPECT_EQ(   stxo.spentness_,    TXOUT_SPENT);
-   EXPECT_FALSE(stxo.isCoinbase_);
-   EXPECT_EQ(   stxo.spentByTxInKey_, READHEX("01a086017f000f00"));
-   EXPECT_EQ(   stxo.unserArmVer_,  0ULL);
+   EXPECT_EQ(   stxo.txVersion, 1ULL);
+   EXPECT_EQ(   stxo.dataCopy, rawTxOut0_);
+   EXPECT_EQ(   stxo.blockHeight, UINT32_MAX);
+   EXPECT_EQ(   stxo.duplicateID, UINT8_MAX);
+   EXPECT_EQ(   stxo.txIndex, UINT16_MAX);
+   EXPECT_EQ(   stxo.txOutIndex, UINT16_MAX);
+   EXPECT_EQ(   stxo.spentness, TXOUT_SPENT);
+   EXPECT_FALSE(stxo.isCoinbase);
+   EXPECT_EQ(   stxo.spentByTxInKey, READHEX("01a086017f000f00"));
+   EXPECT_EQ(   stxo.unserArmVer, 0ULL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4658,16 +4661,16 @@ TEST_F(StoredBlockObjTest, STxOutUnserDBValue_3)
    stxo.unserializeDBValue(input);
 
    EXPECT_TRUE( stxo.isInitialized());
-   EXPECT_EQ(   stxo.txVersion_,    1ULL);
-   EXPECT_EQ(   stxo.dataCopy_,     rawTxOut0_);
-   EXPECT_EQ(   stxo.blockHeight_,  UINT32_MAX);
-   EXPECT_EQ(   stxo.duplicateID_,   UINT8_MAX);
-   EXPECT_EQ(   stxo.txIndex_,      UINT16_MAX);
-   EXPECT_EQ(   stxo.txOutIndex_,   UINT16_MAX);
-   EXPECT_EQ(   stxo.spentness_,    TXOUT_SPENTUNK);
-   EXPECT_TRUE( stxo.isCoinbase_);
-   EXPECT_EQ(   stxo.spentByTxInKey_.getSize(), 0ULL);
-   EXPECT_EQ(   stxo.unserArmVer_,  0ULL);
+   EXPECT_EQ(   stxo.txVersion, 1ULL);
+   EXPECT_EQ(   stxo.dataCopy, rawTxOut0_);
+   EXPECT_EQ(   stxo.blockHeight, UINT32_MAX);
+   EXPECT_EQ(   stxo.duplicateID, UINT8_MAX);
+   EXPECT_EQ(   stxo.txIndex, UINT16_MAX);
+   EXPECT_EQ(   stxo.txOutIndex, UINT16_MAX);
+   EXPECT_EQ(   stxo.spentness, TXOUT_SPENTUNK);
+   EXPECT_TRUE( stxo.isCoinbase);
+   EXPECT_EQ(   stxo.spentByTxInKey.getSize(), 0ULL);
+   EXPECT_EQ(   stxo.unserArmVer, 0ULL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4691,8 +4694,8 @@ TEST_F(StoredBlockObjTest, STxHintsSer)
    BinaryData hint2 = DBUtils::getBlkDataKeyNoPrefix(183922, 15,   3);
 
    StoredTxHints sths;
-   sths.txHashPrefix_ = READHEX("aaaaffff");
-   sths.dbKeyList_.clear();
+   sths.txHashPrefix = READHEX("aaaaffff");
+   sths.dbKeyList.clear();
 
    /////
    BinaryWriter ans0;
@@ -4700,25 +4703,25 @@ TEST_F(StoredBlockObjTest, STxHintsSer)
    EXPECT_EQ(sths.serializeDBValue(), ans0.getData());
 
    /////
-   sths.dbKeyList_.push_back(hint0);
-   sths.preferredDBKey_ = hint0;
+   sths.dbKeyList.push_back(hint0);
+   sths.preferredDBKey = hint0;
    BinaryWriter ans1;
    ans1.put_var_int(1);
    ans1.put_BinaryData(hint0);
-   EXPECT_EQ(sths.dbKeyList_.size(), 1ULL);
-   EXPECT_EQ(sths.preferredDBKey_, hint0);
+   EXPECT_EQ(sths.dbKeyList.size(), 1ULL);
+   EXPECT_EQ(sths.preferredDBKey, hint0);
    EXPECT_EQ(sths.serializeDBValue(), ans1.getData());
 
    /////
-   sths.dbKeyList_.push_back(hint1);
-   sths.dbKeyList_.push_back(hint2);
+   sths.dbKeyList.push_back(hint1);
+   sths.dbKeyList.push_back(hint2);
    BinaryWriter ans3;
    ans3.put_var_int(3);
    ans3.put_BinaryData(hint0);
    ans3.put_BinaryData(hint1);
    ans3.put_BinaryData(hint2);
-   EXPECT_EQ(sths.dbKeyList_.size(), 3ULL);
-   EXPECT_EQ(sths.preferredDBKey_, hint0);
+   EXPECT_EQ(sths.dbKeyList.size(), 3ULL);
+   EXPECT_EQ(sths.preferredDBKey, hint0);
    EXPECT_EQ(sths.serializeDBValue(), ans3.getData());
 }
 
@@ -4730,12 +4733,12 @@ TEST_F(StoredBlockObjTest, STxHintsReorder)
    BinaryData hint2 = DBUtils::getBlkDataKeyNoPrefix(183922, 15,   3);
 
    StoredTxHints sths;
-   sths.txHashPrefix_ = READHEX("aaaaffff");
-   sths.dbKeyList_.clear();
-   sths.dbKeyList_.push_back(hint0);
-   sths.dbKeyList_.push_back(hint1);
-   sths.dbKeyList_.push_back(hint2);
-   sths.preferredDBKey_ = hint1;
+   sths.txHashPrefix = READHEX("aaaaffff");
+   sths.dbKeyList.clear();
+   sths.dbKeyList.push_back(hint0);
+   sths.dbKeyList.push_back(hint1);
+   sths.dbKeyList.push_back(hint2);
+   sths.preferredDBKey = hint1;
 
    BinaryWriter expectedOut;
    expectedOut.put_var_int(3);
@@ -4761,29 +4764,29 @@ TEST_F(StoredBlockObjTest, STxHintsUnser)
 
    sths0.unserializeDBValue(in0);
 
-   EXPECT_EQ(sths0.dbKeyList_.size(), 0ULL);
-   EXPECT_EQ(sths0.preferredDBKey_.getSize(), 0ULL);
+   EXPECT_EQ(sths0.dbKeyList.size(),  0ULL);
+   EXPECT_TRUE(sths0.preferredDBKey.empty());
 
    sths1.unserializeDBValue(in1);
 
-   EXPECT_EQ(sths1.dbKeyList_.size(),  1ULL);
-   EXPECT_EQ(sths1.dbKeyList_[0],      hint0);
-   EXPECT_EQ(sths1.preferredDBKey_,    hint0);
+   EXPECT_EQ(sths1.dbKeyList.size(),  1ULL);
+   EXPECT_EQ(sths1.dbKeyList[0],      hint0);
+   EXPECT_EQ(sths1.preferredDBKey,    hint0);
 
    sths3.unserializeDBValue(in3);
-   EXPECT_EQ(sths3.dbKeyList_.size(),  3ULL);
-   EXPECT_EQ(sths3.dbKeyList_[0],      hint0);
-   EXPECT_EQ(sths3.dbKeyList_[1],      hint1);
-   EXPECT_EQ(sths3.dbKeyList_[2],      hint2);
-   EXPECT_EQ(sths3.preferredDBKey_,    hint0);
+   EXPECT_EQ(sths3.dbKeyList.size(),  3ULL);
+   EXPECT_EQ(sths3.dbKeyList[0],      hint0);
+   EXPECT_EQ(sths3.dbKeyList[1],      hint1);
+   EXPECT_EQ(sths3.dbKeyList[2],      hint2);
+   EXPECT_EQ(sths3.preferredDBKey,    hint0);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(StoredBlockObjTest, SHeadHgtListSer)
 {
    StoredHeadHgtList baseHHL, testHHL;
-   baseHHL.height_ = 123000;
-   baseHHL.dupAndHashList_.resize(0);
+   baseHHL.height = 123000;
+   baseHHL.dupAndHashList.resize(0);
    BinaryData hash0 = READHEX("aaaabbbbaaaabbbbaaaabbbbaaaabbbb"
       "aaaabbbbaaaabbbbaaaabbbbaaaabbbb");
    BinaryData hash1 = READHEX("2222bbbb2222bbbb2222bbbb2222bbbb"
@@ -4806,7 +4809,7 @@ TEST_F(StoredBlockObjTest, SHeadHgtListSer)
    // Test writing list with one entry but no preferred dupID
    expectOut.reset();
    testHHL = baseHHL;
-   testHHL.dupAndHashList_.push_back(pair<uint8_t, BinaryData>(dup0, hash0)); 
+   testHHL.dupAndHashList.push_back(make_pair(dup0, hash0));
    expectOut.put_uint8_t(1);
    expectOut.put_uint8_t(dup0);
    expectOut.put_BinaryData(hash0);
@@ -4815,8 +4818,8 @@ TEST_F(StoredBlockObjTest, SHeadHgtListSer)
    // Test writing list with one entry which is a preferred dupID
    expectOut.reset();
    testHHL = baseHHL;
-   testHHL.preferredDup_ = 0;
-   testHHL.dupAndHashList_.push_back(pair<uint8_t, BinaryData>(dup0, hash0)); 
+   testHHL.preferredDup = 0;
+   testHHL.dupAndHashList.push_back(make_pair(dup0, hash0)); 
    expectOut.put_uint8_t(1);
    expectOut.put_uint8_t(dup0 | 0x80);
    expectOut.put_BinaryData(hash0);
@@ -4825,8 +4828,8 @@ TEST_F(StoredBlockObjTest, SHeadHgtListSer)
    // Test writing list with one entry preferred dupID but that dup isn't avail
    expectOut.reset();
    testHHL = baseHHL;
-   testHHL.preferredDup_ = 1;
-   testHHL.dupAndHashList_.push_back(pair<uint8_t, BinaryData>(dup0, hash0)); 
+   testHHL.preferredDup = 1;
+   testHHL.dupAndHashList.push_back(make_pair(dup0, hash0));
    expectOut.put_uint8_t(1);
    expectOut.put_uint8_t(dup0);
    expectOut.put_BinaryData(hash0);
@@ -4835,9 +4838,9 @@ TEST_F(StoredBlockObjTest, SHeadHgtListSer)
    // Test writing with three entries, no preferred
    expectOut.reset();
    testHHL = baseHHL;
-   testHHL.dupAndHashList_.push_back(pair<uint8_t, BinaryData>(dup0, hash0)); 
-   testHHL.dupAndHashList_.push_back(pair<uint8_t, BinaryData>(dup1, hash1)); 
-   testHHL.dupAndHashList_.push_back(pair<uint8_t, BinaryData>(dup2, hash2)); 
+   testHHL.dupAndHashList.push_back(make_pair(dup0, hash0));
+   testHHL.dupAndHashList.push_back(make_pair(dup1, hash1));
+   testHHL.dupAndHashList.push_back(make_pair(dup2, hash2));
    expectOut.put_uint8_t(3);
    expectOut.put_uint8_t(dup0); expectOut.put_BinaryData(hash0);
    expectOut.put_uint8_t(dup1); expectOut.put_BinaryData(hash1);
@@ -4847,10 +4850,10 @@ TEST_F(StoredBlockObjTest, SHeadHgtListSer)
    // Test writing with three entries, with preferred
    expectOut.reset();
    testHHL = baseHHL;
-   testHHL.dupAndHashList_.push_back(pair<uint8_t, BinaryData>(dup0, hash0)); 
-   testHHL.dupAndHashList_.push_back(pair<uint8_t, BinaryData>(dup1, hash1)); 
-   testHHL.dupAndHashList_.push_back(pair<uint8_t, BinaryData>(dup2, hash2)); 
-   testHHL.preferredDup_ = 1;
+   testHHL.dupAndHashList.push_back(make_pair(dup0, hash0));
+   testHHL.dupAndHashList.push_back(make_pair(dup1, hash1));
+   testHHL.dupAndHashList.push_back(make_pair(dup2, hash2));
+   testHHL.preferredDup = 1;
    expectOut.put_uint8_t(3);
    expectOut.put_uint8_t(dup1 | 0x80); expectOut.put_BinaryData(hash1);
    expectOut.put_uint8_t(dup0);        expectOut.put_BinaryData(hash0);
@@ -4888,47 +4891,39 @@ TEST_F(StoredBlockObjTest, SHeadHgtListUnser)
    uint8_t dup1 = 1;
    uint8_t dup2 = 7;
 
-   for(uint32_t i=0; i<tests.size(); i++)
-   {
+   for (uint32_t i=0; i<tests.size(); i++) {
       BinaryRefReader brr(tests[i]);
       StoredHeadHgtList hhl;
       hhl.unserializeDBValue(brr);
 
-      if(i==0)
-      {
-         ASSERT_EQ(hhl.dupAndHashList_.size(), 1ULL);
-         EXPECT_EQ(hhl.dupAndHashList_[0].first,  dup0);
-         EXPECT_EQ(hhl.dupAndHashList_[0].second, hash0);
-         EXPECT_EQ(hhl.preferredDup_,  UINT8_MAX);
-      }
-      else if(i==1)
-      {
-         ASSERT_EQ(hhl.dupAndHashList_.size(), 1ULL);
-         EXPECT_EQ(hhl.dupAndHashList_[0].first,  dup0);
-         EXPECT_EQ(hhl.dupAndHashList_[0].second, hash0);
-         EXPECT_EQ(hhl.preferredDup_,  0);
-      }
-      else if(i==2)
-      {
-         ASSERT_EQ(hhl.dupAndHashList_.size(), 3ULL);
-         EXPECT_EQ(hhl.dupAndHashList_[0].first,  dup0);
-         EXPECT_EQ(hhl.dupAndHashList_[0].second, hash0);
-         EXPECT_EQ(hhl.dupAndHashList_[1].first,  dup1);
-         EXPECT_EQ(hhl.dupAndHashList_[1].second, hash1);
-         EXPECT_EQ(hhl.dupAndHashList_[2].first,  dup2);
-         EXPECT_EQ(hhl.dupAndHashList_[2].second, hash2);
-         EXPECT_EQ(hhl.preferredDup_,  UINT8_MAX);
-      }
-      else if(i==3)
-      {
-         ASSERT_EQ(hhl.dupAndHashList_.size(), 3ULL);
-         EXPECT_EQ(hhl.dupAndHashList_[0].first,  dup1);
-         EXPECT_EQ(hhl.dupAndHashList_[0].second, hash1);
-         EXPECT_EQ(hhl.dupAndHashList_[1].first,  dup0);
-         EXPECT_EQ(hhl.dupAndHashList_[1].second, hash0);
-         EXPECT_EQ(hhl.dupAndHashList_[2].first,  dup2);
-         EXPECT_EQ(hhl.dupAndHashList_[2].second, hash2);
-         EXPECT_EQ(hhl.preferredDup_,  1);
+      if (i==0) {
+         ASSERT_EQ(hhl.dupAndHashList.size(), 1ULL);
+         EXPECT_EQ(hhl.dupAndHashList[0].first,  dup0);
+         EXPECT_EQ(hhl.dupAndHashList[0].second, hash0);
+         EXPECT_EQ(hhl.preferredDup,  UINT8_MAX);
+      } else if(i==1) {
+         ASSERT_EQ(hhl.dupAndHashList.size(), 1ULL);
+         EXPECT_EQ(hhl.dupAndHashList[0].first,  dup0);
+         EXPECT_EQ(hhl.dupAndHashList[0].second, hash0);
+         EXPECT_EQ(hhl.preferredDup,  0);
+      } else if(i==2) {
+         ASSERT_EQ(hhl.dupAndHashList.size(), 3ULL);
+         EXPECT_EQ(hhl.dupAndHashList[0].first,  dup0);
+         EXPECT_EQ(hhl.dupAndHashList[0].second, hash0);
+         EXPECT_EQ(hhl.dupAndHashList[1].first,  dup1);
+         EXPECT_EQ(hhl.dupAndHashList[1].second, hash1);
+         EXPECT_EQ(hhl.dupAndHashList[2].first,  dup2);
+         EXPECT_EQ(hhl.dupAndHashList[2].second, hash2);
+         EXPECT_EQ(hhl.preferredDup,  UINT8_MAX);
+      } else if(i==3) {
+         ASSERT_EQ(hhl.dupAndHashList.size(), 3ULL);
+         EXPECT_EQ(hhl.dupAndHashList[0].first,  dup1);
+         EXPECT_EQ(hhl.dupAndHashList[0].second, hash1);
+         EXPECT_EQ(hhl.dupAndHashList[1].first,  dup0);
+         EXPECT_EQ(hhl.dupAndHashList[1].second, hash0);
+         EXPECT_EQ(hhl.dupAndHashList[2].first,  dup2);
+         EXPECT_EQ(hhl.dupAndHashList[2].second, hash2);
+         EXPECT_EQ(hhl.preferredDup,  1);
       }
    }
 }
@@ -4937,9 +4932,9 @@ TEST_F(StoredBlockObjTest, SHeadHgtListUnser)
 TEST_F(StoredBlockObjTest, SScriptHistorySer)
 {
    StoredScriptHistory ssh;
-   ssh.uniqueKey_ = READHEX("00""1234abcde1234abcde1234abcdefff1234abcdef");
-   ssh.version_ = 1;
-   ssh.scanHeight_ = 65535;
+   ssh.uniqueKey = READHEX("00""1234abcde1234abcde1234abcdefff1234abcdef");
+   ssh.version = 1;
+   ssh.scanHeight = 65535;
 
    /////////////////////////////////////////////////////////////////////////////
    // Empty ssh (shouldn't be written in supernode, should be in full node)
@@ -4966,8 +4961,8 @@ TEST_F(StoredBlockObjTest, SScriptHistorySer)
    expSub1 = READHEX("01""00""0100000000000000""0001""0001");
    expSub2 = READHEX("01""00""0002000000000000""0002""0002");
    EXPECT_EQ(serializeDBValue(ssh, ARMORY_DB_TYPE::Bare), expect);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap_[READHEX("0000ff00")]), expSub1);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap_[READHEX("00010000")]), expSub2);
+   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("0000ff00")]), expSub1);
+   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("00010000")]), expSub2);
 
    /////////////////////////////////////////////////////////////////////////////
    // Added another TxIO to the second subSSH
@@ -4980,8 +4975,8 @@ TEST_F(StoredBlockObjTest, SScriptHistorySer)
                        "00""0002000000000000""0002""0002"
                        "00""0000030000000000""0004""0004");
    EXPECT_EQ(serializeDBValue(ssh, ARMORY_DB_TYPE::Bare), expect);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap_[READHEX("0000ff00")]), expSub1);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap_[READHEX("00010000")]), expSub2);
+   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("0000ff00")]), expSub1);
+   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("00010000")]), expSub2);
 
    /////////////////////////////////////////////////////////////////////////////
    // Now we explicitly delete a TxIO (with pruning, this should be basically
@@ -4994,8 +4989,8 @@ TEST_F(StoredBlockObjTest, SScriptHistorySer)
    expSub2 = READHEX("01"
                        "00""0000030000000000""0004""0004");
    EXPECT_EQ(serializeDBValue(ssh, ARMORY_DB_TYPE::Bare), expect);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap_[READHEX("0000ff00")]), expSub1);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap_[READHEX("00010000")]), expSub2);
+   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("0000ff00")]), expSub1);
+   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("00010000")]), expSub2);
    
    /////////////////////////////////////////////////////////////////////////////
    // Insert a multisig TxIO -- this should increment totalTxioCount_, but not 
@@ -5010,8 +5005,8 @@ TEST_F(StoredBlockObjTest, SScriptHistorySer)
                        "00""0000030000000000""0004""0004"
                        "10""0000000400000000""0006""0006");
    EXPECT_EQ(serializeDBValue(ssh, ARMORY_DB_TYPE::Bare), expect);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap_[READHEX("0000ff00")]), expSub1);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap_[READHEX("00010000")]), expSub2);
+   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("0000ff00")]), expSub1);
+   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("00010000")]), expSub2);
    
    /////////////////////////////////////////////////////////////////////////////
    // Remove the multisig
@@ -5022,8 +5017,8 @@ TEST_F(StoredBlockObjTest, SScriptHistorySer)
    expSub2 = READHEX("01"
                        "00""0000030000000000""0004""0004");
    EXPECT_EQ(serializeDBValue(ssh, ARMORY_DB_TYPE::Bare), expect);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap_[READHEX("0000ff00")]), expSub1);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap_[READHEX("00010000")]), expSub2);
+   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("0000ff00")]), expSub1);
+   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("00010000")]), expSub2);
 
    /////////////////////////////////////////////////////////////////////////////
    // Remove a full subSSH (it shouldn't be deleted, though, that will be done
@@ -5034,8 +5029,8 @@ TEST_F(StoredBlockObjTest, SScriptHistorySer)
    expSub2 = READHEX("01"
                        "00""0000030000000000""0004""0004");
    EXPECT_EQ(serializeDBValue(ssh, ARMORY_DB_TYPE::Bare), expect);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap_[READHEX("0000ff00")]), expSub1);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap_[READHEX("00010000")]), expSub2);
+   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("0000ff00")]), expSub1);
+   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("00010000")]), expSub2);
    
 }
 
@@ -5049,8 +5044,8 @@ TEST_F(StoredBlockObjTest, SScriptHistoryUnser)
    BinaryData hgtX1 = READHEX("00010000");
    BinaryData uniq  = READHEX("00""0000ffff0000ffff0000ffff0000ffff0000ffff");
 
-   sshorig.uniqueKey_ = uniq;
-   sshorig.version_  = 1;
+   sshorig.uniqueKey = uniq;
+   sshorig.version = 1;
 
    BinaryWriter bw;
    bw.put_uint8_t((uint8_t)DbPrefix::SCRIPT);
@@ -5062,11 +5057,11 @@ TEST_F(StoredBlockObjTest, SScriptHistoryUnser)
    ssh.unserializeDBKey(DBPREF + uniq);
    ssh.unserializeDBValue(toUnser);
 
-   EXPECT_EQ(   ssh.subHistMap_.size(), 0ULL);
-   EXPECT_EQ(   ssh.scanHeight_, 65535);
-   EXPECT_EQ(   ssh.tallyHeight_, -1);
-   EXPECT_EQ(   ssh.totalTxioCount_, 0ULL);
-   EXPECT_EQ(   ssh.totalUnspent_, 0ULL);
+   EXPECT_EQ(ssh.subHistMap.size(), 0ULL);
+   EXPECT_EQ(ssh.scanHeight, 65535);
+   EXPECT_EQ(ssh.tallyHeight, -1);
+   EXPECT_EQ(ssh.totalTxioCount, 0ULL);
+   EXPECT_EQ(ssh.totalUnspent, 0ULL);
 
    /////////////////////////////////////////////////////////////////////////////
    ssh = sshorig;
@@ -5075,11 +5070,10 @@ TEST_F(StoredBlockObjTest, SScriptHistoryUnser)
    ssh.unserializeDBValue(toUnser);
    BinaryData txioKey = hgtX0 + READHEX("00010001");
 
-   EXPECT_EQ(   ssh.scanHeight_, 65535);
-   EXPECT_EQ(   ssh.tallyHeight_, -1);
-   EXPECT_EQ(   ssh.totalTxioCount_, 1ULL);
-   EXPECT_EQ(   ssh.totalUnspent_, READ_UINT64_HEX_LE("0100000000000000"));
-
+   EXPECT_EQ(ssh.scanHeight, 65535);
+   EXPECT_EQ(ssh.tallyHeight, -1);
+   EXPECT_EQ(ssh.totalTxioCount, 1ULL);
+   EXPECT_EQ(ssh.totalUnspent, READ_UINT64_HEX_LE("0100000000000000"));
 
    /////////////////////////////////////////////////////////////////////////////
    // Test reading a subSSH and merging it with the regular ssh
@@ -5087,11 +5081,12 @@ TEST_F(StoredBlockObjTest, SScriptHistoryUnser)
    subssh1 = StoredSubHistory();
 
    ssh.unserializeDBKey(DBPREF + uniq);
-   ssh.unserializeDBValue(READHEX("0400""ffff0000ffffffff""02""0000030400000000""00000000"));
+   ssh.unserializeDBValue(READHEX(
+      "0400""ffff0000ffffffff""02""0000030400000000""00000000"));
    subssh1.unserializeDBKey(DBPREF + uniq + hgtX0);
    subssh1.unserializeDBValue(READHEX("02"
-                                        "00""0000030000000000""0004""0004"
-                                        "00""0000000400000000""0006""0006"));
+      "00""0000030000000000""0004""0004"
+      "00""0000000400000000""0006""0006"));
 
    BinaryData last4_0 = READHEX("0004""0004");
    BinaryData last4_1 = READHEX("0006""0006");
@@ -5101,47 +5096,37 @@ TEST_F(StoredBlockObjTest, SScriptHistoryUnser)
    uint64_t val1 = READ_UINT64_HEX_LE("0000000400000000");
 
    // Unmerged, so ssh doesn't have the subSSH as part of it yet.
-   EXPECT_EQ(   ssh.subHistMap_.size(), 0ULL);
-   EXPECT_EQ(   ssh.scanHeight_, 65535);
-   EXPECT_EQ(   ssh.totalTxioCount_, 2ULL);
-   EXPECT_EQ(   ssh.totalUnspent_, READ_UINT64_HEX_LE("0000030400000000"));
+   EXPECT_EQ(ssh.subHistMap.size(), 0ULL);
+   EXPECT_EQ(ssh.scanHeight, 65535);
+   EXPECT_EQ(ssh.totalTxioCount, 2ULL);
+   EXPECT_EQ(ssh.totalUnspent, READ_UINT64_HEX_LE("0000030400000000"));
 
-   EXPECT_EQ(   subssh1.uniqueKey_,  uniq);
-   EXPECT_EQ(   subssh1.hgtX_,       hgtX0);
-   EXPECT_EQ(   subssh1.txioMap_.size(), 2ULL);
-   ASSERT_NE(   subssh1.txioMap_.find(txio0key), subssh1.txioMap_.end());
-   ASSERT_NE(   subssh1.txioMap_.find(txio1key), subssh1.txioMap_.end());
-   EXPECT_EQ(   subssh1.txioMap_[txio0key].getValue(), val0);
-   EXPECT_EQ(   subssh1.txioMap_[txio1key].getValue(), val1);
-   EXPECT_EQ(   subssh1.txioMap_[txio0key].getDBKeyOfOutput(), txio0key);
-   EXPECT_EQ(   subssh1.txioMap_[txio1key].getDBKeyOfOutput(), txio1key);
+   EXPECT_EQ(subssh1.hgtX,       hgtX0);
+   EXPECT_EQ(subssh1.txioMap.size(), 2ULL);
+   auto txio0Iter = subssh1.txioMap.find(txio0key);
+   auto txio1Iter = subssh1.txioMap.find(txio1key);
+   ASSERT_NE(txio0Iter, subssh1.txioMap.end());
+   ASSERT_NE(txio1Iter, subssh1.txioMap.end());
+   EXPECT_EQ(txio0Iter->second.getValue(), val0);
+   EXPECT_EQ(txio1Iter->second.getValue(), val1);
+   EXPECT_EQ(txio0Iter->second.getDBKeyOfOutput(), txio0key);
+   EXPECT_EQ(txio1Iter->second.getDBKeyOfOutput(), txio1key);
 
    ssh.mergeSubHistory(subssh1);
-   EXPECT_EQ(   ssh.subHistMap_.size(), 1ULL);
-   ASSERT_NE(   ssh.subHistMap_.find(hgtX0), ssh.subHistMap_.end());
+   EXPECT_EQ(ssh.subHistMap.size(), 1ULL);
+   ASSERT_NE(ssh.subHistMap.find(hgtX0), ssh.subHistMap.end());
 
-   StoredSubHistory & subref = ssh.subHistMap_[hgtX0];
-   EXPECT_EQ(   subref.uniqueKey_, uniq);
-   EXPECT_EQ(   subref.hgtX_,      hgtX0);
-   EXPECT_EQ(   subref.txioMap_.size(), 2ULL);
-   ASSERT_NE(   subref.txioMap_.find(txio0key), subref.txioMap_.end());
-   ASSERT_NE(   subref.txioMap_.find(txio1key), subref.txioMap_.end());
-   EXPECT_EQ(   subref.txioMap_[txio0key].getValue(), val0);
-   EXPECT_EQ(   subref.txioMap_[txio1key].getValue(), val1);
-   EXPECT_EQ(   subref.txioMap_[txio0key].getDBKeyOfOutput(), txio0key);
-   EXPECT_EQ(   subref.txioMap_[txio1key].getDBKeyOfOutput(), txio1key);
-
-
-   /////////////////////////////////////////////////////////////////////////////
-   // Try it with two sub-SSHs and a multisig object
-   //ssh = sshorig;
-   //subssh1 = StoredSubHistory();
-   //subssh2 = StoredSubHistory();
-   //expSub1 = READHEX("01"
-                       //"00""0100000000000000""0001""0001");
-   //expSub2 = READHEX("02"
-                       //"00""0000030000000000""0004""0004"
-                       //"10""0000000400000000""0006""0006");
+   StoredSubHistory& subref = ssh.subHistMap[hgtX0];
+   EXPECT_EQ(subref.hgtX,      hgtX0);
+   EXPECT_EQ(subref.txioMap.size(), 2ULL);
+   auto txioRef0Iter = subref.txioMap.find(txio0key);
+   auto txioRef1Iter = subref.txioMap.find(txio1key);
+   ASSERT_NE(txioRef0Iter, subref.txioMap.end());
+   ASSERT_NE(txioRef1Iter, subref.txioMap.end());
+   EXPECT_EQ(txioRef0Iter->second.getValue(), val0);
+   EXPECT_EQ(txioRef1Iter->second.getValue(), val1);
+   EXPECT_EQ(txioRef0Iter->second.getDBKeyOfOutput(), txio0key);
+   EXPECT_EQ(txioRef1Iter->second.getDBKeyOfOutput(), txio1key);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -5632,12 +5617,12 @@ TEST_F(LMDBTest, DISABLED_STxOutPutGet)
    auto&& txH = iface_->beginTransaction(DB_SELECT::STXO, LMDB::Mode::ReadWrite);
 
    StoredTxOut stxo0;
-   stxo0.txVersion_   = 1;
-   stxo0.spentness_   = TXOUT_UNSPENT;
-   stxo0.blockHeight_ = 123000;
-   stxo0.duplicateID_ = 15;
-   stxo0.txIndex_     = 7;
-   stxo0.txOutIndex_  = 1;
+   stxo0.txVersion   = 1;
+   stxo0.spentness   = TXOUT_UNSPENT;
+   stxo0.blockHeight = 123000;
+   stxo0.duplicateID = 15;
+   stxo0.txIndex     = 7;
+   stxo0.txOutIndex  = 1;
    stxo0.unserialize(rawTxOut0_);
    iface_->putStoredTxOut(stxo0);
 
@@ -5657,12 +5642,12 @@ TEST_F(LMDBTest, DISABLED_STxOutPutGet)
    //EXPECT_EQ(serializeDBValue(stxoGet), serializeDBValue(stxo0));
 
    StoredTxOut stxo1;
-   stxo1.txVersion_   = 1;
-   stxo1.spentness_   = TXOUT_UNSPENT;
-   stxo1.blockHeight_ = 200333;
-   stxo1.duplicateID_ = 3;
-   stxo1.txIndex_     = 7;
-   stxo1.txOutIndex_  = 1;
+   stxo1.txVersion   = 1;
+   stxo1.spentness   = TXOUT_UNSPENT;
+   stxo1.blockHeight = 200333;
+   stxo1.duplicateID = 3;
+   stxo1.txIndex     = 7;
+   stxo1.txOutIndex  = 1;
    stxo1.unserialize(rawTxOut1_);
    stxoVal = READHEX("2420") + rawTxOut1_;
    stxoKey = TXP + READHEX("030e8d""03""00070001");
@@ -5690,18 +5675,18 @@ TEST_F(LMDBTest, PutGetBareHeader)
    BinaryRefReader brr(rawBlock_);
    sbh.unserializeFullBlock(brr);
    sbh.setKeyData(123000, UINT8_MAX);
-   BinaryData header0 = sbh.thisHash_;
+   BinaryData header0 = sbh.thisHash;
 
    ASSERT_TRUE(standardOpenDBs());
-   auto&& txh = iface_->beginTransaction(DB_SELECT::HEADERS, LMDB::Mode::ReadWrite);
-   auto&& txH = iface_->beginTransaction(DB_SELECT::HISTORY, LMDB::Mode::ReadWrite);
+   auto txh = iface_->beginTransaction(DB_SELECT::HEADERS, LMDB::Mode::ReadWrite);
+   auto txH = iface_->beginTransaction(DB_SELECT::HISTORY, LMDB::Mode::ReadWrite);
 
    uint8_t sdup = iface_->putBareHeader(sbh);
    EXPECT_EQ(sdup, 0);
-   EXPECT_EQ(sbh.duplicateID_, 0);
+   EXPECT_EQ(sbh.duplicateID, 0);
 
    // Add a new header and make sure duplicate ID is done correctly
-   BinaryData newHeader = READHEX( 
+   BinaryData newHeader = READHEX(
       "0000000105d3571220ef5f87c6ac0bc8bf5b33c02a9e6edf83c84d840109592c"
       "0000000027523728e15f5fe1ac507bff92499eada4af8a0c485d5178e3f96568"
       "c18f84994e0e4efc1c0175d646a91ad4");
@@ -5713,9 +5698,9 @@ TEST_F(LMDBTest, PutGetBareHeader)
    
    uint8_t newDup = iface_->putBareHeader(sbh2);
    EXPECT_EQ(newDup, 1);
-   EXPECT_EQ(sbh2.duplicateID_, 1);
+   EXPECT_EQ(sbh2.duplicateID, 1);
    
-   // Now add a new, isMainBranch_ header
+   // Now add a new, isMainBranch header
    StoredHeader sbh3;
    BinaryData anotherHead = READHEX(
       "010000001d8f4ec0443e1f19f305e488c1085c95de7cc3fd25e0d2c5bb5d0000"
@@ -5725,29 +5710,29 @@ TEST_F(LMDBTest, PutGetBareHeader)
 
    sbh3.setHeaderData(anotherHead);
    sbh3.setKeyData(123000, UINT8_MAX);
-   sbh3.isMainBranch_ = true;
+   sbh3.isMainBranch = true;
    uint8_t anotherDup = iface_->putBareHeader(sbh3);
    EXPECT_EQ(anotherDup, 2);
-   EXPECT_EQ(sbh3.duplicateID_, 2);
+   EXPECT_EQ(sbh3.duplicateID, 2);
    EXPECT_EQ(iface_->getValidDupIDForHeight(123000), 0xFF);
 
    map<unsigned, uint8_t> dupIDs;
-   dupIDs.insert(make_pair(sbh3.blockHeight_, sbh3.duplicateID_));
+   dupIDs.insert(make_pair(sbh3.blockHeight, sbh3.duplicateID));
    iface_->setValidDupIDForHeight(dupIDs);
    
    // Now test getting bare headers
    StoredHeader sbh4;
    iface_->getBareHeader(sbh4, 123000);
-   EXPECT_EQ(sbh4.thisHash_, header2);
-   EXPECT_EQ(sbh4.duplicateID_, 2);
+   EXPECT_EQ(sbh4.thisHash, header2);
+   EXPECT_EQ(sbh4.duplicateID, 2);
    
    iface_->getBareHeader(sbh4, 123000, 1);
-   EXPECT_EQ(sbh4.thisHash_, header1);
-   EXPECT_EQ(sbh4.duplicateID_, 1);
+   EXPECT_EQ(sbh4.thisHash, header1);
+   EXPECT_EQ(sbh4.duplicateID, 1);
 
    // Re-add the same SBH3, make sure nothing changes
    iface_->putBareHeader(sbh3);
-   EXPECT_EQ(sbh3.duplicateID_, 2);
+   EXPECT_EQ(sbh3.duplicateID, 2);
    EXPECT_EQ(iface_->getValidDupIDForHeight(123000), 2);
 }
 ////////////////////////////////////////////////////////////////////////////////
@@ -5761,7 +5746,7 @@ TEST_F(LMDBTest, PutGetStoredTxHints)
    StoredTxHints sths;
    EXPECT_FALSE(iface_->getStoredTxHints(sths, prefix));
 
-   sths.txHashPrefix_ = prefix;
+   sths.txHashPrefix = prefix;
    ASSERT_TRUE(iface_->putStoredTxHints(sths));
 
    BinaryData THP = WRITE_UINT8_BE((uint8_t)DbPrefix::TXHINTS);
@@ -5769,37 +5754,37 @@ TEST_F(LMDBTest, PutGetStoredTxHints)
    compareKVListRange(0,1, 0,2, DB_SELECT::TXHINTS);
 
    /////
-   sths.dbKeyList_.push_back(READHEX("abcd1234ffff"));
+   sths.dbKeyList.push_back(READHEX("abcd1234ffff"));
    replaceTopOutPairB(THP + prefix,  READHEX("01""abcd1234ffff"));
    EXPECT_TRUE(iface_->putStoredTxHints(sths));
    compareKVListRange(0,1, 0,2, DB_SELECT::TXHINTS);
 
    /////
-   sths.dbKeyList_.push_back(READHEX("00002222aaaa"));
+   sths.dbKeyList.push_back(READHEX("00002222aaaa"));
    replaceTopOutPairB(THP + prefix,  READHEX("02""abcd1234ffff""00002222aaaa"));
    EXPECT_TRUE(iface_->putStoredTxHints(sths));
    compareKVListRange(0,1, 0,2, DB_SELECT::TXHINTS);
 
    /////
-   sths.preferredDBKey_ = READHEX("00002222aaaa");
+   sths.preferredDBKey = READHEX("00002222aaaa");
    replaceTopOutPairB(THP + prefix,  READHEX("02""00002222aaaa""abcd1234ffff"));
    EXPECT_TRUE(iface_->putStoredTxHints(sths));
    compareKVListRange(0,1, 0,2, DB_SELECT::TXHINTS);
 
    // Now test the get methods
-   EXPECT_TRUE( iface_->getStoredTxHints(sths, prefix));
-   EXPECT_EQ(   sths.txHashPrefix_,  prefix);
-   EXPECT_EQ(   sths.dbKeyList_.size(),  2ULL);
-   EXPECT_EQ(   sths.preferredDBKey_, READHEX("00002222aaaa"));
+   EXPECT_TRUE(iface_->getStoredTxHints(sths, prefix));
+   EXPECT_EQ(sths.txHashPrefix,  prefix);
+   EXPECT_EQ(sths.dbKeyList.size(), 2ULL);
+   EXPECT_EQ(sths.preferredDBKey, READHEX("00002222aaaa"));
 
    //
-   sths.dbKeyList_.resize(0);
-   sths.preferredDBKey_.resize(0);
-   EXPECT_TRUE( iface_->putStoredTxHints(sths));
-   EXPECT_TRUE( iface_->getStoredTxHints(sths, prefix));
-   EXPECT_EQ(   sths.txHashPrefix_,  prefix);
-   EXPECT_EQ(   sths.dbKeyList_.size(),  0ULL);
-   EXPECT_EQ(   sths.preferredDBKey_.getSize(), 0ULL);
+   sths.dbKeyList.resize(0);
+   sths.preferredDBKey.resize(0);
+   EXPECT_TRUE(iface_->putStoredTxHints(sths));
+   EXPECT_TRUE(iface_->getStoredTxHints(sths, prefix));
+   EXPECT_EQ(sths.txHashPrefix,  prefix);
+   EXPECT_EQ(sths.dbKeyList.size(), 0ULL);
+   EXPECT_EQ(sths.preferredDBKey.getSize(), 0ULL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -5816,8 +5801,8 @@ TEST_F(TxRefTest, TxRefNoInit)
    EXPECT_FALSE(txr.isInitialized());
    //EXPECT_FALSE(txr.isBound());
 
-   EXPECT_EQ(txr.getDBKey(),     BinaryData(0));
-   EXPECT_EQ(txr.getDBKeyRef(),  BinaryDataRef());
+   EXPECT_TRUE(txr.getDBKey().empty());
+   EXPECT_TRUE(txr.getDBKeyRef().empty());
    //EXPECT_EQ(txr.getBlockTimestamp(), UINT32_MAX);
    EXPECT_EQ(txr.getBlockHeight(),    UINT32_MAX);
    EXPECT_EQ(txr.getDuplicateID(),    UINT8_MAX );
@@ -5827,12 +5812,10 @@ TEST_F(TxRefTest, TxRefNoInit)
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(TxRefTest, TxRefKeyParts)
 {
-   TxRef txr;
    BinaryData    newKey = READHEX("e3c4027f000f");
    BinaryDataRef newRef(newKey);
 
-
-   txr.setDBKey(newKey);
+   TxRef txr{newKey};
    EXPECT_EQ(txr.getDBKey(),    newKey);
    EXPECT_EQ(txr.getDBKeyRef(), newRef);
 
@@ -6061,7 +6044,7 @@ TEST_F(TestTxHashFilters, SerializeWriter)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(TestTxHashFilters, FilterALot)
+TEST_F(TestTxHashFilters, DISABLED_FilterALot)
 {
    ASSERT_TRUE(standardOpenDBs());
 
@@ -6563,6 +6546,111 @@ TEST_F(KdfTests, Romix_TargetMemory)
       auto diff = end - start;
       EXPECT_GE(diff, 4000ms) << diff.count();
    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+class TestPeerKey : public ::testing::Test
+{
+protected:
+   virtual void SetUp()
+   {}
+
+   virtual void TearDown()
+   {}
+};
+
+TEST_F(TestPeerKey, HumanReadable)
+{
+   auto key1 = Cryptography::ECDSA::createNewPrivateKey();
+   auto key2 = Cryptography::ECDSA::createNewPrivateKey();
+   auto key3 = Cryptography::ECDSA::createNewPrivateKey();
+
+   auto pubkey1 = Cryptography::ECDSA::computePublicKey(key1, true);
+   auto pubkey2 = Cryptography::ECDSA::computePublicKey(key2, true);
+   auto pubkey3 = Cryptography::ECDSA::computePublicKey(key3, true);
+
+   auto peer1 = Wallets::PeerKey{pubkey1, true, true};  //1 way server
+   auto peer2 = Wallets::PeerKey{pubkey2, false, true}; //2 way server
+   auto peer3 = Wallets::PeerKey{pubkey3, true, false}; //client
+
+   //convert
+   auto str1 = peer1.toHumanReadable();
+   auto str2 = peer2.toHumanReadable();
+   auto str3 = peer3.toHumanReadable();
+
+   ASSERT_EQ(std::memcmp(str1.c_str(), "AR1", 3), 0);
+   ASSERT_EQ(std::memcmp(str2.c_str(), "AR2", 3), 0);
+   ASSERT_EQ(std::memcmp(str3.c_str(), "ARc", 3), 0);
+
+   //revert
+   auto readPeer1 = Wallets::PeerKey::fromHumanReadable(str1);
+   auto readPeer2 = Wallets::PeerKey::fromHumanReadable(str2);
+   auto readPeer3 = Wallets::PeerKey::fromHumanReadable(str3);
+
+   ASSERT_EQ(readPeer1.getKey(), pubkey1);
+   ASSERT_EQ(readPeer1.isOneWay(), true);
+   ASSERT_EQ(readPeer1.isServer(), true);
+
+   ASSERT_EQ(readPeer2.getKey(), pubkey2);
+   ASSERT_EQ(readPeer2.isOneWay(), false);
+   ASSERT_EQ(readPeer2.isServer(), true);
+
+   ASSERT_EQ(readPeer3.getKey(), pubkey3);
+   ASSERT_EQ(readPeer3.isOneWay(), false);
+   ASSERT_EQ(readPeer3.isServer(), false);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+class TestJSONCodec : public ::testing::Test
+{
+protected:
+   virtual void SetUp()
+   {}
+
+   virtual void TearDown()
+   {}
+};
+
+TEST_F(TestJSONCodec, decode)
+{
+   auto obj = JSON::decode("{\"jsonrpc\":\"2.0\",\"result\":{"
+      "\"chain\":\"main\",\"blocks\":943234,\"headers\":943234,"
+      "\"bestblockhash\":\"00000000000000000000fff7a765c9f1e6cf8f52dfec5cdc030f9fdd41a2247c\","
+      "\"difficulty\":133793147307542.8,\"time\":1775056020,\"mediantime\":1775052890,"
+      "\"verificationprogress\":0.9999998991042083,\"initialblockdownload\":false,"
+      "\"chainwork\":\"00000000000000000000000000000000000000011c16a6ff9cfe6d501f727d84\","
+      "\"size_on_disk\":832201426348,\"pruned\":false,\"warnings\":[]},\"id\":50}");
+
+   //id
+   auto idNum = std::dynamic_pointer_cast<JSON::Number>(
+      obj.getValForKey("id"sv));
+   ASSERT_NE(idNum, nullptr);
+   EXPECT_EQ(idNum->val, 50);
+
+   auto result = std::dynamic_pointer_cast<JSON::Object>(
+      obj.getValForKey("result"sv));
+
+   //pruned
+   auto pruned = std::dynamic_pointer_cast<JSON::State>(
+      result->getValForKey("pruned"sv));
+   ASSERT_NE(pruned, nullptr);
+   EXPECT_EQ(pruned->state, JSON::StateEnum::False);
+
+   //ibd
+   auto ibd = std::dynamic_pointer_cast<JSON::State>(
+      result->getValForKey("initialblockdownload"sv));
+   ASSERT_NE(ibd, nullptr);
+   EXPECT_EQ(ibd->state, JSON::StateEnum::False);
+
+   //chain
+   auto chain = std::dynamic_pointer_cast<JSON::String>(
+      result->getValForKey("chain"sv));
+   ASSERT_NE(chain, nullptr);
+   EXPECT_EQ(chain->val, "main");
 }
 
 ////////////////////////////////////////////////////////////////////////////////

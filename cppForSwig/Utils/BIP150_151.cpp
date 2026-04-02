@@ -1753,16 +1753,16 @@ int BIP150StateMachine::processAuthpropose(const BinaryData& inData)
    auth (where the set of known peers is expected to be small).
    */
    const SecureBinaryData* validKey = nullptr;
-   auto& peersKeys = authKeys_.getAuthorizedKeySet();
-   for(auto& checkKey : peersKeys)
+   const auto& peersKeys = authKeys_.getAuthorizedKeyMap();
+   for(const auto& checkKey : peersKeys)
    {
-      if(buildHashData(proposeHash.data(), checkKey.getPtr(), false) == -1)
+      if(buildHashData(proposeHash.data(), checkKey.first.getPtr(), false) == -1)
          continue;
 
       // Compare hashes. If they match, we're happy!
       if(memcmp(inData.getPtr(), proposeHash.data(), BIP151PRVKEYSIZE) == 0)
       {
-         validKey = &checkKey;
+         validKey = &checkKey.first;
          break;
       }
    }
@@ -1964,7 +1964,16 @@ bool BIP150StateMachine::havePublicKey(
    return false;
 }
 
-//AuthPeersLambdsa methods
+////////////////////////////////////////////////////////////////////////////////
+// AuthPeersLambdsa methods
+AuthPeersLambdas::AuthPeersLambdas(
+   const std::function<const std::map<std::string, btc_pubkey>&()>& pubkeymap,
+   const std::function<const SecureBinaryData&(const BinaryDataRef&)>& privkey,
+   const std::function<const std::map<SecureBinaryData, std::string>&()>& getauthmap) :
+   getPubKeyMapLambda_(pubkeymap), getPrivKeyLambda_(privkey),
+   getAuthKeyMap_(getauthmap)
+{}
+
 const btc_pubkey& AuthPeersLambdas::getPubKey(const std::string& id) const
 {
    auto& keymap = getPubKeyMapLambda_();
@@ -1980,7 +1989,7 @@ const SecureBinaryData& AuthPeersLambdas::getPrivKey(const BinaryDataRef& pubkey
    return getPrivKeyLambda_(pubkeyref);
 }
 
-const std::set<SecureBinaryData>& AuthPeersLambdas::getAuthorizedKeySet(void) const
+const std::map<SecureBinaryData, std::string>& AuthPeersLambdas::getAuthorizedKeyMap() const
 {
-   return getAuthKeySet_();
+   return getAuthKeyMap_();
 }

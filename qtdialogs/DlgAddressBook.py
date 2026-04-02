@@ -99,7 +99,7 @@ class DlgAddressBook(ArmoryDialog):
          lblToAddr.setVisible(False)
       rowHeight = tightSizeStr(self.font(), 'XygjpHI')[1]
 
-      self.wltDispModel = AllWalletsDispModel(self.main.wallets)
+      self.wltDispModel = AllWalletsDispModel(self.main, self.main.wallets)
       self.wltDispView = QtWidgets.QTableView()
       self.wltDispView.setModel(self.wltDispModel)
       self.wltDispView.setSelectionBehavior(QtWidgets.QTableView.SelectRows)

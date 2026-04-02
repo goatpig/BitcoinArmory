@@ -392,7 +392,7 @@ def LOGRAWDATA(rawStr, loglevel=DEFAULT_RAWDATA_LOGLEVEL):
 
 ################################################################################
 class Balances(object):
-   def __init__(self, full=0, spendable=0, unconfirmed=0, txCount=-1):
+   def __init__(self, full=0, spendable=0, unconfirmed=0, txCount=0):
       self._full = full
       self._spendable = spendable
       self._unconfirmed = unconfirmed

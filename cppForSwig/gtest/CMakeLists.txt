@@ -8,6 +8,10 @@ set(TEST_SOURCES
     MockedNode.cpp
 )
 
+set(GTEST_LIBS
+    gtest
+)
+
 ################################################################################
 ## BIP151RekeyTest
 add_executable(BIP151RekeyTest

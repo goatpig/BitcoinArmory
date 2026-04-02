@@ -79,10 +79,14 @@ void WalletFileInfo::setStaged(bool staged)
 //
 ////////////////////////////////////////////////////////////////////////////////
 LMDBWalletInfo::LMDBWalletInfo(const std::filesystem::path& path,
-   std::shared_ptr<Wallets::AssetWallet> wltPtr) :
+   std::shared_ptr<Wallets::AssetWallet> wltPtr, bool loaded) :
    WalletFileInfo(path, wltPtr ? WalletLoadState::Ready : WalletLoadState::Encrypted),
    wltPtr_(wltPtr)
-{}
+{
+   if (loaded) {
+      setState(WalletLoadState::Loaded);
+   }
+}
 
 ////////
 const Wallets::WalletId& LMDBWalletInfo::walletId() const
@@ -94,6 +98,27 @@ const Wallets::WalletId& LMDBWalletInfo::walletId() const
       walletId_ = wltPtr_->getID();
    }
    return walletId_;
+}
+
+bool LMDBWalletInfo::hasAccountIds() const
+{
+   if (wltPtr_ == nullptr) {
+      return false;
+   }
+   try {
+      wltPtr_->getMainAccountID();
+      return true;
+   } catch (const Wallets::WalletException&) {
+      return false;
+   }
+}
+
+std::set<Wallets::AddressAccountId> LMDBWalletInfo::getAccountIds() const
+{
+   if (wltPtr_ == nullptr) {
+      return {};
+   }
+   return wltPtr_->getAccountIDs();
 }
 
 const std::string& LMDBWalletInfo::name() const
@@ -147,6 +172,16 @@ A135FileInfo::A135FileInfo(std::shared_ptr<Armory135Header> headerPtr) :
 const Wallets::WalletId& A135FileInfo::walletId() const
 {
    return a135Ptr_->getID();
+}
+
+bool A135FileInfo::hasAccountIds() const
+{
+   return false;
+}
+
+std::set<Wallets::AddressAccountId> A135FileInfo::getAccountIds() const
+{
+   throw std::runtime_error("no accountId for legacy wallets");
 }
 
 const std::string& A135FileInfo::name() const

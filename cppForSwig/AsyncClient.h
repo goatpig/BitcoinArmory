@@ -34,6 +34,8 @@ namespace Armory
    }
 }
 
+class TxIOPair;
+
 ////
 struct OutputBatch
 {
@@ -83,10 +85,10 @@ public:
    }
 
    U get(void)
-   { 
-      if (error_ != nullptr)
+   {
+      if (error_ != nullptr) {
          throw *error_;
-
+      }
       return std::move(value_);
    }
 };
@@ -308,15 +310,14 @@ namespace AsyncClient
    {
    private:
       const std::shared_ptr<SocketPrototype> sock_;
+      using HeaderVec = std::vector<DBClientClasses::BlockHeader>;
 
    public:
       Blockchain(const BlockDataViewer&);
-      void getHeadersByHash(const std::set<BinaryDataRef>& hash,
-         std::function<void(
-            ReturnMessage<std::vector<DBClientClasses::BlockHeader>>)>);
-      void getHeadersByHeight(const std::vector<unsigned> heights,
-         std::function<void(
-            ReturnMessage<std::vector<DBClientClasses::BlockHeader>>)>);
+      void getHeadersByHash(const std::set<BinaryDataRef>&,
+         const std::function<void(ReturnMessage<HeaderVec>)>&);
+      void getHeadersByHeight(const std::set<unsigned>&,
+         const std::function<void(ReturnMessage<HeaderVec>)>&);
    };
 
    /////////////////////////////////////////////////////////////////////////////
@@ -354,8 +355,8 @@ namespace AsyncClient
       //BIP15x
       std::pair<unsigned, unsigned> getRekeyCount(void) const;
       void setCheckServerKeyPromptLambda(
-         std::function<bool(const BinaryData&, const std::string&)>);
-      void addPublicKey(const SecureBinaryData&);
+         const std::function<bool(const BinaryData&)>&);
+      void addPublicKey(const SecureBinaryData&, bool);
 
       //connectivity
       bool connectToRemote(void);
@@ -375,6 +376,8 @@ namespace AsyncClient
       void shutdownNode(void);
 
       //ledgers
+      void getTxios(uint32_t,
+         std::function<void(ReturnMessage<std::vector<TxIOPair>>)>);
       void updateWalletsLedgerFilter(const std::vector<std::string>& wltIdVec);
       void getLedgerDelegate(
          std::function<void(ReturnMessage<LedgerDelegate>)>);
@@ -400,8 +403,8 @@ namespace AsyncClient
 
       /*
       Broadcast methods:
-        All broadcast methods generate and return a random BROADCAST_ID_LENGTH 
-        bytes long ID. This ID will be attached to the broadcast notification 
+        All broadcast methods generate and return a random BROADCAST_ID_LENGTH
+        bytes long ID. This ID will be attached to the broadcast notification
         for the relevant transactions. Notifications for these transaction may
         come with no ID attached, in which case these notifications are not the
         result of your broadcast.
@@ -409,7 +412,10 @@ namespace AsyncClient
       void broadcastZC(const std::vector<BinaryData>& rawTxVec);
       void broadcastThroughRPC(const BinaryData& rawTx);
 
-      void getTxsByHash(
-         const std::set<BinaryData>&, const TxBatchCallback&);
+      //db cache methods
+      void getTxsByHash(const std::set<BinaryData>&,
+         const TxBatchCallback&);
+      void getTxsByKey(const std::set<BinaryData>&,
+         const std::function<void(ReturnMessage<std::vector<Tx>>)>&);
    };
 } //namespace AsyncClient

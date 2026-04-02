@@ -946,10 +946,8 @@ def extractTxInfo(pytx, rcvTime=None):
          hgt = txProto.height
          txWeight = pytx.getTxWeight()
          if hgt <= TheBDM.getTopBlockHeight():
-            header = PyBlockHeader()
-            headersProto = TheBridge.service.getHeadersByHeight([hgt])
-            header.unserialize(headersProto[0])
-            txTime = unixTimeToFormatStr(header.timestamp)
+            blockTime = TheBridge.service.getBlockTimeByHeight(hgt)
+            txTime = unixTimeToFormatStr(blockTime)
             txBlk = hgt
             txIdx = txProto.txIndex
             txSize = pytx.getSize()

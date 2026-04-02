@@ -309,8 +309,11 @@ AuthPeerAssetMap AuthPeerAssetConversion::getAssetMap(
 
             const auto& names = assetPeer->getNames();
             const auto& pubKey = assetPeer->getPublicKey();
+            const auto& label = assetPeer->getLabel();
+            auto& destination = assetPeer->oneWay() ?
+               result.nameKeyMapOneWay : result.nameKeyMapTwoWay;
             for (auto& name : names) {
-               result.nameKeyPair.emplace(name, &pubKey);
+               destination.emplace(name, std::make_pair(&pubKey, &label));
             }
             break;
          }
@@ -359,7 +362,8 @@ AuthPeerAssetMap AuthPeerAssetConversion::getAssetMap(
 
 ////////////////////////////////////////////////////////////////////////////////
 std::map<SecureBinaryData, std::set<uint32_t>>
-   AuthPeerAssetConversion::getKeyIndexMap(const MetaDataAccount* account)
+AuthPeerAssetConversion::getKeyIndexMap(
+   const MetaDataAccount* account, bool oneWay)
 {
    if (account == nullptr || account->getType() != MetaAccountType::AuthPeers) {
       throw AccountException("invalid metadata account ptr");
@@ -374,6 +378,9 @@ std::map<SecureBinaryData, std::set<uint32_t>>
          continue;
       }
 
+      if (assetPeer->oneWay() != oneWay) {
+         continue;
+      }
       const auto& pubKey = assetPeer->getPublicKey();
       auto iter = result.find(pubKey);
       if (iter == result.end()) {
@@ -389,6 +396,7 @@ std::map<SecureBinaryData, std::set<uint32_t>>
 int AuthPeerAssetConversion::addAsset(
    MetaDataAccount* account, const SecureBinaryData& pubkey,
    const std::vector<std::string>& names,
+   const std::string& label, bool oneWay,
    std::shared_ptr<IO::DBIfaceTransaction> txPtr)
 {
    ReentrantLock lock(account);
@@ -403,6 +411,8 @@ int AuthPeerAssetConversion::addAsset(
    for (const auto& name : names) {
       metaObject->addName(name);
    }
+   metaObject->setLabel(label);
+   metaObject->setOneWay(oneWay);
 
    metaObject->flagForCommit();
    account->addAsset(metaObject);

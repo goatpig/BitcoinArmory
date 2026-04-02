@@ -23,6 +23,7 @@ template<class U> class ReturnMessage;
 class AddressEntry;
 class AddressBookEntry;
 struct UTXO;
+class TxIOPair;
 
 namespace Armory
 {
@@ -43,6 +44,8 @@ namespace Armory
 
    namespace Bridge
    {
+      class TxIOCache;
+      struct ChainData;
       struct OfflineException
       {};
 
@@ -53,30 +56,26 @@ namespace Armory
       private:
          const Wallets::WalletId wltId_;
          const Wallets::AddressAccountId accountId_;
+         std::shared_ptr<TxIOCache> cache_;
+
          std::string dbId_;
          std::shared_ptr<Wallets::AssetWallet> wallet_;
 
          std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr_;
          std::shared_ptr<AsyncClient::BtcWallet> asyncWlt_;
 
-         std::map<BinaryData, std::vector<uint64_t>> balanceMap_;
-         std::map<BinaryData, uint64_t> countMap_;
-
-         uint64_t totalBalance_ = 0;
-         uint64_t spendableBalance_ = 0;
-         uint64_t unconfirmedBalance_ = 0;
-         uint64_t txioCount_ = 0;
+         std::unique_ptr<ChainData> chainDataMain_;
+         std::unique_ptr<ChainData> chainDataZC_;
 
          std::map<Wallets::AssetAccountId, Wallets::AssetKeyType>
             highestUsedIndex_;
-         std::mutex stateMutex_;
-
          std::map<BinaryData, std::shared_ptr<AddressEntry>> updatedAddressMap_;
 
       private:
          WalletContainer(
             const Wallets::WalletId&,
-            const Wallets::AddressAccountId&);
+            const Wallets::AddressAccountId&,
+            const std::shared_ptr<TxIOCache>);
 
          void resetCache(void);
          void setBdvPtr(std::shared_ptr<AsyncClient::BlockDataViewer>);
@@ -95,20 +94,17 @@ namespace Armory
             getAddressAccount(void) const;
          const Wallets::AddressAccountId& getAccountId(void) const;
 
-         void updateBalancesAndCount(uint32_t);
-         void updateWalletBalanceState(const AsyncClient::CombinedBalances&);
-         void updateAddressCountState(const AsyncClient::CombinedBalances&);
-
+         void synchronizeAddressChainState(void);
          void extendAddressChain(unsigned, const std::function<void(int)>&);
          void extendAddressChainToIndex(unsigned);
-         bool hasAddress(const BinaryData&);
-         bool hasAddress(const std::string&);
+         bool hasScrAddr(const BinaryData&) const;
+         bool hasAddress(const std::string&) const;
 
-         void createAddressBook(
-            const std::function<void(ReturnMessage<std::vector<AddressBookEntry>>)>&);
-
-         void getUTXOs(uint64_t, bool, bool,
-            const std::function<void(ReturnMessage<std::vector<UTXO>>)>& lbd);
+         std::vector<AddressBookEntry> getAddressBook(void) const;
+         const std::map<BinaryData, TxIOPair> getTxioMap(void) const;
+         void resolveTxios(uint32_t);
+         void resolveZcTxios(void);
+         std::vector<UTXO> getUTXOs(uint64_t, bool, bool);
 
          uint64_t getFullBalance(void) const;
          uint64_t getSpendableBalance(void) const;

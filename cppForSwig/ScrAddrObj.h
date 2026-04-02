@@ -23,8 +23,14 @@ namespace Armory
       class MempoolSnapshot;
       class ZeroConfContainer;
    }
+
+   namespace Ledgers
+   {
+      class Entry;
+      class HistoryPager;
+   }
 }
-class LedgerEntry;
+
 class LMDBBlockDatabase;
 class Blockchain;
 class UnspentTxOut;
@@ -53,10 +59,10 @@ class UnspentTxOut;
 struct ScanAddressStruct
 {
    std::map<BinaryData, BinaryData>* invalidatedZcKeys_ = nullptr;
-   std::shared_ptr<Armory::ZeroConf::MempoolSnapshot> zcState_;
+   std::shared_ptr<const Armory::ZeroConf::MempoolSnapshot> zcState_;
 
    std::map<BinaryData, std::set<BinaryData>> scrAddrToTxioKeys_;
-   std::map<std::string, std::map<BinaryData, LedgerEntry>> zcLedgers_;
+   std::vector<TxIOPair> txios;
    std::shared_ptr<std::map<BinaryData,
       std::shared_ptr<std::set<BinaryDataRef>>>> newKeysAndScrAddr_;
 };
@@ -126,8 +132,8 @@ public:
    std::vector<UnspentTxOut> getFullTxOutList(uint32_t=UINT32_MAX, bool=true) const;
    std::vector<UnspentTxOut> getSpendableTxOutList(bool=true) const;
    
-   std::vector<LedgerEntry> getTxLedgerAsVector(
-      const std::map<BinaryData, LedgerEntry>*) const;
+   std::vector<Armory::Ledgers::Entry> getTxLedgerAsVector(
+      const std::map<BinaryData, Armory::Ledgers::Entry>*) const;
 
    void clearBlkData(void);
 
@@ -138,7 +144,7 @@ public:
       const ScanAddressStruct&, std::function<bool(const BinaryDataRef)>, int32_t);
    bool purgeZC(const std::set<BinaryData>&, const std::set<BinaryData>&);
 
-   std::map<BinaryData, LedgerEntry> updateLedgers(
+   std::map<BinaryData, Armory::Ledgers::Entry> updateLedgers(
       const std::map<BinaryData, TxIOPair>&,
       uint32_t , uint32_t) const;
 
@@ -151,13 +157,11 @@ public:
    const std::map<uint32_t, uint32_t>& getHistSSHsummary(void) const
    { return hist_.getSSHsummary(); }
 
-   std::map<BinaryData, TxIOPair> getHistoryForScrAddr(
-      uint32_t, uint32_t,
-      bool, bool=false) const;
-   std::map<BinaryData, TxIOPair> getTxios(void) const;
+   std::map<BinaryData, TxIOPair> getTxios(
+      uint32_t, uint32_t, bool=false) const;
 
    size_t getPageCount(void) const { return hist_.getPageCount(); }
-   std::vector<LedgerEntry> getHistoryPageById(uint32_t);
+   std::vector<Armory::Ledgers::Entry> getHistoryPageById(uint32_t);
 
    ScrAddrObj& operator=(const ScrAddrObj&);
 
@@ -195,7 +199,7 @@ private:
    uint32_t txioCountForLedgers_ = UINT32_MAX;
 
    //prebuild history indexes for quick fetch from ssh
-   HistoryPager hist_;
+   Armory::Ledgers::HistoryPager hist_;
 
    //fetches and maintains utxos
    PagedUTXOs utxos_;

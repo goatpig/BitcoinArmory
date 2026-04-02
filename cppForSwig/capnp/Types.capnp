@@ -4,19 +4,32 @@ using Cxx = import "/capnp/c++.capnp";
 $Cxx.namespace("Armory::Codec::Types");
 
 ## base types ##
-using Hash        = Data;
-using Header      = Data;
-using ScrAddr     = Data;
+using Hash              = Data;
+using TxKey             = Data;
+using ScrAddr           = Data;
 
-using WalletId    = Text;
-using AccountId   = Text;
-using SignerId    = Text;
-using DelegateId  = Text;
-using BdvId       = UInt64;
-using CallbackId  = Text;
+using WalletId          = Text;
+using AccountId         = Text;
+using SignerId          = Text;
+using DelegateId        = Text;
+using BdvId             = UInt64;
+using CallbackId        = Text;
+using CoinSelectionId   = Text;
 
 using Height      = UInt32;
 using CoinAmount  = UInt64;
+
+## block data ##
+struct Header {
+   rawData     @0 : Data;
+   height      @1 : UInt32;
+   dupId       @2 : UInt8;
+}
+
+struct NewBlockNotif {
+   height            @0 : UInt32;
+   branchHeight      @1 : UInt32;
+}
 
 ## tx data ##
 struct Output {
@@ -37,9 +50,10 @@ struct Outpoint {
 struct Tx {
    body        @0 : Data;
    height      @1 : UInt32;
-   index       @2 : UInt32;
-   isChainZc   @3 : Bool;
-   isRbf       @4 : Bool;
+   dupId       @2 : UInt8;
+   index       @3 : UInt32;
+   isChainZc   @4 : Bool;
+   isRbf       @5 : Bool;
 }
 
 ## bitcoin node & db status ##
@@ -122,6 +136,18 @@ struct TxLedger {
    }
 
    ledgers           @0 : List(LedgerEntry);
+}
+
+struct TxioPair {
+   amount   @0 : UInt64;
+   txOut    @1 : Data;
+   txIn     @2 : Data;
+   txTime   @3 : UInt32;
+
+   fromSelf @4 : Bool;
+   coinbase @5 : Bool;
+   rbf      @6 : Bool;
+   multisig @7 : Bool;
 }
 
 ## balances ##

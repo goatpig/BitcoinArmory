@@ -15,8 +15,7 @@
 
 #define CIPHER_VERSION     0x00000001
 
-using namespace std;
-using namespace Armory::Wallets;
+using namespace Armory;
 using namespace Armory::Wallets::Encryption;
 
 namespace
@@ -24,21 +23,42 @@ namespace
    Cryptography::PRNG::Fortuna fortuna;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-//// Cipher
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-Cipher::~Cipher()
+CipherException::CipherException(const std::string& msg) :
+   std::runtime_error(msg)
 {}
 
 ////////////////////////////////////////////////////////////////////////////////
-const EncryptionKeyId& Cipher::getEncryptionKeyId() const
+// Cipher
+Cipher::Cipher(CipherType type,
+   const KdfId& kdfId, const EncryptionKeyId& keyId) :
+   type_(type), kdfId_(kdfId), encryptionKeyId_(keyId),
+   iv_(generateIV())
+{
+   //General purpose ctor, IV is generated on the fly
+}
+
+Cipher::Cipher(CipherType type,
+   const KdfId& kdfId, const EncryptionKeyId& keyId,
+   SecureBinaryData& iv) :
+   type_(type), kdfId_(kdfId), encryptionKeyId_(keyId),
+   iv_(std::move(iv))
+{
+   //for setting up a cipher object from existing
+   //data (i.e. load from disk)
+   if (iv_.getSize() != getBlockSize()) {
+      throw CipherException("invalid iv length");
+   }
+}
+
+Cipher::~Cipher()
+{}
+
+////////
+const Wallets::EncryptionKeyId& Cipher::getEncryptionKeyId() const
 {
    return encryptionKeyId_;
 }
 
-////////////////////////////////////////////////////////////////////////////////
 unsigned Cipher::getBlockSize(CipherType type)
 {
    unsigned blockSize;
@@ -56,13 +76,32 @@ unsigned Cipher::getBlockSize(CipherType type)
    return blockSize;
 }
 
-////////////////////////////////////////////////////////////////////////////////
 SecureBinaryData Cipher::generateIV(void) const
 {
    return fortuna.generateRandom(getBlockSize(type_));
 }
 
-////////////////////////////////////////////////////////////////////////////////
+CipherType Cipher::getType() const
+{
+   return type_;
+}
+
+const Wallets::KdfId& Cipher::getKdfId() const
+{
+   return kdfId_;
+}
+
+const SecureBinaryData& Cipher::getIV() const
+{
+   return iv_;
+}
+
+unsigned Cipher::getBlockSize() const
+{
+   return getBlockSize(getType());
+}
+
+////////
 std::unique_ptr<Cipher> Cipher::deserialize(BinaryRefReader& brr)
 {
    std::unique_ptr<Cipher> cipher;
@@ -110,6 +149,19 @@ std::unique_ptr<Cipher> Cipher::deserialize(BinaryRefReader& brr)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Cipher_AES
+Cipher_AES::Cipher_AES(const KdfId& kdfId,
+   const EncryptionKeyId& encryptionKeyId) :
+   Cipher(CipherType_AES, kdfId, encryptionKeyId)
+{}
+
+Cipher_AES::Cipher_AES(const KdfId& kdfId,
+   const EncryptionKeyId& encryptionKeyId,
+   SecureBinaryData& iv) :
+   Cipher(CipherType_AES, kdfId, encryptionKeyId, iv)
+{}
+
+////////
 BinaryData Cipher_AES::serialize() const
 {
    BinaryWriter bw;
@@ -129,19 +181,18 @@ BinaryData Cipher_AES::serialize() const
    return bw.getData();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 std::unique_ptr<Cipher> Cipher_AES::getCopy() const
 {
    return std::make_unique<Cipher_AES>(kdfId_, encryptionKeyId_);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 std::unique_ptr<Cipher> Cipher_AES::getCopy(const EncryptionKeyId& keyId) const
 {
    return std::make_unique<Cipher_AES>(kdfId_, keyId);
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 SecureBinaryData Cipher_AES::encrypt(ClearTextEncryptionKey* const key,
    const KdfId& kdfId, const SecureBinaryData& data) const
 {
@@ -152,7 +203,6 @@ SecureBinaryData Cipher_AES::encrypt(ClearTextEncryptionKey* const key,
    return Cryptography::Encryption::AES::encryptCBC(data, encryptionKey, iv_);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 SecureBinaryData Cipher_AES::encrypt(ClearTextEncryptionKey* const key,
    const KdfId& kdfId, ClearTextEncryptionKey* const data) const
 {
@@ -162,14 +212,13 @@ SecureBinaryData Cipher_AES::encrypt(ClearTextEncryptionKey* const key,
    return encrypt(key, kdfId, data->getData());
 }
 
-////////////////////////////////////////////////////////////////////////////////
 SecureBinaryData Cipher_AES::decrypt(const SecureBinaryData& key,
    const SecureBinaryData& data) const
 {
    return Cryptography::Encryption::AES::decryptCBC(data, key, iv_);
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 bool Cipher_AES::isSame(Cipher* const cipher) const
 {
    auto cipher_aes = dynamic_cast<Cipher_AES*>(cipher);
@@ -182,55 +231,50 @@ bool Cipher_AES::isSame(Cipher* const cipher) const
       iv_ == cipher_aes->iv_;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 unsigned Cipher_AES::getBlockSize(void) const
 {
    return Cipher::getBlockSize(getType());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-//
-//// CipherData
-//
-////////////////////////////////////////////////////////////////////////////////
-CipherData::CipherData(SecureBinaryData& cipherText,
-   unique_ptr<Cipher> cipher) :
-   cipherText_(move(cipherText)), cipher_(move(cipher))
+// CipherData
+CipherData::CipherData(SecureBinaryData& pantoText,
+   std::unique_ptr<Cipher> pantoliano) :
+   cipherText(std::move(pantoText)), cipher(std::move(pantoliano))
 {
-   if (cipherText_.empty()) {
+   if (cipherText.empty()) {
       throw CipherException("empty cipher text");
    }
 
-   if (cipher_ == nullptr) {
+   if (cipher == nullptr) {
       throw CipherException("null cipher for privkey");
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 bool CipherData::isSame(CipherData* const rhs) const
 {
-   return cipherText_ == rhs->cipherText_ &&
-      cipher_->isSame(rhs->cipher_.get());
+   return cipherText == rhs->cipherText && cipher->isSame(rhs->cipher.get());
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 BinaryData CipherData::serialize(void) const
 {
    BinaryWriter bw;
    bw.put_uint32_t(CIPHER_DATA_VERSION);
 
-   bw.put_var_int(cipherText_.getSize());
-   bw.put_BinaryData(cipherText_);
+   bw.put_var_int(cipherText.getSize());
+   bw.put_BinaryData(cipherText);
 
-   auto&& data = cipher_->serialize();
+   auto&& data = cipher->serialize();
    bw.put_var_int(data.getSize());
    bw.put_BinaryData(data);
 
    return bw.getData();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-unique_ptr<CipherData> CipherData::deserialize(BinaryRefReader& brr)
+std::unique_ptr<CipherData> CipherData::deserialize(BinaryRefReader& brr)
 {
    std::unique_ptr<CipherData> cipherDataPtr = nullptr;
 
@@ -250,9 +294,9 @@ unique_ptr<CipherData> CipherData::deserialize(BinaryRefReader& brr)
             throw CipherException("invalid cipher length");
          }
 
-         auto cipher = Cipher::deserialize(brr);
+         auto pantoliano = Cipher::deserialize(brr);
          cipherDataPtr = std::make_unique<CipherData>(
-            cipherText, std::move(cipher));
+            cipherText, std::move(pantoliano));
          break;
       }
 
@@ -267,77 +311,72 @@ unique_ptr<CipherData> CipherData::deserialize(BinaryRefReader& brr)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-//
-//// EncryptionKey
-//
-////////////////////////////////////////////////////////////////////////////////
+// EncryptionKey
 EncryptionKey::EncryptionKey(EncryptionKeyId& id,
    SecureBinaryData& cipherText,
-   unique_ptr<Cipher> cipher) :
-   id_(move(id))
+   std::unique_ptr<Cipher> cipher) :
+   id_(std::move(id))
 {
-   auto cipherData = make_unique<CipherData>(cipherText, move(cipher));
+   auto cipherData = std::make_unique<CipherData>(
+      cipherText, std::move(cipher));
    cipherDataMap_.emplace(
-      cipherData->cipher_->getEncryptionKeyId(), move(cipherData));
+      cipherData->cipher->getEncryptionKeyId(),
+      std::move(cipherData));
 }
 
-////////////////////////////////////////////////////////////////////////////////
 EncryptionKey::EncryptionKey(EncryptionKeyId& id,
-   map<EncryptionKeyId, unique_ptr<CipherData>> cipherDataMap) :
-   id_(move(id)),
-   cipherDataMap_(move(cipherDataMap))
+   std::map<EncryptionKeyId, std::unique_ptr<CipherData>> cipherDataMap) :
+   id_(std::move(id)),
+   cipherDataMap_(std::move(cipherDataMap))
 {}
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 bool EncryptionKey::isSame(EncryptionKey* const keyPtr) const
 {
-   if (keyPtr == nullptr)
+   if (keyPtr == nullptr) {
       return false;
-
-   if (id_ != keyPtr->id_)
-      return false;
-
-   if (cipherDataMap_.size() != keyPtr->cipherDataMap_.size())
-      return false;
-
-   for (auto& cipherData : cipherDataMap_)
-   {
-      auto cdIter = keyPtr->cipherDataMap_.find(cipherData.first);
-      if (cdIter == keyPtr->cipherDataMap_.end())
-         return false;
-
-      if (!cipherData.second->isSame(cdIter->second.get()))
-         return false;
    }
-
+   if (id_ != keyPtr->id_) {
+      return false;
+   }
+   if (cipherDataMap_.size() != keyPtr->cipherDataMap_.size()) {
+      return false;
+   }
+   for (auto& cipherData : cipherDataMap_) {
+      auto cdIter = keyPtr->cipherDataMap_.find(cipherData.first);
+      if (cdIter == keyPtr->cipherDataMap_.end()) {
+         return false;
+      }
+      if (!cipherData.second->isSame(cdIter->second.get())) {
+         return false;
+      }
+   }
    return true;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 Cipher* EncryptionKey::getCipherPtrForId(const EncryptionKeyId& id) const
 {
    auto iter = cipherDataMap_.find(id);
-   if (iter == cipherDataMap_.end())
+   if (iter == cipherDataMap_.end()) {
       return nullptr;
-
-   return iter->second->cipher_.get();
+   }
+   return iter->second->cipher.get();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 bool EncryptionKey::removeCipherData(const EncryptionKeyId& id)
 {
    return cipherDataMap_.erase(id) == 1;
 }
 
-////////////////////////////////////////////////////////////////////////////////
 bool EncryptionKey::addCipherData(std::unique_ptr<CipherData> dataPtr)
 {
    auto insertIter = cipherDataMap_.emplace(
-      dataPtr->cipher_->getEncryptionKeyId(), move(dataPtr));
+      dataPtr->cipher->getEncryptionKeyId(), move(dataPtr));
    return insertIter.second;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 BinaryData EncryptionKey::serialize() const
 {
    BinaryWriter bw;
@@ -347,9 +386,8 @@ BinaryData EncryptionKey::serialize() const
 
    bw.put_var_int(cipherDataMap_.size());
 
-   for (auto& dataPair : cipherDataMap_)
-   {
-      auto&& cipherData = dataPair.second->serialize();
+   for (auto& dataPair : cipherDataMap_) {
+      auto cipherData = dataPair.second->serialize();
       bw.put_var_int(cipherData.getSize());
       bw.put_BinaryData(cipherData);
    }
@@ -360,11 +398,11 @@ BinaryData EncryptionKey::serialize() const
    return finalBw.getData();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-unique_ptr<EncryptionKey> EncryptionKey::deserialize(const BinaryDataRef& data)
+std::unique_ptr<EncryptionKey> EncryptionKey::deserialize(
+   const BinaryDataRef& data)
 {
    BinaryRefReader brr(DBUtils::getDataRefForPacket(data));
-   unique_ptr<EncryptionKey> keyPtr;
+   std::unique_ptr<EncryptionKey> keyPtr;
 
    //version
    auto version = brr.get_uint32_t();
@@ -374,59 +412,57 @@ unique_ptr<EncryptionKey> EncryptionKey::deserialize(const BinaryDataRef& data)
 
    switch (prefix)
    {
-   case ENCRYPTIONKEY_BYTE:
-   {
-      switch (version)
+      case ENCRYPTIONKEY_BYTE:
       {
-      case 0x00000001:
-      {
-         //id
-         auto id = EncryptionKeyId::deserializeValue(brr);
-
-         //cipher data
-         map<EncryptionKeyId, unique_ptr<CipherData>> cipherMap;
-         auto count = brr.get_var_int();
-         for (unsigned i = 0; i < count; i++)
+         switch (version)
          {
-            auto len = brr.get_var_int();
-            if (len > brr.getSizeRemaining())
-               throw runtime_error("invalid serialized encrypted data len");
+            case 0x00000001:
+            {
+               //id
+               auto id = EncryptionKeyId::deserializeValue(brr);
 
-            auto cipherBdr = brr.get_BinaryDataRef(len);
-            BinaryRefReader cipherBrr(cipherBdr);
+               //cipher data
+               std::map<EncryptionKeyId, std::unique_ptr<CipherData>> cipherMap;
+               auto count = brr.get_var_int();
+               for (unsigned i = 0; i < count; i++) {
+                  auto len = brr.get_var_int();
+                  if (len > brr.getSizeRemaining()) {
+                     throw std::runtime_error(
+                        "invalid serialized encrypted data len");
+                  }
+                  auto cipherBdr = brr.get_BinaryDataRef(len);
+                  BinaryRefReader cipherBrr(cipherBdr);
 
-            auto cipherData = CipherData::deserialize(cipherBrr);
-            cipherMap.insert(make_pair(
-               cipherData->cipher_->getEncryptionKeyId(), std::move(cipherData)));
+                  auto cipherData = CipherData::deserialize(cipherBrr);
+                  cipherMap.emplace(
+                     cipherData->cipher->getEncryptionKeyId(),
+                     std::move(cipherData));
+               }
+
+               //ptr
+               keyPtr = std::make_unique<EncryptionKey>(id, std::move(cipherMap));
+               break;
+            }
+
+            default:
+               throw std::runtime_error("unsupported encryption key version");
          }
 
-         //ptr
-         keyPtr = make_unique<EncryptionKey>(id, move(cipherMap));
          break;
       }
 
       default:
-         throw runtime_error("unsupported encryption key version");
-      }
-
-      break;
+         throw std::runtime_error("unexpected encrypted key prefix");
    }
 
-   default:
-      throw runtime_error("unexpected encrypted key prefix");
+   if (keyPtr == nullptr) {
+      throw std::runtime_error("failed to deserialize encrypted asset");
    }
-
-   if (keyPtr == nullptr)
-      throw runtime_error("failed to deserialize encrypted asset");
-
    return keyPtr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-//
-//// ClearTextEncryptionKey
-//
-////////////////////////////////////////////////////////////////////////////////
+// ClearTextEncryptionKey
 ClearTextEncryptionKey::ClearTextEncryptionKey(SecureBinaryData& key) :
    rawKey_(std::move(key))
 {}
@@ -435,18 +471,8 @@ ClearTextEncryptionKey::ClearTextEncryptionKey(Passphrase::SetNew& setNewObj) :
    rawKey_(std::move(setNewObj.moveParams()->passphrase))
 {}
 
-void ClearTextEncryptionKey::deriveKey(
-   std::shared_ptr<Encryption::KeyDerivationFunction> kdf)
-{
-   if (derivedKeys_.find(kdf->getId()) != derivedKeys_.end()) {
-      return;
-   }
-   auto derivedkey = kdf->deriveKey(rawKey_);
-   derivedKeys_.emplace(kdf->getId(), std::move(derivedkey));
-}
-
-////////////////////////////////////////////////////////////////////////////////
-unique_ptr<ClearTextEncryptionKey> ClearTextEncryptionKey::copy() const
+////////
+std::unique_ptr<ClearTextEncryptionKey> ClearTextEncryptionKey::copy() const
 {
    auto key_copy = rawKey_;
    auto copy_ptr = std::make_unique<ClearTextEncryptionKey>(key_copy);
@@ -454,8 +480,8 @@ unique_ptr<ClearTextEncryptionKey> ClearTextEncryptionKey::copy() const
    return copy_ptr;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-EncryptionKeyId ClearTextEncryptionKey::getId(const KdfId& kdfId) const
+////////
+Wallets::EncryptionKeyId ClearTextEncryptionKey::getId(const KdfId& kdfId) const
 {
    const auto keyIter = derivedKeys_.find(kdfId);
    if (keyIter == derivedKeys_.end()) {
@@ -464,8 +490,7 @@ EncryptionKeyId ClearTextEncryptionKey::getId(const KdfId& kdfId) const
    return computeId(keyIter->second);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-EncryptionKeyId ClearTextEncryptionKey::computeId(
+Wallets::EncryptionKeyId ClearTextEncryptionKey::computeId(
    const SecureBinaryData& key) const
 {
    //treat value as scalar, get pubkey for it
@@ -477,46 +502,96 @@ EncryptionKeyId ClearTextEncryptionKey::computeId(
       BtcUtils::computeDataId(pubkey, HMAC_KEY_ENCRYPTIONKEYS));
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
+bool ClearTextEncryptionKey::hasData() const
+{
+   return !rawKey_.empty();
+}
+
+const SecureBinaryData& ClearTextEncryptionKey::getData() const
+{
+   return rawKey_;
+}
+
+////////
+void ClearTextEncryptionKey::deriveKey(
+   std::shared_ptr<Encryption::KeyDerivationFunction> kdf)
+{
+   if (derivedKeys_.find(kdf->getId()) != derivedKeys_.end()) {
+      return;
+   }
+   auto derivedkey = kdf->deriveKey(rawKey_);
+   derivedKeys_.emplace(kdf->getId(), std::move(derivedkey));
+}
+
 const SecureBinaryData& ClearTextEncryptionKey::getDerivedKey(
    const KdfId& id) const
 {
    auto iter = derivedKeys_.find(id);
    if (iter == derivedKeys_.end()) {
-      throw runtime_error("invalid key");
+      throw std::runtime_error("invalid key");
    }
    return iter->second;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-//
-//// EncryptedAssetData
-//
+// ClearTextAssetData
+ClearTextAssetData::ClearTextAssetData(const Wallets::AssetId& id,
+   SecureBinaryData& clearText) :
+   id_(id), clearText_(std::move(clearText))
+{}
+
+////////
+bool ClearTextAssetData::hasData() const
+{
+   return !clearText_.empty();
+}
+
+const Wallets::AssetId& ClearTextAssetData::getId() const
+{
+   return id_;
+}
+
+const SecureBinaryData& ClearTextAssetData::getData() const
+{
+   return clearText_;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
+// EncryptedAssetData
+EncryptedAssetData::EncryptedAssetData(std::unique_ptr<CipherData> cipherData) :
+   encryptionKeyId_(cipherData->cipher->getEncryptionKeyId()),
+   cipherData_(std::move(cipherData))
+{
+   if (cipherData_ == nullptr) {
+      throw std::runtime_error("nullptr cipher data");
+   }
+}
+
 EncryptedAssetData::~EncryptedAssetData()
 {}
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 bool EncryptedAssetData::hasData() const
 {
    return cipherData_ != nullptr;
 }
 
-////////////////////////////////////////////////////////////////////////////////
 const CipherData* EncryptedAssetData::getCipherDataPtr() const
 {
-   if (!hasData())
-      throw runtime_error("no cypher data");
+   if (!hasData()) {
+      throw std::runtime_error("no cypher data");
+   }
    return cipherData_.get();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 std::unique_ptr<ClearTextAssetData> EncryptedAssetData::decrypt(
    const SecureBinaryData& key) const
 {
    auto cipherDataPtr = getCipherDataPtr();
-   auto decryptedData = cipherDataPtr->cipher_->decrypt(
-      key, cipherDataPtr->cipherText_);
+   auto decryptedData = cipherDataPtr->cipher->decrypt(
+      key, cipherDataPtr->cipherText);
    auto decrPtr = std::make_unique<ClearTextAssetData>(getAssetId(), decryptedData);
    return decrPtr;
 }
@@ -529,30 +604,26 @@ bool EncryptedAssetData::isSame(EncryptedAssetData* const asset) const
    return cipherData_->isSame(asset->cipherData_.get());
 }
 
-////////////////////////////////////////////////////////////////////////////////
 const SecureBinaryData& EncryptedAssetData::getCipherText() const
 {
    auto ptr = getCipherDataPtr();
-   return ptr->cipherText_;
+   return ptr->cipherText;
 }
 
-////////////////////////////////////////////////////////////////////////////////
 const SecureBinaryData& EncryptedAssetData::getIV() const
 {
    auto ptr = getCipherDataPtr();
-   return ptr->cipher_->getIV();
+   return ptr->cipher->getIV();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-const EncryptionKeyId& EncryptedAssetData::getEncryptionKeyId() const
+const Wallets::EncryptionKeyId& EncryptedAssetData::getEncryptionKeyId() const
 {
    auto ptr = getCipherDataPtr();
-   return ptr->cipher_->getEncryptionKeyId();
+   return ptr->cipher->getEncryptionKeyId();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-const KdfId& EncryptedAssetData::getKdfId() const
+const Wallets::KdfId& EncryptedAssetData::getKdfId() const
 {
    auto ptr = getCipherDataPtr();
-   return ptr->cipher_->getKdfId();
+   return ptr->cipher->getKdfId();
 }

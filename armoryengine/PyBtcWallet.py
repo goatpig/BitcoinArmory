@@ -123,8 +123,8 @@ class PyBtcWallet(object):
       self._dbId        = None
       self._settingsId  = None
 
-      self.lastComputedChainIndex   = 0
-      self._highestUsedChainIndex    = -1
+      self.lastComputedChainIndex = 0
+      self._highestUsedChainIndex = -1
 
       #To enable/disable wallet row in wallet table model
       self.isEnabled = True
@@ -428,13 +428,13 @@ class PyBtcWallet(object):
    #############################################################################
    ## getting new addresses
    def peekChangeAddr(self, addrType=AddressEntryType_Default):
-      newAddrProto = self.bridgeWalletObj.getNewAddress(addrType)
+      newAddrProto = self.bridgeWalletObj.peekChangeAddress(addrType)
       newAddrObj = PyBtcAddress()
       newAddrObj.loadFromProto(newAddrProto)
       return newAddrObj
 
    def getNewChangeAddr(self, addrType=AddressEntryType_Default):
-      newAddrProto = self.bridgeWalletObj.getNewAddress(addrType)
+      newAddrProto = self.bridgeWalletObj.getChangeAddr(addrType)
       newAddrObj = PyBtcAddress()
       newAddrObj.loadFromProto(newAddrProto)
       self.addAddress(newAddrObj)

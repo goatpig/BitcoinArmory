@@ -1,20 +1,23 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2017-2021, goatpig                                          //
+//  Copyright (C) 2017-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifndef _H_ASSET_ACCOUNT
-#define _H_ASSET_ACCOUNT
+#pragma once
 
 #include <memory>
 #include <functional>
 #include <string>
+#include <map>
+#include <set>
 
+#include <Utils/ReentrantLock.h>
+#include <Utils/SecureBinaryData.h>
 #include "../WalletIdTypes.h"
-#include "Utils/ReentrantLock.h"
+#include "../AddressEntryType.h"
 
 #define ASSET_ACCOUNT_PREFIX        0xE1
 #define ASSET_COUNT_PREFIX          0xE2
@@ -28,6 +31,7 @@ namespace Armory
    {
       enum class DerivationSchemeType : int;
       class DerivationScheme;
+      struct Asset_PrivateKey;
    };
 
    namespace Wallets
@@ -41,6 +45,7 @@ namespace Armory
       namespace Encryption
       {
          class DecryptedDataContainer;
+         class Cipher;
       };
    };
 
@@ -187,13 +192,14 @@ namespace Armory
          size_t getAssetCount(void) const;
          int32_t getLastComputedIndex(void) const;
          int32_t getHighestUsedIndex(void) const;
+         void setHighestUsedIndex(
+            std::shared_ptr<Wallets::IO::WalletDBInterface>,
+            const Wallets::AssetKeyType&);
          bool isAssetInUse(const Wallets::AssetId&) const;
          AssetPtr getLastAssetWithPrivateKey(void) const;
 
-         AssetPtr getAssetForID(
-            const Wallets::AssetId&) const;
-         AssetPtr getAssetForKey(
-            const Wallets::AssetKeyType&) const;
+         AssetPtr getAssetForID(const Wallets::AssetId&) const;
+         AssetPtr getAssetForKey(const Wallets::AssetKeyType&) const;
          bool isAssetIDValid(const Wallets::AssetId&) const;
 
          virtual void updateAddressHashMap(const std::set<AddressEntryType>&);
@@ -254,9 +260,10 @@ namespace Armory
 
          //imports
          Wallets::AssetId importPrivateKey(
-            std::shared_ptr<Wallets::IO::WalletIfaceTransaction>,
+            std::shared_ptr<Wallets::IO::WalletDBInterface>,
             std::shared_ptr<Wallets::Encryption::DecryptedDataContainer>,
-            const SecureBinaryData&);
+            const SecureBinaryData&,
+            std::unique_ptr<Wallets::Encryption::Cipher>);
       };
 
       //////////////////////////////////////////////////////////////////////////
@@ -278,9 +285,13 @@ namespace Armory
          Wallets::AssetId importPublicKey(
             std::shared_ptr<Wallets::IO::WalletDBInterface>,
             SecureBinaryData&);
-         Wallets::AssetId importAddressHash(const SecureBinaryData&);
+         Wallets::AssetId importScriptHash(
+            std::shared_ptr<Wallets::IO::WalletDBInterface>,
+            const BinaryData&);
+         Wallets::AssetId importRawScript(
+            std::shared_ptr<Wallets::IO::WalletDBInterface>,
+            const BinaryData&);
       };
 
    }; //namespace Accounts
 }; //namespace Armory
-#endif

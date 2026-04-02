@@ -37,6 +37,22 @@ namespace
          const auto& hashMap = accPtr->getAddressHashMap();
          std::set<uint8_t> usedPrefixes;
 
+         if (prefixSet.empty()) {
+            /*
+            edge case: if we do not have a prefix set for the account, such
+            as imports, run through the hashmap with its advertized address
+            types.
+            */
+            for (const auto& prefixedHash : hashMap) {
+               auto rawHash = prefixedHash.first.getSliceRef(
+                  1, prefixedHash.first.getSize() - 1);
+               if (rawHash == key) {
+                  auto asset = accPtr->getAssetForID(prefixedHash.second.first);
+                  return { asset, prefixedHash.second.second };
+               }
+            }
+         }
+
          for (const auto& addrType : prefixSet) {
             BinaryWriter prefixedKey;
             try {
@@ -67,10 +83,10 @@ namespace
             rather the one used to roll the prefix.
             */
             auto asset = accPtr->getAssetForID(iter->second.first);
-            return std::make_pair(asset, iter->second.second);
+            return { asset, iter->second.second };
          }
       }
-      return std::make_pair(nullptr, AddressEntryType::Default);
+      return { nullptr, AddressEntryType::Default };
    }
 }
 

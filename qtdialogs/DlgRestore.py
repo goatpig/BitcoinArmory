@@ -132,7 +132,7 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
          QtWidgets.QLabel('')
       ]
 
-      inpMask = '<AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA!'
+      inpMask = r'<AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA!'
       self.edtList = [MaskedInputLineEdit(inpMask) for i in range(4)]
       self.frmSP = makeHorizFrame([STRETCH, self.lblSP, self.editSecurePrint])
 
@@ -243,20 +243,21 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
             if dlgPasswd.exec_():
                packet.success = True
 
-               #passphrase
-               passPacket.passphrase = str(dlgPasswd.edtPasswd1.text())
+               passPacket.passphrase = \
+                  str(dlgPasswd.edtPasswd1.text())
 
-               #unlock target in milliseconds
-               privKdfTargetMs = int(self.advancedOptionsTab.getKdfSec() * 1000)
-               if privKdfTargetMs <= 0:
-                  privKdfTargetMs = 2000
-               passPacket.kdfTargetMs = privKdfTargetMs
-
-               #memory target in MB
-               privKdfTargetMem = int(self.advancedOptionsTab.getKdfBytes() / (1024**2))
-               if privKdfTargetMem <= 0:
-                  privKdfTargetMem = 128
-               passPacket.kdfTargetMB = privKdfTargetMem
+               kdfMs = int(
+                  self.advancedOptionsTab.getKdfSec()
+                  * 1000)
+               if kdfMs <= 0:
+                  kdfMs = 2000
+               kdfMB = int(
+                  self.advancedOptionsTab.getKdfBytes()
+                  / (1024**2))
+               if kdfMB > 0:
+                  passPacket.kdfTargetMB = kdfMB
+               else:
+                  passPacket.kdfTargetMs = kdfMs
             else:
                QtWidgets.QMessageBox.critical(self, self.tr('Cannot Encrypt'), \
                   self.tr('You requested your restored wallet be encrypted, but no '
@@ -1101,10 +1102,10 @@ class DlgEnterOneFrag(ArmoryDialog):
                        'y1:', 'y2:', 'y3:', 'y4:', \
                        'F1:', 'F2:', 'F3:', 'F4:']
       self.prfxList = [QtWidgets.QLabel(p) for p in self.prfxList]
-      inpMask = '<AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA!'
+      inpMask = r'<AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA!'
       self.edtList = [MaskedInputLineEdit(inpMask) for i in range(12)]
 
-      inpMaskID = '<HHHH\ HHHH\ HHHH\ HHHH!'
+      inpMaskID = r'<HHHH\ HHHH\ HHHH\ HHHH!'
       self.lblID = QRichLabel('ID:')
       self.edtID = MaskedInputLineEdit(inpMaskID)
 
@@ -1284,7 +1285,7 @@ class DlgRestoreWOData(ArmoryDialog):
 
       # Create the line that will contain the imported ID.
       self.rootIDLabel = QRichLabel(self.tr('Watch-Only Root ID:'), doWrap=False)
-      inpMask = '<AAAA\ AAAA\ AAAA\ AAAA\ AA!'
+      inpMask = r'<AAAA\ AAAA\ AAAA\ AAAA\ AA!'
       self.rootIDLine = MaskedInputLineEdit(inpMask)
       self.rootIDLine.setFont(GETFONT('Fixed', 9))
       self.rootIDFrame = makeHorizFrame([STRETCH, self.rootIDLabel, self.rootIDLine])
@@ -1294,7 +1295,7 @@ class DlgRestoreWOData(ArmoryDialog):
          QtWidgets.QLabel(''), QtWidgets.QLabel(''), QtWidgets.QLabel('')]
       for y in self.pkccLList:
          y.setFont(GETFONT('Fixed', 9))
-      inpMask = '<AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA!'
+      inpMask = r'<AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA\ AAAA\ AAAA\ AAAA\ \ AAAA!'
       self.pkccList = [MaskedInputLineEdit(inpMask) for i in range(4)]
       for x in self.pkccList:
          x.setFont(GETFONT('Fixed', 9))

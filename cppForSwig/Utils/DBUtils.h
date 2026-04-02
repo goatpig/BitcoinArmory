@@ -53,6 +53,7 @@ namespace Armory
       uint32_t   hgtxToHeight(const BinaryData&);
       uint8_t    hgtxToDupID(const BinaryData&);
       BinaryData heightAndDupToHgtx(uint32_t, uint8_t);
+      bool       keyIsZC(BinaryDataRef);
 
       ////////
       BinaryData getBlkDataKey(uint32_t, uint8_t);

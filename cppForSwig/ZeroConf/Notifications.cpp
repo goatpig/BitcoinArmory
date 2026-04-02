@@ -11,6 +11,7 @@
 #include "Notifications.h"
 #include <BlockchainDatabase/txio.h>
 #include <WebSocketMessage.h>
+#include <Ledgers/LedgerEntry.h>
 #include <BDM_Server.h>
 
 #include "Utils.h"

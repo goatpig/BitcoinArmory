@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2017-2025, goatpig                                          //
+//  Copyright (C) 2017-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -16,6 +16,7 @@
 #include <Utils/BinaryData.h>
 #include "WalletIdTypes.h"
 #include "GetPassphrase.h"
+#include "AssetEncryption.h"
 
 #define ENCRYPTIONKEY_PREFIX        0xC0
 #define ENCRYPTIONKEY_PREFIX_TEMP   0xCC
@@ -34,11 +35,7 @@ namespace Armory
 
       namespace Encryption
       {
-         class ClearTextAssetData;
          class KeyDerivationFunction;
-         class EncryptionKey;
-         class EncryptedAssetData;
-         class Cipher;
 
          class DecryptedDataContainerException : public std::runtime_error
          {

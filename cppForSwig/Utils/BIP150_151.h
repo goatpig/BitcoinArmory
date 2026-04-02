@@ -94,20 +94,18 @@ struct AuthPeersLambdas
 private:
    std::function<const std::map<std::string, btc_pubkey>&()> getPubKeyMapLambda_;
    std::function<const SecureBinaryData&(const BinaryDataRef&)> getPrivKeyLambda_;
-   std::function<const std::set<SecureBinaryData>&()> getAuthKeySet_;
+   std::function<const std::map<SecureBinaryData, std::string>&()> getAuthKeyMap_;
 
 public:
    AuthPeersLambdas(
-      std::function<const std::map<std::string, btc_pubkey>&()> pubkeymap,
-      std::function<const SecureBinaryData&(const BinaryDataRef&)> privkey,
-      std::function<const std::set<SecureBinaryData>&()> getauthset):
-      getPubKeyMapLambda_(pubkeymap), getPrivKeyLambda_(privkey),
-      getAuthKeySet_(getauthset)
-   {}
+      const std::function<const std::map<std::string, btc_pubkey>&()>&,
+      const std::function<const SecureBinaryData&(const BinaryDataRef&)>&,
+      const std::function<const std::map<SecureBinaryData, std::string>&()>&
+   );
 
    const btc_pubkey& getPubKey(const std::string&) const;
    const SecureBinaryData& getPrivKey(const BinaryDataRef&) const;
-   const std::set<SecureBinaryData>& getAuthorizedKeySet(void) const;
+   const std::map<SecureBinaryData, std::string>& getAuthorizedKeyMap(void) const;
 };
 
 class BIP151Session

@@ -18,34 +18,34 @@
 #include <gtest/gtest.h>
 #include <btc/ecc.h>
 
-#include "Utils/log.h"
-#include "Utils/ArmoryErrors.h"
-#include "Utils/BinaryData.h"
-#include "Utils/BtcUtils.h"
-#include "Utils/Cryptography.h"
-#include "Utils/BitcoinSettings.h"
+#include <Utils/log.h>
+#include <Utils/ArmoryErrors.h>
+#include <Utils/BinaryData.h>
+#include <Utils/BtcUtils.h>
+#include <Utils/Cryptography.h>
+#include <Utils/BitcoinSettings.h>
 
-#include "Signer/Script.h"
-#include "Signer/Signer.h"
-#include "Signer/ResolverFeed_Wallets.h"
+#include <Signer/Script.h>
+#include <Signer/Signer.h>
+#include <Signer/ResolverFeed_Wallets.h>
 
-#include "BlockchainDatabase/BlockObj.h"
-#include "BlockchainDatabase/lmdb_wrapper.h"
-#include "BlockchainDatabase/BlockUtils.h"
-#include "BlockchainDatabase/txio.h"
-#include "BlockchainDatabase/StoredBlockObj.h"
-#include "AsyncClient.h"
-#include "ScrAddrObj.h"
-#include "BtcWallet.h"
-#include "BlockDataViewer.h"
-#include "BitcoinP2P.h"
+#include <BlockchainDatabase/BlockObj.h>
+#include <BlockchainDatabase/lmdb_wrapper.h>
+#include <BlockchainDatabase/BlockUtils.h>
+#include <BlockchainDatabase/txio.h>
+#include <BlockchainDatabase/StoredBlockObj.h>
+#include <AsyncClient.h>
+#include <ScrAddrObj.h>
+#include <BtcWallet.h>
+#include <BlockDataViewer.h>
+#include <BitcoinP2P.h>
 
-#include "Progress.h"
-#include "BDM_Server.h"
-#include "TxClasses.h"
-#include "bdmenums.h"
-#include "Wallets/Wallets.h"
-#include "Wallets/BIP32_Node.h"
+#include <Progress.h>
+#include <BDM_Server.h>
+#include <TxClasses.h>
+#include <bdmenums.h>
+#include <Wallets/Wallets.h>
+#include <Wallets/BIP32_Node.h>
 
 #include "MockedNode.h"
 
@@ -60,6 +60,14 @@ namespace Armory
 };
 
 class BlockDataManagerThread;
+
+template<class T, typename ...Args>
+static BinaryData serializeDBValue(const T &o, const Args &...a)
+{
+   BinaryWriter wr;
+   o.serializeDBValue(wr, a...);
+   return wr.getData();
+}
 
 namespace TestUtils
 {
@@ -121,7 +129,7 @@ namespace DBTestUtils
    void waitOnBDMError(std::shared_ptr<BlockDataManager>);
 
    std::tuple<BinaryData, unsigned> waitOnNewBlockSignal(Clients*, BdvIdKey);
-   std::pair<std::vector<DBClientClasses::LedgerEntry>, std::set<BinaryData>>
+   std::pair<std::vector<TxIOPair>, std::set<BinaryData>>
       waitOnNewZcSignal(Clients*, BdvIdKey);
    void waitOnWalletRefresh(Clients*, BdvIdKey, const std::string&);
    void triggerNewBlockNotification(BlockDataManagerThread*);
@@ -149,13 +157,14 @@ namespace DBTestUtils
       BinaryData privKey, bool compressed = false);
 
    Tx getTxByHash(Clients*, BdvIdKey, const BinaryData&);
+   Tx getTxByKey(Clients*, BdvIdKey, const BinaryData&);
    std::vector<UTXO> getUtxoForAddress(Clients*, BdvIdKey, const BinaryData&, bool);
 
    void addTxioToSsh(StoredScriptHistory&,
       const std::map<BinaryDataRef, std::shared_ptr<const TxIOPair>>&);
    void prettyPrintSsh(StoredScriptHistory& ssh);
-   LedgerEntry getLedgerEntryFromWallet(std::shared_ptr<BtcWallet>, const BinaryData&);
-   LedgerEntry getLedgerEntryFromAddr(ScrAddrObj*, const BinaryData&);
+   Armory::Ledgers::Entry getLedgerEntryFromWallet(std::shared_ptr<BtcWallet>, const BinaryData&);
+   Armory::Ledgers::Entry getLedgerEntryFromAddr(ScrAddrObj*, const BinaryData&);
    void updateWalletsLedgerFilter(
       Clients*, BdvIdKey, const std::vector<std::string> &);
 
@@ -197,7 +206,7 @@ namespace DBTestUtils
       {
          BDMAction action;
          std::set<std::string> idSet;
-         std::set<BinaryData> addrSet;
+         std::vector<TxIOPair> txios;
          unsigned reorgHeight = UINT32_MAX;
          BDV_Error_Struct error;
          std::string requestID;
@@ -222,7 +231,6 @@ namespace DBTestUtils
                   actionDeque_.erase(iter);
                   return result;
                }
-
                ++iter;
             }
          }
@@ -232,38 +240,13 @@ namespace DBTestUtils
             if (action->action == actionType) {
                return action;
             }
-
             actionDeque_.push_back(std::move(action));
          }
       }
 
-      void run(BdmNotification bdmNotif)
-      {
-         auto notif = std::make_unique<BdmNotif>();
-         notif->action = bdmNotif.action;
-         notif->requestID = bdmNotif.requestID;
+      void run(BdmNotification);
 
-         if (bdmNotif.action == BDMAction_Refresh) {
-            notif->idSet = bdmNotif.ids;
-         } else if (bdmNotif.action == BDMAction_ZC) {
-            for (auto& le : bdmNotif.ledgers) {
-               notif->idSet.emplace(le->getTxHash().toHexStr());
-
-               auto addrVec = le->getScrAddrList();
-               for (auto& addrRef : addrVec) {
-                  notif->addrSet.insert(addrRef);
-               }
-            }
-         } else if (bdmNotif.action == BDMAction_NewBlock) {
-            notif->reorgHeight = bdmNotif.branchHeight;
-         } else if (bdmNotif.action == BDMAction_BDV_Error) {
-            notif->error = bdmNotif.error;
-         }
-
-         actionStack_.push_back(move(notif));
-      }
-
-      void progress(BDMPhase, const std::vector<std::string> &,
+      void progress(BDMPhase, const std::vector<std::string>&,
          float ,unsigned , unsigned)
       {}
 
@@ -325,73 +308,11 @@ namespace DBTestUtils
       }
 
       void waitOnZc(
-         const std::set<BinaryData>& hashes,
-         std::set<BinaryData> scrAddrSet)
-      {
-         std::set<std::string> strHashes;
-         for (const auto& hash : hashes) {
-            strHashes.emplace(hash.toHexStr());
-         }
-         auto hashesToSee = strHashes;
-         std::set<BinaryData> addrSet;
-         while (true) {
-            auto action = waitOnNotification(BDMAction_ZC);
-
-            bool hasHashes = true;
-            for (const auto& txHash : action->idSet) {
-               if (strHashes.find(txHash) == strHashes.end()) {
-                  hasHashes = false;
-                  break;
-               } else {
-                  hashesToSee.erase(txHash);
-               }
-            }
-            if (!hasHashes) {
-               continue;
-            }
-
-            addrSet.insert(action->addrSet.begin(), action->addrSet.end());
-            if (addrSet == scrAddrSet && hashesToSee.empty()) {
-               break;
-            }
-         }
-      }
-
-      void waitOnZc_OutOfOrder(const std::set<BinaryData>& hashes)
-      {
-         std::set<std::string> hashSet;
-         std::set<std::string> strHashes;
-         for (const auto& hash : hashes) {
-            strHashes.emplace(hash.toHexStr());
-         }
-
-         for (auto& pastNotif : zcNotifVec_) {
-            for (auto& txHash : pastNotif.idSet) {
-               if (strHashes.find(txHash) != strHashes.end()) {
-                  hashSet.insert(txHash);
-               }
-            }
-
-            if (hashSet == strHashes) {
-               return;
-            }
-         }
-
-         while (true) {
-            auto action = waitOnNotification(BDMAction_ZC);
-            zcNotifVec_.push_back(*action);
-
-            for (auto& txHash : action->idSet) {
-               if (strHashes.find(txHash) != strHashes.end()) {
-                  hashSet.insert(txHash);
-               }
-            }
-
-            if (hashSet == strHashes) {
-               break;
-            }
-         }
-      }
+         std::shared_ptr<Armory::ZeroConf::ZeroConfContainer>,
+         const std::set<BinaryData>&);
+      void waitOnZc_OutOfOrder(
+         std::shared_ptr<Armory::ZeroConf::ZeroConfContainer>,
+         const std::set<BinaryData>&);
 
       void waitOnError(const BinaryData& hash, ArmoryErrorCodes errorCode)
       {

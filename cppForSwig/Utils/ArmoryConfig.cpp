@@ -641,7 +641,6 @@ std::string NetworkSettings::rpcPort_;
 bool NetworkSettings::ephemeralPeers_;
 bool NetworkSettings::oneWayAuth_ = false;
 bool NetworkSettings::offline_ = false;
-bool NetworkSettings::automateDb_ = false;
 
 BinaryData NetworkSettings::uiPublicKey_;
 
@@ -717,12 +716,6 @@ void NetworkSettings::processArgs(
    iter = args.find("offline");
    if (iter != args.end()) {
       offline_ = true;
-   }
-
-   //automateDb
-   iter = args.find("automateDb");
-   if (iter != args.end()) {
-      automateDb_ = true;
    }
 
    //ui pubkey

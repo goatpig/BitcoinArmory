@@ -13,10 +13,10 @@
 
 #pragma once
 
-#include "Utils/BinaryData.h"
-#include "Utils/ThreadSafeClasses.h"
-#include "BlockchainDatabase/BlockObj.h"
-#include "BlockchainDatabase/StoredBlockObj.h"
+#include <Utils/BinaryData.h>
+#include <Utils/ThreadSafeClasses.h>
+#include <BlockchainDatabase/BlockObj.h>
+#include <BlockchainDatabase/StoredBlockObj.h>
 #include "ScrAddrObj.h"
 #include "bdmenums.h"
 #include "TxClasses.h"
@@ -93,9 +93,9 @@ public:
    void setWalletID(const std::string &wltId) { walletID_ = wltId; }
    const std::string& walletID() const { return walletID_; }
 
-   const HistoryPager& historyPager(void) const;
-   std::shared_ptr<const std::map<BinaryData, LedgerEntry>> getHistoryPage(uint32_t);
-   std::vector<LedgerEntry> getHistoryPageAsVector(uint32_t);
+   const Armory::Ledgers::HistoryPager& historyPager(void) const;
+   std::shared_ptr<const std::map<BinaryData, Armory::Ledgers::Entry>> getHistoryPage(uint32_t);
+   std::vector<Armory::Ledgers::Entry> getHistoryPageAsVector(uint32_t);
    size_t getHistoryPageCount(void) const { return histPages_.getPageCount(); }
 
    void needsRefresh(bool refresh);
@@ -123,7 +123,7 @@ private:
 
    void setRegistered(bool isTrue = true) { isRegistered_ = isTrue; }
 
-   std::map<BinaryData, LedgerEntry> updateWalletLedgersFromTxio(
+   std::map<BinaryData, Armory::Ledgers::Entry> updateWalletLedgersFromTxio(
       const std::map<BinaryData, TxIOPair>& txioMap,
       uint32_t startBlock, uint32_t endBlock) const;
 
@@ -145,7 +145,7 @@ private:
    void resetCounters(void);
 
 private:
-   BlockDataViewer* const        bdvPtr_;
+   BlockDataViewer* const bdvPtr_;
    Armory::Threading::TransactionalMap<
       BinaryDataRef, std::shared_ptr<ScrAddrObj>> scrAddrMap_;
 
@@ -153,15 +153,15 @@ private:
    bool isRegistered_ = false;
 
    //manages history pages
-   HistoryPager                  histPages_;
+   Armory::Ledgers::HistoryPager histPages_;
 
    //wallet id
    std::string walletID_;
 
-   uint64_t                      balance_ = 0;
+   uint64_t balance_ = 0;
 
    //set to true to add wallet paged history to global ledgers
-   bool                          uiFilter_ = true;
+   bool uiFilter_ = true;
 
    //call this lambda once a wallet is done registering and scanning
    //for the first time

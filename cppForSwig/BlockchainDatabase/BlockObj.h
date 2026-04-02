@@ -117,62 +117,6 @@ private:
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-class TxRef
-{
-   friend class BlockDataManager;
-   friend class Tx;
-
-public:
-   TxRef(void);
-   TxRef(BinaryDataRef);
-
-   void setRef(BinaryDataRef);
-   bool isInitialized(void) const;
-   bool isNull(void) const;
-
-   const BinaryData& getDBKey(void) const;
-   BinaryDataRef getDBKeyRef(void) const;
-   void setDBKey(BinaryDataRef);
-   BinaryData getDBKeyOfChild(uint16_t) const;
-   uint16_t getBlockTxIndex(void) const;
-   uint32_t getBlockHeight(void) const;
-   uint8_t getDuplicateID(void) const;
-   void pprint(std::ostream& = std::cout, int=0) const;
-
-   bool operator==(const BinaryData&) const;
-   bool operator==(const TxRef&) const;
-   bool operator>=(const BinaryData&) const;
-
-protected:
-   BinaryData dbKey6B_;
-};
-
-////////////////////////////////////////////////////////////////////////////////
-class DBTxRef : public TxRef
-{
-public:
-   DBTxRef(void);
-   DBTxRef(const TxRef&, const LMDBBlockDatabase*);
-
-   BinaryData serialize(void) const;
-   BinaryData getBlockHash(void) const;
-   uint32_t getBlockTimestamp(void) const;
-   BinaryData getThisHash(void) const;
-   Tx getTxCopy(void) const;
-   bool isMainBranch(void) const;
-
-   /////////////////////////////////////////////////////////////////////////////
-   // This as fast as you can get a single TxIn or TxOut from the DB.  But if 
-   // need multiple of them from the same Tx, you should getTxCopy() and then
-   // iterate over them in the Tx object
-   TxIn  getTxInCopy(uint32_t);
-   TxOut getTxOutCopy(uint32_t);
-
-private:
-   const LMDBBlockDatabase* db_;
-};
-
-////////////////////////////////////////////////////////////////////////////////
 class DBOutPoint : public Outpoint
 {
 private:

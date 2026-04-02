@@ -82,12 +82,15 @@ class CreateWalletNotifHandler(ServerPush):
       self.wizard = page.wizard
       self.frame = page.pageFrame
 
-   def replyWithPassphrase(self, targetMs, targetMB, passphrase):
+   def replyWithPassphrase(self,
+      targetMs, targetMB, passphrase):
       packet = self.getNewPacket()
       reply = packet.init('setPassphrase')
       reply.passphrase = passphrase
-      reply.kdfTargetMs = targetMs
-      reply.kdfTargetMB = targetMB
+      if targetMB > 0:
+         reply.kdfTargetMB = targetMB
+      else:
+         reply.kdfTargetMs = targetMs
       packet.success = True
       self.reply()
 

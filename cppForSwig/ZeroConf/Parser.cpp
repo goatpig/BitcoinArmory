@@ -164,11 +164,11 @@ void ZeroConfContainer::setZeroConfCallbacks(
    bdvCallbacks_ = std::move(ptr);
 }
 
-std::shared_ptr<MempoolSnapshot> ZeroConfContainer::getSnapshot() const
+std::shared_ptr<const MempoolSnapshot> ZeroConfContainer::getSnapshot() const
 {
    auto ss = std::atomic_load_explicit(
       &snapshot_, std::memory_order_acquire);
-   return ss;
+   return std::const_pointer_cast<const MempoolSnapshot>(ss);
 }
 
 ////////
@@ -185,23 +185,7 @@ Tx ZeroConfContainer::getTxByHash(const BinaryData& txHash) const
    }
 
    //copy base tx, add txhash map
-   Tx txCopy = parsedTxPtr->getTxObj();
-
-   //get zc outpoints id
-   for (unsigned i=0; i<txCopy.getNumTxIn(); i++) {
-      auto txin = txCopy.getTxInCopy(i);
-      auto op = txin.getOutPoint();
-      auto opKey = ss->getKeyForHash(op.getTxHashRef());
-      if (opKey.empty()) {
-         txCopy.pushBackOpId(0);
-         continue;
-      }
-
-      BinaryRefReader brr(opKey);
-      brr.advance(2);
-      txCopy.pushBackOpId(brr.get_uint32_t(BE));
-   }
-   return txCopy;
+   return parsedTxPtr->getTxObj();
 }
 
 bool ZeroConfContainer::hasTxByHash(const BinaryData& txHash) const
@@ -1018,7 +1002,7 @@ unsigned ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
             //add to newZCMap_
             auto zckey = zcKey.getSliceCopy(1, 6);
             auto parsedTx = std::make_shared<ParsedTx>(zckey);
-            parsedTx->setTx(zcStx.getSerializedTx(), zcStx.unixTime_);
+            parsedTx->setTx(zcStx.getSerializedTx(), zcStx.unixTime);
             zcMap.emplace(parsedTx->getKeyRef(), std::move(parsedTx));
          } else if (zcKey.getSize() == 9) {
             //TxOut, ignore it
@@ -1795,9 +1779,11 @@ void ZcActionQueue::shutdown()
 BinaryData ZcActionQueue::getNewZCkey()
 {
    uint32_t newId = topId_.fetch_add(1, std::memory_order_relaxed);
-   BinaryData newKey = READHEX("ffff");
-   newKey.append(WRITE_UINT32_BE(newId));
-   return newKey;
+   BinaryWriter bw;
+   bw.reserve(6);
+   bw.put_uint16_t(0xFFFF);
+   bw.put_uint32_t(newId, BE);
+   return bw.getData();
 }
 
 std::shared_ptr<ZeroConfBatch> ZcActionQueue::initiateZcBatch(

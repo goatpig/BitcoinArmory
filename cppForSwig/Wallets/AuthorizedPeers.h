@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2019-2025, goatpig                                          //
+//  Copyright (C) 2019-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -24,6 +24,12 @@ struct AuthPeersLambdas;
 
 namespace Armory
 {
+   namespace Accounts
+   {
+      class MetaDataAccount;
+      struct AuthPeerAssetMap;
+   }
+
    namespace Wallets
    {
       class AssetWallet;
@@ -42,7 +48,7 @@ namespace Armory
          {}
       };
 
-      //////////////////////////////////////////////////////////////////////////
+      ////////
       class AuthorizedPeersException : public std::runtime_error
       {
       public:
@@ -51,25 +57,63 @@ namespace Armory
          {}
       };
 
+      ////////
+      class PeerKey
+      {
+      private:
+         const SecureBinaryData pubkey_;
+         const bool oneWayAuth_;
+         const bool isServer_;
+
+      public:
+         PeerKey(BinaryDataRef, bool, bool);
+         PeerKey(const btc_pubkey&, bool, bool);
+
+         const SecureBinaryData& getKey(void) const;
+         bool isServer(void) const;
+         bool isOneWay(void) const;
+
+         std::string toHumanReadable(void) const;
+         static PeerKey fromHumanReadable(const std::string&);
+      };
+
+      class PeerMap
+      {
+      private:
+         std::map<std::string, btc_pubkey> nameToKeyMap_;
+         std::map<SecureBinaryData, std::string> keyMap_;
+         std::map<SecureBinaryData, std::set<unsigned>> keyToAssetIndexMap_;
+
+         const std::shared_ptr<AssetWallet> wallet_;
+         const bool oneWay_;
+
+      public:
+         PeerMap(std::shared_ptr<AssetWallet>, const btc_pubkey&, bool);
+
+         void setupFromAssetMap(const Accounts::AuthPeerAssetMap&);
+         void grabKeyIndexes(std::shared_ptr<Accounts::MetaDataAccount>);
+
+         const std::map<std::string, btc_pubkey>& getPeerNameMap(void) const;
+         const std::map<SecureBinaryData, std::string>& getPublicKeyMap(void) const;
+
+         void addPeer(const SecureBinaryData&,
+            const std::vector<std::string>&, const std::string&);
+         void setLabel(const SecureBinaryData&, const std::string&);
+
+         btc_pubkey eraseName(const std::string&);
+         void eraseKey(const SecureBinaryData&);
+      };
 
       //////////////////////////////////////////////////////////////////////////
       class AuthorizedPeers
       {
       private:
-         std::map<std::string, btc_pubkey> nameToKeyMap_;
-         std::set<SecureBinaryData> keySet_;
+         std::unique_ptr<PeerMap> peerMapOneWay_;
+         std::unique_ptr<PeerMap> peerMapTwoWay_;
          std::map<BinaryData, SecureBinaryData> privateKeys_;
 
          //for wallet management
-         std::map<SecureBinaryData, std::set<unsigned>> keyToAssetIndexMap_;
          std::shared_ptr<AssetWallet> wallet_ = nullptr;
-
-         //<pubkey, sig>
-         std::pair<SecureBinaryData, SecureBinaryData> rootSignature_;
-
-         //<pubkey, <description, asset id>>
-         std::map<SecureBinaryData,
-            std::pair<std::string, unsigned>> peerRootKeys_;
 
          //public key of master ACL; a client that completes a 2-way
          //AEAD handshake with this key will receive master credentials
@@ -77,71 +121,56 @@ namespace Armory
 
       private:
          AuthorizedPeers(std::shared_ptr<AssetWallet>);
+         AuthorizedPeers(SecureBinaryData&);
 
+         void initPeerMaps(const SecureBinaryData&);
+         SecureBinaryData setOwnPrivateKey(SecureBinaryData&);
          void loadWallet(const IO::ReadOnlyFileParams&);
          void initFromWallet(void);
-         void addPeer(const SecureBinaryData&,
-            const std::initializer_list<std::string>&);
-         void addPeer(const btc_pubkey_&,
-            const std::initializer_list<std::string>&);
          void erasePeerRootKey(const SecureBinaryData&);
 
       public:
          AuthorizedPeers(const IO::ReadOnlyFileParams&);
          AuthorizedPeers(void);
 
-         const std::map<std::string, btc_pubkey>& getPeerNameMap(void) const;
-         const std::set<SecureBinaryData>& getPublicKeySet(void) const;
+         const std::map<std::string, btc_pubkey>& getPeerNameMap(bool) const;
+         const std::map<SecureBinaryData, std::string>& getPublicKeyMap(bool) const;
          const SecureBinaryData& getPrivateKey(const BinaryDataRef&) const;
+         std::shared_ptr<AuthorizedPeers> getNarrowSet(const PeerKey&) const;
+         const btc_pubkey& getOwnPublicKey(void) const;
+         const std::string& getLabel(const SecureBinaryData&, bool) const;
 
          /* addPeer:
          input:
-         - pubkey as SecureBinaryData/btc_pubkey. secp256k1 un/compressed
+         - pubkey as SecureBinaryData/btc_pubkey/PeerKey; secp256k1 un/compressed
            public key
-         - count as unsigned: number of names as strings, at least 1
-         - count names as string/char*
+         - vector<std::string> of names; at least 1
          */
-         template<typename... Types>
-         void addPeer(const SecureBinaryData& pubkey, const Types... strings)
-         {
-            //variadic template shenanigans. This makes sure we get compiler
-            //errors if the wrong arg types are passed (something that can't
-            //natively convert to std::string), instead of blowing up at
-            //runtime
-            std::initializer_list<std::string> names({ strings... });
-            addPeer(pubkey, names);
-         }
-
-         template<typename... Types>
-         void addPeer(const btc_pubkey& pubkey, const Types... strings)
-         {
-            std::initializer_list<std::string> names({ strings... });
-            addPeer(pubkey, names);
-         }
-
-         void addPeer(
-            const SecureBinaryData&, const std::vector<std::string>&);
-
-         void addRootSignature(
-            const SecureBinaryData& key, const SecureBinaryData& sig);
-         void addPeerRootKey(const SecureBinaryData&, std::string);
+         void addPeer(const PeerKey&,
+            const std::vector<std::string>&, const std::string&);
+         void addPeer(const btc_pubkey&,
+            const std::vector<std::string>&, const std::string&, bool);
+         void addPeer(const SecureBinaryData&,
+            const std::vector<std::string>&, const std::string&, bool);
 
          //
-         void eraseName(const std::string&);
-         void eraseKey(const SecureBinaryData&);
-         void eraseKey(const btc_pubkey&);
+         void eraseName(const std::string&, bool);
+         void erasePeer(const PeerKey&);
+         void eraseKey(const SecureBinaryData&, bool);
+         void eraseKey(const btc_pubkey&, bool);
 
-         const btc_pubkey& getOwnPublicKey(void) const;
          bool setMasterKey(const btc_pubkey&);
          bool setMasterKey(const SecureBinaryData&);
          void eraseMasterKey(void);
          bool isMasterKey(const btc_pubkey&) const;
          bool isMasterKey(const SecureBinaryData&) const;
+         void setLabel(const PeerKey&, const std::string&);
+         void setLabel(const SecureBinaryData&, const std::string&, bool);
 
          //takes path to peers db, passphrase lambdas are handled internally
          static void changeControlPassphrase(const std::filesystem::path&);
          static AuthPeersLambdas getAuthPeersLambdas(
-            std::shared_ptr<AuthorizedPeers>);
+            std::shared_ptr<AuthorizedPeers>, bool);
          static std::shared_ptr<AuthorizedPeers> createWallet(
             const IO::CreateFileParams&);
       };

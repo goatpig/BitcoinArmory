@@ -50,17 +50,18 @@ from armoryengine.UserAddressUtils import getScriptForUserStringImpl, \
    getDisplayStringForScriptImpl
 from armoryengine.BDM import TheBDM, \
    BDM_BLOCKCHAIN_READY, BDM_SCANNING, BDM_UNINITIALIZED, BDM_OFFLINE, \
-   SETUP_STEP1, NEW_ZC_ACTION, NEW_BLOCK_ACTION, \
+   NEW_ZC_ACTION, NEW_BLOCK_ACTION, \
    REFRESH_ACTION, WARNING_ACTION, WARNING_ACTION, SCAN_ACTION, \
    NODESTATUS_UPDATE, BDM_SCAN_PROGRESS, BDV_ERROR, BDV_DISCONNECTED, \
-   SETUP_STEP2, SETUP_STEP3, BDMPhase_DBHeaders, BDMPhase_OrganizingChain, \
+   INIT_DB_CONNECTED, INIT_WALLETS_REGISTERED, INIT_DB_READY, \
+   BDMPhase_DBHeaders, BDMPhase_OrganizingChain, \
    BDMPhase_BlockHeaders, BDMPhase_BlockData, BDMPhase_Rescan, \
    BDMPhase_Balance, BDMPhase_SearchHashes, BDMPhase_ResolveHashes
 
 from armoryengine.PyBtcWallet import PyBtcWallet
 from armoryengine.Transaction import PyTx
-from armoryengine.WalletUtils import WalletMap, \
-   WalletTypes, WalletFilter, determineWalletType
+from armoryengine.WalletUtils import WalletTypes, WalletFilter, \
+   determineWalletType, loadWalletsForMainApp
 
 from qtdialogs.qtdefines import GETFONT, NETWORKMODE, \
    QRichLabel_AutoToolTip, tightSizeNChar, USERMODE, initialColResize, \
@@ -93,6 +94,7 @@ from qtdialogs.MsgBoxCustom import MsgBoxCustom
 from qtdialogs.MsgBoxWithDNAA import MsgBoxWithDNAA
 from qtdialogs.DlgUniversalRestoreSelect import DlgUniversalRestoreSelect
 from qtdialogs.DlgWalletMigration import DlgWalletMigration
+from qtdialogs.setupmanager import DlgSetupManager, SCENARIO_DB_NONE
 
 from ui.QtExecuteSignal import TheSignalExecution
 from armorymodels import AllWalletsDispModel, AllWalletsCheckboxDelegate, \
@@ -149,8 +151,8 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
    scriptDispStrings = {}
 
    #############################################################################
-   def __init__(self, parent=None, splashScreen=None):
-      super(ArmoryMainWindow, self).__init__(parent)
+   def __init__(self, wallets):
+      super().__init__()
 
       self.isShuttingDown = False
       self.ledgerView = None
@@ -194,6 +196,9 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       self.needUpdateAfterScan = True
       self.sweepAfterScanList = []
       self.newWalletList = []
+      self.dbConnectionEstablishedBySetup = False
+      self.walletsRegistered = False
+      self.blockchainSetupComplete = False
       self.newZeroConfSinceLastUpdate = []
       self.lastSDMStr = ""
       self.doShutdown = False
@@ -215,7 +220,8 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       self.lockboxIDMap = {}
       self.cppLockboxWltMap = {}
       self.broadcasting = {}
-      self.wallets = WalletMap(self)
+      self.wallets = wallets
+      self.walletModel = AllWalletsDispModel(self.wallets, self)
 
       self.nodeStatus = None
       self.numHeartBeat = 0
@@ -331,7 +337,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       self.statusBar().insertPermanentWidget(0, self.lblArmoryStatus)
 
       # Table for all the wallets
-      self.walletModel = AllWalletsDispModel(self.wallets)
+      self.walletModel = AllWalletsDispModel(self.wallets, self)
       self.walletsView  = QtWidgets.QTableView(self)
 
       w,h = tightSizeNChar(self.walletsView, 55)
@@ -559,11 +565,14 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
       actExportTx    = self.createAction(self.tr('&Export Transactions...'), exportTx)
       actSettings    = self.createAction(self.tr('&Settings...'), self.openSettings)
+      actSetupMgr    = self.createAction(self.tr('S&etup Manager...'), self.openSetupManager)
+      actSetupMgr.setEnabled(False)
       actMinimApp    = self.createAction(self.tr('&Minimize Armory'), self.minimizeArmory)
       actExportLog   = self.createAction(self.tr('Export &Log File...'), self.exportLogFile)
       actCloseApp    = self.createAction(self.tr('&Quit Armory'), self.closeForReal)
       self.menusList[MENUS.File].addAction(actExportTx)
       self.menusList[MENUS.File].addAction(actSettings)
+      self.menusList[MENUS.File].addAction(actSetupMgr)
       self.menusList[MENUS.File].addAction(actMinimApp)
       self.menusList[MENUS.File].addAction(actExportLog)
       self.menusList[MENUS.File].addAction(actCloseApp)
@@ -772,10 +781,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
          if reply[1]==True:
             TheSettings.set('DNAA_DeleteLevelDB', True)
-
-   #############################################################################
-   def networkReadyCallback(self):
-      self.loadWallets()
 
    #############################################################################
    def changeWltFilter(self):
@@ -1250,6 +1255,20 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       LOGDEBUG('openSettings')
       dlgSettings = DlgSettings(self, self)
       dlgSettings.exec_()
+
+   def openSetupManager(self):
+      LOGDEBUG('openSetupManager')
+      dlg = DlgSetupManager(self, self)
+      if dlg.exec_() != QtWidgets.QDialog.Accepted:
+         return
+
+      dbSettings = dlg.databaseTab.collectSettings()
+      if dbSettings['scenario'] == SCENARIO_DB_NONE:
+         CLI_OPTIONS.offline = True
+      elif dlg.connectionSuccess:
+         if not self.dbConnectionEstablishedBySetup:
+            self.dbConnectionEstablishedBySetup = True
+            self.registerWalletsWithService()
 
    ####################################################
    def setupSystemTray(self):
@@ -1814,17 +1833,8 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       self.promptMap = {}
 
    #############################################################################
-   def loadWallets(self):
-      def loadWltsLbd():
-         wltList = TheBridge.wltManager.listWallets()
-         wltsProto = TheBridge.wltManager.loadWallets()
-         self.wallets.setupFromProto(wltsProto)
-         self.setupBlockchainService_step1()
-         TheSignalExecution.executeMethod(self.finalizeLoadWallets)
-      TheSignalExecution.executeMethod(loadWltsLbd)
-
-   #############################################################################
    def finalizeLoadWallets(self):
+      self.initBlockchainService()
       self.walletModel.reset()
       if self.wallets.empty():
          self.execIntroDialog()
@@ -2193,7 +2203,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
                continue
 
             if wlt:
-               isWatch = (determineWalletType(wlt, self)[0] == WalletTypes.WatchOnly)
+               isWatch = (determineWalletType(wlt) == WalletTypes.WatchOnly)
                wltName = wlt.getDisplayStr(pref="")
                dispComment = self.getCommentForLE(le, wltID)
             else:
@@ -2748,9 +2758,17 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
          #is it legacy or modern?
          if wltData.which() == 'legacy':
-            #this is a legacy wallet, offer to migrate it
-            migrateDlg = DlgWalletMigration(self, self, filePath, wltData)
-            migrateDlg.exec_()
+            migrateDlg = DlgWalletMigration(
+               self, self, filePath, wltData)
+            if migrateDlg.exec_() \
+                  == QtWidgets.QDialog.Accepted:
+               QtWidgets.QMessageBox.information(
+                  self,
+                  self.tr('Restart Required'),
+                  self.tr(
+                     'Wallet migrated successfully. '
+                     'Restart Armory to see it in '
+                     'the wallet list.'))
          elif wltData.which() == 'locked':
             #wallet control header is locked, offer to unlock
             pass
@@ -3059,7 +3077,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             selectionMade = False
 
       if selectionMade:
-         wlttype = determineWalletType(wlt, self)[0]
          if ShowRecvCoinsWarningIfNecessary(wlt, self, self):
             QAPP.processEvents()
             dlg = DlgNewAddressDisp(wlt, self, self, loading)
@@ -4386,10 +4403,9 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
    #############################################################################
    def handleCppNotification(self, action, args):
-      if action == SETUP_STEP1:
+      if action == INIT_DB_READY:
          #Blockchain just finished loading, finish initializing UI and render
          #the ledgers
-
          self.nodeStatus = TheBridge.service.getNodeStatus()
          self.wallets.updateBalanceAndCount()
 
@@ -4563,7 +4579,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
       elif action == NODESTATUS_UPDATE:
          prevStatus = None
-         if self.nodeStatus is not None and hasattr(self.nodeStatus, 'node'):
+         if self.nodeStatus is not None:
             prevStatus = self.nodeStatus.node
          self.nodeStatus = args
 
@@ -4575,7 +4591,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
                      'receive bitcoins until connection is '
                      're-established.'),
                   QtWidgets.QSystemTrayIcon.Critical, 10000)
-            elif self.nodeStatus.node_state == NodeStatus_Online:
+            elif self.nodeStatus.node == 'online':
                self.showTrayMsg(self.tr('Connected'),
                   self.tr('Connection to Bitcoin Core '
                      're-established'),
@@ -4599,10 +4615,10 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          self.updateStatusBarText()
 
       #setup notifs
-      elif action == SETUP_STEP2:
-         self.setupBlockchainService_step2()
-      elif action == SETUP_STEP3:
-         self.setupBlockchainService_step3()
+      elif action == INIT_DB_CONNECTED:
+         self.registerWalletsWithService()
+      elif action == INIT_WALLETS_REGISTERED:
+         self.finalizeBlockchainSetup()
 
    #############################################################################
    def printAlert(self, moneyID, ledgerAmt, txAmt):
@@ -4778,7 +4794,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       minimize Armory, this method is for *really* closing Armory
       '''
 
-      self.setCursor(QtCore.Qt.WaitCursor)
       self.showShuttingDownMessage()
 
       try:
@@ -4799,7 +4814,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             LOGINFO('BDM is safe for clean shutdown')
 
          TheBDM.shutdown()
-         TheBridge.service.shutdown()
+         TheBridge.dbSetup.shutdown()
 
          # Remove Temp Modules Directory if it exists:
          if self.tempModulesDirName:
@@ -4842,23 +4857,33 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          self.macNotifHdlr.showNotification(dispTitle, dispText)
 
    #############################################################################
-   def setupBlockchainService_step1(self):
+   def initBlockchainService(self):
       if CLI_OPTIONS.offline:
          self.setDashboardDetails()
          return
-      TheBridge.service.setupDB()
+      if self.dbConnectionEstablishedBySetup:
+         LOGINFO("DB connected by setup manager, registering wallets")
+         self.registerWalletsWithService()
 
    #############################################################################
-   def setupBlockchainService_step2(self):
+   def registerWalletsWithService(self):
+      if self.walletsRegistered:
+         return
+      LOGINFO("Registering wallets with blockchain service")
+      self.walletsRegistered = True
       self.switchNetworkMode(NETWORKMODE.Full)
       TheBridge.service.registerWallets()
 
    #############################################################################
-   def setupBlockchainService_step3(self):
+   def finalizeBlockchainSetup(self):
+      if self.blockchainSetupComplete:
+         return
+      LOGINFO("Finalizing blockchain setup")
+      self.blockchainSetupComplete = True
       self.setupLedgerViews()
       self.loadBlockchainIfNecessary()
       self.setDashboardDetails()
-      TheBridge.service.goOnline()
+      TheBridge.dbSetup.goOnline()
 
    #############################################################################
    def setupLedgerViews(self):
@@ -5048,39 +5073,60 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
 ################################################################################
 if 1:
-   #setup splash screen
+   # 1) Show splash screen during actual loading (bridge startup)
    pixLogo = QtGui.QPixmap('./img/splashlogo.png')
    if USE_TESTNET or USE_REGTEST:
       pixLogo = QtGui.QPixmap('./img/splashlogo_testnet.png')
    SPLASH = ArmorySplashScreen(pixLogo)
    SPLASH.setMask(pixLogo.mask())
-
    SPLASH.show()
    QAPP.processEvents()
 
    # Will make this customizable
    QAPP.setFont(GETFONT('var'))
 
-   # Setup translations
+   # Setup translations before any dialogs
    translator = QtCore.QTranslator(QAPP)
-   app_dir = "./"
-   try:
-      app_dir = os.path.dirname(os.path.realpath(__file__))
-   except:
-      if OS_WINDOWS and getattr(sys, 'frozen', False):
-         app_dir = os.path.dirname(sys.executable)
-   translator.load(TheSettings.getGuiLanguage(), os.path.join(app_dir, "lang/"))
+   # Determine app directory for translations
+   app_dir = os.path.dirname(os.path.realpath(__file__))
+
+   translator.load(TheSettings.getGuiLanguage(),
+      os.path.join(app_dir, "lang/"))
    QAPP.installTranslator(translator)
 
-   #setup main dialog
-   armoryMainWindow = ArmoryMainWindow(splashScreen=SPLASH)
+   # 2) Start bridge with ready handler - sequential process per maintainer
+   dlg = DlgSetupManager(parent=None, main=None)
 
-   #start cppbridge
-   TheBDM.startBridge(getBridgeArgList(), armoryMainWindow.networkReadyCallback)
+   def bridgeReadyHandler():
+      # Bridge is ready - explicitly call wallet listing and close splash
+      TheSignalExecution.executeMethod(dlg.onBridgeReady)
+      def closeSplash():
+         SPLASH.close()
+      TheSignalExecution.executeMethod(closeSplash)
 
-   #show main dialog
+   # Build bridge args - basic startup only, DB connection via bridge API later
+   bridgeArgs = getBridgeArgList()
+   TheBDM.startBridge(bridgeArgs, bridgeReadyHandler)
+
+   # Show setup manager (wallet list will populate when bridge ready)
+   if dlg.exec_() != QtWidgets.QDialog.Accepted:
+      TheBridge.dbSetup.shutdown()
+      sys.exit(1)
+
+   dbSettings = dlg.databaseTab.collectSettings()
+   if dbSettings['scenario'] == SCENARIO_DB_NONE:
+      CLI_OPTIONS.offline = True
+
+   dbConnectionEstablished = (
+      dlg.connectionSuccess
+      and dbSettings['scenario'] != SCENARIO_DB_NONE
+   )
+
+   wallets = loadWalletsForMainApp()
+   armoryMainWindow = ArmoryMainWindow(wallets)
+   armoryMainWindow.dbConnectionEstablishedBySetup = dbConnectionEstablished
+   TheSignalExecution.executeMethod(armoryMainWindow.finalizeLoadWallets)
    armoryMainWindow.show()
 
-   SPLASH.finish(armoryMainWindow)
    QAPP.setQuitOnLastWindowClosed(True)
    os._exit(QAPP.exec_())

@@ -9,27 +9,95 @@
 #include <cstring>
 #include <filesystem>
 #include <string_view>
+#include <algorithm>
+#include <cstring>
 
 #include "Manager.h"
-#include "Utils/BtcUtils.h"
-#include "Utils/DBUtils.h"
+#include <Utils/BtcUtils.h>
+#include <Utils/DBUtils.h>
+#include <Ledgers/LedgerEntry.h>
+#include <Ledgers/Context.h>
+#include <AsyncClient.h>
+#include <BlockchainDatabase/txio.h>
 
-#include "Wallets/Wallets.h"
-#include "Wallets/IOHeader.h"
-#include "Wallets/Accounts/AddressAccounts.h"
-#include "Wallets/Seeds/Backups.h"
-#include "Wallets/Seeds/Seeds.h"
+#include <Wallets/Wallets.h>
+#include <Wallets/IOHeader.h>
+#include <Wallets/Accounts/AddressAccounts.h>
+#include <Wallets/Seeds/Backups.h>
+#include <Wallets/Seeds/Seeds.h>
+#include <Wallets/EncryptedDB.h>
 
 #include "Notifications.h"
+#include "TxIOCache.h"
 #include "../PassphrasePrompt.h"
-#include "AsyncClient.h"
 
 using namespace Armory;
 using namespace Armory::Bridge;
 using namespace std::string_view_literals;
 using namespace std::chrono_literals;
 
-#include "capnp/Bridge.capnp.h"
+namespace
+{
+   const std::string mainDelegateId = "mainDelegateId";
+
+   std::vector<Ledgers::Entry> getPageForId(WalletManager* mgr, uint32_t pageId)
+   {
+      ReentrantLock lock(mgr);
+
+      std::vector<std::map<BinaryData, Ledgers::Entry>> walletLedgers;
+      unsigned totalSize = 0;
+      walletLedgers.reserve(mgr->getWalletContainerMap().size());
+      for (const auto& wltCont : mgr->getWalletContainerMap()) {
+         const auto txioMap = wltCont.second->getTxioMap();
+         auto context = Ledgers::prepareContext(txioMap, mgr->getDbCache(), {});
+         walletLedgers.emplace_back(std::move(Ledgers::computeLedgerMap(
+            txioMap, 0, UINT32_MAX, wltCont.first, context)));
+         totalSize += walletLedgers.back().size();
+      }
+
+      std::vector<Ledgers::Entry> result;
+      result.reserve(totalSize);
+      for (auto& ledgers : walletLedgers) {
+         for (auto& lePair : ledgers) {
+            result.emplace_back(std::move(lePair.second));
+         }
+      }
+      std::sort(result.begin(), result.end(), Ledgers::DescendingOrder{});
+      return result;
+   }
+
+   std::vector<Ledgers::Entry> getLedgersForZCs(WalletManager* mgr)
+   {
+      //this is only used to generate ledgers for ZC notifs
+      auto txioCache = mgr->txioCache();
+      std::vector<std::map<BinaryData, Ledgers::Entry>> walletLedgers;
+      unsigned totalSize = 0;
+      walletLedgers.reserve(mgr->getWalletContainerMap().size());
+      for (const auto& wltCont : mgr->getWalletContainerMap()) {
+         const auto& txioMap = txioCache->getZcTxios(
+            [wltPtr=wltCont.second](const BinaryData& addr)->bool
+            { return wltPtr->hasScrAddr(addr); }
+         );
+         auto context = Ledgers::prepareContext(txioMap, mgr->getDbCache(), {});
+         walletLedgers.emplace_back(std::move(Ledgers::computeLedgerMap(
+            txioMap, 0, UINT32_MAX, wltCont.first, context)));
+         totalSize += walletLedgers.back().size();
+      }
+
+      std::vector<Ledgers::Entry> result;
+      result.reserve(totalSize);
+      for (auto& ledgers : walletLedgers) {
+         for (auto& lePair : ledgers) {
+            if (lePair.second.getBlockNum() != UINT32_MAX) {
+               continue;
+            }
+            result.emplace_back(std::move(lePair.second));
+         }
+      }
+      std::sort(result.begin(), result.end(), Ledgers::DescendingOrder{});
+      return result;
+   }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 ////
@@ -44,12 +112,26 @@ WalletManager::WalletManager(const std::filesystem::path& path) :
       LOGERR << err;
       throw std::runtime_error(err);
    }
+
+   //setup primary ledger delegate
+   txioCache_ = std::make_shared<TxIOCache>();
+   delegateMap_.emplace(mainDelegateId, Ledgers::Delegate{
+      [this](uint32_t pageId)->std::vector<Ledgers::Entry>{
+         return getPageForId(this, pageId);
+      }, nullptr, nullptr,
+      []()->uint32_t { return 1; }
+   });
 }
 
 ////
 const std::filesystem::path& WalletManager::getWalletDir() const
 {
    return path_;
+}
+
+std::shared_ptr<const TxIOCache> WalletManager::txioCache() const
+{
+   return std::const_pointer_cast<const TxIOCache>(txioCache_);
 }
 
 ////
@@ -60,22 +142,31 @@ bool WalletManager::hasWallet(const Wallets::WalletId& id)
    return wltIter != wallets_.end();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-std::map<Wallets::WalletId, std::set<Wallets::AddressAccountId>>
-WalletManager::getAccountIdMap() const
+const std::map<std::string, std::shared_ptr<WalletContainer>>&
+WalletManager::getWalletContainerMap() const
 {
-   std::map<Wallets::WalletId, std::set<Wallets::AddressAccountId>> result;
-   for (const auto& wltIt : wallets_) {
-      auto wltIter = result.emplace(
-         wltIt.first, std::set<Wallets::AddressAccountId>{});
-      for (const auto& accIt : wltIt.second) {
-         wltIter.first->second.emplace(accIt.first);
-      }
+   return walletsByDbId_;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+std::set<Wallets::AddressAccountId> WalletManager::getAddressAccountIds(
+   const Wallets::WalletId& wltId) const
+{
+   auto iter = wallets_.find(wltId);
+   if (iter == wallets_.end()) {
+      std::string errStr{"no wallet for id "sv};
+      errStr += wltId;
+      throw std::runtime_error(errStr);
+   }
+
+   std::set<Wallets::AddressAccountId> result;
+   for (const auto& accPair : iter->second) {
+      result.emplace(accPair.first);
    }
    return result;
 }
 
-////////////////////////////////////////////////////////////////////////////////
 std::shared_ptr<WalletContainer> WalletManager::getWalletContainer(
    const Wallets::WalletId& wltId) const
 {
@@ -126,30 +217,22 @@ void WalletManager::setupBdvCallback(
    The handler is very simple for now: either pass a capnp message along
    to the client or call updateStateFromDB.
    ***/
-   auto pushNotif = [writeFunc, this](NotifStruct notif)->void
+   auto pushNotif = [writeFunc, this](std::shared_ptr<NotifStruct> notif)
    {
-      switch (notif.type)
+      switch (notif->type)
       {
          case NotifType::PUSH:
          {
-            if (notif.packet.empty()) {
+            auto pushPtr = std::dynamic_pointer_cast<NotifStruct_Push>(notif);
+            if (pushPtr == nullptr || pushPtr->packet.empty()) {
                throw std::runtime_error("empty packet in push notif!");
             }
-            writeFunc(notif.packet);
-            return;
-         }
-
-         case NotifType::UPDATE:
-         {
-            if (notif.lbd == nullptr) {
-               throw std::runtime_error("notif lbd is not set!");
-            }
-            updateStateFromDB(notif.lbd);
+            writeFunc(pushPtr->packet);
             return;
          }
 
          default:
-            throw std::runtime_error("invalid pushNotif type");
+            updateStateFromDB(notif);
       }
    };
    callbackPtr_ = std::make_shared<Callback>(pushNotif);
@@ -171,6 +254,7 @@ void WalletManager::setBdvPtr(
          accIt.second->setBdvPtr(bdvPtr);
       }
    }
+   callbackPtr_->notifySetupDone();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -194,10 +278,9 @@ void WalletManager::registerWallet(const Wallets::WalletId& wltId,
    try {
       callbackPtr_->registerRefreshCallback(dbId,
          [this, dbId]() {
-            updateStateFromDB(
-               [this, dbId]() {
-                  callbackPtr_->notifyRefresh({dbId});
-               });
+            updateStateFromDB(std::make_shared<NotifStruct_Refresh>(
+               [this, dbId]() { callbackPtr_->notifyRefresh({dbId}); }
+            ));
          });
       container->registerWithBDV(isNew);
    } catch (const OfflineException& e) {
@@ -226,7 +309,7 @@ std::shared_ptr<WalletContainer> WalletManager::addAccount(
    }
 
    //create wrapper object
-   auto wltContPtr = new WalletContainer(wltPtr->getID(), accId);
+   auto wltContPtr = new WalletContainer(wltPtr->getID(), accId, txioCache_);
    std::shared_ptr<WalletContainer> wltCont;
    wltCont.reset(wltContPtr);
 
@@ -254,7 +337,8 @@ void WalletManager::addAllAccounts(std::shared_ptr<Wallets::AssetWallet> wltPtr)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<WalletContainer> WalletManager::createNewWallet(
+Wallets::WalletId WalletManager::createNewWallet(
+   Seeds::SeedType sType,
    const SecureBinaryData& extraEntropy,
    const Wallets::IO::CreateWalletParams& params)
 {
@@ -264,11 +348,57 @@ std::shared_ptr<WalletContainer> WalletManager::createNewWallet(
       root.XOR(hashTropy);
    }
 
-   auto seed = std::make_unique<Seeds::ClearTextSeed_Armory>(
-      root, SecureBinaryData{}, Seeds::LegacyType::Armory200);
-   auto wallet = Wallets::AssetWallet_Single::createFromSeed(
-      std::move(seed), params);
-   return addAccount(wallet, wallet->getMainAccountID());
+   switch (sType)
+   {
+      case Seeds::SeedType::ArmoryLegacy:
+      {
+         auto seed = std::make_unique<Seeds::ClearTextSeed_Armory>(
+            root, SecureBinaryData{}, Seeds::LegacyType::Armory200);
+         auto wallet = Wallets::AssetWallet_Single::createFromSeed(
+            std::move(seed), params);
+
+         //add wallet path to file map, so that it doesn't appear in
+         //subsequent calls to listWallets
+         auto wltPath = wallet->getDbFilename();
+         walletFiles_.emplace(
+            wltPath.filename().string(),
+            std::make_shared<LMDBWalletInfo>(wltPath, nullptr, true)
+         );
+
+         //put first address in use, or the GUI will have nothing to display
+         auto accPtr = wallet->getAccountForID(wallet->getMainAccountID());
+         accPtr->getNewAddress(wallet->getIface());
+         addAccount(wallet, wallet->getMainAccountID());
+         return wallet->getID();
+      }
+
+      case Seeds::SeedType::BIP32_Structured:
+      case Seeds::SeedType::BIP32_Virgin:
+      {
+         auto seed = std::make_unique<Seeds::ClearTextSeed_BIP32>(
+            root, sType);
+         auto wallet = Wallets::AssetWallet_Single::createFromSeed(
+            std::move(seed), params);
+
+         //add wallet path to file map
+         auto wltPath = wallet->getDbFilename();
+         walletFiles_.emplace(
+            wltPath.filename().string(),
+            std::make_shared<LMDBWalletInfo>(wltPath, nullptr, true)
+         );
+
+         //put first address in use for each account
+         for (const auto& accId : wallet->getAccountIDs()) {
+            auto accPtr = wallet->getAccountForID(accId);
+            accPtr->getNewAddress(wallet->getIface());
+            addAccount(wallet, accId);
+         }
+         return wallet->getID();
+      }
+
+      default:
+         throw std::runtime_error("unsupported seed type");
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -288,6 +418,7 @@ std::filesystem::path WalletManager::unloadWallet(
          if (path.empty()) {
             path = acc.second->getWalletPtr()->getDbFilename();
          }
+         walletsByDbId_.erase(acc.second->getDbId());
          acc.second->unregisterFromBDV();
       } catch (const OfflineException&) {
          //we do not care if the unregister operation fails
@@ -299,7 +430,7 @@ std::filesystem::path WalletManager::unloadWallet(
    return path;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////
 void WalletManager::deleteWallet(const Wallets::WalletId& wltId)
 {
    ReentrantLock lock(this);
@@ -318,7 +449,7 @@ void WalletManager::loadWallet(const Wallets::IO::ReadOnlyFileParams& params)
    addAllAccounts(wltPtr);
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 void WalletManager::loadAFile(const std::filesystem::path& path)
 {
    ReentrantLock lock(this);
@@ -339,6 +470,10 @@ void WalletManager::loadAFile(const std::filesystem::path& path)
          path.filename().string(),
          std::make_shared<LMDBWalletInfo>(path, nullptr)
       );
+   } catch (const Wallets::IO::NoEntryInWalletException&) {
+      //wallet is missing a mandatory entry, typically a header
+      LOGWARN << "failed to open wallet \"" << path.string()
+         << "\" with missing entry error";
    }
 }
 
@@ -550,36 +685,59 @@ void WalletManager::loadWallets()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void WalletManager::updateStateFromDB(const std::function<void(void)>& callback)
+void WalletManager::updateStateFromDB(std::shared_ptr<NotifStruct> notif)
 {
-   auto lbd = [this, callback](void)->void
+   auto lbd = [this, notif](void)->void
    {
-      ReentrantLock lock(this);
+      //update txio cache
+      auto checkFromHeight = txioCache_->update(bdvPtr_, notif);
 
-      //grab wallet balances
-      auto promBal = std::make_shared<std::promise<std::map<
-         std::string, AsyncClient::CombinedBalances>>>();
-      auto futBal = promBal->get_future();
-      auto lbdBal = [promBal]
-         (ReturnMessage<std::map<std::string, AsyncClient::CombinedBalances>> result)->void
+      //resolve wallets
       {
-         promBal->set_value(result.get());
-      };
-      bdvPtr_->getCombinedBalances(lbdBal);
-      auto balances = std::move(futBal.get());
+         ReentrantLock lock(this);
+         for (auto wltCont : walletsByDbId_) {
+            wltCont.second->resolveTxios(checkFromHeight);
+            wltCont.second->resolveZcTxios();
 
-      //update wallet balances
-      for (const auto& wltBalance : balances) {
-         auto wltContIter = walletsByDbId_.find(wltBalance.first);
-         if (wltContIter == walletsByDbId_.end()) {
-            continue;
+            if (notif->syncWalletState()) {
+               wltCont.second->synchronizeAddressChainState();
+            }
          }
-         wltContIter->second->updateWalletBalanceState(wltBalance.second);
-         wltContIter->second->updateAddressCountState(wltBalance.second);
       }
 
-      //fire the lambda
-      callback();
+      //fire callback
+      switch (notif->type)
+      {
+         case NotifType::NEWBLOCK:
+         {
+            auto blockPtr =
+               std::dynamic_pointer_cast<NotifStruct_NewBlock>(notif);
+            blockPtr->callback();
+            break;
+         }
+
+         case NotifType::REFRESH:
+         {
+            auto refreshPtr =
+               std::dynamic_pointer_cast<NotifStruct_Refresh>(notif);
+            refreshPtr->callback();
+            break;
+         }
+
+         case NotifType::ZC:
+         {
+            //get ledgers for the zc txios
+            auto ledgers = getLedgersForZCs(this);
+
+            //feed them to callback
+            auto zcPtr = std::dynamic_pointer_cast<NotifStruct_ZC>(notif);
+            zcPtr->callback(ledgers, zcPtr->invalidatedZCs);
+            break;
+         }
+
+         default:
+            return;
+      }
    };
 
    std::thread thr(lbd);
@@ -619,7 +777,9 @@ std::shared_ptr<AddressEntry> WalletManager::getNewAddress(
    const Wallets::AddressAccountId& accId,
    uint32_t addrType, uint32_t addrKind)
 {
-   using namespace Armory::Codec::Bridge;
+   #define ADDRESS_NEW     0
+   #define ADDRESS_CHANGE  1
+   #define ADDRESS_PEEK    2
 
    bool wasExtended = false;
    auto progFunc = [&wasExtended](int)
@@ -634,21 +794,21 @@ std::shared_ptr<AddressEntry> WalletManager::getNewAddress(
    std::shared_ptr<AddressEntry> addrPtr;
    switch (addrKind)
    {
-      case WalletRequest::AddressRequest::NEW:
+      case ADDRESS_NEW:
       {
          addrPtr = accPtr->getNewAddress(
             wltPtr->getIface(), (AddressEntryType)addrType, progFunc);
          break;
       }
 
-      case WalletRequest::AddressRequest::CHANGE:
+      case ADDRESS_CHANGE:
       {
          addrPtr = accPtr->getNewChangeAddress(
             wltPtr->getIface(), (AddressEntryType)addrType, progFunc);
          break;
       }
 
-      case WalletRequest::AddressRequest::PEEK_CHANGE:
+      case ADDRESS_PEEK:
       {
          addrPtr = accPtr->peekNextChangeAddress(
             wltPtr->getIface(), (AddressEntryType)addrType, progFunc);
@@ -668,4 +828,91 @@ std::shared_ptr<AddressEntry> WalletManager::getNewAddress(
       }
    }
    return addrPtr;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// chain state stuff
+std::shared_ptr<const Ledgers::DBCache> WalletManager::getDbCache() const
+{
+   return txioCache_->getDBCache();
+}
+
+const std::string& WalletManager::getDelegateId()
+{
+   return mainDelegateId;
+}
+
+const std::string& WalletManager::getDelegateIdForWallet(
+   const Wallets::WalletId& wltId, const Wallets::AddressAccountId& accId)
+{
+   auto iter = delegateMap_.emplace(
+      Cryptography::PRNG::fortuna.generateRandom(5).toHexStr(),
+      Ledgers::Delegate{ [this, wltId, accId](uint32_t pageId)->
+         std::vector<Ledgers::Entry> {
+         auto wltCont = this->getWalletContainer(wltId, accId);
+         const auto txioMap = wltCont->getTxioMap();
+         auto context = Ledgers::prepareContext(txioMap,
+            this->getDbCache(), {});
+         auto ledgers = Ledgers::computeLedgerMap(txioMap,
+            0, UINT32_MAX, wltId, context);
+
+         std::vector<Ledgers::Entry> result;
+         result.reserve(ledgers.size());
+         for (auto& ledger : ledgers) {
+            result.emplace_back(std::move(ledger.second));
+         }
+         std::sort(result.begin(), result.end(), Ledgers::DescendingOrder{});
+         return result;
+      }, nullptr, nullptr,
+      []()->uint32_t { return 1; }
+   });
+   return iter.first->first;
+}
+
+const std::string& WalletManager::getDelegateIdForScrAddr(
+   const Wallets::WalletId& wltId, const Wallets::AddressAccountId& accId,
+   const BinaryData& scrAddr)
+{
+   auto iter = delegateMap_.emplace(
+      Cryptography::PRNG::fortuna.generateRandom(5).toHexStr(),
+      Ledgers::Delegate{ [this, wltId, accId, scrAddr](uint32_t pageId)->
+         std::vector<Ledgers::Entry> {
+         auto wltCont = this->getWalletContainer(wltId, accId);
+         const auto txioMap = wltCont->getTxioMap();
+         auto context = Ledgers::prepareContext(txioMap,
+            this->getDbCache(), {scrAddr});
+         auto ledgers = Ledgers::computeLedgerMap(txioMap,
+            0, UINT32_MAX, wltId, context);
+
+         std::vector<Ledgers::Entry> result;
+         result.reserve(ledgers.size());
+         for (auto& ledger : ledgers) {
+            result.emplace_back(std::move(ledger.second));
+         }
+         std::sort(result.begin(), result.end(), Ledgers::DescendingOrder{});
+         return result;
+      }, nullptr, nullptr,
+      []()->uint32_t { return 1; }
+   });
+   return iter.first->first;
+}
+
+////////
+uint32_t WalletManager::getPageCountForDelegate(const std::string& id) const
+{
+   auto iter = delegateMap_.find(id);
+   if (iter == delegateMap_.end()) {
+      throw std::runtime_error(std::string{"invalid delegate id: " + id});
+   }
+   return iter->second.getPageCount();
+}
+
+std::vector<Ledgers::Entry> WalletManager::getPageForDelegate(
+   const std::string& id, uint32_t pageId) const
+{
+   auto iter = delegateMap_.find(id);
+   if (iter == delegateMap_.end()) {
+      throw std::runtime_error(std::string{"invalid delegate id: " + id});
+   }
+   return iter->second.getHistoryPage(pageId);
 }

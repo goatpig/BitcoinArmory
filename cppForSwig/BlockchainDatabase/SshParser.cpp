@@ -8,6 +8,7 @@
 
 #include "SshParser.h"
 #include <Utils/DBUtils.h>
+#include "txio.h"
 #include "StoredBlockObj.h"
 
 using namespace Armory;
@@ -24,7 +25,7 @@ SubSshParserResult parseSubSsh(
    do {
       while (sshIter->isValid()) {
          if (sshPtr != nullptr &&
-            sshIter->getKeyRef().contains(sshPtr->uniqueKey_)) {
+            sshIter->getKeyRef().contains(sshPtr->uniqueKey)) {
             break;
          }
 
@@ -49,7 +50,7 @@ SubSshParserResult parseSubSsh(
 
          //get what's already in the db
          sshPtr = &sshMap[sshKey];
-         sshPtr->uniqueKey_ = sshKey;
+         sshPtr->uniqueKey = sshKey;
 
          if (scanFrom <= 0) {
             break;
@@ -80,14 +81,14 @@ SubSshParserResult parseSubSsh(
       subssh.unserializeDBKey(sshIter->getKeyRef());
 
       //check dupID
-      if (getDupIDForHeight(subssh.height_) != subssh.dupID_) {
+      if (getDupIDForHeight(subssh.height) != subssh.dupID) {
          continue;
       }
       subssh.unserializeDBValue(sshIter->getValueRef());
 
       std::set<BinaryData> txSet;
       size_t extraTxioCount = 0;
-      for (auto& txioPair : subssh.txioMap_) {
+      for (auto& txioPair : subssh.txioMap) {
          auto keyOfOutput = txioPair.second.getDBKeyOfOutput();
          if (resolveHashes) {
             auto txKey = keyOfOutput.getSliceRef(0, 6);
@@ -107,21 +108,21 @@ SubSshParserResult parseSubSsh(
 
                if (resolveHashes) {
                   //this is to resolve output references in transaction build from
-                  //multiple wallets (i.ei coinjoin)
+                  //multiple wallets (i.e coinjoin)
                   txnsToResolve.emplace(keyOfInput.getSliceRef(0, 6));
                }
-               sshPtr->totalUnspent_ -= txioPair.second.getValue();
+               sshPtr->totalUnspent -= txioPair.second.getValue();
             } else {
-               sshPtr->totalUnspent_ += txioPair.second.getValue();
+               sshPtr->totalUnspent += txioPair.second.getValue();
             }
          }
       }
 
       //txio count
-      sshPtr->totalTxioCount_ += subssh.txioCount_ + extraTxioCount;
+      sshPtr->totalTxioCount += subssh.txioCount + extraTxioCount;
 
       //build subssh summary
-      sshPtr->subsshSummary_[subssh.height_] = subssh.txioCount_;
+      sshPtr->subsshSummary[subssh.height] = subssh.txioCount;
    } while (sshIter->advanceAndRead());
 
    return SubSshParserResult{
@@ -369,7 +370,7 @@ void ShardedSshParser::mapSubSshDBThread(unsigned index)
    auto& sshMapping = mappingResults_[index];
 
    auto subssh_sdbi = db_->getStoredDBInfo(DB_SELECT::SUBSSH, 0);
-   auto top_id = subssh_sdbi.metaInt_;
+   auto top_id = subssh_sdbi.metaInt;
    auto current_id = mapCount_.fetch_add(1, std::memory_order_relaxed);
 
    while (current_id <= top_id) {
@@ -454,7 +455,7 @@ void ShardedSshParser::parseSshThread()
 {
    //get top batch id
    auto subssh_sdbi = db_->getStoredDBInfo(DB_SELECT::SUBSSH, 0);
-   auto id_max = subssh_sdbi.metaInt_;
+   auto id_max = subssh_sdbi.metaInt;
 
    //seek lambda
    auto seekToBoundsStart = [](LDBIter* iterPtr,
@@ -571,9 +572,9 @@ void ShardedSshParser::parseSshThread()
             auto ssh_iter = sshMap.find(scrAddrRef);
             if (ssh_iter == sshMap.end()) {
                StoredScriptHistory sshNew;
-               sshNew.uniqueKey_ = scrAddrRef;
+               sshNew.uniqueKey = scrAddrRef;
                ssh_iter = sshMap.emplace(
-                  sshNew.uniqueKey_.getRef(), std::move(sshNew)).first;
+                  sshNew.uniqueKey.getRef(), std::move(sshNew)).first;
             }
             auto& ssh = ssh_iter->second;
 
@@ -652,14 +653,14 @@ void ShardedSshParser::parseSshThread()
                if (!checkDupId(subsshHeight, subssh_dupid) && !undo_) {
                   continue;
                }
-               ssh.totalUnspent_ += totalValue;
+               ssh.totalUnspent += totalValue;
                totalTxioCount += txio_count + extraTxCount;
             }
 
             //tally count
             if (totalTxioCount > 0) {
-               ssh.totalTxioCount_ += totalTxioCount;
-               ssh.subsshSummary_[current_id] = totalTxioCount;
+               ssh.totalTxioCount += totalTxioCount;
+               ssh.subsshSummary[current_id] = totalTxioCount;
             }
          } while (dbIter->advanceAndRead());
 
@@ -693,7 +694,7 @@ void ShardedSshParser::parseSshThread()
             } else {
                dbSsh.substractSummary(subIter->second);
                substractedMap.emplace(
-                  dbSsh.uniqueKey_.getRef(), std::move(dbSsh));
+                  dbSsh.uniqueKey.getRef(), std::move(dbSsh));
                sshMap.erase(subIter++);
             }
          } while (subIter != sshMap.end());

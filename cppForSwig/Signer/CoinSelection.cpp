@@ -13,6 +13,7 @@
 #include <Utils/BtcUtils.h>
 #include <Utils/BitcoinSettings.h>
 #include <Wallets/Wallets.h>
+#include "ScriptRecipient.h"
 
 using namespace Armory;
 using namespace Armory::CoinSelection;
@@ -75,9 +76,31 @@ std::vector<UTXO> RestrictedUtxoSet::getUtxoSelection() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// CoinSelection
-std::vector<UTXO> Armory::CoinSelection::CoinSelection::checkForRecipientReuse(
-   PaymentStruct& payStruct, const std::vector<UTXO>& utxoVec)
+// Selector
+Selector::Selector(std::function<std::vector<UTXO>(uint64_t val)> func,
+   const std::vector<AddressBookEntry>& addrBook,
+   uint64_t spendableValue, uint32_t topHeight) :
+   getUTXOsForVal_(func),
+   spendableValue_(spendableValue),
+   topHeight_(topHeight)
+{
+   //for random shuffling
+   srand(time(0));
+   for (const auto& entry : addrBook) {
+      addrBook_.emplace(entry);
+   }
+}
+
+void Selector::rethrow() const
+{
+   if (except_ptr_ != nullptr) {
+      std::rethrow_exception(except_ptr_);
+   }
+}
+
+////////
+std::vector<UTXO> Selector::checkForRecipientReuse(
+   PaymentStruct& payStruct, const std::vector<UTXO>& utxoVec) const
 {
    //look for recipient reuse
    auto getUtxoLambda = getUTXOsForVal_;
@@ -143,8 +166,13 @@ std::vector<UTXO> Armory::CoinSelection::CoinSelection::checkForRecipientReuse(
    return r_utxos.getUtxoSelection();
 }
 
+<<<<<<< HEAD
 ////////////////////////////////////////////////////////////////////////////////
 UtxoSelection Armory::CoinSelection::CoinSelection::getUtxoSelectionForRecipients(
+=======
+////////
+UtxoSelection Selector::getUtxoSelectionForRecipients(
+>>>>>>> upstream/dev
    PaymentStruct& payStruct, const std::vector<UTXO>& utxoVec)
 {
    try {
@@ -166,9 +194,14 @@ UtxoSelection Armory::CoinSelection::CoinSelection::getUtxoSelectionForRecipient
    }
 }
 
+<<<<<<< HEAD
 ////////////////////////////////////////////////////////////////////////////////
 UtxoSelection Armory::CoinSelection::CoinSelection::getUtxoSelection(
    PaymentStruct& payStruct, const std::vector<UTXO>& utxoVec)
+=======
+UtxoSelection Selector::getUtxoSelection(
+   PaymentStruct& payStruct, const std::vector<UTXO>& utxoVec) const
+>>>>>>> upstream/dev
 {
    if (utxoVec.empty()) {
       throw CoinSelectionException("cannot select from empty utxos");
@@ -297,8 +330,12 @@ UtxoSelection Armory::CoinSelection::CoinSelection::getUtxoSelection(
    return *selectPtr;
 }
 
+<<<<<<< HEAD
 ////////////////////////////////////////////////////////////////////////////////
 void Armory::CoinSelection::CoinSelection::updateUtxoVector(uint64_t value)
+=======
+void Selector::updateUtxoVector(uint64_t value)
+>>>>>>> upstream/dev
 {
    if (utxoVecValue_ >= value) {
       return;
@@ -311,8 +348,12 @@ void Armory::CoinSelection::CoinSelection::updateUtxoVector(uint64_t value)
    }
 }
 
+<<<<<<< HEAD
 ////////////////////////////////////////////////////////////////////////////////
 uint64_t Armory::CoinSelection::CoinSelection::tallyValue(
+=======
+uint64_t Selector::tallyValue(
+>>>>>>> upstream/dev
    const std::vector<UTXO>& utxoVec)
 {
    uint64_t val = 0;
@@ -322,8 +363,12 @@ uint64_t Armory::CoinSelection::CoinSelection::tallyValue(
    return val;
 }
 
+<<<<<<< HEAD
 ////////////////////////////////////////////////////////////////////////////////
 uint64_t Armory::CoinSelection::CoinSelection::getFeeForMaxVal(
+=======
+uint64_t Selector::getFeeForMaxVal(
+>>>>>>> upstream/dev
    size_t txOutSize, float fee_byte,
    const std::vector<UTXO>& coinControlVec)
 {
@@ -358,10 +403,14 @@ uint64_t Armory::CoinSelection::CoinSelection::getFeeForMaxVal(
    return fee;
 }
 
+<<<<<<< HEAD
 ////////////////////////////////////////////////////////////////////////////////
 void Armory::CoinSelection::CoinSelection::fleshOutSelection(
+=======
+void Selector::fleshOutSelection(
+>>>>>>> upstream/dev
    const std::vector<UTXO>& utxoVec,
-   UtxoSelection& utxoSelect, PaymentStruct& payStruct)
+   UtxoSelection& utxoSelect, PaymentStruct& payStruct) const
 {
    //TODO: this is specialized for fee_byte, add a flat fee spec as well
    auto newOutputCount = payStruct.getRecipientCount();

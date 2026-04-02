@@ -13,6 +13,7 @@
 #include <Utils/ArmoryConfig.h>
 #include <Utils/DBUtils.h>
 #include <Utils/UniversalTimer.h>
+#include <Ledgers/LedgerEntry.h>
 
 #include <Wallets/Seeds/Seeds.h>
 #include <Wallets/IOHeader.h>

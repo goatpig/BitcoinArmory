@@ -23,60 +23,67 @@ class AlreadyPagedException
 {};
 
 class BinaryData;
-class LedgerEntry;
 class Blockchain;
 class TxIOPair;
 
-class HistoryPager
+namespace Armory
 {
-private:
-   struct Page
+   namespace Ledgers
    {
-      uint32_t blockStart;
-      uint32_t blockEnd;
-      uint32_t count;
-      unsigned updateID = UINT32_MAX;
-      Armory::Threading::TransactionalMap<BinaryData, LedgerEntry> pageLedgers;
+      class Entry;
 
-      Page(void);
-      Page(uint32_t, uint32_t, uint32_t);
+      class HistoryPager
+      {
+      private:
+         struct Page
+         {
+            uint32_t blockStart;
+            uint32_t blockEnd;
+            uint32_t count;
+            unsigned updateID = UINT32_MAX;
+            Threading::TransactionalMap<BinaryData, Entry> pageLedgers;
 
-      bool operator< (const Page&) const;
-      static bool comparator(
-         const std::shared_ptr<Page>&,
-         const std::shared_ptr<Page>&
-      );
-   };
+            Page(void);
+            Page(uint32_t, uint32_t, uint32_t);
 
-   std::shared_ptr<std::atomic<bool>> isInitialized_;
-   std::shared_ptr<std::vector<std::shared_ptr<Page>>> pages_;
-   std::map<uint32_t, uint32_t> SSHsummary_;
-   static uint32_t txnPerPage_;
+            bool operator<(const Page&) const;
+            static bool comparator(
+               const std::shared_ptr<Page>&,
+               const std::shared_ptr<Page>&
+            );
+         };
 
-public:
-   HistoryPager(void);
-   void reset(void);
-   bool isInitiliazed(void) const;
+         std::shared_ptr<std::atomic<bool>> isInitialized_;
+         std::shared_ptr<std::vector<std::shared_ptr<Page>>> pages_;
+         std::map<uint32_t, uint32_t> SSHsummary_;
+         static uint32_t txnPerPage_;
 
-   std::shared_ptr<const std::map<BinaryData, LedgerEntry>>
-   getPageLedgerMap(
-      std::function<std::map<BinaryData, TxIOPair>(uint32_t, uint32_t)>,
-      std::function<std::map<BinaryData, LedgerEntry>(
-         const std::map<BinaryData, TxIOPair>&, uint32_t, uint32_t)>,
-      uint32_t, unsigned, std::map<BinaryData, TxIOPair>* = nullptr);
-   std::shared_ptr<const std::map<BinaryData, LedgerEntry>>
-   getPageLedgerMap(uint32_t);
+      public:
+         HistoryPager(void);
+         void reset(void);
+         bool isInitiliazed(void) const;
 
-   void addPage(std::vector<std::shared_ptr<Page>>&,
-      uint32_t, uint32_t, uint32_t);
-   void sortPages(std::vector<std::shared_ptr<Page>>&);
+         std::shared_ptr<const std::map<BinaryData, Entry>>
+         getPageLedgerMap(
+            std::function<std::map<BinaryData, TxIOPair>(uint32_t, uint32_t)>,
+            std::function<std::map<BinaryData, Entry>(
+               const std::map<BinaryData, TxIOPair>&, uint32_t, uint32_t)>,
+            uint32_t, unsigned, std::map<BinaryData, TxIOPair>* = nullptr);
+         std::shared_ptr<const std::map<BinaryData, Entry>>
+         getPageLedgerMap(uint32_t);
 
-   bool mapHistory(std::function<std::map<uint32_t, uint32_t>(void)>);
-   const std::map<uint32_t, uint32_t>& getSSHsummary(void) const;
+         void addPage(std::vector<std::shared_ptr<Page>>&,
+            uint32_t, uint32_t, uint32_t);
+         void sortPages(std::vector<std::shared_ptr<Page>>&);
 
-   uint32_t getPageBottom(uint32_t) const;
-   size_t   getPageCount(void) const;
-   uint32_t getRangeForHeightAndCount(uint32_t, uint32_t) const;
-   uint32_t getBlockInVicinity(uint32_t) const;
-   uint32_t getPageIdForBlockHeight(uint32_t) const;
-};
+         bool mapHistory(std::function<std::map<uint32_t, uint32_t>(void)>);
+         const std::map<uint32_t, uint32_t>& getSSHsummary(void) const;
+
+         uint32_t getPageBottom(uint32_t) const;
+         size_t   getPageCount(void) const;
+         uint32_t getRangeForHeightAndCount(uint32_t, uint32_t) const;
+         uint32_t getBlockInVicinity(uint32_t) const;
+         uint32_t getPageIdForBlockHeight(uint32_t) const;
+      };
+   } //namespace Ledgers
+} //namespace Armory

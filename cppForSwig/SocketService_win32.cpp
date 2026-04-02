@@ -2,12 +2,12 @@
 //                                                                            //
 //  Copyright (C) 2018, goatpig.                                              //
 //  Distributed under the MIT license                                         //
-//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //                                      
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "SocketService.h"
-#include "Utils/log.h"
+#include <Utils/log.h>
 
 using namespace std;
 using namespace Armory::Threading;

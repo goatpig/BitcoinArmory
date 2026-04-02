@@ -197,7 +197,7 @@ namespace Armory
 
       std::string base58_encode(BinaryDataRef);
       BinaryData base58_decode(const std::string&);
-      std::string base64_encode(const std::string&);
+      std::string base64_encode(const std::string_view&);
       std::string base64_decode(const std::string&);
 
       //////////////////////////////////////////////////////////////////////////

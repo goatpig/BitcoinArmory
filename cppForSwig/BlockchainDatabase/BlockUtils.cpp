@@ -28,6 +28,7 @@
 #include "BlockchainScanner.h"
 #include "DatabaseBuilder.h"
 #include "BDV_Notification.h"
+#include "txio.h"
 #include "StoredBlockObj.h"
 
 using namespace Armory;
@@ -58,10 +59,10 @@ protected:
          getSshSDBI();
       } catch (const std::runtime_error&) {
          StoredDBInfo sdbi;
-         sdbi.magic_ = Config::BitcoinSettings::getMagicBytes();
-         sdbi.metaHash_ = BtcUtils::EmptyHash;
-         sdbi.topBlkHgt_ = 0;
-         sdbi.armoryType_ = Config::DBSettings::getDbType();
+         sdbi.magic = Config::BitcoinSettings::getMagicBytes();
+         sdbi.metaHash = BtcUtils::EmptyHash;
+         sdbi.topBlkHgt = 0;
+         sdbi.armoryType = Config::DBSettings::getDbType();
 
          //write sdbi
          putSshSDBI(sdbi);
@@ -71,10 +72,10 @@ protected:
          getSubSshSDBI();
       } catch (const std::runtime_error&) {
          StoredDBInfo sdbi;
-         sdbi.magic_ = Config::BitcoinSettings::getMagicBytes();
-         sdbi.metaHash_ = BtcUtils::EmptyHash;
-         sdbi.topBlkHgt_ = 0;
-         sdbi.armoryType_ = Config::DBSettings::getDbType();
+         sdbi.magic = Config::BitcoinSettings::getMagicBytes();
+         sdbi.metaHash = BtcUtils::EmptyHash;
+         sdbi.topBlkHgt = 0;
+         sdbi.armoryType = Config::DBSettings::getDbType();
 
          //write sdbi
          putSubSshSDBI(sdbi);
@@ -385,22 +386,22 @@ std::shared_ptr<CoreRPC::NodeStatus> BlockDataManager::getNodeStatus() const
 
    auto nss = std::make_shared<CoreRPC::NodeStatus>();
    if (processNode_->connected()) {
-      nss->state_ = CoreRPC::NodeState_Online;
+      nss->state = CoreRPC::NodeState::Online;
    }
 
    if (processNode_->isSegWit()) {
-      nss->SegWitEnabled_ = true;
+      nss->segWitEnabled = true;
    }
 
    if (nodeRPC_ == nullptr) {
       return nss;
    }
 
-   nss->rpcState_ = nodeRPC_->testConnection();
-   if (nss->rpcState_ != CoreRPC::RpcState_Online) {
+   nss->rpcState = nodeRPC_->testConnection();
+   if (nss->rpcState != CoreRPC::RpcState::Online) {
       pollNodeStatus();
    }
-   nss->chainStatus_ = nodeRPC_->getChainStatus();
+   nss->chainStatus = nodeRPC_->getChainStatus();
    return nss;
 }
 
@@ -423,7 +424,7 @@ void BlockDataManager::pollNodeStatus() const
       std::unique_lock<std::mutex> lock(*mutexPtr);
 
       unsigned count = 0;
-      while (nodeRPC->testConnection() != CoreRPC::RpcState_Online) {
+      while (nodeRPC->testConnection() != CoreRPC::RpcState::Online) {
          ++count;
          if (count > 10) {
             break; //give up after 20sec

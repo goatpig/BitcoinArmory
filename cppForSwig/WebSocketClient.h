@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2018-2025, goatpig.                                         //
+//  Copyright (C) 2018-2026, goatpig.                                         //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -128,7 +128,7 @@ private:
    BinaryData leftOverData_;
 
    std::shared_ptr<std::promise<bool>> serverPubkeyProm_;
-   std::function<bool(const BinaryData&, const std::string&)> userPromptLambda_;
+   std::function<bool(const BinaryData&)> userPromptLambda_;
 
 public:
    std::atomic<int> count_;
@@ -153,8 +153,8 @@ public:
    void cleanup(void);
    bool running(void) const override;
    std::pair<unsigned, unsigned> getRekeyCount(void) const;
-   void addPublicKey(const SecureBinaryData&);
-   void setPubkeyPromptLambda(std::function<bool(const BinaryData&, const std::string&)>);
+   void addPublicKey(const SecureBinaryData&, bool);
+   void setPubkeyPromptLambda(const std::function<bool(const BinaryData&)>&);
 
    //virtuals
    SocketType type(void) const override;

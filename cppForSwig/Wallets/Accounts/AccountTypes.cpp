@@ -1,16 +1,20 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2017-2025, goatpig                                          //
+//  Copyright (C) 2017-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#include "Utils/BtcUtils.h"
-#include "Utils/Cryptography.h"
+#include <cstring>
+
+#include <Utils/ArmoryConfig.h>
+#include <Utils/BtcUtils.h>
+#include <Utils/Cryptography.h>
 #include "AccountTypes.h"
 #include "../Assets.h"
 #include "../DecryptedDataContainer.h"
+#include "../BIP32_Node.h"
 
 using namespace Armory::Assets;
 using namespace Armory::Accounts;
@@ -84,15 +88,15 @@ AccountType_ArmoryLegacy::AccountType_ArmoryLegacy() :
    AccountType()
 {
    //uncompressed p2pkh
-   addressTypes_.emplace(AddressEntryType(
+   addAddressType(AddressEntryType(
       AddressEntryType::P2PKH | AddressEntryType::Uncompressed));
 
    //nested compressed p2pk
-   addressTypes_.emplace(AddressEntryType(
+   addAddressType(AddressEntryType(
       AddressEntryType::P2PK | AddressEntryType::P2SH));
 
    //nested p2wpkh
-   addressTypes_.emplace(AddressEntryType(
+   addAddressType(AddressEntryType(
       AddressEntryType::P2WPKH | AddressEntryType::P2SH));
 
    //default type
@@ -374,12 +378,34 @@ AccountTypeEnum AccountType_BIP32::type() const
 ////
 std::string AccountType_BIP32::name() const
 {
-   /***
-   TODO:
-      This should be more sophisticated.
-      Read the BIP32 tree and guess special derivations (BIP44/49/84)
-   ***/
-   return std::string{"BIP32"sv};
+   const auto& firstBranch = derTree_.getBranch(0);
+   const auto& nodes = firstBranch.getNodes();
+   if (nodes.size() != 3) {
+      return std::string{"BIP32"};
+   };
+
+   auto nodesIter = nodes.begin();
+   auto baseNode = *nodesIter++;
+   auto coinNode = *nodesIter++;
+   auto lastNode = *nodesIter;
+   const auto coinType = Armory::Config::BitcoinSettings::getCoinType();
+   if (coinNode.value != coinType || lastNode.value != 0x80000000) {
+      return std::string{"BIP32"};
+   }
+   switch (baseNode.value)
+   {
+      case 0x8000002C:
+         return std::string{"BIP44"sv};
+
+      case 0x80000031:
+         return std::string{"BIP49"sv};
+
+      case 0x80000054:
+         return std::string{"BIP84"sv};
+
+      default:
+         return std::string{"BIP32"sv};
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

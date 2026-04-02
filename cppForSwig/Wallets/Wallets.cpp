@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -456,10 +456,11 @@ std::shared_ptr<AddressEntry> AssetWallet::getNewAddress(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool AssetWallet::hasAddrStr(const std::string& addrStr) const
+bool AssetWallet::hasAddrStr(const std::string& addrStr,
+   const AddressAccountId& hint) const
 {
    try {
-      getAssetIDForAddrStr(addrStr);
+      getAssetIDForAddrStr(addrStr, hint);
       return true;
    } catch (const std::runtime_error&) {
       return false;
@@ -467,10 +468,11 @@ bool AssetWallet::hasAddrStr(const std::string& addrStr) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool AssetWallet::hasScrAddr(const BinaryData& scrAddr) const
+bool AssetWallet::hasScrAddr(const BinaryData& scrAddr,
+   const AddressAccountId& hint) const
 {
    try {
-      getAssetIDForScrAddr(scrAddr);
+      getAssetIDForScrAddr(scrAddr, hint);
       return true;
    } catch (const std::runtime_error&) {
       return false;
@@ -479,7 +481,7 @@ bool AssetWallet::hasScrAddr(const BinaryData& scrAddr) const
 
 ////////////////////////////////////////////////////////////////////////////////
 const std::pair<AssetId, AddressEntryType>& AssetWallet::getAssetIDForAddrStr(
-   const std::string& addrStr) const
+   const std::string& addrStr, const AddressAccountId& hint) const
 {
    //this takes b58 or bech32 addresses
    ReentrantLock lock(this);
@@ -490,24 +492,31 @@ const std::pair<AssetId, AddressEntryType>& AssetWallet::getAssetIDForAddrStr(
    } catch (const std::runtime_error&) {
       scrAddr = std::move(BtcUtils::segWitAddressToScrAddr(addrStr).first);
    }
-   return getAssetIDForScrAddr(scrAddr);
+   return getAssetIDForScrAddr(scrAddr, hint);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 const std::pair<AssetId, AddressEntryType>&
-   AssetWallet::getAssetIDForScrAddr(const BinaryData& scrAddr) const
+   AssetWallet::getAssetIDForScrAddr(const BinaryData& scrAddr,
+   const AddressAccountId& hint) const
 {
    //this takes prefixed hashes
    ReentrantLock lock(this);
 
-   for (auto acc : accounts_) {
-      try {
-         return acc.second->getAssetIDPairForAddr(scrAddr);
-      } catch (const std::runtime_error&) {
-         continue;
+   if (hint.isValid()) {
+      auto accIter = accounts_.find(hint);
+      if (accIter != accounts_.end()) {
+         return accIter->second->getAssetIDPairForAddr(scrAddr);
+      }
+   } else {
+      for (auto acc : accounts_) {
+         try {
+            return acc.second->getAssetIDPairForAddr(scrAddr);
+         } catch (const std::runtime_error&) {
+            continue;
+         }
       }
    }
-
    throw std::runtime_error("unknown scrAddr");
 }
 
@@ -1094,29 +1103,24 @@ const AddressAccountId& AssetWallet_Single::createBIP32Account(
    const Progress::Func& prog)
 {
    auto accountPtr = createAccount(accTypePtr, prog);
+   auto lookup = accTypePtr->getAddressLookup();
+   if (lookup > 0) {
+      if (prog) {
+         auto prg = std::make_unique<Progress::ExtendChain>(lookup);
+         prog(std::move(prg));
+      }
 
-   if (prog) {
-      auto prg = std::make_unique<Progress::ExtendChain>(
-         accTypePtr->getAddressLookup());
-      prog(std::move(prg));
-   }
-
-   if (!isWatchingOnly()) {
-      accountPtr->extendPrivateChain(
-         iface_,
-         decryptedData_,
-         accTypePtr->getAddressLookup()
-      );
-   } else {
-      accountPtr->extendPublicChain(
-         iface_,
-         accTypePtr->getAddressLookup()
-      );
+      if (!isWatchingOnly()) {
+         accountPtr->extendPrivateChain(iface_, decryptedData_, lookup);
+      } else {
+         accountPtr->extendPublicChain(iface_, lookup);
+      }
    }
    return accountPtr->getID();
 }
 
-/////////////////////////////-- wallet creation --//////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+// wallet creation
 std::shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
    std::unique_ptr<ClearTextSeed> seed, const IO::CreateWalletParams& params)
 {
@@ -1160,7 +1164,7 @@ std::shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
    return result;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+//// from legacy seed
 std::shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
    ClearTextSeed_Armory* seed, const IO::CreateWalletParams& params)
 {
@@ -1209,7 +1213,7 @@ std::shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
    return walletPtr;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+//// from bip32 seed
 std::shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
    Seeds::ClearTextSeed_BIP32* seed, const IO::CreateWalletParams& params)
 {
@@ -2228,6 +2232,116 @@ AssetId AssetWallet_Single::importPublicKey(SecureBinaryData& pubkey,
 
    auto tx = iface_->beginWriteTransaction(dbName_);
    auto assetId = importAcc->importPublicKey(iface_, pubkey);
+   addrAcc->updateInstantiatedAddressType(iface_, assetId, aeType);
+   return assetId;
+}
+
+AssetId AssetWallet_Single::importScrAddr(const BinaryData& scrAddr)
+{
+   //need to determine scrAddr type & extract the hash
+   AddressEntryType aeType;
+   BinaryData scriptHash;
+   switch (BtcUtils::getScriptTypeForScrAddr(scrAddr))
+   {
+      case TxOutScriptType::STDHASH160:
+         aeType = AddressEntryType::P2PKH;
+         scriptHash = scrAddr.getSliceCopy(1, 20);
+         break;
+
+      case TxOutScriptType::P2WPKH:
+         aeType = AddressEntryType::P2WPKH;
+         scriptHash = scrAddr.getSliceCopy(1, 20);
+         break;
+
+      case TxOutScriptType::P2SH:
+         aeType = AddressEntryType(
+            AddressEntryType::P2SH | AddressEntryType::ScriptHash);
+         scriptHash = scrAddr.getSliceCopy(1, 20);
+         break;
+
+      case TxOutScriptType::P2WSH:
+         aeType = AddressEntryType(
+            AddressEntryType::P2WSH | AddressEntryType::ScriptHash);
+         scriptHash = scrAddr.getSliceCopy(1, 32);
+         break;
+
+      default:
+         throw AddressException("unsupported scrAddr format");
+   }
+
+   //lock
+   ReentrantLock lock(this);
+
+   //grab WO import account
+   auto addrAcc = getAccountForID({IMPORTS_ACCOUNT_PUB});
+   auto assetAcc = addrAcc->getOuterAccount();
+   auto importAcc = dynamic_cast<AssetAccount_ImportsWO*>(assetAcc.get());
+   if (importAcc == nullptr) {
+      throw WalletException("invalid WO import account");
+   }
+
+   auto tx = iface_->beginWriteTransaction(dbName_);
+   auto assetId = importAcc->importScriptHash(iface_, scriptHash);
+   addrAcc->updateInstantiatedAddressType(iface_, assetId, aeType);
+   return assetId;
+}
+
+AssetId AssetWallet_Single::importRawScript(const BinaryData& script)
+{
+   //lock
+   ReentrantLock lock(this);
+
+   //grab WO import account
+   auto addrAcc = getAccountForID({IMPORTS_ACCOUNT_PUB});
+   auto assetAcc = addrAcc->getOuterAccount();
+   auto importAcc = dynamic_cast<AssetAccount_ImportsWO*>(assetAcc.get());
+   if (importAcc == nullptr) {
+      throw WalletException("invalid WO import account");
+   }
+
+   auto tx = iface_->beginWriteTransaction(dbName_);
+   auto assetId = importAcc->importRawScript(iface_, script);
+   addrAcc->updateInstantiatedAddressType(
+      iface_, assetId, AddressEntryType::RawScript);
+   return assetId;
+}
+
+////////
+AssetId AssetWallet_Single::importPrivateKey(SecureBinaryData& privkey,
+   AddressEntryType aeType)
+{
+   //lock
+   ReentrantLock lock(this);
+
+   //grab import account
+   auto addrAcc = getAccountForID({IMPORTS_ACCOUNT_PRIV});
+   auto assetAcc = addrAcc->getOuterAccount();
+   auto importAcc = dynamic_cast<AssetAccount_Imports*>(assetAcc.get());
+   if (importAcc == nullptr) {
+      throw WalletException("invalid WO import account");
+   }
+
+   //grab root, we need its cipher to encrypt the new key
+   if (root_ == nullptr) {
+      throw WalletException("full wallet has no root!");
+   }
+
+   auto rootEntry = std::dynamic_pointer_cast<AssetEntry_Single>(root_);
+   if (rootEntry == nullptr || !rootEntry->hasPrivateKey()) {
+      throw WalletException("need root cipher to encrypt imported");
+   }
+
+   auto* cipherPtr = rootEntry->getPrivKey()->getCipherDataPtr();
+   if (cipherPtr == nullptr) {
+      throw WalletException("root has no cipher");
+   }
+   auto cipherCopy = cipherPtr->cipher->getCopy();
+
+   //import private key and set address type for its asset id
+   auto ddc = lockDecryptedContainer();
+   auto tx = iface_->beginWriteTransaction(dbName_);
+   auto assetId = importAcc->importPrivateKey(iface_, decryptedData_,
+      privkey, std::move(cipherCopy));
    addrAcc->updateInstantiatedAddressType(iface_, assetId, aeType);
    return assetId;
 }

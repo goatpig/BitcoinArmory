@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2017-2025, goatpig                                          //
+//  Copyright (C) 2017-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -18,20 +18,22 @@
 #define ASSETENTRY_SINGLE_VERSION      0x00000001
 #define ASSETENTRY_BIP32ROOT_VERSION   0x00000002
 #define ASSETENTRY_LEGACYROOT_VERSION  0x00000002
+#define ASSETENTRY_SCRIPTHASH_VERSION  0x00000001
+#define ASSETENTRY_RAWSCRIPT_VERSION   0x00000001
 
 #define PRIVKEY_VERSION                0x00000002
 #define PUBKEY_COMPRESSED_VERSION      0x00000001
 #define PUBKEY_UNCOMPRESSED_VERSION    0x00000001
 
-#define PEER_PUBLICDATA_VERSION        0x00000001
+#define PEER_PUBLICDATA_VERSION        0x00000002
 #define PEER_ROOTKEY_VERSION           0x00000001
 #define PEER_ROOTSIG_VERSION           0x00000001
 #define PEER_MASTERKEY_VERSION         0x00000001
 
 #define COMMENT_DATA_VERSION           0x00000001
 
+using namespace Armory;
 using namespace Armory::Assets;
-using namespace Armory::Wallets;
 
 ////////////////////////////////////////////////////////////////////////////////
 AssetException::AssetException(const std::string& err) :
@@ -39,80 +41,69 @@ AssetException::AssetException(const std::string& err) :
 {}
 
 ////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-//// AssetEntry
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-AssetEntry::AssetEntry(AssetEntryType type, AssetId id) :
+// AssetEntry
+AssetEntry::AssetEntry(AssetEntryType type, Wallets::AssetId id) :
    type_(type), ID_(id)
 {}
 
-////////////////////////////////////////////////////////////////////////////////
 AssetEntry::~AssetEntry()
 {}
 
-////////////////////////////////////////////////////////////////////////////////
-AssetKeyType AssetEntry::getIndex() const
-{
-   return ID_.getAssetKey();
-}
-
-////
-const AssetId& AssetEntry::getID() const
+////////
+const Wallets::AssetId& AssetEntry::getID() const
 {
    return ID_;
 }
 
-////
-AssetEntryType AssetEntry::getType() const
+Wallets::AssetKeyType AssetEntry::getIndex() const
 {
-   return type_;
+   return ID_.getAssetKey();
 }
 
-////
-bool AssetEntry::needsCommit() const
-{
-   return needsCommit_;
-}
-
-////
-void AssetEntry::doNotCommit()
-{
-   needsCommit_ = false;
-}
-
-////
-void AssetEntry::flagForCommit()
-{
-   needsCommit_ = true;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-const AssetAccountId AssetEntry::getAccountID(void) const
+const Wallets::AssetAccountId AssetEntry::getAccountID(void) const
 {
    return ID_.getAssetAccountId();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 BinaryData AssetEntry::getDbKey() const
 {
    return ID_.getSerializedKey(ASSETENTRY_PREFIX);
 }
 
-////////////////////////////////////////////////////////////////////////////////
+AssetEntryType AssetEntry::getType() const
+{
+   return type_;
+}
+
+////////
+bool AssetEntry::needsCommit() const
+{
+   return needsCommit_;
+}
+
+void AssetEntry::doNotCommit()
+{
+   needsCommit_ = false;
+}
+
+void AssetEntry::flagForCommit()
+{
+   needsCommit_ = true;
+}
+
+////////
 std::shared_ptr<AssetEntry> AssetEntry::deserialize(
    BinaryDataRef key, BinaryDataRef value)
 {
    BinaryRefReader brrKey(key);
-   auto assetId = AssetId::deserializeKey(key, ASSETENTRY_PREFIX);
+   auto assetId = Wallets::AssetId::deserializeKey(key, ASSETENTRY_PREFIX);
    auto assetPtr = deserDBValue(assetId, value);
    assetPtr->doNotCommit();
    return assetPtr;
 }
 
-////////////////////////////////////////////////////////////////////////////////
 std::shared_ptr<AssetEntry> AssetEntry::deserDBValue(
-   const AssetId& assetId, BinaryDataRef value)
+   const Wallets::AssetId& assetId, BinaryDataRef value)
 {
    BinaryRefReader brrVal(value);
    auto version = brrVal.get_uint32_t();
@@ -197,7 +188,7 @@ std::shared_ptr<AssetEntry> AssetEntry::deserDBValue(
                std::unique_ptr<Asset_PrivateKey> keyUPtr;
                try {
                   keyUPtr = Asset_PrivateKey::deserialize(dataRef);
-               } catch (const IdException&) {
+               } catch (const Wallets::IdException&) {
                   //potentially an old id format, let's try that instead
                   keyUPtr = Asset_PrivateKey::deserializeOld(
                      assetId, dataRef);
@@ -248,6 +239,40 @@ std::shared_ptr<AssetEntry> AssetEntry::deserDBValue(
                throw AssetException("unsupported asset single version");
          }
          break;
+      }
+
+      case AssetEntryType::ScriptHash:
+      {
+         switch (version)
+         {
+            case 0x00000001:
+            {
+               auto hashLen = brrVal.get_uint32_t();
+               SecureBinaryData scriptHash{brrVal.get_BinaryDataRef(hashLen)};
+               return std::make_shared<AssetEntry_ScriptHash>(
+                  assetId, scriptHash);
+            }
+
+            default:
+               throw AssetException("unsupported asset script hash version");
+         }
+      }
+
+      case AssetEntryType::RawScript:
+      {
+         switch (version)
+         {
+            case 0x00000001:
+            {
+               auto hashLen = brrVal.get_uint32_t();
+               SecureBinaryData script{brrVal.get_BinaryDataRef(hashLen)};
+               return std::make_shared<AssetEntry_RawScript>(
+                  assetId, script);
+            }
+
+            default:
+               throw AssetException("unsupported asset script hash version");
+         }
       }
 
       case AssetEntryType::BIP32Root:
@@ -364,6 +389,7 @@ std::shared_ptr<AssetEntry> AssetEntry::deserDBValue(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// AssetEntry_Single
 AssetEntry_Single::AssetEntry_Single(Wallets::AssetId id,
    SecureBinaryData& pubkey, std::shared_ptr<Asset_PrivateKey> privkey) :
    AssetEntry(AssetEntryType::Single, id), privkey_(privkey)
@@ -371,7 +397,6 @@ AssetEntry_Single::AssetEntry_Single(Wallets::AssetId id,
    pubkey_ = std::make_shared<Asset_PublicKey>(pubkey);
 }
 
-////
 AssetEntry_Single::AssetEntry_Single(Wallets::AssetId id,
    SecureBinaryData& pubkeyUncompressed,
    SecureBinaryData& pubkeyCompressed,
@@ -382,7 +407,6 @@ AssetEntry_Single::AssetEntry_Single(Wallets::AssetId id,
    pubkeyUncompressed, pubkeyCompressed);
 }
 
-////
 AssetEntry_Single::AssetEntry_Single(Wallets::AssetId id,
    std::shared_ptr<Asset_PublicKey> pubkey,
    std::shared_ptr<Asset_PrivateKey> privkey) :
@@ -390,19 +414,26 @@ AssetEntry_Single::AssetEntry_Single(Wallets::AssetId id,
    pubkey_(pubkey), privkey_(privkey)
 {}
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 std::shared_ptr<Asset_PublicKey> AssetEntry_Single::getPubKey() const
 {
    return pubkey_;
 }
 
-////
 std::shared_ptr<Asset_PrivateKey> AssetEntry_Single::getPrivKey() const
 {
    return privkey_;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+bool AssetEntry_Single::hasPrivateKey() const
+{
+   if (privkey_ != nullptr) {
+      return privkey_->hasData();
+   }
+   return false;
+}
+
+////////
 BinaryData AssetEntry_Single::serialize() const
 {
    BinaryWriter bw;
@@ -422,7 +453,6 @@ BinaryData AssetEntry_Single::serialize() const
    return finalBw.getData();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 BinaryData AssetEntry_BIP32Root::serialize() const
 {
    BinaryWriter bw;
@@ -458,26 +488,17 @@ BinaryData AssetEntry_BIP32Root::serialize() const
    return finalBw.getData();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-bool AssetEntry_Single::hasPrivateKey() const
-{
-   if (privkey_ != nullptr) {
-      return privkey_->hasData();
-   }
-   return false;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-const EncryptionKeyId& AssetEntry_Single::getPrivateEncryptionKeyId() const
+////////
+const Wallets::EncryptionKeyId&
+AssetEntry_Single::getPrivateEncryptionKeyId() const
 {
    if (!hasPrivateKey()) {
-      throw std::runtime_error("no private key in this asset");
+      throw AssetException("no private key in this asset");
    }
    return privkey_->getEncryptionKeyId();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-const KdfId& AssetEntry_Single::getKdfId() const
+const Wallets::KdfId& AssetEntry_Single::getKdfId() const
 {
    if (!hasPrivateKey()) {
       throw std::runtime_error("no private key in this asset");
@@ -485,7 +506,7 @@ const KdfId& AssetEntry_Single::getKdfId() const
    return privkey_->getKdfId();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 std::shared_ptr<AssetEntry_Single> AssetEntry_Single::getPublicCopy()
 {
    return std::make_shared<AssetEntry_Single>(getID(), pubkey_, nullptr);
@@ -513,26 +534,25 @@ unsigned AssetEntry_Multisig::getM() const
    return m_;
 }
 
-////
 unsigned AssetEntry_Multisig::getN() const
 {
    return n_;
 }
 
-////
+////////
 BinaryData AssetEntry_Multisig::serialize() const
 {
    throw AssetException("no serialization for MS assets");
 }
 
-////
+////////
 bool AssetEntry_Multisig::hasPrivateKey() const
 {
    for (auto& asset_pair : assetMap_) {
       auto asset_single = std::dynamic_pointer_cast<AssetEntry_Single>(
          asset_pair.second);
       if (asset_single == nullptr) {
-         throw std::runtime_error("unexpected asset entry type");
+         throw AssetException("unexpected asset entry type");
       }
       if (!asset_single->hasPrivateKey()) {
          return false;
@@ -541,33 +561,34 @@ bool AssetEntry_Multisig::hasPrivateKey() const
    return true;
 }
 
-////
-const EncryptionKeyId& AssetEntry_Multisig::getPrivateEncryptionKeyId() const
+////////
+const Wallets::EncryptionKeyId&
+AssetEntry_Multisig::getPrivateEncryptionKeyId() const
 {
    if (assetMap_.size() != n_) {
-      throw std::runtime_error("missing asset entries");
+      throw AssetException("missing asset entries");
    }
    if (!hasPrivateKey()) {
-      throw std::runtime_error("no private key in this asset");
+      throw AssetException("no private key in this asset");
    }
 
-   std::set<EncryptionKeyId> idSet;
+   std::set<Wallets::EncryptionKeyId> idSet;
    for (auto& asset_pair : assetMap_) {
       auto asset_single =
          std::dynamic_pointer_cast<AssetEntry_Single>(asset_pair.second);
       if (asset_single == nullptr) {
-         throw std::runtime_error("unexpected asset entry type");
+         throw AssetException("unexpected asset entry type");
       }
       idSet.emplace(asset_pair.second->getPrivateEncryptionKeyId());
    }
 
    if (idSet.size() != 1) {
-      throw std::runtime_error("wallets use different encryption keys");
+      throw AssetException("wallets use different encryption keys");
    }
    return *idSet.begin();
 }
 
-////
+////////
 const std::map<BinaryData, std::shared_ptr<AssetEntry>>
 AssetEntry_Multisig::getAssetMap() const
 {
@@ -575,11 +596,86 @@ AssetEntry_Multisig::getAssetMap() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// AssetEntry_ScriptHash
+AssetEntry_ScriptHash::AssetEntry_ScriptHash(const Wallets::AssetId& id,
+   SecureBinaryData& scriptHash) :
+   AssetEntry(AssetEntryType::ScriptHash, id), scriptHash_(std::move(scriptHash))
+{}
+
+bool AssetEntry_ScriptHash::hasPrivateKey() const
+{
+   return false;
+}
+
+const Wallets::EncryptionKeyId&
+AssetEntry_ScriptHash::getPrivateEncryptionKeyId() const
+{
+   throw AssetException("not prive key for imported script hash");
+}
+
+BinaryData AssetEntry_ScriptHash::serialize() const
+{
+   BinaryWriter bw;
+   bw.put_uint32_t(ASSETENTRY_SCRIPTHASH_VERSION);
+
+   auto entryType = getType();
+   bw.put_uint8_t((uint8_t)entryType);
+   bw.put_uint32_t(scriptHash_.getSize());
+   bw.put_BinaryData(scriptHash_);
+
+   BinaryWriter finalBw;
+   finalBw.put_var_int(bw.getSize());
+   finalBw.put_BinaryData(bw.getData());
+   return finalBw.getData();
+}
+
+const SecureBinaryData& AssetEntry_ScriptHash::getScriptHash() const
+{
+   return scriptHash_;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
-//// AssetEntry_BIP32Root
+// AssetEntry_RawScript
+AssetEntry_RawScript::AssetEntry_RawScript(const Wallets::AssetId& id,
+   SecureBinaryData& script) :
+   AssetEntry(AssetEntryType::RawScript, id), script_(std::move(script))
+{}
+
+bool AssetEntry_RawScript::hasPrivateKey() const
+{
+   return false;
+}
+
+const Wallets::EncryptionKeyId&
+AssetEntry_RawScript::getPrivateEncryptionKeyId() const
+{
+   throw AssetException("not prive key for imported script hash");
+}
+
+BinaryData AssetEntry_RawScript::serialize() const
+{
+   BinaryWriter bw;
+   bw.put_uint32_t(ASSETENTRY_RAWSCRIPT_VERSION);
+
+   auto entryType = getType();
+   bw.put_uint8_t((uint8_t)entryType);
+   bw.put_uint32_t(script_.getSize());
+   bw.put_BinaryData(script_);
+
+   BinaryWriter finalBw;
+   finalBw.put_var_int(bw.getSize());
+   finalBw.put_BinaryData(bw.getData());
+   return finalBw.getData();
+}
+
+const SecureBinaryData& AssetEntry_RawScript::getScript() const
+{
+   return script_;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-AssetEntry_BIP32Root::AssetEntry_BIP32Root(const AssetId& id,
+// AssetEntry_BIP32Root
+AssetEntry_BIP32Root::AssetEntry_BIP32Root(const Wallets::AssetId& id,
    SecureBinaryData& pubkey, std::shared_ptr<Asset_PrivateKey> privkey,
    const SecureBinaryData& chaincode,
    uint8_t depth, uint32_t leafID,
@@ -594,8 +690,7 @@ AssetEntry_BIP32Root::AssetEntry_BIP32Root(const AssetId& id,
    checkSeedFingerprint(false);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-AssetEntry_BIP32Root::AssetEntry_BIP32Root(const AssetId& id,
+AssetEntry_BIP32Root::AssetEntry_BIP32Root(const Wallets::AssetId& id,
    std::shared_ptr<Asset_PublicKey> pubkey,
    std::shared_ptr<Asset_PrivateKey> privkey,
    const SecureBinaryData& chaincode,
@@ -611,43 +706,39 @@ AssetEntry_BIP32Root::AssetEntry_BIP32Root(const AssetId& id,
    checkSeedFingerprint(false);
 }
 
-////
+////////
 uint8_t AssetEntry_BIP32Root::getDepth() const
 {
    return depth_;
 }
 
-////
 unsigned AssetEntry_BIP32Root::getLeafID() const
 {
    return leafID_;
 }
 
-////
-unsigned AssetEntry_BIP32Root::getParentFingerprint() const
-{
-   return parentFingerprint_;
-}
-
-////
 const SecureBinaryData& AssetEntry_BIP32Root::getChaincode() const
 {
    return chaincode_;
 }
 
-////
 const std::vector<uint32_t>& AssetEntry_BIP32Root::getDerivationPath() const
 {
    return derivationPath_;
 }
 
-////
+////////
 AssetEntryType AssetEntry_BIP32Root::getType() const
 {
    return AssetEntryType::BIP32Root;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
+unsigned AssetEntry_BIP32Root::getParentFingerprint() const
+{
+   return parentFingerprint_;
+}
+
 void AssetEntry_BIP32Root::checkSeedFingerprint(bool strongCheck) const
 {
    if (seedFingerprint_ != 0) {
@@ -663,18 +754,6 @@ void AssetEntry_BIP32Root::checkSeedFingerprint(bool strongCheck) const
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<AssetEntry_Single> AssetEntry_BIP32Root::getPublicCopy()
-{
-   auto pubkey = getPubKey();
-   auto woCopy = std::make_shared<AssetEntry_BIP32Root>(
-      getID(), pubkey, nullptr,
-      chaincode_, depth_, leafID_, parentFingerprint_, seedFingerprint_,
-      derivationPath_);
-   return woCopy;
-}
-
-////////////////////////////////////////////////////////////////////////////////
 unsigned AssetEntry_BIP32Root::getThisFingerprint() const
 {
    if (thisFingerprint_ == UINT32_MAX)
@@ -693,7 +772,6 @@ unsigned AssetEntry_BIP32Root::getThisFingerprint() const
    return thisFingerprint_;
 }
 
-////////////////////////////////////////////////////////////////////////////////
 unsigned AssetEntry_BIP32Root::getSeedFingerprint(bool strongCheck) const
 {
    checkSeedFingerprint(strongCheck);
@@ -710,7 +788,18 @@ unsigned AssetEntry_BIP32Root::getSeedFingerprint(bool strongCheck) const
    throw std::runtime_error("missing seed fingerprint");
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
+std::shared_ptr<AssetEntry_Single> AssetEntry_BIP32Root::getPublicCopy()
+{
+   auto pubkey = getPubKey();
+   auto woCopy = std::make_shared<AssetEntry_BIP32Root>(
+      getID(), pubkey, nullptr,
+      chaincode_, depth_, leafID_, parentFingerprint_, seedFingerprint_,
+      derivationPath_);
+   return woCopy;
+}
+
+////////
 std::string AssetEntry_BIP32Root::getXPub() const
 {
    auto pubkey = getPubKey();
@@ -723,10 +812,7 @@ std::string AssetEntry_BIP32Root::getXPub() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-//// AssetEntry_ArmoryLegacyRoot
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+// AssetEntry_ArmoryLegacyRoot
 AssetEntry_ArmoryLegacyRoot::AssetEntry_ArmoryLegacyRoot(
    Wallets::AssetId id, SecureBinaryData& pubkey,
    std::shared_ptr<Asset_PrivateKey> privkey,
@@ -736,7 +822,7 @@ AssetEntry_ArmoryLegacyRoot::AssetEntry_ArmoryLegacyRoot(
    chaincode_(chaincode), seedType_(seedType)
 {}
 
-////
+////////
 AssetEntryType AssetEntry_ArmoryLegacyRoot::getType() const
 {
    return AssetEntryType::ArmoryLegacyRoot;
@@ -748,13 +834,13 @@ AssetEntry_ArmoryLegacyRoot::getSeedType() const
    return seedType_;
 }
 
-////
+////////
 const SecureBinaryData& AssetEntry_ArmoryLegacyRoot::getChaincode() const
 {
    return chaincode_;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 BinaryData AssetEntry_ArmoryLegacyRoot::serialize() const
 {
    BinaryWriter bw;
@@ -783,7 +869,7 @@ BinaryData AssetEntry_ArmoryLegacyRoot::serialize() const
    return finalBw.getData();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 std::shared_ptr<AssetEntry_Single> AssetEntry_ArmoryLegacyRoot::getPublicCopy()
 {
    auto pubkey = getPubKey()->getUncompressedKey();
@@ -796,19 +882,16 @@ std::shared_ptr<AssetEntry_Single> AssetEntry_ArmoryLegacyRoot::getPublicCopy()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-//
-//// Asset
-//
-////////////////////////////////////////////////////////////////////////////////
+// Asset
 Asset::Asset(AssetType t) :
    type(t)
 {}
 
-////
 Asset::~Asset()
 {}
 
 ////////////////////////////////////////////////////////////////////////////////
+// Asset_PublicKey
 Asset_PublicKey::Asset_PublicKey(SecureBinaryData& pubkey) :
    Asset(AssetType::PublicKey)
 {
@@ -834,7 +917,6 @@ Asset_PublicKey::Asset_PublicKey(SecureBinaryData& pubkey) :
    }
 }
 
-////
 Asset_PublicKey::Asset_PublicKey(SecureBinaryData& uncompressedKey,
    SecureBinaryData& compressedKey) :
    Asset(AssetType::PublicKey),
@@ -846,7 +928,7 @@ Asset_PublicKey::Asset_PublicKey(SecureBinaryData& uncompressedKey,
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 const SecureBinaryData& Asset_PublicKey::getUncompressedKey() const
 {
    return uncompressed_;
@@ -858,7 +940,7 @@ const SecureBinaryData& Asset_PublicKey::getCompressedKey() const
    return compressed_;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 BinaryData Asset_PublicKey::serialize() const
 {
    BinaryWriter bw;
@@ -883,17 +965,33 @@ BinaryData Asset_PublicKey::serialize() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-//
-//// Asset_PrivateKey
-//
-////////////////////////////////////////////////////////////////////////////////
+// Asset_PrivateKey
 Asset_PrivateKey::Asset_PrivateKey(const Wallets::AssetId& id,
    std::unique_ptr<Wallets::Encryption::CipherData> cipherData) :
    Wallets::Encryption::EncryptedAssetData(std::move(cipherData)),
    Asset(AssetType::PrivateKey), id_(id)
 {}
 
-////////////////////////////////////////////////////////////////////////////////
+////////
+bool Asset_PrivateKey::isSame(
+   Wallets::Encryption::EncryptedAssetData* const asset) const
+{
+   auto asset_ed = dynamic_cast<Asset_PrivateKey*>(asset);
+   if (asset_ed == nullptr) {
+      return false;
+   }
+   if (id_ != asset_ed->id_) {
+      return false;
+   }
+   return Wallets::Encryption::EncryptedAssetData::isSame(asset);
+}
+
+const Wallets::AssetId& Asset_PrivateKey::getAssetId() const
+{
+   return id_;
+}
+
+////////
 BinaryData Asset_PrivateKey::serialize() const
 {
    BinaryWriter bw;
@@ -911,26 +1009,6 @@ BinaryData Asset_PrivateKey::serialize() const
    return finalBw.getData();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-bool Asset_PrivateKey::isSame(Encryption::EncryptedAssetData* const asset) const
-{
-   auto asset_ed = dynamic_cast<Asset_PrivateKey*>(asset);
-   if (asset_ed == nullptr) {
-      return false;
-   }
-   if (id_ != asset_ed->id_) {
-      return false;
-   }
-   return Encryption::EncryptedAssetData::isSame(asset);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-const AssetId& Asset_PrivateKey::getAssetId() const
-{
-   return id_;
-}
-
-////////////////////////////////////////////////////////////////////////////////
 std::unique_ptr<Asset_PrivateKey> Asset_PrivateKey::deserializeOld(
    const Wallets::AssetId& id, const BinaryDataRef& data)
 {
@@ -963,7 +1041,7 @@ std::unique_ptr<Asset_PrivateKey> Asset_PrivateKey::deserializeOld(
                }
 
                BinaryRefReader keyRefReader(onDiskId);
-               AssetKeyType assetKey = keyRefReader.get_int32_t();
+               Wallets::AssetKeyType assetKey = keyRefReader.get_int32_t();
                if (id.getAssetKey() != assetKey) {
                   throw std::runtime_error(
                      "[Asset_PrivateKey::deserialize]"
@@ -979,7 +1057,7 @@ std::unique_ptr<Asset_PrivateKey> Asset_PrivateKey::deserializeOld(
 
                auto cipherBdr = brr.get_BinaryDataRef(len);
                BinaryRefReader cipherBrr(cipherBdr);
-               auto cipherData = Encryption::CipherData::deserialize(cipherBrr);
+               auto cipherData = Wallets::Encryption::CipherData::deserialize(cipherBrr);
 
                //ptr
                assetPtr = std::make_unique<Asset_PrivateKey>(
@@ -1005,7 +1083,6 @@ std::unique_ptr<Asset_PrivateKey> Asset_PrivateKey::deserializeOld(
    return assetPtr;
 }
 
-////////////////////////////////////////////////////////////////////////////////
 std::unique_ptr<Asset_PrivateKey> Asset_PrivateKey::deserialize(
    const BinaryDataRef& data)
 {
@@ -1030,7 +1107,7 @@ std::unique_ptr<Asset_PrivateKey> Asset_PrivateKey::deserialize(
             case 0x00000002:
             {
                //id
-               auto assetId = AssetId::deserializeValue(brr);
+               auto assetId = Wallets::AssetId::deserializeValue(brr);
 
                //cipher data
                auto len = brr.get_var_int();
@@ -1040,7 +1117,7 @@ std::unique_ptr<Asset_PrivateKey> Asset_PrivateKey::deserialize(
                }
                auto cipherBdr = brr.get_BinaryDataRef(len);
                BinaryRefReader cipherBrr(cipherBdr);
-               auto cipherData = Encryption::CipherData::deserialize(cipherBrr);
+               auto cipherData = Wallets::Encryption::CipherData::deserialize(cipherBrr);
 
                //ptr
                assetPtr = std::make_unique<Asset_PrivateKey>(
@@ -1067,19 +1144,15 @@ std::unique_ptr<Asset_PrivateKey> Asset_PrivateKey::deserialize(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-//
-//// MetaData
-//
-////////////////////////////////////////////////////////////////////////////////
+// MetaData
 MetaData::MetaData(MetaType type, const BinaryData& accountID, uint32_t index) :
    type_(type), accountID_(accountID), index_(index)
 {}
 
-////
 MetaData::~MetaData()
 {}
 
-////
+////////
 std::shared_ptr<MetaData> MetaData::deserialize(
    const BinaryDataRef& key, const BinaryDataRef& data)
 {
@@ -1138,46 +1211,40 @@ std::shared_ptr<MetaData> MetaData::deserialize(
    return resultPtr;
 }
 
-////
+////////
 bool MetaData::needsCommit()
 {
    return needsCommit_;
 }
 
-////
 void MetaData::flagForCommit()
 {
    needsCommit_ = true;
 }
 
-////
+////////
 MetaType MetaData::type() const
 {
    return type_;
 }
 
-////
 const BinaryData& MetaData::getAccountID() const
 {
    return accountID_;
 }
 
-////
 uint32_t MetaData::getIndex() const
 {
    return index_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-//// PeerPublicData
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+// PeerPublicData
 PeerPublicData::PeerPublicData(const BinaryData& accountID, uint32_t index) :
    MetaData(MetaType::AuthorizedPeer, accountID, index)
 {}
 
-////
+////////
 BinaryData PeerPublicData::getDbKey() const
 {
    if (accountID_.getSize() != 4) {
@@ -1191,7 +1258,7 @@ BinaryData PeerPublicData::getDbKey() const
    return bw.getData();
 }
 
-////
+////////
 BinaryData PeerPublicData::serialize() const
 {
    //returning an empty serialized string will cause the key to be deleted
@@ -1212,6 +1279,9 @@ BinaryData PeerPublicData::serialize() const
       bdrName.setRef(name);
       bw.put_BinaryDataRef(bdrName);
    }
+   bw.put_var_int(label_.size());
+   bw.put_String(label_);
+   bw.put_uint8_t((uint8_t)oneWay_);
 
    BinaryWriter bwWithSize;
    bwWithSize.put_var_int(bw.getSize());
@@ -1219,7 +1289,6 @@ BinaryData PeerPublicData::serialize() const
    return bwWithSize.getData();
 }
 
-////
 void PeerPublicData::deserializeDBValue(const BinaryDataRef& data)
 {
    BinaryRefReader brrData(data);
@@ -1230,47 +1299,78 @@ void PeerPublicData::deserializeDBValue(const BinaryDataRef& data)
    }
    auto version = brrData.get_uint32_t();
 
+   auto getKey = [&brrData]()->SecureBinaryData
+   {
+      auto keyLen = brrData.get_var_int();
+      return SecureBinaryData{brrData.get_BinaryDataRef(keyLen)};
+   };
+
+   auto getNames = [&brrData]()->std::set<std::string>
+   {
+      std::set<std::string> result;
+      auto count = brrData.get_var_int();
+      for (unsigned i = 0; i < count; i++) {
+         auto nameLen = brrData.get_var_int();
+         auto bdrName = brrData.get_BinaryDataRef(nameLen);
+         result.emplace(std::string{(char*)bdrName.getPtr(), nameLen});
+      }
+      return result;
+   };
+
    switch (version)
    {
       case 0x00000001:
       {
-         auto keyLen = brrData.get_var_int();
-         publicKey_ = SecureBinaryData{brrData.get_BinaryDataRef(keyLen)};
+         publicKey_ = getKey();
+         names_ = getNames();
+         break;
+      }
 
-         //check pubkey is valid
-         if (!Cryptography::ECDSA::verifyPublicKeyValid(publicKey_)) {
-            throw AssetException("invalid pubkey in peer metadata");
-         }
+      case 0x00000002:
+      {
+         publicKey_ = getKey();
+         names_ = getNames();
 
-         auto count = brrData.get_var_int();
-         for (unsigned i = 0; i < count; i++) {
-            auto nameLen = brrData.get_var_int();
-            auto bdrName = brrData.get_BinaryDataRef(nameLen);
-            names_.emplace(std::string{(char*)bdrName.getPtr(), nameLen});
-         }
+         //v2 carries a label per key and mode
+         auto labelLen = brrData.get_var_int();
+         label_ = brrData.get_String(labelLen);
+         oneWay_ = bool(brrData.get_uint8_t());
          break;
       }
 
    default:
       throw AssetException("unsupported peer data version");
    }
+
+   if (!Cryptography::ECDSA::verifyPublicKeyValid(publicKey_)) {
+      throw AssetException("invalid pubkey in peer metadata");
+   }
 }
 
-////
+////////
 void PeerPublicData::setPublicKey(const SecureBinaryData& key)
 {
    publicKey_ = key;
    flagForCommit();
 }
 
-////
+void PeerPublicData::setLabel(const std::string& label)
+{
+   label_ = label;
+   flagForCommit();
+}
+
+void PeerPublicData::setOneWay(bool val)
+{
+   oneWay_ = val;
+}
+
 void PeerPublicData::addName(const std::string& name)
 {
    names_.emplace(name);
    flagForCommit();
 }
 
-////
 bool PeerPublicData::eraseName(const std::string& name)
 {
    auto iter = names_.find(name);
@@ -1282,45 +1382,53 @@ bool PeerPublicData::eraseName(const std::string& name)
    return true;
 }
 
-////
 void PeerPublicData::clear()
 {
    names_.clear();
+   label_.clear();
    flagForCommit();
 }
 
-////
+////////
 std::shared_ptr<MetaData> PeerPublicData::copy() const
 {
    auto copyPtr = std::make_shared<PeerPublicData>(
       getAccountID(), getIndex());
    copyPtr->names_ = names_;
    copyPtr->publicKey_ = publicKey_;
+   copyPtr->label_ = label_;
+   copyPtr->oneWay_ = oneWay_;
    return copyPtr;
 }
 
-////
+////////
 const std::set<std::string>& PeerPublicData::getNames() const
 {
    return names_;
 }
 
-////
 const SecureBinaryData& PeerPublicData::getPublicKey() const
 {
    return publicKey_;
 }
 
+const std::string& PeerPublicData::getLabel() const
+{
+   return label_;
+}
+
+bool PeerPublicData::oneWay() const
+{
+   return oneWay_;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-//// PeerRootKey
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+// PeerRootKey
 PeerRootKey::PeerRootKey(const BinaryData& accountID, uint32_t index) :
    MetaData(MetaType::PeerRootKey, accountID, index)
 {}
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 BinaryData PeerRootKey::getDbKey() const
 {
    if (accountID_.getSize() != 4) {
@@ -1334,7 +1442,7 @@ BinaryData PeerRootKey::getDbKey() const
    return bw.getData();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 BinaryData PeerRootKey::serialize() const
 {
    //returning an empty serialized string will cause the key to be deleted
@@ -1360,7 +1468,6 @@ BinaryData PeerRootKey::serialize() const
    return bwWithSize.getData();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void PeerRootKey::deserializeDBValue(const BinaryDataRef& data)
 {
    BinaryRefReader brrData(data);
@@ -1395,7 +1502,7 @@ void PeerRootKey::deserializeDBValue(const BinaryDataRef& data)
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 void PeerRootKey::clear()
 {
    publicKey_.clear();
@@ -1403,7 +1510,6 @@ void PeerRootKey::clear()
    flagForCommit();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void PeerRootKey::set(const std::string& desc, const SecureBinaryData& key)
 {
    if (!publicKey_.empty()) {
@@ -1416,7 +1522,7 @@ void PeerRootKey::set(const std::string& desc, const SecureBinaryData& key)
    description_ = desc;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 std::shared_ptr<MetaData> PeerRootKey::copy() const
 {
    auto copyPtr = std::make_shared<PeerRootKey>(getAccountID(), getIndex());
@@ -1425,41 +1531,36 @@ std::shared_ptr<MetaData> PeerRootKey::copy() const
    return copyPtr;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 const SecureBinaryData& PeerRootKey::getKey() const
 {
    return publicKey_;
 }
 
-////
 const std::string& PeerRootKey::getDescription() const
 {
    return description_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-//// PeerRootSignature
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+// PeerRootSignature
 PeerRootSignature::PeerRootSignature(
    const BinaryData& accountID, unsigned index) :
    MetaData(MetaType::PeerRootSig, accountID, index)
 {}
 
-////
+////////
 const SecureBinaryData& PeerRootSignature::getKey() const
 {
    return publicKey_;
 }
 
-////
 const SecureBinaryData& PeerRootSignature::getSig() const
 {
    return signature_;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 BinaryData PeerRootSignature::getDbKey() const
 {
    if (accountID_.getSize() != 4) {
@@ -1473,7 +1574,6 @@ BinaryData PeerRootSignature::getDbKey() const
    return bw.getData();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 BinaryData PeerRootSignature::serialize() const
 {
    //returning an empty serialized string will cause the key to be deleted
@@ -1495,7 +1595,6 @@ BinaryData PeerRootSignature::serialize() const
    return bwWithSize.getData();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void PeerRootSignature::deserializeDBValue(const BinaryDataRef& data)
 {
    BinaryRefReader brrData(data);
@@ -1528,7 +1627,7 @@ void PeerRootSignature::deserializeDBValue(const BinaryDataRef& data)
    //cannot check sig is valid until full peer account is loaded
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 void PeerRootSignature::clear()
 {
    publicKey_.clear();
@@ -1536,7 +1635,6 @@ void PeerRootSignature::clear()
    flagForCommit();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void PeerRootSignature::set(
    const SecureBinaryData& key, const SecureBinaryData& sig)
 {
@@ -1549,7 +1647,7 @@ void PeerRootSignature::set(
    signature_ = sig;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 std::shared_ptr<MetaData> PeerRootSignature::copy() const
 {
    auto copyPtr = std::make_shared<PeerRootSignature>(
@@ -1560,22 +1658,19 @@ std::shared_ptr<MetaData> PeerRootSignature::copy() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-//// PeerMasterKey
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+// PeerMasterKey
 PeerMasterKey::PeerMasterKey(
    const BinaryData& accountID, unsigned index) :
    MetaData(MetaType::PeerMasterKey, accountID, index)
 {}
 
-////
+////////
 const SecureBinaryData& PeerMasterKey::getKey() const
 {
    return key_;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 BinaryData PeerMasterKey::getDbKey() const
 {
    if (accountID_.getSize() != 4) {
@@ -1589,7 +1684,6 @@ BinaryData PeerMasterKey::getDbKey() const
    return bw.getData();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 BinaryData PeerMasterKey::serialize() const
 {
    //returning an empty serialized string will cause the key to be deleted
@@ -1608,7 +1702,6 @@ BinaryData PeerMasterKey::serialize() const
    return bwWithSize.getData();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void PeerMasterKey::deserializeDBValue(const BinaryDataRef& data)
 {
    BinaryRefReader brrData(data);
@@ -1637,14 +1730,13 @@ void PeerMasterKey::deserializeDBValue(const BinaryDataRef& data)
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 void PeerMasterKey::clear()
 {
    key_.clear();
    flagForCommit();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void PeerMasterKey::set(const SecureBinaryData& key)
 {
    if (!key_.empty()) {
@@ -1655,7 +1747,7 @@ void PeerMasterKey::set(const SecureBinaryData& key)
    key_ = key;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 std::shared_ptr<MetaData> PeerMasterKey::copy() const
 {
    auto copyPtr = std::make_shared<PeerMasterKey>(
@@ -1665,39 +1757,34 @@ std::shared_ptr<MetaData> PeerMasterKey::copy() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-//// CommentData
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+// CommentData
 CommentData::CommentData(const BinaryData& accountID, uint32_t index) :
    MetaData(MetaType::AuthorizedPeer, accountID, index)
 {}
 
-////
+////////
 const std::string& CommentData::getValue(void) const
 {
    return commentStr_;
 }
 
-////
 void CommentData::setValue(const std::string& val)
 {
    commentStr_ = val;
 }
 
-////
+////////
 const BinaryData& CommentData::getKey() const
 {
    return key_;
 }
 
-////
 void CommentData::setKey(const BinaryData& val)
 {
    key_ = val;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 BinaryData CommentData::getDbKey() const
 {
    if (accountID_.getSize() != 4) {
@@ -1711,7 +1798,6 @@ BinaryData CommentData::getDbKey() const
    return bw.getData();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 BinaryData CommentData::serialize() const
 {
    //returning an empty serialized string will cause the key to be deleted
@@ -1733,7 +1819,6 @@ BinaryData CommentData::serialize() const
    return bwWithSize.getData();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void CommentData::deserializeDBValue(const BinaryDataRef& data)
 {
    BinaryRefReader brrData(data);
@@ -1760,14 +1845,14 @@ void CommentData::deserializeDBValue(const BinaryDataRef& data)
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 void CommentData::clear()
 {
    commentStr_.clear();
    flagForCommit();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 std::shared_ptr<MetaData> CommentData::copy() const
 {
    auto copyPtr = std::make_shared<CommentData>(getAccountID(), getIndex());

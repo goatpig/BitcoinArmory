@@ -6,20 +6,18 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifndef _H_ADDRESS_ACCOUNTS
-#define _H_ADDRESS_ACCOUNTS
+#pragma once
 
 #include <set>
 #include <map>
 #include <memory>
 
 
-#include "Utils/ReentrantLock.h"
+#include <Utils/ReentrantLock.h>
 #include "../WalletIdTypes.h"
 #include "../Assets.h"
 #include "../Addresses.h"
 #include "../DerivationScheme.h"
-
 #include "AssetAccounts.h"
 
 #define BIP32_OUTER_ACCOUNT_DERIVATIONID 0x00000000
@@ -181,20 +179,24 @@ namespace Armory
 
          std::shared_ptr<AddressEntry> getNewAddress(
             std::shared_ptr<Wallets::IO::WalletDBInterface>,
-            AddressEntryType aeType=AddressEntryType::Default,
-            const ProgressFunc& progFunc=nullptr);
+            AddressEntryType = AddressEntryType::Default,
+            const ProgressFunc& = nullptr);
          std::shared_ptr<AddressEntry> getNewAddress(
             std::shared_ptr<Wallets::IO::WalletDBInterface>,
             const Wallets::AssetAccountId&, AddressEntryType,
             const ProgressFunc&);
          std::shared_ptr<AddressEntry> getNewChangeAddress(
             std::shared_ptr<Wallets::IO::WalletDBInterface>,
-            AddressEntryType aeType=AddressEntryType::Default,
-            const ProgressFunc& progFunc=nullptr);
+            AddressEntryType = AddressEntryType::Default,
+            const ProgressFunc& = nullptr);
          std::shared_ptr<AddressEntry> peekNextChangeAddress(
             std::shared_ptr<Wallets::IO::WalletDBInterface>,
-            AddressEntryType aeType=AddressEntryType::Default,
-            const ProgressFunc& progFunc=nullptr);
+            AddressEntryType = AddressEntryType::Default,
+            const ProgressFunc& = nullptr);
+         void markAssetAsHighestUsed(
+            std::shared_ptr<Wallets::IO::WalletDBInterface>,
+            const Wallets::AssetId&);
+
          bool isAssetChange(const Wallets::AssetId&) const;
          bool isAssetInUse(const Wallets::AssetId&) const;
 
@@ -243,7 +245,5 @@ namespace Armory
          bool hasBip32Path(const Signing::BIP32_AssetPath&) const;
          bool isLegacy(void) const;
       };
-   }; //namespace Accounts
-}; //namespace Armory
-
-#endif
+   } //namespace Accounts
+} //namespace Armory

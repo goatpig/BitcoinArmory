@@ -377,7 +377,24 @@ class ProtoWrapper(object):
          needsReply, callback, cbArgs, msgType)
 
 ################################################################################
-class BlockchainService(ProtoWrapper):
+class DbSetupService(ProtoWrapper):
+   """
+   Database setup service for managing DB connections.
+
+   Provides methods for:
+   - automateDb: Start local automated ArmoryDB
+   - connectToIp: Connect to remote DB by IP
+   - connectToPeer: Connect to remote DB by peer key
+   - loadPeersDb: Load the peers database
+   - listPeers: List all saved peers
+   - addPeer: Add a new peer
+   - removePeer: Remove a peer
+   - setPeerLabel: Update a peer's label
+   - goOnline: Signal DB to go online
+   - disconnect: Disconnect from remote DB
+   - cleanupDb: Clean up DB resources
+   - shutdown: Shutdown the bridge and stop socket
+   """
    #############################################################################
    ## setup ##
    def __init__(self, bridgeSocket):
@@ -385,28 +402,202 @@ class BlockchainService(ProtoWrapper):
 
    #############################################################################
    ## commands ##
-   def shutdown(self):
+   def automateDb(self, satoshiPath: str, dbDir: str):
+      """
+      Start local automated ArmoryDB.
+
+      Args:
+         satoshiPath: Path to Bitcoin Core data directory
+         dbDir: Path to ArmoryDB database directory
+      """
       packet = Bridge.ToBridge.new_message()
-      packet.init("service").shutdown = None
-      self.send(packet)
-      self.bridgeSocket.stop()
+      request = packet.init("setup").init("automateDb")
+      request.satoshiPath = satoshiPath
+      request.dbDir = dbDir
+      fut = self.send(packet)
+      return fut.getVal(nothrow=True)
 
    ####
-   def setupDB(self):
+   def connectToIp(self,
+      ip: str, port: str, callbackId: str,
+      resultCallback: callable = None):
+      """
+      Connect to remote DB by IP address (1-way auth).
+
+      The server will present its public key via a 'presentPubkey'
+      notification. User must ack/nack the connection. The actual
+      connection result arrives as a reply after the ack.
+
+      Args:
+         ip: Remote DB IP address
+         port: Remote DB port
+         callbackId: Callback ID for receiving server key
+         resultCallback: Called with the reply when connection
+            completes or fails (after key ack/nack)
+      """
       packet = Bridge.ToBridge.new_message()
-      packet.init("service").setupDb = None
+      request = packet.init("setup").init("connectToIp")
+      request.ip = ip
+      request.port = port
+      request.callbackId = callbackId
+      self.send(packet, needsReply=False, callback=resultCallback)
+
+   ####
+   def connectToPeer(self, peerKey: str):
+      """
+      Connect to remote DB by peer key.
+
+      The peer must be loaded via loadPeersDb first.
+      Auth mode (1-way/2-way) is embedded in the key prefix.
+
+      Args:
+         peerKey: Human-readable peer key (AR1.../AR2...)
+      """
+      packet = Bridge.ToBridge.new_message()
+      packet.init("setup").connectToPeer = peerKey
+      fut = self.send(packet)
+      return fut.getVal(nothrow=True)
+
+   ####
+   def loadPeersDb(self,
+      callbackId: str,
+      resultCallback: callable = None):
+      """
+      Load the peers database.
+
+      May trigger callbacks:
+      - unlockRequest: If container is encrypted, needs passphrase
+      - setPassphrase: If container doesn't exist, needs new passphrase
+
+      Args:
+         callbackId: Callback ID for receiving unlock/passphrase
+         resultCallback: If provided, call is non-blocking and the
+            callback fires with the reply when the load completes.
+            Must be non-blocking when called from the Qt thread,
+            since C++ may send passphrase prompts that need the
+            Qt event loop.
+      """
+      packet = Bridge.ToBridge.new_message()
+      packet.init("setup").loadPeersDb = callbackId
+      if resultCallback:
+         self.send(packet, needsReply=False,
+            callback=resultCallback)
+      else:
+         fut = self.send(packet)
+         return fut.getVal(nothrow=True)
+
+   ####
+   def listPeers(self):
+      """
+      List all saved peers.
+
+      Returns a list of PeerData objects. Always includes 'own' peer
+      which contains your public key. Each PeerData has .peer (with
+      .key, .names, .label) and .oneWay fields.
+      """
+      packet = Bridge.ToBridge.new_message()
+      packet.init("setup").listPeers = None
+      fut = self.send(packet)
+      reply = fut.getVal(nothrow=True)
+      if reply.success:
+         return reply.setup.listPeers
+      return []
+
+   ####
+   def addPeer(self, key: str, names: list, label: str = ''):
+      """
+      Add a new peer to the peers database.
+
+      Args:
+         key: Human-readable peer key (AR1.../AR2...)
+         names: List of names for this peer (each name is ip:port)
+         label: Human-readable label for the peer
+      """
+      packet = Bridge.ToBridge.new_message()
+      peerMsg = packet.init("setup").init("addPeer")
+      peerMsg.key = key
+      peerNames = peerMsg.init("names", len(names))
+      for i, name in enumerate(names):
+         peerNames[i] = name
+      peerMsg.label = label
+      fut = self.send(packet)
+      return fut.getVal(nothrow=True)
+
+   ####
+   def removePeer(self, key: str):
+      """
+      Remove a peer from the peers database.
+
+      Args:
+         key: Human-readable peer key (AR1.../AR2...)
+      """
+      packet = Bridge.ToBridge.new_message()
+      packet.init("setup").removePeer = key
+      fut = self.send(packet)
+      return fut.getVal(nothrow=True)
+
+   ####
+   def setPeerLabel(self, key: str, label: str):
+      """
+      Update the label on an existing peer.
+
+      Args:
+         key: Human-readable peer key (AR1.../AR2...)
+         label: New label for the peer
+      """
+      packet = Bridge.ToBridge.new_message()
+      labelMsg = packet.init("setup").init("setLabel")
+      labelMsg.key = key
+      labelMsg.label = label
+      fut = self.send(packet)
+      return fut.getVal(nothrow=True)
+
+   ####
+   def goOnline(self):
+      """Signal the DB to go online after connection is established."""
+      packet = Bridge.ToBridge.new_message()
+      packet.init("setup").goOnline = None
       self.send(packet, needsReply=False)
+
+   ####
+   def disconnect(self):
+      """Disconnect from the current database."""
+      packet = Bridge.ToBridge.new_message()
+      packet.init("setup").disconnect = None
+      self.send(packet, needsReply=False)
+
+   ####
+   def cleanupDb(self):
+      """Shutdown the running ArmoryDB process.
+
+      Note: C++ does NOT reset bdvPtr_ after shutdown,
+      so reconnection on the same bridge is not possible.
+      """
+      packet = Bridge.ToBridge.new_message()
+      packet.init("setup").cleanupDb = None
+      fut = self.send(packet)
+      return fut.getVal(nothrow=True)
+
+   ####
+   def shutdown(self):
+      """Shutdown the bridge entirely."""
+      packet = Bridge.ToBridge.new_message()
+      packet.init("setup").shutdown = None
+      self.send(packet, needsReply=False)
+      self.bridgeSocket.stop()
+
+################################################################################
+class BlockchainService(ProtoWrapper):
+   #############################################################################
+   ## setup ##
+   def __init__(self, bridgeSocket):
+      super().__init__(bridgeSocket)
+      self.blockTimeByHeightCache = {}
 
    ####
    def registerWallets(self):
       packet = Bridge.ToBridge.new_message()
       packet.init("service").registerWallets = None
-      self.send(packet, needsReply=False)
-
-   ####
-   def goOnline(self):
-      packet = Bridge.ToBridge.new_message()
-      packet.init("service").goOnline = None
       self.send(packet, needsReply=False)
 
    ####
@@ -492,6 +683,22 @@ class BlockchainService(ProtoWrapper):
       return reply.service.getHeadersByHeight
 
    ####
+   def getBlockTimeByHeight(self, height):
+      if height in self.blockTimeByHeightCache:
+         return self.blockTimeByHeightCache[height]
+
+      packet = Bridge.ToBridge.new_message()
+      packet.init("service").getBlockTimeByHeight = height
+      fut = self.send(packet)
+      reply = fut.getVal()
+      blockTime = reply.service.getBlockTimeByHeight
+
+      if blockTime == 2**32 - 1:
+         raise BridgeError("invalid block time")
+      self.blockTimeByHeightCache[height] = blockTime
+      return blockTime
+
+   ####
    def getFeeSchedule(self, strat):
       packet = Bridge.ToBridge.new_message()
       packet.init("service").getFeeSchedule = strat
@@ -503,12 +710,15 @@ class BlockchainService(ProtoWrapper):
       return reply.service.getFeeSchedule
 
    ####
-   def broadcastTx(self, rawTxs: list[bytes]):
+   def broadcastTx(self, rawTxs: list[bytes], viaRPC: bool=False):
       packet = Bridge.ToBridge.new_message()
-      packetTxs = packet.init("service").init("broadcastTx", len(rawTxs))
+      broadcastRequest = packet.init("service").init("broadcastTx")
+      if viaRPC:
+         #defaults to p2p broadcast
+         broadcastRequest.viaRpc = None
+      packetTxs = broadcastRequest.init("rawTxs", len(rawTxs))
       for i, tx in enumerate(rawTxs):
          packetTxs[i] = tx
-
       self.send(packet, needsReply=False)
 
 ################################################################################
@@ -658,6 +868,16 @@ class WalletManagerWrapper(ProtoWrapper):
       reply = fut.getVal(nothrow=True)
       return reply.success
 
+   ####
+   def unlockControlHeader(self,
+      walletPath: str, callbackId: str, callbackFunc: callable):
+      """Unlock wallet using proper unlock control header pattern."""
+      packet = Bridge.ToBridge.new_message()
+      request = packet.init("walletManager").init("unlockControlHeader")
+      request.walletPath = walletPath
+      request.callbackId = callbackId
+      self.send(packet, callback=callbackFunc)
+
 ################################################################################
 class BridgeWalletWrapper(ProtoWrapper):
    #############################################################################
@@ -696,15 +916,6 @@ class BridgeWalletWrapper(ProtoWrapper):
       fut = self.send(packet)
       reply = fut.getVal()
       return reply.wallet.getAddrCombinedList
-
-   ####
-   def getHighestUsedIndex(self):
-      packet = self._getPacket()
-      packet.wallet.getHighestUsedIndex = None
-
-      fut = self.send(packet)
-      reply = fut.getVal()
-      return reply.wallet.getHighestUsedIndex
 
    ####
    def extendAddressPool(self, count: int,
@@ -880,7 +1091,12 @@ class BridgeCoinSelectionWrapper(ProtoWrapper):
    def destroyCoinSelectionInstance(self):
       packet = self._getPacket()
       packet.coinSelection.cleanup = None
-      self.send(packet, False)
+
+      fut = self.send(packet)
+      reply = fut.getVal(nothrow=True)
+      if reply.success == False:
+         raise BridgeError(
+            f"failed to cleanup coin selection instance with error: {reply.error}")
 
    #############################################################################
    def setCoinSelectionRecipient(self, addrStr: str, value: int, recId: int):
@@ -900,7 +1116,12 @@ class BridgeCoinSelectionWrapper(ProtoWrapper):
    def reset(self):
       packet = self._getPacket()
       packet.coinSelection.reset = None
-      self.send(packet, False)
+
+      fut = self.send(packet)
+      reply = fut.getVal(nothrow=True)
+      if reply.success == False:
+         raise BridgeError(
+            f"failed to reset coin selection instance with error: {reply.error}")
 
    #############################################################################
    def selectUTXOs(self, fee: int, feePerByte: float, processFlags: int):
@@ -1296,9 +1517,9 @@ class BridgeSigner(ProtoWrapper):
 ################################################################################
 class ArmoryBridge(object):
    def __init__(self):
-      self.blockTimeByHeightCache = {}
       self.bridgeSocket = BridgeSocket()
 
+      self.dbSetup      = DbSetupService(self.bridgeSocket)
       self.service      = BlockchainService(self.bridgeSocket)
       self.utils        = BlockchainUtils(self.bridgeSocket)
       self.scriptUtils  = ScriptUtils(self.bridgeSocket)
@@ -1312,40 +1533,6 @@ class ArmoryBridge(object):
       msgType=BRIDGE_CLIENT_HEADER):
       self.bridgeSocket.sendToBridgeProto(msg,
          needsReply, callback, cbArgs, msgType)
-
-   #############################################################################
-   def pushNotification(self, callbackData):
-      notifThread = threading.Thread(\
-         group=None, target=TheBDM.pushNotification, \
-         name=None, args=[callbackData], kwargs={})
-      notifThread.start()
-
-   def pushProgressNotification(self, data):
-      payload = Bridge.Notification.new_message()
-      payload.from_bytes_packed()
-
-      TheBDM.reportProgress(payload)
-
-   #############################################################################
-   def getBlockTimeByHeight(self, height):
-      if height in self.blockTimeByHeightCache:
-         return self.blockTimeByHeightCache[height]
-
-      packet = Bridge.ToBridge.new_message()
-      packet.init("service").getBlockTimeByHeight = height
-
-      fut = self.send(packet)
-      socketResponse = fut.getVal()
-
-      response = BridgeProto_pb2.ReplyNumbers()
-      response.ParseFromString(socketResponse)
-
-      blockTime = response.ints[0]
-      if blockTime == 2**32 - 1:
-         raise BridgeError("invalid block time")
-
-      self.blockTimeByHeightCache[height] = blockTime
-      return blockTime
 
    #############################################################################
    def getHistoryForWalletSelection(self, wltIDList, order):
@@ -1409,6 +1596,87 @@ class ServerPush(ProtoWrapper):
    def reply(self):
       self.send(self.packet, needsReply=False)
       self.packet = None
+
+################################################################################
+class PeersDbCallback(ServerPush):
+   """
+   Callback handler for loadPeersDb operations.
+
+   Handles:
+   - unlockRequest: Peers DB is encrypted, needs passphrase
+   - setPassphrase: New container being created, needs passphrase setup
+   """
+   def __init__(self, callbackId: str, onUnlockRequest: callable,
+      onSetPassphrase: callable, onSuccess: callable):
+      super().__init__(callbackId)
+      self.onUnlockRequest = onUnlockRequest
+      self.onSetPassphrase = onSetPassphrase
+      self.onSuccess = onSuccess
+
+   def parseProtoPacket(self, protoPacket):
+      which = protoPacket.which()
+      if which == "unlockRequest":
+         # Encrypted container needs passphrase
+         if self.onUnlockRequest:
+            self.onUnlockRequest(self, protoPacket.unlockRequest)
+      elif which == "setPassphrase":
+         # New container needs passphrase setup
+         if self.onSetPassphrase:
+            passphraseRequest = protoPacket.setPassphrase
+            self.onSetPassphrase(self, passphraseRequest)
+      else:
+         # Success or other notification
+         if self.onSuccess:
+            self.onSuccess(protoPacket)
+
+   def replyUnlock(self, passphrase: str, success: bool = True):
+      """Reply to an unlockRequest with the passphrase."""
+      notif = self.getNewPacket()
+      notif.success = success
+      notif.unlockRequest = passphrase
+      self.reply()
+
+   def replySetPassphrase(self,
+      passphrase: str, kdfTargetMs: int = 0,
+      kdfTargetMB: int = 0, reuseKdf: bool = False,
+      success: bool = True):
+      notif = self.getNewPacket()
+      notif.success = success
+      reply = notif.init("setPassphrase")
+      reply.passphrase = passphrase
+      if reuseKdf:
+         reply.reuseKdf = True
+      elif kdfTargetMB > 0:
+         reply.kdfTargetMB = kdfTargetMB
+      else:
+         reply.kdfTargetMs = kdfTargetMs
+      self.reply()
+
+################################################################################
+class ServerKeyCallback(ServerPush):
+   """
+   Callback handler for connectToIp server key presentation.
+
+   Handles:
+   - presentPubkey: Server presenting its public key for user approval
+   """
+   def __init__(self, callbackId: str, onPresentPubkey: callable):
+      super().__init__(callbackId)
+      self.onPresentPubkey = onPresentPubkey
+
+   def parseProtoPacket(self, protoPacket):
+      which = protoPacket.which()
+      if which == "presentPubkey":
+         serverPubkey = protoPacket.presentPubkey
+         if self.onPresentPubkey:
+            self.onPresentPubkey(self, serverPubkey)
+
+   def replyAck(self, accept: bool = True):
+      """Reply to server key presentation (ack/nack)."""
+      notif = self.getNewPacket()
+      notif.success = accept
+      notif.presentPubkey = None
+      self.reply()
 
 ####
 TheBridge = ArmoryBridge()

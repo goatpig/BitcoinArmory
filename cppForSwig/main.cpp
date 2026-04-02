@@ -37,6 +37,7 @@ int main(int argc, char* argv[])
    Cryptography::ECDSA::setupContext();
    startupBIP151CTX();
    startupBIP150CTX(4);
+   WebSocketServer::init();
 
 #ifdef _WIN32
    WSADATA wsaData;
@@ -55,12 +56,10 @@ int main(int argc, char* argv[])
 
    auto logFilePath = Config::Pathing::logFilePath(LOG_FILE_NAME).string();
    std::cout << "logging in " << logFilePath << std::endl;
-   STARTLOGGING(logFilePath, LogLvlDebug);
-   if (!Config::NetworkSettings::ephemeralPeers()) {
-      LOGENABLESTDOUT();
-   } else {
-      LOGDISABLESTDOUT();
-   }
+   auto logLevel = Config::NetworkSettings::ephemeralPeers() ?
+      LogLvlWarn : LogLvlDebug;
+   STARTLOGGING(logFilePath, logLevel);
+   LOGENABLESTDOUT();
 
    LOGINFO << "Running on " << Config::DBSettings::threadCount() << " threads";
    LOGINFO << "Ram usage level: " << Config::DBSettings::ramUsage();
@@ -88,8 +87,15 @@ int main(int argc, char* argv[])
          exit(-3);
       }
       //initAuthPeers will setup the ephemeral keys
-      WebSocketServer::initAuthPeers(
-         Wallets::IO::ReadOnlyFileParams{{}, nullptr});
+      try {
+         WebSocketServer::initAuthPeers(
+            Wallets::IO::ReadOnlyFileParams{{}, nullptr});
+      } catch (const std::exception &e) {
+         LOGERR << "ephemeral peer db setup failed with this error: "
+            << e.what();
+         LOGERR << "aborting...";
+         exit(-4);
+      }
    } else {
       //setup remote peers db, this will block the init process until
       //peers db is unlocked
@@ -116,6 +122,9 @@ int main(int argc, char* argv[])
             "server peers store");
          WebSocketServer::initAuthPeers({serverPeersFile, passLbd});
       }
+      Wallets::PeerKey myKey{WebSocketServer::getPublicKey(),
+         Config::NetworkSettings::oneWayAuth(), true};
+      LOGINFO << "This is my key: " << myKey.toHumanReadable();
    }
 
    //start blockchain service

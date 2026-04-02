@@ -226,6 +226,15 @@ BinaryData DBUtils::heightAndDupToHgtx(uint32_t hgt, uint8_t dup)
    return WRITE_UINT32_BE(hgtxInt);
 }
 
+bool DBUtils::keyIsZC(BinaryDataRef key)
+{
+   if (key.getSize() < 4) {
+      return false;
+   }
+   uint16_t* keyInt = (uint16_t*)key.getPtr();
+   return *keyInt == 0xFFFF;
+}
+
 /////////////////////////////////////////////////////////////////////////////
 BinaryData DBUtils::getFilterPoolKey(uint32_t filenum)
 {

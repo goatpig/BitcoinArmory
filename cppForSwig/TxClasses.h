@@ -174,9 +174,6 @@ private:
 ////////////////////////////////////////////////////////////////////////////////
 class Tx
 {
-   friend class BlockDataManager;
-   friend class TransactionVerifier;
-
 private:
    void unserialize(const uint8_t*, size_t);
 
@@ -204,8 +201,9 @@ public:
    uint32_t          getTxTime(void) const;
    unsigned          getZcIndex(void) const;
    virtual uint32_t  getTxHeight(void) const;
+   uint8_t           getDupId(void) const;
    uint32_t          getTxIndex(void) const;
-   const std::vector<uint32_t> getOpIdVec(void) const;
+   BinaryData        getDBKey(void) const;
 
    /////////////////////////////////////////////////////////////////////////////
    size_t            getTxInOffset(uint32_t) const;
@@ -233,13 +231,10 @@ public:
    void setRBF(bool);
    void setChainedZC(bool);
    void setTxHeight(uint32_t) const;
+   void setDupId(uint8_t) const;
    void setTxIndex(uint32_t) const;
    void setTxTime(uint32_t);
    void pushBackOpId(uint32_t) const;
-
-   /////////////////////////////////////////////////////////////////////////////
-   void pprint(std::ostream& = std::cout, int=0, bool=true) const;
-   void pprintAlot(std::ostream& = std::cout) const;
 
 private:
    // Full copy of the serialized tx
@@ -252,17 +247,17 @@ private:
    uint32_t txTime_{0};
 
    // Derived properties - we expect these to be set after construct/copy
-   mutable BinaryData    thisHash_;
+   mutable BinaryData thisHash_;
 
    // Will always create TxIns and TxOuts on-the-fly; only store the offsets
    std::vector<size_t> offsetsTxIn_;
    std::vector<size_t> offsetsTxOut_;
    std::vector<size_t> offsetsWitness_;
-   mutable std::vector<uint32_t> outpointIdVec_;
 
    bool isRBF_ = false;
    bool isChainedZc_ = false;
    mutable uint32_t txHeight_ = UINT32_MAX;
+   mutable uint8_t dupId_ = UINT8_MAX;
    mutable uint32_t txIndex_ = UINT32_MAX;
 };
 

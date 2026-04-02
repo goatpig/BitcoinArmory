@@ -19,15 +19,6 @@
 #include <functional>
 #include <Utils/BinaryData.h>
 
-namespace Armory
-{
-   namespace ZeroConf
-   {
-      class ZeroConfContainer;
-   }
-}
-
-class Blockchain;
 class TxIOPair;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -73,94 +64,98 @@ class TxIOPair;
 namespace Armory
 {
    enum class ScriptPrefix : uint8_t;
-}
 
-class LMDBBlockDatabase;
+   ////
+   namespace Ledgers
+   {
+      class Context;
 
-class LedgerEntry
-{
-public:
-   LedgerEntry(const std::string&, int64_t, uint32_t,
-      const BinaryData&, uint32_t, uint32_t,
-      bool, bool, bool,
-      bool, bool, bool);
+      class Entry
+      {
+      public:
+         Entry(const std::string&, int64_t, uint32_t,
+            const BinaryData&, uint32_t, uint32_t,
+            std::set<BinaryData>&,
+            bool, bool, bool,
+            bool, bool, bool);
 
-   std::string       getWalletID(void) const;
-   int64_t           getValue(void) const;
-   uint32_t          getBlockNum(void) const;
-   const BinaryData& getTxHash(void) const;
-   uint32_t          getIndex(void) const;
-   uint32_t          getTxTime(void) const;
-   bool              isCoinbase(void) const;
-   bool              isSentToSelf(void) const;
-   bool              isChangeBack(void) const;
-   bool              isOptInRBF(void) const;
-   bool              usesWitness(void) const;
-   bool              isChainedZC(void) const;
+         std::string       getWalletID(void) const;
+         int64_t           getValue(void) const;
+         uint32_t          getBlockNum(void) const;
+         const BinaryData& getTxHash(void) const;
+         uint32_t          getIndex(void) const;
+         uint32_t          getTxTime(void) const;
+         bool              isCoinbase(void) const;
+         bool              isSentToSelf(void) const;
+         bool              isChangeBack(void) const;
+         bool              isOptInRBF(void) const;
+         bool              usesWitness(void) const;
+         bool              isChainedZC(void) const;
 
-   Armory::ScriptPrefix getScriptType(void) const;
-   void setScrAddrList(std::set<BinaryData>&);
-   const std::set<BinaryData>& getScrAddrList(void) const;
+         ScriptPrefix getScriptType(void) const;
+         const std::set<BinaryData>& getScrAddrList(void) const;
 
-   bool operator<(const LedgerEntry&) const;
-   bool operator>(const LedgerEntry&) const;
-   bool operator==(const LedgerEntry&) const;
+         bool operator<(const Entry&) const;
+         bool operator>(const Entry&) const;
+         bool operator==(const Entry&) const;
 
-   void pprint(void);
-   void pprintOneLine(void) const;
+         void pprint(void);
+         void pprintOneLine(void) const;
 
-   static void purgeLedgerMapFromHeight(
-      std::map<BinaryData, LedgerEntry>&,
-      uint32_t);
-   static void purgeLedgerVectorFromHeight(
-      std::vector<LedgerEntry>&,
-      uint32_t);
-   static std::map<BinaryData, LedgerEntry> computeLedgerMap(
-      const std::map<BinaryData, TxIOPair>&,
-      uint32_t, uint32_t, const std::string&,
-      const LMDBBlockDatabase*, const Blockchain*,
-      const Armory::ZeroConf::ZeroConfContainer*);
+         static void purgeLedgerMapFromHeight(
+            std::map<BinaryData, Entry>&,
+            uint32_t);
+         static void purgeLedgerVectorFromHeight(
+            std::vector<Entry>&,
+            uint32_t);
 
-private:
-   std::string ID_; //holds either a scrAddr or a walletId
-   int64_t     value_;
-   uint32_t    blockNum_;
-   BinaryData  txHash_;
-   uint32_t    index_; // either a tx index, txout index or txin index
-   uint32_t    txTime_ = 0;
-   bool        isCoinbase_ = false;
-   bool        isSentToSelf_ = false;
-   bool        isChangeBack_ = false;
-   bool        isOptInRBF_ = false;
-   bool        usesWitness_ = false;
-   bool        isChainedZC_ = false;
+      private:
+         std::string ID_; //holds either a scrAddr or a walletId
+         int64_t     value_;
+         uint32_t    blockNum_;
+         BinaryData  txHash_;
+         uint32_t    index_; // either a tx index, txout index or txin index
+         uint32_t    txTime_ = 0;
+         bool        isCoinbase_ = false;
+         bool        isSentToSelf_ = false;
+         bool        isChangeBack_ = false;
+         bool        isOptInRBF_ = false;
+         bool        usesWitness_ = false;
+         bool        isChainedZC_ = false;
 
-   //for matching scrAddr comments to LedgerEntries on the Python side
-   std::set<BinaryData> scrAddrSet_;
-}; 
+         //for matching scrAddr comments to LedgerEntries on the Python side
+         std::set<BinaryData> scrAddrSet_;
+      };
 
-struct LedgerEntry_DescendingOrder
-{
-   bool operator()(const LedgerEntry&, const LedgerEntry&) const;
-};
+      struct DescendingOrder
+      {
+         bool operator()(const Entry&, const Entry&) const;
+      };
 
-class LedgerDelegate
-{
-private:
-   const std::function<std::vector<LedgerEntry>(uint32_t)> getHistoryPage_;
-   const std::function<uint32_t(uint32_t)> getBlockInVicinity_;
-   const std::function<uint32_t(uint32_t)> getPageIdForBlockHeight_;
-   const std::function<uint32_t(void)> getPageCount_;
+      class Delegate
+      {
+      private:
+         const std::function<std::vector<Entry>(uint32_t)> getHistoryPage_;
+         const std::function<uint32_t(uint32_t)> getBlockInVicinity_;
+         const std::function<uint32_t(uint32_t)> getPageIdForBlockHeight_;
+         const std::function<uint32_t(void)> getPageCount_;
 
-public:
-   LedgerDelegate(
-      std::function<std::vector<LedgerEntry>(uint32_t)>,
-      std::function<uint32_t(uint32_t)>,
-      std::function<uint32_t(uint32_t)>,
-      std::function<uint32_t(void)>);
+      public:
+         Delegate(
+            std::function<std::vector<Entry>(uint32_t)>,
+            std::function<uint32_t(uint32_t)>,
+            std::function<uint32_t(uint32_t)>,
+            std::function<uint32_t(void)>);
 
-   std::vector<LedgerEntry> getHistoryPage(uint32_t);
-   uint32_t getBlockInVicinity(uint32_t);
-   uint32_t getPageIdForBlockHeight(uint32_t);
-   uint32_t getPageCount(void);
-};
+         std::vector<Entry> getHistoryPage(uint32_t) const;
+         uint32_t getBlockInVicinity(uint32_t) const;
+         uint32_t getPageIdForBlockHeight(uint32_t) const;
+         uint32_t getPageCount(void) const;
+      };
+
+      std::map<BinaryData, Entry> computeLedgerMap(
+         const std::map<BinaryData, TxIOPair>&,
+         uint32_t, uint32_t, const std::string&,
+         const Context&);
+   } //namespace Ledgers
+} //namespace Armory
