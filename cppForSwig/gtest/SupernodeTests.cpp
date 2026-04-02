@@ -64,7 +64,6 @@ protected:
    /////////////////////////////////////////////////////////////////////////////
    virtual void SetUp()
    {
-      LOGDISABLESTDOUT();
       zeros_ = READHEX("00000000");
 
       FileUtils::removeDirectory(blkdir_);
@@ -100,7 +99,6 @@ protected:
       FileUtils::removeDirectory(ldbdir_);
       Config::reset();
 
-      LOGENABLESTDOUT();
       CLEANUP_ALL_TIMERS();
    }
 
@@ -1380,7 +1378,6 @@ protected:
    /////////////////////////////////////////////////////////////////////////////
    virtual void SetUp()
    {
-      LOGDISABLESTDOUT();
       zeros_ = READHEX("00000000");
 
       FileUtils::removeDirectory(blkdir_);
@@ -1418,7 +1415,6 @@ protected:
       FileUtils::removeDirectory(ldbdir_);
       Config::reset();
 
-      LOGENABLESTDOUT();
       CLEANUP_ALL_TIMERS();
    }
 
@@ -1932,7 +1928,6 @@ protected:
    /////////////////////////////////////////////////////////////////////////////
    virtual void SetUp()
    {
-      LOGDISABLESTDOUT();
       zeros_ = READHEX("00000000");
 
       FileUtils::removeDirectory(blkdir_);
@@ -2011,7 +2006,6 @@ protected:
       FileUtils::removeDirectory(ldbdir_);
       Config::reset();
 
-      //LOGENABLESTDOUT();
       CLEANUP_ALL_TIMERS();
    }
 
@@ -5140,7 +5134,8 @@ GTEST_API_ int main(int argc, char **argv)
    srand(time(0));
    std::cout << "Running main() from gtest_main.cc\n";
    SETLOGLEVEL(LogLvlDebug);
-   LOGENABLESTDOUT();
+   //LOGENABLESTDOUT();
+   LOGDISABLESTDOUT();
 
    testing::InitGoogleTest(&argc, argv);
    int exitCode = RUN_ALL_TESTS();

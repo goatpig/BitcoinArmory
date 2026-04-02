@@ -87,7 +87,7 @@ int32_t BlockchainScanner::check_merkle(int32_t scanFrom)
 ////////////////////////////////////////////////////////////////////////////////
 bool BlockchainScanner::scan_nocheck(int32_t scanFrom)
 {
-   if (scanFrom > (int32_t)db_->blockchain()->top()->getBlockHeight()) {
+   if (scanFrom > (int32_t)blockchain_->top()->getBlockHeight()) {
       return true;
    }
    TIMER_RESTART("scan_nocheck");
@@ -954,7 +954,7 @@ void BlockchainScanner::updateSSH(bool force, int32_t startHeight)
       startHeight = 0;
    }
 
-   if (startHeight > (int32_t)db_->blockchain()->top()->getBlockHeight()) {
+   if (startHeight > (int32_t)blockchain_->top()->getBlockHeight()) {
       return;
    }
 
@@ -1035,10 +1035,20 @@ void BlockchainScanner::updateSSH(bool force, int32_t startHeight)
 
       for (const auto& txid : txnsToResolve) {
          try {
-            //build list of all referred hashes in txins
-            auto tx = db_->getFullTxCopy(txid);
+            //breakdown txkey
+            unsigned height;
+            uint8_t dup;
+            uint16_t txIndex;
+
+            BinaryRefReader brr(txid);
+            DBUtils::readBlkDataKeyNoPrefix(brr, height, dup, txIndex);
+            auto header = blockchain_->getHeaderByHeight(height, dup);
+
+            //grab the tx
+            auto tx = db_->getFullTxCopy(txIndex, header);
             auto dataPtr = tx.getPtr();
 
+            //build list of all referred hashes in txins
             auto txinCount = tx.getNumTxIn();
             for (size_t i = 0; i < txinCount; i++) {
                auto offset = tx.getTxInOffset(i);
@@ -1107,10 +1117,17 @@ void BlockchainScanner::preloadUtxos()
       if (stxo.spentness == TXOUT_SPENT) {
          continue;
       }
-      stxo.parentHash = move(db_->getTxHashForLdbKey(
-         stxo.getDBKeyOfParentTx(false)));
+      auto stxoKey = stxo.getDBKeyOfParentTx(false);
+      BinaryRefReader brrKey{stxoKey};
+      unsigned height;
+      uint8_t dup;
+      uint16_t txId;
+      DBUtils::readBlkDataKeyNoPrefix(brrKey, height, dup, txId);
+      auto header = blockchain_->getHeaderByHeight(height, dup);
+
+      stxo.parentHash = move(db_->getTxHashForLdbKey(stxoKey, header));
       auto& idMap = utxoMap_[stxo.parentHash];
-      idMap.emplace(stxo.txOutIndex, move(stxo));
+      idMap.emplace(stxo.txOutIndex, std::move(stxo));
    }
 }
 

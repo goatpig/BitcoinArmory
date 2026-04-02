@@ -124,7 +124,7 @@ BlockDataManager::BlockDataManager(std::function<bool(void)> shutdownLbd) :
    blockchain_ = std::make_shared<Blockchain>(
       Config::BitcoinSettings::getGenesisBlockHash());
    blockFiles_ = std::make_shared<BlockFiles>(Config::Pathing::blkFilePath());
-   iface_ = new LMDBBlockDatabase(blockchain_, Config::Pathing::blkFilePath());
+   iface_ = new LMDBBlockDatabase(Config::Pathing::blkFilePath());
    nodeStatusPollMutex_ = std::make_shared<std::mutex>();
 
    try {
@@ -138,7 +138,8 @@ BlockDataManager::BlockDataManager(std::function<bool(void)> shutdownLbd) :
       }
 
       zeroConfCont_ = std::make_shared<ZeroConf::ZeroConfContainer>(
-         iface_, processNode_, Config::DBSettings::zcThreadCount());
+         iface_, blockchain_, processNode_,
+         Config::DBSettings::zcThreadCount());
       zeroConfCont_->setWatcherNode(watchNode_);
 
       scrAddrData_ = std::make_shared<BDM_ScrAddrFilter>(this);
@@ -308,11 +309,17 @@ ReorganizationState BlockDataManager::readBlkFileUpdate()
 StoredHeader BlockDataManager::getBlockFromDB(uint32_t hgt, uint8_t dup) const
 {
    // Get the full block from the DB
-   StoredHeader returnSBH;
-   if (!iface_->getStoredHeader(returnSBH, hgt, dup)) {
+   try {
+      StoredHeader returnSBH;
+      auto header = blockchain_->getHeaderByHeight(hgt, dup);
+      if (!iface_->getStoredHeader(returnSBH, header)) {
+         return {};
+      }
+      return returnSBH;
+   } catch (const std::exception&) {
+      LOGWARN << "no block data for " << hgt << "|" << dup;
       return {};
    }
-   return returnSBH;
 }
 
 uint32_t BlockDataManager::getTopBlockHeight() const

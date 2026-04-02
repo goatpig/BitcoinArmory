@@ -1355,60 +1355,6 @@ ScrAddrObj AsyncClient::BtcWallet::getScrAddrObj(const BinaryData& scrAddr,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void AsyncClient::BtcWallet::createAddressBook(
-   std::function<void(ReturnMessage<std::vector<AddressBookEntry>>)> callback) const
-{
-   //create capnp request
-   capnp::MallocMessageBuilder message;
-   auto payload = message.initRoot<Codec::BDV::Request>();
-
-   auto walletRequest = payload.initWallet();
-   walletRequest.setWalletId(walletID_);
-   walletRequest.setCreateAddressBook();
-
-   //serialize and add to payload
-   auto write_payload = toWritePayload(message);
-
-   //reply handling lambda
-   auto read_payload = std::make_shared<Socket_ReadPayload>();
-   read_payload->callbackReturn_ =
-      std::make_unique<ClientCallback>([callback](const WebSocketMessagePartial& msg){
-         try {
-            //deser capnp reply
-            auto msgReader = msg.getReader();
-            auto capnReader = msgReader->getReader();
-            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
-
-            //sanity checks
-            if (!reply.getSuccess()) {
-               throw ClientMessageError(reply.getError(), -1);
-            }
-
-            if (!reply.isWallet()) {
-               throw ClientMessageError("expected wallet reply", WRONG_REPLY_CLASS);
-            }
-
-            auto walletReply = reply.getWallet();
-            if (!walletReply.isCreateAddressBook()) {
-               throw ClientMessageError(
-                  "expected createAddressBook reply", WRONG_REPLY_TYPE);
-            }
-
-            //convert to address book
-            auto result = capnToAddrBook(
-               walletReply.getCreateAddressBook());
-            callback(ReturnMessage<std::vector<AddressBookEntry>>(result));
-         } catch (ClientMessageError& e) {
-            //something went wrong, set error message and fire callback
-            callback(ReturnMessage<std::vector<AddressBookEntry>>(e));
-         }
-      });
-
-   //push to server
-   sock_->pushPayload(move(write_payload), read_payload);
-}
-
-///////////////////////////////////////////////////////////////////////////////
 void BtcWallet::getLedgerDelegate(
    std::function<void(ReturnMessage<LedgerDelegate>)> callback)
 {

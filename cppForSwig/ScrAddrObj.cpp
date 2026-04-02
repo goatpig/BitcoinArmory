@@ -406,7 +406,7 @@ std::vector<UnspentTxOut> ScrAddrObj::getAllUTXOs(
       auto txout_key = txioPair.second.getDBKeyOfOutput();
       StoredTxOut stxo;
       db_->getStoredTxOut(stxo, txout_key);
-      auto hash = db_->getTxHashForLdbKey(txout_key.getSliceRef(0, 6));
+      auto hash = db_->getTxHashForLdbKey(txout_key.getSliceRef(0, 6), nullptr);
 
       BinaryData script(stxo.getScriptRef());
       utxoList.emplace_back(UnspentTxOut{
@@ -415,79 +415,6 @@ std::vector<UnspentTxOut> ScrAddrObj::getAllUTXOs(
       );
    }
    return utxoList;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-std::vector<UnspentTxOut> ScrAddrObj::getFullTxOutList(uint32_t currBlk,
-   bool ignoreZc) const
-{
-   if (currBlk == 0) {
-      currBlk = UINT32_MAX;
-   }
-   if (currBlk != UINT32_MAX) {
-      ignoreZc = true;
-   }
-   auto utxoVec = getSpendableTxOutList(ignoreZc);
-
-   auto utxoIter = utxoVec.rbegin();
-   uint32_t cutOff = UINT32_MAX;
-
-   while (utxoIter != utxoVec.rend()) {
-      if (utxoIter->getTxHeight() <= currBlk) {
-         cutOff = utxoVec.size() - (utxoIter - utxoVec.rbegin());
-         break;
-      }
-   }
-
-   utxoVec.erase(utxoVec.begin() + cutOff, utxoVec.end());
-   return utxoVec;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-std::vector<UnspentTxOut> ScrAddrObj::getSpendableTxOutList(
-   bool ignoreZc) const
-{
-   StoredScriptHistory ssh;
-   std::map<BinaryData, UnspentTxOut> utxoMap;
-   db_->getStoredScriptHistory(ssh, scrAddr_);
-   db_->getFullUTXOMapForSSH(ssh, utxoMap, false);
-
-   auto txios = getTxios(0, UINT32_MAX);
-   std::vector<UnspentTxOut> utxoVec;
-   for (auto& utxo : utxoMap) {
-      auto txioIter = txios.find(utxo.first);
-      if (txioIter != txios.end()) {
-         if (txioIter->second.hasTxInZC()) {
-            continue;
-         }
-      }
-      utxoVec.emplace_back(utxo.second);
-   }
-
-   if (ignoreZc) {
-      return utxoVec;
-   }
-
-   auto tx = db_->beginTransaction(DB_SELECT::STXO, LMDB::Mode::ReadOnly);
-   for (const auto& txio : txios) {
-      if (!txio.second.hasTxOutZC()) {
-         continue;
-      }
-      if (txio.second.hasTxInZC()) {
-         continue;
-      }
-
-      auto txout_key = txio.second.getDBKeyOfOutput();
-      StoredTxOut stxo;
-      db_->getStoredTxOut(stxo, txout_key);
-      auto hash = db_->getTxHashForLdbKey(txout_key.getSliceRef(0, 6));
-
-      BinaryData script{stxo.getScriptRef()};
-      utxoVec.emplace_back(UnspentTxOut{
-         hash, txio.second.getIndexOfOutput(), stxo.getHeight(),
-         stxo.getValue(), script});
-   }
-   return utxoVec;
 }
 
 ////////

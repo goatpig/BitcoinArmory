@@ -161,7 +161,8 @@ Context Ledgers::prepareContext(
    std::map<BinaryData, Tx> txMap;
    for (const auto& txKey : txKeys) {
       if (!txKey.startsWith(DBUtils::ZCPrefix)) {
-         txMap.emplace(txKey, db->getFullTxCopy(txKey));
+         //we don't use this anymore
+         txMap.emplace(txKey, db->getFullTxCopy(0, nullptr));
       } else {
          auto ptx = zcSs->getTxByKey(txKey);
          txMap.emplace(txKey, ptx->getTxObj());

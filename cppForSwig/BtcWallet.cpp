@@ -296,10 +296,12 @@ vector<UTXO> BtcWallet::getSpendableTxOutListForValue(uint64_t val)
          if (!txioPair.second.isSpendable(blk)) {
             continue;
          }
-         auto&& txout_key = txioPair.second.getDBKeyOfOutput();
+         auto txout_key = txioPair.second.getDBKeyOfOutput();
          StoredTxOut stxo;
-         db->getStoredTxOut(stxo, txout_key);
-         auto hash = db->getTxHashForLdbKey(txout_key.getSliceRef(0, 6));
+         if (!db->getStoredTxOut(stxo, txout_key)) {
+            throw std::runtime_error("no txOut for key " + txout_key.toHexStr());
+         }
+         auto hash = db->getTxHashForLdbKey(txout_key.getSliceRef(0, 6), nullptr);
 
          UTXO utxo(
             stxo.getValue(), stxo.getHeight(),
@@ -309,9 +311,8 @@ vector<UTXO> BtcWallet::getSpendableTxOutListForValue(uint64_t val)
       }
    }
 
-   //Shipped a list of TxOuts, time to reset the entire TxOut history, since 
+   //Shipped a list of TxOuts, time to reset the entire TxOut history, since
    //we dont know if any TxOut will be spent
-
    resetTxOutHistory();
    return utxoList;
 }
@@ -373,83 +374,6 @@ vector<UTXO> BtcWallet::getRBFTxOutList()
    }
 
    return utxoVec;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Return a list of addresses this wallet has ever sent to (w/o change addr)
-// Does not include zero-conf tx
-//
-// TODO: make this scalable!
-//
-std::vector<AddressBookEntry> BtcWallet::createAddressBook() const
-{
-   // Collect all data into a map -- later converted to vector and sort it
-   std::map<BinaryData, std::set<BinaryData>> sentToMap;
-   std::map<BinaryData, BinaryData> keyToHash;
-
-   auto scrAddrMap = scrAddrMap_.get();
-   auto db = bdvPtr_->getDB();
-
-   for (const auto& saPair : *scrAddrMap) {
-      auto txioMap = saPair.second->getTxios(0, UINT32_MAX);
-      for (const auto& txioPair : txioMap) {
-         //skip unspent and zc spends
-         if (!txioPair.second.hasTxIn() || txioPair.second.hasTxInZC()) {
-            continue;
-         }
-
-         //skip already processed tx
-         auto dbKey = txioPair.second.getDBKeyOfInput();
-         auto& txHash = keyToHash[dbKey];
-         if (txHash.getSize() == 32) {
-            continue;
-         }
-
-         //grab tx
-         try {
-            auto fullTx = db->getFullTxCopy(dbKey.getSliceRef(0, 6));
-            txHash = fullTx.getThisHash();
-
-            auto nOut = fullTx.getNumTxOut();
-            auto txPtr = fullTx.getPtr();
-
-            for (unsigned i = 0; i < nOut; i++) {
-               unsigned offset = fullTx.getTxOutOffset(i);
-               unsigned outputSize = fullTx.getTxOutOffset(i + 1) - offset;
-               BinaryDataRef outputRef(txPtr + offset + 8, outputSize);
-
-               BinaryRefReader brr(outputRef);
-               auto scriptSize = brr.get_var_int();
-
-               auto scrRef = BtcUtils::getTxOutScrAddrNoCopy(
-                  brr.get_BinaryDataRef(scriptSize));
-               auto scrAddr = scrRef.getScrAddr();
-
-               if (hasScrAddress(scrRef.getScrAddr())) {
-                  continue;
-               }
-               auto& hashSet = sentToMap[scrAddr];
-               hashSet.emplace(txHash);
-            }
-         } catch (const std::exception& e) {
-            LOGWARN << "failed to grab tx for key: " << dbKey.toHexStr() <<
-               " with error: " << e.what();
-         }
-      }
-   }
-
-   std::vector<AddressBookEntry> outputVect;
-   outputVect.reserve(sentToMap.size());
-   for (const auto &entry : sentToMap) {
-      AddressBookEntry abe(entry.first);
-      for (auto& hash : entry.second) {
-         abe.addTxHash(std::move(hash));
-      }
-      outputVect.emplace_back(std::move(abe));
-   }
-
-   std::sort(outputVect.begin(), outputVect.end());
-   return outputVect;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

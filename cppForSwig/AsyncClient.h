@@ -273,8 +273,6 @@ namespace AsyncClient
       void unregisterAddresses(const std::set<BinaryData>&);
       void unregister(void);
 
-      void createAddressBook(
-         std::function<void(ReturnMessage<std::vector<AddressBookEntry>>)>) const;
       void getLedgerDelegate(
          std::function<void(ReturnMessage<LedgerDelegate>)>);
 

@@ -162,11 +162,10 @@ struct WalletRequest {
       unset                @1 : Void;
 
       getLedgerDelegate    @2 : Void;
-      createAddressBook    @3 : Void;
-      getBalanceAndCount   @4 : UInt32;
-      getOutputs           @5 : TxoutRequest;
-      setConfTarget        @6 : UInt32;
-      unregisterAddresses  @7 : List(Address);
+      getBalanceAndCount   @3 : UInt32;
+      getOutputs           @4 : TxoutRequest;
+      setConfTarget        @5 : UInt32;
+      unregisterAddresses  @6 : List(Address);
    }
 }
 
@@ -175,11 +174,10 @@ struct WalletReply {
       unset                @0 : Void;
 
       getLedgerDelegate    @1 : Types.DelegateId;
-      createAddressBook    @2 : Types.AddressBook;
-      getBalanceAndCount   @3 : Types.BalanceAndCount;
-      getOutputs           @4 : List(Types.Output);
-      setConfTarget        @5 : Void;
-      unregisterAddresses  @6 : Void;
+      getBalanceAndCount   @2 : Types.BalanceAndCount;
+      getOutputs           @3 : List(Types.Output);
+      setConfTarget        @4 : Void;
+      unregisterAddresses  @5 : Void;
    }
 }
 

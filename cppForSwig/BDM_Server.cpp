@@ -522,37 +522,6 @@ namespace {
             return builder;
          }
 
-         case WalletRequest::Which::CREATE_ADDRESS_BOOK:
-         {
-            auto builder = ReplyBuilder::getNew(bdv);
-            auto walletReply = prepareReply(builder);
-
-            auto abeVec = wltPtr->createAddressBook();
-            auto capnAddrBook = walletReply.initCreateAddressBook();
-            auto capnAbes = capnAddrBook.initEntries(abeVec.size());
-
-            unsigned i=0;
-            for (const auto& abe : abeVec) {
-               auto capnAbe = capnAbes[i++];
-
-               const auto& scrAddr = abe.getScrAddr();
-               capnAbe.setScrAddr(capnp::Data::Builder(
-                  (uint8_t*)scrAddr.getPtr(), scrAddr.getSize()
-               ));
-
-               const auto& txHashList = abe.getTxHashList();
-               auto capnHashes = capnAbe.initTxHashes(txHashList.size());
-
-               unsigned y=0;
-               for (const auto& hash : txHashList) {
-                  capnHashes.set(y++, capnp::Data::Builder(
-                     (uint8_t*)hash.getPtr(), hash.getSize()
-                  ));
-               }
-            }
-            return builder;
-         }
-
          case WalletRequest::Which::GET_BALANCE_AND_COUNT:
          {
             auto builder = ReplyBuilder::getNew(bdv);

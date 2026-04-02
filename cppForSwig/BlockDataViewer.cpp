@@ -34,7 +34,7 @@ namespace
    {
       auto iter = hashMap.find(key);
       if (iter == hashMap.end()) {
-         auto hash = db->getTxHashForLdbKey(key.getRef());
+         auto hash = db->getTxHashForLdbKey(key.getRef(), nullptr);
          iter = hashMap.emplace(key, std::move(hash)).first;
       }
       return iter->second;
@@ -272,9 +272,21 @@ void BlockDataViewer::registerAddresses(WalletRegistrationRequest& request)
 ////////////////////////////////////////////////////////////////////////////////
 Tx BlockDataViewer::getTxByHash(BinaryDataRef txhash) const
 {
-   StoredTx stx;
-   if (db_->getStoredTx_byHash(txhash, &stx)) {
-      return stx.getTxCopy();
+   auto key = db_->getDBKeyForHash(txhash);
+   if (!key.empty()) {
+      unsigned id;
+      uint8_t dup;
+      uint16_t txId;
+      BinaryRefReader brrKey(key);
+      DBUtils::readBlkDataKeyNoPrefix(brrKey, id, dup, txId);
+
+      std::shared_ptr<BlockHeader> header;
+      if (dup != 0x7F) {
+         header = bc_->getHeaderByHeight(id, dup);
+      } else {
+         bc_->getHeaderById(id);
+      }
+      return db_->getFullTxCopy(txId, header);
    } else {
       return zeroConfCont_->getTxByHash(txhash);
    }
@@ -282,81 +294,19 @@ Tx BlockDataViewer::getTxByHash(BinaryDataRef txhash) const
 
 Tx BlockDataViewer::getTxByKey(BinaryDataRef dbKey) const
 {
-   StoredTx stx;
-   if (!db_->getStoredTx_byDBKey(stx, dbKey)) {
-      throw std::runtime_error("invalid tx dbkey");
+   unsigned id;
+   uint8_t dup;
+   uint16_t txId;
+   BinaryRefReader brrKey(dbKey);
+   DBUtils::readBlkDataKeyNoPrefix(brrKey, id, dup, txId);
+
+   std::shared_ptr<BlockHeader> header;
+   if (dup != 0x7F) {
+      header = bc_->getHeaderByHeight(id, dup);
+   } else {
+      bc_->getHeaderById(id);
    }
-   return stx.getTxCopy();
-}
-
-////////////////////////////////////////////////////////////////////////////////
-std::tuple<uint32_t, uint32_t, std::vector<unsigned>>
-BlockDataViewer::getTxMetaData(
-   const BinaryDataRef& txHash, bool withOpId) const
-{
-   unsigned txHeight = UINT32_MAX;
-   unsigned txIndex = UINT32_MAX;
-   vector<unsigned> opIds;
-
-   auto dbKey = db_->getDBKeyForHash(txHash);
-   switch (dbKey.getSize())
-   {
-   case 6:
-   {
-      BinaryRefReader brr(dbKey.getRef());
-      brr.advance(4);
-      txIndex = brr.get_uint16_t(BE);
-
-      auto hgtx = dbKey.getSliceRef(0, 4);
-      if (db_->getDbType() == ARMORY_DB_TYPE::Super)
-      {
-         auto block_id = DBUtils::hgtxToHeight(hgtx);
-         auto header = bc_->getHeaderById(block_id);
-         txHeight = header->getBlockHeight();
-      }
-      else
-      {
-         txHeight = DBUtils::hgtxToHeight(hgtx);
-      }
-
-      //resolve outpoint heights too
-      StoredTx stx;
-      if (!db_->getStoredTx_byDBKey(stx, dbKey))
-         throw runtime_error("missing tx");
-      
-      if (withOpId)
-      {
-         auto tx = stx.getTxCopy();
-         for (unsigned i=0; i<tx.getNumTxIn(); i++)
-         {
-            auto&& txin = tx.getTxInCopy(i);
-            auto&& op = txin.getOutPoint();
-            opIds.push_back(db_->getHeightForTxHash(op.getTxHashRef()));
-         }
-      }
-
-      break;
-   }
-   case 0:
-   {
-      //possibly zc
-      auto ss = zeroConfCont_->getSnapshot();
-      auto keyRef = ss->getKeyForHash(txHash);
-      if (keyRef.empty())
-         break;
-
-      BinaryRefReader brr(keyRef);
-      brr.advance(2);
-      txIndex = brr.get_uint32_t(BE);
-
-      break;
-   }
-
-   default:
-      throw runtime_error("unexpected db key size");
-   }
-
-   return make_tuple(txHeight, txIndex, move(opIds));
+   return db_->getFullTxCopy(txId, header);
 }
 
 ////////
@@ -408,7 +358,7 @@ LMDBBlockDatabase* BlockDataViewer::getDB() const
 
 BinaryData BlockDataViewer::getTxHashForDbKey(const BinaryData& dbKey6) const
 {
-   return db_->getTxHashForLdbKey(dbKey6);
+   return db_->getTxHashForLdbKey(dbKey6, nullptr);
 }
 
 const Blockchain& BlockDataViewer::blockchain() const
@@ -495,9 +445,9 @@ StoredHeader BlockDataViewer::getMainBlockFromDB(uint32_t height) const
 StoredHeader BlockDataViewer::getBlockFromDB(
    uint32_t height, uint8_t dupID) const
 {
+   auto header = bc_->getHeaderByHeight(height, dupID);
    StoredHeader sbh;
-   db_->getStoredHeader(sbh, height, dupID, true);
-
+   db_->getStoredHeader(sbh, header, true);
    return sbh;
 }
 
@@ -712,12 +662,21 @@ uint32_t BlockDataViewer::getClosestBlockHeightForTime(uint32_t timestamp)
 TxOut BlockDataViewer::getTxOutCopy(
    const BinaryData& txHash, uint16_t index) const
 {
-   {
-      auto tx = db_->beginTransaction(DB_SELECT::STXO, LMDB::Mode::ReadOnly);
-      BinaryData bdkey = db_->getDBKeyForHash(txHash);
-      if (!bdkey.empty()) {
-         return db_->getTxOutCopy(bdkey, index);
+   auto key = db_->getDBKeyForHash(txHash);
+   if (!key.empty()) {
+      unsigned id;
+      uint8_t dup;
+      uint16_t txId;
+      BinaryRefReader brrKey(key);
+      DBUtils::readBlkDataKeyNoPrefix(brrKey, id, dup, txId);
+
+      std::shared_ptr<BlockHeader> header;
+      if (dup != 0x7F) {
+         header = bc_->getHeaderByHeight(id, dup);
+      } else {
+         bc_->getHeaderById(id);
       }
+      return db_->getTxOutCopy(key, index, header);
    }
 
    auto ss = zeroConfCont_->getSnapshot();
@@ -731,15 +690,24 @@ TxOut BlockDataViewer::getTxOutCopy(const BinaryData& dbKey) const
    if (dbKey.getSize() != 8) {
       throw std::runtime_error("invalid txout key length");
    }
-   auto tx = db_->beginTransaction(DB_SELECT::STXO, LMDB::Mode::ReadOnly);
 
-   auto bdkey = dbKey.getSliceRef(0, 6);
-   auto index = READ_UINT16_BE(dbKey.getSliceRef(6, 2));
+   unsigned id;
+   uint8_t dup;
+   uint16_t txId, txOutIndex;
+   BinaryRefReader brrKey(dbKey);
+   DBUtils::readBlkDataKeyNoPrefix(brrKey, id, dup, txId, txOutIndex);
+
    try {
-      return db_->getTxOutCopy(bdkey, index);
-   } catch (const std::runtime_error&) {
+      std::shared_ptr<BlockHeader> header;
+      if (dup != 0x7F) {
+         header = bc_->getHeaderByHeight(id, dup);
+      } else {
+         bc_->getHeaderById(id);
+      }
+      return db_->getTxOutCopy(dbKey, txOutIndex, header);
+   } catch (const std::exception&) {
       auto ss = zeroConfCont_->getSnapshot();
-      return ss->getTxOutCopy(bdkey, index);
+      return ss->getTxOutCopy(dbKey, txOutIndex);
    }
 }
 
@@ -753,7 +721,8 @@ StoredTxOut BlockDataViewer::getStoredTxOut(const BinaryData& dbKey) const
 
    StoredTxOut stxo;
    db_->getStoredTxOut(stxo, dbKey);
-   stxo.parentHash = move(db_->getTxHashForLdbKey(dbKey.getSliceRef(0, 6)));
+   stxo.parentHash = move(
+      db_->getTxHashForLdbKey(dbKey.getSliceRef(0, 6), nullptr));
    return stxo;
 }
 
@@ -767,7 +736,7 @@ Tx BlockDataViewer::getSpenderTxForTxOut(uint32_t height, uint32_t txindex,
    if (!stxo.isSpent()) {
       throw std::runtime_error("output is not spent!");
    }
-   return db_->getFullTxCopy(stxo.spentByTxInKey.getSliceRef(0, 6));
+   return getTxByKey(stxo.spentByTxInKey.getSliceRef(0, 6));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1092,7 +1061,7 @@ BlockDataViewer::getOutputsForOutpoints(
             }
             if (stxo.isSpent()) {
                stxo.spenderHash = db_->getTxHashForLdbKey(
-                  stxo.spentByTxInKey);
+                  stxo.spentByTxInKey, nullptr);
             }
             result.emplace_back(std::move(stxoPair));
          }

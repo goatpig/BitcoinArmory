@@ -27,7 +27,25 @@ using namespace std::chrono_literals;
 
 namespace
 {
+   Tx getFullTxCopy(const LMDBBlockDatabase* iface, std::shared_ptr<Blockchain> bc,
+      const BinaryData& txHash)
+   {
+      auto dbKey = iface->getDBKeyForHash(txHash);
+      unsigned id; uint8_t dup; uint16_t idx;
+      BinaryRefReader brrKey(dbKey);
+      DBUtils::readBlkDataKeyNoPrefix(brrKey, id, dup, idx);
+
+      std::shared_ptr<BlockHeader> header;
+      if (dup == 0x7F) {
+         header = bc->getHeaderById(id);
+      } else {
+         header = bc->getHeaderByHeight(id, dup);
+      }
+      return iface->getFullTxCopy(idx, header);
+   }
+
    int verifyTxSigs(const BinaryData& rawTx, const LMDBBlockDatabase* iface,
+      std::shared_ptr<Blockchain> bc,
       const std::map<BinaryDataRef, std::shared_ptr<MempoolObject>>& mempool)
    {
       Tx tx(rawTx);
@@ -37,21 +55,22 @@ namespace
          auto txin = tx.getTxInCopy(i);
          auto outpoint = txin.getOutPoint();
 
-         StoredTx stx;
-         if (iface->getStoredTx(stx, outpoint.getTxHash())) {
-            auto stxo = stx.initAndGetStxoByIndex(outpoint.getTxOutIndex());
+         auto prevHash = outpoint.getTxHash();
+         auto prevTx = getFullTxCopy(iface, bc, prevHash);
+         if (prevTx.isInitialized()) {
+            auto txOut = prevTx.getTxOutCopy(outpoint.getTxOutIndex());
             UTXO utxo(
-               stxo.getValue(), stx.blockHeight,
-               stx.txIndex, outpoint.getTxOutIndex(),
-               outpoint.getTxHash(), stxo.getScriptRef());
+               txOut.getValue(), prevTx.getTxHeight(),
+               prevTx.getTxIndex(), outpoint.getTxOutIndex(),
+               prevHash, txOut.getScriptRef());
 
-            auto& idMap = utxoMap[outpoint.getTxHash()];
+            auto& idMap = utxoMap[prevHash];
             idMap.emplace(outpoint.getTxOutIndex(), utxo);
             continue; //got the output, on to the next outpoint
          }
 
          //see if this is a zc outpoint instead
-         auto mempoolIter = mempool.find(outpoint.getTxHash());
+         auto mempoolIter = mempool.find(prevHash);
          if (mempoolIter == mempool.end()) {
             //couldn't find utxo
             return (int)ArmoryErrorCodes::ZcBroadcast_Error;
@@ -573,12 +592,10 @@ uint64_t NodeUnitTest::getFeeForTx(const Tx& tx) const
       auto txin = tx.getTxInCopy(i);
       auto outpoint = txin.getOutPoint();
 
-      StoredTx stx;
-      iface_->getStoredTx(stx, outpoint.getTxHash());
-      auto stxo = stx.initAndGetStxoByIndex(outpoint.getTxOutIndex());
-
-      if (stxo.isInitialized()) {
-         inputsVal += stxo.getValue();
+      auto tx = getFullTxCopy(iface_, blockchain_, outpoint.getTxHash());
+      auto txOutCopy = tx.getTxOutCopy(outpoint.getTxOutIndex());
+      if (txOutCopy.isInitialized()) {
+         inputsVal += txOutCopy.getValue();
          continue;
       }
 

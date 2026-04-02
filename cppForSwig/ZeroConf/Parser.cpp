@@ -120,8 +120,9 @@ bool RequestZcPacket::ready() const
 ////////////////////////////////////////////////////////////////////////////////
 // ZeroConfContainer
 ZeroConfContainer::ZeroConfContainer(LMDBBlockDatabase* db,
+   std::shared_ptr<Blockchain> bcPtr,
    std::shared_ptr<Node::BitcoinNodeInterface> node, unsigned maxZcThread) :
-   db_(db), networkNode_(node), maxZcThreadCount_(maxZcThread)
+   db_(db), bc_(bcPtr), networkNode_(node), maxZcThreadCount_(maxZcThread)
 {
    zcEnabled_.store(false, std::memory_order_relaxed);
    zcPreprocessQueue_ = std::make_shared<PreprocessQueue>();
@@ -214,7 +215,6 @@ ZeroConfContainer::purgeToBranchpoint(
    }
 
    std::set<BinaryData> keysToDelete;
-   auto bcPtr = db_->blockchain();
    auto currentHeader = reorgState.prevTop;
 
    //loop over headers
@@ -243,7 +243,7 @@ ZeroConfContainer::purgeToBranchpoint(
       }
 
       const auto& bhash = currentHeader->getPrevHash();
-      currentHeader = bcPtr->getHeaderByHash(bhash);
+      currentHeader = bc_->getHeaderByHash(bhash);
    }
 
    //drop the ZC from the mempool
@@ -313,15 +313,13 @@ std::map<BinaryData, std::shared_ptr<ParsedTx>> ZeroConfContainer::purge(
 
    //get all txhashes for the new blocks
    ZcUpdateBatch batch;
-   auto bcPtr = db_->blockchain();
-
    auto currentHeader = reorgState.prevTop;
    if (!reorgState.prevTopStillValid) {
       currentHeader = reorgState.reorgBranchPoint;
    }
 
    //get the next header
-   currentHeader = bcPtr->getHeaderByHash(currentHeader->getNextHash());
+   currentHeader = bc_->getHeaderByHash(currentHeader->getNextHash());
 
    //loop over headers
    while (currentHeader != nullptr) {
@@ -357,7 +355,7 @@ std::map<BinaryData, std::shared_ptr<ParsedTx>> ZeroConfContainer::purge(
       }
 
       const auto& bhash = currentHeader->getNextHash();
-      currentHeader = bcPtr->getHeaderByHash(bhash);
+      currentHeader = bc_->getHeaderByHash(bhash);
    }
 
    //drop the invalidated ZCs
@@ -997,7 +995,7 @@ unsigned ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
          if (zcKey.getSize() == 7) {
             //Tx, grab it from DB
             StoredTx zcStx;
-            db_->getStoredZcTx(zcStx, zcKey);
+            db_->getStoredZC(zcStx, zcKey);
 
             //add to newZCMap_
             auto zckey = zcKey.getSliceCopy(1, 6);

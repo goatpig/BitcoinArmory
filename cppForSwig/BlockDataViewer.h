@@ -128,10 +128,6 @@ public:
    bool hasWallet(const std::string&) const;
    Tx getTxByHash(BinaryDataRef) const;
    Tx getTxByKey(BinaryDataRef) const;
-
-   std::tuple<uint32_t, uint32_t, std::vector<unsigned>>
-   getTxMetaData(const BinaryDataRef&, bool) const;
-
    TxOut getPrevTxOut(const TxIn&) const;
    Tx getPrevTx(const TxIn&) const;
    BinaryData getSenderScrAddr(const TxIn&) const;

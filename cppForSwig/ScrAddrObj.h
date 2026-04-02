@@ -129,9 +129,6 @@ public:
    uint64_t getFullBalance(unsigned=UINT32_MAX) const;
    uint64_t getSpendableBalance(uint32_t) const;
    uint64_t getUnconfirmedBalance(uint32_t, unsigned) const;
-
-   std::vector<UnspentTxOut> getFullTxOutList(uint32_t=UINT32_MAX, bool=true) const;
-   std::vector<UnspentTxOut> getSpendableTxOutList(bool=true) const;
    
    std::vector<Armory::Ledgers::Entry> getTxLedgerAsVector(
       const std::map<BinaryData, Armory::Ledgers::Entry>*) const;

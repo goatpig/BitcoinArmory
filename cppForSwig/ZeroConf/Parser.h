@@ -51,7 +51,9 @@ struct UTXO;
 
 namespace Armory
 {
+   class Blockchain;
    struct ReorganizationState;
+
    namespace Node
    {
       class BitcoinNodeInterface;
@@ -319,6 +321,7 @@ namespace Armory
          std::map<BinaryDataRef, std::set<BinaryDataRef>> keyToFundedScrAddr_;
 
          LMDBBlockDatabase* db_;
+         std::shared_ptr<Blockchain> bc_;
          std::shared_ptr<Node::BitcoinNodeInterface> networkNode_;
 
          std::shared_ptr<PreprocessQueue> zcPreprocessQueue_;
@@ -396,7 +399,7 @@ namespace Armory
             std::shared_ptr<MempoolSnapshot>);
 
       public:
-         ZeroConfContainer(LMDBBlockDatabase*,
+         ZeroConfContainer(LMDBBlockDatabase*, std::shared_ptr<Blockchain>,
             std::shared_ptr<Node::BitcoinNodeInterface>, unsigned);
 
          //action queue
