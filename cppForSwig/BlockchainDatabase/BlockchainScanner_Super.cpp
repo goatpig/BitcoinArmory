@@ -355,7 +355,7 @@ bool BlockchainScanner_Super::getTxKeyForHash(
       if (hd_iter == heightAndDupMap_.end()) {
          continue;
       }
-      if (!hd_iter->second.isMain_) {
+      if (!hd_iter->second.isMain) {
          continue;
       }
 
@@ -424,8 +424,8 @@ StxoRef BlockchainScanner_Super::getStxoByHash(
 
    StxoRef stxo;
    stxo.unserializeDBValue(data);
-   stxo.height_ = hd_iter->second.height_;
-   stxo.dup_ = hd_iter->second.dup_;
+   stxo.height_ = hd_iter->second.height;
+   stxo.dup_ = hd_iter->second.dup;
    stxo.txIndex_ = txid;
    stxo.txOutIndex_ = txoId;
    return stxo;
@@ -1010,15 +1010,15 @@ void BlockchainScanner_Super::parseSpentnessThread(ParserBatch_Spentness* batch)
 
             //create txout key
             unsigned converted_height =
-               UINT32_MAX - height_iter->second.height_;
+               UINT32_MAX - height_iter->second.height;
             auto&& txoutkey = DBUtils::getBlkDataKeyNoPrefix(
-               converted_height, height_iter->second.dup_,
+               converted_height, height_iter->second.dup,
                txid, txOutId);
 
             auto spentness_pair = make_pair(move(txoutkey), bw.getData());
 
             //figure out which bucket this key goes in
-            if (height_iter->second.height_ >= (uint32_t)batch->bdb_->end_)
+            if (height_iter->second.height >= (uint32_t)batch->bdb_->end_)
             {
                //output belongs to tx within our batch range, we can
                //commit the spentness data right away

@@ -24,105 +24,103 @@ class BlockHeader;
 class BlockData;
 class LMDBBlockDatabase;
 
-////////////////////////////////////////////////////////////////////////////////
-struct HeightAndDup
+namespace Armory
 {
-   const unsigned height_;
-   const uint8_t dup_;
-   bool isMain_;
+   struct HeightAndDup
+   {
+      const unsigned height;
+      const uint8_t dup;
+      bool isMain;
 
-   HeightAndDup(unsigned height, uint8_t dup, bool isMain) :
-      height_(height), dup_(dup), isMain_(isMain)
-   {}
-};
+      HeightAndDup(unsigned, uint8_t, bool);
+   };
 
-struct ReorganizationState
-{
-   bool prevTopStillValid = false;
-   bool hasNewTop = false;
-   std::shared_ptr<BlockHeader> prevTop;
-   std::shared_ptr<BlockHeader> newTop;
-   std::shared_ptr<BlockHeader> reorgBranchPoint;
-};
+   struct ReorganizationState
+   {
+      bool prevTopStillValid = false;
+      bool hasNewTop = false;
+      std::shared_ptr<BlockHeader> prevTop;
+      std::shared_ptr<BlockHeader> newTop;
+      std::shared_ptr<BlockHeader> reorgBranchPoint;
+   };
 
-////////////////////////////////////////////////////////////////////////////////
-//
-// Manages the blockchain, keeping track of all the block headers
-// and our longest cord
-//
-class Blockchain
-{
-   using HeaderPtr = std::shared_ptr<BlockHeader>;
-
-public:
-   Blockchain(const BinaryData& genesisHash);
-   void clear();
-
-   /**
-    * check/add blocks to the chain
-   **/
-   std::set<uint32_t> checkForNewBlocks(const std::vector<std::shared_ptr<BlockData>>&);
-   void addBlocksInBulk(const std::deque<std::deque<HeaderPtr>>&, bool flag);
-   void forceAddBlocksInBulk(std::map<BinaryData, HeaderPtr>&);
-
-   /**
-    * organize/reorganize chain
-   **/
-   ReorganizationState organize(bool);
-   ReorganizationState forceOrganize();
-   ReorganizationState findReorgPointFromBlock(const BinaryData&);
-
-   void updateBranchingMaps(LMDBBlockDatabase*, ReorganizationState&);
-
-   std::shared_ptr<BlockHeader> top(void) const;
-   std::shared_ptr<BlockHeader> getGenesisBlock(void) const;
-   const std::shared_ptr<BlockHeader> getHeaderByHeight(
-      unsigned height, uint8_t dupId) const;
-   bool hasHeaderByHeight(unsigned height) const;
-
-   HeaderPtr getHeaderByHash(const BinaryData&) const;
-   HeaderPtr getHeaderById(uint32_t) const;
-
-   void putBareHeaders(LMDBBlockDatabase *db, bool updateDupID=true);
-   void putNewBareHeaders(LMDBBlockDatabase *db);
-
-   uint32_t getNewUniqueID(void) { return topID_.fetch_add(1, std::memory_order_relaxed); }
-   uint32_t getTopId(void) { return topID_.load(std::memory_order_relaxed); }
-   uint32_t getTopIdFromDb(LMDBBlockDatabase*) const;
-   void initTopBlockId(LMDBBlockDatabase* db);
-   void updateTopIdInDb(LMDBBlockDatabase*);
-
-   std::map<unsigned, std::set<unsigned>> mapIDsPerBlockFile(void) const;
-   std::map<unsigned, HeightAndDup> getHeightAndDupMap(void) const;
-   void flagBlockHeader(std::shared_ptr<BlockHeader>, LMDBBlockDatabase*);
-
-private:
-   std::shared_ptr<BlockHeader> organizeChain(bool forceRebuild = false, bool verbose = false);
    /////////////////////////////////////////////////////////////////////////////
-   // Update/organize the headers map (figure out longest chain, mark orphans)
-   // Start from a node, trace down to the highest solved block, accumulate
-   // difficulties and difficultySum values.  Return the difficultySum of 
-   // this block.
-   double traceChainDown(std::shared_ptr<BlockHeader> bhpStart);
+   // Manages the blockchain, keeping track of all the block headers
+   // and our longest cord
+   class Blockchain
+   {
+      using HeaderPtr = std::shared_ptr<BlockHeader>;
 
-private:
-   //TODO: get rid of this shyte!
-   //use std::unordered_map, manage access in class getters, not at container level
-   //they lead to too many copies, it slows down header parsing to a crawl
+   public:
+      Blockchain(const BinaryData&);
+      void clear(void);
 
-   const BinaryData genesisHash_;
-   Armory::Threading::TransactionalMap<BinaryData, HeaderPtr> headerMap_;
-   Armory::Threading::TransactionalMap<unsigned, HeaderPtr> headersById_;
-   Armory::Threading::TransactionalMap<unsigned, HeaderPtr> headersByHeight_;
+      /**
+      * check/add blocks to the chain
+      **/
+      std::set<uint32_t> checkForNewBlocks(const std::vector<std::shared_ptr<BlockData>>&);
+      void addBlocksInBulk(const std::deque<std::deque<HeaderPtr>>&, bool);
+      void forceAddBlocksInBulk(std::map<BinaryData, HeaderPtr>&);
 
-   std::vector<HeaderPtr> newlyParsedBlocks_;
-   HeaderPtr topBlockPtr_;
-   unsigned topBlockId_ = 0;
-   Blockchain(const Blockchain&); // not defined
+      /**
+      * organize/reorganize chain
+      **/
+      ReorganizationState organize(bool);
+      ReorganizationState forceOrganize();
+      ReorganizationState findReorgPointFromBlock(const BinaryData&);
 
-   std::atomic<uint32_t> topID_;
-   static const BinaryData topIdKey_;
+      void updateBranchingMaps(LMDBBlockDatabase*, ReorganizationState&);
 
-   mutable std::mutex mu_;
-   bool forceRebuildFlag_ = false;
-};
+      std::shared_ptr<BlockHeader> top(void) const;
+      std::shared_ptr<BlockHeader> getGenesisBlock(void) const;
+      const std::shared_ptr<BlockHeader> getHeaderByHeight(
+         unsigned, uint8_t) const;
+      bool hasHeaderByHeight(unsigned) const;
+
+      HeaderPtr getHeaderByHash(const BinaryData&) const;
+      HeaderPtr getHeaderById(uint32_t) const;
+
+      void putBareHeaders(LMDBBlockDatabase*, bool = true);
+      void putNewBareHeaders(LMDBBlockDatabase*);
+
+      uint32_t getNewUniqueID(void);
+      uint32_t getTopId(void) const;
+      uint32_t getTopIdFromDb(LMDBBlockDatabase*) const;
+      void initTopBlockId(LMDBBlockDatabase*);
+      void updateTopIdInDb(LMDBBlockDatabase*);
+
+      std::map<unsigned, std::set<unsigned>> mapIDsPerBlockFile(void) const;
+      std::map<unsigned, HeightAndDup> getHeightAndDupMap(void) const;
+      void flagBlockHeader(std::shared_ptr<BlockHeader>, LMDBBlockDatabase*);
+
+   private:
+      std::shared_ptr<BlockHeader> organizeChain(bool = false, bool = false);
+      /////////////////////////////////////////////////////////////////////////////
+      // Update/organize the headers map (figure out longest chain, mark orphans)
+      // Start from a node, trace down to the highest solved block, accumulate
+      // difficulties and difficultySum values.  Return the difficultySum of 
+      // this block.
+      double traceChainDown(std::shared_ptr<BlockHeader>);
+
+   private:
+      //TODO: get rid of this shyte!
+      //use std::unordered_map, manage access in class getters, not at container level
+      //they lead to too many copies, it slows down header parsing to a crawl
+
+      const BinaryData genesisHash_;
+      Armory::Threading::TransactionalMap<BinaryData, HeaderPtr> headerMap_;
+      Armory::Threading::TransactionalMap<unsigned, HeaderPtr> headersById_;
+      Armory::Threading::TransactionalMap<unsigned, HeaderPtr> headersByHeight_;
+
+      std::vector<HeaderPtr> newlyParsedBlocks_;
+      HeaderPtr topBlockPtr_;
+      unsigned topBlockId_ = 0;
+      Blockchain(const Blockchain&); // not defined
+
+      std::atomic<uint32_t> topID_;
+      static const BinaryData topIdKey_;
+
+      mutable std::mutex mu_;
+      bool forceRebuildFlag_ = false;
+   };
+} //namespace Armory

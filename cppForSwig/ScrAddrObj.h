@@ -29,10 +29,11 @@ namespace Armory
       class Entry;
       class HistoryPager;
    }
+
+   class Blockchain;
 }
 
 class LMDBBlockDatabase;
-class Blockchain;
 class UnspentTxOut;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -108,7 +109,7 @@ public:
    {}
 
    ScrAddrObj(LMDBBlockDatabase*,
-      const Blockchain*,
+      const Armory::Blockchain*,
       Armory::ZeroConf::ZeroConfContainer*,
       BinaryDataRef);
 
@@ -188,7 +189,7 @@ public:
 
 private:
    LMDBBlockDatabase *db_;
-   const Blockchain *bc_;
+   const Armory::Blockchain *bc_;
    Armory::ZeroConf::ZeroConfContainer *zc_;
    BinaryDataRef scrAddr_; //this includes the prefix byte!
 

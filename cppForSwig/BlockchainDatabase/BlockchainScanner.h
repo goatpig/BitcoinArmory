@@ -43,6 +43,9 @@ namespace Armory
    {
       class FileMap;
    }
+
+   class Blockchain;
+   struct ReorganizationState;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -88,7 +91,7 @@ public:
 class BlockchainScanner
 {
 private:
-   std::shared_ptr<Blockchain> blockchain_;
+   std::shared_ptr<Armory::Blockchain> blockchain_;
    LMDBBlockDatabase* db_;
    ScrAddrFilter* scrAddrFilter_;
    std::shared_ptr<BlockFiles> blockFiles_;
@@ -140,7 +143,7 @@ private:
    void processInputsThread(ParserBatch*);
 
 public:
-   BlockchainScanner(std::shared_ptr<Blockchain> bc,
+   BlockchainScanner(std::shared_ptr<Armory::Blockchain> bc,
       LMDBBlockDatabase* db, ScrAddrFilter* saf,
       std::shared_ptr<BlockFiles> bf,
       unsigned threadcount, unsigned queue_depth,
@@ -149,7 +152,7 @@ public:
    bool scan(int32_t startHeight);
    bool scan_nocheck(int32_t startHeight);
 
-   void undo(ReorganizationState& reorgState);
+   void undo(Armory::ReorganizationState& reorgState);
    void updateSSH(bool, int32_t startHeight);
    bool resolveTxHashes();
 

@@ -23,12 +23,21 @@
 #include "BlockDataMap.h"
 #include "lmdb_wrapper.h"
 
-const BinaryData Blockchain::topIdKey_ = READHEX("544f504944"); //TOPID in hex
+using namespace Armory;
+
+//TOPID in hex
+const BinaryData Armory::Blockchain::topIdKey_ = READHEX("544f504944");
 
 namespace {
    //helper containers used in Blockchain::traceDownChain
    std::map<BinaryDataRef, std::unordered_set<BinaryDataRef>> orphans;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// HeightAndDup
+HeightAndDup::HeightAndDup(unsigned height, uint8_t dup, bool isMain) :
+   height(height), dup(dup), isMain(isMain)
+{}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Blockchain
@@ -55,6 +64,7 @@ void Blockchain::clear()
    topID_.store(1, std::memory_order_relaxed);
 }
 
+////////
 ReorganizationState Blockchain::organize(bool verbose)
 {
    ReorganizationState st;
@@ -151,6 +161,7 @@ ReorganizationState Blockchain::findReorgPointFromBlock(
    return st;
 }
 
+////////
 std::shared_ptr<BlockHeader> Blockchain::top() const
 {
    auto ptr = std::atomic_load(&topBlockPtr_);
@@ -167,6 +178,7 @@ std::shared_ptr<BlockHeader> Blockchain::getGenesisBlock() const
    return iter->second;
 }
 
+////////
 const std::shared_ptr<BlockHeader> Blockchain::getHeaderByHeight(
    unsigned index, uint8_t dupId) const
 {
@@ -203,7 +215,6 @@ bool Blockchain::hasHeaderByHeight(unsigned height) const
    return true;
 }
 
-////////////////////////////////////////////////////////////////////////////////
 Blockchain::HeaderPtr Blockchain::getHeaderByHash(const BinaryData& blkHash) const
 {
    auto headermap = headerMap_.get();
@@ -215,7 +226,6 @@ Blockchain::HeaderPtr Blockchain::getHeaderByHash(const BinaryData& blkHash) con
    return it->second;
 }
 
-////////////////////////////////////////////////////////////////////////////////
 Blockchain::HeaderPtr Blockchain::getHeaderById(uint32_t id) const
 {
    auto headermap = headersById_.get();
@@ -478,7 +488,7 @@ double Blockchain::traceChainDown(std::shared_ptr<BlockHeader> bhpStart)
    return bhpStart->difficultySum_;
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 void Blockchain::putBareHeaders(LMDBBlockDatabase *db, bool updateDupID)
 {
    /***
@@ -503,7 +513,6 @@ void Blockchain::putBareHeaders(LMDBBlockDatabase *db, bool updateDupID)
    }
 }
 
-/////////////////////////////////////////////////////////////////////////////
 void Blockchain::putNewBareHeaders(LMDBBlockDatabase *db)
 {
    std::unique_lock<std::mutex> lock(mu_);
@@ -561,7 +570,7 @@ void Blockchain::putNewBareHeaders(LMDBBlockDatabase *db)
    db->setBlockIDBranch(blockIdMap);
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 uint32_t Blockchain::getTopIdFromDb(LMDBBlockDatabase *db) const
 {
    auto tx = db->beginTransaction(
@@ -576,7 +585,6 @@ uint32_t Blockchain::getTopIdFromDb(LMDBBlockDatabase *db) const
    return topId;
 }
 
-/////////////////////////////////////////////////////////////////////////////
 void Blockchain::initTopBlockId(LMDBBlockDatabase* db)
 {
    auto grabLastStxoKey = [db](void)->uint32_t
@@ -620,7 +628,6 @@ void Blockchain::initTopBlockId(LMDBBlockDatabase* db)
    }
 }
 
-/////////////////////////////////////////////////////////////////////////////
 void Blockchain::updateTopIdInDb(LMDBBlockDatabase *db)
 {
    auto inDbTopId = getTopIdFromDb(db);
@@ -635,7 +642,17 @@ void Blockchain::updateTopIdInDb(LMDBBlockDatabase *db)
    db->putValue(DB_SELECT::HEADERS, topIdKey_.getRef(), valRef);
 }
 
-/////////////////////////////////////////////////////////////////////////////
+uint32_t Blockchain::getNewUniqueID()
+{
+   return topID_.fetch_add(1, std::memory_order_relaxed);
+}
+
+uint32_t Blockchain::getTopId() const
+{
+   return topID_.load(std::memory_order_relaxed);
+}
+
+////////
 std::set<uint32_t> Blockchain::checkForNewBlocks(
    const std::vector<std::shared_ptr<BlockData>>& blocks)
 {
@@ -658,7 +675,6 @@ std::set<uint32_t> Blockchain::checkForNewBlocks(
    return result;
 }
 
-/////////////////////////////////////////////////////////////////////////////
 void Blockchain::addBlocksInBulk(
    const std::deque<std::deque<HeaderPtr>>& headerLists, bool areNew)
 {
@@ -736,7 +752,6 @@ void Blockchain::addBlocksInBulk(
    headersById_.update(idMap);
 }
 
-/////////////////////////////////////////////////////////////////////////////
 void Blockchain::forceAddBlocksInBulk(
    std::map<BinaryData, std::shared_ptr<BlockHeader>>& bhMap)
 {
@@ -751,7 +766,7 @@ void Blockchain::forceAddBlocksInBulk(
    headerMap_.update(bhMap);
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 std::map<unsigned, std::set<unsigned>> Blockchain::mapIDsPerBlockFile() const
 {
    std::unique_lock<std::mutex> lock(mu_);
@@ -765,7 +780,7 @@ std::map<unsigned, std::set<unsigned>> Blockchain::mapIDsPerBlockFile() const
    return resultMap;
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 std::map<unsigned, HeightAndDup> Blockchain::getHeightAndDupMap() const
 {
    auto headermap = headersById_.get();
@@ -781,7 +796,7 @@ std::map<unsigned, HeightAndDup> Blockchain::getHeightAndDupMap() const
    return result;
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 void Blockchain::flagBlockHeader(std::shared_ptr<BlockHeader> header,
    LMDBBlockDatabase *db)
 {

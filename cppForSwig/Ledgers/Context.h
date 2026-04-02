@@ -16,7 +16,6 @@
 
 class BinaryData;
 class BinaryDataRef;
-class Blockchain;
 class TxIOPair;
 class LMDBBlockDatabase;
 class Tx;
@@ -32,6 +31,7 @@ namespace Armory
    {
       class MempoolSnapshot;
    }
+   class Blockchain;
 
    namespace Ledgers
    {

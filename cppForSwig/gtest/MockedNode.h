@@ -16,7 +16,6 @@
 #include "BitcoinP2P.h"
 #include "nodeRPC.h"
 
-class Blockchain;
 class BlockFiles;
 class LMDBBlockDatabase;
 class BlockDataManager;
@@ -29,6 +28,7 @@ namespace Armory
    {
       class ScriptRecipient;
    }
+   class Blockchain;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -77,7 +77,7 @@ private:
    std::vector<UnitTestBlock> blocks_;
    std::atomic<unsigned> counter_;
 
-   std::shared_ptr<Blockchain> blockchain_ = nullptr;
+   std::shared_ptr<Armory::Blockchain> blockchain_ = nullptr;
    std::shared_ptr<BlockFiles> filesPtr_ = nullptr;
    std::atomic<unsigned> skipZc_ = {0};
    std::mutex sendMessageMutex_;
@@ -127,7 +127,7 @@ public:
    uint64_t getFeeForTx(const Tx&) const;
 
    //set
-   void setBlockchain(std::shared_ptr<Blockchain>);
+   void setBlockchain(std::shared_ptr<Armory::Blockchain>);
    void setBlockFiles(std::shared_ptr<BlockFiles>);
    void setIface(LMDBBlockDatabase*);
 

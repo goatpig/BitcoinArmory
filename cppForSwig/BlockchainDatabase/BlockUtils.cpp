@@ -486,5 +486,43 @@ void BlockDataManager::triggerOneTimeHooks(BDV_Notification* notifPtr)
          }
          hookPtr->func(notifPtr);
       }
-   } catch (const Armory::Threading::IsEmpty&) {}
+   } catch (const Threading::IsEmpty&) {}
+}
+
+////////
+std::shared_ptr<Blockchain> BlockDataManager::blockchain() const
+{
+   return blockchain_;
+}
+
+LMDBBlockDatabase* BlockDataManager::getIFace() const
+{
+   return iface_;
+}
+
+std::shared_ptr<BlockFiles> BlockDataManager::blockFiles() const
+{
+   return blockFiles_;
+}
+
+////////
+bool BlockDataManager::hasException() const
+{
+   return exceptPtr_ != nullptr;
+}
+
+std::exception_ptr BlockDataManager::getException() const
+{
+   return exceptPtr_;
+}
+
+////////
+bool BlockDataManager::isRunning() const
+{
+   return BDMstate_ != BDMState::Offline;
+}
+
+unsigned BlockDataManager::getCheckedTxCount() const
+{
+   return checkTransactionCount_;
 }

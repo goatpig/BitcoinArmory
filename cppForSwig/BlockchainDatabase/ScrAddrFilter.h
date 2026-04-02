@@ -27,8 +27,8 @@ namespace Armory
    {
       class ZeroConfContainer;
    }
+   class Blockchain;
 }
-class Blockchain;
 class LMDBBlockDatabase;
 struct StoredDBInfo;
 
@@ -234,6 +234,6 @@ protected:
    virtual std::shared_ptr<ScrAddrFilter> getNew(unsigned) = 0;
    virtual bool applyBlockRangeToDB(uint32_t,
       const std::vector<std::string>&, bool)=0;
-   virtual std::shared_ptr<Blockchain> blockchain(void) const = 0;
+   virtual std::shared_ptr<Armory::Blockchain> blockchain(void) const = 0;
    virtual bool bdmIsRunning(void) const = 0;
 };

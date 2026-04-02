@@ -36,9 +36,6 @@ enum BLOCKDATA_ORDER
 struct StoredSubHistory;
 class BlockData;
 class BlockFiles;
-class Blockchain;
-struct HeightAndDup;
-struct ReorganizationState;
 class LMDBBlockDatabase;
 
 namespace Armory
@@ -47,6 +44,10 @@ namespace Armory
    {
       class FileMap;
    }
+
+   class Blockchain;
+   struct HeightAndDup;
+   struct ReorganizationState;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -69,11 +70,11 @@ struct BlockDataBatch
 
    std::set<unsigned> blockDataFileIDs_;
    std::shared_ptr<BlockFiles> blockFiles_;
-   std::shared_ptr<Blockchain> blockchain_;
+   std::shared_ptr<Armory::Blockchain> blockchain_;
 
    BlockDataBatch(int start, int end, std::set<unsigned>& ids,
       BLOCKDATA_ORDER order,
-      std::shared_ptr<BlockFiles> bfl, std::shared_ptr<Blockchain> bcPtr) :
+      std::shared_ptr<BlockFiles> bfl, std::shared_ptr<Armory::Blockchain> bcPtr) :
       order_(order),
       start_(start), end_(end), blockDataFileIDs_(std::move(ids)),
       blockFiles_(bfl), blockchain_(bcPtr)
@@ -174,7 +175,7 @@ private:
    bool init_;
    unsigned batch_counter_ = 0;
 
-   std::shared_ptr<Blockchain> blockchain_;
+   std::shared_ptr<Armory::Blockchain> blockchain_;
    LMDBBlockDatabase* db_;
    std::shared_ptr<BlockFiles> blockFiles_;
 
@@ -192,7 +193,7 @@ private:
    const unsigned totalThreadCount_;
    const unsigned writeQueueDepth_;
    const unsigned totalBlockFileCount_;
-   std::map<unsigned, HeightAndDup> heightAndDupMap_;
+   std::map<unsigned, Armory::HeightAndDup> heightAndDupMap_;
 
    BinaryData topScannedBlockHash_;
 
@@ -227,7 +228,7 @@ private:
 
 public:
    BlockchainScanner_Super(
-      std::shared_ptr<Blockchain>, LMDBBlockDatabase*,
+      std::shared_ptr<Armory::Blockchain>, LMDBBlockDatabase*,
       std::shared_ptr<BlockFiles>, bool init,
       unsigned threadcount, unsigned,
       ProgressCallback prg, bool reportProgress);
@@ -235,7 +236,7 @@ public:
    void scan(void);
    void scanSpentness(void);
    void updateSSH(bool);
-   void undo(ReorganizationState&);
+   void undo(Armory::ReorganizationState&);
 
    const BinaryData& getTopScannedBlockHash(void) const
    {

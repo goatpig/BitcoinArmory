@@ -19,12 +19,17 @@
 #include <Utils/BinaryData.h>
 #include "TxClasses.h"
 
+namespace Armory
+{
+   class Blockchain;
+}
+
 class LMDBBlockDatabase;
 
 ////////
 class BlockHeader
 {
-   friend class Blockchain;
+   friend class Armory::Blockchain;
    friend class testBlockHeader;
    friend class BlockData;
 

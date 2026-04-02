@@ -23,11 +23,12 @@ class AlreadyPagedException
 {};
 
 class BinaryData;
-class Blockchain;
 class TxIOPair;
 
 namespace Armory
 {
+   class Blockchain;
+
    namespace Ledgers
    {
       class Entry;

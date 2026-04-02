@@ -32,6 +32,8 @@ namespace Armory
    {
       class Entry;
    }
+
+   struct ReorganizationState;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -61,11 +63,11 @@ struct BDV_Notification_Init : public BDV_Notification
 ///////////////////////////////////////////////////////////////////////////////
 struct BDV_Notification_NewBlock : public BDV_Notification
 {
-   ReorganizationState reorgState;
+   Armory::ReorganizationState reorgState;
    std::shared_ptr<Armory::ZeroConf::ZcPurgePacket> zcPurgePacket;
 
    BDV_Notification_NewBlock(
-      const ReorganizationState&,
+      const Armory::ReorganizationState&,
       std::shared_ptr<Armory::ZeroConf::ZcPurgePacket>);
    BDV_Action actionType(void) const override;
 };

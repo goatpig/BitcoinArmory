@@ -6,23 +6,31 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
+#include <deque>
+
 #include "BlockDataMap.h"
-#include "Blockchain.h"
 #include "bdmenums.h"
 #include "Progress.h"
 
+class LMDBBlockDatabase;
 class BlockDataManager;
 class ScrAddrFilter;
 class UnresolvedHashException {};
 
 typedef std::function<void(BDMPhase, double, unsigned, unsigned)> ProgressCallback;
 
+namespace Armory
+{
+   class Blockchain;
+   class ReorganizationState;
+}
+
 /////////////////////////////////////////////////////////////////////////////
 class DatabaseBuilder
 {
 private:
    std::shared_ptr<BlockFiles> blockFiles_;
-   std::shared_ptr<Blockchain> blockchain_;
+   std::shared_ptr<Armory::Blockchain> blockchain_;
    LMDBBlockDatabase* db_;
    std::shared_ptr<ScrAddrFilter> scrAddrFilter_;
 
@@ -43,12 +51,12 @@ private:
       )>&
    );
 
-   ReorganizationState updateBlocksInDB(
+   Armory::ReorganizationState updateBlocksInDB(
       const ProgressCallback&,
       std::shared_ptr<BlockDataLoader> = nullptr);
    BinaryData initTransactionHistory(int32_t);
    BinaryData scanHistory(int32_t, bool, bool);
-   void undoHistory(ReorganizationState&);
+   void undoHistory(Armory::ReorganizationState&);
 
    void resetHistory(void);
    void verifyTransactions(void);
@@ -70,7 +78,7 @@ public:
       const ProgressCallback&, bool);
 
    bool init(void);
-   ReorganizationState update(void);
+   Armory::ReorganizationState update(void);
 
    void verifyChain(void);
    unsigned getCheckedTxCount(void) const { return checkedTransactions_; }

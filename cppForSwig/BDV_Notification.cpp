@@ -54,7 +54,7 @@ BDV_Action BDV_Notification_Init::actionType() const
 ///////////////////////////////////////////////////////////////////////////////
 // BDV_Notification_NewBlock
 BDV_Notification_NewBlock::BDV_Notification_NewBlock(
-   const ReorganizationState& ref,
+   const Armory::ReorganizationState& ref,
    std::shared_ptr<Armory::ZeroConf::ZcPurgePacket> purgePacket) :
    BDV_Notification(BDV_NOTIF_BROADCAST),
    reorgState(ref), zcPurgePacket(purgePacket)

@@ -79,7 +79,6 @@ struct CombinedBalances
 };
 
 class ScrAddrFilter;
-class Blockchain;
 class BtcWallet;
 class BlockDataManager;
 struct StoredHeader;
@@ -103,6 +102,8 @@ namespace Armory
       class Delegate;
       class HistoryPager;
    }
+
+   class Blockchain;
 }
 
 class BlockDataViewer
@@ -139,7 +140,7 @@ public:
    LMDBBlockDatabase* getDB(void) const;
    BinaryData getTxHashForDbKey(const BinaryData&) const;
    Armory::ZeroConf::ZeroConfContainer* zcContainer(void) const;
-   const Blockchain& blockchain(void) const;
+   const Armory::Blockchain& blockchain(void) const;
    uint32_t getTopBlockHeight(void) const;
    const std::shared_ptr<BlockHeader> getTopBlockHeader(void) const;
    std::shared_ptr<BlockHeader> getHeaderByHash(const BinaryData&) const;
@@ -223,7 +224,7 @@ protected:
 
    std::shared_ptr<BlockDataManager> bdm_;
    LMDBBlockDatabase* db_;
-   std::shared_ptr<Blockchain> bc_;
+   std::shared_ptr<Armory::Blockchain> bc_;
    ScrAddrFilter* saf_;
 
    std::vector<WalletGroup> groups_;

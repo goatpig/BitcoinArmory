@@ -44,7 +44,6 @@
 using BdvIdKey = uint64_t;
 class AddrAndHash;
 class ScrAddrFilter;
-struct ReorganizationState;
 class Tx;
 class TxIOPair;
 class TxOut;
@@ -52,6 +51,7 @@ struct UTXO;
 
 namespace Armory
 {
+   struct ReorganizationState;
    namespace Node
    {
       class BitcoinNodeInterface;
