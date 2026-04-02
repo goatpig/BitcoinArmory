@@ -32,6 +32,17 @@ using namespace std::string_view_literals;
 
 #define ARMORY_PEERKEY_VERSION   0x01
 
+#ifdef WIN32   //without this there's a linkage error
+std::shared_ptr<MetaData> MetaDataAccount::getMetaDataByIndex(uint32_t id) const
+{
+   auto iter = assets_.find(id);
+   if (iter == assets_.end()) {
+      throw AccountException("invalid asset index");
+   }
+   return iter->second;
+}
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 SecureBinaryData AuthorizedPeers::setOwnPrivateKey(SecureBinaryData& privateKey)
 {

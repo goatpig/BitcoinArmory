@@ -15,6 +15,66 @@ using namespace Armory::Assets;
 using namespace Armory::Accounts;
 using namespace Armory::Wallets;
 
+#ifdef WIN32   //FIXME: without this there's a linkage error, even though the function is defined alrerady
+std::shared_ptr<MetaData> MetaData::deserialize(
+   const BinaryDataRef& key, const BinaryDataRef& data)
+{
+   if (key.getSize() != 9) {
+      throw AssetException("invalid metadata key size");
+   }
+
+   //deser key
+   BinaryRefReader brrKey(key);
+   auto keyPrefix = brrKey.get_uint8_t();
+   auto accountID = brrKey.get_BinaryData(4);
+   auto index = brrKey.get_uint32_t(BE);
+
+   //construct object and deser data
+   std::shared_ptr<MetaData> resultPtr;
+   switch (keyPrefix)
+   {
+   case METADATA_COMMENTS_PREFIX:
+   {
+      resultPtr = std::make_shared<CommentData>(accountID, index);
+      resultPtr->deserializeDBValue(data);
+      break;
+   }
+
+   case METADATA_AUTHPEER_PREFIX:
+   {
+      resultPtr = std::make_shared<PeerPublicData>(accountID, index);
+      resultPtr->deserializeDBValue(data);
+      break;
+   }
+
+   case METADATA_PEERROOT_PREFIX:
+   {
+      resultPtr = std::make_shared<PeerRootKey>(accountID, index);
+      resultPtr->deserializeDBValue(data);
+      break;
+   }
+
+   case METADATA_ROOTSIG_PREFIX:
+   {
+      resultPtr = std::make_shared<PeerRootSignature>(accountID, index);
+      resultPtr->deserializeDBValue(data);
+      break;
+   }
+
+   case METADATA_PEERMASTER_PREFIX:
+   {
+      resultPtr = std::make_shared<PeerMasterKey>(accountID, index);
+      resultPtr->deserializeDBValue(data);
+      break;
+   }
+
+   default:
+      throw AssetException("unexpected metadata prefix");
+   }
+   return resultPtr;
+}
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 //// MetaDataAccount

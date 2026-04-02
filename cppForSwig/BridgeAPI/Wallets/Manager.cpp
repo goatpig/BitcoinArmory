@@ -16,7 +16,7 @@
 #include <Utils/BtcUtils.h>
 #include <Utils/DBUtils.h>
 #include <Ledgers/LedgerEntry.h>
-#include <Ledgers/Context.h>
+#include "Ledgers/Context.h"
 #include <AsyncClient.h>
 #include <BlockchainDatabase/txio.h>
 
@@ -35,6 +35,67 @@ using namespace Armory;
 using namespace Armory::Bridge;
 using namespace std::string_view_literals;
 using namespace std::chrono_literals;
+
+#ifdef WIN32   //FIXME: without this there's a linkage error
+std::shared_ptr<const Ledgers::DBCache> TxIOCache::getDBCache() const
+{
+   return std::const_pointer_cast<const Ledgers::DBCache>(dbCache_);
+}
+
+Ledgers::Context Ledgers::prepareContext(
+   const std::map<BinaryData, TxIOPair>& txioMap,
+   std::shared_ptr<const DBCache> dbCache,
+   std::set<BinaryData> scrAddrSet)
+{
+   std::set<BinaryData> txKeys;
+
+   /* 1. gather all tx keys */
+   for (const auto& txioPair : txioMap) {
+      const auto& txKeyOut = txioPair.second.getTxRefOfOutput().getDBKey();
+      txKeys.emplace(txKeyOut);
+      BinaryDataRef txInKeyRef;
+      if (txioPair.second.hasTxIn()) {
+         txInKeyRef = txioPair.second.getTxRefOfInput().getDBKeyRef();
+         txKeys.emplace(BinaryData{ txInKeyRef });
+      }
+   }
+
+   /* 2. grab all txs */
+   std::map<BinaryData, Tx> txMap;
+   for (const auto& txKey : txKeys) {
+      txMap.emplace(txKey, dbCache->txMap.at(txKey));
+   }
+
+   /* 3. resolve output addresses */
+   std::map<BinaryData, std::map<uint32_t, BinaryData>> txioKeyToScrAddr;
+   for (const auto& txioPair : txioMap) {
+      //output
+      const auto& txKeyOut = txioPair.second.getTxRefOfOutput().getDBKey();
+      const auto& outTx = txMap.at(txKeyOut);
+      auto iterOut = txioKeyToScrAddr.find(txKeyOut);
+      if (iterOut == txioKeyToScrAddr.end()) {
+         iterOut = txioKeyToScrAddr.emplace(
+            txKeyOut, std::map<uint32_t, BinaryData>{}).first;
+      }
+      auto indexOut = txioPair.second.getIndexOfOutput();
+      iterOut->second.emplace(indexOut, outTx.getScrAddrForTxOut(indexOut));
+   }
+
+   /* 4. timestamps */
+   std::map<uint32_t, uint32_t> timestamps;
+   for (const auto& blockPair : dbCache->blocks) {
+      try {
+         const auto& block = blockPair.second.blocks.at(blockPair.second.mainChain);
+         timestamps.emplace(blockPair.first, block.getTimestamp());
+      } catch (const std::out_of_range&) {
+         LOGWARN << "missing block: " <<
+            blockPair.first << "|" << blockPair.second.mainChain;
+         continue;
+      }
+   }
+   return Ledgers::Context{ timestamps, txMap, txioKeyToScrAddr, std::move(scrAddrSet) };
+}
+#endif
 
 namespace
 {
