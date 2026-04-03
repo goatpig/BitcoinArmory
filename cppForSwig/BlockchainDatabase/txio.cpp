@@ -354,3 +354,13 @@ void TxIOPair::merge(const TxIOPair& rhs)
    isUTXO_           = rhs.isUTXO_;
    txtime_           = rhs.txtime_;
 }
+
+////////
+void TxIOPair::pprint() const
+{
+   std::cout << "  TxOut: " << getDBKeyOfOutput().toHexStr() << std::endl;
+   if (hasTxIn()) {
+      std::cout << "  TxIn: " << getDBKeyOfInput().toHexStr() << std::endl;
+   }
+   std::cout << "  amount: " << amount_ << std::endl;
+}

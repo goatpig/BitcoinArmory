@@ -39,7 +39,7 @@ CacheResolveResult TxIOCache::resolve(
    const AddressFilter& filter, uint32_t fromHeight) const
 {
    //run through unspent txios first
-   CacheResolveResult result{lastKnownBlock_};
+   CacheResolveResult result{lastKnownBlock_, false};
    for (const auto& txio : unspentTxios_) {
       const auto& txKey = txio.second.getTxRefOfOutput().getDBKey();
 
@@ -91,7 +91,7 @@ CacheResolveResult TxIOCache::resolve(
 
 CacheResolveResult TxIOCache::resolveZC(const AddressFilter& filter) const
 {
-   CacheResolveResult result{UINT32_MAX};
+   CacheResolveResult result{lastKnownBlock_, true};
    for (const auto& txio : zcTxios_) {
       //do we have an unspent txio in the result map?
       auto txioKey = txio.second.getDBKeyOfOutput();
@@ -525,20 +525,23 @@ std::map<TxIOKey, TxIOPair> TxIOCache::getZcTxios(
 
 ////////////////////////////////////////////////////////////////////////////////
 // CacheResolveResult
+CacheResolveResult::CacheResolveResult(uint32_t height, bool iszc) :
+   topBlock(height), isZC(iszc)
+{}
+
 void CacheResolveResult::addTxio(const TxIOKey& key, const TxIOPair& txio,
    const ScrAddr& addr)
 {
-   auto iter = txioMap.emplace(key, txio).first;
+   auto emplaceResult = txioMap.emplace(key, txio);
+   if (!emplaceResult.second) {
+      std::cout << "txio merge" << std::endl;
+      emplaceResult.first->second.merge(txio);
+   }
    auto addrIter = addrTxioMap.find(addr);
    if (addrIter == addrTxioMap.end()) {
       addrIter = addrTxioMap.emplace(addr, std::vector<TxIOPair*>{}).first;
    }
-   addrIter->second.emplace_back(&iter->second);
-}
-
-bool CacheResolveResult::isZC() const
-{
-   return topBlock == UINT32_MAX;
+   addrIter->second.emplace_back(&emplaceResult.first->second);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -555,7 +558,7 @@ ChainData::ChainData(CacheResolveResult& data) :
       std::set<BinaryDataRef> addrTxKeys;
       for (const auto& txio : addr.second) {
          int64_t val = static_cast<int64_t>(txio->getValue());
-         if (!data.isZC() || txio->hasTxOutZC()) {
+         if (!data.isZC || txio->hasTxOutZC()) {
             addrTxKeys.emplace(txio->getTxRefOfOutput().getDBKey());
          }
          if (txio->hasTxIn()) {
@@ -563,7 +566,9 @@ ChainData::ChainData(CacheResolveResult& data) :
             if (txio->hasTxInZC() && !txio->hasTxOutZC()) {
                total -= val;
                spendable -= val;
-               unconfirmed -= val;
+               if (txio->isUnconfirmed(data.topBlock, MIN_CONFIRMATIONS)) {
+                  unconfirmed -= val;
+               }
             }
             continue;
          }
@@ -572,7 +577,7 @@ ChainData::ChainData(CacheResolveResult& data) :
          total += val;
 
          //spendable only tracks mature outputs (cf mining reward maturity)
-         if (txio->isSpendable(data.topBlock)) {
+         if (!data.isZC && txio->isSpendable(data.topBlock)) {
             spendable += val;
          }
 

@@ -89,6 +89,7 @@ public:
 
    bool isUTXO(void) const;
    void setUTXO(bool);
+   void pprint(void) const;
 
 public:
    bool flagged = false;
