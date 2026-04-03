@@ -813,7 +813,10 @@ TEST_F(BlockUtilsSuper, Load3BlocksPlus3)
    //grab a tx by hash for coverage
    const auto& txioHeightMap = ssh.subHistMap.rbegin()->second;
    const auto& txio = txioHeightMap.txioMap.rbegin()->second;
-   auto txhash = iface_->getTxHashForLdbKey(txio.getTxRefOfOutput().getDBKey());
+   auto blockchain = theBDMt_->bdm()->blockchain();
+   auto txKey = txio.getTxRefOfOutput().getDBKey();
+   auto header = blockchain->getHeaderForTxKey(txKey);
+   auto txhash = iface_->getTxHashForLdbKey(txKey, header);
    auto txObj = DBTestUtils::getTxByHash(clients_, bdvID, txhash);
    EXPECT_EQ(txObj.getThisHash(), txhash);
 }
@@ -1312,35 +1315,52 @@ TEST_F(BlockUtilsSuper, Load5Blocks_DynamicReorg_GrabSTXO)
    EXPECT_EQ(ssh.totalTxioCount, 7U);
 
    /*grab STXOs*/
+   auto getStoredTxOut = [iface=iface_, bc=theBDMt_->bdm()->blockchain()](
+      const BinaryData& stxoKey)->StoredTxOut
+   {
+      unsigned height; uint8_t dup; uint16_t txId; uint16_t txOutId;
+      BinaryRefReader brrKey(stxoKey);
+      DBUtils::readBlkDataKeyNoPrefix(brrKey, height, dup, txId, txOutId);
+      try {
+         auto header = bc->getHeaderByHeight(height, dup);
+         StoredTxOut stxo;
+         iface->getStoredTxOut(stxo, header, txId, txOutId);
+         return stxo;
+      } catch (const std::exception&) {
+         return {};
+      }
+   };
 
    //block 4
-   StoredTxOut stxo1, stxo2;
    auto key4_0_0_0 = DBUtils::getBlkDataKeyNoPrefix(4, 0, 0, 0);
-   EXPECT_TRUE(iface_->getStoredTxOut(stxo1, key4_0_0_0));
+   auto stxo1 = getStoredTxOut(key4_0_0_0);
+   ASSERT_FALSE(stxo1.isInitialized());
 
    auto key4_1_0_0 = DBUtils::getBlkDataKeyNoPrefix(4, 1, 0, 0);
-   EXPECT_TRUE(iface_->getStoredTxOut(stxo2, key4_1_0_0));
-   EXPECT_NE(stxo1.dataCopy, stxo2.dataCopy);
+   auto stxo2 = getStoredTxOut(key4_1_0_0);
+   ASSERT_TRUE(stxo2.isInitialized());
 
    //block 5
-   StoredTxOut stxo3, stxo4, stxo5;
    auto key5_0_0_0 = DBUtils::getBlkDataKeyNoPrefix(5, 0, 0, 0);
-   EXPECT_TRUE(iface_->getStoredTxOut(stxo3, key5_0_0_0));
+   auto stxo3 = getStoredTxOut(key5_0_0_0);
+   ASSERT_FALSE(stxo3.isInitialized());
 
    auto key5_1_0_0 = DBUtils::getBlkDataKeyNoPrefix(5, 1, 0, 0);
-   EXPECT_TRUE(iface_->getStoredTxOut(stxo4, key5_1_0_0));
-   EXPECT_NE(stxo3.dataCopy, stxo4.dataCopy);
+   auto stxo4 = getStoredTxOut(key5_1_0_0);
+   ASSERT_TRUE(stxo4.isInitialized());
 
    auto key5_0_1_0 = DBUtils::getBlkDataKeyNoPrefix(5, 0, 1, 0);
-   EXPECT_TRUE(iface_->getStoredTxOut(stxo5, key5_0_1_0));
+   auto stxo5 = getStoredTxOut(key5_0_1_0);
+   ASSERT_FALSE(stxo5.isInitialized());
 
    //block 6
-   StoredTxOut stxo6, stxo7;
    auto key6_0_1_0 = DBUtils::getBlkDataKeyNoPrefix(6, 0, 1, 0);
-   EXPECT_TRUE(iface_->getStoredTxOut(stxo6, key6_0_1_0));
+   auto stxo6 = getStoredTxOut(key6_0_1_0);
+   ASSERT_TRUE(stxo6.isInitialized());
 
    auto key6_1_1_0 = DBUtils::getBlkDataKeyNoPrefix(6, 1, 1, 0);
-   EXPECT_FALSE(iface_->getStoredTxOut(stxo7, key6_1_1_0));
+   auto stxo7 =  getStoredTxOut(key6_1_1_0);
+   ASSERT_FALSE(stxo7.isInitialized());
 }
 
 ////////////////////////////////////////////////////////////////////////////////

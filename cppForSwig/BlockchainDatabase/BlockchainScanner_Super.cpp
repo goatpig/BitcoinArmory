@@ -1220,18 +1220,19 @@ void BlockchainScanner_Super::undo(ReorganizationState& reorgState)
             if (outHash == BtcUtils::EmptyHash) {
                continue;
             }
-
             uint16_t txOutId = (uint16_t)READ_UINT32_LE(
                txn->data_ + txin.first + 32);
 
-            StoredTxOut stxo;
-            if (!db_->getStoredTxOut(stxo, outHash, txOutId)) {
-               LOGERR << "failed to grab stxo";
-               throw std::runtime_error("failed to grab stxo");
-            }
+            auto txKey = db_->getDBKeyForHash(outHash);
+            unsigned blockId; uint8_t dupId; uint16_t txId;
+            BinaryRefReader brrKey(txKey);
+            DBUtils::readBlkDataKeyNoPrefix(brrKey, blockId, dupId, txId);
+            auto header = blockchain_->getHeaderById(blockId);
 
             //mark spentness entry for deletion
-            undoSpentness.insert(move(stxo.getSpentnessKey()));
+            undoSpentness.emplace(DBUtils::getDBSuperSpentnessKey(
+               header->getBlockHeight(), header->getDuplicateID(),
+               txId, txOutId));
          }
       }
 

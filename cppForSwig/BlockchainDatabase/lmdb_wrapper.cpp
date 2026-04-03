@@ -1743,6 +1743,32 @@ bool LMDBBlockDatabase::getStoredTxOut(StoredTxOut& stxo,
 }
 
 bool LMDBBlockDatabase::getStoredTxOut(StoredTxOut& stxo,
+   std::shared_ptr<BlockHeader> header, uint16_t txId, uint16_t txOutId) const
+{
+   if (getDbType() != ARMORY_DB_TYPE::Super) {
+      throw std::runtime_error("supernode only");
+   }
+
+   auto txKey = DBUtils::getBlkDataKeyNoPrefix(
+      header->getThisID(), 0xFF, txId, txOutId);
+
+   auto stxo_tx = beginTransaction(DB_SELECT::STXO, LMDB::Mode::ReadOnly);
+   auto data = getValueNoCopy(DB_SELECT::STXO, txKey);
+   if (data.empty()) {
+      LOGWARN << "no txout for key: " << txKey.toHexStr();
+         return false;
+      }
+
+   stxo.unserializeDBValue(data);
+   stxo.blockHeight = header->getBlockHeight();
+   stxo.duplicateID = header->getDuplicateID();
+   stxo.txIndex = txId;
+   stxo.txOutIndex = txOutId;
+   stxo.isCoinbase = txId == 0;
+   return true;
+}
+
+bool LMDBBlockDatabase::getStoredTxOut(StoredTxOut& stxo,
    uint32_t blockHeight, uint8_t dupID, uint16_t txIndex,
    uint16_t txOutIndex) const
 {

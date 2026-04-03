@@ -82,7 +82,7 @@ uint8_t TxRef::getDuplicateID() const
    }
 }
 
-uint16_t TxRef::getBlockTxIndex() const
+uint16_t TxRef::getTxIndex() const
 {
    if (dbKey6B_.getSize() == 6) {
       if (!dbKey6B_.startsWith(DBUtils::ZCPrefix)) {

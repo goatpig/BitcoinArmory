@@ -209,6 +209,13 @@ BinaryData DBUtils::getBlkDataKeyNoPrefix(uint32_t height,
    return bw.getData();
 }
 
+BinaryData DBUtils::getDBSuperSpentnessKey(uint32_t height,
+   uint8_t dup, uint16_t txIdx, uint16_t txOutIdx)
+{
+   return DBUtils::getBlkDataKeyNoPrefix(
+      UINT32_MAX - height, dup, txIdx, txOutIdx);
+}
+
 /////////////////////////////////////////////////////////////////////////////
 uint32_t DBUtils::hgtxToHeight(const BinaryData& hgtx)
 {

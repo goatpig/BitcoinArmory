@@ -162,7 +162,11 @@ Context Ledgers::prepareContext(
    for (const auto& txKey : txKeys) {
       if (!txKey.startsWith(DBUtils::ZCPrefix)) {
          //we don't use this anymore
-         txMap.emplace(txKey, db->getFullTxCopy(0, nullptr));
+         unsigned blockId; uint8_t dup; uint16_t txId;
+         BinaryRefReader brrKey(txKey);
+         DBUtils::readBlkDataKeyNoPrefix(brrKey, blockId, dup, txId);
+         auto header = bc.getHeaderForTxKey(txKey);
+         txMap.emplace(txKey, db->getFullTxCopy(txId, header));
       } else {
          auto ptx = zcSs->getTxByKey(txKey);
          txMap.emplace(txKey, ptx->getTxObj());

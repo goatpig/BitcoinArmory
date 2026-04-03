@@ -17,6 +17,7 @@
 #include <BlockchainDatabase/lmdb_wrapper.h>
 #include <BlockchainDatabase/txio.h>
 #include <Utils/DBUtils.h>
+#include <Utils/ArmoryConfig.h>
 #include <ZeroConf/Parser.h>
 #include <ZeroConf/Utils.h>
 #include <ZeroConf/Notifications.h>
@@ -29,12 +30,12 @@ using namespace Armory;
 namespace
 {
    const BinaryData& getTxHash(LMDBBlockDatabase* db,
-      const BinaryData& key,
+      const BinaryData& key, std::shared_ptr<BlockHeader> header,
       std::map<BinaryData, BinaryData>& hashMap)
    {
       auto iter = hashMap.find(key);
       if (iter == hashMap.end()) {
-         auto hash = db->getTxHashForLdbKey(key.getRef(), nullptr);
+         auto hash = db->getTxHashForLdbKey(key.getRef(), header);
          iter = hashMap.emplace(key, std::move(hash)).first;
       }
       return iter->second;
@@ -280,12 +281,7 @@ Tx BlockDataViewer::getTxByHash(BinaryDataRef txhash) const
       BinaryRefReader brrKey(key);
       DBUtils::readBlkDataKeyNoPrefix(brrKey, id, dup, txId);
 
-      std::shared_ptr<BlockHeader> header;
-      if (dup != 0x7F) {
-         header = bc_->getHeaderByHeight(id, dup);
-      } else {
-         bc_->getHeaderById(id);
-      }
+      auto header = bc_->getHeaderForTxKey(key);
       return db_->getFullTxCopy(txId, header);
    } else {
       return zeroConfCont_->getTxByHash(txhash);
@@ -848,11 +844,11 @@ std::map<BinaryData, std::vector<Output>> BlockDataViewer::getAddressOutpoints(
                }
 
                const auto& txHash = getTxHash(db_,
-                  txioPair.second.getTxRefOfOutput().getDBKey(), hashMap);
+                  txioPair.second.getTxRefOfOutput().getDBKey(), nullptr, hashMap);
                BinaryData spenderHash;
                if (stxo.isSpent()) {
                   spenderHash = getTxHash(db_,
-                     txioPair.second.getTxRefOfInput().getDBKey(), hashMap);
+                     txioPair.second.getTxRefOfInput().getDBKey(), nullptr, hashMap);
                }
 
                opVec.emplace_back(Output(
@@ -924,7 +920,7 @@ std::map<BinaryData, std::vector<Output>> BlockDataViewer::getAddressOutpoints(
 
             if (!txOutZc) {
                const auto& txHash = getTxHash(db_,
-                  txiopair.second->getTxRefOfOutput().getDBKey(), hashMap);
+                  txiopair.second->getTxRefOfOutput().getDBKey(), nullptr, hashMap);
 
                //mined txout, have to grab it from db
                StoredTxOut stxo;
@@ -984,12 +980,23 @@ std::vector<UTXO> BlockDataViewer::getUtxosForAddress(
             }
 
             StoredTxOut stxo;
-            if (!db_->getStoredTxOut(stxo, txioPair.second.getDBKeyOfOutput())) {
-               throw std::runtime_error("failed to grab txout");
+            BinaryDataRef txHash;
+            auto txKey = txioPair.second.getTxRefOfOutput().getDBKey();
+            if (Config::DBSettings::getDbType() != ARMORY_DB_TYPE::Super) {
+               if (!db_->getStoredTxOut(stxo, txioPair.second.getDBKeyOfOutput())) {
+                  throw std::runtime_error("failed to grab txout");
+               }
+               txHash = getTxHash(db_, txKey, nullptr, hashMap).getRef();
+            } else {
+               auto header = bc_->getHeaderForTxKey(txKey);
+               auto txId = txioPair.second.getTxRefOfOutput().getTxIndex();
+               if (!db_->getStoredTxOut(
+                  stxo, header, txId, txioPair.second.getIndexOfOutput())) {
+                  throw std::runtime_error("failed to grab txout");
+               }
+               txHash = getTxHash(db_, txKey, header, hashMap).getRef();
             }
 
-            const auto& txHash = getTxHash(db_,
-               txioPair.second.getTxRefOfOutput().getDBKey(), hashMap);
             UTXO utxo(stxo.getValue(), stxo.getHeight(), stxo.txIndex,
                stxo.txOutIndex, txHash, stxo.getScriptRef());
             result.emplace_back(utxo);

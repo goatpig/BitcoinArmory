@@ -29,7 +29,7 @@ public:
    const BinaryData& getDBKey(void) const;
    BinaryDataRef getDBKeyRef(void) const;
    BinaryData getDBKeyOfChild(uint16_t) const;
-   uint16_t getBlockTxIndex(void) const;
+   uint16_t getTxIndex(void) const;
    uint32_t getBlockHeight(void) const;
    uint8_t getDuplicateID(void) const;
 

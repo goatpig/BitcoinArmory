@@ -5155,7 +5155,7 @@ protected:
          Config::ProcessType::DB);
 
       magic_ = Config::BitcoinSettings::getMagicBytes();
-      iface_ = new LMDBBlockDatabase(nullptr, string());
+      iface_ = new LMDBBlockDatabase({});
 
       rawHead_ = READHEX(
          "01000000"
@@ -5806,7 +5806,7 @@ TEST_F(TxRefTest, TxRefNoInit)
    //EXPECT_EQ(txr.getBlockTimestamp(), UINT32_MAX);
    EXPECT_EQ(txr.getBlockHeight(),    UINT32_MAX);
    EXPECT_EQ(txr.getDuplicateID(),    UINT8_MAX );
-   EXPECT_EQ(txr.getBlockTxIndex(),   UINT16_MAX);
+   EXPECT_EQ(txr.getTxIndex(),   UINT16_MAX);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -5821,7 +5821,7 @@ TEST_F(TxRefTest, TxRefKeyParts)
 
    EXPECT_EQ(txr.getBlockHeight(),  0xe3c402ULL);
    EXPECT_EQ(txr.getDuplicateID(),  127ULL);
-   EXPECT_EQ(txr.getBlockTxIndex(), 15ULL);
+   EXPECT_EQ(txr.getTxIndex(), 15ULL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -5939,7 +5939,7 @@ protected:
          "--offline" },
          Armory::Config::ProcessType::DB);
 
-      iface_ = new LMDBBlockDatabase(nullptr, string());
+      iface_ = new LMDBBlockDatabase({});
    }
 
    virtual void TearDown(void)

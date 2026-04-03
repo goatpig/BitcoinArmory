@@ -441,6 +441,8 @@ public:
       StoredTxOut&, const BinaryData&) const;
    bool getStoredTxOut(
       StoredTxOut&, const BinaryData&, uint16_t) const;
+   bool getStoredTxOut(
+      StoredTxOut&, const std::shared_ptr<BlockHeader>, uint16_t, uint16_t) const;
    void getSpentness(StoredTxOut&);
 
    void getUTXOflags(std::map<BinaryData, StoredSubHistory>&) const;

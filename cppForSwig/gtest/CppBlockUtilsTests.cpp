@@ -1821,6 +1821,7 @@ TEST_F(BlockUtilsFull, PPrintTestChain)
    theBDMt_->start(Config::DBSettings::initMode());
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
+   auto blockchain = theBDMt_->bdm()->blockchain();
 
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDMReady(clients_, bdvID);
@@ -1848,8 +1849,10 @@ TEST_F(BlockUtilsFull, PPrintTestChain)
    };
    std::map<BinaryData, IdAndAmounts> knownTxHashes;
    for (const auto& blockId : blockIds) {
+      auto headerPtr = blockchain->getHeaderByHeight(
+         blockId.first, blockId.second);
       StoredHeader block;
-      ASSERT_TRUE(db->getStoredHeader(block, blockId.first, blockId.second, true));
+      ASSERT_TRUE(db->getStoredHeader(block, headerPtr, true));
 
       //header
       auto header = block.getBlockHeaderCopy();
@@ -2508,8 +2511,8 @@ TEST_F(WebSocketTests_1Way, WebSocketStack_Reconnect)
       EXPECT_EQ(lb2Balances[0], 30 * COIN);
 
       //grab main ledgers
-      auto&& delegate = DBTestUtils::getLedgerDelegate(bdvObj);
-      auto&& ledgers = DBTestUtils::getHistoryPage(delegate, 0);
+      auto delegate = DBTestUtils::getLedgerDelegate(bdvObj);
+      auto ledgers = DBTestUtils::getHistoryPage(delegate, 0);
       auto& firstEntry = ledgers[0];
       auto txHash = firstEntry.getTxHash();
       EXPECT_EQ(firstHash, txHash);

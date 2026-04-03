@@ -715,7 +715,7 @@ void NodeUnitTest::sendMessage(std::unique_ptr<Node::Payload> payload)
 
                   //check sigs
                   if (checkSigs_) {
-                     if (verifyTxSigs(obj->rawTx, iface_, mempool_) !=
+                     if (verifyTxSigs(obj->rawTx, iface_, blockchain_, mempool_) !=
                         (int)ArmoryErrorCodes::Success) {
                         break;
                      }
@@ -1078,7 +1078,7 @@ int NodeRPC_UnitTest::broadcastTx(const BinaryDataRef& rawTx, std::string&)
 
    //check sigs
    if (nodeUT->checkSigs_) {
-      auto sigState = verifyTxSigs(rawTx, iface, nodeUT->mempool_);
+      auto sigState = verifyTxSigs(rawTx, iface, nodeUT->blockchain_, nodeUT->mempool_);
       if (sigState != (int)ArmoryErrorCodes::Success) {
          return sigState;
       }

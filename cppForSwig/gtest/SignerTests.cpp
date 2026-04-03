@@ -550,10 +550,10 @@ TEST_F(SignerTest, SpendTest_SizeEstimates)
          return utxoVec;
       };
 
-      auto addrBook = dbAssetWlt->createAddressBook();
+      //auto addrBook = dbAssetWlt->createAddressBook();
       auto topBlock = theBDMt_->bdm()->blockchain()->top()->getBlockHeight();
       CoinSelection::CoinSelectionInstance csi(assetWlt, getUtxos,
-         addrBook, dbAssetWlt->getUnconfirmedBalance(topBlock), 
+         {}, dbAssetWlt->getUnconfirmedBalance(topBlock), 
          topBlock);
 
       //spend 18 to addr B, use P2PKH
@@ -667,10 +667,10 @@ TEST_F(SignerTest, SpendTest_SizeEstimates)
          return utxoVec;
       };
 
-      auto addrBook = dbAssetWlt->createAddressBook();
+      //auto addrBook = dbAssetWlt->createAddressBook();
       auto topBlock = theBDMt_->bdm()->blockchain()->top()->getBlockHeight();
       CoinSelection::CoinSelectionInstance csi(assetWlt, getUtxos,
-         addrBook, dbAssetWlt->getUnconfirmedBalance(topBlock),
+         {}, dbAssetWlt->getUnconfirmedBalance(topBlock),
          topBlock);
 
       //have to add the recipient with 0 val for MAX fee estimate

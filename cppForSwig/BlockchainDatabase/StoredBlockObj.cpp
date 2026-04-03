@@ -1218,8 +1218,8 @@ BinaryData StoredTxOut::getSpentnessKey() const
       return {};
    }
 
-   return DBUtils::getBlkDataKeyNoPrefix(
-      UINT32_MAX - blockHeight, duplicateID, txIndex, txOutIndex);
+   return DBUtils::getDBSuperSpentnessKey(
+      blockHeight, duplicateID, txIndex, txOutIndex);
 }
 
 BinaryData StoredTxOut::getDBKeyOfParentTx(bool withPrefix) const
@@ -2020,7 +2020,7 @@ void StoredSubHistory::compressMany(
 
             //tx and output id
             len += BtcUtils::calcVarIntSize(
-               txio.getTxRefOfOutput().getBlockTxIndex());
+               txio.getTxRefOfOutput().getTxIndex());
             len += BtcUtils::calcVarIntSize(
                txio.getIndexOfOutput());
          } else {
@@ -2045,12 +2045,12 @@ void StoredSubHistory::compressMany(
                auto height = output_height - spent_offset;
                len += BtcUtils::calcVarIntSize(height) + 1;
                len += BtcUtils::calcVarIntSize(
-                  txio.getTxRefOfOutput().getBlockTxIndex());
+                  txio.getTxRefOfOutput().getTxIndex());
                len += BtcUtils::calcVarIntSize(
                   txio.getIndexOfOutput());
 
                //input
-               len += BtcUtils::calcVarIntSize(txio.getTxRefOfInput().getBlockTxIndex());
+               len += BtcUtils::calcVarIntSize(txio.getTxRefOfInput().getTxIndex());
                len += BtcUtils::calcVarIntSize(txio.getIndexOfInput());
             } else {
                /* fund and spend happen in same block, only record ids */
@@ -2060,13 +2060,13 @@ void StoredSubHistory::compressMany(
 
                //output
                len += BtcUtils::calcVarIntSize(
-                  txio.getTxRefOfOutput().getBlockTxIndex());
+                  txio.getTxRefOfOutput().getTxIndex());
                len += BtcUtils::calcVarIntSize(
                   txio.getIndexOfOutput());
 
                //input
                len += BtcUtils::calcVarIntSize(
-                  txio.getTxRefOfInput().getBlockTxIndex());
+                  txio.getTxRefOfInput().getTxIndex());
                len += BtcUtils::calcVarIntSize(
                   txio.getIndexOfInput());
             }
@@ -2102,7 +2102,7 @@ void StoredSubHistory::compressMany(
             bw.put_uint8_t(0);
 
             //tx and output id
-            bw.put_var_int(txio.getTxRefOfOutput().getBlockTxIndex());
+            bw.put_var_int(txio.getTxRefOfOutput().getTxIndex());
             bw.put_var_int(txio.getIndexOfOutput());
          } else {
             //spent
@@ -2127,11 +2127,11 @@ void StoredSubHistory::compressMany(
                auto height = output_height - spent_offset;
                bw.put_var_int(height);
                bw.put_uint8_t(output_dupid);
-               bw.put_var_int(txio.getTxRefOfOutput().getBlockTxIndex());
+               bw.put_var_int(txio.getTxRefOfOutput().getTxIndex());
                bw.put_var_int(txio.getIndexOfOutput());
 
                //input
-               bw.put_var_int(txio.getTxRefOfInput().getBlockTxIndex());
+               bw.put_var_int(txio.getTxRefOfInput().getTxIndex());
                bw.put_var_int(txio.getIndexOfInput());
             } else {
                //fund and spend happen in same block, only record ids
@@ -2140,11 +2140,11 @@ void StoredSubHistory::compressMany(
                bw.put_uint8_t(1);
 
                //output
-               bw.put_var_int(txio.getTxRefOfOutput().getBlockTxIndex());
+               bw.put_var_int(txio.getTxRefOfOutput().getTxIndex());
                bw.put_var_int(txio.getIndexOfOutput());
 
                //input
-               bw.put_var_int(txio.getTxRefOfInput().getBlockTxIndex());
+               bw.put_var_int(txio.getTxRefOfInput().getTxIndex());
                bw.put_var_int(txio.getIndexOfInput());
             }
          }

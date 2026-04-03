@@ -1819,7 +1819,7 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_ZC_Plus3_TestLedgers)
    BinaryData zcKey = WRITE_UINT16_BE(0xFFFF);
    zcKey.append(WRITE_UINT32_LE(0));
 
-   EXPECT_EQ(iface_->getStoredZcTx(zcStx, zcKey), true);
+   EXPECT_EQ(iface_->getStoredZC(zcStx, zcKey), true);
    EXPECT_EQ(zcStx.thisHash, ZChash1);
    EXPECT_EQ(zcStx.numBytes , TestChain::zcTxSize);
    EXPECT_EQ(zcStx.fragBytes, 190U);
@@ -1887,7 +1887,7 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_ZC_Plus3_TestLedgers)
       iface_->beginTransaction(DB_SELECT::ZERO_CONF, LMDB::Mode::ReadOnly));
    StoredTx zcStx3;
 
-   EXPECT_EQ(iface_->getStoredZcTx(zcStx3, zcKey), true);
+   EXPECT_EQ(iface_->getStoredZC(zcStx3, zcKey), true);
    EXPECT_EQ(zcStx3.thisHash, ZChash1);
    EXPECT_EQ(zcStx3.numBytes, TestChain::zcTxSize);
    EXPECT_EQ(zcStx3.fragBytes, 190U); // Not sure how Python can get this value
@@ -1939,7 +1939,7 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_ZC_Plus3_TestLedgers)
       iface_->beginTransaction(DB_SELECT::ZERO_CONF, LMDB::Mode::ReadWrite));
    StoredTx zcStx4;
 
-   EXPECT_EQ(iface_->getStoredZcTx(zcStx4, zcKey), false);
+   EXPECT_EQ(iface_->getStoredZC(zcStx4, zcKey), false);
    dbtx.reset();
 
    EXPECT_GE(theBDMt_->bdm()->zeroConfCont()->getMergeCount(), 1U);

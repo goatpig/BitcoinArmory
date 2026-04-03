@@ -79,6 +79,7 @@ namespace Armory
 
       HeaderPtr getHeaderByHash(const BinaryData&) const;
       HeaderPtr getHeaderById(uint32_t) const;
+      HeaderPtr getHeaderForTxKey(const BinaryData&) const;
 
       void putBareHeaders(LMDBBlockDatabase*, bool = true);
       void putNewBareHeaders(LMDBBlockDatabase*);

@@ -62,6 +62,7 @@ namespace Armory
       BinaryData getBlkDataKeyNoPrefix(uint32_t, uint8_t);
       BinaryData getBlkDataKeyNoPrefix(uint32_t, uint8_t, uint16_t);
       BinaryData getBlkDataKeyNoPrefix(uint32_t, uint8_t, uint16_t, uint16_t);
+      BinaryData getDBSuperSpentnessKey(uint32_t, uint8_t, uint16_t, uint16_t);
 
       ////////
       BLKDATA_TYPE readBlkDataKey(BinaryRefReader&, uint32_t&, uint8_t&);

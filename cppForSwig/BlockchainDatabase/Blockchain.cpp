@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -17,6 +17,7 @@
 #include "Blockchain.h"
 #include <Utils/BtcUtils.h>
 #include <Utils/UniversalTimer.h>
+#include <Utils/DBUtils.h>
 
 #include "BlockObj.h"
 #include "StoredBlockObj.h"
@@ -235,6 +236,20 @@ Blockchain::HeaderPtr Blockchain::getHeaderById(uint32_t id) const
       throw std::range_error("Cannot find block by id");
    }
    return headerIter->second;
+}
+
+Blockchain::HeaderPtr Blockchain::getHeaderForTxKey(
+   const BinaryData& txKey) const
+{
+   unsigned blockId;
+   uint8_t dup;
+   BinaryRefReader brrKey(txKey);
+   DBUtils::readBlkDataKeyNoPrefix(brrKey, blockId, dup);
+   if (dup == 0x7F) {
+      return getHeaderById(blockId);
+   } else {
+      return getHeaderByHeight(blockId, dup);
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
