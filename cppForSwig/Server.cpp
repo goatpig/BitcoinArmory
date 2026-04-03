@@ -588,7 +588,7 @@ void WebSocketServer::prepareWriteThread()
          } else {
             auto time_sec = std::chrono::duration_cast<std::chrono::seconds>(
                rightnow - statePtr->outKeyTimePoint_);
-            if (time_sec.count() >= AEAD_REKEY_INTVERVAL_SECONDS) {
+            if (time_sec.count() >= AEAD_REKEY_INTERVAL_SECONDS) {
                needs_rekey = true;
             }
          }
