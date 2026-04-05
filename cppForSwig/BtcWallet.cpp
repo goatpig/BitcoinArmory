@@ -290,6 +290,7 @@ vector<UTXO> BtcWallet::getSpendableTxOutListForValue(uint64_t val)
 
    auto addrMap = scrAddrMap_.get();
 
+   bool isSuper = db->getDbType() == ARMORY_DB_TYPE::Super ? true : false;
    for (const auto& scrAddr : *addrMap) {
       const auto& txioMap = scrAddr.second->getPreparedTxOutList();
       for (const auto& txioPair : txioMap) {
@@ -298,16 +299,24 @@ vector<UTXO> BtcWallet::getSpendableTxOutListForValue(uint64_t val)
          }
          auto txout_key = txioPair.second.getDBKeyOfOutput();
          StoredTxOut stxo;
-         if (!db->getStoredTxOut(stxo, txout_key)) {
-            throw std::runtime_error("no txOut for key " + txout_key.toHexStr());
+         std::shared_ptr<BlockHeader> header = nullptr;
+         if (isSuper) {
+            header = bdvPtr_->blockchain().getHeaderForTxKey(txout_key);
+            if (!db->getStoredTxOut(stxo, header,
+               txioPair.second.getTxRefOfOutput().getTxIndex(),
+               txioPair.second.getIndexOfOutput())) {
+               throw std::runtime_error("no txOut for key " + txout_key.toHexStr());
+            }
+         } else {
+            if (!db->getStoredTxOut(stxo, txout_key)) {
+               throw std::runtime_error("no txOut for key " + txout_key.toHexStr());
+            }
          }
-         auto hash = db->getTxHashForLdbKey(txout_key.getSliceRef(0, 6), nullptr);
 
-         UTXO utxo(
-            stxo.getValue(), stxo.getHeight(),
+         auto hash = db->getTxHashForLdbKey(txout_key.getSliceRef(0, 6), header);
+         utxoList.emplace_back(UTXO{stxo.getValue(), stxo.getHeight(),
             stxo.txIndex, stxo.txOutIndex,
-            hash, stxo.getScriptRef());
-         utxoList.emplace_back(move(utxo));
+            hash, stxo.getScriptRef()});
       }
    }
 

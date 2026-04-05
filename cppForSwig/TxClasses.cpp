@@ -148,32 +148,36 @@ void Outpoint::unserialize(const BinaryDataRef& bdRef)
 
 ////////////////////////////////////////////////////////////////////////////////
 // TxIn
-TxIn::TxIn(const uint8_t* ptr, size_t size, size_t nbytes, uint32_t idx)
+TxIn::TxIn(const uint8_t* ptr, size_t size, size_t nbytes, uint32_t idx) :
+   dataCopy_(getRawData(ptr, size, nbytes)),
+   index_(idx)
 {
-   unserialize_checked(ptr, size, nbytes, idx);
+   unserialize_checked();
 }
 
-TxIn::TxIn(BinaryDataRef dataRef, size_t nbytes, uint32_t idx)
+TxIn::TxIn(BinaryDataRef dataRef, size_t nbytes, uint32_t idx) :
+   dataCopy_(getRawData(dataRef.getPtr(), dataRef.getSize(), nbytes)),
+   index_(idx)
 {
-   unserialize_checked(dataRef.getPtr(), dataRef.getSize(), nbytes, idx);
+   unserialize_checked();
 }
 
-TxIn::TxIn(BinaryRefReader brr, size_t nbytes, uint32_t idx)
+TxIn::TxIn(BinaryRefReader brr, size_t nbytes, uint32_t idx) :
+   dataCopy_(getRawData(brr.getCurrPtr(), brr.getSizeRemaining(), nbytes)),
+   index_(idx)
 {
-   unserialize_checked(brr.getCurrPtr(), brr.getSizeRemaining(), nbytes, idx);
+   unserialize_checked();
    brr.advance(getSize());
 }
 
 ////////
 const uint8_t* TxIn::getPtr() const
 {
-   assert(isInitialized());
    return dataCopy_.getPtr();
 }
 
 size_t TxIn::getSize() const
 {
-   assert(isInitialized());
    return dataCopy_.getSize();
 }
 
@@ -185,11 +189,6 @@ bool TxIn::isStandard() const
 bool TxIn::isCoinbase() const
 {
    return scriptType_ == TxInScriptType::COINBASE;
-}
-
-bool TxIn::isInitialized() const
-{
-   return !dataCopy_.empty();
 }
 
 Outpoint TxIn::getOutPoint() const
@@ -245,10 +244,9 @@ const BinaryData& TxIn::serialize() const
    return dataCopy_;
 }
 
-void TxIn::unserialize_checked(const uint8_t* ptr,
-   size_t size, size_t nbytes, uint32_t idx)
+BinaryDataRef TxIn::getRawData(const uint8_t* ptr,
+   size_t size, size_t nbytes)
 {
-   index_ = idx;
    size_t numBytes = nbytes == 0 ?
       BtcUtils::TxInCalcLength(ptr, size) :
       nbytes;
@@ -256,8 +254,11 @@ void TxIn::unserialize_checked(const uint8_t* ptr,
    if (size < numBytes) {
       throw BtcUtils::BlockDeserializingException();
    }
-   dataCopy_.copyFrom(ptr, numBytes);
+   return BinaryDataRef{ptr, numBytes};
+}
 
+void TxIn::unserialize_checked()
+{
    if (dataCopy_.getSize() - 36 < 1) {
       throw BtcUtils::BlockDeserializingException();
    }
@@ -362,26 +363,30 @@ void TxIn::pprint(std::ostream& os, int nIndent, bool) const
 
 ////////////////////////////////////////////////////////////////////////////////
 // TxOut
-TxOut::TxOut(BinaryDataRef data, size_t nbytes, uint32_t idx)
+TxOut::TxOut(BinaryDataRef data, size_t nbytes, uint32_t idx) :
+   dataCopy_(getRawData(data.getPtr(), data.getSize(), nbytes)),
+   index_(idx)
 {
-   unserialize(data.getPtr(), data.getSize(), nbytes, idx);
+   unserialize();
 }
 
-TxOut::TxOut(BinaryRefReader& brr, size_t nbytes, uint32_t idx)
+TxOut::TxOut(BinaryRefReader& brr, size_t nbytes, uint32_t idx) :
+   dataCopy_(getRawData(brr.getCurrPtr(), brr.getSizeRemaining(), nbytes)),
+   index_(idx)
 {
-   unserialize(brr.getCurrPtr(), brr.getSizeRemaining(), nbytes, idx);
+   unserialize();
    brr.advance(getSize());
 }
 
-TxOut::TxOut(const uint8_t* ptr, size_t size, uint32_t idx)
+TxOut::TxOut(const uint8_t* ptr, size_t size, uint32_t idx) :
+   dataCopy_(getRawData(ptr, size, 0)), index_(idx)
 {
-   unserialize(ptr, size, 0, idx);
+   unserialize();
 }
 
-void TxOut::unserialize(const uint8_t* ptr,
-   size_t size, size_t nbytes, uint32_t idx)
+BinaryDataRef TxOut::getRawData(const uint8_t* ptr,
+   size_t size, size_t nbytes)
 {
-   index_ = idx;
    uint32_t numBytes = nbytes == 0 ?
       BtcUtils::TxOutCalcLength(ptr, size) :
       nbytes;
@@ -389,10 +394,13 @@ void TxOut::unserialize(const uint8_t* ptr,
    if (size < numBytes) {
       throw BtcUtils::BlockDeserializingException{};
    }
-   dataCopy_.copyFrom(ptr, numBytes);
+   return {ptr, numBytes};
+}
 
+void TxOut::unserialize()
+{
    scriptOffset_ = 8 + BtcUtils::readVarIntLength(getPtr() + 8);
-   if (dataCopy_.getSize() - scriptOffset_ - getScriptSize() > size) {
+   if (dataCopy_.getSize() <= scriptOffset_) {
       throw BtcUtils::BlockDeserializingException{};
    }
    BinaryDataRef scriptRef{
@@ -422,11 +430,6 @@ uint64_t TxOut::getValue() const
 bool TxOut::isStandard() const
 {
    return scriptType_ != TxOutScriptType::NONSTANDARD;
-}
-
-bool TxOut::isInitialized() const
-{
-   return dataCopy_.getSize() > 0;
 }
 
 uint32_t TxOut::getIndex()
@@ -543,10 +546,13 @@ void TxOut::pprint(std::ostream& os, int nIndent, bool pBigendian)
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tx methods
-Tx::Tx(const uint8_t* ptr, size_t size)
-{
-   unserialize(ptr, size);
-}
+Tx::Tx(const uint8_t* ptr, size_t size) :
+   Tx{unserialize(ptr, size)}
+{}
+
+Tx::Tx(BinaryDataRef str) :
+   Tx{unserialize(str.getPtr(), str.getSize())}
+{}
 
 Tx::Tx(BinaryRefReader& brr) :
    Tx{brr.getCurrPtr(), brr.getSizeRemaining()}
@@ -554,38 +560,44 @@ Tx::Tx(BinaryRefReader& brr) :
    brr.advance(getSize());
 }
 
-Tx::Tx(BinaryDataRef str) :
-   Tx{str.getPtr(), str.getSize()}
+Tx::Tx(BinaryDataRef data,
+   uint32_t version, bool useWitness, uint32_t lockTime,
+   std::vector<size_t>& offsetsTxIn,
+   std::vector<size_t>& offsetsTxOut,
+   std::vector<size_t>& offsetsWitness) :
+   dataCopy_(data),
+   version_{version}, usesWitness_{useWitness}, lockTime_{lockTime},
+   offsetsTxIn_{std::move(offsetsTxIn)},
+   offsetsTxOut_{std::move(offsetsTxOut)},
+   offsetsWitness_{std::move(offsetsWitness)}
 {}
 
-void Tx::unserialize(const uint8_t* ptr, size_t size)
+Tx Tx::unserialize(const uint8_t* ptr, size_t size)
 {
-   isInitialized_ = false;
+   std::vector<size_t> txins, txouts, witnesses;
    uint32_t nBytes = BtcUtils::TxCalcLength(ptr, size,
-      &offsetsTxIn_, &offsetsTxOut_, &offsetsWitness_);
-
+      &txins, &txouts, &witnesses);
    if (size < 8 || nBytes > size) {
       throw BtcUtils::BlockDeserializingException();
    }
-   dataCopy_.copyFrom(ptr, nBytes);
+   BinaryDataRef data{ptr, nBytes};
 
-   usesWitness_ = BtcUtils::checkSwMarker(ptr + 4);
-   uint32_t numWitness = offsetsWitness_.size() - 1;
-   version_ = READ_UINT32_LE(ptr);
-   if (4 > size - offsetsWitness_[numWitness]) {
+   uint32_t version = READ_UINT32_LE(ptr);
+   bool usesWitness = BtcUtils::checkSwMarker(ptr + 4);
+   uint32_t numWitness = witnesses.size() - 1;
+   if (4 > nBytes - witnesses[numWitness]) {
       throw BtcUtils::BlockDeserializingException();
    }
-   lockTime_ = READ_UINT32_LE(ptr + offsetsWitness_[numWitness]);
-   isInitialized_ = true;
+   uint32_t lockTime = READ_UINT32_LE(ptr + witnesses[numWitness]);
+
+   return Tx{data, version, usesWitness, lockTime,
+      txins, txouts, witnesses};
 }
 
 ////////
 bool Tx::operator==(const Tx& rhs) const
 {
-   if (this->isInitialized() && rhs.isInitialized()) {
-      return this->thisHash_ == rhs.thisHash_;
-   }
-   return false;
+   return this->thisHash_ == rhs.thisHash_;
 }
 
 ////////
@@ -600,16 +612,8 @@ size_t Tx::getSize() const
 }
 
 ////////
-bool Tx::isInitialized() const
-{
-   return isInitialized_;
-}
-
 bool Tx::isCoinbase() const
 {
-   if (!isInitialized()) {
-      throw std::runtime_error("unprocessed tx");
-   }
    BinaryDataRef bdr{dataCopy_.getPtr() + offsetsTxIn_[0], 32};
    return bdr == BtcUtils::EmptyHash;
 }
@@ -650,9 +654,6 @@ bool Tx::isChained() const
 
 bool Tx::isSegWit() const
 { 
-   if (!isInitialized()) {
-      throw std::runtime_error("uninitialized tx");
-   }
    return usesWitness_;
 }
 
@@ -736,10 +737,6 @@ BinaryData Tx::serialize() const
 
 BinaryData Tx::serializeNoWitness(void) const
 {
-   if (!isInitialized()) {
-      throw std::runtime_error("Tx uninitialized");
-   }
-
    BinaryData dataNoWitness;
    dataNoWitness.append(WRITE_UINT32_LE(version_));
    BinaryDataRef txBody(dataCopy_.getPtr() + 6, offsetsTxOut_.back() - 6);
@@ -752,10 +749,6 @@ BinaryData Tx::serializeNoWitness(void) const
 const BinaryData& Tx::getThisHash() const
 {
    if (thisHash_.empty()) {
-      if (!isInitialized()) {
-         throw std::runtime_error("Tx uninitialized");
-      }
-
       if (usesWitness_) {
          auto dataNoWitness = serializeNoWitness();
          thisHash_ = BtcUtils::getHash256(dataNoWitness);
@@ -784,7 +777,6 @@ BinaryData Tx::getScrAddrForTxOut(uint32_t txOutIndex) const
 // information, so it can probably just be computed on the fly
 TxIn Tx::getTxInCopy(uint32_t i) const
 {
-   assert(isInitialized());
    if (offsetsTxIn_.empty() || i >= (ssize_t)offsetsTxIn_.size() - 1) {
       throw std::range_error("index out of bound");
    }
@@ -797,7 +789,6 @@ TxIn Tx::getTxInCopy(uint32_t i) const
 
 TxOut Tx::getTxOutCopy(uint32_t i) const
 {
-   assert(isInitialized());
    if (offsetsTxOut_.empty() || i >= (ssize_t)offsetsTxOut_.size() - 1) {
       std::string errStr(
          "index out of bound: " + std::to_string(i) + " out of " +

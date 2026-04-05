@@ -1549,12 +1549,12 @@ bool BinaryRefReader::isEndOfStream() const
 }
 
 /////////////////////////////////////////////////////////////////////////////
-uint8_t const* BinaryRefReader::exposeDataPtr()
+const uint8_t* BinaryRefReader::exposeDataPtr()
 {
    return bdRef_.getPtr();
 }
 
-uint8_t const* BinaryRefReader::getCurrPtr()
+const uint8_t* BinaryRefReader::getCurrPtr()
 {
    return bdRef_.getPtr() + pos_.load(std::memory_order_relaxed);
 }

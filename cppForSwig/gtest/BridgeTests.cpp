@@ -9246,8 +9246,8 @@ TEST_F(BridgeChainDataTests, ZeroConf_Chain)
    ASSERT_FALSE(signedTx2.empty());
 
    Tx tx2(signedTx2);
-   changeOutput = tx2.getTxOutCopy(1);
-   int64_t changeAmount2 = changeOutput.getValue();
+   auto changeOutput2 = tx2.getTxOutCopy(1);
+   int64_t changeAmount2 = changeOutput2.getValue();
    EXPECT_TRUE(changeAmount2 > 3 * COIN);
    EXPECT_TRUE(changeAmount2 < 4 * COIN);
 
@@ -9580,8 +9580,8 @@ TEST_F(BridgeChainDataTests, ZeroConf_StaggeredChain)
    ASSERT_FALSE(signedTx2.empty());
 
    Tx tx2(signedTx2);
-   changeOutput = tx2.getTxOutCopy(1);
-   int64_t changeAmount2 = changeOutput.getValue();
+   auto changeOutput2 = tx2.getTxOutCopy(1);
+   int64_t changeAmount2 = changeOutput2.getValue();
    EXPECT_TRUE(changeAmount2 > 3 * COIN);
    EXPECT_TRUE(changeAmount2 < 4 * COIN);
 
@@ -10099,8 +10099,8 @@ TEST_F(BridgeChainDataTests, ZeroConf_ChainRBF)
    ASSERT_FALSE(signedTx2.empty());
 
    Tx tx2(signedTx2);
-   changeOutput = tx2.getTxOutCopy(1);
-   int64_t changeAmount2 = changeOutput.getValue();
+   auto changeOutput2 = tx2.getTxOutCopy(1);
+   int64_t changeAmount2 = changeOutput2.getValue();
    EXPECT_TRUE(changeAmount2 > 3 * COIN);
    EXPECT_TRUE(changeAmount2 < 4 * COIN);
 
@@ -10239,8 +10239,8 @@ TEST_F(BridgeChainDataTests, ZeroConf_ChainRBF)
    ASSERT_FALSE(txRbf.empty());
 
    Tx tx3(txRbf);
-   changeOutput = tx3.getTxOutCopy(1);
-   int64_t changeAmountRbf = changeOutput.getValue();
+   auto changeOutput3 = tx3.getTxOutCopy(1);
+   int64_t changeAmountRbf = changeOutput3.getValue();
    EXPECT_EQ(changeAmountRbf, 12 * COIN - rbfFee);
 
    //broadcast it
@@ -10486,8 +10486,8 @@ TEST_F(BridgeChainDataTests, ZeroConf_Reload)
    ASSERT_FALSE(signedTx2.empty());
 
    Tx tx2(signedTx2);
-   changeOutput = tx2.getTxOutCopy(1);
-   int64_t changeAmount2 = changeOutput.getValue();
+   auto changeOutput2 = tx2.getTxOutCopy(1);
+   int64_t changeAmount2 = changeOutput2.getValue();
    EXPECT_TRUE(changeAmount2 > 3 * COIN);
    EXPECT_TRUE(changeAmount2 < 4 * COIN);
 

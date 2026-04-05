@@ -15,6 +15,7 @@
 #include <BlockchainDatabase/BlockObj.h>
 #include <BlockchainDatabase/txio.h>
 #include <BlockchainDatabase/StoredBlockObj.h>
+#include <BlockchainDatabase/Blockchain.h>
 #include "TxClasses.h"
 
 #include "Notifications.h"
@@ -171,7 +172,8 @@ FilteredZeroConfData ZeroConf::filterParsedTx(
    return result;
 }
 
-void ZeroConf::preprocessTx(ParsedTx& tx, LMDBBlockDatabase* db)
+void ZeroConf::preprocessTx(ParsedTx& tx, LMDBBlockDatabase* db,
+   Blockchain* bc)
 {
    /*
    Resolves mined outpoints and sets reference fields.
@@ -206,6 +208,7 @@ void ZeroConf::preprocessTx(ParsedTx& tx, LMDBBlockDatabase* db)
       tx.outputs.resize(nTxOut);
    }
 
+   auto isSuper = db->getDbType() == ARMORY_DB_TYPE::Super ? true : false;
    for (uint32_t iin = 0; iin < nTxIn; iin++) {
       auto& txIn = tx.inputs[iin];
       if (txIn.isResolved()) {
@@ -232,11 +235,21 @@ void ZeroConf::preprocessTx(ParsedTx& tx, LMDBBlockDatabase* db)
 
       //grab txout
       StoredTxOut stxOut;
-      if (!db->getStoredTxOut(stxOut, opRef.getDbKey())) {
+      if (isSuper) {
+         auto txOutKey = opRef.getDbKey();
+         unsigned blockId; uint8_t dup; uint16_t txId; uint16_t txOutIdx;
+         BinaryRefReader brrKey(txOutKey);
+         DBUtils::readBlkDataKeyNoPrefix(brrKey, blockId, dup, txId, txOutIdx);
+         auto header = bc->getHeaderForTxKey(txOutKey);
+         db->getStoredTxOut(stxOut, header, txId, txOutIdx);
+      } else {
+         db->getStoredTxOut(stxOut, opRef.getDbKey());
+      }
+      if (!stxOut.isInitialized()) {
          continue;
       }
 
-      if (Config::DBSettings::getDbType() == ARMORY_DB_TYPE::Super) {
+      if (isSuper) {
          auto stxOutKey = stxOut.getDBKey(false);
          opRef.setDbKey(stxOutKey.getSliceRef(0, 6));
       }
@@ -290,7 +303,7 @@ void ZeroConf::preprocessTx(ParsedTx& tx, LMDBBlockDatabase* db)
 
 void Armory::ZeroConf::preprocessZcMap(
    const std::map<BinaryData, std::shared_ptr<ParsedTx>>& zcMap,
-   LMDBBlockDatabase* db)
+   LMDBBlockDatabase* db, Blockchain* bc)
 {
    //run threads to preprocess the zcMap
    auto counter = std::make_shared<std::atomic<unsigned>>();
@@ -302,7 +315,7 @@ void Armory::ZeroConf::preprocessZcMap(
       txVec.push_back(txPair.second);
    }
 
-   auto parserLdb = [db, &txVec, counter]()->void
+   auto parserLdb = [db, bc, &txVec, counter]()->void
    {
       while (true) {
          auto id = counter->fetch_add(1, std::memory_order_relaxed);
@@ -310,7 +323,7 @@ void Armory::ZeroConf::preprocessZcMap(
             return;
          }
          auto txIter = txVec.begin() + id;
-         ::preprocessTx(*(*txIter), db);
+         ::preprocessTx(*(*txIter), db, bc);
       }
    };
 
@@ -611,7 +624,7 @@ bool ParsedTx::isResolved() const
    if (state == ParsedTxStatus::Uninitialized) {
       return false;
    }
-   if (tx_ == nullptr || !tx_->isInitialized()) {
+   if (tx_ == nullptr) {
       return false;
    }
    if (inputs.size() != tx_->getNumTxIn() ||
@@ -1076,9 +1089,9 @@ MempoolSnapshot::MempoolSnapshot(unsigned depth, unsigned threshold) :
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void MempoolSnapshot::preprocessZcMap(LMDBBlockDatabase* db)
+void MempoolSnapshot::preprocessZcMap(LMDBBlockDatabase* db, Blockchain* bc)
 {
-   Armory::ZeroConf::preprocessZcMap(data_->txMap_, db);
+   Armory::ZeroConf::preprocessZcMap(data_->txMap_, db, bc);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

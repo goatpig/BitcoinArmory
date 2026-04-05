@@ -295,13 +295,7 @@ Tx BlockDataViewer::getTxByKey(BinaryDataRef dbKey) const
    uint16_t txId;
    BinaryRefReader brrKey(dbKey);
    DBUtils::readBlkDataKeyNoPrefix(brrKey, id, dup, txId);
-
-   std::shared_ptr<BlockHeader> header;
-   if (dup != 0x7F) {
-      header = bc_->getHeaderByHeight(id, dup);
-   } else {
-      bc_->getHeaderById(id);
-   }
+   auto header = bc_->getHeaderForTxKey(dbKey);
    return db_->getFullTxCopy(txId, header);
 }
 
@@ -314,9 +308,6 @@ TxOut BlockDataViewer::getPrevTxOut(const TxIn& txin) const
 
    Outpoint op = txin.getOutPoint();
    Tx theTx = getTxByHash(op.getTxHash());
-   if (!theTx.isInitialized()) {
-      throw std::runtime_error("couldn't find prev tx");
-   }
    uint32_t idx = op.getTxOutIndex();
    return theTx.getTxOutCopy(idx);
 }
@@ -738,11 +729,12 @@ Tx BlockDataViewer::getSpenderTxForTxOut(uint32_t height, uint32_t txindex,
 ////////////////////////////////////////////////////////////////////////////////
 bool BlockDataViewer::isRBF(const BinaryData& txHash) const
 {
-   auto zctx = zeroConfCont_->getTxByHash(txHash);
-   if (!zctx.isInitialized()) {
+   try {
+      auto zctx = zeroConfCont_->getTxByHash(txHash);
+      return zctx.isRBF();
+   } catch (const std::exception&) {
       return false;
    }
-   return zctx.isRBF();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -806,6 +798,7 @@ std::map<BinaryData, std::vector<Output>> BlockDataViewer::getAddressOutpoints(
    std::map<BinaryData, BinaryData> hashMap;
 
    //confirmed outputs, skip if heightCutoff is UINT32_MAX
+   auto isSuper = db_->getDbType() == ARMORY_DB_TYPE::Super ? true : false;
    if (heightCutoff != UINT32_MAX) {
       for (const auto& scrAddr : scrAddrSet) {
          StoredScriptHistory ssh;
@@ -839,7 +832,16 @@ std::map<BinaryData, std::vector<Output>> BlockDataViewer::getAddressOutpoints(
                }
 
                StoredTxOut stxo;
-               if (!db_->getStoredTxOut(stxo, txioPair.second.getDBKeyOfOutput())) {
+               auto txioKey = txioPair.second.getDBKeyOfOutput();
+               if (isSuper) {
+                  auto header = bc_->getHeaderForTxKey(txioKey);
+                  db_->getStoredTxOut(stxo, header,
+                     txioPair.second.getTxRefOfOutput().getTxIndex(),
+                     txioPair.second.getIndexOfOutput());
+               } else {
+                  db_->getStoredTxOut(stxo, txioPair.second.getDBKeyOfOutput());
+               }
+               if (!stxo.isInitialized()) {
                   throw std::runtime_error("failed to grab txout");
                }
 

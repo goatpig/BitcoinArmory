@@ -1426,6 +1426,7 @@ Tx LMDBBlockDatabase::getFullTxCopy(
       BinaryRefReader brr(bctx->data_, bctx->size_);
       Tx tx{brr};
       tx.setTxHeight(bhPtr->getBlockHeight());
+      tx.setDupId(bhPtr->getDuplicateID());
       tx.setTxIndex(txIndex);
       return tx;
    } catch (const BtcUtils::BlockDeserializingException&) {
@@ -1710,34 +1711,7 @@ bool LMDBBlockDatabase::getStoredTxOut(StoredTxOut& stxo,
          return true;
       }
    } else {
-      if (dup != 0x7F) {
-         throw std::runtime_error("straight keys not supported in supernode");
-      }
-
-      auto stxo_tx = beginTransaction(DB_SELECT::STXO, LMDB::Mode::ReadOnly);
-      auto data = getValueNoCopy(DB_SELECT::STXO, dbKey);
-      if (data.empty()) {
-         LOGWARN << "no txout for key: " << dbKey.toHexStr();
-         return false;
-      }
-
-      stxo.unserializeDBValue(data);
-      stxo.txIndex = txIdx;
-      stxo.txOutIndex = txoutid;
-      stxo.isCoinbase = txIdx == 0;
-
-      //get spentness
-      auto spentness_tx = beginTransaction(
-         DB_SELECT::SPENTNESS, LMDB::Mode::ReadOnly);
-      auto spentnessVal = getValueNoCopy(
-         DB_SELECT::SPENTNESS, stxo.getSpentnessKey());
-      if (!spentnessVal.empty()) {
-         stxo.spentByTxInKey = spentnessVal;
-         stxo.spentness = TXOUT_SPENT;
-      } else {
-         stxo.spentness = TXOUT_UNSPENT;
-      }
-      return true;
+      throw std::runtime_error("invalid call for supernode db");
    }
    return false;
 }
@@ -1765,6 +1739,18 @@ bool LMDBBlockDatabase::getStoredTxOut(StoredTxOut& stxo,
    stxo.txIndex = txId;
    stxo.txOutIndex = txOutId;
    stxo.isCoinbase = txId == 0;
+
+   //get spentness
+   auto spentness_tx = beginTransaction(
+      DB_SELECT::SPENTNESS, LMDB::Mode::ReadOnly);
+   auto spentnessVal = getValueNoCopy(
+      DB_SELECT::SPENTNESS, stxo.getSpentnessKey());
+   if (!spentnessVal.empty()) {
+      stxo.spentByTxInKey = spentnessVal;
+      stxo.spentness = TXOUT_SPENT;
+   } else {
+      stxo.spentness = TXOUT_UNSPENT;
+   }
    return true;
 }
 

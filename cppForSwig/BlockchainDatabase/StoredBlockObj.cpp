@@ -839,12 +839,6 @@ StoredTx& StoredTx::createFromTx(BinaryDataRef rawTx, bool doFrag, bool withTxOu
 
 StoredTx& StoredTx::createFromTx(const Tx& tx, bool doFrag, bool withTxOuts)
 {
-   if (!tx.isInitialized()) {
-      LOGERR << "Creating storedtx from uninitialized tx. Aborting.";
-      dataCopy.resize(0);
-      return *this;
-   }
-
    thisHash  = tx.getThisHash();
    numTxOut  = tx.getNumTxOut();
    version   = tx.getVersion();

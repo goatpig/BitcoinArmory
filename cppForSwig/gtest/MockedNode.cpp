@@ -31,16 +31,14 @@ namespace
       const BinaryData& txHash)
    {
       auto dbKey = iface->getDBKeyForHash(txHash);
+      if (dbKey.empty()) {
+         throw std::runtime_error("[MockedNode] no key for this txhash");
+      }
       unsigned id; uint8_t dup; uint16_t idx;
       BinaryRefReader brrKey(dbKey);
       DBUtils::readBlkDataKeyNoPrefix(brrKey, id, dup, idx);
 
-      std::shared_ptr<BlockHeader> header;
-      if (dup == 0x7F) {
-         header = bc->getHeaderById(id);
-      } else {
-         header = bc->getHeaderByHeight(id, dup);
-      }
+      auto header = bc->getHeaderForTxKey(dbKey);
       return iface->getFullTxCopy(idx, header);
    }
 
@@ -56,8 +54,8 @@ namespace
          auto outpoint = txin.getOutPoint();
 
          auto prevHash = outpoint.getTxHash();
-         auto prevTx = getFullTxCopy(iface, bc, prevHash);
-         if (prevTx.isInitialized()) {
+         try {
+            auto prevTx = getFullTxCopy(iface, bc, prevHash);
             auto txOut = prevTx.getTxOutCopy(outpoint.getTxOutIndex());
             UTXO utxo(
                txOut.getValue(), prevTx.getTxHeight(),
@@ -67,9 +65,10 @@ namespace
             auto& idMap = utxoMap[prevHash];
             idMap.emplace(outpoint.getTxOutIndex(), utxo);
             continue; //got the output, on to the next outpoint
+         } catch (const std::exception&) {
+            //try to grab a zc from the mempool for this hash
          }
 
-         //see if this is a zc outpoint instead
          auto mempoolIter = mempool.find(prevHash);
          if (mempoolIter == mempool.end()) {
             //couldn't find utxo
@@ -593,13 +592,14 @@ uint64_t NodeUnitTest::getFeeForTx(const Tx& tx) const
       auto outpoint = txin.getOutPoint();
 
       auto tx = getFullTxCopy(iface_, blockchain_, outpoint.getTxHash());
-      auto txOutCopy = tx.getTxOutCopy(outpoint.getTxOutIndex());
-      if (txOutCopy.isInitialized()) {
+      try {
+         auto txOutCopy = tx.getTxOutCopy(outpoint.getTxOutIndex());
          inputsVal += txOutCopy.getValue();
          continue;
+      } catch (const std::exception&) {
+         //could not find output in db, check mempool
       }
 
-      //could not find output in db, check mempool
       auto iter = mempool_.find(outpoint.getTxHashRef());
       if (iter == mempool_.end()) {
          throw std::runtime_error("can't resolve outpoint");

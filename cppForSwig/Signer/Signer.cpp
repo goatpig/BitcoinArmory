@@ -2425,9 +2425,6 @@ void Signer::addSupportingTx(BinaryDataRef rawTxRef)
 
 void Signer::addSupportingTx(Tx tx)
 {
-   if (!tx.isInitialized()) {
-      return;
-   }
    supportingTxMap_->emplace(tx.getThisHash(), std::move(tx));
 }
 

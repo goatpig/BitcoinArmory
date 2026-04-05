@@ -21,6 +21,8 @@ class TxIOPair;
 
 namespace Armory
 {
+   class Blockchain;
+
    namespace ZeroConf
    {
       class ZeroConfCallbacks;
@@ -271,7 +273,7 @@ namespace Armory
          uint32_t getTopZcID(void) const;
          bool isTxOutSpentByZC(BinaryDataRef) const;
 
-         void preprocessZcMap(LMDBBlockDatabase*);
+         void preprocessZcMap(LMDBBlockDatabase*, Blockchain*);
          std::map<BinaryData, std::shared_ptr<ParsedTx>> dropZc(BinaryDataRef);
 
          void stageNewZC(std::shared_ptr<ParsedTx>, const FilteredZeroConfData&);
@@ -279,10 +281,10 @@ namespace Armory
          unsigned getMergeCount(void) const { return mergeCount_; }
       };
 
-      void preprocessTx(ParsedTx&, LMDBBlockDatabase*);
+      void preprocessTx(ParsedTx&, LMDBBlockDatabase*, Blockchain*);
       void preprocessZcMap(
          const std::map<BinaryData, std::shared_ptr<ParsedTx>>&,
-         LMDBBlockDatabase*);
+         LMDBBlockDatabase*, Blockchain*);
       void finalizeParsedTxResolution(
          std::shared_ptr<ParsedTx>,
          LMDBBlockDatabase*, const std::set<BinaryData>&,

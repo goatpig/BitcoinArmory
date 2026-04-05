@@ -3647,7 +3647,7 @@ TEST_F(BlockObjTest, TxUnserialize)
    txs.emplace_back(Tx{brr});
 
    for (const auto& tx : txs) {
-      EXPECT_TRUE( tx.isInitialized());
+      EXPECT_NE(   tx.getSize(), 0);
       EXPECT_EQ(   tx.getSize(), len);
 
       EXPECT_EQ(   tx.getVersion(), 1ULL);
@@ -4418,8 +4418,8 @@ TEST_F(StoredBlockObjTest, STxReconstruct)
    Tx regTx2{rawTx0_};
    stx.createFromTx(regTx2, true);
 
-   reconTx = stx.getTxCopy();
-   EXPECT_EQ(reconTx.serialize(),   rawTx0_);
+   auto reconTx2 = stx.getTxCopy();
+   EXPECT_EQ(reconTx2.serialize(),   rawTx0_);
    EXPECT_EQ(stx.getSerializedTx(), rawTx0_);
 }
 

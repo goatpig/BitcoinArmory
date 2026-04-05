@@ -82,8 +82,8 @@ class TxIn
    friend class BlockDataManager;
 
 private:
-   void unserialize_checked(const uint8_t*, size_t, size_t=0,
-      uint32_t=UINT32_MAX);
+   static BinaryDataRef getRawData(const uint8_t*, size_t, size_t=0);
+   void unserialize_checked(void);
 
 public:
    TxIn(const uint8_t*, size_t, size_t, uint32_t=UINT32_MAX);
@@ -94,7 +94,6 @@ public:
    size_t getSize(void) const;
    bool isStandard(void) const;
    bool isCoinbase(void) const;
-   bool isInitialized(void) const;
    Outpoint getOutPoint(void) const;
 
    // Script ops
@@ -117,7 +116,7 @@ public:
    void pprint(std::ostream& = std::cout, int=0, bool=true) const;
 
 private:
-   BinaryData       dataCopy_;
+   const BinaryData dataCopy_;
 
    // Derived properties - we expect these to be set after construct/copy
    uint32_t         index_;
@@ -131,7 +130,8 @@ class TxOut
    friend class BlockDataManager;
 
 private:
-   void unserialize(const uint8_t*, size_t, size_t, uint32_t);
+   static BinaryDataRef getRawData(const uint8_t*, size_t, size_t);
+   void unserialize(void);
 
 public:
    TxOut(BinaryDataRef, size_t=0, uint32_t=UINT32_MAX);
@@ -142,7 +142,6 @@ public:
    uint32_t          getSize(void) const;
    uint64_t          getValue(void) const;
    bool              isStandard(void) const;
-   bool              isInitialized(void) const;
    uint32_t          getIndex(void);
 
    ////////
@@ -162,7 +161,7 @@ public:
    void              pprint(std::ostream& = std::cout, int=0, bool=true);
 
 private:
-   BinaryData        dataCopy_;
+   const BinaryData  dataCopy_;
 
    // Derived properties - we expect these to be set after construct/copy
    BinaryData        uniqueScrAddr_;
@@ -175,7 +174,9 @@ private:
 class Tx
 {
 private:
-   void unserialize(const uint8_t*, size_t);
+   static Tx unserialize(const uint8_t*, size_t);
+   Tx(BinaryDataRef, uint32_t, bool, uint32_t,
+      std::vector<size_t>&, std::vector<size_t>&, std::vector<size_t>&);
 
 public:
    explicit Tx(const uint8_t*, size_t);
@@ -191,7 +192,6 @@ public:
    size_t            getNumTxIn(void) const;
    size_t            getNumTxOut(void) const;
    const BinaryData& getThisHash(void) const;
-   bool              isInitialized(void) const;
    bool              isCoinbase(void) const;
    uint32_t          getLockTime(void) const;
    uint64_t          getSumOfOutputs(void) const;
@@ -238,21 +238,20 @@ public:
 
 private:
    // Full copy of the serialized tx
-   BinaryData dataCopy_;
-   bool isInitialized_{false};
-   bool usesWitness_{false};
+   const BinaryData dataCopy_;
+   const bool usesWitness_;
 
-   uint32_t version_;
-   uint32_t lockTime_;
+   const uint32_t version_;
+   const uint32_t lockTime_;
    uint32_t txTime_{0};
 
    // Derived properties - we expect these to be set after construct/copy
    mutable BinaryData thisHash_;
 
    // Will always create TxIns and TxOuts on-the-fly; only store the offsets
-   std::vector<size_t> offsetsTxIn_;
-   std::vector<size_t> offsetsTxOut_;
-   std::vector<size_t> offsetsWitness_;
+   const std::vector<size_t> offsetsTxIn_;
+   const std::vector<size_t> offsetsTxOut_;
+   const std::vector<size_t> offsetsWitness_;
 
    bool isRBF_ = false;
    bool isChainedZc_ = false;

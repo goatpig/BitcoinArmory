@@ -5360,11 +5360,11 @@ TEST_F(ZeroConfTests_Supernode, ZC_MineAfter1Block)
    balanceWlt = wlt->getScrAddrObjByKey(TestChain::scrAddrD)->getFullBalance();
    EXPECT_EQ(balanceWlt, 60 * COIN);
 
-   zc1 = bdvPtr->getTxByHash(hash1);
-   zc2 = bdvPtr->getTxByHash(hash2);
+   auto zc3 = bdvPtr->getTxByHash(hash1);
+   auto zc4 = bdvPtr->getTxByHash(hash2);
 
-   EXPECT_EQ(zc1.getTxHeight(), 6U);
-   EXPECT_EQ(zc2.getTxHeight(), UINT32_MAX);
+   EXPECT_EQ(zc3.getTxHeight(), 6U);
+   EXPECT_EQ(zc4.getTxHeight(), UINT32_MAX);
 
    //mine last block
    DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrB, 1);
@@ -5383,11 +5383,11 @@ TEST_F(ZeroConfTests_Supernode, ZC_MineAfter1Block)
    balanceWlt = wlt->getScrAddrObjByKey(TestChain::scrAddrD)->getFullBalance();
    EXPECT_EQ(balanceWlt, 60 * COIN);
 
-   zc1 = bdvPtr->getTxByHash(hash1);
-   zc2 = bdvPtr->getTxByHash(hash2);
+   auto zc5 = bdvPtr->getTxByHash(hash1);
+   auto zc6 = bdvPtr->getTxByHash(hash2);
 
-   EXPECT_EQ(zc1.getTxHeight(), 6U);
-   EXPECT_EQ(zc2.getTxHeight(), 7U);
+   EXPECT_EQ(zc5.getTxHeight(), 6U);
+   EXPECT_EQ(zc6.getTxHeight(), 7U);
    EXPECT_GE(theBDMt_->bdm()->zeroConfCont()->getMergeCount(), 1U);
 }
 

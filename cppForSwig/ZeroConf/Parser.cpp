@@ -370,7 +370,7 @@ std::map<BinaryData, std::shared_ptr<ParsedTx>> ZeroConfContainer::purge(
    txsToReparse.insert(invalidatedZCs.begin(), invalidatedZCs.end());
 
    //preprocess the dropped ZCs
-   preprocessZcMap(txsToReparse, db_);
+   preprocessZcMap(txsToReparse, db_, bc_.get());
    return txsToReparse;
 }
 
@@ -741,7 +741,7 @@ FilteredZeroConfData ZeroConfContainer::filterTransaction(
 
    if (parsedTx->state == ParsedTxStatus::Uninitialized ||
       parsedTx->state == ParsedTxStatus::ResolveAgain) {
-      preprocessTx(*parsedTx, db_);
+      preprocessTx(*parsedTx, db_, bc_.get());
    }
 
    //check tx resolution
@@ -1028,7 +1028,7 @@ unsigned ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
       fut.wait();
    } else if (!zcMap.empty()) {
       LOGDEBUG << "parsing " << zcMap.size() << " txns from mempool";
-      preprocessZcMap(zcMap, db_);
+      preprocessZcMap(zcMap, db_, bc_.get());
 
       //set highest used index
       auto lastEntry = zcMap.rbegin();
@@ -1338,7 +1338,7 @@ void ZeroConfContainer::processPayloadTx(
    } catch (const std::exception&) {
       //tx already set, ignore
    }
-   preprocessTx(*payloadPtr->pTx, db_);
+   preprocessTx(*payloadPtr->pTx, db_, bc_.get());
    payloadPtr->incrementCounter();
 }
 
