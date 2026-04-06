@@ -24,7 +24,6 @@
 #include <Ledgers/LedgerEntry.h>
 #include "BtcWallet.h"
 
-using namespace std;
 using namespace Armory;
 
 namespace
@@ -43,26 +42,32 @@ namespace
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// BlockDataViewer
 BlockDataViewer::BlockDataViewer(std::shared_ptr<BlockDataManager> bdm) :
-   bdm_(bdm), rescanZC_(false), zeroConfCont_(bdm->zeroConfCont())
+   bdm_(bdm), rescanZC_(false), zeroConfCont_(bdm->zeroConfCont()),
+   saf_{bdm->getScrAddrFilter()},
+   wallets_{this, saf_}, lockboxes_{this, saf_}
 {
    db_ = bdm->getIFace();
    bc_ = bdm->blockchain();
-   saf_ = bdm->getScrAddrFilter().get();
-
-   groups_.push_back(WalletGroup(this, saf_));
-   groups_.push_back(WalletGroup(this, saf_));
-
    flagRescanZC(false);
 }
 
-/////////////////////////////////////////////////////////////////////////////
 BlockDataViewer::~BlockDataViewer()
 {
-   groups_.clear();
+   wallets_.reset();
+   lockboxes_.reset();
 }
 
-/////////////////////////////////////////////////////////////////////////////
+void BlockDataViewer::reset()
+{
+   wallets_.reset();
+   lockboxes_.reset();
+   rescanZC_   = false;
+   lastScanned_ = 0;
+}
+
+////////
 bool BlockDataViewer::isBDMRunning() const
 {
    if (bdm_ == nullptr) {
@@ -71,7 +76,6 @@ bool BlockDataViewer::isBDMRunning() const
    return bdm_->isRunning();
 }
 
-////
 void BlockDataViewer::blockUntilBDMisReady() const
 {
    if (bdm_ == nullptr) {
@@ -80,7 +84,37 @@ void BlockDataViewer::blockUntilBDMisReady() const
    bdm_->blockUntilReady();
 }
 
-////
+LMDBBlockDatabase* BlockDataViewer::getDB() const
+{
+   return db_;
+}
+
+BinaryData BlockDataViewer::getTxHashForDbKey(const BinaryData& dbKey6) const
+{
+   return db_->getTxHashForLdbKey(dbKey6, nullptr);
+}
+
+const Blockchain& BlockDataViewer::blockchain() const
+{
+   return *bc_;
+}
+
+const std::shared_ptr<BlockHeader> BlockDataViewer::getTopBlockHeader() const
+{
+   return bc_->top();
+}
+
+uint32_t BlockDataViewer::getTopBlockHeight() const
+{
+   return bc_->top()->getBlockHeight();
+}
+
+ZeroConf::ZeroConfContainer* BlockDataViewer::zcContainer() const
+{
+   return zeroConfCont_.get();
+}
+
+////////
 bool BlockDataViewer::isZcEnabled() const
 {
    if (bdm_ == nullptr) {
@@ -89,17 +123,32 @@ bool BlockDataViewer::isZcEnabled() const
    return bdm_->isZcEnabled();
 }
 
-/////////////////////////////////////////////////////////////////////////////
+void BlockDataViewer::flagRescanZC(bool flag)
+{
+   rescanZC_.store(flag, std::memory_order_release);
+}
+
+bool BlockDataViewer::getZCflag() const
+{
+   return rescanZC_.load(std::memory_order_acquire);
+}
+
+////////
+bool BlockDataViewer::hasWallet(const std::string& ID) const
+{
+   return wallets_.hasID(ID);
+}
+
 void BlockDataViewer::registerAWallet(WalletRegistrationRequest& request)
 {
    switch (request.type)
    {
       case WalletRegType::WALLET:
-         groups_[group_wallet].registerAddresses(request);
+         wallets_.registerAddresses(request);
          break;
 
       case WalletRegType::LOCKBOX:
-         groups_[group_lockbox].registerAddresses(request);
+         lockboxes_.registerAddresses(request);
          break;
 
       default:
@@ -107,18 +156,23 @@ void BlockDataViewer::registerAWallet(WalletRegistrationRequest& request)
    }
 }
 
-/////////////////////////////////////////////////////////////////////////////
-void BlockDataViewer::unregisterWallet(const string& walletID)
+void BlockDataViewer::unregisterWallet(const std::string& walletID)
 {
-   for (auto& group : groups_) {
-      if (group.hasID(walletID)) {
-         group.unregisterWallet(walletID);
-      }
+   wallets_.unregisterWallet(walletID);
+   lockboxes_.unregisterWallet(walletID);
+}
+
+void BlockDataViewer::registerAddresses(WalletRegistrationRequest& request)
+{
+   if (wallets_.hasID(request.walletId)) {
+      wallets_.registerAddresses(request);
+   } else if (lockboxes_.hasID(request.walletId)) {
+      lockboxes_.registerAddresses(request);
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BlockDataViewer::scanWallets(shared_ptr<BDV_Notification> action)
+////////
+void BlockDataViewer::scanWallets(std::shared_ptr<BDV_Notification> action)
 {
    uint32_t startBlock = UINT32_MAX;
    uint32_t endBlock = UINT32_MAX;
@@ -128,7 +182,7 @@ void BlockDataViewer::scanWallets(shared_ptr<BDV_Notification> action)
    bool refresh = false;
 
    ScanWalletStruct scanData;
-   vector<TxIOPair>* txioVecPtr = nullptr;
+   std::vector<TxIOPair>* txioVecPtr = nullptr;
 
    switch (action->actionType())
    {
@@ -144,8 +198,7 @@ void BlockDataViewer::scanWallets(shared_ptr<BDV_Notification> action)
       {
          auto reorgNotif =
             std::dynamic_pointer_cast<BDV_Notification_NewBlock>(action);
-         auto& reorgState = reorgNotif->reorgState;
-
+         const auto& reorgState = reorgNotif->reorgState;
          if (!reorgState.hasNewTop) {
             return;
          }
@@ -223,30 +276,20 @@ void BlockDataViewer::scanWallets(shared_ptr<BDV_Notification> action)
    scanData.action_ = action->actionType();
    scanData.reorg_ = reorg;
 
-   std::vector<uint32_t> startBlocks;
-   startBlocks.reserve(groups_.size());
-   for (size_t i = 0; i < groups_.size(); i++) {
-      startBlocks.emplace_back(startBlock);
+   auto walletsStartBlock = startBlock;
+   if (wallets_.pageHistory(refresh, false)) {
+      walletsStartBlock = wallets_.hist.getPageBottom(0);
+   }
+   auto lockboxesStartBlock = startBlock;
+   if (lockboxes_.pageHistory(refresh, false)) {
+      lockboxesStartBlock = lockboxes_.hist.getPageBottom(0);
    }
 
-   auto sbIter = startBlocks.begin();
-   for (auto& group : groups_) {
-      if (group.pageHistory(refresh, false)) {
-         *sbIter = group.hist_.getPageBottom(0);
-      }
-      sbIter++;
-   }
-
-   //increment update id
    ++updateID_;
-
-   sbIter = startBlocks.begin();
-   for (auto& group : groups_) {
-      scanData.startBlock_ = *sbIter;
-      group.scanWallets(scanData, updateID_);
-
-      sbIter++;
-   }
+   scanData.startBlock_ = walletsStartBlock;
+   wallets_.scanWallets(scanData, updateID_);
+   scanData.startBlock_ = lockboxesStartBlock;
+   lockboxes_.scanWallets(scanData, updateID_);
 
    if (txioVecPtr != nullptr) {
       *txioVecPtr = std::move(scanData.saStruct_.txios);
@@ -254,23 +297,7 @@ void BlockDataViewer::scanWallets(shared_ptr<BDV_Notification> action)
    lastScanned_ = endBlock;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-bool BlockDataViewer::hasWallet(const string& ID) const
-{
-   return groups_[group_wallet].hasID(ID);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void BlockDataViewer::registerAddresses(WalletRegistrationRequest& request)
-{
-   for (auto& group : groups_) {
-      if (group.hasID(request.walletId)) {
-         group.registerAddresses(request);
-      }
-   }
-}
-
-////////////////////////////////////////////////////////////////////////////////
+////////
 Tx BlockDataViewer::getTxByHash(BinaryDataRef txhash) const
 {
    auto key = db_->getDBKeyForHash(txhash);
@@ -337,98 +364,50 @@ int64_t BlockDataViewer::getSentValue(const TxIn& txin) const
    return getPrevTxOut(txin).getValue();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-LMDBBlockDatabase* BlockDataViewer::getDB() const
-{
-   return db_;
-}
-
-BinaryData BlockDataViewer::getTxHashForDbKey(const BinaryData& dbKey6) const
-{
-   return db_->getTxHashForLdbKey(dbKey6, nullptr);
-}
-
-const Blockchain& BlockDataViewer::blockchain() const
-{
-   return *bc_;
-}
-
-const std::shared_ptr<BlockHeader> BlockDataViewer::getTopBlockHeader() const
-{
-   return bc_->top();
-}
-
-uint32_t BlockDataViewer::getTopBlockHeight() const
-{
-   return bc_->top()->getBlockHeight();
-}
-
-ZeroConf::ZeroConfContainer* BlockDataViewer::zcContainer() const
-{
-   return zeroConfCont_.get();
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void BlockDataViewer::reset()
-{
-   for (auto& group : groups_) {
-      group.reset();
-   }
-   rescanZC_   = false;
-   lastScanned_ = 0;
-}
-
-////////////////////////////////////////////////////////////////////////////////
+////////
 size_t BlockDataViewer::getWalletsPageCount() const
 {
-   return groups_[group_wallet].getPageCount();
+   return wallets_.getPageCount();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-vector<Ledgers::Entry> BlockDataViewer::getWalletsHistoryPage(uint32_t pageId,
-   bool rebuildLedger, bool remapWallets)
+std::vector<Ledgers::Entry> BlockDataViewer::getWalletsHistoryPage(
+   uint32_t pageId, bool rebuildLedger, bool remapWallets)
 {
-   return groups_[group_wallet].getHistoryPage(pageId,
-      updateID_, rebuildLedger, remapWallets);
+   return wallets_.getHistoryPage(
+      pageId, updateID_, rebuildLedger, remapWallets);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 size_t BlockDataViewer::getLockboxesPageCount(void) const
 {
-   return groups_[group_lockbox].getPageCount();
+   return lockboxes_.getPageCount();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-vector<Ledgers::Entry> BlockDataViewer::getLockboxesHistoryPage(uint32_t pageId,
-   bool rebuildLedger, bool remapWallets)
+std::vector<Ledgers::Entry> BlockDataViewer::getLockboxesHistoryPage(
+   uint32_t pageId, bool rebuildLedger, bool remapWallets)
 {
-   return groups_[group_lockbox].getHistoryPage(pageId,
-      updateID_, rebuildLedger, remapWallets);
+   return lockboxes_.getHistoryPage(
+      pageId, updateID_, rebuildLedger, remapWallets);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void BlockDataViewer::updateWalletsLedgerFilter(
-   const vector<string>& walletsList)
+   const std::vector<std::string>& walletsList)
 {
-   groups_[group_wallet].updateLedgerFilter(walletsList);
+   lockboxes_.updateLedgerFilter(walletsList);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void BlockDataViewer::updateLockboxesLedgerFilter(
-   const vector<string>& walletsList)
+   const std::vector<std::string>& walletsList)
 {
-   groups_[group_lockbox].updateLedgerFilter(walletsList);
+   lockboxes_.updateLedgerFilter(walletsList);
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 StoredHeader BlockDataViewer::getMainBlockFromDB(uint32_t height) const
 {
    uint8_t dupID = db_->getValidDupIDForHeight(height);
-   
    return getBlockFromDB(height, dupID);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 StoredHeader BlockDataViewer::getBlockFromDB(
    uint32_t height, uint8_t dupID) const
 {
@@ -443,72 +422,37 @@ bool BlockDataViewer::scrAddressIsRegistered(const BinaryData& scrAddr) const
 {
    auto scrAddrMap = saf_->getScanFilterAddrMap();
    auto saIter = scrAddrMap->find(scrAddr);
-
-   if (saIter == scrAddrMap->end())
+   if (saIter == scrAddrMap->end()) {
       return false;
-
+   }
    return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-shared_ptr<BlockHeader> BlockDataViewer::getHeaderByHash(
+std::shared_ptr<BlockHeader> BlockDataViewer::getHeaderByHash(
    const BinaryData& blockHash) const
 {
    return bc_->getHeaderByHash(blockHash);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-WalletGroup BlockDataViewer::getStandAloneWalletGroup(
-   const vector<string>& wltIDs, HistoryOrdering order)
-{
-   WalletGroup wg(this, this->saf_);
-   wg.order_ = order;
-
-   auto wallets   = groups_[group_wallet].getWalletMap();
-   auto lockboxes = groups_[group_lockbox].getWalletMap();
-
-   for (const auto& wltid : wltIDs)
-   {
-      auto wltIter = wallets.find(wltid);
-      if (wltIter != wallets.end())
-      {
-         wg.wallets_[wltid] = wltIter->second;
-      }
-
-      else
-      {
-         auto lbIter = lockboxes.find(wltid);
-         if (lbIter != lockboxes.end())
-         {
-            wg.wallets_[wltid] = lbIter->second;
-         }
-      }
-   }
-
-   wg.pageHistory(true, false);
-
-   return wg;
-}
-
-////////////////////////////////////////////////////////////////////////////////
 uint32_t BlockDataViewer::getBlockTimeByHeight(uint32_t height) const
 {
    auto bh = blockchain().getHeaderByHeight(height, 0xFF);
-
    return bh->getTimestamp();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 Ledgers::Delegate BlockDataViewer::getLedgerDelegateForWallets()
 {
-   auto getHist = [this](uint32_t pageID)->vector<Ledgers::Entry>
+   auto getHist = [this](uint32_t pageID)->std::vector<Ledgers::Entry>
    { return this->getWalletsHistoryPage(pageID, false, false); };
 
    auto getBlock = [this](uint32_t block)->uint32_t
-   { return this->groups_[group_wallet].getBlockInVicinity(block); };
+   { return this->wallets_.getBlockInVicinity(block); };
 
    auto getPageId = [this](uint32_t block)->uint32_t
-   { return this->groups_[group_wallet].getPageIdForBlockHeight(block); };
+   { return this->wallets_.getPageIdForBlockHeight(block); };
 
    auto getPageCount = [this](void)->uint32_t
    { return this->getWalletsPageCount(); };
@@ -516,17 +460,16 @@ Ledgers::Delegate BlockDataViewer::getLedgerDelegateForWallets()
    return Ledgers::Delegate(getHist, getBlock, getPageId, getPageCount);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 Ledgers::Delegate BlockDataViewer::getLedgerDelegateForLockboxes()
 {
-   auto getHist = [this](uint32_t pageID)->vector<Ledgers::Entry>
+   auto getHist = [this](uint32_t pageID)->std::vector<Ledgers::Entry>
    { return this->getLockboxesHistoryPage(pageID, false, false); };
 
    auto getBlock = [this](uint32_t block)->uint32_t
-   { return this->groups_[group_lockbox].getBlockInVicinity(block); };
+   { return this->lockboxes_.getBlockInVicinity(block); };
 
    auto getPageId = [this](uint32_t block)->uint32_t
-   { return this->groups_[group_lockbox].getPageIdForBlockHeight(block); };
+   { return this->lockboxes_.getPageIdForBlockHeight(block); };
 
    auto getPageCount = [this](void)->uint32_t
    { return this->getLockboxesPageCount(); };
@@ -538,21 +481,9 @@ Ledgers::Delegate BlockDataViewer::getLedgerDelegateForLockboxes()
 Ledgers::Delegate BlockDataViewer::getLedgerDelegateForWallet(
    const std::string& wltID)
 {
-   std::shared_ptr<BtcWallet> wlt;
-   for (auto& group : groups_) {
-      ReadWriteLock::WriteLock wl(group.lock_);
-      auto wltIter = group.wallets_.find(wltID);
-      if (wltIter != group.wallets_.end()) {
-         wlt = wltIter->second;
-         break;
-      }
-   }
+   auto wlt = getWalletOrLockbox(wltID);
 
-   if (wlt == nullptr) {
-      throw std::runtime_error("Unregistered wallet ID");
-   }
-
-   auto getHist = [wlt](uint32_t pageID)->vector<Ledgers::Entry>
+   auto getHist = [wlt](uint32_t pageID)->std::vector<Ledgers::Entry>
    { return wlt->getHistoryPageAsVector(pageID); };
 
    auto getBlock = [wlt](uint32_t block)->uint32_t
@@ -569,25 +500,12 @@ Ledgers::Delegate BlockDataViewer::getLedgerDelegateForWallet(
 
 ////////////////////////////////////////////////////////////////////////////////
 Ledgers::Delegate BlockDataViewer::getLedgerDelegateForScrAddr(
-   const string& wltID, const BinaryData& scrAddr)
+   const std::string& wltID, const BinaryData& scrAddr)
 {
-   std::shared_ptr<BtcWallet> wlt;
-   for (auto& group : groups_) {
-      ReadWriteLock::WriteLock wl(group.lock_);
-      auto wltIter = group.wallets_.find(wltID);
-      if (wltIter != group.wallets_.end()) {
-         wlt = wltIter->second;
-         break;
-      }
-   }
-
-   if (wlt == nullptr) {
-      throw std::runtime_error("Unregistered wallet ID");
-   }
-
+   auto wlt = getWalletOrLockbox(wltID);
    ScrAddrObj& sca = wlt->getScrAddrObjRef(scrAddr);
 
-   auto getHist = [&](uint32_t pageID)->vector<Ledgers::Entry>
+   auto getHist = [&](uint32_t pageID)->std::vector<Ledgers::Entry>
    { return sca.getHistoryPageById(pageID); };
 
    auto getBlock = [&](uint32_t block)->uint32_t
@@ -601,7 +519,6 @@ Ledgers::Delegate BlockDataViewer::getLedgerDelegateForScrAddr(
 
    return Ledgers::Delegate(getHist, getBlock, getPageId, getPageCount);
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////
 uint32_t BlockDataViewer::getClosestBlockHeightForTime(uint32_t timestamp)
@@ -709,7 +626,7 @@ StoredTxOut BlockDataViewer::getStoredTxOut(const BinaryData& dbKey) const
 
    StoredTxOut stxo;
    db_->getStoredTxOut(stxo, dbKey);
-   stxo.parentHash = move(
+   stxo.parentHash = std::move(
       db_->getTxHashForLdbKey(dbKey.getSliceRef(0, 6), nullptr));
    return stxo;
 }
@@ -741,12 +658,19 @@ bool BlockDataViewer::isRBF(const BinaryData& txHash) const
 ////////////////////////////////////////////////////////////////////////////////
 bool BlockDataViewer::hasScrAddress(const BinaryDataRef& scrAddr) const
 {
-   for (const auto& group : groups_) {
-      ReadWriteLock::WriteLock wl(group.lock_);
-      for (const auto& wlt : group.wallets_) {
+   {
+      ReadWriteLock::WriteLock wl(wallets_.lock);
+      for (const auto& wlt : wallets_.wallets) {
          if (wlt.second->hasScrAddress(scrAddr)) {
             return true;
          }
+      }
+   }
+
+   ReadWriteLock::WriteLock wl(lockboxes_.lock);
+   for (const auto& wlt : lockboxes_.wallets) {
+      if (wlt.second->hasScrAddress(scrAddr)) {
+         return true;
       }
    }
    return false;
@@ -756,35 +680,57 @@ bool BlockDataViewer::hasScrAddress(const BinaryDataRef& scrAddr) const
 std::set<BinaryDataRef> BlockDataViewer::getAddrSet() const
 {
    std::set<BinaryDataRef> addrSet;
-   for (auto& group : groups_) {
-      ReadWriteLock::WriteLock wl(group.lock_);
-      for (auto& wlt : group.wallets_) {
+   {
+      ReadWriteLock::WriteLock wl(wallets_.lock);
+      for (const auto& wlt : wallets_.wallets) {
          auto wltAddresses = wlt.second->getAddrSet();
          addrSet.insert(wltAddresses.begin(), wltAddresses.end());
       }
    }
+
+   ReadWriteLock::WriteLock wl(lockboxes_.lock);
+   for (const auto& wlt : lockboxes_.wallets) {
+      auto wltAddresses = wlt.second->getAddrSet();
+      addrSet.insert(wltAddresses.begin(), wltAddresses.end());
+   }
+
    return addrSet;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-shared_ptr<BtcWallet> BlockDataViewer::getWalletOrLockbox(
-   const string& id) const
+std::shared_ptr<BtcWallet> BlockDataViewer::getWalletOrLockbox(
+   const std::string& wltID) const
 {
-   auto wallet = groups_[group_wallet].getWalletByID(id);
-   if (wallet != nullptr)
-      return wallet;
+   std::shared_ptr<BtcWallet> wlt;
+   {
+      ReadWriteLock::WriteLock wl(wallets_.lock);
+      auto iter = wallets_.wallets.find(wltID);
+      if (iter != wallets_.wallets.end()) {
+         wlt = iter->second;
+      }
+   }
 
-   return groups_[group_lockbox].getWalletByID(id);
+   if (wlt == nullptr) {
+      ReadWriteLock::WriteLock wl(lockboxes_.lock);
+      auto iter = lockboxes_.wallets.find(wltID);
+      if (iter != lockboxes_.wallets.end()) {
+         wlt = iter->second;
+      }
+   }
+
+   if (wlt == nullptr) {
+      throw std::runtime_error("Unregistered wallet ID");
+   }
+   return wlt;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-tuple<uint64_t, uint64_t> BlockDataViewer::getAddrFullBalance(
+std::tuple<uint64_t, uint64_t> BlockDataViewer::getAddrFullBalance(
    const BinaryData& scrAddr)
 {
    StoredScriptHistory ssh;
    db_->getStoredScriptHistorySummary(ssh, scrAddr);
-
-   return make_tuple(ssh.totalUnspent, ssh.totalTxioCount);
+   return std::make_tuple(ssh.totalUnspent, ssh.totalTxioCount);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -819,7 +765,7 @@ std::map<BinaryData, std::vector<Output>> BlockDataViewer::getAddressOutpoints(
          younger, unspent counterparts.
          */
 
-         set<BinaryData> processedKeys;
+         std::set<BinaryData> processedKeys;
          auto rIter = ssh.subHistMap.rbegin();
          while (rIter != ssh.subHistMap.rend()) {
             auto& subssh = rIter->second;
@@ -1059,7 +1005,7 @@ BlockDataViewer::getOutputsForOutpoints(
       if (dbkey.getSize() == 6) {
          for (auto& op : opSet.second) {
             //set txout index
-            pair<StoredTxOut, BinaryDataRef> stxoPair;
+            std::pair<StoredTxOut, BinaryDataRef> stxoPair;
             stxoPair.second = opSet.first;
             auto& stxo = stxoPair.first;
             stxo.txOutIndex = op;
@@ -1067,7 +1013,7 @@ BlockDataViewer::getOutputsForOutpoints(
             auto stxoKey = dbkey;
             stxoKey.append(WRITE_UINT16_BE(op));
             if (!db_->getStoredTxOut(stxo, stxoKey)) {
-               throw runtime_error("invalid outpoint");
+               throw std::runtime_error("invalid outpoint");
             }
             if (stxo.isSpent()) {
                stxo.spenderHash = db_->getTxHashForLdbKey(
@@ -1096,7 +1042,7 @@ BlockDataViewer::getOutputsForOutpoints(
 
       for (auto& op : opSet.second) {
          //set txout index
-         pair<StoredTxOut, BinaryDataRef> stxoPair;
+         std::pair<StoredTxOut, BinaryDataRef> stxoPair;
          stxoPair.second = opSet.first;
 
          auto& stxo = stxoPair.first;
@@ -1142,11 +1088,10 @@ BlockDataViewer::getOutputsForOutpoints(
 ////////
 CombinedBalances BlockDataViewer::getCombinedBalances() const
 {
-   auto height = getTopBlockHeight();
-
    CombinedBalances result;
-   for (const auto& group : groups_) {
-      auto wltMap = group.getWalletMap();
+   auto compileResult = [&result, height=getTopBlockHeight()]
+   (const std::map<std::string, std::shared_ptr<BtcWallet>>& wltMap)
+   {
       for (const auto& wlt : wltMap) {
          std::map<BinaryData, CombinedBalances::BalanceAndCount> bnc;
          auto txnCounts = wlt.second->getAddrTxnCounts(-1);
@@ -1178,7 +1123,10 @@ CombinedBalances BlockDataViewer::getCombinedBalances() const
          result.wallets.emplace(wlt.first,
             CombinedBalances::Wallet{wltBnc, bnc});
       }
-   }
+   };
+
+   compileResult(wallets_.wallets);
+   compileResult(lockboxes_.wallets);
    return result;
 }
 
@@ -1214,15 +1162,14 @@ std::vector<UTXO> BlockDataViewer::getZcUTXOsForKeys(
    return zeroConfCont_->getZcUTXOsForKey(keys);
 }
 
-ScrAddrFilter* BlockDataViewer::getSAF()
+std::shared_ptr<ScrAddrFilter> BlockDataViewer::getSAF() const
 {
    return saf_;
 }
 
 std::map<BinaryData, TxIOPair> BlockDataViewer::getTxioForRange(uint32_t from) const
 {
-   auto height = getTopBlockHeight();
-   return groups_[group_wallet].getTxioForRange(from, height);
+   return wallets_.getTxioForRange(from, getTopBlockHeight());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1335,44 +1282,50 @@ void ReadWriteLock::WriteLock::unlock()
 
 ////////////////////////////////////////////////////////////////////////////////
 // WalletGroup
+WalletGroup::WalletGroup(BlockDataViewer* bdvPtr,
+   std::shared_ptr<ScrAddrFilter> saf) :
+   bdvPtr(bdvPtr), saf(saf)
+{}
+
 WalletGroup::~WalletGroup()
 {
-   for (auto& wlt : wallets_) {
+   for (auto& wlt : wallets) {
       wlt.second->unregister();
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-shared_ptr<BtcWallet> WalletGroup::getOrSetWallet(const string& id)
+size_t WalletGroup::getPageCount() const
 {
-   ReadWriteLock::WriteLock wl(lock_);
-   shared_ptr<BtcWallet> theWallet;
+   return hist.getPageCount();
+}
 
-   auto wltIter = wallets_.find(id);
-   if (wltIter != wallets_.end()) {
+////////
+std::shared_ptr<BtcWallet> WalletGroup::getOrSetWallet(const std::string& id)
+{
+   ReadWriteLock::WriteLock wl(lock);
+   std::shared_ptr<BtcWallet> theWallet;
+
+   auto wltIter = wallets.find(id);
+   if (wltIter != wallets.end()) {
       theWallet = wltIter->second;
    } else {
-      auto walletPtr = make_shared<BtcWallet>(bdvPtr_, id);
-      auto insertResult = wallets_.insert(make_pair(
-         id, walletPtr));
-
+      auto insertResult = wallets.emplace(id,
+         std::make_shared<BtcWallet>(bdvPtr, id));
       theWallet = insertResult.first->second;
    }
-
    return theWallet;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool WalletGroup::unregisterWallet(const string& id)
+bool WalletGroup::unregisterWallet(const std::string& id)
 {
-   ReadWriteLock::WriteLock wl(lock_);
-
-   auto wltIter = wallets_.find(id);
-   if (wltIter == wallets_.end()) {
+   ReadWriteLock::WriteLock wl(lock);
+   auto wltIter = wallets.find(id);
+   if (wltIter == wallets.end()) {
       return false;
    }
 
-   wallets_.erase(wltIter);
+   wallets.erase(wltIter);
    return true;
 }
 
@@ -1421,7 +1374,7 @@ void WalletGroup::registerAddresses(WalletRegistrationRequest& request)
             if (addrMapPtr->find(addr) != addrMapPtr->end()) {
                continue;
             }
-            auto scrAddrPtr = make_shared<ScrAddrObj>(
+            auto scrAddrPtr = std::make_shared<ScrAddrObj>(
                dbPtr, bcPtr, zcPtr, addr);
             saMap.emplace(addr, scrAddrPtr);
          }
@@ -1441,22 +1394,22 @@ void WalletGroup::registerAddresses(WalletRegistrationRequest& request)
    batch->isNew_ = request.isNew;
    batch->callback_ = callback;
 
-   saf_->pushAddressBatch(batch);
+   saf->pushAddressBatch(batch);
    theWallet->resetCounters();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool WalletGroup::hasID(const string& ID) const
+bool WalletGroup::hasID(const std::string& ID) const
 {
-   ReadWriteLock::ReadLock rl(lock_);
-   return wallets_.find(ID) != wallets_.end();
+   ReadWriteLock::ReadLock rl(lock);
+   return wallets.find(ID) != wallets.end();
 }
 
 /////////////////////////////////////////////////////////////////////////////
 void WalletGroup::reset()
 {
-   ReadWriteLock::ReadLock rl(lock_);
-   for (const auto& wltPair : wallets_) {
+   ReadWriteLock::ReadLock rl(lock);
+   for (const auto& wltPair : wallets) {
       wltPair.second->reset();
    }
 }
@@ -1465,11 +1418,11 @@ void WalletGroup::reset()
 std::map<uint32_t, uint32_t> WalletGroup::computeWalletsSSHSummary(
    bool forcePaging, bool pageAnyway)
 {
-   ReadWriteLock::ReadLock rl(lock_);
+   ReadWriteLock::ReadLock rl(lock);
    std::map<uint32_t, uint32_t> fullSummary;
 
    bool isAlreadyPaged = true;
-   for (auto& wltPair : wallets_) {
+   for (auto& wltPair : wallets) {
       if (forcePaging) {
          wltPair.second->mapPages();
       }
@@ -1487,7 +1440,7 @@ std::map<uint32_t, uint32_t> WalletGroup::computeWalletsSSHSummary(
       }
    }
 
-   for (const auto& wltPair : wallets_) {
+   for (const auto& wltPair : wallets) {
       if (wltPair.second->uiFilter_ == false) {
          continue;
       }
@@ -1502,10 +1455,10 @@ std::map<uint32_t, uint32_t> WalletGroup::computeWalletsSSHSummary(
 ////////////////////////////////////////////////////////////////////////////////
 bool WalletGroup::pageHistory(bool forcePaging, bool pageAnyway)
 {
-   auto computeSummary = [&](void)->map<uint32_t, uint32_t>
-   { return this->computeWalletsSSHSummary(forcePaging, pageAnyway); };
-
-   return hist_.mapHistory(computeSummary);
+   return hist.mapHistory([this, forcePaging, pageAnyway]
+      (void)->std::map<uint32_t, uint32_t>
+      { return computeWalletsSSHSummary(forcePaging, pageAnyway); }
+   );
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1513,14 +1466,12 @@ std::vector<Ledgers::Entry> WalletGroup::getHistoryPage(
    uint32_t pageId, unsigned updateID,
    bool rebuildLedger, bool remapWallets)
 {
-   unique_lock<mutex> mu(globalLedgerLock_);
-
-   if (pageId >= hist_.getPageCount()) {
+   if (pageId >= hist.getPageCount()) {
       throw std::range_error("pageId out of range");
    }
 
-   if (order_ == order_ascending) {
-      pageId = hist_.getPageCount() - pageId - 1;
+   if (order == order_ascending) {
+      pageId = hist.getPageCount() - pageId - 1;
    }
 
    if (rebuildLedger || remapWallets) {
@@ -1533,21 +1484,14 @@ std::vector<Ledgers::Entry> WalletGroup::getHistoryPage(
 
    std::vector<Ledgers::Entry> vle;
    {
-      ReadWriteLock::ReadLock rl(lock_);
-      std::set<string> localFilterSet;
-      std::map<string, shared_ptr<BtcWallet>> localWalletMap;
+      ReadWriteLock::ReadLock rl(lock);
+      std::map<std::string, std::shared_ptr<BtcWallet>> localWalletMap;
 
-      for (auto& wlt_pair : wallets_) {
+      for (auto& wlt_pair : wallets) {
          if (!wlt_pair.second->uiFilter_) {
             continue;
          }
-         localFilterSet.emplace(wlt_pair.first);
          localWalletMap.emplace(wlt_pair);
-      }
-
-      if (localFilterSet != wltFilterSet_) {
-         updateID = UINT32_MAX;
-         wltFilterSet_ = std::move(localFilterSet);
       }
 
       auto getTxio = [&localWalletMap](
@@ -1555,7 +1499,7 @@ std::vector<Ledgers::Entry> WalletGroup::getHistoryPage(
       { return {}; };
 
       auto buildLedgers = [&localWalletMap](
-         const map<BinaryData, TxIOPair>&,
+         const std::map<BinaryData, TxIOPair>&,
          uint32_t startBlock, uint32_t endBlock)
       ->std::map<BinaryData, Ledgers::Entry>
       {
@@ -1576,7 +1520,7 @@ std::vector<Ledgers::Entry> WalletGroup::getHistoryPage(
          return result;
       };
 
-      auto leMap = hist_.getPageLedgerMap(
+      auto leMap = hist.getPageLedgerMap(
          getTxio, buildLedgers, pageId, updateID, nullptr);
 
       if (leMap != nullptr) {
@@ -1586,7 +1530,7 @@ std::vector<Ledgers::Entry> WalletGroup::getHistoryPage(
       }
    }
 
-   if (order_ == order_ascending) {
+   if (order == order_ascending) {
       std::sort(vle.begin(), vle.end());
    } else {
       std::sort(vle.begin(), vle.end(), Ledgers::DescendingOrder{});
@@ -1595,12 +1539,12 @@ std::vector<Ledgers::Entry> WalletGroup::getHistoryPage(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void WalletGroup::updateLedgerFilter(const vector<string>& walletsList)
+void WalletGroup::updateLedgerFilter(const std::vector<std::string>& walletsList)
 {
-   ReadWriteLock::ReadLock rl(lock_);
+   ReadWriteLock::ReadLock rl(lock);
 
-   vector<string> enabledIDs;
-   for (auto& wlt_pair : wallets_) {
+   std::vector<std::string> enabledIDs;
+   for (auto& wlt_pair : wallets) {
       if (wlt_pair.second->uiFilter_) {
          enabledIDs.push_back(wlt_pair.first);
       }
@@ -1609,8 +1553,8 @@ void WalletGroup::updateLedgerFilter(const vector<string>& walletsList)
 
 
    for (auto walletID : walletsList) {
-      auto iter = wallets_.find(walletID);
-      if (iter == wallets_.end()) {
+      auto iter = wallets.find(walletID);
+      if (iter == wallets.end()) {
          continue;
       }
       iter->second->uiFilter_ = true;
@@ -1623,31 +1567,24 @@ void WalletGroup::updateLedgerFilter(const vector<string>& walletsList)
    if (vec_copy == enabledIDs) {
       return;
    }
-
    pageHistory(false, true);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 void WalletGroup::scanWallets(ScanWalletStruct& scanData, int32_t updateID)
 {
-   ReadWriteLock::ReadLock rl(lock_);
-   for (auto& wlt : wallets_) {
+   ReadWriteLock::ReadLock rl(lock);
+   for (auto& wlt : wallets) {
       wlt.second->scanWallet(scanData, updateID);
    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::map<string, std::shared_ptr<BtcWallet>> WalletGroup::getWalletMap(void) const
+std::shared_ptr<BtcWallet> WalletGroup::getWalletByID(
+   const std::string& ID) const
 {
-   ReadWriteLock::ReadLock rl(lock_);
-   return wallets_;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-shared_ptr<BtcWallet> WalletGroup::getWalletByID(const string& ID) const
-{
-   auto iter = wallets_.find(ID);
-   if (iter != wallets_.end()) {
+   auto iter = wallets.find(ID);
+   if (iter != wallets.end()) {
       return iter->second;
    }
    return nullptr;
@@ -1657,22 +1594,22 @@ shared_ptr<BtcWallet> WalletGroup::getWalletByID(const string& ID) const
 uint32_t WalletGroup::getBlockInVicinity(uint32_t blk) const
 {
    //expect history has been computed, it will throw otherwise
-   return hist_.getBlockInVicinity(blk);
+   return hist.getBlockInVicinity(blk);
 }
 
 uint32_t WalletGroup::getPageIdForBlockHeight(uint32_t blk) const
 {
    //same as above
-   return hist_.getPageIdForBlockHeight(blk);
+   return hist.getPageIdForBlockHeight(blk);
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 std::map<BinaryData, TxIOPair> WalletGroup::getTxioForRange(
    uint32_t from, uint32_t to) const
 {
    std::map<BinaryData, TxIOPair> result;
-   ReadWriteLock::ReadLock rl(lock_);
-   for (const auto& wlt : wallets_) {
+   ReadWriteLock::ReadLock rl(lock);
+   for (const auto& wlt : wallets) {
       auto txioRange = wlt.second->getTxioForRange(from, to);
       result.insert(txioRange.begin(), txioRange.end());
    }

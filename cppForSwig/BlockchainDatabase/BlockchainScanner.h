@@ -124,14 +124,14 @@ private:
    void processAndCommitTxHints(ParserBatch*);
    void preloadUtxos(void);
 
-   int32_t check_merkle(int32_t startHeight);
+   int32_t check_merkle(int32_t);
 
    void processFilterHitsThread(
       std::map<uint32_t, std::map<uint32_t,
-      std::set<const TxHashHints*>>>& filtersResultMap,
-      Armory::Threading::TransactionalSet<BinaryData>& missingHashes,
-      std::atomic<int>& counter, std::map<BinaryData, BinaryData>& results,
-      std::function<void(size_t)> prog);
+      std::set<const TxHashHints*>>>&,
+      const std::set<BinaryData>&,
+      std::atomic<int>&, std::map<BinaryData, BinaryData>&,
+      std::function<void(size_t)>);
 
    std::shared_ptr<BlockData> getBlockData(
       ParserBatch*, unsigned);
@@ -143,17 +143,17 @@ private:
    void processInputsThread(ParserBatch*);
 
 public:
-   BlockchainScanner(std::shared_ptr<Armory::Blockchain> bc,
-      LMDBBlockDatabase* db, ScrAddrFilter* saf,
-      std::shared_ptr<BlockFiles> bf,
-      unsigned threadcount, unsigned queue_depth,
-      ProgressCallback prg, bool reportProgress);
+   BlockchainScanner(std::shared_ptr<Armory::Blockchain>,
+      LMDBBlockDatabase*, ScrAddrFilter*,
+      std::shared_ptr<BlockFiles>,
+      unsigned, unsigned,
+      ProgressCallback, bool);
 
-   bool scan(int32_t startHeight);
-   bool scan_nocheck(int32_t startHeight);
+   bool scan(int32_t);
+   bool scan_nocheck(int32_t);
 
-   void undo(Armory::ReorganizationState& reorgState);
-   void updateSSH(bool, int32_t startHeight);
+   void undo(Armory::ReorganizationState&);
+   void updateSSH(bool, int32_t);
    bool resolveTxHashes();
 
    const BinaryData& getTopScannedBlockHash(void) const

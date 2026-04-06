@@ -209,11 +209,6 @@ uint32_t BlockHeader::getNumTx() const
    return numTx_;
 }
 
-const std::string& BlockHeader::getFileName() const
-{
-   return blkFile_;
-}
-
 uint64_t BlockHeader::getOffset() const
 {
    return blkFileOffset_;
@@ -258,11 +253,6 @@ void BlockHeader::setNumTx(uint32_t ntx)
 }
 
 ////////
-void BlockHeader::setBlockFile(std::string filename)
-{
-   blkFile_ = filename;
-}
-
 void BlockHeader::setBlockFileNum(uint32_t fnum)
 {
    blkFileNum_ = fnum;

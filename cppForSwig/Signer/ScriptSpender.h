@@ -136,7 +136,7 @@ namespace Armory
          ScriptSpender(const ScriptSpender&);
          ~ScriptSpender(void) = default;
 
-         bool operator==(const ScriptSpender&);
+         bool operator==(const ScriptSpender&) const;
 
          //set
          void setStates(SpenderStatus, SpenderStatus, bool, bool, bool);

@@ -35,6 +35,17 @@ ScrAddrObj::ScrAddrObj(LMDBBlockDatabase *db, const Blockchain *bc,
    db_(db), bc_(bc), zc_(zc), scrAddr_(addr), utxos_(this)
 {}
 
+////////
+const BinaryDataRef& ScrAddrObj::getScrAddr() const
+{
+   return scrAddr_;
+}
+
+bool ScrAddrObj::operator==(const ScrAddrObj& rhs) const
+{
+   return scrAddr_ == rhs.scrAddr_;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 uint64_t ScrAddrObj::getSpendableBalance(uint32_t currBlk) const
 {
@@ -255,7 +266,6 @@ uint64_t ScrAddrObj::getTxioCountFromSSH(bool withZc) const
    return count;
 }
 
-///////////////////////////////////////////////////////////////////////////////
 std::map<BinaryData, TxIOPair> ScrAddrObj::getTxios(
    uint32_t startBlock, uint32_t endBlock, bool withMultisig) const
 {
@@ -304,6 +314,16 @@ std::map<BinaryData, TxIOPair> ScrAddrObj::getTxios(
    return outMap;
 }
 
+void ScrAddrObj::setTxioCount(uint64_t count)
+{
+   totalTxioCount_ = count;
+}
+
+uint64_t ScrAddrObj::getTxioCount() const
+{
+   return getTxioCountFromSSH(true);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 std::vector<Ledgers::Entry> ScrAddrObj::getHistoryPageById(uint32_t id)
 {
@@ -328,7 +348,6 @@ std::vector<Ledgers::Entry> ScrAddrObj::getHistoryPageById(uint32_t id)
    return getTxLedgerAsVector(leMap.get());
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void ScrAddrObj::mapHistory()
 {
    //create history map
@@ -338,25 +357,14 @@ void ScrAddrObj::mapHistory()
    );
 }
 
-////////////////////////////////////////////////////////////////////////////////
-ScrAddrObj& ScrAddrObj::operator=(const ScrAddrObj& rhs)
+const std::map<uint32_t, uint32_t>& ScrAddrObj::getHistSSHsummary() const
 {
-   if (&rhs == this) {
-      return *this;
-   }
+   return hist_.getSSHsummary();
+}
 
-   this->db_ = rhs.db_;
-   this->bc_ = rhs.bc_;
-   this->scrAddr_ = rhs.scrAddr_;
-
-   this->totalTxioCount_ = rhs.totalTxioCount_;
-   this->lastSeenBlock_ = rhs.lastSeenBlock_;
-
-   //prebuild history indexes for quick fetch from ssh
-   this->hist_ = rhs.hist_;
-   this->utxos_.reset();
-   this->utxos_.scrAddrObj = this;
-   return *this;
+size_t ScrAddrObj::getPageCount() const
+{
+   return hist_.getPageCount();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -373,20 +381,17 @@ std::vector<Ledgers::Entry> ScrAddrObj::getTxLedgerAsVector(
    return le;
 }
 
-////////////////////////////////////////////////////////////////////////////////
 bool ScrAddrObj::getMoreUTXOs(std::function<bool(const BinaryData&)> spentByZC)
 {
    return getMoreUTXOs(utxos_, spentByZC);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 bool ScrAddrObj::getMoreUTXOs(PagedUTXOs& utxos,
    std::function<bool(const BinaryData&)> spentByZC) const
 {
    return utxos.fetchMoreUTXO(spentByZC);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 std::vector<UnspentTxOut> ScrAddrObj::getAllUTXOs(
    std::function<bool(const BinaryData&)> hasTxOutInZC) const
 {
@@ -415,6 +420,32 @@ std::vector<UnspentTxOut> ScrAddrObj::getAllUTXOs(
       );
    }
    return utxoList;
+}
+
+uint64_t ScrAddrObj::getLoadedTxOutsValue() const
+{
+   return utxos_.getValue();
+}
+
+uint32_t ScrAddrObj::getLoadedTxOutsCount() const
+{
+   return utxos_.getCount();
+}
+
+void ScrAddrObj::resetTxOutHistory()
+{
+   utxos_.reset();
+}
+
+void ScrAddrObj::addZcUTXOs(const std::map<BinaryData, TxIOPair>& txioMap,
+   std::function<bool(const BinaryData&)>)
+{
+   utxos_.addZcUTXOs(txioMap);
+}
+
+const std::map<BinaryData, TxIOPair>& ScrAddrObj::getPreparedTxOutList() const
+{
+   return utxos_.getUTXOs();
 }
 
 ////////

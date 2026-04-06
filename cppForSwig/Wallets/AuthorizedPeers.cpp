@@ -560,7 +560,7 @@ bool AuthorizedPeers::isMasterKey(const SecureBinaryData& pubkey) const
    if (masterKey_.empty()) {
       return false;
    }
-   return masterKey_.getRef() == pubkey;
+   return masterKey_.getRef() == pubkey.getRef();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2021, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -135,7 +135,7 @@ namespace Armory
       std::vector<HeaderPtr> headersByHeight_;
 
       std::vector<HeaderPtr> newlyParsedBlocks_;
-      HeaderPtr topBlockPtr_;
+      std::atomic<HeaderPtr> topBlockPtr_;
       unsigned topBlockId_ = 0;
       Blockchain(const Blockchain&); // not defined
 

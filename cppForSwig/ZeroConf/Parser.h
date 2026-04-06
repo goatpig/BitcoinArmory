@@ -306,7 +306,7 @@ namespace Armory
       class ZeroConfContainer
       {
       private:
-         std::shared_ptr<MempoolSnapshot> snapshot_;
+         std::atomic<std::shared_ptr<MempoolSnapshot>> snapshot_;
 
          //<txHash, map<opId, ZcKeys>>
          std::map<BinaryData,

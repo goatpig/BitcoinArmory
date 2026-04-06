@@ -142,7 +142,7 @@ void Blockchain::clear()
 
    auto emplaceIter = headerMap_.emplace(
       genesisHash_, std::make_shared<BlockHeader>());
-   std::atomic_store(&topBlockPtr_, emplaceIter.first->second);
+   topBlockPtr_.store(emplaceIter.first->second);
    topBlockId_ = 0;
 
    topID_.store(1, std::memory_order_relaxed);
@@ -361,7 +361,7 @@ std::shared_ptr<BlockHeader> Blockchain::organizeChain(
          headerPair.second->nextHash_.clear();
          headerPair.second->isMainBranch_ = false;
       }
-      topBlockPtr_ = NULL;
+      topBlockPtr_.store(nullptr);
    }
 
    // Set genesis block
@@ -378,14 +378,14 @@ std::shared_ptr<BlockHeader> Blockchain::organizeChain(
    {
       auto topblock_iter = headersById_.find(topBlockId_);
       if (topblock_iter != headersById_.end()) {
-         std::atomic_store(&topBlockPtr_, topblock_iter->second);
+         topBlockPtr_.store(topblock_iter->second);
       } else {
-         std::atomic_store(&topBlockPtr_, genBlock);
+         topBlockPtr_.store(genBlock);
       }
    }
 
    const auto prevTopBlock = top();
-   auto newTopBlock = topBlockPtr_;
+   auto newTopBlock = topBlockPtr_.load();
    double maxDiffSum = prevTopBlock->getDifficultySum();
 
    //prepare helper containers
@@ -632,14 +632,15 @@ void Blockchain::putNewBareHeaders(LMDBBlockDatabase *db)
 
    //update SDBI, keep within the batch transaction
    auto sdbiH = db->getStoredDBInfo(DB_SELECT::HEADERS, 0);
-   if (topBlockPtr_ == nullptr) {
+   auto topBlock = topBlockPtr_.load();
+   if (topBlock == nullptr) {
       LOGINFO << "No known top block, didn't update SDBI";
       return;
    }
 
-   if (topBlockPtr_->blockHeight_ >= sdbiH.topBlkHgt) {
-      sdbiH.topBlkHgt = topBlockPtr_->blockHeight_;
-      sdbiH.topScannedBlkHash = topBlockPtr_->thisHash_;
+   if (topBlock->blockHeight_ >= sdbiH.topBlkHgt) {
+      sdbiH.topBlkHgt = topBlock->blockHeight_;
+      sdbiH.topScannedBlkHash = topBlock->thisHash_;
       db->putStoredDBInfo(DB_SELECT::HEADERS, sdbiH, 0);
    }
 

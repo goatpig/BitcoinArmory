@@ -47,7 +47,7 @@ ScriptSpender::ScriptSpender(const ScriptSpender& ss)
    merge(ss);
 }
 
-bool ScriptSpender::operator==(const ScriptSpender& rhs)
+bool ScriptSpender::operator==(const ScriptSpender& rhs) const
 {
    try {
       return this->getOutpoint() == rhs.getOutpoint();

@@ -41,6 +41,11 @@ RpcError::RpcError(const std::string& err) :
 
 ////////////////////////////////////////////////////////////////////////////////
 // NodeRPCInterface
+NodeRPCInterface::NodeRPCInterface()
+{
+   currentEstimateCache_.store(nullptr);
+}
+
 NodeRPCInterface::~NodeRPCInterface()
 {}
 
@@ -342,7 +347,7 @@ FeeEstimateResult NodeRPC::queryFeeByteSmart(HttpSocket& sock,
 FeeEstimateResult NodeRPC::getFeeByte(
    unsigned confTarget, const std::string& strategy) const
 {
-   auto estimateCachePtr = std::atomic_load(&currentEstimateCache_);
+   auto estimateCachePtr = currentEstimateCache_.load();
    if (estimateCachePtr == nullptr) {
       throw RpcError{};
    }
@@ -384,7 +389,7 @@ void NodeRPC::aggregateFeeEstimates()
    }
 
    ReentrantLock lock(this);
-   currentEstimateCache_ = newCache;
+   currentEstimateCache_.store(newCache);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

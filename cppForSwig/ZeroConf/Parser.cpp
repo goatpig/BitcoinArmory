@@ -167,8 +167,7 @@ void ZeroConfContainer::setZeroConfCallbacks(
 
 std::shared_ptr<const MempoolSnapshot> ZeroConfContainer::getSnapshot() const
 {
-   auto ss = std::atomic_load_explicit(
-      &snapshot_, std::memory_order_acquire);
+   auto ss = snapshot_.load(std::memory_order_acquire);
    return std::const_pointer_cast<const MempoolSnapshot>(ss);
 }
 
@@ -456,8 +455,9 @@ void ZeroConfContainer::finalizePurgePacket(
       zcAction.resultPromise->set_value(purgePacket);
    }
 
+   auto thisSnapshot = snapshot_.load();
    for (const auto& zcPair : zcAction.batch->zcMap) {
-      if (snapshot_->getTxByKey(zcPair.first) == nullptr) {
+      if (thisSnapshot->getTxByKey(zcPair.first) == nullptr) {
          //can't find zc for this key, flag as invalidated
          purgePacket->invalidatedZcKeys.emplace(
             zcPair.first, zcPair.second->getTxHash());
@@ -698,13 +698,12 @@ void ZeroConfContainer::parseNewZC(
    }
 
    //swap in new state
-   std::atomic_store_explicit(&snapshot_, ss, std::memory_order_release);
+   snapshot_.store(ss, std::memory_order_release);
 
    //notify bdvs
    if (!hasChanges) {
       return;
    }
-
    if (!notify) {
       return;
    }
@@ -798,7 +797,7 @@ ZeroConfContainer::checkForCollisions(
 
 void ZeroConfContainer::clear()
 {
-   snapshot_.reset();
+   snapshot_.store(nullptr);
 }
 
 bool ZeroConfContainer::isTxOutSpentByZC(const BinaryData& dbKey) const
@@ -1041,7 +1040,8 @@ unsigned ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
          std::move(zcMap), nullptr, false, false,
          UINT64_MAX,
          emptyWatcherMap);
-      snapshot_->commitNewZCs();
+      auto thisSnapshot = snapshot_.load(std::memory_order_acquire);
+      thisSnapshot->commitNewZCs();
    }
    return topId;
 }

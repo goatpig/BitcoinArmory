@@ -62,7 +62,6 @@ public:
    BinaryDataRef getDiffBitsRef(void) const;
 
    uint32_t getNumTx(void) const;
-   const std::string& getFileName(void) const;
    uint64_t getOffset(void) const;
    uint32_t getBlockFileNum(void) const;
 
@@ -114,10 +113,8 @@ private:
    BinaryData     nextHash_;
    double         difficultySum_ = 0.0;
 
-   std::string         blkFile_;
    uint32_t       blkFileNum_ = UINT32_MAX;
    uint64_t       blkFileOffset_ = SIZE_MAX;
-
    unsigned int   uniqueID_ = UINT32_MAX;
 };
 

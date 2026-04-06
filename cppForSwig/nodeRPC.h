@@ -122,7 +122,7 @@ namespace CoreRPC
    protected:
       std::function<void(void)> nodeStatusLambda_;
       NodeChainStatus nodeChainStatus_;
-      std::shared_ptr<EstimateCache> currentEstimateCache_ = nullptr;
+      std::atomic<std::shared_ptr<EstimateCache>> currentEstimateCache_;
 
    private:
       void initAfterLock(void) override {}
@@ -132,6 +132,7 @@ namespace CoreRPC
       void callback(void) const;
 
    public:
+      NodeRPCInterface(void);
       virtual ~NodeRPCInterface(void) = 0;
       virtual void shutdown(void) = 0;
 

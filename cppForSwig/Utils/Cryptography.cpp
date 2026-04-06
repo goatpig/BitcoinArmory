@@ -69,7 +69,7 @@ void PRNG::Fortuna::reseed() const
    sha256_Raw(rng.getPtr(), rng.getSize(), digest);
    sha256_Raw(digest, 32, newKey->getPtr());
 
-   std::atomic_store_explicit(&key_, newKey, std::memory_order_relaxed);
+   key_.store(newKey, std::memory_order_relaxed);
 }
 
 SecureBinaryData PRNG::Fortuna::generateRandom(uint32_t numBytes,
@@ -83,7 +83,7 @@ SecureBinaryData PRNG::Fortuna::generateRandom(uint32_t numBytes,
    memset(&plainText, 0, Encryption::AES::BLOCK_SIZE);
 
    //setup AES object, seed with key_
-   auto keyPtr = std::atomic_load_explicit(&key_, std::memory_order_relaxed);
+   auto keyPtr = key_.load(std::memory_order_relaxed);
    AES256_ctx aes_ctx;
    AES256_init(&aes_ctx, keyPtr->getPtr());
 

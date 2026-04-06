@@ -1365,13 +1365,12 @@ void BlockchainScanner::undo(ReorganizationState& reorgState)
 
 ////////////////////////////////////////////////////////////////////////////////
 void BlockchainScanner::processFilterHitsThread(
-   map<uint32_t, map<uint32_t, set<const TxHashHints*>>>& filtersResultMap,
-   Threading::TransactionalSet<BinaryData>& missingHashes,
-   atomic<int>& counter, map<BinaryData, BinaryData>& results,
+   std::map<uint32_t, std::map<uint32_t, std::set<const TxHashHints*>>>& filtersResultMap,
+   const std::set<BinaryData>& missingHashes, std::atomic<int>& counter,
+   std::map<BinaryData, BinaryData>& results,
    function<void(size_t)> prog)
 {
-   map<BinaryData, BinaryData> result;
-
+   std::map<BinaryData, BinaryData> result;
    uint32_t missedBlocks = 0;
 
    auto resolveHashes =
@@ -1382,36 +1381,27 @@ void BlockchainScanner::processFilterHitsThread(
       auto filePath = blockFiles_->getFilePathForID(fileNum);
       FileUtils::FileMap fileMap(filePath);
 
-      for (auto& blockkey : filterHit)
-      {
-         shared_ptr<BlockHeader> headerPtr;
-         try
-         {
+      for (auto& blockkey : filterHit) {
+         std::shared_ptr<BlockHeader> headerPtr;
+         try {
             headerPtr = blockchain_->getHeaderById(blockkey.first);
-         }
-         catch (range_error&)
-         {
+         } catch (const std::range_error&) {
             //no block for this id, this is an orphan
             missedBlocks++;
             continue;
          }
 
-         auto& filterSet = blockkey.second;
-
          auto getID = [headerPtr](const BinaryData&)->unsigned int
          { return headerPtr->getThisID(); };
 
          //search the block
-         shared_ptr<BlockData> bdata;
-         try
-         {
+         std::shared_ptr<BlockData> bdata;
+         try {
             bdata = BlockData::deserialize(
                fileMap.ptr() + headerPtr->getOffset(),
                headerPtr->getBlockSize(),
                headerPtr, getID, BlockData::CheckHashes::NoChecks);
-         }
-         catch (const BtcUtils::BlockDeserializingException& e)
-         {
+         } catch (const BtcUtils::BlockDeserializingException& e) {
             LOGERR << "Block deser error while processing tx filters: ";
             LOGERR << "  " << e.what();
             LOGERR << "Skipping this block";
@@ -1419,27 +1409,23 @@ void BlockchainScanner::processFilterHitsThread(
          }
 
          const auto& txns = bdata->getTxns();
-         for (auto& filterhit : filterSet)
-         {
+         for (const auto& filterhit : blockkey.second) {
             auto iditer = filterhit->filterHits_.find(blockkey.first);
-            if (iditer == filterhit->filterHits_.end())
+            if (iditer == filterhit->filterHits_.end()) {
                continue;
+            }
 
             const auto& txids = iditer->second;
-            for (auto& txid : txids)
-            {
-               if (txid >= txns.size())
+            for (auto& txid : txids) {
+               if (txid >= txns.size()) {
                   continue;
-
+               }
                const auto& txn = txns[txid];
                const auto& txnHash = txn->getHash();
 
                auto hashIter = hashSet.begin();
-
-               while (hashIter != hashSet.end())
-               {
-                  if (txnHash == *hashIter)
-                  {
+               while (hashIter != hashSet.end()) {
+                  if (txnHash == *hashIter) {
                      auto countAndHash = WRITE_UINT32_LE(txids.size());
                      countAndHash.append(txnHash);
                      result[countAndHash] = move(
@@ -1448,74 +1434,54 @@ void BlockchainScanner::processFilterHitsThread(
                         headerPtr->getDuplicateID(),
                         txid));
 
-                     missingHashes.erase(txnHash);
-                     auto count = missingHashes.size();
-                     prog(count);
-
                      hashSet.erase(hashIter++);
                      continue;
                   }
-
                   ++hashIter;
                }
-
             }
          }
       }
    };
 
-   vector<uint32_t> blkFileNums;
-   for (auto& hitsPair : filtersResultMap)
-      blkFileNums.push_back(hitsPair.first);
-
-   while (1)
-   {
-      auto&& index = counter.fetch_sub(1, memory_order_relaxed);
-      if (index < 0)
+   auto missingHashesCopy = missingHashes;
+   while (true) {
+      auto index = counter.fetch_sub(1, memory_order_relaxed);
+      if (index < 0) {
          break;
-
-      auto& fileNum = blkFileNums[index];
-      auto filterIter = filtersResultMap.find(fileNum);
+      }
+      auto filterIter = filtersResultMap.find(index);
 
       auto& blkHitsMap = filterIter->second;
-      auto hashSet = missingHashes.get();
-
       auto hitsPairIter = blkHitsMap.begin();
-
-      while (hitsPairIter != blkHitsMap.end())
-      {
+      while (hitsPairIter != blkHitsMap.end()) {
          auto& txFilterSet = hitsPairIter->second;
 
          auto hitsIter = txFilterSet.begin();
-         while (hitsIter != txFilterSet.end())
-         {
-            auto hashIter = hashSet->find((*hitsIter)->hash_);
-            if (hashIter != hashSet->end())
-            {
+         while (hitsIter != txFilterSet.end()) {
+            auto hashIter = missingHashesCopy.find((*hitsIter)->hash_);
+            if (hashIter != missingHashesCopy.end()) {
                ++hitsIter;
                continue;
             }
-
             txFilterSet.erase(hitsIter++);
          }
 
-         if (txFilterSet.size() > 0)
-         {
+         if (!txFilterSet.empty()) {
             ++hitsPairIter;
             continue;
          }
-
          blkHitsMap.erase(hitsPairIter++);
       }
 
-      if (blkHitsMap.size() == 0)
+      if (blkHitsMap.empty()) {
          continue;
-
-      resolveHashes(filterIter->first, filterIter->second, *hashSet);
+      }
+      resolveHashes(filterIter->first, filterIter->second, missingHashesCopy);
    }
 
    //merge results
-   unique_lock<mutex> lock(resolverMutex_);
+   std::unique_lock<std::mutex> lock(resolverMutex_);
    results.insert(result.begin(), result.end());
 }
 
@@ -1562,10 +1528,7 @@ bool BlockchainScanner::resolveTxHashes()
       missingHashes.erase(hashIter++);
    }
 
-   Threading::TransactionalSet<BinaryData> missingHashSet;
    map<BinaryData, BlockHashVector> relevantFilters;
-   missingHashSet.insert(missingHashes);
-
    LOGINFO << "resolving " << missingHashes.size() << " txhashes";
 
    //check filters
@@ -1610,7 +1573,7 @@ bool BlockchainScanner::resolveTxHashes()
    map<BinaryData, BinaryData> resolverResults;
    vector<thread> resolverThreads;
 
-   auto hashCount = missingHashSet.size();
+   auto hashCount = missingHashes.size();
    ProgressCalculator calc(hashCount);
    mutex progressMutex;
    uint64_t topCount = hashCount;
@@ -1633,14 +1596,13 @@ bool BlockchainScanner::resolveTxHashes()
       topCount = count;
       auto intprog = hashCount - count;
       calc.advance(intprog);
-      this->progress_(BDMPhase_ResolveHashes, 
+      this->progress_(BDMPhase_ResolveHashes,
          calc.fractionCompleted(), calc.remainingSeconds(), count);
    };
 
    auto resolverThr = [&](void)->void
    {
-      processFilterHitsThread(resultsByHash,
-         missingHashSet,
+      processFilterHitsThread(resultsByHash, missingHashes,
          counter, resolverResults, resolveProgress);
    };
 
@@ -1730,7 +1692,6 @@ bool BlockchainScanner::resolveTxHashes()
          missingHashes.insert(hash);
       }
    }
-
    scrAddrFilter_->putMissingHashes(missingHashes);
 
    TIMER_STOP("resolveHashes");

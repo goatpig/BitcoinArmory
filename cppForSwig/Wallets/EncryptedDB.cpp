@@ -81,7 +81,7 @@ DBInterface::DBInterface(
 {
    auto tx = LMDBEnv::Transaction(dbEnv_, LMDB::Mode::ReadWrite);
    db_.open(dbEnv_, dbName_);
-   dataMapPtr_ = make_shared<IfaceDataMap>();
+   dataMapPtr_.store(std::make_shared<IfaceDataMap>());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -93,9 +93,9 @@ DBInterface::~DBInterface()
 ////////////////////////////////////////////////////////////////////////////////
 void DBInterface::reset(LMDBEnv* envPtr)
 {
-   if (db_.isOpen())
+   if (db_.isOpen()) {
       db_.close();
-
+   }
    dbEnv_ = envPtr;
    auto tx = LMDBEnv::Transaction(dbEnv_, LMDB::Mode::ReadWrite);
    db_.open(dbEnv_, dbName_);
@@ -241,14 +241,15 @@ void DBInterface::loadAllEntries(const SecureBinaryData& rootKey)
       }
 
       //sanity check
-      if (gaps.size() != 0)
+      if (gaps.size() != 0) {
          throw EncryptedDBException("unfilled dbkey gaps!");
+      }
 
       //set dbkey counter
       dataMapPtr->dbKeyCounter_ = prevDbKey + 1;
 
       //set the data map
-      atomic_store_explicit(&dataMapPtr_, dataMapPtr, memory_order_release);
+      dataMapPtr_.store(dataMapPtr, memory_order_release);
    }
 
    {
@@ -260,7 +261,8 @@ void DBInterface::loadAllEntries(const SecureBinaryData& rootKey)
       */
       auto tx = LMDBEnv::Transaction(dbEnv_, LMDB::Mode::ReadWrite);
 
-      auto flagKey = dataMapPtr_->getNewDbKey();
+      auto dataMapPtr = dataMapPtr_.load(memory_order_acquire);
+      auto flagKey = dataMapPtr->getNewDbKey();
       BothBinaryDatas keyFlagBd(keyCycleFlag_);
       auto encrPubKey = Cryptography::ECDSA::computePublicKey(
          decrPrivKey, true);
@@ -444,7 +446,7 @@ pair<BinaryData, BothBinaryDatas> DBInterface::readDataPacket(
 ////////////////////////////////////////////////////////////////////////////////
 unsigned DBInterface::getEntryCount(void) const
 {
-   auto dbMapPtr = atomic_load_explicit(&dataMapPtr_, memory_order_acquire);
+   auto dbMapPtr = dataMapPtr_.load(memory_order_acquire);
    return dbMapPtr->dataMap_.size();
 }
 

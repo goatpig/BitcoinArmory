@@ -1454,9 +1454,9 @@ void BDV_Server_Object::populateWallets(
    for (const auto& wlt : wltMap) {
       std::shared_ptr<BtcWallet> theWallet;
       if (wlt.second.type == WalletRegType::WALLET) {
-         theWallet = groups_[group_wallet].getOrSetWallet(wlt.first);
+         theWallet = wallets_.getOrSetWallet(wlt.first);
       } else {
-         theWallet = groups_[group_lockbox].getOrSetWallet(wlt.first);
+         theWallet = lockboxes_.getOrSetWallet(wlt.first);
       }
 
       if (theWallet == nullptr) {

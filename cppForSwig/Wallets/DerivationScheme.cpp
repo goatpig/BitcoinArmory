@@ -687,7 +687,7 @@ void DerivationScheme_ECDH::putSalt(AssetKeyType id,
       BinaryRefReader brr(dataRef);
       auto size = brr.get_var_int();
       auto saltRef = brr.get_BinaryDataRef(size);
-      if (saltRef != salt) {
+      if (saltRef != salt.getRef()) {
          throw DerivationSchemeException(
             "trying to write a salt different from the one on disk");
       }

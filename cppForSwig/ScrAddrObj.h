@@ -101,25 +101,12 @@ private:
    };
 
 public:
-
-   ScrAddrObj() :
-      db_(nullptr),
-      bc_(nullptr),
-      totalTxioCount_(0), utxos_(this)
-   {}
-
    ScrAddrObj(LMDBBlockDatabase*,
       const Armory::Blockchain*,
       Armory::ZeroConf::ZeroConfContainer*,
       BinaryDataRef);
 
-   ScrAddrObj(const ScrAddrObj& rhs) :
-      utxos_(nullptr)
-   {
-      *this = rhs;
-   }
-
-   const BinaryDataRef& getScrAddr(void) const { return scrAddr_; }
+   const BinaryDataRef& getScrAddr(void) const;
 
    // BlkNum is necessary for "unconfirmed" list, since it is dependent
    // on number of confirmations.  But for "spendable" TxOut list, it is
@@ -134,9 +121,7 @@ public:
       const std::map<BinaryData, Armory::Ledgers::Entry>*) const;
 
    void clearBlkData(void);
-
-   bool operator== (const ScrAddrObj& rhs) const
-   { return (scrAddr_ == rhs.scrAddr_); }
+   bool operator==(const ScrAddrObj&) const;
 
    std::map<BinaryData, TxIOPair> scanZC(
       const ScanAddressStruct&, std::function<bool(const BinaryDataRef)>, int32_t);
@@ -146,39 +131,31 @@ public:
       const std::map<BinaryData, TxIOPair>&,
       uint32_t , uint32_t) const;
 
-   void setTxioCount(uint64_t count) { totalTxioCount_ = count; }
-   uint64_t getTxioCount(void) const { return getTxioCountFromSSH(true); }
+   void setTxioCount(uint64_t);
+   uint64_t getTxioCount(void) const;
    uint64_t getTxioCountFromSSH(bool) const;
 
    void mapHistory(void);
 
-   const std::map<uint32_t, uint32_t>& getHistSSHsummary(void) const
-   { return hist_.getSSHsummary(); }
-
+   const std::map<uint32_t, uint32_t>& getHistSSHsummary(void) const;
    std::map<BinaryData, TxIOPair> getTxios(
       uint32_t, uint32_t, bool=false) const;
 
-   size_t getPageCount(void) const { return hist_.getPageCount(); }
+   size_t getPageCount(void) const;
    std::vector<Armory::Ledgers::Entry> getHistoryPageById(uint32_t);
 
-   ScrAddrObj& operator=(const ScrAddrObj&);
-
-   const std::map<BinaryData, TxIOPair>& getPreparedTxOutList(void) const
-   { return utxos_.getUTXOs(); }
-
+   const std::map<BinaryData, TxIOPair>& getPreparedTxOutList(void) const;
    bool getMoreUTXOs(PagedUTXOs&,
       std::function<bool(const BinaryData&)>) const;
    bool getMoreUTXOs(std::function<bool(const BinaryData&)>);
    std::vector<UnspentTxOut> getAllUTXOs(
       std::function<bool(const BinaryData&)>) const;
 
-   uint64_t getLoadedTxOutsValue(void) const { return utxos_.getValue(); }
-   uint32_t getLoadedTxOutsCount(void) const { return utxos_.getCount(); }
-   void resetTxOutHistory(void) { utxos_.reset(); }
-
-   void addZcUTXOs(const std::map<BinaryData, TxIOPair>& txioMap,
-      std::function<bool(const BinaryData&)>)
-   { utxos_.addZcUTXOs(txioMap); }
+   uint64_t getLoadedTxOutsValue(void) const;
+   uint32_t getLoadedTxOutsCount(void) const;
+   void resetTxOutHistory(void);
+   void addZcUTXOs(const std::map<BinaryData, TxIOPair>&,
+      std::function<bool(const BinaryData&)>);
 
    uint32_t getBlockInVicinity(uint32_t) const;
    uint32_t getPageIdForBlockHeight(uint32_t) const;
