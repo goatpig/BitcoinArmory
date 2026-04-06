@@ -73,7 +73,7 @@ void BlockHeader::unserialize(const uint8_t* ptr, uint32_t size)
    difficultyDbl_ = BtcUtils::convertDiffBitsToDouble(
       BinaryDataRef{dataCopy_.getPtr()+72, 4});
    isInitialized_ = true;
-   nextHash_ = BinaryData(0);
+   nextHash_ = {};
    blockHeight_ = UINT32_MAX;
    difficultySum_ = -1;
    isMainBranch_ = false;

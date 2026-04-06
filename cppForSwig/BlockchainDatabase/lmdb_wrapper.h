@@ -381,7 +381,7 @@ public:
 
    /////////////////////////////////////////////////////////////////////////////
    void readAllHeaders(
-      const std::function<void(std::shared_ptr<BlockHeader>, uint32_t, uint8_t)>&
+      const std::function<void(std::shared_ptr<BlockHeader>)>&
    );
 
    std::map<uint32_t, uint32_t> getSSHSummary(BinaryDataRef);

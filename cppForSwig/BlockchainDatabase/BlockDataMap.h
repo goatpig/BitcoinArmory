@@ -19,7 +19,6 @@
 #include <filesystem>
 
 #include <Utils/BinaryData.h>
-//#include "BlockObj.h"
 
 struct BlockHashVector;
 class BCTX;

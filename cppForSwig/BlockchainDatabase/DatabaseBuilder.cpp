@@ -281,17 +281,10 @@ void DatabaseBuilder::loadBlockHeadersFromDB(
    ProgressCalculator calc(howManyBlocks);
    std::deque<HeaderPtr> headers;
 
-   const auto callback = [&](HeaderPtr h, uint32_t height, uint8_t dup)
+   const auto callback = [&](HeaderPtr h)
    {
-      h->setBlockHeight(height);
-      h->setDuplicateID(dup);
       headers.emplace_back(h);
-
-      if ((counter++ % 50000) != 0) {
-         return;
-      }
-
-      if (!Config::DBSettings::reportProgress()) {
+      if (!Config::DBSettings::reportProgress() || (counter++ % 50000) != 0) {
          return;
       }
 

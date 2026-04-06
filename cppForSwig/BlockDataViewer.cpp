@@ -607,7 +607,8 @@ Ledgers::Delegate BlockDataViewer::getLedgerDelegateForScrAddr(
 uint32_t BlockDataViewer::getClosestBlockHeightForTime(uint32_t timestamp)
 {
    //get timestamp of genesis block
-   auto genBlock = blockchain().getGenesisBlock();
+   auto genBlock = blockchain().getHeaderByHash(
+      Config::BitcoinSettings::getGenesisBlockHash());
 
    //sanity check
    if (timestamp < genBlock->getTimestamp()) {

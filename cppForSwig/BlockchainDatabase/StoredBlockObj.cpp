@@ -458,17 +458,16 @@ void DBBlock::setHeaderData(const BinaryData& header80B)
    BtcUtils::getHash256(header80B, thisHash);
 }
 
-BlockHeader DBBlock::getBlockHeaderCopy(void) const
+BlockHeader DBBlock::getBlockHeaderCopy() const
 {
    if (!isInitialized()) {
       return {};
    }
-   BlockHeader bh(dataCopy);
 
+   BlockHeader bh(dataCopy);
    bh.setNumTx(numTx);
    bh.setBlockSize(numBytes);
    bh.setDuplicateID(duplicateID);
-
    bh.setBlockFileNum(fileID);
    bh.setBlockFileOffset(offset);
    return bh;

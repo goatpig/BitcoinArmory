@@ -219,7 +219,7 @@ std::shared_ptr<BlockHeader> BlockData::createBlockHeader() const
       BinaryDataRef(data_ + 72, 4));
 
    bh.isInitialized_ = true;
-   bh.nextHash_ = BinaryData(0);
+   bh.nextHash_ = {};
    bh.blockHeight_ = UINT32_MAX;
    bh.difficultySum_ = -1;
    bh.isMainBranch_ = false;

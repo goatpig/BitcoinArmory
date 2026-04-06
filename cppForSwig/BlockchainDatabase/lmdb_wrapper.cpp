@@ -1092,11 +1092,10 @@ bool LMDBBlockDatabase::getFullUTXOMapForSSH(StoredScriptHistory& ssh,
 //       that would get us since we are reading all the headers and doing
 //       a fresh organize/sort anyway.
 void LMDBBlockDatabase::readAllHeaders(
-   const std::function<void(std::shared_ptr<BlockHeader>, uint32_t, uint8_t)>& callback)
+   const std::function<void(std::shared_ptr<BlockHeader>)>& callback)
 {
-   auto&& tx = beginTransaction(DB_SELECT::HEADERS, LMDB::Mode::ReadOnly);
+   auto tx = beginTransaction(DB_SELECT::HEADERS, LMDB::Mode::ReadOnly);
    auto ldbIter = getIterator(DB_SELECT::HEADERS);
-
    if (!ldbIter->seekToStartsWith(DbPrefix::HEADHASH)) {
       LOGWARN << "No headers in DB yet!";
       return;
@@ -1105,32 +1104,39 @@ void LMDBBlockDatabase::readAllHeaders(
    do {
       ldbIter->resetReaders();
       ldbIter->verifyPrefix(DbPrefix::HEADHASH);
-
       if (ldbIter->getKeyReader().getSizeRemaining() != 32) {
          LOGERR << "How did we get header hash not 32 bytes?";
          continue;
       }
 
-      StoredHeader sbh;
-      ldbIter->getKeyReader().get_BinaryData(sbh.thisHash, 32);
-      sbh.unserializeDBValue(DB_SELECT::HEADERS, ldbIter->getValueRef());
+      //key is the header's hash
+      BinaryData headerHash;
+      ldbIter->getKeyReader().get_BinaryData(headerHash, 32);
 
-      auto regHead = std::make_shared<BlockHeader>();
-      regHead->unserialize(sbh.dataCopy);
-      regHead->setBlockSize(sbh.numBytes);
-      regHead->setNumTx(sbh.numTx);
+      //header data
+      auto brrVal = ldbIter->getValueReader();
+      auto regHead = std::make_shared<BlockHeader>(brrVal);
 
-      regHead->setBlockFileNum(sbh.fileID);
-      regHead->setBlockFileOffset(sbh.offset);
-      regHead->setUniqueID(sbh.uniqueID);
+      //height & dup
+      BinaryData hgtx = brrVal.get_BinaryData(4);
+      regHead->setBlockHeight(DBUtils::hgtxToHeight(hgtx));
+      regHead->setDuplicateID(DBUtils::hgtxToDupID(hgtx));
 
-      if (sbh.thisHash != regHead->getThisHash()) {
+      //metadata
+      regHead->setBlockSize(brrVal.get_uint32_t());
+      regHead->setNumTx(brrVal.get_uint32_t());
+      regHead->setBlockFileNum(brrVal.get_uint16_t());
+      regHead->setBlockFileOffset(brrVal.get_uint64_t());
+      regHead->setUniqueID(brrVal.get_uint32_t());
+
+      //sanity check
+      if (headerHash != regHead->getThisHash()) {
          LOGWARN << "Corruption detected: block header hash " <<
-            sbh.thisHash.copySwapEndian().toHexStr() << " does not match "
+            headerHash.copySwapEndian().toHexStr() << " does not match "
             << regHead->getThisHash().copySwapEndian().toHexStr();
       }
-      callback(regHead, sbh.blockHeight, sbh.duplicateID);
-   } while(ldbIter->advanceAndRead(DbPrefix::HEADHASH));
+      callback(regHead);
+   } while (ldbIter->advanceAndRead(DbPrefix::HEADHASH));
 }
 
 ////////////////////////////////////////////////////////////////////////////////

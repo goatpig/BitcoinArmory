@@ -16,8 +16,9 @@
 #include <memory>
 #include <deque>
 #include <map>
+#include <set>
+#include <unordered_map>
 
-#include <Utils/ThreadSafeClasses.h>
 #include <Utils/BinaryData.h>
 
 class BlockHeader;
@@ -44,12 +45,47 @@ namespace Armory
       std::shared_ptr<BlockHeader> reorgBranchPoint;
    };
 
+   struct Hash32
+   {
+      uint64_t data[4];
+      explicit Hash32(const BinaryData&);
+      explicit Hash32(const BinaryDataRef&);
+
+      struct Hasher
+      {
+         using is_transparent = void;
+         std::size_t operator()(const Hash32&) const;
+         std::size_t operator()(const BinaryData&) const;
+         std::size_t operator()(const BinaryDataRef&) const;
+      };
+
+      struct Comparator
+      {
+         using is_transparent = void;
+         constexpr bool operator()(const Hash32&, const Hash32&) const;
+         bool operator()(const Hash32&, const BinaryData&) const;
+         bool operator()(const BinaryData&, const Hash32&) const;
+         bool operator()(const Hash32&, const BinaryDataRef&) const;
+         bool operator()(const BinaryDataRef&, const Hash32&) const;
+      };
+   };
+
    /////////////////////////////////////////////////////////////////////////////
    // Manages the blockchain, keeping track of all the block headers
    // and our longest cord
    class Blockchain
    {
       using HeaderPtr = std::shared_ptr<BlockHeader>;
+
+   private:
+      std::shared_ptr<BlockHeader> getGenesisBlock(void) const;
+      std::shared_ptr<BlockHeader> organizeChain(bool = false, bool = false);
+      /////////////////////////////////////////////////////////////////////////////
+      // Update/organize the headers map (figure out longest chain, mark orphans)
+      // Start from a node, trace down to the highest solved block, accumulate
+      // difficulties and difficultySum values.  Return the difficultySum of 
+      // this block.
+      double traceChainDown(std::shared_ptr<BlockHeader>);
 
    public:
       Blockchain(const BinaryData&);
@@ -72,10 +108,8 @@ namespace Armory
       void updateBranchingMaps(LMDBBlockDatabase*, ReorganizationState&);
 
       std::shared_ptr<BlockHeader> top(void) const;
-      std::shared_ptr<BlockHeader> getGenesisBlock(void) const;
       const std::shared_ptr<BlockHeader> getHeaderByHeight(
          unsigned, uint8_t) const;
-      bool hasHeaderByHeight(unsigned) const;
 
       HeaderPtr getHeaderByHash(const BinaryData&) const;
       HeaderPtr getHeaderById(uint32_t) const;
@@ -95,23 +129,10 @@ namespace Armory
       void flagBlockHeader(std::shared_ptr<BlockHeader>, LMDBBlockDatabase*);
 
    private:
-      std::shared_ptr<BlockHeader> organizeChain(bool = false, bool = false);
-      /////////////////////////////////////////////////////////////////////////////
-      // Update/organize the headers map (figure out longest chain, mark orphans)
-      // Start from a node, trace down to the highest solved block, accumulate
-      // difficulties and difficultySum values.  Return the difficultySum of 
-      // this block.
-      double traceChainDown(std::shared_ptr<BlockHeader>);
-
-   private:
-      //TODO: get rid of this shyte!
-      //use std::unordered_map, manage access in class getters, not at container level
-      //they lead to too many copies, it slows down header parsing to a crawl
-
       const BinaryData genesisHash_;
-      Armory::Threading::TransactionalMap<BinaryData, HeaderPtr> headerMap_;
-      Armory::Threading::TransactionalMap<unsigned, HeaderPtr> headersById_;
-      Armory::Threading::TransactionalMap<unsigned, HeaderPtr> headersByHeight_;
+      std::unordered_map<Hash32, HeaderPtr, Hash32::Hasher, Hash32::Comparator> headerMap_;
+      std::unordered_map<unsigned, HeaderPtr> headersById_;
+      std::vector<HeaderPtr> headersByHeight_;
 
       std::vector<HeaderPtr> newlyParsedBlocks_;
       HeaderPtr topBlockPtr_;
