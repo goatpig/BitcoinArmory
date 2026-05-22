@@ -1062,6 +1062,13 @@ class BridgeWalletWrapper(ProtoWrapper):
          changeRequest.control = None
       self.send(packet, callback=callback)
 
+   ####
+   def exportPrivateKeys(self, callback: callable, unlockHandler):
+      packet = self._getPacket()
+      req = packet.wallet.init("exportPrivateKeys")
+      req.callbackId = unlockHandler.callbackId
+      self.send(packet, callback=callback)
+
 ################################################################################
 class BridgeCoinSelectionWrapper(ProtoWrapper):
    #############################################################################

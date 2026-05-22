@@ -460,6 +460,10 @@ struct WalletRequest {
       description    @1 : Text;
    }
 
+   struct ExportPrivateKeysRequest {
+      callbackId     @0 : Types.CallbackId;
+   }
+
    walletId                         @0 : Types.WalletId;
    accountId                        @1 : Types.AccountId;
    union {
@@ -489,6 +493,7 @@ struct WalletRequest {
 
       getUnlockTime                 @19: Void;
       forkWatchingOnly              @20: Types.CallbackId;
+      exportPrivateKeys             @21: ExportPrivateKeysRequest;
    }
 }
 
@@ -502,6 +507,11 @@ struct WalletReply {
    struct AddressAndBalanceData {
       balances       @0 : List(AddressBalanceData);
       updatedAssets  @1 : List(WalletData.AddressData);
+   }
+
+   struct ExportedPrivateKey {
+      assetId  @0 : Data;
+      privKey  @1 : Data;
    }
 
    # reply
@@ -528,6 +538,7 @@ struct WalletReply {
       createAddressBook             @13: Types.AddressBook;
       getUnlockTime                 @14: UInt32; #unlock time in ms
       forkWatchingOnly              @15: Text; #path to new WO wallet
+      exportPrivateKeys             @16: List(ExportedPrivateKey);
    }
 }
 

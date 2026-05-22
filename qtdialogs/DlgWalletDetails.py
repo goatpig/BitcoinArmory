@@ -537,7 +537,8 @@ class DlgWalletDetails(ArmoryDialog):
          pass  # not sure that I don't handle everything in the dialog itself
 
    def execKeyList(self):
-      if self.wlt.useEncryption and self.wlt.isLocked:
+      isBridge = bool(getattr(self.wlt, 'bridgeWalletObj', None))
+      if not isBridge and self.wlt.useEncryption and self.wlt.isLocked:
          dlg = DlgUnlockWallet(self.wlt, self, self.main, self.tr('Unlock Private Keys'))
          if not dlg.exec_():
             if self.main.usermode == USERMODE.Expert:

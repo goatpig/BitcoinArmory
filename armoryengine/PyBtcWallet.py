@@ -128,6 +128,7 @@ class PyBtcWallet(object):
 
       #To enable/disable wallet row in wallet table model
       self.isEnabled = True
+      self.isLocked = False
 
       #list of callables and their args to perform after a wallet
       #has been scanned. Entries are order as follows:
@@ -141,6 +142,13 @@ class PyBtcWallet(object):
          self.bridgeWalletObj = BridgeWalletWrapper(wltId, accId)
       elif proto != None:
          self.loadFromProto(proto)
+
+      # Bridge wallets: C++ manages decryption via passphrase lambda.
+      # Legacy wallets: start locked when encryption is enabled.
+      if self.bridgeWalletObj is not None:
+         self.isLocked = False
+      else:
+         self.isLocked = self.useEncryption
 
    #############################################################################
    ## setup routines
@@ -662,6 +670,10 @@ class PyBtcWallet(object):
       passphrase: str=None, unlockHandler: callable=None):
       return self.bridgeWalletObj.createBackupStringForWallet(callback,
          passphrase, unlockHandler)
+
+   ####
+   def exportPrivateKeys(self, callback, unlockHandler):
+      return self.bridgeWalletObj.exportPrivateKeys(callback, unlockHandler)
 
    #############################################################################
    ## helpers

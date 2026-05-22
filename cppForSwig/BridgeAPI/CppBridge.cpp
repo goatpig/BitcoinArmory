@@ -755,6 +755,134 @@ void CppBridge::forkWatchingOnly(const Wallets::WalletId& wltId,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+void CppBridge::exportPrivateKeys(const Wallets::WalletId& wltId,
+   const Wallets::AddressAccountId& accId,
+   const CallbackId& callbackId, MessageId msgId)
+{
+   auto func = [this, wltId, accId, callbackId, msgId]()
+   {
+      // (assetId serialized with PROTO_ASSETID_PREFIX, private key copy)
+      std::vector<std::pair<BinaryData, SecureBinaryData>> keyPairs;
+      std::string error;
+
+      std::shared_ptr<Wallets::AssetWallet_Single> wltSingle;
+      std::shared_ptr<BridgePassphrasePrompt> passPromptObj;
+
+      struct ExportKeysCleanup
+      {
+         std::shared_ptr<Wallets::AssetWallet_Single> wlt;
+         std::shared_ptr<BridgePassphrasePrompt> prompt;
+
+         ~ExportKeysCleanup()
+         {
+            if (wlt) {
+               wlt->resetPassphrasePromptLambda();
+            }
+            if (prompt) {
+               prompt->cleanup();
+            }
+         }
+      };
+
+      try {
+         //grab wallet container
+         std::shared_ptr<WalletContainer> wltContainer;
+         if (accId.isValid()) {
+            wltContainer = wltManager_->getWalletContainer(wltId, accId);
+         } else {
+            wltContainer = wltManager_->getWalletContainer(wltId);
+         }
+
+         auto wltPtr = wltContainer->getWalletPtr();
+         wltSingle = std::dynamic_pointer_cast<
+            Wallets::AssetWallet_Single>(wltPtr);
+         if (!wltSingle) {
+            throw std::runtime_error("wallet is not an AssetWallet_Single");
+         }
+
+         //setup passphrase prompt
+         passPromptObj = std::make_shared<BridgePassphrasePrompt>(
+            callbackId, [this](ServerPushWrapper wrapper){
+               this->callbackWriter(wrapper);
+            });
+         auto lbd = passPromptObj->getLambda();
+
+         wltSingle->setPassphrasePromptLambda(lbd);
+         ExportKeysCleanup cleanupGuard{wltSingle, passPromptObj};
+
+         //lock the decrypted container for the entire batch operation
+         auto lock = wltSingle->lockDecryptedContainer();
+
+         auto accPtr = wltContainer->getAddressAccount();
+         for (const auto& assetAccId : accPtr->getAccountIdSet()) {
+            auto assetAcc = accPtr->getAccountForID(assetAccId);
+            if (!assetAcc) {
+               continue;
+            }
+
+            auto lastIdx = assetAcc->getLastComputedIndex();
+            for (int32_t i = 0; i <= lastIdx; i++) {
+               auto assetPtr = assetAcc->getAssetForKey(i);
+               if (!assetPtr || !assetPtr->hasPrivateKey()) {
+                  continue;
+               }
+
+               auto assetSingle = std::dynamic_pointer_cast<
+                  Assets::AssetEntry_Single>(assetPtr);
+               if (!assetSingle) {
+                  continue;
+               }
+
+               const auto& assetID = assetPtr->getID();
+               const auto& serAssetId = assetID.getSerializedKey(
+                  PROTO_ASSETID_PREFIX);
+               const auto& privKey = wltSingle->getDecryptedPrivateKeyForAsset(
+                  assetSingle);
+
+               keyPairs.emplace_back(serAssetId, SecureBinaryData(privKey));
+            }
+         }
+         //lock released, DecryptedDataContainer wiped
+
+      } catch (const std::exception& e) {
+         error = e.what();
+      }
+
+      //build reply
+      capnp::MallocMessageBuilder message;
+      auto fromBridge = message.initRoot<FromBridge>();
+      auto reply = fromBridge.initReply();
+      reply.setReferenceId(msgId);
+
+      if (!error.empty()) {
+         reply.setSuccess(false);
+         reply.setError(error);
+      } else {
+         reply.setSuccess(true);
+         auto walletReply = reply.initWallet();
+         auto capnKeys = walletReply.initExportPrivateKeys(keyPairs.size());
+         for (size_t i = 0; i < keyPairs.size(); i++) {
+            auto capnKey = capnKeys[i];
+            const auto& id  = keyPairs[i].first;
+            const auto& key = keyPairs[i].second;
+            capnKey.setAssetId(capnp::Data::Builder(
+               (uint8_t*)id.getPtr(), id.getSize()));
+            capnKey.setPrivKey(capnp::Data::Builder(
+               (uint8_t*)key.getPtr(), key.getSize()));
+         }
+      }
+
+      writeToClient(serializeCapnp(message));
+      //keyPairs destroyed here; SecureBinaryData destructor zeroes memory
+   };
+
+   std::thread thr(func);
+   if (thr.joinable()) {
+      thr.detach();
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 BinaryData CppBridge::loadWallets(MessageId msgId)
 {
    wltManager_->loadWallets();

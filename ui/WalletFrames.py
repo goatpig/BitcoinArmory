@@ -1115,7 +1115,8 @@ class WalletBackupFrame(ArmoryFrame):
          isBackupCreated = self.main.makeWalletCopy(
             self, self.wlt, 'Encrypt', 'encrypt')
       elif self.optIndivKeyListTop.isChecked():
-         if self.wlt.useEncryption and self.wlt.isLocked:
+         isBridge = bool(getattr(self.wlt, 'bridgeWalletObj', None))
+         if not isBridge and self.wlt.useEncryption and self.wlt.isLocked:
             dlg = DlgUnlockWallet(self.wlt, self, self.main,
                'Unlock Private Keys')
             if not dlg.exec_():
