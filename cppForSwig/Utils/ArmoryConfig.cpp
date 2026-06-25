@@ -6,17 +6,17 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
+#include <cstring>
+
 #include "ArmoryConfig.h"
+#include <Network/SocketObject.h>
+#include <Node/BitcoinP2P.h>
+#include <Node/nodeRPC.h>
+
 #include "ArmoryErrors.h"
-#include "BtcUtils.h"
-#include "DBUtils.h"
+#include "FileUtils.h"
 #include "Cryptography.h"
-#include "JSON_codec.h"
-#include "SocketObject.h"
-#include "BIP150_151.h"
-#include "BitcoinP2P.h"
 #include "BitcoinSettings.h"
-#include "nodeRPC.h"
 
 #include "gtest/MockedNode.h"
 
@@ -70,8 +70,6 @@ void Armory::Config::printHelp(void)
 --rescan                   delete all processed history data and rescan
                            blockchain from the first block
 --rebuild                  delete all DB data and build and scan from scratch
---rescanSSH                delete balance and txcount data and rescan it.
-                           Much faster than rescan or rebuild.
 --checkchain               builds db (no scanning) with full txhints, then
                            verifies all tx (consensus and sigs).
 --datadir                  path to the operation folder
@@ -95,7 +93,7 @@ void Armory::Config::printHelp(void)
 --db-type                  sets the db type:
                            DB_BARE:  tracks wallet history only. Smallest DB.
                            DB_FULL:  tracks wallet history and resolves all
-                              relevant tx hashes. ~2.4GB DB at the time
+                              relevant tx hashes. ~50GB DB at the time
                               of 0.97 release. Default DB type.
                            DB_SUPER: tracks all blockchain history.
                               XXL DB (100GB+).
@@ -189,7 +187,7 @@ void Armory::Config::parseArgs(
 
       //get config file
       auto configPath = fs::path(Armory::Config::getDataDir()) / "armorydb.conf";
-      if (FileUtils::fileExists(configPath, 2)) {
+      if (FileUtils::pathExists(configPath, 2)) {
          Config::File cf(configPath);
          auto mapIter = cf.keyvalMap_.find("datadir");
          if (mapIter != cf.keyvalMap_.end()) {
@@ -335,7 +333,7 @@ std::string_view SettingsUtils::stripQuotes(const std::string_view& input)
 ////////////////////////////////////////////////////////////////////////////////
 bool SettingsUtils::testConnection(const std::string& ip, const std::string& port)
 {
-   SimpleSocket testSock(ip, port);
+   Network::SimpleSocket testSock(ip, port);
    return testSock.testConnection();
 }
 
@@ -462,7 +460,7 @@ void BaseSettings::reset()
 //
 ////////////////////////////////////////////////////////////////////////////////
 BdmInitMode DBSettings::initMode_ = BdmInitMode::RESUME;
-ARMORY_DB_TYPE DBSettings::armoryDbType_ = ARMORY_DB_TYPE::Full;
+ARMORY_DB_TYPE DBSettings::armoryDbType_ = ARMORY_DB_TYPE::Bare;
 SOCKET_SERVICE DBSettings::service_ = SERVICE_WEBSOCKET;
 
 unsigned DBSettings::ramUsage_ = 4;
@@ -475,16 +473,93 @@ bool DBSettings::checkChain_ = false;
 bool DBSettings::clearMempool_ = false;
 bool DBSettings::checkTxHints_ = false;
 
+uint64_t DBSettings::xorKey_ = 0;
+
+////////////////////////////////////////////////////////////////////////////////
+ARMORY_DB_TYPE DBSettings::getDbType()
+{
+   return armoryDbType_;
+}
+
+void DBSettings::setServiceType(SOCKET_SERVICE _type)
+{
+   service_ = _type;
+}
+
+SOCKET_SERVICE DBSettings::getServiceType()
+{
+   return service_;
+}
+
+unsigned DBSettings::threadCount()
+{
+   return threadCount_;
+}
+
+unsigned DBSettings::ramUsage()
+{
+   return ramUsage_;
+}
+
+unsigned DBSettings::zcThreadCount()
+{
+   return zcThreadCount_;
+}
+
+unsigned DBSettings::rewindCount()
+{
+   return rewindCount_;
+}
+
+bool DBSettings::checkChain()
+{
+   return checkChain_;
+}
+
+BdmInitMode DBSettings::initMode()
+{
+   return initMode_;
+}
+
+bool DBSettings::clearMempool()
+{
+   return clearMempool_;
+}
+
+bool DBSettings::reportProgress()
+{
+   return reportProgress_;
+}
+
+bool DBSettings::checkTxHints()
+{
+   return checkTxHints_;
+}
+
+////////
+bool DBSettings::isXored()
+{
+   return xorKey_ != 0;
+}
+
+void DBSettings::setXorKey(uint64_t key)
+{
+   if (xorKey_ != 0) {
+      throw std::runtime_error("already have a xor key set");
+   }
+   xorKey_ = key;
+}
+
+uint64_t DBSettings::getXorKey()
+{
+   return xorKey_;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 void DBSettings::processArgs(const std::map<std::string, std::string>& args)
 {
    //db init options
-   auto iter = args.find("rescanSSH");
-   if (iter != args.end()) {
-      initMode_ = BdmInitMode::SSH;
-   }
-
-   iter = args.find("rescan");
+   auto iter = args.find("rescan");
    if (iter != args.end()) {
       initMode_ = BdmInitMode::RESCAN;
    }
@@ -513,7 +588,6 @@ void DBSettings::processArgs(const std::map<std::string, std::string>& args)
    iter = args.find("db-type");
    if (iter != args.end()) {
       if (iter->second == "DB_BARE") {
-         throw std::runtime_error("deprecated");
          armoryDbType_ = ARMORY_DB_TYPE::Bare;
       } else if (iter->second == "DB_FULL") {
          armoryDbType_ = ARMORY_DB_TYPE::Full;
@@ -577,9 +651,9 @@ void DBSettings::processArgs(const std::map<std::string, std::string>& args)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::string DBSettings::getCookie(const std::string& datadir)
+std::string DBSettings::getCookie(const std::filesystem::path& datadir)
 {
-   auto cookie_path = fs::path(datadir) / ".cookie_";
+   auto cookie_path = datadir / ".cookie_";
    auto lines = SettingsUtils::getLines(cookie_path);
    if (lines.size() != 2) {
       return {};
@@ -620,6 +694,8 @@ void DBSettings::reset()
    reportProgress_ = true;
    checkChain_ = false;
    clearMempool_ = false;
+
+   xorKey_ = 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -836,17 +912,17 @@ void NetworkSettings::createNodes()
 {
    auto magicBytes = BitcoinSettings::getMagicBytes();
    if (DBSettings::getServiceType() == SERVICE_WEBSOCKET) {
-      bitcoinNodes_.first = std::make_shared<Node::BitcoinP2P>(
+      bitcoinNodes_.first = std::make_shared<Node::Core::P2P::Peer>(
          "127.0.0.1", btcPort_,
          *(uint32_t*)magicBytes.getPtr(), false
       );
 
-      bitcoinNodes_.second = std::make_shared<Node::BitcoinP2P>(
+      bitcoinNodes_.second = std::make_shared<Node::Core::P2P::Peer>(
          "127.0.0.1", btcPort_,
          *(uint32_t*)magicBytes.getPtr(), true
       );
-
-      rpcNode_ = std::make_shared<CoreRPC::NodeRPC>();
+  
+      rpcNode_ = std::make_shared<Node::Core::RPC::Client>();
    }
 #ifdef BUILD_ARMORY_TESTS
    else {
@@ -954,7 +1030,7 @@ void Pathing::processArgs(const std::map<std::string, std::string>& args,
    //test all paths
    auto testPath = [](const fs::path& path, int mode)->bool
    {
-      return FileUtils::fileExists(path, mode);
+      return FileUtils::pathExists(path, mode);
    };
 
    if (!testPath(Armory::Config::getDataDir(), 6)) {

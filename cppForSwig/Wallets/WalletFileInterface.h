@@ -24,8 +24,11 @@
 #define CONTROL_DB_NAME "control_db"sv
 
 ////////////////////////////////////////////////////////////////////////////////
-class LMDB;
-class LMDBEnv;
+namespace LMDB
+{
+   class DB;
+   class Env;
+}
 
 class BinaryData;
 
@@ -136,11 +139,11 @@ namespace Armory
          private:
             mutable std::mutex setupMutex_;
 
-            std::unique_ptr<LMDBEnv> dbEnv_ = nullptr;
+            std::unique_ptr<LMDB::Env> dbEnv_ = nullptr;
             std::map<std::string, std::unique_ptr<DBInterface>, std::less<>> dbMap_;
 
             //encryption objects
-            std::unique_ptr<LMDB> controlDb_;
+            std::unique_ptr<LMDB::DB> controlDb_;
 
             //wallet structure
             std::map<std::string, std::shared_ptr<WalletHeader>> headerMap_;

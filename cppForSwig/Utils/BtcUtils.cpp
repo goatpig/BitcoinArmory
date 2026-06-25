@@ -102,7 +102,8 @@ void BtcUtils::getHash256(const uint8_t* strToHash, size_t nBytes,
 
 BinaryData BtcUtils::getHash256(const uint8_t* strToHash, size_t nBytes)
 {
-   BinaryData hashOutput(32);
+   BinaryData hashOutput;
+   hashOutput.resize(32);
    BinaryDataRef dataBdr(strToHash, nBytes);
 
    Cryptography::Hash::getHash256(dataBdr, hashOutput.getPtr());
@@ -121,14 +122,16 @@ void BtcUtils::getHash256(BinaryDataRef strToHash, BinaryData& hashOutput)
 
 BinaryData BtcUtils::getHash256(const BinaryData& strToHash)
 {
-   BinaryData hashOutput(32);
+   BinaryData hashOutput;
+   hashOutput.resize(32);
    getHash256(strToHash.getPtr(), strToHash.getSize(), hashOutput);
    return hashOutput;
 }
 
 BinaryData BtcUtils::getHash256(const BinaryDataRef& strToHash)
 {
-   BinaryData hashOutput(32);
+   BinaryData hashOutput;
+   hashOutput.resize(32);
    getHash256(strToHash.getPtr(), strToHash.getSize(), hashOutput);
    return hashOutput;
 }
@@ -142,7 +145,8 @@ void BtcUtils::getHash160(const uint8_t* strToHash, size_t nBytes,
    }
 
    BinaryDataRef bdr(strToHash, nBytes);
-   BinaryData sha2_digest(32);
+   BinaryData sha2_digest;
+   sha2_digest.resize(32);
 
    Cryptography::Hash::getSha256(bdr, sha2_digest.getPtr());
    Cryptography::Hash::getHash160(sha2_digest.getRef(), hashOutput.getPtr());
@@ -150,7 +154,8 @@ void BtcUtils::getHash160(const uint8_t* strToHash, size_t nBytes,
 
 BinaryData BtcUtils::getHash160(const uint8_t* strToHash, size_t nBytes)
 {
-   BinaryData hashOutput(20);
+   BinaryData hashOutput;
+   hashOutput.resize(20);
    getHash160(strToHash, nBytes, hashOutput);
    return hashOutput;
 }
@@ -162,21 +167,24 @@ void BtcUtils::getHash160(BinaryDataRef strToHash, BinaryData& hashOutput)
 
 BinaryData BtcUtils::getHash160(const BinaryDataRef& strToHash)
 {
-   BinaryData hashOutput(20);
+   BinaryData hashOutput;
+   hashOutput.resize(20);
    getHash160(strToHash.getPtr(), strToHash.getSize(), hashOutput);
    return hashOutput;
 }
 
 BinaryData BtcUtils::getHash160(const BinaryData& strToHash)
 {
-   BinaryData hashOutput(20);
+   BinaryData hashOutput;
+   hashOutput.resize(20);
    getHash160(strToHash.getPtr(), strToHash.getSize(), hashOutput);
    return hashOutput;
 }
 
 BinaryData BtcUtils::ripemd160(const BinaryData& strToHash)
 {
-   BinaryData bd(20);
+   BinaryData bd;
+   bd.resize(20);
    Cryptography::Hash::getHash160(strToHash.getRef(), bd.getPtr());
    return bd;
 }
@@ -257,7 +265,9 @@ BinaryData BtcUtils::getBotchedArmoryHMAC256(
       memset(hmacKey.getPtr() + key.getSize(), 0, 32 - key.getSize());
    }
 
-   BinaryData oxor(32), ixor(32);
+   BinaryData oxor, ixor;
+   oxor.resize(32);
+   ixor.resize(32);
    for (unsigned i=0; i<32; i++) {
       oxor.getPtr()[i] = hmacKey.getPtr()[i] ^ 0x5c;
       ixor.getPtr()[i] = hmacKey.getPtr()[i] ^ 0x36;
@@ -282,7 +292,8 @@ std::vector<BinaryData> BtcUtils::calculateMerkleTree(
    // and copy the result to the right size list afterwards
    size_t numTx = txhashlist.size();
    std::vector<BinaryData> merkleTree(3*numTx);
-   BinaryData hashInput(64);
+   BinaryData hashInput;
+   hashInput.resize(64);
 
    for (unsigned i=0; i<numTx; i++) {
       merkleTree[i] = txhashlist[i];
@@ -291,7 +302,8 @@ std::vector<BinaryData> BtcUtils::calculateMerkleTree(
    size_t thisLevelStart = 0;
    size_t nextLevelStart = numTx;
    size_t levelSize = numTx;
-   BinaryData hashOutput(32);
+   BinaryData hashOutput;
+   hashOutput.resize(32);
    while (levelSize>1) {
       for (unsigned j=0; j<(levelSize+1)/2; j++) {
          uint8_t* half1Ptr = hashInput.getPtr();
@@ -340,10 +352,10 @@ void BtcUtils::TxInCalcLength(const uint8_t* ptr, size_t size,
    brr.advance(4);
 
    // TxIn List
-   auto nIn = brr.get_var_int();
+   size_t nIn = brr.get_var_int();
    if (offsetsIn != nullptr) {
       offsetsIn->resize(nIn + 1);
-      for (auto i = 0; i<nIn; i++) {
+      for (size_t i = 0; i < nIn; i++) {
          (*offsetsIn)[i] = brr.getPosition();
          brr.advance(TxInCalcLength(brr.getCurrPtr(), brr.getSizeRemaining()));
       }
@@ -384,7 +396,7 @@ size_t BtcUtils::TxWitnessCalcLength(const uint8_t* ptr, size_t size)
    uint8_t viStackLen;
    size_t stackLen = readVarInt(ptr, size, viStackLen);
    witLen += viStackLen;
-   for (auto i = 0; i < stackLen; i++) {
+   for (size_t i = 0; i < stackLen; i++) {
       if (witLen >= size) {
          throw BtcUtils::BlockDeserializingException();
       }
@@ -427,7 +439,7 @@ size_t BtcUtils::TxCalcLength(const uint8_t* ptr, size_t size,
    size_t nIn = brr.get_var_int();
    if (offsetsIn != nullptr) {
       offsetsIn->resize(nIn+1);
-      for (auto i=0; i < nIn; i++) {
+      for (size_t i = 0; i < nIn; i++) {
          (*offsetsIn)[i] = brr.getPosition();
          brr.advance(TxInCalcLength(
             brr.getCurrPtr(),
@@ -437,7 +449,7 @@ size_t BtcUtils::TxCalcLength(const uint8_t* ptr, size_t size,
       (*offsetsIn)[nIn] = brr.getPosition(); // Get the end of the last
    } else {
       // Don't need to track the offsets, just leap over everything
-      for (auto i=0; i < nIn; i++) {
+      for (size_t i = 0; i < nIn; i++) {
          brr.advance(TxInCalcLength(
             brr.getCurrPtr(),
             brr.getSizeRemaining())
@@ -449,7 +461,7 @@ size_t BtcUtils::TxCalcLength(const uint8_t* ptr, size_t size,
    size_t nOut = brr.get_var_int();
    if (offsetsOut != nullptr) {
       offsetsOut->resize(nOut+1);
-      for (auto i=0; i<nOut; i++) {
+      for (size_t i = 0; i<nOut; i++) {
          (*offsetsOut)[i] = brr.getPosition();
          brr.advance(TxOutCalcLength(
             brr.getCurrPtr(),
@@ -458,7 +470,7 @@ size_t BtcUtils::TxCalcLength(const uint8_t* ptr, size_t size,
       }
       (*offsetsOut)[nOut] = brr.getPosition();
    } else {
-      for (size_t i=0; i<nOut; i++) {
+      for (size_t i = 0; i<nOut; i++) {
          brr.advance(TxOutCalcLength(
             brr.getCurrPtr(),
             brr.getSizeRemaining())
@@ -470,7 +482,7 @@ size_t BtcUtils::TxCalcLength(const uint8_t* ptr, size_t size,
    if (usesWitness) {
       if (offsetsWitness != nullptr) {
          offsetsWitness->resize(nIn + 1);
-         for (uint32_t i = 0; i < nIn; i++) {
+         for (size_t i = 0; i < nIn; i++) {
             (*offsetsWitness)[i] = brr.getPosition();
             brr.advance(TxWitnessCalcLength(
                brr.getCurrPtr(),
@@ -479,7 +491,7 @@ size_t BtcUtils::TxCalcLength(const uint8_t* ptr, size_t size,
          }
          (*offsetsWitness)[nIn] = brr.getPosition();
       } else {
-         for (uint32_t i = 0; i < nIn; i++) {
+         for (size_t i = 0; i < nIn; i++) {
             brr.advance(TxWitnessCalcLength(
                brr.getCurrPtr(),
                brr.getSizeRemaining())
@@ -518,7 +530,7 @@ size_t BtcUtils::StoredTxCalcLength(const uint8_t* ptr,
    size_t nIn = brr.get_var_int();
    if (offsetsIn != nullptr) {
       offsetsIn->resize(nIn+1);
-      for (auto i=0; i<nIn; i++) {
+      for (size_t i = 0; i < nIn; i++) {
          (*offsetsIn)[i] = brr.getPosition();
          brr.advance(TxInCalcLength(
             brr.getCurrPtr(),
@@ -528,7 +540,7 @@ size_t BtcUtils::StoredTxCalcLength(const uint8_t* ptr,
       (*offsetsIn)[nIn] = brr.getPosition(); // Get the end of the last
    } else {
       // Don't need to track the offsets, just leap over everything
-      for (auto i=0; i<nIn; i++) {
+      for (size_t i = 0; i < nIn; i++) {
          brr.advance(TxInCalcLength(
             brr.getCurrPtr(),
             brr.getSizeRemaining())
@@ -540,14 +552,14 @@ size_t BtcUtils::StoredTxCalcLength(const uint8_t* ptr,
    size_t nOut = brr.get_var_int();
    if (fragged) {
       offsetsOut->resize(nOut+1);
-      for (uint32_t i=0; i<nOut+1; i++) {
+      for (size_t i = 0; i < nOut + 1; i++) {
          (*offsetsOut)[i] = brr.getPosition();
       }
    } else {
       // Now extract the TxOut list
       if (offsetsOut != nullptr) {
          offsetsOut->resize(nOut+1);
-         for (auto i=0; i<nOut; i++) {
+         for (size_t i = 0; i < nOut; i++) {
             (*offsetsOut)[i] = brr.getPosition();
             brr.advance(TxOutCalcLength(
                brr.getCurrPtr(),
@@ -556,7 +568,7 @@ size_t BtcUtils::StoredTxCalcLength(const uint8_t* ptr,
          }
          (*offsetsOut)[nOut] = brr.getPosition();
       } else {
-         for (auto i=0; i<nOut; i++) {
+         for (size_t i = 0;  i < nOut; i++) {
             brr.advance(TxOutCalcLength(
                brr.getCurrPtr(),
                brr.getSizeRemaining())
@@ -569,13 +581,13 @@ size_t BtcUtils::StoredTxCalcLength(const uint8_t* ptr,
    if (usesWitness) {
       if (offsetsWitness != nullptr) {
          offsetsWitness->resize(nIn + 1);
-         for (auto i = 0; i < nIn; i++) {
+         for (size_t i = 0; i < nIn; i++) {
             (*offsetsWitness)[i] = brr.getPosition();
             brr.advance(TxWitnessCalcLength(brr.getCurrPtr(), brr.getSizeRemaining()));
          }
          (*offsetsWitness)[nIn] = brr.getPosition();
       } else {
-         for (auto i = 0; i < nIn; i++) {
+         for (size_t i = 0; i < nIn; i++) {
             brr.advance(TxWitnessCalcLength(brr.getCurrPtr(), brr.getSizeRemaining()));
          }
       }
@@ -815,7 +827,7 @@ BinaryData BtcUtils::getMultisigUniqueKey(const BinaryData& script)
    bw.put_uint8_t((uint8_t)N);
 
    std::sort(a160List.begin(), a160List.end());
-   for (auto i=0; i<a160List.size(); i++) {
+   for (size_t i = 0; i < a160List.size(); i++) {
       bw.put_BinaryData(a160List[i]);
    }
    return bw.getData();
@@ -1042,7 +1054,8 @@ BinaryData BtcUtils::computeDataId(const SecureBinaryData& data,
 
    //hmac the hash256 of the data with message
    auto hmacKey = getHash256(data);
-   BinaryData id(32);
+   BinaryData id;
+   id.resize(32);
 
    getHMAC256(hmacKey.getPtr(), hmacKey.getSize(),
       message.c_str(), message.size(), id.getPtr());
@@ -1522,7 +1535,8 @@ BinaryData BtcUtils::base58_decode(const std::string& b58)
    }
 
    size_t size = b58.size();
-   BinaryData result(size);
+   BinaryData result;
+   result.resize(size);
 
    if (!btc_base58_decode(result.getPtr(), &size, b58.c_str()) ||
       size > b58.size()) {
@@ -1618,7 +1632,8 @@ std::pair<BinaryData, int> BtcUtils::segWitAddressToScrAddr(
 
    int ver;
    size_t len;
-   BinaryData result(40);
+   BinaryData result;
+   result.resize(40);
    if (segwit_addr_decode(&ver, result.getPtr(), &len,
       headerPtr, swAddr.c_str()) == 0) {
       throw std::runtime_error("failed to decode sw address!");
@@ -1671,7 +1686,8 @@ std::string BtcUtils::numToStrWCommas(int64_t fullNum)
 ////
 BinaryData BtcUtils::PackBits(const std::list<bool>& boolVec)
 {
-   BinaryData out((boolVec.size()+7) / 8);
+   BinaryData out;
+   out.resize((boolVec.size()+7) / 8);
    memset(out.getPtr(), 0, out.getSize());
 
    unsigned i=0;
@@ -1721,7 +1737,8 @@ BinaryData BtcUtils::convertDoubleToDiffBits(double diff)
       --nShift;
    }
 
-   BinaryData diffBits(4);
+   BinaryData diffBits;
+   diffBits.resize(4);
    auto ptr = diffBits.getPtr();
 
    auto val = 65535.0 / diff;
@@ -1735,7 +1752,7 @@ BinaryData BtcUtils::convertDoubleToDiffBits(double diff)
 void BtcUtils::pprintScript(const BinaryData& script)
 {
    std::vector<std::string> oplist = convertScriptToOpStrings(script);
-   for (uint32_t i=0; i < oplist.size(); i++) {
+   for (uint32_t i = 0; i < oplist.size(); i++) {
       std::cout << "   " << oplist[i] << std::endl;
    }
 }

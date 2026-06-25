@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -15,13 +15,25 @@
 
 #include "HistoryPager.h"
 #include <BlockchainDatabase/txio.h>
-//#include "BitcoinP2P.h"
 #include "LedgerEntry.h"
 
 using namespace Armory;
 using namespace Armory::Ledgers;
 
 uint32_t HistoryPager::txnPerPage_ = 100;
+
+namespace {
+   void addPage(std::vector<std::shared_ptr<HistoryPager::Page>>& pages,
+      uint32_t count, uint32_t bottom, uint32_t top)
+   {
+      pages.emplace_back(std::make_shared<HistoryPager::Page>(count, bottom, top));
+   }
+
+   void sortPages(std::vector<std::shared_ptr<HistoryPager::Page>>& pages)
+   {
+      std::sort(pages.begin(), pages.end(), HistoryPager::Page::comparator);
+   }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Page
@@ -57,7 +69,7 @@ HistoryPager::HistoryPager()
 void HistoryPager::reset()
 {
    isInitialized_->store(false, std::memory_order_relaxed);
-   std::atomic_store_explicit(&pages_, {}, std::memory_order_release);
+   pages_.store(nullptr);
 }
 
 bool HistoryPager::isInitiliazed() const
@@ -71,11 +83,6 @@ const std::map<uint32_t, uint32_t>& HistoryPager::getSSHsummary() const
    return SSHsummary_;
 }
 
-void HistoryPager::addPage(std::vector<std::shared_ptr<Page>>& pages,
-   uint32_t count, uint32_t bottom, uint32_t top)
-{
-   pages.emplace_back(std::make_shared<Page>(count, bottom, top));
-}
 
 std::shared_ptr<const std::map<BinaryData, Entry>>
 HistoryPager::getPageLedgerMap(
@@ -90,8 +97,7 @@ HistoryPager::getPageLedgerMap(
       throw std::runtime_error("Uninitialized history");
    }
 
-   auto pagesLocal = std::atomic_load_explicit(
-      &pages_, std::memory_order_acquire);
+   auto pagesLocal = pages_.load(std::memory_order_acquire);
    if (pagesLocal == nullptr) {
       return nullptr;
    }
@@ -134,8 +140,7 @@ HistoryPager::getPageLedgerMap(uint32_t pageId)
       throw std::runtime_error("Uninitialized history");
    }
 
-   auto pagesLocal = std::atomic_load_explicit(
-      &pages_, std::memory_order_acquire);
+   auto pagesLocal = pages_.load(std::memory_order_acquire);
    if (pagesLocal == nullptr) {
       return nullptr;
    }
@@ -152,7 +157,6 @@ HistoryPager::getPageLedgerMap(uint32_t pageId)
       return nullptr;
    }
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////
 bool HistoryPager::mapHistory(
@@ -173,7 +177,7 @@ bool HistoryPager::mapHistory(
    auto newPages = std::make_shared<std::vector<std::shared_ptr<Page>>>();
    if (SSHsummary_.empty()) {
       addPage(*newPages, 0, 0, UINT32_MAX);
-      std::atomic_store_explicit(&pages_, newPages, std::memory_order_release);
+      pages_.store(newPages, std::memory_order_release);
       isInitialized_->store(true, std::memory_order_relaxed);
       return true;
    }
@@ -197,7 +201,7 @@ bool HistoryPager::mapHistory(
 
    //sort pages canonically then store
    sortPages(*newPages);
-   std::atomic_store_explicit(&pages_, newPages, std::memory_order_release);
+   pages_.store(newPages, std::memory_order_release);
 
    //mark as initialized
    isInitialized_->store(true, std::memory_order_relaxed);
@@ -210,7 +214,7 @@ uint32_t HistoryPager::getPageBottom(uint32_t id) const
    if (!isInitialized_->load(std::memory_order_relaxed)) {
       return 0;
    }
-   auto pagesLocal = atomic_load_explicit(&pages_, std::memory_order_acquire);
+   auto pagesLocal = pages_.load(std::memory_order_acquire);
    if (pagesLocal == nullptr) {
       return 0;
    }
@@ -227,7 +231,7 @@ size_t HistoryPager::getPageCount(void) const
       return 0;
    }
 
-   auto pagesLocal = std::atomic_load_explicit(&pages_, std::memory_order_acquire);
+   auto pagesLocal = pages_.load(std::memory_order_acquire);
    if (pagesLocal == nullptr) {
       return 0;
    }
@@ -243,7 +247,7 @@ uint32_t HistoryPager::getRangeForHeightAndCount(
       throw std::runtime_error("Uninitialized history");
    }
 
-   auto pagesLocal = std::atomic_load_explicit(&pages_, std::memory_order_acquire);
+   auto pagesLocal = pages_.load(std::memory_order_acquire);
    if (pagesLocal == nullptr) {
       return 0;
    }
@@ -294,8 +298,7 @@ uint32_t HistoryPager::getPageIdForBlockHeight(uint32_t blk) const
    }
 
    unsigned i = 0;
-   auto pagesLocal = std::atomic_load_explicit(
-      &pages_, std::memory_order_acquire);
+   auto pagesLocal = pages_.load(std::memory_order_acquire);
    if (pagesLocal == nullptr) {
       return 0;
    }
@@ -306,9 +309,4 @@ uint32_t HistoryPager::getPageIdForBlockHeight(uint32_t blk) const
       ++i;
    }
    return 0;
-}
-
-void HistoryPager::sortPages(std::vector<std::shared_ptr<Page>>& pages)
-{
-   std::sort(pages.begin(), pages.end(), Page::comparator);
 }

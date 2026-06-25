@@ -11,22 +11,32 @@
 #include <Utils/BtcUtils.h>
 #include <Utils/ArmoryConfig.h>
 #include <Utils/JSON_codec.h>
+#include <Network/StringSockets.h>
+#include <Network/SocketWritePayload.h>
 
-#include "StringSockets.h"
-#include "SocketWritePayload.h"
-
-using namespace CoreRPC;
-using namespace Armory;
 using namespace std::chrono_literals;
 using namespace std::string_view_literals;
+
+using namespace Armory;
+using namespace Node;
+using namespace Node::Core;
 
 namespace
 {
    static std::vector<unsigned> confTargets{ 2, 3, 4, 5, 6, 10, 20 };
    static std::vector<std::string> strategies{
-      std::string{ FEE_STRAT_CONSERVATIVE },
-      std::string{ FEE_STRAT_ECONOMICAL }
+      std::string{ RPC::FEE_STRAT_CONSERVATIVE },
+      std::string{ RPC::FEE_STRAT_ECONOMICAL }
    };
+
+   std::filesystem::path getDatadir()
+   {
+      auto datadir = Config::Pathing::blkFilePath();
+      if (datadir.filename() == "blocks") {
+         datadir = datadir.parent_path();
+      }
+      return datadir;
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -41,29 +51,34 @@ RpcError::RpcError(const std::string& err) :
 
 ////////////////////////////////////////////////////////////////////////////////
 // NodeRPCInterface
-NodeRPCInterface::~NodeRPCInterface()
+RPC::Iface::Iface()
+{
+   currentEstimateCache_.store(nullptr);
+}
+
+RPC::Iface::~Iface()
 {}
 
-void NodeRPCInterface::callback() const
+void RPC::Iface::callback() const
 {
    if (nodeStatusLambda_) {
       nodeStatusLambda_();
    }
 }
 
-void NodeRPCInterface::registerNodeStatusLambda(
+void RPC::Iface::registerNodeStatusLambda(
    const std::function<void(void)>& lbd)
 {
    nodeStatusLambda_ = lbd;
 }
 
-const NodeChainStatus& NodeRPCInterface::getChainStatus() const
+const ChainStatus& RPC::Iface::getChainStatus() const
 {
    ReentrantLock lock(this);
    return nodeChainStatus_;
 }
 
-const std::map<unsigned, FeeEstimateResult>& NodeRPCInterface::getFeeSchedule(
+const std::map<unsigned, RPC::FeeEstimateResult>& RPC::Iface::getFeeSchedule(
    const std::string& strategy) const
 {
    auto estimateCachePtr = std::atomic_load(&currentEstimateCache_);
@@ -80,7 +95,7 @@ const std::map<unsigned, FeeEstimateResult>& NodeRPCInterface::getFeeSchedule(
 
 ////////////////////////////////////////////////////////////////////////////////
 // NodeRPC
-NodeRPC::NodeRPC()
+RPC::Client::Client()
 {
    //start fee estimate polling thread
    if (!canPoll()) {
@@ -89,7 +104,7 @@ NodeRPC::NodeRPC()
    thrVec_.emplace_back(std::thread([this](){ pollThread(); }));
 }
 
-NodeRPC::~NodeRPC()
+RPC::Client::~Client()
 {
    run_.store(false, std::memory_order_release);
    pollCondVar_.notify_all();
@@ -101,23 +116,13 @@ NodeRPC::~NodeRPC()
    }
 }
 
-bool NodeRPC::canPoll() const
+bool RPC::Client::canPoll() const
 {
    return true;
 }
 
 ////////
-std::filesystem::path NodeRPC::getDatadir()
-{
-   auto datadir = Config::Pathing::blkFilePath();
-   if (datadir.filename() == "blocks") {
-      datadir = datadir.parent_path();
-   }
-   return datadir;
-}
-
-////////
-bool NodeRPC::setupConnection(HttpSocket& sock)
+bool RPC::Client::setupConnection(Network::HttpSocket& sock)
 {
    ReentrantLock lock(this);
 
@@ -133,7 +138,8 @@ bool NodeRPC::setupConnection(HttpSocket& sock)
       if (authString.empty()) {
          return false;
       }
-      basicAuthString64_ = std::move(BtcUtils::base64_encode(authString));
+      basicAuthString64_ = std::move(
+         BtcUtils::base64_encode(authString));
    }
 
    std::string authHeader{ "Authorization: Basic " + basicAuthString64_ };
@@ -141,7 +147,7 @@ bool NodeRPC::setupConnection(HttpSocket& sock)
    return true;
 }
 
-RpcState NodeRPC::testConnection()
+RpcState RPC::Client::testConnection()
 {
    ReentrantLock lock(this);
 
@@ -180,7 +186,7 @@ RpcState NodeRPC::testConnection()
       }
    } catch (const RpcError& e) {
       state = RpcState::Disabled;
-   } catch (const SocketError& e) {
+   } catch (const Network::SocketError& e) {
       state = RpcState::Disabled;
    } catch (const JSON::Exception& e) {
       LOGERR << "RPC connection test error: " << e.what();
@@ -190,13 +196,13 @@ RpcState NodeRPC::testConnection()
 }
 
 ////////
-void NodeRPC::resetAuthString()
+void RPC::Client::resetAuthString()
 {
    ReentrantLock lock(this);
    basicAuthString64_.clear();
 }
 
-std::string NodeRPC::getAuthString()
+std::string RPC::Client::getAuthString()
 {
    auto getAuthStringFromCookieFile = []
    (const std::filesystem::path& path)->std::string
@@ -245,7 +251,7 @@ std::string NodeRPC::getAuthString()
 }
 
 ////////
-float NodeRPC::queryFeeByte(HttpSocket& sock, unsigned blocksToConfirm)
+float RPC::Client::queryFeeByte(Network::HttpSocket& sock, unsigned blocksToConfirm)
 {
    ReentrantLock lock(this);
 
@@ -270,7 +276,7 @@ float NodeRPC::queryFeeByte(HttpSocket& sock, unsigned blocksToConfirm)
    return feeBytePtr->val;
 }
 
-FeeEstimateResult NodeRPC::queryFeeByteSmart(HttpSocket& sock,
+RPC::FeeEstimateResult RPC::Client::queryFeeByteSmart(Network::HttpSocket& sock,
    unsigned& confTarget, const std::string& strategy)
 {
    auto fallback = [this, &confTarget, &sock]()->FeeEstimateResult
@@ -339,10 +345,10 @@ FeeEstimateResult NodeRPC::queryFeeByteSmart(HttpSocket& sock,
 }
 
 ////////
-FeeEstimateResult NodeRPC::getFeeByte(
+RPC::FeeEstimateResult RPC::Client::getFeeByte(
    unsigned confTarget, const std::string& strategy) const
 {
-   auto estimateCachePtr = std::atomic_load(&currentEstimateCache_);
+   auto estimateCachePtr = currentEstimateCache_.load();
    if (estimateCachePtr == nullptr) {
       throw RpcError{};
    }
@@ -363,10 +369,10 @@ FeeEstimateResult NodeRPC::getFeeByte(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void NodeRPC::aggregateFeeEstimates()
+void RPC::Client::aggregateFeeEstimates()
 {
    //get fee/byte for 2-3-4-5-6-10-20 confs on both strategies
-   HttpSocket sock("127.0.0.1", Config::NetworkSettings::rpcPort());
+   Network::HttpSocket sock("127.0.0.1", Config::NetworkSettings::rpcPort());
    if (!setupConnection(sock)) {
       throw RpcError("aggregateFeeEstimates: failed to setup RPC socket");
    }
@@ -384,11 +390,11 @@ void NodeRPC::aggregateFeeEstimates()
    }
 
    ReentrantLock lock(this);
-   currentEstimateCache_ = newCache;
+   currentEstimateCache_.store(newCache);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool NodeRPC::updateChainStatus()
+bool RPC::Client::updateChainStatus()
 {
    ReentrantLock lock(this);
 
@@ -447,7 +453,7 @@ bool NodeRPC::updateChainStatus()
 }
 
 ////////
-void NodeRPC::waitOnChainSync(std::function<void(void)> callbck)
+void RPC::Client::waitOnChainSync(std::function<void(void)> callbck)
 {
    nodeChainStatus_.reset();
    callbck();
@@ -499,7 +505,7 @@ void NodeRPC::waitOnChainSync(std::function<void(void)> callbck)
 }
 
 ////////
-int NodeRPC::broadcastTx(const BinaryDataRef& rawTx, std::string& verbose)
+int RPC::Client::broadcastTx(const BinaryDataRef& rawTx, std::string& verbose)
 {
    ReentrantLock lock(this);
 
@@ -545,7 +551,7 @@ int NodeRPC::broadcastTx(const BinaryDataRef& rawTx, std::string& verbose)
 }
 
 ////////
-void NodeRPC::shutdown()
+void RPC::Client::shutdown()
 {
    ReentrantLock lock(this);
 
@@ -566,18 +572,18 @@ void NodeRPC::shutdown()
 }
 
 ////////
-std::string NodeRPC::queryRPC(JSON::Object& request)
+std::string RPC::Client::queryRPC(JSON::Object& request)
 {
-   HttpSocket sock("127.0.0.1", Config::NetworkSettings::rpcPort());
+   Network::HttpSocket sock("127.0.0.1", Config::NetworkSettings::rpcPort());
    if (!setupConnection(sock)) {
       throw RpcError("node_down");
    }
    return queryRPC(sock, request);
 }
 
-std::string NodeRPC::queryRPC(HttpSocket& sock, JSON::Object& request)
+std::string RPC::Client::queryRPC(Network::HttpSocket& sock, JSON::Object& request)
 {
-   auto writePayload = std::make_unique<WritePayload_StringPassthrough>();
+   auto writePayload = std::make_unique<Network::WritePayload_StringPassthrough>();
    writePayload->data_ = std::move(JSON::encode(request));
 
    auto promPtr = std::make_shared<std::promise<std::string>>();
@@ -588,16 +594,16 @@ std::string NodeRPC::queryRPC(HttpSocket& sock, JSON::Object& request)
       promPtr->set_value(std::move(body));
    };
 
-   auto readPayload = std::make_shared<Socket_ReadPayload>(request.id);
+   auto readPayload = std::make_shared<Network::Socket_ReadPayload>(request.id);
    readPayload->callbackReturn_ =
-      std::make_unique<CallbackReturn_HttpBody>(callback);
+      std::make_unique<Network::CallbackReturn_HttpBody>(callback);
 
    sock.pushPayload(std::move(writePayload), readPayload);
    return fut.get();
 }
 
 ////////
-void NodeRPC::pollThread()
+void RPC::Client::pollThread()
 {
    auto pred = [this](void)->bool
    {
@@ -653,7 +659,7 @@ void NodeRPC::pollThread()
 
 ////////////////////////////////////////////////////////////////////////////////
 // NodeChainStatus
-void NodeChainStatus::reset()
+void ChainStatus::reset()
 {
    heightTimeVec_.clear();
    state_ = ChainState::Unknown;
@@ -662,33 +668,33 @@ void NodeChainStatus::reset()
 }
 
 ////////
-ChainState NodeChainStatus::state() const
+ChainState ChainStatus::state() const
 {
    return state_;
 }
 
-float NodeChainStatus::getBlockSpeed() const
+float ChainStatus::getBlockSpeed() const
 {
    return blockSpeed_;
 }
 
-float NodeChainStatus::getProgressPct() const
+float ChainStatus::getProgressPct() const
 {
    return pct_;
 }
 
-uint64_t NodeChainStatus::getETA() const
+uint64_t ChainStatus::getETA() const
 {
    return eta_;
 }
 
-unsigned NodeChainStatus::getBlocksLeft() const
+unsigned ChainStatus::getBlocksLeft() const
 {
    return blocksLeft_;
 }
 
 ////////
-bool NodeChainStatus::processState(const JSON::Object& jsonObj)
+bool ChainStatus::processState(const JSON::Object& jsonObj)
 {
    if (state_ == ChainState::Ready) {
       return false;
@@ -756,7 +762,7 @@ bool NodeChainStatus::processState(const JSON::Object& jsonObj)
 }
 
 ////////
-unsigned NodeChainStatus::getTopBlock() const
+unsigned ChainStatus::getTopBlock() const
 {
    if (heightTimeVec_.empty()) {
       throw std::runtime_error("");
@@ -764,7 +770,7 @@ unsigned NodeChainStatus::getTopBlock() const
    return std::get<0>(heightTimeVec_.back());
 }
 
-void NodeChainStatus::appendHeightAndTime(unsigned height, uint64_t timestamp)
+void ChainStatus::appendHeightAndTime(unsigned height, uint64_t timestamp)
 {
    try {
       if (getTopBlock() == height) {

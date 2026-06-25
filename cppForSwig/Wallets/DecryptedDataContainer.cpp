@@ -433,8 +433,8 @@ DecryptedDataContainer::populateEncryptionKey(
             if (dataIter->second->derivedKeys_.count(keyPair.second) == 0) {
                //we have the correct key but it's not extended for the
                //extended KDF, let's deal with that
-               auto keyPtr = std::move(deriveEncryptionKey(
-                  std::move(dataIter->second), keyPair.second));
+               auto keyPtr = deriveEncryptionKey(
+                  std::move(dataIter->second), keyPair.second);
                dataIter->second = std::move(keyPtr);
             }
          }

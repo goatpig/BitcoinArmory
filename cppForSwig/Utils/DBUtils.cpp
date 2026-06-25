@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -23,15 +23,10 @@
 #include <cstring>
 
 #include "DBUtils.h"
+#include "BinaryData.h"
 
-
-namespace fs = std::filesystem;
-using namespace std::string_view_literals;
 using namespace Armory;
-
-namespace {
-   auto blkFilePrefix = "blk"sv;
-}
+using namespace Armory::DBUtils;
 
 const BinaryData DBUtils::ZCPrefix = BinaryData::CreateFromHex("FFFF");
 
@@ -207,6 +202,13 @@ BinaryData DBUtils::getBlkDataKeyNoPrefix(uint32_t height,
    bw.put_uint16_t(txIdx, BE);
    bw.put_uint16_t(txOutIdx, BE);
    return bw.getData();
+}
+
+BinaryData DBUtils::getDBSuperSpentnessKey(uint32_t height,
+   uint8_t dup, uint16_t txIdx, uint16_t txOutIdx)
+{
+   return DBUtils::getBlkDataKeyNoPrefix(
+      UINT32_MAX - height, dup, txIdx, txOutIdx);
 }
 
 /////////////////////////////////////////////////////////////////////////////

@@ -6,12 +6,13 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#include "Utils/ArmoryConfig.h"
-#include "Utils/BtcUtils.h"
-#include "Utils/DBUtils.h"
-#include "Utils/Cryptography.h"
-
 #include "Wallets.h"
+#include <Utils/ArmoryConfig.h>
+#include <Utils/BtcUtils.h>
+#include <Utils/DBUtils.h>
+#include <Utils/FileUtils.h>
+#include <Utils/Cryptography.h>
+
 #include "WalletFileInterface.h"
 #include "Accounts/AccountTypes.h"
 #include "Accounts/AddressAccounts.h"
@@ -21,11 +22,10 @@
 #include "Seeds/Backups.h"
 #include "KDF.h"
 
-using namespace Armory::Signing;
+using namespace Armory;
 using namespace Armory::Assets;
 using namespace Armory::Accounts;
 using namespace Armory::Wallets;
-using namespace Armory::Seeds;
 
 using namespace std::chrono_literals;
 using namespace std::string_view_literals;
@@ -283,8 +283,8 @@ void AssetWallet_Single::readFromFile()
          bwKey.put_uint32_t(WALLET_SEED_KEY);
          auto rootAssetRef = getDataRefForKey(sharedTx.get(), bwKey.getData());
 
-         auto seedUPtr = EncryptedSeed::deserialize(rootAssetRef);
-         seed_ = std::shared_ptr<EncryptedSeed>(move(seedUPtr));
+         auto seedUPtr = Seeds::EncryptedSeed::deserialize(rootAssetRef);
+         seed_ = std::shared_ptr<Seeds::EncryptedSeed>(move(seedUPtr));
          if (seed_ == nullptr) {
             throw WalletException("failed to deser wallet seed");
          }
@@ -632,7 +632,7 @@ std::set<BinaryData> AssetWallet::getAddrHashSet() const
 {
    ReentrantLock lock(this);
    std::set<BinaryData> addrHashSet;
-   for (const auto account : accounts_) {
+   for (const auto& account : accounts_) {
       const auto& hashes = account.second->getAddressHashMap();
       for (const auto& hashPair : hashes) {
          addrHashSet.emplace(hashPair.first);
@@ -666,9 +666,9 @@ const WalletId& AssetWallet::getMasterID() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-ReentrantLock AssetWallet::lockDecryptedContainer(void)
+ReentrantLock AssetWallet::lockDecryptedContainer()
 {
-   return std::move(ReentrantLock(decryptedData_.get()));
+   return ReentrantLock(decryptedData_.get());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1122,7 +1122,8 @@ const AddressAccountId& AssetWallet_Single::createBIP32Account(
 ////////////////////////////////////////////////////////////////////////////////
 // wallet creation
 std::shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
-   std::unique_ptr<ClearTextSeed> seed, const IO::CreateWalletParams& params)
+   std::unique_ptr<Seeds::ClearTextSeed> seed,
+   const IO::CreateWalletParams& params)
 {
    //sanity check
    if (seed == nullptr) {
@@ -1135,14 +1136,14 @@ std::shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
    {
       case Seeds::SeedType::ArmoryLegacy:
       {
-         auto seedLegacy = dynamic_cast<ClearTextSeed_Armory*>(seed.get());
+         auto seedLegacy = dynamic_cast<Seeds::ClearTextSeed_Armory*>(seed.get());
          result = createFromSeed(seedLegacy, params);
          break;
       }
 
       case Seeds::SeedType::ArmoryLegacyPublic:
       {
-         auto seedLegacy = dynamic_cast<ClearTextSeed_ArmoryPublic*>(seed.get());
+         auto seedLegacy = dynamic_cast<Seeds::ClearTextSeed_ArmoryPublic*>(seed.get());
          result = createFromPublicSeed(seedLegacy, params);
          break;
       }
@@ -1152,7 +1153,7 @@ std::shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
       case Seeds::SeedType::BIP32_base58Root:
       case Seeds::SeedType::BIP39:
       {
-         auto seedBip32 = dynamic_cast<ClearTextSeed_BIP32*>(seed.get());
+         auto seedBip32 = dynamic_cast<Seeds::ClearTextSeed_BIP32*>(seed.get());
          result = createFromSeed(seedBip32, params);
          break;
       }
@@ -1166,7 +1167,7 @@ std::shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
 
 //// from legacy seed
 std::shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
-   ClearTextSeed_Armory* seed, const IO::CreateWalletParams& params)
+   Seeds::ClearTextSeed_Armory* seed, const IO::CreateWalletParams& params)
 {
    if (seed == nullptr) {
       throw WalletException("[createFromSeed] null root");
@@ -1327,8 +1328,8 @@ std::shared_ptr<AssetWallet_Single> AssetWallet_Single::createFromSeed(
    walletPtr->setPassphrasePromptLambda(params.setPrivPassObj.getUnlockFunc());
    switch (seed->type())
    {
-      case SeedType::BIP32_Structured:
-      case SeedType::BIP39:
+      case Seeds::SeedType::BIP32_Structured:
+      case Seeds::SeedType::BIP39:
       {
          for (auto accountPtr : accountTypes) {
             walletPtr->createBIP32Account(accountPtr, params.progressFunc);
@@ -1415,7 +1416,7 @@ std::shared_ptr<AssetWallet_Single> AssetWallet_Single::createBlank(
 ////////////////////////////////////////////////////////////////////////////////
 std::shared_ptr<AssetWallet_Single> AssetWallet_Single::initWalletDb(
    std::shared_ptr<IO::WalletDBInterface> iface,
-   ClearTextSeed* seed, const IO::CreateWalletParams& params)
+   Seeds::ClearTextSeed* seed, const IO::CreateWalletParams& params)
 {
    if (params.progressFunc) {
       auto prg = std::make_unique<Progress::InitWalletFile>(seed->getMasterId());
@@ -1463,9 +1464,9 @@ std::shared_ptr<AssetWallet_Single> AssetWallet_Single::initWalletDb(
    std::unique_ptr<AssetEntry> rootAssetEntry;
    switch (seed->type())
    {
-      case SeedType::ArmoryLegacy:
+      case Seeds::SeedType::ArmoryLegacy:
       {
-         auto seedLegacy = dynamic_cast<ClearTextSeed_Armory*>(seed);
+         auto seedLegacy = dynamic_cast<Seeds::ClearTextSeed_Armory*>(seed);
          const auto& privateRoot = seedLegacy->getRoot();
          auto chaincode = seedLegacy->getChaincode();
          if (chaincode.empty()) {
@@ -1485,12 +1486,12 @@ std::shared_ptr<AssetWallet_Single> AssetWallet_Single::initWalletDb(
          break;
       }
 
-      case SeedType::BIP39:
-      case SeedType::BIP32_Structured:
-      case SeedType::BIP32_Virgin:
-      case SeedType::BIP32_base58Root:
+      case Seeds::SeedType::BIP39:
+      case Seeds::SeedType::BIP32_Structured:
+      case Seeds::SeedType::BIP32_Virgin:
+      case Seeds::SeedType::BIP32_base58Root:
       {
-         auto seedBip32 = dynamic_cast<ClearTextSeed_BIP32*>(seed);
+         auto seedBip32 = dynamic_cast<Seeds::ClearTextSeed_BIP32*>(seed);
          auto rootNode = seedBip32->getRootNode();
          auto pubkey = rootNode->getPublicKey();
 
@@ -1538,7 +1539,7 @@ std::shared_ptr<AssetWallet_Single> AssetWallet_Single::initWalletDb(
          BinaryWriter bw; //TODO: need SBD based bw
          seed->serialize(bw);
          auto cipherData = encryptPrivateData(bw.getDataRef());
-         walletPtr->seed_ = std::make_unique<EncryptedSeed>(
+         walletPtr->seed_ = std::make_unique<Seeds::EncryptedSeed>(
             std::move(cipherData), seed->type());
 
          //write to disk
@@ -1681,14 +1682,14 @@ const SecureBinaryData& AssetWallet_Single::getDecryptedPrivateKeyForId(
 }
 
 ////////
-std::shared_ptr<EncryptedSeed> AssetWallet_Single::getEncryptedSeed() const
+std::shared_ptr<Seeds::EncryptedSeed> AssetWallet_Single::getEncryptedSeed() const
 {
    return seed_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 const AssetId& AssetWallet_Single::derivePrivKeyFromPath(
-   const BIP32_AssetPath& path)
+   const Signing::BIP32_AssetPath& path)
 {
    auto derPath = path.getDerivationPathFromSeed();
 
@@ -2098,7 +2099,7 @@ bool AssetWallet_Single::isWatchingOnly() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-BIP32_AssetPath AssetWallet_Single::getBip32PathForAssetID(
+Signing::BIP32_AssetPath AssetWallet_Single::getBip32PathForAssetID(
    const AssetId& id) const
 {
    auto asset = getAssetForID(id);
@@ -2106,7 +2107,7 @@ BIP32_AssetPath AssetWallet_Single::getBip32PathForAssetID(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-BIP32_AssetPath AssetWallet_Single::getBip32PathForAsset(
+Signing::BIP32_AssetPath AssetWallet_Single::getBip32PathForAsset(
    std::shared_ptr<AssetEntry> asset) const
 {
    const auto& id = asset->getID();
@@ -2137,12 +2138,12 @@ BIP32_AssetPath AssetWallet_Single::getBip32PathForAsset(
       carry the path from its seed as well as the seed's fingerprint
       */
 
-      auto rootObj = std::make_shared<BIP32_PublicDerivedRoot>(
+      auto rootObj = std::make_shared<Signing::BIP32_PublicDerivedRoot>(
          accountRoot->getXPub(),
          accountPath,
          accountRoot->getSeedFingerprint(true));
 
-      return BIP32_AssetPath(
+      return Signing::BIP32_AssetPath(
          pubkey,
          { (uint32_t)id.getAssetKey() },
          accountRoot->getThisFingerprint(),
@@ -2152,7 +2153,7 @@ BIP32_AssetPath AssetWallet_Single::getBip32PathForAsset(
       auto rootPath = accountRoot->getDerivationPath();
       rootPath.push_back(id.getAssetKey());
 
-      return BIP32_AssetPath(
+      return Signing::BIP32_AssetPath(
          pubkey,
          rootPath,
          rootBip32->getThisFingerprint(),
@@ -2361,7 +2362,7 @@ std::filesystem::path AssetWallet_Single::forkWatchingOnly(
    auto newPath = wpd.path.parent_path() / newname;
 
    //check file does not exist
-   if (FileUtils::fileExists(newPath, 0)) {
+   if (FileUtils::pathExists(newPath, 0)) {
       throw WalletException("WO wallet filename already exists");
    }
 

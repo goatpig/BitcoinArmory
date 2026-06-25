@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -29,7 +29,7 @@ using namespace Armory::Bridge;
 ////////////////////////////////////////////////////////////////////////////////
 WalletContainer::WalletContainer(
    const Wallets::WalletId& wltId,
-   const Armory::Wallets::AddressAccountId& accId,
+   const Wallets::AddressAccountId& accId,
    std::shared_ptr<TxIOCache> cache) :
    wltId_(wltId), accountId_(accId), cache_(cache)
 {
@@ -38,14 +38,18 @@ WalletContainer::WalletContainer(
    chainDataZC_.reset();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 const std::string& WalletContainer::getDbId() const
 {
    return dbId_;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-const Armory::Wallets::AddressAccountId& WalletContainer::getAccountId() const
+const Wallets::WalletId& WalletContainer::getWalletId() const
+{
+   return wltId_;
+}
+
+const Wallets::AddressAccountId& WalletContainer::getAccountId() const
 {
    return accountId_;
 }
@@ -71,6 +75,12 @@ void WalletContainer::setWalletPtr(std::shared_ptr<Wallets::AssetWallet> wltPtr,
 void WalletContainer::setBdvPtr(std::shared_ptr<AsyncClient::BlockDataViewer> bdv)
 {
    bdvPtr_ = bdv;
+}
+
+void WalletContainer::cleanupBDV()
+{
+   asyncWlt_.reset();
+   bdvPtr_.reset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -131,7 +141,7 @@ void WalletContainer::unregisterFromBDV()
    asyncWlt_->unregister();
 }
 
-uint64_t WalletContainer::getFullBalance() const
+Types::Amount WalletContainer::getFullBalance() const
 {
    if (chainDataMain_ == nullptr) {
       return 0;
@@ -139,7 +149,7 @@ uint64_t WalletContainer::getFullBalance() const
    return chainDataMain_->totalBalance + chainDataZC_->totalBalance;
 }
 
-uint64_t WalletContainer::getSpendableBalance() const
+Types::Amount WalletContainer::getSpendableBalance() const
 {
    if (chainDataMain_ == nullptr) {
       return 0;
@@ -147,7 +157,7 @@ uint64_t WalletContainer::getSpendableBalance() const
    return chainDataMain_->spendableBalance + chainDataZC_->spendableBalance;
 }
 
-uint64_t WalletContainer::getUnconfirmedBalance() const
+Types::Amount WalletContainer::getUnconfirmedBalance() const
 {
    if (chainDataMain_ == nullptr) {
       return 0;
@@ -155,12 +165,12 @@ uint64_t WalletContainer::getUnconfirmedBalance() const
    return chainDataMain_->unconfirmedBalance + chainDataZC_->unconfirmedBalance;
 }
 
-uint64_t WalletContainer::getTxIOCount() const
+size_t WalletContainer::getTxCount() const
 {
    if (chainDataMain_ == nullptr) {
       return 0;
    }
-   return chainDataMain_->txioCount + chainDataZC_->txioCount;
+   return chainDataMain_->txCount + chainDataZC_->txCount;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -197,11 +207,12 @@ void WalletContainer::synchronizeAddressChainState()
    auto account = wallet_->getAccountForID(accountId_);
 
    auto parseChainData = [&topIndexMap, &addressesToUpdate, accPtr=account]
-   (const std::map<ScrAddr, uint64_t>& countMap)
+   (const std::map<Types::ScrAddr, Values>& amountMap)
    {
-      for (const auto& countPair : countMap) {
+      for (const auto& amountPair : amountMap) {
+         const auto& scrAddr = amountPair.first;
          try {
-            const auto& assetPair = accPtr->getAssetIDPairForAddr(countPair.first);
+            const auto& assetPair = accPtr->getAssetIDPairForAddr(scrAddr);
             auto topIdIter = topIndexMap.find(
                assetPair.first.getAssetAccountId());
             if (topIdIter == topIndexMap.end()) {
@@ -209,7 +220,7 @@ void WalletContainer::synchronizeAddressChainState()
                   assetPair.first.getAssetAccountId(), -1).first;
             }
 
-            //check instantiated type matches on chain address
+            //check instantiated type matches on-chain address
             auto addrPtr = accPtr->getAddressEntryForID(assetPair.first);
             if (addrPtr->getType() != assetPair.second) {
                addressesToUpdate.emplace(assetPair);
@@ -221,15 +232,15 @@ void WalletContainer::synchronizeAddressChainState()
                topIdIter->second = idKey;
             }
          } catch (const Accounts::AccountException&) {
-            LOGWARN << "have count for unknown ScrAddr " << countPair.first.toHexStr()
+            LOGWARN << "have count for unknown ScrAddr " << scrAddr.toHexStr()
                << " in wallet/account " << accPtr->getID().toHexStr();
             continue;
          }
       }
    };
 
-   parseChainData(chainDataMain_->countMap);
-   parseChainData(chainDataZC_->countMap);
+   parseChainData(chainDataMain_->valueMap);
+   parseChainData(chainDataZC_->valueMap);
 
    //compare effective top index with known top index
    std::shared_ptr<Wallets::IO::WalletIfaceTransaction> dbtx;
@@ -256,45 +267,43 @@ void WalletContainer::synchronizeAddressChainState()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::map<BinaryData, std::vector<uint64_t>>
-WalletContainer::getAddrBalanceMap() const
+std::map<Types::ScrAddr, Amounts> WalletContainer::getAddrBalanceMap() const
 {
    if (chainDataMain_ == nullptr) {
       return {};
    }
-
-   std::map<BinaryData, std::vector<uint64_t>> result;
-   for (const auto& countPair : chainDataMain_->countMap) {
-      std::vector<uint64_t> balVec;
-      auto iter = chainDataMain_->balanceMap.find(countPair.first);
-      if (iter == chainDataMain_->balanceMap.end()) {
-         balVec = {0, 0, 0};
+   std::map<Types::ScrAddr, Amounts> result;
+   for (const auto& values : chainDataMain_->valueMap) {
+      auto zcIter = chainDataZC_->valueMap.find(values.first);
+      if (zcIter == chainDataZC_->valueMap.end()) {
+         result.emplace(values.first, Amounts{
+            static_cast<Types::Amount>(values.second.fullBalance),
+            static_cast<Types::Amount>(values.second.spendableBalance),
+            static_cast<Types::Amount>(values.second.unconfirmedBalance),
+            values.second.txCount
+         });
       } else {
-         balVec = {
-            static_cast<uint64_t>(iter->second[0]),
-            static_cast<uint64_t>(iter->second[1]),
-            static_cast<uint64_t>(iter->second[2])
-         };
+         result.emplace(values.first, Amounts{
+            static_cast<Types::Amount>(
+               values.second.fullBalance + zcIter->second.fullBalance),
+            static_cast<Types::Amount>(
+               values.second.spendableBalance + zcIter->second.spendableBalance),
+            static_cast<Types::Amount>(
+               values.second.unconfirmedBalance + zcIter->second.unconfirmedBalance),
+            values.second.txCount + zcIter->second.txCount
+         });
       }
-
-      balVec.emplace_back(countPair.second);
-      result.emplace(countPair.first, balVec);
    }
-
-   for (const auto& balPair : chainDataZC_->balanceMap) {
-      auto iter = result.find(balPair.first);
-      if (iter == result.end()) {
-         iter = result.emplace(balPair.first,
-            std::vector<uint64_t>{0, 0, 0, 0}).first;
+   for (const auto& values : chainDataZC_->valueMap) {
+      if (result.find(values.first) != result.end()) {
+         continue;
       }
-      auto& balVec = iter->second;
-      balVec[0] += balPair.second[0];
-      balVec[1] += balPair.second[1];
-      balVec[2] += balPair.second[2];
-   }
-   for (const auto& countPair : chainDataZC_->countMap) {
-      auto& balVec = result.at(countPair.first);
-      balVec[3] += countPair.second;
+      result.emplace(values.first, Amounts{
+         static_cast<Types::Amount>(values.second.fullBalance),
+         static_cast<Types::Amount>(values.second.spendableBalance),
+         static_cast<Types::Amount>(values.second.unconfirmedBalance),
+         values.second.txCount
+      });
    }
    return result;
 }
@@ -303,7 +312,7 @@ WalletContainer::getAddrBalanceMap() const
 std::vector<AddressBookEntry> WalletContainer::getAddressBook() const
 {
    auto addrHashMap = cache_->getAddressBook(
-      [this](const BinaryData& scrAddr)->bool
+      [this](const Types::ScrAddr& scrAddr)->bool
       { return this->hasScrAddr(scrAddr); }
    );
 
@@ -320,7 +329,7 @@ std::vector<AddressBookEntry> WalletContainer::getAddressBook() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::map<BinaryData, std::shared_ptr<AddressEntry>>
+std::map<Types::ScrAddr, std::shared_ptr<AddressEntry>>
 WalletContainer::getUpdatedAddressMap()
 {
    auto mapMove = std::move(updatedAddressMap_);
@@ -431,16 +440,16 @@ std::filesystem::path WalletContainer::forkWatchingOnly(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::vector<UTXO> WalletContainer::getUTXOs(uint64_t val, bool zc, bool rbf)
+std::vector<UTXO> WalletContainer::getUTXOs(Types::Amount val, bool zc, bool rbf)
 {
    return cache_->getUTXOs(val, zc, rbf,
-      [this](const BinaryData& scrAddr)->bool
+      [this](const Types::ScrAddr& scrAddr)->bool
       { return this->hasScrAddr(scrAddr); }
    );
 }
 
 ////////
-const std::map<BinaryData, TxIOPair> WalletContainer::getTxioMap() const
+const std::map<Types::TxIOKey, TxIOPair> WalletContainer::getTxioMap() const
 {
    if (chainDataMain_ == nullptr) {
       return {};
@@ -459,7 +468,7 @@ const std::map<BinaryData, TxIOPair> WalletContainer::getTxioMap() const
 void WalletContainer::resolveTxios(uint32_t fromHeight)
 {
    auto result = cache_->resolve(
-      [this](const BinaryData& scrAddr)->bool
+      [this](const Types::ScrAddr& scrAddr)->bool
       { return this->hasScrAddr(scrAddr); },
       fromHeight
    );
@@ -469,7 +478,7 @@ void WalletContainer::resolveTxios(uint32_t fromHeight)
 void WalletContainer::resolveZcTxios()
 {
    auto result = cache_->resolveZC(
-      [this](const BinaryData& scrAddr)->bool
+      [this](const Types::ScrAddr& scrAddr)->bool
       { return this->hasScrAddr(scrAddr); }
    );
    chainDataZC_ = std::make_unique<ChainData>(result);

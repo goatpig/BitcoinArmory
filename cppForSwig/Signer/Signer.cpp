@@ -182,17 +182,17 @@ namespace
       if (spender->hasUtxo()) {
          const auto& utxo = spender->getUtxo();
          auto capnUtxo = capnSpender.initUtxo();
-         capnUtxo.setValue(utxo.value_);
-         capnUtxo.setTxHeight(utxo.txHeight_);
-         capnUtxo.setTxIndex(utxo.txIndex_);
-         capnUtxo.setTxOutIndex(utxo.txOutIndex_);
+         capnUtxo.setValue(utxo.amount);
+         capnUtxo.setTxHeight(utxo.txHeight);
+         capnUtxo.setTxIndex(utxo.txIndex);
+         capnUtxo.setTxOutIndex(utxo.txOutIndex);
 
          capnUtxo.setTxHash(capnp::Data::Builder(
-            (uint8_t*)utxo.txHash_.getPtr(), utxo.txHash_.getSize()
+            (uint8_t*)utxo.txHash.getPtr(), utxo.txHash.getSize()
          ));
 
          capnUtxo.setScript(capnp::Data::Builder(
-            (uint8_t*)utxo.script_.getPtr(), utxo.script_.getSize()
+            (uint8_t*)utxo.script.getPtr(), utxo.script.getSize()
          ));
       } else {
          auto outputHash = spender->getOutputHash();
@@ -217,7 +217,7 @@ namespace
 
          //put legacy stack
          unsigned i=0;
-         for (const auto stackItem : legacyStack) {
+         for (const auto& stackItem : legacyStack) {
             auto capnStackEntry = capnStackEntries[i++];
             stackItemToCapn(stackItem.second, capnStackEntry);
          }
@@ -236,7 +236,7 @@ namespace
 
          //put witness stack
          unsigned i=0;
-         for (const auto stackItem : witnessStack) {
+         for (const auto& stackItem : witnessStack) {
             auto capnStackEntry = capnStackEntries[i++];
             stackItemToCapn(stackItem.second, capnStackEntry);
          }
@@ -386,20 +386,19 @@ namespace
    UTXO capnToUtxo(const Codec::Types::Output::Reader& capnOutput)
    {
       UTXO result;
-      result.value_ = capnOutput.getValue();
-      result.txHeight_ = capnOutput.getTxHeight();
-      result.txIndex_ = capnOutput.getTxIndex();
-      result.txOutIndex_ = capnOutput.getTxOutIndex();
+      result.amount = capnOutput.getValue();
+      result.txHeight = capnOutput.getTxHeight();
+      result.txIndex = capnOutput.getTxIndex();
+      result.txOutIndex = capnOutput.getTxOutIndex();
 
       auto capnScript = capnOutput.getScript();
-      result.script_ = BinaryDataRef(capnScript.begin(), capnScript.end());
+      result.script = BinaryDataRef(capnScript.begin(), capnScript.end());
 
       auto capnHash = capnOutput.getTxHash();
-      result.txHash_ = BinaryDataRef(capnHash.begin(), capnHash.end());
-      if (result.txHash_.getSize() != 32) {
+      result.txHash = BinaryDataRef(capnHash.begin(), capnHash.end());
+      if (result.txHash.getSize() != 32) {
          throw std::runtime_error("invalid utxo hash size");
       }
-
       return result;
    }
 
@@ -695,7 +694,7 @@ uint64_t Signer::getOutpointValue(unsigned index) const
    if (index >= spenders_.size()) {
       throw std::runtime_error("invalid spender index");
    }
-   return spenders_[index]->getValue();
+   return spenders_[index]->getAmount();
 }
 
 unsigned Signer::getTxInSequence(unsigned index) const
@@ -748,7 +747,7 @@ void Signer::sign()
    try {
       uint64_t inputVal = 0;
       for (const auto& spender : spenders_) {
-         inputVal += spender->getValue();
+         inputVal += spender->getAmount();
       }
 
       uint64_t spendVal = 0;
@@ -796,9 +795,7 @@ void Signer::sign()
             auto sig = this->signScript(script, privKey, SHD, i);
 
             //append sighash byte
-            BinaryData sbd_hashbyte(1);
-            *sbd_hashbyte.getPtr() = shb;
-            sig.append(sbd_hashbyte);
+            sig.append(shb);
             return sig;
          }
       );
@@ -2425,9 +2422,6 @@ void Signer::addSupportingTx(BinaryDataRef rawTxRef)
 
 void Signer::addSupportingTx(Tx tx)
 {
-   if (!tx.isInitialized()) {
-      return;
-   }
    supportingTxMap_->emplace(tx.getThisHash(), std::move(tx));
 }
 
@@ -2497,7 +2491,7 @@ uint64_t Signer::getTotalInputsValue(void) const
 {
    uint64_t val = 0;
    for (auto& spender : spenders_) {
-      val += spender->getValue();
+      val += spender->getAmount();
    }
    return val;
 }

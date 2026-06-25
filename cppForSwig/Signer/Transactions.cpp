@@ -10,7 +10,7 @@
 
 #include "Transactions.h"
 #include <Utils/BtcUtils.h>
-#include <BlockchainDatabase/BlockObj.h>
+#include <TxClasses.h>
 #include "Script.h"
 
 using namespace Armory::Signing;
@@ -193,7 +193,7 @@ uint64_t Armory::Signing::TransactionVerifier::checkOutputs() const
       if (idIter == hashIter->second.end()) {
          throw std::runtime_error("cannot verify tx cause a utxo is missing");
       }
-      inputVal += idIter->second.getValue();
+      inputVal += idIter->second.getAmount();
    }
 
    if (inputVal < spendVal) {
@@ -420,7 +420,7 @@ uint64_t Armory::Signing::TransactionVerifier::getOutpointValue(unsigned inputID
    if (indexIter == utxoIter->second.end()) {
       throw std::runtime_error("unknown outpoint");
    }
-   return indexIter->second.getValue();
+   return indexIter->second.getAmount();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

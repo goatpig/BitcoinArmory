@@ -6,6 +6,11 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
+#ifdef _WIN32
+   #include <winsock2.h>
+   #include <windows.h>
+#endif
+
 #include <string>
 #include <iostream>
 #include <sstream>
@@ -15,16 +20,15 @@
 #include <Utils/ArmoryConfig.h>
 #include <Utils/Cryptography.h>
 #include <Utils/BIP150_151.h>
-#include <Utils/DBUtils.h>
+#include <Utils/FileUtils.h>
 #include <BlockchainDatabase/BlockUtils.h>
 #include <Wallets/IOHeader.h>
 #include <Wallets/AuthorizedPeers.h>
+#include <Network/SocketObject.h>
 
 #include "BDM_mainthread.h"
 #include "Server.h"
 #include "TerminalPassphrasePrompt.h"
-#include "SocketObject.h"
-
 #include <btc/ecc.h>
 
 using namespace Armory;
@@ -70,7 +74,8 @@ int main(int argc, char* argv[])
 
    if (!Config::DBSettings::checkChain()) {
       //check we can listen on this ip:port
-      if (SimpleSocket::checkSocket("127.0.0.1", Config::NetworkSettings::dbPort())) {
+      if (Network::SimpleSocket::checkSocket(
+         "127.0.0.1", Config::NetworkSettings::dbPort())) {
          LOGERR << "There is already a process listening on port " <<
             Config::NetworkSettings::dbPort();
          LOGERR << "ArmoryDB cannot start under these conditions. Shutting down!";
@@ -100,7 +105,7 @@ int main(int argc, char* argv[])
       //setup remote peers db, this will block the init process until
       //peers db is unlocked
       auto serverPeersFile = Config::getDataDir() / SERVER_AUTH_PEER_FILENAME;
-      if (!FileUtils::fileExists(serverPeersFile, 0) &&
+      if (!FileUtils::pathExists(serverPeersFile, 0) &&
          !Config::NetworkSettings::ephemeralPeers()) {
          LOGINFO << "no server peers store found, creating one...";
          auto passWrapper = []()->std::unique_ptr<Passphrase::Params>

@@ -29,7 +29,6 @@
 #define BDM_FATAL_ERROR_CODE INT_MIN
 
 #include <cstdint>
-using BdvIdKey = uint64_t;
 
 enum BDMPhase
 {
@@ -59,7 +58,7 @@ enum BDMAction
 
 enum class ARMORY_DB_TYPE : int
 {
-   Bare,
+   Bare = 1,
    Full,
    Super
 };
@@ -76,7 +75,6 @@ enum class BdmInitMode : int
    RESUME,
    RESCAN,
    REBUILD,
-   SSH
 };
 
 enum class SocketType : int

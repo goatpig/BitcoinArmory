@@ -13,14 +13,12 @@
 #include <map>
 
 #include <Utils/BinaryData.h>
-#include "BitcoinP2P.h"
-#include "nodeRPC.h"
+#include <Node/BitcoinP2P.h>
+#include <Node/nodeRPC.h>
 
-class Blockchain;
 class BlockFiles;
 class LMDBBlockDatabase;
 class BlockDataManager;
-class BlockHeader;
 class Tx;
 
 namespace Armory
@@ -29,6 +27,8 @@ namespace Armory
    {
       class ScriptRecipient;
    }
+   class BlockHeader;
+   class Blockchain;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -58,7 +58,7 @@ struct MempoolObject
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-class NodeUnitTest : public Armory::Node::BitcoinNodeInterface
+class NodeUnitTest : public Node::Core::P2P::Iface
 {
    friend class NodeRPC_UnitTest;
 
@@ -72,13 +72,12 @@ private:
       BinaryData diffBits_;
    };
 
-   std::map<BinaryDataRef, std::shared_ptr<MempoolObject>> mempool_;
-   std::map<BinaryData, std::map<unsigned, BinaryData>> spenderSet_;
+   std::shared_ptr<BlockDataManager> bdm_;
+   std::map<Armory::Types::TxHash, std::shared_ptr<MempoolObject>> mempool_;
+   std::map<Armory::Types::TxHash, std::map<Armory::Types::TxIOId, Armory::Types::TxHash>> spenderSet_;
    std::vector<UnitTestBlock> blocks_;
    std::atomic<unsigned> counter_;
 
-   std::shared_ptr<Blockchain> blockchain_ = nullptr;
-   std::shared_ptr<BlockFiles> filesPtr_ = nullptr;
    std::atomic<unsigned> skipZc_ = {0};
    std::mutex sendMessageMutex_;
    std::deque<unsigned> zcDelays_;
@@ -90,7 +89,6 @@ private:
 
    static Armory::Threading::BlockingQueue<BinaryData> watcherInvQueue_;
    std::thread watcherThread_;
-   LMDBBlockDatabase* iface_ = nullptr;
 
    std::set<BinaryData> seenHashes_;
    bool checkSigs_ = true;
@@ -115,7 +113,7 @@ public:
       unsigned, Armory::Signing::ScriptRecipient*, double = 1.0);
 
    std::vector<UnitTestBlock> getMinedBlocks(void) const;
-   void setReorgBranchPoint(std::shared_ptr<BlockHeader>);
+   void setReorgBranchPoint(std::shared_ptr<Armory::BlockHeader>);
    void skipZc(unsigned);
    void delayNextZc(unsigned);
    void stallNextZc(unsigned);
@@ -127,12 +125,10 @@ public:
    uint64_t getFeeForTx(const Tx&) const;
 
    //set
-   void setBlockchain(std::shared_ptr<Blockchain>);
-   void setBlockFiles(std::shared_ptr<BlockFiles>);
-   void setIface(LMDBBlockDatabase*);
+   void setBDM(std::shared_ptr<BlockDataManager>);
 
    //virtuals
-   void sendMessage(std::unique_ptr<Armory::Node::Payload>) override;
+   void sendMessage(std::unique_ptr<Node::Core::P2P::Payload>) override;
 
    void connectToNode(bool) override;
    bool connected(void) const override;
@@ -144,7 +140,7 @@ public:
 
 
 ////////////////////////////////////////////////////////////////////////////////
-class NodeRPC_UnitTest : public CoreRPC::NodeRPCInterface
+class NodeRPC_UnitTest : public Node::Core::RPC::Iface
 {
 private:
    std::shared_ptr<NodeUnitTest> primaryNode_;
@@ -161,11 +157,11 @@ public:
 
    //virtuals
    void shutdown(void) override;
-   CoreRPC::RpcState testConnection(void) override;
+   Node::RpcState testConnection(void) override;
    bool canPoll(void) const override;
    void waitOnChainSync(std::function<void(void)>);
    int broadcastTx(const BinaryDataRef&, std::string&) override;
-   CoreRPC::FeeEstimateResult getFeeByte(
+   Node::Core::RPC::FeeEstimateResult getFeeByte(
       unsigned, const std::string&) const override;
 
    //locals

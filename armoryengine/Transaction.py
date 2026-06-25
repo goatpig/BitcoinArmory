@@ -1,5 +1,3 @@
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
 ################################################################################
 #                                                                              #
 # Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
@@ -27,14 +25,12 @@ from armoryengine.BinaryPacker import BinaryPacker, UINT8, UINT32, UINT64, \
    VAR_INT, BINARY_CHUNK
 from armoryengine.BinaryUnpacker import BinaryUnpacker
 from armoryengine.AsciiSerialize import AsciiSerializable
-from armoryengine.CppBridge import TheBridge, BridgeSigner
-from armoryengine.CoinSelection import sumTxOutList
 from armoryengine.PyBtcAddress import PyBtcAddress
-from armoryengine.BDM import TheBDM, BDM_BLOCKCHAIN_READY
 from armoryengine.Script import convertScriptToOpStrings
 
+from armoryengine.BDM import TheBDM, BDM_BLOCKCHAIN_READY
+from armoryengine.CppBridge import TheBridge, BridgeSigner
 from qtdialogs.DlgUnlockWallet import UnlockWalletHandler
-
 UNSIGNED_TX_VERSION = 2
 
 WITNESS_MARKER = 0
@@ -55,6 +51,10 @@ USTX_TYPE_LEGACY  = 2
 USTX_TYPE_PSBT    = 3
 
 BASE_SCRIPT = 'base_script'
+
+################################################################################
+def sumTxOutList(txoutList):
+   return sum([u.getValue() for u in txoutList])
 
 ################################################################################
 class InputSignedStatusObject(object):
@@ -1947,7 +1947,7 @@ class UnsignedTransaction(AsciiSerializable):
          for txHash in capnTxns:
             if not txHash in prevTxs:
                raise InvalidHashError('Could not find the referenced tx')
-            prevTxs[txHash]['pyTx'] = PyTx().unserialize(capnTxns[txHash].raw)
+            prevTxs[txHash]['pyTx'] = PyTx().unserialize(capnTxns[txHash].body.raw)
 
       count = 0
       #populate input list with tx data
@@ -2417,7 +2417,7 @@ def determineSentToSelfAmt(le, wlt):
          return (0, 0)
       txData = txProto[le.txHash]
 
-      pytx = PyTx().unserialize(txData.raw)
+      pytx = PyTx().unserialize(txData.body.raw)
       if pytx.getNumTxOut()==1:
          return (pytx.outputs[0].getValue(), -1)
       maxChainIndex = -5

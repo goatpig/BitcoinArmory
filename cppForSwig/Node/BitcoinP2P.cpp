@@ -15,11 +15,12 @@
 #include <Utils/varint.h>
 #include <Utils/Cryptography.h>
 #include <Utils/BitcoinSettings.h>
-#include "SocketWritePayload.h"
+#include <Network/SocketWritePayload.h>
 #include "bdmenums.h"
 
-using namespace Armory::Threading;
-using namespace Armory::Node;
+using namespace Armory;
+using namespace Node;
+using namespace Node::Core;
 
 using namespace std::chrono_literals;
 using namespace std::string_view_literals;
@@ -121,7 +122,7 @@ namespace {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const std::map<std::string_view, PayloadType> Armory::Node::typeToPayload{
+const std::map<std::string_view, P2P::PayloadType> P2P::typeToPayload{
    { "version"sv, PayloadType::Version },
    { "verack"sv, PayloadType::VerAck },
    { "inv"sv, PayloadType::Inv },
@@ -147,32 +148,32 @@ const std::string& NodeException::what() const
 }
 
 ////
-BitcoinMessageDeserError::BitcoinMessageDeserError(
+P2P::MessageDeserError::MessageDeserError(
    const std::string& err, size_t off) :
    NodeException(err), offset(off)
 {}
 
 ////
-BitcoinMessageUnknown::BitcoinMessageUnknown(const std::string& err) :
+P2P::MessageUnknown::MessageUnknown(const std::string& err) :
    NodeException(err)
 {}
 
 ////
-PayloadDeserError::PayloadDeserError(const std::string& err) :
+P2P::PayloadDeserError::PayloadDeserError(const std::string& err) :
    NodeException(err)
 {}
 
 ////
-GetDataException::GetDataException(const std::string& err) :
+P2P::GetDataException::GetDataException(const std::string& err) :
    NodeException(err)
 {}
 
 ////////////////////////////////////////////////////////////////////////////////
 ////
-//// BitcoinNetAddr
+//// NetAddr
 ////
 ////////////////////////////////////////////////////////////////////////////////
-void BitcoinNetAddr::setIPv4(uint64_t srvice, const sockaddr& nodeaddr)
+void P2P::NetAddr::setIPv4(uint64_t srvice, const sockaddr& nodeaddr)
 {
    services = srvice;
    memset(ipV6, 0, 16);
@@ -185,7 +186,7 @@ void BitcoinNetAddr::setIPv4(uint64_t srvice, const sockaddr& nodeaddr)
 }
 
 ////
-void BitcoinNetAddr::deserialize(BinaryRefReader brr)
+void P2P::NetAddr::deserialize(BinaryRefReader brr)
 {
    if (brr.getSize() != NETADDR_NOTIME) {
       throw PayloadDeserError("invalid netaddr size");
@@ -197,7 +198,7 @@ void BitcoinNetAddr::deserialize(BinaryRefReader brr)
 }
 
 ////
-void BitcoinNetAddr::serialize(uint8_t* ptr) const
+void P2P::NetAddr::serialize(uint8_t* ptr) const
 {
    memcpy(ptr, &services, 8);
    memcpy(ptr + 8, ipV6, 16);
@@ -209,11 +210,11 @@ void BitcoinNetAddr::serialize(uint8_t* ptr) const
 //// Payload classes
 ////
 ////////////////////////////////////////////////////////////////////////////////
-Payload::~Payload()
+P2P::Payload::~Payload()
 {}
 
 ////
-std::vector<uint8_t> Payload::serialize(MagicWordType magicWord) const
+std::vector<uint8_t> P2P::Payload::serialize(MagicWordType magicWord) const
 {
    //serialize payload
    auto payload_size = serializeInner(nullptr);
@@ -227,7 +228,7 @@ std::vector<uint8_t> Payload::serialize(MagicWordType magicWord) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-size_t Payload::serialize(MagicWordType magicWord,
+size_t P2P::Payload::serialize(MagicWordType magicWord,
    void* ptr, size_t buffer_len) const
 {
    auto payload_size = serializeInner(nullptr);
@@ -260,7 +261,7 @@ size_t Payload::serialize(MagicWordType magicWord,
       payloadptr = (uint8_t*)ptr + MESSAGE_HEADER_LEN;
    }
    BinaryDataRef bdr(payloadptr, payload_size);
-   auto hash = BtcUtils::getHash256(bdr);
+   auto hash = Armory::BtcUtils::getHash256(bdr);
    uint32_t* checksum = (uint32_t*)hash.getPtr();
    uint32_t* checksumptr = (uint32_t*)((uint8_t*)ptr + CHECKSUM_OFFSET);
    *checksumptr = *checksum;
@@ -269,14 +270,14 @@ size_t Payload::serialize(MagicWordType magicWord,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-size_t Payload::getSerializedSize() const
+size_t P2P::Payload::getSerializedSize() const
 {
    auto payload_size = serializeInner(nullptr);
    return MESSAGE_HEADER_LEN + payload_size;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::vector<size_t> Payload::processPacket(
+std::vector<size_t> P2P::Payload::processPacket(
    std::vector<uint8_t>& data, MagicWordType magicWord)
 {
    std::vector<size_t> retvec;
@@ -343,7 +344,7 @@ std::vector<size_t> Payload::processPacket(
       BinaryDataRef payloadRef(ptr + MESSAGE_HEADER_LEN, length);
 
       //verify checksum
-      auto payloadHash = BtcUtils::getHash256(payloadRef);
+      auto payloadHash = Armory::BtcUtils::getHash256(payloadRef);
       if (memcmp(ptr + CHECKSUM_OFFSET, payloadHash.getPtr(), 4) == 0) {
          //checksum matches, track packet offset
          retvec.emplace_back(localOffset);
@@ -356,7 +357,7 @@ std::vector<size_t> Payload::processPacket(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<Payload::DeserializedPayloads> Payload::deserialize(
+std::shared_ptr<P2P::Payload::DeserializedPayloads> P2P::Payload::deserialize(
    std::vector<uint8_t>& data, MagicWordType magicWord,
    std::shared_ptr<DeserializedPayloads> prevPacket)
 {
@@ -520,28 +521,28 @@ std::shared_ptr<Payload::DeserializedPayloads> Payload::deserialize(
 
 ////////////////////////////////////////////////////////////////////////////////
 // Payload_Unknown
-Payload_Unknown::Payload_Unknown()
+P2P::Payload_Unknown::Payload_Unknown()
 {}
 
-Payload_Unknown::Payload_Unknown(const uint8_t* dataptr, size_t len)
+P2P::Payload_Unknown::Payload_Unknown(const uint8_t* dataptr, size_t len)
 {
    deserialize(dataptr, len);
 }
 
 ////
-PayloadType Payload_Unknown::type() const
+P2P::PayloadType P2P::Payload_Unknown::type() const
 {
    return PayloadType::Unknown;
 }
 
 ////
-std::string_view Payload_Unknown::typeStr() const
+std::string_view P2P::Payload_Unknown::typeStr() const
 {
    return "unknown"sv;
 }
 
 ////////
-void Payload_Unknown::deserialize(const uint8_t* data, size_t len)
+void P2P::Payload_Unknown::deserialize(const uint8_t* data, size_t len)
 {
    data_.clear();
    if (len == 0) {
@@ -552,7 +553,7 @@ void Payload_Unknown::deserialize(const uint8_t* data, size_t len)
 }
 
 ////////
-size_t Payload_Unknown::serializeInner(uint8_t* ptr) const
+size_t P2P::Payload_Unknown::serializeInner(uint8_t* ptr) const
 {
    if (ptr != nullptr && !data_.empty()) {
       memcpy(ptr, &data_[0], data_.size());
@@ -562,28 +563,28 @@ size_t Payload_Unknown::serializeInner(uint8_t* ptr) const
 
 ////////////////////////////////////////////////////////////////////////////////
 // Payload_Version
-Payload_Version::Payload_Version()
+P2P::Payload_Version::Payload_Version()
 {}
 
-Payload_Version::Payload_Version(const uint8_t* dataptr, size_t len)
+P2P::Payload_Version::Payload_Version(const uint8_t* dataptr, size_t len)
 {
    deserialize(dataptr, len);
 }
 
 ////
-PayloadType Payload_Version::type() const
+P2P::PayloadType P2P::Payload_Version::type() const
 {
    return PayloadType::Version;
 }
 
 ////
-std::string_view Payload_Version::typeStr() const
+std::string_view P2P::Payload_Version::typeStr() const
 {
    return "version"sv;
 }
 
 ////////
-void Payload_Version::deserialize(const uint8_t* data, size_t len)
+void P2P::Payload_Version::deserialize(const uint8_t* data, size_t len)
 {
    const uint8_t* dataptr = data;
 
@@ -623,10 +624,10 @@ void Payload_Version::deserialize(const uint8_t* data, size_t len)
 }
 
 ////////
-size_t Payload_Version::serializeInner(uint8_t* dataptr) const
+size_t P2P::Payload_Version::serializeInner(uint8_t* dataptr) const
 {
    if (dataptr == nullptr) {
-      return BtcUtils::calcVarIntSize(userAgent_.size()) +
+      return Armory::BtcUtils::calcVarIntSize(userAgent_.size()) +
          userAgent_.size() +
          VERSION_MINLENGTH;
    }
@@ -662,7 +663,7 @@ size_t Payload_Version::serializeInner(uint8_t* dataptr) const
 }
 
 ////////
-void Payload_Version::setVersionHeaderIPv4(uint32_t version,
+void P2P::Payload_Version::setVersionHeaderIPv4(uint32_t version,
    uint64_t services, int64_t timestamp,
    const sockaddr& recvaddr, const sockaddr& fromaddr)
 {
@@ -679,60 +680,60 @@ void Payload_Version::setVersionHeaderIPv4(uint32_t version,
 
 ////////////////////////////////////////////////////////////////////////////////
 // Payload_Verack
-Payload_Verack::Payload_Verack()
+P2P::Payload_Verack::Payload_Verack()
 {}
 
-Payload_Verack::Payload_Verack(std::vector<uint8_t>*)
+P2P::Payload_Verack::Payload_Verack(std::vector<uint8_t>*)
 {}
 
 ////
-PayloadType Payload_Verack::type() const
+P2P::PayloadType P2P::Payload_Verack::type() const
 {
    return PayloadType::VerAck;
 }
 
 ////
-std::string_view Payload_Verack::typeStr() const
+std::string_view P2P::Payload_Verack::typeStr() const
 {
    return "verack"sv;
 }
 
 ////////
-void Payload_Verack::deserialize(const uint8_t*, size_t)
+void P2P::Payload_Verack::deserialize(const uint8_t*, size_t)
 {
    throw PayloadDeserError("verack cannot be deserialized");
 }
 
 ////////
-size_t Payload_Verack::serializeInner(uint8_t*) const
+size_t P2P::Payload_Verack::serializeInner(uint8_t*) const
 {
    return 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Payload_Ping
-Payload_Ping::Payload_Ping()
+P2P::Payload_Ping::Payload_Ping()
 {}
 
-Payload_Ping::Payload_Ping(const uint8_t* dataptr, size_t len)
+P2P::Payload_Ping::Payload_Ping(const uint8_t* dataptr, size_t len)
 {
    deserialize(dataptr, len);
 }
 
 ////
-PayloadType Payload_Ping::type() const
+P2P::PayloadType P2P::Payload_Ping::type() const
 {
    return PayloadType::Ping;
 }
 
 ////
-std::string_view Payload_Ping::typeStr() const
+std::string_view P2P::Payload_Ping::typeStr() const
 {
    return "ping"sv;
 }
 
 ////////
-void Payload_Ping::deserialize(const uint8_t* dataptr, size_t len)
+void P2P::Payload_Ping::deserialize(const uint8_t* dataptr, size_t len)
 {
    if (len == 0) {
       nonce_ = UINT64_MAX;
@@ -743,7 +744,7 @@ void Payload_Ping::deserialize(const uint8_t* dataptr, size_t len)
    }
 }
 ////////////////////////////////////////////////////////////////////////////////
-size_t Payload_Ping::serializeInner(uint8_t* dataptr) const
+size_t P2P::Payload_Ping::serializeInner(uint8_t* dataptr) const
 {
    if (nonce_ == UINT64_MAX) {
       return 0;
@@ -756,27 +757,27 @@ size_t Payload_Ping::serializeInner(uint8_t* dataptr) const
 
 ////////////////////////////////////////////////////////////////////////////////
 // Payload_Pong
-Payload_Pong::Payload_Pong()
+P2P::Payload_Pong::Payload_Pong()
 {}
 
-Payload_Pong::Payload_Pong(const uint8_t* dataptr, size_t len)
+P2P::Payload_Pong::Payload_Pong(const uint8_t* dataptr, size_t len)
 {
    deserialize(dataptr, len);
 }
 
 ////////
-PayloadType Payload_Pong::type() const
+P2P::PayloadType P2P::Payload_Pong::type() const
 {
-   return PayloadType::Pong;
+   return P2P::PayloadType::Pong;
 }
 
-std::string_view Payload_Pong::typeStr() const
+std::string_view P2P::Payload_Pong::typeStr() const
 {
    return "pong"sv;
 }
 
 ////////
-void Payload_Pong::deserialize(const uint8_t* dataptr, size_t len)
+void P2P::Payload_Pong::deserialize(const uint8_t* dataptr, size_t len)
 {
    if (len != 8) {
       throw PayloadDeserError("invalid pong payload len");
@@ -785,7 +786,7 @@ void Payload_Pong::deserialize(const uint8_t* dataptr, size_t len)
 }
 
 ////////
-size_t Payload_Pong::serializeInner(uint8_t* dataptr) const
+size_t P2P::Payload_Pong::serializeInner(uint8_t* dataptr) const
 {
    if (nonce_ == UINT64_MAX) {
       return 0;
@@ -798,33 +799,33 @@ size_t Payload_Pong::serializeInner(uint8_t* dataptr) const
 
 ////////////////////////////////////////////////////////////////////////////////
 // Payload_Inv
-Payload_Inv::Payload_Inv()
+P2P::Payload_Inv::Payload_Inv()
 {}
 
-Payload_Inv::Payload_Inv(const uint8_t* dataptr, size_t len)
+P2P::Payload_Inv::Payload_Inv(const uint8_t* dataptr, size_t len)
 {
    deserialize(dataptr, len);
 }
 
 ////////
-PayloadType Payload_Inv::type() const
+P2P::PayloadType P2P::Payload_Inv::type() const
 {
    return PayloadType::Inv;
 }
 
-std::string_view Payload_Inv::typeStr() const
+std::string_view P2P::Payload_Inv::typeStr() const
 {
    return "inv"sv;
 }
 
 ////////
-void Payload_Inv::setInvVector(InvVector invvec)
+void P2P::Payload_Inv::setInvVector(InvVector invvec)
 {
    invVector_ = std::move(invvec);
 }
 
 ////////
-void Payload_Inv::deserialize(const uint8_t* dataptr, size_t len)
+void P2P::Payload_Inv::deserialize(const uint8_t* dataptr, size_t len)
 {
    uint64_t invCount;
    auto varintlen = get_varint(invCount, dataptr, len);
@@ -841,7 +842,7 @@ void Payload_Inv::deserialize(const uint8_t* dataptr, size_t len)
       if (remaining < INV_ENTRY_LEN) {
          throw PayloadDeserError("inv deser size mismatch");
       }
-      auto entrytype = (uint32_t*)ptr;
+      //auto entrytype = (uint32_t*)ptr;
       memcpy(&entry.invtype, ptr, 4);
       if (entry.invtype > Inv_Msg_Filtered_Block) {
          throw PayloadDeserError("invalid inv entry type");
@@ -854,11 +855,11 @@ void Payload_Inv::deserialize(const uint8_t* dataptr, size_t len)
 }
 
 ////////
-size_t Payload_Inv::serializeInner(uint8_t* dataptr) const
+size_t P2P::Payload_Inv::serializeInner(uint8_t* dataptr) const
 {
    if (dataptr == nullptr) {
       auto invcount = invVector_.size();
-      auto varintlen = BtcUtils::calcVarIntSize(invcount);
+      auto varintlen = Armory::BtcUtils::calcVarIntSize(invcount);
       return invcount * INV_ENTRY_LEN + varintlen;
    }
 
@@ -880,27 +881,27 @@ size_t Payload_Inv::serializeInner(uint8_t* dataptr) const
 
 ////////////////////////////////////////////////////////////////////////////////
 // Payload_Tx
-Payload_Tx::Payload_Tx()
+P2P::Payload_Tx::Payload_Tx()
 {}
 
-Payload_Tx::Payload_Tx(const uint8_t* dataptr, size_t len)
+P2P::Payload_Tx::Payload_Tx(const uint8_t* dataptr, size_t len)
 {
    deserialize(dataptr, len);
 }
 
 ////////
-PayloadType Payload_Tx::type() const
+P2P::PayloadType P2P::Payload_Tx::type() const
 {
    return PayloadType::Tx;
 }
 
-std::string_view Payload_Tx::typeStr() const
+std::string_view P2P::Payload_Tx::typeStr() const
 {
    return "tx"sv;
 }
 
 ////////
-const BinaryData& Payload_Tx::getHash256() const
+const BinaryData& P2P::Payload_Tx::getHash256() const
 {
    if (txHash_.empty()) {
       Tx thisTx(&rawTx_[0], rawTx_.size());
@@ -910,33 +911,33 @@ const BinaryData& Payload_Tx::getHash256() const
 }
 
 ////////
-const std::vector<uint8_t>& Payload_Tx::getRawTx() const
+const std::vector<uint8_t>& P2P::Payload_Tx::getRawTx() const
 {
    return rawTx_;
 }
 
-void Payload_Tx::moveFrom(Payload_Tx& ptx)
+void P2P::Payload_Tx::moveFrom(P2P::Payload_Tx& ptx)
 {
    rawTx_ = std::move(ptx.rawTx_);
 }
 
-void Payload_Tx::setRawTx(std::vector<uint8_t> rawtx)
+void P2P::Payload_Tx::setRawTx(std::vector<uint8_t> rawtx)
 {
    rawTx_ = std::move(rawtx);
 }
 
-size_t Payload_Tx::getSize() const
+size_t P2P::Payload_Tx::getSize() const
 {
    return rawTx_.size();
 }
 
-bool Payload_Tx::empty() const
+bool P2P::Payload_Tx::empty() const
 {
-   return rawTx_.size() == 0;
+   return rawTx_.empty();
 }
 
 ////////
-size_t Payload_Tx::serializeInner(uint8_t* dataptr) const
+size_t P2P::Payload_Tx::serializeInner(uint8_t* dataptr) const
 {
    if (dataptr != nullptr) {
       memcpy(dataptr, &rawTx_[0], rawTx_.size());
@@ -945,7 +946,7 @@ size_t Payload_Tx::serializeInner(uint8_t* dataptr) const
 }
 
 ////////
-void Payload_Tx::deserialize(const uint8_t* dataptr, size_t len)
+void P2P::Payload_Tx::deserialize(const uint8_t* dataptr, size_t len)
 {
    rawTx_.resize(len);
    memcpy(&rawTx_[0], dataptr, len);
@@ -953,43 +954,43 @@ void Payload_Tx::deserialize(const uint8_t* dataptr, size_t len)
 
 ////////////////////////////////////////////////////////////////////////////////
 // Payload_GetData
-Payload_GetData::Payload_GetData()
+P2P::Payload_GetData::Payload_GetData()
 {}
 
-Payload_GetData::Payload_GetData(const uint8_t* dataptr, size_t len)
+P2P::Payload_GetData::Payload_GetData(const uint8_t* dataptr, size_t len)
 {
    deserialize(dataptr, len);
 }
 
-Payload_GetData::Payload_GetData(const InvEntry& inventry)
+P2P::Payload_GetData::Payload_GetData(const InvEntry& inventry)
 {
    invVector_.emplace_back(inventry);
 }
 
-Payload_GetData::Payload_GetData(InvVector&& invVec)
+P2P::Payload_GetData::Payload_GetData(InvVector&& invVec)
 {
    invVector_ = invVec;
 }
 
 ////////
-PayloadType Payload_GetData::type() const
+P2P::PayloadType P2P::Payload_GetData::type() const
 {
    return PayloadType::GetData;
 }
 
-std::string_view Payload_GetData::typeStr() const
+std::string_view P2P::Payload_GetData::typeStr() const
 {
    return "getdata"sv;
 }
 
 ////////
-const InvVector& Payload_GetData::getInvVector() const
+const P2P::InvVector& P2P::Payload_GetData::getInvVector() const
 {
    return invVector_;
 }
 
 ////////
-void Payload_GetData::deserialize(const uint8_t* dataptr, size_t len)
+void P2P::Payload_GetData::deserialize(const uint8_t* dataptr, size_t len)
 {
    uint64_t invCount;
    auto varintlen = get_varint(invCount, dataptr, len);
@@ -1017,12 +1018,12 @@ void Payload_GetData::deserialize(const uint8_t* dataptr, size_t len)
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-size_t Payload_GetData::serializeInner(uint8_t* dataptr) const
+////////
+size_t P2P::Payload_GetData::serializeInner(uint8_t* dataptr) const
 {
    if (dataptr == nullptr) {
       auto invcount = invVector_.size();
-      auto varintlen = BtcUtils::calcVarIntSize(invcount);
+      auto varintlen = Armory::BtcUtils::calcVarIntSize(invcount);
       return invcount * INV_ENTRY_LEN + varintlen;
    }
 
@@ -1043,51 +1044,51 @@ size_t Payload_GetData::serializeInner(uint8_t* dataptr) const
 
 ////////////////////////////////////////////////////////////////////////////////
 // Payload_Reject
-Payload_Reject::Payload_Reject()
+P2P::Payload_Reject::Payload_Reject()
 {}
 
-Payload_Reject::Payload_Reject(const uint8_t* dataptr, size_t len)
+P2P::Payload_Reject::Payload_Reject(const uint8_t* dataptr, size_t len)
 {
    deserialize(dataptr, len);
 }
 
 ////////
-PayloadType Payload_Reject::type() const
+P2P::PayloadType P2P::Payload_Reject::type() const
 {
    return PayloadType::Reject;
 }
 
-std::string_view Payload_Reject::typeStr() const
+std::string_view P2P::Payload_Reject::typeStr() const
 {
    return "reject"sv;
 }
 
 ////////
-PayloadType Payload_Reject::rejectType() const
+P2P::PayloadType P2P::Payload_Reject::rejectType() const
 {
    return rejectType_;
 }
 
 ////
-const std::vector<uint8_t>& Payload_Reject::getExtra() const
+const std::vector<uint8_t>& P2P::Payload_Reject::getExtra() const
 {
    return extra_;
 }
 
 ////
-const std::string& Payload_Reject::getReasonStr() const
+const std::string& P2P::Payload_Reject::getReasonStr() const
 {
    return reasonStr_;
 }
 
 ////
-int8_t Payload_Reject::code() const
+int8_t P2P::Payload_Reject::code() const
 {
    return code_;
 }
 
 ////////
-void Payload_Reject::deserialize(const uint8_t* dataptr, size_t len)
+void P2P::Payload_Reject::deserialize(const uint8_t* dataptr, size_t len)
 {
    uint64_t typeLen;
 
@@ -1105,7 +1106,7 @@ void Payload_Reject::deserialize(const uint8_t* dataptr, size_t len)
    ptr += typeLen;
 
    //reject code as integer
-   code_ = (const char)*ptr;
+   //code_ = (const char)*ptr;
    ptr++;
 
    auto reasonOffset = typeLen + varintlen + 1;
@@ -1130,74 +1131,69 @@ void Payload_Reject::deserialize(const uint8_t* dataptr, size_t len)
 }
 
 ////////
-size_t Payload_Reject::serializeInner(uint8_t*) const
+size_t P2P::Payload_Reject::serializeInner(uint8_t*) const
 {
    throw std::runtime_error("invalid for reject");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // GetDataStatus
-GetDataStatus::GetDataStatus()
+P2P::GetDataStatus::GetDataStatus()
 {
    prom_ = std::make_shared<std::promise<PayloadPtr>>();
    fut_ = prom_->get_future();
 }
 
 ////////
-std::shared_future<PayloadPtr> GetDataStatus::getFuture() const
+std::shared_future<P2P::PayloadPtr> P2P::GetDataStatus::getFuture() const
 {
    return fut_;
 }
 
-std::shared_ptr<std::promise<PayloadPtr>> GetDataStatus::getPromise() const
+std::shared_ptr<std::promise<P2P::PayloadPtr>> P2P::GetDataStatus::getPromise() const
 {
    return prom_;
 }
 
 ////////
-void GetDataStatus::setMessage(const std::string& message)
+void P2P::GetDataStatus::setMessage(const std::string& message)
 {
    msg_ = message;
 }
 
-const std::string& GetDataStatus::getMessage() const
+const std::string& P2P::GetDataStatus::getMessage() const
 {
    return msg_;
 }
 
 ////////
-bool GetDataStatus::status() const
+bool P2P::GetDataStatus::status() const
 {
    return received_;
 }
 
-void GetDataStatus::setStatus(bool st)
+void P2P::GetDataStatus::setStatus(bool st)
 {
    received_ = st;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-////
-//// BitcoinNodeInterface
-////
-////////////////////////////////////////////////////////////////////////////////
-BitcoinNodeInterface::BitcoinNodeInterface(
+// Iface
+P2P::Iface::Iface(
    MagicWordType magicWord, bool watcher) :
    magicWord_(magicWord)
 {
    if (!watcher) {
-      invBlockStack_ = std::make_shared<BlockingQueue<InvVector>>();
+      invBlockStack_ = std::make_shared<Threading::BlockingQueue<InvVector>>();
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-BitcoinNodeInterface::~BitcoinNodeInterface()
+P2P::Iface::~Iface()
 {
    shutdown();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinNodeInterface::shutdown()
+void P2P::Iface::shutdown()
 {
    //clean up remaining lambdas
    if (invBlockStack_ != nullptr) {
@@ -1207,71 +1203,65 @@ void BitcoinNodeInterface::shutdown()
 }
 
 ////////
-bool BitcoinNodeInterface::isSegWit() const
+bool P2P::Iface::isSegWit() const
 {
    return isSegWit_;
 }
 
-////
-MagicWordType BitcoinNodeInterface::getMagicWord() const
+P2P::MagicWordType P2P::Iface::getMagicWord() const
 {
    return magicWord_;
 }
 
-////
-std::shared_ptr<BlockingQueue<InvVector>>
-BitcoinNodeInterface::getInvBlockStack() const
+std::shared_ptr<Threading::BlockingQueue<P2P::InvVector>>
+P2P::Iface::getInvBlockStack() const
 {
    return invBlockStack_;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinNodeInterface::processInvBlock(InvVector invVec)
+////////
+void P2P::Iface::processInvBlock(InvVector invVec)
 {
    if (invBlockStack_ != nullptr) {
       invBlockStack_->push_back(std::move(invVec));
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinNodeInterface::registerInvTxCallback(
+void P2P::Iface::registerInvTxCallback(
    const std::function<void(InvVector)>& func)
 {
    invTxLambda_ = func;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinNodeInterface::registerNodeStatusCallback(
+void P2P::Iface::registerNodeStatusCallback(
    const std::function<void(void)>& lbd)
 {
    nodeStatusLambda_ = lbd;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinNodeInterface::registerGetTxCallback(
+void P2P::Iface::registerGetTxCallback(
    const std::function<void(std::unique_ptr<Payload>)>& lbd)
 {
    getTxDataLambda_ = lbd;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinNodeInterface::processInvTx(InvVector invVec)
+////////
+void P2P::Iface::processInvTx(InvVector invVec)
 {
    if (invTxLambda_) {
       invTxLambda_(invVec);
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinNodeInterface::processGetTx(std::unique_ptr<Payload> payload)
+void P2P::Iface::processGetTx(std::unique_ptr<Payload> payload)
 {
    if (getTxDataLambda_) {
       getTxDataLambda_(std::move(payload));
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinNodeInterface::requestTx(InvVector invVec)
+////////
+void P2P::Iface::requestTx(InvVector invVec)
 {
    /*
    Send getdata payload to bitcoin node to request transactions. Node
@@ -1288,40 +1278,35 @@ void BitcoinNodeInterface::requestTx(InvVector invVec)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-////
-//// BitcoinP2P
-////
-////////////////////////////////////////////////////////////////////////////////
-BitcoinP2P::BitcoinP2P(
+// Peer
+P2P::Peer::Peer(
    const std::string& addrV4, const std::string& port,
    uint32_t magicword, bool watcher) :
-   BitcoinNodeInterface(magicword, watcher), addr_(addrV4), port_(port)
+   Iface(magicword, watcher), addr_(addrV4), port_(port)
 {
    init();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-BitcoinP2P::~BitcoinP2P()
+P2P::Peer::~Peer()
 {
    if (invBlockStack_ != nullptr) {
       invBlockStack_->terminate();
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinP2P::init()
+void P2P::Peer::init()
 {
    nodeConnected_.store(false, std::memory_order_relaxed);
    run_.store(true, std::memory_order_relaxed);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinP2P::connectToNode(bool async)
+////////
+void P2P::Peer::connectToNode(bool async)
 {
    std::unique_lock<std::mutex> lock(connectMutex_, std::defer_lock);
    if (!lock.try_lock() || connectedPromise_ != nullptr) {
       //return if another thread is already here
-      throw SocketError("another connect attempt is underway");
+      throw Network::SocketError("another connect attempt is underway");
    }
 
    connectedPromise_ = std::unique_ptr<std::promise<bool>>(new std::promise<bool>());
@@ -1342,21 +1327,21 @@ void BitcoinP2P::connectToNode(bool async)
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinP2P::connectLoop(void)
+void P2P::Peer::connectLoop()
 {
    auto waitBeforeReconnect = 0ms;
    std::promise<bool> shutdownPromise;
    shutdownFuture_ = shutdownPromise.get_future();
 
    if (!invTxLambda_) {
-      throw SocketError("BitcoinP2P object is not initialized");
+      throw Network::SocketError("BitcoinP2P object is not initialized");
    }
 
    while (run_.load(std::memory_order_relaxed)) {
       //setup fresh connection
-      dataStack_ = std::make_shared<BlockingQueue<std::vector<uint8_t>>>();
-      socket_ = std::make_unique<BitcoinP2PSocket>(addr_, port_, dataStack_);
+      dataStack_ = std::make_shared<
+         Threading::BlockingQueue<std::vector<uint8_t>>>();
+      socket_ = std::make_unique<Socket>(addr_, port_, dataStack_);
       verackPromise_ = std::make_unique<std::promise<bool>>();
       auto verackFuture = verackPromise_->get_future();
 
@@ -1392,10 +1377,10 @@ void BitcoinP2P::connectLoop(void)
       try {
          //send version
          if (socket_->getSocketName(clientsocketaddr) != 0) {
-            throw SocketError("failed to get client sockaddr");
+            throw Network::SocketError("failed to get client sockaddr");
          }
          if (socket_->getPeerName(node_addr_) != 0) {
-            throw SocketError("failed to get peer sockaddr");
+            throw Network::SocketError("failed to get peer sockaddr");
          }
 
          // Services, for future extensibility
@@ -1437,8 +1422,8 @@ void BitcoinP2P::connectLoop(void)
    shutdownPromise.set_value(true);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinP2P::processDataStackThread()
+////////
+void P2P::Peer::processDataStackThread()
 {
    try {
       std::shared_ptr<Payload::DeserializedPayloads> packetPtr;
@@ -1446,7 +1431,7 @@ void BitcoinP2P::processDataStackThread()
          auto prevPacket = packetPtr;
          packetPtr.reset();
 
-         auto data = std::move(dataStack_->pop_front());
+         auto data = dataStack_->pop_front();
          auto processedPacket = Payload::deserialize(
             data, getMagicWord(), prevPacket);
 
@@ -1455,13 +1440,12 @@ void BitcoinP2P::processDataStackThread()
          }
          processPayload(std::move(processedPacket->payloads_));
       }
-   } catch (const StopBlockingLoop&) {
+   } catch (const Threading::StopBlockingLoop&) {
       LOGERR << "caught StopBlockingLoop in processDataStackThread";
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinP2P::processPayload(
+void P2P::Peer::processPayload(
    std::vector<std::unique_ptr<Payload>> payloadVec)
 {
    for (auto&& payload : payloadVec) {
@@ -1504,8 +1488,8 @@ void BitcoinP2P::processPayload(
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinP2P::checkServices(std::unique_ptr<Payload> payload)
+////////
+void P2P::Peer::checkServices(std::unique_ptr<Payload> payload)
 {
    auto pver = (Payload_Version*)payload.get();
    const auto& mw = Armory::Config::BitcoinSettings::getMagicBytes();
@@ -1529,8 +1513,7 @@ void BitcoinP2P::checkServices(std::unique_ptr<Payload> payload)
    topBlock_ = pver->startHeight_;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinP2P::gotVerack()
+void P2P::Peer::gotVerack()
 {
    if (verackPromise_ == nullptr) {
       return;
@@ -1542,14 +1525,12 @@ void BitcoinP2P::gotVerack()
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinP2P::returnVerack()
+void P2P::Peer::returnVerack()
 {
    sendMessage(std::make_unique<Payload_Verack>());
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinP2P::replyPong(std::unique_ptr<Payload> payload)
+void P2P::Peer::replyPong(std::unique_ptr<Payload> payload)
 {
    Payload_Ping* pping = (Payload_Ping*)payload.get();
    auto ppong = std::make_unique<Payload_Pong>();
@@ -1558,8 +1539,8 @@ void BitcoinP2P::replyPong(std::unique_ptr<Payload> payload)
    sendMessage(std::move(ppong));
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinP2P::processInv(std::unique_ptr<Payload> payload)
+////////
+void P2P::Peer::processInv(std::unique_ptr<Payload> payload)
 {
    Payload_Inv* invptr = (Payload_Inv*)payload.get();
 
@@ -1594,8 +1575,7 @@ void BitcoinP2P::processInv(std::unique_ptr<Payload> payload)
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinP2P::processGetData(std::unique_ptr<Payload> payload)
+void P2P::Peer::processGetData(std::unique_ptr<Payload> payload)
 {
    auto payloadgetdata = (Payload_GetData*)payload.get();
    auto& invvector = payloadgetdata->getInvVector();
@@ -1615,8 +1595,7 @@ void BitcoinP2P::processGetData(std::unique_ptr<Payload> payload)
    sendMessage(std::move(payloadVec));
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinP2P::processReject(std::unique_ptr<Payload> payload)
+void P2P::Peer::processReject(std::unique_ptr<Payload> payload)
 {
    if (payload->type() != PayloadType::Reject) {
       LOGERR << "processReject: expected payload_reject type, got " <<
@@ -1626,18 +1605,17 @@ void BitcoinP2P::processReject(std::unique_ptr<Payload> payload)
    processGetTx(std::move(payload));
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinP2P::sendMessage(std::unique_ptr<Payload> payload)
+////////
+void P2P::Peer::sendMessage(std::unique_ptr<Payload> payload)
 {
    auto msg = payload->serialize(getMagicWord());
 
    std::unique_lock<std::mutex> lock(writeMutex_);
-   auto socket_payload = std::make_unique<WritePayload_Raw>(msg);
+   auto socket_payload = std::make_unique<Network::WritePayload_Raw>(msg);
    socket_->pushPayload(std::move(socket_payload), nullptr);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinP2P::sendMessage(std::vector<std::unique_ptr<Payload>> payloadVec)
+void P2P::Peer::sendMessage(std::vector<std::unique_ptr<Payload>> payloadVec)
 {
    std::vector<uint8_t> msg;
    size_t totalSize = 0;
@@ -1653,25 +1631,24 @@ void BitcoinP2P::sendMessage(std::vector<std::unique_ptr<Payload>> payloadVec)
    }
 
    std::unique_lock<std::mutex> lock(writeMutex_);
-   auto socket_payload = std::make_unique<WritePayload_Raw>(msg);
+   auto socket_payload = std::make_unique<Network::WritePayload_Raw>(msg);
    socket_->pushPayload(std::move(socket_payload), nullptr);
 }
 
-void BitcoinP2P::callback() const
+void P2P::Peer::callback() const
 {
    if (nodeStatusLambda_) {
       nodeStatusLambda_();
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-int64_t BitcoinP2P::getTimeStamp() const
+////////
+int64_t P2P::Peer::getTimeStamp() const
 {
    return (int64_t)time(0);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinP2P::shutdown()
+void P2P::Peer::shutdown()
 {
    if (!run_.load(std::memory_order_relaxed)) {
       return;
@@ -1679,45 +1656,41 @@ void BitcoinP2P::shutdown()
    run_.store(false, std::memory_order_relaxed);
 
    if (socket_ != nullptr) {
-      auto start = std::chrono::system_clock::now();
       socket_->shutdown();
       shutdownFuture_.wait();
    }
 
    //have to call the parent class shutdown explicitly
-   BitcoinNodeInterface::shutdown();
+   Iface::shutdown();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void BitcoinP2P::updateNodeStatus(bool connected)
+////////
+void P2P::Peer::updateNodeStatus(bool connected)
 {
    nodeConnected_.store(connected, std::memory_order_relaxed);
    callback();
 }
 
-bool BitcoinP2P::connected() const
+bool P2P::Peer::connected() const
 {
    return nodeConnected_.load(std::memory_order_relaxed);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-//
-// BitcoinP2PSocket
-//
-////////////////////////////////////////////////////////////////////////////////
-BitcoinP2PSocket::BitcoinP2PSocket(
+// Socket
+P2P::Socket::Socket(
    const std::string& addr, const std::string& port,
-   std::shared_ptr<BlockingQueue<std::vector<uint8_t>>> readStack) :
+   std::shared_ptr<Threading::BlockingQueue<std::vector<uint8_t>>> readStack) :
    PersistentSocket(addr, port), readDataStack_(readStack)
 {}
 
-SocketType BitcoinP2PSocket::type() const
+SocketType P2P::Socket::type() const
 {
    return SocketType::BitcoinP2P;
 }
 
 ////////
-void BitcoinP2PSocket::respond(std::vector<uint8_t>& packet)
+void P2P::Socket::respond(std::vector<uint8_t>& packet)
 {
 
    if (!packet.empty()) {
@@ -1728,9 +1701,9 @@ void BitcoinP2PSocket::respond(std::vector<uint8_t>& packet)
 }
 
 ////////
-void BitcoinP2PSocket::pushPayload(
-   std::unique_ptr<Socket_WritePayload> write_payload,
-   std::shared_ptr<Socket_ReadPayload>)
+void P2P::Socket::pushPayload(
+   std::unique_ptr<Network::Socket_WritePayload> write_payload,
+   std::shared_ptr<Network::Socket_ReadPayload>)
 {
    if (write_payload == nullptr) {
       return;

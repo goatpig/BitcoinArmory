@@ -1,27 +1,28 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig.                                         //
+//  Copyright (C) 2016-2026, goatpig.                                         //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
 #include <string_view>
+#include <cstring>
 
 #include "BlockDataMap.h"
 #include <Utils/BtcUtils.h>
 #include <Utils/varint.h>
 #include <Utils/BCTX.h>
-#include <Utils/DBUtils.h>
+#include <Utils/FileUtils.h>
+#include <Utils/ArmoryConfig.h>
 #include "TxHashFilters.h"
 #include "BlockObj.h"
 
-namespace fs = std::filesystem;
 using namespace std::string_view_literals;
 using namespace Armory;
 
 namespace {
-   fs::path blkFileExt{".dat"sv};
+   std::filesystem::path blkFileExt{".dat"sv};
    auto blkFilePrefix = "blk"sv;
 
    std::shared_ptr<FileUtils::FileCopy> getFileCopy(
@@ -32,93 +33,65 @@ namespace {
       }
       return std::make_shared<FileUtils::FileCopy>(path.path, path.offset);
    }
-}
 
-////////////////////////////////////////////////////////////////////////////////
-// BlockOffset
-BlockOffset::BlockOffset() :
-   fileID(UINT16_MAX), offset(0)
-{}
-
-BlockOffset::BlockOffset(uint16_t fileID, size_t offset) :
-   fileID(fileID), offset(offset)
-{}
-
-BlockOffset::BlockOffset(const BlockOffset& bo) :
-   fileID(bo.fileID), offset(bo.offset)
-{}
-
-bool BlockOffset::operator>(const BlockOffset& rhs) const
-{
-   if (fileID == UINT16_MAX) {
-      if (rhs.fileID == UINT16_MAX) {
-         return false;
-      }
-      return true;
-   } else if (fileID == rhs.fileID) {
-      return offset > rhs.offset;
-   }
-   return fileID > rhs.fileID;
-}
-
-BlockOffset& BlockOffset::operator=(const BlockOffset& rhs)
-{
-   this->fileID = rhs.fileID;
-   this->offset = rhs.offset;
-   return *this;
+   constexpr std::string_view xorFileName{"xor.dat"sv};
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // BlockData
-////////////////////////////////////////////////////////////////////////////////
-BlockData::BlockData(uint32_t blockid)
-   : uniqueID_(blockid)
+BlockData::BlockData(const std::shared_ptr<Armory::BlockHeader> header,
+   const uint8_t* ptr, size_t size)
+   : headerPtr_(header), data_(ptr), size_(size)
 {}
 
-////////////////////////////////////////////////////////////////////////////////
+const std::vector<std::shared_ptr<BCTX>>& BlockData::getTxns() const
+{
+   return txns_;
+}
+
+size_t BlockData::size() const
+{
+   return size_;
+}
+
+const Hash32& BlockData::getHash() const
+{
+   return headerPtr_->getThisHash();
+}
+
+uint32_t BlockData::uniqueID() const
+{
+   return headerPtr_->getUniqueID();
+}
+
+std::shared_ptr<BlockHeader> BlockData::getHeaderPtr() const
+{
+   return headerPtr_;
+}
+
+////////
 std::shared_ptr<BlockData> BlockData::deserialize(
    const uint8_t* data, size_t size,
    const std::shared_ptr<BlockHeader> blockHeader,
-   std::function<unsigned int(const BinaryData&)> getID,
    BlockData::CheckHashes mode)
 {
    //deser header from raw block and run a quick sanity check
-   if (size < HEADER_SIZE) {
+   if (blockHeader == nullptr) {
+      throw std::runtime_error("empty bhptr");
+   }
+   if (size < blockHeader->getBlockSize()) {
       throw BtcUtils::BlockDeserializingException(
-         "raw data is smaller than HEADER_SIZE");
+         "block data is smaller than expected");
    }
 
-   BinaryDataRef bdr(data, HEADER_SIZE);
-   BlockHeader bh(bdr);
-
-   auto uniqueID = UINT32_MAX;
-   if (getID) {
-      uniqueID = getID(bh.getThisHash());
-   }
-
-   auto result = std::make_shared<BlockData>(uniqueID);
-   result->headerPtr_ = blockHeader;
-   result->blockHash_ = bh.thisHash_;
+   auto result = std::shared_ptr<BlockData>(new BlockData(
+      blockHeader, data, blockHeader->getBlockSize()));
 
    BinaryRefReader brr(data + HEADER_SIZE, size - HEADER_SIZE);
    auto numTx = (unsigned)brr.get_var_int();
-
-   if (blockHeader != nullptr) {
-      if (bh.getThisHashRef() != blockHeader->getThisHashRef()) {
-         LOGERR << "expected header hash mismatch!";
-         LOGERR << " current: " << bh.getThisHashRef().toHexStr(true);
-         LOGERR << " expected: " << blockHeader->getThisHashRef().toHexStr(true);
-         LOGERR << " file: " << blockHeader->getBlockFileNum() <<
-            ", offset: " << blockHeader->getOffset();
-
-         throw BtcUtils::BlockDeserializingException(
-            "raw data does not match expected block hash");
-      }
-
-      if (numTx != blockHeader->getNumTx()) {
-         throw BtcUtils::BlockDeserializingException(
-            "tx count mismatch in deser header");
-      }
+   if (numTx != blockHeader->getNumTx()) {
+      throw BtcUtils::BlockDeserializingException(
+         "tx count mismatch in deser header");
    }
 
    result->txns_.reserve(numTx);
@@ -132,9 +105,6 @@ std::shared_ptr<BlockData> BlockData::deserialize(
       result->txns_.emplace_back(std::move(tx));
    }
 
-   result->data_ = data;
-   result->size_ = size;
-
    std::vector<BinaryData> allHashes;
    switch (mode)
    {
@@ -143,21 +113,11 @@ std::shared_ptr<BlockData> BlockData::deserialize(
 
       case CheckHashes::MerkleOnly:
       case CheckHashes::TxFilters:
-      {
-         allHashes.reserve(result->txns_.size());
-         for (auto& txn : result->txns_) {
-            auto txhash = txn->moveHash();
-            allHashes.emplace_back(std::move(txhash));
-         }
-         break;
-      }
-
       case CheckHashes::FullHints:
       {
          allHashes.reserve(result->txns_.size());
-         for (const auto& txn : result->txns_) {
-            const auto& txhash = txn->getHash();
-            allHashes.emplace_back(txhash);
+         for (auto& txn : result->txns_) {
+            allHashes.emplace_back(txn->moveHash());
          }
          break;
       }
@@ -166,86 +126,61 @@ std::shared_ptr<BlockData> BlockData::deserialize(
    //any form of later txhash filtering implies we check the merkle
    //root, otherwise we would have no guarantees the hashes are valid
    auto merkleroot = BtcUtils::calculateMerkleRoot(allHashes);
-   if (merkleroot != bh.getMerkleRoot()) {
+   blockHeader->checkMerkleRoot(merkleroot);
+   if (!blockHeader->isMerkleValid()) {
       LOGERR << "merkle root mismatch!";
-      LOGERR << "   header has: " << bh.getMerkleRoot().toHexStr();
+      LOGERR << "   header has: " << blockHeader->getMerkleRoot().toHexStr();
       LOGERR << "   block yields: " << merkleroot.toHexStr();
       throw BtcUtils::BlockDeserializingException("invalid merkle root");
    }
 
    if (mode == CheckHashes::TxFilters) {
       result->computeTxFilter(allHashes);
+   } else if (mode == CheckHashes::FullHints) {
+      result->allTxHashes = std::move(allHashes);
    }
    return result;
 }
 
-/////////////////////////////////////////////////////////////////////////////
-void BlockData::setUniqueID(uint32_t id)
-{
-   uniqueID_ = id;
-   if (txFilter_ != nullptr) {
-      txFilter_->blockKey_ = id;
-   }
-}
-
-/////////////////////////////////////////////////////////////////////////////
+////////
 void BlockData::computeTxFilter(const std::vector<BinaryData>& allHashes)
 {
    if (txFilter_ == nullptr) {
-      txFilter_ = std::make_shared<BlockHashVector>(uniqueID_);
+      txFilter_ = std::make_shared<BlockHashVector>(uniqueID());
       txFilter_->isValid_ = true;
    }
    txFilter_->update(allHashes);
 }
 
-////
 std::shared_ptr<BlockHashVector> BlockData::getTxFilter() const
 {
    return txFilter_;
 }
 
-/////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<BlockHeader> BlockData::createBlockHeader() const
-{
-   if (headerPtr_ != nullptr) {
-      return headerPtr_;
-   }
-
-   auto bhPtr = std::make_shared<BlockHeader>();
-   auto& bh = *bhPtr;
-
-   bh.dataCopy_ = std::move(BinaryData{data_, HEADER_SIZE});
-   bh.difficultyDbl_ = BtcUtils::convertDiffBitsToDouble(
-      BinaryDataRef(data_ + 72, 4));
-
-   bh.isInitialized_ = true;
-   bh.nextHash_ = BinaryData(0);
-   bh.blockHeight_ = UINT32_MAX;
-   bh.difficultySum_ = -1;
-   bh.isMainBranch_ = false;
-   bh.isOrphan_ = true;
-
-   bh.numBlockBytes_ = size_;
-   bh.numTx_ = txns_.size();
-
-   bh.blkFileNum_ = fileID_;
-   bh.blkFileOffset_ = offset_;
-   bh.thisHash_ = blockHash_;
-   bh.uniqueID_ = uniqueID_;
-
-   return bhPtr;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // BlockFiles
-////////////////////////////////////////////////////////////////////////////////
+BlockFiles::BlockFiles(const std::filesystem::path& folderPath) :
+   folderPath_(folderPath)
+{}
+
+const std::filesystem::path& BlockFiles::folderPath() const
+{
+   return folderPath_;
+}
+
+unsigned BlockFiles::fileCount() const
+{
+   return paths_.size();
+}
+
+////////
 void BlockFiles::detectAllBlockFiles()
 {
    if (folderPath_.empty()) {
       throw std::runtime_error("empty block files folder path");
    }
 
-   for (const auto& entry : fs::directory_iterator{folderPath_}) {
+   for (const auto& entry : std::filesystem::directory_iterator{folderPath_}) {
       if (!entry.is_regular_file()) {
          continue;
       }
@@ -258,10 +193,25 @@ void BlockFiles::detectAllBlockFiles()
             continue;
          }
 
-         paths_.emplace(fileId, filePath);
+         paths_.emplace(fileId, FileStat{filePath, filesize});
          totalBlockchainBytes_ += filesize;
       } catch (const std::exception&) {
-         continue;
+         if (filePath.filename().string() != xorFileName) {
+            continue;
+         }
+
+         //this is the xor key, grab ita
+         auto fileCopy = FileUtils::FileCopy(filePath);
+         if (fileCopy.size() != 8) {
+            LOGWARN << "Found a xor key but it's not 8 bytes";
+            continue;
+         }
+         uint64_t xorkey;
+         std::memcpy(&xorkey, fileCopy.ptr(), 8);
+         if (xorkey != 0) {
+            LOGINFO << "found a xor key";
+            Config::DBSettings::setXorKey(xorkey);
+         }
       }
    }
 }
@@ -271,6 +221,18 @@ void BlockFiles::detectNewBlockFiles()
    //we expect consecutive new block files
    auto lastFilePath = getLastFilePath();
    auto fileID = FileUtils::blkPathToIntID(lastFilePath);
+
+   //check if last known file has grown
+   auto filePath = FileUtils::getBlkFilename(folderPath_, fileID);
+   auto fileSize = FileUtils::getFileSize(filePath);
+   auto iter = paths_.find(fileID);
+   if (iter->second.size != fileSize) {
+      totalBlockchainBytes_ -= iter->second.size;
+      totalBlockchainBytes_ += fileSize;
+      paths_.erase(iter);
+      paths_.emplace(fileID, FileStat{filePath, fileSize});
+   }
+
    while (++fileID < UINT16_MAX) {
       auto filePath = FileUtils::getBlkFilename(folderPath_, fileID);
       auto fileSize = FileUtils::getFileSize(filePath);
@@ -278,58 +240,69 @@ void BlockFiles::detectNewBlockFiles()
          break;
       }
 
-      paths_.emplace(fileID, filePath);
+      paths_.emplace(fileID, FileStat{filePath, fileSize});
       totalBlockchainBytes_ += fileSize;
    }
 }
 
-/////////////////////////////////////////////////////////////////////////////
-const fs::path& BlockFiles::getLastFilePath() const
+////////
+const std::filesystem::path& BlockFiles::getLastFilePath() const
 {
    if (paths_.empty()) {
       throw std::runtime_error("empty path map");
    }
-   return paths_.rbegin()->second;
+   return paths_.rbegin()->second.path;
 }
 
-/////////////////////////////////////////////////////////////////////////////
-const fs::path& BlockFiles::getFilePathForID(uint16_t fileID) const
+const std::filesystem::path& BlockFiles::getFilePathForID(
+   uint16_t fileID) const
 {
    auto iter = paths_.find(fileID);
    if (iter == paths_.end()) {
       LOGERR << "no file path for id " << fileID;
       throw std::range_error("unexpected fileID");
    }
-   return iter->second;
+   return iter->second.path;
+}
+
+uint16_t BlockFiles::getFirstID() const
+{
+   if (paths_.empty()) {
+      throw std::range_error("empty paths");
+   }
+   return paths_.begin()->first;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // BlockDataLoader
-////////////////////////////////////////////////////////////////////////////////
 BlockDataLoader::BlockDataLoader(
    std::shared_ptr<BlockFiles> files,
-   const BlockOffset& startOffset)
+   const BlockOffset& startBO, size_t maxCount)
 {
    counter_.store(0, std::memory_order_relaxed);
-   auto iter = files->paths_.begin();
-   if (startOffset.fileID != UINT16_MAX) {
-      iter = files->paths_.find(startOffset.fileID);
-   }
-
+   auto startOffset = startBO.offset();
+   auto iter = files->paths_.find(startBO.fileID());
    if (iter == files->paths_.end()) {
       throw std::runtime_error("could not find first file index!");
    }
 
-   paf_.emplace_back(PathAndOffset{iter->second,
-      startOffset.fileID, startOffset.offset});
-   while (++iter != files->paths_.end()) {
-      paf_.emplace_back(PathAndOffset{iter->second, iter->first, 0});
+   if (startBO.offset() >= iter->second.size) {
+      ++iter;
+      if (iter == files->paths_.end()) {
+         throw BlockDataExhausted();
+      }
+      startOffset = 0;
+   }
+
+   paf_.emplace_back(PathAndOffset{iter->second.path,
+      iter->first, startOffset});
+   while (++iter != files->paths_.end() && paf_.size() < maxCount) {
+      paf_.emplace_back(PathAndOffset{iter->second.path, iter->first, 0});
    }
 }
 
-/////////////////////////////////////////////////////////////////////////////
 BlockDataLoader::BlockDataLoader(std::shared_ptr<BlockFiles> files,
-   const std::set<uint32_t>& fileIDs)
+   const std::set<uint16_t>& fileIDs)
 {
    counter_.store(0, std::memory_order_relaxed);
    for (const auto& fileID : fileIDs) {
@@ -339,11 +312,11 @@ BlockDataLoader::BlockDataLoader(std::shared_ptr<BlockFiles> files,
          //is no associated file
          continue;
       }
-      paf_.emplace_back(PathAndOffset{iter->second, (uint16_t)fileID, 0});
+      paf_.emplace_back(PathAndOffset{iter->second.path, fileID, 0});
    }
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 std::shared_ptr<FileUtils::FileMap> BlockDataLoader::getNextMap()
 {
    auto id = counter_.fetch_add(1, std::memory_order_relaxed);
@@ -355,7 +328,6 @@ std::shared_ptr<FileUtils::FileMap> BlockDataLoader::getNextMap()
    return std::make_shared<FileUtils::FileMap>(file.path, file.offset);
 }
 
-/////////////////////////////////////////////////////////////////////////////
 BlockDataLoader::BlockDataCopy BlockDataLoader::getNextCopy()
 {
    uint16_t id = counter_.fetch_add(1, std::memory_order_relaxed);
@@ -366,7 +338,7 @@ BlockDataLoader::BlockDataCopy BlockDataLoader::getNextCopy()
    return {file};
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 size_t BlockDataLoader::size() const
 {
    return paf_.size();
@@ -378,14 +350,31 @@ bool BlockDataLoader::isValid() const
    return counter < paf_.size();
 }
 
+uint16_t BlockDataLoader::getFirstFileID() const
+{
+   return paf_[0].fileID;
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // BlockDataCopy
-/////////////////////////////////////////////////////////////////////////////
+BlockDataLoader::BlockDataCopy::BlockDataCopy() :
+   fileID{UINT16_MAX}, offset{SIZE_MAX}, data{nullptr}
+{}
+
 BlockDataLoader::BlockDataCopy::BlockDataCopy(const PathAndOffset& path) :
    fileID(path.fileID), offset(path.offset),
    data(getFileCopy(path))
+{
+   if (Config::DBSettings::isXored()) {
+      data->xorMe(Config::DBSettings::getXorKey());
+   }
+}
+
+BlockDataLoader::BlockDataCopy::BlockDataCopy(const BlockDataCopy& bdc) :
+   fileID(bdc.fileID), offset(bdc.offset), data(bdc.data)
 {}
 
-////
-BlockDataLoader::BlockDataCopy::BlockDataCopy()
-{}
+bool BlockDataLoader::BlockDataCopy::isValid() const
+{
+   return fileID != UINT16_MAX;
+}

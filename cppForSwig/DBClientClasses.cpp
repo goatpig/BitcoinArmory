@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2018-2024, goatpig.                                         //
+//  Copyright (C) 2018-2026, goatpig.                                         //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -10,7 +10,7 @@
 #include <Utils/BtcUtils.h>
 #include <Utils/varint.h>
 #include <btc/ecc.h>
-#include "WebSocketClient.h"
+#include <Network/WebSocketClient.h>
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>
@@ -26,14 +26,14 @@ namespace {
       if (nodeStatus.hasChain()) {
          auto chainCapn = nodeStatus.getChain();
          NodeChainStatus ncs(
-            CoreRPC::ChainState(chainCapn.getChainState()),
+            Node::ChainState(chainCapn.getChainState()),
             chainCapn.getBlockSpeed(), chainCapn.getProgress(),
             chainCapn.getEta(), chainCapn.getBlocksLeft()
          );
 
          auto result = std::make_shared<NodeStatus>(
-            CoreRPC::NodeState(nodeStatus.getNode()),
-            CoreRPC::RpcState(nodeStatus.getRpc()),
+            Node::NodeState(nodeStatus.getNode()),
+            Node::RpcState(nodeStatus.getRpc()),
             nodeStatus.getIsSW(), ncs
          );
 
@@ -41,8 +41,8 @@ namespace {
       } else {
          DBClientClasses::NodeChainStatus ncs;
          auto result = std::make_shared<NodeStatus>(
-            CoreRPC::NodeState(nodeStatus.getNode()),
-            CoreRPC::RpcState(nodeStatus.getRpc()),
+            Node::NodeState(nodeStatus.getNode()),
+            Node::RpcState(nodeStatus.getRpc()),
             nodeStatus.getIsSW(), ncs
          );
 
@@ -57,21 +57,13 @@ namespace {
       txios.reserve(capnTxios.size());
 
       for (auto capnTxio : capnTxios) {
-         auto capnTxOut = capnTxio.getTxOut();
-         BinaryData txOutKey(capnTxOut.begin(), capnTxOut.end());
-         auto amount = capnTxio.getAmount();
-         TxIOPair txio{txOutKey, amount};
-
-         if (capnTxio.hasTxIn()) {
-            auto capnTxIn = capnTxio.getTxIn();
-            BinaryData txInKey(capnTxIn.begin(), capnTxIn.end());
-            txio.setTxIn(txInKey);
-         }
-
-         txio.setTxOutFromSelf(capnTxio.getFromSelf());
-         txio.setFromCoinbase(capnTxio.getCoinbase());
+         auto capnAddr = capnTxio.getScrAddr();
+         BinaryDataRef scrAddr{capnAddr.begin(), capnAddr.end()};
+         TxIOPair txio{
+            capnTxio.getTxOut(), capnTxio.getAmount(),
+            scrAddr, capnTxio.getTxIn()
+         };
          txio.setRBF(capnTxio.getRbf());
-         txio.setMultisig(capnTxio.getMultisig());
          txios.emplace_back(std::move(txio));
       }
       return txios;
@@ -87,137 +79,16 @@ void initLibrary()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-//
 // BlockHeader
-//
-///////////////////////////////////////////////////////////////////////////////
-BlockHeader::BlockHeader(
-   BinaryDataRef rawheader, uint32_t height, uint8_t dupId) :
-   blockHeight_{height}, duplicateId_{dupId}
-{
-   unserialize(rawheader);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void BlockHeader::unserialize(uint8_t const * ptr, uint32_t size)
-{
-   if (size < HEADER_SIZE) {
-      throw BtcUtils::BlockDeserializingException();
-   }
-   dataCopy_.copyFrom(ptr, HEADER_SIZE);
-   BtcUtils::getHash256(dataCopy_.getPtr(), HEADER_SIZE, thisHash_);
-   difficultyDbl_ = BtcUtils::convertDiffBitsToDouble(
-      BinaryDataRef(dataCopy_.getPtr() + 72, 4));
-   isInitialized_ = true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-//
-// LedgerEntry
-//
-///////////////////////////////////////////////////////////////////////////////
-DBClientClasses::LedgerEntry::LedgerEntry(const std::string& id, int64_t value,
-   uint32_t blockHeight, BinaryData& txHash, uint32_t txOutIndex,
-   uint32_t timestamp, bool isCoinbase, bool isSentToSelf, bool isChangeBack,
-   bool isOptInRBF, bool isChainedZC, bool isWitness,
-   std::vector<BinaryData>& scrAddrList) :
-   id_(std::move(id)), value_(value), blockHeight_(blockHeight),
-   txHash_(std::move(txHash)), txOutIndex_(txOutIndex), timestamp_(timestamp),
-   isCoinbase_(isCoinbase), isSentToSelf_(isSentToSelf),
-   isChangeBack_(isChangeBack), isOptInRBF_(isOptInRBF),
-   isChainedZC_(isChainedZC), isWitness_(isWitness),
-   scrAddrList_(std::move(scrAddrList))
+BlockHeader::BlockHeader(BinaryDataRef thishash, BinaryDataRef prevhash,
+   Types::BlockId blockId, uint32_t height,
+   uint32_t time, uint32_t size, uint32_t ntx,
+   bool ismain) :
+   thisHash{thishash}, prevHash{prevhash},
+   blockId{blockId}, blockHeight{height},
+   timestamp{time}, blockSize{size}, numTxs{ntx},
+   isMainBranch{ismain}
 {}
-
-///////////////////////////////////////////////////////////////////////////////
-const std::string& LedgerEntry::getID() const
-{
-   return id_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-int64_t LedgerEntry::getValue() const
-{
-   return value_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-uint32_t LedgerEntry::getBlockHeight() const
-{
-   return blockHeight_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-BinaryDataRef LedgerEntry::getTxHash() const
-{
-   return BinaryDataRef(txHash_);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-uint32_t LedgerEntry::getTxOutIndex() const
-{
-   return txOutIndex_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-uint32_t LedgerEntry::getTxTime() const
-{
-   return timestamp_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool LedgerEntry::isCoinbase() const
-{
-   return isCoinbase_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool LedgerEntry::isSentToSelf() const
-{
-   return isSentToSelf_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool LedgerEntry::isChangeBack() const
-{
-   return isChangeBack_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool LedgerEntry::isOptInRBF() const
-{
-   return isOptInRBF_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool LedgerEntry::isChainedZC() const
-{
-   return isChainedZC_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool LedgerEntry::isWitness() const
-{
-   return isWitness_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool LedgerEntry::operator==(const LedgerEntry& rhs)
-{
-   if (getTxHash() != rhs.getTxHash())
-      return false;
-
-   if (getTxOutIndex() != rhs.getTxOutIndex())
-      return false;
-
-   return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-const std::vector<BinaryData>& LedgerEntry::getScrAddrList() const
-{
-   return scrAddrList_;
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -251,14 +122,25 @@ bool RemoteCallback::processNotifications(
          {
             auto newblock = notif.getNewBlock();
             auto height = newblock.getHeight();
-            if (height != 0)
-            {
+            if (height != 0) {
+               std::vector<Armory::Types::BlockId> invalidatedIds;
+               std::vector<Armory::Types::BlockId> newMainIds;
+               auto branchHeight = newblock.getBranchHeight();
+               if (branchHeight != UINT32_MAX) {
+                  for (const auto& blockId : newblock.getInvalidatedIds()) {
+                     invalidatedIds.emplace_back(blockId);
+                  }
+                  for (const auto& blockId : newblock.getNewMainBranchIds()) {
+                     newMainIds.emplace_back(blockId);
+                  }
+               }
+
                BdmNotification bdmNotif(BDMAction_NewBlock);
                bdmNotif.newBlock = NewBlockNotif{
-                  height, newblock.getBranchHeight()};
+                  height, branchHeight,
+                  std::move(invalidatedIds), std::move(newMainIds)};
                run(std::move(bdmNotif));
             }
-
             break;
          }
 
@@ -280,7 +162,7 @@ bool RemoteCallback::processNotifications(
 
                auto ids = peekNext.getInvalidatedZc();
                for (auto id : ids) {
-                  bdmNotif.invalidatedZc.emplace(BinaryData{
+                  bdmNotif.invalidatedZcHashes.emplace(BinaryData{
                      id.begin(), id.end()
                   });
                }
@@ -297,7 +179,7 @@ bool RemoteCallback::processNotifications(
 
             BdmNotification bdmNotif(BDMAction_InvalidatedZC);
             for (auto id : ids) {
-               bdmNotif.invalidatedZc.emplace(BinaryData{
+               bdmNotif.invalidatedZcHashes.emplace(BinaryData{
                   id.begin(), id.end()
                });
             }
@@ -330,7 +212,7 @@ bool RemoteCallback::processNotifications(
             BdmNotification bdmNotif(BDMAction_Ready);
             auto newBlock = notif.getReady();
             bdmNotif.newBlock = NewBlockNotif{
-               newBlock.getHeight(), newBlock.getBranchHeight()};
+               newBlock.getHeight(), newBlock.getBranchHeight(), {}, {}};
             run(std::move(bdmNotif));
             break;
          }
@@ -398,14 +280,14 @@ bool RemoteCallback::processNotifications(
 // NodeStatus
 //
 ///////////////////////////////////////////////////////////////////////////////
-NodeStatus::NodeStatus(CoreRPC::NodeState nodeState,
-   CoreRPC::RpcState rpcState, bool isSW, NodeChainStatus& nodeChainState) :
+NodeStatus::NodeStatus(Node::NodeState nodeState,
+   Node::RpcState rpcState, bool isSW, NodeChainStatus& nodeChainState) :
    nodeState_(nodeState), rpcState_(rpcState), isSegWitEnabled_(isSW),
    nodeChainStatus_(std::move(nodeChainState))
 {}
 
 ///////////////////////////////////////////////////////////////////////////////
-CoreRPC::NodeState NodeStatus::state() const
+Node::NodeState NodeStatus::state() const
 {
    return nodeState_;
 }
@@ -417,7 +299,7 @@ bool NodeStatus::isSegWitEnabled() const
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-CoreRPC::RpcState NodeStatus::rpcState() const
+Node::RpcState NodeStatus::rpcState() const
 {
    return rpcState_;
 }
@@ -434,18 +316,18 @@ const NodeChainStatus& NodeStatus::chainStatus() const
 //
 ///////////////////////////////////////////////////////////////////////////////
 NodeChainStatus::NodeChainStatus() :
-   chainState_(CoreRPC::ChainState::Unknown), blockSpeed_(0), progressPct_(0),
+   chainState_(Node::ChainState::Unknown), blockSpeed_(0), progressPct_(0),
    etaSeconds_(UINT64_MAX), blocksLeft_(UINT32_MAX)
 {}
 
-NodeChainStatus::NodeChainStatus(CoreRPC::ChainState chainState,
+NodeChainStatus::NodeChainStatus(Node::ChainState chainState,
    float speed, float pct, uint64_t eta, unsigned blocksLeft) :
    chainState_(chainState), blockSpeed_(speed), progressPct_(pct),
    etaSeconds_(eta), blocksLeft_(blocksLeft)
 {}
 
 ///////////////////////////////////////////////////////////////////////////////
-CoreRPC::ChainState NodeChainStatus::state() const
+Node::ChainState NodeChainStatus::state() const
 {
    return chainState_;
 }
@@ -505,8 +387,11 @@ void BDV_Error_Struct::deserialize(const BinaryData& data)
 
 ////////////////////////////////////////////////////////////////////////////////
 // NewBlockNotif
-NewBlockNotif::NewBlockNotif(uint32_t hgt, uint32_t branch) :
-   height_(hgt), branchHeight_(branch)
+NewBlockNotif::NewBlockNotif(uint32_t hgt, uint32_t branch,
+   BlockIdVec invalidIds, BlockIdVec mainIds) :
+   height_(hgt), branchHeight_(branch),
+   invalidatedBlockIds_{std::move(invalidIds)},
+   newMainBranchBlockIds_{std::move(mainIds)}
 {}
 
 bool NewBlockNotif::isValid() const
@@ -533,4 +418,14 @@ uint32_t NewBlockNotif::getBranchHeight() const
       throw std::runtime_error("not a reorg!");
    }
    return branchHeight_;
+}
+
+const NewBlockNotif::BlockIdVec& NewBlockNotif::invalidatedBlockIds() const
+{
+   return invalidatedBlockIds_;
+}
+
+const NewBlockNotif::BlockIdVec& NewBlockNotif::newMainBranchBlockIds() const
+{
+   return newMainBranchBlockIds_;
 }

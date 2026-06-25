@@ -137,7 +137,7 @@ namespace Armory
          ScriptSpender(const ScriptSpender&);
          ~ScriptSpender(void) = default;
 
-         bool operator==(const ScriptSpender&);
+         bool operator==(const ScriptSpender&) const;
 
          //set
          void setStates(SpenderStatus, SpenderStatus, bool, bool, bool);
@@ -168,7 +168,7 @@ namespace Armory
          const BinaryData& getFinalizedWitnessData(void) const;
          BinaryData serializeAvailableWitnessData(void) const;
          BinaryDataRef getOutpoint(void) const;
-         uint64_t getValue(void) const;
+         Types::Amount getAmount(void) const;
          const UTXO& getUtxo(void) const;
 
          const StackItemMap& getLegacyStack(void) const;

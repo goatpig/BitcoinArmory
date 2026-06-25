@@ -168,13 +168,15 @@ class WalletTab(QtWidgets.QWidget):
          item.setData(qtdefines.WLTLISTCOLS.Checkbox, QtCore.Qt.UserRole,
             walletEntry)
          if walletEntry.isLegacy:
+            def migrateWlt(_):
+               self.migrateWallet(walletEntry)
             self._addActionButton(
-               item, self.tr('Migrate'),
-               lambda _, entry=walletEntry: self.migrateWallet(entry))
+               item, self.tr('Migrate'), migrateWlt)
          elif walletEntry.isEncrypted:
+            def unlockWlt(_):
+               self.unlockWallet(walletEntry)
             self._addActionButton(
-               item, self.tr('Unlock'),
-               lambda _, entry=walletEntry: self.unlockWallet(entry))
+               item, self.tr('Unlock'), unlockWlt)
 
    def _addActionButton(self, item, text, handler):
       """Create and add a left-aligned action button to the wallet list item."""
@@ -262,10 +264,9 @@ class WalletTab(QtWidgets.QWidget):
          TheBridge.wltManager.unlockControlHeader(
             walletEntry.filename,
             unlockDlg.callbackId,
-            lambda x: TheSignalExecution
-               .executeMethod(
-                  handleUnlockResult, x))
-         unlockDlg.exec_()
+            lambda x: TheSignalExecution.executeMethod(handleUnlockResult, x)
+         )
+         unlockDlg.show()
       except Exception as e:
          LOGERROR(
             f"Failed to unlock {walletId}: {e}")

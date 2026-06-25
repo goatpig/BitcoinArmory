@@ -10,7 +10,7 @@
 #include "Loader.h"
 #include <Utils/ArmoryConfig.h>
 #include <Utils/BtcUtils.h>
-#include <Utils/DBUtils.h>
+#include <Utils/FileUtils.h>
 #include <Utils/Cryptography.h>
 
 #include <Wallets/Wallets.h>

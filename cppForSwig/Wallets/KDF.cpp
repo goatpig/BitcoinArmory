@@ -316,7 +316,8 @@ KdfId KeyDerivationFunction_Romix::computeID() const
    bw.put_uint32_t(iterations_);
    bw.put_uint32_t(memTargetBytes_);
 
-   BinaryData bd(32);
+   BinaryData bd;
+   bd.resize(32);
    Cryptography::Hash::getHash256(bw.getData(), bd.getPtr());
    return KdfId::fromBinaryData(bd);
 }

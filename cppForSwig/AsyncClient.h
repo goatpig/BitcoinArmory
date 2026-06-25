@@ -11,9 +11,11 @@
 #include <thread>
 #include <list>
 
-#include "Utils/ReentrantLock.h"
-#include "WebSocketClient.h"
-#include "SocketWritePayload.h"
+#include <Utils/ReentrantLock.h>
+#include <Utils/Types.h>
+#include <Network/StringSockets.h>
+#include <Network/WebSocketClient.h>
+#include <Network/SocketWritePayload.h>
 #include "TxClasses.h"
 #include "DBClientClasses.h"
 
@@ -33,17 +35,6 @@ namespace Armory
       }
    }
 }
-
-class TxIOPair;
-
-////
-struct OutputBatch
-{
-   unsigned heightCutoff;
-   unsigned zcIndexCutoff;
-
-   std::map<BinaryData, std::vector<Output>> addrMap;
-};
 
 ///////////////////////////////////////////////////////////////////////////////
 class ClientMessageError : public std::runtime_error
@@ -95,76 +86,6 @@ public:
 
 namespace AsyncClient
 {
-   struct CombinedBalances
-   {
-      std::string walletId;
-
-      /*
-      {
-         fullBalance,
-         spendableBalance,
-         unconfirmedBalance,
-         wltTxnCount
-      }
-      */
-      std::vector<uint64_t> walletBalanceAndCount;
-
-      /*
-      {
-         scrAddr (prefixed):
-         {
-            fullBalance,
-            spendableBalance,
-            unconfirmedBalance,
-            txnCount
-         }
-      }
-      */
-      std::map<BinaryData, std::vector<uint64_t>> addressBalances;
-
-      bool operator<(const CombinedBalances& rhs) const
-      {
-         return walletId < rhs.walletId;
-      }
-
-      bool operator<(const std::string& rhs) const
-      {
-         return walletId < rhs;
-      }
-   };
-
-   ////////////////////////////////////////////////////////////////////////////
-   class ClientCache : public Lockable
-   {
-      friend struct CallbackReturn_Tx;
-      friend struct CallbackReturn_TxBatch;
-      
-   private:
-      std::map<BinaryData, std::shared_ptr<Tx>> txMap_;
-      std::map<unsigned, BinaryData> rawHeaderMap_;
-      std::map<BinaryData, unsigned> txHashToHeightMap_;
-
-   private:
-      std::shared_ptr<Tx> getTx_NoConst(const BinaryDataRef&);
-      void insertTx(const BinaryData&, std::shared_ptr<Tx>);
-
-   public:
-      void insertTx(std::shared_ptr<Tx>);
-      void insertRawHeader(unsigned&, BinaryDataRef);
-      void insertHeightForTxHash(BinaryData&, unsigned&);
-
-      std::shared_ptr<const Tx> getTx(const BinaryDataRef&) const;
-      const BinaryData& getRawHeader(const unsigned&) const;
-      const unsigned& getHeightForTxHash(const BinaryData&) const;
-
-      //virtuals
-      void initAfterLock(void) {}
-      void cleanUpBeforeUnlock(void) {}
-   };
-
-   class NoMatch
-   {};
-
    ///////////////////////////////////////////////////////////////////////////////
    typedef std::shared_ptr<Tx> TxResult;
    typedef std::function<void(ReturnMessage<TxResult>)> TxCallback;
@@ -175,155 +96,42 @@ namespace AsyncClient
    class BlockDataViewer;
 
    /////////////////////////////////////////////////////////////////////////////
-   class LedgerDelegate
-   {
-   private:
-      std::string delegateID_;
-      std::shared_ptr<SocketPrototype> sock_;
-
-   public:
-      LedgerDelegate(void) {}
-      LedgerDelegate(std::shared_ptr<SocketPrototype>, const std::string&);
-
-      void getHistoryPages(uint32_t from, uint32_t to,
-         std::function<void(ReturnMessage<
-            std::vector<DBClientClasses::HistoryPage>>)>);
-      void getPageCount(std::function<void(ReturnMessage<uint64_t>)>) const;
-
-      const std::string& getID(void) const { return delegateID_; }
-   };
-
-   class BtcWallet;
-
-   /////////////////////////////////////////////////////////////////////////////
-   class ScrAddrObj
-   {
-      friend class Armory::Bridge::WalletContainer;
-
-   private:
-      const std::string walletID_;
-      const BinaryData scrAddr_;
-      const std::shared_ptr<SocketPrototype> sock_;
-
-      const uint64_t fullBalance_;
-      const uint64_t spendableBalance_;
-      const uint64_t unconfirmedBalance_;
-      const uint32_t count_;
-      const int index_;
-
-      std::string comment_;
-
-   private:
-      ScrAddrObj(const BinaryData& scrAddr, int index) :
-         walletID_({}),
-         scrAddr_(scrAddr),
-         sock_(nullptr),
-         fullBalance_(0), spendableBalance_(0), unconfirmedBalance_(0),
-         count_(0), index_(index)
-      {}
-
-   public:
-      ScrAddrObj(BtcWallet*, const BinaryData&, int index,
-         uint64_t, uint64_t, uint64_t, uint32_t);
-      ScrAddrObj(std::shared_ptr<SocketPrototype>,
-         const std::string&, const BinaryData&, int index,
-         uint64_t, uint64_t, uint64_t, uint32_t);
-
-      uint64_t getFullBalance(void) const { return fullBalance_; }
-      uint64_t getSpendableBalance(void) const { return spendableBalance_; }
-      uint64_t getUnconfirmedBalance(void) const { return unconfirmedBalance_; }
-
-      uint64_t getTxioCount(void) const { return count_; }
-
-      void getOutputs(uint64_t, bool, bool,
-         std::function<void(ReturnMessage<std::vector<UTXO>>)>);
-      const BinaryData& getScrAddr(void) const { return scrAddr_; }
-      void getLedgerDelegate(
-         std::function<void(ReturnMessage<LedgerDelegate>)>);
-
-      void setComment(const std::string& comment) { comment_ = comment; }
-      const std::string& getComment(void) const { return comment_; }
-      int getIndex(void) const { return index_; }
-   };
-
-   /////////////////////////////////////////////////////////////////////////////
    class BtcWallet
    {
-      friend class ScrAddrObj;
-
    protected:
       const std::string walletID_;
-      const std::shared_ptr<SocketPrototype> sock_;
+      const std::shared_ptr<Armory::Network::SocketPrototype> sock_;
       std::string ledgerID_;
 
    public:
       BtcWallet(const BlockDataViewer&, const std::string&);
-      void getBalancesAndCount(uint32_t topBlockHeight,
-         std::function<void(ReturnMessage<std::vector<uint64_t>>)>);
-
-      void getUTXOs(uint64_t val, bool, bool,
-         std::function<void(ReturnMessage<std::vector<UTXO>>)>);
-
-      ScrAddrObj getScrAddrObj(const BinaryData&,
-         uint64_t, uint64_t, uint64_t, uint32_t);
 
       bool registerAddresses(
-         const std::vector<BinaryData>& addrVec, bool isNew);
-      void unregisterAddresses(const std::set<BinaryData>&);
+         const std::vector<Armory::Types::ScrAddr>&, bool);
+      void unregisterAddresses(const std::set<Armory::Types::ScrAddr>&);
       void unregister(void);
 
-      void createAddressBook(
-         std::function<void(ReturnMessage<std::vector<AddressBookEntry>>)>) const;
-      void getLedgerDelegate(
-         std::function<void(ReturnMessage<LedgerDelegate>)>);
-
-      void setUnconfirmedTarget(unsigned);
       std::string walletID(void) const { return walletID_; }
    };
 
    /////////////////////////////////////////////////////////////////////////////
-   class Lockbox : public BtcWallet
-   {
-   private:
-      uint64_t fullBalance_ = 0;
-      uint64_t spendableBalance_ = 0;
-      uint64_t unconfirmedBalance_ = 0;
-
-      uint64_t txnCount_ = 0;
-
-   public:
-
-      Lockbox(const BlockDataViewer& bdv, const std::string& id) :
-         BtcWallet(bdv, id)
-      {}
-
-      void getBalancesAndCountFromDB(uint32_t topBlockHeight);
-
-      uint64_t getFullBalance(void) const { return fullBalance_; }
-      uint64_t getSpendableBalance(void) const { return spendableBalance_; }
-      uint64_t getUnconfirmedBalance(void) const { return unconfirmedBalance_; }
-      uint64_t getWltTotalTxnCount(void) const { return txnCount_; }
-   };
-
-   /////////////////////////////////////////////////////////////////////////////
+   using HeaderVec = std::vector<std::shared_ptr<DBClientClasses::BlockHeader>>;
    class Blockchain
    {
    private:
-      const std::shared_ptr<SocketPrototype> sock_;
-      using HeaderVec = std::vector<DBClientClasses::BlockHeader>;
+      const std::shared_ptr<Armory::Network::SocketPrototype> sock_;
 
    public:
       Blockchain(const BlockDataViewer&);
-      void getHeadersByHash(const std::set<BinaryDataRef>&,
-         const std::function<void(ReturnMessage<HeaderVec>)>&);
       void getHeadersByHeight(const std::set<unsigned>&,
+         const std::function<void(ReturnMessage<HeaderVec>)>&);
+      void getHeadersById(const std::set<Armory::Types::BlockId>&,
          const std::function<void(ReturnMessage<HeaderVec>)>&);
    };
 
    /////////////////////////////////////////////////////////////////////////////
    class BlockDataViewer
    {
-      friend class ScrAddrObj;
       friend class BtcWallet;
       friend class RemoteCallback;
       friend class LedgerDelegate;
@@ -332,25 +140,17 @@ namespace AsyncClient
 
    private:
       bool registered_ = false;
-      std::shared_ptr<SocketPrototype> sock_;
-      std::shared_ptr<ClientCache> cache_;
+      std::shared_ptr<Armory::Network::SocketPrototype> sock_;
 
    private:
       BlockDataViewer(void);
-      BlockDataViewer(std::shared_ptr<SocketPrototype> sock);
-
-      const BlockDataViewer& operator=(const BlockDataViewer& rhs)
-      {
-         sock_ = rhs.sock_;
-         cache_ = rhs.cache_;
-         return *this;
-      }
+      BlockDataViewer(std::shared_ptr<Armory::Network::SocketPrototype>);
+      BlockDataViewer& operator=(const BlockDataViewer&);
 
    public:
       ~BlockDataViewer(void);
       bool isValid(void) const;
       BtcWallet getWalletObj(const std::string& id);
-      Lockbox getLockboxObj(const std::string& id);
 
       //BIP15x
       std::pair<unsigned, unsigned> getRekeyCount(void) const;
@@ -360,7 +160,8 @@ namespace AsyncClient
 
       //connectivity
       bool connectToRemote(void);
-      std::shared_ptr<SocketPrototype> getSocketObject(void) const { return sock_; }
+      std::shared_ptr<Armory::Network::SocketPrototype>
+      getSocketObject(void) const { return sock_; }
       void goOnline(void);
       bool hasRemoteDB(void);
 
@@ -378,9 +179,6 @@ namespace AsyncClient
       //ledgers
       void getTxios(uint32_t,
          std::function<void(ReturnMessage<std::vector<TxIOPair>>)>);
-      void updateWalletsLedgerFilter(const std::vector<std::string>& wltIdVec);
-      void getLedgerDelegate(
-         std::function<void(ReturnMessage<LedgerDelegate>)>);
 
       //header data
       Blockchain blockchain(void);
@@ -391,6 +189,7 @@ namespace AsyncClient
       void getFeeSchedule(const std::string&, std::function<void(ReturnMessage<
             std::map<unsigned, DBClientClasses::FeeEstimateStruct>>)>);
 
+#if 0	//possibly obsoleted
       //balances & outputs
       void getCombinedBalances(std::function<void(
          ReturnMessage<std::map<std::string, CombinedBalances>>)>);
@@ -400,7 +199,7 @@ namespace AsyncClient
       void getOutputsForOutpoints(
          const std::map<BinaryData, std::set<unsigned>>&, bool,
          std::function<void(ReturnMessage<std::vector<Output>>)>);
-
+#endif
       /*
       Broadcast methods:
         All broadcast methods generate and return a random BROADCAST_ID_LENGTH
@@ -413,9 +212,9 @@ namespace AsyncClient
       void broadcastThroughRPC(const BinaryData& rawTx);
 
       //db cache methods
-      void getTxsByHash(const std::set<BinaryData>&,
+      void getTxsByHash(const std::set<Armory::Types::TxHash>&,
          const TxBatchCallback&);
-      void getTxsByKey(const std::set<BinaryData>&,
+      void getTxsByKey(const std::set<Armory::Types::TxKey>&,
          const std::function<void(ReturnMessage<std::vector<Tx>>)>&);
    };
 } //namespace AsyncClient

@@ -84,8 +84,7 @@ BinaryDataRef TxOutScriptRef::getScrRef() const
 
 std::size_t std::hash<TxOutScriptRef>::operator()(const TxOutScriptRef& key) const
 {
-   std::hash<BinaryDataRef> bdrHashObj;
-   return bdrHashObj(key.getScrRef());
+   return BinaryData::Hasher()(key.getScrRef());
 }
 
 TxOutScriptRef TxOutScriptRef::fromRef(

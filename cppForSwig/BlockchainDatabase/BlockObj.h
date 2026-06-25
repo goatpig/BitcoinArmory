@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -13,166 +13,182 @@
 
 #pragma once
 
-#include <iostream>
 #include <vector>
+#include <string>
+#include <memory>
+#include <Utils/Types.h>
 
-#include <Utils/BinaryData.h>
-#include "TxClasses.h"
+class BinaryData;
+class BinaryDataRef;
 
-class LMDBBlockDatabase;
-
-////////
-class BlockHeader
+namespace Armory
 {
-   friend class Blockchain;
-   friend class testBlockHeader;
-   friend class BlockData;
+   struct Hash32
+   {
+      uint64_t data[4];
+      explicit Hash32(void);
+      explicit Hash32(const BinaryData&);
+      explicit Hash32(const BinaryDataRef&);
 
-public:
-   BlockHeader(void);
-   explicit BlockHeader(const uint8_t*, uint32_t);
-   explicit BlockHeader(BinaryRefReader&);
-   explicit BlockHeader(BinaryDataRef);
+      bool operator==(const Hash32&) const;
+      bool operator==(const BinaryData&) const;
+      bool operator<(const Hash32&) const;
 
-   void clearDataCopy(void);
-   uint32_t getVersion(void) const;
-   const BinaryData& getThisHash(void) const;
-   BinaryData getPrevHash(void) const;
-   const BinaryData& getNextHash(void) const;
-   BinaryData getMerkleRoot(void) const;
-   BinaryData getDiffBits(void) const;
-   uint32_t getTimestamp(void) const;
-   uint32_t getNonce(void) const;
-   uint32_t getBlockHeight(void) const;
-   void setBlockHeight(unsigned);
-   bool isMainBranch(void) const;
-   bool isOrphan(void) const;
-   double getDifficulty(void) const;
-   double getDifficultySum(void) const;
+      BinaryData toBinaryData(void) const;
+      BinaryDataRef getRef(void) const;
+      std::string toHexStr(bool=false) const;
+      bool valid(void) const;
 
-   BinaryDataRef getThisHashRef(void) const;
-   BinaryDataRef getPrevHashRef(void) const;
-   BinaryDataRef getNextHashRef(void) const;
-   BinaryDataRef getMerkleRootRef(void) const;
-   BinaryDataRef getDiffBitsRef(void) const;
+      struct Hasher
+      {
+         using is_transparent = void;
+         std::size_t operator()(const Hash32&) const;
+         std::size_t operator()(const BinaryData&) const;
+         std::size_t operator()(const BinaryDataRef&) const;
+      };
 
-   uint32_t getNumTx(void) const;
-   const std::string& getFileName(void) const;
-   uint64_t getOffset(void) const;
-   uint32_t getBlockFileNum(void) const;
+      struct IsEqual
+      {
+         using is_transparent = void;
+         bool operator()(const Hash32&, const Hash32&) const;
+         bool operator()(const Hash32&, const BinaryData&) const;
+         bool operator()(const BinaryData&, const Hash32&) const;
+         bool operator()(const Hash32&, const BinaryDataRef&) const;
+         bool operator()(const BinaryDataRef&, const Hash32&) const;
+      };
+   };
 
-   const uint8_t* getPtr(void) const;
-   size_t getSize(void) const;
-   bool isInitialized(void) const;
-   uint32_t getBlockSize(void) const;
-   void setBlockSize(uint32_t);
-   void setNumTx(uint32_t);
+   ////////
+   class BlockOffset
+   {
+   private:
+      uint16_t fileID_;
+      size_t offset_;
 
-   void setBlockFile(std::string);
-   void setBlockFileNum(uint32_t);
-   void setBlockFileOffset(uint64_t);
+   public:
+      BlockOffset(uint16_t, size_t);
+      BlockOffset(const BlockOffset&);
 
-   const BinaryData& serialize(void) const;
-   bool hasFilePos(void) const;
+      bool operator<(const BlockOffset&) const;
+      BlockOffset& operator=(const BlockOffset&);
+      bool isValid(void) const;
 
-   void unserialize(const uint8_t*, uint32_t);
-   void unserialize(const BinaryDataRef&);
-   void unserialize(BinaryRefReader&);
+      uint16_t fileID(void) const;
+      size_t offset(void) const;
+   };
 
-   uint8_t getDuplicateID(void) const;
-   void setDuplicateID(uint8_t);
-   BinaryData getBlockDataKey(void) const;
-   unsigned int getThisID(void) const;
-   void setUniqueID(unsigned int);
+   ////////
+   class BlockHeader;
+   using HeaderPtr = std::shared_ptr<BlockHeader>;
 
-   void pprint(std::ostream& = std::cout, int=0, bool=true) const;
-   void pprintAlot(std::ostream& = std::cout);
+   ////////
+   class BlockHeader
+   {
+      friend class Blockchain;
 
-private:
-   BinaryData     dataCopy_;
-   bool           isInitialized_ = false;
-   bool           isMainBranch_ = false;
-   bool           isOrphan_ = true;
-   bool           isFinishedCalc_ = false;
-   // Specific to the DB storage
-   uint8_t        duplicateID_ = 0xFF; // ID of this blk rel to others at same height
-   uint32_t       blockHeight_ = UINT32_MAX;
+   private:
+      BlockHeader(Hash32&, Hash32&, Hash32&, double, uint32_t, uint32_t);
+      static BlockHeader unserialize(const uint8_t*, size_t);
 
-   uint32_t       numTx_ = UINT32_MAX;
-   uint32_t       numBlockBytes_; // includes header + nTx + sum(Tx)
+   public:
+      struct Hasher
+      {
+         using is_transparent = void;
+         std::size_t operator()(const HeaderPtr&) const;
+         std::size_t operator()(const Hash32&) const;
+         std::size_t operator()(const BinaryData&) const;
+         std::size_t operator()(const BinaryDataRef&) const;
+      };
 
-   // Derived properties - we expect these to be set after construct/copy
-   BinaryData     thisHash_;
-   double         difficultyDbl_ = 0.0;
+      struct IsEqual
+      {
+         using is_transparent = void;
+         bool operator()(const HeaderPtr&, const HeaderPtr&) const;
+         bool operator()(const HeaderPtr&, const Hash32&) const;
+         bool operator()(const Hash32&, const HeaderPtr&) const;
+         bool operator()(const HeaderPtr&, const BinaryData&) const;
+         bool operator()(const BinaryData&, const HeaderPtr&) const;
+         bool operator()(const HeaderPtr&, const BinaryDataRef&) const;
+         bool operator()(const BinaryDataRef&, const HeaderPtr&) const;
+      };
 
-   // Need to compute these later
-   BinaryData     nextHash_;
-   double         difficultySum_ = 0.0;
+      enum class MerkleState : int
+      {
+         Unchecked = 0,
+         Valid,
+         Invalid
+      };
 
-   std::string         blkFile_;
-   uint32_t       blkFileNum_ = UINT32_MAX;
-   uint64_t       blkFileOffset_ = SIZE_MAX;
+   public:
+      explicit BlockHeader(const uint8_t*, size_t);
+      explicit BlockHeader(BinaryDataRef);
 
-   unsigned int   uniqueID_ = UINT32_MAX;
-};
+      //native header data getters
+      uint32_t getVersion(void) const;
+      const Hash32& getThisHash(void) const;
+      const Hash32* getNextHash(void) const;
+      const Hash32& getPrevHash(void) const;
+      const Hash32& getMerkleRoot(void) const;
 
-////////////////////////////////////////////////////////////////////////////////
-class DBOutPoint : public Outpoint
-{
-private:
-   LMDBBlockDatabase* db_;
+      uint32_t getTimestamp(void) const;
+      bool isMainBranch(void) const;
+      bool isOrphan(void) const;
+      double getDifficulty(void) const;
+      double getDifficultySum(void) const;
 
-public:
-   DBOutPoint(Outpoint, LMDBBlockDatabase*);
-   BinaryDataRef getDBkey(void) const;
+      //optional header data getters
+      uint32_t getBlockHeight(void) const;
+      uint32_t getNumTx(void) const;
+      size_t getOffset(void) const;
+      Types::FileId getBlockFileNum(void) const;
+      uint32_t getBlockSize(void) const;
+      BinaryDataRef getRawData(void) const;
+      Types::BlockId getUniqueID(void) const;
 
-};
+      //setters for optional data
+      void setBlockHeight(unsigned);
+      void setBlockSize(uint32_t);
+      void setNumTx(uint32_t);
+      void setBlockFileNum(Types::FileId);
+      void setBlockFileOffset(size_t);
+      void setRawData(BinaryData);
+      void setUniqueID(Types::BlockId);
 
-////////////////////////////////////////////////////////////////////////////////
-// This class is mainly for sorting by priority
-class UnspentTxOut
-{
-public:
-   UnspentTxOut(void);
-   UnspentTxOut(const BinaryData&, uint32_t, uint32_t,
-      uint64_t, const BinaryData&);
+      //merkle checks
+      void checkMerkleRoot(const BinaryData&);
+      void setMerkleValid(bool);
+      bool parsedBlockData(void) const;
+      bool isMerkleValid(void) const;
 
-   BinaryData getTxHash(void) const;
-   uint32_t getTxtIndex(void) const;
-   uint32_t getTxOutIndex(void) const;
-   uint64_t getValue(void) const;
-   uint64_t getTxHeight(void) const;
-   uint32_t isMultisigRef(void) const;
+      void pprintAlot(std::ostream&);
 
-   Outpoint getOutPoint(void) const;
-   const BinaryData& getScript(void) const;
-   BinaryData getRecipientScrAddr(void) const;
+   private:
+      const Hash32      thisHash_;
+      const Hash32      prevHash_;
+      const Hash32      merkleRoot_;
+      const double      difficultyDbl_;
+      const uint32_t    timestamp_;
+      const uint32_t    version_;
 
-   uint32_t getNumConfirm(uint32_t) const;
-   void pprintOneLine(uint32_t=UINT32_MAX);
+      // Specific to the DB storage
+      double            difficultySum_ = -1.0;
+      size_t            blkFileOffset_ = SIZE_MAX;
+      uint32_t          blockHeight_ = UINT32_MAX;
+      Types::BlockId    uniqueID_ = Types::INVALID_BLOCK_ID;
+      uint32_t          numTx_ = UINT32_MAX;
+      uint32_t          numBlockBytes_; // includes header + nTx + sum(Tx)
+      Types::FileId     blkFileNum_ = Types::INVALID_FILE_ID;
+      MerkleState       checkState_ = MerkleState::Unchecked;
 
-   // These four methods are listed from steepest-to-shallowest in terms of
-   // how much they favor large inputs over small inputs.
-   // NOTE:  This isn't useful at all anymore:  it was hardly useful even before
-   //        I had UTXO sorting in python.  This was really more experimental
-   //        than anything, so I wouldn't bother doing anything with it unless
-   //        you want to use it as a template for custom sorting in C++
-   static bool CompareNaive(const UnspentTxOut&, const UnspentTxOut&);
-   static bool CompareTech1(const UnspentTxOut&, const UnspentTxOut&);
-   static bool CompareTech2(const UnspentTxOut&, const UnspentTxOut&);
-   static bool CompareTech3(const UnspentTxOut&, const UnspentTxOut&);
-   static void sortTxOutVect(std::vector<UnspentTxOut>&, int=1);
+      //only useful to write header on disk the one time
+      std::vector<uint8_t> rawData_;
 
-public:
-   BinaryData txHash_;
-   uint32_t   txOutIndex_;
-   uint32_t   txHeight_;
-   uint32_t   txIndex_;
-   uint64_t   value_;
-   BinaryData script_;
-   bool       isMultisigRef_;
+      // Need to compute these later
+      const Hash32*     nextHash_ = nullptr;
+      std::shared_ptr<BlockHeader> nextPtr_ = nullptr;
 
-   // This can be set and used as part of a compare function:  if you want
-   // each TxOut prioritization to be dependent on the target Tx amount.
-   uint64_t   targetTxAmount_;
-};
+      bool              isMainBranch_ = false;
+      bool              isOrphan_ = true;
+      bool              isFinishedCalc_ = false;
+   };
+}

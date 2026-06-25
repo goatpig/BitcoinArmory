@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig.                                         //
+//  Copyright (C) 2016-2026, goatpig.                                         //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -14,15 +14,14 @@
 #include <Utils/BIP15x_Handshake.h>
 #include <Wallets/AuthorizedPeers.h>
 #include <Ledgers/LedgerEntry.h>
-#include "WebSocketMessage.h"
+#include <Network/WebSocketMessage.h>
 #include "BDM_Server.h"
 
-using namespace Armory::Threading;
-using namespace Armory::Wallets;
+using namespace Armory;
 
 ///////////////////////////////////////////////////////////////////////////////
 PendingMessage::PendingMessage(uint64_t id, uint32_t msgid,
-   std::unique_ptr<Socket_WritePayload> ptr) :
+   std::unique_ptr<Network::Socket_WritePayload> ptr) :
    id(id), msgid(msgid), payload(std::move(ptr))
 {}
 
@@ -211,20 +210,20 @@ int WebSocketServer::callback(struct lws *wsi,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void WebSocketServer::initAuthPeers(const IO::ReadOnlyFileParams& params)
+void WebSocketServer::initAuthPeers(const Wallets::IO::ReadOnlyFileParams& params)
 {
    //init auth peer object
-   if (!Armory::Config::NetworkSettings::ephemeralPeers()) {
-      initAuthPeers(std::make_shared<AuthorizedPeers>(params));
+   if (!Config::NetworkSettings::ephemeralPeers()) {
+      initAuthPeers(std::make_shared<Wallets::AuthorizedPeers>(params));
    } else {
-      if (Armory::Config::NetworkSettings::oneWayAuth()) {
+      if (Config::NetworkSettings::oneWayAuth()) {
          throw std::runtime_error(
             "--public and --ephemeral are mutually exclusive");
       }
 
       //setup server with an ephemeral key store
       auto instance = getInstance();
-      instance->authorizedPeers_ = std::make_shared<AuthorizedPeers>();
+      instance->authorizedPeers_ = std::make_shared<Wallets::AuthorizedPeers>();
 
       //grab caller pubkey
       auto callerKeyPtr = std::getenv("CALLER_PUBKEY");
@@ -236,7 +235,7 @@ void WebSocketServer::initAuthPeers(const IO::ReadOnlyFileParams& params)
 
       //inject caller pubkey in the store
       std::string serverName{"127.0.0.1:" +
-         Armory::Config::NetworkSettings::dbPort()};
+         Config::NetworkSettings::dbPort()};
       instance->authorizedPeers_->addPeer(
          callerPubKey.getRef(), {serverName}, {}, false);
 
@@ -274,9 +273,10 @@ void WebSocketServer::initAuthPeers(const IO::ReadOnlyFileParams& params)
 }
 
 ////
-void WebSocketServer::initAuthPeers(std::shared_ptr<AuthorizedPeers> peers)
+void WebSocketServer::initAuthPeers(
+   std::shared_ptr<Wallets::AuthorizedPeers> peers)
 {
-   if (Armory::Config::NetworkSettings::ephemeralPeers()) {
+   if (Config::NetworkSettings::ephemeralPeers()) {
       throw std::runtime_error("no peers store loading on ephemeral peers");
    }
    auto instance = getInstance();
@@ -306,7 +306,7 @@ void WebSocketServer::start(std::shared_ptr<BlockDataManager> bdm, bool async)
    encInitPacket.put_uint32_t(1);
    encInitPacket.put_uint8_t((uint8_t)ArmoryAEAD::BIP151_PayloadType::Start);
    instance->encInitPacket_ = encInitPacket.getData();
-   instance->oneWayAuth_ = Armory::Config::NetworkSettings::oneWayAuth();
+   instance->oneWayAuth_ = Config::NetworkSettings::oneWayAuth();
 
    //init Clients object
    if (instance->clients_) {
@@ -316,10 +316,6 @@ void WebSocketServer::start(std::shared_ptr<BlockDataManager> bdm, bool async)
    instance->clients_->init();
 
    //start command threads
-   auto commandThr = [instance](void)->void
-   {
-      instance->commandThread();
-   };
    instance->threads_.push_back(std::thread(
       [instance]{ instance->commandThread(); }));
 
@@ -335,7 +331,7 @@ void WebSocketServer::start(std::shared_ptr<BlockDataManager> bdm, bool async)
          [instance]{ instance->clientInterruptThread(); }));
    }
 
-   auto port = stoi(Armory::Config::NetworkSettings::dbPort());
+   auto port = stoi(Config::NetworkSettings::dbPort());
    if (port == 0) {
       port = WEBSOCKET_PORT;
    }
@@ -477,7 +473,7 @@ void WebSocketServer::commandThread()
       std::shared_ptr<BDV_packet> packetPtr;
       try {
          packetPtr = std::move(packetQueue_.pop_front());
-      } catch (const StopBlockingLoop&) {
+      } catch (const Threading::StopBlockingLoop&) {
          //end loop condition
          return;
       }
@@ -507,7 +503,7 @@ void WebSocketServer::clientInterruptThread()
       uint64_t clientId;
       try {
          clientId = clientConnectionInterruptQueue_.pop_front();
-      } catch (const StopBlockingLoop&) {
+      } catch (const Threading::StopBlockingLoop&) {
          break;
       }
 
@@ -531,7 +527,7 @@ void WebSocketServer::clientInterruptThread()
 
 ///////////////////////////////////////////////////////////////////////////////
 void WebSocketServer::write(const uint64_t& id, const uint32_t& msgid,
-   std::unique_ptr<Socket_WritePayload> payload)
+   std::unique_ptr<Network::Socket_WritePayload> payload)
 {
    if (payload == nullptr) {
       return;
@@ -550,7 +546,7 @@ void WebSocketServer::prepareWriteThread()
       try {
          msg = msgQueue_.pop_front();
       }
-      catch (const StopBlockingLoop&) {
+      catch (const Threading::StopBlockingLoop&) {
          break;
       }
 
@@ -595,10 +591,11 @@ void WebSocketServer::prepareWriteThread()
 
          if (needs_rekey) {
             //create rekey packet
-            BinaryData rekeyPacket(BIP151PUBKEYSIZE);
+            BinaryData rekeyPacket;
+            rekeyPacket.resize(BIP151PUBKEYSIZE);
             memset(rekeyPacket.getPtr(), 0, BIP151PUBKEYSIZE);
-            
-            SerializedMessage ws_msg;
+
+            Network::SerializedMessage ws_msg;
             ws_msg.construct(
                rekeyPacket.getDataVector(),
                statePtr->bip151Connection_.get(),
@@ -615,7 +612,7 @@ void WebSocketServer::prepareWriteThread()
          }
       }
 
-      SerializedMessage ws_msg;
+      Network::SerializedMessage ws_msg;
       ws_msg.construct(std::move(msg->payload),
          statePtr->bip151Connection_.get(), msg->msgid);
 
@@ -703,7 +700,8 @@ void WebSocketServer::closeClientConnection(uint64_t id)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void WebSocketServer::writeToSocket(struct lws* ptr, SerializedMessage& msg)
+void WebSocketServer::writeToSocket(
+   struct lws* ptr, Network::SerializedMessage& msg)
 {
    std::list<BinaryData> packetList;
    while (!msg.isDone()) {
@@ -720,7 +718,7 @@ void WebSocketServer::updateWriteMap()
 {
    try {
       while (true) {
-         auto packetList = std::move(writeQueue_.pop_front());
+         auto packetList = writeQueue_.pop_front();
          auto iter = writeMap_.find(packetList.first);
          if (iter == writeMap_.end()) {
             continue;
@@ -730,7 +728,7 @@ void WebSocketServer::updateWriteMap()
          pendingWrites_.insert(packetList.first);
          break;
       }
-   } catch (const IsEmpty&) {}
+   } catch (const Threading::IsEmpty&) {}
 
    //round robin write activation
    if (pendingWrites_.empty()) {
@@ -770,7 +768,7 @@ ClientConnection::ClientConnection(
    readLock_ = std::make_shared<std::atomic<unsigned>>();
    readLock_->store(0);
 
-   readQueue_ = std::make_shared<Queue<BinaryData>>();
+   readQueue_ = std::make_shared<Threading::Queue<BinaryData>>();
 
    run_ = std::make_shared<std::atomic<int>>();
    run_->store(0, std::memory_order_relaxed);
@@ -783,7 +781,7 @@ void ClientConnection::processReadQueue(std::shared_ptr<Clients> clients)
       BinaryData packetData;
       try {
          packetData = std::move(readQueue_->pop_front());
-      } catch (const IsEmpty&) {
+      } catch (const Threading::IsEmpty&) {
          //end loop condition
          return;
       }
@@ -848,7 +846,7 @@ void ClientConnection::processReadQueue(std::shared_ptr<Clients> clients)
          packetData.resize(plainTextSize);
       }
 
-      auto msgType = WebSocketMessagePartial::readPacketType(
+      auto msgType = Network::WebSocketMessagePartial::readPacketType(
          packetData.getRef());
       if (msgType > ArmoryAEAD::BIP151_PayloadType::Threshold_Begin) {
          processAEADHandshake(std::move(packetData));
@@ -888,7 +886,7 @@ void ClientConnection::processAEADHandshake(BinaryData msg)
       if (encrypt) {
          connPtr = bip151Connection_.get();
       }
-      SerializedMessage aeadMsg;
+      Network::SerializedMessage aeadMsg;
       aeadMsg.construct(msg, connPtr, type);
 
       auto instance = WebSocketServer::getInstance();
@@ -897,7 +895,7 @@ void ClientConnection::processAEADHandshake(BinaryData msg)
 
    auto processHandshake = [this, &writeToClient](BinaryData& msgdata)->bool
    {
-      WebSocketMessagePartial wsMsg;
+      Network::WebSocketMessagePartial wsMsg;
       if (!wsMsg.parsePacket(msgdata) || !wsMsg.isReady()) {
          //invalid packet
          return false;
@@ -959,7 +957,7 @@ bool ClientConnection::isMaster() const
 {
    if (!bip151Connection_ || bip151Connection_->isOneWayAuth() ||
       bip151Connection_->getBIP150State() != BIP150State::SUCCESS) {
-      false;
+      return false;
    }
    return WebSocketServer::isMasterKey(bip151Connection_->getChosenAuthPeerKey());
 }

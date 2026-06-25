@@ -25,11 +25,10 @@
 #include "ScrAddrFilter.h"
 
 class BlockFiles;
-class DatabaseBuilder;
 struct BDV_Notification;
 struct BDVNotificationHook;
-struct ReorganizationState;
 struct StoredHeader;
+class ScannerContext;
 
 namespace Armory
 {
@@ -38,21 +37,37 @@ namespace Armory
       class ZeroConfCallbacks;
    }
 
-   namespace Node
+   struct ReorganizationState;
+
+   namespace Database
    {
-      class BitcoinNodeInterface;
+      class Builder;
    }
+   struct Hash32;
+   class Blockchain;
+   class BlockchainData;
 }
 
-namespace CoreRPC
+namespace Node
 {
-   struct NodeStatus;
-   class NodeRPCInterface;
+   struct Status;
+   namespace Core
+   {
+      namespace RPC
+      {
+         class Iface;
+      }
+
+      namespace P2P
+      {
+         class Iface;
+      }
+   }
 }
 
 enum class BDMState : int
 {
-   Offline,
+   Uninitialized,
    Initializing,
    Ready
 };
@@ -84,12 +99,13 @@ class BlockDataManager
 private:
    LMDBBlockDatabase* iface_ = nullptr;
    std::shared_ptr<BDM_ScrAddrFilter> scrAddrData_;
-   std::shared_ptr<Blockchain> blockchain_;
+   std::shared_ptr<Armory::Blockchain> blockchain_;
+   std::shared_ptr<Armory::BlockchainData> blockchainData_;
    std::shared_ptr<BlockFiles> blockFiles_;
-   std::shared_ptr<DatabaseBuilder> dbBuilder_;
+   std::shared_ptr<Armory::Database::Builder> dbBuilder_;
 
    std::function<bool(void)> shutdownLbd_;
-   BDMState BDMstate_ = BDMState::Offline;
+   BDMState BDMstate_ = BDMState::Uninitialized;
    std::exception_ptr exceptPtr_ = nullptr;
 
    unsigned checkTransactionCount_ = 0;
@@ -98,48 +114,36 @@ private:
 
 public:
    typedef std::function<void(BDMPhase, double,unsigned, unsigned)> ProgressCallback;
-   std::shared_ptr<Armory::Node::BitcoinNodeInterface> processNode_, watchNode_;
+   std::shared_ptr<Node::Core::P2P::Iface> processNode_, watchNode_;
    std::shared_future<bool> isReadyFuture_;
-   mutable std::shared_ptr<CoreRPC::NodeRPCInterface> nodeRPC_;
+   mutable std::shared_ptr<Node::Core::RPC::Iface> nodeRPC_;
 
    Armory::Threading::TimedQueue<std::unique_ptr<BDV_Notification>> notificationStack_;
    std::shared_ptr<Armory::ZeroConf::ZeroConfContainer> zeroConfCont_;
+
+private:
+   bool loadDiskState(const ProgressCallback&);
+   void pollNodeStatus(void) const;
 
 public:
    BlockDataManager(std::function<bool(void)>);
    ~BlockDataManager(void);
 
-   std::shared_ptr<Blockchain> blockchain(void) const { return blockchain_; }
-   LMDBBlockDatabase *getIFace(void) const { return iface_; }
-   std::shared_ptr<BlockFiles> blockFiles(void) const { return blockFiles_; }
+   std::shared_ptr<Armory::Blockchain> blockchain(void) const;
+   std::shared_ptr<Armory::BlockchainData> blockchainData(void) const;
+   LMDBBlockDatabase *getIFace(void) const;
+   std::shared_ptr<BlockFiles> blockFiles(void) const;
+   std::shared_ptr<ScrAddrFilter> getScrAddrFilter(void) const;
 
    void openDatabase(void);
    bool doInitialSyncOnLoad(BdmInitMode, const ProgressCallback&);
+   bool hasException(void) const;
+   std::exception_ptr getException(void) const;
 
-   // for testing only
-   struct BlkFileUpdateCallbacks
-   {
-      std::function<void()> headersRead, headersUpdated, blockDataLoaded;
-   };
-
-   bool hasException(void) const { return exceptPtr_ != nullptr; }
-   std::exception_ptr getException(void) const { return exceptPtr_; }
-
-private:
-   bool loadDiskState(const ProgressCallback&, bool=false);
-   void pollNodeStatus() const;
-
-public:
-   ReorganizationState readBlkFileUpdate(void);
-   bool applyBlockRangeToDB(ProgressCallback,
+   Armory::ReorganizationState readBlkFileUpdate(void);
+   Armory::Hash32 applyBlockRangeToDB(ProgressCallback,
       uint32_t, ScrAddrFilter&);
-
-   uint32_t getTopBlockHeight(void) const;
-   uint8_t getValidDupIDForHeight(uint32_t) const;
-
-   std::shared_ptr<ScrAddrFilter> getScrAddrFilter(void) const;
-   StoredHeader getMainBlockFromDB(uint32_t) const;
-   StoredHeader getBlockFromDB(uint32_t, uint8_t) const;
+   std::pair<Armory::Hash32, Armory::Hash32> getLastScannedRange(void) const;
 
    void enableZeroConf(bool=false);
    void registerZcCallbacks(
@@ -151,13 +155,13 @@ public:
    void triggerShutdown(void);
    void shutdown(void);
    void cleanup(void);
-   bool isRunning(void) const { return BDMstate_ != BDMState::Offline; }
+   bool isRunning(void) const;
    void blockUntilReady(void) const;
    bool isReady(void) const;
    void resetDatabases(BdmInitMode);
 
-   unsigned getCheckedTxCount(void) const { return checkTransactionCount_; }
-   std::shared_ptr<CoreRPC::NodeStatus> getNodeStatus(void) const;
+   unsigned getCheckedTxCount(void) const;
+   std::shared_ptr<Node::Status> getNodeStatus(void) const;
 
    void registerOneTimeHook(std::shared_ptr<BDVNotificationHook>);
    void triggerOneTimeHooks(BDV_Notification*);

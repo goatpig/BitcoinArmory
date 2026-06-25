@@ -22,9 +22,12 @@
 
 using WordArray = kj::ArrayPtr<const capnp::word>;
 
+using namespace Armory;
+using namespace Armory::Network;
+
 namespace
 {
-   ////
+   /*
    BinaryData reconstructFromFragments(
       const std::map<uint32_t, BinaryDataRef>& payloadMap)
    {
@@ -34,7 +37,8 @@ namespace
 
       size_t total = (WEBSOCKET_MESSAGE_PACKET_SIZE - 48) * (payloadMap.size() - 1);
       total += payloadMap.rbegin()->second.getSize();
-      BinaryData full(total);
+      BinaryData full;
+      full.resize(total);
       size_t pos = 0;
       for (const auto& payloadPair : payloadMap) {
          const auto& payload = payloadPair.second;
@@ -44,7 +48,6 @@ namespace
       return full;
    }
 
-   ////
    std::unique_ptr<capnp::MessageReader> getSegmentedReader(
       const std::map<uint32_t, BinaryDataRef>& payloadMap)
    {
@@ -70,6 +73,7 @@ namespace
             array.asPtr());
       return result;
    }
+   */
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -110,7 +114,8 @@ std::vector<BinaryData> WebSocketMessageCodec::serializePacketWithoutId(
    ***/
 
    uint32_t size = payload.getSize() + PAYLOAD_HEADER - 4;
-   BinaryData plainText(payload.getSize() + LWS_PRE + PAYLOAD_HEADER + POLY1305MACLEN);
+   BinaryData plainText;
+   plainText.resize(payload.getSize() + LWS_PRE + PAYLOAD_HEADER + POLY1305MACLEN);
    if (plainText.getSize() > WEBSOCKET_MESSAGE_PACKET_SIZE) {
       throw std::runtime_error("payload is too large to serialize");
    }
@@ -221,7 +226,8 @@ std::vector<BinaryData> WebSocketMessageCodec::serialize(
       //single packet serialization
       result.reserve(1);
       uint32_t size = data_len + PAYLOAD_HEADER - 4;
-      BinaryData plainText(LWS_PRE + POLY1305MACLEN + PAYLOAD_HEADER + data_len);
+      BinaryData plainText;
+      plainText.resize(LWS_PRE + POLY1305MACLEN + PAYLOAD_HEADER + data_len);
 
       memcpy(plainText.getPtr() + LWS_PRE, &size, 4);
       memcpy(plainText.getPtr() + LWS_PRE + 4, &id, 4);
@@ -241,7 +247,8 @@ std::vector<BinaryData> WebSocketMessageCodec::serialize(
       result.reserve(fragment_count32);
 
       //setup first fragment
-      BinaryData header_packet(WEBSOCKET_MESSAGE_PACKET_SIZE);
+      BinaryData header_packet;
+      header_packet.resize(WEBSOCKET_MESSAGE_PACKET_SIZE);
       uint32_t header_size = payload_room + 12;
 
       //header
@@ -261,7 +268,8 @@ std::vector<BinaryData> WebSocketMessageCodec::serialize(
          //get fragment size
          size_t data_size = std::min(payload_room, data_len - pos);
 
-         BinaryData fragment_packet(data_size + overhead);
+         BinaryData fragment_packet;
+         fragment_packet.resize(data_size + overhead);
          uint32_t packet_size = data_size + PAYLOAD_HEADER - 4;
 
          //set header
@@ -339,7 +347,8 @@ void SerializedMessage::construct(std::unique_ptr<Socket_WritePayload> payload,
       for (uint32_t i=0; i<segments.size(); i++) {
          const auto& segment = segments[i];
          auto segmentSize = segment.size() * sizeof(capnp::word);
-         BinaryData encryptedSegment(overhead + segmentSize);
+         BinaryData encryptedSegment;
+         encryptedSegment.resize(overhead + segmentSize);
 
          uint32_t dataSize = segmentSize + PAYLOAD_HEADER - sizeof(uint32_t);
          memcpy(encryptedSegment.getPtr() + LWS_PRE,     &dataSize, 4);

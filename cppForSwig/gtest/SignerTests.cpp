@@ -1,17 +1,22 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
+#ifdef _WIN32
+   #include <winsock2.h>
+   #include <windows.h>
+#endif
+
 #include "TestUtils.h"
 #include <reorgTest/blkdata.h>
 
 #include <Utils/ArmoryConfig.h>
-#include <Utils/DBUtils.h>
+#include <Utils/FileUtils.h>
 #include <Utils/UniversalTimer.h>
 #include <Ledgers/LedgerEntry.h>
 
@@ -200,9 +205,7 @@ protected:
 
       auto nodePtr = std::dynamic_pointer_cast<NodeUnitTest>(
          Config::NetworkSettings::bitcoinNodes().first);
-      nodePtr->setBlockchain(theBDMt_->bdm()->blockchain());
-      nodePtr->setBlockFiles(theBDMt_->bdm()->blockFiles());
-      nodePtr->setIface(iface_);
+      nodePtr->setBDM(theBDMt_->bdm());
       clients_ = new Clients(theBDMt_->bdm());
    }
 
@@ -233,7 +236,7 @@ protected:
          "--dbdir=./ldbtestdir",
          "--satoshi-datadir=./blkfiletest",
          "--public",
-         "--db-type=DB_FULL",
+         "--db-type=DB_BARE",
          "--thread-count=3",
          "--public" },
          Config::ProcessType::DB);
@@ -292,7 +295,7 @@ TEST_F(SignerTest, DISABLED_CheckChain_Test)
 
    BlockDataManager bdm(nullptr);
    try {
-      bdm.doInitialSyncOnLoad(BdmInitMode::RESUME, TestUtils::nullProgress);
+      bdm.doInitialSyncOnLoad(BdmInitMode::RESUME, nullptr);
    } catch (const std::exception&) {
       //signify the failure
       EXPECT_TRUE(false);
@@ -308,6 +311,7 @@ TEST_F(SignerTest, Signer_Test)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -320,13 +324,12 @@ TEST_F(SignerTest, Signer_Test)
    };
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //// spend 2 from wlt to scrAddrF, rest back to scrAddrA ////
    auto spendVal = 2 * COIN;
@@ -340,12 +343,17 @@ TEST_F(SignerTest, Signer_Test)
    feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
    //get utxo list for spend value
-   auto&& unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+   auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+      TestChain::scrAddrB,
+      TestChain::scrAddrC,
+      TestChain::scrAddrD,
+      TestChain::scrAddrE
+   });
 
    //create script spender objects
    uint64_t total = 0;
    for (auto& utxo : unspentVec) {
-      total += utxo.getValue();
+      total += utxo.getAmount();
       signer.addSpender(getSpenderPtr(utxo));
    }
 
@@ -407,34 +415,26 @@ TEST_F(SignerTest, SpendTest_SizeEstimates)
    hashVec.insert(hashVec.begin(), hashSet.begin(), hashSet.end());
 
    DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto dbAssetWlt = bdvPtr->getWalletOrLockbox(assetWlt->getID());
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   auto bdm = theBDMt_->bdm();
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
    //check new wallet balances
    for (const auto& scripthash : hashSet) {
-      scrObj = dbAssetWlt->getScrAddrObjByKey(scripthash);
-      EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+      EXPECT_EQ(DBTestUtils::getScrAddrBalance(scripthash, bdm), 0 * COIN);
    }
 
    {
@@ -452,13 +452,18 @@ TEST_F(SignerTest, SpendTest_SizeEstimates)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -470,7 +475,7 @@ TEST_F(SignerTest, SpendTest_SizeEstimates)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -510,24 +515,15 @@ TEST_F(SignerTest, SpendTest_SizeEstimates)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]);
-   EXPECT_EQ(scrObj->getFullBalance(), 3 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 15 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2], bdm),  3 * COIN);
 
    uint64_t feeVal = 0;
    {
@@ -536,25 +532,26 @@ TEST_F(SignerTest, SpendTest_SizeEstimates)
       auto spendVal = 18 * COIN;
       Signer signer2;
 
-      auto getUtxos = [dbAssetWlt](uint64_t)->std::vector<UTXO>
+      auto getUtxos = [bdm, &addrVec](uint64_t)->std::vector<UTXO>
       {
-         auto unspentVec = dbAssetWlt->getSpendableTxOutListZC();
+         auto unspentVec = DBTestUtils::getZCUTXOs(bdm, {
+            addrVec[0], addrVec[1], addrVec[2]
+         });
          std::vector<UTXO> utxoVec;
          for (auto& unspentTxo : unspentVec) {
-            UTXO entry(unspentTxo.value_, unspentTxo.txHeight_,
-               unspentTxo.txIndex_, unspentTxo.txOutIndex_,
-               std::move(unspentTxo.txHash_),
-               std::move(unspentTxo.script_));
+            UTXO entry(unspentTxo.amount, unspentTxo.txHeight,
+               unspentTxo.txIndex, unspentTxo.txOutIndex,
+               std::move(unspentTxo.txHash),
+               std::move(unspentTxo.script));
             utxoVec.emplace_back(entry);
          }
          return utxoVec;
       };
 
-      auto addrBook = dbAssetWlt->createAddressBook();
+      //auto addrBook = dbAssetWlt->createAddressBook();
       auto topBlock = theBDMt_->bdm()->blockchain()->top()->getBlockHeight();
       CoinSelection::CoinSelectionInstance csi(assetWlt, getUtxos,
-         addrBook, dbAssetWlt->getUnconfirmedBalance(topBlock), 
-         topBlock);
+         {}, 30 * COIN, topBlock);
 
       //spend 18 to addr B, use P2PKH
       csi.addRecipient(TestChain::scrAddrB, spendVal);
@@ -570,7 +567,7 @@ TEST_F(SignerTest, SpendTest_SizeEstimates)
       //create spenders
       uint64_t total = 0;
       for (auto& utxo : utxoSelect) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(std::make_shared<ScriptSpender>(utxo));
       }
 
@@ -624,26 +621,16 @@ TEST_F(SignerTest, SpendTest_SizeEstimates)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]);
-   EXPECT_EQ(scrObj->getFullBalance(), 3 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[3]);
-   EXPECT_EQ(scrObj->getFullBalance(), 9 * COIN - feeVal);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2], bdm), 3 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[3], bdm), 9 * COIN - feeVal);
 
    uint64_t feeVal2;
    {
@@ -652,33 +639,33 @@ TEST_F(SignerTest, SpendTest_SizeEstimates)
       Signer signer3;
       signer3.setFlags(SCRIPT_VERIFY_SEGWIT);
 
-      auto getUtxos = [dbAssetWlt](uint64_t)->std::vector<UTXO>
+      auto getUtxos = [bdm, &addrVec](uint64_t)->std::vector<UTXO>
       {
-         auto unspentVec = dbAssetWlt->getSpendableTxOutListZC();
+         auto unspentVec = DBTestUtils::getZCUTXOs(bdm, {
+            addrVec[0], addrVec[1], addrVec[2], addrVec[3]
+         });
 
          std::vector<UTXO> utxoVec;
          for (auto& unspentTxo : unspentVec) {
-            UTXO entry(unspentTxo.value_, unspentTxo.txHeight_,
-               unspentTxo.txIndex_, unspentTxo.txOutIndex_,
-               std::move(unspentTxo.txHash_),
-               std::move(unspentTxo.script_));
+            UTXO entry(unspentTxo.amount, unspentTxo.txHeight,
+               unspentTxo.txIndex, unspentTxo.txOutIndex,
+               std::move(unspentTxo.txHash),
+               std::move(unspentTxo.script));
             utxoVec.emplace_back(entry);
          }
          return utxoVec;
       };
 
-      auto addrBook = dbAssetWlt->createAddressBook();
+      auto unconfBal = 12 * COIN - feeVal;
       auto topBlock = theBDMt_->bdm()->blockchain()->top()->getBlockHeight();
       CoinSelection::CoinSelectionInstance csi(assetWlt, getUtxos,
-         addrBook, dbAssetWlt->getUnconfirmedBalance(topBlock),
-         topBlock);
+         {}, unconfBal, topBlock);
 
       //have to add the recipient with 0 val for MAX fee estimate
       float desiredFeeByte = 200.0f;
       auto recipientID = csi.addRecipient(TestChain::scrAddrD, 0);
       feeVal2 = csi.getFeeForMaxVal(desiredFeeByte);
-      auto spendVal = dbAssetWlt->getUnconfirmedBalance(topBlock);
-      spendVal -= feeVal2;
+      auto spendVal = unconfBal - feeVal2;
 
       //spend 18 to addr D, use P2PKH
       csi.updateRecipient(recipientID, TestChain::scrAddrD, spendVal);
@@ -692,7 +679,7 @@ TEST_F(SignerTest, SpendTest_SizeEstimates)
       //create spenders
       uint64_t total = 0;
       for (auto& utxo : utxoSelect) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer3.addSpender(std::make_shared<ScriptSpender>(utxo));
       }
 
@@ -737,26 +724,16 @@ TEST_F(SignerTest, SpendTest_SizeEstimates)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 17 * COIN - feeVal - feeVal2);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 17 * COIN - feeVal - feeVal2);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[3]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[3], bdm), 0 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -767,7 +744,8 @@ TEST_F(SignerTest, SpendTest_P2WPKH)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
-   auto&& bdvID = DBTestUtils::registerBDV(
+   auto bdm = theBDMt_->bdm();
+   auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
    std::vector<BinaryData> scrAddrVec {
@@ -804,34 +782,25 @@ TEST_F(SignerTest, SpendTest_P2WPKH)
    }
 
    DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto dbAssetWlt = bdvPtr->getWalletOrLockbox(assetWlt->getID());
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
    //check new wallet balances
    for (auto& addrPtr : addrVec) {
-      scrObj = dbAssetWlt->getScrAddrObjByKey(addrPtr->getPrefixedHash());
-      EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+      EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrPtr->getPrefixedHash(), bdm), 0 * COIN);
    }
 
    {
@@ -849,13 +818,18 @@ TEST_F(SignerTest, SpendTest_P2WPKH)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -867,7 +841,7 @@ TEST_F(SignerTest, SpendTest_P2WPKH)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -898,24 +872,15 @@ TEST_F(SignerTest, SpendTest_P2WPKH)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0]->getPrefixedHash(), bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1]->getPrefixedHash(), bdm), 15 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2]->getPrefixedHash(), bdm), 0  * COIN);
 
    {
       ////spend 18 back to scrAddrB, with change to addr2
@@ -926,7 +891,11 @@ TEST_F(SignerTest, SpendTest_P2WPKH)
       signer2.setFlags(SCRIPT_VERIFY_SEGWIT);
 
       //get utxo list for spend value
-      auto unspentVec = dbAssetWlt->getSpendableTxOutListZC();
+      auto unspentVec = DBTestUtils::getZCUTXOs(bdm, {
+         addrVec[0]->getPrefixedHash(),
+         addrVec[1]->getPrefixedHash(),
+         addrVec[2]->getPrefixedHash()
+      });
 
       //create feed from asset wallet
       auto assetFeed = std::make_shared<ResolverFeed_AssetWalletSingle>(
@@ -935,7 +904,7 @@ TEST_F(SignerTest, SpendTest_P2WPKH)
       //create spenders
       uint64_t total = 0;
       for (auto& utxo : unspentVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(getSpenderPtr(utxo));
          signer_nofeed.addSpender(getSpenderPtr(utxo));
       }
@@ -955,7 +924,7 @@ TEST_F(SignerTest, SpendTest_P2WPKH)
       }
 
       //grab the unsigned tx and get the tx hash from it
-      BinaryData txHashUnsigned;
+      Types::TxHash txHashUnsigned;
       {
          signer2.setFeed(assetFeed);
          auto unsignedTxRaw = signer2.serializeUnsignedTx();
@@ -989,24 +958,15 @@ TEST_F(SignerTest, SpendTest_P2WPKH)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 9 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0]->getPrefixedHash(), bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1]->getPrefixedHash(), bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2]->getPrefixedHash(), bdm), 9 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1017,6 +977,7 @@ TEST_F(SignerTest, SpendTest_MixedInputTypes)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -1074,34 +1035,25 @@ TEST_F(SignerTest, SpendTest_MixedInputTypes)
       hashVec.push_back(addrPtr->getPrefixedHash());
    }
    DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto dbAssetWlt = bdvPtr->getWalletOrLockbox(assetWlt->getID());
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
    //check new wallet balances
    for (auto& addrPtr : addrVec) {
-      scrObj = dbAssetWlt->getScrAddrObjByKey(addrPtr->getPrefixedHash());
-      EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+      EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrPtr->getPrefixedHash(), bdm), 0 * COIN);
    }
 
    {
@@ -1119,13 +1071,18 @@ TEST_F(SignerTest, SpendTest_MixedInputTypes)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -1137,7 +1094,7 @@ TEST_F(SignerTest, SpendTest_MixedInputTypes)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -1175,28 +1132,17 @@ TEST_F(SignerTest, SpendTest_MixedInputTypes)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 6 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 7 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 2 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[3]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[4]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0]->getPrefixedHash(), bdm), 6  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1]->getPrefixedHash(), bdm), 7  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2]->getPrefixedHash(), bdm), 2  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[3]->getPrefixedHash(), bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[4]->getPrefixedHash(), bdm), 0  * COIN);
 
    {
       ////spend 18 back to scrAddrB, with change to addr2
@@ -1206,7 +1152,13 @@ TEST_F(SignerTest, SpendTest_MixedInputTypes)
       signer2.setFlags(SCRIPT_VERIFY_SEGWIT);
 
       //get utxo list for spend value
-      auto&& unspentVec = dbAssetWlt->getSpendableTxOutListZC();
+      auto unspentVec = DBTestUtils::getZCUTXOs(bdm, {
+         addrVec[0]->getPrefixedHash(),
+         addrVec[1]->getPrefixedHash(),
+         addrVec[2]->getPrefixedHash(),
+         addrVec[3]->getPrefixedHash(),
+         addrVec[4]->getPrefixedHash()
+      });
 
       //create feed from asset wallet
       auto assetFeed = std::make_shared<ResolverFeed_AssetWalletSingle>(
@@ -1215,7 +1167,7 @@ TEST_F(SignerTest, SpendTest_MixedInputTypes)
       //create spenders
       uint64_t total = 0;
       for (auto& utxo : unspentVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(getSpenderPtr(utxo));
       }
 
@@ -1251,28 +1203,17 @@ TEST_F(SignerTest, SpendTest_MixedInputTypes)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[3]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[4]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 9 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0]->getPrefixedHash(), bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1]->getPrefixedHash(), bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2]->getPrefixedHash(), bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[3]->getPrefixedHash(), bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[4]->getPrefixedHash(), bdm), 9 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1283,6 +1224,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_1of3)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -1353,33 +1295,22 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_1of3)
    addrVec.push_back(addr_ms->getPrefixedHash());
 
    DBTestUtils::registerWallet(clients_, bdvID, addrVec, "ms_entry",
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto ms_wlt = bdvPtr->getWalletOrLockbox("ms_entry");
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-
-   //check new wallet balances
-   scrObj = ms_wlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 0 * COIN);
 
    {
       ////spend 27 from wlt to ms_wlt only address
@@ -1396,13 +1327,18 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_1of3)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -1414,7 +1350,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_1of3)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -1447,20 +1383,12 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_1of3)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-
-   //check new wallet balances
-   scrObj = ms_wlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 27 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 27 * COIN);
 
    //lambda to sign with each wallet
    auto signPerWallet = [&](
@@ -1474,7 +1402,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_1of3)
       signer2.setFlags(SCRIPT_VERIFY_SEGWIT);
 
       //get utxo list for spend value
-      auto unspentVec = ms_wlt->getSpendableTxOutListZC();
+      auto unspentVec = DBTestUtils::getZCUTXOs(bdm, {addrVec[0]});
 
       //create feed from asset wallet
       auto feed = std::make_shared<ResolverFeed_AssetWalletSingle_ForMultisig>(
@@ -1484,7 +1412,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_1of3)
       //create spenders
       uint64_t total = 0;
       for (auto& utxo : unspentVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(getSpenderPtr(utxo));
       }
 
@@ -1525,7 +1453,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_1of3)
    };
 
    //call lambda with each wallet
-   BinaryData unsignedHash1, unsignedHash2, unsignedHash3;
+   Types::TxHash unsignedHash1, unsignedHash2, unsignedHash3;
    auto tx1 = signPerWallet(assetWlt_1, unsignedHash1);
    auto tx2 = signPerWallet(assetWlt_2, unsignedHash2);
    auto tx3 = signPerWallet(assetWlt_3, unsignedHash3);
@@ -1549,20 +1477,12 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_1of3)
    DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-
-   //check new wallet balances
-   scrObj = ms_wlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 9 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 9 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1573,6 +1493,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_2of3_NativeP2WSH)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -1649,36 +1570,24 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_2of3_NativeP2WSH)
       addrVec_singleSig.push_back(addr);
    }
    DBTestUtils::registerWallet(clients_, bdvID, addrVec, "ms_entry",
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, addrVec_singleSig, assetWlt_2->getID(),
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto ms_wlt = bdvPtr->getWalletOrLockbox("ms_entry");
-   auto wlt_singleSig = bdvPtr->getWalletOrLockbox(assetWlt_2->getID());
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-
-   //check new wallet balances
-   scrObj = ms_wlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 0 * COIN);
 
    {
       ////spend 27 from wlt to ms_wlt only address
@@ -1695,13 +1604,18 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_2of3_NativeP2WSH)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -1713,7 +1627,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_2of3_NativeP2WSH)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -1753,32 +1667,24 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_2of3_NativeP2WSH)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = ms_wlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 20 * COIN);
-   scrObj = wlt_singleSig->getScrAddrObjByKey(asset4_singlesig->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 7 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 20 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(asset4_singlesig->getPrefixedHash(), bdm), 7 * COIN);
 
    auto spendVal = 18 * COIN;
    Signer signer2;
    signer2.setFlags(SCRIPT_VERIFY_SEGWIT);
 
    //get the zc utxo (ms script)
-   auto unspentVec = ms_wlt->getSpendableTxOutListZC();
+   auto unspentVec = DBTestUtils::getZCUTXOs(bdm, {addrVec[0]});
    ASSERT_EQ(unspentVec.size(), 1ULL);
 
-   auto unspentVec_singleSig = wlt_singleSig->getSpendableTxOutListZC();
+   auto unspentVec_singleSig = DBTestUtils::getZCUTXOs(bdm, {asset4_singlesig->getPrefixedHash()});
    ASSERT_EQ(unspentVec_singleSig.size(), 1ULL);
 
    unspentVec.insert(unspentVec.end(),
@@ -1793,7 +1699,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_2of3_NativeP2WSH)
    //create spenders
    uint64_t total = 0;
    for (auto& utxo : unspentVec) {
-      total += utxo.getValue();
+      total += utxo.getAmount();
       signer2.addSpender(getSpenderPtr(utxo));
    }
 
@@ -1939,22 +1845,14 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_2of3_NativeP2WSH)
    ASSERT_TRUE(tx_verifier.evaluateState().isValid());
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = ms_wlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 9 * COIN);
-   scrObj = wlt_singleSig->getScrAddrObjByKey(asset4_singlesig->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 9 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(asset4_singlesig->getPrefixedHash(), bdm), 0 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1965,6 +1863,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -2015,38 +1914,26 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs)
    }
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, hashVec_1, assetWlt_1->getID(),
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, hashVec_2, assetWlt_2->getID(),
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto wlt_1 = bdvPtr->getWalletOrLockbox(assetWlt_1->getID());
-   auto wlt_2 = bdvPtr->getWalletOrLockbox(assetWlt_2->getID());
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 0 * COIN);
 
    {
       ////spend 12 to wlt_1, 15 to wlt_2 from wlt
@@ -2063,13 +1950,18 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -2081,7 +1973,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -2112,28 +2004,20 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 15 * COIN);
 
    //spend 18 back to wlt, split change among the 2
 
    //get utxo list for spend value
-   auto unspentVec_1 = wlt_1->getSpendableTxOutListZC();
-   auto unspentVec_2 = wlt_2->getSpendableTxOutListZC();
+   auto unspentVec_1 = DBTestUtils::getZCUTXOs(bdm, {hashVec_1[0]});
+   auto unspentVec_2 = DBTestUtils::getZCUTXOs(bdm, {hashVec_2[0]});
 
    BinaryData serializedSignerState;
    std::string stringState;
@@ -2150,7 +2034,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs)
       //create wlt_1 spenders
       uint64_t total = 0;
       for (const auto& utxo : unspentVec_1) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(getSpenderPtr(utxo));
       }
 
@@ -2179,7 +2063,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs)
       //add spender from wlt_2
       uint64_t total = 0;
       for (const auto& utxo : unspentVec_2) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer3.addSpender(getSpenderPtr(utxo));
       }
 
@@ -2226,27 +2110,17 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs)
    DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 4 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[1], bdm), 4 * COIN);
 
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[1], bdm), 5 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2257,6 +2131,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_Strings)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -2307,38 +2182,26 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_Strings)
    }
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, hashVec_1, assetWlt_1->getID(),
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, hashVec_2, assetWlt_2->getID(),
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto wlt_1 = bdvPtr->getWalletOrLockbox(assetWlt_1->getID());
-   auto wlt_2 = bdvPtr->getWalletOrLockbox(assetWlt_2->getID());
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 0 * COIN);
 
    {
       ////spend 12 to wlt_1, 15 to wlt_2 from wlt
@@ -2355,13 +2218,18 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_Strings)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -2373,7 +2241,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_Strings)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -2404,28 +2272,20 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_Strings)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 15 * COIN);
 
    //spend 18 back to wlt, split change among the 2
 
    //get utxo list for spend value
-   auto unspentVec_1 = wlt_1->getSpendableTxOutListZC();
-   auto unspentVec_2 = wlt_2->getSpendableTxOutListZC();
+   auto unspentVec_1 = DBTestUtils::getZCUTXOs(bdm, {hashVec_1[0]});
+   auto unspentVec_2 = DBTestUtils::getZCUTXOs(bdm, {hashVec_2[0]});
 
    std::string stringState;
    auto assetFeed2 = std::make_shared<ResolverFeed_AssetWalletSingle>(assetWlt_1);
@@ -2441,7 +2301,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_Strings)
       //create wlt_1 spenders
       uint64_t total = 0;
       for (const auto& utxo : unspentVec_1) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(getSpenderPtr(utxo));
       }
 
@@ -2468,7 +2328,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_Strings)
       //add spender from wlt_2
       uint64_t total = 0;
       for (const auto& utxo : unspentVec_2) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer3.addSpender(getSpenderPtr(utxo));
       }
 
@@ -2517,27 +2377,17 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_Strings)
    DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 4 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[1], bdm), 4 * COIN);
 
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[1], bdm), 5 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2548,6 +2398,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_StringsLegacy)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -2598,38 +2449,26 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_StringsLegacy)
    }
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, hashVec_1, assetWlt_1->getID(),
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, hashVec_2, assetWlt_2->getID(),
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto wlt_1 = bdvPtr->getWalletOrLockbox(assetWlt_1->getID());
-   auto wlt_2 = bdvPtr->getWalletOrLockbox(assetWlt_2->getID());
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 0 * COIN);
 
    {
       ////spend 12 to wlt_1, 15 to wlt_2 from wlt
@@ -2646,13 +2485,18 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_StringsLegacy)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -2664,7 +2508,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_StringsLegacy)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -2695,28 +2539,20 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_StringsLegacy)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 15 * COIN);
 
    //spend 18 back to wlt, split change among the 2
 
    //get utxo list for spend value
-   auto unspentVec_1 = wlt_1->getSpendableTxOutListZC();
-   auto unspentVec_2 = wlt_2->getSpendableTxOutListZC();
+   auto unspentVec_1 = DBTestUtils::getZCUTXOs(bdm, {hashVec_1[0]});
+   auto unspentVec_2 = DBTestUtils::getZCUTXOs(bdm, {hashVec_2[0]});
 
    std::string stringState;
    auto assetFeed2 = std::make_shared<ResolverFeed_AssetWalletSingle>(assetWlt_1);
@@ -2733,7 +2569,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_StringsLegacy)
       uint64_t total = 0;
       std::set<BinaryData> spenderHashes;
       for (const auto& utxo : unspentVec_1) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          spenderHashes.emplace(utxo.getTxHash());
          signer2.addSpender(getSpenderPtr(utxo));
       }
@@ -2768,7 +2604,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_StringsLegacy)
       uint64_t total = 0;
       std::set<BinaryData> spenderHashes;
       for (const auto& utxo : unspentVec_2) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          spenderHashes.emplace(utxo.getTxHash());
          signer3.addSpender(getSpenderPtr(utxo));
       }
@@ -2825,27 +2661,17 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_StringsLegacy)
    DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 4 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[1], bdm), 4 * COIN);
 
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[1], bdm), 5 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2856,6 +2682,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -2906,38 +2733,26 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning)
    }
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, hashVec_1, assetWlt_1->getID(),
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, hashVec_2, assetWlt_2->getID(),
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto wlt_1 = bdvPtr->getWalletOrLockbox(assetWlt_1->getID());
-   auto wlt_2 = bdvPtr->getWalletOrLockbox(assetWlt_2->getID());
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 0 * COIN);
 
    {
       ////spend 12 to wlt_1, 15 to wlt_2 from wlt
@@ -2954,13 +2769,18 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -2972,7 +2792,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -3003,28 +2823,20 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 15 * COIN);
 
    //spend 18 back to wlt, split change among the 2
 
    //get utxo list for spend value
-   auto unspentVec_1 = wlt_1->getSpendableTxOutListZC();
-   auto unspentVec_2 = wlt_2->getSpendableTxOutListZC();
+   auto unspentVec_1 = DBTestUtils::getZCUTXOs(bdm, {hashVec_1[0]});
+   auto unspentVec_2 = DBTestUtils::getZCUTXOs(bdm, {hashVec_2[0]});
    BinaryData serializedSignerState;
 
    {
@@ -3038,7 +2850,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning)
       //create wlt_1 spenders
       uint64_t total = 0;
       for (auto& utxo : unspentVec_1) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(getSpenderPtr(utxo));
       }
 
@@ -3065,7 +2877,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning)
       //add spender from wlt_2
       uint64_t total = 0;
       for (auto& utxo : unspentVec_2) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer3.addSpender(getSpenderPtr(utxo));
       }
 
@@ -3105,8 +2917,8 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning)
    signer5.deserializeState(serializedSignerState);
 
    for (auto& utxo : unspentVec_2) {
-      UTXO entry(utxo.value_, utxo.txHeight_, utxo.txIndex_, utxo.txOutIndex_,
-         std::move(utxo.txHash_), std::move(utxo.script_));
+      UTXO entry(utxo.amount, utxo.txHeight, utxo.txIndex, utxo.txOutIndex,
+         std::move(utxo.txHash), std::move(utxo.script));
       signer5.populateUtxo(entry);
    }
 
@@ -3146,27 +2958,17 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning)
    DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 4 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[1], bdm), 4 * COIN);
 
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[1], bdm), 5 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3177,6 +2979,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -3230,38 +3033,26 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx)
    }
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, hashVec_1, assetWlt_1->getID(),
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, hashVec_2, assetWlt_2->getID(),
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto wlt_1 = bdvPtr->getWalletOrLockbox(assetWlt_1->getID());
-   auto wlt_2 = bdvPtr->getWalletOrLockbox(assetWlt_2->getID());
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 0 * COIN);
 
    {
       ////spend 12 to wlt_1, 15 to wlt_2 from wlt
@@ -3278,13 +3069,18 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -3296,7 +3092,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -3327,28 +3123,20 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 15 * COIN);
 
    //spend 18 back to wlt, split change among the 2
 
    //get utxo list for spend value
-   auto unspentVec_1 = wlt_1->getSpendableTxOutListZC();
-   auto unspentVec_2 = wlt_2->getSpendableTxOutListZC();
+   auto unspentVec_1 = DBTestUtils::getZCUTXOs(bdm, {hashVec_1[0]});
+   auto unspentVec_2 = DBTestUtils::getZCUTXOs(bdm, {hashVec_2[0]});
 
    BinaryData serializedSignerState;
    {
@@ -3363,7 +3151,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx)
       auto _assetFeed = std::make_shared<ResolverFeed_AssetWalletSingle>(assetWlt_1);
       uint64_t total = 0;
       for (auto& utxo : unspentVec_1) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(getSpenderPtr(utxo));
       }
 
@@ -3414,7 +3202,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx)
       //add spender from wlt_2
       uint64_t total = 0;
       for (auto& utxo : unspentVec_2) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          auto spender = getSpenderPtr(utxo);
          spender->setSequence(UINT32_MAX - 2);
          signer3.addSpender(spender);
@@ -3465,8 +3253,8 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx)
    signer5.deserializeState(serializedSignerState);
 
    for (auto& utxo : unspentVec_2) {
-      UTXO entry(utxo.value_, utxo.txHeight_, utxo.txIndex_, utxo.txOutIndex_,
-         std::move(utxo.txHash_), std::move(utxo.script_));
+      UTXO entry(utxo.amount, utxo.txHeight, utxo.txIndex, utxo.txOutIndex,
+         std::move(utxo.txHash), std::move(utxo.script));
       signer5.populateUtxo(entry);
    }
 
@@ -3505,27 +3293,16 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx)
    DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 4 * COIN);
-
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[1], bdm), 4 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[1], bdm), 5 * COIN);
 
    //compare hashes with unsigned counterparts
    Tx unsignedTx(unsignedTxRaw);
@@ -3541,6 +3318,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx_Neste
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -3594,38 +3372,26 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx_Neste
    }
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, hashVec_1, assetWlt_1->getID(),
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, hashVec_2, assetWlt_2->getID(),
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto wlt_1 = bdvPtr->getWalletOrLockbox(assetWlt_1->getID());
-   auto wlt_2 = bdvPtr->getWalletOrLockbox(assetWlt_2->getID());
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 0 * COIN);
 
    {
       ////spend 12 to wlt_1, 15 to wlt_2 from wlt
@@ -3642,13 +3408,18 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx_Neste
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -3660,7 +3431,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx_Neste
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -3691,28 +3462,20 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx_Neste
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 15 * COIN);
 
    //spend 18 back to wlt, split change among the 2
 
    //get utxo list for spend value
-   auto unspentVec_1 = wlt_1->getSpendableTxOutListZC();
-   auto unspentVec_2 = wlt_2->getSpendableTxOutListZC();
+   auto unspentVec_1 = DBTestUtils::getZCUTXOs(bdm, {hashVec_1[0]});
+   auto unspentVec_2 = DBTestUtils::getZCUTXOs(bdm, {hashVec_2[0]});
 
    BinaryData serializedSignerState;
    {
@@ -3727,7 +3490,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx_Neste
       auto _assetFeed = std::make_shared<ResolverFeed_AssetWalletSingle>(assetWlt_1);
       uint64_t total = 0;
       for (auto& utxo : unspentVec_1) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(getSpenderPtr(utxo));
       }
 
@@ -3788,7 +3551,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx_Neste
       //add spender from wlt_2
       uint64_t total = 0;
       for (auto& utxo : unspentVec_2) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer3.addSpender(getSpenderPtr(utxo));
       }
 
@@ -3846,8 +3609,8 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx_Neste
          const auto& utxo = utxoVec[i];
          for (unsigned y=0; y<signer.getTxInCount(); y++) {
             auto spender = signer.getSpender(y);
-            if (spender->getOutputHash() == utxo.txHash_ &&
-               spender->getOutputIndex() == utxo.txOutIndex_) {
+            if (spender->getOutputHash() == utxo.txHash &&
+               spender->getOutputIndex() == utxo.txOutIndex) {
                spenderIndexes.emplace(y);
                break;
             }
@@ -3880,8 +3643,8 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx_Neste
 
    auto unspentVec_2Copy = unspentVec_2;
    for (auto& utxo : unspentVec_2) {
-      UTXO entry(utxo.value_, utxo.txHeight_, utxo.txIndex_, utxo.txOutIndex_,
-         std::move(utxo.txHash_), std::move(utxo.script_));
+      UTXO entry(utxo.amount, utxo.txHeight, utxo.txIndex, utxo.txOutIndex,
+         std::move(utxo.txHash), std::move(utxo.script));
       signer5.populateUtxo(entry);
    }
 
@@ -3921,27 +3684,16 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx_Neste
    DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 4 * COIN);
-
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[1], bdm), 4 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[1], bdm), 5 * COIN);
 
    //compare hashes with unsigned counterparts
    Tx unsignedTx(unsignedTxRaw);
@@ -3958,6 +3710,7 @@ TEST_F(SignerTest, GetUnsignedTxId)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -4012,38 +3765,26 @@ TEST_F(SignerTest, GetUnsignedTxId)
    }
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, hashVec_1, assetWlt_1->getID(),
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, hashVec_2, assetWlt_2->getID(),
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto wlt_1 = bdvPtr->getWalletOrLockbox(assetWlt_1->getID());
-   auto wlt_2 = bdvPtr->getWalletOrLockbox(assetWlt_2->getID());
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 0 * COIN);
 
    BinaryData supportingTx;
    {
@@ -4061,13 +3802,18 @@ TEST_F(SignerTest, GetUnsignedTxId)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -4079,7 +3825,7 @@ TEST_F(SignerTest, GetUnsignedTxId)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -4130,25 +3876,17 @@ TEST_F(SignerTest, GetUnsignedTxId)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = wlt_1->getScrAddrObjByKey(hashVec_1[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = wlt_2->getScrAddrObjByKey(hashVec_2[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_1[0], bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec_2[0], bdm), 15 * COIN);
 
-   auto unspentVec_1 = wlt_1->getSpendableTxOutListZC();
-   auto unspentVec_2 = wlt_2->getSpendableTxOutListZC();
+   auto unspentVec_1 = DBTestUtils::getZCUTXOs(bdm, {hashVec_1[0]});
+   auto unspentVec_2 = DBTestUtils::getZCUTXOs(bdm, {hashVec_2[0]});
 
    BinaryData serializedSignerState;
    {
@@ -4162,7 +3900,7 @@ TEST_F(SignerTest, GetUnsignedTxId)
       //create wlt_1 spenders
       uint64_t total = 0;
       for (auto& utxo : unspentVec_1) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(
             std::make_shared<ScriptSpender>(
                utxo.getTxHash(), utxo.getTxOutIndex()));
@@ -4200,7 +3938,7 @@ TEST_F(SignerTest, GetUnsignedTxId)
       //add spender from wlt_2
       uint64_t total = 0;
       for (auto& utxo : unspentVec_2) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer3.addSpender(
             std::make_shared<ScriptSpender>(
                utxo.getTxHash(), utxo.getTxOutIndex()));
@@ -4324,6 +4062,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -4370,35 +4109,26 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH)
    hashVec.insert(hashVec.begin(), hashSet.begin(), hashSet.end());
 
    DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
 
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto dbAssetWlt = bdvPtr->getWalletOrLockbox(assetWlt->getID());
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
    //check new wallet balances
    for (auto& scripthash : hashSet) {
-      scrObj = dbAssetWlt->getScrAddrObjByKey(scripthash);
-      EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+      EXPECT_EQ(DBTestUtils::getScrAddrBalance(scripthash, bdm), 0 * COIN);
    }
 
    {
@@ -4416,13 +4146,18 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -4434,7 +4169,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -4469,22 +4204,14 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 15 * COIN);
 
    BinaryData signerState;
    {
@@ -4495,7 +4222,9 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH)
       signer2.setFlags(SCRIPT_VERIFY_SEGWIT);
 
       //get utxo list for spend value
-      auto unspentVec = dbAssetWlt->getSpendableTxOutListZC();
+      auto unspentVec = DBTestUtils::getZCUTXOs(bdm, {
+         addrVec[0], addrVec[1]
+      });
 
       //create feed from asset wallet
       auto assetFeed = std::make_shared<ResolverFeed_AssetWalletSingle>(assetWlt);
@@ -4503,7 +4232,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH)
       //create spenders
       uint64_t total = 0;
       for (auto& utxo : unspentVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(getSpenderPtr(utxo));
       }
 
@@ -4553,24 +4282,15 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]);
-   EXPECT_EQ(scrObj->getFullBalance(), 9 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2], bdm), 9 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4581,6 +4301,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromWOCopy)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -4656,35 +4377,25 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromWOCopy)
    hashVec.insert(hashVec.begin(), hashSet.begin(), hashSet.end());
 
    DBTestUtils::registerWallet(clients_, bdvID, hashVec, wltWO->getID(),
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto dbAssetWlt = bdvPtr->getWalletOrLockbox(wltWO->getID());
-
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
    //check new wallet balances
    for (auto& scripthash : hashSet) {
-      scrObj = dbAssetWlt->getScrAddrObjByKey(scripthash);
-      EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+      EXPECT_EQ(DBTestUtils::getScrAddrBalance(scripthash, bdm), 0 * COIN);
    }
 
    {
@@ -4702,13 +4413,18 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromWOCopy)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -4720,7 +4436,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromWOCopy)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -4755,22 +4471,14 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromWOCopy)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 15 * COIN);
 
    //-- resolve unsigned tx with WO wallet --//
    BinaryData signerState;
@@ -4782,7 +4490,9 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromWOCopy)
       signer2.setFlags(SCRIPT_VERIFY_SEGWIT);
 
       //get utxo list for spend value
-      auto unspentVec = dbAssetWlt->getSpendableTxOutListZC();
+      auto unspentVec = DBTestUtils::getZCUTXOs(bdm, {
+         addrVec[0], addrVec[1]
+      });
 
       //create feed from asset wallet
       auto assetFeed = std::make_shared<ResolverFeed_AssetWalletSingle>(wltWO);
@@ -4791,7 +4501,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromWOCopy)
       uint64_t total = 0;
       for (auto& utxo : unspentVec)
       {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(getSpenderPtr(utxo));
       }
 
@@ -4847,24 +4557,15 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromWOCopy)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]);
-   EXPECT_EQ(scrObj->getFullBalance(), 9 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2], bdm), 9 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4875,6 +4576,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromXPub)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -4935,34 +4637,25 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromXPub)
    hashVec.insert(hashVec.begin(), hashSet.begin(), hashSet.end());
 
    DBTestUtils::registerWallet(clients_, bdvID, hashVec, wltWO->getID(),
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto dbAssetWlt = bdvPtr->getWalletOrLockbox(wltWO->getID());
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
    //check new wallet balances
    for (auto& scripthash : hashSet) {
-      scrObj = dbAssetWlt->getScrAddrObjByKey(scripthash);
-      EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+      EXPECT_EQ(DBTestUtils::getScrAddrBalance(scripthash, bdm), 0 * COIN);
    }
 
    {
@@ -4980,13 +4673,18 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromXPub)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -4998,7 +4696,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromXPub)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -5033,22 +4731,14 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromXPub)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 15 * COIN);
 
    BinaryData signerState;
    {
@@ -5059,7 +4749,9 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromXPub)
       signer2.setFlags(SCRIPT_VERIFY_SEGWIT);
 
       //get utxo list for spend value
-      auto unspentVec = dbAssetWlt->getSpendableTxOutListZC();
+      auto unspentVec = DBTestUtils::getZCUTXOs(bdm,
+         {addrVec[0], addrVec[1]}
+      );
 
       //create feed from asset wallet
       auto assetFeed = std::make_shared<ResolverFeed_AssetWalletSingle>(wltWO);
@@ -5067,7 +4759,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromXPub)
       //create spenders
       uint64_t total = 0;
       for (auto& utxo : unspentVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(getSpenderPtr(utxo));
       }
 
@@ -5118,24 +4810,15 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromXPub)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]);
-   EXPECT_EQ(scrObj->getFullBalance(), 9 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2], bdm), 9 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -5146,6 +4829,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2PK)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -5177,35 +4861,25 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2PK)
    hashVec.insert(hashVec.begin(), hashSet.begin(), hashSet.end());
 
    DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto dbAssetWlt = bdvPtr->getWalletOrLockbox(assetWlt->getID());
-
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
    //check new wallet balances
    for (auto& scripthash : hashSet) {
-      scrObj = dbAssetWlt->getScrAddrObjByKey(scripthash);
-      EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+      EXPECT_EQ(DBTestUtils::getScrAddrBalance(scripthash, bdm), 0 * COIN);
    }
 
    {
@@ -5223,13 +4897,18 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2PK)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -5241,7 +4920,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2PK)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -5278,22 +4957,14 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2PK)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 15 * COIN);
 
    {
       ////spend 18 back to scrAddrB, with change to addr[2]
@@ -5303,7 +4974,9 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2PK)
       signer2.setFlags(SCRIPT_VERIFY_SEGWIT);
 
       //get utxo list for spend value
-      auto unspentVec = dbAssetWlt->getSpendableTxOutListZC();
+      auto unspentVec = DBTestUtils::getZCUTXOs(bdm,
+         {addrVec[0], addrVec[1]}
+      );
 
       //create feed from asset wallet
       auto assetFeed = std::make_shared<ResolverFeed_AssetWalletSingle>(assetWlt);
@@ -5311,7 +4984,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2PK)
       //create spenders
       uint64_t total = 0;
       for (auto& utxo : unspentVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(getSpenderPtr(utxo));
       }
 
@@ -5350,24 +5023,15 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2PK)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]);
-   EXPECT_EQ(scrObj->getFullBalance(), 9 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2], bdm), 9 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -5377,6 +5041,7 @@ TEST_F(SignerTest, SpendTest_FromAccount_Reload)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -5432,35 +5097,27 @@ TEST_F(SignerTest, SpendTest_FromAccount_Reload)
    }
 
    DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto dbAssetWlt = bdvPtr->getWalletOrLockbox(assetWlt->getID());
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 3U);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(
+      theBDMt_->bdm().get(), DB_SELECT::HEADERS), 3U);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
    //check new wallet balances
    for (auto& addrPtr : addrVec) {
-      scrObj = dbAssetWlt->getScrAddrObjByKey(addrPtr->getPrefixedHash());
-      EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+      EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrPtr->getPrefixedHash(), bdm), 0 * COIN);
    }
 
    {
@@ -5478,13 +5135,18 @@ TEST_F(SignerTest, SpendTest_FromAccount_Reload)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto&& unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -5496,7 +5158,7 @@ TEST_F(SignerTest, SpendTest_FromAccount_Reload)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -5539,24 +5201,15 @@ TEST_F(SignerTest, SpendTest_FromAccount_Reload)
    ASSERT_EQ(accIdReload, accID);
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0]->getPrefixedHash(), bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1]->getPrefixedHash(), bdm), 15 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2]->getPrefixedHash(), bdm), 0 * COIN);
 
    {
       ////spend 18 back to scrAddrB, with change to addr2
@@ -5566,7 +5219,11 @@ TEST_F(SignerTest, SpendTest_FromAccount_Reload)
       signer2.setFlags(SCRIPT_VERIFY_SEGWIT);
 
       //get utxo list for spend value
-      auto unspentVec = dbAssetWlt->getSpendableTxOutListZC();
+      auto unspentVec = DBTestUtils::getZCUTXOs(bdm, {
+         addrVec[0]->getPrefixedHash(),
+         addrVec[1]->getPrefixedHash(),
+         addrVec[2]->getPrefixedHash()
+      });
 
       //create feed from asset wallet
       auto assetFeed = std::make_shared<ResolverFeed_AssetWalletSingle>(assetWlt);
@@ -5574,7 +5231,7 @@ TEST_F(SignerTest, SpendTest_FromAccount_Reload)
       //create spenders
       uint64_t total = 0;
       for (auto& utxo : unspentVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(getSpenderPtr(utxo));
       }
 
@@ -5611,81 +5268,53 @@ TEST_F(SignerTest, SpendTest_FromAccount_Reload)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-
-   try {
-      scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[3]->getPrefixedHash());
-      EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-      ASSERT_TRUE(false); //should never get here
-   }
-   catch (const std::exception&) {}
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0]->getPrefixedHash(), bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1]->getPrefixedHash(), bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2]->getPrefixedHash(), bdm), 0 * COIN);
 
    //register new change address
    DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
-      false, true);
+      true);
 
-   //check new wallet balance again, change value should appear
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-
-   //full node cannot track zc prior to address registration, balance will
+   //bare/full node cannot track zc prior to address registration, balance will
    //show after the zc mines
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[3]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0]->getPrefixedHash(), bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1]->getPrefixedHash(), bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2]->getPrefixedHash(), bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[3]->getPrefixedHash(), bdm), 0 * COIN);
 
    //mine 2 blocks
    DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrC, 2);
    DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 5U);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(
+      theBDMt_->bdm().get(), DB_SELECT::HEADERS), 5U);
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 155 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 155 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-
-   //change balance will now show on post zc registered address
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[3]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 9 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0]->getPrefixedHash(), bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1]->getPrefixedHash(), bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2]->getPrefixedHash(), bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[3]->getPrefixedHash(), bdm), 9 * COIN);
 
    {
       //check there are no zc utxos anymore
-      auto unspentVec = dbAssetWlt->getSpendableTxOutListZC();
+      auto unspentVec = DBTestUtils::getZCUTXOs(bdm, {
+         addrVec[0]->getPrefixedHash(),
+         addrVec[1]->getPrefixedHash(),
+         addrVec[2]->getPrefixedHash(),
+         addrVec[3]->getPrefixedHash()
+      });
       ASSERT_EQ(unspentVec.size(), 0ULL);
    }
 
@@ -5697,7 +5326,12 @@ TEST_F(SignerTest, SpendTest_FromAccount_Reload)
       signer3.setFlags(SCRIPT_VERIFY_SEGWIT);
 
       //get utxo list for spend value
-      auto unspentVec = dbAssetWlt->getSpendableTxOutListForValue();
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         addrVec[0]->getPrefixedHash(),
+         addrVec[1]->getPrefixedHash(),
+         addrVec[2]->getPrefixedHash(),
+         addrVec[3]->getPrefixedHash()
+      });
 
       //create feed from asset wallet
       auto assetFeed = std::make_shared<ResolverFeed_AssetWalletSingle>(assetWlt);
@@ -5705,7 +5339,7 @@ TEST_F(SignerTest, SpendTest_FromAccount_Reload)
       //create spenders
       uint64_t total = 0;
       for (auto& utxo : unspentVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer3.addSpender(getSpenderPtr(utxo));
       }
 
@@ -5732,26 +5366,16 @@ TEST_F(SignerTest, SpendTest_FromAccount_Reload)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 155 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 9 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 155 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 9  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[3]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0]->getPrefixedHash(), bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1]->getPrefixedHash(), bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2]->getPrefixedHash(), bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[3]->getPrefixedHash(), bdm), 0 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -5762,6 +5386,7 @@ TEST_F(SignerTest, SpendTest_BIP32_Accounts)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -5823,31 +5448,25 @@ TEST_F(SignerTest, SpendTest_BIP32_Accounts)
 
    //register with db
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 3U);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(
+      theBDMt_->bdm().get(), DB_SELECT::HEADERS), 3U);
 
    auto newAddr1 = assetWlt->getNewAddress(accountID1);
    auto newAddr2 = assetWlt->getNewAddress(accountID2);
    auto newAddr3 = assetWlt->getNewAddress(accountID2);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
    {
       ////spend 27 from wlt to acc1 & acc2
@@ -5864,13 +5483,18 @@ TEST_F(SignerTest, SpendTest_BIP32_Accounts)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -5882,7 +5506,7 @@ TEST_F(SignerTest, SpendTest_BIP32_Accounts)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -5911,16 +5535,11 @@ TEST_F(SignerTest, SpendTest_BIP32_Accounts)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
    //register new wallet
    std::vector<BinaryData> hashVec;
@@ -5929,32 +5548,24 @@ TEST_F(SignerTest, SpendTest_BIP32_Accounts)
    hashVec.push_back(newAddr3->getPrefixedHash());
 
    DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
-      false, false);
-   auto dbAssetWlt = bdvPtr->getWalletOrLockbox(assetWlt->getID());
+      false);
 
    //mine some blocks
    DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrC, 2);
    DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 5U);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(
+      theBDMt_->bdm().get(), DB_SELECT::HEADERS), 5U);
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 155 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 155 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 14 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 13 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[2]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0ULL);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[0], bdm), 14 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[1], bdm), 13 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[2], bdm), 0  * COIN);
 
    //spend from the new addresses
    {
@@ -5965,13 +5576,15 @@ TEST_F(SignerTest, SpendTest_BIP32_Accounts)
       auto feed = std::make_shared<ResolverFeed_AssetWalletSingle>(assetWlt);
 
       //get utxo list for spend value
-      auto unspentVec = dbAssetWlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm,
+         {hashVec[0], hashVec[1], hashVec[2]}
+      );
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -5981,9 +5594,7 @@ TEST_F(SignerTest, SpendTest_BIP32_Accounts)
       }
 
       //create script spender objects
-      uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -6014,23 +5625,15 @@ TEST_F(SignerTest, SpendTest_BIP32_Accounts)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 155 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 155 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0ULL);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[2]);
-   EXPECT_EQ(scrObj->getFullBalance(), 27 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[1], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[2], bdm), 27 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -6041,6 +5644,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Armory135)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -6068,27 +5672,21 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Armory135)
 
    //register with db
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 3U);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(
+      theBDMt_->bdm().get(), DB_SELECT::HEADERS), 3U);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
    //grab enough addresses to trigger a lookup extention
    auto accountPtr = assetWlt->getAccountForID(assetWlt->getMainAccountID());
@@ -6116,13 +5714,18 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Armory135)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -6134,7 +5737,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Armory135)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -6161,16 +5764,11 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Armory135)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
    //register new wallet
    std::vector<BinaryData> hashVec;
@@ -6179,30 +5777,23 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Armory135)
    hashVec.push_back(newAddr2->getPrefixedHash());
 
    DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
-      false, false);
-   auto dbAssetWlt = bdvPtr->getWalletOrLockbox(assetWlt->getID());
+      false);
 
    //mine some blocks
    DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrC, 2);
    DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 5U);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(
+      theBDMt_->bdm().get(), DB_SELECT::HEADERS), 5U);
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 155 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0ULL);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 155 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 27 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0ULL);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[0], bdm), 27 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[1], bdm), 0  * COIN);
 
    //spend from the new address
    {
@@ -6214,13 +5805,15 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Armory135)
       auto feed = std::make_shared<ResolverFeed_AssetWalletSingle>(assetWlt);
 
       //get utxo list for spend value
-      auto unspentVec = dbAssetWlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         hashVec[0], hashVec[1]
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -6230,9 +5823,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Armory135)
       }
 
       //create script spender objects
-      uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -6263,21 +5854,14 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Armory135)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 155 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 155 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0ULL);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 27 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[1], bdm), 27 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -6288,6 +5872,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_BIP32)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -6316,27 +5901,21 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_BIP32)
 
    //register with db
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 3U);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(
+      theBDMt_->bdm().get(), DB_SELECT::HEADERS), 3U);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
    //grab enough addresses to trigger a lookup extention
    auto accountPtr = assetWlt->getAccountForID(assetWlt->getMainAccountID());
@@ -6365,13 +5944,18 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_BIP32)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -6383,7 +5967,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_BIP32)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -6411,16 +5995,11 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_BIP32)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
    //register new wallet
    std::vector<BinaryData> hashVec;
@@ -6429,30 +6008,23 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_BIP32)
    hashVec.push_back(newAddr2->getPrefixedHash());
 
    DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
-      false, false);
-   auto dbAssetWlt = bdvPtr->getWalletOrLockbox(assetWlt->getID());
+      false);
 
    //mine some blocks
    DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrC, 2);
    DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 5U);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(
+      theBDMt_->bdm().get(), DB_SELECT::HEADERS), 5U);
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 155 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 155 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 27 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0ULL);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[0], bdm), 27 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[1], bdm), 0  * COIN);
 
    //spend from the new address
    {
@@ -6462,13 +6034,15 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_BIP32)
       auto feed = std::make_shared<ResolverFeed_AssetWalletSingle>(assetWlt);
 
       //get utxo list for spend value
-      auto unspentVec = dbAssetWlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm,
+         {hashVec[0], hashVec[1]}
+      );
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -6478,9 +6052,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_BIP32)
       }
 
       //create script spender objects
-      uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -6511,21 +6083,14 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_BIP32)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 155 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 155 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0ULL);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 27 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[0], bdm), 0  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[1], bdm), 27 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -6536,6 +6101,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Salted)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -6588,27 +6154,21 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Salted)
 
    //register with db
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 3U);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(
+      theBDMt_->bdm().get(), DB_SELECT::HEADERS), 3U);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
    //grab enough addresses to trigger a lookup extention
    auto accountPtr = assetWlt->getAccountForID(assetWlt->getMainAccountID());
@@ -6636,13 +6196,18 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Salted)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -6654,7 +6219,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Salted)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -6682,16 +6247,11 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Salted)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
    //register new wallet
    std::vector<BinaryData> hashVec;
@@ -6700,30 +6260,23 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Salted)
    hashVec.push_back(newAddr2->getPrefixedHash());
 
    DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
-      false, false);
-   auto dbAssetWlt = bdvPtr->getWalletOrLockbox(assetWlt->getID());
+      false);
 
    //mine some blocks
    DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrC, 2);
    DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 5U);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(
+      theBDMt_->bdm().get(), DB_SELECT::HEADERS), 5U);
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 155 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 155 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 27 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0ULL);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[0], bdm), 27 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[1], bdm), 0  * COIN);
 
    //spend from the new address
    {
@@ -6733,13 +6286,15 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Salted)
       auto feed = std::make_shared<ResolverFeed_AssetWalletSingle>(assetWlt);
 
       //get utxo list for spend value
-      auto unspentVec = dbAssetWlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm,
+         {hashVec[0], hashVec[1]}
+      );
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -6749,9 +6304,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Salted)
       }
 
       //create script spender objects
-      uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -6783,21 +6336,14 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Salted)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 155 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 155 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0ULL);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 27 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[0], bdm), 0  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[1], bdm), 27 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -6814,6 +6360,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_ECDH)
 
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -6859,27 +6406,21 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_ECDH)
 
    //register with db
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 3U);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(
+      theBDMt_->bdm().get(), DB_SELECT::HEADERS), 3U);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
    //generate some ECDH addresses
    EXPECT_EQ(TestUtils::getMainAccountAssetCount(assetWlt), 0U);
@@ -6915,13 +6456,18 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_ECDH)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -6933,7 +6479,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_ECDH)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -6961,16 +6507,11 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_ECDH)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
    //register new wallet
    std::vector<BinaryData> hashVec;
@@ -6978,30 +6519,23 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_ECDH)
    hashVec.push_back(addrVec[1]->getPrefixedHash());
 
    DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
-      false, false);
-   auto dbAssetWlt = bdvPtr->getWalletOrLockbox(assetWlt->getID());
+      false);
 
    //mine some blocks
    DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrC, 2);
    DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 5U);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(
+      theBDMt_->bdm().get(), DB_SELECT::HEADERS), 5U);
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 155 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 155 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 27 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0ULL);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[0], bdm), 27 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[1], bdm), 0  * COIN);
 
    //spend from the new address
    {
@@ -7013,13 +6547,15 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_ECDH)
       auto feed = std::make_shared<ResolverFeed_AssetWalletSingle>(assetWlt);
 
       //get utxo list for spend value
-      auto unspentVec = dbAssetWlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm,
+         {hashVec[0], hashVec[1]}
+      );
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -7029,9 +6565,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_ECDH)
       }
 
       //create script spender objects
-      uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -7062,21 +6596,14 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_ECDH)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 155 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 155 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0ULL);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(hashVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 27 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[0], bdm), 0  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(hashVec[1], bdm), 27 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -7087,6 +6614,7 @@ TEST_F(SignerTest, SpendTest_InjectSignature)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -7123,34 +6651,25 @@ TEST_F(SignerTest, SpendTest_InjectSignature)
       hashVec.push_back(addrPtr->getPrefixedHash());
    }
    DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto dbAssetWlt = bdvPtr->getWalletOrLockbox(assetWlt->getID());
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
    //check new wallet balances
    for (auto& addrPtr : addrVec) {
-      scrObj = dbAssetWlt->getScrAddrObjByKey(addrPtr->getPrefixedHash());
-      EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+      EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrPtr->getPrefixedHash(), bdm), 0 * COIN);
    }
 
    {
@@ -7169,13 +6688,18 @@ TEST_F(SignerTest, SpendTest_InjectSignature)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -7188,7 +6712,7 @@ TEST_F(SignerTest, SpendTest_InjectSignature)
       uint64_t total = 0;
       unsigned sigCount = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
          signer_inject.addSpender(getSpenderPtr(utxo));
          ++sigCount;
@@ -7277,24 +6801,15 @@ TEST_F(SignerTest, SpendTest_InjectSignature)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0]->getPrefixedHash(), bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1]->getPrefixedHash(), bdm), 15 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2]->getPrefixedHash(), bdm), 0  * COIN);
 
    {
       ////spend 18 back to scrAddrB, with change to addr2
@@ -7305,7 +6820,11 @@ TEST_F(SignerTest, SpendTest_InjectSignature)
       signer2.setFlags(SCRIPT_VERIFY_SEGWIT);
 
       //get utxo list for spend value
-      auto unspentVec = dbAssetWlt->getSpendableTxOutListZC();
+      auto unspentVec = DBTestUtils::getZCUTXOs(bdm, {
+         addrVec[0]->getPrefixedHash(),
+         addrVec[1]->getPrefixedHash(),
+         addrVec[2]->getPrefixedHash()
+      });
 
       //create feed from asset wallet
       auto assetFeed = std::make_shared<ResolverFeed_AssetWalletSingle>(assetWlt);
@@ -7313,7 +6832,7 @@ TEST_F(SignerTest, SpendTest_InjectSignature)
       //create spenders
       uint64_t total = 0;
       for (auto& utxo : unspentVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(getSpenderPtr(utxo));
          signer_inject.addSpender(getSpenderPtr(utxo));
       }
@@ -7421,24 +6940,15 @@ TEST_F(SignerTest, SpendTest_InjectSignature)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 9 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0]->getPrefixedHash(), bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1]->getPrefixedHash(), bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2]->getPrefixedHash(), bdm), 9 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -7449,6 +6959,7 @@ TEST_F(SignerTest, SpendTest_InjectSignature_Multisig)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -7515,36 +7026,24 @@ TEST_F(SignerTest, SpendTest_InjectSignature_Multisig)
       addrVec_singleSig.push_back(addr);
    }
    DBTestUtils::registerWallet(clients_, bdvID, addrVec, "ms_entry",
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, addrVec_singleSig, assetWlt_2->getID(),
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto ms_wlt = bdvPtr->getWalletOrLockbox("ms_entry");
-   auto wlt_singleSig = bdvPtr->getWalletOrLockbox(assetWlt_2->getID());
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-
-   //check new wallet balances
-   scrObj = ms_wlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 0 * COIN);
 
    {
       ////spend 27 from wlt to ms_wlt only address
@@ -7561,13 +7060,18 @@ TEST_F(SignerTest, SpendTest_InjectSignature_Multisig)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -7579,7 +7083,7 @@ TEST_F(SignerTest, SpendTest_InjectSignature_Multisig)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo));
       }
 
@@ -7618,32 +7122,24 @@ TEST_F(SignerTest, SpendTest_InjectSignature_Multisig)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = ms_wlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 20 * COIN);
-   scrObj = wlt_singleSig->getScrAddrObjByKey(asset4_singlesig->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 7 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 20 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(asset4_singlesig->getPrefixedHash(), bdm), 7 * COIN);
 
    auto spendVal = 18 * COIN;
    Signer signer2;
    signer2.setFlags(SCRIPT_VERIFY_SEGWIT);
 
    //get the zc utxo (ms script)
-   auto unspentVec = ms_wlt->getSpendableTxOutListZC();
+   auto unspentVec = DBTestUtils::getZCUTXOs(bdm, {addrVec[0]});
    ASSERT_EQ(unspentVec.size(), 1ULL);
 
-   auto unspentVec_singleSig = wlt_singleSig->getSpendableTxOutListZC();
+   auto unspentVec_singleSig = DBTestUtils::getZCUTXOs(bdm, {asset4_singlesig->getPrefixedHash()});
    ASSERT_EQ(unspentVec_singleSig.size(), 1ULL);
 
    unspentVec.insert(unspentVec.end(),
@@ -7656,7 +7152,7 @@ TEST_F(SignerTest, SpendTest_InjectSignature_Multisig)
    //create spenders
    uint64_t total = 0;
    for (auto& utxo : unspentVec) {
-      total += utxo.getValue();
+      total += utxo.getAmount();
       signer2.addSpender(getSpenderPtr(utxo));
    }
 
@@ -7873,22 +7369,14 @@ TEST_F(SignerTest, SpendTest_InjectSignature_Multisig)
    ASSERT_TRUE(tx_verifier.evaluateState().isValid());
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 48 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 48 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = ms_wlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 9 * COIN);
-   scrObj = wlt_singleSig->getScrAddrObjByKey(asset4_singlesig->getPrefixedHash());
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 9 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(asset4_singlesig->getPrefixedHash(), bdm), 0 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -9127,8 +8615,8 @@ TEST_F(ExtrasTest, PSBT)
       auto txOut = tx.getTxOutCopy(index);
 
       UTXO utxo(
-         txOut.getValue(),
-         UINT32_MAX, UINT32_MAX, index,
+         txOut.getAmount(),
+         UINT16_MAX, UINT16_MAX, index,
          hash, txOut.getScript());
 
       return utxo;
@@ -9142,10 +8630,10 @@ TEST_F(ExtrasTest, PSBT)
 
       {
          //read hash hexits
-         auto&& hash = READHEX("75ddabb27b8845f5247975c8a5ba7c6f336c4570708ebe230caf6db5217ae858");
+         auto hash = READHEX("75ddabb27b8845f5247975c8a5ba7c6f336c4570708ebe230caf6db5217ae858");
 
          //flip endianess
-         BinaryData hashBE(32);
+         BinaryData hashBE; hashBE.resize(32);
          auto hashPtr = hash.getPtr();
          auto hashBEPtr = (uint8_t*)hashBE.getPtr();
          for (unsigned i=0; i<32; i++)
@@ -9157,10 +8645,10 @@ TEST_F(ExtrasTest, PSBT)
 
       {
          //read hash hexits
-         auto&& hash = READHEX("1dea7cd05979072a3578cab271c02244ea8a090bbb46aa680a65ecd027048d83");
+         auto hash = READHEX("1dea7cd05979072a3578cab271c02244ea8a090bbb46aa680a65ecd027048d83");
 
          //flip endianess
-         BinaryData hashBE(32);
+         BinaryData hashBE; hashBE.resize(32);
          auto hashPtr = hash.getPtr();
          auto hashBEPtr = (uint8_t*)hashBE.getPtr();
          for (unsigned i=0; i<32; i++)
@@ -9726,9 +9214,7 @@ TEST_F(ExtrasTest_Mainnet, Bip32PathDiscovery)
 ////////////////////////////////////////////////////////////////////////////////
 GTEST_API_ int main(int argc, char **argv)
 {
-#ifdef _MSC_VER
-   _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
-
+#ifdef _WIN32
    WSADATA wsaData;
    WORD wVersion = MAKEWORD(2, 0);
    WSAStartup(wVersion, &wsaData);

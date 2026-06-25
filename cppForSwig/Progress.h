@@ -36,16 +36,14 @@ public:
 class ProgressCalculator
 {
    const uint64_t total_;
-   
+
    std::chrono::milliseconds then_;
    uint64_t lastSample_=0;
-   
    double avgSpeed_=0.0;
-   
-   
+
 public:
    ProgressCalculator(uint64_t total);
-   
+
    void init(uint64_t to);
    void advance(uint64_t to);
 

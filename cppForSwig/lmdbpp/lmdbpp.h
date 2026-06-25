@@ -1,12 +1,17 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2011-2025, Armory Technologies, Inc.                        //
+//  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
+//                                                                            //
+//  Copyright (C) 2016-2026, goatpig                                          //
+//  Distributed under the MIT license                                         //
+//  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
+//                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
-#ifndef LMDBPP_H
-#define LMDBPP_H
+
+#pragma once
 
 #include <string>
 #include <stdexcept>
@@ -22,78 +27,109 @@ struct MDB_env;
 struct MDB_txn;
 struct MDB_cursor;
 
-// this exception is thrown for all errors from LMDB
-class LMDBException : public std::runtime_error
+namespace LMDB
 {
-public:
-   LMDBException(const std::string&);
-};
+   // this exception is thrown for all errors from LMDB
+   class Exception : public std::runtime_error
+   {
+   public:
+      Exception(const std::string&);
+   };
 
-class NoValue : public LMDBException
-{
-public:
-   NoValue(const std::string&);
-};
+   class NoValue : public Exception
+   {
+   public:
+      NoValue(const std::string&);
+   };
 
-// a struct that stores a pointer to a memory block
-struct CharacterArrayRef
-{
-   const size_t len;
-   const char *data;
-
-   CharacterArrayRef(const size_t, const char*);
-   CharacterArrayRef(const size_t, const unsigned char*);
-   CharacterArrayRef(const std::string &);
-   CharacterArrayRef(const std::vector<char>&);
-};
-
-class LMDBEnv;
-
-//one mother-txn per thread
-struct LMDBThreadTxInfo;
-
-
-class LMDB
-{
-public:
    enum class Mode : int
    {
       ReadWrite=1,
       ReadOnly
    };
 
-private:
-   friend class Iterator;
+   // a struct that stores a pointer to a memory block
+   struct DataRef
+   {
+      const size_t len;
+      const char *data;
 
-   LMDBEnv* env_ = nullptr;
-   unsigned dbi_ = 0;
+      DataRef(const size_t, const char*);
+      DataRef(const size_t, const unsigned char*);
+      DataRef(const std::string&);
+      DataRef(const std::vector<char>&);
+   };
 
-public:
+   /////////////////////////////////////////////////////////////////////////////
+   using DbIndex = unsigned;
+   class Env;
+   class Iterator;
+   class Transaction
+   {
+      friend class Env;
+      friend class Iterator;
+
+   private:
+      Env *env_;
+      DbIndex dbi_;
+      Mode mode_;
+      MDB_txn *mdbTxn_ = nullptr;
+      std::thread::id tid_;
+      bool began_ = false;
+
+   public:
+      Transaction(Env*, DbIndex, Mode = Mode::ReadWrite);
+      ~Transaction(void);
+
+      Transaction(Transaction&&);
+      Transaction& operator=(Transaction&&);
+
+      // commit the current transaction, create a new one, and begin it
+      void open(Env*, Mode = Mode::ReadWrite);
+
+      // commit a transaction, if it exists, doing nothing otherwise.
+      // after this function completes, no transaction exists
+      void commit(void);
+
+      // rollback the transaction, if it exists, doing nothing otherwise.
+      // All modifications made since this transaction began are removed.
+      // After this function completes, no transaction exists
+      void rollback(void);
+
+      // start a new transaction. If one already exists, do nothing
+      void begin(void);
+
+      // straight into tx db operations
+      void insert(const DataRef&, const DataRef&);
+      void erase(const DataRef&);
+      DataRef get(const DataRef&) const;
+      Iterator getIterator(void) const;
+
+   private:
+      Transaction(const Transaction&); // no copies
+   };
+
+   /////////////////////////////////////////////////////////////////////////////
+   struct ThreadTxInfo;
    class Iterator
    {
       // this class can be used like a C++ iterator,
       // or you can just use isValid() to test for "last item"
-      friend class LMDBEnv;
-      friend class LMDB;
+      friend class Transaction;
 
    private:
-      LMDB* db_ = nullptr;
-      mutable MDB_cursor* csr_ = nullptr;
+      const Transaction* txPtr_;
+      MDB_cursor* csr_ = nullptr;
 
-      mutable bool hasTx = true;
       bool has_ = false;
-      LMDBThreadTxInfo* txnPtr_ = nullptr;
       MDB_val key_, val_;
 
    private:
       void reset(void);
-      void checkHasDb(void) const;
-      void checkOk(void) const;
       void openCursor(void);
-      Iterator(LMDB*);
 
    public:
-      Iterator(void);
+      Iterator(const Transaction*);
       ~Iterator(void);
 
       // copying permitted (encouraged!)
@@ -123,28 +159,25 @@ public:
       // The cursor is left pointing to the smallest key in the database that is
       // larger than (key). If the database contains no keys larger than
       // (key), the cursor is left as Invalid.
-      void seek(const CharacterArrayRef&, SeekBy e=SeekBy::EQ);
+      void seek(const DataRef&, SeekBy = SeekBy::EQ);
 
       // is the cursor pointing to a valid location?
       bool isValid(void) const;
-      bool isEOF(void) const;
 
       // advance the cursor
       // the postfix increment operator is not defined for performance reasons
       Iterator& operator++(void);
-      void advance();
+      void advance(void);
 
       Iterator& operator--(void);
-      void retreat();
+      void retreat(void);
 
       // seek this iterator to the first sequence
       void toFirst(void);
       void toLast(void);
 
       // returns the key currently pointed to, if no key is being pointed to
-      // std::logic_error is returned (not LSMException). LSMException may
-      // be thrown for other reasons. You can avoid logic_error by
-      // calling isValid() first
+      // Exception is thrown. You can avoid throws by checking isValid() first
       const MDB_val& key(void) const;
 
       // returns the value currently pointed to. Exceptions are thrown
@@ -152,146 +185,68 @@ public:
       const MDB_val& value(void) const;
    };
 
-   LMDB(void);
-   LMDB(LMDBEnv*, const std::string_view& name={});
-   ~LMDB(void);
-
-   void open(LMDBEnv*, const std::string_view& name={});
-   bool isOpen(void) const;
-   void close(void);
-   void drop(void);
-
-   // insert a value into the database, replacing
-   // the one with a matching key if it is already there
-   void insert(
-      const CharacterArrayRef&,
-      const CharacterArrayRef&
-   );
-
-   // delete the entry with the given key, doing nothing
-   // if such a key does not exist
-   void erase(const CharacterArrayRef&);
-
-   //erases entry and wipes data field
-   void wipe(const CharacterArrayRef&);
-
-   // read the value having the given key
-   MDB_val value(const CharacterArrayRef&) const;
-   
-   // read the value having the given key, without copying its
-   // data even once. The return object has a pointer to the
-   // location in memory
-   CharacterArrayRef get_NoCopy(const CharacterArrayRef&) const;
-
-   // create a cursor for scanning the database that points to the first
-   // item
-   Iterator begin(void) const;
-
-   // creates a cursor that points to an invalid item
-   Iterator end(void) const;
-
-   template<class T>
-   Iterator find(const T& t) const
+   /////////////////////////////////////////////////////////////////////////////
+   // one mother-txn per thread
+   struct ThreadTxInfo
    {
-      Iterator c = cursor();
-      c.seek(t);
-      return c;
-   }
-
-   // Create an iterator that points to an invalid item.
-   // like end(), the iterator can be repositioned to
-   // become a valid entry
-   Iterator cursor(void) const;
-
-private:
-   LMDB(const LMDB&);
-   void resize(MDB_env*);
-};
-
-struct LMDBThreadTxInfo
-{
-   MDB_txn *txn=nullptr;
-
-   std::vector<LMDB::Iterator*> iterators;
-   unsigned transactionLevel=0;
-   LMDB::Mode mode;
-};
-
-
-class LMDBEnv
-{
-public:
-   class Transaction;
-
-private:
-   MDB_env *dbenv = nullptr;
-   unsigned dbCount_ = 1;
-
-   std::filesystem::path path_;
-   std::mutex threadTxMutex_;
-   std::unordered_map<std::thread::id, LMDBThreadTxInfo> txForThreads_;
-
-   friend class LMDB;
-
-public:
-   class Transaction
-   {
-      friend class LMDB;
-
-   private:
-      LMDBEnv *env=nullptr;
-      bool began=false;
-      LMDB::Mode mode_;
-
-      std::thread::id tid_;
-
-   public:
-      Transaction(void);
-      // begin a transaction
-      Transaction(LMDBEnv*, LMDB::Mode mode = LMDB::Mode::ReadWrite);
-      // commit a transaction if it exists
-      ~Transaction(void);
-
-      Transaction(Transaction&&);
-      Transaction& operator=(Transaction&&);
-
-      // commit the current transaction, create a new one, and begin it
-      void open(LMDBEnv*, LMDB::Mode mode = LMDB::Mode::ReadWrite);
-
-      // commit a transaction, if it exists, doing nothing otherwise.
-      // after this function completes, no transaction exists
-      void commit(void);
-      // rollback the transaction, if it exists, doing nothing otherwise.
-      // All modifications made since this transaction began are removed.
-      // After this function completes, no transaction exists
-      void rollback(void);
-      // start a new transaction. If one already exists, do nothing
-      void begin(void);
-
-   private:
-      Transaction(const Transaction&); // no copies
+      MDB_txn *txn = nullptr;
+      std::vector<Iterator*> iterators;
+      unsigned transactionLevel = 0;
+      Mode mode;
    };
 
-   LMDBEnv(void);
-   LMDBEnv(unsigned);
-   ~LMDBEnv(void);
+   class Env
+   {
+      friend class Transaction;
 
-   // open a database by filename
-   void open(const std::filesystem::path&, unsigned flags = 0);
-   bool isOpen(void) const;
+   private:
+      MDB_env *mdbEnv_ = nullptr;
+      unsigned dbCount_ = 1;
+      std::filesystem::path path_;
 
-   // close a database, doing nothing if one is presently not open
-   void close();
+      mutable std::mutex threadTxMutex_;
+      std::unordered_map<std::thread::id, ThreadTxInfo> txForThreads_;
 
-   const std::filesystem::path& getFilename(void) const;
-   void setMapSize(size_t);
-   void compactCopy(const std::filesystem::path&);
-   
-private:
-   LMDBEnv(const LMDBEnv&); // disallow copy
-};
+   public:
+      Env(void);
+      Env(unsigned);
+      ~Env(void);
 
+      // open a database by filename
+      void open(const std::filesystem::path&, unsigned = 0);
+      bool isOpen(void) const;
+      void close();
 
-#endif
-// kate: indent-width 3; replace-tabs on;
+      DbIndex openDb(const std::string_view&);
+      void closeDb(DbIndex);
 
+      const std::filesystem::path& getFilename(void) const;
+      void setMapSize(size_t);
+      void compactCopy(const std::filesystem::path&);
+      bool hasAnyTx(void) const;
+
+   private:
+      Env(const Env&); // disallow copy
+   };
+
+   /////////////////////////////////////////////////////////////////////////////
+   class DB
+   {
+   private:
+      Env* env_ = nullptr;
+      DbIndex dbi_ = 0;
+
+   public:
+      DB(void);
+      ~DB(void);
+
+      void open(Env*, const std::string_view& name={});
+      bool isOpen(void) const;
+      void close(void);
+      DbIndex dbi(void) const;
+
+   private:
+      DB(const DB&);
+      void resize(MDB_env*);
+   };
+} //namespace LMDB

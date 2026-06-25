@@ -69,7 +69,7 @@ void PRNG::Fortuna::reseed() const
    sha256_Raw(rng.getPtr(), rng.getSize(), digest);
    sha256_Raw(digest, 32, newKey->getPtr());
 
-   std::atomic_store_explicit(&key_, newKey, std::memory_order_relaxed);
+   key_.store(newKey, std::memory_order_relaxed);
 }
 
 SecureBinaryData PRNG::Fortuna::generateRandom(uint32_t numBytes,
@@ -83,7 +83,7 @@ SecureBinaryData PRNG::Fortuna::generateRandom(uint32_t numBytes,
    memset(&plainText, 0, Encryption::AES::BLOCK_SIZE);
 
    //setup AES object, seed with key_
-   auto keyPtr = std::atomic_load_explicit(&key_, std::memory_order_relaxed);
+   auto keyPtr = key_.load(std::memory_order_relaxed);
    AES256_ctx aes_ctx;
    AES256_init(&aes_ctx, keyPtr->getPtr());
 
@@ -357,10 +357,12 @@ SecureBinaryData ECDSA::computeChainedPrivateKey(
    }
 
    // Adding extra entropy to chaincode by xor'ing with hash256 of pubkey
-   BinaryData chainMod(32);
+   BinaryData chainMod;
+   chainMod.resize(32);
    Hash::getHash256(binPubKey.getRef(), chainMod.getPtr());
    BinaryData chainOrig = chainCode.getRawCopy();
-   BinaryData chainXor(32);
+   BinaryData chainXor;
+   chainXor.resize(32);
 
    for (uint8_t i=0; i<8; i++) {
       uint8_t offset = 4*i;
@@ -455,9 +457,11 @@ SecureBinaryData ECDSA::computeChainedPublicKey(
    }
 
    // Added extra entropy to chaincode by xor'ing with hash256 of pubkey
-   BinaryData chainMod(32);
+   BinaryData chainMod;
+   chainMod.resize(32);
    Hash::getHash256(binPubKey, chainMod.getPtr());
-   BinaryData chainXor(32);
+   BinaryData chainXor;
+   chainXor.resize(32);
 
    for (uint8_t i=0; i<8; i++) {
       uint8_t offset = 4*i;
@@ -604,7 +608,8 @@ SecureBinaryData ECDSA::signData(const BinaryData& binToSign,
    const SecureBinaryData& cppPrivKey)
 {
    //hash message
-   BinaryData digest(32);
+   BinaryData digest;
+   digest.resize(32);
    sha256_Raw(binToSign.getPtr(), binToSign.getSize(), digest.getPtr());
    sha256_Raw(digest.getPtr(), 32, digest.getPtr());
 
@@ -629,7 +634,9 @@ bool ECDSA::verifyData(const BinaryData& binMessage,
    /* pub keys are already validated by the script parser */
 
    // We execute the first SHA256 op, here. Next one is done by Verifier
-   BinaryData digest1(32), digest2(32);
+   BinaryData digest1, digest2;
+   digest1.resize(32);
+   digest2.resize(32);
    sha256_Raw(binMessage.getPtr(), binMessage.getSize(), digest1.getPtr());
    sha256_Raw(digest1.getPtr(), 32, digest2.getPtr());
 
@@ -660,7 +667,8 @@ BinaryData ECDSA::signBitcoinMessage(
    msgToSign.put_BinaryDataRef(msg);
 
    //hash it
-   BinaryData digest(32);
+   BinaryData digest;
+   digest.resize(32);
    btc_hash(
       msgToSign.getDataRef().getPtr(),
       msgToSign.getSize(),
@@ -668,7 +676,8 @@ BinaryData ECDSA::signBitcoinMessage(
 
    //sign
    int rec = -1;
-   BinaryData result(65);
+   BinaryData result;
+   result.resize(65);
    size_t outlen = 0;
 
    if (!btc_ecc_sign_compact_recoverable(
@@ -692,7 +701,8 @@ BinaryData ECDSA::verifyBitcoinMessage(
    msgToSign.put_BinaryDataRef(msg);
 
    //hash it
-   BinaryData digest(32);
+   BinaryData digest;
+   digest.resize(32);
    btc_hash(
       msgToSign.getDataRef().getPtr(),
       msgToSign.getSize(),
@@ -704,7 +714,8 @@ BinaryData ECDSA::verifyBitcoinMessage(
 
    size_t outlen;
    outlen = compressed ? 33 : 65;
-   BinaryData pubkey(outlen);
+   BinaryData pubkey;
+   pubkey.resize(outlen);
 
    if (!btc_ecc_recover_pubkey(sig.getPtr() + 1, digest.getPtr(), recid,
       pubkey.getPtr(), &outlen)) {

@@ -647,7 +647,7 @@ std::unique_ptr<ClearTextSeed_BIP32> ClearTextSeed_BIP32::fromBase58(
       SeedType::BIP32_base58Root);
    result->rootNode_ = std::make_shared<BIP32_Node>();
    result->rootNode_->initFromBase58(b58);
-   return move(result);
+   return result;
 }
 
 ////

@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -25,46 +25,47 @@ using namespace Armory::Ledgers;
 
 namespace
 {
-   using TxDbKey = BinaryDataRef;
    struct TxData
    {
-      uint32_t blockNum;
+      Types::BlockId blockId;
+      uint32_t height;
       uint32_t txTime;
-      uint16_t txIndex;
-      BinaryData txHash;
-      std::map<BinaryData, const TxIOPair*> txios;
+      Types::TxId txIndex;
+      Types::ZcId zcIndex = UINT32_MAX;
+      Types::TxHash txHash;
+      std::map<Types::TxIOKey, const TxIOPair*> txios;
    };
 
-   std::map<TxDbKey, TxData> sortByTx(
-      const std::map<BinaryData, TxIOPair>& txioMap,
+   std::map<Types::TxKey, TxData> sortByTx(
+      const std::map<Types::TxIOKey, TxIOPair>& txioMap,
       const Context& ctx)
    {
-      std::map<TxDbKey, TxData> txnTxIOMap;
+      std::map<Types::TxKey, TxData> txnTxIOMap;
       for (const auto& txio : txioMap) {
          if (!ctx.filterTxio(txio.second)) {
             continue;
          }
 
          //txout
-         auto txOutDBKey = txio.second.getTxRefOfOutput().getDBKeyRef();
-         auto txOutIter = txnTxIOMap.find(txOutDBKey);
+         auto txOutKey = txio.second.getTxKeyOfOutput();
+         auto txOutIter = txnTxIOMap.find(txOutKey);
          if (txOutIter == txnTxIOMap.end()) {
-            txOutIter = txnTxIOMap.emplace(txOutDBKey, TxData{}).first;
+            txOutIter = txnTxIOMap.emplace(txOutKey, TxData{}).first;
          }
          txOutIter->second.txios.emplace(
-            txio.second.getDBKeyOfOutput(), &txio.second);
+            txio.second.getTxIOKeyOfOutput(), &txio.second);
 
          //txin
          if (!txio.second.hasTxIn()) {
             continue;
          }
-         auto txInDBKey = txio.second.getTxRefOfInput().getDBKeyRef();
-         auto txInIter = txnTxIOMap.find(txInDBKey);
+         auto txInKey = txio.second.getTxKeyOfInput();
+         auto txInIter = txnTxIOMap.find(txInKey);
          if (txInIter == txnTxIOMap.end()) {
-            txInIter = txnTxIOMap.emplace(txInDBKey, TxData{}).first;
+            txInIter = txnTxIOMap.emplace(txInKey, TxData{}).first;
          }
          auto insertResult = txInIter->second.txios.emplace(
-            txio.second.getDBKeyOfOutput(), &txio.second);
+            txio.second.getTxIOKeyOfOutput(), &txio.second);
          if (!insertResult.second) {
             insertResult.first->second = &txio.second;
          }
@@ -72,31 +73,32 @@ namespace
       return txnTxIOMap;
    }
 
-   void resolveTxnData(std::map<TxDbKey, TxData>& txnMap, const Context& ctx)
+   void resolveTxnData(
+      std::map<Types::TxKey, TxData>& txnMap,
+      const Context& ctx)
    {
       //get txhash, block, txIndex and txtime
       for (auto& txPair : txnMap) {
-         bool isZc = txPair.first.startsWith(DBUtils::ZCPrefix);
-         if (!isZc) {
-            txPair.second.blockNum = DBUtils::hgtxToHeight(
-               txPair.first.getSliceRef(0, 4));
-            txPair.second.txIndex = READ_UINT16_BE(
-               txPair.first.getSliceRef(4, 2));
-            txPair.second.txTime = ctx.getTimestampForBlockHeight(
-               txPair.second.blockNum);
+         auto& txData = txPair.second;
+         if (!Types::isThisAZCKey(txPair.first)) {
+            txData.blockId = Types::getBlockIDFromTxKey(txPair.first);
+            txData.height = ctx.getHeightForBlockId(txData.blockId);
+            txData.txIndex = Types::getTxIndexFromTxKey(txPair.first);
+            txData.txTime = ctx.getTimestampForBlockId(txData.blockId);
          } else {
-            txPair.second.blockNum = UINT32_MAX;
-            txPair.second.txIndex = READ_UINT32_BE(
-               txPair.first.getSliceRef(2, 4));
+            txData.blockId = Types::INVALID_BLOCK_ID;
+            txData.height = UINT32_MAX;
+            txData.txIndex = UINT16_MAX;
+            txData.zcIndex = Types::getZcIdFromTxKey(txPair.first);
 
-            if (txPair.second.txios.empty()) {
+            if (txData.txios.empty()) {
                LOGWARN << "have a tx with no attached txios";
             } else {
-               auto txioIter = txPair.second.txios.begin();
-               txPair.second.txTime = txioIter->second->getTxTime();
+               auto txioIter = txData.txios.begin();
+               txData.txTime = txioIter->second->getTxTime();
             }
          }
-         txPair.second.txHash = ctx.getTxHash(txPair.first);
+         txData.txHash = ctx.getTxHash(txPair.first);
       }
    }
 }
@@ -104,30 +106,30 @@ namespace
 ////////////////////////////////////////////////////////////////////////////////
 // LedgerEntry
 Entry::Entry(const std::string& ID,
-   int64_t val, uint32_t blkNum, const BinaryData& txHash,
+   Types::Value val, uint32_t blkNum, const Types::TxHash& txHash,
    uint32_t idx, uint32_t txtime,
-   std::set<BinaryData>& scrAddrSet,
+   std::set<Types::ScrAddr>& scrAddrSet,
    bool isCoinbase, bool isToSelf, bool isChange,
-   bool isOptInRBF, bool usesWitness, bool isChainedZC) :
+   bool isOptInRBF, bool isChainedZC) :
    ID_(ID), value_(val), blockNum_(blkNum),
    txHash_(txHash), index_(idx), txTime_(txtime),
    scrAddrSet_{std::move(scrAddrSet)},
    isCoinbase_(isCoinbase), isSentToSelf_(isToSelf), isChangeBack_(isChange),
-   isOptInRBF_(isOptInRBF), usesWitness_(usesWitness), isChainedZC_(isChainedZC)
+   isOptInRBF_(isOptInRBF), isChainedZC_(isChainedZC)
 {}
 
 ////////
-std::string Entry::getWalletID() const
+const std::string& Entry::getWalletID() const
 {
    return ID_;
 }
 
-const std::set<BinaryData>& Entry::getScrAddrList() const
+const std::set<Types::ScrAddr>& Entry::getScrAddrList() const
 {
    return scrAddrSet_;
 }
 
-int64_t Entry::getValue() const
+Types::Value Entry::getValue() const
 {
    return value_;
 }
@@ -136,7 +138,7 @@ uint32_t Entry::getBlockNum() const
 {
    return blockNum_;
 }
-const BinaryData& Entry::getTxHash() const
+const Types::TxHash& Entry::getTxHash() const
 {
    return txHash_;
 }
@@ -169,11 +171,6 @@ bool Entry::isChangeBack() const
 bool Entry::isOptInRBF() const
 {
    return isOptInRBF_;
-}
-
-bool Entry::usesWitness() const
-{
-   return usesWitness_;
 }
 
 bool Entry::isChainedZC() const
@@ -252,41 +249,8 @@ void Entry::pprintOneLine() const
 }
 
 //////////////////////////////////////////////////////////////////////////////
-void Entry::purgeLedgerMapFromHeight(
-   std::map<BinaryData, Entry>& leMap, uint32_t purgeFrom)
-{
-   //Remove all entries starting this height, included.
-   BinaryData cutOffHeight(6);
-   auto heightPtr = cutOffHeight.getPtr();
-
-   uint8_t* purgeFromPtr = reinterpret_cast<uint8_t*>(&purgeFrom);
-   memset(heightPtr, 0, 6);
-   heightPtr[0] = purgeFromPtr[2];
-   heightPtr[1] = purgeFromPtr[1];
-   heightPtr[2] = purgeFromPtr[0];
-
-   auto cutOffIterPair = leMap.equal_range(cutOffHeight);
-   leMap.erase(cutOffIterPair.first, leMap.end());
-}
-
-void Entry::purgeLedgerVectorFromHeight(
-  std::vector<Entry>& leVec, uint32_t purgeFrom)
-{
-   //Remove all entries starting this height, included.
-   uint32_t i = 0;
-   std::sort(leVec.begin(), leVec.end());
-   for (const auto& le : leVec) {
-      if (le.getBlockNum() >= purgeFrom) {
-         break;
-      }
-      i++;
-   }
-   leVec.erase(leVec.begin() + i, leVec.end());
-}
-
-//////////////////////////////////////////////////////////////////////////////
-std::map<BinaryData, Entry> Ledgers::computeLedgerMap(
-   const std::map<BinaryData, TxIOPair>& txioMap,
+std::map<Types::TxKey, Entry> Ledgers::computeLedgerMap(
+   const std::map<Types::TxIOKey, TxIOPair>& txioMap,
    uint32_t startBlock, uint32_t endBlock, const std::string& id,
    const Context& ctx)
 {
@@ -294,27 +258,26 @@ std::map<BinaryData, Entry> Ledgers::computeLedgerMap(
    resolveTxnData(txnTxIOMap, ctx);
 
    //convert TxIO to ledgers
-   std::map<BinaryData, Entry> leMap;
+   std::map<Types::TxKey, Entry> leMap;
    for (auto& txnPair : txnTxIOMap) {
       auto& txnData = txnPair.second;
-      if (txnData.blockNum < startBlock || txnData.blockNum > endBlock) {
+      if (txnData.height < startBlock || txnData.height > endBlock) {
          continue;
       }
 
-      bool isZc         = txnData.blockNum == UINT32_MAX ? true : false;
+      bool isZc         = txnData.zcIndex == UINT32_MAX ? false : true;
       bool isRBF        = false;
-      bool usesWitness  = false;
       bool isChained    = false;
-      bool isCoinbase   = false;
+      bool isCoinbase   = isZc ? false : txnData.txIndex == 0;
 
-      int64_t value = 0;
-      int64_t valIn = 0, valOut = 0;
+      Types::Value value = 0;
+      Types::Value valIn = 0, valOut = 0;
       uint32_t nTxInAreOurs = 0, nTxOutAreOurs = 0;
 
-      std::set<BinaryData> scrAddrSet;
+      std::set<Types::ScrAddr> scrAddrSet;
       for (const auto& txioPair : txnData.txios) {
          const auto& txio = *txioPair.second;
-         if (txnData.blockNum == UINT32_MAX) {
+         if (isZc) {
             if (txio.isRBF()) {
                isRBF = true;
             }
@@ -323,25 +286,23 @@ std::map<BinaryData, Entry> Ledgers::computeLedgerMap(
             }
          }
 
-         if (txio.getTxRefOfOutput().getDBKey().startsWith(txnPair.first)) {
-            isCoinbase |= txio.isFromCoinbase();
-            valIn += txio.getValue();
-            value += txio.getValue();
+         if (txio.getTxKeyOfOutput() == txnPair.first) {
+            valIn += txio.getAmount();
+            value += txio.getAmount();
             nTxOutAreOurs++;
          }
 
-         if (txio.hasTxIn() &&
-            txio.getTxRefOfInput().getDBKey().startsWith(txnPair.first)) {
-            valOut -= txio.getValue();
-            value -= txio.getValue();
+         if (txio.hasTxIn() && txio.getTxKeyOfInput() == txnPair.first) {
+            valOut -= txio.getAmount();
+            value -= txio.getAmount();
             nTxInAreOurs++;
 
-            if (txio.isChainedZC()) {
+            if (txio.isChained()) {
                isChained = true;
             }
          }
 
-         scrAddrSet.emplace(ctx.getScrAddrForTxOut(txio));
+         scrAddrSet.emplace(txio.getScrAddr());
       }
 
       bool isSentToSelf = false;
@@ -359,11 +320,10 @@ std::map<BinaryData, Entry> Ledgers::computeLedgerMap(
 
       leMap.emplace(txnPair.first, Entry{
          id, value,
-         txnData.blockNum, txnData.txHash,
-         txnData.txIndex, txnData.txTime,
+         txnData.height, txnData.txHash,
+         isZc ? txnData.zcIndex : txnData.txIndex, txnData.txTime,
          scrAddrSet,
-         isCoinbase, isSentToSelf, isChangeBack, isRBF,
-         usesWitness, isChained}
+         isCoinbase, isSentToSelf, isChangeBack, isRBF, isChained}
       );
    }
    return leMap;

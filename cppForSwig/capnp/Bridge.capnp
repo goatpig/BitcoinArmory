@@ -108,6 +108,11 @@ struct Peer {
    label       @2 : Text; #human readable label for the key
 }
 
+struct WalletIdentifier {
+   walletId @0    : Types.WalletId;
+   accountId @1   : Types.AccountId;
+}
+
 ################################################################################
 ## Notifications
 struct Notification {
@@ -291,23 +296,18 @@ struct BlockchainServiceRequest {
       registerWallet                @3 : RegisterWallet;
       broadcastTx                   @4 : BroadcastRequest;
       getTxsByHash                  @5 : List(Types.Hash);
-      getHeadersByHeight            @6 : List(Types.Height);
-      getBlockTimeByHeight          @7 : UInt32;
-      getFeeSchedule                @8 : Text;
-
-      getLedgerDelegateId           @9 : Void;
-      updateWalletsLedgerFilter     @10: List(Types.WalletId);
+      getBlockTimeByHeight          @6 : UInt32;
+      getFeeSchedule                @7 : Text;
    }
 }
 
 struct BlockchainServiceReply {
    struct TxData {
-      raw         @0 : Data;
-      hash        @1 : Types.Hash;
-      height      @2 : Types.Height;
-      txIndex     @3 : UInt32;
-      rbf         @4 : Bool;
-      chainedZc   @5 : Bool;
+      height      @0 : Types.Height;
+      txIndex     @1 : UInt32;
+      timestamp   @2 : UInt32;
+      hash        @3 : Types.Hash;
+      body        @4 : Types.Tx;
    }
 
    # reply
@@ -316,10 +316,8 @@ struct BlockchainServiceReply {
 
       getNodeStatus                 @1 : Types.NodeStatus;
       getTxsByHash                  @2 : List(TxData);
-      getHeadersByHeight            @3 : List(Types.Header);
-      getBlockTimeByHeight          @4 : UInt32;
-      getFeeSchedule                @5 : List(Types.FeeSchedule);
-      getLedgerDelegateId           @6 : Types.DelegateId;
+      getBlockTimeByHeight          @3 : UInt32;
+      getFeeSchedule                @4 : List(Types.FeeSchedule);
    }
 }
 
@@ -362,6 +360,9 @@ struct WalletManagerRequest {
 
       unloadWallet            @6 : Types.WalletId;
       deleteWallet            @7 : Types.WalletId;
+
+      getMainLedgerDelegateId @8 : Void;
+      updateMainLedgerFilter  @9 : List(WalletIdentifier);
    }
 }
 
@@ -392,10 +393,11 @@ struct WalletManagerReply {
    }
 
    union {
-      unset          @0 : Void;
-      listWallets    @1 : List(WalletFileData);
-      migrateWallet  @2 : Types.WalletId;
-      loadWallets    @3 : List(WalletData);
+      unset                   @0 : Void;
+      listWallets             @1 : List(WalletFileData);
+      migrateWallet           @2 : Types.WalletId;
+      loadWallets             @3 : List(WalletData);
+      getMainLedgerDelegateId @4 : Types.DelegateId;
    }
 }
 
@@ -683,7 +685,6 @@ struct UtilsRequest {
       legacy            @0;
       structuredBip32   @1;
       rawBip32          @2;
-      virgin            @3;
    }
 
    struct CreateWalletStruct {

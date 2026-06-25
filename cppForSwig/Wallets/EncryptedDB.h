@@ -1,12 +1,12 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2019-2021, goatpig                                          //
+//  Copyright (C) 2019-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
-#ifndef _H_ENCRYPTED_DB
-#define _H_ENCRYPTED_DB
+
+#pragma once
 
 #include <memory>
 #include <vector>
@@ -21,9 +21,6 @@
 #include "Utils/SecureBinaryData.h"
 #include "Utils/ReentrantLock.h"
 
-#define ERASURE_PLACE_HOLDER "erased"sv
-#define KEY_CYCLE_FLAG "cycle"sv
-
 namespace Armory
 {
    namespace Wallets
@@ -34,19 +31,12 @@ namespace Armory
          class EncryptedDBException : public std::runtime_error
          {
          public:
-            EncryptedDBException(const std::string& err) :
-               std::runtime_error(err)
-            {}
+            EncryptedDBException(const std::string&);
          };
 
          ////
-         class NoDataInDB : std::runtime_error
-         {
-         public:
-            NoDataInDB(void) :
-               runtime_error("")
-            {}
-         };
+         struct NoDataInDB
+         {};
 
          ////
          class NoEntryInWalletException
@@ -60,42 +50,13 @@ namespace Armory
             SecureBinaryData sbd_;
 
          public:
-            BothBinaryDatas(void)
-            {}
+            BothBinaryDatas(void);
+            BothBinaryDatas(BinaryData&);
+            BothBinaryDatas(const BinaryData&);
+            BothBinaryDatas(SecureBinaryData&);
 
-            BothBinaryDatas(BinaryData& bd) :
-               bd_(std::move(bd))
-            {}
-
-            BothBinaryDatas(const BinaryData& bd) :
-               bd_(bd)
-            {}
-
-            BothBinaryDatas(SecureBinaryData& sbd) :
-               sbd_(std::move(sbd))
-            {}
-
-            const BinaryDataRef getRef(void) const
-            {
-               if (bd_.getSize() != 0)
-               {
-                  return bd_.getRef();
-               }
-               else if (sbd_.getSize() != 0)
-               {
-                  return sbd_.getRef();
-               }
-
-               return BinaryDataRef();
-            }
-
-            size_t getSize(void) const
-            {
-               if (bd_.getSize() != 0)
-                  return bd_.getSize();
-               else
-                  return sbd_.getSize();
-            }
+            const BinaryDataRef getRef(void) const;
+            size_t getSize(void) const;
          };
 
          ///////////////////////////////////////////////////////////////////////
@@ -105,7 +66,6 @@ namespace Armory
             BothBinaryDatas value_;
             bool write_ = true;
          };
-
 
          ///////////////////////////////////////////////////////////////////////
          class DBIfaceIterator;
@@ -131,13 +91,13 @@ namespace Armory
             friend class WalletIfaceTransaction;
 
          private:
-            LMDBEnv* dbEnv_;
+            LMDB::Env* dbEnv_;
             const std::string dbName_;
             const SecureBinaryData controlSalt_;
             const unsigned encrVersion_;
 
-            LMDB db_;
-            std::shared_ptr<IfaceDataMap> dataMapPtr_;
+            LMDB::DB db_;
+            std::atomic<std::shared_ptr<IfaceDataMap>> dataMapPtr_;
 
             SecureBinaryData encrPubKey_;
             SecureBinaryData macKey_;
@@ -145,30 +105,29 @@ namespace Armory
             static const BinaryData erasurePlaceHolder_;
             static const BinaryData keyCycleFlag_;
 
-
          private:
             //serialization methods
-            static BinaryData createDataPacket(const BinaryData& dbKey,
-               const BinaryData& dataKey, const BothBinaryDatas& dataVal,
+            static BinaryData createDataPacket(const BinaryData&,
+               const BinaryData&, const BothBinaryDatas&,
                const SecureBinaryData&, const SecureBinaryData&,
-               unsigned encrVersion);
+               unsigned);
             static std::pair<BinaryData, BothBinaryDatas> readDataPacket(
-               const BinaryData& dbKey, const BinaryData& dataPacket,
+               const BinaryData&, const BinaryData&,
                const SecureBinaryData&, const SecureBinaryData&,
-               unsigned encrVersion);
+               unsigned);
 
          public:
-            DBInterface(LMDBEnv*, const std::string&,
+            DBInterface(LMDB::Env*, const std::string&,
                const SecureBinaryData&, unsigned);
             ~DBInterface(void);
 
             ////
             void loadAllEntries(const SecureBinaryData&);
-            void reset(LMDBEnv*);
-            void close(void) { db_.close(); }
+            void reset(LMDB::Env*);
+            void close(void);
 
             ////
-            const std::string& getName(void) const { return dbName_; }
+            const std::string& getName(void) const;
             unsigned getEntryCount(void) const;
          };
 
@@ -206,7 +165,7 @@ namespace Armory
             static std::mutex txMutex_;
 
          public:
-            DBIfaceTransaction(void) {}
+            DBIfaceTransaction(void);
             virtual ~DBIfaceTransaction(void) noexcept(false) = 0;
 
             virtual void insert(const BinaryData&, BinaryData&) = 0;
@@ -224,25 +183,12 @@ namespace Armory
          class RawIfaceTransaction : public DBIfaceTransaction
          {
          private:
-            LMDB* dbPtr_;
-            std::unique_ptr<LMDBEnv::Transaction> txPtr_;
+            LMDB::DB* dbPtr_;
+            std::unique_ptr<LMDB::Transaction> txPtr_;
 
          public:
-            RawIfaceTransaction(LMDBEnv* dbEnv,
-               LMDB* dbPtr, bool write) :
-               DBIfaceTransaction(), dbPtr_(dbPtr)
-            {
-               auto type = LMDB::Mode::ReadOnly;
-               if (write)
-                  type = LMDB::Mode::ReadWrite;
-
-               txPtr_ = std::make_unique<LMDBEnv::Transaction>(dbEnv, type);
-            }
-
-            ~RawIfaceTransaction(void) noexcept(false)
-            {
-               txPtr_.reset();
-            }
+            RawIfaceTransaction(LMDB::Env&, LMDB::DB&, bool);
+            ~RawIfaceTransaction(void) noexcept(false);
 
             //write routines
             void insert(const BinaryData&, BinaryData&) override;
@@ -252,7 +198,7 @@ namespace Armory
 
             //get routines
             const BinaryDataRef getDataRef(const BinaryData&) const override;
-            std::shared_ptr<DBIfaceIterator> getIterator() const override;
+            std::shared_ptr<DBIfaceIterator> getIterator(void) const override;
          };
 
          ///////////////////////////////////////////////////////////////////////
@@ -274,18 +220,10 @@ namespace Armory
          class RawIfaceIterator : public DBIfaceIterator
          {
          private:
-            LMDB* dbPtr_;
             LMDB::Iterator iterator_;
 
          public:
-            RawIfaceIterator(LMDB* dbPtr) :
-               dbPtr_(dbPtr)
-            {
-               if (dbPtr_ == nullptr)
-                  throw std::runtime_error("null db ptr");
-
-               iterator_ = dbPtr_->begin();
-            }
+            RawIfaceIterator(LMDB::Transaction*);
 
             bool isValid(void) const override;
             void seek(const BinaryDataRef&) override;
@@ -297,5 +235,3 @@ namespace Armory
       }; //IO
    }; //Wallets
 }; //Armory
-
-#endif

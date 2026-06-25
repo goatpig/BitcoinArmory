@@ -10,6 +10,12 @@
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
+
+#ifdef _WIN32
+   #include <winsock2.h>
+   #include <windows.h>
+#endif
+
 #include <chrono>
 #include <filesystem>
 #include <cstring>
@@ -18,6 +24,7 @@
 #include <Utils/ArmoryConfig.h>
 #include <Utils/varint.h>
 #include <Utils/DBUtils.h>
+#include <Utils/FileUtils.h>
 #include <Utils/UniversalTimer.h>
 #include <Utils/JSON_codec.cpp>
 #include <Ledgers/LedgerEntry.h>
@@ -76,9 +83,9 @@ protected:
 // Check the official RFC 5869 test vectors.
 TEST_F(HKDF256Test, RFC5869Vectors)
 {
-   BinaryData results1(42);
-   BinaryData results2(82);
-   BinaryData results3(42);
+   BinaryData results1; results1.resize(42);
+   BinaryData results2; results2.resize(82);
+   BinaryData results3; results3.resize(42);
    hkdf_sha256(results1.getPtr(), results1.getSize(), salt1.getPtr(),
                salt1.getSize(), ikm1.getPtr(), ikm1.getSize(), info1.getPtr(),
                info1.getSize());
@@ -91,1429 +98,6 @@ TEST_F(HKDF256Test, RFC5869Vectors)
    EXPECT_EQ(okm1, results1);
    EXPECT_EQ(okm2, results2);
    EXPECT_EQ(okm3, results3);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Test the BIP 150/151 code here.
-// BIP 151 test vectors partially taken from an old Bcoin test suite.
-class BIP150_151Test : public ::testing::Test
-{
-protected:
-   virtual void SetUp(void)
-   {
-      // Test vector data. Unfortunately, there are no test suites for BIP 151.
-      // Test data was generated using a combination of Bcoin test results for
-      // BIP 151, and private runs of libchacha20poly1305. Despite cobbling data
-      // together, assume the external libraries used in BIP 151 are functioning
-      // properly. This can be verified by running their test suites.
-      string prvKeyClientIn_hexstr = "299ecf12fa716a9891903f05d2d22f483468c10f35cc448f5745e4ba00530e65";
-      string prvKeyClientOut_hexstr = "31bb6f8dad3b2f3c76671f06cbe47ac634c47e9a6bd0f3c66e0bb6f85fbdd88c";
-      string prvKeyServerIn_hexstr = "0e5e3671e90368ed865e9057ebb8cdbd0ffdaf8099bd0eb2414879f18eafacf6";
-      string prvKeyServerOut_hexstr = "19a0eead9ae1d0167c6c4293a5a02de1712111f04007ae0587e0d978bb3b5010";
-      string pubKeyClientIn_hexstr = "03c08a4e5a66478c65f7630162a64648dd1593e6588185ec0086e8c781398526b3";
-      string pubKeyClientOut_hexstr = "0229fc11de5fe2a3b3a062a5ee6eb2e86aabb680a47128044cc1f4e92729dd8921";
-      string pubKeyServerIn_hexstr = "0389cce55a124fc6de5689e23c6d64a5bb37f1a847d32a1afcdbd0e96cbb98a983";
-      string pubKeyServerOut_hexstr = "02d786668c8fc58b8af96dd2567c857a4a83a76101429e3852d12c020a668c38cd";
-      string ecdhCliInSrvOut_hexstr = "773d49e34bd65977b50b3f6b76a8236265fb489262d0cf3053f9152340646f00";
-      string ecdhCliOutSrvIn_hexstr = "de3b244a80465b59d97f05eebb1af93eda0a667d5f0f2bc0dfa18d65d6e0c8a9";
-      string k1CliInSrvOut_hexstr = "ae26351affd46a861890022eb60a4ebbfbca280e5eae425fa37dcf4406354d89";
-      string k1CliOutSrvIn_hexstr = "eeaddf673bb62fa8e8a453e7aec56c8b50c03c5ff9c329319ae81f9b72be32ba";
-      string k2CliInSrvOut_hexstr = "b70b3576c46477df45e8a7e8ffbd4aa2028f70c439ffb1c9f3040e20c5886d4f";
-      string k2CliOutSrvIn_hexstr = "76773a0121079bfcf1fbf73a8476fc1861952b80d3e2a1e41dc8ba4e84f636be";
-      string sesIDCliInSrvOut_hexstr = "71c425ce376162eb29e91744fbc1cbd86af52aad77490758382022bb0347585b";
-      string sesIDCliOutSrvIn_hexstr = "ae60eb91ea2ea8cef36df26e4ab8c6cd609946ba6fd545adc21e4215af983d7d";
-      string command_hexstr = "fake";
-      string payload_hexstr = "deadbeef";
-      string msg_hexstr = "0d0000000466616b6504000000deadbeef";
-      string cliOutMsg1_hexstr = "8c7b743fc456d2f4c7cbb18ebb697ddfdb8308b29b9031fba2c50c5d160ec77bc0";
-      string srvInMsg1_hexstr = "0d0000000466616b6504000000deadbeef";
-      string cliOutMsg2_hexstr = "d5ce6ff902fa2936c8518ed503857134d7a062afe4c5868fd832188b8a5d84e576";
-      string srvInMsg2_hexstr = "0d0000000466616b6504000000deadbeef";
-      string cliOutMsg3_hexstr = "08c2b3592f53197bf1e81df1f2d36dadca27470f4f422e583e2f4ce32cd9719f1ac5a3a8e3e5a0c5f47e60cbdc81f314d030a545c31d9b632ab4e8740f756c00";
-      string srvInMsg3_hexstr = "2c00000006656e6361636b21000000000000000000000000000000000000000000000000000000000000000000000000";
-      string cliOutMsg4_hexstr = "c9056ffa96174f92a59e6aedc16af8a1fc394fe3a8c2639404e0dc700e5a58681c";
-      string srvInMsg4_hexstr = "0d0000000466616b6504000000deadbeef";
-      string srvOutMsg1_hexstr = "754bd639b31487e6e775fd336acf9cb2790323f4355ffc2cf17fcb2c6827d30a7a";
-      string cliInMsg1_hexstr = "0d0000000466616b6504000000deadbeef";
-      string srvOutMsg2_hexstr = "63c9868c88c78b7cdc30f9a23f1f7f8bbe2dec215a38df518c6880bf51ce11a35a";
-      string cliInMsg2_hexstr = "0d0000000466616b6504000000deadbeef";
-      string srvOutMsg3_hexstr = "367951da70abdc072956680a17fed98c54d4cd5fabc401576cbdce7a3e1b1bfd236152b4e55a1a9ff732f98b2b874477a25eeaf3264c0af42932c2eada06c5ab";
-      string cliInMsg3_hexstr = "2c00000006656e6361636b21000000000000000000000000000000000000000000000000000000000000000000000000";
-      string srvOutMsg4_hexstr = "39a790b8cc3bf027faf69622edc9ec1bfebce172d96c5bb52fc8a5f89df309f8a5";
-      string cliInMsg4_hexstr = "0d0000000466616b6504000000deadbeef";
-
-      // BIP 150
-      string authchallenge1_hexstr = "68f35d94aacf218f8d73f4fcc82ab26f39af051c9fcf9af261eab8080bea6685";
-      string authreply1_hexstr = "8144df9803527f833c9a628926fe99de04b15942d0d44e52d73dcdeb8c3d43412b26c1729405445bec9e35216b03a79cc51bb102cc351314fbb5a027298d3546";
-      string authpropose_hexstr = "bde8e33de5a6b60651b82e2337112aebca11d351f84d9c027c7013f75701682b";
-      string authpropose_1way_hexstr = "e42d5a3eec12c1b57e975ae877abd5a36ba84a7dd84eb7bda97b229ffdab5ef2";
-      string authchallenge2_hexstr = "653f05a5e12a40579c8d9c782e04f3fff22c61888b8d67d7f783b1259cbf26cc";
-      string authchallenge2_1way_hexstr = "2a9de34d8af544687a58b59e45d4007b1bf54643549343616f7f1281108913a5";
-      string authreply2_hexstr = "0299a6086ab60af5fc4b5ccfa08d71c996cf0099a3ebb779cc42c94cfe3926294cf9505fd3835f73dcf88d114ed6c7e8956c8dec999617bb2b8b9a340c1eee22";
-
-      prvKeyClientIn = READHEX(prvKeyClientIn_hexstr);
-      prvKeyClientOut = READHEX(prvKeyClientOut_hexstr);
-      prvKeyServerIn = READHEX(prvKeyServerIn_hexstr);
-      prvKeyServerOut = READHEX(prvKeyServerOut_hexstr);
-      pubKeyClientIn = READHEX(pubKeyClientIn_hexstr);
-      pubKeyClientOut = READHEX(pubKeyClientOut_hexstr);
-      pubKeyServerIn = READHEX(pubKeyServerIn_hexstr);
-      pubKeyServerOut = READHEX(pubKeyServerOut_hexstr);
-      ecdhCliInSrvOut = READHEX(ecdhCliInSrvOut_hexstr);
-      ecdhCliOutSrvIn = READHEX(ecdhCliOutSrvIn_hexstr);
-      k1CliInSrvOut = READHEX(k1CliInSrvOut_hexstr);
-      k1CliOutSrvIn = READHEX(k1CliOutSrvIn_hexstr);
-      k2CliInSrvOut = READHEX(k2CliInSrvOut_hexstr);
-      k2CliOutSrvIn = READHEX(k2CliOutSrvIn_hexstr);
-      sesIDCliInSrvOut = READHEX(sesIDCliInSrvOut_hexstr);
-      sesIDCliOutSrvIn = READHEX(sesIDCliOutSrvIn_hexstr);
-      command.copyFrom(command_hexstr);
-      payload = READHEX(payload_hexstr);
-      msg = READHEX(msg_hexstr);
-      cliOutMsg1 = READHEX(cliOutMsg1_hexstr);
-      srvInMsg1 = READHEX(srvInMsg1_hexstr);
-      cliOutMsg2 = READHEX(cliOutMsg2_hexstr);
-      srvInMsg2 = READHEX(srvInMsg2_hexstr);
-      cliOutMsg3 = READHEX(cliOutMsg3_hexstr);
-      srvInMsg3 = READHEX(srvInMsg3_hexstr);
-      cliOutMsg4 = READHEX(cliOutMsg4_hexstr);
-      srvInMsg4 = READHEX(srvInMsg4_hexstr);
-      srvOutMsg1 = READHEX(srvOutMsg1_hexstr);
-      cliInMsg1 = READHEX(cliInMsg1_hexstr);
-      srvOutMsg2 = READHEX(srvOutMsg2_hexstr);
-      cliInMsg2 = READHEX(cliInMsg2_hexstr);
-      srvOutMsg3 = READHEX(srvOutMsg3_hexstr);
-      cliInMsg3 = READHEX(cliInMsg3_hexstr);
-      srvOutMsg4 = READHEX(srvOutMsg4_hexstr);
-      cliInMsg4 = READHEX(cliInMsg4_hexstr);
-
-      // BIP 150
-      authchallenge1Data = READHEX(authchallenge1_hexstr);
-      authreply1Data = READHEX(authreply1_hexstr);
-      authproposeData = READHEX(authpropose_hexstr);
-      authproposeData_1way = READHEX(authpropose_1way_hexstr);
-      authchallenge2Data = READHEX(authchallenge2_hexstr);
-      authchallenge2Data_1way = READHEX(authchallenge2_1way_hexstr);
-      authreply2Data = READHEX(authreply2_hexstr);
-      cli150Fingerprint = "3APoaDH59ANeNt6WbGNksbcWSpdUsZhCqrANS";
-
-#ifndef _MSC_VER
-      baseDir_ = "./input_files";
-#else
-      baseDir_ = "../gtest/input_files";
-#endif
-   }
-
-   BinaryData prvKeyClientIn;
-   BinaryData prvKeyClientOut;
-   BinaryData prvKeyServerIn;
-   BinaryData prvKeyServerOut;
-   BinaryData pubKeyClientIn;
-   BinaryData pubKeyClientOut;
-   BinaryData pubKeyServerIn;
-   BinaryData pubKeyServerOut;
-   BinaryData ecdhCliInSrvOut;
-   BinaryData ecdhCliOutSrvIn;
-   BinaryData k1CliInSrvOut;
-   BinaryData k1CliOutSrvIn;
-   BinaryData k2CliInSrvOut;
-   BinaryData k2CliOutSrvIn;
-   BinaryData sesIDCliInSrvOut;
-   BinaryData sesIDCliOutSrvIn;
-   BinaryData command;
-   BinaryData payload;
-   BinaryData msg;
-   BinaryData cliOutMsg1;
-   BinaryData srvInMsg1;
-   BinaryData cliOutMsg2;
-   BinaryData srvInMsg2;
-   BinaryData cliOutMsg3;
-   BinaryData srvInMsg3;
-   BinaryData cliOutMsg4;
-   BinaryData srvInMsg4;
-   BinaryData srvOutMsg1;
-   BinaryData cliInMsg1;
-   BinaryData srvOutMsg2;
-   BinaryData cliInMsg2;
-   BinaryData srvOutMsg3;
-   BinaryData cliInMsg3;
-   BinaryData srvOutMsg4;
-   BinaryData cliInMsg4;
-   BinaryData authchallenge1Data;
-   BinaryData authreply1Data;
-   BinaryData authproposeData;
-   BinaryData authproposeData_1way;
-   BinaryData authchallenge2Data;
-   BinaryData authchallenge2Data_1way;
-   BinaryData authreply2Data;
-   string cli150Fingerprint;
-
-   string baseDir_;
-};
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(BIP150_151Test, checkData_151_Only)
-{
-   // Run before the first test has been run. (SetUp/TearDown will be called
-   // for each test. Multiple context startups/shutdowns leads to crashes.)
-   startupBIP151CTX();
-   startupBIP150CTX(4);
-
-   // BIP 151 connection uses private keys we feed it. (Normally, we'd let it
-   // generate its own private keys.)
-   auto getpubkeymap = [](void)->const map<string, btc_pubkey>&
-   {
-      throw runtime_error("");
-   };
-
-   auto getprivkey = [](const BinaryDataRef&)->const SecureBinaryData&
-   {
-      throw runtime_error("");
-   };
-
-   auto getauthset = [](void)->const std::map<SecureBinaryData, std::string>&
-   {
-      throw runtime_error("");
-   };
-
-   AuthPeersLambdas akl1(getpubkeymap, getprivkey, getauthset);
-   AuthPeersLambdas akl2(getpubkeymap, getprivkey, getauthset);
-
-   btc_key prvKeyCliIn;
-   btc_key prvKeyCliOut;
-   btc_key prvKeySrvIn;
-   btc_key prvKeySrvOut;
-   prvKeyClientIn.copyTo(prvKeyCliIn.privkey);
-   prvKeyClientOut.copyTo(prvKeyCliOut.privkey);
-   prvKeyServerIn.copyTo(prvKeySrvIn.privkey);
-   prvKeyServerOut.copyTo(prvKeySrvOut.privkey);
-   BIP151Connection cliCon(&prvKeyCliIn, &prvKeyCliOut, akl1, false);
-   BIP151Connection srvCon(&prvKeySrvIn, &prvKeySrvOut, akl2, false);
-
-   // Set up encinit/encack directly. (Initial encinit/encack will use regular
-   // Bitcoin P2P messages, which we'll skip building.) Confirm all steps
-   // function properly along the way.
-   BinaryData cliInEncinitCliData(ENCINITMSGSIZE);   // SRV (Out) -> CLI (In)
-   BinaryData cliInEncackCliData(BIP151PUBKEYSIZE);  // CLI (In)  -> SRV (Out)
-   BinaryData cliOutEncinitCliData(ENCINITMSGSIZE);  // CLI (Out) -> SRV (In)
-   BinaryData cliOutEncackCliData(BIP151PUBKEYSIZE); // SRV (In)  -> CLI (Out)
-   int s1 = srvCon.getEncinitData(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
-   EXPECT_EQ(0, s1);
-   EXPECT_FALSE(srvCon.connectionComplete());
-   int s2 = cliCon.processEncinit(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  false);
-   EXPECT_EQ(0, s2);
-   EXPECT_FALSE(cliCon.connectionComplete());
-   int s3 = cliCon.getEncackData(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize());
-   EXPECT_EQ(0, s3);
-   EXPECT_FALSE(cliCon.connectionComplete());
-   int s4 = srvCon.processEncack(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize(),
-                                 true);
-   EXPECT_EQ(0, s4);
-   EXPECT_FALSE(srvCon.connectionComplete());
-   int s5 = cliCon.getEncinitData(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
-   EXPECT_EQ(0, s5);
-   EXPECT_FALSE(cliCon.connectionComplete());
-   int s6 = srvCon.processEncinit(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  false);
-   EXPECT_EQ(0, s6);
-   EXPECT_FALSE(srvCon.connectionComplete());
-   int s7 = srvCon.getEncackData(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize());
-   EXPECT_EQ(0, s7);
-   EXPECT_TRUE(srvCon.connectionComplete());
-   int s8 = cliCon.processEncack(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize(),
-                                 true);
-   EXPECT_EQ(0, s8);
-   EXPECT_TRUE(cliCon.connectionComplete());
-
-   // Check the encinit/encack data the client sends on its outbound session.
-   BinaryData expectedCliEncinitData(34);
-   std::copy(pubKeyClientOut.getPtr(),
-      pubKeyClientOut.getPtr() + 33,
-      expectedCliEncinitData.getPtr());
-   expectedCliEncinitData[BIP151PUBKEYSIZE] = \
-      static_cast<uint8_t>(BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
-   EXPECT_EQ(pubKeyClientIn, cliInEncackCliData);
-   EXPECT_EQ(expectedCliEncinitData, cliOutEncinitCliData);
-
-   // Check the encinit/encack data the server sends on its outbound session.
-   BinaryData expectedSrvEncinitData(34);
-   std::copy(pubKeyServerOut.getPtr(),
-      pubKeyServerOut.getPtr() + 33,
-      expectedSrvEncinitData.getPtr());
-   expectedSrvEncinitData[BIP151PUBKEYSIZE] = \
-      static_cast<uint8_t>(BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
-   EXPECT_EQ(pubKeyServerIn, cliOutEncackCliData);
-   EXPECT_EQ(expectedSrvEncinitData, cliInEncinitCliData);
-
-   // Check the session IDs.
-   BinaryData inSesID(cliCon.getSessionID(false), 32);
-   BinaryData outSesID(cliCon.getSessionID(true), 32);
-   EXPECT_EQ(sesIDCliInSrvOut, inSesID);
-   EXPECT_EQ(sesIDCliOutSrvIn, outSesID);
-
-   // Get that the size of the encrypted packet will be correct. The message
-   // buffer is intentionally missized at first.
-   auto&& cmd = BinaryData::fromString("fake"sv);
-   std::array<uint8_t, 4> payload = {0xde, 0xad, 0xbe, 0xef};
-   BinaryData testMsgData(50);
-   size_t finalMsgSize;
-   BIP151Message testMsg(cmd.getPtr(), cmd.getSize(),
-      payload.data(), payload.size());
-   testMsg.getEncStructMsg(testMsgData.getPtr(), testMsgData.getSize(),
-      finalMsgSize);
-   testMsgData.resize(finalMsgSize);
-   EXPECT_EQ(finalMsgSize, 17ULL);
-   EXPECT_EQ(msg, testMsgData);
-
-   // Encrypt and decrypt the first CLI -> SRV packet. Buffer is intentionally
-   // oversized to show that the code works properly.
-   BinaryData encMsgBuffer(testMsgData.getSize() + 16);
-   int encryptRes = cliCon.assemblePacket(testMsgData.getPtr(),
-                                          testMsgData.getSize(),
-                                          encMsgBuffer.getPtr(),
-                                          encMsgBuffer.getSize());
-   EXPECT_EQ(0, encryptRes);
-   EXPECT_EQ(cliOutMsg1, encMsgBuffer);
-   BinaryData decMsgBuffer(testMsgData.getSize());
-   int decryptRes = srvCon.decryptPacket(encMsgBuffer.getPtr(),
-                                         encMsgBuffer.getSize(),
-                                         decMsgBuffer.getPtr(),
-                                         decMsgBuffer.getSize());
-   EXPECT_EQ(0, decryptRes);
-   EXPECT_EQ(srvInMsg1, decMsgBuffer);
-
-   // Encrypt and decrypt the second CLI -> SRV packet.
-   encMsgBuffer.resize(testMsgData.getSize() + 16);
-   encryptRes = cliCon.assemblePacket(testMsgData.getPtr(),
-                                      testMsgData.getSize(),
-                                      encMsgBuffer.getPtr(),
-                                      encMsgBuffer.getSize());
-   EXPECT_EQ(0, encryptRes);
-   EXPECT_EQ(cliOutMsg2, encMsgBuffer);
-
-   decMsgBuffer.resize(testMsgData.getSize());
-   decryptRes = srvCon.decryptPacket(encMsgBuffer.getPtr(),
-                                     encMsgBuffer.getSize(),
-                                     decMsgBuffer.getPtr(),
-                                     decMsgBuffer.getSize());
-   EXPECT_EQ(0, decryptRes);
-   EXPECT_EQ(srvInMsg2, decMsgBuffer);
-
-   // Rekey (CLI -> SRV) and confirm that the results are correct.
-   BinaryData rekeyBuf(64);
-   int rekeySendRes = cliCon.bip151RekeyConn(rekeyBuf.getPtr(),
-                                             rekeyBuf.getSize());
-   EXPECT_EQ(0, rekeySendRes);
-   EXPECT_EQ(cliOutMsg3, rekeyBuf);
-   decMsgBuffer.resize(rekeyBuf.getSize() - 16);
-   decryptRes = srvCon.decryptPacket(rekeyBuf.getPtr(),
-                                     rekeyBuf.getSize(),
-                                     decMsgBuffer.getPtr(),
-                                     decMsgBuffer.getSize());
-   EXPECT_EQ(0, decryptRes);
-   EXPECT_EQ(srvInMsg3, decMsgBuffer);
-   BIP151Message decData1(decMsgBuffer.getPtr(), decMsgBuffer.getSize());
-   int rekeyProcRes = srvCon.processEncack(decData1.getPayloadPtr(),
-                                           decData1.getPayloadSize(),
-                                           false);
-   EXPECT_EQ(0, rekeyProcRes);
-
-   // Encrypt and decrypt the third CLI -> SRV packet.
-   encMsgBuffer.resize(testMsgData.getSize() + 16);
-   encryptRes = cliCon.assemblePacket(testMsgData.getPtr(),
-                                      testMsgData.getSize(),
-                                      encMsgBuffer.getPtr(),
-                                      encMsgBuffer.getSize());
-   EXPECT_EQ(0, encryptRes);
-   EXPECT_EQ(cliOutMsg4, encMsgBuffer);
-   decMsgBuffer.resize(testMsgData.getSize());
-   decryptRes = srvCon.decryptPacket(encMsgBuffer.getPtr(),
-                                     encMsgBuffer.getSize(),
-                                     decMsgBuffer.getPtr(),
-                                     decMsgBuffer.getSize());
-   EXPECT_EQ(0, decryptRes);
-   EXPECT_EQ(srvInMsg4, decMsgBuffer);
-
-   // Encrypt and decrypt the first SRV -> CLI packet.
-   encMsgBuffer.resize(testMsgData.getSize() + 16);
-   encryptRes = srvCon.assemblePacket(testMsgData.getPtr(),
-                                      testMsgData.getSize(),
-                                      encMsgBuffer.getPtr(),
-                                      encMsgBuffer.getSize());
-   EXPECT_EQ(0, encryptRes);
-   EXPECT_EQ(srvOutMsg1, encMsgBuffer);
-
-   decMsgBuffer.resize(testMsgData.getSize());
-   decryptRes = cliCon.decryptPacket(encMsgBuffer.getPtr(),
-                                     encMsgBuffer.getSize(),
-                                     decMsgBuffer.getPtr(),
-                                     decMsgBuffer.getSize());
-   EXPECT_EQ(0, decryptRes);
-   EXPECT_EQ(cliInMsg1, decMsgBuffer);
-
-   // Encrypt and decrypt the second SRV -> CLI packet.
-   encMsgBuffer.resize(testMsgData.getSize() + 16);
-   encryptRes = srvCon.assemblePacket(testMsgData.getPtr(),
-                                      testMsgData.getSize(),
-                                      encMsgBuffer.getPtr(),
-                                      encMsgBuffer.getSize());
-   EXPECT_EQ(0, encryptRes);
-   EXPECT_EQ(srvOutMsg2, encMsgBuffer);
-
-   decMsgBuffer.resize(testMsgData.getSize());
-   decryptRes = cliCon.decryptPacket(encMsgBuffer.getPtr(),
-                                     encMsgBuffer.getSize(),
-                                     decMsgBuffer.getPtr(),
-                                     decMsgBuffer.getSize());
-   EXPECT_EQ(0, decryptRes);
-   EXPECT_EQ(cliInMsg2, decMsgBuffer);
-
-   // Rekey (CLI -> SRV) and confirm that the results are correct.
-   rekeySendRes = srvCon.bip151RekeyConn(rekeyBuf.getPtr(),
-                                         rekeyBuf.getSize());
-   EXPECT_EQ(0, rekeySendRes);
-   EXPECT_EQ(srvOutMsg3, rekeyBuf);
-   decMsgBuffer.resize(rekeyBuf.getSize() - 16);
-   decryptRes = cliCon.decryptPacket(rekeyBuf.getPtr(),
-                                     rekeyBuf.getSize(),
-                                     decMsgBuffer.getPtr(),
-                                     decMsgBuffer.getSize());
-   EXPECT_EQ(0, decryptRes);
-   EXPECT_EQ(cliInMsg3, decMsgBuffer);
-   BIP151Message decData2(decMsgBuffer.getPtr(), decMsgBuffer.getSize());
-   rekeyProcRes = cliCon.processEncack(decData2.getPayloadPtr(),
-                                       decData2.getPayloadSize(),
-                                       false);
-   EXPECT_EQ(0, rekeyProcRes);
-
-   // Encrypt and decrypt the third SRV -> CLI packet.
-   encMsgBuffer.resize(testMsgData.getSize() + 16);
-   encryptRes = cliCon.assemblePacket(testMsgData.getPtr(),
-                                      testMsgData.getSize(),
-                                      encMsgBuffer.getPtr(),
-                                      encMsgBuffer.getSize());
-   EXPECT_EQ(0, encryptRes);
-   EXPECT_EQ(srvOutMsg4, encMsgBuffer);
-
-   decMsgBuffer.resize(testMsgData.getSize());
-   decryptRes = srvCon.decryptPacket(encMsgBuffer.getPtr(),
-                                     encMsgBuffer.getSize(),
-                                     decMsgBuffer.getPtr(),
-                                     decMsgBuffer.getSize());
-   EXPECT_EQ(0, decryptRes);
-   EXPECT_EQ(cliInMsg4, decMsgBuffer);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Test BIP 150 and BIP 151. Establish a 151 connection first and then confirm
-// that BIP 150 functions properly, with a quick check to confirm that 151 is
-// still functional afterwards.
-TEST_F(BIP150_151Test, checkData_150_151)
-{
-   // Test IPv4, and then IPv6 later.
-   // Ideally, the code would be smart enough to support two separate contexts
-   // so that two separate key sets can be tested. There's no real reason to
-   // support this in Armory right now, though, and it'd be a lot of work. For
-   // now, just cheat and have two "separate" systems with the same input files.
-
-   //grab serv private key from peer files
-   auto servFilePath = std::filesystem::current_path();
-   servFilePath.append("input_files/bip150v0_srv1/identity-key-ipv4");
-   fstream serv_isf(servFilePath);
-   char prvHex[65];
-   serv_isf.getline(prvHex, 65);
-   SecureBinaryData privServ(READHEX(prvHex));
-
-   //grab client private key from peer files
-   auto cliFilePath = std::filesystem::current_path();
-   cliFilePath.append("input_files/bip150v0_cli1/identity-key-ipv4");
-   fstream cli_isf(cliFilePath);
-   char cliHex[65];
-   cli_isf.getline(cliHex, 65);
-   SecureBinaryData privCli(READHEX(cliHex));
-
-   //compute public keys
-   auto pubServ = Cryptography::ECDSA::computePublicKey(privServ, true);
-   auto pubCli = Cryptography::ECDSA::computePublicKey(privCli, true);
-
-   btc_pubkey servKey;
-   btc_pubkey_init(&servKey);
-   memcpy(servKey.pubkey, pubServ.getPtr(), BIP151PUBKEYSIZE);
-   servKey.compressed = true;
-
-   btc_pubkey clientKey;
-   btc_pubkey_init(&clientKey);
-   memcpy(clientKey.pubkey, pubCli.getPtr(), BIP151PUBKEYSIZE);
-   clientKey.compressed = true;
-
-   //create pubkey maps
-   map<string, btc_pubkey> servMap;
-   servMap.insert(make_pair("own", servKey));
-   servMap.insert(make_pair("101.101.101.101:10101", clientKey));
-
-   map<string, btc_pubkey> cliMap;
-   cliMap.insert(make_pair("own", clientKey));
-   cliMap.insert(make_pair("1.2.3.4:8333", servKey));
-
-   //create privkey maps
-   map<SecureBinaryData, SecureBinaryData> servPrivMap;
-   servPrivMap.insert(make_pair(pubServ, privServ));
-
-   map<SecureBinaryData, SecureBinaryData> cliPrivMap;
-   cliPrivMap.insert(make_pair(pubCli, privCli));
-
-   //create auth peer sets
-   std::map<SecureBinaryData, std::string> servSet;
-   servSet.emplace(pubCli, "");
-
-   std::map<SecureBinaryData, std::string> clientSet;
-   clientSet.emplace(pubServ, "");
-
-   //create server auth key lambdas
-   auto serv_getPubKeyMap = [&servMap](void)->const map<string, btc_pubkey>&
-   {
-      return servMap;
-   };
-
-   auto serv_getPrivKey = [&servPrivMap](const BinaryDataRef& pub)->const SecureBinaryData&
-   {
-      auto iter = servPrivMap.find(pub);
-      if (iter == servPrivMap.end())
-         throw runtime_error("invalid key");
-      return iter->second;
-   };
-
-   auto serv_getauthset = [servSet](void)->const std::map<SecureBinaryData, std::string>&
-   {
-      return servSet;
-   };
-
-   //create client auth key lambdas
-   auto cli_getPubKeyMap = [&cliMap](void)->const map<string, btc_pubkey>&
-   {
-      return cliMap;
-   };
-
-   auto cli_getPrivKey = [&cliPrivMap](const BinaryDataRef& pub)->const SecureBinaryData&
-   {
-      auto iter = cliPrivMap.find(pub);
-      if (iter == cliPrivMap.end())
-         throw runtime_error("invalid key");
-      return iter->second;
-   };
-
-   auto cli_getauthset = [clientSet](void)->const std::map<SecureBinaryData, std::string>&
-   {
-      return clientSet;
-   };
-
-   //create AKL objects
-   AuthPeersLambdas aklServ(serv_getPubKeyMap, serv_getPrivKey, serv_getauthset);
-   AuthPeersLambdas aklCli(cli_getPubKeyMap, cli_getPrivKey, cli_getauthset);
-
-
-   startupBIP150CTX(4);
-
-   btc_key prvKeyCliIn;
-   btc_key prvKeyCliOut;
-   btc_key prvKeySrvIn;
-   btc_key prvKeySrvOut;
-   prvKeyClientIn.copyTo(prvKeyCliIn.privkey);
-   prvKeyClientOut.copyTo(prvKeyCliOut.privkey);
-   prvKeyServerIn.copyTo(prvKeySrvIn.privkey);
-   prvKeyServerOut.copyTo(prvKeySrvOut.privkey);
-   BIP151Connection cliCon(&prvKeyCliIn, &prvKeyCliOut, aklCli, false);
-   BIP151Connection srvCon(&prvKeySrvIn, &prvKeySrvOut, aklServ, false);
-
-   // Set up encinit/encack directly. (Initial encinit/encack will use regular
-   // Bitcoin P2P messages, which we'll skip building.) Confirm all steps
-   // function properly along the way.
-   BinaryData cliInEncinitCliData(ENCINITMSGSIZE);   // SRV (Out) -> CLI (In)
-   BinaryData cliInEncackCliData(BIP151PUBKEYSIZE);  // CLI (In)  -> SRV (Out)
-   BinaryData cliOutEncinitCliData(ENCINITMSGSIZE);  // CLI (Out) -> SRV (In)
-   BinaryData cliOutEncackCliData(BIP151PUBKEYSIZE); // SRV (In)  -> CLI (Out)
-   int s1 = srvCon.getEncinitData(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
-   EXPECT_EQ(0, s1);
-   EXPECT_FALSE(srvCon.connectionComplete());
-   int s2 = cliCon.processEncinit(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  false);
-   EXPECT_EQ(0, s2);
-   EXPECT_FALSE(cliCon.connectionComplete());
-   int s3 = cliCon.getEncackData(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize());
-   EXPECT_EQ(0, s3);
-   EXPECT_FALSE(cliCon.connectionComplete());
-   int s4 = srvCon.processEncack(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize(),
-                                 true);
-   EXPECT_EQ(0, s4);
-   EXPECT_FALSE(srvCon.connectionComplete());
-   int s5 = cliCon.getEncinitData(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
-   EXPECT_EQ(0, s5);
-   EXPECT_FALSE(cliCon.connectionComplete());
-   int s6 = srvCon.processEncinit(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  false);
-   EXPECT_EQ(0, s6);
-   EXPECT_FALSE(srvCon.connectionComplete());
-   int s7 = srvCon.getEncackData(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize());
-   EXPECT_EQ(0, s7);
-   EXPECT_TRUE(srvCon.connectionComplete());
-   int s8 = cliCon.processEncack(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize(),
-                                 true);
-   EXPECT_EQ(0, s8);
-   EXPECT_TRUE(cliCon.connectionComplete());
-
-   // Get the fingerprint.
-   string curFng = cliCon.getBIP150Fingerprint();
-   EXPECT_EQ(cli150Fingerprint, curFng);
-
-   ////////////////// Start the BIP 150 process for each side. /////////////////
-   BinaryData authchallengeBuf(BIP151PRVKEYSIZE);
-   BinaryData authreplyBuf(BIP151PRVKEYSIZE*2);
-   BinaryData authproposeBuf(BIP151PRVKEYSIZE);
-   EXPECT_EQ(BIP150State::INACTIVE, cliCon.getBIP150State());
-   EXPECT_EQ(BIP150State::INACTIVE, srvCon.getBIP150State());
-
-   // INACTIVE -> CHALLENGE1
-   int b1 = cliCon.getAuthchallengeData(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        "1.2.3.4:8333",
-                                        true);
-   EXPECT_EQ(0, b1);
-   EXPECT_EQ(BIP150State::CHALLENGE1, cliCon.getBIP150State());
-   EXPECT_EQ(authchallenge1Data, authchallengeBuf);
-   int b2 = srvCon.processAuthchallenge(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        true);
-   EXPECT_EQ(0, b2);
-   EXPECT_EQ(BIP150State::CHALLENGE1, srvCon.getBIP150State());
-
-   // CHALLENGE1 -> REPLY1
-   int b3 = srvCon.getAuthreplyData(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    true);
-   EXPECT_EQ(0, b3);
-   EXPECT_EQ(BIP150State::REPLY1, srvCon.getBIP150State());
-   EXPECT_EQ(authreply1Data, authreplyBuf);
-   int b4 = cliCon.processAuthreply(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    true);
-   EXPECT_EQ(0, b4);
-   EXPECT_EQ(BIP150State::REPLY1, cliCon.getBIP150State());
-
-   // REPLY1 -> PROPOSE
-   int b5 = cliCon.getAuthproposeData(authproposeBuf.getPtr(),
-                                      authproposeBuf.getSize());
-   EXPECT_EQ(0, b5);
-   EXPECT_EQ(BIP150State::PROPOSE, cliCon.getBIP150State());
-   EXPECT_EQ(authproposeData, authproposeBuf);
-   int b6 = srvCon.processAuthpropose(authproposeBuf.getPtr(),
-                                      authproposeBuf.getSize());
-   EXPECT_EQ(0, b6);
-   EXPECT_EQ(BIP150State::PROPOSE, srvCon.getBIP150State());
-
-   // PROPOSE -> CHALLENGE2
-   int b7 = srvCon.getAuthchallengeData(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        "",
-                                        false);
-   EXPECT_EQ(0, b7);
-   EXPECT_EQ(BIP150State::CHALLENGE2, srvCon.getBIP150State());
-   EXPECT_EQ(authchallenge2Data, authchallengeBuf);
-   int b8 = cliCon.processAuthchallenge(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        false);
-   EXPECT_EQ(0, b8);
-   EXPECT_EQ(BIP150State::CHALLENGE2, cliCon.getBIP150State());
-
-   // CHALLENGE2 -> REPLY2 (SUCCESS)
-   int b9 = cliCon.getAuthreplyData(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    false);
-   EXPECT_EQ(0, b9);
-
-   cliCon.bip150HandshakeRekey();
-   EXPECT_EQ(BIP150State::SUCCESS, cliCon.getBIP150State());
-   EXPECT_EQ(authreply2Data, authreplyBuf);
-   int b10 = srvCon.processAuthreply(authreplyBuf.getPtr(),
-                                     authreplyBuf.getSize(),
-                                     false);
-   EXPECT_EQ(0, b10);
-
-   srvCon.bip150HandshakeRekey();
-   EXPECT_EQ(BIP150State::SUCCESS, srvCon.getBIP150State());
-
-   // See what happens when messages are received out of order.
-   // INACTIVE -> CHALLENGE1  (Client)
-   int b11 = cliCon.getAuthchallengeData(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        "1.2.3.4:8333",
-                                        true);
-   EXPECT_EQ(0, b11);
-   EXPECT_EQ(BIP150State::CHALLENGE1, cliCon.getBIP150State());
-   EXPECT_EQ(authchallenge1Data, authchallengeBuf);
-
-   // CHALLENGE1 -> PROPOSE  (Client)
-   int b12 = cliCon.getAuthproposeData(authproposeBuf.getPtr(),
-                                       authproposeBuf.getSize());
-   EXPECT_EQ(-1, b12);
-   EXPECT_EQ(BIP150State::ERR_STATE, cliCon.getBIP150State());
-}
-
-TEST_F(BIP150_151Test, checkData_150_151_1Way)
-{
-   // Test IPv4, and then IPv6 later.
-   // Ideally, the code would be smart enough to support two separate contexts
-   // so that two separate key sets can be tested. There's no real reason to
-   // support this in Armory right now, though, and it'd be a lot of work. For
-   // now, just cheat and have two "separate" systems with the same input files.
-
-   //grab serv private key from peer files
-   auto servFilePath = std::filesystem::current_path();
-   servFilePath.append("input_files/bip150v0_srv1/identity-key-ipv4");
-   fstream serv_isf(servFilePath);
-   char prvHex[65];
-   serv_isf.getline(prvHex, 65);
-   SecureBinaryData privServ(READHEX(prvHex));
-
-   //grab client private key from peer files
-   auto cliFilePath = std::filesystem::current_path();
-   cliFilePath.append("input_files/bip150v0_cli1/identity-key-ipv4");
-   fstream cli_isf(cliFilePath);
-   char cliHex[65];
-   cli_isf.getline(cliHex, 65);
-   SecureBinaryData privCli(READHEX(cliHex));
-   
-   //compute public keys
-   auto pubServ = Cryptography::ECDSA::computePublicKey(privServ, true);
-   auto pubCli = Cryptography::ECDSA::computePublicKey(privCli, true);
-
-   btc_pubkey servKey;
-   btc_pubkey_init(&servKey);
-   memcpy(servKey.pubkey, pubServ.getPtr(), BIP151PUBKEYSIZE);
-   servKey.compressed = true;
-
-   btc_pubkey clientKey;
-   btc_pubkey_init(&clientKey);
-   memcpy(clientKey.pubkey, pubCli.getPtr(), BIP151PUBKEYSIZE);
-   clientKey.compressed = true;
-
-   //create pubkey maps
-   map<string, btc_pubkey> servMap;
-   servMap.insert(make_pair("own", servKey));
-   servMap.insert(make_pair("101.101.101.101:10101", clientKey));
-
-   map<string, btc_pubkey> cliMap;
-   cliMap.insert(make_pair("own", clientKey));
-   cliMap.insert(make_pair("1.2.3.4:8333", servKey));
-
-   //create privkey maps
-   map<SecureBinaryData, SecureBinaryData> servPrivMap;
-   servPrivMap.insert(make_pair(pubServ, privServ));
-
-   map<SecureBinaryData, SecureBinaryData> cliPrivMap;
-   cliPrivMap.insert(make_pair(pubCli, privCli));
-
-   //create auth peer sets
-   std::map<SecureBinaryData, std::string> servSet;
-   servSet.emplace(pubCli, "");
-
-   std::map<SecureBinaryData, std::string> clientSet;
-   clientSet.emplace(pubServ, "");
-
-   //create server auth key lambdas
-   auto serv_getPubKeyMap = [&servMap](void)->const map<string, btc_pubkey>&
-   {
-      return servMap;
-   };
-
-   auto serv_getPrivKey = [&servPrivMap](const BinaryDataRef& pub)->const SecureBinaryData&
-   {
-      auto iter = servPrivMap.find(pub);
-      if (iter == servPrivMap.end())
-         throw runtime_error("invalid key");
-      return iter->second;
-   };
-
-   auto serv_getauthset = [servSet](void)->const std::map<SecureBinaryData, std::string>&
-   {
-      return servSet;
-   };
-
-   //create client auth key lambdas
-   auto cli_getPubKeyMap = [&cliMap](void)->const map<string, btc_pubkey>&
-   {
-      return cliMap;
-   };
-
-   auto cli_getPrivKey = [&cliPrivMap](const BinaryDataRef& pub)->const SecureBinaryData&
-   {
-      auto iter = cliPrivMap.find(pub);
-      if (iter == cliPrivMap.end())
-         throw runtime_error("invalid key");
-      return iter->second;
-   };
-
-   auto cli_getauthset = [clientSet](void)->const std::map<SecureBinaryData, std::string>&
-   {
-      return clientSet;
-   };
-
-   //create AKL objects
-   AuthPeersLambdas aklServ(serv_getPubKeyMap, serv_getPrivKey, serv_getauthset);
-   AuthPeersLambdas aklCli(cli_getPubKeyMap, cli_getPrivKey, cli_getauthset);
-
-
-   startupBIP150CTX(4);
-
-   btc_key prvKeyCliIn;
-   btc_key prvKeyCliOut;
-   btc_key prvKeySrvIn;
-   btc_key prvKeySrvOut;
-   prvKeyClientIn.copyTo(prvKeyCliIn.privkey);
-   prvKeyClientOut.copyTo(prvKeyCliOut.privkey);
-   prvKeyServerIn.copyTo(prvKeySrvIn.privkey);
-   prvKeyServerOut.copyTo(prvKeySrvOut.privkey);
-   BIP151Connection cliCon(&prvKeyCliIn, &prvKeyCliOut, aklCli, true);
-   BIP151Connection srvCon(&prvKeySrvIn, &prvKeySrvOut, aklServ, true);
-
-   // Set up encinit/encack directly. (Initial encinit/encack will use regular
-   // Bitcoin P2P messages, which we'll skip building.) Confirm all steps
-   // function properly along the way.
-   BinaryData cliInEncinitCliData(ENCINITMSGSIZE);   // SRV (Out) -> CLI (In)
-   BinaryData cliInEncackCliData(BIP151PUBKEYSIZE);  // CLI (In)  -> SRV (Out)
-   BinaryData cliOutEncinitCliData(ENCINITMSGSIZE);  // CLI (Out) -> SRV (In)
-   BinaryData cliOutEncackCliData(BIP151PUBKEYSIZE); // SRV (In)  -> CLI (Out)
-   int s1 = srvCon.getEncinitData(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
-   EXPECT_EQ(0, s1);
-   EXPECT_FALSE(srvCon.connectionComplete());
-   int s2 = cliCon.processEncinit(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  false);
-   EXPECT_EQ(0, s2);
-   EXPECT_FALSE(cliCon.connectionComplete());
-   int s3 = cliCon.getEncackData(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize());
-   EXPECT_EQ(0, s3);
-   EXPECT_FALSE(cliCon.connectionComplete());
-   int s4 = srvCon.processEncack(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize(),
-                                 true);
-   EXPECT_EQ(0, s4);
-   EXPECT_FALSE(srvCon.connectionComplete());
-   int s5 = cliCon.getEncinitData(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
-   EXPECT_EQ(0, s5);
-   EXPECT_FALSE(cliCon.connectionComplete());
-   int s6 = srvCon.processEncinit(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  false);
-   EXPECT_EQ(0, s6);
-   EXPECT_FALSE(srvCon.connectionComplete());
-   int s7 = srvCon.getEncackData(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize());
-   EXPECT_EQ(0, s7);
-   EXPECT_TRUE(srvCon.connectionComplete());
-   int s8 = cliCon.processEncack(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize(),
-                                 true);
-   EXPECT_EQ(0, s8);
-   EXPECT_TRUE(cliCon.connectionComplete());
-
-   // Get the fingerprint.
-   string curFng = cliCon.getBIP150Fingerprint();
-   EXPECT_EQ(cli150Fingerprint, curFng);
-
-   ////////////////// Start the BIP 150 process for each side. /////////////////
-   BinaryData authchallengeBuf(BIP151PRVKEYSIZE);
-   BinaryData authreplyBuf(BIP151PRVKEYSIZE*2);
-   BinaryData authproposeBuf(BIP151PRVKEYSIZE);
-   EXPECT_EQ(BIP150State::INACTIVE, cliCon.getBIP150State());
-   EXPECT_EQ(BIP150State::INACTIVE, srvCon.getBIP150State());
-
-   // INACTIVE -> CHALLENGE1
-   int b1 = cliCon.getAuthchallengeData(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        "1.2.3.4:8333",
-                                        true);
-   EXPECT_EQ(0, b1);
-   EXPECT_EQ(BIP150State::CHALLENGE1, cliCon.getBIP150State());
-   EXPECT_EQ(authchallenge1Data, authchallengeBuf);
-   int b2 = srvCon.processAuthchallenge(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        true);
-   EXPECT_EQ(0, b2);
-   EXPECT_EQ(BIP150State::CHALLENGE1, srvCon.getBIP150State());
-
-   // CHALLENGE1 -> REPLY1
-   int b3 = srvCon.getAuthreplyData(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    true);
-   EXPECT_EQ(0, b3);
-   EXPECT_EQ(BIP150State::REPLY1, srvCon.getBIP150State());
-   EXPECT_EQ(authreply1Data, authreplyBuf);
-   int b4 = cliCon.processAuthreply(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    true);
-   EXPECT_EQ(0, b4);
-   EXPECT_EQ(BIP150State::REPLY1, cliCon.getBIP150State());
-
-   // REPLY1 -> PROPOSE
-   int b5 = cliCon.getAuthproposeData(authproposeBuf.getPtr(),
-                                      authproposeBuf.getSize());
-   EXPECT_EQ(0, b5);
-   EXPECT_EQ(BIP150State::PROPOSE, cliCon.getBIP150State());
-   EXPECT_EQ(authproposeData_1way, authproposeBuf);
-   int b6 = srvCon.processAuthpropose(authproposeBuf.getPtr(),
-                                      authproposeBuf.getSize());
-   EXPECT_EQ(1, b6);
-   EXPECT_EQ(BIP150State::PROPOSE, srvCon.getBIP150State());
-
-   // PROPOSE -> CHALLENGE2
-   int b7 = srvCon.getAuthchallengeData(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        "",
-                                        false);
-   EXPECT_EQ(0, b7);
-   EXPECT_EQ(BIP150State::CHALLENGE2, srvCon.getBIP150State());
-   EXPECT_EQ(authchallenge2Data_1way, authchallengeBuf);
-   int b8 = cliCon.processAuthchallenge(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        false);
-   EXPECT_EQ(0, b8);
-   EXPECT_EQ(BIP150State::CHALLENGE2, cliCon.getBIP150State());
-
-   // CHALLENGE2 -> REPLY2 (SUCCESS)
-   int b9 = cliCon.getAuthreplyData(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    false);
-   EXPECT_EQ(0, b9);
-
-   cliCon.bip150HandshakeRekey();
-   EXPECT_EQ(BIP150State::SUCCESS, cliCon.getBIP150State());
-   EXPECT_EQ(memcmp(pubCli.getPtr(), authreplyBuf.getPtr(), BIP151PUBKEYSIZE), 0);
-   int b10 = srvCon.processAuthreply(authreplyBuf.getPtr(),
-                                     authreplyBuf.getSize(),
-                                     false);
-   EXPECT_EQ(0, b10);
-
-   srvCon.bip150HandshakeRekey();
-   EXPECT_EQ(BIP150State::SUCCESS, srvCon.getBIP150State());
-}
-
-TEST_F(BIP150_151Test, checkData_150_151_privateClientToPublicServer)
-{
-   // Test IPv4, and then IPv6 later.
-   // Ideally, the code would be smart enough to support two separate contexts
-   // so that two separate key sets can be tested. There's no real reason to
-   // support this in Armory right now, though, and it'd be a lot of work. For
-   // now, just cheat and have two "separate" systems with the same input files.
-
-   //grab serv private key from peer files
-   auto servFilePath = std::filesystem::current_path();
-   servFilePath.append("input_files/bip150v0_srv1/identity-key-ipv4");
-   fstream serv_isf(servFilePath);
-   char prvHex[65];
-   serv_isf.getline(prvHex, 65);
-   SecureBinaryData privServ(READHEX(prvHex));
-
-   //grab client private key from peer files
-   auto cliFilePath = std::filesystem::current_path();
-   cliFilePath.append("input_files/bip150v0_cli1/identity-key-ipv4");
-   fstream cli_isf(cliFilePath);
-   char cliHex[65];
-   cli_isf.getline(cliHex, 65);
-   SecureBinaryData privCli(READHEX(cliHex));
-
-   //compute public keys
-   auto pubServ = Cryptography::ECDSA::computePublicKey(privServ, true);
-   auto pubCli = Cryptography::ECDSA::computePublicKey(privCli, true);
-
-   btc_pubkey servKey;
-   btc_pubkey_init(&servKey);
-   memcpy(servKey.pubkey, pubServ.getPtr(), BIP151PUBKEYSIZE);
-   servKey.compressed = true;
-
-   btc_pubkey clientKey;
-   btc_pubkey_init(&clientKey);
-   memcpy(clientKey.pubkey, pubCli.getPtr(), BIP151PUBKEYSIZE);
-   clientKey.compressed = true;
-
-   //create pubkey maps
-   map<string, btc_pubkey> servMap;
-   servMap.insert(make_pair("own", servKey));
-   servMap.insert(make_pair("101.101.101.101:10101", clientKey));
-
-   map<string, btc_pubkey> cliMap;
-   cliMap.insert(make_pair("own", clientKey));
-   cliMap.insert(make_pair("1.2.3.4:8333", servKey));
-
-   //create privkey maps
-   map<SecureBinaryData, SecureBinaryData> servPrivMap;
-   servPrivMap.insert(make_pair(pubServ, privServ));
-
-   map<SecureBinaryData, SecureBinaryData> cliPrivMap;
-   cliPrivMap.insert(make_pair(pubCli, privCli));
-
-   //create auth peer sets
-   std::map<SecureBinaryData, std::string> servSet;
-   servSet.emplace(pubCli, "");
-
-   std::map<SecureBinaryData, std::string> clientSet;
-   clientSet.emplace(pubServ, "");
-
-   //create server auth key lambdas
-   auto serv_getPubKeyMap = [&servMap](void)->const map<string, btc_pubkey>&
-   {
-      return servMap;
-   };
-
-   auto serv_getPrivKey = [&servPrivMap](const BinaryDataRef& pub)->const SecureBinaryData&
-   {
-      auto iter = servPrivMap.find(pub);
-      if (iter == servPrivMap.end())
-         throw runtime_error("invalid key");
-      return iter->second;
-   };
-
-   auto serv_getauthset = [servSet](void)->const std::map<SecureBinaryData, std::string>&
-   {
-      return servSet;
-   };
-
-   //create client auth key lambdas
-   auto cli_getPubKeyMap = [&cliMap](void)->const map<string, btc_pubkey>&
-   {
-      return cliMap;
-   };
-
-   auto cli_getPrivKey = [&cliPrivMap](const BinaryDataRef& pub)->const SecureBinaryData&
-   {
-      auto iter = cliPrivMap.find(pub);
-      if (iter == cliPrivMap.end())
-         throw runtime_error("invalid key");
-      return iter->second;
-   };
-
-   auto cli_getauthset = [clientSet](void)->const std::map<SecureBinaryData, std::string>&
-   {
-      return clientSet;
-   };
-
-   //create AKL objects
-   AuthPeersLambdas aklServ(serv_getPubKeyMap, serv_getPrivKey, serv_getauthset);
-   AuthPeersLambdas aklCli(cli_getPubKeyMap, cli_getPrivKey, cli_getauthset);
-
-
-   startupBIP150CTX(4);
-
-   btc_key prvKeyCliIn;
-   btc_key prvKeyCliOut;
-   btc_key prvKeySrvIn;
-   btc_key prvKeySrvOut;
-   prvKeyClientIn.copyTo(prvKeyCliIn.privkey);
-   prvKeyClientOut.copyTo(prvKeyCliOut.privkey);
-   prvKeyServerIn.copyTo(prvKeySrvIn.privkey);
-   prvKeyServerOut.copyTo(prvKeySrvOut.privkey);
-   BIP151Connection cliCon(&prvKeyCliIn, &prvKeyCliOut, aklCli, false);
-   BIP151Connection srvCon(&prvKeySrvIn, &prvKeySrvOut, aklServ, true);
-
-   // Set up encinit/encack directly. (Initial encinit/encack will use regular
-   // Bitcoin P2P messages, which we'll skip building.) Confirm all steps
-   // function properly along the way.
-   BinaryData cliInEncinitCliData(ENCINITMSGSIZE);   // SRV (Out) -> CLI (In)
-   BinaryData cliInEncackCliData(BIP151PUBKEYSIZE);  // CLI (In)  -> SRV (Out)
-   BinaryData cliOutEncinitCliData(ENCINITMSGSIZE);  // CLI (Out) -> SRV (In)
-   BinaryData cliOutEncackCliData(BIP151PUBKEYSIZE); // SRV (In)  -> CLI (Out)
-   int s1 = srvCon.getEncinitData(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
-   EXPECT_EQ(0, s1);
-   EXPECT_FALSE(srvCon.connectionComplete());
-   int s2 = cliCon.processEncinit(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  false);
-   EXPECT_EQ(0, s2);
-   EXPECT_FALSE(cliCon.connectionComplete());
-   int s3 = cliCon.getEncackData(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize());
-   EXPECT_EQ(0, s3);
-   EXPECT_FALSE(cliCon.connectionComplete());
-   int s4 = srvCon.processEncack(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize(),
-                                 true);
-   EXPECT_EQ(0, s4);
-   EXPECT_FALSE(srvCon.connectionComplete());
-   int s5 = cliCon.getEncinitData(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
-   EXPECT_EQ(0, s5);
-   EXPECT_FALSE(cliCon.connectionComplete());
-   int s6 = srvCon.processEncinit(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  false);
-   EXPECT_EQ(0, s6);
-   EXPECT_FALSE(srvCon.connectionComplete());
-   int s7 = srvCon.getEncackData(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize());
-   EXPECT_EQ(0, s7);
-   EXPECT_TRUE(srvCon.connectionComplete());
-   int s8 = cliCon.processEncack(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize(),
-                                 true);
-   EXPECT_EQ(0, s8);
-   EXPECT_TRUE(cliCon.connectionComplete());
-
-   // Get the fingerprint.
-   string curFng = cliCon.getBIP150Fingerprint();
-   EXPECT_EQ(cli150Fingerprint, curFng);
-
-   ////////////////// Start the BIP 150 process for each side. /////////////////
-   BinaryData authchallengeBuf(BIP151PRVKEYSIZE);
-   BinaryData authreplyBuf(BIP151PRVKEYSIZE*2);
-   BinaryData authproposeBuf(BIP151PRVKEYSIZE);
-   EXPECT_EQ(BIP150State::INACTIVE, cliCon.getBIP150State());
-   EXPECT_EQ(BIP150State::INACTIVE, srvCon.getBIP150State());
-
-   // INACTIVE -> CHALLENGE1
-   int b1 = cliCon.getAuthchallengeData(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        "1.2.3.4:8333",
-                                        true);
-   EXPECT_EQ(0, b1);
-   EXPECT_EQ(BIP150State::CHALLENGE1, cliCon.getBIP150State());
-   EXPECT_EQ(authchallenge1Data, authchallengeBuf);
-   int b2 = srvCon.processAuthchallenge(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        true);
-   EXPECT_EQ(0, b2);
-   EXPECT_EQ(BIP150State::CHALLENGE1, srvCon.getBIP150State());
-
-   // CHALLENGE1 -> REPLY1
-   int b3 = srvCon.getAuthreplyData(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    true);
-   EXPECT_EQ(0, b3);
-   EXPECT_EQ(BIP150State::REPLY1, srvCon.getBIP150State());
-   EXPECT_EQ(authreply1Data, authreplyBuf);
-   int b4 = cliCon.processAuthreply(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    true);
-   EXPECT_EQ(0, b4);
-   EXPECT_EQ(BIP150State::REPLY1, cliCon.getBIP150State());
-
-   // REPLY1 -> PROPOSE
-   int b5 = cliCon.getAuthproposeData(authproposeBuf.getPtr(),
-                                      authproposeBuf.getSize());
-   EXPECT_EQ(0, b5);
-   EXPECT_EQ(BIP150State::PROPOSE, cliCon.getBIP150State());
-   EXPECT_EQ(authproposeData, authproposeBuf);
-   int b6 = srvCon.processAuthpropose(authproposeBuf.getPtr(),
-                                      authproposeBuf.getSize());
-   EXPECT_EQ(-1, b6);
-   EXPECT_EQ(BIP150State::ERR_STATE, srvCon.getBIP150State());
-}
-
-TEST_F(BIP150_151Test, checkData_150_151_publicClientToPrivateServer)
-{
-   // Test IPv4, and then IPv6 later.
-   // Ideally, the code would be smart enough to support two separate contexts
-   // so that two separate key sets can be tested. There's no real reason to
-   // support this in Armory right now, though, and it'd be a lot of work. For
-   // now, just cheat and have two "separate" systems with the same input files.
-
-   //grab serv private key from peer files
-   auto servFilePath = std::filesystem::current_path();
-   servFilePath.append("input_files/bip150v0_srv1/identity-key-ipv4");
-   fstream serv_isf(servFilePath);
-   char prvHex[65];
-   serv_isf.getline(prvHex, 65);
-   SecureBinaryData privServ(READHEX(prvHex));
-
-   //grab client private key from peer files
-   auto cliFilePath = std::filesystem::current_path();
-   cliFilePath.append("input_files/bip150v0_cli1/identity-key-ipv4");
-   fstream cli_isf(cliFilePath);
-   char cliHex[65];
-   cli_isf.getline(cliHex, 65);
-   SecureBinaryData privCli(READHEX(cliHex));
-
-   //compute public keys
-   auto pubServ = Cryptography::ECDSA::computePublicKey(privServ, true);
-   auto pubCli = Cryptography::ECDSA::computePublicKey(privCli, true);
-
-   btc_pubkey servKey;
-   btc_pubkey_init(&servKey);
-   memcpy(servKey.pubkey, pubServ.getPtr(), BIP151PUBKEYSIZE);
-   servKey.compressed = true;
-
-   btc_pubkey clientKey;
-   btc_pubkey_init(&clientKey);
-   memcpy(clientKey.pubkey, pubCli.getPtr(), BIP151PUBKEYSIZE);
-   clientKey.compressed = true;
-
-   //create pubkey maps
-   map<string, btc_pubkey> servMap;
-   servMap.insert(make_pair("own", servKey));
-   servMap.insert(make_pair("101.101.101.101:10101", clientKey));
-
-   map<string, btc_pubkey> cliMap;
-   cliMap.insert(make_pair("own", clientKey));
-   cliMap.insert(make_pair("1.2.3.4:8333", servKey));
-
-   //create privkey maps
-   map<SecureBinaryData, SecureBinaryData> servPrivMap;
-   servPrivMap.insert(make_pair(pubServ, privServ));
-
-   map<SecureBinaryData, SecureBinaryData> cliPrivMap;
-   cliPrivMap.insert(make_pair(pubCli, privCli));
-
-   //create auth peer sets
-   std::map<SecureBinaryData, std::string> servSet;
-   servSet.emplace(pubCli, "");
-
-   std::map<SecureBinaryData, std::string> clientSet;
-   clientSet.emplace(pubServ, "");
-
-   //create server auth key lambdas
-   auto serv_getPubKeyMap = [&servMap](void)->const map<string, btc_pubkey>&
-   {
-      return servMap;
-   };
-
-   auto serv_getPrivKey = [&servPrivMap](const BinaryDataRef& pub)->const SecureBinaryData&
-   {
-      auto iter = servPrivMap.find(pub);
-      if (iter == servPrivMap.end())
-         throw runtime_error("invalid key");
-      return iter->second;
-   };
-
-   auto serv_getauthset = [servSet](void)->const std::map<SecureBinaryData, std::string>&
-   {
-      return servSet;
-   };
-
-   //create client auth key lambdas
-   auto cli_getPubKeyMap = [&cliMap](void)->const map<string, btc_pubkey>&
-   {
-      return cliMap;
-   };
-
-   auto cli_getPrivKey = [&cliPrivMap](const BinaryDataRef& pub)->const SecureBinaryData&
-   {
-      auto iter = cliPrivMap.find(pub);
-      if (iter == cliPrivMap.end())
-         throw runtime_error("invalid key");
-      return iter->second;
-   };
-
-   auto cli_getauthset = [clientSet](void)->const std::map<SecureBinaryData, std::string>&
-   {
-      return clientSet;
-   };
-
-   //create AKL objects
-   AuthPeersLambdas aklServ(serv_getPubKeyMap, serv_getPrivKey, serv_getauthset);
-   AuthPeersLambdas aklCli(cli_getPubKeyMap, cli_getPrivKey, cli_getauthset);
-
-
-   startupBIP150CTX(4);
-
-   btc_key prvKeyCliIn;
-   btc_key prvKeyCliOut;
-   btc_key prvKeySrvIn;
-   btc_key prvKeySrvOut;
-   prvKeyClientIn.copyTo(prvKeyCliIn.privkey);
-   prvKeyClientOut.copyTo(prvKeyCliOut.privkey);
-   prvKeyServerIn.copyTo(prvKeySrvIn.privkey);
-   prvKeyServerOut.copyTo(prvKeySrvOut.privkey);
-   BIP151Connection cliCon(&prvKeyCliIn, &prvKeyCliOut, aklCli, true);
-   BIP151Connection srvCon(&prvKeySrvIn, &prvKeySrvOut, aklServ, false);
-
-   // Set up encinit/encack directly. (Initial encinit/encack will use regular
-   // Bitcoin P2P messages, which we'll skip building.) Confirm all steps
-   // function properly along the way.
-   BinaryData cliInEncinitCliData(ENCINITMSGSIZE);   // SRV (Out) -> CLI (In)
-   BinaryData cliInEncackCliData(BIP151PUBKEYSIZE);  // CLI (In)  -> SRV (Out)
-   BinaryData cliOutEncinitCliData(ENCINITMSGSIZE);  // CLI (Out) -> SRV (In)
-   BinaryData cliOutEncackCliData(BIP151PUBKEYSIZE); // SRV (In)  -> CLI (Out)
-   int s1 = srvCon.getEncinitData(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
-   EXPECT_EQ(0, s1);
-   EXPECT_FALSE(srvCon.connectionComplete());
-   int s2 = cliCon.processEncinit(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  false);
-   EXPECT_EQ(0, s2);
-   EXPECT_FALSE(cliCon.connectionComplete());
-   int s3 = cliCon.getEncackData(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize());
-   EXPECT_EQ(0, s3);
-   EXPECT_FALSE(cliCon.connectionComplete());
-   int s4 = srvCon.processEncack(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize(),
-                                 true);
-   EXPECT_EQ(0, s4);
-   EXPECT_FALSE(srvCon.connectionComplete());
-   int s5 = cliCon.getEncinitData(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
-   EXPECT_EQ(0, s5);
-   EXPECT_FALSE(cliCon.connectionComplete());
-   int s6 = srvCon.processEncinit(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  false);
-   EXPECT_EQ(0, s6);
-   EXPECT_FALSE(srvCon.connectionComplete());
-   int s7 = srvCon.getEncackData(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize());
-   EXPECT_EQ(0, s7);
-   EXPECT_TRUE(srvCon.connectionComplete());
-   int s8 = cliCon.processEncack(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize(),
-                                 true);
-   EXPECT_EQ(0, s8);
-   EXPECT_TRUE(cliCon.connectionComplete());
-
-   // Get the fingerprint.
-   string curFng = cliCon.getBIP150Fingerprint();
-   EXPECT_EQ(cli150Fingerprint, curFng);
-
-   ////////////////// Start the BIP 150 process for each side. /////////////////
-   BinaryData authchallengeBuf(BIP151PRVKEYSIZE);
-   BinaryData authreplyBuf(BIP151PRVKEYSIZE*2);
-   BinaryData authproposeBuf(BIP151PRVKEYSIZE);
-   EXPECT_EQ(BIP150State::INACTIVE, cliCon.getBIP150State());
-   EXPECT_EQ(BIP150State::INACTIVE, srvCon.getBIP150State());
-
-   // INACTIVE -> CHALLENGE1
-   int b1 = cliCon.getAuthchallengeData(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        "1.2.3.4:8333",
-                                        true);
-   EXPECT_EQ(0, b1);
-   EXPECT_EQ(BIP150State::CHALLENGE1, cliCon.getBIP150State());
-   EXPECT_EQ(authchallenge1Data, authchallengeBuf);
-   int b2 = srvCon.processAuthchallenge(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        true);
-   EXPECT_EQ(0, b2);
-   EXPECT_EQ(BIP150State::CHALLENGE1, srvCon.getBIP150State());
-
-   // CHALLENGE1 -> REPLY1
-   int b3 = srvCon.getAuthreplyData(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    true);
-   EXPECT_EQ(0, b3);
-   EXPECT_EQ(BIP150State::REPLY1, srvCon.getBIP150State());
-   EXPECT_EQ(authreply1Data, authreplyBuf);
-   int b4 = cliCon.processAuthreply(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    true);
-   EXPECT_EQ(0, b4);
-   EXPECT_EQ(BIP150State::REPLY1, cliCon.getBIP150State());
-
-   // REPLY1 -> PROPOSE
-   int b5 = cliCon.getAuthproposeData(authproposeBuf.getPtr(),
-                                      authproposeBuf.getSize());
-   EXPECT_EQ(0, b5);
-   EXPECT_EQ(BIP150State::PROPOSE, cliCon.getBIP150State());
-   EXPECT_EQ(authproposeData_1way, authproposeBuf);
-   int b6 = srvCon.processAuthpropose(authproposeBuf.getPtr(),
-                                      authproposeBuf.getSize());
-   EXPECT_EQ(-1, b6);
-   EXPECT_EQ(BIP150State::ERR_STATE, srvCon.getBIP150State());
-}
-
-// Test handshake failure cases. All cases will fail eventually.
-TEST_F(BIP150_151Test, handshakeCases_151_Only)
-{
-   // Try to generate an encack before generating an encinit.
-   auto getpubkeymap = [](void)->const map<string, btc_pubkey>&
-   {
-      throw runtime_error("");
-   };
-
-   auto getprivkey = [](const BinaryDataRef&)->const SecureBinaryData&
-   {
-      throw runtime_error("");
-   };
-
-   auto getauthset = [](void)->const std::map<SecureBinaryData, std::string>&
-   {
-      throw runtime_error("");
-   };
-
-   AuthPeersLambdas akl1(getpubkeymap, getprivkey, getauthset);
-   AuthPeersLambdas akl2(getpubkeymap, getprivkey, getauthset);
-
-   BIP151Connection cliCon1(akl1, false);
-   BIP151Connection srvCon1(akl2, false);
-   std::array<uint8_t, BIP151PUBKEYSIZE> dummy1{};
-   int s1 = cliCon1.getEncackData(dummy1.data(),
-                                  dummy1.size());
-   EXPECT_EQ(-1, s1);
-
-   // Try to process an encack before processing an encinit.
-   dummy1[0] = 0x03;
-   dummy1[1] = 0xff;
-   int s2 = srvCon1.processEncack(dummy1.data(),
-                                  dummy1.size(),
-                                  true);
-   EXPECT_EQ(-1, s2);
-
-   // Attempt to set an incorrect ciphersuite.
-   AuthPeersLambdas akl3(getpubkeymap, getprivkey, getauthset);
-   AuthPeersLambdas akl4(getpubkeymap, getprivkey, getauthset);
-
-   BIP151Connection cliCon2(akl3, false);
-   BIP151Connection srvCon2(akl4, false);
-   std::array<uint8_t, ENCINITMSGSIZE> dummy3{};
-   std::array<uint8_t, 64> dummy4{};
-   int s3 = cliCon2.getEncinitData(dummy3.data(),
-                                   dummy3.size(),
-                                   static_cast<BIP151SymCiphers>(0xda));
-   EXPECT_EQ(-1, s3);
-
-   // Attempt to rekey before the connection is complete.
-   int s4 = cliCon2.getEncinitData(dummy3.data(),
-                                   dummy3.size(),
-                                   BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
-   EXPECT_EQ(0, s4);
-   int s5 = srvCon2.processEncinit(dummy3.data(),
-                                   dummy3.size(),
-                                   false);
-   EXPECT_EQ(0, s5);
-   int s6 = srvCon2.bip151RekeyConn(dummy4.data(),
-                                    dummy4.size());
-   EXPECT_EQ(-1, s6);
-
-   // Run after the final test has finished.
-   shutdownBIP151CTX();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1551,7 +135,7 @@ TEST_F(BinaryDataTest, Constructor)
    ptr[3]='3';
 
    BinaryData a;
-   BinaryData b(4);
+   BinaryData b; b.resize(4);
    BinaryData c(ptr, 2);
    BinaryData d(ptr, 4);
    BinaryData e(b);
@@ -1638,7 +222,9 @@ TEST_F(BinaryDataTest, CopyTo)
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(BinaryDataTest, Fill)
 {
-   BinaryData a(0), b(1), c(4);
+   BinaryData a, b, c;
+   b.resize(1);
+   c.resize(4);
    BinaryData aAns = READHEX("");
    BinaryData bAns = READHEX("aa");
    BinaryData cAns = READHEX("aaaaaaaa");
@@ -2012,7 +598,7 @@ TEST_F(BinaryDataTest, DISABLED_CompareBench)
 
    //setup
    set<BinaryData> dataSet;
-   unordered_set<BinaryData> udSet;
+   unordered_set<BinaryData, BinaryData::Hasher, BinaryData::IsEqual> udSet;
    set<BinaryData> compareSet;
    for (unsigned i=0; i<setSize; i++) {
       auto hash = Cryptography::PRNG::fortuna.generateRandom(32);
@@ -3406,12 +1992,14 @@ protected:
          "d8c8c84d"
          "b3936a1a"
          "334b035b");
+      bh_ = std::make_unique<Armory::BlockHeader>(rawHead_);
+
       headHashLE_ = READHEX(
          "1195e67a7a6d0674bbd28ae096d602e1f038c8254b49dfe79d47000000000000");
       headHashBE_ = READHEX(
          "000000000000479de7df494b25c838f0e102d696e08ad2bb74066d7a7ae69511");
 
-      rawTx0_ = READHEX( 
+      rawTx0_ = READHEX(
          "01000000016290dce984203b6a5032e543e9e272d8bce934c7de4d15fa0fe44d"
          "d49ae4ece9010000008b48304502204f2fa458d439f957308bca264689aa175e"
          "3b7c5f78a901cb450ebd20936b2c500221008ea3883a5b80128e55c9c6070aa6"
@@ -3422,7 +2010,7 @@ protected:
          "000000001976a9140e0aec36fe2545fb31a41164fb6954adcd96b34288ac0000"
          "0000");
 
-      rawTx1_ = READHEX( 
+      rawTx1_ = READHEX(
          "0100000001f658dbc28e703d86ee17c9a2d3b167a8508b082fa0745f55be5144"
          "a4369873aa010000008c49304602210041e1186ca9a41fdfe1569d5d807ca7ff"
          "6c5ffd19d2ad1be42f7f2a20cdc8f1cc0221003366b5d64fe81e53910e156914"
@@ -3504,7 +2092,6 @@ protected:
          "19"
          // Script
          "76""a9""14""8dce8946f1c7763bb60ea5cf16ef514cbed0633b""88""ac");
-         bh_.unserialize(rawHead_);
    }
 
    BinaryData rawHead_;
@@ -3518,28 +2105,8 @@ protected:
    BinaryData rawTxIn_;
    BinaryData rawTxOut_;
 
-   ::BlockHeader bh_;
+   std::unique_ptr<Armory::BlockHeader> bh_;
 };
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockObjTest, HeaderNoInit)
-{
-   BlockHeader bh;
-   EXPECT_FALSE(bh.isInitialized());
-   EXPECT_EQ(bh.getNumTx(), UINT32_MAX);
-   EXPECT_EQ(bh.getBlockSize(), UINT32_MAX);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockObjTest, HeaderUnserialize)
-{
-   bool boolFalse = false;
-   EXPECT_NE(bh_.isInitialized(), boolFalse);
-   EXPECT_EQ(bh_.getNumTx(), UINT32_MAX);
-   EXPECT_EQ(bh_.getBlockSize(), UINT32_MAX);
-   EXPECT_EQ(bh_.getVersion(), 1ULL);
-   EXPECT_EQ(bh_.getThisHash(), headHashLE_);
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(BlockObjTest, HeaderProperties)
@@ -3552,21 +2119,16 @@ TEST_F(BlockObjTest, HeaderProperties)
    // The values are actually little-endian in the serialization, but
    // 0x____ notation requires big-endian
    uint32_t   timestamp =        0x4dc8c8d8;
-   uint32_t   nonce     =        0x5b034b33;
    BinaryData diffBits  = READHEX("b3936a1a");
 
-   EXPECT_EQ(bh_.getPrevHash(), prevHash);
-   EXPECT_EQ(bh_.getTimestamp(), timestamp);
-   EXPECT_EQ(bh_.getDiffBits(), diffBits);
-   EXPECT_EQ(bh_.getNonce(), nonce);
-   EXPECT_DOUBLE_EQ(bh_.getDifficulty(), 157416.40184364893);
+   EXPECT_EQ(bh_->getPrevHash().getRef(), prevHash);
+   EXPECT_EQ(bh_->getTimestamp(), timestamp);
+   EXPECT_DOUBLE_EQ(bh_->getDifficulty(), 157416.40184364893);
 
    BinaryDataRef bdrThis(headHashLE_);
    BinaryDataRef bdrPrev(rawHead_.getPtr()+4, 32);
-   EXPECT_EQ(bh_.getThisHashRef(), bdrThis);
-   EXPECT_EQ(bh_.getPrevHashRef(), bdrPrev);
-
-   EXPECT_EQ(BlockHeader(rawHead_).serialize(), rawHead_);
+   EXPECT_EQ(bh_->getThisHash().getRef(), bdrThis);
+   EXPECT_EQ(bh_->getPrevHash().getRef(), bdrPrev);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3647,7 +2209,7 @@ TEST_F(BlockObjTest, TxUnserialize)
    txs.emplace_back(Tx{brr});
 
    for (const auto& tx : txs) {
-      EXPECT_TRUE( tx.isInitialized());
+      EXPECT_NE(   tx.getSize(), 0);
       EXPECT_EQ(   tx.getSize(), len);
 
       EXPECT_EQ(   tx.getVersion(), 1ULL);
@@ -3665,34 +2227,12 @@ TEST_F(BlockObjTest, TxUnserialize)
 
       EXPECT_EQ(   tx.serialize(), rawTx0_);
       EXPECT_EQ(   tx.getTxInCopy(0).getSenderScrAddrIfAvail(), tx0_In0);
-      EXPECT_EQ(   tx.getTxOutCopy(0).getScrAddressStr(), HASH160PREFIX+tx0_Out0);
-      EXPECT_EQ(   tx.getTxOutCopy(1).getScrAddressStr(), HASH160PREFIX+tx0_Out1);
-      EXPECT_EQ(   tx.getScrAddrForTxOut(0), HASH160PREFIX+tx0_Out0);
-      EXPECT_EQ(   tx.getScrAddrForTxOut(1), HASH160PREFIX+tx0_Out1);
-      EXPECT_EQ(   tx.getTxOutCopy(0).getValue(), v0);
-      EXPECT_EQ(   tx.getTxOutCopy(1).getValue(), v1);
+      EXPECT_EQ(   tx.getTxOutCopy(0).getScrAddress(), HASH160PREFIX+tx0_Out0);
+      EXPECT_EQ(   tx.getTxOutCopy(1).getScrAddress(), HASH160PREFIX+tx0_Out1);
+      EXPECT_EQ(   tx.getTxOutCopy(0).getAmount(), v0);
+      EXPECT_EQ(   tx.getTxOutCopy(1).getAmount(), v1);
       EXPECT_EQ(   tx.getSumOfOutputs(),  v0+v1);
    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockObjTest, DISABLED_FullBlock)
-{
-   EXPECT_TRUE(false);
-
-   BinaryRefReader brr(rawBlock_);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockObjTest, DISABLED_TxIOPairStuff)
-{
-   EXPECT_TRUE(false);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(BlockObjTest, DISABLED_RegisteredTxStuff)
-{
-   EXPECT_TRUE(false);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3700,7 +2240,7 @@ TEST_F(BlockObjTest, DISABLED_RegisteredTxStuff)
 class StoredBlockObjTest : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void) 
+   virtual void SetUp(void)
    {
       rawHead_ = READHEX(
          "01000000"
@@ -3854,7 +2394,6 @@ protected:
          // Script
          "76""a9""14""6a59ac0e8f553f292dfe5e9f3aaa1da93499c15e""88""ac");
 
-      bh_.unserialize(rawHead_);
       sbh_.setHeaderData(rawHead_);
    }
 
@@ -3874,7 +2413,6 @@ protected:
    BinaryData rawTx0_;
    BinaryData rawTx1_;
 
-   ::BlockHeader bh_;
    BinaryData rawTxUnfrag_;
    BinaryData rawTxFragged_;
    BinaryData rawTxOut0_;
@@ -3889,16 +2427,10 @@ TEST_F(StoredBlockObjTest, StoredObjNoInit)
    StoredHeader        sbh;
    StoredTx            stx;
    StoredTxOut         stxo;
-   StoredScriptHistory ssh;
-   StoredHeadHgtList   hhl;
-   StoredTxHints       sths;
 
    EXPECT_FALSE( sbh.isInitialized() );
    EXPECT_FALSE( stx.isInitialized() );
    EXPECT_FALSE( stxo.isInitialized() );
-   EXPECT_FALSE( ssh.isInitialized() );
-   EXPECT_FALSE( hhl.isInitialized() );
-   EXPECT_FALSE( sths.isInitialized() );
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3907,10 +2439,6 @@ TEST_F(StoredBlockObjTest, GetDBKeys)
    StoredHeader        sbh;
    StoredTx            stx;
    StoredTxOut         stxo;
-   StoredScriptHistory ssh1;
-   StoredScriptHistory ssh2;
-   StoredHeadHgtList   hhl;
-   StoredTxHints       sths;
 
    BinaryData key    = READHEX("aaaaffff");
    uint32_t   hgt    = 123000;
@@ -3929,14 +2457,9 @@ TEST_F(StoredBlockObjTest, GetDBKeys)
    stx.txIndex      = txi;
 
    stxo.blockHeight = hgt;
-   stxo.duplicateID = dup;
    stxo.txIndex     = txi;
    stxo.txOutIndex  = txo;
 
-   ssh1.uniqueKey   = key;
-   ssh2.uniqueKey   = key;
-   hhl.height       = hgt;
-   sths.txHashPrefix= key;
 
    BinaryData TXB = PREFBYTE(DbPrefix::TXDATA);
    BinaryData SSB = PREFBYTE(DbPrefix::SCRIPT);
@@ -3946,18 +2469,10 @@ TEST_F(StoredBlockObjTest, GetDBKeys)
    EXPECT_EQ(sbh.getDBKey(  true ),   TXB + hgtx);
    EXPECT_EQ(stx.getDBKey(  true ),   TXB + hgtx + txidx);
    EXPECT_EQ(stxo.getDBKey( true ),   TXB + hgtx + txidx + txoidx);
-   EXPECT_EQ(ssh1.getDBKey( true ),   SSB + key);
-   EXPECT_EQ(ssh2.getDBKey( true ),   SSB + key);
-   EXPECT_EQ(hhl.getDBKey(  true ),   HHB + WRITE_UINT32_BE(hgt));
-   EXPECT_EQ(sths.getDBKey( true ),   THB + key);
 
    EXPECT_EQ(sbh.getDBKey(  false ),        hgtx);
    EXPECT_EQ(stx.getDBKey(  false ),        hgtx + txidx);
    EXPECT_EQ(stxo.getDBKey( false ),        hgtx + txidx + txoidx);
-   EXPECT_EQ(ssh1.getDBKey( false ),        key);
-   EXPECT_EQ(ssh2.getDBKey( false ),        key);
-   EXPECT_EQ(hhl.getDBKey(  false ),        WRITE_UINT32_BE(hgt));
-   EXPECT_EQ(sths.getDBKey( false ),        key);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4213,12 +2728,10 @@ TEST_F(StoredBlockObjTest, SHeaderUnserialize)
    EXPECT_TRUE( sbh_.isInitialized());
    EXPECT_FALSE(sbh_.isMainBranch);
    EXPECT_FALSE(sbh_.haveFullBlock());
-   EXPECT_FALSE(sbh_.isMerkleCreated());
    EXPECT_EQ(   sbh_.numTx,       UINT32_MAX);
    EXPECT_EQ(   sbh_.numBytes,    UINT32_MAX);
    EXPECT_EQ(   sbh_.blockHeight, UINT32_MAX);
    EXPECT_EQ(   sbh_.duplicateID, UINT8_MAX);
-   EXPECT_EQ(   sbh_.merkle.getSize(), 0ULL);
    EXPECT_EQ(   sbh_.stxMap.size(), 0ULL);
 }
 
@@ -4227,8 +2740,6 @@ TEST_F(StoredBlockObjTest, SHeaderDBSerFull_H)
 {
    sbh_.blockHeight     = 65535;
    sbh_.duplicateID     = 1;
-   sbh_.merkle          = READHEX("deadbeef");
-   sbh_.merkleIsPartial = false;
    sbh_.isMainBranch    = true;
    sbh_.numTx           = 15;
    sbh_.numBytes        = 0xdeadbeef;
@@ -4237,7 +2748,7 @@ TEST_F(StoredBlockObjTest, SHeaderDBSerFull_H)
 
    // SetUp already contains sbh_.unserialize(rawHead_);
    BinaryData last4 = READHEX("00ffff01efbeadde" "0f000000" "1900eeeeffff00000000" "ffffffff");
-   EXPECT_EQ(serializeDBValue(sbh_, DB_SELECT::HEADERS, ARMORY_DB_TYPE::Full), rawHead_ + last4);
+   EXPECT_EQ(serializeDBValue(sbh_), rawHead_ + last4);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4247,8 +2758,6 @@ TEST_F(StoredBlockObjTest, SHeaderDBSerFull_B1)
    // so the merkle tree would be redundant.
    sbh_.blockHeight      = 65535;
    sbh_.duplicateID      = 1;
-   sbh_.merkle           = READHEX("deadbeef");
-   sbh_.merkleIsPartial  = false;
    sbh_.isMainBranch     = true;
    sbh_.numTx            = 15;
    sbh_.numBytes         = 65535;
@@ -4259,7 +2768,7 @@ TEST_F(StoredBlockObjTest, SHeaderDBSerFull_B1)
    BinaryData nbyte = READHEX("ffff0000");
 
    BinaryData headBlkData = flags + rawHead_ + ntx + nbyte;
-   EXPECT_EQ(serializeDBValue(sbh_, DB_SELECT::BLKDATA, ARMORY_DB_TYPE::Full), headBlkData);
+   EXPECT_EQ(serializeDBValue(sbh_), headBlkData);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4272,7 +2781,7 @@ TEST_F(StoredBlockObjTest, SHeaderDBUnserFull_H)
       "0000000000000000000000000000000000000000000000000000");
 
    BinaryRefReader brr(dbval);
-   sbh_.unserializeDBValue(DB_SELECT::HEADERS, brr);
+   sbh_.unserializeDBValue(brr);
 
    EXPECT_EQ(sbh_.blockHeight, 65535ULL);
    EXPECT_EQ(sbh_.numBytes, 0x11eeULL);
@@ -4288,18 +2797,16 @@ TEST_F(StoredBlockObjTest, SHeaderDBUnserFull_B1)
       "2734ebf0b4450081d8c8c84db3936a1a334b035b0f000000ffff0000");
 
    BinaryRefReader brr(dbval);
-   sbh_.unserializeDBValue(DB_SELECT::BLKDATA, brr);
+   sbh_.unserializeDBValue(brr);
    sbh_.setHeightAndDup(65535, 1);
 
    EXPECT_EQ(sbh_.blockHeight,  65535ULL);
    EXPECT_EQ(sbh_.duplicateID,  1);
-   EXPECT_EQ(sbh_.merkle     ,  READHEX(""));
    EXPECT_EQ(sbh_.numTx      ,  15ULL);
    EXPECT_EQ(sbh_.numBytes   ,  65535ULL);
    EXPECT_EQ(sbh_.unserArmVer,  0x9701ULL);
    EXPECT_EQ(sbh_.unserBlkVer,  1ULL);
    EXPECT_EQ(sbh_.unserDbType,  ARMORY_DB_TYPE::Full);
-   EXPECT_EQ(sbh_.unserMkType,  MERKLE_SER_NONE);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4311,18 +2818,16 @@ TEST_F(StoredBlockObjTest, SHeaderDBUnserFull_B2)
       "2734ebf0b4450081d8c8c84db3936a1a334b035b0f000000ffff0000deadbeef");
 
    BinaryRefReader brr(dbval);
-   sbh_.unserializeDBValue(DB_SELECT::BLKDATA, brr);
+   sbh_.unserializeDBValue(brr);
    sbh_.setHeightAndDup(65535, 1);
 
    EXPECT_EQ(sbh_.blockHeight, 65535ULL);
    EXPECT_EQ(sbh_.duplicateID, 1);
-   EXPECT_EQ(sbh_.merkle     , READHEX("deadbeef"));
    EXPECT_EQ(sbh_.numTx      , 15ULL);
    EXPECT_EQ(sbh_.numBytes   , 65535ULL);
    EXPECT_EQ(sbh_.unserArmVer,  0x9701ULL);
    EXPECT_EQ(sbh_.unserBlkVer,  1ULL);
    EXPECT_EQ(sbh_.unserDbType,  ARMORY_DB_TYPE::Full);
-   EXPECT_EQ(sbh_.unserMkType,  MERKLE_SER_FULL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4334,17 +2839,15 @@ TEST_F(StoredBlockObjTest, SHeaderDBUnserFull_B3)
       "2734ebf0b4450081d8c8c84db3936a1a334b035b0f000000ffff0000");
 
    BinaryRefReader brr(dbval);
-   sbh_.unserializeDBValue(DB_SELECT::BLKDATA, brr);
+   sbh_.unserializeDBValue(brr);
    sbh_.setHeightAndDup(65535, 1);
 
    EXPECT_EQ(sbh_.blockHeight,  65535ULL);
    EXPECT_EQ(sbh_.duplicateID,  1);
-   EXPECT_EQ(sbh_.merkle     ,  READHEX(""));
    EXPECT_EQ(sbh_.numTx      ,  15ULL);
    EXPECT_EQ(sbh_.numBytes   ,  65535ULL);
    EXPECT_EQ(sbh_.unserArmVer,  0x9701ULL);
    EXPECT_EQ(sbh_.unserBlkVer,  1ULL);
-   EXPECT_EQ(sbh_.unserMkType,  MERKLE_SER_NONE);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4418,8 +2921,8 @@ TEST_F(StoredBlockObjTest, STxReconstruct)
    Tx regTx2{rawTx0_};
    stx.createFromTx(regTx2, true);
 
-   reconTx = stx.getTxCopy();
-   EXPECT_EQ(reconTx.serialize(),   rawTx0_);
+   auto reconTx2 = stx.getTxCopy();
+   EXPECT_EQ(reconTx2.serialize(),   rawTx0_);
    EXPECT_EQ(stx.getSerializedTx(), rawTx0_);
 }
 
@@ -4560,7 +3063,7 @@ TEST_F(StoredBlockObjTest, STxOutSerDBValue_1)
    stxo0.unserialize(rawTxOut0_);
 
    stxo0.txVersion = 1;
-   stxo0.spentness = TXOUT_UNSPENT;
+   stxo0.spentness = SPENTNESS::UNSPENT;
 
    //   0123   45    67   0  123 4567 
    //  |----| |--|  |--| |-|
@@ -4578,12 +3081,12 @@ TEST_F(StoredBlockObjTest, STxOutSerDBValue_2)
    StoredTxOut stxo0;
    stxo0.unserialize(rawTxOut0_);
    stxo0.txVersion = 1;
-   stxo0.spentness = TXOUT_UNSPENT;
+   stxo0.spentness = SPENTNESS::UNSPENT;
 
    // Test a spent TxOut
    //   0000   01    01   0  --- ----
    BinaryData spentStr = DBUtils::getBlkDataKeyNoPrefix( 100000, 1, 127, 15);
-   stxo0.spentness = TXOUT_SPENT;
+   stxo0.spentness = SPENTNESS::SPENT;
    stxo0.spentByTxInKey = spentStr;
    EXPECT_EQ(
       serializeDBValue(stxo0),
@@ -4602,7 +3105,7 @@ TEST_F(StoredBlockObjTest, STxOutSerDBValue_3)
    // Test a spent TxOut but in lite mode where we don't record spentness
    //   0000   01    01   1  --- ----
    BinaryData spentStr = DBUtils::getBlkDataKeyNoPrefix( 100000, 1, 127, 15);
-   stxo0.spentness = TXOUT_SPENT;
+   stxo0.spentness = SPENTNESS::SPENT;
    stxo0.spentByTxInKey = spentStr;
    EXPECT_EQ(
       serializeDBValue(stxo0),
@@ -4622,10 +3125,9 @@ TEST_F(StoredBlockObjTest, STxOutUnserDBValue_1)
    EXPECT_EQ(   stxo.txVersion, 1ULL);
    EXPECT_EQ(   stxo.dataCopy, rawTxOut0_);
    EXPECT_EQ(   stxo.blockHeight, UINT32_MAX);
-   EXPECT_EQ(   stxo.duplicateID, UINT8_MAX);
    EXPECT_EQ(   stxo.txIndex, UINT16_MAX);
    EXPECT_EQ(   stxo.txOutIndex, UINT16_MAX);
-   EXPECT_EQ(   stxo.spentness, TXOUT_UNSPENT);
+   EXPECT_EQ(   stxo.spentness, SPENTNESS::UNSPENT);
    EXPECT_EQ(   stxo.spentByTxInKey.getSize(), 0ULL);
    EXPECT_FALSE(stxo.isCoinbase);
    EXPECT_EQ(   stxo.unserArmVer, 0ULL);
@@ -4643,10 +3145,9 @@ TEST_F(StoredBlockObjTest, STxOutUnserDBValue_2)
    EXPECT_EQ(   stxo.txVersion, 1ULL);
    EXPECT_EQ(   stxo.dataCopy, rawTxOut0_);
    EXPECT_EQ(   stxo.blockHeight, UINT32_MAX);
-   EXPECT_EQ(   stxo.duplicateID, UINT8_MAX);
    EXPECT_EQ(   stxo.txIndex, UINT16_MAX);
    EXPECT_EQ(   stxo.txOutIndex, UINT16_MAX);
-   EXPECT_EQ(   stxo.spentness, TXOUT_SPENT);
+   EXPECT_EQ(   stxo.spentness, SPENTNESS::SPENT);
    EXPECT_FALSE(stxo.isCoinbase);
    EXPECT_EQ(   stxo.spentByTxInKey, READHEX("01a086017f000f00"));
    EXPECT_EQ(   stxo.unserArmVer, 0ULL);
@@ -4664,10 +3165,9 @@ TEST_F(StoredBlockObjTest, STxOutUnserDBValue_3)
    EXPECT_EQ(   stxo.txVersion, 1ULL);
    EXPECT_EQ(   stxo.dataCopy, rawTxOut0_);
    EXPECT_EQ(   stxo.blockHeight, UINT32_MAX);
-   EXPECT_EQ(   stxo.duplicateID, UINT8_MAX);
    EXPECT_EQ(   stxo.txIndex, UINT16_MAX);
    EXPECT_EQ(   stxo.txOutIndex, UINT16_MAX);
-   EXPECT_EQ(   stxo.spentness, TXOUT_SPENTUNK);
+   EXPECT_EQ(   stxo.spentness, SPENTNESS::SPENTUNK);
    EXPECT_TRUE( stxo.isCoinbase);
    EXPECT_EQ(   stxo.spentByTxInKey.getSize(), 0ULL);
    EXPECT_EQ(   stxo.unserArmVer, 0ULL);
@@ -4687,458 +3187,6 @@ TEST_F(StoredBlockObjTest, SHeaderFullBlock)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(StoredBlockObjTest, STxHintsSer)
-{
-   BinaryData hint0 = DBUtils::getBlkDataKeyNoPrefix(123000,  7, 255);
-   BinaryData hint1 = DBUtils::getBlkDataKeyNoPrefix(123000, 15, 127);
-   BinaryData hint2 = DBUtils::getBlkDataKeyNoPrefix(183922, 15,   3);
-
-   StoredTxHints sths;
-   sths.txHashPrefix = READHEX("aaaaffff");
-   sths.dbKeyList.clear();
-
-   /////
-   BinaryWriter ans0;
-   ans0.put_var_int(0);
-   EXPECT_EQ(sths.serializeDBValue(), ans0.getData());
-
-   /////
-   sths.dbKeyList.push_back(hint0);
-   sths.preferredDBKey = hint0;
-   BinaryWriter ans1;
-   ans1.put_var_int(1);
-   ans1.put_BinaryData(hint0);
-   EXPECT_EQ(sths.dbKeyList.size(), 1ULL);
-   EXPECT_EQ(sths.preferredDBKey, hint0);
-   EXPECT_EQ(sths.serializeDBValue(), ans1.getData());
-
-   /////
-   sths.dbKeyList.push_back(hint1);
-   sths.dbKeyList.push_back(hint2);
-   BinaryWriter ans3;
-   ans3.put_var_int(3);
-   ans3.put_BinaryData(hint0);
-   ans3.put_BinaryData(hint1);
-   ans3.put_BinaryData(hint2);
-   EXPECT_EQ(sths.dbKeyList.size(), 3ULL);
-   EXPECT_EQ(sths.preferredDBKey, hint0);
-   EXPECT_EQ(sths.serializeDBValue(), ans3.getData());
-}
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(StoredBlockObjTest, STxHintsReorder)
-{
-   BinaryData hint0 = DBUtils::getBlkDataKeyNoPrefix(123000,  7, 255);
-   BinaryData hint1 = DBUtils::getBlkDataKeyNoPrefix(123000, 15, 127);
-   BinaryData hint2 = DBUtils::getBlkDataKeyNoPrefix(183922, 15,   3);
-
-   StoredTxHints sths;
-   sths.txHashPrefix = READHEX("aaaaffff");
-   sths.dbKeyList.clear();
-   sths.dbKeyList.push_back(hint0);
-   sths.dbKeyList.push_back(hint1);
-   sths.dbKeyList.push_back(hint2);
-   sths.preferredDBKey = hint1;
-
-   BinaryWriter expectedOut;
-   expectedOut.put_var_int(3);
-   expectedOut.put_BinaryData(hint1);
-   expectedOut.put_BinaryData(hint0);
-   expectedOut.put_BinaryData(hint2);
-
-   EXPECT_EQ(sths.serializeDBValue(), expectedOut.getData());
-}
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(StoredBlockObjTest, STxHintsUnser)
-{
-   BinaryData hint0 = DBUtils::getBlkDataKeyNoPrefix(123000,  7, 255);
-   BinaryData hint1 = DBUtils::getBlkDataKeyNoPrefix(123000, 15, 127);
-   BinaryData hint2 = DBUtils::getBlkDataKeyNoPrefix(183922, 15,   3);
-
-   BinaryData in0 = READHEX("00");
-   BinaryData in1 = READHEX("01""01e0780700ff");
-   BinaryData in3 = READHEX("03""01e0780700ff""01e0780f007f""02ce720f0003");
-
-   StoredTxHints sths0, sths1, sths3;
-
-   sths0.unserializeDBValue(in0);
-
-   EXPECT_EQ(sths0.dbKeyList.size(),  0ULL);
-   EXPECT_TRUE(sths0.preferredDBKey.empty());
-
-   sths1.unserializeDBValue(in1);
-
-   EXPECT_EQ(sths1.dbKeyList.size(),  1ULL);
-   EXPECT_EQ(sths1.dbKeyList[0],      hint0);
-   EXPECT_EQ(sths1.preferredDBKey,    hint0);
-
-   sths3.unserializeDBValue(in3);
-   EXPECT_EQ(sths3.dbKeyList.size(),  3ULL);
-   EXPECT_EQ(sths3.dbKeyList[0],      hint0);
-   EXPECT_EQ(sths3.dbKeyList[1],      hint1);
-   EXPECT_EQ(sths3.dbKeyList[2],      hint2);
-   EXPECT_EQ(sths3.preferredDBKey,    hint0);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(StoredBlockObjTest, SHeadHgtListSer)
-{
-   StoredHeadHgtList baseHHL, testHHL;
-   baseHHL.height = 123000;
-   baseHHL.dupAndHashList.resize(0);
-   BinaryData hash0 = READHEX("aaaabbbbaaaabbbbaaaabbbbaaaabbbb"
-      "aaaabbbbaaaabbbbaaaabbbbaaaabbbb");
-   BinaryData hash1 = READHEX("2222bbbb2222bbbb2222bbbb2222bbbb"
-      "2222bbbb2222bbbb2222bbbb2222bbbb");
-   BinaryData hash2 = READHEX("2222ffff2222ffff2222ffff2222ffff"
-      "2222ffff2222ffff2222ffff2222ffff");
-
-   uint8_t dup0 = 0;
-   uint8_t dup1 = 1;
-   uint8_t dup2 = 7;
-
-   BinaryWriter expectOut;
-
-   // Test writing empty list
-   expectOut.reset();
-   expectOut.put_uint8_t(0);
-   EXPECT_EQ(testHHL.serializeDBValue(), expectOut.getData());
-
-   
-   // Test writing list with one entry but no preferred dupID
-   expectOut.reset();
-   testHHL = baseHHL;
-   testHHL.dupAndHashList.push_back(make_pair(dup0, hash0));
-   expectOut.put_uint8_t(1);
-   expectOut.put_uint8_t(dup0);
-   expectOut.put_BinaryData(hash0);
-   EXPECT_EQ(testHHL.serializeDBValue(), expectOut.getData());
-   
-   // Test writing list with one entry which is a preferred dupID
-   expectOut.reset();
-   testHHL = baseHHL;
-   testHHL.preferredDup = 0;
-   testHHL.dupAndHashList.push_back(make_pair(dup0, hash0)); 
-   expectOut.put_uint8_t(1);
-   expectOut.put_uint8_t(dup0 | 0x80);
-   expectOut.put_BinaryData(hash0);
-   EXPECT_EQ(testHHL.serializeDBValue(), expectOut.getData());
-
-   // Test writing list with one entry preferred dupID but that dup isn't avail
-   expectOut.reset();
-   testHHL = baseHHL;
-   testHHL.preferredDup = 1;
-   testHHL.dupAndHashList.push_back(make_pair(dup0, hash0));
-   expectOut.put_uint8_t(1);
-   expectOut.put_uint8_t(dup0);
-   expectOut.put_BinaryData(hash0);
-   EXPECT_EQ(testHHL.serializeDBValue(), expectOut.getData());
-
-   // Test writing with three entries, no preferred
-   expectOut.reset();
-   testHHL = baseHHL;
-   testHHL.dupAndHashList.push_back(make_pair(dup0, hash0));
-   testHHL.dupAndHashList.push_back(make_pair(dup1, hash1));
-   testHHL.dupAndHashList.push_back(make_pair(dup2, hash2));
-   expectOut.put_uint8_t(3);
-   expectOut.put_uint8_t(dup0); expectOut.put_BinaryData(hash0);
-   expectOut.put_uint8_t(dup1); expectOut.put_BinaryData(hash1);
-   expectOut.put_uint8_t(dup2); expectOut.put_BinaryData(hash2);
-   EXPECT_EQ(testHHL.serializeDBValue(), expectOut.getData());
-
-   // Test writing with three entries, with preferred
-   expectOut.reset();
-   testHHL = baseHHL;
-   testHHL.dupAndHashList.push_back(make_pair(dup0, hash0));
-   testHHL.dupAndHashList.push_back(make_pair(dup1, hash1));
-   testHHL.dupAndHashList.push_back(make_pair(dup2, hash2));
-   testHHL.preferredDup = 1;
-   expectOut.put_uint8_t(3);
-   expectOut.put_uint8_t(dup1 | 0x80); expectOut.put_BinaryData(hash1);
-   expectOut.put_uint8_t(dup0);        expectOut.put_BinaryData(hash0);
-   expectOut.put_uint8_t(dup2);        expectOut.put_BinaryData(hash2);
-   EXPECT_EQ(testHHL.serializeDBValue(), expectOut.getData());
-}
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(StoredBlockObjTest, SHeadHgtListUnser)
-{
-   BinaryData hash0 = READHEX("aaaabbbbaaaabbbbaaaabbbbaaaabbbb"
-      "aaaabbbbaaaabbbbaaaabbbbaaaabbbb");
-   BinaryData hash1 = READHEX("2222bbbb2222bbbb2222bbbb2222bbbb"
-      "2222bbbb2222bbbb2222bbbb2222bbbb");
-   BinaryData hash2 = READHEX("2222ffff2222ffff2222ffff2222ffff"
-      "2222ffff2222ffff2222ffff2222ffff");
-
-   vector<BinaryData> tests;
-   tests.push_back( READHEX(
-      "0100aaaabbbbaaaabbbbaaaabbbbaaaabbbbaaaabbbbaaaabbbbaaaabbbbaaaabbbb"));
-   tests.push_back( READHEX(
-      "0180aaaabbbbaaaabbbbaaaabbbbaaaabbbbaaaabbbbaaaabbbbaaaabbbbaaaabbbb"));
-   tests.push_back( READHEX(
-      "0300aaaabbbbaaaabbbbaaaabbbbaaaabbbbaaaabbbbaaaabbbbaaaabbbbaaaa"
-      "bbbb012222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb22"
-      "22bbbb072222ffff2222ffff2222ffff2222ffff2222ffff2222ffff2222ffff"
-      "2222ffff"));
-   tests.push_back( READHEX(
-      "03812222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222"
-      "bbbb00aaaabbbbaaaabbbbaaaabbbbaaaabbbbaaaabbbbaaaabbbbaaaabbbbaa"
-      "aabbbb072222ffff2222ffff2222ffff2222ffff2222ffff2222ffff2222ffff"
-      "2222ffff"));
-
-   uint8_t dup0 = 0;
-   uint8_t dup1 = 1;
-   uint8_t dup2 = 7;
-
-   for (uint32_t i=0; i<tests.size(); i++) {
-      BinaryRefReader brr(tests[i]);
-      StoredHeadHgtList hhl;
-      hhl.unserializeDBValue(brr);
-
-      if (i==0) {
-         ASSERT_EQ(hhl.dupAndHashList.size(), 1ULL);
-         EXPECT_EQ(hhl.dupAndHashList[0].first,  dup0);
-         EXPECT_EQ(hhl.dupAndHashList[0].second, hash0);
-         EXPECT_EQ(hhl.preferredDup,  UINT8_MAX);
-      } else if(i==1) {
-         ASSERT_EQ(hhl.dupAndHashList.size(), 1ULL);
-         EXPECT_EQ(hhl.dupAndHashList[0].first,  dup0);
-         EXPECT_EQ(hhl.dupAndHashList[0].second, hash0);
-         EXPECT_EQ(hhl.preferredDup,  0);
-      } else if(i==2) {
-         ASSERT_EQ(hhl.dupAndHashList.size(), 3ULL);
-         EXPECT_EQ(hhl.dupAndHashList[0].first,  dup0);
-         EXPECT_EQ(hhl.dupAndHashList[0].second, hash0);
-         EXPECT_EQ(hhl.dupAndHashList[1].first,  dup1);
-         EXPECT_EQ(hhl.dupAndHashList[1].second, hash1);
-         EXPECT_EQ(hhl.dupAndHashList[2].first,  dup2);
-         EXPECT_EQ(hhl.dupAndHashList[2].second, hash2);
-         EXPECT_EQ(hhl.preferredDup,  UINT8_MAX);
-      } else if(i==3) {
-         ASSERT_EQ(hhl.dupAndHashList.size(), 3ULL);
-         EXPECT_EQ(hhl.dupAndHashList[0].first,  dup1);
-         EXPECT_EQ(hhl.dupAndHashList[0].second, hash1);
-         EXPECT_EQ(hhl.dupAndHashList[1].first,  dup0);
-         EXPECT_EQ(hhl.dupAndHashList[1].second, hash0);
-         EXPECT_EQ(hhl.dupAndHashList[2].first,  dup2);
-         EXPECT_EQ(hhl.dupAndHashList[2].second, hash2);
-         EXPECT_EQ(hhl.preferredDup,  1);
-      }
-   }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(StoredBlockObjTest, SScriptHistorySer)
-{
-   StoredScriptHistory ssh;
-   ssh.uniqueKey = READHEX("00""1234abcde1234abcde1234abcdefff1234abcdef");
-   ssh.version = 1;
-   ssh.scanHeight = 65535;
-
-   /////////////////////////////////////////////////////////////////////////////
-   // Empty ssh (shouldn't be written in supernode, should be in full node)
-   BinaryData expect, expSub1, expSub2;
-   expect = READHEX("0000""ffff0000ffffffff""00""0000000000000000""00000000");
-   EXPECT_EQ(serializeDBValue(ssh, ARMORY_DB_TYPE::Bare), expect);
-
-   /////////////////////////////////////////////////////////////////////////////
-   // With a single TxIO
-   TxIOPair txio0(READHEX("0000ff00""0001""0001"), READ_UINT64_HEX_LE("0100000000000000"));
-   txio0.setFromCoinbase(false);
-   txio0.setTxOutFromSelf(false);
-   txio0.setMultisig(false);
-   ssh.insertTxio(txio0);
-
-   expect = READHEX("0000""ffff0000ffffffff""01""0100000000000000""00000000");
-   EXPECT_EQ(serializeDBValue(ssh, ARMORY_DB_TYPE::Bare), expect);
-
-   /////////////////////////////////////////////////////////////////////////////
-   // Added a second one, different subSSH
-   TxIOPair txio1(READHEX("00010000""0002""0002"), READ_UINT64_HEX_LE("0002000000000000"));
-   ssh.insertTxio(txio1);
-   expect  = READHEX("0000""ffff0000ffffffff""02""0102000000000000""00000000");
-   expSub1 = READHEX("01""00""0100000000000000""0001""0001");
-   expSub2 = READHEX("01""00""0002000000000000""0002""0002");
-   EXPECT_EQ(serializeDBValue(ssh, ARMORY_DB_TYPE::Bare), expect);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("0000ff00")]), expSub1);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("00010000")]), expSub2);
-
-   /////////////////////////////////////////////////////////////////////////////
-   // Added another TxIO to the second subSSH
-   TxIOPair txio2(READHEX("00010000""0004""0004"), READ_UINT64_HEX_LE("0000030000000000"));
-   ssh.insertTxio(txio2);
-   expect  = READHEX("0000""ffff0000ffffffff""03""0102030000000000""00000000");
-   expSub1 = READHEX("01"
-                       "00""0100000000000000""0001""0001");
-   expSub2 = READHEX("02"
-                       "00""0002000000000000""0002""0002"
-                       "00""0000030000000000""0004""0004");
-   EXPECT_EQ(serializeDBValue(ssh, ARMORY_DB_TYPE::Bare), expect);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("0000ff00")]), expSub1);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("00010000")]), expSub2);
-
-   /////////////////////////////////////////////////////////////////////////////
-   // Now we explicitly delete a TxIO (with pruning, this should be basically
-   // equivalent to marking it spent, but we are DB-mode-agnostic here, testing
-   // just the base insert/erase operations)
-   ssh.eraseTxio(txio1);
-   expect  = READHEX("0000""ffff0000ffffffff""02""0100030000000000""00000000");
-   expSub1 = READHEX("01"
-                       "00""0100000000000000""0001""0001");
-   expSub2 = READHEX("01"
-                       "00""0000030000000000""0004""0004");
-   EXPECT_EQ(serializeDBValue(ssh, ARMORY_DB_TYPE::Bare), expect);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("0000ff00")]), expSub1);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("00010000")]), expSub2);
-   
-   /////////////////////////////////////////////////////////////////////////////
-   // Insert a multisig TxIO -- this should increment totalTxioCount_, but not 
-   // the value 
-   TxIOPair txio3(READHEX("00010000""0006""0006"), READ_UINT64_HEX_LE("0000000400000000"));
-   txio3.setMultisig(true);
-   ssh.insertTxio(txio3);
-   expect  = READHEX("0000""ffff0000ffffffff""03""0100030000000000""00000000");
-   expSub1 = READHEX("01"
-                       "00""0100000000000000""0001""0001");
-   expSub2 = READHEX("02"
-                       "00""0000030000000000""0004""0004"
-                       "10""0000000400000000""0006""0006");
-   EXPECT_EQ(serializeDBValue(ssh, ARMORY_DB_TYPE::Bare), expect);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("0000ff00")]), expSub1);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("00010000")]), expSub2);
-   
-   /////////////////////////////////////////////////////////////////////////////
-   // Remove the multisig
-   ssh.eraseTxio(txio3);
-   expect  = READHEX("0000""ffff0000ffffffff""02""0100030000000000""00000000");
-   expSub1 = READHEX("01"
-                       "00""0100000000000000""0001""0001");
-   expSub2 = READHEX("01"
-                       "00""0000030000000000""0004""0004");
-   EXPECT_EQ(serializeDBValue(ssh, ARMORY_DB_TYPE::Bare), expect);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("0000ff00")]), expSub1);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("00010000")]), expSub2);
-
-   /////////////////////////////////////////////////////////////////////////////
-   // Remove a full subSSH (it shouldn't be deleted, though, that will be done
-   // by BlockUtils in a post-processing step
-   ssh.eraseTxio(txio0);
-   expect  = READHEX("0000""ffff0000ffffffff""01""0000030000000000""00000000");
-   expSub1 = READHEX("00");
-   expSub2 = READHEX("01"
-                       "00""0000030000000000""0004""0004");
-   EXPECT_EQ(serializeDBValue(ssh, ARMORY_DB_TYPE::Bare), expect);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("0000ff00")]), expSub1);
-   EXPECT_EQ(serializeDBValue(ssh.subHistMap[READHEX("00010000")]), expSub2);
-   
-}
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(StoredBlockObjTest, SScriptHistoryUnser)
-{
-   StoredScriptHistory ssh, sshorig;
-   StoredSubHistory subssh1, subssh2;
-   BinaryData toUnser;
-   BinaryData hgtX0 = READHEX("0000ff00");
-   BinaryData hgtX1 = READHEX("00010000");
-   BinaryData uniq  = READHEX("00""0000ffff0000ffff0000ffff0000ffff0000ffff");
-
-   sshorig.uniqueKey = uniq;
-   sshorig.version = 1;
-
-   BinaryWriter bw;
-   bw.put_uint8_t((uint8_t)DbPrefix::SCRIPT);
-   BinaryData DBPREF = bw.getData();
-
-   /////////////////////////////////////////////////////////////////////////////
-   ssh = sshorig;
-   toUnser = READHEX("0400""ffff0000ffffffff""00""00000000");
-   ssh.unserializeDBKey(DBPREF + uniq);
-   ssh.unserializeDBValue(toUnser);
-
-   EXPECT_EQ(ssh.subHistMap.size(), 0ULL);
-   EXPECT_EQ(ssh.scanHeight, 65535);
-   EXPECT_EQ(ssh.tallyHeight, -1);
-   EXPECT_EQ(ssh.totalTxioCount, 0ULL);
-   EXPECT_EQ(ssh.totalUnspent, 0ULL);
-
-   /////////////////////////////////////////////////////////////////////////////
-   ssh = sshorig;
-   toUnser = READHEX("0400""ffff0000ffffffff""01""0100000000000000""00000000");
-   ssh.unserializeDBKey(DBPREF + uniq);
-   ssh.unserializeDBValue(toUnser);
-   BinaryData txioKey = hgtX0 + READHEX("00010001");
-
-   EXPECT_EQ(ssh.scanHeight, 65535);
-   EXPECT_EQ(ssh.tallyHeight, -1);
-   EXPECT_EQ(ssh.totalTxioCount, 1ULL);
-   EXPECT_EQ(ssh.totalUnspent, READ_UINT64_HEX_LE("0100000000000000"));
-
-   /////////////////////////////////////////////////////////////////////////////
-   // Test reading a subSSH and merging it with the regular ssh
-   ssh = sshorig;
-   subssh1 = StoredSubHistory();
-
-   ssh.unserializeDBKey(DBPREF + uniq);
-   ssh.unserializeDBValue(READHEX(
-      "0400""ffff0000ffffffff""02""0000030400000000""00000000"));
-   subssh1.unserializeDBKey(DBPREF + uniq + hgtX0);
-   subssh1.unserializeDBValue(READHEX("02"
-      "00""0000030000000000""0004""0004"
-      "00""0000000400000000""0006""0006"));
-
-   BinaryData last4_0 = READHEX("0004""0004");
-   BinaryData last4_1 = READHEX("0006""0006");
-   BinaryData txio0key = hgtX0 + last4_0;
-   BinaryData txio1key = hgtX0 + last4_1;
-   uint64_t val0 = READ_UINT64_HEX_LE("0000030000000000");
-   uint64_t val1 = READ_UINT64_HEX_LE("0000000400000000");
-
-   // Unmerged, so ssh doesn't have the subSSH as part of it yet.
-   EXPECT_EQ(ssh.subHistMap.size(), 0ULL);
-   EXPECT_EQ(ssh.scanHeight, 65535);
-   EXPECT_EQ(ssh.totalTxioCount, 2ULL);
-   EXPECT_EQ(ssh.totalUnspent, READ_UINT64_HEX_LE("0000030400000000"));
-
-   EXPECT_EQ(subssh1.hgtX,       hgtX0);
-   EXPECT_EQ(subssh1.txioMap.size(), 2ULL);
-   auto txio0Iter = subssh1.txioMap.find(txio0key);
-   auto txio1Iter = subssh1.txioMap.find(txio1key);
-   ASSERT_NE(txio0Iter, subssh1.txioMap.end());
-   ASSERT_NE(txio1Iter, subssh1.txioMap.end());
-   EXPECT_EQ(txio0Iter->second.getValue(), val0);
-   EXPECT_EQ(txio1Iter->second.getValue(), val1);
-   EXPECT_EQ(txio0Iter->second.getDBKeyOfOutput(), txio0key);
-   EXPECT_EQ(txio1Iter->second.getDBKeyOfOutput(), txio1key);
-
-   ssh.mergeSubHistory(subssh1);
-   EXPECT_EQ(ssh.subHistMap.size(), 1ULL);
-   ASSERT_NE(ssh.subHistMap.find(hgtX0), ssh.subHistMap.end());
-
-   StoredSubHistory& subref = ssh.subHistMap[hgtX0];
-   EXPECT_EQ(subref.hgtX,      hgtX0);
-   EXPECT_EQ(subref.txioMap.size(), 2ULL);
-   auto txioRef0Iter = subref.txioMap.find(txio0key);
-   auto txioRef1Iter = subref.txioMap.find(txio1key);
-   ASSERT_NE(txioRef0Iter, subref.txioMap.end());
-   ASSERT_NE(txioRef1Iter, subref.txioMap.end());
-   EXPECT_EQ(txioRef0Iter->second.getValue(), val0);
-   EXPECT_EQ(txioRef1Iter->second.getValue(), val1);
-   EXPECT_EQ(txioRef0Iter->second.getDBKeyOfOutput(), txio0key);
-   EXPECT_EQ(txioRef1Iter->second.getDBKeyOfOutput(), txio1key);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-class testBlockHeader : public ::BlockHeader
-{
-public:
-   void setBlockHeight(uint32_t height)
-   {
-      blockHeight_ = height;
-   }
-};
-
 class LMDBTest : public ::testing::Test
 {
 protected:
@@ -5155,7 +3203,7 @@ protected:
          Config::ProcessType::DB);
 
       magic_ = Config::BitcoinSettings::getMagicBytes();
-      iface_ = new LMDBBlockDatabase(nullptr, string());
+      iface_ = new LMDBBlockDatabase(Config::Pathing::dbDir());
 
       rawHead_ = READHEX(
          "01000000"
@@ -5339,7 +3387,6 @@ protected:
          // Script
          "76""a9""14""6a59ac0e8f553f292dfe5e9f3aaa1da93499c15e""88""ac");
 
-      bh_.unserialize(rawHead_);
       sbh_.setHeaderData(rawHead_);
    }
 
@@ -5396,7 +3443,7 @@ protected:
    /////
    bool compareKVListRange(uint32_t startH, uint32_t endplus1H,
                            uint32_t startB, uint32_t endplus1B,
-                           DB_SELECT db2 = DB_SELECT::HISTORY)
+                           DB_SELECT db2 = DB_SELECT::TXOUTS)
    {
       KVLIST fromDB = iface_->getAllDatabaseEntries(DB_SELECT::HEADERS);
 
@@ -5451,8 +3498,8 @@ protected:
    /////
    bool standardOpenDBs(void)
    {
-      iface_->openDatabases(Config::Pathing::dbDir());
-      auto&& tx = iface_->beginTransaction(DB_SELECT::HISTORY, LMDB::Mode::ReadWrite);
+      iface_->openDatabases();
+      auto tx = iface_->beginTransaction(DB_SELECT::HEADERS, LMDB::Mode::ReadWrite);
 
       BinaryData DBINFO = StoredDBInfo().getDBKey();
       BinaryData flags = READHEX("95021000");
@@ -5478,7 +3525,6 @@ protected:
    BinaryData rawBlock_;
    BinaryData rawTx0_;
    BinaryData rawTx1_;
-   ::BlockHeader bh_;
    StoredHeader sbh_;
    BinaryData rawTxUnfrag_;
    BinaryData rawTxFragged_;
@@ -5486,30 +3532,30 @@ protected:
    BinaryData rawTxOut1_;
 };
 
-
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(LMDBTest, OpenClose)
 {
-   iface_->openDatabases(Config::Pathing::dbDir());
+   iface_->openDatabases();
    ASSERT_TRUE(iface_->databasesAreOpen());
 
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 0ULL);
+   auto topHash = DBTestUtils::getTopBlockHash(iface_, DB_SELECT::HEADERS);
+   EXPECT_FALSE(topHash.valid());
 
    KVLIST HList = iface_->getAllDatabaseEntries(DB_SELECT::HEADERS);
-   KVLIST BList = iface_->getAllDatabaseEntries(DB_SELECT::HISTORY);
+   KVLIST BList = iface_->getAllDatabaseEntries(DB_SELECT::TXOUTS);
 
    // 0123 4567 0123 4567
    // 0000 0010 0001 ---- ---- ---- ---- ----
    BinaryData flags = READHEX("97011000");
    BinaryData ff = READHEX("ffffffffffffffff");
 
-   for(uint32_t i=0; i<HList.size(); i++) {
+   for (uint32_t i=0; i<HList.size(); i++) {
       EXPECT_EQ(HList[i].first,  READHEX("000000"));
       EXPECT_EQ(BList[i].second, magic_ + flags + zeros_ + zeros_ +
          BtcUtils::EmptyHash + BtcUtils::EmptyHash + ff);
    }
 
-   for(uint32_t i=0; i<BList.size(); i++) {
+   for (uint32_t i=0; i<BList.size(); i++) {
       EXPECT_EQ(HList[i].first,  READHEX("000000"));
       EXPECT_EQ(BList[i].second, magic_ + flags + zeros_ + zeros_ +
          BtcUtils::EmptyHash + BtcUtils::EmptyHash + ff);
@@ -5525,14 +3571,14 @@ TEST_F(LMDBTest, OpenCloseOpenNominal)
    BinaryData flags = READHEX("97011000");
    BinaryData ff = READHEX("ffffffffffffffff");
 
-   iface_->openDatabases(Config::Pathing::dbDir());
+   iface_->openDatabases();
    iface_->closeDatabases();
-   iface_->openDatabases(Config::Pathing::dbDir());
+   iface_->openDatabases();
 
    ASSERT_TRUE(iface_->databasesAreOpen());
 
    KVLIST HList = iface_->getAllDatabaseEntries(DB_SELECT::HEADERS);
-   KVLIST BList = iface_->getAllDatabaseEntries(DB_SELECT::HISTORY);
+   KVLIST BList = iface_->getAllDatabaseEntries(DB_SELECT::TXOUTS);
 
    for(uint32_t i=0; i<HList.size(); i++)
    {
@@ -5557,11 +3603,17 @@ TEST_F(LMDBTest, PutGetDelete)
    BinaryData flags = READHEX("97011000");
    BinaryData ff = READHEX("ffffffffffffffff");
 
-   iface_->openDatabases(Config::Pathing::dbDir());
+   iface_->openDatabases();
    ASSERT_TRUE(iface_->databasesAreOpen());
-   
-   auto&& txh = iface_->beginTransaction(DB_SELECT::HEADERS, LMDB::Mode::ReadWrite);
-   auto&& txH = iface_->beginTransaction(DB_SELECT::HISTORY, LMDB::Mode::ReadWrite);
+
+   auto txh = iface_->beginTransaction(DB_SELECT::HEADERS, LMDB::Mode::ReadWrite);
+   auto txH = iface_->beginTransaction(DB_SELECT::TXOUTS, LMDB::Mode::ReadWrite);
+
+   auto getDBVal = [dbtx=txH.get()](BinaryData key)->BinaryDataRef
+   {
+      auto val = dbtx->get(LMDB::DataRef{key.getSize(), key.getPtr()});
+      return {(const uint8_t*)val.data, val.len};
+   };
 
    auto TXDATA = DbPrefix::TXDATA;
    BinaryData DBINFO = StoredDBInfo().getDBKey();
@@ -5570,107 +3622,40 @@ TEST_F(LMDBTest, PutGetDelete)
       BtcUtils::EmptyHash + BtcUtils::EmptyHash + ff;
 
    BinaryData commonValue = READHEX("abcd1234");
+   LMDB::DataRef commonValueRef{commonValue.getSize(), commonValue.getPtr()};
    BinaryData keyAB = READHEX("0100");
    BinaryData nothing = READHEX("0000");
 
-   addOutPairH(DBINFO,         val0);
+   addOutPairH(DBINFO, val0);
 
-   addOutPairB(DBINFO,         val0);
-   addOutPairB(         keyAB, commonValue);
+   addOutPairB(DBINFO, val0);
+   addOutPairB(keyAB, commonValue);
    addOutPairB(PREFIX + keyAB, commonValue);
 
    ASSERT_TRUE( compareKVListRange(0,1, 0,1));
 
-   iface_->putValue(DB_SELECT::HISTORY, keyAB, commonValue);
+   txH->insert(LMDB::DataRef{keyAB.getSize(), keyAB.getPtr()}, commonValueRef);
    ASSERT_TRUE( compareKVListRange(0,1, 0,2));
 
-   iface_->putValue(DB_SELECT::HISTORY, DbPrefix::TXDATA, keyAB, commonValue);
+   auto keyPrefix = PREFIX + keyAB;
+   txH->insert(LMDB::DataRef{keyPrefix.getSize(), keyPrefix.getPtr()}, commonValueRef);
    ASSERT_TRUE( compareKVListRange(0,1, 0,3));
 
    // Now test a bunch of get* methods
-   ASSERT_EQ(iface_->getValueNoCopy(DB_SELECT::HISTORY, PREFIX + keyAB), commonValue);
-   ASSERT_EQ(iface_->getValueRef(   DB_SELECT::HISTORY, DbPrefix::DBINFO, nothing), val0);
-   ASSERT_EQ(iface_->getValueNoCopy(DB_SELECT::HISTORY, DBINFO), val0);
-   ASSERT_EQ(iface_->getValueNoCopy(DB_SELECT::HISTORY, PREFIX + keyAB), commonValue);
-   ASSERT_EQ(iface_->getValueRef(   DB_SELECT::HISTORY, TXDATA, keyAB), commonValue);
-   ASSERT_EQ(iface_->getValueReader(DB_SELECT::HISTORY, PREFIX + keyAB).getRawRef(), commonValue);
-   ASSERT_EQ(iface_->getValueReader(DB_SELECT::HISTORY, TXDATA, keyAB).getRawRef(), commonValue);
+   ASSERT_EQ(getDBVal(PREFIX + keyAB), commonValue);
+   ASSERT_EQ(getDBVal(PREFIX + nothing), val0);
+   ASSERT_EQ(getDBVal(DBINFO), val0);
+   ASSERT_EQ(getDBVal(PREFIX + keyAB), commonValue);
+   ASSERT_EQ(getDBVal(keyAB), commonValue);
 
-   iface_->deleteValue(DB_SELECT::HISTORY, DbPrefix::TXDATA, keyAB);
-   ASSERT_TRUE( compareKVListRange(0,1, 0,2));
-
-   iface_->deleteValue(DB_SELECT::HISTORY, PREFIX + keyAB);
+   txH->erase(LMDB::DataRef{keyPrefix.getSize(), keyPrefix.getPtr()});
    ASSERT_TRUE( compareKVListRange(0,1, 0,1));
-
-   iface_->deleteValue(DB_SELECT::HISTORY, PREFIX + keyAB);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(LMDBTest, DISABLED_STxOutPutGet)
+TEST_F(LMDBTest, DISABLED_PutGetBareHeader)
 {
-   BinaryData TXP     = WRITE_UINT8_BE((uint8_t)DbPrefix::TXDATA);
-   BinaryData stxoVal = READHEX("2420") + rawTxOut0_;
-   BinaryData stxoKey = TXP + READHEX("01e078""0f""0007""0001");
-   
-   ASSERT_TRUE(standardOpenDBs());
-   auto&& txh = iface_->beginTransaction(DB_SELECT::HEADERS, LMDB::Mode::ReadWrite);
-   auto&& txH = iface_->beginTransaction(DB_SELECT::STXO, LMDB::Mode::ReadWrite);
-
-   StoredTxOut stxo0;
-   stxo0.txVersion   = 1;
-   stxo0.spentness   = TXOUT_UNSPENT;
-   stxo0.blockHeight = 123000;
-   stxo0.duplicateID = 15;
-   stxo0.txIndex     = 7;
-   stxo0.txOutIndex  = 1;
-   stxo0.unserialize(rawTxOut0_);
-   iface_->putStoredTxOut(stxo0);
-
-   // Construct expected output
-   addOutPairB(stxoKey, stxoVal);
-   ASSERT_TRUE(compareKVListRange(0,1, 0,2, DB_SELECT::STXO));
-
-   StoredTxOut stxoGet;
-   iface_->getStoredTxOut(stxoGet, 123000, 15, 7, 1);
-   EXPECT_EQ(
-      serializeDBValue(stxoGet),
-      serializeDBValue(stxo0)
-   );
-
-   //iface_->validDupByHeight_[123000] = 15;
-   //iface_->getStoredTxOut(stxoGet, 123000, 7, 1);
-   //EXPECT_EQ(serializeDBValue(stxoGet), serializeDBValue(stxo0));
-
-   StoredTxOut stxo1;
-   stxo1.txVersion   = 1;
-   stxo1.spentness   = TXOUT_UNSPENT;
-   stxo1.blockHeight = 200333;
-   stxo1.duplicateID = 3;
-   stxo1.txIndex     = 7;
-   stxo1.txOutIndex  = 1;
-   stxo1.unserialize(rawTxOut1_);
-   stxoVal = READHEX("2420") + rawTxOut1_;
-   stxoKey = TXP + READHEX("030e8d""03""00070001");
-   iface_->putStoredTxOut(stxo1);
-
-   iface_->getStoredTxOut(stxoGet, 123000, 15, 7, 1);
-   EXPECT_EQ(
-      serializeDBValue(stxoGet),
-      serializeDBValue(stxo0)
-   );
-   iface_->getStoredTxOut(stxoGet, 200333,  3, 7, 1);
-   EXPECT_EQ(
-      serializeDBValue(stxoGet),
-      serializeDBValue(stxo1)
-   );
-
-   addOutPairB(stxoKey, stxoVal);
-   ASSERT_TRUE(compareKVListRange(0,1, 0,3, DB_SELECT::STXO));
-}
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(LMDBTest, PutGetBareHeader)
-{
+   #if 0
    StoredHeader sbh;
    BinaryRefReader brr(rawBlock_);
    sbh.unserializeFullBlock(brr);
@@ -5681,9 +3666,7 @@ TEST_F(LMDBTest, PutGetBareHeader)
    auto txh = iface_->beginTransaction(DB_SELECT::HEADERS, LMDB::Mode::ReadWrite);
    auto txH = iface_->beginTransaction(DB_SELECT::HISTORY, LMDB::Mode::ReadWrite);
 
-   uint8_t sdup = iface_->putBareHeader(sbh);
-   EXPECT_EQ(sdup, 0);
-   EXPECT_EQ(sbh.duplicateID, 0);
+   iface_->putBareHeader(sbh);
 
    // Add a new header and make sure duplicate ID is done correctly
    BinaryData newHeader = READHEX(
@@ -5695,7 +3678,7 @@ TEST_F(LMDBTest, PutGetBareHeader)
    StoredHeader sbh2;
    sbh2.setHeaderData(newHeader);
    sbh2.setKeyData(123000, UINT8_MAX);
-   
+
    uint8_t newDup = iface_->putBareHeader(sbh2);
    EXPECT_EQ(newDup, 1);
    EXPECT_EQ(sbh2.duplicateID, 1);
@@ -5734,10 +3717,13 @@ TEST_F(LMDBTest, PutGetBareHeader)
    iface_->putBareHeader(sbh3);
    EXPECT_EQ(sbh3.duplicateID, 2);
    EXPECT_EQ(iface_->getValidDupIDForHeight(123000), 2);
+   #endif
 }
+
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(LMDBTest, PutGetStoredTxHints)
+TEST_F(LMDBTest, DISABLED_PutGetStoredTxHints)
 {
+   #if 0
    ASSERT_TRUE(standardOpenDBs());
    auto tx = iface_->beginTransaction(DB_SELECT::TXHINTS, LMDB::Mode::ReadWrite);
 
@@ -5785,6 +3771,7 @@ TEST_F(LMDBTest, PutGetStoredTxHints)
    EXPECT_EQ(sths.txHashPrefix,  prefix);
    EXPECT_EQ(sths.dbKeyList.size(), 0ULL);
    EXPECT_EQ(sths.preferredDBKey.getSize(), 0ULL);
+   #endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -5806,7 +3793,7 @@ TEST_F(TxRefTest, TxRefNoInit)
    //EXPECT_EQ(txr.getBlockTimestamp(), UINT32_MAX);
    EXPECT_EQ(txr.getBlockHeight(),    UINT32_MAX);
    EXPECT_EQ(txr.getDuplicateID(),    UINT8_MAX );
-   EXPECT_EQ(txr.getBlockTxIndex(),   UINT16_MAX);
+   EXPECT_EQ(txr.getTxIndex(),   UINT16_MAX);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -5821,7 +3808,7 @@ TEST_F(TxRefTest, TxRefKeyParts)
 
    EXPECT_EQ(txr.getBlockHeight(),  0xe3c402ULL);
    EXPECT_EQ(txr.getDuplicateID(),  127ULL);
-   EXPECT_EQ(txr.getBlockTxIndex(), 15ULL);
+   EXPECT_EQ(txr.getTxIndex(), 15ULL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -5939,7 +3926,7 @@ protected:
          "--offline" },
          Armory::Config::ProcessType::DB);
 
-      iface_ = new LMDBBlockDatabase(nullptr, string());
+      iface_ = new LMDBBlockDatabase({});
    }
 
    virtual void TearDown(void)
@@ -5956,7 +3943,7 @@ protected:
 
    bool standardOpenDBs(void)
    {
-      iface_->openDatabases(Config::Pathing::dbDir());
+      iface_->openDatabases();
       return iface_->databasesAreOpen();
    }
 
@@ -6654,17 +4641,93 @@ TEST_F(TestJSONCodec, decode)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+class TypesTests : public ::testing::Test
+{};
+
+TEST_F(TypesTests, keys)
+{
+   auto invalidTxKey = Types::INVALID_TX_KEY;
+   ASSERT_FALSE(Types::isTxKeyValid(invalidTxKey));
+
+   auto invalidTxIOKey = Types::INVALID_TXIO_KEY;
+   ASSERT_FALSE(Types::isTxIOKeyValid(invalidTxIOKey));
+
+   Types::BlockId blockId1 = 10;
+   Types::BlockId blockId2 = 11;
+   Types::TxId txId1 = 20;
+   Types::TxId txId2 = 21;
+   Types::TxIOId txIOId1 = 30;
+   Types::TxIOId txIOId2 = 31;
+   Types::ZcId zcId1 = 40;
+
+   auto txKey = Types::constructTxKey(blockId1, txId1);
+   ASSERT_TRUE(Types::isTxKeyValid(txKey));
+   EXPECT_EQ(Types::getBlockIDFromTxKey(txKey), blockId1);
+   EXPECT_EQ(Types::getTxIndexFromTxKey(txKey), txId1);
+   EXPECT_FALSE(Types::isThisATxIOKey(txKey));
+   EXPECT_FALSE(Types::isThisAZCKey(txKey));
+
+   auto txIOKey = Types::constructTxIOKey(blockId1, txId1, txIOId1);
+   ASSERT_TRUE(Types::isTxIOKeyValid(txIOKey));
+   EXPECT_EQ(Types::getTxKeyFromTxIOKey(txIOKey), txKey);
+   EXPECT_EQ(Types::getTxIOIndexFromTxIOKey(txIOKey), txIOId1);
+   EXPECT_TRUE(Types::isThisATxIOKey(txIOKey));
+   EXPECT_FALSE(Types::isThisAZCKey(txIOKey));
+
+   auto txIOKey2 = Types::constructTxIOKeyFromTxKey(txKey, txIOId1);
+   EXPECT_EQ(txIOKey, txIOKey2);
+
+   auto txKey2 = Types::constructTxKey(blockId1, txId2);
+   auto txKey3 = Types::constructTxKey(blockId2, txId1);
+   EXPECT_LT(std::memcmp(&txKey, &txKey2, 8), 0);
+   EXPECT_LT(std::memcmp(&txKey2, &txKey3, 8), 0);
+
+   auto txIOKey3 = Types::constructTxIOKey(blockId1, txId1, txIOId2);
+   auto txIOKey4 = Types::constructTxIOKeyFromTxKey(txKey2, txIOId1);
+   EXPECT_LT(std::memcmp(&txIOKey, &txIOKey3, 8), 0);
+   EXPECT_LT(std::memcmp(&txIOKey3, &txIOKey4, 8), 0);
+
+   auto zcKey = Types::constructZCKey(zcId1);
+   ASSERT_TRUE(Types::isTxKeyValid(zcKey));
+   EXPECT_EQ(Types::getZcIdFromTxKey(zcKey), zcId1);
+   EXPECT_TRUE(Types::isThisAZCKey(zcKey));
+   EXPECT_FALSE(Types::isThisATxIOKey(zcKey));
+
+   auto zcTxIOKey = Types::constructTxIOKeyFromTxKey(zcKey, txIOId1);
+   EXPECT_TRUE(Types::isThisAZCKey(zcTxIOKey));
+   EXPECT_TRUE(Types::isThisATxIOKey(zcTxIOKey));
+   EXPECT_EQ(Types::getTxIOIndexFromTxIOKey(zcTxIOKey), txIOId1);
+   EXPECT_EQ(Types::getZcIdFromTxKey(zcTxIOKey), zcId1);
+   auto zctxkey = Types::getTxKeyFromTxIOKey(zcTxIOKey);
+   EXPECT_EQ(zctxkey, zcKey);
+   EXPECT_FALSE(Types::isThisATxIOKey(zctxkey));
+   EXPECT_TRUE(Types::isThisAZCKey(zctxkey));
+   EXPECT_EQ(Types::getZcIdFromTxKey(zctxkey), zcId1);
+
+   Types::ScrAddrId scrAddrId1 = 100;
+   Types::ScrAddrId scrAddrId2 = 200;
+   auto scrAddrKey1 = Types::constructScrAddrKey(scrAddrId1, blockId1);
+   auto scrAddrKey2 = Types::constructScrAddrKey(scrAddrId2, blockId1);
+   auto scrAddrKey3 = Types::constructScrAddrKey(scrAddrId2, blockId2);
+   EXPECT_LT(std::memcmp(&scrAddrKey1, &scrAddrKey2, 8), 0);
+   EXPECT_LT(std::memcmp(&scrAddrKey2, &scrAddrKey3, 8), 0);
+   EXPECT_EQ(Types::getScrAddrIdFromScrAddrKey(scrAddrKey1), scrAddrId1);
+   EXPECT_EQ(Types::getScrAddrIdFromScrAddrKey(scrAddrKey2), scrAddrId2);
+   EXPECT_EQ(Types::getBlockIDFromScrAddrKey(scrAddrKey1), blockId1);
+   EXPECT_EQ(Types::getBlockIDFromScrAddrKey(scrAddrKey3), blockId2);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 // Now actually execute all the tests
 ////////////////////////////////////////////////////////////////////////////////
 GTEST_API_ int main(int argc, char **argv)
 {
-   #ifdef _MSC_VER
-      _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
-      WSADATA wsaData;
-      WORD wVersion = MAKEWORD(2, 0);
-      WSAStartup(wVersion, &wsaData);
-   #endif
+#ifdef _WIN32
+   WSADATA wsaData;
+   WORD wVersion = MAKEWORD(2, 0);
+   WSAStartup(wVersion, &wsaData);
+#endif
 
    srand(time(0));
    std::cout << "Running main() from gtest_main.cc\n";

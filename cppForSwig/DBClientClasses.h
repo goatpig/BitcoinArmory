@@ -1,23 +1,23 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2018-2024, goatpig.                                         //
+//  Copyright (C) 2018-2026, goatpig.                                         //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifndef _H_CLIENTCLASSES
-#define _H_CLIENTCLASSES
+#pragma once
 
 #include <exception>
 #include <string>
 #include <functional>
 
 #include <Utils/BinaryData.h>
+#include <Utils/Types.h>
 #include <BlockchainDatabase/txio.h>
+#include <Network/SocketObject.h>
+#include <Node/nodeRPC.h>
 #include "bdmenums.h"
-#include "SocketObject.h"
-#include "nodeRPC.h"
 
 #define FILTER_CHANGE_FLAG "wallet_filter_changed"
 
@@ -59,116 +59,29 @@ namespace DBClientClasses
    };
 
    /////////////////////////////////////////////////////////////////////////////
-   class BlockHeader
+   struct BlockHeader
    {
-      friend class Blockchain;
-      friend class testBlockHeader;
-      friend class BlockData;
+      const BinaryData thisHash;
+      const BinaryData prevHash;
 
-   private:
+      const Armory::Types::BlockId blockId;
+      const uint32_t blockHeight;
+      const uint32_t timestamp;
+      const uint32_t blockSize;
+      const uint32_t numTxs;
+      bool           isMainBranch;
 
-      void unserialize(uint8_t const * ptr, uint32_t size);
-      void unserialize(BinaryDataRef const & str)
-      {
-         unserialize(str.getPtr(), str.getSize());
-      }
-
-   public:
-      BlockHeader(BinaryDataRef, uint32_t, uint8_t);
-
-      uint32_t           getVersion(void) const { return READ_UINT32_LE(getPtr()); }
-      BinaryData const & getThisHash(void) const { return thisHash_; }
-      BinaryData         getPrevHash(void) const { return BinaryData(getPtr() + 4, 32); }
-      BinaryData         getMerkleRoot(void) const { return BinaryData(getPtr() + 36, 32); }
-      BinaryData         getDiffBits(void) const { return BinaryData(getPtr() + 72, 4); }
-      uint32_t           getTimestamp(void) const { return READ_UINT32_LE(getPtr() + 68); }
-      uint32_t           getNonce(void) const { return READ_UINT32_LE(getPtr() + 76); }
-      uint32_t           getBlockHeight(void) const { return blockHeight_; }
-      uint8_t            getDupId(void) const { return duplicateId_; }
-
-      //////////////////////////////////////////////////////////////////////////
-      BinaryDataRef  getThisHashRef(void) const { return thisHash_.getRef(); }
-      BinaryDataRef  getPrevHashRef(void) const { return BinaryDataRef(getPtr() + 4, 32); }
-      BinaryDataRef  getMerkleRootRef(void) const { return BinaryDataRef(getPtr() + 36, 32); }
-      BinaryDataRef  getDiffBitsRef(void) const { return BinaryDataRef(getPtr() + 72, 4); }
-
-      //////////////////////////////////////////////////////////////////////////
-      uint8_t const * getPtr(void) const {
-         if (!isInitialized_)
-            throw std::runtime_error("uninitialized BlockHeader");
-         return dataCopy_.getPtr();
-      }
-      size_t        getSize(void) const {
-         if (!isInitialized_)
-            throw std::runtime_error("uninitialized BlockHeader");
-         return dataCopy_.getSize();
-      }
-      bool            isInitialized(void) const { return isInitialized_; }
-
-      void clearDataCopy() { dataCopy_.resize(0); }
-
-   private:
-      BinaryData     dataCopy_;
-      bool           isInitialized_ = false;
-      // Specific to the DB storage
-      uint32_t       blockHeight_ = UINT32_MAX;
-      uint8_t        duplicateId_ = 0xFF;
-
-      // Derived properties - we expect these to be set after construct/copy
-      BinaryData     thisHash_;
-      double         difficultyDbl_ = 0.0;
+      BlockHeader(BinaryDataRef, BinaryDataRef,
+         Armory::Types::BlockId,
+         uint32_t, uint32_t, uint32_t, uint32_t,
+         bool);
    };
-
-   ////////////////////////////////////////////////////////////////////////////
-   class LedgerEntry
-   {
-   private:
-      const std::string id_;
-      const int64_t     value_;
-      const uint32_t    blockHeight_;
-      const BinaryData  txHash_;
-      const uint32_t    txOutIndex_;
-      const uint32_t    timestamp_; //seconds
-      const bool        isCoinbase_;
-      const bool        isSentToSelf_;
-      const bool        isChangeBack_;
-      const bool        isOptInRBF_;
-      const bool        isChainedZC_;
-      const bool        isWitness_;
-
-      const std::vector<BinaryData> scrAddrList_;
-
-   public:
-      LedgerEntry(const std::string& id, int64_t value, uint32_t blockHeight,
-         BinaryData& txHash, uint32_t txOutIndex, uint32_t timestamp,
-         bool isCoinbase, bool isSentToSelf, bool isChangeBack,
-         bool isOptInRBF, bool isChainedZC, bool isWitness,
-         std::vector<BinaryData>& scrAddrList);
-
-      const std::string&  getID(void) const;
-      int64_t             getValue(void) const;
-      uint32_t            getBlockHeight(void) const;
-      BinaryDataRef       getTxHash(void) const;
-      uint32_t            getTxOutIndex(void) const;
-      uint32_t            getTxTime(void) const;
-      bool                isCoinbase(void) const;
-      bool                isSentToSelf(void) const;
-      bool                isChangeBack(void) const;
-      bool                isOptInRBF(void) const;
-      bool                isChainedZC(void) const;
-      bool                isWitness(void) const;
-
-      const std::vector<BinaryData>& getScrAddrList(void) const;
-
-      bool operator==(const LedgerEntry& rhs);
-   };
-   using HistoryPage = std::vector<LedgerEntry>;
 
    ////////////////////////////////////////////////////////////////////////////
    class NodeChainStatus
    {
    private:
-      const CoreRPC::ChainState chainState_;
+      const Node::ChainState chainState_;
       const float blockSpeed_;
       const float progressPct_;
       const uint64_t etaSeconds_;
@@ -176,10 +89,10 @@ namespace DBClientClasses
 
    public:
       NodeChainStatus(void);
-      NodeChainStatus(CoreRPC::ChainState, float, float, uint64_t, unsigned);
+      NodeChainStatus(Node::ChainState, float, float, uint64_t, unsigned);
       NodeChainStatus(NodeChainStatus&&) = default;
 
-      CoreRPC::ChainState state(void) const;
+      Node::ChainState state(void) const;
       float getBlockSpeed(void) const;
 
       float getProgressPct(void) const;
@@ -191,17 +104,17 @@ namespace DBClientClasses
    class NodeStatus
    {
    private:
-      const CoreRPC::NodeState nodeState_;
-      const CoreRPC::RpcState rpcState_;
+      const Node::NodeState nodeState_;
+      const Node::RpcState rpcState_;
       const bool isSegWitEnabled_;
       const NodeChainStatus nodeChainStatus_;
 
    public:
-      NodeStatus(CoreRPC::NodeState, CoreRPC::RpcState, bool, NodeChainStatus&);
+      NodeStatus(Node::NodeState, Node::RpcState, bool, NodeChainStatus&);
 
-      CoreRPC::NodeState state(void) const;
+      Node::NodeState state(void) const;
       bool isSegWitEnabled(void) const;
-      CoreRPC::RpcState rpcState(void) const;
+      Node::RpcState rpcState(void) const;
       const NodeChainStatus& chainStatus(void) const;
    };
 }; //namespace DBClientClasses
@@ -219,27 +132,34 @@ struct BDV_Error_Struct
 
 class NewBlockNotif
 {
+   using BlockIdVec = std::vector<Armory::Types::BlockId>;
+
 private:
    uint32_t height_ = UINT32_MAX;
    uint32_t branchHeight_ = UINT32_MAX;
+   BlockIdVec invalidatedBlockIds_;
+   BlockIdVec newMainBranchBlockIds_;
 
 public:
-   NewBlockNotif(uint32_t, uint32_t);
+   NewBlockNotif(uint32_t, uint32_t, BlockIdVec, BlockIdVec);
 
    bool isValid(void) const;
    bool isReorg(void) const;
    uint32_t getHeight(void) const;
    uint32_t getBranchHeight(void) const;
+
+   const BlockIdVec& invalidatedBlockIds(void) const;
+   const BlockIdVec& newMainBranchBlockIds(void) const;
 };
 
 struct BdmNotification
 {
    const BDMAction action;
 
-   NewBlockNotif newBlock{UINT32_MAX, UINT32_MAX};
+   NewBlockNotif newBlock{UINT32_MAX, UINT32_MAX, {}, {}};
 
    std::vector<TxIOPair> txios;
-   std::set<BinaryData> invalidatedZc;
+   std::set<Armory::Types::TxHash> invalidatedZcHashes;
    std::set<std::string> ids;
 
    std::shared_ptr<DBClientClasses::NodeStatus> nodeStatus;
@@ -268,5 +188,3 @@ public:
 
    bool processNotifications(std::unique_ptr<capnp::MessageReader>);
 };
-
-#endif

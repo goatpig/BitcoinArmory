@@ -13,6 +13,7 @@
 
 #include <assert.h>
 #include <cstring>
+#include <cmath>
 
 #include "TxClasses.h"
 #include <Utils/varint.h>
@@ -148,32 +149,36 @@ void Outpoint::unserialize(const BinaryDataRef& bdRef)
 
 ////////////////////////////////////////////////////////////////////////////////
 // TxIn
-TxIn::TxIn(const uint8_t* ptr, size_t size, size_t nbytes, uint32_t idx)
+TxIn::TxIn(const uint8_t* ptr, size_t size, size_t nbytes, uint32_t idx) :
+   dataCopy_(getRawData(ptr, size, nbytes)),
+   index_(idx)
 {
-   unserialize_checked(ptr, size, nbytes, idx);
+   unserialize_checked();
 }
 
-TxIn::TxIn(BinaryDataRef dataRef, size_t nbytes, uint32_t idx)
+TxIn::TxIn(BinaryDataRef dataRef, size_t nbytes, uint32_t idx) :
+   dataCopy_(getRawData(dataRef.getPtr(), dataRef.getSize(), nbytes)),
+   index_(idx)
 {
-   unserialize_checked(dataRef.getPtr(), dataRef.getSize(), nbytes, idx);
+   unserialize_checked();
 }
 
-TxIn::TxIn(BinaryRefReader brr, size_t nbytes, uint32_t idx)
+TxIn::TxIn(BinaryRefReader brr, size_t nbytes, uint32_t idx) :
+   dataCopy_(getRawData(brr.getCurrPtr(), brr.getSizeRemaining(), nbytes)),
+   index_(idx)
 {
-   unserialize_checked(brr.getCurrPtr(), brr.getSizeRemaining(), nbytes, idx);
+   unserialize_checked();
    brr.advance(getSize());
 }
 
 ////////
 const uint8_t* TxIn::getPtr() const
 {
-   assert(isInitialized());
    return dataCopy_.getPtr();
 }
 
 size_t TxIn::getSize() const
 {
-   assert(isInitialized());
    return dataCopy_.getSize();
 }
 
@@ -185,11 +190,6 @@ bool TxIn::isStandard() const
 bool TxIn::isCoinbase() const
 {
    return scriptType_ == TxInScriptType::COINBASE;
-}
-
-bool TxIn::isInitialized() const
-{
-   return !dataCopy_.empty();
 }
 
 Outpoint TxIn::getOutPoint() const
@@ -245,10 +245,9 @@ const BinaryData& TxIn::serialize() const
    return dataCopy_;
 }
 
-void TxIn::unserialize_checked(const uint8_t* ptr,
-   size_t size, size_t nbytes, uint32_t idx)
+BinaryDataRef TxIn::getRawData(const uint8_t* ptr,
+   size_t size, size_t nbytes)
 {
-   index_ = idx;
    size_t numBytes = nbytes == 0 ?
       BtcUtils::TxInCalcLength(ptr, size) :
       nbytes;
@@ -256,8 +255,11 @@ void TxIn::unserialize_checked(const uint8_t* ptr,
    if (size < numBytes) {
       throw BtcUtils::BlockDeserializingException();
    }
-   dataCopy_.copyFrom(ptr, numBytes);
+   return BinaryDataRef{ptr, numBytes};
+}
 
+void TxIn::unserialize_checked()
+{
    if (dataCopy_.getSize() - 36 < 1) {
       throw BtcUtils::BlockDeserializingException();
    }
@@ -293,9 +295,9 @@ bool TxIn::getSenderScrAddrIfAvail(BinaryData& addrTarget) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-BinaryData TxIn::getSenderScrAddrIfAvail(void) const
+BinaryData TxIn::getSenderScrAddrIfAvail() const
 {
-   BinaryData addrTarget(20);
+   BinaryData addrTarget;
    getSenderScrAddrIfAvail(addrTarget);
    return addrTarget;
 }
@@ -362,26 +364,30 @@ void TxIn::pprint(std::ostream& os, int nIndent, bool) const
 
 ////////////////////////////////////////////////////////////////////////////////
 // TxOut
-TxOut::TxOut(BinaryDataRef data, size_t nbytes, uint32_t idx)
+TxOut::TxOut(BinaryDataRef data, size_t nbytes, uint32_t idx) :
+   dataCopy_(getRawData(data.getPtr(), data.getSize(), nbytes)),
+   index_(idx)
 {
-   unserialize(data.getPtr(), data.getSize(), nbytes, idx);
+   unserialize();
 }
 
-TxOut::TxOut(BinaryRefReader& brr, size_t nbytes, uint32_t idx)
+TxOut::TxOut(BinaryRefReader& brr, size_t nbytes, uint32_t idx) :
+   dataCopy_(getRawData(brr.getCurrPtr(), brr.getSizeRemaining(), nbytes)),
+   index_(idx)
 {
-   unserialize(brr.getCurrPtr(), brr.getSizeRemaining(), nbytes, idx);
+   unserialize();
    brr.advance(getSize());
 }
 
-TxOut::TxOut(const uint8_t* ptr, size_t size, uint32_t idx)
+TxOut::TxOut(const uint8_t* ptr, size_t size, uint32_t idx) :
+   dataCopy_(getRawData(ptr, size, 0)), index_(idx)
 {
-   unserialize(ptr, size, 0, idx);
+   unserialize();
 }
 
-void TxOut::unserialize(const uint8_t* ptr,
-   size_t size, size_t nbytes, uint32_t idx)
+BinaryDataRef TxOut::getRawData(const uint8_t* ptr,
+   size_t size, size_t nbytes)
 {
-   index_ = idx;
    uint32_t numBytes = nbytes == 0 ?
       BtcUtils::TxOutCalcLength(ptr, size) :
       nbytes;
@@ -389,10 +395,13 @@ void TxOut::unserialize(const uint8_t* ptr,
    if (size < numBytes) {
       throw BtcUtils::BlockDeserializingException{};
    }
-   dataCopy_.copyFrom(ptr, numBytes);
+   return {ptr, numBytes};
+}
 
+void TxOut::unserialize()
+{
    scriptOffset_ = 8 + BtcUtils::readVarIntLength(getPtr() + 8);
-   if (dataCopy_.getSize() - scriptOffset_ - getScriptSize() > size) {
+   if (dataCopy_.getSize() <= scriptOffset_) {
       throw BtcUtils::BlockDeserializingException{};
    }
    BinaryDataRef scriptRef{
@@ -414,7 +423,7 @@ uint32_t TxOut::getSize() const
    return (uint32_t)dataCopy_.getSize();
 }
 
-uint64_t TxOut::getValue() const
+Types::Amount TxOut::getAmount() const
 {
    return READ_UINT64_LE(dataCopy_.getPtr());
 }
@@ -424,12 +433,7 @@ bool TxOut::isStandard() const
    return scriptType_ != TxOutScriptType::NONSTANDARD;
 }
 
-bool TxOut::isInitialized() const
-{
-   return dataCopy_.getSize() > 0;
-}
-
-uint32_t TxOut::getIndex()
+Types::TxIOId TxOut::getIndex()
 {
    return index_;
 }
@@ -466,14 +470,9 @@ size_t TxOut::getScriptOffset() const
 }
 
 ////////
-const BinaryData& TxOut::getScrAddressStr() const
+const Types::ScrAddr& TxOut::getScrAddress() const
 {
    return uniqueScrAddr_;
-}
-
-BinaryDataRef TxOut::getScrAddressRef() const
-{
-   return uniqueScrAddr_.getRef();
 }
 
 ////////
@@ -538,15 +537,18 @@ void TxOut::pprint(std::ostream& os, int nIndent, bool pBigendian)
    os << indent << "   Recip:  "
       << uniqueScrAddr_.toHexStr(pBigendian).c_str()
       << (pBigendian ? " (BE)" : " (LE)") << std::endl;
-   os << indent << "   Value:  " << getValue() << std::endl;
+   os << indent << "   Amount:  " << getAmount() << std::endl;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tx methods
-Tx::Tx(const uint8_t* ptr, size_t size)
-{
-   unserialize(ptr, size);
-}
+Tx::Tx(const uint8_t* ptr, size_t size) :
+   Tx{unserialize(ptr, size)}
+{}
+
+Tx::Tx(BinaryDataRef str) :
+   Tx{unserialize(str.getPtr(), str.getSize())}
+{}
 
 Tx::Tx(BinaryRefReader& brr) :
    Tx{brr.getCurrPtr(), brr.getSizeRemaining()}
@@ -554,38 +556,44 @@ Tx::Tx(BinaryRefReader& brr) :
    brr.advance(getSize());
 }
 
-Tx::Tx(BinaryDataRef str) :
-   Tx{str.getPtr(), str.getSize()}
+Tx::Tx(BinaryDataRef data,
+   std::vector<size_t>& offsetsTxIn,
+   std::vector<size_t>& offsetsTxOut,
+   std::vector<size_t>& offsetsWitness,
+   uint32_t version, uint32_t lockTime, bool useWitness) :
+   dataCopy_(data),
+   offsetsTxIn_{std::move(offsetsTxIn)},
+   offsetsTxOut_{std::move(offsetsTxOut)},
+   offsetsWitness_{std::move(offsetsWitness)},
+   version_{version}, lockTime_{lockTime}, usesWitness_{useWitness}
 {}
 
-void Tx::unserialize(const uint8_t* ptr, size_t size)
+Tx Tx::unserialize(const uint8_t* ptr, size_t size)
 {
-   isInitialized_ = false;
+   std::vector<size_t> txins, txouts, witnesses;
    uint32_t nBytes = BtcUtils::TxCalcLength(ptr, size,
-      &offsetsTxIn_, &offsetsTxOut_, &offsetsWitness_);
-
+      &txins, &txouts, &witnesses);
    if (size < 8 || nBytes > size) {
       throw BtcUtils::BlockDeserializingException();
    }
-   dataCopy_.copyFrom(ptr, nBytes);
+   BinaryDataRef data{ptr, nBytes};
 
-   usesWitness_ = BtcUtils::checkSwMarker(ptr + 4);
-   uint32_t numWitness = offsetsWitness_.size() - 1;
-   version_ = READ_UINT32_LE(ptr);
-   if (4 > size - offsetsWitness_[numWitness]) {
+   uint32_t version = READ_UINT32_LE(ptr);
+   bool usesWitness = BtcUtils::checkSwMarker(ptr + 4);
+   uint32_t numWitness = witnesses.size() - 1;
+   if (4 > nBytes - witnesses[numWitness]) {
       throw BtcUtils::BlockDeserializingException();
    }
-   lockTime_ = READ_UINT32_LE(ptr + offsetsWitness_[numWitness]);
-   isInitialized_ = true;
+   uint32_t lockTime = READ_UINT32_LE(ptr + witnesses[numWitness]);
+
+   return Tx{data, txins, txouts, witnesses,
+      version, lockTime, usesWitness};
 }
 
 ////////
 bool Tx::operator==(const Tx& rhs) const
 {
-   if (this->isInitialized() && rhs.isInitialized()) {
-      return this->thisHash_ == rhs.thisHash_;
-   }
-   return false;
+   return this->thisHash_ == rhs.thisHash_;
 }
 
 ////////
@@ -600,16 +608,8 @@ size_t Tx::getSize() const
 }
 
 ////////
-bool Tx::isInitialized() const
-{
-   return isInitialized_;
-}
-
 bool Tx::isCoinbase() const
 {
-   if (!isInitialized()) {
-      throw std::runtime_error("unprocessed tx");
-   }
    BinaryDataRef bdr{dataCopy_.getPtr() + offsetsTxIn_[0], 32};
    return bdr == BtcUtils::EmptyHash;
 }
@@ -633,7 +633,7 @@ uint64_t Tx::getSumOfOutputs(void) const
 {
    uint64_t sumVal = 0;
    for (uint32_t i = 0; i < getNumTxOut(); i++) {
-      sumVal += getTxOutCopy(i).getValue();
+      sumVal += getTxOutCopy(i).getAmount();
    }
    return sumVal;
 }
@@ -650,9 +650,6 @@ bool Tx::isChained() const
 
 bool Tx::isSegWit() const
 { 
-   if (!isInitialized()) {
-      throw std::runtime_error("uninitialized tx");
-   }
    return usesWitness_;
 }
 
@@ -661,19 +658,28 @@ uint32_t Tx::getTxTime() const
    return txTime_;
 }
 
-uint32_t Tx::getTxHeight() const
+////////
+void Tx::setTxKey(Types::TxKey key)
 {
-   return txHeight_;
+   txKey_ = key;
 }
 
-uint8_t Tx::getDupId() const
+Types::BlockId Tx::getBlockId() const
 {
-   return dupId_;
+   if (!Types::isThisAZCKey(txKey_)) {
+      return Types::getBlockIDFromTxKey(txKey_);
+   } else {
+      return Types::INVALID_BLOCK_ID;
+   }
 }
 
-uint32_t Tx::getTxIndex() const
+Types::TxId Tx::getTxIndex() const
 {
-   return txIndex_;
+   if (!Types::isThisAZCKey(txKey_)) {
+      return Types::getTxIndexFromTxKey(txKey_);
+   } else {
+      return UINT16_MAX;
+   }
 }
 
 ////////
@@ -703,21 +709,6 @@ void Tx::setChainedZC(bool isTrue)
    isChainedZc_ = isTrue;
 }
 
-void Tx::setTxHeight(uint32_t height) const
-{
-   txHeight_ = height;
-}
-
-void Tx::setDupId(uint8_t dupId) const
-{
-   dupId_ = dupId;
-}
-
-void Tx::setTxIndex(uint32_t index) const
-{
-   txIndex_ = index;
-}
-
 void Tx::setTxTime(uint32_t txtime)
 {
    txTime_ = txtime;
@@ -736,10 +727,6 @@ BinaryData Tx::serialize() const
 
 BinaryData Tx::serializeNoWitness(void) const
 {
-   if (!isInitialized()) {
-      throw std::runtime_error("Tx uninitialized");
-   }
-
    BinaryData dataNoWitness;
    dataNoWitness.append(WRITE_UINT32_LE(version_));
    BinaryDataRef txBody(dataCopy_.getPtr() + 6, offsetsTxOut_.back() - 6);
@@ -749,13 +736,9 @@ BinaryData Tx::serializeNoWitness(void) const
 }
 
 ////////
-const BinaryData& Tx::getThisHash() const
+const Types::TxHash& Tx::getThisHash() const
 {
    if (thisHash_.empty()) {
-      if (!isInitialized()) {
-         throw std::runtime_error("Tx uninitialized");
-      }
-
       if (usesWitness_) {
          auto dataNoWitness = serializeNoWitness();
          thisHash_ = BtcUtils::getHash256(dataNoWitness);
@@ -766,25 +749,12 @@ const BinaryData& Tx::getThisHash() const
    return thisHash_;
 }
 
-BinaryData Tx::getScrAddrForTxOut(uint32_t txOutIndex) const
-{
-   BinaryDataRef txOutRef{
-      dataCopy_.getPtr() + offsetsTxOut_[txOutIndex],
-      offsetsTxOut_[txOutIndex + 1] - offsetsTxOut_[txOutIndex]
-   };
-   auto scriptOffset = 8 + BtcUtils::readVarIntLength(txOutRef.getPtr() + 8);
-   auto scriptRef = txOutRef.getSliceRef(
-      scriptOffset, txOutRef.getSize() - scriptOffset);
-   return BtcUtils::getTxOutScrAddr(scriptRef);
-}
-
 /////////////////////////////////////////////////////////////////////////////
 // This is not a pointer to persistent object, this method actually CREATES
 // the TxIn. But it's fast and doesn't hold a lot of post-construction
 // information, so it can probably just be computed on the fly
-TxIn Tx::getTxInCopy(uint32_t i) const
+TxIn Tx::getTxInCopy(Types::TxIOId i) const
 {
-   assert(isInitialized());
    if (offsetsTxIn_.empty() || i >= (ssize_t)offsetsTxIn_.size() - 1) {
       throw std::range_error("index out of bound");
    }
@@ -795,9 +765,8 @@ TxIn Tx::getTxInCopy(uint32_t i) const
       txinSize, i};
 }
 
-TxOut Tx::getTxOutCopy(uint32_t i) const
+TxOut Tx::getTxOutCopy(Types::TxIOId i) const
 {
-   assert(isInitialized());
    if (offsetsTxOut_.empty() || i >= (ssize_t)offsetsTxOut_.size() - 1) {
       std::string errStr(
          "index out of bound: " + std::to_string(i) + " out of " +
@@ -863,38 +832,17 @@ size_t Tx::getTxWeight() const
 }
 
 ////////
-unsigned Tx::getZcIndex() const
+Types::TxKey Tx::getDBKey() const
 {
-   if (txHeight_ != UINT32_MAX) {
-      throw std::runtime_error("tx is confirmed");
-   }
-   if (txIndex_ == UINT32_MAX) {
-      throw std::runtime_error("tx is uninitialized");
-   }
-   return txIndex_;
-}
-
-////////
-BinaryData Tx::getDBKey() const
-{
-   if (txHeight_ == UINT32_MAX && txIndex_ != UINT32_MAX) {
-      //this is a zc
-      BinaryWriter bw;
-      bw.reserve(6);
-      bw.put_uint16_t(0xFFFF);
-      bw.put_uint32_t(txIndex_, BE);
-      return bw.getData();
-   }
-   return DBUtils::getBlkDataKeyNoPrefix(txHeight_, dupId_, txIndex_);
+   return txKey_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // UTXO methods
-UTXO::UTXO(uint64_t value, uint32_t txHeight, uint32_t txIndex,
-   uint32_t txOutIndex, BinaryData txHash, BinaryData script) :
-   txHash_(std::move(txHash)), txOutIndex_(txOutIndex),
-   txHeight_(txHeight), txIndex_(txIndex),
-   value_(value), script_(std::move(script))
+UTXO::UTXO(Types::Amount amt, uint32_t height, Types::TxId txid,
+   Types::TxIOId txoutid, Types::TxHash txHash, BinaryData script) :
+   amount(amt), txHeight(height), txIndex(txid), txOutIndex(txoutid),
+   txHash(std::move(txHash)), script(std::move(script))
 {}
 
 UTXO::UTXO()
@@ -916,12 +864,12 @@ bool UTXO::operator!=(const UTXO& rhs) const
 
 bool UTXO::operator<(const UTXO& rhs) const
 {
-   if (txHash_ != rhs.txHash_) {
-      return txHash_ < rhs.txHash_;
+   if (txHash != rhs.txHash) {
+      return txHash < rhs.txHash;
    }
 
-   if (txOutIndex_ != rhs.txOutIndex_) {
-      return txOutIndex_ < rhs.txOutIndex_;
+   if (txOutIndex != rhs.txOutIndex) {
+      return txOutIndex < rhs.txOutIndex;
    }
    return false;
 }
@@ -929,82 +877,82 @@ bool UTXO::operator<(const UTXO& rhs) const
 ////////
 bool UTXO::isInitialized() const
 {
-   return !script_.empty();
+   return !script.empty();
 }
 
-uint64_t UTXO::getValue() const
+Types::Amount UTXO::getAmount() const
 {
-   return value_;
+   return amount;
 }
 
-const BinaryData& UTXO::getTxHash() const
+const Types::TxHash& UTXO::getTxHash() const
 {
-   return txHash_;
+   return txHash;
 }
 
 std::string UTXO::getTxHashStr() const
 {
-   return txHash_.toHexStr();
+   return txHash.toHexStr();
 }
 
 const BinaryData& UTXO::getScript() const
 {
-   return script_;
+   return script;
 }
 
-uint32_t UTXO::getTxIndex() const
+Types::TxId UTXO::getTxIndex() const
 {
-   return txIndex_;
+   return txIndex;
 }
 
-uint32_t UTXO::getTxOutIndex() const
+Types::TxIOId UTXO::getTxOutIndex() const
 {
-   return txOutIndex_;
+   return txOutIndex;
 }
 
 uint32_t UTXO::getNumConfirm(uint32_t height) const
 {
-   if (txHeight_ == UINT32_MAX) {
+   if (txHeight == UINT32_MAX) {
       return 0;
    }
-   return height - txHeight_ + 1;
+   return height - txHeight + 1;
 }
 
 unsigned UTXO::getPreferredSequence() const
 {
-   return preferredSequence_;
+   return preferredSequence;
 }
 
 uint32_t UTXO::getHeight() const
 {
-   return txHeight_;
+   return txHeight;
 }
 
 BinaryData UTXO::getRecipientScrAddr() const
 {
-   return BtcUtils::getTxOutScrAddr(script_);
+   return BtcUtils::getTxOutScrAddr(script);
 }
 
 ////////
 bool UTXO::isSegWit() const
 {
-   return isInputSW_;
+   return isInputSW;
 }
 
 unsigned UTXO::getInputRedeemSize() const
 {
-   if (txinRedeemSizeBytes_ == UINT32_MAX) {
+   if (txinRedeemSizeBytes == UINT32_MAX) {
       throw std::runtime_error("redeem size is no set");
    }
-   return txinRedeemSizeBytes_;
+   return txinRedeemSizeBytes;
 }
 
 unsigned UTXO::getWitnessDataSize() const
 {
-   if (!isSegWit() || witnessDataSizeBytes_ == UINT32_MAX) {
+   if (!isSegWit() || witnessDataSizeBytes == UINT32_MAX) {
       throw std::runtime_error("no witness data size available");
    }
-   return witnessDataSizeBytes_;
+   return witnessDataSizeBytes;
 }
 
 ////////
@@ -1012,28 +960,28 @@ BinaryData UTXO::serialize() const
 {
    BinaryWriter bw;
    //8 + 4 + 2 + 2 + (1 + hash) + (3 + script) + 4
-   bw.reserve(26 + txHash_.getSize() + script_.getSize());
-   bw.put_uint64_t(value_);
-   bw.put_uint32_t(txHeight_);
-   bw.put_uint16_t(txIndex_);
-   bw.put_uint16_t(txOutIndex_);
+   bw.reserve(26 + txHash.getSize() + script.getSize());
+   bw.put_uint64_t(amount);
+   bw.put_uint32_t(txHeight);
+   bw.put_uint16_t(txIndex);
+   bw.put_uint16_t(txOutIndex);
 
-   bw.put_var_int(txHash_.getSize());
-   bw.put_BinaryData(txHash_);
+   bw.put_var_int(txHash.getSize());
+   bw.put_BinaryData(txHash);
 
-   bw.put_var_int(script_.getSize());
-   bw.put_BinaryData(script_);
-   bw.put_uint32_t(preferredSequence_);
+   bw.put_var_int(script.getSize());
+   bw.put_BinaryData(script);
+   bw.put_uint32_t(preferredSequence);
    return bw.getData();
 }
 
 BinaryData UTXO::serializeTxOut() const
 {
    BinaryWriter bw;
-   bw.reserve(11 + script_.getSize());
-   bw.put_uint64_t(value_);
-   bw.put_var_int(script_.getSize());
-   bw.put_BinaryData(script_);
+   bw.reserve(11 + script.getSize());
+   bw.put_uint64_t(amount);
+   bw.put_var_int(script.getSize());
+   bw.put_BinaryData(script);
    return bw.getData();
 }
 
@@ -1046,28 +994,28 @@ void UTXO::unserialize(const BinaryData& data)
    BinaryRefReader brr(data.getRef());
 
 
-   value_ = brr.get_uint64_t();
-   txHeight_ = brr.get_uint32_t();
-   txIndex_ = brr.get_uint16_t();
-   txOutIndex_ = brr.get_uint16_t();
+   amount = brr.get_uint64_t();
+   txHeight = brr.get_uint32_t();
+   txIndex = brr.get_uint16_t();
+   txOutIndex = brr.get_uint16_t();
 
    auto hashSize = brr.get_var_int();
-   txHash_ = std::move(brr.get_BinaryData(hashSize));
+   txHash = std::move(brr.get_BinaryData(hashSize));
 
    auto scriptSize = brr.get_var_int();
    if (scriptSize == 0) {
       throw std::runtime_error("no script data in raw utxo");
    }
-   script_ = std::move(brr.get_BinaryData(scriptSize));
-   preferredSequence_ = brr.get_uint32_t();
+   script = std::move(brr.get_BinaryData(scriptSize));
+   preferredSequence = brr.get_uint32_t();
 }
 
 void UTXO::unserializeRaw(const BinaryData& data)
 {
    BinaryRefReader brr(data.getRef());
-   value_ = brr.get_uint64_t();
+   amount = brr.get_uint64_t();
    auto scriptSize = brr.get_var_int();
-   script_ = brr.get_BinaryData(scriptSize);
+   script = brr.get_BinaryData(scriptSize);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1171,4 +1119,131 @@ bool AddressBookEntry::Comparator::operator()
 (const BinaryData& lhs, const AddressBookEntry& rhs) const
 {
    return lhs < rhs.getScrAddr();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// UnspentTxOut
+UnspentTxOut::UnspentTxOut() :
+   txHash_(BtcUtils::EmptyHash),
+   txOutIndex_(0),
+   txHeight_(0),
+   value_(0),
+   isMultisigRef_(false)
+{}
+
+UnspentTxOut::UnspentTxOut(const BinaryData& hash, uint32_t outIndex,
+   uint32_t height, uint64_t val, const BinaryData& script) :
+   txHash_(hash), txOutIndex_(outIndex), txHeight_(height),
+   value_(val), script_(script)
+{}
+
+////////
+BinaryData UnspentTxOut::getTxHash() const
+{
+   return txHash_;
+}
+
+uint32_t UnspentTxOut::getTxtIndex() const
+{
+   return txIndex_;
+}
+
+uint32_t UnspentTxOut::getTxOutIndex() const
+{
+   return txOutIndex_;
+}
+
+uint64_t UnspentTxOut::getValue() const
+{
+   return value_;
+}
+
+uint64_t UnspentTxOut::getTxHeight() const
+{
+   return txHeight_;
+}
+
+uint32_t UnspentTxOut::isMultisigRef() const
+{
+   return isMultisigRef_;
+}
+
+BinaryData UnspentTxOut::getRecipientScrAddr() const
+{
+   return BtcUtils::getTxOutScrAddr(getScript());
+}
+
+uint32_t UnspentTxOut::getNumConfirm(uint32_t currBlkNum) const
+{
+   if (txHeight_ == UINT32_MAX) {
+      throw std::runtime_error("uninitiliazed UnspentTxOut");
+   }
+   return currBlkNum - txHeight_ + 1;
+}
+
+Outpoint UnspentTxOut::getOutPoint() const
+{
+   return Outpoint(txHash_, txOutIndex_);
+}
+
+const BinaryData& UnspentTxOut::getScript() const
+{
+   return script_;
+}
+
+////////
+bool UnspentTxOut::CompareNaive(const UnspentTxOut& uto1,
+   const UnspentTxOut& uto2)
+{
+   float val1 = (float)uto1.getValue();
+   float val2 = (float)uto2.getValue();
+   return (val1 * uto1.txHeight_ < val2 * uto2.txHeight_);
+}
+
+bool UnspentTxOut::CompareTech1(const UnspentTxOut& uto1,
+   const UnspentTxOut& uto2)
+{
+   float val1 = pow((float)uto1.getValue(), 1.0f/3.0f);
+   float val2 = pow((float)uto2.getValue(), 1.0f/3.0f);
+   return (val1 * uto1.txHeight_ < val2 * uto2.txHeight_);
+}
+
+bool UnspentTxOut::CompareTech2(const UnspentTxOut& uto1,
+   const UnspentTxOut& uto2)
+{
+   float val1 = pow(log10((float)uto1.getValue()) + 5, 5);
+   float val2 = pow(log10((float)uto2.getValue()) + 5, 5);
+   return (val1 * uto1.txHeight_ < val2 * uto2.txHeight_);
+
+}
+
+bool UnspentTxOut::CompareTech3(const UnspentTxOut& uto1,
+   const UnspentTxOut& uto2)
+{
+   float val1 = pow(log10((float)uto1.getValue()) + 5, 4);
+   float val2 = pow(log10((float)uto2.getValue()) + 5, 4);
+   return (val1 * uto1.txHeight_ < val2 * uto2.txHeight_);
+}
+
+void UnspentTxOut::sortTxOutVect(
+   std::vector<UnspentTxOut>& utovect, int sortType)
+{
+   switch (sortType)
+   {
+      case 0: sort(utovect.begin(), utovect.end(), CompareNaive); break;
+      case 1: sort(utovect.begin(), utovect.end(), CompareTech1); break;
+      case 2: sort(utovect.begin(), utovect.end(), CompareTech2); break;
+      case 3: sort(utovect.begin(), utovect.end(), CompareTech3); break;
+      default: break; // do nothing
+   }
+}
+
+void UnspentTxOut::pprintOneLine(uint32_t currBlk)
+{
+   printf(" Tx:%s:%02d   BTC:%0.3f   nConf:%04d\n",
+      txHash_.copySwapEndian().getSliceCopy(0,8).toHexStr().c_str(),
+      txOutIndex_,
+      value_/1e8,
+      getNumConfirm(currBlk)
+   );
 }

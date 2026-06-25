@@ -42,7 +42,6 @@ namespace
       capnLedger.setIsSTS(ledger.isSentToSelf());
       capnLedger.setIsOptInRBF(ledger.isOptInRBF());
       capnLedger.setIsChainedZC(ledger.isChainedZC());
-      capnLedger.setIsWitness(ledger.usesWitness());
 
       auto txHash = ledger.getTxHash();
       capnLedger.setTxHash(capnp::Data::Builder(
@@ -217,7 +216,7 @@ void Callback::run(BdmNotification notif)
                serializeCapnp(messageIZC)));
          };
          notifFunc_(std::make_shared<NotifStruct_ZC>(
-            std::move(notif.txios), std::move(notif.invalidatedZc), lbd));
+            std::move(notif.txios), std::move(notif.invalidatedZcHashes), lbd));
          break;
       }
 
@@ -349,7 +348,8 @@ void Callback::disconnected()
    capnNotif.setDisconnected();
    capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
 
-   notifFunc_(std::make_shared<NotifStruct_Push>(serializeCapnp(message)));
+   notifFunc_(std::make_shared<NotifStruct_Disconnected>(
+      serializeCapnp(message)));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -371,13 +371,19 @@ NotifStruct_Push::NotifStruct_Push(BinaryData pushData) :
    NotifStruct(NotifType::PUSH), packet(std::move(pushData))
 {}
 
+////////
+NotifStruct_Disconnected::NotifStruct_Disconnected(BinaryData data) :
+   NotifStruct(NotifType::DISCONNECTED), packet(std::move(data))
+{}
+
+////////
 NotifStruct_ZC::NotifStruct_ZC(
    std::vector<TxIOPair> txioVec, std::set<BinaryData> invalidatedZc,
    const std::function<void(
       const std::vector<Ledgers::Entry>&,
       const std::set<BinaryData>&)>& lbd) :
    NotifStruct(NotifType::ZC), txios(std::move(txioVec)),
-   invalidatedZCs(std::move(invalidatedZc)), callback(lbd)
+   invalidatedZCHashes(std::move(invalidatedZc)), callback(lbd)
 {}
 
 ////////

@@ -280,7 +280,7 @@ DerivationScheme_ArmoryLegacy::extendPrivateChain(
 
       return computeNextPrivateEntry(
          ddc, privkeyData,
-         std::move(privkey->getCipherDataPtr()->cipher->getCopy()),
+         privkey->getCipherDataPtr()->cipher->getCopy(),
          AssetId(assetSingle->getAccountID(), assetSingle->getIndex() + 1)
       );
    };
@@ -413,7 +413,7 @@ DerivationScheme_BIP32::extendPrivateChain(
 
       return computeNextPrivateEntry(
          ddc, privkeyData,
-         std::move(privkey->getCipherDataPtr()->cipher->getCopy()),
+         privkey->getCipherDataPtr()->cipher->getCopy(),
          AssetId(account_id, derivationIndex));
    };
 
@@ -687,7 +687,7 @@ void DerivationScheme_ECDH::putSalt(AssetKeyType id,
       BinaryRefReader brr(dataRef);
       auto size = brr.get_var_int();
       auto saltRef = brr.get_BinaryDataRef(size);
-      if (saltRef != salt) {
+      if (saltRef != salt.getRef()) {
          throw DerivationSchemeException(
             "trying to write a salt different from the one on disk");
       }
@@ -851,7 +851,7 @@ DerivationScheme_ECDH::extendPrivateChain(
 
       return computeNextPrivateEntry(
          ddc,
-         privkeyData, move(privkey->getCipherDataPtr()->cipher->getCopy()),
+         privkeyData, privkey->getCipherDataPtr()->cipher->getCopy(),
          AssetId(rootAsset_single->getAccountID(), derivationIndex));
    };
 

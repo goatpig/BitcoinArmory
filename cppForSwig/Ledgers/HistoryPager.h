@@ -23,18 +23,19 @@ class AlreadyPagedException
 {};
 
 class BinaryData;
-class Blockchain;
 class TxIOPair;
 
 namespace Armory
 {
+   class Blockchain;
+
    namespace Ledgers
    {
       class Entry;
 
       class HistoryPager
       {
-      private:
+      public:
          struct Page
          {
             uint32_t blockStart;
@@ -53,8 +54,9 @@ namespace Armory
             );
          };
 
+      private:
          std::shared_ptr<std::atomic<bool>> isInitialized_;
-         std::shared_ptr<std::vector<std::shared_ptr<Page>>> pages_;
+         std::atomic<std::shared_ptr<std::vector<std::shared_ptr<Page>>>> pages_;
          std::map<uint32_t, uint32_t> SSHsummary_;
          static uint32_t txnPerPage_;
 
@@ -71,10 +73,6 @@ namespace Armory
             uint32_t, unsigned, std::map<BinaryData, TxIOPair>* = nullptr);
          std::shared_ptr<const std::map<BinaryData, Entry>>
          getPageLedgerMap(uint32_t);
-
-         void addPage(std::vector<std::shared_ptr<Page>>&,
-            uint32_t, uint32_t, uint32_t);
-         void sortPages(std::vector<std::shared_ptr<Page>>&);
 
          bool mapHistory(std::function<std::map<uint32_t, uint32_t>(void)>);
          const std::map<uint32_t, uint32_t>& getSSHsummary(void) const;

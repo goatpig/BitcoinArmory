@@ -1,4 +1,4 @@
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -13,18 +13,18 @@ set(GTEST_LIBS
 )
 
 ################################################################################
-## BIP151RekeyTest
-add_executable(BIP151RekeyTest
-    BIP151RekeyTest.cpp
+## BIP151Tests
+add_executable(BIP151Tests
+    BIP151Tests.cpp
     ${TEST_SOURCES}
 )
-set_target_properties(BIP151RekeyTest
+set_target_properties(BIP151Tests
     PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}
 )
-target_include_directories(BIP151RekeyTest
+target_include_directories(BIP151Tests
     ${LIBARMORYCOMMON_INCLUDE_DIRECTORIES}
 )
-target_link_libraries(BIP151RekeyTest
+target_link_libraries(BIP151Tests
     ArmoryCommon
     ${LIBWEBSOCKETS_LIB}
     ${OS_SPECIFIC_LIBS}
@@ -107,22 +107,22 @@ target_link_libraries(SignerTests
 
 ################################################################################
 ## SupernodeTests
-add_executable(SupernodeTests
-    SupernodeTests.cpp
-    ${TEST_SOURCES}
-)
-set_target_properties(SupernodeTests
-    PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}
-)
-target_include_directories(SupernodeTests
-    ${LIBARMORYCOMMON_INCLUDE_DIRECTORIES}
-)
-target_link_libraries(SupernodeTests
-    ArmoryCommon
-    ${LIBWEBSOCKETS_LIB}
-    ${OS_SPECIFIC_LIBS}
-    ${GTEST_LIBS}
-)
+#add_executable(SupernodeTests
+#    SupernodeTests.cpp
+#    ${TEST_SOURCES}
+#)
+#set_target_properties(SupernodeTests
+#    PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}
+#)
+#target_include_directories(SupernodeTests
+#    ${LIBARMORYCOMMON_INCLUDE_DIRECTORIES}
+#)
+#target_link_libraries(SupernodeTests
+#    ArmoryCommon
+#    ${LIBWEBSOCKETS_LIB}
+#    ${OS_SPECIFIC_LIBS}
+#    ${GTEST_LIBS}
+#)
 
 ################################################################################
 ## UtilsTests

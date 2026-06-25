@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2020-2025, goatpig                                          //
+//  Copyright (C) 2020-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -10,12 +10,12 @@
 
 #include "Notifications.h"
 #include <BlockchainDatabase/txio.h>
-#include <WebSocketMessage.h>
-#include <Ledgers/LedgerEntry.h>
+#include <Network/WebSocketMessage.h>
 #include <BDM_Server.h>
 
 #include "Utils.h"
 
+using namespace Armory;
 using namespace Armory::ZeroConf;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -26,7 +26,7 @@ WatcherTxBody::WatcherTxBody(std::shared_ptr<BinaryData> rawTx) :
 
 ////////////////////////////////////////////////////////////////////////////////
 // ZcNotificationPacket
-ZcNotificationPacket::ZcNotificationPacket(BdvIdKey id) :
+ZcNotificationPacket::ZcNotificationPacket(Types::BdvId id) :
    bdvID(id)
 {}
 
@@ -55,11 +55,11 @@ ZeroConfCallbacks_BDV::~ZeroConfCallbacks_BDV()
 }
 
 ////////
-std::set<BdvIdKey> ZeroConfCallbacks_BDV::hasScrAddr(
-   const BinaryDataRef& addr) const
+std::set<Types::BdvId> ZeroConfCallbacks_BDV::hasScrAddr(
+   const Types::ScrAddr& addr) const
 {
    //this is slow, needs improved
-   std::set<BdvIdKey> result;
+   std::set<Types::BdvId> result;
    auto bdvMap = clientsPtr_->BDVs_.get();
    for (const auto& bdv_pair : bdvMap) {
       if (bdv_pair.second->hasScrAddress(addr)) {
@@ -73,9 +73,9 @@ std::set<BdvIdKey> ZeroConfCallbacks_BDV::hasScrAddr(
 void ZeroConfCallbacks_BDV::pushZcNotification(
    std::shared_ptr<MempoolSnapshot> ss,
    std::shared_ptr<KeyAddrMap> newZcKeys,
-   std::map<BdvIdKey, Armory::ZeroConf::ParsedZCData> flaggedBDVs,
-   BdvIdKey bdvId,
-   std::map<BinaryData, std::shared_ptr<WatcherTxBody>>& watcherMap)
+   std::map<Types::BdvId, ParsedZCData> flaggedBDVs,
+   Types::BdvId bdvId,
+   std::map<Types::TxHash, std::shared_ptr<WatcherTxBody>>& watcherMap)
 {
    auto requestPtr = std::make_shared<
       ZeroConfCallbacks_BDV::ZcNotifRequest_Success>(
@@ -86,7 +86,7 @@ void ZeroConfCallbacks_BDV::pushZcNotification(
 }
 
 void ZeroConfCallbacks_BDV::pushZcError(
-   BdvIdKey bdvID, const BinaryData& hash,
+   Types::BdvId bdvID, const Types::TxHash& hash,
    ArmoryErrorCodes errCode, const std::string& verbose)
 {
    auto requestPtr = std::make_shared<ZcNotifRequest_Error>(
@@ -101,7 +101,7 @@ void ZeroConfCallbacks_BDV::processNotifRequests()
       std::shared_ptr<ZeroConfCallbacks_BDV::ZcNotifRequest> notifReqPtr;
       try {
          notifReqPtr = requestQueue_.pop_front();
-      } catch (const Armory::Threading::StopBlockingLoop&) {
+      } catch (const Threading::StopBlockingLoop&) {
          break;
       }
 
@@ -131,14 +131,21 @@ void ZeroConfCallbacks_BDV::processNotifRequests()
                notifPacket->ssPtr = reqPtr->ssPtr;
 
                //set txio map
+               std::vector<std::shared_ptr<const TxIOPair>> txioVec;
+               txioVec.reserve(5);
                for (const auto& sa : bdvObj.second.scrAddrs) {
-                  auto txioKeys = reqPtr->ssPtr->getTxioKeysForScrAddr(sa);
-                  if (txioKeys.empty()) {
+                  auto txioMap = reqPtr->ssPtr->getTxioMapForScrAddr(sa);
+                  if (txioMap.empty()) {
                      continue;
                   }
 
                   //copy the txiomap for this scrAddr over to the notification object
-                  notifPacket->scrAddrToTxioKeys.emplace(sa, txioKeys);
+                  TxIOKeys keySet;
+                  for (const auto& txioPair : txioMap) {
+                     keySet.emplace(txioPair.first);
+                     txioVec.emplace_back(txioPair.second);
+                  }
+                  notifPacket->scrAddrToTxioKeys.emplace(sa, std::move(keySet));
                }
 
                //set invalidated keys
@@ -160,7 +167,7 @@ void ZeroConfCallbacks_BDV::processNotifRequests()
                auto bdvPacket = std::make_shared<BDV_Notification_Packet>();
                bdvPacket->bdvPtr = bdvPtr;
                bdvPacket->notifPtr = std::make_shared<BDV_Notification_ZC>(
-                  notifPacket);
+                  notifPacket, std::move(txioVec));
                clientsPtr_->innerBDVNotifStack_.push_back(std::move(bdvPacket));
             }
 
@@ -220,7 +227,7 @@ void ZeroConfCallbacks_BDV::processNotifRequests()
 ///////////////////////////////////////////////////////////////////////////////
 // ZcNotifRequest
 ZeroConfCallbacks_BDV::ZcNotifRequest::ZcNotifRequest(
-   ZcNotifRequestType zcType, BdvIdKey id) :
+   ZcNotifRequestType zcType, Types::BdvId id) :
    type(zcType), bdvId(id)
 {}
 
@@ -229,11 +236,11 @@ ZeroConfCallbacks_BDV::ZcNotifRequest::~ZcNotifRequest()
 
 ////////
 ZeroConfCallbacks_BDV::ZcNotifRequest_Success::ZcNotifRequest_Success(
-   BdvIdKey bdvId,
-   std::shared_ptr<Armory::ZeroConf::MempoolSnapshot> mempoolSs,
+   Types::BdvId bdvId,
+   std::shared_ptr<MempoolSnapshot> mempoolSs,
    std::shared_ptr<KeyAddrMap> newKeys,
-   std::map<BdvIdKey, Armory::ZeroConf::ParsedZCData> flagged,
-   std::map<BinaryData, std::shared_ptr<WatcherTxBody>>& watchers) :
+   std::map<Types::BdvId, ParsedZCData> flagged,
+   std::map<Types::TxHash, std::shared_ptr<WatcherTxBody>>& watchers) :
    ZcNotifRequest(ZcNotifRequestType::Success, bdvId),
    ssPtr(mempoolSs), newZcKeys(newKeys),
    flaggedBDVs(std::move(flagged)),
@@ -242,8 +249,8 @@ ZeroConfCallbacks_BDV::ZcNotifRequest_Success::ZcNotifRequest_Success(
 
 ////////
 ZeroConfCallbacks_BDV::ZcNotifRequest_Error::ZcNotifRequest_Error(
-   BdvIdKey bdvId,
-   const BinaryData& h, ArmoryErrorCodes err,
+   Types::BdvId bdvId,
+   const Types::TxHash& h, ArmoryErrorCodes err,
    const std::string& v) :
    ZcNotifRequest(ZcNotifRequestType::Error, bdvId),
    hash(h), errCode(err), verbose(v)

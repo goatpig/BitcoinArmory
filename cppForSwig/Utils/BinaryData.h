@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -100,7 +100,6 @@ class BinaryData
 {
 public:
    BinaryData(void);
-   explicit BinaryData(size_t);
    BinaryData(const uint8_t*, size_t);
    BinaryData(const char*, size_t);
    BinaryData(const uint8_t*, const uint8_t*);
@@ -200,8 +199,9 @@ public:
    static BinaryData IntToStrLE(INTTYPE val)
    {
       static const uint8_t SZ = sizeof(INTTYPE);
-      BinaryData out(SZ);
-      for (uint8_t i=0; i<SZ; i++, val>>=8) {
+      BinaryData out;
+      out.resize(SZ);
+      for (uint8_t i = 0; i < SZ; i++, val >>= 8) {
          out[i] = val % 256;
       }
       return out;
@@ -211,9 +211,10 @@ public:
    inline static BinaryData IntToStrBE(INTTYPE val)
    {
       static const uint8_t SZ = sizeof(INTTYPE);
-      BinaryData out(SZ);
-      for (uint8_t i=0; i<SZ; i++, val>>=8) {
-         out[(SZ-1)-i] = val % 256;
+      BinaryData out;
+      out.resize(SZ);
+      for (uint8_t i = 0; i < SZ; i++, val >>= 8) {
+         out[(SZ - 1) - i] = val % 256;
       }
       return out;
    }
@@ -239,8 +240,8 @@ public:
       }
 
       INTTYPE out = 0;
-      for (uint8_t i=0; i<SZ; i++) {
-         out |= ((INTTYPE)binstr[i]) << (8*((SZ-1)-i));
+      for (uint8_t i = 0; i < SZ; i++) {
+         out |= ((INTTYPE)binstr[i]) << (8 * ((SZ - 1) - i));
       }
       return out;
    }
@@ -256,8 +257,8 @@ public:
    {
       uint8_t const SZ = sizeof(INTTYPE);
       INTTYPE out = 0;
-      for (uint8_t i=0; i<SZ; i++) {
-         out |= ((INTTYPE)ptr[i]) << (8*((SZ-1)-i));
+      for (uint8_t i = 0; i < SZ; i++) {
+         out |= ((INTTYPE)ptr[i]) << (8 * ((SZ - 1) - i));
       }
       return out;
    }
@@ -275,7 +276,22 @@ public:
    // For deallocating all the memory that is currently used by this BD
    void clear(void);
    std::vector<uint8_t> release(void);
-   const std::vector<uint8_t>& getVector(void) const;
+
+   //for unordered containers
+   struct Hasher
+   {
+      using is_transparent = void;
+      std::size_t operator()(const BinaryData&) const;
+      std::size_t operator()(const BinaryDataRef&) const;
+   };
+
+   struct IsEqual
+   {
+      using is_transparent = void;
+      bool operator()(const BinaryData&, const BinaryData&) const;
+      bool operator()(const BinaryData&, const BinaryDataRef&) const;
+      bool operator()(const BinaryDataRef&, const BinaryData&) const;
+   };
 
 protected:
    std::vector<uint8_t> data_;
@@ -620,15 +636,15 @@ public:
    // Using the argument to pre-allocate a certain amount of capacity.  Not 
    // required, but will improve performance if you can take a reasonable guess
    // about the final size of the output data
-   BinaryWriter(size_t reserveSize=0);
+   BinaryWriter(size_t=0);
 
    /////////////////////////////////////////////////////////////////////////////
    // These write data properly regardless of the architecture
    void put_uint8_t (const uint8_t&);
-   void put_uint16_t(const uint16_t&, ENDIAN e=LE);
-   void put_uint32_t(const uint32_t&, ENDIAN e=LE);
-   void put_int32_t(const int32_t&, ENDIAN e = LE);
-   void put_uint64_t(const uint64_t&, ENDIAN e=LE);
+   void put_uint16_t(const uint16_t&, ENDIAN=LE);
+   void put_uint32_t(const uint32_t&, ENDIAN=LE);
+   void put_int32_t(const int32_t&  , ENDIAN=LE);
+   void put_uint64_t(const uint64_t&, ENDIAN=LE);
    void put_double(const double&);
 
    uint8_t put_var_int(const uint64_t&);
@@ -640,13 +656,14 @@ public:
 
    /////////////////////////////////////////////////////////////////////////////
    template<typename T>
-   void put_BitPacker(BitPacker<T> & bp)
+   void put_BitPacker(BitPacker<T>& bp)
    {
       put_BinaryData(bp.getBinaryData());
    }
 
    const BinaryData& getData(void) const;
    size_t getSize(void) const;
+   bool empty(void) const;
    BinaryDataRef getDataRef(void) const;
    std::string toString(void) const;
    std::string toHex(void) const;
@@ -656,17 +673,4 @@ public:
 
 private:
    BinaryData theString_;
-};
-
-namespace std
-{
-   template<> struct hash<BinaryData>
-   {
-      std::size_t operator()(const BinaryData&) const;
-   };
-
-   template<> struct hash<BinaryDataRef>
-   {
-      std::size_t operator()(const BinaryDataRef&) const;
-   };
 };

@@ -9,7 +9,7 @@
 #pragma once
 
 #include <memory>
-#include "../SocketObject.h"
+#include <Network/SocketObject.h>
 
 class BIP151Connection;
 class AuthorizedPeers;
@@ -26,7 +26,7 @@ namespace Armory
       class CppBridge;
 
       /////////////////////////////////////////////////////////////////////////////
-      struct WritePayload_Bridge : public Socket_WritePayload
+      struct WritePayload_Bridge : public Network::Socket_WritePayload
       {
          BinaryData data;
 
@@ -40,7 +40,7 @@ namespace Armory
       };
 
       /////////////////////////////////////////////////////////////////////////////
-      class CppBridgeSocket : public PersistentSocket
+      class CppBridgeSocket : public Network::PersistentSocket
       {
       private:
          std::shared_ptr<CppBridge> bridgePtr_;
@@ -64,8 +64,8 @@ namespace Armory
          SocketType type(void) const override;
          void respond(std::vector<uint8_t>&) override;
          void pushPayload(
-            std::unique_ptr<Socket_WritePayload>,
-            std::shared_ptr<Socket_ReadPayload>) override;
+            std::unique_ptr<Network::Socket_WritePayload>,
+            std::shared_ptr<Network::Socket_ReadPayload>) override;
       };
    } //namespace Bridge
 } //namespace Armory

@@ -193,7 +193,7 @@ void MetaDataAccount::readFromDisk(
       throw AccountException("unexpected prefix for AssetAccount key");
    }
 
-   CharacterArrayRef carKey(key.getSize(), key.getCharPtr());
+   LMDB::DataRef carKey(key.getSize(), key.getCharPtr());
    auto tx = iface->beginReadTransaction(dbName_);
    auto diskDataRef = tx->getDataRef(key);
    BinaryRefReader brr(diskDataRef);

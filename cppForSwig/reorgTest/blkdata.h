@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -68,7 +68,12 @@ reorg chain
 static const std::vector<std::map<BinaryData, std::vector<uint64_t>>> testAddrBalances {
    { /* block 0 */ },
    { /* block 1 */ },
-   { /* block 2 */ },
+   { /* block 2 */
+      { TestChain::scrAddrB,        { 55 * COIN,  5 * COIN, 55 * COIN, 4 } },
+      { TestChain::scrAddrC,        {  0 * COIN,  0 * COIN,  0 * COIN, 0 } },
+      { TestChain::scrAddrD,        {  0 * COIN,  0 * COIN,  0 * COIN, 0 } },
+      { TestChain::scrAddrE,        {  0 * COIN,  0 * COIN,  0 * COIN, 0 } },
+   },
    { /* block 3 */
       { TestChain::scrAddrA,        { 50 * COIN,  0 * COIN, 50 * COIN, 1 } },
       { TestChain::scrAddrB,        { 30 * COIN, 30 * COIN, 30 * COIN, 5 } },
@@ -142,7 +147,8 @@ static const std::vector<std::map<BinaryData, std::vector<uint64_t>>> testAddrBa
 static const std::vector<std::vector<uint64_t>> wltBal_BCDE {
    { /* block 0 */ },
    { /* block 1 */ },
-   { /* block 2 */ },
+   { /* block 2 */ 
+       55 * COIN,  5 * COIN,  55 * COIN, 4 },
    { /* block 3 */
       120 * COIN, 70 * COIN, 120 * COIN, 9 },
    { /* block 4 */

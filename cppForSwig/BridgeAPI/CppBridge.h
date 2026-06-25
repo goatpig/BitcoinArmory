@@ -15,13 +15,14 @@
 #include <functional>
 #include <filesystem>
 
+#include <Utils/Types.h>
+
 class BinaryData;
 class BinaryDataRef;
 class SecureBinaryData;
 
 namespace AsyncClient
 {
-   class LedgerDelegate;
    class BlockDataViewer;
 }
 
@@ -108,7 +109,6 @@ namespace Armory
          std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr_;
 
          //various states cache
-         std::map<std::string, AsyncClient::LedgerDelegate> delegateMap_;
          std::map<std::string,
             std::shared_ptr<CoinSelection::CoinSelectionInstance>> csMap_;
          std::map<std::string,
@@ -120,9 +120,9 @@ namespace Armory
 
       private:
          std::shared_ptr<Wallets::AuthorizedPeers> getPeersDb(void);
+         void reset(void);
 
       public:
-         void reset(void);
          std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr(void) const;
 
          //wallet manager init methods
@@ -153,7 +153,6 @@ namespace Armory
             MessageId);
          void cleanupDb(MessageId);
          void goOnline(void);
-         void disconnect(void);
 
          void loadPeersDb(const CallbackId&, MessageId);
          void listPeers(MessageId);
@@ -215,12 +214,11 @@ namespace Armory
             const std::string&, const std::string&);
          void setWalletLabels(const Wallets::WalletId&,
             const std::string&, const std::string&);
+         void updateWalletsLedgerFilter(const std::map<Wallets::WalletId,
+            std::set<Wallets::AddressAccountId>>&);
 
-         //txs & headers
-         void getTxsByHash(const std::set<BinaryData>&, MessageId);
-         void getHeadersByHeight(const std::set<unsigned>&, MessageId);
-
-         //utxos
+         //tx stuff
+         void getTxsByHash(const std::set<Types::TxHash>&, MessageId);
          void getUTXOs(const Wallets::WalletId&,
             const Wallets::AddressAccountId&,
             uint64_t, bool, bool, MessageId);
@@ -272,7 +270,9 @@ namespace Armory
 
       public:
          CppBridge(void);
+         ~CppBridge(void);
 
+         void disconnectFromDb(void);
          void writeToClient(BinaryData&) const;
          void setWriteLambda(
             const std::function<void(std::unique_ptr<WritePayload_Bridge>)>&);

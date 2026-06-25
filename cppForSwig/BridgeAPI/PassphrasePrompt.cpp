@@ -38,7 +38,7 @@ Seeds::PromptReply BridgePassphrasePrompt::processFeedRequest(
    if (ids.empty()) {
       //exit condition
       cleanup();
-      return {false};
+      return {false, false, {}};
    }
 
    //cycle the promise & future
@@ -86,7 +86,7 @@ Seeds::PromptReply BridgePassphrasePrompt::processFeedRequest(
       return fut.get();
    } catch (const std::exception&) {
       LOGINFO << "cancelled wallet unlock";
-      return {false};
+      return {false, false, {}};
    }
 }
 

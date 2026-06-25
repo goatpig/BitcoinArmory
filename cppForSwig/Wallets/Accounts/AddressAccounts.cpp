@@ -978,12 +978,12 @@ AddressAccountPublicData AddressAccount::exportPublicData() const
          }
       }
 
-      AssetAccountPublicData assaPD {
+      aapd.accountDataMap_.emplace(assetData->id_, AssetAccountPublicData{
          assetData->id_,
          rootData, derData,
-         accPtr->getHighestUsedIndex(), accPtr->getLastComputedIndex() };
-      assaPD.extendedData = extended;
-      aapd.accountDataMap_.emplace(assetData->id_, std::move(assaPD));
+         accPtr->getHighestUsedIndex(), accPtr->getLastComputedIndex(),
+         extended
+      });
    }
    return aapd;
 }

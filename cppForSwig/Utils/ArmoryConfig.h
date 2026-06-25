@@ -31,18 +31,24 @@
 #define BROADCAST_ID_LENGTH 6
 #define REGISTER_ID_LENGH 5
 
-namespace CoreRPC
+namespace Node
 {
-   class NodeRPCInterface;
-};
+   namespace Core
+   {
+      namespace RPC
+      {
+         class Iface;
+      }
+
+      namespace P2P
+      {
+         class Iface;
+      }
+   }
+}
 
 namespace Armory
 {
-   namespace Node
-   {
-      class BitcoinNodeInterface;
-   }
-
    namespace Config
    {
       class Error : public std::runtime_error
@@ -63,20 +69,19 @@ namespace Armory
       //////////////////////////////////////////////////////////////////////////
       namespace SettingsUtils
       {
-         std::vector<std::string> getLines(const std::filesystem::path& path);
+         std::vector<std::string> getLines(const std::filesystem::path&);
          std::map<std::string, std::string> getKeyValsFromLines(
-            const std::vector<std::string>&, char delim);
+            const std::vector<std::string>&, char);
          std::pair<std::string_view, std::string_view> getKeyValFromLine(
-            const std::string_view&, char delim);
+            const std::string_view&, char);
 
          std::string_view stripQuotes(const std::string_view& input);
          std::vector<std::string> keyValToArgv(
             const std::map<std::string, std::string>&);
 
-         bool testConnection(const std::string& ip, const std::string& port);
-         std::string getPortFromCookie(const std::string& datadir);
-         std::string hasLocalDB(const std::string& datadir,
-            const std::string& port);
+         bool testConnection(const std::string&, const std::string&);
+         std::string getPortFromCookie(const std::string&);
+         std::string hasLocalDB(const std::string&, const std::string&);
       };
 
       //////////////////////////////////////////////////////////////////////////
@@ -127,48 +132,43 @@ namespace Armory
          static bool clearMempool_;
          static bool checkTxHints_;
 
+         static uint64_t xorKey_;
+
       private:
          static void processArgs(const std::map<std::string, std::string>&);
          static void reset(void);
 
       public:
-         static std::string getCookie(const std::string& datadir);
+         static std::string getCookie(const std::filesystem::path&);
 
-         static ARMORY_DB_TYPE getDbType(void)
-         {
-            return armoryDbType_;
-         }
-
-         static void setServiceType(SOCKET_SERVICE _type)
-         {
-            service_ = _type;
-         }
-
-         static SOCKET_SERVICE getServiceType(void)
-         {
-            return service_;
-         }
+         static ARMORY_DB_TYPE getDbType(void);
+         static void setServiceType(SOCKET_SERVICE);
+         static SOCKET_SERVICE getServiceType(void);
 
          static std::string getDbModeStr(void);
-         static unsigned threadCount(void) { return threadCount_; }
-         static unsigned ramUsage(void) { return ramUsage_; }
-         static unsigned zcThreadCount(void) { return zcThreadCount_; }
-         static unsigned rewindCount(void) { return rewindCount_; }
+         static unsigned threadCount(void);
+         static unsigned ramUsage(void);
+         static unsigned zcThreadCount(void);
+         static unsigned rewindCount(void);
 
-         static bool checkChain(void) { return checkChain_; }
-         static BdmInitMode initMode(void) { return initMode_; }
-         static bool clearMempool(void) { return clearMempool_; }
-         static bool reportProgress(void) { return reportProgress_; }
-         static bool checkTxHints(void) { return checkTxHints_; }
+         static bool checkChain(void);
+         static BdmInitMode initMode(void);
+         static bool clearMempool(void);
+         static bool reportProgress(void);
+         static bool checkTxHints(void);
+
+         static bool isXored(void);
+         static void setXorKey(uint64_t);
+         static uint64_t getXorKey(void);
       };
 
       //////////////////////////////////////////////////////////////////////////
       class NetworkSettings
       {
-         using RpcPtr = std::shared_ptr<CoreRPC::NodeRPCInterface>;
+         using RpcPtr = std::shared_ptr<Node::Core::RPC::Iface>;
          using NodePair = std::pair<
-            std::shared_ptr<Node::BitcoinNodeInterface>,
-            std::shared_ptr<Node::BitcoinNodeInterface>
+            std::shared_ptr<Node::Core::P2P::Iface>,
+            std::shared_ptr<Node::Core::P2P::Iface>
          >;
 
          friend void Config::parseArgs(
@@ -252,9 +252,9 @@ namespace Armory
       {
          std::map<std::string, std::string> keyvalMap_;
 
-         File(const std::filesystem::path& path);
+         File(const std::filesystem::path&);
          static std::vector<BinaryData> fleshOutArgs(
-            const std::string& path, const std::vector<BinaryData>& argv);
+            const std::string&, const std::vector<BinaryData>&);
       };
    } //namespace Config
 } //namespace Armory

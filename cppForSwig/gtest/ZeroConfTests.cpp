@@ -5,30 +5,33 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
+#ifdef _WIN32
+   #include <winsock2.h>
+   #include <windows.h>
+#endif
+
 #include "TestUtils.h"
 #include <reorgTest/blkdata.h>
 
 #include <Utils/ArmoryConfig.h>
-#include <Utils/DBUtils.h>
+#include <Utils/FileUtils.h>
 #include <Utils/UniversalTimer.h>
 #include <Wallets/IOHeader.h>
-#include <Wallets/AuthorizedPeers.h>
 #include <Wallets/Seeds/Seeds.h>
 #include <Signer/ScriptSpender.h>
 #include <ZeroConf/Parser.h>
 #include <ZeroConf/Utils.h>
 #include <ZeroConf/Notifications.h>
-#include <Ledgers/LedgerEntry.h>
+#include <Network/WebSocketClient.h>
 
 #include "BDM_mainthread.h"
 #include "Server.h"
-#include "WebSocketClient.h"
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>
@@ -40,24 +43,16 @@ using namespace Armory::ZeroConf;
 using namespace std::string_view_literals;
 using namespace std::chrono_literals;
 
-namespace
-{
-   uint32_t getZcId(const BinaryData& zcKey)
+namespace {
+   std::shared_ptr<Signing::ScriptSpender> getSpenderPtr(
+      const UTXO& utxo, bool RBF = false)
    {
-      BinaryRefReader brr(zcKey);
-      brr.advance(2);
-      return brr.get_uint32_t(BE);
+      auto spender = std::make_shared<Signing::ScriptSpender>(utxo);
+      if (RBF) {
+         spender->setSequence(UINT32_MAX -2);
+      }
+      return spender;
    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<Signing::ScriptSpender> getSpenderPtr(const UTXO& utxo, bool RBF = false)
-{
-   auto spender = std::make_shared<Signing::ScriptSpender>(utxo);
-   if (RBF) {
-      spender->setSequence(UINT32_MAX -2);
-   }
-   return spender;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -97,23 +92,23 @@ private:
    {
       txs_.emplace_back(TxData());
       auto& txData = txs_.back();
-      txData.id_ = txid;
-      txData.txIns_ = txins;
-      txData.txOuts_ = txouts;
+      txData.id = txid;
+      txData.txIns = txins;
+      txData.txOuts = txouts;
 
       auto key = zcKeys_[txid];
-      txData.txPtr_ = std::make_shared<ZeroConf::ParsedTx>(key);
-      auto tx = txData.txPtr_;
+      txData.txPtr = std::make_shared<ZeroConf::ParsedTx>(key);
+      auto tx = txData.txPtr;
 
       tx->setTxHash(zcHashes_[txid]);
       for (auto& id : txins) {
          const auto& txindata = txIns_[id];
          ZeroConf::ParsedTxIn pTxIn;
 
-         pTxIn.value = txindata.value_;
-         pTxIn.scrAddr = txindata.scrAddr_;
-         pTxIn.opRef.unserialize(txindata.outpoint_.serialized_);
-         pTxIn.opRef.setDbKey(txindata.outpoint_.key_);
+         pTxIn.value = txindata.amount;
+         pTxIn.scrAddr = txindata.scrAddr;
+         pTxIn.opRef.unserialize(txindata.outpoint.serialized);
+         pTxIn.opRef.setDbKey(txindata.outpoint.txKey);
 
          tx->inputs.push_back(pTxIn);
          addAddrToMap(pTxIn.scrAddr);
@@ -123,238 +118,238 @@ private:
          const auto& txoutdata = txOuts_[id];
          ZeroConf::ParsedTxOut pTxOut;
 
-         pTxOut.scrAddr = txoutdata.scrAddr_;
-         pTxOut.value = txoutdata.value_;
+         pTxOut.scrAddr = txoutdata.scrAddr;
+         pTxOut.value = txoutdata.amount;
          tx->outputs.push_back(pTxOut);
          addAddrToMap(pTxOut.scrAddr);
       }
       tx->state = ZeroConf::ParsedTxStatus::Resolved;
    }
 
-   void createTx0(void)
+   void createTx0()
    {
-      zcKeys_.push_back(READHEX("FFFF00000001"));
+      zcKeys_.push_back(Types::constructZCKey(1));
       zcHashes_.push_back(READHEX(
          "000102030405060708090A0B0C0D0E0FF0F1F2F3F4F5F6F7F8F9FAFBFCFDFEFF"));
 
       //txin0
       txIns_.emplace_back(TxInData());
       auto& txIn0 = txIns_.back();
-      txIn0.value_ = 10*COIN;
-      txIn0.scrAddr_ = READHEX("000102030405060708090A");
+      txIn0.amount = 10*COIN;
+      txIn0.scrAddr = READHEX("000102030405060708090A");
 
       //outpoint0
       OutpointData outpoint0;
-      outpoint0.hash_ = READHEX(
+      outpoint0.hash = READHEX(
          "0101010101010101010101010101010101010101010101010101010101010101");
-      outpoint0.index_ = 4;
-      outpoint0.key_ = READHEX("000054000003");
-      outpoint0.serialized_ = getOutpoint(outpoint0.hash_, outpoint0.index_);
-      txIn0.outpoint_ = outpoint0;
+      outpoint0.index = 4;
+      outpoint0.txKey = Types::constructTxKey(0x54, 3); //READHEX("000054000003")
+      outpoint0.serialized = getOutpoint(outpoint0.hash, outpoint0.index);
+      txIn0.outpoint = outpoint0;
 
       //txin1
       txIns_.emplace_back(TxInData());
       auto& txIn1 = txIns_.back();
-      txIn1.value_ = 5*COIN;
-      txIn1.scrAddr_ = READHEX("00A1A2A3A4A5A6A7A8A9AA");
+      txIn1.amount = 5*COIN;
+      txIn1.scrAddr = READHEX("00A1A2A3A4A5A6A7A8A9AA");
 
       //outpoint1
       OutpointData outpoint1;
-      outpoint1.hash_ = READHEX(
+      outpoint1.hash = READHEX(
          "0202020202020202020202020202020202020202020202020202020202020202");
-      outpoint1.index_ = 2;
-      outpoint1.key_ = READHEX("00006200000A");
-      outpoint1.serialized_ = getOutpoint(outpoint1.hash_, outpoint1.index_);
-      txIn1.outpoint_ = outpoint1;
+      outpoint1.index = 2;
+      outpoint1.txKey = Types::constructTxKey(0x62, 0x0A); //READHEX("00006200000A");
+      outpoint1.serialized = getOutpoint(outpoint1.hash, outpoint1.index);
+      txIn1.outpoint = outpoint1;
 
       //txout0
       txOuts_.emplace_back(TxOutData());
       auto& txOut0 = txOuts_.back();
-      txOut0.scrAddr_ = READHEX("00B1B2B3B4B5B6B7B8B9BA");
-      txOut0.value_ = 7*COIN;
+      txOut0.scrAddr = READHEX("00B1B2B3B4B5B6B7B8B9BA");
+      txOut0.amount = 7*COIN;
 
       //txout1
       txOuts_.emplace_back(TxOutData());
       auto& txOut1 = txOuts_.back();
-      txOut1.scrAddr_ = READHEX("00C1C2C3C4C5C6C7C8C9CA");
-      txOut1.value_ = 8*COIN;
+      txOut1.scrAddr = READHEX("00C1C2C3C4C5C6C7C8C9CA");
+      txOut1.amount = 8*COIN;
 
       //create tx
       createTx(0, {0, 1}, {0, 1});
    }
 
-   void createTx1(void)
+   void createTx1()
    {
-      zcKeys_.push_back(READHEX("FFFF00000002"));
+      zcKeys_.push_back(Types::constructZCKey(2));
       zcHashes_.push_back(READHEX(
          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBB"));
 
       //txin2
       txIns_.emplace_back(TxInData());
       auto& txIn2 = txIns_.back();
-      txIn2.value_ = 45*COIN;
-      txIn2.scrAddr_ = READHEX("C1C2C3C4C5C6C7C8C9CACB");
+      txIn2.amount = 45*COIN;
+      txIn2.scrAddr = READHEX("C1C2C3C4C5C6C7C8C9CACB");
 
       //txin3
       txIns_.emplace_back(TxInData());
       auto& txIn3 = txIns_.back();
-      txIn3.value_ = 35*COIN;
-      txIn3.scrAddr_ = READHEX("D1D2D3D4D5D6D7D8D9DADB");
+      txIn3.amount = 35*COIN;
+      txIn3.scrAddr = READHEX("D1D2D3D4D5D6D7D8D9DADB");
 
       //outpoint2
       OutpointData outpoint2;
-      outpoint2.hash_ = READHEX(
+      outpoint2.hash = READHEX(
          "0303030303303030303030303030303030303030303030303030303030303030");
-      outpoint2.index_ = 34;
-      outpoint2.key_ = READHEX("000087000010");
-      outpoint2.serialized_ = getOutpoint(outpoint2.hash_, outpoint2.index_);
-      txIn2.outpoint_ = outpoint2;
+      outpoint2.index = 34;
+      outpoint2.txKey = Types::constructTxKey(0x87, 0x10); //READHEX("000087000010");
+      outpoint2.serialized = getOutpoint(outpoint2.hash, outpoint2.index);
+      txIn2.outpoint = outpoint2;
 
       //outpoint3
       OutpointData outpoint3;
-      outpoint3.hash_ = READHEX(
+      outpoint3.hash = READHEX(
          "0404040404040404040404040404040404040404040404040404040404040404");
-      outpoint3.index_ = 0;
-      outpoint3.key_ = READHEX("000011000203");
-      outpoint3.serialized_ = getOutpoint(outpoint3.hash_, outpoint3.index_);
-      txIn3.outpoint_ = outpoint3;
+      outpoint3.index = 0;
+      outpoint3.txKey = Types::constructTxKey(0x11, 0x0203); //READHEX("000011000203");
+      outpoint3.serialized = getOutpoint(outpoint3.hash, outpoint3.index);
+      txIn3.outpoint = outpoint3;
 
       //txout2
       txOuts_.emplace_back(TxOutData());
       auto& txOut2 = txOuts_.back();
-      txOut2.scrAddr_ = READHEX("001112131415161718191F");
-      txOut2.value_ = 70*COIN;
+      txOut2.scrAddr = READHEX("001112131415161718191F");
+      txOut2.amount = 70*COIN;
 
       //txout3
       txOuts_.emplace_back(TxOutData());
       auto& txOut3 = txOuts_.back();
-      txOut3.scrAddr_ = READHEX("0022232425262728292A2B");
-      txOut3.value_ = 10*COIN;
+      txOut3.scrAddr = READHEX("0022232425262728292A2B");
+      txOut3.amount = 10*COIN;
 
       //create tx
       createTx(1, {2, 3}, {2, 3});
    }
 
-   void createTx2(void)
+   void createTx2()
    {
       //child of tx0 & tx1 (txouts 0 & 2)
-      zcKeys_.push_back(READHEX("FFFF00000003"));
+      zcKeys_.push_back(Types::constructZCKey(3));
       zcHashes_.push_back(READHEX(
          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCCCCCAAAAAAAAAAAAAAAAAABBBBB"));
 
       //txin4
       txIns_.emplace_back(TxInData());
       auto& txIn4 = txIns_.back();
-      txIn4.value_ = txOuts_[0].value_;
-      txIn4.scrAddr_ = txOuts_[0].scrAddr_;
+      txIn4.amount = txOuts_[0].amount;
+      txIn4.scrAddr = txOuts_[0].scrAddr;
 
       //txin5
       txIns_.emplace_back(TxInData());
       auto& txIn5 = txIns_.back();
-      txIn5.value_ = txOuts_[2].value_;
-      txIn5.scrAddr_ = txOuts_[2].scrAddr_;
+      txIn5.amount = txOuts_[2].amount;
+      txIn5.scrAddr = txOuts_[2].scrAddr;
 
       //outpoint4
       OutpointData outpoint4;
-      outpoint4.hash_ = zcHashes_[0];
-      outpoint4.index_ = 0;
-      outpoint4.key_ = zcKeys_[0];
-      outpoint4.serialized_ = getOutpoint(outpoint4.hash_, outpoint4.index_);
-      txIn4.outpoint_ = outpoint4;
+      outpoint4.hash = zcHashes_[0];
+      outpoint4.index = 0;
+      outpoint4.txKey = zcKeys_[0];
+      outpoint4.serialized = getOutpoint(outpoint4.hash, outpoint4.index);
+      txIn4.outpoint = outpoint4;
 
       //outpoint5
       OutpointData outpoint5;
-      outpoint5.hash_ = zcHashes_[1];
-      outpoint5.index_ = 0;
-      outpoint5.key_ = zcKeys_[1];
-      outpoint5.serialized_ = getOutpoint(outpoint5.hash_, outpoint5.index_);
-      txIn5.outpoint_ = outpoint5;
+      outpoint5.hash = zcHashes_[1];
+      outpoint5.index = 0;
+      outpoint5.txKey = zcKeys_[1];
+      outpoint5.serialized = getOutpoint(outpoint5.hash, outpoint5.index);
+      txIn5.outpoint = outpoint5;
 
       //txout4
       txOuts_.emplace_back(TxOutData());
       auto& txOut4 = txOuts_.back();
-      txOut4.scrAddr_ = READHEX("AAAAAAAAAAA4359802FF34");
-      txOut4.value_ = 27*COIN;
+      txOut4.scrAddr = READHEX("AAAAAAAAAAA4359802FF34");
+      txOut4.amount = 27*COIN;
 
       //txout5
       txOuts_.emplace_back(TxOutData());
       auto& txOut5 = txOuts_.back();
-      txOut5.scrAddr_ = READHEX("BBBBBBB342564CCCF4536C");
-      txOut5.value_ = 50*COIN;
+      txOut5.scrAddr = READHEX("BBBBBBB342564CCCF4536C");
+      txOut5.amount = 50*COIN;
 
       //create tx
       createTx(2, {4, 5}, {4, 5});
    }
 
-   void createTx3(void)
+   void createTx3()
    {
       //child of tx1 (txout 3)
-      zcKeys_.push_back(READHEX("FFFF00000004"));
+      zcKeys_.push_back(Types::constructZCKey(4));
       zcHashes_.push_back(READHEX(
          "AAAAAAAAAAAAAAAAAAAAAAAAAAFFFFFFFFFCCCCCCCAAAAAAAAAAAAAAAAABBBBB"));
 
       //txin6
       txIns_.emplace_back(TxInData());
       auto& txIn6 = txIns_.back();
-      txIn6.value_ = txOuts_[3].value_;
-      txIn6.scrAddr_ = txOuts_[3].scrAddr_;
+      txIn6.amount = txOuts_[3].amount;
+      txIn6.scrAddr = txOuts_[3].scrAddr;
 
       //outpoint6
       OutpointData outpoint6;
-      outpoint6.hash_ = zcHashes_[1];
-      outpoint6.index_ = 1;
-      outpoint6.key_ = zcKeys_[1];
-      outpoint6.serialized_ = getOutpoint(outpoint6.hash_, outpoint6.index_);
-      txIn6.outpoint_ = outpoint6;
+      outpoint6.hash = zcHashes_[1];
+      outpoint6.index = 1;
+      outpoint6.txKey = zcKeys_[1];
+      outpoint6.serialized = getOutpoint(outpoint6.hash, outpoint6.index);
+      txIn6.outpoint = outpoint6;
 
       //txout6
       txOuts_.emplace_back(TxOutData());
       auto& txOut6 = txOuts_.back();
-      txOut6.scrAddr_ = READHEX("EEEEEEEEEEEEEEE4534622");
-      txOut6.value_ = 2*COIN;
+      txOut6.scrAddr = READHEX("EEEEEEEEEEEEEEE4534622");
+      txOut6.amount = 2*COIN;
 
       //txout7
       txOuts_.emplace_back(TxOutData());
       auto& txOut7 = txOuts_.back();
-      txOut7.scrAddr_ = READHEX("EEEEEEEEEEEEEE98790234");
-      txOut7.value_ = 8*COIN;
+      txOut7.scrAddr = READHEX("EEEEEEEEEEEEEE98790234");
+      txOut7.amount = 8*COIN;
 
       //create tx
       createTx(3, {6}, {6, 7});
    }
 
-   void createTx4(void)
+   void createTx4()
    {
       //child of tx2 (txout 4)
-      zcKeys_.push_back(READHEX("FFFF00000005"));
+      zcKeys_.push_back(Types::constructZCKey(5));
       zcHashes_.push_back(READHEX(
          "AAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBB3CCCCCCCAAAAAAAAAAAAAAAAABBBBB"));
 
       //txin7
       txIns_.emplace_back(TxInData());
       auto& txIn7 = txIns_.back();
-      txIn7.value_ = txOuts_[4].value_;
-      txIn7.scrAddr_ = txOuts_[4].scrAddr_;
+      txIn7.amount = txOuts_[4].amount;
+      txIn7.scrAddr = txOuts_[4].scrAddr;
 
       //outpoint7
       OutpointData outpoint7;
-      outpoint7.hash_ = zcHashes_[2];
-      outpoint7.index_ = 0;
-      outpoint7.key_ = zcKeys_[2];
-      outpoint7.serialized_ = getOutpoint(outpoint7.hash_, outpoint7.index_);
-      txIn7.outpoint_ = outpoint7;
+      outpoint7.hash = zcHashes_[2];
+      outpoint7.index = 0;
+      outpoint7.txKey = zcKeys_[2];
+      outpoint7.serialized = getOutpoint(outpoint7.hash, outpoint7.index);
+      txIn7.outpoint = outpoint7;
 
       //txout8
       txOuts_.emplace_back(TxOutData());
       auto& txOut8 = txOuts_.back();
-      txOut8.scrAddr_ = txOuts_[0].scrAddr_;
-      txOut8.value_ = 17*COIN;
+      txOut8.scrAddr = txOuts_[0].scrAddr;
+      txOut8.amount = 17*COIN;
 
       //txout9
       txOuts_.emplace_back(TxOutData());
       auto& txOut9 = txOuts_.back();
-      txOut9.scrAddr_ = READHEX("DDDDDDDDDDDDDD98790234");
-      txOut9.value_ = 10*COIN;
+      txOut9.scrAddr = READHEX("DDDDDDDDDDDDDD98790234");
+      txOut9.amount = 10*COIN;
 
       //create tx
       createTx(4, {7}, {8, 9});
@@ -363,7 +358,7 @@ private:
 protected:
    class ZeroConfCallbacks_Tests : public ZeroConf::ZeroConfCallbacks
    {
-      std::set<BdvIdKey> hasScrAddr(const BinaryDataRef&) const override
+      std::set<Types::BdvId> hasScrAddr(const Types::ScrAddr&) const override
       {
          return {};
       }
@@ -371,12 +366,12 @@ protected:
       void pushZcNotification(
          std::shared_ptr<ZeroConf::MempoolSnapshot>,
          std::shared_ptr<ZeroConf::KeyAddrMap>,
-         std::map<BdvIdKey, ZeroConf::ParsedZCData>, //flaggedBDVs
-         BdvIdKey, //bdvid
-         std::map<BinaryData, std::shared_ptr<ZeroConf::WatcherTxBody>>&) override
+         std::map<Types::BdvId, ZeroConf::ParsedZCData>,
+         Types::BdvId,
+         std::map<Types::TxHash, std::shared_ptr<ZeroConf::WatcherTxBody>>&) override
       {}
 
-      void pushZcError(BdvIdKey, const BinaryData&,
+      void pushZcError(Types::BdvId, const Types::TxHash&,
          ArmoryErrorCodes, const std::string&) override
       {}
    };
@@ -442,16 +437,14 @@ protected:
       EXPECT_NE(zcPtr, nullptr);
 
       //inputs
-      for (unsigned i=0; i<txData.txIns_.size(); i++)
+      for (unsigned i=0; i<txData.txIns.size(); i++)
       try {
-         auto txInId = txData.txIns_[i];
+         auto txInId = txData.txIns[i];
 
-         BinaryWriter keyWriter;
-         keyWriter.put_BinaryData(txIns_[txInId].outpoint_.key_);
-         keyWriter.put_uint16_t(txIns_[txInId].outpoint_.index_, BE);
-         auto txOutKey = keyWriter.getData();
+         auto txOutKey = Types::constructTxIOKeyFromTxKey(
+            txIns_[txInId].outpoint.txKey, txIns_[txInId].outpoint.index);
 
-         auto txioKeys = snapshot.getTxioKeysForScrAddr(txIns_[txInId].scrAddr_);
+         auto txioKeys = snapshot.getTxioKeysForScrAddr(txIns_[txInId].scrAddr);
          METHOD_ASSERT_FALSE(txioKeys.empty());
 
          bool foundTxio = false;
@@ -462,12 +455,12 @@ protected:
             foundTxio = true;
             auto txio = snapshot.getTxioByKey(key);
             METHOD_ASSERT_NE(txio, nullptr);
-            EXPECT_EQ(txio->getDBKeyOfOutput(), txOutKey);
-            EXPECT_EQ(txio->getIndexOfOutput(), txIns_[txInId].outpoint_.index_);
+            EXPECT_EQ(txio->getTxIOKeyOfOutput(), txOutKey);
+            EXPECT_EQ(txio->getIndexOfOutput(), txIns_[txInId].outpoint.index);
 
-            EXPECT_TRUE(txio->getDBKeyOfInput().startsWith(zcKeys_[txid]));
+            EXPECT_EQ(txio->getTxKeyOfInput(), zcKeys_[txid]);
             EXPECT_EQ(txio->getIndexOfInput(), i);
-            EXPECT_EQ(txio->getValue(), txIns_[txInId].value_);
+            EXPECT_EQ(txio->getAmount(), txIns_[txInId].amount);
 
             EXPECT_TRUE(snapshot.isTxOutSpentByZC(txOutKey));
          }
@@ -478,27 +471,23 @@ protected:
       }
 
       //outputs
-      for (unsigned i=0; i<txData.txOuts_.size(); i++)
+      for (unsigned i=0; i<txData.txOuts.size(); i++)
       try {
-         auto txOutId = txData.txOuts_[i];
+         auto txOutId = txData.txOuts[i];
+         auto txOutKey = Types::constructTxIOKeyFromTxKey(zcKeys_[txid], i);
 
-         BinaryWriter keyWriter;
-         keyWriter.put_BinaryData(zcKeys_[txid]);
-         keyWriter.put_uint16_t(i, BE);
-         auto txOutKey = keyWriter.getData();
-
-         auto txioKeys = snapshot.getTxioKeysForScrAddr(txOuts_[txOutId].scrAddr_);
+         auto txioKeys = snapshot.getTxioKeysForScrAddr(txOuts_[txOutId].scrAddr);
          METHOD_ASSERT_FALSE(txioKeys.empty());
 
          bool foundTxio = false;
          for (const auto& key : txioKeys) {
-            if (!key.startsWith(zcKeys_[txid])) {
+            if (Types::getTxKeyFromTxIOKey(key) != zcKeys_[txid]) {
                continue;
             }
             foundTxio = true;
             auto txio = snapshot.getTxioByKey(key);
             METHOD_ASSERT_NE(txio, nullptr);
-            EXPECT_EQ(txio->getDBKeyOfOutput(), txOutKey);
+            EXPECT_EQ(txio->getTxIOKeyOfOutput(), txOutKey);
             EXPECT_EQ(txio->getIndexOfOutput(), i);
          }
          METHOD_ASSERT_TRUE(foundTxio);
@@ -510,48 +499,41 @@ protected:
 
    /////////////////////////////////////////////////////////////////////////////
    bool checkIsDropped(
-      const ZeroConf::MempoolSnapshot& snapshot,
-      unsigned txid) const
+      const ZeroConf::MempoolSnapshot& snapshot, Types::TxIOId txId) const
    {
-      if (txid >= txs_.size()) {
+      if (txId >= txs_.size()) {
          return false;
       }
-      const auto& txData = txs_[txid];
+      const auto& txData = txs_[txId];
 
-      EXPECT_FALSE(snapshot.hasHash(zcHashes_[txid]));
+      EXPECT_FALSE(snapshot.hasHash(zcHashes_[txId]));
+      auto zckey = snapshot.getKeyForHash(zcHashes_[txId]);
+      EXPECT_EQ(zckey, Types::INVALID_TX_KEY);
 
-      auto zckey = snapshot.getKeyForHash(zcHashes_[txid]);
-      EXPECT_TRUE(zckey.empty());
-
-      auto zcPtr = snapshot.getTxByKey(zcKeys_[txid]);
+      auto zcPtr = snapshot.getTxByKey(zcKeys_[txId]);
       METHOD_ASSERT_EQ(zcPtr, nullptr);
 
       //inputs
-      for (unsigned i=0; i<txData.txIns_.size(); i++) {
-         auto txInId = txData.txIns_[i];
-
-         BinaryWriter keyWriter;
-         keyWriter.put_BinaryData(txIns_[txInId].outpoint_.key_);
-         keyWriter.put_uint16_t(txIns_[txInId].outpoint_.index_, BE);
-         auto txOutKey = keyWriter.getData();
+      for (unsigned i=0; i<txData.txIns.size(); i++) {
+         auto txInId = txData.txIns[i];
+         auto txOutKey = Types::constructTxIOKeyFromTxKey(
+            txIns_[txInId].outpoint.txKey, txIns_[txInId].outpoint.index);
 
          try {
             auto txioKeys = snapshot.getTxioKeysForScrAddr(
-               txIns_[txInId].scrAddr_);
+               txIns_[txInId].scrAddr);
 
             for (auto& key : txioKeys) {
                auto txio = snapshot.getTxioByKey(key);
                if (txio == nullptr) {
                   continue;
                }
-               METHOD_ASSERT_FALSE(
-                  txio->getDBKeyOfOutput().startsWith(zcKeys_[txid]));
+               METHOD_ASSERT_NE(txio->getTxKeyOfOutput(), zcKeys_[txId]);
 
                if (!txio->hasTxIn()) {
                   continue;
                }
-               METHOD_ASSERT_FALSE(
-                  txio->getDBKeyOfInput().startsWith(zcKeys_[txid]));
+               METHOD_ASSERT_NE(txio->getTxKeyOfInput(), zcKeys_[txId]);
             }
          } catch (const std::range_error&) {}
 
@@ -559,54 +541,43 @@ protected:
          if (txio != nullptr) {
             METHOD_ASSERT_TRUE(txio->hasTxOutZC());
             if (txio->hasTxIn()) {
-               METHOD_ASSERT_FALSE(
-                  txio->getDBKeyOfInput().startsWith(zcKeys_[txid]));
+               METHOD_ASSERT_NE(txio->getTxKeyOfInput(), zcKeys_[txId]);
             }
          }
 
          EXPECT_FALSE(snapshot.isTxOutSpentByZC(txOutKey));
       }
 
-      for (unsigned i=0; i<txData.txOuts_.size(); i++) {
-         auto txOutId = txData.txOuts_[i];
-
-         BinaryWriter keyWriter;
-         keyWriter.put_BinaryData(zcKeys_[txid]);
-         keyWriter.put_uint16_t(i, BE);
-         auto txOutKey = keyWriter.getData();
+      for (unsigned i=0; i<txData.txOuts.size(); i++) {
+         auto txOutId = txData.txOuts[i];
+         auto txOutKey = Types::constructTxIOKeyFromTxKey(zcKeys_[txId], i);
 
          try {
             auto txioKeys = snapshot.getTxioKeysForScrAddr(
-               txOuts_[txOutId].scrAddr_);
+               txOuts_[txOutId].scrAddr);
             METHOD_ASSERT_TRUE(false);
-         }
-         catch (const std::range_error&) {}
+         } catch (const std::range_error&) {}
 
          auto txio = snapshot.getTxioByKey(txOutKey);
          METHOD_ASSERT_EQ(txio, nullptr);
       }
-
       return true;
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   BinaryData checkTxOutIsSpent(
+   Types::TxIOKey checkTxOutIsSpent(
       const ZeroConf::MempoolSnapshot& snapshot,
       unsigned txid, unsigned txoutid) const
    {
-      BinaryWriter keyWriter;
-      keyWriter.put_BinaryData(zcKeys_[txid]);
-      keyWriter.put_uint16_t(txoutid, BE);
-      auto txOutKey = keyWriter.getData();
-
+      auto txOutKey = Types::constructTxIOKeyFromTxKey(zcKeys_[txid], txoutid);
       auto txio = snapshot.getTxioByKey(txOutKey);
       if (txio == nullptr) {
-         return {};
+         return Types::INVALID_TXIO_KEY;
       }
       if (!txio->hasTxIn()) {
-         return {};
+         return Types::INVALID_TXIO_KEY;
       }
-      return txio->getDBKeyOfInput();
+      return txio->getTxIOKeyOfInput();
    }
 
 protected:
@@ -615,37 +586,37 @@ protected:
    std::filesystem::path ldbdir_{"./ldbtestdir"sv};
 
    /*****/
-   std::vector<BinaryData> zcKeys_;
-   std::vector<BinaryData> zcHashes_;
+   std::vector<Types::TxKey> zcKeys_;
+   std::vector<Types::TxHash> zcHashes_;
 
    struct OutpointData
    {
-      BinaryData hash_;
-      uint32_t index_;
-      BinaryData key_;
-      BinaryData serialized_;
+      Types::TxHash hash;
+      uint32_t index;
+      Types::TxKey txKey;
+      BinaryData serialized;
    };
 
    struct TxInData
    {
-      uint64_t value_;
-      BinaryData scrAddr_;
+      Types::Amount amount;
+      Types::ScrAddr scrAddr;
 
-      OutpointData outpoint_;
+      OutpointData outpoint;
    };
 
    struct TxOutData
    {
-      uint64_t value_;
-      BinaryData scrAddr_;
+      Types::Amount amount;
+      Types::ScrAddr scrAddr;
    };
 
    struct TxData
    {
-      std::vector<unsigned> txIns_;
-      std::vector<unsigned> txOuts_;
-      unsigned id_;
-      std::shared_ptr<ZeroConf::ParsedTx> txPtr_;
+      std::vector<unsigned> txIns;
+      std::vector<unsigned> txOuts;
+      unsigned id;
+      std::shared_ptr<ZeroConf::ParsedTx> txPtr;
    };
 
    std::vector<TxInData> txIns_;
@@ -655,7 +626,7 @@ protected:
    /*****/
 
    //mainAddressMap
-   std::shared_ptr<std::map<BinaryData, std::shared_ptr<AddrAndHash>>> mainAddrMap_;
+   std::shared_ptr<std::map<Types::ScrAddr, std::shared_ptr<AddrAndHash>>> mainAddrMap_;
    ZeroConfCallbacks_Tests zcCallbacks_;
 };
 
@@ -668,8 +639,8 @@ TEST_F(ZeroConfTests_Mempool, Stage)
    EXPECT_EQ(snapshot.getTopZcID(), 0U);
 
    //filter the tx
-   auto filterResult = filterParsedTx(txs_[0].txPtr_,
-      [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+   auto filterResult = filterParsedTx(txs_[0].txPtr,
+      [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
       {
          return mainAddrMap->find(addr) == mainAddrMap->end();
       },
@@ -677,7 +648,7 @@ TEST_F(ZeroConfTests_Mempool, Stage)
    );
 
    //stage it
-   snapshot.stageNewZC(txs_[0].txPtr_, filterResult);
+   snapshot.stageNewZC(txs_[0].txPtr, filterResult);
 
    //check it was added
    EXPECT_TRUE(checkTxIsStaged(snapshot, 0));
@@ -691,8 +662,8 @@ TEST_F(ZeroConfTests_Mempool, Commit)
    EXPECT_EQ(snapshot.getTopZcID(), 0U);
 
    //filter the tx
-   auto filterResult = filterParsedTx(txs_[0].txPtr_,
-      [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+   auto filterResult = filterParsedTx(txs_[0].txPtr,
+      [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
       {
          return mainAddrMap->find(addr) == mainAddrMap->end();
       },
@@ -700,7 +671,7 @@ TEST_F(ZeroConfTests_Mempool, Commit)
    );
 
    //stage it
-   snapshot.stageNewZC(txs_[0].txPtr_, filterResult);
+   snapshot.stageNewZC(txs_[0].txPtr, filterResult);
 
    //check it was added
    EXPECT_TRUE(checkTxIsStaged(snapshot, 0));
@@ -720,9 +691,8 @@ TEST_F(ZeroConfTests_Mempool, Drop)
    EXPECT_EQ(snapshot.getTopZcID(), 0U);
 
    //filter the tx
-   auto filterResult = filterParsedTx(
-      txs_[0].txPtr_,
-      [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+   auto filterResult = filterParsedTx(txs_[0].txPtr,
+      [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
       {
          return mainAddrMap->find(addr) == mainAddrMap->end();
       },
@@ -730,7 +700,7 @@ TEST_F(ZeroConfTests_Mempool, Drop)
    );
 
    //stage it
-   snapshot.stageNewZC(txs_[0].txPtr_, filterResult);
+   snapshot.stageNewZC(txs_[0].txPtr, filterResult);
 
    //check it was added
    EXPECT_TRUE(checkTxIsStaged(snapshot, 0));
@@ -753,9 +723,8 @@ TEST_F(ZeroConfTests_Mempool, CommitAndDrop)
    EXPECT_EQ(snapshot.getTopZcID(), 0U);
 
    //filter the tx
-   auto filterResult = filterParsedTx(
-      txs_[0].txPtr_,
-      [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+   auto filterResult = filterParsedTx(txs_[0].txPtr,
+      [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
       {
          return mainAddrMap->find(addr) == mainAddrMap->end();
       },
@@ -763,7 +732,7 @@ TEST_F(ZeroConfTests_Mempool, CommitAndDrop)
    );
 
    //stage it
-   snapshot.stageNewZC(txs_[0].txPtr_, filterResult);
+   snapshot.stageNewZC(txs_[0].txPtr, filterResult);
 
    //check it was added
    EXPECT_TRUE(checkTxIsStaged(snapshot, 0));
@@ -795,26 +764,24 @@ TEST_F(ZeroConfTests_Mempool, Stage2_Drop1)
 
    {
       //add tx0
-      auto filterResult = filterParsedTx(
-         txs_[0].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult = filterParsedTx(txs_[0].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[0].txPtr_, filterResult);
+      snapshot.stageNewZC(txs_[0].txPtr, filterResult);
 
       //add tx1
-      auto filterResult1 = filterParsedTx(
-         txs_[1].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult1 = filterParsedTx(txs_[1].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[1].txPtr_, filterResult1);
+      snapshot.stageNewZC(txs_[1].txPtr, filterResult1);
    }
 
    EXPECT_TRUE(checkTxIsStaged(snapshot, 0));
@@ -849,15 +816,14 @@ TEST_F(ZeroConfTests_Mempool, Stage2_Commit_Drop1)
 
    {
       //add tx0
-      auto filterResult = filterParsedTx(
-         txs_[0].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult = filterParsedTx(txs_[0].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[0].txPtr_, filterResult);
+      snapshot.stageNewZC(txs_[0].txPtr, filterResult);
       EXPECT_TRUE(checkTxIsStaged(snapshot, 0));
    }
 
@@ -866,15 +832,14 @@ TEST_F(ZeroConfTests_Mempool, Stage2_Commit_Drop1)
 
    {
       //add tx1
-      auto filterResult1 = filterParsedTx(
-         txs_[1].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult1 = filterParsedTx(txs_[1].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[1].txPtr_, filterResult1);
+      snapshot.stageNewZC(txs_[1].txPtr, filterResult1);
       EXPECT_TRUE(checkTxIsStaged(snapshot, 0));
       EXPECT_TRUE(checkTxIsStaged(snapshot, 1));
    }
@@ -919,58 +884,54 @@ TEST_F(ZeroConfTests_Mempool, StageChildren)
 
    {
       //add tx0
-      auto filterResult = filterParsedTx(
-         txs_[0].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult = filterParsedTx(txs_[0].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[0].txPtr_, filterResult);
+      snapshot.stageNewZC(txs_[0].txPtr, filterResult);
 
       //add tx1
-      auto filterResult1 = filterParsedTx(
-         txs_[1].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult1 = filterParsedTx(txs_[1].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[1].txPtr_, filterResult1);
+      snapshot.stageNewZC(txs_[1].txPtr, filterResult1);
    }
 
    EXPECT_TRUE(checkTxIsStaged(snapshot, 0));
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 0, 0).empty());
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 0, 1).empty());
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 0, 0), Types::INVALID_TXIO_KEY);
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 0, 1), Types::INVALID_TXIO_KEY);
 
    EXPECT_TRUE(checkTxIsStaged(snapshot, 1));
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 1, 0).empty());
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 1, 1).empty());
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 1, 0), Types::INVALID_TXIO_KEY);
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 1, 1), Types::INVALID_TXIO_KEY);
 
    {
       //add tx2
-      auto filterResult2 = filterParsedTx(
-         txs_[2].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult2 = filterParsedTx(txs_[2].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[2].txPtr_, filterResult2);
+      snapshot.stageNewZC(txs_[2].txPtr, filterResult2);
 
       //add tx3
-      auto filterResult3 = filterParsedTx(
-         txs_[3].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult3 = filterParsedTx(txs_[3].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[3].txPtr_, filterResult3);
+      snapshot.stageNewZC(txs_[3].txPtr, filterResult3);
    }
 
    EXPECT_TRUE(checkTxIsStaged(snapshot, 2));
@@ -978,29 +939,28 @@ TEST_F(ZeroConfTests_Mempool, StageChildren)
 
    {
       auto spender0 = checkTxOutIsSpent(snapshot, 0, 0);
-      EXPECT_TRUE(spender0.startsWith(zcKeys_[2]));
-      EXPECT_TRUE(checkTxOutIsSpent(snapshot, 0, 1).empty());
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender0), zcKeys_[2]);
+      EXPECT_EQ(checkTxOutIsSpent(snapshot, 0, 1), Types::INVALID_TXIO_KEY);
 
       auto spender1 = checkTxOutIsSpent(snapshot, 1, 0);
-      EXPECT_TRUE(spender1.startsWith(zcKeys_[2]));
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender1), zcKeys_[2]);
 
       auto spender2 = checkTxOutIsSpent(snapshot, 1, 1);
-      EXPECT_TRUE(spender2.startsWith(zcKeys_[3]));
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender2), zcKeys_[3]);
 
-      EXPECT_TRUE(checkTxOutIsSpent(snapshot, 2, 0).empty());
+      EXPECT_EQ(checkTxOutIsSpent(snapshot, 2, 0), Types::INVALID_TXIO_KEY);
    }
 
    {
       //add tx4
-      auto filterResult4 = filterParsedTx(
-         txs_[4].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult4 = filterParsedTx(txs_[4].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[4].txPtr_, filterResult4);
+      snapshot.stageNewZC(txs_[4].txPtr, filterResult4);
    }
 
    EXPECT_TRUE(checkTxIsStaged(snapshot, 2));
@@ -1009,17 +969,17 @@ TEST_F(ZeroConfTests_Mempool, StageChildren)
 
    {
       auto spender0 = checkTxOutIsSpent(snapshot, 0, 0);
-      EXPECT_TRUE(spender0.startsWith(zcKeys_[2]));
-      EXPECT_TRUE(checkTxOutIsSpent(snapshot, 0, 1).empty());
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender0), zcKeys_[2]);
+      EXPECT_EQ(checkTxOutIsSpent(snapshot, 0, 1), Types::INVALID_TXIO_KEY);
 
       auto spender1 = checkTxOutIsSpent(snapshot, 1, 0);
-      EXPECT_TRUE(spender1.startsWith(zcKeys_[2]));
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender1), zcKeys_[2]);
 
       auto spender2 = checkTxOutIsSpent(snapshot, 1, 1);
-      EXPECT_TRUE(spender2.startsWith(zcKeys_[3]));
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender2), zcKeys_[3]);
 
       auto spender3 = checkTxOutIsSpent(snapshot, 2, 0);
-      EXPECT_TRUE(spender3.startsWith(zcKeys_[4]));
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender3), zcKeys_[4]);
    }
 }
 
@@ -1030,68 +990,64 @@ TEST_F(ZeroConfTests_Mempool, StageChildren_Commit)
 
    {
       //add tx0
-      auto filterResult = filterParsedTx(
-         txs_[0].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult = filterParsedTx(txs_[0].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[0].txPtr_, filterResult);
+      snapshot.stageNewZC(txs_[0].txPtr, filterResult);
 
       //add tx1
-      auto filterResult1 = filterParsedTx(
-         txs_[1].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult1 = filterParsedTx(txs_[1].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[1].txPtr_, filterResult1);
+      snapshot.stageNewZC(txs_[1].txPtr, filterResult1);
    }
 
    EXPECT_TRUE(checkTxIsStaged(snapshot, 0));
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 0, 0).empty());
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 0, 1).empty());
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 0, 0), Types::INVALID_TXIO_KEY);
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 0, 1), Types::INVALID_TXIO_KEY);
    
    EXPECT_TRUE(checkTxIsStaged(snapshot, 1));
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 1, 0).empty());
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 1, 1).empty());
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 1, 0), Types::INVALID_TXIO_KEY);
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 1, 1), Types::INVALID_TXIO_KEY);
 
    snapshot.commitNewZCs();
 
    EXPECT_TRUE(checkTxIsStaged(snapshot, 0));
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 0, 0).empty());
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 0, 1).empty());
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 0, 0), Types::INVALID_TXIO_KEY);
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 0, 1), Types::INVALID_TXIO_KEY);
    
    EXPECT_TRUE(checkTxIsStaged(snapshot, 1));
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 1, 0).empty());
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 1, 1).empty());
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 1, 0), Types::INVALID_TXIO_KEY);
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 1, 1), Types::INVALID_TXIO_KEY);
 
    {
       //add tx2
-      auto filterResult2 = filterParsedTx(
-         txs_[2].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult2 = filterParsedTx(txs_[2].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[2].txPtr_, filterResult2);
+      snapshot.stageNewZC(txs_[2].txPtr, filterResult2);
 
       //add tx3
-      auto filterResult3 = filterParsedTx(
-         txs_[3].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult3 = filterParsedTx(txs_[3].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[3].txPtr_, filterResult3);
+      snapshot.stageNewZC(txs_[3].txPtr, filterResult3);
    }
 
    EXPECT_TRUE(checkTxIsStaged(snapshot, 2));
@@ -1099,16 +1055,16 @@ TEST_F(ZeroConfTests_Mempool, StageChildren_Commit)
 
    {
       auto spender0 = checkTxOutIsSpent(snapshot, 0, 0);
-      EXPECT_TRUE(spender0.startsWith(zcKeys_[2]));
-      EXPECT_TRUE(checkTxOutIsSpent(snapshot, 0, 1).empty());
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender0), zcKeys_[2]);
+      EXPECT_EQ(checkTxOutIsSpent(snapshot, 0, 1), Types::INVALID_TXIO_KEY);
 
       auto spender1 = checkTxOutIsSpent(snapshot, 1, 0);
-      EXPECT_TRUE(spender1.startsWith(zcKeys_[2]));
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender1), zcKeys_[2]);
 
       auto spender2 = checkTxOutIsSpent(snapshot, 1, 1);
-      EXPECT_TRUE(spender2.startsWith(zcKeys_[3]));
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender2), zcKeys_[3]);
 
-      EXPECT_TRUE(checkTxOutIsSpent(snapshot, 2, 0).empty());
+      EXPECT_EQ(checkTxOutIsSpent(snapshot, 2, 0), Types::INVALID_TXIO_KEY);
    }
 
    snapshot.commitNewZCs();
@@ -1118,35 +1074,34 @@ TEST_F(ZeroConfTests_Mempool, StageChildren_Commit)
 
    {
       auto spender0 = checkTxOutIsSpent(snapshot, 0, 0);
-      EXPECT_TRUE(spender0.startsWith(zcKeys_[2]));
-      EXPECT_TRUE(checkTxOutIsSpent(snapshot, 0, 1).empty());
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender0), zcKeys_[2]);
+      EXPECT_EQ(checkTxOutIsSpent(snapshot, 0, 1), Types::INVALID_TXIO_KEY);
 
       auto spender1 = checkTxOutIsSpent(snapshot, 1, 0);
-      EXPECT_TRUE(spender1.startsWith(zcKeys_[2]));
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender1), zcKeys_[2]);
 
       auto spender2 = checkTxOutIsSpent(snapshot, 1, 1);
-      EXPECT_TRUE(spender2.startsWith(zcKeys_[3]));
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender2), zcKeys_[3]);
 
-      EXPECT_TRUE(checkTxOutIsSpent(snapshot, 2, 0).empty());
+      EXPECT_EQ(checkTxOutIsSpent(snapshot, 2, 0), Types::INVALID_TXIO_KEY);
    }
 
    {
       //add tx4
-      auto filterResult4 = filterParsedTx(
-         txs_[4].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult4 = filterParsedTx(txs_[4].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[4].txPtr_, filterResult4);
+      snapshot.stageNewZC(txs_[4].txPtr, filterResult4);
    }
 
    EXPECT_TRUE(checkTxIsStaged(snapshot, 4));
 
    auto spender3 = checkTxOutIsSpent(snapshot, 2, 0);
-   EXPECT_TRUE(spender3.startsWith(zcKeys_[4]));
+   EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender3), zcKeys_[4]);
 
    snapshot.commitNewZCs();
 
@@ -1155,20 +1110,20 @@ TEST_F(ZeroConfTests_Mempool, StageChildren_Commit)
 
    {
       auto spender0 = checkTxOutIsSpent(snapshot, 0, 0);
-      EXPECT_TRUE(spender0.startsWith(zcKeys_[2]));
-      EXPECT_TRUE(checkTxOutIsSpent(snapshot, 0, 1).empty());
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender0), zcKeys_[2]);
+      EXPECT_EQ(checkTxOutIsSpent(snapshot, 0, 1), Types::INVALID_TXIO_KEY);
 
       auto spender1 = checkTxOutIsSpent(snapshot, 1, 0);
-      EXPECT_TRUE(spender1.startsWith(zcKeys_[2]));
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender1), zcKeys_[2]);
 
       auto spender2 = checkTxOutIsSpent(snapshot, 1, 1);
-      EXPECT_TRUE(spender2.startsWith(zcKeys_[3]));
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender2), zcKeys_[3]);
    }
 
    EXPECT_TRUE(checkTxIsStaged(snapshot, 4));
 
    auto spender4 = checkTxOutIsSpent(snapshot, 2, 0);
-   EXPECT_TRUE(spender4.startsWith(zcKeys_[4]));
+   EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender4), zcKeys_[4]);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1178,72 +1133,68 @@ TEST_F(ZeroConfTests_Mempool, DropParent)
 
    {
       //add tx0
-      auto filterResult = filterParsedTx(
-         txs_[0].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult = filterParsedTx(txs_[0].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[0].txPtr_, filterResult);
+      snapshot.stageNewZC(txs_[0].txPtr, filterResult);
 
       //add tx1
-      auto filterResult1 = filterParsedTx(
-         txs_[1].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult1 = filterParsedTx(txs_[1].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[1].txPtr_, filterResult1);
+      snapshot.stageNewZC(txs_[1].txPtr, filterResult1);
    }
 
    EXPECT_TRUE(checkTxIsStaged(snapshot, 0));
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 0, 0).empty());
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 0, 1).empty());
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 0, 0), Types::INVALID_TXIO_KEY);
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 0, 1), Types::INVALID_TXIO_KEY);
    
    EXPECT_TRUE(checkTxIsStaged(snapshot, 1));
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 1, 0).empty());
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 1, 1).empty());
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 1, 0), Types::INVALID_TXIO_KEY);
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 1, 1), Types::INVALID_TXIO_KEY);
 
    {
       //add tx2
-      auto filterResult2 = filterParsedTx(
-         txs_[2].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult2 = filterParsedTx(txs_[2].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[2].txPtr_, filterResult2);
+      snapshot.stageNewZC(txs_[2].txPtr, filterResult2);
 
       //add tx3
-      auto filterResult3 = filterParsedTx(
-         txs_[3].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult3 = filterParsedTx(txs_[3].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[3].txPtr_, filterResult3);
+      snapshot.stageNewZC(txs_[3].txPtr, filterResult3);
    }
 
    EXPECT_TRUE(checkTxIsStaged(snapshot, 2));
    EXPECT_TRUE(checkTxIsStaged(snapshot, 3));
 
    auto spender0 = checkTxOutIsSpent(snapshot, 0, 0);
-   EXPECT_TRUE(spender0.startsWith(zcKeys_[2]));
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 0, 1).empty());
+   EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender0), zcKeys_[2]);
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 0, 1), Types::INVALID_TXIO_KEY);
 
    auto spender1 = checkTxOutIsSpent(snapshot, 1, 0);
-   EXPECT_TRUE(spender1.startsWith(zcKeys_[2]));
+   EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender1), zcKeys_[2]);
 
    auto spender2 = checkTxOutIsSpent(snapshot, 1, 1);
-   EXPECT_TRUE(spender2.startsWith(zcKeys_[3]));
+   EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender2), zcKeys_[3]);
 
    //drop tx0
    auto droppedZCs = snapshot.dropZc(zcKeys_[0]);
@@ -1262,10 +1213,10 @@ TEST_F(ZeroConfTests_Mempool, DropParent)
    EXPECT_TRUE(checkTxIsStaged(snapshot, 1));
    EXPECT_TRUE(checkTxIsStaged(snapshot, 3));
 
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 1, 0).empty());
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 1, 0), Types::INVALID_TXIO_KEY);
 
    auto spender3 = checkTxOutIsSpent(snapshot, 1, 1);
-   EXPECT_TRUE(spender3.startsWith(zcKeys_[3]));
+   EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender3), zcKeys_[3]);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1275,58 +1226,54 @@ TEST_F(ZeroConfTests_Mempool, DropParent_Commit)
 
    {
       //add tx0
-      auto filterResult = filterParsedTx(
-         txs_[0].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult = filterParsedTx(txs_[0].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[0].txPtr_, filterResult);
+      snapshot.stageNewZC(txs_[0].txPtr, filterResult);
 
       //add tx1
-      auto filterResult1 = filterParsedTx(
-         txs_[1].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult1 = filterParsedTx(txs_[1].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[1].txPtr_, filterResult1);
+      snapshot.stageNewZC(txs_[1].txPtr, filterResult1);
    }
 
    EXPECT_TRUE(checkTxIsStaged(snapshot, 0));
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 0, 0).empty());
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 0, 1).empty());
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 0, 0), Types::INVALID_TXIO_KEY);
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 0, 1), Types::INVALID_TXIO_KEY);
    
    EXPECT_TRUE(checkTxIsStaged(snapshot, 1));
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 1, 0).empty());
-   EXPECT_TRUE(checkTxOutIsSpent(snapshot, 1, 1).empty());
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 1, 0), Types::INVALID_TXIO_KEY);
+   EXPECT_EQ(checkTxOutIsSpent(snapshot, 1, 1), Types::INVALID_TXIO_KEY);
 
    {
       //add tx2
-      auto filterResult2 = filterParsedTx(
-         txs_[2].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult2 = filterParsedTx(txs_[2].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[2].txPtr_, filterResult2);
+      snapshot.stageNewZC(txs_[2].txPtr, filterResult2);
 
       //add tx3
-      auto filterResult3 = filterParsedTx(
-         txs_[3].txPtr_,
-         [mainAddrMap=mainAddrMap_](const BinaryData& addr)->bool
+      auto filterResult3 = filterParsedTx(txs_[3].txPtr,
+         [mainAddrMap=mainAddrMap_](const Types::ScrAddr& addr)->bool
          {
             return mainAddrMap->find(addr) == mainAddrMap->end();
          },
          &zcCallbacks_
       );
-      snapshot.stageNewZC(txs_[3].txPtr_, filterResult3);
+      snapshot.stageNewZC(txs_[3].txPtr, filterResult3);
    }
 
    {
@@ -1334,14 +1281,14 @@ TEST_F(ZeroConfTests_Mempool, DropParent_Commit)
       EXPECT_TRUE(checkTxIsStaged(snapshot, 3));
 
       auto spender0 = checkTxOutIsSpent(snapshot, 0, 0);
-      EXPECT_TRUE(spender0.startsWith(zcKeys_[2]));
-      EXPECT_TRUE(checkTxOutIsSpent(snapshot, 0, 1).empty());
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender0), zcKeys_[2]);
+      EXPECT_EQ(checkTxOutIsSpent(snapshot, 0, 1), Types::INVALID_TXIO_KEY);
 
       auto spender1 = checkTxOutIsSpent(snapshot, 1, 0);
-      EXPECT_TRUE(spender1.startsWith(zcKeys_[2]));
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender1), zcKeys_[2]);
 
       auto spender2 = checkTxOutIsSpent(snapshot, 1, 1);
-      EXPECT_TRUE(spender2.startsWith(zcKeys_[3]));
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender2), zcKeys_[3]);
    }
 
    snapshot.commitNewZCs();
@@ -1351,14 +1298,14 @@ TEST_F(ZeroConfTests_Mempool, DropParent_Commit)
       EXPECT_TRUE(checkTxIsStaged(snapshot, 3));
 
       auto spender0 = checkTxOutIsSpent(snapshot, 0, 0);
-      EXPECT_TRUE(spender0.startsWith(zcKeys_[2]));
-      EXPECT_TRUE(checkTxOutIsSpent(snapshot, 0, 1).empty());
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender0), zcKeys_[2]);
+      EXPECT_EQ(checkTxOutIsSpent(snapshot, 0, 1), Types::INVALID_TXIO_KEY);
 
       auto spender1 = checkTxOutIsSpent(snapshot, 1, 0);
-      EXPECT_TRUE(spender1.startsWith(zcKeys_[2]));
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender1), zcKeys_[2]);
 
       auto spender2 = checkTxOutIsSpent(snapshot, 1, 1);
-      EXPECT_TRUE(spender2.startsWith(zcKeys_[3]));
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender2), zcKeys_[3]);
    }
 
    //drop tx0
@@ -1379,10 +1326,10 @@ TEST_F(ZeroConfTests_Mempool, DropParent_Commit)
       EXPECT_TRUE(checkTxIsStaged(snapshot, 1));
       EXPECT_TRUE(checkTxIsStaged(snapshot, 3));
 
-      EXPECT_TRUE(checkTxOutIsSpent(snapshot, 1, 0).empty());
+      EXPECT_EQ(checkTxOutIsSpent(snapshot, 1, 0), Types::INVALID_TXIO_KEY);
 
       auto spender3 = checkTxOutIsSpent(snapshot, 1, 1);
-      EXPECT_TRUE(spender3.startsWith(zcKeys_[3]));
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender3), zcKeys_[3]);
    }
 
    snapshot.commitNewZCs();
@@ -1395,10 +1342,10 @@ TEST_F(ZeroConfTests_Mempool, DropParent_Commit)
       EXPECT_TRUE(checkTxIsStaged(snapshot, 1));
       EXPECT_TRUE(checkTxIsStaged(snapshot, 3));
 
-      EXPECT_TRUE(checkTxOutIsSpent(snapshot, 1, 0).empty());
+      EXPECT_EQ(checkTxOutIsSpent(snapshot, 1, 0), Types::INVALID_TXIO_KEY);
 
       auto spender3 = checkTxOutIsSpent(snapshot, 1, 1);
-      EXPECT_TRUE(spender3.startsWith(zcKeys_[3]));
+      EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender3), zcKeys_[3]);
    }
 }
 
@@ -1425,9 +1372,7 @@ protected:
 
       auto nodePtr = std::dynamic_pointer_cast<NodeUnitTest>(
          Config::NetworkSettings::bitcoinNodes().first);
-      nodePtr->setBlockchain(theBDMt_->bdm()->blockchain());
-      nodePtr->setBlockFiles(theBDMt_->bdm()->blockFiles());
-      nodePtr->setIface(iface_);
+      nodePtr->setBDM(theBDMt_->bdm());
       clients_ = new Clients(theBDMt_->bdm());
    }
 
@@ -1456,7 +1401,7 @@ protected:
       initBDM();
 
       //first UTXO to hit scrAddrF
-      firstUtxoScrAddrF_ = UTXO(500000000, 3, UINT32_MAX, 1, 
+      firstUtxoScrAddrF_ = UTXO(500000000, 3, UINT16_MAX, 1,
          READHEX("9ec8177ca0a4f7aa21ec88a324f236a4d1dce6c610812a90e16febef4603a438"),
          READHEX("76a914d63b766cd342e6f0f7390dd454065e4bbea26b1b88ac"));
    }
@@ -1509,7 +1454,6 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ZC_Plus2)
 {
    TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
    clients_->init();
-   theBDMt_->start(Config::DBSettings::initMode());
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    std::vector<BinaryData> scrAddrVec {
@@ -1529,59 +1473,35 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ZC_Plus2)
    };
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    DBTestUtils::registerWallet(
       clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
-      true, false);
+      false);
    DBTestUtils::registerWallet(
       clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
-      true, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto wltLB1 = bdvPtr->getWalletOrLockbox(LB1ID);
-   auto wltLB2 = bdvPtr->getWalletOrLockbox(LB2ID);
+   theBDMt_->start(Config::DBSettings::initMode());
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 3U);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(theBDMt_->bdm().get(), DB_SELECT::HEADERS), 3U);
    EXPECT_EQ(DBTestUtils::getTopBlockHash(iface_, DB_SELECT::HEADERS), TestChain::blkHash3);
    EXPECT_TRUE(theBDMt_->bdm()->blockchain()->getHeaderByHash(TestChain::blkHash3)->isMainBranch());
 
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50*COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30*COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55*COIN);
-
-   uint64_t fullBalance = wlt->getFullBalance();
-   uint64_t spendableBalance = wlt->getSpendableBalance(4);
-   uint64_t unconfirmedBalance = wlt->getUnconfirmedBalance(4);
-   EXPECT_EQ(fullBalance, 165*COIN);
-   EXPECT_EQ(spendableBalance, 65*COIN);
-   EXPECT_EQ(unconfirmedBalance, 165*COIN);
-
-   scrObj = wltLB1->getScrAddrObjByKey(TestChain::lb1ScrAddr);
-   EXPECT_EQ(scrObj->getFullBalance(), 10 * COIN);
-   scrObj = wltLB1->getScrAddrObjByKey(TestChain::lb1ScrAddrP2SH);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wltLB2->getScrAddrObjByKey(TestChain::lb2ScrAddr);
-   EXPECT_EQ(scrObj->getFullBalance(), 10 * COIN);
-   scrObj = wltLB2->getScrAddrObjByKey(TestChain::lb2ScrAddrP2SH);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-
-   EXPECT_EQ(wltLB1->getFullBalance(), 10 * COIN);
-   EXPECT_EQ(wltLB2->getFullBalance(), 15 * COIN);
+   auto bdm = theBDMt_->bdm();
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb1ScrAddr, bdm), 10 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb1ScrAddrP2SH, bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddr, bdm), 10 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddrP2SH, bdm), 5 * COIN);
 
    //restart bdm
    bdvPtr.reset();
-   wlt.reset();
-   wltLB1.reset();
-   wltLB2.reset();
-
    clients_->shutdown();
    theBDMt_->shutdown();
 
@@ -1590,55 +1510,35 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ZC_Plus2)
 
    initBDM();
    clients_->init();
-   theBDMt_->start(Config::DBSettings::initMode());
    bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    DBTestUtils::registerWallet(
       clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
-      true, false);
+      false);
    DBTestUtils::registerWallet(
       clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
-      true, false);
+      false);
    bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   wltLB1 = bdvPtr->getWalletOrLockbox(LB1ID);
-   wltLB2 = bdvPtr->getWalletOrLockbox(LB2ID);
+   theBDMt_->start(Config::DBSettings::initMode());
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50*COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30*COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55*COIN);
-
-   fullBalance = wlt->getFullBalance();
-   spendableBalance = wlt->getSpendableBalance(4);
-   unconfirmedBalance = wlt->getUnconfirmedBalance(4);
-   EXPECT_EQ(fullBalance, 165 * COIN);
-   EXPECT_EQ(spendableBalance, 65 * COIN);
-   EXPECT_EQ(unconfirmedBalance, 165 * COIN);
-
-   scrObj = wltLB1->getScrAddrObjByKey(TestChain::lb1ScrAddr);
-   EXPECT_EQ(scrObj->getFullBalance(), 10 * COIN);
-   scrObj = wltLB1->getScrAddrObjByKey(TestChain::lb1ScrAddrP2SH);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wltLB2->getScrAddrObjByKey(TestChain::lb2ScrAddr);
-   EXPECT_EQ(scrObj->getFullBalance(), 10 * COIN);
-   scrObj = wltLB2->getScrAddrObjByKey(TestChain::lb2ScrAddrP2SH);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-
-   EXPECT_EQ(wltLB1->getFullBalance(), 10 * COIN);
-   EXPECT_EQ(wltLB2->getFullBalance(), 15 * COIN);
+   bdm = theBDMt_->bdm();
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb1ScrAddr, bdm), 10 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb1ScrAddrP2SH, bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddr, bdm), 10 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddrP2SH, bdm), 5 * COIN);
 
    //add ZC
    std::filesystem::path zcPath(TestUtils::dataDir / "ZCtx.tx");
-   BinaryData rawZC(TestChain::zcTxSize);
+   BinaryData rawZC; rawZC.resize(TestChain::zcTxSize);
    std::ifstream zcStream(zcPath, std::ios::in | std::ios::binary);
    zcStream.read(rawZC.getCharPtr(), TestChain::zcTxSize);
    zcStream.close();
@@ -1646,7 +1546,7 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ZC_Plus2)
    rawZcVec.push_back(std::move(rawZC), 0);
 
    std::filesystem::path lbPath(TestUtils::dataDir / "LBZC.tx");
-   BinaryData rawLBZC(TestChain::lbZCTxSize);
+   BinaryData rawLBZC; rawLBZC.resize(TestChain::lbZCTxSize);
    std::ifstream lbStream(lbPath, std::ios::in | std::ios::binary);
    lbStream.read(rawLBZC.getCharPtr(), TestChain::lbZCTxSize);
    lbStream.close();
@@ -1659,76 +1559,37 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ZC_Plus2)
    DBTestUtils::pushNewZc(theBDMt_, rawLBZcVec);
    DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
 
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50*COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 20*COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 65*COIN);
-
-   fullBalance = wlt->getFullBalance();
-   spendableBalance = wlt->getSpendableBalance(4);
-   unconfirmedBalance = wlt->getUnconfirmedBalance(4);
-   EXPECT_EQ(fullBalance, 165*COIN);
-   EXPECT_EQ(spendableBalance, 35*COIN);
-   EXPECT_EQ(unconfirmedBalance, 165*COIN);
-
-   scrObj = wltLB1->getScrAddrObjByKey(TestChain::lb1ScrAddr);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wltLB1->getScrAddrObjByKey(TestChain::lb1ScrAddrP2SH);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wltLB2->getScrAddrObjByKey(TestChain::lb2ScrAddr);
-   EXPECT_EQ(scrObj->getFullBalance(), 10 * COIN);
-   scrObj = wltLB2->getScrAddrObjByKey(TestChain::lb2ScrAddrP2SH);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-
-   EXPECT_EQ(wltLB1->getFullBalance(), 5 * COIN);
-   EXPECT_EQ(wltLB2->getFullBalance(), 15 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 20 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 65 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb1ScrAddr, bdm), 5 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb1ScrAddrP2SH, bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddr, bdm), 10 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddrP2SH, bdm), 5 * COIN);
 
    //
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    DBTestUtils::triggerNewBlockNotification(theBDMt_);
    DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
 
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 5U);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(theBDMt_->bdm().get(), DB_SELECT::HEADERS), 5U);
    EXPECT_EQ(DBTestUtils::getTopBlockHash(iface_, DB_SELECT::HEADERS), TestChain::blkHash5);
    EXPECT_TRUE(theBDMt_->bdm()->blockchain()->getHeaderByHash(TestChain::blkHash5)->isMainBranch());
 
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(),  50*COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(),  70*COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(),  20*COIN);
-
-   fullBalance = wlt->getFullBalance();
-   spendableBalance = wlt->getSpendableBalance(5);
-   unconfirmedBalance = wlt->getUnconfirmedBalance(5);
-   EXPECT_EQ(fullBalance, 170*COIN);
-   EXPECT_EQ(spendableBalance, 70*COIN);
-   EXPECT_EQ(unconfirmedBalance, 170*COIN);
-
-   scrObj = wltLB1->getScrAddrObjByKey(TestChain::lb1ScrAddr);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wltLB1->getScrAddrObjByKey(TestChain::lb1ScrAddrP2SH);
-   EXPECT_EQ(scrObj->getFullBalance(), 25 * COIN);
-   scrObj = wltLB2->getScrAddrObjByKey(TestChain::lb2ScrAddr);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wltLB2->getScrAddrObjByKey(TestChain::lb2ScrAddrP2SH);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-
-   EXPECT_EQ(wltLB1->getFullBalance(), 30 * COIN);
-   EXPECT_EQ(wltLB2->getFullBalance(), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 70 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 20 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb1ScrAddr, bdm), 5 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb1ScrAddrP2SH, bdm), 25 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddr, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddrP2SH, bdm), 0 * COIN);
 
    //cleanup
    bdvPtr.reset();
-   wlt.reset();
-   wltLB1.reset();
-   wltLB2.reset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST_F(ZeroConfTests_FullNode, Load3Blocks_ZC_Plus3_TestLedgers)
+TEST_F(ZeroConfTests_FullNode, Load3Blocks_ZC_Plus3)
 {
    //copy the first 3 blocks
    TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
@@ -1744,32 +1605,21 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_ZC_Plus3_TestLedgers)
    };
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 3U);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(theBDMt_->bdm().get(), DB_SELECT::HEADERS), 3U);
    EXPECT_EQ(DBTestUtils::getTopBlockHash(iface_, DB_SELECT::HEADERS), TestChain::blkHash3);
    EXPECT_TRUE(theBDMt_->bdm()->blockchain()->getHeaderByHash(TestChain::blkHash3)->isMainBranch());
 
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50*COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30*COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55*COIN);
-
-   uint64_t fullBalance = wlt->getFullBalance();
-   uint64_t spendableBalance = wlt->getSpendableBalance(3);
-   uint64_t unconfirmedBalance = wlt->getUnconfirmedBalance(3);
-   EXPECT_EQ(fullBalance, 165 * COIN);
-   EXPECT_EQ(spendableBalance, 65 * COIN);
-   EXPECT_EQ(unconfirmedBalance, 165 * COIN);
+   auto bdm = theBDMt_->bdm();
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
 
    //add ZC
    auto ZC1 = TestUtils::getTx(5, 1); //block 5, tx 1
@@ -1781,45 +1631,18 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_ZC_Plus3_TestLedgers)
    DBTestUtils::pushNewZc(theBDMt_, rawZcVec);
    DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
 
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50*COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 65*COIN);
-
-   {
-      //check scrAddr ledger before checking balance to make sure fetching 
-      //ledgers does not corrupt the scrAddrObj txio map
-      scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-      EXPECT_EQ(scrObj->getFullBalance(), 20*COIN);
-      auto&& leSA = DBTestUtils::getLedgerEntryFromAddr(
-         (ScrAddrObj*)scrObj, ZChash1);
-      //EXPECT_EQ(leSA.getTxTime(), 1300000000);
-      EXPECT_EQ(leSA.getValue(), -1000000000);
-      EXPECT_EQ(leSA.getBlockNum(), UINT32_MAX);
-      EXPECT_EQ(scrObj->getFullBalance(), 20 * COIN);
-   }
-
-   fullBalance = wlt->getFullBalance();
-   spendableBalance = wlt->getSpendableBalance(4);
-   unconfirmedBalance = wlt->getUnconfirmedBalance(4);
-   EXPECT_EQ(fullBalance, 165 * COIN);
-   EXPECT_EQ(spendableBalance, 35 * COIN);
-   EXPECT_EQ(unconfirmedBalance, 165 * COIN);
-
-   //check ledger for ZC
-   auto&& le = DBTestUtils::getLedgerEntryFromWallet(wlt, ZChash1);
-   //EXPECT_EQ(le.getTxTime(), 1300000000);
-   EXPECT_EQ(le.getValue(),  3000000000);
-   EXPECT_EQ(le.getBlockNum(), UINT32_MAX);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 20 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 65 * COIN);
 
    //pull ZC from DB, verify it's carrying the proper data
-   auto&& dbtx = 
-      iface_->beginTransaction(DB_SELECT::ZERO_CONF, LMDB::Mode::ReadOnly);
+   std::this_thread::sleep_for(100ms);
+   auto dbtx = iface_->beginTransaction(
+      DB_SELECT::ZERO_CONF, LMDB::Mode::ReadOnly);
    StoredTx zcStx;
-   BinaryData zcKey = WRITE_UINT16_BE(0xFFFF);
-   zcKey.append(WRITE_UINT32_LE(0));
+   auto zcKey = Types::constructZCKey(0);
 
-   EXPECT_EQ(iface_->getStoredZcTx(zcStx, zcKey), true);
+   ASSERT_TRUE(iface_->getStoredZC(zcStx, zcKey));
    EXPECT_EQ(zcStx.thisHash, ZChash1);
    EXPECT_EQ(zcStx.numBytes , TestChain::zcTxSize);
    EXPECT_EQ(zcStx.fragBytes, 190U);
@@ -1837,7 +1660,6 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_ZC_Plus3_TestLedgers)
 
    //restart bdm
    bdvPtr.reset();
-   wlt.reset();
 
    clients_->shutdown();
    theBDMt_->shutdown();
@@ -1852,45 +1674,35 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_ZC_Plus3_TestLedgers)
 
    scrAddrVec.pop_back();
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   wlt = bdvPtr->getWalletOrLockbox(wallet1id);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //add 5th block
    TestUtils::setBlocks({ "0", "1", "2", "3", "4" }, blk0dat_);
    DBTestUtils::triggerNewBlockNotification(theBDMt_);
    DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
 
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 4U);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(theBDMt_->bdm().get(), DB_SELECT::HEADERS), 4U);
    EXPECT_EQ(DBTestUtils::getTopBlockHash(iface_, DB_SELECT::HEADERS), TestChain::blkHash4);
    EXPECT_TRUE(theBDMt_->bdm()->blockchain()->getHeaderByHash(TestChain::blkHash4)->isMainBranch());
 
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50*COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 20*COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 20*COIN);
-
-   fullBalance = wlt->getFullBalance();
-   spendableBalance = wlt->getSpendableBalance(5);
-   unconfirmedBalance = wlt->getUnconfirmedBalance(5);
-   EXPECT_EQ(fullBalance, 90 * COIN);
-   EXPECT_EQ(spendableBalance, 10 * COIN);
-   EXPECT_EQ(unconfirmedBalance, 90 * COIN);
+   bdm = theBDMt_->bdm();
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 20 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 20 * COIN);
 
    dbtx = move(
       iface_->beginTransaction(DB_SELECT::ZERO_CONF, LMDB::Mode::ReadOnly));
    StoredTx zcStx3;
 
-   EXPECT_EQ(iface_->getStoredZcTx(zcStx3, zcKey), true);
+   EXPECT_EQ(iface_->getStoredZC(zcStx3, zcKey), true);
    EXPECT_EQ(zcStx3.thisHash, ZChash1);
    EXPECT_EQ(zcStx3.numBytes, TestChain::zcTxSize);
-   EXPECT_EQ(zcStx3.fragBytes, 190U); // Not sure how Python can get this value
+   EXPECT_EQ(zcStx3.fragBytes, 190U);
    EXPECT_EQ(zcStx3.numTxOut, 2U);
    EXPECT_EQ(zcStx3.stxoMap.begin()->second.getValue(), 10 * COIN);
 
@@ -1901,45 +1713,20 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_ZC_Plus3_TestLedgers)
    DBTestUtils::triggerNewBlockNotification(theBDMt_);
    DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
 
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 5U);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(theBDMt_->bdm().get(), DB_SELECT::HEADERS), 5U);
    EXPECT_EQ(DBTestUtils::getTopBlockHash(iface_, DB_SELECT::HEADERS), TestChain::blkHash5);
    EXPECT_TRUE(theBDMt_->bdm()->blockchain()->getHeaderByHash(TestChain::blkHash5)->isMainBranch());
 
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 20 * COIN);
-
-   {
-      //check scrAddr ledger before checking balance to make sure fetching 
-      //ledgers does not corrupt the scrAddrObj txio map
-      scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-      auto&& leSA = DBTestUtils::getLedgerEntryFromAddr(
-         (ScrAddrObj*)scrObj, ZChash1);
-      EXPECT_EQ(leSA.getTxTime(), 1231009513U);
-      EXPECT_EQ(leSA.getValue(), -1000000000);
-      EXPECT_EQ(leSA.getBlockNum(), 5U);
-      EXPECT_EQ(scrObj->getFullBalance(), 70 * COIN);
-   }
-
-   fullBalance = wlt->getFullBalance();
-   spendableBalance = wlt->getSpendableBalance(5);
-   unconfirmedBalance = wlt->getUnconfirmedBalance(5);
-   EXPECT_EQ(fullBalance, 140 * COIN);
-   EXPECT_EQ(spendableBalance, 40 * COIN);
-   EXPECT_EQ(unconfirmedBalance, 140 * COIN);
-
-   le = DBTestUtils::getLedgerEntryFromWallet(wlt, ZChash1);
-   EXPECT_EQ(le.getTxTime(), 1231009513U);
-   EXPECT_EQ(le.getValue(), 3000000000);
-   EXPECT_EQ(le.getBlockNum(), 5U);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 70 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 20 * COIN);
 
    //Tx is now in a block, ZC should be gone from DB
    dbtx = move(
       iface_->beginTransaction(DB_SELECT::ZERO_CONF, LMDB::Mode::ReadWrite));
    StoredTx zcStx4;
 
-   EXPECT_EQ(iface_->getStoredZcTx(zcStx4, zcKey), false);
+   EXPECT_EQ(iface_->getStoredZC(zcStx4, zcKey), false);
    dbtx.reset();
 
    EXPECT_GE(theBDMt_->bdm()->zeroConfCont()->getMergeCount(), 1U);
@@ -1982,154 +1769,65 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_ZCchain)
    };
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    DBTestUtils::registerWallet(
       clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
-      true, false);
+      false);
    DBTestUtils::registerWallet(
       clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
-      true, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto wltLB1 = bdvPtr->getWalletOrLockbox(LB1ID);
-   auto wltLB2 = bdvPtr->getWalletOrLockbox(LB2ID);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 2U);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(theBDMt_->bdm().get(), DB_SELECT::HEADERS), 2U);
    EXPECT_EQ(DBTestUtils::getTopBlockHash(iface_, DB_SELECT::HEADERS), TestChain::blkHash2);
    EXPECT_TRUE(theBDMt_->bdm()->blockchain()->getHeaderByHash(TestChain::blkHash2)->isMainBranch());
 
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-
-   uint64_t fullBalance = wlt->getFullBalance();
-   uint64_t spendableBalance = wlt->getSpendableBalance(3);
-   uint64_t unconfirmedBalance = wlt->getUnconfirmedBalance(3);
-   EXPECT_EQ(fullBalance, 105 * COIN);
-   EXPECT_EQ(spendableBalance, 5 * COIN);
-   EXPECT_EQ(unconfirmedBalance, 105 * COIN);
+   auto bdm = theBDMt_->bdm();
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 0 * COIN);
 
    //add first ZC
    DBTestUtils::pushNewZc(theBDMt_, zc1Vec);
    DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
 
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-
-   fullBalance = wlt->getFullBalance();
-   spendableBalance = wlt->getSpendableBalance(3);
-   unconfirmedBalance = wlt->getUnconfirmedBalance(3);
-   EXPECT_EQ(fullBalance, 80 * COIN);
-   EXPECT_EQ(spendableBalance, 0 * COIN);
-   EXPECT_EQ(unconfirmedBalance, 80 * COIN);
-
-   auto le = DBTestUtils::getLedgerEntryFromWallet(wlt, ZChash1);
-   //EXPECT_EQ(le.getTxTime(), 1400000000);
-   EXPECT_EQ(le.getValue(), -25 * (int64_t)COIN);
-   EXPECT_EQ(le.getBlockNum(), UINT32_MAX);
-   EXPECT_FALSE(le.isChainedZC());
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 0 * COIN);
 
    //add second ZC
    DBTestUtils::pushNewZc(theBDMt_, zc2Vec);
    DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
 
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 20 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 10 * COIN);
-
-   fullBalance = wlt->getFullBalance();
-   spendableBalance = wlt->getSpendableBalance(3);
-   unconfirmedBalance = wlt->getUnconfirmedBalance(3);
-   EXPECT_EQ(fullBalance, 80 * COIN);
-   EXPECT_EQ(spendableBalance, 0 * COIN);
-   EXPECT_EQ(unconfirmedBalance, 80 * COIN);
-
-   le = DBTestUtils::getLedgerEntryFromWallet(wlt, ZChash1);
-   //EXPECT_EQ(le.getTxTime(), 1400000000);
-   EXPECT_EQ(le.getValue(), -25 * (int64_t)COIN);
-   EXPECT_EQ(le.getBlockNum(), UINT32_MAX);
-   EXPECT_FALSE(le.isChainedZC());
-
-   le = DBTestUtils::getLedgerEntryFromWallet(wlt, ZChash2);
-   //EXPECT_EQ(le.getTxTime(), 1500000000);
-   EXPECT_EQ(le.getValue(), 30 * (int64_t)COIN);
-   EXPECT_EQ(le.getBlockNum(), UINT32_MAX);
-   EXPECT_TRUE(le.isChainedZC());
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 20 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 10 * COIN);
 
    //add 4th block
    TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
    DBTestUtils::triggerNewBlockNotification(theBDMt_);
    DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
 
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 20 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 65 * COIN);
-
-   fullBalance = wlt->getFullBalance();
-   spendableBalance = wlt->getSpendableBalance(3);
-   unconfirmedBalance = wlt->getUnconfirmedBalance(3);
-   EXPECT_EQ(fullBalance, 135 * COIN);
-   EXPECT_EQ(spendableBalance, 5 * COIN);
-   EXPECT_EQ(unconfirmedBalance, 135 * COIN);
-
-   le = DBTestUtils::getLedgerEntryFromWallet(wlt, ZChash1);
-   EXPECT_EQ(le.getTxTime(), 1231008309U);
-   EXPECT_EQ(le.getValue(), -25 * (int64_t)COIN);
-   EXPECT_EQ(le.getBlockNum(), 3U);
-   EXPECT_FALSE(le.isChainedZC());
-
-   le = DBTestUtils::getLedgerEntryFromWallet(wlt, ZChash2);
-   //EXPECT_EQ(le.getTxTime(), 1500000000);
-   EXPECT_EQ(le.getValue(), 30 * (int64_t)COIN);
-   EXPECT_EQ(le.getBlockNum(), UINT32_MAX);
-   EXPECT_FALSE(le.isChainedZC());
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 20 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 65 * COIN);
 
    //add 5th and 6th block
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    DBTestUtils::triggerNewBlockNotification(theBDMt_);
    DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
 
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 5U);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(theBDMt_->bdm().get(), DB_SELECT::HEADERS), 5U);
    EXPECT_EQ(DBTestUtils::getTopBlockHash(iface_, DB_SELECT::HEADERS), TestChain::blkHash5);
    EXPECT_TRUE(theBDMt_->bdm()->blockchain()->getHeaderByHash(TestChain::blkHash5)->isMainBranch());
 
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 70 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 20 * COIN);
-
-   fullBalance = wlt->getFullBalance();
-   spendableBalance = wlt->getSpendableBalance(5);
-   unconfirmedBalance = wlt->getUnconfirmedBalance(5);
-   EXPECT_EQ(fullBalance, 140 * COIN);
-   EXPECT_EQ(spendableBalance, 40 * COIN);
-   EXPECT_EQ(unconfirmedBalance, 140 * COIN);
-
-   le = DBTestUtils::getLedgerEntryFromWallet(wlt, ZChash2);
-   EXPECT_EQ(le.getTxTime(), 1231009513U);
-   EXPECT_EQ(le.getValue(), 30 * (int64_t)COIN);
-   EXPECT_EQ(le.getBlockNum(), 5U);
-   EXPECT_FALSE(le.isChainedZC());
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 70 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 20 * COIN);
 
    EXPECT_GE(theBDMt_->bdm()->zeroConfCont()->getMergeCount(), 1U);
 }
@@ -2247,253 +1945,52 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_RBF)
    };
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    DBTestUtils::registerWallet(
       clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
-      true, false);
+      false);
    DBTestUtils::registerWallet(
       clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
-      true, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto wltLB1 = bdvPtr->getWalletOrLockbox(LB1ID);
-   auto wltLB2 = bdvPtr->getWalletOrLockbox(LB2ID);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-
-   uint64_t fullBalance = wlt->getFullBalance();
-   uint64_t spendableBalance = wlt->getSpendableBalance(3);
-   uint64_t unconfirmedBalance = wlt->getUnconfirmedBalance(3);
-   EXPECT_EQ(fullBalance, 135 * COIN);
-   EXPECT_EQ(spendableBalance, 35 * COIN);
-   EXPECT_EQ(unconfirmedBalance, 135 * COIN);
+   auto bdm = theBDMt_->bdm();
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
 
    //add RBF ZC
    DBTestUtils::pushNewZc(theBDMt_, rawRBFVec);
    DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
 
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-
-   fullBalance = wlt->getFullBalance();
-   spendableBalance = wlt->getSpendableBalance(3);
-   unconfirmedBalance = wlt->getUnconfirmedBalance(3);
-   EXPECT_EQ(fullBalance, 105 * COIN);
-   EXPECT_EQ(spendableBalance, 5 * COIN);
-   EXPECT_EQ(unconfirmedBalance, 105 * COIN);
-
-   //check ledger
-   auto&& le = DBTestUtils::getLedgerEntryFromWallet(wlt, RBFhash);
-   //EXPECT_EQ(le.getTxTime(), 1400000000);
-   EXPECT_EQ(le.getValue(), -30 * (int64_t)COIN);
-   EXPECT_EQ(le.getBlockNum(), UINT32_MAX);
-   EXPECT_TRUE(le.isOptInRBF());
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
 
    //replace it
    DBTestUtils::pushNewZc(theBDMt_, spendRBFVec);
    DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
 
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 80 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-
-   fullBalance = wlt->getFullBalance();
-   spendableBalance = wlt->getSpendableBalance(3);
-   unconfirmedBalance = wlt->getUnconfirmedBalance(3);
-   EXPECT_EQ(fullBalance, 135 * COIN);
-   EXPECT_EQ(spendableBalance, 5 * COIN);
-   EXPECT_EQ(unconfirmedBalance, 135 * COIN);
-
-   //verify replacement in ledgers
-   try {
-      DBTestUtils::getLedgerEntryFromWallet(wlt, RBFhash);
-      ASSERT_TRUE(false);
-   } catch (const std::runtime_error& e) {
-      EXPECT_EQ(e.what(), std::string{"no ledger for txhash"});
-   }
-
-   le = DBTestUtils::getLedgerEntryFromWallet(wlt, spendRBFhash);
-   //EXPECT_EQ(le.getTxTime(), 1500000000);
-   EXPECT_EQ(le.getValue(), 30 * (int64_t)COIN);
-   EXPECT_EQ(le.getBlockNum(), UINT32_MAX);
-   EXPECT_TRUE(le.isOptInRBF());
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 80 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
 
    //add last blocks
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    DBTestUtils::triggerNewBlockNotification(theBDMt_);
    DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
 
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 5U);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(theBDMt_->bdm().get(), DB_SELECT::HEADERS), 5U);
    EXPECT_EQ(DBTestUtils::getTopBlockHash(iface_, DB_SELECT::HEADERS), TestChain::blkHash5);
    EXPECT_TRUE(theBDMt_->bdm()->blockchain()->getHeaderByHash(TestChain::blkHash5)->isMainBranch());
 
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 70 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 20 * COIN);
-
-   fullBalance = wlt->getFullBalance();
-   spendableBalance = wlt->getSpendableBalance(5);
-   unconfirmedBalance = wlt->getUnconfirmedBalance(5);
-   EXPECT_EQ(fullBalance, 140 * COIN);
-   EXPECT_EQ(spendableBalance, 40 * COIN);
-   EXPECT_EQ(unconfirmedBalance, 140 * COIN);
-
-   //verify replacement ZC is invalid now
-   try {
-      DBTestUtils::getLedgerEntryFromWallet(wlt, spendRBFhash);
-      ASSERT_TRUE(false);
-   } catch (const std::runtime_error& e) {
-      EXPECT_EQ(e.what(), std::string{"no ledger for txhash"});
-   }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(ZeroConfTests_FullNode, Load4Blocks_ZC_GetUtxos)
-{
-   TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
-   clients_->init();
-   theBDMt_->start(Config::DBSettings::initMode());
-   auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
-
-   std::vector<BinaryData> scrAddrVec {
-      TestChain::scrAddrA,
-      TestChain::scrAddrB,
-      TestChain::scrAddrC,
-      TestChain::scrAddrE
-   };
-
-   const std::vector<BinaryData> lb1ScrAddrs {
-      TestChain::lb1ScrAddr,
-      TestChain::lb1ScrAddrP2SH
-   };
-   const std::vector<BinaryData> lb2ScrAddrs {
-      TestChain::lb2ScrAddr,
-      TestChain::lb2ScrAddrP2SH
-   };
-
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
-   DBTestUtils::registerWallet(
-      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
-      true, false);
-   DBTestUtils::registerWallet(
-      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
-      true, false);
-   auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
-
-   //wait on signals
-   DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto wltLB1 = bdvPtr->getWalletOrLockbox(LB1ID);
-   auto wltLB2 = bdvPtr->getWalletOrLockbox(LB2ID);
-
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 3U);
-   EXPECT_EQ(DBTestUtils::getTopBlockHash(iface_, DB_SELECT::HEADERS), TestChain::blkHash3);
-   EXPECT_TRUE(theBDMt_->bdm()->blockchain()->getHeaderByHash(TestChain::blkHash3)->isMainBranch());
-
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-
-   uint64_t fullBalance = wlt->getFullBalance();
-   uint64_t spendableBalance = wlt->getSpendableBalance(4);
-   uint64_t unconfirmedBalance = wlt->getUnconfirmedBalance(4);
-   EXPECT_EQ(fullBalance, 165 * COIN);
-   EXPECT_EQ(spendableBalance, 65 * COIN);
-   EXPECT_EQ(unconfirmedBalance, 165 * COIN);
-
-   scrObj = wltLB1->getScrAddrObjByKey(TestChain::lb1ScrAddr);
-   EXPECT_EQ(scrObj->getFullBalance(), 10 * COIN);
-   scrObj = wltLB1->getScrAddrObjByKey(TestChain::lb1ScrAddrP2SH);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wltLB2->getScrAddrObjByKey(TestChain::lb2ScrAddr);
-   EXPECT_EQ(scrObj->getFullBalance(), 10 * COIN);
-   scrObj = wltLB2->getScrAddrObjByKey(TestChain::lb2ScrAddrP2SH);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-
-   EXPECT_EQ(wltLB1->getFullBalance(), 10 * COIN);
-   EXPECT_EQ(wltLB2->getFullBalance(), 15 * COIN);
-
-   //add ZC
-   std::filesystem::path zcPath(TestUtils::dataDir / "ZCtx.tx");
-   BinaryData rawZC(TestChain::zcTxSize);
-   std::ifstream zcStream(zcPath, std::ios::in | std::ios::binary);
-   zcStream.read(rawZC.getCharPtr(), TestChain::zcTxSize);
-   zcStream.close();
-
-   std::filesystem::path lbPath(TestUtils::dataDir / "LBZC.tx");
-   BinaryData rawLBZC(TestChain::lbZCTxSize);
-   std::ifstream lbStream(lbPath, std::ios::in | std::ios::binary);
-   lbStream.read(rawLBZC.getCharPtr(), TestChain::lbZCTxSize);
-   lbStream.close();
-
-   DBTestUtils::ZcVector zcVec;
-   zcVec.push_back(std::move(rawZC), 0);
-   zcVec.push_back(std::move(rawLBZC), 0);
-
-   DBTestUtils::pushNewZc(theBDMt_, zcVec);
-   DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
-
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 20 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 65 * COIN);
-
-   fullBalance = wlt->getFullBalance();
-   spendableBalance = wlt->getSpendableBalance(4);
-   unconfirmedBalance = wlt->getUnconfirmedBalance(4);
-   EXPECT_EQ(fullBalance, 165 * COIN);
-   EXPECT_EQ(spendableBalance, 35 * COIN);
-   EXPECT_EQ(unconfirmedBalance, 165 * COIN);
-
-   scrObj = wltLB1->getScrAddrObjByKey(TestChain::lb1ScrAddr);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wltLB1->getScrAddrObjByKey(TestChain::lb1ScrAddrP2SH);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = wltLB2->getScrAddrObjByKey(TestChain::lb2ScrAddr);
-   EXPECT_EQ(scrObj->getFullBalance(), 10 * COIN);
-   scrObj = wltLB2->getScrAddrObjByKey(TestChain::lb2ScrAddrP2SH);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-
-   EXPECT_EQ(wltLB1->getFullBalance(), 5 * COIN);
-   EXPECT_EQ(wltLB2->getFullBalance(), 15 * COIN);
-
-   //get utxos with zc
-   spendableBalance = wlt->getSpendableBalance(4);
-   auto utxoVec = wlt->getSpendableTxOutListForValue(UINT64_MAX);
-
-   uint64_t totalUtxoVal = 0;
-   for (auto& utxo : utxoVec) {
-      totalUtxoVal += utxo.getValue();
-   }
-   EXPECT_EQ(spendableBalance, totalUtxoVal);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 70 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 20 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2535,35 +2032,22 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
    hashVec.insert(hashVec.begin(), hashSet.begin(), hashSet.end());
 
    DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto dbAssetWlt = bdvPtr->getWalletOrLockbox(assetWlt->getID());
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-
-   //check new wallet balances
-   for (auto& scripthash : hashSet) {
-      scrObj = dbAssetWlt->getScrAddrObjByKey(scripthash);
-      EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   }
+   auto bdm = theBDMt_->bdm();
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
    {
       ////spend 27 from wlt to assetWlt's first 2 unused addresses
@@ -2580,13 +2064,19 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE,
+         TestChain::scrAddrF}
+      );
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -2598,7 +2088,7 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo, true));
       }
 
@@ -2635,28 +2125,22 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 15 * COIN);
 
-   //grab ledger
-   auto&& zcledger = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash1);
-   EXPECT_EQ(zcledger.getValue(), 27 * (int64_t)COIN);
-   //EXPECT_EQ(zcledger.getTxTime(), 14000000);
-   EXPECT_TRUE(zcledger.isOptInRBF());
+   {
+      //first zc should be valid
+      auto ss = bdm->zeroConfCont()->getSnapshot();
+      auto key1 = ss->getKeyForHash(ZCHash1);
+      ASSERT_TRUE(Types::isTxKeyValid(key1));
+   }
 
    {
       ////Double spend the 27
@@ -2671,13 +2155,18 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getRBFTxOutList();
+      auto unspentVec = DBTestUtils::getRBFUTXOs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE}
+      );
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -2689,7 +2178,7 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(getSpenderPtr(utxo, true));
       }
 
@@ -2726,43 +2215,30 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 7 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 7  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]);
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[3]);
-   EXPECT_EQ(scrObj->getFullBalance(), 14 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2], bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[3], bdm), 14 * COIN);
 
-   //grab ledgers
+   //grab zc
 
-   //first zc should be replaced, hence the ledger should be empty
-   try {
-      DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash1);
-      ASSERT_TRUE(false);
-   } catch (const std::runtime_error& e) {
-      EXPECT_EQ(e.what(), std::string{"no ledger for txhash"});
+   {
+      //first zc should be replaced
+      auto ss = bdm->zeroConfCont()->getSnapshot();
+      auto key1 = ss->getKeyForHash(ZCHash1);
+      ASSERT_FALSE(Types::isTxKeyValid(key1));
+
+      //second zc should be valid
+      auto key2 = ss->getKeyForHash(ZCHash2);
+      ASSERT_TRUE(Types::isTxKeyValid(key2));
+      ASSERT_TRUE(Types::isThisAZCKey(key2));
    }
-
-   //second zc should be valid
-   //grab ledger
-   auto zcledger3 = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash2);
-   EXPECT_EQ(zcledger3.getValue(), 26 * (int64_t)COIN);
-   //EXPECT_EQ(zcledger3.getTxTime(), 15000000);
-   EXPECT_TRUE(zcledger3.isOptInRBF());
 
    //cpfp the first rbf
    {
@@ -2774,13 +2250,18 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
       auto assetFeed = std::make_shared<Signing::ResolverFeed_AssetWalletSingle>(assetWlt);
 
       //get utxo list for spend value
-      auto unspentVec = dbAssetWlt->getSpendableTxOutListZC();
+      auto unspentVec = DBTestUtils::getZCUTXOs(bdm, {
+         addrVec[0],
+         addrVec[1],
+         addrVec[2],
+         addrVec[3]}
+      );
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -2792,7 +2273,7 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer3.addSpender(getSpenderPtr(utxo, true));
       }
 
@@ -2832,58 +2313,40 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 18 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 18  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[3]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[4]);
-   EXPECT_EQ(scrObj->getFullBalance(), 4 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[5]);
-   EXPECT_EQ(scrObj->getFullBalance(), 6 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[3], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[4], bdm), 4 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[5], bdm), 6 * COIN);
 
-   //grab ledgers
+   {
+      //first zc should be replaced
+      auto ss = bdm->zeroConfCont()->getSnapshot();
+      auto key1 = ss->getKeyForHash(ZCHash1);
+      ASSERT_FALSE(Types::isTxKeyValid(key1));
 
-   //first zc should be replaced, hence the ledger should be empty
-   try {
-      DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash1);
-      ASSERT_TRUE(false);
-   } catch (const std::runtime_error& e) {
-      EXPECT_EQ(e.what(), std::string{"no ledger for txhash"});
+      //second zc should be valid
+      auto key2 = ss->getKeyForHash(ZCHash2);
+      ASSERT_TRUE(Types::isTxKeyValid(key2));
+      ASSERT_TRUE(Types::isThisAZCKey(key2));
+
+      //third zc should be valid
+      auto key3 = ss->getKeyForHash(ZCHash3);
+      ASSERT_TRUE(Types::isTxKeyValid(key3));
+      ASSERT_TRUE(Types::isThisAZCKey(key3));
+      auto tx3 = ss->getTxByKey(key3);
+      ASSERT_TRUE(tx3->isRBF);
+      EXPECT_TRUE(tx3->isChainedZc);
    }
 
-   //second zc should be valid
-   //grab ledger
-   auto zcledger5 = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash2);
-   EXPECT_EQ(zcledger5.getValue(), 26 * (int64_t)COIN);
-   //EXPECT_EQ(zcledger5.getTxTime(), 15000000);
-   EXPECT_TRUE(zcledger5.isOptInRBF());
-
-   //third zc should be valid
-   //grab ledger
-   auto zcledger6 = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash3);
-   EXPECT_EQ(zcledger6.getValue(), -16 * (int64_t)COIN);
-   //EXPECT_EQ(zcledger6.getTxTime(), 16000000);
-   EXPECT_TRUE(zcledger6.isChainedZC());
-   EXPECT_TRUE(zcledger6.isOptInRBF());
-
    //rbf the 2 zc chain dead
-
    {
       ////Double spend the 27
       auto spendVal = 22 * COIN;
@@ -2897,13 +2360,18 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getRBFTxOutList();
+      auto unspentVec = DBTestUtils::getRBFUTXOs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE}
+      );
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -2915,7 +2383,7 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(getSpenderPtr(utxo, true));
       }
 
@@ -2952,283 +2420,43 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 12  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[3]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[4]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[5]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[6]);
-   EXPECT_EQ(scrObj->getFullBalance(), 10 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[7]);
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-
-   //grab ledgers
-
-   //first zc should be replaced, hence the ledger should be empty
-   try {
-      DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash1);
-      ASSERT_TRUE(false);
-   } catch (const std::runtime_error& e) {
-      EXPECT_EQ(e.what(), std::string{"no ledger for txhash"});
-   }
-
-   //second zc should be replaced
-   try {
-      DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash2);
-      ASSERT_TRUE(false);
-   } catch (const std::runtime_error& e) {
-      EXPECT_EQ(e.what(), std::string{"no ledger for txhash"});
-   }
-
-   //third zc should be replaced
-   try {
-      DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash3);
-      ASSERT_TRUE(false);
-   } catch (const std::runtime_error& e) {
-      EXPECT_EQ(e.what(), std::string{"no ledger for txhash"});
-   }
-
-   //fourth zc should be valid
-   auto zcledger10 = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash4);
-   EXPECT_EQ(zcledger10.getValue(), 22 * (int64_t)COIN);
-   //EXPECT_EQ(zcledger10.getTxTime(), 17000000);
-   EXPECT_FALSE(zcledger10.isChainedZC());
-   EXPECT_TRUE(zcledger10.isOptInRBF());
-}
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(ZeroConfTests_FullNode, RegisterAddress_AfterZC)
-{
-   BinaryData ZCHash1, ZCHash2, ZCHash3, ZCHash4;
-
-   //
-   TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
-   clients_->init();
-   theBDMt_->start(Config::DBSettings::initMode());
-   auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
-
-   std::vector<BinaryData> scrAddrVec {
-      TestChain::scrAddrA,
-      TestChain::scrAddrB,
-      TestChain::scrAddrC,
-      TestChain::scrAddrD,
-      TestChain::scrAddrE
-   };
-
-   //// create assetWlt ////
-   Wallets::IO::CreateWalletParams params{
-      homedir_,
-      Passphrase::SetNew{1ms, 0, {}},
-      Passphrase::SetNew{1ms, 0, {}},
-      nullptr, 3
-   };
-   std::unique_ptr<Seeds::ClearTextSeed> seed(
-      new Seeds::ClearTextSeed_Armory());
-   auto assetWlt = Wallets::AssetWallet_Single::createFromSeed(
-      std::move(seed), params);
-
-   //register with db
-   std::vector<BinaryData> addrVec;
-   auto hashSet = assetWlt->getAddrHashSet();
-   std::vector<BinaryData> hashVec;
-   hashVec.insert(hashVec.begin(), hashSet.begin(), hashSet.end());
-
-   DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
-      false, false);
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
-   auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
-
-   //wait on signals
-   DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto dbAssetWlt = bdvPtr->getWalletOrLockbox(assetWlt->getID());
-
-   //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-
-   //check new wallet balances
-   for (auto& scripthash : hashSet) {
-      scrObj = dbAssetWlt->getScrAddrObjByKey(scripthash);
-      EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   }
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[3], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[4], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[5], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[6], bdm), 10 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[7], bdm), 12 * COIN);
 
    {
-      ////spend 27 from wlt to assetWlt's first 2 unused addresses
-      ////send rest back to scrAddrA
+      //first zc should be replaced
+      auto ss = bdm->zeroConfCont()->getSnapshot();
+      auto key1 = ss->getKeyForHash(ZCHash1);
+      ASSERT_FALSE(Types::isTxKeyValid(key1));
 
-      auto spendVal = 27 * COIN;
-      Signing::Signer signer;
-      signer.setLockTime(3);
+      //second zc should be replaced
+      auto key2 = ss->getKeyForHash(ZCHash2);
+      ASSERT_FALSE(Types::isTxKeyValid(key2));
 
-      //instantiate resolver feed overloaded object
-      auto feed = std::make_shared<ResolverUtils::TestResolverFeed>();
-      feed->addPrivKey(TestChain::privKeyAddrB.getRef());
-      feed->addPrivKey(TestChain::privKeyAddrC.getRef());
-      feed->addPrivKey(TestChain::privKeyAddrD.getRef());
-      feed->addPrivKey(TestChain::privKeyAddrE.getRef());
+      //third zc should be replaced
+      auto key3 = ss->getKeyForHash(ZCHash3);
+      ASSERT_FALSE(Types::isTxKeyValid(key3));
 
-      //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
-
-      std::vector<UTXO> utxoVec;
-      uint64_t tval = 0;
-      auto utxoIter = unspentVec.begin();
-      while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
-         utxoVec.push_back(*utxoIter);
-
-         if (tval > spendVal) {
-            break;
-         }
-         ++utxoIter;
-      }
-
-      //create script spender objects
-      uint64_t total = 0;
-      for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
-         signer.addSpender(getSpenderPtr(utxo, true));
-      }
-
-      //spend 12 to first address
-      auto addr0 = assetWlt->getNewAddress();
-      signer.addRecipient(addr0->getRecipient(12 * COIN));
-      addrVec.push_back(addr0->getPrefixedHash());
-
-      //spend 15 to addr 1, use P2PKH
-      auto addr1 = assetWlt->getNewAddress();
-      signer.addRecipient(addr1->getRecipient(15 * COIN));
-      addrVec.push_back(addr1->getPrefixedHash());
-
-      if (total > spendVal) {
-         //deal with change, no fee
-         auto changeVal = total - spendVal;
-         auto recipientChange = std::make_shared<Signing::Recipient_P2PKH>(
-            TestChain::scrAddrD.getSliceCopy(1, 20), changeVal);
-         signer.addRecipient(recipientChange);
-      }
-
-      //sign, verify then broadcast
-      signer.setFeed(feed);
-      signer.sign();
-      EXPECT_TRUE(signer.verify());
-
-      auto rawTx = signer.serializeSignedTx();
-      DBTestUtils::ZcVector zcVec;
-      zcVec.push_back(rawTx, 14000000);
-
-      ZCHash1 = std::move(BtcUtils::getHash256(rawTx));
-      DBTestUtils::pushNewZc(theBDMt_, zcVec);
-      DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
+      //fourth zc should be valid
+      auto key4 = ss->getKeyForHash(ZCHash4);
+      ASSERT_TRUE(Types::isTxKeyValid(key4));
+      ASSERT_TRUE(Types::isThisAZCKey(key4));
+      auto tx4 = ss->getTxByKey(key4);
+      ASSERT_TRUE(tx4->isRBF);
+      EXPECT_FALSE(tx4->isChainedZc);
    }
-
-   //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-
-   auto wallet1_balanceCount =
-      DBTestUtils::getBalanceAndCount(clients_, bdvID, "wallet1", 3);
-
-   EXPECT_EQ(wallet1_balanceCount[0], 143 * COIN);
-   EXPECT_EQ(wallet1_balanceCount[1], 40 * COIN);
-   EXPECT_EQ(wallet1_balanceCount[2], 143 * COIN);
-
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
-
-   auto assetWlt_balanceCount =
-      DBTestUtils::getBalanceAndCount(clients_, bdvID, assetWlt->getID(), 3);
-
-   EXPECT_EQ(assetWlt_balanceCount[0], 27 * COIN);
-   EXPECT_EQ(assetWlt_balanceCount[1], 0 * COIN);
-   EXPECT_EQ(assetWlt_balanceCount[2], 27 * COIN);
-
-   //grab ledger
-   auto zcledger = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash1);
-   EXPECT_EQ(zcledger.getValue(), 27 * (int64_t)COIN);
-   //EXPECT_EQ(zcledger.getTxTime(), 14000000);
-   EXPECT_TRUE(zcledger.isOptInRBF());
-
-   //register new address
-   assetWlt->extendPublicChain(1);
-   hashSet = assetWlt->getAddrHashSet();
-   hashVec.clear();
-   hashVec.insert(hashVec.begin(), hashSet.begin(), hashSet.end());
-   DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
-      false, false);
-
-   //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-
-   wallet1_balanceCount =
-      DBTestUtils::getBalanceAndCount(clients_, bdvID, "wallet1", 3);
-
-   EXPECT_EQ(wallet1_balanceCount[0], 143 * COIN);
-   EXPECT_EQ(wallet1_balanceCount[1], 40 * COIN);
-   EXPECT_EQ(wallet1_balanceCount[2], 143 * COIN);
-
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
-
-   assetWlt_balanceCount =
-      DBTestUtils::getBalanceAndCount(clients_, bdvID, assetWlt->getID(), 3);
-
-   EXPECT_EQ(assetWlt_balanceCount[0], 27 * COIN);
-   EXPECT_EQ(assetWlt_balanceCount[1], 0 * COIN);
-   EXPECT_EQ(assetWlt_balanceCount[2], 27 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3269,34 +2497,26 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
    hashVec.insert(hashVec.begin(), hashSet.begin(), hashSet.end());
 
    DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto dbAssetWlt = bdvPtr->getWalletOrLockbox(assetWlt->getID());
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
+   auto bdm = theBDMt_->bdm();
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 5  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 30 * COIN);
 
    //check new wallet balances
    for (auto& scripthash : hashSet) {
-      scrObj = dbAssetWlt->getScrAddrObjByKey(scripthash);
-      EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+      EXPECT_EQ(DBTestUtils::getScrAddrBalance(scripthash, bdm), 0 * COIN);
    }
 
    {
@@ -3314,13 +2534,19 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
       feed->addPrivKey(TestChain::privKeyAddrE.getRef());
 
       //get utxo list for spend value
-      auto unspentVec = wlt->getSpendableTxOutListForValue(spendVal);
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE,
+         TestChain::scrAddrF}
+      );
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -3332,7 +2558,7 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo, true));
       }
 
@@ -3372,48 +2598,37 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
       for (const auto& txio : txioVec.first) {
          if (txio.hasTxOutZC()) {
             auto txObj = DBTestUtils::getTxByKey(clients_, bdvID,
-               txio.getTxRefOfOutput().getDBKey());
+               txio.getTxKeyOfOutput());
             EXPECT_EQ(txObj.getThisHash(), ZCHash1);
          }
          if (txio.hasTxInZC()) {
             auto txObj = DBTestUtils::getTxByKey(clients_, bdvID,
-               txio.getTxRefOfInput().getDBKey());
+               txio.getTxKeyOfInput());
             EXPECT_EQ(txObj.getThisHash(), ZCHash1);
          }
       }
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8  * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
+
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 15 * COIN);
 
    {
-      scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-      auto zcledger_sa = DBTestUtils::getLedgerEntryFromAddr(
-         (ScrAddrObj*)scrObj, ZCHash1);
-      EXPECT_EQ(zcledger_sa.getValue(), -30 * (int64_t)COIN);
-      //EXPECT_EQ(zcledger_sa.getTxTime(), 14000000);
-      EXPECT_TRUE(zcledger_sa.isOptInRBF());
-      EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+      //first zc should be valid
+      auto ss = bdm->zeroConfCont()->getSnapshot();
+      auto key1 = ss->getKeyForHash(ZCHash1);
+      ASSERT_TRUE(Types::isTxKeyValid(key1));
+      ASSERT_TRUE(Types::isThisAZCKey(key1));
+      auto tx1 = ss->getTxByKey(key1);
+      EXPECT_TRUE(tx1->isRBF);
+      EXPECT_FALSE(tx1->isChainedZc);
    }
-
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 12 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
-
-   //grab ledger
-   auto&& zcledger = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash1);
-   EXPECT_EQ(zcledger.getValue(), 27 * (int64_t)COIN);
-   //EXPECT_EQ(zcledger.getTxTime(), 14000000);
-   EXPECT_TRUE(zcledger.isOptInRBF());
 
    //cpfp the first zc
    {
@@ -3423,12 +2638,15 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
       auto assetFeed = std::make_shared<Signing::ResolverFeed_AssetWalletSingle>(assetWlt);
 
       //get utxo list for spend value
-      auto unspentVec = dbAssetWlt->getSpendableTxOutListZC();
+      auto unspentVec = DBTestUtils::getZCUTXOs(bdm, {
+         addrVec[0],
+         addrVec[1]}
+      );
 
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : unspentVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer3.addSpender(getSpenderPtr(utxo, true));
       }
 
@@ -3465,18 +2683,18 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
       EXPECT_EQ(txioVec.first.size(), 6ULL);
       EXPECT_EQ(txioVec.second.size(), 0ULL);
 
-      std::set<BinaryData> txKeys;
+      std::set<Types::TxKey> txKeys;
       for (const auto& txio : txioVec.first) {
          if (txio.hasTxOutZC()) {
-            txKeys.emplace(txio.getTxRefOfOutput().getDBKey());
+            txKeys.emplace(txio.getTxKeyOfOutput());
          }
          if (txio.hasTxInZC()) {
-            txKeys.emplace(txio.getTxRefOfInput().getDBKey());
+            txKeys.emplace(txio.getTxKeyOfInput());
          }
       }
       for (const auto& txKey : txKeys) {
          auto txObj = DBTestUtils::getTxByKey(clients_, bdvID, txKey);
-         auto zcId = getZcId(txKey);
+         auto zcId = Types::getZcIdFromTxKey(txKey);
          switch (zcId)
          {
             case 0:
@@ -3494,54 +2712,35 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 25 * COIN);
-   {
-      scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-      auto zcledger_sa = DBTestUtils::getLedgerEntryFromAddr(
-         (ScrAddrObj*)scrObj, ZCHash1);
-      EXPECT_EQ(zcledger_sa.getValue(), -30 * (int64_t)COIN);
-      //EXPECT_EQ(zcledger_sa.getTxTime(), 14000000);
-      EXPECT_TRUE(zcledger_sa.isOptInRBF());
-      EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   }
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 25 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
 
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2], bdm), 4 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[3], bdm), 6 * COIN);
 
    {
-      scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]);
-      auto&& zcledger_sa = DBTestUtils::getLedgerEntryFromAddr(
-         (ScrAddrObj*)scrObj, ZCHash2);
-      EXPECT_EQ(zcledger_sa.getValue(), 4 * (int64_t)COIN);
-      //EXPECT_EQ(zcledger_sa.getTxTime(), 15000000);
-      EXPECT_TRUE(zcledger_sa.isOptInRBF());
-      EXPECT_EQ(scrObj->getFullBalance(), 4 * COIN);
+      //first zc should still be valid
+      auto ss = bdm->zeroConfCont()->getSnapshot();
+      auto key1 = ss->getKeyForHash(ZCHash1);
+      ASSERT_TRUE(Types::isTxKeyValid(key1));
+      ASSERT_TRUE(Types::isThisAZCKey(key1));
+      auto tx1 = ss->getTxByKey(key1);
+      EXPECT_TRUE(tx1->isRBF);
+      EXPECT_FALSE(tx1->isChainedZc);
+
+      //second zc should be valid
+      auto key2 = ss->getKeyForHash(ZCHash2);
+      ASSERT_TRUE(Types::isTxKeyValid(key2));
+      ASSERT_TRUE(Types::isThisAZCKey(key2));
+      auto tx2 = ss->getTxByKey(key2);
+      EXPECT_TRUE(tx2->isRBF);
+      EXPECT_TRUE(tx2->isChainedZc);
    }
-
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[3]);
-   EXPECT_EQ(scrObj->getFullBalance(), 6 * COIN);
-
-   //first zc should still be valid
-   auto&& zcledger1 = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash1);
-   EXPECT_EQ(zcledger1.getValue(), 27 * (int64_t)COIN);
-   //EXPECT_EQ(zcledger1.getTxTime(), 14000000);
-   EXPECT_TRUE(zcledger1.isOptInRBF());
-
-   //second zc should be valid
-   auto&& zcledger2 = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash2);
-   EXPECT_EQ(zcledger2.getValue(), -17 * (int64_t)COIN);
-   //EXPECT_EQ(zcledger2.getTxTime(), 15000000);
-   EXPECT_TRUE(zcledger2.isOptInRBF());
 
    //rbf the child
    {
@@ -3553,13 +2752,13 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
          std::make_shared<Signing::ResolverFeed_AssetWalletSingle>(assetWlt);
 
       //get utxo list for spend value
-      auto unspentVec = dbAssetWlt->getRBFTxOutList();
+      auto unspentVec = DBTestUtils::getRBFUTXOs(bdm, {addrVec[0]});
 
       std::vector<UTXO> utxoVec;
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -3571,7 +2770,7 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(getSpenderPtr(utxo, true));
       }
 
@@ -3605,18 +2804,26 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
       EXPECT_EQ(txioVec.first.size(), 5ULL);
       EXPECT_EQ(txioVec.second.size(), 1ULL);
 
-      std::set<BinaryData> txKeys;
+      //tally zc txkeys and run some sanity checks
+      std::set<Types::TxKey> txKeys;
       for (const auto& txio : txioVec.first) {
+         EXPECT_FALSE(txio.getScrAddr().empty());
+         EXPECT_NE(txio.getTxTime(), 0);
+
+         ASSERT_TRUE(Types::isThisATxIOKey(txio.getTxIOKeyOfOutput()));
          if (txio.hasTxOutZC()) {
-            txKeys.emplace(txio.getTxRefOfOutput().getDBKey());
+            txKeys.emplace(txio.getTxKeyOfOutput());
          }
+
          if (txio.hasTxInZC()) {
-            txKeys.emplace(txio.getTxRefOfInput().getDBKey());
+            ASSERT_TRUE(Types::isThisATxIOKey(txio.getTxIOKeyOfInput()));
+            txKeys.emplace(txio.getTxKeyOfInput());
          }
       }
+
       for (const auto& txKey : txKeys) {
          auto txObj = DBTestUtils::getTxByKey(clients_, bdvID, txKey);
-         auto zcId = getZcId(txKey);
+         auto zcId = Types::getZcIdFromTxKey(txKey);
          switch (zcId)
          {
             case 0:
@@ -3635,66 +2842,40 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
    }
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 8 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 8 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 5  * COIN);
+
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm),  0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 15 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2], bdm),  0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[3], bdm),  0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[4], bdm),  6 * COIN);
+
    {
-      scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-      auto&& zcledger_sa = DBTestUtils::getLedgerEntryFromAddr(
-         (ScrAddrObj*)scrObj, ZCHash1);
-      EXPECT_EQ(zcledger_sa.getValue(), -30 * (int64_t)COIN);
-      //EXPECT_EQ(zcledger_sa.getTxTime(), 14000000);
-      EXPECT_TRUE(zcledger_sa.isOptInRBF());
-      EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
+      //first zc should still be valid
+      auto ss = bdm->zeroConfCont()->getSnapshot();
+      auto key1 = ss->getKeyForHash(ZCHash1);
+      ASSERT_TRUE(Types::isTxKeyValid(key1));
+      ASSERT_TRUE(Types::isThisAZCKey(key1));
+      auto tx1 = ss->getTxByKey(key1);
+      EXPECT_TRUE(tx1->isRBF);
+      EXPECT_FALSE(tx1->isChainedZc);
+
+      //second zc should be replaced
+      auto key2 = ss->getKeyForHash(ZCHash2);
+      ASSERT_FALSE(Types::isTxKeyValid(key2));
+
+      //third zc should be valid
+      auto key3 = ss->getKeyForHash(ZCHash3);
+      ASSERT_TRUE(Types::isTxKeyValid(key3));
+      ASSERT_TRUE(Types::isThisAZCKey(key3));
+      auto tx3 = ss->getTxByKey(key3);
+      EXPECT_TRUE(tx3->isRBF);
+      EXPECT_TRUE(tx3->isChainedZc);
    }
-
-   //check new wallet balances
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[1]);
-   EXPECT_EQ(scrObj->getFullBalance(), 15 * COIN);
-   {
-      scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[2]);
-      EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-      try {
-         DBTestUtils::getLedgerEntryFromAddr(
-            (ScrAddrObj*)scrObj, ZCHash2);
-         ASSERT_TRUE(false);
-      } catch (const std::runtime_error& e) {
-         EXPECT_EQ(e.what(), std::string{"no ledger for txhash"});
-      }
-   }
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[3]);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[4]);
-   EXPECT_EQ(scrObj->getFullBalance(), 6 * COIN);
-
-   //grab ledgers
-
-   //first zc should be valid
-   auto zcledger3 = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash1);
-   EXPECT_EQ(zcledger3.getValue(), 27 * (int64_t)COIN);
-   //EXPECT_EQ(zcledger3.getTxTime(), 14000000);
-   EXPECT_TRUE(zcledger3.isOptInRBF());
-
-   //second zc should be replaced
-   try {
-      DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash2);
-      ASSERT_TRUE(false);
-   } catch (const std::runtime_error& e) {
-      EXPECT_EQ(e.what(), std::string{"no ledger for txhash"});
-   }
-
-   //third zc should be valid
-   auto zcledger9 = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash3);
-   EXPECT_EQ(zcledger9.getValue(), -6 * (int64_t)COIN);
-   //EXPECT_EQ(zcledger9.getTxTime(), 17000000);
-   EXPECT_TRUE(zcledger9.isOptInRBF());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3715,22 +2896,18 @@ TEST_F(ZeroConfTests_FullNode, ZC_InOut_SameBlock)
    };
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   auto bdm = theBDMt_->bdm();
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm),  0 * COIN);
 
    //add the 2 zc
    auto ZC1 = TestUtils::getTx(2, 1); //block 2, tx 1
@@ -3747,12 +2924,9 @@ TEST_F(ZeroConfTests_FullNode, ZC_InOut_SameBlock)
    DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm),  5 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm),  0 * COIN);
 
    //add last block
    TestUtils::appendBlocks({ "2" }, blk0dat_);
@@ -3760,359 +2934,15 @@ TEST_F(ZeroConfTests_FullNode, ZC_InOut_SameBlock)
    DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
 
    //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(ZeroConfTests_FullNode, TwoZC_CheckLedgers)
-{
-   BinaryData ZCHash1, ZCHash2, ZCHash3, ZCHash4;
-
-   //
-   TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
-   clients_->init();
-   theBDMt_->start(Config::DBSettings::initMode());
-   auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
-
-   std::vector<BinaryData> scrAddrVec {
-      TestChain::scrAddrA,
-      TestChain::scrAddrB,
-      TestChain::scrAddrC,
-      TestChain::scrAddrE
-   };
-
-   //// create assetWlt ////
-   Wallets::IO::CreateWalletParams params{
-      homedir_,
-      Passphrase::SetNew{1ms, 0, {}},
-      Passphrase::SetNew{1ms, 0, {}},
-      nullptr, 5
-   };
-   std::unique_ptr<Seeds::ClearTextSeed> seed(
-      new Seeds::ClearTextSeed_Armory());
-   auto assetWlt = Wallets::AssetWallet_Single::createFromSeed(
-      std::move(seed), params);
-
-   //register with db
-   std::vector<BinaryData> addrVec;
-
-   auto hashSet = assetWlt->getAddrHashSet();
-   std::vector<BinaryData> hashVec;
-   hashVec.insert(hashVec.begin(), hashSet.begin(), hashSet.end());
-
-   //add existing address to asset wlt for zc test purposes
-   hashVec.push_back(TestChain::scrAddrD);
-   DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
-      false, false);
-   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
-   auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
-
-   //wait on signals
-   DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 3U);
-
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
-   auto dbAssetWlt = bdvPtr->getWalletOrLockbox(assetWlt->getID());
-   auto delegateID = DBTestUtils::getLedgerDelegate(clients_, bdvID);
-
-   //check balances
-   const ScrAddrObj* scrObj;
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-
-   //check new wallet balances
-   for (auto& scripthash : hashSet) {
-      scrObj = dbAssetWlt->getScrAddrObjByKey(scripthash);
-      EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-   }
-
-   {
-      /*
-      Create a tx to fund assetWlt from scrAddrF. This will appear as
-      an external tx since scrAddrF isn't registered
-      */
-      Signing::Signer signer;
-
-      //instantiate resolver feed overloaded object
-      auto feed = std::make_shared<ResolverUtils::TestResolverFeed>();
-      feed->addPrivKey(TestChain::privKeyAddrF.getRef());
-
-      //create spender
-      {
-         auto spender = std::make_shared<Signing::ScriptSpender>(firstUtxoScrAddrF_);
-         signer.addSpender(spender);
-      }
-
-      auto assetWlt_addr = assetWlt->getNewAddress(
-         AddressEntryType(AddressEntryType::P2WPKH | AddressEntryType::P2SH));
-      addrVec.push_back(assetWlt_addr->getPrefixedHash());
-      signer.addRecipient(assetWlt_addr->getRecipient(firstUtxoScrAddrF_.value_));
-
-      //sign, verify then broadcast
-      signer.setFeed(feed);
-      signer.sign();
-      EXPECT_TRUE(signer.verify());
-
-      auto rawTx = signer.serializeSignedTx();
-      DBTestUtils::ZcVector zcVec;
-      zcVec.push_back(rawTx, 14000000);
-
-      ZCHash1 = std::move(BtcUtils::getHash256(rawTx));
-      DBTestUtils::pushNewZc(theBDMt_, zcVec);
-      auto txioVec = DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
-      EXPECT_EQ(txioVec.first.size(), 1ULL);
-      EXPECT_EQ(txioVec.second.size(), 0ULL);
-
-      for (const auto& txio : txioVec.first) {
-         if (txio.hasTxOutZC()) {
-            auto txObj = DBTestUtils::getTxByKey(clients_, bdvID,
-               txio.getTxRefOfOutput().getDBKey());
-            EXPECT_EQ(txObj.getThisHash(), ZCHash1);
-         }
-         if (txio.hasTxInZC()) {
-            auto txObj = DBTestUtils::getTxByKey(clients_, bdvID,
-               txio.getTxRefOfInput().getDBKey());
-            EXPECT_EQ(txObj.getThisHash(), ZCHash1);
-         }
-      }
-   }
-
-   //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-
-   //check new wallet balances
-   {
-      scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-      auto zcledgerSA = DBTestUtils::getLedgerEntryFromAddr(
-         (ScrAddrObj*)scrObj, ZCHash1);
-      EXPECT_EQ(zcledgerSA.getValue(), 5 * (int64_t)COIN);
-      //EXPECT_EQ(zcledgerSA.getTxTime(), 14000000);
-      EXPECT_FALSE(zcledgerSA.isOptInRBF());
-      EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   }
-   scrObj = dbAssetWlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-
-   //grab wallet ledger
-   auto zcledger = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash1);
-   EXPECT_EQ(zcledger.getValue(), 5 * (int64_t)COIN);
-   //EXPECT_EQ(zcledger.getTxTime(), 14000000);
-   EXPECT_FALSE(zcledger.isOptInRBF());
-   EXPECT_FALSE(zcledger.isSentToSelf());
-
-   //grab delegate ledger
-   auto&& delegateLedger = DBTestUtils::getHistoryPage(clients_, bdvID, delegateID, 0);
-
-   unsigned zc1_count = 0;
-   for (auto& ld : delegateLedger) {
-      if (ld.getTxHash() == ZCHash1) {
-         zc1_count++;
-      }
-   }
-
-   EXPECT_EQ(zc1_count, 1U);
-
-   {
-      ////assetWlt send-to-self
-      auto spendVal = 5 * COIN;
-      Signing::Signer signer2;
-
-      auto feed = std::make_shared<ResolverUtils::HybridFeed>(assetWlt);
-      auto addToFeed = [feed](const BinaryData& key)->void
-      {
-         feed->testFeed_.addPrivKey(key.getRef());
-      };
-      addToFeed(TestChain::privKeyAddrD);
-
-      //get utxo list for spend value
-      auto unspentVec = dbAssetWlt->getSpendableTxOutListForValue();
-
-      std::vector<UTXO> utxoVec;
-      uint64_t tval = 0;
-      auto utxoIter = unspentVec.begin();
-      while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
-         utxoVec.push_back(*utxoIter);
-
-         if (tval >= spendVal) {
-            break;
-         }
-         ++utxoIter;
-      }
-
-      //create script spender objects
-      uint64_t total = 0;
-      for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
-         signer2.addSpender(getSpenderPtr(utxo, true));
-      }
-
-      auto addr2 = assetWlt->getNewAddress(
-         AddressEntryType(AddressEntryType::P2WPKH | AddressEntryType::P2SH));
-      signer2.addRecipient(addr2->getRecipient(spendVal));
-      addrVec.push_back(addr2->getPrefixedHash());
-
-      //sign, verify then broadcast
-      signer2.setFeed(feed);
-      signer2.sign();
-      EXPECT_TRUE(signer2.verify());
-
-      auto rawTx = signer2.serializeSignedTx();
-      DBTestUtils::ZcVector zcVec2;
-      zcVec2.push_back(rawTx, 15000000);
-
-      ZCHash2 = std::move(BtcUtils::getHash256(rawTx));
-      DBTestUtils::pushNewZc(theBDMt_, zcVec2);
-      auto txioVec = DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
-      for (const auto& txio : txioVec.first) {
-         if (txio.hasTxOutZC()) {
-            auto txObj = DBTestUtils::getTxByKey(clients_, bdvID,
-               txio.getTxRefOfOutput().getDBKey());
-            EXPECT_EQ(txObj.getThisHash(), ZCHash2);
-         }
-         if (txio.hasTxInZC()) {
-            auto txObj = DBTestUtils::getTxByKey(clients_, bdvID,
-               txio.getTxRefOfInput().getDBKey());
-            EXPECT_EQ(txObj.getThisHash(), ZCHash2);
-         }
-      }
-   }
-
-   //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-
-   //check new wallet balances
-   {
-      scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-      auto zcledgerSA = DBTestUtils::getLedgerEntryFromAddr(
-         (ScrAddrObj*)scrObj, ZCHash1);
-      EXPECT_EQ(zcledgerSA.getValue(), 5 * (int64_t)COIN);
-      //EXPECT_EQ(zcledgerSA.getTxTime(), 14000000);
-      EXPECT_FALSE(zcledgerSA.isOptInRBF());
-      EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   }
-
-   scrObj = dbAssetWlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-
-   //grab wallet ledger
-   auto zcledger2 = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash1);
-   EXPECT_EQ(zcledger2.getValue(), 5 * (int64_t)COIN);
-   EXPECT_EQ(zcledger2.getBlockNum(), UINT32_MAX);
-   EXPECT_FALSE(zcledger2.isSentToSelf());
-
-   auto zcledger3 = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash2);
-   EXPECT_EQ(zcledger3.getValue(), 5 * (int64_t)COIN);
-   EXPECT_EQ(zcledger3.getBlockNum(), UINT32_MAX);
-   EXPECT_TRUE(zcledger3.isSentToSelf());
-
-   //grab delegate ledger
-   auto delegateLedger2 = DBTestUtils::getHistoryPage(clients_, bdvID, delegateID, 0);
-
-   unsigned zc2_count = 0;
-   unsigned zc3_count = 0;
-
-   for (auto& ld : delegateLedger2) {
-      if (ld.getTxHash() == ZCHash1) {
-         zc2_count++;
-      }
-      if (ld.getTxHash() == ZCHash2) {
-         zc3_count++;
-      }
-   }
-
-   EXPECT_EQ(zc2_count, 1U);
-   EXPECT_EQ(zc3_count, 1U);
-
-   //mine a new block
-   DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrB, 1);
-   DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
-
-   //check chain is 1 block longer
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 4U);
-
-   //check balances
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
-   EXPECT_EQ(scrObj->getFullBalance(), 50 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrB);
-   EXPECT_EQ(scrObj->getFullBalance(), 80 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrC);
-   EXPECT_EQ(scrObj->getFullBalance(), 55 * COIN);
-   scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrE);
-   EXPECT_EQ(scrObj->getFullBalance(), 30 * COIN);
-
-   //check new wallet balances
-   {
-      scrObj = dbAssetWlt->getScrAddrObjByKey(addrVec[0]);
-      auto zcledgerSA = DBTestUtils::getLedgerEntryFromAddr(
-         (ScrAddrObj*)scrObj, ZCHash1);
-      EXPECT_EQ(zcledgerSA.getValue(), 5 * (int64_t)COIN);
-      //EXPECT_EQ(zcledgerSA.getTxTime(), 14000000);
-      EXPECT_FALSE(zcledgerSA.isOptInRBF());
-      EXPECT_EQ(scrObj->getFullBalance(), 5 * COIN);
-   }
-
-   scrObj = dbAssetWlt->getScrAddrObjByKey(TestChain::scrAddrD);
-   EXPECT_EQ(scrObj->getFullBalance(), 0 * COIN);
-
-   //grab wallet ledger
-   zcledger2 = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash1);
-   EXPECT_EQ(zcledger2.getValue(), 5 * (int64_t)COIN);
-   EXPECT_EQ(zcledger2.getBlockNum(), 4U);
-   EXPECT_FALSE(zcledger2.isSentToSelf());
-
-   zcledger3 = DBTestUtils::getLedgerEntryFromWallet(dbAssetWlt, ZCHash2);
-   EXPECT_EQ(zcledger3.getValue(), 5 * (int64_t)COIN);
-   EXPECT_EQ(zcledger3.getBlockNum(), 4U);
-   EXPECT_TRUE(zcledger3.isSentToSelf());
-
-   //grab delegate ledger
-   delegateLedger2 = DBTestUtils::getHistoryPage(clients_, bdvID, delegateID, 0);
-
-   zc2_count = 0;
-   zc3_count = 0;
-   for (auto& ld : delegateLedger2) {
-      if (ld.getTxHash() == ZCHash1) {
-         zc2_count++;
-      }
-      if (ld.getTxHash() == ZCHash2) {
-         zc3_count++;
-      }
-   }
-
-   EXPECT_EQ(zc2_count, 1U);
-   EXPECT_EQ(zc3_count, 1U);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 55 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm),  0 * COIN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
+//NOTE: have to rework supernode scanner before getting to this
+#if 0
 class ZeroConfTests_Supernode : public ::testing::Test
 {
 protected:
@@ -4136,9 +2966,7 @@ protected:
       auto nodePtr = std::dynamic_pointer_cast<NodeUnitTest>(
          Config::NetworkSettings::bitcoinNodes().first);
 
-      nodePtr->setBlockchain(theBDMt_->bdm()->blockchain());
-      nodePtr->setBlockFiles(theBDMt_->bdm()->blockFiles());
-      nodePtr->setIface(iface_);
+      nodePtr->setBDM(theBDMt_->bdm());
       clients_ = new Clients(theBDMt_->bdm());
    }
 
@@ -4215,13 +3043,12 @@ TEST_F(ZeroConfTests_Supernode, ZeroConfUpdate)
    theBDMt_->start(Config::DBSettings::initMode());
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    BinaryData ZChash;
    {
@@ -4246,7 +3073,7 @@ TEST_F(ZeroConfTests_Supernode, ZeroConfUpdate)
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -4258,7 +3085,7 @@ TEST_F(ZeroConfTests_Supernode, ZeroConfUpdate)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo, true));
       }
 
@@ -4304,8 +3131,7 @@ TEST_F(ZeroConfTests_Supernode, ZeroConfUpdate)
 
    //check ZChash in DB
    {
-      BinaryData zcKey = WRITE_UINT16_BE(0xFFFF);
-      zcKey.append(WRITE_UINT32_LE(0));
+      auto zcKey = Types::constructZCKey(0);
       auto ss = theBDMt_->bdm()->zeroConfCont()->getSnapshot();
       EXPECT_EQ(ss->getHashForKey(zcKey), ZChash);
    }
@@ -4330,12 +3156,12 @@ TEST_F(ZeroConfTests_Supernode, UnrelatedZC_CheckLedgers)
    };
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
    auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
    auto delegateID = DBTestUtils::getLedgerDelegate(clients_, bdvID);
 
@@ -4487,12 +3313,12 @@ TEST_F(ZeroConfTests_Supernode, RegisterAfterZC)
    };
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
    auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
    auto delegateID = DBTestUtils::getLedgerDelegate(clients_, bdvID);
 
@@ -4561,7 +3387,7 @@ TEST_F(ZeroConfTests_Supernode, RegisterAfterZC)
    //Register scrAddrD with the wallet. It should have the ZC balance
    scrAddrVec.push_back(TestChain::scrAddrD);
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, true);
+      true);
 
    scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrD);
    EXPECT_EQ(scrObj->getFullBalance(), 65 * COIN);
@@ -4616,14 +3442,14 @@ TEST_F(ZeroConfTests_Supernode, ZC_Reorg)
    }
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, wltVec, assetWlt->getID(),
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
    auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
    auto assetWltDbObj = bdvPtr->getWalletOrLockbox(assetWlt->getID());
    auto delegateID = DBTestUtils::getLedgerDelegate(clients_, bdvID);
@@ -4788,15 +3614,15 @@ TEST_F(ZeroConfTests_Supernode, ChainZC_RBFchild_Test)
    hashVec.insert(hashVec.begin(), hashSet.begin(), hashSet.end());
 
    DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
-      false, false);
+      false);
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 3U);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(theBDMt_->bdm().get(), DB_SELECT::HEADERS), 3U);
 
    auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
    auto dbAssetWlt = bdvPtr->getWalletOrLockbox(assetWlt->getID());
@@ -4841,7 +3667,7 @@ TEST_F(ZeroConfTests_Supernode, ChainZC_RBFchild_Test)
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -4853,7 +3679,7 @@ TEST_F(ZeroConfTests_Supernode, ChainZC_RBFchild_Test)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer.addSpender(getSpenderPtr(utxo, true));
       }
 
@@ -4926,7 +3752,7 @@ TEST_F(ZeroConfTests_Supernode, ChainZC_RBFchild_Test)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : unspentVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer3.addSpender(getSpenderPtr(utxo, true));
       }
 
@@ -5014,7 +3840,7 @@ TEST_F(ZeroConfTests_Supernode, ChainZC_RBFchild_Test)
       uint64_t tval = 0;
       auto utxoIter = unspentVec.begin();
       while (utxoIter != unspentVec.end()) {
-         tval += utxoIter->getValue();
+         tval += utxoIter->getAmount();
          utxoVec.push_back(*utxoIter);
 
          if (tval > spendVal) {
@@ -5026,7 +3852,7 @@ TEST_F(ZeroConfTests_Supernode, ChainZC_RBFchild_Test)
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {
-         total += utxo.getValue();
+         total += utxo.getAmount();
          signer2.addSpender(getSpenderPtr(utxo, true));
       }
 
@@ -5111,8 +3937,8 @@ TEST_F(ZeroConfTests_Supernode, ChainZC_RBFchild_Test)
    DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrA, 3);
    DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
 
-   //check chain is 3 block longer
-   EXPECT_EQ(DBTestUtils::getTopBlockHeight(iface_, DB_SELECT::HEADERS), 6U);
+   //check chain is 3 blocks longer
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(theBDMt_->bdm().get(), DB_SELECT::HEADERS), 6U);
 
    //check balances
    scrObj = wlt->getScrAddrObjByKey(TestChain::scrAddrA);
@@ -5168,12 +3994,12 @@ TEST_F(ZeroConfTests_Supernode, ZC_InOut_SameBlock)
    };
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
    auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
 
    //check balances
@@ -5242,12 +4068,12 @@ TEST_F(ZeroConfTests_Supernode, ZC_MineAfter1Block)
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
-      false, false);
+      false);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
    DBTestUtils::goOnline(clients_, bdvID);
-   DBTestUtils::waitOnBDMReady(clients_, bdvID);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
    auto wlt = bdvPtr->getWalletOrLockbox(wallet1id);
 
    uint64_t balanceWlt;
@@ -5294,7 +4120,7 @@ TEST_F(ZeroConfTests_Supernode, ZC_MineAfter1Block)
       signer.addSpender(spenderA);
 
       auto recipient = std::make_shared<Signing::Recipient_P2PKH>(
-         TestChain::scrAddrC.getSliceCopy(1, 20), utxoA.getValue());
+         TestChain::scrAddrC.getSliceCopy(1, 20), utxoA.getAmount());
       signer.addRecipient(recipient);
 
       signer.setFeed(feed);
@@ -5309,7 +4135,7 @@ TEST_F(ZeroConfTests_Supernode, ZC_MineAfter1Block)
       signer.addSpender(spenderB);
 
       auto recipient = std::make_shared<Signing::Recipient_P2PKH>(
-         TestChain::scrAddrC.getSliceCopy(1, 20), utxoB.getValue());
+         TestChain::scrAddrC.getSliceCopy(1, 20), utxoB.getAmount());
       signer.addRecipient(recipient);
 
       signer.setFeed(feed);
@@ -5360,11 +4186,11 @@ TEST_F(ZeroConfTests_Supernode, ZC_MineAfter1Block)
    balanceWlt = wlt->getScrAddrObjByKey(TestChain::scrAddrD)->getFullBalance();
    EXPECT_EQ(balanceWlt, 60 * COIN);
 
-   zc1 = bdvPtr->getTxByHash(hash1);
-   zc2 = bdvPtr->getTxByHash(hash2);
+   auto zc3 = bdvPtr->getTxByHash(hash1);
+   auto zc4 = bdvPtr->getTxByHash(hash2);
 
-   EXPECT_EQ(zc1.getTxHeight(), 6U);
-   EXPECT_EQ(zc2.getTxHeight(), UINT32_MAX);
+   EXPECT_EQ(zc3.getTxHeight(), 6U);
+   EXPECT_EQ(zc4.getTxHeight(), UINT32_MAX);
 
    //mine last block
    DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrB, 1);
@@ -5383,14 +4209,13 @@ TEST_F(ZeroConfTests_Supernode, ZC_MineAfter1Block)
    balanceWlt = wlt->getScrAddrObjByKey(TestChain::scrAddrD)->getFullBalance();
    EXPECT_EQ(balanceWlt, 60 * COIN);
 
-   zc1 = bdvPtr->getTxByHash(hash1);
-   zc2 = bdvPtr->getTxByHash(hash2);
+   auto zc5 = bdvPtr->getTxByHash(hash1);
+   auto zc6 = bdvPtr->getTxByHash(hash2);
 
-   EXPECT_EQ(zc1.getTxHeight(), 6U);
-   EXPECT_EQ(zc2.getTxHeight(), 7U);
+   EXPECT_EQ(zc5.getTxHeight(), 6U);
+   EXPECT_EQ(zc6.getTxHeight(), 7U);
    EXPECT_GE(theBDMt_->bdm()->zeroConfCont()->getMergeCount(), 1U);
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -5407,10 +4232,7 @@ protected:
 
       rpcNode_ = std::dynamic_pointer_cast<NodeRPC_UnitTest>(
          Config::NetworkSettings::rpcNode());
-
-      nodePtr_->setIface(iface_);
-      nodePtr_->setBlockchain(theBDMt_->bdm()->blockchain());
-      nodePtr_->setBlockFiles(theBDMt_->bdm()->blockFiles());
+      nodePtr_->setBDM(theBDMt_->bdm());
       hexMagicBytes = Config::BitcoinSettings::getMagicBytes().toHexStr();
    }
 
@@ -7327,7 +6149,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, ZcUpdate_RBFLowFee)
    BinaryData branchPointBlockHash, mainBranchBlockHash;
    {
       auto top = theBDMt_->bdm()->blockchain()->top();
-      branchPointBlockHash = top->getThisHash();
+      branchPointBlockHash = top->getThisHash().toBinaryData();
    }
 
    BinaryData bd_BtoC;
@@ -10516,7 +9338,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BroadcastSameZC_ManyThreads)
 
       for (unsigned i=0; i<tx.getNumTxOut(); i++) {
          auto txout = tx.getTxOutCopy(i);
-         addrSet.insert(txout.getScrAddressStr());
+         addrSet.insert(txout.getScrAddress());
       }
       return addrSet;
    };
@@ -11094,7 +9916,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BroadcastSameZC_ManyThreads_RPCFallbac
 
       for (unsigned i=0; i<tx.getNumTxOut(); i++) {
          auto txout = tx.getTxOutCopy(i);
-         addrSet.insert(txout.getScrAddressStr());
+         addrSet.insert(txout.getScrAddress());
       }
       return addrSet;
    };
@@ -11581,7 +10403,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BroadcastSameZC_RPCThenP2P)
 
       for (unsigned i=0; i<tx.getNumTxOut(); i++) {
          auto txout = tx.getTxOutCopy(i);
-         addrSet.insert(txout.getScrAddressStr());
+         addrSet.insert(txout.getScrAddress());
       }
 
       return addrSet;
@@ -11912,15 +10734,14 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, RebroadcastInvalidBatch)
       bdvObj->unregisterFromDB();
    }
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // Now actually execute all the tests
 ////////////////////////////////////////////////////////////////////////////////
 GTEST_API_ int main(int argc, char **argv)
 {
-#ifdef _MSC_VER
-   _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
-
+#ifdef _WIN32
    WSADATA wsaData;
    WORD wVersion = MAKEWORD(2, 0);
    WSAStartup(wVersion, &wsaData);

@@ -5,149 +5,294 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
 #include <iostream>
-#include <vector>
-#include <map>
-#include <cmath>
-#include <algorithm>
-#include <thread>
+#include <cstring>
 #include <cassert>
 
-#include <Utils/BinaryData.h>
+#include "BlockObj.h"
 #include <Utils/BtcUtils.h>
 #include <Utils/varint.h>
 #include <Utils/DBUtils.h>
-
-#include "StoredBlockObj.h"
-#include "BlockObj.h"
-#include "lmdb_wrapper.h"
+#include <Utils/Cryptography.h>
 
 using namespace Armory;
 
 ////////////////////////////////////////////////////////////////////////////////
-// BlockHeader
-BlockHeader::BlockHeader() :
-   isInitialized_(false),
-   isMainBranch_(false),
-   isOrphan_(false),
-   isFinishedCalc_(false),
-   duplicateID_(UINT8_MAX),
-   numTx_(UINT32_MAX),
-   numBlockBytes_(UINT32_MAX)
+// BlockOffset
+BlockOffset::BlockOffset(uint16_t fid, size_t off) :
+   fileID_(fid), offset_(off)
 {}
 
-BlockHeader::BlockHeader(const uint8_t* ptr, uint32_t size)
+BlockOffset::BlockOffset(const BlockOffset& bo) :
+   fileID_(bo.fileID_), offset_(bo.offset_)
+{}
+
+bool BlockOffset::operator<(const BlockOffset& rhs) const
 {
-   unserialize(ptr, size);
+   if (fileID_ < rhs.fileID_) {
+      return true;
+   }
+   return offset_ < rhs.offset_;
 }
 
-BlockHeader::BlockHeader(BinaryRefReader& brr)
+BlockOffset& BlockOffset::operator=(const BlockOffset& rhs)
 {
-   unserialize(brr);
+   this->fileID_ = rhs.fileID_;
+   this->offset_ = rhs.offset_;
+   return *this;
 }
 
-BlockHeader::BlockHeader(BinaryDataRef str)
+bool BlockOffset::isValid() const
 {
-   unserialize(str);
+   return fileID_ != UINT16_MAX && offset_ != SIZE_MAX;
 }
 
-void BlockHeader::clearDataCopy()
+uint16_t BlockOffset::fileID() const
 {
-   dataCopy_.resize(0);
+   return fileID_;
+}
+
+size_t BlockOffset::offset() const
+{
+   return offset_;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Hash32
+Hash32::Hash32()
+{
+   std::memset(data, 0, 32);
+}
+
+Hash32::Hash32(const BinaryData& bd)
+{
+   if (bd.getSize() != 32) {
+      throw std::length_error("only accepts 32 bytes of data");
+   }
+   std::memcpy(data, bd.getPtr(), 32);
+}
+
+Hash32::Hash32(const BinaryDataRef& bdr)
+{
+   if (bdr.getSize() != 32) {
+      throw std::length_error("only accepts 32 bytes of data");
+   }
+   std::memcpy(data, bdr.getPtr(), 32);
 }
 
 ////////
-void BlockHeader::unserialize(const uint8_t* ptr, uint32_t size)
+bool Hash32::operator==(const Hash32& rhs) const
+{
+   //compiler should optimize the hell out of this
+   return std::memcmp(data, rhs.data, 32) == 0;
+}
+
+bool Hash32::operator==(const BinaryData& rhs) const
+{
+   if (rhs.getSize() != 32) {
+      throw std::length_error("hash32 comparator requires 32 bytes bd");
+   }
+   return std::memcmp(data, rhs.getPtr(), 32) == 0;
+}
+
+bool Hash32::operator<(const Hash32& lhs) const
+{
+   return std::memcmp(data, lhs.data, 32) < 0;
+}
+
+////////
+BinaryData Hash32::toBinaryData() const
+{
+   return BinaryData{(const uint8_t*)&data, 32};
+}
+
+BinaryDataRef Hash32::getRef() const
+{
+   return BinaryDataRef{(const uint8_t*)&data, 32};
+}
+
+std::string Hash32::toHexStr(bool swapEndian) const
+{
+   return getRef().toHexStr(swapEndian);
+}
+
+bool Hash32::valid() const
+{
+   return data[0] != 0 || data[1] != 0 || data[2] != 0 || data[3] != 0;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Hasher
+std::size_t Hash32::Hasher::operator()(const Hash32& h32) const
+{
+   return h32.data[0];
+}
+
+std::size_t Hash32::Hasher::operator()(const BinaryData& bd) const
+{
+   if (bd.getSize() != 32) {
+      throw std::length_error("hash32 hasher requires 32 bytes bd");
+   }
+   std::size_t result;
+   std::memcpy(&result, bd.getPtr(), sizeof(std::size_t));
+   return result;
+}
+
+std::size_t Hash32::Hasher::operator()(const BinaryDataRef& bdr) const
+{
+   if (bdr.getSize() != 32) {
+      throw std::length_error("hash32 hasher requires 32 bytes bdr");
+   }
+   std::size_t result;
+   std::memcpy(&result, bdr.getPtr(), sizeof(std::size_t));
+   return result;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// IsEqual
+bool Hash32::IsEqual::operator()(
+   const Hash32& lhs, const Hash32& rhs) const
+{
+   return lhs == rhs;
+}
+
+bool Hash32::IsEqual::operator()(
+   const Hash32& lhs, const BinaryData& rhs) const
+{
+   return lhs == rhs;
+}
+
+bool Hash32::IsEqual::operator()(
+   const BinaryData& lhs, const Hash32& rhs) const
+{
+   if (lhs.getSize() != 32) {
+      throw std::length_error("hash32 comparator requires 32 bytes bd");
+   }
+   return std::memcmp(lhs.getPtr(), rhs.data, 32) == 0;
+}
+
+bool Hash32::IsEqual::operator()(
+   const Hash32& lhs, const BinaryDataRef& rhs) const
+{
+   if (rhs.getSize() != 32) {
+      throw std::length_error("hash32 comparator requires 32 bytes bdr");
+   }
+   return std::memcmp(lhs.data, rhs.getPtr(), 32) == 0;
+}
+
+bool Hash32::IsEqual::operator()(
+   const BinaryDataRef& lhs, const Hash32& rhs) const
+{
+   if (lhs.getSize() != 32) {
+      throw std::length_error("hash32 comparator requires 32 bytes bdr");
+   }
+   return std::memcmp(lhs.getPtr(), rhs.data, 32) == 0;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// BlockHeader
+BlockHeader::BlockHeader(Hash32& thisHash, Hash32& prevHash, Hash32& merkleRoot,
+   double diff, uint32_t timestamp, uint32_t version) :
+   thisHash_{std::move(thisHash)}, prevHash_{std::move(prevHash)},
+   merkleRoot_{std::move(merkleRoot)}, difficultyDbl_(diff),
+   timestamp_(timestamp), version_(version)
+{}
+
+BlockHeader::BlockHeader(const uint8_t* ptr, size_t size) :
+   BlockHeader{unserialize(ptr, size)}
+{}
+
+BlockHeader::BlockHeader(BinaryDataRef str) :
+   BlockHeader{unserialize(str.getPtr(), str.getSize())}
+{}
+
+////////
+BlockHeader BlockHeader::unserialize(
+   const uint8_t* ptr, size_t size)
 {
    if (size < HEADER_SIZE) {
       throw BtcUtils::BlockDeserializingException();
    }
-   dataCopy_.copyFrom(ptr, HEADER_SIZE);
-   BtcUtils::getHash256(dataCopy_.getPtr(), HEADER_SIZE, thisHash_);
-   difficultyDbl_ = BtcUtils::convertDiffBitsToDouble(
-      BinaryDataRef{dataCopy_.getPtr()+72, 4});
-   isInitialized_ = true;
-   nextHash_ = BinaryData(0);
-   blockHeight_ = UINT32_MAX;
-   difficultySum_ = -1;
-   isMainBranch_ = false;
-   isOrphan_ = true;
-   numTx_ = UINT32_MAX;
-}
 
-void BlockHeader::unserialize(const BinaryDataRef& str)
-{
-   unserialize(str.getPtr(), str.getSize());
-}
+   //header hash
+   BinaryDataRef data{ptr, HEADER_SIZE};
+   Hash32 thisHash;
+   if (true) {
+      Cryptography::Hash::getHash256(data, (uint8_t*)&thisHash.data);
+   }
 
-void BlockHeader::unserialize(BinaryRefReader& brr)
-{
-   unserialize(brr.get_BinaryDataRef(HEADER_SIZE));
-}
+   //version
+   BinaryRefReader brr(data);
+   auto version = brr.get_uint32_t();
 
-BinaryData BlockHeader::getBlockDataKey() const
-{
-   return DBUtils::getBlkDataKeyNoPrefix(blockHeight_, duplicateID_);
+   //prev hash
+   Hash32 prevHash{brr.get_BinaryDataRef(32)};
+
+   //merkle root
+   Hash32 merkleRoot{brr.get_BinaryDataRef(32)};
+
+   //timestamp
+   auto timestamp = brr.get_uint32_t();
+
+   //diff converted into double
+   auto diff = BtcUtils::convertDiffBitsToDouble(brr.get_BinaryData(4));
+
+   return BlockHeader{thisHash, prevHash, merkleRoot, diff, timestamp, version};
 }
 
 ////////
-const BinaryData& BlockHeader::serialize() const
+void BlockHeader::setRawData(BinaryData data)
 {
-   return dataCopy_;
+   if (data.getSize() != HEADER_SIZE) {
+      throw std::runtime_error("invalid header raw data size");
+   }
+   rawData_ = std::move(data.release());
 }
 
-bool BlockHeader::hasFilePos() const
+BinaryDataRef BlockHeader::getRawData() const
 {
-   return blkFileNum_ != UINT32_MAX;
+   return BinaryDataRef{&rawData_[0], rawData_.size()};
+}
+
+////////
+const Hash32& BlockHeader::getThisHash() const
+{
+   return thisHash_;
+}
+
+const Hash32& BlockHeader::getPrevHash() const
+{
+   return prevHash_;
+}
+
+const Hash32* BlockHeader::getNextHash() const
+{
+   return nextHash_;
+}
+
+const Hash32& BlockHeader::getMerkleRoot() const
+{
+   return merkleRoot_;
 }
 
 ////////
 uint32_t BlockHeader::getVersion() const
 {
-   return READ_UINT32_LE(getPtr());
-}
-
-const BinaryData& BlockHeader::getThisHash() const
-{
-   return thisHash_;
-}
-
-BinaryData BlockHeader::getPrevHash() const
-{
-   return BinaryData(getPtr()+4 ,32);
-}
-
-const BinaryData& BlockHeader::getNextHash() const
-{
-   return nextHash_;
-}
-
-BinaryData BlockHeader::getMerkleRoot() const
-{
-   return BinaryData(getPtr()+36,32);
-}
-
-BinaryData BlockHeader::getDiffBits() const
-{
-   return BinaryData(getPtr()+72,4 );
+   return version_;
 }
 
 uint32_t BlockHeader::getTimestamp() const
 {
-   return READ_UINT32_LE(getPtr()+68);
+   return timestamp_;
 }
 
-uint32_t BlockHeader::getNonce() const
-{
-   return READ_UINT32_LE(getPtr()+76);
-}
-
+////////
 uint32_t BlockHeader::getBlockHeight() const
 {
    return blockHeight_;
@@ -158,6 +303,7 @@ void BlockHeader::setBlockHeight(unsigned hgt)
    blockHeight_ = hgt;
 }
 
+////////
 bool BlockHeader::isMainBranch() const
 {
    return isMainBranch_;
@@ -168,6 +314,7 @@ bool BlockHeader::isOrphan() const
    return isOrphan_;
 }
 
+////////
 double BlockHeader::getDifficulty() const
 {
    return difficultyDbl_;
@@ -179,69 +326,27 @@ double BlockHeader::getDifficultySum() const
 }
 
 ////////
-BinaryDataRef BlockHeader::getThisHashRef() const
-{
-   return thisHash_.getRef();
-}
-
-BinaryDataRef BlockHeader::getPrevHashRef() const
-{
-   return BinaryDataRef(getPtr()+4, 32);
-}
-
-BinaryDataRef BlockHeader::getNextHashRef() const
-{
-   return nextHash_.getRef();
-}
-
-BinaryDataRef BlockHeader::getMerkleRootRef() const
-{
-   return BinaryDataRef(getPtr()+36,32);
-}
-
-BinaryDataRef BlockHeader::getDiffBitsRef() const
-{
-   return BinaryDataRef(getPtr()+72,4 );
-}
-
-uint32_t BlockHeader::getNumTx() const
-{
-   return numTx_;
-}
-
-const std::string& BlockHeader::getFileName() const
-{
-   return blkFile_;
-}
-
-uint64_t BlockHeader::getOffset() const
+size_t BlockHeader::getOffset() const
 {
    return blkFileOffset_;
 }
 
-uint32_t BlockHeader::getBlockFileNum() const
+Types::FileId BlockHeader::getBlockFileNum() const
 {
    return blkFileNum_;
 }
 
+void BlockHeader::setBlockFileNum(Types::FileId fnum)
+{
+   blkFileNum_ = fnum;
+}
+
+void BlockHeader::setBlockFileOffset(size_t offs)
+{
+   blkFileOffset_ = offs;
+}
+
 ////////
-const uint8_t* BlockHeader::getPtr() const
-{
-   assert(isInitialized_);
-   return dataCopy_.getPtr();
-}
-
-size_t BlockHeader::getSize() const
-{
-   assert(isInitialized_);
-   return dataCopy_.getSize();
-}
-
-bool BlockHeader::isInitialized() const
-{
-   return isInitialized_;
-}
-
 uint32_t BlockHeader::getBlockSize() const
 {
    return numBlockBytes_;
@@ -257,66 +362,51 @@ void BlockHeader::setNumTx(uint32_t ntx)
    numTx_ = ntx;
 }
 
-////////
-void BlockHeader::setBlockFile(std::string filename)
+uint32_t BlockHeader::getNumTx() const
 {
-   blkFile_ = filename;
-}
-
-void BlockHeader::setBlockFileNum(uint32_t fnum)
-{
-   blkFileNum_ = fnum;
-}
-
-void BlockHeader::setBlockFileOffset(uint64_t offs)
-{
-   blkFileOffset_ = offs;
+   return numTx_;
 }
 
 ////////
-uint8_t BlockHeader::getDuplicateID() const
-{
-   return duplicateID_;
-}
-
-void BlockHeader::setDuplicateID(uint8_t d)
-{
-   duplicateID_ = d;
-}
-
-unsigned int BlockHeader::getThisID() const
+Types::BlockId BlockHeader::getUniqueID() const
 {
    return uniqueID_;
 }
 
-void BlockHeader::setUniqueID(unsigned int ID)
+void BlockHeader::setUniqueID(Types::BlockId ID)
 {
    uniqueID_ = ID;
 }
 
 ////////
-void BlockHeader::pprint(std::ostream& os, int nIndent, bool pBigendian) const
+void BlockHeader::checkMerkleRoot(const BinaryData& merkleRoot)
 {
-   std::string indent{""};
-   for (int i=0; i < nIndent; i++) {
-      indent += "   ";
+   if (merkleRoot_ == merkleRoot) {
+      checkState_ = MerkleState::Valid;
+   } else {
+      checkState_ = MerkleState::Invalid;
    }
-
-   std::string endstr = (pBigendian ? " (BE)" : " (LE)");
-   os << indent << "Block Information: " << blockHeight_ << std::endl;
-   os << indent << "   Hash:       " <<
-      getThisHash().toHexStr(pBigendian).c_str() << endstr << std::endl;
-   os << indent << "   Timestamp:  " << getTimestamp() << std::endl;
-   os << indent << "   Prev Hash:  " <<
-      getPrevHash().toHexStr(pBigendian).c_str() << endstr << std::endl;
-   os << indent << "   MerkleRoot: " <<
-      getMerkleRoot().toHexStr(pBigendian).c_str() << endstr << std::endl;
-   os << indent << "   Difficulty: " << (difficultyDbl_) <<
-      "    (" << getDiffBits().toHexStr().c_str() << ")" << std::endl;
-   os << indent << "   CumulDiff:  " << (difficultySum_) << std::endl;
-   os << indent << "   Nonce:      " << getNonce() << std::endl;
 }
 
+void BlockHeader::setMerkleValid(bool isValid)
+{
+   if (checkState_ != MerkleState::Unchecked) {
+      throw std::runtime_error("merkle already checked");
+   }
+   checkState_ = isValid ? MerkleState::Valid : MerkleState::Invalid;
+}
+
+bool BlockHeader::parsedBlockData() const
+{
+   return checkState_ != MerkleState::Unchecked;
+}
+
+bool BlockHeader::isMerkleValid() const
+{
+   return checkState_ == MerkleState::Valid;
+}
+
+////////
 void BlockHeader::pprintAlot(std::ostream &)
 {
    std::cout << "Header:   " << getBlockHeight() << std::endl;
@@ -330,151 +420,92 @@ void BlockHeader::pprintAlot(std::ostream &)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// DBOutPoint Methods
-DBOutPoint::DBOutPoint(Outpoint op, LMDBBlockDatabase* db) :
-   Outpoint(op), db_(db)
-{}
-
-BinaryDataRef DBOutPoint::getDBkey() const
+// Hasher
+std::size_t BlockHeader::Hasher::operator()(const HeaderPtr& ptr) const
 {
-   if (DBkey_.getSize() == 8) {
-      return DBkey_;
+   if (ptr == nullptr) {
+      throw std::runtime_error("empty header ptr");
    }
+   return Hash32::Hasher()(ptr->getThisHash());
+}
 
-   if (db_ != nullptr) {
-      DBkey_ = std::move(db_->getDBKeyForHash(txHash_));
-      if (DBkey_.getSize() == 6) {
-         DBkey_.append(WRITE_UINT16_BE((uint16_t)txOutIndex_));
-         return DBkey_;
-      }
-   }
-   return {};
+std::size_t BlockHeader::Hasher::operator()(const Hash32& h32) const
+{
+   return Hash32::Hasher()(h32);
+}
+
+std::size_t BlockHeader::Hasher::operator()(const BinaryData& bd) const
+{
+   return Hash32::Hasher()(bd);
+}
+
+std::size_t BlockHeader::Hasher::operator()(const BinaryDataRef& bdr) const
+{
+   return Hash32::Hasher()(bdr);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// UnspentTxOut Methods
-UnspentTxOut::UnspentTxOut() :
-   txHash_(BtcUtils::EmptyHash),
-   txOutIndex_(0),
-   txHeight_(0),
-   value_(0),
-   script_(BinaryData(0)),
-   isMultisigRef_(false)
-{}
+// IsEqual
 
-UnspentTxOut::UnspentTxOut(const BinaryData& hash, uint32_t outIndex,
-   uint32_t height, uint64_t val, const BinaryData& script) :
-   txHash_(hash), txOutIndex_(outIndex), txHeight_(height),
-   value_(val), script_(script)
-{}
-
-////////
-BinaryData UnspentTxOut::getTxHash() const
+bool BlockHeader::IsEqual::operator()(
+   const HeaderPtr& lhs, const HeaderPtr& rhs) const
 {
-   return txHash_;
-}
-
-uint32_t UnspentTxOut::getTxtIndex() const
-{
-   return txIndex_;
-}
-
-uint32_t UnspentTxOut::getTxOutIndex() const
-{
-   return txOutIndex_;
-}
-
-uint64_t UnspentTxOut::getValue() const
-{
-   return value_;
-}
-
-uint64_t UnspentTxOut::getTxHeight() const
-{
-   return txHeight_;
-}
-
-uint32_t UnspentTxOut::isMultisigRef() const
-{
-   return isMultisigRef_;
-}
-
-BinaryData UnspentTxOut::getRecipientScrAddr() const
-{
-   return BtcUtils::getTxOutScrAddr(getScript());
-}
-
-uint32_t UnspentTxOut::getNumConfirm(uint32_t currBlkNum) const
-{
-   if (txHeight_ == UINT32_MAX) {
-      throw std::runtime_error("uninitiliazed UnspentTxOut");
+   if (lhs == nullptr || rhs == nullptr) {
+      return false;
    }
-   return currBlkNum - txHeight_ + 1;
+   return lhs->getThisHash() == rhs->getThisHash();
 }
 
-Outpoint UnspentTxOut::getOutPoint() const
+bool BlockHeader::IsEqual::operator()(
+   const HeaderPtr& lhs, const Hash32& rhs) const
 {
-   return Outpoint(txHash_, txOutIndex_);
-}
-
-const BinaryData& UnspentTxOut::getScript() const
-{
-   return script_;
-}
-
-////////
-bool UnspentTxOut::CompareNaive(const UnspentTxOut& uto1,
-   const UnspentTxOut& uto2)
-{
-   float val1 = (float)uto1.getValue();
-   float val2 = (float)uto2.getValue();
-   return (val1 * uto1.txHeight_ < val2 * uto2.txHeight_);
-}
-
-bool UnspentTxOut::CompareTech1(const UnspentTxOut& uto1,
-   const UnspentTxOut& uto2)
-{
-   float val1 = pow((float)uto1.getValue(), 1.0f/3.0f);
-   float val2 = pow((float)uto2.getValue(), 1.0f/3.0f);
-   return (val1 * uto1.txHeight_ < val2 * uto2.txHeight_);
-}
-
-bool UnspentTxOut::CompareTech2(const UnspentTxOut& uto1,
-   const UnspentTxOut& uto2)
-{
-   float val1 = pow(log10((float)uto1.getValue()) + 5, 5);
-   float val2 = pow(log10((float)uto2.getValue()) + 5, 5);
-   return (val1 * uto1.txHeight_ < val2 * uto2.txHeight_);
-
-}
-
-bool UnspentTxOut::CompareTech3(const UnspentTxOut& uto1,
-   const UnspentTxOut& uto2)
-{
-   float val1 = pow(log10((float)uto1.getValue()) + 5, 4);
-   float val2 = pow(log10((float)uto2.getValue()) + 5, 4);
-   return (val1 * uto1.txHeight_ < val2 * uto2.txHeight_);
-}
-
-void UnspentTxOut::sortTxOutVect(
-   std::vector<UnspentTxOut>& utovect, int sortType)
-{
-   switch (sortType)
-   {
-      case 0: sort(utovect.begin(), utovect.end(), CompareNaive); break;
-      case 1: sort(utovect.begin(), utovect.end(), CompareTech1); break;
-      case 2: sort(utovect.begin(), utovect.end(), CompareTech2); break;
-      case 3: sort(utovect.begin(), utovect.end(), CompareTech3); break;
-      default: break; // do nothing
+   if (lhs == nullptr) {
+      return false;
    }
+   return lhs->getThisHash() == rhs;
 }
 
-void UnspentTxOut::pprintOneLine(uint32_t currBlk)
+bool BlockHeader::IsEqual::operator()(
+   const Hash32& lhs, const HeaderPtr& rhs) const
 {
-   printf(" Tx:%s:%02d   BTC:%0.3f   nConf:%04d\n",
-      txHash_.copySwapEndian().getSliceCopy(0,8).toHexStr().c_str(),
-      txOutIndex_,
-      value_/1e8,
-      getNumConfirm(currBlk)
-   );
+   if (rhs == nullptr) {
+      return false;
+   }
+   return lhs == rhs->getThisHash();
+}
+
+bool BlockHeader::IsEqual::operator()(
+   const HeaderPtr& lhs, const BinaryData& bd) const
+{
+   if (lhs == nullptr) {
+      return false;
+   }
+   return Hash32::IsEqual()(lhs->getThisHash(), bd);
+}
+
+bool BlockHeader::IsEqual::operator()(
+   const BinaryData& bd, const HeaderPtr& rhs) const
+{
+   if (rhs == nullptr) {
+      return false;
+   }
+   return Hash32::IsEqual()(bd, rhs->getThisHash());
+}
+
+bool BlockHeader::IsEqual::operator()(
+   const HeaderPtr& lhs, const BinaryDataRef& bdr) const
+{
+   if (lhs == nullptr) {
+      return false;
+   }
+   return Hash32::IsEqual()(lhs->getThisHash(), bdr);
+}
+
+bool BlockHeader::IsEqual::operator()(
+   const BinaryDataRef& bdr, const HeaderPtr& rhs) const
+{
+   if (rhs == nullptr) {
+      return false;
+   }
+   return Hash32::IsEqual()(bdr, rhs->getThisHash());
 }

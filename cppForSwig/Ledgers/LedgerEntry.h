@@ -18,6 +18,7 @@
 #include <vector>
 #include <functional>
 #include <Utils/BinaryData.h>
+#include <Utils/Types.h>
 
 class TxIOPair;
 
@@ -73,27 +74,25 @@ namespace Armory
       class Entry
       {
       public:
-         Entry(const std::string&, int64_t, uint32_t,
-            const BinaryData&, uint32_t, uint32_t,
-            std::set<BinaryData>&,
-            bool, bool, bool,
-            bool, bool, bool);
+         Entry(const std::string&, Types::Value, uint32_t,
+            const Types::TxHash&, uint32_t, uint32_t,
+            std::set<Types::ScrAddr>&,
+            bool, bool, bool, bool, bool);
 
-         std::string       getWalletID(void) const;
-         int64_t           getValue(void) const;
+         const std::string& getWalletID(void) const;
+         Types::Value      getValue(void) const;
          uint32_t          getBlockNum(void) const;
-         const BinaryData& getTxHash(void) const;
+         const Types::TxHash& getTxHash(void) const;
          uint32_t          getIndex(void) const;
          uint32_t          getTxTime(void) const;
          bool              isCoinbase(void) const;
          bool              isSentToSelf(void) const;
          bool              isChangeBack(void) const;
          bool              isOptInRBF(void) const;
-         bool              usesWitness(void) const;
          bool              isChainedZC(void) const;
 
          ScriptPrefix getScriptType(void) const;
-         const std::set<BinaryData>& getScrAddrList(void) const;
+         const std::set<Types::ScrAddr>& getScrAddrList(void) const;
 
          bool operator<(const Entry&) const;
          bool operator>(const Entry&) const;
@@ -102,29 +101,22 @@ namespace Armory
          void pprint(void);
          void pprintOneLine(void) const;
 
-         static void purgeLedgerMapFromHeight(
-            std::map<BinaryData, Entry>&,
-            uint32_t);
-         static void purgeLedgerVectorFromHeight(
-            std::vector<Entry>&,
-            uint32_t);
-
       private:
          std::string ID_; //holds either a scrAddr or a walletId
-         int64_t     value_;
+         Types::Value value_;
          uint32_t    blockNum_;
-         BinaryData  txHash_;
-         uint32_t    index_; // either a tx index, txout index or txin index
+         Types::TxHash txHash_;
+         uint32_t    index_; // either a tx or a zc index
          uint32_t    txTime_ = 0;
+
+         //for matching scrAddr comments to LedgerEntries on the Python side
+         std::set<Types::ScrAddr> scrAddrSet_;
+
          bool        isCoinbase_ = false;
          bool        isSentToSelf_ = false;
          bool        isChangeBack_ = false;
          bool        isOptInRBF_ = false;
-         bool        usesWitness_ = false;
          bool        isChainedZC_ = false;
-
-         //for matching scrAddr comments to LedgerEntries on the Python side
-         std::set<BinaryData> scrAddrSet_;
       };
 
       struct DescendingOrder
@@ -153,8 +145,8 @@ namespace Armory
          uint32_t getPageCount(void) const;
       };
 
-      std::map<BinaryData, Entry> computeLedgerMap(
-         const std::map<BinaryData, TxIOPair>&,
+      std::map<Types::TxKey, Entry> computeLedgerMap(
+         const std::map<Types::TxIOKey, TxIOPair>&,
          uint32_t, uint32_t, const std::string&,
          const Context&);
    } //namespace Ledgers

@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2025, goatpig                                               //
+//  Copyright (C) 2026, goatpig                                               //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -12,79 +12,59 @@
 #include <vector>
 #include <map>
 #include <set>
-#include <stdint.h>
 
-class BinaryData;
-class BinaryDataRef;
-class Blockchain;
+#include <Utils/Types.h>
+
 class TxIOPair;
-class LMDBBlockDatabase;
 class Tx;
+
 
 namespace DBClientClasses
 {
-   class BlockHeader;
+   struct BlockHeader;
 };
 
 namespace Armory
 {
-   namespace ZeroConf
-   {
-      class MempoolSnapshot;
-   }
-
    namespace Ledgers
    {
+      using HeaderPtr = std::shared_ptr<DBClientClasses::BlockHeader>;
       struct DBCache
       {
-         struct Blocks
-         {
-            uint8_t mainChain = 0;
-            std::map<uint8_t, DBClientClasses::BlockHeader> blocks;
-         };
+         std::map<Types::TxKey, Tx> txMap;
+         std::map<Types::TxHash, Types::TxKey> txHashToKey;
+         std::map<Types::BlockId, HeaderPtr> headers;
 
-         std::map<BinaryData, Tx> txMap;
-         std::map<uint32_t, Blocks> blocks;
-
-         void addBlocks(std::vector<DBClientClasses::BlockHeader>&);
-         bool isHeightValid(uint32_t, uint8_t) const;
+         void addHeaders(const std::vector<HeaderPtr>&);
+         HeaderPtr getHeaderForHeight(uint32_t) const;
       };
 
       class Context
       {
       private:
-         const std::map<uint32_t, uint32_t> timestamps_;
-
-         //TODO: setup with transparent bdr/bd comparator
-         const std::map<BinaryData, Tx> txMap_;
-         const std::map<BinaryData, std::map<uint32_t, BinaryData>> txioKeyToScrAddr_;
-         const std::set<BinaryData> scrAddrSet_;
+         const std::map<Types::BlockId, HeaderPtr>& headers_;
+         const std::map<Types::TxKey, Tx> txMap_;
+         const std::set<Types::ScrAddr> scrAddrSet_;
 
       public:
          Context(
-            std::map<uint32_t, uint32_t>,
-            std::map<BinaryData, Tx>&,
-            std::map<BinaryData, std::map<uint32_t, BinaryData>>&,
-            std::set<BinaryData>
+            const std::map<Types::BlockId, HeaderPtr>&,
+            std::map<Types::TxKey, Tx>,
+            std::set<Types::ScrAddr>
          );
 
-         uint32_t getTimestampForBlockHeight(uint32_t) const;
-         const BinaryData& getTxHash(BinaryDataRef) const;
-         size_t getTxOutCount(BinaryDataRef) const;
-         const Tx& getTx(BinaryDataRef) const;
-         const BinaryData& getScrAddrForTxOut(const TxIOPair&) const;
+         uint32_t getTimestampForBlockId(Types::BlockId) const;
+         uint32_t getHeightForBlockId(Types::BlockId) const;
+         const Types::ScrAddr& getTxHash(Types::TxKey) const;
+         size_t getTxOutCount(Types::TxKey) const;
+         const Tx& getTx(Types::TxKey) const;
          bool filterTxio(const TxIOPair&) const;
       };
 
       Context prepareContext(
-         const std::map<BinaryData, TxIOPair>&,
-         const Blockchain&, LMDBBlockDatabase*,
-         std::shared_ptr<const ZeroConf::MempoolSnapshot>
-      );
-
-      Context prepareContext(
-         const std::map<BinaryData, TxIOPair>&,
-         std::shared_ptr<const DBCache>, std::set<BinaryData>
+         const std::map<Types::TxIOKey, TxIOPair>&,
+         std::shared_ptr<const DBCache>,
+         std::set<Types::ScrAddr>
       );
    }
 }

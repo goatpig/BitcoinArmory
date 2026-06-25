@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig.                                         //
+//  Copyright (C) 2016-2026, goatpig.                                         //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -10,13 +10,15 @@
 #include <stdexcept>
 
 #include "SocketObject.h"
+#include <bdmenums.h>
 #include "SocketWritePayload.h"
-#include "bdmenums.h"
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>
 
 using namespace std::chrono_literals;
+using namespace Armory;
+using namespace Armory::Network;
 
 #ifdef _WIN32
 //i dont know how to get linkage for this with MSYS2 halp T_T
@@ -113,7 +115,7 @@ SOCKET SocketPrototype::openSocket(bool blocking)
    SOCKET sockfd = SOCK_MAX;
    try {
       sockfd = socket(serv_addr_.sa_family, SOCK_STREAM, 0);
-      if (sockfd < 0) {
+      if (sockfd == SOCK_MAX) {
          throw SocketError("failed to create socket");
       }
       auto result = connect(sockfd, &serv_addr_, sizeof(serv_addr_));
@@ -161,7 +163,7 @@ bool SocketPrototype::testConnection(void)
 ////////////////////////////////////////////////////////////////////////////////
 void SocketPrototype::setBlocking(SOCKET sock, bool setblocking)
 {
-   if (sock < 0) {
+   if (sock == SOCK_MAX) {
       throw SocketError("invalid socket");
    }
 #ifdef WIN32
@@ -192,7 +194,7 @@ void SocketPrototype::listen(AcceptCallback callback, SOCKET& sockfd)
 {
    try {
       sockfd = socket(serv_addr_.sa_family, SOCK_STREAM, 0);
-      if (sockfd < 0) {
+      if (sockfd == SOCK_MAX) {
          throw SocketError("failed to create socket");
       }
 
@@ -344,7 +346,7 @@ void PersistentSocket::socketService_nix()
       } else {
          try {
             payload = std::move(writeQueue_.pop_front());
-         } catch (const Armory::Threading::IsEmpty&) {
+         } catch (const Threading::IsEmpty&) {
             pfd[1].events = POLLIN;
             return;
          }
@@ -477,7 +479,7 @@ void PersistentSocket::socketService_win()
       } else {
          try {
             payload = std::move(writeQueue_.pop_front());
-         } catch (const Armory::Threading::IsEmpty&) {
+         } catch (const Threading::IsEmpty&) {
             return;
          }
       }
@@ -560,7 +562,7 @@ void PersistentSocket::socketService_win()
             }
 
             totalread += readAmt;
-            if (readAmt < readIncrement) {
+            if ((size_t)readAmt < readIncrement) {
                break;
             }
             readdata.resize(totalread + readIncrement);
@@ -608,7 +610,7 @@ void PersistentSocket::readService()
       try {
          auto packet = readQueue_.pop_front();
          respond(packet);
-      } catch (const Armory::Threading::StopBlockingLoop&) {
+      } catch (const Threading::StopBlockingLoop&) {
          //exit condition
          break;
       }
@@ -1058,7 +1060,7 @@ void ListenServer::acceptProcess(AcceptStruct aStruct)
             }
          }
       }
-   } catch (const Armory::Threading::IsEmpty&) {}
+   } catch (const Threading::IsEmpty&) {}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1138,21 +1140,6 @@ size_t WritePayload_Capnp::getSerializedSize() const
 bool WritePayload_Capnp::isSingleSegment() const
 {
    return false;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-//
-//// CallbackReturn_CloseBitcoinP2PSocket
-//
-///////////////////////////////////////////////////////////////////////////////
-CallbackReturn_CloseBitcoinP2PSocket::CallbackReturn_CloseBitcoinP2PSocket(
-   std::shared_ptr<Armory::Threading::BlockingQueue<std::vector<uint8_t>>> datastack) :
-   dataStack_(datastack)
-{}
-
-void CallbackReturn_CloseBitcoinP2PSocket::callback(const BinaryDataRef&)
-{
-   dataStack_->terminate();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

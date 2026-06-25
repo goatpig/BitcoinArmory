@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -27,11 +27,6 @@ BinaryData::BinaryData(BinaryDataRef const & bdRef)
 BinaryData::BinaryData()
    : data_(0)
 {}
-
-BinaryData::BinaryData(size_t sz)
-{
-   alloc(sz);
-}
 
 BinaryData::BinaryData(const uint8_t* inData, size_t sz)
 {
@@ -63,7 +58,7 @@ BinaryData::~BinaryData()
    data_.clear();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 void BinaryData::alloc(size_t sz)
 {
    if (sz != getSize()) {
@@ -92,7 +87,7 @@ bool BinaryData::empty() const
    return data_.empty();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 BinaryData& BinaryData::operator=(const BinaryData& o)
 {
    data_ = o.data_;
@@ -121,7 +116,8 @@ BinaryData BinaryData::operator+(const BinaryData& bd2) const
       return *this;
    }
 
-   BinaryData out{getSize() + bd2.getSize()};
+   BinaryData out;
+   out.resize(getSize() + bd2.getSize());
    if (!empty()) {
       memcpy(out.getPtr(), getPtr(), getSize());
    }
@@ -144,7 +140,7 @@ bool BinaryData::operator>=(const BinaryData& bd2) const
    return (*this > bd2 || *this == bd2);
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 const uint8_t* BinaryData::getPtr() const
 {
    if (empty()) {
@@ -168,7 +164,7 @@ const std::vector<uint8_t>& BinaryData::getDataVector() const
    return data_;
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 const char* BinaryData::getCharPtr() const
 {
    if (empty()) {
@@ -189,8 +185,7 @@ char* BinaryData::getCharPtr()
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// copyFrom
+////////
 void BinaryData::copyFrom(uint8_t const * start, uint8_t const * end)
 {
    // [start, end)
@@ -227,8 +222,7 @@ void BinaryData::copyFrom(const uint8_t* inData, size_t sz)
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// copyTo
+////////
 void BinaryData::copyTo(uint8_t* outData) const
 {
    memcpy( outData, &(data_[0]), getSize());
@@ -249,7 +243,6 @@ void BinaryData::copyTo(BinaryData& bd) const
    if (empty()) {
       return;
    }
-
    bd.resize(getSize());
    memcpy(bd.getPtr(), getPtr(), getSize());
 }
@@ -269,13 +262,13 @@ void BinaryData::fill(uint8_t ch)
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 BinaryDataRef BinaryData::getRef() const
 {
    return BinaryDataRef(getPtr(), getSize());
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 BinaryData& BinaryData::append(const BinaryData& bd2)
 {
    return this->append(BinaryDataRef{bd2});
@@ -313,7 +306,7 @@ BinaryData& BinaryData::append(uint8_t byte)
    return(*this);
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 int32_t BinaryData::find(BinaryDataRef const & matchStr, uint32_t startPos)
 {
    int32_t finalAnswer = -1;
@@ -350,19 +343,18 @@ int32_t BinaryData::find(BinaryData const & matchStr, uint32_t startPos)
    return find(bdrmatch, startPos);
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 bool BinaryData::contains(BinaryData const & matchStr, uint32_t startPos)
 {
    return (find(matchStr, startPos) != -1);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 bool BinaryData::contains(BinaryDataRef const & matchStr, uint32_t startPos)
 {
    return (find(matchStr, startPos) != -1);
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 bool BinaryData::startsWith(BinaryDataRef const & matchStr) const
 {
    if (matchStr.getSize() > getSize()) {
@@ -377,7 +369,6 @@ bool BinaryData::startsWith(BinaryDataRef const & matchStr) const
    return true;
 }
 
-/////////////////////////////////////////////////////////////////////////////
 bool BinaryData::startsWith(BinaryData const & matchStr) const
 {
    if (matchStr.getSize() > getSize()) {
@@ -392,7 +383,7 @@ bool BinaryData::startsWith(BinaryData const & matchStr) const
    return true;
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 bool BinaryData::endsWith(BinaryDataRef const & matchStr) const
 {
    size_t sz = matchStr.getSize();
@@ -408,7 +399,6 @@ bool BinaryData::endsWith(BinaryDataRef const & matchStr) const
    return true;
 }
 
-/////////////////////////////////////////////////////////////////////////////
 bool BinaryData::endsWith(BinaryData const & matchStr) const
 {
    size_t sz = matchStr.getSize();
@@ -424,7 +414,7 @@ bool BinaryData::endsWith(BinaryData const & matchStr) const
    return true;
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 BinaryDataRef BinaryData::getSliceRef(ssize_t start_pos, size_t nChar) const
 {
    if (start_pos < 0) {
@@ -438,7 +428,6 @@ BinaryDataRef BinaryData::getSliceRef(ssize_t start_pos, size_t nChar) const
    return BinaryDataRef{getPtr()+start_pos, nChar};
 }
 
-/////////////////////////////////////////////////////////////////////////////
 BinaryData BinaryData::getSliceCopy(ssize_t start_pos, size_t nChar) const
 {
    if (start_pos < 0) {
@@ -452,7 +441,7 @@ BinaryData BinaryData::getSliceCopy(ssize_t start_pos, size_t nChar) const
    return BinaryData{getPtr()+start_pos, nChar};
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 BinaryData BinaryData::fromString(const std::string& str, size_t len)
 {
    if (len == SIZE_MAX) {
@@ -463,7 +452,6 @@ BinaryData BinaryData::fromString(const std::string& str, size_t len)
    return data;
 }
 
-/////////////////////////////////////////////////////////////////////////////
 BinaryData BinaryData::fromString(const std::string_view& str, size_t len)
 {
    if (len == SIZE_MAX) {
@@ -474,7 +462,7 @@ BinaryData BinaryData::fromString(const std::string_view& str, size_t len)
    return data;
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 void BinaryData::createFromHex(const std::string& str)
 {
    BinaryDataRef bdr((uint8_t*)str.c_str(), str.size());
@@ -545,7 +533,7 @@ std::string BinaryData::toBinStr(bool bigEndian) const
    }
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 bool BinaryData::isZero() const
 {
    bool isZero = true;
@@ -559,7 +547,7 @@ bool BinaryData::isZero() const
    return isZero;
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 bool BinaryData::operator==(const BinaryDataRef& bd2) const
 {
    if (!empty()) {
@@ -571,7 +559,6 @@ bool BinaryData::operator==(const BinaryDataRef& bd2) const
    return bd2.empty();
 }
 
-/////////////////////////////////////////////////////////////////////////////
 bool BinaryData::operator<(const BinaryDataRef& bd2) const
 {
    size_t minLen = std::min(getSize(), bd2.getSize());
@@ -584,7 +571,6 @@ bool BinaryData::operator<(const BinaryDataRef& bd2) const
    return (getSize() < bd2.getSize());
 }
 
-/////////////////////////////////////////////////////////////////////////////
 bool BinaryData::operator<(const BinaryData& bd2) const
 {
    size_t minLen = std::min(getSize(), bd2.getSize());
@@ -597,7 +583,6 @@ bool BinaryData::operator<(const BinaryData& bd2) const
    return (getSize() < bd2.getSize());
 }
 
-/////////////////////////////////////////////////////////////////////////////
 bool BinaryData::operator>(const BinaryData& bd2) const
 {
    size_t minLen = std::min(getSize(), bd2.getSize());
@@ -610,7 +595,6 @@ bool BinaryData::operator>(const BinaryData& bd2) const
    return (getSize() > bd2.getSize());
 }
 
-/////////////////////////////////////////////////////////////////////////////
 bool BinaryData::operator==(const BinaryData& bd2) const
 {
    if (!empty()) {
@@ -622,19 +606,7 @@ bool BinaryData::operator==(const BinaryData& bd2) const
    return bd2.empty();
 }
 
-/////////////////////////////////////////////////////////////////////////////
-std::size_t std::hash<BinaryData>::operator()(const BinaryData& key) const
-{
-   if (key.empty()) {
-      return 0;
-   }
-   std::size_t result;
-   auto len = std::min(sizeof(std::size_t), key.getSize());
-   memcpy(&result, key.getPtr(), len);
-   return result;
-}
-
-/////////////////////////////////////////////////////////////////////////////
+////////
 void BinaryData::clear()
 {
    data_.clear();
@@ -647,12 +619,7 @@ std::vector<uint8_t> BinaryData::release()
    return vec;
 }
 
-const std::vector<uint8_t>& BinaryData::getVector() const
-{
-   return data_;
-}
-
-/////////////////////////////////////////////////////////////////////////////
+////////
 BinaryData& BinaryData::swapEndian(size_t pos1, size_t pos2)
 {
    if (empty()) {
@@ -716,7 +683,7 @@ void BinaryDataRef::reset()
    nBytes_ = 0;
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 const uint8_t* BinaryDataRef::getPtr() const
 {
    return ptr_;
@@ -737,7 +704,7 @@ bool BinaryDataRef::isValid() const
    return ptr_ != nullptr;
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 void BinaryDataRef::setRef(const uint8_t* inData, size_t sz)
 {
    ptr_ = inData;
@@ -760,6 +727,7 @@ void BinaryDataRef::setRef(const BinaryData& bd)
    setRef(bd.getPtr(), bd.getSize());
 }
 
+////////
 BinaryDataRef BinaryDataRef::fromString(const std::string& str, size_t len)
 {
    if (len == SIZE_MAX) {
@@ -783,7 +751,7 @@ BinaryDataRef BinaryDataRef::fromStringView(
    return data;
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 void BinaryDataRef::copyTo(uint8_t* outData) const
 {
    memcpy(outData, ptr_, nBytes_);
@@ -804,7 +772,6 @@ void BinaryDataRef::copyTo(BinaryData& bd) const
    if (empty()) {
       return;
    }
-
    bd.resize(nBytes_);
    memcpy(bd.getPtr(), ptr_, nBytes_);
 }
@@ -816,12 +783,13 @@ void BinaryDataRef::copyTo(std::string& str)
 
 BinaryData BinaryDataRef::copy() const
 {
-   BinaryData outData(nBytes_);
+   BinaryData outData;
+   outData.resize(nBytes_);
    copyTo(outData);
    return outData;
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 BinaryDataRef& BinaryDataRef::operator=(const BinaryDataRef& rhs)
 {
    setRef(rhs.ptr_, rhs.nBytes_);
@@ -852,17 +820,6 @@ bool BinaryDataRef::operator>(BinaryDataRef const & bd2) const
       return result > 0;
    }
    return (getSize() > bd2.getSize());
-}
-
-std::size_t std::hash<BinaryDataRef>::operator()(const BinaryDataRef& key) const
-{
-   if (key.empty()) {
-      return 0;
-   }
-   std::size_t result;
-   auto len = std::min(sizeof(std::size_t), key.getSize());
-   memcpy(&result, key.getPtr(), len);
-   return result;
 }
 
 const uint8_t& BinaryDataRef::operator[](ssize_t i) const
@@ -900,7 +857,7 @@ bool BinaryDataRef::operator!=(const BinaryData& bd2) const
    return !((*this)==bd2);
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 std::string BinaryDataRef::toBinStr(bool bigEndian) const
 {
    if (empty()) {
@@ -920,7 +877,7 @@ const char* BinaryDataRef::toCharPtr() const
    return (char*)ptr_;
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 int32_t BinaryDataRef::find(const BinaryDataRef& matchStr, uint32_t startPos)
 {
    int32_t finalAnswer = -1;
@@ -968,19 +925,13 @@ bool BinaryDataRef::contains(const BinaryData& matchStr, uint32_t startPos)
    return (find(bdr, startPos) != -1);
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 bool BinaryDataRef::startsWith(const BinaryDataRef& matchStr) const
 {
    if (matchStr.getSize() > nBytes_) {
       return false;
    }
-
-   for (uint32_t i=0; i<matchStr.getSize(); i++) {
-      if (matchStr[i] != (*this)[i]) {
-         return false;
-      }
-   }
-   return true;
+   return std::memcmp(matchStr.getPtr(), getPtr(), matchStr.getSize()) == 0;
 }
 
 bool BinaryDataRef::startsWith(const BinaryData& matchStr) const
@@ -988,12 +939,7 @@ bool BinaryDataRef::startsWith(const BinaryData& matchStr) const
    if (matchStr.getSize() > nBytes_) {
       return false;
    }
-   for (uint32_t i=0; i<matchStr.getSize(); i++) {
-      if (matchStr[i] != (*this)[i]) {
-         return false;
-      }
-   }
-   return true;
+   return std::memcmp(matchStr.getPtr(), getPtr(), matchStr.getSize()) == 0;
 }
 
 bool BinaryDataRef::endsWith(const BinaryDataRef& matchStr) const
@@ -1026,7 +972,7 @@ bool BinaryDataRef::endsWith(const BinaryData& matchStr) const
    return true;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 BinaryDataRef BinaryDataRef::getSliceRef(ssize_t start_pos, size_t nChar) const
 {
    if (start_pos < 0) {
@@ -1053,13 +999,13 @@ BinaryData BinaryDataRef::getSliceCopy(ssize_t start_pos, size_t nChar) const
    return {getPtr()+start_pos, nChar};
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 bool BinaryDataRef::isSameRefAs(const BinaryDataRef& bdRef2) const
 {
    return (ptr_ == bdRef2.ptr_ && nBytes_ == bdRef2.nBytes_);
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 std::string BinaryDataRef::toHexStr(bool bigEndian) const
 {
    if (empty()) {
@@ -1085,7 +1031,7 @@ std::string BinaryDataRef::toHexStr(bool bigEndian) const
    return outStr;
 }
 
-/////////////////////////////////////////////////////////////////////////////
+////////
 bool BinaryDataRef::isZero() const
 {
    for (unsigned i=0; i<nBytes_; i++) {
@@ -1098,10 +1044,50 @@ bool BinaryDataRef::isZero() const
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// Hasher
+std::size_t BinaryData::Hasher::operator()(const BinaryData& bd) const
+{
+   std::size_t result = 0;
+   std::memcpy(&result, &bd.data_[0],
+      std::min(sizeof(std::size_t), bd.getSize()));
+   return result;
+}
+
+std::size_t BinaryData::Hasher::operator()(const BinaryDataRef& bdr) const
+{
+   std::size_t result = 0;
+   std::memcpy(&result, bdr.getPtr(),
+      std::min(sizeof(std::size_t), bdr.getSize()));
+   return result;
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// IsEqual
+bool BinaryData::IsEqual::operator()(
+   const BinaryData& lhs, const BinaryData& rhs) const
+{
+   return lhs == rhs;
+}
+
+bool BinaryData::IsEqual::operator()(
+   const BinaryData& lhs, const BinaryDataRef& rhs) const
+{
+   return lhs == rhs;
+}
+
+bool BinaryData::IsEqual::operator()(
+   const BinaryDataRef& lhs, const BinaryData& rhs) const
+{
+   return lhs == rhs;
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // BinaryReader
 BinaryReader::BinaryReader(int sz) :
-   bdStr_(sz), pos_(0)
-{}
+   pos_(0)
+{
+   bdStr_.resize(sz);
+}
 
 BinaryReader::BinaryReader(const BinaryData& toRead)
 {
@@ -1549,12 +1535,12 @@ bool BinaryRefReader::isEndOfStream() const
 }
 
 /////////////////////////////////////////////////////////////////////////////
-uint8_t const* BinaryRefReader::exposeDataPtr()
+const uint8_t* BinaryRefReader::exposeDataPtr()
 {
    return bdRef_.getPtr();
 }
 
-uint8_t const* BinaryRefReader::getCurrPtr()
+const uint8_t* BinaryRefReader::getCurrPtr()
 {
    return bdRef_.getPtr() + pos_.load(std::memory_order_relaxed);
 }
@@ -1566,8 +1552,7 @@ BinaryDataRef BinaryRefReader::getRawRef()
 
 /////////////////////////////////////////////////////////////////////////////
 // BinaryWriter
-BinaryWriter::BinaryWriter(size_t reserveSize) :
-   theString_(0)
+BinaryWriter::BinaryWriter(size_t reserveSize)
 {
    if (reserveSize != 0) {
       theString_.reserve(reserveSize);
@@ -1577,6 +1562,11 @@ BinaryWriter::BinaryWriter(size_t reserveSize) :
 void BinaryWriter::reserve(size_t sz)
 {
    theString_.reserve(sz);
+}
+
+bool BinaryWriter::empty() const
+{
+   return theString_.empty();
 }
 
 /////////////////////////////////////////////////////////////////////////////

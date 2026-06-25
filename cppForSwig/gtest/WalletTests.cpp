@@ -1,14 +1,19 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2017-2025, goatpig                                          //
+//  Copyright (C) 2017-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
+#ifdef _WIN32
+   #include <winsock2.h>
+   #include <windows.h>
+#endif
+
 #include "TestUtils.h"
 #include <reorgTest/blkdata.h>
-#include <Utils/DBUtils.h>
+#include <Utils/FileUtils.h>
 #include <Utils/ArmoryConfig.h>
 #include <Utils/BitcoinSettings.h>
 #include <Ledgers/LedgerEntry.h>
@@ -1909,13 +1914,14 @@ protected:
 
    /////////////////////////////////////////////////////////////////////////////
    std::map<BinaryData, BinaryData> getAllEntries(
-      std::shared_ptr<LMDBEnv> dbEnv, LMDB& db)
+      std::shared_ptr<LMDB::Env> dbEnv, LMDB::DB& db)
    {
       std::map<BinaryData, BinaryData> keyValMap;
 
-      auto tx = LMDBEnv::Transaction(dbEnv.get(), LMDB::Mode::ReadOnly);
-      auto iter = db.begin();
-      while(iter.isValid()) {
+      auto tx = LMDB::Transaction(dbEnv.get(), db.dbi(), LMDB::Mode::ReadOnly);
+      auto iter = tx.getIterator();
+      iter.toFirst();
+      while (iter.isValid()) {
          auto keyData = iter.key();
          auto valData = iter.value();
 
@@ -2091,7 +2097,7 @@ TEST_F(WalletInterfaceTest, WalletIfaceTransaction_Test)
    };
 
    //setup db env
-   auto dbEnv = std::make_shared<LMDBEnv>();
+   auto dbEnv = std::make_shared<LMDB::Env>();
    dbEnv->open(dbPath_, 0);
    auto filename = dbEnv->getFilename();
    ASSERT_EQ(filename, dbPath_);
@@ -2224,7 +2230,7 @@ TEST_F(WalletInterfaceTest, WalletIfaceTransaction_Test)
 TEST_F(WalletInterfaceTest, WalletIfaceTransaction_Concurrency_Test)
 {
    //setup env
-   auto dbEnv = std::make_shared<LMDBEnv>(3);
+   auto dbEnv = std::make_shared<LMDB::Env>(3);
    dbEnv->open(dbPath_, 0);
    auto filename = dbEnv->getFilename();
    ASSERT_EQ(filename, dbPath_);
@@ -2392,7 +2398,7 @@ TEST_F(WalletInterfaceTest, WalletIfaceTransaction_Concurrency_Test)
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(WalletInterfaceTest, EncryptionTest)
 {
-   auto dbEnv = std::make_shared<LMDBEnv>();
+   auto dbEnv = std::make_shared<LMDB::Env>();
    dbEnv->open(dbPath_, 0);
    auto filename = dbEnv->getFilename();
    ASSERT_EQ(filename, dbPath_);
@@ -2469,11 +2475,8 @@ TEST_F(WalletInterfaceTest, EncryptionTest)
    dbIface.reset();
 
    //open LMDB object
-   LMDB dbObj;
-   {
-      auto tx = LMDBEnv::Transaction(dbEnv.get(), LMDB::Mode::ReadWrite);
-      dbObj.open(dbEnv.get(), dbName);
-   }
+   LMDB::DB dbObj;
+   dbObj.open(dbEnv.get(), dbName);
 
    //grab all entries in db
    auto keyValMap = getAllEntries(dbEnv, dbObj);
@@ -2490,7 +2493,7 @@ TEST_F(WalletInterfaceTest, EncryptionTest)
    }
 
    //check cryptographic material
-   for (unsigned i=0; i<packets.size(); i++) {
+   for (unsigned i = 0; i < packets.size(); i++) {
       auto& packet = packets[i];
 
       ASSERT_TRUE(Cryptography::ECDSA::verifyPublicKeyValid(packet.pubKey_));
@@ -2574,7 +2577,7 @@ TEST_F(WalletInterfaceTest, EncryptionTest)
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(WalletInterfaceTest, EncryptionTest_AmendValues)
 {
-   auto dbEnv = std::make_shared<LMDBEnv>();
+   auto dbEnv = std::make_shared<LMDB::Env>();
    dbEnv->open(dbPath_, 0);
    auto filename = dbEnv->getFilename();
    ASSERT_EQ(filename, dbPath_);
@@ -2679,11 +2682,8 @@ TEST_F(WalletInterfaceTest, EncryptionTest_AmendValues)
    dbIface.reset();
 
    //open LMDB object
-   LMDB dbObj;
-   {
-      auto tx = LMDBEnv::Transaction(dbEnv.get(), LMDB::Mode::ReadWrite);
-      dbObj.open(dbEnv.get(), dbName);
-   }
+   LMDB::DB dbObj;
+   dbObj.open(dbEnv.get(), dbName);
 
    //grab all entries in db
    auto keyValMap = getAllEntries(dbEnv, dbObj);
@@ -2797,7 +2797,7 @@ TEST_F(WalletInterfaceTest, EncryptionTest_AmendValues)
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(WalletInterfaceTest, EncryptionTest_OpenCloseAmend)
 {
-   auto dbEnv = std::make_shared<LMDBEnv>();
+   auto dbEnv = std::make_shared<LMDB::Env>();
    dbEnv->open(dbPath_, 0);
    auto filename = dbEnv->getFilename();
    ASSERT_EQ(filename, dbPath_);
@@ -2902,11 +2902,8 @@ TEST_F(WalletInterfaceTest, EncryptionTest_OpenCloseAmend)
    dbIface.reset();
 
    //open LMDB object
-   LMDB dbObj;
-   {
-      auto tx = LMDBEnv::Transaction(dbEnv.get(), LMDB::Mode::ReadWrite);
-      dbObj.open(dbEnv.get(), dbName);
-   }
+   LMDB::DB dbObj;
+   dbObj.open(dbEnv.get(), dbName);
 
    //grab all entries in db
    auto keyValMap = getAllEntries(dbEnv, dbObj);
@@ -2919,7 +2916,7 @@ TEST_F(WalletInterfaceTest, EncryptionTest_OpenCloseAmend)
 
       auto gapsIter = gaps.begin();
       EXPECT_EQ(*gapsIter, 2U);
-      
+
       ++gapsIter;
       EXPECT_EQ(*gapsIter, 3U);
 
@@ -3077,11 +3074,8 @@ TEST_F(WalletInterfaceTest, EncryptionTest_OpenCloseAmend)
    dbIface.reset();
 
    //open LMDB object
-   LMDB dbObj2;
-   {
-      auto tx = LMDBEnv::Transaction(dbEnv.get(), LMDB::Mode::ReadWrite);
-      dbObj2.open(dbEnv.get(), dbName);
-   }
+   LMDB::DB dbObj2;
+   dbObj2.open(dbEnv.get(), dbName);
 
    //grab all entries in db
    keyValMap = getAllEntries(dbEnv, dbObj2);
@@ -3507,15 +3501,15 @@ TEST_F(WalletInterfaceTest, DbCount_Test)
    try {
       auto tx = dbIface.beginReadTransaction(CONTROL_DB_NAME.data());
       ASSERT_TRUE(false);
-   } catch (const LMDBException& e) {
-      EXPECT_EQ(e.what(), std::string("null LMDBEnv"));
+   } catch (const IO::WalletInterfaceException& e) {
+      EXPECT_EQ(e.what(), std::string("null env"));
    }
 
    try {
       auto tx = dbIface.beginReadTransaction("db1");
       ASSERT_TRUE(false);
    } catch (const IO::WalletInterfaceException& e) {
-      EXPECT_EQ(e.what(), std::string("invalid db name"));
+      EXPECT_EQ(e.what(), std::string("null env"));
    }
 
    try {
@@ -3674,7 +3668,7 @@ TEST_F(WalletInterfaceTest, WipeEntries_Test)
    }
 
    //open raw db
-   auto dbEnv = std::make_shared<LMDBEnv>(3);
+   auto dbEnv = std::make_shared<LMDB::Env>(3);
    dbEnv->open(dbPath_, 0);
    auto filename = dbEnv->getFilename();
    ASSERT_EQ(filename, dbPath_);
@@ -3684,18 +3678,18 @@ TEST_F(WalletInterfaceTest, WipeEntries_Test)
    SecureBinaryData controlSalt;
    {
       //open control db
-      LMDB dbCtrl;
-      auto tx = LMDBEnv::Transaction(dbEnv.get(), LMDB::Mode::ReadWrite);
+      LMDB::DB dbCtrl;
       dbCtrl.open(dbEnv.get(), CONTROL_DB_NAME.data());
 
       //grab control header
       std::shared_ptr<IO::WalletHeader_Control> controlHeader;
       {
+         auto tx = LMDB::Transaction(dbEnv.get(), dbCtrl.dbi(), LMDB::Mode::ReadOnly);
          BinaryWriter bw;
          bw.put_uint8_t(WALLETHEADER_PREFIX);
          bw.put_BinaryData(BinaryData::fromString(CONTROL_DB_NAME));
-         CharacterArrayRef carKey(bw.getSize(), bw.getData().getPtr());
-         auto rawVal = dbCtrl.get_NoCopy(carKey);
+         LMDB::DataRef carKey(bw.getSize(), bw.getData().getPtr());
+         auto rawVal = tx.get(carKey);
 
          BinaryDataRef refVal((const uint8_t*)rawVal.data, rawVal.len);
          BinaryRefReader brrVal(refVal);
@@ -3714,17 +3708,18 @@ TEST_F(WalletInterfaceTest, WipeEntries_Test)
          controlHeader->defaultKdfId_, controlHeader->masterEncryptionKeyId_);
       {
          auto txInner = std::make_shared<IO::RawIfaceTransaction>(
-            dbEnv.get(), &dbCtrl, true);
+            *dbEnv, dbCtrl, true);
          decryptedData->readFromDisk(txInner);
       }
 
       //grab seed
       std::unique_ptr<Seeds::EncryptedSeed> controlSeed;
       {
+         auto tx = LMDB::Transaction(dbEnv.get(), dbCtrl.dbi(), LMDB::Mode::ReadOnly);
          BinaryWriter bw;
          bw.put_uint32_t(WALLET_SEED_KEY);
-         CharacterArrayRef carKey(bw.getSize(), bw.getData().getPtr());
-         auto rawVal = dbCtrl.get_NoCopy(carKey);
+         LMDB::DataRef carKey(bw.getSize(), bw.getData().getPtr());
+         auto rawVal = tx.get(carKey);
 
          BinaryDataRef refVal((const uint8_t*)rawVal.data, rawVal.len);
          BinaryRefReader brrVal(refVal);
@@ -3753,15 +3748,12 @@ TEST_F(WalletInterfaceTest, WipeEntries_Test)
    //grab db salt
    SecureBinaryData dbSalt;
    {
-      LMDB headerDb;
-      {
-         auto tx = LMDBEnv::Transaction(dbEnv.get(), LMDB::Mode::ReadWrite);
-         headerDb.open(dbEnv.get(), std::string{WALLETHEADER_DBNAME});
-      }
+      LMDB::DB headerDb;
+      headerDb.open(dbEnv.get(), std::string{WALLETHEADER_DBNAME});
       auto keyValMap = getAllEntries(dbEnv, headerDb);
 
       std::vector<IESPacket> packets;
-      for(auto& keyVal : keyValMap) {
+      for (auto& keyVal : keyValMap) {
          auto iesPacket = getIESData(keyVal);
          packets.push_back(iesPacket);
       }
@@ -3800,15 +3792,12 @@ TEST_F(WalletInterfaceTest, WipeEntries_Test)
    //grab the entries
    std::map<BinaryData, IESPacket> dataKeyToCipherText;
    {
-      LMDB headerDb;
-      {
-         auto tx = LMDBEnv::Transaction(dbEnv.get(), LMDB::Mode::ReadWrite);
-         headerDb.open(dbEnv.get(), dbName);
-      }
+      LMDB::DB headerDb;
+      headerDb.open(dbEnv.get(), dbName);
       auto keyValMap = getAllEntries(dbEnv, headerDb);
 
       std::vector<IESPacket> packets;
-      for(auto& keyVal : keyValMap) {
+      for (auto& keyVal : keyValMap) {
          auto iesPacket = getIESData(keyVal);
          packets.push_back(iesPacket);
       }
@@ -4183,7 +4172,7 @@ TEST_F(WalletsTest, RejectCreationAtPassphrase)
    auto passFunc = [&fileExists, filename]()->std::unique_ptr<Passphrase::Params>
    {
       //check the file exists
-      if (FileUtils::fileExists(filename, 0)) {
+      if (FileUtils::pathExists(filename, 0)) {
          fileExists = true;
       }
       return std::make_unique<Passphrase::Params>();
@@ -4208,7 +4197,7 @@ TEST_F(WalletsTest, RejectCreationAtPassphrase)
 
    //check file is deleted
    EXPECT_TRUE(fileExists);
-   EXPECT_FALSE(FileUtils::fileExists(filename, 0));
+   EXPECT_FALSE(FileUtils::pathExists(filename, 0));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -10461,11 +10450,11 @@ TEST_F(BackupTests, BackupStrings_Legacy)
          {
             EXPECT_EQ(prompt.walletId, backupData->getWalletId());
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory135c);
-            return Seeds::PromptReply{true};
+            return Seeds::PromptReply{ true, false, {} };
          }
 
          default:
-            return Seeds::PromptReply{false};
+            return Seeds::PromptReply{ false, false, {} };
       }
    };
 
@@ -10556,11 +10545,11 @@ TEST_F(BackupTests, BackupStrings_Legacy_Armory200a)
          {
             EXPECT_EQ(prompt.walletId, backupData->getWalletId());
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory200a);
-            return Seeds::PromptReply{true};
+            return Seeds::PromptReply{ true, false, {} };
          }
 
          default:
-            return Seeds::PromptReply{false};
+            return Seeds::PromptReply{ false, false, {} };
       }
    };
 
@@ -10652,11 +10641,12 @@ TEST_F(BackupTests, BackupStrings_Legacy_SecurePrint)
          case Seeds::RestorePromptType::Id:
          {
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory135c);
-            return Seeds::PromptReply{prompt.walletId == backupData->getWalletId()};
+            return Seeds::PromptReply{
+               prompt.walletId == backupData->getWalletId(), false, {} };
          }
 
          default:
-            return Seeds::PromptReply{false};
+            return Seeds::PromptReply{ false, true, {} };
       }
    };
 
@@ -10831,7 +10821,7 @@ TEST_F(BackupTests, Easy16_AutoRepair)
                {
                   EXPECT_EQ(prompt.checksumResult.at(0), decoded.checksumIndexes[0]);
                   EXPECT_EQ(prompt.checksumResult.at(1), decoded.checksumIndexes[1]);
-                  return Seeds::PromptReply{false};
+                  return Seeds::PromptReply{ false, false, {} };
                }
 
                case Seeds::RestorePromptType::Id:
@@ -10840,11 +10830,11 @@ TEST_F(BackupTests, Easy16_AutoRepair)
                   if (prompt.walletId == wltID) {
                      ++succesfulRepairs;
                   }
-                  return Seeds::PromptReply{false};
+                  return Seeds::PromptReply{ false, false, {} };
                }
 
                default:
-                  return Seeds::PromptReply{false};
+                  return Seeds::PromptReply{ false, false, {} };
             }
          };
 
@@ -10941,14 +10931,14 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode)
          case Seeds::RestorePromptType::Id:
          {
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory135a);
-            return Seeds::PromptReply{prompt.walletId == backupData->getWalletId()};
+            return Seeds::PromptReply{
+               prompt.walletId == backupData->getWalletId(), false, {} };
          }
 
          case Seeds::RestorePromptType::ChecksumError:
          {
             auto corruptedLines = corruptions[corruptionCounter++];
             auto iter = corruptedLines.begin();
-            unsigned y=0;
             for (const auto& linePair : prompt.checksumResult) {
                if (linePair.first == *iter) {
                   EXPECT_EQ(linePair.second, 255);
@@ -10957,11 +10947,11 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode)
                   EXPECT_EQ(linePair.second, 0);
                }
             }
-            return Seeds::PromptReply{false};
+            return Seeds::PromptReply{ false, false, {} };
          }
 
          default:
-            return Seeds::PromptReply{false};
+            return Seeds::PromptReply{ false, false, {} };
       }
    };
 
@@ -11099,11 +11089,12 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode_SecurePrint)
          case Seeds::RestorePromptType::Id:
          {
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory135a);
-            return Seeds::PromptReply{prompt.walletId == backupData->getWalletId()};
+            return Seeds::PromptReply{
+               prompt.walletId == backupData->getWalletId(), false, {} };
          }
 
          default:
-            return Seeds::PromptReply{false};
+            return Seeds::PromptReply{ false, false, {} };
       }
    };
 
@@ -11238,11 +11229,11 @@ TEST_F(BackupTests, BackupString_LegacyWO)
             {
                EXPECT_EQ(prompt.walletId, originalWalletId);
                EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory200a);
-               return Seeds::PromptReply{true};
+               return Seeds::PromptReply{ true, false, {} };
             }
 
             default:
-               return Seeds::PromptReply{false};
+               return Seeds::PromptReply{ false, false, {} };
          }
       };
 
@@ -11314,11 +11305,11 @@ TEST_F(BackupTests, BackupString_LegacyStatic)
          {
             EXPECT_EQ(prompt.walletId, walletId);
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory135a);
-            return Seeds::PromptReply{true};
+            return Seeds::PromptReply{ true, false, {} };
          }
 
          default:
-            return Seeds::PromptReply{false};
+            return Seeds::PromptReply{ false, false, {} };
       }
    };
 
@@ -11427,11 +11418,11 @@ TEST_F(BackupTests, BackupStrings_BIP32)
          {
             EXPECT_EQ(prompt.walletId, backupData->getWalletId());
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory200b);
-            return Seeds::PromptReply{true};
+            return Seeds::PromptReply{ true, false, {} };
          }
 
          default:
-            return Seeds::PromptReply{false};
+            return Seeds::PromptReply{ false, false, {} };
       }
    };
 
@@ -11526,11 +11517,11 @@ TEST_F(BackupTests, BackupStrings_BIP32_Virgin)
          {
             EXPECT_EQ(prompt.walletId, backupData->getWalletId());
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory200c);
-            return Seeds::PromptReply{true};
+            return Seeds::PromptReply{ true, false, {} };
          }
 
          default:
-            return Seeds::PromptReply{false};
+            return Seeds::PromptReply{ false, false, {} };
       }
    };
 
@@ -11604,11 +11595,11 @@ TEST_F(BackupTests, BackupStrings_BIP32_FromBase58)
          {
             EXPECT_EQ(prompt.walletId, "poUtmfmp");
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Base58);
-            return Seeds::PromptReply{true};
+            return Seeds::PromptReply{ true, false, {} };
          }
 
          default:
-            return Seeds::PromptReply{false};
+            return Seeds::PromptReply{ false, false, {} };
       }
    };
 
@@ -11718,11 +11709,11 @@ TEST_F(BackupTests, BackupStrings_BIP39)
          {
             EXPECT_EQ(prompt.walletId, walletId);
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory200d);
-            return Seeds::PromptReply{true};
+            return Seeds::PromptReply{ true, false, {} };
          }
 
          default:
-            return Seeds::PromptReply{false};
+            return Seeds::PromptReply{ false, false, {} };
       }
    };
 
@@ -11787,11 +11778,11 @@ TEST_F(BackupTests, BackupStrings_BIP39)
          {
             EXPECT_EQ(prompt.walletId, walletId);
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::BIP39);
-            return Seeds::PromptReply{true};
+            return Seeds::PromptReply{ true, false, {} };
          }
 
          default:
-            return Seeds::PromptReply{false};
+            return Seeds::PromptReply{ false, false, {} };
       }
    };
 
@@ -11845,9 +11836,7 @@ TEST_F(BackupTests, BackupStrings_BIP39)
 ////////////////////////////////////////////////////////////////////////////////
 GTEST_API_ int main(int argc, char **argv)
 {
-#ifdef _MSC_VER
-   _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
-
+#ifdef _WIN32
    WSADATA wsaData;
    WORD wVersion = MAKEWORD(2, 0);
    WSAStartup(wVersion, &wsaData);

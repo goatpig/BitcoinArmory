@@ -15,7 +15,7 @@
 
 #include "CppBridge.h"
 #include "ProtoCommandParser.h"
-#include "WebSocketMessage.h"
+#include <Network/WebSocketMessage.h>
 
 using namespace Armory;
 using namespace Armory::Bridge;
@@ -150,7 +150,8 @@ void CppBridgeSocket::respond(std::vector<uint8_t>& data)
             return;
          }
 
-         BinaryData requestBody(dataRef.getSize() - 1);
+         BinaryData requestBody;
+         requestBody.resize(dataRef.getSize() - 1);
          memcpy(requestBody.getPtr(), dataRef.getPtr() + 1, requestBody.getSize());
          if (!ProtoCommandParser::processData(bridgePtr_, requestBody)) {
             shutdown();
@@ -179,8 +180,8 @@ void CppBridgeSocket::respond(std::vector<uint8_t>& data)
 
 ////////////////////////////////////////////////////////////////////////////////
 void CppBridgeSocket::pushPayload(
-   std::unique_ptr<Socket_WritePayload> write_payload,
-   std::shared_ptr<Socket_ReadPayload>)
+   std::unique_ptr<Network::Socket_WritePayload> write_payload,
+   std::shared_ptr<Network::Socket_ReadPayload>)
 {
    if (write_payload == nullptr) {
       return;

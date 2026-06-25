@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2020-2025, goatpig                                          //
+//  Copyright (C) 2020-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -12,6 +12,7 @@
 #include <set>
 #include <functional>
 
+#include <Utils/Types.h>
 #include <Utils/BinaryData.h>
 
 class LMDBBlockDatabase;
@@ -21,9 +22,13 @@ class TxIOPair;
 
 namespace Armory
 {
+   class Blockchain;
+   class BlockchainData;
+
    namespace ZeroConf
    {
       class ZeroConfCallbacks;
+      using TxIOKeys = std::set<Types::TxIOKey>;
 
       enum class ParsedTxStatus : int
       {
@@ -46,8 +51,8 @@ namespace Armory
       ////
       struct ParsedZCData
       {
-         std::set<BinaryData> scrAddrs;
-         std::map<BinaryData, BinaryData> invalidatedKeys;
+         std::set<Types::ScrAddr> scrAddrs;
+         std::map<Types::TxKey, Types::TxHash> invalidatedKeys;
 
          void mergeTxios(const ParsedZCData&);
       };
@@ -56,39 +61,37 @@ namespace Armory
       class OutPointRef
       {
       private:
-         BinaryData txHash_;
-         unsigned txOutIndex_ = UINT16_MAX;
-         BinaryData dbKey_;
-         uint64_t time_ = UINT64_MAX;
+         Types::TxHash txHash_;
+         Types::TxIOId txOutIndex_ = UINT16_MAX;
+         Types::TxIOKey dbKey_ = Types::INVALID_TXIO_KEY;
+         uint32_t time_ = UINT32_MAX;
 
       public:
          void unserialize(const uint8_t*, uint32_t);
          void unserialize(BinaryDataRef);
 
          void resolveDbKey(LMDBBlockDatabase*);
-         void setDbKey(const BinaryData&);
-
          bool isResolved(void) const;
          bool isInitialized(void) const;
 
-         BinaryDataRef getTxHashRef(void) const;
-         unsigned getIndex(void) const;
+         const Types::TxHash& getTxHash(void) const;
+         Types::TxIOId getIndex(void) const;
 
-         const BinaryData& getDbKey(void) const;
-         BinaryDataRef getDbTxKeyRef(void) const;
+         const Types::TxIOKey& getDbKey(void) const;
+         void setDbKey(const Types::TxKey&);
 
          void reset(InputResolution);
          bool isZc(void) const;
 
-         void setTime(uint64_t);
-         uint64_t getTime(void) const;
+         void setTime(uint32_t);
+         uint32_t getTime(void) const;
       };
 
       ////
       struct ParsedTxIn
       {
          OutPointRef opRef;
-         BinaryData scrAddr;
+         Types::ScrAddr scrAddr;
          uint64_t value = UINT64_MAX;
 
          bool isResolved(void) const;
@@ -96,7 +99,7 @@ namespace Armory
 
       struct ParsedTxOut
       {
-         BinaryData scrAddr;
+         Types::ScrAddr scrAddr;
          uint64_t value = UINT64_MAX;
          size_t offset;
          size_t len;
@@ -108,10 +111,9 @@ namespace Armory
       class ParsedTx
       {
       private:
-         const BinaryData zcKey_;
-         uint32_t txIndex_;
+         const Types::TxKey zcKey_;
 
-         mutable BinaryData txHash_;
+         mutable Types::TxHash txHash_;
          std::shared_ptr<Tx> tx_;
 
       public:
@@ -122,29 +124,28 @@ namespace Armory
          bool isChainedZc = false;
 
       public:
-         ParsedTx(BinaryData&);
+         ParsedTx(const Types::TxKey&);
 
          void setTx(BinaryDataRef, uint32_t);
-         void setTxHash(const BinaryData&);
+         void setTxHash(const Types::TxHash&);
          void resetInputResolution(InputResolution);
 
          bool isResolved(void) const;
-         const BinaryData& getTxHash(void) const;
-         BinaryDataRef getKeyRef(void) const;
-         const BinaryData& getKey(void) const;
+         const Types::TxHash& getTxHash(void) const;
+         const Types::TxKey& getKey(void) const;
          const Tx& getTxObj(void) const;
       };
 
       ////
       struct FilteredZeroConfData
       {
-         std::map<BinaryData, std::map<BinaryData, std::shared_ptr<TxIOPair>>> scrAddrTxioMap;
-         std::map<BinaryDataRef, std::map<unsigned, BinaryDataRef>> outPointsSpentByKey;
-         std::set<BinaryData> txOutsSpentByZC;
-         std::map<BinaryDataRef, std::shared_ptr<std::set<BinaryDataRef>>> keyToSpentScrAddr;
-         std::map<BinaryDataRef, std::set<BinaryDataRef>> keyToFundedScrAddr;
+         std::map<Types::ScrAddr, std::map<Types::TxIOKey, std::shared_ptr<TxIOPair>>> scrAddrTxioMap;
+         std::map<Types::TxHash, std::map<unsigned, Types::TxKey>> outPointsSpentByKey;
+         TxIOKeys txOutsSpentByZC;
+         std::map<Types::TxKey, std::shared_ptr<std::set<Types::ScrAddr>>> keyToSpentScrAddr;
+         std::map<Types::TxKey, std::set<Types::ScrAddr>> keyToFundedScrAddr;
 
-         std::map<uint64_t, ParsedZCData> flaggedBDVs;
+         std::map<Types::BdvId, ParsedZCData> flaggedBDVs;
          std::shared_ptr<ParsedTx> txPtr;
 
          bool isEmpty(void) const;
@@ -191,42 +192,42 @@ namespace Armory
 
       public:
          //TODO: shouldn't use references for txHashes anymore
-         std::map<BinaryDataRef, BinaryDataRef> txHashToDBKey_; //<txHash, zcKey>
-         std::map<BinaryData, std::shared_ptr<ParsedTx>> txMap_; //<zcKey, zcTx>
+         std::map<Types::TxHash, Types::TxKey> txHashToDBKey_; //<txHash, zcKey>
+         std::map<Types::TxKey, std::shared_ptr<ParsedTx>> txMap_; //<zcKey, zcTx>
 
          //<txOutKey, bool> (true for valid, false for dropped)
-         std::map<BinaryData, bool> txOutsSpentByZC_;
+         std::map<Types::TxIOKey, bool> txOutsSpentByZC_;
 
          //<scrAddr, <txOutKey>>
-         std::map<BinaryData, std::set<BinaryData>> scrAddrMap_;
+         std::map<Types::ScrAddr, TxIOKeys> scrAddrMap_;
 
          //<zcKey/txKey, txio>>
-         std::map<BinaryData, std::shared_ptr<TxIOPair>> txioMap_;
+         std::map<Types::TxIOKey, std::shared_ptr<TxIOPair>> txioMap_;
 
          std::shared_ptr<MempoolData> parent_;
 
       private:
-         std::set<BinaryData>* getTxioKeysFromParent(BinaryDataRef) const;
-         const std::set<BinaryData>& getTxioKeysForScrAddr(BinaryDataRef) const;
-         std::set<BinaryData>& getTxioKeysForScrAddr_NoThrow(BinaryDataRef);
+         TxIOKeys* getTxioKeysFromParent(const Types::ScrAddr&) const;
+         const TxIOKeys& getTxioKeysForScrAddr(const Types::ScrAddr&) const;
+         TxIOKeys& getTxioKeysForScrAddr_NoThrow(const Types::ScrAddr&);
 
       public:
          unsigned getParentCount(void) const;
          void copyFrom(const MempoolData&);
 
-         std::shared_ptr<ParsedTx> getTx(BinaryDataRef) const;
-         std::shared_ptr<const TxIOPair> getTxio(BinaryDataRef) const;
-         BinaryDataRef getKeyForHash(BinaryDataRef) const;
-         bool isTxOutSpentByZC(BinaryDataRef) const;
+         std::shared_ptr<ParsedTx> getTx(Types::TxKey) const;
+         std::shared_ptr<const TxIOPair> getTxio(Types::TxIOKey) const;
+         Types::TxKey getKeyForHash(const Types::TxHash&) const;
+         bool isTxOutSpentByZC(Types::TxIOKey) const;
 
          ////
-         void dropFromSpentTxOuts(BinaryDataRef);
-         void dropFromScrAddrMap(BinaryDataRef, BinaryDataRef);
-         void dropTxHashToDBKey(BinaryDataRef);
+         void dropFromSpentTxOuts(Types::TxIOKey);
+         void dropFromScrAddrMap(const Types::ScrAddr&, Types::TxKey);
+         void dropTxHashToDBKey(const Types::TxHash&);
 
-         void dropTxiosForZC(BinaryDataRef);
-         void dropTxioInputs(BinaryDataRef, const std::set<BinaryData>&);
-         void dropTx(BinaryDataRef);
+         void dropTxiosForZC(Types::TxKey);
+         void dropTxioInputs(Types::TxKey, const TxIOKeys&);
+         void dropTx(Types::TxKey);
 
          ////
          static std::shared_ptr<MempoolData> mergeWithParent(
@@ -246,8 +247,8 @@ namespace Armory
          unsigned mergeCount_ = 0;
 
       private:
-         std::shared_ptr<ParsedTx> getTxByKey_NoConst(BinaryDataRef) const;
-         std::set<BinaryData> findChildren(BinaryDataRef);
+         std::shared_ptr<ParsedTx> getTxByKey_NoConst(Types::TxKey) const;
+         std::set<Types::TxKey> findChildren(Types::TxKey);
 
       public:
          MempoolSnapshot(unsigned, unsigned);
@@ -255,39 +256,39 @@ namespace Armory
             std::shared_ptr<MempoolSnapshot>,
             unsigned, unsigned);
 
-         const std::set<BinaryData>& getTxioKeysForScrAddr(BinaryDataRef) const;
-         std::map<BinaryDataRef, std::shared_ptr<const TxIOPair>>
-            getTxioMapForScrAddr(BinaryDataRef) const;
-         std::shared_ptr<const TxIOPair> getTxioByKey(BinaryDataRef) const;
+         const TxIOKeys& getTxioKeysForScrAddr(const Types::ScrAddr&) const;
+         std::map<Types::TxIOKey, std::shared_ptr<const TxIOPair>>
+            getTxioMapForScrAddr(const Types::ScrAddr&) const;
+         std::shared_ptr<const TxIOPair> getTxioByKey(Types::TxIOKey) const;
 
-         std::shared_ptr<const ParsedTx> getTxByKey(BinaryDataRef) const;
-         std::shared_ptr<const ParsedTx> getTxByHash(BinaryDataRef) const;
-         TxOut getTxOutCopy(BinaryDataRef, uint16_t) const;
+         std::shared_ptr<const ParsedTx> getTxByKey(Types::TxKey) const;
+         std::shared_ptr<const ParsedTx> getTxByHash(const Types::TxHash&) const;
+         TxOut getTxOutCopy(Types::TxKey, Types::TxIOId) const;
 
-         BinaryDataRef getKeyForHash(BinaryDataRef) const;
-         BinaryDataRef getHashForKey(BinaryDataRef) const;
-         bool hasHash(BinaryDataRef) const;
+         Types::TxKey getKeyForHash(const Types::TxHash&) const;
+         const Types::TxHash& getHashForKey(Types::TxKey) const;
+         bool hasHash(const Types::TxHash&) const;
 
-         uint32_t getTopZcID(void) const;
-         bool isTxOutSpentByZC(BinaryDataRef) const;
+         Types::ZcId getTopZcID(void) const;
+         bool isTxOutSpentByZC(Types::TxIOKey) const;
 
-         void preprocessZcMap(LMDBBlockDatabase*);
-         std::map<BinaryData, std::shared_ptr<ParsedTx>> dropZc(BinaryDataRef);
+         void preprocessZcMap(LMDBBlockDatabase*, std::shared_ptr<BlockchainData>);
+         std::map<Types::TxKey, std::shared_ptr<ParsedTx>> dropZc(Types::TxKey);
 
          void stageNewZC(std::shared_ptr<ParsedTx>, const FilteredZeroConfData&);
          void commitNewZCs(void);
          unsigned getMergeCount(void) const { return mergeCount_; }
       };
 
-      void preprocessTx(ParsedTx&, LMDBBlockDatabase*);
       void preprocessZcMap(
-         const std::map<BinaryData, std::shared_ptr<ParsedTx>>&,
-         LMDBBlockDatabase*);
+         const std::map<Types::TxKey, std::shared_ptr<ParsedTx>>&,
+         LMDBBlockDatabase*, std::shared_ptr<BlockchainData>);
+      void preprocessTx(ParsedTx&, LMDBBlockDatabase*,
+         std::shared_ptr<BlockchainData>);
       void finalizeParsedTxResolution(
          std::shared_ptr<ParsedTx>,
-         LMDBBlockDatabase*, const std::set<BinaryData>&,
+         std::shared_ptr<Blockchain>, const std::set<BinaryData>&,
          std::shared_ptr<MempoolSnapshot>);
-
       FilteredZeroConfData filterParsedTx(
          std::shared_ptr<ParsedTx>,
          const std::function<bool(const BinaryData&)>&,

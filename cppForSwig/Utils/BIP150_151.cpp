@@ -904,7 +904,8 @@ int BIP151Connection::bip151RekeyConn(uint8_t* encackBuf,
    assert(encackSize >= 64);
 
    int retVal = -1;
-   BinaryData clrRekeyBuf(48);
+   BinaryData clrRekeyBuf;
+   clrRekeyBuf.resize(48);
    if(getRekeyBuf(clrRekeyBuf.getPtr(), clrRekeyBuf.getSize()) == -1)
    {
       return retVal;

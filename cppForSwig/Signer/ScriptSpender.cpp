@@ -15,6 +15,7 @@
 #include "PSBT.h"
 #include "Script.h"
 
+using namespace Armory;
 using namespace Armory::Signing;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -47,7 +48,7 @@ ScriptSpender::ScriptSpender(const ScriptSpender& ss)
    merge(ss);
 }
 
-bool ScriptSpender::operator==(const ScriptSpender& rhs)
+bool ScriptSpender::operator==(const ScriptSpender& rhs) const
 {
    try {
       return this->getOutpoint() == rhs.getOutpoint();
@@ -63,8 +64,8 @@ const UTXO& ScriptSpender::getUtxo() const
       if (!haveSupportingTx()) {
          throw SpenderException("missing both utxo & supporting tx");
       }
-      utxo_.txHash_ = getOutputHash();
-      utxo_.txOutIndex_ = getOutputIndex();
+      utxo_.txHash = getOutputHash();
+      utxo_.txOutIndex = getOutputIndex();
 
       const auto& supportingTx = getSupportingTx();
       auto opId = getOutputIndex();
@@ -822,7 +823,7 @@ void ScriptSpender::merge(const ScriptSpender& obj)
       uint64_t objOpVal;
       try {
          objOpHash = obj.getOutputHash();
-         objOpVal = obj.getValue();
+         objOpVal = obj.getAmount();
       } catch (const std::exception&) {
          //obj has no supporting data, it doesn't carry anything to merge
          return;
@@ -835,7 +836,7 @@ void ScriptSpender::merge(const ScriptSpender& obj)
          if (getOutputIndex() != obj.getOutputIndex()) {
             throw std::runtime_error("spender output index mismatch");
          }
-         if (getValue() != objOpVal) {
+         if (getAmount() != objOpVal) {
             throw std::runtime_error("spender output value mismatch");
          }
       } catch (const SpenderException&) {
@@ -1038,7 +1039,7 @@ bool ScriptSpender::compareEvalState(const ScriptSpender& rhs) const
    //check utxos
    if (getOutputHash() != rhs.getOutputHash() ||
       getOutputIndex() != rhs.getOutputIndex() ||
-      getValue() != getValue()) {
+      getAmount() != rhs.getAmount()) {
       return false;
    }
 
@@ -1390,15 +1391,12 @@ bool ScriptSpender::isSegWit() const
    switch (legacyStatus_)
    {
       case SpenderStatus::Empty:
-         return true; //empty legacy input means sw
+         //empty legacy input means sw   
+         return true;
 
       case SpenderStatus::Resolved:
-      {
          //resolved legacy status could mean nested sw
-         if (segwitStatus_ >= SpenderStatus::Resolved) {
-            return true;
-         }
-      }
+         return segwitStatus_ >= SpenderStatus::Resolved;
 
       default:
          return false;
@@ -1898,8 +1896,8 @@ std::shared_ptr<ScriptSpender> ScriptSpender::fromPSBT(
    auto outpoint = txin.getOutPoint();
 
    if (!haveSupportingTx && utxo.isInitialized()) {
-      utxo.txHash_ = outpoint.getTxHash();
-      utxo.txOutIndex_ = outpoint.getTxOutIndex();
+      utxo.txHash = outpoint.getTxHash();
+      utxo.txOutIndex = outpoint.getTxOutIndex();
       spender = std::make_shared<ScriptSpender>(utxo);
    } else {
       spender = std::make_shared<ScriptSpender>(
@@ -2074,10 +2072,10 @@ bool ScriptSpender::canBeResolved() const
    return haveSupportingTx();
 }
 
-uint64_t ScriptSpender::getValue() const
+Types::Amount ScriptSpender::getAmount() const
 {
    if (utxo_.isInitialized()) {
-      return utxo_.getValue();
+      return utxo_.getAmount();
    }
    if (!haveSupportingTx()) {
       throw SpenderException("missing both supporting tx and utxo");
@@ -2086,7 +2084,7 @@ uint64_t ScriptSpender::getValue() const
    auto index = getOutputIndex();
    const auto& supportingTx = getSupportingTx();
    auto txOutCopy = supportingTx.getTxOutCopy(index);
-   return txOutCopy.getValue();
+   return txOutCopy.getAmount();
 }
 
 void ScriptSpender::seedResolver(std::shared_ptr<ResolverFeed> feedPtr,
@@ -2153,7 +2151,7 @@ void ScriptSpender::seedResolver(std::shared_ptr<ResolverFeed> feedPtr,
       return;
    }
 
-   auto hash = BtcUtils::getTxOutRecipientAddr(utxo_.script_);
+   auto hash = BtcUtils::getTxOutRecipientAddr(utxo_.script);
    try {
       feedPtr->getByVal(hash);
    } catch (const std::exception&) {

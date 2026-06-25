@@ -687,7 +687,7 @@ class DatabaseTab(QtWidgets.QWidget):
          else:
             satoshiDir = '/path/to/bitcoin/blocks'
          dbTypeArg = 'DB_SUPER' \
-            if dbType == 'Supernode' else 'DB_FULL'
+            if dbType == 'Supernode' else 'DB_BARE'
          cmdParts = [
             '# Local ArmoryDB (bridge: automateDb)',
             'ArmoryDB', '--ephemeral',
@@ -1004,7 +1004,7 @@ class DatabaseTab(QtWidgets.QWidget):
       if dbScenario == SCENARIO_DB_LOCAL:
          dbTypeSetting = \
             TheSettings.getSettingOrSetDefault(
-               'DBType', 'DB_FULL')
+               'DBType', 'DB_BARE')
          if dbTypeSetting == 'DB_SUPER':
             self.databaseTypeCombo.setCurrentText(
                'Supernode')

@@ -124,9 +124,9 @@ namespace
       }
 
       ++mostSignificantByteOffset;
-      BinaryData bd(mostSignificantByteOffset);
-      auto ptr = bd.getPtr();
-      memcpy(ptr, &absval, mostSignificantByteOffset);
+      BinaryData bd;
+      bd.resize(mostSignificantByteOffset);
+      memcpy(bd.getPtr(), &absval, mostSignificantByteOffset);
       return bd;
    }
 
@@ -1896,7 +1896,7 @@ void StackResolver::resolveStack()
                resolver.setFlags(flags_);
                resolver.isSW_ = isSW_;
 
-               auto stackptr = std::move(resolver.getResolvedStack());
+               auto stackptr = resolver.getResolvedStack();
                resolvedStack_ = stackptr;
             }
             break;

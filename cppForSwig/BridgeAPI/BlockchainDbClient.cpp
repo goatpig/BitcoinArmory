@@ -20,7 +20,7 @@
 
 #include "BlockchainDbClient.h"
 #include <Utils/ArmoryConfig.h>
-#include <Utils/DBUtils.h>
+#include <Utils/FileUtils.h>
 #include <Utils/Cryptography.h>
 
 #include <Wallets/IOHeader.h>
@@ -91,7 +91,7 @@ Bridge::spawnDb(const std::filesystem::path& satoshiPath,
 
    const std::filesystem::path armoryDbPath{
       Config::Pathing::runningDir() / L"ArmoryDB.exe" };
-   if (!FileUtils::fileExists(armoryDbPath, 0)) {
+   if (!FileUtils::pathExists(armoryDbPath, 0)) {
       throw std::runtime_error("invalid db binary path: " + armoryDbPath.string());
    }
 
@@ -288,7 +288,7 @@ Bridge::spawnDb(const std::filesystem::path& satoshiPath,
    //get full path to armorydb
    const std::filesystem::path armoryDbPath{
       Config::Pathing::runningDir() / "ArmoryDB" };
-   if (!FileUtils::fileExists(armoryDbPath, 0)) {
+   if (!FileUtils::pathExists(armoryDbPath, 0)) {
       throw std::runtime_error("invalid db binary path: " + armoryDbPath.string());
    }
 

@@ -8,12 +8,8 @@
 
 #include "Context.h"
 #include <Utils/BinaryData.h>
-#include <Utils/DBUtils.h>
-#include <BlockchainDatabase/BlockObj.h>
-#include <BlockchainDatabase/Blockchain.h>
 #include <BlockchainDatabase/txio.h>
-#include <BlockchainDatabase/lmdb_wrapper.h>
-#include <ZeroConf/Utils.h>
+#include <TxClasses.h>
 #include <DBClientClasses.h>
 
 using namespace Armory;
@@ -21,47 +17,55 @@ using namespace Armory::Ledgers;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Context
-Context::Context(std::map<uint32_t, uint32_t> timestamps,
-   std::map<BinaryData, Tx>& txMap,
-   std::map<BinaryData, std::map<uint32_t, BinaryData>>& txioKeyToScrAddr,
-   std::set<BinaryData> scrAddrSet) :
-   timestamps_(std::move(timestamps)),
+Context::Context(
+   const std::map<Types::BlockId, HeaderPtr>& headers,
+   std::map<Types::TxKey, Tx> txMap,
+   std::set<Types::ScrAddr> scrAddrSet) :
+   headers_(headers),
    txMap_{std::move(txMap)},
-   txioKeyToScrAddr_{std::move(txioKeyToScrAddr)},
    scrAddrSet_{std::move(scrAddrSet)}
 {}
 
-uint32_t Context::getTimestampForBlockHeight(uint32_t blockNum) const
+////////
+uint32_t Context::getTimestampForBlockId(Types::BlockId blockId) const
 {
    try {
-      return timestamps_.at(blockNum);
+      auto header = headers_.at(blockId);
+      return header->timestamp;
    } catch (const std::out_of_range&) {
-      LOGWARN << "no timestamp for block " << blockNum;
+      LOGWARN << "no block for id " << blockId;
       return UINT32_MAX;
    }
 }
 
-const BinaryData& Context::getTxHash(BinaryDataRef key) const
+uint32_t Context::getHeightForBlockId(Types::BlockId blockId) const
+{
+   try {
+      auto header = headers_.at(blockId);
+      return header->blockHeight;
+   } catch (const std::out_of_range&) {
+      LOGWARN << "no block for id " << blockId;
+      return UINT32_MAX;
+   }
+}
+
+////////
+const Types::TxHash& Context::getTxHash(Types::TxKey key) const
 {
    const auto& tx = getTx(key);
    return tx.getThisHash();
 }
 
-size_t Context::getTxOutCount(BinaryDataRef key) const
+////////
+size_t Context::getTxOutCount(Types::TxKey key) const
 {
    const auto& tx = getTx(key);
    return tx.getNumTxOut();
 }
 
-const Tx& Context::getTx(BinaryDataRef key) const
+const Tx& Context::getTx(Types::TxKey key) const
 {
    return txMap_.at(key);
-}
-
-const BinaryData& Context::getScrAddrForTxOut(const TxIOPair& txio) const
-{
-   return txioKeyToScrAddr_.at(txio.getTxRefOfOutput().getDBKey()).at(
-      txio.getIndexOfOutput());
 }
 
 bool Context::filterTxio(const TxIOPair& txio) const
@@ -69,172 +73,55 @@ bool Context::filterTxio(const TxIOPair& txio) const
    if (scrAddrSet_.empty()) {
       return true;
    }
-   const auto& scrAddr = getScrAddrForTxOut(txio);
-   return scrAddrSet_.find(scrAddr) != scrAddrSet_.end();
+   return scrAddrSet_.find(txio.getScrAddr()) != scrAddrSet_.end();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // DBCache
-void DBCache::addBlocks(std::vector<DBClientClasses::BlockHeader>& blkVec)
+void DBCache::addHeaders(const std::vector<HeaderPtr>& headerVec)
 {
-   for (auto& blk : blkVec) {
-      auto iter = blocks.find(blk.getBlockHeight());
-      if (iter == blocks.end()) {
-         iter = blocks.emplace(blk.getBlockHeight(), Blocks{}).first;
+   for (auto& header : headerVec) {
+      auto iter = headers.find(header->blockId);
+      if (iter == headers.end()) {
+         iter = headers.emplace(header->blockId, header).first;
       }
-
-      auto dupId = blk.getDupId();
-      iter->second.mainChain = dupId;
-      iter->second.blocks.emplace(dupId, std::move(blk));
    }
 }
 
-bool DBCache::isHeightValid(uint32_t height, uint8_t dupId) const
+HeaderPtr DBCache::getHeaderForHeight(uint32_t bheight) const
 {
-   auto iter = blocks.find(height);
-   if (iter == blocks.end()) {
-      return false;
+   for (const auto& hPair : headers) {
+      if (bheight == hPair.second->blockHeight) {
+         if (hPair.second->isMainBranch) {
+            return hPair.second;
+         }
+      }
    }
-   return dupId == iter->second.mainChain;
+   return nullptr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// namespace functions
+// namespace Ledgers functions
 Context Ledgers::prepareContext(
-   const std::map<BinaryData, TxIOPair>& txioMap,
-   const Blockchain& bc,
-   LMDBBlockDatabase* db,
-   std::shared_ptr<const ZeroConf::MempoolSnapshot> zcSs)
-{
-   std::map<uint32_t, uint32_t> timestamps;
-   std::set<BinaryData> txKeys;
-
-   /* 1. gather all tx keys, set timestamps */
-   for (const auto& txioPair : txioMap) {
-      /* output */
-      const auto& txKeyOut = txioPair.second.getTxRefOfOutput().getDBKey();
-      txKeys.emplace(txKeyOut);
-      BinaryDataRef txInKeyRef;
-      if (txioPair.second.hasTxIn()) {
-         txInKeyRef = txioPair.second.getTxRefOfInput().getDBKeyRef();
-         txKeys.emplace(BinaryData{txInKeyRef});
-      }
-
-      if (txKeyOut.startsWith(DBUtils::ZCPrefix)) {
-         continue;
-      }
-
-      //block timestamp
-      auto blockNum = DBUtils::hgtxToHeight(txKeyOut.getSliceRef(0, 4));
-      if (timestamps.find(blockNum) == timestamps.end()) {
-         try {
-            auto headerPtr = bc.getHeaderByHeight(blockNum, 0xFF);
-            timestamps.emplace(blockNum, headerPtr->getTimestamp());
-         } catch (const std::range_error&) {
-            LOGWARN << "no block for height " << blockNum;
-            continue;
-         }
-      }
-
-      /* input */
-      if (txInKeyRef.empty()) {
-         continue;
-      }
-      if (txInKeyRef.startsWith(DBUtils::ZCPrefix)) {
-         continue;
-      }
-
-      //block timestamp
-      blockNum = DBUtils::hgtxToHeight(txInKeyRef.getSliceRef(0, 4));
-      if (timestamps.find(blockNum) == timestamps.end()) {
-         try {
-            auto headerPtr = bc.getHeaderByHeight(blockNum, 0xFF);
-            timestamps.emplace(blockNum, headerPtr->getTimestamp());
-         } catch (const std::range_error&) {
-            LOGWARN << "no block for height " << blockNum;
-            continue;
-         }
-      }
-   }
-
-   /* 2. grab all txs */
-   std::map<BinaryData, Tx> txMap;
-   for (const auto& txKey : txKeys) {
-      if (!txKey.startsWith(DBUtils::ZCPrefix)) {
-         txMap.emplace(txKey, db->getFullTxCopy(txKey));
-      } else {
-         auto ptx = zcSs->getTxByKey(txKey);
-         txMap.emplace(txKey, ptx->getTxObj());
-      }
-   }
-
-   /* 3. resolve output addresses */
-   std::map<BinaryData, std::map<uint32_t, BinaryData>> txioKeyToScrAddr;
-   for (const auto& txioPair : txioMap) {
-      //output
-      const auto& txKeyOut = txioPair.second.getTxRefOfOutput().getDBKey();
-      const auto& outTx = txMap.at(txKeyOut);
-      auto iterOut = txioKeyToScrAddr.find(txKeyOut);
-      if (iterOut == txioKeyToScrAddr.end()) {
-         iterOut = txioKeyToScrAddr.emplace(
-            txKeyOut, std::map<uint32_t, BinaryData>{}).first;
-      }
-      auto indexOut = txioPair.second.getIndexOfOutput();
-      iterOut->second.emplace(indexOut, outTx.getScrAddrForTxOut(indexOut));
-   }
-   return Context{timestamps, txMap, txioKeyToScrAddr, {}};
-}
-
-Context Ledgers::prepareContext(
-   const std::map<BinaryData, TxIOPair>& txioMap,
+   const std::map<Types::TxIOKey, TxIOPair>& txioMap,
    std::shared_ptr<const DBCache> dbCache,
-   std::set<BinaryData> scrAddrSet)
+   std::set<Types::ScrAddr> scrAddrSet)
 {
-   std::set<BinaryData> txKeys;
+   std::set<Types::TxKey> txKeys;
 
-   /* 1. gather all tx keys */
+   /* 1. gather all relevant tx keys */
    for (const auto& txioPair : txioMap) {
-      const auto& txKeyOut = txioPair.second.getTxRefOfOutput().getDBKey();
-      txKeys.emplace(txKeyOut);
-      BinaryDataRef txInKeyRef;
+      txKeys.emplace(txioPair.second.getTxKeyOfOutput());
       if (txioPair.second.hasTxIn()) {
-         txInKeyRef = txioPair.second.getTxRefOfInput().getDBKeyRef();
-         txKeys.emplace(BinaryData{txInKeyRef});
+         txKeys.emplace(txioPair.second.getTxKeyOfInput());
       }
    }
 
-   /* 2. grab all txs */
-   std::map<BinaryData, Tx> txMap;
+   /* 2. grab all txs for relevant tx keys */
+   std::map<Types::TxKey, Tx> txMap;
    for (const auto& txKey : txKeys) {
       txMap.emplace(txKey, dbCache->txMap.at(txKey));
    }
 
-   /* 3. resolve output addresses */
-   std::map<BinaryData, std::map<uint32_t, BinaryData>> txioKeyToScrAddr;
-   for (const auto& txioPair : txioMap) {
-      //output
-      const auto& txKeyOut = txioPair.second.getTxRefOfOutput().getDBKey();
-      const auto& outTx = txMap.at(txKeyOut);
-      auto iterOut = txioKeyToScrAddr.find(txKeyOut);
-      if (iterOut == txioKeyToScrAddr.end()) {
-         iterOut = txioKeyToScrAddr.emplace(
-            txKeyOut, std::map<uint32_t, BinaryData>{}).first;
-      }
-      auto indexOut = txioPair.second.getIndexOfOutput();
-      iterOut->second.emplace(indexOut, outTx.getScrAddrForTxOut(indexOut));
-   }
-
-   /* 4. timestamps */
-   std::map<uint32_t, uint32_t> timestamps;
-   for (const auto& blockPair : dbCache->blocks) {
-      try {
-         const auto& block = blockPair.second.blocks.at(blockPair.second.mainChain);
-         timestamps.emplace(blockPair.first, block.getTimestamp());
-      } catch (const std::out_of_range&) {
-         LOGWARN << "missing block: " <<
-            blockPair.first << "|" << blockPair.second.mainChain;
-         continue;
-      }
-   }
-   return Context{timestamps, txMap, txioKeyToScrAddr, std::move(scrAddrSet)};
+   return Context{dbCache->headers, std::move(txMap), std::move(scrAddrSet)};
 }

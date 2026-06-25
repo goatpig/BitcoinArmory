@@ -1,10 +1,15 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2019-2025, goatpig                                          //
+//  Copyright (C) 2019-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
+
+#ifdef _WIN32
+   #include <winsock2.h>
+   #include <windows.h>
+#endif
 
 #include <cstdlib>
 #include <memory>
@@ -30,7 +35,7 @@ int main(int argc, char* argv[])
 
    unsigned count = argc + 1;
    auto args = new char*[count];
-   for (unsigned i=0; i<argc; i++) {
+   for (int i = 0; i < argc; i++) {
       args[i] = argv[i];
    }
 

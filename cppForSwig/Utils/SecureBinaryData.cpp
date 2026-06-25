@@ -13,8 +13,8 @@
 
 // This is used to attempt to keep keying material out of swap
 // I am stealing this from bitcoin 0.4.0 src, serialize.h
-#if defined(__MINGW32__) || defined(_MSC_VER)
-#include <Windows.h>
+#ifdef _WIN32
+   #include <Windows.h>
    // Note that VirtualLock does not provide this as a guarantee on Windows,
    // but, in practice, memory that has been VirtualLock'd almost never gets written to
    // the pagefile except in rare circumstances where memory is extremely low.
@@ -46,8 +46,9 @@ SecureBinaryData::SecureBinaryData() :
 {}
 
 SecureBinaryData::SecureBinaryData(size_t sz) :
-   BinaryData{sz}
+   BinaryData{}
 {
+   resize(sz);
    lockData();
 }
 

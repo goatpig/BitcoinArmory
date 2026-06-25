@@ -1,4 +1,4 @@
-SET(CMAKE_CXX_STANDARD 17)
+SET(CMAKE_CXX_STANDARD 20)
 SET(CMAKE_CXX_STANDARD_REQUIRED ON)
 SET(CMAKE_POSITION_INDEPENDENT_CODE ON)
 SET(CMAKE_CXX_EXTENSIONS OFF)
@@ -58,6 +58,12 @@ LIST(APPEND WALLETS_SOURCES
 
 LIST(APPEND LIBARMORYCOMMON_SOURCES
     lmdbpp/lmdbpp.cpp
+    Network/WebSocketMessage.cpp
+    Network/SocketObject.cpp
+    Network/StringSockets.cpp
+    Network/WebSocketClient.cpp
+    Node/nodeRPC.cpp
+    Node/BitcoinP2P.cpp
     ${UTILS_SOURCES}
     ${WALLETS_SOURCES}
     ${ACCOUNTS_SOURCES}
@@ -183,20 +189,16 @@ TARGET_LINK_LIBRARIES(ArmoryCommon
 SET(LIBARMORYCLI_SOURCES
     BDM_mainthread.cpp
     BDM_Server.cpp
-    BitcoinP2P.cpp
     BlockDataViewer.cpp
     BtcWallet.cpp
-    nodeRPC.cpp
     Progress.cpp
     ScrAddrObj.cpp
     Server.cpp
-    StringSockets.cpp
     gtest/MockedNode.cpp
 )
 
 ADD_LIBRARY(ArmoryCLI
     STATIC
-    ${LIBARMORYUTILS_SOURCES}
     ${LIBARMORYCLI_SOURCES}
 )
 

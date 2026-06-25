@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig.                                         //
+//  Copyright (C) 2016-2026, goatpig.                                         //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -17,18 +17,16 @@
 
 #include <Utils/ThreadSafeClasses.h>
 #include <Utils/BinaryData.h>
-#include "SocketService.h"
-#include "libwebsockets.h"
+#include <Network/SocketService.h>
+#include <libwebsockets.h>
 
 #define SERVER_AUTH_PEER_FILENAME "server.peers"
 
 class SecureBinaryData;
 class Clients;
 class BlockDataManager;
-class SerializedMessage;
 class BIP151Connection;
 struct AuthPeersLambdas;
-struct Socket_WritePayload;
 struct btc_pubkey_;
 
 namespace Armory
@@ -41,6 +39,12 @@ namespace Armory
       {
          struct ReadOnlyFileParams;
       }
+   }
+
+   namespace Network
+   {
+      struct Socket_WritePayload;
+      class SerializedMessage;
    }
 }
 
@@ -83,9 +87,10 @@ struct PendingMessage
 {
    const uint64_t id;
    const uint32_t msgid;
-   std::unique_ptr<Socket_WritePayload> payload;
+   std::unique_ptr<Armory::Network::Socket_WritePayload> payload;
 
-   PendingMessage(uint64_t, uint32_t, std::unique_ptr<Socket_WritePayload>);
+   PendingMessage(uint64_t, uint32_t, std::unique_ptr<
+      Armory::Network::Socket_WritePayload>);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -150,7 +155,7 @@ private:
    bool oneWayAuth_ = false;
 
 public:
-   void writeToSocket(struct lws*, SerializedMessage&);
+   void writeToSocket(struct lws*, Armory::Network::SerializedMessage&);
 
 private:
    void webSocketService(int port);
@@ -183,7 +188,7 @@ public:
    static bool isMasterKey(const btc_pubkey_&);
 
    static void write(const uint64_t&, const uint32_t&,
-      std::unique_ptr<Socket_WritePayload>);
+      std::unique_ptr<Armory::Network::Socket_WritePayload>);
 
    std::shared_ptr<const std::map<uint64_t, ClientConnection>>
       getConnectionStateMap(void) const;

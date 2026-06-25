@@ -175,7 +175,8 @@ HandshakeState BIP15x_Handshake::serverSideHandshake(
    case BIP151_PayloadType::Start:
    {
       //init bip151 handshake
-      BinaryData encinitData(ENCINITMSGSIZE);
+      BinaryData encinitData;
+      encinitData.resize(ENCINITMSGSIZE);
       if (connPtr->getEncinitData(
          encinitData.getPtr(), ENCINITMSGSIZE,
          BIP151SymCiphers::CHACHA20POLY1305_OPENSSH) != 0)
@@ -220,7 +221,8 @@ HandshakeState BIP15x_Handshake::serverSideHandshake(
       }
 
       //return encack
-      BinaryData encackData(BIP151PUBKEYSIZE);
+      BinaryData encackData;
+      encackData.resize(BIP151PUBKEYSIZE);
       if (connPtr->getEncackData(
          encackData.getPtr(), BIP151PUBKEYSIZE) != 0)
       {
@@ -258,7 +260,8 @@ HandshakeState BIP15x_Handshake::serverSideHandshake(
          return HandshakeState::Error_ProcessAuthChallenge;
       }
 
-      BinaryData authreplyBuf(BIP151PRVKEYSIZE * 2);
+      BinaryData authreplyBuf;
+      authreplyBuf.resize(BIP151PRVKEYSIZE * 2);
       if (connPtr->getAuthreplyData(
          authreplyBuf.getPtr(),
          authreplyBuf.getSize(),
@@ -285,7 +288,8 @@ HandshakeState BIP15x_Handshake::serverSideHandshake(
          return HandshakeState::Error_ProcessAuthPropose;
       }
 
-      BinaryData authchallengeBuf(BIP151PRVKEYSIZE);
+      BinaryData authchallengeBuf;
+      authchallengeBuf.resize(BIP151PRVKEYSIZE);
       if (connPtr->getAuthchallengeData(
          authchallengeBuf.getPtr(),
          authchallengeBuf.getSize(),
@@ -346,7 +350,8 @@ HandshakeState BIP15x_Handshake::clientSideHandshake(
          return HandshakeState::Error_ProcessEncInit;
 
       //valid encinit, send client side encack
-      BinaryData encackPayload(BIP151PUBKEYSIZE);
+      BinaryData encackPayload;
+      encackPayload.resize(BIP151PUBKEYSIZE);
       if (connPtr->getEncackData(
          encackPayload.getPtr(), BIP151PUBKEYSIZE) != 0)
       {
@@ -356,7 +361,8 @@ HandshakeState BIP15x_Handshake::clientSideHandshake(
       writeCb(encackPayload, BIP151_PayloadType::EncAck, false);
 
       //start client side encinit
-      BinaryData encinitPayload(ENCINITMSGSIZE);
+      BinaryData encinitPayload;
+      encinitPayload.resize(ENCINITMSGSIZE);
       if (connPtr->getEncinitData(
          encinitPayload.getPtr(), ENCINITMSGSIZE,
          BIP151SymCiphers::CHACHA20POLY1305_OPENSSH) != 0)
@@ -377,7 +383,8 @@ HandshakeState BIP15x_Handshake::clientSideHandshake(
       }
 
       //bip151 handshake completed, time for bip150
-      BinaryData authchallengeBuf(BIP151PRVKEYSIZE);
+      BinaryData authchallengeBuf;
+      authchallengeBuf.resize(BIP151PRVKEYSIZE);
       if (connPtr->getAuthchallengeData(
          authchallengeBuf.getPtr(),
          authchallengeBuf.getSize(),
@@ -414,7 +421,8 @@ HandshakeState BIP15x_Handshake::clientSideHandshake(
          return HandshakeState::Error_ProcessAuthReply;
       }
 
-      BinaryData authproposeBuf(BIP151PRVKEYSIZE);
+      BinaryData authproposeBuf;
+      authproposeBuf.resize(BIP151PRVKEYSIZE);
       if (connPtr->getAuthproposeData(
          authproposeBuf.getPtr(),
          authproposeBuf.getSize()) != 0)
@@ -436,7 +444,8 @@ HandshakeState BIP15x_Handshake::clientSideHandshake(
             msg.getSize(),
             false); //false: step #4 of 6
 
-      BinaryData authreplyBuf(BIP151PRVKEYSIZE * 2);
+      BinaryData authreplyBuf;
+      authreplyBuf.resize(BIP151PRVKEYSIZE * 2);
       auto validReply = connPtr->getAuthreplyData(
          authreplyBuf.getPtr(),
          authreplyBuf.getSize(),

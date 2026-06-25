@@ -10,7 +10,7 @@
 
 #include "AuthorizedPeers.h"
 #include <Utils/BIP150_151.h>
-#include <Utils/DBUtils.h>
+#include <Utils/FileUtils.h>
 #include <Utils/BtcUtils.h>
 
 #include "Accounts/AccountTypes.h"
@@ -97,7 +97,7 @@ AuthorizedPeers::AuthorizedPeers(SecureBinaryData& privateKey)
 ////////
 void AuthorizedPeers::loadWallet(const IO::ReadOnlyFileParams& params)
 {
-   if (!FileUtils::fileExists(params.filePath, 6)) {
+   if (!FileUtils::pathExists(params.filePath, 6)) {
       throw PeerFileMissing();
    }
    wallet_ = AssetWallet::loadMainWalletFromFile(params);
@@ -571,7 +571,7 @@ bool AuthorizedPeers::isMasterKey(const SecureBinaryData& pubkey) const
    if (masterKey_.empty()) {
       return false;
    }
-   return masterKey_.getRef() == pubkey;
+   return masterKey_.getRef() == pubkey.getRef();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

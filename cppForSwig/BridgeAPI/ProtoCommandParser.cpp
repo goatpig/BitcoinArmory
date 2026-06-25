@@ -58,7 +58,7 @@ namespace
 
          //output body
          auto capnOutput = capnUtxo.initOutput();
-         capnOutput.setValue(utxo.getValue());
+         capnOutput.setValue(utxo.getAmount());
          capnOutput.setTxHeight(utxo.getHeight());
          capnOutput.setTxIndex(utxo.getTxIndex());
          capnOutput.setTxOutIndex(utxo.getTxOutIndex());
@@ -141,13 +141,13 @@ namespace
 
          case DbSetupRequest::DISCONNECT:
          {
-            bridge->disconnect();
+            bridge->disconnectFromDb();
             break;
          }
 
          case DbSetupRequest::SHUTDOWN:
          {
-            bridge->reset();
+            bridge->bdvPtr()->shutdown();
             return false;
          }
 
@@ -195,6 +195,9 @@ namespace
                labelReq.getKey(), labelReq.getLabel(), referenceId);
             return true;
          }
+
+         default:
+            throw std::runtime_error("invalid db setup command");
       }
 
       if (!response.empty()) {
@@ -236,57 +239,18 @@ namespace
             break;
          }
 
-         case BlockchainServiceRequest::GET_LEDGER_DELEGATE_ID:
-         {
-            const auto& delegateId = bridge->getLedgerDelegateId();
-            capnp::MallocMessageBuilder message;
-            auto fromBridge = message.initRoot<FromBridge>();
-            auto reply = fromBridge.initReply();
-            auto service = reply.initService();
-
-            service.setGetLedgerDelegateId(delegateId);
-            reply.setSuccess(true);
-            reply.setReferenceId(referenceId);
-
-            response = serializeCapnp(message);
-            break;
-         }
-
-         case BlockchainServiceRequest::UPDATE_WALLETS_LEDGER_FILTER:
-         {
-            auto walletsId = request.getUpdateWalletsLedgerFilter();
-            std::vector<std::string> idVec;
-            idVec.reserve(walletsId.size());
-            for (const auto& walletId : walletsId) {
-               idVec.emplace_back(walletId);
-            }
-            bridge->bdvPtr()->updateWalletsLedgerFilter(idVec);
-            break;
-         }
-
          case BlockchainServiceRequest::GET_NODE_STATUS:
          {
             response = bridge->getNodeStatus(referenceId);
             break;
          }
 
-         case BlockchainServiceRequest::GET_HEADERS_BY_HEIGHT:
-         {
-            auto capnHeights = request.getGetHeadersByHeight();
-            std::set<unsigned> heights;
-            for (const auto& height : capnHeights) {
-               heights.emplace(height);
-            }
-            bridge->getHeadersByHeight(heights, referenceId);
-            break;
-         }
-
          case BlockchainServiceRequest::GET_TXS_BY_HASH:
          {
-            std::set<BinaryData> hashes;
+            std::set<Types::TxHash> hashes;
             auto capnHashes = request.getGetTxsByHash();
             for (auto hash : capnHashes) {
-               hashes.emplace(BinaryData(hash.begin(), hash.end()));
+               hashes.emplace(BinaryData{hash.begin(), hash.end()});
             }
             bridge->getTxsByHash(hashes, referenceId);
             break;
@@ -317,6 +281,10 @@ namespace
             bridge->getBlockTimeByHeight(height, referenceId);
             break;
          }
+
+         default:
+            throw std::runtime_error("unhandled blockchain service command");
+            break;
       }
 
       if (!response.empty()) {
@@ -413,11 +381,41 @@ namespace
             break;
          }
 
+         case WalletManagerRequest::GET_MAIN_LEDGER_DELEGATE_ID:
+         {
+            const auto& delegateId = bridge->getLedgerDelegateId();
+            capnp::MallocMessageBuilder message;
+            auto fromBridge = message.initRoot<FromBridge>();
+            auto reply = fromBridge.initReply();
+            auto managerReply = reply.initWalletManager();
+
+            managerReply.setGetMainLedgerDelegateId(delegateId);
+            reply.setSuccess(true);
+            reply.setReferenceId(referenceId);
+
+            response = serializeCapnp(message);
+            break;
+         }
+
+         case WalletManagerRequest::UPDATE_MAIN_LEDGER_FILTER:
+         {
+            using AAIdSet = std::set<Wallets::AddressAccountId>;
+            auto wIds = request.getUpdateMainLedgerFilter();
+            std::map<Wallets::WalletId, AAIdSet> idMap;
+            for (const auto& wId : wIds) {
+               auto result = idMap.emplace(wId.getWalletId(), AAIdSet{});
+               auto accIdCapn = wId.getAccountId();
+               result.first->second.emplace(
+                  Wallets::AddressAccountId::fromHex(accIdCapn));
+            }
+            bridge->updateWalletsLedgerFilter(idMap);
+            break;
+         }
+
          default:
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
             auto reply = fromBridge.initReply();
-            auto walletReply = reply.initWalletManager();
             reply.setSuccess(false);
             reply.setReferenceId(referenceId);
             reply.setError("invalid WalletManager request");
@@ -929,6 +927,9 @@ namespace
             response = serializeCapnp(message);
             break;
          }
+
+         default:
+            throw std::runtime_error("invalid coin selection command");
       }
 
       if (!response.empty()) {
@@ -1015,7 +1016,7 @@ namespace
             auto capnScript = args.getScript();
             BinaryDataRef scriptRef(capnScript.begin(), capnScript.end());
 
-            ::UTXO utxo(args.getValue(), UINT32_MAX, UINT32_MAX,
+            ::UTXO utxo(args.getValue(), UINT32_MAX, UINT16_MAX,
                args.getTxOutId(), hashRef, scriptRef);
             signer->signer->populateUtxo(utxo);
 
@@ -1177,6 +1178,10 @@ namespace
             replySuccess(result);
             break;
          }
+
+         default:
+            throw std::runtime_error("invalid signer command");
+            break;
       }
 
       if (!response.empty()) {
@@ -1320,6 +1325,9 @@ namespace
             response = serializeCapnp(message);
             break;
          }
+
+         default:
+            throw std::runtime_error("invalid utils command");
       }
 
       if (!response.empty()) {
@@ -1389,6 +1397,9 @@ namespace
                request.getGetScrAddrForAddrStr(), referenceId);
             break;
          }
+
+         default:
+            throw std::runtime_error("invalid script utils command");
       }
 
       if (!response.empty()) {
@@ -1419,6 +1430,9 @@ namespace
             bridge->getPageCountForDelegate(delegateId, referenceId);
             break;
          }
+
+         default:
+            throw std::runtime_error("invalid delegate command");
       }
       return true;
    }
@@ -1472,14 +1486,15 @@ namespace
                      });
                   }
                }
+               break;
             }
 
             case NotificationReply::RESTORE:
             {
+               bool restore = notif.getRestore() ==
+                  NotificationReply::RestoreMode::MERGE ? true : false;
                return handler(Seeds::PromptReply{
-                  notif.getSuccess(),
-                  notif.getRestore() == NotificationReply::RestoreMode::MERGE ?
-                     true : false
+                  notif.getSuccess(), restore, {}
                });
             }
 

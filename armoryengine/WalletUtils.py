@@ -217,7 +217,8 @@ class WalletMap(object):
       result = []
       for entry in self._dbIdList:
          if entry["visible"]:
-            result.append(entry['id'])
+            wallet = self._walletMap[entry['id']]
+            result.append((wallet.walletId, wallet.accountId))
       return result
 
    ## balances ##

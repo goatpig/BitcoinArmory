@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2019-2025, goatpig                                          //
+//  Copyright (C) 2019-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -10,14 +10,17 @@
 #include "BridgeSocket.h"
 #include "../SocketIncludes.h"
 #include "./Wallets/Manager.h"
+#include "./Wallets/TxIOCache.h"
 #include "./Wallets/Notifications.h"
 
 #include <Utils/ArmoryConfig.h>
 #include <Utils/BtcUtils.h>
-#include <Utils/DBUtils.h>
+#include <Utils/FileUtils.h>
 #include <Signer/Signer.h>
 #include <Signer/ResolverFeed_Wallets.h>
+#include <Signer/CoinSelection.h>
 #include <Ledgers/LedgerEntry.h>
+#include <Ledgers/Context.h>
 #include <BlockchainDatabase/txio.h>
 
 #include <Wallets/Seeds/Backups.h>
@@ -30,11 +33,12 @@
 #include <Wallets/Accounts/AccountTypes.h>
 #include <Wallets/Accounts/AddressAccounts.h>
 
+#include <AsyncClient.h>
+#include <TxClasses.h>
+
 #include "BlockchainDbClient.h"
 #include "PassphrasePrompt.h"
-#include "AsyncClient.h"
-#include "CoinSelection.h"
-#include "TerminalPassphrasePrompt.h"
+//#include "TerminalPassphrasePrompt.h"
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>
@@ -69,8 +73,7 @@ namespace
 
    void addressToCapnp(WalletData::AddressData::Builder& capnAddress,
       std::shared_ptr<AddressEntry> addrPtr,
-      std::shared_ptr<Accounts::AddressAccount> addrAcc,
-      const Wallets::EncryptionKeyId& keyId)
+      std::shared_ptr<Accounts::AddressAccount> addrAcc)
    {
       if (addrAcc == nullptr) {
          throw std::runtime_error("[addressToCapnp] null acc ptr");
@@ -144,22 +147,12 @@ namespace
       capnAddress.setIsChange(addrAcc->isAssetChange(addrPtr->getID()));
 
       //priv key & encryption status
-      bool isLocked = false;
       bool hasPrivKey = false;
       if (addrWithAssetPtr != nullptr) {
          auto theAsset = addrWithAssetPtr->getAsset();
          if (theAsset != nullptr) {
             if (theAsset->hasPrivateKey()) {
                hasPrivKey = true;
-               try {
-                  //the privkey is considered locked if it's encrypted by
-                  //something else than the default encryption key, which
-                  //lays in clear text in the wallet header
-                  auto encryptionKeyId = theAsset->getPrivateEncryptionKeyId();
-                  isLocked = (encryptionKeyId != keyId);
-               } catch (const std::runtime_error&) {
-                  //nothing to do, address has no encryption key
-               }
             }
          }
       }
@@ -232,9 +225,7 @@ namespace
       for (const auto& addrPair : addrMap) {
          auto capnAddress = capnAddresses[i++];
          addressToCapnp(capnAddress,
-            addrPair.second, accPtr,
-            wallet->getDefaultEncryptionKeyId()
-         );
+            addrPair.second, accPtr);
       }
 
       /* encryption info */
@@ -260,51 +251,6 @@ namespace
             (uint8_t*)commentIt.first.getPtr(), commentIt.first.getSize()
          ));
          capnComment.setVal(commentIt.second);
-      }
-   }
-
-   void ledgerToCapnp(const DBClientClasses::LedgerEntry& ledger,
-      Codec::Types::TxLedger::LedgerEntry::Builder& capnLedger)
-   {
-      capnLedger.setBalance(ledger.getValue());
-      capnLedger.setTxHeight(ledger.getBlockHeight());
-      capnLedger.setTxOutIndex(ledger.getTxOutIndex());
-      capnLedger.setTxTime(ledger.getTxTime());
-      capnLedger.setIsCoinbase(ledger.isCoinbase());
-      capnLedger.setIsSTS(ledger.isSentToSelf());
-      capnLedger.setIsOptInRBF(ledger.isOptInRBF());
-      capnLedger.setIsChainedZC(ledger.isChainedZC());
-      capnLedger.setIsWitness(ledger.isWitness());
-
-      auto txHash = ledger.getTxHash();
-      capnLedger.setTxHash(capnp::Data::Builder(
-         (uint8_t*)txHash.getPtr(), txHash.getSize()
-      ));
-
-      capnLedger.setWalletId(ledger.getID());
-
-      auto scrAddrList = ledger.getScrAddrList();
-      auto capnAddrs = capnLedger.initScrAddrs(scrAddrList.size());
-      unsigned i=0;
-      for (const auto& scrAddr : scrAddrList) {
-         capnAddrs.set(i++, capnp::Data::Builder(
-            (uint8_t*)scrAddr.getPtr(), scrAddr.getSize()
-         ));
-      }
-   }
-
-   void ledgersToCapnp(const std::vector<DBClientClasses::HistoryPage>& pages,
-      capnp::List<Codec::Types::TxLedger, capnp::Kind::STRUCT>::Builder& txLedgers)
-   {
-      for (unsigned i=0; i<pages.size(); i++) {
-         auto txLedger = txLedgers[i];
-         const auto& page = pages[i];
-
-         auto capnLedgers = txLedger.initLedgers(page.size());
-         for (unsigned y=0; y<page.size(); y++) {
-            auto capnLedger = capnLedgers[y];
-            ledgerToCapnp(page[y], capnLedger);
-         }
       }
    }
 
@@ -340,7 +286,7 @@ namespace
 
          //output body
          auto capnOutput = capnUtxo.initOutput();
-         capnOutput.setValue(utxo.getValue());
+         capnOutput.setValue(utxo.getAmount());
          capnOutput.setTxHeight(utxo.getHeight());
          capnOutput.setTxIndex(utxo.getTxIndex());
          capnOutput.setTxOutIndex(utxo.getTxOutIndex());
@@ -517,7 +463,7 @@ namespace
          bridgePtr->callbackWriter(wrapper);
 
          //wait on reply
-         auto reply = std::move(fut.get());
+         auto reply = fut.get();
          if (!reply.success) {
             return std::make_unique<Passphrase::Params>();
          }
@@ -536,9 +482,25 @@ CppBridge::CppBridge() :
    dbOffline_(Config::NetworkSettings::isOffline())
 {
    wltManager_ = std::make_shared<WalletManager>(path_);
-   wltManager_->setupBdvCallback([this](BinaryData& data)
+   wltManager_->setBdvCallback([this](BinaryData& data)
       { writeToClient(data); }
    );
+   wltManager_->setCleanupCallback([this]()
+      { reset(); }
+   );
+}
+
+CppBridge::~CppBridge()
+{
+   wltManager_->cleanupBDV();
+}
+
+void CppBridge::disconnectFromDb()
+{
+   if (bdvPtr_ && bdvPtr_->isValid()) {
+      bdvPtr_->unregisterFromDB();
+   }
+   wltManager_->cleanupBDV();
 }
 
 void CppBridge::setWriteLambda(
@@ -554,9 +516,6 @@ std::shared_ptr<AsyncClient::BlockDataViewer> CppBridge::bdvPtr() const
 
 void CppBridge::reset()
 {
-   if (bdvPtr_) {
-      bdvPtr_->unregisterFromDB();
-   }
    bdvPtr_.reset();
 }
 
@@ -842,7 +801,7 @@ BinaryData CppBridge::createWalletsPacket(MessageId msgId)
 bool CppBridge::unloadWallet(const Wallets::WalletId& wltId)
 {
    try {
-      wltManager_->deleteWallet(wltId);
+      wltManager_->unloadWallet(wltId);
    } catch (const std::exception& e) {
       LOGWARN << "failed to unload wallet with error: " << e.what();
       return false;
@@ -1111,7 +1070,7 @@ void CppBridge::connectToIp(const std::string& ip, const std::string& port,
 
    if (dbOffline_) {
       LOGWARN << "attempt to connect to DB in offline mode, ignoring";
-      reply.setError("cannot setup db offline mode");
+      reply.setError("cannot setup db in offline mode");
       reply.setSuccess(false);
       auto response = serializeCapnp(message);
       this->writeToClient(response);
@@ -1159,7 +1118,7 @@ void CppBridge::connectToIp(const std::string& ip, const std::string& port,
       callbackWriter(wrapper);
 
       //wait on reply
-      auto reply = std::move(fut.get());
+      auto reply = fut.get();
       return reply.success;
    };
 
@@ -1204,7 +1163,7 @@ void CppBridge::connectToPeer(const std::string& peerKey, MessageId refId)
 
    if (dbOffline_) {
       LOGWARN << "attempt to connect to DB in offline mode, ignoring";
-      reply.setError("cannot setup db offline mode");
+      reply.setError("cannot setup db in offline mode");
       reply.setSuccess(false);
       auto response = serializeCapnp(message);
       this->writeToClient(response);
@@ -1265,7 +1224,7 @@ void CppBridge::automateDb(
 
    if (dbOffline_) {
       LOGWARN << "attempt to connect to DB in offline mode, ignoring";
-      reply.setError("cannot setup db offline mode");
+      reply.setError("cannot setup db in offline mode");
       reply.setSuccess(false);
       auto response = serializeCapnp(message);
       this->writeToClient(response);
@@ -1328,11 +1287,6 @@ void CppBridge::cleanupDb(MessageId refId)
 
    auto response = serializeCapnp(message);
    this->writeToClient(response);
-}
-
-void CppBridge::disconnect()
-{
-   bdvPtr_->unregisterFromDB();
 }
 
 ////
@@ -1689,7 +1643,7 @@ void CppBridge::restoreWallet(
             auto message = createCallbackMessage(prompt, 0);
             ServerPushWrapper wrapper{0, nullptr, std::move(message)};
             callbackWriter(wrapper);
-            return {false};
+            return {false, false, {}};
          }
       };
 
@@ -1922,6 +1876,12 @@ const std::string& CppBridge::getLedgerDelegateIdForScrAddr(
    return wltManager_->getDelegateIdForScrAddr(wltId, accId, addrHash);
 }
 
+void CppBridge::updateWalletsLedgerFilter(
+   const std::map<Wallets::WalletId, std::set<Wallets::AddressAccountId>>& idMap)
+{
+   wltManager_->updateMainLedgerFilter(idMap);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 void CppBridge::getHistoryPageForDelegate(const std::string& id,
    unsigned from, unsigned to, MessageId msgId)
@@ -1959,7 +1919,6 @@ void CppBridge::getHistoryPageForDelegate(const std::string& id,
             capnLedger.setIsSTS(ledger.isSentToSelf());
             capnLedger.setIsOptInRBF(ledger.isOptInRBF());
             capnLedger.setIsChainedZC(ledger.isChainedZC());
-            capnLedger.setIsWitness(ledger.usesWitness());
 
             auto txHash = ledger.getTxHash();
             capnLedger.setTxHash(capnp::Data::Builder(
@@ -2060,7 +2019,7 @@ BinaryData CppBridge::getBalanceAndCount(const Wallets::WalletId& wltId,
       bnc.setFull(wltContainer->getFullBalance());
       bnc.setSpendable(wltContainer->getSpendableBalance());
       bnc.setUnconfirmed(wltContainer->getUnconfirmedBalance());
-      bnc.setTxnCount(wltContainer->getTxIOCount());
+      bnc.setTxnCount(wltContainer->getTxCount());
       reply.setSuccess(true);
    } catch (const std::exception& e) {
       reply.setError(e.what());
@@ -2092,10 +2051,10 @@ BinaryData CppBridge::getAddrCombinedList(const Wallets::WalletId& wltId,
       ));
 
       auto bnc = addrReply.initBalances();
-      bnc.setFull(addrPair.second[0]);
-      bnc.setSpendable(addrPair.second[1]);
-      bnc.setUnconfirmed(addrPair.second[2]);
-      bnc.setTxnCount(addrPair.second[3]);
+      bnc.setFull(addrPair.second.fullBalance);
+      bnc.setSpendable(addrPair.second.spendableBalance);
+      bnc.setUnconfirmed(addrPair.second.unconfirmedBalance);
+      bnc.setTxnCount(addrPair.second.txCount);
    }
 
    auto updatedMap = wltContainer->getUpdatedAddressMap();
@@ -2103,13 +2062,9 @@ BinaryData CppBridge::getAddrCombinedList(const Wallets::WalletId& wltId,
 
    auto addrDataReply = combinedReply.initUpdatedAssets(updatedMap.size());
    i=0;
-   const auto& keyId = wltContainer->getDefaultEncryptionKeyId();
    for (const auto& addrPair : updatedMap) {
       auto capnAddr = addrDataReply[i++];
-      addressToCapnp(capnAddr,
-         addrPair.second, accPtr,
-         keyId
-      );
+      addressToCapnp(capnAddr, addrPair.second, accPtr);
    }
 
    reply.setSuccess(true);
@@ -2308,12 +2263,6 @@ void CppBridge::getAddress(const Wallets::WalletId& wltId,
    uint32_t addrType, uint32_t addrKind,
    MessageId msgId)
 {
-   bool wasExtended = false;
-   auto progFunc = [&wasExtended](int)
-   {
-      wasExtended = true;
-   };
-
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<FromBridge>();
    auto reply = fromBridge.initReply();
@@ -2327,8 +2276,7 @@ void CppBridge::getAddress(const Wallets::WalletId& wltId,
 
       auto walletReply = reply.initWallet();
       auto capnAddr = walletReply.initGetAddress();
-      addressToCapnp(capnAddr, addrPtr, accPtr,
-         wltContainer->getDefaultEncryptionKeyId());
+      addressToCapnp(capnAddr, addrPtr, accPtr);
       reply.setSuccess(true);
    } else {
       reply.setSuccess(false);
@@ -2340,41 +2288,62 @@ void CppBridge::getAddress(const Wallets::WalletId& wltId,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void CppBridge::getTxsByHash(const std::set<BinaryData>& hashes, MessageId msgId)
+void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId msgId)
 {
-   auto lbd = [this, msgId](ReturnMessage<AsyncClient::TxBatchResult> result)
+   auto func = [this, hashes, msgId]()
    {
-      AsyncClient::TxBatchResult txMap;
-      bool valid = false;
-      try {
-         txMap = std::move(result.get());
-         valid = true;
-      } catch(const std::exception&) {}
+      auto txioCache = wltManager_->txioCache();
+      ReentrantLock lock(txioCache.get());
+      auto dbCache = txioCache->getDBCache();
+
+      std::vector<::Tx> txs;
+      txs.reserve(hashes.size());
+      for (const auto& txHash : hashes) {
+         try {
+            auto txKey = dbCache->txHashToKey.at(txHash);
+            txs.emplace_back(dbCache->txMap.at(txKey));
+         } catch (const std::out_of_range&) {
+            //no tx for this hash
+            continue;
+         }
+      }
 
       capnp::MallocMessageBuilder message;
       auto fromBridge = message.initRoot<FromBridge>();
       auto reply = fromBridge.initReply();
       reply.setReferenceId(msgId);
-      if (!valid) {
+      if (txs.empty()) {
          reply.setSuccess(false);
+         reply.setError("no txs found for requested hashes");
       } else {
-         auto service = reply.initService();
-         auto capnTxs = service.initGetTxsByHash(txMap.size());
-         unsigned i = 0;
-         for (const auto& tx : txMap) {
-            auto capnTx = capnTxs[i++];
+         auto serviceReply = reply.initService();
+         auto capnTxs = serviceReply.initGetTxsByHash(txs.size());
+
+         size_t count = 0;
+         for (const auto& tx : txs) {
+            auto capnTx = capnTxs[count++];
+            auto txKey = tx.getDBKey();
+            if (Types::isThisAZCKey(txKey)) {
+               capnTx.setHeight(UINT32_MAX);
+               capnTx.setTimestamp(tx.getTxTime());
+               capnTx.setTxIndex(UINT32_MAX);
+            } else {
+               auto header = dbCache->headers.at(
+                  Types::getBlockIDFromTxKey(txKey));
+               capnTx.setHeight(header->blockHeight);
+               capnTx.setTimestamp(header->timestamp);
+               capnTx.setTxIndex(tx.getTxIndex());
+            }
+            const auto& txHash = tx.getThisHash();
             capnTx.setHash(capnp::Data::Builder(
-               (uint8_t*)tx.first.getPtr(), tx.first.getSize()
-            ));
+               (uint8_t*)txHash.getPtr(), txHash.getSize()));
 
-            auto txRaw = tx.second->serialize();
-            capnTx.setRaw(capnp::Data::Builder(
-               (uint8_t*)txRaw.getPtr(), txRaw.getSize()));
-
-            capnTx.setRbf(tx.second->isRBF());
-            capnTx.setChainedZc(tx.second->isChained());
-            capnTx.setHeight(tx.second->getTxHeight());
-            capnTx.setTxIndex(tx.second->getTxIndex());
+            auto capnTxBody = capnTx.initBody();
+            capnTxBody.setRaw(capnp::Data::Builder(
+               (uint8_t*)tx.getPtr(), tx.getSize()));
+            capnTxBody.setKey(txKey);
+            capnTxBody.setIsChainedZc(tx.isChained());
+            capnTxBody.setIsRbf(tx.isRBF());
          }
          reply.setSuccess(true);
       }
@@ -2382,7 +2351,11 @@ void CppBridge::getTxsByHash(const std::set<BinaryData>& hashes, MessageId msgId
       auto serialized = serializeCapnp(message);
       this->writeToClient(serialized);
    };
-   bdvPtr_->getTxsByHash(hashes, lbd);
+
+   std::thread run{func};
+   if (run.joinable()) {
+      run.detach();
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2572,45 +2545,8 @@ BinaryData CppBridge::setAddressTypeFor(const Wallets::WalletId& wltId,
 
    auto walletReply = reply.initWallet();
    auto capnAddr = walletReply.initSetAddressTypeFor();
-   addressToCapnp(capnAddr, addrPtr, accPtr,
-      wltContainer->getDefaultEncryptionKeyId());
+   addressToCapnp(capnAddr, addrPtr, accPtr);
    return serializeCapnp(message);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void CppBridge::getHeadersByHeight(
-  const std::set<unsigned>& heights, MessageId msgId)
-{
-   auto lbd = [this, msgId](
-      ReturnMessage<std::vector<DBClientClasses::BlockHeader>> result)->void
-   {
-      auto headers = result.get();
-
-      capnp::MallocMessageBuilder message;
-      auto fromBridge = message.initRoot<FromBridge>();
-      auto reply = fromBridge.initReply();
-      reply.setReferenceId(msgId);
-      reply.setSuccess(true);
-
-      auto service = reply.initService();
-      auto capnHeaders = service.initGetHeadersByHeight(headers.size());
-      for (unsigned i = 0; i < headers.size(); i++) {
-         auto capnHeader = capnHeaders[i];
-         const auto& header = headers[i];
-
-         capnHeader.setRawData(capnp::Data::Builder(
-            (uint8_t*)header.getPtr(), header.getSize()
-         ));
-         capnHeader.setHeight(header.getBlockHeight());
-         capnHeader.setDupId(header.getDupId());
-      }
-
-      auto serialized = serializeCapnp(message);
-      this->writeToClient(serialized);
-   };
-
-   auto bc = bdvPtr_->blockchain();
-   bc.getHeadersByHeight(heights, lbd);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2796,33 +2732,25 @@ void CppBridge::broadcastTxs(const std::vector<BinaryData>& rawTxVec, bool isRPC
 ////////////////////////////////////////////////////////////////////////////////
 void CppBridge::getBlockTimeByHeight(uint32_t height, MessageId msgId) const
 {
-   auto callback = [this, msgId, height](
-      ReturnMessage<std::vector<DBClientClasses::BlockHeader>> result)->void
-   {
-      capnp::MallocMessageBuilder message;
-      auto fromBridge = message.initRoot<FromBridge>();
-      auto reply = fromBridge.initReply();
-      reply.setReferenceId(msgId);
-      try {
-         auto headers = std::move(result.get());
-         if (headers.size() != 1) {
-            throw ClientMessageError("unexpected header count in reply", -1);
-         }
-         auto service = reply.initService();
-         service.setGetBlockTimeByHeight(headers[0].getTimestamp());
-         reply.setSuccess(true);
+   auto dbCache = wltManager_->getDbCache();
+   auto header = dbCache->getHeaderForHeight(height);
 
-      } catch (const ClientMessageError& e) {
-         reply.setSuccess(false);
-         reply.setError(e.what());
-      }
+   capnp::MallocMessageBuilder message;
+   auto fromBridge = message.initRoot<FromBridge>();
+   auto reply = fromBridge.initReply();
+   reply.setReferenceId(msgId);
 
-      auto serialized = serializeCapnp(message);
-      this->writeToClient(serialized);
-   };
+   if (header != nullptr) {
+      auto service = reply.initService();
+      service.setGetBlockTimeByHeight(header->timestamp);
+      reply.setSuccess(true);
+   } else {
+      reply.setSuccess(false);
+      reply.setError(std::format("could not find header for height {}", height));
+   }
 
-   auto bc = bdvPtr_->blockchain();
-   bc.getHeadersByHeight({height}, callback);
+   auto serialized = serializeCapnp(message);
+   this->writeToClient(serialized);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3001,7 +2929,7 @@ void CppBridgeSignerStruct::signTx(const Wallets::WalletId& wltId,
       capnp::MallocMessageBuilder message;
       auto fromBridge = message.initRoot<FromBridge>();
       auto reply = fromBridge.initReply();
-      reply.setSuccess(true);
+      reply.setSuccess(success);
       reply.setReferenceId(referenceId);
 
       ServerPushWrapper wrapper{ 0, nullptr, serializeCapnp(message) };

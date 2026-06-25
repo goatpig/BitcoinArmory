@@ -48,7 +48,7 @@ uint64_t RestrictedUtxoSet::getBalance() const
 {
    uint64_t bal = 0;
    for (const auto& utxo : selection) {
-      bal += utxo.getValue();
+      bal += utxo.getAmount();
    }
    return bal;
 }
@@ -337,7 +337,7 @@ uint64_t Armory::CoinSelection::Selector::tallyValue(
 {
    uint64_t val = 0;
    for (auto& utxo : utxoVec) {
-      val += utxo.getValue();
+      val += utxo.getAmount();
    }
    return val;
 }
@@ -425,7 +425,7 @@ void Armory::CoinSelection::Selector::fleshOutSelection(
       size_t size_;
 
       FeeValScore(const UTXO* utxo, float fee_byte, unsigned i) :
-         utxo_(utxo), fee_(getFee(fee_byte)), score_(utxo->value_*fee_), order_(i)
+         utxo_(utxo), fee_(getFee(fee_byte)), score_(utxo->amount * fee_), order_(i)
       {}
 
       bool operator<(const FeeValScore& rhs) const
@@ -484,7 +484,7 @@ std::set<CoinSorting::ScoredUtxo_Float> CoinSorting::ruleset_1(
    unsigned i = 0;
    for (const auto& utxo : utxoVec) {
       auto nConf = utxo.getNumConfirm(topHeight);
-      float priority = float(nConf * utxo.getValue());
+      float priority = float(nConf * utxo.getAmount());
       float finalVal = std::pow(priority, one_third);
 
       ScoredUtxo_Float suf(&utxo, finalVal, i++);
@@ -534,7 +534,7 @@ std::vector<UTXO> CoinSorting::sortCoins(
          unsigned i = 0;
          for (const auto& utxo : utxoVec) {
             auto nConf = utxo.getNumConfirm(topHeight);
-            float priority = float(nConf * utxo.getValue() + 1);
+            float priority = float(nConf * utxo.getAmount() + 1);
             float logVal = log(priority) + 4;
             float finalVal = pow(logVal, 4);
 
@@ -729,11 +729,11 @@ std::vector<UTXO> CoinSubSelection::selectOneUtxo_SingleSpendVal(
 
    for (unsigned i = 0; i < utxoVec.size(); i++) {
       const auto& utxo = utxoVec[i];
-      if (utxo.getValue() < target) {
+      if (utxo.getAmount() < target) {
          continue;
       }
 
-      auto diff = utxo.getValue() - target;
+      auto diff = utxo.getAmount() - target;
       if (diff == 0) {
          retVec.emplace_back(utxo);
          return retVec;
@@ -766,7 +766,7 @@ std::vector<UTXO> CoinSubSelection::selectManyUtxo_SingleSpendVal(
 
    for (auto& utxo : utxoVec) {
       ++count;
-      tally += utxo.getValue();
+      tally += utxo.getAmount();
       if (tally >= target) {
          break;
       }
@@ -792,7 +792,7 @@ std::vector<UTXO> CoinSubSelection::selectOneUtxo_DoubleSpendVal(
 
    for (unsigned i = 0; i < utxoVec.size(); i++) {
       const auto& utxo = utxoVec[i];
-      auto value = utxo.getValue();
+      auto value = utxo.getAmount();
 
       if (value >= minTarget && value <= maxTarget) {
          auto match = std::abs(int64_t(value) - idealTarget);
@@ -823,7 +823,7 @@ std::vector<UTXO> CoinSubSelection::selectManyUtxo_DoubleSpendVal(
    unsigned count = 0;
    for (const auto& utxo : utxoVec) {
       ++count;
-      int64_t newtally = tally + utxo.getValue();
+      int64_t newtally = tally + utxo.getAmount();
 
       if (newtally < (int64_t)minTarget) {
          tally = newtally;
@@ -861,7 +861,7 @@ float SelectionScoring::computeScore(
    uint64_t valConf = 0;
 
    for (const auto& utxo : utxoSelect.utxoVec_) {
-      auto val = utxo.getValue();
+      auto val = utxo.getAmount();
       auto nConf = utxo.getNumConfirm(topHeight);
       valConf += val*nConf;
 
@@ -970,7 +970,7 @@ void UtxoSelection::computeSizeAndFee(const PaymentStruct& payStruct)
    bool sw = false;
 
    for (const auto& utxo : utxoVec_) {
-      value_ += utxo.getValue();
+      value_ += utxo.getAmount();
       txInSize += utxo.getInputRedeemSize();
 
       if (!utxo.isSegWit()) {
@@ -1122,9 +1122,9 @@ size_t PaymentStruct::getRecipientCount() const
 // CoinSelectionInstance
 CoinSelectionInstance::CoinSelectionInstance(
    std::shared_ptr<Wallets::AssetWallet> const walletPtr,
-   std::function<std::vector<UTXO>(uint64_t)> getUtxoLbd,
+   std::function<std::vector<UTXO>(Types::Amount)> getUtxoLbd,
    const std::vector<AddressBookEntry>& addrBook,
-   uint64_t spendableBalance, unsigned topHeight) :
+   Types::Amount spendableBalance, unsigned topHeight) :
    cs_(getFetchLambdaFromWallet(walletPtr, getUtxoLbd),
       addrBook, spendableBalance, topHeight
    ), walletPtr_(walletPtr), spendableBalance_(spendableBalance)
@@ -1161,15 +1161,15 @@ void CoinSelectionInstance::decorateUTXOs(
       const auto& ID = walletPtr->getAssetIDForScrAddr(scrAddr);
       auto addrPtr = walletPtr->getAddressEntryForID(ID.first);
 
-      utxo.txinRedeemSizeBytes_ = 0;
-      utxo.witnessDataSizeBytes_ = 0;
-      utxo.isInputSW_ = false;
+      utxo.txinRedeemSizeBytes = 0;
+      utxo.witnessDataSizeBytes = 0;
+      utxo.isInputSW = false;
 
       while (true) {
-         utxo.txinRedeemSizeBytes_ += addrPtr->getInputSize();
+         utxo.txinRedeemSizeBytes += addrPtr->getInputSize();
          try {
-            utxo.witnessDataSizeBytes_ += addrPtr->getWitnessDataSize();
-            utxo.isInputSW_ = true;
+            utxo.witnessDataSizeBytes += addrPtr->getWitnessDataSize();
+            utxo.isInputSW = true;
          } catch (const std::runtime_error&) {}
 
          auto addrNested = std::dynamic_pointer_cast<AddressEntry_Nested>(
@@ -1187,7 +1187,7 @@ void CoinSelectionInstance::selectUTXOs(std::vector<UTXO>& vecUtxo,
 {
    uint64_t spendableVal = 0;
    for (auto& utxo : vecUtxo) {
-      spendableVal += utxo.getValue();
+      spendableVal += utxo.getAmount();
    }
 
    //sanity check
@@ -1299,7 +1299,7 @@ CoinSelectionInstance::createRecipient(
 {
    std::shared_ptr<Signing::ScriptRecipient> rec;
    try {
-      auto scrAddr = std::move(BtcUtils::base58toScrAddr(addrStr));
+      auto scrAddr = BtcUtils::base58toScrAddr(addrStr);
       uint8_t scrType = *scrAddr.getPtr();
 
       if (scrType == Config::BitcoinSettings::getPubkeyHashPrefix()) {
@@ -1310,7 +1310,7 @@ CoinSelectionInstance::createRecipient(
             scrAddr.getSliceRef(1, scrAddr.getSize() - 1), value);
       }
    } catch (const std::exception&) {
-      auto scrAddrPair = std::move(BtcUtils::segWitAddressToScrAddr(addrStr));
+      auto scrAddrPair = BtcUtils::segWitAddressToScrAddr(addrStr);
       if (scrAddrPair.second != 0) {
          throw std::runtime_error("[createRecipient] unsupported sw version");
       }

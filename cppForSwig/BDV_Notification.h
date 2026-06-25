@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -9,15 +9,17 @@
 #pragma once
 
 #include <memory>
+
+#include <Utils/Types.h>
 #include <BlockchainDatabase/Blockchain.h>
 #include "bdmenums.h"
 #include "DBClientClasses.h"
 
 #define BDV_NOTIF_BROADCAST UINT64_MAX
 
-namespace CoreRPC
+namespace Node
 {
-   struct NodeStatus;
+   struct Status;
 }
 
 namespace Armory
@@ -32,6 +34,8 @@ namespace Armory
    {
       class Entry;
    }
+
+   struct ReorganizationState;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -39,14 +43,14 @@ struct BDV_Notification
 {
 private:
    //notificaton id set to BDV_NOTIF_BROADCAST means broadcast to all bdv
-   const BdvIdKey bdvID_;
+   const Armory::Types::BdvId bdvID_;
 
 public:
-   BDV_Notification(BdvIdKey);
+   BDV_Notification(Armory::Types::BdvId);
    virtual ~BDV_Notification(void);
 
    virtual BDV_Action actionType(void) const = 0;
-   BdvIdKey bdvID(void) const;
+   Armory::Types::BdvId bdvID(void) const;
    virtual bool fatal(void) const;
    bool broadcast(void) const;
 };
@@ -61,11 +65,11 @@ struct BDV_Notification_Init : public BDV_Notification
 ///////////////////////////////////////////////////////////////////////////////
 struct BDV_Notification_NewBlock : public BDV_Notification
 {
-   ReorganizationState reorgState;
+   Armory::ReorganizationState reorgState;
    std::shared_ptr<Armory::ZeroConf::ZcPurgePacket> zcPurgePacket;
 
    BDV_Notification_NewBlock(
-      const ReorganizationState&,
+      const Armory::ReorganizationState&,
       std::shared_ptr<Armory::ZeroConf::ZcPurgePacket>);
    BDV_Action actionType(void) const override;
 };
@@ -74,9 +78,11 @@ struct BDV_Notification_NewBlock : public BDV_Notification
 struct BDV_Notification_ZC : public BDV_Notification
 {
    const std::shared_ptr<Armory::ZeroConf::ZcNotificationPacket> packet;
-   std::vector<TxIOPair> txios;
+   const std::vector<std::shared_ptr<const TxIOPair>> txios;
 
-   BDV_Notification_ZC(std::shared_ptr<Armory::ZeroConf::ZcNotificationPacket>);
+   BDV_Notification_ZC(
+      std::shared_ptr<Armory::ZeroConf::ZcNotificationPacket>,
+      std::vector<std::shared_ptr<const TxIOPair>>);
    BDV_Action actionType(void) const override;
 };
 
@@ -87,7 +93,7 @@ struct BDV_Notification_Refresh : public BDV_Notification
    const std::string refreshID;
    std::shared_ptr<Armory::ZeroConf::ZcNotificationPacket> zcPacket;
 
-   BDV_Notification_Refresh(BdvIdKey, BDV_refresh, const std::string&);
+   BDV_Notification_Refresh(Armory::Types::BdvId, BDV_refresh, const std::string&);
    BDV_Action actionType(void) const override;
 };
 
@@ -108,9 +114,9 @@ struct BDV_Notification_Progress : public BDV_Notification
 ///////////////////////////////////////////////////////////////////////////////
 struct BDV_Notification_NodeStatus : public BDV_Notification
 {
-   const std::shared_ptr<CoreRPC::NodeStatus> status;
+   const std::shared_ptr<Node::Status> status;
 
-   BDV_Notification_NodeStatus(std::shared_ptr<CoreRPC::NodeStatus>);
+   BDV_Notification_NodeStatus(std::shared_ptr<Node::Status>);
    BDV_Action actionType(void) const override;
 };
 
@@ -119,7 +125,8 @@ struct BDV_Notification_Error : public BDV_Notification
 {
    BDV_Error_Struct errStruct;
 
-   BDV_Notification_Error(BdvIdKey, int, const BinaryData&, const std::string&);
+   BDV_Notification_Error(Armory::Types::BdvId,
+      int, const Armory::Types::TxHash&, const std::string&);
    BDV_Action actionType(void) const override;
    bool fatal(void) const override;
 };

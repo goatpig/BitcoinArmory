@@ -20,7 +20,7 @@ ScriptException::ScriptException(const std::string& what) :
 ////////////////////////////////////////////////////////////////////////////////
 // StackItem
 StackItem::StackItem(StackItemType type, unsigned id) :
-   id_(id), type_(type)
+   type_(type), id_(id)
 {}
 
 StackItem::~StackItem()

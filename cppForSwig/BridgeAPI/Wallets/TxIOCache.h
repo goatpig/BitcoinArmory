@@ -16,6 +16,7 @@
 
 #include <Utils/BinaryData.h>
 #include <Utils/ReentrantLock.h>
+#include <Utils/Types.h>
 
 class TxIOPair;
 class Tx;
@@ -37,42 +38,53 @@ namespace Armory
    namespace Bridge
    {
       struct NotifStruct;
+      using AddressFilter = std::function<bool(const Types::ScrAddr&)>;
 
-      using TxIOKey = BinaryData;
-      using ScrAddr = BinaryData;
-      using AddressFilter = std::function<bool(const ScrAddr&)>;
-
+      //////////////////////////////////////////////////////////////////////////
       struct CacheResolveResult
       {
          const uint32_t topBlock;
          const bool isZC;
-         std::map<TxIOKey, TxIOPair> txioMap;
-         std::map<ScrAddr, std::vector<TxIOPair*>> addrTxioMap;
+         std::map<Types::TxIOKey, TxIOPair> txioMap;
+         std::map<Types::ScrAddr, std::vector<TxIOPair*>> addrTxioMap;
+         std::shared_ptr<Ledgers::DBCache> dbCache;
 
-         CacheResolveResult(uint32_t, bool);
-         void addTxio(const TxIOKey&, const TxIOPair&, const ScrAddr&);
+         CacheResolveResult(
+            uint32_t, bool, std::shared_ptr<Ledgers::DBCache>);
+         void addTxio(const Types::TxIOKey&,
+            const TxIOPair&,
+            const Types::ScrAddr&);
+      };
+
+      //////////////////////////////////////////////////////////////////////////
+      struct Values
+      {
+         const Types::Value fullBalance;
+         const Types::Value spendableBalance;
+         const Types::Value unconfirmedBalance;
+         const size_t txCount;
       };
 
       struct ChainData
       {
-         const std::map<TxIOKey, TxIOPair> txioMap;
-         std::map<ScrAddr, std::vector<int64_t>> balanceMap;
-         std::map<ScrAddr, uint64_t> countMap;
+         const std::map<Types::TxIOKey, TxIOPair> txioMap;
+         std::map<Types::ScrAddr, Values> valueMap;
 
-         int64_t totalBalance       = 0;
-         int64_t spendableBalance   = 0;
-         int64_t unconfirmedBalance = 0;
-         int64_t txioCount          = 0;
+         Types::Value totalBalance       = 0;
+         Types::Value spendableBalance   = 0;
+         Types::Value unconfirmedBalance = 0;
+         size_t txCount                  = 0;
 
          ChainData(CacheResolveResult&);
       };
 
+      //////////////////////////////////////////////////////////////////////////
       class TxIOCache : public Lockable
       {
       private:
-         std::map<TxIOKey, TxIOPair> unspentTxios_;
-         std::map<TxIOKey, TxIOPair> spentTxios_;
-         std::map<TxIOKey, TxIOPair> zcTxios_;
+         std::map<Types::TxIOKey, TxIOPair> unspentTxios_;
+         std::map<Types::TxIOKey, TxIOPair> spentTxios_;
+         std::map<Types::TxIOKey, TxIOPair> zcTxios_;
          std::shared_ptr<Ledgers::DBCache> dbCache_;
          uint32_t lastKnownBlock_ = UINT32_MAX;
 
@@ -80,14 +92,15 @@ namespace Armory
          void initAfterLock(void) override {}
          void cleanUpBeforeUnlock(void) override {}
 
-         bool txKeyIsValid(const BinaryData&) const;
-         std::pair<std::set<BinaryData>, std::set<uint32_t>> addTxios(
-            std::vector<TxIOPair>&, uint32_t);
-         std::set<BinaryData> updateZC(
+         bool txKeyIsValid(const Types::TxKey&) const;
+         std::pair<std::set<Types::TxKey>, std::set<Types::BlockId>>
+         addTxios(std::vector<TxIOPair>&, uint32_t);
+         std::set<Types::TxKey> updateZC(
             std::shared_ptr<AsyncClient::BlockDataViewer>,
             const std::vector<TxIOPair>&,
             const std::set<BinaryData>&, bool);
          std::vector<UTXO> getZcUTXOs(bool, const AddressFilter&) const;
+         void updateBlockBranching(const NewBlockNotif&);
 
       public:
          TxIOCache(void);
@@ -97,11 +110,12 @@ namespace Armory
          std::shared_ptr<const Ledgers::DBCache> getDBCache(void) const;
          CacheResolveResult resolve(const AddressFilter&, uint32_t) const;
          CacheResolveResult resolveZC(const AddressFilter&) const;
-         std::map<ScrAddr, std::set<BinaryData>> getAddressBook(
+         std::map<Types::ScrAddr, std::set<Types::TxHash>> getAddressBook(
             const AddressFilter&) const;
          std::vector<UTXO> getUTXOs(uint64_t, bool, bool,
             const AddressFilter&) const;
-         std::map<TxIOKey, TxIOPair> getZcTxios(const AddressFilter&) const;
+         std::map<Types::TxIOKey, TxIOPair> getZcTxios(const AddressFilter&) const;
+         void purge(void);
       };
    } //namespace Bridge
 } //namespace Armory

@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2020-2021, goatpig                                          //
+//  Copyright (C) 2020-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -155,9 +155,9 @@
 
 #include <Utils/ThreadSafeClasses.h>
 #include <Utils/ArmoryErrors.h>
+#include <Utils/Types.h>
 #include <Utils/BinaryData.h>
 
-using BdvIdKey = uint64_t;
 class Clients;
 
 namespace Armory
@@ -169,8 +169,8 @@ namespace Armory
 
       struct ZcPurgePacket
       {
-         std::map<BinaryData, BinaryData> invalidatedZcKeys;
-         std::map<BinaryData, std::set<BinaryData>> scrAddrToTxioKeys;
+         std::map<Types::TxKey, Types::TxHash> invalidatedZcKeys;
+         std::map<Types::ScrAddr, std::set<Types::TxIOKey>> scrAddrToTxioKeys;
          std::shared_ptr<MempoolSnapshot> ssPtr;
       };
 
@@ -181,17 +181,17 @@ namespace Armory
          bool ignoreWatcherNodeInv = false;
 
          //<bdv id>
-         std::set<BdvIdKey> extraRequestors;
+         std::set<Types::BdvId> extraRequestors;
 
          WatcherTxBody(std::shared_ptr<BinaryData>);
       };
 
-      using KeyAddrMap = std::map<BinaryData,
-         std::shared_ptr<std::set<BinaryDataRef>>>;
+      using KeyAddrMap = std::map<Types::TxKey,
+         std::shared_ptr<std::set<Types::ScrAddr>>>;
       struct ZcNotificationPacket
       {
-         BdvIdKey bdvID;
-         std::map<BinaryData, std::set<BinaryData>> scrAddrToTxioKeys;
+         Types::BdvId bdvID;
+         std::map<Types::ScrAddr, std::set<Types::TxIOKey>> scrAddrToTxioKeys;
 
          std::shared_ptr<ZcPurgePacket> purgePacket;
          std::shared_ptr<KeyAddrMap> newKeysAndScrAddr;
@@ -206,7 +206,7 @@ namespace Armory
          std::shared_ptr<const MempoolSnapshot> ssPtr;
 
       public:
-         ZcNotificationPacket(BdvIdKey);
+         ZcNotificationPacket(Types::BdvId);
       };
 
       ////////
@@ -215,14 +215,14 @@ namespace Armory
       public:
          virtual ~ZeroConfCallbacks(void) = 0;
 
-         virtual std::set<BdvIdKey> hasScrAddr(const BinaryDataRef&) const = 0;
+         virtual std::set<Types::BdvId> hasScrAddr(const Types::ScrAddr&) const = 0;
          virtual void pushZcNotification(
             std::shared_ptr<MempoolSnapshot>,
             std::shared_ptr<KeyAddrMap>,
-            std::map<BdvIdKey, ParsedZCData>, //flaggedBDVs
-            BdvIdKey, //bdvid
-            std::map<BinaryData, std::shared_ptr<WatcherTxBody>>&) = 0;
-         virtual void pushZcError(BdvIdKey, const BinaryData&,
+            std::map<Types::BdvId, ParsedZCData>,
+            Types::BdvId,
+            std::map<Types::TxHash, std::shared_ptr<WatcherTxBody>>&) = 0;
+         virtual void pushZcError(Types::BdvId, const BinaryData&,
             ArmoryErrorCodes, const std::string&) = 0;
       };
 
@@ -238,9 +238,9 @@ namespace Armory
          struct ZcNotifRequest
          {
             const ZcNotifRequestType type;
-            const BdvIdKey bdvId;
+            const Types::BdvId bdvId;
 
-            ZcNotifRequest(ZcNotifRequestType, BdvIdKey);
+            ZcNotifRequest(ZcNotifRequestType, Types::BdvId);
             virtual ~ZcNotifRequest(void) = 0;
          };
 
@@ -248,24 +248,24 @@ namespace Armory
          {
             std::shared_ptr<MempoolSnapshot> ssPtr;
             std::shared_ptr<KeyAddrMap> newZcKeys;
-            std::map<BdvIdKey, ParsedZCData> flaggedBDVs;
-            std::map<BinaryData, std::shared_ptr<WatcherTxBody>> watcherMap;
+            std::map<Types::BdvId, ParsedZCData> flaggedBDVs;
+            std::map<Types::TxHash, std::shared_ptr<WatcherTxBody>> watcherMap;
 
-            ZcNotifRequest_Success(BdvIdKey,
+            ZcNotifRequest_Success(Types::BdvId,
                std::shared_ptr<MempoolSnapshot>,
                std::shared_ptr<KeyAddrMap>,
-               std::map<BdvIdKey, ParsedZCData>,
-               std::map<BinaryData, std::shared_ptr<WatcherTxBody>>&);
+               std::map<Types::BdvId, ParsedZCData>,
+               std::map<Types::TxHash, std::shared_ptr<WatcherTxBody>>&);
          };
 
          struct ZcNotifRequest_Error : public ZcNotifRequest
          {
-            const BinaryData hash;
+            const Types::TxHash hash;
             ArmoryErrorCodes errCode;
             const std::string verbose;
 
-            ZcNotifRequest_Error(BdvIdKey,
-               const BinaryData&, ArmoryErrorCodes,
+            ZcNotifRequest_Error(Types::BdvId,
+               const Types::TxHash&, ArmoryErrorCodes,
                const std::string&);
          };
 
@@ -282,16 +282,16 @@ namespace Armory
          ZeroConfCallbacks_BDV(Clients*);
          ~ZeroConfCallbacks_BDV(void);
 
-         std::set<BdvIdKey> hasScrAddr(const BinaryDataRef&) const override;
-         void pushZcError(BdvIdKey, const BinaryData&,
+         std::set<Types::BdvId> hasScrAddr(const Types::ScrAddr&) const override;
+         void pushZcError(Types::BdvId, const Types::TxHash&,
             ArmoryErrorCodes, const std::string&) override;
 
          void pushZcNotification(
             std::shared_ptr<MempoolSnapshot>,
             std::shared_ptr<KeyAddrMap>,
-            std::map<BdvIdKey, ParsedZCData>,
-            BdvIdKey,
-            std::map<BinaryData, std::shared_ptr<WatcherTxBody>>&) override;
+            std::map<Types::BdvId, ParsedZCData>,
+            Types::BdvId,
+            std::map<Types::TxHash, std::shared_ptr<WatcherTxBody>>&) override;
       };
    } //namespace ZeroConf
 } //namespace Armory

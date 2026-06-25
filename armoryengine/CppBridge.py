@@ -601,25 +601,6 @@ class BlockchainService(ProtoWrapper):
       self.send(packet, needsReply=False)
 
    ####
-   def getLedgerDelegateIdForWallets(self):
-      packet = Bridge.ToBridge.new_message()
-      packet.init("service").getLedgerDelegateId = None
-
-      fut = self.send(packet)
-      response = fut.getVal()
-      return response.service.getLedgerDelegateId
-
-   ####
-   def updateWalletsLedgerFilter(self, ids: list[str]):
-      packet = Bridge.ToBridge.new_message()
-
-      packetIds = packet.init("service").init("updateWalletsLedgerFilter", len(ids))
-      for i, id_ in enumerate(ids):
-         packetIds[i] = id_
-
-      self.send(packet, needsReply=False)
-
-   ####
    def getNodeStatus(self):
       packet = Bridge.ToBridge.new_message()
       packet.init("service").getNodeStatus = None
@@ -670,17 +651,6 @@ class BlockchainService(ProtoWrapper):
       for tx in txList:
          txDict[tx.hash] = tx
       return txDict
-
-   ####
-   def getHeadersByHeight(self, heights: list[int]):
-      packet = Bridge.ToBridge.new_message()
-      packetHeights = packet.init("service").init("getHeadersByHeight", len(heights))
-      for i, height in enumerate(heights):
-         packetHeights[i] = height
-
-      fut = self.send(packet)
-      reply = fut.getVal()
-      return reply.service.getHeadersByHeight
 
    ####
    def getBlockTimeByHeight(self, height):
@@ -877,6 +847,26 @@ class WalletManagerWrapper(ProtoWrapper):
       request.walletPath = walletPath
       request.callbackId = callbackId
       self.send(packet, callback=callbackFunc)
+
+   ####
+   def getMainLedgerDelegateId(self):
+      packet = Bridge.ToBridge.new_message()
+      packet.init("walletManager").getMainLedgerDelegateId = None
+
+      fut = self.send(packet)
+      response = fut.getVal()
+      return response.walletManager.getMainLedgerDelegateId
+
+   ####
+   def updateMainLedgerFilter(self, ids):
+      packet = Bridge.ToBridge.new_message()
+      packetIds = packet.init("walletManager").init(
+         "updateMainLedgerFilter", len(ids))
+      for i in range(len(ids)):
+         capnId = packetIds[i]
+         capnId.walletId = ids[i][0]
+         capnId.accountId = ids[i][1]
+      self.send(packet, needsReply=False)
 
 ################################################################################
 class BridgeWalletWrapper(ProtoWrapper):

@@ -5,11 +5,13 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
+
+#include <cstring>
 
 #include "StoredBlockObj.h"
 #include <Utils/BtcUtils.h>
@@ -17,6 +19,7 @@
 #include <Utils/DBUtils.h>
 #include <Utils/ArmoryErrors.h>
 #include <Utils/ArmoryConfig.h>
+#include <TxClasses.h>
 #include "txio.h"
 
 using namespace Armory;
@@ -29,67 +32,47 @@ StoredDBInfo::StoredDBInfo() :
 
 bool StoredDBInfo::isInitialized() const
 {
-   return !magic.empty();
+   return !magicBytes.empty();
 }
 
 BinaryData StoredDBInfo::getDBKey(uint16_t id)
 {
-   BinaryWriter bw(3);
-   bw.put_uint8_t((uint8_t)DbPrefix::DBINFO);
-   bw.put_uint16_t(id, BE);
+   BinaryWriter bw(4);
+   bw.put_uint32_t(0xFFFF0000 | id, BE);
    return bw.getData();
 }
 
 ////////
 void StoredDBInfo::unserializeDBValue(BinaryRefReader& brr)
 {
-   if (brr.getSizeRemaining() < 44) {
-      magic.resize(0);
-      topBlkHgt = UINT32_MAX;
-      metaHash.resize(0);
+   if (brr.getSizeRemaining() != 82) {
+      magicBytes.resize(0);
       return;
    }
-   brr.get_BinaryData(magic, 4);
-
-   BitUnpacker<uint32_t> bitunpack(brr);
-   armoryVer  = bitunpack.getBits(16);
-   if (armoryVer != ARMORY_DB_VERSION) {
+   armoryVer = brr.get_uint32_t();
+   if (armoryVer != (uint32_t)ARMORY_DB_VERSION) {
       std::stringstream ss;
       ss << "DB version mismatch. Use another dbdir or empty the current one!";
       LOGERR << ss.str();
       throw DbErrorMsg(ss.str());
    }
+   armoryType = (ARMORY_DB_TYPE)brr.get_uint16_t();
+   brr.get_BinaryData(magicBytes, 4);
 
-   armoryType = (ARMORY_DB_TYPE)bitunpack.getBits(4);
-   topBlkHgt = brr.get_uint32_t();
-   appliedToHgt = brr.get_uint32_t();
-   brr.get_BinaryData(metaHash, 32);
-   brr.get_BinaryData(topScannedBlkHash, 32);
+   auto topHashRef = brr.get_BinaryDataRef(32);
+   std::memcpy(topScannedBlkHash.data, topHashRef.getPtr(), 32);
+   auto metaRef = brr.get_BinaryDataRef(32);
+   std::memcpy(metaHash.data, metaRef.getPtr(), 32);
    metaInt = brr.get_uint64_t();
 }
 
 void StoredDBInfo::serializeDBValue(BinaryWriter& bw) const
 {
-   BitPacker<uint32_t> bitpack;
-   bitpack.putBits((uint32_t)armoryVer, 16);
-   bitpack.putBits((uint32_t)armoryType, 4);
-
-   bw.put_BinaryData(magic);
-   bw.put_BitPacker(bitpack);
-   bw.put_uint32_t(topBlkHgt); // top blk height
-   bw.put_uint32_t(appliedToHgt); // top blk height
-
-   if (metaHash.empty()) {
-      bw.put_BinaryData(BtcUtils::EmptyHash);
-   } else {
-      bw.put_BinaryData(metaHash);
-   }
-
-   BinaryDataRef hashRef(topScannedBlkHash);
-   if (topScannedBlkHash.empty()) {
-      hashRef.setRef(BtcUtils::EmptyHash);
-   }
-   bw.put_BinaryDataRef(hashRef);
+   bw.put_uint32_t((uint32_t)armoryVer);
+   bw.put_uint16_t((uint16_t)armoryType);
+   bw.put_BinaryData(magicBytes);
+   bw.put_BinaryDataRef(topScannedBlkHash.getRef());
+   bw.put_BinaryDataRef(metaHash.getRef());
    bw.put_uint64_t(metaInt);
 }
 
@@ -103,18 +86,6 @@ void StoredDBInfo::unserializeDBValue(BinaryDataRef bdr)
 {
    BinaryRefReader brr(bdr);
    unserializeDBValue(brr);
-}
-
-////////
-void StoredDBInfo::pprintOneLine(uint32_t indent) const
-{
-   for (uint32_t i=0; i < indent; i++) {
-      std::cout << " ";
-   }
-   std::cout << "DBINFO: " <<
-      " TopBlk: " << topBlkHgt <<
-      " , " << metaHash.getSliceCopy(0,4).toHexStr().c_str() <<
-      std::endl;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -247,7 +218,7 @@ void StoredHeader::unserializeSimple(BinaryRefReader brr)
    uint8_t  dupid = duplicateID;
 
    std::vector<BinaryData> allTxHashes;
-   BlockHeader bh(brr);
+   BlockHeader bh(brr.get_BinaryDataRef(HEADER_SIZE));
    uint32_t nTx = (uint32_t)brr.get_var_int();
 
    createFromBlockHeader(bh);
@@ -293,7 +264,9 @@ void StoredHeader::unserializeFullBlock(BinaryRefReader brr, bool doFrag,
    uint8_t  dupid  = duplicateID;
 
    std::vector<BinaryData> allTxHashes;
-   BlockHeader bh(brr); 
+   auto rawHeader = brr.get_BinaryData(HEADER_SIZE);
+   BlockHeader bh(rawHeader.getRef());
+   bh.setRawData(std::move(rawHeader));
    uint32_t nTx = (uint32_t)brr.get_var_int();
 
    createFromBlockHeader(bh);
@@ -345,7 +318,6 @@ void StoredHeader::unserializeFullBlock(BinaryRefReader brr, bool doFrag,
          stxo.unserialize(brr);
          stxo.txVersion    = thisTx.getVersion();
          stxo.blockHeight  = UINT32_MAX;
-         stxo.duplicateID  = UINT8_MAX;
          stxo.txIndex      = tx;
          stxo.txOutIndex   = txo;
          stxo.isCoinbase   = isCoinbase;
@@ -429,12 +401,11 @@ BinaryData DBBlock::getDBKey(bool withPrefix) const
 
 void DBBlock::createFromBlockHeader(const BlockHeader& bh)
 {
-   if (!bh.isInitialized()) {
-      LOGERR << "trying to create from uninitialized block header";
-      return;
+   const auto& rawHeader = bh.getRawData();
+   if (rawHeader.empty()) {
+      throw std::runtime_error("header does not carry data");
    }
-
-   setHeaderData(bh.serialize());
+   setHeaderData(bh.getRawData());
    numTx = bh.getNumTx();
    numBytes = bh.getBlockSize();
    blockHeight = bh.getBlockHeight();
@@ -444,7 +415,8 @@ void DBBlock::createFromBlockHeader(const BlockHeader& bh)
 
    fileID = bh.getBlockFileNum();
    offset = bh.getOffset();
-   uniqueID = bh.getThisID();
+   uniqueID = bh.getUniqueID();
+   merkleValid = bh.isMerkleValid();
 }
 
 ////////
@@ -458,17 +430,15 @@ void DBBlock::setHeaderData(const BinaryData& header80B)
    BtcUtils::getHash256(header80B, thisHash);
 }
 
-BlockHeader DBBlock::getBlockHeaderCopy(void) const
+BlockHeader DBBlock::getBlockHeaderCopy() const
 {
    if (!isInitialized()) {
-      return {};
+      throw std::runtime_error("SBH is no initialized");
    }
-   BlockHeader bh(dataCopy);
 
+   BlockHeader bh(dataCopy);
    bh.setNumTx(numTx);
    bh.setBlockSize(numBytes);
-   bh.setDuplicateID(duplicateID);
-
    bh.setBlockFileNum(fileID);
    bh.setBlockFileOffset(offset);
    return bh;
@@ -482,165 +452,56 @@ BinaryData DBBlock::getSerializedBlockHeader() const
    return dataCopy;
 }
 
-void DBBlock::unserializeDBValue(DB_SELECT db, const BinaryData& bd,
-   bool ignoreMerkle)
+void DBBlock::unserializeDBValue(const BinaryData& bd)
 {
    BinaryRefReader brr(bd);
-   unserializeDBValue(db, brr, ignoreMerkle);
+   unserializeDBValue(brr);
 }
 
-void DBBlock::unserializeDBValue(DB_SELECT db, BinaryDataRef bdr,
-   bool ignoreMerkle)
+void DBBlock::unserializeDBValue(BinaryDataRef bdr)
 {
    BinaryRefReader brr(bdr);
-   unserializeDBValue(db, brr, ignoreMerkle);
+   unserializeDBValue(brr);
 }
 
 ////////
-void DBBlock::unserializeDBValue(DB_SELECT db, BinaryRefReader& brr,
-   bool ignoreMerkle)
+void DBBlock::unserializeDBValue(BinaryRefReader& brr)
 {
-   if (db == DB_SELECT::HEADERS) {
-      if (brr.getSize() < HEADER_SIZE + 26) {
-         std::stringstream err;
-         err << "buffer is too small: " << dataCopy.getSize();
-         err << " bytes. expected: " << HEADER_SIZE + 26;
+   if (brr.getSize() < HEADER_SIZE + 26) {
+      std::stringstream err;
+      err << "buffer is too small: " << dataCopy.getSize();
+      err << " bytes. expected: " << HEADER_SIZE + 26;
 
-         LOGERR << err.str();
-         throw BtcUtils::BlockDeserializingException(err.str());
-      }
-
-      brr.get_BinaryData(dataCopy, HEADER_SIZE);
-      BinaryData hgtx = brr.get_BinaryData(4);
-      blockHeight = DBUtils::hgtxToHeight(hgtx);
-      duplicateID = DBUtils::hgtxToDupID(hgtx);
-      BtcUtils::getHash256(dataCopy, thisHash);
-      numBytes = brr.get_uint32_t();
-      numTx = brr.get_uint32_t();
-      fileID = brr.get_uint16_t();
-      offset = brr.get_uint64_t();
-      uniqueID = brr.get_uint32_t();
-   } else if(db == DB_SELECT::BLKDATA) {
-      if (brr.getSize() < HEADER_SIZE + 12) {
-         std::stringstream err;
-         err << "buffer is too small: " << dataCopy.getSize();
-         err << " bytes. expected: " << HEADER_SIZE + 12;
-
-         LOGERR << err.str();
-         throw BtcUtils::BlockDeserializingException(err.str());
-      }
-
-      // Read the flags byte
-      BitUnpacker<uint32_t> bitunpack(brr);
-      unserArmVer       =                  bitunpack.getBits(16);
-      unserBlkVer       =                  bitunpack.getBits(4);
-      unserDbType       = (ARMORY_DB_TYPE) bitunpack.getBits(4);
-      unserMkType       = (MERKLE_SER_TYPE)bitunpack.getBits(2);
-      blockAppliedToDB  =                  bitunpack.getBit();
-
-      // Unserialize the raw header into the SBH object
-      brr.get_BinaryData(dataCopy, HEADER_SIZE);
-      BtcUtils::getHash256(dataCopy, thisHash);
-      numTx    = brr.get_uint32_t();
-      numBytes = brr.get_uint32_t();
-
-      if (unserArmVer != ARMORY_DB_VERSION) {
-         LOGWARN << "Version mismatch in unserialize DB header";
-      }
-      if (!ignoreMerkle ) {
-         uint32_t currPos = brr.getPosition();
-         uint32_t totalSz = brr.getSize();
-         if (unserMkType == MERKLE_SER_NONE) {
-            merkle.resize(0);
-         } else {
-            merkleIsPartial = unserMkType == MERKLE_SER_PARTIAL;
-            brr.get_BinaryData(merkle, totalSz - currPos);
-         }
-      }
+      LOGERR << err.str();
+      throw BtcUtils::BlockDeserializingException(err.str());
    }
+
+   brr.get_BinaryData(dataCopy, HEADER_SIZE);
+   BinaryData hgtx = brr.get_BinaryData(4);
+   blockHeight = DBUtils::hgtxToHeight(hgtx);
+   duplicateID = DBUtils::hgtxToDupID(hgtx);
+   BtcUtils::getHash256(dataCopy, thisHash);
+   numBytes = brr.get_uint32_t();
+   numTx = brr.get_uint32_t();
+   fileID = brr.get_uint16_t();
+   offset = brr.get_uint64_t();
+   uniqueID = brr.get_uint32_t();
 }
 
-void DBBlock::serializeDBValue(BinaryWriter& bw, DB_SELECT db,
-   ARMORY_DB_TYPE dbType
-) const
+void DBBlock::serializeDBValue(BinaryWriter& bw) const
 {
    if (!isInitialized()) {
       LOGERR << "Attempted to serialize uninitialized block header";
       return;
    }
 
-   if (db == DB_SELECT::HEADERS) {
-      BinaryData hgtx = DBUtils::heightAndDupToHgtx(blockHeight, duplicateID);
-      bw.put_BinaryData(dataCopy);
-      bw.put_BinaryData(hgtx);
-      bw.put_uint32_t(numBytes);
-      bw.put_uint32_t(numTx);
-      bw.put_uint16_t(fileID);
-      bw.put_uint64_t(offset);
-      bw.put_uint32_t(uniqueID);
-   } else if (db == DB_SELECT::BLKDATA) {
-      uint32_t version = READ_UINT32_LE(dataCopy.getPtr());
-
-      // TODO:  We define merkle serialization types here, but we're not actually
-      //        enforcing it in this function.  Either merkle_ member contains 
-      //        the correct form of the merkle data or it doesn't.  We should 
-      //        figure out whether we need to make sure the correct data is 
-      //        already here when this function starts, or guarantee the data
-      //        is in the right form as part of this function.  For now I'm 
-      //        assuming that it's already in the right form, and thus the
-      //        determination of PARTIAL vs FULL is irrelevant
-      MERKLE_SER_TYPE mtype;
-      switch (dbType)
-      {
-         // If we store all the tx anyway, don't need any/partial merkle trees
-         case ARMORY_DB_TYPE::Bare:    mtype = MERKLE_SER_NONE; break;
-         case ARMORY_DB_TYPE::Full:    mtype = MERKLE_SER_NONE; break;
-         case ARMORY_DB_TYPE::Super:   mtype = MERKLE_SER_NONE; break;
-         default:
-            LOGERR << "Invalid DB mode in serializeStoredHeaderValue";
-      }
-
-      // Override the above mtype if the merkle data is zero-length
-      if (merkle.empty()) {
-         mtype = MERKLE_SER_NONE;
-      }
-
-      // Create the flags byte
-      BitPacker<uint32_t> bitpack;
-      bitpack.putBits((uint32_t)ARMORY_DB_VERSION, 16);
-      bitpack.putBits((uint32_t)version,           4);
-      bitpack.putBits((uint32_t)dbType,            4);
-      bitpack.putBits((uint32_t)mtype,             2);
-      bitpack.putBit(blockAppliedToDB);
-
-      bw.put_BitPacker(bitpack);
-      bw.put_BinaryData(dataCopy);
-      bw.put_uint32_t(numTx);
-      bw.put_uint32_t(numBytes);
-
-      if (mtype != MERKLE_SER_NONE ) {
-         bw.put_BinaryData(merkle);
-         if (merkle.empty()) {
-            LOGERR << "Expected to serialize merkle tree, but empty string";
-         }
-      }
-   }
-}
-
-void DBBlock::unserializeDBKey(DB_SELECT db, BinaryDataRef key)
-{
-   if (db == DB_SELECT::BLKDATA) {
-      BinaryRefReader brr(key);
-      if (key.getSize() == 4) {
-         DBUtils::readBlkDataKeyNoPrefix(brr, blockHeight, duplicateID);
-      } else if (key.getSize() == 5) {
-         DBUtils::readBlkDataKey(brr, blockHeight, duplicateID);
-      } else {
-         LOGERR << "Invalid key for StoredHeader";
-      }
-   } else {
-      LOGERR << "This method not intended for HEADERS DB";
-   }
+   bw.put_BinaryData(dataCopy);
+   bw.put_uint32_t(numBytes);
+   bw.put_uint32_t(numTx);
+   bw.put_uint64_t(offset);
+   bw.put_uint16_t(fileID);
+   //set valid merkle by default, update it on failed check
+   bw.put_uint8_t(merkleValid);
 }
 
 ////
@@ -654,11 +515,6 @@ void DBBlock::pprintOneLine(uint32_t indent) const
       << "     #Tx: " << numTx
       << " Applied: " << (blockAppliedToDB ? "T" : "F")
       << std::endl;
-}
-
-bool DBBlock::isMerkleCreated()
-{
-   return !merkle.empty();
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -704,14 +560,14 @@ void StoredTx::serializeDBValue(BinaryWriter& bw, ARMORY_DB_TYPE dbType) const
    {
       // In most cases, if storing separate TxOuts, fragged Tx is fine
       // UPDATE:  I'm not sure there's a good reason to NOT frag ever
-      case ARMORY_DB_TYPE::Bare:    serType = TX_SER_FRAGGED; break;
-      case ARMORY_DB_TYPE::Full:    serType = TX_SER_FRAGGED; break;
-      case ARMORY_DB_TYPE::Super:   serType = TX_SER_FRAGGED; break;
+      case ARMORY_DB_TYPE::Bare:    serType = TX_SERIALIZE_TYPE::FRAGGED; break;
+      case ARMORY_DB_TYPE::Full:    serType = TX_SERIALIZE_TYPE::FRAGGED; break;
+      case ARMORY_DB_TYPE::Super:   serType = TX_SERIALIZE_TYPE::FRAGGED; break;
       default:
          LOGERR << "Invalid DB mode in serializeStoredTxValue";
    }
 
-   if (serType == TX_SER_FULL && !haveAllTxOut()) {
+   if (serType == TX_SERIALIZE_TYPE::FULL && !haveAllTxOut()) {
       LOGERR << "Supposed to write out full Tx, but don't have it";
       return;
    }
@@ -730,9 +586,9 @@ void StoredTx::serializeDBValue(BinaryWriter& bw, ARMORY_DB_TYPE dbType) const
    bw.put_BitPacker(bitpack);
    bw.put_BinaryData(thisHash);
 
-   if (serType == TX_SER_FULL) {
+   if (serType == TX_SERIALIZE_TYPE::FULL) {
       bw.put_BinaryData(getSerializedTx());
-   } else if(serType == TX_SER_FRAGGED) {
+   } else if(serType == TX_SERIALIZE_TYPE::FRAGGED) {
       bw.put_BinaryData(getSerializedTxFragged());
    } else {
       bw.put_var_int(numTxOut);
@@ -804,6 +660,8 @@ void StoredTx::pprintFullTx(uint32_t indent) const
 
 Tx StoredTx::getTxCopy() const
 {
+   throw std::runtime_error("[StoredTx::getTxCopy] deprecated");
+   #if 0
    if (!haveAllTxOut()) {
       throw std::runtime_error(
          "Cannot get tx copy, because don't have full StoredTx!");
@@ -811,10 +669,10 @@ Tx StoredTx::getTxCopy() const
 
    Tx returnTx{getSerializedTx()};
    returnTx.setRBF(rbfFlag);
-   returnTx.setTxHeight(blockHeight);
+   returnTx.setBlockId(blockId);
    returnTx.setTxIndex(txIndex);
-   returnTx.setDupId(duplicateID);
    return returnTx;
+   #endif
 }
 
 void StoredTx::setKeyData(uint32_t height, uint8_t dup, uint16_t txIdx)
@@ -825,7 +683,6 @@ void StoredTx::setKeyData(uint32_t height, uint8_t dup, uint16_t txIdx)
 
    for (auto& stxoPair : stxoMap) {
       stxoPair.second.blockHeight = height;
-      stxoPair.second.duplicateID = dup;
       stxoPair.second.txIndex     = txIdx;
       stxoPair.second.txOutIndex  = stxoPair.first;
    }
@@ -839,12 +696,6 @@ StoredTx& StoredTx::createFromTx(BinaryDataRef rawTx, bool doFrag, bool withTxOu
 
 StoredTx& StoredTx::createFromTx(const Tx& tx, bool doFrag, bool withTxOuts)
 {
-   if (!tx.isInitialized()) {
-      LOGERR << "Creating storedtx from uninitialized tx. Aborting.";
-      dataCopy.resize(0);
-      return *this;
-   }
-
    thisHash  = tx.getThisHash();
    numTxOut  = tx.getNumTxOut();
    version   = tx.getVersion();
@@ -998,8 +849,9 @@ void DBTx::unserializeDBValue(BinaryRefReader& brr)
    }
    brr.get_BinaryData(thisHash, 32);
 
-   if (unserTxType == TX_SER_FULL || unserTxType == TX_SER_FRAGGED) {
-      unserialize(brr, unserTxType == TX_SER_FRAGGED);
+   if (unserTxType == TX_SERIALIZE_TYPE::FULL ||
+      unserTxType == TX_SERIALIZE_TYPE::FRAGGED) {
+      unserialize(brr, unserTxType == TX_SERIALIZE_TYPE::FRAGGED);
    } else {
       numTxOut = (uint32_t)brr.get_var_int();
    }
@@ -1034,7 +886,8 @@ BinaryData DBTx::getSerializedTxFragged() const
    uint32_t afterLast = outOffsets[outOffsets.size()-1];
    uint32_t span = afterLast - firstOut;
 
-   BinaryData output(dataCopy.getSize() - span);
+   BinaryData output;
+   output.resize(dataCopy.getSize() - span);
    dataCopy.getSliceRef(0,  firstOut).copyTo(output.getPtr());
    dataCopy.getSliceRef(afterLast, 4).copyTo(output.getPtr()+firstOut);
    return output;
@@ -1081,10 +934,9 @@ void DBTx::pprintOneLine(uint32_t indent) const
 ////////////////////////////////////////////////////////////////////////////////
 // StoredTxOut
 StoredTxOut::StoredTxOut()
-   : txVersion(UINT32_MAX), dataCopy(0), blockHeight(UINT32_MAX),
-   duplicateID(UINT8_MAX), txIndex(UINT16_MAX), txOutIndex(UINT16_MAX),
-   parentHash(0), spentness(TXOUT_SPENTUNK), isCoinbase(false),
-   spentByTxInKey(0)
+   : txVersion(UINT32_MAX), blockHeight(UINT32_MAX),
+   txIndex(UINT16_MAX), txOutIndex(UINT16_MAX),
+   spentness(SPENTNESS::SPENTUNK), isCoinbase(false)
 {}
 
 bool StoredTxOut::isInitialized() const
@@ -1141,13 +993,13 @@ void StoredTxOut::unserializeDBValue(BinaryRefReader& brr)
    //    TxVersion   2 bits
    //    Spentness   2 bits
    BitUnpacker<uint16_t> bitunpack(brr);
-   unserArmVer =                  bitunpack.getBits(4);
-   txVersion   =                  bitunpack.getBits(2);
-   spentness   = (TXOUT_SPENTNESS)bitunpack.getBits(2);
-   isCoinbase  =                  bitunpack.getBit();
+   unserArmVer = bitunpack.getBits(4);
+   txVersion   = bitunpack.getBits(2);
+   spentness   = (SPENTNESS)bitunpack.getBits(2);
+   isCoinbase  = bitunpack.getBit();
 
    unserialize(brr);
-   if (spentness == TXOUT_SPENT && brr.getSizeRemaining() >= 8) {
+   if (spentness == SPENTNESS::SPENT && brr.getSizeRemaining() >= 8) {
       spentByTxInKey = brr.get_BinaryData(8);
    }
 }
@@ -1163,7 +1015,7 @@ void StoredTxOut::serializeDBValue(
    BinaryWriter& bw,
    uint16_t txVersion, bool isCoinbase,
    const BinaryDataRef dataRef,
-   TXOUT_SPENTNESS spentness, BinaryDataRef spentByTxin)
+   SPENTNESS spentness, BinaryDataRef spentByTxin)
 {
    size_t len = 2 + dataRef.getSize();
    bw.reserve(len);
@@ -1177,7 +1029,7 @@ void StoredTxOut::serializeDBValue(
    bw.put_BitPacker(bitpack);
    bw.put_BinaryData(dataRef);  // 8-byte value, var_int sz, pkscript
 
-   if (spentness == TXOUT_SPENT) {
+   if (spentness == SPENTNESS::SPENT) {
       if (spentByTxin.empty()) {
          LOGERR << "Need to write out spentByTxIn but no spentness data";
       }
@@ -1189,7 +1041,7 @@ void StoredTxOut::serializeDBValue(
 BinaryData StoredTxOut::getDBKey(bool withPrefix) const
 {
    if (blockHeight == UINT32_MAX ||
-      duplicateID == UINT8_MAX  ||
+      //duplicateID == UINT8_MAX  ||
       txIndex     == UINT16_MAX ||
       txOutIndex  == UINT16_MAX) {
       return {};
@@ -1197,10 +1049,10 @@ BinaryData StoredTxOut::getDBKey(bool withPrefix) const
 
    if (withPrefix) {
       return DBUtils::getBlkDataKey(
-         blockHeight, duplicateID, txIndex, txOutIndex);
+         blockHeight, 0, txIndex, txOutIndex);
    } else {
       return DBUtils::getBlkDataKeyNoPrefix(
-         blockHeight, duplicateID, txIndex, txOutIndex);
+         blockHeight, 0, txIndex, txOutIndex);
    }
 }
 
@@ -1212,14 +1064,13 @@ BinaryData StoredTxOut::getSpentnessKey() const
    }
 
    if (blockHeight == UINT32_MAX ||
-      duplicateID == UINT8_MAX ||
       txIndex == UINT16_MAX ||
       txOutIndex == UINT16_MAX) {
       return {};
    }
 
-   return DBUtils::getBlkDataKeyNoPrefix(
-      UINT32_MAX - blockHeight, duplicateID, txIndex, txOutIndex);
+   return DBUtils::getDBSuperSpentnessKey(
+      blockHeight, 0, txIndex, txOutIndex);
 }
 
 BinaryData StoredTxOut::getDBKeyOfParentTx(bool withPrefix) const
@@ -1317,11 +1168,12 @@ uint64_t StoredTxOut::getValue() const
 void StoredTxOut::unserializeDBKey(BinaryDataRef key)
 {
    BinaryRefReader brr(key);
+   uint8_t dump;
    if (key.getSize() == 8) {
       DBUtils::readBlkDataKeyNoPrefix(brr,
-         blockHeight, duplicateID, txIndex, txOutIndex);
+         blockHeight, dump, txIndex, txOutIndex);
    } else if (key.getSize() == 9) {
-      DBUtils::readBlkDataKey(brr, blockHeight, duplicateID, txIndex, txOutIndex);
+      DBUtils::readBlkDataKey(brr, blockHeight, dump, txIndex, txOutIndex);
    } else {
       LOGERR << "Invalid key for StoredTxOut";
    }
@@ -1329,7 +1181,7 @@ void StoredTxOut::unserializeDBKey(BinaryDataRef key)
 
 bool StoredTxOut::isSpent() const
 {
-   return spentness == TXOUT_SPENT;
+   return spentness == SPENTNESS::SPENT;
 }
 
 ////////
@@ -1345,1036 +1197,17 @@ void StoredTxOut::pprintOneLine(uint32_t indent) const
    }
    std::cout << "TXOUT:   "
       << "  (" << blockHeight
-      << "," << (uint32_t)duplicateID
       << "," << txIndex
       << "," << txOutIndex << ")"
       << " Value=" << (double)(getValue())/(100000000.0)
       << " isCB: " << (isCoinbase ? "(X)" : "   ");
 
-   if (spentness == TXOUT_SPENTUNK) {
+   if (spentness == SPENTNESS::SPENTUNK) {
       std::cout << " Spnt: " << "<-----UNKNOWN---->" << std::endl;
-   } else if (spentness == TXOUT_UNSPENT) {
+   } else if (spentness == SPENTNESS::UNSPENT) {
       std::cout << " Spnt: " << "<                >" << std::endl;
    } else {
       std::cout << " Spnt: " << "<" <<
          spentByTxInKey.toHexStr() << ">" << std::endl;
    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// The list of spent/unspent txOuts is exactly what is needed to construct
-// a full vector<TxIOPair> for each address.  Keep in mind that this list
-// only contains TxOuts and spentness of those TxOuts that are:
-//    (1) Already in the blockchain
-//    (2) On the longest chain at the time is was written
-// It contains no zero-confirmation tx data, and it may not be accurate
-// if there was a reorg since it was written.  Part of the challenge of
-// implementing this DB stuff correctly is making sure both conditions 
-// above are adhered to, despite TxIOPair objects being used in RAM to store
-// zero-confirmation data as well as in-blockchain data.
-StoredScriptHistory::StoredScriptHistory() :
-   uniqueKey(0),
-   version(UINT32_MAX),
-   totalTxioCount(0),
-   totalUnspent(0)
-{}
-
-bool StoredScriptHistory::isInitialized() const
-{
-   return !uniqueKey.empty();
-}
-
-////////
-void StoredScriptHistory::unserializeDBValue(BinaryRefReader& brr)
-{
-   // Now read the stored data fro this registered address
-   BitUnpacker<uint16_t> bitunpack(brr);
-   auto dbType = (ARMORY_DB_TYPE)bitunpack.getBits(4);
-   if (dbType != ARMORY_DB_TYPE::Super) {
-      scanHeight = brr.get_int32_t();
-      tallyHeight = brr.get_int32_t();
-   }
-
-   totalTxioCount = brr.get_var_int();
-   subHistMap.clear();
-   subsshSummary.clear();
-
-   // We shouldn't end up with empty ssh's, but should catch it just in case
-   if (totalTxioCount == 0) {
-      return;
-   }
-
-   try {
-      totalUnspent = brr.get_uint64_t();
-      auto sumSize = brr.get_uint32_t();
-      for (unsigned i = 0; i < sumSize; i++) {
-         unsigned height = brr.get_var_int();
-         unsigned sum = brr.get_var_int();
-         subsshSummary[height] = sum;
-      }
-   } catch (const std::runtime_error& e) {
-      LOGERR << "StoredScriptHistory deser error";
-      throw e;
-   }
-}
-
-void StoredScriptHistory::serializeDBValue(BinaryWriter& bw,
-   ARMORY_DB_TYPE dbType) const
-{
-   size_t len = 13 + BtcUtils::calcVarIntSize(totalTxioCount);
-   if (dbType != ARMORY_DB_TYPE::Super) {
-      len += 8;
-   }
-   for (const auto& sum : subsshSummary) {
-      len += BtcUtils::calcVarIntSize(sum.first) +
-         BtcUtils::calcVarIntSize(sum.second);
-   }
-
-   bw.reserve(len);
-
-   // Write out all the flags
-   BitPacker<uint16_t> bitpack;
-   bitpack.putBits((uint16_t)dbType, 4);
-   bitpack.putBits((uint16_t)SCRIPT_UTXO_VECTOR, 2);
-   bw.put_BitPacker(bitpack);
-
-   //
-   if (dbType != ARMORY_DB_TYPE::Super) {
-      bw.put_int32_t(scanHeight);
-      bw.put_int32_t(tallyHeight);
-   }
-
-   bw.put_var_int(totalTxioCount);
-   bw.put_uint64_t(totalUnspent);
-
-   //
-   bw.put_uint32_t(subsshSummary.size());
-   for (const auto& sum : subsshSummary) {
-      bw.put_var_int(sum.first);
-      bw.put_var_int(sum.second);
-   }
-}
-
-void StoredScriptHistory::unserializeDBValue(const BinaryData& bd)
-{
-   BinaryRefReader brr(bd);
-   unserializeDBValue(brr);
-}
-
-void StoredScriptHistory::unserializeDBValue(BinaryDataRef bdr)
-{
-   BinaryRefReader brr(bdr);
-   unserializeDBValue(brr);
-}
-
-////////
-void StoredScriptHistory::decompressManySubssh(BinaryDataRef data,
-   unsigned height_base, unsigned spent_offset,
-   unsigned lower_bound, unsigned upper_bound,
-   std::function<bool(unsigned, uint8_t)>& isDupIdValid)
-{
-   BinaryRefReader brr(data);
-
-   //get subbssh count
-   auto count = brr.get_var_int();
-   for (unsigned i = 0; i < count; i++) {
-      StoredSubHistory subssh;
-
-      //get height offset
-      auto height_offset = brr.get_var_int();
-      auto this_height = height_offset + height_base;
-      if (this_height > upper_bound) {
-         return;
-      }
-      subssh.height = this_height;
-
-      //dupid
-      auto dupId = brr.get_uint8_t();
-
-      //get txio count
-      auto txio_count = brr.get_var_int();
-
-      //grab all txios
-      for (unsigned y = 0; y < txio_count; y++) {
-         //value
-         uint64_t value = brr.get_var_int();
-
-         //spent flag
-         auto flag = brr.get_uint8_t();
-
-         switch (flag)
-         {
-            case 0:
-            {
-               //unspent
-               auto txid = brr.get_var_int();
-               auto outputid = brr.get_var_int();
-               if (this_height < lower_bound) {
-                  continue;
-               }
-
-               auto outputKey = DBUtils::getBlkDataKeyNoPrefix(
-                  this_height, dupId, txid, outputid);
-               auto emplaceIter = subssh.txioMap.emplace(
-                  outputKey, TxIOPair{outputKey, value}).first;
-
-               if (txid == 0) {
-                  emplaceIter->second.setFromCoinbase(true);
-               }
-               break;
-            }
-
-            case 1:
-            {
-               //funded and spent in same block
-               auto txid_output = brr.get_var_int();
-               auto iid_output = brr.get_var_int();
-
-               auto txid_input = brr.get_var_int();
-               auto iid_input = brr.get_var_int();
-               if (this_height < lower_bound) {
-                  continue;
-               }
-
-               auto outputKey = DBUtils::getBlkDataKeyNoPrefix(
-                  this_height, dupId, txid_output, iid_output);
-               auto inputKey = DBUtils::getBlkDataKeyNoPrefix(
-                  this_height, dupId, txid_input, iid_input);
-               auto emplaceIter = subssh.txioMap.emplace(
-                  outputKey, TxIOPair{outputKey, value}).first;
-
-               emplaceIter->second.setTxIn(inputKey);
-               break;
-            }
-
-            case 0xFF:
-            {
-               //spent
-
-               //get output height offset and dupid
-               auto output_height = brr.get_var_int() + spent_offset;
-               auto output_dupid = brr.get_uint8_t();
-
-               auto txid_output = brr.get_var_int();
-               auto iid_output = brr.get_var_int();
-
-               auto txid_input = brr.get_var_int();
-               auto iid_input = brr.get_var_int();
-               if (this_height < lower_bound) {
-                  continue;
-               }
-
-               auto outputKey = DBUtils::getBlkDataKeyNoPrefix(
-                  output_height, output_dupid, txid_output, iid_output);
-               auto inputKey = DBUtils::getBlkDataKeyNoPrefix(
-                  this_height, dupId, txid_input, iid_input);
-               auto emplaceIter = subssh.txioMap.emplace(
-                  outputKey, TxIOPair{outputKey, value}).first;
-
-               emplaceIter->second.setTxIn(inputKey);
-               break;
-            }
-
-            default:
-               LOGERR << "unexpected spent flag in compressed subssh";
-               throw std::runtime_error(
-                  "unexpected spent flag in compressed subssh");
-         }
-      }
-
-      if (!isDupIdValid(this_height, dupId)) {
-         continue;
-      }
-
-      //add to subssh map
-      subHistMap.emplace(
-         DBUtils::getBlkDataKeyNoPrefix(this_height, dupId),
-         std::move(subssh)
-      );
-   }
-}
-
-////////
-BinaryData StoredScriptHistory::getDBKey(bool withPrefix) const
-{
-   BinaryWriter bw(1 + uniqueKey.getSize());
-   if (withPrefix) {
-      bw.put_uint8_t((uint8_t)DbPrefix::SCRIPT);
-   }
-   bw.put_BinaryData(uniqueKey);
-   return bw.getData();
-}
-
-Armory::ScriptPrefix StoredScriptHistory::getScriptType() const
-{
-   if (uniqueKey.empty()) {
-      return Armory::ScriptPrefix::NONSTD;
-   } else {
-      return (Armory::ScriptPrefix)uniqueKey[0];
-   }
-}
-
-void StoredScriptHistory::unserializeDBKey(BinaryDataRef key, bool withPrefix)
-{
-   // Assume prefix
-   if (withPrefix) {
-      uniqueKey = key.getSliceCopy(1, key.getSize() - 1);
-   } else {
-      uniqueKey = key;
-   }
-}
-
-bool StoredScriptHistory::haveFullHistoryLoaded() const
-{
-   //Shouldn't be using this call outside of C++ unit tests. It is supported to
-   //accomodate for unit tests degree of data review, but it is painfully slow
-   //and should be avoided in all speed critical operations. The method already
-   //assumes we function in an environment with full history in ram, which
-   //doesn't with the new backend anymore.
-
-   if (!isInitialized()) {
-      return false;
-   }
-   uint64_t numTxio = 0;
-   for (const auto& stxoPair : subHistMap) {
-      for (const auto& txioPair : stxoPair.second.txioMap) {
-         if (txioPair.second.isUTXO()) {
-            numTxio++;
-         } else if (txioPair.second.hasTxIn()) {
-            numTxio += 2;
-         }
-      }
-   }
-
-   if (numTxio > totalTxioCount) {
-      LOGERR << "Somehow stored total is less than counted total...?";
-   }
-   return numTxio == totalTxioCount;
-}
-
-////////
-uint64_t StoredScriptHistory::getScriptReceived(bool withMultisig) const
-{
-   if (!haveFullHistoryLoaded()) {
-      return UINT64_MAX;
-   }
-   uint64_t bal = 0;
-   for (const auto& sshPair : subHistMap) {
-      bal += sshPair.second.getSubHistoryReceived(withMultisig);
-   }
-   return bal;
-}
-
-uint64_t StoredScriptHistory::getScriptBalance(bool withMultisig) const
-{
-   // If regular balance,
-   if (!withMultisig) {
-      return totalUnspent;
-   }
-
-   // If with multisig we have to load and count everything
-   if (!haveFullHistoryLoaded()) {
-      return UINT64_MAX;
-   }
-
-   uint64_t bal = 0;
-   for (const auto& sshPair : subHistMap) {
-      bal += sshPair.second.getSubHistoryBalance(withMultisig);
-   }
-   return bal;
-}
-
-////////
-bool StoredScriptHistory::getFullTxioMap(
-   std::map<BinaryData, TxIOPair>& mapToFill,
-   bool withMultisig) const
-{
-   if (!haveFullHistoryLoaded()) {
-      return false;
-   }
-   for (const auto sshPair : subHistMap) {
-      const StoredSubHistory& subssh = sshPair.second;
-      if (withMultisig) {
-         // If with multisig, we can just copy everything
-         mapToFill.insert(subssh.txioMap.begin(), subssh.txioMap.end());
-      } else {
-         // Otherwise, we have to filter out the multisig TxIOs
-         for (const auto& txioPair : subssh.txioMap) {
-            if (!txioPair.second.isMultisig()) {
-               mapToFill.emplace(txioPair.first, txioPair.second);
-            }
-         }
-      }
-   }
-   return true;
-}
-
-void StoredScriptHistory::mergeSubHistory(const StoredSubHistory& subssh)
-{
-   auto& subSshEntry = subHistMap[subssh.hgtX];
-   if (!subSshEntry.isInitialized()) {
-      subSshEntry = subssh;
-      return;
-   }
-   for (const auto& txioPair : subssh.txioMap) {
-      subSshEntry.txioMap.emplace(txioPair);
-   }
-}
-
-////////
-void StoredScriptHistory::insertTxio(const TxIOPair& txio)
-{
-   auto txioKey = txio.getDBKeyOfOutput();
-   auto hgtX = txioKey.getSliceRef(0, 4);
-   auto& subSshEntry = subHistMap[hgtX];
-   if (!subSshEntry.isInitialized()) {
-      subSshEntry.hgtX      = hgtX;
-   }
-
-   auto wasInserted = subSshEntry.txioMap.emplace(std::move(txioKey), txio);
-   if (wasInserted.second == true) {
-      if (!txio.hasTxIn() && !txio.isMultisig()) {
-         totalUnspent += txio.getValue();
-      }
-      totalTxioCount++;
-   }
-}
-
-void StoredScriptHistory::eraseTxio(const TxIOPair& txio)
-{
-   auto iter = subHistMap.find(txio.getDBKeyOfOutput().getSliceRef(0, 4));
-   if (iter == subHistMap.end()) {
-      return;
-   }
-
-   auto wasRemoved = iter->second.txioMap.erase(txio.getDBKeyOfOutput());
-   if (wasRemoved == 1) {
-      if (!txio.hasTxIn() && !txio.isMultisig()) {
-         totalUnspent -= txio.getValue();
-      }
-      totalTxioCount--;
-   }
-}
-
-void StoredScriptHistory::clear()
-{
-   uniqueKey.clear();
-   version = UINT32_MAX;
-   scanHeight = tallyHeight = -1;
-   totalTxioCount = totalUnspent = 0;
-
-   subsshSummary.clear();
-   subHistMap.clear();
-}
-
-/////////
-void StoredScriptHistory::addSummary(const StoredScriptHistory& ssh)
-{
-   totalTxioCount += ssh.totalTxioCount;
-   totalUnspent += ssh.totalUnspent;
-   subsshSummary.insert(
-      ssh.subsshSummary.begin(),
-      ssh.subsshSummary.end());
-}
-
-void StoredScriptHistory::substractSummary(const StoredScriptHistory& ssh)
-{
-   totalTxioCount -= ssh.totalTxioCount;
-   totalUnspent -= ssh.totalUnspent;
-
-   for (auto& summary_pair : ssh.subsshSummary) {
-      auto summIter = subsshSummary.find(summary_pair.first);
-      if (summIter == subsshSummary.end()) {
-         LOGWARN << "missing entry in substractSummary";
-         continue;
-      }
-      if (summary_pair.second >= summIter->second) {
-         subsshSummary.erase(summary_pair.first);
-         continue;
-      }
-      summIter->second -= summary_pair.second;
-   }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// SubSSH object code
-//
-// If the ssh has more than one TxIO, then we put them into SubSSH objects,
-// which represent a list of TxIOs for the given block.  The complexity of
-// doing it this way seems unnecessary, but it actually works quite efficiently
-// for massively-reused addresses like SatoshiDice.
-////////////////////////////////////////////////////////////////////////////////
-StoredSubHistory::StoredSubHistory() :
-   hgtX(0), height(0), dupID(0), txioCount(0)
-{}
-
-StoredSubHistory::StoredSubHistory(const StoredSubHistory& copy)
-{
-   *this = copy;
-}
-
-bool StoredSubHistory::isInitialized() const
-{
-   return !hgtX.empty();
-}
-
-StoredSubHistory& StoredSubHistory::operator=(const StoredSubHistory& copy)
-{
-   if (&copy == this) {
-      return *this;
-   }
-
-   hgtX = copy.hgtX;
-   txioMap = copy.txioMap;
-   height = copy.height;
-   dupID = copy.dupID;
-   txioCount = copy.txioCount;
-   return *this;
-}
-
-////////
-void StoredSubHistory::unserializeDBValue(BinaryRefReader& brr)
-{
-   if (hgtX.getSize() != 4) {
-      LOGERR << "Cannot unserialize DB value until key is set (hgt&dup)";
-      hgtX.clear();
-      return;
-   }
-
-   BinaryData fullTxKey(8);
-   hgtX.copyTo(fullTxKey.getPtr());
-
-   txioCount = (uint32_t)(brr.get_var_int());
-   for (uint32_t i = 0; i < txioCount; i++) {
-      BitUnpacker<uint8_t> bitunpack(brr);
-      bool isFromSelf   = bitunpack.getBit();
-      bool isCoinbase   = bitunpack.getBit();
-      bool isSpent      = bitunpack.getBit();
-      bool isMulti      = bitunpack.getBit();
-      bool isUTXO       = bitunpack.getBit();
-
-      // We always include the 8-byte value
-      uint64_t txoValue = brr.get_uint64_t();
-      std::map<BinaryData, TxIOPair>::iterator txioIter;
-
-      if (!isSpent) {
-         // First 4 bytes is same for all TxIOs, and was copied outside the loop.
-         // So we grab the last four bytes and copy it to the end.
-         brr.get_BinaryData(fullTxKey.getPtr() + 4, 4);
-         txioIter = txioMap.emplace(
-            fullTxKey, TxIOPair{fullTxKey, txoValue}).first;
-      } else {
-         //spent subssh, TxOut will always carry a full DBkey
-         auto txOutKey = brr.get_BinaryData(8);
-         txioIter = txioMap.emplace(
-            txOutKey, TxIOPair{txOutKey, txoValue}).first;
-
-         //4 bytes entry
-         brr.get_BinaryData(fullTxKey.getPtr() + 4, 4);
-         txioIter->second.setTxIn(fullTxKey);
-      }
-
-      txioIter->second.setUTXO(isUTXO);
-      txioIter->second.setTxOutFromSelf(isFromSelf);
-      txioIter->second.setFromCoinbase(isCoinbase);
-      txioIter->second.setMultisig(isMulti);
-   }
-}
-
-////////
-void StoredSubHistory::serializeDBValue(BinaryWriter& bw) const
-{
-   size_t len = BtcUtils::calcVarIntSize(txioMap.size());
-   for (const auto& txioPair : txioMap) {
-      const auto& txio = txioPair.second;
-      bool isSpent = txio.hasTxIn();
-      len += 13; //bitpack + value + at least 4 bytes of txio key
-      if (isSpent) {
-         len += 8;
-      }
-   }
-
-   bw.reserve(len);
-   bw.put_var_int(txioMap.size());
-   for (const auto& txioPair : txioMap) {
-      TxIOPair const & txio = txioPair.second;
-      bool isSpent = txio.hasTxIn();
-
-      // If spent and only maintaining a pruned DB, skip it
-      if (isSpent) {
-         if (!txio.getTxRefOfInput().isInitialized()) {
-            LOGERR << "TxIO is spent, but input is not initialized";
-            continue;
-         }
-      }
-
-      auto key8B = txio.getDBKeyOfOutput();
-      BitPacker<uint8_t> bitpack;
-      bitpack.putBit(txio.isTxOutFromSelf());
-      bitpack.putBit(txio.isFromCoinbase());
-      bitpack.putBit(txio.hasTxIn());
-      bitpack.putBit(txio.isMultisig());
-      bitpack.putBit(txio.isUTXO());
-      bw.put_BitPacker(bitpack);
-
-      if (!isSpent) {
-         // Always write the value and last 4 bytes of dbkey (first 4 is in dbkey)
-         bw.put_uint64_t(txio.getValue());
-         bw.put_BinaryDataRef(key8B.getSliceRef(4, 4));
-      } else {
-         //spent subssh entry that marks the spent TxOut at the TxIn hgtX
-         //write the full TxOut dbkey, since this is saved at TxIn hgtX
-         bw.put_uint64_t(txio.getValue());
-         bw.put_BinaryData(key8B);
-
-         //Spent subssh are saved by TxIn hgtX, only write the last 4 bytes
-         key8B = std::move(txio.getDBKeyOfInput());
-         bw.put_BinaryDataRef(key8B.getSliceRef(4, 4));
-      }
-   }
-}
-
-void StoredSubHistory::unserializeDBValue(BinaryDataRef bdr)
-{
-   BinaryRefReader brr(bdr);
-   unserializeDBValue(brr);
-}
-
-void StoredSubHistory::unserializeDBKey(BinaryDataRef key, bool withPrefix)
-{
-   uint32_t sz = key.getSize();
-   BinaryRefReader brr(key);
-
-   // Assume prefix
-   if (withPrefix) {
-      DBUtils::checkPrefixByte(brr, DbPrefix::SCRIPT);
-      sz -= 1;
-   }
-
-   brr.advance(sz - 4);
-   brr.get_BinaryData(hgtX, 4);
-
-   uint8_t* hgtXptr = (uint8_t*)hgtX.getPtr();
-   height = 0;
-   uint8_t* hgt = (uint8_t*)&height;
-
-   dupID = hgtXptr[3];
-   hgt[0] = hgtXptr[2];
-   hgt[1] = hgtXptr[1];
-   hgt[2] = hgtXptr[0];
-}
-
-////////
-uint64_t StoredSubHistory::getSubHistoryReceived(bool withMultisig) const
-{
-   uint64_t bal = 0;
-   for (const auto& txioPair : txioMap) {
-      if (txioPair.second.isUTXO() &&
-         (!txioPair.second.isMultisig() || withMultisig)) {
-         bal += txioPair.second.getValue();
-      } else if (txioPair.second.hasTxIn()) {
-         bal += txioPair.second.getValue();
-      }
-   }
-   return bal;
-}
-
-uint64_t StoredSubHistory::getSubHistoryBalance(bool withMultisig) const
-{
-   uint64_t bal = 0;
-   for (const auto& txioPair : txioMap) {
-      if (!txioPair.second.hasTxIn()) {
-         if (!txioPair.second.isMultisig() || withMultisig) {
-            bal += txioPair.second.getValue();
-         }
-      }
-   }
-   return bal;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void StoredSubHistory::compressMany(
-   const std::map<BinaryDataRef, StoredSubHistory*>& ssh,
-   unsigned start_offset, unsigned spent_offset,
-   BinaryWriter& bw)
-{
-   //compute serialized size to prealloc bw
-   size_t len = BtcUtils::calcVarIntSize(ssh.size());
-   for (auto& subssh : ssh) {
-      //height and dup
-      len += BtcUtils::calcVarIntSize(
-         subssh.second->height - start_offset) + 1;
-
-      //txio count
-      len += BtcUtils::calcVarIntSize(subssh.second->txioMap.size());
-      for (const auto& txio_pair : subssh.second->txioMap) {
-         const auto& txio = txio_pair.second;
-
-         //value
-         len += BtcUtils::calcVarIntSize(txio.getValue());
-         if (!txio.hasTxIn()) {
-            /* unspent */
-
-            //flag
-            ++len;
-
-            //tx and output id
-            len += BtcUtils::calcVarIntSize(
-               txio.getTxRefOfOutput().getBlockTxIndex());
-            len += BtcUtils::calcVarIntSize(
-               txio.getIndexOfOutput());
-         } else {
-            /* spent */
-
-            //TxIOPair is slow, convert hgtx manually
-            auto& outputRef = txio.getTxRefOfOutput();
-            auto& txkeyRef = outputRef.getDBKey();
-
-            auto keyptr = txkeyRef.getPtr();
-            unsigned output_height = 0;
-            auto heightPtr = (uint8_t*)&output_height;
-            heightPtr[0] = keyptr[2];
-            heightPtr[1] = keyptr[1];
-            heightPtr[2] = keyptr[0];
-
-            if (output_height != subssh.second->height) {
-               //flag
-               ++len;
-
-               //output
-               auto height = output_height - spent_offset;
-               len += BtcUtils::calcVarIntSize(height) + 1;
-               len += BtcUtils::calcVarIntSize(
-                  txio.getTxRefOfOutput().getBlockTxIndex());
-               len += BtcUtils::calcVarIntSize(
-                  txio.getIndexOfOutput());
-
-               //input
-               len += BtcUtils::calcVarIntSize(txio.getTxRefOfInput().getBlockTxIndex());
-               len += BtcUtils::calcVarIntSize(txio.getIndexOfInput());
-            } else {
-               /* fund and spend happen in same block, only record ids */
-
-               //flag
-               ++len;
-
-               //output
-               len += BtcUtils::calcVarIntSize(
-                  txio.getTxRefOfOutput().getBlockTxIndex());
-               len += BtcUtils::calcVarIntSize(
-                  txio.getIndexOfOutput());
-
-               //input
-               len += BtcUtils::calcVarIntSize(
-                  txio.getTxRefOfInput().getBlockTxIndex());
-               len += BtcUtils::calcVarIntSize(
-                  txio.getIndexOfInput());
-            }
-         }
-      }
-   }
-
-   bw.reserve(len);
-
-   //serialize
-   bw.put_var_int(ssh.size());
-
-   for (auto& subssh : ssh) {
-      //put height offset
-      bw.put_var_int(subssh.second->height - start_offset);
-
-      //extract dupid from subssh and serialize its
-      auto dupId = DBUtils::hgtxToDupID(subssh.first);
-      bw.put_uint8_t(dupId);
-
-      //put txio count
-      bw.put_var_int(subssh.second->txioMap.size());
-
-      //put txios
-      for (const auto& txio_pair : subssh.second->txioMap) {
-         const auto& txio = txio_pair.second;
-         bw.put_var_int(txio.getValue());
-
-         if (!txio.hasTxIn()) {
-            //unspent
-
-            //flag
-            bw.put_uint8_t(0);
-
-            //tx and output id
-            bw.put_var_int(txio.getTxRefOfOutput().getBlockTxIndex());
-            bw.put_var_int(txio.getIndexOfOutput());
-         } else {
-            //spent
-
-            //TxIOPair is slow, convert hgtx manually
-            const auto& outputRef = txio.getTxRefOfOutput();
-            const auto& txkeyRef = outputRef.getDBKey();
-
-            auto keyptr = txkeyRef.getPtr();
-            unsigned output_height = 0;
-            auto heightPtr = (uint8_t*)&output_height;
-            heightPtr[0] = keyptr[2];
-            heightPtr[1] = keyptr[1];
-            heightPtr[2] = keyptr[0];
-            auto output_dupid = keyptr[3];
-
-            if (output_height != subssh.second->height) {
-               //flag
-               bw.put_uint8_t(0xFF);
-
-               //output
-               auto height = output_height - spent_offset;
-               bw.put_var_int(height);
-               bw.put_uint8_t(output_dupid);
-               bw.put_var_int(txio.getTxRefOfOutput().getBlockTxIndex());
-               bw.put_var_int(txio.getIndexOfOutput());
-
-               //input
-               bw.put_var_int(txio.getTxRefOfInput().getBlockTxIndex());
-               bw.put_var_int(txio.getIndexOfInput());
-            } else {
-               //fund and spend happen in same block, only record ids
-
-               //flag
-               bw.put_uint8_t(1);
-
-               //output
-               bw.put_var_int(txio.getTxRefOfOutput().getBlockTxIndex());
-               bw.put_var_int(txio.getIndexOfOutput());
-
-               //input
-               bw.put_var_int(txio.getTxRefOfInput().getBlockTxIndex());
-               bw.put_var_int(txio.getIndexOfInput());
-            }
-         }
-      }
-   }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// StoredTxHints
-StoredTxHints::StoredTxHints() :
-   txHashPrefix(0), dbKeyList(0), preferredDBKey(0)
-{}
-
-bool StoredTxHints::isInitialized() const
-{
-   return !txHashPrefix.empty();
-}
-
-size_t StoredTxHints::getNumHints() const
-{
-   return dbKeyList.size();
-}
-
-BinaryDataRef StoredTxHints::getHint(uint32_t i) const
-{
-   return dbKeyList[i].getRef();
-}
-
-void StoredTxHints::unserializeDBValue(BinaryRefReader& brr)
-{
-   uint64_t numHints = (brr.getSizeRemaining()==0 ? 0 : brr.get_var_int());
-   dbKeyList.resize((uint32_t)numHints);
-   for (uint32_t i=0; i<numHints; i++) {
-      brr.get_BinaryData(dbKeyList[i], 6);
-   }
-   // Preferred simply means it's supposed to be first in the list
-   // This simply improves search time in the event there's multiple hints
-   if (numHints > 0) {
-      preferredDBKey = dbKeyList[0];
-   }
-}
-
-void StoredTxHints::serializeDBValue(BinaryWriter& bw) const
-{
-   bw.put_var_int(dbKeyList.size());
-   // Find and write the preferred key first, skip all unpreferred (the first
-   // one in the list is the preferred key... that paradigm could be improved
-   // for sure...)
-   for (const auto& dbKey : dbKeyList) {
-      if (dbKey != preferredDBKey) {
-         continue;
-      }
-      bw.put_BinaryData(dbKey);
-      break;
-   }
-
-   // Now write all the remaining keys in whatever order they are naturally
-   // sorted (skip the preferred key since it was already written)
-   for (const auto& dbKey : dbKeyList) {
-      if (dbKey == preferredDBKey) {
-         continue;
-      }
-      bw.put_BinaryData(dbKey);
-   }
-}
-
-////////
-void StoredTxHints::unserializeDBValue(const BinaryData& bd)
-{
-   BinaryRefReader brr(bd);
-   unserializeDBValue(brr);
-}
-
-void StoredTxHints::unserializeDBValue(BinaryDataRef bdr)
-{
-   BinaryRefReader brr(bdr);
-   unserializeDBValue(brr);
-}
-
-BinaryData StoredTxHints::serializeDBValue() const
-{
-   BinaryWriter bw;
-   serializeDBValue(bw);
-   return bw.getData();
-}
-
-////////
-BinaryData StoredTxHints::getDBKey(bool withPrefix) const
-{
-   if (!withPrefix) {
-      return txHashPrefix;
-   } else {
-      BinaryWriter bw(5);
-      bw.put_uint8_t((uint8_t)DbPrefix::TXHINTS);
-      bw.put_BinaryData(txHashPrefix);
-      return bw.getData();
-   }
-}
-
-void StoredTxHints::unserializeDBKey(BinaryDataRef key, bool withPrefix)
-{
-   if (withPrefix) {
-      txHashPrefix = key.getSliceCopy(1, 4);
-   } else {
-      txHashPrefix = key;
-   }
-}
-
-void StoredTxHints::setPreferredTx(
-   uint32_t height, uint8_t dupID, uint16_t txIndex)
-{
-   preferredDBKey = DBUtils::getBlkDataKeyNoPrefix(height, dupID, txIndex);
-}
-
-void StoredTxHints::setPreferredTx(BinaryData dbKey6B)
-{
-   preferredDBKey = dbKey6B;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// StoredHeadHgtList
-StoredHeadHgtList::StoredHeadHgtList() :
-   height(UINT32_MAX), preferredDup(UINT8_MAX)
-{}
-
-bool StoredHeadHgtList::isInitialized() const
-{
-   return height != UINT32_MAX;
-}
-
-void StoredHeadHgtList::setPreferredDupID(uint8_t newDup)
-{
-   preferredDup = newDup;
-}
-
-////////
-void StoredHeadHgtList::unserializeDBValue(BinaryRefReader& brr)
-{
-   uint32_t numHeads = brr.get_uint8_t();
-   dupAndHashList.resize(numHeads);
-   preferredDup = UINT8_MAX;
-   for (uint32_t i = 0; i < numHeads; i++) {
-      uint8_t dup = brr.get_uint8_t();
-      dupAndHashList[i].first = dup & 0x7f;
-      brr.get_BinaryData(dupAndHashList[i].second, 32);
-      if ((dup & 0x80) > 0) {
-         preferredDup = dup & 0x7f;
-      }
-   }
-}
-
-void StoredHeadHgtList::serializeDBValue(BinaryWriter& bw) const
-{
-   bw.put_uint8_t(dupAndHashList.size());
-
-   // Write the preferred/valid block header first
-   for (const auto& dahPair : dupAndHashList) {
-      if (dahPair.first != preferredDup) {
-         continue;
-      }
-      bw.put_uint8_t(dahPair.first | 0x80);
-      bw.put_BinaryData(dahPair.second);
-      break;
-   }
-
-   // Now write everything else
-   for (const auto& dahPair : dupAndHashList) {
-      if (dahPair.first == preferredDup) {
-         continue;
-      }
-      bw.put_uint8_t(dahPair.first & 0x7f);
-      bw.put_BinaryData(dahPair.second);
-   }
-}
-
-void StoredHeadHgtList::unserializeDBValue(const BinaryData& bd)
-{
-   BinaryRefReader brr(bd);
-   unserializeDBValue(brr);
-}
-
-void StoredHeadHgtList::unserializeDBValue(BinaryDataRef bdr)
-{
-   BinaryRefReader brr(bdr);
-   unserializeDBValue(brr);
-}
-
-BinaryData StoredHeadHgtList::serializeDBValue() const
-{
-   BinaryWriter bw;
-   serializeDBValue(bw);
-   return bw.getData();
-}
-
-////////
-BinaryData StoredHeadHgtList::getDBKey(bool withPrefix) const
-{
-   BinaryWriter bw(5);
-   if (withPrefix) {
-      bw.put_uint8_t((uint8_t)DbPrefix::HEADHGT);
-   }
-   bw.put_uint32_t(height, BE);
-   return bw.getData();
-
-}
-
-void StoredHeadHgtList::unserializeDBKey(BinaryDataRef key)
-{
-   BinaryRefReader brr(key);
-   if (key.getSize() == 5) {
-      uint8_t prefix = brr.get_uint8_t();
-      if (prefix != (uint8_t)DbPrefix::HEADHGT) {
-         LOGERR << "Unserialized HEADHGT key but wrong prefix";
-         return;
-      }
-   }
-   height = brr.get_uint32_t(BE);
-}
-
-////////
-void StoredHeadHgtList::addDupAndHash(uint8_t dup, BinaryDataRef hash)
-{
-   for (auto& dah : dupAndHashList) {
-      if (dah.first == dup) {
-         if (dah.second != hash) {
-            LOGERR << "Pushing different hash into existing HHL dupID"; 
-         }
-         dah = std::make_pair(dup, hash);
-         return;
-      }
-   }
-   dupAndHashList.emplace_back(std::make_pair(dup, hash));
 }

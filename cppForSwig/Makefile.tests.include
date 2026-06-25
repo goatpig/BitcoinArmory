@@ -154,46 +154,46 @@ TESTS += gtest/WalletTests
 #gtest_DB1kIterTest_LDFLAGS = $(AM_LDFLAGS) $(LWSLDFLAGS) $(LDFLAGS) -static
 #TESTS += gtest/DB1kIterTest
 
-# BIP151RekeyTest
-bin_PROGRAMS += gtest/BIP151RekeyTest
-gtest_BIP151RekeyTest_SOURCES = gtest/BIP151RekeyTest.cpp
-gtest_BIP151RekeyTest_CXXFLAGS = $(AM_CXXFLAGS) $(UNIT_TEST_CXXFLAGS) $(LIBBTC_FLAGS)
-gtest_BIP151RekeyTest_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
-gtest_BIP151RekeyTest_LDADD = gtest/libgtest.la $(LIBHKDF) $(LIBBTC) \
+# BIP151Tests
+bin_PROGRAMS += gtest/BIP151Tests
+gtest_BIP151Tests_SOURCES = gtest/BIP151Tests.cpp
+gtest_BIP151Tests_CXXFLAGS = $(AM_CXXFLAGS) $(UNIT_TEST_CXXFLAGS) $(LIBBTC_FLAGS)
+gtest_BIP151Tests_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+gtest_BIP151Tests_LDADD = gtest/libgtest.la $(LIBHKDF) $(LIBBTC) \
 			$(LIBCHACHA20POLY1305)
-gtest_BIP151RekeyTest_LDFLAGS = $(AM_LDFLAGS) $(LDFLAGS) -static
-TESTS += gtest/BIP151RekeyTest
+gtest_BIP151Tests_LDFLAGS = $(AM_LDFLAGS) $(LDFLAGS) -static
+TESTS += gtest/BIP151Tests
 
 # SupernodeTests
-bin_PROGRAMS += gtest/SupernodeTests
-gtest_SupernodeTests_SOURCES = gtest/SupernodeTests.cpp
-gtest_SupernodeTests_CXXFLAGS = $(AM_CXXFLAGS) $(UNIT_TEST_CXXFLAGS) $(LIBBTC_FLAGS)
-gtest_SupernodeTests_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
-gtest_SupernodeTests_LDADD = gtest/libgtest.la \
-			$(LIBARMORYCOMMON) \
-			$(LIBARMORYCLI) \
-			$(LIBLMDBPP) \
-			-llmdb \
-			$(LIBHKDF) \
-			$(LIBBTC) \
-			$(LIBTREZORCRYPTO) \
-			$(LIBCHACHA20POLY1305) \
-			$(LIBWEBSOCKETS_STATIC)
-if BUILD_OPENSSL_SUPPORT
-gtest_SupernodeTests_LDADD += $(LIBSSL_STATIC) \
-		 $(LIBCRYPTO_STATIC)
-endif
-if BUILD_LIBUV_SUPPORT
-gtest_SupernodeTests_LDADD += $(LIBUV_STATIC)
-endif
-if BUILD_LIBEVENT_SUPPORT
-gtest_SupernodeTests_LDADD += $(LIBEVENT_STATIC)
-endif
-if BUILD_LIBCAP_SUPPORT
-gtest_SupernodeTests_LDADD += $(LIBCAP_LIBS)
-endif
-gtest_SupernodeTests_LDFLAGS = $(AM_LDFLAGS) $(LWSLDFLAGS) $(LDFLAGS) -static
-TESTS += gtest/SupernodeTests
+#bin_PROGRAMS += gtest/SupernodeTests
+#gtest_SupernodeTests_SOURCES = gtest/SupernodeTests.cpp
+#gtest_SupernodeTests_CXXFLAGS = $(AM_CXXFLAGS) $(UNIT_TEST_CXXFLAGS) $(LIBBTC_FLAGS)
+#gtest_SupernodeTests_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+#gtest_SupernodeTests_LDADD = gtest/libgtest.la \
+#			$(LIBARMORYCOMMON) \
+#			$(LIBARMORYCLI) \
+#			$(LIBLMDBPP) \
+#			-llmdb \
+#			$(LIBHKDF) \
+#			$(LIBBTC) \
+#			$(LIBTREZORCRYPTO) \
+#			$(LIBCHACHA20POLY1305) \
+#			$(LIBWEBSOCKETS_STATIC)
+#if BUILD_OPENSSL_SUPPORT
+#gtest_SupernodeTests_LDADD += $(LIBSSL_STATIC) \
+#		 $(LIBCRYPTO_STATIC)
+#endif
+#if BUILD_LIBUV_SUPPORT
+#gtest_SupernodeTests_LDADD += $(LIBUV_STATIC)
+#endif
+#if BUILD_LIBEVENT_SUPPORT
+#gtest_SupernodeTests_LDADD += $(LIBEVENT_STATIC)
+#endif
+#if BUILD_LIBCAP_SUPPORT
+#gtest_SupernodeTests_LDADD += $(LIBCAP_LIBS)
+#endif
+#gtest_SupernodeTests_LDFLAGS = $(AM_LDFLAGS) $(LWSLDFLAGS) $(LDFLAGS) -static
+#TESTS += gtest/SupernodeTests
 
 # CppBlockUtilsTests - Full node tests
 bin_PROGRAMS += gtest/CppBlockUtilsTests

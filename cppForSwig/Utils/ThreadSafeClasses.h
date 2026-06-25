@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig.                                         //
+//  Copyright (C) 2016-2026, goatpig.                                         //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -204,6 +204,15 @@ namespace Armory
          {
             return count_;
          }
+
+         std::deque<T> pop_all(void)
+         {
+            std::unique_lock<std::mutex> lock(condVarMutex_);
+            std::deque<T> newQueue;
+            std::swap(queue_, newQueue);
+            condVar_.notify_all();
+            return std::move(newQueue);
+         }
       };
 
       //////////////////////////////////////////////////////////////////////////
@@ -336,7 +345,7 @@ namespace Armory
 
       private:
          mutable std::mutex mu_;
-         std::shared_ptr<std::map<T, U>> map_;
+         std::atomic<std::shared_ptr<std::map<T, U>>> map_;
          std::atomic<size_t> count_;
 
       public:
@@ -344,31 +353,31 @@ namespace Armory
          TransactionalMap(void)
          {
             count_.store(0, std::memory_order_relaxed);
-            map_ = std::make_shared<std::map<T, U>>();
+            map_.store(std::make_shared<std::map<T, U>>());
          }
 
          void insert(std::pair<T, U>&& mv)
          {
+            auto thisMap = map_.load();
             auto newMap = std::make_shared<std::map<T, U>>();
 
-            std::unique_lock<std::mutex> lock(mu_);
-            newMap->insert(map_->begin(), map_->end());
+            newMap->insert(thisMap->begin(), thisMap->end());
             newMap->emplace(std::move(mv));
 
-            atomic_store(&map_, newMap);
-            count_.store(map_->size(), std::memory_order_relaxed);
+            count_.store(newMap->size(), std::memory_order_relaxed);
+            map_.store(newMap);
          }
 
          void insert(const std::pair<T, U>& obj)
          {
+            auto thisMap = map_.load();
             auto newMap = std::make_shared<std::map<T, U>>();
 
-            std::unique_lock<std::mutex> lock(mu_);
-            newMap->insert(map_->begin(), map_->end());
+            newMap->insert(thisMap->begin(), thisMap->end());
             newMap->emplace(obj);
 
-            std::atomic_store(&map_, newMap);
-            count_.store(map_->size(), std::memory_order_relaxed);
+            count_.store(newMap->size(), std::memory_order_relaxed);
+            map_.store(newMap);
          }
 
          void update(std::map<T, U> updatemap)
@@ -376,32 +385,28 @@ namespace Armory
             if (updatemap.empty()) {
                return;
             }
+            auto thisMap = map_.load();
             auto newMap = std::make_shared<std::map<T, U>>(std::move(updatemap));
+            newMap->insert(thisMap->begin(), thisMap->end());
 
-            std::unique_lock<std::mutex> lock(mu_);
-            for (auto& data_pair : *map_) {
-               newMap->emplace(data_pair);
-            }
-
-            std::atomic_store(&map_, newMap);
-            count_.store(map_->size(), std::memory_order_relaxed);
+            count_.store(newMap->size(), std::memory_order_relaxed);
+            map_.store(newMap);
          }
 
          void erase(const T& id)
          {
-            std::unique_lock<std::mutex> lock(mu_);
-
-            auto iter = map_->find(id);
-            if (iter == map_->end()) {
+            auto thisMap = map_.load();
+            auto iter = thisMap->find(id);
+            if (iter == thisMap->end()) {
                return;
             }
 
             auto newMap = std::make_shared<std::map<T, U>>();
-            newMap->insert(map_->begin(), map_->end());
+            newMap->insert(thisMap->begin(), thisMap->end());
             newMap->erase(id);
 
-            std::atomic_store(&map_, newMap);
-            count_.store(map_->size(), std::memory_order_relaxed);
+            count_.store(newMap->size(), std::memory_order_relaxed);
+            map_.store(newMap);
          }
 
          void erase(const std::vector<T>& idVec)
@@ -409,22 +414,16 @@ namespace Armory
             if (idVec.empty()) {
                return;
             }
+            auto thisMap = map_.load();
             auto newMap = std::make_shared<std::map<T, U>>();
 
-            std::unique_lock<std::mutex> lock(mu_);
-            newMap->insert(map_->begin(), map_->end());
-
-            bool erased = false;
-            for (auto& id : idVec) {
-               if (newMap->erase(id) != 0) {
-                  erased = true;
-               }
+            newMap->insert(thisMap->begin(), thisMap->end());
+            for (const auto& id : idVec) {
+               newMap->erase(id);
             }
 
-            if (erased) {
-               std::atomic_store(&map_, newMap);
-            }
-            count_.store(map_->size(), std::memory_order_relaxed);
+            count_.store(newMap->size(), std::memory_order_relaxed);
+            map_.store(newMap);
          }
 
          void erase(const std::deque<T>& idVec)
@@ -432,39 +431,31 @@ namespace Armory
             if (idVec.empty()) {
                return;
             }
+            auto thisMap = map_.load();
             auto newMap = std::make_shared<std::map<T, U>>();
-
-            std::unique_lock<std::mutex> lock(mu_);
             newMap->insert(map_->begin(), map_->end());
 
-            bool erased = false;
-            for (auto& id : idVec) {
-               if (newMap->erase(id) != 0) {
-                  erased = true;
-               }
+            for (const auto& id : idVec) {
+               newMap->erase(id);
             }
 
-            if (erased) {
-               std::atomic_store(&map_, newMap);
-            }
-            count_.store(map_->size(), std::memory_order_relaxed);
+            count_.store(newMap->size(), std::memory_order_relaxed);
+            map_.store(newMap);
          }
 
          std::shared_ptr<std::map<T, U>> pop_all(void)
          {
+            auto thisMap = map_.load();
             auto newMap = std::make_shared<std::map<T, U>>();
-            std::unique_lock<std::mutex> lock(mu_);
 
-            auto retMap = atomic_load(&map_);
-            std::atomic_store(&map_, newMap);
-
-            count_.store(map_->size(), std::memory_order_relaxed);
-            return retMap;
+            count_.store(0, std::memory_order_relaxed);
+            map_.store(newMap);
+            return thisMap;
          }
 
          std::shared_ptr<const std::map<T, U>> get(void) const
          {
-            auto retMap = std::atomic_load(&map_);
+            auto retMap = map_.load();
             auto retConstMap = std::static_pointer_cast<const std::map<T, U>>(
                retMap);
             return retConstMap;
@@ -472,11 +463,11 @@ namespace Armory
 
          void clear(void)
          {
+            auto thisMap = map_.load();
             auto newMap = std::make_shared<std::map<T, U>>();
-            std::unique_lock<std::mutex> lock(mu_);
 
-            std::atomic_store(&map_, newMap);
             count_.store(0, std::memory_order_relaxed);
+            map_.store(newMap);
          }
 
          size_t size(void) const
@@ -487,164 +478,6 @@ namespace Armory
          bool empty(void) const
          {
             return size() == 0;
-         }
-      };
-
-      //////////////////////////////////////////////////////////////////////////
-      template<typename T> class TransactionalSet
-      {
-         /*
-         - locked writes, using a mutex for sequential updating
-         - lockless reads as long as atomic_...<shared_ptr> operations are
-           lockess on the target platform
-
-         memory order is not set explicity, it defaults to seq_cst
-         */
-
-      private:
-         mutable std::mutex mu_;
-         std::shared_ptr<std::set<T>> set_;
-         std::atomic<size_t> count_;
-
-      public:
-
-         TransactionalSet(void)
-         {
-            count_.store(0, std::memory_order_relaxed);
-            set_ = std::make_shared<std::set<T>>();
-         }
-
-         void insert(T&& mv)
-         {
-            auto newSet = std::make_shared<std::set<T>>();
-
-            std::unique_lock<std::mutex> lock(mu_);
-            newSet->insert(set_->begin(), set_->end());
-            newSet->insert(move(mv));
-
-            std::atomic_store(&set_, newSet);
-            count_.store(set_->size(), std::memory_order_relaxed);
-         }
-
-         void insert(const T& obj)
-         {
-            auto newSet = std::make_shared<std::set<T>>();
-
-            std::unique_lock<std::mutex> lock(mu_);
-            newSet->insert(set_->begin(), set_->end());
-            newSet->insert(obj);
-
-            std::atomic_store(&set_, newSet);
-            count_.store(set_->size(), std::memory_order_relaxed);
-         }
-
-         void insert(const std::set<T>& dataSet)
-         {
-            if (dataSet.size() == 0)
-               return;
-
-            auto newSet = std::make_shared<std::set<T>>();
-
-            std::unique_lock<std::mutex> lock(mu_);
-            newSet->insert(set_->begin(), set_->end());
-            newSet->insert(dataSet.begin(), dataSet.end());
-
-            atomic_store(&set_, newSet);
-            count_.store(set_->size(), std::memory_order_relaxed);
-         }
-
-         void erase(const T& id)
-         {
-            std::unique_lock<std::mutex> lock(mu_);
-
-            auto iter = set_->find(id);
-            if (iter == set_->end())
-               return;
-
-            auto newSet = std::make_shared<std::set<T>>();
-            newSet->insert(set_->begin(), set_->end());
-            newSet->erase(id);
-
-            std::atomic_store(&set_, newSet);
-            count_.store(set_->size(), std::memory_order_relaxed);
-         }
-
-         void erase(const std::vector<T>& idVec)
-         {
-            if (idVec.size() == 0)
-               return;
-
-            auto newSet = std::make_shared<std::set<T>>();
-
-            std::unique_lock<std::mutex> lock(mu_);
-            newSet->insert(set_->begin(), set_->end());
-
-            bool erased = false;
-            for (auto& id : idVec)
-            {
-               if (newSet->erase(id) != 0)
-               erased = true;
-            }
-
-            if (erased)
-               std::atomic_store(&set_, newSet);
-
-            count_.store(set_->size(), std::memory_order_relaxed);
-         }
-
-         void erase(const std::deque<T>& idVec)
-         {
-            if (idVec.size() == 0)
-               return;
-
-            auto newSet = std::make_shared<std::set<T>>();
-
-            std::unique_lock<std::mutex> lock(mu_);
-            newSet->insert(set_->begin(), set_->end());
-
-            bool erased = false;
-            for (auto& id : idVec)
-            {
-               if (newSet->erase(id) != 0)
-                  erased = true;
-            }
-
-            if (erased)
-               std::atomic_store(&set_, newSet);
-
-            count_.store(set_->size(), std::memory_order_relaxed);
-         }
-
-         std::shared_ptr<std::set<T>> pop_all(void)
-         {
-            auto newSet = std::make_shared<std::set<T>>();
-            std::unique_lock<std::mutex> lock(mu_);
-
-            auto retSet = std::atomic_load(&set_);
-            std::atomic_store(&set_, newSet);
-            count_.store(set_->size(), std::memory_order_relaxed);
-
-            return retSet;
-         }
-
-         std::shared_ptr<std::set<T>> get(void) const
-         {
-            auto retSet = std::atomic_load(&set_);
-            return retSet;
-         }
-
-         void clear(void)
-         {
-            auto newSet = std::make_shared<std::set<T>>();
-            std::unique_lock<std::mutex> lock(mu_);
-
-            std::atomic_store(&set_, newSet);
-            count_.store(0, std::memory_order_relaxed);
-         }
-
-         size_t size(void) const
-         {
-            return count_.load(std::memory_order_relaxed);
          }
       };
    }; //namespace Threading

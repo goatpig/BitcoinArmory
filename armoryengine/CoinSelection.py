@@ -1,5 +1,3 @@
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
 ################################################################################
 #                                                                              #
 # Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
@@ -188,10 +186,6 @@ class PyUnspentTxOut(object):
       bridgeUtxo.script = self.binScript
       bridgeUtxo.txHeight = self.txHeight
       bridgeUtxo.txIndex = self.txIndex
-
-################################################################################
-def sumTxOutList(txoutList):
-   return sum([u.getValue() for u in txoutList])
 
 ################################################################################
 # This is really just for viewing a TxOut list -- usually for debugging

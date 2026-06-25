@@ -939,29 +939,25 @@ def extractTxInfo(pytx, rcvTime=None):
       txin = pytx.getTxIn(i)
       hashesToFetch.append(txin.getOutPoint().txHash)
    txns = TheBridge.service.getTxsByHash(hashesToFetch)
-
-   if TheBDM.getState() == BDM_BLOCKCHAIN_READY and hasTxHash:
-      if txHash in txns:
-         txProto = txns[txHash]
-         hgt = txProto.height
-         txWeight = pytx.getTxWeight()
-         if hgt <= TheBDM.getTopBlockHeight():
-            blockTime = TheBridge.service.getBlockTimeByHeight(hgt)
-            txTime = unixTimeToFormatStr(blockTime)
-            txBlk = hgt
-            txIdx = txProto.txIndex
-            txSize = pytx.getSize()
+   if txHash in txns:
+      txProto = txns[txHash]
+      timestamp = txProto.timestamp
+      hgt = txProto.height
+      txWeight = pytx.getTxWeight()
+      if hgt <= TheBDM.getTopBlockHeight():
+         txTime = unixTimeToFormatStr(timestamp)
+         txBlk = hgt
+         txIdx = txProto.txIndex
+         txSize = pytx.getSize()
+      else:
+         if timestamp == None:
+            txTime = 'Unknown'
+         elif timestamp == -1:
+            txTime = '[[Not broadcast yet]]'
          else:
-            if rcvTime == None:
-               txTime = 'Unknown'
-            elif rcvTime == -1:
-               txTime = '[[Not broadcast yet]]'
-            elif isinstance(rcvTime, str):
-               txTime = rcvTime
-            else:
-               txTime = unixTimeToFormatStr(rcvTime)
-            txBlk = UINT32_MAX
-            txIdx = -1
+            txTime = unixTimeToFormatStr(timestamp)
+         txBlk = UINT32_MAX
+         txIdx = -1
 
    txinFromList = []
    if TheBDM.getState() == BDM_BLOCKCHAIN_READY and pytx.isInitialized():
@@ -973,7 +969,7 @@ def extractTxInfo(pytx, rcvTime=None):
          prevTxIndex = txin.getOutPoint().txOutIndex
          if prevTxHash in txns:
             prevTxProto = txns[prevTxHash]
-            prevTx = PyTx().unserialize(prevTxProto.raw)
+            prevTx = PyTx().unserialize(prevTxProto.body.raw)
             prevTxOut = prevTx.getTxOut(prevTxIndex)
             txinFromList[-1].append(prevTxOut.getScrAddressStr())
             txinFromList[-1].append(prevTxOut.getValue())

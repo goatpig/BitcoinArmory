@@ -83,7 +83,8 @@ CPPBRIDGE_SOURCE_FILES = BridgeAPI/CppBridge.cpp \
 	BridgeAPI/Wallets/Manager.cpp \
 	BridgeAPI/Wallets/Notifications.cpp \
 	BridgeAPI/Wallets/TxIOCache.cpp \
-	BridgeAPI/BlockchainDbClient.cpp
+	BridgeAPI/BlockchainDbClient.cpp \
+	Ledgers/Context.cpp Ledgers/LedgerEntry.cpp
 
 LIBTREZORCRYPTO_SOURCE_FILES = $(LIBBTC_LIBDIR)/src/trezor-crypto/bip39.c \
 	$(LIBBTC_LIBDIR)/src/trezor-crypto/pbkdf2.c \
@@ -93,6 +94,7 @@ LIBTREZORCRYPTO_SOURCE_FILES = $(LIBBTC_LIBDIR)/src/trezor-crypto/bip39.c \
 
 ARMORYUTILS_SOURCE_FILES = Utils/ArmoryConfig.cpp \
 	Utils/BinaryData.cpp \
+	Utils/Types.cpp \
 	Utils/BIP15x_Handshake.cpp \
 	Utils/BIP150_151.cpp \
 	Utils/BitcoinSettings.cpp \
@@ -103,6 +105,7 @@ ARMORYUTILS_SOURCE_FILES = Utils/ArmoryConfig.cpp \
 	Utils/TxOutScrRef.cpp \
 	Utils/Cryptography.cpp \
 	Utils/DBUtils.cpp \
+	Utils/FileUtils.cpp \
 	Utils/HttpMessage.cpp \
 	Utils/JSON_codec.cpp \
 	Utils/log.cpp \
@@ -153,6 +156,7 @@ ARMORYSIGNER_SOURCE_FILES = Signer/Script.cpp \
 	capnp/Types.capnp.c++
 
 BLOCKCHAINDB_SOURCE_FILES = BlockchainDatabase/Blockchain.cpp \
+	BlockchainDatabase/BlockchainData.cpp \
 	BlockchainDatabase/BlockchainScanner.cpp \
 	BlockchainDatabase/BlockchainScanner_Super.cpp \
 	BlockchainDatabase/BlockDataMap.cpp \
@@ -161,7 +165,6 @@ BLOCKCHAINDB_SOURCE_FILES = BlockchainDatabase/Blockchain.cpp \
 	BlockchainDatabase/DatabaseBuilder.cpp \
 	BlockchainDatabase/lmdb_wrapper.cpp \
 	BlockchainDatabase/ScrAddrFilter.cpp \
-	BlockchainDatabase/SshParser.cpp \
 	BlockchainDatabase/StoredBlockObj.cpp \
 	BlockchainDatabase/TxHashFilters.cpp \
 	BlockchainDatabase/txio.cpp
@@ -169,18 +172,15 @@ BLOCKCHAINDB_SOURCE_FILES = BlockchainDatabase/Blockchain.cpp \
 ARMORYCLI_SOURCE_FILES = BDM_mainthread.cpp \
 	BDM_Server.cpp \
 	BDV_Notification.cpp \
-	BitcoinP2P.cpp \
+	Node/BitcoinP2P.cpp \
+	Node/nodeRPC.cpp \
 	BlockDataViewer.cpp \
 	BtcWallet.cpp \
-	Ledgers/HistoryPager.cpp \
-	Ledgers/LedgerEntry.cpp \
-	Ledgers/Context.cpp \
-	nodeRPC.cpp \
 	Progress.cpp \
 	ScrAddrObj.cpp \
 	Server.cpp \
-	SocketService_unix.cpp \
-	StringSockets.cpp \
+	Network/SocketService_unix.cpp \
+	Network/StringSockets.cpp \
 	ZeroConf/Utils.cpp \
 	ZeroConf/Notifications.cpp \
 	ZeroConf/Parser.cpp \
@@ -191,10 +191,10 @@ ARMORYCOMMON_SOURCE_FILES = capnp/Types.capnp.c++ \
 	capnp/BDV.capnp.c++ \
 	AsyncClient.cpp \
 	DBClientClasses.cpp \
-	SocketObject.cpp \
+	Network/SocketObject.cpp \
 	TxClasses.cpp \
-	WebSocketClient.cpp \
-	WebSocketMessage.cpp
+	Network/WebSocketClient.cpp \
+	Network/WebSocketMessage.cpp
 
 ################################################################################
 ## LMDB (DB used by Armory). On macOS, don't use SYSV semaphores (the default),

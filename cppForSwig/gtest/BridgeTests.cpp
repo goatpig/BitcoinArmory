@@ -13,7 +13,7 @@
 #include "TestUtils.h"
 #include <reorgTest/blkdata.h>
 #include <Utils/ArmoryConfig.h>
-#include <Utils/DBUtils.h>
+#include <Utils/FileUtils.h>
 #include <Ledgers/LedgerEntry.h>
 
 #include <Wallets/Accounts/AddressAccounts.h>
@@ -27,11 +27,11 @@
 #include <BridgeAPI/ProtoCommandParser.h>
 #include <BridgeAPI/Wallets/Manager.h>
 #include <BridgeAPI/Wallets/Notifications.h>
+#include <BridgeAPI/Wallets/TxIOCache.h>
 #include <BridgeAPI/BlockchainDbClient.h>
 
 #include "BDM_mainthread.h"
 #include "Server.h"
-#include "WebSocketClient.h"
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>
@@ -171,7 +171,7 @@ namespace {
             capnLedger.getTxOutIndex(), capnLedger.getTxTime(),
             addrSet,
             capnLedger.getIsCoinbase(), capnLedger.getIsSTS(), capnLedger.getIsChangeBack(),
-            capnLedger.getIsOptInRBF(), capnLedger.getIsWitness(), capnLedger.getIsChainedZC()
+            capnLedger.getIsOptInRBF(), capnLedger.getIsChainedZC()
          });
       }
       return result;
@@ -183,7 +183,6 @@ namespace {
       std::vector<std::vector<Ledgers::Entry>> result;
       result.reserve(capnLedgers.size());
 
-      unsigned i=0;
       for (auto txLedgers : capnLedgers) {
          result.emplace_back(capnToLedgers(txLedgers));
       }
@@ -432,9 +431,9 @@ namespace {
                      }
 
                      auto fullPath = std::filesystem::path{"./fakehomedir"} / path;
-                     if (!FileUtils::fileExists(fullPath, 0)) {
+                     if (!FileUtils::pathExists(fullPath, 0)) {
                         fullPath = std::filesystem::path{"./fakehomedir/temp"} / path;
-                        if (!FileUtils::fileExists(fullPath, 0)) {
+                        if (!FileUtils::pathExists(fullPath, 0)) {
                            throw std::runtime_error("wallet path is invalid!");
                         }
                      }
@@ -507,7 +506,6 @@ namespace {
 
             case Codec::Bridge::Notification::RESTORE:
             {
-               auto restoreNotif = notif.getRestore();
                throw std::runtime_error("got a restore notif in wallet creation progress!");
             }
 
@@ -532,14 +530,14 @@ namespace {
          {}, {}, masterId, {},
          {}, {},
          true, false, {}, 0, 0,
-         path
+         path, 0
       };
    }
 
    std::string createAWallet(std::shared_ptr<Bridge::CppBridge> bridge,
       std::chrono::milliseconds targetMs, uint32_t lookup, bool isBIP32)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
       capnp::MallocMessageBuilder message;
@@ -600,7 +598,7 @@ namespace {
       std::shared_ptr<Bridge::CppBridge> bridge, const std::string& walletId,
       const std::string& passphrase, Codec::Bridge::WalletBackup::Type backupType)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
       capnp::MallocMessageBuilder message;
@@ -724,7 +722,7 @@ namespace {
          backupType == Codec::Bridge::WalletBackup::Type::ARMORY200_B ? true : false;
 
       //restore the wallet
-      auto refId = rand();
+      uint64_t refId = rand();
       auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
       {
@@ -756,7 +754,6 @@ namespace {
       }
 
       //backup deser notifs
-      unsigned notifCount = 0;
       bool restoringBackup = true;
       while (restoringBackup) {
          auto result = waitOnReply();
@@ -849,7 +846,7 @@ namespace {
    std::map<std::string, WalletData> loadWallets(
       std::shared_ptr<Bridge::CppBridge> bridge)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
 
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
@@ -884,7 +881,7 @@ namespace {
    std::map<std::string, WltListEntry> listWallets(
       std::shared_ptr<Bridge::CppBridge> bridge)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
 
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
@@ -931,7 +928,7 @@ namespace {
       std::shared_ptr<Bridge::CppBridge> bridge,
       const std::string& walletId)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
 
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
@@ -966,7 +963,7 @@ namespace {
       std::shared_ptr<Bridge::CppBridge> bridge,
       const std::string& walletId, const std::string& accId)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
 
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
@@ -1000,7 +997,7 @@ namespace {
       const std::string& currentPass, const std::string& newPass)
    {
       auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
-      auto refId = rand();
+      uint64_t refId = rand();
 
       //start passphrase change sequence
       {
@@ -1134,7 +1131,7 @@ namespace {
       const std::string& dbId, unsigned count, bool isNew)
    {
       auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
-      auto refId = rand();
+      uint64_t refId = rand();
 
       //start chain extension sequence
       {
@@ -1155,8 +1152,8 @@ namespace {
       }
       bool run = true;
       MsgPtr rawReply;
-      int notifCount = 0;
-      int lastKnownCount = 0;
+      unsigned notifCount = 0;
+      unsigned lastKnownCount = 0;
       std::string refreshId;
       while (run) {
          auto rawPrompt = waitOnReply();
@@ -1305,7 +1302,7 @@ namespace {
       const std::string& accountId,
       uint32_t addressType=0)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -1349,7 +1346,7 @@ namespace {
       const std::string& walletId,
       bool stage)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
 
       //request staging change
       {
@@ -1426,6 +1423,10 @@ namespace {
                }
                return success;
             }
+
+            default:
+               EXPECT_TRUE(false);
+               break;
          }
       }
    }
@@ -1434,7 +1435,7 @@ namespace {
       const std::string& ip, const std::string& port,
       const std::string& expectedPubkey)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       auto callbackId = Cryptography::PRNG::fortuna.generateRandom(4).toHexStr();
       {
          capnp::MallocMessageBuilder message;
@@ -1487,7 +1488,7 @@ namespace {
    bool connectToPeer(std::shared_ptr<Bridge::CppBridge> bridge,
       const std::string& peerKey)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -1503,7 +1504,7 @@ namespace {
       const std::filesystem::path& satoshiDir,
       const std::filesystem::path& dbDir)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -1519,7 +1520,7 @@ namespace {
 
    bool registerWallets(std::shared_ptr<Bridge::CppBridge> bridge)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -1542,14 +1543,19 @@ namespace {
       }
 
       auto notif = fromBridge.getNotification();
-      return notif.which() == Codec::Bridge::Notification::REGISTER_DONE;
+      if (notif.which() != Codec::Bridge::Notification::REGISTER_DONE) {
+         std::cout << "expected register_done notif, instead got: " <<
+            (int)notif.which() << std::endl;
+         return false;
+      }
+      return true;
    }
 
    bool registerWallet(std::shared_ptr<Bridge::CppBridge> bridge,
       const std::string& walletId, const std::string& accountId,
       const std::string& dbId)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -1604,7 +1610,7 @@ namespace {
 
    int goOnline(std::shared_ptr<Bridge::CppBridge> bridge)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -1685,7 +1691,7 @@ namespace {
       std::shared_ptr<Bridge::CppBridge> bridge,
       const std::string& wltId, const std::string& accId)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -1732,7 +1738,7 @@ namespace {
       std::shared_ptr<Bridge::CppBridge> bridge,
       const std::string& wltId, const std::string& accId)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -1788,12 +1794,12 @@ namespace {
    // ledger stuff
    std::string getLedgerDelegateId(std::shared_ptr<Bridge::CppBridge> bridge)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
-      auto req = toBridge.initService();
-      req.setGetLedgerDelegateId();
+      auto req = toBridge.initWalletManager();
+      req.setGetMainLedgerDelegateId();
       auto rawReq = serializeCapnp(message);
       pushRequest(bridge, rawReq);
 
@@ -1812,18 +1818,18 @@ namespace {
       if (!reply.getSuccess()) {
          return {};
       }
-      if (reply.which() != Codec::Bridge::RpcReply::SERVICE) {
+      if (reply.which() != Codec::Bridge::RpcReply::WALLET_MANAGER) {
          return {};
       }
-      auto serviceReply = reply.getService();
-      return serviceReply.getGetLedgerDelegateId();
+      auto mgrReply = reply.getWalletManager();
+      return mgrReply.getGetMainLedgerDelegateId();
    }
 
    std::string getLedgerDelegateIdForWallet(
       std::shared_ptr<Bridge::CppBridge> bridge,
       const std::string& wltId, const std::string& accId)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -1861,7 +1867,7 @@ namespace {
       const std::string& wltId, const std::string& accId,
       const BinaryData& scrAddr)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -1898,7 +1904,7 @@ namespace {
    size_t getLedgersPageCount(std::shared_ptr<Bridge::CppBridge> bridge,
       const std::string& delegateId)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -1934,7 +1940,7 @@ namespace {
       std::shared_ptr<Bridge::CppBridge> bridge,
       const std::string& delegateId, uint32_t pageId)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -1993,9 +1999,9 @@ namespace {
       try {
          for (const auto& balPair : balances) {
             const auto& addrBal = addrMap.at(balPair.first);
-            EXPECT_EQ(addrBal[0], balPair.second[0]);
-            EXPECT_EQ(addrBal[1], balPair.second[1]);
-            EXPECT_EQ(addrBal[2], balPair.second[2]);
+            EXPECT_EQ(addrBal[0], balPair.second[0]) << balPair.first.toHexStr();
+            EXPECT_EQ(addrBal[1], balPair.second[1]) << balPair.first.toHexStr();
+            EXPECT_EQ(addrBal[2], balPair.second[2]) << balPair.first.toHexStr();
             EXPECT_EQ(addrBal[3], balPair.second[3]) << balPair.first.toHexStr();
          }
       } catch (const std::exception&) {
@@ -2020,7 +2026,7 @@ namespace {
       std::shared_ptr<Bridge::CppBridge> bridge,
       const std::string& walletId, const std::string& accountId)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -2071,7 +2077,7 @@ namespace {
       const std::string& walletId, const std::string& accountId,
       int mode)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -2148,7 +2154,7 @@ namespace {
       const std::string& walletId, const std::string& accountId,
       uint32_t height)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -2186,7 +2192,7 @@ namespace {
       std::shared_ptr<Bridge::CppBridge> bridge,
       const std::string& csId)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -2215,7 +2221,7 @@ namespace {
       const std::string& csId, unsigned recId,
       const std::string& addr, uint64_t amount)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -2245,7 +2251,7 @@ namespace {
    bool selectUtxos(std::shared_ptr<Bridge::CppBridge> bridge,
       const std::string& csId, uint32_t flags, float feeByte)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -2276,7 +2282,7 @@ namespace {
       const std::string& csId, const std::vector<UTXO>& utxos,
       uint32_t flags, uint64_t flatFee)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -2291,7 +2297,7 @@ namespace {
          auto capnUtxo = capnUtxos[i];
          const auto& utxo = utxos[i];
 
-         capnUtxo.setValue(utxo.getValue());
+         capnUtxo.setValue(utxo.getAmount());
          capnUtxo.setTxHeight(utxo.getHeight());
          capnUtxo.setTxIndex(utxo.getTxIndex());
          capnUtxo.setTxOutIndex(utxo.getTxOutIndex());
@@ -2322,7 +2328,7 @@ namespace {
       std::shared_ptr<Bridge::CppBridge> bridge,
       const std::string& csId)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -2375,7 +2381,7 @@ namespace {
       std::shared_ptr<Bridge::CppBridge> bridge,
       const std::string& csId)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -2410,7 +2416,7 @@ namespace {
    // tx signing
    std::string getNewSigner(std::shared_ptr<Bridge::CppBridge> bridge)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -2446,7 +2452,7 @@ namespace {
       std::shared_ptr<Bridge::CppBridge> bridge, const std::string& signerId,
       uint32_t version)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -2475,7 +2481,7 @@ namespace {
       std::shared_ptr<Bridge::CppBridge> bridge,
       const std::set<BinaryData>& hashSet)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -2526,7 +2532,7 @@ namespace {
       std::shared_ptr<Bridge::CppBridge> bridge, const std::string& signerId,
       const BinaryData& hash, uint32_t index, uint32_t sequence)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -2561,7 +2567,7 @@ namespace {
       const BinaryData& hash, uint32_t index,
       uint64_t value, const BinaryData& script)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -2597,7 +2603,7 @@ namespace {
       std::shared_ptr<Bridge::CppBridge> bridge, const std::string& signerId,
       const BinaryData& rawTx)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -2627,7 +2633,7 @@ namespace {
       std::shared_ptr<Bridge::CppBridge> bridge, const std::string& signerId,
       const BinaryData& script, uint64_t value)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -2660,7 +2666,7 @@ namespace {
       std::shared_ptr<Bridge::CppBridge> bridge, const std::string& signerId,
       const std::string& walletId)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -2689,7 +2695,7 @@ namespace {
       std::shared_ptr<Bridge::CppBridge> bridge, const std::string& signerId,
       const std::string& walletId, const std::string& passphrase)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
@@ -2760,6 +2766,10 @@ namespace {
                hasReply = true;
                break;
             }
+
+            default:
+               EXPECT_TRUE(false);
+               break;
          }
       }
       return success;
@@ -2775,7 +2785,7 @@ namespace {
       std::shared_ptr<Bridge::CppBridge> bridge, const std::string& signerId,
       uint32_t inputId)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -2812,7 +2822,7 @@ namespace {
    BinaryData getSignedTx(
       std::shared_ptr<Bridge::CppBridge> bridge, const std::string& signerId)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -2849,7 +2859,7 @@ namespace {
    bool cleanupSigner(std::shared_ptr<Bridge::CppBridge> bridge,
       const std::string& signerId)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
@@ -2929,7 +2939,7 @@ namespace {
       uint64_t totalInputs = 0;
       std::set<BinaryData> supportingTxHashes;
       for (const auto& utxo : utxoSelection) {
-         totalInputs += utxo.getValue();
+         totalInputs += utxo.getAmount();
          supportingTxHashes.emplace(utxo.getTxHash());
       }
 
@@ -2990,7 +3000,7 @@ namespace {
          if (!populateUtxo(
             bridge, signerId,
             utxo.getTxHash(), utxo.getTxOutIndex(),
-            utxo.getValue(), utxo.getScript())) {
+            utxo.getAmount(), utxo.getScript())) {
             throw std::runtime_error("failed to populate utxo");
          }
 
@@ -3067,7 +3077,7 @@ namespace {
    void broadcastTx(std::shared_ptr<Bridge::CppBridge> bridge,
       const BinaryData& rawTx)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -3365,7 +3375,7 @@ TEST_F(WalletManagerTests, ListWO)
          {1ms, 0, SecureBinaryData::fromString("woPass")}
       );
       ASSERT_FALSE(woWltPath.empty());
-      ASSERT_TRUE(FileUtils::fileExists(woWltPath, 0));
+      ASSERT_TRUE(FileUtils::pathExists(woWltPath, 0));
       ASSERT_NE(woWltPath, wltPaths[0]);
       wltPaths.emplace_back(woWltPath);
    }
@@ -3661,7 +3671,7 @@ protected:
          "--datadir=./fakehomedir",
          "--dbdir=./ldbtestdir",
          "--satoshi-datadir=./blkfiletest",
-         "--db-type=DB_FULL",
+         "--db-type=DB_BARE",
          "--thread-count=3",
          "--public"},
          Config::ProcessType::DB);
@@ -3703,7 +3713,7 @@ protected:
       initBDM();
       auto nodePtr = std::dynamic_pointer_cast<NodeUnitTest>(
          Config::NetworkSettings::bitcoinNodes().first);
-      nodePtr->setIface(theBDMt_->bdm()->getIFace());
+      nodePtr->setBDM(theBDMt_->bdm());
       hexMagicBytes = Config::BitcoinSettings::getMagicBytes().toHexStr();
    }
 
@@ -3747,7 +3757,7 @@ TEST_F(WalletManagerWebsocketsTests, Connect)
       queue.push_back(notifData);
    };
    auto mgr = std::make_shared<Bridge::WalletManager>(homedir_);
-   mgr->setupBdvCallback(notifFunc);
+   mgr->setBdvCallback(notifFunc);
 
    //list wallets
    auto theList = mgr->listWallets();
@@ -3839,9 +3849,10 @@ TEST_F(WalletManagerWebsocketsTests, Connect)
 
       for (const auto& mgrBal : addrBalances) {
          auto addrBal = TestChain::testAddrBalances[5].at(mgrBal.first);
-         for (unsigned i = 0; i < 3; i++) {
-            EXPECT_EQ(addrBal[i], mgrBal.second[i]);
-         }
+         EXPECT_EQ(addrBal[0], mgrBal.second.fullBalance);
+         EXPECT_EQ(addrBal[1], mgrBal.second.spendableBalance);
+         EXPECT_EQ(addrBal[2], mgrBal.second.unconfirmedBalance);
+         EXPECT_EQ(addrBal[3], mgrBal.second.txCount);
       }
    } catch (const std::exception& e) {
       std::cout << e.what() << std::endl;
@@ -3889,7 +3900,7 @@ protected:
    //helpers
    bool unlockWallet(const std::string& path, const std::string& passphrase)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
       //request unlock
@@ -3987,7 +3998,7 @@ protected:
 
    int failToUnlockWallet(const std::string& path, unsigned count)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
       //request unlock
@@ -4099,7 +4110,7 @@ protected:
 
    std::chrono::milliseconds testKDFUnlock(const std::string& walletId)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -4340,7 +4351,7 @@ TEST_F(BridgeWalletTests, ListWO)
          {1ms, 0, SecureBinaryData::fromString("woPass")}
       );
       ASSERT_FALSE(woWltPath.empty());
-      ASSERT_TRUE(FileUtils::fileExists(woWltPath, 0));
+      ASSERT_TRUE(FileUtils::pathExists(woWltPath, 0));
       ASSERT_NE(woWltPath, fullWltPath);
       wltPaths.emplace_back(std::make_pair(
          woWltPath, walletId));
@@ -4426,7 +4437,7 @@ TEST_F(BridgeWalletTests, ListWO)
 TEST_F(BridgeWalletTests, CreateWallet)
 {
    //create the wallet
-   auto refId = rand();
+   uint64_t refId = rand();
    auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
    capnp::MallocMessageBuilder message;
@@ -4504,7 +4515,7 @@ TEST_F(BridgeWalletTests, CreateWallet)
 TEST_F(BridgeWalletTests, CreateWallet_BIP32)
 {
    //create the wallet
-   auto refId = rand();
+   uint64_t refId = rand();
    auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
    capnp::MallocMessageBuilder message;
@@ -4587,7 +4598,7 @@ TEST_F(BridgeWalletTests, DeleteWallet)
 
    {
       //create the wallet
-      auto refId = rand();
+      uint64_t refId = rand();
       auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
       capnp::MallocMessageBuilder message;
@@ -4651,11 +4662,11 @@ TEST_F(BridgeWalletTests, DeleteWallet)
 
    //check wallet path
    auto fullWltPath = homedir / path;
-   ASSERT_TRUE(FileUtils::fileExists(fullWltPath, 0));
+   ASSERT_TRUE(FileUtils::pathExists(fullWltPath, 0));
 
    //delete said wallet
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -4674,14 +4685,14 @@ TEST_F(BridgeWalletTests, DeleteWallet)
       auto reply = fromBridge.getReply();
       ASSERT_TRUE(reply.getSuccess());
       ASSERT_EQ(reply.getReferenceId(), refId);
-      ASSERT_FALSE(FileUtils::fileExists(fullWltPath, 0));
+      ASSERT_FALSE(FileUtils::pathExists(fullWltPath, 0));
    }
 }
 
 TEST_F(BridgeWalletTests, CreateWallet_Reject)
 {
    //create the wallet
-   auto refId = rand();
+   uint64_t refId = rand();
    auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
    capnp::MallocMessageBuilder message;
@@ -4707,7 +4718,7 @@ TEST_F(BridgeWalletTests, CreateWallet_Reject)
       ASSERT_FALSE(walletData.path.empty());
 
       //check file is cleaned up
-      EXPECT_FALSE(FileUtils::fileExists(
+      EXPECT_FALSE(FileUtils::pathExists(
          std::filesystem::path{"./fakehomedir"} / walletData.path, 0));
    } catch (const std::exception& e) {
       ASSERT_TRUE(false) << e.what();
@@ -4763,7 +4774,7 @@ TEST_F(BridgeWalletTests, RestoreWallet_Legacy)
 
    //grab backup strings via callback
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
       capnp::MallocMessageBuilder message;
@@ -4923,7 +4934,7 @@ TEST_F(BridgeWalletTests, RestoreWallet_LegacyWO)
 
    //grab backup strings
    {
-      auto refId = rand();
+      uint64_t refId = rand();
 
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
@@ -4971,7 +4982,7 @@ TEST_F(BridgeWalletTests, RestoreWallet_LegacyWO)
 TEST_F(BridgeWalletTests, RestoreMerge)
 {
    //create the wallet
-   auto refId = rand();
+   uint64_t refId = rand();
    auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
    std::string passphrase{"pass2"};
    std::string passphrase2{"pass3"};
@@ -5135,7 +5146,7 @@ TEST_F(BridgeWalletTests, Migrate_Legacy)
 
    //migrate it
    auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
-   auto refId = rand();
+   uint64_t refId = rand();
    {
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
@@ -5238,7 +5249,7 @@ TEST_F(BridgeWalletTests, ImportWallet_Legacy)
    const std::string walletId{"28m472Xbm"sv};
 
    /* import the wallet file */
-   auto refId = rand();
+   uint64_t refId = rand();
    capnp::MallocMessageBuilder message;
    auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
    toBridge.setReferenceId(refId);
@@ -5617,7 +5628,7 @@ TEST_F(BridgeWalletTests, ForkWO)
    }
 
    /* 3. fork it */
-   auto refId = rand();
+   uint64_t refId = rand();
    {
       auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
@@ -5704,7 +5715,7 @@ TEST_F(BridgeWalletTests, ForkWO)
 
    /* unload full wallet */
    {
-      auto msgId = rand();
+      uint64_t msgId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(msgId);
@@ -5796,7 +5807,7 @@ protected:
          "--datadir=./fakehomedir",
          "--dbdir=./ldbtestdir",
          "--satoshi-datadir=./blkfiletest",
-         "--db-type=DB_FULL",
+         "--db-type=DB_BARE",
          "--thread-count=3",
          "--public"},
          Config::ProcessType::DB);
@@ -5837,7 +5848,7 @@ protected:
       initBDM();
       auto nodePtr = std::dynamic_pointer_cast<NodeUnitTest>(
          Config::NetworkSettings::bitcoinNodes().first);
-      nodePtr->setIface(theBDMt_->bdm()->getIFace());
+      nodePtr->setBDM(theBDMt_->bdm());
       hexMagicBytes = Config::BitcoinSettings::getMagicBytes().toHexStr();
    }
 
@@ -5955,6 +5966,68 @@ TEST_F(BridgeWalletsWithDBTests, CycleConnection)
    } catch (const std::exception&) {
       ASSERT_TRUE(false);
    }
+
+   //kill BDM
+   WebSocketServer::shutdown();
+
+   //wait on disconnected notif
+   auto reply = waitOnReply();
+   kj::ArrayPtr<const capnp::word> words(
+      reinterpret_cast<const capnp::word*>(reply->data.getPtr()),
+      reply->data.getSize() / sizeof(capnp::word));
+   capnp::FlatArrayMessageReader reader(words);
+
+   auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+   ASSERT_EQ(fromBridge.which(), Codec::Bridge::FromBridge::NOTIFICATION);
+   auto notif = fromBridge.getNotification();
+   ASSERT_EQ(notif.which(), Codec::Bridge::Notification::DISCONNECTED);
+
+   //restart BDM
+   WebSocketServer::waitOnShutdown();
+   theBDMt_->shutdown();
+   delete theBDMt_;
+
+   {
+      WebSocketServer::init();
+      Config::reset();
+      Config::DBSettings::setServiceType(SERVICE_UNITTEST_WITHWS);
+      Config::parseArgs({
+         "--datadir=./fakehomedir",
+         "--dbdir=./ldbtestdir",
+         "--satoshi-datadir=./blkfiletest",
+         "--db-type=DB_BARE",
+         "--thread-count=3",
+         "--public"},
+         Config::ProcessType::DB);
+      initBDM();
+      auto nodePtr = std::dynamic_pointer_cast<NodeUnitTest>(
+         Config::NetworkSettings::bitcoinNodes().first);
+      nodePtr->setBDM(theBDMt_->bdm());
+   }
+
+   WebSocketServer::initAuthPeers({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   WebSocketServer::start(theBDMt_->bdm(), true);
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   //check balances
+   balances = getAddrBalances(bridge_, wltId, accountId);
+   ASSERT_EQ(balances.size(), 4);
+
+   try {
+      for (const auto& balPair : balances) {
+         const auto& addrBal = TestChain::testAddrBalances[5].at(balPair.first);
+         EXPECT_EQ(addrBal[0], balPair.second[0]);
+         EXPECT_EQ(addrBal[1], balPair.second[1]);
+         EXPECT_EQ(addrBal[2], balPair.second[2]);
+      }
+   } catch (const std::exception&) {
+      ASSERT_TRUE(false);
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -6019,10 +6092,10 @@ TEST_F(BridgeWalletsWithDBTests, DeleteWallet)
       }
    }
    ASSERT_FALSE(wltPath.empty());
-   ASSERT_TRUE(FileUtils::fileExists(wltPath, 0));
+   ASSERT_TRUE(FileUtils::pathExists(wltPath, 0));
 
    //delete said wallet
-   auto refId = rand();
+   uint64_t refId = rand();
    capnp::MallocMessageBuilder message;
    auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
    toBridge.setReferenceId(refId);
@@ -6032,23 +6105,39 @@ TEST_F(BridgeWalletsWithDBTests, DeleteWallet)
    pushRequest(bridge_, rawReq);
 
    //validate reply
-   while (true) {
+   int count = 0;
+   while (count < 2) {
       auto result = waitOnReply();
       kj::ArrayPtr<const capnp::word> words(
          reinterpret_cast<const capnp::word*>(result->data.getPtr()),
          result->data.getSize() / sizeof(capnp::word));
       capnp::FlatArrayMessageReader reader(words);
       auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-      if (fromBridge.which() != Codec::Bridge::FromBridge::REPLY) {
-         continue;
-      }
+      switch (fromBridge.which())
+      {
+         case Codec::Bridge::FromBridge::REPLY:
+         {
+            auto reply = fromBridge.getReply();
+            ASSERT_TRUE(reply.getSuccess());
+            ASSERT_EQ(reply.getReferenceId(), refId);
+            ++count;
+            break;
+         }
 
-      auto reply = fromBridge.getReply();
-      ASSERT_TRUE(reply.getSuccess());
-      ASSERT_EQ(reply.getReferenceId(), refId);
-      ASSERT_FALSE(FileUtils::fileExists(wltPath, 0));
-      break;
+         case Codec::Bridge::FromBridge::NOTIFICATION:
+         {
+            auto notif = fromBridge.getNotification();
+            ASSERT_EQ(notif.which(), Codec::Bridge::Notification::REFRESH);
+            ++count;
+            break;
+         }
+
+         default:
+            ASSERT_TRUE(false);
+            break;
+      }
    }
+   ASSERT_FALSE(FileUtils::pathExists(wltPath, 0));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -6205,7 +6294,7 @@ TEST_F(BridgeWalletsWithDBTests, AddNewAddress)
 
    /* request a new address, it should trigger address creation */
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -6254,6 +6343,10 @@ TEST_F(BridgeWalletsWithDBTests, AddNewAddress)
                }
                break;
             }
+
+            default:
+               ASSERT_TRUE(false);
+               break;
          }
       }
    }
@@ -6392,7 +6485,7 @@ protected:
          "--datadir=./fakehomedir",
          "--dbdir=./ldbtestdir",
          "--satoshi-datadir=./blkfiletest",
-         "--db-type=DB_FULL",
+         "--db-type=DB_BARE",
          "--thread-count=3",
          "--public"},
          Config::ProcessType::DB);
@@ -6429,9 +6522,7 @@ protected:
       initBDM();
       nodePtr_ = std::dynamic_pointer_cast<NodeUnitTest>(
          Config::NetworkSettings::bitcoinNodes().first);
-      nodePtr_->setIface(theBDMt_->bdm()->getIFace());
-      nodePtr_->setBlockchain(theBDMt_->bdm()->blockchain());
-      nodePtr_->setBlockFiles(theBDMt_->bdm()->blockFiles());
+      nodePtr_->setBDM(theBDMt_->bdm());
       hexMagicBytes = Config::BitcoinSettings::getMagicBytes().toHexStr();
    }
 
@@ -6517,6 +6608,158 @@ TEST_F(BridgeChainDataTests, Check5Blocks_BCDE)
    EXPECT_EQ(pageCount, 1);
 
    auto ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgers.size(), 15);
+
+   for (unsigned i = 0; i < ledgers.size(); i++) {
+      EXPECT_TRUE(checkLedgers(ledgers[i], TestChain::ledgersBCDE[i])) << i;
+   }
+}
+
+TEST_F(BridgeChainDataTests, ChangeFilters_ALFB_BCDE)
+{
+   loadWallets({walletId_BCDE_, walletId_AFLB_});
+
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initAuthPeers({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   WebSocketServer::start(theBDMt_->bdm(), true);
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+
+   //start db, go online and wait on ready notif
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   //check main ledger
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+
+   auto pageCount = getLedgersPageCount(bridge_, delegateId);
+   EXPECT_EQ(pageCount, 1);
+
+   auto ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgers.size(), 26);
+
+   std::vector<TestChain::LedgerEntryValue> combinedLedgers;
+   combinedLedgers.insert(combinedLedgers.end(),
+      TestChain::ledgersBCDE.begin(), TestChain::ledgersBCDE.end());
+   combinedLedgers.insert(combinedLedgers.end(),
+      TestChain::ledgersAFLB.begin(), TestChain::ledgersAFLB.end());
+   ASSERT_EQ(combinedLedgers.size(), 26);
+   std::sort(combinedLedgers.begin(), combinedLedgers.end());
+
+   for (unsigned i = 0; i < ledgers.size(); i++) {
+      EXPECT_TRUE(
+         checkLedgers(ledgers[i],
+            combinedLedgers[i])) << i;
+   }
+
+   //remove AFLB from filter
+   uint64_t refId = rand();
+
+   capnp::MallocMessageBuilder message;
+   auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+   toBridge.setReferenceId(refId);
+   auto request = toBridge.initWalletManager();
+   auto filterReq = request.initUpdateMainLedgerFilter(1);
+   auto wltId0 = filterReq[0];
+   wltId0.setWalletId(walletId_BCDE_);
+   wltId0.setAccountId(accountId_BCDE_);
+
+   auto rawReq = serializeCapnp(message);
+   pushRequest(bridge_, rawReq);
+
+   auto result = waitOnReply();
+   kj::ArrayPtr<const capnp::word> words(
+      reinterpret_cast<const capnp::word*>(result->data.getPtr()),
+      result->data.getSize() / sizeof(capnp::word));
+   capnp::FlatArrayMessageReader reader(words);
+   auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+   ASSERT_EQ(fromBridge.which(), Codec::Bridge::FromBridge::NOTIFICATION);
+   auto notif = fromBridge.getNotification();
+   ASSERT_EQ(notif.which(), Codec::Bridge::Notification::REFRESH);
+   auto notifIds = notif.getRefresh();
+   ASSERT_EQ(notifIds.size(), 1);
+   ASSERT_EQ(std::string(notifIds[0]), std::string{"wallet_filter_changed"});
+
+   //check main ledger again
+   ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgers.size(), 15);
+
+   for (unsigned i = 0; i < ledgers.size(); i++) {
+      EXPECT_TRUE(checkLedgers(ledgers[i], TestChain::ledgersBCDE[i])) << i;
+   }
+}
+
+TEST_F(BridgeChainDataTests, BlocksOutOfOrder_BCDE)
+{
+   /*
+   This implements the same test conditions as
+   BlockDir.HeadersFirstForwardUpdate
+   */
+
+   loadWallets({walletId_BCDE_});
+
+   TestUtils::setBlocks({ "0", "1", "2", "4", "5", "4A" }, blk0dat_);
+   WebSocketServer::initAuthPeers({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   WebSocketServer::start(theBDMt_->bdm(), true);
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+
+   //start db, go online and wait on ready notif
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(goOnline(bridge_), 2);
+
+   //check wallet balance
+   auto wltBal = getWalletBalance(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(wltBal.size(), 4);
+   EXPECT_EQ(wltBal[0], TestChain::wltBal_BCDE[2][0]);
+   EXPECT_EQ(wltBal[1], TestChain::wltBal_BCDE[2][1]);
+   EXPECT_EQ(wltBal[2], TestChain::wltBal_BCDE[2][2]);
+   EXPECT_EQ(wltBal[3], TestChain::wltBal_BCDE[2][3]);
+
+   //check address balances
+   auto balances = getAddrBalances(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(balances.size(), 1);
+   checkBalances(balances, 2, false);
+
+   //check ledgers
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+
+   auto pageCount = getLedgersPageCount(bridge_, delegateId);
+   EXPECT_EQ(pageCount, 1);
+
+   auto ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgers.size(), 4);
+
+   for (unsigned i = 0; i < ledgers.size(); i++) {
+      EXPECT_TRUE(checkLedgers(ledgers[i], TestChain::ledgersBCDE[i + 11])) << i;
+   }
+
+   /* add block 3 */
+   TestUtils::appendBlocks({ "3" }, blk0dat_);
+   nodePtr_->notifyNewBlock();
+   ASSERT_EQ(waitOnNewBlock(), 5);
+
+   //check wallet balance
+   wltBal = getWalletBalance(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(wltBal.size(), 4);
+   EXPECT_EQ(wltBal[0], TestChain::wltBal_BCDE[5][0]);
+   EXPECT_EQ(wltBal[1], TestChain::wltBal_BCDE[5][1]);
+   EXPECT_EQ(wltBal[2], TestChain::wltBal_BCDE[5][2]);
+   EXPECT_EQ(wltBal[3], TestChain::wltBal_BCDE[5][3]);
+
+   //check address balances
+   balances = getAddrBalances(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(balances.size(), 4);
+   checkBalances(balances, 5, false);
+
+   //check ledgers
+   ledgers = getLedgersPage(bridge_, delegateId, 0);
    ASSERT_EQ(ledgers.size(), 15);
 
    for (unsigned i = 0; i < ledgers.size(); i++) {
@@ -6632,7 +6875,7 @@ TEST_F(BridgeChainDataTests, AddBlocks_BCDE)
    for (unsigned i = 0; i < ledgersAt5Blocks.size(); i++) {
       EXPECT_TRUE(
          checkLedgers(ledgersAt5Blocks[i],
-         TestChain::ledgersBCDE[i]));
+         TestChain::ledgersBCDE[i])) << i;
    }
 }
 
@@ -7491,6 +7734,116 @@ TEST_F(BridgeChainDataTests, Reorg_BCDE)
 
    /* block 5A */
    TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5", "5A" }, blk0dat_);
+   nodePtr_->notifyNewBlock();
+   ASSERT_EQ(waitOnNewBlock(), 5);
+
+   //wlt balance
+   wltBal = getWalletBalance(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(wltBal.size(), 4);
+   EXPECT_EQ(wltBal[0], TestChain::wltBal_BCDE_Reorg[5][0]);
+   EXPECT_EQ(wltBal[1], TestChain::wltBal_BCDE_Reorg[5][1]);
+   EXPECT_EQ(wltBal[2], TestChain::wltBal_BCDE_Reorg[5][2]);
+   EXPECT_EQ(wltBal[3], TestChain::wltBal_BCDE_Reorg[5][3]);
+
+   //addr balances
+   balances = getAddrBalances(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(balances.size(), 4);
+   checkBalances(balances, 5, true);
+
+   //ledgers
+   pageCount = getLedgersPageCount(bridge_, delegateId);
+   EXPECT_EQ(pageCount, 1);
+
+   ledgersAt5Blocks = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgersAt5Blocks.size(), 11);
+
+   for (unsigned i = 0; i < ledgersAt5Blocks.size(); i++) {
+      EXPECT_TRUE(
+         checkLedgers(ledgersAt5Blocks[i],
+         TestChain::ledgersBCDE_Reorg[i]));
+   }
+}
+
+TEST_F(BridgeChainDataTests, Reorg_BCDE_DifferentOrder)
+{
+   loadWallets({walletId_BCDE_});
+
+   //connect to db
+   WebSocketServer::initAuthPeers({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   WebSocketServer::start(theBDMt_->bdm(), true);
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+
+   //start db, go online and wait on ready notif
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(goOnline(bridge_), 3);
+
+   /* block 3 */
+
+   //wlt balance
+   auto wltBal = getWalletBalance(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(wltBal.size(), 4);
+   EXPECT_EQ(wltBal[0], TestChain::wltBal_BCDE[3][0]);
+   EXPECT_EQ(wltBal[1], TestChain::wltBal_BCDE[3][1]);
+   EXPECT_EQ(wltBal[2], TestChain::wltBal_BCDE[3][2]);
+   EXPECT_EQ(wltBal[3], TestChain::wltBal_BCDE[3][3]);
+
+   //addr balances
+   auto balances = getAddrBalances(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(balances.size(), 4);
+   checkBalances(balances, 3, false);
+
+   //ledgers
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+
+   auto pageCount = getLedgersPageCount(bridge_, delegateId);
+   EXPECT_EQ(pageCount, 1);
+
+   auto ledgersAt3Blocks = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgersAt3Blocks.size(), 9);
+
+   for (unsigned i = 0; i < ledgersAt3Blocks.size(); i++) {
+      EXPECT_TRUE(
+         checkLedgers(ledgersAt3Blocks[i],
+         TestChain::ledgersBCDE[i + 6]));
+   }
+
+   /* block 4, 5 */
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   nodePtr_->notifyNewBlock();
+   ASSERT_EQ(waitOnNewBlock(), 5);
+
+   //wlt balance
+   wltBal = getWalletBalance(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(wltBal.size(), 4);
+   EXPECT_EQ(wltBal[0], TestChain::wltBal_BCDE[5][0]);
+   EXPECT_EQ(wltBal[1], TestChain::wltBal_BCDE[5][1]);
+   EXPECT_EQ(wltBal[2], TestChain::wltBal_BCDE[5][2]);
+   EXPECT_EQ(wltBal[3], TestChain::wltBal_BCDE[5][3]);
+
+   //addr balances
+   balances = getAddrBalances(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(balances.size(), 4);
+   checkBalances(balances, 5, false);
+
+   //ledgers
+   pageCount = getLedgersPageCount(bridge_, delegateId);
+   EXPECT_EQ(pageCount, 1);
+
+   auto ledgersAt5Blocks = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgersAt5Blocks.size(), 15);
+
+   for (unsigned i = 0; i < ledgersAt5Blocks.size(); i++) {
+      EXPECT_TRUE(
+         checkLedgers(ledgersAt5Blocks[i],
+         TestChain::ledgersBCDE[i]));
+   }
+
+   /* block 4A, 5A */
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5", "4A", "5A" }, blk0dat_);
    nodePtr_->notifyNewBlock();
    ASSERT_EQ(waitOnNewBlock(), 5);
 
@@ -8470,6 +8823,292 @@ TEST_F(BridgeChainDataTests, Reorg_BCDE_AFLB)
    }
 }
 
+TEST_F(BridgeChainDataTests, Reorg_SpendBeforeBranchPoint)
+{
+   /*
+   Amazingly enough, our test chain does not provide a case of a reorg
+   where an output that lives before the branch point is spent across
+   both branches. This test covers that.
+   */
+
+   /* start with classic 6 blocks */
+   loadWallets({walletId_BCDE_});
+
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initAuthPeers({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   WebSocketServer::start(theBDMt_->bdm(), true);
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+
+   //start db, go online and wait on ready notif
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   //check wallet balance
+   auto wltBal = getWalletBalance(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(wltBal.size(), 4);
+   EXPECT_EQ(wltBal[0], TestChain::wltBal_BCDE[5][0]);
+   EXPECT_EQ(wltBal[1], TestChain::wltBal_BCDE[5][1]);
+   EXPECT_EQ(wltBal[2], TestChain::wltBal_BCDE[5][2]);
+   EXPECT_EQ(wltBal[3], TestChain::wltBal_BCDE[5][3]);
+
+   //check address balances
+   auto balances = getAddrBalances(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(balances.size(), 4);
+   checkBalances(balances, 5, false);
+
+   //check ledgers
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+
+   auto pageCount = getLedgersPageCount(bridge_, delegateId);
+   EXPECT_EQ(pageCount, 1);
+
+   auto ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgers.size(), 15);
+
+   for (unsigned i = 0; i < ledgers.size(); i++) {
+      EXPECT_TRUE(checkLedgers(ledgers[i], TestChain::ledgersBCDE[i])) << i;
+   }
+
+   /* create 2 txs that spends the same output */
+   auto utxos = getUTXOs(bridge_, walletId_BCDE_, accountId_BCDE_, 0);
+
+   //look for output 4|2:0
+   UTXO theUtxo;
+   for (const auto& utxo : utxos) {
+      if (utxo.txHash == TestChain::hash42) {
+         theUtxo = utxo;
+         break;
+      }
+   }
+   ASSERT_TRUE(theUtxo.isInitialized());
+
+   //txA
+   auto recipientPrivKeyA = Cryptography::ECDSA::createNewPrivateKey();
+   auto recipientPubKeyA = Cryptography::ECDSA::computePublicKey(
+      recipientPrivKeyA, true);
+   auto hash160A =  BtcUtils::getHash160(recipientPubKeyA);
+   auto recipientAddrA = BtcUtils::scrAddrToSegWitAddress(hash160A);
+
+   auto txA = createAndSignTx(
+      bridge_, walletId_BCDE_, accountId_BCDE_,
+      { theUtxo }, {{ recipientAddrA, 3 * COIN }},
+      TestChain::scrAddrB, 2, false,
+      "privPass1"
+   );
+   ASSERT_FALSE(txA.empty());
+   Tx txAObj{txA};
+
+   //txB
+   auto recipientPrivKeyB = Cryptography::ECDSA::createNewPrivateKey();
+   auto recipientPubKeyB = Cryptography::ECDSA::computePublicKey(
+      recipientPrivKeyB, true);
+   auto hash160B =  BtcUtils::getHash160(recipientPubKeyB);
+   auto recipientAddrB = BtcUtils::scrAddrToSegWitAddress(hash160B);
+
+   auto txB = createAndSignTx(
+      bridge_, walletId_BCDE_, accountId_BCDE_,
+      { theUtxo }, {{ recipientAddrB, 4 * COIN }},
+      TestChain::scrAddrB, 2, false,
+      "privPass1"
+   );
+   ASSERT_FALSE(txB.empty());
+   Tx txBObj{txB};
+   ASSERT_NE(txAObj.getThisHash(), txBObj.getThisHash());
+
+   //broadcast txA
+   broadcastTx(bridge_, txA);
+   waitOnZc();
+
+   /* validate effect of zc txA */
+
+   //check wallet balance
+   Types::Amount txAAmount = 3UL * COIN + 2UL;
+
+   wltBal = getWalletBalance(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(wltBal.size(), 4);
+   EXPECT_EQ(wltBal[0], TestChain::wltBal_BCDE[5][0] - txAAmount);
+   EXPECT_EQ(wltBal[1], TestChain::wltBal_BCDE[5][1] - 5 * COIN);
+   EXPECT_EQ(wltBal[2], TestChain::wltBal_BCDE[5][2] - txAAmount);
+   EXPECT_EQ(wltBal[3], TestChain::wltBal_BCDE[5][3] + 1);
+
+   //check address balances
+   try {
+      auto balances = getAddrBalances(bridge_, walletId_BCDE_, accountId_BCDE_);
+      auto scrAddrDBal = balances.at(TestChain::scrAddrD);
+      auto testAddrDBal = TestChain::testAddrBalances[5].at(TestChain::scrAddrD);
+      EXPECT_EQ(scrAddrDBal[0], testAddrDBal[0] - 5UL * COIN);
+      EXPECT_EQ(scrAddrDBal[1], testAddrDBal[1] - 5UL * COIN);
+      EXPECT_EQ(scrAddrDBal[2], testAddrDBal[2] - 5UL * COIN);
+      EXPECT_EQ(scrAddrDBal[3], testAddrDBal[3] + 1);
+   } catch (const std::out_of_range&) {
+      ASSERT_TRUE(false);
+   }
+
+   //check ledgers
+   ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgers.size(), 16);
+
+   auto ledger0 = ledgers[0];
+   ASSERT_EQ(ledger0.getTxHash(), txAObj.getThisHash());
+   ASSERT_EQ(ledger0.getBlockNum(), UINT32_MAX);
+   EXPECT_EQ(ledger0.getValue(), Types::Value(txAAmount) * -1L);
+
+   for (unsigned i = 0; i < TestChain::ledgersBCDE.size(); i++) {
+      EXPECT_TRUE(checkLedgers(ledgers[i + 1], TestChain::ledgersBCDE[i])) << i;
+   }
+
+   //mine txA
+   DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrA, 1);
+   ASSERT_EQ(waitOnNewBlock(), 6);
+
+   /* validate effect of mined txA */
+
+   //check wallet balance
+   wltBal = getWalletBalance(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(wltBal.size(), 4);
+   EXPECT_EQ(wltBal[0], TestChain::wltBal_BCDE[5][0] - txAAmount);
+   EXPECT_EQ(wltBal[1], TestChain::wltBal_BCDE[5][1] - txAAmount);
+   EXPECT_EQ(wltBal[2], TestChain::wltBal_BCDE[5][2] - txAAmount);
+   EXPECT_EQ(wltBal[3], TestChain::wltBal_BCDE[5][3] + 1);
+
+   //check address balances
+   try {
+      auto balances = getAddrBalances(bridge_, walletId_BCDE_, accountId_BCDE_);
+      auto scrAddrDBal = balances.at(TestChain::scrAddrD);
+      auto testAddrDBal = TestChain::testAddrBalances[5].at(TestChain::scrAddrD);
+      EXPECT_EQ(scrAddrDBal[0], testAddrDBal[0] - 5UL * COIN);
+      EXPECT_EQ(scrAddrDBal[1], testAddrDBal[1] - 5UL * COIN);
+      EXPECT_EQ(scrAddrDBal[2], testAddrDBal[2] - 5UL * COIN);
+      EXPECT_EQ(scrAddrDBal[3], testAddrDBal[3] + 1);
+   } catch (const std::out_of_range&) {
+      ASSERT_TRUE(false);
+   }
+
+   //check ledgers
+   ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgers.size(), 16);
+
+   ledger0 = ledgers[0];
+   ASSERT_EQ(ledger0.getTxHash(), txAObj.getThisHash());
+   ASSERT_EQ(ledger0.getBlockNum(), 6);
+   EXPECT_EQ(ledger0.getValue(), Types::Value(txAAmount) * -1L);
+
+   for (unsigned i = 0; i < TestChain::ledgersBCDE.size(); i++) {
+      EXPECT_TRUE(checkLedgers(ledgers[i + 1], TestChain::ledgersBCDE[i])) << i;
+   }
+
+   /* reorg from block 5 */
+
+   auto branchPoint = theBDMt_->bdm()->blockchain()->getHeaderByHeight(5);
+   auto topA = theBDMt_->bdm()->blockchain()->top();
+   ASSERT_EQ(branchPoint->getUniqueID(), 6);
+   nodePtr_->setReorgBranchPoint(branchPoint);
+   nodePtr_->mineNewBlock(theBDMt_->bdm(), 1, TestChain::addrA, 100.0);
+   ASSERT_EQ(waitOnNewBlock(), 6);
+
+   auto topB = theBDMt_->bdm()->blockchain()->top();
+   ASSERT_NE(topA->getThisHash(), topB->getThisHash());
+   ASSERT_EQ(topA->getPrevHash(), branchPoint->getThisHash());
+   ASSERT_EQ(topB->getPrevHash(), branchPoint->getThisHash());
+   ASSERT_FALSE(topA->isMainBranch());
+
+   //check ledgers
+   ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgers.size(), 15);
+
+   for (unsigned i = 0; i < ledgers.size(); i++) {
+      EXPECT_TRUE(checkLedgers(ledgers[i], TestChain::ledgersBCDE[i])) << i;
+   }
+
+   //broadcast txB
+   Types::Amount txBAmount = 4UL * COIN + 2UL;
+   broadcastTx(bridge_, txB);
+   auto zcLedgers = waitOnZc();
+   ASSERT_EQ(zcLedgers.size(), 1);
+   ASSERT_EQ(zcLedgers[0].getTxHash(), txBObj.getThisHash());
+   ASSERT_EQ(zcLedgers[0].getValue(), Types::Value(txBAmount) * -1L);
+
+   /* validate effect of zc txB */
+
+   //check wallet balance
+   wltBal = getWalletBalance(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(wltBal.size(), 4);
+   EXPECT_EQ(wltBal[0], TestChain::wltBal_BCDE[5][0] - txBAmount);
+   EXPECT_EQ(wltBal[1], TestChain::wltBal_BCDE[5][1] - 5 * COIN);
+   EXPECT_EQ(wltBal[2], TestChain::wltBal_BCDE[5][2] - txBAmount);
+   EXPECT_EQ(wltBal[3], TestChain::wltBal_BCDE[5][3] + 1);
+
+   //check address balances
+   try {
+      auto balances = getAddrBalances(bridge_, walletId_BCDE_, accountId_BCDE_);
+      auto scrAddrDBal = balances.at(TestChain::scrAddrD);
+      auto testAddrDBal = TestChain::testAddrBalances[5].at(TestChain::scrAddrD);
+      EXPECT_EQ(scrAddrDBal[0], testAddrDBal[0] - 5UL * COIN);
+      EXPECT_EQ(scrAddrDBal[1], testAddrDBal[1] - 5UL * COIN);
+      EXPECT_EQ(scrAddrDBal[2], testAddrDBal[2] - 5UL * COIN);
+      EXPECT_EQ(scrAddrDBal[3], testAddrDBal[3] + 1);
+   } catch (const std::out_of_range&) {
+      ASSERT_TRUE(false);
+   }
+
+   //ledgers
+   ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgers.size(), 16);
+
+   ledger0 = ledgers[0];
+   ASSERT_EQ(ledger0.getTxHash(), txBObj.getThisHash());
+   ASSERT_EQ(ledger0.getBlockNum(), UINT32_MAX);
+   EXPECT_EQ(ledger0.getValue(), Types::Value(txBAmount) * -1L);
+
+   for (unsigned i = 0; i < TestChain::ledgersBCDE.size(); i++) {
+      EXPECT_TRUE(checkLedgers(ledgers[i + 1], TestChain::ledgersBCDE[i])) << i;
+   }
+
+   //mine txB
+   DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrA, 1);
+   ASSERT_EQ(waitOnNewBlock(), 7);
+
+   /* validate effect of mined txB */
+
+   //check wallet balance
+   wltBal = getWalletBalance(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(wltBal.size(), 4);
+   EXPECT_EQ(wltBal[0], TestChain::wltBal_BCDE[5][0] - txBAmount);
+   EXPECT_EQ(wltBal[1], TestChain::wltBal_BCDE[5][1] - txBAmount);
+   EXPECT_EQ(wltBal[2], TestChain::wltBal_BCDE[5][2] - txBAmount);
+   EXPECT_EQ(wltBal[3], TestChain::wltBal_BCDE[5][3] + 1);
+
+   //check address balances
+   try {
+      auto balances = getAddrBalances(bridge_, walletId_BCDE_, accountId_BCDE_);
+      auto scrAddrDBal = balances.at(TestChain::scrAddrD);
+      auto testAddrDBal = TestChain::testAddrBalances[5].at(TestChain::scrAddrD);
+      EXPECT_EQ(scrAddrDBal[0], testAddrDBal[0] - 5UL * COIN);
+      EXPECT_EQ(scrAddrDBal[1], testAddrDBal[1] - 5UL * COIN);
+      EXPECT_EQ(scrAddrDBal[2], testAddrDBal[2] - 5UL * COIN);
+      EXPECT_EQ(scrAddrDBal[3], testAddrDBal[3] + 1);
+   } catch (const std::out_of_range&) {
+      ASSERT_TRUE(false);
+   }
+
+   //ledgers
+   ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgers.size(), 16);
+
+   ledger0 = ledgers[0];
+   ASSERT_EQ(ledger0.getTxHash(), txBObj.getThisHash());
+   ASSERT_EQ(ledger0.getBlockNum(), 7);
+   EXPECT_EQ(ledger0.getValue(), Types::Value(txBAmount) * -1L);
+
+   for (unsigned i = 0; i < TestChain::ledgersBCDE.size(); i++) {
+      EXPECT_TRUE(checkLedgers(ledgers[i + 1], TestChain::ledgersBCDE[i])) << i;
+   }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // helper data
 TEST_F(BridgeChainDataTests, AddressBook)
@@ -8576,7 +9215,7 @@ TEST_F(BridgeChainDataTests, getUTXOs)
    ASSERT_EQ(utxo.getHeight(), 4);
    ASSERT_EQ(utxo.getTxIndex(), 2);
    ASSERT_EQ(utxo.getTxOutIndex(), 0);
-   ASSERT_EQ(utxo.getValue(), 5 * COIN);
+   ASSERT_EQ(utxo.getAmount(), 5 * COIN);
    ASSERT_EQ(utxo.getTxHash(), TestChain::hash42);
 
    //Block 3, tx 4, output 0, 25 COINS
@@ -8584,7 +9223,7 @@ TEST_F(BridgeChainDataTests, getUTXOs)
    ASSERT_EQ(utxo.getHeight(), 3);
    ASSERT_EQ(utxo.getTxIndex(), 4);
    ASSERT_EQ(utxo.getTxOutIndex(), 0);
-   ASSERT_EQ(utxo.getValue(), 25 * COIN);
+   ASSERT_EQ(utxo.getAmount(), 25 * COIN);
    ASSERT_EQ(utxo.getTxHash(), TestChain::hash34);
 
    //Block 3, tx 2, output 0, 5 COINS
@@ -8592,7 +9231,7 @@ TEST_F(BridgeChainDataTests, getUTXOs)
    ASSERT_EQ(utxo.getHeight(), 3);
    ASSERT_EQ(utxo.getTxIndex(), 2);
    ASSERT_EQ(utxo.getTxOutIndex(), 0);
-   ASSERT_EQ(utxo.getValue(), 5 * COIN);
+   ASSERT_EQ(utxo.getAmount(), 5 * COIN);
    ASSERT_EQ(utxo.getTxHash(), TestChain::hash32);
 
    //Block 5, tx 2, output 0, 5 COINS
@@ -8600,7 +9239,7 @@ TEST_F(BridgeChainDataTests, getUTXOs)
    ASSERT_EQ(utxo.getHeight(), 5);
    ASSERT_EQ(utxo.getTxIndex(), 2);
    ASSERT_EQ(utxo.getTxOutIndex(), 0);
-   ASSERT_EQ(utxo.getValue(), 5 * COIN);
+   ASSERT_EQ(utxo.getAmount(), 5 * COIN);
    ASSERT_EQ(utxo.getTxHash(), TestChain::hash52);
 
    //Block 4, tx 3, output 2, 10 COINS
@@ -8608,7 +9247,7 @@ TEST_F(BridgeChainDataTests, getUTXOs)
    ASSERT_EQ(utxo.getHeight(), 4);
    ASSERT_EQ(utxo.getTxIndex(), 3);
    ASSERT_EQ(utxo.getTxOutIndex(), 2);
-   ASSERT_EQ(utxo.getValue(), 10 * COIN);
+   ASSERT_EQ(utxo.getAmount(), 10 * COIN);
    ASSERT_EQ(utxo.getTxHash(), TestChain::hash43);
 
    //Block 5, tx 1, output 0, 10 COINS
@@ -8616,7 +9255,7 @@ TEST_F(BridgeChainDataTests, getUTXOs)
    ASSERT_EQ(utxo.getHeight(), 5);
    ASSERT_EQ(utxo.getTxIndex(), 1);
    ASSERT_EQ(utxo.getTxOutIndex(), 0);
-   ASSERT_EQ(utxo.getValue(), 10 * COIN);
+   ASSERT_EQ(utxo.getAmount(), 10 * COIN);
    ASSERT_EQ(utxo.getTxHash(), TestChain::hash51);
 
    //Block 5, tx 1, output 1, 20 COINS
@@ -8624,7 +9263,7 @@ TEST_F(BridgeChainDataTests, getUTXOs)
    ASSERT_EQ(utxo.getHeight(), 5);
    ASSERT_EQ(utxo.getTxIndex(), 1);
    ASSERT_EQ(utxo.getTxOutIndex(), 1);
-   ASSERT_EQ(utxo.getValue(), 20 * COIN);
+   ASSERT_EQ(utxo.getAmount(), 20 * COIN);
    ASSERT_EQ(utxo.getTxHash(), TestChain::hash51);
 
    //Block 3, tx 1, output 0, 5 COINS
@@ -8632,7 +9271,7 @@ TEST_F(BridgeChainDataTests, getUTXOs)
    ASSERT_EQ(utxo.getHeight(), 3);
    ASSERT_EQ(utxo.getTxIndex(), 1);
    ASSERT_EQ(utxo.getTxOutIndex(), 0);
-   ASSERT_EQ(utxo.getValue(), 5 * COIN);
+   ASSERT_EQ(utxo.getAmount(), 5 * COIN);
    ASSERT_EQ(utxo.getTxHash(), TestChain::hash31);
 
    //grab AFLB utxos
@@ -8644,7 +9283,7 @@ TEST_F(BridgeChainDataTests, getUTXOs)
    ASSERT_EQ(utxo.getHeight(), 4);
    ASSERT_EQ(utxo.getTxIndex(), 1);
    ASSERT_EQ(utxo.getTxOutIndex(), 1);
-   ASSERT_EQ(utxo.getValue(), 5 * COIN);
+   ASSERT_EQ(utxo.getAmount(), 5 * COIN);
    ASSERT_EQ(utxo.getTxHash(), TestChain::hash41);
 
    //Block 4, tx 3, output 0, 25 COINS
@@ -8652,7 +9291,7 @@ TEST_F(BridgeChainDataTests, getUTXOs)
    ASSERT_EQ(utxo.getHeight(), 4);
    ASSERT_EQ(utxo.getTxIndex(), 3);
    ASSERT_EQ(utxo.getTxOutIndex(), 0);
-   ASSERT_EQ(utxo.getValue(), 25 * COIN);
+   ASSERT_EQ(utxo.getAmount(), 25 * COIN);
    ASSERT_EQ(utxo.getTxHash(), TestChain::hash43);
 
    //Block 4, tx 3, output 1, 20 COINS
@@ -8660,7 +9299,7 @@ TEST_F(BridgeChainDataTests, getUTXOs)
    ASSERT_EQ(utxo.getHeight(), 4);
    ASSERT_EQ(utxo.getTxIndex(), 3);
    ASSERT_EQ(utxo.getTxOutIndex(), 1);
-   ASSERT_EQ(utxo.getValue(), 20 * COIN);
+   ASSERT_EQ(utxo.getAmount(), 20 * COIN);
    ASSERT_EQ(utxo.getTxHash(), TestChain::hash43);
 
    //Block 3, tx 5, output 0, 10 COINS
@@ -8668,7 +9307,7 @@ TEST_F(BridgeChainDataTests, getUTXOs)
    ASSERT_EQ(utxo.getHeight(), 3);
    ASSERT_EQ(utxo.getTxIndex(), 5);
    ASSERT_EQ(utxo.getTxOutIndex(), 0);
-   ASSERT_EQ(utxo.getValue(), 10 * COIN);
+   ASSERT_EQ(utxo.getAmount(), 10 * COIN);
    ASSERT_EQ(utxo.getTxHash(), TestChain::hash35);
 
    //Block 3, tx 5, output 1, 5 COINS
@@ -8676,7 +9315,7 @@ TEST_F(BridgeChainDataTests, getUTXOs)
    ASSERT_EQ(utxo.getHeight(), 3);
    ASSERT_EQ(utxo.getTxIndex(), 5);
    ASSERT_EQ(utxo.getTxOutIndex(), 1);
-   ASSERT_EQ(utxo.getValue(), 5 * COIN);
+   ASSERT_EQ(utxo.getAmount(), 5 * COIN);
    ASSERT_EQ(utxo.getTxHash(), TestChain::hash35);
 }
 
@@ -9176,7 +9815,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_Chain)
    //grab amount for change output
    Tx tx(signedTx);
    auto changeOutput = tx.getTxOutCopy(1);
-   int64_t changeAmount = changeOutput.getValue();
+   uint64_t changeAmount = changeOutput.getAmount();
    EXPECT_TRUE(changeAmount > 8 * COIN);
    EXPECT_TRUE(changeAmount < 9 * COIN);
 
@@ -9246,8 +9885,8 @@ TEST_F(BridgeChainDataTests, ZeroConf_Chain)
    ASSERT_FALSE(signedTx2.empty());
 
    Tx tx2(signedTx2);
-   changeOutput = tx2.getTxOutCopy(1);
-   int64_t changeAmount2 = changeOutput.getValue();
+   auto changeOutput2 = tx2.getTxOutCopy(1);
+   uint64_t changeAmount2 = changeOutput2.getAmount();
    EXPECT_TRUE(changeAmount2 > 3 * COIN);
    EXPECT_TRUE(changeAmount2 < 4 * COIN);
 
@@ -9469,7 +10108,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_StaggeredChain)
    //grab amount for change output
    Tx tx(signedTx);
    auto changeOutput = tx.getTxOutCopy(1);
-   int64_t changeAmount = changeOutput.getValue();
+   uint64_t changeAmount = changeOutput.getAmount();
    EXPECT_TRUE(changeAmount > 8 * COIN);
    EXPECT_TRUE(changeAmount < 9 * COIN);
 
@@ -9580,8 +10219,8 @@ TEST_F(BridgeChainDataTests, ZeroConf_StaggeredChain)
    ASSERT_FALSE(signedTx2.empty());
 
    Tx tx2(signedTx2);
-   changeOutput = tx2.getTxOutCopy(1);
-   int64_t changeAmount2 = changeOutput.getValue();
+   auto changeOutput2 = tx2.getTxOutCopy(1);
+   uint64_t changeAmount2 = changeOutput2.getAmount();
    EXPECT_TRUE(changeAmount2 > 3 * COIN);
    EXPECT_TRUE(changeAmount2 < 4 * COIN);
 
@@ -9983,7 +10622,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_ChainRBF)
    //grab amount for change output
    Tx tx(signedTx);
    auto changeOutput = tx.getTxOutCopy(1);
-   int64_t changeAmount = changeOutput.getValue();
+   uint64_t changeAmount = changeOutput.getAmount();
    EXPECT_TRUE(changeAmount > 8 * COIN);
    EXPECT_TRUE(changeAmount < 9 * COIN);
 
@@ -10099,8 +10738,8 @@ TEST_F(BridgeChainDataTests, ZeroConf_ChainRBF)
    ASSERT_FALSE(signedTx2.empty());
 
    Tx tx2(signedTx2);
-   changeOutput = tx2.getTxOutCopy(1);
-   int64_t changeAmount2 = changeOutput.getValue();
+   auto changeOutput2 = tx2.getTxOutCopy(1);
+   uint64_t changeAmount2 = changeOutput2.getAmount();
    EXPECT_TRUE(changeAmount2 > 3 * COIN);
    EXPECT_TRUE(changeAmount2 < 4 * COIN);
 
@@ -10239,8 +10878,8 @@ TEST_F(BridgeChainDataTests, ZeroConf_ChainRBF)
    ASSERT_FALSE(txRbf.empty());
 
    Tx tx3(txRbf);
-   changeOutput = tx3.getTxOutCopy(1);
-   int64_t changeAmountRbf = changeOutput.getValue();
+   auto changeOutput3 = tx3.getTxOutCopy(1);
+   uint64_t changeAmountRbf = changeOutput3.getAmount();
    EXPECT_EQ(changeAmountRbf, 12 * COIN - rbfFee);
 
    //broadcast it
@@ -10416,7 +11055,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_Reload)
    //grab amount for change output
    Tx tx(signedTx);
    auto changeOutput = tx.getTxOutCopy(1);
-   int64_t changeAmount = changeOutput.getValue();
+   uint64_t changeAmount = changeOutput.getAmount();
    EXPECT_TRUE(changeAmount > 8 * COIN);
    EXPECT_TRUE(changeAmount < 9 * COIN);
 
@@ -10486,8 +11125,8 @@ TEST_F(BridgeChainDataTests, ZeroConf_Reload)
    ASSERT_FALSE(signedTx2.empty());
 
    Tx tx2(signedTx2);
-   changeOutput = tx2.getTxOutCopy(1);
-   int64_t changeAmount2 = changeOutput.getValue();
+   auto changeOutput2 = tx2.getTxOutCopy(1);
+   uint64_t changeAmount2 = changeOutput2.getAmount();
    EXPECT_TRUE(changeAmount2 > 3 * COIN);
    EXPECT_TRUE(changeAmount2 < 4 * COIN);
 
@@ -10778,7 +11417,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_Reorg)
    //grab amount for change output
    Tx tx(signedTx);
    auto changeOutput = tx.getTxOutCopy(1);
-   int64_t changeAmount = changeOutput.getValue();
+   uint64_t changeAmount = changeOutput.getAmount();
    EXPECT_TRUE(changeAmount > 2 * COIN);
    EXPECT_TRUE(changeAmount < 3 * COIN);
 
@@ -10928,8 +11567,9 @@ TEST_F(BridgeChainDataTests, ZeroConf_Reorg)
    }
 }
 
-TEST_F(BridgeChainDataTests, ZeroConf_RegisterWallet)
+TEST_F(BridgeChainDataTests, DISABLED_ZeroConf_RegisterWallet)
 {
+   //NOTE: reenable once supernode scanner is redesigned
    /* this test only works with a supernode db */
 
    //shutdown bdm, clean up db folder
@@ -10956,9 +11596,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_RegisterWallet)
    initBDM();
    nodePtr_ = std::dynamic_pointer_cast<NodeUnitTest>(
       Config::NetworkSettings::bitcoinNodes().first);
-   nodePtr_->setIface(theBDMt_->bdm()->getIFace());
-   nodePtr_->setBlockchain(theBDMt_->bdm()->blockchain());
-   nodePtr_->setBlockFiles(theBDMt_->bdm()->blockFiles());
+   nodePtr_->setBDM(theBDMt_->bdm());
 
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initAuthPeers({
@@ -11143,7 +11781,7 @@ TEST_F(BridgeChainDataTests, RestoreSynchronize)
 
    //create legacy wallet, grab backup
    auto legacyWltId = createAWallet(bridge_, 50ms, 10, false);
-   ASSERT_FALSE(bip32WltId.empty());
+   ASSERT_FALSE(legacyWltId.empty());
    auto legacyBackup = getWalletBackup(bridge_, legacyWltId, "pass1",
       Codec::Bridge::WalletBackup::Type::ARMORY200_A);
    ASSERT_FALSE(legacyBackup.empty());
@@ -11230,7 +11868,7 @@ TEST_F(BridgeChainDataTests, RestoreSynchronize)
    //grab amount for change output
    Tx tx(signedTx);
    auto changeOutput = tx.getTxOutCopy(4);
-   int64_t changeAmount = changeOutput.getValue();
+   uint64_t changeAmount = changeOutput.getAmount();
    EXPECT_TRUE(changeAmount > 9 * COIN);
    EXPECT_TRUE(changeAmount < 10 * COIN);
 
@@ -11292,15 +11930,15 @@ TEST_F(BridgeChainDataTests, RestoreSynchronize)
       wltLegacyPath = wltData4.path;
    }
 
-   /* delete the 2 news wallets */
+   /* delete the 2 new wallets */
 
    //check wallet path
-   ASSERT_TRUE(FileUtils::fileExists(wltBip32Path, 0));
-   ASSERT_TRUE(FileUtils::fileExists(wltLegacyPath, 0));
+   ASSERT_TRUE(FileUtils::pathExists(wltBip32Path, 0));
+   ASSERT_TRUE(FileUtils::pathExists(wltLegacyPath, 0));
 
    //delete bip32 wlt
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -11323,14 +11961,14 @@ TEST_F(BridgeChainDataTests, RestoreSynchronize)
          auto reply = fromBridge.getReply();
          ASSERT_TRUE(reply.getSuccess());
          ASSERT_EQ(reply.getReferenceId(), refId);
-         ASSERT_FALSE(FileUtils::fileExists(wltBip32Path, 0));
+         ASSERT_FALSE(FileUtils::pathExists(wltBip32Path, 0));
          break;
       }
    }
 
    //delete legacy wlt
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -11353,7 +11991,7 @@ TEST_F(BridgeChainDataTests, RestoreSynchronize)
          auto reply = fromBridge.getReply();
          ASSERT_TRUE(reply.getSuccess());
          ASSERT_EQ(reply.getReferenceId(), refId);
-         ASSERT_FALSE(FileUtils::fileExists(wltLegacyPath, 0));
+         ASSERT_FALSE(FileUtils::pathExists(wltLegacyPath, 0));
          break;
       }
    }
@@ -11604,7 +12242,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_SpendNew)
    //grab amount for change output
    Tx tx(signedTx);
    auto changeOutput = tx.getTxOutCopy(1);
-   int64_t changeAmount = changeOutput.getValue();
+   uint64_t changeAmount = changeOutput.getAmount();
    EXPECT_TRUE(changeAmount > 8 * COIN);
    EXPECT_TRUE(changeAmount < 9 * COIN);
 
@@ -11719,22 +12357,22 @@ TEST_F(BridgeChainDataTests, ZeroConf_SpendNew)
    EXPECT_FALSE(lastEntry.isChainedZC());
 
    /* mine the tx */
-   DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrA, 1);
-   ASSERT_EQ(waitOnNewBlock(), 6);
+   DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrA, 10);
+   ASSERT_EQ(waitOnNewBlock(), 15);
 
    //check wallet balance
    wltBal = getWalletBalance(bridge_, walletId_BCDE_, accountId_BCDE_);
    ASSERT_EQ(wltBal.size(), 4);
    EXPECT_EQ(wltBal[0], TestChain::wltBal_BCDE[5][0] - (20 * COIN) + changeAmount);
    EXPECT_EQ(wltBal[1], TestChain::wltBal_BCDE[5][1] - (20 * COIN) + changeAmount);
-   EXPECT_EQ(wltBal[2], TestChain::wltBal_BCDE[5][2] - (20 * COIN) + changeAmount);
+   EXPECT_EQ(wltBal[2], 100 * COIN);
    EXPECT_EQ(wltBal[3], TestChain::wltBal_BCDE[5][3] + 1);
 
    wltBal = getWalletBalance(bridge_, legacyWltId, legacyAccId);
    ASSERT_EQ(wltBal.size(), 4);
    EXPECT_EQ(wltBal[0], 11 * COIN);
    EXPECT_EQ(wltBal[1], 11 * COIN);
-   EXPECT_EQ(wltBal[2], 11 * COIN);
+   EXPECT_EQ(wltBal[2], 0ULL);
    EXPECT_EQ(wltBal[3], 1);
 
    /* spend from new wallet */
@@ -11769,7 +12407,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_SpendNew)
    //grab amount for change output
    Tx tx2(signedTx2);
    auto changeOutput2 = tx2.getTxOutCopy(1);
-   int64_t changeAmount2 = changeOutput2.getValue();
+   uint64_t changeAmount2 = changeOutput2.getAmount();
    EXPECT_TRUE(changeAmount2 > 5 * COIN);
    EXPECT_TRUE(changeAmount2 < 6 * COIN);
 
@@ -11793,12 +12431,6 @@ TEST_F(BridgeChainDataTests, ZeroConf_SpendNew)
    EXPECT_EQ(wltBal[2], changeAmount2);
    EXPECT_EQ(wltBal[3], 2);
 }
-
-//TODO:
-// possible SNAFU: review reorg code, it yields a different output when it
-// goes 4A, 4, 5, 5A vs 4, 5, 4A, 5A.
-// could be the test chain is weird too, it seems too big to have been
-// missing for so long
 
 ////////////////////////////////////////////////////////////////////////////////
 // BridgeBlocksAutoDBTests
@@ -11844,7 +12476,7 @@ protected:
          (char*)"--datadir=./fakehomedir"sv.data(),
          (char*)"--dbdir=./ldbtestdir"sv.data(),
          (char*)"--satoshi-datadir=./blkfiletest"sv.data(),
-         (char*)"--db-type=DB_FULL"sv.data(),
+         (char*)"--db-type=DB_BARE"sv.data(),
          (char*)"--thread-count=3"sv.data()
       };
       Config::parseArgs(6, argv, Config::ProcessType::Bridge);
@@ -11872,7 +12504,7 @@ protected:
    {
       if (cleanup) {
          //command db to shutdown
-         auto refId = rand();
+         uint64_t refId = rand();
          capnp::MallocMessageBuilder message;
          auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
          toBridge.setReferenceId(refId);
@@ -11899,7 +12531,7 @@ protected:
          }
       } else {
          //only disconnect client from db
-         auto refId = rand();
+         uint64_t refId = rand();
          capnp::MallocMessageBuilder message;
          auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
          toBridge.setReferenceId(refId);
@@ -12047,7 +12679,7 @@ protected:
 
    bool loadPeersDb(bool succeed)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       auto callbackId = Cryptography::PRNG::fortuna.generateRandom(4).toHexStr();
       {
          capnp::MallocMessageBuilder message;
@@ -12113,7 +12745,7 @@ protected:
 
    bool createPeersDb(const std::string& passphrase)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       auto callbackId = Cryptography::PRNG::fortuna.generateRandom(4).toHexStr();
       {
          capnp::MallocMessageBuilder message;
@@ -12184,7 +12816,7 @@ protected:
 
    std::vector<PeerData> listPeers()
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -12231,7 +12863,7 @@ protected:
    {
       Wallets::PeerKey peer{key.getRef(), true, true};
 
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -12264,7 +12896,7 @@ protected:
 
    void removePeer(const std::string& key)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -12291,7 +12923,7 @@ protected:
 
    void setLabel(const std::string& key, const std::string& label)
    {
-      auto refId = rand();
+      uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -12340,7 +12972,7 @@ protected:
          "--datadir=./fakehomedir",
          "--dbdir=./ldbtestdir",
          "--satoshi-datadir=./blkfiletest",
-         "--db-type=DB_FULL",
+         "--db-type=DB_BARE",
          "--thread-count=3",
          "--public"},
          Config::ProcessType::DB);
@@ -12397,7 +13029,7 @@ protected:
       initBDM();
       auto nodePtr = std::dynamic_pointer_cast<NodeUnitTest>(
          Config::NetworkSettings::bitcoinNodes().first);
-      nodePtr->setIface(theBDMt_->bdm()->getIFace());
+      nodePtr->setBDM(theBDMt_->bdm());
    }
 
    /////////////////////////////////////////////////////////////////////////////

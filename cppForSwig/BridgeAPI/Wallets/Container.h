@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -11,6 +11,7 @@
 #include <map>
 #include <Wallets/WalletIdTypes.h>
 #include <Wallets/GetPassphrase.h>
+#include <Utils/Types.h>
 
 namespace AsyncClient
 {
@@ -46,6 +47,16 @@ namespace Armory
    {
       class TxIOCache;
       struct ChainData;
+
+      struct Amounts
+      {
+         const Types::Amount fullBalance;
+         const Types::Amount spendableBalance;
+         const Types::Amount unconfirmedBalance;
+         const size_t txCount;
+      };
+
+      ////////
       struct OfflineException
       {};
 
@@ -79,6 +90,7 @@ namespace Armory
 
          void resetCache(void);
          void setBdvPtr(std::shared_ptr<AsyncClient::BlockDataViewer>);
+         void cleanupBDV(void);
          void setWalletPtr(std::shared_ptr<Wallets::AssetWallet>,
             const Wallets::AddressAccountId&);
          void eraseFromDisk(void);
@@ -92,28 +104,30 @@ namespace Armory
             getWalletPtr(void) const;
          std::shared_ptr<Accounts::AddressAccount>
             getAddressAccount(void) const;
+         const Wallets::WalletId& getWalletId(void) const;
          const Wallets::AddressAccountId& getAccountId(void) const;
 
          void synchronizeAddressChainState(void);
          void extendAddressChain(unsigned, const std::function<void(int)>&);
          void extendAddressChainToIndex(unsigned);
-         bool hasScrAddr(const BinaryData&) const;
+         bool hasScrAddr(const Types::ScrAddr&) const;
          bool hasAddress(const std::string&) const;
 
          std::vector<AddressBookEntry> getAddressBook(void) const;
-         const std::map<BinaryData, TxIOPair> getTxioMap(void) const;
+         const std::map<Types::TxIOKey, TxIOPair> getTxioMap(void) const;
          void resolveTxios(uint32_t);
          void resolveZcTxios(void);
-         std::vector<UTXO> getUTXOs(uint64_t, bool, bool);
+         std::vector<UTXO> getUTXOs(Types::Amount, bool, bool);
 
-         uint64_t getFullBalance(void) const;
-         uint64_t getSpendableBalance(void) const;
-         uint64_t getUnconfirmedBalance(void) const;
-         uint64_t getTxIOCount(void) const;
+         Types::Amount getFullBalance(void) const;
+         Types::Amount getSpendableBalance(void) const;
+         Types::Amount getUnconfirmedBalance(void) const;
+         size_t getTxCount(void) const;
 
-         std::map<BinaryData, std::vector<uint64_t>> getAddrBalanceMap(void) const;
+         std::map<Types::ScrAddr, Amounts> getAddrBalanceMap(void) const;
          Wallets::AssetKeyType getHighestUsedIndex(void) const;
-         std::map<BinaryData, std::shared_ptr<AddressEntry>> getUpdatedAddressMap();
+         std::map<Types::ScrAddr, std::shared_ptr<AddressEntry>>
+         getUpdatedAddressMap(void);
 
          std::unique_ptr<Seeds::WalletBackup> getBackupStrings(
             bool, const Passphrase::UnlockFunc&) const;

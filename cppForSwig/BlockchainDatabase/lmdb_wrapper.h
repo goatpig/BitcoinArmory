@@ -5,46 +5,28 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifndef _LMDB_WRAPPER_
-#define _LMDB_WRAPPER_
+#pragma once
 
 #include <list>
 #include <vector>
+#include <functional>
 #include <filesystem>
 
-#include "Utils/BinaryData.h"
-#include <Utils/ThreadSafeClasses.h>
-#include <Utils/ReentrantLock.h>
-
-//#include "BlockObj.h"
-//#include "StoredBlockObj.h"
+#include <Utils/BinaryData.h>
+#include <Utils/Types.h>
 #include "lmdbpp.h"
-
-#define META_SHARD_ID               0xFFFFFFFF
-#define SHARD_COUNTER_KEY           0xA76B6C00
-#define SHARD_TOPHASH_ID            0xFFAAAA
 
 #define SHARD_FILTER_DBKEY          0xAC28337D
 
-#ifndef UNIT_TESTS
-#define SHARD_FILTER_SCRADDR_STEP   1500
-#define SHARD_FILTER_SPENTNESS_STEP 5000
-#else
-#define SHARD_FILTER_SCRADDR_STEP   2
-#define SHARD_FILTER_SPENTNESS_STEP 2
-#endif
-
-class Blockchain;
 class TxFilterPoolWriter;
 struct StoredDBInfo;
-struct StoredSubHistory;
-class UnspentTxOut;
+struct TxOutData;
 
 enum class DB_SELECT : int;
 enum class ARMORY_DB_TYPE : int;
@@ -52,45 +34,13 @@ enum class ARMORY_DB_TYPE : int;
 ////
 struct FilterException : public std::runtime_error
 {
-   FilterException(const std::string& err) : std::runtime_error(err)
-   {}
+   FilterException(const std::string&);
 };
 
-////
-struct DBIterException : public std::runtime_error
-{
-   DBIterException(const std::string& err) : std::runtime_error(err)
-   {}
-};
-
-////
 struct LmdbWrapperException : public std::runtime_error
 {
-   LmdbWrapperException(const std::string& err) : std::runtime_error(err)
-   {}
+   LmdbWrapperException(const std::string&);
 };
-
-////
-struct SshAccessorException : public std::runtime_error
-{
-   SshAccessorException(const std::string& err) : std::runtime_error(err)
-   {}
-};
-
-////
-struct SpentnessAccessorException : public std::runtime_error
-{
-   SpentnessAccessorException(const std::string& err) : std::runtime_error(err)
-   {}
-};
-
-////
-struct DbTxException : public std::runtime_error
-{
-   DbTxException(const std::string& err) : std::runtime_error(err)
-   {}
-};
-
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -98,18 +48,8 @@ struct DbTxException : public std::runtime_error
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-#define STD_READ_OPTS       leveldb::ReadOptions()
-#define STD_WRITE_OPTS      leveldb::WriteOptions()
-
 #define KVLIST std::vector<std::pair<BinaryData,BinaryData> > 
 
-#define DEFAULT_LDB_BLOCK_SIZE 32*1024
-
-// Use this to create iterators that are intended for bulk scanning
-// It's actually that the ReadOptions::fill_cache arg needs to be false
-#define BULK_SCAN false
-
-class BlockHeader;
 class Tx;
 class TxIn;
 class TxOut;
@@ -118,34 +58,31 @@ class TxRef;
 struct StoredHeader;
 struct StoredTx;
 struct StoredTxOut;
-struct StoredScriptHistory;
-struct StoredTxHints;
-struct StoredHeadHgtList;
 
 enum class DbPrefix : uint8_t;
 
-enum ShardFilterType
+namespace Armory
 {
-   ShardFilterType_ScrAddr = 0,
-   ShardFilterType_Spentness
-};
+   class BlockHeader;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-class LDBIter
+class DBIterator
 {
+private:
+   LMDB::Iterator iter_;
+
 public:
-   LDBIter(void) {isDirty_=true;}
-   virtual ~LDBIter(void) = 0;
+   DBIterator(LMDB::Iterator&&);
+   ~DBIterator(void);
 
-   virtual bool isNull(void) const = 0;
-   virtual bool isValid(void) const = 0;
+   bool isNull(void) const;
+   bool isValid(void) const;
    bool isValid(DbPrefix);
 
-   virtual bool readIterData(void) = 0;
-   virtual bool retreat(void) = 0;
-   virtual bool advance(void) = 0;
-
+   bool readIterData(void);
+   bool retreat(void);
+   bool advance(void);
    bool advance(DbPrefix);
    bool advanceAndRead(void);
    bool advanceAndRead(DbPrefix);
@@ -157,20 +94,20 @@ public:
    BinaryRefReader& getKeyReader(void) const;
    BinaryRefReader& getValueReader(void) const;
 
-   // All the seekTo* methods do the exact same thing, the variant simply 
+   // All the seekTo* methods do the exact same thing, the variant simply
    // determines the meaning of the return true/false value.
-   virtual bool seekTo(BinaryDataRef key) = 0;
-   bool seekTo(DbPrefix pref, BinaryDataRef key);
-   virtual bool seekToExact(BinaryDataRef key) = 0;
-   bool seekToExact(DbPrefix pref, BinaryDataRef key);
-   bool seekToStartsWith(BinaryDataRef key);
-   bool seekToStartsWith(DbPrefix prefix);
-   bool seekToStartsWith(DbPrefix pref, BinaryDataRef key);
-   virtual bool seekToBefore(BinaryDataRef key) = 0;
-   bool seekToBefore(DbPrefix prefix);
-   bool seekToBefore(DbPrefix pref, BinaryDataRef key);
-   virtual bool seekToFirst(void) = 0;
-   virtual bool seekToLast(void) = 0;
+   bool seekTo(BinaryDataRef);
+   bool seekTo(DbPrefix, BinaryDataRef);
+   bool seekToExact(BinaryDataRef);
+   bool seekToExact(DbPrefix, BinaryDataRef);
+   bool seekToStartsWith(BinaryDataRef);
+   bool seekToStartsWith(DbPrefix);
+   bool seekToStartsWith(DbPrefix, BinaryDataRef);
+   bool seekToBefore(BinaryDataRef);
+   bool seekToBefore(DbPrefix);
+   bool seekToBefore(DbPrefix, BinaryDataRef);
+   bool seekToFirst(void);
+   bool seekToLast(void) ;
 
    // Return true if the iterator is currently on valid data, with key match
    bool checkKeyExact(BinaryDataRef);
@@ -179,11 +116,7 @@ public:
    bool checkKeyStartsWith(DbPrefix, BinaryDataRef);
 
    bool verifyPrefix(DbPrefix, bool=true);
-   void resetReaders(void)
-   {
-      currKeyReader_.resetPosition();
-      currValueReader_.resetPosition();
-   }
+   void resetReaders(void);
 
 protected:
    mutable BinaryDataRef    currKey_;
@@ -195,437 +128,135 @@ protected:
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-class LDBIter_Single : public LDBIter
+class DBTransaction
 {
 private:
-   LMDB::Iterator iter_;
+   LMDB::Transaction dbtx_;
 
 public:
-   LDBIter_Single(LMDB::Iterator&& iter) :
-      iter_(std::move(iter))
-   {}
+   DBTransaction(LMDB::Transaction&&);
+   ~DBTransaction(void);
 
-   //virutals
-   bool isNull(void) const override { return !iter_.isValid(); }
-   bool isValid(void) const override { return iter_.isValid(); }
-
-   bool seekTo(BinaryDataRef key) override;
-   bool seekToExact(BinaryDataRef key) override;
-   bool seekToBefore(BinaryDataRef key) override;
-   bool seekToFirst(void) override;
-   bool seekToLast(void) override;
-
-   bool advance(void) override;
-   bool retreat(void) override;
-   bool readIterData(void) override;
+   void insert(const LMDB::DataRef&, const LMDB::DataRef&);
+   void erase(const LMDB::DataRef&);
+   LMDB::DataRef get(const LMDB::DataRef&) const;
+   DBIterator getIterator(void) const;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 class DBPair
 {
 private:
-   LMDBEnv env_;
-   LMDB db_;
-   const unsigned id_;
+   LMDB::Env env_;
+   LMDB::DB db_;
+   size_t mapSize_;
 
 public:
-   DBPair(unsigned id) :
-      id_(id)
-   {}
+   DBPair(size_t);
 
-   LMDBEnv::Transaction beginTransaction(LMDB::Mode mode);
-   void open(const std::filesystem::path& path, const std::string& dbName);
+   LMDB::Transaction beginTransaction(LMDB::Mode);
+   void open(const std::filesystem::path&, const std::string&);
    void close(void);
-
-   BinaryDataRef getValue(BinaryDataRef keyWithPrefix) const;
-   void putValue(BinaryDataRef key, BinaryDataRef value);
-   void deleteValue(BinaryDataRef key);
-   
-   std::unique_ptr<LDBIter_Single> getIterator(void);
-   unsigned getId(void) const { return id_; }
-
    bool isOpen(void) const;
-
-   LMDBEnv* getEnv(void) { return &env_; }
 };
 
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-class DbTransaction
-{
-public:
-   DbTransaction(void)
-   {}
-
-   virtual ~DbTransaction(void) = 0;
-};
-
-////////
-class DbTransaction_Single : public DbTransaction
-{
-private:
-   LMDBEnv::Transaction dbtx_;
-
-public:
-   DbTransaction_Single(LMDBEnv::Transaction&& dbtx) :
-      dbtx_(std::move(dbtx))
-   {}
-};
-
-////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 class DatabaseContainer
 {
-protected:
-   const DB_SELECT dbSelect_;
-
-public:
-   static std::filesystem::path baseDir_;
-   static BinaryData magicBytes_;
-
-public:
-   //tor
-   DatabaseContainer(DB_SELECT dbSelect) :
-      dbSelect_(dbSelect)
-   {}
-
-   virtual ~DatabaseContainer(void) = 0;
-
-   //static
-   static std::filesystem::path getDbPath(DB_SELECT);
-   static std::filesystem::path getDbPath(const std::string&);
-   static std::string getDbName(DB_SELECT);
-
-   //virtual
-   virtual StoredDBInfo open(void) = 0;
-   virtual void close(void) = 0;
-   virtual void eraseOnDisk(void) = 0;
-
-   virtual std::unique_ptr<DbTransaction> beginTransaction(LMDB::Mode) const = 0;
-   virtual std::unique_ptr<LDBIter> getIterator(void) = 0;
-   
-   virtual BinaryDataRef getValue(BinaryDataRef keyWithPrefix) const = 0;
-   virtual void putValue(BinaryDataRef key, BinaryDataRef value) = 0;
-   virtual void deleteValue(BinaryDataRef key) = 0;
-
-   virtual StoredDBInfo getStoredDBInfo(uint32_t id) = 0;
-   virtual void putStoredDBInfo(StoredDBInfo const & sdbi, uint32_t id) = 0;
-};
-
-////////////////////////////////////////////////////////////////////////////////
-class DatabaseContainer_Single : public DatabaseContainer
-{
 private:
+   const std::filesystem::path baseDir_;
+   const std::string name_;
    mutable DBPair db_;
 
 public:
-   DatabaseContainer_Single(DB_SELECT dbSelect) :
-      DatabaseContainer(dbSelect), db_(0)
-   {}
+   //tor
+   DatabaseContainer(const std::filesystem::path&, const std::string&, size_t);
+   ~DatabaseContainer(void);
 
-   ~DatabaseContainer_Single(void)
-   {
-      close();
-   }
+   //static
+   static std::string getDbName(DB_SELECT);
 
-   //virtuals
-   StoredDBInfo open(void);
+   //virtual
+   void open(void);
    void close(void);
    void eraseOnDisk(void);
 
-   std::unique_ptr<DbTransaction> beginTransaction(LMDB::Mode) const;
-   std::unique_ptr<LDBIter> getIterator(void);
+   std::unique_ptr<DBTransaction> beginTransaction(LMDB::Mode) const;
 
-   BinaryDataRef getValue(BinaryDataRef key) const;
-   void putValue(BinaryDataRef key, BinaryDataRef value);
-   void deleteValue(BinaryDataRef key);
-
-   StoredDBInfo getStoredDBInfo(uint32_t id);
-   void putStoredDBInfo(StoredDBInfo const & sdbi, uint32_t id);
-};
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-struct ShardFilter
-{
-   virtual ~ShardFilter(void) = 0;
-   virtual unsigned keyToId(BinaryDataRef) const = 0;
-   virtual unsigned getHeightForId(unsigned) const = 0;
-   virtual BinaryData serialize(void) const = 0;
-
-   static std::unique_ptr<ShardFilter> deserialize(BinaryDataRef);
-   static BinaryData getDbKey(void);
-};
-
-////////
-struct ShardFilter_ScrAddr : public ShardFilter
-{
-   const unsigned step_;
-   unsigned thresholdId_;
-   unsigned thresholdValue_;
-
-   ShardFilter_ScrAddr(unsigned);
-
-   unsigned keyToId(BinaryDataRef) const;
-   unsigned getHeightForId(unsigned) const;
-   BinaryData serialize(void) const;
-
-   static std::unique_ptr<ShardFilter> deserialize(BinaryDataRef);
-};
-
-////////
-struct ShardFilter_Spentness : public ShardFilter
-{
-   const unsigned step_;
-   unsigned thresholdId_;
-   unsigned thresholdValue_;
-
-   ShardFilter_Spentness(unsigned);
-
-   unsigned keyToId(BinaryDataRef) const;
-   unsigned getHeightForId(unsigned) const;
-   BinaryData serialize(void) const;
-
-   static std::unique_ptr<ShardFilter> deserialize(BinaryDataRef);
+   StoredDBInfo getStoredDBInfo(uint16_t);
+   void putStoredDBInfo(const StoredDBInfo&, uint16_t);
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 class LMDBBlockDatabase
 {
-   friend class ShardedSshParser;
-   friend class BlockchainScanner_Super;
-
 private:
+   const std::filesystem::path dbDir_;
+
    std::shared_ptr<DatabaseContainer> getDbPtr(DB_SELECT) const;
+   std::shared_ptr<DatabaseContainer> getHashTablePtr(DB_SELECT, uint8_t) const;
 
 public:
-   LMDBBlockDatabase(std::shared_ptr<Blockchain>, const std::filesystem::path&);
+   LMDBBlockDatabase(const std::filesystem::path&);
    ~LMDBBlockDatabase(void);
 
    /////////////////////////////////////////////////////////////////////////////
-   void openDatabases(const std::filesystem::path &basedir);
+   void openDatabases(void);
+   bool databasesAreOpen(void) const;
 
-   /////////////////////////////////////////////////////////////////////////////
-   void closeDatabases();
-   void replaceDatabases(DB_SELECT, const std::string&);
+   void closeDatabases(void);
    void cycleDatabase(DB_SELECT);
-
-   /////////////////////////////////////////////////////////////////////////////
-   std::unique_ptr<DbTransaction> beginTransaction(DB_SELECT, LMDB::Mode) const;
-   ARMORY_DB_TYPE getDbType(void) const;
-
-   /////////////////////////////////////////////////////////////////////////////
-   // Sometimes, we just need to nuke everything and start over
    void destroyAndResetDatabases(void);
    void resetHistoryDatabases(void);
 
    /////////////////////////////////////////////////////////////////////////////
-   bool databasesAreOpen(void) const;
+   std::unique_ptr<DBTransaction> beginTransaction(
+      DB_SELECT, LMDB::Mode) const;
+   std::unique_ptr<DBTransaction> beginHashTableTx(
+      DB_SELECT, uint8_t, LMDB::Mode) const;
 
    /////////////////////////////////////////////////////////////////////////////
-   // Get latest block info
-   BinaryData getTopBlockHash() const;
-
-   /////////////////////////////////////////////////////////////////////////////
-   std::unique_ptr<LDBIter> getIterator(DB_SELECT) const;
-
-   /////////////////////////////////////////////////////////////////////////////
-   // Get value using BinaryData object.  If you have a string, you can use
-   // BinaryData key(string(theStr));
-   BinaryDataRef getValueNoCopy(DB_SELECT, BinaryDataRef) const;
-
-   /////////////////////////////////////////////////////////////////////////////
-   // Get value using BinaryDataRef object.  The data from the get* call is 
-   // actually stored in a member variable, and thus the refs are valid only 
-   // until the next get* call.
-   BinaryDataRef getValueRef(DB_SELECT, DbPrefix, BinaryDataRef) const;
-
-   /////////////////////////////////////////////////////////////////////////////
-   // Same as the getValueRef, in that they are only valid until the next get*
-   // call.  These are convenience methods which basically just save us 
-   BinaryRefReader getValueReader(DB_SELECT, BinaryDataRef) const;
-   BinaryRefReader getValueReader(DB_SELECT, DbPrefix, BinaryDataRef) const;
-
-   BinaryData getDBKeyForHash(BinaryDataRef, uint8_t = UINT8_MAX) const;
-   BinaryData getHashForDBKey(BinaryData dbkey) const;
-   BinaryData getHashForDBKey(uint32_t,
-      uint8_t,
-      uint16_t = UINT16_MAX,
-      uint16_t = UINT16_MAX) const;
-   unsigned getHeightForTxHash(BinaryDataRef) const;
-
-   /////////////////////////////////////////////////////////////////////////////
-   // Put value based on BinaryDataRefs key and value
-   void putValue(DB_SELECT db, BinaryDataRef key, BinaryDataRef value);
-   void putValue(DB_SELECT db, DbPrefix pref, BinaryDataRef key, BinaryDataRef value);
-
-   /////////////////////////////////////////////////////////////////////////////
-   // Put value based on BinaryData key. If batch writing, pass in the batch
-   void deleteValue(DB_SELECT db, BinaryDataRef key);
-   void deleteValue(DB_SELECT db, DbPrefix pref, BinaryDataRef key);
-
-   /////////////////////////////////////////////////////////////////////////////
-   void readAllHeaders(
-      const std::function<void(std::shared_ptr<BlockHeader>, uint32_t, uint8_t)> &callback
-   );
-
-   std::map<uint32_t, uint32_t> getSSHSummary(BinaryDataRef scrAddrStr);
-   void resetHistoryForAddressVector(const std::vector<BinaryData>&);
-
-public:
-   uint8_t getValidDupIDForHeight(uint32_t blockHgt) const;
-   uint8_t getValidDupIDForHeight_fromDB(uint32_t blockHgt);
-   void setValidDupIDForHeight(
-      uint32_t blockHgt, uint8_t dup, bool overwrite = true);
-   void setValidDupIDForHeight(std::map<unsigned, uint8_t>&);
-   
-   bool isBlockIDOnMainBranch(unsigned) const;
-   void setBlockIDBranch(std::map<unsigned, bool>&);
+   uint64_t getDBKeyForHash(const Armory::Types::TxHash&) const;
 
    /////////////////////////////////////////////////////////////////////////////
    // Interface to translate Stored* objects to/from persistent DB storage
    /////////////////////////////////////////////////////////////////////////////
-   StoredDBInfo getStoredDBInfo(DB_SELECT db, uint32_t id);
-   void putStoredDBInfo(DB_SELECT db, StoredDBInfo const & sdbi, uint32_t id);
+   StoredDBInfo getStoredDBInfo(DB_SELECT, uint16_t);
+   void putStoredDBInfo(DB_SELECT, StoredDBInfo const&, uint16_t);
 
    /////////////////////////////////////////////////////////////////////////////
-   // BareHeaders are those int the HEADERS DB with no blockdta associated
-   uint8_t putBareHeader(StoredHeader & sbh, bool updateDupID = true,
-      bool updateSDBI = true);
-   bool    getBareHeader(StoredHeader & sbh, uint32_t blkHgt, uint8_t dup) const;
-   bool    getBareHeader(StoredHeader & sbh, uint32_t blkHgt) const;
-   bool    getBareHeader(StoredHeader & sbh, BinaryDataRef headHash) const;
-
-   /////////////////////////////////////////////////////////////////////////////
-   // still using the old name even though no block data is stored anymore
-   BinaryData getRawBlock(uint32_t height, uint8_t dupId) const;
-   BinaryData getRawBlock(std::shared_ptr<BlockHeader>) const;
-   bool getStoredHeader(StoredHeader&, uint32_t, uint8_t, bool withTx = true) const;
-   bool getStoredHeader(StoredHeader&, std::shared_ptr<BlockHeader>, bool withTx = true) const;
+   // BareHeaders are those in the HEADERS DB with no blockdta associated
+   void readAllHeaders(
+      const std::function<void(std::shared_ptr<Armory::BlockHeader>)>&);
+   void putBareHeader(const StoredHeader&);
+   bool getStoredHeader(StoredHeader&,
+      std::shared_ptr<Armory::BlockHeader>, bool=true) const;
 
    /////////////////////////////////////////////////////////////////////////////
    // StoredTx Accessors
-   void updateStoredTx(StoredTx&);
-
-   void putStoredTx(StoredTx&, bool=true);
-   void putStoredZC(StoredTx&, const BinaryData&);
-
-   bool getStoredZcTx(StoredTx&, BinaryDataRef) const;
-   bool getStoredTx(StoredTx&, BinaryDataRef) const;
-   bool getStoredTx_byDBKey(StoredTx&, BinaryDataRef) const;
-   bool getStoredTx_byHash(BinaryDataRef, StoredTx* = nullptr) const;
-   bool getStoredTx(StoredTx&, uint32_t, uint16_t, bool=true) const;
-   bool getStoredTx(StoredTx&, uint32_t, uint8_t, uint16_t, bool=true) const;
+   void putStoredZC(StoredTx&, const Armory::Types::TxKey&);
+   bool getStoredZC(StoredTx&, const Armory::Types::TxKey&) const;
+   void putStoredZcTxOut(const StoredTxOut&, const Armory::Types::TxIOKey&);
 
    /////////////////////////////////////////////////////////////////////////////
-   // StoredTxOut Accessors
-   void putStoredTxOut(StoredTxOut const & sto);
-   void putStoredZcTxOut(StoredTxOut const & stxo, const BinaryData& zcKey);
-
-   bool getStoredTxOut(StoredTxOut & stxo,
-      uint32_t blockHeight,
-      uint8_t  dupID,
-      uint16_t txIndex,
-      uint16_t txOutIndex) const;
-
-   bool getStoredTxOut(StoredTxOut & stxo,
-      uint32_t blockHeight,
-      uint16_t txIndex,
-      uint16_t txOutIndex) const;
-
-   bool getStoredTxOut(StoredTxOut & stxo,
-      const BinaryData& DBkey) const;
-
-   bool getStoredTxOut(
-      StoredTxOut & stxo, const BinaryData& txHash, uint16_t txoutid) const;
-
-   void getSpentness(StoredTxOut& stxo);
-
-   void getUTXOflags(std::map<BinaryData, StoredSubHistory>&) const;
-   void getUTXOflags(StoredSubHistory&) const;
-   void getUTXOflags_Super(StoredSubHistory&) const;
+   // TxOut/In history stuff
+   std::map<Armory::Types::TxIOKey, TxOutData>
+   getTxOutHistoryForScrAddrKey(Armory::Types::ScrAddrId,
+      Armory::Types::BlockId, Armory::Types::BlockId) const;
+   std::map<Armory::Types::TxIOKey, Armory::Types::TxIOKey>
+   getTxInHistoryForTxOutHistory(
+      const std::vector<Armory::Types::TxIOKey>&) const;
+   Armory::Types::TxIOKey getTxInHistoryForTxOutKey(
+      Armory::Types::TxIOKey) const;
 
    /////////////////////////////////////////////////////////////////////////////
-   // StoredScriptHistory Accessors
-   void putStoredScriptHistorySummary(StoredScriptHistory & ssh);
-
-   bool getStoredScriptHistory(StoredScriptHistory & ssh,
-      BinaryDataRef scrAddrStr,
-      uint32_t startBlock = 0,
-      uint32_t endBlock = UINT32_MAX) const;
-
-   bool getStoredSubHistoryAtHgtX(StoredSubHistory& subssh,
-      const BinaryDataRef scrAddrStr, const BinaryData& hgtX) const;
-   
-   bool getStoredSubHistoryAtHgtX(StoredSubHistory& subssh,
-      const BinaryData& dbkey) const;
-
-   bool getStoredScriptHistorySummary(StoredScriptHistory & ssh,
-      BinaryDataRef scrAddrStr) const;
-
-   void getStoredScriptHistoryByRawScript(
-      StoredScriptHistory & ssh,
-      BinaryDataRef rawScript) const;
-   
-   bool fillStoredSubHistory(StoredScriptHistory&, unsigned, unsigned) const;
-   bool fillStoredSubHistory_Super(StoredScriptHistory&, unsigned, unsigned) const;
-
-   // This method breaks from the convention I've used for getting/putting 
-   // stored objects, because we never really handle Sub-ssh objects directly,
-   // but we do need to harness them.  This method could be renamed to
-   // "getPartialScriptHistory()" ... it reads the main 
-   // sub-ssh from DB and adds it to the supplied regular-ssh.
-   bool fetchStoredSubHistory(StoredScriptHistory & ssh,
-      BinaryData hgtX,
-      bool createIfDNE = false,
-      bool forceReadAndMerge = false);
-
-   // This could go in StoredBlockObj if it didn't need to lookup DB data
-   bool     getFullUTXOMapForSSH(StoredScriptHistory & ssh,
-      std::map<BinaryData, UnspentTxOut> & mapToFill,
-      bool withMultisig = false);
-
-   uint64_t getBalanceForScrAddr(BinaryDataRef scrAddr, bool withMulti = false);
-
-   bool putStoredTxHints(StoredTxHints const & sths);
-   bool getStoredTxHints(StoredTxHints & sths, BinaryDataRef hashPrefix) const;
-   void updatePreferredTxHint(BinaryDataRef hashOrPrefix, BinaryData preferKey);
-
-   bool putStoredHeadHgtList(StoredHeadHgtList const & hhl);
-   bool getStoredHeadHgtList(StoredHeadHgtList & hhl, uint32_t height) const;
-
-   // TxRefs are much simpler with LDB than the previous FileDataPtr construct
-   TxRef getTxRef(BinaryDataRef txHash);
-   TxRef getTxRef(BinaryData hgtx, uint16_t txIndex);
-   TxRef getTxRef(uint32_t hgt, uint8_t dup, uint16_t txIndex);
-
-
-   // Sometimes we already know where the Tx is, but we don't know its hash
-   Tx    getFullTxCopy(const BinaryData&) const;
-   Tx    getFullTxCopy(uint32_t, uint16_t) const;
-   Tx    getFullTxCopy(uint32_t, uint8_t, uint16_t) const;
-   Tx    getFullTxCopy(uint16_t, std::shared_ptr<BlockHeader>) const;
-   TxOut getTxOutCopy(const BinaryData&, uint16_t) const;
-   TxIn  getTxInCopy(const BinaryData&, uint16_t) const;
-
-   // Sometimes we already know where the Tx is, but we don't know its hash
-   BinaryData getTxHashForLdbKey(BinaryDataRef) const;
-
-   ////////////////////////////////////////////////////////////////////////////
-   bool markBlockHeaderValid(BinaryDataRef);
-   bool markBlockHeaderValid(uint32_t, uint8_t);
-
    KVLIST getAllDatabaseEntries(DB_SELECT);
    void   printAllDatabaseEntries(DB_SELECT);
 
    const std::filesystem::path& baseDir(void) const;
 
    void closeDB(DB_SELECT);
-   StoredDBInfo openDB(DB_SELECT);
-   void resetSSHdb(void);
-   void resetSSHdb_Super(void);
-
-   const std::shared_ptr<Blockchain> blockchain(void) const { return blockchainPtr_; }
+   void openDB(DB_SELECT);
 
    ////
    TxFilterPoolWriter getFilterPoolWriter(uint32_t) const;
@@ -635,16 +266,6 @@ public:
    void putMissingHashes(const std::set<BinaryData>&, uint32_t);
    std::set<BinaryData> getMissingHashes(uint32_t) const;
 
-   ////
-   void updateHeightToIdMap(std::map<unsigned, unsigned>& idmap)
-   {
-      heightToBatchId_.update(move(idmap));
-   }
-
-   void loadHeightToIdMap();
-   unsigned getShardIdForHeight(unsigned) const;
-   unsigned getNextShardIdForHeight(unsigned) const;
-
    //// block files flagged for reparsing
    bool getOrSetFlaggedBlockFile(uint32_t);
    std::vector<uint32_t> getFlaggedFileNums(void) const;
@@ -652,27 +273,9 @@ public:
 
 public:
    std::map<DB_SELECT, std::shared_ptr<DatabaseContainer>> dbMap_;
-   const static std::map<std::string, size_t> mapSizes_;
+   std::map<DB_SELECT, std::vector<std::shared_ptr<DatabaseContainer>>> dbHashTables_;
 
 private:
-   bool                 dbIsOpen_;
-   uint32_t             ldbBlockSize_;
-
-   uint32_t             lowestScannedUpTo_;
-
-   Armory::Threading::TransactionalMap<unsigned, uint8_t> validDupByHeight_;
-   Armory::Threading::TransactionalMap<unsigned, bool> blockIDMainChainMap_;
-
-   // In this case, a address is any TxOut script, which is usually
-   // just a 25-byte script.  But this generically captures all types
-   // of addresses including pubkey-only, P2SH, 
-   std::map<BinaryData, StoredScriptHistory> registeredSSHs_;
-   const std::shared_ptr<Blockchain> blockchainPtr_;
-   std::filesystem::path blkFolder_;
-   const static std::set<DB_SELECT> supernodeDBs_;
-
-   Armory::Threading::TransactionalMap<unsigned, unsigned> heightToBatchId_;
+   bool     dbIsOpen_;
+   uint32_t ldbBlockSize_;
 };
-
-#endif
-// kate: indent-width 3; replace-tabs on;

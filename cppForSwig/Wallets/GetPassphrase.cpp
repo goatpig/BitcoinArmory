@@ -28,12 +28,12 @@ Params::Params() :
 Params::Params(std::chrono::milliseconds target, uint32_t mb,
    SecureBinaryData pass) :
    type(Type::SetNew), unlockMs(target), memTargetMB(mb),
-   passphrase{std::move(pass)}, reuseKdf(false)
+   reuseKdf(false), passphrase{std::move(pass)}
 {}
 
 Params::Params(SecureBinaryData pass, bool reuseKdf) :
    type(reuseKdf ? Type::SetNew : Type::Unlock),
-   unlockMs(0ms), passphrase{std::move(pass)}, reuseKdf(reuseKdf)
+   unlockMs(0ms), reuseKdf(reuseKdf), passphrase{std::move(pass)}
 {}
 
 ////////////////////////////////////////////////////////////////////////////////

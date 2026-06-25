@@ -267,7 +267,8 @@ namespace
    {
       //walletId
       size_t idLen = 7;
-      BinaryData decodedId(idLen), checksum;
+      BinaryData decodedId, checksum;
+      decodedId.resize(idLen);
       auto idRef = BinaryDataRef::fromStringView(backup->getBackupId());
       int decodeChkByte = decodeEasy16Line(decodedId.getPtr(), idLen,
          idRef, checksum);

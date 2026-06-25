@@ -64,7 +64,7 @@ namespace
       //derive '(int)sType' amount of addresses, use last one as id
       auto addrVec = derScheme->extendPublicChain(rootEntry,
          0, (int)sType, nullptr);
-      if (addrVec.size() != (int)sType+1) {
+      if (addrVec.size() != (size_t)sType+1) {
          throw WalletException("unexpected chain derivation output");
       }
 

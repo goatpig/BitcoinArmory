@@ -5,7 +5,7 @@ $Cxx.namespace("Armory::Codec::Types");
 
 ## base types ##
 using Hash              = Data;
-using TxKey             = Data;
+using TxKey             = UInt64;
 using ScrAddr           = Data;
 
 using WalletId          = Text;
@@ -21,21 +21,28 @@ using CoinAmount  = UInt64;
 
 ## block data ##
 struct Header {
-   rawData     @0 : Data;
-   height      @1 : UInt32;
-   dupId       @2 : UInt8;
+   thisHash    @0 : Hash;
+   prevHash    @1 : Hash;
+   timestamp   @2 : UInt32;
+   blockSize   @3 : UInt32;
+   numTxs      @4 : UInt32;
+   blockId     @5 : UInt32;
+   height      @6 : UInt32;
+   mainBranch  @7 : Bool;
 }
 
 struct NewBlockNotif {
    height            @0 : UInt32;
    branchHeight      @1 : UInt32;
+   invalidatedIds    @2 : List(UInt32);
+   newMainBranchIds  @3 : List(UInt32);
 }
 
 ## tx data ##
 struct Output {
    value       @0 : CoinAmount;
    txHeight    @1 : Height;
-   txIndex     @2 : UInt32;
+   txIndex     @2 : UInt16;
    txOutIndex  @3 : UInt16;
    txHash      @4 : Hash;
    script      @5 : Data;
@@ -48,12 +55,10 @@ struct Outpoint {
 }
 
 struct Tx {
-   body        @0 : Data;
-   height      @1 : UInt32;
-   dupId       @2 : UInt8;
-   index       @3 : UInt32;
-   isChainZc   @4 : Bool;
-   isRbf       @5 : Bool;
+   raw         @0 : Data;
+   key         @1 : TxKey;
+   isChainedZc @2 : Bool;
+   isRbf       @3 : Bool;
 }
 
 ## bitcoin node & db status ##
@@ -129,10 +134,9 @@ struct TxLedger {
       isSTS          @7 : Bool;
       isOptInRBF     @8 : Bool;
       isChainedZC    @9 : Bool;
-      isWitness      @10: Bool;
 
-      walletId       @11: WalletId;
-      scrAddrs       @12: List(Data);
+      walletId       @10: WalletId;
+      scrAddrs       @11: List(Data);
    }
 
    ledgers           @0 : List(LedgerEntry);
@@ -140,13 +144,13 @@ struct TxLedger {
 
 struct TxioPair {
    amount   @0 : UInt64;
-   txOut    @1 : Data;
-   txIn     @2 : Data;
+   txOut    @1 : UInt64;
+   txIn     @2 : UInt64;
    txTime   @3 : UInt32;
+   scrAddr  @4 : Data;
 
-   fromSelf @4 : Bool;
-   coinbase @5 : Bool;
-   rbf      @6 : Bool;
+   rbf      @5 : Bool;
+   chained  @6 : Bool;
    multisig @7 : Bool;
 }
 
