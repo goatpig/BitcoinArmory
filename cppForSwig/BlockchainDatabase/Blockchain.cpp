@@ -203,11 +203,11 @@ HeaderPtr Blockchain::organizeChain(
          header->nextHash_ = nullptr;
          header->isMainBranch_ = false;
       }
-      topBlockPtr_.store(nullptr);
+      topBlockPtr_.reset();
    }
 
    // If this is the first run, the topBlock is the genesis block
-   if (topBlockPtr_.load() == nullptr) {
+   if (!topBlockPtr_) {
       auto genBlock = getGenesisHeader();
       if (!genBlock->getMerkleRoot().valid()) {
          return nullptr;
@@ -217,10 +217,10 @@ HeaderPtr Blockchain::organizeChain(
       genBlock->isMainBranch_ = true;
       genBlock->isOrphan_ = false;
       genBlock->isFinishedCalc_ = true;
-      topBlockPtr_.store(genBlock);
+      topBlockPtr_ = genBlock;
    }
    const auto prevTopBlock = top();
-   auto newTopBlock = topBlockPtr_.load();
+   auto newTopBlock = topBlockPtr_;
    double maxDiffSum = prevTopBlock->getDifficultySum();
 
    //prepare helper containers
@@ -432,7 +432,7 @@ void Blockchain::putNewHeaders(LMDBBlockDatabase *db)
 
    //update SDBI, keep within the batch transaction
    auto sdbiH = db->getStoredDBInfo(DB_SELECT::HEADERS, 0xFFFF);
-   auto topBlock = topBlockPtr_.load();
+   auto topBlock = topBlockPtr_;
    if (topBlock == nullptr) {
       LOGINFO << "No known top block, didn't update SDBI";
       return;
