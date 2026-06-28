@@ -6,7 +6,7 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 #include <cstring>
-#include <format>
+#include <spdlog/spdlog.h>
 #include "Utils.h"
 #include <Utils/BtcUtils.h>
 #include <Utils/ArmoryConfig.h>
@@ -1103,7 +1103,7 @@ const Types::TxHash& MempoolSnapshot::getHashForKey(
 {
    auto txPtr = getTxByKey(key);
    if (txPtr == nullptr) {
-      throw std::runtime_error(std::format("not hash for zc key {:x}", key));
+      throw std::runtime_error(fmt::format("not hash for zc key {:x}", key));
    }
    return txPtr->getTxHash();
 }

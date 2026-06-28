@@ -17,7 +17,7 @@
 #include <fcntl.h>
 #include <string_view>
 #include <cstring>
-#include <format>
+#include <spdlog/spdlog.h>
 
 #include "FileUtils.h"
 #include "log.h"
@@ -372,7 +372,7 @@ std::filesystem::path FileUtils::getBlkFilename(
    /// Update:  It's been enough time since the hardfork that just about
    //           everyone must've upgraded to 0.8+ by now... remove pre-0.8
    //           compatibility.
-   return path / std::format(blkFileNumTemplate, fblkNum);
+   return path / fmt::format(blkFileNumTemplate, fblkNum);
 }
 
 ///
