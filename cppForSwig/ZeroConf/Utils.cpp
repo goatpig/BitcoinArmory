@@ -6,7 +6,7 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 #include <cstring>
-
+#include <format>
 #include "Utils.h"
 #include <Utils/BtcUtils.h>
 #include <Utils/ArmoryConfig.h>

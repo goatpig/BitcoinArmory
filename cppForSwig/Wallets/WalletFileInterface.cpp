@@ -815,9 +815,8 @@ void WalletDBInterface::compactFile()
 
    std::filesystem::path copyName;
    while (true) {
-      auto fullpath = swapFolder / std::filesystem::path(std::format(
-         "{}-{}", COMPACT_FILE_COPY_NAME, fortuna.generateRandom(6).toHexStr()
-      ));
+      auto fullpath = swapFolder / std::filesystem::path(std::string{ COMPACT_FILE_COPY_NAME }
+         + "-" + fortuna.generateRandom(6).toHexStr());
       if (!FileUtils::pathExists(fullpath, 0)) {
          copyName = fullpath;
          break;
@@ -833,9 +832,8 @@ void WalletDBInterface::compactFile()
    //swap files
    std::filesystem::path swapPath;
    while (true) {
-      auto fullpath = swapFolder / std::filesystem::path(std::format(
-         "{}-{}", COMPACT_FILE_SWAP_NAME, fortuna.generateRandom(6).toHexStr()
-      ));
+      auto fullpath = swapFolder / std::filesystem::path(std::string{ COMPACT_FILE_SWAP_NAME }
+         + "-" + fortuna.generateRandom(6).toHexStr());
       if (FileUtils::pathExists(fullpath, 0)) {
          continue;
       }

@@ -515,7 +515,7 @@ void LMDBBlockDatabase::openDatabases()
       auto emplaceResult = dbHashTables_.emplace(currDb,
          std::vector<std::shared_ptr<DatabaseContainer>>{256});
       for (uint32_t index = 0; index < 256; index++) {
-         auto name = std::format("{}_{:x}", tableName, index);
+         const std::string name = tableName + "_" + std::to_string(index);
          auto db = std::make_shared<DatabaseContainer>(
             hashDir, name, size);
          db->open();

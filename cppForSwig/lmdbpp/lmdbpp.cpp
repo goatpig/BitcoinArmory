@@ -575,8 +575,8 @@ void Env::open(const std::filesystem::path &path, unsigned flags)
 
    rc = mdb_env_open(mdbEnv_, path.string().c_str(), MDB_NOSUBDIR | flags, 0600);
    if (rc != MDB_SUCCESS) {
-      throw Exception(std::format("Failed to open db \"{}\" with error: {}",
-         path.filename().string(), errorString(rc)));
+      throw Exception("Failed to open db \"" + path.filename().string() +
+         "\" with error: " + errorString(rc));
    }
    path_ = path;
 }
