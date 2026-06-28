@@ -20,7 +20,6 @@
 #include <cstring>
 #include <algorithm>
 #include <iostream>
-#include <format>
 
 using namespace LMDB;
 
