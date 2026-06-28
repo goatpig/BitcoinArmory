@@ -43,57 +43,27 @@ std::shared_ptr<const Ledgers::DBCache> TxIOCache::getDBCache() const
 }
 
 Ledgers::Context Ledgers::prepareContext(
-   const std::map<BinaryData, TxIOPair>& txioMap,
+   const std::map<Types::TxIOKey, TxIOPair>& txioMap,
    std::shared_ptr<const DBCache> dbCache,
-   std::set<BinaryData> scrAddrSet)
+   std::set<Types::ScrAddr> scrAddrSet)
 {
-   std::set<BinaryData> txKeys;
+   std::set<Types::TxKey> txKeys;
 
-   /* 1. gather all tx keys */
+   /* 1. gather all relevant tx keys */
    for (const auto& txioPair : txioMap) {
-      const auto& txKeyOut = txioPair.second.getTxRefOfOutput().getDBKey();
-      txKeys.emplace(txKeyOut);
-      BinaryDataRef txInKeyRef;
+      txKeys.emplace(txioPair.second.getTxKeyOfOutput());
       if (txioPair.second.hasTxIn()) {
-         txInKeyRef = txioPair.second.getTxRefOfInput().getDBKeyRef();
-         txKeys.emplace(BinaryData{ txInKeyRef });
+         txKeys.emplace(txioPair.second.getTxKeyOfInput());
       }
    }
 
-   /* 2. grab all txs */
-   std::map<BinaryData, Tx> txMap;
+   /* 2. grab all txs for relevant tx keys */
+   std::map<Types::TxKey, Tx> txMap;
    for (const auto& txKey : txKeys) {
       txMap.emplace(txKey, dbCache->txMap.at(txKey));
    }
 
-   /* 3. resolve output addresses */
-   std::map<BinaryData, std::map<uint32_t, BinaryData>> txioKeyToScrAddr;
-   for (const auto& txioPair : txioMap) {
-      //output
-      const auto& txKeyOut = txioPair.second.getTxRefOfOutput().getDBKey();
-      const auto& outTx = txMap.at(txKeyOut);
-      auto iterOut = txioKeyToScrAddr.find(txKeyOut);
-      if (iterOut == txioKeyToScrAddr.end()) {
-         iterOut = txioKeyToScrAddr.emplace(
-            txKeyOut, std::map<uint32_t, BinaryData>{}).first;
-      }
-      auto indexOut = txioPair.second.getIndexOfOutput();
-      iterOut->second.emplace(indexOut, outTx.getScrAddrForTxOut(indexOut));
-   }
-
-   /* 4. timestamps */
-   std::map<uint32_t, uint32_t> timestamps;
-   for (const auto& blockPair : dbCache->blocks) {
-      try {
-         const auto& block = blockPair.second.blocks.at(blockPair.second.mainChain);
-         timestamps.emplace(blockPair.first, block.getTimestamp());
-      } catch (const std::out_of_range&) {
-         LOGWARN << "missing block: " <<
-            blockPair.first << "|" << blockPair.second.mainChain;
-         continue;
-      }
-   }
-   return Ledgers::Context{ timestamps, txMap, txioKeyToScrAddr, std::move(scrAddrSet) };
+   return Context{ dbCache->headers, std::move(txMap), std::move(scrAddrSet) };
 }
 #endif
 

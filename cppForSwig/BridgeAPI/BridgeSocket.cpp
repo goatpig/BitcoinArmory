@@ -200,7 +200,7 @@ void CppBridgeSocket::pushPayload(
       } else {
          auto time_sec = std::chrono::duration_cast<std::chrono::seconds>(
             rightnow - outKeyTimePoint_);
-         if (time_sec.count() >= AEAD_REKEY_INTERVAL_SECONDS) {
+         if (time_sec.count() >= 1800) { //FIXME: use named constant
             needs_rekey = true;
          }
       }

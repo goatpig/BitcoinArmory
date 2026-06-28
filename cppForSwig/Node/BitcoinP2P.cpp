@@ -122,16 +122,22 @@ namespace {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const std::map<std::string_view, P2P::PayloadType> P2P::typeToPayload{
-   { "version"sv, PayloadType::Version },
-   { "verack"sv, PayloadType::VerAck },
-   { "inv"sv, PayloadType::Inv },
-   { "ping"sv, PayloadType::Ping },
-   { "pong"sv, PayloadType::Pong },
-   { "getdata"sv, PayloadType::GetData },
-   { "tx"sv, PayloadType::Tx },
-   { "reject"sv, PayloadType::Reject }
-};
+namespace Node {
+   namespace Core {
+      namespace P2P {
+         static const std::map<std::string, PayloadType> typeToPayload = {
+            { "version", PayloadType::Version },
+            { "verack", PayloadType::VerAck },
+            { "inv", PayloadType::Inv },
+            { "ping", PayloadType::Ping },
+            { "pong", PayloadType::Pong },
+            { "getdata", PayloadType::GetData },
+            { "tx", PayloadType::Tx },
+            { "reject", PayloadType::Reject }
+         };
+      }
+   }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 ////
@@ -378,7 +384,7 @@ std::shared_ptr<P2P::Payload::DeserializedPayloads> P2P::Payload::deserialize(
          if (localBytesConsumed + offset > data.size()) {
             break;
          }
-         std::string_view messagetype{(const char*)&data[offset] + MESSAGE_TYPE_OFFSET};
+         std::string messagetype{(const char*)&data[offset] + MESSAGE_TYPE_OFFSET};
 
          try {
             const uint8_t* payloadptr = nullptr;
@@ -1097,7 +1103,7 @@ void P2P::Payload_Reject::deserialize(const uint8_t* dataptr, size_t len)
    auto ptr = dataptr + varintlen;
 
    //message type
-   std::string_view msgtype{(const char*)ptr, typeLen};
+   std::string msgtype{(const char*)ptr, typeLen};
    auto typeIter = typeToPayload.find(msgtype);
    if (typeIter == typeToPayload.end()) {
       throw PayloadDeserError("unknown reject type");

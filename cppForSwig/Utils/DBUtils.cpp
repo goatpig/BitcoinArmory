@@ -268,7 +268,7 @@ BinaryDataRef DBUtils::getDataRefForPacket(
    }
    return brr.get_BinaryDataRef(brr.getSizeRemaining());
 }
-
+#if 0
 /////////////////////////////////////////////////////////////////////////////
 // FileMap
 FileUtils::FileMap::FileMap(const fs::path& path, bool write, size_t offset)
@@ -699,3 +699,4 @@ bool FileUtils::BlockDataFileMap::valid() const
 {
    return fileMap_.isValid();
 }
+#endif

@@ -11,6 +11,9 @@
 #include <functional>
 #include "Utils/ThreadSafeClasses.h"
 #include "SocketIncludes.h"
+#ifdef WIN32
+#include <WinSock2.h>
+#endif
 
 namespace Armory
 {

@@ -53,7 +53,7 @@ RpcError::RpcError(const std::string& err) :
 // NodeRPCInterface
 RPC::Iface::Iface()
 {
-   currentEstimateCache_.store(nullptr);
+   currentEstimateCache_.reset();
 }
 
 RPC::Iface::~Iface()
@@ -348,13 +348,12 @@ RPC::FeeEstimateResult RPC::Client::queryFeeByteSmart(Network::HttpSocket& sock,
 RPC::FeeEstimateResult RPC::Client::getFeeByte(
    unsigned confTarget, const std::string& strategy) const
 {
-   auto estimateCachePtr = currentEstimateCache_.load();
-   if (estimateCachePtr == nullptr) {
+   if (!currentEstimateCache_) {
       throw RpcError{};
    }
 
-   auto iterStrat = estimateCachePtr->find(strategy);
-   if (iterStrat == estimateCachePtr->end()) {
+   auto iterStrat = currentEstimateCache_->find(strategy);
+   if (iterStrat == currentEstimateCache_->end()) {
       throw RpcError{};
    }
    if (iterStrat->second.empty()) {
@@ -390,7 +389,7 @@ void RPC::Client::aggregateFeeEstimates()
    }
 
    ReentrantLock lock(this);
-   currentEstimateCache_.store(newCache);
+   currentEstimateCache_ = newCache;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

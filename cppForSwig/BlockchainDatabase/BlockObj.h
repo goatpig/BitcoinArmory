@@ -122,6 +122,7 @@ namespace Armory
    public:
       explicit BlockHeader(const uint8_t*, size_t);
       explicit BlockHeader(BinaryDataRef);
+      BlockHeader(const Hash32&);
 
       //native header data getters
       uint32_t getVersion(void) const;

@@ -8,7 +8,7 @@
 
 #include "CppBridge.h"
 #include "BridgeSocket.h"
-#include "../SocketIncludes.h"
+#include "Network/SocketIncludes.h"
 #include "./Wallets/Manager.h"
 #include "./Wallets/TxIOCache.h"
 #include "./Wallets/Notifications.h"

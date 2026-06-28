@@ -121,7 +121,7 @@ DBInterface::DBInterface(
    encrVersion_(encrVersion)
 {
    db_.open(dbEnv_, dbName_);
-   dataMapPtr_.store(std::make_shared<IfaceDataMap>());
+   dataMapPtr_ = std::make_shared<IfaceDataMap>();
 }
 
 DBInterface::~DBInterface()
@@ -291,7 +291,7 @@ void DBInterface::loadAllEntries(const SecureBinaryData& rootKey)
       dataMapPtr->dbKeyCounter_ = prevDbKey + 1;
 
       //set the data map
-      dataMapPtr_.store(dataMapPtr, std::memory_order_release);
+      dataMapPtr_ = dataMapPtr;
    }
 
    {
@@ -303,8 +303,7 @@ void DBInterface::loadAllEntries(const SecureBinaryData& rootKey)
       */
       auto tx = LMDB::Transaction(dbEnv_, db_.dbi(), LMDB::Mode::ReadWrite);
 
-      auto dataMapPtr = dataMapPtr_.load(std::memory_order_acquire);
-      auto flagKey = dataMapPtr->getNewDbKey();
+      auto flagKey = dataMapPtr_->getNewDbKey();
       BothBinaryDatas keyFlagBd(keyCycleFlag_);
       auto encrPubKey = Cryptography::ECDSA::computePublicKey(
          decrPrivKey, true);
@@ -410,64 +409,64 @@ std::pair<BinaryData, BothBinaryDatas> DBInterface::readDataPacket(
 
    switch (encrVersion)
    {
-      case 0x00000001:
-      {
+   case 0x00000001:
+   {
       /* decryption key */
          //recover public key
-         BinaryRefReader brrCipher(dataPacket.getRef());
+      BinaryRefReader brrCipher(dataPacket.getRef());
 
-         //public key
-         SecureBinaryData localPubKey{brrCipher.get_BinaryDataRef(33)};
+      //public key
+      SecureBinaryData localPubKey{ brrCipher.get_BinaryDataRef(33) };
 
-         //ECDH with decryption private key
-         auto ecdhPubKey = Cryptography::ECDSA::pubKeyScalarMultiply(
-            localPubKey, decrPrivKey);
+      //ECDH with decryption private key
+      auto ecdhPubKey = Cryptography::ECDSA::pubKeyScalarMultiply(
+         localPubKey, decrPrivKey);
 
-         //kdf
-         auto decrKey = BtcUtils::getHash256(ecdhPubKey);
+      //kdf
+      auto decrKey = BtcUtils::getHash256(ecdhPubKey);
 
       /* decryption leg */
          //get iv
-         SecureBinaryData iv{brrCipher.get_BinaryDataRef(
-            Encryption::Cipher::getBlockSize(CipherType_AES))};
+      SecureBinaryData iv{ brrCipher.get_BinaryDataRef(
+         Encryption::Cipher::getBlockSize(CipherType_AES)) };
 
-         //get cipher text
-         SecureBinaryData cipherText{brrCipher.get_BinaryDataRef(
-            brrCipher.getSizeRemaining())};
+      //get cipher text
+      SecureBinaryData cipherText{ brrCipher.get_BinaryDataRef(
+         brrCipher.getSizeRemaining()) };
 
-         //decrypt
-         auto plainText = Cryptography::Encryption::AES::decryptCBC(
-            cipherText, {decrKey}, iv);
+      //decrypt
+      auto plainText = Cryptography::Encryption::AES::decryptCBC(
+         cipherText, { decrKey }, iv);
 
       /* authentication leg */
-         BinaryRefReader brrPlain(plainText.getRef());
+      BinaryRefReader brrPlain(plainText.getRef());
 
-         //grab hmac
-         auto hmac = brrPlain.get_BinaryData(32);
+      //grab hmac
+      auto hmac = brrPlain.get_BinaryData(32);
 
-         //grab data key
-         auto len = brrPlain.get_var_int();
-         dataKey = std::move(brrPlain.get_BinaryData(len));
+      //grab data key
+      auto len = brrPlain.get_var_int();
+      dataKey = std::move(brrPlain.get_BinaryData(len));
 
-         //grab data val
-         len = brrPlain.get_var_int();
-         dataVal = SecureBinaryData{brrPlain.get_BinaryDataRef(len)};
+      //grab data val
+      len = brrPlain.get_var_int();
+      dataVal = SecureBinaryData{ brrPlain.get_BinaryDataRef(len) };
 
-         //mark the position
-         auto pos = brrPlain.getPosition() - 32;
+      //mark the position
+      auto pos = brrPlain.getPosition() - 32;
 
-         //sanity check
-         if (brrPlain.getSizeRemaining() != 0) {
-            throw EncryptedDBException("loose data entry");
-         }
+      //sanity check
+      if (brrPlain.getSizeRemaining() != 0) {
+         throw EncryptedDBException("loose data entry");
+      }
 
-         //reset reader & grab data packet
-         brrPlain.resetPosition();
-         brrPlain.advance(32);
-         auto data = brrPlain.get_BinaryData(pos);
+      //reset reader & grab data packet
+      brrPlain.resetPosition();
+      brrPlain.advance(32);
+      auto data = brrPlain.get_BinaryData(pos);
 
-         //append db key
-         data.append(dbKey);
+      //append db key
+      data.append(dbKey);
 
       //compute hmac
       const auto computedHmac = BtcUtils::getHMAC256(macKey, data);
@@ -478,9 +477,9 @@ std::pair<BinaryData, BothBinaryDatas> DBInterface::readDataPacket(
             + " vs " + hmac.toHexStr());
       }
       break;
-
-      default:
-         throw EncryptedDBException("unsupported encryption version");
+   }
+   default:
+      throw EncryptedDBException("unsupported encryption version");
    }
 
    return std::make_pair(dataKey, dataVal);
@@ -488,8 +487,7 @@ std::pair<BinaryData, BothBinaryDatas> DBInterface::readDataPacket(
 
 unsigned DBInterface::getEntryCount() const
 {
-   auto dbMapPtr = dataMapPtr_.load(std::memory_order_acquire);
-   return dbMapPtr->dataMap_.size();
+   return dataMapPtr_->dataMap_.size();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -64,8 +64,6 @@ namespace Node
             Inv_Msg_Witness_Block = Inv_Msg_Block | Inv_Witness
          };
 
-         extern const std::map<std::string_view, PayloadType> typeToPayload;
-
          ///////////////////////////////////////////////////////////////////////
          struct NetAddr
          {

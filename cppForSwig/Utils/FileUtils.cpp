@@ -7,12 +7,14 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #ifdef _WIN32
-   #include <windows.h>
+   #include <Windows.h>
+   #include <io.h>
+   #include <fcntl.h>
 #else
    #include <sys/mman.h>
+   #include <unistd.h>
 #endif
 #include <fcntl.h>
-#include <unistd.h>
 #include <string_view>
 #include <cstring>
 
