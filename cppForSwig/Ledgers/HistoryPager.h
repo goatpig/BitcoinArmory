@@ -56,7 +56,7 @@ namespace Armory
 
       private:
          std::shared_ptr<std::atomic<bool>> isInitialized_;
-         std::atomic<std::shared_ptr<std::vector<std::shared_ptr<Page>>>> pages_;
+         std::shared_ptr<std::vector<std::shared_ptr<Page>>> pages_;
          std::map<uint32_t, uint32_t> SSHsummary_;
          static uint32_t txnPerPage_;
 
