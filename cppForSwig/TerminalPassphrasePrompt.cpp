@@ -9,7 +9,7 @@
 #include "TerminalPassphrasePrompt.h"
 
 #ifdef _WIN32
-   #include <windows.h>
+   #include <Windows.h>
 #else
    #include <termios.h>
    #include <unistd.h>

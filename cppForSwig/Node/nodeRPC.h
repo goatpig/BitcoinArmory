@@ -142,7 +142,7 @@ namespace Node
          protected:
             std::function<void(void)> nodeStatusLambda_;
             ChainStatus nodeChainStatus_;
-            std::atomic<std::shared_ptr<EstimateCache>> currentEstimateCache_;
+            std::shared_ptr<EstimateCache> currentEstimateCache_;
 
          private:
             void initAfterLock(void) override {}

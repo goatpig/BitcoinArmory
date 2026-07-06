@@ -16,7 +16,7 @@
 #include <Utils/BtcUtils.h>
 #include <Utils/FileUtils.h>
 #include <Ledgers/LedgerEntry.h>
-#include <Ledgers/Context.h>
+#include "Ledgers/Context.h"
 #include <AsyncClient.h>
 #include <BlockchainDatabase/txio.h>
 
@@ -35,6 +35,37 @@ using namespace Armory;
 using namespace Armory::Bridge;
 using namespace std::string_view_literals;
 using namespace std::chrono_literals;
+
+#ifdef WIN32   //FIXME: without this there's a linkage error
+std::shared_ptr<const Ledgers::DBCache> TxIOCache::getDBCache() const
+{
+   return std::const_pointer_cast<const Ledgers::DBCache>(dbCache_);
+}
+
+Ledgers::Context Ledgers::prepareContext(
+   const std::map<Types::TxIOKey, TxIOPair>& txioMap,
+   std::shared_ptr<const DBCache> dbCache,
+   std::set<Types::ScrAddr> scrAddrSet)
+{
+   std::set<Types::TxKey> txKeys;
+
+   /* 1. gather all relevant tx keys */
+   for (const auto& txioPair : txioMap) {
+      txKeys.emplace(txioPair.second.getTxKeyOfOutput());
+      if (txioPair.second.hasTxIn()) {
+         txKeys.emplace(txioPair.second.getTxKeyOfInput());
+      }
+   }
+
+   /* 2. grab all txs for relevant tx keys */
+   std::map<Types::TxKey, Tx> txMap;
+   for (const auto& txKey : txKeys) {
+      txMap.emplace(txKey, dbCache->txMap.at(txKey));
+   }
+
+   return Context{ dbCache->headers, std::move(txMap), std::move(scrAddrSet) };
+}
+#endif
 
 namespace
 {

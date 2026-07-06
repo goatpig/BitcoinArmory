@@ -9,11 +9,11 @@
 #include <cstdlib>
 #include <errno.h>
 #include <sys/stat.h>
-#include <sys/file.h>
 #include <random>
 #include <cstring>
 
 #ifndef _WIN32
+   #include <sys/file.h>
    #include <sys/wait.h>
    #include "spawn.h"
 #endif
@@ -132,7 +132,7 @@ Bridge::spawnDb(const std::filesystem::path& satoshiPath,
       L"--satoshirpc-port=" + Config::NetworkSettings::rpcPortW() };
 
    //2. randomize a file name
-   std::filesystem::path keyFilePath{ Config::getDataDir() /
+   std::filesystem::path keyFilePath{ Armory::Config::getDataDir() /
       std::string{ "keyFile_" +
          Cryptography::PRNG::fortuna.generateRandom(7).toHexStr() }};
 
@@ -353,7 +353,7 @@ Bridge::spawnDb(const std::filesystem::path& satoshiPath,
       }};
 
    //open file and lock it
-   auto fd = open(keyFilePath.c_str(), O_CREAT | O_EXCL | O_RSYNC | O_RDWR);
+   auto fd = open(keyFilePath.c_str(), O_CREAT | O_EXCL | O_RSYNC | O_RDWR, 0644);
    if (fd == -1) {
       throw std::runtime_error("failed to create autodb key file");
    }

@@ -66,7 +66,7 @@ HeaderPtr Blockchain::top() const
 HeaderPtr Blockchain::getGenesisHeader() const
 {
    //NOTE: caller is responsible for holding the lock
-   auto iter = headerSet_.find(genesisHash_);
+   auto iter = headerSet_.find(std::make_shared<BlockHeader>(genesisHash_));
    if (iter == headerSet_.end()) {
       throw std::runtime_error("missing genesis block header");
    }
@@ -100,7 +100,7 @@ const HeaderPtr Blockchain::getHeaderByHeight(unsigned height) const
 HeaderPtr Blockchain::getHeaderByHash(const BinaryData& blkHash) const
 {
    std::unique_lock<std::mutex> lock(mu_);
-   auto iter = headerSet_.find(blkHash);
+   auto iter = headerSet_.find(std::make_shared<BlockHeader>(blkHash));
    if (iter == headerSet_.end()) {
       throw std::range_error(
          "cannot find header with hash " + blkHash.toHexStr(true));
@@ -111,7 +111,7 @@ HeaderPtr Blockchain::getHeaderByHash(const BinaryData& blkHash) const
 HeaderPtr Blockchain::getHeaderByHash(const Hash32& blkHash) const
 {
    std::unique_lock<std::mutex> lock(mu_);
-   auto iter = headerSet_.find(blkHash);
+   auto iter = headerSet_.find(std::make_shared<BlockHeader>(blkHash));
    if (iter == headerSet_.end()) {
       throw std::range_error(
          "cannot find header with hash " + blkHash.toHexStr(true));
@@ -149,7 +149,7 @@ ReorganizationState Blockchain::organize(bool force, bool verbose)
       auto header = st.prevTop;
       while (header->getUniqueID() != st.reorgBranchPoint->getUniqueID()) {
          st.invalidatedBlockIds.emplace_back(header->getUniqueID());
-         auto headerIter = headerSet_.find(header->prevHash_);
+         auto headerIter = headerSet_.find(std::make_shared<BlockHeader>(header->prevHash_));
          if (headerIter == headerSet_.end()) {
             break;
          }
@@ -159,7 +159,7 @@ ReorganizationState Blockchain::organize(bool force, bool verbose)
       header = st.newTop;
       while (header->getUniqueID() != st.reorgBranchPoint->getUniqueID()) {
          st.newMainBranchIds.emplace_back(header->getUniqueID());
-         auto headerIter = headerSet_.find(header->prevHash_);
+         auto headerIter = headerSet_.find(std::make_shared<BlockHeader>(header->prevHash_));
          if (headerIter == headerSet_.end()) {
             break;
          }
@@ -203,11 +203,11 @@ HeaderPtr Blockchain::organizeChain(
          header->nextHash_ = nullptr;
          header->isMainBranch_ = false;
       }
-      topBlockPtr_.store(nullptr);
+      topBlockPtr_.reset();
    }
 
    // If this is the first run, the topBlock is the genesis block
-   if (topBlockPtr_.load() == nullptr) {
+   if (!topBlockPtr_) {
       auto genBlock = getGenesisHeader();
       if (!genBlock->getMerkleRoot().valid()) {
          return nullptr;
@@ -217,10 +217,10 @@ HeaderPtr Blockchain::organizeChain(
       genBlock->isMainBranch_ = true;
       genBlock->isOrphan_ = false;
       genBlock->isFinishedCalc_ = true;
-      topBlockPtr_.store(genBlock);
+      topBlockPtr_ = genBlock;
    }
    const auto prevTopBlock = top();
-   auto newTopBlock = topBlockPtr_.load();
+   auto newTopBlock = topBlockPtr_;
    double maxDiffSum = prevTopBlock->getDifficultySum();
 
    //prepare helper containers
@@ -251,7 +251,7 @@ HeaderPtr Blockchain::organizeChain(
    //report long orphaned chains
    for (const auto& orphanChain : orphans) {
       if (orphanChain.second.size() >= 144) {
-         auto headerIter = headerSet_.find(orphanChain.first);
+         auto headerIter = headerSet_.find(std::make_shared<BlockHeader>(orphanChain.first));
          if (headerIter == headerSet_.end()) {
             LOGERR << "Could not find first orphan by hash! This is a fatal error!";
             throw std::runtime_error("could not find orphan");
@@ -267,7 +267,7 @@ HeaderPtr Blockchain::organizeChain(
 
       //reset finishedCalc flag on all orphans
       for (const auto& headerHash : orphanChain.second) {
-         auto headerIter = headerSet_.find(headerHash);
+         auto headerIter = headerSet_.find(std::make_shared<BlockHeader>(headerHash));
          if (headerIter == headerSet_.end()) {
             LOGERR << "Could not find an orphan by hash! This is a fatal error!";
             throw std::runtime_error("could not find orphan");
@@ -295,7 +295,7 @@ HeaderPtr Blockchain::organizeChain(
       headersByHeight_[thisHeaderPtr->getBlockHeight()] = thisHeaderPtr;
       invalidBlockIds_.erase(thisHeaderPtr->getUniqueID());
 
-      auto childIter = headerSet_.find(thisHeaderPtr->getPrevHash());
+      auto childIter = headerSet_.find(std::make_shared<BlockHeader>(thisHeaderPtr->getPrevHash()));
       if (childIter == headerSet_.end()) {
          LOGERR << "failed to get prev header by hash";
          throw std::runtime_error("failed to get prev header by hash");
@@ -321,13 +321,13 @@ HeaderPtr Blockchain::organizeChain(
 
       //reset calculation flag on lesser chain
       auto prevHeadPtr = prevTopBlock;
-      while (prevHeadPtr->thisHash_ != thisHeaderPtr->thisHash_) {
+      while (!BlockHeader::IsEqual()(prevHeadPtr, thisHeaderPtr)) {
          prevHeadPtr->isFinishedCalc_ = false;
          prevHeadPtr->difficultySum_ = -1.0;
          prevHeadPtr->isMainBranch_ = false;
          prevHeadPtr->isOrphan_ = true;
          invalidBlockIds_.emplace(prevHeadPtr->getUniqueID());
-         prevHeadPtr = *headerSet_.find(prevHeadPtr->prevHash_);
+         prevHeadPtr = *headerSet_.find(std::make_shared<BlockHeader>(prevHeadPtr->prevHash_));
       }
       return thisHeaderPtr;
    }
@@ -355,7 +355,7 @@ void Blockchain::traceChainDown(std::shared_ptr<BlockHeader> bhpStart)
    // that has a definitive difficultySum value (i.e. >0).
    auto thisPtr = bhpStart;
    while (thisPtr->difficultySum_ < 0.0) {
-      auto iter = headerSet_.find(thisPtr->getPrevHash());
+      auto iter = headerSet_.find(std::make_shared<BlockHeader>(thisPtr->getPrevHash()));
       if (iter != headerSet_.end()) {
          auto hPtr = *iter;
          hPtr->nextPtr_ = thisPtr;
@@ -432,13 +432,13 @@ void Blockchain::putNewHeaders(LMDBBlockDatabase *db)
 
    //update SDBI, keep within the batch transaction
    auto sdbiH = db->getStoredDBInfo(DB_SELECT::HEADERS, 0xFFFF);
-   auto topBlock = topBlockPtr_.load();
+   auto topBlock = topBlockPtr_;
    if (topBlock == nullptr) {
       LOGINFO << "No known top block, didn't update SDBI";
       return;
    }
 
-   if (topBlock->thisHash_ != sdbiH.topScannedBlkHash) {
+   if (!BlockHeader::IsEqual()(topBlock, sdbiH.topScannedBlkHash)) {
       sdbiH.topScannedBlkHash = topBlock->thisHash_;
       db->putStoredDBInfo(DB_SELECT::HEADERS, sdbiH, 0xFFFF);
    }

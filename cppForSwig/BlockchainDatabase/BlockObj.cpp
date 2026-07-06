@@ -212,6 +212,11 @@ BlockHeader::BlockHeader(BinaryDataRef str) :
    BlockHeader{unserialize(str.getPtr(), str.getSize())}
 {}
 
+BlockHeader::BlockHeader(const Hash32& hash)
+   : thisHash_{hash}, prevHash_{}, merkleRoot_{},
+   difficultyDbl_{ 0.0 }, timestamp_{ 0 }, version_{ 0 }
+{}
+
 ////////
 BlockHeader BlockHeader::unserialize(
    const uint8_t* ptr, size_t size)

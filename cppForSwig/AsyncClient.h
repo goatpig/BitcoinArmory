@@ -189,6 +189,17 @@ namespace AsyncClient
       void getFeeSchedule(const std::string&, std::function<void(ReturnMessage<
             std::map<unsigned, DBClientClasses::FeeEstimateStruct>>)>);
 
+#if 0	//possibly obsoleted
+      //balances & outputs
+      void getCombinedBalances(std::function<void(
+         ReturnMessage<std::map<std::string, CombinedBalances>>)>);
+
+      void getOutputsForAddresses(const std::set<BinaryData>&, uint32_t, uint32_t,
+         std::function<void(ReturnMessage<OutputBatch>)>);
+      void getOutputsForOutpoints(
+         const std::map<BinaryData, std::set<unsigned>>&, bool,
+         std::function<void(ReturnMessage<std::vector<Output>>)>);
+#endif
       /*
       Broadcast methods:
         All broadcast methods generate and return a random BROADCAST_ID_LENGTH

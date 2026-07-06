@@ -11,6 +11,7 @@
 #include <string.h>
 #include "SocketObject.h"
 #include "Utils/HttpMessage.h"
+#include "Network/SocketIncludes.h"
 
 typedef std::vector<uint8_t>::iterator vecIter;
 

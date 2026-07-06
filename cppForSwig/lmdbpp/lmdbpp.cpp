@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2011-2015, Armory Technologies, Inc.                        //
+//  Copyright (C) 2011-2026, Armory Technologies, Inc.                        //
 //  Distributed under the GNU Affero General Public License (AGPL v3)         //
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
@@ -13,13 +13,13 @@
 
 #include "lmdbpp.h"
 #include "lmdb.h"
-
-#include <unistd.h>
+#ifndef _WIN32
+#  include <unistd.h>
+#endif
 #include <sstream>
 #include <cstring>
 #include <algorithm>
 #include <iostream>
-#include <format>
 
 using namespace LMDB;
 
@@ -574,8 +574,8 @@ void Env::open(const std::filesystem::path &path, unsigned flags)
 
    rc = mdb_env_open(mdbEnv_, path.string().c_str(), MDB_NOSUBDIR | flags, 0600);
    if (rc != MDB_SUCCESS) {
-      throw Exception(std::format("Failed to open db \"{}\" with error: {}",
-         path.filename().string(), errorString(rc)));
+      throw Exception("Failed to open db \"" + path.filename().string() +
+         "\" with error: " + errorString(rc));
    }
    path_ = path;
 }

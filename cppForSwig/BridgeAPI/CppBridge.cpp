@@ -8,6 +8,7 @@
 
 #include "CppBridge.h"
 #include "BridgeSocket.h"
+#include "Network/SocketIncludes.h"
 #include "./Wallets/Manager.h"
 #include "./Wallets/TxIOCache.h"
 #include "./Wallets/Notifications.h"
@@ -2745,7 +2746,8 @@ void CppBridge::getBlockTimeByHeight(uint32_t height, MessageId msgId) const
       reply.setSuccess(true);
    } else {
       reply.setSuccess(false);
-      reply.setError(std::format("could not find header for height {}", height));
+      reply.setError(std::string{ "could not find header for height " } +
+         std::to_string(height));
    }
 
    auto serialized = serializeCapnp(message);

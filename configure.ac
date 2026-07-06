@@ -183,10 +183,13 @@ AC_PATH_PROG([CAPNPC], [capnpc], [])
 AS_IF([test x"$CAPNPC" = x],
   [AC_MSG_ERROR([cannot find capnpc (the capnproto compiler)])])
 
-if test x$use_pkgconfig$with_own_lws = xyesno; then
-    PKG_CHECK_MODULES_STATIC([WEBSOCKETS], [libwebsockets_static >= 3.0.1],,[AC_MSG_ERROR(libwebsockets_static >= 3.0.1 not found.)])
+if test x$use_pkgconfig$with_own_lws = xno; then
+    _save_PKG_CONFIG=$PKG_CONFIG
+    PKG_CONFIG="$PKG_CONFIG --static"
+    PKG_CHECK_MODULES_STATIC([WEBSOCKETS], [libwebsockets >= 3.0.1],,[AC_MSG_ERROR(libwebsockets_static >= 3.0.1 not found.)])
+    PKG_CONFIG=$_save_PKG_CONFIG
     AC_MSG_CHECKING([libwebsockets lib path])
-    PKG_CHECK_VAR([WEBSOCKETS_LIBDIR], [libwebsockets_static], [libdir])
+    PKG_CHECK_VAR([WEBSOCKETS_LIBDIR], [libwebsockets], [libdir])
     AS_IF([test "x$WEBSOCKETS_LIBDIR" = "x"], [
       AC_MSG_FAILURE([Unable to identify libwebsockets_static lib path.])
     ])

@@ -18,13 +18,15 @@
 #ifndef _WIN32
 #include <poll.h>
 #define socketService socketService_nix
+#include "SocketIncludes.h"
 #else
 #define socketService socketService_win
+#include <WinSock2.h>
+//#include <WS2tcpip.h>
 #endif
 
 #include "Utils/ThreadSafeClasses.h"
 #include "Utils/BinaryData.h"
-#include "SocketIncludes.h"
 
 typedef std::function<bool(std::vector<uint8_t>, std::exception_ptr)> ReadCallback;
 enum class SocketType : int;
@@ -71,7 +73,11 @@ namespace Armory
       public:
          SOCKET sockfd_;
          sockaddr saddr_;
+#ifdef WIN32
+         int addrlen_;
+#else
          socklen_t addrlen_;
+#endif
          ReadCallback readCallback_;
 
       public:
@@ -135,7 +141,7 @@ namespace Armory
       class SimpleSocket : public SocketPrototype
       {
       protected:
-         SOCKET sockfd_ = SOCK_MAX;
+         SOCKET sockfd_ = UINT32_MAX;
 
       private:
          int writeToSocket(std::vector<uint8_t>&);
@@ -164,7 +170,7 @@ namespace Armory
          friend class ListenServer;
 
       private:
-         SOCKET sockfd_ = SOCK_MAX;
+         SOCKET sockfd_ = UINT32_MAX;
          std::vector<std::thread> threads_;
 
          std::vector<uint8_t> writeLeftOver_;

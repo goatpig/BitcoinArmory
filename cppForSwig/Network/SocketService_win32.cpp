@@ -6,11 +6,12 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#include "SocketService.h"
+#include "Network/SocketService.h"
 #include <Utils/log.h>
 
 using namespace std;
 using namespace Armory::Threading;
+using namespace Armory::Network;
 
 ////////////////////////////////////////////////////////////////////////////////
 //

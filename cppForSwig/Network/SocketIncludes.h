@@ -12,8 +12,8 @@
 #include <string>
 
 #ifdef _WIN32
-   #include <WinSock2.h>
-   #include <ws2tcpip.h>
+//   #include <WinSock2.h>
+//   #include <ws2tcpip.h>
 
    #define SOCK_MAX SIZE_MAX
 #else

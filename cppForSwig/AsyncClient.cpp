@@ -7,6 +7,9 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
+#ifdef WIN32
+#include <WinSock2.h>
+#endif
 #include "AsyncClient.h"
 #include <Utils/BtcUtils.h>
 #include <Utils/varint.h>
@@ -921,3 +924,254 @@ std::pair<unsigned, unsigned> AsyncClient::BlockDataViewer::getRekeyCount() cons
 
    return wsSocket->getRekeyCount();
 }
+
+#if 0
+///////////////////////////////////////////////////////////////////////////////
+void AsyncClient::BlockDataViewer::getCombinedBalances(std::function<void(
+   ReturnMessage<std::map<std::string, CombinedBalances>>)> callback)
+{
+   //create capnp request
+   capnp::MallocMessageBuilder message;
+   auto payload = message.initRoot<Codec::BDV::Request>();
+
+   auto bdvRequest = payload.initBdv();
+   bdvRequest.setGetCombinedBalances();
+
+   //serialize and add to payload
+   auto write_payload = toWritePayload(message);
+
+   //reply handling lambda
+   auto read_payload = std::make_shared<Socket_ReadPayload>();
+   read_payload->callbackReturn_ = std::make_unique<ClientCallback>(
+      [callback](const WebSocketMessagePartial& msg){
+         try {
+            //deser capnp reply
+            auto msgReader = msg.getReader();
+            auto capnReader = msgReader->getReader();
+            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
+
+            //sanity checks
+            if (!reply.getSuccess()) {
+               throw ClientMessageError(reply.getError(), -1);
+            }
+
+            if (!reply.isBdv()) {
+               throw ClientMessageError("expected bdv reply", WRONG_REPLY_CLASS);
+            }
+
+            auto bdvReply = reply.getBdv();
+            if (!bdvReply.isGetCombinedBalances()) {
+               throw ClientMessageError(
+                  "expected GetCombinedBalances reply", WRONG_REPLY_TYPE);
+            }
+            //convert to utxo vector and fire callback
+            auto result = capnToCombinedBalances(bdvReply.getGetCombinedBalances());
+            callback(ReturnMessage<std::map<std::string, CombinedBalances>>(result));
+         } catch (ClientMessageError& e) {
+            //something went wrong, set error message and fire callback
+            callback(ReturnMessage<std::map<std::string, CombinedBalances>>(e));
+         }
+      });
+
+   //push to server
+   sock_->pushPayload(move(write_payload), read_payload);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void AsyncClient::BlockDataViewer::getOutputsForAddresses(
+   const std::set<BinaryData>& addrSet, uint32_t heightCutoff, uint32_t zcCutoff,
+   std::function<void(ReturnMessage<OutputBatch>)> callback)
+{
+   //create capnp request
+   capnp::MallocMessageBuilder message;
+   auto payload = message.initRoot<Codec::BDV::Request>();
+
+   auto bdvRequest = payload.initBdv();
+   auto addrReq = bdvRequest.initGetOutputsForAddress();
+   addrReq.setHeightCutoff(heightCutoff);
+   addrReq.setZcCutoff(zcCutoff);
+
+   //populate request data
+   auto capnAddrs = addrReq.initAddresses(addrSet.size());
+   unsigned i = 0;
+   for (const auto& addr : addrSet) {
+      auto capnAddr = capnAddrs[i++];
+      capnAddr.setBody(capnp::Data::Builder(
+         (uint8_t*)addr.getPtr(), addr.getSize()
+      ));
+   }
+
+   //serialize and add to payload
+   auto write_payload = toWritePayload(message);
+
+   //reply handler
+   auto read_payload = std::make_shared<Socket_ReadPayload>();
+   read_payload->callbackReturn_ = std::make_unique<ClientCallback>(
+      [callback](const WebSocketMessagePartial& msg){
+         try {
+            //deser capnp reply
+            auto msgReader = msg.getReader();
+            auto capnReader = msgReader->getReader();
+            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
+
+            //sanity checks
+            if (!reply.getSuccess()) {
+               throw ClientMessageError(reply.getError(), -1);
+            }
+
+            if (!reply.isBdv()) {
+               throw ClientMessageError("expected bdv reply", WRONG_REPLY_CLASS);
+            }
+
+            auto bdvReply = reply.getBdv();
+            if (!bdvReply.isGetOutputsForAddress()) {
+               throw ClientMessageError(
+                  "expected getOutputsForAddress reply", WRONG_REPLY_TYPE);
+            }
+
+            //convert to output map and fire callback
+            auto result = capnToOutputMap(bdvReply.getGetOutputsForAddress());
+            callback(ReturnMessage<OutputBatch>(std::move(result)));
+         } catch (ClientMessageError& e) {
+            //something went wrong, set error message and fire callback
+            callback(ReturnMessage<OutputBatch>(e));
+         }
+      });
+
+   //push to server
+   sock_->pushPayload(move(write_payload), read_payload);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void AsyncClient::BlockDataViewer::getLedgerDelegate(
+   std::function<void(ReturnMessage<LedgerDelegate>)> callback)
+{
+   //create capnp request
+   capnp::MallocMessageBuilder message;
+   auto payload = message.initRoot<Codec::BDV::Request>();
+
+   auto bdvRequest = payload.initBdv();
+   bdvRequest.setGetLedgerDelegate();
+
+   //serialize and add to payload
+   auto write_payload = toWritePayload(message);
+
+   //reply handling lambda
+   auto read_payload = std::make_shared<Socket_ReadPayload>();
+   read_payload->callbackReturn_ = std::make_unique<ClientCallback>(
+      [sock=sock_, callback](const WebSocketMessagePartial& msg){
+         try {
+            //deser capnp reply
+            auto msgReader = msg.getReader();
+            auto capnReader = msgReader->getReader();
+            auto reply = capnReader->getRoot<Codec::BDV::Reply>();
+
+            //sanity checks
+            if (!reply.getSuccess()) {
+               throw ClientMessageError(reply.getError(), -1);
+            }
+
+            if (!reply.isBdv()) {
+               throw ClientMessageError("expected bdv reply", WRONG_REPLY_CLASS);
+            }
+
+            auto bdvReply = reply.getBdv();
+            if (!bdvReply.isGetLedgerDelegate()) {
+               throw ClientMessageError(
+                  "expected getLedgerDelegate reply", WRONG_REPLY_TYPE);
+            }
+
+            //instantiate ledger delegate and pass it to callback
+            LedgerDelegate delegate{sock, bdvReply.getGetLedgerDelegate()};
+            callback(ReturnMessage<LedgerDelegate>(delegate));
+         } catch (ClientMessageError& e) {
+            //something went wrong, set error message and fire callback
+            callback(ReturnMessage<LedgerDelegate>(e));
+         }
+      });
+
+   //push to server
+   sock_->pushPayload(move(write_payload), read_payload);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// ClientCache
+//
+///////////////////////////////////////////////////////////////////////////////
+void ClientCache::insertTx(std::shared_ptr<Tx> tx)
+{
+   ReentrantLock(this);
+   txMap_.emplace(tx->getThisHash(), tx);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void ClientCache::insertTx(const BinaryData& hash, std::shared_ptr<Tx> tx)
+{
+   ReentrantLock(this);
+   txMap_.emplace(hash, tx);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void ClientCache::insertRawHeader(unsigned& height, BinaryDataRef header)
+{
+   ReentrantLock(this);
+   rawHeaderMap_.insert(std::make_pair(height, header));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void ClientCache::insertHeightForTxHash(BinaryData& hash, unsigned& height)
+{
+   ReentrantLock(this);
+   txHashToHeightMap_.insert(std::make_pair(hash, height));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+std::shared_ptr<const Tx> ClientCache::getTx(const BinaryDataRef& hashRef) const
+{
+   ReentrantLock(this);
+
+   auto iter = txMap_.find(hashRef);
+   if (iter == txMap_.end())
+      throw NoMatch();
+
+   auto constTx = std::const_pointer_cast<const Tx>(iter->second);
+   return constTx;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+std::shared_ptr<Tx> ClientCache::getTx_NoConst(const BinaryDataRef& hashRef)
+{
+   ReentrantLock(this);
+
+   auto iter = txMap_.find(hashRef);
+   if (iter == txMap_.end())
+      throw NoMatch();
+
+   return iter->second;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+const BinaryData& ClientCache::getRawHeader(const unsigned& height) const
+{
+   ReentrantLock(this);
+
+   auto iter = rawHeaderMap_.find(height);
+   if (iter == rawHeaderMap_.end())
+      throw NoMatch();
+
+   return iter->second;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+const unsigned& ClientCache::getHeightForTxHash(const BinaryData& height) const
+{
+   ReentrantLock(this);
+
+   auto iter = txHashToHeightMap_.find(height);
+   if (iter == txHashToHeightMap_.end())
+      throw NoMatch();
+
+   return iter->second;
+}
+#endif	//0

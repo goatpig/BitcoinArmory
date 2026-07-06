@@ -47,7 +47,8 @@ stamp-h1
 .vs
 client_cookie
 
-Makefile
+CMakeFiles
+CMakeCache.txt
 ArmoryDB
 BIP150KeyManager
 /armoryengine/ArmoryBuild.py
@@ -56,7 +57,8 @@ BIP150KeyManager
 
 /cppForSwig/chacha20poly1305/chacha20poly1305bench
 /cppForSwig/chacha20poly1305/chacha20poly1305tests
-
+cppForSwig/capnp/*.c++
+cppForSwig/capnp/*.h
 /cppForSwig/gtest/BIP151RekeyTest
 /cppForSwig/gtest/ContainerTests
 /cppForSwig/gtest/CppBlockUtilsTests

@@ -7,14 +7,17 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #ifdef _WIN32
-   #include <windows.h>
+   #include <Windows.h>
+   #include <io.h>
+   #include <fcntl.h>
 #else
    #include <sys/mman.h>
+   #include <unistd.h>
 #endif
 #include <fcntl.h>
-#include <unistd.h>
 #include <string_view>
 #include <cstring>
+#include <spdlog/spdlog.h>
 
 #include "FileUtils.h"
 #include "log.h"
@@ -26,7 +29,7 @@ using namespace std::string_view_literals;
 
 namespace {
    constexpr auto blkFilePrefix = "blk"sv;
-   constexpr auto blkFileNumTemplace = "blk{:05}.dat"sv;
+   constexpr auto blkFileNumTemplate = "blk{:05}.dat"sv;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -369,7 +372,7 @@ std::filesystem::path FileUtils::getBlkFilename(
    /// Update:  It's been enough time since the hardfork that just about
    //           everyone must've upgraded to 0.8+ by now... remove pre-0.8
    //           compatibility.
-   return path / std::format(blkFileNumTemplace, fblkNum);
+   return path / fmt::format(blkFileNumTemplate, fblkNum);
 }
 
 ///

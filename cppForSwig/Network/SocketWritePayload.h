@@ -9,6 +9,7 @@
 #pragma once
 
 #include "SocketObject.h"
+#include "Network/SocketIncludes.h"
 
 namespace capnp
 {

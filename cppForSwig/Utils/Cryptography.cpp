@@ -29,10 +29,10 @@ std::once_flag contexFlag;
 using namespace Cryptography;
 using namespace std::string_view_literals;
 
-constexpr std::string_view ECDSA::bitcoinMessageMagic{
-   "Bitcoin Signed Message:\n"sv
+const std::string_view ECDSA::bitcoinMessageMagic{
+   "Bitcoin Signed Message:\n"
 };
-constexpr size_t Encryption::AES::BLOCK_SIZE = AES_BLOCK_SIZE;
+const size_t Encryption::AES::BLOCK_SIZE = AES_BLOCK_SIZE;
 secp256k1_context* ECDSA::crypto_ecdsa_ctx = nullptr;
 const PRNG::Fortuna PRNG::fortuna;
 
@@ -69,7 +69,7 @@ void PRNG::Fortuna::reseed() const
    sha256_Raw(rng.getPtr(), rng.getSize(), digest);
    sha256_Raw(digest, 32, newKey->getPtr());
 
-   key_.store(newKey, std::memory_order_relaxed);
+   key_ = newKey;
 }
 
 SecureBinaryData PRNG::Fortuna::generateRandom(uint32_t numBytes,
@@ -83,9 +83,8 @@ SecureBinaryData PRNG::Fortuna::generateRandom(uint32_t numBytes,
    memset(&plainText, 0, Encryption::AES::BLOCK_SIZE);
 
    //setup AES object, seed with key_
-   auto keyPtr = key_.load(std::memory_order_relaxed);
    AES256_ctx aes_ctx;
-   AES256_init(&aes_ctx, keyPtr->getPtr());
+   AES256_init(&aes_ctx, key_->getPtr());
 
    //main body
    for (unsigned i=0; i<blockCount; i++) {

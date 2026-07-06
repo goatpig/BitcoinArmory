@@ -6,6 +6,10 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
+#ifdef WIN32
+#include <WinSock2.h>
+#include <WS2tcpip.h>
+#endif
 #include <cstring>
 #include <stdexcept>
 
@@ -22,7 +26,7 @@ using namespace Armory::Network;
 
 #ifdef _WIN32
 //i dont know how to get linkage for this with MSYS2 halp T_T
-char *gai_strerrorA(int) { return nullptr; }
+//already has a body: char *gai_strerrorA(int errcode) { return nullptr; }
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////

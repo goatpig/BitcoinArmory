@@ -50,7 +50,7 @@ const std::set<BackupType> Easy16Codec::eligibleIndexes{
    BackupType::Armory200d
 };
 
-constexpr char Easy16Codec::characters[]{"asdfghjkwertuion"};
+const char Easy16Codec::characters[]{"asdfghjkwertuion"};
 const std::map<char, uint8_t> Easy16Codec::easy16Vals{
    {'a', 0}, {'s', 1}, {'d', 2}, {'f', 3},
    {'g', 4}, {'h', 5}, {'j', 6}, {'k', 7},

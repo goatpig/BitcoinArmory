@@ -35,7 +35,7 @@ endif
 SUBDIRS = chacha20poly1305 hkdf $(MAYBE_BUILD)
 
 # Unit test flags.
-UNIT_TEST_CXXFLAGS=
+UNIT_TEST_CXXFLAGS= -DBUILD_ARMORY_TESTS
 if BUILD_TESTS
 UNIT_TEST_CXXFLAGS += -DUNIT_TESTS -Wunused-parameter
 endif
@@ -380,6 +380,8 @@ BIP150KeyManager_LDADD = $(LIBARMORYCOMMON) \
 	$(LIBLMDBPP) \
 	-llmdb \
 	$(LIBWEBSOCKETS_STATIC) \
+        $(LIBSSL_STATIC) \
+	$(LIBCRYPTO_STATIC) \
 	-lpthread \
 	-lcapnp \
 	-lkj

@@ -69,7 +69,7 @@ HistoryPager::HistoryPager()
 void HistoryPager::reset()
 {
    isInitialized_->store(false, std::memory_order_relaxed);
-   pages_.store(nullptr);
+   pages_.reset();
 }
 
 bool HistoryPager::isInitiliazed() const
@@ -97,7 +97,7 @@ HistoryPager::getPageLedgerMap(
       throw std::runtime_error("Uninitialized history");
    }
 
-   auto pagesLocal = pages_.load(std::memory_order_acquire);
+   auto pagesLocal = pages_;
    if (pagesLocal == nullptr) {
       return nullptr;
    }
@@ -140,7 +140,7 @@ HistoryPager::getPageLedgerMap(uint32_t pageId)
       throw std::runtime_error("Uninitialized history");
    }
 
-   auto pagesLocal = pages_.load(std::memory_order_acquire);
+   auto pagesLocal = pages_;
    if (pagesLocal == nullptr) {
       return nullptr;
    }
@@ -177,7 +177,7 @@ bool HistoryPager::mapHistory(
    auto newPages = std::make_shared<std::vector<std::shared_ptr<Page>>>();
    if (SSHsummary_.empty()) {
       addPage(*newPages, 0, 0, UINT32_MAX);
-      pages_.store(newPages, std::memory_order_release);
+      pages_ = newPages;
       isInitialized_->store(true, std::memory_order_relaxed);
       return true;
    }
@@ -201,7 +201,7 @@ bool HistoryPager::mapHistory(
 
    //sort pages canonically then store
    sortPages(*newPages);
-   pages_.store(newPages, std::memory_order_release);
+   pages_ = newPages;
 
    //mark as initialized
    isInitialized_->store(true, std::memory_order_relaxed);
@@ -214,7 +214,7 @@ uint32_t HistoryPager::getPageBottom(uint32_t id) const
    if (!isInitialized_->load(std::memory_order_relaxed)) {
       return 0;
    }
-   auto pagesLocal = pages_.load(std::memory_order_acquire);
+   auto pagesLocal = pages_;
    if (pagesLocal == nullptr) {
       return 0;
    }
@@ -231,11 +231,10 @@ size_t HistoryPager::getPageCount(void) const
       return 0;
    }
 
-   auto pagesLocal = pages_.load(std::memory_order_acquire);
-   if (pagesLocal == nullptr) {
+   if (!pages_) {
       return 0;
    }
-   return pagesLocal->size();
+   return pages_->size();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -247,7 +246,7 @@ uint32_t HistoryPager::getRangeForHeightAndCount(
       throw std::runtime_error("Uninitialized history");
    }
 
-   auto pagesLocal = pages_.load(std::memory_order_acquire);
+   auto pagesLocal = pages_;
    if (pagesLocal == nullptr) {
       return 0;
    }
@@ -298,7 +297,7 @@ uint32_t HistoryPager::getPageIdForBlockHeight(uint32_t blk) const
    }
 
    unsigned i = 0;
-   auto pagesLocal = pages_.load(std::memory_order_acquire);
+   auto pagesLocal = pages_;
    if (pagesLocal == nullptr) {
       return 0;
    }

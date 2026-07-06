@@ -91,6 +91,10 @@ inline constexpr uint8_t binLookupTable[256] = {
    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
+#ifdef WIN32
+typedef long long ssize_t;
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 class BinaryData
 {

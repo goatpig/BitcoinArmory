@@ -265,7 +265,7 @@ std::pair<std::string_view, std::string_view> SettingsUtils::getKeyValFromLine(
    auto iter = line.begin();
    while (iter != line.end()) {
       if (*iter == delim) {
-         output.first = std::string_view(line.begin(), iter - line.begin());
+         output.first = line.substr(0, iter-line.cbegin());
          break;
       }
       ++iter;
@@ -275,7 +275,7 @@ std::pair<std::string_view, std::string_view> SettingsUtils::getKeyValFromLine(
       /* we're not at the end of the line, there's a value to parse */
       //skip the the delimiter
       ++iter;
-      output.second = std::string_view(iter, line.end()-iter);
+      output.second = line.substr(iter - line.cbegin());
    } else {
       /* we're at the end of the line, there's only a key */
       output.first = line;
@@ -327,7 +327,7 @@ std::string_view SettingsUtils::stripQuotes(const std::string_view& input)
       --len;
    }
 
-   return std::string_view(input.begin() + start, len);
+   return input.substr(start, len);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -768,10 +768,10 @@ void NetworkSettings::processArgs(
    iter = args.find("satoshirpc-port");
    if (iter != args.end()) {
       auto value = SettingsUtils::stripQuotes(iter->second);
-      int portInt;
+      int portInt = 0;
 
       try {
-         std::from_chars(value.begin(), value.end(), portInt);
+         portInt = std::stoi(std::string(value));
          if (portInt < 1 || portInt > 65535) {
             std::cout << "Invalid satoshi rpc port, falling back to default" << std::endl;
          } else {
@@ -921,9 +921,11 @@ void NetworkSettings::createNodes()
          "127.0.0.1", btcPort_,
          *(uint32_t*)magicBytes.getPtr(), true
       );
-
+  
       rpcNode_ = std::make_shared<Node::Core::RPC::Client>();
-   } else {
+   }
+#ifdef BUILD_ARMORY_TESTS
+   else {
       auto primary = std::make_shared<NodeUnitTest>(
          *(uint32_t*)magicBytes.getPtr(), false
       );
@@ -936,6 +938,7 @@ void NetworkSettings::createNodes()
       bitcoinNodes_.second = watcher;
       rpcNode_ = std::make_shared<NodeRPC_UnitTest>(primary, watcher);
    }
+#endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////
