@@ -353,7 +353,7 @@ Bridge::spawnDb(const std::filesystem::path& satoshiPath,
       }};
 
    //open file and lock it
-   auto fd = open(keyFilePath.c_str(), O_CREAT | O_EXCL | O_RSYNC | O_RDWR);
+   auto fd = open(keyFilePath.c_str(), O_CREAT | O_EXCL | O_RSYNC | O_RDWR, 0600);
    if (fd == -1) {
       throw std::runtime_error("failed to create autodb key file");
    }
