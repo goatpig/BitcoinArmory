@@ -1172,8 +1172,12 @@ std::map<AssetId, std::shared_ptr<AddressEntry>>
 AddressAccount::getUsedAddressMap() const
 {
    /***
-   Expensive call, as addresses are built on the fly
+   Expensive call, as addresses are built on the fly.
+   Warm the address-hash map first so Hash160 work is shared with
+   getAddressHashMap / BDV registration.
    ***/
+
+   const_cast<AddressAccount*>(this)->updateAddressHashMap();
 
    std::map<AssetId, std::shared_ptr<AddressEntry>> result;
    for (auto& account : accountDataMap_) {
@@ -1183,16 +1187,25 @@ AddressAccount::getUsedAddressMap() const
       if (usedIndex == -1) {
          continue;
       }
+
+      const auto& hashMap = aa.getAddressHashMap();
       for (AssetKeyType i = 0; i <= usedIndex; i++) {
          auto assetPtr = aa.getAssetForKey(i);
          auto& assetID = assetPtr->getID();
 
-         std::shared_ptr<AddressEntry> addrPtr;
-         auto iter = instantiatedAddressTypes_.find(assetID);
-         if (iter == instantiatedAddressTypes_.end()) {
-            addrPtr = AddressEntry::instantiate(assetPtr, defaultAddressEntryType_);
-         } else {
-            addrPtr = AddressEntry::instantiate(assetPtr, iter->second);
+         AddressEntryType aeType = defaultAddressEntryType_;
+         auto typeIter = instantiatedAddressTypes_.find(assetID);
+         if (typeIter != instantiatedAddressTypes_.end()) {
+            aeType = typeIter->second;
+         }
+
+         auto addrPtr = AddressEntry::instantiate(assetPtr, aeType);
+         auto hashMapIter = hashMap.find(assetID);
+         if (hashMapIter != hashMap.end()) {
+            auto typeHashIter = hashMapIter->second.find(aeType);
+            if (typeHashIter != hashMapIter->second.end()) {
+               addrPtr->setCachedPrefixedHash(typeHashIter->second);
+            }
          }
          result.emplace(assetID, addrPtr);
       }
