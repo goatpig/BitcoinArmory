@@ -2283,7 +2283,7 @@ def parseBitcoinURI(uriStr):
    data = {}
 
    # Split URI into parts. Let Python do the heavy lifting.
-   from urlparse import urlparse, parse_qs
+   from urllib.parse import urlparse, parse_qs
    uri = urlparse(uriStr)
    query = parse_qs(uri.query)
 
