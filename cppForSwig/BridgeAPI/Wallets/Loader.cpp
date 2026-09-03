@@ -514,6 +514,21 @@ std::shared_ptr<Wallets::AssetWallet_Single> Armory135Header::migrate(
          };
          decryptedRoot = std::move(decryptPrivKey(passLbd, rootAddrObj));
       }
+      else if (rootAddrObj.hasPrivKey() && !rootAddrObj.isEncrypted()) {
+         /*
+         Unencrypted legacy wallet: the root private key sits in the file in
+         the clear. Verify it against the stored public key before trusting it,
+         same check the decryption path performs.
+         */
+         const auto& clearRoot = rootAddrObj.privKey();
+         auto computedPubKey = Cryptography::ECDSA::computePublicKey(
+            clearRoot, false);
+         if (rootAddrObj.pubKey() != computedPubKey) {
+            throw std::runtime_error(
+               "clear text root private key does not match stored public key");
+         }
+         decryptedRoot = clearRoot;
+      }
    }
 
    //create wallet
