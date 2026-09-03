@@ -274,8 +274,8 @@ void FileCopy::xorMe(uint64_t xorKey)
       throw std::length_error("xored block data is misaligned");
    }
 
-   //Core's key repeats from the start of the file, so rotate it to
-   //match this copy's starting offset
+   //the xor key is aligned to the start of the file, not the start of
+   //this copy, so rotate it to match offset_
    unsigned shift = (offset_ % 8) * 8;
    if (shift != 0) {
       xorKey = (xorKey >> shift) | (xorKey << (64 - shift));
