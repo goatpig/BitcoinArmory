@@ -56,6 +56,7 @@ public:
 
    //local
    virtual AddressEntryType getType(void) const;
+   void setCachedPrefixedHash(BinaryData);
 
    //virtual
    virtual const Armory::Wallets::AssetId& getID(void) const = 0;

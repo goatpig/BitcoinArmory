@@ -7172,6 +7172,37 @@ TEST_F(WalletsTest, WalletDisplayNames)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(WalletsTest, UsedAddressMapReusesHashMap)
+{
+   auto wltDir = homedir_ / "used_addr_hash_reuse";
+   std::filesystem::create_directories(wltDir);
+   IO::CreateWalletParams params{
+      wltDir,
+      Passphrase::SetNew{1ms, 0, SecureBinaryData::fromString("test")},
+      Passphrase::SetNew{1ms, 0, controlPass_},
+      nullptr, 8
+   };
+
+   std::unique_ptr<Seeds::ClearTextSeed> seed(new Seeds::ClearTextSeed_Armory());
+   auto wlt = AssetWallet_Single::createFromSeed(std::move(seed), params);
+   for (unsigned i = 0; i < 4; i++) {
+      wlt->getNewAddress();
+   }
+
+   auto acc = wlt->getAccountForID(wlt->getMainAccountID());
+   const auto& addrHashMap = acc->getAddressHashMap();
+   auto usedMap = acc->getUsedAddressMap();
+   ASSERT_FALSE(usedMap.empty());
+
+   for (const auto& pair : usedMap) {
+      const auto& prefixed = pair.second->getPrefixedHash();
+      auto it = addrHashMap.find(prefixed);
+      ASSERT_NE(it, addrHashMap.end());
+      EXPECT_EQ(it->second.first, pair.first);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(WalletsTest, BIP32_Chain)
 {
    //BIP32 test 1 seed

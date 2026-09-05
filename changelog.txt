@@ -33,6 +33,7 @@ Unreleased (0.97_rc2)
    - Take std::filesystem::path in WalletManager::unlockControlHeader.
    - Show Armory Legacy and N/A derivation-scheme display names for legacy and import accounts.
    - Pass exported private keys as BinaryDataRef instead of naked SecureBinaryData pointers.
+   - Hash each address preimage once and reuse the account address-hash map in getUsedAddressMap.
    - Fix setup manager unlock and migrate button handlers to capture each wallet row.
    - Label receive and change key chains separately in the key list export.
    - Rename wallet properties and key list address-type labels to eligible address type and default address types.

@@ -36,6 +36,15 @@ AddressEntryType AddressEntry::getType() const
    return type_;
 }
 
+void AddressEntry::setCachedPrefixedHash(BinaryData prefixed)
+{
+   if (prefixed.getSize() < 2) {
+      throw AddressException("invalid prefixed hash");
+   }
+   prefixedHash_ = std::move(prefixed);
+   hash_ = prefixedHash_.getSliceCopy(1, prefixedHash_.getSize() - 1);
+}
+
 size_t AddressEntry::getWitnessDataSize() const
 {
    throw std::runtime_error("no witness data");
@@ -130,14 +139,7 @@ const BinaryData& AddressEntry_P2PKH::getHash() const
       }
 
       default:
-         const auto& preimage = getPreimage();
-         auto hash1 = BtcUtils::getHash160(preimage);
-         auto hash2 = BtcUtils::getHash160(preimage);
-
-         if (hash1 != hash2) {
-            throw AddressException("failed to hash preimage");
-         }
-         hash_ = hash1;
+         hash_ = BtcUtils::getHash160(getPreimage());
       }
    }
    return hash_;
@@ -300,13 +302,7 @@ const BinaryData& AddressEntry_P2WPKH::getPreimage() const
 const BinaryData& AddressEntry_P2WPKH::getHash() const
 {
    if (hash_.empty()) {
-      const auto& preimage = getPreimage();
-      auto hash1 = BtcUtils::getHash160(preimage);
-      auto hash2 = BtcUtils::getHash160(preimage);
-      if (hash1 != hash2) {
-         throw AddressException("failed to hash preimage");
-      }
-      hash_ = hash1;
+      hash_ = BtcUtils::getHash160(getPreimage());
    }
    return hash_;
 }
@@ -625,14 +621,7 @@ const BinaryData& AddressEntry_P2SH::getHash() const
          }
 
          default:
-            const auto& preimage = getPreimage();
-            auto hash1 = BtcUtils::getHash160(preimage);
-            auto hash2 = BtcUtils::getHash160(preimage);
-
-            if (hash1 != hash2) {
-               throw AddressException("failed to hash preimage");
-            }
-            hash_ = hash1;
+            hash_ = BtcUtils::getHash160(getPreimage());
       }
    }
    return hash_;
@@ -719,14 +708,7 @@ const BinaryData& AddressEntry_P2WSH::getPreimage() const
 const BinaryData& AddressEntry_P2WSH::getHash() const
 {
    if (hash_.empty()) {
-      const auto& preimage = getPreimage();
-      auto hash1 = BtcUtils::getSha256(preimage);
-      auto hash2 = BtcUtils::getSha256(preimage);
-
-      if (hash1 != hash2) {
-         throw AddressException("failed to compute hash");
-      }
-      hash_ = hash1;
+      hash_ = BtcUtils::getSha256(getPreimage());
    }
    return hash_;
 }
