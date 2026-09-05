@@ -649,7 +649,7 @@ Types::TxKey LMDBBlockDatabase::getDBKeyForHash(
       }
    }
 
-   //time to check tx hashes
+   //time to check tx hints
    auto hashTableIndex = txHash.getPtr()[8];
    auto tx = beginHashTableTx(DB_SELECT::TXHINTS,
       hashTableIndex, LMDB::Mode::ReadOnly);
@@ -691,12 +691,11 @@ Types::TxKey LMDBBlockDatabase::getDBKeyForHash(
    if (result.empty()) {
       return Types::INVALID_TX_KEY;
    } else if (result.size() == 1) {
-      //TODO: migrate to uint64_t txkeys
       return *result.begin();
    } else {
-      //NOTE: db wrapper shouldnt have to pick the correct key,
+      //db wrapper shouldnt have to pick the correct key,
       //caller should deal with it
-      throw std::runtime_error("implement me");
+      throw TxHintCollision(txHash, result);
    }
 }
 

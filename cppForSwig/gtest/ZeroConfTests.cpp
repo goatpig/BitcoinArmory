@@ -2092,6 +2092,66 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
          ++utxoIter;
       }
 
+      //plot twist: insert fake txhint collision for first spender hash
+      {
+         auto firstTxHash = utxoVec[0].getTxHash();
+         std::cout << firstTxHash.toHexStr() << std::endl;
+         ASSERT_EQ(firstTxHash, TestChain::hash32);
+
+         //insert fake txhint: tx 4.1
+         const uint64_t blockIDMask = 0x00000000FFFFFFFF;
+         uint8_t hashTableIndex = TestChain::hash32.getPtr()[8];
+         auto db = bdm->getIFace();
+            auto txkey = db->getDBKeyForHash(TestChain::hash32);
+         {
+            auto tx = db->beginHashTableTx(
+               DB_SELECT::TXHINTS, hashTableIndex, LMDB::Mode::ReadWrite);
+
+            //2.1, 2.4 (an non existant tx, to cover deser throws)
+            uint64_t blockID = 5ul << 32;
+            uint64_t txHintKey;
+            std::memcpy(&txHintKey, TestChain::hash32.getPtr(), 8);
+            txHintKey = (txHintKey & blockIDMask) | blockID;
+            std::vector<uint16_t> txids{1};
+            tx->insert(
+               LMDB::DataRef{
+                  sizeof(uint64_t),
+                  (const char*)&txHintKey},
+               LMDB::DataRef{
+                  sizeof(uint16_t) * txids.size(),
+                  (const char*)&txids[0]}
+            );
+         }
+
+         //for this test to work, have to get rid of TestChain::hash32 from the
+         //known hashes table to fall back to txhints
+         {
+            auto tx = db->beginTransaction(
+               DB_SELECT::KNOWNHASHES, LMDB::Mode::ReadWrite);
+            tx->erase(LMDB::DataRef{
+               TestChain::hash32.getSize(), TestChain::hash32.getCharPtr()});
+         }
+
+         //check tx has 2 hints
+         try {
+            auto txkey = db->getDBKeyForHash(TestChain::hash32);
+            ASSERT_TRUE(false);
+         } catch (const TxHintCollision& collision) {
+            ASSERT_EQ(collision.getTxHash(), TestChain::hash32);
+
+            auto candidates = collision.getCandidates();
+            ASSERT_EQ(candidates.size(), 2);
+
+            //4.1
+            auto candidatesIter = candidates.begin();
+            ASSERT_EQ(*candidatesIter, 0xffff010005000000);
+
+            //3.2
+            ++candidatesIter;
+            ASSERT_EQ(*candidatesIter, 0xffff020004000000);
+         }
+      }
+
       //create script spender objects
       uint64_t total = 0;
       for (auto& utxo : utxoVec) {

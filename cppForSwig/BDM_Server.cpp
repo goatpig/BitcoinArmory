@@ -151,6 +151,7 @@ namespace {
          case BdvRequest::Which::GET_TXS_BY_HASH:
          {
             auto db = bdv->getDB();
+            auto blockData = bdv->bdm()->blockchainData();
             auto txHashList = request.getGetTxsByHash();
             std::map<Types::TxKey, Tx> results;
             std::set<Types::TxHash> possibleZcHashes;
@@ -158,12 +159,18 @@ namespace {
                BinaryDataRef hashBdr(txHash.begin(), txHash.end());
                try {
                   auto txKey = db->getDBKeyForHash(hashBdr);
+                  if (!Types::isTxKeyValid(txKey)) {
+                     possibleZcHashes.emplace(hashBdr);
+                     continue;
+                  }
                   auto tx = bdv->bdm()->blockchainData()->getTx(txKey);
                   results.emplace(txKey, std::move(tx));
-               } catch (const std::exception&) {
+               } catch (const TxHintCollision& collision) {
                   //could not get the tx, maybe it's a zc?
-                  possibleZcHashes.emplace(hashBdr);
-                  continue;
+                  auto txKey = blockData->resolveTxHintCollision(collision);
+                  if (!Types::isTxKeyValid(txKey)) {
+                     possibleZcHashes.emplace(hashBdr);
+                  }
                }
             }
 
@@ -1838,9 +1845,24 @@ void Clients::p2pBroadcast(Types::BdvId bdvId, std::vector<BinaryDataRef>& rawZC
       Tx tx(rawZcRef);
       auto hash = tx.getThisHash();
 
-      auto dbKey = db->getDBKeyForHash(hash);
-      if (Types::isTxKeyValid(dbKey)) {
-         //notify the bdv of the error
+      Types::TxKey dbTxKey;
+      try {
+         //do we know this txhash?
+         dbTxKey = db->getDBKeyForHash(hash);
+         if (Types::isTxKeyValid(dbTxKey)) {
+            //we have a txkey for this hash, do a hard check against
+            //the actual tx data
+            std::set<Types::TxKey> hints{dbTxKey};
+            TxHintCollision collision{hash, hints};
+            dbTxKey = bdm_->blockchainData()->resolveTxHintCollision(collision);
+         }
+      } catch (const TxHintCollision& collision){
+         //multiple hints, do a hard check too
+         dbTxKey = bdm_->blockchainData()->resolveTxHintCollision(collision);
+      }
+
+      if (Types::isTxKeyValid(dbTxKey)) {
+         //this hash is mined, notify the bdv of the error
          auto notifPacket = std::make_shared<BDV_Notification_Packet>();
          notifPacket->bdvPtr = BDVs_.get(bdvId);
 

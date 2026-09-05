@@ -49,6 +49,23 @@ uint64_t RecipientReuseException::value() const
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// TxHintCollision
+TxHintCollision::TxHintCollision(
+   const Types::TxHash& hash, std::set<Armory::Types::TxKey>& hints) :
+   txHash_{hash}, candidates_{std::move(hints)}
+{}
+
+const Types::TxHash& TxHintCollision::getTxHash() const
+{
+   return txHash_;
+}
+
+const std::set<Types::TxKey>& TxHintCollision::getCandidates() const
+{
+   return candidates_;
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // Outpoint
 Outpoint::Outpoint(const uint8_t* ptr, size_t remaining)
 {

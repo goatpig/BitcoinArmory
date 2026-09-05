@@ -28,6 +28,7 @@
 #include <Wallets/AuthorizedPeers.h>
 #include <Signer/ScriptSpender.h>
 #include <Network/WebSocketClient.h>
+#include <BlockchainDatabase/BlockchainData.h>
 
 #include "BDM_mainthread.h"
 #include "Server.h"
@@ -2105,6 +2106,100 @@ TEST_F(BlockUtilsFull, TxHints)
    EXPECT_EQ(keyPair.first, 5); EXPECT_EQ(keyPair.second, 1);
    keyPair = getTxKeyForHash(TestChain::hash52, db);
    EXPECT_EQ(keyPair.first, 5); EXPECT_EQ(keyPair.second, 2);
+
+   //check db returns hint for hash35
+   auto txkey = db->getDBKeyForHash(TestChain::hash35);
+   ASSERT_EQ(txkey, 0xffff050004000000);
+
+   //inject fake hints for hash35
+   {
+      const uint64_t blockIDMask = 0x00000000FFFFFFFF;
+      uint8_t hashTableIndex = TestChain::hash35.getPtr()[8];
+      auto tx = db->beginHashTableTx(
+         DB_SELECT::TXHINTS, hashTableIndex, LMDB::Mode::ReadWrite);
+
+      //2.1, 2.4 (an non existant tx, to cover deser throws)
+      uint64_t blockID2 = 3ul << 32;
+      uint64_t txHintKey2;
+      std::memcpy(&txHintKey2, TestChain::hash35.getPtr(), 8);
+      txHintKey2 = (txHintKey2 & blockIDMask) | blockID2;
+      std::vector<uint16_t> txids2{1, 4};
+      tx->insert(
+         LMDB::DataRef{
+            sizeof(uint64_t),
+            (const char*)&txHintKey2},
+         LMDB::DataRef{
+            sizeof(uint16_t) * txids2.size(),
+            (const char*)&txids2[0]}
+      );
+
+      //4.2, 4.4
+      uint64_t blockID4 = 5ul << 32;
+      uint64_t txHintKey4;
+      std::memcpy(&txHintKey4, TestChain::hash35.getPtr(), 8);
+      txHintKey4 = (txHintKey4 & blockIDMask) | blockID4;
+      std::vector<uint16_t> txids4{2, 4};
+      tx->insert(
+         LMDB::DataRef{
+            sizeof(uint64_t),
+            (const char*)&txHintKey4},
+         LMDB::DataRef{
+            sizeof(uint16_t) * txids4.size(),
+            (const char*)&txids4[0]}
+      );
+
+      //7.3 (inexistant block, to cover throws)
+      uint64_t blockID7 = 8ul << 32;
+      uint64_t txHintKey7;
+      std::memcpy(&txHintKey7, TestChain::hash35.getPtr(), 8);
+      txHintKey7 = (txHintKey7 & blockIDMask) | blockID7;
+      std::vector<uint16_t> txids7{3};
+      tx->insert(
+         LMDB::DataRef{
+            sizeof(uint64_t),
+            (const char*)&txHintKey7},
+         LMDB::DataRef{
+            sizeof(uint16_t) * txids7.size(),
+            (const char*)&txids7[0]}
+      );
+   }
+
+   try {
+      db->getDBKeyForHash(TestChain::hash35);
+      ASSERT_TRUE(false);
+   } catch (const TxHintCollision& collision) {
+      ASSERT_EQ(collision.getTxHash(), TestChain::hash35);
+
+      auto candidates = collision.getCandidates();
+      ASSERT_EQ(candidates.size(), 6);
+
+      //2.1
+      auto candidatesIter = candidates.begin();
+      ASSERT_EQ(*candidatesIter, 0xffff010003000000);
+
+      //4.2
+      ++candidatesIter;
+      ASSERT_EQ(*candidatesIter, 0xffff020005000000);
+
+      //7.3
+      ++candidatesIter;
+      ASSERT_EQ(*candidatesIter, 0xffff030008000000);
+
+      //2.4
+      ++candidatesIter;
+      ASSERT_EQ(*candidatesIter, 0xffff040003000000);
+
+      //4.4
+      ++candidatesIter;
+      ASSERT_EQ(*candidatesIter, 0xffff040005000000);
+
+      //3.5
+      ++candidatesIter;
+      ASSERT_EQ(*candidatesIter, 0xffff050004000000);
+
+      auto final = bdm->blockchainData()->resolveTxHintCollision(collision);
+      ASSERT_EQ(final, 0xffff050004000000);
+   }
 
    //cleanup
    bdvPtr.reset();
