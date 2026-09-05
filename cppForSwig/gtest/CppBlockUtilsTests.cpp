@@ -1726,12 +1726,23 @@ TEST_F(BlockUtilsBare, BlockXor)
       }
    }
 
-   //swap the files
+   //remove clear blk file
    fileMap.close();
    std::filesystem::remove(blk0dat_);
-   std::filesystem::rename(xoredFilePath, blk0dat_);
 
-   //create xor file, this is where the xorkey sits
+   //copy first 4 xored blocks
+   {
+      std::fstream blkFile;
+      blkFile.open(blk0dat_, std::ios::out | std::ios::binary);
+
+      std::fstream xoredFile;
+      xoredFile.open(xoredFilePath, std::ios::in | std::ios::binary);
+
+      std::copy_n(std::istreambuf_iterator<char>(xoredFile), 3242,
+         std::ostreambuf_iterator<char>(blkFile));
+   }
+
+   //create xor file, this is where the xor key sits
    {
       std::fstream xorFile;
       xorFile.open(blkdir_ / "blocks" / "xor.dat", std::ios::out | std::ios::binary);
@@ -1777,9 +1788,40 @@ TEST_F(BlockUtilsBare, BlockXor)
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(theBDMt_->bdm().get(), DB_SELECT::SCRADDR), 3U);
+   EXPECT_EQ(DBTestUtils::getTopBlockHash(iface_, DB_SELECT::SCRADDR), TestChain::blkHash3);
+   auto header = theBDMt_->bdm()->blockchain()->getHeaderByHash(TestChain::blkHash3);
+   EXPECT_TRUE(header->isMainBranch());
+
    auto bdm = theBDMt_->bdm();
    auto getBal = [bdm](const BinaryData& scrAddr)->uint64_t
    { return DBTestUtils::getScrAddrBalance(scrAddr, bdm); };
+
+   //check balances
+   EXPECT_EQ(getBal(TestChain::scrAddrA), 50 * COIN);
+   EXPECT_EQ(getBal(TestChain::scrAddrB), 30 * COIN);
+   EXPECT_EQ(getBal(TestChain::scrAddrC), 55 * COIN);
+   EXPECT_EQ(getBal(TestChain::scrAddrD),  5 * COIN);
+   EXPECT_EQ(getBal(TestChain::scrAddrE), 30 * COIN);
+   EXPECT_EQ(getBal(TestChain::scrAddrF),  5 * COIN);
+
+   EXPECT_EQ(getBal(TestChain::lb1ScrAddr), 10 * COIN);
+   EXPECT_EQ(getBal(TestChain::lb1ScrAddrP2SH), 0 * COIN);
+   EXPECT_EQ(getBal(TestChain::lb2ScrAddr), 10 * COIN);
+   EXPECT_EQ(getBal(TestChain::lb2ScrAddrP2SH), 5 * COIN);
+
+   //add last 2 blocks
+   std::filesystem::remove(blk0dat_);
+   std::filesystem::rename(xoredFilePath, blk0dat_);
+   DBTestUtils::triggerNewBlockNotification(theBDMt_);
+   DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
+
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(theBDMt_->bdm().get(), DB_SELECT::SCRADDR), 5U);
+   EXPECT_EQ(DBTestUtils::getTopBlockHash(iface_, DB_SELECT::SCRADDR), TestChain::blkHash5);
+   EXPECT_TRUE(theBDMt_->bdm()->blockchain()->getHeaderByHash(TestChain::blkHash5)->isMainBranch());
+   auto lastScannedRange = bdm->getLastScannedRange();
+   EXPECT_EQ(lastScannedRange.first, TestChain::blkHash4);
+   EXPECT_EQ(lastScannedRange.second, TestChain::blkHash5);
 
    //check balances
    EXPECT_EQ(getBal(TestChain::scrAddrA), 50 * COIN);
