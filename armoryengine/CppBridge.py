@@ -1596,7 +1596,7 @@ class BridgeSigner(ProtoWrapper):
       packet.signer.canLegacySerialize = None
 
       fut = self.send(packet)
-      reply = fut.getVal()
+      reply = fut.getVal(nothrow=True)
       return reply.success
 
 ################################################################################
