@@ -76,6 +76,7 @@ namespace Armory
          std::shared_ptr<Callback> callbackPtr_;
          std::function<void(void)> cleanupCallback_;
          std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr_;
+         bool automatesDB_ = false;
 
          //history
          std::shared_ptr<TxIOCache> txioCache_;
@@ -96,7 +97,8 @@ namespace Armory
 
          /* pre wallets loading calls */
          std::map<std::string, std::shared_ptr<WalletFileInfo>> listWallets(void);
-         void unlockControlHeader(const std::string&, const Passphrase::UnlockFunc&);
+         void unlockControlHeader(const std::filesystem::path&,
+            const Passphrase::UnlockFunc&);
          const Wallets::WalletId& migrateWallet(const std::filesystem::path&,
             const Passphrase::UnlockFunc&,
             const Wallets::IO::CreateWalletParams&
@@ -111,7 +113,7 @@ namespace Armory
          void setCleanupCallback(
             const std::function<void(void)>&);
          std::shared_ptr<Callback> getBdvCallback(void) const;
-         void setBdvPtr(std::shared_ptr<AsyncClient::BlockDataViewer>);
+         void setBdvPtr(std::shared_ptr<AsyncClient::BlockDataViewer>, bool=false);
          void cleanupBDV(void);
 
          /* utils */

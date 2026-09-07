@@ -166,13 +166,48 @@ ReorganizationState Blockchain::organize(bool force, bool verbose)
          header = *headerIter;
       }
    }
+
+   if (!orphans.empty()) {
+      //we have long orphanned chains (144+ headers), find the lowest block
+      //file containing any of these orphans
+      Types::FileId fileIdRetarget = topBlockOffset_.fileID();
+      for (const auto& orphanChain : orphans) {
+         auto iter = headerSet_.find(orphanChain.first);
+         if (iter == headerSet_.end()) {
+            throw std::runtime_error("missing orphan tail!");
+         }
+
+         //track lowest fileID for this orphan chain
+         Types::FileId fileID = topBlockOffset_.fileID();
+         auto blockPtr = *iter;
+         auto orphanTail = *iter;
+         while (blockPtr != nullptr) {
+            fileID = std::min(fileID, blockPtr->blkFileId_);
+            blockPtr = blockPtr->nextPtr_;
+         }
+
+         LOGWARN << std::format(
+            "looking for orphan tail: {}, lowest fileID: {}",
+            orphanTail->getPrevHash().toHexStr(true), fileID);
+         fileIdRetarget = std::min(fileIdRetarget, fileID);
+      }
+
+      //rollback topBlockOffset to cover up to 10 files before
+      //the lowest fileID carrying orphaned headers
+      fileIdRetarget = fileIdRetarget > 10 ? fileIdRetarget - 10 : 0;
+      LOGWARN << std::format(
+         "topBlockOffset adjusted from <{}, {}> to <{}, 0>",
+         topBlockOffset_.fileID(), topBlockOffset_.offset(), fileIdRetarget);
+      topBlockOffset_ = BlockOffset(fileIdRetarget, 0);
+   }
+
+   //cleanup helper containers
+   orphans.clear();
    return st;
 }
 
 // Returns nullptr if the new top block is a direct follower of
 // the previous top. Returns the branch point if we had to reorg
-// TODO: Figure out if there is an elegant way to deal with a forked
-//   blockchain containing two equal-length chains
 HeaderPtr Blockchain::organizeChain(
    bool forceRebuild, bool verbose)
 {
@@ -253,13 +288,13 @@ HeaderPtr Blockchain::organizeChain(
       if (orphanChain.second.size() >= 144) {
          auto headerIter = headerSet_.find(orphanChain.first);
          if (headerIter == headerSet_.end()) {
-            LOGERR << "Could not find first orphan by hash! This is a fatal error!";
+            LOGERR << "Could not find orphan head! This is a fatal error!";
             throw std::runtime_error("could not find orphan");
          }
 
          auto headerPtr = *headerIter;
          LOGWARN << "Found a long orphan chain!";
-         LOGWARN << "  file: " << headerPtr->getBlockFileNum();
+         LOGWARN << "  file: " << headerPtr->getBlockFileId();
          LOGWARN << "  first header hash  : " << headerPtr->getThisHash().toHexStr(true);
          LOGWARN << "  missing header hash: " << headerPtr->getPrevHash().toHexStr(true);
          LOGWARN << "  orphan chain length: " << orphanChain.second.size();
@@ -269,7 +304,7 @@ HeaderPtr Blockchain::organizeChain(
       for (const auto& headerHash : orphanChain.second) {
          auto headerIter = headerSet_.find(headerHash);
          if (headerIter == headerSet_.end()) {
-            LOGERR << "Could not find an orphan by hash! This is a fatal error!";
+            LOGERR << "Could not find a known orphan! This is a fatal error!";
             throw std::runtime_error("could not find orphan");
          }
          (*headerIter)->isFinishedCalc_ = false;
@@ -312,9 +347,6 @@ HeaderPtr Blockchain::organizeChain(
    thisHeaderPtr->isMainBranch_ = true;
    headersByHeight_[thisHeaderPtr->getBlockHeight()] = thisHeaderPtr;
    std::atomic_store(&topBlockPtr_, newTopBlock);
-
-   //cleanup helper containers
-   orphans.clear();
 
    if (!prevChainStillValid) {
       LOGWARN << "Reorg detected!";
@@ -489,7 +521,7 @@ void Blockchain::loadHeadersFromDB(
       }
       headersById_[hPtr->getUniqueID()] = hPtr;
       highestBlockID = std::max(highestBlockID, hPtr->getUniqueID());
-      BlockOffset bo{hPtr->getBlockFileNum(), hPtr->getOffset() + hPtr->getBlockSize()};
+      BlockOffset bo{hPtr->getBlockFileId(), hPtr->getOffset() + hPtr->getBlockSize()};
       topBlockOffset_ = std::max(topBlockOffset_, bo);
 
       if (prog && count++ % 50000 == 0) {
@@ -525,7 +557,7 @@ uint32_t Blockchain::stageNewHeaders(
       auto iter = headerSet_.find(newHeader);
       if (iter != headerSet_.end()) {
          auto thisHeader = *iter;
-         if (thisHeader->getBlockFileNum() == newHeader->getBlockFileNum() &&
+         if (thisHeader->getBlockFileId() == newHeader->getBlockFileId() &&
             thisHeader->getOffset() == newHeader->getOffset()) {
             continue;
          }
@@ -544,7 +576,7 @@ uint32_t Blockchain::stageNewHeaders(
       newlyParsedHeaders_.emplace_back(newHeader);
 
       BlockOffset bo{
-         newHeader->getBlockFileNum(),
+         newHeader->getBlockFileId(),
          newHeader->getOffset() + newHeader->getBlockSize()};
       topBlockOffset_ = std::max(topBlockOffset_, bo);
       ++count;
@@ -561,7 +593,7 @@ std::map<Types::FileId, std::set<Types::BlockId>> Blockchain::mapIDsPerBlockFile
       if (header == nullptr) {
          continue;
       }
-      auto& result_set = resultMap[header->blkFileNum_];
+      auto& result_set = resultMap[header->blkFileId_];
       result_set.emplace(header->uniqueID_);
    }
    return resultMap;
@@ -571,8 +603,8 @@ std::map<Types::FileId, std::set<Types::BlockId>> Blockchain::mapIDsPerBlockFile
 void Blockchain::flagBlockHeader(std::shared_ptr<BlockHeader> header,
    LMDBBlockDatabase *db)
 {
-   if (db->getOrSetFlaggedBlockFile(header->getBlockFileNum())) {
-      LOGINFO << "flagging block file " << header->getBlockFileNum() <<
+   if (db->getOrSetFlaggedBlockFile(header->getBlockFileId())) {
+      LOGINFO << "flagging block file " << header->getBlockFileId() <<
          " for reparsing";
    }
 }

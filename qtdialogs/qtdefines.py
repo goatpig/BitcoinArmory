@@ -24,7 +24,8 @@ from armorycolors import htmlColor
 USERMODE        = enum('Standard', 'Advanced', 'Expert')
 NETWORKMODE     = enum('Offline', 'Full', 'Disconnected')
 WLTFIELDS       = enum('Name', 'Descr', 'WltID', 'NumAddr', 'Secure',
-   'BelongsTo', 'Crypto', 'Time', 'Mem', 'Version')
+   'BelongsTo', 'Crypto', 'Time', 'Mem', 'Version',
+   'AccountName', 'AddressTypes', 'DefaultAddrType')
 MSGBOX          = enum('Good','Info', 'Question', 'Warning',
    'Critical', 'Error')
 DASHBTNS        = enum('Close', 'Browse', 'Settings')
@@ -504,6 +505,7 @@ class QLabelButton(QtWidgets.QLabel):
       super().__init__('<font color=%s>%s</u></font>' % (colorStr, txt))
       self.plainText = txt
       self.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
+      self.setOpenExternalLinks(False)
 
    def sizeHint(self):
       w,h = relaxedSizeStr(self, self.plainText)
@@ -518,7 +520,7 @@ class QLabelButton(QtWidgets.QLabel):
       txt = toBytes(self.text())
       if txt in self.mousePressOn:
          self.mousePressOn.remove(txt)
-         self.linkActivated.emit(ev)
+         self.linkActivated.emit(None)
 
    def enterEvent(self, ev):
       ssStr = "QtWidgets.QLabel { background-color : %s }" % \

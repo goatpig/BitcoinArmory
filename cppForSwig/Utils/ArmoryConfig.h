@@ -26,10 +26,8 @@
 #include "BitcoinSettings.h"
 
 #define DEFAULT_ZCTHREAD_COUNT 100
+#define DEFAULT_RAM_USAGE 8
 #define WEBSOCKET_PORT 7681
-
-#define BROADCAST_ID_LENGTH 6
-#define REGISTER_ID_LENGH 5
 
 namespace Node
 {
@@ -129,9 +127,10 @@ namespace Armory
 
          static bool reportProgress_;
          static bool checkChain_;
+         static bool disableZC_;
          static bool clearMempool_;
          static bool checkTxHints_;
-
+         static bool automatedNode_;
          static uint64_t xorKey_;
 
       private:
@@ -152,10 +151,12 @@ namespace Armory
          static unsigned rewindCount(void);
 
          static bool checkChain(void);
+         static bool enableZC(void);
          static BdmInitMode initMode(void);
          static bool clearMempool(void);
          static bool reportProgress(void);
          static bool checkTxHints(void);
+         static bool automatedNode(void);
 
          static bool isXored(void);
          static void setXorKey(uint64_t);

@@ -29,10 +29,8 @@ namespace
       if (Types::isThisAZCKey(txKey)) {
          return 0;
       }
-
       auto blockId = Types::getBlockIDFromTxKey(txKey);
-
-      auto header = cache->headers.at(blockId);
+      auto header = cache->getHeader(blockId);
       return top - header->blockHeight + 1;
    }
 
@@ -81,8 +79,7 @@ void TxIOCache::purge()
    unspentTxios_.clear();
    spentTxios_.clear();
    zcTxios_.clear();
-   dbCache_->txMap.clear();
-   dbCache_->headers.clear();
+   dbCache_->clear();
 }
 
 ////////
@@ -168,16 +165,20 @@ void TxIOCache::updateBlockBranching(const NewBlockNotif& reorgNotif)
    }
 
    for (auto blockId : reorgNotif.invalidatedBlockIds()) {
-      auto iter = dbCache_->headers.find(blockId);
-      if (iter != dbCache_->headers.end()) {
-         iter->second->isMainBranch = false;
+      try {
+         auto header = dbCache_->getHeader(blockId);
+         header->isMainBranch = false;
+      } catch (const std::out_of_range&) {
+         continue;
       }
    }
 
    for (auto blockId : reorgNotif.newMainBranchBlockIds()) {
-      auto iter = dbCache_->headers.find(blockId);
-      if (iter != dbCache_->headers.end()) {
-         iter->second->isMainBranch = true;
+      try {
+         auto header = dbCache_->getHeader(blockId);
+         header->isMainBranch = true;
+      } catch (const std::out_of_range&) {
+         continue;
       }
    }
 }
@@ -185,11 +186,12 @@ void TxIOCache::updateBlockBranching(const NewBlockNotif& reorgNotif)
 bool TxIOCache::txKeyIsValid(const Types::TxKey& txKey) const
 {
    auto blockId = Types::getBlockIDFromTxKey(txKey);
-   auto iter = dbCache_->headers.find(blockId);
-   if (iter == dbCache_->headers.end()) {
+   try {
+      auto header = dbCache_->getHeader(blockId);
+      return header->isMainBranch;
+   } catch (const std::out_of_range&) {
       return false;
    }
-   return iter->second->isMainBranch;
 }
 
 ////////
@@ -258,26 +260,17 @@ uint32_t TxIOCache::update(
    ReentrantLock lock(this);
 
    //5. prune mined tx from dbCache
-   std::map<Types::TxHash, Types::TxKey> zcHashes;
-   {
-      auto txIter = dbCache_->txMap.lower_bound(firstZCKey);
-      while (txIter != dbCache_->txMap.end()) {
-         zcHashes.emplace(txIter->second.getThisHash(), txIter->first);
-         ++txIter;
-      }
-   }
+   auto zcHashes = dbCache_->getHashesStartingKey(firstZCKey);
 
    for (auto& tx : txs) {
       //prune mined tx from dbCache
       auto zcIter = zcHashes.find(tx.getThisHash());
       if (zcIter != zcHashes.end()) {
-         dbCache_->txMap.erase(zcIter->second);
-         dbCache_->txHashToKey.erase(tx.getThisHash());
+         dbCache_->eraseTx(zcIter->second);
       }
 
       //add fresh tx
-      dbCache_->txHashToKey.emplace(tx.getThisHash(), tx.getDBKey());
-      dbCache_->txMap.emplace(tx.getDBKey(), std::move(tx));
+      dbCache_->addTx(tx);
    }
    dbCache_->addHeaders(headers);
    return fromHeight;
@@ -289,28 +282,16 @@ std::set<Types::TxKey> TxIOCache::updateZC(
    const std::set<BinaryData>& invalidatedZC, bool append)
 {
    ReentrantLock lock(this);
-   auto& txMap = dbCache_->txMap;
    if (!append) {
       //append is false, clear up the zc map and apply
       //fresh set of zc txios
       zcTxios_.clear();
    }
    if (!invalidatedZC.empty()) {
-      //we have invalidated zc txs, let's purge them
-      std::set<Types::TxKey> invalidatedKeys;
-      auto txIter = txMap.lower_bound(firstZCKey);
-      while (txIter != txMap.end()) {
-         auto& tx = txIter->second;
-         if (invalidatedZC.find(tx.getThisHash()) != invalidatedZC.end()) {
-            //also gather the invalidated keys
-            invalidatedKeys.emplace(txIter->first);
-            txMap.erase(txIter++);
-         } else {
-            ++txIter;
-         }
-      }
+      //we have invalidated zc hashes, let's purge them
+      auto invalidatedKeys = dbCache_->purgeTxs(invalidatedZC);
 
-      //now purge the txio map
+      //purge the txio map using the keys
       auto txioIter = zcTxios_.begin();
       while (txioIter != zcTxios_.end()) {
          auto& zcTxio = txioIter->second;
@@ -335,13 +316,17 @@ std::set<Types::TxKey> TxIOCache::updateZC(
    std::set<Types::TxKey> missingTxKeys;
    for (const auto& zcTxio : zcTxios) {
       auto zcOutKey = zcTxio.getTxKeyOfOutput();
-      if (txMap.find(zcOutKey) == txMap.end()) {
+      try {
+         dbCache_->getTx(zcOutKey);
+      } catch (const std::out_of_range&) {
          missingTxKeys.emplace(zcOutKey);
       }
 
       if (zcTxio.hasTxIn()) {
          auto zcInKey = zcTxio.getTxKeyOfInput();
-         if (txMap.find(zcInKey) == txMap.end()) {
+         try {
+            dbCache_->getTx(zcInKey);
+         } catch (const std::out_of_range&) {
             missingTxKeys.emplace(zcInKey);
          }
       }
@@ -365,7 +350,7 @@ std::set<Types::TxKey> TxIOCache::updateZC(
       auto txs = futTxs.get();
 
       for (auto& tx : txs) {
-         txMap.emplace(tx.getDBKey(), std::move(tx));
+         dbCache_->addTx(tx);
       }
       return {};
    } else {
@@ -384,10 +369,14 @@ TxIOCache::addTxios(
    auto addKey = [&missingTxKeys, &missingBlocks, this](Types::TxKey key)
    {
       auto blockId = Types::getBlockIDFromTxKey(key);
-      if (dbCache_->headers.find(blockId) == dbCache_->headers.end()) {
+      try {
+         dbCache_->getHeader(blockId);
+      } catch (const std::out_of_range&) {
          missingBlocks.emplace(blockId);
       }
-      if (dbCache_->txMap.find(key) == dbCache_->txMap.end()) {
+      try {
+         dbCache_->getTx(key);
+      } catch (const std::out_of_range&) {
          missingTxKeys.emplace(key);
       }
    };
@@ -443,7 +432,7 @@ std::map<Types::ScrAddr, std::set<Types::TxHash>> TxIOCache::getAddressBook(
          if (iter == result.end()) {
             iter = result.emplace(scrAddr, std::set<Types::TxHash>{}).first;
          }
-         const auto& tx = dbCache_->txMap.at(txKey);
+         const auto& tx = dbCache_->getTx(txKey);
          iter->second.emplace(tx.getThisHash());
       }
    }
@@ -468,7 +457,7 @@ std::map<Types::ScrAddr, std::set<Types::TxHash>> TxIOCache::getAddressBook(
          if (iter == result.end()) {
             iter = result.emplace(scrAddr, std::set<Types::TxHash>{}).first;
          }
-         const auto& tx = dbCache_->txMap.at(txKeyOutput);
+         const auto& tx = dbCache_->getTx(txKeyOutput);
          iter->second.emplace(tx.getThisHash());
       }
    }
@@ -490,7 +479,8 @@ std::vector<UTXO> TxIOCache::getZcUTXOs(bool rbf,
 
       uint32_t height = UINT32_MAX;
       if (!Types::isThisAZCKey(tx.getDBKey())) {
-         auto header = dbCache_->headers.at(tx.getBlockId());
+         auto blockId = tx.getBlockId();
+         auto header = dbCache_->getHeader(blockId);
          height = header->blockHeight;
       }
       result.emplace_back(UTXO{txio.getAmount(),
@@ -505,7 +495,7 @@ std::vector<UTXO> TxIOCache::getZcUTXOs(bool rbf,
       if (rbf) {
          //for rbf outputs, we consider all outputs that are RBF flagged
          if (txio.second.isRBF()) {
-            const auto& tx = dbCache_->txMap.at(txKey);
+            const auto& tx = dbCache_->getTx(txKey);
             addTxio(txio.second, tx);
          }
          continue;
@@ -521,7 +511,7 @@ std::vector<UTXO> TxIOCache::getZcUTXOs(bool rbf,
          continue;
       }
 
-      const auto& tx = dbCache_->txMap.at(txKey);
+      const auto& tx = dbCache_->getTx(txKey);
       addTxio(txio.second, tx);
    }
    return result;
@@ -557,8 +547,10 @@ std::vector<UTXO> TxIOCache::getUTXOs(
       if (!txKeyIsValid(txKey)) {
          continue;
       }
-      const auto& tx = dbCache_->txMap.at(txKey);
-      auto header = dbCache_->headers.at(tx.getBlockId());
+      const auto& tx = dbCache_->getTx(txKey);
+      auto blockId = tx.getBlockId();
+      const auto& header = dbCache_->getHeader(blockId);
+
       if (tx.getTxIndex() == 0 &&
          header->blockHeight + COINBASE_MATURITY > lastKnownBlock_) {
          continue;

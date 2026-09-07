@@ -75,7 +75,7 @@ private:
 public:
    ReentrantLock(const Lockable*);
    ReentrantLock(ReentrantLock&&);
-   ~ReentrantLock();
+   ~ReentrantLock(void);
 };
 
 ////////////////////////////////////////////////////////////////////////////////

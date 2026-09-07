@@ -27,7 +27,7 @@ namespace Armory
    namespace Accounts
    {
       class MetaDataAccount;
-      struct AuthPeerAssetMap;
+      struct PeerAssetMap;
    }
 
    namespace Wallets
@@ -39,35 +39,41 @@ namespace Armory
          struct ReadOnlyFileParams;
          struct CreateFileParams;
       };
+   }
 
-      //////////////////////////////////////////////////////////////////////////
-      class PeerFileMissing
+   /////////////////////////////////////////////////////////////////////////////
+   namespace NetworkPeers
+   {
+      struct FileMissing
       {
-      public:
-         PeerFileMissing(void)
+         FileMissing(void)
          {}
       };
 
       ////////
-      class AuthorizedPeersException : public std::runtime_error
+      struct Exception : public std::runtime_error
       {
-      public:
-         AuthorizedPeersException(const std::string& err) :
+         Exception(const std::string& err) :
             std::runtime_error(err)
          {}
       };
 
       ////////
+      enum class PeerType : int {
+         Client = 0,
+         ServerOneWay,
+         ServerTwoWay
+      };
+
       class PeerKey
       {
       private:
          const SecureBinaryData pubkey_;
-         const bool oneWayAuth_;
-         const bool isServer_;
+         const PeerType type_;
 
       public:
-         PeerKey(BinaryDataRef, bool, bool);
-         PeerKey(const btc_pubkey&, bool, bool);
+         PeerKey(BinaryDataRef, PeerType);
+         PeerKey(const btc_pubkey&, PeerType);
 
          const SecureBinaryData& getKey(void) const;
          bool isServer(void) const;
@@ -80,99 +86,153 @@ namespace Armory
       class PeerMap
       {
       private:
-         std::map<std::string, btc_pubkey> nameToKeyMap_;
+         std::map<std::string, SecureBinaryData> nameToKeyMap_;
          std::map<SecureBinaryData, std::string> keyMap_;
          std::map<SecureBinaryData, std::set<unsigned>> keyToAssetIndexMap_;
 
-         const std::shared_ptr<AssetWallet> wallet_;
+         const std::shared_ptr<Wallets::AssetWallet> wallet_;
          const bool oneWay_;
 
       public:
-         PeerMap(std::shared_ptr<AssetWallet>, const btc_pubkey&, bool);
+         PeerMap(std::shared_ptr<Wallets::AssetWallet>, const SecureBinaryData&, bool);
 
-         void setupFromAssetMap(const Accounts::AuthPeerAssetMap&);
+         void setupFromAssetMap(const Accounts::PeerAssetMap&);
          void grabKeyIndexes(std::shared_ptr<Accounts::MetaDataAccount>);
 
-         const std::map<std::string, btc_pubkey>& getPeerNameMap(void) const;
+         const std::map<std::string, SecureBinaryData>& getPeerNameMap(void) const;
          const std::map<SecureBinaryData, std::string>& getPublicKeyMap(void) const;
 
          void addPeer(const SecureBinaryData&,
             const std::vector<std::string>&, const std::string&);
+         const std::string& getLabel(const SecureBinaryData&) const;
          void setLabel(const SecureBinaryData&, const std::string&);
 
-         btc_pubkey eraseName(const std::string&);
+         SecureBinaryData eraseName(const std::string&);
          void eraseKey(const SecureBinaryData&);
       };
 
-      //////////////////////////////////////////////////////////////////////////
-      class AuthorizedPeers
+      ////////
+      class PeerStoreView;
+
+      class PeerStore
+      {
+      protected:
+         //std::map<SecureBinaryData, SecureBinaryData> privateKeys_;
+         std::shared_ptr<Wallets::AssetWallet> wallet_ = nullptr;
+         std::shared_ptr<const SecureBinaryData> ephemeralPrivateKey_ = nullptr;
+
+      protected:
+         PeerStore(const Wallets::IO::ReadOnlyFileParams&);
+         PeerStore(std::shared_ptr<Wallets::AssetWallet>);
+         PeerStore(const SecureBinaryData&);
+         PeerStore(void);
+         virtual ~PeerStore(void) = 0;
+
+         void loadWallet(const Wallets::IO::ReadOnlyFileParams&);
+         void erasePeerRootKey(const SecureBinaryData&);
+
+      public:
+         virtual const SecureBinaryData& getOwnPublicKey(void) const = 0;
+
+         virtual void addPeer(const PeerKey&,
+            const std::vector<std::string>&, const std::string&) = 0;
+         virtual void erasePeer(const PeerKey&) = 0;
+         virtual void eraseName(const std::string&, PeerType) = 0;
+         virtual void eraseKey(const btc_pubkey&, PeerType) = 0;
+         virtual void eraseKey(BinaryDataRef, PeerType) = 0;
+         virtual void setLabel(const PeerKey&, const std::string&) = 0;
+
+         //takes path to peers db, passphrase lambdas are handled internally
+         static void changeControlPassphrase(const std::filesystem::path&);
+         static std::shared_ptr<Wallets::AssetWallet> bootstrapWallet(
+            const Wallets::IO::CreateFileParams&);
+      };
+
+      ////
+      class ServerStore : public PeerStore
       {
       private:
-         std::unique_ptr<PeerMap> peerMapOneWay_;
-         std::unique_ptr<PeerMap> peerMapTwoWay_;
-         std::map<BinaryData, SecureBinaryData> privateKeys_;
-
-         //for wallet management
-         std::shared_ptr<AssetWallet> wallet_ = nullptr;
+         std::shared_ptr<PeerMap> peerMap_;
 
          //public key of master ACL; a client that completes a 2-way
          //AEAD handshake with this key will receive master credentials
          SecureBinaryData masterKey_;
 
       private:
-         AuthorizedPeers(std::shared_ptr<AssetWallet>);
-         AuthorizedPeers(SecureBinaryData&);
-
-         void initPeerMaps(const SecureBinaryData&);
-         SecureBinaryData setOwnPrivateKey(SecureBinaryData&);
-         void loadWallet(const IO::ReadOnlyFileParams&);
-         void initFromWallet(void);
-         void erasePeerRootKey(const SecureBinaryData&);
+         void initPeerMap(void);
+         void setupFromWallet(void);
 
       public:
-         AuthorizedPeers(const IO::ReadOnlyFileParams&);
-         AuthorizedPeers(void);
+         ServerStore(void);
+         ServerStore(const SecureBinaryData&);
+         ServerStore(std::shared_ptr<Wallets::AssetWallet>);
+         ServerStore(const Wallets::IO::ReadOnlyFileParams&);
 
-         const std::map<std::string, btc_pubkey>& getPeerNameMap(bool) const;
-         const std::map<SecureBinaryData, std::string>& getPublicKeyMap(bool) const;
-         const SecureBinaryData& getPrivateKey(const BinaryDataRef&) const;
-         std::shared_ptr<AuthorizedPeers> getNarrowSet(const PeerKey&) const;
-         const btc_pubkey& getOwnPublicKey(void) const;
-         const std::string& getLabel(const SecureBinaryData&, bool) const;
-
-         /* addPeer:
-         input:
-         - pubkey as SecureBinaryData/btc_pubkey/PeerKey; secp256k1 un/compressed
-           public key
-         - vector<std::string> of names; at least 1
-         */
-         void addPeer(const PeerKey&,
-            const std::vector<std::string>&, const std::string&);
-         void addPeer(const btc_pubkey&,
-            const std::vector<std::string>&, const std::string&, bool);
-         void addPeer(const SecureBinaryData&,
-            const std::vector<std::string>&, const std::string&, bool);
-
-         //
-         void eraseName(const std::string&, bool);
-         void erasePeer(const PeerKey&);
-         void eraseKey(const SecureBinaryData&, bool);
-         void eraseKey(const btc_pubkey&, bool);
-
-         bool setMasterKey(const btc_pubkey&);
-         bool setMasterKey(const SecureBinaryData&);
+         std::unique_ptr<PeerStoreView> getView(void) const;
+         bool setMasterKey(const PeerKey&);
          void eraseMasterKey(void);
-         bool isMasterKey(const btc_pubkey&) const;
-         bool isMasterKey(const SecureBinaryData&) const;
-         void setLabel(const PeerKey&, const std::string&);
-         void setLabel(const SecureBinaryData&, const std::string&, bool);
+         bool isMasterKey(BinaryDataRef) const;
 
-         //takes path to peers db, passphrase lambdas are handled internally
-         static void changeControlPassphrase(const std::filesystem::path&);
-         static AuthPeersLambdas getAuthPeersLambdas(
-            std::shared_ptr<AuthorizedPeers>, bool);
-         static std::shared_ptr<AuthorizedPeers> createWallet(
-            const IO::CreateFileParams&);
+         const SecureBinaryData& getOwnPublicKey(void) const override;
+         void addPeer(const PeerKey&,
+            const std::vector<std::string>&, const std::string&) override;
+         void erasePeer(const PeerKey&) override;
+         void eraseName(const std::string&, PeerType) override;
+         void eraseKey(const btc_pubkey&, PeerType) override;
+         void eraseKey(BinaryDataRef, PeerType) override;
+         void setLabel(const PeerKey&, const std::string&) override;
       };
-   } //namespace Wallets
+
+      ////
+      class ClientStore : public PeerStore
+      {
+      private:
+         std::shared_ptr<PeerMap> peerMapOneWay_;
+         std::shared_ptr<PeerMap> peerMapTwoWay_;
+
+      private:
+         void initPeerMap(void);
+         void setupFromWallet(void);
+
+      public:
+         ClientStore(void);
+         ClientStore(const SecureBinaryData&);
+         ClientStore(std::shared_ptr<Wallets::AssetWallet>);
+         ClientStore(const Wallets::IO::ReadOnlyFileParams&);
+
+         std::unique_ptr<PeerStoreView> getView(PeerType) const;
+         std::shared_ptr<ClientStore> getNarrowSet(const PeerKey&) const;
+
+         const SecureBinaryData& getOwnPublicKey(void) const override;
+         void addPeer(const PeerKey&,
+            const std::vector<std::string>&, const std::string&) override;
+         void erasePeer(const PeerKey&) override;
+         void eraseName(const std::string&, PeerType) override;
+         void eraseKey(const btc_pubkey&, PeerType) override;
+         void eraseKey(BinaryDataRef, PeerType) override;
+         void setLabel(const PeerKey&, const std::string&) override;
+      };
+
+      ////////
+      class PeerStoreView
+      {
+      private:
+         const std::shared_ptr<const PeerMap> peerMap_;
+         const std::shared_ptr<const Wallets::AssetWallet> wallet_;
+         const std::shared_ptr<const SecureBinaryData> ephemeralPrivateKey_;
+
+      public:
+         PeerStoreView(std::shared_ptr<const PeerMap>,
+            std::shared_ptr<const Wallets::AssetWallet>);
+         PeerStoreView(std::shared_ptr<const PeerMap>,
+            std::shared_ptr<const SecureBinaryData>);
+
+         bool signChallenge(const uint8_t*, BinaryData&) const;
+         BinaryDataRef getPubKeyRef(const std::string&) const;
+         const std::string& getLabel(const SecureBinaryData&) const;
+
+         const std::map<SecureBinaryData, std::string>& getPublicKeyMap(void) const;
+         const std::map<std::string, SecureBinaryData>& getPeerNameMap(void) const;
+      };
+   } //namespace NetworkPeers
 } //namespace Armory

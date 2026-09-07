@@ -31,9 +31,9 @@ namespace Armory
    {
       bool prevTopStillValid = false;
       bool hasNewTop = false;
-      std::shared_ptr<BlockHeader> prevTop;
-      std::shared_ptr<BlockHeader> newTop;
-      std::shared_ptr<BlockHeader> reorgBranchPoint;
+      HeaderPtr prevTop;
+      HeaderPtr newTop;
+      HeaderPtr reorgBranchPoint;
 
       std::vector<Types::BlockId> invalidatedBlockIds;
       std::vector<Types::BlockId> newMainBranchIds;
@@ -48,13 +48,13 @@ namespace Armory
          BlockHeader::Hasher, BlockHeader::IsEqual>;
    private:
       void clear(void);
-      std::shared_ptr<BlockHeader> organizeChain(bool = false, bool = false);
+      HeaderPtr organizeChain(bool = false, bool = false);
       /////////////////////////////////////////////////////////////////////////////
       // Update/organize the headers map (figure out longest chain, mark orphans)
       // Start from a node, trace down to the highest solved block, accumulate
       // difficulties and difficultySum values.  Return the difficultySum of 
       // this block.
-      void traceChainDown(std::shared_ptr<BlockHeader>);
+      void traceChainDown(HeaderPtr);
       Types::BlockId getNewUniqueID(void);
 
    public:
@@ -64,7 +64,7 @@ namespace Armory
       * check/add blocks to the chain
       **/
       void loadHeadersFromDB(LMDBBlockDatabase*, const std::function<void(size_t)>&);
-      uint32_t stageNewHeaders(const std::vector<std::shared_ptr<BlockHeader>>&);
+      uint32_t stageNewHeaders(const std::vector<HeaderPtr>&);
       void putNewHeaders(LMDBBlockDatabase*);
       void flagInvalidBlocks(LMDBBlockDatabase*, const std::set<Types::BlockId>&);
 
@@ -73,11 +73,11 @@ namespace Armory
       **/
       ReorganizationState organize(bool, bool);
 
-      std::shared_ptr<BlockHeader> top(void) const;
-      std::shared_ptr<BlockHeader> getGenesisHeader(void) const;
+      HeaderPtr top(void) const;
+      HeaderPtr getGenesisHeader(void) const;
 
       const HeaderSet& getHeaderSet(void) const;
-      const std::shared_ptr<BlockHeader> getHeaderByHeight(unsigned) const;
+      const HeaderPtr getHeaderByHeight(unsigned) const;
       HeaderPtr getHeaderByHash(const BinaryData&) const;
       HeaderPtr getHeaderByHash(BinaryDataRef) const;
       HeaderPtr getHeaderByHash(const Hash32&) const;
@@ -85,7 +85,7 @@ namespace Armory
       BlockOffset getTopBlockOffset(void) const;
 
       std::map<Types::FileId, std::set<Types::BlockId>> mapIDsPerBlockFile(void) const;
-      void flagBlockHeader(std::shared_ptr<BlockHeader>, LMDBBlockDatabase*);
+      void flagBlockHeader(HeaderPtr, LMDBBlockDatabase*);
       const std::vector<HeaderPtr>& headersById(void) const;
       const std::set<Types::BlockId>& getInvalidBlockIds(void) const;
 

@@ -27,7 +27,7 @@ namespace {
    {
       //open block file
       auto path = FileUtils::getBlkFilename(
-         Config::Pathing::blkFilePath(), header->getBlockFileNum());
+         Config::Pathing::blkFilePath(), header->getBlockFileId());
       auto fileMap = FileUtils::FileMap(path, false);
 
       if (!Config::DBSettings::isXored()) {
@@ -56,8 +56,9 @@ namespace {
             header->getBlockSize() + prepad);
 
          auto xorkey = Config::DBSettings::getXorKey();
-         for (auto& chunk : xoredData) {
-            chunk ^= xorkey;
+         auto data64Ptr = (uint64_t*)&xoredData[0];
+         for (int i = 0; i < count; i++) {
+            data64Ptr[i] ^= xorkey;
          }
          return { std::move(xoredData), prepad };
       }

@@ -16,7 +16,7 @@ import binascii
 from armoryengine.BinaryPacker import BinaryPacker, UINT8, BINARY_CHUNK
 from armoryengine.ArmoryUtils import DATATYPE, ADDRBYTE, P2SHBYTE, \
    binary_to_hex, prettyHex, hash256, hash160, SCRADDR_BYTE_LIST, \
-   ADDRBYTE, P2SHBYTE, LOGERROR
+   ADDRBYTE, P2SHBYTE, PRIVKEYBYTE, computeChecksum, LOGERROR
 
 
 ################################################################################

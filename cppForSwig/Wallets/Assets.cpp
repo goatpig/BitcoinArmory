@@ -8,6 +8,7 @@
 
 #include "Utils/BtcUtils.h"
 #include "Utils/Cryptography.h"
+#include "Utils/BitcoinSettings.h"
 #include "Assets.h"
 #include "ScriptRecipient.h"
 #include "BIP32_Node.h"
@@ -673,6 +674,56 @@ const SecureBinaryData& AssetEntry_RawScript::getScript() const
    return script_;
 }
 
+using namespace Armory::Assets;
+using namespace Armory::Wallets;
+using namespace std::string_view_literals;
+
+////////////////////////////////////////////////////////////////////////////////
+std::string Armory::Assets::bip32PurposeDisplayName(
+   const std::vector<uint32_t>& rootPath)
+{
+   // Account roots may be stored at the external-chain level
+   // (purpose'/coin'/account'/0), so read purpose/coin/account from the
+   // first three path elements.
+   if (rootPath.size() < 3) {
+      return "BIP32";
+   }
+   const auto coinType = Armory::Config::BitcoinSettings::getCoinType();
+   if (rootPath[1] != coinType || !(rootPath[2] & 0x80000000)) {
+      return "BIP32";
+   }
+   switch (rootPath[0]) {
+      case 0x8000002C:
+         return "BIP44";
+      case 0x80000031:
+         return "BIP49";
+      case 0x80000054:
+         return "BIP84";
+      default:
+         return "BIP32";
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+std::string Armory::Assets::formatBip32DerivationPath(
+   const std::vector<uint32_t>& path)
+{
+   if (path.empty()) {
+      return {};
+   }
+   std::string result = "m";
+   for (const auto node : path) {
+      result += '/';
+      if (node >= 0x80000000) {
+         result += std::to_string(node & 0x7FFFFFFF);
+         result += '\'';
+      } else {
+         result += std::to_string(node);
+      }
+   }
+   return result;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // AssetEntry_BIP32Root
 AssetEntry_BIP32Root::AssetEntry_BIP32Root(const Wallets::AssetId& id,
@@ -725,6 +776,18 @@ const SecureBinaryData& AssetEntry_BIP32Root::getChaincode() const
 const std::vector<uint32_t>& AssetEntry_BIP32Root::getDerivationPath() const
 {
    return derivationPath_;
+}
+
+////////
+std::string AssetEntry_BIP32Root::getDisplayName() const
+{
+   return bip32PurposeDisplayName(derivationPath_);
+}
+
+////////
+std::string AssetEntry_BIP32Root::getDerivationSchemeDisplay() const
+{
+   return formatBip32DerivationPath(derivationPath_);
 }
 
 ////////
@@ -832,6 +895,19 @@ Armory::Seeds::LegacyType
 AssetEntry_ArmoryLegacyRoot::getSeedType() const
 {
    return seedType_;
+}
+
+////////
+std::string AssetEntry_ArmoryLegacyRoot::getDisplayName() const
+{
+   switch (seedType_) {
+      case Seeds::LegacyType::Armory135:
+         return "Armory Legacy (1.35)";
+      case Seeds::LegacyType::Armory200:
+         return "Armory Legacy (2.00)";
+      default:
+         return "Armory Legacy";
+   }
 }
 
 ////////
@@ -1241,7 +1317,7 @@ uint32_t MetaData::getIndex() const
 ////////////////////////////////////////////////////////////////////////////////
 // PeerPublicData
 PeerPublicData::PeerPublicData(const BinaryData& accountID, uint32_t index) :
-   MetaData(MetaType::AuthorizedPeer, accountID, index)
+   MetaData(MetaType::Peer, accountID, index)
 {}
 
 ////////
@@ -1759,7 +1835,7 @@ std::shared_ptr<MetaData> PeerMasterKey::copy() const
 ////////////////////////////////////////////////////////////////////////////////
 // CommentData
 CommentData::CommentData(const BinaryData& accountID, uint32_t index) :
-   MetaData(MetaType::AuthorizedPeer, accountID, index)
+   MetaData(MetaType::Peer, accountID, index)
 {}
 
 ////////

@@ -1483,8 +1483,9 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ZC_Plus2)
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
-   DBTestUtils::goOnline(clients_, bdvID);
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    EXPECT_EQ(TestUtils::getTopBlockHeightInDB(theBDMt_->bdm().get(), DB_SELECT::HEADERS), 3U);
@@ -1523,8 +1524,9 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ZC_Plus2)
    bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    //wait on signals
-   DBTestUtils::goOnline(clients_, bdvID);
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
    bdm = theBDMt_->bdm();
@@ -1595,6 +1597,7 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_ZC_Plus3)
    TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    std::vector<BinaryData> scrAddrVec {
@@ -1670,6 +1673,7 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_ZC_Plus3)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    scrAddrVec.pop_back();
@@ -1751,6 +1755,7 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_ZCchain)
    zc2Vec.push_back(std::move(ZC2), 1500000000);
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    std::vector<BinaryData> scrAddrVec {
@@ -1927,6 +1932,7 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_RBF)
    TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    std::vector<BinaryData> scrAddrVec {
@@ -2002,6 +2008,7 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
    TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    std::vector<BinaryData> scrAddrVec {
@@ -2297,7 +2304,7 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
 
       //sign, verify then broadcast
       {
-         auto lock = assetWlt->lockDecryptedContainer();
+         auto lock = assetWlt->lockDecryptedContainer({});
          signer3.setFeed(assetFeed);
          signer3.sign();
       }
@@ -2468,6 +2475,7 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
    TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    std::vector<BinaryData> scrAddrVec {
@@ -2668,7 +2676,7 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
 
       //sign, verify then broadcast
       {
-         auto lock = assetWlt->lockDecryptedContainer();
+         auto lock = assetWlt->lockDecryptedContainer({});
          signer3.setFeed(assetFeed);
          signer3.sign();
       }
@@ -2788,7 +2796,7 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
 
       //sign, verify then broadcast
       {
-         auto lock = assetWlt->lockDecryptedContainer();
+         auto lock = assetWlt->lockDecryptedContainer({});
          signer2.setFeed(assetFeed);
          signer2.sign();
       }
@@ -2887,6 +2895,7 @@ TEST_F(ZeroConfTests_FullNode, ZC_InOut_SameBlock)
    TestUtils::setBlocks({ "0", "1" }, blk0dat_);
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    std::vector<BinaryData> scrAddrVec {
@@ -3041,6 +3050,7 @@ TEST_F(ZeroConfTests_Supernode, ZeroConfUpdate)
 
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
       false);
@@ -3147,6 +3157,7 @@ TEST_F(ZeroConfTests_Supernode, UnrelatedZC_CheckLedgers)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4" }, blk0dat_);
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    std::vector<BinaryData> scrAddrVec {
@@ -3304,6 +3315,7 @@ TEST_F(ZeroConfTests_Supernode, RegisterAfterZC)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4" }, blk0dat_);
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    std::vector<BinaryData> scrAddrVec {
@@ -3415,6 +3427,7 @@ TEST_F(ZeroConfTests_Supernode, ZC_Reorg)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    Wallets::IO::CreateWalletParams params{
@@ -3585,6 +3598,7 @@ TEST_F(ZeroConfTests_Supernode, ChainZC_RBFchild_Test)
    TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    std::vector<BinaryData> scrAddrVec {
@@ -3774,7 +3788,7 @@ TEST_F(ZeroConfTests_Supernode, ChainZC_RBFchild_Test)
 
       //sign, verify then broadcast 
       {
-         auto lock = assetWlt->lockDecryptedContainer();
+         auto lock = assetWlt->lockDecryptedContainer({});
          signer3.setFeed(assetFeed);
          signer3.sign();
       }
@@ -3872,7 +3886,7 @@ TEST_F(ZeroConfTests_Supernode, ChainZC_RBFchild_Test)
 
       //sign, verify then broadcast
       {
-         auto lock = assetWlt->lockDecryptedContainer();
+         auto lock = assetWlt->lockDecryptedContainer({});
          signer2.setFeed(assetFeed);
          signer2.sign();
       }
@@ -3985,6 +3999,7 @@ TEST_F(ZeroConfTests_Supernode, ZC_InOut_SameBlock)
    TestUtils::setBlocks({ "0", "1" }, blk0dat_);
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    std::vector<BinaryData> scrAddrVec {
@@ -4065,6 +4080,7 @@ TEST_F(ZeroConfTests_Supernode, ZC_MineAfter1Block)
 
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
@@ -4360,6 +4376,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, ZcUpdate)
    };
 
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
    auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
       "127.0.0.1", Config::NetworkSettings::dbPort(),
@@ -4607,6 +4624,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, ZcUpdate_RPC)
       TestChain::scrAddrC
    };
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
    auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
@@ -4834,6 +4852,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, ZcUpdate_RPC_Fallback)
       TestChain::scrAddrC
    };
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
    auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
@@ -5064,6 +5083,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, ZcUpdate_RPC_Fallback_SingleBatch)
       TestChain::scrAddrC
    };
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
    auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
@@ -5295,6 +5315,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, ZcUpdate_AlreadyInMempool)
       TestChain::scrAddrC
    };
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
    auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
@@ -5532,6 +5553,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, ZcUpdate_AlreadyInMempool_Batched)
       TestChain::scrAddrC
    };
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
    auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
@@ -5782,6 +5804,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, ZcUpdate_AlreadyInNodeMempool)
       TestChain::scrAddrC
    };
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
    auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
@@ -6012,6 +6035,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, ZcUpdate_RBFLowFee)
    };
 
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
    auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
       "127.0.0.1", Config::NetworkSettings::dbPort(),
@@ -6252,6 +6276,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BatchZcChain)
    WebSocketServer::start(theBDMt_->bdm(), true);
    auto serverPubkey = WebSocketServer::getPublicKey();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    {
       auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
@@ -6528,6 +6553,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BatchZcChain_AlreadyInMempool)
    WebSocketServer::start(theBDMt_->bdm(), true);
    auto serverPubkey = WebSocketServer::getPublicKey();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    {
       auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
@@ -6815,6 +6841,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BatchZcChain_AlreadyInNodeMempool)
    WebSocketServer::start(theBDMt_->bdm(), true);
    auto serverPubkey = WebSocketServer::getPublicKey();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    {
       auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
@@ -7135,6 +7162,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BatchZcChain_AlreadyInChain)
    WebSocketServer::start(theBDMt_->bdm(), true);
    auto serverPubkey = WebSocketServer::getPublicKey();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    {
       auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
@@ -7446,6 +7474,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BatchZcChain_MissInv)
    WebSocketServer::start(theBDMt_->bdm(), true);
    auto serverPubkey = WebSocketServer::getPublicKey();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    {
       auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
@@ -7752,6 +7781,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BatchZcChain_ConflictingChildren)
    WebSocketServer::start(theBDMt_->bdm(), true);
    auto&& serverPubkey = WebSocketServer::getPublicKey();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    {
       auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
@@ -8047,6 +8077,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BatchZcChain_ConflictingChildren_Alrea
    WebSocketServer::start(theBDMt_->bdm(), true);
    auto serverPubkey = WebSocketServer::getPublicKey();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    {
       auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
@@ -8351,6 +8382,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BatchZcChain_ConflictingChildren_Alrea
    WebSocketServer::start(theBDMt_->bdm(), true);
    auto serverPubkey = WebSocketServer::getPublicKey();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    {
       auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
@@ -8657,6 +8689,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BatchZcChain_ConflictingChildren_Alrea
    WebSocketServer::start(theBDMt_->bdm(), true);
    auto serverPubkey = WebSocketServer::getPublicKey();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    {
       auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
@@ -8964,6 +8997,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BroadcastAlreadyMinedTx)
    WebSocketServer::start(theBDMt_->bdm(), true);
    auto serverPubkey = WebSocketServer::getPublicKey();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    {
       auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
@@ -9038,6 +9072,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BroadcastSameZC_ManyThreads)
    WebSocketServer::start(theBDMt_->bdm(), true);
    auto serverPubkey = WebSocketServer::getPublicKey();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    //create BDV lambda
    auto setupBDV = [this, &serverPubkey](void)->std::shared_ptr<WSClient>
@@ -9618,6 +9653,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BroadcastSameZC_ManyThreads_RPCFallbac
    WebSocketServer::start(theBDMt_->bdm(), true);
    auto serverPubkey = WebSocketServer::getPublicKey();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    //create BDV lambda
    auto setupBDV = [this, &serverPubkey](void)->std::shared_ptr<WSClient>
@@ -10195,6 +10231,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BroadcastSameZC_RPCThenP2P)
    WebSocketServer::start(theBDMt_->bdm(), true);
    auto serverPubkey = WebSocketServer::getPublicKey();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    //create BDV lambda
    auto setupBDV = [this, &serverPubkey](void)->std::shared_ptr<WSClient>
@@ -10502,6 +10539,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, RebroadcastInvalidBatch)
    WebSocketServer::start(theBDMt_->bdm(), true);
    auto serverPubkey = WebSocketServer::getPublicKey();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    {
       auto pCallback = std::make_shared<DBTestUtils::UTCallback>();

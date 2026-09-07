@@ -311,10 +311,10 @@ class DlgUnlockWallet(ArmoryDialog):
          self.encryptionKeyIds = ids
 
       if self.encryptionKeyIds == ids:
-         #success
+         #success — matching encryption key set; run the modal unlock dialog
          self.exec_()
       else:
-         #failure
+         #failure — unexpected encryption key set; clear passphrase and re-show
          self.recycle()
          self.show()
 
@@ -325,6 +325,10 @@ class DlgUnlockWallet(ArmoryDialog):
 
 ################################################################################
 class UnlockWalletHandler(ServerPush, DlgUnlockWallet):
+   '''
+   Wraps around DlgUnlockWallet to handle CppBridge notification/push flow
+   '''
+
    def __init__(self, wltId, title, parent):
       ServerPush.__init__(self)
       DlgUnlockWallet.__init__(self, main=parent, parent=parent,
@@ -346,3 +350,29 @@ class UnlockWalletHandler(ServerPush, DlgUnlockWallet):
       packet.success = bool(len(passphrase) != 0)
       packet.unlockRequest = passphrase
       super().reply()
+
+################################################################################
+class AutoUnlockHandler(ServerPush):
+   '''
+   Silently unlock a wallet when the caller already has the passphrase cached
+   '''
+
+   def __init__(self, passphrase):
+      super().__init__()
+      self._passphrase = passphrase
+
+   def parseProtoPacket(self, protoPacket):
+      if protoPacket.which() == 'cleanup':
+         self._passphrase = None
+         return
+
+      elif protoPacket.which() == 'unlockRequest':
+         packet = self.getNewPacket()
+         if not self._passphrase:
+            #already provided this passphrase once, to no avail
+            packet.success = False
+         else:
+            packet.unlockRequest = self._passphrase
+            self._passphrase = None
+            packet.success = True
+         super().reply()

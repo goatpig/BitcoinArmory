@@ -65,13 +65,6 @@ namespace Node
    }
 }
 
-enum class BDMState : int
-{
-   Uninitialized,
-   Initializing,
-   Ready
-};
-
 ///////////////////////////////////////////////////////////////////////////////
 struct ProgressData
 {
@@ -103,27 +96,27 @@ private:
    std::shared_ptr<Armory::BlockchainData> blockchainData_;
    std::shared_ptr<BlockFiles> blockFiles_;
    std::shared_ptr<Armory::Database::Builder> dbBuilder_;
+   std::shared_ptr<Armory::ZeroConf::ZeroConfContainer> zeroConfCont_;
 
    std::function<bool(void)> shutdownLbd_;
-   BDMState BDMstate_ = BDMState::Uninitialized;
+   std::atomic_int32_t BDMstate_;
    std::exception_ptr exceptPtr_ = nullptr;
 
    unsigned checkTransactionCount_ = 0;
    mutable std::shared_ptr<std::mutex> nodeStatusPollMutex_;
    Armory::Threading::Queue<std::shared_ptr<BDVNotificationHook>> oneTimeHooks_;
+   std::unique_ptr<std::promise<bool>> startPromise_;
 
 public:
    typedef std::function<void(BDMPhase, double,unsigned, unsigned)> ProgressCallback;
-   std::shared_ptr<Node::Core::P2P::Iface> processNode_, watchNode_;
-   std::shared_future<bool> isReadyFuture_;
-   mutable std::shared_ptr<Node::Core::RPC::Iface> nodeRPC_;
+   std::shared_ptr<Node::Core::P2P::Iface> processNode, watchNode;
+   std::shared_future<bool> isReadyFuture;
+   mutable std::shared_ptr<Node::Core::RPC::Iface> nodeRPC;
 
-   Armory::Threading::TimedQueue<std::unique_ptr<BDV_Notification>> notificationStack_;
-   std::shared_ptr<Armory::ZeroConf::ZeroConfContainer> zeroConfCont_;
+   Armory::Threading::TimedQueue<std::unique_ptr<BDV_Notification>> notificationStack;
 
 private:
    bool loadDiskState(const ProgressCallback&);
-   void pollNodeStatus(void) const;
 
 public:
    BlockDataManager(std::function<bool(void)>);
@@ -152,6 +145,8 @@ public:
    bool isZcEnabled(void) const;
    std::shared_ptr<Armory::ZeroConf::ZeroConfContainer> zeroConfCont(void) const;
 
+   void signalStart(bool);
+   bool waitOnStartSignal(void);
    void triggerShutdown(void);
    void shutdown(void);
    void cleanup(void);

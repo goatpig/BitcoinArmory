@@ -15,8 +15,9 @@
 #include <memory>
 
 #include "CppBridge.h"
-#include "Utils/ArmoryConfig.h"
-#include "Utils/BIP150_151.h"
+#include <Utils/ArmoryConfig.h>
+#include <Utils/BIP150_151.h>
+#include <Utils/Cryptography.h>
 #include "BridgeSocket.h"
 #include "AsyncClient.h"
 

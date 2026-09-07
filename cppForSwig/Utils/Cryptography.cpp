@@ -429,15 +429,16 @@ SecureBinaryData ECDSA::computePublicKey(
 
 bool ECDSA::verifyPublicKeyValid(BinaryDataRef pubKey)
 {
-   if (CRYPTO_DEBUG) {
-      std::cout << "BinPub: " << pubKey.toHexStr() << std::endl;
-   }
-
    btc_pubkey key;
    btc_pubkey_init(&key);
    memcpy(key.pubkey, pubKey.getPtr(), pubKey.getSize());
    key.compressed = pubKey.getSize() == 33 ? true : false;
-   return btc_pubkey_is_valid(&key);
+   return verifyPublicKeyValid(key);
+}
+
+bool ECDSA::verifyPublicKeyValid(const btc_pubkey& pubKey)
+{
+   return btc_pubkey_is_valid(&pubKey);
 }
 
 // Deterministically generate new public key using a chaincode

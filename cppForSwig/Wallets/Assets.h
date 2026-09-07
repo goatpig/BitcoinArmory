@@ -71,7 +71,7 @@ namespace Armory
       enum class MetaType : int
       {
          Comment,
-         AuthorizedPeer,
+         Peer,
          PeerRootKey,
          PeerRootSig,
          PeerMasterKey
@@ -208,6 +208,9 @@ namespace Armory
          virtual std::shared_ptr<AssetEntry_Single> getPublicCopy(void);
       };
 
+      std::string bip32PurposeDisplayName(const std::vector<uint32_t>& rootPath);
+      std::string formatBip32DerivationPath(const std::vector<uint32_t>& path);
+
       //////////////////////////////////////////////////////////////////////////
       class AssetEntry_ArmoryLegacyRoot : public AssetEntry_Single
       {
@@ -228,6 +231,7 @@ namespace Armory
 
          Seeds::LegacyType getSeedType(void) const;
          const SecureBinaryData& getChaincode(void) const;
+         std::string getDisplayName(void) const;
       };
 
       //////////////////////////////////////////////////////////////////////////
@@ -287,6 +291,8 @@ namespace Armory
          std::string getXPub(void) const;
          const SecureBinaryData& getChaincode(void) const;
          const std::vector<uint32_t>& getDerivationPath(void) const;
+         std::string getDisplayName(void) const;
+         std::string getDerivationSchemeDisplay(void) const;
 
          //sanity check
          void checkSeedFingerprint(bool) const;

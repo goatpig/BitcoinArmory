@@ -7,6 +7,7 @@
 ################################################################################
 
 import os
+import psutil
 
 from qtpy import QtCore, QtWidgets, QtGui
 from armoryengine.ArmoryUtils import ARMORY_DB_DIR, ARMORY_HOME_DIR, \
@@ -18,17 +19,13 @@ from armorycolors import htmlColor
 import qtdialogs.qtdefines as qtdefines
 
 # Database scenario constants
-SCENARIO_DB_LOCAL = "Automate ArmoryDB"
+SCENARIO_DB_AUTOMATED = "Automate ArmoryDB"
 SCENARIO_REMOTE_IP = "Connect to IP"
 SCENARIO_REMOTE_PEER = "Connect to Peer"
-SCENARIO_DB_NONE = "Offline"
+SCENARIO_DB_OFFLINE = "Offline"
 
 def isRemoteScenario(scenario):
    return scenario in (SCENARIO_REMOTE_IP, SCENARIO_REMOTE_PEER)
-
-# Validation limits
-MAX_RAM_USAGE = 256      # Max RAM in 128MB increments (~32GB)
-MAX_THREAD_COUNT = 64    # Max threads for DB operations
 
 ################################################################################
 class PeerData:
@@ -233,12 +230,15 @@ class DatabaseTab(QtWidgets.QWidget):
       # Default scenario and checkbox
       self.setDefaultCheckbox = None
       self.defaultHintLabel = None
-      self._savedDefaultScenario = SCENARIO_DB_LOCAL
+      self._savedDefaultScenario = SCENARIO_DB_AUTOMATED
 
       # State tracking
       self.peersDbLoaded = False
       self.ownKey = ''
 
+      systemRam = psutil.virtual_memory().total / (1024**3)
+      self.memTarget = int(systemRam / 4) + 1
+      self.threadCount = os.cpu_count()
       self.initUI()
 
    def initUI(self):
@@ -359,15 +359,19 @@ class DatabaseTab(QtWidgets.QWidget):
       self.databaseTypeCombo.currentTextChanged.connect(
          self.updateCliCommandDisplay)
 
+      onlyInt = QtGui.QIntValidator()
+      onlyInt.setRange(1, 128)
       self.ramUsageEdit = QtWidgets.QLineEdit()
+      self.ramUsageEdit.setValidator(onlyInt)
       self.ramUsageEdit.setFixedWidth(100)
       self.ramUsageEdit.textChanged.connect(
-         self.updateCliCommandDisplay)
+         self._updateUsageTargets)
 
       self.threadCountEdit = QtWidgets.QLineEdit()
       self.threadCountEdit.setFixedWidth(100)
+      self.threadCountEdit.setValidator(onlyInt)
       self.threadCountEdit.textChanged.connect(
-         self.updateCliCommandDisplay)
+         self._updateUsageTargets)
 
       # Remote sub-mode combo (IP vs Peer)
       self.remoteSubModeCombo = QtWidgets.QComboBox()
@@ -633,8 +637,8 @@ class DatabaseTab(QtWidgets.QWidget):
             return SCENARIO_REMOTE_PEER
          return SCENARIO_REMOTE_IP
       elif checkedId == 2:
-         return SCENARIO_DB_NONE
-      return SCENARIO_DB_LOCAL
+         return SCENARIO_DB_OFFLINE
+      return SCENARIO_DB_AUTOMATED
 
    def onModeChanged(self, radioId, checked):
       """Show/hide sections based on radio selection."""
@@ -666,21 +670,33 @@ class DatabaseTab(QtWidgets.QWidget):
       self.setDefaultCheckbox.setEnabled(not isDefault)
       self.setDefaultCheckbox.setChecked(isDefault)
 
+   def _updateUsageTargets(self):
+      try:
+         val = int(self.ramUsageEdit.text())
+         if val > 0:
+            self.memTarget = val
+      except:
+         pass
+
+      try:
+         val = int(self.threadCountEdit.text())
+         if val > 0:
+            self.threadCount = val
+      except:
+         pass
+      self.updateCliCommandDisplay()
+
    def updateCliCommandDisplay(self):
       """Update the CLI command display.
 
       Informational only. Actual connection is via bridge.
       """
       scenario = self.getScenario()
-      if scenario == SCENARIO_DB_LOCAL:
+      if scenario == SCENARIO_DB_AUTOMATED:
          dbType = self.databaseTypeCombo.currentText()
-         ramUsage = self.ramUsageEdit.text() or '50'
-         threadCount = \
-            self.threadCountEdit.text() or '4'
          dbDir = self.databaseDirEdit.text() \
             or ARMORY_DB_DIR
-         dataDir = ARMORY_HOME_DIR \
-            or '/path/to/armory'
+         dataDir = ARMORY_HOME_DIR
          if BTC_HOME_DIR:
             satoshiDir = os.path.join(
                BTC_HOME_DIR, 'blocks')
@@ -692,8 +708,8 @@ class DatabaseTab(QtWidgets.QWidget):
             '# Local ArmoryDB (bridge: automateDb)',
             'ArmoryDB', '--ephemeral',
             f'--db-type={dbTypeArg}',
-            f'--ram-usage={ramUsage}',
-            f'--thread-count={threadCount}',
+            f'--ram-usage={self.memTarget}',
+            f'--thread-count={self.threadCount}',
             f'--datadir="{dataDir}"',
             f'--dbdir="{dbDir}"',
             f'--satoshi-datadir="{satoshiDir}"'
@@ -807,10 +823,10 @@ class DatabaseTab(QtWidgets.QWidget):
    def _showDefaultHint(self, dbScenario):
       """Place the 'default' hint next to the saved radio."""
       rowMap = {
-         SCENARIO_DB_LOCAL: self.autoDbRow,
+         SCENARIO_DB_AUTOMATED: self.autoDbRow,
          SCENARIO_REMOTE_IP: self.connectRow,
          SCENARIO_REMOTE_PEER: self.connectRow,
-         SCENARIO_DB_NONE: self.offlineRow,
+         SCENARIO_DB_OFFLINE: self.offlineRow,
       }
       targetRow = rowMap.get(
          dbScenario, self.autoDbRow)
@@ -942,7 +958,7 @@ class DatabaseTab(QtWidgets.QWidget):
          os.path.normpath(ARMORY_DB_DIR))
 
       dbScenario = TheSettings.getSettingOrSetDefault(
-         'DBScenarioDefault', SCENARIO_DB_LOCAL)
+         'DBScenarioDefault', SCENARIO_DB_AUTOMATED)
       # Migrate old scenario names
       if dbScenario == "Remote Database":
          oldMode = TheSettings.getSettingOrSetDefault(
@@ -965,7 +981,7 @@ class DatabaseTab(QtWidgets.QWidget):
             self.remoteSubModeCombo.setCurrentIndex(1)
          else:
             self.remoteSubModeCombo.setCurrentIndex(0)
-      elif dbScenario == SCENARIO_DB_NONE:
+      elif dbScenario == SCENARIO_DB_OFFLINE:
          self.offlineRadio.setChecked(True)
       else:
          self.autoDbRadio.setChecked(True)
@@ -1001,22 +1017,20 @@ class DatabaseTab(QtWidgets.QWidget):
 
       # Scenario-specific settings
       dbScenario = self.getScenario()
-      if dbScenario == SCENARIO_DB_LOCAL:
+      if dbScenario == SCENARIO_DB_AUTOMATED:
          dbTypeSetting = \
             TheSettings.getSettingOrSetDefault(
                'DBType', 'DB_BARE')
          if dbTypeSetting == 'DB_SUPER':
-            self.databaseTypeCombo.setCurrentText(
-               'Supernode')
+            self.databaseTypeCombo.setCurrentText('Supernode')
          else:
-            self.databaseTypeCombo.setCurrentText(
-               'Full Database')
-         self.ramUsageEdit.setText(str(
-            TheSettings.getSettingOrSetDefault(
-               'RAMUsage', 50)))
-         self.threadCountEdit.setText(str(
-            TheSettings.getSettingOrSetDefault(
-               'ThreadCount', 4)))
+            self.databaseTypeCombo.setCurrentText('Light Database')
+         memTarget = TheSettings.get('RAMUsage')
+         if memTarget:
+            self.memTarget = memTarget
+         thrcount = TheSettings.get('ThreadCount')
+         if thrcount:
+            self.threadCount = thrcount
       elif dbScenario == SCENARIO_REMOTE_IP:
          savedIp = TheSettings.getSettingOrSetDefault(
             'RemoteIpAddr', '')
@@ -1030,7 +1044,7 @@ class DatabaseTab(QtWidgets.QWidget):
    def collectSettings(self):
       """Return current database config from UI."""
       scenario = self.getScenario()
-      isLocal = scenario == SCENARIO_DB_LOCAL
+      isLocal = scenario == SCENARIO_DB_AUTOMATED
       isPeer = scenario == SCENARIO_REMOTE_PEER
       isIp = scenario == SCENARIO_REMOTE_IP
 
@@ -1058,10 +1072,8 @@ class DatabaseTab(QtWidgets.QWidget):
          'typeDisp':
             self.databaseTypeCombo.currentText()
             if isLocal else '',
-         'ram': self.ramUsageEdit.text()
-            if isLocal else '',
-         'threads': self.threadCountEdit.text()
-            if isLocal else '',
+         'ram': self.memTarget,
+         'threads': self.threadCount,
          'peerKey': peerKey,
          'ipAddr': ipAddr,
          'ipPort': ipPort,
@@ -1070,31 +1082,8 @@ class DatabaseTab(QtWidgets.QWidget):
    def validate(self):
       """Validate database tab settings."""
       scenario = self.getScenario()
-      if scenario == SCENARIO_DB_LOCAL:
-         ramText = self.ramUsageEdit.text().strip()
-         threadText = self.threadCountEdit.text().strip()
-         if ramText:
-            try:
-               ram = int(ramText)
-               if ram < 1 or ram > MAX_RAM_USAGE:
-                  raise ValueError()
-            except ValueError:
-               msg = self.tr('RAM usage must be an integer between 1 and {}.')
-               QtWidgets.QMessageBox.warning(self, self.tr('Invalid RAM Usage'),
-                  msg.format(MAX_RAM_USAGE))
-               return False
-         if threadText:
-            try:
-               threads = int(threadText)
-               if threads < 1 or threads > MAX_THREAD_COUNT:
-                  raise ValueError()
-            except ValueError:
-               msg = self.tr('Thread count must be between '
-                  '1 and {}.')
-               QtWidgets.QMessageBox.warning(
-                  self, self.tr('Invalid Thread Count'),
-                  msg.format(MAX_THREAD_COUNT))
-               return False
+      if scenario == SCENARIO_DB_AUTOMATED:
+         return True
       elif scenario == SCENARIO_REMOTE_PEER:
          selected = self.peerList.currentItem()
          if not selected \

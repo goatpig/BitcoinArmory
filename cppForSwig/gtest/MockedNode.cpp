@@ -962,8 +962,10 @@ NodeRPC_UnitTest::NodeRPC_UnitTest(
    primaryNode_(primaryNode), watcherNode_(watcherNode)
 {}
 
-void NodeRPC_UnitTest::shutdown()
-{}
+bool NodeRPC_UnitTest::shutdown()
+{
+   return true;
+}
 
 Node::RpcState NodeRPC_UnitTest::testConnection()
 {
@@ -975,7 +977,7 @@ bool NodeRPC_UnitTest::canPoll() const
    return false;
 }
 
-void NodeRPC_UnitTest::waitOnChainSync(std::function<void(void)>)
+void NodeRPC_UnitTest::waitOnChainSync(std::function<void(void)>, bool)
 {}
 
 ////////

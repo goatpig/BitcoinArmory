@@ -167,12 +167,13 @@ namespace AsyncClient
 
       //setup
       static std::shared_ptr<BlockDataViewer> getNewBDV(
-         const std::string& addr, const std::string& port,
-         std::shared_ptr<Armory::Wallets::AuthorizedPeers>, bool,
+         const std::string&, const std::string&,
+         std::shared_ptr<Armory::NetworkPeers::ClientStore>, bool,
          std::shared_ptr<RemoteCallback>);
 
       void registerWithDB(const std::string&);
       void unregisterFromDB(void);
+      void start(void);
       void shutdown(void);
       void shutdownNode(void);
 
@@ -189,16 +190,8 @@ namespace AsyncClient
       void getFeeSchedule(const std::string&, std::function<void(ReturnMessage<
             std::map<unsigned, DBClientClasses::FeeEstimateStruct>>)>);
 
-      /*
-      Broadcast methods:
-        All broadcast methods generate and return a random BROADCAST_ID_LENGTH
-        bytes long ID. This ID will be attached to the broadcast notification
-        for the relevant transactions. Notifications for these transaction may
-        come with no ID attached, in which case these notifications are not the
-        result of your broadcast.
-      */
-      void broadcastZC(const std::vector<BinaryData>& rawTxVec);
-      void broadcastThroughRPC(const BinaryData& rawTx);
+      void broadcastZC(const std::vector<BinaryData>&);
+      void broadcastThroughRPC(const BinaryData&);
 
       //db cache methods
       void getTxsByHash(const std::set<Armory::Types::TxHash>&,

@@ -75,7 +75,8 @@ std::unique_ptr<AddressAccount> AddressAccount::make_new(
       AssetId assetId(aaid, AssetId::getRootKey());
 
       if (node.isPublic()) {
-         //WO wallet
+         /* WO wallet */
+
          rootAsset = std::make_shared<AssetEntry_BIP32Root>(
             assetId,
             pubkey, nullptr,
@@ -84,8 +85,7 @@ std::unique_ptr<AddressAccount> AddressAccount::make_new(
             node.getParentFingerprint(), accBip32->getSeedFingerprint(),
             derPath);
       } else {
-         //full wallet
-         ReentrantLock lock(decrData.get());
+         /* full wallet */
 
          //encrypt private root
          auto encrypted_root = decrData->encryptData(
@@ -165,13 +165,12 @@ std::unique_ptr<AddressAccount> AddressAccount::make_new(
          AssetKeyType firstAssetKey = 0;
          AssetId assetId(aaid, firstAssetKey);
          if (!root135->hasPrivateKey()) {
-            //WO
+            /* WO wallet */
             firstAsset = derScheme->computeNextPublicEntry(
                root135->getPubKey()->getUncompressedKey(),
                assetId);
          } else {
-            //full wallet
-            ReentrantLock lock(decrData.get());
+            /* full wallet */
             const auto& privRootRef = decrData->getClearTextAssetData(
                root135->getPrivKey());
 
@@ -206,9 +205,7 @@ std::unique_ptr<AddressAccount> AddressAccount::make_new(
          auto walletRootBip32 =
             std::dynamic_pointer_cast<AssetEntry_BIP32Root>(getRootLbd());
 
-         ReentrantLock lock(decrData.get());
          auto nodeRoots = derTree.resolveNodeRoots(decrData, walletRootBip32);
-
          for (const auto& nodeRoot : nodeRoots) {
             if (nodeRoot.b58Root.empty()) {
                throw AccountException("[make_new] skipped path");
@@ -259,12 +256,12 @@ std::unique_ptr<AddressAccount> AddressAccount::make_new(
          //root asset
          std::shared_ptr<AssetEntry_Single> rootAsset;
          if (accEcdh->isWatchingOnly()) {
-            //WO
+            /* WO wallet */
             auto pubkeyCopy = accEcdh->getPubKey();
             rootAsset = std::make_shared<AssetEntry_Single>(
                assetId, pubkeyCopy, nullptr);
          } else {
-            //full wallet
+            /* full wallet */
             auto pubkey = accEcdh->getPubKey();
             if (pubkey.empty()) {
                pubkey = Cryptography::ECDSA::computePublicKey(
@@ -272,7 +269,6 @@ std::unique_ptr<AddressAccount> AddressAccount::make_new(
             }
 
             //encrypt private root
-            ReentrantLock lock(decrData.get());
             auto cipher_copy = cipher->getCopy();
             auto encrypted_root = decrData->encryptData(
                cipher_copy.get(), accEcdh->getPrivKey());
@@ -300,11 +296,13 @@ std::unique_ptr<AddressAccount> AddressAccount::make_new(
       case AccountTypeEnum_Imports:
       {
          if (accType->isWatchingOnly()) {
+            /* WO account */
             auto assetAccount = std::make_shared<AssetAccountData>(
                AssetAccountType::ImportsWO, accType->getOuterAccountID(),
                nullptr, nullptr, dbName);
             addressAccountPtr->addAccount(assetAccount);
          } else {
+            /* full account */
             auto assetAccount = std::make_shared<AssetAccountData>(
                AssetAccountType::Imports, accType->getOuterAccountID(),
                nullptr, nullptr, dbName);
@@ -1290,6 +1288,50 @@ bool AddressAccount::hasBip32Path(
 bool AddressAccount::isLegacy() const
 {
    return ID_ == AccountType_ArmoryLegacy::addrAccountId;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+std::string AddressAccount::getDisplayName() const
+{
+   if (isLegacy()) {
+      return "Armory Legacy";
+   }
+   try {
+      auto outerAcc = getOuterAccount();
+      auto root = outerAcc->getRoot();
+      auto rootBip32 = std::dynamic_pointer_cast<AssetEntry_BIP32Root>(root);
+      if (rootBip32 != nullptr) {
+         return rootBip32->getDisplayName();
+      }
+   } catch (const std::exception&) {
+   }
+   const auto hex = ID_.toHexStr();
+   if (hex.size() > 8) {
+      return hex.substr(0, 8) + "...";
+   }
+   return hex;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+std::string AddressAccount::getDerivationSchemeDisplay() const
+{
+   if (isLegacy()) {
+      return "Armory Legacy";
+   }
+   if (ID_ == AddressAccountId{IMPORTS_ACCOUNT_PRIV} ||
+       ID_ == AddressAccountId{IMPORTS_ACCOUNT_PUB}) {
+      return "N/A";
+   }
+   try {
+      auto outerAcc = getOuterAccount();
+      auto root = outerAcc->getRoot();
+      auto rootBip32 = std::dynamic_pointer_cast<AssetEntry_BIP32Root>(root);
+      if (rootBip32 != nullptr) {
+         return rootBip32->getDerivationSchemeDisplay();
+      }
+   } catch (const std::exception&) {
+   }
+   return {};
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2020-2025, goatpig                                          //
+//  Copyright (C) 2020-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -10,6 +10,7 @@
 
 #include <Utils/log.h>
 #include <Utils/BtcUtils.h>
+#include <Utils/Cryptography.h>
 
 #include <Wallets/IOHeader.h>
 #include <Wallets/WalletIdTypes.h>
@@ -20,6 +21,7 @@
 #include <AsyncClient.h>
 
 #include "CppBridge.h"
+#include "DBSetup.h"
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>
@@ -82,20 +84,6 @@ namespace
       BinaryData response;
       switch (request.which())
       {
-         case DbSetupRequest::AUTOMATE_DB:
-         {
-            auto autoDbReq = request.getAutomateDb();
-            std::filesystem::path satoshiPath{std::string(autoDbReq.getSatoshiPath())};
-            std::filesystem::path dbDir{std::string(autoDbReq.getDbDir())};
-
-            std::thread thr([bridge, satoshiPath, dbDir, referenceId]{
-               bridge->automateDb(satoshiPath, dbDir, referenceId);});
-            if (thr.joinable()) {
-               thr.detach();
-            }
-            return true;
-         }
-
          case DbSetupRequest::CONNECT_TO_IP:
          {
             auto connectReq = request.getConnectToIp();
@@ -123,77 +111,235 @@ namespace
             return true;
          }
 
-         case DbSetupRequest::CLEANUP_DB:
+         case DbSetupRequest::BEGIN_DB_SESSION:
          {
-            std::thread thr([bridge, referenceId]{
-               bridge->cleanupDb(referenceId);});
-            if (thr.joinable()) {
-               thr.detach();
-            }
-            return true;
-         }
-
-         case DbSetupRequest::GO_ONLINE:
-         {
-            bridge->goOnline();
+            bridge->beginDbSession();
             break;
          }
 
-         case DbSetupRequest::DISCONNECT:
+         case DbSetupRequest::PEERS_HELPER:
          {
-            bridge->disconnectFromDb();
+            auto peersRequest = request.getPeersHelper();
+            switch (peersRequest.which())
+            {
+               case DbSetupRequest::PeersRequest::LOAD_PEERS_DB:
+               {
+                  std::string callbackId(peersRequest.getLoadPeersDb());
+                  std::thread thr([bridge, callbackId, referenceId]() {
+                     bridge->loadPeersDb(callbackId, referenceId);
+                  });
+                  if (thr.joinable()) {
+                     thr.detach();
+                  }
+                  return true;
+               }
+
+               case DbSetupRequest::PeersRequest::LIST_PEERS:
+               {
+                  bridge->listPeers(referenceId);
+                  return true;
+               }
+
+               case DbSetupRequest::PeersRequest::ADD_PEER:
+               {
+                  auto peerReq = peersRequest.getAddPeer();
+                  std::vector<std::string> names;
+                  for (auto capnName : peerReq.getNames()) {
+                     names.emplace_back(std::string(capnName));
+                  }
+                  bridge->addPeer(peerReq.getKey(),
+                     names, peerReq.getLabel(), referenceId);
+                  return true;
+               }
+
+               case DbSetupRequest::PeersRequest::REMOVE_PEER:
+               {
+                  auto peer = std::string(peersRequest.getRemovePeer());
+                  bridge->removePeer(peer, referenceId);
+                  return true;
+               }
+      
+               case DbSetupRequest::PeersRequest::SET_LABEL:
+               {
+                  auto labelReq = peersRequest.getSetLabel();
+                  bridge->setPeerLabel(
+                     labelReq.getKey(), labelReq.getLabel(), referenceId);
+                  return true;
+               }
+            }
             break;
          }
 
-         case DbSetupRequest::SHUTDOWN:
+         case DbSetupRequest::SATOSHI_HELPER:
          {
-            bridge->bdvPtr()->shutdown();
-            return false;
-         }
+            auto satoshiRequest = request.getSatoshiHelper();
+            switch (satoshiRequest.which())
+            {
+               case DbSetupRequest::SatoshiRequest::FIND_DIR:
+               {
+                  capnp::MallocMessageBuilder message;
+                  auto fromBridge = message.initRoot<FromBridge>();
+                  auto reply = fromBridge.initReply();
+                  reply.setReferenceId(referenceId);
 
-         case DbSetupRequest::LOAD_PEERS_DB:
-         {
-            std::string callbackId(request.getLoadPeersDb());
-            std::thread thr([bridge, callbackId, referenceId]() {
-               bridge->loadPeersDb(callbackId, referenceId);
-            });
-            if (thr.joinable()) {
-               thr.detach();
+                  try {
+                     auto p = Node::Core::findDatadir();
+                     auto setupReply = reply.initSetup();
+                     auto satoshiReply = setupReply.initSatoshiHelper();
+                     satoshiReply.setFindDir(p.string());
+                     reply.setSuccess(true);
+                  } catch (const std::exception& e) {
+                     reply.setError(e.what());
+                     reply.setSuccess(false);
+                  }
+                  response = serializeCapnp(message);
+                  break;
+               }
+
+               case DbSetupRequest::SatoshiRequest::FIND_BIN:
+               {
+                  capnp::MallocMessageBuilder message;
+                  auto fromBridge = message.initRoot<FromBridge>();
+                  auto reply = fromBridge.initReply();
+                  reply.setReferenceId(referenceId);
+      
+                  try {
+                     auto p = Node::Core::findBinary();
+                     auto setupReply = reply.initSetup();
+                     auto satoshiReply = setupReply.initSatoshiHelper();
+                     satoshiReply.setFindBin(p.string());
+                     reply.setSuccess(true);
+                  } catch (const std::exception& e) {
+                     reply.setError(e.what());
+                     reply.setSuccess(false);
+                  }
+                  response = serializeCapnp(message);
+                  break;
+               }
+
+               case DbSetupRequest::SatoshiRequest::VALIDATE_DIR:
+               {
+                  capnp::MallocMessageBuilder message;
+                  auto fromBridge = message.initRoot<FromBridge>();
+                  auto reply = fromBridge.initReply();
+                  reply.setReferenceId(referenceId);
+      
+                  try {
+                     auto datadir = std::filesystem::path(
+                        satoshiRequest.getValidateDir());
+                     auto validationResult =
+                        Node::Core::validateDatadir(datadir);
+
+                     auto setupReply = reply.initSetup();
+                     auto satoshiReply = setupReply.initSatoshiHelper();
+                     auto capnValidationResult = satoshiReply.initValidateDir();
+                     capnValidationResult.setPath(validationResult.datadir.string());
+                     capnValidationResult.setChainSizeGB(
+                        validationResult.fileSize / (1024 * 1024 * 1024));
+                     capnValidationResult.setPruned(validationResult.isPruned);
+                     reply.setSuccess(true);
+                  } catch (const std::exception& e) {
+                     reply.setError(e.what());
+                     reply.setSuccess(false);
+                  }
+                  response = serializeCapnp(message);
+                  break;
+               }
+
+               case DbSetupRequest::SatoshiRequest::VALIDATE_BIN:
+               {
+                  capnp::MallocMessageBuilder message;
+                  auto fromBridge = message.initRoot<FromBridge>();
+                  auto reply = fromBridge.initReply();
+                  reply.setReferenceId(referenceId);
+      
+                  try {
+                     auto binPath = std::filesystem::path(
+                        satoshiRequest.getValidateBin());
+                     auto validationResult = Node::Core::validateBinary(binPath);
+
+                     auto setupReply = reply.initSetup();
+                     auto satoshiReply = setupReply.initSatoshiHelper();
+                     auto capnValidationResult = satoshiReply.initValidateBin();
+                     capnValidationResult.setPath(validationResult.path.string());
+                     capnValidationResult.setVersion(validationResult.version);
+                     reply.setSuccess(true);
+                  } catch (const std::exception& e) {
+                     reply.setError(e.what());
+                     reply.setSuccess(false);
+                  }
+                  response = serializeCapnp(message);
+                  break;
+               }
             }
-            return true;
+            break;
          }
 
-         case DbSetupRequest::LIST_PEERS:
+         case DbSetupRequest::INIT_AUTOMATION_CONTEXT:
          {
-            bridge->listPeers(referenceId);
-            return true;
-         }
-
-         case DbSetupRequest::ADD_PEER:
-         {
-            auto peerReq = request.getAddPeer();
-            std::vector<std::string> names;
-            for (auto capnName : peerReq.getNames()) {
-               names.emplace_back(std::string(capnName));
+            auto ctxReq = request.getInitAutomationContext();
+            std::filesystem::path dbDir;
+            if (ctxReq.hasDbDir()) {
+               dbDir = std::filesystem::path{ctxReq.getDbDir()};
             }
-            bridge->addPeer(peerReq.getKey(),
-               names, peerReq.getLabel(), referenceId);
-            return true;
+            std::filesystem::path satoshiDir;
+            if (ctxReq.hasSatoshiDir()) {
+               satoshiDir = std::filesystem::path{ctxReq.getSatoshiDir()};
+            }
+            std::filesystem::path satoshiBin;
+            if (ctxReq.hasSatoshiBin()) {
+               satoshiBin = std::filesystem::path{ctxReq.getSatoshiBin()};
+            }
+
+            bool automateDb = false;
+            bool automateNode = false;
+            switch (ctxReq.which())
+            {
+               case DbSetupRequest::AutomationContext::AUTOMATE_NODE:
+                  //when automating core, also automate the db
+                  automateNode = true;
+                  [[fallthrough]];
+
+               case DbSetupRequest::AutomationContext::AUTOMATE_DB:
+                  automateDb = true;
+                  break;
+
+               default:
+                  break;
+            }
+
+            capnp::MallocMessageBuilder message;
+            auto fromBridge = message.initRoot<FromBridge>();
+            auto reply = fromBridge.initReply();
+            reply.setReferenceId(referenceId);
+
+            try {
+               auto automationContext = std::make_unique<AutomationContext>(
+                  satoshiDir, satoshiBin, dbDir,
+                  automateNode, automateDb
+               );
+               bridge->setAutomationContext(std::move(automationContext));
+               reply.setSuccess(true);
+            } catch (const std::exception& e) {
+               reply.setSuccess(false);
+               reply.setError(e.what());
+            }
+            response = serializeCapnp(message);
+            break;
          }
 
-         case DbSetupRequest::REMOVE_PEER:
+         case DbSetupRequest::RUN_AUTOMATION_CONTEXT:
          {
-            auto peer = std::string(request.getRemovePeer());
-            bridge->removePeer(peer, referenceId);
-            return true;
+            bridge->runAutomationContext(
+               request.getRunAutomationContext(), referenceId);
+            break;
          }
 
-         case DbSetupRequest::SET_LABEL:
+         case DbSetupRequest::CLEANUP_AUTOMATION_CONTEXT:
          {
-            auto labelReq = request.getSetLabel();
-            bridge->setPeerLabel(
-               labelReq.getKey(), labelReq.getLabel(), referenceId);
-            return true;
+            bridge->cleanupAutomationContext(
+               request.getCleanupAutomationContext(), referenceId);
+            break;
          }
 
          default:
@@ -657,6 +803,41 @@ namespace
             break;
          }
 
+         case WalletRequest::HAS_IMPORTS:
+         {
+            capnp::MallocMessageBuilder message;
+            auto fromBridge = message.initRoot<FromBridge>();
+            auto reply = fromBridge.initReply();
+            reply.setReferenceId(referenceId);
+
+            try {
+               auto hasImports = bridge->doesWalletHaveImports(walletId);
+               auto wltReply = reply.initWallet();
+               wltReply.setHasImports(hasImports);
+               reply.setSuccess(true);
+            } catch (const std::exception& e) {
+               reply.setSuccess(false);
+               reply.setError(e.what());
+            }
+
+            response = serializeCapnp(message);
+            break;
+         }
+
+         case WalletRequest::EXPORT_KEYS:
+         {
+            auto exportRequest = request.getExportKeys();
+            const bool includePrivateKeys = exportRequest.which() ==
+               WalletRequest::ExportKeyRequest::WITH_PRIVATE_KEYS;
+            std::string callbackId;
+            if (includePrivateKeys) {
+               callbackId = exportRequest.getWithPrivateKeys();
+            }
+            bridge->exportKeys(walletId, accountId, includePrivateKeys,
+               callbackId, referenceId);
+            break;
+         }
+
          default:
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
@@ -665,7 +846,6 @@ namespace
             reply.setReferenceId(referenceId);
             reply.setError("unknown wallet method");
             response = serializeCapnp(message);
-
       }
 
       if (!response.empty()) {

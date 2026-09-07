@@ -37,6 +37,45 @@ namespace
       }
       return datadir;
    }
+
+   std::string getAuthStringFromCookie()
+   {
+      auto cookiePath = getDatadir() / ".cookie";
+      auto lines = Config::SettingsUtils::getLines(cookiePath);
+      if (lines.size() != 1) {
+         throw std::runtime_error("unexpected cookie file content");
+      }
+
+      auto keyVals = Config::SettingsUtils::getKeyValsFromLines(lines, ':');
+      auto keyIter = keyVals.find("__cookie__");
+      if (keyIter == keyVals.end()) {
+         throw std::runtime_error("missing cookie key");
+      }
+      return lines[0];
+   }
+
+   std::string getAuthString()
+   {
+      //open and parse .conf file
+      try {
+         auto datadir = getDatadir();
+         auto confPath = datadir / "bitcoin.conf";
+         auto lines = Config::SettingsUtils::getLines(confPath);
+         auto keyVals = Config::SettingsUtils::getKeyValsFromLines(lines, '=');
+
+         //get rpcuser
+         try {
+            return std::string{
+               keyVals.at("rpcuser") + ":" +
+               keyVals.at("rpcpassword")
+            };
+         } catch (const std::out_of_range&) {
+            return getAuthStringFromCookie();
+         }
+      } catch (const std::exception& e) {
+         return {};
+      }
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -95,9 +134,17 @@ const std::map<unsigned, RPC::FeeEstimateResult>& RPC::Iface::getFeeSchedule(
 
 ////////////////////////////////////////////////////////////////////////////////
 // NodeRPC
-RPC::Client::Client()
+RPC::Client::Client(bool pollForFees,
+   const std::string& rpcUser, const std::string& rpcPass) :
+   canPoll_{pollForFees}, canResetAuthString_{true}
 {
-   //start fee estimate polling thread
+   if (!rpcUser.empty() && !rpcPass.empty()) {
+      basicAuthString64_ = BtcUtils::base64_encode(std::format("{}:{}",
+         rpcUser, rpcPass));
+      canResetAuthString_ = false;
+   }
+
+   //can we poll for fees?
    if (!canPoll()) {
       return;
    }
@@ -118,7 +165,7 @@ RPC::Client::~Client()
 
 bool RPC::Client::canPoll() const
 {
-   return true;
+   return canPoll_;
 }
 
 ////////
@@ -198,56 +245,11 @@ RpcState RPC::Client::testConnection()
 ////////
 void RPC::Client::resetAuthString()
 {
+   if (!canResetAuthString_) {
+      return;
+   }
    ReentrantLock lock(this);
    basicAuthString64_.clear();
-}
-
-std::string RPC::Client::getAuthString()
-{
-   auto getAuthStringFromCookieFile = []
-   (const std::filesystem::path& path)->std::string
-   {
-      auto cookiePath = path / ".cookie";
-      auto lines = Config::SettingsUtils::getLines(cookiePath);
-      if (lines.size() != 1) {
-         throw std::runtime_error("unexpected cookie file content");
-      }
-
-      auto keyVals = Config::SettingsUtils::getKeyValsFromLines(lines, ':');
-      auto keyIter = keyVals.find("__cookie__");
-      if (keyIter == keyVals.end()) {
-         throw std::runtime_error("missing cookie key");
-      }
-
-      return lines[0];
-   };
-
-   //open and parse .conf file
-   try {
-      //is rpc log/pass set via envvars?
-      auto rpcLogPtr = std::getenv("CORERPCLOG");
-      auto rpcPassPtr = std::getenv("CORERPCPASS");
-      if (rpcLogPtr != nullptr && rpcPassPtr != nullptr) {
-         return std::string{ rpcLogPtr } + ":" + std::string{ rpcPassPtr };
-      }
-
-      auto datadir = getDatadir();
-      auto confPath = datadir / "bitcoin.conf";
-      auto lines = Config::SettingsUtils::getLines(confPath);
-      auto keyVals = Config::SettingsUtils::getKeyValsFromLines(lines, '=');
-
-      //get rpcuser
-      try {
-         return std::string{
-            keyVals.at("rpcuser") + ":" +
-            keyVals.at("rpcpassword")
-         };
-      } catch (const std::out_of_range&) {
-         return getAuthStringFromCookieFile(datadir);
-      }
-   } catch (const std::exception& e) {
-      return {};
-   }
 }
 
 ////////
@@ -453,16 +455,15 @@ bool RPC::Client::updateChainStatus()
 }
 
 ////////
-void RPC::Client::waitOnChainSync(std::function<void(void)> callbck)
+void RPC::Client::waitOnChainSync(std::function<void(void)> callbck, bool force)
 {
    nodeChainStatus_.reset();
-   callbck();
-
    while (true) {
       //keep trying as long as the node is initializing
       auto state = testConnection();
+      callbck();
       if (state != RpcState::Error_28) {
-         if (state != RpcState::Online) {
+         if (state != RpcState::Online && !force) {
             return;
          }
          break;
@@ -472,9 +473,9 @@ void RPC::Client::waitOnChainSync(std::function<void(void)> callbck)
       std::this_thread::sleep_for(1s);
    }
 
-   callbck();
 
    while (true) {
+      callbck();
       float blkSpeed = 0.0f;
       try {
          ReentrantLock lock(this);
@@ -551,7 +552,7 @@ int RPC::Client::broadcastTx(const BinaryDataRef& rawTx, std::string& verbose)
 }
 
 ////////
-void RPC::Client::shutdown()
+bool RPC::Client::shutdown()
 {
    ReentrantLock lock(this);
 
@@ -569,6 +570,7 @@ void RPC::Client::shutdown()
       throw JSON::Exception("stop missing result");
    }
    LOGINFO << responseStr->val;
+   return true;
 }
 
 ////////
@@ -715,7 +717,7 @@ bool ChainStatus::processState(const JSON::Object& jsonObj)
       prevPctInt_ = pct_int;
    }
 
-   if (pct_ >= 0.9995) {
+   if (pct_ >= 0.9999999) {
       state_ = ChainState::Ready;
       return true;
    }

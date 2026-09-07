@@ -105,6 +105,7 @@ namespace Armory
       public:
          TxIOCache(void);
 
+         void purge(void);
          uint32_t update(std::shared_ptr<AsyncClient::BlockDataViewer>,
             std::shared_ptr<NotifStruct>);
          std::shared_ptr<const Ledgers::DBCache> getDBCache(void) const;
@@ -115,7 +116,6 @@ namespace Armory
          std::vector<UTXO> getUTXOs(uint64_t, bool, bool,
             const AddressFilter&) const;
          std::map<Types::TxIOKey, TxIOPair> getZcTxios(const AddressFilter&) const;
-         void purge(void);
       };
    } //namespace Bridge
 } //namespace Armory

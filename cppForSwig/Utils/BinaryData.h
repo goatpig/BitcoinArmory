@@ -101,6 +101,7 @@ public:
    BinaryData(const uint8_t*, const uint8_t*);
    BinaryData(const BinaryData&);
    BinaryData(BinaryData&&);
+   BinaryData(std::vector<uint8_t>&&);
    BinaryData(const BinaryDataRef&);
    ~BinaryData(void);
 

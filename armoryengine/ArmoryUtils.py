@@ -2753,7 +2753,7 @@ def getBridgeArgList():
    Build CLI args for CppBridge startup.
 
    Note: Database connection is now handled via explicit bridge API calls
-   (automateDb, connectToIp, connectToPeer) after the setup dialog,
+   (automatationContext, connectToIp, connectToPeer) after the setup dialog,
    not via CLI arguments at startup.
 
    This function only provides basic args:

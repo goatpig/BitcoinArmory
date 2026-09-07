@@ -29,7 +29,26 @@ from armoryengine.BIP15x import \
 BRIDGE_CLIENT_HEADER = 1
 
 import sys
-sys.path.append("cppForSwig/capnp")
+
+################################################################################
+def findCapnpSchemaDir() -> str:
+   #search candidate locations for the capnp schema dir, in priority order
+   candidates = [
+      os.path.normpath(os.path.join(
+         os.path.dirname(os.path.abspath(__file__)),
+         '..', 'cppForSwig', 'capnp')),
+      os.path.join(os.getcwd(), 'cppForSwig', 'capnp'),
+   ]
+
+   for candidate in candidates:
+      if os.path.isdir(candidate):
+         return candidate
+
+   triedPaths = '\n'.join('  ' + path for path in candidates)
+   raise ImportError(
+      "could not find capnp schema directory; tried:\n" + triedPaths)
+
+sys.path.append(findCapnpSchemaDir())
 
 import capnp
 import Bridge_capnp as Bridge
@@ -46,6 +65,24 @@ class BridgeError(Exception):
 ################################################################################
 class BridgeSignerError(Exception):
    pass
+
+################################################################################
+def findCppBridgeBinary() -> str:
+   #search candidate locations in priority order, return the first that exists
+   candidates = [
+      os.path.normpath(os.path.join(
+         os.path.dirname(os.path.abspath(__file__)), '..', 'CppBridge')),
+      os.path.join(os.getcwd(), 'CppBridge'),
+      os.path.join(os.getcwd(), 'build', 'CppBridge'),
+   ]
+
+   for candidate in candidates:
+      if os.path.isfile(candidate):
+         return candidate
+
+   triedPaths = '\n'.join('  ' + path for path in candidates)
+   raise BridgeError(
+      "could not find CppBridge binary; tried:\n" + triedPaths)
 
 ################################################################################
 ##
@@ -157,7 +194,7 @@ class BridgeSocket(object):
 
    ####
    def spawnBridge(self, args: list):
-      subprocess.run(["./build/CppBridge", *args])
+      subprocess.run([findCppBridgeBinary(), *args])
 
    #############################################################################
    ## socket write
@@ -380,20 +417,6 @@ class ProtoWrapper(object):
 class DbSetupService(ProtoWrapper):
    """
    Database setup service for managing DB connections.
-
-   Provides methods for:
-   - automateDb: Start local automated ArmoryDB
-   - connectToIp: Connect to remote DB by IP
-   - connectToPeer: Connect to remote DB by peer key
-   - loadPeersDb: Load the peers database
-   - listPeers: List all saved peers
-   - addPeer: Add a new peer
-   - removePeer: Remove a peer
-   - setPeerLabel: Update a peer's label
-   - goOnline: Signal DB to go online
-   - disconnect: Disconnect from remote DB
-   - cleanupDb: Clean up DB resources
-   - shutdown: Shutdown the bridge and stop socket
    """
    #############################################################################
    ## setup ##
@@ -402,22 +425,6 @@ class DbSetupService(ProtoWrapper):
 
    #############################################################################
    ## commands ##
-   def automateDb(self, satoshiPath: str, dbDir: str):
-      """
-      Start local automated ArmoryDB.
-
-      Args:
-         satoshiPath: Path to Bitcoin Core data directory
-         dbDir: Path to ArmoryDB database directory
-      """
-      packet = Bridge.ToBridge.new_message()
-      request = packet.init("setup").init("automateDb")
-      request.satoshiPath = satoshiPath
-      request.dbDir = dbDir
-      fut = self.send(packet)
-      return fut.getVal(nothrow=True)
-
-   ####
    def connectToIp(self,
       ip: str, port: str, callbackId: str,
       resultCallback: callable = None):
@@ -478,7 +485,7 @@ class DbSetupService(ProtoWrapper):
             Qt event loop.
       """
       packet = Bridge.ToBridge.new_message()
-      packet.init("setup").loadPeersDb = callbackId
+      packet.init("setup").init("peersHelper").loadPeersDb = callbackId
       if resultCallback:
          self.send(packet, needsReply=False,
             callback=resultCallback)
@@ -496,7 +503,7 @@ class DbSetupService(ProtoWrapper):
       .key, .names, .label) and .oneWay fields.
       """
       packet = Bridge.ToBridge.new_message()
-      packet.init("setup").listPeers = None
+      packet.init("setup").init("peersHelper").listPeers = None
       fut = self.send(packet)
       reply = fut.getVal(nothrow=True)
       if reply.success:
@@ -514,7 +521,7 @@ class DbSetupService(ProtoWrapper):
          label: Human-readable label for the peer
       """
       packet = Bridge.ToBridge.new_message()
-      peerMsg = packet.init("setup").init("addPeer")
+      peerMsg = packet.init("setup").init("peersHelper").init("addPeer")
       peerMsg.key = key
       peerNames = peerMsg.init("names", len(names))
       for i, name in enumerate(names):
@@ -532,7 +539,7 @@ class DbSetupService(ProtoWrapper):
          key: Human-readable peer key (AR1.../AR2...)
       """
       packet = Bridge.ToBridge.new_message()
-      packet.init("setup").removePeer = key
+      packet.init("setup").init("peersHelper").removePeer = key
       fut = self.send(packet)
       return fut.getVal(nothrow=True)
 
@@ -546,17 +553,17 @@ class DbSetupService(ProtoWrapper):
          label: New label for the peer
       """
       packet = Bridge.ToBridge.new_message()
-      labelMsg = packet.init("setup").init("setLabel")
+      labelMsg = packet.init("setup").init("peersHelper").init("setLabel")
       labelMsg.key = key
       labelMsg.label = label
       fut = self.send(packet)
       return fut.getVal(nothrow=True)
 
    ####
-   def goOnline(self):
+   def beginDbSession(self):
       """Signal the DB to go online after connection is established."""
       packet = Bridge.ToBridge.new_message()
-      packet.init("setup").goOnline = None
+      packet.init("setup").beginDbSession = None
       self.send(packet, needsReply=False)
 
    ####
@@ -566,25 +573,85 @@ class DbSetupService(ProtoWrapper):
       packet.init("setup").disconnect = None
       self.send(packet, needsReply=False)
 
-   ####
-   def cleanupDb(self):
-      """Shutdown the running ArmoryDB process.
-
-      Note: C++ does NOT reset bdvPtr_ after shutdown,
-      so reconnection on the same bridge is not possible.
-      """
+   #############################################################################
+   ## automation context
+   def initAutomationContext(self,
+      satoshiDir: str, satoshiBin: str, dbDir: str,
+      automateNode: bool, automateDb: bool):
+      """setup a context to automate ArmoryDB and Core instances"""
       packet = Bridge.ToBridge.new_message()
-      packet.init("setup").cleanupDb = None
+      ctxRequest = packet.init("setup").init("initAutomationContext")
+      if satoshiDir:
+         ctxRequest.satoshiDir = satoshiDir
+      if satoshiBin:
+         ctxRequest.satoshiBin = satoshiBin
+      if dbDir:
+         ctxRequest.dbDir = dbDir
+
+      if automateNode == True:
+         ctxRequest.automateNode = None
+      elif automateDb == True:
+         ctxRequest.automateDb = None
+
       fut = self.send(packet)
       return fut.getVal(nothrow=True)
 
-   ####
-   def shutdown(self):
-      """Shutdown the bridge entirely."""
+   def runAutomationContext(self, callbackId: str, successCb: callable):
+      """run the automation context setup via initAutomationContext"""
       packet = Bridge.ToBridge.new_message()
-      packet.init("setup").shutdown = None
-      self.send(packet, needsReply=False)
-      self.bridgeSocket.stop()
+      request = packet.init("setup").runAutomationContext = callbackId
+      self.send(packet, callback=successCb)
+
+   def cleanup(self, callbackId: str, successCb: callable):
+      """cleanup automation context."""
+      packet = Bridge.ToBridge.new_message()
+      packet.init("setup").cleanupAutomationContext = callbackId
+      if successCb:
+         self.send(packet, callback=successCb)
+      else:
+         fut = self.send(packet)
+         return fut.getVal(nothrow=True)
+
+   #############################################################################
+   ## automation helpers
+   def findSatoshiDatadir(self):
+      """Look for the Core datadir"""
+      packet = Bridge.ToBridge.new_message()
+      packet.init("setup").init("satoshiHelper").findDir = None
+      fut = self.send(packet)
+      result = fut.getVal(nothrow=True)
+      if result.success == False:
+         return None
+      return result.setup.satoshiHelper.findDir
+
+   def findSatoshiBinary(self):
+      """Look for the Core binary"""
+      packet = Bridge.ToBridge.new_message()
+      packet.init("setup").init("satoshiHelper").findBin = None
+      fut = self.send(packet)
+      result = fut.getVal(nothrow=True)
+      if result.success == False:
+         return None
+      return result.setup.satoshiHelper.findBin
+
+   ####
+   def validateSatoshiDatadir(self, datadir):
+      """Check folder is Core datadir, also check for pruning and RPC setting"""
+      packet = Bridge.ToBridge.new_message()
+      packet.init("setup").init("satoshiHelper").validateDir = str(datadir)
+
+      fut = self.send(packet)
+      result = fut.getVal()
+      return result.setup.satoshiHelper.validateDir
+
+   def validateSatoshiBinary(self, binPath):
+      """Check path is Core binary, also grab version"""
+      packet = Bridge.ToBridge.new_message()
+      packet.init("setup").init("satoshiHelper").validateBin = str(binPath)
+
+      fut = self.send(packet)
+      result = fut.getVal()
+      return result.setup.satoshiHelper.validateBin
 
 ################################################################################
 class BlockchainService(ProtoWrapper):
@@ -878,11 +945,11 @@ class BridgeWalletWrapper(ProtoWrapper):
       self.accountId = accountId
 
    ####
-   def _getPacket(self):
+   def _getPacket(self, omitAccountId=False):
       packet = Bridge.ToBridge.new_message()
       wltCapn = packet.init("wallet")
       wltCapn.walletId  = self.walletId
-      if self.accountId:
+      if self.accountId and not omitAccountId:
          wltCapn.accountId = self.accountId
       return packet
 
@@ -919,15 +986,13 @@ class BridgeWalletWrapper(ProtoWrapper):
 
    ####
    def createBackupStringForWallet(self,
-      callbackFunc, passphrase, serverPushObj):
+      callbackFunc, serverPushObj=None):
       packet = self._getPacket()
       req = packet.wallet.init("createBackupString")
-      if passphrase:
-         req.passphrase = passphrase
-      elif serverPushObj:
-         req.callbackId = serverPushObj.callbackId
+      if serverPushObj:
+         req.private = serverPushObj.callbackId
       else:
-         raise Exception("[createBackupStringForWallet] invalid args")
+         req.public = None
       self.send(packet, callback=callbackFunc)
 
    ####
@@ -1061,6 +1126,36 @@ class BridgeWalletWrapper(ProtoWrapper):
       else:
          changeRequest.control = None
       self.send(packet, callback=callback)
+
+   ####
+   def hasImports(self):
+      packet = self._getPacket()
+      packet.wallet.hasImports = None
+
+      fut = self.send(packet)
+      reply = fut.getVal()
+      return reply.wallet.hasImports
+
+   ####
+   def exportKeys(self, callback: callable, publicOnly=False, unlockHandler=None,
+      omitAccountId=False):
+      packet = self._getPacket(omitAccountId=omitAccountId)
+      exportReq = packet.wallet.init('exportKeys')
+      if publicOnly:
+         exportReq.publicDataOnly = None
+      else:
+         exportReq.withPrivateKeys = unlockHandler.callbackId
+      self.send(packet, callback=callback)
+
+   ####
+   def exportPrivateKeys(self, callback: callable, unlockHandler,
+      omitAccountId=False):
+      self.exportKeys(callback, publicOnly=False, unlockHandler=unlockHandler,
+         omitAccountId=omitAccountId)
+
+   ####
+   def exportPublicKeys(self, callback: callable, omitAccountId=False):
+      self.exportKeys(callback, publicOnly=True, omitAccountId=omitAccountId)
 
 ################################################################################
 class BridgeCoinSelectionWrapper(ProtoWrapper):
@@ -1518,6 +1613,9 @@ class ArmoryBridge(object):
    def start(self, stringArgs, notifyReadyLbd):
       self.bridgeSocket.start(stringArgs, notifyReadyLbd)
 
+   def stop(self):
+      self.bridgeSocket.stop()
+
    #############################################################################
    def send(self, msg, needsReply=True, callback=None, cbArgs=[],
       msgType=BRIDGE_CLIENT_HEADER):
@@ -1534,10 +1632,8 @@ class ArmoryBridge(object):
 
       fut = self.send(packet)
       socketResponse = fut.getVal()
-
       response = BridgeProto_pb2.BridgeLedgers()
       response.ParseFromString(socketResponse)
-
       return response
 
 ################################################################################
@@ -1554,7 +1650,7 @@ class CallbackWrapper(object):
 
 ################################################################################
 class ServerPush(ProtoWrapper):
-   def __init__(self, callbackId=""):
+   def __init__(self, callbackId=None):
       super().__init__(TheBridge.bridgeSocket)
 
       if not callbackId:

@@ -207,6 +207,14 @@ bool SecureBinaryData::operator==(const BinaryData& bd2) const
    return std::memcmp(getPtr(), bd2.getPtr(), getSize()) == 0;
 }
 
+bool SecureBinaryData::operator==(const BinaryDataRef& bdr) const
+{
+   if (getSize() != bdr.getSize()) {
+      return false;
+   }
+   return std::memcmp(getPtr(), bdr.getPtr(), getSize()) == 0;
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // Swap endianness of the bytes in the index range [pos1, pos2)
 SecureBinaryData SecureBinaryData::copySwapEndian(size_t pos1, size_t pos2) const

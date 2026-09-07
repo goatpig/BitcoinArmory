@@ -331,14 +331,14 @@ size_t BlockHeader::getOffset() const
    return blkFileOffset_;
 }
 
-Types::FileId BlockHeader::getBlockFileNum() const
+Types::FileId BlockHeader::getBlockFileId() const
 {
-   return blkFileNum_;
+   return blkFileId_;
 }
 
-void BlockHeader::setBlockFileNum(Types::FileId fnum)
+void BlockHeader::setBlockFileId(Types::FileId fnum)
 {
-   blkFileNum_ = fnum;
+   blkFileId_ = fnum;
 }
 
 void BlockHeader::setBlockFileOffset(size_t offs)

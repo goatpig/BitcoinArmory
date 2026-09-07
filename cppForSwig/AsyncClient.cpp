@@ -228,7 +228,7 @@ void BlockDataViewer::addPublicKey(const SecureBinaryData& pubkey, bool oneWay)
 ///////////////////////////////////////////////////////////////////////////////
 std::shared_ptr<BlockDataViewer> BlockDataViewer::getNewBDV(
    const std::string& addr, const std::string& port,
-   std::shared_ptr<Wallets::AuthorizedPeers> peers, bool oneWayAuth,
+   std::shared_ptr<NetworkPeers::ClientStore> peers, bool oneWayAuth,
    std::shared_ptr<RemoteCallback> callbackPtr)
 {
    //create socket object
@@ -316,14 +316,13 @@ void BlockDataViewer::goOnline()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void BlockDataViewer::shutdown()
+void BlockDataViewer::start()
 {
-   //create capnp request
+   /* request db synchronization start when automating it */
    capnp::MallocMessageBuilder message;
    auto payload = message.initRoot<Codec::BDV::Request>();
-
    auto staticRequest = payload.initStatic();
-   staticRequest.setShutdown();
+   staticRequest.setStart();
 
    //serialize and add to payload
    auto write_payload = toWritePayload(message);
@@ -332,15 +331,13 @@ void BlockDataViewer::shutdown()
    sock_->pushPayload(std::move(write_payload), nullptr);
 }
 
-///////////////////////////////////////////////////////////////////////////////
-void BlockDataViewer::shutdownNode()
+void BlockDataViewer::shutdown()
 {
-   //create capnp request
+   /* request db shutdown when automating it */
    capnp::MallocMessageBuilder message;
    auto payload = message.initRoot<Codec::BDV::Request>();
-
    auto staticRequest = payload.initStatic();
-   staticRequest.setShutdownNode();
+   staticRequest.setShutdown();
 
    //serialize and add to payload
    auto write_payload = toWritePayload(message);

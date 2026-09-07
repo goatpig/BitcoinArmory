@@ -20,29 +20,24 @@
 using namespace Armory;
 
 ///////////////////////////////////////////////////////////////////////////////
-PendingMessage::PendingMessage(uint64_t id, uint32_t msgid,
+// PendingMessage
+PendingMessage::PendingMessage(uint64_t id,
    std::unique_ptr<Network::Socket_WritePayload> ptr) :
-   id(id), msgid(msgid), payload(std::move(ptr))
+   id(id), payload(std::move(ptr))
 {}
 
 ///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-//// WebSocketServer
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
+// WebSocketServer
 std::atomic<WebSocketServer*> WebSocketServer::instance_;
 std::mutex WebSocketServer::mu_;
 std::promise<bool> WebSocketServer::shutdownPromise_;
 std::shared_future<bool> WebSocketServer::shutdownFuture_;
 
-///////////////////////////////////////////////////////////////////////////////
 WebSocketServer::WebSocketServer()
 {}
 
-///////////////////////////////////////////////////////////////////////////////
 static struct lws_protocols protocols[] = {
-   /* first protocol must always be HTTP handler */
-
+   /* first protocol for server must always be HTTP handler */
    {
       "http-only",   /* name */
       callback_http, /* callback */
@@ -54,28 +49,27 @@ static struct lws_protocols protocols[] = {
    },
    {
       "armory-bdm-protocol",
-      WebSocketServer::callback,
+      WebSocketServer::lwsServiceHandler,
       sizeof(struct per_session_data__bdv),
       per_session_data__bdv::rcv_size,
       2,
       nullptr,
       0
    },
-
-{ NULL, NULL, 0, 0, 0, NULL, 0 } /* terminator */
+   /* terminator */
+   { NULL, NULL, 0, 0, 0, NULL, 0 }
 };
 
-///////////////////////////////////////////////////////////////////////////////
-int callback_http(struct lws *, enum lws_callback_reasons,
-   void *, void *, size_t)
+int callback_http(struct lws*, enum lws_callback_reasons,
+   void*, void*, size_t)
 {
    return 0;
 }
 
-///////////////////////////////////////////////////////////////////////////////
-int WebSocketServer::callback(struct lws *wsi,
+///////
+int WebSocketServer::lwsServiceHandler(struct lws* wsi,
    enum lws_callback_reasons reason,
-   void *user, void *in, size_t len)
+   void* user, void* in, size_t len)
 {
    auto* session_data = (struct per_session_data__bdv *)user;
 
@@ -101,6 +95,7 @@ int WebSocketServer::callback(struct lws *wsi,
       case LWS_CALLBACK_ESTABLISHED:
       {
          auto bdid = Cryptography::PRNG::generateRandomStrong(8);
+         LOGINFO << "new connection: " << bdid.toHexStr();
          session_data->id_ = *(uint64_t*)bdid.getPtr();
 
          auto instance = WebSocketServer::getInstance();
@@ -115,6 +110,10 @@ int WebSocketServer::callback(struct lws *wsi,
       case LWS_CALLBACK_CLOSED:
       {
          auto instance = WebSocketServer::getInstance();
+         if (instance == nullptr) {
+            return 0;
+         }
+         LOGINFO << std::format("connection closed: {:x}", session_data->id_);
          instance->clients_->unregisterBDV(session_data->id_);
          instance->eraseId(session_data->id_, wsi);
 
@@ -210,11 +209,12 @@ int WebSocketServer::callback(struct lws *wsi,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void WebSocketServer::initAuthPeers(const Wallets::IO::ReadOnlyFileParams& params)
+void WebSocketServer::initPeerStore(
+   const Wallets::IO::ReadOnlyFileParams& params)
 {
    //init auth peer object
    if (!Config::NetworkSettings::ephemeralPeers()) {
-      initAuthPeers(std::make_shared<Wallets::AuthorizedPeers>(params));
+      initPeerStore(std::make_shared<NetworkPeers::ServerStore>(params));
    } else {
       if (Config::NetworkSettings::oneWayAuth()) {
          throw std::runtime_error(
@@ -223,64 +223,38 @@ void WebSocketServer::initAuthPeers(const Wallets::IO::ReadOnlyFileParams& param
 
       //setup server with an ephemeral key store
       auto instance = getInstance();
-      instance->authorizedPeers_ = std::make_shared<Wallets::AuthorizedPeers>();
+      instance->peerStore_ = std::make_shared<NetworkPeers::ServerStore>();
 
-      //grab caller pubkey
-      auto callerKeyPtr = std::getenv("CALLER_PUBKEY");
-      if (callerKeyPtr == nullptr) {
+      //grab master pubkey
+      auto keyPtr = std::getenv("MASTER_PUBKEY");
+      if (keyPtr == nullptr) {
          throw std::runtime_error("caller key is not set");
       }
-      std::string callerPubKeyStr{std::getenv("CALLER_PUBKEY")};
-      auto callerPubKey = SecureBinaryData::CreateFromHex(callerPubKeyStr);
+      auto masterKey = NetworkPeers::PeerKey::fromHumanReadable({keyPtr});
 
-      //inject caller pubkey in the store
-      std::string serverName{"127.0.0.1:" +
-         Config::NetworkSettings::dbPort()};
-      instance->authorizedPeers_->addPeer(
-         callerPubKey.getRef(), {serverName}, {}, false);
+      //inject master pubkey in the store
+      instance->peerStore_->addPeer(
+         masterKey,
+         {std::format("127.0.0.1:{}", Config::NetworkSettings::dbPort())}, 
+         {}
+      );
 
-      //set caller pubkey as master key
-      if (!instance->authorizedPeers_->setMasterKey(callerPubKey.getRef())) {
+      //set master key
+      if (!instance->peerStore_->setMasterKey(masterKey)) {
          throw std::runtime_error("ephemeral peers db setup snafu");
       }
-      const auto& ownKey = instance->authorizedPeers_->getOwnPublicKey();
-
-   #ifdef _WIN32
-      //grab inherited key file handle
-      std::string handleStr{std::getenv("KEYFILE_HANDLE")};
-      uint64_t fd = std::stoi(handleStr);
-      auto fHandle = (HANDLE)fd;
-
-      DWORD bytesWritten = 0;
-      if (!WriteFile(fHandle, ownKey.pubkey, 33, &bytesWritten, NULL)
-         || bytesWritten != 33) {
-         LOGERR << "failed to set server autodb pubkey";
-         exit(-2);
-      }
-      CloseHandle(fHandle);
-   #else
-      //grab inherited key file descriptor
-      std::string fdStr{std::getenv("KEYFILE_FD")};
-      int fd = std::stoi(fdStr);
-
-      //write own pubkey to file
-      if (::write(fd, ownKey.pubkey, 33) != 33) {
-         LOGERR << "failed to set server autodb pubkey";
-         exit(-2);
-      }
-   #endif
    }
 }
 
 ////
-void WebSocketServer::initAuthPeers(
-   std::shared_ptr<Wallets::AuthorizedPeers> peers)
+void WebSocketServer::initPeerStore(
+   std::shared_ptr<NetworkPeers::ServerStore> peers)
 {
    if (Config::NetworkSettings::ephemeralPeers()) {
       throw std::runtime_error("no peers store loading on ephemeral peers");
    }
    auto instance = getInstance();
-   instance->authorizedPeers_ = peers;
+   instance->peerStore_ = peers;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -340,14 +314,18 @@ void WebSocketServer::start(std::shared_ptr<BlockDataManager> bdm, bool async)
    if (async) {
       auto loopthr = [instance, port](void)->void
       {
+         instance->async_ = true;
          instance->webSocketService(port);
+         instance_.store(nullptr, std::memory_order_relaxed);
       };
       auto fut = instance->isReadyProm_.get_future();
       instance->threads_.push_back(std::thread(loopthr));
       fut.get();
-      return;
+   } else {
+      instance->webSocketService(port);
+      instance_.store(nullptr, std::memory_order_relaxed);
+      delete instance;
    }
-   instance->webSocketService(port);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -358,12 +336,10 @@ void WebSocketServer::shutdown()
       return;
    }
 
-   auto ptr = instance_.load(std::memory_order_relaxed);
-   if (ptr == nullptr) {
+   auto instance = instance_.load(std::memory_order_relaxed);
+   if (instance == nullptr) {
       return;
    }
-
-   auto instance = getInstance();
    if (instance->run_.load(std::memory_order_relaxed) == 0) {
       return;
    }
@@ -381,10 +357,12 @@ void WebSocketServer::shutdown()
          thr.join();
       }
    }
-
    instance->threads_.clear();
-   instance_.store(nullptr, std::memory_order_relaxed);
-   delete instance;
+
+   if (instance->async_) {
+      while (instance_.load(std::memory_order_relaxed) != nullptr);
+      delete instance;
+   }
 
    try {
       shutdownPromise_.set_value(true);
@@ -393,12 +371,13 @@ void WebSocketServer::shutdown()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-SecureBinaryData WebSocketServer::getPublicKey()
+const SecureBinaryData& WebSocketServer::getOwnPublicKey()
 {
    auto instance = getInstance();
-   const auto& pubkey = instance->authorizedPeers_->getOwnPublicKey();
-   SecureBinaryData keySbd{pubkey.pubkey, BIP151PUBKEYSIZE};
-   return keySbd;
+   if (instance == nullptr || instance->peerStore_ == nullptr) {
+      throw std::runtime_error("null instance/store");
+   }
+   return instance->peerStore_->getOwnPublicKey();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -446,6 +425,24 @@ void WebSocketServer::webSocketService(int port)
 
    pendingWritesIter_ = pendingWrites_.begin();
    run_.store(1, std::memory_order_relaxed);
+
+   if (Config::NetworkSettings::ephemeralPeers()) {
+      /*
+      DB is automated by client, output pubkey to stdout to complete AEAD
+      key share.
+      We do this at this stage to make sure the server is ready and listening
+      before the client tries to connect.
+      */
+      NetworkPeers::PeerKey myKey{
+         peerStore_->getOwnPublicKey(),
+         NetworkPeers::PeerType::ServerTwoWay
+      };
+      std::cout << myKey.toHumanReadable() << std::endl;
+
+      //set stdout to nullptr to suppress any further cout
+      std::cout.rdbuf(nullptr);
+   }
+
    try {
       while (run_.load(std::memory_order_relaxed) != 0 && n >= 0) {
          n = lws_service(contextPtr_, 10000);
@@ -526,14 +523,14 @@ void WebSocketServer::clientInterruptThread()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void WebSocketServer::write(const uint64_t& id, const uint32_t& msgid,
+void WebSocketServer::write(const uint64_t& id,
    std::unique_ptr<Network::Socket_WritePayload> payload)
 {
    if (payload == nullptr) {
       return;
    }
 
-   auto msg = std::make_unique<PendingMessage>(id, msgid, std::move(payload));
+   auto msg = std::make_unique<PendingMessage>(id, std::move(payload));
    auto instance = getInstance();
    instance->msgQueue_.push_back(std::move(msg));
 }
@@ -614,7 +611,7 @@ void WebSocketServer::prepareWriteThread()
 
       Network::SerializedMessage ws_msg;
       ws_msg.construct(std::move(msg->payload),
-         statePtr->bip151Connection_.get(), msg->msgid);
+         statePtr->bip151Connection_.get());
 
       //push to write map
       writeToSocket(statePtr->wsiPtr_, ws_msg);
@@ -643,9 +640,8 @@ WebSocketServer::getConnectionStateMap() const
 ///////////////////////////////////////////////////////////////////////////////
 void WebSocketServer::addId(const uint64_t& id, struct lws* ptr)
 {
-   auto lbds = getAuthPeerLambda(oneWayAuth_);
    auto write_pair = std::make_pair(
-      id, ClientConnection(ptr, id, lbds, oneWayAuth_));
+      id, ClientConnection(ptr, id, peerStore_->getView(), oneWayAuth_));
    clientStateMap_.insert(std::move(write_pair));
    writeMap_.emplace(ptr, std::list<std::list<BinaryData>>());
 }
@@ -655,30 +651,6 @@ void WebSocketServer::eraseId(const uint64_t& id, struct lws* ptr)
 {
    closeClientConnection(id);
    writeMap_.erase(ptr);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-AuthPeersLambdas WebSocketServer::getAuthPeerLambda(bool oneWay) const
-{
-   auto authPeerPtr = authorizedPeers_;
-   auto getMap = [authPeerPtr, oneWay](void)->const std::map<std::string, btc_pubkey>&
-   {
-      return authPeerPtr->getPeerNameMap(oneWay);
-   };
-
-   auto getPrivKey = [authPeerPtr](
-      const BinaryDataRef& pubkey)->const SecureBinaryData&
-   {
-      return authPeerPtr->getPrivateKey(pubkey);
-   };
-
-   auto getAuthMap = [authPeerPtr, oneWay](void)
-   ->const std::map<SecureBinaryData, std::string>&
-   {
-      return authPeerPtr->getPublicKeyMap(oneWay);
-   };
-
-   return AuthPeersLambdas(getMap, getPrivKey, getAuthMap);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -742,13 +714,16 @@ void WebSocketServer::updateWriteMap()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool WebSocketServer::isMasterKey(const btc_pubkey& pubkey)
+bool WebSocketServer::isMasterKey(BinaryDataRef pubkey)
 {
    auto instance = getInstance();
-   if (instance->authorizedPeers_ == nullptr) {
+   if (instance == nullptr) {
       return false;
    }
-   return instance->authorizedPeers_->isMasterKey(pubkey);
+   if (instance->peerStore_ == nullptr) {
+      return false;
+   }
+   return instance->peerStore_->isMasterKey(pubkey);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -756,11 +731,12 @@ bool WebSocketServer::isMasterKey(const btc_pubkey& pubkey)
 // ClientConnection
 //
 ///////////////////////////////////////////////////////////////////////////////
-ClientConnection::ClientConnection(
-   struct lws *wsi, uint64_t id, AuthPeersLambdas& lbds, bool isOneWayAuth) :
+ClientConnection::ClientConnection(struct lws *wsi, uint64_t id,
+   std::unique_ptr<NetworkPeers::PeerStoreView> view, bool isOneWayAuth) :
    wsiPtr_(wsi), id_(id)
 {
-   bip151Connection_ = std::make_shared<BIP151Connection>(lbds, isOneWayAuth);
+   bip151Connection_ = std::make_shared<BIP151Connection>(
+      std::move(view), isOneWayAuth);
 
    writeLock_ = std::make_shared<std::atomic<unsigned>>();
    writeLock_->store(0);
@@ -808,8 +784,7 @@ void ClientConnection::processReadQueue(std::shared_ptr<Clients> clients)
          //decrypt packet
          size_t plainTextSize = packetData.getSize() - POLY1305MACLEN;
          auto result = bip151Connection_->decryptPacket(
-            packetData.getPtr(), packetData.getSize(),
-            (uint8_t*)packetData.getPtr(), packetData.getSize());
+            packetData.getRef(), packetData);
 
          if (result != 0) {
             if (result <= 1048576 && result > -1) {
@@ -865,14 +840,14 @@ void ClientConnection::processReadQueue(std::shared_ptr<Clients> clients)
 
       //create payload
       auto bdvPtr = clients->get(id_);
-      auto bdv_payload = std::make_shared<BDV_Payload>(
+      auto payloadPtr = std::make_shared<BDV_Payload>(
          std::move(packetData),
          bdvPtr, //can be nullptr
          id_, bip151Connection_->getChosenAuthPeerKey()
       );
 
       //queue for clients thread pool to process
-      clients->queuePayload(bdv_payload);
+      clients->queuePayload(payloadPtr);
    }
 }
 

@@ -74,6 +74,10 @@ struct WalletData {
 
    addressData          @12: List(AddressData);
    comments             @13: List(Comment);
+
+   accountName          @16: Text;
+   seedTypeName         @17: Text;
+   derivationScheme     @18: Text;
 }
 
 struct WalletImportPreview {
@@ -165,6 +169,19 @@ struct Notification {
       }
    }
 
+   ## db/node automation
+   struct AutomationContextNotif {
+      union {
+         unset          @0 : Void;
+         spawnNode      @1 : Void;
+         spawnDb        @2 : Void;
+         connectToDb    @3 : Void;
+         shutdownDb     @4 : Void;
+         shutdownNode   @5 : Void;
+         done           @6 : Void;
+      }
+   }
+
    #callbackId is set if this notification is the result
    #of a RPC request that provided said id
    callbackId        @0 : Types.CallbackId;
@@ -189,6 +206,7 @@ struct Notification {
       restore        @17: RestorePrompt;
       presentPubkey  @18: Text; #hexit public key
       invalidatedZcs @19: List(Types.Hash);
+      automation     @20: AutomationContextNotif;
    }
 }
 
@@ -222,37 +240,69 @@ struct NotificationReply {
 ## DB Setup
 struct DbSetupRequest {
    struct IpRequest {
-      ip             @0 : Text;
-      port           @1 : Text;
-      callbackId     @2 : Text;
+      ip                @0 : Text;
+      port              @1 : Text;
+      callbackId        @2 : Text;
    }
 
-   struct LabelRequest {
-      key            @0 : Text; #base64 blob
-      label          @1 : Text;
+   struct PeersRequest {
+      struct LabelRequest {
+         key            @0 : Text; #base64 blob
+         label          @1 : Text;
+      }
+
+      union {
+         unset          @0 : Void;
+
+         loadPeersDb    @1 : Types.CallbackId;
+         listPeers      @2 : Void;
+         addPeer        @3 : Peer;
+         removePeer     @4 : Text; #remove by key
+         setLabel       @5 : LabelRequest;
+      }
    }
 
-   struct AutoDbRequest {
-      satoshiPath    @0 : Text;
-      dbDir          @1 : Text;
+   struct SatoshiRequest {
+      union {
+         unset          @0 : Void;
+         findDir        @1 : Void;
+         findBin        @2 : Void;
+         validateDir    @3 : Text;
+         validateBin    @4 : Text;
+      }
+   }
+
+   struct AutomationContext
+   {
+      satoshiDir        @0 : Text;
+      satoshiBin        @1 : Text;
+      dbDir             @2 : Text;
+
+      union {
+         noAutomation   @3 : Void;
+         automateDb     @4 : Void;
+         automateNode   @5 : Void;
+      }
    }
 
    union {
-      unset          @0 : Void;
+      unset                      @0 : Void;
 
-      connectToIp    @1 : IpRequest;
-      connectToPeer  @2 : Text; #peer key
-      automateDb     @3 : AutoDbRequest;
-      goOnline       @4 : Void;
-      disconnect     @5 : Void;
-      cleanupDb      @6 : Void;
-      shutdown       @7 : Void;
+      #peers
+      peersHelper                @1 : PeersRequest;
 
-      loadPeersDb    @8 : Text; #callbackId
-      listPeers      @9 : Void;
-      addPeer        @10: Peer;
-      removePeer     @11: Text; #remove by key
-      setLabel       @12: LabelRequest;
+      #node
+      satoshiHelper              @2 : SatoshiRequest;
+
+      #binary automations
+      initAutomationContext      @3 : AutomationContext;
+      runAutomationContext       @4 : Types.CallbackId;
+      cleanupAutomationContext   @5 : Types.CallbackId;
+
+      #db connection
+      connectToIp                @6 : IpRequest;
+      connectToPeer              @7 : Text; #peer key
+      beginDbSession             @8 : Void;
    }
 }
 
@@ -262,10 +312,33 @@ struct DbSetupReply {
       oneWay         @1 : Bool;
    }
 
+   struct SatoshiReply {
+      struct SatoshiDatadirState {
+         path        @0 : Text;
+         chainSizeGB @1 : UInt32;
+         pruned      @2 : Bool;
+      }
+
+      struct SatoshiBinaryState {
+         path        @0: Text;
+         version     @1: Text;
+      }
+
+      union {
+         unset       @0 : Void;
+
+         findDir     @1 : Text;
+         findBin     @2 : Text;
+         validateDir @3 : SatoshiDatadirState;
+         validateBin @4 : SatoshiBinaryState;
+      }
+   }
+
    union {
       unset          @0 : Void;
 
       listPeers      @1 : List(PeerData);
+      satoshiHelper  @2 : SatoshiReply;
    }
 }
 
@@ -460,6 +533,13 @@ struct WalletRequest {
       description    @1 : Text;
    }
 
+   struct ExportKeyRequest {
+      union {
+         publicDataOnly @0 : Void;
+         withPrivateKeys @1 : Types.CallbackId;
+      }
+   }
+
    walletId                         @0 : Types.WalletId;
    accountId                        @1 : Types.AccountId;
    union {
@@ -489,6 +569,8 @@ struct WalletRequest {
 
       getUnlockTime                 @19: Void;
       forkWatchingOnly              @20: Types.CallbackId;
+      hasImports                    @21: Void;
+      exportKeys                    @22: ExportKeyRequest;
    }
 }
 
@@ -502,6 +584,18 @@ struct WalletReply {
    struct AddressAndBalanceData {
       balances       @0 : List(AddressBalanceData);
       updatedAssets  @1 : List(WalletData.AddressData);
+   }
+
+   struct ExportedPrivateKey {
+      assetId        @0 : Data;
+      privKey        @1 : Data;
+      publicKey      @2 : Data;
+      addressString  @3 : Text;
+      addrType       @4 : UInt32;
+      index          @5 : Int32;
+      accountId      @6 : Text;
+      isUsed         @7 : Bool;
+      chainRole      @8 : Text;
    }
 
    # reply
@@ -528,6 +622,9 @@ struct WalletReply {
       createAddressBook             @13: Types.AddressBook;
       getUnlockTime                 @14: UInt32; #unlock time in ms
       forkWatchingOnly              @15: Text; #path to new WO wallet
+      hasImports                    @16: Bool;
+      # privKey is empty for public-only export.
+      exportKeys                    @17: List(ExportedPrivateKey);
    }
 }
 

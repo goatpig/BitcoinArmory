@@ -9,7 +9,7 @@
 # Setup Manager package - exports DlgSetupManager dialog
 #
 
-from qtdialogs.setupmanager.DlgSetupManager import DlgSetupManager
-from qtdialogs.setupmanager.DatabaseTab import SCENARIO_DB_NONE
+from qtdialogs.setupmanager.DlgSetupManager import DlgSetupManager, DlgAutomations
+from qtdialogs.setupmanager.DatabaseTab import SCENARIO_DB_OFFLINE
 
-__all__ = ['DlgSetupManager', 'SCENARIO_DB_NONE']
+__all__ = ['DlgSetupManager', 'DlgAutomations', 'SCENARIO_DB_OFFLINE']

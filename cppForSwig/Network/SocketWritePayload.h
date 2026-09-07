@@ -25,20 +25,27 @@ namespace Armory
          std::vector<uint8_t> data;
 
          WritePayload_Raw(std::vector<uint8_t>& payload) :
+            Socket_WritePayload{},
+            data(std::move(payload))
+         {}
+
+         WritePayload_Raw(uint32_t id, std::vector<uint8_t>& payload) :
+            Socket_WritePayload{id},
             data(std::move(payload))
          {}
 
          WritePayload_Raw(WritePayload_Raw&& lhs) :
+            Socket_WritePayload{},
             data(std::move(lhs.data))
          {}
 
          void serialize(std::vector<uint8_t>&) override;
-         std::string serializeToText(void) override
+         std::string serializeToText() override
          {
             throw SocketError("raw payload cannot serialize to str");
          }
 
-         size_t getSerializedSize(void) const override
+         size_t getSerializedSize() const override
          {
             return data.size();
          }
@@ -96,10 +103,15 @@ namespace Armory
          WritePayload_Capnp(
             std::unique_ptr<capnp::MessageBuilder>,
             std::vector<uint8_t>);
+
+         WritePayload_Capnp(
+            uint32_t,
+            std::unique_ptr<capnp::MessageBuilder>,
+            std::vector<uint8_t>);
          ~WritePayload_Capnp(void);
 
          void serialize(std::vector<uint8_t>& payload) override;
-         std::string serializeToText(void) override
+         std::string serializeToText() override
          {
             throw SocketError("raw payload cannot serialize to str");
          }

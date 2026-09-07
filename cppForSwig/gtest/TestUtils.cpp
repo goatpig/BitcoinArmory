@@ -405,6 +405,14 @@ namespace DBTestUtils
       return total;
    }
 
+   Tx getTx(const Types::TxHash& txHash, std::shared_ptr<BlockDataManager> bdm)
+   {
+      auto db = bdm->getIFace();
+      auto blockchainData = bdm->blockchainData();
+      auto txKey = db->getDBKeyForHash(txHash);
+      return blockchainData->getTx(txKey);
+   }
+
    std::vector<UTXO> getUTXOsForScrAddrs(std::shared_ptr<BlockDataManager> bdm,
       const std::set<Types::ScrAddr>& addrSet)
    {
@@ -527,7 +535,7 @@ namespace DBTestUtils
    {
       while (true) {
          try {
-            auto notif = bdm->notificationStack_.pop_front();
+            auto notif = bdm->notificationStack.pop_front();
             if (notif == nullptr) {
                continue;
             } else if (notif->actionType() == action) {
@@ -742,7 +750,7 @@ namespace DBTestUtils
    /////////////////////////////////////////////////////////////////////////////
    void triggerNewBlockNotification(BlockDataManagerThread* bdmt)
    {
-      auto nodePtr = bdmt->bdm()->processNode_;
+      auto nodePtr = bdmt->bdm()->processNode;
       auto nodeUnitTest = (NodeUnitTest*)nodePtr.get();
 
       nodeUnitTest->notifyNewBlock();
@@ -752,7 +760,7 @@ namespace DBTestUtils
    void mineNewBlock(BlockDataManagerThread* bdmt, const BinaryData& h160,
       unsigned count)
    {
-      auto nodePtr = bdmt->bdm()->processNode_;
+      auto nodePtr = bdmt->bdm()->processNode;
       auto nodeUnitTest = (NodeUnitTest*)nodePtr.get();
       nodeUnitTest->mineNewBlock(bdmt->bdm(), count, h160);
    }
@@ -760,7 +768,7 @@ namespace DBTestUtils
    /////////////////////////////////////////////////////////////////////////////
    std::vector<UnitTestBlock> getMinedBlocks(BlockDataManagerThread* bdmt)
    {
-      auto nodePtr = bdmt->bdm()->processNode_;
+      auto nodePtr = bdmt->bdm()->processNode;
       auto nodeUnitTest = (NodeUnitTest*)nodePtr.get();
       return nodeUnitTest->getMinedBlocks();
    }
@@ -769,7 +777,7 @@ namespace DBTestUtils
    void setReorgBranchingPoint(
       BlockDataManagerThread* bdmt, const BinaryData& hash)
    {
-      auto nodePtr = bdmt->bdm()->processNode_;
+      auto nodePtr = bdmt->bdm()->processNode;
       auto nodeUnitTest = (NodeUnitTest*)nodePtr.get();
 
       auto headerPtr = bdmt->bdm()->blockchain()->getHeaderByHash(hash);
@@ -780,7 +788,7 @@ namespace DBTestUtils
    void pushNewZc(BlockDataManagerThread* bdmt, const ZcVector& zcVec,
       bool stage)
    {
-      auto nodePtr = bdmt->bdm()->processNode_;
+      auto nodePtr = bdmt->bdm()->processNode;
       auto nodeUnitTest = (NodeUnitTest*)nodePtr.get();
 
       unsigned delay = UINT32_MAX;
@@ -842,8 +850,8 @@ namespace DBTestUtils
       auto bdvReply = reply.getBdv();
       auto capnTxs = bdvReply.getGetTxsByHash();
       auto capnTx = capnTxs[0];
-      auto body = capnTx.getBody();
-      BinaryDataRef rawTx(body.begin(), body.end());
+      auto capnRaw = capnTx.getRaw();
+      BinaryDataRef rawTx(capnRaw.begin(), capnRaw.end());
 
       Tx txobj(rawTx);
       txobj.setTxKey(capnTx.getKey());
@@ -875,8 +883,8 @@ namespace DBTestUtils
          throw std::runtime_error(std::format("no tx for key {:x}", txKey));
       }
       auto capnTx = capnTxs[0];
-      auto body = capnTx.getBody();
-      BinaryDataRef rawTx(body.begin(), body.end());
+      auto capnRaw = capnTx.getRaw();
+      BinaryDataRef rawTx(capnRaw.begin(), capnRaw.end());
 
       Tx txobj(rawTx);
       txobj.setTxKey(capnTx.getKey());
@@ -916,10 +924,8 @@ namespace DBTestUtils
       auto bdRef = bdVec[0].getSliceRef(
          LWS_PRE, bdVec[0].getSize() - LWS_PRE);
 
-      btc_pubkey key;
       auto payload = std::make_shared<BDV_Payload>(
-         bdRef, clients->get(bdvId), bdvId, key
-      );
+         bdRef, clients->get(bdvId), bdvId, BinaryDataRef{});
 
       auto reply = clients->processCommand(payload);
       if (reply == nullptr) {

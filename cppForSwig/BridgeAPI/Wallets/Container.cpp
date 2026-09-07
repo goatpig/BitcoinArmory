@@ -348,10 +348,8 @@ std::unique_ptr<Seeds::WalletBackup> WalletContainer::getBackupStrings(
          "WalletContainer::getBackupStrings: unexpected wallet type");
    }
 
-   wltSingle->setPassphrasePromptLambda(passLbd);
+   auto lock = wltSingle->lockDecryptedContainer(passLbd);
    auto backupStrings = Seeds::Helpers::getWalletBackup(wltSingle, isPriv);
-   wltSingle->resetPassphrasePromptLambda();
-
    return backupStrings;
 }
 
@@ -366,9 +364,7 @@ void WalletContainer::changePassphrase(const Passphrase::UnlockFunc& unlockLbd,
    }
 
    if (isPriv) {
-      wltSingle->setPassphrasePromptLambda(unlockLbd);
-      wltSingle->changePrivateKeyPassphrase(setLbd);
-      wltSingle->resetPassphrasePromptLambda();
+      wltSingle->changePrivateKeyPassphrase(unlockLbd, setLbd);
    } else {
       wltSingle->changeControlPassphrase(setLbd, unlockLbd);
    }

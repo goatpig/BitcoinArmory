@@ -311,6 +311,7 @@ TEST_F(SignerTest, Signer_Test)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -383,6 +384,7 @@ TEST_F(SignerTest, SpendTest_SizeEstimates)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -591,7 +593,7 @@ TEST_F(SignerTest, SpendTest_SizeEstimates)
 
       //sign, verify & broadcast
       {
-         auto lock = assetWlt->lockDecryptedContainer();
+         auto lock = assetWlt->lockDecryptedContainer({});
          signer2.setFeed(assetFeed);
          signer2.sign();
       }
@@ -694,7 +696,7 @@ TEST_F(SignerTest, SpendTest_SizeEstimates)
 
       //sign, verify & broadcast
       {
-         auto lock = assetWlt->lockDecryptedContainer();
+         auto lock = assetWlt->lockDecryptedContainer({});
          signer3.setFeed(assetFeed);
          signer3.sign();
       }
@@ -744,6 +746,7 @@ TEST_F(SignerTest, SpendTest_P2WPKH)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -941,7 +944,7 @@ TEST_F(SignerTest, SpendTest_P2WPKH)
 
       //sign, verify & broadcast
       {
-         auto lock = assetWlt->lockDecryptedContainer();
+         auto lock = assetWlt->lockDecryptedContainer({});
          signer2.sign();
       }
       EXPECT_TRUE(signer2.verify());
@@ -977,6 +980,7 @@ TEST_F(SignerTest, SpendTest_MixedInputTypes)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -1009,7 +1013,7 @@ TEST_F(SignerTest, SpendTest_MixedInputTypes)
 
    //add a bip32 account
    {
-      auto lock = assetWlt->lockDecryptedContainer();
+      auto lock = assetWlt->lockDecryptedContainer({});
       auto accTypePtr = Accounts::AccountType_BIP32::makeFromDerPaths(
          node.getThisFingerprint(), {{0x80000000, 0x80000000, 0, 1}});
       accTypePtr->setSeedRoot(node.getBase58());
@@ -1186,7 +1190,7 @@ TEST_F(SignerTest, SpendTest_MixedInputTypes)
       //sign, verify & broadcast
       {
          signer2.setFeed(assetFeed);
-         auto lock = assetWlt->lockDecryptedContainer();
+         auto lock = assetWlt->lockDecryptedContainer({});
          signer2.sign();
       }
       EXPECT_TRUE(signer2.verify());
@@ -1224,6 +1228,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_1of3)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -1444,7 +1449,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_1of3)
 
       //sign, verify & return signed tx
       {
-         auto lock = wltPtr->lockDecryptedContainer();
+         auto lock = wltPtr->lockDecryptedContainer({});
          signer2.sign();
       }
       EXPECT_TRUE(signer2.verify());
@@ -1493,6 +1498,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_2of3_NativeP2WSH)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -1735,7 +1741,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_2of3_NativeP2WSH)
    }
 
    {
-      auto lock = assetWlt_1->lockDecryptedContainer();
+      auto lock = assetWlt_1->lockDecryptedContainer({});
       signer2.sign();
    }
 
@@ -1783,7 +1789,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_2of3_NativeP2WSH)
 
    signer3.setFeed(assetFeed3);
    {
-      auto lock = assetWlt_2->lockDecryptedContainer();
+      auto lock = assetWlt_2->lockDecryptedContainer({});
       signer3.sign();
 
       signerState = signer3.evaluateSignedState();
@@ -1800,7 +1806,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_2of3_NativeP2WSH)
       auto assetFeed4 = std::make_shared<ResolverFeed_AssetWalletSingle>(assetWlt_2);
       signer3.resetFeed();
       signer3.setFeed(assetFeed4);
-      auto lock = assetWlt_2->lockDecryptedContainer();
+      auto lock = assetWlt_2->lockDecryptedContainer({});
       signer3.sign();
    }
 
@@ -1863,6 +1869,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -2081,7 +2088,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs)
    signer4.setFeed(assetFeed2);
 
    {
-      auto lock = assetWlt_1->lockDecryptedContainer();
+      auto lock = assetWlt_1->lockDecryptedContainer({});
       signer4.sign();
    }
 
@@ -2094,7 +2101,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs)
    signer5.setFeed(assetFeed3);
 
    {
-      auto lock = assetWlt_2->lockDecryptedContainer();
+      auto lock = assetWlt_2->lockDecryptedContainer({});
       signer5.sign();
    }
 
@@ -2131,6 +2138,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_Strings)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -2348,7 +2356,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_Strings)
    signer4.setFeed(assetFeed2);
 
    {
-      auto lock = assetWlt_1->lockDecryptedContainer();
+      auto lock = assetWlt_1->lockDecryptedContainer({});
       signer4.sign();
    }
 
@@ -2361,7 +2369,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_Strings)
    signer5.setFeed(assetFeed3);
 
    {
-      auto lock = assetWlt_2->lockDecryptedContainer();
+      auto lock = assetWlt_2->lockDecryptedContainer({});
       signer5.sign();
    }
 
@@ -2398,6 +2406,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_StringsLegacy)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -2632,7 +2641,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_StringsLegacy)
    signer4.setFeed(assetFeed2);
 
    {
-      auto lock = assetWlt_1->lockDecryptedContainer();
+      auto lock = assetWlt_1->lockDecryptedContainer({});
       signer4.sign();
    }
 
@@ -2645,7 +2654,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_DifferentInputs_StringsLegacy)
    signer5.setFeed(assetFeed3);
 
    {
-      auto lock = assetWlt_2->lockDecryptedContainer();
+      auto lock = assetWlt_2->lockDecryptedContainer({});
       signer5.sign();
    }
 
@@ -2682,6 +2691,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -2901,7 +2911,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning)
 
    signer4.deserializeState(serializedSignerState);
    {
-      auto lock = assetWlt_1->lockDecryptedContainer();
+      auto lock = assetWlt_1->lockDecryptedContainer({});
       signer4.sign();
    }
 
@@ -2926,7 +2936,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning)
    signer5.setFeed(assetFeed3);
 
    {
-      auto lock = assetWlt_2->lockDecryptedContainer();
+      auto lock = assetWlt_2->lockDecryptedContainer({});
       signer5.sign();
    }
 
@@ -2979,6 +2989,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -3238,7 +3249,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx)
 
    signer4.deserializeState(serializedSignerState);
    {
-      auto lock = assetWlt_1->lockDecryptedContainer();
+      auto lock = assetWlt_1->lockDecryptedContainer({});
       signer4.sign();
    }
 
@@ -3261,7 +3272,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx)
    //finally set the feed
    signer5.setFeed(assetFeed3);
    {
-      auto lock = assetWlt_2->lockDecryptedContainer();
+      auto lock = assetWlt_2->lockDecryptedContainer({});
       signer5.sign();
    }
 
@@ -3318,6 +3329,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx_Neste
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -3590,7 +3602,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx_Neste
 
    {
       signer4.setFeed(assetFeed2);
-      auto lock = assetWlt_1->lockDecryptedContainer();
+      auto lock = assetWlt_1->lockDecryptedContainer({});
       signer4.sign();
    }
 
@@ -3651,7 +3663,7 @@ TEST_F(SignerTest, SpendTest_MultipleSigners_ParallelSigning_GetUnsignedTx_Neste
    //finally set the feed
    signer5.setFeed(assetFeed3);
    {
-      auto lock = assetWlt_2->lockDecryptedContainer();
+      auto lock = assetWlt_2->lockDecryptedContainer({});
       signer5.sign();
    }
 
@@ -3710,6 +3722,7 @@ TEST_F(SignerTest, GetUnsignedTxId)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -3975,7 +3988,7 @@ TEST_F(SignerTest, GetUnsignedTxId)
       Tx tx(unsignedTx);
       EXPECT_EQ(tx.getLockTime(), locktime);
 
-      auto lock = assetWlt_1->lockDecryptedContainer();
+      auto lock = assetWlt_1->lockDecryptedContainer({});
       signer4.sign();
    }
 
@@ -4044,7 +4057,7 @@ TEST_F(SignerTest, GetUnsignedTxId)
    EXPECT_FALSE(signer5.verify());
 
    {
-      auto lock = assetWlt_2->lockDecryptedContainer();
+      auto lock = assetWlt_2->lockDecryptedContainer({});
       signer5.sign();
    }
 
@@ -4062,6 +4075,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -4091,15 +4105,20 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH)
    //add p2sh-p2wpkh account
    std::vector<unsigned> derPath = { 0x800061a5, 0x80000000 };
 
-   auto mainAccType =
-      assetWlt->makeNewBip32AccTypeObject(derPath);
-   mainAccType->setMain(true);
-   mainAccType->setAddressLookup(3);
-   mainAccType->setDefaultAddressType(
-      AddressEntryType(AddressEntryType::P2SH | AddressEntryType::P2WPKH));
-   mainAccType->addAddressType(
-      AddressEntryType(AddressEntryType::P2SH | AddressEntryType::P2WPKH));
-   auto accountID = assetWlt->createBIP32Account(mainAccType);
+   Wallets::AddressAccountId accountID;
+   {
+      auto mainAccType =
+         assetWlt->makeNewBip32AccTypeObject(derPath);
+      mainAccType->setMain(true);
+      mainAccType->setAddressLookup(3);
+      mainAccType->setDefaultAddressType(
+         AddressEntryType(AddressEntryType::P2SH | AddressEntryType::P2WPKH));
+      mainAccType->addAddressType(
+         AddressEntryType(AddressEntryType::P2SH | AddressEntryType::P2WPKH));
+
+      auto lock = assetWlt->lockDecryptedContainer({});
+      accountID = assetWlt->createBIP32Account(mainAccType);
+   }
 
    //// register with db ////
    std::vector<BinaryData> addrVec;
@@ -4267,7 +4286,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH)
 
       //sign, verify & broadcast
       {
-         auto lock = assetWlt->lockDecryptedContainer();
+         auto lock = assetWlt->lockDecryptedContainer({});
          signer3.setFeed(assetFeed);
          signer3.sign();
       }
@@ -4301,6 +4320,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromWOCopy)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -4334,22 +4354,25 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromWOCopy)
       auto assetWlt = Wallets::AssetWallet_Single::createFromSeed(move(seed), params);
 
       //add p2sh-p2wpkh account
-      std::vector<unsigned> derPath = { 0x800061a5, 0x80000000 };
-      auto mainAccType =
-         assetWlt->makeNewBip32AccTypeObject(derPath);
-      mainAccType->setMain(true);
-      mainAccType->setAddressLookup(3);
-      mainAccType->setDefaultAddressType(
-         AddressEntryType(AddressEntryType::P2SH | AddressEntryType::P2WPKH));
-      mainAccType->addAddressType(
-         AddressEntryType(AddressEntryType::P2SH | AddressEntryType::P2WPKH));
+      {
+         std::vector<unsigned> derPath = { 0x800061a5, 0x80000000 };
+         auto mainAccType =
+            assetWlt->makeNewBip32AccTypeObject(derPath);
+         mainAccType->setMain(true);
+         mainAccType->setAddressLookup(3);
+         mainAccType->setDefaultAddressType(
+            AddressEntryType(AddressEntryType::P2SH | AddressEntryType::P2WPKH));
+         mainAccType->addAddressType(
+            AddressEntryType(AddressEntryType::P2SH | AddressEntryType::P2WPKH));
 
-         std::set<unsigned> nodes = { 0, 1 };
-      mainAccType->setNodes(nodes);
-      mainAccType->setOuterAccountID(*nodes.begin());
-      mainAccType->setInnerAccountID(*nodes.rbegin());
+            std::set<unsigned> nodes = { 0, 1 };
+         mainAccType->setNodes(nodes);
+         mainAccType->setOuterAccountID(*nodes.begin());
+         mainAccType->setInnerAccountID(*nodes.rbegin());
 
-      auto accountID = assetWlt->createBIP32Account(mainAccType);
+         auto lock = assetWlt->lockDecryptedContainer({});
+         assetWlt->createBIP32Account(mainAccType);
+      }
 
       //make a WO copy
       wltPath = assetWlt->getDbFilename();
@@ -4542,7 +4565,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromWOCopy)
 
       //sign, verify & broadcast
       {
-         auto lock = emptyWlt->lockDecryptedContainer();
+         auto lock = emptyWlt->lockDecryptedContainer({});
          signer3.setFeed(assetFeed);
          signer3.sign();
       }
@@ -4576,6 +4599,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromXPub)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -4795,7 +4819,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2WPKH_WOResolution_fromXPub)
 
       //sign, verify & broadcast
       {
-         auto lock = emptyWlt->lockDecryptedContainer();
+         auto lock = emptyWlt->lockDecryptedContainer({});
          signer3.setFeed(assetFeed);
          signer3.sign();
       }
@@ -4829,6 +4853,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2PK)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -5009,7 +5034,7 @@ TEST_F(SignerTest, Wallet_SpendTest_Nested_P2PK)
 
       //sign, verify & broadcast
       {
-         auto lock = assetWlt->lockDecryptedContainer();
+         auto lock = assetWlt->lockDecryptedContainer({});
          signer2.setFeed(assetFeed);
          signer2.sign();
       }
@@ -5041,6 +5066,7 @@ TEST_F(SignerTest, SpendTest_FromAccount_Reload)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -5071,7 +5097,7 @@ TEST_F(SignerTest, SpendTest_FromAccount_Reload)
          assetWlt->getRoot());
       ASSERT_NE(root, nullptr);
 
-      auto lock = assetWlt->lockDecryptedContainer();
+      auto lock = assetWlt->lockDecryptedContainer({});
       auto accTypePtr = Accounts::AccountType_BIP32::makeFromDerPaths(
          root->getSeedFingerprint(true), {{0x80000000, 0x80000000, 0, 1}});
       accTypePtr->setAddressLookup(5);
@@ -5254,7 +5280,7 @@ TEST_F(SignerTest, SpendTest_FromAccount_Reload)
 
       //sign, verify & broadcast
       {
-         auto&& lock = assetWlt->lockDecryptedContainer();
+         auto&& lock = assetWlt->lockDecryptedContainer({});
          signer2.setFeed(assetFeed);
          signer2.sign();
       }
@@ -5352,7 +5378,7 @@ TEST_F(SignerTest, SpendTest_FromAccount_Reload)
 
       //sign, verify & broadcast
       {
-         auto&& lock = assetWlt->lockDecryptedContainer();
+         auto&& lock = assetWlt->lockDecryptedContainer({});
          signer3.setFeed(assetFeed);
          signer3.sign();
       }
@@ -5386,6 +5412,7 @@ TEST_F(SignerTest, SpendTest_BIP32_Accounts)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -5427,24 +5454,28 @@ TEST_F(SignerTest, SpendTest_BIP32_Accounts)
    saltedAccType->addAddressType(
       AddressEntryType(AddressEntryType::P2SH | AddressEntryType::P2WPKH));
 
-   auto passphraseLbd = [&passphrase]
-      (const std::set<Wallets::EncryptionKeyId>&)->Passphrase::Result
+
+   Wallets::AddressAccountId accountID1, accountID2;
    {
-      return { passphrase, true };
-   };
-   assetWlt->setPassphrasePromptLambda(passphraseLbd);
+      auto passphraseLbd = [&passphrase]
+      (const std::set<Wallets::EncryptionKeyId>&)->Passphrase::Result
+      {
+         return { passphrase, true };
+      };
+      auto lock = assetWlt->lockDecryptedContainer(passphraseLbd);
 
-   auto accountID1 = assetWlt->createBIP32Account(saltedAccType);
+      //salted account
+      accountID1 = assetWlt->createBIP32Account(saltedAccType);
 
-   //regular account
-   std::vector<unsigned> derPath2 = { 0x80000099, 0x80000001 };
-   auto mainAccType = assetWlt->makeNewBip32AccTypeObject(derPath2);
-   mainAccType->setAddressLookup(5);
-   mainAccType->setDefaultAddressType(
-      AddressEntryType::P2WPKH);
-   mainAccType->addAddressType(AddressEntryType::P2WPKH);
-   auto accountID2 = assetWlt->createBIP32Account(mainAccType);
-   assetWlt->resetPassphrasePromptLambda();
+      //regular account
+      std::vector<unsigned> derPath2 = { 0x80000099, 0x80000001 };
+      auto mainAccType = assetWlt->makeNewBip32AccTypeObject(derPath2);
+      mainAccType->setAddressLookup(5);
+      mainAccType->setDefaultAddressType(
+         AddressEntryType::P2WPKH);
+      mainAccType->addAddressType(AddressEntryType::P2WPKH);
+      accountID2 = assetWlt->createBIP32Account(mainAccType);
+   }
 
    //register with db
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
@@ -5609,8 +5640,7 @@ TEST_F(SignerTest, SpendTest_BIP32_Accounts)
             return { passphrase, true };
          };
 
-         assetWlt->setPassphrasePromptLambda(passlbd);
-         auto lock = assetWlt->lockDecryptedContainer();
+         auto lock = assetWlt->lockDecryptedContainer(passlbd);
          signer.setFeed(feed);
          signer.sign();
       }
@@ -5644,6 +5674,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Armory135)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -5838,8 +5869,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Armory135)
             return { passphrase, true };
          };
 
-         assetWlt->setPassphrasePromptLambda(passlbd);
-         auto lock = assetWlt->lockDecryptedContainer();
+         auto lock = assetWlt->lockDecryptedContainer(passlbd);
          signer.setFeed(feed);
          signer.sign();
       }
@@ -5872,6 +5902,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_BIP32)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -6067,8 +6098,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_BIP32)
             return { passphrase, true };
          };
 
-         assetWlt->setPassphrasePromptLambda(passlbd);
-         auto lock = assetWlt->lockDecryptedContainer();
+         auto lock = assetWlt->lockDecryptedContainer(passlbd);
          signer.setFeed(feed);
          signer.sign();
       }
@@ -6101,6 +6131,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Salted)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -6141,16 +6172,18 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Salted)
    saltedAccType->addAddressType(AddressEntryType::P2WPKH);
    saltedAccType->setMain(true);
 
-   auto passphraseLbd = [&passphrase]
-      (const std::set<Wallets::EncryptionKeyId>&)->Passphrase::Result
+   Wallets::AddressAccountId accountID;
    {
-      return { passphrase, true };
-   };
-   assetWlt->setPassphrasePromptLambda(passphraseLbd);
+      auto passphraseLbd = [&passphrase]
+         (const std::set<Wallets::EncryptionKeyId>&)->Passphrase::Result
+      {
+         return { passphrase, true };
+      };
+      auto lock = assetWlt->lockDecryptedContainer(passphraseLbd);
 
-   //add salted account
-   auto accountID = assetWlt->createBIP32Account(saltedAccType);
-   assetWlt->resetPassphrasePromptLambda();
+      //add salted account
+      accountID = assetWlt->createBIP32Account(saltedAccType);
+   }
 
    //register with db
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
@@ -6320,8 +6353,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_Salted)
             return { passphrase, true };
          };
 
-         assetWlt->setPassphrasePromptLambda(passlbd);
-         auto lock = assetWlt->lockDecryptedContainer();
+         auto lock = assetWlt->lockDecryptedContainer(passlbd);
          signer.setFeed(feed);
          signer.sign();
       }
@@ -6360,6 +6392,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_ECDH)
 
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -6393,16 +6426,17 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_ECDH)
    ecdhAccType->addAddressType(AddressEntryType::P2WPKH);
    ecdhAccType->setMain(true);
 
-   auto passphraseLbd = [&passphrase]
-      (const std::set<Wallets::EncryptionKeyId>&)->Passphrase::Result
-   {
-      return { passphrase, true };
-   };
-
    //add salted account
-   assetWlt->setPassphrasePromptLambda(passphraseLbd);
-   auto addrAccountObj = assetWlt->createAccount(ecdhAccType, nullptr);
-   assetWlt->resetPassphrasePromptLambda();
+   std::shared_ptr<Accounts::AddressAccount> addrAccountObj;
+   {
+      auto passphraseLbd = [&passphrase]
+         (const std::set<Wallets::EncryptionKeyId>&)->Passphrase::Result
+      {
+         return { passphrase, true };
+      };
+      auto lock = assetWlt->lockDecryptedContainer(passphraseLbd);
+      addrAccountObj = assetWlt->createAccount(ecdhAccType, nullptr);
+   }
 
    //register with db
    DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
@@ -6580,8 +6614,7 @@ TEST_F(SignerTest, SpendTest_FromExtendedAddress_ECDH)
             return { passphrase, true };
          };
 
-         assetWlt->setPassphrasePromptLambda(passlbd);
-         auto lock = assetWlt->lockDecryptedContainer();
+         auto lock = assetWlt->lockDecryptedContainer(passlbd);
          signer.setFeed(feed);
          signer.sign();
       }
@@ -6614,6 +6647,7 @@ TEST_F(SignerTest, SpendTest_InjectSignature)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -6865,7 +6899,7 @@ TEST_F(SignerTest, SpendTest_InjectSignature)
 
       //sign & verify
       {
-         auto lock = assetWlt->lockDecryptedContainer();
+         auto lock = assetWlt->lockDecryptedContainer({});
          signer2.setFeed(assetFeed);
          signer2.sign();
       }
@@ -6959,6 +6993,7 @@ TEST_F(SignerTest, SpendTest_InjectSignature_Multisig)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
    auto bdm = theBDMt_->bdm();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -7190,7 +7225,7 @@ TEST_F(SignerTest, SpendTest_InjectSignature_Multisig)
    }
 
    {
-      auto lock = assetWlt_1->lockDecryptedContainer();
+      auto lock = assetWlt_1->lockDecryptedContainer({});
       signer2.sign();
    }
 
@@ -7234,7 +7269,7 @@ TEST_F(SignerTest, SpendTest_InjectSignature_Multisig)
    signer3.setFeed(assetFeed3);
 
    {
-      auto lock = assetWlt_2->lockDecryptedContainer();
+      auto lock = assetWlt_2->lockDecryptedContainer({});
       signer3.sign();
 
       signerState = signer3.evaluateSignedState();
@@ -7251,7 +7286,7 @@ TEST_F(SignerTest, SpendTest_InjectSignature_Multisig)
       auto assetFeed4 = std::make_shared<ResolverFeed_AssetWalletSingle>(assetWlt_2);
       signer3.resetFeed();
       signer3.setFeed(assetFeed4);
-      auto lock = assetWlt_2->lockDecryptedContainer();
+      auto lock = assetWlt_2->lockDecryptedContainer({});
       signer3.sign();
    }
 
@@ -8990,7 +9025,7 @@ TEST_F(ExtrasTest, PSBT)
          auto wltFeed = std::make_shared<ResolverFeed_AssetWalletSingle>(wallet);
          signer5.setFeed(wltFeed);
 
-         auto lock = wallet->lockDecryptedContainer();
+         auto lock = wallet->lockDecryptedContainer({});
          signer5.sign();
          EXPECT_EQ(signer5.toPSBT(), psbtTestVal);
       }

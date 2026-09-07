@@ -206,4 +206,5 @@ protected:
       const std::vector<std::string>&, bool) = 0;
    virtual std::shared_ptr<Armory::Blockchain> blockchain(void) const = 0;
    virtual bool bdmIsRunning(void) const = 0;
+   virtual bool bdmIsReady(void) const = 0;
 };

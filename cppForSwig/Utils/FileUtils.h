@@ -67,7 +67,7 @@ namespace Armory
       ////
       bool pathExists(const std::filesystem::path&, int);
       bool isFile(const std::filesystem::path&);
-      bool isDir(const std::filesystem::path&);
+      bool isDir(const std::filesystem::path&, int);
       size_t getFileSize(const std::filesystem::path&);
 
       //core blk file naming pattern

@@ -389,7 +389,7 @@ std::string AccountType_BIP32::name() const
    auto coinNode = *nodesIter++;
    auto lastNode = *nodesIter;
    const auto coinType = Armory::Config::BitcoinSettings::getCoinType();
-   if (coinNode.value != coinType || lastNode.value != 0x80000000) {
+   if (coinNode.value != coinType || !(lastNode.value & 0x80000000)) {
       return std::string{"BIP32"};
    }
    switch (baseNode.value)

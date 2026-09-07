@@ -6,8 +6,7 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifndef _H_DECRYPTED_DATA_CONTAINER
-#define _H_DECRYPTED_DATA_CONTAINER
+#pragma once
 
 #include <functional>
 #include <map>
@@ -56,29 +55,23 @@ namespace Armory
             std::unique_ptr<IO::DBIfaceTransaction>(const std::string&)>;
 
          ////
-         class DecryptedDataContainer : public Lockable
+         class DecryptedDataContainer
          {
          private:
-            struct DecryptedDataMaps
+            struct DecryptedDataMaps : public Lockable
             {
                std::map<EncryptionKeyId,
-                  std::unique_ptr<ClearTextEncryptionKey>> encryptionKeys_;
-
+                  std::unique_ptr<ClearTextEncryptionKey>> encryptionKeys;
                std::map<AssetId,
-                  std::unique_ptr<ClearTextAssetData>> assetData_;
+                  std::unique_ptr<ClearTextAssetData>> clearTextAssets;
+               Passphrase::UnlockFunc getPassphraseFunc = nullptr;
+
+               void initAfterLock(void) override;
+               void cleanUpBeforeUnlock(void) override;
             };
 
          private:
-            std::unique_ptr<DecryptedDataMaps> lockedDecryptedData_ = nullptr;
-
-            struct OtherLockedContainer
-            {
-               std::shared_ptr<DecryptedDataContainer> container_;
-               std::shared_ptr<ReentrantLock> lock_;
-
-               OtherLockedContainer(std::shared_ptr<DecryptedDataContainer>);
-            };
-            std::vector<OtherLockedContainer> otherLocks_ = {};
+            DecryptedDataMaps decryptedData_;
 
          public:
             const WriteTxFuncType getWriteTx_;
@@ -108,9 +101,6 @@ namespace Armory
                std::shared_ptr<EncryptionKey>> encryptedKeys_;
 
          private:
-            Passphrase::UnlockFunc getPassphraseLambda_;
-
-         private:
             std::unique_ptr<ClearTextEncryptionKey> deriveEncryptionKey(
                std::unique_ptr<ClearTextEncryptionKey>, const KdfId&) const;
             std::unique_ptr<ClearTextEncryptionKey> promptPassphrase(
@@ -120,17 +110,13 @@ namespace Armory
             std::pair<EncryptionKeyId, EncryptionKeyId> populateEncryptionKey(
                const std::map<EncryptionKeyId, KdfId>&);
 
-            void initAfterLock(void) override;
-            void cleanUpBeforeUnlock(void) override;
-
          public:
             DecryptedDataContainer(
-               const WriteTxFuncType& getWriteTx,
-               const std::string dbName,
-               const SecureBinaryData& defaultEncryptionKey,
-               const EncryptionKeyId& defaultEncryptionKeyId,
-               const KdfId& defaultKdfId,
-               const EncryptionKeyId& masterKeyId);
+               const WriteTxFuncType&, const std::string,
+               const SecureBinaryData&, const EncryptionKeyId&,
+               const KdfId&, const EncryptionKeyId&);
+
+            SingleLock lockContainer(const Passphrase::UnlockFunc&);
 
             const SecureBinaryData& getClearTextAssetData(
                const std::shared_ptr<EncryptedAssetData>& data);
@@ -161,22 +147,17 @@ namespace Armory
             void deleteFromDisk(std::shared_ptr<IO::DBIfaceTransaction>,
                const BinaryData&);
 
-            void setPassphrasePromptLambda(const Passphrase::UnlockFunc&);
-            void resetPassphraseLambda(void);
+            void encryptEncryptionKey(const EncryptionKeyId&,
+               const Passphrase::UnlockFunc&, Passphrase::SetNew&, bool=true);
+            void eraseEncryptionKey(const EncryptionKeyId&, const KdfId&,
+               const Passphrase::UnlockFunc&);
 
-            void encryptEncryptionKey(
-               const EncryptionKeyId&, Passphrase::SetNew&, bool replace=true);
-            void eraseEncryptionKey(const EncryptionKeyId&, const KdfId&);
-
-            void lockOther(std::shared_ptr<DecryptedDataContainer> other);
             const KdfId& getDefaultKdfId(void) const;
             std::shared_ptr<KeyDerivationFunction> getMasterKdf(void) const;
             bool isMasterKeyEncrypted(void) const;
             const EncryptionKeyId& getMasterEncryptionKeyId(void) const;
             const EncryptionKeyId& getDefaultEncryptionKeyId(void) const;
          };
-      }; //namespace Encryption
-   }; //namespace Wallets
-}; //namespace Armory
-
-#endif
+      } //namespace Encryption
+   } //namespace Wallets
+} //namespace Armory

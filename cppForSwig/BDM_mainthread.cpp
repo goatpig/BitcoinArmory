@@ -90,12 +90,18 @@ void BlockDataManagerThread::join()
 void BlockDataManagerThread::run()
 try {
    const auto bdm = this->bdm();
-   if (bdm->hasException()) {
+   try {
+      if (bdm->hasException()) {
+         std::rethrow_exception(bdm->getException());
+      }
+      bdm->openDatabase();
+   } catch (const std::exception& e) {
+      LOGERR << "error during bdm init: " << e.what();
       return;
    }
 
    std::promise<bool> isReadyPromise;
-   bdm->isReadyFuture_ = isReadyPromise.get_future();
+   bdm->isReadyFuture = isReadyPromise.get_future();
 
    auto updateNodeStatusLambda = [bdm]()->void
    {
@@ -103,7 +109,7 @@ try {
          auto nodeStatus = bdm->getNodeStatus();
          auto notifPtr = std::make_unique<BDV_Notification_NodeStatus>(
             std::move(nodeStatus));
-         bdm->notificationStack_.push_back(std::move(notifPtr));
+         bdm->notificationStack.push_back(std::move(notifPtr));
       } catch (const std::exception& e) {
          LOGERR << "Can't get node status: " << e.what();
       }
@@ -111,12 +117,16 @@ try {
 
    //connect to node as async, no need to wait for a succesful connection
    //to init the DB
-   bdm->processNode_->connectToNode(true);
-   bdm->watchNode_->connectToNode(true);
+   bdm->processNode->connectToNode(true);
+   bdm->watchNode->connectToNode(true);
 
    //if RPC is running, wait on node init
    try {
-      bdm->nodeRPC_->waitOnChainSync(updateNodeStatusLambda);
+      LOGINFO << "Waiting on node sync";
+      bdm->nodeRPC->waitOnChainSync(
+         updateNodeStatusLambda,
+         DBSettings::automatedNode()
+      );
    } catch (const std::exception& e) {
       LOGINFO << "Error occured while querying the RPC for sync status";
       LOGINFO << "Message: " << e.what();
@@ -130,8 +140,19 @@ try {
          phase, prog, time, numericProgress,
          std::vector<std::string>{}
       );
-      bdm->notificationStack_.push_back(std::move(notifPtr));
+      bdm->notificationStack.push_back(std::move(notifPtr));
    };
+
+   if (NetworkSettings::ephemeralPeers()) {
+      //this is an automated db instance, wait on the master's signal
+      //to start the db scan
+      LOGINFO << "waiting on start signal from master";
+      if (!bdm->waitOnStartSignal()) {
+         LOGINFO << "master signaled to shutdown";
+         return;
+      }
+      LOGINFO << "master signaled to start scanning";
+   }
 
    if (!bdm->doInitialSyncOnLoad(pimpl->mode, loadProgress)) {
       //db init failed, exit
@@ -139,7 +160,9 @@ try {
    }
 
    if (!DBSettings::checkChain()) {
-      bdm->enableZeroConf(DBSettings::clearMempool());
+      if (DBSettings::enableZC()) {
+         bdm->enableZeroConf(DBSettings::clearMempool());
+      }
    }
    isReadyPromise.set_value(true);
 
@@ -153,15 +176,18 @@ try {
       auto reorgState = bdm->readBlkFileUpdate();
       if (reorgState.hasNewTop) {
          //purge zc container
-         auto purgeFuture = bdm->zeroConfCont_->pushNewBlockNotification(
-            reorgState);
-         auto purgePacket = purgeFuture.get();
+         std::shared_ptr<Armory::ZeroConf::ZcPurgePacket> purgePacket = nullptr;
+         if (DBSettings::enableZC()) {
+            auto purgeFuture = bdm->zeroConfCont()->pushNewBlockNotification(
+               reorgState);
+            purgePacket = purgeFuture.get();
+         }
 
          //notify bdvs
          auto notifPtr = std::make_unique<BDV_Notification_NewBlock>(
             std::move(reorgState), purgePacket);
          bdm->triggerOneTimeHooks(notifPtr.get());
-         bdm->notificationStack_.push_back(std::move(notifPtr));
+         bdm->notificationStack.push_back(std::move(notifPtr));
 
          std::stringstream ss;
          ss << "found new top!" << std::endl;
@@ -171,10 +197,10 @@ try {
       }
    };
 
-   bdm->processNode_->registerNodeStatusCallback(updateNodeStatusLambda);
-   bdm->nodeRPC_->registerNodeStatusLambda(updateNodeStatusLambda);
+   bdm->processNode->registerNodeStatusCallback(updateNodeStatusLambda);
+   bdm->nodeRPC->registerNodeStatusLambda(updateNodeStatusLambda);
 
-   auto newBlockStack = bdm->processNode_->getInvBlockStack();
+   auto newBlockStack = bdm->processNode->getInvBlockStack();
    while (pimpl->run) {
       try {
          //wait on a new block InvEntry, blocking is on

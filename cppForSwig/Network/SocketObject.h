@@ -52,12 +52,18 @@ namespace Armory
          Socket_ReadPayload(unsigned);
       };
 
-      struct Socket_WritePayload
+      class Socket_WritePayload
       {
-      public:
-         unsigned id_;
+      private:
+         static std::atomic_uint32_t idCounter_;
 
       public:
+         const uint32_t id;
+
+      public:
+         Socket_WritePayload(void);
+         Socket_WritePayload(uint32_t);
+
          virtual ~Socket_WritePayload(void) = 0;
          virtual void serialize(std::vector<uint8_t>&) = 0;
          virtual std::string serializeToText(void) = 0;

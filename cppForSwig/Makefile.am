@@ -83,7 +83,7 @@ CPPBRIDGE_SOURCE_FILES = BridgeAPI/CppBridge.cpp \
 	BridgeAPI/Wallets/Manager.cpp \
 	BridgeAPI/Wallets/Notifications.cpp \
 	BridgeAPI/Wallets/TxIOCache.cpp \
-	BridgeAPI/BlockchainDbClient.cpp \
+	BridgeAPI/DBSetup.cpp \
 	Ledgers/Context.cpp Ledgers/LedgerEntry.cpp
 
 LIBTREZORCRYPTO_SOURCE_FILES = $(LIBBTC_LIBDIR)/src/trezor-crypto/bip39.c \
@@ -95,8 +95,8 @@ LIBTREZORCRYPTO_SOURCE_FILES = $(LIBBTC_LIBDIR)/src/trezor-crypto/bip39.c \
 ARMORYUTILS_SOURCE_FILES = Utils/ArmoryConfig.cpp \
 	Utils/BinaryData.cpp \
 	Utils/Types.cpp \
-	Utils/BIP15x_Handshake.cpp \
 	Utils/BIP150_151.cpp \
+	Utils/BIP15x_Handshake.cpp \
 	Utils/BitcoinSettings.cpp \
 	Utils/OpCodes.cpp \
 	Utils/BCTX.cpp \

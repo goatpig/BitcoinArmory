@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2019-2025, goatpig                                          //
+//  Copyright (C) 2019-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -152,14 +152,13 @@ namespace Armory
             unsigned dbCount_ = 0;
 
             std::unique_ptr<Encryption::DecryptedDataContainer> decryptedData_;
-            std::unique_ptr<ReentrantLock> controlLock_;
             std::unique_ptr<Armory::Seeds::EncryptedSeed> controlSeed_;
 
             unsigned encryptionVersion_ = UINT32_MAX;
 
          private:
             //control objects loading
-            std::shared_ptr<WalletHeader> loadControlHeader();
+            std::shared_ptr<WalletHeader> loadControlHeader(void);
             void loadDataContainer(std::shared_ptr<WalletHeader>);
             void loadSeed(std::shared_ptr<WalletHeader>);
             void loadHeaders(void);
@@ -218,14 +217,13 @@ namespace Armory
                const std::string_view&);
 
             //utils
-            void lockControlContainer(const Passphrase::UnlockFunc&);
-            void unlockControlContainer(void);
+            SingleLock lockControlContainer(const Passphrase::UnlockFunc&);
 
             void changeControlPassphrase(
                Passphrase::SetNew&,
                const Passphrase::UnlockFunc&);
             void eraseControlPassphrase(const Passphrase::UnlockFunc&);
          };
-      }; //namespace IO
-   }; //namespace Wallets
-}; //namespace Armory
+      } //namespace IO
+   } //namespace Wallets
+} //namespace Armory

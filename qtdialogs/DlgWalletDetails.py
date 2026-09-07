@@ -12,7 +12,8 @@
 
 from qtpy import QtCore, QtWidgets
 
-from armoryengine.ArmoryUtils import getVersionString, coin2str, isASCII
+from armoryengine.ArmoryUtils import getVersionString, coin2str, isASCII, \
+   getNameForAddrType
 from armoryengine.AddressUtils import addrStr_to_hash160
 from armoryengine.BDM import TheBDM, BDM_UNINITIALIZED, BDM_OFFLINE, \
    BDM_SCANNING
@@ -537,21 +538,8 @@ class DlgWalletDetails(ArmoryDialog):
          pass  # not sure that I don't handle everything in the dialog itself
 
    def execKeyList(self):
-      if self.wlt.useEncryption and self.wlt.isLocked:
-         dlg = DlgUnlockWallet(self.wlt, self, self.main, self.tr('Unlock Private Keys'))
-         if not dlg.exec_():
-            if self.main.usermode == USERMODE.Expert:
-               QtWidgets.QMessageBox.warning(self, self.tr('Unlock Failed'), self.tr(
-                  'Wallet was not unlocked.  The public keys and addresses '
-                  'will still be shown, but private keys will not be available '
-                  'unless you reopen the dialog with the correct passphrase'),
-                  QtWidgets.QMessageBox.Ok)
-            else:
-               QtWidgets.QMessageBox.warning(self, self.tr('Unlock Failed'), self.tr(
-                  'Wallet could not be unlocked to display individual keys.'),
-                  QtWidgets.QMessageBox.Ok)
-               return
-
+      # DlgShowKeyList drives the unlock itself through the CppBridge callback
+      # flow, so there is no need to unlock the wallet here.
       dlg = DlgShowKeyList(self.wlt, self, self.main)
       dlg.exec_()
 
@@ -623,7 +611,7 @@ class DlgWalletDetails(ArmoryDialog):
          if mem >= 1024 * 1024:
             kdfmemstr = str(mem / (1024 * 1024)) + ' MB'
 
-      tooltips = [[]] * 10
+      tooltips = [[]] * 13
       tooltips[WLTFIELDS.Name] = createToolTipWidget(self.tr(
             'This is the name stored with the wallet file.  Click on the '
             '"Change Labels" button on the right side of this '
@@ -693,7 +681,18 @@ class DlgWalletDetails(ArmoryDialog):
             'different wallet versions.  Not all functionality may be '
             'available with all wallet versions.  Creating a new wallet will '
             'always create the latest version.'))
-      labelNames = [[]] * 10
+
+      tooltips[WLTFIELDS.AccountName] = createToolTipWidget(self.tr(
+            'The account within this wallet file (for example BIP44, BIP49, '
+            'BIP84, or Armory Legacy).'))
+
+      tooltips[WLTFIELDS.AddressTypes] = createToolTipWidget(self.tr(
+            'Address types that this account can generate.'))
+
+      tooltips[WLTFIELDS.DefaultAddrType] = createToolTipWidget(self.tr(
+            'The default address type used when creating new addresses.'))
+
+      labelNames = [[]] * 13
       labelNames[WLTFIELDS.Name] = QtWidgets.QLabel(self.tr('Wallet Name:'))
       labelNames[WLTFIELDS.Descr] = QtWidgets.QLabel(self.tr('Description:'))
 
@@ -704,15 +703,32 @@ class DlgWalletDetails(ArmoryDialog):
 
       labelNames[WLTFIELDS.BelongsTo] = QtWidgets.QLabel(self.tr('Belongs to:'))
 
+      labelNames[WLTFIELDS.AccountName] = QtWidgets.QLabel(self.tr('Account:'))
+      labelNames[WLTFIELDS.AddressTypes] = QtWidgets.QLabel(
+         self.tr('Eligible address type:'))
+      labelNames[WLTFIELDS.DefaultAddrType] = QtWidgets.QLabel(
+         self.tr('Default address types:'))
+
       # TODO:  Add wallet path/location to this!
 
       if dispCrypto:
          labelNames[WLTFIELDS.Time] = QtWidgets.QLabel(self.tr('Unlock Time:'))
          labelNames[WLTFIELDS.Mem] = QtWidgets.QLabel(self.tr('Unlock Memory:'))
 
-      self.labelValues = [[]] * 10
+      self.labelValues = [[]] * 13
       self.labelValues[WLTFIELDS.Name] = QtWidgets.QLabel(self.wlt.labelName)
       self.labelValues[WLTFIELDS.Descr] = QtWidgets.QLabel(self.wlt.labelDescr)
+
+      acctDisp = getattr(self.wlt, 'accountName', '') or \
+         getattr(self.wlt, 'accountId', '') or ''
+      addrTypesDisp = ', '.join(
+         getNameForAddrType(t) for t in self.wlt.getAddressTypes())
+      defaultAddrDisp = getNameForAddrType(self.wlt.getDefaultAddressType())
+
+      self.labelValues[WLTFIELDS.AccountName] = QtWidgets.QLabel(acctDisp)
+      self.labelValues[WLTFIELDS.AddressTypes] = QtWidgets.QLabel(addrTypesDisp)
+      self.labelValues[WLTFIELDS.DefaultAddrType] = QtWidgets.QLabel(
+         defaultAddrDisp)
 
       self.labelValues[WLTFIELDS.WltID] = QtWidgets.QLabel(self.wlt.walletId)
       self.labelValues[WLTFIELDS.Secure] = QtWidgets.QLabel(self.typestr)
@@ -799,6 +815,18 @@ class DlgWalletDetails(ArmoryDialog):
       layout.addWidget(tooltips[WLTFIELDS.Descr], 2, 0)
       layout.addWidget(labelNames[WLTFIELDS.Descr], 2, 1)
       layout.addWidget(self.labelValues[WLTFIELDS.Descr], 2, 2, 4, 1)
+
+      layout.addWidget(tooltips[WLTFIELDS.AccountName], 6, 0)
+      layout.addWidget(labelNames[WLTFIELDS.AccountName], 6, 1)
+      layout.addWidget(self.labelValues[WLTFIELDS.AccountName], 6, 2)
+
+      layout.addWidget(tooltips[WLTFIELDS.AddressTypes], 7, 0)
+      layout.addWidget(labelNames[WLTFIELDS.AddressTypes], 7, 1)
+      layout.addWidget(self.labelValues[WLTFIELDS.AddressTypes], 7, 2)
+
+      layout.addWidget(tooltips[WLTFIELDS.DefaultAddrType], 8, 0)
+      layout.addWidget(labelNames[WLTFIELDS.DefaultAddrType], 8, 1)
+      layout.addWidget(self.labelValues[WLTFIELDS.DefaultAddrType], 8, 2)
 
       layout.addWidget(tooltips[WLTFIELDS.Version], 0, 3)
       layout.addWidget(labelNames[WLTFIELDS.Version], 0, 4)

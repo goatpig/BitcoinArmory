@@ -178,6 +178,12 @@ void Callback::run(BdmNotification notif)
          break;
       }
 
+      case BDMAction_Registered:
+      {
+         notifFunc_(std::make_shared<NotifStruct_Registered>());
+         break;
+      }
+
       case BDMAction_ZC:
       {
          auto lbd = [pushLbd = notifFunc_](
@@ -409,3 +415,8 @@ bool NotifStruct_NewBlock::syncWalletState() const
 {
    return isReadyNotif;
 }
+
+////////
+NotifStruct_Registered::NotifStruct_Registered() :
+   NotifStruct(NotifType::REGISTERED)
+{}

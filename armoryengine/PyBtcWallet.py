@@ -167,6 +167,9 @@ class PyBtcWallet(object):
       self.watchingOnly = payload.watchingOnly
       self.addressTypes = payload.addressTypes
       self.defaultAddressType = payload.defaultAddressType
+      self.accountName = getattr(payload, 'accountName', '') or ''
+      self.seedTypeName = getattr(payload, 'seedTypeName', '') or ''
+      self.derivationScheme = getattr(payload, 'derivationScheme', '') or ''
       self.kdfMemoryReq = payload.kdfMemReq * (1024**2)
 
       #addrMap and chainIndexMap
@@ -658,10 +661,26 @@ class PyBtcWallet(object):
       return onlineWallet
 
    ####
-   def createBackupString(self, callback,
-      passphrase: str=None, unlockHandler: callable=None):
-      return self.bridgeWalletObj.createBackupStringForWallet(callback,
-         passphrase, unlockHandler)
+   def createBackupString(self, callback, unlockHandler=None):
+      return self.bridgeWalletObj.createBackupStringForWallet(
+         callback, unlockHandler)
+
+   ####
+   def exportKeys(self, callback, publicOnly=False, unlockHandler=None,
+      omitAccountId=False):
+      return self.bridgeWalletObj.exportKeys(
+         callback, publicOnly=publicOnly, unlockHandler=unlockHandler,
+         omitAccountId=omitAccountId)
+
+   ####
+   def exportPrivateKeys(self, callback, unlockHandler, omitAccountId=False):
+      return self.exportKeys(callback, publicOnly=False,
+         unlockHandler=unlockHandler, omitAccountId=omitAccountId)
+
+   ####
+   def exportPublicKeys(self, callback, omitAccountId=False):
+      return self.exportKeys(callback, publicOnly=True,
+         omitAccountId=omitAccountId)
 
    #############################################################################
    ## helpers
@@ -806,6 +825,10 @@ class PyBtcWallet(object):
    def getLedgerDelegateIdForScrAddr(self, scrAddr):
       return self.bridgeWalletObj.getLedgerDelegateIdForScrAddr(scrAddr)
 
+   ####
+   def hasAnyImported(self):
+      return self.bridgeWalletObj.hasImports()
+
    #############################################################################
    ## properties
    @property
@@ -832,7 +855,8 @@ class PyBtcWallet(object):
          raise Exception("missing settingsId!")
       return self._settingsId
 
-   ####
+   #############################################################################
+   ## UI strings
    def getHighestUsedIndex(self):
       """
       This only retrieves the stored value, but it may not be correct if,

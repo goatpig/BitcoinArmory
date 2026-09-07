@@ -36,13 +36,6 @@ ScrAddrFilter::ScrAddrFilter(LMDBBlockDatabase* lmdb, uint16_t sdbiKey)
 {
    scanFilterAddrMap_ = std::make_shared<Threading::TransactionalMap<
       BinaryData, std::shared_ptr<AddrAndHash>>>();
-
-   //seed SDBI if necessary
-   try {
-      getSDBI();
-   } catch (const LmdbWrapperException&) {
-      resetSDBI();
-   }
 }
 
 ScrAddrFilter::~ScrAddrFilter()
@@ -57,6 +50,13 @@ bool ScrAddrFilter::empty() const
 
 void ScrAddrFilter::start(std::shared_future<bool> bdmReadyFut)
 {
+   //seed SDBI if necessary
+   try {
+      getSDBI();
+   } catch (const LmdbWrapperException&) {
+      resetSDBI();
+   }
+
    LOGINFO << "loading known addresses";
 
    /* grab all scrAddr ids from db */
@@ -93,19 +93,17 @@ void ScrAddrFilter::start(std::shared_future<bool> bdmReadyFut)
    LOGINFO << "found " << scanFilterAddrMap_->size() << " known addresses";
 
    /* if bdm isn't ready, exhaust addr registration queue */
-   if (bdmIsRunning() == false) {
-      auto regQueue = registrationStack_.pop_all();
-      for (auto batch : regQueue) {
-         auto batchPtr = std::dynamic_pointer_cast<RegistrationBatch>(batch);
-         if (batchPtr == nullptr) {
-            //ignore unregistration batches at init time
-            continue;
-         }
-         auto result = prepareRegistrationBatch(batchPtr);
-         if (!result.empty()) {
-            throw std::runtime_error(
-               "no registration batch should lead to a scan at SCA start!");
-         }
+   auto regQueue = registrationStack_.pop_all();
+   for (auto batch : regQueue) {
+      auto batchPtr = std::dynamic_pointer_cast<RegistrationBatch>(batch);
+      if (batchPtr == nullptr) {
+         //ignore unregistration batches at init time
+         continue;
+      }
+      auto result = prepareRegistrationBatch(batchPtr);
+      if (!result.empty()) {
+         throw std::runtime_error(
+            "no registration batch should lead to a scan at SAF start!");
       }
    }
 
@@ -218,7 +216,11 @@ void ScrAddrFilter::mergeAddresses(AddrMap addrMap, bool updateMerkleRoot)
 Hash32 ScrAddrFilter::headerHashToScanFrom()
 {
    auto sdbi = getSDBI();
-   if (!merkleRoot_.valid() || !sdbi.metaHash.valid()) {
+   LOGDEBUG << "address merkle root: " << merkleRoot_.toHexStr();
+   LOGDEBUG << "in sdbi: " << sdbi.metaHash.toHexStr();
+   LOGDEBUG << "top scanned hash " << sdbi.topScannedBlkHash.toHexStr();
+
+   if (!sdbi.metaHash.valid() || merkleRoot_ != sdbi.metaHash) {
       merkleRoot_ = computeMerkleRoot();
       sdbi.metaHash = merkleRoot_;
       auto tx = lmdb_->beginTransaction(DB_SELECT::SCRADDR, LMDB::Mode::ReadWrite);
@@ -259,6 +261,8 @@ void ScrAddrFilter::updateAddressMerkle()
 
 void ScrAddrFilter::updateScannedHash(const Hash32& hash)
 {
+   LOGDEBUG << "updating top scanned hash to " << hash.toHexStr();
+
    auto tx = lmdb_->beginTransaction(DB_SELECT::SCRADDR, LMDB::Mode::ReadWrite);
    auto sdbi = getSDBI();
    sdbi.topScannedBlkHash = hash;
@@ -307,10 +311,6 @@ void ScrAddrFilter::pushAddressBatch(std::shared_ptr<AddressBatch> batch)
 
 void ScrAddrFilter::run(std::shared_future<bool> bdmReadyFut)
 {
-   if (bdmReadyFut.get() == false) {
-      return;
-   }
-
    while (true) {
       std::shared_ptr<AddressBatch> batch;
       try {
@@ -320,7 +320,6 @@ void ScrAddrFilter::run(std::shared_future<bool> bdmReadyFut)
          break;
       }
 
-
       switch (batch->type)
       {
          case AddressBatchType::Register:
@@ -328,6 +327,10 @@ void ScrAddrFilter::run(std::shared_future<bool> bdmReadyFut)
             auto batchPtr = std::dynamic_pointer_cast<RegistrationBatch>(batch);
             if (batchPtr == nullptr) {
                throw std::runtime_error("unexpected batch ptr type");
+            }
+
+            if (!bdmIsReady()) {
+               bdmReadyFut.wait();
             }
 
             //prepare the batch, it will also wrap up registration for edge case.

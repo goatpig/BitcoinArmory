@@ -97,6 +97,7 @@ namespace Armory
             bool operator<(const KeyDerivationFunction&);
 
             virtual const KdfId& getId(void) const = 0;
+            virtual std::string getDisplayName(void) const = 0;
             virtual BinaryData serialize(void) const = 0;
             static std::shared_ptr<KeyDerivationFunction>
                deserialize(const BinaryDataRef&);
@@ -129,6 +130,7 @@ namespace Armory
             bool isSimilar(const KeyDerivationFunction*) const override;
             BinaryData serialize(void) const override;
             const KdfId& getId(void) const override;
+            std::string getDisplayName(void) const override;
 
             //locals
             unsigned memTarget(void) const;
@@ -151,6 +153,7 @@ namespace Armory
             bool isSimilar(const KeyDerivationFunction*) const override;
             BinaryData serialize(void) const override;
             const KdfId& getId(void) const override;
+            std::string getDisplayName(void) const override;
          };
       } //namespace Encryption
    } //namespace Wallets

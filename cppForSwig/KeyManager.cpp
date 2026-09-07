@@ -93,6 +93,7 @@ std::map<std::string, std::string> parseArgs(int argc, char* argv[])
 ////////////////////////////////////////////////////////////////////////////////
 int processArgs(std::map<std::string, std::string> args)
 {
+#if 0
    //look for datadir
    std::string datadir("./");
    auto iter = args.find("datadir");
@@ -238,6 +239,8 @@ int processArgs(std::map<std::string, std::string> args)
    }
 
    std::cout << "no known command, aborting" << std::endl;
+   return -1;
+#endif
    return -1;
 }
 

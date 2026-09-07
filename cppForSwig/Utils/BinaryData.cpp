@@ -48,9 +48,14 @@ BinaryData::BinaryData(const BinaryData& bd)
    copyFrom(bd);
 }
 
-BinaryData::BinaryData(BinaryData&& copy)
+BinaryData::BinaryData(BinaryData&& move)
 {
-   data_ = move(copy.data_);
+   data_ = std::move(move.data_);
+}
+
+BinaryData::BinaryData(std::vector<uint8_t>&& move)
+{
+   data_ = std::move(move);
 }
 
 BinaryData::~BinaryData()
@@ -478,15 +483,11 @@ BinaryData BinaryData::CreateFromHex(const std::string& str)
 
 void BinaryData::createFromHex(const BinaryDataRef& bdr)
 {
-   if (bdr.getSize() % 2 != 0) {
-      LOGERR << "odd hexit count";
-      throw std::runtime_error("odd hexit count");
-   }
    size_t newLen = bdr.getSize() / 2;
    alloc(newLen);
 
    auto ptr = bdr.getPtr();
-   for (size_t i = 0; i<newLen; i++) {
+   for (size_t i = 0; i < newLen; i++) {
       uint8_t char1 = binLookupTable[*(ptr + 2 * i)];
       uint8_t char2 = binLookupTable[*(ptr + 2 * i + 1)];
       data_[i] = (char1 << 4) | char2;

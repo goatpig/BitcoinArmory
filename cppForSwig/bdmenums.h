@@ -5,14 +5,13 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifndef _BDM_ENUMS_H
-#define _BDM_ENUMS_H
+#pragma once
 
 #define NODE_PORT_MAINNET 8333
 #define NODE_PORT_TESTNET 18333
@@ -28,7 +27,12 @@
 
 #define BDM_FATAL_ERROR_CODE INT_MIN
 
-#include <cstdint>
+enum class BDMState : int
+{
+   Uninitialized,
+   Initializing,
+   Ready
+};
 
 enum BDMPhase
 {
@@ -46,6 +50,7 @@ enum BDMPhase
 enum BDMAction
 {
    BDMAction_Ready=1,
+   BDMAction_Registered,
    BDMAction_NewBlock,
    BDMAction_ZC,
    BDMAction_InvalidatedZC,
@@ -105,5 +110,3 @@ enum BDV_refresh
    BDV_filterChanged,
    BDV_registrationCompleted
 };
-
-#endif

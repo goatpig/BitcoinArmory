@@ -15,6 +15,7 @@
 #include <Utils/ArmoryConfig.h>
 #include <Utils/BtcUtils.h>
 #include <Utils/FileUtils.h>
+#include <Utils/Cryptography.h>
 #include <Signer/Signer.h>
 #include <Signer/ResolverFeed_Wallets.h>
 #include <Signer/CoinSelection.h>
@@ -23,6 +24,7 @@
 #include <BlockchainDatabase/txio.h>
 
 #include <Wallets/Seeds/Backups.h>
+#include <Wallets/Seeds/Seeds.h>
 #include <Wallets/IOHeader.h>
 #include <Wallets/WalletIdTypes.h>
 #include <Wallets/KDF.h>
@@ -35,9 +37,8 @@
 #include <AsyncClient.h>
 #include <TxClasses.h>
 
-#include "BlockchainDbClient.h"
+#include "DBSetup.h"
 #include "PassphrasePrompt.h"
-//#include "TerminalPassphrasePrompt.h"
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>
@@ -69,6 +70,10 @@ namespace
       auto bytes = flat.asBytes();
       return BinaryData(bytes.begin(), bytes.end());
    }
+
+   std::string chainRoleForAssetAccount(
+      const std::shared_ptr<Accounts::AddressAccount>& accPtr,
+      const Wallets::AssetAccountId& assetAccId);
 
    void addressToCapnp(WalletData::AddressData::Builder& capnAddress,
       std::shared_ptr<AddressEntry> addrPtr,
@@ -211,6 +216,10 @@ namespace
       }
       capnWallet.setDefaultAddressType(
          (uint32_t)accPtr->getDefaultAddressType());
+
+      capnWallet.setAccountName(accPtr->getDisplayName());
+      capnWallet.setSeedTypeName(wltSingle->getSeedTypeDisplayName());
+      capnWallet.setDerivationScheme(accPtr->getDerivationSchemeDisplay());
 
       //address use count
       auto assetAccountPtr = accPtr->getOuterAccount();
@@ -469,6 +478,56 @@ namespace
          return std::make_unique<Passphrase::Params>(reply.passParams);
       };
    }
+
+   std::function<void(AutomationStep)> getAutomationNotifFunc(
+      CppBridge* bridgePtr, const CallbackId& callbackId)
+   {
+      return [bridgePtr, callbackId](AutomationStep step)
+      {
+         if (callbackId.empty()) {
+            return;
+         }
+
+         capnp::MallocMessageBuilder message;
+         auto fromBridge = message.initRoot<FromBridge>();
+         auto notif = fromBridge.initNotification();
+         notif.setCallbackId(callbackId);
+
+         if (step == AutomationStep::Cleanup) {
+            notif.setCleanup();
+         } else {
+            auto automationNotif = notif.initAutomation();
+            switch (step)
+            {
+               case AutomationStep::SpawnNode:
+                  automationNotif.setSpawnNode();
+                  break;
+
+               case AutomationStep::SpawnDb:
+                  automationNotif.setSpawnDb();
+                  break;
+
+               case AutomationStep::ConnectToDb:
+                  automationNotif.setConnectToDb();
+                  break;
+
+               case AutomationStep::ShutdownDb:
+                  automationNotif.setShutdownDb();
+                  break;
+
+               case AutomationStep::ShutdownNode:
+                  automationNotif.setShutdownNode();
+                  break;
+
+               case AutomationStep::Done:
+                  automationNotif.setDone();
+                  break;
+            }
+         }
+         auto response = serializeCapnp(message);
+         bridgePtr->writeToClient(response);
+      };
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -535,7 +594,15 @@ const std::filesystem::path& CppBridge::getDataDir() const
    return path_;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+bool CppBridge::isDbRunning()
+{
+   if (automationContext_ == nullptr) {
+      return false;
+   }
+   return automationContext_->isDbRunning();
+}
+
+////////
 void CppBridge::writeToClient(BinaryData& payload) const
 {
    auto payloadPtr = std::make_unique<WritePayload_Bridge>();
@@ -543,7 +610,6 @@ void CppBridge::writeToClient(BinaryData& payload) const
    writeLambda_(std::move(payloadPtr));
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void CppBridge::callbackWriter(ServerPushWrapper& wrapper)
 {
    setCallbackHandler(wrapper);
@@ -640,7 +706,7 @@ void CppBridge::unlockControlHeader(const std::string& path,
       };
 
       try {
-         wltManager_->unlockControlHeader(path, lbd);
+         wltManager_->unlockControlHeader(std::filesystem::path(path), lbd);
          notifySuccess(true, {});
       } catch (const std::exception& e) {
          notifySuccess(false, e.what());
@@ -755,6 +821,270 @@ void CppBridge::forkWatchingOnly(const Wallets::WalletId& wltId,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+namespace {
+   struct ExportedKeyData
+   {
+      BinaryData assetId;
+      BinaryDataRef privKeyRef;
+      BinaryData pubKey;
+      std::string addressString;
+      uint32_t addrType = 0;
+      int32_t index = 0;
+      std::string accountId;
+      bool isUsed = false;
+      std::string chainRole;
+   };
+
+   std::string chainRoleForAssetAccount(
+      const std::shared_ptr<Accounts::AddressAccount>& accPtr,
+      const Wallets::AssetAccountId& assetAccId)
+   {
+      const auto& outerId = accPtr->getOuterAccountID();
+      const auto& innerId = accPtr->getInnerAccountID();
+      if (outerId == innerId) {
+         return {};
+      }
+      if (assetAccId == outerId) {
+         return "Receive";
+      }
+      if (assetAccId == innerId) {
+         return "Change";
+      }
+      return {};
+   }
+
+   void fillExportedKeyMetadata(ExportedKeyData& entry,
+      const std::shared_ptr<Accounts::AddressAccount>& accPtr,
+      const Wallets::AssetId& assetID)
+   {
+      try {
+         auto addrEntry = accPtr->getAddressEntryForID(assetID);
+         if (addrEntry == nullptr) {
+            return;
+         }
+
+         uint32_t addrType = (uint32_t)addrEntry->getType();
+         auto addrNested = std::dynamic_pointer_cast<
+            AddressEntry_Nested>(addrEntry);
+         if (addrNested != nullptr) {
+            addrType |= (uint32_t)addrNested->getPredecessor()->getType();
+         }
+         entry.addrType = addrType;
+
+         try {
+            if (addrNested != nullptr) {
+               entry.pubKey = addrNested->getPredecessor()->getPreimage();
+            } else {
+               entry.pubKey = addrEntry->getPreimage();
+            }
+         } catch (const AddressException&) {
+            //no public key for this address type, leave empty
+         }
+
+         try {
+            entry.addressString = addrEntry->getAddress();
+         } catch (const AddressException&) {
+            //address type yields no human readable string
+         }
+      } catch (const std::exception&) {
+         //asset has no instantiable address, leave blank
+      }
+   }
+
+   void collectExportedKeys(
+      const std::shared_ptr<Wallets::AssetWallet_Single>& wltSingle,
+      const Wallets::AddressAccountId& scopeAccId,
+      bool includePrivateKeys,
+      std::vector<ExportedKeyData>& exportedKeys)
+   {
+      std::vector<Wallets::AddressAccountId> accountIdsToWalk;
+      if (scopeAccId.isValid()) {
+         accountIdsToWalk.push_back(scopeAccId);
+      } else {
+         for (const auto& addrAccId : wltSingle->getAccountIDs()) {
+            accountIdsToWalk.push_back(addrAccId);
+         }
+      }
+
+      auto walkWallet = [&]()
+      {
+         for (const auto& addrAccId : accountIdsToWalk) {
+            auto accPtr = wltSingle->getAccountForID(addrAccId);
+            if (!accPtr) {
+               continue;
+            }
+
+            for (const auto& assetAccId : accPtr->getAccountIdSet()) {
+               auto assetAcc = accPtr->getAccountForID(assetAccId);
+               if (!assetAcc) {
+                  continue;
+               }
+
+               switch (assetAcc->type()) {
+                  case Accounts::AssetAccountType::Plain:
+                  case Accounts::AssetAccountType::Imports:
+                     break;
+
+                  case Accounts::AssetAccountType::ECDH:
+                  case Accounts::AssetAccountType::ImportsWO:
+                     continue;
+
+                  default:
+                     LOGWARN << "trying to export keys" <<
+                        " from unsupported account type";
+                     continue;
+               }
+
+               //getDecryptedPrivateKeyForAsset will fill missing private keys
+               //run backwards the assets to compute missing keys in batch
+               //rather than sequentially
+               //TODO: add progressCallback logic to extend/fillPrivateKey
+               auto lastIdx = assetAcc->getLastComputedIndex();
+               for (int32_t i = lastIdx; i >= 0; i--) {
+                  auto assetPtr = assetAcc->getAssetForKey(i);
+                  auto assetSingle = std::dynamic_pointer_cast<
+                     Assets::AssetEntry_Single>(assetPtr);
+                  if (!assetSingle) {
+                     continue;
+                  }
+
+                  const auto& assetID = assetPtr->getID();
+
+                  ExportedKeyData entry;
+                  entry.assetId = assetID.getSerializedKey(PROTO_ASSETID_PREFIX);
+                  entry.index = assetSingle->getIndex();
+                  entry.accountId = addrAccId.toHexStr();
+                  entry.isUsed = accPtr->isAssetInUse(assetID);
+                  entry.chainRole = chainRoleForAssetAccount(accPtr, assetAccId);
+
+                  if (includePrivateKeys) {
+                     entry.privKeyRef =
+                        wltSingle->getDecryptedPrivateKeyForAsset(assetSingle);
+                  }
+
+                  fillExportedKeyMetadata(entry, accPtr, assetID);
+                  exportedKeys.emplace_back(std::move(entry));
+               }
+            }
+         }
+      };
+
+      walkWallet();
+   }
+
+   void populateExportedKey(WalletReply::ExportedPrivateKey::Builder& capnKey,
+      const ExportedKeyData& entry)
+   {
+      capnKey.setAssetId(capnp::Data::Builder(
+         (uint8_t*)entry.assetId.getPtr(), entry.assetId.getSize()));
+      if (!entry.privKeyRef.empty()) {
+         capnKey.setPrivKey(capnp::Data::Builder(
+            (uint8_t*)entry.privKeyRef.getPtr(), entry.privKeyRef.getSize()));
+      }
+      if (!entry.pubKey.empty()) {
+         capnKey.setPublicKey(capnp::Data::Builder(
+            (uint8_t*)entry.pubKey.getPtr(), entry.pubKey.getSize()));
+      }
+      capnKey.setAddressString(entry.addressString);
+      capnKey.setAddrType(entry.addrType);
+      capnKey.setIndex(entry.index);
+      capnKey.setAccountId(entry.accountId);
+      capnKey.setIsUsed(entry.isUsed);
+      capnKey.setChainRole(entry.chainRole);
+   }
+
+   BinaryData buildExportedKeysReply(MessageId msgId,
+      const std::vector<ExportedKeyData>& exportedKeys,
+      const std::string& error)
+   {
+      capnp::MallocMessageBuilder message;
+      auto fromBridge = message.initRoot<FromBridge>();
+      auto reply = fromBridge.initReply();
+      reply.setReferenceId(msgId);
+
+      if (!error.empty()) {
+         reply.setSuccess(false);
+         reply.setError(error);
+      } else {
+         reply.setSuccess(true);
+         auto walletReply = reply.initWallet();
+         auto capnKeys = walletReply.initExportKeys(exportedKeys.size());
+         for (size_t i = 0; i < exportedKeys.size(); i++) {
+            auto capnKey = capnKeys[i];
+            populateExportedKey(capnKey, exportedKeys[i]);
+         }
+      }
+
+      return serializeCapnp(message);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void CppBridge::exportKeys(const Wallets::WalletId& wltId,
+   const Wallets::AddressAccountId& accId,
+   bool includePrivateKeys, const CallbackId& callbackId, MessageId msgId)
+{
+   auto func = [this, wltId, accId, includePrivateKeys, callbackId, msgId]()
+   {
+      std::vector<ExportedKeyData> exportedKeys;
+      BinaryData serialized;
+
+      std::shared_ptr<BridgePassphrasePrompt> passPromptObj;
+
+      struct ExportKeysCleanup
+      {
+         std::shared_ptr<BridgePassphrasePrompt> prompt;
+
+         ~ExportKeysCleanup()
+         {
+            if (prompt) {
+               prompt->cleanup();
+            }
+         }
+      };
+
+      try {
+         auto wltContainer = wltManager_->getWalletContainer(wltId);
+         auto wltPtr = wltContainer->getWalletPtr();
+         auto wltSingle = std::dynamic_pointer_cast<
+            Wallets::AssetWallet_Single>(wltPtr);
+         if (!wltSingle) {
+            throw std::runtime_error("wallet is not an AssetWallet_Single");
+         }
+
+         if (includePrivateKeys) {
+            if (!wltSingle->getRoot()->hasPrivateKey()) {
+               throw std::runtime_error("this is a WO wallet");
+            }
+
+            passPromptObj = std::make_shared<BridgePassphrasePrompt>(
+               callbackId, [this](ServerPushWrapper wrapper){
+                  this->callbackWriter(wrapper);
+               });
+            auto lbd = passPromptObj->getLambda();
+            ExportKeysCleanup cleanupGuard{passPromptObj};
+            auto lock = wltSingle->lockDecryptedContainer(lbd);
+            collectExportedKeys(wltSingle, accId, true, exportedKeys);
+            serialized = buildExportedKeysReply(msgId, exportedKeys, "");
+         } else {
+            collectExportedKeys(wltSingle, accId, false, exportedKeys);
+            serialized = buildExportedKeysReply(msgId, exportedKeys, "");
+         }
+
+      } catch (const std::exception& e) {
+         serialized = buildExportedKeysReply(msgId, {}, e.what());
+      }
+
+      this->writeToClient(serialized);
+   };
+
+   std::thread thr(func);
+   if (thr.joinable()) {
+      thr.detach();
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 BinaryData CppBridge::loadWallets(MessageId msgId)
 {
    wltManager_->loadWallets();
@@ -841,20 +1171,25 @@ void CppBridge::loadPeersDb(const CallbackId& callbackId, MessageId refId)
          callbackId, [this](ServerPushWrapper wrapper) {
             this->callbackWriter(wrapper);
       });
-      peersDb_ = std::make_shared<Wallets::AuthorizedPeers>(
+      peersDb_ = std::make_shared<NetworkPeers::ClientStore>(
          Wallets::IO::ReadOnlyFileParams{
             path_ / CLIENT_AUTH_PEER_FILENAME,
             passPromptObj->getLambda()
       });
       reply.setSuccess(true);
-   } catch (const Wallets::PeerFileMissing&) {
-      //NOTE (SHORT TERM SOLUTION): auto generation of auth peer db
+   } catch (const NetworkPeers::FileMissing&) {
+      /***
+      NOTE:
+         short term solution: auto generate the auth peer db if its missing
+         long term soution: implement UI for user to boostrap/encrypt the store
+      ***/
       auto setCtrlPassFunc = getSetPassFunc(this, callbackId, false);
-      peersDb_ = Wallets::AuthorizedPeers::createWallet(
+      auto wlt = NetworkPeers::PeerStore::bootstrapWallet(
          Wallets::IO::CreateFileParams{
             path_ / CLIENT_AUTH_PEER_FILENAME,
             Passphrase::SetNew{setCtrlPassFunc}
       });
+      peersDb_ = std::make_shared<NetworkPeers::ClientStore>(wlt);
       reply.setSuccess(true);
    } catch (const std::exception& e) {
       reply.setError(
@@ -878,33 +1213,43 @@ void CppBridge::listPeers(MessageId refId)
          throw std::runtime_error("have to load peers db before listing peers");
       }
 
-      //grab 1way peers, sort by key
-      std::map<BinaryDataRef, std::set<std::string>> keysOneWay;
-      for (const auto& namePair : peersDb_->getPeerNameMap(true)) {
-         if (namePair.first == "own") {
-            continue;
-         }
-         BinaryDataRef keyRef{namePair.second.pubkey, BIP151PUBKEYSIZE};
-         auto iter = keysOneWay.find(keyRef);
-         if (iter == keysOneWay.end()) {
-            iter = keysOneWay.emplace(keyRef, std::set<std::string>{}).first;
-         }
-         iter->second.emplace(namePair.first);
-      }
+      struct KeyData
+      {
+         std::set<std::string> names;
+         std::string label;
+      };
 
-      //same with 2way peers
-      std::map<BinaryDataRef, std::set<std::string>> keysTwoWay;
-      for (const auto& namePair : peersDb_->getPeerNameMap(false)) {
-         if (namePair.first == "own") {
-            continue;
+      auto getKeyData = []
+      (std::unique_ptr<NetworkPeers::PeerStoreView> view)
+      ->std::map<BinaryDataRef, KeyData>
+      {
+         std::map<BinaryDataRef, KeyData> result;
+         for (const auto& namePair : view->getPeerNameMap()) {
+            if (namePair.first == "own") {
+               continue;
+            }
+            auto iter = result.find(namePair.second.getRef());
+            if (iter == result.end()) {
+               iter = result.emplace(namePair.second.getRef(), KeyData{}).first;
+            }
+            iter->second.names.emplace(namePair.first);
          }
-         BinaryDataRef keyRef{namePair.second.pubkey, BIP151PUBKEYSIZE};
-         auto iter = keysTwoWay.find(keyRef);
-         if (iter == keysTwoWay.end()) {
-            iter = keysTwoWay.emplace(keyRef, std::set<std::string>{}).first;
+
+         for (const auto& label : view->getPublicKeyMap()) {
+            auto iter = result.find(label.first.getRef());
+            if (iter == result.end()) {
+               continue;
+            }
+            iter->second.label = label.second;
          }
-         iter->second.emplace(namePair.first);
-      }
+         return result;
+      };
+
+      //grab 1way peers, sort by key
+      auto keysOneWay = getKeyData(
+         peersDb_->getView(NetworkPeers::PeerType::ServerOneWay));
+      auto keysTwoWay = getKeyData(
+         peersDb_->getView(NetworkPeers::PeerType::ServerTwoWay));
 
       //prepare capnp reply list
       auto setupReply = reply.initSetup();
@@ -913,7 +1258,7 @@ void CppBridge::listPeers(MessageId refId)
 
       //set own key
       auto ownKey = peersDb_->getOwnPublicKey();
-      Wallets::PeerKey ownPeer{ownKey, false, false};
+      NetworkPeers::PeerKey ownPeer{ownKey, NetworkPeers::PeerType::Client};
       auto ownKeyCapnp = peersCapnp[0];
       ownKeyCapnp.setOneWay(false);
       auto ownKeyDataCapnp = ownKeyCapnp.initPeer();
@@ -925,27 +1270,26 @@ void CppBridge::listPeers(MessageId refId)
       //function to populate the capnp peer list
       size_t counter = 1;
       auto addKeys = [this, &counter, &peersCapnp]
-      (std::map<BinaryDataRef, std::set<std::string>> keyMap, bool oneWay)
+      (std::map<BinaryDataRef, KeyData> keyMap, bool oneWay)
       {
-         for (const auto& keyNames : keyMap) {
+         for (const auto& keyData : keyMap) {
             auto peerDataCapnp = peersCapnp[counter++];
             peerDataCapnp.setOneWay(oneWay);
 
             auto peerCapnp = peerDataCapnp.initPeer();
-            auto namesCapnp = peerCapnp.initNames(keyNames.second.size());
+            auto namesCapnp = peerCapnp.initNames(keyData.second.names.size());
             unsigned y = 0;
-            for (const auto& name : keyNames.second) {
+            for (const auto& name : keyData.second.names) {
                namesCapnp.set(y++, name);
             }
 
-            //TODO: get mode from peer store instead of hardcoding it
-            Wallets::PeerKey peer{keyNames.first, oneWay, true};
+            NetworkPeers::PeerKey peer{keyData.first, oneWay ?
+               NetworkPeers::PeerType::ServerOneWay : NetworkPeers::PeerType::ServerTwoWay};
             peerCapnp.setKey(peer.toHumanReadable());
-            try {
-               const auto& label = peersDb_->getLabel(keyNames.first, oneWay);
-               peerCapnp.setLabel(label);
-            } catch (const std::exception&) {
+            if (keyData.second.label.empty()) {
                peerCapnp.setLabel("N/A");
+            } else {
+               peerCapnp.setLabel(keyData.second.label);
             }
          }
       };
@@ -978,7 +1322,7 @@ void CppBridge::addPeer(const std::string& peerKey,
       if (peersDb_ == nullptr) {
          throw std::runtime_error("have to load peers db before adding a peer");
       }
-      auto peer = Wallets::PeerKey::fromHumanReadable(peerKey);
+      auto peer = NetworkPeers::PeerKey::fromHumanReadable(peerKey);
       if (!peer.isServer()) {
          throw std::runtime_error("cannot add a client key to a client peer store");
       }
@@ -1006,7 +1350,7 @@ void CppBridge::removePeer(const std::string& peerKey, MessageId refId)
       if (peersDb_ == nullptr) {
          throw std::runtime_error("have to load peers db before adding a peer");
       }
-      auto peer = Wallets::PeerKey::fromHumanReadable(peerKey);
+      auto peer = NetworkPeers::PeerKey::fromHumanReadable(peerKey);
       if (!peer.isServer()) {
          throw std::runtime_error("cannot remove a client key from a client peer store");
       }
@@ -1033,7 +1377,7 @@ void CppBridge::setPeerLabel(
       if (peersDb_ == nullptr) {
          throw std::runtime_error("have to load peers db before updating labels");
       }
-      auto peer = Wallets::PeerKey::fromHumanReadable(peerKey);
+      auto peer = NetworkPeers::PeerKey::fromHumanReadable(peerKey);
       peersDb_->setLabel(peer, label);
       reply.setSuccess(true);
    } catch (const std::exception& e) {
@@ -1043,9 +1387,7 @@ void CppBridge::setPeerLabel(
 
    auto response = serializeCapnp(message);
    this->writeToClient(response);
-
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////
 // db connection routines
@@ -1090,7 +1432,7 @@ void CppBridge::connectToIp(const std::string& ip, const std::string& port,
    {
       auto counterBd = fortuna.generateRandom(4);
       auto notifCounter = *(uint32_t*)counterBd.getPtr();
-      Wallets::PeerKey peerKey{key, true, true};
+      NetworkPeers::PeerKey peerKey{key, NetworkPeers::PeerType::ServerOneWay};
 
       //create present pubkey notif
       capnp::MallocMessageBuilder notifMessage;
@@ -1124,7 +1466,7 @@ void CppBridge::connectToIp(const std::string& ip, const std::string& port,
    //connect to db
    try {
       bdvPtr_ = setupClientConnection(
-         std::make_shared<Wallets::AuthorizedPeers>(),
+         std::make_shared<NetworkPeers::ClientStore>(),
          ip, port, true, presentServerKeyCallback,
          wltManager_->getBdvCallback());
       if (bdvPtr_ == nullptr) {
@@ -1184,7 +1526,7 @@ void CppBridge::connectToPeer(const std::string& peerKey, MessageId refId)
          throw std::runtime_error(
             "have to load peers db before attemping connection to a peer");
       }
-      auto peerObj = Wallets::PeerKey::fromHumanReadable(peerKey);
+      auto peerObj = NetworkPeers::PeerKey::fromHumanReadable(peerKey);
       auto peers = peersDb_->getNarrowSet(peerObj);
 
       bdvPtr_ = setupClientConnection(peers, peerObj,
@@ -1206,95 +1548,134 @@ void CppBridge::connectToPeer(const std::string& peerKey, MessageId refId)
    this->writeToClient(response);
 }
 
-void CppBridge::automateDb(
-   const std::filesystem::path& satoshiPath,
-   const std::filesystem::path& dbDir,
-   MessageId refId)
-{
-   /*
-   * should call this method from a dedicated thread
-   */
-   LOGINFO << "automating ArmoryDB";
-
-   capnp::MallocMessageBuilder message;
-   auto fromBridge = message.initRoot<FromBridge>();
-   auto reply = fromBridge.initReply();
-   reply.setReferenceId(refId);
-
-   if (dbOffline_) {
-      LOGWARN << "attempt to connect to DB in offline mode, ignoring";
-      reply.setError("cannot setup db in offline mode");
-      reply.setSuccess(false);
-      auto response = serializeCapnp(message);
-      this->writeToClient(response);
-      return;
-   }
-
-   if (bdvPtr_ != nullptr) {
-      LOGWARN << "already connected to db!";
-      reply.setError("already connected to db!");
-      reply.setSuccess(false);
-      auto response = serializeCapnp(message);
-      this->writeToClient(response);
-      return;
-   }
-
-   auto result = spawnDb(satoshiPath, dbDir);
-   auto peers = result.first;
-   auto port = std::to_string(result.second);
-
-   //connect to db
-   try {
-      bdvPtr_ = setupClientConnection(peers,
-         "127.0.0.1", port,
-         false, nullptr,
-         wltManager_->getBdvCallback());
-      if (bdvPtr_ == nullptr) {
-         throw std::runtime_error("automatedDb connection failed");
-      }
-      wltManager_->setBdvPtr(bdvPtr_);
-
-      //reply to caller
-      reply.setSuccess(true);
-   } catch (const std::exception& e) {
-      reply.setSuccess(false);
-      reply.setError(e.what());
-   }
-
-   auto response = serializeCapnp(message);
-   this->writeToClient(response);
-}
-
 ////
-void CppBridge::cleanupDb(MessageId refId)
-{
-   capnp::MallocMessageBuilder message;
-   auto fromBridge = message.initRoot<FromBridge>();
-   auto reply = fromBridge.initReply();
-   reply.setReferenceId(refId);
-
-   if (bdvPtr_ == nullptr) {
-      reply.setSuccess(false);
-      reply.setError("no connection to db");
-   } else if (!isDbRunning()) {
-      reply.setSuccess(false);
-      reply.setError("db is not running");
-   } else {
-      bdvPtr_->shutdown();
-      reply.setSuccess(true);
-   }
-
-   auto response = serializeCapnp(message);
-   this->writeToClient(response);
-}
-
-////
-void CppBridge::goOnline()
+void CppBridge::beginDbSession()
 {
    if (bdvPtr_ == nullptr) {
       throw std::runtime_error("have to connect to db first!");
    }
    bdvPtr_->goOnline();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void CppBridge::setAutomationContext(std::unique_ptr<AutomationContext> ctxPtr)
+{
+   if (automationContext_ != nullptr) {
+      throw std::runtime_error("already have a context");
+   }
+   automationContext_ = std::move(ctxPtr);
+}
+
+void CppBridge::runAutomationContext(CallbackId cbId, MessageId refId)
+{
+   auto threadBody = [this, cbId, refId]()
+   {
+      LOGINFO << "running automation context";
+
+      capnp::MallocMessageBuilder message;
+      auto fromBridge = message.initRoot<FromBridge>();
+      auto reply = fromBridge.initReply();
+      reply.setReferenceId(refId);
+
+      //sanity checks
+      if (dbOffline_) {
+         reply.setError("cannot automate db in offline mode");
+         reply.setSuccess(false);
+         auto response = serializeCapnp(message);
+         this->writeToClient(response);
+         return;
+      }
+
+      if (automationContext_ == nullptr) {
+         reply.setError("missing automation context");
+         reply.setSuccess(false);
+         auto response = serializeCapnp(message);
+         this->writeToClient(response);
+         return;
+      }
+
+      if (bdvPtr_ != nullptr) {
+         reply.setError("already connected to db!");
+         reply.setSuccess(false);
+         auto response = serializeCapnp(message);
+         this->writeToClient(response);
+         return;
+      }
+
+      //run the context
+      auto notifyFunc = getAutomationNotifFunc(this, cbId);
+      try {
+         if (!automationContext_->run(notifyFunc)) {
+            //no automation, return
+            reply.setSuccess(true);
+            auto response = serializeCapnp(message);
+            this->writeToClient(response);
+            return;
+         }
+
+         //connect to db
+         notifyFunc(AutomationStep::ConnectToDb);
+         auto peers = automationContext_->getPeerStore();
+         auto port = std::to_string(automationContext_->getDbPort());
+         bdvPtr_ = setupClientConnection(peers,
+            "127.0.0.1", port,
+            false, nullptr,
+            wltManager_->getBdvCallback());
+         if (bdvPtr_ == nullptr) {
+            throw std::runtime_error("automatedDb connection failed");
+         }
+         wltManager_->setBdvPtr(bdvPtr_, true);
+
+         //reply to caller
+         notifyFunc(AutomationStep::Done);
+         reply.setSuccess(true);
+      } catch (const std::exception& e) {
+         LOGWARN << "automation context failure: " << e.what();
+         reply.setSuccess(false);
+         reply.setError(e.what());
+      }
+
+      notifyFunc(AutomationStep::Cleanup);
+      auto response = serializeCapnp(message);
+      this->writeToClient(response);
+   };
+
+   std::thread thr{threadBody};
+   if (thr.joinable()) {
+      thr.detach();
+   }
+}
+
+void CppBridge::cleanupAutomationContext(CallbackId cbId, MessageId refId)
+{
+   auto threadBody = [this, refId, cbId]()
+   {
+      capnp::MallocMessageBuilder message;
+      auto fromBridge = message.initRoot<FromBridge>();
+      auto reply = fromBridge.initReply();
+      reply.setReferenceId(refId);
+
+      auto notifFunc = getAutomationNotifFunc(this, cbId);
+      try {
+         if (automationContext_ != nullptr) {
+            automationContext_->cleanup(notifFunc);
+            automationContext_.reset();
+         }
+         reply.setSuccess(true);
+      } catch (const std::exception& e) {
+         reply.setSuccess(false);
+         reply.setError(e.what());
+      }
+
+      notifFunc(AutomationStep::Cleanup);
+      auto response = serializeCapnp(message);
+      this->writeToClient(response);
+   };
+
+   std::thread thr{threadBody};
+   if (thr.joinable()) {
+      thr.detach();
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1719,13 +2100,14 @@ void CppBridge::restoreWallet(
          } else {
             //we dont have an existing wallet to merge into the new one,
             //extend the address chain for some baseline count
-            progFunc(std::make_unique<Wallets::Progress::ExtendChain>(500));
+            unsigned lookup = 500;
+            progFunc(std::make_unique<Wallets::Progress::ExtendChain>(lookup));
             if (isWO) {
-               restoreResult.wltPtr->extendPublicChain(499);
+               restoreResult.wltPtr->extendPublicChain(lookup);
             } else {
-               restoreResult.wltPtr->setPassphrasePromptLambda(
+               auto lock = restoreResult.wltPtr->lockDecryptedContainer(
                   params.setPrivPassObj.getUnlockFunc());
-               restoreResult.wltPtr->extendPrivateChainToIndex(499);
+               restoreResult.wltPtr->extendPrivateChain(lookup);
             }
             restoreResult.wltPtr.reset();
          }
@@ -2299,8 +2681,7 @@ void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId ms
       txs.reserve(hashes.size());
       for (const auto& txHash : hashes) {
          try {
-            auto txKey = dbCache->txHashToKey.at(txHash);
-            txs.emplace_back(dbCache->txMap.at(txKey));
+            txs.emplace_back(dbCache->getTxByHash(txHash));
          } catch (const std::out_of_range&) {
             //no tx for this hash
             continue;
@@ -2327,7 +2708,7 @@ void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId ms
                capnTx.setTimestamp(tx.getTxTime());
                capnTx.setTxIndex(UINT32_MAX);
             } else {
-               auto header = dbCache->headers.at(
+               auto header = dbCache->getHeader(
                   Types::getBlockIDFromTxKey(txKey));
                capnTx.setHeight(header->blockHeight);
                capnTx.setTimestamp(header->timestamp);
@@ -2816,7 +3197,8 @@ CallbackHandler CppBridge::getCallbackHandler(uint32_t id)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void CppBridge::getUnlockTime(const Wallets::WalletId& walletId, MessageId refId)
+void CppBridge::getUnlockTime(
+   const Wallets::WalletId& walletId, MessageId refId) const
 {
    using namespace std::chrono;
    auto testUnlockTime = [this, walletId, refId]
@@ -2868,6 +3250,38 @@ void CppBridge::getUnlockTime(const Wallets::WalletId& walletId, MessageId refId
    }
 }
 
+bool CppBridge::doesWalletHaveImports(const Wallets::WalletId& walletId) const
+{
+   //get wallet
+   auto wltContainer = wltManager_->getWalletContainer(walletId);
+   auto wlt = wltContainer->getWalletPtr();
+
+   //look for address imports
+   try {
+      auto addrAccPtr = wlt->getAccountForID(IMPORTS_ACCOUNT_PUB);
+      auto accPtr = addrAccPtr->getOuterAccount();
+      if (accPtr->getAssetCount() > 0) {
+         return true;
+      }
+   } catch (const std::exception&) {
+      //no WO import account, move on
+   }
+
+   //look for priv key imports
+   try {
+      auto addrAccPtr = wlt->getAccountForID(IMPORTS_ACCOUNT_PRIV);
+      auto accPtr = addrAccPtr->getOuterAccount();
+      if (accPtr->getAssetCount() > 0) {
+         return true;
+      }
+   } catch (const std::exception&) {
+      //no priv import account
+   }
+
+   //no imports were found
+   return false;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 ////
 ////  CppBridgeSignerStruct
@@ -2909,11 +3323,8 @@ void CppBridgeSignerStruct::signTx(const Wallets::WalletId& wltId,
          signer->resetFeed();
          signer->setFeed(feed);
 
-         //create & set passphrase lambda
-         wltPtr->setPassphrasePromptLambda(passLbd);
-
          //lock decryption container
-         auto lock = wltPtr->lockDecryptedContainer();
+         auto lock = wltPtr->lockDecryptedContainer(passLbd);
 
          //sign, this will prompt the passphrase lambda on demand
          signer->sign();

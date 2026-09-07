@@ -244,6 +244,8 @@ namespace Armory
 
          bool hasBip32Path(const Signing::BIP32_AssetPath&) const;
          bool isLegacy(void) const;
+         std::string getDisplayName(void) const;
+         std::string getDerivationSchemeDisplay(void) const;
       };
    } //namespace Accounts
 } //namespace Armory

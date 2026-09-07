@@ -14,7 +14,6 @@
 #include <map>
 
 #include "BinaryData.h"
-//#include "btc/chainparams.h"
 
 #define TESTNET_MAGIC_BYTES "0b110907"
 #define TESTNET_GENESIS_HASH_HEX    "43497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000"

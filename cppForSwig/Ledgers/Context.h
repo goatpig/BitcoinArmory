@@ -29,14 +29,29 @@ namespace Armory
    namespace Ledgers
    {
       using HeaderPtr = std::shared_ptr<DBClientClasses::BlockHeader>;
-      struct DBCache
+      class DBCache
       {
-         std::map<Types::TxKey, Tx> txMap;
-         std::map<Types::TxHash, Types::TxKey> txHashToKey;
-         std::map<Types::BlockId, HeaderPtr> headers;
+      private:
+         std::map<Types::TxKey, Tx> txMap_;
+         std::map<Types::TxHash, Types::TxKey> txHashToKey_;
+         std::map<Types::BlockId, HeaderPtr> headers_;
+
+      public:
+         DBCache(void);
+         void clear(void);
 
          void addHeaders(const std::vector<HeaderPtr>&);
+         HeaderPtr getHeader(Types::BlockId) const;
          HeaderPtr getHeaderForHeight(uint32_t) const;
+         const std::map<Types::BlockId, HeaderPtr>& getHeaderMap(void) const;
+
+         void addTx(Tx&);
+         void eraseTx(Types::TxKey);
+         const Tx& getTx(Types::TxKey) const;
+         const Tx& getTxByHash(const Types::TxHash&) const;
+         std::map<Types::TxHash, Types::TxKey> getHashesStartingKey(
+            Types::TxKey) const;
+         std::set<Types::TxKey> purgeTxs(const std::set<Types::TxHash>&);
       };
 
       class Context

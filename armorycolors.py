@@ -1,5 +1,3 @@
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
 ################################################################################
 #                                                                              #
 # Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
@@ -7,7 +5,6 @@ from __future__ import (absolute_import, division,
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                         #
 #                                                                              #
 ################################################################################
-import sys
 import qtpy
 from qtpy import QtGui, QtWidgets
 
@@ -83,79 +80,78 @@ def luminance(qcolor):
    r,g,b = qcolor.red(), qcolor.green(), qcolor.blue()
    return int(0.2*r + 0.6*g + 0.2*b)
 
-
-QAPP = QtWidgets.QApplication(sys.argv)
-qpal = QAPP.palette()
-
-# workaround for https://bugs.launchpad.net/ubuntu/+source/qt4-x11/+bug/877236
-qpal.setColor(QtGui.QPalette.ToolTipBase, qpal.color(QtGui.QPalette.Window))
-qpal.setColor(QtGui.QPalette.ToolTipText, qpal.color(QtGui.QPalette.WindowText))
-QAPP.setPalette(qpal)
-
-# Some of the standard colors to be tweaked
 class ArbitraryStruct: pass
 Colors = ArbitraryStruct()
 
-Colors.Background       = qpal.color(QtGui.QPalette.Window)
-Colors.Foreground       = qpal.color(QtGui.QPalette.WindowText)
-Colors.HighlightBG      = qpal.color(QtGui.QPalette.Highlight)
-Colors.HighlightFG      = qpal.color(QtGui.QPalette.HighlightedText)
-Colors.Link             = qpal.color(QtGui.QPalette.Link)
-Colors.Mid              = qpal.color(QtGui.QPalette.Mid)
-Colors.DisableFG        = qpal.color(QtGui.QPalette.Disabled, QtGui.QPalette.WindowText)
+def initQAppColors(qapp):
+   qpal = qapp.palette()
 
-Colors.isDarkBkgd       = (luminance(Colors.Background) < 128)
+   # workaround for https://bugs.launchpad.net/ubuntu/+source/qt4-x11/+bug/877236
+   qpal.setColor(QtGui.QPalette.ToolTipBase, qpal.color(QtGui.QPalette.Window))
+   qpal.setColor(QtGui.QPalette.ToolTipText, qpal.color(QtGui.QPalette.WindowText))
+   qapp.setPalette(qpal)
 
-Colors.TextWarn         = tweakColor(Colors.Foreground, '+', [+100,  -40,  -40])
-Colors.TextRed          = tweakColor(Colors.Foreground, '+', [+100,  -40,  -40])
-Colors.TextGreen        = tweakColor(Colors.Foreground, '+', [ -40, +100,  -40])
-Colors.TextBlue         = tweakColor(Colors.Foreground, '+', [ -40,  -40, +100])
-Colors.TextYellow       = tweakColor(Colors.Foreground, '*', [0.75, 0.75,    0])
-Colors.SlightRed        = tweakColor(Colors.Background, '*', [1.05, 0.95, 0.95])
-Colors.SlightGreen      = tweakColor(Colors.Background, '*', [0.95, 1.05, 0.95])
-Colors.SlightBlue       = tweakColor(Colors.Background, '*', [0.95, 0.95, 1.05])
-Colors.SlightMoreBlue   = tweakColor(Colors.Background, '*', [0.95, 0.95, 1.15])
-Colors.SlightBkgdDark   = tweakColor(Colors.Background, '*', [0.95, 0.95, 0.95])
-Colors.SlightBkgdLight  = tweakColor(Colors.Background, '*', [1.05, 1.05, 1.05])
+   # Some of the standard colors to be tweaked
+   Colors.Background       = qpal.color(QtGui.QPalette.Window)
+   Colors.Foreground       = qpal.color(QtGui.QPalette.WindowText)
+   Colors.HighlightBG      = qpal.color(QtGui.QPalette.Highlight)
+   Colors.HighlightFG      = qpal.color(QtGui.QPalette.HighlightedText)
+   Colors.Link             = qpal.color(QtGui.QPalette.Link)
+   Colors.Mid              = qpal.color(QtGui.QPalette.Mid)
+   Colors.DisableFG        = qpal.color(QtGui.QPalette.Disabled, QtGui.QPalette.WindowText)
 
-Colors.TextNoConfirm    = tweakColor(Colors.Mid, '*', [ 0.9,  0.9,  0.9])
-Colors.TextSomeConfirm  = tweakColor(Colors.Mid, '*', [ 0.7,  0.7,  0.7])
+   Colors.isDarkBkgd       = (luminance(Colors.Background) < 128)
+
+   Colors.TextWarn         = tweakColor(Colors.Foreground, '+', [+100,  -40,  -40])
+   Colors.TextRed          = tweakColor(Colors.Foreground, '+', [+100,  -40,  -40])
+   Colors.TextGreen        = tweakColor(Colors.Foreground, '+', [ -40, +100,  -40])
+   Colors.TextBlue         = tweakColor(Colors.Foreground, '+', [ -40,  -40, +100])
+   Colors.TextYellow       = tweakColor(Colors.Foreground, '*', [0.75, 0.75,    0])
+   Colors.SlightRed        = tweakColor(Colors.Background, '*', [1.05, 0.95, 0.95])
+   Colors.SlightGreen      = tweakColor(Colors.Background, '*', [0.95, 1.05, 0.95])
+   Colors.SlightBlue       = tweakColor(Colors.Background, '*', [0.95, 0.95, 1.05])
+   Colors.SlightMoreBlue   = tweakColor(Colors.Background, '*', [0.95, 0.95, 1.15])
+   Colors.SlightBkgdDark   = tweakColor(Colors.Background, '*', [0.95, 0.95, 0.95])
+   Colors.SlightBkgdLight  = tweakColor(Colors.Background, '*', [1.05, 1.05, 1.05])
+
+   Colors.TextNoConfirm    = tweakColor(Colors.Mid, '*', [ 0.9,  0.9,  0.9])
+   Colors.TextSomeConfirm  = tweakColor(Colors.Mid, '*', [ 0.7,  0.7,  0.7])
 
 
-Colors.MoneyPos         = tweakColor(Colors.Foreground, '+', [ -50, +100,  -50])
-Colors.MoneyNeg         = tweakColor(Colors.Foreground, '+', [+150,  -40,  -40])
-Colors.TblWltOther      = tweakColor(Colors.Background, '*', [1.00, 1.00, 1.00])
-Colors.TblWltMine       = tweakColor(Colors.Background, '*', [0.95, 0.95, 1.3 ])
-Colors.TblWltOffline    = tweakColor(Colors.Background, '*', [0.85, 0.85, 1.35])
+   Colors.MoneyPos         = tweakColor(Colors.Foreground, '+', [ -50, +100,  -50])
+   Colors.MoneyNeg         = tweakColor(Colors.Foreground, '+', [+150,  -40,  -40])
+   Colors.TblWltOther      = tweakColor(Colors.Background, '*', [1.00, 1.00, 1.00])
+   Colors.TblWltMine       = tweakColor(Colors.Background, '*', [0.95, 0.95, 1.3 ])
+   Colors.TblWltOffline    = tweakColor(Colors.Background, '*', [0.85, 0.85, 1.35])
 
-Colors.optInRBF         = tweakColor(Colors.Background, '*', [1.00, 0.10, 0.10])
-Colors.myRBF            = tweakColor(Colors.Background, '*', [0.15, 0.65, 0.65])
-Colors.chainedZC        = tweakColor(Colors.Background, '*', [1.00, 0.50, 0.10])
+   Colors.optInRBF         = tweakColor(Colors.Background, '*', [1.00, 0.10, 0.10])
+   Colors.myRBF            = tweakColor(Colors.Background, '*', [0.15, 0.65, 0.65])
+   Colors.chainedZC        = tweakColor(Colors.Background, '*', [1.00, 0.50, 0.10])
 
-if(Colors.isDarkBkgd):
-   Colors.LBtnNormalBG  = Colors.Background
-   Colors.LBtnHoverBG   = tweakColor(Colors.Background, '+', [ +25,  +25,    0])
-   Colors.LBtnNormalFG  = tweakColor(Colors.Link,       '+', [+150, +150,    0])
-   Colors.LBtnHoverFG   = tweakColor(Colors.Link,       '+', [+150, +150,    0])
-else:
-   Colors.LBtnNormalBG  = Colors.Background
-   Colors.LBtnHoverBG   = tweakColor(Colors.Background, '*', [ 0.8,  0.8,  1.7])
-   Colors.LBtnNormalFG  = Colors.Link
-   Colors.LBtnHoverFG   = Colors.Link
+   if(Colors.isDarkBkgd):
+      Colors.LBtnNormalBG  = Colors.Background
+      Colors.LBtnHoverBG   = tweakColor(Colors.Background, '+', [ +25,  +25,    0])
+      Colors.LBtnNormalFG  = tweakColor(Colors.Link,       '+', [+150, +150,    0])
+      Colors.LBtnHoverFG   = tweakColor(Colors.Link,       '+', [+150, +150,    0])
+   else:
+      Colors.LBtnNormalBG  = Colors.Background
+      Colors.LBtnHoverBG   = tweakColor(Colors.Background, '*', [ 0.8,  0.8,  1.7])
+      Colors.LBtnNormalFG  = Colors.Link
+      Colors.LBtnHoverFG   = Colors.Link
 
-Colors.ToolTipQ         = Colors.LBtnNormalFG
+   Colors.ToolTipQ         = Colors.LBtnNormalFG
 
-Colors.TextPurple = QtGui.QColor()
-Colors.TextPurple.setRgb(102, 0, 204, 255)
+   Colors.TextPurple = QtGui.QColor()
+   Colors.TextPurple.setRgb(102, 0, 204, 255)
 
-Colors.Black = QtGui.QColor()
-Colors.Black.setRgb(0, 0, 0)
+   Colors.Black = QtGui.QColor()
+   Colors.Black.setRgb(0, 0, 0)
 
-Colors.White = QtGui.QColor()
-Colors.White.setRgb(255, 255, 255)
+   Colors.White = QtGui.QColor()
+   Colors.White.setRgb(255, 255, 255)
 
-Colors.Red = QtGui.QColor()
-Colors.Red.setRgb(180, 0, 0)
+   Colors.Red = QtGui.QColor()
+   Colors.Red.setRgb(180, 0, 0)
 
 ################################################################################
 def htmlColor(name):

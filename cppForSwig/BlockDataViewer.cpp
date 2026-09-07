@@ -131,7 +131,7 @@ void BlockDataViewer::registerAWallet(
    }
 
    auto registrationCompleteCB =
-   [theWallet, callback, bdm=bdm_, addrVec=scrAddrVec](bool success)
+   [theWallet, callback, saf=saf_, addrVec=scrAddrVec](bool success)
    {
       if (!success) {
          if (callback) {
@@ -141,7 +141,7 @@ void BlockDataViewer::registerAWallet(
       }
 
       if (!addrVec.empty()) {
-         auto aaMap = bdm->getScrAddrFilter()->getScanFilterAddrMap();
+         auto aaMap = saf->getScanFilterAddrMap();
          std::map<Types::ScrAddr, std::shared_ptr<ScrAddrObj>> saMap;
          for (const auto& addr : addrVec) {
             auto aaIter = aaMap->find(addr);
@@ -160,8 +160,10 @@ void BlockDataViewer::registerAWallet(
    };
 
    auto batch = std::make_shared<RegistrationBatch>(
-      std::vector<std::string>{request.walletId}, std::move(scrAddrVec),
-      request.isNew, registrationCompleteCB);
+      std::vector<std::string>{request.walletId},
+      std::move(scrAddrVec),
+      request.isNew, registrationCompleteCB
+   );
    saf_->pushAddressBatch(batch);
 }
 

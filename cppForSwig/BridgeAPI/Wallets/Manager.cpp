@@ -15,6 +15,7 @@
 #include "Manager.h"
 #include <Utils/BtcUtils.h>
 #include <Utils/FileUtils.h>
+#include <Utils/Cryptography.h>
 #include <Ledgers/LedgerEntry.h>
 #include <Ledgers/Context.h>
 #include <AsyncClient.h>
@@ -109,7 +110,7 @@ namespace
 WalletManager::WalletManager(const std::filesystem::path& path) :
    path_(path)
 {
-   if (!FileUtils::isDir(path_)) {
+   if (!FileUtils::isDir(path_, 2)) {
       std::string err{path_.string() + std::string{"is not a valid datadir"sv}};
       LOGERR << err;
       throw std::runtime_error(err);
@@ -200,9 +201,8 @@ std::shared_ptr<WalletContainer> WalletManager::getWalletContainer(
 {
    auto iter = wallets_.find(wltId);
    if (iter == wallets_.end()) {
-      std::string errStr{"no wallet for id "sv};
-      errStr += wltId;
-      throw std::runtime_error(errStr);
+      throw std::runtime_error(std::format("no wallet for id {}",
+         static_cast<std::string>(wltId)));
    }
    return iter->second.begin()->second;
 }
@@ -213,16 +213,16 @@ std::shared_ptr<WalletContainer> WalletManager::getWalletContainer(
 {
    auto wltIter = wallets_.find(wltId);
    if (wltIter == wallets_.end()) {
-      std::string errStr{"i do not know wallet "sv};
-      errStr += wltId;
-      throw std::runtime_error(errStr);
+      throw std::runtime_error(std::format("i do not know wallet {}",
+         static_cast<std::string>(wltId)));
    }
 
    auto accIter = wltIter->second.find(accId);
    if (accIter == wltIter->second.end()) {
-      std::string errStr{"there is no account "sv};
-      errStr += accId.toHexStr() + std::string{" for wallet "sv} + wltId;
-      throw std::runtime_error(errStr);
+      throw std::runtime_error(std::format(
+         "there is no account {} for wallet {}",
+         accId.toHexStr(), static_cast<std::string>(wltId))
+      );
    }
    return accIter->second;
 }
@@ -249,6 +249,15 @@ void WalletManager::setBdvCallback(
    {
       switch (notif->type)
       {
+         case NotifType::REGISTERED:
+         {
+            if (automatesDB_) {
+               //if we automate the db, we have to tell it to start scanning
+               bdvPtr_->start();
+            }
+            return;
+         }
+
          case NotifType::PUSH:
          {
             auto pushPtr = std::dynamic_pointer_cast<NotifStruct_Push>(notif);
@@ -294,8 +303,10 @@ std::shared_ptr<Callback> WalletManager::getBdvCallback() const
 
 ////
 void WalletManager::setBdvPtr(
-   std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr)
+   std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr,
+   bool autoDB)
 {
+   automatesDB_ = autoDB;
    bdvPtr_ = bdvPtr;
    for (auto& wltIt : wallets_) {
       for (auto& accIt : wltIt.second) {
@@ -550,7 +561,7 @@ WalletManager::listWallets()
       const auto& path = dirEntry.path();
 
       //ignore folders
-      if (FileUtils::isDir(path)) {
+      if (FileUtils::isDir(path, 2)) {
          continue;
       }
 
@@ -661,7 +672,7 @@ std::shared_ptr<WalletFileInfo> WalletManager::importFile(
 }
 
 /////////
-void WalletManager::unlockControlHeader(const std::string& path,
+void WalletManager::unlockControlHeader(const std::filesystem::path& path,
    const Passphrase::UnlockFunc& lbd)
 {
    //sanity checks
@@ -669,9 +680,9 @@ void WalletManager::unlockControlHeader(const std::string& path,
       throw std::runtime_error("tried to unlock control header with empty id/lambda");
    }
 
-   auto iter = walletFiles_.find(path);
+   auto iter = walletFiles_.find(path.filename().string());
    if (iter == walletFiles_.end()) {
-      throw std::runtime_error("this file is not a known wallet: " + path);
+      throw std::runtime_error("this file is not a known wallet: " + path.string());
    }
 
    auto infoObj = std::dynamic_pointer_cast<LMDBWalletInfo>(iter->second);

@@ -116,6 +116,7 @@ namespace DBTestUtils
       const  Armory::Types::ScrAddr&, std::shared_ptr<BlockDataManager>);
    Armory::Types::Amount getScrAddrBalance(const  Armory::Types::ScrAddr&,
       std::shared_ptr<BlockDataManager>);
+   Tx getTx(const Armory::Types::TxHash&, std::shared_ptr<BlockDataManager>);
 
    std::vector<UTXO> getUTXOsForScrAddrs(std::shared_ptr<BlockDataManager>,
       const std::set<Armory::Types::ScrAddr>&);

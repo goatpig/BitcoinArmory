@@ -19,17 +19,17 @@ using namespace std;
 
 atomic<int32_t> UniversalTimer::lock_;
 
-void UniversalTimer::lock(void)
+void UniversalTimer::lock()
 {
    while (lock_.fetch_or(1, memory_order_relaxed));
 }
 
-void UniversalTimer::unlock(void)
+void UniversalTimer::unlock()
 {
    lock_.store(0, memory_order_relaxed);
 }
 
-void UniversalTimer::timer::start(void)
+void UniversalTimer::timer::start()
 {
    if (isRunning_)
       return;
@@ -38,7 +38,7 @@ void UniversalTimer::timer::start(void)
 }
 
 // RESTART TIMER
-void UniversalTimer::timer::restart(void)
+void UniversalTimer::timer::restart()
 {
    isRunning_ = true;
    accum_time_ = 0;
@@ -46,13 +46,11 @@ void UniversalTimer::timer::restart(void)
 }
 
 // STOP TIMER
-void UniversalTimer::timer::stop(void)
+void UniversalTimer::timer::stop()
 {
-   if (isRunning_)
-   {
-      chrono::duration<double> acc_sec = 
-         chrono::system_clock::now() - start_clock_;
-      accum_time_ += acc_sec.count();
+   if (isRunning_) {
+      auto total = chrono::system_clock::now() - start_clock_;
+      accum_time_ += std::chrono::duration_cast<std::chrono::milliseconds>(total).count();
    }
    isRunning_ = false;
 }
@@ -74,7 +72,7 @@ double UniversalTimer::timer::read(void)
       accum = accum_time_;
       start();
    }
-   return accum;
+   return accum / 1000.0;
 }
 ////////////////////////////////////////////////////////////////////////////////
 // END UniversalTimer::timer methods

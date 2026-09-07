@@ -31,6 +31,7 @@ namespace Armory
          NEWBLOCK,
          ZC,
          REFRESH,
+         REGISTERED,
          DISCONNECTED
       };
 
@@ -47,6 +48,11 @@ namespace Armory
       {
          BinaryData packet;
          NotifStruct_Push(BinaryData);
+      };
+
+      struct NotifStruct_Registered : public NotifStruct
+      {
+         NotifStruct_Registered(void);
       };
 
       struct NotifStruct_Disconnected : public NotifStruct

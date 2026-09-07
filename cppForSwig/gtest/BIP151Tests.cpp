@@ -6,14 +6,109 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
+#include <stdexcept>
+#include <gtest/gtest.h>
+
 #ifdef _WIN32
    #include <winsock2.h>
 #endif
 
-#include "TestUtils.h"
+#include <Utils/BIP150_151.h>
+#include <Utils/FileUtils.h>
+#include <Utils/varint.h>
+#include <Utils/Cryptography.h>
+#include <Wallets/AuthorizedPeers.h>
 
-#include <stdexcept>
+using namespace Armory;
+using namespace Armory::NetworkPeers;
 using namespace std::string_view_literals;
+
+class BIP151Message
+{
+private:
+   BinaryData cmd_;
+   BinaryData payload_;
+
+public:
+   BIP151Message(uint8_t* plaintextData, uint32_t plaintextDataSize)
+   { setEncStruct(plaintextData, plaintextDataSize); }
+
+   BIP151Message(const uint8_t* inCmd, size_t inCmdSize,
+      const uint8_t* inPayload, size_t inPayloadSize)
+   { setEncStructData(inCmd, inCmdSize, inPayload, inPayloadSize); }
+
+   ////////
+   void setEncStructData(const uint8_t* inCmd, size_t inCmdSize,
+      const uint8_t* inPayload, size_t inPayloadSize)
+   {
+      cmd_.copyFrom(inCmd, inCmdSize);
+      payload_.copyFrom(inPayload, inPayloadSize);
+   }
+
+   int setEncStruct(uint8_t* plaintextData,
+      const uint32_t& plaintextDataSize)
+   {
+      BinaryReader inData(plaintextData, plaintextDataSize);
+
+      // Do some basic sanity checking before proceeding.
+      uint32_t msgSize = inData.get_uint32_t();
+      if (msgSize != inData.getSizeRemaining()) {
+         LOGERR << "BIP 151 - Incoming message size (" << msgSize << ") does not "
+            << "match the data buffer size (" << inData.getSizeRemaining() << ").";
+         return -1;
+      }
+
+      // uint64_t -> uint32_t is safe in this case. The spec disallows >4GB msgs.
+      uint8_t cmdSize = inData.get_uint8_t();
+      inData.get_BinaryData(cmd_, static_cast<uint32_t>(cmdSize));
+      uint64_t payloadSize = inData.get_var_int();
+      inData.get_BinaryData(payload_, static_cast<uint32_t>(payloadSize));
+      return 0;
+   }
+
+   ////////
+   void getEncStructMsg(uint8_t* outStruct, size_t outStructSize,
+      size_t& finalStructSize)
+   {
+      assert(outStructSize >= messageSizeHint());
+
+      size_t writerSize = messageSizeHint() - 4;
+      BinaryWriter payloadWriter(writerSize);
+      payloadWriter.put_var_int(cmd_.getSize());
+      payloadWriter.put_BinaryData(cmd_);
+      payloadWriter.put_uint32_t(payload_.getSize());
+      payloadWriter.put_BinaryData(payload_);
+
+      // Write a second, final buffer.
+      finalStructSize = payloadWriter.getSize() + 4;
+      BinaryWriter finalStruct(finalStructSize);
+      finalStruct.put_uint32_t(payloadWriter.getSize());
+      finalStruct.put_BinaryData(payloadWriter.getData());
+
+      std::copy(finalStruct.getData().getPtr(),
+         finalStruct.getData().getPtr() + finalStructSize,
+         outStruct);
+   }
+
+   ////////
+   void getCmd(uint8_t* cmdBuf, size_t cmdBufSize)
+   {
+      assert(cmd_.getSize() <= cmdBufSize);
+      std::copy(cmd_.getPtr(), cmd_.getPtr() + cmd_.getSize(), cmdBuf);
+   }
+
+   size_t getCmdSize() const { return cmd_.getSize(); }
+   const uint8_t* getCmdPtr() const { return cmd_.getPtr(); }
+   const BinaryData& getPayload(void) const { return payload_; }
+   size_t getPayloadSize() const { return payload_.getSize(); }
+   const uint8_t* getPayloadPtr() const { return payload_.getPtr(); }
+   size_t messageSizeHint() const
+   {
+      // Hint: Operand order is the same order as what's found in the struct.
+      return 8 + BtcUtils::calcVarIntSize(cmd_.getSize()) +
+         cmd_.getSize() + payload_.getSize();
+   }
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 // Test the BIP 150/151 code here.
@@ -179,24 +274,6 @@ TEST_F(BIP150_151Test, checkData_151_Only)
 
    // BIP 151 connection uses private keys we feed it. (Normally, we'd let it
    // generate its own private keys.)
-   auto getpubkeymap = [](void)->const std::map<std::string, btc_pubkey>&
-   {
-      throw std::runtime_error("");
-   };
-
-   auto getprivkey = [](const BinaryDataRef&)->const SecureBinaryData&
-   {
-      throw std::runtime_error("");
-   };
-
-   auto getauthset = [](void)->const std::map<SecureBinaryData, std::string>&
-   {
-      throw std::runtime_error("");
-   };
-
-   AuthPeersLambdas akl1(getpubkeymap, getprivkey, getauthset);
-   AuthPeersLambdas akl2(getpubkeymap, getprivkey, getauthset);
-
    btc_key prvKeyCliIn;
    btc_key prvKeyCliOut;
    btc_key prvKeySrvIn;
@@ -205,8 +282,10 @@ TEST_F(BIP150_151Test, checkData_151_Only)
    prvKeyClientOut.copyTo(prvKeyCliOut.privkey);
    prvKeyServerIn.copyTo(prvKeySrvIn.privkey);
    prvKeyServerOut.copyTo(prvKeySrvOut.privkey);
-   BIP151Connection cliCon(&prvKeyCliIn, &prvKeyCliOut, akl1, false);
-   BIP151Connection srvCon(&prvKeySrvIn, &prvKeySrvOut, akl2, false);
+   BIP151Connection cliCon(&prvKeyCliIn, &prvKeyCliOut,
+      std::make_unique<PeerStoreView>(nullptr, std::make_shared<SecureBinaryData>()), false);
+   BIP151Connection srvCon(&prvKeySrvIn, &prvKeySrvOut,
+      std::make_unique<PeerStoreView>(nullptr, std::make_shared<SecureBinaryData>()), false);
 
    // Set up encinit/encack directly. (Initial encinit/encack will use regular
    // Bitcoin P2P messages, which we'll skip building.) Confirm all steps
@@ -215,42 +294,28 @@ TEST_F(BIP150_151Test, checkData_151_Only)
    BinaryData cliInEncackCliData; cliInEncackCliData.resize(BIP151PUBKEYSIZE);  // CLI (In)  -> SRV (Out)
    BinaryData cliOutEncinitCliData; cliOutEncinitCliData.resize(ENCINITMSGSIZE);  // CLI (Out) -> SRV (In)
    BinaryData cliOutEncackCliData; cliOutEncackCliData.resize(BIP151PUBKEYSIZE); // SRV (In)  -> CLI (Out)
-   int s1 = srvCon.getEncinitData(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
+   int s1 = srvCon.getEncinitData(cliInEncinitCliData, BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(0, s1);
    EXPECT_FALSE(srvCon.connectionComplete());
-   int s2 = cliCon.processEncinit(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  false);
+   int s2 = cliCon.processEncinit(cliInEncinitCliData, false);
    EXPECT_EQ(0, s2);
    EXPECT_FALSE(cliCon.connectionComplete());
-   int s3 = cliCon.getEncackData(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize());
+   int s3 = cliCon.getEncackData(cliInEncackCliData);
    EXPECT_EQ(0, s3);
    EXPECT_FALSE(cliCon.connectionComplete());
-   int s4 = srvCon.processEncack(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize(),
-                                 true);
+   int s4 = srvCon.processEncack(cliInEncackCliData, true);
    EXPECT_EQ(0, s4);
    EXPECT_FALSE(srvCon.connectionComplete());
-   int s5 = cliCon.getEncinitData(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
+   int s5 = cliCon.getEncinitData(cliOutEncinitCliData, BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(0, s5);
    EXPECT_FALSE(cliCon.connectionComplete());
-   int s6 = srvCon.processEncinit(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  false);
+   int s6 = srvCon.processEncinit(cliOutEncinitCliData, false);
    EXPECT_EQ(0, s6);
    EXPECT_FALSE(srvCon.connectionComplete());
-   int s7 = srvCon.getEncackData(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize());
+   int s7 = srvCon.getEncackData(cliOutEncackCliData);
    EXPECT_EQ(0, s7);
    EXPECT_TRUE(srvCon.connectionComplete());
-   int s8 = cliCon.processEncack(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize(),
-                                 true);
+   int s8 = cliCon.processEncack(cliOutEncackCliData, true);
    EXPECT_EQ(0, s8);
    EXPECT_TRUE(cliCon.connectionComplete());
 
@@ -259,7 +324,7 @@ TEST_F(BIP150_151Test, checkData_151_Only)
    std::copy(pubKeyClientOut.getPtr(),
       pubKeyClientOut.getPtr() + 33,
       expectedCliEncinitData.getPtr());
-   expectedCliEncinitData[BIP151PUBKEYSIZE] = \
+   expectedCliEncinitData[BIP151PUBKEYSIZE] =
       static_cast<uint8_t>(BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(pubKeyClientIn, cliInEncackCliData);
    EXPECT_EQ(expectedCliEncinitData, cliOutEncinitCliData);
@@ -269,7 +334,7 @@ TEST_F(BIP150_151Test, checkData_151_Only)
    std::copy(pubKeyServerOut.getPtr(),
       pubKeyServerOut.getPtr() + 33,
       expectedSrvEncinitData.getPtr());
-   expectedSrvEncinitData[BIP151PUBKEYSIZE] = \
+   expectedSrvEncinitData[BIP151PUBKEYSIZE] =
       static_cast<uint8_t>(BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(pubKeyServerIn, cliOutEncackCliData);
    EXPECT_EQ(expectedSrvEncinitData, cliInEncinitCliData);
@@ -297,138 +362,96 @@ TEST_F(BIP150_151Test, checkData_151_Only)
    // Encrypt and decrypt the first CLI -> SRV packet. Buffer is intentionally
    // oversized to show that the code works properly.
    BinaryData encMsgBuffer; encMsgBuffer.resize(testMsgData.getSize() + 16);
-   int encryptRes = cliCon.assemblePacket(testMsgData.getPtr(),
-                                          testMsgData.getSize(),
-                                          encMsgBuffer.getPtr(),
-                                          encMsgBuffer.getSize());
+   int encryptRes = cliCon.assemblePacket(testMsgData.getRef(),
+      encMsgBuffer.getPtr(), encMsgBuffer.getSize());
    EXPECT_EQ(0, encryptRes);
    EXPECT_EQ(cliOutMsg1, encMsgBuffer);
    BinaryData decMsgBuffer; decMsgBuffer.resize(testMsgData.getSize());
-   int decryptRes = srvCon.decryptPacket(encMsgBuffer.getPtr(),
-                                         encMsgBuffer.getSize(),
-                                         decMsgBuffer.getPtr(),
-                                         decMsgBuffer.getSize());
+   int decryptRes = srvCon.decryptPacket(encMsgBuffer.getRef(), decMsgBuffer);
    EXPECT_EQ(0, decryptRes);
    EXPECT_EQ(srvInMsg1, decMsgBuffer);
 
    // Encrypt and decrypt the second CLI -> SRV packet.
    encMsgBuffer.resize(testMsgData.getSize() + 16);
-   encryptRes = cliCon.assemblePacket(testMsgData.getPtr(),
-                                      testMsgData.getSize(),
-                                      encMsgBuffer.getPtr(),
-                                      encMsgBuffer.getSize());
+   encryptRes = cliCon.assemblePacket(testMsgData.getRef(),
+      encMsgBuffer.getPtr(), encMsgBuffer.getSize());
    EXPECT_EQ(0, encryptRes);
    EXPECT_EQ(cliOutMsg2, encMsgBuffer);
 
    decMsgBuffer.resize(testMsgData.getSize());
-   decryptRes = srvCon.decryptPacket(encMsgBuffer.getPtr(),
-                                     encMsgBuffer.getSize(),
-                                     decMsgBuffer.getPtr(),
-                                     decMsgBuffer.getSize());
+   decryptRes = srvCon.decryptPacket(encMsgBuffer.getRef(), decMsgBuffer);
    EXPECT_EQ(0, decryptRes);
    EXPECT_EQ(srvInMsg2, decMsgBuffer);
 
    // Rekey (CLI -> SRV) and confirm that the results are correct.
    BinaryData rekeyBuf; rekeyBuf.resize(64);
-   int rekeySendRes = cliCon.bip151RekeyConn(rekeyBuf.getPtr(),
-                                             rekeyBuf.getSize());
+   int rekeySendRes = cliCon.bip151RekeyConn(rekeyBuf);
    EXPECT_EQ(0, rekeySendRes);
    EXPECT_EQ(cliOutMsg3, rekeyBuf);
    decMsgBuffer.resize(rekeyBuf.getSize() - 16);
-   decryptRes = srvCon.decryptPacket(rekeyBuf.getPtr(),
-                                     rekeyBuf.getSize(),
-                                     decMsgBuffer.getPtr(),
-                                     decMsgBuffer.getSize());
+   decryptRes = srvCon.decryptPacket(rekeyBuf.getRef(), decMsgBuffer);
    EXPECT_EQ(0, decryptRes);
    EXPECT_EQ(srvInMsg3, decMsgBuffer);
    BIP151Message decData1(decMsgBuffer.getPtr(), decMsgBuffer.getSize());
-   int rekeyProcRes = srvCon.processEncack(decData1.getPayloadPtr(),
-                                           decData1.getPayloadSize(),
-                                           false);
+   int rekeyProcRes = srvCon.processEncack(decData1.getPayload().getRef(), false);
    EXPECT_EQ(0, rekeyProcRes);
 
    // Encrypt and decrypt the third CLI -> SRV packet.
    encMsgBuffer.resize(testMsgData.getSize() + 16);
-   encryptRes = cliCon.assemblePacket(testMsgData.getPtr(),
-                                      testMsgData.getSize(),
-                                      encMsgBuffer.getPtr(),
-                                      encMsgBuffer.getSize());
+   encryptRes = cliCon.assemblePacket(testMsgData.getRef(),
+      encMsgBuffer.getPtr(), encMsgBuffer.getSize());
    EXPECT_EQ(0, encryptRes);
    EXPECT_EQ(cliOutMsg4, encMsgBuffer);
    decMsgBuffer.resize(testMsgData.getSize());
-   decryptRes = srvCon.decryptPacket(encMsgBuffer.getPtr(),
-                                     encMsgBuffer.getSize(),
-                                     decMsgBuffer.getPtr(),
-                                     decMsgBuffer.getSize());
+   decryptRes = srvCon.decryptPacket(encMsgBuffer.getRef(), decMsgBuffer);
    EXPECT_EQ(0, decryptRes);
    EXPECT_EQ(srvInMsg4, decMsgBuffer);
 
    // Encrypt and decrypt the first SRV -> CLI packet.
    encMsgBuffer.resize(testMsgData.getSize() + 16);
-   encryptRes = srvCon.assemblePacket(testMsgData.getPtr(),
-                                      testMsgData.getSize(),
-                                      encMsgBuffer.getPtr(),
-                                      encMsgBuffer.getSize());
+   encryptRes = srvCon.assemblePacket(testMsgData.getRef(),
+      encMsgBuffer.getPtr(), encMsgBuffer.getSize());
    EXPECT_EQ(0, encryptRes);
    EXPECT_EQ(srvOutMsg1, encMsgBuffer);
 
    decMsgBuffer.resize(testMsgData.getSize());
-   decryptRes = cliCon.decryptPacket(encMsgBuffer.getPtr(),
-                                     encMsgBuffer.getSize(),
-                                     decMsgBuffer.getPtr(),
-                                     decMsgBuffer.getSize());
+   decryptRes = cliCon.decryptPacket(encMsgBuffer.getRef(), decMsgBuffer);
    EXPECT_EQ(0, decryptRes);
    EXPECT_EQ(cliInMsg1, decMsgBuffer);
 
    // Encrypt and decrypt the second SRV -> CLI packet.
    encMsgBuffer.resize(testMsgData.getSize() + 16);
-   encryptRes = srvCon.assemblePacket(testMsgData.getPtr(),
-                                      testMsgData.getSize(),
-                                      encMsgBuffer.getPtr(),
-                                      encMsgBuffer.getSize());
+   encryptRes = srvCon.assemblePacket(testMsgData.getRef(),
+      encMsgBuffer.getPtr(), encMsgBuffer.getSize());
    EXPECT_EQ(0, encryptRes);
    EXPECT_EQ(srvOutMsg2, encMsgBuffer);
 
    decMsgBuffer.resize(testMsgData.getSize());
-   decryptRes = cliCon.decryptPacket(encMsgBuffer.getPtr(),
-                                     encMsgBuffer.getSize(),
-                                     decMsgBuffer.getPtr(),
-                                     decMsgBuffer.getSize());
+   decryptRes = cliCon.decryptPacket(encMsgBuffer.getRef(), decMsgBuffer);
    EXPECT_EQ(0, decryptRes);
    EXPECT_EQ(cliInMsg2, decMsgBuffer);
 
    // Rekey (CLI -> SRV) and confirm that the results are correct.
-   rekeySendRes = srvCon.bip151RekeyConn(rekeyBuf.getPtr(),
-                                         rekeyBuf.getSize());
+   rekeySendRes = srvCon.bip151RekeyConn(rekeyBuf);
    EXPECT_EQ(0, rekeySendRes);
    EXPECT_EQ(srvOutMsg3, rekeyBuf);
    decMsgBuffer.resize(rekeyBuf.getSize() - 16);
-   decryptRes = cliCon.decryptPacket(rekeyBuf.getPtr(),
-                                     rekeyBuf.getSize(),
-                                     decMsgBuffer.getPtr(),
-                                     decMsgBuffer.getSize());
+   decryptRes = cliCon.decryptPacket(rekeyBuf.getRef(), decMsgBuffer);
    EXPECT_EQ(0, decryptRes);
    EXPECT_EQ(cliInMsg3, decMsgBuffer);
    BIP151Message decData2(decMsgBuffer.getPtr(), decMsgBuffer.getSize());
-   rekeyProcRes = cliCon.processEncack(decData2.getPayloadPtr(),
-                                       decData2.getPayloadSize(),
-                                       false);
+   rekeyProcRes = cliCon.processEncack(decData2.getPayload().getRef(), false);
    EXPECT_EQ(0, rekeyProcRes);
 
    // Encrypt and decrypt the third SRV -> CLI packet.
    encMsgBuffer.resize(testMsgData.getSize() + 16);
-   encryptRes = cliCon.assemblePacket(testMsgData.getPtr(),
-                                      testMsgData.getSize(),
-                                      encMsgBuffer.getPtr(),
-                                      encMsgBuffer.getSize());
+   encryptRes = cliCon.assemblePacket(testMsgData.getRef(),
+      encMsgBuffer.getPtr(), encMsgBuffer.getSize());
    EXPECT_EQ(0, encryptRes);
    EXPECT_EQ(srvOutMsg4, encMsgBuffer);
 
    decMsgBuffer.resize(testMsgData.getSize());
-   decryptRes = srvCon.decryptPacket(encMsgBuffer.getPtr(),
-                                     encMsgBuffer.getSize(),
-                                     decMsgBuffer.getPtr(),
-                                     decMsgBuffer.getSize());
+   decryptRes = srvCon.decryptPacket(encMsgBuffer.getRef(), decMsgBuffer);
    EXPECT_EQ(0, decryptRes);
    EXPECT_EQ(cliInMsg4, decMsgBuffer);
 }
@@ -446,16 +469,18 @@ TEST_F(BIP150_151Test, checkData_150_151)
    // now, just cheat and have two "separate" systems with the same input files.
 
    //grab serv private key from peer files
-   auto servFilePath = std::filesystem::current_path();
-   servFilePath.append("input_files/bip150v0_srv1/identity-key-ipv4");
+   auto servFilePath = std::filesystem::current_path() / baseDir_ /
+      "bip150v0_srv1/identity-key-ipv4";
+   ASSERT_TRUE(FileUtils::pathExists(servFilePath, 2));
    std::fstream serv_isf(servFilePath);
    char prvHex[65];
    serv_isf.getline(prvHex, 65);
    SecureBinaryData privServ(READHEX(prvHex));
 
    //grab client private key from peer files
-   auto cliFilePath = std::filesystem::current_path();
-   cliFilePath.append("input_files/bip150v0_cli1/identity-key-ipv4");
+   auto cliFilePath = std::filesystem::current_path() / baseDir_ /
+      "bip150v0_cli1/identity-key-ipv4";
+   ASSERT_TRUE(FileUtils::pathExists(cliFilePath, 2));
    std::fstream cli_isf(cliFilePath);
    char cliHex[65];
    cli_isf.getline(cliHex, 65);
@@ -465,93 +490,12 @@ TEST_F(BIP150_151Test, checkData_150_151)
    auto pubServ = Cryptography::ECDSA::computePublicKey(privServ, true);
    auto pubCli = Cryptography::ECDSA::computePublicKey(privCli, true);
 
-   btc_pubkey servKey;
-   btc_pubkey_init(&servKey);
-   memcpy(servKey.pubkey, pubServ.getPtr(), BIP151PUBKEYSIZE);
-   servKey.compressed = true;
+   //setup peer stores
+   auto serverStore = std::make_shared<ServerStore>(privServ);
+   serverStore->addPeer(PeerKey{pubCli, PeerType::Client}, {"101.101.101.101:10101"}, {});
 
-   btc_pubkey clientKey;
-   btc_pubkey_init(&clientKey);
-   memcpy(clientKey.pubkey, pubCli.getPtr(), BIP151PUBKEYSIZE);
-   clientKey.compressed = true;
-
-   //create pubkey maps
-   std::map<std::string, btc_pubkey> servMap{
-      {"own", servKey},
-      {"101.101.101.101:10101", clientKey}
-   };
-
-   std::map<std::string, btc_pubkey> cliMap{
-      {"own", clientKey},
-      {"1.2.3.4:8333", servKey}
-   };
-
-   //create privkey maps
-   std::map<SecureBinaryData, SecureBinaryData> servPrivMap{
-      {pubServ, privServ}
-   };
-
-   std::map<SecureBinaryData, SecureBinaryData> cliPrivMap{
-      {pubCli, privCli}
-   };
-
-   //create auth peer sets
-   std::map<SecureBinaryData, std::string> servSet{
-      {pubCli, ""}
-   };
-
-   std::map<SecureBinaryData, std::string> clientSet{
-      {pubServ, ""}
-   };
-
-   //create server auth key lambdas
-   auto serv_getPubKeyMap = [&servMap](void)
-   ->const std::map<std::string, btc_pubkey>&
-   {
-      return servMap;
-   };
-
-   auto serv_getPrivKey = [&servPrivMap](const BinaryDataRef& pub)->const SecureBinaryData&
-   {
-      auto iter = servPrivMap.find(pub);
-      if (iter == servPrivMap.end()) {
-         throw std::runtime_error("invalid key");
-      }
-      return iter->second;
-   };
-
-   auto serv_getauthset = [servSet](void)
-   ->const std::map<SecureBinaryData, std::string>&
-   {
-      return servSet;
-   };
-
-   //create client auth key lambdas
-   auto cli_getPubKeyMap = [&cliMap](void)
-   ->const std::map<std::string, btc_pubkey>&
-   {
-      return cliMap;
-   };
-
-   auto cli_getPrivKey = [&cliPrivMap](const BinaryDataRef& pub)->const SecureBinaryData&
-   {
-      auto iter = cliPrivMap.find(pub);
-      if (iter == cliPrivMap.end()) {
-         throw std::runtime_error("invalid key");
-      }
-      return iter->second;
-   };
-
-   auto cli_getauthset = [clientSet](void)
-   ->const std::map<SecureBinaryData, std::string>&
-   {
-      return clientSet;
-   };
-
-   //create AKL objects
-   AuthPeersLambdas aklServ(serv_getPubKeyMap, serv_getPrivKey, serv_getauthset);
-   AuthPeersLambdas aklCli(cli_getPubKeyMap, cli_getPrivKey, cli_getauthset);
-
+   auto clientStore = std::make_shared<ClientStore>(privCli);
+   clientStore->addPeer(PeerKey{pubServ, PeerType::ServerTwoWay}, {"1.2.3.4:8333"}, {});
 
    startupBIP150CTX(4);
 
@@ -563,8 +507,8 @@ TEST_F(BIP150_151Test, checkData_150_151)
    prvKeyClientOut.copyTo(prvKeyCliOut.privkey);
    prvKeyServerIn.copyTo(prvKeySrvIn.privkey);
    prvKeyServerOut.copyTo(prvKeySrvOut.privkey);
-   BIP151Connection cliCon(&prvKeyCliIn, &prvKeyCliOut, aklCli, false);
-   BIP151Connection srvCon(&prvKeySrvIn, &prvKeySrvOut, aklServ, false);
+   BIP151Connection cliCon(&prvKeyCliIn, &prvKeyCliOut, clientStore->getView(PeerType::ServerTwoWay), false);
+   BIP151Connection srvCon(&prvKeySrvIn, &prvKeySrvOut, serverStore->getView(), false);
 
    // Set up encinit/encack directly. (Initial encinit/encack will use regular
    // Bitcoin P2P messages, which we'll skip building.) Confirm all steps
@@ -573,42 +517,28 @@ TEST_F(BIP150_151Test, checkData_150_151)
    BinaryData cliInEncackCliData; cliInEncackCliData.resize(BIP151PUBKEYSIZE);  // CLI (In)  -> SRV (Out)
    BinaryData cliOutEncinitCliData; cliOutEncinitCliData.resize(ENCINITMSGSIZE);  // CLI (Out) -> SRV (In)
    BinaryData cliOutEncackCliData; cliOutEncackCliData.resize(BIP151PUBKEYSIZE); // SRV (In)  -> CLI (Out)
-   int s1 = srvCon.getEncinitData(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
+   int s1 = srvCon.getEncinitData(cliInEncinitCliData, BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(0, s1);
    EXPECT_FALSE(srvCon.connectionComplete());
-   int s2 = cliCon.processEncinit(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  false);
+   int s2 = cliCon.processEncinit(cliInEncinitCliData.getRef(), false);
    EXPECT_EQ(0, s2);
    EXPECT_FALSE(cliCon.connectionComplete());
-   int s3 = cliCon.getEncackData(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize());
+   int s3 = cliCon.getEncackData(cliInEncackCliData);
    EXPECT_EQ(0, s3);
    EXPECT_FALSE(cliCon.connectionComplete());
-   int s4 = srvCon.processEncack(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize(),
-                                 true);
+   int s4 = srvCon.processEncack(cliInEncackCliData.getRef(), true);
    EXPECT_EQ(0, s4);
    EXPECT_FALSE(srvCon.connectionComplete());
-   int s5 = cliCon.getEncinitData(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
+   int s5 = cliCon.getEncinitData(cliOutEncinitCliData, BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(0, s5);
    EXPECT_FALSE(cliCon.connectionComplete());
-   int s6 = srvCon.processEncinit(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  false);
+   int s6 = srvCon.processEncinit(cliOutEncinitCliData.getRef(), false);
    EXPECT_EQ(0, s6);
    EXPECT_FALSE(srvCon.connectionComplete());
-   int s7 = srvCon.getEncackData(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize());
+   int s7 = srvCon.getEncackData(cliOutEncackCliData);
    EXPECT_EQ(0, s7);
    EXPECT_TRUE(srvCon.connectionComplete());
-   int s8 = cliCon.processEncack(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize(),
-                                 true);
+   int s8 = cliCon.processEncack(cliOutEncackCliData.getRef(), true);
    EXPECT_EQ(0, s8);
    EXPECT_TRUE(cliCon.connectionComplete());
 
@@ -624,69 +554,51 @@ TEST_F(BIP150_151Test, checkData_150_151)
    EXPECT_EQ(BIP150State::INACTIVE, srvCon.getBIP150State());
 
    // INACTIVE -> CHALLENGE1
-   int b1 = cliCon.getAuthchallengeData(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        "1.2.3.4:8333",
-                                        true);
+   int b1 = cliCon.getAuthchallengeData(
+      authchallengeBuf, "1.2.3.4:8333", true);
    EXPECT_EQ(0, b1);
    EXPECT_EQ(BIP150State::CHALLENGE1, cliCon.getBIP150State());
    EXPECT_EQ(authchallenge1Data, authchallengeBuf);
-   int b2 = srvCon.processAuthchallenge(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        true);
+   int b2 = srvCon.processAuthchallenge(authchallengeBuf, true);
    EXPECT_EQ(0, b2);
    EXPECT_EQ(BIP150State::CHALLENGE1, srvCon.getBIP150State());
 
    // CHALLENGE1 -> REPLY1
-   int b3 = srvCon.getAuthreplyData(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    true);
+   int b3 = srvCon.getAuthreplyData(authreplyBuf,true);
    EXPECT_EQ(0, b3);
    EXPECT_EQ(BIP150State::REPLY1, srvCon.getBIP150State());
    EXPECT_EQ(authreply1Data, authreplyBuf);
-   int b4 = cliCon.processAuthreply(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    true);
+   int b4 = cliCon.processAuthreply(authreplyBuf, true);
    EXPECT_EQ(0, b4);
    EXPECT_EQ(BIP150State::REPLY1, cliCon.getBIP150State());
 
    // REPLY1 -> PROPOSE
-   int b5 = cliCon.getAuthproposeData(authproposeBuf.getPtr(),
-                                      authproposeBuf.getSize());
+   int b5 = cliCon.getAuthproposeData(authproposeBuf);
    EXPECT_EQ(0, b5);
    EXPECT_EQ(BIP150State::PROPOSE, cliCon.getBIP150State());
    EXPECT_EQ(authproposeData, authproposeBuf);
-   int b6 = srvCon.processAuthpropose(authproposeBuf.getPtr(),
-                                      authproposeBuf.getSize());
+   int b6 = srvCon.processAuthpropose(authproposeBuf);
    EXPECT_EQ(0, b6);
    EXPECT_EQ(BIP150State::PROPOSE, srvCon.getBIP150State());
 
    // PROPOSE -> CHALLENGE2
-   int b7 = srvCon.getAuthchallengeData(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        "",
-                                        false);
+   int b7 = srvCon.getAuthchallengeData(
+      authchallengeBuf, "", false);
    EXPECT_EQ(0, b7);
    EXPECT_EQ(BIP150State::CHALLENGE2, srvCon.getBIP150State());
    EXPECT_EQ(authchallenge2Data, authchallengeBuf);
-   int b8 = cliCon.processAuthchallenge(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        false);
+   int b8 = cliCon.processAuthchallenge(authchallengeBuf, false);
    EXPECT_EQ(0, b8);
    EXPECT_EQ(BIP150State::CHALLENGE2, cliCon.getBIP150State());
 
    // CHALLENGE2 -> REPLY2 (SUCCESS)
-   int b9 = cliCon.getAuthreplyData(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    false);
+   int b9 = cliCon.getAuthreplyData(authreplyBuf, false);
    EXPECT_EQ(0, b9);
 
    cliCon.bip150HandshakeRekey();
    EXPECT_EQ(BIP150State::SUCCESS, cliCon.getBIP150State());
    EXPECT_EQ(authreply2Data, authreplyBuf);
-   int b10 = srvCon.processAuthreply(authreplyBuf.getPtr(),
-                                     authreplyBuf.getSize(),
-                                     false);
+   int b10 = srvCon.processAuthreply(authreplyBuf, false);
    EXPECT_EQ(0, b10);
 
    srvCon.bip150HandshakeRekey();
@@ -694,17 +606,14 @@ TEST_F(BIP150_151Test, checkData_150_151)
 
    // See what happens when messages are received out of order.
    // INACTIVE -> CHALLENGE1  (Client)
-   int b11 = cliCon.getAuthchallengeData(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        "1.2.3.4:8333",
-                                        true);
+   int b11 = cliCon.getAuthchallengeData(
+      authchallengeBuf, "1.2.3.4:8333", true);
    EXPECT_EQ(0, b11);
    EXPECT_EQ(BIP150State::CHALLENGE1, cliCon.getBIP150State());
    EXPECT_EQ(authchallenge1Data, authchallengeBuf);
 
    // CHALLENGE1 -> PROPOSE  (Client)
-   int b12 = cliCon.getAuthproposeData(authproposeBuf.getPtr(),
-                                       authproposeBuf.getSize());
+   int b12 = cliCon.getAuthproposeData(authproposeBuf);
    EXPECT_EQ(-1, b12);
    EXPECT_EQ(BIP150State::ERR_STATE, cliCon.getBIP150State());
 }
@@ -718,16 +627,18 @@ TEST_F(BIP150_151Test, checkData_150_151_1Way)
    // now, just cheat and have two "separate" systems with the same input files.
 
    //grab serv private key from peer files
-   auto servFilePath = std::filesystem::current_path();
-   servFilePath.append("input_files/bip150v0_srv1/identity-key-ipv4");
+   auto servFilePath = std::filesystem::current_path() / baseDir_ /
+      "bip150v0_srv1/identity-key-ipv4";
+   ASSERT_TRUE(FileUtils::pathExists(servFilePath, 2));
    std::fstream serv_isf(servFilePath);
    char prvHex[65];
    serv_isf.getline(prvHex, 65);
    SecureBinaryData privServ(READHEX(prvHex));
 
    //grab client private key from peer files
-   auto cliFilePath = std::filesystem::current_path();
-   cliFilePath.append("input_files/bip150v0_cli1/identity-key-ipv4");
+   auto cliFilePath = std::filesystem::current_path() / baseDir_ /
+      "bip150v0_cli1/identity-key-ipv4";
+   ASSERT_TRUE(FileUtils::pathExists(cliFilePath, 2));
    std::fstream cli_isf(cliFilePath);
    char cliHex[65];
    cli_isf.getline(cliHex, 65);
@@ -737,89 +648,10 @@ TEST_F(BIP150_151Test, checkData_150_151_1Way)
    auto pubServ = Cryptography::ECDSA::computePublicKey(privServ, true);
    auto pubCli = Cryptography::ECDSA::computePublicKey(privCli, true);
 
-   btc_pubkey servKey;
-   btc_pubkey_init(&servKey);
-   memcpy(servKey.pubkey, pubServ.getPtr(), BIP151PUBKEYSIZE);
-   servKey.compressed = true;
-
-   btc_pubkey clientKey;
-   btc_pubkey_init(&clientKey);
-   memcpy(clientKey.pubkey, pubCli.getPtr(), BIP151PUBKEYSIZE);
-   clientKey.compressed = true;
-
-   //create pubkey maps
-   std::map<std::string, btc_pubkey> servMap{
-      {"own", servKey}, {"101.101.101.101:10101", clientKey}
-   };
-
-   std::map<std::string, btc_pubkey> cliMap{
-      {"own", clientKey}, {"1.2.3.4:8333", servKey}
-   };
-
-   //create privkey maps
-   std::map<SecureBinaryData, SecureBinaryData> servPrivMap{
-      {pubServ, privServ}
-   };
-
-   std::map<SecureBinaryData, SecureBinaryData> cliPrivMap{
-      {pubCli, privCli}
-   };
-
-   //create auth peer sets
-   std::map<SecureBinaryData, std::string> servSet{
-      {pubCli, ""}
-   };
-
-   std::map<SecureBinaryData, std::string> clientSet{
-      {pubServ, ""}
-   };
-
-   //create server auth key lambdas
-   auto serv_getPubKeyMap = [&servMap](void)
-   ->const std::map<std::string, btc_pubkey>&
-   {
-      return servMap;
-   };
-
-   auto serv_getPrivKey = [&servPrivMap](const BinaryDataRef& pub)
-   ->const SecureBinaryData&
-   {
-      auto iter = servPrivMap.find(pub);
-      if (iter == servPrivMap.end()) {
-         throw std::runtime_error("invalid key");
-      }
-      return iter->second;
-   };
-
-   auto serv_getauthset = [servSet](void)
-   ->const std::map<SecureBinaryData, std::string>&
-   {
-      return servSet;
-   };
-
-   //create client auth key lambdas
-   auto cli_getPubKeyMap = [&cliMap](void)
-   ->const std::map<std::string, btc_pubkey>&
-   { return cliMap; };
-
-   auto cli_getPrivKey = [&cliPrivMap](const BinaryDataRef& pub)
-   ->const SecureBinaryData&
-   {
-      auto iter = cliPrivMap.find(pub);
-      if (iter == cliPrivMap.end()) {
-         throw std::runtime_error("invalid key");
-      }
-      return iter->second;
-   };
-
-   auto cli_getauthset = [clientSet](void)
-   ->const std::map<SecureBinaryData, std::string>&
-   { return clientSet; };
-
-   //create AKL objects
-   AuthPeersLambdas aklServ(serv_getPubKeyMap, serv_getPrivKey, serv_getauthset);
-   AuthPeersLambdas aklCli(cli_getPubKeyMap, cli_getPrivKey, cli_getauthset);
-
+   //setup peer stores
+   auto serverStore = std::make_shared<ServerStore>(privServ);
+   auto clientStore = std::make_shared<ClientStore>(privCli);
+   clientStore->addPeer(PeerKey{pubServ, PeerType::ServerOneWay}, {"1.2.3.4:8333"}, {});
 
    startupBIP150CTX(4);
 
@@ -831,8 +663,8 @@ TEST_F(BIP150_151Test, checkData_150_151_1Way)
    prvKeyClientOut.copyTo(prvKeyCliOut.privkey);
    prvKeyServerIn.copyTo(prvKeySrvIn.privkey);
    prvKeyServerOut.copyTo(prvKeySrvOut.privkey);
-   BIP151Connection cliCon(&prvKeyCliIn, &prvKeyCliOut, aklCli, true);
-   BIP151Connection srvCon(&prvKeySrvIn, &prvKeySrvOut, aklServ, true);
+   BIP151Connection cliCon(&prvKeyCliIn, &prvKeyCliOut, clientStore->getView(PeerType::ServerOneWay), true);
+   BIP151Connection srvCon(&prvKeySrvIn, &prvKeySrvOut, serverStore->getView(), true);
 
    // Set up encinit/encack directly. (Initial encinit/encack will use regular
    // Bitcoin P2P messages, which we'll skip building.) Confirm all steps
@@ -841,42 +673,28 @@ TEST_F(BIP150_151Test, checkData_150_151_1Way)
    BinaryData cliInEncackCliData; cliInEncackCliData.resize(BIP151PUBKEYSIZE);  // CLI (In)  -> SRV (Out)
    BinaryData cliOutEncinitCliData; cliOutEncinitCliData.resize(ENCINITMSGSIZE);  // CLI (Out) -> SRV (In)
    BinaryData cliOutEncackCliData; cliOutEncackCliData.resize(BIP151PUBKEYSIZE); // SRV (In)  -> CLI (Out)
-   int s1 = srvCon.getEncinitData(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
+   int s1 = srvCon.getEncinitData(cliInEncinitCliData, BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(0, s1);
    EXPECT_FALSE(srvCon.connectionComplete());
-   int s2 = cliCon.processEncinit(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  false);
+   int s2 = cliCon.processEncinit(cliInEncinitCliData.getRef(), false);
    EXPECT_EQ(0, s2);
    EXPECT_FALSE(cliCon.connectionComplete());
-   int s3 = cliCon.getEncackData(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize());
+   int s3 = cliCon.getEncackData(cliInEncackCliData);
    EXPECT_EQ(0, s3);
    EXPECT_FALSE(cliCon.connectionComplete());
-   int s4 = srvCon.processEncack(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize(),
-                                 true);
+   int s4 = srvCon.processEncack(cliInEncackCliData.getRef(), true);
    EXPECT_EQ(0, s4);
    EXPECT_FALSE(srvCon.connectionComplete());
-   int s5 = cliCon.getEncinitData(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
+   int s5 = cliCon.getEncinitData(cliOutEncinitCliData, BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(0, s5);
    EXPECT_FALSE(cliCon.connectionComplete());
-   int s6 = srvCon.processEncinit(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  false);
+   int s6 = srvCon.processEncinit(cliOutEncinitCliData.getRef(), false);
    EXPECT_EQ(0, s6);
    EXPECT_FALSE(srvCon.connectionComplete());
-   int s7 = srvCon.getEncackData(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize());
+   int s7 = srvCon.getEncackData(cliOutEncackCliData);
    EXPECT_EQ(0, s7);
    EXPECT_TRUE(srvCon.connectionComplete());
-   int s8 = cliCon.processEncack(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize(),
-                                 true);
+   int s8 = cliCon.processEncack(cliOutEncackCliData.getRef(), true);
    EXPECT_EQ(0, s8);
    EXPECT_TRUE(cliCon.connectionComplete());
 
@@ -892,69 +710,51 @@ TEST_F(BIP150_151Test, checkData_150_151_1Way)
    EXPECT_EQ(BIP150State::INACTIVE, srvCon.getBIP150State());
 
    // INACTIVE -> CHALLENGE1
-   int b1 = cliCon.getAuthchallengeData(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        "1.2.3.4:8333",
-                                        true);
+   int b1 = cliCon.getAuthchallengeData(
+      authchallengeBuf, "1.2.3.4:8333", true);
    EXPECT_EQ(0, b1);
    EXPECT_EQ(BIP150State::CHALLENGE1, cliCon.getBIP150State());
    EXPECT_EQ(authchallenge1Data, authchallengeBuf);
-   int b2 = srvCon.processAuthchallenge(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        true);
+   int b2 = srvCon.processAuthchallenge(authchallengeBuf, true);
    EXPECT_EQ(0, b2);
    EXPECT_EQ(BIP150State::CHALLENGE1, srvCon.getBIP150State());
 
    // CHALLENGE1 -> REPLY1
-   int b3 = srvCon.getAuthreplyData(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    true);
+   int b3 = srvCon.getAuthreplyData(authreplyBuf, true);
    EXPECT_EQ(0, b3);
    EXPECT_EQ(BIP150State::REPLY1, srvCon.getBIP150State());
    EXPECT_EQ(authreply1Data, authreplyBuf);
-   int b4 = cliCon.processAuthreply(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    true);
+   int b4 = cliCon.processAuthreply(authreplyBuf, true);
    EXPECT_EQ(0, b4);
    EXPECT_EQ(BIP150State::REPLY1, cliCon.getBIP150State());
 
    // REPLY1 -> PROPOSE
-   int b5 = cliCon.getAuthproposeData(authproposeBuf.getPtr(),
-                                      authproposeBuf.getSize());
+   int b5 = cliCon.getAuthproposeData(authproposeBuf);
    EXPECT_EQ(0, b5);
    EXPECT_EQ(BIP150State::PROPOSE, cliCon.getBIP150State());
    EXPECT_EQ(authproposeData_1way, authproposeBuf);
-   int b6 = srvCon.processAuthpropose(authproposeBuf.getPtr(),
-                                      authproposeBuf.getSize());
+   int b6 = srvCon.processAuthpropose(authproposeBuf);
    EXPECT_EQ(1, b6);
    EXPECT_EQ(BIP150State::PROPOSE, srvCon.getBIP150State());
 
    // PROPOSE -> CHALLENGE2
-   int b7 = srvCon.getAuthchallengeData(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        "",
-                                        false);
+   int b7 = srvCon.getAuthchallengeData(
+      authchallengeBuf, "", false);
    EXPECT_EQ(0, b7);
    EXPECT_EQ(BIP150State::CHALLENGE2, srvCon.getBIP150State());
    EXPECT_EQ(authchallenge2Data_1way, authchallengeBuf);
-   int b8 = cliCon.processAuthchallenge(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        false);
+   int b8 = cliCon.processAuthchallenge(authchallengeBuf, false);
    EXPECT_EQ(0, b8);
    EXPECT_EQ(BIP150State::CHALLENGE2, cliCon.getBIP150State());
 
    // CHALLENGE2 -> REPLY2 (SUCCESS)
-   int b9 = cliCon.getAuthreplyData(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    false);
+   int b9 = cliCon.getAuthreplyData(authreplyBuf, false);
    EXPECT_EQ(0, b9);
 
    cliCon.bip150HandshakeRekey();
    EXPECT_EQ(BIP150State::SUCCESS, cliCon.getBIP150State());
    EXPECT_EQ(memcmp(pubCli.getPtr(), authreplyBuf.getPtr(), BIP151PUBKEYSIZE), 0);
-   int b10 = srvCon.processAuthreply(authreplyBuf.getPtr(),
-                                     authreplyBuf.getSize(),
-                                     false);
+   int b10 = srvCon.processAuthreply(authreplyBuf, false);
    EXPECT_EQ(0, b10);
 
    srvCon.bip150HandshakeRekey();
@@ -970,16 +770,18 @@ TEST_F(BIP150_151Test, checkData_150_151_privateClientToPublicServer)
    // now, just cheat and have two "separate" systems with the same input files.
 
    //grab serv private key from peer files
-   auto servFilePath = std::filesystem::current_path();
-   servFilePath.append("input_files/bip150v0_srv1/identity-key-ipv4");
+   auto servFilePath = std::filesystem::current_path() / baseDir_ /
+      "bip150v0_srv1/identity-key-ipv4";
+   ASSERT_TRUE(FileUtils::pathExists(servFilePath, 2));
    std::fstream serv_isf(servFilePath);
    char prvHex[65];
    serv_isf.getline(prvHex, 65);
    SecureBinaryData privServ(READHEX(prvHex));
 
    //grab client private key from peer files
-   auto cliFilePath = std::filesystem::current_path();
-   cliFilePath.append("input_files/bip150v0_cli1/identity-key-ipv4");
+   auto cliFilePath = std::filesystem::current_path() / baseDir_ /
+      "bip150v0_cli1/identity-key-ipv4";
+   ASSERT_TRUE(FileUtils::pathExists(cliFilePath, 2));
    std::fstream cli_isf(cliFilePath);
    char cliHex[65];
    cli_isf.getline(cliHex, 65);
@@ -989,86 +791,11 @@ TEST_F(BIP150_151Test, checkData_150_151_privateClientToPublicServer)
    auto pubServ = Cryptography::ECDSA::computePublicKey(privServ, true);
    auto pubCli = Cryptography::ECDSA::computePublicKey(privCli, true);
 
-   btc_pubkey servKey;
-   btc_pubkey_init(&servKey);
-   memcpy(servKey.pubkey, pubServ.getPtr(), BIP151PUBKEYSIZE);
-   servKey.compressed = true;
+   auto serverStore = std::make_shared<ServerStore>(privServ);
+   serverStore->addPeer(PeerKey{pubCli, PeerType::Client}, {"101.101.101.101:10101"}, {});
 
-   btc_pubkey clientKey;
-   btc_pubkey_init(&clientKey);
-   memcpy(clientKey.pubkey, pubCli.getPtr(), BIP151PUBKEYSIZE);
-   clientKey.compressed = true;
-
-   //create pubkey maps
-   std::map<std::string, btc_pubkey> servMap{
-      {"own", servKey}, {"101.101.101.101:10101", clientKey}
-   };
-
-   std::map<std::string, btc_pubkey> cliMap{
-      {"own", clientKey}, {"1.2.3.4:8333", servKey}
-   };
-
-   //create privkey maps
-   std::map<SecureBinaryData, SecureBinaryData> servPrivMap{
-      {pubServ, privServ}
-   };
-
-   std::map<SecureBinaryData, SecureBinaryData> cliPrivMap{
-      {pubCli, privCli}
-   };
-
-   //create auth peer sets
-   std::map<SecureBinaryData, std::string> servSet{
-      {pubCli, ""}
-   };
-
-   std::map<SecureBinaryData, std::string> clientSet{
-      {pubServ, ""}
-   };
-
-   //create server auth key lambdas
-   auto serv_getPubKeyMap = [&servMap](void)
-   ->const std::map<std::string, btc_pubkey>&
-   { return servMap; };
-
-   auto serv_getPrivKey = [&servPrivMap](const BinaryDataRef& pub)
-   ->const SecureBinaryData&
-   {
-      auto iter = servPrivMap.find(pub);
-      if (iter == servPrivMap.end()) {
-         throw std::runtime_error("invalid key");
-      }
-      return iter->second;
-   };
-
-   auto serv_getauthset = [servSet](void)
-   ->const std::map<SecureBinaryData, std::string>&
-   {
-      return servSet;
-   };
-
-   //create client auth key lambdas
-   auto cli_getPubKeyMap = [&cliMap](void)
-   ->const std::map<std::string, btc_pubkey>&
-   { return cliMap; };
-
-   auto cli_getPrivKey = [&cliPrivMap](const BinaryDataRef& pub)
-   ->const SecureBinaryData&
-   {
-      auto iter = cliPrivMap.find(pub);
-      if (iter == cliPrivMap.end()) {
-         throw std::runtime_error("invalid key");
-      }
-      return iter->second;
-   };
-
-   auto cli_getauthset = [clientSet](void)
-   ->const std::map<SecureBinaryData, std::string>&
-   { return clientSet; };
-
-   //create AKL objects
-   AuthPeersLambdas aklServ(serv_getPubKeyMap, serv_getPrivKey, serv_getauthset);
-   AuthPeersLambdas aklCli(cli_getPubKeyMap, cli_getPrivKey, cli_getauthset);
+   auto clientStore = std::make_shared<ClientStore>(privCli);
+   clientStore->addPeer(PeerKey{pubServ, PeerType::ServerTwoWay}, {"1.2.3.4:8333"}, {});
 
    startupBIP150CTX(4);
 
@@ -1080,8 +807,8 @@ TEST_F(BIP150_151Test, checkData_150_151_privateClientToPublicServer)
    prvKeyClientOut.copyTo(prvKeyCliOut.privkey);
    prvKeyServerIn.copyTo(prvKeySrvIn.privkey);
    prvKeyServerOut.copyTo(prvKeySrvOut.privkey);
-   BIP151Connection cliCon(&prvKeyCliIn, &prvKeyCliOut, aklCli, false);
-   BIP151Connection srvCon(&prvKeySrvIn, &prvKeySrvOut, aklServ, true);
+   BIP151Connection cliCon(&prvKeyCliIn, &prvKeyCliOut, clientStore->getView(PeerType::ServerTwoWay), false);
+   BIP151Connection srvCon(&prvKeySrvIn, &prvKeySrvOut, serverStore->getView(), true);
 
    // Set up encinit/encack directly. (Initial encinit/encack will use regular
    // Bitcoin P2P messages, which we'll skip building.) Confirm all steps
@@ -1090,42 +817,28 @@ TEST_F(BIP150_151Test, checkData_150_151_privateClientToPublicServer)
    BinaryData cliInEncackCliData; cliInEncackCliData.resize(BIP151PUBKEYSIZE);  // CLI (In)  -> SRV (Out)
    BinaryData cliOutEncinitCliData; cliOutEncinitCliData.resize(ENCINITMSGSIZE);  // CLI (Out) -> SRV (In)
    BinaryData cliOutEncackCliData; cliOutEncackCliData.resize(BIP151PUBKEYSIZE); // SRV (In)  -> CLI (Out)
-   int s1 = srvCon.getEncinitData(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
+   int s1 = srvCon.getEncinitData(cliInEncinitCliData, BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(0, s1);
    EXPECT_FALSE(srvCon.connectionComplete());
-   int s2 = cliCon.processEncinit(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  false);
+   int s2 = cliCon.processEncinit(cliInEncinitCliData.getRef(), false);
    EXPECT_EQ(0, s2);
    EXPECT_FALSE(cliCon.connectionComplete());
-   int s3 = cliCon.getEncackData(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize());
+   int s3 = cliCon.getEncackData(cliInEncackCliData);
    EXPECT_EQ(0, s3);
    EXPECT_FALSE(cliCon.connectionComplete());
-   int s4 = srvCon.processEncack(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize(),
-                                 true);
+   int s4 = srvCon.processEncack(cliInEncackCliData.getRef(), true);
    EXPECT_EQ(0, s4);
    EXPECT_FALSE(srvCon.connectionComplete());
-   int s5 = cliCon.getEncinitData(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
+   int s5 = cliCon.getEncinitData(cliOutEncinitCliData, BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(0, s5);
    EXPECT_FALSE(cliCon.connectionComplete());
-   int s6 = srvCon.processEncinit(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  false);
+   int s6 = srvCon.processEncinit(cliOutEncinitCliData.getRef(), false);
    EXPECT_EQ(0, s6);
    EXPECT_FALSE(srvCon.connectionComplete());
-   int s7 = srvCon.getEncackData(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize());
+   int s7 = srvCon.getEncackData(cliOutEncackCliData);
    EXPECT_EQ(0, s7);
    EXPECT_TRUE(srvCon.connectionComplete());
-   int s8 = cliCon.processEncack(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize(),
-                                 true);
+   int s8 = cliCon.processEncack(cliOutEncackCliData.getRef(), true);
    EXPECT_EQ(0, s8);
    EXPECT_TRUE(cliCon.connectionComplete());
 
@@ -1141,40 +854,30 @@ TEST_F(BIP150_151Test, checkData_150_151_privateClientToPublicServer)
    EXPECT_EQ(BIP150State::INACTIVE, srvCon.getBIP150State());
 
    // INACTIVE -> CHALLENGE1
-   int b1 = cliCon.getAuthchallengeData(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        "1.2.3.4:8333",
-                                        true);
+   int b1 = cliCon.getAuthchallengeData(
+      authchallengeBuf, "1.2.3.4:8333", true);
    EXPECT_EQ(0, b1);
    EXPECT_EQ(BIP150State::CHALLENGE1, cliCon.getBIP150State());
    EXPECT_EQ(authchallenge1Data, authchallengeBuf);
-   int b2 = srvCon.processAuthchallenge(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        true);
+   int b2 = srvCon.processAuthchallenge(authchallengeBuf, true);
    EXPECT_EQ(0, b2);
    EXPECT_EQ(BIP150State::CHALLENGE1, srvCon.getBIP150State());
 
    // CHALLENGE1 -> REPLY1
-   int b3 = srvCon.getAuthreplyData(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    true);
+   int b3 = srvCon.getAuthreplyData(authreplyBuf, true);
    EXPECT_EQ(0, b3);
    EXPECT_EQ(BIP150State::REPLY1, srvCon.getBIP150State());
    EXPECT_EQ(authreply1Data, authreplyBuf);
-   int b4 = cliCon.processAuthreply(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    true);
+   int b4 = cliCon.processAuthreply(authreplyBuf, true);
    EXPECT_EQ(0, b4);
    EXPECT_EQ(BIP150State::REPLY1, cliCon.getBIP150State());
 
    // REPLY1 -> PROPOSE
-   int b5 = cliCon.getAuthproposeData(authproposeBuf.getPtr(),
-                                      authproposeBuf.getSize());
+   int b5 = cliCon.getAuthproposeData(authproposeBuf);
    EXPECT_EQ(0, b5);
    EXPECT_EQ(BIP150State::PROPOSE, cliCon.getBIP150State());
    EXPECT_EQ(authproposeData, authproposeBuf);
-   int b6 = srvCon.processAuthpropose(authproposeBuf.getPtr(),
-                                      authproposeBuf.getSize());
+   int b6 = srvCon.processAuthpropose(authproposeBuf);
    EXPECT_EQ(-1, b6);
    EXPECT_EQ(BIP150State::ERR_STATE, srvCon.getBIP150State());
 }
@@ -1188,16 +891,18 @@ TEST_F(BIP150_151Test, checkData_150_151_publicClientToPrivateServer)
    // now, just cheat and have two "separate" systems with the same input files.
 
    //grab serv private key from peer files
-   auto servFilePath = std::filesystem::current_path();
-   servFilePath.append("input_files/bip150v0_srv1/identity-key-ipv4");
+   auto servFilePath = std::filesystem::current_path() / baseDir_ /
+      "bip150v0_srv1/identity-key-ipv4";
+   ASSERT_TRUE(FileUtils::pathExists(servFilePath, 2));
    std::fstream serv_isf(servFilePath);
    char prvHex[65];
    serv_isf.getline(prvHex, 65);
    SecureBinaryData privServ(READHEX(prvHex));
 
    //grab client private key from peer files
-   auto cliFilePath = std::filesystem::current_path();
-   cliFilePath.append("input_files/bip150v0_cli1/identity-key-ipv4");
+   auto cliFilePath = std::filesystem::current_path() / baseDir_ /
+      "bip150v0_cli1/identity-key-ipv4";
+   ASSERT_TRUE(FileUtils::pathExists(cliFilePath, 2));
    std::fstream cli_isf(cliFilePath);
    char cliHex[65];
    cli_isf.getline(cliHex, 65);
@@ -1207,84 +912,11 @@ TEST_F(BIP150_151Test, checkData_150_151_publicClientToPrivateServer)
    auto pubServ = Cryptography::ECDSA::computePublicKey(privServ, true);
    auto pubCli = Cryptography::ECDSA::computePublicKey(privCli, true);
 
-   btc_pubkey servKey;
-   btc_pubkey_init(&servKey);
-   memcpy(servKey.pubkey, pubServ.getPtr(), BIP151PUBKEYSIZE);
-   servKey.compressed = true;
+   auto serverStore = std::make_shared<ServerStore>(privServ);
+   serverStore->addPeer(PeerKey{pubCli, PeerType::Client}, {"101.101.101.101:10101"}, {});
 
-   btc_pubkey clientKey;
-   btc_pubkey_init(&clientKey);
-   memcpy(clientKey.pubkey, pubCli.getPtr(), BIP151PUBKEYSIZE);
-   clientKey.compressed = true;
-
-   //create pubkey maps
-   std::map<std::string, btc_pubkey> servMap{
-      {"own", servKey}, {"101.101.101.101:10101", clientKey}
-   };
-
-   std::map<std::string, btc_pubkey> cliMap{
-      {"own", clientKey}, {"1.2.3.4:8333", servKey}
-   };
-
-   //create privkey maps
-   std::map<SecureBinaryData, SecureBinaryData> servPrivMap{
-      {pubServ, privServ}
-   };
-
-   std::map<SecureBinaryData, SecureBinaryData> cliPrivMap{
-      {pubCli, privCli}
-   };
-
-   //create auth peer sets
-   std::map<SecureBinaryData, std::string> servSet{
-      {pubCli, ""}
-   };
-
-   std::map<SecureBinaryData, std::string> clientSet{
-      {pubServ, ""}
-   };
-
-   //create server auth key lambdas
-   auto serv_getPubKeyMap = [&servMap](void)
-   ->const std::map<std::string, btc_pubkey>&
-   { return servMap; };
-
-   auto serv_getPrivKey = [&servPrivMap](const BinaryDataRef& pub)
-   ->const SecureBinaryData&
-   {
-      auto iter = servPrivMap.find(pub);
-      if (iter == servPrivMap.end()) {
-         throw std::runtime_error("invalid key");
-      }
-      return iter->second;
-   };
-
-   auto serv_getauthset = [servSet](void)
-   ->const std::map<SecureBinaryData, std::string>&
-   { return servSet; };
-
-   //create client auth key lambdas
-   auto cli_getPubKeyMap = [&cliMap](void)
-   ->const std::map<std::string, btc_pubkey>&
-   { return cliMap; };
-
-   auto cli_getPrivKey = [&cliPrivMap](const BinaryDataRef& pub)
-   ->const SecureBinaryData&
-   {
-      auto iter = cliPrivMap.find(pub);
-      if (iter == cliPrivMap.end()) {
-         throw std::runtime_error("invalid key");
-      }
-      return iter->second;
-   };
-
-   auto cli_getauthset = [clientSet](void)
-   ->const std::map<SecureBinaryData, std::string>&
-   { return clientSet; };
-
-   //create AKL objects
-   AuthPeersLambdas aklServ(serv_getPubKeyMap, serv_getPrivKey, serv_getauthset);
-   AuthPeersLambdas aklCli(cli_getPubKeyMap, cli_getPrivKey, cli_getauthset);
+   auto clientStore = std::make_shared<ClientStore>(privCli);
+   clientStore->addPeer(PeerKey{pubServ, PeerType::ServerOneWay}, {"1.2.3.4:8333"}, {});
 
    startupBIP150CTX(4);
 
@@ -1296,8 +928,8 @@ TEST_F(BIP150_151Test, checkData_150_151_publicClientToPrivateServer)
    prvKeyClientOut.copyTo(prvKeyCliOut.privkey);
    prvKeyServerIn.copyTo(prvKeySrvIn.privkey);
    prvKeyServerOut.copyTo(prvKeySrvOut.privkey);
-   BIP151Connection cliCon(&prvKeyCliIn, &prvKeyCliOut, aklCli, true);
-   BIP151Connection srvCon(&prvKeySrvIn, &prvKeySrvOut, aklServ, false);
+   BIP151Connection cliCon(&prvKeyCliIn, &prvKeyCliOut, clientStore->getView(PeerType::ServerOneWay), true);
+   BIP151Connection srvCon(&prvKeySrvIn, &prvKeySrvOut, serverStore->getView(), false);
 
    // Set up encinit/encack directly. (Initial encinit/encack will use regular
    // Bitcoin P2P messages, which we'll skip building.) Confirm all steps
@@ -1306,42 +938,28 @@ TEST_F(BIP150_151Test, checkData_150_151_publicClientToPrivateServer)
    BinaryData cliInEncackCliData; cliInEncackCliData.resize(BIP151PUBKEYSIZE);  // CLI (In)  -> SRV (Out)
    BinaryData cliOutEncinitCliData; cliOutEncinitCliData.resize(ENCINITMSGSIZE);  // CLI (Out) -> SRV (In)
    BinaryData cliOutEncackCliData; cliOutEncackCliData.resize(BIP151PUBKEYSIZE); // SRV (In)  -> CLI (Out)
-   int s1 = srvCon.getEncinitData(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
+   int s1 = srvCon.getEncinitData(cliInEncinitCliData, BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(0, s1);
    EXPECT_FALSE(srvCon.connectionComplete());
-   int s2 = cliCon.processEncinit(cliInEncinitCliData.getPtr(),
-                                  cliInEncinitCliData.getSize(),
-                                  false);
+   int s2 = cliCon.processEncinit(cliInEncinitCliData.getRef(), false);
    EXPECT_EQ(0, s2);
    EXPECT_FALSE(cliCon.connectionComplete());
-   int s3 = cliCon.getEncackData(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize());
+   int s3 = cliCon.getEncackData(cliInEncackCliData);
    EXPECT_EQ(0, s3);
    EXPECT_FALSE(cliCon.connectionComplete());
-   int s4 = srvCon.processEncack(cliInEncackCliData.getPtr(),
-                                 cliInEncackCliData.getSize(),
-                                 true);
+   int s4 = srvCon.processEncack(cliInEncackCliData.getRef(), true);
    EXPECT_EQ(0, s4);
    EXPECT_FALSE(srvCon.connectionComplete());
-   int s5 = cliCon.getEncinitData(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
+   int s5 = cliCon.getEncinitData(cliOutEncinitCliData, BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(0, s5);
    EXPECT_FALSE(cliCon.connectionComplete());
-   int s6 = srvCon.processEncinit(cliOutEncinitCliData.getPtr(),
-                                  cliOutEncinitCliData.getSize(),
-                                  false);
+   int s6 = srvCon.processEncinit(cliOutEncinitCliData.getRef(), false);
    EXPECT_EQ(0, s6);
    EXPECT_FALSE(srvCon.connectionComplete());
-   int s7 = srvCon.getEncackData(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize());
+   int s7 = srvCon.getEncackData(cliOutEncackCliData);
    EXPECT_EQ(0, s7);
    EXPECT_TRUE(srvCon.connectionComplete());
-   int s8 = cliCon.processEncack(cliOutEncackCliData.getPtr(),
-                                 cliOutEncackCliData.getSize(),
-                                 true);
+   int s8 = cliCon.processEncack(cliOutEncackCliData.getRef(), true);
    EXPECT_EQ(0, s8);
    EXPECT_TRUE(cliCon.connectionComplete());
 
@@ -1357,40 +975,30 @@ TEST_F(BIP150_151Test, checkData_150_151_publicClientToPrivateServer)
    EXPECT_EQ(BIP150State::INACTIVE, srvCon.getBIP150State());
 
    // INACTIVE -> CHALLENGE1
-   int b1 = cliCon.getAuthchallengeData(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        "1.2.3.4:8333",
-                                        true);
+   int b1 = cliCon.getAuthchallengeData(
+      authchallengeBuf, "1.2.3.4:8333", true);
    EXPECT_EQ(0, b1);
    EXPECT_EQ(BIP150State::CHALLENGE1, cliCon.getBIP150State());
    EXPECT_EQ(authchallenge1Data, authchallengeBuf);
-   int b2 = srvCon.processAuthchallenge(authchallengeBuf.getPtr(),
-                                        authchallengeBuf.getSize(),
-                                        true);
+   int b2 = srvCon.processAuthchallenge(authchallengeBuf, true);
    EXPECT_EQ(0, b2);
    EXPECT_EQ(BIP150State::CHALLENGE1, srvCon.getBIP150State());
 
    // CHALLENGE1 -> REPLY1
-   int b3 = srvCon.getAuthreplyData(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    true);
+   int b3 = srvCon.getAuthreplyData(authreplyBuf, true);
    EXPECT_EQ(0, b3);
    EXPECT_EQ(BIP150State::REPLY1, srvCon.getBIP150State());
    EXPECT_EQ(authreply1Data, authreplyBuf);
-   int b4 = cliCon.processAuthreply(authreplyBuf.getPtr(),
-                                    authreplyBuf.getSize(),
-                                    true);
+   int b4 = cliCon.processAuthreply(authreplyBuf, true);
    EXPECT_EQ(0, b4);
    EXPECT_EQ(BIP150State::REPLY1, cliCon.getBIP150State());
 
    // REPLY1 -> PROPOSE
-   int b5 = cliCon.getAuthproposeData(authproposeBuf.getPtr(),
-                                      authproposeBuf.getSize());
+   int b5 = cliCon.getAuthproposeData(authproposeBuf);
    EXPECT_EQ(0, b5);
    EXPECT_EQ(BIP150State::PROPOSE, cliCon.getBIP150State());
    EXPECT_EQ(authproposeData_1way, authproposeBuf);
-   int b6 = srvCon.processAuthpropose(authproposeBuf.getPtr(),
-                                      authproposeBuf.getSize());
+   int b6 = srvCon.processAuthpropose(authproposeBuf);
    EXPECT_EQ(-1, b6);
    EXPECT_EQ(BIP150State::ERR_STATE, srvCon.getBIP150State());
 }
@@ -1399,60 +1007,36 @@ TEST_F(BIP150_151Test, checkData_150_151_publicClientToPrivateServer)
 TEST_F(BIP150_151Test, handshakeCases_151_Only)
 {
    // Try to generate an encack before generating an encinit.
-   auto getpubkeymap = [](void)
-   ->const std::map<std::string, btc_pubkey>&
-   { throw std::runtime_error(""); };
-
-   auto getprivkey = [](const BinaryDataRef&)
-   ->const SecureBinaryData&
-   { throw std::runtime_error(""); };
-
-   auto getauthset = [](void)
-   ->const std::map<SecureBinaryData, std::string>&
-   { throw std::runtime_error(""); };
-
-   AuthPeersLambdas akl1(getpubkeymap, getprivkey, getauthset);
-   AuthPeersLambdas akl2(getpubkeymap, getprivkey, getauthset);
-
-   BIP151Connection cliCon1(akl1, false);
-   BIP151Connection srvCon1(akl2, false);
-   std::array<uint8_t, BIP151PUBKEYSIZE> dummy1{};
-   int s1 = cliCon1.getEncackData(dummy1.data(),
-                                  dummy1.size());
+   BIP151Connection cliCon1(std::make_unique<PeerStoreView>(
+      nullptr, std::make_shared<SecureBinaryData>()), false);
+   BIP151Connection srvCon1(std::make_unique<PeerStoreView>(
+      nullptr, std::make_shared<SecureBinaryData>()), false);
+   BinaryData dummy1; dummy1.resize(BIP151PUBKEYSIZE);
+   int s1 = cliCon1.getEncackData(dummy1);
    EXPECT_EQ(-1, s1);
 
    // Try to process an encack before processing an encinit.
    dummy1[0] = 0x03;
    dummy1[1] = 0xff;
-   int s2 = srvCon1.processEncack(dummy1.data(),
-                                  dummy1.size(),
-                                  true);
+   int s2 = srvCon1.processEncack(dummy1.getRef(), true);
    EXPECT_EQ(-1, s2);
 
    // Attempt to set an incorrect ciphersuite.
-   AuthPeersLambdas akl3(getpubkeymap, getprivkey, getauthset);
-   AuthPeersLambdas akl4(getpubkeymap, getprivkey, getauthset);
-
-   BIP151Connection cliCon2(akl3, false);
-   BIP151Connection srvCon2(akl4, false);
-   std::array<uint8_t, ENCINITMSGSIZE> dummy3{};
-   std::array<uint8_t, 64> dummy4{};
-   int s3 = cliCon2.getEncinitData(dummy3.data(),
-                                   dummy3.size(),
-                                   static_cast<BIP151SymCiphers>(0xda));
+   BIP151Connection cliCon2(std::make_unique<PeerStoreView>(
+      nullptr, std::make_shared<SecureBinaryData>()), false);
+   BIP151Connection srvCon2(std::make_unique<PeerStoreView>(
+      nullptr, std::make_shared<SecureBinaryData>()), false);
+   BinaryData dummy3; dummy3.resize(ENCINITMSGSIZE);
+   BinaryData dummy4; dummy4.resize(64);
+   int s3 = cliCon2.getEncinitData(dummy3, static_cast<BIP151SymCiphers>(0xda));
    EXPECT_EQ(-1, s3);
 
    // Attempt to rekey before the connection is complete.
-   int s4 = cliCon2.getEncinitData(dummy3.data(),
-                                   dummy3.size(),
-                                   BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
+   int s4 = cliCon2.getEncinitData(dummy3, BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_EQ(0, s4);
-   int s5 = srvCon2.processEncinit(dummy3.data(),
-                                   dummy3.size(),
-                                   false);
+   int s5 = srvCon2.processEncinit(dummy3.getRef(), false);
    EXPECT_EQ(0, s5);
-   int s6 = srvCon2.bip151RekeyConn(dummy4.data(),
-                                    dummy4.size());
+   int s6 = srvCon2.bip151RekeyConn(dummy4);
    EXPECT_EQ(-1, s6);
 
    // Run after the final test has finished.
@@ -1491,26 +1075,10 @@ TEST_F(BIP151RekeyTest, rekeyRequired)
 
    // BIP 151 connection uses private keys we feed it. (Normally, we'd let it
    // generate its own private keys.)
-   auto getpubkeymap = [](void)->const std::map<std::string, btc_pubkey>&
-   {
-      throw std::runtime_error("");
-   };
-
-   auto getprivkey = [](const BinaryDataRef&)->const SecureBinaryData&
-   {
-      throw std::runtime_error("");
-   };
-
-   auto getauthset = [](void)->const std::map<SecureBinaryData, std::string>&
-   {
-      throw std::runtime_error("");
-   };
-
-   AuthPeersLambdas akl1(getpubkeymap, getprivkey, getauthset);
-   AuthPeersLambdas akl2(getpubkeymap, getprivkey, getauthset);
-
-   BIP151Connection cliCon(akl1, false);
-   BIP151Connection srvCon(akl2, false);
+   BIP151Connection cliCon(std::make_unique<PeerStoreView>(
+      nullptr, std::make_shared<SecureBinaryData>()), false);
+   BIP151Connection srvCon(std::make_unique<PeerStoreView>(
+      nullptr, std::make_shared<SecureBinaryData>()), false);
 
    // Set up encinit/encack directly. (Initial encinit/encack will use regular
    // Bitcoin P2P messages, which we'll skip building.) Confirm all steps
@@ -1519,35 +1087,21 @@ TEST_F(BIP151RekeyTest, rekeyRequired)
    BinaryData cliInEncackCliData; cliInEncackCliData.resize(BIP151PUBKEYSIZE);  // CLI (In)  -> SRV (Out)
    BinaryData cliOutEncinitCliData; cliOutEncinitCliData.resize(ENCINITMSGSIZE);  // CLI (Out) -> SRV (In)
    BinaryData cliOutEncackCliData; cliOutEncackCliData.resize(BIP151PUBKEYSIZE); // SRV (In)  -> CLI (Out)
-   srvCon.getEncinitData(cliInEncinitCliData.getPtr(),
-                         cliInEncinitCliData.getSize(),
-                         BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
+   srvCon.getEncinitData(cliInEncinitCliData, BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_FALSE(srvCon.connectionComplete());
-   cliCon.processEncinit(cliInEncinitCliData.getPtr(),
-                         cliInEncinitCliData.getSize(),
-                         false);
+   cliCon.processEncinit(cliInEncinitCliData.getRef(), false);
    EXPECT_FALSE(cliCon.connectionComplete());
-   cliCon.getEncackData(cliInEncackCliData.getPtr(),
-                        cliInEncackCliData.getSize());
+   cliCon.getEncackData(cliInEncackCliData);
    EXPECT_FALSE(cliCon.connectionComplete());
-   srvCon.processEncack(cliInEncackCliData.getPtr(),
-                        cliInEncackCliData.getSize(),
-                        true);
+   srvCon.processEncack(cliInEncackCliData.getRef(), true);
    EXPECT_FALSE(srvCon.connectionComplete());
-   cliCon.getEncinitData(cliOutEncinitCliData.getPtr(),
-                         cliOutEncinitCliData.getSize(),
-                         BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
+   cliCon.getEncinitData(cliOutEncinitCliData, BIP151SymCiphers::CHACHA20POLY1305_OPENSSH);
    EXPECT_FALSE(cliCon.connectionComplete());
-   srvCon.processEncinit(cliOutEncinitCliData.getPtr(),
-                         cliOutEncinitCliData.getSize(),
-                         false);
+   srvCon.processEncinit(cliOutEncinitCliData.getRef(), false);
    EXPECT_FALSE(srvCon.connectionComplete());
-   srvCon.getEncackData(cliOutEncackCliData.getPtr(),
-                        cliOutEncackCliData.getSize());
+   srvCon.getEncackData(cliOutEncackCliData);
    EXPECT_TRUE(srvCon.connectionComplete());
-   cliCon.processEncack(cliOutEncackCliData.getPtr(),
-                        cliOutEncackCliData.getSize(),
-                        true);
+   cliCon.processEncack(cliOutEncackCliData.getRef(), true);
    EXPECT_TRUE(cliCon.connectionComplete());
 
    // Our packet is 17 bytes. Over the course of 1200 bytes (unit test value 
@@ -1565,37 +1119,24 @@ TEST_F(BIP151RekeyTest, rekeyRequired)
    BinaryData decMsgBuffer; decMsgBuffer.resize(testMsgData.getSize());
    for(uint32_t x = 0; x < 69; ++x)
    {
-      cliCon.assemblePacket(testMsgData.getPtr(),
-                            testMsgData.getSize(),
-                            encMsgBuffer.getPtr(),
-                            encMsgBuffer.getSize());
-      srvCon.decryptPacket(encMsgBuffer.getPtr(),
-                           encMsgBuffer.getSize(),
-                           decMsgBuffer.getPtr(),
-                           decMsgBuffer.getSize());
+      cliCon.assemblePacket(testMsgData.getRef(),
+         encMsgBuffer.getPtr(),  encMsgBuffer.getSize());
+      srvCon.decryptPacket(encMsgBuffer.getRef(), decMsgBuffer);
       EXPECT_FALSE(cliCon.rekeyNeeded(testMsgData.getSize()));
       EXPECT_EQ(msg, decMsgBuffer);
    }
-   cliCon.assemblePacket(testMsgData.getPtr(),
-                         testMsgData.getSize(),
-                         encMsgBuffer.getPtr(),
-                         encMsgBuffer.getSize());
-   srvCon.decryptPacket(encMsgBuffer.getPtr(),
-                        encMsgBuffer.getSize(),
-                        decMsgBuffer.getPtr(),
-                        decMsgBuffer.getSize());
+   cliCon.assemblePacket(testMsgData.getRef(),
+      encMsgBuffer.getPtr(), encMsgBuffer.getSize());
+   srvCon.decryptPacket(encMsgBuffer.getRef(), decMsgBuffer);
    EXPECT_TRUE(cliCon.rekeyNeeded(testMsgData.getSize()));
    EXPECT_EQ(msg, decMsgBuffer);
 
    // Do a rekey and confirm that everything has been reset.
    // Rekey (CLI -> SRV) and confirm that the results are correct.
    BinaryData rekeyBuf; rekeyBuf.resize(64);
-   cliCon.bip151RekeyConn(rekeyBuf.getPtr(), rekeyBuf.getSize()); // Cli rekey
+   cliCon.bip151RekeyConn(rekeyBuf); // Cli rekey
    decMsgBuffer.resize(rekeyBuf.getSize() - 16);
-   srvCon.decryptPacket(rekeyBuf.getPtr(),
-                        rekeyBuf.getSize(),
-                        decMsgBuffer.getPtr(),
-                        decMsgBuffer.getSize());
+   srvCon.decryptPacket(rekeyBuf.getRef(), decMsgBuffer);
 
    // Process the incoming rekey.
    BIP151Message inEncack(decMsgBuffer.getPtr(), decMsgBuffer.getSize());
@@ -1603,32 +1144,22 @@ TEST_F(BIP151RekeyTest, rekeyRequired)
    BinaryData inPayload; inPayload.resize(inEncack.getPayloadSize());
    inEncack.getCmd(inCmd.getPtr(), inCmd.getSize());
    EXPECT_EQ("encack", inCmd.toBinStr());
-   srvCon.processEncack(inPayload.getPtr(), inPayload.getSize(), false); // Srv rekey
+   srvCon.processEncack(inPayload.getRef(), false); // Srv rekey
 
    // Repeat the data Tx and confirm that a rekey can be re-triggered.
    encMsgBuffer.resize(testMsgData.getSize() + 16);
    decMsgBuffer.resize(testMsgData.getSize());
    for(uint32_t x = 0; x < 69; ++x)
    {
-      cliCon.assemblePacket(testMsgData.getPtr(),
-                            testMsgData.getSize(),
-                            encMsgBuffer.getPtr(),
-                            encMsgBuffer.getSize());
-      srvCon.decryptPacket(encMsgBuffer.getPtr(),
-                           encMsgBuffer.getSize(),
-                           decMsgBuffer.getPtr(),
-                           decMsgBuffer.getSize());
+      cliCon.assemblePacket(testMsgData.getRef(),
+         encMsgBuffer.getPtr(), encMsgBuffer.getSize());
+      srvCon.decryptPacket(encMsgBuffer.getRef(), decMsgBuffer);
       EXPECT_FALSE(cliCon.rekeyNeeded(testMsgData.getSize()));
       EXPECT_EQ(msg, decMsgBuffer);
    }
-   cliCon.assemblePacket(testMsgData.getPtr(),
-                         testMsgData.getSize(),
-                         encMsgBuffer.getPtr(),
-                         encMsgBuffer.getSize());
-   srvCon.decryptPacket(encMsgBuffer.getPtr(),
-                        encMsgBuffer.getSize(),
-                        decMsgBuffer.getPtr(),
-                        decMsgBuffer.getSize());
+   cliCon.assemblePacket(testMsgData.getRef(),
+      encMsgBuffer.getPtr(), encMsgBuffer.getSize());
+   srvCon.decryptPacket(encMsgBuffer.getRef(), decMsgBuffer);
    EXPECT_TRUE(cliCon.rekeyNeeded(testMsgData.getSize()));
    EXPECT_EQ(msg, decMsgBuffer);
 

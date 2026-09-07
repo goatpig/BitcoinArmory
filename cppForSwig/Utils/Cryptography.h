@@ -173,6 +173,7 @@ namespace Cryptography
       //////////////////////////////////////////////////////////////////////////
       SecureBinaryData computePublicKey(BinaryDataRef, bool=false);
       bool verifyPublicKeyValid(BinaryDataRef);
+      bool verifyPublicKeyValid(const btc_pubkey_&);
       SecureBinaryData computeChainedPublicKey(BinaryDataRef, BinaryDataRef);
 
       bool verifyPoint(const BinaryData&, const BinaryData&);

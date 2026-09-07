@@ -23,14 +23,15 @@ void DualStream::enableStdOut(bool val)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-LogStream& DualStream::operator<<(std::string const & str)
+LogStream& DualStream::operator<<(const std::string& str)
 {
    std::unique_lock<std::mutex> lock(mu_);
    if (!noStdout_) {
       std::cout << str.c_str();
    }
    if (fout_.is_open()) {
-      fout_ << str.c_str();
+      fout_ << str;
+      fout_.flush();
    }
    return *this;
 }

@@ -59,11 +59,60 @@ int main(int argc, char* argv[])
    }
 
    auto logFilePath = Config::Pathing::logFilePath(LOG_FILE_NAME).string();
-   std::cout << "logging in " << logFilePath << std::endl;
-   auto logLevel = Config::NetworkSettings::ephemeralPeers() ?
-      LogLvlWarn : LogLvlDebug;
-   STARTLOGGING(logFilePath, logLevel);
-   LOGENABLESTDOUT();
+   STARTLOGGING(logFilePath, LogLvlDebug);
+   if (Config::NetworkSettings::ephemeralPeers()) {
+      LOGDISABLESTDOUT();
+      if (Config::NetworkSettings::oneWayAuth()) {
+         LOGERR << "--ephemeral and --oneWayAuth are mutually exclusive for db";
+         exit(-3);
+      }
+      //initAuthPeers will setup the ephemeral keys
+      try {
+         WebSocketServer::initPeerStore(
+            Wallets::IO::ReadOnlyFileParams{{}, nullptr});
+      } catch (const std::exception &e) {
+         LOGERR << "ephemeral peer db setup failed with this error: "
+            << e.what();
+         LOGERR << "aborting...";
+         exit(-4);
+      }
+   } else {
+      //setup remote peers db, this will block the init process until
+      //peers db is unlocked
+      LOGENABLESTDOUT();
+      LOGINFO << "logging in " << logFilePath;
+
+      auto peerFilePath = Config::getDataDir() / SERVER_AUTH_PEER_FILENAME;
+      if (!FileUtils::pathExists(peerFilePath, 0) &&
+         !Config::NetworkSettings::ephemeralPeers()) {
+         LOGINFO << "no server peers store found, creating one...";
+         auto passLbd = TerminalPassphrasePrompt::getLambda(
+            "new server peers store");
+         auto passWrapper = [&passLbd]()->std::unique_ptr<Passphrase::Params>
+         {
+            auto result = passLbd({});
+            if (!result.success) {
+               throw std::runtime_error("peers store init was rejected");
+            }
+            return std::make_unique<Passphrase::Params>(
+               250ms, 0, std::move(result.passphrase));
+         };
+         NetworkPeers::PeerStore::bootstrapWallet(
+            {peerFilePath, {passWrapper}});
+         WebSocketServer::initPeerStore(
+            {peerFilePath, passLbd});
+      } else {
+         auto passLbd = TerminalPassphrasePrompt::getLambda(
+            "server peers store");
+         WebSocketServer::initPeerStore({peerFilePath, passLbd});
+      }
+      NetworkPeers::PeerKey myKey{WebSocketServer::getOwnPublicKey(),
+         Config::NetworkSettings::oneWayAuth() ?
+         NetworkPeers::PeerType::ServerOneWay :
+         NetworkPeers::PeerType::ServerTwoWay
+      };
+      LOGINFO << "This is my key: " << myKey.toHumanReadable();
+   }
 
    LOGINFO << "Running on " << Config::DBSettings::threadCount() << " threads";
    LOGINFO << "Ram usage level: " << Config::DBSettings::ramUsage();
@@ -85,52 +134,6 @@ int main(int argc, char* argv[])
       }
    }
    LOGINFO << "datadir: " << Config::getDataDir().string();
-
-   if (Config::NetworkSettings::ephemeralPeers()) {
-      if (Config::NetworkSettings::oneWayAuth()) {
-         LOGERR << "--ephemeral and --oneWayAuth are mutually exclusive for db";
-         exit(-3);
-      }
-      //initAuthPeers will setup the ephemeral keys
-      try {
-         WebSocketServer::initAuthPeers(
-            Wallets::IO::ReadOnlyFileParams{{}, nullptr});
-      } catch (const std::exception &e) {
-         LOGERR << "ephemeral peer db setup failed with this error: "
-            << e.what();
-         LOGERR << "aborting...";
-         exit(-4);
-      }
-   } else {
-      //setup remote peers db, this will block the init process until
-      //peers db is unlocked
-      auto serverPeersFile = Config::getDataDir() / SERVER_AUTH_PEER_FILENAME;
-      if (!FileUtils::pathExists(serverPeersFile, 0) &&
-         !Config::NetworkSettings::ephemeralPeers()) {
-         LOGINFO << "no server peers store found, creating one...";
-         auto passWrapper = []()->std::unique_ptr<Passphrase::Params>
-         {
-            auto passLbd = TerminalPassphrasePrompt::getLambda(
-               "new server peers store");
-            auto result = passLbd({});
-            if (!result.success) {
-               throw std::runtime_error("peers store init was rejected");
-            }
-            return std::make_unique<Passphrase::Params>(
-               250ms, 0, std::move(result.passphrase));
-         };
-         auto peers = Wallets::AuthorizedPeers::createWallet(
-            {serverPeersFile, {passWrapper}});
-         WebSocketServer::initAuthPeers(peers);
-      } else {
-         auto passLbd = TerminalPassphrasePrompt::getLambda(
-            "server peers store");
-         WebSocketServer::initAuthPeers({serverPeersFile, passLbd});
-      }
-      Wallets::PeerKey myKey{WebSocketServer::getPublicKey(),
-         Config::NetworkSettings::oneWayAuth(), true};
-      LOGINFO << "This is my key: " << myKey.toHumanReadable();
-   }
 
    //start blockchain service
    bdmThread.start(Config::DBSettings::initMode());

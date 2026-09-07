@@ -9,7 +9,7 @@
 #include "DBClientClasses.h"
 #include <Utils/BtcUtils.h>
 #include <Utils/varint.h>
-#include <btc/ecc.h>
+#include <Utils/Cryptography.h>
 #include <Network/WebSocketClient.h>
 
 #include <capnp/message.h>
@@ -115,9 +115,6 @@ bool RemoteCallback::processNotifications(
       auto notif = notifs[i];
       switch (notif.which())
       {
-         case BDV::Notification::CONTINUE_POLLING:
-            break;
-
          case BDV::Notification::NEW_BLOCK:
          {
             auto newblock = notif.getNewBlock();
@@ -213,6 +210,13 @@ bool RemoteCallback::processNotifications(
             auto newBlock = notif.getReady();
             bdmNotif.newBlock = NewBlockNotif{
                newBlock.getHeight(), newBlock.getBranchHeight(), {}, {}};
+            run(std::move(bdmNotif));
+            break;
+         }
+
+         case BDV::Notification::REGISTERED:
+         {
+            BdmNotification bdmNotif(BDMAction_Registered);
             run(std::move(bdmNotif));
             break;
          }

@@ -94,7 +94,7 @@ namespace Armory
       {
          Unset = 0,
          Comments,
-         AuthPeers
+         Peers
       };
 
       //////////////////////////////////////////////////////////////////////////
@@ -123,6 +123,7 @@ namespace Armory
          //virtuals
          virtual AccountTypeEnum type(void) const = 0;
          virtual std::string name(void) const = 0;
+         std::string getDisplayName(void) const { return name(); }
          virtual Wallets::AddressAccountId getAccountID(void) const = 0;
          virtual Wallets::AssetAccountId getOuterAccountID(void) const = 0;
          virtual Wallets::AssetAccountId getInnerAccountID(void) const = 0;

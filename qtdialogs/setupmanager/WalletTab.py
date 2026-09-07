@@ -168,13 +168,13 @@ class WalletTab(QtWidgets.QWidget):
          item.setData(qtdefines.WLTLISTCOLS.Checkbox, QtCore.Qt.UserRole,
             walletEntry)
          if walletEntry.isLegacy:
-            def migrateWlt(_):
-               self.migrateWallet(walletEntry)
+            def migrateWlt(_, entry=walletEntry):
+               self.migrateWallet(entry)
             self._addActionButton(
                item, self.tr('Migrate'), migrateWlt)
          elif walletEntry.isEncrypted:
-            def unlockWlt(_):
-               self.unlockWallet(walletEntry)
+            def unlockWlt(_, entry=walletEntry):
+               self.unlockWallet(entry)
             self._addActionButton(
                item, self.tr('Unlock'), unlockWlt)
 

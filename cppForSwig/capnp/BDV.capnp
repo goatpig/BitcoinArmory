@@ -13,12 +13,12 @@ struct StaticRequest {
 
       register             @2 : Void;
       unregister           @3 : Void;
-      shutdown             @4 : Void;
-      shutdownNode         @5 : Void;
+      start                @4 : Void;
+      shutdown             @5 : Void;
       getNodeStatus        @6 : Void;
       getFeeSchedule       @7 : Text;
       getTopBlockHeight    @8 : Void;
-      getHeadersByHeight   @9 : List(UInt32);
+      getHeadersByHeight   @9: List(UInt32);
       getHeadersById       @10: List(UInt32);
       broadcast            @11: List(Data);
       rpcBroadcast         @12: Data;
@@ -167,7 +167,7 @@ struct Notification {
    requestId @0 : Text;
    union {
       terminate         @1 : Void;
-      continuePolling   @2 : Void;
+      registered        @2 : Void;
       ready             @3 : Types.NewBlockNotif;
       newBlock          @4 : Types.NewBlockNotif;
       zc                @5 : List(Types.TxioPair);

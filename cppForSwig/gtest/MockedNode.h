@@ -156,10 +156,10 @@ public:
    );
 
    //virtuals
-   void shutdown(void) override;
+   bool shutdown(void) override;
    Node::RpcState testConnection(void) override;
    bool canPoll(void) const override;
-   void waitOnChainSync(std::function<void(void)>);
+   void waitOnChainSync(std::function<void(void)>, bool);
    int broadcastTx(const BinaryDataRef&, std::string&) override;
    Node::Core::RPC::FeeEstimateResult getFeeByte(
       unsigned, const std::string&) const override;

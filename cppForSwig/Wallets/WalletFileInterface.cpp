@@ -33,20 +33,16 @@ namespace
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-//// WalletDBInterface
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+// WalletDBInterface
 WalletDBInterface::WalletDBInterface()
 {}
 
-////////////////////////////////////////////////////////////////////////////////
 WalletDBInterface::~WalletDBInterface()
 {
    shutdown();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 void WalletDBInterface::createEnv(const CreateFileParams& params)
 {
    auto lock = std::unique_lock<std::mutex>(setupMutex_);
@@ -64,7 +60,6 @@ void WalletDBInterface::createEnv(const CreateFileParams& params)
    setDbCount(3, false);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void WalletDBInterface::setupEnv(const ReadOnlyFileParams& params)
 {
    auto lock = std::unique_lock<std::mutex>(setupMutex_);
@@ -100,7 +95,7 @@ void WalletDBInterface::setupEnv(const ReadOnlyFileParams& params)
    */
 
    //decrypt control seed
-   lockControlContainer(params.unlockFunc);
+   auto controLock = lockControlContainer(params.unlockFunc);
    auto& rootEncrKey = decryptedData_->getClearTextAssetData(
       controlSeed_.get());
 
@@ -123,12 +118,9 @@ void WalletDBInterface::setupEnv(const ReadOnlyFileParams& params)
    for (auto& headerPtr : headerMap_) {
       openDB(headerPtr.second, rootEncrKey, encryptionVersion_);
    }
-
-   //clean up
-   unlockControlContainer();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 BinaryDataRef WalletDBInterface::getDataRefForKey(
    DBIfaceTransaction* tx, const BinaryData& key)
 {
@@ -142,7 +134,7 @@ BinaryDataRef WalletDBInterface::getDataRefForKey(
    return DBUtils::getDataRefForPacket(ref);
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 void WalletDBInterface::loadHeaders()
 {
    auto tx = beginReadTransaction(WALLETHEADER_DBNAME);
@@ -179,7 +171,23 @@ void WalletDBInterface::loadHeaders()
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
+std::shared_ptr<WalletHeader> WalletDBInterface::loadControlHeader()
+{
+   //grab meta object
+   BinaryWriter bw;
+   bw.put_uint8_t(WALLETHEADER_PREFIX);
+   bw.put_String(CONTROL_DB_NAME.data());
+   auto& headerKey = bw.getData();
+
+   auto tx = beginReadTransaction(CONTROL_DB_NAME.data());
+   auto headerVal = getDataRefForKey(tx.get(), headerKey);
+   if (headerVal.empty()) {
+      throw WalletInterfaceException("missing control db entry");
+   }
+   return WalletHeader::deserialize(headerKey, headerVal);
+}
+
+////////
 void WalletDBInterface::openControlDb()
 {
    if (controlDb_ != nullptr) {
@@ -189,7 +197,7 @@ void WalletDBInterface::openControlDb()
    controlDb_->open(dbEnv_.get(), CONTROL_DB_NAME.data());
 }
 
-////////////////////////////////////////////////////////////////////////////////
+
 void WalletDBInterface::shutdown()
 {
    auto lock = std::unique_lock<std::mutex>(setupMutex_);
@@ -202,7 +210,6 @@ void WalletDBInterface::shutdown()
       controlDb_.reset();
    }
 
-   controlLock_.reset();
    decryptedData_.reset();
    controlSeed_.reset();
    dbMap_.clear();
@@ -216,7 +223,7 @@ void WalletDBInterface::shutdown()
    path_.clear();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+
 void WalletDBInterface::openDB(std::shared_ptr<WalletHeader> headerPtr,
    const SecureBinaryData& encrRootKey, unsigned encrVersion)
 {
@@ -239,7 +246,7 @@ void WalletDBInterface::openDB(std::shared_ptr<WalletHeader> headerPtr,
    dbMap_.insert(make_pair(dbName, move(dbiPtr)));
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 const std::filesystem::path& WalletDBInterface::getFilename() const
 {
    if (dbEnv_ == nullptr) {
@@ -248,7 +255,7 @@ const std::filesystem::path& WalletDBInterface::getFilename() const
    return dbEnv_->getFilename();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 std::unique_ptr<DBIfaceTransaction> WalletDBInterface::beginWriteTransaction(
    const std::string_view& dbName)
 {
@@ -264,7 +271,6 @@ std::unique_ptr<DBIfaceTransaction> WalletDBInterface::beginWriteTransaction(
       this, iter->second.get(), true);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 std::unique_ptr<DBIfaceTransaction> WalletDBInterface::beginReadTransaction(
    const std::string_view& dbName)
 {
@@ -287,24 +293,7 @@ std::unique_ptr<DBIfaceTransaction> WalletDBInterface::beginReadTransaction(
       this, iter->second.get(), false);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<WalletHeader> WalletDBInterface::loadControlHeader()
-{
-   //grab meta object
-   BinaryWriter bw;
-   bw.put_uint8_t(WALLETHEADER_PREFIX);
-   bw.put_String(CONTROL_DB_NAME.data());
-   auto& headerKey = bw.getData();
-
-   auto tx = beginReadTransaction(CONTROL_DB_NAME.data());
-   auto headerVal = getDataRefForKey(tx.get(), headerKey);
-   if (headerVal.empty()) {
-      throw WalletInterfaceException("missing control db entry");
-   }
-   return WalletHeader::deserialize(headerKey, headerVal);
-}
-
-////////////////////////////////////////////////////////////////////////////////
+////////
 void WalletDBInterface::loadDataContainer(
    std::shared_ptr<WalletHeader> headerPtr)
 {
@@ -325,7 +314,6 @@ void WalletDBInterface::loadDataContainer(
    decryptedData_->readFromDisk(move(readTx));
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void WalletDBInterface::loadSeed(std::shared_ptr<WalletHeader> headerPtr)
 {
    auto tx = beginReadTransaction(headerPtr->getDbName());
@@ -340,7 +328,7 @@ void WalletDBInterface::loadSeed(std::shared_ptr<WalletHeader> headerPtr)
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 MasterKeyStruct WalletDBInterface::initWalletHeaderObject(
    std::shared_ptr<WalletHeader> headerPtr,
    Armory::Passphrase::Params& params)
@@ -463,7 +451,7 @@ MasterKeyStruct WalletDBInterface::initWalletHeaderObject(
    return mks;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 std::shared_ptr<WalletHeader_Control> WalletDBInterface::setupControlDB(
    const CreateFileParams& params)
 {
@@ -500,13 +488,11 @@ std::shared_ptr<WalletHeader_Control> WalletDBInterface::setupControlDB(
    This will be the second out of 3 calls to the passphrase lambda during
    wallet creation.
    */
-   decryptedData->setPassphrasePromptLambda(
-      params.setCtrlPassObj.getUnlockFunc());
-
    {
       //create encrypted seed object
+      auto lock = decryptedData->lockContainer(
+         params.setCtrlPassObj.getUnlockFunc());
       auto seed = Cryptography::PRNG::generateRandomStrong(32);
-      auto lock = ReentrantLock(decryptedData.get());
 
       auto cipherCopy = keyStruct.cipher_->getCopy();
       auto cipherText = decryptedData->encryptData(cipherCopy.get(), seed);
@@ -534,7 +520,7 @@ std::shared_ptr<WalletHeader_Control> WalletDBInterface::setupControlDB(
    return headerPtr;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 void WalletDBInterface::putHeader(std::shared_ptr<WalletHeader> headerPtr)
 {
    auto key = headerPtr->getDbKey();
@@ -544,7 +530,6 @@ void WalletDBInterface::putHeader(std::shared_ptr<WalletHeader> headerPtr)
    tx->insert(key, val);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void WalletDBInterface::addHeader(std::shared_ptr<WalletHeader> headerPtr)
 {
    auto lock = std::unique_lock<std::mutex>(setupMutex_);
@@ -573,7 +558,6 @@ void WalletDBInterface::addHeader(std::shared_ptr<WalletHeader> headerPtr)
    headerMap_.emplace(headerPtr->walletID_, headerPtr);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 std::shared_ptr<WalletHeader> WalletDBInterface::getWalletHeader(
    const std::string& name) const
 {
@@ -583,21 +567,19 @@ std::shared_ptr<WalletHeader> WalletDBInterface::getWalletHeader(
    return iter->second;
 }
 
-////////////////////////////////////////////////////////////////////////////////
 const std::map<std::string, std::shared_ptr<WalletHeader>>&
 WalletDBInterface::getHeaderMap() const
 {
    return headerMap_;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 unsigned WalletDBInterface::getDbCount() const
 {
    auto lock = std::unique_lock<std::mutex>(setupMutex_);
    return headerMap_.size();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 unsigned WalletDBInterface::getFreeDbCount() const
 {
    auto lock = std::unique_lock<std::mutex>(setupMutex_);
@@ -608,61 +590,12 @@ unsigned WalletDBInterface::getFreeDbCount() const
    return dbCount_ - count;
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void WalletDBInterface::setDbCount(unsigned count)
 {
    //add 2 for the control and headers db
    setDbCount(count + 2, true);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void WalletDBInterface::openDbEnv(bool fileExists)
-{
-   if (FileUtils::pathExists(path_, 0) != fileExists) {
-      if (!fileExists) {
-         throw WalletInterfaceException(
-            "[openEnv] trying to create a file that already exists: " +
-            path_.string());
-      } else {
-         throw WalletInterfaceException(
-            "[openEnv] trying to read a file that does not exists");
-      }
-   }
-
-   if (dbEnv_ != nullptr) {
-      throw WalletInterfaceException("[openEnv] dbEnv already instantiated");
-   }
-   dbEnv_ = std::make_unique<LMDB::Env>(dbCount_);
-   dbEnv_->open(path_, MDB_NOTLS);
-   dbEnv_->setMapSize(100*1024*1024ULL);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void WalletDBInterface::openEnv()
-{
-   openDbEnv(true);
-   for (auto& dbPtr : dbMap_) {
-      dbPtr.second->reset(dbEnv_.get());
-   }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void WalletDBInterface::closeEnv()
-{
-   if (controlDb_ != nullptr) {
-      controlDb_->close();
-      controlDb_.reset();
-   }
-
-   for (auto& dbPtr : dbMap_) {
-      dbPtr.second->close();
-   }
-
-   dbEnv_->close();
-   dbEnv_.reset();
-}
-
-////////////////////////////////////////////////////////////////////////////////
 void WalletDBInterface::setDbCount(unsigned count, bool doLock)
 {
    if (DBIfaceTransaction::hasTx()) {
@@ -687,28 +620,59 @@ void WalletDBInterface::setDbCount(unsigned count, bool doLock)
    openEnv();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void WalletDBInterface::lockControlContainer(
+////////
+void WalletDBInterface::openDbEnv(bool fileExists)
+{
+   if (FileUtils::pathExists(path_, 0) != fileExists) {
+      if (!fileExists) {
+         throw WalletInterfaceException(
+            "[openEnv] trying to create a file that already exists: " +
+            path_.string());
+      } else {
+         throw WalletInterfaceException(
+            "[openEnv] trying to read a file that does not exists");
+      }
+   }
+
+   if (dbEnv_ != nullptr) {
+      throw WalletInterfaceException("[openEnv] dbEnv already instantiated");
+   }
+   dbEnv_ = std::make_unique<LMDB::Env>(dbCount_);
+   dbEnv_->open(path_, MDB_NOTLS);
+   dbEnv_->setMapSize(100*1024*1024ULL);
+}
+
+void WalletDBInterface::openEnv()
+{
+   openDbEnv(true);
+   for (auto& dbPtr : dbMap_) {
+      dbPtr.second->reset(dbEnv_.get());
+   }
+}
+
+void WalletDBInterface::closeEnv()
+{
+   if (controlDb_ != nullptr) {
+      controlDb_->close();
+      controlDb_.reset();
+   }
+
+   for (auto& dbPtr : dbMap_) {
+      dbPtr.second->close();
+   }
+
+   dbEnv_->close();
+   dbEnv_.reset();
+}
+
+////////
+SingleLock WalletDBInterface::lockControlContainer(
    const Passphrase::UnlockFunc& passLbd)
 {
-   if (controlLock_ != nullptr) {
-      throw WalletInterfaceException("control container already locked");
-   }
-   controlLock_ = std::make_unique<ReentrantLock>(decryptedData_.get());
-   decryptedData_->setPassphrasePromptLambda(passLbd);
+   return decryptedData_->lockContainer(passLbd);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-void WalletDBInterface::unlockControlContainer()
-{
-   if (controlLock_ == nullptr) {
-      throw WalletInterfaceException("control container isn't locked");
-   }
-   decryptedData_->resetPassphraseLambda();
-   controlLock_.reset();
-}
-
-////////////////////////////////////////////////////////////////////////////////
+////////
 void WalletDBInterface::changeControlPassphrase(
    Passphrase::SetNew& newPassObj,
    const Passphrase::UnlockFunc& passLbd)
@@ -728,7 +692,6 @@ void WalletDBInterface::changeControlPassphrase(
    std::unique_lock<std::recursive_mutex> lock(DBIfaceTransaction::writeMutex_);
 
    //set the lambda to unlock the control encryption key
-   decryptedData_->setPassphrasePromptLambda(passLbd);
 
    //grab the encryption key
    const auto& masterKeyId = decryptedData_->getMasterEncryptionKeyId();
@@ -747,16 +710,12 @@ void WalletDBInterface::changeControlPassphrase(
    blindly pass the kdf used for the current passphrase. We will use the default
    kdf instead, until code is introduced to change that kdf too.
    */
-   decryptedData_->encryptEncryptionKey(masterKeyId, newPassObj);
-
-   //clear the lambda
-   decryptedData_->resetPassphraseLambda();
+   decryptedData_->encryptEncryptionKey(masterKeyId, passLbd, newPassObj);
 
    //cleanup deleted data placeholders
    compactFile();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void WalletDBInterface::eraseControlPassphrase(
    const Passphrase::UnlockFunc& passLbd)
 {
@@ -775,22 +734,16 @@ void WalletDBInterface::eraseControlPassphrase(
    //hold tx write mutex until the file is compacted
    std::unique_lock<std::recursive_mutex> lock(DBIfaceTransaction::writeMutex_);
 
-   //set the lambda to unlock the control encryption key
-   decryptedData_->setPassphrasePromptLambda(passLbd);
-
    //erase the passphrase
-   auto& masterKeyId = decryptedData_->getMasterEncryptionKeyId();
-   auto& kdfId = decryptedData_->getDefaultKdfId();
-   decryptedData_->eraseEncryptionKey(masterKeyId, kdfId);
-
-   //clear the lambda
-   decryptedData_->resetPassphraseLambda();
+   const auto& masterKeyId = decryptedData_->getMasterEncryptionKeyId();
+   const auto& kdfId = decryptedData_->getDefaultKdfId();
+   decryptedData_->eraseEncryptionKey(masterKeyId, kdfId, passLbd);
 
    //wipe the db
    compactFile();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 void WalletDBInterface::compactFile()
 {
    /*
@@ -862,7 +815,7 @@ void WalletDBInterface::compactFile()
    //TODO: lock sharing rights on wallet files
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 void WalletDBInterface::wipeAndDeleteFile(const std::filesystem::path& path)
 {
    if (path.empty()) {
@@ -880,7 +833,6 @@ void WalletDBInterface::wipeAndDeleteFile(const std::filesystem::path& path)
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void WalletDBInterface::eraseFromDisk()
 {
    auto pathCopy = path_;
@@ -890,10 +842,7 @@ void WalletDBInterface::eraseFromDisk()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-//// WalletIfaceIterator
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+// WalletIfaceIterator
 WalletIfaceIterator::WalletIfaceIterator(const WalletIfaceTransaction* tx) :
    txPtr_(tx)
 {
@@ -903,43 +852,34 @@ WalletIfaceIterator::WalletIfaceIterator(const WalletIfaceTransaction* tx) :
    iterator_ = tx->dataMapPtr_->dataMap_.begin();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 bool WalletIfaceIterator::isValid() const
 {
    return iterator_ != txPtr_->dataMapPtr_->dataMap_.end();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void WalletIfaceIterator::seek(const BinaryDataRef& key)
 {
    iterator_ = txPtr_->dataMapPtr_->dataMap_.lower_bound(key);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void WalletIfaceIterator::advance()
 {
    ++iterator_;
 }
 
-////////////////////////////////////////////////////////////////////////////////
 BinaryDataRef WalletIfaceIterator::key() const
 {
    return iterator_->first.getRef();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 BinaryDataRef WalletIfaceIterator::value() const
 {
    return iterator_->second.getRef();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-//// WalletIfaceTransaction
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-////////////////////////////////////////////////////////////////////////////////
+// WalletIfaceTransaction
 WalletIfaceTransaction::WalletIfaceTransaction(
    WalletDBInterface* ifacePtr, DBInterface* dbPtr, bool mode) :
    DBIfaceTransaction(), ifacePtr_(ifacePtr), dbPtr_(dbPtr), commit_(mode)
@@ -949,19 +889,18 @@ WalletIfaceTransaction::WalletIfaceTransaction(
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
 WalletIfaceTransaction::~WalletIfaceTransaction() noexcept(false)
 {
    closeTx();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 const std::string& WalletIfaceTransaction::getDbName() const
 {
    return dbPtr_->getName();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 void WalletIfaceTransaction::closeTx()
 {
    std::unique_ptr<LMDB::Transaction> tx;
@@ -1072,7 +1011,6 @@ void WalletIfaceTransaction::closeTx()
    ifacePtr_->compactFile();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 bool WalletIfaceTransaction::insertTx(WalletIfaceTransaction* txPtr)
 {
    if (txPtr == nullptr) {
@@ -1192,7 +1130,6 @@ bool WalletIfaceTransaction::insertTx(WalletIfaceTransaction* txPtr)
    return true;
 }
 
-////////////////////////////////////////////////////////////////////////////////
 std::unique_ptr<std::unique_lock<std::recursive_mutex>>
 WalletIfaceTransaction::eraseTx(
    WalletIfaceTransaction* txPtr)
@@ -1229,7 +1166,7 @@ WalletIfaceTransaction::eraseTx(
    return lockPtr;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 void WalletIfaceTransaction::insert(const BinaryData& key, BinaryData& val)
 {
    if (!insertLbd_) {
@@ -1239,7 +1176,6 @@ void WalletIfaceTransaction::insert(const BinaryData& key, BinaryData& val)
    insertLbd_(key, bbdVal);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void WalletIfaceTransaction::insert(
    const BinaryData& key, const BinaryData& val)
 {
@@ -1250,7 +1186,6 @@ void WalletIfaceTransaction::insert(
    insertLbd_(key, bbdVal);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void WalletIfaceTransaction::insert(
    const BinaryData& key, SecureBinaryData& val)
 {
@@ -1261,7 +1196,6 @@ void WalletIfaceTransaction::insert(
    insertLbd_(key, bbdVal);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void WalletIfaceTransaction::erase(const BinaryData& key)
 {
    if (!eraseLbd_) {
@@ -1270,7 +1204,7 @@ void WalletIfaceTransaction::erase(const BinaryData& key)
    eraseLbd_(key);
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 std::shared_ptr<DBIfaceIterator> WalletIfaceTransaction::getIterator() const
 {
    if (commit_) {
@@ -1279,7 +1213,6 @@ std::shared_ptr<DBIfaceIterator> WalletIfaceTransaction::getIterator() const
    return std::make_shared<WalletIfaceIterator>(this);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 const BinaryDataRef WalletIfaceTransaction::getDataRef(
    const BinaryData& key) const
 {
@@ -1310,7 +1243,6 @@ const BinaryDataRef WalletIfaceTransaction::getDataRef(
    return iter->second.getRef();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 const std::shared_ptr<InsertData>& WalletIfaceTransaction::getInsertDataForKey(
    const BinaryData& key) const
 {

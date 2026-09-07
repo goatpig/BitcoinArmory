@@ -44,7 +44,7 @@ namespace Armory
 {
    namespace Network
    {
-      struct Socket_WritePayload;
+      class Socket_WritePayload;
 
       ////////
       class WebSocketMessageCodec
@@ -81,8 +81,7 @@ namespace Armory
             ArmoryAEAD::BIP151_PayloadType, uint32_t id = 0);
          void construct(const BinaryDataRef& data, BIP151Connection*,
             ArmoryAEAD::BIP151_PayloadType, uint32_t id = 0);
-         void construct(std::unique_ptr<Socket_WritePayload>, BIP151Connection*,
-            uint32_t id = 0);
+         void construct(std::unique_ptr<Socket_WritePayload>, BIP151Connection*);
 
          bool isDone(void) const { return index_ >= packets_.size(); }
          BinaryData consumeNextPacket(void);

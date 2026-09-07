@@ -369,6 +369,12 @@ const KdfId& KeyDerivationFunction_Romix::getId() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+std::string KeyDerivationFunction_Romix::getDisplayName() const
+{
+   return "ROMIX";
+}
+
+////////////////////////////////////////////////////////////////////////////////
 bool KeyDerivationFunction_Romix::isSame(
    const KeyDerivationFunction* kdf) const
 {
@@ -429,6 +435,11 @@ KeyDerivationFunction_Passthrough::~KeyDerivationFunction_Passthrough()
 const KdfId& KeyDerivationFunction_Passthrough::getId() const
 {
    return id_;
+}
+
+std::string KeyDerivationFunction_Passthrough::getDisplayName() const
+{
+   return "Passthrough";
 }
 
 SecureBinaryData KeyDerivationFunction_Passthrough::deriveKey(

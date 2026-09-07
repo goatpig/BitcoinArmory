@@ -984,7 +984,6 @@ std::unique_ptr<WalletBackup> Helpers::getWalletBackup(
 
    //grab encrypted seed from wallet
    if (isPriv) {
-      auto lock = wltPtr->lockDecryptedContainer();
       auto wltSeed = wltPtr->getEncryptedSeed();
       if (wltSeed != nullptr) {
          const auto& rawClearTextSeed = wltPtr->getDecryptedValue(wltSeed);

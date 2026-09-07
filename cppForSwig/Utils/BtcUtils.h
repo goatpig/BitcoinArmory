@@ -207,6 +207,7 @@ namespace Armory
       BinaryData getHMAC512(BinaryDataRef, const std::string&);
       SecureBinaryData getHMAC512(const std::string&, BinaryDataRef);
       BinaryData getBotchedArmoryHMAC256(BinaryDataRef, BinaryDataRef);
+      BinaryData getSaltedRpcPass(const std::string&, const std::string&);
 
       void getHMAC256(const uint8_t*, size_t, const char*, size_t, uint8_t*);
       void getHMAC512(const void*, size_t, const void*, size_t, void*);

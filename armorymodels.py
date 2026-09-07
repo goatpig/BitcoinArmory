@@ -38,7 +38,7 @@ from qtdialogs.qtdefines import GETFONT, CHANGE_ADDR_DESCR_STRING, \
 
 from qtdialogs.ArmoryDialog import ArmoryDialog
 
-WLTVIEWCOLS = enum('Visible', 'ID', 'Name', 'Secure', 'Bal')
+WLTVIEWCOLS = enum('Visible', 'ID', 'Name', 'Secure', 'Bal', 'Account')
 LEDGERCOLS  = enum('NumConf', 'UnixTime', 'DateStr', 'TxDir', 'WltName',
    'Comment', 'Amount', 'isOther', 'WltID', 'TxHash', 'isCoinbase', 'toSelf',
    'optInRBF', 'isChainedZC')
@@ -65,7 +65,7 @@ class AllWalletsDispModel(QtCore.QAbstractTableModel):
       return self.wallets.count()
 
    def columnCount(self, index=QtCore.QModelIndex()):
-      return 5
+      return 6
 
    def data(self, index, role=QtCore.Qt.DisplayRole):
       bdmState = TheBDM.getState()
@@ -98,9 +98,17 @@ class AllWalletsDispModel(QtCore.QAbstractTableModel):
             else:
                dispStr = 'Scanning: %d%%' % (mainWnd.walletSideScanProgress[wltID])
                return str(dispStr)
+         elif col==COL.Account:
+            acctName = getattr(wlt, 'accountName', '') or ''
+            if acctName:
+               return str(acctName)
+            acctId = getattr(wlt, 'accountId', '') or ''
+            if acctId and len(acctId) > 10:
+               return str(acctId[:10] + '...')
+            return str(acctId)
 
       elif role==QtCore.Qt.TextAlignmentRole:
-         if col in (COL.ID, COL.Name):
+         if col in (COL.ID, COL.Name, COL.Account):
             return int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
          elif col in (COL.Secure,):
             return int(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
@@ -123,7 +131,8 @@ class AllWalletsDispModel(QtCore.QAbstractTableModel):
       return None
 
    def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
-      colLabels = ['', self.tr('ID'), self.tr('Wallet Name'), self.tr('Security'), self.tr('Balance')]
+      colLabels = ['', self.tr('ID'), self.tr('Wallet Name'),
+         self.tr('Security'), self.tr('Balance'), self.tr('Account')]
       if role==QtCore.Qt.DisplayRole:
          if orientation==QtCore.Qt.Horizontal:
             return colLabels[section]

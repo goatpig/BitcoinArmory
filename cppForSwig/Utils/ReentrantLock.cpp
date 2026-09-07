@@ -57,7 +57,7 @@ SingleLock::~SingleLock()
 
    if (lock_->owns_lock()) {
       if (lockablePtr_ != nullptr) {
-         lockablePtr_->mutexTID_ = std::thread::id();
+         lockablePtr_->mutexTID_ = std::thread::id{};
          lockablePtr_->cleanUpBeforeUnlock();
       }
    }
@@ -97,7 +97,7 @@ ReentrantLock::~ReentrantLock()
 
    if (lock_->owns_lock()) {
       if (lockablePtr_ != nullptr) {
-         lockablePtr_->mutexTID_ = std::thread::id();
+         lockablePtr_->mutexTID_ = std::thread::id{};
          lockablePtr_->cleanUpBeforeUnlock();
       }
    }

@@ -1081,35 +1081,45 @@ void ListenServer::stop()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-//
-// CallbackReturn
-//
-///////////////////////////////////////////////////////////////////////////////
+//// CallbackReturn
 CallbackReturn::~CallbackReturn()
 {}
 
 ///////////////////////////////////////////////////////////////////////////////
-//
 //// Socket_WritePayload
-//
-///////////////////////////////////////////////////////////////////////////////
-Socket_WritePayload::~Socket_WritePayload(void)
+std::atomic_uint32_t Socket_WritePayload::idCounter_{0};
+
+Socket_WritePayload::Socket_WritePayload() :
+   id{idCounter_.fetch_add(1, std::memory_order_relaxed)}
 {}
 
-///////////////////////////////////////////////////////////////////////////////
+Socket_WritePayload::Socket_WritePayload(uint32_t msgId) :
+   id{msgId}
+{}
+
+Socket_WritePayload::~Socket_WritePayload()
+{}
+
 void WritePayload_Raw::serialize(std::vector<uint8_t>& destination)
 {
    destination = std::move(data);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-//
 //// WritePayload_Capnp
-//
-///////////////////////////////////////////////////////////////////////////////
 WritePayload_Capnp::WritePayload_Capnp(
    std::unique_ptr<capnp::MessageBuilder> builderPtr,
    std::vector<uint8_t> firstSegment) :
+   Socket_WritePayload{},
+   builder(std::move(builderPtr)),
+   firstSegment(std::move(firstSegment))
+{}
+
+WritePayload_Capnp::WritePayload_Capnp(
+   uint32_t msgId,
+   std::unique_ptr<capnp::MessageBuilder> builderPtr,
+   std::vector<uint8_t> firstSegment) :
+   Socket_WritePayload{msgId},
    builder(std::move(builderPtr)),
    firstSegment(std::move(firstSegment))
 {}

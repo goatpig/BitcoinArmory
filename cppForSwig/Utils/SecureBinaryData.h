@@ -50,6 +50,7 @@ public:
    SecureBinaryData  operator+(const SecureBinaryData&) const;
    bool operator==(const SecureBinaryData&) const;
    bool operator==(const BinaryData&) const;
+   bool operator==(const BinaryDataRef&) const;
 
    void lockData(void);
    void destroy(void);

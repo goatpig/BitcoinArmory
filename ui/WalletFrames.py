@@ -23,7 +23,6 @@ from armorycolors import htmlColor
 from ui.QtExecuteSignal import TheSignalExecution
 from ui.CoinControlUI import CoinControlDlg, RBFDlg
 
-from qtdialogs.DlgUnlockWallet import DlgUnlockWallet
 from qtdialogs.DlgShowKeyList import DlgShowKeyList
 from qtdialogs.qtdefines import AdvancedOptionsFrame, ArmoryFrame, \
    VERTICAL, HORIZONTAL, STRETCH, MIN_PASSWD_WIDTH, \
@@ -1115,22 +1114,8 @@ class WalletBackupFrame(ArmoryFrame):
          isBackupCreated = self.main.makeWalletCopy(
             self, self.wlt, 'Encrypt', 'encrypt')
       elif self.optIndivKeyListTop.isChecked():
-         if self.wlt.useEncryption and self.wlt.isLocked:
-            dlg = DlgUnlockWallet(self.wlt, self, self.main,
-               'Unlock Private Keys')
-            if not dlg.exec_():
-               if self.main.usermode == USERMODE.Expert:
-                  QtWidgets.QMessageBox.warning(self, self.tr('Unlock Failed'),
-                     self.tr( 'Wallet was not unlocked.  The public keys and '
-                     'addresses will still be shown, but private keys will '
-                     'not be available unless you reopen the dialog with the '
-                     'correct passphrase.'), QtWidgets.QMessageBox.Ok)
-               else:
-                  QtWidgets.QMessageBox.warning(self, self.tr('Unlock Failed'),
-                     self.tr( 'Wallet could not be unlocked to display '
-                     'individual keys.'), QtWidgets.QMessageBox.Ok)
-                  if self.main.usermode == USERMODE.Standard:
-                     return
+         # DlgShowKeyList drives the unlock itself through the CppBridge
+         # callback flow, so there is no need to unlock the wallet here.
          DlgShowKeyList(self.wlt, self.parent(), self.main).exec_()
          isBackupCreated = True
       if isBackupCreated:

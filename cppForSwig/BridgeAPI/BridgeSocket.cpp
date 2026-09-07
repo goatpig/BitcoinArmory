@@ -34,7 +34,7 @@ CppBridgeSocket::CppBridgeSocket(
    serverName_(addr + ":" + port)
 {
    //setup auth peers db
-   authPeers_ = std::make_shared<Wallets::AuthorizedPeers>();
+   peers_ = std::make_shared<NetworkPeers::ClientStore>();
 
    auto uiPubKey = Config::NetworkSettings::uiPublicKey();
    if (uiPubKey.getSize() != 33) {
@@ -45,24 +45,24 @@ CppBridgeSocket::CppBridgeSocket(
    }
 
    //inject UI key (UI is the server, bridge connects to it)
-   authPeers_->addPeer(uiPubKey.getRef(), {serverName_}, {}, false);
-   auto lbds = Wallets::AuthorizedPeers::getAuthPeersLambdas(
-      authPeers_, false);
+   NetworkPeers::PeerKey uiKey{uiPubKey, NetworkPeers::PeerType::ServerTwoWay};
+   peers_->addPeer(uiKey, {serverName_}, {});
 
    //write own public key to cookie file
    {
-      const auto& ownKey = authPeers_->getOwnPublicKey();
+      const auto& ownKey = peers_->getOwnPublicKey();
       std::fstream file;
 
       //on windows, we need to explicitly open the cookie file in binary
       //for writing, or it will stop at the first null byte
       file.open(Config::getDataDir() / "client_cookie",
          std::ios::out | std::ios::binary);
-      file.write((const char*)ownKey.pubkey, 33);
+      file.write((const char*)ownKey.getPtr(), ownKey.getSize());
    }
 
    //init bip15x channel
-   bip151Connection_ = std::make_shared<BIP151Connection>(lbds, false);
+   bip151Connection_ = std::make_shared<BIP151Connection>(
+      peers_->getView(NetworkPeers::PeerType::ServerTwoWay), false);
 }
 
 SocketType CppBridgeSocket::type() const
@@ -71,39 +71,36 @@ SocketType CppBridgeSocket::type() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void CppBridgeSocket::respond(std::vector<uint8_t>& data)
+void CppBridgeSocket::respond(std::vector<uint8_t>& inMsg)
 {
-   if (data.empty()) {
+   static BinaryData emptySizeCheck{};
+   if (inMsg.empty()) {
       //shutdown condition
       shutdown();
       return;
    }
 
    //append data to leftovers from previous iteration if applicable
+   BinaryData data;
    if (!leftOverData_.empty()) {
-      std::vector<uint8_t> copy;
-      copy.resize(leftOverData_.size() + data.size());
-      memcpy(&copy[0], &leftOverData_[0], leftOverData_.size());
-      memcpy(&copy[0] + leftOverData_.size(), &data[0], data.size());
-
-      data = std::move(copy);
-      leftOverData_.clear();
+      leftOverData_.append(&inMsg[0], inMsg.size());
+      data = std::move(leftOverData_);
+   } else {
+      data = std::move(inMsg);
    }
 
    while (!data.empty()) {
       //for data that isn't encrypted, assume the payload is
       //a single whole packet
       bool encr = false;
-
-      //skip size header
-      BinaryDataRef dataRef(&data[0], data.size());
+      BinaryDataRef dataRef = data.getRef();
       auto packetSize = dataRef.getSize();
 
       if (bip151Connection_->connectionComplete()) {
          //get decrypted length
          auto decrLen = bip151Connection_->decryptPacket(
-            &data[0], POLY1305MACLEN + AUTHASSOCDATAFIELDLEN,
-            nullptr, POLY1305MACLEN + AUTHASSOCDATAFIELDLEN);
+            data.getSliceRef(0, POLY1305MACLEN + AUTHASSOCDATAFIELDLEN),
+            emptySizeCheck);
 
          if (decrLen == -1 || decrLen > BRIDGE_SOCKET_MAXLEN) {
             //fatal error
@@ -112,25 +109,20 @@ void CppBridgeSocket::respond(std::vector<uint8_t>& data)
             return;
          }
 
-         if (decrLen > (ssize_t)data.size() + POLY1305MACLEN) {
+         if (decrLen > (ssize_t)data.getSize() + POLY1305MACLEN) {
             //not enough data to decrypt, save it and continue
             leftOverData_ = std::move(data);
             return;
          }
 
          //decrypt the data
-         bip151Connection_->decryptPacket(
-            &data[0], data.size(), &data[0], data.size());
+         bip151Connection_->decryptPacket(data.getRef(), data);
 
          //point to the head of the decrypted cleartext
-         dataRef.setRef(&data[0] + AUTHASSOCDATAFIELDLEN, decrLen);
+         dataRef.setRef(data.getPtr() + AUTHASSOCDATAFIELDLEN, decrLen);
 
          //keep track of this packet's size
-         if ((ssize_t)data.size() >
-            decrLen + AUTHASSOCDATAFIELDLEN + POLY1305MACLEN) {
-            packetSize = decrLen + AUTHASSOCDATAFIELDLEN + POLY1305MACLEN;
-         }
-
+         packetSize = decrLen + AUTHASSOCDATAFIELDLEN + POLY1305MACLEN;
          encr = true;
       }
 
@@ -168,13 +160,13 @@ void CppBridgeSocket::respond(std::vector<uint8_t>& data)
          }
       }
 
-      if (data.size() == packetSize) {
+      if (data.getSize() == packetSize) {
          return;
       }
 
       //payload is bigger than the packet we just processed, remove leading
       //packet from data and iterate over what's left
-      data = std::vector<uint8_t>(data.begin() + packetSize, data.end());
+      data = data.getSliceCopy(packetSize, data.getSize() - packetSize);
    }
 }
 
@@ -215,7 +207,7 @@ void CppBridgeSocket::pushPayload(
             (uint8_t)ArmoryAEAD::BIP151_PayloadType::Rekey, 1);
 
          bip151Connection_->assemblePacket(
-            &rekeyPacket[0], rekeyPacket.size() - POLY1305MACLEN,
+            BinaryDataRef{&rekeyPacket[0], rekeyPacket.size() - POLY1305MACLEN},
             &rekeyPacket[0], rekeyPacket.size());
 
          queuePayloadForWrite(rekeyPacket);
@@ -233,7 +225,7 @@ void CppBridgeSocket::pushPayload(
 
    //encrypt
    bip151Connection_->assemblePacket(
-      &data[0], data.size() - POLY1305MACLEN,
+      BinaryDataRef{&data[0], data.size() - POLY1305MACLEN},
       &data[0], data.size());
    queuePayloadForWrite(data);
 }
@@ -262,7 +254,7 @@ bool CppBridgeSocket::processAEADHandshake(BinaryDataRef data)
       //encrypt if necessary
       if (encrypt) {
          bip151Connection_->assemblePacket(
-            &cipherText[0], packetSize - POLY1305MACLEN,
+            BinaryDataRef{&cipherText[0], packetSize - POLY1305MACLEN},
             &cipherText[0], packetSize);
       } else {
          cipherText.resize(payload.getSize() + 1);

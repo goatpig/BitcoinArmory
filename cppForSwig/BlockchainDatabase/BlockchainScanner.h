@@ -62,7 +62,7 @@
 #include "bdmenums.h"
 #include "BlockObj.h"
 
-#define BATCH_SIZE  1024 * 1024 * 512ULL
+#define BATCH_SIZE 1024 * 1024 * 128ULL
 
 struct TxHashHints;
 struct TxOutScrRef;
@@ -148,6 +148,7 @@ public:
    const unsigned end;
    const Armory::Types::FileId startBlockFileID;
    const Armory::Types::FileId targetBlockFileID;
+   const unsigned threadCount;
    ScannerContext& context;
 
    std::map<Armory::Types::FileId, std::shared_ptr<Armory::FileUtils::FileCopy>> fileCopies;
@@ -158,12 +159,16 @@ public:
    TxInParsingResult inParserResult;
 
    std::promise<bool> completedPromise;
+   std::promise<bool> preloadPromise;
    unsigned count;
 
 public:
    ParserBatch(unsigned, unsigned,
       Armory::Types::FileId, Armory::Types::FileId,
-      ScannerContext&);
+      unsigned, ScannerContext&);
+   std::future<bool> preloadFiles(
+      std::shared_ptr<BlockFiles>,
+      std::map<Armory::Types::FileId, std::shared_ptr<Armory::FileUtils::FileCopy>>&);
    void mergeResult(TxOutParsingResult&);
    void mergeResult(TxInParsingResult&);
 };
@@ -178,7 +183,7 @@ private:
    std::shared_ptr<BlockFiles> blockFiles_;
 
    const unsigned totalThreadCount_;
-   const unsigned writeQueueDepth_;
+   const unsigned memTarget_;
    const unsigned totalBlockFileCount_;
 
    Armory::Hash32 topScannedBlockHash_;

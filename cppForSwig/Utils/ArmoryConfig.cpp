@@ -92,9 +92,10 @@ void Armory::Config::printHelp(void)
                            restart. Defaults at 100.
 --db-type                  sets the db type:
                            DB_BARE:  tracks wallet history only. Smallest DB.
+                           Default since 0.97.
                            DB_FULL:  tracks wallet history and resolves all
                               relevant tx hashes. ~50GB DB at the time
-                              of 0.97 release. Default DB type.
+                              of 0.97 release.
                            DB_SUPER: tracks all blockchain history.
                               XXL DB (100GB+).
                            db type cannot be changed in between processes.
@@ -102,16 +103,19 @@ void Armory::Config::printHelp(void)
                            always function according to that type.
                            Specifying another type will do nothing. Build a new
                            db to change type.
---ephemeral                server only. Ignores authorized peer store. Create a
+--ephemeral                Server only. Ignores authorized peer store. Create a
                            cookie file holding a random authentication keypair
                            instead to allow local clients to make use of elevated
                            commands, like shutdown. Expects client pubkey in
                            envvars under CALLER_PUBKEY. Enforces 2-way auth.
+--automated-node           Tells the DB whether the network node is automated by
+                           the client. This affects the synchronization sequence
+                           and only has an effect along with --ephemeral
 --armorydb-port            DB port to connect to.
 --armorydb-ip              DB IP to connect to.
---clear-mempool            delete all zero confirmation transactions from the DB.
---satoshirpc-port          set node rpc port
---satoshi-port             set Bitcoin node port
+--clear-mempool            Delete all zero confirmation transactions from the DB.
+--satoshirpc-port          Set node RPC port
+--satoshi-port             Set node P2P port
 --public                   BIP150 auth will allow for anonymous requesters.
                            While only clients can be anon (servers/responders are
                            always auth'ed), both sides need to enable public
@@ -249,7 +253,11 @@ std::map<std::string, std::string> SettingsUtils::getKeyValsFromLines(
 {
    std::map<std::string, std::string> output;
    for (auto& line : lines) {
-      output.emplace(getKeyValFromLine(line, delim));
+      auto keyval = getKeyValFromLine(line, delim);
+      if (keyval.first.empty()) {
+         continue;
+      }
+      output.emplace(keyval);
    }
    return output;
 }
@@ -463,15 +471,17 @@ BdmInitMode DBSettings::initMode_ = BdmInitMode::RESUME;
 ARMORY_DB_TYPE DBSettings::armoryDbType_ = ARMORY_DB_TYPE::Bare;
 SOCKET_SERVICE DBSettings::service_ = SERVICE_WEBSOCKET;
 
-unsigned DBSettings::ramUsage_ = 4;
+unsigned DBSettings::ramUsage_ = DEFAULT_RAM_USAGE;
 unsigned DBSettings::threadCount_ = std::thread::hardware_concurrency();
 unsigned DBSettings::zcThreadCount_ = DEFAULT_ZCTHREAD_COUNT;
 unsigned DBSettings::rewindCount_ = 100;
 
 bool DBSettings::reportProgress_ = true;
 bool DBSettings::checkChain_ = false;
+bool DBSettings::disableZC_ = false;
 bool DBSettings::clearMempool_ = false;
 bool DBSettings::checkTxHints_ = false;
+bool DBSettings::automatedNode_ = false;
 
 uint64_t DBSettings::xorKey_ = 0;
 
@@ -516,6 +526,18 @@ bool DBSettings::checkChain()
    return checkChain_;
 }
 
+bool DBSettings::enableZC()
+{
+   if (disableZC_) {
+      if (service_ == SERVICE_UNITTEST ||
+         service_ == SERVICE_UNITTEST_WITHWS) {
+         //only permit zc disabling in test runs
+         return false;
+      }
+   }
+   return true;
+}
+
 BdmInitMode DBSettings::initMode()
 {
    return initMode_;
@@ -534,6 +556,14 @@ bool DBSettings::reportProgress()
 bool DBSettings::checkTxHints()
 {
    return checkTxHints_;
+}
+
+bool DBSettings::automatedNode()
+{
+   if (NetworkSettings::ephemeralPeers()) {
+      return automatedNode_;
+   }
+   return false;
 }
 
 ////////
@@ -572,6 +602,12 @@ void DBSettings::processArgs(const std::map<std::string, std::string>& args)
    iter = args.find("checkchain");
    if (iter != args.end()) {
       checkChain_ = true;
+   }
+
+   iter = args.find("disable-zc");
+   if (iter != args.end()) {
+      //only has an effect while running unit tests
+      disableZC_ = true;
    }
 
    iter = args.find("clear-mempool");
@@ -648,6 +684,11 @@ void DBSettings::processArgs(const std::map<std::string, std::string>& args)
          rewindCount_ = val;
       }
    }
+
+   iter = args.find("automated-node");
+   if (iter != args.end()) {
+      automatedNode_ = true;
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -687,13 +728,14 @@ void DBSettings::reset()
    armoryDbType_ = ARMORY_DB_TYPE::Full;
    service_ = SERVICE_WEBSOCKET;
 
-   ramUsage_ = 4;
+   ramUsage_ = DEFAULT_RAM_USAGE;
    threadCount_ = std::thread::hardware_concurrency();
    zcThreadCount_ = DEFAULT_ZCTHREAD_COUNT;
 
    reportProgress_ = true;
    checkChain_ = false;
    clearMempool_ = false;
+   automatedNode_ = false;
 
    xorKey_ = 0;
 }
@@ -922,7 +964,16 @@ void NetworkSettings::createNodes()
          *(uint32_t*)magicBytes.getPtr(), true
       );
 
-      rpcNode_ = std::make_shared<Node::Core::RPC::Client>();
+      //is rpc log/pass set via envvars?
+      std::string rpcUser, rpcPass;
+      auto rpcUserPtr = std::getenv("CORERPCLOG");
+      auto rpcPassPtr = std::getenv("CORERPCPASS");
+      if (rpcUserPtr != nullptr && rpcPassPtr != nullptr) {
+         rpcUser = std::string{ rpcUserPtr };
+         rpcPass = std::string{ rpcPassPtr };
+      }
+      rpcNode_ = std::make_shared<Node::Core::RPC::Client>(
+         true, rpcUser, rpcPass);
    } else {
       auto primary = std::make_shared<NodeUnitTest>(
          *(uint32_t*)magicBytes.getPtr(), false
@@ -1025,12 +1076,7 @@ void Pathing::processArgs(const std::map<std::string, std::string>& args,
    }
 
    //test all paths
-   auto testPath = [](const fs::path& path, int mode)->bool
-   {
-      return FileUtils::pathExists(path, mode);
-   };
-
-   if (!testPath(Armory::Config::getDataDir(), 6)) {
+   if (!FileUtils::pathExists(Armory::Config::getDataDir(), 6)) {
       throw DbErrorMsg({Armory::Config::getDataDir().string() +
          " is not a valid datadir path"});
    }
@@ -1047,13 +1093,13 @@ void Pathing::processArgs(const std::map<std::string, std::string>& args,
 
    //create dbdir if set automatically
    if (autoDbDir) {
-      if (!testPath(dbDir_, 0)) {
+      if (!FileUtils::pathExists(dbDir_, 0)) {
          fs::create_directory(dbDir_);
       }
    }
 
    //now for the regular test, let it throw if it fails
-   if (!testPath(dbDir_, 6)) {
+   if (!FileUtils::pathExists(dbDir_, 6)) {
       std::string errMsg = dbDir_.string() + " is not a valid db path";
       throw DbErrorMsg(errMsg); 
    }
@@ -1064,7 +1110,7 @@ void Pathing::processArgs(const std::map<std::string, std::string>& args,
    */
 
    if (!NetworkSettings::isOffline()) {
-      if (!testPath(blkFilePath_, 2)) {
+      if (!FileUtils::pathExists(blkFilePath_, 2)) {
          throw DbErrorMsg({ blkFilePath_.string() +
             " is not a valid blockchain data path" });
       }

@@ -9,7 +9,7 @@
 import os
 
 from qtpy import QtCore, QtWidgets
-from armoryengine.BDM import TheBDM
+from armoryengine.CppBridge import TheBridge
 from armoryengine.ArmoryUtils import USE_TESTNET, USE_REGTEST, BITCOIN_PORT, \
    BITCOIN_RPC_PORT
 from armoryengine.Settings import TheSettings
@@ -33,14 +33,24 @@ class CoreTab(QtWidgets.QWidget):
    """
    def __init__(self, parent, main=None):
       super().__init__(parent)
-      self.main = main
+      self.btcDir = None
+      self.btcBin = None
+
       self.satoshiHomePath = None
       self.satoshiBrowseButton = None
+      self.chainSize = None
+      self.prunedState = None
+
+      self.satoshiBinPath = None
+      self.satoshiBinBrowse = None
+      self.satoshiBinVer = None
+
       self.scenarioCombo = None
       self.networkModeCombo = None
       self.p2pPortInput = None
       self.rpcPortInput = None
       self.coreDirectoryFrame = None
+      self.coreBinFrame = None
       self.coreSettingsFrame = None
       self.initUI()
 
@@ -55,6 +65,7 @@ class CoreTab(QtWidgets.QWidget):
 
       self.createDirectoryFrame()
       mainLayout.addWidget(self.coreDirectoryFrame)
+      mainLayout.addWidget(self.coreBinFrame)
 
       self.createSettingsFrame()
       mainLayout.addWidget(self.coreSettingsFrame)
@@ -64,31 +75,53 @@ class CoreTab(QtWidgets.QWidget):
 
    def createDirectoryFrame(self):
       """Create the directory settings frame for the Core tab."""
-      self.coreDirectoryFrame = QtWidgets.QGroupBox(self.tr('Bitcoin Core Data'))
+      self.coreDirectoryFrame = QtWidgets.QGroupBox(self.tr('Satoshi Home'))
       dirFrameLayout = QtWidgets.QVBoxLayout(self.coreDirectoryFrame)
       dirFrameLayout.setContentsMargins(12, 12, 12, 12)
       dirFrameLayout.setSpacing(8)
 
-      dirGrid = QtWidgets.QGridLayout()
-      dirGrid.setSpacing(8)
+      dirInputLayout = QtWidgets.QGridLayout()
+      dirInputLayout.setSpacing(8)
 
-      coreDirLabel = QtWidgets.QLabel(self.tr("Bitcoin Core Data Directory"))
+      #satoshi datadir
+      coreDirLabel = QtWidgets.QLabel(self.tr("Data Directory"))
       self.satoshiHomePath = QtWidgets.QLineEdit()
-      self.satoshiHomePath.setFixedWidth(400)
+      self.satoshiHomePath.setReadOnly(True)
       self.satoshiBrowseButton = QtWidgets.QPushButton(self.tr("Browse..."))
       self.satoshiBrowseButton.setFixedWidth(100)
       self.satoshiBrowseButton.clicked.connect(self.browseSatoshiHome)
+      self.chainSize = QtWidgets.QLabel()
+      self.prunedState = QtWidgets.QLabel()
 
-      dirInputLayout = QtWidgets.QHBoxLayout()
-      dirInputLayout.setSpacing(8)
-      dirInputLayout.addWidget(self.satoshiHomePath)
-      dirInputLayout.addWidget(self.satoshiBrowseButton)
+      dirInputLayout.addWidget(coreDirLabel              , 0, 0, 1, 1)
+      dirInputLayout.addWidget(self.satoshiHomePath      , 0, 1, 1, 4)
+      dirInputLayout.addWidget(self.satoshiBrowseButton  , 0, 5, 1, 1)
+      dirInputLayout.addWidget(self.chainSize            , 1, 1, 1, 1)
+      dirInputLayout.addWidget(self.prunedState          , 1, 3, 1, 1)
+      dirFrameLayout.addLayout(dirInputLayout)
 
-      dirGrid.addWidget(coreDirLabel, 0, 0)
-      dirGrid.addLayout(dirInputLayout, 0, 1)
-      dirGrid.setColumnStretch(1, 1)
+      #satoshi binary
+      self.coreBinFrame = QtWidgets.QGroupBox(self.tr('Satoshi Executable'))
+      binFrameLayout = QtWidgets.QVBoxLayout(self.coreBinFrame)
+      binFrameLayout.setContentsMargins(12, 12, 12, 12)
+      binFrameLayout.setSpacing(8)
 
-      dirFrameLayout.addLayout(dirGrid)
+      binLayout = QtWidgets.QGridLayout()
+      binLayout.setSpacing(8)
+
+      coreBinLabel = QtWidgets.QLabel(self.tr("Executable"))
+      self.satoshiBinPath = QtWidgets.QLineEdit()
+      self.satoshiBinPath.setReadOnly(True)
+      self.satoshiBinBrowse = QtWidgets.QPushButton(self.tr("Browse..."))
+      self.satoshiBinBrowse.setFixedWidth(100)
+      self.satoshiBinBrowse.clicked.connect(self.browseSatoshiBin)
+      self.satoshiBinVer = QtWidgets.QLabel()
+
+      binLayout.addWidget(coreBinLabel                , 0, 0, 1, 1)
+      binLayout.addWidget(self.satoshiBinPath         , 0, 1, 1, 4)
+      binLayout.addWidget(self.satoshiBinBrowse       , 0, 5, 1, 1)
+      binLayout.addWidget(self.satoshiBinVer          , 1, 1, 1, 1)
+      binFrameLayout.addLayout(binLayout)
 
    def createSettingsFrame(self):
       """Create core settings frame with operation mode and network options."""
@@ -147,7 +180,12 @@ class CoreTab(QtWidgets.QWidget):
    def onScenarioChanged(self, index):
       """Handle changes to the scenario selection."""
       scenario = self.scenarioCombo.itemText(index)
-      if scenario in (SCENARIO_CORE_AUTOMATE, SCENARIO_CORE_MANUAL):
+      if scenario == SCENARIO_CORE_MANUAL:
+         self.coreBinFrame.setEnabled(False)
+         self.p2pPortInput.setEnabled(True)
+         self.rpcPortInput.setEnabled(True)
+      elif scenario == SCENARIO_CORE_AUTOMATE:
+         self.coreBinFrame.setEnabled(True)
          self.p2pPortInput.setEnabled(False)
          self.rpcPortInput.setEnabled(False)
 
@@ -159,17 +197,26 @@ class CoreTab(QtWidgets.QWidget):
          os.path.expanduser('~')
       )
       if directory:
-         self.satoshiHomePath.setText(directory)
+         self._validateSatoshiDir(directory)
+
+   def browseSatoshiBin(self):
+      """Open a directory dialog to select the Bitcoin Core daemon path."""
+      binpath = QtWidgets.QFileDialog.getOpenFileName(
+         self,
+         self.tr('Select Bitcoin Core Daemon'),
+         os.path.expanduser('~')
+      )
+      if binpath:
+         self._validateSatoshiBin(binpath[0])
 
    def loadSettings(self):
       """Load core tab settings from configuration."""
-      # Load Bitcoin Core path from settings, fallback to TheBDM
+      # Load Bitcoin Core path from settings,
+      # fallback to bridge auto detection routine
       savedPath = TheSettings.get('SatoshiDatadir')
-      if savedPath:
-         btcDir = savedPath
-      else:
-         btcDir = TheBDM.btcdir
-      self.satoshiHomePath.setText(os.path.normpath(btcDir))
+      self.btcDir = savedPath if savedPath else None
+      savedBin = TheSettings.get('SatoshiBin')
+      self.btcBin = savedBin if savedBin else None
 
       # Load operation mode
       hasCoreSettings = bool(self.satoshiHomePath.text() and
@@ -198,53 +245,78 @@ class CoreTab(QtWidgets.QWidget):
 
    def collectSettings(self):
       """Return current core settings from UI as a dict."""
+      scenario = self.scenarioCombo.currentText() == SCENARIO_CORE_AUTOMATE
       return {
-         'corePath': str(self.satoshiHomePath.text()),
-         'networkMode': str(self.networkModeCombo.currentText()),
-         'manageSatoshi': (self.scenarioCombo.currentText() ==
-            SCENARIO_CORE_AUTOMATE),
+         'datadir': self.btcDir,
+         'binpath' : self.btcBin,
+         'automate': True if scenario and self.btcDir and self.btcBin else False,
          'p2pPort': str(self.p2pPortInput.text()),
          'rpcPort': str(self.rpcPortInput.text()),
       }
 
    def validate(self):
       """Validate core tab settings. Returns True if valid."""
-      scenario = self.scenarioCombo.currentText()
-      scenarioOk = scenario in (SCENARIO_CORE_AUTOMATE, SCENARIO_CORE_MANUAL)
-      modeOk = str(self.networkModeCombo.currentText()) in (
-         'Mainnet', 'Testnet', 'Regtest')
-      if not (scenarioOk and modeOk):
+      if not self.btcDir:
          QtWidgets.QMessageBox.warning(
             self,
-            self.tr('Invalid Core Settings'),
-            self.tr('Please select a valid scenario and network mode.')
+            self.tr('Invalid Core Datadir'),
+            self.tr('Please select a valid datadir for Bitcoin Core.')
          )
          return False
-      self.p2pPortInput.setEnabled(False)
-      self.rpcPortInput.setEnabled(False)
-      return True
 
-   def validateCorePath(self):
-      """
-      Validate Bitcoin Core data directory exists.
-      Returns True if valid, False if user cancelled.
-      Prompts user to select new directory if current doesn't exist.
-      """
-      corePath = str(self.satoshiHomePath.text())
-      if not os.path.exists(corePath):
-         reply = QtWidgets.QMessageBox.warning(
+      automate = self.scenarioCombo.currentText() == SCENARIO_CORE_AUTOMATE
+      if automate and not self.btcBin:
+         QtWidgets.QMessageBox.warning(
             self,
-            self.tr('Invalid Directory'),
-            self.tr('Bitcoin Core data directory does not exist. '
-               'Please select a valid directory.'),
-            QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel)
-         if reply == QtWidgets.QMessageBox.Ok:
-            newDir = QtWidgets.QFileDialog.getExistingDirectory(
-               self,
-               self.tr('Select Bitcoin Core Data Directory'),
-               os.path.expanduser('~'))
-            if newDir:
-               self.satoshiHomePath.setText(newDir)
-               return self.validateCorePath()
+            self.tr('Invalid Core Executable'),
+            self.tr(
+               '''Armory needs the path to bitcoind to automate Core.
+               \nPoint it to a valid executable or disable automation to proceed further.
+               ''')
+         )
          return False
       return True
+
+   def _validateSatoshiDir(self, target):
+      try:
+         validationResult = \
+            TheBridge.dbSetup.validateSatoshiDatadir(target)
+         self.btcDir = os.path.normpath(validationResult.path)
+         self.satoshiHomePath.setStyleSheet("color: black; font-style: normal;")
+         self.satoshiHomePath.setText(self.btcDir)
+         self.chainSize.setText(f"Chain Size: <b>{validationResult.chainSizeGB}GB</b>")
+
+         prunedFlag = f"<b style=\"color: red;\">Pruned</b>" if validationResult.pruned else \
+            f"<b style=\"color: green;\">No Pruning</b>"
+         self.prunedState.setText(f"Chain Data: {prunedFlag}")
+      except:
+         self.btcDir = None
+         self.satoshiHomePath.setStyleSheet("color: red; font-style: italic;")
+         self.chainSize.setText("Chain Size: N/A")
+         self.prunedState.setText("Chain Data: N/A")
+
+   def _validateSatoshiBin(self, target):
+      try:
+         validationResult = \
+            TheBridge.dbSetup.validateSatoshiBinary(target)
+         self.btcBin = os.path.normpath(validationResult.path)
+         self.satoshiBinPath.setStyleSheet("color: black; font-style: normal;")
+         self.satoshiBinPath.setText(self.btcBin)
+         self.satoshiBinVer.setText(
+            f"Version: <b style=\"color: green;\">{validationResult.version}</b>")
+      except Exception as e:
+         self.btcBin = None
+         self.satoshiBinPath.setStyleSheet("color: red; font-style: italic;")
+         self.satoshiBinPath.setText(target)
+         self.satoshiBinVer.setText(f"<i>{str(e)}</i>")
+
+   def onBridgeReady(self):
+      ## detect and/or validate satoshi datadir ##
+      targetDir = self.btcDir if self.btcDir else \
+         TheBridge.dbSetup.findSatoshiDatadir()
+      self._validateSatoshiDir(targetDir)
+
+      ## detect and/or validate satoshi binary ##
+      targetBin = self.btcBin if self.btcBin else \
+         TheBridge.dbSetup.findSatoshiBinary()
+      self._validateSatoshiBin(targetBin)

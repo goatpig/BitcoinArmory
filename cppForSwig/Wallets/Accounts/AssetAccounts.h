@@ -183,18 +183,18 @@ namespace Armory
             std::shared_ptr<Wallets::Encryption::DecryptedDataContainer>,
             const Wallets::AssetId&);
 
+         void setHighestUsedIndex(
+            std::shared_ptr<Wallets::IO::WalletDBInterface>,
+            const Wallets::AssetKeyType&);
          virtual unsigned getLookup(void) const;
-         virtual AssetAccountType type(void) const;
 
       public:
          AssetAccount(std::shared_ptr<AssetAccountData>);
 
+         virtual AssetAccountType type(void) const;
          size_t getAssetCount(void) const;
          int32_t getLastComputedIndex(void) const;
          int32_t getHighestUsedIndex(void) const;
-         void setHighestUsedIndex(
-            std::shared_ptr<Wallets::IO::WalletDBInterface>,
-            const Wallets::AssetKeyType&);
          bool isAssetInUse(const Wallets::AssetId&) const;
          AssetPtr getLastAssetWithPrivateKey(void) const;
 

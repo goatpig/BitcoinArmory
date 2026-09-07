@@ -85,7 +85,7 @@ namespace Armory
          const BinaryData& getID(void) const;
       };
 
-      struct AuthPeerAssetMap
+      struct PeerAssetMap
       {
          //<name, authorized pubkey>
          std::map<std::string,
@@ -104,9 +104,9 @@ namespace Armory
       };
 
       //////////////////////////////////////////////////////////////////////////
-      struct AuthPeerAssetConversion
+      struct PeerAccountHelper
       {
-         static AuthPeerAssetMap getAssetMap(
+         static PeerAssetMap getAssetMap(
             const MetaDataAccount*);
          static std::map<SecureBinaryData, std::set<unsigned>> getKeyIndexMap(
             const MetaDataAccount*, bool);
@@ -130,7 +130,7 @@ namespace Armory
       };
 
       //////////////////////////////////////////////////////////////////////////
-      struct CommentAssetConversion
+      struct CommentAccountHelper
       {
          static std::shared_ptr<Assets::CommentData> getByKey(MetaDataAccount*,
             const BinaryData&);

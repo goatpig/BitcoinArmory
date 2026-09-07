@@ -285,7 +285,6 @@ DerivationScheme_ArmoryLegacy::extendPrivateChain(
       );
    };
 
-   ReentrantLock lock(ddc.get());
    std::vector<std::shared_ptr<AssetEntry>> assetVec;
    assetVec.reserve(end - firstAsset->getIndex());
 
@@ -417,10 +416,8 @@ DerivationScheme_BIP32::extendPrivateChain(
          AssetId(account_id, derivationIndex));
    };
 
-   ReentrantLock lock(ddc.get());
    std::vector<std::shared_ptr<AssetEntry>> assetVec;
    assetVec.reserve(end-start);
-
    for (int32_t i = start; i < end; i++) {
       auto newAsset = nextAsset(i+1);
       assetVec.emplace_back(newAsset);
@@ -858,7 +855,6 @@ DerivationScheme_ECDH::extendPrivateChain(
    if (ddc == nullptr) {
       throw AssetUnavailableException();
    }
-   ReentrantLock lock(ddc.get());
 
    std::vector<std::shared_ptr<AssetEntry>> assetVec;
    for (int32_t i = start; i < end; i++) {

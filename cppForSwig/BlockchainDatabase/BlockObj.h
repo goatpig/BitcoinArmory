@@ -62,18 +62,18 @@ namespace Armory
    class BlockOffset
    {
    private:
-      uint16_t fileID_;
+      Types::FileId fileID_;
       size_t offset_;
 
    public:
-      BlockOffset(uint16_t, size_t);
+      BlockOffset(Types::FileId, size_t);
       BlockOffset(const BlockOffset&);
 
       bool operator<(const BlockOffset&) const;
       BlockOffset& operator=(const BlockOffset&);
       bool isValid(void) const;
 
-      uint16_t fileID(void) const;
+      Types::FileId fileID(void) const;
       size_t offset(void) const;
    };
 
@@ -140,7 +140,7 @@ namespace Armory
       uint32_t getBlockHeight(void) const;
       uint32_t getNumTx(void) const;
       size_t getOffset(void) const;
-      Types::FileId getBlockFileNum(void) const;
+      Types::FileId getBlockFileId(void) const;
       uint32_t getBlockSize(void) const;
       BinaryDataRef getRawData(void) const;
       Types::BlockId getUniqueID(void) const;
@@ -149,7 +149,7 @@ namespace Armory
       void setBlockHeight(unsigned);
       void setBlockSize(uint32_t);
       void setNumTx(uint32_t);
-      void setBlockFileNum(Types::FileId);
+      void setBlockFileId(Types::FileId);
       void setBlockFileOffset(size_t);
       void setRawData(BinaryData);
       void setUniqueID(Types::BlockId);
@@ -177,7 +177,7 @@ namespace Armory
       Types::BlockId    uniqueID_ = Types::INVALID_BLOCK_ID;
       uint32_t          numTx_ = UINT32_MAX;
       uint32_t          numBlockBytes_; // includes header + nTx + sum(Tx)
-      Types::FileId     blkFileNum_ = Types::INVALID_FILE_ID;
+      Types::FileId     blkFileId_ = Types::INVALID_FILE_ID;
       MerkleState       checkState_ = MerkleState::Unchecked;
 
       //only useful to write header on disk the one time

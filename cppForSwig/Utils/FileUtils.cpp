@@ -37,7 +37,7 @@ FileMap::FileMap(const std::filesystem::path& path, bool write, size_t offset)
    int fd = 0;
    if (!pathExists(path, 2)) {
       //false positive warning, we often ask for block files that do not
-      //exists as way to check for exhaustion
+      //exists as the way to check for exhaustion
       return;
    }
 
@@ -302,6 +302,12 @@ bool FileUtils::pathExists(const std::filesystem::path& path, int mode)
          std::filesystem::perms::none) {
          return false;
       }
+
+      //do we need exec permissions
+      if ((mode & 8) && (filePerms & std::filesystem::perms::owner_exec) ==
+         std::filesystem::perms::none) {
+         return false;
+      }
       return true;
    } catch (const std::filesystem::filesystem_error&) {
       //throw, invalid path/file doesnt exist
@@ -317,16 +323,34 @@ bool FileUtils::isFile(const std::filesystem::path& path)
 }
 
 ////
-bool FileUtils::isDir(const std::filesystem::path& path)
+bool FileUtils::isDir(const std::filesystem::path& path, int mode)
 {
    auto result = std::filesystem::status(path);
-   return result.type() == std::filesystem::file_type::directory;
+   if (result.type() != std::filesystem::file_type::directory) {
+      return false;
+   }
+   auto filePerms = result.permissions();
+
+   //do we need read permission?
+   if ((mode & 2) && (filePerms & std::filesystem::perms::owner_read) ==
+      std::filesystem::perms::none) {
+      LOGERR << "lacking read permission for folder " << path.string();
+      return false;
+   }
+
+   //do we need write permission?
+   if ((mode & 4) && (filePerms & std::filesystem::perms::owner_write) ==
+      std::filesystem::perms::none) {
+      LOGERR << "lacking write permission for folder " << path.string();
+      return false;
+   }
+   return true;
 }
 
 ////
 int FileUtils::removeDirectory(const std::filesystem::path& path)
 {
-   if (!isDir(path)) {
+   if (!isDir(path, 4)) {
       return -1;
    }
 

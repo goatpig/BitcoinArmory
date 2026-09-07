@@ -413,7 +413,7 @@ void DBBlock::createFromBlockHeader(const BlockHeader& bh)
    isMainBranch = bh.isMainBranch();
    hasBlockHeader = true;
 
-   fileID = bh.getBlockFileNum();
+   fileID = bh.getBlockFileId();
    offset = bh.getOffset();
    uniqueID = bh.getUniqueID();
    merkleValid = bh.isMerkleValid();
@@ -439,7 +439,7 @@ BlockHeader DBBlock::getBlockHeaderCopy() const
    BlockHeader bh(dataCopy);
    bh.setNumTx(numTx);
    bh.setBlockSize(numBytes);
-   bh.setBlockFileNum(fileID);
+   bh.setBlockFileId(fileID);
    bh.setBlockFileOffset(offset);
    return bh;
 }

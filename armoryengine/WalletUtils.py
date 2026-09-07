@@ -181,6 +181,11 @@ class WalletMap(object):
    def hasWallet(self, wltId: str):
       return wltId in self._wltIdToDbId
 
+   def getAccountsForWallet(self, wltId: str):
+      if wltId not in self._wltIdToDbId:
+         return {}
+      return dict(self._wltIdToDbId[wltId])
+
    ## visibility ##
    def isVisible(self, index):
       if index >= len(self._dbIdList):

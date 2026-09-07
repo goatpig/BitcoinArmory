@@ -149,10 +149,11 @@ const ScrAddrIdMap& ScannerContext::getScrAddrIdMap() const
 ////////////////////////////////////////////////////////////////////////////////
 // ParserBatch
 ParserBatch::ParserBatch(unsigned start, unsigned end,
-   Types::FileId startID, Types::FileId endID, ScannerContext& ctx) :
+   Types::FileId startID, Types::FileId endID,
+   unsigned thrCount, ScannerContext& ctx) :
    start(start), end(end),
    startBlockFileID(startID), targetBlockFileID(endID),
-   context(ctx)
+   threadCount{thrCount}, context(ctx)
 {
    if (end < start) {
       throw std::runtime_error("end > start");
@@ -198,17 +199,81 @@ void ParserBatch::mergeResult(TxInParsingResult& result)
    }
 }
 
+std::future<bool> ParserBatch::preloadFiles(
+   std::shared_ptr<BlockFiles> blockFiles,
+   std::map<Types::FileId, std::shared_ptr<FileUtils::FileCopy>>& fileCache)
+{
+   auto fetchFile = [this, &fileCache, blockFiles]
+   (std::shared_ptr<std::atomic_uint32_t> counterPtr)
+   {
+      auto& counter = *counterPtr;
+      std::map<Types::FileId, std::shared_ptr<FileUtils::FileCopy>> result;
+      while (true) {
+         auto fileId = counter.fetch_add(1, std::memory_order_relaxed);
+         if (fileId > targetBlockFileID) {
+            break;
+         }
+         auto fileIter = fileCache.find(fileId);
+         if (fileIter != fileCache.end()) {
+            result.emplace(fileId, fileIter->second);
+         } else {
+            auto filePath = blockFiles->getFilePathForID(fileId);
+            auto fileCopy = std::make_shared<FileUtils::FileCopy>(filePath);
+            if (Config::DBSettings::isXored()) {
+               fileCopy->xorMe(Config::DBSettings::getXorKey());
+            }
+            result.emplace(fileId, fileCopy);
+         }
+      }
+
+      std::unique_lock<std::mutex> lock(mergeMutex);
+      for (auto& filePair : result) {
+         fileCopies.emplace(filePair);
+      }
+   };
+
+   auto worker = [this, &fileCache, fetchFile]() {
+      TIMER_START("filecopy");
+      auto counter = std::make_shared<std::atomic_uint32_t>(startBlockFileID);
+      auto thrcount = std::min(
+         unsigned(targetBlockFileID - startBlockFileID + 1),
+         threadCount
+      );
+      std::vector<std::thread> thrs; thrs.reserve(threadCount);
+      for (int i = 1; i < threadCount; i++) {
+         thrs.emplace_back(std::thread(fetchFile, counter));
+      }
+      fetchFile(counter);
+
+      for (auto& thr : thrs) {
+         if (thr.joinable()) {
+            thr.join();
+         }
+      }
+      fileCache = fileCopies;
+      preloadPromise.set_value(true);
+      TIMER_STOP("filecopy");
+   };
+
+   auto fut = preloadPromise.get_future();
+   std::thread run{worker};
+   if (run.joinable()) {
+      run.detach();
+   }
+   return fut;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // BlockchainScanner
 BlockchainScanner::BlockchainScanner(
    std::shared_ptr<Blockchain> bc, LMDBBlockDatabase* db,
    ScrAddrFilter* saf,
    std::shared_ptr<BlockFiles> bf,
-   unsigned threadcount, unsigned queue_depth,
+   unsigned threadcount, unsigned memtarget,
    ProgressCallback prg, bool reportProgress) :
    blockchain_(bc), db_(db), scrAddrFilter_(saf),
    blockFiles_(bf),
-   totalThreadCount_(threadcount), writeQueueDepth_(queue_depth),
+   totalThreadCount_(threadcount), memTarget_(memtarget),
    totalBlockFileCount_(bf->fileCount()),
    progress_(prg), reportProgress_(reportProgress)
 {
@@ -251,12 +316,12 @@ bool BlockchainScanner::scan(ScannerContext& ctx, int32_t scanFrom)
          //figure out how many blocks to pull for this batch
          //batches try to grab up nBlockFilesPerBatch_ worth of block data
          unsigned targetHeight = 0;
-         size_t targetSize = BATCH_SIZE;
+         size_t targetSize = memTarget_ * BATCH_SIZE;
          size_t tallySize;
          try {
             std::shared_ptr<BlockHeader> currentHeader =
                blockchain_->getHeaderByHeight(startHeight);
-            firstBlockFileID = currentHeader->getBlockFileNum();
+            firstBlockFileID = currentHeader->getBlockFileId();
 
             targetBlockFileID = 0;
             targetHeight = startHeight;
@@ -266,11 +331,11 @@ bool BlockchainScanner::scan(ScannerContext& ctx, int32_t scanFrom)
                currentHeader = blockchain_->getHeaderByHeight(++targetHeight);
                tallySize += currentHeader->getBlockSize();
 
-               if (currentHeader->getBlockFileNum() < firstBlockFileID) {
-                  firstBlockFileID = currentHeader->getBlockFileNum();
+               if (currentHeader->getBlockFileId() < firstBlockFileID) {
+                  firstBlockFileID = currentHeader->getBlockFileId();
                }
-               if (currentHeader->getBlockFileNum() > targetBlockFileID) {
-                  targetBlockFileID = currentHeader->getBlockFileNum();
+               if (currentHeader->getBlockFileId() > targetBlockFileID) {
+                  targetBlockFileID = currentHeader->getBlockFileId();
                }
             }
          } catch (const std::range_error& e) {
@@ -282,8 +347,8 @@ bool BlockchainScanner::scan(ScannerContext& ctx, int32_t scanFrom)
                return false;
             } else {
                targetHeight = topBlock->getBlockHeight();
-               if (targetBlockFileID < topBlock->getBlockFileNum()) {
-                  targetBlockFileID = topBlock->getBlockFileNum();
+               if (targetBlockFileID < topBlock->getBlockFileId()) {
+                  targetBlockFileID = topBlock->getBlockFileId();
                }
             }
          }
@@ -293,12 +358,23 @@ bool BlockchainScanner::scan(ScannerContext& ctx, int32_t scanFrom)
          auto batch = std::make_unique<ParserBatch>(
             startHeight, endHeight,
             firstBlockFileID, targetBlockFileID,
-            ctx);
+            totalThreadCount_, ctx);
          completedFutures.push_back(batch->completedPromise.get_future());
          batch->count = batchCount;
 
          //post for txout parsing
          outputQueue_.push_back(move(batch));
+
+         /***
+         Throttle batch creation if we have more than writeQueueDepth_
+         live batches.
+         This had value when batches were using file maps. With file copies,
+         the IO cost is front loaded in the batch lifetime and this step has
+         no measurable effect currently.
+
+         Disabled for now.
+         ***/
+         /*
          if (batchCount - completedBatches_.load(std::memory_order_relaxed) >=
             writeQueueDepth_) {
             try {
@@ -309,7 +385,7 @@ bool BlockchainScanner::scan(ScannerContext& ctx, int32_t scanFrom)
                LOGERR << "future error";
                return false;
             }
-         }
+         }*/
 
          ++batchCount;
          startHeight = endHeight + 1;
@@ -341,6 +417,10 @@ bool BlockchainScanner::scan(ScannerContext& ctx, int32_t scanFrom)
    if (topBlock->getBlockHeight() - scanFrom > 100) {
       auto timeSpent = TIMER_READ_SEC("scan_nocheck");
       LOGINFO << "scanned transaction history in " << timeSpent << "s";
+      LOGINFO << " - filecopy: " << TIMER_READ_SEC("filecopy") << "s";
+      LOGINFO << " - outputs: " << TIMER_READ_SEC("outputs") << "s";
+      LOGINFO << " - inputs: " << TIMER_READ_SEC("inputs") << "s";
+      LOGINFO << " - writer: " << TIMER_READ_SEC("write") << "s";
    }
 
    auto timeSpent = TIMER_READ_SEC("throttling");
@@ -354,44 +434,17 @@ bool BlockchainScanner::scan(ScannerContext& ctx, int32_t scanFrom)
 void BlockchainScanner::processOutputs()
 {
    TIMER_RESET("throttling");
-   TIMER_RESET("preload");
    TIMER_RESET("outputs");
+   TIMER_RESET("filecopy");
 
    auto process_thread = [this](ParserBatch* batch)->void
    {
       this->processOutputsThread(batch);
    };
 
-   std::map<Types::FileId, std::shared_ptr<FileUtils::FileCopy>> localFileCopies;
-   auto preloadBlockDataFiles = [&](ParserBatch* batch)->void
-   {
-      if (batch == nullptr) {
-         return;
-      }
-
-      TIMER_START("preload");
-
-      auto fileId = batch->startBlockFileID;
-      while (fileId <= batch->targetBlockFileID) {
-         auto fileIter = localFileCopies.find(fileId);
-         if (fileIter != localFileCopies.end()) {
-            batch->fileCopies.emplace(fileId, fileIter->second);
-         } else {
-            auto filePath = blockFiles_->getFilePathForID(fileId);
-            auto fileCopy = std::make_shared<FileUtils::FileCopy>(filePath);
-            if (Config::DBSettings::isXored()) {
-               fileCopy->xorMe(Config::DBSettings::getXorKey());
-            }
-            batch->fileCopies.emplace(fileId, fileCopy);
-         }
-         ++fileId;
-      }
-      localFileCopies = batch->fileCopies;
-
-      TIMER_STOP("preload");
-   };
 
    //init batch
+   std::map<Types::FileId, std::shared_ptr<FileUtils::FileCopy>> localFileCopies;
    std::unique_ptr<ParserBatch> batch;
    while (true) {
       try {
@@ -400,9 +453,14 @@ void BlockchainScanner::processOutputs()
       } catch (const Threading::StopBlockingLoop&) {}
    }
 
-   preloadBlockDataFiles(batch.get());
+   auto preloadFut = batch->preloadFiles(
+      blockFiles_, localFileCopies);
    while (true) {
+      //wait till files are loaded
+      preloadFut.wait();
+
       //start processing threads
+      TIMER_START("outputs");
       std::vector<std::thread> thr_vec;
       thr_vec.reserve(totalThreadCount_);
       for (unsigned i = 0; i < totalThreadCount_; i++) {
@@ -418,8 +476,10 @@ void BlockchainScanner::processOutputs()
 
       //populate the next batch's file map while the first
       //batch is being processed
-      TIMER_START("outputs");
-      preloadBlockDataFiles(nextBatch.get());
+      if (nextBatch != nullptr) {
+         preloadFut = nextBatch->preloadFiles(
+            blockFiles_, localFileCopies);
+      }
 
       //wait on threads
       for (auto& thr : thr_vec) {
@@ -427,20 +487,18 @@ void BlockchainScanner::processOutputs()
             thr.join();
          }
       }
+      TIMER_STOP("outputs");
 
       //push first batch for input processing
       inputQueue_.push_back(std::move(batch));
 
       //check loop break condition
       if (nextBatch == nullptr || fatalError_.load(std::memory_order_relaxed) != 0) {
-         TIMER_STOP("outputs");
          break;
       }
 
       //set batch for next iteration
       batch = std::move(nextBatch);
-
-      TIMER_STOP("outputs");
    }
 
    //done with processing ouputs, there won't be anymore batches to push
@@ -511,7 +569,7 @@ std::shared_ptr<BlockData> BlockchainScanner::getBlockData(
 {
    //grab block file map
    auto blockheader = blockchain_->getHeaderByHeight(height);
-   auto filenum = blockheader->getBlockFileNum();
+   auto filenum = blockheader->getBlockFileId();
    auto mapIter = batch->fileCopies.find(filenum);
    if (mapIter == batch->fileCopies.end()) {
       LOGERR << "Missing file map for output scan, this is unexpected";
@@ -569,14 +627,17 @@ void BlockchainScanner::processOutputsThread(ParserBatch* batch)
 
       const auto header = blockdata->getHeaderPtr();
       const auto& txns = blockdata->getTxns();
-      for (uint16_t i = 0; i < txns.size(); i++) {
+      for (size_t i = 0; i < txns.size(); i++) {
          const BCTX& txn = *(txns[i].get());
-         for (uint16_t y = 0; y < txn.txouts_.size(); y++) {
+         for (size_t y = 0; y < txn.txouts_.size(); y++) {
             const auto& txout = txn.txouts_[y];
 
             BinaryRefReader brr{txn.data_ + txout.first, txout.second};
             brr.advance(8);
             unsigned scriptSize = (unsigned)brr.get_var_int();
+            if (scriptSize == 0) {
+               continue;
+            }
             auto scrAddr = BtcUtils::getTxOutScrAddr(
                brr.get_BinaryDataRef(scriptSize));
 
@@ -607,7 +668,7 @@ void BlockchainScanner::processOutputsThread(ParserBatch* batch)
             auto emplaceResult = txOutIter->second.emplace(
                header->getUniqueID(), std::deque<TxOutData>{}).first;
             emplaceResult->second.emplace_back(TxOutData{
-               value, header->getUniqueID(), i, y});
+               value, header->getUniqueID(), (uint16_t)i, (uint16_t)y});
          }
       }
    }
@@ -645,10 +706,10 @@ void BlockchainScanner::processInputsThread(ParserBatch* batch)
       const auto header = blockdata->getHeaderPtr();
       const auto& txns = blockdata->getTxns();
 
-      for (unsigned i = 0; i < txns.size(); i++) {
+      for (size_t i = 0; i < txns.size(); i++) {
          const BCTX& txn = *(txns[i].get());
 
-         for (unsigned y = 0; y < txn.txins_.size(); y++) {
+         for (size_t y = 0; y < txn.txins_.size(); y++) {
             const auto& txin = txn.txins_[y];
             BinaryDataRef outHash(txn.data_ + txin.first, 32);
             auto hashIter = hashMap.find(outHash);
@@ -710,7 +771,7 @@ void BlockchainScanner::commitBatches()
    auto getGlobalOffsetForBlock = [bc=blockchain_](unsigned height)->size_t
    {
       auto header = bc->getHeaderByHeight(height);
-      size_t val = header->getBlockFileNum();
+      size_t val = header->getBlockFileId();
       val *= 128 * 1024 * 1024;
       val += header->getOffset();
       return val;
@@ -741,6 +802,7 @@ void BlockchainScanner::commitBatches()
       //sanity check
       auto& outData = batch->outParserResult;
       if (outData.blockMap.empty()) {
+         TIMER_STOP("write");
          continue;
       }
 

@@ -13,7 +13,8 @@ from armoryengine.ArmoryUtils import CLI_OPTIONS, \
    ARMORY_HOME_DIR, ARMORYDB_DEFAULT_PORT, \
    LOGINFO, LOGERROR
 from armoryengine.Settings import TheSettings
-from armoryengine.CppBridge import TheBridge, PeersDbCallback, ServerKeyCallback
+from armoryengine.CppBridge import TheBridge, ServerPush, \
+   PeersDbCallback, ServerKeyCallback
 from ui.QtExecuteSignal import TheSignalExecution
 
 from qtdialogs.ArmoryDialog import ArmoryDialog
@@ -22,7 +23,7 @@ import qtdialogs.qtdefines as qtdefines
 from qtdialogs.setupmanager.WalletTab import WalletTab
 from qtdialogs.setupmanager.CoreTab import CoreTab
 from qtdialogs.setupmanager.DatabaseTab import (
-   DatabaseTab, SCENARIO_DB_LOCAL, SCENARIO_DB_NONE,
+   DatabaseTab, SCENARIO_DB_AUTOMATED, SCENARIO_DB_OFFLINE,
    SCENARIO_REMOTE_IP, SCENARIO_REMOTE_PEER
 )
 
@@ -64,6 +65,7 @@ class DlgSetupManager(ArmoryDialog):
       self.setupMainLayout()
       self.loadSettings()
       self.connectSignals()
+      self._handleCoreTabActivation()
 
       # Peers DB auto-load happens in onBridgeReady
       # (bridge isn't available during __init__)
@@ -95,17 +97,13 @@ class DlgSetupManager(ArmoryDialog):
       self.tabWidget.addTab(self.databaseTab, self.tr('Database Settings'))
       self.tabWidget.addTab(self.coreTab, self.tr('Core Settings'))
 
-      coreTabIndex = self.tabWidget.indexOf(self.coreTab)
-      self.tabWidget.setTabEnabled(coreTabIndex, False)
-      self.tabWidget.setTabToolTip(
-         coreTabIndex,
-         self.tr('Disabled until backend calls are provided'))
-
       if CLI_OPTIONS.offline:
          dbTabIndex = self.tabWidget.indexOf(self.databaseTab)
          self.tabWidget.setTabEnabled(dbTabIndex, False)
          self.tabWidget.setTabText(
             dbTabIndex, self.tr('Database Settings, Offline'))
+         coreTabIndex = self.tabWidget.indexOf(self.coreTab)
+         self.tabWidget.setTabEnabled(coreTabIndex, False)
 
    def setupMainLayout(self):
       """Set up the main layout with tabs and buttons."""
@@ -165,8 +163,9 @@ class DlgSetupManager(ArmoryDialog):
       scenario = dbSettings['scenario']
 
       # Offline mode is always valid - no connection needed
-      if scenario == SCENARIO_DB_NONE:
+      if scenario == SCENARIO_DB_OFFLINE:
          LOGINFO("Offline mode - no connection validation needed")
+         #TODO: set instance wide offline flag
          self._saveAndAccept()
          return
 
@@ -182,7 +181,9 @@ class DlgSetupManager(ArmoryDialog):
       QtWidgets.QApplication.processEvents()
 
       params = self.getDbConnectionParams()
-      success, error = self.initiateDbConnection(params)
+      self.initiateDbConnection(params)
+
+   def _handleConnectionAttemptFinality(self, success, error):
       self.unsetCursor()
 
       if success:
@@ -230,6 +231,7 @@ class DlgSetupManager(ArmoryDialog):
       """Called when bridge is ready."""
       self.walletTab.loadWalletList()
       self._autoLoadPeersIfNeeded()
+      self.coreTab.onBridgeReady()
 
    def registerWidgetActivateTime(self, widget):
       """Stub for entropy collection - no-op during setup."""
@@ -246,6 +248,7 @@ class DlgSetupManager(ArmoryDialog):
       if not checked:
          return
       self._autoLoadPeersIfNeeded()
+      self._handleCoreTabActivation()
 
    def onRemoteSubModeChanged(self, index):
       """Handle remote sub-mode combo changes.
@@ -299,6 +302,15 @@ class DlgSetupManager(ArmoryDialog):
          self.databaseTab.remoteSubModeCombo \
             .setCurrentIndex(0)
 
+   def _handleCoreTabActivation(self):
+      scenario = self.databaseTab.getScenario()
+      coreTabIndex = self.tabWidget.indexOf(self.coreTab)
+      if scenario == SCENARIO_DB_AUTOMATED:
+         #core automation only relevant if db is automated too
+         self.tabWidget.setTabEnabled(coreTabIndex, True)
+      else:
+         self.tabWidget.setTabEnabled(coreTabIndex, False)
+
    def onTestConnectionRequested(self):
       """
       Handle test connection request from DatabaseTab.
@@ -328,7 +340,7 @@ class DlgSetupManager(ArmoryDialog):
       params = self.getDbConnectionParams()
       scenario = params['scenario']
 
-      if scenario == SCENARIO_DB_NONE:
+      if scenario == SCENARIO_DB_OFFLINE:
          QtWidgets.QMessageBox.information(
             self,
             self.tr('Offline Mode'),
@@ -369,11 +381,8 @@ class DlgSetupManager(ArmoryDialog):
       if not self.walletTab.validate():
          return False
 
-      coreTabIndex = self.tabWidget.indexOf(
-         self.coreTab)
+      coreTabIndex = self.tabWidget.indexOf(self.coreTab)
       if self.tabWidget.isTabEnabled(coreTabIndex):
-         if not self.coreTab.validateCorePath():
-            return False
          if not self.coreTab.validate():
             return False
 
@@ -399,14 +408,13 @@ class DlgSetupManager(ArmoryDialog):
       dbSettings = self.databaseTab.collectSettings()
 
       # Paths
-      self._setSettingIfChanged('CoreDataDir', coreSettings['corePath'])
       self._setSettingIfChanged('ArmoryDataDir', walletSettings['armoryPath'])
       self._setSettingIfChanged('DBDir', dbSettings['dbPath'])
-      self._setSettingIfChanged('SatoshiDatadir', coreSettings['corePath'])
+      self._setSettingIfChanged('SatoshiDatadir', coreSettings['datadir'])
+      self._setSettingIfChanged('SatoshiBin', coreSettings['binpath'])
 
       # Core settings
-      self._setSettingIfChanged('ManageSatoshi', coreSettings['manageSatoshi'])
-      self._setSettingIfChanged('NetworkMode', coreSettings['networkMode'])
+      self._setSettingIfChanged('ManageSatoshi', coreSettings['automate'])
       if coreSettings['p2pPort']:
          self._setSettingIfChanged('BitcoinP2PPort', coreSettings['p2pPort'])
       if coreSettings['rpcPort']:
@@ -420,7 +428,7 @@ class DlgSetupManager(ArmoryDialog):
          self._setSettingIfChanged(
             'DBScenarioDefault', dbScenario)
 
-      if dbScenario == SCENARIO_DB_LOCAL:
+      if dbScenario == SCENARIO_DB_AUTOMATED:
          dbTypeVal = 'DB_SUPER' \
             if dbSettings['typeDisp'] == 'Supernode' \
             else 'DB_BARE'
@@ -449,13 +457,15 @@ class DlgSetupManager(ArmoryDialog):
       """Get database connection parameters from UI."""
       dbSettings = self.databaseTab.collectSettings()
       coreSettings = self.coreTab.collectSettings()
-      scenario = SCENARIO_DB_NONE if CLI_OPTIONS.offline == True \
+      scenario = SCENARIO_DB_OFFLINE if CLI_OPTIONS.offline == True \
          else dbSettings['scenario']
       params = {'scenario': scenario}
 
-      if scenario == SCENARIO_DB_LOCAL:
-         params['satoshiPath'] = coreSettings['corePath']
+      if scenario == SCENARIO_DB_AUTOMATED:
+         params['satoshiPath'] = coreSettings['datadir']
+         params['satoshiBin'] = coreSettings['binpath']
          params['dbPath'] = dbSettings['dbPath']
+         params['automateNode'] = coreSettings['automate']
       elif scenario == SCENARIO_REMOTE_PEER:
          params['peerKey'] = dbSettings['peerKey']
       elif scenario == SCENARIO_REMOTE_IP:
@@ -483,39 +493,49 @@ class DlgSetupManager(ArmoryDialog):
       scenario = params['scenario']
       LOGINFO(f"Initiating DB connection: scenario={scenario}")
 
-      if scenario == SCENARIO_DB_NONE:
+      if scenario == SCENARIO_DB_OFFLINE:
          LOGINFO("Offline mode - no database connection")
          return (True, None)
 
-      elif scenario == SCENARIO_DB_LOCAL:
+      elif scenario == SCENARIO_DB_AUTOMATED:
          return self._connectLocalDb(params)
       elif scenario == SCENARIO_REMOTE_PEER:
-         return self._connectToPeer(params)
+         success, error = self._connectToPeer(params)
+         self._handleConnectionAttemptFinality(success, error)
       elif scenario == SCENARIO_REMOTE_IP:
-         return self._connectToIp(params)
+         success, error = self._connectToIp(params)
+         self._handleConnectionAttemptFinality(success, error)
 
       raise ValueError(f"Unknown scenario: {scenario}")
 
-   def _connectLocalDb(self, params):
-      """Initiate local (automated) database connection."""
-      satoshiPath = params.get('satoshiPath', '')
-      dbPath = params.get('dbPath', '')
-
-      LOGINFO(f"Calling automateDb: "
-         f"satoshiPath={satoshiPath}, "
-         f"dbPath={dbPath}")
-
-      result = TheBridge.dbSetup.automateDb(
-         satoshiPath=satoshiPath,
-         dbDir=dbPath
+   def _handleAutomationReply(self, reply):
+      TheSignalExecution.executeMethod(
+         self._handleConnectionAttemptFinality,
+         reply.success, reply.error
       )
 
-      if result.success:
-         LOGINFO("automateDb succeeded")
-         return (True, None)
+   def _connectLocalDb(self, params):
+      """Initiate local (automated) database connection."""
+      print (f"params: {params}")
+      satoshiDir = params.get('satoshiPath', '')
+      satoshiBin = params.get('satoshiBin', '')
+      dbDir = params.get('dbPath', '')
+      automateNode = params.get('automateNode', False)
 
-      LOGERROR(f"automateDb failed: {result.error}")
-      return (False, result.error)
+      LOGINFO("automating db/node operations")
+      result = TheBridge.dbSetup.initAutomationContext(
+         satoshiDir=satoshiDir, satoshiBin=satoshiBin,
+         dbDir=dbDir, automateNode=automateNode, automateDb=True)
+
+      if result.success == False:
+         LOGINFO("automation context init failed!")
+         return (False, result.error)
+
+      dlgAutomations = DlgAutomations(self, self.main, automateNode)
+      TheBridge.dbSetup.runAutomationContext(
+         dlgAutomations.callbackId,
+         self._handleAutomationReply)
+      dlgAutomations.exec_()
 
    def _connectToPeer(self, params):
       """Connect to a known peer from the peers database."""
@@ -763,3 +783,40 @@ class DlgSetupManager(ArmoryDialog):
 
       TheSignalExecution.executeMethod(
          promptOnQtThread)
+
+################################################################################
+class DlgAutomations(ArmoryDialog, ServerPush):
+   """
+   Modal to render automation notifications.
+   See runAutomationContext and cleanup in class DbSetupService
+   """
+   def __init__(self, parent, main, withNode: bool):
+      ArmoryDialog.__init__(self, parent, main)
+      ServerPush.__init__(self)
+
+      #setup modal
+      layout = QtWidgets.QVBoxLayout()
+      self.progressDesc = "Progressing..."
+      self.progressLabel = QtWidgets.QLabel(self.progressDesc)
+      layout.addWidget(self.progressLabel)
+      self.setLayout(layout)
+
+      if withNode:
+         self.setWindowTitle("Automating Bitcoin Core and ArmoryDB")
+      else:
+         self.setWindowTitle("Automating ArmoryDB")
+
+   def updateLabel(self, descLine):
+      self.progressDesc += f"\n - {descLine}"
+      self.progressLabel.setText(self.progressDesc)
+      self.setVisible(True)
+
+   def parseProtoPacket(self, protoPacket):
+      """override of ServerPush method"""
+      which = protoPacket.which()
+      if which == "cleanup":
+         TheSignalExecution.executeMethod(self.reject)
+
+      elif which == "automation":
+         TheSignalExecution.executeMethod(
+            self.updateLabel, protoPacket.automation.which())

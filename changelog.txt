@@ -1,3 +1,43 @@
+Unreleased (0.97_rc2)
+== Added ==
+   - Add exportKeys bridge request supporting public-only and passphrase-gated private key export.
+   - Add Address Type column to the wallet key list dialog.
+   - Add accountId and isUsed fields to exported key metadata.
+   - Add accountName, seedTypeName, and derivationScheme fields to WalletData bridge payloads.
+   - Add Account column to the main wallet lobby table.
+   - Add account name and address type fields to the wallet properties dialog.
+   - Add multi-account export scope prompt, rich header metadata, large-wallet warning, and hide-unused filter to the key list dialog.
+   - Add WalletMap.getAccountsForWallet helper for sibling-account lookup.
+   - Add chainRole field to exported key metadata for receive and change key chains.
+
+== Changed ==
+   - Show key list public data on dialog open without unlocking the wallet.
+   - Request private keys only when a private-key column is enabled.
+   - List eligible and default address types in the key list export header.
+   - Fix exported public key compression for legacy address types.
+   - Show private key export failures in the key list dialog without clearing public data.
+   - Stop unchecking the Public Key column when private keys are loaded in the key list dialog.
+   - Guard private key export against duplicate unlock prompts when both priv-key columns are toggled quickly.
+   - Restrict key export to the requested account when accountId is set on the wallet request.
+   - Omit accountId from export bridge requests when exporting all accounts in a wallet file.
+   - Show human-readable account names in export-all key list section headers.
+   - Treat closing the multi-account export scope prompt as cancel rather than export-all.
+   - Enable public key export for watch-only wallets in the key list dialog.
+   - Clear cached private key bytes and text box contents when the key list dialog closes.
+   - Fix BIP32 account naming to accept any hardened account index, not only account 0'.
+   - Derive seedTypeName from account purpose names instead of labeling multi-account wallets BIP32 Structured.
+   - Infer BIP purpose display names from the first three derivation path elements.
+   - Fix unlockControlHeader to look up wallet files by filename.
+   - Move wallet display-name logic into Wallets classes with getDisplayName methods.
+   - Hold the wallet decryption lock through key-export serialization to avoid extra private-key copies.
+   - Take std::filesystem::path in WalletManager::unlockControlHeader.
+   - Show Armory Legacy and N/A derivation-scheme display names for legacy and import accounts.
+   - Pass exported private keys as BinaryDataRef instead of naked SecureBinaryData pointers.
+   - Fix setup manager unlock and migrate button handlers to capture each wallet row.
+   - Label receive and change key chains separately in the key list export.
+   - Rename wallet properties and key list address-type labels to eligible address type and default address types.
+   - Widen the lobby Account column for BIP purpose account names.
+
 v0.96.5, released December 23rd 2018
 == Added ==
    - You can now set the database path from the Settings menu.

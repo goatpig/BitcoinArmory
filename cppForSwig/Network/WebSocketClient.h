@@ -22,17 +22,21 @@
 #define CLIENT_AUTH_PEER_FILENAME "client.peers"
 
 class RemoteCallback;
+class SecureBinaryData;
 
 namespace Armory
 {
    namespace Wallets
    {
-      class AuthorizedPeers;
-
       namespace IO
       {
          struct ReadOnlyFileParams;
       }
+   }
+
+   namespace NetworkPeers
+   {
+      class ClientStore;
    }
 
    namespace Network
@@ -88,8 +92,6 @@ namespace Armory
          std::atomic<void*> wsiPtr_;
          std::atomic<void*> contextPtr_;
          const std::string servName_;
-
-         std::atomic<unsigned> requestID_;
          std::atomic<bool> connected_ = { false };
 
          std::unique_ptr<WSClientWriteQueue> writeQueue_;
@@ -118,7 +120,7 @@ namespace Armory
          unsigned outerRekeyCount_ = 0;
          unsigned innerRekeyCount_ = 0;
 
-         std::shared_ptr<Wallets::AuthorizedPeers> authPeers_;
+         std::shared_ptr<NetworkPeers::ClientStore> peerStore_;
          BinaryData leftOverData_;
 
          std::shared_ptr<std::promise<bool>> serverPubkeyProm_;
@@ -139,7 +141,7 @@ namespace Armory
 
       public:
          WebSocketClient(const std::string& addr, const std::string& port,
-            std::shared_ptr<Wallets::AuthorizedPeers>, bool,
+            std::shared_ptr<NetworkPeers::ClientStore>, bool,
             std::shared_ptr<RemoteCallback>);
          ~WebSocketClient(void);
 
@@ -157,9 +159,9 @@ namespace Armory
             std::shared_ptr<Socket_ReadPayload>) override;
          bool connectToRemote(void) override;
 
-         static int callback(
-            struct lws *wsi, enum lws_callback_reasons reason,
-            void *user, void *in, size_t len);
+         static int lwsServiceHandler(
+            struct lws*, enum lws_callback_reasons,
+            void*, void*, size_t);
       };
    } //namespace Network
 } //namespace Armory
