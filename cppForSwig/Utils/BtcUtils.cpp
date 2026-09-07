@@ -357,7 +357,8 @@ void BtcUtils::TxInCalcLength(const uint8_t* ptr, size_t size,
 {
    BinaryRefReader brr(ptr, size);
    if (brr.getSizeRemaining() < 4) {
-      throw BtcUtils::BlockDeserializingException();
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "txin data is too small: {}", brr.getSizeRemaining()));
    }
 
    // Tx Version
@@ -380,7 +381,8 @@ void BtcUtils::TxInCalcLength(const uint8_t* ptr, size_t size,
 size_t BtcUtils::TxInCalcLength(const uint8_t* ptr, size_t size)
 {
    if (size < 37) {
-      throw BtcUtils::BlockDeserializingException();
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "not enough txin data: {}", size));
    }
    uint8_t viLen;
    size_t scrLen = (size_t)readVarInt(ptr+36, size-36, viLen);
@@ -390,7 +392,8 @@ size_t BtcUtils::TxInCalcLength(const uint8_t* ptr, size_t size)
 size_t BtcUtils::TxOutCalcLength(const uint8_t* ptr, size_t size)
 {
    if (size < 9) {
-      throw BtcUtils::BlockDeserializingException();
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "not enough txout data: {}", size));
    }
 
    uint8_t viLen;
@@ -401,7 +404,8 @@ size_t BtcUtils::TxOutCalcLength(const uint8_t* ptr, size_t size)
 size_t BtcUtils::TxWitnessCalcLength(const uint8_t* ptr, size_t size)
 {
    if (size < 1) {
-      throw BtcUtils::BlockDeserializingException();
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "not enough witness data: {}", size));
    }
 
    size_t witLen = 0;
@@ -410,13 +414,15 @@ size_t BtcUtils::TxWitnessCalcLength(const uint8_t* ptr, size_t size)
    witLen += viStackLen;
    for (size_t i = 0; i < stackLen; i++) {
       if (witLen >= size) {
-         throw BtcUtils::BlockDeserializingException();
+         throw BtcUtils::BlockDeserializingException(std::format(
+            "witness data overflow: expected {} vs actual {}", witLen, size));
       }
       uint8_t viLen;
       witLen += readVarInt(ptr + witLen, size - witLen, viLen);
       witLen += viLen;
       if (witLen > size) {
-         throw BtcUtils::BlockDeserializingException();
+         throw BtcUtils::BlockDeserializingException(std::format(
+            "witness data overflow: expected {} vs actual {}", witLen, size));
       }
    }
    return witLen;
@@ -435,7 +441,8 @@ size_t BtcUtils::TxCalcLength(const uint8_t* ptr, size_t size,
    BinaryRefReader brr(ptr, size);
 
    if (brr.getSizeRemaining() < 4) {
-      throw BtcUtils::BlockDeserializingException();
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "tx data is too small: {}", brr.getSizeRemaining()));
    }
 
    // Tx Version;

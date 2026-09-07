@@ -954,11 +954,23 @@ unsigned ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
             }
             //Tx, grab it from DB
             StoredTx zcStx;
-            db_->getStoredZC(zcStx, zckey);
+            if (!db_->getStoredZC(zcStx, zckey)) {
+               LOGDEBUG << std::format("failed to grab zc {:x}", zckey);
+               continue;
+            }
+            if (!zcStx.isInitialized()) {
+               LOGDEBUG << std::format("zc {:x} is invalid", zckey);
+               continue;
+            }
 
             //add to newZCMap_
             auto parsedTx = std::make_shared<ParsedTx>(zckey);
-            parsedTx->setTx(zcStx.getSerializedTx(), zcStx.unixTime);
+            auto serializedTxData = zcStx.getSerializedTx();
+            if (serializedTxData.empty()) {
+               LOGWARN << std::format("mangled zc in db: {:x}", zckey);
+               continue;
+            }
+            parsedTx->setTx(serializedTxData, zcStx.unixTime);
             zcMap.emplace(parsedTx->getKey(), std::move(parsedTx));
          } else if (keyRef.getSize() == 32) {
             //tx hash
