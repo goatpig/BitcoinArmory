@@ -58,7 +58,7 @@ extern const std::vector<DB_SELECT> FULLNODEHASHTABLES{
 extern const std::vector<DB_SELECT> BARENODEDBS{
    DB_SELECT::SCRADDR,
    DB_SELECT::TXOUTS, DB_SELECT::TXINS,
-   DB_SELECT::KNOWNHASHES, DB_SELECT::TXHINTS,
+   DB_SELECT::KNOWNHASHES,
    DB_SELECT::ZERO_CONF
 };
 
@@ -587,14 +587,10 @@ void LMDBBlockDatabase::resetHistoryDatabases()
    if (Config::DBSettings::getDbType() != ARMORY_DB_TYPE::Super) {
       auto dbTxouts = getDbPtr(DB_SELECT::TXOUTS);
       auto dbTxins = getDbPtr(DB_SELECT::TXINS);
-      auto dbHints = getDbPtr(DB_SELECT::TXHINTS);
-      auto dbHashes = getDbPtr(DB_SELECT::KNOWNHASHES);
       closeDatabases();
 
       dbTxouts->eraseOnDisk();
       dbTxins->eraseOnDisk();
-      dbHints->eraseOnDisk();
-      dbHashes->eraseOnDisk();
    }
    openDatabases();
 }

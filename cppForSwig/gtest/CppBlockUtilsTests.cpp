@@ -2205,6 +2205,112 @@ TEST_F(BlockUtilsFull, TxHints)
    bdvPtr.reset();
 }
 
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BlockUtilsFull, Load5Blocks_RescanOps)
+{
+   auto startbdm = [this](BdmInitMode init)->void
+   {
+      clients_->init();
+      auto bdvID = DBTestUtils::registerBDV(
+         clients_, Config::BitcoinSettings::getMagicBytes());
+
+      DBTestUtils::registerWallet(clients_, bdvID, {
+            TestChain::scrAddrA,
+            TestChain::scrAddrB,
+            TestChain::scrAddrC,
+            TestChain::scrAddrD,
+            TestChain::scrAddrE,
+            TestChain::scrAddrF},
+         "wallet1",
+         false);
+      DBTestUtils::registerWallet(clients_, bdvID, {
+            TestChain::lb1ScrAddr,
+            TestChain::lb1ScrAddrP2SH},
+         TestChain::lb1B58ID,
+         false);
+      DBTestUtils::registerWallet(clients_, bdvID, {
+            TestChain::lb2ScrAddr,
+            TestChain::lb2ScrAddrP2SH},
+         TestChain::lb2B58ID,
+         false);
+
+      auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
+
+      //wait on signals
+      theBDMt_->start(init);
+      theBDMt_->bdm()->blockUntilReady();
+      DBTestUtils::goOnline(clients_, bdvID);
+      DBTestUtils::waitOnBDVReady(clients_, bdvID);
+   };
+
+   auto checkBalance = [](std::shared_ptr<BlockDataManager> bdm)
+   {
+      EXPECT_EQ(bdm->blockchain()->top()->getThisHash(), TestChain::blkHash5);
+
+      auto getBal = [bdm](const BinaryData& scrAddr)->uint64_t
+      { return DBTestUtils::getScrAddrBalance(scrAddr, bdm); };
+
+      EXPECT_EQ(getBal(TestChain::scrAddrA), 50 * COIN);
+      EXPECT_EQ(getBal(TestChain::scrAddrB), 70 * COIN);
+      EXPECT_EQ(getBal(TestChain::scrAddrC), 20 * COIN);
+      EXPECT_EQ(getBal(TestChain::scrAddrD), 65 * COIN);
+      EXPECT_EQ(getBal(TestChain::scrAddrE), 30 * COIN);
+      EXPECT_EQ(getBal(TestChain::scrAddrF),  5 * COIN);
+
+      EXPECT_EQ(getBal(TestChain::lb1ScrAddr), 5 * COIN);
+      EXPECT_EQ(getBal(TestChain::lb1ScrAddrP2SH), 25 * COIN);
+      EXPECT_EQ(getBal(TestChain::lb2ScrAddr), 30 * COIN);
+      EXPECT_EQ(getBal(TestChain::lb2ScrAddrP2SH), 0 * COIN);
+   };
+
+   auto resetbdm = [this](void)->void
+   {
+      clients_->shutdown();
+      theBDMt_->shutdown();
+
+      delete clients_;
+      delete theBDMt_;
+      std::this_thread::sleep_for(1s);
+
+      initBDM();
+   };
+
+   //regular start
+   startbdm(BdmInitMode::RESUME);
+   checkBalance(theBDMt_->bdm());
+   auto lastScannedRange = theBDMt_->bdm()->getLastScannedRange();
+
+   //rebuild
+   resetbdm();
+   startbdm(BdmInitMode::REBUILD);
+   checkBalance(theBDMt_->bdm());
+   lastScannedRange = theBDMt_->bdm()->getLastScannedRange();
+
+   //regular start
+   resetbdm();
+   startbdm(BdmInitMode::RESUME);
+   checkBalance(theBDMt_->bdm());
+   lastScannedRange = theBDMt_->bdm()->getLastScannedRange();
+   EXPECT_EQ(lastScannedRange.first, TestChain::blkHash5);
+   EXPECT_EQ(lastScannedRange.second, TestChain::blkHash5);
+
+   //rescan
+   resetbdm();
+   startbdm(BdmInitMode::RESCAN);
+   checkBalance(theBDMt_->bdm());
+   lastScannedRange = theBDMt_->bdm()->getLastScannedRange();
+   EXPECT_EQ(lastScannedRange.first, TestChain::blkHash0);
+   EXPECT_EQ(lastScannedRange.second, TestChain::blkHash5);
+
+   //regular start
+   resetbdm();
+   startbdm(BdmInitMode::RESUME);
+   checkBalance(theBDMt_->bdm());
+   lastScannedRange = theBDMt_->bdm()->getLastScannedRange();
+   EXPECT_EQ(lastScannedRange.first, TestChain::blkHash5);
+   EXPECT_EQ(lastScannedRange.second, TestChain::blkHash5);
+}
+
 /*
 TODO:
  - test tx filters
