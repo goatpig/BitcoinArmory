@@ -70,7 +70,7 @@ namespace Armory
          void unserialize(const uint8_t*, uint32_t);
          void unserialize(BinaryDataRef);
 
-         void resolveDbKey(LMDBBlockDatabase*);
+         void resolveDbKey(LMDBBlockDatabase*, std::shared_ptr<BlockchainData>);
          bool isResolved(void) const;
          bool isInitialized(void) const;
 
