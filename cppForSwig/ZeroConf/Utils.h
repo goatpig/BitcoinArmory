@@ -191,7 +191,6 @@ namespace Armory
          friend class MempoolSnapshot;
 
       public:
-         //TODO: shouldn't use references for txHashes anymore
          std::map<Types::TxHash, Types::TxKey> txHashToDBKey_; //<txHash, zcKey>
          std::map<Types::TxKey, std::shared_ptr<ParsedTx>> txMap_; //<zcKey, zcTx>
 

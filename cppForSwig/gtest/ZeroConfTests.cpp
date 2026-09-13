@@ -410,7 +410,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
+   virtual void TearDown()
    {
       FileUtils::removeDirectory(blkdir_);
       FileUtils::removeDirectory(homedir_);
@@ -2095,7 +2095,6 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
       //plot twist: insert fake txhint collision for first spender hash
       {
          auto firstTxHash = utxoVec[0].getTxHash();
-         std::cout << firstTxHash.toHexStr() << std::endl;
          ASSERT_EQ(firstTxHash, TestChain::hash32);
 
          //insert fake txhint: tx 4.1
@@ -3006,6 +3005,508 @@ TEST_F(ZeroConfTests_FullNode, ZC_InOut_SameBlock)
    EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
    EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 55 * COIN);
    EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm),  0 * COIN);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//add a txhint for a zc that resolves to a valid tx
+TEST_F(ZeroConfTests_FullNode, PoisonTxHints)
+{
+   //setup 5 blocks test chain
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   clients_->init();
+   auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
+
+   std::vector<BinaryData> scrAddrVec {
+      TestChain::scrAddrA,
+      TestChain::scrAddrB,
+      TestChain::scrAddrC,
+      TestChain::scrAddrE
+   };
+
+   const std::vector<BinaryData> lb1ScrAddrs {
+      TestChain::lb1ScrAddr,
+      TestChain::lb1ScrAddrP2SH
+   };
+   const std::vector<BinaryData> lb2ScrAddrs {
+      TestChain::lb2ScrAddr,
+      TestChain::lb2ScrAddrP2SH
+   };
+
+   Wallets::IO::CreateWalletParams params{
+      homedir_,
+      Passphrase::SetNew{1ms, 0, {}},
+      Passphrase::SetNew{1ms, 0, {}},
+      nullptr, 10
+   };
+   std::unique_ptr<Seeds::ClearTextSeed> seed(
+      new Seeds::ClearTextSeed_Armory());
+   auto assetWlt = Wallets::AssetWallet_Single::createFromSeed(
+      std::move(seed), params);
+
+   //register with db
+   std::vector<BinaryData> addrVec;
+   auto hashSet = assetWlt->getAddrHashSet();
+   std::vector<BinaryData> hashVec;
+   hashVec.insert(hashVec.begin(), hashSet.begin(), hashSet.end());
+
+   DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
+      false);
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+      false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
+      false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
+      false);
+   auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
+
+   //wait on signals
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   DBTestUtils::goOnline(clients_, bdvID);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
+
+   auto bdm = theBDMt_->bdm();
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(bdm.get(), DB_SELECT::HEADERS), 5U);
+   EXPECT_EQ(DBTestUtils::getTopBlockHash(iface_, DB_SELECT::HEADERS), TestChain::blkHash5);
+   EXPECT_TRUE(bdm->blockchain()->getHeaderByHash(TestChain::blkHash5)->isMainBranch());
+
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 70 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 20 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb1ScrAddr, bdm), 5 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb1ScrAddrP2SH, bdm), 25 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddr, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddrP2SH, bdm), 0 * COIN);
+
+   //add a zc
+   BinaryData ZCHash;
+   {
+      ////spend 27 from wlt to assetWlt's first 2 unused addresses
+      ////send rest back to scrAddrA
+
+      auto spendVal = 27 * COIN;
+      Signing::Signer signer;
+
+      //instantiate resolver feed overloaded object
+      auto feed = std::make_shared<ResolverUtils::TestResolverFeed>();
+      feed->addPrivKey(TestChain::privKeyAddrB.getRef());
+      feed->addPrivKey(TestChain::privKeyAddrC.getRef());
+      feed->addPrivKey(TestChain::privKeyAddrD.getRef());
+      feed->addPrivKey(TestChain::privKeyAddrE.getRef());
+
+      //get utxo list for spend value
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrE
+      });
+
+      std::vector<UTXO> utxoVec;
+      uint64_t tval = 0;
+      auto utxoIter = unspentVec.begin();
+      while (utxoIter != unspentVec.end()) {
+         tval += utxoIter->getAmount();
+         utxoVec.push_back(*utxoIter);
+
+         if (tval > spendVal) {
+            break;
+         }
+         ++utxoIter;
+      }
+
+      //create script spender objects
+      uint64_t total = 0;
+      for (auto& utxo : utxoVec) {
+         total += utxo.getAmount();
+         signer.addSpender(getSpenderPtr(utxo, true));
+      }
+
+      //spend 12 to first address
+      auto addr0 = assetWlt->getNewAddress();
+      signer.addRecipient(addr0->getRecipient(12 * COIN));
+      addrVec.push_back(addr0->getPrefixedHash());
+
+      //spend 15 to addr 1, use P2PKH
+      auto addr1 = assetWlt->getNewAddress();
+      signer.addRecipient(addr1->getRecipient(15 * COIN));
+      addrVec.push_back(addr1->getPrefixedHash());
+
+      if (total > spendVal) {
+         //deal with change, no fee
+         auto changeVal = total - spendVal;
+         auto recipientChange = std::make_shared<Signing::Recipient_P2PKH>(
+            TestChain::scrAddrD.getSliceCopy(1, 20), changeVal);
+         signer.addRecipient(recipientChange);
+      }
+
+      //sign, verify then broadcast
+      signer.setFeed(feed);
+      signer.sign();
+      EXPECT_TRUE(signer.verify());
+
+      auto rawTx = signer.serializeSignedTx();
+      DBTestUtils::ZcVector zcVec;
+      zcVec.push_back(rawTx, 14000000);
+
+      //poison txhints with the zchash
+      ZCHash = std::move(BtcUtils::getHash256(rawTx));
+      {
+         const uint64_t blockIDMask = 0x00000000FFFFFFFF;
+         uint8_t hashTableIndex = ZCHash.getPtr()[8];
+         auto db = bdm->getIFace();
+         auto tx = db->beginHashTableTx(
+            DB_SELECT::TXHINTS, hashTableIndex, LMDB::Mode::ReadWrite);
+
+         uint64_t blockID = 5ul << 32;
+         uint64_t txHintKey;
+         std::memcpy(&txHintKey, ZCHash.getPtr(), 8);
+         txHintKey = (txHintKey & blockIDMask) | blockID;
+         std::vector<uint16_t> txids{1};
+         tx->insert(
+            LMDB::DataRef{
+               sizeof(uint64_t),
+               (const char*)&txHintKey},
+            LMDB::DataRef{
+               sizeof(uint16_t) * txids.size(),
+               (const char*)&txids[0]}
+         );
+      }
+
+      DBTestUtils::pushNewZc(theBDMt_, zcVec);
+      auto txioVec = DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
+      EXPECT_EQ(txioVec.first.size(), 4ULL);
+      EXPECT_EQ(txioVec.second.size(), 0ULL);
+
+      for (const auto& txio : txioVec.first) {
+         if (txio.hasTxOutZC()) {
+            auto txObj = DBTestUtils::getTxByKey(clients_, bdvID,
+               txio.getTxKeyOfOutput());
+            EXPECT_EQ(txObj.getThisHash(), ZCHash);
+         }
+         if (txio.hasTxInZC()) {
+            auto txObj = DBTestUtils::getTxByKey(clients_, bdvID,
+               txio.getTxKeyOfInput());
+            EXPECT_EQ(txObj.getThisHash(), ZCHash);
+         }
+      }
+   }
+
+   //check balances
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 70 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 20 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
+
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 15 * COIN);
+
+   //cleanup
+   bdvPtr.reset();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//add a zc, add a txhint for that hash that points to a valid mined tx,
+//then try to spend from first zc
+TEST_F(ZeroConfTests_FullNode, PoisonTxHints2)
+{
+   //setup 5 blocks test chain
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   clients_->init();
+   auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
+
+   std::vector<BinaryData> scrAddrVec {
+      TestChain::scrAddrA,
+      TestChain::scrAddrB,
+      TestChain::scrAddrC,
+      TestChain::scrAddrE
+   };
+
+   const std::vector<BinaryData> lb1ScrAddrs {
+      TestChain::lb1ScrAddr,
+      TestChain::lb1ScrAddrP2SH
+   };
+   const std::vector<BinaryData> lb2ScrAddrs {
+      TestChain::lb2ScrAddr,
+      TestChain::lb2ScrAddrP2SH
+   };
+
+   Wallets::IO::CreateWalletParams params{
+      homedir_,
+      Passphrase::SetNew{1ms, 0, {}},
+      Passphrase::SetNew{1ms, 0, {}},
+      nullptr, 10
+   };
+   std::unique_ptr<Seeds::ClearTextSeed> seed(
+      new Seeds::ClearTextSeed_Armory());
+   auto assetWlt = Wallets::AssetWallet_Single::createFromSeed(
+      std::move(seed), params);
+
+   //register with db
+   std::vector<BinaryData> addrVec;
+   auto hashSet = assetWlt->getAddrHashSet();
+   std::vector<BinaryData> hashVec;
+   hashVec.insert(hashVec.begin(), hashSet.begin(), hashSet.end());
+
+   DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
+      false);
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+      false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
+      false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
+      false);
+   auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
+
+   //wait on signals
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   DBTestUtils::goOnline(clients_, bdvID);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
+
+   auto bdm = theBDMt_->bdm();
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(bdm.get(), DB_SELECT::HEADERS), 5U);
+   EXPECT_EQ(DBTestUtils::getTopBlockHash(iface_, DB_SELECT::HEADERS), TestChain::blkHash5);
+   EXPECT_TRUE(bdm->blockchain()->getHeaderByHash(TestChain::blkHash5)->isMainBranch());
+
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 70 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 20 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb1ScrAddr, bdm), 5 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb1ScrAddrP2SH, bdm), 25 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddr, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddrP2SH, bdm), 0 * COIN);
+
+   //add a zc
+   BinaryData ZCHash1;
+   {
+      ////spend 27 from wlt to assetWlt's first 2 unused addresses
+      ////send rest back to scrAddrA
+
+      auto spendVal = 27 * COIN;
+      Signing::Signer signer;
+
+      //instantiate resolver feed overloaded object
+      auto feed = std::make_shared<ResolverUtils::TestResolverFeed>();
+      feed->addPrivKey(TestChain::privKeyAddrB.getRef());
+      feed->addPrivKey(TestChain::privKeyAddrC.getRef());
+      feed->addPrivKey(TestChain::privKeyAddrD.getRef());
+      feed->addPrivKey(TestChain::privKeyAddrE.getRef());
+
+      //get utxo list for spend value
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrE
+      });
+
+      std::vector<UTXO> utxoVec;
+      uint64_t tval = 0;
+      auto utxoIter = unspentVec.begin();
+      while (utxoIter != unspentVec.end()) {
+         tval += utxoIter->getAmount();
+         utxoVec.push_back(*utxoIter);
+
+         if (tval > spendVal) {
+            break;
+         }
+         ++utxoIter;
+      }
+
+      //create script spender objects
+      uint64_t total = 0;
+      for (auto& utxo : utxoVec) {
+         total += utxo.getAmount();
+         signer.addSpender(getSpenderPtr(utxo, true));
+      }
+
+      //spend 12 to first address
+      auto addr0 = assetWlt->getNewAddress();
+      signer.addRecipient(addr0->getRecipient(12 * COIN));
+      addrVec.push_back(addr0->getPrefixedHash());
+
+      //spend 15 to addr 1, use P2PKH
+      auto addr1 = assetWlt->getNewAddress();
+      signer.addRecipient(addr1->getRecipient(15 * COIN));
+      addrVec.push_back(addr1->getPrefixedHash());
+
+      if (total > spendVal) {
+         //deal with change, no fee
+         auto changeVal = total - spendVal;
+         auto recipientChange = std::make_shared<Signing::Recipient_P2PKH>(
+            TestChain::scrAddrD.getSliceCopy(1, 20), changeVal);
+         signer.addRecipient(recipientChange);
+      }
+
+      //sign, verify then broadcast
+      signer.setFeed(feed);
+      signer.sign();
+      EXPECT_TRUE(signer.verify());
+
+      auto rawTx = signer.serializeSignedTx();
+      DBTestUtils::ZcVector zcVec;
+      zcVec.push_back(rawTx, 14000000);
+
+      ZCHash1 = std::move(BtcUtils::getHash256(rawTx));
+      DBTestUtils::pushNewZc(theBDMt_, zcVec);
+      auto txioVec = DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
+      EXPECT_EQ(txioVec.first.size(), 4ULL);
+      EXPECT_EQ(txioVec.second.size(), 0ULL);
+
+      for (const auto& txio : txioVec.first) {
+         if (txio.hasTxOutZC()) {
+            auto txObj = DBTestUtils::getTxByKey(clients_, bdvID,
+               txio.getTxKeyOfOutput());
+            EXPECT_EQ(txObj.getThisHash(), ZCHash1);
+         }
+         if (txio.hasTxInZC()) {
+            auto txObj = DBTestUtils::getTxByKey(clients_, bdvID,
+               txio.getTxKeyOfInput());
+            EXPECT_EQ(txObj.getThisHash(), ZCHash1);
+         }
+      }
+   }
+
+   //check balances
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 70 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 20 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
+
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm), 12 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm), 15 * COIN);
+
+   //poison txhints with the zchash
+   {
+      const uint64_t blockIDMask = 0x00000000FFFFFFFF;
+      uint8_t hashTableIndex = ZCHash1.getPtr()[8];
+      auto db = bdm->getIFace();
+      auto tx = db->beginHashTableTx(
+         DB_SELECT::TXHINTS, hashTableIndex, LMDB::Mode::ReadWrite);
+
+      uint64_t blockID = 5ul << 32;
+      uint64_t txHintKey;
+      std::memcpy(&txHintKey, ZCHash1.getPtr(), 8);
+      txHintKey = (txHintKey & blockIDMask) | blockID;
+      std::vector<uint16_t> txids{1};
+      tx->insert(
+         LMDB::DataRef{
+            sizeof(uint64_t),
+            (const char*)&txHintKey},
+         LMDB::DataRef{
+            sizeof(uint16_t) * txids.size(),
+            (const char*)&txids[0]}
+      );
+   }
+
+   //spend from the zc
+   BinaryData ZCHash2;
+   {
+      ////spend 27 from wlt to assetWlt's first 2 unused addresses
+      ////send rest back to scrAddrA
+
+      auto spendVal = 18 * COIN;
+      Signing::Signer signer;
+
+      //instantiate resolver
+      auto assetFeed = std::make_shared<Signing::ResolverFeed_AssetWalletSingle>(assetWlt);
+
+      //get utxo list for spend value
+      auto unspentVec = DBTestUtils::getZCUTXOs(bdm, {
+         addrVec[0],
+         addrVec[1]}
+      );
+
+      std::vector<UTXO> utxoVec;
+      uint64_t tval = 0;
+      auto utxoIter = unspentVec.begin();
+      while (utxoIter != unspentVec.end()) {
+         tval += utxoIter->getAmount();
+         utxoVec.push_back(*utxoIter);
+
+         if (tval > spendVal) {
+            break;
+         }
+         ++utxoIter;
+      }
+
+      //create script spender objects
+      uint64_t total = 0;
+      for (auto& utxo : utxoVec) {
+         total += utxo.getAmount();
+         signer.addSpender(getSpenderPtr(utxo, true));
+      }
+
+      //spend 10 to third address
+      auto addr2 = assetWlt->getNewAddress();
+      signer.addRecipient(addr2->getRecipient(10 * COIN));
+      addrVec.push_back(addr2->getPrefixedHash());
+
+      //spend 8 to addr3
+      auto addr3 = assetWlt->getNewAddress();
+      signer.addRecipient(addr3->getRecipient(8 * COIN));
+      addrVec.push_back(addr3->getPrefixedHash());
+
+      if (total > spendVal) {
+         //deal with change, no fee
+         auto changeVal = total - spendVal;
+         auto recipientChange = std::make_shared<Signing::Recipient_P2PKH>(
+            TestChain::scrAddrD.getSliceCopy(1, 20), changeVal);
+         signer.addRecipient(recipientChange);
+      }
+
+      //sign, verify then broadcast
+      {
+         auto lock = assetWlt->lockDecryptedContainer({});
+         signer.setFeed(assetFeed);
+         signer.sign();
+         EXPECT_TRUE(signer.verify());
+      }
+
+      auto rawTx = signer.serializeSignedTx();
+      DBTestUtils::ZcVector zcVec;
+      zcVec.push_back(rawTx, 15000000);
+
+      ZCHash2 = std::move(BtcUtils::getHash256(rawTx));
+      DBTestUtils::pushNewZc(theBDMt_, zcVec);
+      auto txioVec = DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
+      EXPECT_EQ(txioVec.first.size(), 4ULL);
+      EXPECT_EQ(txioVec.second.size(), 0ULL);
+
+      for (const auto& txio : txioVec.first) {
+         if (txio.hasTxOutZC()) {
+            auto txObj = DBTestUtils::getTxByKey(clients_, bdvID,
+               txio.getTxKeyOfOutput());
+            if (txio.hasTxInZC()) {
+               EXPECT_EQ(txObj.getThisHash(), ZCHash1);
+            } else {
+               EXPECT_EQ(txObj.getThisHash(), ZCHash2);
+            }
+         }
+         if (txio.hasTxInZC()) {
+            auto txObj = DBTestUtils::getTxByKey(clients_, bdvID,
+               txio.getTxKeyOfInput());
+            EXPECT_EQ(txObj.getThisHash(), ZCHash2);
+         }
+      }
+   }
+
+   //check balances
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 70 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 20 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrE, bdm), 0  * COIN);
+
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[0], bdm),  0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[1], bdm),  0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[2], bdm), 10 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(addrVec[3], bdm),  8 * COIN);
+
+   //cleanup
+   bdvPtr.reset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

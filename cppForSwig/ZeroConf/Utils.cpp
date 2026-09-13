@@ -186,8 +186,11 @@ void ZeroConf::preprocessTx(ParsedTx& tx, LMDBBlockDatabase* db,
       txKey = bd->resolveTxHintCollision(collision);
    }
    if (Types::isTxKeyValid(txKey)) {
-      tx.state = ParsedTxStatus::Mined;
-      return;
+      auto txhash = bd->getTxHashForTxKey(txKey);
+      if (txhash == tx.getTxHash()) {
+         tx.state = ParsedTxStatus::Mined;
+         return;
+      }
    }
 
    const auto& txObj = tx.getTxObj();
@@ -479,6 +482,10 @@ void OutPointRef::resolveDbKey(
    }
 
    if (Types::isTxKeyValid(txKey)) {
+      auto txHash = bd->getTxHashForTxKey(txKey);
+      if (txHash != txHash_) {
+         return;
+      }
       setDbKey(txKey);
    }
 }
