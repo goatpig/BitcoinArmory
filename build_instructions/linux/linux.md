@@ -39,8 +39,10 @@ The following dependencies you have to build from source.
     ```
     git clone https://github.com/warmcat/libwebsockets
     cd libwebsockets
-    mkdir build & cd build
-    cmake -DLWS_WITH_SSL=OFF ..
+    git checkout v4.5.8
+    mkdir build
+    cmake -DLWS_WITH_SSL=OFF -DLWS_WITHOUT_TESTAPPS=ON -B build
+    cd build
     make
     ```
 

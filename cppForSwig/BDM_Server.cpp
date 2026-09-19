@@ -741,11 +741,11 @@ void BDV_Server_Object::init()
       auto notifList = notifs.initNotifs(1);
       auto notif = notifList[0];
       if (ready) {
-         auto readyNotif = notif.initReady();
+         auto readyNotif = notif.initConnectionIsReady();
          readyNotif.setHeight(blockchain().top()->getBlockHeight());
          readyNotif.setBranchHeight(UINT32_MAX);
       } else {
-         notif.setRegistered();
+         notif.setRegistrationDone();
       }
 
       //we expect this message to be smaller than our scratchpad
