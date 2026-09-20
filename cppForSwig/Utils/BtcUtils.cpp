@@ -1465,7 +1465,7 @@ std::string BtcUtils::base64_decode(const std::string& in)
                break;
             }
             throw std::runtime_error(
-               std::format("invalid b64 character: {}", val8));
+               std::format("invalid b64 character: \"{}\"", val8));
          }
 
          uint32_t bits = iter->second << (26 - (6 * (y % 4)));

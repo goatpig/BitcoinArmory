@@ -55,7 +55,13 @@ int main(int argc, char* argv[])
       LOGERR << "could not find bridge port env var, aborting!";
       exit(-2);
    }
-   std::string bridgePortStr(bridgePortChar);
+   Armory::Network::port_t bridgePort;
+   auto [ptr, ec] = std::from_chars(bridgePortChar,
+      bridgePortChar + strlen(bridgePortChar), bridgePort);
+   if (ec != std::errc{}) {
+      LOGERR << "invalid bridge port, aborting";
+      exit(-3);
+   }
 
    //init static configuration variables
    Armory::Config::parseArgs(count, args,
@@ -72,12 +78,12 @@ int main(int argc, char* argv[])
       "\n - offline: " << Armory::Config::NetworkSettings::isOffline() <<
       "\n - auth mode: " << Armory::Config::NetworkSettings::oneWayAuth() <<
       "\n - db port: " << Armory::Config::NetworkSettings::dbPort() <<
-      "\n - bridge port: " << bridgePortStr;
+      "\n - bridge port: " << bridgePort;
 
    //setup the bridge & socket
    auto bridge = std::make_shared<Armory::Bridge::CppBridge>();
    auto sockPtr = std::make_shared<Armory::Bridge::CppBridgeSocket>(
-      "127.0.0.1", bridgePortStr, bridge);
+      "127.0.0.1", bridgePort, bridge);
 
    //set bridge write lambda
    auto pushPayloadLbd = [sockPtr](

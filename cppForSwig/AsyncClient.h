@@ -167,7 +167,7 @@ namespace AsyncClient
 
       //setup
       static std::shared_ptr<BlockDataViewer> getNewBDV(
-         const std::string&, const std::string&,
+         const std::string&, Armory::Network::port_t,
          std::shared_ptr<Armory::NetworkPeers::ClientStore>, bool,
          std::shared_ptr<RemoteCallback>);
 

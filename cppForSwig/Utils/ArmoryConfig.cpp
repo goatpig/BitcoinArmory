@@ -23,7 +23,6 @@
 #include <string_view>
 #include <charconv>
 
-namespace fs = std::filesystem;
 using namespace std::literals::string_view_literals;
 using namespace Armory;
 using namespace Armory::Config;
@@ -127,7 +126,7 @@ void Armory::Config::printHelp(void)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const fs::path& Armory::Config::getDataDir()
+const std::filesystem::path& Armory::Config::getDataDir()
 {
    return BaseSettings::dataDir_;
 }
@@ -140,9 +139,9 @@ void Armory::Config::parseArgs(int argc, char* argv[], ProcessType procType)
    for (int i=1; i<argc; i++) {
       lines.emplace_back(argv[i], strlen(argv[i]));
    }
-   fs::path own{argv[0]};
-   Armory::Config::Pathing::own_ = fs::absolute(own).parent_path();
-   Armory::Config::parseArgs(lines, procType);
+   std::filesystem::path own{argv[0]};
+   Pathing::own_ = std::filesystem::absolute(own).parent_path();
+   parseArgs(lines, procType);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -167,7 +166,7 @@ void Armory::Config::parseArgs(
       std::map<std::string, std::string> args;
       for (const auto& line : lines) {
          if (line == ("--help")) {
-            Armory::Config::printHelp();
+            printHelp();
             exit(0);
          }
 
@@ -190,7 +189,7 @@ void Armory::Config::parseArgs(
       BaseSettings::detectDataDir(args);
 
       //get config file
-      auto configPath = fs::path(Armory::Config::getDataDir()) / "armorydb.conf";
+      auto configPath = std::filesystem::path(getDataDir()) / "armorydb.conf";
       if (FileUtils::pathExists(configPath, 2)) {
          Config::File cf(configPath);
          auto mapIter = cf.keyvalMap_.find("datadir");
@@ -222,7 +221,6 @@ void Armory::Config::parseArgs(
 void Armory::Config::reset()
 {
    std::unique_lock<std::mutex> lock(BaseSettings::configMutex_);
-
    NetworkSettings::reset();
    Pathing::reset();
    DBSettings::reset();
@@ -234,7 +232,8 @@ void Armory::Config::reset()
 // SettingsUtils
 //
 ////////////////////////////////////////////////////////////////////////////////
-std::vector<std::string> SettingsUtils::getLines(const fs::path& path)
+std::vector<std::string> SettingsUtils::getLines(
+   const std::filesystem::path& path)
 {
    std::vector<std::string> output;
    std::fstream inStream(path, std::ios_base::in);
@@ -339,75 +338,14 @@ std::string_view SettingsUtils::stripQuotes(const std::string_view& input)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool SettingsUtils::testConnection(const std::string& ip, const std::string& port)
-{
-   Network::SimpleSocket testSock(ip, port);
-   return testSock.testConnection();
-}
-
-////////////////////////////////////////////////////////////////////////////////
-std::string SettingsUtils::getPortFromCookie(const std::string& datadir)
-{
-   //check for cookie file
-   auto cookie_path = fs::path(datadir) / ".cookie_";
-   auto lines = SettingsUtils::getLines(cookie_path);
-   if (lines.size() != 2) {
-      return {};
-   }
-   return lines[1];
-}
-
-////////////////////////////////////////////////////////////////////////////////
-std::string SettingsUtils::hasLocalDB(
-   const std::string& datadir, const std::string& port)
-{
-   //check db on provided port
-   if (SettingsUtils::testConnection("127.0.0.1", port)) {
-      return port;
-   }
-
-   //check db on default port
-   std::string defaultPort;
-   switch (BitcoinSettings::getMode())
-   {
-      case NETWORK_MODE_TESTNET:
-         defaultPort = std::to_string(LISTEN_PORT_TESTNET);
-         break;
-
-      case NETWORK_MODE_REGTEST:
-         defaultPort = std::to_string(LISTEN_PORT_REGTEST);
-         break;
-
-      default:
-         defaultPort = std::to_string(LISTEN_PORT_MAINNET);
-   }
-
-   if (SettingsUtils::testConnection("127.0.0.1", defaultPort)) {
-      return defaultPort;
-   }
-
-   //check for cookie file
-   auto cookie_port = getPortFromCookie(datadir);
-   if (cookie_port.empty()) {
-      return {};
-   }
-
-   if (SettingsUtils::testConnection("127.0.0.1", cookie_port)) {
-      return cookie_port;
-   }
-   return {};
-}
-
-////////////////////////////////////////////////////////////////////////////////
 //
 // BaseSettings
 //
 ////////////////////////////////////////////////////////////////////////////////
 std::mutex BaseSettings::configMutex_;
-fs::path BaseSettings::dataDir_;
+std::filesystem::path BaseSettings::dataDir_;
 unsigned BaseSettings::initCount_ = 0;
 
-////////////////////////////////////////////////////////////////////////////////
 void BaseSettings::detectDataDir(std::map<std::string, std::string>& args)
 {
    //figure out the datadir
@@ -446,7 +384,7 @@ void BaseSettings::detectDataDir(std::map<std::string, std::string>& args)
       isAuto = true;
    }
 
-   dataDir_ = fs::absolute(dataDir_);
+   dataDir_ = std::filesystem::absolute(dataDir_);
    if (!isAuto) {
       return;
    }
@@ -455,7 +393,6 @@ void BaseSettings::detectDataDir(std::map<std::string, std::string>& args)
    FileUtils::createDirectory(dataDir_);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 void BaseSettings::reset()
 {
    dataDir_.clear();
@@ -745,16 +682,13 @@ void DBSettings::reset()
 // NetworkSettings
 //
 ////////////////////////////////////////////////////////////////////////////////
-bool NetworkSettings::customDbPort_ = false;
-bool NetworkSettings::customBtcPort_ = false;
-
 NetworkSettings::NodePair NetworkSettings::bitcoinNodes_;
 NetworkSettings::RpcPtr NetworkSettings::rpcNode_;
 
-std::string NetworkSettings::btcPort_;
-std::string NetworkSettings::dbPort_;
+Network::port_t NetworkSettings::btcPort_ = UINT16_MAX;
+Network::port_t NetworkSettings::dbPort_ = UINT16_MAX;
+Network::port_t NetworkSettings::rpcPort_ = UINT16_MAX;
 std::string NetworkSettings::dbIP_;
-std::string NetworkSettings::rpcPort_;
 
 bool NetworkSettings::ephemeralPeers_;
 bool NetworkSettings::oneWayAuth_ = false;
@@ -767,30 +701,52 @@ void NetworkSettings::processArgs(
    const std::map<std::string, std::string>& args,
    ProcessType procType)
 {
+   //db port
    auto iter = args.find("armorydb-port");
    if (iter != args.end()) {
-      dbPort_ = SettingsUtils::stripQuotes(iter->second);
-      int portInt = std::stoi(dbPort_);
+      auto portSv = SettingsUtils::stripQuotes(iter->second);
+      auto [ptr, ec] = std::from_chars(portSv.data(),
+         portSv.data() + portSv.size(), dbPort_);
 
-      if (portInt < 1 || portInt > 65535) {
-         std::cout << "Invalid listen port, falling back to default" << std::endl;
-         dbPort_ = "";
-      } else {
-         customDbPort_ = true;
+      if (ec != std::errc{} || dbPort_ == 0 || dbPort_ == UINT16_MAX) {
+         std::cout << "Invalid listen port, falling back to default: " <<
+            portSv << ", " << dbPort_ << std::endl;
+         dbPort_ = UINT16_MAX;
       }
    }
 
+   //node port
+   iter = args.find("satoshi-port");
+   if (iter != args.end()) {
+      auto portSv = SettingsUtils::stripQuotes(iter->second);
+      auto [ptr, ec] = std::from_chars(portSv.data(),
+         portSv.data() + portSv.size(), btcPort_);
+
+      if (ec != std::errc{} || btcPort_ == 0 || btcPort_ == UINT16_MAX) {
+         std::cout << "Invalid node port, falling back to default" << std::endl;
+         btcPort_ = UINT16_MAX;
+      }
+   }
+
+   //rpc port
+   iter = args.find("satoshirpc-port");
+   if (iter != args.end()) {
+      auto portSv = SettingsUtils::stripQuotes(iter->second);
+      auto [ptr, ec] = std::from_chars(portSv.data(),
+         portSv.data() + portSv.size(), rpcPort_);
+
+      if (ec != std::errc{} || rpcPort_ == 0 || rpcPort_ == UINT16_MAX) {
+         std::cout << "Invalid rpc port, falling back to default" << std::endl;
+         rpcPort_ = UINT16_MAX;
+      }
+   }
+
+   //db IP
    iter = args.find("armorydb-ip");
    if (iter != args.end()) {
       dbIP_ = SettingsUtils::stripQuotes(iter->second);
    } else {
       dbIP_ = "127.0.0.1";
-   }
-
-   iter = args.find("satoshi-port");
-   if (iter != args.end()) {
-      btcPort_ = SettingsUtils::stripQuotes(iter->second);
-      customBtcPort_ = true;
    }
 
    //network type
@@ -803,24 +759,6 @@ void NetworkSettings::processArgs(
          selectNetwork(NETWORK_MODE_REGTEST);
       } else {
          selectNetwork(NETWORK_MODE_MAINNET);
-      }
-   }
-
-   //rpc port
-   iter = args.find("satoshirpc-port");
-   if (iter != args.end()) {
-      auto value = SettingsUtils::stripQuotes(iter->second);
-      int portInt;
-
-      try {
-         std::from_chars(value.begin(), value.end(), portInt);
-         if (portInt < 1 || portInt > 65535) {
-            std::cout << "Invalid satoshi rpc port, falling back to default" << std::endl;
-         } else {
-            rpcPort_ = value;
-         }
-      } catch (const std::exception&) {
-         std::cout << "satoshi rpc port is not a number, falling back to default" << std::endl;
       }
    }
 
@@ -864,42 +802,48 @@ void NetworkSettings::selectNetwork(NETWORK_MODE mode)
    {
       case NETWORK_MODE_MAINNET:
       {
-         rpcPort_ = std::to_string(RPC_PORT_MAINNET);
-
-         if (!customDbPort_) {
-            dbPort_ = std::to_string(LISTEN_PORT_MAINNET);
+         if (rpcPort_ == UINT16_MAX) {
+            rpcPort_ = RPC_PORT_MAINNET;
          }
 
-         if (!customBtcPort_) {
-            btcPort_ = std::to_string(NODE_PORT_MAINNET);
+         if (dbPort_ == UINT16_MAX) {
+            dbPort_ = LISTEN_PORT_MAINNET;
+         }
+
+         if (btcPort_ == UINT16_MAX) {
+            btcPort_ = NODE_PORT_MAINNET;
          }
          break;
       }
 
       case NETWORK_MODE_TESTNET:
       {
-         rpcPort_ = std::to_string(RPC_PORT_TESTNET);
-
-         if (!customDbPort_) {
-            dbPort_ = std::to_string(LISTEN_PORT_TESTNET);
+         if (rpcPort_ == UINT16_MAX) {
+            rpcPort_ = RPC_PORT_TESTNET;
          }
 
-         if (!customBtcPort_) {
-            btcPort_ = std::to_string(NODE_PORT_TESTNET);
+         if (dbPort_ == UINT16_MAX) {
+            dbPort_ = LISTEN_PORT_TESTNET;
+         }
+
+         if (btcPort_ == UINT16_MAX) {
+            btcPort_ = NODE_PORT_TESTNET;
          }
          break;
       }
 
       case NETWORK_MODE_REGTEST:
       {
-         rpcPort_ = std::to_string(RPC_PORT_REGTEST);
-
-         if (!customDbPort_) {
-            dbPort_ = std::to_string(LISTEN_PORT_REGTEST);
+         if (rpcPort_ == UINT16_MAX) {
+            rpcPort_ = RPC_PORT_REGTEST;
          }
 
-         if (!customBtcPort_) {
-            btcPort_ = std::to_string(NODE_PORT_REGTEST);
+         if (dbPort_ == UINT16_MAX) {
+            dbPort_ = LISTEN_PORT_REGTEST;
+         }
+
+         if (btcPort_ == UINT16_MAX) {
+            btcPort_ = NODE_PORT_REGTEST;
          }
          break;
       }
@@ -910,43 +854,30 @@ void NetworkSettings::selectNetwork(NETWORK_MODE mode)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void NetworkSettings::setDbPort(const std::string& port)
+void NetworkSettings::setDbPort(Network::port_t port)
 {
    dbPort_ = port;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-const std::string& NetworkSettings::btcPort()
+////
+Network::port_t NetworkSettings::btcPort()
 {
    return btcPort_;
 }
 
-std::wstring NetworkSettings::btcPortW()
-{
-   return std::to_wstring(std::stoi(btcPort_));
-}
-
-////////////////////////////////////////////////////////////////////////////////
-const std::string& NetworkSettings::dbPort()
+Network::port_t NetworkSettings::dbPort()
 {
    return dbPort_;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-const std::string& NetworkSettings::dbIP()
-{
-   return dbIP_;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-const std::string& NetworkSettings::rpcPort()
+Network::port_t NetworkSettings::rpcPort()
 {
    return rpcPort_;
 }
 
-std::wstring NetworkSettings::rpcPortW()
+const std::string& NetworkSettings::dbIP()
 {
-   return std::to_wstring(std::stoi(rpcPort_));
+   return dbIP_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1004,17 +935,14 @@ NetworkSettings::RpcPtr NetworkSettings::rpcNode()
 ////////////////////////////////////////////////////////////////////////////////
 void NetworkSettings::reset()
 {
-   customDbPort_ = false;
-   customBtcPort_ = false;
-
    bitcoinNodes_.first.reset();
    bitcoinNodes_.second.reset();
    rpcNode_.reset();
 
-   btcPort_.clear();
-   dbPort_.clear();
+   btcPort_ = UINT16_MAX;
+   dbPort_ = UINT16_MAX;
+   rpcPort_ = UINT16_MAX;
    dbIP_.clear();
-   rpcPort_.clear();
 
    ephemeralPeers_ = false;
    oneWayAuth_ = false;
@@ -1026,11 +954,10 @@ void NetworkSettings::reset()
 // Pathing
 //
 ////////////////////////////////////////////////////////////////////////////////
-fs::path Pathing::blkFilePath_;
-fs::path Pathing::dbDir_;
-fs::path Pathing::own_;
+std::filesystem::path Pathing::blkFilePath_;
+std::filesystem::path Pathing::dbDir_;
+std::filesystem::path Pathing::own_;
 
-////////////////////////////////////////////////////////////////////////////////
 void Pathing::processArgs(const std::map<std::string, std::string>& args,
    ProcessType procType)
 {
@@ -1067,17 +994,17 @@ void Pathing::processArgs(const std::map<std::string, std::string>& args,
    }
 
    //expand paths if necessary
-   dbDir_ = fs::absolute(dbDir_);
-   blkFilePath_ = fs::absolute(blkFilePath_);
+   dbDir_ = std::filesystem::absolute(dbDir_);
+   blkFilePath_ = std::filesystem::absolute(blkFilePath_);
 
    //check block file path ends in "blocks"
    if (blkFilePath_.filename() != "blocks") {
-      blkFilePath_ = fs::path(blkFilePath_) / fs::path("blocks");
+      blkFilePath_ = blkFilePath_ / "blocks";
    }
 
    //test all paths
-   if (!FileUtils::pathExists(Armory::Config::getDataDir(), 6)) {
-      throw DbErrorMsg({Armory::Config::getDataDir().string() +
+   if (!FileUtils::pathExists(getDataDir(), 6)) {
+      throw DbErrorMsg({getDataDir().string() +
          " is not a valid datadir path"});
    }
 
@@ -1094,7 +1021,7 @@ void Pathing::processArgs(const std::map<std::string, std::string>& args,
    //create dbdir if set automatically
    if (autoDbDir) {
       if (!FileUtils::pathExists(dbDir_, 0)) {
-         fs::create_directory(dbDir_);
+         std::filesystem::create_directory(dbDir_);
       }
    }
 
@@ -1125,25 +1052,25 @@ void Pathing::reset()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-fs::path Pathing::logFilePath(const std::string& logName)
+std::filesystem::path Pathing::logFilePath(const std::string& logName)
 {
-   return fs::path(getDataDir()) / fs::path(logName + ".txt");
+   return getDataDir() / std::format("{}.txt", logName);
 }
 
 ////
-const fs::path& Pathing::blkFilePath()
+const std::filesystem::path& Pathing::blkFilePath()
 {
    return blkFilePath_;
 }
 
 ////
-const fs::path& Pathing::dbDir()
+const std::filesystem::path& Pathing::dbDir()
 {
    return dbDir_;
 }
 
 ////
-const fs::path& Pathing::runningDir()
+const std::filesystem::path& Pathing::runningDir()
 {
    return own_;
 }
@@ -1153,7 +1080,7 @@ const fs::path& Pathing::runningDir()
 // ConfigFile
 //
 ////////////////////////////////////////////////////////////////////////////////
-Config::File::File(const fs::path& path)
+Config::File::File(const std::filesystem::path& path)
 {
    auto lines = SettingsUtils::getLines(path);
    for (auto& line : lines) {
@@ -1194,7 +1121,7 @@ std::vector<BinaryData> Config::File::fleshOutArgs(
    auto keyValMap = SettingsUtils::getKeyValsFromLines(arg_minus_1, '=');
 
    //complete config file path
-   auto configFilePath = fs::path(MAINNET_DEFAULT_DATADIR);
+   auto configFilePath = std::filesystem::path(MAINNET_DEFAULT_DATADIR);
    if (keyValMap.find("--testnet") != keyValMap.end()) {
       configFilePath = TESTNET_DEFAULT_DATADIR;
    } else if (keyValMap.find("--regtest") != keyValMap.end()) {
@@ -1205,7 +1132,7 @@ std::vector<BinaryData> Config::File::fleshOutArgs(
    if (datadir_iter != keyValMap.end() && !datadir_iter->second.empty()) {
       configFilePath = datadir_iter->second;
    }
-   configFilePath = fs::absolute(configFilePath / path);
+   configFilePath = std::filesystem::absolute(configFilePath / path);
 
    //process config file
    Config::File cfile(configFilePath);

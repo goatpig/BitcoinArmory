@@ -305,10 +305,8 @@ void WebSocketServer::start(std::shared_ptr<BlockDataManager> bdm, bool async)
          [instance]{ instance->clientInterruptThread(); }));
    }
 
-   auto port = stoi(Config::NetworkSettings::dbPort());
-   if (port == 0) {
-      port = WEBSOCKET_PORT;
-   }
+   auto port = Config::NetworkSettings::dbPort() == UINT16_MAX ?
+      WEBSOCKET_PORT : Config::NetworkSettings::dbPort();
 
    //run service thread
    if (async) {

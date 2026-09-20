@@ -1391,7 +1391,7 @@ void CppBridge::setPeerLabel(
 
 ////////////////////////////////////////////////////////////////////////////////
 // db connection routines
-void CppBridge::connectToIp(const std::string& ip, const std::string& port,
+void CppBridge::connectToIp(const std::string& ip, Network::port_t port,
    const CallbackId& callbackId, MessageId refId)
 {
    /*
@@ -1616,9 +1616,8 @@ void CppBridge::runAutomationContext(CallbackId cbId, MessageId refId)
          //connect to db
          notifyFunc(AutomationStep::ConnectToDb);
          auto peers = automationContext_->getPeerStore();
-         auto port = std::to_string(automationContext_->getDbPort());
          bdvPtr_ = setupClientConnection(peers,
-            "127.0.0.1", port,
+            "127.0.0.1", automationContext_->getDbPort(),
             false, nullptr,
             wltManager_->getBdvCallback());
          if (bdvPtr_ == nullptr) {

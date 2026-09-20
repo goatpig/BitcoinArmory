@@ -110,7 +110,7 @@ namespace Armory
 
       BdvPtr setupClientConnection(
          std::shared_ptr<NetworkPeers::ClientStore>,
-         const std::string&, const std::string&, bool,
+         const std::string&, uint16_t, bool,
          const std::function<bool(const BinaryData&)>&,
          std::shared_ptr<RemoteCallback>
       );

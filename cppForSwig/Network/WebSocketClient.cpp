@@ -37,12 +37,12 @@ static struct lws_protocols protocols[] = {
 
 ////////////////////////////////////////////////////////////////////////////////
 // WebSocketClient
-WebSocketClient::WebSocketClient(const std::string& addr,
-   const std::string& port,
+WebSocketClient::WebSocketClient(const std::string& addr, port_t port,
    std::shared_ptr<NetworkPeers::ClientStore> peers, bool oneWayAuth,
    std::shared_ptr<RemoteCallback> cbPtr) :
    SocketPrototype(addr, port, false),
-   servName_(addr_ + ":" + port_), callbackPtr_(cbPtr), peerStore_(peers)
+   servName_(std::format("{}:{}", addr_, port_)),
+   callbackPtr_(cbPtr), peerStore_(peers)
 {
    count_.store(0, std::memory_order_relaxed);
    contextPtr_.store(0, std::memory_order_release);
@@ -189,12 +189,7 @@ struct lws_context* WebSocketClient::init()
    //connect to server
    struct lws_client_connect_info i;
    memset(&i, 0, sizeof(i));
-
-   int port = std::stoi(port_);
-   if (port == 0) {
-      port = WEBSOCKET_PORT;
-   }
-   i.port = port;
+   i.port = port_ == UINT16_MAX ? WEBSOCKET_PORT : port_;
 
    const char *prot, *p;
    char path[300];
@@ -629,8 +624,7 @@ void WebSocketClient::addPublicKey(const SecureBinaryData& pubkey, bool oneWay)
       NetworkPeers::PeerType::ServerOneWay :
       NetworkPeers::PeerType::ServerTwoWay
    };
-   const std::string addrPort{ addr_ + ":" + port_ };
-   peerStore_->addPeer(serverKey, {addrPort}, {});
+   peerStore_->addPeer(serverKey, {std::format("{}:{}", addr_, port_)}, {});
 }
 
 void WebSocketClient::setPubkeyPromptLambda(

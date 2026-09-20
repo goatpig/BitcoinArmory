@@ -140,7 +140,7 @@ namespace Armory
          void cleanup(void);
 
       public:
-         WebSocketClient(const std::string& addr, const std::string& port,
+         WebSocketClient(const std::string&, port_t,
             std::shared_ptr<NetworkPeers::ClientStore>, bool,
             std::shared_ptr<RemoteCallback>);
          ~WebSocketClient(void);

@@ -28,10 +28,10 @@ using namespace Armory::Bridge;
 ////
 ////////////////////////////////////////////////////////////////////////////////
 CppBridgeSocket::CppBridgeSocket(
-   const std::string& addr, const std::string& port,
+   const std::string& addr, Network::port_t port,
    std::shared_ptr<CppBridge> bridgePtr) :
    PersistentSocket(addr, port), bridgePtr_(bridgePtr),
-   serverName_(addr + ":" + port)
+   serverName_(std::format("{}:{}", addr, port))
 {
    //setup auth peers db
    peers_ = std::make_shared<NetworkPeers::ClientStore>();

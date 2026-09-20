@@ -61,7 +61,7 @@ namespace {
          commandLine.append(std::format("{} ", arg));
       }
 
-      //mandatory, process handle is writting in pi after start
+      //mandatory, process handle is written inside pi after start
       STARTUPINFOW si;
       ZeroMemory( &si, sizeof(si) );
       si.cb = sizeof(si);
@@ -94,12 +94,11 @@ namespace {
             &si, &pi
          )) {
             auto lastError = GetLastError();
-            throw std::runtime_error("failed to spawn ArmorDB with error: " + std::to_string(lastError));
+            return { {}, lastError };
          }
-   }
+      }
       auto handle = pi.hProcess;
       CloseHandle(pi.hThread);
-
       return { {handle}, {} };
    }
 
@@ -117,6 +116,7 @@ namespace {
 
    std::pair<ProcessInstance, std::string> spawnProcess(
       const std::filesystem::path& target,
+      const std::map<std::string, std::filesystem::path>& pathArgs,
       const std::vector<std::string>& args,
       const std::map<std::string, std::string>& envvars,
       bool captureStdOut)
@@ -124,9 +124,21 @@ namespace {
       std::vector<char*> argv;
       auto targetStr = target.string();
       argv.emplace_back(targetStr.data());
+
+      //path args
+      std::vector<std::string> pathArgsStr;
+      for (const auto& pathArg : pathArgs) {
+         pathArgsStr.emplace_back(std::format("{}={}",
+            pathArg.first, pathArg.second.string()));
+         argv.emplace_back((char*)pathArgsStr.back().data());
+      }
+
+      //other args
       for (const auto& arg : args) {
          argv.emplace_back((char*)arg.data());
       }
+
+      //argv null terminator
       argv.emplace_back(nullptr);
 
       std::vector<std::string> envStrings;
@@ -192,19 +204,21 @@ namespace {
 
 #endif
 
-   std::pair<std::string, std::string> getIpAndPortFromPeerName(
+   std::pair<std::string, Network::port_t> getIpAndPortFromPeerName(
       const std::string& peerName)
    {
       //TODO: flesh this out
       std::stringstream ss(peerName);
-      std::pair<std::string, std::string> output;
+      std::pair<std::string, Network::port_t> output;
 
       //ip
       std::getline(ss, output.first, ':');
 
       //port
       if (ss.good()) {
-         std::getline(ss, output.second);
+         std::string portStr;
+         std::getline(ss, portStr);
+         output.second = std::stoi(portStr);
       } else {
          output.second = Config::NetworkSettings::dbPort();
       }
@@ -349,14 +363,13 @@ namespace {
          //is this a fully qualified path?
          targetDir = std::filesystem::absolute(dataDir);
       }
-      auto dataDirStr = std::format("--datadir={}", targetDir.string());
 
       //run bitcoind --version
-      std::vector<std::string> args{
-         std::format("--datadir={}", targetDir.string()),
-         {"--version"}
-      };
-      auto result = spawnProcess(binPath, args, {}, true);
+      auto result = spawnProcess(binPath,
+         {{"--datadir", targetDir}},
+         {"--version"},
+         {}, true
+      );
       result.first.wait();
 
       if (dataDir.empty()) {
@@ -409,7 +422,7 @@ namespace {
 ////////////////////////////////////////////////////////////////////////////////
 BdvPtr Armory::Bridge::setupClientConnection(
    std::shared_ptr<NetworkPeers::ClientStore> peers,
-   const std::string& ip, const std::string& port, bool oneWayAuth,
+   const std::string& ip, Network::port_t port, bool oneWayAuth,
    const std::function<bool(const BinaryData&)>& presentPubKeyFunc,
    std::shared_ptr<RemoteCallback> cbPtr)
 {
@@ -676,14 +689,16 @@ void AutomationContext::automateSatoshi()
    }
 
    std::vector<std::string> args{
-      std::format("--datadir={}", datadir.string()),
       std::format("--rpcauth={}:{}${}", rpcLogin_, salt, saltedPass.toHexStr()),
       {"--disablewallet"}
    };
    if (Config::BitcoinSettings::getMode() == Config::NETWORK_MODE_TESTNET) {
       args.emplace_back("--testnet");
    }
-   auto result = spawnProcess(satoshiBin_, args, {}, false);
+   auto result = spawnProcess(satoshiBin_,
+      {{"--datadir", datadir}},
+      args, {}, false
+   );
    nodeInstance_ = result.first;
    if (!nodeInstance_.isValid()) {
       throw std::runtime_error(std::format(
@@ -767,16 +782,12 @@ void AutomationContext::automateDb()
 
    //generate random db port & set it
    dbPort_ = (rand() % 10000) + 50000;
-   auto portStr = std::to_string(dbPort_);
-   Armory::Config::NetworkSettings::setDbPort(portStr);
+   Armory::Config::NetworkSettings::setDbPort(dbPort_);
 
    //args
    std::vector<std::string> args{
       { "--ephemeral" },
-      std::format("--armorydb-port={}", portStr),
-      std::format("--dbdir={}", dbDir_.string()),
-      std::format("--datadir={}", Config::getDataDir().string()),
-      std::format("--satoshi-datadir={}", satoshiDir_.string()),
+      std::format("--armorydb-port={}", dbPort_),
       std::format("--satoshi-port={}", Config::NetworkSettings::btcPort()),
       std::format("--satoshirpc-port={}", Config::NetworkSettings::rpcPort())
    };
@@ -806,7 +817,12 @@ void AutomationContext::automateDb()
       envvars.emplace("CORERPCPASS", rpcPass_);
    }
 
-   auto result = spawnProcess(armoryDbPath, args, envvars, true);
+   auto result = spawnProcess(armoryDbPath, {
+         {"--dbdir", dbDir_},
+         {"--datadir", Config::getDataDir()},
+         {"--satoshi-datadir", satoshiDir_}
+      }, args, envvars, true
+   );
    dbInstance_ = result.first;
    if (!dbInstance_.isValid()) {
       throw std::runtime_error(std::format(
@@ -817,7 +833,7 @@ void AutomationContext::automateDb()
 
    //set db pubkey
    auto serverKey = NetworkPeers::PeerKey::fromHumanReadable(result.second);
-   peers_->addPeer(serverKey, {std::format("127.0.0.1:{}", portStr)}, {});
+   peers_->addPeer(serverKey, {std::format("127.0.0.1:{}", dbPort_)}, {});
 }
 
 ////
@@ -836,9 +852,8 @@ void AutomationContext::cleanupDb()
 
    //create bdv object
    auto callback = std::make_shared<ShutdownCallback>();
-   auto port = std::to_string(dbPort_);
    auto bdvPtr = setupClientConnection(peers_,
-      "127.0.0.1", port,
+      "127.0.0.1", dbPort_,
       false, nullptr, callback);
    if (bdvPtr == nullptr) {
       throw std::runtime_error("automatedDb connection failed");

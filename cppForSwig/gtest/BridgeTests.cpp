@@ -1832,7 +1832,7 @@ namespace {
    }
 
    bool connectToIp(std::shared_ptr<Bridge::CppBridge> bridge,
-      const std::string& ip, const std::string& port,
+      const std::string& ip, Network::port_t port,
       const std::string& expectedPubkey)
    {
       uint64_t refId = rand();
@@ -6803,7 +6803,7 @@ TEST_F(BridgeWalletsWithDBTests, Connect)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -6845,8 +6845,8 @@ TEST_F(BridgeWalletsWithDBTests, CycleConnection)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_FALSE(connectToIp(bridge_, "127.0.0.1", "9001", {}));
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_FALSE(connectToIp(bridge_, "127.0.0.1", 9001, {}));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -6911,7 +6911,7 @@ TEST_F(BridgeWalletsWithDBTests, CycleConnection)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
    theBDMt_->start(Config::DBSettings::initMode());
    theBDMt_->bdm()->blockUntilReady();
@@ -6962,7 +6962,7 @@ TEST_F(BridgeWalletsWithDBTests, DeleteWallet)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -7073,7 +7073,7 @@ TEST_F(BridgeWalletsWithDBTests, ExtendAddressChain)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -7152,7 +7152,7 @@ TEST_F(BridgeWalletsWithDBTests, AddNewAddress)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -7486,7 +7486,7 @@ TEST_F(BridgeChainDataTests, Check5Blocks_BCDE)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -7531,7 +7531,7 @@ TEST_F(BridgeChainDataTests, ChangeFilters_ALFB_BCDE)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -7614,7 +7614,7 @@ TEST_F(BridgeChainDataTests, BlocksOutOfOrder_BCDE)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -7687,7 +7687,7 @@ TEST_F(BridgeChainDataTests, AddBlocks_BCDE)
    WebSocketServer::start(theBDMt_->bdm(), true);
 
    //connect to db
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -7799,7 +7799,7 @@ TEST_F(BridgeChainDataTests, AddBlocks_BC_DE)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -7984,7 +7984,7 @@ TEST_F(BridgeChainDataTests, AddBlocks_BCDE_AFLB)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -8544,7 +8544,7 @@ TEST_F(BridgeChainDataTests, Reorg_BCDE)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -8686,7 +8686,7 @@ TEST_F(BridgeChainDataTests, Reorg_BCDE_DifferentOrder)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -8797,7 +8797,7 @@ TEST_F(BridgeChainDataTests, Reorg_BC_DE)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -9032,7 +9032,7 @@ TEST_F(BridgeChainDataTests, Reorg_BCDE_AFLB)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -9755,7 +9755,7 @@ TEST_F(BridgeChainDataTests, Reorg_SpendBeforeBranchPoint)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -10037,7 +10037,7 @@ TEST_F(BridgeChainDataTests, AddressBook)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -10117,7 +10117,7 @@ TEST_F(BridgeChainDataTests, getUTXOs)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -10249,7 +10249,7 @@ TEST_F(BridgeChainDataTests, ZeroConf)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -10483,7 +10483,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_Replace)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -10683,7 +10683,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_Chain)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -10908,7 +10908,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_StaggeredChain)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -11423,7 +11423,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_ChainRBF)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -11926,7 +11926,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_Reload)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -12116,7 +12116,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_Reload)
    });
 
    loadWallets({walletId_BCDE_});
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
    ASSERT_EQ(goOnline(bridge_), 5);
 
@@ -12198,7 +12198,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_Reorg)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -12531,7 +12531,7 @@ TEST_F(BridgeChainDataTests, DISABLED_ZeroConf_RegisterWallet)
 
    //init bridge
    loadWallets({walletId_BCDE_});
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -12764,7 +12764,7 @@ TEST_F(BridgeChainDataTests, RestoreSynchronize)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -12967,7 +12967,7 @@ TEST_F(BridgeChainDataTests, RestoreSynchronize)
    }
 
    //go online
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
    ASSERT_EQ(goOnline(bridge_), 5);
 
@@ -13046,7 +13046,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_SpendNew)
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
    WebSocketServer::start(theBDMt_->bdm(), true);
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -14253,7 +14253,7 @@ TEST_F(BridgePeersManagement, ListAddConnect)
    ASSERT_FALSE(connectToPeer(bridge_, serverKey));
 
    //add the server to peers store
-   auto serverAddress = std::string{"127.0.0.1:"} + Config::NetworkSettings::dbPort();
+   auto serverAddress = std::format("127.0.0.1:{}", Config::NetworkSettings::dbPort());
    addPeer(serverPubkey_, { serverAddress }, "the server key");
 
    //list again, server should appear
@@ -14299,7 +14299,7 @@ TEST_F(BridgePeersManagement, LoadDeleteCreate)
    ASSERT_EQ(clientKey.size(), 48);
 
    //add the server to peers store
-   auto serverAddress = std::string{"127.0.0.1:"} + Config::NetworkSettings::dbPort();
+   auto serverAddress = std::format("127.0.0.1:{}", Config::NetworkSettings::dbPort());
    addPeer(serverPubkey_, { serverAddress }, "my serv key");
 
    //list again, server should appear
@@ -14345,7 +14345,7 @@ TEST_F(BridgePeersManagement, Remove)
    ASSERT_FALSE(connectToPeer(bridge_, "abcd"));
 
    //add the server to peers store
-   auto serverAddress = std::string{"127.0.0.1:"} + Config::NetworkSettings::dbPort();
+   auto serverAddress = std::format("127.0.0.1:{}", Config::NetworkSettings::dbPort());
    addPeer(serverPubkey_, { serverAddress }, "serv key");
 
    //also add a random key

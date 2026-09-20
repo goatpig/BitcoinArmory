@@ -426,7 +426,7 @@ class DbSetupService(ProtoWrapper):
    #############################################################################
    ## commands ##
    def connectToIp(self,
-      ip: str, port: str, callbackId: str,
+      ip: str, port: int, callbackId: str,
       resultCallback: callable = None):
       """
       Connect to remote DB by IP address (1-way auth).

@@ -31,16 +31,16 @@ char *gai_strerrorA(int) { return nullptr; }
 //
 ///////////////////////////////////////////////////////////////////////////////
 SocketPrototype::SocketPrototype() :
-   addr_(""), port_("")
+   addr_(""), port_(UINT16_MAX)
 {}
 
 ////////
 SocketPrototype::SocketPrototype(const std::string& addr,
-   const std::string& port, bool doInit) :
+   port_t port, bool doInit) :
    addr_(addr), port_(port)
 {
-   if (addr.empty() || port.empty()) {
-      throw std::runtime_error("empty addr/port");
+   if (addr.empty() || port == 0 || port == UINT16_MAX) {
+      throw std::runtime_error("invalid addr/port");
    }
 
    if (doInit) {
@@ -62,12 +62,6 @@ bool SocketPrototype::isBlocking() const
 const std::string& SocketPrototype::getAddrStr() const
 {
    return addr_;
-}
-
-////////
-const std::string& SocketPrototype::getPortStr() const
-{
-   return port_;
 }
 
 ////////
@@ -97,7 +91,8 @@ void SocketPrototype::init()
    auto& addrstr = addr_;
 #endif
 
-   getaddrinfo(addrstr.c_str(), port_.c_str(), &hints, &result);
+   const auto& portStr = std::to_string(port_);
+   getaddrinfo(addrstr.c_str(), portStr.c_str(), &hints, &result);
    for (auto ptr = result; ptr != nullptr; ptr = ptr->ai_next) {
       if (ptr->ai_family == AF_INET) {
          memcpy(&serv_addr_, ptr->ai_addr, sizeof(sockaddr_in));
@@ -146,7 +141,7 @@ void SocketPrototype::closeSocket(SOCKET& sockfd)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool SocketPrototype::testConnection(void)
+bool SocketPrototype::testConnection()
 {
    try {
       auto sockfd = openSocket(true);
@@ -177,7 +172,7 @@ void SocketPrototype::setBlocking(SOCKET sock, bool setblocking)
       return;
    }
 
-   flags = setblocking ? (flags&~O_NONBLOCK) : (flags | O_NONBLOCK);
+   flags = setblocking ? (flags & ~O_NONBLOCK) : (flags | O_NONBLOCK);
    int rt = fcntl(sock, F_SETFL, flags);
    if (rt != 0) {
       std::cout << "fcntl returned " << rt << std::endl;
@@ -275,8 +270,7 @@ void SocketPrototype::listen(AcceptCallback callback, SOCKET& sockfd)
 //// PersistentSocket
 //
 ///////////////////////////////////////////////////////////////////////////////
-PersistentSocket::PersistentSocket(const std::string& addr,
-   const std::string& port) :
+PersistentSocket::PersistentSocket(const std::string& addr, port_t port) :
    SocketPrototype(addr, port)
 {
    shutdownProm_ = std::make_unique<std::promise<bool>>();
@@ -693,7 +687,8 @@ void PersistentSocket::cleanUpPipes()
 ///////////////////////////////////////////////////////////////////////////////
 bool PersistentSocket::openSocket(bool blocking)
 {
-   if (!addr_.empty() && !port_.empty() && readQueue_.isValid()) {
+   if (!addr_.empty() && port_ != 0 && port_ != UINT16_MAX &&
+      readQueue_.isValid()) {
       sockfd_ = SocketPrototype::openSocket(blocking);
    }
    return isValid();
@@ -769,7 +764,6 @@ void PersistentSocket::shutdown()
    shutdownProm_->set_value(true);
 }
 
-///////////////////////////////////////////////////////////////////////////////
 void PersistentSocket::blockUntilClosed() const
 {
    auto futCopy = shutdownFut_;
@@ -781,7 +775,7 @@ void PersistentSocket::blockUntilClosed() const
 //// SimpleSocket
 //
 ///////////////////////////////////////////////////////////////////////////////
-SimpleSocket::SimpleSocket(const std::string& addr, const std::string& port) :
+SimpleSocket::SimpleSocket(const std::string& addr, port_t port) :
    SocketPrototype(addr, port)
 {}
 
@@ -953,8 +947,7 @@ bool SimpleSocket::connectToRemote()
    return sockfd_ != SOCK_MAX;
 }
 
-///////////////////////////////////////////////////////////////////////////////
-bool SimpleSocket::checkSocket(const std::string& ip, const std::string& port)
+bool SimpleSocket::checkSocket(const std::string& ip, port_t port)
 {
    SimpleSocket testSock(ip, port);
    return testSock.testConnection();
@@ -965,7 +958,7 @@ bool SimpleSocket::checkSocket(const std::string& ip, const std::string& port)
 //// ListenServer
 //
 ///////////////////////////////////////////////////////////////////////////////
-ListenServer::ListenServer(const std::string& addr, const std::string& port)
+ListenServer::ListenServer(const std::string& addr, port_t port)
 {
    listenSocket_ = std::make_unique<SimpleSocket>(addr, port);
    listenSocket_->verbose_ = false;
