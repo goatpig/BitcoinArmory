@@ -49,16 +49,80 @@ namespace {
       //figure out default windows install location
    };
 
+   std::wstring toWString(const std::string& str)
+   {
+      auto wCharCount = MultiByteToWideChar(
+         CP_UTF8, 0,
+         str.c_str(), str.size(),
+         nullptr, 0
+      );
+      if (wCharCount == 0) {
+         throw std::runtime_error("could not project wchar size");
+      }
+
+      std::wstring wString;
+      wString.resize(wCharCount);
+      auto result = MultiByteToWideChar(
+         CP_UTF8, 0,
+         str.c_str(), str.size(),
+         wString.data(), wCharCount
+      );
+      if (result != wCharCount) {
+         throw std::runtime_error("failed to convert to wstring");
+      }
+      return wString;
+   }
+
+   std::string getLastErrorVerbose()
+   {
+      auto lastError = GetLastError();
+      LPVOID lpMsgBuf;
+
+      if (FormatMessage(
+         FORMAT_MESSAGE_ALLOCATE_BUFFER | 
+         FORMAT_MESSAGE_FROM_SYSTEM |
+         FORMAT_MESSAGE_IGNORE_INSERTS,
+         NULL,
+         lastError,
+         MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+         (LPTSTR) &lpMsgBuf,
+         0, NULL) == 0) {
+         return std::format("could not retrieve verbose for error code {}", lastError);
+      }
+
+      std::string result{(LPCSTR)lpMsgBuf};
+      LocalFree(lpMsgBuf);
+      return result;
+   }
+
+   ////////
    std::pair<ProcessInstance, std::string> spawnProcess(
       const std::filesystem::path& target,
+      const std::map<std::string, std::filesystem::path>& pathArgs,
       const std::vector<std::string>& args,
       const std::map<std::string, std::string>& envvars,
       bool captureStdOut)
    {
-      //use CreateProcess to spawn ArmoryDB
+      /* use CreateProcess to spawn ArmoryDB */
+
+      //binary target
       std::wstring commandLine{ target.wstring() };
-      for (const auto& arg : args) {
-         commandLine.append(std::format("{} ", arg));
+
+      //path arguments
+      try {
+         for (const auto& pathArg : pathArgs) {
+            auto wArg = toWString(pathArg.first);
+            commandLine.append(std::format(L"{}={}", wArg, pathArg.second.wstring()));
+         }
+
+         //other args
+         for (const auto& arg : args) {
+            auto wArg = toWString(arg);
+            commandLine.append(std::format(L"{} ", wArg));
+         }
+      } catch (const std::exception& e) {
+         return { {}, std::format(
+            "failed to build arg string with error: {}", e.what()) };
       }
 
       //mandatory, process handle is written inside pi after start
@@ -93,8 +157,7 @@ namespace {
             NULL,
             &si, &pi
          )) {
-            auto lastError = GetLastError();
-            return { {}, lastError };
+            return { {}, getLastErrorVerbose() };
          }
       }
       auto handle = pi.hProcess;
@@ -654,7 +717,7 @@ AutomationContext::AutomationContext(
    automateNode_{automateNode}, automateDb_{automateDb}
 {}
 
-uint32_t AutomationContext::getDbPort() const
+Network::port_t AutomationContext::getDbPort() const
 {
    return dbPort_;
 }
