@@ -214,6 +214,17 @@ shared_ptr<ScriptSpender> ScriptSpender::deserExtState(BinaryDataRef data)
 ////////////////////////////////////////////////////////////////////////////////
 SecureBinaryData ScriptSpender::getSig() const
 {
+   if (!witnessData_.empty())
+   {
+      //segwit spender: witness is <count><sig><pubkey>
+      BinaryRefReader brr(witnessData_.getRef());
+      auto count = brr.get_var_int();
+      if (count == 0)
+         return {};
+      auto sigSize = brr.get_var_int();
+      return {brr.get_BinaryDataRef(sigSize)};
+   }
+
    if (serializedScript_.empty())
       return {};
 
