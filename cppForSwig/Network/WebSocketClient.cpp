@@ -106,7 +106,7 @@ void WebSocketClient::pushPayload(
       //set response id
       readPackets_.insert(make_pair(write_payload->id, move(response)));
    }
-   writeSerializationQueue_.push_back(move(write_payload));
+   writeSerializationQueue_.push_back(std::move(write_payload));
 }
 
 void WebSocketClient::writeService()
@@ -521,7 +521,7 @@ void WebSocketClient::readService()
                readPackets_.erase(msgid);
                currentReadMessage_.reset();
             } else {
-               LOGWARN << "invalid msg id: " << msgid;
+               LOGWARN << "there is no callback registered for msg id: " << msgid;
                currentReadMessage_.reset();
             }
       }

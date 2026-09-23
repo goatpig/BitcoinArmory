@@ -13583,7 +13583,7 @@ protected:
       }
 
       auto validationReply = helperReply.getValidateDir();
-      return std::filesystem::path{validationReply.getPath()};
+      return std::filesystem::path{std::string{validationReply.getPath()}};
    }
 
 protected:

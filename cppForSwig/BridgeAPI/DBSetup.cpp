@@ -159,7 +159,7 @@ namespace {
          //do not let child inherit the read pipe
          SetHandleInformation(pipeRead, HANDLE_FLAG_INHERIT, 0);
          si.hStdOutput = pipeWrite;
-         si.hStrError = pipeWrite;
+         si.hStdError = pipeWrite;
          si.dwFlags |= STARTF_USESTDHANDLES;
       }
       if (CreateProcessW(NULL,

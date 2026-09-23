@@ -233,11 +233,9 @@ void WebSocketServer::initPeerStore(
       auto masterKey = NetworkPeers::PeerKey::fromHumanReadable({keyPtr});
 
       //inject master pubkey in the store
-      instance->peerStore_->addPeer(
-         masterKey,
-         {std::format("127.0.0.1:{}", Config::NetworkSettings::dbPort())}, 
-         {}
-      );
+      instance->peerStore_->addPeer(masterKey, {
+            std::format("127.0.0.1:{}", Config::NetworkSettings::dbPort())
+         }, {});
 
       //set master key
       if (!instance->peerStore_->setMasterKey(masterKey)) {
@@ -389,6 +387,17 @@ void WebSocketServer::setIsReady()
 ///////////////////////////////////////////////////////////////////////////////
 void WebSocketServer::webSocketService(int port)
 {
+   if (Config::NetworkSettings::ephemeralPeers()) {
+      NetworkPeers::PeerKey myKey{
+         peerStore_->getOwnPublicKey(),
+         NetworkPeers::PeerType::ServerTwoWay
+      };
+      std::cout << myKey.toHumanReadable() << std::endl;
+
+      //set stdout to nullptr to suppress any further cout
+      std::cout.rdbuf(nullptr);
+   }
+
    struct lws_context_creation_info info;
    struct lws_vhost *vhost;
    const char *iface = nullptr;
@@ -423,23 +432,6 @@ void WebSocketServer::webSocketService(int port)
 
    pendingWritesIter_ = pendingWrites_.begin();
    run_.store(1, std::memory_order_relaxed);
-
-   if (Config::NetworkSettings::ephemeralPeers()) {
-      /*
-      DB is automated by client, output pubkey to stdout to complete AEAD
-      key share.
-      We do this at this stage to make sure the server is ready and listening
-      before the client tries to connect.
-      */
-      NetworkPeers::PeerKey myKey{
-         peerStore_->getOwnPublicKey(),
-         NetworkPeers::PeerType::ServerTwoWay
-      };
-      std::cout << myKey.toHumanReadable() << std::endl;
-
-      //set stdout to nullptr to suppress any further cout
-      std::cout.rdbuf(nullptr);
-   }
 
    try {
       while (run_.load(std::memory_order_relaxed) != 0 && n >= 0) {

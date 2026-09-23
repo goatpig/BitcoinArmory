@@ -382,7 +382,7 @@ namespace {
                break;
             }
             clients->bdm()->signalStart(true);
-            break;
+            return nullptr;
          }
 
          case StaticRequest::Which::SHUTDOWN:
