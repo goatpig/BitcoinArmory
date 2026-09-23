@@ -11315,14 +11315,21 @@ TEST_F(BackupTests, BackupString_LegacyStatic)
          nullptr, 10
       });
 
-   auto woRestore = Seeds::Helpers::restoreFromBackup(
-      std::move(backupWO), callback, IO::CreateWalletParams{
-         newHomeDir,
-         Passphrase::SetNew{},
-         Passphrase::SetNew{1ms, 0, SecureBinaryData::fromString("woctrl")},
-         nullptr, 10
-      });
-   auto filename = woRestore.wltPtr->getDbFilename();
+   std::filesystem::path filename;
+   std::unique_ptr<Seeds::WalletBackup> newBackupWO;
+   {
+      auto woRestore = Seeds::Helpers::restoreFromBackup(
+         std::move(backupWO), callback, IO::CreateWalletParams{
+            newHomeDir,
+            Passphrase::SetNew{},
+            Passphrase::SetNew{1ms, 0, SecureBinaryData::fromString("woctrl")},
+            nullptr, 10
+         });
+      filename = woRestore.wltPtr->getDbFilename();
+      auto woWltSingle = std::dynamic_pointer_cast<AssetWallet_Single>(
+         woRestore.wltPtr);
+      newBackupWO = Seeds::Helpers::getWalletBackup(woWltSingle, false);
+   }
    auto wltSingle = std::dynamic_pointer_cast<AssetWallet_Single>(
       fullRestore.wltPtr);
 
@@ -11346,9 +11353,6 @@ TEST_F(BackupTests, BackupString_LegacyStatic)
    EXPECT_EQ(newFullBackE16->getChaincode(Seeds::LineIndex::Two, false), fullBackup[3]);
    EXPECT_TRUE(compareWalletWithBackup(wltSingle, filename, {}, "woctrl"));
 
-   auto woWltSingle = std::dynamic_pointer_cast<AssetWallet_Single>(
-      woRestore.wltPtr);
-   auto newBackupWO = Seeds::Helpers::getWalletBackup(woWltSingle, false);
    auto newBackupPublic = dynamic_cast<Seeds::Backup_Easy16Public*>(
       newBackupWO.get());
    ASSERT_NE(newBackupPublic, nullptr);
