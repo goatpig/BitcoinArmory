@@ -112,13 +112,13 @@ namespace {
       try {
          for (const auto& pathArg : pathArgs) {
             auto wArg = toWString(pathArg.first);
-            commandLine.append(std::format(L"{}={}", wArg, pathArg.second.wstring()));
+            commandLine.append(std::format(L" {}={}", wArg, pathArg.second.wstring()));
          }
 
          //other args
          for (const auto& arg : args) {
             auto wArg = toWString(arg);
-            commandLine.append(std::format(L"{} ", wArg));
+            commandLine.append(std::format(L" {}", wArg));
          }
       } catch (const std::exception& e) {
          return { {}, std::format(
@@ -144,25 +144,55 @@ namespace {
          SetEnvironmentVariable(envvar.first.c_str(), envvar.second.c_str());
       }
 
+      HANDLE pipeRead = nullptr;
+      HANDLE pipeWrite = nullptr;
       if (captureStdOut) {
-         throw std::runtime_error("implement stdout capture in windows");
-      } else {
-         if (!CreateProcessW(NULL,
-            commandLine.data(),
-            NULL,
-            NULL,
-            true, //inherit parent handles where possible
-            NORMAL_PRIORITY_CLASS,
-            NULL, //no explicit envvars on windows, let child inherit parent's
-            NULL,
-            &si, &pi
-         )) {
-            return { {}, getLastErrorVerbose() };
+         //create pipes to take over stdout in child process
+         SECURITY_ATTRIBUTES sa;
+         ZeroMemory(&sa, sizeof(sa));
+         sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+         sa.bInheritHandle = true;
+         if (CreatePipe(&pipeRead, &pipeWrite, &sa, 0) == 0) {
+            return { {}, "failed to create pipes" };
          }
+
+         //do not let child inherit the read pipe
+         SetHandleInformation(pipeRead, HANDLE_FLAG_INHERIT, 0);
+         si.hStdOutput = pipeWrite;
+         si.hStrError = pipeWrite;
+         si.dwFlags |= STARTF_USESTDHANDLES;
       }
+      if (CreateProcessW(NULL,
+         commandLine.data(),
+         NULL,
+         NULL,
+         true, //inherit parent handles where possible
+         NORMAL_PRIORITY_CLASS,
+         NULL, //no explicit envvars on windows, let child inherit parent's
+         NULL,
+         &si, &pi) == 0) {
+         return { {}, getLastErrorVerbose() };
+      }
+
+      std::string stdOutStr;
+      if (captureStdOut) {
+         //parent side has no use for the write pipe
+         CloseHandle(pipeWrite);
+
+         //grab first output to stdout and cleanup
+         stdOutStr.resize(2048);
+         DWORD bytesRead;
+         if (ReadFile(pipeRead, stdOutStr.data(), 2047, &bytesRead, nullptr) != 0) {
+            stdOutStr.resize(bytesRead);
+         } else {
+            stdOutStr.resize(0);
+         }
+         CloseHandle(pipeRead);
+      }
+
       auto handle = pi.hProcess;
       CloseHandle(pi.hThread);
-      return { {handle}, {} };
+      return { {handle}, stdOutStr };
    }
 
 #else
@@ -667,7 +697,7 @@ bool ProcessInstance::isRunning()
    }
 
 #ifdef _WIN32
-   if (WaitForSingleObject(instance_) != WAIT_TIMEOUT) {
+   if (WaitForSingleObject(instance_, 0) != WAIT_TIMEOUT) {
       //we need to close this handle after use
       CloseHandle(instance_);
       instance_ = INVALID_INSTANCE;
@@ -809,19 +839,19 @@ void AutomationContext::automateDb()
    LOGINFO << "spawning ArmoryDB";
 
    /*
-   Spawn ArmoryDB with tailored CLI args and environment variables to setup
-   adhoc a AEAD 2-way handshake.
+   Spawn ArmoryDB with tailored CLI args and environment variables, to setup
+   an adhoc AEAD 2-way handshake.
 
    2-way Keys are exchange via the following these steps:
       1. CppBridge creates an ephemeral key store and adds its public key to
-         to ArmoryDB via .
-      2. CppBridge spawn ArmoryDB, replacing stdout by a pipe.
+         to ArmoryDB via envvars.
+      2. CppBridge spawns ArmoryDB, replacing stdout by a pipe.
       3. ArmoryDB detects automation via the --ephemeral CLI arg.
          It creates an ephemeral key store, reads the caller pubkey from
-         envvars, adds it to the store and sets it as the store's master key.
+         envvars, adds it to its store and sets it as the store's master key.
       4. ArmoryDB writes its public key to stdout.
-      5. CppBridge detects changes to the key file, grabs the pubkey and
-         injects it into its own store. The pipe is cleaned up.
+      5. CppBridge reads ArmoryDB's stdout, grabs the pubkey and
+         injects it into its own store.
    */
 
    //sanity check
@@ -830,8 +860,13 @@ void AutomationContext::automateDb()
    }
 
    //get full path to armorydb
+#ifdef _WIN32
+   const std::filesystem::path armoryDbPath{
+      Config::Pathing::runningDir() / "ArmoryDB.exe" };
+#else
    const std::filesystem::path armoryDbPath{
       Config::Pathing::runningDir() / "ArmoryDB" };
+#endif
    if (!FileUtils::pathExists(armoryDbPath, 8)) {
       throw std::runtime_error("invalid db binary path: " + armoryDbPath.string());
    }
