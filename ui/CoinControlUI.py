@@ -113,7 +113,7 @@ class CoinControlDlg(ArmoryDialog):
    #############################################################################
    def accept(self, *args):
       self.saveGeometrySettings()
-      super(CoinControlDlg, self).accept(*args)
+      super(CoinControlDlg, self).accept()
 
    #############################################################################
    def resetTreeData(self):
