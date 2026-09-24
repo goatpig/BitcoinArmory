@@ -527,25 +527,33 @@ BdvPtr Armory::Bridge::setupClientConnection(
    }
 
    //setup bdv obj
-   BdvPtr bdvPtr = AsyncClient::BlockDataViewer::getNewBDV(
-      ip, port,
-      peers, oneWayAuth,
-      cbPtr
-   );
+   BdvPtr bdvPtr;
+   unsigned count = 0;
+   while (count++ < 10) {
+      bdvPtr = AsyncClient::BlockDataViewer::getNewBDV(
+         ip, port,
+         peers, oneWayAuth,
+         cbPtr
+      );
 
-   if (presentPubKeyFunc) {
-      bdvPtr->setCheckServerKeyPromptLambda(presentPubKeyFunc);
+      if (presentPubKeyFunc) {
+         bdvPtr->setCheckServerKeyPromptLambda(presentPubKeyFunc);
+      }
+
+      //connect to db
+      if (!bdvPtr->connectToRemote()) {
+         //could not connect, sleep for 250ms and try again
+         std::this_thread::sleep_for(250ms);
+      }
+      bdvPtr->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+
+      //notify setup is done
+      return bdvPtr;
    }
 
-   //connect to db
-   if (!bdvPtr->connectToRemote()) {
-      return nullptr;
-   }
-   bdvPtr->registerWithDB(
-      Config::BitcoinSettings::getMagicBytes().toHexStr());
-
-   //notify setup is done
-   return bdvPtr;
+   LOGERR << "failed to connect to armorydb";
+   return nullptr;
 }
 
 BdvPtr Armory::Bridge::setupClientConnection(
