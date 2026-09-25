@@ -514,7 +514,7 @@ void PersistentSocket::socketService_win()
          index = ev - WSA_WAIT_EVENT_0;
       }
 
-      if (index == 1)
+      if (index == 1) {
          WSAResetEvent(events_[1]);
          serviceSocketWrite();
          continue;
