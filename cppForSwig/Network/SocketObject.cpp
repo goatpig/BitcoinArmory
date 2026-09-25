@@ -458,60 +458,48 @@ void PersistentSocket::socketService_win()
    size_t readIncrement = 8192;
    DWORD timeout = 100000;
 
-   WSAEventSelect(sockfd_, events_[0], FD_READ | FD_WRITE | FD_CLOSE);
-   bool writeReady = false;
-
-   auto serviceSocketWrite = [&writeReady, this](void)->void
+   auto serviceSocketWrite = [this]()
    {
-      if (!writeReady) {
-         return;
-      }
-      std::vector<uint8_t> payload;
-      if (!writeLeftOver_.empty()) {
-         payload = std::move(writeLeftOver_);
-         writeLeftOver_.clear();
-      } else {
-         try {
-            payload = std::move(writeQueue_.pop_front());
-         } catch (const Threading::IsEmpty&) {
-            return;
-         }
-      }
-
-      WSABUF wsaBuffer;
-      wsaBuffer.buf = (char*)&payload[0] + writeOffset_;
-      wsaBuffer.len = payload.size() - writeOffset_;
-
-      DWORD bytessent;
-      if (WSASend(sockfd_, &wsaBuffer, 1, &bytessent, 0, nullptr, nullptr) ==
-         SOCKET_ERROR) {
-         auto wsaError = WSAGetLastError();
-         if (wsaError == WSAEWOULDBLOCK) {
-            writeReady = false;
-         } else {
-            LOGERR << "WSASend error with code: " << wsaError;
-            writeOffset_ = 0;
+      while (writeQueue_.count() > 0) {
+         std::vector<uint8_t> payload;
+         if (!writeLeftOver_.empty()) {
+            payload = std::move(writeLeftOver_);
             writeLeftOver_.clear();
+         } else {
+            try {
+               payload = std::move(writeQueue_.pop_front());
+               writeOffset_ = 0;
+            } catch (const Threading::IsEmpty&) {
+               return;
+            }
+         }
+
+         WSABUF wsaBuffer;
+         wsaBuffer.buf = (char*)&payload[0] + writeOffset_;
+         wsaBuffer.len = payload.size() - writeOffset_;
+
+         DWORD bytessent;
+         if (WSASend(sockfd_, &wsaBuffer, 1, &bytessent, 0, nullptr, nullptr) ==
+            SOCKET_ERROR) {
+            writeLeftOver_ = std::move(payload);
             return;
          }
-      } else {
-         if (bytessent == 0) {
-            LOGWARN << "failed to write to socket, aborting";
-         }
-      }
 
-      writeOffset_ += bytessent;
-      if (writeOffset_ < payload.size()) {
-         writeLeftOver_ = std::move(payload);
-      } else {
-         writeOffset_ = 0;
+         writeOffset_ += bytessent;
+         if (writeOffset_ < payload.size()) {
+            writeLeftOver_ = std::move(payload);
+            if (bytessent == 0) {
+               return;
+            }
+         } else {
+            writeOffset_ = 0;
+         }
       }
    };
 
-   bool loop = true;
-   while (loop) {
-      serviceSocketWrite();
-      auto ev = WSAWaitForMultipleEvents(1, events_, false, timeout, false);
+   WSAEventSelect(sockfd_, events_[0], FD_READ | FD_WRITE | FD_CLOSE);
+   while (true) {
+      auto ev = WSAWaitForMultipleEvents(2, events_, false, timeout, false);
       if (ev == WSA_WAIT_TIMEOUT) {
          continue;
       }
@@ -521,21 +509,26 @@ void PersistentSocket::socketService_win()
          break;
       }
 
-      if (ev == WSA_WAIT_EVENT_0) {
-         //reset user event
-         WSAResetEvent(events_[0]);
+      int index;
+      if (ev >= WSA_WAIT_EVENT_0) {
+         index = ev - WSA_WAIT_EVENT_0;
+      }
+
+      if (index == 1)
+         WSAResetEvent(events_[1]);
+         serviceSocketWrite();
+         continue;
       }
 
       WSANETWORKEVENTS networkevents;
-      if (WSAEnumNetworkEvents(sockfd_, 0,
-         &networkevents) == SOCKET_ERROR) {
+      if (WSAEnumNetworkEvents(sockfd_, events_[0], &networkevents) ==
+         SOCKET_ERROR) {
          LOGERR << "error getting network events for socket";
          break;
       }
 
       //service socket
-      if (networkevents.lNetworkEvents & FD_READ)
-      {
+      if (networkevents.lNetworkEvents & FD_READ) {
          //read socket
          std::vector<uint8_t> readdata;
          readdata.resize(readIncrement);
@@ -551,7 +544,6 @@ void PersistentSocket::socketService_win()
                   break;
                }
                LOGERR << "error reading socket, aborting";
-               loop = false;
                break;
             }
 
@@ -569,7 +561,7 @@ void PersistentSocket::socketService_win()
       }
 
       if (networkevents.lNetworkEvents & FD_WRITE) {
-         writeReady = true;
+         serviceSocketWrite();
       }
 
       if (networkevents.lNetworkEvents & FD_CLOSE) {
@@ -631,7 +623,7 @@ void PersistentSocket::signalService(uint8_t signal)
    if (signal == 1) {
       run_.store(false, std::memory_order_relaxed);
    }
-   WSASetEvent(events_[0]);
+   WSASetEvent(events_[1]);
 #else
    if (pipes_[1] == SOCK_MAX) {
       return;
@@ -658,7 +650,7 @@ void PersistentSocket::initPipes()
    cleanUpPipes();
 
 #ifdef _WIN32
-   for (unsigned i = 0; i < 1; i++) {
+   for (unsigned i = 0; i < 2; i++) {
       events_[i] = WSACreateEvent();
    }
 #else
