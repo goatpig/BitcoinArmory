@@ -1334,8 +1334,8 @@ void Signer::merge(const Signer& rhs)
 
 BinaryData Signing::Signer::serializeState_Legacy() const
 {
-   if (isSegWit()) {
-      throw std::runtime_error("SW txs cannot be serialized to legacy format");
+   if (!canLegacySerialize()) {
+      throw std::runtime_error("tx cannot be serialized to legacy format");
    }
 
    BinaryWriter bw;
@@ -1398,8 +1398,8 @@ BinaryData Signing::Signer::serializeState_Legacy() const
          bwTxIn.put_var_int(0);
       }
 
-      //rest of p2sh map, for nested SW
-      //we'll ignore this as we dont allow legacy ser for SW txs
+      //extended p2sh map: only needed for P2WSH, which is excluded by
+      //canLegacySerialize, so nothing to write here
 
       //finalize
       bw.put_var_int(bwTxIn.getSize());
@@ -1633,8 +1633,9 @@ void Signer::deserializeState_Legacy(const BinaryDataRef& ref)
       switch (scriptType)
       {
          case TxOutScriptType::STDHASH160:
+         case TxOutScriptType::P2WPKH:
          {
-            //p2pkh, we should have a pubkey
+            //p2pkh or nested p2wpkh, we should have a pubkey
             if (keysAndSigs.size() == 1) {
                feed->hashMap.emplace(scriptHash, keysAndSigs.begin()->key);
             }
@@ -2592,7 +2593,25 @@ SignerStringFormat Signer::deserializedFromType() const
 
 bool Signer::canLegacySerialize() const
 {
-   return !isSegWit();
+   //nested p2wpkh only needs the redeem script and pubkey, which the
+   //legacy format already carries. native sw and p2wsh are left out
+   try {
+      for (const auto& spender : spenders_) {
+         if (!spender->isSegWit()) {
+            continue;
+         }
+         if (!spender->isP2SH()) {
+            return false; //native SW
+         }
+         auto script = spender->getRedeemScriptFromStack(false);
+         if (BtcUtils::getTxOutScriptType(script) != TxOutScriptType::P2WPKH) {
+            return false; //not a P2WPKH program (e.g. P2WSH)
+         }
+      }
+   } catch (const std::exception&) {
+      return false;
+   }
+   return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
