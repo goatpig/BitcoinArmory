@@ -502,9 +502,11 @@ class DlgSetupManager(ArmoryDialog):
       elif scenario == SCENARIO_REMOTE_PEER:
          success, error = self._connectToPeer(params)
          self._handleConnectionAttemptFinality(success, error)
+         return (success, error)
       elif scenario == SCENARIO_REMOTE_IP:
          success, error = self._connectToIp(params)
          self._handleConnectionAttemptFinality(success, error)
+         return (success, error)
 
       raise ValueError(f"Unknown scenario: {scenario}")
 
