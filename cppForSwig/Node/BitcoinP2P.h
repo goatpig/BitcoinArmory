@@ -371,7 +371,7 @@ namespace Node
                std::vector<uint8_t>>> readDataStack_;
 
          public:
-            Socket(const std::string&, const std::string&,
+            Socket(const std::string&, Armory::Network::port_t,
                std::shared_ptr<Armory::Threading::BlockingQueue<std::vector<uint8_t>>>);
 
             SocketType type(void) const override;
@@ -443,7 +443,7 @@ namespace Node
          {
          private:
             const std::string addr_;
-            const std::string port_;
+            Armory::Network::port_t port_;
             struct sockaddr node_addr_;
             std::unique_ptr<Socket> socket_;
 
@@ -483,7 +483,7 @@ namespace Node
             void sendMessage(std::vector<std::unique_ptr<Payload>>);
 
          public:
-            Peer(const std::string&, const std::string&,
+            Peer(const std::string&, Armory::Network::port_t,
                MagicWordType, bool);
             ~Peer(void);
 

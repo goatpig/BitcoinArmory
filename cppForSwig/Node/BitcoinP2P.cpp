@@ -1280,7 +1280,7 @@ void P2P::Iface::requestTx(InvVector invVec)
 ////////////////////////////////////////////////////////////////////////////////
 // Peer
 P2P::Peer::Peer(
-   const std::string& addrV4, const std::string& port,
+   const std::string& addrV4, Network::port_t port,
    uint32_t magicword, bool watcher) :
    Iface(magicword, watcher), addr_(addrV4), port_(port)
 {
@@ -1679,7 +1679,7 @@ bool P2P::Peer::connected() const
 ////////////////////////////////////////////////////////////////////////////////
 // Socket
 P2P::Socket::Socket(
-   const std::string& addr, const std::string& port,
+   const std::string& addr, Network::port_t port,
    std::shared_ptr<Threading::BlockingQueue<std::vector<uint8_t>>> readStack) :
    PersistentSocket(addr, port), readDataStack_(readStack)
 {}

@@ -123,14 +123,41 @@ Hash32 BlockchainData::getTxHashForTxKey(const Types::TxKey& txKey) const
    return Hash32{tx.getThisHash()};
 }
 
+Types::TxKey BlockchainData::resolveTxHintCollision(
+   const TxHintCollision& collision)
+{
+   for (const auto& txKey : collision.getCandidates()) {
+      if (!isTxKeyOnMainBranch(txKey)) {
+         continue;
+      }
+      try {
+         auto txHash = getTxHashForTxKey(txKey);
+         if (txHash == collision.getTxHash()) {
+            return txKey;
+         }
+      } catch (const BlockchainDataException& e) {
+         //ignore mangled data
+         LOGWARN << "[getTxHashForTxKey] " << e.what();
+         continue;
+      } catch (const std::range_error& e) {
+         LOGWARN << "[getTxHashForTxKey] " << e.what();
+      }
+   }
+   return Types::INVALID_TX_KEY;
+}
+
 bool BlockchainData::isTxKeyOnMainBranch(const Types::TxKey& txKey) const
 {
    auto blockID = Types::getBlockIDFromTxKey(txKey);
-   auto header = blockchain_->getHeaderById(blockID);
-   if (header == nullptr) {
+   try {
+      auto header = blockchain_->getHeaderById(blockID);
+      if (header == nullptr) {
+         return false;
+      }
+      return header->isMainBranch();
+   } catch (const std::range_error&) {
       return false;
    }
-   return header->isMainBranch();
 }
 
 ////////

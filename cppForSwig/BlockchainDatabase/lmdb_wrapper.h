@@ -216,7 +216,7 @@ public:
       DB_SELECT, uint8_t, LMDB::Mode) const;
 
    /////////////////////////////////////////////////////////////////////////////
-   uint64_t getDBKeyForHash(const Armory::Types::TxHash&) const;
+   Armory::Types::TxKey getDBKeyForHash(const Armory::Types::TxHash&) const;
 
    /////////////////////////////////////////////////////////////////////////////
    // Interface to translate Stored* objects to/from persistent DB storage

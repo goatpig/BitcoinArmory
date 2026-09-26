@@ -178,11 +178,19 @@ void ZeroConf::preprocessTx(ParsedTx& tx, LMDBBlockDatabase* db,
    */
 
    //sanity check: is this tx mined?
-   const auto& txHash = tx.getTxHash();
-   auto txKey = db->getDBKeyForHash(txHash);
+   Types::TxKey txKey;
+   try {
+      const auto& txHash = tx.getTxHash();
+      txKey = db->getDBKeyForHash(txHash);
+   } catch (const TxHintCollision& collision) {
+      txKey = bd->resolveTxHintCollision(collision);
+   }
    if (Types::isTxKeyValid(txKey)) {
-      tx.state = ParsedTxStatus::Mined;
-      return;
+      auto txhash = bd->getTxHashForTxKey(txKey);
+      if (txhash == tx.getTxHash()) {
+         tx.state = ParsedTxStatus::Mined;
+         return;
+      }
    }
 
    const auto& txObj = tx.getTxObj();
@@ -224,7 +232,7 @@ void ZeroConf::preprocessTx(ParsedTx& tx, LMDBBlockDatabase* db,
 
       if (!opRef.isResolved()) {
          //resolve outpoint to dbkey
-         opRef.resolveDbKey(db);
+         opRef.resolveDbKey(db, bd);
          if (!opRef.isResolved()) {
             continue;
          }
@@ -459,17 +467,27 @@ void OutPointRef::unserialize(BinaryDataRef bdr)
    unserialize(bdr.getPtr(), bdr.getSize());
 }
 
-void OutPointRef::resolveDbKey(LMDBBlockDatabase *dbPtr)
+void OutPointRef::resolveDbKey(
+   LMDBBlockDatabase *dbPtr, std::shared_ptr<BlockchainData> bd)
 {
    if (txHash_.empty() || txOutIndex_ == UINT16_MAX) {
       throw std::runtime_error("empty outpoint hash");
    }
 
-   auto key = dbPtr->getDBKeyForHash(txHash_);
-   if (key == Types::INVALID_TX_KEY) {
-      return;
+   Types::TxKey txKey;
+   try {
+      txKey = dbPtr->getDBKeyForHash(txHash_);
+   } catch (const TxHintCollision& collision) {
+      txKey = bd->resolveTxHintCollision(collision);
    }
-   setDbKey(key);
+
+   if (Types::isTxKeyValid(txKey)) {
+      auto txHash = bd->getTxHashForTxKey(txKey);
+      if (txHash != txHash_) {
+         return;
+      }
+      setDbKey(txKey);
+   }
 }
 
 bool OutPointRef::isResolved() const

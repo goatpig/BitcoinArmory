@@ -58,7 +58,7 @@ namespace Armory
 
       public:
          CppBridgeSocket(
-            const std::string&, const std::string&,
+            const std::string&, Network::port_t,
             std::shared_ptr<CppBridge>);
 
          SocketType type(void) const override;

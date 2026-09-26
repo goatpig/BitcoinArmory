@@ -225,7 +225,7 @@ ADD_LIBRARY(BridgeLib
     BridgeAPI/Wallets/Manager.cpp
     BridgeAPI/Wallets/Notifications.cpp
     BridgeAPI/Wallets/TxIOCache.cpp
-    BridgeAPI/BlockchainDbClient.cpp
+    BridgeAPI/DBSetup.cpp
 )
 
 TARGET_INCLUDE_DIRECTORIES(BridgeLib

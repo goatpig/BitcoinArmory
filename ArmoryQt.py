@@ -4797,7 +4797,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          else:
             LOGINFO('BDM is safe for clean shutdown')
 
-         TheBDM.shutdown()
          # Remove Temp Modules Directory if it exists:
          if self.tempModulesDirName:
             shutil.rmtree(self.tempModulesDirName)

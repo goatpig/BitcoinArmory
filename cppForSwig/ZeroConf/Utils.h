@@ -70,7 +70,7 @@ namespace Armory
          void unserialize(const uint8_t*, uint32_t);
          void unserialize(BinaryDataRef);
 
-         void resolveDbKey(LMDBBlockDatabase*);
+         void resolveDbKey(LMDBBlockDatabase*, std::shared_ptr<BlockchainData>);
          bool isResolved(void) const;
          bool isInitialized(void) const;
 
@@ -191,7 +191,6 @@ namespace Armory
          friend class MempoolSnapshot;
 
       public:
-         //TODO: shouldn't use references for txHashes anymore
          std::map<Types::TxHash, Types::TxKey> txHashToDBKey_; //<txHash, zcKey>
          std::map<Types::TxKey, std::shared_ptr<ParsedTx>> txMap_; //<zcKey, zcTx>
 

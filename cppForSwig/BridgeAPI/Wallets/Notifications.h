@@ -31,7 +31,7 @@ namespace Armory
          NEWBLOCK,
          ZC,
          REFRESH,
-         REGISTERED,
+         IS_REGISTERED,
          DISCONNECTED
       };
 

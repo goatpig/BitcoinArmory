@@ -90,7 +90,7 @@ namespace Armory
          std::string getHttpPayload(const char*, size_t);
 
       public:
-         HttpSocket(const std::string& addr, const std::string& port);
+         HttpSocket(const std::string&, port_t);
 
          static size_t getHttpBodyOffset(const char*, size_t);
          SocketType type(void) const override;

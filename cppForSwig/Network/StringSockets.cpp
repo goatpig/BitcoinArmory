@@ -15,7 +15,7 @@ using namespace Armory::Network;
 
 ///////////////////////////////////////////////////////////////////////////////
 // HttpSocket
-HttpSocket::HttpSocket(const std::string& addr, const std::string& port) :
+HttpSocket::HttpSocket(const std::string& addr, port_t port) :
    SimpleSocket(addr, port)
 {
    messageWithPrecacheHeaders_ = make_unique<HttpMessage>(getAddrStr());

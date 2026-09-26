@@ -123,13 +123,11 @@ HeaderPtr Blockchain::getHeaderById(Types::BlockId id) const
 {
    std::unique_lock<std::mutex> lock(mu_);
    if (id > highestBlockID_.load(std::memory_order_relaxed)) {
-      LOGERR << "block id " << id << " is too big";
-      throw std::range_error("block id overflow");
+      throw std::range_error(std::format("block id overflow: {}", id));
    }
    auto header = headersById_[id];
    if (header == nullptr) {
-      LOGERR << "cannot find block for id: " << id;
-      throw std::range_error("Cannot find block by id");
+      throw std::range_error(std::format("cannot find block {} by id", id));
    }
    return header;
 }

@@ -33,6 +33,8 @@ namespace Armory
 {
    namespace Network
    {
+      using port_t = uint16_t;
+
       //////////////////////////////////////////////////////////////////////////
       struct CallbackReturn
       {
@@ -103,8 +105,7 @@ namespace Armory
          
          struct sockaddr serv_addr_;
          const std::string addr_;
-         const std::string port_;
-
+         const port_t port_;
          bool verbose_ = true;
 
       private:
@@ -114,15 +115,15 @@ namespace Armory
          SocketPrototype(void);
 
          void setBlocking(SOCKET, bool);
-         void listen(AcceptCallback, SOCKET& sockfd);
+         void listen(AcceptCallback, SOCKET&);
 
       public:
-         SocketPrototype(const std::string& addr, const std::string& port, bool init = true);
+         SocketPrototype(const std::string&, port_t, bool = true);
          virtual ~SocketPrototype(void) = 0;
 
          virtual bool testConnection(void);
          bool isBlocking(void) const;
-         SOCKET openSocket(bool blocking);
+         SOCKET openSocket(bool);
 
          static void closeSocket(SOCKET&);
          virtual void pushPayload(
@@ -132,7 +133,6 @@ namespace Armory
 
          virtual SocketType type(void) const = 0;
          const std::string& getAddrStr(void) const;
-         const std::string& getPortStr(void) const;
 
          //override me
          virtual bool running(void) const;
@@ -147,7 +147,7 @@ namespace Armory
          int writeToSocket(std::vector<uint8_t>&);
 
       public:
-         SimpleSocket(const std::string& addr, const std::string& port);
+         SimpleSocket(const std::string&, port_t);
          SimpleSocket(SOCKET);
          ~SimpleSocket(void);
 
@@ -162,7 +162,7 @@ namespace Armory
          bool connectToRemote(void) override;
 
          //
-         static bool checkSocket(const std::string& ip, const std::string& port);
+         static bool checkSocket(const std::string&, port_t);
       };
 
       class PersistentSocket : public SocketPrototype
@@ -208,15 +208,15 @@ namespace Armory
          void queuePayloadForWrite(std::vector<uint8_t>&);
 
       public:
-         PersistentSocket(const std::string& addr, const std::string& port);
+         PersistentSocket(const std::string&, port_t);
          PersistentSocket(SOCKET);
          ~PersistentSocket(void);
 
-         void shutdown();
+         void shutdown(void);
          bool openSocket(bool);
          int getSocketName(struct sockaddr& );
          int getPeerName(struct sockaddr&);
-         bool connectToRemote(void);
+         bool connectToRemote(void) override;
          bool isValid(void) const;
          bool testConnection(void);
          void blockUntilClosed(void) const;
@@ -253,7 +253,7 @@ namespace Armory
          ListenServer(const ListenServer&) = delete;
 
       public:
-         ListenServer(const std::string& addr, const std::string& port);
+         ListenServer(const std::string&, port_t);
          ~ListenServer(void);
 
          void start(ReadCallback);

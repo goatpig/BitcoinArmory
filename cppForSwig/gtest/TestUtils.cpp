@@ -550,7 +550,8 @@ namespace DBTestUtils
    /////////////////////////////////////////////////////////////////////////////
    void waitOnBDVReady(Clients* clients, Types::BdvId bdvId)
    {
-      waitOnSignal(clients, bdvId, (int)Codec::BDV::Notification::READY);
+      waitOnSignal(clients, bdvId,
+         (int)Codec::BDV::Notification::CONNECTION_IS_READY);
    }
 
    /////////////////////////////////////////////////////////////////////////////

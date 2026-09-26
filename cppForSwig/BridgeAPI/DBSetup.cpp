@@ -49,19 +49,83 @@ namespace {
       //figure out default windows install location
    };
 
+   std::wstring toWString(const std::string& str)
+   {
+      auto wCharCount = MultiByteToWideChar(
+         CP_UTF8, 0,
+         str.c_str(), str.size(),
+         nullptr, 0
+      );
+      if (wCharCount == 0) {
+         throw std::runtime_error("could not project wchar size");
+      }
+
+      std::wstring wString;
+      wString.resize(wCharCount);
+      auto result = MultiByteToWideChar(
+         CP_UTF8, 0,
+         str.c_str(), str.size(),
+         wString.data(), wCharCount
+      );
+      if (result != wCharCount) {
+         throw std::runtime_error("failed to convert to wstring");
+      }
+      return wString;
+   }
+
+   std::string getLastErrorVerbose()
+   {
+      auto lastError = GetLastError();
+      LPVOID lpMsgBuf;
+
+      if (FormatMessage(
+         FORMAT_MESSAGE_ALLOCATE_BUFFER | 
+         FORMAT_MESSAGE_FROM_SYSTEM |
+         FORMAT_MESSAGE_IGNORE_INSERTS,
+         NULL,
+         lastError,
+         MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+         (LPTSTR) &lpMsgBuf,
+         0, NULL) == 0) {
+         return std::format("could not retrieve verbose for error code {}", lastError);
+      }
+
+      std::string result{(LPCSTR)lpMsgBuf};
+      LocalFree(lpMsgBuf);
+      return result;
+   }
+
+   ////////
    std::pair<ProcessInstance, std::string> spawnProcess(
       const std::filesystem::path& target,
+      const std::map<std::string, std::filesystem::path>& pathArgs,
       const std::vector<std::string>& args,
       const std::map<std::string, std::string>& envvars,
       bool captureStdOut)
    {
-      //use CreateProcess to spawn ArmoryDB
+      /* use CreateProcess to spawn ArmoryDB */
+
+      //binary target
       std::wstring commandLine{ target.wstring() };
-      for (const auto& arg : args) {
-         commandLine.append(std::format("{} ", arg));
+
+      //path arguments
+      try {
+         for (const auto& pathArg : pathArgs) {
+            auto wArg = toWString(pathArg.first);
+            commandLine.append(std::format(L" {}={}", wArg, pathArg.second.wstring()));
+         }
+
+         //other args
+         for (const auto& arg : args) {
+            auto wArg = toWString(arg);
+            commandLine.append(std::format(L" {}", wArg));
+         }
+      } catch (const std::exception& e) {
+         return { {}, std::format(
+            "failed to build arg string with error: {}", e.what()) };
       }
 
-      //mandatory, process handle is writting in pi after start
+      //mandatory, process handle is written inside pi after start
       STARTUPINFOW si;
       ZeroMemory( &si, sizeof(si) );
       si.cb = sizeof(si);
@@ -80,27 +144,55 @@ namespace {
          SetEnvironmentVariable(envvar.first.c_str(), envvar.second.c_str());
       }
 
+      HANDLE pipeRead = nullptr;
+      HANDLE pipeWrite = nullptr;
       if (captureStdOut) {
-         throw std::runtime_error("implement stdout capture in windows");
-      } else {
-         if (!CreateProcessW(NULL,
-            commandLine.data(),
-            NULL,
-            NULL,
-            true, //inherit parent handles where possible
-            NORMAL_PRIORITY_CLASS,
-            NULL, //no explicit envvars on windows, let child inherit parent's
-            NULL,
-            &si, &pi
-         )) {
-            auto lastError = GetLastError();
-            throw std::runtime_error("failed to spawn ArmorDB with error: " + std::to_string(lastError));
+         //create pipes to take over stdout in child process
+         SECURITY_ATTRIBUTES sa;
+         ZeroMemory(&sa, sizeof(sa));
+         sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+         sa.bInheritHandle = true;
+         if (CreatePipe(&pipeRead, &pipeWrite, &sa, 0) == 0) {
+            return { {}, "failed to create pipes" };
          }
-   }
+
+         //do not let child inherit the read pipe
+         SetHandleInformation(pipeRead, HANDLE_FLAG_INHERIT, 0);
+         si.hStdOutput = pipeWrite;
+         si.hStdError = pipeWrite;
+         si.dwFlags |= STARTF_USESTDHANDLES;
+      }
+      if (CreateProcessW(NULL,
+         commandLine.data(),
+         NULL,
+         NULL,
+         true, //inherit parent handles where possible
+         NORMAL_PRIORITY_CLASS,
+         NULL, //no explicit envvars on windows, let child inherit parent's
+         NULL,
+         &si, &pi) == 0) {
+         return { {}, getLastErrorVerbose() };
+      }
+
+      std::string stdOutStr;
+      if (captureStdOut) {
+         //parent side has no use for the write pipe
+         CloseHandle(pipeWrite);
+
+         //grab first output to stdout and cleanup
+         stdOutStr.resize(2048);
+         DWORD bytesRead;
+         if (ReadFile(pipeRead, stdOutStr.data(), 2047, &bytesRead, nullptr) != 0) {
+            stdOutStr.resize(bytesRead);
+         } else {
+            stdOutStr.resize(0);
+         }
+         CloseHandle(pipeRead);
+      }
+
       auto handle = pi.hProcess;
       CloseHandle(pi.hThread);
-
-      return { {handle}, {} };
+      return { {handle}, stdOutStr };
    }
 
 #else
@@ -117,6 +209,7 @@ namespace {
 
    std::pair<ProcessInstance, std::string> spawnProcess(
       const std::filesystem::path& target,
+      const std::map<std::string, std::filesystem::path>& pathArgs,
       const std::vector<std::string>& args,
       const std::map<std::string, std::string>& envvars,
       bool captureStdOut)
@@ -124,9 +217,21 @@ namespace {
       std::vector<char*> argv;
       auto targetStr = target.string();
       argv.emplace_back(targetStr.data());
+
+      //path args
+      std::vector<std::string> pathArgsStr;
+      for (const auto& pathArg : pathArgs) {
+         pathArgsStr.emplace_back(std::format("{}={}",
+            pathArg.first, pathArg.second.string()));
+         argv.emplace_back((char*)pathArgsStr.back().data());
+      }
+
+      //other args
       for (const auto& arg : args) {
          argv.emplace_back((char*)arg.data());
       }
+
+      //argv null terminator
       argv.emplace_back(nullptr);
 
       std::vector<std::string> envStrings;
@@ -192,19 +297,21 @@ namespace {
 
 #endif
 
-   std::pair<std::string, std::string> getIpAndPortFromPeerName(
+   std::pair<std::string, Network::port_t> getIpAndPortFromPeerName(
       const std::string& peerName)
    {
       //TODO: flesh this out
       std::stringstream ss(peerName);
-      std::pair<std::string, std::string> output;
+      std::pair<std::string, Network::port_t> output;
 
       //ip
       std::getline(ss, output.first, ':');
 
       //port
       if (ss.good()) {
-         std::getline(ss, output.second);
+         std::string portStr;
+         std::getline(ss, portStr);
+         output.second = std::stoi(portStr);
       } else {
          output.second = Config::NetworkSettings::dbPort();
       }
@@ -349,14 +456,13 @@ namespace {
          //is this a fully qualified path?
          targetDir = std::filesystem::absolute(dataDir);
       }
-      auto dataDirStr = std::format("--datadir={}", targetDir.string());
 
       //run bitcoind --version
-      std::vector<std::string> args{
-         std::format("--datadir={}", targetDir.string()),
-         {"--version"}
-      };
-      auto result = spawnProcess(binPath, args, {}, true);
+      auto result = spawnProcess(binPath,
+         {{"--datadir", targetDir}},
+         {"--version"},
+         {}, true
+      );
       result.first.wait();
 
       if (dataDir.empty()) {
@@ -409,7 +515,7 @@ namespace {
 ////////////////////////////////////////////////////////////////////////////////
 BdvPtr Armory::Bridge::setupClientConnection(
    std::shared_ptr<NetworkPeers::ClientStore> peers,
-   const std::string& ip, const std::string& port, bool oneWayAuth,
+   const std::string& ip, Network::port_t port, bool oneWayAuth,
    const std::function<bool(const BinaryData&)>& presentPubKeyFunc,
    std::shared_ptr<RemoteCallback> cbPtr)
 {
@@ -421,25 +527,33 @@ BdvPtr Armory::Bridge::setupClientConnection(
    }
 
    //setup bdv obj
-   BdvPtr bdvPtr = AsyncClient::BlockDataViewer::getNewBDV(
-      ip, port,
-      peers, oneWayAuth,
-      cbPtr
-   );
+   BdvPtr bdvPtr;
+   unsigned count = 0;
+   while (count++ < 10) {
+      bdvPtr = AsyncClient::BlockDataViewer::getNewBDV(
+         ip, port,
+         peers, oneWayAuth,
+         cbPtr
+      );
 
-   if (presentPubKeyFunc) {
-      bdvPtr->setCheckServerKeyPromptLambda(presentPubKeyFunc);
+      if (presentPubKeyFunc) {
+         bdvPtr->setCheckServerKeyPromptLambda(presentPubKeyFunc);
+      }
+
+      //connect to db
+      if (!bdvPtr->connectToRemote()) {
+         //could not connect, sleep for 250ms and try again
+         std::this_thread::sleep_for(250ms);
+      }
+      bdvPtr->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+
+      //notify setup is done
+      return bdvPtr;
    }
 
-   //connect to db
-   if (!bdvPtr->connectToRemote()) {
-      return nullptr;
-   }
-   bdvPtr->registerWithDB(
-      Config::BitcoinSettings::getMagicBytes().toHexStr());
-
-   //notify setup is done
-   return bdvPtr;
+   LOGERR << "failed to connect to armorydb";
+   return nullptr;
 }
 
 BdvPtr Armory::Bridge::setupClientConnection(
@@ -591,7 +705,7 @@ bool ProcessInstance::isRunning()
    }
 
 #ifdef _WIN32
-   if (WaitForSingleObject(instance_) != WAIT_TIMEOUT) {
+   if (WaitForSingleObject(instance_, 0) != WAIT_TIMEOUT) {
       //we need to close this handle after use
       CloseHandle(instance_);
       instance_ = INVALID_INSTANCE;
@@ -641,7 +755,7 @@ AutomationContext::AutomationContext(
    automateNode_{automateNode}, automateDb_{automateDb}
 {}
 
-uint32_t AutomationContext::getDbPort() const
+Network::port_t AutomationContext::getDbPort() const
 {
    return dbPort_;
 }
@@ -676,14 +790,16 @@ void AutomationContext::automateSatoshi()
    }
 
    std::vector<std::string> args{
-      std::format("--datadir={}", datadir.string()),
       std::format("--rpcauth={}:{}${}", rpcLogin_, salt, saltedPass.toHexStr()),
       {"--disablewallet"}
    };
    if (Config::BitcoinSettings::getMode() == Config::NETWORK_MODE_TESTNET) {
       args.emplace_back("--testnet");
    }
-   auto result = spawnProcess(satoshiBin_, args, {}, false);
+   auto result = spawnProcess(satoshiBin_,
+      {{"--datadir", datadir}},
+      args, {}, false
+   );
    nodeInstance_ = result.first;
    if (!nodeInstance_.isValid()) {
       throw std::runtime_error(std::format(
@@ -731,19 +847,19 @@ void AutomationContext::automateDb()
    LOGINFO << "spawning ArmoryDB";
 
    /*
-   Spawn ArmoryDB with tailored CLI args and environment variables to setup
-   adhoc a AEAD 2-way handshake.
+   Spawn ArmoryDB with tailored CLI args and environment variables, to setup
+   an adhoc AEAD 2-way handshake.
 
    2-way Keys are exchange via the following these steps:
       1. CppBridge creates an ephemeral key store and adds its public key to
-         to ArmoryDB via .
-      2. CppBridge spawn ArmoryDB, replacing stdout by a pipe.
+         to ArmoryDB via envvars.
+      2. CppBridge spawns ArmoryDB, replacing stdout by a pipe.
       3. ArmoryDB detects automation via the --ephemeral CLI arg.
          It creates an ephemeral key store, reads the caller pubkey from
-         envvars, adds it to the store and sets it as the store's master key.
+         envvars, adds it to its store and sets it as the store's master key.
       4. ArmoryDB writes its public key to stdout.
-      5. CppBridge detects changes to the key file, grabs the pubkey and
-         injects it into its own store. The pipe is cleaned up.
+      5. CppBridge reads ArmoryDB's stdout, grabs the pubkey and
+         injects it into its own store.
    */
 
    //sanity check
@@ -752,8 +868,13 @@ void AutomationContext::automateDb()
    }
 
    //get full path to armorydb
+#ifdef _WIN32
+   const std::filesystem::path armoryDbPath{
+      Config::Pathing::runningDir() / "ArmoryDB.exe" };
+#else
    const std::filesystem::path armoryDbPath{
       Config::Pathing::runningDir() / "ArmoryDB" };
+#endif
    if (!FileUtils::pathExists(armoryDbPath, 8)) {
       throw std::runtime_error("invalid db binary path: " + armoryDbPath.string());
    }
@@ -767,16 +888,12 @@ void AutomationContext::automateDb()
 
    //generate random db port & set it
    dbPort_ = (rand() % 10000) + 50000;
-   auto portStr = std::to_string(dbPort_);
-   Armory::Config::NetworkSettings::setDbPort(portStr);
+   Armory::Config::NetworkSettings::setDbPort(dbPort_);
 
    //args
    std::vector<std::string> args{
       { "--ephemeral" },
-      std::format("--armorydb-port={}", portStr),
-      std::format("--dbdir={}", dbDir_.string()),
-      std::format("--datadir={}", Config::getDataDir().string()),
-      std::format("--satoshi-datadir={}", satoshiDir_.string()),
+      std::format("--armorydb-port={}", dbPort_),
       std::format("--satoshi-port={}", Config::NetworkSettings::btcPort()),
       std::format("--satoshirpc-port={}", Config::NetworkSettings::rpcPort())
    };
@@ -806,7 +923,12 @@ void AutomationContext::automateDb()
       envvars.emplace("CORERPCPASS", rpcPass_);
    }
 
-   auto result = spawnProcess(armoryDbPath, args, envvars, true);
+   auto result = spawnProcess(armoryDbPath, {
+         {"--dbdir", dbDir_},
+         {"--datadir", Config::getDataDir()},
+         {"--satoshi-datadir", satoshiDir_}
+      }, args, envvars, true
+   );
    dbInstance_ = result.first;
    if (!dbInstance_.isValid()) {
       throw std::runtime_error(std::format(
@@ -817,7 +939,7 @@ void AutomationContext::automateDb()
 
    //set db pubkey
    auto serverKey = NetworkPeers::PeerKey::fromHumanReadable(result.second);
-   peers_->addPeer(serverKey, {std::format("127.0.0.1:{}", portStr)}, {});
+   peers_->addPeer(serverKey, {std::format("127.0.0.1:{}", dbPort_)}, {});
 }
 
 ////
@@ -836,9 +958,8 @@ void AutomationContext::cleanupDb()
 
    //create bdv object
    auto callback = std::make_shared<ShutdownCallback>();
-   auto port = std::to_string(dbPort_);
    auto bdvPtr = setupClientConnection(peers_,
-      "127.0.0.1", port,
+      "127.0.0.1", dbPort_,
       false, nullptr, callback);
    if (bdvPtr == nullptr) {
       throw std::runtime_error("automatedDb connection failed");

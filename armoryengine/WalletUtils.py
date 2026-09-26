@@ -178,6 +178,12 @@ class WalletMap(object):
             return iterWlt
       return None
 
+   def getWltForAddrStr(self, addrStr):
+      for _, iterWlt in self._walletMap.items():
+         if iterWlt.hasAddrString(addrStr):
+            return iterWlt
+      return None
+
    def hasWallet(self, wltId: str):
       return wltId in self._wltIdToDbId
 

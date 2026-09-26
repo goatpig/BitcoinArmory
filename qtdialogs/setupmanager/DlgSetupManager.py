@@ -470,9 +470,9 @@ class DlgSetupManager(ArmoryDialog):
          params['peerKey'] = dbSettings['peerKey']
       elif scenario == SCENARIO_REMOTE_IP:
          params['ipAddr'] = dbSettings['ipAddr']
-         params['ipPort'] = dbSettings['ipPort'] \
-            if dbSettings['ipPort'] \
-            else str(ARMORYDB_DEFAULT_PORT)
+         params['dbPort'] = dbSettings['dbPort'] \
+            if dbSettings['dbPort'] \
+            else ARMORYDB_DEFAULT_PORT
 
       return params
 
@@ -568,17 +568,17 @@ class DlgSetupManager(ArmoryDialog):
       4. C++ finishes connecting (or fails)
       5. Result callback fires with actual success/failure
       """
-      ipAddr = params.get('ipAddr', '')
-      ipPort = params.get(
-         'ipPort', str(ARMORYDB_DEFAULT_PORT))
+      dbAddr = params.get('ipAddr', '')
+      dbPort = params.get(
+         'dbPort', ARMORYDB_DEFAULT_PORT)
 
-      if not ipAddr:
+      if not dbAddr:
          raise ValueError(
             "ipAddr missing from params")
 
-      LOGINFO(f"Calling connectToIp: {ipAddr}:{ipPort}")
+      LOGINFO(f"Calling connectToIp: {dbAddr}:{dbPort}")
 
-      callbackId = f"connectToIp_{ipAddr}_{ipPort}"
+      callbackId = f"connectToIp_{dbAddr}_{dbPort}"
       self.pendingConnectionResult = None
 
       def onConnectResult(reply):
@@ -595,7 +595,7 @@ class DlgSetupManager(ArmoryDialog):
          onPresentPubkey=self._onServerKeyPresented)
 
       TheBridge.dbSetup.connectToIp(
-         ip=ipAddr, port=ipPort,
+         ip=dbAddr, port=dbPort,
          callbackId=callbackId,
          resultCallback=onConnectResult)
 
