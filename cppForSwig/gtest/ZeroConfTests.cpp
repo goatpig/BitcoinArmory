@@ -1569,7 +1569,92 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ZC_Plus2)
    EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddr, bdm), 10 * COIN);
    EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddrP2SH, bdm), 5 * COIN);
 
-   //
+   //check the two ZCs are in the mempool
+   {
+      auto zcParser = bdm->zeroConfCont();
+      auto ss = zcParser->getSnapshot();
+
+      auto zcHash0 = rawZcVec.zcVec_[0].first.getThisHash();
+      auto zcKey0 = ss->getKeyForHash(zcHash0);
+      ASSERT_TRUE(Types::isTxKeyValid(zcKey0));
+      ASSERT_TRUE(Types::isThisAZCKey(zcKey0));
+      auto zcId0 = Types::getZcIdFromTxKey(zcKey0);
+      ASSERT_EQ(zcId0, 0);
+
+      auto zcHash1 = rawLBZcVec.zcVec_[0].first.getThisHash();
+      auto zcKey1 = ss->getKeyForHash(zcHash1);
+      ASSERT_TRUE(Types::isTxKeyValid(zcKey1));
+      ASSERT_TRUE(Types::isThisAZCKey(zcKey1));
+      auto zcId1 = Types::getZcIdFromTxKey(zcKey1);
+      ASSERT_EQ(zcId1, 1);
+
+      ASSERT_EQ(ss->getTopZcID(), 1);
+   }
+
+   //restart BDM
+   bdvPtr.reset();
+   clients_->shutdown();
+   theBDMt_->shutdown();
+
+   delete clients_;
+   delete theBDMt_;
+
+   initBDM();
+   clients_->init();
+   bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
+
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+      false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
+      false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
+      false);
+   bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
+
+   //wait on signals
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   DBTestUtils::goOnline(clients_, bdvID);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
+
+   bdm = theBDMt_->bdm();
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(theBDMt_->bdm().get(), DB_SELECT::HEADERS), 3U);
+   EXPECT_EQ(DBTestUtils::getTopBlockHash(iface_, DB_SELECT::HEADERS), TestChain::blkHash3);
+   EXPECT_TRUE(theBDMt_->bdm()->blockchain()->getHeaderByHash(TestChain::blkHash3)->isMainBranch());
+
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 20 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 65 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb1ScrAddr, bdm), 5 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb1ScrAddrP2SH, bdm), 0 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddr, bdm), 10 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddrP2SH, bdm), 5 * COIN);
+
+   //check the two ZCs are in the mempool
+   {
+      auto zcParser = bdm->zeroConfCont();
+      auto ss = zcParser->getSnapshot();
+
+      auto zcHash0 = rawZcVec.zcVec_[0].first.getThisHash();
+      auto zcKey0 = ss->getKeyForHash(zcHash0);
+      ASSERT_TRUE(Types::isTxKeyValid(zcKey0));
+      ASSERT_TRUE(Types::isThisAZCKey(zcKey0));
+      auto zcId0 = Types::getZcIdFromTxKey(zcKey0);
+      ASSERT_EQ(zcId0, 0);
+
+      auto zcHash1 = rawLBZcVec.zcVec_[0].first.getThisHash();
+      auto zcKey1 = ss->getKeyForHash(zcHash1);
+      ASSERT_TRUE(Types::isTxKeyValid(zcKey1));
+      ASSERT_TRUE(Types::isThisAZCKey(zcKey1));
+      auto zcId1 = Types::getZcIdFromTxKey(zcKey1);
+      ASSERT_EQ(zcId1, 1);
+
+      ASSERT_EQ(ss->getTopZcID(), 1);
+   }
+
+   //add last 2 blocks
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    DBTestUtils::triggerNewBlockNotification(theBDMt_);
    DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
@@ -1585,6 +1670,72 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ZC_Plus2)
    EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb1ScrAddrP2SH, bdm), 25 * COIN);
    EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddr, bdm), 30 * COIN);
    EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddrP2SH, bdm), 0 * COIN);
+
+   //check the two ZCs are out of the mempool
+   {
+      auto zcParser = bdm->zeroConfCont();
+      auto ss = zcParser->getSnapshot();
+
+      auto zcHash0 = rawZcVec.zcVec_[0].first.getThisHash();
+      auto zcKey0 = ss->getKeyForHash(zcHash0);
+      ASSERT_FALSE(Types::isTxKeyValid(zcKey0));
+      ASSERT_FALSE(Types::isThisAZCKey(zcKey0));
+
+      auto zcHash1 = rawLBZcVec.zcVec_[0].first.getThisHash();
+      auto zcKey1 = ss->getKeyForHash(zcHash1);
+      ASSERT_FALSE(Types::isTxKeyValid(zcKey1));
+      ASSERT_FALSE(Types::isThisAZCKey(zcKey1));
+
+      ASSERT_EQ(ss->getTopZcID(), 1);
+   }
+
+   //restart BDM again
+   bdvPtr.reset();
+   clients_->shutdown();
+   theBDMt_->shutdown();
+
+   delete clients_;
+   delete theBDMt_;
+
+   initBDM();
+   clients_->init();
+   bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
+
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+      false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
+      false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
+      false);
+   bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
+
+   //wait on signals
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   DBTestUtils::goOnline(clients_, bdvID);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
+
+   bdm = theBDMt_->bdm();
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(theBDMt_->bdm().get(), DB_SELECT::HEADERS), 5U);
+   EXPECT_EQ(DBTestUtils::getTopBlockHash(iface_, DB_SELECT::HEADERS), TestChain::blkHash5);
+   EXPECT_TRUE(theBDMt_->bdm()->blockchain()->getHeaderByHash(TestChain::blkHash5)->isMainBranch());
+
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 70 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 20 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb1ScrAddr, bdm), 5 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb1ScrAddrP2SH, bdm), 25 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddr, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::lb2ScrAddrP2SH, bdm), 0 * COIN);
+
+   //check mempool is empty
+   {
+      auto zcParser = bdm->zeroConfCont();
+      auto ss = zcParser->getSnapshot();
+      ASSERT_EQ(ss, nullptr);
+   }
 
    //cleanup
    bdvPtr.reset();
@@ -9188,7 +9339,7 @@ TEST_F(ZeroConfTests_Supernode_WebSocket, BatchZcChain_ConflictingChildren_Alrea
          pCallback->waitOnZc(theBDMt_->bdm()->zeroConfCont(), txHashes);
       }
 
-      //batch push first zc (already in chain), C (unrelated) 
+      //batch push first zc (already in chain), C (unrelated)
       //and tx3 (child of first, mempool conflict with tx2)
       bdvObj->broadcastZC({ rawTx1_B, rawTx1_C, rawTx3 });
       std::set<BinaryData> txHashes {tx1_C.getThisHash()};
