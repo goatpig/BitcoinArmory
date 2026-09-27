@@ -367,13 +367,13 @@ int WebSocketClient::lwsServiceHandler(struct lws* wsi,
       {
          try {
             instance->connected_.store(false, std::memory_order_release);
-            if (instance->callbackPtr_ != nullptr) {
-               instance->callbackPtr_->disconnected();
-            }
             try {
                instance->connectionReadyProm_.set_value(false);
             } catch (const std::future_error&) {
-               //promise already set, nothing to do
+               //promise already set, notify of disconnection
+               if (instance->callbackPtr_ != nullptr) {
+                  instance->callbackPtr_->disconnected();
+               }
             }
             instance->shutdown();
          } catch (const LWS_Error&) {}

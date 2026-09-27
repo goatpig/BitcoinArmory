@@ -543,7 +543,9 @@ BdvPtr Armory::Bridge::setupClientConnection(
       //connect to db
       if (!bdvPtr->connectToRemote()) {
          //could not connect, sleep for 250ms and try again
+         LOGWARN << "bdvptr connection failed, retrying";
          std::this_thread::sleep_for(250ms);
+         continue;
       }
       bdvPtr->registerWithDB(
          Config::BitcoinSettings::getMagicBytes().toHexStr());
