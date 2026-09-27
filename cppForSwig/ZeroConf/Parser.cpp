@@ -270,7 +270,7 @@ std::map<Types::TxKey, std::shared_ptr<ParsedTx>> ZeroConfContainer::purge(
 
       - evict all the descendants of mined and invalidated ZCs
       - for descendants, reset all resolved spenders.
-      - return any descendant that wasn't invalidated (for reparsing and 
+      - return any descendant that wasn't invalidated (for reparsing and
         potential reentry in the mempool)
 
     * reorgs are first handled in purgeToBranchpoint
@@ -384,15 +384,15 @@ std::map<Types::TxKey, std::shared_ptr<ParsedTx>> ZeroConfContainer::dropZC(
 {
    /*
    ZeroConfSharedSnapshot will drop the tx and its children and return them.
-   We need to clear our containers all dropped ZCs so we first drop from the
-   snapshot and use the returned map to clear the requested ZC as well as all
-   of its children.
+   We need to clear our containers from all dropped ZCs so we first drop from
+   the snapshot then use the returned map to clear the requested ZC as well as
+   all of its children.
    */
    auto droppedZCs = ss->dropZc(key);
    for (const auto& zcPair : droppedZCs) {
       auto txPtr = zcPair.second;
       if (txPtr == nullptr) {
-         return {};
+         continue;
       }
 
       //drop from outPointsSpentByKey_
@@ -417,6 +417,8 @@ std::map<Types::TxKey, std::shared_ptr<ParsedTx>> ZeroConfContainer::dropZC(
       keyToFundedScrAddr_.erase(key);
       allZcTxHashes_.erase(txPtr->getTxHash());
    }
+
+   //remove the target key from the return set
    return droppedZCs;
 }
 
@@ -430,7 +432,9 @@ std::map<Types::TxKey, std::shared_ptr<ParsedTx>> ZeroConfContainer::dropZCs(
    std::map<Types::TxKey, std::shared_ptr<ParsedTx>> droppedZCs;
    auto rIter = zcKeys.rbegin();
    while (rIter != zcKeys.rend()) {
-      auto dropped = dropZC(ss, *rIter++);
+      auto keyToDrop = *rIter++;
+      auto dropped = dropZC(ss, keyToDrop);
+      dropped.erase(keyToDrop);
       droppedZCs.insert(dropped.begin(), dropped.end());
    }
 
@@ -489,6 +493,7 @@ void ZeroConfContainer::finalizePurgePacket(
    zcAction.resultPromise->set_value(purgePacket);
 }
 
+////////
 void ZeroConfContainer::parseNewZC(ZcActionStruct zcAction)
 {
    bool notify = true;
@@ -507,7 +512,7 @@ void ZeroConfContainer::parseNewZC(ZcActionStruct zcAction)
          auto result = purge(zcAction.reorgState, ss);
          notify = false;
 
-         ss->commitNewZCs();
+         ss->mergeWithParents();
 
          //setup batch with all tracked zc
          if (zcAction.batch == nullptr) {
@@ -724,6 +729,7 @@ void ZeroConfContainer::parseNewZC(
       watcherMap);
 }
 
+////////
 FilteredZeroConfData ZeroConfContainer::filterTransaction(
    std::shared_ptr<ParsedTx> parsedTx,
    std::shared_ptr<MempoolSnapshot> ss) const
@@ -790,6 +796,7 @@ ZeroConfContainer::checkForCollisions(
    return invalidatedZCs;
 }
 
+////////
 void ZeroConfContainer::clear()
 {
    snapshot_.store(nullptr);
@@ -1011,7 +1018,7 @@ unsigned ZeroConfContainer::loadMempool(bool clearMempool)
          UINT64_MAX,
          emptyWatcherMap);
       auto thisSnapshot = snapshot_.load(std::memory_order_acquire);
-      thisSnapshot->commitNewZCs();
+      thisSnapshot->mergeWithParents();
    }
    return topId;
 }

@@ -277,7 +277,7 @@ namespace Armory
          std::map<Types::TxKey, std::shared_ptr<ParsedTx>> dropZc(Types::TxKey);
 
          void stageNewZC(std::shared_ptr<ParsedTx>, const FilteredZeroConfData&);
-         void commitNewZCs(void);
+         void mergeWithParents(void);
          unsigned getMergeCount(void) const { return mergeCount_; }
       };
 

@@ -677,7 +677,7 @@ TEST_F(ZeroConfTests_Mempool, Commit)
    EXPECT_TRUE(checkTxIsStaged(snapshot, 0));
 
    //commit
-   snapshot.commitNewZCs();
+   snapshot.mergeWithParents();
 
    //check the tx is still in there
    EXPECT_TRUE(checkTxIsStaged(snapshot, 0));
@@ -739,7 +739,7 @@ TEST_F(ZeroConfTests_Mempool, CommitAndDrop)
    EXPECT_EQ(snapshot.getTopZcID(), 1U);
 
    //commit and check again
-   snapshot.commitNewZCs();
+   snapshot.mergeWithParents();
    EXPECT_TRUE(checkTxIsStaged(snapshot, 0));
 
    //drop the tx
@@ -751,7 +751,7 @@ TEST_F(ZeroConfTests_Mempool, CommitAndDrop)
    EXPECT_TRUE(checkIsDropped(snapshot, 0));
 
    //commit and check
-   snapshot.commitNewZCs();
+   snapshot.mergeWithParents();
    EXPECT_TRUE(checkIsDropped(snapshot, 0));
    EXPECT_EQ(snapshot.getTopZcID(), 1U);
 }
@@ -827,7 +827,7 @@ TEST_F(ZeroConfTests_Mempool, Stage2_Commit_Drop1)
       EXPECT_TRUE(checkTxIsStaged(snapshot, 0));
    }
 
-   snapshot.commitNewZCs();
+   snapshot.mergeWithParents();
    EXPECT_EQ(snapshot.getTopZcID(), 1U);
 
    {
@@ -844,7 +844,7 @@ TEST_F(ZeroConfTests_Mempool, Stage2_Commit_Drop1)
       EXPECT_TRUE(checkTxIsStaged(snapshot, 1));
    }
 
-   snapshot.commitNewZCs();
+   snapshot.mergeWithParents();
    EXPECT_EQ(snapshot.getTopZcID(), 2U);
 
    //drop tx0
@@ -857,7 +857,7 @@ TEST_F(ZeroConfTests_Mempool, Stage2_Commit_Drop1)
    EXPECT_TRUE(checkTxIsStaged(snapshot, 1));
    EXPECT_EQ(snapshot.getTopZcID(), 2U);
 
-   snapshot.commitNewZCs();
+   snapshot.mergeWithParents();
 
    //check it is still dropped from the snapshot
    EXPECT_TRUE(checkIsDropped(snapshot, 0));
@@ -873,7 +873,7 @@ TEST_F(ZeroConfTests_Mempool, Stage2_Commit_Drop1)
    EXPECT_TRUE(checkIsDropped(snapshot, 1));
    EXPECT_EQ(snapshot.getTopZcID(), 2U);
 
-   snapshot.commitNewZCs();
+   snapshot.mergeWithParents();
    EXPECT_EQ(snapshot.getTopZcID(), 2U);
 }
 
@@ -1018,7 +1018,7 @@ TEST_F(ZeroConfTests_Mempool, StageChildren_Commit)
    EXPECT_EQ(checkTxOutIsSpent(snapshot, 1, 0), Types::INVALID_TXIO_KEY);
    EXPECT_EQ(checkTxOutIsSpent(snapshot, 1, 1), Types::INVALID_TXIO_KEY);
 
-   snapshot.commitNewZCs();
+   snapshot.mergeWithParents();
 
    EXPECT_TRUE(checkTxIsStaged(snapshot, 0));
    EXPECT_EQ(checkTxOutIsSpent(snapshot, 0, 0), Types::INVALID_TXIO_KEY);
@@ -1067,7 +1067,7 @@ TEST_F(ZeroConfTests_Mempool, StageChildren_Commit)
       EXPECT_EQ(checkTxOutIsSpent(snapshot, 2, 0), Types::INVALID_TXIO_KEY);
    }
 
-   snapshot.commitNewZCs();
+   snapshot.mergeWithParents();
 
    EXPECT_TRUE(checkTxIsStaged(snapshot, 2));
    EXPECT_TRUE(checkTxIsStaged(snapshot, 3));
@@ -1103,7 +1103,7 @@ TEST_F(ZeroConfTests_Mempool, StageChildren_Commit)
    auto spender3 = checkTxOutIsSpent(snapshot, 2, 0);
    EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender3), zcKeys_[4]);
 
-   snapshot.commitNewZCs();
+   snapshot.mergeWithParents();
 
    EXPECT_TRUE(checkTxIsStaged(snapshot, 2));
    EXPECT_TRUE(checkTxIsStaged(snapshot, 3));
@@ -1291,7 +1291,7 @@ TEST_F(ZeroConfTests_Mempool, DropParent_Commit)
       EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender2), zcKeys_[3]);
    }
 
-   snapshot.commitNewZCs();
+   snapshot.mergeWithParents();
 
    {
       EXPECT_TRUE(checkTxIsStaged(snapshot, 2));
@@ -1332,7 +1332,7 @@ TEST_F(ZeroConfTests_Mempool, DropParent_Commit)
       EXPECT_EQ(Types::getTxKeyFromTxIOKey(spender3), zcKeys_[3]);
    }
 
-   snapshot.commitNewZCs();
+   snapshot.mergeWithParents();
 
    {
       EXPECT_TRUE(checkIsDropped(snapshot, 0));
@@ -3202,8 +3202,8 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
    }
 
    {
-      ////spend 27 from wlt to assetWlt's first 2 unused addresses
-      ////send rest back to scrAddrA
+      // spend 27 from wallet1 to assetWlt's first 2 unused addresses
+      // send rest back to scrAddrD
 
       auto spendVal = 27 * COIN;
       Signing::Signer signer;
@@ -3316,9 +3316,6 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
    {
       Signing::Signer signer3;
 
-      //instantiate resolver feed overloaded object
-      auto assetFeed = std::make_shared<Signing::ResolverFeed_AssetWalletSingle>(assetWlt);
-
       //get utxo list for spend value
       auto unspentVec = DBTestUtils::getZCUTXOs(bdm, {
          addrVec[0],
@@ -3350,6 +3347,7 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
 
       //sign, verify then broadcast
       {
+         auto assetFeed = std::make_shared<Signing::ResolverFeed_AssetWalletSingle>(assetWlt);
          auto lock = assetWlt->lockDecryptedContainer({});
          signer3.setFeed(assetFeed);
          signer3.sign();
@@ -3429,10 +3427,6 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
       auto spendVal = 10 * COIN;
       Signing::Signer signer2;
 
-      //instantiate resolver feed
-      auto assetFeed =
-         std::make_shared<Signing::ResolverFeed_AssetWalletSingle>(assetWlt);
-
       //get utxo list for spend value
       auto unspentVec = DBTestUtils::getRBFUTXOs(bdm, {addrVec[0]});
 
@@ -3470,6 +3464,7 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
 
       //sign, verify then broadcast
       {
+         auto assetFeed = std::make_shared<Signing::ResolverFeed_AssetWalletSingle>(assetWlt);
          auto lock = assetWlt->lockDecryptedContainer({});
          signer2.setFeed(assetFeed);
          signer2.sign();

@@ -1342,7 +1342,7 @@ std::shared_ptr<MempoolSnapshot> MempoolSnapshot::copy(
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void MempoolSnapshot::commitNewZCs()
+void MempoolSnapshot::mergeWithParents()
 {
    //figure out depth and size of each mempool obj, merge if necessary
    if (data_->txioMap_.empty() &&
