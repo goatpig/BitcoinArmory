@@ -300,7 +300,9 @@ namespace Armory
          void queueGetDataResponse(std::shared_ptr<ZcGetPacket>);
          void queueBatch(std::shared_ptr<ZeroConfBatch>);
 
+         //for unit tests
          unsigned getMatcherMapSize(void) const;
+         uint32_t getTopZcID(void) const;
       };
 
       ////////
@@ -355,7 +357,7 @@ namespace Armory
             std::shared_ptr<MempoolSnapshot>) const;
 
          void increaseParserThreadPool(unsigned);
-         unsigned loadZeroConfMempool(bool);
+         unsigned loadMempool(bool);
          void reset(void);
 
          std::map<Types::TxKey, std::shared_ptr<ParsedTx>> purge(
@@ -394,7 +396,8 @@ namespace Armory
             std::shared_ptr<MempoolSnapshot>);
 
          void updateZCinDB(void);
-         void handleInvTx();
+         void updateZCinDB(ZcUpdateBatch);
+         void handleInvTx(void);
 
          BatchTxMap getBatchTxMap(
             std::shared_ptr<ZeroConfBatch>,
@@ -408,7 +411,6 @@ namespace Armory
          //action queue
          std::shared_future<std::shared_ptr<ZcPurgePacket>>
          pushNewBlockNotification(ReorganizationState);
-         unsigned getMatcherMapSize(void) const;
 
          // setup methods
          void init(std::shared_ptr<ScrAddrFilter>, bool);
@@ -449,6 +451,8 @@ namespace Armory
 
          //for unit tests
          unsigned getMergeCount(void) const;
+         unsigned getMatcherMapSize(void) const;
+         uint32_t getTopZcID(void) const;
       };
    } //namespace ZeroConf
 } //namespace Armory

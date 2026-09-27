@@ -558,11 +558,13 @@ void ZeroConfContainer::parseNewZC(
    std::unique_lock<std::mutex> lock(parserMutex_);
    ZcUpdateBatch batch;
 
+   std::set<Types::TxKey> droppedZcKeys;
    auto iter = zcMap.begin();
    while (iter != zcMap.end()) {
       if (iter->second->state == ParsedTxStatus::Mined ||
          iter->second->state == ParsedTxStatus::Invalid ||
          iter->second->state == ParsedTxStatus::Skip) {
+         droppedZcKeys.emplace(iter->first);
          zcMap.erase(iter++);
       } else {
          ++iter;
@@ -595,7 +597,6 @@ void ZeroConfContainer::parseNewZC(
 
    //zc logic
    std::set<Types::TxKey> addedZcKeys;
-   std::set<Types::TxKey> droppedZcKeys;
    for (const auto& newZCPair : zcMap) {
       const auto& txHash = newZCPair.second->getTxHash();
       if (Types::isTxKeyValid(ss->getKeyForHash(txHash))) {
@@ -876,61 +877,65 @@ void ZeroConfContainer::updateZCinDB()
       } catch (const Threading::StopBlockingLoop&) {
          break;
       }
-
-      if (!batch.hasData()) {
-         continue;
-      }
-
-      auto tx = db_->beginTransaction(
-         DB_SELECT::ZERO_CONF, LMDB::Mode::ReadWrite);
-      for (auto& zcPair : batch.zcToWrite) {
-         /*TODO: speed this up*/
-         StoredTx zcTx;
-         auto txObj = zcPair.second->getTxObj();
-         zcTx.createFromTx(txObj, true, true);
-         db_->putStoredZC(zcTx, zcPair.first);
-      }
-
-      for (const auto& txhash : batch.txHashes) {
-         //if the key is not to be found in the txMap_, this is a ZC txhash
-         tx->insert(
-            LMDB::DataRef{txhash.getSize(), txhash.getPtr()},
-            LMDB::DataRef{0, (const char*)nullptr}
-         );
-      }
-
-      for (auto& key : batch.keysToDelete) {
-         BinaryData keyWithPrefix;
-         keyWithPrefix.resize(7);
-         keyWithPrefix[0] = (uint8_t)DbPrefix::ZCDATA;
-         std::memcpy(keyWithPrefix.getPtr() + 1, &key, 6);
-         auto dbIter = tx->getIterator();
-         if (!dbIter.seekToStartsWith(keyWithPrefix.getRef())) {
-            continue;
-         }
-
-         std::set<BinaryData> ktd;
-         do {
-            auto thisKey = dbIter.getKeyRef();
-            if (!thisKey.startsWith(keyWithPrefix.getRef())) {
-               break;
-            }
-            ktd.emplace(thisKey);
-         } while (dbIter.advanceAndRead(DbPrefix::ZCDATA));
-
-         for (const auto& _key : ktd) {
-            tx->erase(LMDB::DataRef{_key.getSize(), _key.getPtr()});
-         }
-      }
-
-      for (const auto& _hash : batch.txHashesToDelete) {
-         tx->erase(LMDB::DataRef{_hash.getSize(), _hash.getPtr()});
-      }
-      batch.setCompleted(true);
+      updateZCinDB(std::move(batch));
    }
 }
 
-unsigned ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
+void ZeroConfContainer::updateZCinDB(ZcUpdateBatch batch)
+{
+   if (!batch.hasData()) {
+      return;
+   }
+   auto tx = db_->beginTransaction(DB_SELECT::ZERO_CONF, LMDB::Mode::ReadWrite);
+
+   for (auto& zcPair : batch.zcToWrite) {
+      /*TODO: speed this up*/
+      StoredTx zcTx;
+      auto txObj = zcPair.second->getTxObj();
+      zcTx.createFromTx(txObj, true, true);
+      db_->putStoredZC(zcTx, zcPair.first);
+   }
+
+   for (const auto& txhash : batch.txHashes) {
+      //if the key is not to be found in the txMap_, this is a ZC txhash
+      tx->insert(
+         LMDB::DataRef{txhash.getSize(), txhash.getPtr()},
+         LMDB::DataRef{0, (const char*)nullptr}
+      );
+   }
+
+   for (auto& key : batch.keysToDelete) {
+      BinaryData keyWithPrefix;
+      keyWithPrefix.resize(7);
+      keyWithPrefix[0] = (uint8_t)DbPrefix::ZCDATA;
+      std::memcpy(keyWithPrefix.getPtr() + 1, &key, 6);
+      auto dbIter = tx->getIterator();
+      if (!dbIter.seekToStartsWith(keyWithPrefix.getRef())) {
+         continue;
+      }
+
+      std::set<BinaryData> ktd;
+      do {
+         auto thisKey = dbIter.getKeyRef();
+         if (!thisKey.startsWith(keyWithPrefix.getRef())) {
+            break;
+         }
+         ktd.emplace(thisKey);
+      } while (dbIter.advanceAndRead(DbPrefix::ZCDATA));
+
+      for (const auto& _key : ktd) {
+         tx->erase(LMDB::DataRef{_key.getSize(), _key.getPtr()});
+      }
+   }
+
+   for (const auto& _hash : batch.txHashesToDelete) {
+      tx->erase(LMDB::DataRef{_hash.getSize(), _hash.getPtr()});
+   }
+   batch.setCompleted(true);
+}
+
+////////
+unsigned ZeroConfContainer::loadMempool(bool clearMempool)
 {
    unsigned topId = 0;
    std::map<Types::TxKey, std::shared_ptr<ParsedTx>> zcMap;
@@ -986,13 +991,10 @@ unsigned ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
    if (clearMempool == true) {
       LOGWARN << "Mempool was flagged for deletion!";
       ZcUpdateBatch batch;
-      auto fut = batch.getCompletedFuture();
-
       for (const auto& zcTx : zcMap) {
          batch.keysToDelete.emplace(zcTx.first);
       }
-      updateBatch_.push_back(std::move(batch));
-      fut.wait();
+      updateZCinDB(std::move(batch));
    } else if (!zcMap.empty()) {
       LOGDEBUG << "parsing " << zcMap.size() << " txns from mempool";
       preprocessZcMap(zcMap, db_, bd_);
@@ -1020,7 +1022,7 @@ void ZeroConfContainer::init(std::shared_ptr<ScrAddrFilter> saf,
    LOGINFO << "Enabling zero-conf tracking";
 
    scrAddrMap_ = saf->getZcFilterMapPtr();
-   auto topId = loadZeroConfMempool(clearMempool);
+   auto topId = loadMempool(clearMempool);
    actionQueue_ = std::make_unique<ZcActionQueue>(
       [this](ZcActionStruct zas){ parseNewZC(std::move(zas)); },
       zcPreprocessQueue_, topId);
@@ -1673,6 +1675,9 @@ BatchTxMap ZeroConfContainer::getBatchTxMap(
 
 unsigned ZeroConfContainer::getMatcherMapSize() const
 {
+   if (actionQueue_ == nullptr) {
+      return UINT32_MAX;
+   }
    return actionQueue_->getMatcherMapSize();
 }
 
@@ -1683,6 +1688,14 @@ unsigned ZeroConfContainer::getMergeCount() const
       return 0;
    }
    return ss->getMergeCount();
+}
+
+uint32_t ZeroConfContainer::getTopZcID() const
+{
+   if (actionQueue_ == nullptr) {
+      return UINT32_MAX;
+   }
+   return actionQueue_->getTopZcID();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1920,9 +1933,15 @@ void ZcActionQueue::getDataToBatchMatcherThread()
    }
 }
 
+////////
 unsigned ZcActionQueue::getMatcherMapSize() const
 {
    return matcherMapSize_.load(std::memory_order_relaxed);
+}
+
+uint32_t ZcActionQueue::getTopZcID() const
+{
+   return topId_.load(std::memory_order_relaxed);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

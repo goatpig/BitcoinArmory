@@ -215,6 +215,7 @@ namespace Armory
          void copyFrom(const MempoolData&);
 
          std::shared_ptr<ParsedTx> getTx(Types::TxKey) const;
+         size_t getTxCount(void) const;
          std::shared_ptr<const TxIOPair> getTxio(Types::TxIOKey) const;
          Types::TxKey getKeyForHash(const Types::TxHash&) const;
          bool isTxOutSpentByZC(Types::TxIOKey) const;
@@ -268,6 +269,7 @@ namespace Armory
          const Types::TxHash& getHashForKey(Types::TxKey) const;
          bool hasHash(const Types::TxHash&) const;
 
+         size_t getTxCount(void) const;
          Types::ZcId getTopZcID(void) const;
          bool isTxOutSpentByZC(Types::TxIOKey) const;
 
