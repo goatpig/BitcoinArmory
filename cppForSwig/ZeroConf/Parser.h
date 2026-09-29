@@ -22,6 +22,7 @@
 #include <Utils/ArmoryErrors.h>
 #include <Utils/ThreadSafeClasses.h>
 #include <Utils/ReentrantLock.h>
+#include <Utils/AtomicSharedPtr.h>
 #include <BlockchainDatabase/Blockchain.h>
 
 #define GETZC_THREADCOUNT 5
@@ -309,7 +310,7 @@ namespace Armory
       class ZeroConfContainer
       {
       private:
-         std::atomic<std::shared_ptr<MempoolSnapshot>> snapshot_;
+         AtomicSharedPtr<MempoolSnapshot> snapshot_;
 
          //<txHash, map<opId, ZcKeys>>
          std::map<Types::TxHash,std::map<unsigned, Types::TxKey>> outPointsSpentByKey_;

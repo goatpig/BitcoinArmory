@@ -18,6 +18,7 @@
 
 #include <Utils/BinaryData.h>
 #include <Utils/ReentrantLock.h>
+#include <Utils/AtomicSharedPtr.h>
 
 namespace Armory
 {
@@ -142,7 +143,7 @@ namespace Node
          protected:
             std::function<void(void)> nodeStatusLambda_;
             ChainStatus nodeChainStatus_;
-            std::atomic<std::shared_ptr<EstimateCache>> currentEstimateCache_;
+            AtomicSharedPtr<EstimateCache> currentEstimateCache_;
 
          private:
             void initAfterLock(void) override {}

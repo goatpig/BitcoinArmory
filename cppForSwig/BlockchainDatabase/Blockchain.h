@@ -20,6 +20,7 @@
 #include <functional>
 
 #include <Utils/BinaryData.h>
+#include <Utils/AtomicSharedPtr.h>
 #include "BlockObj.h"
 
 class BlockData;
@@ -97,7 +98,7 @@ namespace Armory
       std::set<Types::BlockId> invalidBlockIds_;
 
       std::vector<HeaderPtr> newlyParsedHeaders_;
-      std::atomic<HeaderPtr> topBlockPtr_;
+      AtomicSharedPtr<HeaderPtr::element_type> topBlockPtr_;
       Types::BlockId idOfTopBlock_ = 0;
 
       std::atomic<Types::BlockId> highestBlockID_;
