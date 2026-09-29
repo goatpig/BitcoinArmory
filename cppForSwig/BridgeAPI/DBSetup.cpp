@@ -365,7 +365,11 @@ namespace {
          if (filesize == SIZE_MAX) {
             continue;
          }
-         if (filesize >= 8 && firstBlkFile.empty()) {
+         //only blkXXXXX.dat files hold blocks; xor.dat (8 bytes) and
+         //rev files must not be picked, whatever the directory order
+         const auto fname = blkFilePath.filename().string();
+         if (filesize >= 8 && firstBlkFile.empty() &&
+            fname.starts_with("blk") && blkFilePath.extension() == ".dat") {
             firstBlkFile = blkFilePath;
          }
          totalChainSize += filesize;
