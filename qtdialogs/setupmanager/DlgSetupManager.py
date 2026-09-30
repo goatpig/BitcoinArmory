@@ -445,7 +445,7 @@ class DlgSetupManager(ArmoryDialog):
          self._setSettingIfChanged(
             'RemoteIpAddr', dbSettings['ipAddr'])
          self._setSettingIfChanged(
-            'RemoteIpPort', dbSettings['ipPort'])
+            'RemoteIpPort', dbSettings['dbPort'])
       elif dbScenario == SCENARIO_REMOTE_PEER:
          self._setSettingIfChanged(
             'RemotePeerKey', dbSettings['peerKey'])
@@ -502,11 +502,13 @@ class DlgSetupManager(ArmoryDialog):
       elif scenario == SCENARIO_REMOTE_PEER:
          success, error = self._connectToPeer(params)
          self._handleConnectionAttemptFinality(success, error)
+         return success, error
       elif scenario == SCENARIO_REMOTE_IP:
          success, error = self._connectToIp(params)
          self._handleConnectionAttemptFinality(success, error)
-
-      raise ValueError(f"Unknown scenario: {scenario}")
+         return success, error
+      else:
+         return False, f"Unknown scenario: {scenario}"
 
    def _handleAutomationReply(self, reply):
       TheSignalExecution.executeMethod(
@@ -569,8 +571,8 @@ class DlgSetupManager(ArmoryDialog):
       5. Result callback fires with actual success/failure
       """
       dbAddr = params.get('ipAddr', '')
-      dbPort = params.get(
-         'dbPort', ARMORYDB_DEFAULT_PORT)
+      dbPort = int(params.get(
+         'dbPort', ARMORYDB_DEFAULT_PORT))
 
       if not dbAddr:
          raise ValueError(

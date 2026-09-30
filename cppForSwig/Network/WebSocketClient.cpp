@@ -545,7 +545,7 @@ bool WebSocketClient::processAEADHandshake(const WebSocketMessagePartial& msgObj
    if (serverPubkeyProm_ != nullptr) {
       //wait on server pubkey announce ACK/nACK
       auto fut = serverPubkeyProm_->get_future();
-      fut.wait();
+      valid1WayServerKey_ = fut.get();
       serverPubkeyProm_.reset();
    }
 
@@ -569,7 +569,6 @@ bool WebSocketClient::processAEADHandshake(const WebSocketMessagePartial& msgObj
             serverPubkeyProm_ = std::make_shared<std::promise<bool>>();
             promptUser(msgbdr, servName_);
          }
-
          return true;
       }
 
@@ -631,6 +630,11 @@ void WebSocketClient::setPubkeyPromptLambda(
    const std::function<bool(const BinaryData&)>& lbd)
 {
    userPromptLambda_ = lbd;
+}
+
+bool WebSocketClient::valid1WayServerKey() const
+{
+   return valid1WayServerKey_;
 }
 
 void WebSocketClient::promptUser(

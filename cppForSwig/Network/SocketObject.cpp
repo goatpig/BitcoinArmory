@@ -23,6 +23,8 @@ using namespace Armory::Network;
 #ifdef _WIN32
 //i dont know how to get linkage for this with MSYS2 halp T_T
 char *gai_strerrorA(int) { return nullptr; }
+#else
+#include <sys/ioctl.h>
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -317,7 +319,6 @@ bool PersistentSocket::testConnection()
 #ifndef _WIN32
 void PersistentSocket::socketService_nix()
 {
-   int readIncrement = 8192;
    int timeout = 100;
    std::stringstream errorss;
    std::exception_ptr exceptptr = nullptr;
@@ -363,15 +364,14 @@ void PersistentSocket::socketService_nix()
       }
    };
 
-   bool loop = true;
-   while (loop) {
+   while (true) {
       auto status = poll(pfd, 2, timeout);
       if (status == 0) {
          continue;
       } else if (status == -1) {
          //poll error, process and exit loop
          auto errornum = errno;
-         LOGERR << "poll() error in readFromSocketThread: " << errornum;
+         LOGERR << "poll() error in socketService_nix: " << errornum;
          break;
       }
 
@@ -389,50 +389,39 @@ void PersistentSocket::socketService_nix()
       }
 
       if (pfd[1].revents & POLLNVAL) {
-         LOGERR << "POLLNVAL in readFromSocketThread";
+         LOGERR << "POLLNVAL in socketService_nix";
       }
 
       //exceptions
       if (pfd[1].revents & POLLERR) {
          //break out of poll loop
-         LOGERR << "POLLERR error in readFromSocketThread";
+         LOGERR << "POLLERR error in socketService_nix";
          break;
       }
 
       if (pfd[1].revents & POLLIN) {
-         //read socket
-         std::vector<uint8_t> readdata;
-         readdata.resize(readIncrement);
-
-         size_t totalread = 0;
+         //get amount of data buffered by socket
          int readAmt;
-
-         while (true) {
-            readAmt = recv(sockfd_,
-               (char*)&readdata[0] + totalread,
-               readIncrement, 0
-            );
-
-            if (readAmt <= 0) {
-               auto errornum = errno;
-               if (errornum == EAGAIN || errornum == EWOULDBLOCK) {
-                  break;
-               }
-               LOGERR << "recv error: " << errornum << ", aborting";
-               loop = false;
+         if (ioctl(sockfd_, FIONREAD, &readAmt) == 0) {
+            if (readAmt == 0) {
+               //pollin notified socket is ready to read but buffer is empty
+               //treat as socket has been cleaned up
+               LOGDEBUG << "socket cleaned up";
                break;
             }
-
-            totalread += readAmt;
-            if (readAmt < readIncrement) {
+            //read it and push it into the queue
+            std::vector<uint8_t> readdata;
+            readdata.resize(readAmt);
+            int totalRead = recv(sockfd_, &readdata[0], readAmt, 0);
+            if (totalRead == readAmt) {
+               readQueue_.push_back(std::move(readdata));
+            } else {
+               LOGWARN << std::format(
+                  "failed to read socket data with error: {}! dropping socket", errno);
                break;
             }
-            readdata.resize(totalread + readIncrement);
-         }
-
-         if (totalread > 0) {
-            readdata.resize(totalread);
-            readQueue_.push_back(move(readdata));
+         } else {
+            LOGWARN << "ioctl failed with error: " << errno;
          }
       }
 

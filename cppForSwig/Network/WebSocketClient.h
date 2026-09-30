@@ -124,6 +124,7 @@ namespace Armory
          BinaryData leftOverData_;
 
          std::shared_ptr<std::promise<bool>> serverPubkeyProm_;
+         bool valid1WayServerKey_ = false;
          std::function<bool(const BinaryData&)> userPromptLambda_;
 
       public:
@@ -151,6 +152,7 @@ namespace Armory
          std::pair<unsigned, unsigned> getRekeyCount(void) const;
          void addPublicKey(const SecureBinaryData&, bool);
          void setPubkeyPromptLambda(const std::function<bool(const BinaryData&)>&);
+         bool valid1WayServerKey(void) const;
 
          //virtuals
          SocketType type(void) const override;

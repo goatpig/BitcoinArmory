@@ -156,6 +156,7 @@ namespace AsyncClient
       std::pair<unsigned, unsigned> getRekeyCount(void) const;
       void setCheckServerKeyPromptLambda(
          const std::function<bool(const BinaryData&)>&);
+      bool valid1WayServerKey(void) const;
       void addPublicKey(const SecureBinaryData&, bool);
 
       //connectivity

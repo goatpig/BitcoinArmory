@@ -634,7 +634,7 @@ class DlgSettings(ArmoryDialog):
       self.frmAddrType.setLayout(frmAddrLayout)
 
    #############################################################################
-   def accept(self, *args):
+   def accept(self):
       if self.chkManageSatoshi.isChecked():
          # Check valid path is supplied for bitcoin installation
          pathExe = str(self.edtSatoshiExePath.text()).strip()
@@ -729,7 +729,7 @@ class DlgSettings(ArmoryDialog):
          self.main.createCombinedLedger()
       except:
          pass
-      super(DlgSettings, self).accept(*args)
+      super(DlgSettings, self).accept()
 
    #############################################################################
    def setUsermodeDescr(self):

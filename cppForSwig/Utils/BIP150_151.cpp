@@ -1145,8 +1145,8 @@ int BIP150StateMachine::getAuthreplyData(BinaryData& output, bool responderSent)
       Client side 1-way auth: return own pubkey
       */
       auto ownPubKey = peerView_->getPubKeyRef("own");
-      LOGERR << "BIP 150 - own public key is not 33 bytes long";
       if (ownPubKey.getSize() != BIP151PUBKEYSIZE) {
+         LOGERR << "BIP 150 - own public key is not 33 bytes long";
          return errorSM(retVal);
       }
       std::memcpy(output.getPtr(), ownPubKey.getPtr(), BIP151PUBKEYSIZE);

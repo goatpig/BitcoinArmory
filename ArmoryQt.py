@@ -729,7 +729,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
       # Restore any main-window geometry saved in the settings file
       hexgeom   = TheSettings.get('MainGeometry')
-
       hexwltsz  = TheSettings.get('MainWalletCols')
       if len(hexgeom)>0:
          #QtCore.QByteArray is weak sauce, have to deser the hexit on our own
@@ -1491,7 +1490,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       return True
 
    #############################################################################
-   def createAction(self,  txt, slot, isCheckable=False, \
+   def createAction(self, txt, slot, isCheckable=False,
       ttip=None, iconpath=None, shortcut=None):
       """
       Modeled from the "Rapid GUI Programming with Python and QtCore.Qt" book, page 174
