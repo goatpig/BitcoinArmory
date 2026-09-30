@@ -21,6 +21,7 @@
 
 #include <Utils/ArmoryConfig.h>
 #include <Utils/FileUtils.h>
+#include <Utils/DBUtils.h>
 #include <Utils/UniversalTimer.h>
 #include <Wallets/IOHeader.h>
 #include <Wallets/Seeds/Seeds.h>
@@ -2477,7 +2478,7 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_RBF)
       bw.put_uint32_t(1); //flagged sequence number
 
       //spend script, classic P2PKH
-      BinaryData fakeAddr = 
+      BinaryData fakeAddr =
          READHEX("0101010101010101010101010101010101010101");
       BinaryWriter spendScript;
       spendScript.put_uint8_t(OP_DUP);
@@ -3816,7 +3817,6 @@ TEST_F(ZeroConfTests_FullNode, PoisonTxHints)
    bdvPtr.reset();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 //add a zc, add a txhint for that hash that points to a valid mined tx,
 //then try to spend from first zc
 TEST_F(ZeroConfTests_FullNode, PoisonTxHints2)
@@ -4117,6 +4117,186 @@ TEST_F(ZeroConfTests_FullNode, PoisonTxHints2)
 
    //cleanup
    bdvPtr.reset();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// zc that don't affect the registered wallets in bare/full node should
+// not be saved in db
+TEST_F(ZeroConfTests_FullNode, DBBloat)
+{
+   BinaryData mockZC1, mockZC2;
+
+   {
+      //build bogus zc
+      BinaryWriter bw;
+      bw.put_uint32_t(1); //version number
+
+      //input
+      bw.put_var_int(1); //1 input, no need to complicate this
+      bw.put_BinaryData(Cryptography::PRNG::fortuna.generateRandom(32)); //hash of tx we are spending
+      bw.put_uint32_t(0); //output id
+      bw.put_var_int(0); //empty script, zc parser does not check sigs at any rate
+      bw.put_uint32_t(1); //flagged sequence number
+
+      //spend script, classic P2PKH
+      BinaryData fakeAddr =
+         READHEX("0101010101010101010101010101010101010101");
+      BinaryWriter spendScript;
+      spendScript.put_uint8_t(OP_DUP);
+      spendScript.put_uint8_t(OP_HASH160);
+      spendScript.put_var_int(fakeAddr.getSize());
+      spendScript.put_BinaryData(fakeAddr); //bogus address
+      spendScript.put_uint8_t(OP_EQUALVERIFY);
+      spendScript.put_uint8_t(OP_CHECKSIG);
+
+      auto& spendScriptbd = spendScript.getData();
+
+      //output
+      bw.put_var_int(1); //txout count
+      bw.put_uint64_t(30 * COIN); //value
+      bw.put_var_int(spendScriptbd.getSize()); //script length
+      bw.put_BinaryData(spendScriptbd); //spend script
+
+      //locktime
+      bw.put_uint32_t(UINT32_MAX);
+
+      mockZC1 = bw.getData();
+   }
+
+   {
+      //build another bogus ZC
+      BinaryWriter bw;
+      bw.put_uint32_t(1); //version number
+
+      //input
+      bw.put_var_int(1); 
+      bw.put_BinaryData(Cryptography::PRNG::fortuna.generateRandom(32));
+      bw.put_uint32_t(3);
+      bw.put_var_int(0);
+      bw.put_uint32_t(1);
+
+      //spend script, classic P2PKH
+      BinaryWriter spendScript;
+      spendScript.put_uint8_t(OP_DUP);
+      spendScript.put_uint8_t(OP_HASH160);
+      spendScript.put_var_int(TestChain::addrA.getSize());
+      spendScript.put_BinaryData(TestChain::addrA); //spend back to self
+      spendScript.put_uint8_t(OP_EQUALVERIFY);
+      spendScript.put_uint8_t(OP_CHECKSIG);
+
+      auto& spendScriptbd = spendScript.getData();
+
+      //output
+      bw.put_var_int(1);
+      bw.put_uint64_t(11 * COIN); //value
+      bw.put_var_int(spendScriptbd.getSize()); //script length
+      bw.put_BinaryData(spendScriptbd); //spend script
+
+      //locktime
+      bw.put_uint32_t(UINT32_MAX);
+      mockZC2 = bw.getData();
+   }
+
+   auto mockZC1Hash = BtcUtils::getHash256(mockZC1);
+   auto mockZC2Hash = BtcUtils::getHash256(mockZC2);
+
+   DBTestUtils::ZcVector zcVec;
+   zcVec.push_back(mockZC1, 0, 0);
+   zcVec.push_back(mockZC2, 0, 0);
+
+   //copy the first 4 blocks
+   TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
+   clients_->init();
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
+
+   std::vector<BinaryData> scrAddrVec {
+      TestChain::scrAddrA,
+      TestChain::scrAddrB,
+      TestChain::scrAddrC
+   };
+
+   const std::vector<BinaryData> lb1ScrAddrs {
+      TestChain::lb1ScrAddr,
+      TestChain::lb1ScrAddrP2SH
+   };
+   const std::vector<BinaryData> lb2ScrAddrs {
+      TestChain::lb2ScrAddr,
+      TestChain::lb2ScrAddrP2SH
+   };
+
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+      false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
+      false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
+      false);
+   auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
+
+   //wait on signals
+   DBTestUtils::goOnline(clients_, bdvID);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
+
+   auto bdm = theBDMt_->bdm();
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 50 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+
+   //push the 2 ZC
+   DBTestUtils::pushNewZc(theBDMt_, zcVec);
+   DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
+
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrA, bdm), 61 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrB, bdm), 30 * COIN);
+   EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 55 * COIN);
+
+   //check mempool
+   Types::ZcId zc2Id;
+   {
+      auto zcParser = bdm->zeroConfCont();
+      ASSERT_EQ(zcParser->getTopZcID(), 2);
+      auto ss = zcParser->getSnapshot();
+      ASSERT_NE(ss, nullptr);
+      ASSERT_EQ(ss->getTxCount(), 1);
+
+      auto zcKey1 = ss->getKeyForHash(mockZC1Hash);
+      ASSERT_FALSE(Types::isTxKeyValid(zcKey1));
+      ASSERT_FALSE(Types::isThisAZCKey(zcKey1));
+
+      auto zcKey2 = ss->getKeyForHash(mockZC2Hash);
+      ASSERT_TRUE(Types::isTxKeyValid(zcKey2));
+      ASSERT_TRUE(Types::isThisAZCKey(zcKey2));
+      zc2Id = Types::getZcIdFromTxKey(zcKey2);
+      ASSERT_EQ(zc2Id, 1);
+   }
+
+   //check db
+   {
+      auto db = bdm->getIFace();
+      auto tx = db->beginTransaction(DB_SELECT::ZERO_CONF, LMDB::Mode::ReadOnly);
+
+      //zc db should have entries
+      auto dbIter = tx->getIterator();
+      ASSERT_TRUE(dbIter.seekToStartsWith(DbPrefix::ZCDATA));
+
+      //check all keys in zc db
+      do {
+         auto keyRef = dbIter.getKeyRef();
+         if (keyRef.getSize() == 9) {
+            Types::TxKey zckey;
+            std::memcpy(&zckey, keyRef.getPtr() + 1, sizeof(Types::TxKey));
+            ASSERT_TRUE(Types::isThisAZCKey(zckey));
+            auto zcId = Types::getZcIdFromTxKey(zckey);
+            ASSERT_EQ(zcId, zc2Id);
+         } else {
+            ASSERT_EQ(keyRef.getSize(), 32);
+            ASSERT_EQ(keyRef, mockZC2Hash);
+         }
+      } while (dbIter.advanceAndRead(DbPrefix::ZCDATA));
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

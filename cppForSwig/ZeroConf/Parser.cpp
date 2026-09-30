@@ -654,12 +654,12 @@ void ZeroConfContainer::parseNewZC(
             continue;
          }
          //in bare/full node, zcs that cannot be resolved do not affect
-         //our list of addresses, drop them
-         droppedZcKeys.emplace(newZCPair.first);
+         //our list of addresses, do not track them
+         batch.zcToWrite.erase(newZCPair.first);
       }
    }
 
-   //get rid of invalid zc, only applies to bare/full node
+   //get rid of invalid/mined zc
    dropZCs(ss, droppedZcKeys);
 
    if (updateDB && batch.hasData()) {
@@ -904,7 +904,6 @@ void ZeroConfContainer::updateZCinDB(ZcUpdateBatch batch)
    }
 
    for (const auto& txhash : batch.txHashes) {
-      //if the key is not to be found in the txMap_, this is a ZC txhash
       tx->insert(
          LMDB::DataRef{txhash.getSize(), txhash.getPtr()},
          LMDB::DataRef{0, (const char*)nullptr}
