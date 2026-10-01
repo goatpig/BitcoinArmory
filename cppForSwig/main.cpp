@@ -60,7 +60,7 @@ int main(int argc, char* argv[])
 
    auto logFilePath = Config::Pathing::logFilePath(LOG_FILE_NAME).string();
    LOGDISABLESTDOUT();
-   STARTLOGGING(logFilePath, LogLvlDebug);
+   STARTLOGGING(logFilePath, LogLvlInfo);
    if (Config::NetworkSettings::ephemeralPeers()) {
       if (Config::NetworkSettings::oneWayAuth()) {
          LOGERR << "--ephemeral and --oneWayAuth are mutually exclusive for db";

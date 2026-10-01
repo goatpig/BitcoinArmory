@@ -371,7 +371,7 @@ namespace Node
                std::vector<uint8_t>>> readDataStack_;
 
          public:
-            Socket(const std::string&, Armory::Network::port_t,
+            Socket(const std::string&, Armory::Network::port_t, const std::string&,
                std::shared_ptr<Armory::Threading::BlockingQueue<std::vector<uint8_t>>>);
 
             SocketType type(void) const override;
@@ -443,12 +443,13 @@ namespace Node
          {
          private:
             const std::string addr_;
-            Armory::Network::port_t port_;
+            const Armory::Network::port_t port_;
+            const std::string name_;
+
             struct sockaddr node_addr_;
             std::unique_ptr<Socket> socket_;
 
             std::mutex connectMutex_, pollMutex_, writeMutex_;
-            std::unique_ptr<std::promise<bool>> connectedPromise_ = nullptr;
             std::unique_ptr<std::promise<bool>> verackPromise_ = nullptr;
             std::atomic<bool> nodeConnected_;
 
@@ -458,12 +459,12 @@ namespace Node
 
             std::exception_ptr select_except_ = nullptr;
             std::exception_ptr process_except_ = nullptr;
-            std::future<bool> shutdownFuture_;
+            std::future<void> shutdownFuture_;
             uint32_t topBlock_ = UINT32_MAX;
 
          private:
             void init(void);
-            void connectLoop(void);
+            void connectLoop(std::promise<void>);
 
             void processDataStackThread(void);
             void processPayload(std::vector<std::unique_ptr<Payload>>);
@@ -484,7 +485,7 @@ namespace Node
 
          public:
             Peer(const std::string&, Armory::Network::port_t,
-               MagicWordType, bool);
+               const std::string&, MagicWordType, bool);
             ~Peer(void);
 
             //virtuals

@@ -15,8 +15,9 @@ using namespace Armory::Network;
 
 ///////////////////////////////////////////////////////////////////////////////
 // HttpSocket
-HttpSocket::HttpSocket(const std::string& addr, port_t port) :
-   SimpleSocket(addr, port)
+HttpSocket::HttpSocket(const std::string& addr, port_t port,
+   const std::string& name) :
+   SimpleSocket(addr, port, name)
 {
    messageWithPrecacheHeaders_ = make_unique<HttpMessage>(getAddrStr());
 }
@@ -80,7 +81,8 @@ bool HttpSocket::processPacket(
 
    //no content-length header was found, abort
    if (currentRead_.content_length_ == -1) {
-      throw HttpError("failed to find http header response packet");
+      throw HttpError(std::format(
+         "failed to find http header response packet ({})", name_));
    }
 
    //check the total amount of data accumulated matches the advertised

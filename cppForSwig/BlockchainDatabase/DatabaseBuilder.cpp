@@ -234,9 +234,11 @@ namespace {
       }
       totalWriteCount += localWriteCount;
       auto hintsInMem = totalHintsInMemory.load(std::memory_order_relaxed);
-      std::cout << "wrote " << localWriteCount << " hints in " <<
-         elapsed << " - total: " << totalWriteCount <<
-         "/" << totalHints << ", in mem: " << hintsInMem << std::endl;
+      LOGDEBUG << std::format(
+         "wrote {} hints in {} - total: {}/{}, in mem: {}",
+         localWriteCount, elapsed,
+         totalWriteCount, totalHints,
+         hintsInMem);
       return hintsInMem > (256 * writeThreshold / 2);
    }
 }

@@ -32,17 +32,18 @@ char *gai_strerrorA(int) { return nullptr; }
 //// SocketPrototype
 //
 ///////////////////////////////////////////////////////////////////////////////
-SocketPrototype::SocketPrototype() :
-   addr_(""), port_(UINT16_MAX)
+SocketPrototype::SocketPrototype(const std::string& name) :
+   addr_(""), port_(UINT16_MAX), name_(name)
 {}
 
 ////////
 SocketPrototype::SocketPrototype(const std::string& addr,
-   port_t port, bool doInit) :
-   addr_(addr), port_(port)
+   port_t port, const std::string& name, bool doInit) :
+   addr_(addr), port_(port), name_(name)
 {
    if (addr.empty() || port == 0 || port == UINT16_MAX) {
-      throw std::runtime_error("invalid addr/port");
+      throw std::runtime_error(std::format(
+         "invalid addr/port for {}", name_));
    }
 
    if (doInit) {
@@ -50,15 +51,8 @@ SocketPrototype::SocketPrototype(const std::string& addr,
    }
 }
 
-////////
 SocketPrototype::~SocketPrototype()
 {}
-
-///////////////////////////////////////////////////////////////////////////////
-bool SocketPrototype::isBlocking() const
-{
-   return blocking_;
-}
 
 ////////
 const std::string& SocketPrototype::getAddrStr() const
@@ -67,12 +61,6 @@ const std::string& SocketPrototype::getAddrStr() const
 }
 
 ////////
-bool SocketPrototype::running() const
-{
-   return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
 void SocketPrototype::init()
 {
    //resolve address
@@ -86,7 +74,7 @@ void SocketPrototype::init()
 #ifdef _WIN32
    //somehow getaddrinfo doesnt handle localhost on Windows
    std::string addrstr = addr_;
-   if(addr_ == "localhost") {
+   if (addr_ == "localhost") {
       addrstr = "127.0.0.1";
    }
 #else
@@ -97,28 +85,30 @@ void SocketPrototype::init()
    getaddrinfo(addrstr.c_str(), portStr.c_str(), &hints, &result);
    for (auto ptr = result; ptr != nullptr; ptr = ptr->ai_next) {
       if (ptr->ai_family == AF_INET) {
-         memcpy(&serv_addr_, ptr->ai_addr, sizeof(sockaddr_in));
-         memcpy(&serv_addr_.sa_data, &ptr->ai_addr->sa_data, 14);
+         std::memcpy(&serv_addr_, ptr->ai_addr, sizeof(sockaddr_in));
+         std::memcpy(&serv_addr_.sa_data, &ptr->ai_addr->sa_data, 14);
          break;
       }
-      throw std::runtime_error("unsupported remote address format");
+      throw std::runtime_error(std::format(
+         "unsupported remote address format for {}", name_));
    }
    freeaddrinfo(result);
 }
 
-///////////////////////////////////////////////////////////////////////////////
 SOCKET SocketPrototype::openSocket(bool blocking)
 {
    SOCKET sockfd = SOCK_MAX;
    try {
       sockfd = socket(serv_addr_.sa_family, SOCK_STREAM, 0);
       if (sockfd == SOCK_MAX) {
-         throw SocketError("failed to create socket");
+         throw SocketError(std::format(
+            "failed to create socket for {}", name_));
       }
       auto result = connect(sockfd, &serv_addr_, sizeof(serv_addr_));
       if (result < 0) {
          closeSocket(sockfd);
-         throw SocketError("failed to connect to server");
+         throw SocketError(std::format(
+            "failed to connect to server for {}", name_));
       }
       setBlocking(sockfd, blocking);
    } catch (const SocketError &) {
@@ -128,7 +118,6 @@ SOCKET SocketPrototype::openSocket(bool blocking)
    return sockfd;
 }
 
-///////////////////////////////////////////////////////////////////////////////
 void SocketPrototype::closeSocket(SOCKET& sockfd)
 {
    if (sockfd == SOCK_MAX) {
@@ -142,7 +131,7 @@ void SocketPrototype::closeSocket(SOCKET& sockfd)
    sockfd = SOCK_MAX;
 }
 
-///////////////////////////////////////////////////////////////////////////////
+////////
 bool SocketPrototype::testConnection()
 {
    try {
@@ -157,7 +146,7 @@ bool SocketPrototype::testConnection()
    }
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
 void SocketPrototype::setBlocking(SOCKET sock, bool setblocking)
 {
    if (sock == SOCK_MAX) {
@@ -166,7 +155,8 @@ void SocketPrototype::setBlocking(SOCKET sock, bool setblocking)
 #ifdef WIN32
    unsigned long mode = (unsigned long)!setblocking;
    if (ioctlsocket(sock, FIONBIO, &mode) != 0) {
-      throw SocketError("failed to set blocking mode on socket");
+      throw SocketError(std::format(
+         "failed to set blocking mode on socket {}", name_));
    }
 #else
    int flags = fcntl(sock, F_GETFL, 0);
@@ -177,41 +167,43 @@ void SocketPrototype::setBlocking(SOCKET sock, bool setblocking)
    flags = setblocking ? (flags & ~O_NONBLOCK) : (flags | O_NONBLOCK);
    int rt = fcntl(sock, F_SETFL, flags);
    if (rt != 0) {
-      std::cout << "fcntl returned " << rt << std::endl;
-      std::cout << "error: " << strerror(errno);
-      throw SocketError("failed to set blocking mode on socket");
+      throw SocketError(std::format(
+         "failed to set blocking mode on socket {}", name_));
    }
 #endif
 
    blocking_ = setblocking;
 }
 
-///////////////////////////////////////////////////////////////////////////////
+bool SocketPrototype::isBlocking() const
+{
+   return blocking_;
+}
+
+////////
 void SocketPrototype::listen(AcceptCallback callback, SOCKET& sockfd)
 {
    try {
       sockfd = socket(serv_addr_.sa_family, SOCK_STREAM, 0);
       if (sockfd == SOCK_MAX) {
-         throw SocketError("failed to create socket");
+         throw SocketError(std::format("failed to create socket {}", name_));
       }
 
       if (::bind(sockfd, &serv_addr_, sizeof(serv_addr_)) < 0) {
          closeSocket(sockfd);
-         throw SocketError("failed to bind socket");
+         throw SocketError(std::format("failed to bind socket {}", name_));
       }
 
       if (::listen(sockfd, 10) < 0) {
          closeSocket(sockfd);
-         throw SocketError("failed to listen to socket");
+         throw SocketError(std::format("failed to listen to socket {}", name_));
       }
    } catch (const SocketError&) {
       closeSocket(sockfd);
       return;
    }
 
-   std::stringstream errorss;
    std::exception_ptr exceptptr = nullptr;
-
    struct pollfd pfd;
    pfd.fd = sockfd;
    pfd.events = POLLIN;
@@ -233,13 +225,15 @@ void SocketPrototype::listen(AcceptCallback callback, SOCKET& sockfd)
 #else
             auto errornum = errno;
 #endif
-            errorss << "poll() error in readFromSocketThread: " << errornum;
-            LOGERR << errorss.str();
-            throw SocketError(errorss.str());
+            auto errStr = std::format(
+               "poll error during listen ({}): {}",
+               name_, errornum);
+            LOGERR << errStr;
+            throw SocketError(errStr);
          }
 
          if (pfd.revents & POLLNVAL) {
-            throw SocketError("POLLNVAL in readFromSocketThread");
+            throw SocketError(std::format("POLLNVAL in listen ({})", name_));
          }
 
          //exceptions
@@ -247,9 +241,9 @@ void SocketPrototype::listen(AcceptCallback callback, SOCKET& sockfd)
             //TODO: grab socket error code, pass error to callback
 
             //break out of poll loop
-            errorss << "POLLERR error in readFromSocketThread";
-            LOGERR << errorss.str();
-            throw SocketError(errorss.str());
+            auto errStr = std::format("POLLERR error in listen ({})", name_);
+            LOGERR << errStr;
+            throw SocketError(errStr);
          }
 
          if (pfd.revents & POLLIN) {
@@ -272,24 +266,19 @@ void SocketPrototype::listen(AcceptCallback callback, SOCKET& sockfd)
 //// PersistentSocket
 //
 ///////////////////////////////////////////////////////////////////////////////
-PersistentSocket::PersistentSocket(const std::string& addr, port_t port) :
-   SocketPrototype(addr, port)
+PersistentSocket::PersistentSocket(const std::string& addr, port_t port,
+   const std::string& name) :
+   SocketPrototype(addr, port, name)
 {
-   shutdownProm_ = std::make_unique<std::promise<bool>>();
-   shutdownFut_ = shutdownProm_->get_future();
    init();
 }
 
-////////
-PersistentSocket::PersistentSocket(SOCKET sockfd) :
-   SocketPrototype(), sockfd_(sockfd)
+PersistentSocket::PersistentSocket(SOCKET sockfd, const std::string& name) :
+   SocketPrototype(name), sockfd_(sockfd)
 {
-   shutdownProm_ = std::make_unique<std::promise<bool>>();
-   shutdownFut_ = shutdownProm_->get_future();
    init();
 }
 
-////////
 PersistentSocket::~PersistentSocket()
 {
    for (auto& thr : threads_) {
@@ -309,10 +298,14 @@ bool PersistentSocket::isValid() const
    return sockfd_ != SOCK_MAX;
 }
 
-////////
 bool PersistentSocket::testConnection()
 {
    return isValid();
+}
+
+bool PersistentSocket::running() const
+{
+   return run_.load(std::memory_order_relaxed);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -371,7 +364,9 @@ void PersistentSocket::socketService_nix()
       } else if (status == -1) {
          //poll error, process and exit loop
          auto errornum = errno;
-         LOGERR << "poll() error in socketService_nix: " << errornum;
+         LOGERR << std::format(
+            "poll error in socket service ({}): {}",
+            name_, errornum);
          break;
       }
 
@@ -389,13 +384,13 @@ void PersistentSocket::socketService_nix()
       }
 
       if (pfd[1].revents & POLLNVAL) {
-         LOGERR << "POLLNVAL in socketService_nix";
+         LOGERR << std::format("POLLNVAL in socket service ({})", name_);
       }
 
       //exceptions
       if (pfd[1].revents & POLLERR) {
          //break out of poll loop
-         LOGERR << "POLLERR error in socketService_nix";
+         LOGERR << std::format("POLLERR error in socket service ({})", name_);
          break;
       }
 
@@ -406,7 +401,7 @@ void PersistentSocket::socketService_nix()
             if (readAmt == 0) {
                //pollin notified socket is ready to read but buffer is empty
                //treat as socket has been cleaned up
-               LOGDEBUG << "socket cleaned up";
+               LOGDEBUG << std::format("socket \"{}\" cleaned up", name_);
                break;
             }
             //read it and push it into the queue
@@ -417,11 +412,15 @@ void PersistentSocket::socketService_nix()
                readQueue_.push_back(std::move(readdata));
             } else {
                LOGWARN << std::format(
-                  "failed to read socket data with error: {}! dropping socket", errno);
+                  "failed to read data from socket {} with error: {}!",
+                  name_, errno);
                break;
             }
          } else {
-            LOGWARN << "ioctl failed with error: " << errno;
+            LOGWARN << std::format(
+               "ioctl for {} failed with error: {}",
+               name_, errno);
+            break;
          }
       }
 
@@ -494,7 +493,7 @@ void PersistentSocket::socketService_win()
       }
 
       if (ev == WSA_WAIT_FAILED) {
-         LOGERR << "WSAWaitForMultipleEvents failed";
+         LOGERR << std::format("WSAWaitForMultipleEvents failed ({})", name_);
          break;
       }
 
@@ -512,7 +511,7 @@ void PersistentSocket::socketService_win()
       WSANETWORKEVENTS networkevents;
       if (WSAEnumNetworkEvents(sockfd_, events_[0], &networkevents) ==
          SOCKET_ERROR) {
-         LOGERR << "error getting network events for socket";
+         LOGERR << std::format("error getting network events for {}", name_);
          break;
       }
 
@@ -532,7 +531,7 @@ void PersistentSocket::socketService_win()
                if (errornum == EAGAIN || errornum == EWOULDBLOCK) {
                   break;
                }
-               LOGERR << "error reading socket, aborting";
+               LOGERR << std::format("error reading socket {}, aborting", name_);
                break;
             }
 
@@ -554,7 +553,8 @@ void PersistentSocket::socketService_win()
       }
 
       if (networkevents.lNetworkEvents & FD_CLOSE) {
-         LOGERR << "socket was closed: " << int(networkevents.iErrorCode[FD_CLOSE_BIT]);
+         LOGERR << std::format("socket {} was closed with code: {}",
+            name_, (int)networkevents.iErrorCode[FD_CLOSE_BIT]);
          break;
       }
    }
@@ -564,7 +564,7 @@ void PersistentSocket::socketService_win()
 }
 #endif
 
-///////////////////////////////////////////////////////////////////////////////
+////////
 void PersistentSocket::queuePayloadForWrite(std::vector<uint8_t>& payload)
 {
    if (payload.empty()) {
@@ -578,7 +578,7 @@ void PersistentSocket::queuePayloadForWrite(std::vector<uint8_t>& payload)
    signalService(0);
 }
 
-///////////////////////////////////////////////////////////////////////////////
+////////
 void PersistentSocket::readService()
 {
    while (true) {
@@ -596,7 +596,6 @@ void PersistentSocket::readService()
    respond(empty);
 }
 
-///////////////////////////////////////////////////////////////////////////////
 bool PersistentSocket::processPacket(
    std::vector<uint8_t>& packet, std::vector<uint8_t>& payload)
 {
@@ -604,7 +603,7 @@ bool PersistentSocket::processPacket(
    return true;
 }
 
-///////////////////////////////////////////////////////////////////////////////
+////////
 void PersistentSocket::signalService(uint8_t signal)
 {
    //0 to trigger a pollout, 1 to exit poll loop
@@ -621,9 +620,10 @@ void PersistentSocket::signalService(uint8_t signal)
 #endif
 }
 
-///////////////////////////////////////////////////////////////////////////////
+////////
 void PersistentSocket::init()
 {
+   shutdownFut_ = shutdownProm_.get_future();
    run_.store(false, std::memory_order_relaxed);
 
 #ifndef _WIN32
@@ -633,7 +633,6 @@ void PersistentSocket::init()
 #endif
 }
 
-///////////////////////////////////////////////////////////////////////////////
 void PersistentSocket::initPipes()
 {
    cleanUpPipes();
@@ -647,7 +646,6 @@ void PersistentSocket::initPipes()
 #endif
 }
 
-///////////////////////////////////////////////////////////////////////////////
 void PersistentSocket::cleanUpPipes()
 {
    for (unsigned i = 0; i < 2; i++) {
@@ -665,7 +663,7 @@ void PersistentSocket::cleanUpPipes()
    }
 }
 
-///////////////////////////////////////////////////////////////////////////////
+////////
 bool PersistentSocket::openSocket(bool blocking)
 {
    if (!addr_.empty() && port_ != 0 && port_ != UINT16_MAX &&
@@ -675,7 +673,6 @@ bool PersistentSocket::openSocket(bool blocking)
    return isValid();
 }
 
-///////////////////////////////////////////////////////////////////////////////
 int PersistentSocket::getSocketName(struct sockaddr& sa)
 {
 #ifdef _WIN32
@@ -686,7 +683,6 @@ int PersistentSocket::getSocketName(struct sockaddr& sa)
    return getsockname(sockfd_, &sa, &namelen);
 }
 
-///////////////////////////////////////////////////////////////////////////////
 int PersistentSocket::getPeerName(struct sockaddr& sa)
 {
 #ifdef _WIN32
@@ -697,7 +693,6 @@ int PersistentSocket::getPeerName(struct sockaddr& sa)
    return getpeername(sockfd_, &sa, &namelen);
 }
 
-///////////////////////////////////////////////////////////////////////////////
 bool PersistentSocket::connectToRemote()
 {
    if (run_.load(std::memory_order_relaxed)) {
@@ -723,7 +718,9 @@ bool PersistentSocket::connectToRemote()
       try {
          this->socketService();
       } catch (const SocketError&) {
-         LOGERR << "error in socket service, shutting down connection";
+         LOGERR << std::format(
+            "error in socket service for {}, shutting down connection",
+            name_);
          shutdown();
       }
    };
@@ -733,16 +730,17 @@ bool PersistentSocket::connectToRemote()
    return true;
 }
 
-///////////////////////////////////////////////////////////////////////////////
+////////
 void PersistentSocket::shutdown()
 {
    std::unique_lock<std::mutex> lock(shutdownMutex_);
-   if (shutdownFut_.wait_for(0s) == std::future_status::ready) {
+   auto futCopy = shutdownFut_;
+   if (futCopy.wait_for(0s) == std::future_status::ready) {
       return;
    }
    readQueue_.terminate();
    signalService(1);
-   shutdownProm_->set_value(true);
+   shutdownProm_.set_value();
 }
 
 void PersistentSocket::blockUntilClosed() const
@@ -756,17 +754,23 @@ void PersistentSocket::blockUntilClosed() const
 //// SimpleSocket
 //
 ///////////////////////////////////////////////////////////////////////////////
-SimpleSocket::SimpleSocket(const std::string& addr, port_t port) :
-   SocketPrototype(addr, port)
+SimpleSocket::SimpleSocket(const std::string& addr, port_t port,
+   const std::string& name) :
+   SocketPrototype(addr, port, name)
 {}
 
 ////////
-SimpleSocket::SimpleSocket(SOCKET sockfd) :
-   SocketPrototype(), sockfd_(sockfd)
+SimpleSocket::SimpleSocket(SOCKET sockfd, const std::string& name) :
+   SocketPrototype(name), sockfd_(sockfd)
 {}
 
 ////////
 SimpleSocket::~SimpleSocket()
+{
+   closeSocket(sockfd_);
+}
+
+void SimpleSocket::shutdown()
 {
    closeSocket(sockfd_);
 }
@@ -777,13 +781,14 @@ SocketType SimpleSocket::type() const
    return SocketType::Simple;
 }
 
-////////
-SOCKET SimpleSocket::getSockFD() const
+bool SimpleSocket::running() const
 {
-   return sockfd_;
+   //this is meant for REST with keep-alive behavior,
+   //return true so long as the socket is valid
+   return sockfd_ != SOCK_MAX;
 }
 
-///////////////////////////////////////////////////////////////////////////////
+////////
 void SimpleSocket::pushPayload(
    std::unique_ptr<Socket_WritePayload> write_payload,
    std::shared_ptr<Socket_ReadPayload> read_payload)
@@ -807,20 +812,13 @@ void SimpleSocket::pushPayload(
    read_payload->callbackReturn_->callback(bdr);
 }
 
-///////////////////////////////////////////////////////////////////////////////
-void SimpleSocket::listen(AcceptCallback acb)
+int SimpleSocket::writeToSocket(std::vector<uint8_t>& payload)
 {
-   SocketPrototype::listen(std::move(acb), sockfd_);
+   return send(sockfd_, (char*)&payload[0], payload.size(), 0);
 }
 
-///////////////////////////////////////////////////////////////////////////////
-void SimpleSocket::shutdown()
-{
-   closeSocket(sockfd_);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-std::vector<uint8_t> SimpleSocket::readFromSocket(void)
+////////
+std::vector<uint8_t> SimpleSocket::readFromSocket()
 {
    //exit after one read
    size_t readIncrement = 8192;
@@ -846,19 +844,21 @@ std::vector<uint8_t> SimpleSocket::readFromSocket(void)
 #else
          auto errornum = errno;
 #endif
-         LOGERR << "poll() error in readFromSocketThread: " << errornum;
+         LOGERR << std::format(
+            "poll error in read service ({}): {}",
+            name_, errornum);
          break;
       }
 
       if (pfd.revents & POLLNVAL) {
-         LOGERR << "POLLNVAL in readFromSocketThread";
+         LOGERR << std::format("POLLNVAL in read service ({})", name_);
          break;
       }
 
       //exceptions
       if (pfd.revents & POLLERR) {
          //break out of poll loop
-         LOGERR << "POLLERR error in readFromSocketThread";
+         LOGERR << std::format("POLLERR in read service ({})", name_);
          break;
       }
 
@@ -883,7 +883,7 @@ std::vector<uint8_t> SimpleSocket::readFromSocket(void)
                   break;
                }
 #endif
-               LOGERR << "recv error: " << errornum;
+               LOGERR << std::format("recv error for {}: {}", name_, errornum);
                break;
             }
 
@@ -895,7 +895,7 @@ std::vector<uint8_t> SimpleSocket::readFromSocket(void)
          }
 
          if (readAmt == 0) {
-            LOGINFO << "POLLIN recv return 0";
+            LOGINFO << std::format("recv return 0 for {}", name_);
             break;
          }
 
@@ -913,13 +913,7 @@ std::vector<uint8_t> SimpleSocket::readFromSocket(void)
    return {};
 }
 
-///////////////////////////////////////////////////////////////////////////////
-int SimpleSocket::writeToSocket(std::vector<uint8_t>& payload)
-{
-   return send(sockfd_, (char*)&payload[0], payload.size(), 0);
-}
-
-///////////////////////////////////////////////////////////////////////////////
+////////
 bool SimpleSocket::connectToRemote()
 {
    if (sockfd_ == SOCK_MAX) {
@@ -928,10 +922,20 @@ bool SimpleSocket::connectToRemote()
    return sockfd_ != SOCK_MAX;
 }
 
+void SimpleSocket::listen(AcceptCallback acb)
+{
+   SocketPrototype::listen(std::move(acb), sockfd_);
+}
+
 bool SimpleSocket::checkSocket(const std::string& ip, port_t port)
 {
-   SimpleSocket testSock(ip, port);
+   SimpleSocket testSock(ip, port, {});
    return testSock.testConnection();
+}
+
+SOCKET SimpleSocket::getSockFD() const
+{
+   return sockfd_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -939,9 +943,10 @@ bool SimpleSocket::checkSocket(const std::string& ip, port_t port)
 //// ListenServer
 //
 ///////////////////////////////////////////////////////////////////////////////
-ListenServer::ListenServer(const std::string& addr, port_t port)
+ListenServer::ListenServer(const std::string& addr, port_t port,
+   const std::string& name)
 {
-   listenSocket_ = std::make_unique<SimpleSocket>(addr, port);
+   listenSocket_ = std::make_unique<SimpleSocket>(addr, port, name);
    listenSocket_->verbose_ = false;
 }
 
@@ -1011,7 +1016,8 @@ void ListenServer::acceptProcess(AcceptStruct aStruct)
    auto ss = std::make_unique<SocketStruct>();
 
    //create BinarySocket object from sockfd
-   ss->sock_ = std::make_shared<SimpleSocket>(aStruct.sockfd_);
+   ss->sock_ = std::make_shared<SimpleSocket>(
+      aStruct.sockfd_, std::string{aStruct.saddr_.sa_data});
    ss->sock_->verbose_ = false;
 
    //start read lambda thread
@@ -1156,4 +1162,3 @@ bool Socket_WritePayload::isSingleSegment() const
 AcceptStruct::AcceptStruct() :
    addrlen_(sizeof(saddr_))
 {}
-

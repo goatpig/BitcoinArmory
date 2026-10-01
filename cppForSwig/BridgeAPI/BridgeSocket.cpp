@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2019-2025, goatpig                                          //
+//  Copyright (C) 2019-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -30,7 +30,7 @@ using namespace Armory::Bridge;
 CppBridgeSocket::CppBridgeSocket(
    const std::string& addr, Network::port_t port,
    std::shared_ptr<CppBridge> bridgePtr) :
-   PersistentSocket(addr, port), bridgePtr_(bridgePtr),
+   PersistentSocket(addr, port, "bridge_socket"), bridgePtr_(bridgePtr),
    serverName_(std::format("{}:{}", addr, port))
 {
    //setup auth peers db

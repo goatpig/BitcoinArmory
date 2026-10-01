@@ -886,12 +886,12 @@ void NetworkSettings::createNodes()
    auto magicBytes = BitcoinSettings::getMagicBytes();
    if (DBSettings::getServiceType() == SERVICE_WEBSOCKET) {
       bitcoinNodes_.first = std::make_shared<Node::Core::P2P::Peer>(
-         "127.0.0.1", btcPort_,
+         "127.0.0.1", btcPort_, "satoshi_p2p_main",
          *(uint32_t*)magicBytes.getPtr(), false
       );
 
       bitcoinNodes_.second = std::make_shared<Node::Core::P2P::Peer>(
-         "127.0.0.1", btcPort_,
+         "127.0.0.1", btcPort_, "satoshi_p2p_watcher",
          *(uint32_t*)magicBytes.getPtr(), true
       );
 

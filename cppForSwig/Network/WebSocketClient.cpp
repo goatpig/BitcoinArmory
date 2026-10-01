@@ -40,8 +40,8 @@ static struct lws_protocols protocols[] = {
 WebSocketClient::WebSocketClient(const std::string& addr, port_t port,
    std::shared_ptr<NetworkPeers::ClientStore> peers, bool oneWayAuth,
    std::shared_ptr<RemoteCallback> cbPtr) :
-   SocketPrototype(addr, port, false),
-   servName_(std::format("{}:{}", addr_, port_)),
+   SocketPrototype(addr, port, std::format("wsclient_{}", addr), false),
+   servName_(std::format("{}:{}", addr, port)),
    callbackPtr_(cbPtr), peerStore_(peers)
 {
    count_.store(0, std::memory_order_relaxed);
@@ -182,8 +182,9 @@ struct lws_context* WebSocketClient::init()
    //info.ws_ping_pong_interval = 60;
 
    auto contextptr = lws_create_context(&info);
-   if (contextptr == NULL) {
-      throw LWS_Error("failed to create LWS context");
+   if (contextptr == nullptr) {
+      throw LWS_Error(std::format(
+         "failed to create LWS context for {}", name_));
    }
 
    //connect to server
@@ -194,8 +195,9 @@ struct lws_context* WebSocketClient::init()
    const char *prot, *p;
    char path[300];
    if (lws_parse_uri((char*)addr_.c_str(), &prot, &i.address, &i.port, &p) != 0) {
-      LOGERR << "failed to parse server URI";
-      throw LWS_Error("failed to parse server URI");
+      auto errStr = std::format("failed to parse URI for {}", name_);
+      LOGERR << errStr;
+      throw LWS_Error(errStr);
    }
 
    path[0] = '/';
@@ -277,10 +279,12 @@ void WebSocketClient::cleanup()
       if (readThr_.joinable()) {
          readThr_.join();
       }
-   } catch(const std::system_error& e) {
-      LOGERR << "failed to join on client threads with error:";
-      LOGERR << e.what();
-      throw e;
+   } catch (const std::system_error& e) {
+      auto errStr = std::format(
+         "error while joining threads during {} cleaning up: {}",
+         name_, e.what());
+      LOGERR << errStr;
+      throw errStr;
    }
    readPackets_.clear();
 
@@ -290,7 +294,7 @@ void WebSocketClient::cleanup()
    auto notifs = payload.initNotifs(1);
    auto error = notifs[0].initError();
    error.setCode(-1);
-   error.setErrStr("LWS client disconnected");
+   error.setErrStr(std::format("{} disconnected", name_));
 
    auto flat = capnp::messageToFlatArray(message);
    auto bytes = flat.asBytes();
@@ -331,7 +335,7 @@ void WebSocketClient::cleanup()
          thr.join();
       }
    }
-   LOGINFO << "lws client cleaned up";
+   LOGINFO << std::format("{} was cleaned up", name_);
 }
 
 ////////
@@ -352,12 +356,18 @@ int WebSocketClient::lwsServiceHandler(struct lws* wsi,
 
       case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
       {
-         LOGERR << "lws client connection error";
+         if (instance != nullptr) {
+            LOGERR << std::format("connection error in {}",
+               instance->name_);
+         } else {
+            LOGERR << "LWS connection error in unknown instance!";
+         }
+
          if (len > 0) {
             auto errstr = (char*)in;
-            LOGERR << "   error message: " << errstr;
+            LOGERR << " . error message: " << errstr;
          } else {
-            LOGERR << "no error message was provided by lws";
+            LOGERR << "no error message was provided by LWS";
          }
          [[fallthrough]];
       }
@@ -403,21 +413,20 @@ int WebSocketClient::lwsServiceHandler(struct lws* wsi,
 
          auto packet = instance->currentWriteMessage_.consumeNextPacket();
          auto body = (uint8_t*)packet.getPtr() + LWS_PRE;
-         auto m = lws_write(wsi,
+         auto bytesWritten = lws_write(wsi,
             body, packet.getSize() - LWS_PRE,
             LWS_WRITE_BINARY);
 
-         if (m != (int)packet.getSize() - (int)LWS_PRE) {
-            LOGERR << "failed to send packet of size";
-            LOGERR << "packet is " << packet.getSize() <<
-               " bytes, sent " << m << " bytes";
+         if (bytesWritten != (int)packet.getSize() - (int)LWS_PRE) {
+            LOGERR << std::format(
+               "{} failed to write packet of size {} bytes, sent {} instead",
+               instance->name_, packet.getSize() - LWS_PRE, bytesWritten);
          }
 
          if (instance->currentWriteMessage_.isDone()) {
             instance->currentWriteMessage_.clear();
             instance->count_.fetch_add(1, std::memory_order_relaxed);
          }
-
          break;
       }
 
@@ -484,7 +493,8 @@ void WebSocketClient::readService()
       }
 
       if (bip151Connection_->getBIP150State() != BIP150State::SUCCESS) {
-         LOGWARN << "encryption layer is uninitialized, aborting connection";
+         LOGWARN << std::format(
+            "AEAD for {} is in invalid state, dropping socket", name_);
          shutdown();
          return;
       }
@@ -521,7 +531,8 @@ void WebSocketClient::readService()
                readPackets_.erase(msgid);
                currentReadMessage_.reset();
             } else {
-               LOGWARN << "there is no callback registered for msg id: " << msgid;
+               LOGWARN << std::format(
+                  "{} has no callback registered for msg id {}", name_, msgid);
                currentReadMessage_.reset();
             }
       }
@@ -559,8 +570,9 @@ bool WebSocketClient::processAEADHandshake(const WebSocketMessagePartial& msgObj
 
          /*packet is server's pubkey, do we have it?*/
          if (!bip151Connection_->isOneWayAuth()) {
-            LOGERR << "Trying to connect to 1-way server as a 2-way client." <<
-               " Aborting!";
+            LOGERR << std::format(
+               "{} is trying to connect to 1-way server as a 2-way client!",
+               name_);
             return false;
          }
 
@@ -575,8 +587,8 @@ bool WebSocketClient::processAEADHandshake(const WebSocketMessagePartial& msgObj
       case ArmoryAEAD::BIP151_PayloadType::EncInit:
       {
          if (bip151Connection_->isOneWayAuth() && !serverPubkeyAnnounce_) {
-            LOGERR << "trying to connect to 2-way server as 1-way client." <<
-               " Aborting!";
+            LOGERR << std::format(
+               "{} is trying to connect to 2-way server as 1-way client!", name_);
             return false;
          }
          break;
