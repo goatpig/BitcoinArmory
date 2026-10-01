@@ -374,7 +374,9 @@ RPC::FeeEstimateResult RPC::Client::getFeeByte(
 void RPC::Client::aggregateFeeEstimates()
 {
    //get fee/byte for 2-3-4-5-6-10-20 confs on both strategies
-   Network::HttpSocket sock("127.0.0.1", Config::NetworkSettings::rpcPort());
+   Network::HttpSocket sock(
+      "127.0.0.1", Config::NetworkSettings::rpcPort(),
+      "satoshiRPC_fees");
    if (!setupConnection(sock)) {
       throw RpcError("aggregateFeeEstimates: failed to setup RPC socket");
    }
@@ -576,9 +578,11 @@ bool RPC::Client::shutdown()
 ////////
 std::string RPC::Client::queryRPC(JSON::Object& request)
 {
-   Network::HttpSocket sock("127.0.0.1", Config::NetworkSettings::rpcPort());
+   Network::HttpSocket sock(
+      "127.0.0.1", Config::NetworkSettings::rpcPort(),
+      "satoshiRPC");
    if (!setupConnection(sock)) {
-      throw RpcError("node_down");
+      throw RpcError("satoshi_rpc_down");
    }
    return queryRPC(sock, request);
 }

@@ -156,7 +156,7 @@ namespace Armory
          void cleanupAutomationContext(CallbackId, MessageId);
 
          //db setup
-         void connectToIp(const std::string&, const std::string&,
+         void connectToIp(const std::string&, uint16_t,
             const CallbackId&, MessageId);
          void connectToPeer(const std::string&, MessageId);
          void beginDbSession(void);
@@ -173,7 +173,7 @@ namespace Armory
          //wallet registration
          void registerWallets(void);
          void registerWallet(const Wallets::WalletId&,
-            const Wallets::AddressAccountId&, bool isNew);
+            const Wallets::AddressAccountId&, bool);
          BinaryData getNodeStatus(MessageId);
 
          //balance and counts
@@ -207,8 +207,8 @@ namespace Armory
          void forkWatchingOnly(const Wallets::WalletId&,
             const CallbackId&, MessageId);
          void exportKeys(const Wallets::WalletId&,
-            const Wallets::AddressAccountId&, bool includePrivateKeys,
-            const CallbackId& callbackId, MessageId);
+            const Wallets::AddressAccountId&, bool,
+            const CallbackId&, MessageId);
 
          //ledgers
          const std::string& getLedgerDelegateId(void);

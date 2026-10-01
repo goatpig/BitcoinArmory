@@ -49,6 +49,23 @@ uint64_t RecipientReuseException::value() const
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// TxHintCollision
+TxHintCollision::TxHintCollision(
+   const Types::TxHash& hash, std::set<Armory::Types::TxKey>& hints) :
+   txHash_{hash}, candidates_{std::move(hints)}
+{}
+
+const Types::TxHash& TxHintCollision::getTxHash() const
+{
+   return txHash_;
+}
+
+const std::set<Types::TxKey>& TxHintCollision::getCandidates() const
+{
+   return candidates_;
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // Outpoint
 Outpoint::Outpoint(const uint8_t* ptr, size_t remaining)
 {
@@ -574,7 +591,8 @@ Tx Tx::unserialize(const uint8_t* ptr, size_t size)
    uint32_t nBytes = BtcUtils::TxCalcLength(ptr, size,
       &txins, &txouts, &witnesses);
    if (size < 8 || nBytes > size) {
-      throw BtcUtils::BlockDeserializingException();
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "tx size mismatch: expected {} vs actual {}", size, nBytes));
    }
    BinaryDataRef data{ptr, nBytes};
 
@@ -582,7 +600,8 @@ Tx Tx::unserialize(const uint8_t* ptr, size_t size)
    bool usesWitness = BtcUtils::checkSwMarker(ptr + 4);
    uint32_t numWitness = witnesses.size() - 1;
    if (4 > nBytes - witnesses[numWitness]) {
-      throw BtcUtils::BlockDeserializingException();
+      throw BtcUtils::BlockDeserializingException(
+         "not enough data to read witness count");
    }
    uint32_t lockTime = READ_UINT32_LE(ptr + witnesses[numWitness]);
 

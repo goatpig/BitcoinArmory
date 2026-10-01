@@ -249,7 +249,7 @@ void WalletManager::setBdvCallback(
    {
       switch (notif->type)
       {
-         case NotifType::REGISTERED:
+         case NotifType::IS_REGISTERED:
          {
             if (automatesDB_) {
                //if we automate the db, we have to tell it to start scanning

@@ -15,6 +15,7 @@
 #include <Utils/Types.h>
 
 class Tx;
+class TxHintCollision;
 
 namespace Armory
 {
@@ -42,6 +43,7 @@ namespace Armory
 
       Hash32 getTxHashForTxKey(const Types::TxKey&) const;
       bool isTxKeyOnMainBranch(const Types::TxKey&) const;
+      Types::TxKey resolveTxHintCollision(const TxHintCollision&);
 
       std::pair<std::vector<uint8_t>, size_t> getRawBlockForId(
          Types::BlockId) const;

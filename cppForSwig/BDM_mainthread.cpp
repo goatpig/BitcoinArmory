@@ -49,7 +49,12 @@ void BlockDataManagerThread::start(BdmInitMode mode)
 {
    pimpl->mode = mode;
    pimpl->run = true;
-   pimpl->tID = std::thread(thrun, this);
+   std::promise<void> isReadyPromise;
+   pimpl->bdm->isReadyFuture = isReadyPromise.get_future();
+   pimpl->tID = std::thread(
+      [this](std::promise<void> prom){ this->run(std::move(prom)); },
+      std::move(isReadyPromise)
+   );
 }
 
 std::shared_ptr<BlockDataManager> BlockDataManagerThread::bdm()
@@ -87,8 +92,8 @@ void BlockDataManagerThread::join()
    }
 }
 
-void BlockDataManagerThread::run()
-try {
+void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
+{
    const auto bdm = this->bdm();
    try {
       if (bdm->hasException()) {
@@ -99,9 +104,6 @@ try {
       LOGERR << "error during bdm init: " << e.what();
       return;
    }
-
-   std::promise<bool> isReadyPromise;
-   bdm->isReadyFuture = isReadyPromise.get_future();
 
    auto updateNodeStatusLambda = [bdm]()->void
    {
@@ -164,7 +166,7 @@ try {
          bdm->enableZeroConf(DBSettings::clearMempool());
       }
    }
-   isReadyPromise.set_value(true);
+   isReadyPromise.set_value();
 
    if (DBSettings::checkChain()) {
       return;
@@ -245,16 +247,4 @@ try {
          break;
       }
    }
-} catch (const std::exception &e) {
-   LOGERR << "BDM thread failed: " << e.what();
-} catch (...) {
-   LOGERR << "BDM thread failed: (unknown exception)";
-}
-
-void* BlockDataManagerThread::thrun(void *_self)
-{
-   BlockDataManagerThread *const self
-      = static_cast<BlockDataManagerThread*>(_self);
-   self->run();
-   return 0;
 }

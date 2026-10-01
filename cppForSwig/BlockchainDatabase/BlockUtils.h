@@ -110,7 +110,7 @@ private:
 public:
    typedef std::function<void(BDMPhase, double,unsigned, unsigned)> ProgressCallback;
    std::shared_ptr<Node::Core::P2P::Iface> processNode, watchNode;
-   std::shared_future<bool> isReadyFuture;
+   std::shared_future<void> isReadyFuture;
    mutable std::shared_ptr<Node::Core::RPC::Iface> nodeRPC;
 
    Armory::Threading::TimedQueue<std::unique_ptr<BDV_Notification>> notificationStack;

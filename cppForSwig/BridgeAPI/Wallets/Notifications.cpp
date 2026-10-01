@@ -418,5 +418,5 @@ bool NotifStruct_NewBlock::syncWalletState() const
 
 ////////
 NotifStruct_Registered::NotifStruct_Registered() :
-   NotifStruct(NotifType::REGISTERED)
+   NotifStruct(NotifType::IS_REGISTERED)
 {}

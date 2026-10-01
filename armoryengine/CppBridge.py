@@ -1,17 +1,16 @@
 ################################################################################
 #                                                                              #
-# Copyright (C) 2019-2024, goatpig.                                            #
+# Copyright (C) 2019-2026, goatpig.                                            #
 #  Distributed under the MIT license                                           #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                      #
 #                                                                              #
 ################################################################################
 
-from __future__ import (absolute_import, division, annotations,
-                        print_function, unicode_literals)
 import os
 import errno
 import socket
-from armoryengine.ArmoryUtils import LOGDEBUG, LOGERROR, LOGWARN, hash256, LOGINFO
+from armoryengine.ArmoryUtils import LOGDEBUG, LOGERROR, LOGWARN, LOGINFO, \
+   OS_WINDOWS
 from armoryengine.BinaryPacker import BinaryPacker, \
    UINT32, UINT8, BINARY_CHUNK, VAR_INT
 from struct import unpack
@@ -69,11 +68,12 @@ class BridgeSignerError(Exception):
 ################################################################################
 def findCppBridgeBinary() -> str:
    #search candidate locations in priority order, return the first that exists
+   bridgeBinName = "CppBridge.exe" if OS_WINDOWS else "CppBridge"
    candidates = [
       os.path.normpath(os.path.join(
-         os.path.dirname(os.path.abspath(__file__)), '..', 'CppBridge')),
-      os.path.join(os.getcwd(), 'CppBridge'),
-      os.path.join(os.getcwd(), 'build', 'CppBridge'),
+         os.path.dirname(os.path.abspath(__file__)), '..', bridgeBinName)),
+      os.path.join(os.getcwd(), bridgeBinName),
+      os.path.join(os.getcwd(), 'build', bridgeBinName),
    ]
 
    for candidate in candidates:
@@ -228,9 +228,8 @@ class BridgeSocket(object):
       needsReply=True, callback: callable=None, cbArgs: list=[],
       msgType = BRIDGE_CLIENT_HEADER):
 
-      #grab id from msg counter
       if self.run == False:
-         return
+         return None
 
       #serialize payload
       bp = BinaryPacker()
@@ -426,7 +425,7 @@ class DbSetupService(ProtoWrapper):
    #############################################################################
    ## commands ##
    def connectToIp(self,
-      ip: str, port: str, callbackId: str,
+      ip: str, port: int, callbackId: str,
       resultCallback: callable = None):
       """
       Connect to remote DB by IP address (1-way auth).
@@ -1596,7 +1595,7 @@ class BridgeSigner(ProtoWrapper):
       packet.signer.canLegacySerialize = None
 
       fut = self.send(packet)
-      reply = fut.getVal()
+      reply = fut.getVal(nothrow=True)
       return reply.success
 
 ################################################################################
@@ -1619,7 +1618,7 @@ class ArmoryBridge(object):
    #############################################################################
    def send(self, msg, needsReply=True, callback=None, cbArgs=[],
       msgType=BRIDGE_CLIENT_HEADER):
-      self.bridgeSocket.sendToBridgeProto(msg,
+      return self.bridgeSocket.sendToBridgeProto(msg,
          needsReply, callback, cbArgs, msgType)
 
    #############################################################################

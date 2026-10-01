@@ -268,15 +268,15 @@ class DlgRequestPayment(ArmoryDialog):
       super(DlgRequestPayment, self).closeEvent(event)
 
    #############################################################################
-   def accept(self, *args):
+   def accept(self):
       self.saveGeometrySettings()
       self.saveLinkText()
-      super(DlgRequestPayment, self).accept(*args)
+      super(DlgRequestPayment, self).accept()
 
    #############################################################################
-   def reject(self, *args):
+   def reject(self):
       self.saveGeometrySettings()
-      super(DlgRequestPayment, self).reject(*args)
+      super(DlgRequestPayment, self).reject()
 
 
    #############################################################################

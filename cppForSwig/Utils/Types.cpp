@@ -81,7 +81,9 @@ TxKey Types::getTxKeyFromTxIOKey(TxIOKey key)
 ////////
 bool Types::isThisAZCKey(TxKey key)
 {
-   return (key & 0x000000000000FFFF) == 0x000000000000FFFF;
+   return key != INVALID_TX_KEY ?
+      (key & 0x000000000000FFFF) == 0x000000000000FFFF :
+      false;
 }
 
 bool Types::isThisATxIOKey(TxIOKey key)

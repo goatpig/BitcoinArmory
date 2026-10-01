@@ -166,16 +166,15 @@ struct Notification {
 
    requestId @0 : Text;
    union {
-      terminate         @1 : Void;
-      registered        @2 : Void;
-      ready             @3 : Types.NewBlockNotif;
-      newBlock          @4 : Types.NewBlockNotif;
-      zc                @5 : List(Types.TxioPair);
-      invalidatedZc     @6 : List(Data);
-      refresh           @7 : Refresh;
-      nodeStatus        @8 : Types.NodeStatus;
-      progress          @9 : Types.ScanProgress;
-      error             @10: ServerError;
+      registrationDone  @1 : Void;
+      connectionIsReady @2 : Types.NewBlockNotif;
+      newBlock          @3 : Types.NewBlockNotif;
+      zc                @4 : List(Types.TxioPair);
+      invalidatedZc     @5 : List(Data);
+      refresh           @6 : Refresh;
+      nodeStatus        @7 : Types.NodeStatus;
+      progress          @8 : Types.ScanProgress;
+      error             @9 : ServerError;
    }
 }
 

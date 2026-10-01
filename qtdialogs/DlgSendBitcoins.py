@@ -66,11 +66,11 @@ class DlgSendBitcoins(ArmoryDialog):
       super(DlgSendBitcoins, self).closeEvent(event)
 
    #############################################################################
-   def accept(self, *args):
+   def accept(self):
       self.saveGeometrySettings()
-      super(DlgSendBitcoins, self).accept(*args)
+      super(DlgSendBitcoins, self).accept()
 
    #############################################################################
-   def reject(self, *args):
+   def reject(self):
       self.saveGeometrySettings()
-      super(DlgSendBitcoins, self).reject(*args)
+      super(DlgSendBitcoins, self).reject()
