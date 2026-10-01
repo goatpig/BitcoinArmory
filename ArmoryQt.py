@@ -1855,17 +1855,10 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       # issue of some sort. Some experimental code under ArmoryMac that directly
       # calls a dialog produces better results but still freezes under some
       # circumstances.
-      fullPath = str(QtWidgets.QFileDialog.getSaveFileName(
+      # getSaveFileName returns a (path, selected filter) tuple
+      filePath = QtWidgets.QFileDialog.getSaveFileName(
          self, title, startPath, typesStr,
-         options=QtWidgets.QFileDialog.DontUseNativeDialog))
-
-      '''
-      With PySide2, QtWidgets.QFileDialog.getSaveFileName return the user selection as
-      str("('file name', 'filter1'; 'filter2')")
-      '''
-      pathStripped = fullPath.strip('(')
-      pathList = pathStripped.split(',')
-      filePath = pathList[0].strip('\'')
+         options=QtWidgets.QFileDialog.DontUseNativeDialog)[0]
 
       fdir,fname = os.path.split(filePath)
       if fdir:
@@ -1897,21 +1890,14 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       # issue of some sort. Some experimental code under ArmoryMac that directly
       # calls a dialog produces better results but still freezes under some
       # circumstances.
+      # getOpenFileName returns a (path, selected filter) tuple
       if not OS_MACOSX:
-         fullPath = str(QtWidgets.QFileDialog.getOpenFileName(
-            self, title, defaultDir, typeStr))
+         filePath = QtWidgets.QFileDialog.getOpenFileName(
+            self, title, defaultDir, typeStr)[0]
       else:
-         fullPath = str(QtWidgets.QFileDialog.getOpenFileName(
+         filePath = QtWidgets.QFileDialog.getOpenFileName(
             self, title, defaultDir, typeStr,
-            options=QtWidgets.QFileDialog.DontUseNativeDialog))
-
-      '''
-      With PySide2, QtWidgets.QFileDialog.getOpenFileName return the user selection as
-      str("('file name', 'filter1'; 'filter2')")
-      '''
-      pathStripped = fullPath.strip('(')
-      pathList = pathStripped.split(',')
-      filePath = pathList[0].strip('\'')
+            options=QtWidgets.QFileDialog.DontUseNativeDialog)[0]
 
       TheSettings.set('LastDirectory', os.path.split(filePath)[0])
       return filePath
