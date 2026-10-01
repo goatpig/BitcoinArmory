@@ -17,6 +17,7 @@
 #include <string>
 #include <memory>
 #include <thread>
+#include <future>
 #include "bdmenums.h"
 
 struct BlockDataManagerConfig;
@@ -56,12 +57,11 @@ public:
    std::shared_ptr<BlockDataManager> bdm(void);
 
    // return true if the caller should wait on callback notification
-   bool shutdown();
-   void join();
+   bool shutdown(void);
+   void join(void);
 
 private:
-   static void* thrun(void *);
-   void run();
+   void run(std::promise<void>);
 
 private:
    BlockDataManagerThread(const BlockDataManagerThread&);

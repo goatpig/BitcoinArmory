@@ -270,7 +270,7 @@ bool BlockDataManager::loadDiskState(const ProgressCallback &progress)
 
    BDMstate_.store((int)BDMState::Ready, std::memory_order_relaxed);
    readyProm.set_value(true);
-   LOGINFO << "BDM is ready";
+   LOGINFO << "BDM is ready, top block: " << blockchain_->top()->getBlockHeight();
    return true;
 }
 
@@ -367,9 +367,14 @@ std::shared_ptr<Node::Status> BlockDataManager::getNodeStatus() const
 ////////
 void BlockDataManager::blockUntilReady() const
 {
+   //for thread safety, shared_future should be copied before use
+   auto futCopy = isReadyFuture;
    while (true) {
       try {
-         isReadyFuture.wait();
+         if (!futCopy.valid()) {
+            throw std::future_error(std::future_errc::no_state);
+         }
+         futCopy.wait();
          return;
       } catch (const std::future_error&) {
          std::this_thread::sleep_for(100ms);
