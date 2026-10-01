@@ -98,7 +98,7 @@ namespace Armory
             const unsigned encrVersion_;
 
             LMDB::DB db_;
-            AtomicSharedPtr<IfaceDataMap> dataMapPtr_;
+            Armory::Threading::AtomicSharedPtr<IfaceDataMap> dataMapPtr_;
 
             SecureBinaryData encrPubKey_;
             SecureBinaryData macKey_;

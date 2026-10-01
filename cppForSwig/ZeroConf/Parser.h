@@ -310,7 +310,7 @@ namespace Armory
       class ZeroConfContainer
       {
       private:
-         AtomicSharedPtr<MempoolSnapshot> snapshot_;
+         Armory::Threading::AtomicSharedPtr<MempoolSnapshot> snapshot_;
 
          //<txHash, map<opId, ZcKeys>>
          std::map<Types::TxHash,std::map<unsigned, Types::TxKey>> outPointsSpentByKey_;

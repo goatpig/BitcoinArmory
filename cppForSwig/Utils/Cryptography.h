@@ -100,7 +100,7 @@ namespace Cryptography
          Use the crypto lib's PRNG directly to generate wallet seeds instead.
          */
       private:
-         mutable AtomicSharedPtr<SecureBinaryData> key_;
+         mutable Armory::Threading::AtomicSharedPtr<SecureBinaryData> key_;
          mutable std::atomic<unsigned> counter_;
          mutable std::atomic<unsigned> nBytes_;
 

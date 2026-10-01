@@ -98,7 +98,7 @@ namespace Armory
       std::set<Types::BlockId> invalidBlockIds_;
 
       std::vector<HeaderPtr> newlyParsedHeaders_;
-      AtomicSharedPtr<HeaderPtr::element_type> topBlockPtr_;
+      Armory::Threading::AtomicSharedPtr<HeaderPtr::element_type> topBlockPtr_;
       Types::BlockId idOfTopBlock_ = 0;
 
       std::atomic<Types::BlockId> highestBlockID_;
