@@ -498,7 +498,7 @@ void ZeroConfContainer::parseNewZC(ZcActionStruct zcAction)
 {
    bool notify = true;
    auto ss = MempoolSnapshot::copy(
-      snapshot_, MEMPOOL_DEPTH, POOL_MERGE_THRESHOLD);
+      snapshot_.load(), MEMPOOL_DEPTH, POOL_MERGE_THRESHOLD);
 
    std::map<Types::TxKey, std::shared_ptr<ParsedTx>> zcMap;
    std::map<BinaryData, std::shared_ptr<WatcherTxBody>> watcherMap;

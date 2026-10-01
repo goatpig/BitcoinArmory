@@ -59,7 +59,7 @@ void Blockchain::clear()
 ////////
 HeaderPtr Blockchain::top() const
 {
-   auto ptr = std::atomic_load(&topBlockPtr_);
+   auto ptr = topBlockPtr_.load();
    return ptr;
 }
 
@@ -344,7 +344,7 @@ HeaderPtr Blockchain::organizeChain(
    // Last header in the loop didn't get added (the genesis block on first run)
    thisHeaderPtr->isMainBranch_ = true;
    headersByHeight_[thisHeaderPtr->getBlockHeight()] = thisHeaderPtr;
-   std::atomic_store(&topBlockPtr_, newTopBlock);
+   topBlockPtr_.store(newTopBlock);
 
    if (!prevChainStillValid) {
       LOGWARN << "Reorg detected!";
