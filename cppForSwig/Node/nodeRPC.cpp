@@ -120,7 +120,7 @@ const ChainStatus& RPC::Iface::getChainStatus() const
 const std::map<unsigned, RPC::FeeEstimateResult>& RPC::Iface::getFeeSchedule(
    const std::string& strategy) const
 {
-   auto estimateCachePtr = std::atomic_load(&currentEstimateCache_);
+   auto estimateCachePtr = currentEstimateCache_.load();
    if (estimateCachePtr == nullptr) {
       throw RpcError{};
    }

@@ -2658,7 +2658,7 @@ TEST_F(WalletInterfaceTest, EncryptionTest_AmendValues)
       EXPECT_EQ(key2Data.getSize(), 0ULL);
 
       auto key3Data = tx.getDataRef(key3);
-      EXPECT_EQ(key3Data, val4);
+      EXPECT_EQ(key3Data, val4.getRef());
    }
 
    //check file content
@@ -2878,7 +2878,7 @@ TEST_F(WalletInterfaceTest, EncryptionTest_OpenCloseAmend)
       EXPECT_EQ(key2Data.getSize(), 0ULL);
 
       auto key3Data = tx.getDataRef(key3);
-      EXPECT_EQ(key3Data, val4);
+      EXPECT_EQ(key3Data, val4.getRef());
    }
 
    //check file content
@@ -3032,13 +3032,13 @@ TEST_F(WalletInterfaceTest, EncryptionTest_OpenCloseAmend)
       IO::WalletIfaceTransaction tx(nullptr, dbIface.get(), false);
 
       auto key1Data = tx.getDataRef(key1);
-      EXPECT_EQ(key1Data, val1);
+      EXPECT_EQ(key1Data, val1.getRef());
 
       auto key2Data = tx.getDataRef(key2);
       EXPECT_EQ(key2Data.getSize(), 0ULL);
 
       auto key3Data = tx.getDataRef(key3);
-      EXPECT_EQ(key3Data, val4);
+      EXPECT_EQ(key3Data, val4.getRef());
    }
 
    auto key4 = Cryptography::PRNG::generateRandomStrong(30);
@@ -3060,13 +3060,13 @@ TEST_F(WalletInterfaceTest, EncryptionTest_OpenCloseAmend)
       EXPECT_EQ(key1Data.getSize(), 0ULL);
 
       auto key2Data = tx.getDataRef(key2);
-      EXPECT_EQ(key2Data, val5);
+      EXPECT_EQ(key2Data, val5.getRef());
 
       auto key3Data = tx.getDataRef(key3);
-      EXPECT_EQ(key3Data, val6);
+      EXPECT_EQ(key3Data, val6.getRef());
 
       auto key4Data = tx.getDataRef(key4);
-      EXPECT_EQ(key4Data, val3);
+      EXPECT_EQ(key4Data, val3.getRef());
    }
 
    //close dbIface

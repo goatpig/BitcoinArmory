@@ -994,8 +994,8 @@ void WalletIfaceTransaction::closeTx()
    dataMapCopy->update(insertVec_);
 
    //swap in the data struct
-   std::atomic_store_explicit(
-      &dbPtr_->dataMapPtr_, dataMapCopy, std::memory_order_release);
+   dbPtr_->dataMapPtr_.store(
+      dataMapCopy, std::memory_order_release);
 
    if (!needsWiped) {
       return;
@@ -1124,8 +1124,8 @@ bool WalletIfaceTransaction::insertTx(WalletIfaceTransaction* txPtr)
       ptx->getDataLbd_ = getDataLbd;
    }
 
-   ptx->dataMapPtr_ = std::atomic_load_explicit(
-      &txPtr->dbPtr_->dataMapPtr_, std::memory_order_acquire);
+   ptx->dataMapPtr_ = txPtr->dbPtr_->dataMapPtr_.load(
+      std::memory_order_acquire);
    txPtr->dataMapPtr_ = ptx->dataMapPtr_;
    return true;
 }

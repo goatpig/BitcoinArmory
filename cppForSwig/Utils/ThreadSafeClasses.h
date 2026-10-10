@@ -21,6 +21,8 @@
 #include <condition_variable>
 #include <deque>
 
+#include "AtomicSharedPtr.h"
+
 namespace Armory
 {
    namespace Threading
@@ -345,7 +347,7 @@ namespace Armory
 
       private:
          mutable std::mutex mu_;
-         std::atomic<std::shared_ptr<std::map<T, U>>> map_;
+         AtomicSharedPtr<std::map<T, U>> map_;
          std::atomic<size_t> count_;
 
       public:
