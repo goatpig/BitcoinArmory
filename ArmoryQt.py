@@ -140,9 +140,15 @@ handler = URLHandler()
 QtGui.QDesktopServices.setUrlHandler("http", handler, "handleURL")
 QtGui.QDesktopServices.setUrlHandler("https", handler, "handleURL")
 
-# Load our framework with OS X-specific code.
+# Load our framework with OS X-specific code. The ArmoryMac helper is only
+# built by the old Qt4/sip OS X build; without it, plain Qt handles the dock
+# icon and tray messages.
+ArmoryMac = None
 if OS_MACOSX:
-   import ArmoryMac
+   try:
+      import ArmoryMac
+   except ImportError:
+      ArmoryMac = None
 
 # HACK ALERT: QtCore.Qt has a bug in OS X where the system font settings will override
 # the app's settings when a window is activated (e.g., Armory starts, the user
@@ -193,7 +199,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       # OS X requires some Objective-C code if we're switching to the testnet
       # (green) icon. We should also use a larger icon. Otherwise, Info.plist
       # takes care of everything.
-      if not OS_MACOSX:
+      if ArmoryMac is None:
          self.setWindowIcon(QtGui.QIcon(self.iconfile))
       else:
          if USE_TESTNET or USE_REGTEST:
@@ -747,7 +753,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       if CLI_ARGS:
          TheSignalExecution.callLater(1, self.uriLinkClicked, CLI_ARGS[0])
 
-      if OS_MACOSX:
+      if ArmoryMac is not None:
          self.macNotifHdlr = ArmoryMac.MacNotificationHandler()
 
       # Now that construction of the UI is done
@@ -4831,7 +4837,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
    # System tray notifications require specific code for OS X. We'll handle
    # messages here to hide the ugliness.
    def showTrayMsg(self, dispTitle, dispText, dispIconType, dispTime):
-      if not OS_MACOSX:
+      if ArmoryMac is None:
          self.sysTray.showMessage(dispTitle, dispText, dispIconType, dispTime)
       else:
          # Code supporting Growl (OSX 10.7) is buggy, and no one seems to care.
