@@ -12,6 +12,9 @@
 #include <string>
 #include <map>
 #include <filesystem>
+#include <mutex>
+#include <thread>
+#include <vector>
 
 #include <Utils/ReentrantLock.h>
 #include "Loader.h"
@@ -78,6 +81,11 @@ namespace Armory
          std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr_;
          bool automatesDB_ = false;
 
+         //disconnection cleanup
+         std::mutex cleanupMutex_;
+         std::mutex cleanupThrMutex_;
+         std::vector<std::thread> cleanupThreads_;
+
          //history
          std::shared_ptr<TxIOCache> txioCache_;
          std::map<std::string, Ledgers::Delegate> delegateMap_;
@@ -94,6 +102,7 @@ namespace Armory
 
       public:
          WalletManager(const std::filesystem::path&);
+         ~WalletManager(void);
 
          /* pre wallets loading calls */
          std::map<std::string, std::shared_ptr<WalletFileInfo>> listWallets(void);
@@ -115,6 +124,7 @@ namespace Armory
          std::shared_ptr<Callback> getBdvCallback(void) const;
          void setBdvPtr(std::shared_ptr<AsyncClient::BlockDataViewer>, bool=false);
          void cleanupBDV(void);
+         void waitOnCleanup(void);
 
          /* utils */
          const std::filesystem::path& getWalletDir(void) const;

@@ -551,6 +551,9 @@ CppBridge::CppBridge() :
 CppBridge::~CppBridge()
 {
    wltManager_->cleanupBDV();
+
+   //a disconnection can still start a cleanup that calls reset()
+   wltManager_->waitOnCleanup();
 }
 
 void CppBridge::disconnectFromDb()
@@ -1416,6 +1419,8 @@ void CppBridge::connectToIp(const std::string& ip, Network::port_t port,
       return;
    }
 
+   //let a cleanup from the previous connection finish, it resets bdvPtr_
+   wltManager_->waitOnCleanup();
    if (bdvPtr_ != nullptr) {
       LOGWARN << "already connected to db!";
       reply.setError("already connected to db!");
@@ -1509,6 +1514,8 @@ void CppBridge::connectToPeer(const std::string& peerKey, MessageId refId)
       return;
    }
 
+   //let a cleanup from the previous connection finish, it resets bdvPtr_
+   wltManager_->waitOnCleanup();
    if (bdvPtr_ != nullptr) {
       LOGWARN << "already connected to db!";
       reply.setError("already connected to db!");
@@ -1592,6 +1599,8 @@ void CppBridge::runAutomationContext(CallbackId cbId, MessageId refId)
          return;
       }
 
+      //let a cleanup from the previous connection finish, it resets bdvPtr_
+      wltManager_->waitOnCleanup();
       if (bdvPtr_ != nullptr) {
          reply.setError("already connected to db!");
          reply.setSuccess(false);

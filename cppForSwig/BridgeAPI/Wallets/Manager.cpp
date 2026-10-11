@@ -126,6 +126,22 @@ WalletManager::WalletManager(const std::filesystem::path& path) :
    });
 }
 
+WalletManager::~WalletManager()
+{
+   /*
+   The connection's callback points to this object. Drop our references to
+   the BlockDataViewer so its socket shuts down if we hold the last ones,
+   then wait on any cleanup a disconnection started. The owner is going
+   away, so its cleanup callback is not called from here.
+   */
+   {
+      std::unique_lock<std::mutex> lock(cleanupMutex_);
+      cleanupCallback_ = nullptr;
+   }
+   cleanupBDV();
+   waitOnCleanup();
+}
+
 ////
 const std::filesystem::path& WalletManager::getWalletDir() const
 {
@@ -275,10 +291,16 @@ void WalletManager::setBdvCallback(
                throw std::runtime_error("empty packet in push notif!");
             }
             writeFunc(pushPtr->packet);
-            auto cleanupThr = std::thread([this]() { cleanupBDV(); });
-            if (cleanupThr.joinable()) {
-               cleanupThr.join();
-            }
+
+            /*
+            This runs on the socket's service thread. The cleanup may drop
+            the last reference to the BlockDataViewer, whose WebSocketClient
+            joins that same service thread when it is destroyed, so it runs
+            on its own thread and is not waited on here. It is joined in
+            waitOnCleanup.
+            */
+            std::unique_lock<std::mutex> lock(cleanupThrMutex_);
+            cleanupThreads_.emplace_back([this]() { cleanupBDV(); });
             return;
          }
 
@@ -292,6 +314,7 @@ void WalletManager::setBdvCallback(
 void WalletManager::setCleanupCallback(
    const std::function<void(void)>& callback)
 {
+   std::unique_lock<std::mutex> lock(cleanupMutex_);
    cleanupCallback_ = callback;
 }
 
@@ -318,6 +341,8 @@ void WalletManager::setBdvPtr(
 
 void WalletManager::cleanupBDV()
 {
+   //the bridge and the disconnection notification can both get here
+   std::unique_lock<std::mutex> lock(cleanupMutex_);
    for (auto& wltIt : wallets_) {
       for (auto& accIt : wltIt.second) {
          accIt.second->cleanupBDV();
@@ -326,6 +351,26 @@ void WalletManager::cleanupBDV()
    bdvPtr_.reset();
    if (cleanupCallback_) {
       cleanupCallback_();
+   }
+}
+
+void WalletManager::waitOnCleanup()
+{
+   std::vector<std::thread> threads;
+   {
+      std::unique_lock<std::mutex> lock(cleanupThrMutex_);
+      threads.swap(cleanupThreads_);
+   }
+
+   for (auto& thr : threads) {
+      if (!thr.joinable()) {
+         continue;
+      }
+      if (thr.get_id() == std::this_thread::get_id()) {
+         thr.detach();
+      } else {
+         thr.join();
+      }
    }
 }
 

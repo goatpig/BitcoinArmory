@@ -4402,6 +4402,81 @@ TEST_F(WalletManagerWebsocketsTests, Connect)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(WalletManagerWebsocketsTests, DisconnectReleasesLastBdvRef)
+{
+   NotifQueue queue;
+   auto notifFunc = [&queue](BinaryData notifData)
+   {
+      queue.push_back(notifData);
+   };
+   auto mgr = std::make_shared<Bridge::WalletManager>(homedir_);
+   mgr->setBdvCallback(notifFunc);
+   mgr->listWallets();
+   mgr->loadWallets();
+
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   WebSocketServer::start(theBDMt_->bdm(), true);
+
+   //connect to db
+   auto clientPeers = std::make_shared<NetworkPeers::ClientStore>(
+      Wallets::IO::ReadOnlyFileParams{
+         homedir_ / CLIENT_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   auto bdvPtr = Bridge::setupClientConnection(clientPeers,
+      Config::NetworkSettings::dbIP(), Config::NetworkSettings::dbPort(),
+      Config::NetworkSettings::oneWayAuth(), {},
+      mgr->getBdvCallback());
+   ASSERT_NE(bdvPtr, nullptr);
+   mgr->setBdvPtr(bdvPtr);
+
+   //expecting setupDone notif
+   {
+      auto notifBd = queue.pop();
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(notifBd.getPtr()),
+         notifBd.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+      auto notif = fromBridge.getNotification();
+      ASSERT_EQ(notif.which(), Codec::Bridge::Notification::SETUP_DONE);
+   }
+
+   /*
+   Like CppBridge::reset(), the cleanup callback drops the last reference
+   to the BlockDataViewer, so its WebSocketClient is destroyed by the
+   cleanup that the disconnection starts.
+   */
+   std::promise<void> cleanupProm;
+   auto cleanupFut = cleanupProm.get_future();
+   mgr->setCleanupCallback([&bdvPtr, &cleanupProm]()
+   {
+      bdvPtr.reset();
+      try {
+         cleanupProm.set_value();
+      } catch (const std::future_error&) {}
+   });
+
+   //take the db side down, wait on the disconnected notif
+   WebSocketServer::shutdown();
+   while (true) {
+      auto notifBd = queue.pop();
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(notifBd.getPtr()),
+         notifBd.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+      auto notif = fromBridge.getNotification();
+      if (notif.which() == Codec::Bridge::Notification::DISCONNECTED) {
+         break;
+      }
+   }
+
+   //the cleanup has to complete
+   ASSERT_EQ(cleanupFut.wait_for(10s), std::future_status::ready);
+   mgr.reset();
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // BridgeWalletTests
 class BridgeWalletTests : public ::testing::Test
 {
