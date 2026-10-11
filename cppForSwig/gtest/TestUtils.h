@@ -88,6 +88,8 @@ namespace TestUtils
       const std::filesystem::path&);
    void setBlocks(const std::vector<std::string>&,
       const std::filesystem::path&);
+   uint64_t xorTheBlockFolder(const std::filesystem::path,
+      uint64_t=UINT64_MAX);
    BinaryData getTx(unsigned, unsigned);
 
    std::shared_ptr<Armory::Assets::AssetEntry> getMainAccountAssetForIndex(

@@ -217,8 +217,8 @@ std::future<bool> ParserBatch::preloadFiles(
          if (fileIter != fileCache.end()) {
             result.emplace(fileId, fileIter->second);
          } else {
-            auto filePath = blockFiles->getFilePathForID(fileId);
-            auto fileCopy = std::make_shared<FileUtils::FileCopy>(filePath);
+            auto fileStat = blockFiles->getFileStatForID(fileId);
+            auto fileCopy = std::make_shared<FileUtils::FileCopy>(fileStat.path);
             if (Config::DBSettings::isXored()) {
                fileCopy->xorMe(Config::DBSettings::getXorKey());
             }
@@ -920,8 +920,8 @@ void BlockchainScanner::processFilterHitsThread(
       std::map<uint32_t, std::set<const TxHashHints*>> filterHit,
       std::set<BinaryData>& hashSet)->void
    {
-      auto filePath = blockFiles_->getFilePathForID(fileNum);
-      FileUtils::FileMap fileMap(filePath);
+      auto fileStat = blockFiles_->getFileStatForID(fileNum);
+      FileUtils::FileMap fileMap{fileStat.path};
 
       for (auto& blockkey : filterHit) {
          std::shared_ptr<BlockHeader> headerPtr;

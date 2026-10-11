@@ -1702,52 +1702,29 @@ TEST_F(BlockUtilsBare, Load5Blocks_SideScan)
 
 TEST_F(BlockUtilsBare, BlockXor)
 {
-   //generate a random xor key
-   auto rando = Cryptography::PRNG::fortuna.generateRandom(8);
-   uint64_t xorKey;
-   memcpy(&xorKey, rando.getPtr(), 8);
+   TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
+   uint64_t xorKey = UINT64_MAX;
+   try {
+      xorKey = TestUtils::xorTheBlockFolder(blkdir_);
+      ASSERT_NE(xorKey, UINT64_MAX);
+   } catch (const std::exception&) {
+      ASSERT_TRUE(false);
+   }
 
-   //get a mmap of the block data file
-   auto fileMap = FileUtils::FileMap(blk0dat_, false);
-   ASSERT_TRUE(fileMap.isValid());
-
-   //create xored copy of the block file
-   auto xoredFilePath = blkdir_ / "xoredfile.dat";
-   {
-      size_t offset = 0;
-      std::fstream xoredFile;
-      xoredFile.open(xoredFilePath, std::ios::out | std::ios::binary);
-      while (offset <= fileMap.size()) {
-         uint64_t chunk;
-         memcpy(&chunk, fileMap.ptr() + offset,
-            std::min(size_t{8}, fileMap.size() - offset));
-         chunk ^= xorKey;
-         xoredFile.write((const char*)&chunk, 8);
-         offset += 8;
+   //add a file prior to both blocks and the xor file,
+   //it shouldn't trip the parser
+   while (true) {
+      //grab random data to fill the file, make sure it doesn't start with
+      //the magic word, or it would be treated as a mangled block file
+      auto randomData = Cryptography::PRNG::fortuna.generateRandom(128);
+      if (randomData.getSliceRef(0, 4) ==
+         Config::BitcoinSettings::getMagicBytes().getRef()) {
+         continue;
       }
-   }
-
-   //remove clear blk file
-   fileMap.close();
-   std::filesystem::remove(blk0dat_);
-
-   //copy first 4 xored blocks
-   {
-      std::fstream blkFile;
-      blkFile.open(blk0dat_, std::ios::out | std::ios::binary);
-
-      std::fstream xoredFile;
-      xoredFile.open(xoredFilePath, std::ios::in | std::ios::binary);
-
-      std::copy_n(std::istreambuf_iterator<char>(xoredFile), 3242,
-         std::ostreambuf_iterator<char>(blkFile));
-   }
-
-   //create xor file, this is where the xor key sits
-   {
-      std::fstream xorFile;
-      xorFile.open(blkdir_ / "blocks" / "xor.dat", std::ios::out | std::ios::binary);
-      xorFile.write((const char*)&xorKey, 8);
+      std::fstream firstFile(blkdir_ / "blocks" / "afileaheadofothers.dat",
+         std::ios::out | std::ios::binary);
+      firstFile.write(randomData.getCharPtr(), randomData.getSize());
+      break;
    }
 
    //run the db
@@ -1812,8 +1789,16 @@ TEST_F(BlockUtilsBare, BlockXor)
    EXPECT_EQ(getBal(TestChain::lb2ScrAddrP2SH), 5 * COIN);
 
    //add last 2 blocks
-   std::filesystem::remove(blk0dat_);
-   std::filesystem::rename(xoredFilePath, blk0dat_);
+   FileUtils::removeDirectory(blkdir_);
+   FileUtils::createDirectory(blkdir_ / "blocks");
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   try {
+      auto returnedKey = TestUtils::xorTheBlockFolder(blkdir_, xorKey);
+      ASSERT_EQ(returnedKey, xorKey);
+   } catch (const std::exception& e) {
+      ASSERT_TRUE(false) << e.what();
+   }
+
    DBTestUtils::triggerNewBlockNotification(theBDMt_);
    DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
 

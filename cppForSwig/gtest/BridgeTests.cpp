@@ -13583,6 +13583,10 @@ protected:
       }
 
       auto validationReply = helperReply.getValidateDir();
+      if (validationReply.getPruned() != false) {
+         throw std::runtime_error(
+            "test blk folder shouldn't be seen as pruned");
+      }
       return std::filesystem::path{std::string{validationReply.getPath()}};
    }
 
@@ -13616,11 +13620,33 @@ TEST_F(BridgeBlocksAutoDBTests, Connect)
    try {
       /*
       SatoshiDir is the path to the node home folder.
-      If the validation call is passed a path the `/blocks` suffix appended,
-      it should be strip in the reply (the validation call returns the "legal"
+      If the validation call is passed a path with the `/blocks` suffix appended,
+      it will be stripped in the reply (the validation call returns the "legal"
       path as part of its reply).
       We cover that behavior here.
+      Also poison cover block data xoring and blk file discovery
       */
+
+      //1. xor the blkfile folder
+      auto xorKey = TestUtils::xorTheBlockFolder(blkdir_);
+      ASSERT_NE(xorKey, UINT64_MAX);
+
+      //2. poison the folder
+      while (true) {
+         //grab random data to fill the file, make sure it doesn't start with
+         //the magic word, or it would be treated as a mangled block file
+         auto randomData = Cryptography::PRNG::fortuna.generateRandom(128);
+         if (randomData.getSliceRef(0, 4) ==
+            Config::BitcoinSettings::getMagicBytes().getRef()) {
+            continue;
+         }
+         std::fstream firstFile(blkdir_ / "blocks" / "afileaheadofothers.dat",
+            std::ios::out | std::ios::binary);
+         firstFile.write(randomData.getCharPtr(), randomData.getSize());
+         break;
+      }
+
+      //3. validate it
       validatedSatoshiDir = validateSatoshiDir(blkdir_ / "blocks");
    } catch (const std::exception& e) {
       ASSERT_TRUE(false) << e.what();
