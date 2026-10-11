@@ -729,9 +729,14 @@ void BDV_Server_Object::init()
 {
    auto notifyBdv = [this](bool ready)
    {
-      auto& scratchPad = getScratchPad();
+      /*
+      This runs on initT_, while the worker threads can be building a reply
+      for this bdv in its scratchpad (processCommand only serializes the
+      workers), so use a buffer of our own.
+      */
+      std::vector<uint8_t> firstSegment(SCRATCHPAD_SIZE);
       kj::ArrayPtr<capnp::word> arrayPtr(
-         reinterpret_cast<capnp::word*>(scratchPad.data()),
+         reinterpret_cast<capnp::word*>(firstSegment.data()),
          SCRATCHPAD_SIZE / sizeof(capnp::word)
       );
       capnp::MallocMessageBuilder message(arrayPtr,
