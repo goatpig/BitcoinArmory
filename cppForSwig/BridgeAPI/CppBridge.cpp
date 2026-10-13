@@ -1754,10 +1754,16 @@ void CppBridge::createBackupStringForWallet(const Wallets::WalletId& wltId,
       auto backupE16 = dynamic_cast<Seeds::Backup_Easy16*>(
          backupData.get());
       if (backupE16 != nullptr) {
-         //secure print passphrase
+         /*
+         secure print passphrase: unlike the backup lines, it isn't padded
+         with a NUL, which capnp::Text::Reader expects after the data, so
+         copy it into a builder of the right size instead
+         */
          auto spPass = backupE16->getSpPass();
-         backupStringCapnp.setSpPass(
-            capnp::Text::Reader(spPass.data(), spPass.size()));
+         auto spPassText = backupStringCapnp.initSpPass(spPass.size());
+         if (!spPass.empty()) {
+            memcpy(spPassText.begin(), spPass.data(), spPass.size());
+         }
 
          {
             //cleartext root
