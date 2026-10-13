@@ -1781,8 +1781,10 @@ namespace {
    // connect to db stuff
    bool waitOnConnection(Bridge::MessageId refId)
    {
-      bool success = false;
-      while (true) {
+      bool notifSuccess = false;
+      bool replySuccess = false;
+      unsigned count = 0;
+      while (count != 13) {
          auto reply = waitOnReply();
          kj::ArrayPtr<const capnp::word> words(
             reinterpret_cast<const capnp::word*>(reply->data.getPtr()),
@@ -1793,14 +1795,15 @@ namespace {
          switch (fromBridge.which()) {
             case Codec::Bridge::FromBridge::NOTIFICATION:
             {
+               count += 2;
                auto notif = fromBridge.getNotification();
                switch (notif.which()) {
                   case Codec::Bridge::Notification::SETUP_DONE:
-                     success = true;
+                     notifSuccess = true;
                      break;
 
                   case Codec::Bridge::Notification::DISCONNECTED:
-                     success = false;
+                     notifSuccess = false;
                      break;
 
                   default:
@@ -1811,17 +1814,17 @@ namespace {
 
             case Codec::Bridge::FromBridge::REPLY:
             {
+               count += 11;
                auto repCapnp = fromBridge.getReply();
                if (repCapnp.getReferenceId() != refId) {
                   throw std::runtime_error("referenceId mismatch");
                }
                if (repCapnp.getSuccess() == false) {
-                  std::cout << std::string(repCapnp.getError()) << std::endl;
+                  std::cout << std::format("connection error: {}",
+                     std::string(repCapnp.getError())) << std::endl;
                }
-               if (repCapnp.getSuccess() != success) {
-                  throw std::runtime_error("connection state mismatch");
-               }
-               return success;
+               replySuccess = repCapnp.getSuccess();
+               break;
             }
 
             default:
@@ -1829,6 +1832,10 @@ namespace {
                break;
          }
       }
+      if (notifSuccess != replySuccess) {
+         throw std::runtime_error("connection state mismatch");
+      }
+      return replySuccess;
    }
 
    bool connectToIp(std::shared_ptr<Bridge::CppBridge> bridge,
@@ -3754,7 +3761,7 @@ TEST_F(WalletManagerTests, ListStageLoad)
    }
 
    //list wallets
-   Bridge::WalletManager mgr{homedir_};
+   Bridge::WalletManager mgr{homedir_, nullptr};
    auto theList = mgr.listWallets();
    ASSERT_EQ(theList.size(), 4);
    for (const auto& path : walletFiles) {
@@ -3923,7 +3930,7 @@ TEST_F(WalletManagerTests, ListWO)
    }
 
    //list wallets
-   Bridge::WalletManager mgr{homedir_};
+   Bridge::WalletManager mgr{homedir_, nullptr};
    auto theList = mgr.listWallets();
    ASSERT_EQ(theList.size(), 2);
    for (const auto& path : wltPaths) {
@@ -4021,7 +4028,7 @@ TEST_F(WalletManagerTests, Migrate_Legacy)
    );
 
    //list wallets
-   Bridge::WalletManager mgr{homedir_};
+   Bridge::WalletManager mgr{homedir_, nullptr};
    auto theList = mgr.listWallets();
    ASSERT_EQ(theList.size(), 1);
 
@@ -4080,7 +4087,7 @@ TEST_F(WalletManagerTests, Migrate_Legacy)
 
    //check migrated wallet
    try {
-      auto wltContainer = mgr.getWalletContainer(wltId);
+      auto wltContainer = mgr.getContainer(wltId);
       ASSERT_NE(wltContainer, nullptr);
       EXPECT_EQ(wltContainer->getHighestUsedIndex(), 2);
       EXPECT_EQ(wltContainer->getAccountId().toHexStr(), "f6e10000");
@@ -4116,7 +4123,7 @@ TEST_F(WalletManagerTests, Migrate_Reject)
    );
 
    //list wallets
-   Bridge::WalletManager mgr{homedir_};
+   Bridge::WalletManager mgr{homedir_, nullptr};
    auto theList = mgr.listWallets();
    ASSERT_EQ(theList.size(), 1);
 
@@ -4284,122 +4291,6 @@ protected:
    std::string serverAddr_;
    std::string hexMagicBytes;
 };
-
-////
-TEST_F(WalletManagerWebsocketsTests, Connect)
-{
-   NotifQueue queue;
-   auto notifFunc = [&queue](BinaryData notifData)
-   {
-      queue.push_back(notifData);
-   };
-   auto mgr = std::make_shared<Bridge::WalletManager>(homedir_);
-   mgr->setBdvCallback(notifFunc);
-
-   //list wallets
-   auto theList = mgr->listWallets();
-   ASSERT_EQ(theList.size(), 1);
-   auto wltId = theList.begin()->second->walletId();
-   mgr->loadWallets();
-
-   WebSocketServer::initPeerStore({
-      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
-
-   //create bdv ptr, connect to db
-   auto clientPeers = std::make_shared<NetworkPeers::ClientStore>(
-      Wallets::IO::ReadOnlyFileParams{
-         homedir_ / CLIENT_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   auto bdvPtr = Bridge::setupClientConnection(clientPeers,
-      Config::NetworkSettings::dbIP(), Config::NetworkSettings::dbPort(),
-      Config::NetworkSettings::oneWayAuth(), {},
-      mgr->getBdvCallback());
-   mgr->setBdvPtr(bdvPtr);
-
-   //expecting setupDone notif
-   {
-      auto notifBd = queue.pop();
-      kj::ArrayPtr<const capnp::word> words(
-         reinterpret_cast<const capnp::word*>(notifBd.getPtr()),
-         notifBd.getSize() / sizeof(capnp::word));
-      capnp::FlatArrayMessageReader reader(words);
-      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-      auto notif = fromBridge.getNotification();
-      ASSERT_EQ(notif.which(), Codec::Bridge::Notification::SETUP_DONE);
-   }
-
-   //register wallet
-   mgr->registerWallets();
-
-   //expecting registerDone notif
-   {
-      auto notifBd = queue.pop();
-      kj::ArrayPtr<const capnp::word> words(
-         reinterpret_cast<const capnp::word*>(notifBd.getPtr()),
-         notifBd.getSize() / sizeof(capnp::word));
-      capnp::FlatArrayMessageReader reader(words);
-      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-      auto notif = fromBridge.getNotification();
-      ASSERT_EQ(notif.which(), Codec::Bridge::Notification::REGISTER_DONE);
-   }
-
-   //start blockchain db & go online
-   theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
-   bdvPtr->goOnline();
-
-   //expecting ready notif
-   int newBlockVal = 0;
-   bool run = true;
-   while (run) {
-      auto notifBd = queue.pop();
-      kj::ArrayPtr<const capnp::word> words(
-         reinterpret_cast<const capnp::word*>(notifBd.getPtr()),
-         notifBd.getSize() / sizeof(capnp::word));
-      capnp::FlatArrayMessageReader reader(words);
-      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-      auto notif = fromBridge.getNotification();
-
-      switch (notif.which()) {
-         case Codec::Bridge::Notification::READY:
-         {
-            newBlockVal = notif.getReady();
-            run = false;
-            break;
-         }
-
-         case Codec::Bridge::Notification::SCAN_PROGRESS:
-            break;
-
-         default:
-            EXPECT_TRUE(false) << (int)notif.which();
-      }
-   }
-   ASSERT_EQ(newBlockVal, 5);
-
-   //check wallet balances
-   try {
-      auto wltCont = mgr->getWalletContainer(wltId);
-      ASSERT_NE(wltCont, nullptr);
-
-      auto addrBalances = wltCont->getAddrBalanceMap();
-      ASSERT_EQ(addrBalances.size(), 4);
-
-      for (const auto& mgrBal : addrBalances) {
-         auto addrBal = TestChain::testAddrBalances[5].at(mgrBal.first);
-         EXPECT_EQ(addrBal[0], mgrBal.second.fullBalance);
-         EXPECT_EQ(addrBal[1], mgrBal.second.spendableBalance);
-         EXPECT_EQ(addrBal[2], mgrBal.second.unconfirmedBalance);
-         EXPECT_EQ(addrBal[3], mgrBal.second.txCount);
-      }
-   } catch (const std::exception& e) {
-      std::cout << e.what() << std::endl;
-      ASSERT_TRUE(false);
-   }
-
-   //cleanup
-   bdvPtr->unregisterFromDB();
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 // BridgeWalletTests
@@ -13718,7 +13609,7 @@ TEST_F(BridgeBlocksAutoDBTests, Connect_NoCleanup)
    }
 
    /* ephemeral db should clean itself up after the client disconnects */
-   bridge_->disconnectFromDb();
+   bridge_->cleanupDbConnection();
 
    //confirm db is down
    while (bridge_->isDbRunning()) {

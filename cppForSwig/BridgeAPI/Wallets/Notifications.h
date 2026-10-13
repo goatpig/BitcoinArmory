@@ -25,107 +25,105 @@ namespace Armory
 
    namespace Bridge
    {
-      enum class NotifType : int
+      namespace Notifications
       {
-         PUSH,
-         NEWBLOCK,
-         ZC,
-         REFRESH,
-         IS_REGISTERED,
-         DISCONNECTED
-      };
+         namespace Server
+         {
+            enum class NotifType : int
+            {
+               PUSH,
+               NEWBLOCK,
+               ZC,
+               REFRESH,
+               IS_REGISTERED,
+               SETUP_DONE,
+               DISCONNECTED
+            };
 
-      struct NotifStruct
-      {
-         const NotifType type;
-         NotifStruct(NotifType);
-         virtual ~NotifStruct(void) = 0;
-         virtual bool syncWalletState(void) const;
-      };
-      typedef std::function<void(std::shared_ptr<NotifStruct>)> NotifFunc;
+            struct Notif
+            {
+               const NotifType type;
+               Notif(NotifType);
+               virtual ~Notif(void) = 0;
+               virtual bool syncWalletState(void) const;
+            };
 
-      struct NotifStruct_Push : public NotifStruct
-      {
-         BinaryData packet;
-         NotifStruct_Push(BinaryData);
-      };
+            struct Notif_Push : public Notif
+            {
+               BinaryData packet;
+               Notif_Push(BinaryData);
+            };
 
-      struct NotifStruct_Registered : public NotifStruct
-      {
-         NotifStruct_Registered(void);
-      };
+            struct Notif_Registered : public Notif
+            {
+               Notif_Registered(void);
+            };
 
-      struct NotifStruct_Disconnected : public NotifStruct
-      {
-         BinaryData packet;
-         NotifStruct_Disconnected(BinaryData);
-      };
+            struct Notif_Disconnected : public Notif
+            {
+               Notif_Disconnected(void);
+            };
 
-      struct NotifStruct_NewBlock : public NotifStruct
-      {
-         const NewBlockNotif blockNotif;
-         const bool isReadyNotif;
-         const std::function<void(void)> callback;
+            struct Notif_NewBlock : public Notif
+            {
+               const NewBlockNotif blockNotif;
+               const bool isReadyNotif;
 
-         NotifStruct_NewBlock(
-            const NewBlockNotif&, const std::function<void(void)>&, bool);
-         bool syncWalletState(void) const override;
-      };
+               Notif_NewBlock(
+                  const NewBlockNotif&, bool);
+               bool syncWalletState(void) const override;
+            };
 
-      struct NotifStruct_ZC : public NotifStruct
-      {
-         std::vector<TxIOPair> txios;
-         std::set<BinaryData> invalidatedZCHashes;
-         const std::function<void(
-            const std::vector<Ledgers::Entry>&,
-            const std::set<BinaryData>&)> callback;
+            struct Notif_ZC : public Notif
+            {
+               std::vector<TxIOPair> txios;
+               std::set<BinaryData> invalidatedZCHashes;
 
-         NotifStruct_ZC(std::vector<TxIOPair>, std::set<BinaryData>,
-            const std::function<void(
+               Notif_ZC(std::vector<TxIOPair>, std::set<BinaryData>);
+            };
+
+            struct Notif_Refresh : public Notif
+            {
+               const std::set<std::string> notifIds;
+
+               Notif_Refresh(const std::set<std::string>&);
+               Notif_Refresh(const std::string&);
+               bool syncWalletState(void) const override;
+            };
+
+            ////////
+            class NotifHandler : public RemoteCallback
+            {
+               using NotifQueue = Threading::BlockingQueue<std::unique_ptr<Notif>>;
+            private:
+               std::shared_ptr<NotifQueue> queue_;
+
+            public:
+               NotifHandler(std::shared_ptr<NotifQueue>);
+
+               //virtuals
+               void run(BdmNotification) override;
+               void progress(
+                  BDMPhase,
+                  const std::vector<std::string>&,
+                  float, unsigned, unsigned
+               ) override;
+               void disconnected(void) override;
+            };
+         }
+
+         namespace Client
+         {
+            //bridge client notif serialization
+            BinaryData getSerializedNewBlockNotif(std::shared_ptr<Server::Notif_NewBlock>);
+            BinaryData getSerializedRefreshNotif(std::shared_ptr<Server::Notif_Refresh>);
+            std::pair<BinaryData, BinaryData> getSerializedZcNotif(
                const std::vector<Ledgers::Entry>&,
-               const std::set<BinaryData>&)>&
-         );
-      };
-
-      struct NotifStruct_Refresh : public NotifStruct
-      {
-         const std::function<void(void)> callback;
-         NotifStruct_Refresh(const std::function<void(void)>&);
-         bool syncWalletState(void) const override;
-      };
-
-      ////////
-      class Callback : public RemoteCallback
-      {
-      private:
-         //to push packets to the gui
-         NotifFunc notifFunc_;
-
-         //id members
-         std::mutex idMutex_;
-         std::unordered_map<std::string, std::function<void(void)>> idCallbacks_;
-
-      private:
-         void processRefreshCallbacks(std::set<std::string>&);
-
-      public:
-         Callback(const NotifFunc&);
-
-         //virtuals
-         void run(BdmNotification) override;
-         void progress(
-            BDMPhase,
-            const std::vector<std::string>&,
-            float, unsigned, unsigned
-         ) override;
-         void disconnected(void) override;
-
-         void notifySetupDone(void);
-         void notifySetupRegistrationDone(void);
-         void notifyRefresh(const std::set<std::string>&);
-         void registerRefreshCallback(const std::string&,
-            const std::function<void(void)>&);
-         void unregisterCallback(const std::string&);
-      };
-   }
-}
+               const std::set<BinaryData>&);
+            BinaryData getSerializedSetupDoneNotif(void);
+            BinaryData getSerializedWalletsRegisteredNotif(void);
+            BinaryData getSerializedServerDisconnectedNotif(void);
+         }
+      } // namespace Notifications
+   } // namespace Bridge
+} // namespace Armory

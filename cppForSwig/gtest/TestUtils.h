@@ -108,7 +108,7 @@ namespace DBTestUtils
 
    Armory::Types::BdvId registerBDV(Clients*, const BinaryData&);
    void goOnline(Clients*, Armory::Types::BdvId);
-   const std::shared_ptr<BDV_Server_Object> getBDV(Clients*, Armory::Types::BdvId);
+   const std::shared_ptr<BdvClient> getBDV(Clients*, Armory::Types::BdvId);
    void registerWallet(Clients*, Armory::Types::BdvId,
       const std::vector<BinaryData>&, const std::string&, bool);
 

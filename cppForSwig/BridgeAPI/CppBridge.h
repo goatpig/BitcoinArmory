@@ -16,6 +16,7 @@
 #include <filesystem>
 
 #include <Utils/Types.h>
+#include <Utils/ThreadSafeClasses.h>
 
 class BinaryData;
 class BinaryDataRef;
@@ -64,6 +65,13 @@ namespace Armory
 
    namespace Bridge
    {
+      namespace Notifications
+      {
+         namespace Server
+         {
+            class Notif;
+         }
+      }
       struct ServerPushWrapper;
       struct WritePayload_Bridge;
       class WalletManager;
@@ -105,6 +113,9 @@ namespace Armory
          //armorydb stuff
          const bool dbOffline_;
          std::shared_ptr<NetworkPeers::ClientStore> peersDb_;
+         std::shared_ptr<Threading::BlockingQueue<
+            std::unique_ptr<Notifications::Server::Notif>>> dbNotifQueue_;
+         std::thread dbNotifThread_;
 
          //to write to the bridge client
          std::function<void(std::unique_ptr<WritePayload_Bridge>)> writeLambda_;
@@ -128,6 +139,7 @@ namespace Armory
 
       private:
          void reset(void);
+         void runServerNotificationProcessingThread(void);
 
       public:
          std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr(void) const;
@@ -285,7 +297,7 @@ namespace Armory
          CppBridge(void);
          ~CppBridge(void);
 
-         void disconnectFromDb(void);
+         void cleanupDbConnection(void);
          void writeToClient(BinaryData&) const;
          void setWriteLambda(
             const std::function<void(std::unique_ptr<WritePayload_Bridge>)>&);

@@ -317,7 +317,7 @@ namespace DBTestUtils
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   const std::shared_ptr<BDV_Server_Object> getBDV(
+   const std::shared_ptr<BdvClient> getBDV(
       Clients* clients, Types::BdvId id)
    {
       return clients->get(id);
