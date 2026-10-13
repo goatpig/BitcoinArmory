@@ -263,10 +263,10 @@ namespace {
          std::string stdout_str;
 
 
-         //read stdout via the pipe
+         //read stdout via the pipe, give ArmoryDB up to 10s to print its key
          if (result == 0 && pid != -1) {
             struct pollfd pfd{ stdout_pipe[0], POLLIN };
-            while (poll(&pfd, 1, 2000) > 0) {
+            while (poll(&pfd, 1, 10000) > 0) {
                stdout_str.resize(1024);
                auto bytesread = read(stdout_pipe[0], stdout_str.data(), 1023);
                if (bytesread > 0) {
@@ -948,6 +948,10 @@ void AutomationContext::automateDb()
    }
 
    //set db pubkey
+   if (result.second.empty()) {
+      throw std::runtime_error(
+         "ArmoryDB did not print its public key (it may have failed to start)");
+   }
    auto serverKey = NetworkPeers::PeerKey::fromHumanReadable(result.second);
    peers_->addPeer(serverKey, {std::format("127.0.0.1:{}", dbPort_)}, {});
 }
