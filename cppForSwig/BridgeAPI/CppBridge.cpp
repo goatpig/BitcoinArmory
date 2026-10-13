@@ -10,7 +10,7 @@
 #include "BridgeSocket.h"
 #include "./Wallets/Manager.h"
 #include "./Wallets/TxIOCache.h"
-#include "./Wallets/Notifications.h"
+#include "./Notifications.h"
 
 #include <Utils/ArmoryConfig.h>
 #include <Utils/BtcUtils.h>

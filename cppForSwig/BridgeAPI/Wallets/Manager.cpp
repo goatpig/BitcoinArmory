@@ -28,8 +28,8 @@
 #include <Wallets/Seeds/Seeds.h>
 #include <Wallets/EncryptedDB.h>
 
-#include "Notifications.h"
 #include "TxIOCache.h"
+#include "../Notifications.h"
 #include "../PassphrasePrompt.h"
 
 using namespace Armory;

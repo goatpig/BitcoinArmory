@@ -14,7 +14,7 @@
 #include <Ledgers/Context.h>
 #include <TxClasses.h>
 #include <AsyncClient.h>
-#include "Notifications.h"
+#include "../Notifications.h"
 
 using namespace Armory;
 using namespace Armory::Bridge;

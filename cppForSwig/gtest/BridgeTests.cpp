@@ -27,8 +27,8 @@
 #include <BridgeAPI/CppBridge.h>
 #include <BridgeAPI/BridgeSocket.h>
 #include <BridgeAPI/ProtoCommandParser.h>
+#include <BridgeAPI/Notifications.h>
 #include <BridgeAPI/Wallets/Manager.h>
-#include <BridgeAPI/Wallets/Notifications.h>
 #include <BridgeAPI/Wallets/TxIOCache.h>
 #include <BridgeAPI/DBSetup.h>
 
