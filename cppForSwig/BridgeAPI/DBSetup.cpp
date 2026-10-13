@@ -218,12 +218,15 @@ namespace {
       auto targetStr = target.string();
       argv.emplace_back(targetStr.data());
 
-      //path args
+      //path args: build all the strings before taking pointers to them,
+      //growing the vector moves short strings and frees their old buffer
       std::vector<std::string> pathArgsStr;
       for (const auto& pathArg : pathArgs) {
          pathArgsStr.emplace_back(std::format("{}={}",
             pathArg.first, pathArg.second.string()));
-         argv.emplace_back((char*)pathArgsStr.back().data());
+      }
+      for (auto& pathArgStr : pathArgsStr) {
+         argv.emplace_back(pathArgStr.data());
       }
 
       //other args
