@@ -1626,8 +1626,8 @@ void CppBridge::connectToPeer(const std::string& peerKey, MessageId refId)
       reply.setSuccess(true);
    } catch (const std::exception& e) {
       reply.setSuccess(false);
-      reply.setError(std::string{"failed connect to peer with error: "} +
-         e.what());
+      reply.setError(std::format(
+         "failed connect to peer with error: {}", e.what()));
 
       //on failed connect attempt, also push a disconnected notif
       auto message = Notifications::Client::getSerializedServerDisconnectedNotif();

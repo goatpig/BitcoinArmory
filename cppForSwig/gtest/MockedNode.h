@@ -159,7 +159,7 @@ public:
    bool shutdown(void) override;
    Node::RpcState testConnection(void) override;
    bool canPoll(void) const override;
-   void waitOnChainSync(std::function<void(void)>, bool);
+   void waitOnChainSync(std::function<void(void)>, bool) override;
    int broadcastTx(const BinaryDataRef&, std::string&) override;
    Node::Core::RPC::FeeEstimateResult getFeeByte(
       unsigned, const std::string&) const override;

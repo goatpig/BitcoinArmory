@@ -59,7 +59,6 @@ int main(int argc, char* argv[])
    }
 
    auto logFilePath = Config::Pathing::logFilePath(LOG_FILE_NAME).string();
-   LOGDISABLESTDOUT();
    STARTLOGGING(logFilePath, LogLvlInfo);
    if (Config::NetworkSettings::ephemeralPeers()) {
       if (Config::NetworkSettings::oneWayAuth()) {
@@ -140,7 +139,6 @@ int main(int argc, char* argv[])
 
    //start LWS server, it will return on shutdown
    WebSocketServer::start(bdmThread.bdm());
-   LOGINFO << "WS server has shut down" << std::endl;
 
    //shutdown BDM and cleanup crypto contexts
    bdmThread.shutdown();

@@ -1201,9 +1201,12 @@ void Clients::init()
       this->unregisterBDVThread();
    };
 
-   controlThreads_.push_back(std::thread([this](){ bdmNotificationLoop(); }));
-   controlThreads_.push_back(std::thread([this](){ bdvOuterNotificationLoop(); }));
-   controlThreads_.push_back(std::thread([this](){ this->broadcastThroughRPC(); }));
+   controlThreads_.emplace("bdm_notif_loop",
+      std::thread([this](){ bdmNotificationLoop(); }));
+   controlThreads_.emplace("bdv outer notif loop",
+      std::thread([this](){ bdvOuterNotificationLoop(); }));
+   controlThreads_.emplace("rpc broadcast thread",
+      std::thread([this](){ this->broadcastThroughRPC(); }));
    unregThread_ = std::thread([this](){ this->unregisterBDVThread(); });
 
    unsigned innerThreadCount = 2;
@@ -1212,8 +1215,12 @@ void Clients::init()
       innerThreadCount = std::thread::hardware_concurrency();
    }
    for (unsigned i = 0; i < innerThreadCount; i++) {
-      controlThreads_.push_back(std::thread([this](){ bdvInnerNotificationLoop(); }));
-      controlThreads_.push_back(std::thread([this](){ this->messageParserThread(); }));
+      controlThreads_.emplace(
+         std::format("bdv inner notif loop #{}/{}", i, innerThreadCount),
+         std::thread([this](){ bdvInnerNotificationLoop(); }));
+      controlThreads_.emplace(
+         std::format("bdv parser thread #{}/{}", i, innerThreadCount),
+         std::thread([this](){ this->messageParserThread(); }));
    }
 
    auto callbackPtr = std::make_unique<ZeroConf::ZeroConfCallbacks_BDV>(this);
@@ -1329,10 +1336,13 @@ void Clients::shutdown()
    packetQueue_.terminate();
 
    //exit BDM maintenance thread
-   bdm_->shutdown();
-   for (auto& thr : controlThreads_) {
-      if (thr.joinable()) {
-         thr.join();
+   bdm_->notificationStack.terminate();
+
+   //wait on all control threads
+   for (auto& thrPair : controlThreads_) {
+      LOGDEBUG << "joining control thread: " << thrPair.first;
+      if (thrPair.second.joinable()) {
+         thrPair.second.join();
       }
    }
 }

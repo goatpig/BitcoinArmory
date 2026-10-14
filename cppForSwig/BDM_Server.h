@@ -189,7 +189,7 @@ private:
    std::shared_ptr<BlockDataManager> bdm_;
    std::atomic<bool> run_;
 
-   std::vector<std::thread> controlThreads_;
+   std::unordered_map<std::string, std::thread> controlThreads_;
    std::thread unregThread_;
 
    std::shared_ptr<BdvClient::NotifQueue> outerBDVNotifStack_;

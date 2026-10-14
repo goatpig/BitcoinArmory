@@ -98,7 +98,6 @@ private:
    std::shared_ptr<Armory::Database::Builder> dbBuilder_;
    std::shared_ptr<Armory::ZeroConf::ZeroConfContainer> zeroConfCont_;
 
-   std::function<bool(void)> shutdownLbd_;
    std::atomic_int32_t BDMstate_;
    std::exception_ptr exceptPtr_ = nullptr;
 
@@ -119,7 +118,7 @@ private:
    bool loadDiskState(const ProgressCallback&);
 
 public:
-   BlockDataManager(std::function<bool(void)>);
+   BlockDataManager(void);
    ~BlockDataManager(void);
 
    std::shared_ptr<Armory::Blockchain> blockchain(void) const;
@@ -147,7 +146,6 @@ public:
 
    void signalStart(bool);
    bool waitOnStartSignal(void);
-   void triggerShutdown(void);
    void shutdown(void);
    void cleanup(void);
    bool isRunning(void) const;

@@ -293,7 +293,7 @@ TEST_F(SignerTest, DISABLED_CheckChain_Test)
    //this test fails because the p2sh tx in our unit test chain are botched
    //(the input script has opcode when it should only be push data)
 
-   BlockDataManager bdm(nullptr);
+   BlockDataManager bdm;
    try {
       bdm.doInitialSyncOnLoad(BdmInitMode::RESUME, nullptr);
    } catch (const std::exception&) {

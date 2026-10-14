@@ -1667,7 +1667,8 @@ void P2P::Peer::shutdown()
    if (socket_ != nullptr) {
       socket_->shutdown();
       try {
-         shutdownFuture_.wait();
+         auto fut = shutdownFuture_;
+         fut.wait();
       } catch (const std::future_error&) {}
    }
 

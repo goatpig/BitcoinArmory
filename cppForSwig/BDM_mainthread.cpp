@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -28,9 +28,7 @@ BDM_CallBack::~BDM_CallBack()
 BlockDataManagerThread::BlockDataManagerThread()
 {
    pimpl = std::make_unique<BlockDataManagerThreadImpl>();
-   pimpl->bdm = std::make_shared<BlockDataManager>([this]()->bool{
-      return this->shutdown();
-   });
+   pimpl->bdm = std::make_shared<BlockDataManager>();
 }
 
 BlockDataManagerThread::~BlockDataManagerThread()

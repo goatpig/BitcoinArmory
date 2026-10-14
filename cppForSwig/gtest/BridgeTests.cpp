@@ -14055,6 +14055,8 @@ TEST_F(BridgePeersManagement, ListAddConnect)
 {
    WebSocketServer::initPeerStore({homedir_ / SERVER_AUTH_PEER_FILENAME, {}});
    startWSServer();
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    NetworkPeers::PeerKey clientPeer{clientPubKey_.getRef(), NetworkPeers::PeerType::Client};
    NetworkPeers::PeerKey serverPeer{serverPubkey_.getRef(), NetworkPeers::PeerType::ServerOneWay};
@@ -14102,6 +14104,8 @@ TEST_F(BridgePeersManagement, LoadDeleteCreate)
 {
    WebSocketServer::initPeerStore({homedir_ / SERVER_AUTH_PEER_FILENAME, {}});
    startWSServer();
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    NetworkPeers::PeerKey serverPeer{serverPubkey_.getRef(), NetworkPeers::PeerType::ServerOneWay};
    auto serverKey = serverPeer.toHumanReadable();
@@ -14149,6 +14153,8 @@ TEST_F(BridgePeersManagement, Remove)
 {
    WebSocketServer::initPeerStore({homedir_ / SERVER_AUTH_PEER_FILENAME, {}});
    startWSServer();
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    NetworkPeers::PeerKey clientPeer{clientPubKey_.getRef(), NetworkPeers::PeerType::Client};
    NetworkPeers::PeerKey serverPeer{serverPubkey_.getRef(), NetworkPeers::PeerType::ServerOneWay};

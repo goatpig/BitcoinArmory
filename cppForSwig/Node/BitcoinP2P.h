@@ -459,7 +459,7 @@ namespace Node
 
             std::exception_ptr select_except_ = nullptr;
             std::exception_ptr process_except_ = nullptr;
-            std::future<void> shutdownFuture_;
+            std::shared_future<void> shutdownFuture_;
             uint32_t topBlock_ = UINT32_MAX;
 
          private:

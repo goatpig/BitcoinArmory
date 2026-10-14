@@ -135,8 +135,8 @@ NodeUnitTest::~NodeUnitTest()
 
 void NodeUnitTest::shutdown()
 {
+   watcherInvQueue_.terminate();
    if (watcherThread_.joinable()) {
-      watcherInvQueue_.terminate();
       watcherThread_.join();
    }
    P2P::Iface::shutdown();

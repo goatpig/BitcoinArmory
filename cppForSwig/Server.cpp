@@ -319,9 +319,7 @@ void WebSocketServer::start(std::shared_ptr<BlockDataManager> bdm)
 
    //run service thread
    instance->webSocketService(port);
-
-   //cleanup before exiting
-   shutdown();
+   delete instance;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -332,8 +330,7 @@ void WebSocketServer::shutdown()
       return;
    }
 
-   auto instance = instance_.load(std::memory_order_relaxed);
-   instance_.store(nullptr, std::memory_order_relaxed);
+   auto instance = getInstance();
    if (instance == nullptr) {
       return;
    }
@@ -341,12 +338,11 @@ void WebSocketServer::shutdown()
       return;
    }
 
-   LOGINFO << "proceeding to WS server shutdown";
+   LOGWARN << "WS server is shutting down";
    instance->msgQueue_.terminate();
    instance->clientConnectionInterruptQueue_.terminate();
    instance->clients_->shutdown();
    instance->run_.store(0, std::memory_order_relaxed);
-   lws_cancel_service(instance->contextPtr_);
    instance->packetQueue_.terminate();
 
    for (auto& thr : instance->threads_) {
@@ -355,9 +351,9 @@ void WebSocketServer::shutdown()
       }
    }
    instance->threads_.clear();
-   delete instance;
 
-   LOGINFO << "WS server shutdown sequence has completed";
+   LOGWARN << "WS server shutdown sequence has completed";
+   lws_cancel_service(instance->contextPtr_);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -431,6 +427,7 @@ void WebSocketServer::webSocketService(int port)
    LOGINFO << "cleaning up lws server";
    lws_vhost_destroy(vhost);
    lws_context_destroy(contextPtr_);
+   instance_.store(nullptr, std::memory_order_relaxed);
 }
 
 WebSocketServer* WebSocketServer::getInstance()

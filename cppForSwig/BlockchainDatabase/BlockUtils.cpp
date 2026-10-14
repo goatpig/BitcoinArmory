@@ -98,8 +98,7 @@ protected:
 
 ////////////////////////////////////////////////////////////////////////////////
 // BlockDataManager
-BlockDataManager::BlockDataManager(std::function<bool(void)> shutdownLbd) :
-   shutdownLbd_(shutdownLbd)
+BlockDataManager::BlockDataManager()
 {
    BDMstate_.store((int)BDMState::Uninitialized, std::memory_order_relaxed);
    blockchain_ = std::make_shared<Blockchain>(
@@ -188,13 +187,6 @@ void BlockDataManager::shutdown()
    }
    if (scrAddrData_) {
       scrAddrData_->shutdown();
-   }
-}
-
-void BlockDataManager::triggerShutdown()
-{
-   if (shutdownLbd_ != nullptr) {
-      shutdownLbd_();
    }
 }
 
