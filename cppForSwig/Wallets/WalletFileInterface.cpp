@@ -794,12 +794,38 @@ void WalletDBInterface::compactFile()
       }
       swapPath = fullpath;
 
-      //rename old file to swap
+      /*
+      Hard link the old file to swap, then replace the wallet path with the
+      copy in a single rename, so a process crash can't leave the path empty.
+      Fall back to moving the old file if the link fails (FAT/exFAT).
+      Entries in swap may be links to the live file: unlink them, don't wipe.
+      */
+      bool linked = false;
+      bool moved = false;
       try {
-         std::filesystem::rename(fullDbPath, swapPath);
+         std::error_code ec;
+         std::filesystem::create_hard_link(fullDbPath, swapPath, ec);
+         if (!ec) {
+            linked = true;
+         } else {
+            std::filesystem::rename(fullDbPath, swapPath);
+            moved = true;
+         }
          std::filesystem::rename(copyName, fullDbPath);
       } catch (const std::filesystem::filesystem_error& e) {
          std::cout << e.what() << std::endl;
+         std::error_code ec;
+         if (linked) {
+            //old file is still in place, drop the link (do not wipe it!)
+            std::filesystem::remove(swapPath, ec);
+         } else if (moved) {
+            //put the old file back
+            std::filesystem::rename(swapPath, fullDbPath, ec);
+         }
+         if (FileUtils::pathExists(fullDbPath, 0)) {
+            //nothing was swapped, reopen the old file
+            openEnv();
+         }
          throw WalletInterfaceException(
             "failed to swap file during wipe operation");
       }
