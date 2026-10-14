@@ -272,7 +272,7 @@ class DatabaseTab(QtWidgets.QWidget):
          '2-way auth with ad-hoc keys. The database '
          'shuts down when the client exits.'
          '<br><br>'
-         '<b>Full Database.</b> Tracks only transactions '
+         '<b>Light Database.</b> Tracks only transactions '
          'relevant to your registered wallets. Lower '
          'disk and memory usage.'
          '<br><br>'
@@ -355,7 +355,7 @@ class DatabaseTab(QtWidgets.QWidget):
       self.databaseTypeCombo = QtWidgets.QComboBox()
       self.databaseTypeCombo.setFixedWidth(200)
       self.databaseTypeCombo.addItems(
-         ["Full Database", "Supernode"])
+         ["Light Database", "Supernode"])
       self.databaseTypeCombo.currentTextChanged.connect(
          self.updateCliCommandDisplay)
 
