@@ -135,13 +135,10 @@ private:
 
    static std::atomic<WebSocketServer*> instance_;
    static std::mutex mu_;
-   static std::promise<bool> shutdownPromise_;
-   static std::shared_future<bool> shutdownFuture_;
    BinaryData encInitPacket_;
 
    std::shared_ptr<Clients> clients_;
    std::atomic<unsigned> run_;
-   std::promise<bool> isReadyProm_;
 
    Armory::Threading::BlockingQueue<std::unique_ptr<PendingMessage>> msgQueue_;
    Armory::Threading::BlockingQueue<uint64_t> clientConnectionInterruptQueue_;
@@ -159,12 +156,12 @@ private:
    bool async_ = false;
 
 public:
+   std::atomic<bool> masterIsConnected_;
    void writeToSocket(struct lws*, Armory::Network::SerializedMessage&);
 
 private:
    void webSocketService(int);
    void commandThread(void);
-   void setIsReady(void);
 
    void prepareWriteThread(void);
    void closeClientConnection(uint64_t);
@@ -182,9 +179,8 @@ public:
    static void init(void);
    static void initPeerStore(const Armory::Wallets::IO::ReadOnlyFileParams&);
    static void initPeerStore(std::shared_ptr<Armory::NetworkPeers::ServerStore>);
-   static void start(std::shared_ptr<BlockDataManager>, bool);
+   static void start(std::shared_ptr<BlockDataManager>);
    static void shutdown(void);
-   static void waitOnShutdown(void);
    static const SecureBinaryData& getOwnPublicKey(void);
    static bool isMasterKey(BinaryDataRef);
 

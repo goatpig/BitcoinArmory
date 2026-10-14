@@ -4158,141 +4158,6 @@ TEST_F(WalletManagerTests, Migrate_Reject)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// WalletManagerWebsocketsTests
-////////////////////////////////////////////////////////////////////////////////
-class WalletManagerWebsocketsTests : public ::testing::Test
-{
-protected:
-   void initBDM()
-   {
-      theBDMt_ = new BlockDataManagerThread();
-      iface_ = theBDMt_->bdm()->getIFace();
-   }
-
-   void createWallet()
-   {
-      Wallets::IO::CreateWalletParams params{
-         homedir_,
-         Passphrase::SetNew{1ms, 0, {}},
-         Passphrase::SetNew{1ms, 0, {}},
-         nullptr, 0
-      };
-
-      //create empty WO wallet
-      auto wltWO = Wallets::AssetWallet_Single::createBlank("walletWO1"sv, params);
-      wltWO->setupImportAccount();
-
-      auto pubKeyB = Cryptography::ECDSA::computePublicKey(TestChain::privKeyAddrB);
-      wltWO->importPublicKey(pubKeyB, AddressEntryType(
-         AddressEntryType::P2PKH | AddressEntryType::Uncompressed));
-
-      auto pubKeyC = Cryptography::ECDSA::computePublicKey(TestChain::privKeyAddrC);
-      wltWO->importPublicKey(pubKeyC, AddressEntryType(
-         AddressEntryType::P2PKH | AddressEntryType::Uncompressed));
-
-      auto pubKeyD = Cryptography::ECDSA::computePublicKey(TestChain::privKeyAddrD);
-      wltWO->importPublicKey(pubKeyD, AddressEntryType(
-         AddressEntryType::P2PKH | AddressEntryType::Uncompressed));
-
-      auto pubKeyE = Cryptography::ECDSA::computePublicKey(TestChain::privKeyAddrE);
-      wltWO->importPublicKey(pubKeyE, AddressEntryType(
-         AddressEntryType::P2PKH | AddressEntryType::Uncompressed));
-   }
-
-   virtual void SetUp()
-   {
-      FileUtils::removeDirectory(blkdir_);
-      FileUtils::removeDirectory(homedir_);
-      FileUtils::removeDirectory(ldbdir_);
-
-      FileUtils::createDirectory(blkdir_ / "blocks");
-      FileUtils::createDirectory(homedir_);
-      FileUtils::createDirectory(ldbdir_);
-
-      Config::DBSettings::setServiceType(SERVICE_UNITTEST_WITHWS);
-
-      // Put the first 5 blocks into the blkdir
-      blk0dat_ = FileUtils::getBlkFilename(blkdir_ / "blocks", 0);
-      TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
-
-      WebSocketServer::init();
-      Config::parseArgs({
-         "--datadir=./fakehomedir",
-         "--dbdir=./ldbtestdir",
-         "--satoshi-datadir=./blkfiletest",
-         "--db-type=DB_BARE",
-         "--thread-count=3",
-         "--public"},
-         Config::ProcessType::DB);
-
-      //setup auth peers for server and client
-      authPeersPassLbd_ = [](const std::set<Wallets::EncryptionKeyId>&)
-      ->Passphrase::Result
-      {
-         return { {}, true };
-      };
-
-      auto createWltLbd = []()->std::unique_ptr<Passphrase::Params>
-      {
-         return std::make_unique<Passphrase::Params>(
-            1ms, 0, SecureBinaryData{});
-      };
-
-      auto serverPeersWlt = NetworkPeers::PeerStore::bootstrapWallet({
-         homedir_ / SERVER_AUTH_PEER_FILENAME, {createWltLbd}});
-      NetworkPeers::ServerStore serverPeers(serverPeersWlt);
-
-      auto clientPeersWlt = NetworkPeers::PeerStore::bootstrapWallet({
-         homedir_ / CLIENT_AUTH_PEER_FILENAME, {createWltLbd}});
-      NetworkPeers::ClientStore clientPeers(clientPeersWlt);
-
-      //share public keys between client and server
-      serverPubkey_ = serverPeers.getOwnPublicKey();
-      serverAddr_ = std::format("127.0.0.1:{}", Config::NetworkSettings::dbPort());
-      clientPeers.addPeer(
-         NetworkPeers::PeerKey{serverPubkey_, NetworkPeers::PeerType::ServerOneWay},
-         {serverAddr_}, {});
-
-      createWallet();
-      initBDM();
-      auto nodePtr = std::dynamic_pointer_cast<NodeUnitTest>(
-         Config::NetworkSettings::bitcoinNodes().first);
-      nodePtr->setBDM(theBDMt_->bdm());
-      hexMagicBytes = Config::BitcoinSettings::getMagicBytes().toHexStr();
-   }
-
-   /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown()
-   {
-      WebSocketServer::shutdown();
-      WebSocketServer::waitOnShutdown();
-      theBDMt_->shutdown();
-
-      delete theBDMt_;
-      theBDMt_ = nullptr;
-
-      FileUtils::removeDirectory(blkdir_);
-      FileUtils::removeDirectory(homedir_);
-      FileUtils::removeDirectory(ldbdir_);
-      Config::reset();
-   }
-
-   /////////////////////////////////////////////////////////////////////////////
-   BlockDataManagerThread *theBDMt_;
-   Passphrase::UnlockFunc authPeersPassLbd_;
-   LMDBBlockDatabase* iface_;
-
-   std::filesystem::path blkdir_{"./blkfiletest"sv};
-   std::filesystem::path homedir_{"./fakehomedir"sv};
-   std::filesystem::path ldbdir_{"./ldbtestdir"sv};
-   std::filesystem::path blk0dat_;
-
-   BinaryData serverPubkey_;
-   std::string serverAddr_;
-   std::string hexMagicBytes;
-};
-
-////////////////////////////////////////////////////////////////////////////////
 // BridgeWalletTests
 class BridgeWalletTests : public ::testing::Test
 {
@@ -6643,12 +6508,13 @@ protected:
       hexMagicBytes = Config::BitcoinSettings::getMagicBytes().toHexStr();
    }
 
-   /////////////////////////////////////////////////////////////////////////////
    virtual void TearDown()
    {
       bridge_.reset();
       WebSocketServer::shutdown();
-      WebSocketServer::waitOnShutdown();
+      if (wsServerThr_.joinable()) {
+         wsServerThr_.join();
+      }
       theBDMt_->shutdown();
 
       delete theBDMt_;
@@ -6658,6 +6524,17 @@ protected:
       FileUtils::removeDirectory(homedir_);
       FileUtils::removeDirectory(ldbdir_);
       Config::reset();
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   void startWSServer()
+   {
+      wsServerThr_ = std::thread([bdm=theBDMt_->bdm()](){
+         WebSocketServer::start(bdm); }
+      );
+
+      //arbitrary wait to give time to WS server to startup
+      std::this_thread::sleep_for(100ms);
    }
 
 protected:
@@ -6674,6 +6551,7 @@ protected:
    std::shared_ptr<Bridge::CppBridge> bridge_;
    std::string walletId_;
    std::string serverPubkey_;
+   std::thread wsServerThr_;
 };
 
 TEST_F(BridgeWalletsWithDBTests, Connect)
@@ -6692,7 +6570,7 @@ TEST_F(BridgeWalletsWithDBTests, Connect)
 
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -6734,7 +6612,7 @@ TEST_F(BridgeWalletsWithDBTests, CycleConnection)
 
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_FALSE(connectToIp(bridge_, "127.0.0.1", 9001, {}));
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
@@ -6774,9 +6652,11 @@ TEST_F(BridgeWalletsWithDBTests, CycleConnection)
    ASSERT_EQ(fromBridge.which(), Codec::Bridge::FromBridge::NOTIFICATION);
    auto notif = fromBridge.getNotification();
    ASSERT_EQ(notif.which(), Codec::Bridge::Notification::DISCONNECTED);
+   if (wsServerThr_.joinable()) {
+      wsServerThr_.join();
+   }
 
    //restart BDM
-   WebSocketServer::waitOnShutdown();
    theBDMt_->shutdown();
    delete theBDMt_;
 
@@ -6800,7 +6680,7 @@ TEST_F(BridgeWalletsWithDBTests, CycleConnection)
 
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -6851,7 +6731,7 @@ TEST_F(BridgeWalletsWithDBTests, DeleteWallet)
 
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -6962,7 +6842,7 @@ TEST_F(BridgeWalletsWithDBTests, ExtendAddressChain)
 
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -7041,7 +6921,7 @@ TEST_F(BridgeWalletsWithDBTests, AddNewAddress)
 
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -7327,7 +7207,9 @@ protected:
    {
       bridge_.reset();
       WebSocketServer::shutdown();
-      WebSocketServer::waitOnShutdown();
+      if (wsServerThr_.joinable()) {
+         wsServerThr_.join();
+      }
       theBDMt_->shutdown();
 
       delete theBDMt_;
@@ -7337,6 +7219,17 @@ protected:
       FileUtils::removeDirectory(homedir_);
       FileUtils::removeDirectory(ldbdir_);
       Config::reset();
+   }
+
+   ////////
+   void startWSServer()
+   {
+      wsServerThr_ = std::thread([bdm=theBDMt_->bdm()](){
+         WebSocketServer::start(bdm); }
+      );
+
+      //arbitrary wait to give time to WS server to startup
+      std::this_thread::sleep_for(100ms);
    }
 
 protected:
@@ -7363,6 +7256,7 @@ protected:
    std::string accountId_BC_;
    std::string accountId_DE_;
    std::string accountId_AFLB_;
+   std::thread wsServerThr_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -7375,7 +7269,7 @@ TEST_F(BridgeChainDataTests, Check5Blocks_BCDE)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -7420,7 +7314,7 @@ TEST_F(BridgeChainDataTests, ChangeFilters_ALFB_BCDE)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -7503,7 +7397,7 @@ TEST_F(BridgeChainDataTests, BlocksOutOfOrder_BCDE)
    TestUtils::setBlocks({ "0", "1", "2", "4", "5", "4A" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -7575,7 +7469,7 @@ TEST_F(BridgeChainDataTests, AddBlocks_BCDE)
 
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    //connect to db
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
@@ -7688,7 +7582,7 @@ TEST_F(BridgeChainDataTests, AddBlocks_BC_DE)
    //connect to db
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -7873,7 +7767,7 @@ TEST_F(BridgeChainDataTests, AddBlocks_BCDE_AFLB)
    //connect to db
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -8433,7 +8327,7 @@ TEST_F(BridgeChainDataTests, Reorg_BCDE)
    //connect to db
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -8575,7 +8469,7 @@ TEST_F(BridgeChainDataTests, Reorg_BCDE_DifferentOrder)
    //connect to db
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -8686,7 +8580,7 @@ TEST_F(BridgeChainDataTests, Reorg_BC_DE)
    //connect to db
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -8921,7 +8815,7 @@ TEST_F(BridgeChainDataTests, Reorg_BCDE_AFLB)
    //connect to db
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -9644,7 +9538,7 @@ TEST_F(BridgeChainDataTests, Reorg_SpendBeforeBranchPoint)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -9926,7 +9820,7 @@ TEST_F(BridgeChainDataTests, AddressBook)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -10006,7 +9900,7 @@ TEST_F(BridgeChainDataTests, getUTXOs)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -10138,7 +10032,7 @@ TEST_F(BridgeChainDataTests, ZeroConf)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -10372,7 +10266,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_Replace)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -10572,7 +10466,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_Chain)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -10797,7 +10691,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_StaggeredChain)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -11312,7 +11206,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_ChainRBF)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -11815,7 +11709,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_Reload)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -12087,7 +11981,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_Reorg)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4A" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -12418,7 +12312,7 @@ TEST_F(BridgeChainDataTests, DISABLED_ZeroConf_RegisterWallet)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    //init bridge
    loadWallets({walletId_BCDE_});
@@ -12653,7 +12547,7 @@ TEST_F(BridgeChainDataTests, RestoreSynchronize)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -12935,7 +12829,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_SpendNew)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
@@ -14110,13 +14004,14 @@ protected:
       nodePtr->setBDM(theBDMt_->bdm());
    }
 
-   /////////////////////////////////////////////////////////////////////////////
    virtual void TearDown()
    {
       bridge_.reset();
       WebSocketServer::shutdown();
-      WebSocketServer::waitOnShutdown();
       theBDMt_->shutdown();
+      if (wsServerThr_.joinable()) {
+         wsServerThr_.join();
+      }
 
       delete theBDMt_;
       theBDMt_ = nullptr;
@@ -14125,6 +14020,17 @@ protected:
       FileUtils::removeDirectory(homedir_);
       FileUtils::removeDirectory(ldbdir_);
       Config::reset();
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   void startWSServer()
+   {
+      wsServerThr_ = std::thread([bdm=theBDMt_->bdm()](){
+         WebSocketServer::start(bdm); }
+      );
+
+      //arbitrary wait to give time to WS server to startup
+      std::this_thread::sleep_for(100ms);
    }
 
 protected:
@@ -14141,13 +14047,14 @@ protected:
    std::shared_ptr<Bridge::CppBridge> bridge_;
    BinaryData serverPubkey_;
    BinaryData clientPubKey_;
+   std::thread wsServerThr_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(BridgePeersManagement, ListAddConnect)
 {
    WebSocketServer::initPeerStore({homedir_ / SERVER_AUTH_PEER_FILENAME, {}});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    NetworkPeers::PeerKey clientPeer{clientPubKey_.getRef(), NetworkPeers::PeerType::Client};
    NetworkPeers::PeerKey serverPeer{serverPubkey_.getRef(), NetworkPeers::PeerType::ServerOneWay};
@@ -14194,7 +14101,8 @@ TEST_F(BridgePeersManagement, ListAddConnect)
 TEST_F(BridgePeersManagement, LoadDeleteCreate)
 {
    WebSocketServer::initPeerStore({homedir_ / SERVER_AUTH_PEER_FILENAME, {}});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
+
    NetworkPeers::PeerKey serverPeer{serverPubkey_.getRef(), NetworkPeers::PeerType::ServerOneWay};
    auto serverKey = serverPeer.toHumanReadable();
 
@@ -14240,7 +14148,7 @@ TEST_F(BridgePeersManagement, LoadDeleteCreate)
 TEST_F(BridgePeersManagement, Remove)
 {
    WebSocketServer::initPeerStore({homedir_ / SERVER_AUTH_PEER_FILENAME, {}});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    NetworkPeers::PeerKey clientPeer{clientPubKey_.getRef(), NetworkPeers::PeerType::Client};
    NetworkPeers::PeerKey serverPeer{serverPubkey_.getRef(), NetworkPeers::PeerType::ServerOneWay};

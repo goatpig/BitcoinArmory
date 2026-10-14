@@ -137,12 +137,10 @@ int main(int argc, char* argv[])
 
    //start blockchain service
    bdmThread.start(Config::DBSettings::initMode());
-   if (!Config::DBSettings::checkChain()) {
-      WebSocketServer::start(bdmThread.bdm(), false);
-      LOGINFO << "WS server has shut down" << std::endl;
-   } else {
-      bdmThread.join();
-   }
+
+   //start LWS server, it will return on shutdown
+   WebSocketServer::start(bdmThread.bdm());
+   LOGINFO << "WS server has shut down" << std::endl;
 
    //shutdown BDM and cleanup crypto contexts
    bdmThread.shutdown();

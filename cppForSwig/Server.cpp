@@ -18,6 +18,7 @@
 #include "BDM_Server.h"
 
 using namespace Armory;
+using namespace std::chrono_literals;
 
 ///////////////////////////////////////////////////////////////////////////////
 // PendingMessage
@@ -30,8 +31,6 @@ PendingMessage::PendingMessage(uint64_t id,
 // WebSocketServer
 std::atomic<WebSocketServer*> WebSocketServer::instance_;
 std::mutex WebSocketServer::mu_;
-std::promise<bool> WebSocketServer::shutdownPromise_;
-std::shared_future<bool> WebSocketServer::shutdownFuture_;
 
 WebSocketServer::WebSocketServer()
 {}
@@ -86,11 +85,7 @@ int WebSocketServer::lwsServiceHandler(struct lws* wsi,
          break;
 
       case LWS_CALLBACK_PROTOCOL_INIT:
-      {
-         auto instance = WebSocketServer::getInstance();
-         instance->setIsReady();
          break;
-      }
 
       case LWS_CALLBACK_ESTABLISHED:
       {
@@ -267,10 +262,8 @@ void WebSocketServer::init()
    instance_.store(ptr, std::memory_order_relaxed);
 }
 
-void WebSocketServer::start(std::shared_ptr<BlockDataManager> bdm, bool async)
+void WebSocketServer::start(std::shared_ptr<BlockDataManager> bdm)
 {
-   shutdownPromise_ = std::promise<bool>();
-   shutdownFuture_ = shutdownPromise_.get_future();
    auto instance = getInstance();
 
    //setup encinit and pubkey present packet
@@ -306,22 +299,29 @@ void WebSocketServer::start(std::shared_ptr<BlockDataManager> bdm, bool async)
    auto port = Config::NetworkSettings::dbPort() == UINT16_MAX ?
       WEBSOCKET_PORT : Config::NetworkSettings::dbPort();
 
-   //run service thread
-   if (async) {
-      auto loopthr = [instance, port](void)->void
-      {
-         instance->async_ = true;
-         instance->webSocketService(port);
-         instance_.store(nullptr, std::memory_order_relaxed);
-      };
-      auto fut = instance->isReadyProm_.get_future();
-      instance->threads_.push_back(std::thread(loopthr));
-      fut.get();
-   } else {
-      instance->webSocketService(port);
-      instance_.store(nullptr, std::memory_order_relaxed);
-      delete instance;
+   if (Config::NetworkSettings::ephemeralPeers()) {
+      //shutdown within 5sec of starting an ephemeral db if the master client
+      //has yet to connect
+      auto masterCheckThr = std::thread([](){
+         std::this_thread::sleep_for(5s);
+         auto instance = WebSocketServer::getInstance();
+         if (instance == nullptr) {
+            return;
+         } else if (instance->masterIsConnected_.load(std::memory_order_relaxed) == false) {
+            LOGERR << "master client did not connect within imparted time, exiting";
+            WebSocketServer::shutdown();
+         }
+      });
+      if (masterCheckThr.joinable()) {
+         masterCheckThr.detach();
+      }
    }
+
+   //run service thread
+   instance->webSocketService(port);
+
+   //cleanup before exiting
+   shutdown();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -333,6 +333,7 @@ void WebSocketServer::shutdown()
    }
 
    auto instance = instance_.load(std::memory_order_relaxed);
+   instance_.store(nullptr, std::memory_order_relaxed);
    if (instance == nullptr) {
       return;
    }
@@ -354,15 +355,8 @@ void WebSocketServer::shutdown()
       }
    }
    instance->threads_.clear();
+   delete instance;
 
-   if (instance->async_) {
-      while (instance_.load(std::memory_order_relaxed) != nullptr);
-      delete instance;
-   }
-
-   try {
-      shutdownPromise_.set_value(true);
-   } catch (const std::future_error&) {}
    LOGINFO << "WS server shutdown sequence has completed";
 }
 
@@ -374,14 +368,6 @@ const SecureBinaryData& WebSocketServer::getOwnPublicKey()
       throw std::runtime_error("null instance/store");
    }
    return instance->peerStore_->getOwnPublicKey();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void WebSocketServer::setIsReady()
-{
-   try {
-      isReadyProm_.set_value(true);
-   } catch (const std::future_error&) {}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -447,7 +433,6 @@ void WebSocketServer::webSocketService(int port)
    lws_context_destroy(contextPtr_);
 }
 
-///////////////////////////////////////////////////////////////////////////////
 WebSocketServer* WebSocketServer::getInstance()
 {
    return instance_.load(std::memory_order_relaxed);
@@ -522,7 +507,9 @@ void WebSocketServer::write(const uint64_t& id,
 
    auto msg = std::make_unique<PendingMessage>(id, std::move(payload));
    auto instance = getInstance();
-   instance->msgQueue_.push_back(std::move(msg));
+   if (instance) {
+      instance->msgQueue_.push_back(std::move(msg));
+   }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -612,22 +599,12 @@ void WebSocketServer::prepareWriteThread()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void WebSocketServer::waitOnShutdown()
-{
-   try {
-      shutdownFuture_.get();
-   }
-   catch (const std::future_error&) {}
-}
-
-///////////////////////////////////////////////////////////////////////////////
 std::shared_ptr<const std::map<uint64_t, ClientConnection>>
 WebSocketServer::getConnectionStateMap() const
 {
    return clientStateMap_.get();
 }
 
-///////////////////////////////////////////////////////////////////////////////
 void WebSocketServer::addId(const uint64_t& id, struct lws* ptr)
 {
    auto write_pair = std::make_pair(
@@ -636,14 +613,12 @@ void WebSocketServer::addId(const uint64_t& id, struct lws* ptr)
    writeMap_.emplace(ptr, std::list<std::list<BinaryData>>());
 }
 
-///////////////////////////////////////////////////////////////////////////////
 void WebSocketServer::eraseId(const uint64_t& id, struct lws* ptr)
 {
    closeClientConnection(id);
    writeMap_.erase(ptr);
 }
 
-///////////////////////////////////////////////////////////////////////////////
 void WebSocketServer::closeClientConnection(uint64_t id)
 {
    auto clientStateMap = getConnectionStateMap();
@@ -653,12 +628,24 @@ void WebSocketServer::closeClientConnection(uint64_t id)
       return;
    }
 
-   auto cc = const_cast<ClientConnection*>(&iter->second);
-   cc->closeConnection();
-   if (cc->isMaster()) {
-      clients_->setMasterIsConnected(false);
+   bool isMaster = false;
+   {
+      auto cc = const_cast<ClientConnection*>(&iter->second);
+      cc->closeConnection();
+      isMaster = cc->isMaster();
+      clientStateMap_.erase(id);
    }
-   clientStateMap_.erase(id);
+
+   if (isMaster) {
+      if (Config::NetworkSettings::ephemeralPeers()) {
+         //master disconnected from ephemeral db, time to shut it down
+         masterIsConnected_.store(false, std::memory_order_relaxed);
+         std::thread shutdownThr([]{ WebSocketServer::shutdown(); });
+         if (shutdownThr.joinable()) {
+            shutdownThr.detach();
+         }
+      }
+   }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -675,7 +662,6 @@ void WebSocketServer::writeToSocket(
    lws_cancel_service(contextPtr_);
 }
 
-///////////////////////////////////////////////////////////////////////////////
 void WebSocketServer::updateWriteMap()
 {
    try {
@@ -817,7 +803,10 @@ void ClientConnection::processReadQueue(std::shared_ptr<Clients> clients)
          processAEADHandshake(std::move(packetData));
          if (bip151Connection_->getBIP150State() == BIP150State::SUCCESS &&
             isMaster()) {
-            clients->setMasterIsConnected(true);
+            auto instance = WebSocketServer::getInstance();
+            if (instance != nullptr) {
+               instance->masterIsConnected_.store(true, std::memory_order_relaxed);
+            }
          }
          continue;
       }

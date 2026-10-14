@@ -21,10 +21,9 @@
 #define MAX_CONTENT_LENGTH 1024*1024*1024
 #define CALLBACK_EXPIRE_COUNT 5
 
-class BDV_Server_Object;
-using BdvPtr = std::shared_ptr<BDV_Server_Object>;
+class BdvClient;
+using BdvPtr = std::shared_ptr<BdvClient>;
 
-struct btc_pubkey_;
 namespace Armory
 {
    namespace ZeroConf
@@ -114,11 +113,14 @@ public:
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-class BDV_Server_Object : public BlockDataViewer
+class BdvClient : public BlockDataViewer
 {
+   using NotifQueue = Armory::Threading::BlockingQueue<
+      std::shared_ptr<BDV_Notification>>;
    friend class Clients;
 
 private:
+   const std::shared_ptr<NotifQueue> notifQueue_;
    std::atomic<unsigned> started_;
    std::thread initT_;
 
@@ -130,7 +132,6 @@ private:
    std::shared_ptr<std::promise<bool>> isReadyPromise_;
    std::shared_future<bool> isReadyFuture_;
 
-   std::function<void(std::unique_ptr<BDV_Notification>)> notifLambda_;
    std::atomic<unsigned> packetProcess_threadLock_;
    std::atomic<unsigned> notificationProcess_threadLock_;
 
@@ -142,16 +143,18 @@ public:
    std::unique_ptr<Callback> notifications_;
 
 private:
-   BDV_Server_Object(BDV_Server_Object&) = delete; //no copies
+   BdvClient(BdvClient&) = delete; //no copies
    void setup(void);
-   Armory::Network::WebSocketMessagePartial
-   preparePayload(std::shared_ptr<BDV_Payload>);
+   Armory::Network::WebSocketMessagePartial preparePayload(
+      std::shared_ptr<BDV_Payload>);
    std::unique_ptr<BDV_Notification_ZC> createZcNotification(
       const std::set<Armory::Types::ScrAddr>&);
 
 public:
-   BDV_Server_Object(Armory::Types::BdvId, std::shared_ptr<BlockDataManager>);
-   ~BDV_Server_Object(void);
+   BdvClient(Armory::Types::BdvId,
+      std::shared_ptr<BlockDataManager>,
+      std::shared_ptr<NotifQueue>);
+   ~BdvClient(void);
 
    void startThreads(void);
    Armory::Types::BdvId getID(void) const;
@@ -185,12 +188,11 @@ private:
    mutable Armory::Threading::BlockingQueue<bool> gcCommands_;
    std::shared_ptr<BlockDataManager> bdm_;
    std::atomic<bool> run_;
-   std::atomic<bool> masterIsConnected_;
 
    std::vector<std::thread> controlThreads_;
    std::thread unregThread_;
 
-   mutable Armory::Threading::BlockingQueue<std::shared_ptr<BDV_Notification>> outerBDVNotifStack_;
+   std::shared_ptr<BdvClient::NotifQueue> outerBDVNotifStack_;
    Armory::Threading::BlockingQueue<std::shared_ptr<BDV_Notification_Packet>> innerBDVNotifStack_;
    Armory::Threading::BlockingQueue<std::shared_ptr<BDV_Payload>> packetQueue_;
    Armory::Threading::BlockingQueue<Armory::Types::BdvId> unregBDVQueue_;
@@ -199,12 +201,12 @@ private:
    std::mutex shutdownMutex_;
 
 private:
-   void notificationThread(void);
-   void unregisterAllBDVs(void);
-   void bdvMaintenanceLoop(void);
-   void bdvMaintenanceThread(void);
+   void bdmNotificationLoop(void);
+   void bdvOuterNotificationLoop(void);
+   void bdvInnerNotificationLoop(void);
    void messageParserThread(void);
    void unregisterBDVThread(void);
+   void unregisterAllBDVs(void);
 
    void broadcastThroughRPC(void);
    void parseStandAlonePayload(std::shared_ptr<BDV_Payload>);
@@ -224,5 +226,4 @@ public:
       std::shared_ptr<BDV_Payload>);
    void rpcBroadcast(RpcBroadcastPacket&);
    void p2pBroadcast(Armory::Types::BdvId, std::vector<BinaryDataRef>&);
-   void setMasterIsConnected(bool);
 };
