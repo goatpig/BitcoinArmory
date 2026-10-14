@@ -158,9 +158,11 @@ class DlgSetupManager(ArmoryDialog):
       if not self.validateAllSettings():
          return
 
-      # Get current scenario
+      # Get current scenario, --offline overrides the (disabled) Database tab
       dbSettings = self.databaseTab.collectSettings()
       scenario = dbSettings['scenario']
+      if CLI_OPTIONS.offline:
+         scenario = SCENARIO_DB_OFFLINE
 
       # Offline mode is always valid - no connection needed
       if scenario == SCENARIO_DB_OFFLINE:
@@ -305,7 +307,7 @@ class DlgSetupManager(ArmoryDialog):
    def _handleCoreTabActivation(self):
       scenario = self.databaseTab.getScenario()
       coreTabIndex = self.tabWidget.indexOf(self.coreTab)
-      if scenario == SCENARIO_DB_AUTOMATED:
+      if scenario == SCENARIO_DB_AUTOMATED and not CLI_OPTIONS.offline:
          #core automation only relevant if db is automated too
          self.tabWidget.setTabEnabled(coreTabIndex, True)
       else:
@@ -385,6 +387,10 @@ class DlgSetupManager(ArmoryDialog):
       if self.tabWidget.isTabEnabled(coreTabIndex):
          if not self.coreTab.validate():
             return False
+
+      if CLI_OPTIONS.offline:
+         #the Database tab is disabled and not used with --offline
+         return True
 
       if not self.databaseTab.validateDbPath():
          return False

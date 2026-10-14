@@ -448,7 +448,7 @@ if not CLI_OPTIONS.armoryDBDir==DEFAULT:
 
 # Change the log file to use
 ARMORY_LOG_FILE = os.path.join(ARMORY_HOME_DIR, 'armorylog.txt')
-ARMCPP_LOG_FILE = os.path.join(ARMORY_HOME_DIR, 'armorycpplog.txt')
+ARMCPP_LOG_FILE = os.path.join(ARMORY_HOME_DIR, 'bridgeLog.txt')
 ARMDB_LOG_FILE = os.path.join(ARMORY_HOME_DIR, 'dbLog.txt')
 if not sys.argv[0] in ['ArmoryQt.py', 'ArmoryQt.exe', 'Armory.exe']:
    basename = os.path.basename(sys.argv[0])
@@ -1025,9 +1025,9 @@ def GetSystemDetails():
       out.Memory = stat.ullTotalPhys//1024.
       out.CpuStr = platform.processor()
    elif OS_MACOSX:
-      memsizeStr = subprocess_check_output('sysctl hw.memsize', shell=True)
+      memsizeStr = subprocess.check_output('sysctl hw.memsize', shell=True)
       out.Memory = int(memsizeStr.split(b": ")[1]) // 1024
-      out.CpuStr = subprocess_check_output('sysctl -n machdep.cpu.brand_string', shell=True).decode('utf-8')
+      out.CpuStr = subprocess.check_output('sysctl -n machdep.cpu.brand_string', shell=True).decode('utf-8').strip()
    else:
       out.CpuStr = 'Unknown'
       raise OSError("Can't get system specs in: %s" % platform.system())
@@ -2716,8 +2716,8 @@ def send_email(send_from, server, password, send_to, subject, text):
 #############################################################################
 def getLastBytesOfFile(filename, nBytes=500*1024):
    if not os.path.exists(filename):
-      LOGERROR('File does not exist!')
-      return ''
+      LOGERROR('File does not exist: %s', filename)
+      return b''
 
    sz = os.path.getsize(filename)
    with open(filename, 'rb') as fin:
