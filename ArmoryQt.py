@@ -281,6 +281,9 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          TheSignalExecution.executeMethod(self.handleCppNotification,
             action, arglist)
 
+      #notifications are held until the UI is built, see
+      #processQueuedCppNotifications
+      self.queuedCppNotifications = []
       TheBDM.registerCppNotification(cppNotifySignal)
       self.progressCallbacks = {}
 
@@ -755,6 +758,10 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
       if ArmoryMac is not None:
          self.macNotifHdlr = ArmoryMac.MacNotificationHandler()
+
+      # The widgets the notification handlers use exist now, process the
+      # notifications that came in while the UI was being built
+      self.processQueuedCppNotifications()
 
       # Now that construction of the UI is done
       # Check for warnings to be displayed
@@ -4386,7 +4393,26 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          self.lblArmoryStatus.setToolTipLambda(getToolTipTextOffline)
 
    #############################################################################
+   def processQueuedCppNotifications(self):
+      queue = self.queuedCppNotifications
+      self.queuedCppNotifications = None
+      for action, args in queue:
+         #an exception in a Qt slot only gets reported, do the same here
+         #rather than abort the main window construction
+         try:
+            self.handleCppNotification(action, args)
+         except Exception:
+            LOGEXCEPT('Error processing queued notification: %s', action)
+
+   #############################################################################
    def handleCppNotification(self, action, args):
+      if self.queuedCppNotifications is not None:
+         #The main window is still being built. Modal dialogs shown from
+         #__init__ (e.g. the EULA) run their own event loop, which delivers
+         #notifications before the widgets the handlers below use exist.
+         self.queuedCppNotifications.append((action, args))
+         return
+
       if action == INIT_DB_READY:
          #Blockchain just finished loading, finish initializing UI and render
          #the ledgers
