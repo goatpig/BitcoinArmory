@@ -449,8 +449,9 @@ namespace Node
             struct sockaddr node_addr_;
             std::unique_ptr<Socket> socket_;
 
-            std::mutex connectMutex_, pollMutex_, writeMutex_;
-            std::unique_ptr<std::promise<bool>> verackPromise_ = nullptr;
+            std::mutex connectMutex_, connectLoopMutex_, writeMutex_;
+            std::condition_variable connectLoopCV_;
+            std::unique_ptr<std::promise<void>> verackPromise_ = nullptr;
             std::atomic<bool> nodeConnected_;
 
             //to pass payloads between the poll thread and the processing one

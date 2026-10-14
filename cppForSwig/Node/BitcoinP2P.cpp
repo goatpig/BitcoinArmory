@@ -1347,20 +1347,16 @@ void P2P::Peer::connectLoop(std::promise<void> connectedPromise)
       dataStack_ = std::make_shared<
          Threading::BlockingQueue<std::vector<uint8_t>>>();
       socket_ = std::make_unique<Socket>(addr_, port_, name_, dataStack_);
-      verackPromise_ = std::make_unique<std::promise<bool>>();
+      verackPromise_ = std::make_unique<std::promise<void>>();
       auto verackFuture = verackPromise_->get_future();
 
-      while (run_.load(std::memory_order_relaxed)) {
-         if (socket_->openSocket(false)) {
-            break;
-         }
-
+      if (!socket_->openSocket(false)) {
+         //wait some time to reconnect or until the condvar triggers
          waitBeforeReconnect = std::min(
             waitBeforeReconnect + RECONNECT_DELAY, 5000ms);
-         std::this_thread::sleep_for(waitBeforeReconnect);
-      }
-      if (!socket_->isValid()) {
-         break;
+         std::unique_lock<std::mutex> lock(connectLoopMutex_);
+         connectLoopCV_.wait_for(lock, waitBeforeReconnect);
+         continue;
       }
 
       auto processThread = [this](void)->void
@@ -1528,7 +1524,7 @@ void P2P::Peer::gotVerack()
       return;
    }
    try {
-      verackPromise_->set_value(true);
+      verackPromise_->set_value();
    } catch (const std::future_error&) {
       //already set or no shared state, move on
    }
@@ -1666,11 +1662,12 @@ void P2P::Peer::shutdown()
 
    if (socket_ != nullptr) {
       socket_->shutdown();
-      try {
-         auto fut = shutdownFuture_;
-         fut.wait();
-      } catch (const std::future_error&) {}
    }
+   connectLoopCV_.notify_all();
+   try {
+      auto fut = shutdownFuture_;
+      fut.wait();
+   } catch (const std::future_error&) {}
 
    //have to call the parent class shutdown explicitly
    Iface::shutdown();
