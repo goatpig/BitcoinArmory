@@ -13,14 +13,11 @@
 #include <Utils/ArmoryConfig.h>
 #include <Wallets/AuthorizedPeers.h>
 
-#include "CppBridge.h"
-#include "ProtoCommandParser.h"
-#include <Network/WebSocketMessage.h>
-
 using namespace Armory;
 using namespace Armory::Bridge;
 
-#define BRIDGE_SOCKET_MAXLEN 1024 * 1024 * 1024 //1MB
+#define BRIDGE_REKEY_INTVERVAL_SECONDS 600
+#define BRIDGE_SOCKET_MAXLEN           1024 * 1024 * 1024 //1MB
 
 ////////////////////////////////////////////////////////////////////////////////
 ////
@@ -28,9 +25,8 @@ using namespace Armory::Bridge;
 ////
 ////////////////////////////////////////////////////////////////////////////////
 CppBridgeSocket::CppBridgeSocket(
-   const std::string& addr, Network::port_t port,
-   std::shared_ptr<CppBridge> bridgePtr) :
-   PersistentSocket(addr, port, "bridge_socket"), bridgePtr_(bridgePtr),
+   const std::string& addr, Network::port_t port) :
+   PersistentSocket(addr, port, "bridge_socket"),
    serverName_(std::format("{}:{}", addr, port))
 {
    //setup auth peers db
@@ -71,32 +67,31 @@ SocketType CppBridgeSocket::type() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void CppBridgeSocket::respond(std::vector<uint8_t>& inMsg)
+BinaryData CppBridgeSocket::getPayload()
 {
+   /*
+   Loop through socket packets.
+   Handle all AEAD and partial payloads internally.
+   Return on first full packet, saving leftover data for next call.
+   Caller should repeatedly call getPayload until the socket is closed.
+   */
    static BinaryData emptySizeCheck{};
-   if (inMsg.empty()) {
-      //shutdown condition
-      shutdown();
-      return;
-   }
 
-   //append data to leftovers from previous iteration if applicable
+   //reuse leftovers from previous call if applicable
    BinaryData data;
    if (!leftOverData_.empty()) {
-      leftOverData_.append(&inMsg[0], inMsg.size());
       data = std::move(leftOverData_);
-   } else {
-      data = std::move(inMsg);
+      leftOverData_.clear();
    }
 
-   while (!data.empty()) {
+   while (true) {
       //for data that isn't encrypted, assume the payload is
       //a single whole packet
       bool encr = false;
       BinaryDataRef dataRef = data.getRef();
       auto packetSize = dataRef.getSize();
 
-      if (bip151Connection_->connectionComplete()) {
+      if (!data.empty() && bip151Connection_->connectionComplete()) {
          //get decrypted length
          auto decrLen = bip151Connection_->decryptPacket(
             data.getSliceRef(0, POLY1305MACLEN + AUTHASSOCDATAFIELDLEN),
@@ -104,15 +99,12 @@ void CppBridgeSocket::respond(std::vector<uint8_t>& inMsg)
 
          if (decrLen == -1 || decrLen > BRIDGE_SOCKET_MAXLEN) {
             //fatal error
-            LOGERR << "packet exceeds BRIDGE_SOCKET_MAXLEN, aborting";
-            shutdown();
-            return;
+            throw std::runtime_error("packet exceeds BRIDGE_SOCKET_MAXLEN, aborting");
          }
 
          if (decrLen > (ssize_t)data.getSize() + POLY1305MACLEN) {
-            //not enough data to decrypt, save it and continue
-            leftOverData_ = std::move(data);
-            return;
+            //not enough data to decrypt, continue
+            continue;
          }
 
          //decrypt the data
@@ -127,10 +119,14 @@ void CppBridgeSocket::respond(std::vector<uint8_t>& inMsg)
       }
 
       if (dataRef.empty()) {
-         //handshake failure
-         LOGERR << "invalid packet size, aborting";
-         shutdown();
-         return;
+         auto packet = getPacket();
+         if (data.empty()) {
+            data = std::move(packet);
+         } else {
+            data.append(packet.data(), packet.size());
+            packet.clear();
+         }
+         continue;
       }
 
       auto dataType = (ArmoryAEAD::BIP151_PayloadType)dataRef[0];
@@ -138,35 +134,39 @@ void CppBridgeSocket::respond(std::vector<uint8_t>& inMsg)
          //we can only process user messages after the AEAD channel is auth'ed
          //and the data is encrypted
          if (bip151Connection_->getBIP150State() != BIP150State::SUCCESS) {
-            shutdown();
-            return;
+            throw std::runtime_error("AEAD handshake is not completed");
          }
 
          BinaryData requestBody;
          requestBody.resize(dataRef.getSize() - 1);
          memcpy(requestBody.getPtr(), dataRef.getPtr() + 1, requestBody.getSize());
-         if (!ProtoCommandParser::processData(bridgePtr_, requestBody)) {
-            shutdown();
-            return;
+         if (data.getSize() != packetSize) {
+            //payload is bigger than the packet we just processed, save
+            //leftovers before returning the request
+            leftOverData_ = data.getSliceCopy(
+               packetSize, data.getSize() - packetSize);
+         } else {
+            data.clear();
          }
+         //we have a request, return it to the caller
+         return requestBody;
       } else {
          //we can only get here if the data is part of an ongoing AEAD
          //handhsake or an incoming channel rekey
          if (!processAEADHandshake(dataRef)) {
             //handshake failure
-            LOGERR << "AEAD handshake failed, aborting";
-            shutdown();
-            return;
+            throw std::runtime_error("AEAD handshake failed, aborting");
+         }
+
+         if (data.getSize() != packetSize) {
+            //payload is bigger than the packet we just processed, remove
+            //leading packet from data and iterate over what's left
+            data = data.getSliceCopy(
+               packetSize, data.getSize() - packetSize);
+         } else {
+            data.clear();
          }
       }
-
-      if (data.getSize() == packetSize) {
-         return;
-      }
-
-      //payload is bigger than the packet we just processed, remove leading
-      //packet from data and iterate over what's left
-      data = data.getSliceCopy(packetSize, data.getSize() - packetSize);
    }
 }
 
@@ -192,7 +192,7 @@ void CppBridgeSocket::pushPayload(
       } else {
          auto time_sec = std::chrono::duration_cast<std::chrono::seconds>(
             rightnow - outKeyTimePoint_);
-         if (time_sec.count() >= AEAD_REKEY_INTVERVAL_SECONDS) {
+         if (time_sec.count() >= BRIDGE_REKEY_INTVERVAL_SECONDS) {
             needs_rekey = true;
          }
       }
@@ -288,6 +288,8 @@ bool CppBridgeSocket::processAEADHandshake(BinaryDataRef data)
    switch (status)
    {
       case ArmoryAEAD::HandshakeState::StepSuccessful:
+         return true;
+
       case ArmoryAEAD::HandshakeState::RekeySuccessful:
          return true;
 

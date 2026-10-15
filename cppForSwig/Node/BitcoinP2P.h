@@ -366,19 +366,13 @@ namespace Node
          ///////////////////////////////////////////////////////////////////////
          class Socket : public Armory::Network::PersistentSocket
          {
-         private:
-            std::shared_ptr<Armory::Threading::BlockingQueue<
-               std::vector<uint8_t>>> readDataStack_;
-
          public:
-            Socket(const std::string&, Armory::Network::port_t, const std::string&,
-               std::shared_ptr<Armory::Threading::BlockingQueue<std::vector<uint8_t>>>);
+            Socket(const std::string&, Armory::Network::port_t, const std::string&);
 
             SocketType type(void) const override;
             void pushPayload(
                std::unique_ptr<Armory::Network::Socket_WritePayload>,
                std::shared_ptr<Armory::Network::Socket_ReadPayload>) override;
-            void respond(std::vector<uint8_t>&) override;
          };
 
          //////////////////////////////////////////////////////////////////////////
@@ -453,10 +447,6 @@ namespace Node
             std::condition_variable connectLoopCV_;
             std::unique_ptr<std::promise<void>> verackPromise_ = nullptr;
             std::atomic<bool> nodeConnected_;
-
-            //to pass payloads between the poll thread and the processing one
-            std::shared_ptr<Armory::Threading::BlockingQueue<
-               std::vector<uint8_t>>> dataStack_;
 
             std::exception_ptr select_except_ = nullptr;
             std::exception_ptr process_except_ = nullptr;

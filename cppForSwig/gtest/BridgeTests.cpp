@@ -45,14 +45,14 @@ using namespace Armory;
 using namespace std::chrono_literals;
 using namespace std::string_view_literals;
 
-using MsgPtr = std::unique_ptr<Armory::Bridge::WritePayload_Bridge>;
+using MsgPtr = std::unique_ptr<Bridge::WritePayload_Bridge>;
 
 ////////////////////////////////////////////////////////////////////////////////
 namespace {
    int CapnWalletState_Legacy = 1;
    int CapnWalletState_Encrypted = 2;
    int CapnWalletState_Ready = 3;
-   std::string legacyAccId = Armory::Wallets::AddressAccountId(
+   std::string legacyAccId = Wallets::AddressAccountId(
       ARMORY_LEGACY_ACCOUNTID).toHexStr();
 
    /////////////////////////////////////////////////////////////////////////////
@@ -192,7 +192,7 @@ namespace {
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   // bridge client side reply & notif handling
+   // bridge client side mocked comms layer
    struct NotifQueue
    {
       std::queue<BinaryData> queue;
@@ -239,6 +239,34 @@ namespace {
    {
       Bridge::ProtoCommandParser::processData(bridge, rawRequest);
    }
+
+   struct TestBridgeSocket : public Network::PersistentSocket
+   {
+      TestBridgeSocket() :
+         PersistentSocket("127.0.0.1", 50000, "test_bridge_socket")
+      {}
+
+      SocketType type() const override
+      {
+         return SocketType::CppBridge;
+      }
+
+      void pushPayload(
+         std::unique_ptr<Network::Socket_WritePayload> payload,
+         std::shared_ptr<Network::Socket_ReadPayload>) override
+      {
+         auto payloadPtr = dynamic_cast<Bridge::WritePayload_Bridge*>(payload.get());
+         if (payloadPtr == nullptr) {
+            throw std::runtime_error("could not read the push payload");
+         }
+         auto msgPtr = std::unique_ptr<Bridge::WritePayload_Bridge>(payloadPtr);
+         payload.release();
+
+         std::unique_lock<std::mutex> lock(commsMutex);
+         replyQueue.emplace_back(std::move(msgPtr));
+         commsCV.notify_all();
+      }
+   };
 
    /////////////////////////////////////////////////////////////////////////////
    // wallet creation from manager
@@ -1637,8 +1665,9 @@ namespace {
          throw std::runtime_error("invalid count in final notif");
       }
 
-      //expect cleanup notif
-      {
+      //expect refresh and cleanup notif
+      unsigned cleanupNotifCount = refreshId.empty() ? 0 : 11;
+      while (cleanupNotifCount < 14) {
          auto rawPrompt = waitOnReply();
          kj::ArrayPtr<const capnp::word> words(
             reinterpret_cast<const capnp::word*>(rawPrompt->data.getPtr()),
@@ -1650,46 +1679,37 @@ namespace {
          }
 
          auto notif = fromBridge.getNotification();
-         if (notif.getCallbackId() != callbackId) {
-            throw std::runtime_error("unexpected callbackId");
-         }
-         if (notif.which() != Codec::Bridge::Notification::CLEANUP) {
-            throw std::runtime_error("expected cleanup notif");
-         }
-      }
-
-      //expect refresh notif
-      while (refreshId.empty()) {
-         auto rawPrompt = waitOnReply();
-         kj::ArrayPtr<const capnp::word> words(
-            reinterpret_cast<const capnp::word*>(rawPrompt->data.getPtr()),
-            rawPrompt->data.getSize() / sizeof(capnp::word));
-         capnp::FlatArrayMessageReader reader(words);
-         auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-         if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
-            throw std::runtime_error("expected notif");
-         }
-
-         auto notif = fromBridge.getNotification();
-         if (notif.getCallbackId() == "progress") {
+         std::string capnCbId = notif.getCallbackId();
+         if (capnCbId == "progress") {
             continue;
-         } else if (notif.getCallbackId() != "bdm_callback") {
-            throw std::runtime_error("expected bdm notif");
-         }
-         if (notif.which() != Codec::Bridge::Notification::REFRESH) {
-            throw std::runtime_error("expected refresh notif");
-         }
+         } else if (capnCbId != "bdm_callback") {
+            if (capnCbId != callbackId) {
+               throw std::runtime_error(std::format(
+                  "unexpected cleanup callbackId: {} vs {}",
+                  capnCbId, callbackId));
+            }
+            if (notif.which() != Codec::Bridge::Notification::CLEANUP) {
+               throw std::runtime_error("expected cleanup notif");
+            }
+            cleanupNotifCount += 3;
+         } else {
+            if (notif.which() != Codec::Bridge::Notification::REFRESH) {
+               throw std::runtime_error("expected refresh notif");
+            }
 
-         auto refreshIds = notif.getRefresh();
-         if (refreshIds.size() != 1) {
-            throw std::runtime_error("unexpected refreshId");
+            auto refreshIds = notif.getRefresh();
+            if (refreshIds.size() != 1) {
+               throw std::runtime_error("unexpected refreshId");
+            }
+            refreshId = refreshIds[0];
+            cleanupNotifCount += 11;
          }
-         refreshId = refreshIds[0];
-         break;
       }
 
       if (refreshId != dbId) {
          throw std::runtime_error("dbId mismatch");
+      } else if (cleanupNotifCount != 14) {
+         throw std::runtime_error("extendAddressPool cleanup notif count mismatch");
       }
 
       //lastly, grab updated wallet data
@@ -4176,12 +4196,8 @@ protected:
          Config::ProcessType::Bridge);
 
       replyQueue.clear();
-      bridge_ = std::make_shared<Bridge::CppBridge>();
-      bridge_->setWriteLambda([](MsgPtr payload) {
-         std::unique_lock<std::mutex> lock(commsMutex);
-         replyQueue.emplace_back(std::move(payload));
-         commsCV.notify_all();
-      });
+      bridge_ = std::make_shared<Bridge::CppBridge>(
+         std::make_shared<TestBridgeSocket>());
    }
 
    virtual void TearDown(void)
@@ -6494,12 +6510,8 @@ protected:
       serverPubkey_ = servPK.toHumanReadable();
 
       replyQueue.clear();
-      bridge_ = std::make_shared<Bridge::CppBridge>();
-      bridge_->setWriteLambda([](MsgPtr payload) {
-         std::unique_lock<std::mutex> lock(commsMutex);
-         replyQueue.emplace_back(std::move(payload));
-         commsCV.notify_all();
-      });
+      bridge_ = std::make_shared<Bridge::CppBridge>(
+         std::make_shared<TestBridgeSocket>());
 
       initBDM();
       auto nodePtr = std::dynamic_pointer_cast<NodeUnitTest>(
@@ -7188,12 +7200,8 @@ protected:
       serverPubkey_ = servPK.toHumanReadable();
 
       replyQueue.clear();
-      bridge_ = std::make_shared<Bridge::CppBridge>();
-      bridge_->setWriteLambda([](MsgPtr payload) {
-         std::unique_lock<std::mutex> lock(commsMutex);
-         replyQueue.emplace_back(std::move(payload));
-         commsCV.notify_all();
-      });
+      bridge_ = std::make_shared<Bridge::CppBridge>(
+         std::make_shared<TestBridgeSocket>());
 
       initBDM();
       nodePtr_ = std::dynamic_pointer_cast<NodeUnitTest>(
@@ -11893,12 +11901,8 @@ TEST_F(BridgeChainDataTests, ZeroConf_Reload)
    /* cycle bridge */
    bridge_.reset();
    replyQueue.clear();
-   bridge_ = std::make_shared<Bridge::CppBridge>();
-   bridge_->setWriteLambda([](MsgPtr payload) {
-      std::unique_lock<std::mutex> lock(commsMutex);
-         replyQueue.emplace_back(std::move(payload));
-      commsCV.notify_all();
-   });
+   bridge_ = std::make_shared<Bridge::CppBridge>(
+      std::make_shared<TestBridgeSocket>());
 
    loadWallets({walletId_BCDE_});
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
@@ -12712,12 +12716,8 @@ TEST_F(BridgeChainDataTests, RestoreSynchronize)
    /* cycle bridge */
    bridge_.reset();
    replyQueue.clear();
-   bridge_ = std::make_shared<Bridge::CppBridge>();
-   bridge_->setWriteLambda([](MsgPtr payload) {
-      std::unique_lock<std::mutex> lock(commsMutex);
-         replyQueue.emplace_back(std::move(payload));
-      commsCV.notify_all();
-   });
+   bridge_ = std::make_shared<Bridge::CppBridge>(
+      std::make_shared<TestBridgeSocket>());
 
    //restore bip32 wlt
    unsigned restoreLookup = 500;
@@ -13198,12 +13198,8 @@ protected:
       prepareWallets();
 
       replyQueue.clear();
-      bridge_ = std::make_shared<Bridge::CppBridge>();
-      bridge_->setWriteLambda([](MsgPtr payload) {
-         std::unique_lock<std::mutex> lock(commsMutex);
-         replyQueue.emplace_back(std::move(payload));
-         commsCV.notify_all();
-      });
+      bridge_ = std::make_shared<Bridge::CppBridge>(
+         std::make_shared<TestBridgeSocket>());
    }
 
    virtual void TearDown()
@@ -13991,12 +13987,8 @@ protected:
       clientPubKey_ = clientPeers.getOwnPublicKey();
 
       replyQueue.clear();
-      bridge_ = std::make_shared<Bridge::CppBridge>();
-      bridge_->setWriteLambda([](MsgPtr payload) {
-         std::unique_lock<std::mutex> lock(commsMutex);
-         replyQueue.emplace_back(std::move(payload));
-         commsCV.notify_all();
-      });
+      bridge_ = std::make_shared<Bridge::CppBridge>(
+         std::make_shared<TestBridgeSocket>());
 
       initBDM();
       auto nodePtr = std::dynamic_pointer_cast<NodeUnitTest>(

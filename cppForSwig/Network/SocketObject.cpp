@@ -578,24 +578,6 @@ void PersistentSocket::queuePayloadForWrite(std::vector<uint8_t>& payload)
    signalService(0);
 }
 
-////////
-void PersistentSocket::readService()
-{
-   while (true) {
-      try {
-         auto packet = readQueue_.pop_front();
-         respond(packet);
-      } catch (const Threading::StopBlockingLoop&) {
-         //exit condition
-         break;
-      }
-   }
-
-   //respond with empty packet to kill the read thread
-   std::vector<uint8_t> empty;
-   respond(empty);
-}
-
 bool PersistentSocket::processPacket(
    std::vector<uint8_t>& packet, std::vector<uint8_t>& payload)
 {
@@ -708,11 +690,6 @@ bool PersistentSocket::connectToRemote()
    run_.store(true, std::memory_order_relaxed);
    initPipes();
 
-   auto readLBD = [this](void)->void
-   {
-      this->readService();
-   };
-
    auto socketLBD = [this](void)->void
    {
       try {
@@ -724,10 +701,13 @@ bool PersistentSocket::connectToRemote()
          shutdown();
       }
    };
-
-   threads_.push_back(std::thread(readLBD));
    threads_.push_back(std::thread(socketLBD));
    return true;
+}
+
+std::vector<uint8_t> PersistentSocket::getPacket()
+{
+   return readQueue_.pop_front();
 }
 
 ////////
@@ -741,12 +721,6 @@ void PersistentSocket::shutdown()
    readQueue_.terminate();
    signalService(1);
    shutdownProm_.set_value();
-}
-
-void PersistentSocket::blockUntilClosed() const
-{
-   auto futCopy = shutdownFut_;
-   futCopy.wait();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

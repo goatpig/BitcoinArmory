@@ -63,6 +63,11 @@ namespace Armory
       class ClientStore;
    }
 
+   namespace Network
+   {
+      class PersistentSocket;
+   }
+
    namespace Bridge
    {
       namespace Notifications
@@ -107,18 +112,15 @@ namespace Armory
       class CppBridge
       {
       private:
-         //datadir
+         const std::shared_ptr<Network::PersistentSocket> sockPtr_;
          const std::filesystem::path path_;
+         const bool dbOffline_;
 
          //armorydb stuff
-         const bool dbOffline_;
          std::shared_ptr<NetworkPeers::ClientStore> peersDb_;
          std::shared_ptr<Threading::BlockingQueue<
             std::unique_ptr<Notifications::Server::Notif>>> dbNotifQueue_;
          std::thread dbNotifThread_;
-
-         //to write to the bridge client
-         std::function<void(std::unique_ptr<WritePayload_Bridge>)> writeLambda_;
 
          //these objects are the core of the bridge
          std::shared_ptr<WalletManager> wltManager_;
@@ -294,13 +296,11 @@ namespace Armory
          bool doesWalletHaveImports(const Wallets::WalletId&) const;
 
       public:
-         CppBridge(void);
+         CppBridge(std::shared_ptr<Network::PersistentSocket>);
          ~CppBridge(void);
 
          void cleanupDbConnection(void);
          void writeToClient(BinaryData&) const;
-         void setWriteLambda(
-            const std::function<void(std::unique_ptr<WritePayload_Bridge>)>&);
       };
    } //namespace Bridge
 } //namespace Armory

@@ -198,14 +198,12 @@ namespace Armory
       #else
          void socketService_nix(void);
       #endif
-         void readService(void);
          void initPipes(void);
          void cleanUpPipes(void);
          void init(void);
 
       protected:
          virtual bool processPacket(std::vector<uint8_t>&, std::vector<uint8_t>&);
-         virtual void respond(std::vector<uint8_t>&) = 0;
          void queuePayloadForWrite(std::vector<uint8_t>&);
 
       public:
@@ -219,7 +217,7 @@ namespace Armory
          int getPeerName(struct sockaddr&);
          bool isValid(void) const;
          bool testConnection(void);
-         void blockUntilClosed(void) const;
+         std::vector<uint8_t> getPacket(void);
 
          //overrides
          bool connectToRemote(void) override;

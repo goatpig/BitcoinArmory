@@ -37,6 +37,7 @@
 #include <AsyncClient.h>
 #include <TxClasses.h>
 
+#include "BridgeSocket.h"
 #include "DBSetup.h"
 #include "PassphrasePrompt.h"
 
@@ -535,8 +536,8 @@ namespace
 ////  CppBridge
 ////
 ////////////////////////////////////////////////////////////////////////////////
-CppBridge::CppBridge() :
-   path_(Config::getDataDir()),
+CppBridge::CppBridge(std::shared_ptr<Network::PersistentSocket> sockPtr) :
+   sockPtr_(sockPtr), path_(Config::getDataDir()),
    dbOffline_(Config::NetworkSettings::isOffline())
 {
    dbNotifQueue_ = std::make_shared<NotifQueue>();
@@ -566,12 +567,6 @@ void CppBridge::cleanupDbConnection()
       auto message = Notifications::Client::getSerializedServerDisconnectedNotif();
       writeToClient(message);
    }
-}
-
-void CppBridge::setWriteLambda(
-   const std::function<void(std::unique_ptr<WritePayload_Bridge>)>& lbd)
-{
-   writeLambda_ = lbd;
 }
 
 std::shared_ptr<AsyncClient::BlockDataViewer> CppBridge::bdvPtr() const
@@ -614,7 +609,7 @@ void CppBridge::writeToClient(BinaryData& payload) const
 {
    auto payloadPtr = std::make_unique<WritePayload_Bridge>();
    payloadPtr->data = std::move(payload);
-   writeLambda_(std::move(payloadPtr));
+   sockPtr_->pushPayload(std::move(payloadPtr), nullptr);
 }
 
 void CppBridge::callbackWriter(ServerPushWrapper& wrapper)

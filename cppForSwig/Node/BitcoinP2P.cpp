@@ -1344,9 +1344,7 @@ void P2P::Peer::connectLoop(std::promise<void> connectedPromise)
 
    while (run_.load(std::memory_order_relaxed)) {
       //setup fresh connection
-      dataStack_ = std::make_shared<
-         Threading::BlockingQueue<std::vector<uint8_t>>>();
-      socket_ = std::make_unique<Socket>(addr_, port_, name_, dataStack_);
+      socket_ = std::make_unique<Socket>(addr_, port_, name_);
       verackPromise_ = std::make_unique<std::promise<void>>();
       auto verackFuture = verackPromise_->get_future();
 
@@ -1436,7 +1434,7 @@ void P2P::Peer::processDataStackThread()
          auto prevPacket = packetPtr;
          packetPtr.reset();
 
-         auto data = dataStack_->pop_front();
+         auto data = socket_->getPacket();
          auto processedPacket = Payload::deserialize(
             data, getMagicWord(), prevPacket);
 
@@ -1688,10 +1686,8 @@ bool P2P::Peer::connected() const
 ////////////////////////////////////////////////////////////////////////////////
 // Socket
 P2P::Socket::Socket(
-   const std::string& addr, Network::port_t port, const std::string& name,
-   std::shared_ptr<Threading::BlockingQueue<std::vector<uint8_t>>> readStack) :
-   PersistentSocket(addr, port, name),
-   readDataStack_(readStack)
+   const std::string& addr, Network::port_t port, const std::string& name) :
+   PersistentSocket(addr, port, name)
 {}
 
 SocketType P2P::Socket::type() const
@@ -1699,18 +1695,6 @@ SocketType P2P::Socket::type() const
    return SocketType::BitcoinP2P;
 }
 
-////////
-void P2P::Socket::respond(std::vector<uint8_t>& packet)
-{
-
-   if (!packet.empty()) {
-      readDataStack_->push_back(std::move(packet));
-   } else {
-      readDataStack_->terminate();
-   }
-}
-
-////////
 void P2P::Socket::pushPayload(
    std::unique_ptr<Network::Socket_WritePayload> write_payload,
    std::shared_ptr<Network::Socket_ReadPayload>)
