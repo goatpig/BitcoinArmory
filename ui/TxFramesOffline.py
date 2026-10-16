@@ -23,6 +23,7 @@ from armoryengine.ArmoryUtils import LOGEXCEPT, LOGERROR, LOGINFO, \
    coin2strNZS, NetworkIDError, UnserializeError, OS_WINDOWS
 from armoryengine.Settings import TheSettings
 from armoryengine.AddressUtils import script_to_scrAddr, BadAddressError
+from armoryengine.CppBridge import BridgeSignerError
 
 from qtdialogs.qtdefines import ArmoryFrame, tightSizeNChar, \
    GETFONT, QRichLabel, HLINE, QLabelButton, USERMODE, \
@@ -216,7 +217,8 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
                'Did you load the correct transaction?'), QtWidgets.QMessageBox.Ok)
             self.ustxObj = None
             self.ustxReadable = False
-         except (UnserializeError, IndexError, ValueError):
+         except (UnserializeError, IndexError, ValueError,
+            BridgeSignerError):
             self.ustxObj = None
             self.ustxReadable = False
 

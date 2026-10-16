@@ -1526,7 +1526,7 @@ class BridgeSigner(ProtoWrapper):
       packet.signer.fromTxSigCollect = txSigCollect
 
       fut = self.send(packet)
-      reply = fut.getVal()
+      reply = fut.getVal(nothrow=True)
       if reply.success == False:
          raise BridgeSignerError(
             f"[fromTxSigCollect] failed with error: {reply.error}")
