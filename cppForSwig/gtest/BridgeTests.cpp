@@ -7967,6 +7967,11 @@ TEST_F(BridgeChainDataTests, GetTxsByHash_DbFallback)
    auto fromDb = getTxDataByHash(bridge_, request, success);
    ASSERT_TRUE(success);
    EXPECT_EQ(fromDb, fromCache);
+
+   //finding nothing is an empty reply, not an error
+   auto nothing = getTxDataByHash(bridge_, {unknownHash, shortHash}, success);
+   EXPECT_TRUE(success);
+   EXPECT_TRUE(nothing.empty());
 }
 
 TEST_F(BridgeChainDataTests, GetTxsByHash_ZcThenMined)

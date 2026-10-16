@@ -709,13 +709,15 @@ class BlockchainService(ProtoWrapper):
          packet.service.getTxsByHash[i] = hashVal
 
       fut = self.send(packet)
-      reply = fut.getVal()
+      reply = fut.getVal(nothrow=True)
       if reply.success == False:
-         return None
-      txList = reply.service.getTxsByHash
+         raise BridgeError(f"getTxsByHash failed: {reply.error}")
+
+      #keyed by the hash of the raw tx, txs not found are left out
+      from armoryengine.Transaction import PyTx
       txDict = {}
-      for tx in txList:
-         txDict[tx.hash] = tx
+      for tx in reply.service.getTxsByHash:
+         txDict[PyTx().unserialize(bytes(tx.body.raw)).getHash()] = tx
       return txDict
 
    ####

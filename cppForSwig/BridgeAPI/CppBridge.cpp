@@ -2791,10 +2791,8 @@ void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId ms
       auto fromBridge = message.initRoot<FromBridge>();
       auto reply = fromBridge.initReply();
       reply.setReferenceId(msgId);
-      if (txs.empty()) {
-         reply.setSuccess(false);
-         reply.setError("no txs found for requested hashes");
-      } else {
+      //hashes with no tx are left out, finding none is not an error
+      {
          auto serviceReply = reply.initService();
          auto capnTxs = serviceReply.initGetTxsByHash(txs.size());
 

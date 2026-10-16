@@ -2413,7 +2413,7 @@ def determineSentToSelfAmt(le, wlt):
    amt = 0
    if le.isSTS:
       txProto = TheBridge.service.getTxsByHash([le.txHash])
-      if txProto == None or len(txProto) == 0:
+      if le.txHash not in txProto:
          return (0, 0)
       txData = txProto[le.txHash]
 
