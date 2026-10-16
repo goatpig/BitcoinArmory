@@ -17,6 +17,7 @@
 #include <Wallets/Seeds/Backups.h>
 #include <Wallets/Seeds/Seeds.h>
 #include <Signer/Signer.h>
+#include <Signer/PSBT.h>
 #include <Signer/CoinSelection.h>
 #include <AsyncClient.h>
 
@@ -1252,11 +1253,28 @@ namespace
 
          case SignerRequest::FROM_TX_SIG_COLLECT:
          {
-            auto signerObj = Signing::Signer::fromString(
-               request.getFromTxSigCollect());
-            signer->signer = std::make_unique<Signing::Signer>(std::move(signerObj));
+            //user input, malformed strings get an error reply
+            std::string ustx = request.getFromTxSigCollect();
+            capnp::MallocMessageBuilder message;
+            auto fromBridge = message.initRoot<FromBridge>();
+            auto reply = fromBridge.initReply();
+            reply.setReferenceId(referenceId);
 
-            replySuccess(true);
+            try {
+               auto signerObj = Signing::Signer::fromString(ustx);
+               signer->signer = std::make_unique<Signing::Signer>(
+                  std::move(signerObj));
+               reply.setSuccess(true);
+            } catch (const Signing::PSBT::DeserError&) {
+               //private runtime_error base, see #820
+               reply.setError("invalid PSBT");
+               reply.setSuccess(false);
+            } catch (const std::exception& e) {
+               reply.setError(e.what());
+               reply.setSuccess(false);
+            }
+
+            response = serializeCapnp(message);
             break;
          }
 

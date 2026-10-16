@@ -32,6 +32,8 @@
 #include <BridgeAPI/Wallets/Manager.h>
 #include <BridgeAPI/Wallets/TxIOCache.h>
 #include <BridgeAPI/DBSetup.h>
+#include <Signer/Signer.h>
+#include <Signer/ScriptSpender.h>
 
 #include "BDM_mainthread.h"
 #include "Server.h"
@@ -6847,6 +6849,94 @@ TEST_F(BridgeWalletTests, ForkWO)
       ASSERT_EQ(wltIter->second.accountId, accountId);
       ASSERT_NE(dbId, wltIter->second.dbId);
    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeWalletTests, Signer_FromTxSigCollect_Malformed)
+{
+   //a valid USTX: one p2pkh input, one output
+   Signing::Signer ustx;
+   ustx.addSpender(std::make_shared<Signing::ScriptSpender>(UTXO(
+      COIN, 0, 0, 0, BinaryData(std::vector<uint8_t>(32, 0xab)),
+      BtcUtils::getP2PKHScript(BinaryData(std::vector<uint8_t>(20, 1))))));
+   ustx.addRecipient(std::make_shared<Signing::Recipient_P2WPKH>(
+      BinaryData(std::vector<uint8_t>(20, 2)), COIN / 2));
+   auto valid = ustx.toString(Signing::SignerStringFormat::TxSigCollect_Modern);
+
+   auto signerId = getNewSigner(bridge_);
+   ASSERT_FALSE(signerId.empty());
+
+   //returns the reply's success flag, sets its error or USTX string
+   auto signerRequest = [this, &signerId](std::string& result,
+      const std::function<void(Codec::Bridge::SignerRequest::Builder&)>& set)
+   {
+      uint64_t refId = rand();
+      capnp::MallocMessageBuilder message;
+      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+      toBridge.setReferenceId(refId);
+      auto req = toBridge.initSigner();
+      req.setId(signerId);
+      set(req);
+      pushRequest(bridge_, serializeCapnp(message));
+
+      auto resp = waitOnReply();
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(resp->data.getPtr()),
+         resp->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto reply = reader.getRoot<Codec::Bridge::FromBridge>().getReply();
+      EXPECT_EQ(reply.getReferenceId(), refId);
+      if (!reply.getSuccess()) {
+         result = reply.getError();
+      } else if (reply.which() == Codec::Bridge::RpcReply::SIGNER) {
+         result = reply.getSigner().getToTxSigCollect();
+      }
+      return reply.getSuccess();
+   };
+   auto fromTxSigCollect = [&](const std::string& str, std::string& error)
+   {
+      return signerRequest(error,
+         [&str](Codec::Bridge::SignerRequest::Builder& req)
+         { req.setFromTxSigCollect(str); });
+   };
+
+   //load the valid one first, malformed strings must leave it be
+   std::string error;
+   ASSERT_TRUE(fromTxSigCollect(valid, error)) << error;
+
+   //valid header with: a junk body, a modern body whose capnp segment
+   //table is junk (0x5a5a5a5a segments)
+   auto header = valid.substr(0, valid.find('\n') + 1);
+   auto footer = std::string(64, '=') + "\n";
+   BinaryWriter capnBody;
+   capnBody.put_uint32_t(3);
+   capnBody.put_uint32_t(0);
+   capnBody.put_BinaryData(BinaryData(std::vector<uint8_t>(32, 'Z')));
+   auto capnStr = BtcUtils::base64_encode(std::string(
+      capnBody.getData().getCharPtr(), capnBody.getSize()));
+
+   std::vector<std::string> malformed = {
+      "",
+      valid.substr(0, valid.size() / 2),
+      header + std::string(64, 'Z') + "\n" + footer,
+      header + capnStr + "\n" + footer,
+      BtcUtils::base64_encode("not a psbt either")
+   };
+   for (const auto& str : malformed) {
+      std::string strError;
+      EXPECT_FALSE(fromTxSigCollect(str, strError)) << str;
+      EXPECT_FALSE(strError.empty()) << str;
+   }
+
+   //the bridge still serves, the signer kept the valid USTX
+   std::string roundTrip;
+   ASSERT_TRUE(signerRequest(roundTrip,
+      [](Codec::Bridge::SignerRequest::Builder& req)
+      {
+         req.setToTxSigCollect(static_cast<uint32_t>(
+            Signing::SignerStringFormat::TxSigCollect_Modern));
+      }));
+   EXPECT_EQ(roundTrip, valid);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
