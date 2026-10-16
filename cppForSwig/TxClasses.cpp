@@ -685,7 +685,7 @@ void Tx::setTxKey(Types::TxKey key)
 
 Types::BlockId Tx::getBlockId() const
 {
-   if (!Types::isThisAZCKey(txKey_)) {
+   if (!Types::isThisAZCKey(txKey_) && !Types::isThisAnUnpooledKey(txKey_)) {
       return Types::getBlockIDFromTxKey(txKey_);
    } else {
       return Types::INVALID_BLOCK_ID;
@@ -694,7 +694,7 @@ Types::BlockId Tx::getBlockId() const
 
 Types::TxId Tx::getTxIndex() const
 {
-   if (!Types::isThisAZCKey(txKey_)) {
+   if (!Types::isThisAZCKey(txKey_) && !Types::isThisAnUnpooledKey(txKey_)) {
       return Types::getTxIndexFromTxKey(txKey_);
    } else {
       return UINT16_MAX;
