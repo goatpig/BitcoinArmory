@@ -14,6 +14,8 @@
 #include <Ledgers/Context.h>
 #include <TxClasses.h>
 #include <AsyncClient.h>
+#include <Utils/log.h>
+#include <Network/WebSocketMessage.h>
 #include "../Notifications.h"
 
 using namespace Armory;
@@ -680,4 +682,155 @@ ChainData::ChainData(CacheResolveResult& data) :
       allTxKeys.insert(addrTxKeys.begin(), addrTxKeys.end());
    }
    txCount = allTxKeys.size();
+}
+
+////////
+namespace
+{
+   //waits on a db reply, gives up if the db connection goes away
+   template<typename T>
+   bool waitOnDb(std::future<T>& fut,
+      const std::shared_ptr<AsyncClient::BlockDataViewer>& bdvPtr)
+   {
+      while (fut.wait_for(std::chrono::milliseconds(250)) !=
+         std::future_status::ready) {
+         if (!bdvPtr->isValid()) {
+            return false;
+         }
+      }
+      return true;
+   }
+}
+
+void TxIOCache::fetchTxs(
+   std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr,
+   const std::set<Types::TxHash>& hashes)
+{
+   if (bdvPtr == nullptr) {
+      //offline, the cache is all there is
+      return;
+   }
+
+   //1. what the cache misses: unknown hashes, zcs (they may have been
+   //mined or dropped since) and headers of mined txs
+   std::set<Types::TxHash> missingHashes;
+   std::set<Types::BlockId> missingBlockIds;
+   {
+      ReentrantLock lock(this);
+      for (const auto& txHash : hashes) {
+         if (txHash.getSize() != 32) {
+            continue;
+         }
+         try {
+            auto txKey = dbCache_->getTxByHash(txHash).getDBKey();
+            if (Types::isThisAZCKey(txKey)) {
+               missingHashes.emplace(txHash);
+               continue;
+            }
+
+            auto blockId = Types::getBlockIDFromTxKey(txKey);
+            try {
+               dbCache_->getHeader(blockId);
+            } catch (const std::out_of_range&) {
+               missingBlockIds.emplace(blockId);
+            }
+         } catch (const std::out_of_range&) {
+            missingHashes.emplace(txHash);
+         }
+      }
+   }
+
+   //2. ask the db, without holding the lock. A miss in DB_BARE doesn't
+   //mean the tx doesn't exist, so misses aren't remembered
+   std::vector<Tx> txs;
+   if (!missingHashes.empty()) {
+      auto promTxs = std::make_shared<
+         std::promise<AsyncClient::TxBatchResult>>();
+      auto futTxs = promTxs->get_future();
+      try {
+         bdvPtr->getTxsByHash(missingHashes, [promTxs]
+            (ReturnMessage<AsyncClient::TxBatchResult> result) {
+               try {
+                  promTxs->set_value(result.get());
+               } catch (const ClientMessageError&) {
+                  promTxs->set_exception(std::current_exception());
+               }
+         });
+         if (!waitOnDb(futTxs, bdvPtr)) {
+            LOGWARN << "lost the db while fetching txs";
+            return;
+         }
+
+         auto txBatch = futTxs.get();
+         for (auto& txPair : txBatch) {
+            if (missingHashes.find(txPair.first) == missingHashes.end()) {
+               continue;
+            }
+
+            //the db only returns txs with a valid key
+            auto txKey = txPair.second->getDBKey();
+            if (!Types::isTxKeyValid(txKey)) {
+               continue;
+            }
+            if (!Types::isThisAZCKey(txKey)) {
+               missingBlockIds.emplace(Types::getBlockIDFromTxKey(txKey));
+            }
+            txs.emplace_back(*txPair.second);
+         }
+      } catch (const ClientMessageError& e) {
+         LOGWARN << "failed to fetch txs from the db: " << e.what();
+      } catch (const LWS_Error& e) {
+         LOGWARN << "failed to fetch txs from the db: " << e.what();
+         return;
+      }
+   }
+
+   //3. headers for the mined txs
+   {
+      ReentrantLock lock(this);
+      for (auto iter = missingBlockIds.begin();
+         iter != missingBlockIds.end();) {
+         try {
+            dbCache_->getHeader(*iter);
+            iter = missingBlockIds.erase(iter);
+         } catch (const std::out_of_range&) {
+            ++iter;
+         }
+      }
+   }
+
+   AsyncClient::HeaderVec headers;
+   if (!missingBlockIds.empty()) {
+      auto promHeaders = std::make_shared<
+         std::promise<AsyncClient::HeaderVec>>();
+      auto futHeaders = promHeaders->get_future();
+      try {
+         AsyncClient::Blockchain bc{*bdvPtr};
+         bc.getHeadersById(missingBlockIds, [promHeaders]
+            (ReturnMessage<AsyncClient::HeaderVec> result) {
+               try {
+                  promHeaders->set_value(result.get());
+               } catch (const ClientMessageError&) {
+                  promHeaders->set_exception(std::current_exception());
+               }
+         });
+         if (waitOnDb(futHeaders, bdvPtr)) {
+            headers = futHeaders.get();
+         } else {
+            LOGWARN << "lost the db while fetching headers";
+         }
+      } catch (const ClientMessageError& e) {
+         //the txs are still cached, the next fetch asks again
+         LOGWARN << "failed to fetch headers from the db: " << e.what();
+      } catch (const LWS_Error& e) {
+         LOGWARN << "failed to fetch headers from the db: " << e.what();
+      }
+   }
+
+   //4. fill the cache
+   ReentrantLock lock(this);
+   dbCache_->addHeaders(headers);
+   for (auto& tx : txs) {
+      dbCache_->addTx(tx);
+   }
 }

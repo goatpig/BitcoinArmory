@@ -142,6 +142,13 @@ std::shared_ptr<const TxIOCache> WalletManager::txioCache() const
    return std::const_pointer_cast<const TxIOCache>(txioCache_);
 }
 
+void WalletManager::fetchTxs(
+   std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr,
+   const std::set<Types::TxHash>& hashes)
+{
+   txioCache_->fetchTxs(bdvPtr, hashes);
+}
+
 ////
 bool WalletManager::hasWallet(const Wallets::WalletId& id)
 {
