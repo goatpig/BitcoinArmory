@@ -2755,9 +2755,18 @@ void CppBridge::getAddress(const Wallets::WalletId& wltId,
 ////////////////////////////////////////////////////////////////////////////////
 void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId msgId)
 {
-   auto func = [this, hashes, msgId]()
+   //cache first, the db for what it misses, then serve from the cache.
+   //The thread waits on the db, so it doesn't capture this
+   auto bdvPtr = bdvPtr_;
+   if (dbOffline_ || bdvPtr == nullptr || !bdvPtr->isValid()) {
+      bdvPtr = nullptr;
+   }
+   auto func = [wltManager = wltManager_, sockPtr = sockPtr_,
+      bdvPtr, hashes, msgId]()
    {
-      auto txioCache = wltManager_->txioCache();
+      wltManager->fetchTxs(bdvPtr, hashes);
+
+      auto txioCache = wltManager->txioCache();
       ReentrantLock lock(txioCache.get());
       auto dbCache = txioCache->getDBCache();
 
@@ -2792,10 +2801,16 @@ void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId ms
                capnTx.setTimestamp(tx.getTxTime());
                capnTx.setTxIndex(UINT32_MAX);
             } else {
-               auto header = dbCache->getHeader(
-                  Types::getBlockIDFromTxKey(txKey));
-               capnTx.setHeight(header->blockHeight);
-               capnTx.setTimestamp(header->timestamp);
+               //not all keys lead to a cached header
+               try {
+                  auto header = dbCache->getHeader(
+                     Types::getBlockIDFromTxKey(txKey));
+                  capnTx.setHeight(header->blockHeight);
+                  capnTx.setTimestamp(header->timestamp);
+               } catch (const std::out_of_range&) {
+                  capnTx.setHeight(UINT32_MAX);
+                  capnTx.setTimestamp(UINT32_MAX);
+               }
                capnTx.setTxIndex(tx.getTxIndex());
             }
             const auto& txHash = tx.getThisHash();
@@ -2812,8 +2827,9 @@ void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId ms
          reply.setSuccess(true);
       }
 
-      auto serialized = serializeCapnp(message);
-      this->writeToClient(serialized);
+      auto payload = std::make_unique<WritePayload_Bridge>();
+      payload->data = serializeCapnp(message);
+      sockPtr->pushPayload(std::move(payload), nullptr);
    };
 
    std::thread run{func};
