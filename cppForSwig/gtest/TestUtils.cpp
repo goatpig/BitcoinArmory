@@ -191,13 +191,14 @@ namespace TestUtils
          std::vector<char> xoredData;
          xoredData.resize(fileMap.size());
 
+         //xor 8 bytes at a time, the last chunk can be shorter
          size_t offset = 0;
-         uint64_t chunk;
-         while (offset <= fileMap.size()) {
-            std::memcpy(&chunk, fileMap.ptr() + offset,
-               std::min(size_t{8}, fileMap.size() - offset));
+         while (offset < fileMap.size()) {
+            auto len = std::min(size_t{8}, fileMap.size() - offset);
+            uint64_t chunk = 0;
+            std::memcpy(&chunk, fileMap.ptr() + offset, len);
             chunk ^= xorKey;
-            std::memcpy(&xoredData[offset], &chunk, 8);
+            std::memcpy(&xoredData[offset], &chunk, len);
             offset += 8;
          }
 
