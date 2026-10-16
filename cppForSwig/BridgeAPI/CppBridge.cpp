@@ -3202,8 +3202,10 @@ void CppBridge::broadcastTxs(const std::vector<BinaryData>& rawTxVec, bool isRPC
 ////////////////////////////////////////////////////////////////////////////////
 void CppBridge::getBlockTimeByHeight(uint32_t height, MessageId msgId) const
 {
-   auto dbCache = wltManager_->getDbCache();
-   auto header = dbCache->getHeaderForHeight(height);
+   auto header = [this, height]() {
+      ReentrantLock lock(wltManager_->txioCache().get());
+      return wltManager_->getDbCache()->getHeaderForHeight(height);
+   }();
 
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<FromBridge>();

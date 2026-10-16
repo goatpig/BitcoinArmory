@@ -75,6 +75,7 @@ std::shared_ptr<const Ledgers::DBCache> TxIOCache::getDBCache() const
 
 void TxIOCache::purge()
 {
+   ReentrantLock lock(this);
    lastKnownBlock_ = UINT32_MAX;
    unspentTxios_.clear();
    spentTxios_.clear();
@@ -86,6 +87,7 @@ void TxIOCache::purge()
 CacheResolveResult TxIOCache::resolve(
    const AddressFilter& filter, uint32_t fromHeight) const
 {
+   ReentrantLock lock(this);
    //run through unspent txios first
    CacheResolveResult result{lastKnownBlock_, false, dbCache_};
    for (const auto& txio : unspentTxios_) {
@@ -137,6 +139,7 @@ CacheResolveResult TxIOCache::resolve(
 
 CacheResolveResult TxIOCache::resolveZC(const AddressFilter& filter) const
 {
+   ReentrantLock lock(this);
    CacheResolveResult result{lastKnownBlock_, true, dbCache_};
    for (const auto& txio : zcTxios_) {
       //do we have an unspent txio in the result map?
@@ -163,6 +166,8 @@ void TxIOCache::updateBlockBranching(const NewBlockNotif& reorgNotif)
    if (!reorgNotif.isReorg()) {
       return;
    }
+
+   ReentrantLock lock(this);
 
    for (auto blockId : reorgNotif.invalidatedBlockIds()) {
       try {
@@ -418,6 +423,7 @@ TxIOCache::addTxios(
 std::map<Types::ScrAddr, std::set<Types::TxHash>> TxIOCache::getAddressBook(
    const AddressFilter& filter) const
 {
+   ReentrantLock lock(this);
    std::map<Types::ScrAddr, std::set<Types::TxHash>> result;
    for (const auto& txio : unspentTxios_) {
       const auto& txKey = txio.second.getTxKeyOfOutput();
@@ -469,6 +475,7 @@ std::map<Types::ScrAddr, std::set<Types::TxHash>> TxIOCache::getAddressBook(
 std::vector<UTXO> TxIOCache::getZcUTXOs(bool rbf,
    const AddressFilter& filter) const
 {
+   ReentrantLock lock(this);
    std::vector<UTXO> result;
    auto addTxio = [this, &result, filter](const TxIOPair& txio, const Tx& tx)
    {
@@ -523,6 +530,7 @@ std::vector<UTXO> TxIOCache::getUTXOs(
    uint64_t value, bool zc, bool rbf,
    const AddressFilter& filter) const
 {
+   ReentrantLock lock(this);
    if (zc || rbf) {
       return getZcUTXOs(rbf, filter);
    }
