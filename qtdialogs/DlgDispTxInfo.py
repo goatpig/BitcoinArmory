@@ -950,7 +950,7 @@ def extractTxInfo(pytx, rcvTime=None):
          txIdx = txProto.txIndex
          txSize = pytx.getSize()
       else:
-         if timestamp == None:
+         if timestamp == None or timestamp >= UINT32_MAX:
             txTime = 'Unknown'
          elif timestamp == -1:
             txTime = '[[Not broadcast yet]]'
@@ -974,9 +974,12 @@ def extractTxInfo(pytx, rcvTime=None):
             txinFromList[-1].append(prevTxOut.getScrAddressStr())
             txinFromList[-1].append(prevTxOut.getValue())
             if prevTx.isInitialized():
-               txinFromList[-1].append(prevTxProto.height)
+               #UINT32_MAX: no known block (zc, unpooled, uncached header)
+               prevHeight = prevTxProto.height
+               txinFromList[-1].append(
+                  prevHeight if prevHeight < UINT32_MAX else '')
                txinFromList[-1].append(prevTxHash)
-               txinFromList[-1].append(prevTxProto.txIndex)
+               txinFromList[-1].append(prevTxIndex)
                txinFromList[-1].append(prevTxOut.getScript())
             else:
                LOGERROR('How did we get a bad parent pointer? (extractTxInfo)')
