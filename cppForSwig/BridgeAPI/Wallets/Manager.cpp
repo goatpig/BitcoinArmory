@@ -51,6 +51,7 @@ namespace
       auto filteredMap = mgr->getFilteredContainerMap();
       walletLedgers.reserve(filteredMap.size());
       for (const auto& wltCont : filteredMap) {
+         ReentrantLock cacheLock(mgr->txioCache().get());
          const auto txioMap = wltCont.second->getTxioMap();
          auto context = Ledgers::prepareContext(txioMap, mgr->getDbCache(), {});
          walletLedgers.emplace_back(std::move(Ledgers::computeLedgerMap(
@@ -82,6 +83,7 @@ namespace
             [wltPtr=wltCont.second](const Types::ScrAddr& addr)->bool
             { return wltPtr->hasScrAddr(addr); }
          );
+         ReentrantLock cacheLock(txioCache.get());
          auto context = Ledgers::prepareContext(txioMap, mgr->getDbCache(), {});
          walletLedgers.emplace_back(std::move(Ledgers::computeLedgerMap(
             txioMap, 0, UINT32_MAX, wltCont.first, context)));
@@ -138,6 +140,18 @@ const std::filesystem::path& WalletManager::getWalletsDir() const
 std::shared_ptr<const TxIOCache> WalletManager::txioCache() const
 {
    return std::const_pointer_cast<const TxIOCache>(txioCache_);
+}
+
+void WalletManager::addUnpooledTxs(const std::vector<BinaryData>& rawTxs)
+{
+   txioCache_->addUnpooledTxs(rawTxs);
+}
+
+void WalletManager::fetchTxs(
+   std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr,
+   const std::set<Types::TxHash>& hashes)
+{
+   txioCache_->fetchTxs(bdvPtr, hashes);
 }
 
 ////
@@ -856,6 +870,7 @@ const std::string& WalletManager::getDelegateIdForWallet(
       Ledgers::Delegate{ [this, wltId, accId](uint32_t pageId)->
          std::vector<Ledgers::Entry> {
          auto wltCont = this->getContainer(wltId, accId);
+         ReentrantLock cacheLock(this->txioCache().get());
          const auto txioMap = wltCont->getTxioMap();
          auto context = Ledgers::prepareContext(txioMap,
             this->getDbCache(), {});
@@ -884,6 +899,7 @@ const std::string& WalletManager::getDelegateIdForScrAddr(
       Ledgers::Delegate{ [this, wltId, accId, scrAddr](uint32_t pageId)->
          std::vector<Ledgers::Entry> {
          auto wltCont = this->getContainer(wltId, accId);
+         ReentrantLock cacheLock(this->txioCache().get());
          const auto txioMap = wltCont->getTxioMap();
          auto context = Ledgers::prepareContext(txioMap,
             this->getDbCache(), {scrAddr});

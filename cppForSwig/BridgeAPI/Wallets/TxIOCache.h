@@ -122,6 +122,9 @@ namespace Armory
          std::vector<UTXO> getUTXOs(uint64_t, bool, bool,
             const AddressFilter&) const;
          std::map<Types::TxIOKey, TxIOPair> getZcTxios(const AddressFilter&) const;
+         void addUnpooledTxs(const std::vector<BinaryData>&);
+         void fetchTxs(std::shared_ptr<AsyncClient::BlockDataViewer>,
+            const std::set<Types::TxHash>&);
       };
    } //namespace Bridge
 } //namespace Armory

@@ -2854,9 +2854,9 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       pytx = None
       txHashBin = hex_to_binary(txHash)
       txProto = TheBridge.service.getTxsByHash([txHashBin])
-      if not txProto or len(txProto) == 0:
+      if txHashBin not in txProto:
          QtWidgets.QMessageBox.critical(self, self.tr('Error'), self.tr(
-         f"Could not find a transaction for hash {txHash}!", QtWidgets.QMessageBox.Ok))
+         f"Could not find a transaction for hash {txHash}!"), QtWidgets.QMessageBox.Ok)
          return
       txData = txProto[txHashBin]
       pytx = PyTx().unserialize(txData.body.raw)
@@ -5010,6 +5010,10 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       #grab ZC from DB
       txHashBin = hex_to_binary(txHash)
       result = TheBridge.service.getTxsByHash([txHashBin])
+      if txHashBin not in result:
+         QtWidgets.QMessageBox.critical(self, self.tr('Error'), self.tr(
+         f"Could not find a transaction for hash {txHash}!"), QtWidgets.QMessageBox.Ok)
+         return
       zctx = result[txHashBin]
       pytx = PyTx().unserialize(zctx.body.raw)
 
