@@ -12,6 +12,7 @@
 
 import os
 import shutil
+from html import escape
 
 from qtpy import QtCore, QtWidgets
 
@@ -19,11 +20,12 @@ from ui.QtExecuteSignal import TheSignalExecution
 from armoryengine.Transaction import UnsignedTransaction, \
    USTX_TYPE_MODERN, USTX_TYPE_LEGACY, USTX_TYPE_PSBT, USTX_TYPE_UNKNOWN
 from armoryengine.ArmoryUtils import LOGEXCEPT, LOGERROR, LOGINFO, \
-   CPP_TXOUT_STDSINGLESIG, CPP_TXOUT_P2SH, coin2str, enum, binary_to_hex, \
-   coin2strNZS, NetworkIDError, UnserializeError, OS_WINDOWS, SignatureError
+   LOGWARN, CPP_TXOUT_STDSINGLESIG, CPP_TXOUT_P2SH, coin2str, enum, \
+   binary_to_hex, coin2strNZS, NetworkIDError, UnserializeError, OS_WINDOWS, \
+   SignatureError, UstxError, InvalidHashError
 from armoryengine.Settings import TheSettings
 from armoryengine.AddressUtils import script_to_scrAddr, BadAddressError
-from armoryengine.CppBridge import BridgeSignerError
+from armoryengine.CppBridge import BridgeSignerError, BridgeError
 
 from qtdialogs.qtdefines import ArmoryFrame, tightSizeNChar, \
    GETFONT, QRichLabel, HLINE, QLabelButton, USERMODE, \
@@ -193,6 +195,7 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
       self.sigsValid = False
       self.ustxReadable = False
       self.btnSign.setEnabled(False)
+      loadError = None
 
       ustxStr = str(self.txtUSTX.toPlainText())
       if len(ustxStr) > 0:
@@ -221,6 +224,13 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
             BridgeSignerError):
             self.ustxObj = None
             self.ustxReadable = False
+         except (UstxError, InvalidHashError, BridgeError) as e:
+            #the string parsed but the tx can't be built from it, e.g. a
+            #prev tx neither the payload nor the bridge has
+            LOGWARN('processUSTX: %s' % e)
+            loadError = str(e)
+            self.ustxObj = None
+            self.ustxReadable = False
 
          if not self.enoughSigs or not self.sigsValid or not self.ustxReadable:
             self.btnBroadcast.setEnabled(False)
@@ -240,7 +250,11 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
       self.btnSave.setEnabled(True)
       self.btnCopyHex.setEnabled(False)
       if not self.ustxReadable:
-         if len(ustxStr) > 0:
+         if loadError:
+            self.lblStatus.setText(
+               self.tr('<b><font color="red">Unrecognized!</font></b>') +
+               ' (%s)' % escape(loadError))
+         elif len(ustxStr) > 0:
             self.lblStatus.setText(self.tr('<b><font color="red">Unrecognized!</font></b>'))
          else:
             self.lblStatus.setText('')
