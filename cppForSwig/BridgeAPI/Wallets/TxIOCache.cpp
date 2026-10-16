@@ -23,8 +23,6 @@ using namespace Armory::Bridge;
 
 namespace
 {
-   constexpr Types::TxKey firstZCKey = 0xFFFF000000000000;
-
    uint32_t getConfCount(Types::TxKey txKey, uint32_t top,
       std::shared_ptr<Ledgers::DBCache> cache)
    {
@@ -268,16 +266,14 @@ uint32_t TxIOCache::update(
    auto headers = futHeaders.get();
    ReentrantLock lock(this);
 
-   //5. prune mined tx from dbCache
-   auto zcHashes = dbCache_->getHashesStartingKey(firstZCKey);
+   //5. a fetched tx replaces the copies of its hash the cache has
+   std::set<Types::TxHash> fetchedHashes;
+   for (const auto& tx : txs) {
+      fetchedHashes.emplace(tx.getThisHash());
+   }
+   dbCache_->eraseHashes(fetchedHashes);
 
    for (auto& tx : txs) {
-      //prune mined tx from dbCache
-      auto zcIter = zcHashes.find(tx.getThisHash());
-      if (zcIter != zcHashes.end()) {
-         dbCache_->eraseTx(zcIter->second);
-      }
-
       //add fresh tx
       dbCache_->addTx(tx);
    }
@@ -685,6 +681,20 @@ ChainData::ChainData(CacheResolveResult& data) :
 }
 
 ////////
+void TxIOCache::addUnpooledTxs(const std::vector<BinaryData>& rawTxs)
+{
+   //txs the bridge sees before any db has a key for them
+   ReentrantLock lock(this);
+   for (const auto& rawTx : rawTxs) {
+      try {
+         dbCache_->addUnpooledTx(rawTx);
+      } catch (const std::exception& e) {
+         LOGWARN << "not caching a tx that doesn't deserialize: " << e.what();
+      }
+   }
+}
+
+////////
 namespace
 {
    //waits on a db reply, gives up if the db connection goes away
@@ -711,8 +721,8 @@ void TxIOCache::fetchTxs(
       return;
    }
 
-   //1. what the cache misses: unknown hashes, zcs (they may have been
-   //mined or dropped since) and headers of mined txs
+   //1. what the cache misses: unknown hashes, zc and unpooled copies (they
+   //may have been mined or pooled since) and headers of mined txs
    std::set<Types::TxHash> missingHashes;
    std::set<Types::BlockId> missingBlockIds;
    {
@@ -723,7 +733,8 @@ void TxIOCache::fetchTxs(
          }
          try {
             auto txKey = dbCache_->getTxByHash(txHash).getDBKey();
-            if (Types::isThisAZCKey(txKey)) {
+            if (Types::isThisAZCKey(txKey) ||
+               Types::isThisAnUnpooledKey(txKey)) {
                missingHashes.emplace(txHash);
                continue;
             }

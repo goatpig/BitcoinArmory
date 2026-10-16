@@ -2798,6 +2798,11 @@ void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId ms
                capnTx.setHeight(UINT32_MAX);
                capnTx.setTimestamp(tx.getTxTime());
                capnTx.setTxIndex(UINT32_MAX);
+            } else if (Types::isThisAnUnpooledKey(txKey)) {
+               //no db has given it a key
+               capnTx.setHeight(UINT32_MAX);
+               capnTx.setTimestamp(UINT32_MAX);
+               capnTx.setTxIndex(UINT32_MAX);
             } else {
                //not all keys lead to a cached header
                try {
@@ -2834,6 +2839,12 @@ void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId ms
    if (run.joinable()) {
       run.detach();
    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void CppBridge::addUnpooledTxs(const std::vector<BinaryData>& rawTxs)
+{
+   wltManager_->addUnpooledTxs(rawTxs);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3198,6 +3209,8 @@ std::shared_ptr<CppBridgeSignerStruct> CppBridge::signerInstance(
 ////////////////////////////////////////////////////////////////////////////////
 void CppBridge::broadcastTxs(const std::vector<BinaryData>& rawTxVec, bool isRPC)
 {
+   //cached as unpooled until the db reports them
+   addUnpooledTxs(rawTxVec);
    if (!isRPC) {
       bdvPtr_->broadcastZC(rawTxVec);
    } else {

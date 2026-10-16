@@ -245,6 +245,7 @@ namespace Armory
 
          //tx stuff
          void getTxsByHash(const std::set<Types::TxHash>&, MessageId);
+         void addUnpooledTxs(const std::vector<BinaryData>&);
          void getUTXOs(const Wallets::WalletId&,
             const Wallets::AddressAccountId&,
             uint64_t, bool, bool, MessageId);
