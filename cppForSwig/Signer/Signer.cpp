@@ -1213,7 +1213,7 @@ BinaryData Signer::serializeState() const
       i=0;
       auto capnTxns = capnMsg.initSupportingTxs(supportingTxMap_->size());
       for (const auto& supportingTx : *supportingTxMap_) {
-         capnTxns.set(i, capnp::Data::Builder(
+         capnTxns.set(i++, capnp::Data::Builder(
             (uint8_t*)supportingTx.second.getPtr(),
             supportingTx.second.getSize()
          ));
