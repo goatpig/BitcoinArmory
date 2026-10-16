@@ -20,7 +20,7 @@ from armoryengine.Transaction import UnsignedTransaction, \
    USTX_TYPE_MODERN, USTX_TYPE_LEGACY, USTX_TYPE_PSBT, USTX_TYPE_UNKNOWN
 from armoryengine.ArmoryUtils import LOGEXCEPT, LOGERROR, LOGINFO, \
    CPP_TXOUT_STDSINGLESIG, CPP_TXOUT_P2SH, coin2str, enum, binary_to_hex, \
-   coin2strNZS, NetworkIDError, UnserializeError, OS_WINDOWS
+   coin2strNZS, NetworkIDError, UnserializeError, OS_WINDOWS, SignatureError
 from armoryengine.Settings import TheSettings
 from armoryengine.AddressUtils import script_to_scrAddr, BadAddressError
 from armoryengine.CppBridge import BridgeSignerError
@@ -278,8 +278,9 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
 
       # Collect the input wallets (hopefully just one of them)
       fromWlts = set()
-      for addrStr, amt, a, b, c, script in data[FIELDS.InList]:
-         wlt = self.main.wallets.getWltForAddrStr(addrStr)
+      for ustxi in self.ustxObj.ustxInputs:
+         wlt = self.main.wallets.getWltForScrAddr(
+            script_to_scrAddr(ustxi.txoScript))
          if wlt:
             fromWlts.add(wlt.dbId)
 
@@ -433,7 +434,8 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
       def completeSignProcess(success):
          def signTxLastStep(success):
             if success:
-               serTx = self.ustxObj.serialize(self.signerTypeSelect.fromType())
+               serTx = self.ustxObj.toTxSigCollect(
+                  self.signerTypeSelect.fromType())
                self.txtUSTX.setText(serTx)
 
                if not self.fileLoaded == None:
@@ -469,6 +471,7 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
          QtWidgets.QMessageBox.warning(self, self.tr('Signature Error'), self.tr(
             'Not all signatures are valid.  This transaction '
             'cannot be broadcast.'), QtWidgets.QMessageBox.Ok)
+         return
       except:
          QtWidgets.QMessageBox.warning(self, self.tr('Error'), self.tr(
             'There was an error processing this transaction, for reasons '
