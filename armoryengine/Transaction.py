@@ -18,8 +18,7 @@ from armoryengine.ArmoryUtils import BlockComponent, BIGENDIAN, \
    CPP_TXIN_P2WPKH_P2SH, CPP_TXIN_P2WSH_P2SH, MIN_RELAY_TX_FEE, \
    int_to_binary, SignatureError, indent, binary_to_hex, \
    hash160, sha256, ONE_BTC, LOGERROR, LOGWARN, coin2strNZS, \
-   BlockchainUnavailableError, InvalidHashError, InvalidScriptError, \
-   UstxError
+   InvalidHashError, InvalidScriptError, UstxError
 from armoryengine.AddressUtils import hash160_to_addrStr, binary_to_base58, \
    CheckHash160, binScript_to_p2shAddrStr, script_to_addrStr, \
    script_to_scrAddr, scrAddr_to_addrStr, BadAddressError
@@ -1908,14 +1907,6 @@ class UnsignedTransaction(AsciiSerializable):
       txMap       = {} if not txMap     else txMap
       p2shMap     = {} if not p2shMap   else p2shMap
 
-
-      if len(txMap)==0 and not TheBDM.getState()==BDM_BLOCKCHAIN_READY:
-         # TxDP includes the transactions that supply the inputs to this
-         # transaction, so the BDM needs to be available to fetch those.
-         raise BlockchainUnavailableError('Must input supporting transactions '
-                                            'or access to the blockchain, to '
-                                            'create the TxDP')
-
       ustxiList = []
       dtxoList = []
 
@@ -1936,10 +1927,8 @@ class UnsignedTransaction(AsciiSerializable):
             missingTxHashes.append(txhash)
 
       if missingTxHashes:
-         #try to get txdata from db for missing hashes
-         if not TheBDM.getState()==BDM_BLOCKCHAIN_READY:
-            raise InvalidScriptError('No previous-tx data available for TxDP')
-
+         #the bridge serves the db's txs and the supporting txs of the
+         #signer payloads it has loaded, unknown hashes are left out
          capnTxns = TheBridge.service.getTxsByHash(missingTxHashes)
          for txHash in capnTxns:
             if not txHash in prevTxs:
@@ -1950,7 +1939,8 @@ class UnsignedTransaction(AsciiSerializable):
       for inputID, txin in enumerate(pytx.inputs):
          pyPrevTx = prevTxs[txin.outpoint.txHash]
          if not pyPrevTx:
-            raise InvalidScriptError('No previous-tx data available for TxDP')
+            raise UstxError(
+               f'No previous-tx data available for input {inputID}')
 
          ustxiList.append(UnsignedTxInput(
             pyPrevTx.serializeWithoutWitness(),
