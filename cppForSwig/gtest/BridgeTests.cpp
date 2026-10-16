@@ -17,6 +17,7 @@
 #include <Utils/FileUtils.h>
 #include <Utils/BIP15x_Handshake.h>
 #include <Ledgers/LedgerEntry.h>
+#include <Ledgers/Context.h>
 
 #include <Wallets/Accounts/AddressAccounts.h>
 #include <Wallets/Accounts/AccountTypes.h>
@@ -14726,6 +14727,99 @@ TEST_F(BridgePeersManagement, Remove)
 
    //connect to db
    ASSERT_TRUE(connectToPeer(bridge_, serverKey));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+class BridgeDBCacheTests : public ::testing::Test
+{
+protected:
+   //the 2 txs the inputs of the BIP174 test vector spend from
+   const BinaryData rawTx1 = READHEX("0200000000010158e87a21b56daf0c23be8e7070456c336f7cbaa5c8757924f545887bb2abdd7501000000171600145f275f436b09a8cc9a2eb2a2f528485c68a56323feffffff02d8231f1b0100000017a914aed962d6654f9a2b36608eb9d64d2b260db4f1118700c2eb0b0000000017a914b7f5faf40e3d40a5a459b1db3535f2b72fa921e88702483045022100a22edcc6e5bc511af4cc4ae0de0fcd75c7e04d8c1c3a8aa9d820ed4b967384ec02200642963597b9b1bc22c75e9f3e117284a962188bf5e8a74c895089046a20ad770121035509a48eb623e10aace8bfd0212fdb8a8e5af3c94b0b133b95e114cab89e4f7965000000");
+   const BinaryData rawTx2 = READHEX("0200000001aad73931018bd25f84ae400b68848be09db706eac2ac18298babee71ab656f8b0000000048473044022058f6fc7c6a33e1b31548d481c826c015bd30135aad42cd67790dab66d2ad243b02204a1ced2604c6735b6393e5b41691dd78b00f0c5942fb9f751856faa938157dba01feffffff0280f0fa020000000017a9140fb9463421696b82c833af241c78c17ddbde493487d0f20a270100000017a91429ca74f8a08f81999428185c97b5d852e4063f618765000000");
+   const Types::TxKey minedKey = Types::constructTxKey(10, 3);
+   const Types::TxKey zcKey = Types::constructZCKey(5);
+
+   static void add(Ledgers::DBCache& cache,
+      const BinaryData& raw, Types::TxKey key)
+   {
+      Tx tx(raw);
+      tx.setTxKey(key);
+      cache.addTx(tx);
+   }
+
+   static Types::TxKey keyForHash(const Ledgers::DBCache& cache,
+      const BinaryData& raw)
+   {
+      return cache.getTxByHash(Tx(raw).getThisHash()).getDBKey();
+   }
+};
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, ZcThenMined)
+{
+   Ledgers::DBCache cache;
+   add(cache, rawTx1, zcKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), zcKey);
+
+   //the mined copy takes the hash, the zc entry stays for the ledgers
+   add(cache, rawTx1, minedKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), minedKey);
+   EXPECT_EQ(cache.getTx(zcKey).serialize(), rawTx1);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, MinedThenZc)
+{
+   Ledgers::DBCache cache;
+   add(cache, rawTx1, minedKey);
+   add(cache, rawTx1, zcKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), minedKey);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, MinedThenRemined)
+{
+   //a reorg mines the tx again in another block, the new copy wins
+   Ledgers::DBCache cache;
+   const auto reminedKey = Types::constructTxKey(11, 0);
+   add(cache, rawTx1, minedKey);
+   add(cache, rawTx1, reminedKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), reminedKey);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, EraseZcKeepsMined)
+{
+   Ledgers::DBCache cache;
+   add(cache, rawTx1, zcKey);
+   add(cache, rawTx1, minedKey);
+
+   //dropping the zc copy leaves the mined one
+   cache.eraseTx(zcKey);
+   EXPECT_THROW(cache.getTx(zcKey), std::out_of_range);
+   EXPECT_EQ(keyForHash(cache, rawTx1), minedKey);
+
+   //erasing the key the hash points to still drops the hash
+   cache.eraseTx(minedKey);
+   EXPECT_THROW(cache.getTxByHash(Tx(rawTx1).getThisHash()),
+      std::out_of_range);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, PurgeSkipsMined)
+{
+   Ledgers::DBCache cache;
+   add(cache, rawTx1, minedKey);
+   add(cache, rawTx2, zcKey);
+
+   auto purged = cache.purgeTxs({
+      Tx(rawTx1).getThisHash(), Tx(rawTx2).getThisHash()});
+   EXPECT_EQ(purged, std::set<Types::TxKey>{zcKey});
+   EXPECT_EQ(keyForHash(cache, rawTx1), minedKey);
+   EXPECT_THROW(cache.getTxByHash(Tx(rawTx2).getThisHash()),
+      std::out_of_range);
+   EXPECT_THROW(cache.getTx(zcKey), std::out_of_range);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

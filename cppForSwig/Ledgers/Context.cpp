@@ -133,8 +133,15 @@ const std::map<Types::BlockId, HeaderPtr>& DBCache::getHeaderMap() const
 ////////
 void DBCache::addTx(Tx& tx)
 {
-   txHashToKey_.emplace(tx.getThisHash(), tx.getDBKey());
-   txMap_.emplace(tx.getDBKey(), std::move(tx));
+   //a mined copy takes the hash, a zc never takes it from a mined tx
+   auto txKey = tx.getDBKey();
+   auto hashIter = txHashToKey_.find(tx.getThisHash());
+   if (hashIter == txHashToKey_.end()) {
+      txHashToKey_.emplace(tx.getThisHash(), txKey);
+   } else if (!Types::isThisAZCKey(txKey)) {
+      hashIter->second = txKey;
+   }
+   txMap_.emplace(txKey, std::move(tx));
 }
 
 void DBCache::eraseTx(Types::TxKey txKey)
@@ -143,7 +150,11 @@ void DBCache::eraseTx(Types::TxKey txKey)
    if (txIter == txMap_.end()) {
       return;
    }
-   txHashToKey_.erase(txIter->second.getThisHash());
+   //only drop the hash if it points to this key
+   auto hashIter = txHashToKey_.find(txIter->second.getThisHash());
+   if (hashIter != txHashToKey_.end() && hashIter->second == txKey) {
+      txHashToKey_.erase(hashIter);
+   }
    txMap_.erase(txIter);
 }
 
@@ -187,6 +198,10 @@ std::set<Types::TxKey> DBCache::purgeTxs(
    for (const auto& txHash : invalidHashes) {
       auto keyIter = txHashToKey_.find(txHash);
       if (keyIter == txHashToKey_.end()) {
+         continue;
+      }
+      if (!Types::isThisAZCKey(keyIter->second)) {
+         //invalidated hashes are zc, leave mined txs alone
          continue;
       }
       txMap_.erase(keyIter->second);
