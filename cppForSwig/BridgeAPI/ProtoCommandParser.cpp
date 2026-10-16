@@ -17,6 +17,7 @@
 #include <Wallets/Seeds/Backups.h>
 #include <Wallets/Seeds/Seeds.h>
 #include <Signer/Signer.h>
+#include <Signer/ScriptSpender.h>
 #include <Signer/PSBT.h>
 #include <Signer/CoinSelection.h>
 #include <AsyncClient.h>
@@ -1210,6 +1211,7 @@ namespace
             auto capnTx = request.getAddSupportingTx();
             BinaryDataRef txRef(capnTx.begin(), capnTx.end());
             signer->signer->addSupportingTx(txRef);
+            bridge->addUnpooledTxs({BinaryData{txRef}});
 
             replySuccess(true);
             break;
@@ -1272,6 +1274,18 @@ namespace
             } catch (const std::exception& e) {
                reply.setError(e.what());
                reply.setSuccess(false);
+            }
+
+            //the payload's supporting txs go in the cache
+            if (reply.getSuccess()) {
+               std::vector<BinaryData> rawTxs;
+               for (unsigned i=0; i<signer->signer->getTxInCount(); i++) {
+                  auto spender = signer->signer->getSpender(i);
+                  if (spender->haveSupportingTx()) {
+                     rawTxs.emplace_back(spender->getSupportingTx().serialize());
+                  }
+               }
+               bridge->addUnpooledTxs(rawTxs);
             }
 
             response = serializeCapnp(message);

@@ -3187,6 +3187,32 @@ namespace {
       return result;
    }
 
+   //FROM_TX_SIG_COLLECT, returns the reply's success flag
+   bool loadSignerString(std::shared_ptr<Bridge::CppBridge> bridge,
+      const std::string& signerId, const std::string& str)
+   {
+      uint64_t refId = rand();
+      capnp::MallocMessageBuilder message;
+      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+      toBridge.setReferenceId(refId);
+      auto req = toBridge.initSigner();
+      req.setId(signerId);
+      req.setFromTxSigCollect(str);
+      pushRequest(bridge, serializeCapnp(message));
+
+      auto resp = waitOnReply();
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(resp->data.getPtr()),
+         resp->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+      if (fromBridge.which() != Codec::Bridge::FromBridge::REPLY) {
+         return false;
+      }
+      auto reply = fromBridge.getReply();
+      return reply.getReferenceId() == refId && reply.getSuccess();
+   }
+
    bool addSpenderByOutpoint(
       std::shared_ptr<Bridge::CppBridge> bridge, const std::string& signerId,
       const BinaryData& hash, uint32_t index, uint32_t sequence)
@@ -7027,6 +7053,107 @@ TEST_F(BridgeWalletTests, Signer_FromTxSigCollect_Malformed)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeWalletTests, GetTxsByHash_OfflinePayload)
+{
+   //the 2 txs the inputs of the BIP174 test vector spend from
+   auto rawTx1 = READHEX("0200000000010158e87a21b56daf0c23be8e7070456c336f7cbaa5c8757924f545887bb2abdd7501000000171600145f275f436b09a8cc9a2eb2a2f528485c68a56323feffffff02d8231f1b0100000017a914aed962d6654f9a2b36608eb9d64d2b260db4f1118700c2eb0b0000000017a914b7f5faf40e3d40a5a459b1db3535f2b72fa921e88702483045022100a22edcc6e5bc511af4cc4ae0de0fcd75c7e04d8c1c3a8aa9d820ed4b967384ec02200642963597b9b1bc22c75e9f3e117284a962188bf5e8a74c895089046a20ad770121035509a48eb623e10aace8bfd0212fdb8a8e5af3c94b0b133b95e114cab89e4f7965000000");
+   auto rawTx2 = READHEX("0200000001aad73931018bd25f84ae400b68848be09db706eac2ac18298babee71ab656f8b0000000048473044022058f6fc7c6a33e1b31548d481c826c015bd30135aad42cd67790dab66d2ad243b02204a1ced2604c6735b6393e5b41691dd78b00f0c5942fb9f751856faa938157dba01feffffff0280f0fa020000000017a9140fb9463421696b82c833af241c78c17ddbde493487d0f20a270100000017a91429ca74f8a08f81999428185c97b5d852e4063f618765000000");
+   Tx tx1(rawTx1);
+   Tx tx2(rawTx2);
+   auto getUtxo = [](const Tx& tx, unsigned index)->UTXO
+   {
+      auto txOut = tx.getTxOutCopy(index);
+      return UTXO(txOut.getAmount(), UINT32_MAX, UINT16_MAX, index,
+         tx.getThisHash(), txOut.getScript());
+   };
+
+   Signing::Signer ustx;
+   ustx.setVersion(2);
+   ustx.addSpender(std::make_shared<Signing::ScriptSpender>(getUtxo(tx2, 0)));
+   ustx.addSpender(std::make_shared<Signing::ScriptSpender>(getUtxo(tx1, 1)));
+   ustx.addRecipient(std::make_shared<Signing::Recipient_P2WPKH>(
+      READHEX("d85c2b71d0060b09c9886aeb815e50991dda124d"), 149990000));
+   ustx.addSupportingTx(rawTx1);
+   ustx.addSupportingTx(rawTx2);
+
+   auto unknownHash = READHEX(
+      "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff");
+   std::set<BinaryData> hashes{
+      tx1.getThisHash(), tx2.getThisHash(), unknownHash};
+
+   //nothing cached yet
+   bool success = false;
+   auto none = getTxDataByHash(bridge_, hashes, success);
+   ASSERT_TRUE(success);
+   EXPECT_TRUE(none.empty());
+
+   //a malformed string is refused
+   auto signerId = getNewSigner(bridge_);
+   ASSERT_FALSE(signerId.empty());
+   EXPECT_FALSE(loadSignerString(bridge_, signerId, "not a signer string"));
+   EXPECT_TRUE(getTxDataByHash(bridge_, hashes, success).empty());
+
+   //loading the USTX caches its supporting txs, served with no height. Each
+   //format gets a fresh bridge, so its cache starts empty
+   for (auto format : {Signing::SignerStringFormat::TxSigCollect_Modern,
+      Signing::SignerStringFormat::PSBT}) {
+      bridge_.reset();
+      replyQueue.clear();
+      bridge_ = std::make_shared<Bridge::CppBridge>(
+         std::make_shared<TestBridgeSocket>());
+      signerId = getNewSigner(bridge_);
+      ASSERT_FALSE(signerId.empty());
+      ASSERT_TRUE(getTxDataByHash(bridge_, hashes, success).empty());
+
+      auto str = ustx.toString(format);
+      ASSERT_TRUE(loadSignerString(bridge_, signerId, str));
+
+      auto txs = getTxDataByHash(bridge_, hashes, success);
+      ASSERT_TRUE(success);
+      ASSERT_EQ(txs.size(), 2U);
+      EXPECT_EQ(txs[tx1.getThisHash()].raw, rawTx1);
+      EXPECT_EQ(txs[tx2.getThisHash()].raw, rawTx2);
+      for (const auto& txPair : txs) {
+         EXPECT_EQ(txPair.second.height, UINT32_MAX);
+         EXPECT_EQ(txPair.second.txIndex, UINT32_MAX);
+         EXPECT_EQ(txPair.second.timestamp, UINT32_MAX);
+      }
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeWalletTests, GetTxsByHash_AddSupportingTx)
+{
+   auto rawTx1 = READHEX("0200000000010158e87a21b56daf0c23be8e7070456c336f7cbaa5c8757924f545887bb2abdd7501000000171600145f275f436b09a8cc9a2eb2a2f528485c68a56323feffffff02d8231f1b0100000017a914aed962d6654f9a2b36608eb9d64d2b260db4f1118700c2eb0b0000000017a914b7f5faf40e3d40a5a459b1db3535f2b72fa921e88702483045022100a22edcc6e5bc511af4cc4ae0de0fcd75c7e04d8c1c3a8aa9d820ed4b967384ec02200642963597b9b1bc22c75e9f3e117284a962188bf5e8a74c895089046a20ad770121035509a48eb623e10aace8bfd0212fdb8a8e5af3c94b0b133b95e114cab89e4f7965000000");
+   auto rawTx2 = READHEX("0200000001aad73931018bd25f84ae400b68848be09db706eac2ac18298babee71ab656f8b0000000048473044022058f6fc7c6a33e1b31548d481c826c015bd30135aad42cd67790dab66d2ad243b02204a1ced2604c6735b6393e5b41691dd78b00f0c5942fb9f751856faa938157dba01feffffff0280f0fa020000000017a9140fb9463421696b82c833af241c78c17ddbde493487d0f20a270100000017a91429ca74f8a08f81999428185c97b5d852e4063f618765000000");
+   auto hash1 = Tx(rawTx1).getThisHash();
+   auto hash2 = Tx(rawTx2).getThisHash();
+
+   auto signerId = getNewSigner(bridge_);
+   ASSERT_FALSE(signerId.empty());
+
+   //a truncated tx (no locktime) is skipped, the bridge stays up
+   auto truncated = rawTx2.getSliceCopy(0, rawTx2.getSize() - 4);
+   bool added = false;
+   EXPECT_NO_THROW(added = addSupportingTx(bridge_, signerId, truncated));
+   EXPECT_TRUE(added);
+
+   bool success = false;
+   EXPECT_TRUE(getTxDataByHash(bridge_, {hash1, hash2}, success).empty());
+   ASSERT_TRUE(success);
+
+   //a supporting tx added to a signer is cached as unpooled
+   ASSERT_TRUE(addSupportingTx(bridge_, signerId, rawTx1));
+   auto txs = getTxDataByHash(bridge_, {hash1, hash2}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(txs.size(), 1U);
+   EXPECT_EQ(txs[hash1].raw, rawTx1);
+   EXPECT_EQ(txs[hash1].height, UINT32_MAX);
+   EXPECT_EQ(txs[hash1].txIndex, UINT32_MAX);
+   EXPECT_EQ(txs[hash1].timestamp, UINT32_MAX);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // BridgeWalletsWithDBTests
 class BridgeWalletsWithDBTests : public ::testing::Test
 {
@@ -7972,6 +8099,75 @@ TEST_F(BridgeChainDataTests, GetTxsByHash_DbFallback)
    auto nothing = getTxDataByHash(bridge_, {unknownHash, shortHash}, success);
    EXPECT_TRUE(success);
    EXPECT_TRUE(nothing.empty());
+}
+
+TEST_F(BridgeChainDataTests, GetTxsByHash_PayloadThenDb)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   //a mined tx of the wallet, as its bridge serves it
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+   auto ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_FALSE(ledgers.empty());
+   auto txHash = ledgers.back().getTxHash();
+
+   bool success = false;
+   auto fromWallet = getTxDataByHash(bridge_, {txHash}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(fromWallet.size(), 1U);
+   ASSERT_NE(fromWallet[txHash].height, UINT32_MAX);
+
+   //a fresh bridge with no wallet gets that tx as the supporting tx of a
+   //USTX: unpooled while the bridge has no db, the db's mined copy once it
+   //has one
+   bridge_.reset();
+   replyQueue.clear();
+   bridge_ = std::make_shared<Bridge::CppBridge>(
+      std::make_shared<TestBridgeSocket>());
+   loadWallets({});
+
+   const auto& rawTx = fromWallet[txHash].raw;
+   Tx tx(rawTx);
+   auto txOut = tx.getTxOutCopy(0);
+   Signing::Signer ustx;
+   ustx.addSpender(std::make_shared<Signing::ScriptSpender>(UTXO(
+      txOut.getAmount(), UINT32_MAX, UINT16_MAX, 0,
+      tx.getThisHash(), txOut.getScript())));
+   ustx.addRecipient(std::make_shared<Signing::Recipient_P2WPKH>(
+      BinaryData(std::vector<uint8_t>(20, 2)), txOut.getAmount() / 2));
+   ustx.addSupportingTx(rawTx);
+
+   auto signerId = getNewSigner(bridge_);
+   ASSERT_FALSE(signerId.empty());
+   ASSERT_TRUE(loadSignerString(bridge_, signerId,
+      ustx.toString(Signing::SignerStringFormat::TxSigCollect_Modern)));
+
+   auto unpooled = getTxDataByHash(bridge_, {txHash}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(unpooled.size(), 1U);
+   EXPECT_EQ(unpooled[txHash].raw, rawTx);
+   EXPECT_EQ(unpooled[txHash].height, UINT32_MAX);
+   EXPECT_EQ(unpooled[txHash].txIndex, UINT32_MAX);
+   EXPECT_EQ(unpooled[txHash].timestamp, UINT32_MAX);
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   auto fromDb = getTxDataByHash(bridge_, {txHash}, success);
+   ASSERT_TRUE(success);
+   EXPECT_EQ(fromDb, fromWallet);
 }
 
 TEST_F(BridgeChainDataTests, GetTxsByHash_ZcThenMined)
@@ -15032,6 +15228,126 @@ TEST_F(BridgeDBCacheTests, EraseZcKeepsMined)
 
    //erasing the key the hash points to still drops the hash
    cache.eraseTx(minedKey);
+   EXPECT_THROW(cache.getTxByHash(Tx(rawTx1).getThisHash()),
+      std::out_of_range);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, Candidates)
+{
+   //mined > pooled > unpooled, newest first within a kind
+   auto unpooledKey = Types::constructUnpooledKey(7);
+   auto minedKey2 = Types::constructTxKey(11, 0);
+
+   Ledgers::TxKeyCandidates candidates;
+   EXPECT_TRUE(candidates.empty());
+   EXPECT_EQ(candidates.best(), Types::INVALID_TX_KEY);
+
+   candidates.add(unpooledKey);
+   EXPECT_EQ(candidates.best(), unpooledKey);
+   candidates.add(zcKey);
+   EXPECT_EQ(candidates.best(), zcKey);
+   candidates.add(minedKey);
+   EXPECT_EQ(candidates.best(), minedKey);
+   candidates.add(minedKey2);
+   EXPECT_EQ(candidates.best(), minedKey2);
+   candidates.add(unpooledKey);
+   EXPECT_EQ(candidates.keys(), (std::vector<Types::TxKey>{
+      minedKey2, minedKey, zcKey, unpooledKey}));
+
+   EXPECT_TRUE(candidates.remove(minedKey2));
+   EXPECT_FALSE(candidates.remove(minedKey2));
+   EXPECT_EQ(candidates.best(), minedKey);
+   EXPECT_TRUE(candidates.remove(minedKey));
+   EXPECT_EQ(candidates.best(), zcKey);
+   EXPECT_TRUE(candidates.remove(zcKey));
+   EXPECT_EQ(candidates.best(), unpooledKey);
+   EXPECT_TRUE(candidates.remove(unpooledKey));
+   EXPECT_TRUE(candidates.empty());
+
+   //each key goes ahead of its kind and behind the better kinds: within a
+   //kind the newest comes first, whatever its id
+   auto minedKey0 = Types::constructTxKey(9, 0);
+   auto zcKey2 = Types::constructZCKey(6);
+   auto zcKey0 = Types::constructZCKey(4);
+   auto unpooledKey2 = Types::constructUnpooledKey(8);
+   auto unpooledKey0 = Types::constructUnpooledKey(6);
+   for (auto txKey : {minedKey, zcKey, unpooledKey, zcKey2, minedKey2,
+      unpooledKey2, zcKey0, minedKey0, unpooledKey0}) {
+      candidates.add(txKey);
+   }
+   EXPECT_EQ(candidates.keys(), (std::vector<Types::TxKey>{
+      minedKey0, minedKey2, minedKey, zcKey0, zcKey2, zcKey,
+      unpooledKey0, unpooledKey2, unpooledKey}));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, Unpooled)
+{
+   Ledgers::DBCache cache;
+   auto hash1 = Tx(rawTx1).getThisHash();
+
+   //a raw tx gets the next unpooled key, once
+   auto key1 = cache.addUnpooledTx(rawTx1);
+   EXPECT_EQ(key1, Types::constructUnpooledKey(0));
+   EXPECT_EQ(cache.getTx(key1).getBlockId(), Types::INVALID_BLOCK_ID);
+   EXPECT_EQ(cache.getTx(key1).getTxIndex(), UINT16_MAX);
+   EXPECT_EQ(cache.addUnpooledTx(rawTx1), key1);
+   EXPECT_EQ(cache.addUnpooledTx(rawTx2), Types::constructUnpooledKey(1));
+   EXPECT_EQ(cache.getTxByHash(hash1).serialize(), rawTx1);
+   EXPECT_EQ(keyForHash(cache, rawTx1), key1);
+
+   //the pooled and mined copies take over, the unpooled one stays below
+   add(cache, rawTx1, zcKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), zcKey);
+   add(cache, rawTx1, minedKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), minedKey);
+   EXPECT_EQ(cache.addUnpooledTx(rawTx1), minedKey);
+
+   //a purged hash keeps its mined copy only
+   EXPECT_EQ(cache.purgeTxs({hash1}), (std::set<Types::TxKey>{zcKey, key1}));
+   EXPECT_EQ(keyForHash(cache, rawTx1), minedKey);
+   cache.eraseTx(minedKey);
+   EXPECT_THROW(cache.getTxByHash(hash1), std::out_of_range);
+
+   //an erased copy falls back to what's left
+   auto zcKey2 = Types::constructZCKey(6);
+   add(cache, rawTx2, zcKey2);
+   EXPECT_EQ(keyForHash(cache, rawTx2), zcKey2);
+   cache.eraseTx(zcKey2);
+   EXPECT_EQ(keyForHash(cache, rawTx2), Types::constructUnpooledKey(1));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, EraseHashes)
+{
+   //every copy of the hash goes, other hashes stay
+   Ledgers::DBCache cache;
+   auto unpooledKey = cache.addUnpooledTx(rawTx1);
+   add(cache, rawTx1, zcKey);
+   add(cache, rawTx1, minedKey);
+   auto zcKey2 = Types::constructZCKey(6);
+   add(cache, rawTx2, zcKey2);
+
+   cache.eraseHashes({Tx(rawTx1).getThisHash()});
+   EXPECT_THROW(cache.getTxByHash(Tx(rawTx1).getThisHash()),
+      std::out_of_range);
+   for (auto txKey : {unpooledKey, zcKey, minedKey}) {
+      EXPECT_THROW(cache.getTx(txKey), std::out_of_range);
+   }
+   EXPECT_EQ(keyForHash(cache, rawTx2), zcKey2);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, ZcIdReuse)
+{
+   //zc ids can be reused after ArmoryDB restarts: a key can come back for
+   //another tx, the old tx goes
+   Ledgers::DBCache cache;
+   add(cache, rawTx1, zcKey);
+   add(cache, rawTx2, zcKey);
+   EXPECT_EQ(cache.getTx(zcKey).serialize(), rawTx2);
+   EXPECT_EQ(keyForHash(cache, rawTx2), zcKey);
    EXPECT_THROW(cache.getTxByHash(Tx(rawTx1).getThisHash()),
       std::out_of_range);
 }
