@@ -105,12 +105,6 @@ int main(int argc, char* argv[])
             "server peers store");
          WebSocketServer::initPeerStore({peerFilePath, passLbd});
       }
-      NetworkPeers::PeerKey myKey{WebSocketServer::getOwnPublicKey(),
-         Config::NetworkSettings::oneWayAuth() ?
-         NetworkPeers::PeerType::ServerOneWay :
-         NetworkPeers::PeerType::ServerTwoWay
-      };
-      LOGINFO << "This is my key: " << myKey.toHumanReadable();
    }
 
    LOGINFO << "Running on " << Config::DBSettings::threadCount() << " threads";

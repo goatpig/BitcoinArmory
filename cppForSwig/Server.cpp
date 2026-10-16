@@ -29,8 +29,11 @@ PendingMessage::PendingMessage(uint64_t id,
 
 ///////////////////////////////////////////////////////////////////////////////
 // WebSocketServer
+BinaryData WebSocketServer::masterPubkey_;
 std::atomic<WebSocketServer*> WebSocketServer::instance_;
 std::mutex WebSocketServer::mu_;
+BinaryData WebSocketServer::encInitPacket_;
+Threading::BlockingQueue<std::unique_ptr<PendingMessage>> WebSocketServer::writeHeap_;
 
 WebSocketServer::WebSocketServer()
 {}
@@ -79,6 +82,12 @@ int WebSocketServer::lwsServiceHandler(struct lws* wsi,
    Need to curate innactive sockets.
    ***/
 
+   auto instance = WebSocketServer::getInstance();
+   if (instance == nullptr) {
+      //server was cleaned up, exit
+      return -1;
+   }
+
    switch (reason)
    {
       case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
@@ -92,22 +101,16 @@ int WebSocketServer::lwsServiceHandler(struct lws* wsi,
          auto bdid = Cryptography::PRNG::generateRandomStrong(8);
          LOGINFO << "new connection: " << bdid.toHexStr();
          session_data->id_ = *(uint64_t*)bdid.getPtr();
-
-         auto instance = WebSocketServer::getInstance();
          instance->addId(session_data->id_, wsi);
 
          auto packetPtr = std::make_shared<BDV_packet>(session_data->id_);
-         packetPtr->data_ = instance->encInitPacket_;
+         packetPtr->data_ = encInitPacket_;
          instance->packetQueue_.push_back(std::move(packetPtr));
          break;
       }
 
       case LWS_CALLBACK_CLOSED:
       {
-         auto instance = WebSocketServer::getInstance();
-         if (instance == nullptr) {
-            return 0;
-         }
          LOGINFO << std::format("connection closed: {:x}", session_data->id_);
          instance->clients_->unregisterBDV(session_data->id_);
          instance->eraseId(session_data->id_, wsi);
@@ -132,21 +135,18 @@ int WebSocketServer::lwsServiceHandler(struct lws* wsi,
          auto packetPtr = std::make_shared<BDV_packet>(session_data->id_);
          packetPtr->data_.resize(len);
          memcpy(packetPtr->data_.getPtr(), (uint8_t*)in, len);
-
-         auto wsPtr = WebSocketServer::getInstance();
-         wsPtr->packetQueue_.push_back(move(packetPtr));
+         instance->packetQueue_.push_back(std::move(packetPtr));
          break;
       }
 
       case LWS_CALLBACK_SERVER_WRITEABLE:
       {
-         auto wsPtr = WebSocketServer::getInstance();
-         if (wsPtr->pendingWrites_.empty() ||
-            wsPtr->pendingWritesIter_ == wsPtr->pendingWrites_.end()) {
+         if (instance->pendingWrites_.empty() ||
+            instance->pendingWritesIter_ == instance->pendingWrites_.end()) {
             break;
          }
 
-         if (wsi != *wsPtr->pendingWritesIter_) {
+         if (wsi != *instance->pendingWritesIter_) {
             /*
             Sanity check: skip over lws pollin callbacks that are not
             for our expected wsi, as we have not requested those (lws
@@ -155,15 +155,15 @@ int WebSocketServer::lwsServiceHandler(struct lws* wsi,
             break;
          }
 
-         auto iter = wsPtr->writeMap_.find(wsi);
-         if (iter == wsPtr->writeMap_.end()) {
-            wsPtr->pendingWrites_.erase(wsPtr->pendingWritesIter_++);
+         auto iter = instance->writeMap_.find(wsi);
+         if (iter == instance->writeMap_.end()) {
+            instance->pendingWrites_.erase(instance->pendingWritesIter_++);
             LOGWARN << "incrementing over missing wsi write list";
             break;
          }
 
          if (iter->second.empty()) {
-            wsPtr->pendingWrites_.erase(wsPtr->pendingWritesIter_++);
+            instance->pendingWrites_.erase(instance->pendingWritesIter_++);
             LOGWARN << "incrementing over empty wsi write list";
             break;
          }
@@ -187,19 +187,18 @@ int WebSocketServer::lwsServiceHandler(struct lws* wsi,
             iter->second.pop_front();
             if (iter->second.empty())
             {
-               wsPtr->pendingWrites_.erase(wsPtr->pendingWritesIter_++);
+               instance->pendingWrites_.erase(instance->pendingWritesIter_++);
                break;
             }
          }
 
-         ++wsPtr->pendingWritesIter_;
+         ++instance->pendingWritesIter_;
          break;
       }
 
       default:
          break;
    }
-
    return 0;
 }
 
@@ -207,9 +206,21 @@ int WebSocketServer::lwsServiceHandler(struct lws* wsi,
 void WebSocketServer::initPeerStore(
    const Wallets::IO::ReadOnlyFileParams& params)
 {
+   auto instance = getInstance();
+   if (instance == nullptr) {
+      throw std::runtime_error("call init before initPeerStore");
+   }
+
    //init auth peer object
    if (!Config::NetworkSettings::ephemeralPeers()) {
-      initPeerStore(std::make_shared<NetworkPeers::ServerStore>(params));
+      instance->initPeerStore(
+         std::make_shared<NetworkPeers::ServerStore>(params));
+      NetworkPeers::PeerKey myKey{instance->peerStore_->getOwnPublicKey(),
+         Config::NetworkSettings::oneWayAuth() ?
+         NetworkPeers::PeerType::ServerOneWay :
+         NetworkPeers::PeerType::ServerTwoWay
+      };
+      LOGINFO << "This is my key: " << myKey.toHumanReadable();
    } else {
       if (Config::NetworkSettings::oneWayAuth()) {
          throw std::runtime_error(
@@ -217,7 +228,6 @@ void WebSocketServer::initPeerStore(
       }
 
       //setup server with an ephemeral key store
-      auto instance = getInstance();
       instance->peerStore_ = std::make_shared<NetworkPeers::ServerStore>();
 
       //grab master pubkey
@@ -231,6 +241,10 @@ void WebSocketServer::initPeerStore(
       instance->peerStore_->addPeer(masterKey, {
             std::format("127.0.0.1:{}", Config::NetworkSettings::dbPort())
          }, {});
+      if (!masterPubkey_.empty()) {
+         throw std::runtime_error("server already has a master key");
+      }
+      masterPubkey_ = masterKey.getKey();
 
       //set master key
       if (!instance->peerStore_->setMasterKey(masterKey)) {
@@ -246,31 +260,38 @@ void WebSocketServer::initPeerStore(
    if (Config::NetworkSettings::ephemeralPeers()) {
       throw std::runtime_error("no peers store loading on ephemeral peers");
    }
-   auto instance = getInstance();
-   instance->peerStore_ = peers;
+   peerStore_ = peers;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 void WebSocketServer::init()
 {
    std::unique_lock<std::mutex> lock(mu_);
-   auto ptr = instance_.load(std::memory_order_relaxed);
-   if (ptr != nullptr) {
+   if (getInstance() != nullptr) {
+      LOGWARN << "WebSocketServer is already instantiated";
       return;
    }
-   ptr = new WebSocketServer();
+
+   BinaryWriter encInitPacket;
+   encInitPacket.put_uint32_t(1);
+   encInitPacket.put_uint8_t((uint8_t)ArmoryAEAD::BIP151_PayloadType::Start);
+   encInitPacket_ = encInitPacket.getData();
+   writeHeap_.clear();
+
+   auto ptr = new WebSocketServer();
    instance_.store(ptr, std::memory_order_relaxed);
 }
 
 void WebSocketServer::start(std::shared_ptr<BlockDataManager> bdm)
 {
    auto instance = getInstance();
+   if (instance == nullptr) {
+      throw std::runtime_error("call init before start");
+   } else if (instance->peerStore_ == nullptr) {
+      throw std::runtime_error("call initPeerStore before start");
+   }
 
    //setup encinit and pubkey present packet
-   BinaryWriter encInitPacket;
-   encInitPacket.put_uint32_t(1);
-   encInitPacket.put_uint8_t((uint8_t)ArmoryAEAD::BIP151_PayloadType::Start);
-   instance->encInitPacket_ = encInitPacket.getData();
    instance->oneWayAuth_ = Config::NetworkSettings::oneWayAuth();
 
    //init Clients object
@@ -281,18 +302,16 @@ void WebSocketServer::start(std::shared_ptr<BlockDataManager> bdm)
    instance->clients_->init();
 
    //start command threads
-   instance->threads_.push_back(std::thread(
+   std::vector<std::thread> threads;
+   threads.emplace_back(std::thread(
       [instance]{ instance->commandThread(); }));
 
    //read & write threads
-   unsigned parserThreads = std::thread::hardware_concurrency() / 4;
-   if (parserThreads == 0) {
-      parserThreads = 1;
-   }
-   for (unsigned i = 0; i < parserThreads; i++) {
-      instance->threads_.push_back(std::thread(
+   int parserThreadCount = std::thread::hardware_concurrency() / 4;
+   for (int i = 0; i < std::max(parserThreadCount, 1); i++) {
+      threads.emplace_back(std::thread(
          [instance]{ instance->prepareWriteThread(); }));
-      instance->threads_.push_back(std::thread(
+      threads.emplace_back(std::thread(
          [instance]{ instance->clientInterruptThread(); }));
    }
 
@@ -307,8 +326,9 @@ void WebSocketServer::start(std::shared_ptr<BlockDataManager> bdm)
          auto instance = WebSocketServer::getInstance();
          if (instance == nullptr) {
             return;
-         } else if (instance->masterIsConnected_.load(std::memory_order_relaxed) == false) {
-            LOGERR << "master client did not connect within imparted time, exiting";
+         } else if (instance->masterIsConnected_.load(
+            std::memory_order_relaxed) == false) {
+            LOGERR << "master client did not connect within imparted time";
             WebSocketServer::shutdown();
          }
       });
@@ -317,58 +337,60 @@ void WebSocketServer::start(std::shared_ptr<BlockDataManager> bdm)
       }
    }
 
-   //run service thread
+   //run service thread, it will block until cancelled by the master
    instance->webSocketService(port);
-   delete instance;
-}
 
-///////////////////////////////////////////////////////////////////////////////
-void WebSocketServer::shutdown()
-{
-   std::unique_lock<std::mutex> lock(mu_, std::defer_lock);
-   if (!lock.try_lock()) {
-      return;
-   }
-
-   auto instance = getInstance();
-   if (instance == nullptr) {
-      return;
-   }
-   if (instance->run_.load(std::memory_order_relaxed) == 0) {
-      return;
-   }
-
+   //service thread has returned, clean up
    LOGWARN << "WS server is shutting down";
-   instance->msgQueue_.terminate();
+
+   //no new caller past this point can get a valid instance
+   instance_.store(nullptr, std::memory_order_relaxed);
+
+   //turn off every queue
+   writeHeap_.terminate();
    instance->clientConnectionInterruptQueue_.terminate();
    instance->clients_->shutdown();
-   instance->run_.store(0, std::memory_order_relaxed);
    instance->packetQueue_.terminate();
 
-   for (auto& thr : instance->threads_) {
+   //wait on all threads initiatied by start
+   for (auto& thr : threads) {
       if (thr.joinable()) {
          thr.join();
       }
    }
-   instance->threads_.clear();
 
+   /*
+   At this point, nothing but callers to shutdown can have a non null instance.
+   Grab the global WebSocketServer lock before deleting the instance, this
+   will guarantee those callers either see a valid instance and context or a
+   cleaned up one.
+   */
+   std::unique_lock<std::mutex> lock(mu_);
+   lws_context_destroy(instance->contextPtr_);
+   delete instance;
+   masterPubkey_.clear();
    LOGWARN << "WS server shutdown sequence has completed";
-   lws_cancel_service(instance->contextPtr_);
 }
 
-///////////////////////////////////////////////////////////////////////////////
-const SecureBinaryData& WebSocketServer::getOwnPublicKey()
+void WebSocketServer::shutdown()
 {
+   LOGWARN << "WebSocketServer shutdown has been requested";
+   std::unique_lock<std::mutex> lock(mu_);
    auto instance = getInstance();
-   if (instance == nullptr || instance->peerStore_ == nullptr) {
-      throw std::runtime_error("null instance/store");
+   if (instance == nullptr) {
+      return;
    }
-   return instance->peerStore_->getOwnPublicKey();
+   instance->run_.store(0, std::memory_order_relaxed);
+
+   if (instance->contextPtr_ != nullptr) {
+      lws_cancel_service(instance->contextPtr_);
+   }
 }
 
-///////////////////////////////////////////////////////////////////////////////
+////////
 void WebSocketServer::webSocketService(int port)
 {
+   run_.store(1, std::memory_order_relaxed);
    if (Config::NetworkSettings::ephemeralPeers()) {
       NetworkPeers::PeerKey myKey{
          peerStore_->getOwnPublicKey(),
@@ -385,7 +407,6 @@ void WebSocketServer::webSocketService(int port)
    const char *iface = nullptr;
    int uid = -1, gid = -1;
    int opts = 0;
-   int n = 0;
 
    memset(&info, 0, sizeof info);
    info.port = port;
@@ -413,8 +434,7 @@ void WebSocketServer::webSocketService(int port)
    }
 
    pendingWritesIter_ = pendingWrites_.begin();
-   run_.store(1, std::memory_order_relaxed);
-
+   int n = 0;
    try {
       while (run_.load(std::memory_order_relaxed) != 0 && n >= 0) {
          n = lws_service(contextPtr_, 10000);
@@ -426,8 +446,6 @@ void WebSocketServer::webSocketService(int port)
 
    LOGINFO << "cleaning up lws server";
    lws_vhost_destroy(vhost);
-   lws_context_destroy(contextPtr_);
-   instance_.store(nullptr, std::memory_order_relaxed);
 }
 
 WebSocketServer* WebSocketServer::getInstance()
@@ -465,7 +483,6 @@ void WebSocketServer::commandThread()
    }
 }
 
-///////////////////////////////////////////////////////////////////////////////
 void WebSocketServer::clientInterruptThread()
 {
    while (true) {
@@ -489,7 +506,7 @@ void WebSocketServer::clientInterruptThread()
          continue;
       }
 
-      ccs->processReadQueue(clients_);
+      ccs->processReadQueue(clients_, this);
       ccs->readLock_->store(0);
    }
 }
@@ -501,12 +518,8 @@ void WebSocketServer::write(const uint64_t& id,
    if (payload == nullptr) {
       return;
    }
-
-   auto msg = std::make_unique<PendingMessage>(id, std::move(payload));
-   auto instance = getInstance();
-   if (instance) {
-      instance->msgQueue_.push_back(std::move(msg));
-   }
+   writeHeap_.push_back(
+      std::make_unique<PendingMessage>(id, std::move(payload)));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -515,9 +528,8 @@ void WebSocketServer::prepareWriteThread()
    while (true) {
       std::unique_ptr<PendingMessage> msg;
       try {
-         msg = msgQueue_.pop_front();
-      }
-      catch (const Threading::StopBlockingLoop&) {
+         msg = writeHeap_.pop_front();
+      } catch (const Threading::StopBlockingLoop&) {
          break;
       }
 
@@ -535,7 +547,7 @@ void WebSocketServer::prepareWriteThread()
       //grab state object lock
       unsigned zero = 0;
       if (!statePtr->writeLock_->compare_exchange_weak(zero, 1)) { 
-         msgQueue_.push_back(std::move(msg));
+         writeHeap_.push_back(std::move(msg));
          continue;
       }
 
@@ -635,12 +647,9 @@ void WebSocketServer::closeClientConnection(uint64_t id)
 
    if (isMaster) {
       if (Config::NetworkSettings::ephemeralPeers()) {
-         //master disconnected from ephemeral db, time to shut it down
+         //master disconnected from ephemeral db, time to shut server down
          masterIsConnected_.store(false, std::memory_order_relaxed);
-         std::thread shutdownThr([]{ WebSocketServer::shutdown(); });
-         if (shutdownThr.joinable()) {
-            shutdownThr.detach();
-         }
+         shutdown();
       }
    }
 }
@@ -653,9 +662,7 @@ void WebSocketServer::writeToSocket(
    while (!msg.isDone()) {
       packetList.emplace_back(std::move(msg.consumeNextPacket()));
    }
-
-   auto thePair = std::make_pair(ptr, std::move(packetList));
-   writeQueue_.push_back(std::move(thePair));
+   writeQueue_.push_back(std::make_pair(ptr, std::move(packetList)));
    lws_cancel_service(contextPtr_);
 }
 
@@ -689,14 +696,7 @@ void WebSocketServer::updateWriteMap()
 ///////////////////////////////////////////////////////////////////////////////
 bool WebSocketServer::isMasterKey(BinaryDataRef pubkey)
 {
-   auto instance = getInstance();
-   if (instance == nullptr) {
-      return false;
-   }
-   if (instance->peerStore_ == nullptr) {
-      return false;
-   }
-   return instance->peerStore_->isMasterKey(pubkey);
+   return masterPubkey_.empty() ? false : pubkey == masterPubkey_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -724,7 +724,8 @@ ClientConnection::ClientConnection(struct lws *wsi, uint64_t id,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void ClientConnection::processReadQueue(std::shared_ptr<Clients> clients)
+void ClientConnection::processReadQueue(
+   std::shared_ptr<Clients> clients, WebSocketServer* instance)
 {
    while (run_->load(std::memory_order_relaxed) != -1) {
       BinaryData packetData;
@@ -797,13 +798,11 @@ void ClientConnection::processReadQueue(std::shared_ptr<Clients> clients)
       auto msgType = Network::WebSocketMessagePartial::readPacketType(
          packetData.getRef());
       if (msgType > ArmoryAEAD::BIP151_PayloadType::Threshold_Begin) {
-         processAEADHandshake(std::move(packetData));
+         processAEADHandshake(std::move(packetData), instance);
          if (bip151Connection_->getBIP150State() == BIP150State::SUCCESS &&
             isMaster()) {
-            auto instance = WebSocketServer::getInstance();
-            if (instance != nullptr) {
-               instance->masterIsConnected_.store(true, std::memory_order_relaxed);
-            }
+            instance->masterIsConnected_.store(
+               true, std::memory_order_relaxed);
          }
          continue;
       }
@@ -828,9 +827,10 @@ void ClientConnection::processReadQueue(std::shared_ptr<Clients> clients)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void ClientConnection::processAEADHandshake(BinaryData msg)
+void ClientConnection::processAEADHandshake(
+   BinaryData msg, WebSocketServer* instance)
 {
-   auto writeToClient = [this](const BinaryDataRef& msg,
+   auto writeToClient = [this, instance](const BinaryDataRef& msg,
       ArmoryAEAD::BIP151_PayloadType type, bool encrypt)->void
    {
       BIP151Connection* connPtr = nullptr;
@@ -839,8 +839,6 @@ void ClientConnection::processAEADHandshake(BinaryData msg)
       }
       Network::SerializedMessage aeadMsg;
       aeadMsg.construct(msg, connPtr, type);
-
-      auto instance = WebSocketServer::getInstance();
       instance->writeToSocket(wsiPtr_, aeadMsg);
    };
 
@@ -910,5 +908,6 @@ bool ClientConnection::isMaster() const
       bip151Connection_->getBIP150State() != BIP150State::SUCCESS) {
       return false;
    }
-   return WebSocketServer::isMasterKey(bip151Connection_->getChosenAuthPeerKey());
+   return WebSocketServer::isMasterKey(
+      bip151Connection_->getChosenAuthPeerKey());
 }
