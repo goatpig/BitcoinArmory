@@ -90,7 +90,7 @@ namespace Armory
 
          void resetCache(void);
          void setBdvPtr(std::shared_ptr<AsyncClient::BlockDataViewer>);
-         void cleanupBDV(void);
+         void cleanupBdvPtr(void);
          void setWalletPtr(std::shared_ptr<Wallets::AssetWallet>,
             const Wallets::AddressAccountId&);
          void eraseFromDisk(void);

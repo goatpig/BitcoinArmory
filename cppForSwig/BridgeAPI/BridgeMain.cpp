@@ -19,7 +19,10 @@
 #include <Utils/BIP150_151.h>
 #include <Utils/Cryptography.h>
 #include "BridgeSocket.h"
+#include "ProtoCommandParser.h"
 #include "AsyncClient.h"
+
+using namespace Armory;
 
 ////////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
@@ -55,37 +58,34 @@ int main(int argc, char* argv[])
       LOGERR << "could not find bridge port env var, aborting!";
       exit(-2);
    }
-   std::string bridgePortStr(bridgePortChar);
+   Network::port_t bridgePort;
+   auto [ptr, ec] = std::from_chars(bridgePortChar,
+      bridgePortChar + strlen(bridgePortChar), bridgePort);
+   if (ec != std::errc{}) {
+      LOGERR << "invalid bridge port, aborting";
+      exit(-3);
+   }
 
    //init static configuration variables
-   Armory::Config::parseArgs(count, args,
-      Armory::Config::ProcessType::Bridge);
+   Config::parseArgs(count, args, Config::ProcessType::Bridge);
 
    //turn on logging
-   auto bridgeLogPath = Armory::Config::Pathing::logFilePath("bridgeLog");
-   STARTLOGGING(bridgeLogPath, LogLvlDebug);
+   auto bridgeLogPath = Config::Pathing::logFilePath("bridgeLog");
+   STARTLOGGING(bridgeLogPath, LogLvlInfo);
    LOGENABLESTDOUT();
 
    LOGINFO << "bridge log: " << bridgeLogPath.string();
    LOGINFO << "cppbridge args:" <<
-      "\n - datadir: " << Armory::Config::getDataDir().string() <<
-      "\n - offline: " << Armory::Config::NetworkSettings::isOffline() <<
-      "\n - auth mode: " << Armory::Config::NetworkSettings::oneWayAuth() <<
-      "\n - db port: " << Armory::Config::NetworkSettings::dbPort() <<
-      "\n - bridge port: " << bridgePortStr;
+      "\n - datadir: " << Config::getDataDir().string() <<
+      "\n - offline: " << Config::NetworkSettings::isOffline() <<
+      "\n - auth mode: " << Config::NetworkSettings::oneWayAuth() <<
+      "\n - db port: " << Config::NetworkSettings::dbPort() <<
+      "\n - bridge port: " << bridgePort;
 
    //setup the bridge & socket
-   auto bridge = std::make_shared<Armory::Bridge::CppBridge>();
-   auto sockPtr = std::make_shared<Armory::Bridge::CppBridgeSocket>(
-      "127.0.0.1", bridgePortStr, bridge);
-
-   //set bridge write lambda
-   auto pushPayloadLbd = [sockPtr](
-      std::unique_ptr<Armory::Bridge::WritePayload_Bridge> payload)->void
-   {
-      sockPtr->pushPayload(std::move(payload), nullptr);
-   };
-   bridge->setWriteLambda(pushPayloadLbd);
+   auto sockPtr = std::make_shared<Bridge::CppBridgeSocket>(
+      "127.0.0.1", bridgePort);
+   auto bridge = std::make_shared<Bridge::CppBridge>(sockPtr);
 
    //connect
    if (!sockPtr->connectToRemote()) {
@@ -93,14 +93,29 @@ int main(int argc, char* argv[])
       return -1;
    }
 
-   //block main thread till socket dies
-   sockPtr->blockUntilClosed();
+   while (true) {
+      try {
+         auto payload = sockPtr->getPayload();
+         if (!Bridge::ProtoCommandParser::processData(bridge, payload)) {
+            //if the processing of a request returns false, close the bridge
+            LOGDEBUG << "bridge request processing led to fatal error, aborting";
+            break;
+         }
+      } catch (Threading::StopBlockingLoop&) {
+         //socket read queue has been terminated, we are done
+         LOGDEBUG << "bridge socket has been closed";
+         break;
+      } catch (const std::exception& e) {
+         LOGERR << std::format(
+            "bridge socket processing failed with error: \"{}\", aborting",
+            e.what());
+         break;
+      }
+   }
 
-   //done
-   LOGINFO << "exiting";
-
+   LOGINFO << "bridge is exiting";
+   sockPtr->shutdown();
    shutdownBIP151CTX();
    Cryptography::ECDSA::shutdown();
-
    return 0;
 }

@@ -241,7 +241,7 @@ struct NotificationReply {
 struct DbSetupRequest {
    struct IpRequest {
       ip                @0 : Text;
-      port              @1 : Text;
+      port              @1 : UInt16;
       callbackId        @2 : Text;
    }
 

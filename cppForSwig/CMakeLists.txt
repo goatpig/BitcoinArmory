@@ -219,13 +219,13 @@ ADD_LIBRARY(BridgeLib
     BridgeAPI/BridgeSocket.cpp
     BridgeAPI/CppBridge.cpp
     BridgeAPI/PassphrasePrompt.cpp
+    BridgeAPI/Notifications.cpp
     BridgeAPI/ProtoCommandParser.cpp
     BridgeAPI/Wallets/Loader.cpp
     BridgeAPI/Wallets/Container.cpp
     BridgeAPI/Wallets/Manager.cpp
-    BridgeAPI/Wallets/Notifications.cpp
     BridgeAPI/Wallets/TxIOCache.cpp
-    BridgeAPI/BlockchainDbClient.cpp
+    BridgeAPI/DBSetup.cpp
 )
 
 TARGET_INCLUDE_DIRECTORIES(BridgeLib

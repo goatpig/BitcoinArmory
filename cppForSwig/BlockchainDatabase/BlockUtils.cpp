@@ -69,7 +69,7 @@ protected:
          }
          auto notifPtr = std::make_unique<BDV_Notification_Progress>(
             phase, prog, time, numericProgress, wltIDs);
-         bdm_->notificationStack.push_back(std::move(notifPtr));
+         bdm_->notificationQueue->push_back(std::move(notifPtr));
       };
       auto result = bdm_->applyBlockRangeToDB(progress, startBlock, *this);
       if (!result.valid()) {
@@ -80,7 +80,7 @@ protected:
             BDV_NOTIF_BROADCAST, BDM_FATAL_ERROR_CODE, BinaryData{},
             std::string{"fatal error while scanning"}
          );
-         bdm_->notificationStack.push_back(std::move(notifPtr));
+         bdm_->notificationQueue->push_back(std::move(notifPtr));
       }
       return result;
    }
@@ -98,8 +98,7 @@ protected:
 
 ////////////////////////////////////////////////////////////////////////////////
 // BlockDataManager
-BlockDataManager::BlockDataManager(std::function<bool(void)> shutdownLbd) :
-   shutdownLbd_(shutdownLbd)
+BlockDataManager::BlockDataManager()
 {
    BDMstate_.store((int)BDMState::Uninitialized, std::memory_order_relaxed);
    blockchain_ = std::make_shared<Blockchain>(
@@ -107,8 +106,9 @@ BlockDataManager::BlockDataManager(std::function<bool(void)> shutdownLbd) :
    blockchainData_ = std::make_shared<BlockchainData>(blockchain_);
    blockFiles_ = std::make_shared<BlockFiles>(Config::Pathing::blkFilePath());
    iface_ = new LMDBBlockDatabase(Config::Pathing::dbDir());
-   nodeStatusPollMutex_ = std::make_shared<std::mutex>();
    startPromise_ = std::make_unique<std::promise<bool>>();
+   notificationQueue = std::make_shared<
+      Threading::TimedQueue<std::unique_ptr<BDV_Notification>>>();
 
    try {
       processNode = Config::NetworkSettings::bitcoinNodes().first;
@@ -178,8 +178,11 @@ void BlockDataManager::shutdown()
       //promise already set, ignore
    }
    disableZeroConf();
-   notificationStack.terminate();
+   notificationQueue->terminate();
 
+   if (nodeRPC) {
+      nodeRPC->disable();
+   }
    if (processNode) {
       processNode->shutdown();
    }
@@ -188,13 +191,6 @@ void BlockDataManager::shutdown()
    }
    if (scrAddrData_) {
       scrAddrData_->shutdown();
-   }
-}
-
-void BlockDataManager::triggerShutdown()
-{
-   if (shutdownLbd_ != nullptr) {
-      shutdownLbd_();
    }
 }
 
@@ -270,7 +266,7 @@ bool BlockDataManager::loadDiskState(const ProgressCallback &progress)
 
    BDMstate_.store((int)BDMState::Ready, std::memory_order_relaxed);
    readyProm.set_value(true);
-   LOGINFO << "BDM is ready";
+   LOGINFO << "BDM is ready, top block: " << blockchain_->top()->getBlockHeight();
    return true;
 }
 
@@ -367,9 +363,14 @@ std::shared_ptr<Node::Status> BlockDataManager::getNodeStatus() const
 ////////
 void BlockDataManager::blockUntilReady() const
 {
+   //for thread safety, shared_future should be copied before use
    while (true) {
       try {
-         isReadyFuture.wait();
+         auto futCopy = isReadyFuture;
+         if (!futCopy.valid()) {
+            throw std::future_error(std::future_errc::no_state);
+         }
+         futCopy.wait();
          return;
       } catch (const std::future_error&) {
          std::this_thread::sleep_for(100ms);

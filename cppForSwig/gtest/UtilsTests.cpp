@@ -4679,6 +4679,7 @@ TEST_F(TypesTests, keys)
 {
    auto invalidTxKey = Types::INVALID_TX_KEY;
    ASSERT_FALSE(Types::isTxKeyValid(invalidTxKey));
+   ASSERT_FALSE(Types::isThisAZCKey(invalidTxKey));
 
    auto invalidTxIOKey = Types::INVALID_TXIO_KEY;
    ASSERT_FALSE(Types::isTxIOKeyValid(invalidTxIOKey));

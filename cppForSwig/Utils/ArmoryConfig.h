@@ -76,10 +76,6 @@ namespace Armory
          std::string_view stripQuotes(const std::string_view& input);
          std::vector<std::string> keyValToArgv(
             const std::map<std::string, std::string>&);
-
-         bool testConnection(const std::string&, const std::string&);
-         std::string getPortFromCookie(const std::string&);
-         std::string hasLocalDB(const std::string&, const std::string&);
       };
 
       //////////////////////////////////////////////////////////////////////////
@@ -180,13 +176,10 @@ namespace Armory
          static NodePair bitcoinNodes_;
          static RpcPtr rpcNode_;
 
-         static std::string btcPort_;
-         static std::string dbPort_;
+         static uint16_t btcPort_;
+         static uint16_t dbPort_;
+         static uint16_t rpcPort_;
          static std::string dbIP_;
-         static std::string rpcPort_;
-
-         static bool customDbPort_;
-         static bool customBtcPort_;
 
          static bool ephemeralPeers_;
          static bool oneWayAuth_;
@@ -205,16 +198,14 @@ namespace Armory
       public:
          static void selectNetwork(NETWORK_MODE);
 
-         static const std::string& btcPort(void);
-         static std::wstring btcPortW(void);
-         static const std::string& dbPort(void);
+         static uint16_t btcPort(void);
+         static uint16_t dbPort(void);
+         static uint16_t rpcPort(void);
          static const std::string& dbIP(void);
-         static const std::string& rpcPort(void);
-         static std::wstring rpcPortW(void);
 
          static const NodePair& bitcoinNodes(void);
          static RpcPtr rpcNode(void);
-         static void setDbPort(const std::string&);
+         static void setDbPort(uint16_t);
 
          static bool ephemeralPeers(void) { return ephemeralPeers_; }
          static bool oneWayAuth(void) { return oneWayAuth_; }

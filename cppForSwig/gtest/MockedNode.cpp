@@ -135,8 +135,8 @@ NodeUnitTest::~NodeUnitTest()
 
 void NodeUnitTest::shutdown()
 {
+   watcherInvQueue_.terminate();
    if (watcherThread_.joinable()) {
-      watcherInvQueue_.terminate();
       watcherThread_.join();
    }
    P2P::Iface::shutdown();
@@ -159,7 +159,7 @@ std::vector<UnitTestBlock> NodeUnitTest::getMinedBlocks() const
    return blocks_;
 }
 
-void NodeUnitTest::notifyNewBlock(void)
+void NodeUnitTest::notifyNewBlock()
 {
    P2P::InvEntry ie;
    ie.invtype = P2P::Inv_Msg_Block;
@@ -171,20 +171,18 @@ void NodeUnitTest::notifyNewBlock(void)
 }
 
 std::map<unsigned, BinaryData> NodeUnitTest::mineNewBlock(
-   std::shared_ptr<BlockDataManager> bdm,
    unsigned count, const BinaryData& h160, double diff)
 {
    Signing::Recipient_P2PKH recipient(h160, 50 * COIN);
-   return mineNewBlock(bdm, count, &recipient, diff);
+   return mineNewBlock(count, &recipient, diff);
 }
 
 std::map<unsigned, BinaryData> NodeUnitTest::mineNewBlock(
-   std::shared_ptr<BlockDataManager> bdm,
    unsigned count, Signing::ScriptRecipient* recipient, double diff)
 {
    auto diffBits = BtcUtils::convertDoubleToDiffBits(diff);
    if (header_.prevHash_.empty()) {
-      auto top = bdm->blockchain()->top();
+      auto top = bdm_->blockchain()->top();
       header_.prevHash_ = top->getThisHash().toBinaryData();
       header_.timestamp_ = top->getTimestamp();
       header_.diffBits_  = diffBits;
@@ -376,7 +374,7 @@ std::map<unsigned, BinaryData> NodeUnitTest::mineNewBlock(
       hookPtr->func = waitOnNotif;
 
       //set hook
-      bdm->registerOneTimeHook(hookPtr);
+      bdm_->registerOneTimeHook(hookPtr);
 
       //push db block notification
       notifyNewBlock();
@@ -563,7 +561,7 @@ void NodeUnitTest::evictZC(const BinaryData& txHash)
 ////////
 void NodeUnitTest::setBDM(std::shared_ptr<BlockDataManager> bdm)
 {
-   bdm_ = bdm;
+   bdm_ = bdm.get();
 }
 
 ////////
@@ -962,7 +960,7 @@ NodeRPC_UnitTest::NodeRPC_UnitTest(
    primaryNode_(primaryNode), watcherNode_(watcherNode)
 {}
 
-bool NodeRPC_UnitTest::shutdown()
+bool NodeRPC_UnitTest::requestNodeShutdown()
 {
    return true;
 }
@@ -972,13 +970,19 @@ Node::RpcState NodeRPC_UnitTest::testConnection()
    return Node::RpcState::Online;
 }
 
-bool NodeRPC_UnitTest::canPoll() const
-{
-   return false;
-}
-
 void NodeRPC_UnitTest::waitOnChainSync(std::function<void(void)>, bool)
-{}
+{
+   if (loopOnSync == nullptr) {
+      return;
+   }
+
+   loopOnSync->set_value();
+   while (enabled_.load(std::memory_order_relaxed)) {
+      //perpetual sleep, to mimic a long node sync during bdm start
+      std::unique_lock<std::mutex> lock(sleepMutex_);
+      sleepCV_.wait_for(lock, 10s);
+   }
+}
 
 ////////
 void NodeRPC_UnitTest::stallNextZc(unsigned seconds)
@@ -1095,8 +1099,15 @@ int NodeRPC_UnitTest::broadcastTx(const BinaryDataRef& rawTx, std::string&)
    return (int)ArmoryErrorCodes::Success;
 }
 
-RPC::FeeEstimateResult NodeRPC_UnitTest::getFeeByte(
-   unsigned, const std::string&) const
+const std::map<unsigned, Node::Core::RPC::FeeEstimate>&
+NodeRPC_UnitTest::getFeeSchedule(
+   const std::string&)
 {
-   return {};
+   throw std::runtime_error("should never get here");
+}
+
+RPC::FeeEstimate NodeRPC_UnitTest::getFeeByte(
+   unsigned, const std::string&)
+{
+   return { false, 1.0f };
 }

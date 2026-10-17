@@ -23,9 +23,6 @@ namespace Armory
 
    namespace Bridge
    {
-      class CppBridge;
-
-      /////////////////////////////////////////////////////////////////////////////
       struct WritePayload_Bridge : public Network::Socket_WritePayload
       {
          BinaryData data;
@@ -39,11 +36,10 @@ namespace Armory
          size_t getSerializedSize(void) const override;
       };
 
-      /////////////////////////////////////////////////////////////////////////////
+      ////////
       class CppBridgeSocket : public Network::PersistentSocket
       {
       private:
-         std::shared_ptr<CppBridge> bridgePtr_;
          const std::string serverName_;
 
          std::shared_ptr<BIP151Connection> bip151Connection_;
@@ -57,12 +53,10 @@ namespace Armory
          bool processAEADHandshake(BinaryDataRef);
 
       public:
-         CppBridgeSocket(
-            const std::string&, const std::string&,
-            std::shared_ptr<CppBridge>);
+         CppBridgeSocket(const std::string&, Network::port_t);
 
          SocketType type(void) const override;
-         void respond(std::vector<uint8_t>&) override;
+         BinaryData getPayload(void);
          void pushPayload(
             std::unique_ptr<Network::Socket_WritePayload>,
             std::shared_ptr<Network::Socket_ReadPayload>) override;

@@ -285,12 +285,12 @@ class DlgAddressBook(ArmoryDialog):
       super(DlgAddressBook, self).closeEvent(event)
 
    #############################################################################
-   def accept(self, *args):
+   def accept(self):
       self.saveGeometrySettings()
-      super(DlgAddressBook, self).accept(*args)
+      super(DlgAddressBook, self).accept()
 
    #############################################################################
-   def reject(self, *args):
+   def reject(self):
       self.saveGeometrySettings()
       super(DlgAddressBook, self).reject(*args)
 

@@ -445,7 +445,7 @@ class DlgSetupManager(ArmoryDialog):
          self._setSettingIfChanged(
             'RemoteIpAddr', dbSettings['ipAddr'])
          self._setSettingIfChanged(
-            'RemoteIpPort', dbSettings['ipPort'])
+            'RemoteIpPort', dbSettings['dbPort'])
       elif dbScenario == SCENARIO_REMOTE_PEER:
          self._setSettingIfChanged(
             'RemotePeerKey', dbSettings['peerKey'])
@@ -470,9 +470,9 @@ class DlgSetupManager(ArmoryDialog):
          params['peerKey'] = dbSettings['peerKey']
       elif scenario == SCENARIO_REMOTE_IP:
          params['ipAddr'] = dbSettings['ipAddr']
-         params['ipPort'] = dbSettings['ipPort'] \
-            if dbSettings['ipPort'] \
-            else str(ARMORYDB_DEFAULT_PORT)
+         params['dbPort'] = dbSettings['dbPort'] \
+            if dbSettings['dbPort'] \
+            else ARMORYDB_DEFAULT_PORT
 
       return params
 
@@ -502,11 +502,13 @@ class DlgSetupManager(ArmoryDialog):
       elif scenario == SCENARIO_REMOTE_PEER:
          success, error = self._connectToPeer(params)
          self._handleConnectionAttemptFinality(success, error)
+         return success, error
       elif scenario == SCENARIO_REMOTE_IP:
          success, error = self._connectToIp(params)
          self._handleConnectionAttemptFinality(success, error)
-
-      raise ValueError(f"Unknown scenario: {scenario}")
+         return success, error
+      else:
+         return False, f"Unknown scenario: {scenario}"
 
    def _handleAutomationReply(self, reply):
       TheSignalExecution.executeMethod(
@@ -568,17 +570,17 @@ class DlgSetupManager(ArmoryDialog):
       4. C++ finishes connecting (or fails)
       5. Result callback fires with actual success/failure
       """
-      ipAddr = params.get('ipAddr', '')
-      ipPort = params.get(
-         'ipPort', str(ARMORYDB_DEFAULT_PORT))
+      dbAddr = params.get('ipAddr', '')
+      dbPort = int(params.get(
+         'dbPort', ARMORYDB_DEFAULT_PORT))
 
-      if not ipAddr:
+      if not dbAddr:
          raise ValueError(
             "ipAddr missing from params")
 
-      LOGINFO(f"Calling connectToIp: {ipAddr}:{ipPort}")
+      LOGINFO(f"Calling connectToIp: {dbAddr}:{dbPort}")
 
-      callbackId = f"connectToIp_{ipAddr}_{ipPort}"
+      callbackId = f"connectToIp_{dbAddr}_{dbPort}"
       self.pendingConnectionResult = None
 
       def onConnectResult(reply):
@@ -595,7 +597,7 @@ class DlgSetupManager(ArmoryDialog):
          onPresentPubkey=self._onServerKeyPresented)
 
       TheBridge.dbSetup.connectToIp(
-         ip=ipAddr, port=ipPort,
+         ip=dbAddr, port=dbPort,
          callbackId=callbackId,
          resultCallback=onConnectResult)
 

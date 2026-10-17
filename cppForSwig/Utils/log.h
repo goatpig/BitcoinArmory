@@ -122,7 +122,8 @@ private:
    std::mutex              mu_;
 
 public:
-   DualStream(void) : noStdout_(false)
+   DualStream() :
+      noStdout_(true)
    {}
 
    void enableStdOut(bool);

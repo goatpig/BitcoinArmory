@@ -28,9 +28,29 @@ bin_PROGRAMS += gtest/ContainerTests
 gtest_ContainerTests_SOURCES = gtest/ContainerTests.cpp
 gtest_ContainerTests_CXXFLAGS = $(AM_CXXFLAGS) $(UNIT_TEST_CXXFLAGS) $(LIBBTC_FLAGS)
 gtest_ContainerTests_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
-gtest_ContainerTests_LDADD = gtest/libgtest.la $(LIBARMORYCOMMON) \
-		 $(LIBARMORYCLI) \
-		 $(LIBBTC)
+gtest_ContainerTests_LDADD = gtest/libgtest.la \
+			$(LIBARMORYCOMMON) \
+			$(LIBCHACHA20POLY1305) \
+			$(LIBARMORYCLI) \
+			$(LIBHKDF) \
+			$(LIBBTC) \
+			$(LIBTREZORCRYPTO) \
+			$(LIBLMDBPP) \
+			-llmdb \
+			$(LIBWEBSOCKETS_STATIC)
+if BUILD_OPENSSL_SUPPORT
+gtest_ContainerTests_LDADD += $(LIBSSL_STATIC) \
+		 $(LIBCRYPTO_STATIC)
+endif
+if BUILD_LIBUV_SUPPORT
+gtest_ContainerTests_LDADD += $(LIBUV_STATIC)
+endif
+if BUILD_LIBEVENT_SUPPORT
+gtest_ContainerTests_LDADD += $(LIBEVENT_STATIC)
+endif
+if BUILD_LIBCAP_SUPPORT
+gtest_ContainerTests_LDADD += $(LIBCAP_LIBS)
+endif
 gtest_ContainerTests_LDFLAGS = $(AM_LDFLAGS) $(LWSLDFLAGS) $(LDFLAGS) -static
 TESTS += gtest/ContainerTests
 

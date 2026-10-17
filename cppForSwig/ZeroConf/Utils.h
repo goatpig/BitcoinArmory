@@ -70,7 +70,7 @@ namespace Armory
          void unserialize(const uint8_t*, uint32_t);
          void unserialize(BinaryDataRef);
 
-         void resolveDbKey(LMDBBlockDatabase*);
+         void resolveDbKey(LMDBBlockDatabase*, std::shared_ptr<BlockchainData>);
          bool isResolved(void) const;
          bool isInitialized(void) const;
 
@@ -191,7 +191,6 @@ namespace Armory
          friend class MempoolSnapshot;
 
       public:
-         //TODO: shouldn't use references for txHashes anymore
          std::map<Types::TxHash, Types::TxKey> txHashToDBKey_; //<txHash, zcKey>
          std::map<Types::TxKey, std::shared_ptr<ParsedTx>> txMap_; //<zcKey, zcTx>
 
@@ -216,6 +215,7 @@ namespace Armory
          void copyFrom(const MempoolData&);
 
          std::shared_ptr<ParsedTx> getTx(Types::TxKey) const;
+         size_t getTxCount(void) const;
          std::shared_ptr<const TxIOPair> getTxio(Types::TxIOKey) const;
          Types::TxKey getKeyForHash(const Types::TxHash&) const;
          bool isTxOutSpentByZC(Types::TxIOKey) const;
@@ -269,6 +269,7 @@ namespace Armory
          const Types::TxHash& getHashForKey(Types::TxKey) const;
          bool hasHash(const Types::TxHash&) const;
 
+         size_t getTxCount(void) const;
          Types::ZcId getTopZcID(void) const;
          bool isTxOutSpentByZC(Types::TxIOKey) const;
 
@@ -276,7 +277,7 @@ namespace Armory
          std::map<Types::TxKey, std::shared_ptr<ParsedTx>> dropZc(Types::TxKey);
 
          void stageNewZC(std::shared_ptr<ParsedTx>, const FilteredZeroConfData&);
-         void commitNewZCs(void);
+         void mergeWithParents(void);
          unsigned getMergeCount(void) const { return mergeCount_; }
       };
 
