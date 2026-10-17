@@ -60,6 +60,7 @@ namespace Armory
 
    public:
       Blockchain(const BinaryData&);
+      ~Blockchain(void);
 
       /**
       * check/add blocks to the chain

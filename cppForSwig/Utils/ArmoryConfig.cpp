@@ -536,10 +536,10 @@ void DBSettings::processArgs(const std::map<std::string, std::string>& args)
       initMode_ = BdmInitMode::REBUILD;
    }
 
-   iter = args.find("checkchain");
+   /*iter = args.find("checkchain");
    if (iter != args.end()) {
       checkChain_ = true;
-   }
+   }*/
 
    iter = args.find("disable-zc");
    if (iter != args.end()) {

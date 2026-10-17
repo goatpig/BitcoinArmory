@@ -218,17 +218,17 @@ FileCopy::FileCopy(const std::filesystem::path& path, size_t offset)
       if (offset >= size) {
          throw std::runtime_error("offset is too large");
       }
+      size -= offset;
 
       //8 align the underlying buffer, resize to exact length
-      size_t sizeCount = (size - offset + 7) / 8;
-      data_.reserve(sizeCount * 8);
-      data_.resize(size - offset);
+      data_.reserve((size + 7) & ~7);
+      data_.resize(size);
 
 #ifdef _WIN32
-      _read(fd, &data_[0], size - offset);
+      _read(fd, &data_[0], size);
       _close(fd);
 #else
-      read(fd, &data_[0], size - offset);
+      read(fd, &data_[0], size);
       close(fd);
 #endif
    } catch (const std::runtime_error &e) {
@@ -240,8 +240,9 @@ FileCopy::FileCopy(const std::filesystem::path& path, size_t offset)
 #endif
       }
 
-      LOGERR << "FileCopy error for path: \"" << path.string() <<
-         "\" - error: " << e.what();
+      LOGERR << std::format(
+         "FileCopy error for path: \"{}\" - error: {}",
+         path.string(), e.what());
    }
 }
 

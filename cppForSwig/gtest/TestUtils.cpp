@@ -189,11 +189,12 @@ namespace TestUtils
             throw std::runtime_error("blk file mmap is invalid");
          }
          std::vector<char> xoredData;
+         xoredData.reserve(((fileMap.size() + 7) & ~7));
          xoredData.resize(fileMap.size());
 
          size_t offset = 0;
          uint64_t chunk;
-         while (offset <= fileMap.size()) {
+         while (offset < fileMap.size()) {
             std::memcpy(&chunk, fileMap.ptr() + offset,
                std::min(size_t{8}, fileMap.size() - offset));
             chunk ^= xorKey;

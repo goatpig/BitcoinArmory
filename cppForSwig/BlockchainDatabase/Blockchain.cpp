@@ -36,8 +36,18 @@ Blockchain::Blockchain(const BinaryData &genesisHash)
    : genesisHash_(genesisHash), topBlockOffset_{0, 0}
 {}
 
+Blockchain::~Blockchain()
+{
+   clear();
+}
+
 void Blockchain::clear()
 {
+   for (auto headerPtr : headersById_) {
+      if (headerPtr != nullptr) {
+         headerPtr->nextPtr_ = nullptr;
+      }
+   }
    newlyParsedHeaders_.clear();
    headersByHeight_.clear();
    headersById_.clear();
@@ -548,8 +558,10 @@ uint32_t Blockchain::stageNewHeaders(
 {
    std::unique_lock<std::mutex> lock(mu_);
    uint32_t count = 0;
-   if (headersById_.size() < headersById_.size() + newHeaders.size()) {
-      headersById_.resize(headersById_.size() + newHeaders.size() + 150);
+   auto projectedSize = highestBlockID_.load(std::memory_order_relaxed) +
+      newHeaders.size();
+   if (headersById_.size() < projectedSize) {
+      headersById_.resize(projectedSize + 150);
    }
    for (auto newHeader : newHeaders) {
       auto iter = headerSet_.find(newHeader);
