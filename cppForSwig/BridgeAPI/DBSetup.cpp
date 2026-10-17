@@ -837,10 +837,10 @@ void AutomationContext::cleanupSatoshi()
 
    try {
       //connect to RPC
-      auto rpc = Node::Core::RPC::Client(false, rpcLogin_, rpcPass_);
+      auto rpc = Node::Core::RPC::Client(rpcLogin_, rpcPass_);
 
       //request shutdown
-      if (!rpc.shutdown()) {
+      if (!rpc.requestNodeShutdown()) {
          throw std::runtime_error("request was rejected by node");
       }
 

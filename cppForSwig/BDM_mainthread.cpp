@@ -67,16 +67,8 @@ bool BlockDataManagerThread::shutdown()
    }
    if (pimpl->run) {
       pimpl->run = false;
-
-      auto shutdownLbd = [bdmPtr=pimpl->bdm]()
-      {
-         bdmPtr->shutdown();
-         bdmPtr->cleanup();
-      };
-      std::thread shutdownThr(shutdownLbd);
-      if (shutdownThr.joinable()) {
-         shutdownThr.join();
-      }
+      pimpl->bdm->shutdown();
+      pimpl->bdm->cleanup();
    }
 
    join();
@@ -93,86 +85,23 @@ void BlockDataManagerThread::join()
 void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
 {
    const auto bdm = this->bdm();
-   try {
-      if (bdm->hasException()) {
-         std::rethrow_exception(bdm->getException());
-      }
-      bdm->openDatabase();
-   } catch (const std::exception& e) {
-      LOGERR << "error during bdm init: " << e.what();
-      return;
-   }
 
-   auto updateNodeStatusLambda = [bdm]()->void
+   //node status notif callback
+   auto updateNodeStatusLambda = [queue=bdm->notificationQueue]()
    {
       try {
-         auto nodeStatus = bdm->getNodeStatus();
-         auto notifPtr = std::make_unique<BDV_Notification_NodeStatus>(
-            std::move(nodeStatus));
-         bdm->notificationStack.push_back(std::move(notifPtr));
+         auto notifPtr = std::make_unique<BDV_Notification_UpdateNodeStatus>();
+         queue->push_back(std::move(notifPtr));
       } catch (const std::exception& e) {
          LOGERR << "Can't get node status: " << e.what();
       }
    };
 
-   //connect to node as async, no need to wait for a succesful connection
-   //to init the DB
-   bdm->processNode->connectToNode(true);
-   bdm->watchNode->connectToNode(true);
-
-   //if RPC is running, wait on node init
-   try {
-      LOGINFO << "Waiting on node sync";
-      bdm->nodeRPC->waitOnChainSync(
-         updateNodeStatusLambda,
-         DBSettings::automatedNode()
-      );
-   } catch (const std::exception& e) {
-      LOGINFO << "Error occured while querying the RPC for sync status";
-      LOGINFO << "Message: " << e.what();
-   }
-
-   const auto loadProgress
-      = [&](BDMPhase phase, double prog, unsigned time, unsigned numericProgress)
+   //new block parsing helper
+   auto newBlockStack = bdm->processNode->getInvBlockStack();
+   auto updateChainLambda = [bdm]()
    {
-      //pass empty walletID for main build&scan calls
-      auto notifPtr = std::make_unique<BDV_Notification_Progress>(
-         phase, prog, time, numericProgress,
-         std::vector<std::string>{}
-      );
-      bdm->notificationStack.push_back(std::move(notifPtr));
-   };
-
-   if (NetworkSettings::ephemeralPeers()) {
-      //this is an automated db instance, wait on the master's signal
-      //to start the db scan
-      LOGINFO << "waiting on start signal from master";
-      if (!bdm->waitOnStartSignal()) {
-         LOGINFO << "master signaled to shutdown";
-         return;
-      }
-      LOGINFO << "master signaled to start scanning";
-   }
-
-   if (!bdm->doInitialSyncOnLoad(pimpl->mode, loadProgress)) {
-      //db init failed, exit
-      return;
-   }
-
-   if (!DBSettings::checkChain()) {
-      if (DBSettings::enableZC()) {
-         bdm->enableZeroConf(DBSettings::clearMempool());
-      }
-   }
-   isReadyPromise.set_value();
-
-   if (DBSettings::checkChain()) {
-      return;
-   }
-
-   auto updateChainLambda = [bdm, this]()->void
-   {
-      LOGINFO << "readBlkFileUpdate";
+      LOGDEBUG << "readBlkFileUpdate";
       auto reorgState = bdm->readBlkFileUpdate();
       if (reorgState.hasNewTop) {
          //purge zc container
@@ -187,7 +116,7 @@ void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
          auto notifPtr = std::make_unique<BDV_Notification_NewBlock>(
             std::move(reorgState), purgePacket);
          bdm->triggerOneTimeHooks(notifPtr.get());
-         bdm->notificationStack.push_back(std::move(notifPtr));
+         bdm->notificationQueue->push_back(std::move(notifPtr));
 
          std::stringstream ss;
          ss << "found new top!" << std::endl;
@@ -197,52 +126,174 @@ void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
       }
    };
 
-   bdm->processNode->registerNodeStatusCallback(updateNodeStatusLambda);
-   bdm->nodeRPC->registerNodeStatusLambda(updateNodeStatusLambda);
+   //state enum
+   enum class Sequence : int
+   {
+      INIT,
+      WAIT_ON_CHAIN_SYNC,
+      WAIT_ON_START_SIGNAL,
+      SYNC_DB,
+      ENABLE_ZC,
+      LOOP_OVER_BLOCKS,
+      ERROR,
+      EXIT
+   };
 
-   auto newBlockStack = bdm->processNode->getInvBlockStack();
+   //bdmThread star sequence
+   auto bdmStep = Sequence::INIT;
    while (pimpl->run) {
-      try {
-         //wait on a new block InvEntry, blocking is on
-         auto invVec = newBlockStack->pop_front();
+      switch (bdmStep)
+      {
+         case Sequence::INIT:
+         {
+            try {
+               if (bdm->hasException()) {
+                  std::rethrow_exception(bdm->getException());
+               }
+               bdm->openDatabase();
+            } catch (const std::exception& e) {
+               LOGERR << "error during bdm init: " << e.what();
+               bdmStep = Sequence::ERROR;
+               break;
+            }
 
-         bool hasNewBlocks = true;
-         while (hasNewBlocks) {
-            //check blocks on disk, update chain state accordingly
-            updateChainLambda();
-            hasNewBlocks = false;
+            //connect to node as async, no need to wait for a succesful
+            //connection to init the DB
+            bdm->processNode->connectToNode(true);
+            bdm->processNode->registerNodeStatusCallback(
+               updateNodeStatusLambda);
+            bdm->watchNode->connectToNode(true);
+            bdmStep = Sequence::WAIT_ON_CHAIN_SYNC;
+            break;
+         }
 
-            while (true) {
-               /*
-               More new blocks may have appeared while we were parsing the
-               current batch. The chain update code will grab as many blocks
-               as it sees in a single call. Therefor, while N new blocks
-               generate N new block notifications, a single call to
-               updateChainLambda would cover them all.
+         case Sequence::WAIT_ON_CHAIN_SYNC:
+         {
+            //if RPC is running, wait on chain sync
+            try {
+               LOGINFO << "Waiting on node sync";
+               bdm->nodeRPC->waitOnChainSync(
+                  updateNodeStatusLambda,
+                  DBSettings::automatedNode()
+               );
+            } catch (const std::exception& e) {
+               LOGWARN << "Error occured while querying the RPC for sync status";
+               LOGWARN << "Message: " << e.what();
+            }
+            bdmStep = Sequence::WAIT_ON_START_SIGNAL;
+            break;
+         }
 
-               updateChainLambda is an expensive call and it is unnecessary to
-               run it as many times as we have pending new block notifications.
-               The notifications just indicate that updateChainLamda should be
-               ran, not how often. Hence after a run to updateChainLambda, we
-               want to deplete the block notification queue, run
-               updateChainLambda one more time for good measure, and break out
-               of the inner, non blocking queue wait loop once it is empty.
-
-               The outer blocking queue wait will then once again act as the
-               signal to check the chain and deplete the queue
-               */
-
-               try {
-                  //wait on new block entry, do not block for the inner loop
-                  invVec = move(newBlockStack->pop_front(false));
-                  hasNewBlocks = true;
-               } catch (const Armory::Threading::IsEmpty&) {
+         case Sequence::WAIT_ON_START_SIGNAL:
+         {
+            if (NetworkSettings::ephemeralPeers()) {
+               //this is an automated db instance, wait on the master's signal
+               //to start the db scan
+               LOGINFO << "waiting on start signal from master";
+               if (!bdm->waitOnStartSignal()) {
+                  LOGINFO << "master signaled to shutdown";
+                  bdmStep = Sequence::ERROR;
                   break;
+               } else {
+                  LOGINFO << "master signaled to start operations";
                }
             }
+            bdmStep = Sequence::SYNC_DB;
+            break;
          }
-      } catch (const Armory::Threading::StopBlockingLoop&) {
-         break;
+
+         case Sequence::SYNC_DB:
+         {
+            const auto loadProgress = [queue=bdm->notificationQueue](
+               BDMPhase phase, double prog, unsigned time, unsigned numericProgress)
+            {
+               //pass empty walletID for main build&scan calls
+               auto notifPtr = std::make_unique<BDV_Notification_Progress>(
+                  phase, prog, time, numericProgress,
+                  std::vector<std::string>{}
+               );
+               queue->push_back(std::move(notifPtr));
+            };
+
+            if (!bdm->doInitialSyncOnLoad(pimpl->mode, loadProgress)) {
+               //db init failed, exit
+               bdmStep = Sequence::ERROR;
+            } else {
+               bdmStep = Sequence::ENABLE_ZC;
+            }
+            break;
+         }
+
+         case Sequence::ENABLE_ZC:
+         {
+            if (DBSettings::enableZC()) {
+               bdm->enableZeroConf(DBSettings::clearMempool());
+            }
+            isReadyPromise.set_value();
+            bdmStep = Sequence::LOOP_OVER_BLOCKS;
+            break;
+         }
+
+         case Sequence::LOOP_OVER_BLOCKS:
+         {
+            try {
+               //wait on a new block InvEntry, blocking is on
+               auto invVec = newBlockStack->pop_front();
+
+               bool hasNewBlocks = true;
+               while (hasNewBlocks) {
+                  //check blocks on disk, update chain state accordingly
+                  updateChainLambda();
+                  hasNewBlocks = false;
+
+                  while (true) {
+                     /*
+                     More new blocks may have appeared while we were parsing the
+                     current batch. The chain update code will grab as many blocks
+                     as it sees in a single call. Therefor, while N new blocks
+                     generate N new block notifications, a single call to
+                     updateChainLambda would cover them all.
+
+                     updateChainLambda is an expensive call and it is unnecessary to
+                     run it as many times as we have pending new block notifications.
+                     The notifications just indicate that updateChainLamda should be
+                     ran, not how often. Hence after a run to updateChainLambda, we
+                     want to deplete the block notification queue, run
+                     updateChainLambda one more time for good measure, and break out
+                     of the inner, non blocking queue wait loop once it is empty.
+
+                     The outer blocking queue wait will then once again act as the
+                     signal to check the chain and deplete the queue
+                     */
+
+                     try {
+                        //wait on new block entry, do not block for the inner loop
+                        invVec = move(newBlockStack->pop_front(false));
+                        hasNewBlocks = true;
+                     } catch (const Armory::Threading::IsEmpty&) {
+                        break;
+                     }
+                  }
+               }
+            } catch (const Armory::Threading::StopBlockingLoop&) {
+               bdmStep = Sequence::EXIT;
+            }
+            break;
+         }
+
+         case Sequence::ERROR:
+         case Sequence::EXIT:
+         {
+            pimpl->run = false;
+            break;
+         }
       }
    }
+
+   if (bdmStep == Sequence::ERROR) {
+      //on errors, isReadyPromise has yet to be set
+      isReadyPromise.set_value();
+      LOGERR << "bdm thread sequence exited with an error";
+   }
+   LOGINFO << "exiting bdm thread";
 }

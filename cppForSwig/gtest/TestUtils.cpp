@@ -577,7 +577,7 @@ namespace DBTestUtils
    {
       while (true) {
          try {
-            auto notif = bdm->notificationStack.pop_front();
+            auto notif = bdm->notificationQueue->pop_front();
             if (notif == nullptr) {
                continue;
             } else if (notif->actionType() == action) {
@@ -805,7 +805,7 @@ namespace DBTestUtils
    {
       auto nodePtr = bdmt->bdm()->processNode;
       auto nodeUnitTest = (NodeUnitTest*)nodePtr.get();
-      nodeUnitTest->mineNewBlock(bdmt->bdm(), count, h160);
+      nodeUnitTest->mineNewBlock(count, h160);
    }
 
    /////////////////////////////////////////////////////////////////////////////

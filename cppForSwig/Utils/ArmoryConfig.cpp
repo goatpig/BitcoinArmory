@@ -903,8 +903,7 @@ void NetworkSettings::createNodes()
          rpcUser = std::string{ rpcUserPtr };
          rpcPass = std::string{ rpcPassPtr };
       }
-      rpcNode_ = std::make_shared<Node::Core::RPC::Client>(
-         true, rpcUser, rpcPass);
+      rpcNode_ = std::make_shared<Node::Core::RPC::Client>(rpcUser, rpcPass);
    } else {
       auto primary = std::make_shared<NodeUnitTest>(
          *(uint32_t*)magicBytes.getPtr(), false

@@ -1030,7 +1030,7 @@ void BdvClient::processNotification(
          break;
       }
 
-      case BDV_Action::BDV_Error:
+      case BDV_Error:
       {
          auto notifList = notifs.initNotifs(1);
          auto notif = notifList[0];
@@ -1253,6 +1253,12 @@ void Clients::bdvOuterNotificationLoop()
       }
 
       if (notifPtr->broadcast()) {
+         if (notifPtr->actionType() == BDV_UpdateNodeStatus) {
+            //replace notif ptr with actual node status notif
+            auto nodeStatus = bdm()->getNodeStatus();
+            notifPtr = std::make_shared<BDV_Notification_NodeStatus>(
+               nodeStatus);
+         }
          const auto& bdvs = BDVs_.get();
          for (const auto& bdv_pair : bdvs) {
             auto notifPacket = std::make_shared<BDV_Notification_Packet>();
@@ -1340,8 +1346,8 @@ void Clients::shutdown()
    innerBDVNotifStack_.completed();
    packetQueue_.terminate();
 
-   //exit BDM maintenance thread
-   bdm_->notificationStack.terminate();
+   //exit BDM notification handler thread
+   bdm_->notificationQueue->terminate();
 
    //wait on all control threads
    for (auto& thrPair : controlThreads_) {
@@ -1435,12 +1441,13 @@ void Clients::bdmNotificationLoop()
    if (bdm_ == nullptr) {
       throw std::runtime_error("BDM is null!");
    }
+   auto bdmNotifQueue = bdm_->notificationQueue;
 
    while (true) {
       bool timedout = true;
       std::shared_ptr<BDV_Notification> notifPtr;
       try {
-         notifPtr = std::move(bdm_->notificationStack.pop_front(60s));
+         notifPtr = std::move(bdmNotifQueue->pop_front(60s));
          timedout = false;
       } catch (const Threading::StackTimedOutException&) {
          //nothing to do

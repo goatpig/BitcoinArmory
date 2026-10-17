@@ -14,11 +14,9 @@
 #include <string>
 #include <map>
 #include <functional>
-#include <filesystem>
 
 #include <Utils/BinaryData.h>
 #include <Utils/ReentrantLock.h>
-#include <Utils/AtomicSharedPtr.h>
 
 namespace Armory
 {
@@ -126,88 +124,86 @@ namespace Node
          static constexpr std::string_view FEE_STRAT_ECONOMICAL{"ECONOMICAL"};
 
          ////////
-         struct FeeEstimateResult
+         struct FeeEstimate
          {
-            bool smartFee = false;
-            float feeByte = 0.0f;
-            std::string error;
+            const bool smartFee;
+            const float feeByte;
+            const std::string error;
          };
 
-         using EstimateCache = std::map<std::string,
-            std::map<unsigned, FeeEstimateResult>>;
+         struct FeeEstimateCache
+         {
+            using EstimateMap = std::map<std::string,
+               std::map<unsigned, FeeEstimate>>;
+            const EstimateMap estimates;
+            const uint32_t timestamp;
 
+            FeeEstimateCache(EstimateMap);
+            bool isValid(void) const;
+         };
 
          ////////
          class Iface : public Lockable
          {
          protected:
-            std::function<void(void)> nodeStatusLambda_;
             ChainStatus nodeChainStatus_;
-            Armory::Threading::AtomicSharedPtr<EstimateCache> currentEstimateCache_;
+            std::unique_ptr<FeeEstimateCache> cachedFees_;
+            std::atomic<bool> enabled_ = { true };
+            std::condition_variable sleepCV_;
+            std::mutex sleepMutex_;
 
          private:
             void initAfterLock(void) override {}
             void cleanUpBeforeUnlock(void) override {}
 
-         protected:
-            void callback(void) const;
-
          public:
             Iface(void);
             virtual ~Iface(void) = 0;
-            virtual bool shutdown(void) = 0;
+            virtual bool requestNodeShutdown(void) = 0;
+            void disable(void);
 
             virtual int broadcastTx(const BinaryDataRef&, std::string&) = 0;
-            virtual bool canPoll(void) const = 0;
             virtual RpcState testConnection() = 0;
             virtual void waitOnChainSync(std::function<void(void)>, bool) = 0;
-            virtual FeeEstimateResult getFeeByte(
-               unsigned, const std::string&) const = 0;
+            virtual FeeEstimate getFeeByte(
+               unsigned, const std::string&) = 0;
+            virtual const std::map<unsigned, FeeEstimate>& getFeeSchedule(
+               const std::string&) = 0;
 
             //locals
             const ChainStatus& getChainStatus(void) const;
-            void registerNodeStatusLambda(const std::function<void(void)>&);
-            const std::map<unsigned, FeeEstimateResult>& getFeeSchedule(
-               const std::string&) const;
          };
 
          ////////
          class Client : public Iface
          {
          private:
-            const bool canPoll_;
             std::string basicAuthString64_;
             bool canResetAuthString_;
-
             RpcState previousState_ = RpcState::Disabled;
-            std::condition_variable pollCondVar_;
-            std::vector<std::thread> thrVec_;
-            std::atomic<bool> run_ = { true };
 
          private:
             std::string queryRPC(JSON::Object&);
             std::string queryRPC(Armory::Network::HttpSocket&, JSON::Object&);
-            void pollThread(void);
-            
+            bool setupConnection(Armory::Network::HttpSocket&);
+
             float queryFeeByte(Armory::Network::HttpSocket&, unsigned);
-            FeeEstimateResult queryFeeByteSmart(
+            FeeEstimate queryFeeByteSmart(
                Armory::Network::HttpSocket&, unsigned&, const std::string&);
             void aggregateFeeEstimates(void);
             void resetAuthString(void);
             bool updateChainStatus(void);
 
          public:
-            Client(bool, const std::string&, const std::string&);
-            ~Client(void);
-
-            bool setupConnection(Armory::Network::HttpSocket&);
+            Client(const std::string&, const std::string&);
 
             //virtuals
-            bool shutdown(void) override;
+            bool requestNodeShutdown(void) override;
             RpcState testConnection(void) override;
-            bool canPoll(void) const override;
 
-            FeeEstimateResult getFeeByte(unsigned, const std::string&) const override;
+            const std::map<unsigned, FeeEstimate>& getFeeSchedule(
+               const std::string&) override;
+            FeeEstimate getFeeByte(unsigned, const std::string&) override;
             int broadcastTx(const BinaryDataRef&, std::string&) override;
             void waitOnChainSync(std::function<void(void)>, bool) override;
          };

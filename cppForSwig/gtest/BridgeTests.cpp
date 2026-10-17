@@ -9717,7 +9717,7 @@ TEST_F(BridgeChainDataTests, Reorg_SpendBeforeBranchPoint)
    auto topA = theBDMt_->bdm()->blockchain()->top();
    ASSERT_EQ(branchPoint->getUniqueID(), 6);
    nodePtr_->setReorgBranchPoint(branchPoint);
-   nodePtr_->mineNewBlock(theBDMt_->bdm(), 1, TestChain::addrA, 100.0);
+   nodePtr_->mineNewBlock(1, TestChain::addrA, 100.0);
    ASSERT_EQ(waitOnNewBlock(), 6);
 
    auto topB = theBDMt_->bdm()->blockchain()->top();

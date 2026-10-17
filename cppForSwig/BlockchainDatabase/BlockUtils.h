@@ -102,7 +102,6 @@ private:
    std::exception_ptr exceptPtr_ = nullptr;
 
    unsigned checkTransactionCount_ = 0;
-   mutable std::shared_ptr<std::mutex> nodeStatusPollMutex_;
    Armory::Threading::Queue<std::shared_ptr<BDVNotificationHook>> oneTimeHooks_;
    std::unique_ptr<std::promise<bool>> startPromise_;
 
@@ -112,7 +111,8 @@ public:
    std::shared_future<void> isReadyFuture;
    mutable std::shared_ptr<Node::Core::RPC::Iface> nodeRPC;
 
-   Armory::Threading::TimedQueue<std::unique_ptr<BDV_Notification>> notificationStack;
+   std::shared_ptr<Armory::Threading::TimedQueue<
+      std::unique_ptr<BDV_Notification>>> notificationQueue;
 
 private:
    bool loadDiskState(const ProgressCallback&);

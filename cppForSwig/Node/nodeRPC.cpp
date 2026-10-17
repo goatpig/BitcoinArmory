@@ -7,6 +7,9 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "nodeRPC.h"
+
+#include <filesystem>
+
 #include <Utils/ArmoryErrors.h>
 #include <Utils/BtcUtils.h>
 #include <Utils/ArmoryConfig.h>
@@ -20,6 +23,8 @@ using namespace std::string_view_literals;
 using namespace Armory;
 using namespace Node;
 using namespace Node::Core;
+
+#define FEE_ESTIMATE_LIFETIME 30
 
 namespace
 {
@@ -76,6 +81,25 @@ namespace
          return {};
       }
    }
+
+   uint32_t now()
+   {
+      //all nimbly pimbly
+      auto rightMeow = std::chrono::system_clock::now();
+      return std::chrono::duration_cast<std::chrono::seconds>(
+         rightMeow.time_since_epoch()).count();
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// FeeEstimateCache
+RPC::FeeEstimateCache::FeeEstimateCache(EstimateMap eMap) :
+   estimates{std::move(eMap)}, timestamp{now()}
+{}
+
+bool RPC::FeeEstimateCache::isValid() const
+{
+   return timestamp + FEE_ESTIMATE_LIFETIME > now();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -92,23 +116,22 @@ RpcError::RpcError(const std::string& err) :
 // NodeRPCInterface
 RPC::Iface::Iface()
 {
-   currentEstimateCache_.store(nullptr);
+   enabled_.store(true, std::memory_order_relaxed);
 }
 
 RPC::Iface::~Iface()
 {}
 
-void RPC::Iface::callback() const
+void RPC::Iface::disable()
 {
-   if (nodeStatusLambda_) {
-      nodeStatusLambda_();
-   }
-}
+   //grab the lock before flipping the flag, so that ongoing RPC
+   //reqeust are not rugpulled
+   ReentrantLock lock(this);
+   enabled_.store(false, std::memory_order_relaxed);
 
-void RPC::Iface::registerNodeStatusLambda(
-   const std::function<void(void)>& lbd)
-{
-   nodeStatusLambda_ = lbd;
+   //whatever loops on the enabled_ flag sleeps on this cv, so
+   //wake them all up
+   sleepCV_.notify_all();
 }
 
 const ChainStatus& RPC::Iface::getChainStatus() const
@@ -117,63 +140,27 @@ const ChainStatus& RPC::Iface::getChainStatus() const
    return nodeChainStatus_;
 }
 
-const std::map<unsigned, RPC::FeeEstimateResult>& RPC::Iface::getFeeSchedule(
-   const std::string& strategy) const
-{
-   auto estimateCachePtr = currentEstimateCache_.load();
-   if (estimateCachePtr == nullptr) {
-      throw RpcError{};
-   }
-
-   auto iterStrat = estimateCachePtr->find(strategy);
-   if (iterStrat == estimateCachePtr->end()) {
-      throw RpcError{};
-   }
-   return iterStrat->second;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // NodeRPC
-RPC::Client::Client(bool pollForFees,
-   const std::string& rpcUser, const std::string& rpcPass) :
-   canPoll_{pollForFees}, canResetAuthString_{true}
+RPC::Client::Client(const std::string& rpcUser, const std::string& rpcPass) :
+   canResetAuthString_{true}
 {
    if (!rpcUser.empty() && !rpcPass.empty()) {
       basicAuthString64_ = BtcUtils::base64_encode(std::format("{}:{}",
          rpcUser, rpcPass));
       canResetAuthString_ = false;
    }
-
-   //can we poll for fees?
-   if (!canPoll()) {
-      return;
-   }
-   thrVec_.emplace_back(std::thread([this](){ pollThread(); }));
-}
-
-RPC::Client::~Client()
-{
-   run_.store(false, std::memory_order_release);
-   pollCondVar_.notify_all();
-
-   for (auto& thr : thrVec_) {
-      if (thr.joinable()) {
-         thr.join();
-      }
-   }
-}
-
-bool RPC::Client::canPoll() const
-{
-   return canPoll_;
 }
 
 ////////
 bool RPC::Client::setupConnection(Network::HttpSocket& sock)
 {
-   ReentrantLock lock(this);
+   if (enabled_.load(std::memory_order_relaxed) == false) {
+      return false;
+   }
 
    //test the socket
+   ReentrantLock lock(this);
    if (!sock.connectToRemote()) {
       return false;
    }
@@ -253,6 +240,7 @@ void RPC::Client::resetAuthString()
 }
 
 ////////
+// grabbing fees from the RPC
 float RPC::Client::queryFeeByte(Network::HttpSocket& sock, unsigned blocksToConfirm)
 {
    ReentrantLock lock(this);
@@ -278,19 +266,17 @@ float RPC::Client::queryFeeByte(Network::HttpSocket& sock, unsigned blocksToConf
    return feeBytePtr->val;
 }
 
-RPC::FeeEstimateResult RPC::Client::queryFeeByteSmart(Network::HttpSocket& sock,
+RPC::FeeEstimate RPC::Client::queryFeeByteSmart(Network::HttpSocket& sock,
    unsigned& confTarget, const std::string& strategy)
 {
-   auto fallback = [this, &confTarget, &sock]()->FeeEstimateResult
+   auto fallback = [this, &confTarget, &sock]()->FeeEstimate
    {
-      FeeEstimateResult fer;
       auto feeByteSimple = queryFeeByte(sock, confTarget);
       if (feeByteSimple == -1.0f) {
-         fer.error = "error";
+         return { false, -1.0f, "error" };
       } else {
-         fer.feeByte = feeByteSimple;
+         return { false, feeByteSimple, {} };
       }
-      return fer;
    };
 
    ReentrantLock lock(this);
@@ -313,14 +299,10 @@ RPC::FeeEstimateResult RPC::Client::queryFeeByteSmart(Network::HttpSocket& sock,
    auto resultPairPtr = std::dynamic_pointer_cast<JSON::Object>(
       responseObj.getValForKey("result"sv));
 
-   FeeEstimateResult fer;
    if (resultPairPtr != nullptr) {
       auto feeBytePtr = std::dynamic_pointer_cast<JSON::Number>(
          resultPairPtr->getValForKey("feerate"sv));
       if (feeBytePtr != nullptr) {
-         fer.feeByte = feeBytePtr->val;
-         fer.smartFee = true;
-
          auto blocksPtr = std::dynamic_pointer_cast<JSON::Number>(
             resultPairPtr->getValForKey("blocks"sv));
          if (blocksPtr != nullptr) {
@@ -328,6 +310,7 @@ RPC::FeeEstimateResult RPC::Client::queryFeeByteSmart(Network::HttpSocket& sock,
                confTarget = blocksPtr->val;
             }
          }
+         return { true, float(feeBytePtr->val) };
       }
    }
 
@@ -335,66 +318,77 @@ RPC::FeeEstimateResult RPC::Client::queryFeeByteSmart(Network::HttpSocket& sock,
       responseObj.getValForKey("error"sv));
    if (errorPtr != nullptr) {
       if (resultPairPtr == nullptr) {
-         //fallback to the estimatefee if the method is missing
+         //fallback to estimatefee if estimatesmartfee method is missing
          return fallback();
       } else {
-         //report smartfee error msg
-         fer.error = errorPtr->val;
-         fer.smartFee = true;
+         //report estimatesmartfee error msg
+         return { true, -1.0f, errorPtr->val };
       }
+   } else {
+      return { false, -1.0f, "unexpected error during queryFeeByteSmart" };
    }
-   return fer;
 }
 
-////////
-RPC::FeeEstimateResult RPC::Client::getFeeByte(
-   unsigned confTarget, const std::string& strategy) const
-{
-   auto estimateCachePtr = currentEstimateCache_.load();
-   if (estimateCachePtr == nullptr) {
-      throw RpcError{};
-   }
-
-   auto iterStrat = estimateCachePtr->find(strategy);
-   if (iterStrat == estimateCachePtr->end()) {
-      throw RpcError{};
-   }
-   if (iterStrat->second.empty()) {
-      throw RpcError{};
-   }
-
-   auto targetIter = iterStrat->second.upper_bound(confTarget);
-   if (targetIter != iterStrat->second.begin()) {
-      --targetIter;
-   }
-   return targetIter->second;
-}
-
-////////////////////////////////////////////////////////////////////////////////
 void RPC::Client::aggregateFeeEstimates()
 {
    //get fee/byte for 2-3-4-5-6-10-20 confs on both strategies
+   ReentrantLock lock(this);
    Network::HttpSocket sock(
       "127.0.0.1", Config::NetworkSettings::rpcPort(),
       "satoshiRPC_fees");
    if (!setupConnection(sock)) {
-      throw RpcError("aggregateFeeEstimates: failed to setup RPC socket");
+      throw RpcError("[aggregateFeeEstimates] failed to setup RPC socket");
    }
 
-   auto newCache = std::make_shared<EstimateCache>();
+   FeeEstimateCache::EstimateMap freshEstimates;
    for (const auto& strat : strategies) {
-      auto insertIter = newCache->emplace(
-         strat, std::map<unsigned, FeeEstimateResult>{});
+      auto insertIter = freshEstimates.emplace(
+         strat, std::map<unsigned, FeeEstimate>{});
       auto& newMap = insertIter.first->second;
 
       for (auto target : confTargets) {
-         auto result = queryFeeByteSmart(sock, target, strat);
-         newMap.emplace(target, std::move(result));
+         newMap.emplace(target, queryFeeByteSmart(sock, target, strat));
       }
    }
+   cachedFees_ = std::make_unique<FeeEstimateCache>(std::move(freshEstimates));
+}
 
+////////
+// grabbing fees from the cache
+const std::map<unsigned, RPC::FeeEstimate>& RPC::Client::getFeeSchedule(
+   const std::string& strategy)
+{
    ReentrantLock lock(this);
-   currentEstimateCache_.store(newCache);
+   while (true) {
+      if (cachedFees_ != nullptr) {
+         if (cachedFees_->isValid()) {
+            //we have a valid fee cache, return from it
+            auto iterStrat = cachedFees_->estimates.find(strategy);
+            if (iterStrat == cachedFees_->estimates.end()) {
+               throw RpcError{};
+            }
+            return iterStrat->second;
+         }
+      }
+
+      /*
+      If we got this far, we have either lack a fee estimate or it is stale.
+      Let's try to constitute a fresh one. This call will throw on error.
+      */
+      aggregateFeeEstimates();
+   }
+}
+
+RPC::FeeEstimate RPC::Client::getFeeByte(
+   unsigned confTarget, const std::string& strategy)
+{
+   ReentrantLock lock(this);
+   const auto& schedule = getFeeSchedule(strategy);
+   auto targetIter = schedule.upper_bound(confTarget);
+   if (targetIter != schedule.begin()) {
+      --targetIter;
+   }
+   return targetIter->second;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -457,27 +451,26 @@ bool RPC::Client::updateChainStatus()
 }
 
 ////////
-void RPC::Client::waitOnChainSync(std::function<void(void)> callbck, bool force)
+void RPC::Client::waitOnChainSync(std::function<void(void)> callbck, bool persist)
 {
    nodeChainStatus_.reset();
-   while (true) {
+   while (enabled_.load(std::memory_order_relaxed)) {
       //keep trying as long as the node is initializing
       auto state = testConnection();
       callbck();
       if (state != RpcState::Error_28) {
-         if (state != RpcState::Online && !force) {
+         if (state != RpcState::Online && !persist) {
             return;
          }
          break;
       }
 
       //sleep for 1sec
-      std::this_thread::sleep_for(1s);
+      std::unique_lock<std::mutex> lock{sleepMutex_};
+      sleepCV_.wait_for(lock, 1s);
    }
 
-
-   while (true) {
-      callbck();
+   while (enabled_.load(std::memory_order_relaxed)) {
       float blkSpeed = 0.0f;
       try {
          ReentrantLock lock(this);
@@ -498,11 +491,12 @@ void RPC::Client::waitOnChainSync(std::function<void(void)> callbck, bool force)
 
       unsigned dur = 1; //sleep delay in seconds
       if (blkSpeed != 0.0f) {
-         auto singleBlkEta = std::max(1.0f / blkSpeed, 1.0f);
          //don't sleep for more than 5sec
+         auto singleBlkEta = std::max(1.0f / blkSpeed, 1.0f);
          dur = std::min(unsigned(singleBlkEta), 5u);
       }
-      std::this_thread::sleep_for(std::chrono::seconds(dur));
+      std::unique_lock<std::mutex> lock{sleepMutex_};
+      sleepCV_.wait_for(lock, std::chrono::seconds(dur));
    }
    LOGINFO << "RPC is ready";
 }
@@ -554,7 +548,7 @@ int RPC::Client::broadcastTx(const BinaryDataRef& rawTx, std::string& verbose)
 }
 
 ////////
-bool RPC::Client::shutdown()
+bool RPC::Client::requestNodeShutdown()
 {
    ReentrantLock lock(this);
 
@@ -606,61 +600,6 @@ std::string RPC::Client::queryRPC(Network::HttpSocket& sock, JSON::Object& reque
 
    sock.pushPayload(std::move(writePayload), readPayload);
    return fut.get();
-}
-
-////////
-void RPC::Client::pollThread()
-{
-   auto pred = [this](void)->bool
-   {
-      return !run_.load(std::memory_order_acquire);
-   };
-
-   std::mutex mu;
-   bool status = false;
-   while (true) {
-      auto loopSleep = 3s;
-      if (!status) {
-         //test connection
-         try {
-            resetAuthString();
-            auto rpcState = testConnection();
-            bool doCallback = false;
-            if (rpcState != previousState_) {
-               doCallback = true;
-            }
-            previousState_ = rpcState;
-
-            if (doCallback) {
-               callback();
-            }
-            if (rpcState == RpcState::Online) {
-               LOGINFO << "RPC connection established";
-               status = true;
-               continue;
-            }
-         } catch (const std::exception& e) {
-            LOGWARN << "fee poll check failed with error: " << e.what();
-            status = false;
-         }
-      } else {
-         //update fee estimate
-         try {
-            aggregateFeeEstimates();
-            loopSleep = 60s;
-         } catch (const std::exception&) {
-            status = false;
-            continue;
-         }
-      }
-
-      std::unique_lock<std::mutex> lock(mu);
-      if (pollCondVar_.wait_for(lock, loopSleep, pred)) {
-         break;
-      }
-   }
-
-   LOGWARN << "out of rpc poll loop";
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -402,7 +402,7 @@ TEST_F(BlockDir, HeadersFirstReorg)
    //reorg back to original test chain
    auto header5 = blockchain->getHeaderByHash(TestChain::blkHash5);
    nodePtr->setReorgBranchPoint(header5);
-   nodePtr->mineNewBlock(BDMt->bdm(), 1, TestChain::addrF, 100.0);
+   nodePtr->mineNewBlock(1, TestChain::addrF, 100.0);
    DBTestUtils::waitOnNewBlockSignal(clients, bdvID);
    top = blockchain->top();
    ASSERT_EQ(top->getBlockHeight(), 6);
@@ -798,6 +798,9 @@ protected:
    /////////////////////////////////////////////////////////////////////////////
    virtual void TearDown(void)
    {
+      auto nodePtr = std::dynamic_pointer_cast<NodeUnitTest>(
+         Config::NetworkSettings::bitcoinNodes().first);
+
       if (clients_ != nullptr) {
          clients_->shutdown();
       }
@@ -1830,6 +1833,33 @@ TEST_F(BlockUtilsBare, BlockXor)
    bdvPtr.reset();
 }
 
+TEST_F(BlockUtilsBare, ShutdownDuringNodeSync)
+{
+   auto nodeRPC = std::dynamic_pointer_cast<NodeRPC_UnitTest>(
+      Config::NetworkSettings::rpcNode());
+
+   //set mocked RPC into a perpetual chain sync loop
+   nodeRPC->loopOnSync = std::make_shared<std::promise<void>>();
+   auto fut = nodeRPC->loopOnSync->get_future();
+
+   theBDMt_->start(Config::DBSettings::initMode());
+   /*clients_->init();
+   auto bdvID = DBTestUtils::registerBDV(
+      clients_, Config::BitcoinSettings::getMagicBytes());*/
+
+   //wait for mocked RPC to enter its sync loop
+   fut.get();
+   std::this_thread::sleep_for(2s);
+
+   //mocked RPC will never let bdm get ready, try to shutdown anyways
+   auto now = std::chrono::system_clock::now();
+   theBDMt_->shutdown();
+   auto diff = std::chrono::system_clock::now() - now;
+   ASSERT_LE(diff, 1s);
+
+   theBDMt_->bdm()->blockUntilReady();
+}
+
 /* this is meant to spit out test chain data for debug purposes */
 TEST_F(BlockUtilsBare, DISABLED_PPrintTestChain)
 {
@@ -2298,7 +2328,6 @@ TEST_F(BlockUtilsFull, Load5Blocks_RescanOps)
 
 /*
 TODO:
- - test tx filters
  - test fresh address registration
  - test fresh address registration on top of empty db
 */
