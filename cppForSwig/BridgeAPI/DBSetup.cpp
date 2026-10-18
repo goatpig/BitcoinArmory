@@ -220,6 +220,9 @@ namespace {
 
       //path args
       std::vector<std::string> pathArgsStr;
+      //argv points into these strings: the vector must not grow (and move
+      //short, inline strings) while the loop runs
+      pathArgsStr.reserve(pathArgs.size());
       for (const auto& pathArg : pathArgs) {
          pathArgsStr.emplace_back(std::format("{}={}",
             pathArg.first, pathArg.second.string()));
