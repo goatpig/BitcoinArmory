@@ -48,7 +48,8 @@ from armoryengine.ArmoryUtils import HMAC256, \
    unixTimeToFormatStr, binary_to_hex, BTC_HOME_DIR, secondsToHumanTime, \
    LEVELDB_BLKDATA, LOGPPRINT, hex_to_binary, \
    getRandomHexits_NotSecure, coin2strNZS, bytesToHumanSize, hash256, \
-   DEFAULT_ADDR_TYPE, hex_switchEndian, BLOCKEXPLORE_NAME, getBridgeArgList
+   DEFAULT_ADDR_TYPE, hex_switchEndian, BLOCKEXPLORE_NAME, getBridgeArgList, \
+   getLastBytesOfFile, ARMORY_LOG_FILE, ARMCPP_LOG_FILE, ARMDB_LOG_FILE
 from armoryengine.Settings import TheSettings
 from armoryengine.AddressUtils import base58_to_binary, Hash160ToScrAddr, \
    hash160_to_addrStr, addrStr_to_hash160, scrAddr_to_script, \
@@ -281,6 +282,9 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          TheSignalExecution.executeMethod(self.handleCppNotification,
             action, arglist)
 
+      #notifications are held until the UI is built, see
+      #processQueuedCppNotifications
+      self.queuedCppNotifications = []
       TheBDM.registerCppNotification(cppNotifySignal)
       self.progressCallbacks = {}
 
@@ -755,6 +759,10 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
       if ArmoryMac is not None:
          self.macNotifHdlr = ArmoryMac.MacNotificationHandler()
+
+      # The widgets the notification handlers use exist now, process the
+      # notifications that came in while the UI was being built
+      self.processQueuedCppNotifications()
 
       # Now that construction of the UI is done
       # Check for warnings to be displayed
@@ -1861,17 +1869,10 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       # issue of some sort. Some experimental code under ArmoryMac that directly
       # calls a dialog produces better results but still freezes under some
       # circumstances.
-      fullPath = str(QtWidgets.QFileDialog.getSaveFileName(
+      # getSaveFileName returns a (path, selected filter) tuple
+      filePath = QtWidgets.QFileDialog.getSaveFileName(
          self, title, startPath, typesStr,
-         options=QtWidgets.QFileDialog.DontUseNativeDialog))
-
-      '''
-      With PySide2, QtWidgets.QFileDialog.getSaveFileName return the user selection as
-      str("('file name', 'filter1'; 'filter2')")
-      '''
-      pathStripped = fullPath.strip('(')
-      pathList = pathStripped.split(',')
-      filePath = pathList[0].strip('\'')
+         options=QtWidgets.QFileDialog.DontUseNativeDialog)[0]
 
       fdir,fname = os.path.split(filePath)
       if fdir:
@@ -1903,21 +1904,14 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       # issue of some sort. Some experimental code under ArmoryMac that directly
       # calls a dialog produces better results but still freezes under some
       # circumstances.
+      # getOpenFileName returns a (path, selected filter) tuple
       if not OS_MACOSX:
-         fullPath = str(QtWidgets.QFileDialog.getOpenFileName(
-            self, title, defaultDir, typeStr))
+         filePath = QtWidgets.QFileDialog.getOpenFileName(
+            self, title, defaultDir, typeStr)[0]
       else:
-         fullPath = str(QtWidgets.QFileDialog.getOpenFileName(
+         filePath = QtWidgets.QFileDialog.getOpenFileName(
             self, title, defaultDir, typeStr,
-            options=QtWidgets.QFileDialog.DontUseNativeDialog))
-
-      '''
-      With PySide2, QtWidgets.QFileDialog.getOpenFileName return the user selection as
-      str("('file name', 'filter1'; 'filter2')")
-      '''
-      pathStripped = fullPath.strip('(')
-      pathList = pathStripped.split(',')
-      filePath = pathList[0].strip('\'')
+            options=QtWidgets.QFileDialog.DontUseNativeDialog)[0]
 
       TheSettings.set('LastDirectory', os.path.split(filePath)[0])
       return filePath
@@ -4400,7 +4394,26 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          self.lblArmoryStatus.setToolTipLambda(getToolTipTextOffline)
 
    #############################################################################
+   def processQueuedCppNotifications(self):
+      queue = self.queuedCppNotifications
+      self.queuedCppNotifications = None
+      for action, args in queue:
+         #an exception in a Qt slot only gets reported, do the same here
+         #rather than abort the main window construction
+         try:
+            self.handleCppNotification(action, args)
+         except Exception:
+            LOGEXCEPT('Error processing queued notification: %s', action)
+
+   #############################################################################
    def handleCppNotification(self, action, args):
+      if self.queuedCppNotifications is not None:
+         #The main window is still being built. Modal dialogs shown from
+         #__init__ (e.g. the EULA) run their own event loop, which delivers
+         #notifications before the widgets the handlers below use exist.
+         self.queuedCppNotifications.append((action, args))
+         return
+
       if action == INIT_DB_READY:
          #Blockchain just finished loading, finish initializing UI and render
          #the ledgers

@@ -201,13 +201,15 @@ class CoreTab(QtWidgets.QWidget):
 
    def browseSatoshiBin(self):
       """Open a directory dialog to select the Bitcoin Core daemon path."""
+      # getOpenFileName returns a (path, selected filter) tuple, the path is
+      # empty if the dialog was cancelled
       binpath = QtWidgets.QFileDialog.getOpenFileName(
          self,
          self.tr('Select Bitcoin Core Daemon'),
          os.path.expanduser('~')
-      )
+      )[0]
       if binpath:
-         self._validateSatoshiBin(binpath[0])
+         self._validateSatoshiBin(binpath)
 
    def loadSettings(self):
       """Load core tab settings from configuration."""
