@@ -2801,14 +2801,12 @@ void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId ms
          for (const auto& tx : txs) {
             auto capnTx = capnTxs[count++];
             auto txKey = tx.getDBKey();
-            if (Types::isThisAZCKey(txKey)) {
+            if (Types::isThisAZCKey(txKey) ||
+               Types::isThisAnUnpooledKey(txKey)) {
+               //not in a block: a zc has the time of its mempool entry
+               //if the tx carries it, getTxTime gives UINT32_MAX otherwise
                capnTx.setHeight(UINT32_MAX);
                capnTx.setTimestamp(tx.getTxTime());
-               capnTx.setTxIndex(UINT32_MAX);
-            } else if (Types::isThisAnUnpooledKey(txKey)) {
-               //no db has given it a key
-               capnTx.setHeight(UINT32_MAX);
-               capnTx.setTimestamp(UINT32_MAX);
                capnTx.setTxIndex(UINT32_MAX);
             } else {
                //not all keys lead to a cached header
@@ -2819,7 +2817,7 @@ void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId ms
                   capnTx.setTimestamp(header->timestamp);
                } catch (const std::out_of_range&) {
                   capnTx.setHeight(UINT32_MAX);
-                  capnTx.setTimestamp(UINT32_MAX);
+                  capnTx.setTimestamp(tx.getTxTime());
                }
                capnTx.setTxIndex(tx.getTxIndex());
             }

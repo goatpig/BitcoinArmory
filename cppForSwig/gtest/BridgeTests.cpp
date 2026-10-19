@@ -8230,6 +8230,8 @@ TEST_F(BridgeChainDataTests, GetTxsByHash_ZcThenMined)
    EXPECT_EQ(asZc.begin()->first, zcHash);
    EXPECT_EQ(asZc.begin()->second.height, UINT32_MAX);
    EXPECT_EQ(asZc.begin()->second.txIndex, UINT32_MAX);
+   //the zc's time comes from the tx, and the db's txs carry none
+   EXPECT_EQ(asZc.begin()->second.timestamp, UINT32_MAX);
 
    //once mined, the cached zc copy is replaced
    DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrA, 1);
