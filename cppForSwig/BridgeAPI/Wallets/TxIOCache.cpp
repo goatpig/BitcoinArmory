@@ -721,20 +721,37 @@ void TxIOCache::fetchTxs(
       return;
    }
 
-   //1. what the cache misses: unknown hashes, zc and unpooled copies (they
-   //may have been mined or pooled since) and headers of mined txs
+   //1. what the cache misses: unknown hashes, unpooled copies and zc copies
+   //no txio points to (they may have been pooled or mined since, and update
+   //only replaces the txs of the wallets), and headers of mined txs
    std::set<Types::TxHash> missingHashes;
    std::set<Types::BlockId> missingBlockIds;
    {
       ReentrantLock lock(this);
+      std::set<Types::TxKey> walletZcKeys;
+      for (const auto& txioPair : zcTxios_) {
+         const auto& txio = txioPair.second;
+         if (txio.hasTxOutZC()) {
+            walletZcKeys.emplace(txio.getTxKeyOfOutput());
+         }
+         if (txio.hasTxInZC()) {
+            walletZcKeys.emplace(txio.getTxKeyOfInput());
+         }
+      }
+
       for (const auto& txHash : hashes) {
          if (txHash.getSize() != 32) {
             continue;
          }
          try {
             auto txKey = dbCache_->getTxByHash(txHash).getDBKey();
-            if (Types::isThisAZCKey(txKey) ||
-               Types::isThisAnUnpooledKey(txKey)) {
+            if (Types::isThisAZCKey(txKey)) {
+               if (walletZcKeys.find(txKey) == walletZcKeys.end()) {
+                  missingHashes.emplace(txHash);
+               }
+               continue;
+            }
+            if (Types::isThisAnUnpooledKey(txKey)) {
                missingHashes.emplace(txHash);
                continue;
             }
