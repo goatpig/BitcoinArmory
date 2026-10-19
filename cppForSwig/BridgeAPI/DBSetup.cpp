@@ -218,10 +218,16 @@ namespace {
       auto targetStr = target.string();
       argv.emplace_back(targetStr.data());
 
+      /* args */
+      /***
+      NOTE: posix_spawn takes an array of char pointers for arguments and
+      envvars. We build and hold these strings in a vector. We have to
+      reserve the vector's size prior to appending the strings, so that the
+      char pointers are not invalidated by implicit vector resizing mechanics.
+      ***/
+
       //path args
       std::vector<std::string> pathArgsStr;
-      //argv points into these strings: the vector must not grow (and move
-      //short, inline strings) while the loop runs
       pathArgsStr.reserve(pathArgs.size());
       for (const auto& pathArg : pathArgs) {
          pathArgsStr.emplace_back(std::format("{}={}",
@@ -237,17 +243,20 @@ namespace {
       //argv null terminator
       argv.emplace_back(nullptr);
 
+      /* envvars */
+      std::vector<char*> envp;
       std::vector<std::string> envStrings;
+      envStrings.reserve(envvars.size());
       for (const auto& envvar : envvars) {
          envStrings.emplace_back(
             std::format("{}={}", envvar.first, envvar.second));
+         envp.emplace_back((char*)envStrings.back().data());
       }
-      std::vector<char*> envp;
-      for (const auto& envstr : envStrings) {
-         envp.emplace_back((char*)envstr.data());
-      }
+
+      //envp null terminator
       envp.emplace_back(nullptr);
 
+      /* spawn the process */
       if (captureStdOut) {
          //create pipe that will replace stdout fd
          int stdout_pipe[2];
