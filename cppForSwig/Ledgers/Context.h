@@ -33,6 +33,7 @@ namespace Armory
       /*
       All the keys the dbCache holds for one tx hash, best first: mined, then
       pooled (zc), then unpooled. Within a kind, the newest key comes first.
+      A key that isn't a tx key (INVALID_TX_KEY, a txio key) is no candidate.
       */
       class TxKeyCandidates
       {
@@ -40,7 +41,8 @@ namespace Armory
          std::vector<Types::TxKey> keys_;
 
       public:
-         enum class Kind : int { Unpooled = 0, Pooled = 1, Mined = 2 };
+         enum class Kind : int {
+            Invalid = -1, Unpooled = 0, Pooled = 1, Mined = 2 };
          static Kind kindOf(Types::TxKey);
 
          void add(Types::TxKey);

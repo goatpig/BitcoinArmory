@@ -15390,6 +15390,48 @@ TEST_F(BridgeDBCacheTests, PurgeSkipsMined)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, InvalidKeys)
+{
+   //INVALID_TX_KEY and txio keys aren't tx keys, they are no candidates
+   using Kind = Ledgers::TxKeyCandidates::Kind;
+   const auto txioKey = Types::constructTxIOKey(10, 3, 1);
+   const auto unpooledKey = Types::constructUnpooledKey(7);
+   EXPECT_EQ(Ledgers::TxKeyCandidates::kindOf(Types::INVALID_TX_KEY),
+      Kind::Invalid);
+   EXPECT_EQ(Ledgers::TxKeyCandidates::kindOf(txioKey), Kind::Invalid);
+   EXPECT_EQ(Ledgers::TxKeyCandidates::kindOf(minedKey), Kind::Mined);
+   EXPECT_EQ(Ledgers::TxKeyCandidates::kindOf(zcKey), Kind::Pooled);
+   EXPECT_EQ(Ledgers::TxKeyCandidates::kindOf(unpooledKey), Kind::Unpooled);
+
+   Ledgers::TxKeyCandidates candidates;
+   candidates.add(Types::INVALID_TX_KEY);
+   candidates.add(txioKey);
+   EXPECT_TRUE(candidates.empty());
+   candidates.add(unpooledKey);
+   candidates.add(Types::INVALID_TX_KEY);
+   EXPECT_EQ(candidates.keys(), std::vector<Types::TxKey>{unpooledKey});
+
+   //a tx starts with an invalid key, the cache doesn't take a tx without
+   //a valid one
+   Ledgers::DBCache cache;
+   Tx unkeyed(rawTx2);
+   EXPECT_EQ(unkeyed.getDBKey(), Types::INVALID_TX_KEY);
+   cache.addTx(unkeyed);
+   add(cache, rawTx1, Types::INVALID_TX_KEY);
+   add(cache, rawTx1, txioKey);
+   EXPECT_THROW(cache.getTxByHash(Tx(rawTx1).getThisHash()),
+      std::out_of_range);
+   EXPECT_THROW(cache.getTxByHash(Tx(rawTx2).getThisHash()),
+      std::out_of_range);
+   EXPECT_THROW(cache.getTx(Types::INVALID_TX_KEY), std::out_of_range);
+   EXPECT_THROW(cache.getTx(txioKey), std::out_of_range);
+
+   //a valid key still goes in
+   add(cache, rawTx1, zcKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), zcKey);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 GTEST_API_ int main(int argc, char **argv)
 {
    Cryptography::ECDSA::setupContext();

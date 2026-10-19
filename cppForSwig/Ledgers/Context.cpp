@@ -12,6 +12,7 @@
 #include <BlockchainDatabase/txio.h>
 #include <TxClasses.h>
 #include <DBClientClasses.h>
+#include <Utils/log.h>
 
 using namespace Armory;
 using namespace Armory::Ledgers;
@@ -86,6 +87,9 @@ bool Context::filterTxio(const TxIOPair& txio) const
 // TxKeyCandidates
 TxKeyCandidates::Kind TxKeyCandidates::kindOf(Types::TxKey txKey)
 {
+   if (!Types::isTxKeyValid(txKey) || Types::isThisATxIOKey(txKey)) {
+      return Kind::Invalid;
+   }
    if (Types::isThisAnUnpooledKey(txKey)) {
       return Kind::Unpooled;
    }
@@ -97,12 +101,13 @@ TxKeyCandidates::Kind TxKeyCandidates::kindOf(Types::TxKey txKey)
 
 void TxKeyCandidates::add(Types::TxKey txKey)
 {
-   if (std::find(keys_.begin(), keys_.end(), txKey) != keys_.end()) {
+   auto kind = kindOf(txKey);
+   if (kind == Kind::Invalid ||
+      std::find(keys_.begin(), keys_.end(), txKey) != keys_.end()) {
       return;
    }
 
    //ahead of the first key of the same kind or below
-   auto kind = kindOf(txKey);
    auto iter = std::find_if(keys_.begin(), keys_.end(),
       [kind](Types::TxKey key)->bool { return kindOf(key) <= kind; });
    keys_.insert(iter, txKey);
@@ -191,6 +196,12 @@ void DBCache::addTx(Tx& tx)
 {
    auto txKey = tx.getDBKey();
    const auto& txHash = tx.getThisHash();
+   if (TxKeyCandidates::kindOf(txKey) == TxKeyCandidates::Kind::Invalid) {
+      //nothing could find it by key, and its hash would point nowhere
+      LOGWARN << std::format("not caching tx {} with invalid key {:x}",
+         txHash.toHexStr(), txKey);
+      return;
+   }
 
    //zc ids can be reused after ArmoryDB restarts, a key can come back for
    //another tx: drop the old tx along with its hash's candidate
