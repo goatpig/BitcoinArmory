@@ -71,7 +71,7 @@ from armoryengine.BDM import TheBDM, \
    BDMPhase_Balance, BDMPhase_SearchHashes, BDMPhase_ResolveHashes
 
 from armoryengine.PyBtcWallet import PyBtcWallet
-from armoryengine.Transaction import PyTx
+from armoryengine.Transaction import getTxsByHash
 from armoryengine.WalletUtils import WalletTypes, WalletFilter, \
    determineWalletType, loadWalletsForMainApp
 
@@ -2847,14 +2847,12 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
       pytx = None
       txHashBin = hex_to_binary(txHash)
-      txProto = TheBridge.service.getTxsByHash([txHashBin])
-      if txHashBin not in txProto:
+      bridgeTxs = getTxsByHash([txHashBin])
+      if txHashBin not in bridgeTxs:
          QtWidgets.QMessageBox.critical(self, self.tr('Error'), self.tr(
          f"Could not find a transaction for hash {txHash}!"), QtWidgets.QMessageBox.Ok)
          return
-      txData = txProto[txHashBin]
-      pytx = PyTx().unserialize(txData.body.raw)
-      pytx.setRBF(txData.body.isRbf)
+      pytx = bridgeTxs[txHashBin].pytx
 
       if pytx==None:
          QtWidgets.QMessageBox.critical(self, self.tr('Invalid Tx'), self.tr(
@@ -5022,13 +5020,12 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
       #grab ZC from DB
       txHashBin = hex_to_binary(txHash)
-      result = TheBridge.service.getTxsByHash([txHashBin])
+      result = getTxsByHash([txHashBin])
       if txHashBin not in result:
          QtWidgets.QMessageBox.critical(self, self.tr('Error'), self.tr(
          f"Could not find a transaction for hash {txHash}!"), QtWidgets.QMessageBox.Ok)
          return
-      zctx = result[txHashBin]
-      pytx = PyTx().unserialize(zctx.body.raw)
+      pytx = result[txHashBin].pytx
 
       #init tx prefill data
       prefill = {

@@ -23,11 +23,10 @@ from armoryengine.AddressUtils import addrStr_to_hash160, \
 
 from armoryengine.BDM import TheBDM, BDM_BLOCKCHAIN_READY
 from armoryengine.Transaction import UnsignedTransaction, \
-   determineSentToSelfAmt, PyTx, getTxInScriptType, getTxOutScriptType, \
-   TxInExtractAddrStrIfAvail
+   determineSentToSelfAmt, getTxInScriptType, getTxOutScriptType, \
+   TxInExtractAddrStrIfAvail, getTxsByHash
 from armoryengine.Block import PyBlockHeader
 from armoryengine.Script import convertScriptToOpStrings
-from armoryengine.CppBridge import TheBridge
 from armoryengine.Settings import TheSettings
 
 from armorymodels import TxInDispModel, TxOutDispModel, TXINCOLS, TXOUTCOLS
@@ -938,7 +937,7 @@ def extractTxInfo(pytx, rcvTime=None):
    for i in range(pytx.getNumTxIn()):
       txin = pytx.getTxIn(i)
       hashesToFetch.append(txin.getOutPoint().txHash)
-   txns = TheBridge.service.getTxsByHash(hashesToFetch)
+   txns = getTxsByHash(hashesToFetch)
    if txHash in txns:
       txProto = txns[txHash]
       timestamp = txProto.timestamp
@@ -969,7 +968,7 @@ def extractTxInfo(pytx, rcvTime=None):
          prevTxIndex = txin.getOutPoint().txOutIndex
          if prevTxHash in txns:
             prevTxProto = txns[prevTxHash]
-            prevTx = PyTx().unserialize(prevTxProto.body.raw)
+            prevTx = prevTxProto.pytx
             prevTxOut = prevTx.getTxOut(prevTxIndex)
             txinFromList[-1].append(prevTxOut.getScrAddressStr())
             txinFromList[-1].append(prevTxOut.getValue())

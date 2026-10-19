@@ -713,12 +713,9 @@ class BlockchainService(ProtoWrapper):
       if reply.success == False:
          raise BridgeError(f"getTxsByHash failed: {reply.error}")
 
-      #keyed by the hash of the raw tx, txs not found are left out
-      from armoryengine.Transaction import PyTx
-      txDict = {}
-      for tx in reply.service.getTxsByHash:
-         txDict[PyTx().unserialize(bytes(tx.body.raw)).getHash()] = tx
-      return txDict
+      #txs not found are left out, Transaction.getTxsByHash keys the
+      #rest by the hash of each raw tx
+      return reply.service.getTxsByHash
 
    ####
    def getBlockTimeByHeight(self, height):

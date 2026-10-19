@@ -1929,11 +1929,11 @@ class UnsignedTransaction(AsciiSerializable):
       if missingTxHashes:
          #the bridge serves the db's txs and the supporting txs of the
          #signer payloads it has loaded, unknown hashes are left out
-         capnTxns = TheBridge.service.getTxsByHash(missingTxHashes)
-         for txHash in capnTxns:
+         bridgeTxs = getTxsByHash(missingTxHashes)
+         for txHash in bridgeTxs:
             if not txHash in prevTxs:
                raise InvalidHashError('Could not find the referenced tx')
-            prevTxs[txHash] = PyTx().unserialize(capnTxns[txHash].body.raw)
+            prevTxs[txHash] = bridgeTxs[txHash].pytx
 
       #populate input list with tx data, one entry per input, in input order
       for inputID, txin in enumerate(pytx.inputs):
@@ -2359,6 +2359,34 @@ class UnsignedTransaction(AsciiSerializable):
       self.signer.signTx(wltId, callback, parentDlg)
 
 #############################################################################
+class BridgeTx(object):
+   """
+   A tx the bridge serves by hash: the PyTx and where the bridge places it.
+   height, timestamp and txIndex are UINT32_MAX when the bridge knows no
+   block for the tx (a zc, an unpooled tx, or a header it doesn't have).
+   A zc's timestamp is its mempool time if the bridge has it.
+   """
+   def __init__(self, pytx, height, timestamp, txIndex):
+      self.pytx = pytx
+      self.height = height
+      self.timestamp = timestamp
+      self.txIndex = txIndex
+
+#############################################################################
+def getTxsByHash(txHashes):
+   """
+   Asks the bridge for txs by hash, returns {hash: BridgeTx}, keyed by the
+   hash of each raw tx. Txs the bridge doesn't have are left out.
+   """
+   bridgeTxs = {}
+   for capnTx in TheBridge.service.getTxsByHash(txHashes):
+      pytx = PyTx().unserialize(bytes(capnTx.body.raw))
+      pytx.setRBF(capnTx.body.isRbf)
+      bridgeTxs[pytx.getHash()] = BridgeTx(
+         pytx, capnTx.height, capnTx.timestamp, capnTx.txIndex)
+   return bridgeTxs
+
+#############################################################################
 def getFeeForTx(txHash):
    if TheBDM.getState()==BDM_BLOCKCHAIN_READY:
       try:
@@ -2395,12 +2423,11 @@ def determineSentToSelfAmt(le, wlt):
    """
    amt = 0
    if le.isSTS:
-      txProto = TheBridge.service.getTxsByHash([le.txHash])
-      if le.txHash not in txProto:
+      bridgeTxs = getTxsByHash([le.txHash])
+      if le.txHash not in bridgeTxs:
          return (0, 0)
-      txData = txProto[le.txHash]
 
-      pytx = PyTx().unserialize(txData.body.raw)
+      pytx = bridgeTxs[le.txHash].pytx
       if pytx.getNumTxOut()==1:
          return (pytx.outputs[0].getValue(), -1)
       maxChainIndex = -5
