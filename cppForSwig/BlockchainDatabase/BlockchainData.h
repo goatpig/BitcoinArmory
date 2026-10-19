@@ -20,7 +20,7 @@ class TxHintCollision;
 namespace Armory
 {
    class Blockchain;
-   class Hash32;
+   struct Hash32;
    class BlockHeader;
 
    ////////

@@ -673,6 +673,7 @@ void DBSettings::reset()
    checkChain_ = false;
    clearMempool_ = false;
    automatedNode_ = false;
+   disableZC_ = false;
 
    xorKey_ = 0;
 }

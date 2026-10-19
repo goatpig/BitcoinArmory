@@ -29,6 +29,8 @@
 #include <Signer/ScriptSpender.h>
 #include <Network/WebSocketClient.h>
 #include <BlockchainDatabase/BlockchainData.h>
+#include <ZeroConf/Parser.h>
+#include <ZeroConf/Utils.h>
 
 #include "BDM_mainthread.h"
 #include "Server.h"
@@ -1833,6 +1835,7 @@ TEST_F(BlockUtilsBare, BlockXor)
    bdvPtr.reset();
 }
 
+////////
 TEST_F(BlockUtilsBare, ShutdownDuringNodeSync)
 {
    auto nodeRPC = std::dynamic_pointer_cast<NodeRPC_UnitTest>(
@@ -1841,11 +1844,7 @@ TEST_F(BlockUtilsBare, ShutdownDuringNodeSync)
    //set mocked RPC into a perpetual chain sync loop
    nodeRPC->loopOnSync = std::make_shared<std::promise<void>>();
    auto fut = nodeRPC->loopOnSync->get_future();
-
    theBDMt_->start(Config::DBSettings::initMode());
-   /*clients_->init();
-   auto bdvID = DBTestUtils::registerBDV(
-      clients_, Config::BitcoinSettings::getMagicBytes());*/
 
    //wait for mocked RPC to enter its sync loop
    fut.get();
@@ -1977,6 +1976,242 @@ TEST_F(BlockUtilsBare, DISABLED_PPrintTestChain)
 
       std::cout << std::endl;
    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+class BlockUtilsBareWithZC : public ::testing::Test
+{
+protected:
+   void initBDM()
+   {
+      Config::reset();
+      Config::DBSettings::setServiceType(SERVICE_UNITTEST);
+      Config::parseArgs({
+         "--datadir=./fakehomedir",
+         "--dbdir=./ldbtestdir",
+         "--satoshi-datadir=./blkfiletest",
+         "--db-type=DB_BARE",
+         "--thread-count=3",
+         "--public"},
+         Config::ProcessType::DB);
+
+      DBTestUtils::init();
+      theBDMt_ = new BlockDataManagerThread();
+      iface_ = theBDMt_->bdm()->getIFace();
+
+      auto nodePtr = std::dynamic_pointer_cast<NodeUnitTest>(
+         Config::NetworkSettings::bitcoinNodes().first);
+      nodePtr->setBDM(theBDMt_->bdm());
+      clients_ = new Clients(theBDMt_->bdm());
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   virtual void SetUp()
+   {
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
+
+      FileUtils::createDirectory(blkdir_ / "blocks");
+      FileUtils::createDirectory(homedir_);
+      FileUtils::createDirectory(ldbdir_);
+
+      // Put the first 5 blocks into the blkdir
+      blk0dat_ = FileUtils::getBlkFilename(blkdir_ / "blocks", 0);
+      TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+
+      wallet1id = "wallet1";
+      wallet2id = "wallet2";
+      LB1ID = TestChain::lb1B58ID;
+      LB2ID = TestChain::lb2B58ID;
+
+      initBDM();
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   virtual void TearDown(void)
+   {
+      auto nodePtr = std::dynamic_pointer_cast<NodeUnitTest>(
+         Config::NetworkSettings::bitcoinNodes().first);
+
+      if (clients_ != nullptr) {
+         clients_->shutdown();
+      }
+      theBDMt_->shutdown();
+
+      delete clients_;
+      delete theBDMt_;
+      clients_ = nullptr;
+      theBDMt_ = nullptr;
+
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
+      Config::reset();
+      CLEANUP_ALL_TIMERS();
+   }
+
+   BlockDataManagerThread *theBDMt_;
+   Clients* clients_;
+   LMDBBlockDatabase* iface_;
+
+   std::filesystem::path blkdir_{"./blkfiletest"sv};
+   std::filesystem::path homedir_{"./fakehomedir"sv};
+   std::filesystem::path ldbdir_{"./ldbtestdir"sv};
+   std::filesystem::path blk0dat_;
+
+   std::string wallet1id;
+   std::string wallet2id;
+   std::string LB1ID;
+   std::string LB2ID;
+};
+
+////////
+TEST_F(BlockUtilsBareWithZC, SpenderKnownHashes)
+{
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   clients_->init();
+   auto bdvID = DBTestUtils::registerBDV(
+      clients_, Config::BitcoinSettings::getMagicBytes());
+   std::vector<BinaryData> scrAddrVec {
+      TestChain::scrAddrA,
+      TestChain::scrAddrB,
+      TestChain::scrAddrC,
+      TestChain::scrAddrD,
+      TestChain::scrAddrE,
+      TestChain::scrAddrF
+   };
+
+   const std::vector<BinaryData> lb1ScrAddrs{
+      TestChain::lb1ScrAddr,
+      TestChain::lb1ScrAddrP2SH
+   };
+   const std::vector<BinaryData> lb2ScrAddrs{
+      TestChain::lb2ScrAddr,
+      TestChain::lb2ScrAddrP2SH
+   };
+
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+      false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb1ScrAddrs, TestChain::lb1B58ID,
+      false);
+   DBTestUtils::registerWallet(
+      clients_, bdvID, lb2ScrAddrs, TestChain::lb2B58ID,
+      false);
+
+   auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
+
+   //wait on signals
+   DBTestUtils::goOnline(clients_, bdvID);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
+
+   auto bdm = theBDMt_->bdm();
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(bdm.get(), DB_SELECT::HEADERS), 5U);
+
+   auto getBal = [bdm](const BinaryData& scrAddr)->uint64_t
+   { return DBTestUtils::getScrAddrBalance(scrAddr, bdm); };
+
+   EXPECT_EQ(getBal(TestChain::scrAddrA), 50 * COIN);
+   EXPECT_EQ(getBal(TestChain::scrAddrB), 70 * COIN);
+   EXPECT_EQ(getBal(TestChain::scrAddrC), 20 * COIN);
+   EXPECT_EQ(getBal(TestChain::scrAddrD), 65 * COIN);
+   EXPECT_EQ(getBal(TestChain::scrAddrE), 30 * COIN);
+   EXPECT_EQ(getBal(TestChain::scrAddrF), 5 * COIN);
+
+   EXPECT_EQ(getBal(TestChain::lb1ScrAddr), 5 * COIN);
+   EXPECT_EQ(getBal(TestChain::lb1ScrAddrP2SH), 25 * COIN);
+   EXPECT_EQ(getBal(TestChain::lb2ScrAddr), 30 * COIN);
+   EXPECT_EQ(getBal(TestChain::lb2ScrAddrP2SH), 0 * COIN);
+
+   //send from C to a fresh address
+   BinaryData theHash;
+   {
+      auto spendVal = 2 * COIN;
+      Signing::Signer signer;
+
+      //instantiate resolver feed overloaded object
+      auto feed = std::make_shared<ResolverUtils::TestResolverFeed>();
+      feed->addPrivKey(TestChain::privKeyAddrC.getRef());
+
+      //get utxo list for spend value
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(
+         bdm, { TestChain::scrAddrC });
+
+      //utxo from C
+      ASSERT_EQ(unspentVec.size(), 2);
+      ASSERT_EQ(unspentVec[0].amount, 10 * COIN);
+      signer.addSpender(std::make_shared<Signing::ScriptSpender>(
+         unspentVec[0]));
+
+      //all to address unknown to our wallets
+      auto recipientUnk = std::make_shared<Signing::Recipient_P2PKH>(
+         Cryptography::PRNG::fortuna.generateRandom(20), spendVal);
+      signer.addRecipient(recipientUnk);
+
+      signer.setFeed(feed);
+      signer.sign();
+      EXPECT_TRUE(signer.verify());
+
+      DBTestUtils::ZcVector zcVec;
+      auto serializedTx = signer.serializeSignedTx();
+      theHash = Tx{serializedTx}.getThisHash();
+      zcVec.push_back(serializedTx, 14000000);
+
+      DBTestUtils::pushNewZc(theBDMt_, zcVec);
+      DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
+   }
+
+   Types::TxKey zcKey = Types::INVALID_TX_KEY;
+   {
+      //check the zc in in the mempool
+      auto snapshot = bdm->zeroConfCont()->getSnapshot();
+      ASSERT_NE(snapshot, nullptr);
+      zcKey = snapshot->getKeyForHash(theHash);
+      ASSERT_TRUE(Types::isTxKeyValid(zcKey));
+      ASSERT_TRUE(Types::isThisAZCKey(zcKey));
+   }
+
+   //check the effect
+   EXPECT_EQ(getBal(TestChain::scrAddrC), 10 * COIN);
+
+   {
+      //hash should not be in known hashes yet
+      auto tx = bdm->getIFace()->beginTransaction(
+         DB_SELECT::KNOWNHASHES, LMDB::Mode::ReadOnly);
+      auto val = tx->get(LMDB::DataRef{theHash.getSize(), theHash.getCharPtr()});
+      ASSERT_EQ(val.len, 0);
+   }
+
+   //mine the tx
+   DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrA, 1);
+   DBTestUtils::waitOnNewBlockSignal(clients_, bdvID);
+   EXPECT_EQ(TestUtils::getTopBlockHeightInDB(bdm.get(), DB_SELECT::HEADERS), 6U);
+
+   {
+      //check the zc is out of the mempool
+      auto snapshot = bdm->zeroConfCont()->getSnapshot();
+      ASSERT_NE(snapshot, nullptr);
+      zcKey = snapshot->getKeyForHash(theHash);
+      ASSERT_FALSE(Types::isTxKeyValid(zcKey));
+   }
+
+   //check the effect
+   EXPECT_EQ(getBal(TestChain::scrAddrC), 10 * COIN);
+
+   {
+      //hash should now be in known hashes
+      auto tx = bdm->getIFace()->beginTransaction(
+         DB_SELECT::KNOWNHASHES, LMDB::Mode::ReadOnly);
+      auto val = tx->get(LMDB::DataRef{theHash.getSize(), theHash.getCharPtr()});
+      ASSERT_EQ(val.len, 8);
+   }
+
+   //cleanup
+   bdvPtr.reset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

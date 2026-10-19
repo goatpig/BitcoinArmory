@@ -136,7 +136,7 @@ struct TxOutParsingResult
 
 struct TxInParsingResult
 {
-   HashMap diff;
+   HashMap knownHashesToCommit;
    std::unordered_map<Armory::Types::TxIOKey, Armory::Types::TxIOKey> txInMap;
 };
 
