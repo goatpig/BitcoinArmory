@@ -20,6 +20,7 @@
 
 using namespace Armory;
 using namespace Armory::Bridge;
+using namespace std::chrono_literals;
 
 namespace
 {
@@ -702,8 +703,7 @@ namespace
    bool waitOnDb(std::future<T>& fut,
       const std::shared_ptr<AsyncClient::BlockDataViewer>& bdvPtr)
    {
-      while (fut.wait_for(std::chrono::milliseconds(250)) !=
-         std::future_status::ready) {
+      while (fut.wait_for(250ms) != std::future_status::ready) {
          if (!bdvPtr->isValid()) {
             return false;
          }
