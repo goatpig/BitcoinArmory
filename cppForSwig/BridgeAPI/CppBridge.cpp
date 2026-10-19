@@ -2768,9 +2768,10 @@ void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId ms
       bdvPtr = nullptr;
    }
    auto func = [wltManager = wltManager_, sockPtr = sockPtr_,
-      bdvPtr, hashes, msgId]()
+      bdvPtr, hashes, msgId]() mutable
    {
       wltManager->fetchTxs(bdvPtr, hashes);
+      bdvPtr.reset();
 
       auto txioCache = wltManager->txioCache();
       ReentrantLock lock(txioCache.get());
@@ -2838,6 +2839,12 @@ void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId ms
 
       auto payload = std::make_unique<WritePayload_Bridge>();
       payload->data = serializeCapnp(message);
+
+      //once the reply is out, the bridge may be gone. Let go of the manager
+      //first, so its last copy doesn't close the wallets on this thread
+      //while the caller opens them again: LMDB can't have a db open twice
+      //in one process
+      wltManager.reset();
       sockPtr->pushPayload(std::move(payload), nullptr);
    };
 
