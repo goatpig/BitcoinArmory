@@ -188,9 +188,9 @@ namespace TestUtils
          if (!fileMap.isValid()) {
             throw std::runtime_error("blk file mmap is invalid");
          }
-         std::vector<char> xoredData;
-         xoredData.reserve(((fileMap.size() + 7) & ~7));
-         xoredData.resize(fileMap.size());
+         //padded to the next multiple of 8 so the last 8-byte store stays
+         //within size(), only fileMap.size() bytes are written out
+         std::vector<char> xoredData((fileMap.size() + 7) & ~7);
 
          size_t offset = 0;
          uint64_t chunk;
@@ -209,7 +209,7 @@ namespace TestUtils
             )};
          std::fstream xoredFile{
             xoredFilename, std::ios::out | std::ios::binary};
-         xoredFile.write(&xoredData[0], xoredData.size());
+         xoredFile.write(&xoredData[0], fileMap.size());
          return xoredFilename;
       };
 

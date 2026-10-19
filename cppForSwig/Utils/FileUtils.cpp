@@ -220,9 +220,12 @@ FileCopy::FileCopy(const std::filesystem::path& path, size_t offset)
       }
       size -= offset;
 
-      //8 align the underlying buffer, resize to exact length
-      data_.reserve((size + 7) & ~7);
-      data_.resize(size);
+      //size the buffer to the next multiple of 8 so xorMe works on whole
+      //8-byte chunks. The padding has to be within size(): ASan builds flag
+      //any access past size(), even within capacity() (always on with libc++,
+      //on with libstdc++ if built with _GLIBCXX_SANITIZE_VECTOR)
+      data_.resize((size + 7) & ~7);
+      size_ = size;
 
 #ifdef _WIN32
       _read(fd, &data_[0], size);
@@ -249,6 +252,7 @@ FileCopy::FileCopy(const std::filesystem::path& path, size_t offset)
 void FileCopy::clear()
 {
    data_.clear();
+   size_ = 0;
 }
 
 ////
@@ -260,7 +264,7 @@ bool FileCopy::isValid() const
 ////
 size_t FileCopy::size() const
 {
-   return data_.size();
+   return size_;
 }
 
 ////
@@ -271,7 +275,7 @@ const uint8_t* FileCopy::ptr() const
 
 void FileCopy::xorMe(uint64_t xorKey)
 {
-   if (data_.capacity() % 8 != 0) {
+   if (data_.size() % 8 != 0) {
       throw std::length_error("xored block data is misaligned");
    }
 
@@ -283,7 +287,7 @@ void FileCopy::xorMe(uint64_t xorKey)
    }
 
    auto data64 = (uint64_t*)&data_[0];
-   for (unsigned i = 0; i < data_.capacity() / 8; i++) {
+   for (unsigned i = 0; i < data_.size() / 8; i++) {
       data64[i] ^= xorKey;
    }
 }
