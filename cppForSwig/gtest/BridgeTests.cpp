@@ -8065,9 +8065,16 @@ TEST_F(BridgeChainDataTests, GetTxsByHash_DbFallback)
    ASSERT_TRUE(success);
    ASSERT_EQ(fromCache.size(), hashes.size());
    for (const auto& txPair : fromCache) {
+      //the block of each tx and its index in it, as the db has them
+      auto txKey = iface_->getDBKeyForHash(txPair.first);
+      ASSERT_TRUE(Types::isTxKeyValid(txKey));
+      auto header = theBDMt_->bdm()->blockchain()->getHeaderById(
+         Types::getBlockIDFromTxKey(txKey));
+      ASSERT_NE(header, nullptr);
       EXPECT_EQ(txPair.second.height, heights[txPair.first]);
-      EXPECT_NE(txPair.second.txIndex, UINT32_MAX);
-      EXPECT_NE(txPair.second.timestamp, UINT32_MAX);
+      EXPECT_EQ(txPair.second.height, header->getBlockHeight());
+      EXPECT_EQ(txPair.second.txIndex, Types::getTxIndexFromTxKey(txKey));
+      EXPECT_EQ(txPair.second.timestamp, header->getTimestamp());
    }
 
    //a fresh bridge with no wallet has nothing cached, the db still has
@@ -8242,7 +8249,19 @@ TEST_F(BridgeChainDataTests, GetTxsByHash_ZcThenMined)
    ASSERT_EQ(asMined.size(), 1);
    EXPECT_EQ(asMined.begin()->first, zcHash);
    EXPECT_EQ(asMined.begin()->second.height, 6U);
-   EXPECT_NE(asMined.begin()->second.txIndex, UINT32_MAX);
+
+   //its block and index in it, as the db has them
+   auto minedKey = iface_->getDBKeyForHash(zcHash);
+   ASSERT_TRUE(Types::isTxKeyValid(minedKey));
+   ASSERT_FALSE(Types::isThisAZCKey(minedKey));
+   auto minedHeader = theBDMt_->bdm()->blockchain()->getHeaderById(
+      Types::getBlockIDFromTxKey(minedKey));
+   ASSERT_NE(minedHeader, nullptr);
+   EXPECT_EQ(minedHeader->getBlockHeight(), 6U);
+   EXPECT_NE(Types::getTxIndexFromTxKey(minedKey), 0U); //not the coinbase
+   EXPECT_EQ(asMined.begin()->second.txIndex,
+      Types::getTxIndexFromTxKey(minedKey));
+   EXPECT_EQ(asMined.begin()->second.timestamp, minedHeader->getTimestamp());
 
    bridge_.reset();
    walletBridge.reset();
