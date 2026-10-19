@@ -200,6 +200,7 @@ namespace {
                capnTx.setKey(tx.first);
                capnTx.setIsChainedZc(tx.second.isChained());
                capnTx.setIsRbf(tx.second.isRBF());
+               capnTx.setTxTime(tx.second.getTxTime());
             }
             return builder;
          }
@@ -248,6 +249,7 @@ namespace {
                capnTx.setKey(tx.first);
                capnTx.setIsChainedZc(tx.second.isChained());
                capnTx.setIsRbf(tx.second.isRBF());
+               capnTx.setTxTime(tx.second.getTxTime());
             }
             return builder;
          }

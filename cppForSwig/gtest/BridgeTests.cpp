@@ -8208,8 +8208,10 @@ TEST_F(BridgeChainDataTests, GetTxsByHash_ZcThenMined)
       ASSERT_TRUE(false) << e.what();
    }
    ASSERT_FALSE(signedTx.empty());
+   auto beforeZc = (uint32_t)time(0);
    broadcastTx(bridge_, signedTx);
    auto zcLedgers = waitOnZc();
+   auto afterZc = (uint32_t)time(0);
    ASSERT_EQ(zcLedgers.size(), 1);
    auto zcHash = Tx(signedTx).getThisHash();
    ASSERT_EQ(zcLedgers[0].getTxHash(), zcHash);
@@ -8237,8 +8239,9 @@ TEST_F(BridgeChainDataTests, GetTxsByHash_ZcThenMined)
    EXPECT_EQ(asZc.begin()->first, zcHash);
    EXPECT_EQ(asZc.begin()->second.height, UINT32_MAX);
    EXPECT_EQ(asZc.begin()->second.txIndex, UINT32_MAX);
-   //the zc's time comes from the tx, and the db's txs carry none
-   EXPECT_EQ(asZc.begin()->second.timestamp, UINT32_MAX);
+   //the time the db's mempool got the zc
+   EXPECT_GE(asZc.begin()->second.timestamp, beforeZc);
+   EXPECT_LE(asZc.begin()->second.timestamp, afterZc);
 
    //once mined, the cached zc copy is replaced
    DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrA, 1);
