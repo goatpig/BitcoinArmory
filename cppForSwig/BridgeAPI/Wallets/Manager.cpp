@@ -216,6 +216,7 @@ const std::map<std::string, ContainerPtr>& WalletManager::getContainerMap() cons
 ContainerPtr WalletManager::getContainer(
    const Wallets::WalletId& wltId) const
 {
+   ReentrantLock lock(this);
    auto iter = wallets_.find(wltId);
    if (iter == wallets_.end()) {
       throw std::runtime_error(std::format("no wallet for id {}",
@@ -227,6 +228,7 @@ ContainerPtr WalletManager::getContainer(
 ContainerPtr WalletManager::getContainer(
    const Wallets::WalletId& wltId, const Wallets::AddressAccountId& accId) const
 {
+   ReentrantLock lock(this);
    auto wltIter = wallets_.find(wltId);
    if (wltIter == wallets_.end()) {
       throw std::runtime_error(std::format("i do not know wallet {}",
