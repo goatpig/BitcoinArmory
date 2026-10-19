@@ -159,7 +159,7 @@ void WalletManager::fetchTxs(
 ////
 bool WalletManager::hasWallet(const Wallets::WalletId& id)
 {
-   std::unique_lock<std::mutex> lock(mu_);
+   ReentrantLock lock(this);
    auto wltIter = wallets_.find(id);
    return wltIter != wallets_.end();
 }
