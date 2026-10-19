@@ -45,13 +45,13 @@ namespace
    std::vector<Ledgers::Entry> getPageForId(WalletManager* mgr, uint32_t pageId)
    {
       ReentrantLock lock(mgr);
+      ReentrantLock cacheLock(mgr->txioCache().get());
 
       std::vector<std::map<Types::TxKey, Ledgers::Entry>> walletLedgers;
       unsigned totalSize = 0;
       auto filteredMap = mgr->getFilteredContainerMap();
       walletLedgers.reserve(filteredMap.size());
       for (const auto& wltCont : filteredMap) {
-         ReentrantLock cacheLock(mgr->txioCache().get());
          const auto txioMap = wltCont.second->getTxioMap();
          auto context = Ledgers::prepareContext(txioMap, mgr->getDbCache(), {});
          walletLedgers.emplace_back(std::move(Ledgers::computeLedgerMap(
@@ -73,7 +73,10 @@ namespace
    std::vector<Ledgers::Entry> getLedgersForZCs(WalletManager* mgr)
    {
       //this is only used to generate ledgers for ZC notifs
+      ReentrantLock lock(mgr);
       auto txioCache = mgr->txioCache();
+      ReentrantLock cacheLock(txioCache.get());
+
       std::vector<std::map<Types::TxKey, Ledgers::Entry>> walletLedgers;
       unsigned totalSize = 0;
       auto filteredMap = mgr->getFilteredContainerMap();
@@ -83,7 +86,6 @@ namespace
             [wltPtr=wltCont.second](const Types::ScrAddr& addr)->bool
             { return wltPtr->hasScrAddr(addr); }
          );
-         ReentrantLock cacheLock(txioCache.get());
          auto context = Ledgers::prepareContext(txioMap, mgr->getDbCache(), {});
          walletLedgers.emplace_back(std::move(Ledgers::computeLedgerMap(
             txioMap, 0, UINT32_MAX, wltCont.first, context)));
