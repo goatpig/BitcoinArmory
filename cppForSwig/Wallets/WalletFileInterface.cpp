@@ -813,13 +813,18 @@ void WalletDBInterface::compactFile()
          }
          std::filesystem::rename(copyName, fullDbPath);
       } catch (const std::filesystem::filesystem_error& e) {
-         std::cout << e.what() << std::endl;
          std::error_code ec;
          if (linked) {
+            LOGWARN << std::format(
+               "compactFile file swap via hardlink failed with error: \"{}\"",
+               e.what());
             //old file is still in place, drop the link (do not wipe it!)
             std::filesystem::remove(swapPath, ec);
          } else if (moved) {
             //put the old file back
+            LOGWARN << std::format(
+               "compactFile file swap via move failed with error: \"{}\"",
+               e.what());
             std::filesystem::rename(swapPath, fullDbPath, ec);
          }
          if (FileUtils::pathExists(fullDbPath, 0)) {
