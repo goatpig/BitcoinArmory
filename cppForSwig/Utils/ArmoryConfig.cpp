@@ -60,7 +60,7 @@ using namespace Armory::Config;
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
-void Armory::Config::printHelp(void)
+void Armory::Config::printHelp()
 {
   static std::string_view helpMsg = R"(
 --help                     print help message and exit
@@ -69,8 +69,6 @@ void Armory::Config::printHelp(void)
 --rescan                   delete all processed history data and rescan
                            blockchain from the first block
 --rebuild                  delete all DB data and build and scan from scratch
---checkchain               builds db (no scanning) with full txhints, then
-                           verifies all tx (consensus and sigs).
 --datadir                  path to the operation folder
 --dbdir                    path to folder containing the database files.
                            If empty, a new db will be created there
@@ -124,6 +122,11 @@ void Armory::Config::printHelp(void)
 
    std::cerr << helpMsg << std::endl;
 }
+
+/*
+--checkchain               builds db (no scanning) with full txhints, then
+                           verifies all tx (consensus and sigs).
+*/
 
 ////////////////////////////////////////////////////////////////////////////////
 const std::filesystem::path& Armory::Config::getDataDir()
@@ -974,7 +977,7 @@ void Pathing::processArgs(const std::map<std::string, std::string>& args,
 
    bool autoDbDir = false;
    if (dbDir_.empty()) {
-      dbDir_ = Armory::Config::getDataDir() / DEFAULT_DBDIR_SUFFIX;
+      dbDir_ = Config::getDataDir() / DEFAULT_DBDIR_SUFFIX;
       autoDbDir = true;
    }
 
@@ -1004,8 +1007,8 @@ void Pathing::processArgs(const std::map<std::string, std::string>& args,
 
    //test all paths
    if (!FileUtils::pathExists(getDataDir(), 6)) {
-      throw DbErrorMsg({getDataDir().string() +
-         " is not a valid datadir path"});
+      throw DbErrorMsg(std::format("{} is not a valid datadir path",
+         getDataDir().string()));
    }
 
    if (procType != ProcessType::DB) {

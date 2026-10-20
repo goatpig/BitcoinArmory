@@ -91,31 +91,36 @@ BinaryData CppBridgeSocket::getPayload()
       BinaryDataRef dataRef = data.getRef();
       auto packetSize = dataRef.getSize();
 
-      if (!data.empty() && bip151Connection_->connectionComplete()) {
-         //get decrypted length
-         auto decrLen = bip151Connection_->decryptPacket(
-            data.getSliceRef(0, POLY1305MACLEN + AUTHASSOCDATAFIELDLEN),
-            emptySizeCheck);
+      if (bip151Connection_->connectionComplete()) {
+         if (data.getSize() > POLY1305MACLEN + AUTHASSOCDATAFIELDLEN) {
+            //get decrypted length
+            auto decrLen = bip151Connection_->decryptPacket(
+               data.getSliceRef(0, POLY1305MACLEN + AUTHASSOCDATAFIELDLEN),
+               emptySizeCheck);
 
-         if (decrLen == -1 || decrLen > BRIDGE_SOCKET_MAXLEN) {
-            //fatal error
-            throw std::runtime_error("packet exceeds BRIDGE_SOCKET_MAXLEN, aborting");
+            if (decrLen == -1 || decrLen > BRIDGE_SOCKET_MAXLEN) {
+               //fatal error
+               throw std::runtime_error("packet exceeds BRIDGE_SOCKET_MAXLEN, aborting");
+            }
+
+            if (decrLen > (ssize_t)data.getSize() + POLY1305MACLEN) {
+               //not enough data to decrypt, wait for more
+               dataRef.reset();
+            } else {
+               //decrypt the data
+               bip151Connection_->decryptPacket(data.getRef(), data);
+
+               //point to the head of the decrypted cleartext
+               dataRef.setRef(data.getPtr() + AUTHASSOCDATAFIELDLEN, decrLen);
+
+               //keep track of this packet's size
+               packetSize = decrLen + AUTHASSOCDATAFIELDLEN + POLY1305MACLEN;
+               encr = true;
+            }
+         } else {
+            //packet is too short for decryption, need more data
+            dataRef.reset();
          }
-
-         if (decrLen > (ssize_t)data.getSize() + POLY1305MACLEN) {
-            //not enough data to decrypt, continue
-            continue;
-         }
-
-         //decrypt the data
-         bip151Connection_->decryptPacket(data.getRef(), data);
-
-         //point to the head of the decrypted cleartext
-         dataRef.setRef(data.getPtr() + AUTHASSOCDATAFIELDLEN, decrLen);
-
-         //keep track of this packet's size
-         packetSize = decrLen + AUTHASSOCDATAFIELDLEN + POLY1305MACLEN;
-         encr = true;
       }
 
       if (dataRef.empty()) {
@@ -327,7 +332,7 @@ void WritePayload_Bridge::serialize(std::vector<uint8_t>& payload)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-size_t WritePayload_Bridge::getSerializedSize(void) const
+size_t WritePayload_Bridge::getSerializedSize() const
 {
    return data.getSize() + 8 + POLY1305MACLEN;
 }

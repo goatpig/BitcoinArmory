@@ -95,7 +95,7 @@ namespace Armory
          bool blocking_ = true;
 
       public:
-         typedef std::function<void(AcceptStruct)> AcceptCallback;
+         using AcceptCallback = std::function<bool(AcceptStruct)>;
 
       protected:
          struct sockaddr serv_addr_;

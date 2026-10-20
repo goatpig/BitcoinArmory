@@ -250,7 +250,10 @@ void SocketPrototype::listen(AcceptCallback callback, SOCKET& sockfd)
             //accept socket and trigger callback
             AcceptStruct astruct;
             astruct.sockfd_ = accept(sockfd, &astruct.saddr_, &astruct.addrlen_);
-            callback(std::move(astruct));
+            if (callback(std::move(astruct)) == false) {
+               //exit listen loop if the callback returns false;
+               break;
+            }
          }
       }
    } catch (...) {
@@ -281,6 +284,7 @@ PersistentSocket::PersistentSocket(SOCKET sockfd, const std::string& name) :
 
 PersistentSocket::~PersistentSocket()
 {
+   shutdown();
    for (auto& thr : threads_) {
       if (thr.joinable()) {
          thr.join();
@@ -683,6 +687,7 @@ bool PersistentSocket::connectToRemote()
 
    if (sockfd_ == SOCK_MAX) {
       if (!openSocket(false)) {
+         LOGERR << "failed to open socket " << name_;
          return false;
       }
    }
@@ -701,7 +706,7 @@ bool PersistentSocket::connectToRemote()
          shutdown();
       }
    };
-   threads_.push_back(std::thread(socketLBD));
+   threads_.emplace_back(std::thread(socketLBD));
    return true;
 }
 
@@ -955,12 +960,12 @@ void ListenServer::join()
 ///////////////////////////////////////////////////////////////////////////////
 void ListenServer::listenThread(ReadCallback callback)
 {
-   auto acceptlbd = [callback, this](AcceptStruct astruct)->void
+   auto acceptlbd = [callback, this](AcceptStruct astruct)->bool
    {
       astruct.readCallback_ = callback;
       this->acceptProcess(std::move(astruct));
+      return true;
    };
-
    listenSocket_->listen(acceptlbd);
 }
 

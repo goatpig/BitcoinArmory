@@ -15,6 +15,7 @@
 #include <reorgTest/blkdata.h>
 #include <Utils/ArmoryConfig.h>
 #include <Utils/FileUtils.h>
+#include <Utils/BIP15x_Handshake.h>
 #include <Ledgers/LedgerEntry.h>
 
 #include <Wallets/Accounts/AddressAccounts.h>
@@ -4174,6 +4175,376 @@ TEST_F(WalletManagerTests, Migrate_Reject)
    } catch (const std::exception& e) {
       EXPECT_EQ(e.what(), std::string{"rejected migration"});
    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// BridgeSocketTests
+class BridgeSocketTests : public ::testing::Test
+{
+protected:
+   void SetUp() override
+   {
+      std::srand(std::time({}));
+      homedir = std::filesystem::path("./fakehomedir");
+      FileUtils::removeDirectory(homedir);
+      std::filesystem::create_directory(homedir);
+
+      serverStore_ = std::make_unique<NetworkPeers::ServerStore>(
+         Cryptography::ECDSA::createNewPrivateKey());
+      auto serverKey = serverStore_->getOwnPublicKey();
+
+      Config::reset();
+      Config::parseArgs({
+         std::format("--uiPubKey={}", serverKey.toHexStr()),
+         "--offline",
+         "--datadir=./fakehomedir" },
+         Config::ProcessType::Bridge);
+   }
+
+   void TearDown() override
+   {
+      Config::reset();
+   }
+
+   ////////
+   class BridgeTestServerSocket : public Network::PersistentSocket
+   {
+   public:
+      std::shared_ptr<Bridge::CppBridgeSocket> bridgeClientSock;
+
+   public:
+      BridgeTestServerSocket(Network::AcceptStruct acceptStruct,
+         std::shared_ptr<Bridge::CppBridgeSocket> sockPtr) :
+         PersistentSocket{acceptStruct.sockfd_, "ye_olde_test_server"},
+         bridgeClientSock{sockPtr}
+      {}
+
+      SocketType type() const override
+      {
+         return SocketType::CppBridge;
+      }
+
+      void pushPayload(
+         std::unique_ptr<Network::Socket_WritePayload> writePayload,
+         std::shared_ptr<Network::Socket_ReadPayload>) override
+      {
+         std::vector<uint8_t> data;
+         writePayload->serialize(data);
+         queuePayloadForWrite(data);
+      }
+   };
+
+   class RawBridgePayload : public Network::Socket_WritePayload
+   {
+      std::vector<uint8_t> data;
+
+   public:
+      RawBridgePayload(BinaryData bd) :
+         Network::Socket_WritePayload{},
+         data{std::move(bd.release())}
+      {}
+
+      void serialize(std::vector<uint8_t>& output) override
+      {
+         output = std::move(data);
+      }
+
+      std::string serializeToText() override
+      {
+         throw std::runtime_error("cannot serialize to text");
+      }
+
+      size_t getSerializedSize() const override
+      {
+         return data.size();
+      }
+   };
+
+   ////////
+   void injectClientKey(Network::port_t port)
+   {
+      SecureBinaryData clientKey(33);
+      std::fstream file(homedir / "client_cookie",
+         std::ios::in | std::ios::binary);
+      file.read(clientKey.getCharPtr(), clientKey.getSize());
+
+      NetworkPeers::PeerKey clientPeer{
+         clientKey.getRef(), NetworkPeers::PeerType::Client};
+      serverStore_->addPeer(clientPeer, {std::format("127.0.0.1:{}", port)}, {});
+   }
+
+protected:
+   std::unique_ptr<NetworkPeers::ServerStore> serverStore_;
+   std::filesystem::path homedir;
+};
+
+TEST_F(BridgeSocketTests, EstablishConnection)
+{
+   //setup & start the listen server
+   Network::port_t port = (uint16_t)rand() % 10000 + 50000;
+   std::promise<Network::AcceptStruct> acceptProm;
+   auto fut = acceptProm.get_future();
+   auto listenLbd = [port](std::promise<Network::AcceptStruct> prom) {
+      Network::SimpleSocket listenSocket{"127.0.0.1", port, "listen_socket"};
+      listenSocket.listen(
+         [&prom](Network::AcceptStruct accStruct)->bool {
+            prom.set_value(std::move(accStruct));
+            return false;
+         });
+   };
+   auto listenThr = std::thread(listenLbd, std::move(acceptProm));
+
+   //wait on listen thread to start then connect
+   std::this_thread::sleep_for(1s);
+   auto client = std::make_shared<Bridge::CppBridgeSocket>("127.0.0.1", port);
+   ASSERT_TRUE(client->connectToRemote());
+   auto acceptStruct = fut.get();
+   listenThr.join();
+
+   //client should have written out its pubkey now
+   injectClientKey(port);
+
+   //we have a socket for the server side, now run it
+   ASSERT_NE(acceptStruct.sockfd_, SOCK_MAX);
+   BridgeTestServerSocket server{acceptStruct, client};
+   ASSERT_TRUE(server.connectToRemote());
+
+   /*
+   Run bridge socket getPayload in its own thread, it will block until after
+   the AEAD handshake is done and the first actual payload is delivered.
+   */
+   std::promise<BinaryData> firstPacketProm;
+   auto firstPacketFut = firstPacketProm.get_future();
+   auto readUntilFirstPacketThr = std::thread(
+      [&client](std::promise<BinaryData> prom)
+      {
+         auto firstPacket = client->getPayload();
+         prom.set_value(std::move(firstPacket));
+      }, std::move(firstPacketProm)
+   );
+
+   /* drive the server side AEAD handshake */
+   BIP151Connection serverBIP15xSession{serverStore_->getView(), false};
+   auto serverWriteCb = [&server, &serverBIP15xSession]
+   (const BinaryData& data, ArmoryAEAD::BIP151_PayloadType pType, bool encrypt) {
+      uint32_t packetLen = data.getSize() + 1;
+      std::unique_ptr<RawBridgePayload> payload;
+      if (encrypt) {
+         //prepare ciphertext target
+         BinaryData target;
+         target.resize(packetLen + POLY1305MACLEN + AUTHASSOCDATAFIELDLEN);
+
+         //set packet size
+         std::memcpy(target.getPtr(), &packetLen, sizeof(uint32_t));
+
+         //payload type
+         target[4] = (uint8_t)pType;
+
+         //copy the data
+         std::memcpy(target.getPtr() + 5, data.getPtr(), data.getSize());
+
+         //encrypt
+         serverBIP15xSession.assemblePacket(
+            target.getSliceRef(0, packetLen + AUTHASSOCDATAFIELDLEN),
+            target.getPtr(), target.getSize());
+
+         //package in payload
+         payload = std::make_unique<RawBridgePayload>(std::move(target));
+      } else {
+         BinaryWriter bw(packetLen);
+         bw.put_uint8_t((uint8_t)pType);
+         bw.put_BinaryData(data);
+         payload = std::make_unique<RawBridgePayload>(bw.getData());
+      }
+      server.pushPayload(std::move(payload), nullptr);
+   };
+
+   //1. server sends start
+   {
+      ASSERT_EQ(ArmoryAEAD::BIP15x_Handshake::serverSideHandshake(
+         &serverBIP15xSession, ArmoryAEAD::BIP151_PayloadType::Start,
+         {}, serverWriteCb),
+         ArmoryAEAD::HandshakeState::StepSuccessful
+      );
+   }
+
+   //2. expect encAck
+   //NOTE: encAck and encInit are sent back to back from the same path,
+   //chances are they show up as a single packet
+   auto encAckReply = server.getPacket();
+   {
+      ASSERT_GE(encAckReply.size(), 34);
+      ASSERT_EQ(encAckReply[0], (uint8_t)ArmoryAEAD::BIP151_PayloadType::EncAck);
+      BinaryDataRef encAckBdr{encAckReply.data() + 1, 33};
+      ASSERT_EQ(ArmoryAEAD::BIP15x_Handshake::serverSideHandshake(
+         &serverBIP15xSession, ArmoryAEAD::BIP151_PayloadType::EncAck,
+         encAckBdr, nullptr),
+         ArmoryAEAD::HandshakeState::StepSuccessful
+      );
+   }
+
+   //3. expect encInit
+   {
+      std::vector<uint8_t> encInitReply;
+      if (encAckReply.size() > 34) {
+         encInitReply = std::vector<uint8_t>{encAckReply.begin() + 34, encAckReply.end()};
+      } else {
+         encInitReply = server.getPacket();
+      }
+      ASSERT_EQ(encInitReply.size(), 35);
+      ASSERT_EQ(encInitReply[0], (uint8_t)ArmoryAEAD::BIP151_PayloadType::EncInit);
+      BinaryDataRef encInitBdr{encInitReply.data() + 1, encInitReply.size() - 1};
+      ASSERT_EQ(ArmoryAEAD::BIP15x_Handshake::serverSideHandshake(
+         &serverBIP15xSession, ArmoryAEAD::BIP151_PayloadType::EncInit,
+         encInitBdr, serverWriteCb),
+         ArmoryAEAD::HandshakeState::StepSuccessful
+      );
+   }
+
+   /* channel should be encrytped from now on */
+   ASSERT_TRUE(serverBIP15xSession.connectionComplete());
+
+   //4. expect auth challenge
+   {
+      auto authChallenge = server.getPacket();
+      ASSERT_EQ(authChallenge.size(), 33 + POLY1305MACLEN + AUTHASSOCDATAFIELDLEN);
+
+      //this should be an encrypted packet
+      BinaryData clearText;
+      auto decrLen = serverBIP15xSession.decryptPacket(
+         BinaryDataRef::fromVector(authChallenge, POLY1305MACLEN + AUTHASSOCDATAFIELDLEN),
+         clearText);
+      ASSERT_EQ(decrLen, 33);
+
+      clearText.resize(decrLen + AUTHASSOCDATAFIELDLEN);
+      ASSERT_EQ(serverBIP15xSession.decryptPacket(
+         BinaryDataRef::fromVector(authChallenge),
+         clearText), 0);
+
+      ASSERT_EQ(clearText[4], (uint8_t)ArmoryAEAD::BIP151_PayloadType::Challenge);
+      ASSERT_EQ(ArmoryAEAD::BIP15x_Handshake::serverSideHandshake(
+         &serverBIP15xSession, ArmoryAEAD::BIP151_PayloadType::Challenge,
+         clearText.getSliceRef(5, clearText.getSize() - 5), serverWriteCb),
+         ArmoryAEAD::HandshakeState::StepSuccessful
+      );
+   }
+
+   //5. expect propose
+   {
+      auto propose = server.getPacket();
+      ASSERT_EQ(propose.size(), 33 + POLY1305MACLEN + AUTHASSOCDATAFIELDLEN);
+
+      //this should be an encrypted packet
+      BinaryData clearText;
+      auto decrLen = serverBIP15xSession.decryptPacket(
+         BinaryDataRef::fromVector(propose, POLY1305MACLEN + AUTHASSOCDATAFIELDLEN),
+         clearText);
+      ASSERT_EQ(decrLen, 33);
+
+      clearText.resize(decrLen + AUTHASSOCDATAFIELDLEN);
+      ASSERT_EQ(serverBIP15xSession.decryptPacket(
+         BinaryDataRef::fromVector(propose),
+         clearText), 0);
+
+      ASSERT_EQ(clearText[4], (uint8_t)ArmoryAEAD::BIP151_PayloadType::Propose);
+      ASSERT_EQ(ArmoryAEAD::BIP15x_Handshake::serverSideHandshake(
+         &serverBIP15xSession, ArmoryAEAD::BIP151_PayloadType::Propose,
+         clearText.getSliceRef(5, clearText.getSize() - 5), serverWriteCb),
+         ArmoryAEAD::HandshakeState::StepSuccessful
+      );
+   }
+
+   //6. expect reply
+   {
+      auto reply = server.getPacket();
+      ASSERT_EQ(reply.size(), 65 + POLY1305MACLEN + AUTHASSOCDATAFIELDLEN);
+
+      //this should be an encrypted packet
+      BinaryData clearText;
+      auto decrLen = serverBIP15xSession.decryptPacket(
+         BinaryDataRef::fromVector(reply, POLY1305MACLEN + AUTHASSOCDATAFIELDLEN),
+         clearText);
+      ASSERT_EQ(decrLen, 65);
+
+      clearText.resize(decrLen + AUTHASSOCDATAFIELDLEN);
+      ASSERT_EQ(serverBIP15xSession.decryptPacket(
+         BinaryDataRef::fromVector(reply),
+         clearText), 0);
+
+      ASSERT_EQ(clearText[4], (uint8_t)ArmoryAEAD::BIP151_PayloadType::Reply);
+      ASSERT_EQ(ArmoryAEAD::BIP15x_Handshake::serverSideHandshake(
+         &serverBIP15xSession, ArmoryAEAD::BIP151_PayloadType::Reply,
+         clearText.getSliceRef(5, clearText.getSize() - 5), nullptr),
+         ArmoryAEAD::HandshakeState::Completed
+      );
+   }
+
+   //send a packet from server to end the client's getPayload loop
+   auto serverSidePacket = BinaryData::fromString("hello world, from the server"sv);
+   serverWriteCb(serverSidePacket, ArmoryAEAD::BIP151_PayloadType::SinglePacket, true);
+
+   //grab the first packet down the queue
+   auto deliveredPacket = firstPacketFut.get();
+   EXPECT_EQ(deliveredPacket, serverSidePacket);
+   readUntilFirstPacketThr.join();
+
+   //feed it an encrypted packet in 2 parts, first part is <20 bytes
+   auto lorem1 = BinaryData::fromString("Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua"sv);
+   {
+      auto packetLen = lorem1.getSize() + 1;
+      BinaryData target;
+      target.resize(packetLen + POLY1305MACLEN + AUTHASSOCDATAFIELDLEN);
+      std::memcpy(target.getPtr(), &packetLen, sizeof(uint32_t));
+      target[4] = (uint8_t)ArmoryAEAD::BIP151_PayloadType::SinglePacket;
+      std::memcpy(target.getPtr() + 5, lorem1.getPtr(), lorem1.getSize());
+      serverBIP15xSession.assemblePacket(
+         target.getSliceRef(0, packetLen + AUTHASSOCDATAFIELDLEN),
+         target.getPtr(), target.getSize());
+
+      auto payload1 = std::make_unique<RawBridgePayload>(
+         std::move(target.getSliceCopy(0, 16)));
+      auto payload2 = std::make_unique<RawBridgePayload>(
+         std::move(target.getSliceCopy(16, target.getSize() - 16)));
+
+      server.pushPayload(std::move(payload1), nullptr);
+      std::this_thread::sleep_for(1s);
+      server.pushPayload(std::move(payload2), nullptr);
+   }
+   auto lorem1FromClient = client->getPayload();
+   EXPECT_EQ(lorem1, lorem1FromClient);
+
+   //feed it an encrypted packet in 3 parts
+   auto lorem2 = BinaryData::fromString("Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat."sv);
+   {
+      auto packetLen = lorem2.getSize() + 1;
+      BinaryData target;
+      target.resize(packetLen + POLY1305MACLEN + AUTHASSOCDATAFIELDLEN);
+      std::memcpy(target.getPtr(), &packetLen, sizeof(uint32_t));
+      target[4] = (uint8_t)ArmoryAEAD::BIP151_PayloadType::SinglePacket;
+      std::memcpy(target.getPtr() + 5, lorem2.getPtr(), lorem2.getSize());
+      serverBIP15xSession.assemblePacket(
+         target.getSliceRef(0, packetLen + AUTHASSOCDATAFIELDLEN),
+         target.getPtr(), target.getSize());
+
+      auto payload1 = std::make_unique<RawBridgePayload>(
+         std::move(target.getSliceCopy(0, 30)));
+      auto payload2 = std::make_unique<RawBridgePayload>(
+         std::move(target.getSliceCopy(30, 20)));
+      auto payload3 = std::make_unique<RawBridgePayload>(
+         std::move(target.getSliceCopy(50, target.getSize() - 50)));
+
+      server.pushPayload(std::move(payload1), nullptr);
+      std::this_thread::sleep_for(1s);
+      server.pushPayload(std::move(payload2), nullptr);
+      std::this_thread::sleep_for(1s);
+      server.pushPayload(std::move(payload3), nullptr);
+   }
+   auto lorem2FromClient = client->getPayload();
+   EXPECT_EQ(lorem2, lorem2FromClient);
+
+   //cleanup
+   client->shutdown();
+   server.shutdown();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
