@@ -60,7 +60,7 @@ TEST(SettingsUtilsTest, GetKeyValsFromLines_SkipsEmptyLines)
 class HKDF256Test : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void)
+   void SetUp() override
    {
       // Official SHA-256 test vector data from RFC 5869.
       string ikm1_hexstr = "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b";
@@ -123,7 +123,7 @@ TEST_F(HKDF256Test, RFC5869Vectors)
 class BinaryDataTest : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void) 
+   void SetUp() override
    {
       str0_ = "";
       str4_ = "1234abcd";
@@ -674,7 +674,7 @@ TEST_F(BinaryDataTest, DISABLED_CompareBench)
 class BinaryDataRefTest : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void)
+   void SetUp() override
    {
       str0_ = "";
       str4_ = "1234abcd";
@@ -1377,7 +1377,7 @@ TEST(BinaryReadWriteTest, ReaderEndian)
 class BtcUtilsTest : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void) 
+   void SetUp() override
    {
       homedir_ = std::filesystem::path("./fakehomedir");
       FileUtils::removeDirectory(homedir_);
@@ -2012,7 +2012,7 @@ TEST_F(BtcUtilsTest, RpcAuthString)
 class BlockObjTest : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void)
+   void SetUp() override
    {
       rawHead_ = READHEX(
          "01000000"
@@ -2269,7 +2269,7 @@ TEST_F(BlockObjTest, TxUnserialize)
 class StoredBlockObjTest : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void)
+   void SetUp() override
    {
       rawHead_ = READHEX(
          "01000000"
@@ -3219,7 +3219,7 @@ TEST_F(StoredBlockObjTest, SHeaderFullBlock)
 class LMDBTest : public ::testing::Test
 {
 protected:
-   virtual void SetUp()
+   void SetUp() override
    {
       homedir_ = std::filesystem::path("./fakehomedir");
       FileUtils::removeDirectory(homedir_);
@@ -3847,7 +3847,7 @@ class TestCryptoECDSA : public ::testing::Test
 {
 protected:
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp(void)
+   void SetUp() override
    {
       verifyX = SecureBinaryData{READHEX("39a36013301597daef41fbe593a02cc513d0b55527ec2df1050e2e8ff49c85c2")};
       verifyY = SecureBinaryData{READHEX("3cbe7ded0e7ce6a594896b8f62888fdbc5c8821305e2ea42bf01e37300116281")};
@@ -3884,7 +3884,7 @@ protected:
 
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
+   void TearDown() override
    {
       CLEANUP_ALL_TIMERS();
    }
@@ -3943,7 +3943,7 @@ TEST_F(TestCryptoECDSA, VerifyPubKeyValidity)
 class TestTxHashFilters : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void)
+   void SetUp() override
    {
       homedir_ = std::filesystem::path("./fakehomedir");
       FileUtils::removeDirectory(homedir_);
@@ -3958,7 +3958,7 @@ protected:
       iface_ = new LMDBBlockDatabase({});
    }
 
-   virtual void TearDown(void)
+   void TearDown() override
    {
       iface_->closeDatabases();
       delete iface_;
@@ -3970,7 +3970,7 @@ protected:
       CLEANUP_ALL_TIMERS();
    }
 
-   bool standardOpenDBs(void)
+   bool standardOpenDBs()
    {
       iface_->openDatabases();
       return iface_->databasesAreOpen();
@@ -4432,7 +4432,7 @@ TEST_F(TestTxHashFilters, DISABLED_FilterALot)
 class KdfTests : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void)
+   void SetUp() override
    {}
 };
 
@@ -4570,10 +4570,10 @@ TEST_F(KdfTests, Romix_TargetMemory)
 class TestPeerKey : public ::testing::Test
 {
 protected:
-   virtual void SetUp()
+   void SetUp() override
    {}
 
-   virtual void TearDown()
+   void TearDown() override
    {}
 };
 
@@ -4626,10 +4626,10 @@ TEST_F(TestPeerKey, HumanReadable)
 class TestJSONCodec : public ::testing::Test
 {
 protected:
-   virtual void SetUp()
+   void SetUp() override
    {}
 
-   virtual void TearDown()
+   void TearDown() override
    {}
 };
 

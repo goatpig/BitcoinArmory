@@ -3711,11 +3711,10 @@ namespace {
 
 ////////////////////////////////////////////////////////////////////////////////
 // WalletManagerTests
-////////////////////////////////////////////////////////////////////////////////
 class WalletManagerTests : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void)
+   void SetUp() override
    {
       homedir_ = std::filesystem::path("./fakehomedir");
       FileUtils::removeDirectory(homedir_);
@@ -3727,7 +3726,7 @@ protected:
          Config::ProcessType::DB);
    }
 
-   virtual void TearDown(void)
+   void TearDown() override
    {
       Config::reset();
       FileUtils::removeDirectory(homedir_);
@@ -4183,7 +4182,7 @@ class BridgeWalletTests : public ::testing::Test
 {
 protected:
    //setup
-   virtual void SetUp(void)
+   void SetUp() override
    {
       std::srand(std::time({}));
       homedir = std::filesystem::path("./fakehomedir");
@@ -4200,7 +4199,7 @@ protected:
          std::make_shared<TestBridgeSocket>());
    }
 
-   virtual void TearDown(void)
+   void TearDown() override
    {
       bridge_.reset();
       Config::reset();
@@ -6459,7 +6458,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       FileUtils::removeDirectory(blkdir_);
       FileUtils::removeDirectory(homedir_);
@@ -6520,7 +6519,7 @@ protected:
       hexMagicBytes = Config::BitcoinSettings::getMagicBytes().toHexStr();
    }
 
-   virtual void TearDown()
+   void TearDown() override
    {
       bridge_.reset();
       WebSocketServer::shutdown();
@@ -7153,7 +7152,7 @@ protected:
    }
 
    ////////
-   virtual void SetUp()
+   void SetUp() override
    {
       FileUtils::removeDirectory(blkdir_);
       FileUtils::removeDirectory(homedir_);
@@ -7211,7 +7210,7 @@ protected:
    }
 
    ////////
-   virtual void TearDown()
+   void TearDown() override
    {
       bridge_.reset();
       WebSocketServer::shutdown();
@@ -13165,7 +13164,7 @@ protected:
       );
    }
 
-   virtual void SetUp()
+   void SetUp() override
    {
       FileUtils::removeDirectory(blkdir_);
       FileUtils::removeDirectory(homedir_);
@@ -13202,7 +13201,7 @@ protected:
          std::make_shared<TestBridgeSocket>());
    }
 
-   virtual void TearDown()
+   void TearDown() override
    {
       bridge_.reset();
       FileUtils::removeDirectory(blkdir_);
@@ -13926,7 +13925,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       FileUtils::removeDirectory(blkdir_);
       FileUtils::removeDirectory(homedir_);
@@ -13996,7 +13995,7 @@ protected:
       nodePtr->setBDM(theBDMt_->bdm());
    }
 
-   virtual void TearDown()
+   void TearDown() override
    {
       bridge_.reset();
       WebSocketServer::shutdown();

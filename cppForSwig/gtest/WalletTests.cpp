@@ -143,7 +143,7 @@ TEST_F(PassphraseTests, InvalidParams)
 class AddressTests : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void)
+   void SetUp() override
    {
       homedir_ = std::filesystem::path("./fakehomedir");
       FileUtils::removeDirectory(homedir_);
@@ -155,7 +155,7 @@ protected:
          Config::ProcessType::DB);
    }
 
-   virtual void TearDown(void)
+   void TearDown() override
    {
       Config::reset();
       FileUtils::removeDirectory(homedir_);
@@ -253,10 +253,10 @@ TEST_F(AddressTests, OddAddressTypes)
 ////////////////////////////////////////////////////////////////////////////////
 class WalletIdsTests : public ::testing::Test
 {
-   virtual void SetUp()
+   void SetUp() override
    {}
 
-   virtual void TearDown()
+   void TearDown() override
    {}
 };
 
@@ -711,7 +711,7 @@ protected:
    SecureBinaryData seed_ = READHEX("000102030405060708090a0b0c0d0e0f");
 
 protected:
-   virtual void SetUp(void)
+   void SetUp() override
    {
       homedir_ = std::filesystem::path("./fakehomedir");
       FileUtils::removeDirectory(homedir_);
@@ -723,7 +723,7 @@ protected:
          Config::ProcessType::DB);
    }
 
-   virtual void TearDown(void)
+   void TearDown() override
    {
       Config::reset();
       FileUtils::removeDirectory(homedir_);
@@ -1654,7 +1654,7 @@ TEST_F(DerivationTests, DerivationTree_MergePaths)
 class AddressEntryTest : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void)
+   void SetUp() override
    {
       homedir_ = std::filesystem::path("./fakehomedir");
       FileUtils::removeDirectory(homedir_);
@@ -1666,7 +1666,7 @@ protected:
          Config::ProcessType::DB);
    }
 
-   virtual void TearDown(void)
+   void TearDown() override
    {
       Config::reset();
       FileUtils::removeDirectory(homedir_);
@@ -1887,7 +1887,7 @@ protected:
    BinaryData allZeroes16_;
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       homedir_ = std::filesystem::path("./fakehomedir");
       FileUtils::removeDirectory(homedir_);
@@ -1906,7 +1906,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
+   void TearDown() override
    {
       Config::reset();
       FileUtils::removeDirectory(homedir_);
@@ -3924,7 +3924,7 @@ protected:
    Passphrase::UnlockFunc controlLbd_;
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       homedir_ = std::filesystem::path("./fakehomedir");
       FileUtils::removeDirectory(homedir_);
@@ -3944,7 +3944,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
+   void TearDown() override
    {
       Config::reset();
       FileUtils::removeDirectory(homedir_);
@@ -9140,7 +9140,7 @@ protected:
    std::filesystem::path homedir_;
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       homedir_ = std::filesystem::path("./fakehomedir");
       FileUtils::removeDirectory(homedir_);
@@ -9153,7 +9153,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
+   void TearDown() override
    {
       Config::reset();
 
@@ -10155,7 +10155,7 @@ public:
    std::filesystem::path homedir_;
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       homedir_ = std::filesystem::path("./fakehomedir");
       FileUtils::removeDirectory(homedir_);
@@ -10169,7 +10169,7 @@ public:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
+   void TearDown() override
    {
       Config::reset();
 
