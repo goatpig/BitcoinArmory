@@ -7566,6 +7566,52 @@ protected:
       return result;
    }
 
+   bool updateWalletFilters(
+      const std::map<std::string, std::set<std::string>>& filters)
+   {
+      capnp::MallocMessageBuilder message;
+      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+      toBridge.setReferenceId(rand());
+      auto request = toBridge.initWalletManager();
+      size_t count = 0;
+      for (const auto& wltIdPair : filters) {
+         count += wltIdPair.second.size();
+      }
+      auto filterReq = request.initUpdateMainLedgerFilter(count);
+
+      count = 0;
+      for (const auto& wltIdPair : filters) {
+         for (const auto& accId : wltIdPair.second) {
+            auto capnIds = filterReq[count++];
+            capnIds.setWalletId(wltIdPair.first);
+            capnIds.setAccountId(accId);
+         }
+      }
+
+      auto rawReq = serializeCapnp(message);
+      pushRequest(bridge_, rawReq);
+
+      auto result = waitOnReply();
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(result->data.getPtr()),
+         result->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+      if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
+         return false;
+      }
+      auto notif = fromBridge.getNotification();
+      if (notif.which() != Codec::Bridge::Notification::REFRESH) {
+         return false;
+      }
+      auto notifIds = notif.getRefresh();
+      if (notifIds.size() != 1 ||
+         notifIds[0] != std::string{"wallet_filter_changed"}) {
+         return false;
+      }
+      return true;
+   }
+
    ////////
    void SetUp() override
    {
@@ -7733,6 +7779,16 @@ TEST_F(BridgeChainDataTests, ChangeFilters_ALFB_BCDE)
 {
    loadWallets({walletId_BCDE_, walletId_AFLB_});
 
+   //changing filters while offline shouldn't blow up the manager
+   ASSERT_TRUE(updateWalletFilters({
+      {walletId_AFLB_, {accountId_AFLB_}}}));
+
+   //revert fitler back to all wallets
+   ASSERT_TRUE(updateWalletFilters({
+      {walletId_AFLB_, {accountId_AFLB_}},
+      {walletId_BCDE_, {accountId_BCDE_}},
+   }));
+
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
@@ -7771,32 +7827,8 @@ TEST_F(BridgeChainDataTests, ChangeFilters_ALFB_BCDE)
    }
 
    //remove AFLB from filter
-   uint64_t refId = rand();
-
-   capnp::MallocMessageBuilder message;
-   auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
-   toBridge.setReferenceId(refId);
-   auto request = toBridge.initWalletManager();
-   auto filterReq = request.initUpdateMainLedgerFilter(1);
-   auto wltId0 = filterReq[0];
-   wltId0.setWalletId(walletId_BCDE_);
-   wltId0.setAccountId(accountId_BCDE_);
-
-   auto rawReq = serializeCapnp(message);
-   pushRequest(bridge_, rawReq);
-
-   auto result = waitOnReply();
-   kj::ArrayPtr<const capnp::word> words(
-      reinterpret_cast<const capnp::word*>(result->data.getPtr()),
-      result->data.getSize() / sizeof(capnp::word));
-   capnp::FlatArrayMessageReader reader(words);
-   auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-   ASSERT_EQ(fromBridge.which(), Codec::Bridge::FromBridge::NOTIFICATION);
-   auto notif = fromBridge.getNotification();
-   ASSERT_EQ(notif.which(), Codec::Bridge::Notification::REFRESH);
-   auto notifIds = notif.getRefresh();
-   ASSERT_EQ(notifIds.size(), 1);
-   ASSERT_EQ(std::string(notifIds[0]), std::string{"wallet_filter_changed"});
+   ASSERT_TRUE(updateWalletFilters(
+      {{walletId_BCDE_, {accountId_BCDE_}}}));
 
    //check main ledger again
    ledgers = getLedgersPage(bridge_, delegateId, 0);
