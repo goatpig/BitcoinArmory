@@ -705,10 +705,10 @@ class TreeStructure_RBF():
          #get outpoints for spender tx
          entryList = self.rbfDict[txHashStr]
          txHash = binascii.unhexlify(txHashStr)
-         cppTx = TheBridge.service.getTxByHash(txHash)
+         txList = TheBridge.service.getTxsByHash([txHash])
 
-         if cppTx is not None:
-            pytx = PyTx().unserialize(cppTx.raw)
+         if txHash in txList:
+            pytx = PyTx().unserialize(txList[txHash].body.raw)
          else:
             continue
 
