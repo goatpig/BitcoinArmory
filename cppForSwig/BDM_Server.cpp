@@ -457,7 +457,6 @@ namespace {
          case StaticRequest::Which::GET_NODE_STATUS:
          {
             auto nodeStatus = clients->bdm()->getNodeStatus();
-
             auto nodeReply = staticReply.initGetNodeStatus();
             nodeReply.setNode(
                (Codec::Types::NodeStatus::NodeState)nodeStatus->state);
@@ -599,7 +598,6 @@ namespace {
             reply.setError("invalid static request");
             reply.setSuccess(false);
       }
-
       return result;
    }
 }
@@ -1689,8 +1687,9 @@ void Clients::broadcastThroughRPC()
          }
 
          default:
-            LOGINFO << "RPC broadcast for tx: " << hashes.begin()->toHexStr() <<
-               ", verbose: " << verbose;
+            LOGWARN << std::format(
+               "RPC broadcast error for tx: {}, verbose: {}",
+               hashes.begin()->toHexStr(), verbose);
 
             //cleanup watcher map
             auto watcherEntry = zcPtr->eraseWatcherEntry(*hashes.begin());
@@ -1712,17 +1711,13 @@ void Clients::broadcastThroughRPC()
                std::make_exception_ptr(ZeroConf::ZcBatchError{}));
 
             //notify the bdv of the error
-            std::stringstream errMsg;
-            errMsg << "RPC broadcast error: " << verbose;
             notifyError(*hashes.begin(), packet.bdvPtr_,
-               result, errMsg.str());
+               result, verbose);
 
             //notify extra requestors of the error as well
             for (auto& requestor : packet.extraRequestors_) {
-               std::stringstream reqMsg;
-               reqMsg << "Extra requestor broadcast error: " << verbose;
                notifyError(*hashes.begin(), requestor,
-                  result, reqMsg.str());
+                  result, verbose);
             }
       }
    }

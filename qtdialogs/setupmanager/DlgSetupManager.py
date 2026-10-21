@@ -524,7 +524,6 @@ class DlgSetupManager(ArmoryDialog):
 
    def _connectLocalDb(self, params):
       """Initiate local (automated) database connection."""
-      print (f"params: {params}")
       satoshiDir = params.get('satoshiPath', '')
       satoshiBin = params.get('satoshiBin', '')
       dbDir = params.get('dbPath', '')

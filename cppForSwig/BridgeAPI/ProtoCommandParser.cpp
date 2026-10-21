@@ -405,7 +405,6 @@ namespace
          case BlockchainServiceRequest::BROADCAST_TX:
          {
             auto broadcastObj = request.getBroadcastTx();
-
             auto capnTxs = broadcastObj.getRawTxs();
             std::vector<BinaryData> rawTxs;
             rawTxs.reserve(capnTxs.size());
@@ -416,7 +415,6 @@ namespace
             bool isRPC = broadcastObj.which() ==
                BlockchainServiceRequest::BroadcastRequest::VIA_RPC ?
                true : false;
-
             bridge->broadcastTxs(rawTxs, isRPC);
             break;
          }
@@ -1123,13 +1121,16 @@ namespace
       std::shared_ptr<CppBridge> bridge, MessageId referenceId,
       SignerRequest::Reader& request)
    {
-      auto replySuccess = [referenceId, bridge](bool success)->void
+      auto replySuccess = [referenceId, bridge]
+      (bool success, const std::string& error={})
       {
          capnp::MallocMessageBuilder message;
          auto fromBridge = message.initRoot<FromBridge>();
          auto reply = fromBridge.initReply();
          reply.setSuccess(success);
-         reply.setError("generic signer error message");
+         if (!success) {
+            reply.setError(error);
+         }
          reply.setReferenceId(referenceId);
 
          //serialize & push reply
@@ -1252,11 +1253,15 @@ namespace
 
          case SignerRequest::FROM_TX_SIG_COLLECT:
          {
-            auto signerObj = Signing::Signer::fromString(
-               request.getFromTxSigCollect());
-            signer->signer = std::make_unique<Signing::Signer>(std::move(signerObj));
+            try {
+               auto signerObj = Signing::Signer::fromString(
+                  request.getFromTxSigCollect());
+               signer->signer = std::make_unique<Signing::Signer>(std::move(signerObj));
+               replySuccess(true);
+            } catch (const std::exception& e) {
+               replySuccess(false, e.what());
+            }
 
-            replySuccess(true);
             break;
          }
 

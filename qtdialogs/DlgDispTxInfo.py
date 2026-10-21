@@ -1,14 +1,14 @@
-##############################################################################
-#                                                                            #
-# Copyright (C) 2011-2015, Armory Technologies, Inc.                         #
-# Distributed under the GNU Affero General Public License (AGPL v3)          #
-# See LICENSE or http://www.gnu.org/licenses/agpl.html                       #
-#                                                                            #
-# Copyright (C) 2016-2024, goatpig                                           #
-#  Distributed under the MIT license                                         #
-#  See LICENSE-MIT or https://opensource.org/licenses/MIT                    #
-#                                                                            #
-##############################################################################
+################################################################################
+#                                                                              #
+# Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
+# Distributed under the GNU Affero General Public License (AGPL v3)            #
+# See LICENSE or http://www.gnu.org/licenses/agpl.html                         #
+#                                                                              #
+# Copyright (C) 2016-2024, goatpig                                             #
+#  Distributed under the MIT license                                           #
+#  See LICENSE-MIT or https://opensource.org/licenses/MIT                      #
+#                                                                              #
+################################################################################
 
 from qtpy import QtCore, QtGui, QtWidgets
 
@@ -143,7 +143,6 @@ class DlgDisplayTxIn(ArmoryDialog):
       w,h = tightSizeNChar(edtBrowse, 100)
       self.setMinimumWidth(max(w, 500))
       self.setMinimumHeight(max(20*h, 400))
-
 
 ################################################################################
 class DlgDisplayTxOut(ArmoryDialog):
@@ -870,11 +869,11 @@ class DlgDispTxInfo(ArmoryDialog):
       if action == actMoreInfo:
          self.showTxInDialog()
       if action == actCopyWltID:
-         s = str(self.txInView.model().index(idx.row(), TXINCOLS.WltID).data().toString())
+         s = self.txInView.model().index(idx.row(), TXINCOLS.WltID).data()
       elif action == actCopySender:
-         s = str(self.txInView.model().index(idx.row(), TXINCOLS.Sender).data().toString())
+         s = self.txInView.model().index(idx.row(), TXINCOLS.Sender).data()
       elif action == actCopyAmount:
-         s = str(self.txInView.model().index(idx.row(), TXINCOLS.Btc).data().toString())
+         s = self.txInView.model().index(idx.row(), TXINCOLS.Btc).data()
       #elif dev and action == actCopyOutPt:
          #s1 = str(self.txInView.model().index(idx.row(), TXINCOLS.OutPt).data().toString())
          #s2 = str(self.txInView.model().index(idx.row(), TXINCOLS.OutIdx).data().toString())
@@ -886,7 +885,7 @@ class DlgDispTxInfo(ArmoryDialog):
 
       clipb = QtWidgets.QApplication.clipboard()
       clipb.clear()
-      clipb.setText(s.strip())
+      clipb.setText(str(s).strip())
 
    #############################################################################
    def showContextMenuTxOut(self, pos):
@@ -903,13 +902,13 @@ class DlgDispTxInfo(ArmoryDialog):
       action = menu.exec_(QtGui.QCursor.pos())
 
       if action == actCopyWltID:
-         s = self.txOutView.model().index(idx.row(), TXOUTCOLS.WltID).data().toString()
+         s = self.txOutView.model().index(idx.row(), TXOUTCOLS.WltID).data()
       elif action == actCopyRecip:
-         s = self.txOutView.model().index(idx.row(), TXOUTCOLS.AddrStr).data().toString()
+         s = self.txOutView.model().index(idx.row(), TXOUTCOLS.AddrStr).data()
       elif action == actCopyAmount:
-         s = self.txOutView.model().index(idx.row(), TXOUTCOLS.Btc).data().toString()
+         s = self.txOutView.model().index(idx.row(), TXOUTCOLS.Btc).data()
       elif dev and action == actCopyScript:
-         s = self.txOutView.model().index(idx.row(), TXOUTCOLS.Script).data().toString()
+         s = self.txOutView.model().index(idx.row(), TXOUTCOLS.Script).data()
       else:
          return
 
