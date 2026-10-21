@@ -116,7 +116,7 @@ public:
 class BIP150_151Test : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void)
+   void SetUp() override
    {
       // Test vector data. Unfortunately, there are no test suites for BIP 151.
       // Test data was generated using a combination of Bcoin test results for
@@ -1050,7 +1050,7 @@ TEST_F(BIP150_151Test, handshakeCases_151_Only)
 class BIP151RekeyTest : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void)
+   void SetUp() override
    {
       std::string command_hexstr = "fake";
       std::string payload_hexstr = "deadbeef";

@@ -78,10 +78,10 @@ CPPBRIDGE_SOURCE_FILES = BridgeAPI/CppBridge.cpp \
 	BridgeAPI/BridgeSocket.cpp \
 	BridgeAPI/ProtoCommandParser.cpp \
 	BridgeAPI/PassphrasePrompt.cpp \
+	BridgeAPI/Notifications.cpp \
 	BridgeAPI/Wallets/Container.cpp \
 	BridgeAPI/Wallets/Loader.cpp \
 	BridgeAPI/Wallets/Manager.cpp \
-	BridgeAPI/Wallets/Notifications.cpp \
 	BridgeAPI/Wallets/TxIOCache.cpp \
 	BridgeAPI/DBSetup.cpp \
 	Ledgers/Context.cpp Ledgers/LedgerEntry.cpp

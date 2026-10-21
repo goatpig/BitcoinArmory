@@ -21,6 +21,8 @@
 #include <condition_variable>
 #include <deque>
 
+#include "AtomicSharedPtr.h"
+
 namespace Armory
 {
    namespace Threading
@@ -345,7 +347,7 @@ namespace Armory
 
       private:
          mutable std::mutex mu_;
-         std::atomic<std::shared_ptr<std::map<T, U>>> map_;
+         AtomicSharedPtr<std::map<T, U>> map_;
          std::atomic<size_t> count_;
 
       public:
@@ -358,6 +360,7 @@ namespace Armory
 
          void insert(std::pair<T, U>&& mv)
          {
+            std::unique_lock<std::mutex> lock(mu_);
             auto thisMap = map_.load();
             auto newMap = std::make_shared<std::map<T, U>>();
 
@@ -370,6 +373,7 @@ namespace Armory
 
          void insert(const std::pair<T, U>& obj)
          {
+            std::unique_lock<std::mutex> lock(mu_);
             auto thisMap = map_.load();
             auto newMap = std::make_shared<std::map<T, U>>();
 
@@ -385,6 +389,7 @@ namespace Armory
             if (updatemap.empty()) {
                return;
             }
+            std::unique_lock<std::mutex> lock(mu_);
             auto thisMap = map_.load();
             auto newMap = std::make_shared<std::map<T, U>>(std::move(updatemap));
             newMap->insert(thisMap->begin(), thisMap->end());
@@ -395,6 +400,7 @@ namespace Armory
 
          void erase(const T& id)
          {
+            std::unique_lock<std::mutex> lock(mu_);
             auto thisMap = map_.load();
             auto iter = thisMap->find(id);
             if (iter == thisMap->end()) {
@@ -414,6 +420,7 @@ namespace Armory
             if (idVec.empty()) {
                return;
             }
+            std::unique_lock<std::mutex> lock(mu_);
             auto thisMap = map_.load();
             auto newMap = std::make_shared<std::map<T, U>>();
 
@@ -431,9 +438,10 @@ namespace Armory
             if (idVec.empty()) {
                return;
             }
+            std::unique_lock<std::mutex> lock(mu_);
             auto thisMap = map_.load();
             auto newMap = std::make_shared<std::map<T, U>>();
-            newMap->insert(map_->begin(), map_->end());
+            newMap->insert(thisMap->begin(), thisMap->end());
 
             for (const auto& id : idVec) {
                newMap->erase(id);
@@ -445,6 +453,7 @@ namespace Armory
 
          std::shared_ptr<std::map<T, U>> pop_all(void)
          {
+            std::unique_lock<std::mutex> lock(mu_);
             auto thisMap = map_.load();
             auto newMap = std::make_shared<std::map<T, U>>();
 
@@ -463,6 +472,7 @@ namespace Armory
 
          void clear(void)
          {
+            std::unique_lock<std::mutex> lock(mu_);
             auto thisMap = map_.load();
             auto newMap = std::make_shared<std::map<T, U>>();
 

@@ -277,9 +277,9 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
       # Collect the input wallets (hopefully just one of them)
       fromWlts = set()
       for addrStr, amt, a, b, c, script in data[FIELDS.InList]:
-         wltID = self.main.wallets.getWltForScrAddr(addrStr)
-         if wltID:
-            fromWlts.add(wltID)
+         wlt = self.main.wallets.getWltForAddrStr(addrStr)
+         if wlt:
+            fromWlts.add(wlt.dbId)
 
       if len(fromWlts) > 1:
          QtWidgets.QMessageBox.warning(self, self.tr('Multiple Input Wallets'), \
@@ -298,22 +298,18 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
          return
 
       spendWltID = fromWlts.pop()
-      self.wlt = self.main.walletMap[spendWltID]
+      self.wlt = self.main.wallets.get(spendWltID)
 
-      toWlts = set()
       myOutSum = 0
       theirOutSum = 0
       rvPairs = []
       idx = 0
       for scrType, amt, binScript, multiSigList in data[FIELDS.OutList]:
          recip = script_to_scrAddr(binScript)
-         try:
-            wltID = self.main.getWalletForAddrHash(recip)
-         except BadAddressError:
-            wltID = ''
+         recipWlt = self.main.wallets.getWltForScrAddr(recip)
+         wltID = recipWlt.dbId if recipWlt else None
 
          if wltID == spendWltID:
-            toWlts.add(wltID)
             myOutSum += amt
             self.idxSelf.append(idx)
          else:
@@ -332,10 +328,8 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
       self.leValue = theirOutSum
       self.makeReviewFrame()
 
-
    ############################################################################
    def makeReviewFrame(self):
-      # ##
       if self.ustxObj == None:
          self.infoLbls[0][2].setText('')
          self.infoLbls[1][2].setText('')
@@ -347,7 +341,7 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
 
          ##### 1
          if self.wlt:
-            self.infoLbls[0][2].setText(self.wlt.uniqueIDB58)
+            self.infoLbls[0][2].setText(self.wlt.walletId)
             self.infoLbls[1][2].setText(self.wlt.labelName)
          else:
             self.infoLbls[0][2].setText(self.tr('[[ Unrelated ]]'))
@@ -365,7 +359,6 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
          self.moreInfo.setVisible(True)
 
    def execMoreTxInfo(self):
-
       if not self.ustxObj:
          self.processUSTX()
 
@@ -378,8 +371,6 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
       dlgTxInfo = DlgDispTxInfo(self.ustxObj, self.wlt, self.parent(), self.main, \
          precomputeIdxGray=self.idxSelf, precomputeAmt=leVal, txtime=-1)
       dlgTxInfo.exec_()
-
-
 
    def signTx(self):
       if not self.ustxObj:

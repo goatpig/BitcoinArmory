@@ -16,6 +16,7 @@
 #include <filesystem>
 
 #include <Utils/Types.h>
+#include <Utils/ThreadSafeClasses.h>
 
 class BinaryData;
 class BinaryDataRef;
@@ -62,8 +63,20 @@ namespace Armory
       class ClientStore;
    }
 
+   namespace Network
+   {
+      class PersistentSocket;
+   }
+
    namespace Bridge
    {
+      namespace Notifications
+      {
+         namespace Server
+         {
+            class Notif;
+         }
+      }
       struct ServerPushWrapper;
       struct WritePayload_Bridge;
       class WalletManager;
@@ -99,15 +112,15 @@ namespace Armory
       class CppBridge
       {
       private:
-         //datadir
+         const std::shared_ptr<Network::PersistentSocket> sockPtr_;
          const std::filesystem::path path_;
+         const bool dbOffline_;
 
          //armorydb stuff
-         const bool dbOffline_;
          std::shared_ptr<NetworkPeers::ClientStore> peersDb_;
-
-         //to write to the bridge client
-         std::function<void(std::unique_ptr<WritePayload_Bridge>)> writeLambda_;
+         std::shared_ptr<Threading::BlockingQueue<
+            std::unique_ptr<Notifications::Server::Notif>>> dbNotifQueue_;
+         std::thread dbNotifThread_;
 
          //these objects are the core of the bridge
          std::shared_ptr<WalletManager> wltManager_;
@@ -128,6 +141,7 @@ namespace Armory
 
       private:
          void reset(void);
+         void runServerNotificationProcessingThread(void);
 
       public:
          std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr(void) const;
@@ -156,7 +170,7 @@ namespace Armory
          void cleanupAutomationContext(CallbackId, MessageId);
 
          //db setup
-         void connectToIp(const std::string&, const std::string&,
+         void connectToIp(const std::string&, uint16_t,
             const CallbackId&, MessageId);
          void connectToPeer(const std::string&, MessageId);
          void beginDbSession(void);
@@ -173,7 +187,7 @@ namespace Armory
          //wallet registration
          void registerWallets(void);
          void registerWallet(const Wallets::WalletId&,
-            const Wallets::AddressAccountId&, bool isNew);
+            const Wallets::AddressAccountId&, bool);
          BinaryData getNodeStatus(MessageId);
 
          //balance and counts
@@ -207,8 +221,8 @@ namespace Armory
          void forkWatchingOnly(const Wallets::WalletId&,
             const CallbackId&, MessageId);
          void exportKeys(const Wallets::WalletId&,
-            const Wallets::AddressAccountId&, bool includePrivateKeys,
-            const CallbackId& callbackId, MessageId);
+            const Wallets::AddressAccountId&, bool,
+            const CallbackId&, MessageId);
 
          //ledgers
          const std::string& getLedgerDelegateId(void);
@@ -282,13 +296,11 @@ namespace Armory
          bool doesWalletHaveImports(const Wallets::WalletId&) const;
 
       public:
-         CppBridge(void);
+         CppBridge(std::shared_ptr<Network::PersistentSocket>);
          ~CppBridge(void);
 
-         void disconnectFromDb(void);
+         void cleanupDbConnection(void);
          void writeToClient(BinaryData&) const;
-         void setWriteLambda(
-            const std::function<void(std::unique_ptr<WritePayload_Bridge>)>&);
       };
    } //namespace Bridge
 } //namespace Armory

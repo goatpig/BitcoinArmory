@@ -178,11 +178,19 @@ void ZeroConf::preprocessTx(ParsedTx& tx, LMDBBlockDatabase* db,
    */
 
    //sanity check: is this tx mined?
-   const auto& txHash = tx.getTxHash();
-   auto txKey = db->getDBKeyForHash(txHash);
+   Types::TxKey txKey;
+   try {
+      const auto& txHash = tx.getTxHash();
+      txKey = db->getDBKeyForHash(txHash);
+   } catch (const TxHintCollision& collision) {
+      txKey = bd->resolveTxHintCollision(collision);
+   }
    if (Types::isTxKeyValid(txKey)) {
-      tx.state = ParsedTxStatus::Mined;
-      return;
+      auto txhash = bd->getTxHashForTxKey(txKey);
+      if (txhash == tx.getTxHash()) {
+         tx.state = ParsedTxStatus::Mined;
+         return;
+      }
    }
 
    const auto& txObj = tx.getTxObj();
@@ -224,7 +232,7 @@ void ZeroConf::preprocessTx(ParsedTx& tx, LMDBBlockDatabase* db,
 
       if (!opRef.isResolved()) {
          //resolve outpoint to dbkey
-         opRef.resolveDbKey(db);
+         opRef.resolveDbKey(db, bd);
          if (!opRef.isResolved()) {
             continue;
          }
@@ -459,17 +467,27 @@ void OutPointRef::unserialize(BinaryDataRef bdr)
    unserialize(bdr.getPtr(), bdr.getSize());
 }
 
-void OutPointRef::resolveDbKey(LMDBBlockDatabase *dbPtr)
+void OutPointRef::resolveDbKey(
+   LMDBBlockDatabase *dbPtr, std::shared_ptr<BlockchainData> bd)
 {
    if (txHash_.empty() || txOutIndex_ == UINT16_MAX) {
       throw std::runtime_error("empty outpoint hash");
    }
 
-   auto key = dbPtr->getDBKeyForHash(txHash_);
-   if (key == Types::INVALID_TX_KEY) {
-      return;
+   Types::TxKey txKey;
+   try {
+      txKey = dbPtr->getDBKeyForHash(txHash_);
+   } catch (const TxHintCollision& collision) {
+      txKey = bd->resolveTxHintCollision(collision);
    }
-   setDbKey(key);
+
+   if (Types::isTxKeyValid(txKey)) {
+      auto txHash = bd->getTxHashForTxKey(txKey);
+      if (txHash != txHash_) {
+         return;
+      }
+      setDbKey(txKey);
+   }
 }
 
 bool OutPointRef::isResolved() const
@@ -673,6 +691,20 @@ std::shared_ptr<ParsedTx> MempoolData::getTx(Types::TxKey key) const
       return nullptr;
    }
    return iter->second;
+}
+
+size_t MempoolData::getTxCount() const
+{
+   size_t count = 0;
+   for (const auto& txPair : txMap_) {
+      if (txPair.second != nullptr) {
+         ++count;
+      }
+   }
+   if (parent_ != nullptr) {
+      count += parent_->getTxCount();
+   }
+   return count;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1050,7 +1082,17 @@ void MempoolSnapshot::preprocessZcMap(
    ZeroConf::preprocessZcMap(data_->txMap_, db, bd);
 }
 
-///////////////////////////////////////////////////////////////////////////////
+Types::ZcId MempoolSnapshot::getTopZcID() const
+{
+   return topID_;
+}
+
+size_t MempoolSnapshot::getTxCount() const
+{
+   return data_->getTxCount();
+}
+
+////////
 std::shared_ptr<ParsedTx> MempoolSnapshot::getTxByKey_NoConst(
    Types::TxKey key) const
 {
@@ -1064,16 +1106,17 @@ std::shared_ptr<const ParsedTx> MempoolSnapshot::getTxByKey(
    return std::const_pointer_cast<const ParsedTx>(txPtr);
 }
 
-std::shared_ptr<const ParsedTx> MempoolSnapshot::getTxByHash(
-   const Types::TxHash& hash) const
+const Types::TxHash& MempoolSnapshot::getHashForKey(
+   Types::TxKey key) const
 {
-   auto key = getKeyForHash(hash);
-   if (!Types::isTxKeyValid(key)) {
-      return nullptr;
+   auto txPtr = getTxByKey(key);
+   if (txPtr == nullptr) {
+      throw std::runtime_error(std::format("not hash for zc key {:x}", key));
    }
-   return getTxByKey(key);
+   return txPtr->getTxHash();
 }
 
+////////
 TxOut MempoolSnapshot::getTxOutCopy(Types::TxKey key, Types::TxIOId outputId) const
 {
    auto txPtr = getTxByKey(key);
@@ -1092,27 +1135,24 @@ std::shared_ptr<const TxIOPair> MempoolSnapshot::getTxioByKey(
    return data_->getTxio(txioKey);
 }
 
+////////
 Types::TxKey MempoolSnapshot::getKeyForHash(
    const Types::TxHash& hash) const
 {
    return data_->getKeyForHash(hash);
 }
 
-const Types::TxHash& MempoolSnapshot::getHashForKey(
-   Types::TxKey key) const
+std::shared_ptr<const ParsedTx> MempoolSnapshot::getTxByHash(
+   const Types::TxHash& hash) const
 {
-   auto txPtr = getTxByKey(key);
-   if (txPtr == nullptr) {
-      throw std::runtime_error(std::format("not hash for zc key {:x}", key));
+   auto key = getKeyForHash(hash);
+   if (!Types::isTxKeyValid(key)) {
+      return nullptr;
    }
-   return txPtr->getTxHash();
+   return getTxByKey(key);
 }
 
-Types::ZcId MempoolSnapshot::getTopZcID() const
-{
-   return topID_;
-}
-
+////////
 bool MempoolSnapshot::hasHash(const Types::TxHash& hash) const
 {
    return data_->getKeyForHash(hash) != Types::INVALID_TX_KEY;
@@ -1123,6 +1163,7 @@ bool MempoolSnapshot::isTxOutSpentByZC(Types::TxIOKey key) const
    return data_->isTxOutSpentByZC(key);
 }
 
+////////
 const TxIOKeys& MempoolSnapshot::getTxioKeysForScrAddr(
    const Types::ScrAddr& scrAddr) const
 {
@@ -1301,7 +1342,7 @@ std::shared_ptr<MempoolSnapshot> MempoolSnapshot::copy(
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void MempoolSnapshot::commitNewZCs()
+void MempoolSnapshot::mergeWithParents()
 {
    //figure out depth and size of each mempool obj, merge if necessary
    if (data_->txioMap_.empty() &&

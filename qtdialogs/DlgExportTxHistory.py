@@ -147,9 +147,9 @@ class DlgExportTxHistory(ArmoryDialog):
          self.isValidFormat = False
 
    #############################################################################
-   def accept(self, *args):
+   def accept(self):
       if self.createFile_CSV():
-         super(DlgExportTxHistory, self).accept(*args)
+         super(DlgExportTxHistory, self).accept()
 
 
    #############################################################################

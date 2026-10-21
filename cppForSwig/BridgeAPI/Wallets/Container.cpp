@@ -77,7 +77,7 @@ void WalletContainer::setBdvPtr(std::shared_ptr<AsyncClient::BlockDataViewer> bd
    bdvPtr_ = bdv;
 }
 
-void WalletContainer::cleanupBDV()
+void WalletContainer::cleanupBdvPtr()
 {
    asyncWlt_.reset();
    bdvPtr_.reset();

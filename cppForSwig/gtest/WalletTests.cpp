@@ -143,7 +143,7 @@ TEST_F(PassphraseTests, InvalidParams)
 class AddressTests : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void)
+   void SetUp() override
    {
       homedir_ = std::filesystem::path("./fakehomedir");
       FileUtils::removeDirectory(homedir_);
@@ -155,7 +155,7 @@ protected:
          Config::ProcessType::DB);
    }
 
-   virtual void TearDown(void)
+   void TearDown() override
    {
       Config::reset();
       FileUtils::removeDirectory(homedir_);
@@ -253,10 +253,10 @@ TEST_F(AddressTests, OddAddressTypes)
 ////////////////////////////////////////////////////////////////////////////////
 class WalletIdsTests : public ::testing::Test
 {
-   virtual void SetUp()
+   void SetUp() override
    {}
 
-   virtual void TearDown()
+   void TearDown() override
    {}
 };
 
@@ -711,7 +711,7 @@ protected:
    SecureBinaryData seed_ = READHEX("000102030405060708090a0b0c0d0e0f");
 
 protected:
-   virtual void SetUp(void)
+   void SetUp() override
    {
       homedir_ = std::filesystem::path("./fakehomedir");
       FileUtils::removeDirectory(homedir_);
@@ -723,7 +723,7 @@ protected:
          Config::ProcessType::DB);
    }
 
-   virtual void TearDown(void)
+   void TearDown() override
    {
       Config::reset();
       FileUtils::removeDirectory(homedir_);
@@ -1654,7 +1654,7 @@ TEST_F(DerivationTests, DerivationTree_MergePaths)
 class AddressEntryTest : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void)
+   void SetUp() override
    {
       homedir_ = std::filesystem::path("./fakehomedir");
       FileUtils::removeDirectory(homedir_);
@@ -1666,7 +1666,7 @@ protected:
          Config::ProcessType::DB);
    }
 
-   virtual void TearDown(void)
+   void TearDown() override
    {
       Config::reset();
       FileUtils::removeDirectory(homedir_);
@@ -1887,7 +1887,7 @@ protected:
    BinaryData allZeroes16_;
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       homedir_ = std::filesystem::path("./fakehomedir");
       FileUtils::removeDirectory(homedir_);
@@ -1906,7 +1906,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
+   void TearDown() override
    {
       Config::reset();
       FileUtils::removeDirectory(homedir_);
@@ -2658,7 +2658,7 @@ TEST_F(WalletInterfaceTest, EncryptionTest_AmendValues)
       EXPECT_EQ(key2Data.getSize(), 0ULL);
 
       auto key3Data = tx.getDataRef(key3);
-      EXPECT_EQ(key3Data, val4);
+      EXPECT_EQ(key3Data, val4.getRef());
    }
 
    //check file content
@@ -2878,7 +2878,7 @@ TEST_F(WalletInterfaceTest, EncryptionTest_OpenCloseAmend)
       EXPECT_EQ(key2Data.getSize(), 0ULL);
 
       auto key3Data = tx.getDataRef(key3);
-      EXPECT_EQ(key3Data, val4);
+      EXPECT_EQ(key3Data, val4.getRef());
    }
 
    //check file content
@@ -3032,13 +3032,13 @@ TEST_F(WalletInterfaceTest, EncryptionTest_OpenCloseAmend)
       IO::WalletIfaceTransaction tx(nullptr, dbIface.get(), false);
 
       auto key1Data = tx.getDataRef(key1);
-      EXPECT_EQ(key1Data, val1);
+      EXPECT_EQ(key1Data, val1.getRef());
 
       auto key2Data = tx.getDataRef(key2);
       EXPECT_EQ(key2Data.getSize(), 0ULL);
 
       auto key3Data = tx.getDataRef(key3);
-      EXPECT_EQ(key3Data, val4);
+      EXPECT_EQ(key3Data, val4.getRef());
    }
 
    auto key4 = Cryptography::PRNG::generateRandomStrong(30);
@@ -3060,13 +3060,13 @@ TEST_F(WalletInterfaceTest, EncryptionTest_OpenCloseAmend)
       EXPECT_EQ(key1Data.getSize(), 0ULL);
 
       auto key2Data = tx.getDataRef(key2);
-      EXPECT_EQ(key2Data, val5);
+      EXPECT_EQ(key2Data, val5.getRef());
 
       auto key3Data = tx.getDataRef(key3);
-      EXPECT_EQ(key3Data, val6);
+      EXPECT_EQ(key3Data, val6.getRef());
 
       auto key4Data = tx.getDataRef(key4);
-      EXPECT_EQ(key4Data, val3);
+      EXPECT_EQ(key4Data, val3.getRef());
    }
 
    //close dbIface
@@ -3924,7 +3924,7 @@ protected:
    Passphrase::UnlockFunc controlLbd_;
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       homedir_ = std::filesystem::path("./fakehomedir");
       FileUtils::removeDirectory(homedir_);
@@ -3944,7 +3944,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
+   void TearDown() override
    {
       Config::reset();
       FileUtils::removeDirectory(homedir_);
@@ -6973,6 +6973,171 @@ TEST_F(WalletsTest, ChangeControlPassphrase)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(WalletsTest, CompactFile_SwapFolder)
+{
+   //new addresses and control passphrase changes compact the wallet file
+   auto newPass = SecureBinaryData::fromString("newpass");
+   IO::CreateWalletParams params{
+      homedir_,
+      Passphrase::SetNew{1ms, 0, SecureBinaryData::fromString("test")},
+      Passphrase::SetNew{1ms, 0, controlPass_},
+      nullptr, 10,
+   };
+
+   std::filesystem::path filename;
+   std::set<BinaryData> addrHashes;
+   {
+      std::unique_ptr<Seeds::ClearTextSeed> seed(
+         new Seeds::ClearTextSeed_BIP32(
+            Seeds::SeedType::BIP32_Structured));
+      auto wlt = AssetWallet_Single::createFromSeed(
+         std::move(seed), params);
+      filename = wlt->getDbFilename();
+
+      for (unsigned i = 0; i < 5; i++) {
+         addrHashes.insert(wlt->getNewAddress()->getPrefixedHash());
+      }
+      addrHashes.insert(wlt->getNewChangeAddress()->getPrefixedHash());
+
+      Passphrase::SetNew newCtrlPassObj{1ms, 0, newPass};
+      wlt->changeControlPassphrase(newCtrlPassObj, controlLbd_);
+   }
+
+   //wallet file is in place, no swap file or extra link left behind
+   ASSERT_TRUE(std::filesystem::exists(filename));
+   EXPECT_EQ(std::filesystem::hard_link_count(filename), 1U);
+   auto swapFolder = filename.parent_path() / "_delete_me";
+   ASSERT_TRUE(std::filesystem::is_directory(swapFolder));
+   EXPECT_TRUE(std::filesystem::is_empty(swapFolder));
+
+   //reload with the new control passphrase
+   auto newPassLbd = [&newPass](const std::set<EncryptionKeyId>&)
+   ->Passphrase::Result
+   {
+      return { newPass, true };
+   };
+   auto loaded = AssetWallet::loadMainWalletFromFile(
+      IO::ReadOnlyFileParams{filename, newPassLbd});
+
+   std::set<BinaryData> usedAddrHashes;
+   for (auto& addrPair : loaded->getUsedAddressMap()) {
+      usedAddrHashes.insert(addrPair.second->getPrefixedHash());
+   }
+   EXPECT_EQ(addrHashes, usedAddrHashes);
+
+   //private keys still decrypt
+   auto privPassLbd = [](const std::set<EncryptionKeyId>&)
+   ->Passphrase::Result
+   {
+      return { SecureBinaryData::fromString("test"), true };
+   };
+   auto wltSingle = std::dynamic_pointer_cast<AssetWallet_Single>(loaded);
+   ASSERT_NE(wltSingle, nullptr);
+   auto root = std::dynamic_pointer_cast<Assets::AssetEntry_Single>(
+      wltSingle->getRoot());
+   ASSERT_NE(root, nullptr);
+   auto lock = wltSingle->lockDecryptedContainer(privPassLbd);
+   EXPECT_EQ(wltSingle->getDecryptedValue(root->getPrivKey()).getSize(), 32U);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(WalletsTest, CompactFile_SwapFailure)
+{
+   /*
+   With the wallet folder read-only (_delete_me stays writable), compactFile
+   can link the old file but cannot rename the copy over it. The wallet file
+   should stay in place and the wallet should remain usable.
+   */
+   auto newPass = SecureBinaryData::fromString("newpass");
+   IO::CreateWalletParams params{
+      homedir_,
+      Passphrase::SetNew{1ms, 0, SecureBinaryData::fromString("test")},
+      Passphrase::SetNew{1ms, 0, controlPass_},
+      nullptr, 10,
+   };
+
+   std::unique_ptr<Seeds::ClearTextSeed> seed(
+      new Seeds::ClearTextSeed_BIP32(
+         Seeds::SeedType::BIP32_Structured));
+   auto wlt = AssetWallet_Single::createFromSeed(
+      std::move(seed), params);
+   auto filename = wlt->getDbFilename();
+   auto wltFolder = filename.parent_path();
+   auto swapFolder = wltFolder / "_delete_me";
+   ASSERT_TRUE(std::filesystem::is_directory(swapFolder));
+
+   std::set<BinaryData> addrHashes;
+   addrHashes.insert(wlt->getNewAddress()->getPrefixedHash());
+
+   auto folderPerms = std::filesystem::status(wltFolder).permissions();
+   std::filesystem::permissions(wltFolder,
+      std::filesystem::perms::owner_write |
+      std::filesystem::perms::group_write |
+      std::filesystem::perms::others_write,
+      std::filesystem::perm_options::remove);
+
+   //restore the folder permissions on every exit path
+   struct PermGuard {
+      std::filesystem::path path;
+      std::filesystem::perms perms;
+      ~PermGuard()
+      {
+         std::error_code ec;
+         std::filesystem::permissions(path, perms, ec);
+      }
+   } permGuard{wltFolder, folderPerms};
+
+   //skip if folder permissions aren't enforced (root, Windows)
+   std::error_code ec;
+   if (std::filesystem::create_directory(wltFolder / "probe", ec)) {
+      std::filesystem::remove(wltFolder / "probe");
+      std::filesystem::permissions(wltFolder, folderPerms);
+      GTEST_SKIP() << "folder permissions are not enforced";
+   }
+
+   //the new passphrase is committed, then compactFile fails
+   bool swapFailed = false;
+   try {
+      Passphrase::SetNew newCtrlPassObj{1ms, 0, newPass};
+      wlt->changeControlPassphrase(newCtrlPassObj, controlLbd_);
+   } catch (const IO::WalletInterfaceException& e) {
+      EXPECT_EQ(e.what(),
+         std::string{"failed to swap file during wipe operation"});
+      swapFailed = true;
+   }
+   std::filesystem::permissions(wltFolder, folderPerms);
+   ASSERT_TRUE(swapFailed);
+
+   //wallet file is in place, only the compacted copy is left behind
+   ASSERT_TRUE(std::filesystem::exists(filename));
+   EXPECT_EQ(std::filesystem::hard_link_count(filename), 1U);
+   unsigned leftovers = 0;
+   for (auto& entry : std::filesystem::directory_iterator(swapFolder)) {
+      EXPECT_EQ(entry.path().filename().string().rfind("compactCopy-", 0), 0U);
+      ++leftovers;
+   }
+   EXPECT_EQ(leftovers, 1U);
+
+   //wallet is still usable
+   addrHashes.insert(wlt->getNewAddress()->getPrefixedHash());
+   wlt.reset();
+
+   //reload with the new control passphrase
+   auto newPassLbd = [&newPass](const std::set<EncryptionKeyId>&)
+   ->Passphrase::Result
+   {
+      return { newPass, true };
+   };
+   auto loaded = AssetWallet::loadMainWalletFromFile(
+      IO::ReadOnlyFileParams{filename, newPassLbd});
+   std::set<BinaryData> usedAddrHashes;
+   for (auto& addrPair : loaded->getUsedAddressMap()) {
+      usedAddrHashes.insert(addrPair.second->getPrefixedHash());
+   }
+   EXPECT_EQ(addrHashes, usedAddrHashes);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(WalletsTest, MultiplePassphrase)
 {
    //create wallet from priv key
@@ -8975,7 +9140,7 @@ protected:
    std::filesystem::path homedir_;
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       homedir_ = std::filesystem::path("./fakehomedir");
       FileUtils::removeDirectory(homedir_);
@@ -8988,7 +9153,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
+   void TearDown() override
    {
       Config::reset();
 
@@ -9990,7 +10155,7 @@ public:
    std::filesystem::path homedir_;
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       homedir_ = std::filesystem::path("./fakehomedir");
       FileUtils::removeDirectory(homedir_);
@@ -10004,7 +10169,7 @@ public:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
+   void TearDown() override
    {
       Config::reset();
 
@@ -11315,14 +11480,21 @@ TEST_F(BackupTests, BackupString_LegacyStatic)
          nullptr, 10
       });
 
-   auto woRestore = Seeds::Helpers::restoreFromBackup(
-      std::move(backupWO), callback, IO::CreateWalletParams{
-         newHomeDir,
-         Passphrase::SetNew{},
-         Passphrase::SetNew{1ms, 0, SecureBinaryData::fromString("woctrl")},
-         nullptr, 10
-      });
-   auto filename = woRestore.wltPtr->getDbFilename();
+   std::filesystem::path filename;
+   std::unique_ptr<Seeds::WalletBackup> newBackupWO;
+   {
+      auto woRestore = Seeds::Helpers::restoreFromBackup(
+         std::move(backupWO), callback, IO::CreateWalletParams{
+            newHomeDir,
+            Passphrase::SetNew{},
+            Passphrase::SetNew{1ms, 0, SecureBinaryData::fromString("woctrl")},
+            nullptr, 10
+         });
+      filename = woRestore.wltPtr->getDbFilename();
+      auto woWltSingle = std::dynamic_pointer_cast<AssetWallet_Single>(
+         woRestore.wltPtr);
+      newBackupWO = Seeds::Helpers::getWalletBackup(woWltSingle, false);
+   }
    auto wltSingle = std::dynamic_pointer_cast<AssetWallet_Single>(
       fullRestore.wltPtr);
 
@@ -11346,9 +11518,6 @@ TEST_F(BackupTests, BackupString_LegacyStatic)
    EXPECT_EQ(newFullBackE16->getChaincode(Seeds::LineIndex::Two, false), fullBackup[3]);
    EXPECT_TRUE(compareWalletWithBackup(wltSingle, filename, {}, "woctrl"));
 
-   auto woWltSingle = std::dynamic_pointer_cast<AssetWallet_Single>(
-      woRestore.wltPtr);
-   auto newBackupWO = Seeds::Helpers::getWalletBackup(woWltSingle, false);
    auto newBackupPublic = dynamic_cast<Seeds::Backup_Easy16Public*>(
       newBackupWO.get());
    ASSERT_NE(newBackupPublic, nullptr);

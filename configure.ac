@@ -15,41 +15,52 @@ AS_IF([test "$CXXFLAGS" = "-g -O2"] ,[AC_SUBST(CXXFLAGS, [ ])])
 
 #build tests arg
 AC_ARG_ENABLE([tests],
-              AS_HELP_STRING([--enable-tests],
-              [build with test suites @<:@default=no@:>@]),
-              [want_tests="$enableval"], [want_tests=no])
+  AS_HELP_STRING([--enable-tests],
+    [build with test suites @<:@default=no@:>@]),
+  [want_tests="$enableval"], [want_tests=no])
 
 #build benchmarks
 AC_ARG_ENABLE([benchmark],
-              AS_HELP_STRING([--enable-benchmark],
-              [build with benchmark suites @<:@default=no@:>@]),
-              [want_benchmark=$enableval], [want_benchmark=no])
+  AS_HELP_STRING([--enable-benchmark],
+    [build with benchmark suites @<:@default=no@:>@]),
+  [want_benchmark=$enableval], [want_benchmark=no])
 
 #build debug arg
 AC_ARG_ENABLE([debug],
-              AS_HELP_STRING([--enable-debug],
-              [compile with debug symbols @<:@default=no@:>@]),
-              [want_debug="$enableval"], [want_debug=no])
+  AS_HELP_STRING([--enable-debug],
+    [compile with debug symbols @<:@default=no@:>@]),
+  [want_debug="$enableval"], [want_debug=no])
+
+#compile with ASAN
+AC_ARG_WITH([asan],
+  AS_HELP_STRING([--with-asan],
+    [build with ASAN @<:@default=no@:>@]),
+  [with_asan="$withval"], [with_asan=no])
 
 #build client arg
 AC_ARG_WITH([client],
-              AS_HELP_STRING([--without-client],
-              [do not build client @<:@default=no@:>@]),
-              [with_client="$withval"], [with_client=yes])
+  AS_HELP_STRING([--without-client],
+    [do not build client @<:@default=no@:>@]),
+  [with_client="$withval"], [with_client=yes])
 
-# Custom libwebsockets path. This will be a mandatory flag, even if the user
-# uses /usr/local. The problem is that Ubuntu has a pretty old version of LWS.
-# We should just use a newer version and link it in.
+# Custom libwebsockets path. If you use system LWS, beware that the
+# version may mismatch what Armory targets. You will also have to link
+# with OpenSSL.
 AC_ARG_WITH([own-lws],
-    AS_HELP_STRING([--with-own-lws],
+  AS_HELP_STRING([--with-own-lws],
     [pass path of your own lws binary and headers @<:@default=no@:>@]),
-    [with_own_lws="$withval"], [with_own_lws=no])
+  [with_own_lws="$withval"], [with_own_lws=no])
 
 # Custom libbtc path
 AC_ARG_WITH([own-libbtc],
-    AS_HELP_STRING([--with-own-libbtc],
+  AS_HELP_STRING([--with-own-libbtc],
     [pass path of your own libbtc binary and headers @<:@default=no@:>@]),
-    [with_own_libbtc="$withval"], [with_own_libbtc=no])
+  [with_own_libbtc="$withval"], [with_own_libbtc=no])
+
+if test "x$with_asan" = "xyes"; then
+  CFLAGS="$CFLAGS -fsanitize=address -fno-omit-frame-pointer"
+  CXXFLAGS="$CXXFLAGS -fsanitize=address -fno-omit-frame-pointer"
+fi
 
 if test "x$want_debug" = "xyes" -a $ac_cv_c_compiler_gnu != no; then
   CFLAGS="$CFLAGS -O0 -g3"
@@ -406,6 +417,7 @@ echo "  ac_configure_args = $ac_configure_args"
 echo "  with tests        = $want_tests"
 echo "  with benchmarks   = $want_benchmark"
 echo "  debug symbols     = $want_debug"
+echo "  address sanitizer = $with_asan"
 echo "  with client       = $build_client"
 echo "  custom lws path   = $with_own_lws"
 echo "  custom libbtc     = $with_own_libbtc"

@@ -794,12 +794,43 @@ void WalletDBInterface::compactFile()
       }
       swapPath = fullpath;
 
-      //rename old file to swap
+      /*
+      Hard link the old file to swap, then replace the wallet path with the
+      copy in a single rename, so a process crash can't leave the path empty.
+      Fall back to moving the old file if the link fails (FAT/exFAT).
+      Entries in swap may be links to the live file: unlink them, don't wipe.
+      */
+      bool linked = false;
+      bool moved = false;
       try {
-         std::filesystem::rename(fullDbPath, swapPath);
+         std::error_code ec;
+         std::filesystem::create_hard_link(fullDbPath, swapPath, ec);
+         if (!ec) {
+            linked = true;
+         } else {
+            std::filesystem::rename(fullDbPath, swapPath);
+            moved = true;
+         }
          std::filesystem::rename(copyName, fullDbPath);
       } catch (const std::filesystem::filesystem_error& e) {
-         std::cout << e.what() << std::endl;
+         std::error_code ec;
+         if (linked) {
+            LOGWARN << std::format(
+               "compactFile file swap via hardlink failed with error: \"{}\"",
+               e.what());
+            //old file is still in place, drop the link (do not wipe it!)
+            std::filesystem::remove(swapPath, ec);
+         } else if (moved) {
+            //put the old file back
+            LOGWARN << std::format(
+               "compactFile file swap via move failed with error: \"{}\"",
+               e.what());
+            std::filesystem::rename(swapPath, fullDbPath, ec);
+         }
+         if (FileUtils::pathExists(fullDbPath, 0)) {
+            //nothing was swapped, reopen the old file
+            openEnv();
+         }
          throw WalletInterfaceException(
             "failed to swap file during wipe operation");
       }
@@ -994,8 +1025,8 @@ void WalletIfaceTransaction::closeTx()
    dataMapCopy->update(insertVec_);
 
    //swap in the data struct
-   std::atomic_store_explicit(
-      &dbPtr_->dataMapPtr_, dataMapCopy, std::memory_order_release);
+   dbPtr_->dataMapPtr_.store(
+      dataMapCopy, std::memory_order_release);
 
    if (!needsWiped) {
       return;
@@ -1124,8 +1155,8 @@ bool WalletIfaceTransaction::insertTx(WalletIfaceTransaction* txPtr)
       ptx->getDataLbd_ = getDataLbd;
    }
 
-   ptx->dataMapPtr_ = std::atomic_load_explicit(
-      &txPtr->dbPtr_->dataMapPtr_, std::memory_order_acquire);
+   ptx->dataMapPtr_ = txPtr->dbPtr_->dataMapPtr_.load(
+      std::memory_order_acquire);
    txPtr->dataMapPtr_ = ptx->dataMapPtr_;
    return true;
 }

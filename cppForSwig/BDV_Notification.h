@@ -112,6 +112,13 @@ struct BDV_Notification_Progress : public BDV_Notification
 };
 
 ///////////////////////////////////////////////////////////////////////////////
+struct BDV_Notification_UpdateNodeStatus : public BDV_Notification
+{
+   //request BDV to generate and fan-out a BDV_Notification_NodeStatus
+   BDV_Notification_UpdateNodeStatus(void);
+   BDV_Action actionType(void) const override;
+};
+
 struct BDV_Notification_NodeStatus : public BDV_Notification
 {
    const std::shared_ptr<Node::Status> status;
@@ -131,12 +138,12 @@ struct BDV_Notification_Error : public BDV_Notification
    bool fatal(void) const override;
 };
 
-class BDV_Server_Object;
+class BdvClient;
 
 ///////////////////////////////////////////////////////////////////////////////
 struct BDV_Notification_Packet
 {
-   std::shared_ptr<BDV_Server_Object> bdvPtr;
+   std::shared_ptr<BdvClient> bdvPtr;
    std::shared_ptr<BDV_Notification> notifPtr;
 };
 

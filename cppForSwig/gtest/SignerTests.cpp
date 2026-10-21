@@ -49,10 +49,10 @@ std::shared_ptr<ScriptSpender> getSpenderPtr(
 class PRNGTest : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void)
+   void SetUp() override
    {}
 
-   virtual void TearDown(void)
+   void TearDown() override
    {}
 };
 
@@ -210,7 +210,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       LOGDISABLESTDOUT();
       ghash_ = READHEX(MAINNET_GENESIS_HASH_HEX);
@@ -248,7 +248,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
+   void TearDown() override
    {
       if (clients_ != nullptr) {
          clients_->shutdown();
@@ -293,7 +293,7 @@ TEST_F(SignerTest, DISABLED_CheckChain_Test)
    //this test fails because the p2sh tx in our unit test chain are botched
    //(the input script has opcode when it should only be push data)
 
-   BlockDataManager bdm(nullptr);
+   BlockDataManager bdm;
    try {
       bdm.doInitialSyncOnLoad(BdmInitMode::RESUME, nullptr);
    } catch (const std::exception&) {
@@ -7420,7 +7420,7 @@ class ExtrasTest : public ::testing::Test
 protected:
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       FileUtils::removeDirectory(homedir_);
       std::filesystem::create_directory(homedir_);
@@ -7438,7 +7438,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
+   void TearDown() override
    {
       FileUtils::removeDirectory(homedir_);
       Config::reset();
@@ -9122,7 +9122,7 @@ class ExtrasTest_Mainnet : public ::testing::Test
 protected:
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       FileUtils::removeDirectory(homedir_);
       std::filesystem::create_directory(homedir_);
@@ -9139,7 +9139,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
+   void TearDown() override
    {
       FileUtils::removeDirectory(homedir_);
 

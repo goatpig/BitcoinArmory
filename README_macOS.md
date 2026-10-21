@@ -59,7 +59,7 @@ Once the builds are verified, the following steps should be followed. (Note that
    3.2. If the option in Step 2.1 is unavailable, there is an alternative. On all supported versions of macOS, click the lock and unlock it, choose "Anywhere", re-lock the system, and start Armory, ignoring the unsigned code warning. (If the "Anywhere" option isn't seen, [follow these instructions](http://osxdaily.com/2016/09/27/allow-apps-from-anywhere-macos-gatekeeper/) to bring it up.) If you wish, you may reset the "Allow apps downloaded from" setting to a more strict setting at this point. macOS will remember that you allowed Armory to run.
 
 ## Compiling Armory
-See the [macOS build README](osxbuild/OSX_build_notes.md) for more info.
+See the [macOS build instructions](build_instructions/osx/macos.md) for more info.
 
 ## Running armoryd
 As of 2017, armoryd (a JSON-RPC daemon for Armory) is [in its own repo](https://github.com/goatpig/armoryd), separate from Armory. If users wish to run armoryd under macOS, the easiest solution is to open up Armory.app and place armoryd.py alongside the Armory codebase (Contents/MacOS/py/usr/local/lib/armory). The user can then execute the script that kicks off armoryd (`Contents/MacOS/armoryd`).

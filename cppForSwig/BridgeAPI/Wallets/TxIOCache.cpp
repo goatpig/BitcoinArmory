@@ -14,7 +14,7 @@
 #include <Ledgers/Context.h>
 #include <TxClasses.h>
 #include <AsyncClient.h>
-#include "Notifications.h"
+#include "../Notifications.h"
 
 using namespace Armory;
 using namespace Armory::Bridge;
@@ -197,10 +197,12 @@ bool TxIOCache::txKeyIsValid(const Types::TxKey& txKey) const
 ////////
 uint32_t TxIOCache::update(
    std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr,
-   std::shared_ptr<NotifStruct> notif)
+   std::shared_ptr<Notifications::Server::Notif> notif)
 {
+   using namespace Notifications::Server;
+
    if (notif->type == NotifType::ZC) {
-      auto zcPtr = std::dynamic_pointer_cast<NotifStruct_ZC>(notif);
+      auto zcPtr = std::dynamic_pointer_cast<Notif_ZC>(notif);
       updateZC(bdvPtr, zcPtr->txios, zcPtr->invalidatedZCHashes, true);
       return UINT32_MAX;
    }
@@ -208,7 +210,7 @@ uint32_t TxIOCache::update(
    NewBlockNotif blockNotif{UINT32_MAX, UINT32_MAX, {}, {}};
    if (notif->type == NotifType::NEWBLOCK) {
       auto blockPtr =
-         std::dynamic_pointer_cast<NotifStruct_NewBlock>(notif);
+         std::dynamic_pointer_cast<Notif_NewBlock>(notif);
       blockNotif = blockPtr->blockNotif;
    }
    uint32_t fromHeight = 0;

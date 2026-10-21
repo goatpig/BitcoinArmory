@@ -98,28 +98,27 @@ private:
    std::shared_ptr<Armory::Database::Builder> dbBuilder_;
    std::shared_ptr<Armory::ZeroConf::ZeroConfContainer> zeroConfCont_;
 
-   std::function<bool(void)> shutdownLbd_;
    std::atomic_int32_t BDMstate_;
    std::exception_ptr exceptPtr_ = nullptr;
 
    unsigned checkTransactionCount_ = 0;
-   mutable std::shared_ptr<std::mutex> nodeStatusPollMutex_;
    Armory::Threading::Queue<std::shared_ptr<BDVNotificationHook>> oneTimeHooks_;
    std::unique_ptr<std::promise<bool>> startPromise_;
 
 public:
    typedef std::function<void(BDMPhase, double,unsigned, unsigned)> ProgressCallback;
    std::shared_ptr<Node::Core::P2P::Iface> processNode, watchNode;
-   std::shared_future<bool> isReadyFuture;
+   std::shared_future<void> isReadyFuture;
    mutable std::shared_ptr<Node::Core::RPC::Iface> nodeRPC;
 
-   Armory::Threading::TimedQueue<std::unique_ptr<BDV_Notification>> notificationStack;
+   std::shared_ptr<Armory::Threading::TimedQueue<
+      std::unique_ptr<BDV_Notification>>> notificationQueue;
 
 private:
    bool loadDiskState(const ProgressCallback&);
 
 public:
-   BlockDataManager(std::function<bool(void)>);
+   BlockDataManager(void);
    ~BlockDataManager(void);
 
    std::shared_ptr<Armory::Blockchain> blockchain(void) const;
@@ -147,7 +146,6 @@ public:
 
    void signalStart(bool);
    bool waitOnStartSignal(void);
-   void triggerShutdown(void);
    void shutdown(void);
    void cleanup(void);
    bool isRunning(void) const;
