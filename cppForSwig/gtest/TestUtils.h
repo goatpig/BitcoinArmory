@@ -161,6 +161,8 @@ namespace DBTestUtils
       BinaryData, bool = false);
 
    Tx getTxByHash(Clients*, Armory::Types::BdvId, const Armory::Types::TxHash&);
+   std::vector<Tx> getTxsByHash(Clients*, Armory::Types::BdvId,
+      const std::vector<Armory::Types::TxHash>&);
    Tx getTxByKey(Clients*, Armory::Types::BdvId, const Armory::Types::TxKey&);
 
    BinaryData processCommand(Clients*, Armory::Types::BdvId, BinaryData);

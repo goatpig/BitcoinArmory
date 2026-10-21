@@ -2451,6 +2451,13 @@ TEST_F(BlockUtilsFull, TxHints)
       ASSERT_EQ(final, 0xffff050004000000);
    }
 
+   //a GET_TXS_BY_HASH for hash35 goes through the same collision and
+   //returns the tx the collision resolves to
+   auto txs = DBTestUtils::getTxsByHash(clients_, bdvID, {TestChain::hash35});
+   ASSERT_EQ(txs.size(), 1);
+   EXPECT_EQ(txs[0].getThisHash(), TestChain::hash35);
+   EXPECT_EQ(txs[0].getDBKey(), 0xffff050004000000);
+
    //cleanup
    bdvPtr.reset();
 }
