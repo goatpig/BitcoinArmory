@@ -98,17 +98,20 @@ BinaryData CppBridgeSocket::getPayload()
                data.getSliceRef(0, POLY1305MACLEN + AUTHASSOCDATAFIELDLEN),
                emptySizeCheck);
 
-            if (decrLen == -1 || decrLen > BRIDGE_SOCKET_MAXLEN) {
+            if (decrLen < 0 || decrLen > BRIDGE_SOCKET_MAXLEN) {
                //fatal error
                throw std::runtime_error("packet exceeds BRIDGE_SOCKET_MAXLEN, aborting");
             }
 
-            if (decrLen > (ssize_t)data.getSize() + POLY1305MACLEN) {
+            if ((size_t)decrLen + AUTHASSOCDATAFIELDLEN + POLY1305MACLEN >
+               data.getSize()) {
                //not enough data to decrypt, wait for more
                dataRef.reset();
             } else {
                //decrypt the data
-               bip151Connection_->decryptPacket(data.getRef(), data);
+               if (bip151Connection_->decryptPacket(data.getRef(), data) != 0) {
+                  throw std::runtime_error("failed to decrypt packet, aborting");
+               }
 
                //point to the head of the decrypted cleartext
                dataRef.setRef(data.getPtr() + AUTHASSOCDATAFIELDLEN, decrLen);

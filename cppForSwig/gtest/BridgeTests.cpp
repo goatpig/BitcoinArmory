@@ -4542,6 +4542,34 @@ TEST_F(BridgeSocketTests, EstablishConnection)
    auto lorem2FromClient = client->getPayload();
    EXPECT_EQ(lorem2, lorem2FromClient);
 
+   //feed it encrypted packets in 2 parts, the second part only carries the
+   //last few bytes: the first part is long enough to read the packet length
+   //but the packet is not complete yet
+   auto lorem3 = BinaryData::fromString("Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur."sv);
+   for (size_t tail : {1, 10, 16, 17, 36}) {
+      auto packetLen = lorem3.getSize() + 1;
+      BinaryData target;
+      target.resize(packetLen + POLY1305MACLEN + AUTHASSOCDATAFIELDLEN);
+      std::memcpy(target.getPtr(), &packetLen, sizeof(uint32_t));
+      target[4] = (uint8_t)ArmoryAEAD::BIP151_PayloadType::SinglePacket;
+      std::memcpy(target.getPtr() + 5, lorem3.getPtr(), lorem3.getSize());
+      serverBIP15xSession.assemblePacket(
+         target.getSliceRef(0, packetLen + AUTHASSOCDATAFIELDLEN),
+         target.getPtr(), target.getSize());
+
+      auto payload1 = std::make_unique<RawBridgePayload>(
+         std::move(target.getSliceCopy(0, target.getSize() - tail)));
+      auto payload2 = std::make_unique<RawBridgePayload>(
+         std::move(target.getSliceCopy(target.getSize() - tail, tail)));
+
+      server.pushPayload(std::move(payload1), nullptr);
+      std::this_thread::sleep_for(1s);
+      server.pushPayload(std::move(payload2), nullptr);
+
+      auto lorem3FromClient = client->getPayload();
+      EXPECT_EQ(lorem3, lorem3FromClient) << "last " << tail << " bytes sent apart";
+   }
+
    //cleanup
    client->shutdown();
    server.shutdown();
