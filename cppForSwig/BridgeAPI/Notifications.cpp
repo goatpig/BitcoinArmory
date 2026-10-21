@@ -144,7 +144,8 @@ void Push::NotifHandler::run(BdmNotification notif)
 
       case BDMAction_Refresh:
       {
-         queue_->push_back(std::make_unique<Command_Refresh>(notif.ids));
+         queue_->push_back(std::make_unique<Command_Refresh>(
+            notif.ids, SyncState::ScanWallets));
          break;
       }
 
@@ -226,9 +227,9 @@ Push::Payload::Payload(PayloadType t) :
 Push::Payload::~Payload()
 {}
 
-bool Push::Payload::syncWalletState() const
+SyncState Push::Payload::syncWalletState() const
 {
-   return false;
+   return SyncState::NoSync;
 }
 
 ////////
@@ -243,6 +244,11 @@ Push::Notif_ZC::Notif_ZC(
    invalidatedZCHashes(std::move(invalidatedZc))
 {}
 
+SyncState Push::Notif_ZC::syncWalletState() const
+{
+   return SyncState::ScanWallets;
+}
+
 ////////
 Push::Notif_NewBlock::Notif_NewBlock(
    const NewBlockNotif& notif, bool isReady) :
@@ -250,9 +256,9 @@ Push::Notif_NewBlock::Notif_NewBlock(
    blockNotif(notif), isReadyNotif(isReady)
 {}
 
-bool Push::Notif_NewBlock::syncWalletState() const
+SyncState Push::Notif_NewBlock::syncWalletState() const
 {
-   return isReadyNotif;
+   return isReadyNotif ? SyncState::SyncWallets : SyncState::ScanWallets;
 }
 
 ////////
@@ -267,17 +273,21 @@ Push::Command_PassAlong::Command_PassAlong(BinaryData pushData) :
 {}
 
 ////////
-Push::Command_Refresh::Command_Refresh(const std::set<std::string>& ids) :
-   Payload(PayloadType::REFRESH), refreshIds(ids)
+Push::Command_Refresh::Command_Refresh(
+   const std::set<std::string>& ids, SyncState state) :
+   Payload(PayloadType::REFRESH),
+   refreshIds(ids), syncWalletsWithDB{state}
 {}
 
-Push::Command_Refresh::Command_Refresh(const std::string& id) :
-   Payload(PayloadType::REFRESH), refreshIds({id})
+Push::Command_Refresh::Command_Refresh(
+   const std::string& id, SyncState state) :
+   Payload(PayloadType::REFRESH),
+   refreshIds({id}), syncWalletsWithDB{state}
 {}
 
-bool Push::Command_Refresh::syncWalletState() const
+SyncState Push::Command_Refresh::syncWalletState() const
 {
-   return true;
+   return syncWalletsWithDB;
 }
 
 ////////
