@@ -4323,41 +4323,96 @@ TEST_F(BridgeSocketTests, EstablishConnection)
       }, std::move(firstPacketProm)
    );
 
-   /* drive the server side AEAD handshake */
+   /* some helpers */
+
+   //server side BIP151 session
    BIP151Connection serverBIP15xSession{serverStore_->getView(), false};
-   auto serverWriteCb = [&server, &serverBIP15xSession]
+
+   //server side decryption helper
+   auto decryptByServer = [&serverBIP15xSession]
+   (const std::vector<uint8_t>& cipherText, size_t expectedSize,
+      ArmoryAEAD::BIP151_PayloadType expectedPayloadType)->BinaryData
+   {
+      if (cipherText.size() !=
+         expectedSize + POLY1305MACLEN + AUTHASSOCDATAFIELDLEN) {
+         return {};
+      }
+
+      BinaryData clearText;
+      auto decrLen = serverBIP15xSession.decryptPacket(
+         BinaryDataRef::fromVector(cipherText, POLY1305MACLEN + AUTHASSOCDATAFIELDLEN),
+         clearText);
+      if (decrLen != expectedSize) {
+         return {};
+      }
+
+      clearText.resize(decrLen + AUTHASSOCDATAFIELDLEN);
+      if (serverBIP15xSession.decryptPacket(
+         BinaryDataRef::fromVector(cipherText),
+         clearText) != 0) {
+         return {};
+      }
+      if (clearText[4] != (uint8_t)expectedPayloadType) {
+         return {};
+      }
+
+      //return the cleartext stripped of the size header and the
+      //packet type prefix
+      return clearText.getSliceCopy(5, clearText.getSize() - 5);
+   };
+
+   //server side encryption helper
+   auto encryptByServer = [&serverBIP15xSession]
+   (const BinaryData& clearText,
+      ArmoryAEAD::BIP151_PayloadType pType)->BinaryData
+   {
+      uint32_t packetLen = clearText.getSize() + 1;
+
+      //prepare ciphertext target
+      BinaryData target;
+      target.resize(packetLen + POLY1305MACLEN + AUTHASSOCDATAFIELDLEN);
+
+      //set packet size
+      std::memcpy(target.getPtr(), &packetLen, sizeof(uint32_t));
+
+      //payload type
+      target[4] = (uint8_t)pType;
+
+      //copy the data
+      std::memcpy(target.getPtr() + 5, clearText.getPtr(), clearText.getSize());
+
+      //encrypt
+      serverBIP15xSession.assemblePacket(
+         target.getSliceRef(0, packetLen + AUTHASSOCDATAFIELDLEN),
+         target.getPtr(), target.getSize());
+      return target;
+   };
+
+   //server write function
+   auto serverWriteCb = [&server, &encryptByServer]
    (const BinaryData& data, ArmoryAEAD::BIP151_PayloadType pType, bool encrypt) {
-      uint32_t packetLen = data.getSize() + 1;
       std::unique_ptr<RawBridgePayload> payload;
       if (encrypt) {
-         //prepare ciphertext target
-         BinaryData target;
-         target.resize(packetLen + POLY1305MACLEN + AUTHASSOCDATAFIELDLEN);
-
-         //set packet size
-         std::memcpy(target.getPtr(), &packetLen, sizeof(uint32_t));
-
-         //payload type
-         target[4] = (uint8_t)pType;
-
-         //copy the data
-         std::memcpy(target.getPtr() + 5, data.getPtr(), data.getSize());
-
-         //encrypt
-         serverBIP15xSession.assemblePacket(
-            target.getSliceRef(0, packetLen + AUTHASSOCDATAFIELDLEN),
-            target.getPtr(), target.getSize());
-
-         //package in payload
-         payload = std::make_unique<RawBridgePayload>(std::move(target));
+         auto cipherText = encryptByServer(data, pType);
+         payload = std::make_unique<RawBridgePayload>(std::move(cipherText));
       } else {
-         BinaryWriter bw(packetLen);
+         BinaryWriter bw(data.getSize() + 1);
          bw.put_uint8_t((uint8_t)pType);
          bw.put_BinaryData(data);
          payload = std::make_unique<RawBridgePayload>(bw.getData());
       }
       server.pushPayload(std::move(payload), nullptr);
    };
+
+   //empty server write function, for those payload that shouldn't reply
+   int timesServerShouldNotHaveReplied = 0;
+   auto noReplyServerWriteCb = [&timesServerShouldNotHaveReplied]
+   (const BinaryData&, ArmoryAEAD::BIP151_PayloadType, bool) {
+      ++timesServerShouldNotHaveReplied;
+      return;
+   };
+
+   /* drive the server side AEAD handshake */
 
    //1. server sends start
    {
@@ -4376,11 +4431,14 @@ TEST_F(BridgeSocketTests, EstablishConnection)
       ASSERT_GE(encAckReply.size(), 34);
       ASSERT_EQ(encAckReply[0], (uint8_t)ArmoryAEAD::BIP151_PayloadType::EncAck);
       BinaryDataRef encAckBdr{encAckReply.data() + 1, 33};
+
+      //server should not have to reply to this payload
       ASSERT_EQ(ArmoryAEAD::BIP15x_Handshake::serverSideHandshake(
          &serverBIP15xSession, ArmoryAEAD::BIP151_PayloadType::EncAck,
-         encAckBdr, nullptr),
+         encAckBdr, noReplyServerWriteCb),
          ArmoryAEAD::HandshakeState::StepSuccessful
       );
+      ASSERT_EQ(timesServerShouldNotHaveReplied, 0);
    }
 
    //3. expect encInit
@@ -4406,77 +4464,53 @@ TEST_F(BridgeSocketTests, EstablishConnection)
 
    //4. expect auth challenge
    {
-      auto authChallenge = server.getPacket();
-      ASSERT_EQ(authChallenge.size(), 33 + POLY1305MACLEN + AUTHASSOCDATAFIELDLEN);
+      auto authChallengeCipher = server.getPacket();
+      auto authChallengeClear = decryptByServer(authChallengeCipher,
+         33, ArmoryAEAD::BIP151_PayloadType::Challenge);
 
-      //this should be an encrypted packet
-      BinaryData clearText;
-      auto decrLen = serverBIP15xSession.decryptPacket(
-         BinaryDataRef::fromVector(authChallenge, POLY1305MACLEN + AUTHASSOCDATAFIELDLEN),
-         clearText);
-      ASSERT_EQ(decrLen, 33);
-
-      clearText.resize(decrLen + AUTHASSOCDATAFIELDLEN);
-      ASSERT_EQ(serverBIP15xSession.decryptPacket(
-         BinaryDataRef::fromVector(authChallenge),
-         clearText), 0);
-
-      ASSERT_EQ(clearText[4], (uint8_t)ArmoryAEAD::BIP151_PayloadType::Challenge);
+      //returned cleartext will be stripped of the size header and
+      //the payload type prefix
+      ASSERT_EQ(authChallengeClear.getSize(), 32);
       ASSERT_EQ(ArmoryAEAD::BIP15x_Handshake::serverSideHandshake(
          &serverBIP15xSession, ArmoryAEAD::BIP151_PayloadType::Challenge,
-         clearText.getSliceRef(5, clearText.getSize() - 5), serverWriteCb),
+         authChallengeClear, serverWriteCb),
          ArmoryAEAD::HandshakeState::StepSuccessful
       );
    }
 
    //5. expect propose
    {
-      auto propose = server.getPacket();
-      ASSERT_EQ(propose.size(), 33 + POLY1305MACLEN + AUTHASSOCDATAFIELDLEN);
+      auto proposeCipher = server.getPacket();
+      auto proposeClear = decryptByServer(proposeCipher,
+         33, ArmoryAEAD::BIP151_PayloadType::Propose);
 
-      //this should be an encrypted packet
-      BinaryData clearText;
-      auto decrLen = serverBIP15xSession.decryptPacket(
-         BinaryDataRef::fromVector(propose, POLY1305MACLEN + AUTHASSOCDATAFIELDLEN),
-         clearText);
-      ASSERT_EQ(decrLen, 33);
-
-      clearText.resize(decrLen + AUTHASSOCDATAFIELDLEN);
-      ASSERT_EQ(serverBIP15xSession.decryptPacket(
-         BinaryDataRef::fromVector(propose),
-         clearText), 0);
-
-      ASSERT_EQ(clearText[4], (uint8_t)ArmoryAEAD::BIP151_PayloadType::Propose);
+      //returned cleartext will be stripped of the size header and
+      //the payload type prefix
+      ASSERT_EQ(proposeClear.getSize(), 32);
       ASSERT_EQ(ArmoryAEAD::BIP15x_Handshake::serverSideHandshake(
          &serverBIP15xSession, ArmoryAEAD::BIP151_PayloadType::Propose,
-         clearText.getSliceRef(5, clearText.getSize() - 5), serverWriteCb),
+         proposeClear, serverWriteCb),
          ArmoryAEAD::HandshakeState::StepSuccessful
       );
    }
 
    //6. expect reply
    {
-      auto reply = server.getPacket();
-      ASSERT_EQ(reply.size(), 65 + POLY1305MACLEN + AUTHASSOCDATAFIELDLEN);
+      auto replyCipher = server.getPacket();
+      auto replyClear = decryptByServer(replyCipher,
+         65, ArmoryAEAD::BIP151_PayloadType::Reply);
 
-      //this should be an encrypted packet
-      BinaryData clearText;
-      auto decrLen = serverBIP15xSession.decryptPacket(
-         BinaryDataRef::fromVector(reply, POLY1305MACLEN + AUTHASSOCDATAFIELDLEN),
-         clearText);
-      ASSERT_EQ(decrLen, 65);
+      //returned cleartext will be stripped of the size header and
+      //the payload type prefix
+      ASSERT_EQ(replyClear.getSize(), 64);
 
-      clearText.resize(decrLen + AUTHASSOCDATAFIELDLEN);
-      ASSERT_EQ(serverBIP15xSession.decryptPacket(
-         BinaryDataRef::fromVector(reply),
-         clearText), 0);
-
-      ASSERT_EQ(clearText[4], (uint8_t)ArmoryAEAD::BIP151_PayloadType::Reply);
+      //server should not have to reply to this payload
       ASSERT_EQ(ArmoryAEAD::BIP15x_Handshake::serverSideHandshake(
          &serverBIP15xSession, ArmoryAEAD::BIP151_PayloadType::Reply,
-         clearText.getSliceRef(5, clearText.getSize() - 5), nullptr),
+         replyClear, noReplyServerWriteCb),
          ArmoryAEAD::HandshakeState::Completed
       );
+      ASSERT_EQ(timesServerShouldNotHaveReplied, 0);
    }
 
    //send a packet from server to end the client's getPayload loop
@@ -4491,16 +4525,11 @@ TEST_F(BridgeSocketTests, EstablishConnection)
    //feed it an encrypted packet in 2 parts, first part is <20 bytes
    auto lorem1 = BinaryData::fromString("Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua"sv);
    {
-      auto packetLen = lorem1.getSize() + 1;
-      BinaryData target;
-      target.resize(packetLen + POLY1305MACLEN + AUTHASSOCDATAFIELDLEN);
-      std::memcpy(target.getPtr(), &packetLen, sizeof(uint32_t));
-      target[4] = (uint8_t)ArmoryAEAD::BIP151_PayloadType::SinglePacket;
-      std::memcpy(target.getPtr() + 5, lorem1.getPtr(), lorem1.getSize());
-      serverBIP15xSession.assemblePacket(
-         target.getSliceRef(0, packetLen + AUTHASSOCDATAFIELDLEN),
-         target.getPtr(), target.getSize());
+      //encrypt the data
+      auto target = encryptByServer(lorem1,
+         ArmoryAEAD::BIP151_PayloadType::SinglePacket);
 
+      //split it
       auto payload1 = std::make_unique<RawBridgePayload>(
          std::move(target.getSliceCopy(0, 16)));
       auto payload2 = std::make_unique<RawBridgePayload>(
@@ -4516,15 +4545,9 @@ TEST_F(BridgeSocketTests, EstablishConnection)
    //feed it an encrypted packet in 3 parts
    auto lorem2 = BinaryData::fromString("Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat."sv);
    {
-      auto packetLen = lorem2.getSize() + 1;
-      BinaryData target;
-      target.resize(packetLen + POLY1305MACLEN + AUTHASSOCDATAFIELDLEN);
-      std::memcpy(target.getPtr(), &packetLen, sizeof(uint32_t));
-      target[4] = (uint8_t)ArmoryAEAD::BIP151_PayloadType::SinglePacket;
-      std::memcpy(target.getPtr() + 5, lorem2.getPtr(), lorem2.getSize());
-      serverBIP15xSession.assemblePacket(
-         target.getSliceRef(0, packetLen + AUTHASSOCDATAFIELDLEN),
-         target.getPtr(), target.getSize());
+      //encrypt the data
+      auto target = encryptByServer(lorem2,
+         ArmoryAEAD::BIP151_PayloadType::SinglePacket);
 
       auto payload1 = std::make_unique<RawBridgePayload>(
          std::move(target.getSliceCopy(0, 30)));
@@ -4547,15 +4570,8 @@ TEST_F(BridgeSocketTests, EstablishConnection)
    //but the packet is not complete yet
    auto lorem3 = BinaryData::fromString("Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur."sv);
    for (size_t tail : {1, 10, 16, 17, 36}) {
-      auto packetLen = lorem3.getSize() + 1;
-      BinaryData target;
-      target.resize(packetLen + POLY1305MACLEN + AUTHASSOCDATAFIELDLEN);
-      std::memcpy(target.getPtr(), &packetLen, sizeof(uint32_t));
-      target[4] = (uint8_t)ArmoryAEAD::BIP151_PayloadType::SinglePacket;
-      std::memcpy(target.getPtr() + 5, lorem3.getPtr(), lorem3.getSize());
-      serverBIP15xSession.assemblePacket(
-         target.getSliceRef(0, packetLen + AUTHASSOCDATAFIELDLEN),
-         target.getPtr(), target.getSize());
+      auto target = encryptByServer(lorem3,
+         ArmoryAEAD::BIP151_PayloadType::SinglePacket);
 
       auto payload1 = std::make_unique<RawBridgePayload>(
          std::move(target.getSliceCopy(0, target.getSize() - tail)));
