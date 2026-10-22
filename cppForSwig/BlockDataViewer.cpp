@@ -62,14 +62,6 @@ bool BlockDataViewer::isBDMRunning() const
    return bdm_->isRunning();
 }
 
-void BlockDataViewer::blockUntilBDMisReady() const
-{
-   if (bdm_ == nullptr) {
-      throw std::runtime_error("no bdmPtr_");
-   }
-   bdm_->blockUntilReady();
-}
-
 LMDBBlockDatabase* BlockDataViewer::getDB() const
 {
    return db_;

@@ -24,6 +24,7 @@
 #include <Utils/Types.h>
 #include <Utils/BinaryData.h>
 #include "BlockObj.h"
+#include "bdmenums.h"
 
 namespace Armory
 {
@@ -62,9 +63,11 @@ struct RegistrationBatch : public AddressBatch
    const std::vector<Armory::Types::ScrAddr> scrAddrVec;
    const bool isNew;
    const Callback callback;
+   std::atomic<bool> keepTrying;
 
    RegistrationBatch(const std::vector<std::string>&,
       std::vector<Armory::Types::ScrAddr>, bool, const Callback&);
+   void halt(void);
 };
 
 ////
@@ -160,7 +163,7 @@ public:
    std::mutex mergeLock_;
 
 private:
-   void run(std::shared_future<bool>);
+   void run(void);
    AddrMap prepareRegistrationBatch(std::shared_ptr<RegistrationBatch>);
    void mergeAddresses(AddrMap, bool);
    AddrMap assignScrAddrKeys(const std::vector<Armory::Types::ScrAddr>&);
@@ -175,7 +178,7 @@ public:
    virtual ~ScrAddrFilter(void);
 
    ////
-   void start(std::shared_future<bool>);
+   void start(void);
    void shutdown(void);
    bool empty(void) const;
    void resetSDBI(void);
@@ -206,5 +209,5 @@ protected:
       const std::vector<std::string>&, bool) = 0;
    virtual std::shared_ptr<Armory::Blockchain> blockchain(void) const = 0;
    virtual bool bdmIsRunning(void) const = 0;
-   virtual bool bdmIsReady(void) const = 0;
+   virtual BDMState waitOnBDMReady(std::chrono::milliseconds) const = 0;
 };
