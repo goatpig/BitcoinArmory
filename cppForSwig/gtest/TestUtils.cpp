@@ -557,8 +557,8 @@ namespace DBTestUtils
       };
 
       auto bdv_obj = clients->get(bdvId);
-      auto cbPtr = bdv_obj->notifications_.get();
-      auto unittest_cbptr = dynamic_cast<UnitTest_Callback*>(cbPtr);
+      auto cbPtr = bdv_obj->pushToClient_.get();
+      auto unittest_cbptr = dynamic_cast<PushToTestClient*>(cbPtr);
       if (unittest_cbptr == nullptr) {
          throw std::runtime_error("unexpected callback ptr type");
       }
@@ -572,7 +572,7 @@ namespace DBTestUtils
       }
    }
 
-   /////////////////////////////////////////////////////////////////////////////
+   ////////
    void waitOnBDMSignal(std::shared_ptr<BlockDataManager> bdm, BDV_Action action)
    {
       while (true) {
@@ -589,20 +589,17 @@ namespace DBTestUtils
       }
    }
 
-   /////////////////////////////////////////////////////////////////////////////
    void waitOnBDVReady(Clients* clients, Types::BdvId bdvId)
    {
       waitOnSignal(clients, bdvId,
          (int)Codec::BDV::Notification::CONNECTION_IS_READY);
    }
 
-   /////////////////////////////////////////////////////////////////////////////
    void waitOnBDMError(std::shared_ptr<BlockDataManager> bdm)
    {
       waitOnBDMSignal(bdm, BDV_Action::BDV_Error);
    }
 
-   /////////////////////////////////////////////////////////////////////////////
    std::tuple<BinaryData, unsigned> waitOnNewBlockSignal(
       Clients* clients, Types::BdvId bdvId)
    {

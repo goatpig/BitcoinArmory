@@ -25,6 +25,8 @@
 #include "StoredBlockObj.h"
 
 using namespace Armory;
+using namespace std::chrono_literals;
+
 namespace {
    static constexpr uint16_t SIDESCAN_ID = 0x00FF;
 }
@@ -48,7 +50,7 @@ bool ScrAddrFilter::empty() const
    return scanFilterAddrMap_->empty();
 }
 
-void ScrAddrFilter::start(std::shared_future<bool> bdmReadyFut)
+void ScrAddrFilter::start()
 {
    //seed SDBI if necessary
    try {
@@ -108,7 +110,7 @@ void ScrAddrFilter::start(std::shared_future<bool> bdmReadyFut)
    }
 
    /* start operation thread */
-   thr_ = std::thread([this, fut=bdmReadyFut]{ run(fut); });
+   thr_ = std::thread([this]{ run(); });
 }
 
 void ScrAddrFilter::shutdown()
@@ -309,7 +311,7 @@ void ScrAddrFilter::pushAddressBatch(std::shared_ptr<AddressBatch> batch)
    registrationStack_.push_back(std::move(batch));
 }
 
-void ScrAddrFilter::run(std::shared_future<bool> bdmReadyFut)
+void ScrAddrFilter::run()
 {
    while (true) {
       std::shared_ptr<AddressBatch> batch;
@@ -329,8 +331,28 @@ void ScrAddrFilter::run(std::shared_future<bool> bdmReadyFut)
                throw std::runtime_error("unexpected batch ptr type");
             }
 
-            if (!bdmIsReady()) {
-               bdmReadyFut.wait();
+            bool bdmReady = false;
+            while (!bdmReady) {
+               if (!batchPtr->keepTrying.load(std::memory_order_relaxed)) {
+                  batchPtr->callback(false);
+                  return;
+               }
+
+               auto state = waitOnBDMReady(1s);
+               switch (state)
+               {
+                  case BDMState::Uninitialized:
+                  case BDMState::Initializing:
+                     break;
+
+                  case BDMState::Ready:
+                     bdmReady = true;
+                     break;
+
+                  case BDMState::InitializationFailed:
+                     batchPtr->callback(false);
+                     break;
+               }
             }
 
             //prepare the batch, it will also wrap up registration for edge case.
@@ -349,7 +371,7 @@ void ScrAddrFilter::run(std::shared_future<bool> bdmReadyFut)
             auto scanFromHeader = blockchain()->getGenesisHeader();
             Hash32 scannedHash;
 
-            while (true) {
+            while (batchPtr->keepTrying.load(std::memory_order_relaxed)) {
                //run the side scan
                scannedHash = saf->applyBlockRangeToDB(
                   scanFromHeader->getBlockHeight(), batchPtr->walletIDs, true);
@@ -486,7 +508,19 @@ RegistrationBatch::RegistrationBatch(
    AddressBatch(AddressBatchType::Register),
    walletIDs{wltIds}, scrAddrVec{std::move(addrVec)},
    isNew(isnew), callback(cb)
-{}
+{
+   if (callback == nullptr) {
+      throw std::runtime_error("RegistrationBatch needs a valid callback");
+   }
+   keepTrying.store(true, std::memory_order_relaxed);
+}
+
+void RegistrationBatch::halt()
+{
+   keepTrying.store(
+      false, std::memory_order_relaxed);
+   callback(false);
+}
 
 UnregistrationBatch::UnregistrationBatch() :
    AddressBatch(AddressBatchType::Unregister)

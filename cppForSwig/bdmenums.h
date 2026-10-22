@@ -31,7 +31,8 @@ enum class BDMState : int
 {
    Uninitialized,
    Initializing,
-   Ready
+   Ready,
+   InitializationFailed
 };
 
 enum BDMPhase

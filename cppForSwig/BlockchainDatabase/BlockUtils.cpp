@@ -52,9 +52,9 @@ protected:
       return bdm_->isRunning();
    }
 
-   bool bdmIsReady() const override
+   BDMState waitOnBDMReady(std::chrono::milliseconds dur) const override
    {
-      return bdm_->isReady();
+      return bdm_->waitUntilReady(dur);
    }
 
    Hash32 applyBlockRangeToDB(
@@ -106,7 +106,7 @@ BlockDataManager::BlockDataManager()
    blockchainData_ = std::make_shared<BlockchainData>(blockchain_);
    blockFiles_ = std::make_shared<BlockFiles>(Config::Pathing::blkFilePath());
    iface_ = new LMDBBlockDatabase(Config::Pathing::dbDir());
-   startPromise_ = std::make_unique<std::promise<bool>>();
+   startFuture_ = startPromise_.get_future();
    notificationQueue = std::make_shared<
       Threading::TimedQueue<std::unique_ptr<BDV_Notification>>>();
 
@@ -155,7 +155,7 @@ void BlockDataManager::cleanup()
 void BlockDataManager::signalStart(bool success)
 {
    try {
-      startPromise_->set_value(success);
+      startPromise_.set_value(success);
    } catch (const std::future_error&) {
       //promise already set, nothing to do
    }
@@ -163,20 +163,14 @@ void BlockDataManager::signalStart(bool success)
 
 bool BlockDataManager::waitOnStartSignal()
 {
-   auto fut = startPromise_->get_future();
+   auto fut = startFuture_;
    return fut.get();
 }
 
 ////////
 void BlockDataManager::shutdown()
 {
-   try {
-      if (startPromise_ != nullptr) {
-         startPromise_->set_value(false);
-      }
-   } catch (const std::future_error&) {
-      //promise already set, ignore
-   }
+   signalStart(false);
    disableZeroConf();
    notificationQueue->terminate();
 
@@ -249,14 +243,11 @@ bool BlockDataManager::doInitialSyncOnLoad(BdmInitMode mode,
 
 bool BlockDataManager::loadDiskState(const ProgressCallback &progress)
 {
-   std::promise<bool> readyProm;
-   scrAddrData_->start(readyProm.get_future());
-
+   scrAddrData_->start();
    BDMstate_.store((int)BDMState::Initializing, std::memory_order_relaxed);
    dbBuilder_ = std::make_shared<Database::Builder>(*this, progress);
    if (!dbBuilder_->init()) {
       //fatal error in db startup, terminate bdm
-      readyProm.set_value(false);
       return false;
    }
 
@@ -265,7 +256,6 @@ bool BlockDataManager::loadDiskState(const ProgressCallback &progress)
    }
 
    BDMstate_.store((int)BDMState::Ready, std::memory_order_relaxed);
-   readyProm.set_value(true);
    LOGINFO << "BDM is ready, top block: " << blockchain_->top()->getBlockHeight();
    return true;
 }
@@ -361,20 +351,23 @@ std::shared_ptr<Node::Status> BlockDataManager::getNodeStatus() const
 }
 
 ////////
-void BlockDataManager::blockUntilReady() const
+BDMState BlockDataManager::waitUntilReady(std::chrono::milliseconds dur) const
 {
    //for thread safety, shared_future should be copied before use
-   while (true) {
-      try {
-         auto futCopy = isReadyFuture;
-         if (!futCopy.valid()) {
-            throw std::future_error(std::future_errc::no_state);
-         }
-         futCopy.wait();
-         return;
-      } catch (const std::future_error&) {
-         std::this_thread::sleep_for(100ms);
+   try {
+      auto futCopy = isReadyFuture;
+      if (!futCopy.valid()) {
+         return BDMState::Uninitialized;
       }
+      auto state = futCopy.wait_for(dur);
+      if (state != std::future_status::ready) {
+         return BDMState::Initializing;
+      } else {
+         auto valid = futCopy.get();
+         return valid ? BDMState::Ready : BDMState::InitializationFailed;
+      }
+   } catch (const std::future_error&) {
+      return BDMState::Uninitialized;
    }
 }
 

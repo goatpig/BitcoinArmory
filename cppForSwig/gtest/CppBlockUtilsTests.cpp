@@ -246,7 +246,7 @@ TEST_F(BlockDir, HeadersFirst)
       false);
 
    BDMt->start(BdmInitMode::RESUME);
-   BDMt->bdm()->blockUntilReady();
+   ASSERT_EQ(BDMt->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients, bdvID);
    DBTestUtils::waitOnBDVReady(clients, bdvID);
 
@@ -274,7 +274,7 @@ TEST_F(BlockDir, HeadersFirstUpdate)
    clients->init();
 
    BDMt->start(BdmInitMode::RESUME);
-   BDMt->bdm()->blockUntilReady();
+   ASSERT_EQ(BDMt->bdm()->waitUntilReady(5s), BDMState::Ready);
    const std::vector<BinaryData> scraddrs {
       TestChain::scrAddrA,
       TestChain::scrAddrB,
@@ -318,7 +318,7 @@ TEST_F(BlockDir, HeadersFirstForwardUpdate)
    clients->init();
 
    BDMt->start(BdmInitMode::RESUME);
-   BDMt->bdm()->blockUntilReady();
+   ASSERT_EQ(BDMt->bdm()->waitUntilReady(5s), BDMState::Ready);
    const std::vector<BinaryData> scraddrs {
       TestChain::scrAddrA,
       TestChain::scrAddrB,
@@ -351,7 +351,6 @@ TEST_F(BlockDir, HeadersFirstForwardUpdate)
    delete BDMt;
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(BlockDir, HeadersFirstReorg)
 {
@@ -364,7 +363,7 @@ TEST_F(BlockDir, HeadersFirstReorg)
    clients->init();
 
    BDMt->start(BdmInitMode::RESUME);
-   BDMt->bdm()->blockUntilReady();
+   ASSERT_EQ(BDMt->bdm()->waitUntilReady(5s), BDMState::Ready);
    const std::vector<BinaryData> scraddrs {
       TestChain::scrAddrA,
       TestChain::scrAddrB,
@@ -548,7 +547,7 @@ TEST_F(BlockDir, HeadersFirstUpdateTwice)
    clients->init();
 
    BDMt->start(BdmInitMode::RESUME);
-   BDMt->bdm()->blockUntilReady();
+   ASSERT_EQ(BDMt->bdm()->waitUntilReady(5s), BDMState::Ready);
    const std::vector<BinaryData> scraddrs{
       TestChain::scrAddrA,
       TestChain::scrAddrB,
@@ -597,7 +596,7 @@ TEST_F(BlockDir, BlockFileSplit)
    clients->init();
 
    BDMt->start(BdmInitMode::RESUME);
-   BDMt->bdm()->blockUntilReady();
+   ASSERT_EQ(BDMt->bdm()->waitUntilReady(5s), BDMState::Ready);
    const std::vector<BinaryData> scraddrs{
       TestChain::scrAddrA,
       TestChain::scrAddrB,
@@ -634,7 +633,7 @@ TEST_F(BlockDir, BlockFileSplitUpdate)
    clients->init();
 
    BDMt->start(BdmInitMode::RESUME);
-   BDMt->bdm()->blockUntilReady();
+   ASSERT_EQ(BDMt->bdm()->waitUntilReady(5s), BDMState::Ready);
    const std::vector<BinaryData> scraddrs{
       TestChain::scrAddrA,
       TestChain::scrAddrB,
@@ -680,7 +679,7 @@ TEST_F(BlockDir, DISABLED_FixBlockDataOffsets)
    clients->init();
 
    BDMt->start(BdmInitMode::RESUME);
-   BDMt->bdm()->blockUntilReady();
+   ASSERT_EQ(BDMt->bdm()->waitUntilReady(5s), BDMState::Ready);
    std::vector<BinaryData> scraddrs{
       TestChain::scrAddrA,
       TestChain::scrAddrB,
@@ -827,7 +826,7 @@ TEST_F(BlockDir, StartAtBlkFile1)
       false);
 
    BDMt->start(BdmInitMode::RESUME);
-   BDMt->bdm()->blockUntilReady();
+   ASSERT_EQ(BDMt->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients, bdvID);
    DBTestUtils::waitOnBDVReady(clients, bdvID);
 
@@ -939,7 +938,7 @@ protected:
 TEST_F(BlockUtilsBare, Load5Blocks)
 {
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    clients_->init();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -1005,7 +1004,7 @@ TEST_F(BlockUtilsBare, Load5Blocks_DamagedBlkFile)
 
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
 
@@ -1075,7 +1074,7 @@ TEST_F(BlockUtilsBare, Load4Blocks_Plus2)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
@@ -1138,7 +1137,7 @@ TEST_F(BlockUtilsBare, Load5Blocks_FullReorg)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
@@ -1261,7 +1260,7 @@ TEST_F(BlockUtilsBare, Load5Blocks_DoubleReorg)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
    EXPECT_EQ(DBTestUtils::getTopBlockHash(iface_, DB_SELECT::SCRADDR), TestChain::blkHash4A);
@@ -1356,7 +1355,7 @@ TEST_F(BlockUtilsBare, Load5Blocks_ReloadBDM_Reorg)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
    EXPECT_EQ(DBTestUtils::getTopBlockHash(iface_, DB_SELECT::SCRADDR), TestChain::blkHash5);
@@ -1406,7 +1405,7 @@ TEST_F(BlockUtilsBare, Load5Blocks_ReloadBDM_Reorg)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
    EXPECT_EQ(DBTestUtils::getTopBlockHash(iface_, DB_SELECT::SCRADDR), TestChain::blkHash5A);
@@ -1536,7 +1535,7 @@ TEST_F(BlockUtilsBare, Load5Blocks_RescanOps)
 
       //wait on signals
       theBDMt_->start(init);
-      theBDMt_->bdm()->blockUntilReady();
+      ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
       DBTestUtils::goOnline(clients_, bdvID);
       DBTestUtils::waitOnBDVReady(clients_, bdvID);
    };
@@ -1646,7 +1645,7 @@ TEST_F(BlockUtilsBare, Load5Blocks_RescanEmptyDB)
 
       //wait on signals
       theBDMt_->start(init);
-      theBDMt_->bdm()->blockUntilReady();
+      ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
       DBTestUtils::goOnline(clients_, bdvID);
       DBTestUtils::waitOnBDVReady(clients_, bdvID);
    };
@@ -1713,7 +1712,7 @@ TEST_F(BlockUtilsBare, Load5Blocks_RebuildEmptyDB)
 
       //wait on signals
       theBDMt_->start(init);
-      theBDMt_->bdm()->blockUntilReady();
+      ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
       DBTestUtils::goOnline(clients_, bdvID);
       DBTestUtils::waitOnBDVReady(clients_, bdvID);
    };
@@ -1777,7 +1776,7 @@ TEST_F(BlockUtilsBare, Load5Blocks_SideScan)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
@@ -1873,7 +1872,7 @@ TEST_F(BlockUtilsBare, BlockXor)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
@@ -1961,8 +1960,7 @@ TEST_F(BlockUtilsBare, ShutdownDuringNodeSync)
    theBDMt_->shutdown();
    auto diff = std::chrono::system_clock::now() - now;
    ASSERT_LE(diff, 1s);
-
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::InitializationFailed);
 }
 
 /* this is meant to spit out test chain data for debug purposes */
@@ -1975,7 +1973,7 @@ TEST_F(BlockUtilsBare, DISABLED_PPrintTestChain)
 
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
    auto blockchain = theBDMt_->bdm()->blockchain();
@@ -2127,21 +2125,12 @@ protected:
       // Put the first 5 blocks into the blkdir
       blk0dat_ = FileUtils::getBlkFilename(blkdir_ / "blocks", 0);
       TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
-
-      wallet1id = "wallet1";
-      wallet2id = "wallet2";
-      LB1ID = TestChain::lb1B58ID;
-      LB2ID = TestChain::lb2B58ID;
-
       initBDM();
    }
 
    /////////////////////////////////////////////////////////////////////////////
    void TearDown() override
    {
-      auto nodePtr = std::dynamic_pointer_cast<NodeUnitTest>(
-         Config::NetworkSettings::bitcoinNodes().first);
-
       if (clients_ != nullptr) {
          clients_->shutdown();
       }
@@ -2167,11 +2156,6 @@ protected:
    std::filesystem::path homedir_{"./fakehomedir"sv};
    std::filesystem::path ldbdir_{"./ldbtestdir"sv};
    std::filesystem::path blk0dat_;
-
-   std::string wallet1id;
-   std::string wallet2id;
-   std::string LB1ID;
-   std::string LB2ID;
 };
 
 ////////
@@ -2300,7 +2284,7 @@ TEST_F(BlockUtilsBareWithZC, ReloadMempool_ChainedZcIdAbove255)
 TEST_F(BlockUtilsBareWithZC, SpenderKnownHashes)
 {
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    clients_->init();
    auto bdvID = DBTestUtils::registerBDV(
       clients_, Config::BitcoinSettings::getMagicBytes());
@@ -2408,7 +2392,7 @@ TEST_F(BlockUtilsBareWithZC, SpenderKnownHashes)
 
    {
       //hash should not be in known hashes yet
-      auto tx = bdm->getIFace()->beginTransaction(
+      auto tx = iface_->beginTransaction(
          DB_SELECT::KNOWNHASHES, LMDB::Mode::ReadOnly);
       auto val = tx->get(LMDB::DataRef{theHash.getSize(), theHash.getCharPtr()});
       ASSERT_EQ(val.len, 0);
@@ -2432,7 +2416,7 @@ TEST_F(BlockUtilsBareWithZC, SpenderKnownHashes)
 
    {
       //hash should now be in known hashes
-      auto tx = bdm->getIFace()->beginTransaction(
+      auto tx = iface_->beginTransaction(
          DB_SELECT::KNOWNHASHES, LMDB::Mode::ReadOnly);
       auto val = tx->get(LMDB::DataRef{theHash.getSize(), theHash.getCharPtr()});
       ASSERT_EQ(val.len, 8);
@@ -2608,6 +2592,166 @@ TEST_F(BlockUtilsBareWithZC, ReloadMempool_ZcIdAbove255)
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
+class BlockUtilsBareWithServer : public ::testing::Test
+{
+protected:
+   void initBDM()
+   {
+      theBDMt_ = new BlockDataManagerThread();
+      auto nodePtr = std::dynamic_pointer_cast<NodeUnitTest>(
+         Config::NetworkSettings::bitcoinNodes().first);
+      nodePtr->setBDM(theBDMt_->bdm());
+   }
+
+   void startWSServer()
+   {
+      wsServerThr_ = std::thread([bdm=theBDMt_->bdm()](){
+         WebSocketServer::start(bdm); }
+      );
+
+      //arbitrary wait to give time to WS server to startup
+      std::this_thread::sleep_for(100ms);
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   void SetUp() override
+   {
+      startupBIP151CTX();
+      startupBIP150CTX(4);
+
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
+
+      FileUtils::createDirectory(blkdir_ / "blocks");
+      FileUtils::createDirectory(homedir_);
+      FileUtils::createDirectory(ldbdir_);
+
+      Config::reset();
+      Config::DBSettings::setServiceType(SERVICE_UNITTEST);
+      Config::parseArgs({
+         "--datadir=./fakehomedir",
+         "--dbdir=./ldbtestdir",
+         "--satoshi-datadir=./blkfiletest",
+         "--db-type=DB_BARE",
+         "--thread-count=3",
+         "--public",
+         "--disable-zc"},
+         Config::ProcessType::DB);
+      DBTestUtils::init();
+
+      authPeersPassLbd_ = [](const std::set<Wallets::EncryptionKeyId>&)
+      ->Passphrase::Result
+      {
+         return { {}, true };
+      };
+
+      auto createWltLbd = []()->std::unique_ptr<Passphrase::Params>
+      {
+         return std::make_unique<Passphrase::Params>(
+            1ms, 0, SecureBinaryData{});
+      };
+
+      std::string serverPubkey;
+      {
+         auto serverPeersWlt = NetworkPeers::PeerStore::bootstrapWallet({
+            homedir_ / SERVER_AUTH_PEER_FILENAME, {createWltLbd}});
+         NetworkPeers::ServerStore serverPeers(serverPeersWlt);
+         NetworkPeers::PeerKey servPK{
+            serverPeers.getOwnPublicKey(),
+            NetworkPeers::PeerType::ServerOneWay};
+         serverPubkey = servPK.toHumanReadable();
+      }
+
+      {
+         auto clientPeersWlt = NetworkPeers::PeerStore::bootstrapWallet({
+            homedir_ / CLIENT_AUTH_PEER_FILENAME, {createWltLbd}});
+         NetworkPeers::ClientStore clientPeers(clientPeersWlt);
+         clientPeers.addPeer(
+            NetworkPeers::PeerKey::fromHumanReadable(serverPubkey), {
+               std::format("127.0.0.1:{}", Config::NetworkSettings::dbPort())
+            }, {});
+      }
+
+      // Put the first 5 blocks into the blkdir
+      blk0dat_ = FileUtils::getBlkFilename(blkdir_ / "blocks", 0);
+      TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+      WebSocketServer::init();
+      initBDM();
+   }
+
+   void TearDown() override
+   {
+      WebSocketServer::shutdown();
+      if (wsServerThr_.joinable()) {
+         wsServerThr_.join();
+      }
+      theBDMt_->shutdown();
+
+      delete theBDMt_;
+      theBDMt_ = nullptr;
+
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
+      Config::reset();
+      CLEANUP_ALL_TIMERS();
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   Passphrase::UnlockFunc authPeersPassLbd_;
+   BlockDataManagerThread *theBDMt_;
+   std::thread wsServerThr_;
+
+   std::filesystem::path blkdir_{"./blkfiletest"sv};
+   std::filesystem::path homedir_{"./fakehomedir"sv};
+   std::filesystem::path ldbdir_{"./ldbtestdir"sv};
+   std::filesystem::path blk0dat_;
+};
+
+TEST_F(BlockUtilsBareWithServer, ShutdownWithPendingClient)
+{
+   /*
+   Clients waiting on bdm ready should not block the server
+   shutdown sequence
+   */
+   TestUtils::setBlocks({ "0", "1" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   std::vector<BinaryData> scrAddrVec {
+      TestChain::scrAddrA,
+      TestChain::scrAddrB,
+      TestChain::scrAddrC
+   };
+
+   auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+   auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
+      "127.0.0.1", Config::NetworkSettings::dbPort(),
+      std::make_shared<NetworkPeers::ClientStore>(Wallets::IO::ReadOnlyFileParams{
+         homedir_ / CLIENT_AUTH_PEER_FILENAME, authPeersPassLbd_}),
+      true, //public server
+      pCallback);
+   bdvObj->connectToRemote();
+   bdvObj->registerWithDB(Config::BitcoinSettings::getMagicBytes().toHexStr());
+   AsyncClient::BtcWallet walletObj{*bdvObj, "wallet1"};
+   walletObj.registerAddresses(scrAddrVec, false);
+
+   //go online without starting the bdm
+   bdvObj->goOnline();
+
+   //shutdown the server, it shouldn't hang
+   std::this_thread::sleep_for(1s);
+   WebSocketServer::shutdown();
+   if (wsServerThr_.joinable()) {
+      wsServerThr_.join();
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 class BlockUtilsFull : public ::testing::Test
 {
 protected:
@@ -2714,7 +2858,7 @@ TEST_F(BlockUtilsFull, TxHints)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
@@ -2913,7 +3057,7 @@ TEST_F(BlockUtilsFull, Load5Blocks_RescanOps)
 
       //wait on signals
       theBDMt_->start(init);
-      theBDMt_->bdm()->blockUntilReady();
+      ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
       DBTestUtils::goOnline(clients_, bdvID);
       DBTestUtils::waitOnBDVReady(clients_, bdvID);
    };
