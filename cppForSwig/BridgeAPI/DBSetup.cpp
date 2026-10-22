@@ -29,7 +29,7 @@
 #include <Wallets/IOHeader.h>
 #include <Wallets/AuthorizedPeers.h>
 #include <AsyncClient.h>
-#include <Node/nodeRPC.h>
+#include <Node/RPC.h>
 
 using namespace Armory;
 using namespace Armory::Bridge;
