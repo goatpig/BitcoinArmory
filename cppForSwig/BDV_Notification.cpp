@@ -11,7 +11,7 @@
 #include <ZeroConf/Utils.h>
 #include <ZeroConf/Notifications.h>
 #include <Node/BitcoinP2P.h>
-#include <Node/nodeRPC.h>
+#include <Node/RPC.h>
 
 ///////////////////////////////////////////////////////////////////////////////
 // BDV_Notification
