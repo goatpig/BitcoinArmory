@@ -7003,7 +7003,7 @@ TEST_F(BridgeWalletsWithDBTests, Connect)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //check balances
@@ -7046,7 +7046,7 @@ TEST_F(BridgeWalletsWithDBTests, CycleConnection)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //check balances
@@ -7111,7 +7111,7 @@ TEST_F(BridgeWalletsWithDBTests, CycleConnection)
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //check balances
@@ -7164,7 +7164,7 @@ TEST_F(BridgeWalletsWithDBTests, DeleteWallet)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //check balances
@@ -7275,7 +7275,7 @@ TEST_F(BridgeWalletsWithDBTests, ExtendAddressChain)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //check balances
@@ -7354,7 +7354,7 @@ TEST_F(BridgeWalletsWithDBTests, AddNewAddress)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //check balances
@@ -7566,6 +7566,52 @@ protected:
       return result;
    }
 
+   bool updateWalletFilters(
+      const std::map<std::string, std::set<std::string>>& filters)
+   {
+      capnp::MallocMessageBuilder message;
+      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+      toBridge.setReferenceId(rand());
+      auto request = toBridge.initWalletManager();
+      size_t count = 0;
+      for (const auto& wltIdPair : filters) {
+         count += wltIdPair.second.size();
+      }
+      auto filterReq = request.initUpdateMainLedgerFilter(count);
+
+      count = 0;
+      for (const auto& wltIdPair : filters) {
+         for (const auto& accId : wltIdPair.second) {
+            auto capnIds = filterReq[count++];
+            capnIds.setWalletId(wltIdPair.first);
+            capnIds.setAccountId(accId);
+         }
+      }
+
+      auto rawReq = serializeCapnp(message);
+      pushRequest(bridge_, rawReq);
+
+      auto result = waitOnReply();
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(result->data.getPtr()),
+         result->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+      if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
+         return false;
+      }
+      auto notif = fromBridge.getNotification();
+      if (notif.which() != Codec::Bridge::Notification::REFRESH) {
+         return false;
+      }
+      auto notifIds = notif.getRefresh();
+      if (notifIds.size() != 1 ||
+         notifIds[0] != std::string{"wallet_filter_changed"}) {
+         return false;
+      }
+      return true;
+   }
+
    ////////
    void SetUp() override
    {
@@ -7698,7 +7744,7 @@ TEST_F(BridgeChainDataTests, Check5Blocks_BCDE)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //check wallet balance
@@ -7733,6 +7779,16 @@ TEST_F(BridgeChainDataTests, ChangeFilters_ALFB_BCDE)
 {
    loadWallets({walletId_BCDE_, walletId_AFLB_});
 
+   //changing filters while offline shouldn't blow up the manager
+   ASSERT_TRUE(updateWalletFilters({
+      {walletId_AFLB_, {accountId_AFLB_}}}));
+
+   //revert fitler back to all wallets
+   ASSERT_TRUE(updateWalletFilters({
+      {walletId_AFLB_, {accountId_AFLB_}},
+      {walletId_BCDE_, {accountId_BCDE_}},
+   }));
+
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
@@ -7743,7 +7799,7 @@ TEST_F(BridgeChainDataTests, ChangeFilters_ALFB_BCDE)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //check main ledger
@@ -7771,32 +7827,8 @@ TEST_F(BridgeChainDataTests, ChangeFilters_ALFB_BCDE)
    }
 
    //remove AFLB from filter
-   uint64_t refId = rand();
-
-   capnp::MallocMessageBuilder message;
-   auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
-   toBridge.setReferenceId(refId);
-   auto request = toBridge.initWalletManager();
-   auto filterReq = request.initUpdateMainLedgerFilter(1);
-   auto wltId0 = filterReq[0];
-   wltId0.setWalletId(walletId_BCDE_);
-   wltId0.setAccountId(accountId_BCDE_);
-
-   auto rawReq = serializeCapnp(message);
-   pushRequest(bridge_, rawReq);
-
-   auto result = waitOnReply();
-   kj::ArrayPtr<const capnp::word> words(
-      reinterpret_cast<const capnp::word*>(result->data.getPtr()),
-      result->data.getSize() / sizeof(capnp::word));
-   capnp::FlatArrayMessageReader reader(words);
-   auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-   ASSERT_EQ(fromBridge.which(), Codec::Bridge::FromBridge::NOTIFICATION);
-   auto notif = fromBridge.getNotification();
-   ASSERT_EQ(notif.which(), Codec::Bridge::Notification::REFRESH);
-   auto notifIds = notif.getRefresh();
-   ASSERT_EQ(notifIds.size(), 1);
-   ASSERT_EQ(std::string(notifIds[0]), std::string{"wallet_filter_changed"});
+   ASSERT_TRUE(updateWalletFilters(
+      {{walletId_BCDE_, {accountId_BCDE_}}}));
 
    //check main ledger again
    ledgers = getLedgersPage(bridge_, delegateId, 0);
@@ -7826,7 +7858,7 @@ TEST_F(BridgeChainDataTests, BlocksOutOfOrder_BCDE)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 2);
 
    //check wallet balance
@@ -7899,7 +7931,7 @@ TEST_F(BridgeChainDataTests, AddBlocks_BCDE)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 3);
 
    /* block 3 */
@@ -8011,7 +8043,7 @@ TEST_F(BridgeChainDataTests, AddBlocks_BC_DE)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 3);
 
    /* block 3 */
@@ -8196,7 +8228,7 @@ TEST_F(BridgeChainDataTests, AddBlocks_BCDE_AFLB)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 3);
 
    /* block 3 */
@@ -8756,7 +8788,7 @@ TEST_F(BridgeChainDataTests, Reorg_BCDE)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 3);
 
    /* block 3 */
@@ -8898,7 +8930,7 @@ TEST_F(BridgeChainDataTests, Reorg_BCDE_DifferentOrder)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 3);
 
    /* block 3 */
@@ -9009,7 +9041,7 @@ TEST_F(BridgeChainDataTests, Reorg_BC_DE)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 3);
 
    /* block 3 */
@@ -9244,7 +9276,7 @@ TEST_F(BridgeChainDataTests, Reorg_BCDE_AFLB)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 3);
 
    /* block 3 */
@@ -9967,7 +9999,7 @@ TEST_F(BridgeChainDataTests, Reorg_SpendBeforeBranchPoint)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //check wallet balance
@@ -10249,7 +10281,7 @@ TEST_F(BridgeChainDataTests, AddressBook)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //check balances
@@ -10329,7 +10361,7 @@ TEST_F(BridgeChainDataTests, getUTXOs)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //grab BCDE utxos
@@ -10461,7 +10493,7 @@ TEST_F(BridgeChainDataTests, ZeroConf)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //check wallet balance
@@ -10695,7 +10727,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_Replace)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //check balances
@@ -10895,7 +10927,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_Chain)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //check balances
@@ -11120,7 +11152,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_StaggeredChain)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //check wallet balance
@@ -11635,7 +11667,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_ChainRBF)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //check wallet balance
@@ -12138,7 +12170,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_Reload)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //check balances
@@ -12406,7 +12438,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_Reorg)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 4);
 
    TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5" }, blk0dat_);
@@ -12739,7 +12771,7 @@ TEST_F(BridgeChainDataTests, DISABLED_ZeroConf_RegisterWallet)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //check wallet balance
@@ -12972,7 +13004,7 @@ TEST_F(BridgeChainDataTests, RestoreSynchronize)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //get signed tx
@@ -13250,7 +13282,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_SpendNew)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //check wallet balance
@@ -14462,7 +14494,7 @@ TEST_F(BridgePeersManagement, ListAddConnect)
    WebSocketServer::initPeerStore({homedir_ / SERVER_AUTH_PEER_FILENAME, {}});
    startWSServer();
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
 
    NetworkPeers::PeerKey clientPeer{clientPubKey_.getRef(), NetworkPeers::PeerType::Client};
    NetworkPeers::PeerKey serverPeer{serverPubkey_.getRef(), NetworkPeers::PeerType::ServerOneWay};
@@ -14511,7 +14543,7 @@ TEST_F(BridgePeersManagement, LoadDeleteCreate)
    WebSocketServer::initPeerStore({homedir_ / SERVER_AUTH_PEER_FILENAME, {}});
    startWSServer();
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
 
    NetworkPeers::PeerKey serverPeer{serverPubkey_.getRef(), NetworkPeers::PeerType::ServerOneWay};
    auto serverKey = serverPeer.toHumanReadable();
@@ -14560,7 +14592,7 @@ TEST_F(BridgePeersManagement, Remove)
    WebSocketServer::initPeerStore({homedir_ / SERVER_AUTH_PEER_FILENAME, {}});
    startWSServer();
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
 
    NetworkPeers::PeerKey clientPeer{clientPubKey_.getRef(), NetworkPeers::PeerType::Client};
    NetworkPeers::PeerKey serverPeer{serverPubkey_.getRef(), NetworkPeers::PeerType::ServerOneWay};

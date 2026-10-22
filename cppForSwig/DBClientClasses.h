@@ -16,7 +16,7 @@
 #include <Utils/Types.h>
 #include <BlockchainDatabase/txio.h>
 #include <Network/SocketObject.h>
-#include <Node/nodeRPC.h>
+#include <Node/RPC.h>
 #include "bdmenums.h"
 
 #define FILTER_CHANGE_FLAG "wallet_filter_changed"
