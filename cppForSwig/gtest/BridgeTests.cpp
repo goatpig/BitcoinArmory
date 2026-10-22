@@ -7,6 +7,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include <cstdlib>
+#include <future>
 #include <queue>
 #include <set>
 #include <algorithm>
@@ -7128,6 +7129,115 @@ TEST_F(BridgeWalletsWithDBTests, CycleConnection)
    } catch (const std::exception&) {
       ASSERT_TRUE(false);
    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+namespace {
+   //once armed, holds the bridge's server disconnected notification until
+   //the gate is opened. This pauses the bridge's db cleanup thread, which
+   //sends that notification last
+   struct GatedBridgeSocket : public TestBridgeSocket
+   {
+      std::mutex gateMutex;
+      std::condition_variable gateCV;
+      bool armed = false;
+      bool reached = false;
+      bool open = false;
+
+      void pushPayload(
+         std::unique_ptr<Network::Socket_WritePayload> payload,
+         std::shared_ptr<Network::Socket_ReadPayload> readPayload) override
+      {
+         auto payloadPtr = dynamic_cast<Bridge::WritePayload_Bridge*>(payload.get());
+         if (payloadPtr != nullptr && payloadPtr->data ==
+            Bridge::Notifications::Client::getSerializedServerDisconnectedNotif()) {
+            std::unique_lock<std::mutex> lock(gateMutex);
+            if (armed) {
+               reached = true;
+               gateCV.notify_all();
+
+               //bounded, a failed test can't leave this thread stuck
+               gateCV.wait_for(lock, 10s, [this]{ return open; });
+            }
+         }
+         TestBridgeSocket::pushPayload(std::move(payload), std::move(readPayload));
+      }
+
+      void arm()
+      {
+         std::unique_lock<std::mutex> lock(gateMutex);
+         armed = true;
+      }
+
+      bool waitOnGate()
+      {
+         std::unique_lock<std::mutex> lock(gateMutex);
+         return gateCV.wait_for(lock, 10s, [this]{ return reached; });
+      }
+
+      void openGate()
+      {
+         {
+            std::unique_lock<std::mutex> lock(gateMutex);
+            open = true;
+         }
+         gateCV.notify_all();
+      }
+   };
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeWalletsWithDBTests, DestroyDuringDisconnectCleanup)
+{
+   //replace the fixture's bridge with one on a gated socket
+   auto gatedSocket = std::make_shared<GatedBridgeSocket>();
+   bridge_ = std::make_shared<Bridge::CppBridge>(gatedSocket);
+
+   auto wallets = loadWallets(bridge_);
+   ASSERT_EQ(wallets.size(), 1);
+
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+
+   //start db, go online and wait on ready notif
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   //kill BDM, the bridge's db cleanup thread stops at the gate
+   gatedSocket->arm();
+   WebSocketServer::shutdown();
+   if (!gatedSocket->waitOnGate()) {
+      gatedSocket->openGate();
+      FAIL() << "no disconnected notif from the bridge";
+   }
+
+   //destroy the bridge from another thread while its db cleanup thread
+   //is still running
+   std::promise<void> destroyedProm;
+   auto destroyedFut = destroyedProm.get_future();
+   std::thread destroyThr(
+      [bridge = std::move(bridge_), prom = std::move(destroyedProm)]() mutable {
+         bridge.reset();
+         prom.set_value();
+      }
+   );
+
+   //~CppBridge should wait on the cleanup thread, which waits on the gate
+   auto status = destroyedFut.wait_for(500ms);
+   gatedSocket->openGate();
+   EXPECT_EQ(status, std::future_status::timeout) <<
+      "~CppBridge returned while its db cleanup thread was running";
+
+   if (destroyedFut.wait_for(10s) != std::future_status::ready) {
+      destroyThr.detach();
+      FAIL() << "~CppBridge did not return";
+   }
+   destroyThr.join();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
