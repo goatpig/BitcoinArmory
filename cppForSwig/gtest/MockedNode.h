@@ -14,7 +14,7 @@
 
 #include <Utils/BinaryData.h>
 #include <Node/BitcoinP2P.h>
-#include <Node/nodeRPC.h>
+#include <Node/RPC.h>
 
 class BlockFiles;
 class LMDBBlockDatabase;
