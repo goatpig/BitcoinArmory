@@ -1005,10 +1005,14 @@ unsigned ZeroConfContainer::loadMempool(bool clearMempool)
       LOGDEBUG << "parsing " << zcMap.size() << " txns from mempool";
       preprocessZcMap(zcMap, db_, bd_);
 
-      //set highest used index
-      auto lastEntry = zcMap.rbegin();
-      auto& topZcKey = lastEntry->first;
-      topId = Types::getZcIdFromTxKey(topZcKey) + 1;
+      //set highest used index. zcMap is sorted by key value, which isn't
+      //the id order: the id sits big-endian inside the key
+      for (const auto& zcPair : zcMap) {
+         auto zcId = Types::getZcIdFromTxKey(zcPair.first);
+         if (zcId >= topId) {
+            topId = zcId + 1;
+         }
+      }
 
       //no need to update the db nor notify bdvs on init
       std::map<BinaryData, std::shared_ptr<WatcherTxBody>> emptyWatcherMap;
