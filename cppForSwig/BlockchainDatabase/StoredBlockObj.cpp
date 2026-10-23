@@ -791,7 +791,7 @@ void DBTx::unserialize(BinaryRefReader& brr, bool fragged)
 {
    std::vector<size_t> offsetsIn, offsetsOut;
    uint32_t nbytes = BtcUtils::StoredTxCalcLength(brr.getCurrPtr(),
-      brr.getSize(), fragged, &offsetsIn, &offsetsOut, nullptr);
+      brr.getSizeRemaining(), fragged, &offsetsIn, &offsetsOut, nullptr);
 
    if (offsetsOut.size() < 1) {
       LOGERR << "Couldn't deserialize db value";
