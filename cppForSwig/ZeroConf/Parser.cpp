@@ -10,6 +10,7 @@
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
+#include <algorithm>
 #include <cstring>
 
 #include "Parser.h"
@@ -600,9 +601,27 @@ void ZeroConfContainer::parseNewZC(
    std::map<Types::BdvId, ParsedZCData> flaggedBDVs;
    std::map<Types::TxKey, std::shared_ptr<ParsedTx>> invalidatedTx;
 
+   /*
+   zcMap is sorted by key value, which isn't the id order: the id sits
+   big-endian inside the key. Go through the zcs in id order so that
+   parents are staged before the children spending from them.
+   */
+   std::vector<const decltype(zcMap)::value_type*> zcsById;
+   zcsById.reserve(zcMap.size());
+   for (const auto& zcPair : zcMap) {
+      zcsById.push_back(&zcPair);
+   }
+   std::sort(zcsById.begin(), zcsById.end(),
+      [](const auto* lhs, const auto* rhs)->bool
+      {
+         return Types::getZcIdFromTxKey(lhs->first) <
+            Types::getZcIdFromTxKey(rhs->first);
+      });
+
    //zc logic
    std::set<Types::TxKey> addedZcKeys;
-   for (const auto& newZCPair : zcMap) {
+   for (const auto* zcPairPtr : zcsById) {
+      const auto& newZCPair = *zcPairPtr;
       const auto& txHash = newZCPair.second->getTxHash();
       if (Types::isTxKeyValid(ss->getKeyForHash(txHash))) {
          continue;
