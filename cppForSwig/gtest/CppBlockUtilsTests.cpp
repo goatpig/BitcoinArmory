@@ -2069,6 +2069,128 @@ protected:
 };
 
 ////////
+TEST_F(BlockUtilsBareWithZC, ReloadMempool_ChainedZcIdAbove255)
+{
+   std::vector<BinaryData> scrAddrVec {
+      TestChain::scrAddrA,
+      TestChain::scrAddrB,
+      TestChain::scrAddrC,
+      TestChain::scrAddrD,
+      TestChain::scrAddrE,
+      TestChain::scrAddrF
+   };
+
+   auto startBDM = [this, &scrAddrVec](void)->Types::BdvId
+   {
+      clients_->init();
+      auto bdvID = DBTestUtils::registerBDV(
+         clients_, Config::BitcoinSettings::getMagicBytes());
+      DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+         false);
+      theBDMt_->start(Config::DBSettings::initMode());
+      theBDMt_->bdm()->blockUntilReady();
+      DBTestUtils::goOnline(clients_, bdvID);
+      DBTestUtils::waitOnBDVReady(clients_, bdvID);
+      return bdvID;
+   };
+
+   auto bdvID = startBDM();
+   auto bdm = theBDMt_->bdm();
+   auto getBal = [&bdm](const BinaryData& scrAddr)->uint64_t
+   { return DBTestUtils::getScrAddrBalance(scrAddr, bdm); };
+
+   EXPECT_EQ(getBal(TestChain::scrAddrC), 20 * COIN);
+   EXPECT_EQ(getBal(TestChain::scrAddrD), 65 * COIN);
+
+   auto utxosC = DBTestUtils::getUTXOsForScrAddrs(bdm, { TestChain::scrAddrC });
+   ASSERT_EQ(utxosC.size(), 2U);
+
+   //parent: C to D
+   BinaryData rawParent;
+   {
+      Signing::Signer signer;
+      auto feed = std::make_shared<ResolverUtils::TestResolverFeed>();
+      feed->addPrivKey(TestChain::privKeyAddrC.getRef());
+
+      signer.addSpender(std::make_shared<Signing::ScriptSpender>(utxosC[0]));
+      signer.addRecipient(std::make_shared<Signing::Recipient_P2PKH>(
+         TestChain::scrAddrD.getSliceCopy(1, 20), utxosC[0].amount - 10000));
+      signer.setFeed(feed);
+      signer.sign();
+      EXPECT_TRUE(signer.verify());
+      rawParent = signer.serializeSignedTx();
+   }
+   Tx parentTx{rawParent};
+
+   //child: spends the parent's output from D, to an address unknown to us
+   BinaryData rawChild;
+   {
+      auto txOut = parentTx.getTxOutCopy(0);
+      UTXO utxo(txOut.getAmount(), UINT32_MAX, 0, 0,
+         parentTx.getThisHash(), txOut.getScript());
+
+      Signing::Signer signer;
+      auto feed = std::make_shared<ResolverUtils::TestResolverFeed>();
+      feed->addPrivKey(TestChain::privKeyAddrD.getRef());
+
+      signer.addSpender(std::make_shared<Signing::ScriptSpender>(utxo));
+      signer.addRecipient(std::make_shared<Signing::Recipient_P2PKH>(
+         Cryptography::PRNG::fortuna.generateRandom(20), utxo.amount - 10000));
+      signer.setFeed(feed);
+      signer.sign();
+      EXPECT_TRUE(signer.verify());
+      rawChild = signer.serializeSignedTx();
+   }
+   auto parentHash = parentTx.getThisHash();
+   auto childHash = Tx{rawChild}.getThisHash();
+
+   /*
+   Persist the parent with id 255 and the child with id 256. On
+   little-endian hosts the child's key sorts first as an integer: the id
+   is stored big-endian inside the key.
+   */
+   auto persistZc = [this](const BinaryData& rawTx, Types::ZcId id)
+   {
+      StoredTx stx;
+      stx.createFromTx(Tx{rawTx}, true, true);
+      iface_->putStoredZC(stx, Types::constructZCKey(id));
+   };
+   persistZc(rawParent, 255);
+   persistZc(rawChild, 256);
+
+   //reload the mempool from the db
+   clients_->shutdown();
+   theBDMt_->shutdown();
+   delete clients_;
+   delete theBDMt_;
+   clients_ = nullptr;
+   theBDMt_ = nullptr;
+
+   initBDM();
+   bdvID = startBDM();
+   bdm = theBDMt_->bdm();
+
+   //C spent 10 btc to D, which spent it to an unknown address
+   EXPECT_EQ(getBal(TestChain::scrAddrC), 10 * COIN);
+   EXPECT_EQ(getBal(TestChain::scrAddrD), 65 * COIN);
+
+   //both zcs are back, the child spends from the parent
+   {
+      auto ss = bdm->zeroConfCont()->getSnapshot();
+      ASSERT_NE(ss, nullptr);
+      EXPECT_EQ(ss->getTxCount(), 2U);
+      EXPECT_EQ(ss->getKeyForHash(parentHash), Types::constructZCKey(255));
+      EXPECT_EQ(ss->getKeyForHash(childHash), Types::constructZCKey(256));
+
+      auto childPtr = ss->getTxByHash(childHash);
+      ASSERT_NE(childPtr, nullptr);
+      ASSERT_EQ(childPtr->inputs.size(), 1U);
+      EXPECT_EQ(childPtr->inputs[0].opRef.getDbKey(),
+         Types::constructTxIOKeyFromTxKey(Types::constructZCKey(255), 0));
+   }
+}
+
+////////
 TEST_F(BlockUtilsBareWithZC, SpenderKnownHashes)
 {
    theBDMt_->start(Config::DBSettings::initMode());
