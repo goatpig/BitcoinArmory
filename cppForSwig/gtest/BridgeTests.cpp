@@ -10681,6 +10681,79 @@ TEST_F(BridgeChainDataTests, ZeroConf)
    ASSERT_EQ(lastEntry.getBlockNum(), 6);
 }
 
+TEST_F(BridgeChainDataTests, ZeroConf_TxTime)
+{
+   //zc ledgers carry the time the db saw the tx, mined ones the block time
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   BinaryData signedTx;
+   try {
+      signedTx = createAndSignTx(bridge_, walletId_BCDE_, accountId_BCDE_,
+         {}, {{ BtcUtils::scrAddrToBase58(TestChain::scrAddrC), 11 * COIN }},
+         TestChain::scrAddrD, 2, false, "privPass1");
+   } catch (const std::exception& e) {
+      ASSERT_TRUE(false) << e.what();
+   }
+   ASSERT_FALSE(signedTx.empty());
+   Tx tx(signedTx);
+
+   auto before = (uint32_t)time(0);
+   broadcastTx(bridge_, signedTx);
+   auto zcLedgers = waitOnZc();
+   auto after = (uint32_t)time(0);
+
+   //zc notification
+   ASSERT_EQ(zcLedgers.size(), 1);
+   ASSERT_EQ(zcLedgers[0].getTxHash(), tx.getThisHash());
+   EXPECT_EQ(zcLedgers[0].getBlockNum(), UINT32_MAX);
+   EXPECT_GE(zcLedgers[0].getTxTime(), before);
+   EXPECT_LE(zcLedgers[0].getTxTime(), after);
+
+   //ledger page: the zc first, then the mined history
+   auto delegateId = getLedgerDelegateId(bridge_);
+   auto ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_GE(ledgers.size(), 2);
+   ASSERT_EQ(ledgers[0].getTxHash(), tx.getThisHash());
+   EXPECT_EQ(ledgers[0].getBlockNum(), UINT32_MAX);
+   EXPECT_GE(ledgers[0].getTxTime(), before);
+   EXPECT_LE(ledgers[0].getTxTime(), after);
+   for (unsigned i = 1; i < ledgers.size(); i++) {
+      EXPECT_NE(ledgers[i].getBlockNum(), UINT32_MAX);
+      EXPECT_LT(ledgers[i].getTxTime(), before);
+   }
+   auto zcTime = ledgers[0].getTxTime();
+
+   //a new bridge gets the zc from the db's txios instead of a notification
+   bridge_.reset();
+   replyQueue.clear();
+   bridge_ = std::make_shared<Bridge::CppBridge>(
+      std::make_shared<TestBridgeSocket>());
+   loadWallets({walletId_BCDE_});
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   delegateId = getLedgerDelegateId(bridge_);
+   ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_GE(ledgers.size(), 2);
+   ASSERT_EQ(ledgers[0].getTxHash(), tx.getThisHash());
+   EXPECT_EQ(ledgers[0].getBlockNum(), UINT32_MAX);
+   EXPECT_EQ(ledgers[0].getTxTime(), zcTime);
+   for (unsigned i = 1; i < ledgers.size(); i++) {
+      EXPECT_NE(ledgers[i].getBlockNum(), UINT32_MAX);
+      EXPECT_LT(ledgers[i].getTxTime(), before);
+   }
+}
+
 TEST_F(BridgeChainDataTests, ZeroConf_Replace)
 {
    loadWallets({walletId_BCDE_});

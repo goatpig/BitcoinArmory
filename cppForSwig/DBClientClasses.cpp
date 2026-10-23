@@ -63,6 +63,7 @@ namespace {
             capnTxio.getTxOut(), capnTxio.getAmount(),
             scrAddr, capnTxio.getTxIn()
          };
+         txio.setTxTime(capnTxio.getTxTime());
          txio.setRBF(capnTxio.getRbf());
          txios.emplace_back(std::move(txio));
       }

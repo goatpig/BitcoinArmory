@@ -453,6 +453,7 @@ void BlockDataViewer::getTxios(uint32_t from,
                   capnTxio.getTxOut(), capnTxio.getAmount(),
                   scrAddr, capnTxio.getTxIn()};
 
+               txio.setTxTime(capnTxio.getTxTime());
                txio.setRBF(capnTxio.getRbf());
                txio.setChained(capnTxio.getChained());
                txios.emplace_back(std::move(txio));
