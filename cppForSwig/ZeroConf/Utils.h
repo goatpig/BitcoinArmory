@@ -222,7 +222,7 @@ namespace Armory
 
          ////
          void dropFromSpentTxOuts(Types::TxIOKey);
-         void dropFromScrAddrMap(const Types::ScrAddr&, Types::TxKey);
+         void dropFromScrAddrMap(const Types::ScrAddr&, Types::TxIOKey);
          void dropTxHashToDBKey(const Types::TxHash&);
 
          void dropTxiosForZC(Types::TxKey);
