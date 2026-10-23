@@ -17,6 +17,8 @@
 #include <Wallets/Seeds/Backups.h>
 #include <Wallets/Seeds/Seeds.h>
 #include <Signer/Signer.h>
+#include <Signer/ScriptSpender.h>
+#include <Signer/PSBT.h>
 #include <Signer/CoinSelection.h>
 #include <AsyncClient.h>
 
@@ -1209,6 +1211,7 @@ namespace
             auto capnTx = request.getAddSupportingTx();
             BinaryDataRef txRef(capnTx.begin(), capnTx.end());
             signer->signer->addSupportingTx(txRef);
+            bridge->addUnpooledTxs({BinaryData{txRef}});
 
             replySuccess(true);
             break;
@@ -1252,11 +1255,40 @@ namespace
 
          case SignerRequest::FROM_TX_SIG_COLLECT:
          {
-            auto signerObj = Signing::Signer::fromString(
-               request.getFromTxSigCollect());
-            signer->signer = std::make_unique<Signing::Signer>(std::move(signerObj));
+            //user input, malformed strings get an error reply
+            std::string ustx = request.getFromTxSigCollect();
+            capnp::MallocMessageBuilder message;
+            auto fromBridge = message.initRoot<FromBridge>();
+            auto reply = fromBridge.initReply();
+            reply.setReferenceId(referenceId);
 
-            replySuccess(true);
+            try {
+               auto signerObj = Signing::Signer::fromString(ustx);
+               signer->signer = std::make_unique<Signing::Signer>(
+                  std::move(signerObj));
+               reply.setSuccess(true);
+            } catch (const Signing::PSBT::DeserError&) {
+               //private runtime_error base, see #820
+               reply.setError("invalid PSBT");
+               reply.setSuccess(false);
+            } catch (const std::exception& e) {
+               reply.setError(e.what());
+               reply.setSuccess(false);
+            }
+
+            //the payload's supporting txs go in the cache
+            if (reply.getSuccess()) {
+               std::vector<BinaryData> rawTxs;
+               for (unsigned i=0; i<signer->signer->getTxInCount(); i++) {
+                  auto spender = signer->signer->getSpender(i);
+                  if (spender->haveSupportingTx()) {
+                     rawTxs.emplace_back(spender->getSupportingTx().serialize());
+                  }
+               }
+               bridge->addUnpooledTxs(rawTxs);
+            }
+
+            response = serializeCapnp(message);
             break;
          }
 

@@ -625,7 +625,7 @@ Types::TxKey LMDBBlockDatabase::getDBKeyForHash(
 {
    if (txHash.getSize() != 32) {
       LOGWARN << "invalid tx hash size:" << txHash.getSize();
-      return {};
+      return Types::INVALID_TX_KEY;
    }
 
    auto dbType = Config::DBSettings::getDbType();

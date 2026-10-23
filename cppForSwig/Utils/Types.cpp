@@ -17,6 +17,22 @@
 using namespace Armory;
 using namespace Armory::Types;
 
+/*
+Tx keys that don't point to a block. Mined tx keys start with the block id
+(big endian), these start with a 2 byte tag instead:
+   - zc: a tx in the db's mempool
+   - unpooled: a tx no db has given a key yet (offline payloads, txs the
+     bridge broadcasts), only the bridge's dbCache makes them, they are
+     never sent to a db
+The keys are little endian, the id sits in bytes 2 to 5 (big endian), so
+keys of a kind sort by id in LMDB's byte order. A mined key only carries one
+of these tags for block ids 0xFEFF0000 to 0xFEFFFFFF and 0xFFFF0000 up, block
+ids stay well below that.
+*/
+#define ZC_MASK         0xFFFF00000000FFFF
+#define UNPOOLED_MASK   0xFFFF00000000FFFE
+#define POOL_TAG_MASK   0x000000000000FFFF
+
 ////////////////////////////////////////////////////////////////////////////////
 // key helpers
 TxKey Types::constructTxKey(BlockId blockID, TxId txId)
@@ -54,10 +70,20 @@ BlockId Types::getBlockIDFromTxKey(TxKey txKey)
 ////////
 TxKey Types::constructZCKey(ZcId zcid)
 {
-   return 0xFFFF00000000FFFF | (uint64_t)htonl(zcid) << 16;
+   return ZC_MASK | (uint64_t)htonl(zcid) << 16;
 }
 
 ZcId Types::getZcIdFromTxKey(TxKey key)
+{
+   return ntohl((uint32_t)(key >> 16));
+}
+
+TxKey Types::constructUnpooledKey(UnpooledId unpooledId)
+{
+   return UNPOOLED_MASK | (uint64_t)htonl(unpooledId) << 16;
+}
+
+UnpooledId Types::getUnpooledIdFromTxKey(TxKey key)
 {
    return ntohl((uint32_t)(key >> 16));
 }
@@ -82,7 +108,14 @@ TxKey Types::getTxKeyFromTxIOKey(TxIOKey key)
 bool Types::isThisAZCKey(TxKey key)
 {
    return key != INVALID_TX_KEY ?
-      (key & 0x000000000000FFFF) == 0x000000000000FFFF :
+      (key & POOL_TAG_MASK) == (ZC_MASK & POOL_TAG_MASK) :
+      false;
+}
+
+bool Types::isThisAnUnpooledKey(TxKey key)
+{
+   return key != INVALID_TX_KEY ?
+      (key & POOL_TAG_MASK) == (UNPOOLED_MASK & POOL_TAG_MASK) :
       false;
 }
 

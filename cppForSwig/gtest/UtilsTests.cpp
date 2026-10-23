@@ -4736,6 +4736,35 @@ TEST_F(TypesTests, keys)
    EXPECT_TRUE(Types::isThisAZCKey(zctxkey));
    EXPECT_EQ(Types::getZcIdFromTxKey(zctxkey), zcId1);
 
+   Types::UnpooledId unpooledId1 = 50;
+   auto unpooledKey = Types::constructUnpooledKey(unpooledId1);
+   ASSERT_TRUE(Types::isTxKeyValid(unpooledKey));
+   EXPECT_EQ(Types::getUnpooledIdFromTxKey(unpooledKey), unpooledId1);
+   EXPECT_TRUE(Types::isThisAnUnpooledKey(unpooledKey));
+   EXPECT_FALSE(Types::isThisAZCKey(unpooledKey));
+   EXPECT_FALSE(Types::isThisATxIOKey(unpooledKey));
+   EXPECT_FALSE(Types::isThisAnUnpooledKey(invalidTxKey));
+   EXPECT_FALSE(Types::isThisAnUnpooledKey(txKey));
+   EXPECT_FALSE(Types::isThisAnUnpooledKey(zcKey));
+   EXPECT_FALSE(Types::isThisAnUnpooledKey(txIOKey));
+   EXPECT_FALSE(Types::isThisAnUnpooledKey(zcTxIOKey));
+   EXPECT_NE(unpooledKey, Types::constructZCKey(unpooledId1));
+
+   //unpooled keys sort by id in byte order
+   auto unpooledKey2 = Types::constructUnpooledKey(unpooledId1 + 1);
+   auto unpooledKey3 = Types::constructUnpooledKey(0x01000000);
+   EXPECT_LT(std::memcmp(&unpooledKey, &unpooledKey2, 8), 0);
+   EXPECT_LT(std::memcmp(&unpooledKey2, &unpooledKey3, 8), 0);
+
+   //the full id range stays valid and unpooled
+   for (Types::UnpooledId id : {0U, 1U, 0xFFFFU, UINT32_MAX}) {
+      auto key = Types::constructUnpooledKey(id);
+      EXPECT_TRUE(Types::isTxKeyValid(key));
+      EXPECT_TRUE(Types::isThisAnUnpooledKey(key));
+      EXPECT_FALSE(Types::isThisAZCKey(key));
+      EXPECT_EQ(Types::getUnpooledIdFromTxKey(key), id);
+   }
+
    Types::ScrAddrId scrAddrId1 = 100;
    Types::ScrAddrId scrAddrId2 = 200;
    auto scrAddrKey1 = Types::constructScrAddrKey(scrAddrId1, blockId1);

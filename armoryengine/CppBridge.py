@@ -709,14 +709,13 @@ class BlockchainService(ProtoWrapper):
          packet.service.getTxsByHash[i] = hashVal
 
       fut = self.send(packet)
-      reply = fut.getVal()
+      reply = fut.getVal(nothrow=True)
       if reply.success == False:
-         return None
-      txList = reply.service.getTxsByHash
-      txDict = {}
-      for tx in txList:
-         txDict[tx.hash] = tx
-      return txDict
+         raise BridgeError(f"getTxsByHash failed: {reply.error}")
+
+      #txs not found are left out, Transaction.getTxsByHash keys the
+      #rest by the hash of each raw tx
+      return reply.service.getTxsByHash
 
    ####
    def getBlockTimeByHeight(self, height):
@@ -1526,7 +1525,7 @@ class BridgeSigner(ProtoWrapper):
       packet.signer.fromTxSigCollect = txSigCollect
 
       fut = self.send(packet)
-      reply = fut.getVal()
+      reply = fut.getVal(nothrow=True)
       if reply.success == False:
          raise BridgeSignerError(
             f"[fromTxSigCollect] failed with error: {reply.error}")

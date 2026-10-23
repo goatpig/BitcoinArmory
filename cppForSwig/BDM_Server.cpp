@@ -174,8 +174,9 @@ namespace {
                }
             }
 
-            if (!possibleZcHashes.empty()) {
-               auto mempool = bdv->zcContainer()->getSnapshot();
+            //there is no snapshot until the first zc
+            auto mempool = bdv->zcContainer()->getSnapshot();
+            if (!possibleZcHashes.empty() && mempool != nullptr) {
                for (const auto& txHash : possibleZcHashes) {
                   auto zcKey = mempool->getKeyForHash(txHash);
                   if (!Types::isTxKeyValid(zcKey)) {
@@ -199,6 +200,7 @@ namespace {
                capnTx.setKey(tx.first);
                capnTx.setIsChainedZc(tx.second.isChained());
                capnTx.setIsRbf(tx.second.isRBF());
+               capnTx.setTxTime(tx.second.getTxTime());
             }
             return builder;
          }
@@ -225,8 +227,8 @@ namespace {
                }
             }
 
-            if (!zcKeys.empty()) {
-               auto mempool = bdv->zcContainer()->getSnapshot();
+            auto mempool = bdv->zcContainer()->getSnapshot();
+            if (!zcKeys.empty() && mempool != nullptr) {
                for (auto zcKey : zcKeys) {
                   auto tx = mempool->getTxByKey(zcKey);
                   if (tx != nullptr) {
@@ -247,6 +249,7 @@ namespace {
                capnTx.setKey(tx.first);
                capnTx.setIsChainedZc(tx.second.isChained());
                capnTx.setIsRbf(tx.second.isRBF());
+               capnTx.setTxTime(tx.second.getTxTime());
             }
             return builder;
          }

@@ -21,6 +21,7 @@ namespace Armory
       using TxId        = uint16_t;
       using TxIOId      = uint16_t;
       using ZcId        = uint32_t;
+      using UnpooledId  = uint32_t;
       using BlockId     = uint32_t;
       using FileId      = uint16_t;
       using BdvId       = uint64_t;
@@ -78,6 +79,7 @@ namespace Armory
       // key helpers
       TxKey       constructTxKey(BlockId, TxId);
       TxKey       constructZCKey(ZcId);
+      TxKey       constructUnpooledKey(UnpooledId);
       TxIOKey     constructTxIOKey(BlockId, TxId, TxIOId);
       TxIOKey     constructTxIOKeyFromTxKey(TxKey, TxIOId);
       ScrAddrKey  constructScrAddrKey(ScrAddrId, BlockId);
@@ -86,6 +88,7 @@ namespace Armory
       TxId        getTxIndexFromTxKey(TxKey);
       TxIOId      getTxIOIndexFromTxIOKey(TxKey);
       ZcId        getZcIdFromTxKey(TxKey);
+      UnpooledId  getUnpooledIdFromTxKey(TxKey);
       BlockId     getBlockIDFromScrAddrKey(ScrAddrKey);
       BlockId     getBlockIDFromTxKey(TxKey);
       ScrAddrId   getScrAddrIdFromScrAddrKey(ScrAddrKey);
@@ -95,5 +98,6 @@ namespace Armory
 
       bool        isThisATxIOKey(TxIOKey);
       bool        isThisAZCKey(TxKey);
+      bool        isThisAnUnpooledKey(TxKey);
    }
 }

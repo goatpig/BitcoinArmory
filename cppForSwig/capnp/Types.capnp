@@ -59,6 +59,9 @@ struct Tx {
    key         @1 : TxKey;
    isChainedZc @2 : Bool;
    isRbf       @3 : Bool;
+
+   #when the db's mempool got a zc, UINT32_MAX for the others
+   txTime      @4 : UInt32 = 0xffffffff;
 }
 
 ## bitcoin node & db status ##
