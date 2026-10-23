@@ -1351,6 +1351,106 @@ TEST_F(ZeroConfTests_Mempool, DropParent_Commit)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(ZeroConfTests_Mempool, Drop_TxioKeysNotContiguous)
+{
+   /*
+   A scrAddr's txio keys are sorted by output index first (the index sits
+   in the high bits of the key), so the keys of a given tx aren't next to
+   each other in the set. Dropping a zc has to remove its keys, and only
+   its keys.
+
+   A mined tx pays addrIn twice. zcA spends output 0, zcB spends output 1.
+   Both zcs pay addrOut twice.
+   */
+   ZeroConf::MempoolSnapshot snapshot(2, 4);
+
+   const auto addrIn = READHEX("00E1E2E3E4E5E6E7E8E9EA");
+   const auto addrOut = READHEX("00F1F2F3F4F5F6F7F8F9FA");
+   const auto minedHash = READHEX(
+      "0505050505050505050505050505050505050505050505050505050505050505");
+   const auto minedKey = Types::constructTxKey(0x40, 2);
+
+   auto stageZc = [&](Types::ZcId id, const BinaryData& hash,
+      uint32_t minedOutputId)->Types::TxKey
+   {
+      auto zcPtr = std::make_shared<ZeroConf::ParsedTx>(
+         Types::constructZCKey(id));
+      zcPtr->setTxHash(hash);
+
+      BinaryWriter bw;
+      bw.put_BinaryData(minedHash);
+      bw.put_uint32_t(minedOutputId);
+      BinaryData outpoint = bw.getData();
+
+      ZeroConf::ParsedTxIn txIn;
+      txIn.value = 5 * COIN;
+      txIn.scrAddr = addrIn;
+      txIn.opRef.unserialize(outpoint);
+      txIn.opRef.setDbKey(minedKey);
+      zcPtr->inputs.push_back(txIn);
+
+      for (unsigned i=0; i<2; i++) {
+         ZeroConf::ParsedTxOut txOut;
+         txOut.scrAddr = addrOut;
+         txOut.value = 2 * COIN;
+         zcPtr->outputs.push_back(txOut);
+      }
+      zcPtr->state = ZeroConf::ParsedTxStatus::Resolved;
+
+      auto filterResult = filterParsedTx(zcPtr,
+         [](const Types::ScrAddr&)->bool { return true; },
+         &zcCallbacks_
+      );
+      snapshot.stageNewZC(zcPtr, filterResult);
+      return zcPtr->getKey();
+   };
+
+   auto keyA = stageZc(5, READHEX(
+      "0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A"), 0);
+   auto keyB = stageZc(7, READHEX(
+      "0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B"), 1);
+   snapshot.mergeWithParents();
+
+   auto outA0 = Types::constructTxIOKeyFromTxKey(keyA, 0);
+   auto outA1 = Types::constructTxIOKeyFromTxKey(keyA, 1);
+   auto outB0 = Types::constructTxIOKeyFromTxKey(keyB, 0);
+   auto outB1 = Types::constructTxIOKeyFromTxKey(keyB, 1);
+   auto minedOut1 = Types::constructTxIOKeyFromTxKey(minedKey, 1);
+
+   //zcB's first key sits between zcA's keys
+   {
+      const auto& keys = snapshot.getTxioKeysForScrAddr(addrOut);
+      std::vector<Types::TxIOKey> keyVec(keys.begin(), keys.end());
+      ASSERT_EQ(keyVec.size(), 4U);
+      EXPECT_EQ(keyVec[0], outA0);
+      EXPECT_EQ(keyVec[1], outB0);
+      EXPECT_EQ(keyVec[2], outA1);
+      EXPECT_EQ(keyVec[3], outB1);
+   }
+
+   //drop zcA
+   auto droppedZCs = snapshot.dropZc(keyA);
+   ASSERT_EQ(droppedZCs.size(), 1ULL);
+   EXPECT_EQ(droppedZCs.begin()->first, keyA);
+
+   //addrOut only carries zcB's outputs
+   {
+      const auto& keys = snapshot.getTxioKeysForScrAddr(addrOut);
+      std::set<Types::TxIOKey> expected{ outB0, outB1 };
+      EXPECT_EQ(keys, expected);
+   }
+
+   //addrIn still sees zcB spending the mined output 1
+   {
+      auto txioMap = snapshot.getTxioMapForScrAddr(addrIn);
+      ASSERT_EQ(txioMap.size(), 1ULL);
+      EXPECT_EQ(txioMap.begin()->first, minedOut1);
+      ASSERT_TRUE(txioMap.begin()->second->hasTxIn());
+      EXPECT_EQ(txioMap.begin()->second->getTxKeyOfInput(), keyB);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 class ZeroConfTests_FullNode : public ::testing::Test
 {
 protected:

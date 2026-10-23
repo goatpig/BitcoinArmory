@@ -834,21 +834,15 @@ void MempoolData::dropFromSpentTxOuts(Types::TxIOKey key)
 
 ///////////////////////////////////////////////////////////////////////////////
 void MempoolData::dropFromScrAddrMap(
-   const Types::ScrAddr& scrAddr, Types::TxKey zcKey)
+   const Types::ScrAddr& scrAddr, Types::TxIOKey txioKey)
 {
-   //this scrAddr is funded by outputs from this zc, remove them
+   /*
+   Remove this txio key from the scrAddr's set. The keys of a given tx
+   aren't contiguous in the set (the output index sits in the high bits
+   of the key), so drop the exact key rather than a range.
+   */
    auto& txioKeys = getTxioKeysForScrAddr_NoThrow(scrAddr);
-
-   //look for txio keys belonging to our zc
-   auto lowKey = Types::constructTxIOKeyFromTxKey(zcKey, 0);
-   auto keyIter = txioKeys.lower_bound(lowKey);
-   while (keyIter != txioKeys.end()) {
-      if (Types::getTxKeyFromTxIOKey(*keyIter) != zcKey) {
-         break;
-      }
-      //remove all entries that begin with our zcKey
-      txioKeys.erase(keyIter++);
-   }
+   txioKeys.erase(txioKey);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1242,8 +1236,7 @@ std::map<Types::TxKey, std::shared_ptr<ParsedTx>> MempoolSnapshot::dropZc(
       if (Types::isThisAZCKey(input.opRef.getDbKey())) {
          continue;
       }
-      data_->dropFromScrAddrMap(input.scrAddr,
-         Types::getTxKeyFromTxIOKey(input.opRef.getDbKey()));
+      data_->dropFromScrAddrMap(input.scrAddr, input.opRef.getDbKey());
    }
 
    /*
@@ -1273,8 +1266,9 @@ std::map<Types::TxKey, std::shared_ptr<ParsedTx>> MempoolSnapshot::dropZc(
    }
 
    //drop outputs from scrAddrMap
-   for (const auto& output : txPtr->outputs) {
-      data_->dropFromScrAddrMap(output.scrAddr, zcKey);
+   for (Types::TxIOId i = 0; i < txPtr->outputs.size(); i++) {
+      data_->dropFromScrAddrMap(txPtr->outputs[i].scrAddr,
+         Types::constructTxIOKeyFromTxKey(zcKey, i));
    }
 
    //drop all txios this ZC created (where our tx holds the txout)
