@@ -4750,6 +4750,49 @@ TEST_F(TypesTests, keys)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST(FileCopyTests, XorPartialChunk)
+{
+   /*
+   FileCopy::xorMe works on whole 8-byte chunks. The file length is not a
+   multiple of 8, so the last chunk is a partial one. ASan builds that
+   annotate std::vector (libc++, or libstdc++ with _GLIBCXX_SANITIZE_VECTOR)
+   abort here if the xor reaches past the vector's size().
+   */
+   std::filesystem::path dir{"./filecopytest"};
+   FileUtils::removeDirectory(dir);
+   FileUtils::createDirectory(dir);
+   auto path = dir / "data.bin";
+
+   std::vector<uint8_t> raw(21);
+   for (size_t i = 0; i < raw.size(); i++) {
+      raw[i] = uint8_t(i * 37 + 11);
+   }
+   {
+      std::ofstream file{path, std::ios::out | std::ios::binary};
+      file.write((const char*)raw.data(), raw.size());
+   }
+
+   //the key is aligned to the start of the file: file byte at position
+   //pos is xored with key byte (pos % 8), whatever the copy's offset
+   const uint64_t xorKey = 0x8877665544332211ULL;
+   for (size_t offset : {0, 3, 8, 13, 20}) {
+      FileUtils::FileCopy fileCopy{path, offset};
+      ASSERT_TRUE(fileCopy.isValid());
+      ASSERT_EQ(fileCopy.size(), raw.size() - offset);
+
+      fileCopy.xorMe(xorKey);
+      for (size_t i = 0; i < fileCopy.size(); i++) {
+         auto pos = offset + i;
+         uint8_t keyByte = (xorKey >> ((pos % 8) * 8)) & 0xFF;
+         EXPECT_EQ(int(fileCopy.ptr()[i]), int(raw[pos] ^ keyByte))
+            << "offset " << offset << ", byte " << i;
+      }
+   }
+
+   FileUtils::removeDirectory(dir);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 // Now actually execute all the tests
 ////////////////////////////////////////////////////////////////////////////////
