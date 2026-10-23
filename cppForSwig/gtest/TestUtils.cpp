@@ -904,6 +904,40 @@ namespace DBTestUtils
    }
 
    /////////////////////////////////////////////////////////////////////////////
+   std::vector<Tx> getTxsByHash(Clients* clients, Types::BdvId bdvId,
+      const std::vector<Types::TxHash>& txHashes)
+   {
+      capnp::MallocMessageBuilder message;
+      auto payload = message.initRoot<Codec::BDV::Request>();
+
+      auto bdvRequest = payload.initBdv();
+      auto hashReq = bdvRequest.initGetTxsByHash(txHashes.size());
+      for (unsigned i = 0; i < txHashes.size(); i++) {
+         hashReq.set(i, capnp::Data::Builder(
+            (uint8_t*)txHashes[i].getPtr(), txHashes[i].getSize()));
+      }
+
+      auto result = processCommand(clients, bdvId, serializeCapnp(message));
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(result.getPtr()),
+         result.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto reply = reader.getRoot<Codec::BDV::Reply>();
+
+      //hashes the server doesn't resolve are left out of the reply
+      std::vector<Tx> txs;
+      for (auto capnTx : reply.getBdv().getGetTxsByHash()) {
+         auto capnRaw = capnTx.getRaw();
+         BinaryDataRef rawTx(capnRaw.begin(), capnRaw.end());
+
+         Tx txobj(rawTx);
+         txobj.setTxKey(capnTx.getKey());
+         txs.emplace_back(std::move(txobj));
+      }
+      return txs;
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
    Tx getTxByKey(Clients* clients, Types::BdvId bdvId,
       const Types::TxKey& txKey)
    {
