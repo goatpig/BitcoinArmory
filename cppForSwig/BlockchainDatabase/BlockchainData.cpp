@@ -18,6 +18,7 @@
 
 #include "Blockchain.h"
 #include "BlockDataMap.h"
+#include "StoredBlockObj.h"
 
 using namespace Armory;
 
@@ -77,6 +78,8 @@ BlockchainData::BlockchainData(std::shared_ptr<Blockchain> bcPtr) :
    blockchain_{bcPtr}
 {}
 
+////////
+// tx fetching
 Tx BlockchainData::getTx(const Types::TxKey& key) const
 {
    auto blockId = Types::getBlockIDFromTxKey(key);
@@ -102,9 +105,9 @@ Tx BlockchainData::getTx(const Types::BlockId& blockId, Types::TxId txId) const
    auto rawBlockData = getRawBlockData(header);
    try {
       auto block = BlockData::deserialize(
-         &rawBlockData.first[0] + rawBlockData.second,
-         header->getBlockSize(), header,
-         BlockData::CheckHashes::NoChecks);
+         rawBlockData.first.data() + rawBlockData.second,
+         rawBlockData.first.size() - rawBlockData.second,
+         header, BlockData::CheckHashes::NoChecks);
 
       const auto& bctx = block->getTxns()[txId];
       Tx tx{bctx->data_, bctx->size_};
@@ -117,6 +120,7 @@ Tx BlockchainData::getTx(const Types::BlockId& blockId, Types::TxId txId) const
 }
 
 ////////
+// tx key to hash resolution
 Hash32 BlockchainData::getTxHashForTxKey(const Types::TxKey& txKey) const
 {
    auto tx = getTx(txKey);
@@ -161,6 +165,7 @@ bool BlockchainData::isTxKeyOnMainBranch(const Types::TxKey& txKey) const
 }
 
 ////////
+// full block fetch
 std::pair<std::vector<uint8_t>, size_t> BlockchainData::getRawBlockForId(
    Types::BlockId blockId) const
 {
@@ -177,4 +182,26 @@ std::pair<std::vector<uint8_t>, size_t> BlockchainData::getRawBlockForHeader(
    std::shared_ptr<BlockHeader> header) const
 {
    return getRawBlockData(header);
+}
+
+bool BlockchainData::getStoredHeader(
+   StoredHeader& sbh, std::shared_ptr<BlockHeader> bh, bool withTx) const
+{
+   try {
+      //open block file
+      auto rawBlock = getRawBlockForHeader(bh);
+      BinaryRefReader brr{
+         rawBlock.first.data() + rawBlock.second,
+         rawBlock.first.size() - rawBlock.second
+      };
+
+      if (withTx) {
+         sbh.unserializeFullBlock(brr, false, false);
+      } else {
+         sbh.unserializeSimple(brr);
+      }
+   } catch (...) {
+      return false;
+   }
+   return true;
 }

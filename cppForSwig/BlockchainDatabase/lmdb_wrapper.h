@@ -229,8 +229,6 @@ public:
    void readAllHeaders(
       const std::function<void(std::shared_ptr<Armory::BlockHeader>)>&);
    void putBareHeader(const StoredHeader&);
-   bool getStoredHeader(StoredHeader&,
-      std::shared_ptr<Armory::BlockHeader>, bool=true) const;
 
    /////////////////////////////////////////////////////////////////////////////
    // StoredTx Accessors

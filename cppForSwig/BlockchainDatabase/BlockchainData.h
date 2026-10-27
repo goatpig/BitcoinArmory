@@ -16,6 +16,7 @@
 
 class Tx;
 class TxHintCollision;
+class StoredHeader;
 
 namespace Armory
 {
@@ -49,5 +50,7 @@ namespace Armory
          Types::BlockId) const;
       std::pair<std::vector<uint8_t>, size_t> getRawBlockForHeader(
          std::shared_ptr<BlockHeader>) const;
+      bool getStoredHeader(StoredHeader&,
+         std::shared_ptr<Armory::BlockHeader>, bool=true) const;
    };
 }

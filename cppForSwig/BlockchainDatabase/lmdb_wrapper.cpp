@@ -793,28 +793,6 @@ void LMDBBlockDatabase::putStoredZC(StoredTx& stx, const Types::TxKey& zcKey)
    }
 }
 
-////////
-bool LMDBBlockDatabase::getStoredHeader(
-   StoredHeader& sbh, std::shared_ptr<BlockHeader> bh, bool withTx) const
-{
-   try {
-      //open block file
-      auto path = FileUtils::getBlkFilename(
-         Config::Pathing::blkFilePath(), bh->getBlockFileId());
-      auto fileMap = FileUtils::FileMap(path, false);
-      BinaryRefReader brr(fileMap.ptr() + bh->getOffset(), bh->getBlockSize());
-
-      if (withTx) {
-         sbh.unserializeFullBlock(brr, false, false);
-      } else {
-         sbh.unserializeSimple(brr);
-      }
-   } catch (...) {
-      return false;
-   }
-   return true;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 bool LMDBBlockDatabase::getStoredZC(StoredTx& stx, const Types::TxKey& zcKey) const
 {

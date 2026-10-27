@@ -1877,7 +1877,7 @@ TEST_F(BlockUtilsBare, DISABLED_PPrintTestChain)
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
-   auto db = bdvPtr->getDB();
+   auto bd = theBDMt_->bdm()->blockchainData();
 
    std::map<BinaryData, std::string> knownAddrs{
       { TestChain::scrAddrA, "scrAddrA" },
@@ -1902,7 +1902,7 @@ TEST_F(BlockUtilsBare, DISABLED_PPrintTestChain)
    for (const auto& blockId : blockIds) {
       auto headerPtr = blockchain->getHeaderByHeight(blockId.first);
       StoredHeader block;
-      ASSERT_TRUE(db->getStoredHeader(block, headerPtr, true));
+      ASSERT_TRUE(bd->getStoredHeader(block, headerPtr, true));
 
       //header
       auto header = block.getBlockHeaderCopy();
