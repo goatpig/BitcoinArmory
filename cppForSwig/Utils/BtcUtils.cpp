@@ -448,6 +448,12 @@ size_t BtcUtils::TxCalcLength(const uint8_t* ptr, size_t size,
    // Tx Version;
    brr.advance(4);
 
+   // checkSwMarker reads 2 bytes
+   if (brr.getSizeRemaining() < 2) {
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "tx data is too small: {}", size));
+   }
+
    // Get marker and flag if transaction uses segwit
    auto usesWitness = checkSwMarker(brr.getCurrPtr());
    if (usesWitness) {
@@ -456,6 +462,12 @@ size_t BtcUtils::TxCalcLength(const uint8_t* ptr, size_t size,
 
    // TxIn List
    size_t nIn = brr.get_var_int();
+   // each txin takes at least 1 byte, a larger count can't be valid
+   // (and nIn+1 would wrap or blow up the resize below)
+   if (nIn > brr.getSizeRemaining()) {
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "txin count too large: {}", nIn));
+   }
    if (offsetsIn != nullptr) {
       offsetsIn->resize(nIn+1);
       for (size_t i = 0; i < nIn; i++) {
@@ -478,6 +490,10 @@ size_t BtcUtils::TxCalcLength(const uint8_t* ptr, size_t size,
 
    // Now extract the TxOut list
    size_t nOut = brr.get_var_int();
+   if (nOut > brr.getSizeRemaining()) {
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "txout count too large: {}", nOut));
+   }
    if (offsetsOut != nullptr) {
       offsetsOut->resize(nOut+1);
       for (size_t i = 0; i<nOut; i++) {
@@ -539,6 +555,12 @@ size_t BtcUtils::StoredTxCalcLength(const uint8_t* ptr,
    // Tx Version;
    brr.advance(4);
 
+   // checkSwMarker reads 2 bytes
+   if (brr.getSizeRemaining() < 2) {
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "tx data is too small: {}", len));
+   }
+
    // Get marker and flag if transaction uses segwit
    auto usesWitness = checkSwMarker(brr.getCurrPtr());
    if (usesWitness) {
@@ -547,6 +569,10 @@ size_t BtcUtils::StoredTxCalcLength(const uint8_t* ptr,
 
    // TxIn List
    size_t nIn = brr.get_var_int();
+   if (nIn > brr.getSizeRemaining()) {
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "txin count too large: {}", nIn));
+   }
    if (offsetsIn != nullptr) {
       offsetsIn->resize(nIn+1);
       for (size_t i = 0; i < nIn; i++) {
@@ -575,6 +601,12 @@ size_t BtcUtils::StoredTxCalcLength(const uint8_t* ptr,
          (*offsetsOut)[i] = brr.getPosition();
       }
    } else {
+      // fragged txouts aren't in the buffer, unfragged ones are
+      if (nOut > brr.getSizeRemaining()) {
+         throw BtcUtils::BlockDeserializingException(std::format(
+            "txout count too large: {}", nOut));
+      }
+
       // Now extract the TxOut list
       if (offsetsOut != nullptr) {
          offsetsOut->resize(nOut+1);

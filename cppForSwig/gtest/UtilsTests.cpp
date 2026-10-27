@@ -2265,6 +2265,43 @@ TEST_F(BlockObjTest, TxUnserialize)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(BlockObjTest, TxCalcLength_TooShort)
+{
+   //a valid tx still parses to its full length
+   std::vector<size_t> offIn, offOut, offWit;
+   EXPECT_EQ(BtcUtils::TxCalcLength(rawTx0_.getPtr(), rawTx0_.getSize(),
+      &offIn, &offOut, &offWit), rawTx0_.getSize());
+   EXPECT_EQ(BtcUtils::StoredTxCalcLength(rawTx0_.getPtr(), rawTx0_.getSize(),
+      false, &offIn, &offOut, &offWit), rawTx0_.getSize());
+
+   //4 and 5 byte txs. The 2 bytes past the version are a segwit marker, so a
+   //read past the size handed to the parser would show up as a different error
+   auto data = READHEX("01000000" "0001");
+   for (size_t len : {4, 5}) {
+      std::vector<size_t> in, out, wit;
+      EXPECT_THROW(BtcUtils::TxCalcLength(data.getPtr(), len,
+         &in, &out, &wit), BtcUtils::BlockDeserializingException);
+      EXPECT_THROW(BtcUtils::StoredTxCalcLength(data.getPtr(), len,
+         false, &in, &out, &wit), BtcUtils::BlockDeserializingException);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BlockObjTest, TxCalcLength_TxInCountTooLarge)
+{
+   //txin count of 2^32, then 2^64-1, with no txin data behind it
+   for (auto hex : {"01000000" "ff0000000001000000",
+      "01000000" "ffffffffffffffffff"}) {
+      auto data = READHEX(hex);
+      std::vector<size_t> in, out, wit;
+      EXPECT_THROW(BtcUtils::TxCalcLength(data.getPtr(), data.getSize(),
+         &in, &out, &wit), BtcUtils::BlockDeserializingException);
+      EXPECT_THROW(BtcUtils::StoredTxCalcLength(data.getPtr(), data.getSize(),
+         false, &in, &out, &wit), BtcUtils::BlockDeserializingException);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 class StoredBlockObjTest : public ::testing::Test
 {
