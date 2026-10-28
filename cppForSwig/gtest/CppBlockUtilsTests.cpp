@@ -2214,6 +2214,169 @@ TEST_F(BlockUtilsBareWithZC, SpenderKnownHashes)
    bdvPtr.reset();
 }
 
+////////
+TEST_F(BlockUtilsBareWithZC, ReloadMempool_ZcIdAbove255)
+{
+   std::vector<BinaryData> scrAddrVec {
+      TestChain::scrAddrA,
+      TestChain::scrAddrB,
+      TestChain::scrAddrC,
+      TestChain::scrAddrD,
+      TestChain::scrAddrE,
+      TestChain::scrAddrF
+   };
+
+   auto startBDM = [this, &scrAddrVec](void)->Types::BdvId
+   {
+      clients_->init();
+      auto bdvID = DBTestUtils::registerBDV(
+         clients_, Config::BitcoinSettings::getMagicBytes());
+      DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+         false);
+      theBDMt_->start(Config::DBSettings::initMode());
+      theBDMt_->bdm()->blockUntilReady();
+      DBTestUtils::goOnline(clients_, bdvID);
+      DBTestUtils::waitOnBDVReady(clients_, bdvID);
+      return bdvID;
+   };
+
+   auto restartBDM = [this, &startBDM](void)->Types::BdvId
+   {
+      clients_->shutdown();
+      theBDMt_->shutdown();
+      delete clients_;
+      delete theBDMt_;
+      clients_ = nullptr;
+      theBDMt_ = nullptr;
+
+      initBDM();
+      return startBDM();
+   };
+
+   //spend a utxo to an address unknown to our wallets
+   auto makeZc = [](const UTXO& utxo, const BinaryData& privKey)->BinaryData
+   {
+      Signing::Signer signer;
+      auto feed = std::make_shared<ResolverUtils::TestResolverFeed>();
+      feed->addPrivKey(privKey.getRef());
+
+      signer.addSpender(std::make_shared<Signing::ScriptSpender>(utxo));
+      signer.addRecipient(std::make_shared<Signing::Recipient_P2PKH>(
+         Cryptography::PRNG::fortuna.generateRandom(20), utxo.amount - 10000));
+      signer.setFeed(feed);
+      signer.sign();
+      EXPECT_TRUE(signer.verify());
+      return signer.serializeSignedTx();
+   };
+
+   auto bdvID = startBDM();
+   auto bdm = theBDMt_->bdm();
+   auto getBal = [&bdm](const BinaryData& scrAddr)->uint64_t
+   { return DBTestUtils::getScrAddrBalance(scrAddr, bdm); };
+
+   EXPECT_EQ(getBal(TestChain::scrAddrB), 70 * COIN);
+   EXPECT_EQ(getBal(TestChain::scrAddrC), 20 * COIN);
+
+   auto utxosC = DBTestUtils::getUTXOsForScrAddrs(bdm, { TestChain::scrAddrC });
+   ASSERT_EQ(utxosC.size(), 2U);
+   auto utxosB = DBTestUtils::getUTXOsForScrAddrs(bdm, { TestChain::scrAddrB });
+   ASSERT_FALSE(utxosB.empty());
+
+   auto rawZc1 = makeZc(utxosC[0], TestChain::privKeyAddrC);
+   auto rawZc2 = makeZc(utxosC[1], TestChain::privKeyAddrC);
+   auto rawZc3 = makeZc(utxosB[0], TestChain::privKeyAddrB);
+   auto hash1 = Tx{rawZc1}.getThisHash();
+   auto hash2 = Tx{rawZc2}.getThisHash();
+   auto hash3 = Tx{rawZc3}.getThisHash();
+
+   /*
+   Persist 2 zcs with ids 255 and 256, as a db that has been running
+   for a while would have them. On little-endian hosts their keys sort
+   the other way around as integers: the id is stored big-endian inside
+   the key.
+   */
+   auto persistZc = [this](const BinaryData& rawTx, Types::ZcId id)
+   {
+      StoredTx stx;
+      stx.createFromTx(Tx{rawTx}, true, true);
+      iface_->putStoredZC(stx, Types::constructZCKey(id));
+   };
+   persistZc(rawZc1, 255);
+   persistZc(rawZc2, 256);
+
+   //reload the mempool from the db
+   bdvID = restartBDM();
+   bdm = theBDMt_->bdm();
+   {
+      auto zcCont = bdm->zeroConfCont();
+      auto ss = zcCont->getSnapshot();
+      ASSERT_NE(ss, nullptr);
+      EXPECT_EQ(ss->getTxCount(), 2U);
+      EXPECT_EQ(ss->getKeyForHash(hash1), Types::constructZCKey(255));
+      EXPECT_EQ(ss->getKeyForHash(hash2), Types::constructZCKey(256));
+
+      //next id has to be above the highest id in use
+      EXPECT_EQ(zcCont->getTopZcID(), 257U);
+   }
+   EXPECT_EQ(getBal(TestChain::scrAddrC), 0U);
+
+   //push a new zc, it should not take the key of a live one
+   {
+      DBTestUtils::ZcVector zcVec;
+      zcVec.push_back(rawZc3, 14000000);
+      DBTestUtils::pushNewZc(theBDMt_, zcVec);
+      DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
+   }
+   {
+      auto ss = bdm->zeroConfCont()->getSnapshot();
+      ASSERT_NE(ss, nullptr);
+      EXPECT_EQ(ss->getTxCount(), 3U);
+      EXPECT_EQ(ss->getKeyForHash(hash3), Types::constructZCKey(257));
+
+      auto tx2 = ss->getTxByHash(hash2);
+      ASSERT_NE(tx2, nullptr);
+      EXPECT_EQ(tx2->getTxHash(), hash2);
+      EXPECT_NE(tx2->getTxHash(), hash3);
+   }
+   EXPECT_EQ(getBal(TestChain::scrAddrB), 70 * COIN - utxosB[0].amount);
+   EXPECT_EQ(getBal(TestChain::scrAddrC), 0U);
+
+   /*
+   The zc is written to the db on its own thread (updateZCinDB), and the
+   new zc notification doesn't wait on that write. Wait for it to land
+   before restarting: shutdown drops the writes that are still queued.
+   */
+   {
+      auto key3 = bdm->zeroConfCont()->getSnapshot()->getKeyForHash(hash3);
+      bool inDb = false;
+      for (unsigned i = 0; i < 500 && !inDb; i++) {
+         StoredTx stx;
+         inDb = iface_->getStoredZC(stx, key3) &&
+            stx.getSerializedTx() == rawZc3;
+         if (!inDb) {
+            std::this_thread::sleep_for(10ms);
+         }
+      }
+      ASSERT_TRUE(inDb);
+   }
+
+   //all 3 zcs should survive another restart
+   bdvID = restartBDM();
+   bdm = theBDMt_->bdm();
+   {
+      auto zcCont = bdm->zeroConfCont();
+      auto ss = zcCont->getSnapshot();
+      ASSERT_NE(ss, nullptr);
+      EXPECT_EQ(ss->getTxCount(), 3U);
+      EXPECT_TRUE(ss->hasHash(hash1));
+      EXPECT_TRUE(ss->hasHash(hash2));
+      EXPECT_TRUE(ss->hasHash(hash3));
+      EXPECT_EQ(zcCont->getTopZcID(), 258U);
+   }
+   EXPECT_EQ(getBal(TestChain::scrAddrB), 70 * COIN - utxosB[0].amount);
+   EXPECT_EQ(getBal(TestChain::scrAddrC), 0U);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
