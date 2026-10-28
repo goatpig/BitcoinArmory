@@ -83,6 +83,9 @@ namespace {
    macOS, where LMDB uses POSIX named semaphores. That is more than macOS's
    default soft limit of 256 open files. Raise the soft limit to what the
    envs need, within the hard limit (macOS refuses an unlimited soft limit).
+   At db bootstrap, Builder::parseForNewHeaders and parseForNewBlocks also
+   open one block file per thread at the same time (short lived), so add
+   the thread count on top.
 
    This runs when the db object is created, before ArmoryDB starts its
    websocket server: libwebsockets reads the limit when its context is
@@ -107,7 +110,8 @@ namespace {
             break;
       }
 
-      const rlim_t wanted = envCount * 5 + 256;
+      const rlim_t wanted =
+         envCount * 5 + Config::DBSettings::threadCount() + 256;
       struct rlimit rl;
       if (getrlimit(RLIMIT_NOFILE, &rl) != 0 || rl.rlim_cur >= wanted) {
          return;
@@ -118,7 +122,8 @@ namespace {
       }
       if (setrlimit(RLIMIT_NOFILE, &rl) != 0 || rl.rlim_cur < wanted) {
          LOGWARN << "need " << wanted << " open files for " << envCount <<
-            " db envs, could not raise the limit that far";
+            " db envs and the block file reads, could not raise the limit" <<
+            " that far";
       }
 #endif
    }
