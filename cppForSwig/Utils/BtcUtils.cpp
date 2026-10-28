@@ -596,9 +596,11 @@ size_t BtcUtils::StoredTxCalcLength(const uint8_t* ptr,
    // Now extract the TxOut list
    size_t nOut = brr.get_var_int();
    if (fragged) {
-      offsetsOut->resize(nOut+1);
-      for (size_t i = 0; i < nOut + 1; i++) {
-         (*offsetsOut)[i] = brr.getPosition();
+      if (offsetsOut != nullptr) {
+         offsetsOut->resize(nOut+1);
+         for (size_t i = 0; i < nOut + 1; i++) {
+            (*offsetsOut)[i] = brr.getPosition();
+         }
       }
    } else {
       // fragged txouts aren't in the buffer, unfragged ones are
