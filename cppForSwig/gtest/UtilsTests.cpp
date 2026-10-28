@@ -2954,6 +2954,38 @@ TEST_F(StoredBlockObjTest, STxUnserDBValue_2)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(StoredBlockObjTest, STxUnserDBValue_Truncated)
+{
+   /*
+   Full tx db value (flags, hash, tx) that announces 1 txout but ends
+   right after the txout count. The value is read from a larger buffer:
+   the parser has to stop at the end of the value, not run into the
+   bytes that follow it.
+   */
+   BinaryData dbVal = READHEX(
+      "97024400"
+      "0000000000000000000000000000000000000000000000000000000000000000"
+      "01000000"
+      "01"
+      "1111111111111111111111111111111111111111111111111111111111111111"
+      "00000000"
+      "00"
+      "ffffffff"
+      "01");
+
+   BinaryData buffer = dbVal;
+   buffer.append(READHEX(
+      "0000000000000000000000000000000000000000000000000000000000000000"
+      "0000000000000000000000000000000000000000000000000000000000000000"));
+
+   StoredTx stx;
+   EXPECT_THROW(
+      stx.unserializeDBValue(BinaryDataRef(buffer.getPtr(), dbVal.getSize())),
+      BtcUtils::BlockDeserializingException);
+   EXPECT_FALSE(stx.isInitialized());
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(StoredBlockObjTest, STxOutUnserialize)
 {
    StoredTxOut stxo0, stxo1;
