@@ -500,7 +500,7 @@ void ZeroConfContainer::parseNewZC(ZcActionStruct zcAction)
    auto ss = MempoolSnapshot::copy(
       snapshot_.load(), MEMPOOL_DEPTH, POOL_MERGE_THRESHOLD);
 
-   std::map<Types::TxKey, std::shared_ptr<ParsedTx>> zcMap;
+   std::map<Types::ZcId, std::shared_ptr<ParsedTx>> zcMap;
    std::map<BinaryData, std::shared_ptr<WatcherTxBody>> watcherMap;
    Types::BdvId requestor;
 
@@ -528,7 +528,10 @@ void ZeroConfContainer::parseNewZC(ZcActionStruct zcAction)
       {
          try {
             auto batchTxMap = getBatchTxMap(zcAction.batch, ss);
-            zcMap = std::move(batchTxMap.txMap_);
+            for (auto& zcPair : batchTxMap.txMap_) {
+               zcMap.emplace(Types::getZcIdFromTxKey(zcPair.first),
+                  std::move(zcPair.second));
+            }
             watcherMap = std::move(batchTxMap.watcherMap_);
             requestor = std::move(batchTxMap.requestor_);
          } catch (const ZcBatchError&) {
@@ -555,7 +558,7 @@ void ZeroConfContainer::parseNewZC(ZcActionStruct zcAction)
 }
 
 void ZeroConfContainer::parseNewZC(
-   std::map<Types::TxKey, std::shared_ptr<ParsedTx>> zcMap,
+   std::map<Types::ZcId, std::shared_ptr<ParsedTx>> zcMap,
    std::shared_ptr<MempoolSnapshot> ss,
    bool updateDB, bool notify, Types::BdvId requestor,
    std::map<Types::TxHash, std::shared_ptr<WatcherTxBody>>& watcherMap)
@@ -569,7 +572,7 @@ void ZeroConfContainer::parseNewZC(
       if (iter->second->state == ParsedTxStatus::Mined ||
          iter->second->state == ParsedTxStatus::Invalid ||
          iter->second->state == ParsedTxStatus::Skip) {
-         droppedZcKeys.emplace(iter->first);
+         droppedZcKeys.emplace(iter->second->getKey());
          zcMap.erase(iter++);
       } else {
          ++iter;
@@ -589,20 +592,21 @@ void ZeroConfContainer::parseNewZC(
             continue;
          }
       } else {
-         if (ss->getTxByKey(newZCPair.first) != nullptr) {
+         if (ss->getTxByKey(newZCPair.second->getKey()) != nullptr) {
             continue;
          }
       }
-      batch.zcToWrite.emplace(newZCPair);
+      batch.zcToWrite.emplace(newZCPair.second->getKey(), newZCPair.second);
    }
 
    bool hasChanges = false;
    std::map<Types::BdvId, ParsedZCData> flaggedBDVs;
    std::map<Types::TxKey, std::shared_ptr<ParsedTx>> invalidatedTx;
 
-   //zc logic
+   //zc logic, in id order: parents are staged before their children
    std::set<Types::TxKey> addedZcKeys;
    for (const auto& newZCPair : zcMap) {
+      const auto& zcKey = newZCPair.second->getKey();
       const auto& txHash = newZCPair.second->getTxHash();
       if (Types::isTxKeyValid(ss->getKeyForHash(txHash))) {
          continue;
@@ -618,7 +622,7 @@ void ZeroConfContainer::parseNewZC(
          }
 
          //add this tx to known valid zcs
-         addedZcKeys.emplace(newZCPair.first);
+         addedZcKeys.emplace(zcKey);
          hasChanges = true;
 
          for (auto& idmap : filterResult.outPointsSpentByKey) {
@@ -655,7 +659,7 @@ void ZeroConfContainer::parseNewZC(
          }
          //in bare/full node, zcs that cannot be resolved do not affect
          //our list of addresses, do not track them
-         batch.zcToWrite.erase(newZCPair.first);
+         batch.zcToWrite.erase(zcKey);
       }
    }
 
@@ -1005,19 +1009,21 @@ unsigned ZeroConfContainer::loadMempool(bool clearMempool)
       LOGDEBUG << "parsing " << zcMap.size() << " txns from mempool";
       preprocessZcMap(zcMap, db_, bd_);
 
-      //set highest used index. zcMap is sorted by key value, which isn't
-      //the id order: the id sits big-endian inside the key
-      for (const auto& zcPair : zcMap) {
-         auto zcId = Types::getZcIdFromTxKey(zcPair.first);
-         if (zcId >= topId) {
-            topId = zcId + 1;
-         }
+      //zcMap is sorted by key value, which isn't the id order: the id
+      //sits big-endian inside the key
+      std::map<Types::ZcId, std::shared_ptr<ParsedTx>> zcsById;
+      for (auto& zcPair : zcMap) {
+         zcsById.emplace(Types::getZcIdFromTxKey(zcPair.first),
+            std::move(zcPair.second));
       }
+
+      //set highest used index
+      topId = zcsById.rbegin()->first + 1;
 
       //no need to update the db nor notify bdvs on init
       std::map<BinaryData, std::shared_ptr<WatcherTxBody>> emptyWatcherMap;
       parseNewZC(
-         std::move(zcMap), nullptr, false, false,
+         std::move(zcsById), nullptr, false, false,
          UINT64_MAX,
          emptyWatcherMap);
       auto thisSnapshot = snapshot_.load(std::memory_order_acquire);
