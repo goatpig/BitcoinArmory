@@ -125,6 +125,7 @@ namespace Armory
          void addUnpooledTxs(const std::vector<BinaryData>&);
          void fetchTxs(std::shared_ptr<AsyncClient::BlockDataViewer>,
             const std::set<Types::TxHash>&);
+         const Tx& getTxByHash(const Types::TxHash&) const;
       };
    } //namespace Bridge
 } //namespace Armory

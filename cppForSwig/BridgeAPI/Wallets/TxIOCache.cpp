@@ -200,6 +200,21 @@ bool TxIOCache::txKeyIsValid(const Types::TxKey& txKey) const
    }
 }
 
+const Tx& TxIOCache::getTxByHash(const Types::TxHash& txHash) const
+{
+   //the best copy of this hash that is valid: a mined copy on the main
+   //branch, else a zc or unpooled copy. The caller holds the lock for as
+   //long as it uses the tx
+   ReentrantLock lock(this);
+   for (auto txKey : dbCache_->getKeysForHash(txHash)) {
+      if (Ledgers::TxKeyCandidates::kindOf(txKey) !=
+         Ledgers::TxKeyCandidates::Kind::Mined || txKeyIsValid(txKey)) {
+         return dbCache_->getTx(txKey);
+      }
+   }
+   throw std::out_of_range("no valid tx for hash " + txHash.toHexStr());
+}
+
 ////////
 uint32_t TxIOCache::update(
    std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr,
@@ -721,9 +736,10 @@ void TxIOCache::fetchTxs(
       return;
    }
 
-   //1. what the cache misses: unknown hashes, unpooled copies and zc copies
+   //1. what the cache misses: hashes with no valid copy (unknown, or mined
+   //off the main branch or with no header), unpooled copies and zc copies
    //no txio points to (they may have been pooled or mined since, and update
-   //only replaces the txs of the wallets), and headers of mined txs
+   //only replaces the txs of the wallets)
    std::set<Types::TxHash> missingHashes;
    std::set<Types::BlockId> missingBlockIds;
    {
@@ -744,7 +760,7 @@ void TxIOCache::fetchTxs(
             continue;
          }
          try {
-            auto txKey = dbCache_->getTxByHash(txHash).getDBKey();
+            auto txKey = getTxByHash(txHash).getDBKey();
             if (Types::isThisAZCKey(txKey)) {
                if (walletZcKeys.find(txKey) == walletZcKeys.end()) {
                   missingHashes.emplace(txHash);
@@ -753,15 +769,8 @@ void TxIOCache::fetchTxs(
             }
             if (Types::isThisAnUnpooledKey(txKey)) {
                missingHashes.emplace(txHash);
-               continue;
             }
-
-            auto blockId = Types::getBlockIDFromTxKey(txKey);
-            try {
-               dbCache_->getHeader(blockId);
-            } catch (const std::out_of_range&) {
-               missingBlockIds.emplace(blockId);
-            }
+            //a valid mined copy has its header cached
          } catch (const std::out_of_range&) {
             missingHashes.emplace(txHash);
          }

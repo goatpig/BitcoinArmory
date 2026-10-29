@@ -18,6 +18,7 @@
 #include <Utils/BIP15x_Handshake.h>
 #include <Ledgers/LedgerEntry.h>
 #include <Ledgers/Context.h>
+#include <BlockchainDatabase/BlockchainData.h>
 
 #include <Wallets/Accounts/AddressAccounts.h>
 #include <Wallets/Accounts/AccountTypes.h>
@@ -8268,6 +8269,101 @@ TEST_F(BridgeChainDataTests, GetTxsByHash_ZcThenMined)
 
    bridge_.reset();
    walletBridge.reset();
+}
+
+TEST_F(BridgeChainDataTests, GetTxsByHash_DoubleReorg)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 4);
+
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+
+   //every wallet tx seen so far, on any branch
+   std::set<BinaryData> hashes;
+   auto addLedgerHashes = [&]() {
+      for (const auto& ledger : getLedgersPage(bridge_, delegateId, 0)) {
+         hashes.emplace(ledger.getTxHash());
+      }
+   };
+
+   //what the db's main chain has of these txs, as getTxsByHash gives it
+   auto onMainChain = [this, &hashes]() {
+      std::map<BinaryData, FetchedTx> result;
+      auto blockchain = theBDMt_->bdm()->blockchain();
+      auto blockData = theBDMt_->bdm()->blockchainData();
+      auto top = blockchain->top()->getBlockHeight();
+      for (unsigned height = 0; height <= top; height++) {
+         auto header = blockchain->getHeaderByHeight(height);
+         for (unsigned i = 0; i < header->getNumTx(); i++) {
+            auto tx = blockData->getTx(header->getUniqueID(), i);
+            if (hashes.find(tx.getThisHash()) == hashes.end()) {
+               continue;
+            }
+            result.emplace(tx.getThisHash(), FetchedTx{
+               BinaryData(tx.getPtr(), tx.getSize()),
+               height, i, header->getTimestamp()});
+         }
+      }
+      return result;
+   };
+
+   //the bridge serves a tx where the db's main chain has it, and doesn't
+   //serve one the main chain doesn't have
+   auto checkAgainstDb = [&](const std::string& tag, size_t offMain) {
+      auto expected = onMainChain();
+      EXPECT_EQ(hashes.size() - expected.size(), offMain) << tag;
+
+      bool success = false;
+      auto served = getTxDataByHash(bridge_, hashes, success);
+      EXPECT_TRUE(success) << tag;
+      for (const auto& txHash : hashes) {
+         auto hashStr = txHash.toHexStr(true);
+         auto expIter = expected.find(txHash);
+         auto iter = served.find(txHash);
+         if (expIter == expected.end()) {
+            EXPECT_TRUE(iter == served.end()) << tag << ": " << hashStr <<
+               " is off the main chain, served at height " <<
+               iter->second.height;
+            continue;
+         }
+         if (iter == served.end()) {
+            ADD_FAILURE() << tag << ": " << hashStr << " not served";
+            continue;
+         }
+         EXPECT_EQ(iter->second.height, expIter->second.height) << tag << ": " << hashStr;
+         EXPECT_EQ(iter->second.txIndex, expIter->second.txIndex) << tag << ": " << hashStr;
+         EXPECT_EQ(iter->second.timestamp, expIter->second.timestamp) << tag << ": " << hashStr;
+         EXPECT_EQ(iter->second.raw, expIter->second.raw) << tag << ": " << hashStr;
+      }
+   };
+
+   //0-3, 4A
+   addLedgerHashes();
+   checkAgainstDb("on 4A", 0);
+
+   //reorg onto 4, 5: the wallet's 4A txs are in 4 and 5 too
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5" }, blk0dat_);
+   nodePtr_->notifyNewBlock();
+   ASSERT_EQ(waitOnNewBlock(), 5);
+   addLedgerHashes();
+   checkAgainstDb("on 4-5", 0);
+
+   //reorg back onto 4A, 5A: 5 of the txs of 4 and 5 are off the main chain
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5", "5A" }, blk0dat_);
+   nodePtr_->notifyNewBlock();
+   ASSERT_EQ(waitOnNewBlock(), 5);
+   addLedgerHashes();
+   checkAgainstDb("on 4A-5A", 5);
 }
 
 TEST_F(BridgeChainDataTests, ChangeFilters_ALFB_BCDE)

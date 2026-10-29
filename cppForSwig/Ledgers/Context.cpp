@@ -283,6 +283,17 @@ const Tx& DBCache::getTxByHash(const Types::TxHash& txHash) const
    return getTx(iter->second.best());
 }
 
+std::vector<Types::TxKey> DBCache::getKeysForHash(
+   const Types::TxHash& txHash) const
+{
+   //best first, as TxKeyCandidates orders them
+   auto iter = txHashToKey_.find(txHash);
+   if (iter == txHashToKey_.end()) {
+      return {};
+   }
+   return iter->second.keys();
+}
+
 ////////
 std::set<Types::TxKey> DBCache::purgeTxs(
    const std::set<Types::TxHash>& invalidHashes)

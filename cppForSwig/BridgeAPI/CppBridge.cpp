@@ -2781,9 +2781,9 @@ void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId ms
       txs.reserve(hashes.size());
       for (const auto& txHash : hashes) {
          try {
-            txs.emplace_back(dbCache->getTxByHash(txHash));
+            txs.emplace_back(txioCache->getTxByHash(txHash));
          } catch (const std::out_of_range&) {
-            //no tx for this hash
+            //no valid tx for this hash
             continue;
          }
       }

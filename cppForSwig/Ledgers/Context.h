@@ -75,6 +75,7 @@ namespace Armory
          void eraseHashes(const std::set<Types::TxHash>&);
          const Tx& getTx(Types::TxKey) const;
          const Tx& getTxByHash(const Types::TxHash&) const;
+         std::vector<Types::TxKey> getKeysForHash(const Types::TxHash&) const;
          std::set<Types::TxKey> purgeTxs(const std::set<Types::TxHash>&);
       };
 
