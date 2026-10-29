@@ -20,7 +20,8 @@ from armoryengine.Transaction import UnsignedTransaction, \
    USTX_TYPE_MODERN, USTX_TYPE_LEGACY, USTX_TYPE_PSBT, USTX_TYPE_UNKNOWN
 from armoryengine.ArmoryUtils import LOGEXCEPT, LOGERROR, LOGINFO, \
    CPP_TXOUT_STDSINGLESIG, CPP_TXOUT_P2SH, coin2str, enum, binary_to_hex, \
-   coin2strNZS, NetworkIDError, UnserializeError, OS_WINDOWS
+   coin2strNZS, NetworkIDError, UnserializeError, OS_WINDOWS, \
+   BlockchainUnavailableError
 from armoryengine.Settings import TheSettings
 from armoryengine.AddressUtils import script_to_scrAddr, BadAddressError
 
@@ -62,7 +63,8 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
       w,h = relaxedSizeNChar(self.txtUSTX, 68)
       self.txtUSTX.setMinimumWidth(w)
       self.txtUSTX.setMinimumHeight(8*h)
-      self.txtUSTX.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+      self.txtUSTX.setSizePolicy(
+         QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
 
       self.btnSign = QtWidgets.QPushButton(self.tr('Sign'))
       self.btnBroadcast = QtWidgets.QPushButton(self.tr('Broadcast'))
@@ -75,10 +77,7 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
 
       self.btnSign.setEnabled(False)
       self.btnBroadcast.setEnabled(False)
-
       self.txtUSTX.textChanged.connect(self.processUSTX)
-
-
       self.btnSign.clicked.connect(self.signTx)
       self.btnBroadcast.clicked.connect(self.broadTx)
       self.btnSave.clicked.connect(self.saveTx)
@@ -431,9 +430,8 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
       def completeSignProcess(success):
          def signTxLastStep(success):
             if success:
-               serTx = self.ustxObj.serialize(self.signerTypeSelect.fromType())
+               serTx = self.ustxObj.toTxSigCollect()
                self.txtUSTX.setText(serTx)
-
                if not self.fileLoaded == None:
                   self.saveTxAuto()
             else:
@@ -458,8 +456,6 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
             'If this does not seem correct, verify that  is open '
             'and synchronized with the network.'), QtWidgets.QMessageBox.Ok)
          return
-
-
 
       try:
          finalTx = self.ustxObj.getSignedPyTx()

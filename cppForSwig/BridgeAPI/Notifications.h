@@ -27,6 +27,13 @@ namespace Armory
    {
       namespace Notifications
       {
+         enum class SyncState : int
+         {
+            NoSync,
+            ScanWallets,
+            SyncWallets
+         };
+
          namespace Server
          {
             enum class NotifType : int
@@ -45,7 +52,7 @@ namespace Armory
                const NotifType type;
                Notif(NotifType);
                virtual ~Notif(void) = 0;
-               virtual bool syncWalletState(void) const;
+               virtual SyncState syncWalletState(void) const;
             };
 
             struct Notif_Push : public Notif
@@ -71,7 +78,7 @@ namespace Armory
 
                Notif_NewBlock(
                   const NewBlockNotif&, bool);
-               bool syncWalletState(void) const override;
+               SyncState syncWalletState(void) const override;
             };
 
             struct Notif_ZC : public Notif
@@ -80,15 +87,17 @@ namespace Armory
                std::set<BinaryData> invalidatedZCHashes;
 
                Notif_ZC(std::vector<TxIOPair>, std::set<BinaryData>);
+               SyncState syncWalletState(void) const override;
             };
 
             struct Notif_Refresh : public Notif
             {
                const std::set<std::string> notifIds;
+               const SyncState syncWalletsWithDB;
 
-               Notif_Refresh(const std::set<std::string>&);
-               Notif_Refresh(const std::string&);
-               bool syncWalletState(void) const override;
+               Notif_Refresh(const std::set<std::string>&, SyncState);
+               Notif_Refresh(const std::string&, SyncState);
+               SyncState syncWalletState(void) const override;
             };
 
             ////////

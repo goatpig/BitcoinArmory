@@ -62,7 +62,7 @@ LIST(APPEND LIBARMORYCOMMON_SOURCES
     Network/SocketObject.cpp
     Network/StringSockets.cpp
     Network/WebSocketClient.cpp
-    Node/nodeRPC.cpp
+    Node/RPC.cpp
     Node/BitcoinP2P.cpp
     ${UTILS_SOURCES}
     ${WALLETS_SOURCES}

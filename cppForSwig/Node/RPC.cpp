@@ -6,7 +6,7 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-#include "nodeRPC.h"
+#include "RPC.h"
 
 #include <filesystem>
 
@@ -507,7 +507,6 @@ int RPC::Client::broadcastTx(const BinaryDataRef& rawTx, std::string& verbose)
    ReentrantLock lock(this);
 
    JSON::Object jsonObj{"method"sv, "sendrawtransaction"sv};
-
    auto jsonArray = std::make_shared<JSON::Array>();
    jsonArray->append(rawTx.toHexStr());
    jsonObj.append("params"sv, jsonArray);
@@ -534,17 +533,18 @@ int RPC::Client::broadcastTx(const BinaryDataRef& rawTx, std::string& verbose)
       }
       return (int)ArmoryErrorCodes::Success;
    } catch (const RpcError& e) {
-      LOGWARN << "RPC internal error: " << e.what();
+      verbose = std::format("RPC internal error: {}", e.what());
       return (int)ArmoryErrorCodes::RPCFailure_Internal;
    } catch (const JSON::Exception& e) {
-      LOGWARN << "RPC JSON error: " << e.what();
-      LOGWARN << "Node response was: ";
-      LOGWARN << response;
+      verbose = std::format(
+         "RPC JSON error: {}\n"
+         "Node response was: {}",
+         e.what(), response);
       return (int)ArmoryErrorCodes::RPCFailure_JSON;
    } catch (const std::exception& e) {
-      LOGWARN << "Unkown RPC error: " << e.what();
-      return (int)ArmoryErrorCodes::RPCFailure_Unknown;
+      verbose = std::format("Unkown RPC error: {}", e.what());
    }
+   return (int)ArmoryErrorCodes::RPCFailure_Unknown;
 }
 
 ////////

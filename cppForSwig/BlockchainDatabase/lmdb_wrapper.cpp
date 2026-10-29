@@ -425,7 +425,7 @@ std::shared_ptr<DatabaseContainer> LMDBBlockDatabase::getDbPtr(
 {
    auto iter = dbMap_.find(db);
    if (iter == dbMap_.end()) {
-      throw LmdbWrapperException("unexpected db");
+      throw LmdbWrapperException(std::format("unexpected db: {}", (int)db));
    }
    return iter->second;
 }

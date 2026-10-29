@@ -1,12 +1,10 @@
-#! /usr/bin/python
-# -*- coding: UTF-8 -*-
 ################################################################################
 #                                                                              #
 # Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
 # Distributed under the GNU Affero General Public License (AGPL v3)            #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                         #
 #                                                                              #
-# Copyright (C) 2016-2025, goatpig                                             #
+# Copyright (C) 2016-2026, goatpig                                             #
 #  Distributed under the MIT license                                           #
 #  See LICENSE-MIT or https://opensource.org/licenses/MIT                      #
 #                                                                              #
@@ -108,6 +106,7 @@ from qtdialogs.DlgUniversalRestoreSelect import DlgUniversalRestoreSelect
 from qtdialogs.DlgWalletMigration import DlgWalletMigration
 from qtdialogs.setupmanager import DlgSetupManager, DlgAutomations, \
    SCENARIO_DB_OFFLINE
+from qtdialogs.DlgMisc import DlgECDSACalc, DlgBroadcastBlindTx
 
 from ui.QtExecuteSignal import TheSignalExecution
 from armorymodels import AllWalletsDispModel, AllWalletsCheckboxDelegate, \
@@ -643,8 +642,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
                'to broadcast any transactions for you.'), QtWidgets.QMessageBox.Ok)
             return
          DlgBroadcastBlindTx(self,self).exec_()
-
-
 
       actOpenSigner = self.createAction(self.tr('&Message Signing/Verification...'), openMsgSigning)
       if currmode=='Expert':
@@ -4604,11 +4601,17 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          self.updateSyncProgress()
 
       elif action == BDV_ERROR:
+         QtWidgets.QMessageBox.warning(self, self.tr('Error'), self.tr(
+            f"ArmoryDB pushed the following error:\n\n\"{args}\""),
+         QtWidgets.QMessageBox.Ok)
+
+         '''
          errorStruct = args
          if errorStruct.errType_ == Cpp.Error_ZC:
             errorMsg = errorStruct.errorStr_
             txHash = errorStruct.extraMsg_
             self.zcBroadcastError(txHash, errorMsg)
+         '''
 
       elif action == BDV_DISCONNECTED:
          self.setDashboardDetails()

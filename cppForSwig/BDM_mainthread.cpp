@@ -14,16 +14,12 @@
 #include "BDM_mainthread.h"
 #include <Utils/ArmoryConfig.h>
 #include <BlockchainDatabase/BlockUtils.h>
-#include <BlockchainDatabase/BlockObj.h>
 #include <ZeroConf/Parser.h>
 
 #include <Node/BitcoinP2P.h>
 #include "BDV_Notification.h"
 
-using namespace Armory::Config;
-
-BDM_CallBack::~BDM_CallBack()
-{}
+using namespace Armory;
 
 BlockDataManagerThread::BlockDataManagerThread()
 {
@@ -47,12 +43,8 @@ void BlockDataManagerThread::start(BdmInitMode mode)
 {
    pimpl->mode = mode;
    pimpl->run = true;
-   std::promise<void> isReadyPromise;
-   pimpl->bdm->isReadyFuture = isReadyPromise.get_future();
-   pimpl->tID = std::thread(
-      [this](std::promise<void> prom){ this->run(std::move(prom)); },
-      std::move(isReadyPromise)
-   );
+   pimpl->bdm->isReadyFuture = pimpl->readyPromise.get_future();
+   pimpl->tID = std::thread([this](){ this->run(); });
 }
 
 std::shared_ptr<BlockDataManager> BlockDataManagerThread::bdm()
@@ -82,7 +74,7 @@ void BlockDataManagerThread::join()
    }
 }
 
-void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
+void BlockDataManagerThread::run()
 {
    const auto bdm = this->bdm();
 
@@ -105,8 +97,8 @@ void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
       auto reorgState = bdm->readBlkFileUpdate();
       if (reorgState.hasNewTop) {
          //purge zc container
-         std::shared_ptr<Armory::ZeroConf::ZcPurgePacket> purgePacket = nullptr;
-         if (DBSettings::enableZC()) {
+         std::shared_ptr<ZeroConf::ZcPurgePacket> purgePacket = nullptr;
+         if (Config::DBSettings::enableZC()) {
             auto purgeFuture = bdm->zeroConfCont()->pushNewBlockNotification(
                reorgState);
             purgePacket = purgeFuture.get();
@@ -174,7 +166,7 @@ void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
                LOGINFO << "Waiting on node sync";
                bdm->nodeRPC->waitOnChainSync(
                   updateNodeStatusLambda,
-                  DBSettings::automatedNode()
+                  Config::DBSettings::automatedNode()
                );
             } catch (const std::exception& e) {
                LOGWARN << "Error occured while querying the RPC for sync status";
@@ -186,7 +178,7 @@ void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
 
          case Sequence::WAIT_ON_START_SIGNAL:
          {
-            if (NetworkSettings::ephemeralPeers()) {
+            if (Config::NetworkSettings::ephemeralPeers()) {
                //this is an automated db instance, wait on the master's signal
                //to start the db scan
                LOGINFO << "waiting on start signal from master";
@@ -217,6 +209,7 @@ void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
 
             if (!bdm->doInitialSyncOnLoad(pimpl->mode, loadProgress)) {
                //db init failed, exit
+               LOGERR << "bdm failed to initialize";
                bdmStep = Sequence::ERROR;
             } else {
                bdmStep = Sequence::ENABLE_ZC;
@@ -226,10 +219,10 @@ void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
 
          case Sequence::ENABLE_ZC:
          {
-            if (DBSettings::enableZC()) {
-               bdm->enableZeroConf(DBSettings::clearMempool());
+            if (Config::DBSettings::enableZC()) {
+               bdm->enableZeroConf(Config::DBSettings::clearMempool());
             }
-            isReadyPromise.set_value();
+            pimpl->readyPromise.set_value(true);
             bdmStep = Sequence::LOOP_OVER_BLOCKS;
             break;
          }
@@ -270,12 +263,12 @@ void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
                         //wait on new block entry, do not block for the inner loop
                         invVec = move(newBlockStack->pop_front(false));
                         hasNewBlocks = true;
-                     } catch (const Armory::Threading::IsEmpty&) {
+                     } catch (const Threading::IsEmpty&) {
                         break;
                      }
                   }
                }
-            } catch (const Armory::Threading::StopBlockingLoop&) {
+            } catch (const Threading::StopBlockingLoop&) {
                bdmStep = Sequence::EXIT;
             }
             break;
@@ -290,10 +283,11 @@ void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
       }
    }
 
-   if (bdmStep == Sequence::ERROR) {
+   if (bdmStep != Sequence::EXIT) {
       //on errors, isReadyPromise has yet to be set
-      isReadyPromise.set_value();
-      LOGERR << "bdm thread sequence exited with an error";
+      pimpl->readyPromise.set_value(false);
+      LOGERR << "bdm thread failed with status: " << (int)bdmStep;
+   } else {
+      LOGINFO << "bdm thread exited gracefully";
    }
-   LOGINFO << "exiting bdm thread";
 }

@@ -144,7 +144,8 @@ void Server::NotifHandler::run(BdmNotification notif)
 
       case BDMAction_Refresh:
       {
-         queue_->push_back(std::make_unique<Notif_Refresh>(notif.ids));
+         queue_->push_back(std::make_unique<Notif_Refresh>(
+            notif.ids, SyncState::ScanWallets));
          break;
       }
 
@@ -231,9 +232,9 @@ Server::Notif::Notif(NotifType t) :
 Server::Notif::~Notif()
 {}
 
-bool Server::Notif::syncWalletState() const
+SyncState Server::Notif::syncWalletState() const
 {
-   return false;
+   return SyncState::NoSync;
 }
 
 ////////
@@ -253,18 +254,27 @@ Server::Notif_ZC::Notif_ZC(
    invalidatedZCHashes(std::move(invalidatedZc))
 {}
 
-////////
-Server::Notif_Refresh::Notif_Refresh(const std::set<std::string>& ids) :
-   Notif(NotifType::REFRESH), notifIds(ids)
-{}
-
-Server::Notif_Refresh::Notif_Refresh(const std::string& id) :
-   Notif(NotifType::REFRESH), notifIds({id})
-{}
-
-bool Server::Notif_Refresh::syncWalletState() const
+SyncState Server::Notif_ZC::syncWalletState() const
 {
-   return true;
+   return SyncState::ScanWallets;
+}
+
+////////
+Server::Notif_Refresh::Notif_Refresh(
+   const std::set<std::string>& ids, SyncState syncWallets) :
+   Notif(NotifType::REFRESH),
+   notifIds{ids}, syncWalletsWithDB{syncWallets}
+{}
+
+Server::Notif_Refresh::Notif_Refresh(
+   const std::string& id, SyncState syncWallets) :
+   Notif(NotifType::REFRESH),
+   notifIds{{id}}, syncWalletsWithDB{syncWallets}
+{}
+
+SyncState Server::Notif_Refresh::syncWalletState() const
+{
+   return syncWalletsWithDB;
 }
 
 ////////
@@ -274,9 +284,9 @@ Server::Notif_NewBlock::Notif_NewBlock(
    blockNotif(notif), isReadyNotif(isReady)
 {}
 
-bool Server::Notif_NewBlock::syncWalletState() const
+SyncState Server::Notif_NewBlock::syncWalletState() const
 {
-   return isReadyNotif;
+   return isReadyNotif ? SyncState::SyncWallets : SyncState::ScanWallets;
 }
 
 ////////
