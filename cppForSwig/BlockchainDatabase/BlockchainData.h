@@ -13,9 +13,8 @@
 #include <string>
 
 #include <Utils/Types.h>
+#include <TxClasses.h>
 
-class Tx;
-class TxHintCollision;
 class StoredHeader;
 
 namespace Armory
@@ -28,6 +27,16 @@ namespace Armory
    struct BlockchainDataException : public std::runtime_error
    {
       BlockchainDataException(const std::string&);
+   };
+
+   ////////
+   struct NoSolutionException
+   {};
+
+   struct TxHintSolution
+   {
+      const Types::TxKey txKey;
+      Tx tx;
    };
 
    ////////
@@ -44,7 +53,7 @@ namespace Armory
 
       Hash32 getTxHashForTxKey(const Types::TxKey&) const;
       bool isTxKeyOnMainBranch(const Types::TxKey&) const;
-      Types::TxKey resolveTxHintCollision(const TxHintCollision&);
+      TxHintSolution resolveTxHintCollision(const TxHintCollision&);
 
       std::pair<std::vector<uint8_t>, size_t> getRawBlockForId(
          Types::BlockId) const;

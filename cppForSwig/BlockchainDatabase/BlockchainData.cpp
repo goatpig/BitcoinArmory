@@ -127,7 +127,7 @@ Hash32 BlockchainData::getTxHashForTxKey(const Types::TxKey& txKey) const
    return Hash32{tx.getThisHash()};
 }
 
-Types::TxKey BlockchainData::resolveTxHintCollision(
+TxHintSolution BlockchainData::resolveTxHintCollision(
    const TxHintCollision& collision)
 {
    for (const auto& txKey : collision.getCandidates()) {
@@ -135,9 +135,9 @@ Types::TxKey BlockchainData::resolveTxHintCollision(
          continue;
       }
       try {
-         auto txHash = getTxHashForTxKey(txKey);
-         if (txHash == collision.getTxHash()) {
-            return txKey;
+         auto tx = getTx(txKey);
+         if (tx.getThisHash() == collision.getTxHash()) {
+            return { txKey, std::move(tx) };
          }
       } catch (const BlockchainDataException& e) {
          //ignore mangled data
@@ -147,7 +147,7 @@ Types::TxKey BlockchainData::resolveTxHintCollision(
          LOGWARN << "[getTxHashForTxKey] " << e.what();
       }
    }
-   return Types::INVALID_TX_KEY;
+   throw NoSolutionException{};
 }
 
 bool BlockchainData::isTxKeyOnMainBranch(const Types::TxKey& txKey) const

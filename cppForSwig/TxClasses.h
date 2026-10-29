@@ -44,8 +44,8 @@ public:
 class TxHintCollision
 {
 private:
-   Armory::Types::TxHash txHash_;
-   std::set<Armory::Types::TxKey> candidates_;
+   const Armory::Types::TxHash txHash_;
+   const std::set<Armory::Types::TxKey> candidates_;
 
 public:
    TxHintCollision(const Armory::Types::TxHash&, std::set<Armory::Types::TxKey>&);

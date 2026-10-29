@@ -2610,8 +2610,12 @@ TEST_F(BlockUtilsFull, TxHints)
       ++candidatesIter;
       ASSERT_EQ(*candidatesIter, 0xffff050004000000);
 
-      auto final = bdm->blockchainData()->resolveTxHintCollision(collision);
-      ASSERT_EQ(final, 0xffff050004000000);
+      try {
+         auto solution = bdm->blockchainData()->resolveTxHintCollision(collision);
+         ASSERT_EQ(solution.txKey, 0xffff050004000000);
+      } catch (const NoSolutionException&) {
+         ASSERT_TRUE(false);
+      }
    }
 
    //a GET_TXS_BY_HASH for hash35 goes through the same collision and

@@ -178,19 +178,31 @@ void ZeroConf::preprocessTx(ParsedTx& tx, LMDBBlockDatabase* db,
    */
 
    //sanity check: is this tx mined?
-   Types::TxKey txKey;
+   bool isMined = false;
    try {
       const auto& txHash = tx.getTxHash();
-      txKey = db->getDBKeyForHash(txHash);
-   } catch (const TxHintCollision& collision) {
-      txKey = bd->resolveTxHintCollision(collision);
-   }
-   if (Types::isTxKeyValid(txKey)) {
-      auto txhash = bd->getTxHashForTxKey(txKey);
-      if (txhash == tx.getTxHash()) {
-         tx.state = ParsedTxStatus::Mined;
-         return;
+      auto candidateTxKey = db->getDBKeyForHash(txHash);
+      if (Types::isTxKeyValid(candidateTxKey)) {
+         //we know of one mined tx carrying a similar hash, let's check
+         //it's actually the same hash
+         auto candidateTxHash = bd->getTxHashForTxKey(candidateTxKey);
+         isMined = (candidateTxHash == txHash);
       }
+   } catch (const TxHintCollision& collision) {
+      //there are multiple candidate txs for this hash, does one of
+      //them match?
+      try {
+         auto solution = bd->resolveTxHintCollision(collision);
+         //there is a solution, tx is mined
+         isMined = true;
+      } catch (const NoSolutionException&) {
+         //no solution, this hash is not associated with a mined tx
+      }
+   }
+
+   if (isMined) {
+      tx.state = ParsedTxStatus::Mined;
+      return;
    }
 
    const auto& txObj = tx.getTxObj();
@@ -474,19 +486,24 @@ void OutPointRef::resolveDbKey(
       throw std::runtime_error("empty outpoint hash");
    }
 
-   Types::TxKey txKey;
    try {
-      txKey = dbPtr->getDBKeyForHash(txHash_);
-   } catch (const TxHintCollision& collision) {
-      txKey = bd->resolveTxHintCollision(collision);
-   }
-
-   if (Types::isTxKeyValid(txKey)) {
-      auto txHash = bd->getTxHashForTxKey(txKey);
-      if (txHash != txHash_) {
-         return;
+      auto txKeyCandidate = dbPtr->getDBKeyForHash(txHash_);
+      if (Types::isTxKeyValid(txKeyCandidate)) {
+         //there's a key candidate for this hash, check it
+         if (bd->getTxHashForTxKey(txKeyCandidate) == txHash_) {
+            //hash matches, this our key
+            setDbKey(txKeyCandidate);
+         }
       }
-      setDbKey(txKey);
+   } catch (const TxHintCollision& collision) {
+      //multiple candidate keys for this hash, look for a match
+      try {
+         auto solution = bd->resolveTxHintCollision(collision);
+         //there's a solution, this our tx key
+         setDbKey(solution.txKey);
+      } catch (const NoSolutionException&) {
+         //none of the candidates match our hash
+      }
    }
 }
 

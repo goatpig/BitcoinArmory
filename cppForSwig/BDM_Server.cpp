@@ -160,20 +160,22 @@ namespace {
                try {
                   auto txKey = db->getDBKeyForHash(hashBdr);
                   if (!Types::isTxKeyValid(txKey)) {
+                     //no known mined tx for this hash, maybe it's a zc?
                      possibleZcHashes.emplace(hashBdr);
                      continue;
                   }
                   auto tx = bdv->bdm()->blockchainData()->getTx(txKey);
                   results.emplace(txKey, std::move(tx));
                } catch (const TxHintCollision& collision) {
-                  auto txKey = blockData->resolveTxHintCollision(collision);
-                  if (!Types::isTxKeyValid(txKey)) {
-                     //could not get the tx, maybe it's a zc?
+                  //multiple candidates for this hash, look for a match
+                  try {
+                     auto solution = blockData->resolveTxHintCollision(collision);
+                     //we have a hard match
+                     results.emplace(solution.txKey, std::move(solution.tx));
+                  } catch (const NoSolutionException&) {
+                     //no known mined tx for this hash, maybe it's a zc?
                      possibleZcHashes.emplace(hashBdr);
-                     continue;
                   }
-                  auto tx = blockData->getTx(txKey);
-                  results.emplace(txKey, std::move(tx));
                }
             }
 
@@ -1823,23 +1825,40 @@ void Clients::p2pBroadcast(Types::BdvId bdvId, std::vector<BinaryDataRef>& rawZC
       Tx tx(rawZcRef);
       auto hash = tx.getThisHash();
 
-      Types::TxKey dbTxKey;
+      bool isMined = false;
       try {
          //do we know this txhash?
-         dbTxKey = db->getDBKeyForHash(hash);
-         if (Types::isTxKeyValid(dbTxKey)) {
-            //we have a txkey for this hash, do a hard check against
-            //the actual tx data
-            std::set<Types::TxKey> hints{dbTxKey};
-            TxHintCollision collision{hash, hints};
-            dbTxKey = bdm_->blockchainData()->resolveTxHintCollision(collision);
+         auto candidateTxKey = db->getDBKeyForHash(hash);
+         if (Types::isTxKeyValid(candidateTxKey)) {
+            /*
+            We have a txkey for this hash, do a hard check against
+            the actual tx data
+            */
+            try {
+               //if the collision check doesn't throw, there is a known mined
+               //tx for this key
+               std::set<Types::TxKey> hints{candidateTxKey};
+               auto solution = bdm_->blockchainData()->resolveTxHintCollision(
+                  TxHintCollision{hash, hints});
+               isMined = true;
+            } catch (const NoSolutionException&) {
+               //we do not know of a TxKey which points to a tx carrying
+               //our desired hash: we can conclude this tx isn't mined
+            }
          }
       } catch (const TxHintCollision& collision){
-         //multiple hints, do a hard check too
-         dbTxKey = bdm_->blockchainData()->resolveTxHintCollision(collision);
+         //multiple candidates, look for a solution
+         try {
+            //same as before, no throw == mined tx
+            auto solution = bdm_->blockchainData()->resolveTxHintCollision(
+               collision);
+            isMined = true;
+         } catch (const NoSolutionException&) {
+            //no known solution, this tx is not mined
+         }
       }
 
-      if (Types::isTxKeyValid(dbTxKey)) {
+      if (isMined) {
          //this hash is mined, notify the bdv of the error
          auto notifPacket = std::make_shared<BDV_Notification_Packet>();
          notifPacket->bdvPtr = BDVs_.get(bdvId);
