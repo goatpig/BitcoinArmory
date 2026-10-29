@@ -8366,6 +8366,127 @@ TEST_F(BridgeChainDataTests, GetTxsByHash_DoubleReorg)
    checkAgainstDb("on 4A-5A", 5);
 }
 
+namespace
+{
+   //drops its db connection when it takes its lock for the nth time
+   class DbDroppingTxIOCache : public Bridge::TxIOCache
+   {
+   private:
+      std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr_;
+      const unsigned dropAt_;
+      unsigned lockCount_ = 0;
+
+      void initAfterLock(void) override
+      {
+         if (++lockCount_ == dropAt_) {
+            bdvPtr_->unregisterFromDB();
+         }
+      }
+
+   public:
+      DbDroppingTxIOCache(
+         std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr, unsigned at) :
+         bdvPtr_(bdvPtr), dropAt_(at)
+      {}
+
+      unsigned lockCount(void) const { return lockCount_; }
+   };
+}
+
+TEST_F(BridgeChainDataTests, FetchTxs_NoHeaderAskAgain)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+   auto ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgers.size(), 15);
+
+   std::set<BinaryData> hashes;
+   std::map<BinaryData, uint32_t> heights;
+   for (const auto& ledger : ledgers) {
+      hashes.emplace(ledger.getTxHash());
+      heights.emplace(ledger.getTxHash(), ledger.getBlockNum());
+   }
+   auto bdvPtr = bridge_->bdvPtr();
+   ASSERT_NE(bdvPtr, nullptr);
+
+   //every hash has a mined copy with its header in the cache
+   auto checkMined = [&](const Bridge::TxIOCache& txioCache) {
+      auto dbCache = txioCache.getDBCache();
+      for (const auto& txHash : hashes) {
+         try {
+            auto txKey = txioCache.getTxByHash(txHash).getDBKey();
+            ASSERT_FALSE(Types::isThisAZCKey(txKey));
+            auto header = dbCache->getHeader(
+               Types::getBlockIDFromTxKey(txKey));
+            EXPECT_EQ(header->blockHeight, heights[txHash]);
+         } catch (const std::out_of_range& e) {
+            ADD_FAILURE() << e.what();
+         }
+      }
+   };
+
+   //an empty cache gets the mined txs and their headers from the db
+   {
+      Bridge::TxIOCache txioCache;
+      txioCache.fetchTxs(bdvPtr, hashes);
+      checkMined(txioCache);
+   }
+
+   //the db goes away once it has served the txs, before the headers are
+   //asked for: fetchTxs takes the lock to see what the cache misses (1),
+   //then to see which headers it misses (2), then to fill the cache (3)
+   DbDroppingTxIOCache txioCache(bdvPtr, 2);
+   txioCache.fetchTxs(bdvPtr, hashes);
+   EXPECT_FALSE(bdvPtr->isValid());
+   EXPECT_EQ(txioCache.lockCount(), 3U);
+
+   //the bridge lost its db along: wait on its disconnected notif, the
+   //thread that sends it must be done before the bridge goes away
+   while (true) {
+      auto reply = waitOnReply();
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(reply->data.getPtr()),
+         reply->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+      if (fromBridge.which() == Codec::Bridge::FromBridge::NOTIFICATION &&
+         fromBridge.getNotification().which() ==
+            Codec::Bridge::Notification::DISCONNECTED) {
+         break;
+      }
+   }
+
+   //a mined copy with no header is no valid copy
+   for (const auto& txHash : hashes) {
+      EXPECT_THROW(txioCache.getTxByHash(txHash), std::out_of_range);
+   }
+
+   //so the next fetch asks the db for these hashes again
+   bridge_ = std::make_shared<Bridge::CppBridge>(
+      std::make_shared<TestBridgeSocket>());
+   loadWallets({});
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   ASSERT_EQ(goOnline(bridge_), 5);
+   bdvPtr = bridge_->bdvPtr();
+   ASSERT_NE(bdvPtr, nullptr);
+
+   txioCache.fetchTxs(bdvPtr, hashes);
+   checkMined(txioCache);
+}
+
 TEST_F(BridgeChainDataTests, ChangeFilters_ALFB_BCDE)
 {
    loadWallets({walletId_BCDE_, walletId_AFLB_});

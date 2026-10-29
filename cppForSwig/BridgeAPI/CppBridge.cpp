@@ -2809,20 +2809,12 @@ void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId ms
                capnTx.setTimestamp(tx.getTxTime());
                capnTx.setTxIndex(UINT32_MAX);
             } else {
-               //a mined key carries the tx's index in its block, with or
-               //without the header
+               //getTxByHash only gives a mined tx whose header is cached
+               auto header = dbCache->getHeader(
+                  Types::getBlockIDFromTxKey(txKey));
+               capnTx.setHeight(header->blockHeight);
+               capnTx.setTimestamp(header->timestamp);
                capnTx.setTxIndex(tx.getTxIndex());
-
-               //not all keys lead to a cached header
-               try {
-                  auto header = dbCache->getHeader(
-                     Types::getBlockIDFromTxKey(txKey));
-                  capnTx.setHeight(header->blockHeight);
-                  capnTx.setTimestamp(header->timestamp);
-               } catch (const std::out_of_range&) {
-                  capnTx.setHeight(UINT32_MAX);
-                  capnTx.setTimestamp(tx.getTxTime());
-               }
             }
             const auto& txHash = tx.getThisHash();
             capnTx.setHash(capnp::Data::Builder(
