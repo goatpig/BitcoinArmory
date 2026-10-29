@@ -16,6 +16,9 @@
 #include <set>
 #include <cmath>
 #include <cstring>
+#ifndef _WIN32
+#include <sys/resource.h>
+#endif
 
 #include "lmdb_wrapper.h"
 #include <Utils/BtcUtils.h>
@@ -72,6 +75,59 @@ extern const std::map<DB_SELECT, size_t> MAPSIZES{
    { DB_SELECT::TXINS,         2000 * 1024 * 1024 * 1024ULL },
    { DB_SELECT::KNOWNHASHES,      1 * 1024 * 1024 * 1024ULL }
 };
+
+namespace {
+   /*
+   DB_FULL and DB_SUPER open their hash tables as 256 LMDB envs each. An env
+   holds 3 file descriptors (data, meta, lock), plus 2 for its semaphores on
+   macOS, where LMDB uses POSIX named semaphores. That is more than macOS's
+   default soft limit of 256 open files. Raise the soft limit to what the
+   envs need, within the hard limit (macOS refuses an unlimited soft limit).
+   At db bootstrap, Builder::parseForNewHeaders and parseForNewBlocks also
+   open one block file per thread at the same time (short lived), so add
+   the thread count on top.
+
+   This runs when the db object is created, before ArmoryDB starts its
+   websocket server: libwebsockets reads the limit when its context is
+   created and rejects sockets numbered above it.
+   */
+   void raiseOpenFileLimit()
+   {
+#ifndef _WIN32
+      size_t envCount = 1; //headers
+      switch (Config::DBSettings::getDbType())
+      {
+         case ARMORY_DB_TYPE::Bare:
+            envCount += BARENODEDBS.size();
+            break;
+
+         case ARMORY_DB_TYPE::Full:
+            envCount += FULLNODEDBS.size() + FULLNODEHASHTABLES.size() * 256;
+            break;
+
+         case ARMORY_DB_TYPE::Super:
+            envCount += SUPERNODEDBS.size() + SUPERNODEHASHTABLES.size() * 256;
+            break;
+      }
+
+      const rlim_t wanted =
+         envCount * 5 + Config::DBSettings::threadCount() + 256;
+      struct rlimit rl;
+      if (getrlimit(RLIMIT_NOFILE, &rl) != 0 || rl.rlim_cur >= wanted) {
+         return;
+      }
+      rl.rlim_cur = wanted;
+      if (rl.rlim_max != RLIM_INFINITY && rl.rlim_max < wanted) {
+         rl.rlim_cur = rl.rlim_max;
+      }
+      if (setrlimit(RLIMIT_NOFILE, &rl) != 0 || rl.rlim_cur < wanted) {
+         LOGWARN << "need " << wanted << " open files for " << envCount <<
+            " db envs and the block file reads, could not raise the limit" <<
+            " that far";
+      }
+#endif
+   }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // exceptions
@@ -412,7 +468,9 @@ bool DBIterator::seekToLast()
 // LMDBBlockDatabase
 LMDBBlockDatabase::LMDBBlockDatabase(const std::filesystem::path& dbdir) :
    dbDir_{dbdir}
-{}
+{
+   raiseOpenFileLimit();
+}
 
 LMDBBlockDatabase::~LMDBBlockDatabase()
 {
@@ -568,7 +626,10 @@ void LMDBBlockDatabase::closeDatabases()
    dbMap_.clear();
    for (auto& table : dbHashTables_) {
       for (auto& db : table.second) {
-         db->close();
+         //null if openDatabases threw before opening this one
+         if (db != nullptr) {
+            db->close();
+         }
       }
    }
    dbHashTables_.clear();
