@@ -2761,8 +2761,10 @@ void CppBridge::getAddress(const Wallets::WalletId& wltId,
 ////////////////////////////////////////////////////////////////////////////////
 void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId msgId)
 {
-   //cache first, the db for what it misses, then serve from the cache.
-   //The thread waits on the db, so it doesn't capture this
+   //the db for what the cache can't serve as is (no valid copy, an
+   //unpooled copy, a zc copy no txio points to), its answers go in the
+   //cache, then each hash gets its best valid copy from the cache. The
+   //thread waits on the db, so it doesn't capture this
    auto bdvPtr = bdvPtr_;
    if (dbOffline_ || bdvPtr == nullptr || !bdvPtr->isValid()) {
       bdvPtr = nullptr;
