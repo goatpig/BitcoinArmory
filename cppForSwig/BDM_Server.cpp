@@ -166,11 +166,14 @@ namespace {
                   auto tx = bdv->bdm()->blockchainData()->getTx(txKey);
                   results.emplace(txKey, std::move(tx));
                } catch (const TxHintCollision& collision) {
-                  //could not get the tx, maybe it's a zc?
                   auto txKey = blockData->resolveTxHintCollision(collision);
                   if (!Types::isTxKeyValid(txKey)) {
+                     //could not get the tx, maybe it's a zc?
                      possibleZcHashes.emplace(hashBdr);
+                     continue;
                   }
+                  auto tx = blockData->getTx(txKey);
+                  results.emplace(txKey, std::move(tx));
                }
             }
 
