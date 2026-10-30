@@ -318,6 +318,22 @@ std::set<Types::TxKey> DBCache::purgeTxs(
    return result;
 }
 
+void DBCache::purgeZC()
+{
+   //drop every zc copy. Mined copies are checked when read, unpooled ones
+   //are the bridge's own: both stay
+   std::vector<Types::TxKey> zcKeys;
+   for (const auto& txPair : txMap_) {
+      if (TxKeyCandidates::kindOf(txPair.first) ==
+         TxKeyCandidates::Kind::Pooled) {
+         zcKeys.emplace_back(txPair.first);
+      }
+   }
+   for (auto txKey : zcKeys) {
+      eraseTx(txKey);
+   }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // namespace Ledgers functions
 Context Ledgers::prepareContext(

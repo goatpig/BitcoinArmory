@@ -15610,6 +15610,35 @@ TEST_F(BridgeDBCacheTests, PurgeSkipsMined)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, PurgeZC)
+{
+   //every zc copy goes, mined and unpooled copies stay
+   Ledgers::DBCache cache;
+   auto hash1 = Tx(rawTx1).getThisHash();
+   auto hash2 = Tx(rawTx2).getThisHash();
+   auto unpooledKey = cache.addUnpooledTx(rawTx1);
+   add(cache, rawTx1, zcKey);
+   add(cache, rawTx1, minedKey);
+   auto zcKey2 = Types::constructZCKey(6);
+   add(cache, rawTx2, zcKey2);
+
+   cache.purgeZC();
+   EXPECT_THROW(cache.getTx(zcKey), std::out_of_range);
+   EXPECT_THROW(cache.getTx(zcKey2), std::out_of_range);
+   EXPECT_EQ(cache.getKeysForHash(hash1),
+      (std::vector<Types::TxKey>{minedKey, unpooledKey}));
+   EXPECT_EQ(cache.getTx(unpooledKey).serialize(), rawTx1);
+   EXPECT_TRUE(cache.getKeysForHash(hash2).empty());
+   EXPECT_THROW(cache.getTxByHash(hash2), std::out_of_range);
+
+   //a zc key that comes back is a new copy
+   add(cache, rawTx2, zcKey);
+   EXPECT_EQ(keyForHash(cache, rawTx2), zcKey);
+   EXPECT_EQ(cache.getKeysForHash(hash1),
+      (std::vector<Types::TxKey>{minedKey, unpooledKey}));
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(BridgeDBCacheTests, InvalidKeys)
 {
    //INVALID_TX_KEY and txio keys aren't tx keys, they are no candidates
