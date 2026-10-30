@@ -9117,6 +9117,199 @@ TEST_F(ExtrasTest, BitcoinMessage)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(ExtrasTest, PSBT_LockTimeSequence)
+{
+   /*
+   Signer::fromPSBT has to carry the unsigned tx's nLockTime and each
+   txin's nSequence over (#820). The BIP174 vectors in ExtrasTest.PSBT use
+   the default values (0 and 0xffffffff), so they can't tell. This uses the
+   same inputs, outputs and keys with non default values.
+   */
+   const uint32_t lockTime = 850000;
+   const std::vector<uint32_t> sequences{ 0xfffffffd, 0xfffffffe };
+
+   auto hashFromHexits = [](const std::string& hexits)->BinaryData
+   {
+      auto hash = READHEX(hexits);
+      BinaryData hashBE; hashBE.resize(32);
+      auto hashPtr = hash.getPtr();
+      auto hashBEPtr = (uint8_t*)hashBE.getPtr();
+      for (unsigned i=0; i<32; i++) {
+         hashBEPtr[i] = hashPtr[31-i];
+      }
+      return hashBE;
+   };
+
+   auto createSigner = [&]()->Signer
+   {
+      Signer signer;
+      signer.setVersion(2);
+      signer.setLockTime(lockTime);
+
+      auto spender0 = std::make_shared<ScriptSpender>(hashFromHexits(
+         "75ddabb27b8845f5247975c8a5ba7c6f336c4570708ebe230caf6db5217ae858"), 0);
+      spender0->setSequence(sequences[0]);
+      signer.addSpender(spender0);
+
+      auto spender1 = std::make_shared<ScriptSpender>(hashFromHexits(
+         "1dea7cd05979072a3578cab271c02244ea8a090bbb46aa680a65ecd027048d83"), 1);
+      spender1->setSequence(sequences[1]);
+      signer.addSpender(spender1);
+
+      signer.addRecipient(std::make_shared<Recipient_P2WPKH>(
+         READHEX("d85c2b71d0060b09c9886aeb815e50991dda124d"), 149990000));
+      signer.addRecipient(std::make_shared<Recipient_P2WPKH>(
+         READHEX("00aea9a2e5f0f876a588df5546e8742d1d87008f"), 100000000));
+      return signer;
+   };
+
+   //import a PSBT, check the tx fields and that it exports back as is
+   auto importPSBT = [&](const BinaryData& psbt, const char* what)->Signer
+   {
+      SCOPED_TRACE(what);
+      auto signer = Signer::fromPSBT(psbt);
+      EXPECT_EQ(signer.getLockTime(), lockTime);
+      EXPECT_EQ(signer.getTxInCount(), sequences.size());
+      for (unsigned i=0; i<sequences.size(); i++) {
+         EXPECT_EQ(signer.getSpender(i)->getSequence(), sequences[i]);
+      }
+      EXPECT_EQ(signer.toPSBT().toHexStr(), psbt.toHexStr());
+      return signer;
+   };
+
+   //keys, from the BIP174 test vector
+   auto b58seed = SecureBinaryData::fromString(
+      "tprv8ZgxMBicQKsPd9TeAdPADNnSyH9SSUUbTVeFszDE23Ki6TBB5nCefAdHkK8Fm3qMQR6sHwA56zqRmKmxnHk37JkiFzvncDqoKmPWubu7hDF");
+   BIP32_Node node;
+   node.initFromBase58(b58seed);
+   auto masterFingerprint = node.getThisFingerprint();
+   node.derivePrivate(0x80000000);
+   node.derivePrivate(0x80000000);
+
+   std::vector<SecureBinaryData> privKeys;
+   std::vector<BinaryData> pubKeys;
+   for (unsigned i=0; i<6; i++) {
+      auto nodeCopy = node;
+      nodeCopy.derivePrivate(i ^ 0x80000000);
+      privKeys.emplace_back(nodeCopy.movePrivateKey());
+      pubKeys.emplace_back(
+         Cryptography::ECDSA::computePublicKey(privKeys.back(), true));
+   }
+
+   auto createFeed = [&](const std::vector<unsigned>& privKeyIds)
+      ->std::shared_ptr<ResolverUtils::TestResolverFeed>
+   {
+      auto feed = std::make_shared<ResolverUtils::TestResolverFeed>();
+      for (unsigned i=0; i<pubKeys.size(); i++) {
+         feed->setBip32PathForPubkey(pubKeys[i], BIP32_AssetPath(
+            pubKeys[i],
+            {0x80000000, 0x80000000, i ^ 0x80000000},
+            masterFingerprint, nullptr));
+         feed->addValPair(BtcUtils::getHash160(pubKeys[i]), pubKeys[i]);
+      }
+      for (auto id : privKeyIds) {
+         feed->addPrivKey(privKeys[id], true);
+      }
+
+      //p2sh multisig input
+      auto msScript1 = READHEX("5221029583bf39ae0a609747ad199addd634fa6108559d6c5cd39b4c2183f1ab96e07f2102dab61ff49a14db6a7d02b0cd1fbb78fc4b18312b5b4e54dae4dba2fbfef536d752ae");
+      feed->addValPair(BtcUtils::getHash160(msScript1), msScript1);
+
+      //p2sh-p2wsh multisig input
+      auto msScript2 = READHEX("522103089dc10c7ac6db54f91329af617333db388cead0c231f723379d1b99030b02dc21023add904f3d6dcf59ddb906b0dee23529b7ffb9ed50e5e86151926860221f0e7352ae");
+      auto hash256 = BtcUtils::getSha256(msScript2);
+      feed->addValPair(hash256, msScript2);
+      auto p2wshScript = BtcUtils::getP2WSHOutputScript(hash256);
+      feed->addValPair(BtcUtils::getHash160(p2wshScript), p2wshScript);
+      return feed;
+   };
+
+   auto supportingTx1 = READHEX("0200000000010158e87a21b56daf0c23be8e7070456c336f7cbaa5c8757924f545887bb2abdd7501000000171600145f275f436b09a8cc9a2eb2a2f528485c68a56323feffffff02d8231f1b0100000017a914aed962d6654f9a2b36608eb9d64d2b260db4f1118700c2eb0b0000000017a914b7f5faf40e3d40a5a459b1db3535f2b72fa921e88702483045022100a22edcc6e5bc511af4cc4ae0de0fcd75c7e04d8c1c3a8aa9d820ed4b967384ec02200642963597b9b1bc22c75e9f3e117284a962188bf5e8a74c895089046a20ad770121035509a48eb623e10aace8bfd0212fdb8a8e5af3c94b0b133b95e114cab89e4f7965000000");
+   auto supportingTx2 = READHEX("0200000001aad73931018bd25f84ae400b68848be09db706eac2ac18298babee71ab656f8b0000000048473044022058f6fc7c6a33e1b31548d481c826c015bd30135aad42cd67790dab66d2ad243b02204a1ced2604c6735b6393e5b41691dd78b00f0c5942fb9f751856faa938157dba01feffffff0280f0fa020000000017a9140fb9463421696b82c833af241c78c17ddbde493487d0f20a270100000017a91429ca74f8a08f81999428185c97b5d852e4063f618765000000");
+   UTXO utxo1_1;
+   {
+      Tx tx(supportingTx1);
+      auto txOut = tx.getTxOutCopy(1);
+      utxo1_1 = UTXO(txOut.getAmount(), UINT16_MAX, UINT16_MAX, 1,
+         tx.getThisHash(), txOut.getScript());
+   }
+
+   auto createResolvedSigner = [&](const std::vector<unsigned>& privKeyIds)
+      ->Signer
+   {
+      auto signer = createSigner();
+      signer.populateUtxo(utxo1_1);
+      signer.addSupportingTx(supportingTx2);
+      signer.setFeed(createFeed(privKeyIds));
+      return signer;
+   };
+
+   //reference: the same tx, signed with all 4 keys in a single signer
+   BinaryData signedTx;
+   {
+      auto signer = createResolvedSigner({0, 1, 2, 3});
+      signer.sign();
+      ASSERT_TRUE(signer.verify());
+      signedTx = signer.serializeSignedTx();
+
+      Tx tx(signedTx);
+      EXPECT_EQ(tx.getLockTime(), lockTime);
+      ASSERT_EQ(tx.getNumTxIn(), sequences.size());
+      for (unsigned i=0; i<sequences.size(); i++) {
+         EXPECT_EQ(tx.getTxInCopy(i).getSequence(), sequences[i]);
+      }
+   }
+
+   //unsigned
+   {
+      auto signer = createSigner();
+      importPSBT(signer.toPSBT(), "unsigned");
+
+      //same through fromString
+      auto signer2 = Signer::fromString(
+         signer.toString(SignerStringFormat::PSBT));
+      EXPECT_EQ(signer2.deserializedFromType(), SignerStringFormat::PSBT);
+      EXPECT_EQ(signer2.getLockTime(), lockTime);
+      for (unsigned i=0; i<sequences.size(); i++) {
+         EXPECT_EQ(signer2.getTxInSequence(i), sequences[i]);
+      }
+   }
+
+   //resolved, signed after the import: the sighash has to commit to the
+   //imported nLockTime and nSequence, so it yields the reference tx
+   {
+      auto signer = createResolvedSigner({});
+      signer.resolvePublicData();
+      auto signer2 = importPSBT(signer.toPSBT(), "resolved");
+
+      signer2.setFeed(createFeed({0, 1, 2, 3}));
+      signer2.sign();
+      EXPECT_TRUE(signer2.verify());
+      EXPECT_EQ(signer2.serializeSignedTx().toHexStr(), signedTx.toHexStr());
+   }
+
+   //partial sigs made before the export have to check after the import
+   {
+      auto signerHalf1 = createResolvedSigner({0, 2});
+      signerHalf1.sign();
+      auto signer = importPSBT(signerHalf1.toPSBT(), "half 1");
+
+      auto signerHalf2 = createResolvedSigner({1, 3});
+      signerHalf2.sign();
+      auto signer2 = importPSBT(signerHalf2.toPSBT(), "half 2");
+
+      signer.merge(signer2);
+      EXPECT_TRUE(signer.isSigned());
+      EXPECT_TRUE(signer.verify());
+      EXPECT_EQ(signer.serializeSignedTx().toHexStr(), signedTx.toHexStr());
+
+      //finalized
+      auto signer3 = importPSBT(signer.toPSBT(), "finalized");
+      EXPECT_EQ(signer3.serializeSignedTx().toHexStr(), signedTx.toHexStr());
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 class ExtrasTest_Mainnet : public ::testing::Test
 {
 protected:
