@@ -658,7 +658,6 @@ class BlockchainService(ProtoWrapper):
    ## setup ##
    def __init__(self, bridgeSocket):
       super().__init__(bridgeSocket)
-      self.blockTimeByHeightCache = {}
 
    ####
    def registerWallets(self):
@@ -696,42 +695,6 @@ class BlockchainService(ProtoWrapper):
       fut = self.send(packet)
       reply = fut.getVal()
       return reply.delegate.getPages
-
-   ####
-   def getTxsByHash(self, hashVals: list[bytes]):
-      packet = Bridge.ToBridge.new_message()
-      serviceReq = packet.init("service")
-      packet.service.init("getTxsByHash", len(hashVals))
-      for i, hashVal in enumerate(hashVals):
-         if not hashVal:
-            LOGWARN("trying to fetch tx by empty hash")
-            continue
-         packet.service.getTxsByHash[i] = hashVal
-
-      fut = self.send(packet)
-      reply = fut.getVal(nothrow=True)
-      if reply.success == False:
-         raise BridgeError(f"getTxsByHash failed: {reply.error}")
-
-      #txs not found are left out, Transaction.getTxsByHash keys the
-      #rest by the hash of each raw tx
-      return reply.service.getTxsByHash
-
-   ####
-   def getBlockTimeByHeight(self, height):
-      if height in self.blockTimeByHeightCache:
-         return self.blockTimeByHeightCache[height]
-
-      packet = Bridge.ToBridge.new_message()
-      packet.init("service").getBlockTimeByHeight = height
-      fut = self.send(packet)
-      reply = fut.getVal()
-      blockTime = reply.service.getBlockTimeByHeight
-
-      if blockTime == 2**32 - 1:
-         raise BridgeError("invalid block time")
-      self.blockTimeByHeightCache[height] = blockTime
-      return blockTime
 
    ####
    def getFeeSchedule(self, strat):
@@ -854,6 +817,7 @@ class WalletManagerWrapper(ProtoWrapper):
    ## setup ##
    def __init__(self, bridgeSocket):
       super().__init__(bridgeSocket)
+      self.blockTimeByHeightCache = {}
 
    #############################################################################
    ## commands ##
@@ -932,6 +896,42 @@ class WalletManagerWrapper(ProtoWrapper):
          capnId.walletId = ids[i][0]
          capnId.accountId = ids[i][1]
       self.send(packet, needsReply=False)
+
+   ####
+   def getTxsByHash(self, hashVals: list[bytes]):
+      packet = Bridge.ToBridge.new_message()
+      packet.init("walletManager")
+      packet.walletManager.init("getTxsByHash", len(hashVals))
+      for i, hashVal in enumerate(hashVals):
+         if not hashVal:
+            LOGWARN("trying to fetch tx by empty hash")
+            continue
+         packet.walletManager.getTxsByHash[i] = hashVal
+
+      fut = self.send(packet)
+      reply = fut.getVal(nothrow=True)
+      if reply.success == False:
+         raise BridgeError(f"getTxsByHash failed: {reply.error}")
+
+      #txs not found are left out, Transaction.getTxsByHash keys the
+      #rest by the hash of each raw tx
+      return reply.walletManager.getTxsByHash
+
+   ####
+   def getBlockTimeByHeight(self, height):
+      if height in self.blockTimeByHeightCache:
+         return self.blockTimeByHeightCache[height]
+
+      packet = Bridge.ToBridge.new_message()
+      packet.init("walletManager").getBlockTimeByHeight = height
+      fut = self.send(packet)
+      reply = fut.getVal()
+      blockTime = reply.walletManager.getBlockTimeByHeight
+
+      if blockTime == 2**32 - 1:
+         raise BridgeError("invalid block time")
+      self.blockTimeByHeightCache[height] = blockTime
+      return blockTime
 
 ################################################################################
 class BridgeWalletWrapper(ProtoWrapper):

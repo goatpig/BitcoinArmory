@@ -2796,8 +2796,8 @@ void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId ms
       reply.setReferenceId(msgId);
       //hashes with no tx are left out, finding none is not an error
       {
-         auto serviceReply = reply.initService();
-         auto capnTxs = serviceReply.initGetTxsByHash(txs.size());
+         auto managerReply = reply.initWalletManager();
+         auto capnTxs = managerReply.initGetTxsByHash(txs.size());
 
          size_t count = 0;
          for (const auto& tx : txs) {
@@ -3242,8 +3242,8 @@ void CppBridge::getBlockTimeByHeight(uint32_t height, MessageId msgId) const
    reply.setReferenceId(msgId);
 
    if (header != nullptr) {
-      auto service = reply.initService();
-      service.setGetBlockTimeByHeight(header->timestamp);
+      auto managerReply = reply.initWalletManager();
+      managerReply.setGetBlockTimeByHeight(header->timestamp);
       reply.setSuccess(true);
    } else {
       reply.setSuccess(false);

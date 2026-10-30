@@ -3085,7 +3085,7 @@ namespace {
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
-      auto req = toBridge.initService();
+      auto req = toBridge.initWalletManager();
       auto txsReq = req.initGetTxsByHash(hashSet.size());
       unsigned i=0;
       for (const auto& hash : hashSet) {
@@ -3110,12 +3110,12 @@ namespace {
       if (!reply.getSuccess()) {
          return {};
       }
-      if (reply.which() != Codec::Bridge::RpcReply::SERVICE) {
+      if (reply.which() != Codec::Bridge::RpcReply::WALLET_MANAGER) {
          return {};
       }
 
-      auto serviceReply = reply.getService();
-      auto capnTxs = serviceReply.getGetTxsByHash();
+      auto managerReply = reply.getWalletManager();
+      auto capnTxs = managerReply.getGetTxsByHash();
       std::map<BinaryData, BinaryData> result;
       for (auto capnTx : capnTxs) {
          auto capnHash = capnTx.getHash();
@@ -3148,7 +3148,7 @@ namespace {
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
-      auto req = toBridge.initService();
+      auto req = toBridge.initWalletManager();
       auto txsReq = req.initGetTxsByHash(hashSet.size());
       unsigned i=0;
       for (const auto& hash : hashSet) {
@@ -3174,12 +3174,12 @@ namespace {
          return {};
       }
       success = reply.getSuccess();
-      if (!success || reply.which() != Codec::Bridge::RpcReply::SERVICE) {
+      if (!success || reply.which() != Codec::Bridge::RpcReply::WALLET_MANAGER) {
          return {};
       }
 
       std::map<BinaryData, FetchedTx> result;
-      for (auto capnTx : reply.getService().getGetTxsByHash()) {
+      for (auto capnTx : reply.getWalletManager().getGetTxsByHash()) {
          auto capnRaw = capnTx.getBody().getRaw();
          BinaryData raw{capnRaw.begin(), capnRaw.size()};
          result.emplace(Tx(raw).getThisHash(), FetchedTx{raw,

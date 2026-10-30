@@ -2379,7 +2379,7 @@ def getTxsByHash(txHashes):
    hash of each raw tx. Txs the bridge doesn't have are left out.
    """
    bridgeTxs = {}
-   for capnTx in TheBridge.service.getTxsByHash(txHashes):
+   for capnTx in TheBridge.wltManager.getTxsByHash(txHashes):
       pytx = PyTx().unserialize(bytes(capnTx.body.raw))
       pytx.setRBF(capnTx.body.isRbf)
       bridgeTxs[pytx.getHash()] = BridgeTx(

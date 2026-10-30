@@ -393,17 +393,6 @@ namespace
             break;
          }
 
-         case BlockchainServiceRequest::GET_TXS_BY_HASH:
-         {
-            std::set<Types::TxHash> hashes;
-            auto capnHashes = request.getGetTxsByHash();
-            for (auto hash : capnHashes) {
-               hashes.emplace(BinaryData{hash.begin(), hash.end()});
-            }
-            bridge->getTxsByHash(hashes, referenceId);
-            break;
-         }
-
          case BlockchainServiceRequest::BROADCAST_TX:
          {
             auto broadcastObj = request.getBroadcastTx();
@@ -420,13 +409,6 @@ namespace
                true : false;
 
             bridge->broadcastTxs(rawTxs, isRPC);
-            break;
-         }
-
-         case BlockchainServiceRequest::GET_BLOCK_TIME_BY_HEIGHT:
-         {
-            auto height = request.getGetBlockTimeByHeight();
-            bridge->getBlockTimeByHeight(height, referenceId);
             break;
          }
 
@@ -557,6 +539,24 @@ namespace
                   Wallets::AddressAccountId::fromHex(accIdCapn));
             }
             bridge->updateWalletsLedgerFilter(idMap);
+            break;
+         }
+
+         case WalletManagerRequest::GET_TXS_BY_HASH:
+         {
+            std::set<Types::TxHash> hashes;
+            auto capnHashes = request.getGetTxsByHash();
+            for (auto hash : capnHashes) {
+               hashes.emplace(BinaryData{hash.begin(), hash.end()});
+            }
+            bridge->getTxsByHash(hashes, referenceId);
+            break;
+         }
+
+         case WalletManagerRequest::GET_BLOCK_TIME_BY_HEIGHT:
+         {
+            auto height = request.getGetBlockTimeByHeight();
+            bridge->getBlockTimeByHeight(height, referenceId);
             break;
          }
 
