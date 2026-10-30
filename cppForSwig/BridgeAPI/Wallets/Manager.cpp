@@ -45,6 +45,7 @@ namespace
    std::vector<Ledgers::Entry> getPageForId(WalletManager* mgr, uint32_t pageId)
    {
       ReentrantLock lock(mgr);
+      ReentrantLock cacheLock(mgr->txioCache().get());
 
       std::vector<std::map<Types::TxKey, Ledgers::Entry>> walletLedgers;
       unsigned totalSize = 0;
@@ -72,7 +73,10 @@ namespace
    std::vector<Ledgers::Entry> getLedgersForZCs(WalletManager* mgr)
    {
       //this is only used to generate ledgers for ZC notifs
+      ReentrantLock lock(mgr);
       auto txioCache = mgr->txioCache();
+      ReentrantLock cacheLock(txioCache.get());
+
       std::vector<std::map<Types::TxKey, Ledgers::Entry>> walletLedgers;
       unsigned totalSize = 0;
       auto filteredMap = mgr->getFilteredContainerMap();
@@ -140,10 +144,22 @@ std::shared_ptr<const TxIOCache> WalletManager::txioCache() const
    return std::const_pointer_cast<const TxIOCache>(txioCache_);
 }
 
+void WalletManager::addUnpooledTxs(const std::vector<BinaryData>& rawTxs)
+{
+   txioCache_->addUnpooledTxs(rawTxs);
+}
+
+void WalletManager::fetchTxs(
+   std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr,
+   const std::set<Types::TxHash>& hashes)
+{
+   txioCache_->fetchTxs(bdvPtr, hashes);
+}
+
 ////
 bool WalletManager::hasWallet(const Wallets::WalletId& id)
 {
-   std::unique_lock<std::mutex> lock(mu_);
+   ReentrantLock lock(this);
    auto wltIter = wallets_.find(id);
    return wltIter != wallets_.end();
 }
@@ -200,6 +216,7 @@ const std::map<std::string, ContainerPtr>& WalletManager::getContainerMap() cons
 ContainerPtr WalletManager::getContainer(
    const Wallets::WalletId& wltId) const
 {
+   ReentrantLock lock(this);
    auto iter = wallets_.find(wltId);
    if (iter == wallets_.end()) {
       throw std::runtime_error(std::format("no wallet for id {}",
@@ -211,6 +228,7 @@ ContainerPtr WalletManager::getContainer(
 ContainerPtr WalletManager::getContainer(
    const Wallets::WalletId& wltId, const Wallets::AddressAccountId& accId) const
 {
+   ReentrantLock lock(this);
    auto wltIter = wallets_.find(wltId);
    if (wltIter == wallets_.end()) {
       throw std::runtime_error(std::format("i do not know wallet {}",
@@ -856,6 +874,7 @@ const std::string& WalletManager::getDelegateIdForWallet(
       Ledgers::Delegate{ [this, wltId, accId](uint32_t pageId)->
          std::vector<Ledgers::Entry> {
          auto wltCont = this->getContainer(wltId, accId);
+         ReentrantLock cacheLock(this->txioCache().get());
          const auto txioMap = wltCont->getTxioMap();
          auto context = Ledgers::prepareContext(txioMap,
             this->getDbCache(), {});
@@ -884,6 +903,7 @@ const std::string& WalletManager::getDelegateIdForScrAddr(
       Ledgers::Delegate{ [this, wltId, accId, scrAddr](uint32_t pageId)->
          std::vector<Ledgers::Entry> {
          auto wltCont = this->getContainer(wltId, accId);
+         ReentrantLock cacheLock(this->txioCache().get());
          const auto txioMap = wltCont->getTxioMap();
          auto context = Ledgers::prepareContext(txioMap,
             this->getDbCache(), {scrAddr});

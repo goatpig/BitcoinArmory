@@ -263,7 +263,7 @@ private:
 
    uint32_t txTime_{UINT32_MAX};
    mutable Armory::Types::TxHash thisHash_;
-   Armory::Types::TxKey txKey_;
+   Armory::Types::TxKey txKey_{Armory::Types::INVALID_TX_KEY};
 
    bool isRBF_ = false;
    bool isChainedZc_ = false;
