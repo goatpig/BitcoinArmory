@@ -1904,6 +1904,8 @@ std::shared_ptr<ScriptSpender> ScriptSpender::fromPSBT(
          outpoint.getTxHash(), outpoint.getTxOutIndex());
    }
 
+   //sighashes commit to the sequence, carry it over from the unsigned tx
+   spender->setSequence(txin.getSequence());
    spender->setTxMap(txMap);
    auto feed = std::make_shared<ResolverFeed_SpenderResolutionChecks>();
 
