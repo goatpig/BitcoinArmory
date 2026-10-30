@@ -8882,6 +8882,77 @@ TEST_F(BridgeChainDataTests, GetZcUTXOs_TxNotCached)
    EXPECT_FALSE(txioCache.getUTXOs(UINT64_MAX, false, true, all).empty());
 }
 
+TEST_F(BridgeChainDataTests, FetchTxs_ZcAcrossPurge)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   //a zc from the wallet
+   BinaryData signedTx;
+   try {
+      signedTx = createAndSignTx(bridge_,
+         walletId_BCDE_, accountId_BCDE_,
+         {}, {{ BtcUtils::scrAddrToBase58(TestChain::scrAddrC), 11 * COIN }},
+         TestChain::scrAddrD, 2, false,
+         "privPass1"
+      );
+   } catch (const std::exception& e) {
+      ASSERT_TRUE(false) << e.what();
+   }
+   broadcastTx(bridge_, signedTx);
+   auto zcLedgers = waitOnZc();
+   ASSERT_EQ(zcLedgers.size(), 1U);
+   auto zcHash = Tx(signedTx).getThisHash();
+   auto bdvPtr = bridge_->bdvPtr();
+   ASSERT_NE(bdvPtr, nullptr);
+
+   //and a mined tx of the wallet, in its block
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+   auto ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_FALSE(ledgers.empty());
+   auto minedHash = ledgers.back().getTxHash();
+   auto minedKey = iface_->getDBKeyForHash(minedHash);
+   ASSERT_TRUE(Types::isTxKeyValid(minedKey));
+   ASSERT_FALSE(Types::isThisAZCKey(minedKey));
+   auto blockId = Types::getBlockIDFromTxKey(minedKey);
+
+   //fetchTxs takes the lock to see what the cache misses (1), then to see
+   //which headers it misses (2), then to fill the cache (3). The zcs are
+   //purged once the db has served the txs and the header, as on a reorg:
+   //none of it is cached
+   HookedTxIOCache txioCache(3, [](Bridge::TxIOCache& cache) {
+      cache.purgeZC();
+   });
+   txioCache.fetchTxs(bdvPtr, {zcHash, minedHash});
+   EXPECT_THROW(txioCache.getTxByHash(zcHash), std::out_of_range);
+   EXPECT_THROW(txioCache.getTxByHash(minedHash), std::out_of_range);
+   EXPECT_THROW(txioCache.getDBCache()->getHeader(blockId),
+      std::out_of_range);
+
+   //the next fetch caches them
+   txioCache.fetchTxs(bdvPtr, {zcHash, minedHash});
+   try {
+      const auto& tx = txioCache.getTxByHash(zcHash);
+      EXPECT_TRUE(Types::isThisAZCKey(tx.getDBKey()));
+      EXPECT_NE(tx.getTxTime(), UINT32_MAX);
+      EXPECT_EQ(txioCache.getTxByHash(minedHash).getDBKey(), minedKey);
+      EXPECT_EQ(txioCache.getDBCache()->getHeader(blockId)->blockHeight,
+         ledgers.back().getBlockNum());
+   } catch (const std::out_of_range& e) {
+      ADD_FAILURE() << e.what();
+   }
+}
+
 TEST_F(BridgeChainDataTests, ChangeFilters_ALFB_BCDE)
 {
    loadWallets({walletId_BCDE_, walletId_AFLB_});

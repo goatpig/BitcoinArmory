@@ -93,6 +93,7 @@ namespace Armory
          std::map<Types::TxIOKey, TxIOPair> zcTxios_;
          std::shared_ptr<Ledgers::DBCache> dbCache_;
          uint32_t lastKnownBlock_ = UINT32_MAX;
+         unsigned zcPurges_ = 0;
 
       private:
          void initAfterLock(void) override {}
