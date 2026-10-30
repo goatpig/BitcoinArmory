@@ -248,7 +248,8 @@ void DBCache::eraseTx(Types::TxKey txKey)
 
 void DBCache::eraseHashes(const std::set<Types::TxHash>& txHashes)
 {
-   //drop every copy of these hashes
+   //drop the mined and zc copies of these hashes. Unpooled copies stay:
+   //the db can still drop a zc it serves now
    for (const auto& txHash : txHashes) {
       auto hashIter = txHashToKey_.find(txHash);
       if (hashIter == txHashToKey_.end()) {
@@ -258,7 +259,10 @@ void DBCache::eraseHashes(const std::set<Types::TxHash>& txHashes)
       //eraseTx edits the candidates, iterate over a copy
       auto txKeys = hashIter->second.keys();
       for (auto txKey : txKeys) {
-         eraseTx(txKey);
+         if (TxKeyCandidates::kindOf(txKey) !=
+            TxKeyCandidates::Kind::Unpooled) {
+            eraseTx(txKey);
+         }
       }
    }
 }
