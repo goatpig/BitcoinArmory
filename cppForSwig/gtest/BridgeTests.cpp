@@ -15562,7 +15562,8 @@ TEST_F(BridgeDBCacheTests, Unpooled)
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(BridgeDBCacheTests, EraseHashes)
 {
-   //every copy of the hash goes, other hashes stay
+   //the mined and zc copies of the hash go, its unpooled copy and other
+   //hashes stay
    Ledgers::DBCache cache;
    auto unpooledKey = cache.addUnpooledTx(rawTx1);
    add(cache, rawTx1, zcKey);
@@ -15571,11 +15572,11 @@ TEST_F(BridgeDBCacheTests, EraseHashes)
    add(cache, rawTx2, zcKey2);
 
    cache.eraseHashes({Tx(rawTx1).getThisHash()});
-   EXPECT_THROW(cache.getTxByHash(Tx(rawTx1).getThisHash()),
-      std::out_of_range);
-   for (auto txKey : {unpooledKey, zcKey, minedKey}) {
+   for (auto txKey : {zcKey, minedKey}) {
       EXPECT_THROW(cache.getTx(txKey), std::out_of_range);
    }
+   EXPECT_EQ(cache.getKeysForHash(Tx(rawTx1).getThisHash()),
+      std::vector<Types::TxKey>{unpooledKey});
    EXPECT_EQ(keyForHash(cache, rawTx2), zcKey2);
 }
 

@@ -282,7 +282,7 @@ uint32_t TxIOCache::update(
    auto headers = futHeaders.get();
    ReentrantLock lock(this);
 
-   //5. a fetched tx replaces the copies of its hash the cache has
+   //5. a fetched tx replaces the mined and zc copies of its hash
    std::set<Types::TxHash> fetchedHashes;
    for (const auto& tx : txs) {
       fetchedHashes.emplace(tx.getThisHash());
