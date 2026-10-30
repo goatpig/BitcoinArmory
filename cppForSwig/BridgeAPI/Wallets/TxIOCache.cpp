@@ -97,6 +97,7 @@ void TxIOCache::purge(PurgeStatus status)
          //wallets' zcs anew
          zcTxios_.clear();
          dbCache_->purgeZC();
+         ++zcPurges_;
          break;
 
       default:
@@ -800,8 +801,10 @@ void TxIOCache::fetchTxs(
    //only replaces the txs of the wallets)
    std::set<Types::TxHash> missingHashes;
    std::set<Types::BlockId> missingBlockIds;
+   unsigned zcPurges = 0;
    {
       ReentrantLock lock(this);
+      zcPurges = zcPurges_;
       std::set<Types::TxKey> walletZcKeys;
       for (const auto& txioPair : zcTxios_) {
          const auto& txio = txioPair.second;
@@ -922,8 +925,14 @@ void TxIOCache::fetchTxs(
       }
    }
 
-   //4. fill the cache
+   //4. fill the cache. If the zcs were purged while the db was asked (a
+   //reorg, a new db or a failed update), what it served may be stale: a
+   //zc may have left its mempool, a block the main branch. Nothing is
+   //cached, the next fetch asks again
    ReentrantLock lock(this);
+   if (zcPurges != zcPurges_) {
+      return;
+   }
    dbCache_->addHeaders(headers);
    for (auto& tx : txs) {
       dbCache_->addTx(tx);
