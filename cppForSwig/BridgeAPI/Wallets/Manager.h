@@ -98,6 +98,7 @@ namespace Armory
             const Wallets::AddressAccountId&);
          void addAllAccounts(std::shared_ptr<Wallets::AssetWallet>);
          void loadAFile(const std::filesystem::path&);
+         void purgeZC(void);
 
       public:
          WalletManager(

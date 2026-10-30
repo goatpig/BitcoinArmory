@@ -19,6 +19,8 @@
 #include <Ledgers/LedgerEntry.h>
 #include <Ledgers/Context.h>
 #include <BlockchainDatabase/BlockchainData.h>
+#include <ZeroConf/Parser.h>
+#include <ZeroConf/Utils.h>
 
 #include <Wallets/Accounts/AddressAccounts.h>
 #include <Wallets/Accounts/AccountTypes.h>
@@ -8364,6 +8366,133 @@ TEST_F(BridgeChainDataTests, GetTxsByHash_DoubleReorg)
    ASSERT_EQ(waitOnNewBlock(), 5);
    addLedgerHashes();
    checkAgainstDb("on 4A-5A", 5);
+}
+
+TEST_F(BridgeChainDataTests, GetTxsByHash_ZcDoubleReorg)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 4);
+
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+
+   //a zc spending the wallet's output at height/txIndex/txOutIndex
+   auto recipientPrivKey = Cryptography::ECDSA::createNewPrivateKey();
+   auto recipientPubKey = Cryptography::ECDSA::computePublicKey(
+      recipientPrivKey, true);
+   auto recipientAddr = BtcUtils::scrAddrToSegWitAddress(
+      BtcUtils::getHash160(recipientPubKey));
+   auto spend = [&](uint32_t height, uint32_t txIndex, uint32_t txOutIndex)
+   {
+      auto utxos = getUTXOs(bridge_, walletId_BCDE_, accountId_BCDE_, 0);
+      auto iter = std::find_if(utxos.begin(), utxos.end(),
+         [&](const UTXO& utxo)->bool {
+            return utxo.getHeight() == height &&
+               utxo.getTxIndex() == txIndex &&
+               utxo.getTxOutIndex() == txOutIndex;
+      });
+      if (iter == utxos.end()) {
+         throw std::runtime_error("no such utxo");
+      }
+      auto signedTx = createAndSignTx(bridge_,
+         walletId_BCDE_, accountId_BCDE_,
+         {*iter}, {{ recipientAddr, 1 * COIN }},
+         TestChain::scrAddrC, 2, true,
+         "privPass1"
+      );
+      broadcastTx(bridge_, signedTx);
+      auto zcLedgers = waitOnZc();
+      auto txHash = Tx(signedTx).getThisHash();
+      if (zcLedgers.empty() || zcLedgers[0].getTxHash() != txHash) {
+         throw std::runtime_error("no zc notif for the tx");
+      }
+      return txHash;
+   };
+
+   //a zc the db's mempool has is served as a zc, with the time the mempool
+   //got it, and the wallet's ledgers list it. One the mempool doesn't have
+   //is neither: this bridge broadcast it, so all it serves is its unpooled
+   //copy, with no time
+   std::set<BinaryData> hashes;
+   auto checkAgainstDb = [&](const std::string& tag, size_t inMempool) {
+      auto snapshot = theBDMt_->bdm()->zeroConfCont()->getSnapshot();
+      ASSERT_NE(snapshot, nullptr) << tag;
+
+      std::set<BinaryData> zcLedgers;
+      for (const auto& ledger : getLedgersPage(bridge_, delegateId, 0)) {
+         if (ledger.getBlockNum() == UINT32_MAX) {
+            zcLedgers.emplace(ledger.getTxHash());
+         }
+      }
+
+      bool success = false;
+      auto served = getTxDataByHash(bridge_, hashes, success);
+      EXPECT_TRUE(success) << tag;
+      size_t count = 0;
+      for (const auto& txHash : hashes) {
+         auto hashStr = txHash.toHexStr(true);
+         auto iter = served.find(txHash);
+         if (iter == served.end()) {
+            ADD_FAILURE() << tag << ": " << hashStr << " not served";
+            continue;
+         }
+         EXPECT_EQ(iter->second.height, UINT32_MAX) << tag << ": " << hashStr;
+         EXPECT_EQ(iter->second.txIndex, UINT32_MAX) << tag << ": " << hashStr;
+
+         auto zcKey = snapshot->getKeyForHash(txHash);
+         if (!Types::isTxKeyValid(zcKey)) {
+            EXPECT_EQ(iter->second.timestamp, UINT32_MAX) << tag << ": " <<
+               hashStr << " isn't in the db's mempool, served as a zc";
+            EXPECT_EQ(zcLedgers.count(txHash), 0U) << tag << ": " << hashStr;
+            continue;
+         }
+         ++count;
+         auto zcTx = snapshot->getTxByKey(zcKey);
+         ASSERT_NE(zcTx, nullptr);
+         EXPECT_EQ(iter->second.timestamp, zcTx->getTxObj().getTxTime())
+            << tag << ": " << hashStr;
+         EXPECT_EQ(zcLedgers.count(txHash), 1U) << tag << ": " << hashStr;
+      }
+      EXPECT_EQ(count, inMempool) << tag;
+   };
+
+   //on 4A: one zc spends an output of block 3 all branches keep unspent,
+   //the other one an output of block 3 that block 4 spends
+   try {
+      hashes.emplace(spend(3, 2, 0));
+      hashes.emplace(spend(3, 3, 0));
+   } catch (const std::exception& e) {
+      ASSERT_TRUE(false) << e.what();
+   }
+   checkAgainstDb("on 4A", 2);
+
+   //reorg onto 4, 5: the second zc is out. A third one spends an output
+   //of block 5, which 5A doesn't have
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5" }, blk0dat_);
+   nodePtr_->notifyNewBlock();
+   ASSERT_EQ(waitOnNewBlock(), 5);
+   checkAgainstDb("on 4-5", 1);
+   try {
+      hashes.emplace(spend(5, 1, 0));
+   } catch (const std::exception& e) {
+      ASSERT_TRUE(false) << e.what();
+   }
+   checkAgainstDb("on 4-5, 3rd zc", 2);
+
+   //reorg back onto 4A, 5A: the third zc is out, the first one stays
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5", "5A" }, blk0dat_);
+   nodePtr_->notifyNewBlock();
+   ASSERT_EQ(waitOnNewBlock(), 5);
+   checkAgainstDb("on 4A-5A", 1);
 }
 
 namespace

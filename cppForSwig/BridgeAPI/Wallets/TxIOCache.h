@@ -112,6 +112,7 @@ namespace Armory
          TxIOCache(void);
 
          void purge(void);
+         void purgeZC(void);
          uint32_t update(std::shared_ptr<AsyncClient::BlockDataViewer>,
             std::shared_ptr<Notifications::Server::Notif>);
          std::shared_ptr<const Ledgers::DBCache> getDBCache(void) const;

@@ -700,13 +700,36 @@ void WalletManager::loadWallets()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+void WalletManager::purgeZC()
+{
+   //the manager, then the cache once, as the ledger readers do. Each
+   //container resolves its zc txios again, so none points to a purged tx
+   ReentrantLock lock(this);
+   ReentrantLock cacheLock(txioCache_.get());
+   txioCache_->purgeZC();
+   for (auto& wltCont : walletsByDbId_) {
+      wltCont.second->resolveZcTxios();
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 void WalletManager::updateStateFromDB(
    std::unique_ptr<Notifications::Server::Notif> notif)
 {
    using namespace Notifications;
 
-   //update txio cache
+   //a reorg can take zcs out of the db's mempool, and the bridge doesn't
+   //learn which: the cache drops its zcs, the update below gets them anew
    std::shared_ptr<Server::Notif> sharedNotif{std::move(notif)};
+   if (sharedNotif->type == Server::NotifType::NEWBLOCK) {
+      auto blockPtr =
+         std::dynamic_pointer_cast<Server::Notif_NewBlock>(sharedNotif);
+      if (blockPtr->blockNotif.isReorg()) {
+         purgeZC();
+      }
+   }
+
+   //update txio cache
    auto checkFromHeight = txioCache_->update(bdvPtr_, sharedNotif);
 
    //resolve wallets

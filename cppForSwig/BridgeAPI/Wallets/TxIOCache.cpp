@@ -84,6 +84,15 @@ void TxIOCache::purge()
    dbCache_->clear();
 }
 
+void TxIOCache::purgeZC()
+{
+   //the zc txios and the zc copies of txs, the next update gets the
+   //wallets' zcs anew
+   ReentrantLock lock(this);
+   zcTxios_.clear();
+   dbCache_->purgeZC();
+}
+
 ////////
 CacheResolveResult TxIOCache::resolve(
    const AddressFilter& filter, uint32_t fromHeight) const
