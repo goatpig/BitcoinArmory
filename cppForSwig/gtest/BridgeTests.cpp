@@ -8487,6 +8487,96 @@ TEST_F(BridgeChainDataTests, FetchTxs_NoHeaderAskAgain)
    checkMined(txioCache);
 }
 
+namespace
+{
+   //runs a function when it takes its lock for the nth time
+   class HookedTxIOCache : public Bridge::TxIOCache
+   {
+   private:
+      const unsigned hookAt_;
+      const std::function<void(Bridge::TxIOCache&)> hook_;
+      unsigned lockCount_ = 0;
+
+      void initAfterLock(void) override
+      {
+         if (++lockCount_ == hookAt_) {
+            hook_(*this);
+         }
+      }
+
+   public:
+      HookedTxIOCache(unsigned at,
+         std::function<void(Bridge::TxIOCache&)> hook) :
+         hookAt_(at), hook_(std::move(hook))
+      {}
+   };
+}
+
+TEST_F(BridgeChainDataTests, GetZcUTXOs_TxNotCached)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   //an rbf zc from the wallet, its change goes back to the wallet
+   auto recipientPrivKey = Cryptography::ECDSA::createNewPrivateKey();
+   auto recipientPubKey = Cryptography::ECDSA::computePublicKey(
+      recipientPrivKey, true);
+   auto recipientAddr = BtcUtils::scrAddrToSegWitAddress(
+      BtcUtils::getHash160(recipientPubKey));
+   BinaryData signedTx;
+   try {
+      signedTx = createAndSignTx(bridge_,
+         walletId_BCDE_, accountId_BCDE_,
+         {}, {{ recipientAddr, 11 * COIN }},
+         TestChain::scrAddrC, 2, true,
+         "privPass1"
+      );
+   } catch (const std::exception& e) {
+      ASSERT_TRUE(false) << e.what();
+   }
+   broadcastTx(bridge_, signedTx);
+   auto zcLedgers = waitOnZc();
+   ASSERT_EQ(zcLedgers.size(), 1U);
+   auto zcHash = Tx(signedTx).getThisHash();
+   auto bdvPtr = bridge_->bdvPtr();
+   ASSERT_NE(bdvPtr, nullptr);
+
+   //an update takes the lock to set the txios (1), then to cache their
+   //txs (2): in between, the zc txios have no tx in the cache
+   auto all = [](const Types::ScrAddr&)->bool { return true; };
+   std::vector<UTXO> zcUtxos, rbfUtxos;
+   std::string error;
+   HookedTxIOCache txioCache(2, [&](Bridge::TxIOCache& cache) {
+      try {
+         zcUtxos = cache.getUTXOs(UINT64_MAX, true, false, all);
+         rbfUtxos = cache.getUTXOs(UINT64_MAX, false, true, all);
+      } catch (const std::exception& e) {
+         error = e.what();
+      }
+   });
+   txioCache.update(bdvPtr,
+      std::make_shared<Bridge::Notifications::Server::Notif_Refresh>(
+         std::string{"refresh"}));
+   EXPECT_TRUE(error.empty()) << error;
+   EXPECT_TRUE(zcUtxos.empty());
+   EXPECT_TRUE(rbfUtxos.empty());
+
+   //once they are cached, the zc's change is listed
+   zcUtxos = txioCache.getUTXOs(UINT64_MAX, true, false, all);
+   ASSERT_EQ(zcUtxos.size(), 1U);
+   EXPECT_EQ(zcUtxos[0].getTxHash().toHexStr(), zcHash.toHexStr());
+   EXPECT_FALSE(txioCache.getUTXOs(UINT64_MAX, false, true, all).empty());
+}
+
 TEST_F(BridgeChainDataTests, ChangeFilters_ALFB_BCDE)
 {
    loadWallets({walletId_BCDE_, walletId_AFLB_});

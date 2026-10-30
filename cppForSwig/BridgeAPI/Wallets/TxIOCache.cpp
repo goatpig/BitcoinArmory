@@ -491,21 +491,30 @@ std::vector<UTXO> TxIOCache::getZcUTXOs(bool rbf,
 {
    ReentrantLock lock(this);
    std::vector<UTXO> result;
-   auto addTxio = [this, &result, filter](const TxIOPair& txio, const Tx& tx)
+   auto addTxio = [this, &result, filter](const TxIOPair& txio)
    {
       const auto& scrAddr = txio.getScrAddr();
       if (!filter(scrAddr)) {
          return;
       }
 
-      auto txOut = tx.getTxOutCopy(txio.getIndexOfOutput());
-
+      //an update sets the zc txios before it has their txs, and a mined tx
+      //can be cached before its header: such a txio is left out
+      const Tx* txPtr = nullptr;
       uint32_t height = UINT32_MAX;
-      if (!Types::isThisAZCKey(tx.getDBKey())) {
-         auto blockId = tx.getBlockId();
-         auto header = dbCache_->getHeader(blockId);
-         height = header->blockHeight;
+      try {
+         txPtr = &dbCache_->getTx(txio.getTxKeyOfOutput());
+         if (!Types::isThisAZCKey(txPtr->getDBKey())) {
+            auto blockId = txPtr->getBlockId();
+            auto header = dbCache_->getHeader(blockId);
+            height = header->blockHeight;
+         }
+      } catch (const std::out_of_range&) {
+         return;
       }
+      const auto& tx = *txPtr;
+
+      auto txOut = tx.getTxOutCopy(txio.getIndexOfOutput());
       result.emplace_back(UTXO{txio.getAmount(),
          height, tx.getTxIndex(), txio.getIndexOfOutput(),
          tx.getThisHash(), txOut.getScript()
@@ -513,13 +522,10 @@ std::vector<UTXO> TxIOCache::getZcUTXOs(bool rbf,
    };
 
    for (const auto& txio : zcTxios_) {
-      const auto& txKey = txio.second.getTxKeyOfOutput();
-
       if (rbf) {
          //for rbf outputs, we consider all outputs that are RBF flagged
          if (txio.second.isRBF()) {
-            const auto& tx = dbCache_->getTx(txKey);
-            addTxio(txio.second, tx);
+            addTxio(txio.second);
          }
          continue;
       }
@@ -533,9 +539,7 @@ std::vector<UTXO> TxIOCache::getZcUTXOs(bool rbf,
          //and the output has to be zc as well
          continue;
       }
-
-      const auto& tx = dbCache_->getTx(txKey);
-      addTxio(txio.second, tx);
+      addTxio(txio.second);
    }
    return result;
 }
