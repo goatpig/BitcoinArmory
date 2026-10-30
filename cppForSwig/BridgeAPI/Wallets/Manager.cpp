@@ -248,6 +248,12 @@ ContainerPtr WalletManager::getContainer(
 ////////
 void WalletManager::setBdvPtr(std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr)
 {
+   //a new db may not have the last one's mempool, and a restarted ArmoryDB
+   //can give a zc an id the last one gave another tx: the cache drops its
+   //zcs, the ready notification after goOnline gets the wallets' ones from
+   //this db
+   purgeZC();
+
    bdvPtr_ = bdvPtr;
    for (auto& wltIt : wallets_) {
       for (auto& accIt : wltIt.second) {

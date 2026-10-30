@@ -8495,6 +8495,182 @@ TEST_F(BridgeChainDataTests, GetTxsByHash_ZcDoubleReorg)
    checkAgainstDb("on 4A-5A", 1);
 }
 
+TEST_F(BridgeChainDataTests, GetTxsByHash_ZcReconnect)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+
+   //the wallet pays a new address, waits on the zc notif
+   auto sendZc = [&](uint64_t value)
+   {
+      auto recipientPrivKey = Cryptography::ECDSA::createNewPrivateKey();
+      auto recipientPubKey = Cryptography::ECDSA::computePublicKey(
+         recipientPrivKey, true);
+      auto recipientAddr = BtcUtils::scrAddrToSegWitAddress(
+         BtcUtils::getHash160(recipientPubKey));
+      auto signedTx = createAndSignTx(bridge_,
+         walletId_BCDE_, accountId_BCDE_,
+         {}, {{ recipientAddr, value }},
+         TestChain::scrAddrC, 2, true,
+         "privPass1"
+      );
+      broadcastTx(bridge_, signedTx);
+      auto zcLedgers = waitOnZc();
+      if (zcLedgers.size() != 1) {
+         throw std::runtime_error("expected 1 zc ledger");
+      }
+      return std::make_pair(Tx(signedTx).getThisHash(),
+         zcLedgers[0].getTxHash());
+   };
+
+   auto dbZcKey = [this](const BinaryData& txHash) {
+      auto snapshot = theBDMt_->bdm()->zeroConfCont()->getSnapshot();
+      if (snapshot == nullptr) {
+         return Types::INVALID_TX_KEY;
+      }
+      return snapshot->getKeyForHash(txHash);
+   };
+
+   auto zcLedgerHashes = [&]() {
+      std::set<std::string> result;
+      for (const auto& ledger : getLedgersPage(bridge_, delegateId, 0)) {
+         if (ledger.getBlockNum() == UINT32_MAX) {
+            result.emplace(ledger.getTxHash().toHexStr());
+         }
+      }
+      return result;
+   };
+
+   //the db goes away, comes back and the bridge reconnects
+   auto restartDb = [&](bool clearMempool) {
+      WebSocketServer::shutdown();
+      while (true) {
+         auto reply = waitOnReply();
+         kj::ArrayPtr<const capnp::word> words(
+            reinterpret_cast<const capnp::word*>(reply->data.getPtr()),
+            reply->data.getSize() / sizeof(capnp::word));
+         capnp::FlatArrayMessageReader reader(words);
+         auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+         if (fromBridge.which() == Codec::Bridge::FromBridge::NOTIFICATION &&
+            fromBridge.getNotification().which() ==
+               Codec::Bridge::Notification::DISCONNECTED) {
+            break;
+         }
+      }
+      if (wsServerThr_.joinable()) {
+         wsServerThr_.join();
+      }
+      theBDMt_->shutdown();
+      delete theBDMt_;
+
+      WebSocketServer::init();
+      Config::reset();
+      Config::DBSettings::setServiceType(SERVICE_UNITTEST_WITHWS);
+      std::vector<std::string> args{
+         "--datadir=./fakehomedir",
+         "--dbdir=./ldbtestdir",
+         "--satoshi-datadir=./blkfiletest",
+         "--db-type=DB_BARE",
+         "--thread-count=3",
+         "--public"};
+      if (clearMempool) {
+         args.emplace_back("--clear-mempool");
+      }
+      Config::parseArgs(args, Config::ProcessType::DB);
+      initBDM();
+      nodePtr_ = std::dynamic_pointer_cast<NodeUnitTest>(
+         Config::NetworkSettings::bitcoinNodes().first);
+      nodePtr_->setBDM(theBDMt_->bdm());
+
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer();
+      ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+      ASSERT_TRUE(registerWallets(bridge_));
+      theBDMt_->start(Config::DBSettings::initMode());
+      theBDMt_->bdm()->blockUntilReady();
+      ASSERT_EQ(goOnline(bridge_), 5);
+   };
+
+   BinaryData zcHash1;
+   try {
+      auto sent = sendZc(11 * COIN);
+      zcHash1 = sent.first;
+      ASSERT_EQ(sent.second.toHexStr(), zcHash1.toHexStr());
+   } catch (const std::exception& e) {
+      ASSERT_TRUE(false) << e.what();
+   }
+   auto zcKey1 = dbZcKey(zcHash1);
+   ASSERT_TRUE(Types::isThisAZCKey(zcKey1));
+
+   bool success = false;
+   auto served = getTxDataByHash(bridge_, {zcHash1}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(served.size(), 1U);
+   auto zcTime1 = served[zcHash1].timestamp;
+   EXPECT_NE(zcTime1, UINT32_MAX);
+
+   //the db comes back with the mempool it saved, the zc has the same key:
+   //the wallet lists it, the bridge serves it as a zc
+   restartDb(false);
+   if (HasFatalFailure()) {
+      return;
+   }
+   EXPECT_EQ(dbZcKey(zcHash1), zcKey1);
+   EXPECT_EQ(zcLedgerHashes(), std::set<std::string>{zcHash1.toHexStr()});
+   served = getTxDataByHash(bridge_, {zcHash1}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(served.size(), 1U);
+   EXPECT_EQ(served[zcHash1].height, UINT32_MAX);
+   EXPECT_EQ(served[zcHash1].timestamp, zcTime1);
+
+   //it comes back with its mempool cleared: the wallet lists no zc, and the
+   //bridge serves the zc's unpooled copy only, with no time
+   restartDb(true);
+   if (HasFatalFailure()) {
+      return;
+   }
+   EXPECT_TRUE(zcLedgerHashes().empty());
+   served = getTxDataByHash(bridge_, {zcHash1}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(served.size(), 1U);
+   EXPECT_EQ(served[zcHash1].height, UINT32_MAX);
+   EXPECT_EQ(served[zcHash1].timestamp, UINT32_MAX);
+
+   //a new zc gets the first zc id again, the key the first zc had: the
+   //wallet's ledgers and the bridge show the new tx
+   BinaryData zcHash2;
+   try {
+      auto sent = sendZc(5 * COIN);
+      zcHash2 = sent.first;
+      EXPECT_EQ(sent.second.toHexStr(), zcHash2.toHexStr());
+   } catch (const std::exception& e) {
+      ASSERT_TRUE(false) << e.what();
+   }
+   ASSERT_NE(zcHash2.toHexStr(), zcHash1.toHexStr());
+   EXPECT_EQ(dbZcKey(zcHash2), zcKey1);
+   EXPECT_EQ(zcLedgerHashes(), std::set<std::string>{zcHash2.toHexStr()});
+
+   served = getTxDataByHash(bridge_, {zcHash1, zcHash2}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(served.size(), 2U);
+   EXPECT_EQ(served[zcHash1].timestamp, UINT32_MAX);
+   EXPECT_EQ(served[zcHash2].height, UINT32_MAX);
+   EXPECT_NE(served[zcHash2].timestamp, UINT32_MAX);
+}
+
 namespace
 {
    //drops its db connection when it takes its lock for the nth time
