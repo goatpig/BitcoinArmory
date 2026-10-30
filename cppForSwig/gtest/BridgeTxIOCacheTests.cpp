@@ -660,7 +660,7 @@ TEST_F(TxIOCacheTests, Purge)
    //check zc in cache
    Tx zcTx(signedTx);
    auto hashesAt5WithZc = txHashesAt5Blocks;
-   txHashesAt5Blocks.emplace(zcTx.getThisHash());
+   hashesAt5WithZc.emplace(zcTx.getThisHash());
    ASSERT_TRUE(checkCache(cache, hashesAt5WithZc, blockHashesAt5));
 
    //check ledgers
@@ -675,8 +675,10 @@ TEST_F(TxIOCacheTests, Purge)
       TestChain::ledgersBC.begin(), TestChain::ledgersBC.end());
    ASSERT_TRUE(compareLedgers(cache, addressesBC, ledgersWithZc));
 
-   //purge the ZC then check the cache
+   //purge the ZC then check the cache, the zc copy of the tx is gone
    cache.purge(Bridge::TxIOCache::PurgeStatus::PurgeZC);
+   EXPECT_THROW(cache.getTxByHash(zcTx.getThisHash()), std::out_of_range);
+   EXPECT_TRUE(cache.getDBCache()->getKeysForHash(zcTx.getThisHash()).empty());
    ASSERT_TRUE(checkCache(cache, txHashesAt5Blocks, blockHashesAt5));
    ASSERT_TRUE(compareLedgers(cache, addressesBC, TestChain::ledgersBC));
 }

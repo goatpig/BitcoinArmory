@@ -93,7 +93,10 @@ void TxIOCache::purge(PurgeStatus status)
       }
 
       case PurgeStatus::PurgeZC:
+         //the zc txios and the zc copies of txs, the next update gets the
+         //wallets' zcs anew
          zcTxios_.clear();
+         dbCache_->purgeZC();
          break;
 
       default:
