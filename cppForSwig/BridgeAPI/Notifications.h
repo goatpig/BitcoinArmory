@@ -27,44 +27,42 @@ namespace Armory
    {
       namespace Notifications
       {
-         namespace Server
+         namespace Push
          {
-            enum class NotifType : int
+            enum class PayloadType : int
             {
-               PUSH,
+               PASS_TO_CLIENT,
                NEWBLOCK,
                ZC,
                REFRESH,
                IS_REGISTERED,
                SETUP_DONE,
+               CONNECT_TO_IP,
+               CONNECT_TO_PEER,
+               RUN_AUTOMATION_CONTEXT,
                DISCONNECTED
             };
 
-            struct Notif
+            struct Payload
             {
-               const NotifType type;
-               Notif(NotifType);
-               virtual ~Notif(void) = 0;
+               const PayloadType type;
+               Payload(PayloadType);
+               virtual ~Payload(void) = 0;
                virtual bool syncWalletState(void) const;
             };
 
-            struct Notif_Push : public Notif
-            {
-               BinaryData packet;
-               Notif_Push(BinaryData);
-            };
 
-            struct Notif_Registered : public Notif
+            struct Notif_Registered : public Payload
             {
                Notif_Registered(void);
             };
 
-            struct Notif_Disconnected : public Notif
+            struct Notif_Disconnected : public Payload
             {
                Notif_Disconnected(void);
             };
 
-            struct Notif_NewBlock : public Notif
+            struct Notif_NewBlock : public Payload
             {
                const NewBlockNotif blockNotif;
                const bool isReadyNotif;
@@ -74,7 +72,7 @@ namespace Armory
                bool syncWalletState(void) const override;
             };
 
-            struct Notif_ZC : public Notif
+            struct Notif_ZC : public Payload
             {
                std::vector<TxIOPair> txios;
                std::set<BinaryData> invalidatedZCHashes;
@@ -82,19 +80,53 @@ namespace Armory
                Notif_ZC(std::vector<TxIOPair>, std::set<BinaryData>);
             };
 
-            struct Notif_Refresh : public Notif
+            ////////
+            struct Command_PassAlong : public Payload
             {
-               const std::set<std::string> notifIds;
+               BinaryData packet;
+               Command_PassAlong(BinaryData);
+            };
 
-               Notif_Refresh(const std::set<std::string>&);
-               Notif_Refresh(const std::string&);
+            struct Command_Refresh : public Payload
+            {
+               const std::set<std::string> refreshIds;
+
+               Command_Refresh(const std::set<std::string>&);
+               Command_Refresh(const std::string&);
                bool syncWalletState(void) const override;
+            };
+
+            struct Command_ConnectToIp : public Payload
+            {
+               const std::string ip;
+               const uint16_t port;
+               const std::string callbackId;
+               const uint64_t msgId;
+
+               Command_ConnectToIp(const std::string&, uint16_t,
+                  const std::string&, uint64_t);
+            };
+
+            struct Command_ConnectToPeer : public Payload
+            {
+               const std::string peerKey;
+               const uint64_t msgId;
+
+               Command_ConnectToPeer(const std::string&, uint64_t);
+            };
+
+            struct Command_RunAutomationContext : public Payload
+            {
+               const std::string callbackId;
+               const uint64_t msgId;
+
+               Command_RunAutomationContext(const std::string&, uint64_t);
             };
 
             ////////
             class NotifHandler : public RemoteCallback
             {
-               using NotifQueue = Threading::BlockingQueue<std::unique_ptr<Notif>>;
+               using NotifQueue = Threading::BlockingQueue<std::unique_ptr<Payload>>;
             private:
                std::shared_ptr<NotifQueue> queue_;
 
@@ -112,17 +144,17 @@ namespace Armory
             };
          }
 
-         namespace Client
+         namespace Serialization
          {
             //bridge client notif serialization
-            BinaryData getSerializedNewBlockNotif(std::shared_ptr<Server::Notif_NewBlock>);
-            BinaryData getSerializedRefreshNotif(std::shared_ptr<Server::Notif_Refresh>);
-            std::pair<BinaryData, BinaryData> getSerializedZcNotif(
+            BinaryData getNewBlockPacket(std::shared_ptr<Push::Notif_NewBlock>);
+            BinaryData getRefreshPacket(std::shared_ptr<Push::Command_Refresh>);
+            std::pair<BinaryData, BinaryData> getZcPacket(
                const std::vector<Ledgers::Entry>&,
                const std::set<BinaryData>&);
-            BinaryData getSerializedSetupDoneNotif(void);
-            BinaryData getSerializedWalletsRegisteredNotif(void);
-            BinaryData getSerializedServerDisconnectedNotif(void);
+            BinaryData getSetupDonePacket(void);
+            BinaryData getWalletsRegisteredPacket(void);
+            BinaryData getServerDisconnectedPacket(void);
          }
       } // namespace Notifications
    } // namespace Bridge
