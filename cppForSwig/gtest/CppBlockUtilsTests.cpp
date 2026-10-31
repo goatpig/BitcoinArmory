@@ -64,6 +64,106 @@ namespace {
       //blockIDs start at 1
       return { blockID - 1, valueReader.get_uint16_t() };
    }
+
+   ////////
+   /*
+   hash42, tx #2 of block 4, is also tx #2 of block 5A and pays 5 btc to
+   addrD. Going through 4A, then 4-5, then 4A-5A, it is mined on both
+   branches, and in DB_BARE as in DB_FULL its KNOWNHASHES entry carries 2
+   tx keys. Mine a block on 5A that spends that output.
+   */
+   void spendTxMinedOnBothBranches(BlockDataManagerThread* bdmt,
+      Clients* clients, const std::filesystem::path& blk0dat)
+   {
+      TestUtils::setBlocks({ "0", "1", "2", "3", "4A" }, blk0dat);
+
+      clients->init();
+      auto bdvID = DBTestUtils::registerBDV(
+         clients, Config::BitcoinSettings::getMagicBytes());
+      auto bdvPtr = DBTestUtils::getBDV(clients, bdvID);
+
+      DBTestUtils::registerWallet(clients, bdvID, {
+         TestChain::scrAddrD,
+         TestChain::scrAddrE,
+         TestChain::scrAddrF},
+         "wallet2",
+         false);
+
+      bdmt->start(Config::DBSettings::initMode());
+      bdmt->bdm()->blockUntilReady();
+      DBTestUtils::goOnline(clients, bdvID);
+      DBTestUtils::waitOnBDVReady(clients, bdvID);
+
+      auto bdm = bdmt->bdm();
+      auto iface = bdm->getIFace();
+      EXPECT_EQ(DBTestUtils::getTopBlockHash(iface, DB_SELECT::SCRADDR), TestChain::blkHash4A);
+
+      //first reorg: up to 5
+      TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5" }, blk0dat);
+      DBTestUtils::triggerNewBlockNotification(bdmt);
+      DBTestUtils::waitOnNewBlockSignal(clients, bdvID);
+      EXPECT_EQ(DBTestUtils::getTopBlockHash(iface, DB_SELECT::SCRADDR), TestChain::blkHash5);
+
+      //second reorg: up to 5A
+      TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5", "5A" }, blk0dat);
+      DBTestUtils::triggerNewBlockNotification(bdmt);
+      DBTestUtils::waitOnNewBlockSignal(clients, bdvID);
+      EXPECT_EQ(DBTestUtils::getTopBlockHash(iface, DB_SELECT::SCRADDR), TestChain::blkHash5A);
+      EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 60 * COIN);
+
+      {
+         //one key per branch
+         auto tx = iface->beginTransaction(
+            DB_SELECT::KNOWNHASHES, LMDB::Mode::ReadOnly);
+         auto val = tx->get(LMDB::DataRef{
+            TestChain::hash42.getSize(), TestChain::hash42.getCharPtr()});
+         ASSERT_EQ(val.len, 16);
+      }
+
+      //spend it to an address unknown to our wallets
+      BinaryData spenderHash;
+      {
+         UTXO utxo(5 * COIN, 5, 2, 0, TestChain::hash42,
+            BtcUtils::getP2PKHScript(TestChain::addrD));
+
+         Signing::Signer signer;
+         auto feed = std::make_shared<ResolverUtils::TestResolverFeed>();
+         feed->addPrivKey(TestChain::privKeyAddrD.getRef());
+         signer.addSpender(std::make_shared<Signing::ScriptSpender>(utxo));
+         signer.addRecipient(std::make_shared<Signing::Recipient_P2PKH>(
+            Cryptography::PRNG::fortuna.generateRandom(20), 4 * COIN));
+         signer.setFeed(feed);
+         signer.sign();
+         ASSERT_TRUE(signer.verify());
+
+         auto rawTx = signer.serializeSignedTx();
+         spenderHash = Tx{rawTx}.getThisHash();
+
+         //staged: goes in the next block without going through the mempool
+         DBTestUtils::ZcVector zcVec;
+         zcVec.push_back(rawTx, 14000000);
+         DBTestUtils::pushNewZc(bdmt, zcVec, true);
+      }
+
+      DBTestUtils::mineNewBlock(bdmt, TestChain::addrA, 1);
+      DBTestUtils::waitOnNewBlockSignal(clients, bdvID);
+
+      auto mined = DBTestUtils::getMinedBlocks(bdmt);
+      ASSERT_EQ(mined.size(), 1);
+      EXPECT_EQ(DBTestUtils::getTopBlockHash(iface, DB_SELECT::SCRADDR), mined.back().headerHash);
+
+      //the spent output is the 5A one
+      EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrD, bdm), 55 * COIN);
+
+      {
+         auto tx = iface->beginTransaction(
+            DB_SELECT::KNOWNHASHES, LMDB::Mode::ReadOnly);
+         auto val = tx->get(LMDB::DataRef{spenderHash.getSize(), spenderHash.getCharPtr()});
+         EXPECT_EQ(val.len, 8);
+      }
+
+      bdvPtr.reset();
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1214,6 +1314,12 @@ TEST_F(BlockUtilsBare, Load5Blocks_DoubleReorg)
    EXPECT_EQ(getBal(TestChain::lb1ScrAddrP2SH), 0 * COIN);
    EXPECT_EQ(getBal(TestChain::lb2ScrAddr), 10 * COIN);
    EXPECT_EQ(getBal(TestChain::lb2ScrAddrP2SH), 0 * COIN);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BlockUtilsBare, DoubleReorg_SpendTxMinedOnBothBranches)
+{
+   spendTxMinedOnBothBranches(theBDMt_, clients_, blk0dat_);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2453,6 +2559,29 @@ protected:
    std::filesystem::path ldbdir_{"./ldbtestdir"sv};
    std::filesystem::path blk0dat_;
 };
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BlockUtilsFull, DoubleReorg_SpendTxMinedOnBothBranches)
+{
+   spendTxMinedOnBothBranches(theBDMt_, clients_, blk0dat_);
+   if (HasFatalFailure()) {
+      return;
+   }
+
+   //fullnode also has a tx hint per block: the lookup by hash gives both
+   //keys, and the collision resolves to the 5A copy
+   auto bdm = theBDMt_->bdm();
+   try {
+      bdm->getIFace()->getDBKeyForHash(TestChain::hash42);
+      ASSERT_TRUE(false);
+   } catch (const TxHintCollision& collision) {
+      ASSERT_EQ(collision.getCandidates().size(), 2);
+      auto solution = bdm->blockchainData()->resolveTxHintCollision(collision);
+      auto header = bdm->blockchain()->getHeaderById(
+         Types::getBlockIDFromTxKey(solution.txKey));
+      EXPECT_EQ(header->getThisHash(), TestChain::blkHash5A);
+   }
+}
 
 TEST_F(BlockUtilsFull, TxHints)
 {
