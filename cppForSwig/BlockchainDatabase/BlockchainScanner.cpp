@@ -129,10 +129,11 @@ void ScannerContext::update(std::shared_ptr<Blockchain> bc)
 
 bool ScannerContext::isBlockIDValid(uint32_t blockID) const
 {
-   if (blockID <= headersById_.size()) {
+   if (blockID >= headersById_.size()) {
       return false;
    }
-   return headersById_[blockID]->isMainBranch();
+   const auto& header = headersById_[blockID];
+   return header != nullptr && header->isMainBranch();
 }
 
 ////////
@@ -748,7 +749,7 @@ void BlockchainScanner::processInputsThread(ParserBatch* batch)
                //multiple blocks carry this hash, grab the valid one
                txKey = UINT64_MAX;
                for (const auto& key : hashIter->second) {
-                  auto blockID = Types::getBlockIDFromScrAddrKey(key);
+                  auto blockID = Types::getBlockIDFromTxKey(key);
                   if (batch->context.isBlockIDValid(blockID)) {
                      txKey = key;
                      break;
