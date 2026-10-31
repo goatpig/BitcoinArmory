@@ -72,9 +72,12 @@ namespace Armory
    {
       namespace Notifications
       {
-         namespace Server
+         namespace Push
          {
-            class Notif;
+            class Payload;
+            struct Command_ConnectToIp;
+            struct Command_ConnectToPeer;
+            struct Command_RunAutomationContext;
          }
       }
       struct ServerPushWrapper;
@@ -119,8 +122,8 @@ namespace Armory
          //armorydb stuff
          std::shared_ptr<NetworkPeers::ClientStore> peersDb_;
          std::shared_ptr<Threading::BlockingQueue<
-            std::unique_ptr<Notifications::Server::Notif>>> dbNotifQueue_;
-         std::thread dbNotifThread_;
+            std::unique_ptr<Notifications::Push::Payload>>> notifQueue_;
+         std::thread notifThread_;
 
          //these objects are the core of the bridge
          std::shared_ptr<WalletManager> wltManager_;
@@ -141,7 +144,12 @@ namespace Armory
 
       private:
          void reset(void);
-         void runServerNotificationProcessingThread(void);
+         void runNotificationProcessingThread(void);
+         BinaryData createWalletsPacket(MessageId);
+         void connectToIp(const Notifications::Push::Command_ConnectToIp&);
+         void connectToPeer(const Notifications::Push::Command_ConnectToPeer&);
+         void runAutomationContext(
+            const Notifications::Push::Command_RunAutomationContext&);
 
       public:
          std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr(void) const;
@@ -157,7 +165,6 @@ namespace Armory
 
          //wallets
          const std::filesystem::path& getDataDir(void) const;
-         BinaryData createWalletsPacket(MessageId);
          bool unloadWallet(const Wallets::WalletId&);
          bool deleteWallet(const Wallets::WalletId&);
          BinaryData getAccountIds(const Wallets::WalletId&, MessageId) const;
