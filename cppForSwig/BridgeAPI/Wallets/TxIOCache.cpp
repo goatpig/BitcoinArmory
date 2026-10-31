@@ -218,27 +218,27 @@ const Tx& TxIOCache::getTxByHash(const Types::TxHash& txHash) const
 ////////
 uint32_t TxIOCache::update(
    std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr,
-   std::shared_ptr<Notifications::Server::Notif> notif)
+   std::shared_ptr<Notifications::Push::Payload> payload)
 {
-   using namespace Notifications::Server;
+   using namespace Notifications::Push;
 
-   if (notif->type == NotifType::ZC) {
-      auto zcPtr = std::dynamic_pointer_cast<Notif_ZC>(notif);
+   if (payload->type == PayloadType::ZC) {
+      auto zcPtr = std::dynamic_pointer_cast<Notif_ZC>(payload);
       updateZC(bdvPtr, zcPtr->txios, zcPtr->invalidatedZCHashes, true);
       return UINT32_MAX;
    }
 
    NewBlockNotif blockNotif{UINT32_MAX, UINT32_MAX, {}, {}};
-   if (notif->type == NotifType::NEWBLOCK) {
+   if (payload->type == PayloadType::NEWBLOCK) {
       auto blockPtr =
-         std::dynamic_pointer_cast<Notif_NewBlock>(notif);
+         std::dynamic_pointer_cast<Notif_NewBlock>(payload);
       blockNotif = blockPtr->blockNotif;
    }
    uint32_t fromHeight = 0;
    if (blockNotif.isReorg()) {
       fromHeight = blockNotif.getBranchHeight() + 1;
       updateBlockBranching(blockNotif);
-   } else if (notif->type != NotifType::REFRESH) {
+   } else if (payload->type != PayloadType::REFRESH) {
       fromHeight = lastKnownBlock_ + 1;
    }
 
@@ -252,7 +252,7 @@ uint32_t TxIOCache::update(
    });
    auto txios = futTxios.get();
 
-   auto fetchedHeight = notif->type == NotifType::REFRESH ?
+   auto fetchedHeight = payload->type == PayloadType::REFRESH ?
       UINT32_MAX : blockNotif.getHeight();
    auto missingStuff = addTxios(txios, fetchedHeight);
    auto missingTxKeys = std::move(missingStuff.first);

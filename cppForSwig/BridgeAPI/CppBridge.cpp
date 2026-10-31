@@ -540,33 +540,25 @@ CppBridge::CppBridge(std::shared_ptr<Network::PersistentSocket> sockPtr) :
    sockPtr_(sockPtr), path_(Config::getDataDir()),
    dbOffline_(Config::NetworkSettings::isOffline())
 {
-   dbNotifQueue_ = std::make_shared<NotifQueue>();
-   wltManager_ = std::make_shared<WalletManager>(path_, dbNotifQueue_);
-   runServerNotificationProcessingThread();
+   notifQueue_ = std::make_shared<NotifQueue>();
+   wltManager_ = std::make_shared<WalletManager>(path_, notifQueue_);
+   runNotificationProcessingThread();
 }
 
 CppBridge::~CppBridge()
 {
    //shutdown notif queue
-   dbNotifQueue_->terminate();
-   if (dbNotifThread_.joinable()) {
-      dbNotifThread_.join();
+   notifQueue_->terminate();
+   if (notifThread_.joinable()) {
+      notifThread_.join();
    }
-   cleanupDbConnection();
    wltManager_.reset();
 }
 
 void CppBridge::cleanupDbConnection()
 {
-   if (bdvPtr_) {
-      if (bdvPtr_->isValid()) {
-         bdvPtr_->unregisterFromDB();
-      }
-      wltManager_->cleanupBdvPtr();
-      bdvPtr_.reset();
-      auto message = Notifications::Client::getSerializedServerDisconnectedNotif();
-      writeToClient(message);
-   }
+   notifQueue_->push_back(
+      std::make_unique<Notifications::Push::Notif_Disconnected>());
 }
 
 std::shared_ptr<AsyncClient::BlockDataViewer> CppBridge::bdvPtr() const
@@ -619,10 +611,8 @@ void CppBridge::callbackWriter(ServerPushWrapper& wrapper)
 }
 
 ////////
-void CppBridge::runServerNotificationProcessingThread()
+void CppBridge::runNotificationProcessingThread()
 {
-   using namespace Notifications;
-
    /***
    The bridge feeds a RemoteCallback object to the WebSocketClient object
    that bdvPtr_ wraps around. On pushes from ArmoryDB, the wsclient passes
@@ -634,20 +624,35 @@ void CppBridge::runServerNotificationProcessingThread()
    isRegistered, push and disconnected notifs are handled here, the rest is
    passed to wltManager->updateStateFromDB
    ***/
+   using namespace Notifications;
+
    auto thr = [this]()
    {
+      auto cleanup = [this]()
+      {
+         if (bdvPtr_) {
+            if (bdvPtr_->isValid()) {
+               bdvPtr_->unregisterFromDB();
+            }
+            wltManager_->cleanupBdvPtr();
+            bdvPtr_.reset();
+            auto message = Serialization::getServerDisconnectedPacket();
+            writeToClient(message);
+         }
+      };
+
       while (true) {
-         std::unique_ptr<Server::Notif> notif;
+         std::unique_ptr<Push::Payload> payload;
          try {
-            notif = std::move(dbNotifQueue_->pop_front());
+            payload = std::move(notifQueue_->pop_front());
          } catch (const Threading::StopBlockingLoop&) {
-            //thread exit condition
-            return;
+            //notification loop exit condition
+            break;
          }
 
-         switch (notif->type)
+         switch (payload->type)
          {
-            case Server::NotifType::IS_REGISTERED:
+            case Push::PayloadType::IS_REGISTERED:
             {
                if (isDbRunning()) {
                   //if we automate the db, we have to tell it to
@@ -657,43 +662,70 @@ void CppBridge::runServerNotificationProcessingThread()
                break;
             }
 
-            case Server::NotifType::PUSH:
+            case Push::PayloadType::PASS_TO_CLIENT:
             {
-               auto pushPtr = dynamic_cast<Server::Notif_Push*>(
-                  notif.get());
+               auto pushPtr = dynamic_cast<Push::Command_PassAlong*>(
+                  payload.get());
                if (pushPtr == nullptr || pushPtr->packet.empty()) {
-                  throw std::runtime_error("empty packet in push notif!");
+                  throw std::runtime_error("invalid passAlong command");
                }
                writeToClient(pushPtr->packet);
                break;
             }
 
-            case Server::NotifType::DISCONNECTED:
+            case Push::PayloadType::DISCONNECTED:
             {
-               auto pushPtr = dynamic_cast<Server::Notif_Disconnected*>(
-                  notif.get());
-               if (pushPtr == nullptr) {
-                  throw std::runtime_error("empty packet in push notif!");
-               }
+               //cleanup bdv
+               cleanup();
+               break;
+            }
 
-               //cleanup bdv in another thread
-               std::thread cleanupThr([this](){ cleanupDbConnection(); });
-               if (cleanupThr.joinable()) {
-                  cleanupThr.detach();
+            case Push::PayloadType::CONNECT_TO_IP:
+            {
+               auto command = dynamic_cast<Push::Command_ConnectToIp*>(
+                  payload.get());
+               if (command == nullptr) {
+                  throw std::runtime_error("invalid connectToIp command");
                }
+               connectToIp(*command);
+               break;
+            }
+
+            case Push::PayloadType::CONNECT_TO_PEER:
+            {
+               auto command = dynamic_cast<Push::Command_ConnectToPeer*>(
+                  payload.get());
+               if (command == nullptr) {
+                  throw std::runtime_error("invalid connectToPeer command");
+               }
+               connectToPeer(*command);
+               break;
+            }
+
+            case Push::PayloadType::RUN_AUTOMATION_CONTEXT:
+            {
+               auto command = dynamic_cast<Push::Command_RunAutomationContext*>(
+                  payload.get());
+               if (command == nullptr) {
+                  throw std::runtime_error("invalid runAutomationContext command");
+               }
+               runAutomationContext(*command);
                break;
             }
 
             default:
-               wltManager_->updateStateFromDB(std::move(notif));
+               wltManager_->updateStateFromDB(std::move(payload));
          }
       }
+
+      //cleanup once the notification loop has exited
+      cleanup();
    };
 
-   if (dbNotifThread_.joinable()) {
-      throw std::runtime_error("already running a db notif processing thread");
+   if (notifThread_.joinable()) {
+      throw std::runtime_error("already running a notif processing thread");
    }
-   dbNotifThread_ = std::thread(thr);
+   notifThread_ = std::thread(thr);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1473,6 +1505,14 @@ void CppBridge::setPeerLabel(
 void CppBridge::connectToIp(const std::string& ip, Network::port_t port,
    const CallbackId& callbackId, MessageId refId)
 {
+   notifQueue_->push_back(
+      std::make_unique<Notifications::Push::Command_ConnectToIp>(
+         ip, port, callbackId, refId));
+}
+
+void CppBridge::connectToIp(
+   const Notifications::Push::Command_ConnectToIp& command)
+{
    /*
    * Should call this method from a dedicated thread
    * Connect to db by port + ip. Expect db to present it's public key, which
@@ -1484,7 +1524,7 @@ void CppBridge::connectToIp(const std::string& ip, Network::port_t port,
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<FromBridge>();
    auto reply = fromBridge.initReply();
-   reply.setReferenceId(refId);
+   reply.setReferenceId(command.msgId);
 
    if (dbOffline_) {
       LOGWARN << "attempt to connect to DB in offline mode, ignoring";
@@ -1504,7 +1544,7 @@ void CppBridge::connectToIp(const std::string& ip, Network::port_t port,
       return;
    }
 
-   auto presentServerKeyCallback = [callbackId, this]
+   auto presentServerKeyCallback = [callbackId=command.callbackId, this]
    (const BinaryData& key)->bool
    {
       auto counterBd = fortuna.generateRandom(4);
@@ -1544,8 +1584,8 @@ void CppBridge::connectToIp(const std::string& ip, Network::port_t port,
    try {
       bdvPtr_ = setupClientConnection(
          std::make_shared<NetworkPeers::ClientStore>(),
-         ip, port, true, presentServerKeyCallback,
-         std::make_shared<Notifications::Server::NotifHandler>(dbNotifQueue_));
+         command.ip, command.port, true, presentServerKeyCallback,
+         std::make_shared<Notifications::Push::NotifHandler>(notifQueue_));
       if (bdvPtr_ == nullptr) {
          throw std::runtime_error("connectToIP failed");
       }
@@ -1558,7 +1598,7 @@ void CppBridge::connectToIp(const std::string& ip, Network::port_t port,
       reply.setError(e.what());
 
       //on failed connect attempt, also push a disconnected notif
-      auto message = Notifications::Client::getSerializedServerDisconnectedNotif();
+      auto message = Notifications::Serialization::getServerDisconnectedPacket();
       this->writeToClient(message);
    }
 
@@ -1566,7 +1606,16 @@ void CppBridge::connectToIp(const std::string& ip, Network::port_t port,
    this->writeToClient(response);
 }
 
+////////
 void CppBridge::connectToPeer(const std::string& peerKey, MessageId refId)
+{
+   notifQueue_->push_back(
+      std::make_unique<Notifications::Push::Command_ConnectToPeer>(
+         peerKey, refId));
+}
+
+void CppBridge::connectToPeer(
+   const Notifications::Push::Command_ConnectToPeer& command)
 {
    /*
    * Should call this method from a dedicated thread
@@ -1581,7 +1630,7 @@ void CppBridge::connectToPeer(const std::string& peerKey, MessageId refId)
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<FromBridge>();
    auto reply = fromBridge.initReply();
-   reply.setReferenceId(refId);
+   reply.setReferenceId(command.msgId);
 
    if (dbOffline_) {
       LOGWARN << "attempt to connect to DB in offline mode, ignoring";
@@ -1607,11 +1656,11 @@ void CppBridge::connectToPeer(const std::string& peerKey, MessageId refId)
          throw std::runtime_error(
             "have to load peers db before attemping connection to a peer");
       }
-      auto peerObj = NetworkPeers::PeerKey::fromHumanReadable(peerKey);
+      auto peerObj = NetworkPeers::PeerKey::fromHumanReadable(command.peerKey);
       auto peers = peersDb_->getNarrowSet(peerObj);
 
       bdvPtr_ = setupClientConnection(peers, peerObj,
-         std::make_shared<Notifications::Server::NotifHandler>(dbNotifQueue_));
+         std::make_shared<Notifications::Push::NotifHandler>(notifQueue_));
       if (bdvPtr_ == nullptr) {
          throw std::runtime_error("connecToPeer failed");
       }
@@ -1625,7 +1674,7 @@ void CppBridge::connectToPeer(const std::string& peerKey, MessageId refId)
          "failed connect to peer with error: {}", e.what()));
 
       //on failed connect attempt, also push a disconnected notif
-      auto message = Notifications::Client::getSerializedServerDisconnectedNotif();
+      auto message = Notifications::Serialization::getServerDisconnectedPacket();
       this->writeToClient(message);
    }
 
@@ -1653,81 +1702,81 @@ void CppBridge::setAutomationContext(std::unique_ptr<AutomationContext> ctxPtr)
 
 void CppBridge::runAutomationContext(CallbackId cbId, MessageId refId)
 {
-   auto threadBody = [this, cbId, refId]()
-   {
-      LOGINFO << "running automation context";
+   notifQueue_->push_back(
+      std::make_unique<Notifications::Push::Command_RunAutomationContext>(
+         cbId, refId));
+}
 
-      capnp::MallocMessageBuilder message;
-      auto fromBridge = message.initRoot<FromBridge>();
-      auto reply = fromBridge.initReply();
-      reply.setReferenceId(refId);
+void CppBridge::runAutomationContext(
+   const Notifications::Push::Command_RunAutomationContext& command)
+{
+   LOGINFO << "running automation context";
 
-      //sanity checks
-      if (dbOffline_) {
-         reply.setError("cannot automate db in offline mode");
-         reply.setSuccess(false);
-         auto response = serializeCapnp(message);
-         this->writeToClient(response);
-         return;
-      }
+   capnp::MallocMessageBuilder message;
+   auto fromBridge = message.initRoot<FromBridge>();
+   auto reply = fromBridge.initReply();
+   reply.setReferenceId(command.msgId);
 
-      if (automationContext_ == nullptr) {
-         reply.setError("missing automation context");
-         reply.setSuccess(false);
-         auto response = serializeCapnp(message);
-         this->writeToClient(response);
-         return;
-      }
-
-      if (bdvPtr_ != nullptr) {
-         reply.setError("already connected to db!");
-         reply.setSuccess(false);
-         auto response = serializeCapnp(message);
-         this->writeToClient(response);
-         return;
-      }
-
-      //run the context
-      auto notifyFunc = getAutomationNotifFunc(this, cbId);
-      try {
-         if (!automationContext_->run(notifyFunc)) {
-            //no automation, return
-            reply.setSuccess(true);
-            auto response = serializeCapnp(message);
-            this->writeToClient(response);
-            return;
-         }
-
-         //connect to db
-         notifyFunc(AutomationStep::ConnectToDb);
-         auto peers = automationContext_->getPeerStore();
-         bdvPtr_ = setupClientConnection(peers,
-            "127.0.0.1", automationContext_->getDbPort(),
-            false, nullptr,
-            std::make_shared<Notifications::Server::NotifHandler>(dbNotifQueue_));
-         if (bdvPtr_ == nullptr) {
-            throw std::runtime_error("automatedDb connection failed");
-         }
-         wltManager_->setBdvPtr(bdvPtr_);
-
-         //reply to caller
-         notifyFunc(AutomationStep::Done);
-         reply.setSuccess(true);
-      } catch (const std::exception& e) {
-         LOGWARN << "automation context failure: " << e.what();
-         reply.setSuccess(false);
-         reply.setError(e.what());
-      }
-
-      notifyFunc(AutomationStep::Cleanup);
+   //sanity checks
+   if (dbOffline_) {
+      reply.setError("cannot automate db in offline mode");
+      reply.setSuccess(false);
       auto response = serializeCapnp(message);
       this->writeToClient(response);
-   };
-
-   std::thread thr{threadBody};
-   if (thr.joinable()) {
-      thr.detach();
+      return;
    }
+
+   if (automationContext_ == nullptr) {
+      reply.setError("missing automation context");
+      reply.setSuccess(false);
+      auto response = serializeCapnp(message);
+      this->writeToClient(response);
+      return;
+   }
+
+   if (bdvPtr_ != nullptr) {
+      reply.setError("already connected to db!");
+      reply.setSuccess(false);
+      auto response = serializeCapnp(message);
+      this->writeToClient(response);
+      return;
+   }
+
+   //run the context
+   auto notifyFunc = getAutomationNotifFunc(this, command.callbackId);
+   try {
+      if (!automationContext_->run(notifyFunc)) {
+         //no automation, return
+         reply.setSuccess(true);
+         auto response = serializeCapnp(message);
+         this->writeToClient(response);
+         return;
+      }
+
+      //connect to db
+      notifyFunc(AutomationStep::ConnectToDb);
+      auto peers = automationContext_->getPeerStore();
+      bdvPtr_ = setupClientConnection(peers,
+         "127.0.0.1", automationContext_->getDbPort(),
+         false, nullptr,
+         std::make_shared<Notifications::Push::NotifHandler>(notifQueue_));
+      if (bdvPtr_ == nullptr) {
+         throw std::runtime_error("automatedDb connection failed");
+      }
+      wltManager_->setBdvPtr(bdvPtr_);
+
+      //reply to caller
+      notifyFunc(AutomationStep::Done);
+      reply.setSuccess(true);
+   } catch (const std::exception& e) {
+      LOGWARN << "automation context failure: " << e.what();
+      reply.setSuccess(false);
+      reply.setError(e.what());
+   }
+
+   notifyFunc(AutomationStep::Cleanup);
+   auto response = serializeCapnp(message);
+   this->writeToClient(response);
 }
 
 void CppBridge::cleanupAutomationContext(CallbackId cbId, MessageId refId)
