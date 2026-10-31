@@ -58,7 +58,7 @@ extern const std::vector<DB_SELECT> FULLNODEHASHTABLES{
 extern const std::vector<DB_SELECT> BARENODEDBS{
    DB_SELECT::SCRADDR,
    DB_SELECT::TXOUTS, DB_SELECT::TXINS,
-   DB_SELECT::KNOWNHASHES, DB_SELECT::TXHINTS,
+   DB_SELECT::KNOWNHASHES,
    DB_SELECT::ZERO_CONF
 };
 
@@ -587,14 +587,10 @@ void LMDBBlockDatabase::resetHistoryDatabases()
    if (Config::DBSettings::getDbType() != ARMORY_DB_TYPE::Super) {
       auto dbTxouts = getDbPtr(DB_SELECT::TXOUTS);
       auto dbTxins = getDbPtr(DB_SELECT::TXINS);
-      auto dbHints = getDbPtr(DB_SELECT::TXHINTS);
-      auto dbHashes = getDbPtr(DB_SELECT::KNOWNHASHES);
       closeDatabases();
 
       dbTxouts->eraseOnDisk();
       dbTxins->eraseOnDisk();
-      dbHints->eraseOnDisk();
-      dbHashes->eraseOnDisk();
    }
    openDatabases();
 }
@@ -629,7 +625,7 @@ Types::TxKey LMDBBlockDatabase::getDBKeyForHash(
 {
    if (txHash.getSize() != 32) {
       LOGWARN << "invalid tx hash size:" << txHash.getSize();
-      return {};
+      return Types::INVALID_TX_KEY;
    }
 
    auto dbType = Config::DBSettings::getDbType();
@@ -649,7 +645,7 @@ Types::TxKey LMDBBlockDatabase::getDBKeyForHash(
       }
    }
 
-   //time to check tx hashes
+   //time to check tx hints
    auto hashTableIndex = txHash.getPtr()[8];
    auto tx = beginHashTableTx(DB_SELECT::TXHINTS,
       hashTableIndex, LMDB::Mode::ReadOnly);
@@ -691,12 +687,11 @@ Types::TxKey LMDBBlockDatabase::getDBKeyForHash(
    if (result.empty()) {
       return Types::INVALID_TX_KEY;
    } else if (result.size() == 1) {
-      //TODO: migrate to uint64_t txkeys
       return *result.begin();
    } else {
-      //NOTE: db wrapper shouldnt have to pick the correct key,
+      //db wrapper shouldnt have to pick the correct key,
       //caller should deal with it
-      throw std::runtime_error("implement me");
+      throw TxHintCollision(txHash, result);
    }
 }
 
@@ -796,28 +791,6 @@ void LMDBBlockDatabase::putStoredZC(StoredTx& stx, const Types::TxKey& zcKey)
          zcKey, stxoPair.second.txOutIndex);
       putStoredZcTxOut(stxoPair.second, zcStxoKey);
    }
-}
-
-////////
-bool LMDBBlockDatabase::getStoredHeader(
-   StoredHeader& sbh, std::shared_ptr<BlockHeader> bh, bool withTx) const
-{
-   try {
-      //open block file
-      auto path = FileUtils::getBlkFilename(
-         Config::Pathing::blkFilePath(), bh->getBlockFileId());
-      auto fileMap = FileUtils::FileMap(path, false);
-      BinaryRefReader brr(fileMap.ptr() + bh->getOffset(), bh->getBlockSize());
-
-      if (withTx) {
-         sbh.unserializeFullBlock(brr, false, false);
-      } else {
-         sbh.unserializeSimple(brr);
-      }
-   } catch (...) {
-      return false;
-   }
-   return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

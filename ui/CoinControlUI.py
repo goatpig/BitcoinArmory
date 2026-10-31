@@ -111,9 +111,9 @@ class CoinControlDlg(ArmoryDialog):
       super(CoinControlDlg, self).closeEvent(event)
 
    #############################################################################
-   def accept(self, *args):
+   def accept(self):
       self.saveGeometrySettings()
-      super(CoinControlDlg, self).accept(*args)
+      super(CoinControlDlg, self).accept()
 
    #############################################################################
    def resetTreeData(self):
@@ -121,9 +121,9 @@ class CoinControlDlg(ArmoryDialog):
       self.ccTreeModel.reset()
 
    #############################################################################
-   def reject(self, *args):
+   def reject(self):
       self.saveGeometrySettings()
-      super(CoinControlDlg, self).reject(*args)
+      super(CoinControlDlg, self).reject()
 
    #############################################################################
    def saveGeometrySettings(self):

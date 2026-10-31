@@ -90,10 +90,12 @@ namespace Armory
 
          void resetCache(void);
          void setBdvPtr(std::shared_ptr<AsyncClient::BlockDataViewer>);
-         void cleanupBDV(void);
+         void cleanupBdvPtr(void);
          void setWalletPtr(std::shared_ptr<Wallets::AssetWallet>,
             const Wallets::AddressAccountId&);
          void eraseFromDisk(void);
+         void resolveTxios(uint32_t);
+         void resolveZcTxios(void);
 
       public:
          void registerWithBDV(bool isNew);
@@ -115,8 +117,6 @@ namespace Armory
 
          std::vector<AddressBookEntry> getAddressBook(void) const;
          const std::map<Types::TxIOKey, TxIOPair> getTxioMap(void) const;
-         void resolveTxios(uint32_t);
-         void resolveZcTxios(void);
          std::vector<UTXO> getUTXOs(Types::Amount, bool, bool);
 
          Types::Amount getFullBalance(void) const;

@@ -357,7 +357,8 @@ void BtcUtils::TxInCalcLength(const uint8_t* ptr, size_t size,
 {
    BinaryRefReader brr(ptr, size);
    if (brr.getSizeRemaining() < 4) {
-      throw BtcUtils::BlockDeserializingException();
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "txin data is too small: {}", brr.getSizeRemaining()));
    }
 
    // Tx Version
@@ -380,7 +381,8 @@ void BtcUtils::TxInCalcLength(const uint8_t* ptr, size_t size,
 size_t BtcUtils::TxInCalcLength(const uint8_t* ptr, size_t size)
 {
    if (size < 37) {
-      throw BtcUtils::BlockDeserializingException();
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "not enough txin data: {}", size));
    }
    uint8_t viLen;
    size_t scrLen = (size_t)readVarInt(ptr+36, size-36, viLen);
@@ -390,7 +392,8 @@ size_t BtcUtils::TxInCalcLength(const uint8_t* ptr, size_t size)
 size_t BtcUtils::TxOutCalcLength(const uint8_t* ptr, size_t size)
 {
    if (size < 9) {
-      throw BtcUtils::BlockDeserializingException();
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "not enough txout data: {}", size));
    }
 
    uint8_t viLen;
@@ -401,7 +404,8 @@ size_t BtcUtils::TxOutCalcLength(const uint8_t* ptr, size_t size)
 size_t BtcUtils::TxWitnessCalcLength(const uint8_t* ptr, size_t size)
 {
    if (size < 1) {
-      throw BtcUtils::BlockDeserializingException();
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "not enough witness data: {}", size));
    }
 
    size_t witLen = 0;
@@ -410,13 +414,15 @@ size_t BtcUtils::TxWitnessCalcLength(const uint8_t* ptr, size_t size)
    witLen += viStackLen;
    for (size_t i = 0; i < stackLen; i++) {
       if (witLen >= size) {
-         throw BtcUtils::BlockDeserializingException();
+         throw BtcUtils::BlockDeserializingException(std::format(
+            "witness data overflow: expected {} vs actual {}", witLen, size));
       }
       uint8_t viLen;
       witLen += readVarInt(ptr + witLen, size - witLen, viLen);
       witLen += viLen;
       if (witLen > size) {
-         throw BtcUtils::BlockDeserializingException();
+         throw BtcUtils::BlockDeserializingException(std::format(
+            "witness data overflow: expected {} vs actual {}", witLen, size));
       }
    }
    return witLen;
@@ -435,11 +441,18 @@ size_t BtcUtils::TxCalcLength(const uint8_t* ptr, size_t size,
    BinaryRefReader brr(ptr, size);
 
    if (brr.getSizeRemaining() < 4) {
-      throw BtcUtils::BlockDeserializingException();
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "tx data is too small: {}", brr.getSizeRemaining()));
    }
 
    // Tx Version;
    brr.advance(4);
+
+   // checkSwMarker reads 2 bytes
+   if (brr.getSizeRemaining() < 2) {
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "tx data is too small: {}", size));
+   }
 
    // Get marker and flag if transaction uses segwit
    auto usesWitness = checkSwMarker(brr.getCurrPtr());
@@ -449,6 +462,12 @@ size_t BtcUtils::TxCalcLength(const uint8_t* ptr, size_t size,
 
    // TxIn List
    size_t nIn = brr.get_var_int();
+   // each txin takes at least 1 byte, a larger count can't be valid
+   // (and nIn+1 would wrap or blow up the resize below)
+   if (nIn > brr.getSizeRemaining()) {
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "txin count too large: {}", nIn));
+   }
    if (offsetsIn != nullptr) {
       offsetsIn->resize(nIn+1);
       for (size_t i = 0; i < nIn; i++) {
@@ -471,6 +490,10 @@ size_t BtcUtils::TxCalcLength(const uint8_t* ptr, size_t size,
 
    // Now extract the TxOut list
    size_t nOut = brr.get_var_int();
+   if (nOut > brr.getSizeRemaining()) {
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "txout count too large: {}", nOut));
+   }
    if (offsetsOut != nullptr) {
       offsetsOut->resize(nOut+1);
       for (size_t i = 0; i<nOut; i++) {
@@ -532,6 +555,12 @@ size_t BtcUtils::StoredTxCalcLength(const uint8_t* ptr,
    // Tx Version;
    brr.advance(4);
 
+   // checkSwMarker reads 2 bytes
+   if (brr.getSizeRemaining() < 2) {
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "tx data is too small: {}", len));
+   }
+
    // Get marker and flag if transaction uses segwit
    auto usesWitness = checkSwMarker(brr.getCurrPtr());
    if (usesWitness) {
@@ -540,6 +569,10 @@ size_t BtcUtils::StoredTxCalcLength(const uint8_t* ptr,
 
    // TxIn List
    size_t nIn = brr.get_var_int();
+   if (nIn > brr.getSizeRemaining()) {
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "txin count too large: {}", nIn));
+   }
    if (offsetsIn != nullptr) {
       offsetsIn->resize(nIn+1);
       for (size_t i = 0; i < nIn; i++) {
@@ -563,11 +596,19 @@ size_t BtcUtils::StoredTxCalcLength(const uint8_t* ptr,
    // Now extract the TxOut list
    size_t nOut = brr.get_var_int();
    if (fragged) {
-      offsetsOut->resize(nOut+1);
-      for (size_t i = 0; i < nOut + 1; i++) {
-         (*offsetsOut)[i] = brr.getPosition();
+      if (offsetsOut != nullptr) {
+         offsetsOut->resize(nOut+1);
+         for (size_t i = 0; i < nOut + 1; i++) {
+            (*offsetsOut)[i] = brr.getPosition();
+         }
       }
    } else {
+      // fragged txouts aren't in the buffer, unfragged ones are
+      if (nOut > brr.getSizeRemaining()) {
+         throw BtcUtils::BlockDeserializingException(std::format(
+            "txout count too large: {}", nOut));
+      }
+
       // Now extract the TxOut list
       if (offsetsOut != nullptr) {
          offsetsOut->resize(nOut+1);
@@ -1435,7 +1476,7 @@ std::string BtcUtils::base64_decode(const std::string& in)
    size_t count = (in.size() + 3) / 4;
    std::string result;
    result.resize(count * 3);
-   auto ptr = in.c_str();
+   const char* ptr = in.c_str();
    auto result_ptr = (uint8_t*)result.c_str();
 
    unsigned y=0;
@@ -1451,13 +1492,14 @@ std::string BtcUtils::base64_decode(const std::string& in)
             ++i;
          }
 
-         auto val8 = ptr[y];
+         const char val8 = ptr[y];
          auto iter = base64Vals.find(val8);
          if (iter == base64Vals.end()) {
-            if (val8 == '=' || val8 == '\n') {
+            if (val8 == '=' || val8 == '\n' || val8 == 13) {
                break;
             }
-            throw std::runtime_error("invalid b64 character");
+            throw std::runtime_error(std::format(
+               "invalid b64 character: {}", (unsigned)val8));
          }
 
          uint32_t bits = iter->second << (26 - (6 * (y % 4)));

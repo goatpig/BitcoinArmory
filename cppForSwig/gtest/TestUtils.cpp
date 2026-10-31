@@ -1,6 +1,5 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//                                                                            //
 //  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
@@ -15,6 +14,7 @@
 #include <Ledgers/LedgerEntry.h>
 #include <BDM_mainthread.h>
 #include <BlockchainDatabase/BlockchainData.h>
+#include <BlockchainDatabase/BlockDataMap.h>
 #include <ZeroConf/Parser.h>
 #include <ZeroConf/Utils.h>
 
@@ -94,6 +94,13 @@ namespace {
 ////////////////////////////////////////////////////////////////////////////////
 namespace TestUtils
 {
+   uint32_t getTopBlockHeightInDB(BlockDataManager* bdm, DB_SELECT db)
+   {
+      auto sdbi = bdm->getIFace()->getStoredDBInfo(db, 0xFFFF);
+      auto header = bdm->blockchain()->getHeaderByHash(sdbi.topScannedBlkHash);
+      return header->getBlockHeight();
+   }
+
    /////////////////////////////////////////////////////////////////////////////
    bool searchFile(const std::filesystem::path& filename, BinaryData& data)
    {
@@ -124,36 +131,6 @@ namespace TestUtils
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   uint32_t getTopBlockHeightInDB(BlockDataManager* bdm, DB_SELECT db)
-   {
-      auto sdbi = bdm->getIFace()->getStoredDBInfo(db, 0xFFFF);
-      auto header = bdm->blockchain()->getHeaderByHash(sdbi.topScannedBlkHash);
-      return header->getBlockHeight();
-   }
-
-   /////////////////////////////////////////////////////////////////////////////
-   int char2int(char input)
-   {
-      if (input >= '0' && input <= '9')
-         return input - '0';
-      if (input >= 'A' && input <= 'F')
-         return input - 'A' + 10;
-      if (input >= 'a' && input <= 'f')
-         return input - 'a' + 10;
-      return 0;
-   }
-
-   /////////////////////////////////////////////////////////////////////////////
-   void hex2bin(const char* src, unsigned char* target)
-   {
-      while (*src && src[1])
-      {
-         *(target++) = char2int(*src) * 16 + char2int(src[1]);
-         src += 2;
-      }
-   }
-
-   /////////////////////////////////////////////////////////////////////////////
    void concatFile(const std::vector<std::filesystem::path> &from,
       const std::filesystem::path &to)
    {
@@ -168,7 +145,6 @@ namespace TestUtils
       o.close();
    }
 
-   /////////////////////////////////////////////////////////////////////////////
    void appendBlocks(const std::vector<std::string> &files,
       const std::filesystem::path &to)
    {
@@ -180,7 +156,6 @@ namespace TestUtils
       concatFile(fullFileNames, to);
    }
 
-   /////////////////////////////////////////////////////////////////////////////
    void setBlocks(const std::vector<std::string> &files,
       const std::filesystem::path &to)
    {
@@ -193,6 +168,74 @@ namespace TestUtils
          fullFileNames.emplace_back(dataDir / filename);
       }
       concatFile(fullFileNames, to);
+   }
+
+   uint64_t xorTheBlockFolder(
+      const std::filesystem::path blkDir, uint64_t xorKey)
+   {
+      /* expects a block folder with no xor key */
+      if (xorKey == UINT64_MAX) {
+         //generate a xor key if one isn't provided
+         auto rando = Cryptography::PRNG::fortuna.generateRandom(8);
+         memcpy(&xorKey, rando.getPtr(), 8);
+      }
+
+      //creates xored copy of the block file
+      auto xorTheFile = [blkDir, xorKey]
+      (const std::filesystem::path& blkFile)->std::filesystem::path
+      {
+         auto fileMap = FileUtils::FileMap(blkFile, false);
+         if (!fileMap.isValid()) {
+            throw std::runtime_error("blk file mmap is invalid");
+         }
+         //padded to the next multiple of 8 so the last 8-byte store stays
+         //within size(), only fileMap.size() bytes are written out
+         std::vector<char> xoredData((fileMap.size() + 7) & ~7);
+
+         size_t offset = 0;
+         uint64_t chunk;
+         while (offset < fileMap.size()) {
+            std::memcpy(&chunk, fileMap.ptr() + offset,
+               std::min(size_t{8}, fileMap.size() - offset));
+            chunk ^= xorKey;
+            std::memcpy(&xoredData[offset], &chunk, 8);
+            offset += 8;
+         }
+
+         std::filesystem::path xoredFilename{
+            blkDir / "blocks" /
+            std::format("xored_{}",
+               Cryptography::PRNG::fortuna.generateRandom(4).toHexStr()
+            )};
+         std::fstream xoredFile{
+            xoredFilename, std::ios::out | std::ios::binary};
+         xoredFile.write(&xoredData[0], fileMap.size());
+         return xoredFilename;
+      };
+
+      //iterate over block files
+      BlockFiles blkFiles{blkDir / "blocks"};
+      blkFiles.detectAllBlockFiles();
+
+      for (unsigned i = blkFiles.getFirstID();
+         i < blkFiles.getFirstID() + blkFiles.fileCount(); i++) {
+         //xor the file
+         auto blkFileStat = blkFiles.getFileStatForID(i);
+         auto xoredFile = xorTheFile(blkFileStat.path);
+
+         //replace the original
+         std::filesystem::remove(blkFileStat.path);
+         std::filesystem::rename(xoredFile, blkFileStat.path);
+      }
+
+      //create xor file, this is where the xor key sits
+      {
+         std::fstream xorFile;
+         xorFile.open(blkDir / "blocks" / "xor.dat",
+            std::ios::out | std::ios::binary);
+         xorFile.write((const char*)&xorKey, 8);
+      }
+      return xorKey;
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -232,7 +275,6 @@ namespace TestUtils
       return outerAcc->getAssetForKey(index);
    }
 
-   ////////////////////////////////////////////////////////////////////////////////
    size_t getMainAccountAssetCount(std::shared_ptr<AssetWallet> wlt)
    {
       auto mainAcc = wlt->getAccountForID(wlt->getMainAccountID());
@@ -276,7 +318,7 @@ namespace DBTestUtils
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   const std::shared_ptr<BDV_Server_Object> getBDV(
+   const std::shared_ptr<BdvClient> getBDV(
       Clients* clients, Types::BdvId id)
    {
       return clients->get(id);
@@ -535,7 +577,7 @@ namespace DBTestUtils
    {
       while (true) {
          try {
-            auto notif = bdm->notificationStack.pop_front();
+            auto notif = bdm->notificationQueue->pop_front();
             if (notif == nullptr) {
                continue;
             } else if (notif->actionType() == action) {
@@ -550,7 +592,8 @@ namespace DBTestUtils
    /////////////////////////////////////////////////////////////////////////////
    void waitOnBDVReady(Clients* clients, Types::BdvId bdvId)
    {
-      waitOnSignal(clients, bdvId, (int)Codec::BDV::Notification::READY);
+      waitOnSignal(clients, bdvId,
+         (int)Codec::BDV::Notification::CONNECTION_IS_READY);
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -762,7 +805,7 @@ namespace DBTestUtils
    {
       auto nodePtr = bdmt->bdm()->processNode;
       auto nodeUnitTest = (NodeUnitTest*)nodePtr.get();
-      nodeUnitTest->mineNewBlock(bdmt->bdm(), count, h160);
+      nodeUnitTest->mineNewBlock(count, h160);
    }
 
    /////////////////////////////////////////////////////////////////////////////
@@ -858,6 +901,40 @@ namespace DBTestUtils
       txobj.setChainedZC(capnTx.getIsChainedZc());
       txobj.setRBF(capnTx.getIsRbf());
       return txobj;
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   std::vector<Tx> getTxsByHash(Clients* clients, Types::BdvId bdvId,
+      const std::vector<Types::TxHash>& txHashes)
+   {
+      capnp::MallocMessageBuilder message;
+      auto payload = message.initRoot<Codec::BDV::Request>();
+
+      auto bdvRequest = payload.initBdv();
+      auto hashReq = bdvRequest.initGetTxsByHash(txHashes.size());
+      for (unsigned i = 0; i < txHashes.size(); i++) {
+         hashReq.set(i, capnp::Data::Builder(
+            (uint8_t*)txHashes[i].getPtr(), txHashes[i].getSize()));
+      }
+
+      auto result = processCommand(clients, bdvId, serializeCapnp(message));
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(result.getPtr()),
+         result.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto reply = reader.getRoot<Codec::BDV::Reply>();
+
+      //hashes the server doesn't resolve are left out of the reply
+      std::vector<Tx> txs;
+      for (auto capnTx : reply.getBdv().getGetTxsByHash()) {
+         auto capnRaw = capnTx.getRaw();
+         BinaryDataRef rawTx(capnRaw.begin(), capnRaw.end());
+
+         Tx txobj(rawTx);
+         txobj.setTxKey(capnTx.getKey());
+         txs.emplace_back(std::move(txobj));
+      }
+      return txs;
    }
 
    /////////////////////////////////////////////////////////////////////////////

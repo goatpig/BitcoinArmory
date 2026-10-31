@@ -49,10 +49,10 @@ std::shared_ptr<ScriptSpender> getSpenderPtr(
 class PRNGTest : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void)
+   void SetUp() override
    {}
 
-   virtual void TearDown(void)
+   void TearDown() override
    {}
 };
 
@@ -210,7 +210,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       LOGDISABLESTDOUT();
       ghash_ = READHEX(MAINNET_GENESIS_HASH_HEX);
@@ -248,7 +248,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
+   void TearDown() override
    {
       if (clients_ != nullptr) {
          clients_->shutdown();
@@ -293,7 +293,7 @@ TEST_F(SignerTest, DISABLED_CheckChain_Test)
    //this test fails because the p2sh tx in our unit test chain are botched
    //(the input script has opcode when it should only be push data)
 
-   BlockDataManager bdm(nullptr);
+   BlockDataManager bdm;
    try {
       bdm.doInitialSyncOnLoad(BdmInitMode::RESUME, nullptr);
    } catch (const std::exception&) {
@@ -7420,7 +7420,7 @@ class ExtrasTest : public ::testing::Test
 protected:
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       FileUtils::removeDirectory(homedir_);
       std::filesystem::create_directory(homedir_);
@@ -7438,7 +7438,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
+   void TearDown() override
    {
       FileUtils::removeDirectory(homedir_);
       Config::reset();
@@ -9033,6 +9033,62 @@ TEST_F(ExtrasTest, PSBT)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(ExtrasTest, SerializeState_SupportingTxs)
+{
+   //the 2 txs the inputs of the BIP174 test vector spend from
+   auto supportingTx1 = READHEX("0200000000010158e87a21b56daf0c23be8e7070456c336f7cbaa5c8757924f545887bb2abdd7501000000171600145f275f436b09a8cc9a2eb2a2f528485c68a56323feffffff02d8231f1b0100000017a914aed962d6654f9a2b36608eb9d64d2b260db4f1118700c2eb0b0000000017a914b7f5faf40e3d40a5a459b1db3535f2b72fa921e88702483045022100a22edcc6e5bc511af4cc4ae0de0fcd75c7e04d8c1c3a8aa9d820ed4b967384ec02200642963597b9b1bc22c75e9f3e117284a962188bf5e8a74c895089046a20ad770121035509a48eb623e10aace8bfd0212fdb8a8e5af3c94b0b133b95e114cab89e4f7965000000");
+   auto supportingTx2 = READHEX("0200000001aad73931018bd25f84ae400b68848be09db706eac2ac18298babee71ab656f8b0000000048473044022058f6fc7c6a33e1b31548d481c826c015bd30135aad42cd67790dab66d2ad243b02204a1ced2604c6735b6393e5b41691dd78b00f0c5942fb9f751856faa938157dba01feffffff0280f0fa020000000017a9140fb9463421696b82c833af241c78c17ddbde493487d0f20a270100000017a91429ca74f8a08f81999428185c97b5d852e4063f618765000000");
+   Tx tx1(supportingTx1);
+   Tx tx2(supportingTx2);
+
+   auto getUtxo = [](const Tx& tx, unsigned index)->UTXO
+   {
+      auto txOut = tx.getTxOutCopy(index);
+      return UTXO(txOut.getAmount(), UINT16_MAX, UINT16_MAX, index,
+         tx.getThisHash(), txOut.getScript());
+   };
+
+   //2 spenders, each from a different supporting tx
+   Signer signer;
+   signer.setVersion(2);
+   signer.addSpender(std::make_shared<ScriptSpender>(getUtxo(tx2, 0)));
+   signer.addSpender(std::make_shared<ScriptSpender>(getUtxo(tx1, 1)));
+   signer.addRecipient(std::make_shared<Recipient_P2WPKH>(
+      READHEX("d85c2b71d0060b09c9886aeb815e50991dda124d"), 149990000));
+   signer.addRecipient(std::make_shared<Recipient_P2WPKH>(
+      READHEX("00aea9a2e5f0f876a588df5546e8742d1d87008f"), 100000000));
+   signer.addSupportingTx(supportingTx1);
+   signer.addSupportingTx(supportingTx2);
+
+   auto checkSupportingTxs = [&](const Signer& theSigner)
+   {
+      EXPECT_EQ(theSigner.getTxInCount(), 2U);
+      EXPECT_EQ(theSigner.getSupportingTx(tx1.getThisHash()).serialize(),
+         supportingTx1);
+      EXPECT_EQ(theSigner.getSupportingTx(tx2.getThisHash()).serialize(),
+         supportingTx2);
+   };
+
+   //serializeState round trip
+   {
+      Signer signer2;
+      signer2.deserializeState(signer.serializeState());
+      checkSupportingTxs(signer2);
+      EXPECT_EQ(signer2.toPSBT(), signer.toPSBT());
+   }
+
+   //TxSigCollect round trip (default USTX format)
+   {
+      auto ustx = signer.toString(SignerStringFormat::TxSigCollect_Modern);
+      auto signer3 = Signer::fromString(ustx);
+      EXPECT_EQ(signer3.deserializedFromType(),
+         SignerStringFormat::TxSigCollect_Modern);
+      checkSupportingTxs(signer3);
+      EXPECT_EQ(signer3.toPSBT(), signer.toPSBT());
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(ExtrasTest, BitcoinMessage)
 {
    struct ResolverFeed_SignMessage : public ResolverFeed
@@ -9122,7 +9178,7 @@ class ExtrasTest_Mainnet : public ::testing::Test
 protected:
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       FileUtils::removeDirectory(homedir_);
       std::filesystem::create_directory(homedir_);
@@ -9139,7 +9195,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
+   void TearDown() override
    {
       FileUtils::removeDirectory(homedir_);
 

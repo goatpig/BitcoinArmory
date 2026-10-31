@@ -72,7 +72,10 @@ private:
       BinaryData diffBits_;
    };
 
-   std::shared_ptr<BlockDataManager> bdm_;
+   //bdm holds a reference to nodes, so mocked nodes shouldn't hold
+   //a shared_ptr to bdm
+   BlockDataManager* bdm_;
+
    std::map<Armory::Types::TxHash, std::shared_ptr<MempoolObject>> mempool_;
    std::map<Armory::Types::TxHash, std::map<Armory::Types::TxIOId, Armory::Types::TxHash>> spenderSet_;
    std::vector<UnitTestBlock> blocks_;
@@ -106,10 +109,8 @@ public:
    void watcherProcess(void);
 
    std::map<unsigned, BinaryData> mineNewBlock(
-      std::shared_ptr<BlockDataManager>,
       unsigned, const BinaryData&, double = 1.0);
    std::map<unsigned, BinaryData> mineNewBlock(
-      std::shared_ptr<BlockDataManager>,
       unsigned, Armory::Signing::ScriptRecipient*, double = 1.0);
 
    std::vector<UnitTestBlock> getMinedBlocks(void) const;
@@ -150,19 +151,24 @@ private:
    std::mutex zcStallMutex_;
 
 public:
+   std::shared_ptr<std::promise<void>> loopOnSync = nullptr;
+
+public:
    NodeRPC_UnitTest(
       std::shared_ptr<NodeUnitTest>,
       std::shared_ptr<NodeUnitTest>
    );
 
    //virtuals
-   bool shutdown(void) override;
+   bool requestNodeShutdown(void) override;
    Node::RpcState testConnection(void) override;
-   bool canPoll(void) const override;
-   void waitOnChainSync(std::function<void(void)>, bool);
+   void waitOnChainSync(std::function<void(void)>, bool) override;
    int broadcastTx(const BinaryDataRef&, std::string&) override;
-   Node::Core::RPC::FeeEstimateResult getFeeByte(
-      unsigned, const std::string&) const override;
+
+   const std::map<unsigned, Node::Core::RPC::FeeEstimate>& getFeeSchedule(
+      const std::string&) override;
+   Node::Core::RPC::FeeEstimate getFeeByte(
+      unsigned, const std::string&) override;
 
    //locals
    void stallNextZc(unsigned);

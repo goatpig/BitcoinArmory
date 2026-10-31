@@ -37,7 +37,13 @@ namespace Armory
 
    namespace Bridge
    {
-      struct NotifStruct;
+      namespace Notifications
+      {
+         namespace Server
+         {
+            struct Notif;
+         }
+      }
       using AddressFilter = std::function<bool(const Types::ScrAddr&)>;
 
       //////////////////////////////////////////////////////////////////////////
@@ -107,7 +113,7 @@ namespace Armory
 
          void purge(void);
          uint32_t update(std::shared_ptr<AsyncClient::BlockDataViewer>,
-            std::shared_ptr<NotifStruct>);
+            std::shared_ptr<Notifications::Server::Notif>);
          std::shared_ptr<const Ledgers::DBCache> getDBCache(void) const;
          CacheResolveResult resolve(const AddressFilter&, uint32_t) const;
          CacheResolveResult resolveZC(const AddressFilter&) const;
@@ -116,6 +122,10 @@ namespace Armory
          std::vector<UTXO> getUTXOs(uint64_t, bool, bool,
             const AddressFilter&) const;
          std::map<Types::TxIOKey, TxIOPair> getZcTxios(const AddressFilter&) const;
+         void addUnpooledTxs(const std::vector<BinaryData>&);
+         void fetchTxs(std::shared_ptr<AsyncClient::BlockDataViewer>,
+            const std::set<Types::TxHash>&);
+         const Tx& getTxByHash(const Types::TxHash&) const;
       };
    } //namespace Bridge
 } //namespace Armory

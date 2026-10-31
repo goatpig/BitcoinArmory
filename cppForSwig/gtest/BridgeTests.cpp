@@ -15,7 +15,10 @@
 #include <reorgTest/blkdata.h>
 #include <Utils/ArmoryConfig.h>
 #include <Utils/FileUtils.h>
+#include <Utils/BIP15x_Handshake.h>
 #include <Ledgers/LedgerEntry.h>
+#include <Ledgers/Context.h>
+#include <BlockchainDatabase/BlockchainData.h>
 
 #include <Wallets/Accounts/AddressAccounts.h>
 #include <Wallets/Accounts/AccountTypes.h>
@@ -27,10 +30,12 @@
 #include <BridgeAPI/CppBridge.h>
 #include <BridgeAPI/BridgeSocket.h>
 #include <BridgeAPI/ProtoCommandParser.h>
+#include <BridgeAPI/Notifications.h>
 #include <BridgeAPI/Wallets/Manager.h>
-#include <BridgeAPI/Wallets/Notifications.h>
 #include <BridgeAPI/Wallets/TxIOCache.h>
 #include <BridgeAPI/DBSetup.h>
+#include <Signer/Signer.h>
+#include <Signer/ScriptSpender.h>
 
 #include "BDM_mainthread.h"
 #include "Server.h"
@@ -45,14 +50,14 @@ using namespace Armory;
 using namespace std::chrono_literals;
 using namespace std::string_view_literals;
 
-using MsgPtr = std::unique_ptr<Armory::Bridge::WritePayload_Bridge>;
+using MsgPtr = std::unique_ptr<Bridge::WritePayload_Bridge>;
 
 ////////////////////////////////////////////////////////////////////////////////
 namespace {
    int CapnWalletState_Legacy = 1;
    int CapnWalletState_Encrypted = 2;
    int CapnWalletState_Ready = 3;
-   std::string legacyAccId = Armory::Wallets::AddressAccountId(
+   std::string legacyAccId = Wallets::AddressAccountId(
       ARMORY_LEGACY_ACCOUNTID).toHexStr();
 
    /////////////////////////////////////////////////////////////////////////////
@@ -192,7 +197,7 @@ namespace {
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   // bridge client side reply & notif handling
+   // bridge client side mocked comms layer
    struct NotifQueue
    {
       std::queue<BinaryData> queue;
@@ -239,6 +244,61 @@ namespace {
    {
       Bridge::ProtoCommandParser::processData(bridge, rawRequest);
    }
+
+   struct TestBridgeSocket : public Network::PersistentSocket
+   {
+      TestBridgeSocket() :
+         PersistentSocket("127.0.0.1", 50000, "test_bridge_socket")
+      {}
+
+      SocketType type() const override
+      {
+         return SocketType::CppBridge;
+      }
+
+      void pushPayload(
+         std::unique_ptr<Network::Socket_WritePayload> payload,
+         std::shared_ptr<Network::Socket_ReadPayload>) override
+      {
+         auto payloadPtr = dynamic_cast<Bridge::WritePayload_Bridge*>(payload.get());
+         if (payloadPtr == nullptr) {
+            throw std::runtime_error("could not read the push payload");
+         }
+         auto msgPtr = std::unique_ptr<Bridge::WritePayload_Bridge>(payloadPtr);
+         payload.release();
+
+         std::unique_lock<std::mutex> lock(commsMutex);
+         replyQueue.emplace_back(std::move(msgPtr));
+         commsCV.notify_all();
+      }
+   };
+
+   //a TestBridgeSocket that can be muted, to keep a bridge quiet once a
+   //second one takes over. muted is guarded by commsMutex, flip it with the
+   //reply queue lock held
+   struct MutableTestBridgeSocket : public TestBridgeSocket
+   {
+      bool muted = false;
+
+      void pushPayload(
+         std::unique_ptr<Network::Socket_WritePayload> payload,
+         std::shared_ptr<Network::Socket_ReadPayload>) override
+      {
+         auto payloadPtr = dynamic_cast<Bridge::WritePayload_Bridge*>(payload.get());
+         if (payloadPtr == nullptr) {
+            throw std::runtime_error("could not read the push payload");
+         }
+         auto msgPtr = std::unique_ptr<Bridge::WritePayload_Bridge>(payloadPtr);
+         payload.release();
+
+         std::unique_lock<std::mutex> lock(commsMutex);
+         if (muted) {
+            return;
+         }
+         replyQueue.emplace_back(std::move(msgPtr));
+         commsCV.notify_all();
+      }
+   };
 
    /////////////////////////////////////////////////////////////////////////////
    // wallet creation from manager
@@ -1637,8 +1697,9 @@ namespace {
          throw std::runtime_error("invalid count in final notif");
       }
 
-      //expect cleanup notif
-      {
+      //expect refresh and cleanup notif
+      unsigned cleanupNotifCount = refreshId.empty() ? 0 : 11;
+      while (cleanupNotifCount < 14) {
          auto rawPrompt = waitOnReply();
          kj::ArrayPtr<const capnp::word> words(
             reinterpret_cast<const capnp::word*>(rawPrompt->data.getPtr()),
@@ -1650,46 +1711,37 @@ namespace {
          }
 
          auto notif = fromBridge.getNotification();
-         if (notif.getCallbackId() != callbackId) {
-            throw std::runtime_error("unexpected callbackId");
-         }
-         if (notif.which() != Codec::Bridge::Notification::CLEANUP) {
-            throw std::runtime_error("expected cleanup notif");
-         }
-      }
-
-      //expect refresh notif
-      while (refreshId.empty()) {
-         auto rawPrompt = waitOnReply();
-         kj::ArrayPtr<const capnp::word> words(
-            reinterpret_cast<const capnp::word*>(rawPrompt->data.getPtr()),
-            rawPrompt->data.getSize() / sizeof(capnp::word));
-         capnp::FlatArrayMessageReader reader(words);
-         auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-         if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
-            throw std::runtime_error("expected notif");
-         }
-
-         auto notif = fromBridge.getNotification();
-         if (notif.getCallbackId() == "progress") {
+         std::string capnCbId = notif.getCallbackId();
+         if (capnCbId == "progress") {
             continue;
-         } else if (notif.getCallbackId() != "bdm_callback") {
-            throw std::runtime_error("expected bdm notif");
-         }
-         if (notif.which() != Codec::Bridge::Notification::REFRESH) {
-            throw std::runtime_error("expected refresh notif");
-         }
+         } else if (capnCbId != "bdm_callback") {
+            if (capnCbId != callbackId) {
+               throw std::runtime_error(std::format(
+                  "unexpected cleanup callbackId: {} vs {}",
+                  capnCbId, callbackId));
+            }
+            if (notif.which() != Codec::Bridge::Notification::CLEANUP) {
+               throw std::runtime_error("expected cleanup notif");
+            }
+            cleanupNotifCount += 3;
+         } else {
+            if (notif.which() != Codec::Bridge::Notification::REFRESH) {
+               throw std::runtime_error("expected refresh notif");
+            }
 
-         auto refreshIds = notif.getRefresh();
-         if (refreshIds.size() != 1) {
-            throw std::runtime_error("unexpected refreshId");
+            auto refreshIds = notif.getRefresh();
+            if (refreshIds.size() != 1) {
+               throw std::runtime_error("unexpected refreshId");
+            }
+            refreshId = refreshIds[0];
+            cleanupNotifCount += 11;
          }
-         refreshId = refreshIds[0];
-         break;
       }
 
       if (refreshId != dbId) {
          throw std::runtime_error("dbId mismatch");
+      } else if (cleanupNotifCount != 14) {
+         throw std::runtime_error("extendAddressPool cleanup notif count mismatch");
       }
 
       //lastly, grab updated wallet data
@@ -1781,8 +1833,10 @@ namespace {
    // connect to db stuff
    bool waitOnConnection(Bridge::MessageId refId)
    {
-      bool success = false;
-      while (true) {
+      bool notifSuccess = false;
+      bool replySuccess = false;
+      unsigned count = 0;
+      while (count != 13) {
          auto reply = waitOnReply();
          kj::ArrayPtr<const capnp::word> words(
             reinterpret_cast<const capnp::word*>(reply->data.getPtr()),
@@ -1793,14 +1847,15 @@ namespace {
          switch (fromBridge.which()) {
             case Codec::Bridge::FromBridge::NOTIFICATION:
             {
+               count += 2;
                auto notif = fromBridge.getNotification();
                switch (notif.which()) {
                   case Codec::Bridge::Notification::SETUP_DONE:
-                     success = true;
+                     notifSuccess = true;
                      break;
 
                   case Codec::Bridge::Notification::DISCONNECTED:
-                     success = false;
+                     notifSuccess = false;
                      break;
 
                   default:
@@ -1811,17 +1866,17 @@ namespace {
 
             case Codec::Bridge::FromBridge::REPLY:
             {
+               count += 11;
                auto repCapnp = fromBridge.getReply();
                if (repCapnp.getReferenceId() != refId) {
                   throw std::runtime_error("referenceId mismatch");
                }
                if (repCapnp.getSuccess() == false) {
-                  std::cout << std::string(repCapnp.getError()) << std::endl;
+                  std::cout << std::format("connection error: {}",
+                     std::string(repCapnp.getError())) << std::endl;
                }
-               if (repCapnp.getSuccess() != success) {
-                  throw std::runtime_error("connection state mismatch");
-               }
-               return success;
+               replySuccess = repCapnp.getSuccess();
+               break;
             }
 
             default:
@@ -1829,10 +1884,14 @@ namespace {
                break;
          }
       }
+      if (notifSuccess != replySuccess) {
+         throw std::runtime_error("connection state mismatch");
+      }
+      return replySuccess;
    }
 
    bool connectToIp(std::shared_ptr<Bridge::CppBridge> bridge,
-      const std::string& ip, const std::string& port,
+      const std::string& ip, Network::port_t port,
       const std::string& expectedPubkey)
    {
       uint64_t refId = rand();
@@ -3026,7 +3085,7 @@ namespace {
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
-      auto req = toBridge.initService();
+      auto req = toBridge.initWalletManager();
       auto txsReq = req.initGetTxsByHash(hashSet.size());
       unsigned i=0;
       for (const auto& hash : hashSet) {
@@ -3051,12 +3110,12 @@ namespace {
       if (!reply.getSuccess()) {
          return {};
       }
-      if (reply.which() != Codec::Bridge::RpcReply::SERVICE) {
+      if (reply.which() != Codec::Bridge::RpcReply::WALLET_MANAGER) {
          return {};
       }
 
-      auto serviceReply = reply.getService();
-      auto capnTxs = serviceReply.getGetTxsByHash();
+      auto managerReply = reply.getWalletManager();
+      auto capnTxs = managerReply.getGetTxsByHash();
       std::map<BinaryData, BinaryData> result;
       for (auto capnTx : capnTxs) {
          auto capnHash = capnTx.getHash();
@@ -3068,6 +3127,91 @@ namespace {
          result.emplace(hash, raw);
       }
       return result;
+   }
+
+   struct FetchedTx
+   {
+      BinaryData raw;
+      uint32_t height;
+      uint32_t txIndex;
+      uint32_t timestamp;
+
+      bool operator==(const FetchedTx&) const = default;
+   };
+
+   //keyed by the hash of the raw tx, computed here
+   std::map<BinaryData, FetchedTx> getTxDataByHash(
+      std::shared_ptr<Bridge::CppBridge> bridge,
+      const std::set<BinaryData>& hashSet, bool& success)
+   {
+      uint64_t refId = rand();
+      capnp::MallocMessageBuilder message;
+      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+      toBridge.setReferenceId(refId);
+      auto req = toBridge.initWalletManager();
+      auto txsReq = req.initGetTxsByHash(hashSet.size());
+      unsigned i=0;
+      for (const auto& hash : hashSet) {
+         txsReq.set(i++, capnp::Data::Builder(
+            (uint8_t*)hash.getPtr(), hash.getSize()));
+      }
+      auto rawReq = serializeCapnp(message);
+      pushRequest(bridge, rawReq);
+
+      auto resp = waitOnReply();
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(resp->data.getPtr()),
+         resp->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+
+      success = false;
+      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+      if (fromBridge.which() != Codec::Bridge::FromBridge::REPLY) {
+         return {};
+      }
+      auto reply = fromBridge.getReply();
+      if (reply.getReferenceId() != refId) {
+         return {};
+      }
+      success = reply.getSuccess();
+      if (!success || reply.which() != Codec::Bridge::RpcReply::WALLET_MANAGER) {
+         return {};
+      }
+
+      std::map<BinaryData, FetchedTx> result;
+      for (auto capnTx : reply.getWalletManager().getGetTxsByHash()) {
+         auto capnRaw = capnTx.getBody().getRaw();
+         BinaryData raw{capnRaw.begin(), capnRaw.size()};
+         result.emplace(Tx(raw).getThisHash(), FetchedTx{raw,
+            capnTx.getHeight(), capnTx.getTxIndex(), capnTx.getTimestamp()});
+      }
+      return result;
+   }
+
+   //FROM_TX_SIG_COLLECT, returns the reply's success flag
+   bool loadSignerString(std::shared_ptr<Bridge::CppBridge> bridge,
+      const std::string& signerId, const std::string& str)
+   {
+      uint64_t refId = rand();
+      capnp::MallocMessageBuilder message;
+      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+      toBridge.setReferenceId(refId);
+      auto req = toBridge.initSigner();
+      req.setId(signerId);
+      req.setFromTxSigCollect(str);
+      pushRequest(bridge, serializeCapnp(message));
+
+      auto resp = waitOnReply();
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(resp->data.getPtr()),
+         resp->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+      if (fromBridge.which() != Codec::Bridge::FromBridge::REPLY) {
+         return false;
+      }
+      auto reply = fromBridge.getReply();
+      return reply.getReferenceId() == refId && reply.getSuccess();
    }
 
    bool addSpenderByOutpoint(
@@ -3684,11 +3828,10 @@ namespace {
 
 ////////////////////////////////////////////////////////////////////////////////
 // WalletManagerTests
-////////////////////////////////////////////////////////////////////////////////
 class WalletManagerTests : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void)
+   void SetUp() override
    {
       homedir_ = std::filesystem::path("./fakehomedir");
       FileUtils::removeDirectory(homedir_);
@@ -3700,7 +3843,7 @@ protected:
          Config::ProcessType::DB);
    }
 
-   virtual void TearDown(void)
+   void TearDown() override
    {
       Config::reset();
       FileUtils::removeDirectory(homedir_);
@@ -3754,7 +3897,7 @@ TEST_F(WalletManagerTests, ListStageLoad)
    }
 
    //list wallets
-   Bridge::WalletManager mgr{homedir_};
+   Bridge::WalletManager mgr{homedir_, nullptr};
    auto theList = mgr.listWallets();
    ASSERT_EQ(theList.size(), 4);
    for (const auto& path : walletFiles) {
@@ -3923,7 +4066,7 @@ TEST_F(WalletManagerTests, ListWO)
    }
 
    //list wallets
-   Bridge::WalletManager mgr{homedir_};
+   Bridge::WalletManager mgr{homedir_, nullptr};
    auto theList = mgr.listWallets();
    ASSERT_EQ(theList.size(), 2);
    for (const auto& path : wltPaths) {
@@ -4021,7 +4164,7 @@ TEST_F(WalletManagerTests, Migrate_Legacy)
    );
 
    //list wallets
-   Bridge::WalletManager mgr{homedir_};
+   Bridge::WalletManager mgr{homedir_, nullptr};
    auto theList = mgr.listWallets();
    ASSERT_EQ(theList.size(), 1);
 
@@ -4080,7 +4223,7 @@ TEST_F(WalletManagerTests, Migrate_Legacy)
 
    //check migrated wallet
    try {
-      auto wltContainer = mgr.getWalletContainer(wltId);
+      auto wltContainer = mgr.getContainer(wltId);
       ASSERT_NE(wltContainer, nullptr);
       EXPECT_EQ(wltContainer->getHighestUsedIndex(), 2);
       EXPECT_EQ(wltContainer->getAccountId().toHexStr(), "f6e10000");
@@ -4116,7 +4259,7 @@ TEST_F(WalletManagerTests, Migrate_Reject)
    );
 
    //list wallets
-   Bridge::WalletManager mgr{homedir_};
+   Bridge::WalletManager mgr{homedir_, nullptr};
    auto theList = mgr.listWallets();
    ASSERT_EQ(theList.size(), 1);
 
@@ -4151,254 +4294,417 @@ TEST_F(WalletManagerTests, Migrate_Reject)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// WalletManagerWebsocketsTests
-////////////////////////////////////////////////////////////////////////////////
-class WalletManagerWebsocketsTests : public ::testing::Test
+// BridgeSocketTests
+class BridgeSocketTests : public ::testing::Test
 {
 protected:
-   void initBDM()
+   void SetUp() override
    {
-      theBDMt_ = new BlockDataManagerThread();
-      iface_ = theBDMt_->bdm()->getIFace();
-   }
+      std::srand(std::time({}));
+      homedir = std::filesystem::path("./fakehomedir");
+      FileUtils::removeDirectory(homedir);
+      std::filesystem::create_directory(homedir);
 
-   void createWallet()
-   {
-      Wallets::IO::CreateWalletParams params{
-         homedir_,
-         Passphrase::SetNew{1ms, 0, {}},
-         Passphrase::SetNew{1ms, 0, {}},
-         nullptr, 0
-      };
+      serverStore_ = std::make_unique<NetworkPeers::ServerStore>(
+         Cryptography::ECDSA::createNewPrivateKey());
+      auto serverKey = serverStore_->getOwnPublicKey();
 
-      //create empty WO wallet
-      auto wltWO = Wallets::AssetWallet_Single::createBlank("walletWO1"sv, params);
-      wltWO->setupImportAccount();
-
-      auto pubKeyB = Cryptography::ECDSA::computePublicKey(TestChain::privKeyAddrB);
-      wltWO->importPublicKey(pubKeyB, AddressEntryType(
-         AddressEntryType::P2PKH | AddressEntryType::Uncompressed));
-
-      auto pubKeyC = Cryptography::ECDSA::computePublicKey(TestChain::privKeyAddrC);
-      wltWO->importPublicKey(pubKeyC, AddressEntryType(
-         AddressEntryType::P2PKH | AddressEntryType::Uncompressed));
-
-      auto pubKeyD = Cryptography::ECDSA::computePublicKey(TestChain::privKeyAddrD);
-      wltWO->importPublicKey(pubKeyD, AddressEntryType(
-         AddressEntryType::P2PKH | AddressEntryType::Uncompressed));
-
-      auto pubKeyE = Cryptography::ECDSA::computePublicKey(TestChain::privKeyAddrE);
-      wltWO->importPublicKey(pubKeyE, AddressEntryType(
-         AddressEntryType::P2PKH | AddressEntryType::Uncompressed));
-   }
-
-   virtual void SetUp()
-   {
-      FileUtils::removeDirectory(blkdir_);
-      FileUtils::removeDirectory(homedir_);
-      FileUtils::removeDirectory(ldbdir_);
-
-      FileUtils::createDirectory(blkdir_ / "blocks");
-      FileUtils::createDirectory(homedir_);
-      FileUtils::createDirectory(ldbdir_);
-
-      Config::DBSettings::setServiceType(SERVICE_UNITTEST_WITHWS);
-
-      // Put the first 5 blocks into the blkdir
-      blk0dat_ = FileUtils::getBlkFilename(blkdir_ / "blocks", 0);
-      TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
-
-      WebSocketServer::init();
+      Config::reset();
       Config::parseArgs({
-         "--datadir=./fakehomedir",
-         "--dbdir=./ldbtestdir",
-         "--satoshi-datadir=./blkfiletest",
-         "--db-type=DB_BARE",
-         "--thread-count=3",
-         "--public"},
-         Config::ProcessType::DB);
-
-      //setup auth peers for server and client
-      authPeersPassLbd_ = [](const std::set<Wallets::EncryptionKeyId>&)
-      ->Passphrase::Result
-      {
-         return { {}, true };
-      };
-
-      auto createWltLbd = []()->std::unique_ptr<Passphrase::Params>
-      {
-         return std::make_unique<Passphrase::Params>(
-            1ms, 0, SecureBinaryData{});
-      };
-
-      auto serverPeersWlt = NetworkPeers::PeerStore::bootstrapWallet({
-         homedir_ / SERVER_AUTH_PEER_FILENAME, {createWltLbd}});
-      NetworkPeers::ServerStore serverPeers(serverPeersWlt);
-
-      auto clientPeersWlt = NetworkPeers::PeerStore::bootstrapWallet({
-         homedir_ / CLIENT_AUTH_PEER_FILENAME, {createWltLbd}});
-      NetworkPeers::ClientStore clientPeers(clientPeersWlt);
-
-      //share public keys between client and server
-      serverPubkey_ = serverPeers.getOwnPublicKey();
-      serverAddr_ = std::format("127.0.0.1:{}", Config::NetworkSettings::dbPort());
-      clientPeers.addPeer(
-         NetworkPeers::PeerKey{serverPubkey_, NetworkPeers::PeerType::ServerOneWay},
-         {serverAddr_}, {});
-
-      createWallet();
-      initBDM();
-      auto nodePtr = std::dynamic_pointer_cast<NodeUnitTest>(
-         Config::NetworkSettings::bitcoinNodes().first);
-      nodePtr->setBDM(theBDMt_->bdm());
-      hexMagicBytes = Config::BitcoinSettings::getMagicBytes().toHexStr();
+         std::format("--uiPubKey={}", serverKey.toHexStr()),
+         "--offline",
+         "--datadir=./fakehomedir" },
+         Config::ProcessType::Bridge);
    }
 
-   /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown()
+   void TearDown() override
    {
-      WebSocketServer::shutdown();
-      WebSocketServer::waitOnShutdown();
-      theBDMt_->shutdown();
-
-      delete theBDMt_;
-      theBDMt_ = nullptr;
-
-      FileUtils::removeDirectory(blkdir_);
-      FileUtils::removeDirectory(homedir_);
-      FileUtils::removeDirectory(ldbdir_);
       Config::reset();
    }
 
-   /////////////////////////////////////////////////////////////////////////////
-   BlockDataManagerThread *theBDMt_;
-   Passphrase::UnlockFunc authPeersPassLbd_;
-   LMDBBlockDatabase* iface_;
+   ////////
+   class BridgeTestServerSocket : public Network::PersistentSocket
+   {
+   public:
+      std::shared_ptr<Bridge::CppBridgeSocket> bridgeClientSock;
 
-   std::filesystem::path blkdir_{"./blkfiletest"sv};
-   std::filesystem::path homedir_{"./fakehomedir"sv};
-   std::filesystem::path ldbdir_{"./ldbtestdir"sv};
-   std::filesystem::path blk0dat_;
+   public:
+      BridgeTestServerSocket(Network::AcceptStruct acceptStruct,
+         std::shared_ptr<Bridge::CppBridgeSocket> sockPtr) :
+         PersistentSocket{acceptStruct.sockfd_, "ye_olde_test_server"},
+         bridgeClientSock{sockPtr}
+      {}
 
-   BinaryData serverPubkey_;
-   std::string serverAddr_;
-   std::string hexMagicBytes;
+      SocketType type() const override
+      {
+         return SocketType::CppBridge;
+      }
+
+      void pushPayload(
+         std::unique_ptr<Network::Socket_WritePayload> writePayload,
+         std::shared_ptr<Network::Socket_ReadPayload>) override
+      {
+         std::vector<uint8_t> data;
+         writePayload->serialize(data);
+         queuePayloadForWrite(data);
+      }
+   };
+
+   class RawBridgePayload : public Network::Socket_WritePayload
+   {
+      std::vector<uint8_t> data;
+
+   public:
+      RawBridgePayload(BinaryData bd) :
+         Network::Socket_WritePayload{},
+         data{std::move(bd.release())}
+      {}
+
+      void serialize(std::vector<uint8_t>& output) override
+      {
+         output = std::move(data);
+      }
+
+      std::string serializeToText() override
+      {
+         throw std::runtime_error("cannot serialize to text");
+      }
+
+      size_t getSerializedSize() const override
+      {
+         return data.size();
+      }
+   };
+
+   ////////
+   void injectClientKey(Network::port_t port)
+   {
+      SecureBinaryData clientKey(33);
+      std::fstream file(homedir / "client_cookie",
+         std::ios::in | std::ios::binary);
+      file.read(clientKey.getCharPtr(), clientKey.getSize());
+
+      NetworkPeers::PeerKey clientPeer{
+         clientKey.getRef(), NetworkPeers::PeerType::Client};
+      serverStore_->addPeer(clientPeer, {std::format("127.0.0.1:{}", port)}, {});
+   }
+
+protected:
+   std::unique_ptr<NetworkPeers::ServerStore> serverStore_;
+   std::filesystem::path homedir;
 };
 
-////
-TEST_F(WalletManagerWebsocketsTests, Connect)
+TEST_F(BridgeSocketTests, EstablishConnection)
 {
-   NotifQueue queue;
-   auto notifFunc = [&queue](BinaryData notifData)
-   {
-      queue.push_back(notifData);
+   //setup & start the listen server
+   Network::port_t port = (uint16_t)rand() % 10000 + 50000;
+   std::promise<Network::AcceptStruct> acceptProm;
+   auto fut = acceptProm.get_future();
+   auto listenLbd = [port](std::promise<Network::AcceptStruct> prom) {
+      Network::SimpleSocket listenSocket{"127.0.0.1", port, "listen_socket"};
+      listenSocket.listen(
+         [&prom](Network::AcceptStruct accStruct)->bool {
+            prom.set_value(std::move(accStruct));
+            return false;
+         });
    };
-   auto mgr = std::make_shared<Bridge::WalletManager>(homedir_);
-   mgr->setBdvCallback(notifFunc);
+   auto listenThr = std::thread(listenLbd, std::move(acceptProm));
 
-   //list wallets
-   auto theList = mgr->listWallets();
-   ASSERT_EQ(theList.size(), 1);
-   auto wltId = theList.begin()->second->walletId();
-   mgr->loadWallets();
+   //wait on listen thread to start then connect
+   std::this_thread::sleep_for(1s);
+   auto client = std::make_shared<Bridge::CppBridgeSocket>("127.0.0.1", port);
+   ASSERT_TRUE(client->connectToRemote());
+   auto acceptStruct = fut.get();
+   listenThr.join();
 
-   WebSocketServer::initPeerStore({
-      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   //client should have written out its pubkey now
+   injectClientKey(port);
 
-   //create bdv ptr, connect to db
-   auto clientPeers = std::make_shared<NetworkPeers::ClientStore>(
-      Wallets::IO::ReadOnlyFileParams{
-         homedir_ / CLIENT_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   auto bdvPtr = Bridge::setupClientConnection(clientPeers,
-      Config::NetworkSettings::dbIP(), Config::NetworkSettings::dbPort(),
-      Config::NetworkSettings::oneWayAuth(), {},
-      mgr->getBdvCallback());
-   mgr->setBdvPtr(bdvPtr);
+   //we have a socket for the server side, now run it
+   ASSERT_NE(acceptStruct.sockfd_, SOCK_MAX);
+   BridgeTestServerSocket server{acceptStruct, client};
+   ASSERT_TRUE(server.connectToRemote());
 
-   //expecting setupDone notif
+   /*
+   Run bridge socket getPayload in its own thread, it will block until after
+   the AEAD handshake is done and the first actual payload is delivered.
+   */
+   std::promise<BinaryData> firstPacketProm;
+   auto firstPacketFut = firstPacketProm.get_future();
+   auto readUntilFirstPacketThr = std::thread(
+      [&client](std::promise<BinaryData> prom)
+      {
+         auto firstPacket = client->getPayload();
+         prom.set_value(std::move(firstPacket));
+      }, std::move(firstPacketProm)
+   );
+
+   /* some helpers */
+
+   //server side BIP151 session
+   BIP151Connection serverBIP15xSession{serverStore_->getView(), false};
+
+   //server side decryption helper
+   auto decryptByServer = [&serverBIP15xSession]
+   (const std::vector<uint8_t>& cipherText, size_t expectedSize,
+      ArmoryAEAD::BIP151_PayloadType expectedPayloadType)->BinaryData
    {
-      auto notifBd = queue.pop();
-      kj::ArrayPtr<const capnp::word> words(
-         reinterpret_cast<const capnp::word*>(notifBd.getPtr()),
-         notifBd.getSize() / sizeof(capnp::word));
-      capnp::FlatArrayMessageReader reader(words);
-      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-      auto notif = fromBridge.getNotification();
-      ASSERT_EQ(notif.which(), Codec::Bridge::Notification::SETUP_DONE);
-   }
+      if (cipherText.size() !=
+         expectedSize + POLY1305MACLEN + AUTHASSOCDATAFIELDLEN) {
+         return {};
+      }
 
-   //register wallet
-   mgr->registerWallets();
+      BinaryData clearText;
+      auto decrLen = serverBIP15xSession.decryptPacket(
+         BinaryDataRef::fromVector(cipherText, POLY1305MACLEN + AUTHASSOCDATAFIELDLEN),
+         clearText);
+      if (decrLen != expectedSize) {
+         return {};
+      }
 
-   //expecting registerDone notif
+      clearText.resize(decrLen + AUTHASSOCDATAFIELDLEN);
+      if (serverBIP15xSession.decryptPacket(
+         BinaryDataRef::fromVector(cipherText),
+         clearText) != 0) {
+         return {};
+      }
+      if (clearText[4] != (uint8_t)expectedPayloadType) {
+         return {};
+      }
+
+      //return the cleartext stripped of the size header and the
+      //packet type prefix
+      return clearText.getSliceCopy(5, clearText.getSize() - 5);
+   };
+
+   //server side encryption helper
+   auto encryptByServer = [&serverBIP15xSession]
+   (const BinaryData& clearText,
+      ArmoryAEAD::BIP151_PayloadType pType)->BinaryData
    {
-      auto notifBd = queue.pop();
-      kj::ArrayPtr<const capnp::word> words(
-         reinterpret_cast<const capnp::word*>(notifBd.getPtr()),
-         notifBd.getSize() / sizeof(capnp::word));
-      capnp::FlatArrayMessageReader reader(words);
-      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-      auto notif = fromBridge.getNotification();
-      ASSERT_EQ(notif.which(), Codec::Bridge::Notification::REGISTER_DONE);
+      uint32_t packetLen = clearText.getSize() + 1;
+
+      //prepare ciphertext target
+      BinaryData target;
+      target.resize(packetLen + POLY1305MACLEN + AUTHASSOCDATAFIELDLEN);
+
+      //set packet size
+      std::memcpy(target.getPtr(), &packetLen, sizeof(uint32_t));
+
+      //payload type
+      target[4] = (uint8_t)pType;
+
+      //copy the data
+      std::memcpy(target.getPtr() + 5, clearText.getPtr(), clearText.getSize());
+
+      //encrypt
+      serverBIP15xSession.assemblePacket(
+         target.getSliceRef(0, packetLen + AUTHASSOCDATAFIELDLEN),
+         target.getPtr(), target.getSize());
+      return target;
+   };
+
+   //server write function
+   auto serverWriteCb = [&server, &encryptByServer]
+   (const BinaryData& data, ArmoryAEAD::BIP151_PayloadType pType, bool encrypt) {
+      std::unique_ptr<RawBridgePayload> payload;
+      if (encrypt) {
+         auto cipherText = encryptByServer(data, pType);
+         payload = std::make_unique<RawBridgePayload>(std::move(cipherText));
+      } else {
+         BinaryWriter bw(data.getSize() + 1);
+         bw.put_uint8_t((uint8_t)pType);
+         bw.put_BinaryData(data);
+         payload = std::make_unique<RawBridgePayload>(bw.getData());
+      }
+      server.pushPayload(std::move(payload), nullptr);
+   };
+
+   //empty server write function, for those payload that shouldn't reply
+   int timesServerShouldNotHaveReplied = 0;
+   auto noReplyServerWriteCb = [&timesServerShouldNotHaveReplied]
+   (const BinaryData&, ArmoryAEAD::BIP151_PayloadType, bool) {
+      ++timesServerShouldNotHaveReplied;
+      return;
+   };
+
+   /* drive the server side AEAD handshake */
+
+   //1. server sends start
+   {
+      ASSERT_EQ(ArmoryAEAD::BIP15x_Handshake::serverSideHandshake(
+         &serverBIP15xSession, ArmoryAEAD::BIP151_PayloadType::Start,
+         {}, serverWriteCb),
+         ArmoryAEAD::HandshakeState::StepSuccessful
+      );
    }
 
-   //start blockchain db & go online
-   theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
-   bdvPtr->goOnline();
+   //2. expect encAck
+   //NOTE: encAck and encInit are sent back to back from the same path,
+   //chances are they show up as a single packet
+   auto encAckReply = server.getPacket();
+   {
+      ASSERT_GE(encAckReply.size(), 34);
+      ASSERT_EQ(encAckReply[0], (uint8_t)ArmoryAEAD::BIP151_PayloadType::EncAck);
+      BinaryDataRef encAckBdr{encAckReply.data() + 1, 33};
 
-   //expecting ready notif
-   int newBlockVal = 0;
-   bool run = true;
-   while (run) {
-      auto notifBd = queue.pop();
-      kj::ArrayPtr<const capnp::word> words(
-         reinterpret_cast<const capnp::word*>(notifBd.getPtr()),
-         notifBd.getSize() / sizeof(capnp::word));
-      capnp::FlatArrayMessageReader reader(words);
-      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-      auto notif = fromBridge.getNotification();
-
-      switch (notif.which()) {
-         case Codec::Bridge::Notification::READY:
-         {
-            newBlockVal = notif.getReady();
-            run = false;
-            break;
-         }
-
-         case Codec::Bridge::Notification::SCAN_PROGRESS:
-            break;
-
-         default:
-            EXPECT_TRUE(false) << (int)notif.which();
-      }
+      //server should not have to reply to this payload
+      ASSERT_EQ(ArmoryAEAD::BIP15x_Handshake::serverSideHandshake(
+         &serverBIP15xSession, ArmoryAEAD::BIP151_PayloadType::EncAck,
+         encAckBdr, noReplyServerWriteCb),
+         ArmoryAEAD::HandshakeState::StepSuccessful
+      );
+      ASSERT_EQ(timesServerShouldNotHaveReplied, 0);
    }
-   ASSERT_EQ(newBlockVal, 5);
 
-   //check wallet balances
-   try {
-      auto wltCont = mgr->getWalletContainer(wltId);
-      ASSERT_NE(wltCont, nullptr);
-
-      auto addrBalances = wltCont->getAddrBalanceMap();
-      ASSERT_EQ(addrBalances.size(), 4);
-
-      for (const auto& mgrBal : addrBalances) {
-         auto addrBal = TestChain::testAddrBalances[5].at(mgrBal.first);
-         EXPECT_EQ(addrBal[0], mgrBal.second.fullBalance);
-         EXPECT_EQ(addrBal[1], mgrBal.second.spendableBalance);
-         EXPECT_EQ(addrBal[2], mgrBal.second.unconfirmedBalance);
-         EXPECT_EQ(addrBal[3], mgrBal.second.txCount);
+   //3. expect encInit
+   {
+      std::vector<uint8_t> encInitReply;
+      if (encAckReply.size() > 34) {
+         encInitReply = std::vector<uint8_t>{encAckReply.begin() + 34, encAckReply.end()};
+      } else {
+         encInitReply = server.getPacket();
       }
-   } catch (const std::exception& e) {
-      std::cout << e.what() << std::endl;
-      ASSERT_TRUE(false);
+      ASSERT_EQ(encInitReply.size(), 35);
+      ASSERT_EQ(encInitReply[0], (uint8_t)ArmoryAEAD::BIP151_PayloadType::EncInit);
+      BinaryDataRef encInitBdr{encInitReply.data() + 1, encInitReply.size() - 1};
+      ASSERT_EQ(ArmoryAEAD::BIP15x_Handshake::serverSideHandshake(
+         &serverBIP15xSession, ArmoryAEAD::BIP151_PayloadType::EncInit,
+         encInitBdr, serverWriteCb),
+         ArmoryAEAD::HandshakeState::StepSuccessful
+      );
+   }
+
+   /* channel should be encrytped from now on */
+   ASSERT_TRUE(serverBIP15xSession.connectionComplete());
+
+   //4. expect auth challenge
+   {
+      auto authChallengeCipher = server.getPacket();
+      auto authChallengeClear = decryptByServer(authChallengeCipher,
+         33, ArmoryAEAD::BIP151_PayloadType::Challenge);
+
+      //returned cleartext will be stripped of the size header and
+      //the payload type prefix
+      ASSERT_EQ(authChallengeClear.getSize(), 32);
+      ASSERT_EQ(ArmoryAEAD::BIP15x_Handshake::serverSideHandshake(
+         &serverBIP15xSession, ArmoryAEAD::BIP151_PayloadType::Challenge,
+         authChallengeClear, serverWriteCb),
+         ArmoryAEAD::HandshakeState::StepSuccessful
+      );
+   }
+
+   //5. expect propose
+   {
+      auto proposeCipher = server.getPacket();
+      auto proposeClear = decryptByServer(proposeCipher,
+         33, ArmoryAEAD::BIP151_PayloadType::Propose);
+
+      //returned cleartext will be stripped of the size header and
+      //the payload type prefix
+      ASSERT_EQ(proposeClear.getSize(), 32);
+      ASSERT_EQ(ArmoryAEAD::BIP15x_Handshake::serverSideHandshake(
+         &serverBIP15xSession, ArmoryAEAD::BIP151_PayloadType::Propose,
+         proposeClear, serverWriteCb),
+         ArmoryAEAD::HandshakeState::StepSuccessful
+      );
+   }
+
+   //6. expect reply
+   {
+      auto replyCipher = server.getPacket();
+      auto replyClear = decryptByServer(replyCipher,
+         65, ArmoryAEAD::BIP151_PayloadType::Reply);
+
+      //returned cleartext will be stripped of the size header and
+      //the payload type prefix
+      ASSERT_EQ(replyClear.getSize(), 64);
+
+      //server should not have to reply to this payload
+      ASSERT_EQ(ArmoryAEAD::BIP15x_Handshake::serverSideHandshake(
+         &serverBIP15xSession, ArmoryAEAD::BIP151_PayloadType::Reply,
+         replyClear, noReplyServerWriteCb),
+         ArmoryAEAD::HandshakeState::Completed
+      );
+      ASSERT_EQ(timesServerShouldNotHaveReplied, 0);
+   }
+
+   //send a packet from server to end the client's getPayload loop
+   auto serverSidePacket = BinaryData::fromString("hello world, from the server"sv);
+   serverWriteCb(serverSidePacket, ArmoryAEAD::BIP151_PayloadType::SinglePacket, true);
+
+   //grab the first packet down the queue
+   auto deliveredPacket = firstPacketFut.get();
+   EXPECT_EQ(deliveredPacket, serverSidePacket);
+   readUntilFirstPacketThr.join();
+
+   //feed it an encrypted packet in 2 parts, first part is <20 bytes
+   auto lorem1 = BinaryData::fromString("Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua"sv);
+   {
+      //encrypt the data
+      auto target = encryptByServer(lorem1,
+         ArmoryAEAD::BIP151_PayloadType::SinglePacket);
+
+      //split it
+      auto payload1 = std::make_unique<RawBridgePayload>(
+         std::move(target.getSliceCopy(0, 16)));
+      auto payload2 = std::make_unique<RawBridgePayload>(
+         std::move(target.getSliceCopy(16, target.getSize() - 16)));
+
+      server.pushPayload(std::move(payload1), nullptr);
+      std::this_thread::sleep_for(1s);
+      server.pushPayload(std::move(payload2), nullptr);
+   }
+   auto lorem1FromClient = client->getPayload();
+   EXPECT_EQ(lorem1, lorem1FromClient);
+
+   //feed it an encrypted packet in 3 parts
+   auto lorem2 = BinaryData::fromString("Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat."sv);
+   {
+      //encrypt the data
+      auto target = encryptByServer(lorem2,
+         ArmoryAEAD::BIP151_PayloadType::SinglePacket);
+
+      auto payload1 = std::make_unique<RawBridgePayload>(
+         std::move(target.getSliceCopy(0, 30)));
+      auto payload2 = std::make_unique<RawBridgePayload>(
+         std::move(target.getSliceCopy(30, 20)));
+      auto payload3 = std::make_unique<RawBridgePayload>(
+         std::move(target.getSliceCopy(50, target.getSize() - 50)));
+
+      server.pushPayload(std::move(payload1), nullptr);
+      std::this_thread::sleep_for(1s);
+      server.pushPayload(std::move(payload2), nullptr);
+      std::this_thread::sleep_for(1s);
+      server.pushPayload(std::move(payload3), nullptr);
+   }
+   auto lorem2FromClient = client->getPayload();
+   EXPECT_EQ(lorem2, lorem2FromClient);
+
+   //feed it encrypted packets in 2 parts, the second part only carries the
+   //last few bytes: the first part is long enough to read the packet length
+   //but the packet is not complete yet
+   auto lorem3 = BinaryData::fromString("Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur."sv);
+   for (size_t tail : {1, 10, 16, 17, 36}) {
+      auto target = encryptByServer(lorem3,
+         ArmoryAEAD::BIP151_PayloadType::SinglePacket);
+
+      auto payload1 = std::make_unique<RawBridgePayload>(
+         std::move(target.getSliceCopy(0, target.getSize() - tail)));
+      auto payload2 = std::make_unique<RawBridgePayload>(
+         std::move(target.getSliceCopy(target.getSize() - tail, tail)));
+
+      server.pushPayload(std::move(payload1), nullptr);
+      std::this_thread::sleep_for(1s);
+      server.pushPayload(std::move(payload2), nullptr);
+
+      auto lorem3FromClient = client->getPayload();
+      EXPECT_EQ(lorem3, lorem3FromClient) << "last " << tail << " bytes sent apart";
    }
 
    //cleanup
-   bdvPtr->unregisterFromDB();
+   client->shutdown();
+   server.shutdown();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4407,7 +4713,7 @@ class BridgeWalletTests : public ::testing::Test
 {
 protected:
    //setup
-   virtual void SetUp(void)
+   void SetUp() override
    {
       std::srand(std::time({}));
       homedir = std::filesystem::path("./fakehomedir");
@@ -4420,15 +4726,11 @@ protected:
          Config::ProcessType::Bridge);
 
       replyQueue.clear();
-      bridge_ = std::make_shared<Bridge::CppBridge>();
-      bridge_->setWriteLambda([](MsgPtr payload) {
-         std::unique_lock<std::mutex> lock(commsMutex);
-         replyQueue.emplace_back(std::move(payload));
-         commsCV.notify_all();
-      });
+      bridge_ = std::make_shared<Bridge::CppBridge>(
+         std::make_shared<TestBridgeSocket>());
    }
 
-   virtual void TearDown(void)
+   void TearDown() override
    {
       bridge_.reset();
       Config::reset();
@@ -6664,6 +6966,195 @@ TEST_F(BridgeWalletTests, ForkWO)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeWalletTests, Signer_FromTxSigCollect_Malformed)
+{
+   //a valid USTX: one p2pkh input, one output
+   Signing::Signer ustx;
+   ustx.addSpender(std::make_shared<Signing::ScriptSpender>(UTXO(
+      COIN, 0, 0, 0, BinaryData(std::vector<uint8_t>(32, 0xab)),
+      BtcUtils::getP2PKHScript(BinaryData(std::vector<uint8_t>(20, 1))))));
+   ustx.addRecipient(std::make_shared<Signing::Recipient_P2WPKH>(
+      BinaryData(std::vector<uint8_t>(20, 2)), COIN / 2));
+   auto valid = ustx.toString(Signing::SignerStringFormat::TxSigCollect_Modern);
+
+   auto signerId = getNewSigner(bridge_);
+   ASSERT_FALSE(signerId.empty());
+
+   //returns the reply's success flag, sets its error or USTX string
+   auto signerRequest = [this, &signerId](std::string& result,
+      const std::function<void(Codec::Bridge::SignerRequest::Builder&)>& set)
+   {
+      uint64_t refId = rand();
+      capnp::MallocMessageBuilder message;
+      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+      toBridge.setReferenceId(refId);
+      auto req = toBridge.initSigner();
+      req.setId(signerId);
+      set(req);
+      pushRequest(bridge_, serializeCapnp(message));
+
+      auto resp = waitOnReply();
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(resp->data.getPtr()),
+         resp->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto reply = reader.getRoot<Codec::Bridge::FromBridge>().getReply();
+      EXPECT_EQ(reply.getReferenceId(), refId);
+      if (!reply.getSuccess()) {
+         result = reply.getError();
+      } else if (reply.which() == Codec::Bridge::RpcReply::SIGNER) {
+         result = reply.getSigner().getToTxSigCollect();
+      }
+      return reply.getSuccess();
+   };
+   auto fromTxSigCollect = [&](const std::string& str, std::string& error)
+   {
+      return signerRequest(error,
+         [&str](Codec::Bridge::SignerRequest::Builder& req)
+         { req.setFromTxSigCollect(str); });
+   };
+
+   //load the valid one first, malformed strings must leave it be
+   std::string error;
+   ASSERT_TRUE(fromTxSigCollect(valid, error)) << error;
+
+   //valid header with: a junk body, a modern body whose capnp segment
+   //table is junk (0x5a5a5a5a segments)
+   auto header = valid.substr(0, valid.find('\n') + 1);
+   auto footer = std::string(64, '=') + "\n";
+   BinaryWriter capnBody;
+   capnBody.put_uint32_t(3);
+   capnBody.put_uint32_t(0);
+   capnBody.put_BinaryData(BinaryData(std::vector<uint8_t>(32, 'Z')));
+   auto capnStr = BtcUtils::base64_encode(std::string(
+      capnBody.getData().getCharPtr(), capnBody.getSize()));
+
+   std::vector<std::string> malformed = {
+      "",
+      valid.substr(0, valid.size() / 2),
+      header + std::string(64, 'Z') + "\n" + footer,
+      header + capnStr + "\n" + footer,
+      BtcUtils::base64_encode("not a psbt either")
+   };
+   for (const auto& str : malformed) {
+      std::string strError;
+      EXPECT_FALSE(fromTxSigCollect(str, strError)) << str;
+      EXPECT_FALSE(strError.empty()) << str;
+   }
+
+   //the bridge still serves, the signer kept the valid USTX
+   std::string roundTrip;
+   ASSERT_TRUE(signerRequest(roundTrip,
+      [](Codec::Bridge::SignerRequest::Builder& req)
+      {
+         req.setToTxSigCollect(static_cast<uint32_t>(
+            Signing::SignerStringFormat::TxSigCollect_Modern));
+      }));
+   EXPECT_EQ(roundTrip, valid);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeWalletTests, GetTxsByHash_OfflinePayload)
+{
+   //the 2 txs the inputs of the BIP174 test vector spend from
+   auto rawTx1 = READHEX("0200000000010158e87a21b56daf0c23be8e7070456c336f7cbaa5c8757924f545887bb2abdd7501000000171600145f275f436b09a8cc9a2eb2a2f528485c68a56323feffffff02d8231f1b0100000017a914aed962d6654f9a2b36608eb9d64d2b260db4f1118700c2eb0b0000000017a914b7f5faf40e3d40a5a459b1db3535f2b72fa921e88702483045022100a22edcc6e5bc511af4cc4ae0de0fcd75c7e04d8c1c3a8aa9d820ed4b967384ec02200642963597b9b1bc22c75e9f3e117284a962188bf5e8a74c895089046a20ad770121035509a48eb623e10aace8bfd0212fdb8a8e5af3c94b0b133b95e114cab89e4f7965000000");
+   auto rawTx2 = READHEX("0200000001aad73931018bd25f84ae400b68848be09db706eac2ac18298babee71ab656f8b0000000048473044022058f6fc7c6a33e1b31548d481c826c015bd30135aad42cd67790dab66d2ad243b02204a1ced2604c6735b6393e5b41691dd78b00f0c5942fb9f751856faa938157dba01feffffff0280f0fa020000000017a9140fb9463421696b82c833af241c78c17ddbde493487d0f20a270100000017a91429ca74f8a08f81999428185c97b5d852e4063f618765000000");
+   Tx tx1(rawTx1);
+   Tx tx2(rawTx2);
+   auto getUtxo = [](const Tx& tx, unsigned index)->UTXO
+   {
+      auto txOut = tx.getTxOutCopy(index);
+      return UTXO(txOut.getAmount(), UINT32_MAX, UINT16_MAX, index,
+         tx.getThisHash(), txOut.getScript());
+   };
+
+   Signing::Signer ustx;
+   ustx.setVersion(2);
+   ustx.addSpender(std::make_shared<Signing::ScriptSpender>(getUtxo(tx2, 0)));
+   ustx.addSpender(std::make_shared<Signing::ScriptSpender>(getUtxo(tx1, 1)));
+   ustx.addRecipient(std::make_shared<Signing::Recipient_P2WPKH>(
+      READHEX("d85c2b71d0060b09c9886aeb815e50991dda124d"), 149990000));
+   ustx.addSupportingTx(rawTx1);
+   ustx.addSupportingTx(rawTx2);
+
+   auto unknownHash = READHEX(
+      "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff");
+   std::set<BinaryData> hashes{
+      tx1.getThisHash(), tx2.getThisHash(), unknownHash};
+
+   //nothing cached yet
+   bool success = false;
+   auto none = getTxDataByHash(bridge_, hashes, success);
+   ASSERT_TRUE(success);
+   EXPECT_TRUE(none.empty());
+
+   //a malformed string is refused
+   auto signerId = getNewSigner(bridge_);
+   ASSERT_FALSE(signerId.empty());
+   EXPECT_FALSE(loadSignerString(bridge_, signerId, "not a signer string"));
+   EXPECT_TRUE(getTxDataByHash(bridge_, hashes, success).empty());
+
+   //loading the USTX caches its supporting txs, served with no height. Each
+   //format gets a fresh bridge, so its cache starts empty
+   for (auto format : {Signing::SignerStringFormat::TxSigCollect_Modern,
+      Signing::SignerStringFormat::PSBT}) {
+      bridge_.reset();
+      replyQueue.clear();
+      bridge_ = std::make_shared<Bridge::CppBridge>(
+         std::make_shared<TestBridgeSocket>());
+      signerId = getNewSigner(bridge_);
+      ASSERT_FALSE(signerId.empty());
+      ASSERT_TRUE(getTxDataByHash(bridge_, hashes, success).empty());
+
+      auto str = ustx.toString(format);
+      ASSERT_TRUE(loadSignerString(bridge_, signerId, str));
+
+      auto txs = getTxDataByHash(bridge_, hashes, success);
+      ASSERT_TRUE(success);
+      ASSERT_EQ(txs.size(), 2U);
+      EXPECT_EQ(txs[tx1.getThisHash()].raw, rawTx1);
+      EXPECT_EQ(txs[tx2.getThisHash()].raw, rawTx2);
+      for (const auto& txPair : txs) {
+         EXPECT_EQ(txPair.second.height, UINT32_MAX);
+         EXPECT_EQ(txPair.second.txIndex, UINT32_MAX);
+         EXPECT_EQ(txPair.second.timestamp, UINT32_MAX);
+      }
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeWalletTests, GetTxsByHash_AddSupportingTx)
+{
+   auto rawTx1 = READHEX("0200000000010158e87a21b56daf0c23be8e7070456c336f7cbaa5c8757924f545887bb2abdd7501000000171600145f275f436b09a8cc9a2eb2a2f528485c68a56323feffffff02d8231f1b0100000017a914aed962d6654f9a2b36608eb9d64d2b260db4f1118700c2eb0b0000000017a914b7f5faf40e3d40a5a459b1db3535f2b72fa921e88702483045022100a22edcc6e5bc511af4cc4ae0de0fcd75c7e04d8c1c3a8aa9d820ed4b967384ec02200642963597b9b1bc22c75e9f3e117284a962188bf5e8a74c895089046a20ad770121035509a48eb623e10aace8bfd0212fdb8a8e5af3c94b0b133b95e114cab89e4f7965000000");
+   auto rawTx2 = READHEX("0200000001aad73931018bd25f84ae400b68848be09db706eac2ac18298babee71ab656f8b0000000048473044022058f6fc7c6a33e1b31548d481c826c015bd30135aad42cd67790dab66d2ad243b02204a1ced2604c6735b6393e5b41691dd78b00f0c5942fb9f751856faa938157dba01feffffff0280f0fa020000000017a9140fb9463421696b82c833af241c78c17ddbde493487d0f20a270100000017a91429ca74f8a08f81999428185c97b5d852e4063f618765000000");
+   auto hash1 = Tx(rawTx1).getThisHash();
+   auto hash2 = Tx(rawTx2).getThisHash();
+
+   auto signerId = getNewSigner(bridge_);
+   ASSERT_FALSE(signerId.empty());
+
+   //a truncated tx (no locktime) is skipped, the bridge stays up
+   auto truncated = rawTx2.getSliceCopy(0, rawTx2.getSize() - 4);
+   bool added = false;
+   EXPECT_NO_THROW(added = addSupportingTx(bridge_, signerId, truncated));
+   EXPECT_TRUE(added);
+
+   bool success = false;
+   EXPECT_TRUE(getTxDataByHash(bridge_, {hash1, hash2}, success).empty());
+   ASSERT_TRUE(success);
+
+   //a supporting tx added to a signer is cached as unpooled
+   ASSERT_TRUE(addSupportingTx(bridge_, signerId, rawTx1));
+   auto txs = getTxDataByHash(bridge_, {hash1, hash2}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(txs.size(), 1U);
+   EXPECT_EQ(txs[hash1].raw, rawTx1);
+   EXPECT_EQ(txs[hash1].height, UINT32_MAX);
+   EXPECT_EQ(txs[hash1].txIndex, UINT32_MAX);
+   EXPECT_EQ(txs[hash1].timestamp, UINT32_MAX);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // BridgeWalletsWithDBTests
 class BridgeWalletsWithDBTests : public ::testing::Test
 {
@@ -6687,7 +7178,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       FileUtils::removeDirectory(blkdir_);
       FileUtils::removeDirectory(homedir_);
@@ -6738,12 +7229,8 @@ protected:
       serverPubkey_ = servPK.toHumanReadable();
 
       replyQueue.clear();
-      bridge_ = std::make_shared<Bridge::CppBridge>();
-      bridge_->setWriteLambda([](MsgPtr payload) {
-         std::unique_lock<std::mutex> lock(commsMutex);
-         replyQueue.emplace_back(std::move(payload));
-         commsCV.notify_all();
-      });
+      bridge_ = std::make_shared<Bridge::CppBridge>(
+         std::make_shared<TestBridgeSocket>());
 
       initBDM();
       auto nodePtr = std::dynamic_pointer_cast<NodeUnitTest>(
@@ -6752,12 +7239,13 @@ protected:
       hexMagicBytes = Config::BitcoinSettings::getMagicBytes().toHexStr();
    }
 
-   /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown()
+   void TearDown() override
    {
       bridge_.reset();
       WebSocketServer::shutdown();
-      WebSocketServer::waitOnShutdown();
+      if (wsServerThr_.joinable()) {
+         wsServerThr_.join();
+      }
       theBDMt_->shutdown();
 
       delete theBDMt_;
@@ -6767,6 +7255,17 @@ protected:
       FileUtils::removeDirectory(homedir_);
       FileUtils::removeDirectory(ldbdir_);
       Config::reset();
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   void startWSServer()
+   {
+      wsServerThr_ = std::thread([bdm=theBDMt_->bdm()](){
+         WebSocketServer::start(bdm); }
+      );
+
+      //arbitrary wait to give time to WS server to startup
+      std::this_thread::sleep_for(100ms);
    }
 
 protected:
@@ -6783,6 +7282,7 @@ protected:
    std::shared_ptr<Bridge::CppBridge> bridge_;
    std::string walletId_;
    std::string serverPubkey_;
+   std::thread wsServerThr_;
 };
 
 TEST_F(BridgeWalletsWithDBTests, Connect)
@@ -6801,9 +7301,9 @@ TEST_F(BridgeWalletsWithDBTests, Connect)
 
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -6843,10 +7343,10 @@ TEST_F(BridgeWalletsWithDBTests, CycleConnection)
 
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_FALSE(connectToIp(bridge_, "127.0.0.1", "9001", {}));
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_FALSE(connectToIp(bridge_, "127.0.0.1", 9001, {}));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -6883,9 +7383,11 @@ TEST_F(BridgeWalletsWithDBTests, CycleConnection)
    ASSERT_EQ(fromBridge.which(), Codec::Bridge::FromBridge::NOTIFICATION);
    auto notif = fromBridge.getNotification();
    ASSERT_EQ(notif.which(), Codec::Bridge::Notification::DISCONNECTED);
+   if (wsServerThr_.joinable()) {
+      wsServerThr_.join();
+   }
 
    //restart BDM
-   WebSocketServer::waitOnShutdown();
    theBDMt_->shutdown();
    delete theBDMt_;
 
@@ -6909,9 +7411,9 @@ TEST_F(BridgeWalletsWithDBTests, CycleConnection)
 
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
    theBDMt_->start(Config::DBSettings::initMode());
    theBDMt_->bdm()->blockUntilReady();
@@ -6960,9 +7462,9 @@ TEST_F(BridgeWalletsWithDBTests, DeleteWallet)
 
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -7071,9 +7573,9 @@ TEST_F(BridgeWalletsWithDBTests, ExtendAddressChain)
 
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -7150,9 +7652,9 @@ TEST_F(BridgeWalletsWithDBTests, AddNewAddress)
 
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -7370,7 +7872,7 @@ protected:
    }
 
    ////////
-   virtual void SetUp()
+   void SetUp() override
    {
       FileUtils::removeDirectory(blkdir_);
       FileUtils::removeDirectory(homedir_);
@@ -7417,12 +7919,8 @@ protected:
       serverPubkey_ = servPK.toHumanReadable();
 
       replyQueue.clear();
-      bridge_ = std::make_shared<Bridge::CppBridge>();
-      bridge_->setWriteLambda([](MsgPtr payload) {
-         std::unique_lock<std::mutex> lock(commsMutex);
-         replyQueue.emplace_back(std::move(payload));
-         commsCV.notify_all();
-      });
+      bridge_ = std::make_shared<Bridge::CppBridge>(
+         std::make_shared<TestBridgeSocket>());
 
       initBDM();
       nodePtr_ = std::dynamic_pointer_cast<NodeUnitTest>(
@@ -7432,11 +7930,13 @@ protected:
    }
 
    ////////
-   virtual void TearDown()
+   void TearDown() override
    {
       bridge_.reset();
       WebSocketServer::shutdown();
-      WebSocketServer::waitOnShutdown();
+      if (wsServerThr_.joinable()) {
+         wsServerThr_.join();
+      }
       theBDMt_->shutdown();
 
       delete theBDMt_;
@@ -7446,6 +7946,17 @@ protected:
       FileUtils::removeDirectory(homedir_);
       FileUtils::removeDirectory(ldbdir_);
       Config::reset();
+   }
+
+   ////////
+   void startWSServer()
+   {
+      wsServerThr_ = std::thread([bdm=theBDMt_->bdm()](){
+         WebSocketServer::start(bdm); }
+      );
+
+      //arbitrary wait to give time to WS server to startup
+      std::this_thread::sleep_for(100ms);
    }
 
 protected:
@@ -7472,6 +7983,7 @@ protected:
    std::string accountId_BC_;
    std::string accountId_DE_;
    std::string accountId_AFLB_;
+   std::thread wsServerThr_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -7484,9 +7996,9 @@ TEST_F(BridgeChainDataTests, Check5Blocks_BCDE)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -7522,6 +8034,459 @@ TEST_F(BridgeChainDataTests, Check5Blocks_BCDE)
    }
 }
 
+TEST_F(BridgeChainDataTests, GetTxsByHash_DbFallback)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   //the wallet's txs, served from this bridge's cache
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+   auto ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgers.size(), 15);
+
+   std::set<BinaryData> hashes;
+   std::map<BinaryData, uint32_t> heights;
+   for (const auto& ledger : ledgers) {
+      hashes.emplace(ledger.getTxHash());
+      heights.emplace(ledger.getTxHash(), ledger.getBlockNum());
+   }
+
+   bool success = false;
+   auto fromCache = getTxDataByHash(bridge_, hashes, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(fromCache.size(), hashes.size());
+   for (const auto& txPair : fromCache) {
+      //the block of each tx and its index in it, as the db has them
+      auto txKey = iface_->getDBKeyForHash(txPair.first);
+      ASSERT_TRUE(Types::isTxKeyValid(txKey));
+      auto header = theBDMt_->bdm()->blockchain()->getHeaderById(
+         Types::getBlockIDFromTxKey(txKey));
+      ASSERT_NE(header, nullptr);
+      EXPECT_EQ(txPair.second.height, heights[txPair.first]);
+      EXPECT_EQ(txPair.second.height, header->getBlockHeight());
+      EXPECT_EQ(txPair.second.txIndex, Types::getTxIndexFromTxKey(txKey));
+      EXPECT_EQ(txPair.second.timestamp, header->getTimestamp());
+   }
+
+   //a fresh bridge with no wallet has nothing cached, the db still has
+   //them (DB_BARE keeps the hashes of txs that pay or spend from a
+   //registered address)
+   bridge_.reset();
+   replyQueue.clear();
+   bridge_ = std::make_shared<Bridge::CppBridge>(
+      std::make_shared<TestBridgeSocket>());
+
+   loadWallets({});
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   //unknown and malformed hashes are left out, the rest is served
+   auto unknownHash = READHEX(
+      "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff");
+   auto shortHash = READHEX("0011223344");
+   auto request = hashes;
+   request.emplace(unknownHash);
+   request.emplace(shortHash);
+
+   auto fromDb = getTxDataByHash(bridge_, request, success);
+   ASSERT_TRUE(success);
+   EXPECT_EQ(fromDb, fromCache);
+
+   //finding nothing is an empty reply, not an error
+   auto nothing = getTxDataByHash(bridge_, {unknownHash, shortHash}, success);
+   EXPECT_TRUE(success);
+   EXPECT_TRUE(nothing.empty());
+}
+
+TEST_F(BridgeChainDataTests, GetTxsByHash_PayloadThenDb)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   //a mined tx of the wallet, as its bridge serves it
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+   auto ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_FALSE(ledgers.empty());
+   auto txHash = ledgers.back().getTxHash();
+
+   bool success = false;
+   auto fromWallet = getTxDataByHash(bridge_, {txHash}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(fromWallet.size(), 1U);
+   ASSERT_NE(fromWallet[txHash].height, UINT32_MAX);
+
+   //a fresh bridge with no wallet gets that tx as the supporting tx of a
+   //USTX: unpooled while the bridge has no db, the db's mined copy once it
+   //has one
+   bridge_.reset();
+   replyQueue.clear();
+   bridge_ = std::make_shared<Bridge::CppBridge>(
+      std::make_shared<TestBridgeSocket>());
+   loadWallets({});
+
+   const auto& rawTx = fromWallet[txHash].raw;
+   Tx tx(rawTx);
+   auto txOut = tx.getTxOutCopy(0);
+   Signing::Signer ustx;
+   ustx.addSpender(std::make_shared<Signing::ScriptSpender>(UTXO(
+      txOut.getAmount(), UINT32_MAX, UINT16_MAX, 0,
+      tx.getThisHash(), txOut.getScript())));
+   ustx.addRecipient(std::make_shared<Signing::Recipient_P2WPKH>(
+      BinaryData(std::vector<uint8_t>(20, 2)), txOut.getAmount() / 2));
+   ustx.addSupportingTx(rawTx);
+
+   auto signerId = getNewSigner(bridge_);
+   ASSERT_FALSE(signerId.empty());
+   ASSERT_TRUE(loadSignerString(bridge_, signerId,
+      ustx.toString(Signing::SignerStringFormat::TxSigCollect_Modern)));
+
+   auto unpooled = getTxDataByHash(bridge_, {txHash}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(unpooled.size(), 1U);
+   EXPECT_EQ(unpooled[txHash].raw, rawTx);
+   EXPECT_EQ(unpooled[txHash].height, UINT32_MAX);
+   EXPECT_EQ(unpooled[txHash].txIndex, UINT32_MAX);
+   EXPECT_EQ(unpooled[txHash].timestamp, UINT32_MAX);
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   auto fromDb = getTxDataByHash(bridge_, {txHash}, success);
+   ASSERT_TRUE(success);
+   EXPECT_EQ(fromDb, fromWallet);
+}
+
+TEST_F(BridgeChainDataTests, GetTxsByHash_ZcThenMined)
+{
+   //the wallet bridge gets muted once a second bridge takes over
+   auto walletSocket = std::make_shared<MutableTestBridgeSocket>();
+   bridge_ = std::make_shared<Bridge::CppBridge>(walletSocket);
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   //the wallet sends a zc to itself. In DB_BARE the db only resolves
+   //hashes of mined txs that pay or spend from a registered address
+   BinaryData signedTx;
+   try {
+      signedTx = createAndSignTx(bridge_,
+         walletId_BCDE_, accountId_BCDE_,
+         {}, {{ BtcUtils::scrAddrToBase58(TestChain::scrAddrC), 11 * COIN }},
+         TestChain::scrAddrD, 2, false,
+         "privPass1"
+      );
+   } catch (const std::exception& e) {
+      ASSERT_TRUE(false) << e.what();
+   }
+   ASSERT_FALSE(signedTx.empty());
+   auto beforeZc = (uint32_t)time(0);
+   broadcastTx(bridge_, signedTx);
+   auto zcLedgers = waitOnZc();
+   auto afterZc = (uint32_t)time(0);
+   ASSERT_EQ(zcLedgers.size(), 1);
+   auto zcHash = Tx(signedTx).getThisHash();
+   ASSERT_EQ(zcLedgers[0].getTxHash(), zcHash);
+
+   //keep the wallet bridge registered but quiet, a second bridge with no
+   //wallet asks for the zc
+   auto walletBridge = bridge_;
+   {
+      std::unique_lock<std::mutex> lock(commsMutex);
+      walletSocket->muted = true;
+      replyQueue.clear();
+   }
+
+   bridge_ = std::make_shared<Bridge::CppBridge>(
+      std::make_shared<TestBridgeSocket>());
+   loadWallets({});
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   bool success = false;
+   auto asZc = getTxDataByHash(bridge_, {zcHash}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(asZc.size(), 1);
+   EXPECT_EQ(asZc.begin()->first, zcHash);
+   EXPECT_EQ(asZc.begin()->second.height, UINT32_MAX);
+   EXPECT_EQ(asZc.begin()->second.txIndex, UINT32_MAX);
+   //the time the db's mempool got the zc
+   EXPECT_GE(asZc.begin()->second.timestamp, beforeZc);
+   EXPECT_LE(asZc.begin()->second.timestamp, afterZc);
+
+   //once mined, the cached zc copy is replaced
+   DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrA, 1);
+   ASSERT_EQ(waitOnNewBlock(), 6);
+
+   auto asMined = getTxDataByHash(bridge_, {zcHash}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(asMined.size(), 1);
+   EXPECT_EQ(asMined.begin()->first, zcHash);
+   EXPECT_EQ(asMined.begin()->second.height, 6U);
+
+   //its block and index in it, as the db has them
+   auto minedKey = iface_->getDBKeyForHash(zcHash);
+   ASSERT_TRUE(Types::isTxKeyValid(minedKey));
+   ASSERT_FALSE(Types::isThisAZCKey(minedKey));
+   auto minedHeader = theBDMt_->bdm()->blockchain()->getHeaderById(
+      Types::getBlockIDFromTxKey(minedKey));
+   ASSERT_NE(minedHeader, nullptr);
+   EXPECT_EQ(minedHeader->getBlockHeight(), 6U);
+   EXPECT_NE(Types::getTxIndexFromTxKey(minedKey), 0U); //not the coinbase
+   EXPECT_EQ(asMined.begin()->second.txIndex,
+      Types::getTxIndexFromTxKey(minedKey));
+   EXPECT_EQ(asMined.begin()->second.timestamp, minedHeader->getTimestamp());
+
+   bridge_.reset();
+   walletBridge.reset();
+}
+
+TEST_F(BridgeChainDataTests, GetTxsByHash_DoubleReorg)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 4);
+
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+
+   //every wallet tx seen so far, on any branch
+   std::set<BinaryData> hashes;
+   auto addLedgerHashes = [&]() {
+      for (const auto& ledger : getLedgersPage(bridge_, delegateId, 0)) {
+         hashes.emplace(ledger.getTxHash());
+      }
+   };
+
+   //what the db's main chain has of these txs, as getTxsByHash gives it
+   auto onMainChain = [this, &hashes]() {
+      std::map<BinaryData, FetchedTx> result;
+      auto blockchain = theBDMt_->bdm()->blockchain();
+      auto blockData = theBDMt_->bdm()->blockchainData();
+      auto top = blockchain->top()->getBlockHeight();
+      for (unsigned height = 0; height <= top; height++) {
+         auto header = blockchain->getHeaderByHeight(height);
+         for (unsigned i = 0; i < header->getNumTx(); i++) {
+            auto tx = blockData->getTx(header->getUniqueID(), i);
+            if (hashes.find(tx.getThisHash()) == hashes.end()) {
+               continue;
+            }
+            result.emplace(tx.getThisHash(), FetchedTx{
+               BinaryData(tx.getPtr(), tx.getSize()),
+               height, i, header->getTimestamp()});
+         }
+      }
+      return result;
+   };
+
+   //the bridge serves a tx where the db's main chain has it, and doesn't
+   //serve one the main chain doesn't have
+   auto checkAgainstDb = [&](const std::string& tag, size_t offMain) {
+      auto expected = onMainChain();
+      EXPECT_EQ(hashes.size() - expected.size(), offMain) << tag;
+
+      bool success = false;
+      auto served = getTxDataByHash(bridge_, hashes, success);
+      EXPECT_TRUE(success) << tag;
+      for (const auto& txHash : hashes) {
+         auto hashStr = txHash.toHexStr(true);
+         auto expIter = expected.find(txHash);
+         auto iter = served.find(txHash);
+         if (expIter == expected.end()) {
+            EXPECT_TRUE(iter == served.end()) << tag << ": " << hashStr <<
+               " is off the main chain, served at height " <<
+               iter->second.height;
+            continue;
+         }
+         if (iter == served.end()) {
+            ADD_FAILURE() << tag << ": " << hashStr << " not served";
+            continue;
+         }
+         EXPECT_EQ(iter->second.height, expIter->second.height) << tag << ": " << hashStr;
+         EXPECT_EQ(iter->second.txIndex, expIter->second.txIndex) << tag << ": " << hashStr;
+         EXPECT_EQ(iter->second.timestamp, expIter->second.timestamp) << tag << ": " << hashStr;
+         EXPECT_EQ(iter->second.raw, expIter->second.raw) << tag << ": " << hashStr;
+      }
+   };
+
+   //0-3, 4A
+   addLedgerHashes();
+   checkAgainstDb("on 4A", 0);
+
+   //reorg onto 4, 5: the wallet's 4A txs are in 4 and 5 too
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5" }, blk0dat_);
+   nodePtr_->notifyNewBlock();
+   ASSERT_EQ(waitOnNewBlock(), 5);
+   addLedgerHashes();
+   checkAgainstDb("on 4-5", 0);
+
+   //reorg back onto 4A, 5A: 5 of the txs of 4 and 5 are off the main chain
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5", "5A" }, blk0dat_);
+   nodePtr_->notifyNewBlock();
+   ASSERT_EQ(waitOnNewBlock(), 5);
+   addLedgerHashes();
+   checkAgainstDb("on 4A-5A", 5);
+}
+
+namespace
+{
+   //drops its db connection when it takes its lock for the nth time
+   class DbDroppingTxIOCache : public Bridge::TxIOCache
+   {
+   private:
+      std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr_;
+      const unsigned dropAt_;
+      unsigned lockCount_ = 0;
+
+      void initAfterLock(void) override
+      {
+         if (++lockCount_ == dropAt_) {
+            bdvPtr_->unregisterFromDB();
+         }
+      }
+
+   public:
+      DbDroppingTxIOCache(
+         std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr, unsigned at) :
+         bdvPtr_(bdvPtr), dropAt_(at)
+      {}
+
+      unsigned lockCount(void) const { return lockCount_; }
+   };
+}
+
+TEST_F(BridgeChainDataTests, FetchTxs_NoHeaderAskAgain)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+   auto ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgers.size(), 15);
+
+   std::set<BinaryData> hashes;
+   std::map<BinaryData, uint32_t> heights;
+   for (const auto& ledger : ledgers) {
+      hashes.emplace(ledger.getTxHash());
+      heights.emplace(ledger.getTxHash(), ledger.getBlockNum());
+   }
+   auto bdvPtr = bridge_->bdvPtr();
+   ASSERT_NE(bdvPtr, nullptr);
+
+   //every hash has a mined copy with its header in the cache
+   auto checkMined = [&](const Bridge::TxIOCache& txioCache) {
+      auto dbCache = txioCache.getDBCache();
+      for (const auto& txHash : hashes) {
+         try {
+            auto txKey = txioCache.getTxByHash(txHash).getDBKey();
+            ASSERT_FALSE(Types::isThisAZCKey(txKey));
+            auto header = dbCache->getHeader(
+               Types::getBlockIDFromTxKey(txKey));
+            EXPECT_EQ(header->blockHeight, heights[txHash]);
+         } catch (const std::out_of_range& e) {
+            ADD_FAILURE() << e.what();
+         }
+      }
+   };
+
+   //an empty cache gets the mined txs and their headers from the db
+   {
+      Bridge::TxIOCache txioCache;
+      txioCache.fetchTxs(bdvPtr, hashes);
+      checkMined(txioCache);
+   }
+
+   //the db goes away once it has served the txs, before the headers are
+   //asked for: fetchTxs takes the lock to see what the cache misses (1),
+   //then to see which headers it misses (2), then to fill the cache (3)
+   DbDroppingTxIOCache txioCache(bdvPtr, 2);
+   txioCache.fetchTxs(bdvPtr, hashes);
+   EXPECT_FALSE(bdvPtr->isValid());
+   EXPECT_EQ(txioCache.lockCount(), 3U);
+
+   //the bridge lost its db along: wait on its disconnected notif, the
+   //thread that sends it must be done before the bridge goes away
+   while (true) {
+      auto reply = waitOnReply();
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(reply->data.getPtr()),
+         reply->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+      if (fromBridge.which() == Codec::Bridge::FromBridge::NOTIFICATION &&
+         fromBridge.getNotification().which() ==
+            Codec::Bridge::Notification::DISCONNECTED) {
+         break;
+      }
+   }
+
+   //a mined copy with no header is no valid copy
+   for (const auto& txHash : hashes) {
+      EXPECT_THROW(txioCache.getTxByHash(txHash), std::out_of_range);
+   }
+
+   //so the next fetch asks the db for these hashes again
+   bridge_ = std::make_shared<Bridge::CppBridge>(
+      std::make_shared<TestBridgeSocket>());
+   loadWallets({});
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   ASSERT_EQ(goOnline(bridge_), 5);
+   bdvPtr = bridge_->bdvPtr();
+   ASSERT_NE(bdvPtr, nullptr);
+
+   txioCache.fetchTxs(bdvPtr, hashes);
+   checkMined(txioCache);
+}
+
 TEST_F(BridgeChainDataTests, ChangeFilters_ALFB_BCDE)
 {
    loadWallets({walletId_BCDE_, walletId_AFLB_});
@@ -7529,9 +8494,9 @@ TEST_F(BridgeChainDataTests, ChangeFilters_ALFB_BCDE)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -7612,9 +8577,9 @@ TEST_F(BridgeChainDataTests, BlocksOutOfOrder_BCDE)
    TestUtils::setBlocks({ "0", "1", "2", "4", "5", "4A" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -7684,10 +8649,10 @@ TEST_F(BridgeChainDataTests, AddBlocks_BCDE)
 
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    //connect to db
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -7797,9 +8762,9 @@ TEST_F(BridgeChainDataTests, AddBlocks_BC_DE)
    //connect to db
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -7982,9 +8947,9 @@ TEST_F(BridgeChainDataTests, AddBlocks_BCDE_AFLB)
    //connect to db
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -8542,9 +9507,9 @@ TEST_F(BridgeChainDataTests, Reorg_BCDE)
    //connect to db
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -8684,9 +9649,9 @@ TEST_F(BridgeChainDataTests, Reorg_BCDE_DifferentOrder)
    //connect to db
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -8795,9 +9760,9 @@ TEST_F(BridgeChainDataTests, Reorg_BC_DE)
    //connect to db
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -9030,9 +9995,9 @@ TEST_F(BridgeChainDataTests, Reorg_BCDE_AFLB)
    //connect to db
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -9753,9 +10718,9 @@ TEST_F(BridgeChainDataTests, Reorg_SpendBeforeBranchPoint)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -9924,7 +10889,7 @@ TEST_F(BridgeChainDataTests, Reorg_SpendBeforeBranchPoint)
    auto topA = theBDMt_->bdm()->blockchain()->top();
    ASSERT_EQ(branchPoint->getUniqueID(), 6);
    nodePtr_->setReorgBranchPoint(branchPoint);
-   nodePtr_->mineNewBlock(theBDMt_->bdm(), 1, TestChain::addrA, 100.0);
+   nodePtr_->mineNewBlock(1, TestChain::addrA, 100.0);
    ASSERT_EQ(waitOnNewBlock(), 6);
 
    auto topB = theBDMt_->bdm()->blockchain()->top();
@@ -10035,9 +11000,9 @@ TEST_F(BridgeChainDataTests, AddressBook)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -10115,9 +11080,9 @@ TEST_F(BridgeChainDataTests, getUTXOs)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -10247,9 +11212,9 @@ TEST_F(BridgeChainDataTests, ZeroConf)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -10474,6 +11439,79 @@ TEST_F(BridgeChainDataTests, ZeroConf)
    ASSERT_EQ(lastEntry.getBlockNum(), 6);
 }
 
+TEST_F(BridgeChainDataTests, ZeroConf_TxTime)
+{
+   //zc ledgers carry the time the db saw the tx, mined ones the block time
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   BinaryData signedTx;
+   try {
+      signedTx = createAndSignTx(bridge_, walletId_BCDE_, accountId_BCDE_,
+         {}, {{ BtcUtils::scrAddrToBase58(TestChain::scrAddrC), 11 * COIN }},
+         TestChain::scrAddrD, 2, false, "privPass1");
+   } catch (const std::exception& e) {
+      ASSERT_TRUE(false) << e.what();
+   }
+   ASSERT_FALSE(signedTx.empty());
+   Tx tx(signedTx);
+
+   auto before = (uint32_t)time(0);
+   broadcastTx(bridge_, signedTx);
+   auto zcLedgers = waitOnZc();
+   auto after = (uint32_t)time(0);
+
+   //zc notification
+   ASSERT_EQ(zcLedgers.size(), 1);
+   ASSERT_EQ(zcLedgers[0].getTxHash(), tx.getThisHash());
+   EXPECT_EQ(zcLedgers[0].getBlockNum(), UINT32_MAX);
+   EXPECT_GE(zcLedgers[0].getTxTime(), before);
+   EXPECT_LE(zcLedgers[0].getTxTime(), after);
+
+   //ledger page: the zc first, then the mined history
+   auto delegateId = getLedgerDelegateId(bridge_);
+   auto ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_GE(ledgers.size(), 2);
+   ASSERT_EQ(ledgers[0].getTxHash(), tx.getThisHash());
+   EXPECT_EQ(ledgers[0].getBlockNum(), UINT32_MAX);
+   EXPECT_GE(ledgers[0].getTxTime(), before);
+   EXPECT_LE(ledgers[0].getTxTime(), after);
+   for (unsigned i = 1; i < ledgers.size(); i++) {
+      EXPECT_NE(ledgers[i].getBlockNum(), UINT32_MAX);
+      EXPECT_LT(ledgers[i].getTxTime(), before);
+   }
+   auto zcTime = ledgers[0].getTxTime();
+
+   //a new bridge gets the zc from the db's txios instead of a notification
+   bridge_.reset();
+   replyQueue.clear();
+   bridge_ = std::make_shared<Bridge::CppBridge>(
+      std::make_shared<TestBridgeSocket>());
+   loadWallets({walletId_BCDE_});
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   delegateId = getLedgerDelegateId(bridge_);
+   ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_GE(ledgers.size(), 2);
+   ASSERT_EQ(ledgers[0].getTxHash(), tx.getThisHash());
+   EXPECT_EQ(ledgers[0].getBlockNum(), UINT32_MAX);
+   EXPECT_EQ(ledgers[0].getTxTime(), zcTime);
+   for (unsigned i = 1; i < ledgers.size(); i++) {
+      EXPECT_NE(ledgers[i].getBlockNum(), UINT32_MAX);
+      EXPECT_LT(ledgers[i].getTxTime(), before);
+   }
+}
+
 TEST_F(BridgeChainDataTests, ZeroConf_Replace)
 {
    loadWallets({walletId_BCDE_});
@@ -10481,9 +11519,9 @@ TEST_F(BridgeChainDataTests, ZeroConf_Replace)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -10681,9 +11719,9 @@ TEST_F(BridgeChainDataTests, ZeroConf_Chain)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -10906,9 +11944,9 @@ TEST_F(BridgeChainDataTests, ZeroConf_StaggeredChain)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -11421,9 +12459,9 @@ TEST_F(BridgeChainDataTests, ZeroConf_ChainRBF)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -11924,9 +12962,9 @@ TEST_F(BridgeChainDataTests, ZeroConf_Reload)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -12108,15 +13146,11 @@ TEST_F(BridgeChainDataTests, ZeroConf_Reload)
    /* cycle bridge */
    bridge_.reset();
    replyQueue.clear();
-   bridge_ = std::make_shared<Bridge::CppBridge>();
-   bridge_->setWriteLambda([](MsgPtr payload) {
-      std::unique_lock<std::mutex> lock(commsMutex);
-         replyQueue.emplace_back(std::move(payload));
-      commsCV.notify_all();
-   });
+   bridge_ = std::make_shared<Bridge::CppBridge>(
+      std::make_shared<TestBridgeSocket>());
 
    loadWallets({walletId_BCDE_});
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
    ASSERT_EQ(goOnline(bridge_), 5);
 
@@ -12196,9 +13230,9 @@ TEST_F(BridgeChainDataTests, ZeroConf_Reorg)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4A" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -12527,11 +13561,11 @@ TEST_F(BridgeChainDataTests, DISABLED_ZeroConf_RegisterWallet)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
    //init bridge
    loadWallets({walletId_BCDE_});
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -12762,9 +13796,9 @@ TEST_F(BridgeChainDataTests, RestoreSynchronize)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -12927,12 +13961,8 @@ TEST_F(BridgeChainDataTests, RestoreSynchronize)
    /* cycle bridge */
    bridge_.reset();
    replyQueue.clear();
-   bridge_ = std::make_shared<Bridge::CppBridge>();
-   bridge_->setWriteLambda([](MsgPtr payload) {
-      std::unique_lock<std::mutex> lock(commsMutex);
-         replyQueue.emplace_back(std::move(payload));
-      commsCV.notify_all();
-   });
+   bridge_ = std::make_shared<Bridge::CppBridge>(
+      std::make_shared<TestBridgeSocket>());
 
    //restore bip32 wlt
    unsigned restoreLookup = 500;
@@ -12967,7 +13997,7 @@ TEST_F(BridgeChainDataTests, RestoreSynchronize)
    }
 
    //go online
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
    ASSERT_EQ(goOnline(bridge_), 5);
 
@@ -13044,9 +14074,9 @@ TEST_F(BridgeChainDataTests, ZeroConf_SpendNew)
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
 
-   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", "9001", serverPubkey_));
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
 
    //start db, go online and wait on ready notif
@@ -13380,7 +14410,7 @@ protected:
       );
    }
 
-   virtual void SetUp()
+   void SetUp() override
    {
       FileUtils::removeDirectory(blkdir_);
       FileUtils::removeDirectory(homedir_);
@@ -13413,15 +14443,11 @@ protected:
       prepareWallets();
 
       replyQueue.clear();
-      bridge_ = std::make_shared<Bridge::CppBridge>();
-      bridge_->setWriteLambda([](MsgPtr payload) {
-         std::unique_lock<std::mutex> lock(commsMutex);
-         replyQueue.emplace_back(std::move(payload));
-         commsCV.notify_all();
-      });
+      bridge_ = std::make_shared<Bridge::CppBridge>(
+         std::make_shared<TestBridgeSocket>());
    }
 
-   virtual void TearDown()
+   void TearDown() override
    {
       bridge_.reset();
       FileUtils::removeDirectory(blkdir_);
@@ -13583,7 +14609,11 @@ protected:
       }
 
       auto validationReply = helperReply.getValidateDir();
-      return std::filesystem::path{validationReply.getPath()};
+      if (validationReply.getPruned() != false) {
+         throw std::runtime_error(
+            "test blk folder shouldn't be seen as pruned");
+      }
+      return std::filesystem::path{std::string{validationReply.getPath()}};
    }
 
 protected:
@@ -13616,11 +14646,33 @@ TEST_F(BridgeBlocksAutoDBTests, Connect)
    try {
       /*
       SatoshiDir is the path to the node home folder.
-      If the validation call is passed a path the `/blocks` suffix appended,
-      it should be strip in the reply (the validation call returns the "legal"
+      If the validation call is passed a path with the `/blocks` suffix appended,
+      it will be stripped in the reply (the validation call returns the "legal"
       path as part of its reply).
       We cover that behavior here.
+      Also poison cover block data xoring and blk file discovery
       */
+
+      //1. xor the blkfile folder
+      auto xorKey = TestUtils::xorTheBlockFolder(blkdir_);
+      ASSERT_NE(xorKey, UINT64_MAX);
+
+      //2. poison the folder
+      while (true) {
+         //grab random data to fill the file, make sure it doesn't start with
+         //the magic word, or it would be treated as a mangled block file
+         auto randomData = Cryptography::PRNG::fortuna.generateRandom(128);
+         if (randomData.getSliceRef(0, 4) ==
+            Config::BitcoinSettings::getMagicBytes().getRef()) {
+            continue;
+         }
+         std::fstream firstFile(blkdir_ / "blocks" / "afileaheadofothers.dat",
+            std::ios::out | std::ios::binary);
+         firstFile.write(randomData.getCharPtr(), randomData.getSize());
+         break;
+      }
+
+      //3. validate it
       validatedSatoshiDir = validateSatoshiDir(blkdir_ / "blocks");
    } catch (const std::exception& e) {
       ASSERT_TRUE(false) << e.what();
@@ -13692,7 +14744,7 @@ TEST_F(BridgeBlocksAutoDBTests, Connect_NoCleanup)
    }
 
    /* ephemeral db should clean itself up after the client disconnects */
-   bridge_->disconnectFromDb();
+   bridge_->cleanupDbConnection();
 
    //confirm db is down
    while (bridge_->isDbRunning()) {
@@ -14119,7 +15171,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       FileUtils::removeDirectory(blkdir_);
       FileUtils::removeDirectory(homedir_);
@@ -14180,12 +15232,8 @@ protected:
       clientPubKey_ = clientPeers.getOwnPublicKey();
 
       replyQueue.clear();
-      bridge_ = std::make_shared<Bridge::CppBridge>();
-      bridge_->setWriteLambda([](MsgPtr payload) {
-         std::unique_lock<std::mutex> lock(commsMutex);
-         replyQueue.emplace_back(std::move(payload));
-         commsCV.notify_all();
-      });
+      bridge_ = std::make_shared<Bridge::CppBridge>(
+         std::make_shared<TestBridgeSocket>());
 
       initBDM();
       auto nodePtr = std::dynamic_pointer_cast<NodeUnitTest>(
@@ -14193,13 +15241,14 @@ protected:
       nodePtr->setBDM(theBDMt_->bdm());
    }
 
-   /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown()
+   void TearDown() override
    {
       bridge_.reset();
       WebSocketServer::shutdown();
-      WebSocketServer::waitOnShutdown();
       theBDMt_->shutdown();
+      if (wsServerThr_.joinable()) {
+         wsServerThr_.join();
+      }
 
       delete theBDMt_;
       theBDMt_ = nullptr;
@@ -14208,6 +15257,17 @@ protected:
       FileUtils::removeDirectory(homedir_);
       FileUtils::removeDirectory(ldbdir_);
       Config::reset();
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   void startWSServer()
+   {
+      wsServerThr_ = std::thread([bdm=theBDMt_->bdm()](){
+         WebSocketServer::start(bdm); }
+      );
+
+      //arbitrary wait to give time to WS server to startup
+      std::this_thread::sleep_for(100ms);
    }
 
 protected:
@@ -14224,13 +15284,16 @@ protected:
    std::shared_ptr<Bridge::CppBridge> bridge_;
    BinaryData serverPubkey_;
    BinaryData clientPubKey_;
+   std::thread wsServerThr_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(BridgePeersManagement, ListAddConnect)
 {
    WebSocketServer::initPeerStore({homedir_ / SERVER_AUTH_PEER_FILENAME, {}});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    NetworkPeers::PeerKey clientPeer{clientPubKey_.getRef(), NetworkPeers::PeerType::Client};
    NetworkPeers::PeerKey serverPeer{serverPubkey_.getRef(), NetworkPeers::PeerType::ServerOneWay};
@@ -14253,7 +15316,7 @@ TEST_F(BridgePeersManagement, ListAddConnect)
    ASSERT_FALSE(connectToPeer(bridge_, serverKey));
 
    //add the server to peers store
-   auto serverAddress = std::string{"127.0.0.1:"} + Config::NetworkSettings::dbPort();
+   auto serverAddress = std::format("127.0.0.1:{}", Config::NetworkSettings::dbPort());
    addPeer(serverPubkey_, { serverAddress }, "the server key");
 
    //list again, server should appear
@@ -14277,7 +15340,10 @@ TEST_F(BridgePeersManagement, ListAddConnect)
 TEST_F(BridgePeersManagement, LoadDeleteCreate)
 {
    WebSocketServer::initPeerStore({homedir_ / SERVER_AUTH_PEER_FILENAME, {}});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+
    NetworkPeers::PeerKey serverPeer{serverPubkey_.getRef(), NetworkPeers::PeerType::ServerOneWay};
    auto serverKey = serverPeer.toHumanReadable();
 
@@ -14299,7 +15365,7 @@ TEST_F(BridgePeersManagement, LoadDeleteCreate)
    ASSERT_EQ(clientKey.size(), 48);
 
    //add the server to peers store
-   auto serverAddress = std::string{"127.0.0.1:"} + Config::NetworkSettings::dbPort();
+   auto serverAddress = std::format("127.0.0.1:{}", Config::NetworkSettings::dbPort());
    addPeer(serverPubkey_, { serverAddress }, "my serv key");
 
    //list again, server should appear
@@ -14323,7 +15389,9 @@ TEST_F(BridgePeersManagement, LoadDeleteCreate)
 TEST_F(BridgePeersManagement, Remove)
 {
    WebSocketServer::initPeerStore({homedir_ / SERVER_AUTH_PEER_FILENAME, {}});
-   WebSocketServer::start(theBDMt_->bdm(), true);
+   startWSServer();
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
 
    NetworkPeers::PeerKey clientPeer{clientPubKey_.getRef(), NetworkPeers::PeerType::Client};
    NetworkPeers::PeerKey serverPeer{serverPubkey_.getRef(), NetworkPeers::PeerType::ServerOneWay};
@@ -14345,7 +15413,7 @@ TEST_F(BridgePeersManagement, Remove)
    ASSERT_FALSE(connectToPeer(bridge_, "abcd"));
 
    //add the server to peers store
-   auto serverAddress = std::string{"127.0.0.1:"} + Config::NetworkSettings::dbPort();
+   auto serverAddress = std::format("127.0.0.1:{}", Config::NetworkSettings::dbPort());
    addPeer(serverPubkey_, { serverAddress }, "serv key");
 
    //also add a random key
@@ -14399,6 +15467,261 @@ TEST_F(BridgePeersManagement, Remove)
 
    //connect to db
    ASSERT_TRUE(connectToPeer(bridge_, serverKey));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+class BridgeDBCacheTests : public ::testing::Test
+{
+protected:
+   //the 2 txs the inputs of the BIP174 test vector spend from
+   const BinaryData rawTx1 = READHEX("0200000000010158e87a21b56daf0c23be8e7070456c336f7cbaa5c8757924f545887bb2abdd7501000000171600145f275f436b09a8cc9a2eb2a2f528485c68a56323feffffff02d8231f1b0100000017a914aed962d6654f9a2b36608eb9d64d2b260db4f1118700c2eb0b0000000017a914b7f5faf40e3d40a5a459b1db3535f2b72fa921e88702483045022100a22edcc6e5bc511af4cc4ae0de0fcd75c7e04d8c1c3a8aa9d820ed4b967384ec02200642963597b9b1bc22c75e9f3e117284a962188bf5e8a74c895089046a20ad770121035509a48eb623e10aace8bfd0212fdb8a8e5af3c94b0b133b95e114cab89e4f7965000000");
+   const BinaryData rawTx2 = READHEX("0200000001aad73931018bd25f84ae400b68848be09db706eac2ac18298babee71ab656f8b0000000048473044022058f6fc7c6a33e1b31548d481c826c015bd30135aad42cd67790dab66d2ad243b02204a1ced2604c6735b6393e5b41691dd78b00f0c5942fb9f751856faa938157dba01feffffff0280f0fa020000000017a9140fb9463421696b82c833af241c78c17ddbde493487d0f20a270100000017a91429ca74f8a08f81999428185c97b5d852e4063f618765000000");
+   const Types::TxKey minedKey = Types::constructTxKey(10, 3);
+   const Types::TxKey zcKey = Types::constructZCKey(5);
+
+   static void add(Ledgers::DBCache& cache,
+      const BinaryData& raw, Types::TxKey key)
+   {
+      Tx tx(raw);
+      tx.setTxKey(key);
+      cache.addTx(tx);
+   }
+
+   static Types::TxKey keyForHash(const Ledgers::DBCache& cache,
+      const BinaryData& raw)
+   {
+      return cache.getTxByHash(Tx(raw).getThisHash()).getDBKey();
+   }
+};
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, ZcThenMined)
+{
+   Ledgers::DBCache cache;
+   add(cache, rawTx1, zcKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), zcKey);
+
+   //the mined copy takes the hash, the zc entry stays for the ledgers
+   add(cache, rawTx1, minedKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), minedKey);
+   EXPECT_EQ(cache.getTx(zcKey).serialize(), rawTx1);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, MinedThenZc)
+{
+   Ledgers::DBCache cache;
+   add(cache, rawTx1, minedKey);
+   add(cache, rawTx1, zcKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), minedKey);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, MinedThenRemined)
+{
+   //a reorg mines the tx again in another block, the new copy wins
+   Ledgers::DBCache cache;
+   const auto reminedKey = Types::constructTxKey(11, 0);
+   add(cache, rawTx1, minedKey);
+   add(cache, rawTx1, reminedKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), reminedKey);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, EraseZcKeepsMined)
+{
+   Ledgers::DBCache cache;
+   add(cache, rawTx1, zcKey);
+   add(cache, rawTx1, minedKey);
+
+   //dropping the zc copy leaves the mined one
+   cache.eraseTx(zcKey);
+   EXPECT_THROW(cache.getTx(zcKey), std::out_of_range);
+   EXPECT_EQ(keyForHash(cache, rawTx1), minedKey);
+
+   //erasing the key the hash points to still drops the hash
+   cache.eraseTx(minedKey);
+   EXPECT_THROW(cache.getTxByHash(Tx(rawTx1).getThisHash()),
+      std::out_of_range);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, Candidates)
+{
+   //mined > pooled > unpooled, newest first within a kind
+   auto unpooledKey = Types::constructUnpooledKey(7);
+   auto minedKey2 = Types::constructTxKey(11, 0);
+
+   Ledgers::TxKeyCandidates candidates;
+   EXPECT_TRUE(candidates.empty());
+   EXPECT_EQ(candidates.best(), Types::INVALID_TX_KEY);
+
+   candidates.add(unpooledKey);
+   EXPECT_EQ(candidates.best(), unpooledKey);
+   candidates.add(zcKey);
+   EXPECT_EQ(candidates.best(), zcKey);
+   candidates.add(minedKey);
+   EXPECT_EQ(candidates.best(), minedKey);
+   candidates.add(minedKey2);
+   EXPECT_EQ(candidates.best(), minedKey2);
+   candidates.add(unpooledKey);
+   EXPECT_EQ(candidates.keys(), (std::vector<Types::TxKey>{
+      minedKey2, minedKey, zcKey, unpooledKey}));
+
+   EXPECT_TRUE(candidates.remove(minedKey2));
+   EXPECT_FALSE(candidates.remove(minedKey2));
+   EXPECT_EQ(candidates.best(), minedKey);
+   EXPECT_TRUE(candidates.remove(minedKey));
+   EXPECT_EQ(candidates.best(), zcKey);
+   EXPECT_TRUE(candidates.remove(zcKey));
+   EXPECT_EQ(candidates.best(), unpooledKey);
+   EXPECT_TRUE(candidates.remove(unpooledKey));
+   EXPECT_TRUE(candidates.empty());
+
+   //each key goes ahead of its kind and behind the better kinds: within a
+   //kind the newest comes first, whatever its id
+   auto minedKey0 = Types::constructTxKey(9, 0);
+   auto zcKey2 = Types::constructZCKey(6);
+   auto zcKey0 = Types::constructZCKey(4);
+   auto unpooledKey2 = Types::constructUnpooledKey(8);
+   auto unpooledKey0 = Types::constructUnpooledKey(6);
+   for (auto txKey : {minedKey, zcKey, unpooledKey, zcKey2, minedKey2,
+      unpooledKey2, zcKey0, minedKey0, unpooledKey0}) {
+      candidates.add(txKey);
+   }
+   EXPECT_EQ(candidates.keys(), (std::vector<Types::TxKey>{
+      minedKey0, minedKey2, minedKey, zcKey0, zcKey2, zcKey,
+      unpooledKey0, unpooledKey2, unpooledKey}));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, Unpooled)
+{
+   Ledgers::DBCache cache;
+   auto hash1 = Tx(rawTx1).getThisHash();
+
+   //a raw tx gets the next unpooled key, once
+   auto key1 = cache.addUnpooledTx(rawTx1);
+   EXPECT_EQ(key1, Types::constructUnpooledKey(0));
+   EXPECT_EQ(cache.getTx(key1).getBlockId(), Types::INVALID_BLOCK_ID);
+   EXPECT_EQ(cache.getTx(key1).getTxIndex(), UINT16_MAX);
+   EXPECT_EQ(cache.addUnpooledTx(rawTx1), key1);
+   EXPECT_EQ(cache.addUnpooledTx(rawTx2), Types::constructUnpooledKey(1));
+   EXPECT_EQ(cache.getTxByHash(hash1).serialize(), rawTx1);
+   EXPECT_EQ(keyForHash(cache, rawTx1), key1);
+
+   //the pooled and mined copies take over, the unpooled one stays below
+   add(cache, rawTx1, zcKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), zcKey);
+   add(cache, rawTx1, minedKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), minedKey);
+   EXPECT_EQ(cache.addUnpooledTx(rawTx1), minedKey);
+
+   //a purged hash keeps its mined copy only
+   EXPECT_EQ(cache.purgeTxs({hash1}), (std::set<Types::TxKey>{zcKey, key1}));
+   EXPECT_EQ(keyForHash(cache, rawTx1), minedKey);
+   cache.eraseTx(minedKey);
+   EXPECT_THROW(cache.getTxByHash(hash1), std::out_of_range);
+
+   //an erased copy falls back to what's left
+   auto zcKey2 = Types::constructZCKey(6);
+   add(cache, rawTx2, zcKey2);
+   EXPECT_EQ(keyForHash(cache, rawTx2), zcKey2);
+   cache.eraseTx(zcKey2);
+   EXPECT_EQ(keyForHash(cache, rawTx2), Types::constructUnpooledKey(1));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, EraseHashes)
+{
+   //every copy of the hash goes, other hashes stay
+   Ledgers::DBCache cache;
+   auto unpooledKey = cache.addUnpooledTx(rawTx1);
+   add(cache, rawTx1, zcKey);
+   add(cache, rawTx1, minedKey);
+   auto zcKey2 = Types::constructZCKey(6);
+   add(cache, rawTx2, zcKey2);
+
+   cache.eraseHashes({Tx(rawTx1).getThisHash()});
+   EXPECT_THROW(cache.getTxByHash(Tx(rawTx1).getThisHash()),
+      std::out_of_range);
+   for (auto txKey : {unpooledKey, zcKey, minedKey}) {
+      EXPECT_THROW(cache.getTx(txKey), std::out_of_range);
+   }
+   EXPECT_EQ(keyForHash(cache, rawTx2), zcKey2);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, ZcIdReuse)
+{
+   //zc ids can be reused after ArmoryDB restarts: a key can come back for
+   //another tx, the old tx goes
+   Ledgers::DBCache cache;
+   add(cache, rawTx1, zcKey);
+   add(cache, rawTx2, zcKey);
+   EXPECT_EQ(cache.getTx(zcKey).serialize(), rawTx2);
+   EXPECT_EQ(keyForHash(cache, rawTx2), zcKey);
+   EXPECT_THROW(cache.getTxByHash(Tx(rawTx1).getThisHash()),
+      std::out_of_range);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, PurgeSkipsMined)
+{
+   Ledgers::DBCache cache;
+   add(cache, rawTx1, minedKey);
+   add(cache, rawTx2, zcKey);
+
+   auto purged = cache.purgeTxs({
+      Tx(rawTx1).getThisHash(), Tx(rawTx2).getThisHash()});
+   EXPECT_EQ(purged, std::set<Types::TxKey>{zcKey});
+   EXPECT_EQ(keyForHash(cache, rawTx1), minedKey);
+   EXPECT_THROW(cache.getTxByHash(Tx(rawTx2).getThisHash()),
+      std::out_of_range);
+   EXPECT_THROW(cache.getTx(zcKey), std::out_of_range);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, InvalidKeys)
+{
+   //INVALID_TX_KEY and txio keys aren't tx keys, they are no candidates
+   using Kind = Ledgers::TxKeyCandidates::Kind;
+   const auto txioKey = Types::constructTxIOKey(10, 3, 1);
+   const auto unpooledKey = Types::constructUnpooledKey(7);
+   EXPECT_EQ(Ledgers::TxKeyCandidates::kindOf(Types::INVALID_TX_KEY),
+      Kind::Invalid);
+   EXPECT_EQ(Ledgers::TxKeyCandidates::kindOf(txioKey), Kind::Invalid);
+   EXPECT_EQ(Ledgers::TxKeyCandidates::kindOf(minedKey), Kind::Mined);
+   EXPECT_EQ(Ledgers::TxKeyCandidates::kindOf(zcKey), Kind::Pooled);
+   EXPECT_EQ(Ledgers::TxKeyCandidates::kindOf(unpooledKey), Kind::Unpooled);
+
+   Ledgers::TxKeyCandidates candidates;
+   candidates.add(Types::INVALID_TX_KEY);
+   candidates.add(txioKey);
+   EXPECT_TRUE(candidates.empty());
+   candidates.add(unpooledKey);
+   candidates.add(Types::INVALID_TX_KEY);
+   EXPECT_EQ(candidates.keys(), std::vector<Types::TxKey>{unpooledKey});
+
+   //a tx starts with an invalid key, the cache doesn't take a tx without
+   //a valid one
+   Ledgers::DBCache cache;
+   Tx unkeyed(rawTx2);
+   EXPECT_EQ(unkeyed.getDBKey(), Types::INVALID_TX_KEY);
+   cache.addTx(unkeyed);
+   add(cache, rawTx1, Types::INVALID_TX_KEY);
+   add(cache, rawTx1, txioKey);
+   EXPECT_THROW(cache.getTxByHash(Tx(rawTx1).getThisHash()),
+      std::out_of_range);
+   EXPECT_THROW(cache.getTxByHash(Tx(rawTx2).getThisHash()),
+      std::out_of_range);
+   EXPECT_THROW(cache.getTx(Types::INVALID_TX_KEY), std::out_of_range);
+   EXPECT_THROW(cache.getTx(txioKey), std::out_of_range);
+
+   //a valid key still goes in
+   add(cache, rawTx1, zcKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), zcKey);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

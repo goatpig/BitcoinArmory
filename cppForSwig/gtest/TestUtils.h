@@ -88,6 +88,8 @@ namespace TestUtils
       const std::filesystem::path&);
    void setBlocks(const std::vector<std::string>&,
       const std::filesystem::path&);
+   uint64_t xorTheBlockFolder(const std::filesystem::path,
+      uint64_t=UINT64_MAX);
    BinaryData getTx(unsigned, unsigned);
 
    std::shared_ptr<Armory::Assets::AssetEntry> getMainAccountAssetForIndex(
@@ -106,7 +108,7 @@ namespace DBTestUtils
 
    Armory::Types::BdvId registerBDV(Clients*, const BinaryData&);
    void goOnline(Clients*, Armory::Types::BdvId);
-   const std::shared_ptr<BDV_Server_Object> getBDV(Clients*, Armory::Types::BdvId);
+   const std::shared_ptr<BdvClient> getBDV(Clients*, Armory::Types::BdvId);
    void registerWallet(Clients*, Armory::Types::BdvId,
       const std::vector<BinaryData>&, const std::string&, bool);
 
@@ -159,6 +161,8 @@ namespace DBTestUtils
       BinaryData, bool = false);
 
    Tx getTxByHash(Clients*, Armory::Types::BdvId, const Armory::Types::TxHash&);
+   std::vector<Tx> getTxsByHash(Clients*, Armory::Types::BdvId,
+      const std::vector<Armory::Types::TxHash>&);
    Tx getTxByKey(Clients*, Armory::Types::BdvId, const Armory::Types::TxKey&);
 
    BinaryData processCommand(Clients*, Armory::Types::BdvId, BinaryData);

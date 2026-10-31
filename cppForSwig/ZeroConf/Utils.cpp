@@ -178,9 +178,29 @@ void ZeroConf::preprocessTx(ParsedTx& tx, LMDBBlockDatabase* db,
    */
 
    //sanity check: is this tx mined?
-   const auto& txHash = tx.getTxHash();
-   auto txKey = db->getDBKeyForHash(txHash);
-   if (Types::isTxKeyValid(txKey)) {
+   bool isMined = false;
+   try {
+      const auto& txHash = tx.getTxHash();
+      auto candidateTxKey = db->getDBKeyForHash(txHash);
+      if (Types::isTxKeyValid(candidateTxKey)) {
+         //we know of one mined tx carrying a similar hash, let's check
+         //it's actually the same hash
+         auto candidateTxHash = bd->getTxHashForTxKey(candidateTxKey);
+         isMined = (candidateTxHash == txHash);
+      }
+   } catch (const TxHintCollision& collision) {
+      //there are multiple candidate txs for this hash, does one of
+      //them match?
+      try {
+         auto solution = bd->resolveTxHintCollision(collision);
+         //there is a solution, tx is mined
+         isMined = true;
+      } catch (const NoSolutionException&) {
+         //no solution, this hash is not associated with a mined tx
+      }
+   }
+
+   if (isMined) {
       tx.state = ParsedTxStatus::Mined;
       return;
    }
@@ -224,7 +244,7 @@ void ZeroConf::preprocessTx(ParsedTx& tx, LMDBBlockDatabase* db,
 
       if (!opRef.isResolved()) {
          //resolve outpoint to dbkey
-         opRef.resolveDbKey(db);
+         opRef.resolveDbKey(db, bd);
          if (!opRef.isResolved()) {
             continue;
          }
@@ -459,17 +479,32 @@ void OutPointRef::unserialize(BinaryDataRef bdr)
    unserialize(bdr.getPtr(), bdr.getSize());
 }
 
-void OutPointRef::resolveDbKey(LMDBBlockDatabase *dbPtr)
+void OutPointRef::resolveDbKey(
+   LMDBBlockDatabase *dbPtr, std::shared_ptr<BlockchainData> bd)
 {
    if (txHash_.empty() || txOutIndex_ == UINT16_MAX) {
       throw std::runtime_error("empty outpoint hash");
    }
 
-   auto key = dbPtr->getDBKeyForHash(txHash_);
-   if (key == Types::INVALID_TX_KEY) {
-      return;
+   try {
+      auto txKeyCandidate = dbPtr->getDBKeyForHash(txHash_);
+      if (Types::isTxKeyValid(txKeyCandidate)) {
+         //there's a key candidate for this hash, check it
+         if (bd->getTxHashForTxKey(txKeyCandidate) == txHash_) {
+            //hash matches, this our key
+            setDbKey(txKeyCandidate);
+         }
+      }
+   } catch (const TxHintCollision& collision) {
+      //multiple candidate keys for this hash, look for a match
+      try {
+         auto solution = bd->resolveTxHintCollision(collision);
+         //there's a solution, this our tx key
+         setDbKey(solution.txKey);
+      } catch (const NoSolutionException&) {
+         //none of the candidates match our hash
+      }
    }
-   setDbKey(key);
 }
 
 bool OutPointRef::isResolved() const
@@ -675,6 +710,20 @@ std::shared_ptr<ParsedTx> MempoolData::getTx(Types::TxKey key) const
    return iter->second;
 }
 
+size_t MempoolData::getTxCount() const
+{
+   size_t count = 0;
+   for (const auto& txPair : txMap_) {
+      if (txPair.second != nullptr) {
+         ++count;
+      }
+   }
+   if (parent_ != nullptr) {
+      count += parent_->getTxCount();
+   }
+   return count;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 Types::TxKey MempoolData::getKeyForHash(const Types::TxHash& hash) const
 {
@@ -802,21 +851,15 @@ void MempoolData::dropFromSpentTxOuts(Types::TxIOKey key)
 
 ///////////////////////////////////////////////////////////////////////////////
 void MempoolData::dropFromScrAddrMap(
-   const Types::ScrAddr& scrAddr, Types::TxKey zcKey)
+   const Types::ScrAddr& scrAddr, Types::TxIOKey txioKey)
 {
-   //this scrAddr is funded by outputs from this zc, remove them
+   /*
+   Remove this txio key from the scrAddr's set. The keys of a given tx
+   aren't contiguous in the set (the output index sits in the high bits
+   of the key), so drop the exact key rather than a range.
+   */
    auto& txioKeys = getTxioKeysForScrAddr_NoThrow(scrAddr);
-
-   //look for txio keys belonging to our zc
-   auto lowKey = Types::constructTxIOKeyFromTxKey(zcKey, 0);
-   auto keyIter = txioKeys.lower_bound(lowKey);
-   while (keyIter != txioKeys.end()) {
-      if (Types::getTxKeyFromTxIOKey(*keyIter) != zcKey) {
-         break;
-      }
-      //remove all entries that begin with our zcKey
-      txioKeys.erase(keyIter++);
-   }
+   txioKeys.erase(txioKey);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1050,7 +1093,17 @@ void MempoolSnapshot::preprocessZcMap(
    ZeroConf::preprocessZcMap(data_->txMap_, db, bd);
 }
 
-///////////////////////////////////////////////////////////////////////////////
+Types::ZcId MempoolSnapshot::getTopZcID() const
+{
+   return topID_;
+}
+
+size_t MempoolSnapshot::getTxCount() const
+{
+   return data_->getTxCount();
+}
+
+////////
 std::shared_ptr<ParsedTx> MempoolSnapshot::getTxByKey_NoConst(
    Types::TxKey key) const
 {
@@ -1064,16 +1117,17 @@ std::shared_ptr<const ParsedTx> MempoolSnapshot::getTxByKey(
    return std::const_pointer_cast<const ParsedTx>(txPtr);
 }
 
-std::shared_ptr<const ParsedTx> MempoolSnapshot::getTxByHash(
-   const Types::TxHash& hash) const
+const Types::TxHash& MempoolSnapshot::getHashForKey(
+   Types::TxKey key) const
 {
-   auto key = getKeyForHash(hash);
-   if (!Types::isTxKeyValid(key)) {
-      return nullptr;
+   auto txPtr = getTxByKey(key);
+   if (txPtr == nullptr) {
+      throw std::runtime_error(std::format("not hash for zc key {:x}", key));
    }
-   return getTxByKey(key);
+   return txPtr->getTxHash();
 }
 
+////////
 TxOut MempoolSnapshot::getTxOutCopy(Types::TxKey key, Types::TxIOId outputId) const
 {
    auto txPtr = getTxByKey(key);
@@ -1092,27 +1146,24 @@ std::shared_ptr<const TxIOPair> MempoolSnapshot::getTxioByKey(
    return data_->getTxio(txioKey);
 }
 
+////////
 Types::TxKey MempoolSnapshot::getKeyForHash(
    const Types::TxHash& hash) const
 {
    return data_->getKeyForHash(hash);
 }
 
-const Types::TxHash& MempoolSnapshot::getHashForKey(
-   Types::TxKey key) const
+std::shared_ptr<const ParsedTx> MempoolSnapshot::getTxByHash(
+   const Types::TxHash& hash) const
 {
-   auto txPtr = getTxByKey(key);
-   if (txPtr == nullptr) {
-      throw std::runtime_error(std::format("not hash for zc key {:x}", key));
+   auto key = getKeyForHash(hash);
+   if (!Types::isTxKeyValid(key)) {
+      return nullptr;
    }
-   return txPtr->getTxHash();
+   return getTxByKey(key);
 }
 
-Types::ZcId MempoolSnapshot::getTopZcID() const
-{
-   return topID_;
-}
-
+////////
 bool MempoolSnapshot::hasHash(const Types::TxHash& hash) const
 {
    return data_->getKeyForHash(hash) != Types::INVALID_TX_KEY;
@@ -1123,6 +1174,7 @@ bool MempoolSnapshot::isTxOutSpentByZC(Types::TxIOKey key) const
    return data_->isTxOutSpentByZC(key);
 }
 
+////////
 const TxIOKeys& MempoolSnapshot::getTxioKeysForScrAddr(
    const Types::ScrAddr& scrAddr) const
 {
@@ -1201,8 +1253,7 @@ std::map<Types::TxKey, std::shared_ptr<ParsedTx>> MempoolSnapshot::dropZc(
       if (Types::isThisAZCKey(input.opRef.getDbKey())) {
          continue;
       }
-      data_->dropFromScrAddrMap(input.scrAddr,
-         Types::getTxKeyFromTxIOKey(input.opRef.getDbKey()));
+      data_->dropFromScrAddrMap(input.scrAddr, input.opRef.getDbKey());
    }
 
    /*
@@ -1232,8 +1283,9 @@ std::map<Types::TxKey, std::shared_ptr<ParsedTx>> MempoolSnapshot::dropZc(
    }
 
    //drop outputs from scrAddrMap
-   for (const auto& output : txPtr->outputs) {
-      data_->dropFromScrAddrMap(output.scrAddr, zcKey);
+   for (Types::TxIOId i = 0; i < txPtr->outputs.size(); i++) {
+      data_->dropFromScrAddrMap(txPtr->outputs[i].scrAddr,
+         Types::constructTxIOKeyFromTxKey(zcKey, i));
    }
 
    //drop all txios this ZC created (where our tx holds the txout)
@@ -1301,7 +1353,7 @@ std::shared_ptr<MempoolSnapshot> MempoolSnapshot::copy(
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void MempoolSnapshot::commitNewZCs()
+void MempoolSnapshot::mergeWithParents()
 {
    //figure out depth and size of each mempool obj, merge if necessary
    if (data_->txioMap_.empty() &&

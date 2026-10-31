@@ -14,6 +14,7 @@
 #include <filesystem>
 
 #include <Utils/ReentrantLock.h>
+#include <Utils/ThreadSafeClasses.h>
 #include "Loader.h"
 #include "Container.h"
 
@@ -57,26 +58,32 @@ namespace Armory
    ////////
    namespace Bridge
    {
-      class Callback;
       class TxIOCache;
-      struct NotifStruct;
+      namespace Notifications
+      {
+         namespace Server
+         {
+            class NotifHandler;
+            class Notif;
+         }
+      }
+
       using AAIdSet = std::set<Wallets::AddressAccountId>;
+      using ContainerPtr = std::shared_ptr<WalletContainer>;
+      using NotifQueue = Threading::BlockingQueue<
+         std::unique_ptr<Notifications::Server::Notif>>;
 
       class WalletManager : public Lockable
       {
       private:
-         const std::filesystem::path path_;
+         const std::filesystem::path walletsDir_;
+         const std::shared_ptr<NotifQueue> notifQueue_;
+
          std::map<std::string, std::shared_ptr<WalletFileInfo>> walletFiles_;
-
          std::map<Wallets::WalletId, std::map<
-            Wallets::AddressAccountId,
-            std::shared_ptr<WalletContainer>>> wallets_;
-         std::map<std::string, std::shared_ptr<WalletContainer>> walletsByDbId_;
-
-         std::shared_ptr<Callback> callbackPtr_;
-         std::function<void(void)> cleanupCallback_;
+            Wallets::AddressAccountId, ContainerPtr>> wallets_;
+         std::map<std::string, ContainerPtr> walletsByDbId_;
          std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr_;
-         bool automatesDB_ = false;
 
          //history
          std::shared_ptr<TxIOCache> txioCache_;
@@ -86,14 +93,16 @@ namespace Armory
       private:
          void initAfterLock(void) override {}
          void cleanUpBeforeUnlock(void) override {}
-         std::shared_ptr<WalletContainer> addAccount(
+         ContainerPtr addAccount(
             std::shared_ptr<Wallets::AssetWallet>,
             const Wallets::AddressAccountId&);
          void addAllAccounts(std::shared_ptr<Wallets::AssetWallet>);
          void loadAFile(const std::filesystem::path&);
 
       public:
-         WalletManager(const std::filesystem::path&);
+         WalletManager(
+            const std::filesystem::path&,
+            std::shared_ptr<NotifQueue>);
 
          /* pre wallets loading calls */
          std::map<std::string, std::shared_ptr<WalletFileInfo>> listWallets(void);
@@ -108,28 +117,24 @@ namespace Armory
          std::shared_ptr<WalletFileInfo> importFile(const std::filesystem::path&);
 
          /* connection setup */
-         void setBdvCallback(
-            const std::function<void(BinaryData&)>&);
-         void setCleanupCallback(
-            const std::function<void(void)>&);
-         std::shared_ptr<Callback> getBdvCallback(void) const;
-         void setBdvPtr(std::shared_ptr<AsyncClient::BlockDataViewer>, bool=false);
-         void cleanupBDV(void);
+         void setBdvPtr(std::shared_ptr<AsyncClient::BlockDataViewer>);
+         void cleanupBdvPtr(void);
 
          /* utils */
-         const std::filesystem::path& getWalletDir(void) const;
-         void updateStateFromDB(std::shared_ptr<NotifStruct>);
+         const std::filesystem::path& getWalletsDir(void) const;
+         void updateStateFromDB(std::unique_ptr<Notifications::Server::Notif>);
          std::shared_ptr<const TxIOCache> txioCache(void) const;
+         void addUnpooledTxs(const std::vector<BinaryData>&);
+         void fetchTxs(std::shared_ptr<AsyncClient::BlockDataViewer>,
+            const std::set<Types::TxHash>&);
 
          /* loaded wallet getters */
          bool hasWallet(const Wallets::WalletId&);
-         std::shared_ptr<WalletContainer> getWalletContainer(
-            const Wallets::WalletId&) const;
-         std::shared_ptr<WalletContainer> getWalletContainer(
-            const Wallets::WalletId&, const Wallets::AddressAccountId&) const;
+         ContainerPtr getContainer(const Wallets::WalletId&) const;
+         ContainerPtr getContainer(const Wallets::WalletId&,
+            const Wallets::AddressAccountId&) const;
          AAIdSet getAddressAccountIds(const Wallets::WalletId&) const;
-         const std::map<std::string, std::shared_ptr<WalletContainer>>&
-         getWalletContainerMap(void) const;
+         const std::map<std::string, ContainerPtr>& getContainerMap(void) const;
 
          /* wallet add/create/delete */
          void loadWallet(const Wallets::IO::ReadOnlyFileParams&);
@@ -163,8 +168,7 @@ namespace Armory
             const Wallets::WalletId&, const Wallets::AddressAccountId&,
             const Types::ScrAddr&);
 
-         std::map<std::string, std::shared_ptr<WalletContainer>>
-         getFilteredContainerMap(void) const;
+         std::map<std::string, ContainerPtr> getFilteredContainerMap(void) const;
          void updateMainLedgerFilter(
             const std::map<Wallets::WalletId, AAIdSet>&);
 

@@ -73,7 +73,7 @@ namespace Armory
          const bool automateDb_;
 
          std::shared_ptr<NetworkPeers::ClientStore> peers_;
-         uint32_t dbPort_ = UINT32_MAX;
+         uint16_t dbPort_ = UINT16_MAX;
          bool hasRun_ = false;
 
          std::string rpcLogin_;
@@ -101,7 +101,7 @@ namespace Armory
 
          bool isDbRunning(void);
          bool isSatoshiRunning(void);
-         uint32_t getDbPort(void) const;
+         uint16_t getDbPort(void) const;
          std::shared_ptr<NetworkPeers::ClientStore> getPeerStore(void) const;
       };
 
@@ -110,7 +110,7 @@ namespace Armory
 
       BdvPtr setupClientConnection(
          std::shared_ptr<NetworkPeers::ClientStore>,
-         const std::string&, const std::string&, bool,
+         const std::string&, uint16_t, bool,
          const std::function<bool(const BinaryData&)>&,
          std::shared_ptr<RemoteCallback>
       );

@@ -14,6 +14,7 @@
 
 #include <Utils/BinaryData.h>
 #include <Utils/Types.h>
+#include <set>
 
 //PayStruct flags
 #define USE_FULL_CUSTOM_LIST  1
@@ -36,6 +37,21 @@ public:
    const std::vector<std::string>& getAddresses(void) const;
    uint64_t total(void) const;
    uint64_t value(void) const;
+};
+
+//////////////////////////////////////////////////////////////////////////
+// tx hint collision exception
+class TxHintCollision
+{
+private:
+   const Armory::Types::TxHash txHash_;
+   const std::set<Armory::Types::TxKey> candidates_;
+
+public:
+   TxHintCollision(const Armory::Types::TxHash&, std::set<Armory::Types::TxKey>&);
+
+   const Armory::Types::TxHash& getTxHash(void) const;
+   const std::set<Armory::Types::TxKey>& getCandidates(void) const;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -247,7 +263,7 @@ private:
 
    uint32_t txTime_{UINT32_MAX};
    mutable Armory::Types::TxHash thisHash_;
-   Armory::Types::TxKey txKey_;
+   Armory::Types::TxKey txKey_{Armory::Types::INVALID_TX_KEY};
 
    bool isRBF_ = false;
    bool isChainedZc_ = false;

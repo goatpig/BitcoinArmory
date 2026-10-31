@@ -200,7 +200,7 @@ void BlockFiles::detectAllBlockFiles()
             continue;
          }
 
-         //this is the xor key, grab ita
+         //this is the xor key, grab it
          auto fileCopy = FileUtils::FileCopy(filePath);
          if (fileCopy.size() != 8) {
             LOGWARN << "Found a xor key but it's not 8 bytes";
@@ -254,7 +254,7 @@ const std::filesystem::path& BlockFiles::getLastFilePath() const
    return paths_.rbegin()->second.path;
 }
 
-const std::filesystem::path& BlockFiles::getFilePathForID(
+const BlockFiles::FileStat& BlockFiles::getFileStatForID(
    uint16_t fileID) const
 {
    auto iter = paths_.find(fileID);
@@ -262,7 +262,7 @@ const std::filesystem::path& BlockFiles::getFilePathForID(
       LOGERR << "no file path for id " << fileID;
       throw std::range_error("unexpected fileID");
    }
-   return iter->second.path;
+   return iter->second;
 }
 
 uint16_t BlockFiles::getFirstID() const

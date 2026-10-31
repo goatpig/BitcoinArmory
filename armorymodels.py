@@ -656,7 +656,7 @@ class ArmoryBlockAndDateSelector(QtCore.QObject):
       self.Block = block
 
       try:
-         self.Date = TheBridge.getBlockTimeByHeight(block)
+         self.Date = TheBridge.wltManager.getBlockTimeByHeight(block)
          datefmt = self.main.getPreferredDateFormat()
          dateStr = unixTimeToFormatStr(self.Date, datefmt)
       except:

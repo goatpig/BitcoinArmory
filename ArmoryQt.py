@@ -48,7 +48,8 @@ from armoryengine.ArmoryUtils import HMAC256, \
    unixTimeToFormatStr, binary_to_hex, BTC_HOME_DIR, secondsToHumanTime, \
    LEVELDB_BLKDATA, LOGPPRINT, hex_to_binary, \
    getRandomHexits_NotSecure, coin2strNZS, bytesToHumanSize, hash256, \
-   DEFAULT_ADDR_TYPE, hex_switchEndian, BLOCKEXPLORE_NAME, getBridgeArgList
+   DEFAULT_ADDR_TYPE, hex_switchEndian, BLOCKEXPLORE_NAME, getBridgeArgList, \
+   getLastBytesOfFile, ARMORY_LOG_FILE, ARMCPP_LOG_FILE, ARMDB_LOG_FILE
 from armoryengine.Settings import TheSettings
 from armoryengine.AddressUtils import base58_to_binary, Hash160ToScrAddr, \
    hash160_to_addrStr, addrStr_to_hash160, scrAddr_to_script, \
@@ -70,7 +71,7 @@ from armoryengine.BDM import TheBDM, \
    BDMPhase_Balance, BDMPhase_SearchHashes, BDMPhase_ResolveHashes
 
 from armoryengine.PyBtcWallet import PyBtcWallet
-from armoryengine.Transaction import PyTx
+from armoryengine.Transaction import getTxsByHash
 from armoryengine.WalletUtils import WalletTypes, WalletFilter, \
    determineWalletType, loadWalletsForMainApp
 
@@ -140,9 +141,15 @@ handler = URLHandler()
 QtGui.QDesktopServices.setUrlHandler("http", handler, "handleURL")
 QtGui.QDesktopServices.setUrlHandler("https", handler, "handleURL")
 
-# Load our framework with OS X-specific code.
+# Load our framework with OS X-specific code. The ArmoryMac helper is only
+# built by the old Qt4/sip OS X build; without it, plain Qt handles the dock
+# icon and tray messages.
+ArmoryMac = None
 if OS_MACOSX:
-   import ArmoryMac
+   try:
+      import ArmoryMac
+   except ImportError:
+      ArmoryMac = None
 
 # HACK ALERT: QtCore.Qt has a bug in OS X where the system font settings will override
 # the app's settings when a window is activated (e.g., Armory starts, the user
@@ -193,7 +200,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       # OS X requires some Objective-C code if we're switching to the testnet
       # (green) icon. We should also use a larger icon. Otherwise, Info.plist
       # takes care of everything.
-      if not OS_MACOSX:
+      if ArmoryMac is None:
          self.setWindowIcon(QtGui.QIcon(self.iconfile))
       else:
          if USE_TESTNET or USE_REGTEST:
@@ -275,6 +282,9 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          TheSignalExecution.executeMethod(self.handleCppNotification,
             action, arglist)
 
+      #notifications are held until the UI is built, see
+      #processQueuedCppNotifications
+      self.queuedCppNotifications = []
       TheBDM.registerCppNotification(cppNotifySignal)
       self.progressCallbacks = {}
 
@@ -729,7 +739,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
       # Restore any main-window geometry saved in the settings file
       hexgeom   = TheSettings.get('MainGeometry')
-
       hexwltsz  = TheSettings.get('MainWalletCols')
       if len(hexgeom)>0:
          #QtCore.QByteArray is weak sauce, have to deser the hexit on our own
@@ -748,8 +757,12 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       if CLI_ARGS:
          TheSignalExecution.callLater(1, self.uriLinkClicked, CLI_ARGS[0])
 
-      if OS_MACOSX:
+      if ArmoryMac is not None:
          self.macNotifHdlr = ArmoryMac.MacNotificationHandler()
+
+      # The widgets the notification handlers use exist now, process the
+      # notifications that came in while the UI was being built
+      self.processQueuedCppNotifications()
 
       # Now that construction of the UI is done
       # Check for warnings to be displayed
@@ -1491,7 +1504,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       return True
 
    #############################################################################
-   def createAction(self,  txt, slot, isCheckable=False, \
+   def createAction(self, txt, slot, isCheckable=False,
       ttip=None, iconpath=None, shortcut=None):
       """
       Modeled from the "Rapid GUI Programming with Python and QtCore.Qt" book, page 174
@@ -1856,17 +1869,10 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       # issue of some sort. Some experimental code under ArmoryMac that directly
       # calls a dialog produces better results but still freezes under some
       # circumstances.
-      fullPath = str(QtWidgets.QFileDialog.getSaveFileName(
+      # getSaveFileName returns a (path, selected filter) tuple
+      filePath = QtWidgets.QFileDialog.getSaveFileName(
          self, title, startPath, typesStr,
-         options=QtWidgets.QFileDialog.DontUseNativeDialog))
-
-      '''
-      With PySide2, QtWidgets.QFileDialog.getSaveFileName return the user selection as
-      str("('file name', 'filter1'; 'filter2')")
-      '''
-      pathStripped = fullPath.strip('(')
-      pathList = pathStripped.split(',')
-      filePath = pathList[0].strip('\'')
+         options=QtWidgets.QFileDialog.DontUseNativeDialog)[0]
 
       fdir,fname = os.path.split(filePath)
       if fdir:
@@ -1898,21 +1904,14 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       # issue of some sort. Some experimental code under ArmoryMac that directly
       # calls a dialog produces better results but still freezes under some
       # circumstances.
+      # getOpenFileName returns a (path, selected filter) tuple
       if not OS_MACOSX:
-         fullPath = str(QtWidgets.QFileDialog.getOpenFileName(
-            self, title, defaultDir, typeStr))
+         filePath = QtWidgets.QFileDialog.getOpenFileName(
+            self, title, defaultDir, typeStr)[0]
       else:
-         fullPath = str(QtWidgets.QFileDialog.getOpenFileName(
+         filePath = QtWidgets.QFileDialog.getOpenFileName(
             self, title, defaultDir, typeStr,
-            options=QtWidgets.QFileDialog.DontUseNativeDialog))
-
-      '''
-      With PySide2, QtWidgets.QFileDialog.getOpenFileName return the user selection as
-      str("('file name', 'filter1'; 'filter2')")
-      '''
-      pathStripped = fullPath.strip('(')
-      pathList = pathStripped.split(',')
-      filePath = pathList[0].strip('\'')
+            options=QtWidgets.QFileDialog.DontUseNativeDialog)[0]
 
       TheSettings.set('LastDirectory', os.path.split(filePath)[0])
       return filePath
@@ -2848,14 +2847,12 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
       pytx = None
       txHashBin = hex_to_binary(txHash)
-      txProto = TheBridge.service.getTxsByHash([txHashBin])
-      if not txProto or len(txProto) == 0:
+      bridgeTxs = getTxsByHash([txHashBin])
+      if txHashBin not in bridgeTxs:
          QtWidgets.QMessageBox.critical(self, self.tr('Error'), self.tr(
-         f"Could not find a transaction for hash {txHash}!", QtWidgets.QMessageBox.Ok))
+         f"Could not find a transaction for hash {txHash}!"), QtWidgets.QMessageBox.Ok)
          return
-      txData = txProto[txHashBin]
-      pytx = PyTx().unserialize(txData.body.raw)
-      pytx.setRBF(txData.body.isRbf)
+      pytx = bridgeTxs[txHashBin].pytx
 
       if pytx==None:
          QtWidgets.QMessageBox.critical(self, self.tr('Invalid Tx'), self.tr(
@@ -4395,7 +4392,26 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          self.lblArmoryStatus.setToolTipLambda(getToolTipTextOffline)
 
    #############################################################################
+   def processQueuedCppNotifications(self):
+      queue = self.queuedCppNotifications
+      self.queuedCppNotifications = None
+      for action, args in queue:
+         #an exception in a Qt slot only gets reported, do the same here
+         #rather than abort the main window construction
+         try:
+            self.handleCppNotification(action, args)
+         except Exception:
+            LOGEXCEPT('Error processing queued notification: %s', action)
+
+   #############################################################################
    def handleCppNotification(self, action, args):
+      if self.queuedCppNotifications is not None:
+         #The main window is still being built. Modal dialogs shown from
+         #__init__ (e.g. the EULA) run their own event loop, which delivers
+         #notifications before the widgets the handlers below use exist.
+         self.queuedCppNotifications.append((action, args))
+         return
+
       if action == INIT_DB_READY:
          #Blockchain just finished loading, finish initializing UI and render
          #the ledgers
@@ -4797,7 +4813,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          else:
             LOGINFO('BDM is safe for clean shutdown')
 
-         TheBDM.shutdown()
          # Remove Temp Modules Directory if it exists:
          if self.tempModulesDirName:
             shutil.rmtree(self.tempModulesDirName)
@@ -4833,7 +4848,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
    # System tray notifications require specific code for OS X. We'll handle
    # messages here to hide the ugliness.
    def showTrayMsg(self, dispTitle, dispText, dispIconType, dispTime):
-      if not OS_MACOSX:
+      if ArmoryMac is None:
          self.sysTray.showMessage(dispTitle, dispText, dispIconType, dispTime)
       else:
          # Code supporting Growl (OSX 10.7) is buggy, and no one seems to care.
@@ -5005,9 +5020,12 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
       #grab ZC from DB
       txHashBin = hex_to_binary(txHash)
-      result = TheBridge.service.getTxsByHash([txHashBin])
-      zctx = result[txHashBin]
-      pytx = PyTx().unserialize(zctx.body.raw)
+      result = getTxsByHash([txHashBin])
+      if txHashBin not in result:
+         QtWidgets.QMessageBox.critical(self, self.tr('Error'), self.tr(
+         f"Could not find a transaction for hash {txHash}!"), QtWidgets.QMessageBox.Ok)
+         return
+      pytx = result[txHashBin].pytx
 
       #init tx prefill data
       prefill = {

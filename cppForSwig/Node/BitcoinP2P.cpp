@@ -1280,9 +1280,9 @@ void P2P::Iface::requestTx(InvVector invVec)
 ////////////////////////////////////////////////////////////////////////////////
 // Peer
 P2P::Peer::Peer(
-   const std::string& addrV4, const std::string& port,
+   const std::string& addrV4, Network::port_t port, const std::string& name,
    uint32_t magicword, bool watcher) :
-   Iface(magicword, watcher), addr_(addrV4), port_(port)
+   Iface(magicword, watcher), addr_(addrV4), port_(port), name_{name}
 {
    init();
 }
@@ -1304,15 +1304,20 @@ void P2P::Peer::init()
 void P2P::Peer::connectToNode(bool async)
 {
    std::unique_lock<std::mutex> lock(connectMutex_, std::defer_lock);
-   if (!lock.try_lock() || connectedPromise_ != nullptr) {
+   if (!lock.try_lock()) {
       //return if another thread is already here
-      throw Network::SocketError("another connect attempt is underway");
+      throw Network::SocketError(std::format(
+         "another connect attempt is underway for {}", name_));
    }
 
-   connectedPromise_ = std::unique_ptr<std::promise<bool>>(new std::promise<bool>());
-   auto connectedFuture = connectedPromise_->get_future();
+   std::promise<void> connectedPromise;
+   auto connectedFuture = connectedPromise.get_future();
 
-   std::thread connectthread([this]{ connectLoop(); });
+   std::thread connectthread(
+      [this](std::promise<void> prom)
+      { connectLoop(std::move(prom)); },
+      std::move(connectedPromise)
+   );
    if (connectthread.joinable()) {
       connectthread.detach();
    }
@@ -1321,16 +1326,16 @@ void P2P::Peer::connectToNode(bool async)
       return;
    }
 
-   connectedFuture.get();
+   connectedFuture.wait();
    if (process_except_ != nullptr) {
       std::rethrow_exception(process_except_);
    }
 }
 
-void P2P::Peer::connectLoop()
+void P2P::Peer::connectLoop(std::promise<void> connectedPromise)
 {
    auto waitBeforeReconnect = 0ms;
-   std::promise<bool> shutdownPromise;
+   std::promise<void> shutdownPromise;
    shutdownFuture_ = shutdownPromise.get_future();
 
    if (!invTxLambda_) {
@@ -1339,23 +1344,17 @@ void P2P::Peer::connectLoop()
 
    while (run_.load(std::memory_order_relaxed)) {
       //setup fresh connection
-      dataStack_ = std::make_shared<
-         Threading::BlockingQueue<std::vector<uint8_t>>>();
-      socket_ = std::make_unique<Socket>(addr_, port_, dataStack_);
-      verackPromise_ = std::make_unique<std::promise<bool>>();
+      socket_ = std::make_unique<Socket>(addr_, port_, name_);
+      verackPromise_ = std::make_unique<std::promise<void>>();
       auto verackFuture = verackPromise_->get_future();
 
-      while (run_.load(std::memory_order_relaxed)) {
-         if (socket_->openSocket(false)) {
-            break;
-         }
-
+      if (!socket_->openSocket(false)) {
+         //wait some time to reconnect or until the condvar triggers
          waitBeforeReconnect = std::min(
             waitBeforeReconnect + RECONNECT_DELAY, 5000ms);
-         std::this_thread::sleep_for(waitBeforeReconnect);
-      }
-      if (!socket_->isValid()) {
-         break;
+         std::unique_lock<std::mutex> lock(connectLoopMutex_);
+         connectLoopCV_.wait_for(lock, waitBeforeReconnect);
+         continue;
       }
 
       auto processThread = [this](void)->void
@@ -1377,28 +1376,32 @@ void P2P::Peer::connectLoop()
       try {
          //send version
          if (socket_->getSocketName(clientsocketaddr) != 0) {
-            throw Network::SocketError("failed to get client sockaddr");
+            throw Network::SocketError(
+               std::format("{} failed to get client sockaddr", name_));
          }
          if (socket_->getPeerName(node_addr_) != 0) {
-            throw Network::SocketError("failed to get peer sockaddr");
+            throw Network::SocketError(
+               std::format("failed to get peer sockaddr", name_));
          }
 
          // Services, for future extensibility
          uint32_t services = NODE_WITNESS;
          version->setVersionHeaderIPv4(70012, services, timestamp,
             node_addr_, clientsocketaddr);
-         version->userAgent_ = "Armory:0.96.5";
+         version->userAgent_ = "Armory:0.96.99";
          version->startHeight_ = -1;
          sendMessage(std::move(version));
 
          //wait on verack
          verackFuture.get();
          verackPromise_.reset();
-         LOGINFO << "Connected to Bitcoin node";
+         LOGINFO << std::format("{} is connected to Bitcoin node", name_);
          updateNodeStatus(true);
 
-         //signal calling thread
-         connectedPromise_->set_value(true);
+         try {
+            //notify calling thread the connection is ready on first success
+            connectedPromise.set_value();
+         } catch (const std::future_error&) {}
          waitBeforeReconnect = 0ms;
 
          //signal new blocks for good measure
@@ -1416,10 +1419,10 @@ void P2P::Peer::connectLoop()
       if (socket_->isValid()) {
          socket_->shutdown();
       }
-      LOGINFO << "Disconnected from Bitcoin node";
+      LOGINFO << std::format("{} disconnected from Bitcoin node", name_);
       updateNodeStatus(false);
    }
-   shutdownPromise.set_value(true);
+   shutdownPromise.set_value();
 }
 
 ////////
@@ -1431,7 +1434,7 @@ void P2P::Peer::processDataStackThread()
          auto prevPacket = packetPtr;
          packetPtr.reset();
 
-         auto data = dataStack_->pop_front();
+         auto data = socket_->getPacket();
          auto processedPacket = Payload::deserialize(
             data, getMagicWord(), prevPacket);
 
@@ -1519,7 +1522,7 @@ void P2P::Peer::gotVerack()
       return;
    }
    try {
-      verackPromise_->set_value(true);
+      verackPromise_->set_value();
    } catch (const std::future_error&) {
       //already set or no shared state, move on
    }
@@ -1657,8 +1660,12 @@ void P2P::Peer::shutdown()
 
    if (socket_ != nullptr) {
       socket_->shutdown();
-      shutdownFuture_.wait();
    }
+   connectLoopCV_.notify_all();
+   try {
+      auto fut = shutdownFuture_;
+      fut.wait();
+   } catch (const std::future_error&) {}
 
    //have to call the parent class shutdown explicitly
    Iface::shutdown();
@@ -1679,9 +1686,8 @@ bool P2P::Peer::connected() const
 ////////////////////////////////////////////////////////////////////////////////
 // Socket
 P2P::Socket::Socket(
-   const std::string& addr, const std::string& port,
-   std::shared_ptr<Threading::BlockingQueue<std::vector<uint8_t>>> readStack) :
-   PersistentSocket(addr, port), readDataStack_(readStack)
+   const std::string& addr, Network::port_t port, const std::string& name) :
+   PersistentSocket(addr, port, name)
 {}
 
 SocketType P2P::Socket::type() const
@@ -1689,18 +1695,6 @@ SocketType P2P::Socket::type() const
    return SocketType::BitcoinP2P;
 }
 
-////////
-void P2P::Socket::respond(std::vector<uint8_t>& packet)
-{
-
-   if (!packet.empty()) {
-      readDataStack_->push_back(std::move(packet));
-   } else {
-      readDataStack_->terminate();
-   }
-}
-
-////////
 void P2P::Socket::pushPayload(
    std::unique_ptr<Network::Socket_WritePayload> write_payload,
    std::shared_ptr<Network::Socket_ReadPayload>)

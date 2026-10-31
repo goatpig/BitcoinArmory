@@ -25,12 +25,12 @@ protected:
 
    uint64_t threadCount_;
 
-   virtual void SetUp()
+   void SetUp() override
    {
       threadCount_ = thread::hardware_concurrency() * 2;
    }
 
-   virtual void TearDown()
+   void TearDown() override
    {}
 };
 

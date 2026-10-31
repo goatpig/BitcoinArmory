@@ -803,7 +803,6 @@ PeerKey PeerKey::fromHumanReadable(const std::string& str)
       throw std::runtime_error("invalid peer key size");
    }
 
-
    auto header = brr.get_BinaryDataRef(3);
    uint32_t headerInt =
       uint32_t(header[0]) << 24 |
