@@ -463,6 +463,8 @@ const std::map<Types::TxIOKey, TxIOPair> WalletContainer::getTxioMap() const
 
 void WalletContainer::resolveTxios(uint32_t fromHeight)
 {
+   //ChainData reads the dbCache too
+   ReentrantLock lock(cache_.get());
    auto result = cache_->resolve(
       [this](const Types::ScrAddr& scrAddr)->bool
       { return this->hasScrAddr(scrAddr); },
@@ -473,6 +475,7 @@ void WalletContainer::resolveTxios(uint32_t fromHeight)
 
 void WalletContainer::resolveZcTxios()
 {
+   ReentrantLock lock(cache_.get());
    auto result = cache_->resolveZC(
       [this](const Types::ScrAddr& scrAddr)->bool
       { return this->hasScrAddr(scrAddr); }

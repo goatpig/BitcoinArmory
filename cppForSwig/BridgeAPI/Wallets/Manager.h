@@ -98,6 +98,7 @@ namespace Armory
             const Wallets::AddressAccountId&);
          void addAllAccounts(std::shared_ptr<Wallets::AssetWallet>);
          void loadAFile(const std::filesystem::path&);
+         void purgeZC(void);
 
       public:
          WalletManager(
@@ -124,6 +125,9 @@ namespace Armory
          const std::filesystem::path& getWalletsDir(void) const;
          void updateStateFromDB(std::unique_ptr<Notifications::Server::Notif>);
          std::shared_ptr<const TxIOCache> txioCache(void) const;
+         void addUnpooledTxs(const std::vector<BinaryData>&);
+         void fetchTxs(std::shared_ptr<AsyncClient::BlockDataViewer>,
+            const std::set<Types::TxHash>&);
 
          /* loaded wallet getters */
          bool hasWallet(const Wallets::WalletId&);

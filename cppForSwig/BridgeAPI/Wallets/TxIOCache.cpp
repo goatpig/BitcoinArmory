@@ -14,15 +14,16 @@
 #include <Ledgers/Context.h>
 #include <TxClasses.h>
 #include <AsyncClient.h>
+#include <Utils/log.h>
+#include <Network/WebSocketMessage.h>
 #include "../Notifications.h"
 
 using namespace Armory;
 using namespace Armory::Bridge;
+using namespace std::chrono_literals;
 
 namespace
 {
-   constexpr Types::TxKey firstZCKey = 0xFFFF000000000000;
-
    uint32_t getConfCount(Types::TxKey txKey, uint32_t top,
       std::shared_ptr<Ledgers::DBCache> cache)
    {
@@ -75,6 +76,7 @@ std::shared_ptr<const Ledgers::DBCache> TxIOCache::getDBCache() const
 
 void TxIOCache::purge()
 {
+   ReentrantLock lock(this);
    lastKnownBlock_ = UINT32_MAX;
    unspentTxios_.clear();
    spentTxios_.clear();
@@ -82,10 +84,21 @@ void TxIOCache::purge()
    dbCache_->clear();
 }
 
+void TxIOCache::purgeZC()
+{
+   //the zc txios and the zc copies of txs, the next update gets the
+   //wallets' zcs anew
+   ReentrantLock lock(this);
+   zcTxios_.clear();
+   dbCache_->purgeZC();
+   ++zcPurges_;
+}
+
 ////////
 CacheResolveResult TxIOCache::resolve(
    const AddressFilter& filter, uint32_t fromHeight) const
 {
+   ReentrantLock lock(this);
    //run through unspent txios first
    CacheResolveResult result{lastKnownBlock_, false, dbCache_};
    for (const auto& txio : unspentTxios_) {
@@ -137,6 +150,7 @@ CacheResolveResult TxIOCache::resolve(
 
 CacheResolveResult TxIOCache::resolveZC(const AddressFilter& filter) const
 {
+   ReentrantLock lock(this);
    CacheResolveResult result{lastKnownBlock_, true, dbCache_};
    for (const auto& txio : zcTxios_) {
       //do we have an unspent txio in the result map?
@@ -163,6 +177,8 @@ void TxIOCache::updateBlockBranching(const NewBlockNotif& reorgNotif)
    if (!reorgNotif.isReorg()) {
       return;
    }
+
+   ReentrantLock lock(this);
 
    for (auto blockId : reorgNotif.invalidatedBlockIds()) {
       try {
@@ -192,6 +208,21 @@ bool TxIOCache::txKeyIsValid(const Types::TxKey& txKey) const
    } catch (const std::out_of_range&) {
       return false;
    }
+}
+
+const Tx& TxIOCache::getTxByHash(const Types::TxHash& txHash) const
+{
+   //the best copy of this hash that is valid: a mined copy on the main
+   //branch, else a zc or unpooled copy. The caller holds the lock for as
+   //long as it uses the tx
+   ReentrantLock lock(this);
+   for (auto txKey : dbCache_->getKeysForHash(txHash)) {
+      if (Ledgers::TxKeyCandidates::kindOf(txKey) !=
+         Ledgers::TxKeyCandidates::Kind::Mined || txKeyIsValid(txKey)) {
+         return dbCache_->getTx(txKey);
+      }
+   }
+   throw std::out_of_range("no valid tx for hash " + txHash.toHexStr());
 }
 
 ////////
@@ -261,16 +292,14 @@ uint32_t TxIOCache::update(
    auto headers = futHeaders.get();
    ReentrantLock lock(this);
 
-   //5. prune mined tx from dbCache
-   auto zcHashes = dbCache_->getHashesStartingKey(firstZCKey);
+   //5. a fetched tx replaces the mined and zc copies of its hash
+   std::set<Types::TxHash> fetchedHashes;
+   for (const auto& tx : txs) {
+      fetchedHashes.emplace(tx.getThisHash());
+   }
+   dbCache_->eraseHashes(fetchedHashes);
 
    for (auto& tx : txs) {
-      //prune mined tx from dbCache
-      auto zcIter = zcHashes.find(tx.getThisHash());
-      if (zcIter != zcHashes.end()) {
-         dbCache_->eraseTx(zcIter->second);
-      }
-
       //add fresh tx
       dbCache_->addTx(tx);
    }
@@ -418,6 +447,7 @@ TxIOCache::addTxios(
 std::map<Types::ScrAddr, std::set<Types::TxHash>> TxIOCache::getAddressBook(
    const AddressFilter& filter) const
 {
+   ReentrantLock lock(this);
    std::map<Types::ScrAddr, std::set<Types::TxHash>> result;
    for (const auto& txio : unspentTxios_) {
       const auto& txKey = txio.second.getTxKeyOfOutput();
@@ -469,22 +499,32 @@ std::map<Types::ScrAddr, std::set<Types::TxHash>> TxIOCache::getAddressBook(
 std::vector<UTXO> TxIOCache::getZcUTXOs(bool rbf,
    const AddressFilter& filter) const
 {
+   ReentrantLock lock(this);
    std::vector<UTXO> result;
-   auto addTxio = [this, &result, filter](const TxIOPair& txio, const Tx& tx)
+   auto addTxio = [this, &result, filter](const TxIOPair& txio)
    {
       const auto& scrAddr = txio.getScrAddr();
       if (!filter(scrAddr)) {
          return;
       }
 
-      auto txOut = tx.getTxOutCopy(txio.getIndexOfOutput());
-
+      //an update sets the zc txios before it has their txs, and a mined tx
+      //can be cached before its header: such a txio is left out
+      const Tx* txPtr = nullptr;
       uint32_t height = UINT32_MAX;
-      if (!Types::isThisAZCKey(tx.getDBKey())) {
-         auto blockId = tx.getBlockId();
-         auto header = dbCache_->getHeader(blockId);
-         height = header->blockHeight;
+      try {
+         txPtr = &dbCache_->getTx(txio.getTxKeyOfOutput());
+         if (!Types::isThisAZCKey(txPtr->getDBKey())) {
+            auto blockId = txPtr->getBlockId();
+            auto header = dbCache_->getHeader(blockId);
+            height = header->blockHeight;
+         }
+      } catch (const std::out_of_range&) {
+         return;
       }
+      const auto& tx = *txPtr;
+
+      auto txOut = tx.getTxOutCopy(txio.getIndexOfOutput());
       result.emplace_back(UTXO{txio.getAmount(),
          height, tx.getTxIndex(), txio.getIndexOfOutput(),
          tx.getThisHash(), txOut.getScript()
@@ -492,13 +532,10 @@ std::vector<UTXO> TxIOCache::getZcUTXOs(bool rbf,
    };
 
    for (const auto& txio : zcTxios_) {
-      const auto& txKey = txio.second.getTxKeyOfOutput();
-
       if (rbf) {
          //for rbf outputs, we consider all outputs that are RBF flagged
          if (txio.second.isRBF()) {
-            const auto& tx = dbCache_->getTx(txKey);
-            addTxio(txio.second, tx);
+            addTxio(txio.second);
          }
          continue;
       }
@@ -512,9 +549,7 @@ std::vector<UTXO> TxIOCache::getZcUTXOs(bool rbf,
          //and the output has to be zc as well
          continue;
       }
-
-      const auto& tx = dbCache_->getTx(txKey);
-      addTxio(txio.second, tx);
+      addTxio(txio.second);
    }
    return result;
 }
@@ -523,6 +558,7 @@ std::vector<UTXO> TxIOCache::getUTXOs(
    uint64_t value, bool zc, bool rbf,
    const AddressFilter& filter) const
 {
+   ReentrantLock lock(this);
    if (zc || rbf) {
       return getZcUTXOs(rbf, filter);
    }
@@ -672,4 +708,188 @@ ChainData::ChainData(CacheResolveResult& data) :
       allTxKeys.insert(addrTxKeys.begin(), addrTxKeys.end());
    }
    txCount = allTxKeys.size();
+}
+
+////////
+void TxIOCache::addUnpooledTxs(const std::vector<BinaryData>& rawTxs)
+{
+   //txs the bridge sees before any db has a key for them
+   ReentrantLock lock(this);
+   for (const auto& rawTx : rawTxs) {
+      try {
+         dbCache_->addUnpooledTx(rawTx);
+      } catch (const std::exception& e) {
+         LOGWARN << "not caching a tx that doesn't deserialize: " << e.what();
+      }
+   }
+}
+
+////////
+namespace
+{
+   //waits on a db reply, gives up if the db connection goes away
+   template<typename T>
+   bool waitOnDb(std::future<T>& fut,
+      const std::shared_ptr<AsyncClient::BlockDataViewer>& bdvPtr)
+   {
+      while (fut.wait_for(250ms) != std::future_status::ready) {
+         if (!bdvPtr->isValid()) {
+            return false;
+         }
+      }
+      return true;
+   }
+}
+
+void TxIOCache::fetchTxs(
+   std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr,
+   const std::set<Types::TxHash>& hashes)
+{
+   if (bdvPtr == nullptr) {
+      //offline, the cache is all there is
+      return;
+   }
+
+   //1. what the cache misses: hashes with no valid copy (unknown, or mined
+   //off the main branch or with no header), unpooled copies and zc copies
+   //no txio points to (they may have been pooled or mined since, and update
+   //only replaces the txs of the wallets)
+   std::set<Types::TxHash> missingHashes;
+   std::set<Types::BlockId> missingBlockIds;
+   unsigned zcPurges = 0;
+   {
+      ReentrantLock lock(this);
+      zcPurges = zcPurges_;
+      std::set<Types::TxKey> walletZcKeys;
+      for (const auto& txioPair : zcTxios_) {
+         const auto& txio = txioPair.second;
+         if (txio.hasTxOutZC()) {
+            walletZcKeys.emplace(txio.getTxKeyOfOutput());
+         }
+         if (txio.hasTxInZC()) {
+            walletZcKeys.emplace(txio.getTxKeyOfInput());
+         }
+      }
+
+      for (const auto& txHash : hashes) {
+         if (txHash.getSize() != 32) {
+            continue;
+         }
+         try {
+            auto txKey = getTxByHash(txHash).getDBKey();
+            if (Types::isThisAZCKey(txKey)) {
+               if (walletZcKeys.find(txKey) == walletZcKeys.end()) {
+                  missingHashes.emplace(txHash);
+               }
+               continue;
+            }
+            if (Types::isThisAnUnpooledKey(txKey)) {
+               missingHashes.emplace(txHash);
+            }
+            //a valid mined copy has its header cached
+         } catch (const std::out_of_range&) {
+            missingHashes.emplace(txHash);
+         }
+      }
+   }
+
+   //2. ask the db, without holding the lock. A miss in DB_BARE doesn't
+   //mean the tx doesn't exist, so misses aren't remembered
+   std::vector<Tx> txs;
+   if (!missingHashes.empty()) {
+      auto promTxs = std::make_shared<
+         std::promise<AsyncClient::TxBatchResult>>();
+      auto futTxs = promTxs->get_future();
+      try {
+         bdvPtr->getTxsByHash(missingHashes, [promTxs]
+            (ReturnMessage<AsyncClient::TxBatchResult> result) {
+               try {
+                  promTxs->set_value(result.get());
+               } catch (const ClientMessageError&) {
+                  promTxs->set_exception(std::current_exception());
+               }
+         });
+         if (!waitOnDb(futTxs, bdvPtr)) {
+            LOGWARN << "lost the db while fetching txs";
+            return;
+         }
+
+         auto txBatch = futTxs.get();
+         for (auto& txPair : txBatch) {
+            if (missingHashes.find(txPair.first) == missingHashes.end()) {
+               continue;
+            }
+
+            //the db only returns txs with a valid key
+            auto txKey = txPair.second->getDBKey();
+            if (!Types::isTxKeyValid(txKey)) {
+               continue;
+            }
+            if (!Types::isThisAZCKey(txKey)) {
+               missingBlockIds.emplace(Types::getBlockIDFromTxKey(txKey));
+            }
+            txs.emplace_back(*txPair.second);
+         }
+      } catch (const ClientMessageError& e) {
+         LOGWARN << "failed to fetch txs from the db: " << e.what();
+      } catch (const LWS_Error& e) {
+         LOGWARN << "failed to fetch txs from the db: " << e.what();
+         return;
+      }
+   }
+
+   //3. headers for the mined txs
+   {
+      ReentrantLock lock(this);
+      for (auto iter = missingBlockIds.begin();
+         iter != missingBlockIds.end();) {
+         try {
+            dbCache_->getHeader(*iter);
+            iter = missingBlockIds.erase(iter);
+         } catch (const std::out_of_range&) {
+            ++iter;
+         }
+      }
+   }
+
+   AsyncClient::HeaderVec headers;
+   if (!missingBlockIds.empty()) {
+      auto promHeaders = std::make_shared<
+         std::promise<AsyncClient::HeaderVec>>();
+      auto futHeaders = promHeaders->get_future();
+      try {
+         AsyncClient::Blockchain bc{*bdvPtr};
+         bc.getHeadersById(missingBlockIds, [promHeaders]
+            (ReturnMessage<AsyncClient::HeaderVec> result) {
+               try {
+                  promHeaders->set_value(result.get());
+               } catch (const ClientMessageError&) {
+                  promHeaders->set_exception(std::current_exception());
+               }
+         });
+         if (waitOnDb(futHeaders, bdvPtr)) {
+            headers = futHeaders.get();
+         } else {
+            LOGWARN << "lost the db while fetching headers";
+         }
+      } catch (const ClientMessageError& e) {
+         //the txs are still cached, the next fetch asks again
+         LOGWARN << "failed to fetch headers from the db: " << e.what();
+      } catch (const LWS_Error& e) {
+         LOGWARN << "failed to fetch headers from the db: " << e.what();
+      }
+   }
+
+   //4. fill the cache. If the zcs were purged while the db was asked (a
+   //reorg or a new db), what it served may be stale: a zc may have left
+   //its mempool, a block the main branch. Nothing is cached, the next
+   //fetch asks again
+   ReentrantLock lock(this);
+   if (zcPurges != zcPurges_) {
+      return;
+   }
+   dbCache_->addHeaders(headers);
+   for (auto& tx : txs) {
+      dbCache_->addTx(tx);
+   }
 }

@@ -2735,6 +2735,46 @@ TEST_F(BlockUtilsFull, Load5Blocks_RescanOps)
    EXPECT_EQ(lastScannedRange.second, TestChain::blkHash5);
 }
 
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BlockUtilsFull, GetTxsByHash_BadHashSize)
+{
+   clients_->init();
+   auto bdvID = DBTestUtils::registerBDV(
+      clients_, Config::BitcoinSettings::getMagicBytes());
+   auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
+
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   DBTestUtils::goOnline(clients_, bdvID);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
+
+   //a hash that isn't 32 bytes long has no tx key
+   auto db = theBDMt_->bdm()->getIFace();
+   auto hash31 = TestChain::hash35.getSliceCopy(0, 31);
+   auto hash33 = TestChain::hash35;
+   hash33.append(uint8_t(0));
+   const std::vector<Types::TxHash> badHashes{ {}, hash31, hash33 };
+   for (const auto& hash : badHashes) {
+      EXPECT_EQ(db->getDBKeyForHash(hash), Types::INVALID_TX_KEY);
+   }
+
+   //before any zc there is no mempool snapshot: the bad hashes and an
+   //unknown hash are left out of the reply, hash35 is still returned
+   auto unknownHash = READHEX(
+      "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+   ASSERT_FALSE(Types::isTxKeyValid(db->getDBKeyForHash(unknownHash)));
+
+   auto request = badHashes;
+   request.emplace_back(unknownHash);
+   request.emplace_back(TestChain::hash35);
+   auto txs = DBTestUtils::getTxsByHash(clients_, bdvID, request);
+   ASSERT_EQ(txs.size(), 1);
+   EXPECT_EQ(txs[0].getThisHash(), TestChain::hash35);
+
+   //cleanup
+   bdvPtr.reset();
+}
+
 /*
 TODO:
  - test fresh address registration

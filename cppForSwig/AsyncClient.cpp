@@ -124,6 +124,7 @@ namespace {
             txObj->setTxKey(capnTx.getKey());
             txObj->setChainedZC(capnTx.getIsChainedZc());
             txObj->setRBF(capnTx.getIsRbf());
+            txObj->setTxTime(capnTx.getTxTime());
             result.emplace(txObj->getThisHash(), std::move(txObj));
          } catch (const BtcUtils::BlockDeserializingException&) {}
       }
@@ -143,6 +144,7 @@ namespace {
             txObj.setTxKey(capnTx.getKey());
             txObj.setChainedZC(capnTx.getIsChainedZc());
             txObj.setRBF(capnTx.getIsRbf());
+            txObj.setTxTime(capnTx.getTxTime());
          } catch (const BtcUtils::BlockDeserializingException&) {}
       }
       return result;

@@ -93,6 +93,7 @@ namespace Armory
          std::map<Types::TxIOKey, TxIOPair> zcTxios_;
          std::shared_ptr<Ledgers::DBCache> dbCache_;
          uint32_t lastKnownBlock_ = UINT32_MAX;
+         unsigned zcPurges_ = 0;
 
       private:
          void initAfterLock(void) override {}
@@ -112,6 +113,7 @@ namespace Armory
          TxIOCache(void);
 
          void purge(void);
+         void purgeZC(void);
          uint32_t update(std::shared_ptr<AsyncClient::BlockDataViewer>,
             std::shared_ptr<Notifications::Server::Notif>);
          std::shared_ptr<const Ledgers::DBCache> getDBCache(void) const;
@@ -122,6 +124,10 @@ namespace Armory
          std::vector<UTXO> getUTXOs(uint64_t, bool, bool,
             const AddressFilter&) const;
          std::map<Types::TxIOKey, TxIOPair> getZcTxios(const AddressFilter&) const;
+         void addUnpooledTxs(const std::vector<BinaryData>&);
+         void fetchTxs(std::shared_ptr<AsyncClient::BlockDataViewer>,
+            const std::set<Types::TxHash>&);
+         const Tx& getTxByHash(const Types::TxHash&) const;
       };
    } //namespace Bridge
 } //namespace Armory

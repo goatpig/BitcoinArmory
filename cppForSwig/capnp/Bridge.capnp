@@ -368,29 +368,17 @@ struct BlockchainServiceRequest {
 
       registerWallet                @3 : RegisterWallet;
       broadcastTx                   @4 : BroadcastRequest;
-      getTxsByHash                  @5 : List(Types.Hash);
-      getBlockTimeByHeight          @6 : UInt32;
-      getFeeSchedule                @7 : Text;
+      getFeeSchedule                @5 : Text;
    }
 }
 
 struct BlockchainServiceReply {
-   struct TxData {
-      height      @0 : Types.Height;
-      txIndex     @1 : UInt32;
-      timestamp   @2 : UInt32;
-      hash        @3 : Types.Hash;
-      body        @4 : Types.Tx;
-   }
-
    # reply
    union {
       unset                         @0 : Void;
 
       getNodeStatus                 @1 : Types.NodeStatus;
-      getTxsByHash                  @2 : List(TxData);
-      getBlockTimeByHeight          @3 : UInt32;
-      getFeeSchedule                @4 : List(Types.FeeSchedule);
+      getFeeSchedule                @2 : List(Types.FeeSchedule);
    }
 }
 
@@ -436,6 +424,12 @@ struct WalletManagerRequest {
 
       getMainLedgerDelegateId @8 : Void;
       updateMainLedgerFilter  @9 : List(WalletIdentifier);
+
+      #served from the txio cache, which asks the db for what it misses
+      getTxsByHash            @10 : List(Types.Hash);
+
+      #served from the headers in the txio cache
+      getBlockTimeByHeight    @11 : UInt32;
    }
 }
 
@@ -465,12 +459,22 @@ struct WalletManagerReply {
       }
    }
 
+   struct TxData {
+      height      @0 : Types.Height;
+      txIndex     @1 : UInt32;
+      timestamp   @2 : UInt32;
+      hash        @3 : Types.Hash;
+      body        @4 : Types.Tx;
+   }
+
    union {
       unset                   @0 : Void;
       listWallets             @1 : List(WalletFileData);
       migrateWallet           @2 : Types.WalletId;
       loadWallets             @3 : List(WalletData);
       getMainLedgerDelegateId @4 : Types.DelegateId;
+      getTxsByHash            @5 : List(TxData);
+      getBlockTimeByHeight    @6 : UInt32;
    }
 }
 

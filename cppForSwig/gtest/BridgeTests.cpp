@@ -17,6 +17,10 @@
 #include <Utils/FileUtils.h>
 #include <Utils/BIP15x_Handshake.h>
 #include <Ledgers/LedgerEntry.h>
+#include <Ledgers/Context.h>
+#include <BlockchainDatabase/BlockchainData.h>
+#include <ZeroConf/Parser.h>
+#include <ZeroConf/Utils.h>
 
 #include <Wallets/Accounts/AddressAccounts.h>
 #include <Wallets/Accounts/AccountTypes.h>
@@ -32,6 +36,8 @@
 #include <BridgeAPI/Wallets/Manager.h>
 #include <BridgeAPI/Wallets/TxIOCache.h>
 #include <BridgeAPI/DBSetup.h>
+#include <Signer/Signer.h>
+#include <Signer/ScriptSpender.h>
 
 #include "BDM_mainthread.h"
 #include "Server.h"
@@ -264,6 +270,33 @@ namespace {
          payload.release();
 
          std::unique_lock<std::mutex> lock(commsMutex);
+         replyQueue.emplace_back(std::move(msgPtr));
+         commsCV.notify_all();
+      }
+   };
+
+   //a TestBridgeSocket that can be muted, to keep a bridge quiet once a
+   //second one takes over. muted is guarded by commsMutex, flip it with the
+   //reply queue lock held
+   struct MutableTestBridgeSocket : public TestBridgeSocket
+   {
+      bool muted = false;
+
+      void pushPayload(
+         std::unique_ptr<Network::Socket_WritePayload> payload,
+         std::shared_ptr<Network::Socket_ReadPayload>) override
+      {
+         auto payloadPtr = dynamic_cast<Bridge::WritePayload_Bridge*>(payload.get());
+         if (payloadPtr == nullptr) {
+            throw std::runtime_error("could not read the push payload");
+         }
+         auto msgPtr = std::unique_ptr<Bridge::WritePayload_Bridge>(payloadPtr);
+         payload.release();
+
+         std::unique_lock<std::mutex> lock(commsMutex);
+         if (muted) {
+            return;
+         }
          replyQueue.emplace_back(std::move(msgPtr));
          commsCV.notify_all();
       }
@@ -3054,7 +3087,7 @@ namespace {
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
-      auto req = toBridge.initService();
+      auto req = toBridge.initWalletManager();
       auto txsReq = req.initGetTxsByHash(hashSet.size());
       unsigned i=0;
       for (const auto& hash : hashSet) {
@@ -3079,12 +3112,12 @@ namespace {
       if (!reply.getSuccess()) {
          return {};
       }
-      if (reply.which() != Codec::Bridge::RpcReply::SERVICE) {
+      if (reply.which() != Codec::Bridge::RpcReply::WALLET_MANAGER) {
          return {};
       }
 
-      auto serviceReply = reply.getService();
-      auto capnTxs = serviceReply.getGetTxsByHash();
+      auto managerReply = reply.getWalletManager();
+      auto capnTxs = managerReply.getGetTxsByHash();
       std::map<BinaryData, BinaryData> result;
       for (auto capnTx : capnTxs) {
          auto capnHash = capnTx.getHash();
@@ -3096,6 +3129,91 @@ namespace {
          result.emplace(hash, raw);
       }
       return result;
+   }
+
+   struct FetchedTx
+   {
+      BinaryData raw;
+      uint32_t height;
+      uint32_t txIndex;
+      uint32_t timestamp;
+
+      bool operator==(const FetchedTx&) const = default;
+   };
+
+   //keyed by the hash of the raw tx, computed here
+   std::map<BinaryData, FetchedTx> getTxDataByHash(
+      std::shared_ptr<Bridge::CppBridge> bridge,
+      const std::set<BinaryData>& hashSet, bool& success)
+   {
+      uint64_t refId = rand();
+      capnp::MallocMessageBuilder message;
+      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+      toBridge.setReferenceId(refId);
+      auto req = toBridge.initWalletManager();
+      auto txsReq = req.initGetTxsByHash(hashSet.size());
+      unsigned i=0;
+      for (const auto& hash : hashSet) {
+         txsReq.set(i++, capnp::Data::Builder(
+            (uint8_t*)hash.getPtr(), hash.getSize()));
+      }
+      auto rawReq = serializeCapnp(message);
+      pushRequest(bridge, rawReq);
+
+      auto resp = waitOnReply();
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(resp->data.getPtr()),
+         resp->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+
+      success = false;
+      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+      if (fromBridge.which() != Codec::Bridge::FromBridge::REPLY) {
+         return {};
+      }
+      auto reply = fromBridge.getReply();
+      if (reply.getReferenceId() != refId) {
+         return {};
+      }
+      success = reply.getSuccess();
+      if (!success || reply.which() != Codec::Bridge::RpcReply::WALLET_MANAGER) {
+         return {};
+      }
+
+      std::map<BinaryData, FetchedTx> result;
+      for (auto capnTx : reply.getWalletManager().getGetTxsByHash()) {
+         auto capnRaw = capnTx.getBody().getRaw();
+         BinaryData raw{capnRaw.begin(), capnRaw.size()};
+         result.emplace(Tx(raw).getThisHash(), FetchedTx{raw,
+            capnTx.getHeight(), capnTx.getTxIndex(), capnTx.getTimestamp()});
+      }
+      return result;
+   }
+
+   //FROM_TX_SIG_COLLECT, returns the reply's success flag
+   bool loadSignerString(std::shared_ptr<Bridge::CppBridge> bridge,
+      const std::string& signerId, const std::string& str)
+   {
+      uint64_t refId = rand();
+      capnp::MallocMessageBuilder message;
+      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+      toBridge.setReferenceId(refId);
+      auto req = toBridge.initSigner();
+      req.setId(signerId);
+      req.setFromTxSigCollect(str);
+      pushRequest(bridge, serializeCapnp(message));
+
+      auto resp = waitOnReply();
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(resp->data.getPtr()),
+         resp->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+      if (fromBridge.which() != Codec::Bridge::FromBridge::REPLY) {
+         return false;
+      }
+      auto reply = fromBridge.getReply();
+      return reply.getReferenceId() == refId && reply.getSuccess();
    }
 
    bool addSpenderByOutpoint(
@@ -6850,6 +6968,195 @@ TEST_F(BridgeWalletTests, ForkWO)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeWalletTests, Signer_FromTxSigCollect_Malformed)
+{
+   //a valid USTX: one p2pkh input, one output
+   Signing::Signer ustx;
+   ustx.addSpender(std::make_shared<Signing::ScriptSpender>(UTXO(
+      COIN, 0, 0, 0, BinaryData(std::vector<uint8_t>(32, 0xab)),
+      BtcUtils::getP2PKHScript(BinaryData(std::vector<uint8_t>(20, 1))))));
+   ustx.addRecipient(std::make_shared<Signing::Recipient_P2WPKH>(
+      BinaryData(std::vector<uint8_t>(20, 2)), COIN / 2));
+   auto valid = ustx.toString(Signing::SignerStringFormat::TxSigCollect_Modern);
+
+   auto signerId = getNewSigner(bridge_);
+   ASSERT_FALSE(signerId.empty());
+
+   //returns the reply's success flag, sets its error or USTX string
+   auto signerRequest = [this, &signerId](std::string& result,
+      const std::function<void(Codec::Bridge::SignerRequest::Builder&)>& set)
+   {
+      uint64_t refId = rand();
+      capnp::MallocMessageBuilder message;
+      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+      toBridge.setReferenceId(refId);
+      auto req = toBridge.initSigner();
+      req.setId(signerId);
+      set(req);
+      pushRequest(bridge_, serializeCapnp(message));
+
+      auto resp = waitOnReply();
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(resp->data.getPtr()),
+         resp->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto reply = reader.getRoot<Codec::Bridge::FromBridge>().getReply();
+      EXPECT_EQ(reply.getReferenceId(), refId);
+      if (!reply.getSuccess()) {
+         result = reply.getError();
+      } else if (reply.which() == Codec::Bridge::RpcReply::SIGNER) {
+         result = reply.getSigner().getToTxSigCollect();
+      }
+      return reply.getSuccess();
+   };
+   auto fromTxSigCollect = [&](const std::string& str, std::string& error)
+   {
+      return signerRequest(error,
+         [&str](Codec::Bridge::SignerRequest::Builder& req)
+         { req.setFromTxSigCollect(str); });
+   };
+
+   //load the valid one first, malformed strings must leave it be
+   std::string error;
+   ASSERT_TRUE(fromTxSigCollect(valid, error)) << error;
+
+   //valid header with: a junk body, a modern body whose capnp segment
+   //table is junk (0x5a5a5a5a segments)
+   auto header = valid.substr(0, valid.find('\n') + 1);
+   auto footer = std::string(64, '=') + "\n";
+   BinaryWriter capnBody;
+   capnBody.put_uint32_t(3);
+   capnBody.put_uint32_t(0);
+   capnBody.put_BinaryData(BinaryData(std::vector<uint8_t>(32, 'Z')));
+   auto capnStr = BtcUtils::base64_encode(std::string(
+      capnBody.getData().getCharPtr(), capnBody.getSize()));
+
+   std::vector<std::string> malformed = {
+      "",
+      valid.substr(0, valid.size() / 2),
+      header + std::string(64, 'Z') + "\n" + footer,
+      header + capnStr + "\n" + footer,
+      BtcUtils::base64_encode("not a psbt either")
+   };
+   for (const auto& str : malformed) {
+      std::string strError;
+      EXPECT_FALSE(fromTxSigCollect(str, strError)) << str;
+      EXPECT_FALSE(strError.empty()) << str;
+   }
+
+   //the bridge still serves, the signer kept the valid USTX
+   std::string roundTrip;
+   ASSERT_TRUE(signerRequest(roundTrip,
+      [](Codec::Bridge::SignerRequest::Builder& req)
+      {
+         req.setToTxSigCollect(static_cast<uint32_t>(
+            Signing::SignerStringFormat::TxSigCollect_Modern));
+      }));
+   EXPECT_EQ(roundTrip, valid);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeWalletTests, GetTxsByHash_OfflinePayload)
+{
+   //the 2 txs the inputs of the BIP174 test vector spend from
+   auto rawTx1 = READHEX("0200000000010158e87a21b56daf0c23be8e7070456c336f7cbaa5c8757924f545887bb2abdd7501000000171600145f275f436b09a8cc9a2eb2a2f528485c68a56323feffffff02d8231f1b0100000017a914aed962d6654f9a2b36608eb9d64d2b260db4f1118700c2eb0b0000000017a914b7f5faf40e3d40a5a459b1db3535f2b72fa921e88702483045022100a22edcc6e5bc511af4cc4ae0de0fcd75c7e04d8c1c3a8aa9d820ed4b967384ec02200642963597b9b1bc22c75e9f3e117284a962188bf5e8a74c895089046a20ad770121035509a48eb623e10aace8bfd0212fdb8a8e5af3c94b0b133b95e114cab89e4f7965000000");
+   auto rawTx2 = READHEX("0200000001aad73931018bd25f84ae400b68848be09db706eac2ac18298babee71ab656f8b0000000048473044022058f6fc7c6a33e1b31548d481c826c015bd30135aad42cd67790dab66d2ad243b02204a1ced2604c6735b6393e5b41691dd78b00f0c5942fb9f751856faa938157dba01feffffff0280f0fa020000000017a9140fb9463421696b82c833af241c78c17ddbde493487d0f20a270100000017a91429ca74f8a08f81999428185c97b5d852e4063f618765000000");
+   Tx tx1(rawTx1);
+   Tx tx2(rawTx2);
+   auto getUtxo = [](const Tx& tx, unsigned index)->UTXO
+   {
+      auto txOut = tx.getTxOutCopy(index);
+      return UTXO(txOut.getAmount(), UINT32_MAX, UINT16_MAX, index,
+         tx.getThisHash(), txOut.getScript());
+   };
+
+   Signing::Signer ustx;
+   ustx.setVersion(2);
+   ustx.addSpender(std::make_shared<Signing::ScriptSpender>(getUtxo(tx2, 0)));
+   ustx.addSpender(std::make_shared<Signing::ScriptSpender>(getUtxo(tx1, 1)));
+   ustx.addRecipient(std::make_shared<Signing::Recipient_P2WPKH>(
+      READHEX("d85c2b71d0060b09c9886aeb815e50991dda124d"), 149990000));
+   ustx.addSupportingTx(rawTx1);
+   ustx.addSupportingTx(rawTx2);
+
+   auto unknownHash = READHEX(
+      "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff");
+   std::set<BinaryData> hashes{
+      tx1.getThisHash(), tx2.getThisHash(), unknownHash};
+
+   //nothing cached yet
+   bool success = false;
+   auto none = getTxDataByHash(bridge_, hashes, success);
+   ASSERT_TRUE(success);
+   EXPECT_TRUE(none.empty());
+
+   //a malformed string is refused
+   auto signerId = getNewSigner(bridge_);
+   ASSERT_FALSE(signerId.empty());
+   EXPECT_FALSE(loadSignerString(bridge_, signerId, "not a signer string"));
+   EXPECT_TRUE(getTxDataByHash(bridge_, hashes, success).empty());
+
+   //loading the USTX caches its supporting txs, served with no height. Each
+   //format gets a fresh bridge, so its cache starts empty
+   for (auto format : {Signing::SignerStringFormat::TxSigCollect_Modern,
+      Signing::SignerStringFormat::PSBT}) {
+      bridge_.reset();
+      replyQueue.clear();
+      bridge_ = std::make_shared<Bridge::CppBridge>(
+         std::make_shared<TestBridgeSocket>());
+      signerId = getNewSigner(bridge_);
+      ASSERT_FALSE(signerId.empty());
+      ASSERT_TRUE(getTxDataByHash(bridge_, hashes, success).empty());
+
+      auto str = ustx.toString(format);
+      ASSERT_TRUE(loadSignerString(bridge_, signerId, str));
+
+      auto txs = getTxDataByHash(bridge_, hashes, success);
+      ASSERT_TRUE(success);
+      ASSERT_EQ(txs.size(), 2U);
+      EXPECT_EQ(txs[tx1.getThisHash()].raw, rawTx1);
+      EXPECT_EQ(txs[tx2.getThisHash()].raw, rawTx2);
+      for (const auto& txPair : txs) {
+         EXPECT_EQ(txPair.second.height, UINT32_MAX);
+         EXPECT_EQ(txPair.second.txIndex, UINT32_MAX);
+         EXPECT_EQ(txPair.second.timestamp, UINT32_MAX);
+      }
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeWalletTests, GetTxsByHash_AddSupportingTx)
+{
+   auto rawTx1 = READHEX("0200000000010158e87a21b56daf0c23be8e7070456c336f7cbaa5c8757924f545887bb2abdd7501000000171600145f275f436b09a8cc9a2eb2a2f528485c68a56323feffffff02d8231f1b0100000017a914aed962d6654f9a2b36608eb9d64d2b260db4f1118700c2eb0b0000000017a914b7f5faf40e3d40a5a459b1db3535f2b72fa921e88702483045022100a22edcc6e5bc511af4cc4ae0de0fcd75c7e04d8c1c3a8aa9d820ed4b967384ec02200642963597b9b1bc22c75e9f3e117284a962188bf5e8a74c895089046a20ad770121035509a48eb623e10aace8bfd0212fdb8a8e5af3c94b0b133b95e114cab89e4f7965000000");
+   auto rawTx2 = READHEX("0200000001aad73931018bd25f84ae400b68848be09db706eac2ac18298babee71ab656f8b0000000048473044022058f6fc7c6a33e1b31548d481c826c015bd30135aad42cd67790dab66d2ad243b02204a1ced2604c6735b6393e5b41691dd78b00f0c5942fb9f751856faa938157dba01feffffff0280f0fa020000000017a9140fb9463421696b82c833af241c78c17ddbde493487d0f20a270100000017a91429ca74f8a08f81999428185c97b5d852e4063f618765000000");
+   auto hash1 = Tx(rawTx1).getThisHash();
+   auto hash2 = Tx(rawTx2).getThisHash();
+
+   auto signerId = getNewSigner(bridge_);
+   ASSERT_FALSE(signerId.empty());
+
+   //a truncated tx (no locktime) is skipped, the bridge stays up
+   auto truncated = rawTx2.getSliceCopy(0, rawTx2.getSize() - 4);
+   bool added = false;
+   EXPECT_NO_THROW(added = addSupportingTx(bridge_, signerId, truncated));
+   EXPECT_TRUE(added);
+
+   bool success = false;
+   EXPECT_TRUE(getTxDataByHash(bridge_, {hash1, hash2}, success).empty());
+   ASSERT_TRUE(success);
+
+   //a supporting tx added to a signer is cached as unpooled
+   ASSERT_TRUE(addSupportingTx(bridge_, signerId, rawTx1));
+   auto txs = getTxDataByHash(bridge_, {hash1, hash2}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(txs.size(), 1U);
+   EXPECT_EQ(txs[hash1].raw, rawTx1);
+   EXPECT_EQ(txs[hash1].height, UINT32_MAX);
+   EXPECT_EQ(txs[hash1].txIndex, UINT32_MAX);
+   EXPECT_EQ(txs[hash1].timestamp, UINT32_MAX);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // BridgeWalletsWithDBTests
 class BridgeWalletsWithDBTests : public ::testing::Test
 {
@@ -7726,6 +8033,923 @@ TEST_F(BridgeChainDataTests, Check5Blocks_BCDE)
 
    for (unsigned i = 0; i < ledgers.size(); i++) {
       EXPECT_TRUE(checkLedgers(ledgers[i], TestChain::ledgersBCDE[i])) << i;
+   }
+}
+
+TEST_F(BridgeChainDataTests, GetTxsByHash_DbFallback)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   //the wallet's txs, served from this bridge's cache
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+   auto ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgers.size(), 15);
+
+   std::set<BinaryData> hashes;
+   std::map<BinaryData, uint32_t> heights;
+   for (const auto& ledger : ledgers) {
+      hashes.emplace(ledger.getTxHash());
+      heights.emplace(ledger.getTxHash(), ledger.getBlockNum());
+   }
+
+   bool success = false;
+   auto fromCache = getTxDataByHash(bridge_, hashes, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(fromCache.size(), hashes.size());
+   for (const auto& txPair : fromCache) {
+      //the block of each tx and its index in it, as the db has them
+      auto txKey = iface_->getDBKeyForHash(txPair.first);
+      ASSERT_TRUE(Types::isTxKeyValid(txKey));
+      auto header = theBDMt_->bdm()->blockchain()->getHeaderById(
+         Types::getBlockIDFromTxKey(txKey));
+      ASSERT_NE(header, nullptr);
+      EXPECT_EQ(txPair.second.height, heights[txPair.first]);
+      EXPECT_EQ(txPair.second.height, header->getBlockHeight());
+      EXPECT_EQ(txPair.second.txIndex, Types::getTxIndexFromTxKey(txKey));
+      EXPECT_EQ(txPair.second.timestamp, header->getTimestamp());
+   }
+
+   //a fresh bridge with no wallet has nothing cached, the db still has
+   //them (DB_BARE keeps the hashes of txs that pay or spend from a
+   //registered address)
+   bridge_.reset();
+   replyQueue.clear();
+   bridge_ = std::make_shared<Bridge::CppBridge>(
+      std::make_shared<TestBridgeSocket>());
+
+   loadWallets({});
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   //unknown and malformed hashes are left out, the rest is served
+   auto unknownHash = READHEX(
+      "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff");
+   auto shortHash = READHEX("0011223344");
+   auto request = hashes;
+   request.emplace(unknownHash);
+   request.emplace(shortHash);
+
+   auto fromDb = getTxDataByHash(bridge_, request, success);
+   ASSERT_TRUE(success);
+   EXPECT_EQ(fromDb, fromCache);
+
+   //finding nothing is an empty reply, not an error
+   auto nothing = getTxDataByHash(bridge_, {unknownHash, shortHash}, success);
+   EXPECT_TRUE(success);
+   EXPECT_TRUE(nothing.empty());
+}
+
+TEST_F(BridgeChainDataTests, GetTxsByHash_PayloadThenDb)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   //a mined tx of the wallet, as its bridge serves it
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+   auto ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_FALSE(ledgers.empty());
+   auto txHash = ledgers.back().getTxHash();
+
+   bool success = false;
+   auto fromWallet = getTxDataByHash(bridge_, {txHash}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(fromWallet.size(), 1U);
+   ASSERT_NE(fromWallet[txHash].height, UINT32_MAX);
+
+   //a fresh bridge with no wallet gets that tx as the supporting tx of a
+   //USTX: unpooled while the bridge has no db, the db's mined copy once it
+   //has one
+   bridge_.reset();
+   replyQueue.clear();
+   bridge_ = std::make_shared<Bridge::CppBridge>(
+      std::make_shared<TestBridgeSocket>());
+   loadWallets({});
+
+   const auto& rawTx = fromWallet[txHash].raw;
+   Tx tx(rawTx);
+   auto txOut = tx.getTxOutCopy(0);
+   Signing::Signer ustx;
+   ustx.addSpender(std::make_shared<Signing::ScriptSpender>(UTXO(
+      txOut.getAmount(), UINT32_MAX, UINT16_MAX, 0,
+      tx.getThisHash(), txOut.getScript())));
+   ustx.addRecipient(std::make_shared<Signing::Recipient_P2WPKH>(
+      BinaryData(std::vector<uint8_t>(20, 2)), txOut.getAmount() / 2));
+   ustx.addSupportingTx(rawTx);
+
+   auto signerId = getNewSigner(bridge_);
+   ASSERT_FALSE(signerId.empty());
+   ASSERT_TRUE(loadSignerString(bridge_, signerId,
+      ustx.toString(Signing::SignerStringFormat::TxSigCollect_Modern)));
+
+   auto unpooled = getTxDataByHash(bridge_, {txHash}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(unpooled.size(), 1U);
+   EXPECT_EQ(unpooled[txHash].raw, rawTx);
+   EXPECT_EQ(unpooled[txHash].height, UINT32_MAX);
+   EXPECT_EQ(unpooled[txHash].txIndex, UINT32_MAX);
+   EXPECT_EQ(unpooled[txHash].timestamp, UINT32_MAX);
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   auto fromDb = getTxDataByHash(bridge_, {txHash}, success);
+   ASSERT_TRUE(success);
+   EXPECT_EQ(fromDb, fromWallet);
+}
+
+TEST_F(BridgeChainDataTests, GetTxsByHash_ZcThenMined)
+{
+   //the wallet bridge gets muted once a second bridge takes over
+   auto walletSocket = std::make_shared<MutableTestBridgeSocket>();
+   bridge_ = std::make_shared<Bridge::CppBridge>(walletSocket);
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   //the wallet sends a zc to itself. In DB_BARE the db only resolves
+   //hashes of mined txs that pay or spend from a registered address
+   BinaryData signedTx;
+   try {
+      signedTx = createAndSignTx(bridge_,
+         walletId_BCDE_, accountId_BCDE_,
+         {}, {{ BtcUtils::scrAddrToBase58(TestChain::scrAddrC), 11 * COIN }},
+         TestChain::scrAddrD, 2, false,
+         "privPass1"
+      );
+   } catch (const std::exception& e) {
+      ASSERT_TRUE(false) << e.what();
+   }
+   ASSERT_FALSE(signedTx.empty());
+   auto beforeZc = (uint32_t)time(0);
+   broadcastTx(bridge_, signedTx);
+   auto zcLedgers = waitOnZc();
+   auto afterZc = (uint32_t)time(0);
+   ASSERT_EQ(zcLedgers.size(), 1);
+   auto zcHash = Tx(signedTx).getThisHash();
+   ASSERT_EQ(zcLedgers[0].getTxHash(), zcHash);
+
+   //keep the wallet bridge registered but quiet, a second bridge with no
+   //wallet asks for the zc
+   auto walletBridge = bridge_;
+   {
+      std::unique_lock<std::mutex> lock(commsMutex);
+      walletSocket->muted = true;
+      replyQueue.clear();
+   }
+
+   bridge_ = std::make_shared<Bridge::CppBridge>(
+      std::make_shared<TestBridgeSocket>());
+   loadWallets({});
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   bool success = false;
+   auto asZc = getTxDataByHash(bridge_, {zcHash}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(asZc.size(), 1);
+   EXPECT_EQ(asZc.begin()->first, zcHash);
+   EXPECT_EQ(asZc.begin()->second.height, UINT32_MAX);
+   EXPECT_EQ(asZc.begin()->second.txIndex, UINT32_MAX);
+   //the time the db's mempool got the zc
+   EXPECT_GE(asZc.begin()->second.timestamp, beforeZc);
+   EXPECT_LE(asZc.begin()->second.timestamp, afterZc);
+
+   //once mined, the cached zc copy is replaced
+   DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrA, 1);
+   ASSERT_EQ(waitOnNewBlock(), 6);
+
+   auto asMined = getTxDataByHash(bridge_, {zcHash}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(asMined.size(), 1);
+   EXPECT_EQ(asMined.begin()->first, zcHash);
+   EXPECT_EQ(asMined.begin()->second.height, 6U);
+
+   //its block and index in it, as the db has them
+   auto minedKey = iface_->getDBKeyForHash(zcHash);
+   ASSERT_TRUE(Types::isTxKeyValid(minedKey));
+   ASSERT_FALSE(Types::isThisAZCKey(minedKey));
+   auto minedHeader = theBDMt_->bdm()->blockchain()->getHeaderById(
+      Types::getBlockIDFromTxKey(minedKey));
+   ASSERT_NE(minedHeader, nullptr);
+   EXPECT_EQ(minedHeader->getBlockHeight(), 6U);
+   EXPECT_NE(Types::getTxIndexFromTxKey(minedKey), 0U); //not the coinbase
+   EXPECT_EQ(asMined.begin()->second.txIndex,
+      Types::getTxIndexFromTxKey(minedKey));
+   EXPECT_EQ(asMined.begin()->second.timestamp, minedHeader->getTimestamp());
+
+   bridge_.reset();
+   walletBridge.reset();
+}
+
+TEST_F(BridgeChainDataTests, GetTxsByHash_DoubleReorg)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 4);
+
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+
+   //every wallet tx seen so far, on any branch
+   std::set<BinaryData> hashes;
+   auto addLedgerHashes = [&]() {
+      for (const auto& ledger : getLedgersPage(bridge_, delegateId, 0)) {
+         hashes.emplace(ledger.getTxHash());
+      }
+   };
+
+   //what the db's main chain has of these txs, as getTxsByHash gives it
+   auto onMainChain = [this, &hashes]() {
+      std::map<BinaryData, FetchedTx> result;
+      auto blockchain = theBDMt_->bdm()->blockchain();
+      auto blockData = theBDMt_->bdm()->blockchainData();
+      auto top = blockchain->top()->getBlockHeight();
+      for (unsigned height = 0; height <= top; height++) {
+         auto header = blockchain->getHeaderByHeight(height);
+         for (unsigned i = 0; i < header->getNumTx(); i++) {
+            auto tx = blockData->getTx(header->getUniqueID(), i);
+            if (hashes.find(tx.getThisHash()) == hashes.end()) {
+               continue;
+            }
+            result.emplace(tx.getThisHash(), FetchedTx{
+               BinaryData(tx.getPtr(), tx.getSize()),
+               height, i, header->getTimestamp()});
+         }
+      }
+      return result;
+   };
+
+   //the bridge serves a tx where the db's main chain has it, and doesn't
+   //serve one the main chain doesn't have
+   auto checkAgainstDb = [&](const std::string& tag, size_t offMain) {
+      auto expected = onMainChain();
+      EXPECT_EQ(hashes.size() - expected.size(), offMain) << tag;
+
+      bool success = false;
+      auto served = getTxDataByHash(bridge_, hashes, success);
+      EXPECT_TRUE(success) << tag;
+      for (const auto& txHash : hashes) {
+         auto hashStr = txHash.toHexStr(true);
+         auto expIter = expected.find(txHash);
+         auto iter = served.find(txHash);
+         if (expIter == expected.end()) {
+            EXPECT_TRUE(iter == served.end()) << tag << ": " << hashStr <<
+               " is off the main chain, served at height " <<
+               iter->second.height;
+            continue;
+         }
+         if (iter == served.end()) {
+            ADD_FAILURE() << tag << ": " << hashStr << " not served";
+            continue;
+         }
+         EXPECT_EQ(iter->second.height, expIter->second.height) << tag << ": " << hashStr;
+         EXPECT_EQ(iter->second.txIndex, expIter->second.txIndex) << tag << ": " << hashStr;
+         EXPECT_EQ(iter->second.timestamp, expIter->second.timestamp) << tag << ": " << hashStr;
+         EXPECT_EQ(iter->second.raw, expIter->second.raw) << tag << ": " << hashStr;
+      }
+   };
+
+   //0-3, 4A
+   addLedgerHashes();
+   checkAgainstDb("on 4A", 0);
+
+   //reorg onto 4, 5: the wallet's 4A txs are in 4 and 5 too
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5" }, blk0dat_);
+   nodePtr_->notifyNewBlock();
+   ASSERT_EQ(waitOnNewBlock(), 5);
+   addLedgerHashes();
+   checkAgainstDb("on 4-5", 0);
+
+   //reorg back onto 4A, 5A: 5 of the txs of 4 and 5 are off the main chain
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5", "5A" }, blk0dat_);
+   nodePtr_->notifyNewBlock();
+   ASSERT_EQ(waitOnNewBlock(), 5);
+   addLedgerHashes();
+   checkAgainstDb("on 4A-5A", 5);
+}
+
+TEST_F(BridgeChainDataTests, GetTxsByHash_ZcDoubleReorg)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 4);
+
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+
+   //a zc spending the wallet's output at height/txIndex/txOutIndex
+   auto recipientPrivKey = Cryptography::ECDSA::createNewPrivateKey();
+   auto recipientPubKey = Cryptography::ECDSA::computePublicKey(
+      recipientPrivKey, true);
+   auto recipientAddr = BtcUtils::scrAddrToSegWitAddress(
+      BtcUtils::getHash160(recipientPubKey));
+   auto spend = [&](uint32_t height, uint32_t txIndex, uint32_t txOutIndex)
+   {
+      auto utxos = getUTXOs(bridge_, walletId_BCDE_, accountId_BCDE_, 0);
+      auto iter = std::find_if(utxos.begin(), utxos.end(),
+         [&](const UTXO& utxo)->bool {
+            return utxo.getHeight() == height &&
+               utxo.getTxIndex() == txIndex &&
+               utxo.getTxOutIndex() == txOutIndex;
+      });
+      if (iter == utxos.end()) {
+         throw std::runtime_error("no such utxo");
+      }
+      auto signedTx = createAndSignTx(bridge_,
+         walletId_BCDE_, accountId_BCDE_,
+         {*iter}, {{ recipientAddr, 1 * COIN }},
+         TestChain::scrAddrC, 2, true,
+         "privPass1"
+      );
+      broadcastTx(bridge_, signedTx);
+      auto zcLedgers = waitOnZc();
+      auto txHash = Tx(signedTx).getThisHash();
+      if (zcLedgers.empty() || zcLedgers[0].getTxHash() != txHash) {
+         throw std::runtime_error("no zc notif for the tx");
+      }
+      return txHash;
+   };
+
+   //a zc the db's mempool has is served as a zc, with the time the mempool
+   //got it, and the wallet's ledgers list it. One the mempool doesn't have
+   //is neither: this bridge broadcast it, so all it serves is its unpooled
+   //copy, with no time
+   std::set<BinaryData> hashes;
+   auto checkAgainstDb = [&](const std::string& tag, size_t inMempool) {
+      auto snapshot = theBDMt_->bdm()->zeroConfCont()->getSnapshot();
+      ASSERT_NE(snapshot, nullptr) << tag;
+
+      std::set<BinaryData> zcLedgers;
+      for (const auto& ledger : getLedgersPage(bridge_, delegateId, 0)) {
+         if (ledger.getBlockNum() == UINT32_MAX) {
+            zcLedgers.emplace(ledger.getTxHash());
+         }
+      }
+
+      bool success = false;
+      auto served = getTxDataByHash(bridge_, hashes, success);
+      EXPECT_TRUE(success) << tag;
+      size_t count = 0;
+      for (const auto& txHash : hashes) {
+         auto hashStr = txHash.toHexStr(true);
+         auto iter = served.find(txHash);
+         if (iter == served.end()) {
+            ADD_FAILURE() << tag << ": " << hashStr << " not served";
+            continue;
+         }
+         EXPECT_EQ(iter->second.height, UINT32_MAX) << tag << ": " << hashStr;
+         EXPECT_EQ(iter->second.txIndex, UINT32_MAX) << tag << ": " << hashStr;
+
+         auto zcKey = snapshot->getKeyForHash(txHash);
+         if (!Types::isTxKeyValid(zcKey)) {
+            EXPECT_EQ(iter->second.timestamp, UINT32_MAX) << tag << ": " <<
+               hashStr << " isn't in the db's mempool, served as a zc";
+            EXPECT_EQ(zcLedgers.count(txHash), 0U) << tag << ": " << hashStr;
+            continue;
+         }
+         ++count;
+         auto zcTx = snapshot->getTxByKey(zcKey);
+         ASSERT_NE(zcTx, nullptr);
+         EXPECT_EQ(iter->second.timestamp, zcTx->getTxObj().getTxTime())
+            << tag << ": " << hashStr;
+         EXPECT_EQ(zcLedgers.count(txHash), 1U) << tag << ": " << hashStr;
+      }
+      EXPECT_EQ(count, inMempool) << tag;
+   };
+
+   //on 4A: one zc spends an output of block 3 all branches keep unspent,
+   //the other one an output of block 3 that block 4 spends
+   try {
+      hashes.emplace(spend(3, 2, 0));
+      hashes.emplace(spend(3, 3, 0));
+   } catch (const std::exception& e) {
+      ASSERT_TRUE(false) << e.what();
+   }
+   checkAgainstDb("on 4A", 2);
+
+   //reorg onto 4, 5: the second zc is out. A third one spends an output
+   //of block 5, which 5A doesn't have
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5" }, blk0dat_);
+   nodePtr_->notifyNewBlock();
+   ASSERT_EQ(waitOnNewBlock(), 5);
+   checkAgainstDb("on 4-5", 1);
+   try {
+      hashes.emplace(spend(5, 1, 0));
+   } catch (const std::exception& e) {
+      ASSERT_TRUE(false) << e.what();
+   }
+   checkAgainstDb("on 4-5, 3rd zc", 2);
+
+   //reorg back onto 4A, 5A: the third zc is out, the first one stays
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5", "5A" }, blk0dat_);
+   nodePtr_->notifyNewBlock();
+   ASSERT_EQ(waitOnNewBlock(), 5);
+   checkAgainstDb("on 4A-5A", 1);
+}
+
+TEST_F(BridgeChainDataTests, GetTxsByHash_ZcReconnect)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+
+   //the wallet pays a new address, waits on the zc notif
+   auto sendZc = [&](uint64_t value)
+   {
+      auto recipientPrivKey = Cryptography::ECDSA::createNewPrivateKey();
+      auto recipientPubKey = Cryptography::ECDSA::computePublicKey(
+         recipientPrivKey, true);
+      auto recipientAddr = BtcUtils::scrAddrToSegWitAddress(
+         BtcUtils::getHash160(recipientPubKey));
+      auto signedTx = createAndSignTx(bridge_,
+         walletId_BCDE_, accountId_BCDE_,
+         {}, {{ recipientAddr, value }},
+         TestChain::scrAddrC, 2, true,
+         "privPass1"
+      );
+      broadcastTx(bridge_, signedTx);
+      auto zcLedgers = waitOnZc();
+      if (zcLedgers.size() != 1) {
+         throw std::runtime_error("expected 1 zc ledger");
+      }
+      return std::make_pair(Tx(signedTx).getThisHash(),
+         zcLedgers[0].getTxHash());
+   };
+
+   auto dbZcKey = [this](const BinaryData& txHash) {
+      auto snapshot = theBDMt_->bdm()->zeroConfCont()->getSnapshot();
+      if (snapshot == nullptr) {
+         return Types::INVALID_TX_KEY;
+      }
+      return snapshot->getKeyForHash(txHash);
+   };
+
+   auto zcLedgerHashes = [&]() {
+      std::set<std::string> result;
+      for (const auto& ledger : getLedgersPage(bridge_, delegateId, 0)) {
+         if (ledger.getBlockNum() == UINT32_MAX) {
+            result.emplace(ledger.getTxHash().toHexStr());
+         }
+      }
+      return result;
+   };
+
+   //the db goes away, comes back and the bridge reconnects
+   auto restartDb = [&](bool clearMempool) {
+      WebSocketServer::shutdown();
+      while (true) {
+         auto reply = waitOnReply();
+         kj::ArrayPtr<const capnp::word> words(
+            reinterpret_cast<const capnp::word*>(reply->data.getPtr()),
+            reply->data.getSize() / sizeof(capnp::word));
+         capnp::FlatArrayMessageReader reader(words);
+         auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+         if (fromBridge.which() == Codec::Bridge::FromBridge::NOTIFICATION &&
+            fromBridge.getNotification().which() ==
+               Codec::Bridge::Notification::DISCONNECTED) {
+            break;
+         }
+      }
+      if (wsServerThr_.joinable()) {
+         wsServerThr_.join();
+      }
+      theBDMt_->shutdown();
+      delete theBDMt_;
+
+      WebSocketServer::init();
+      Config::reset();
+      Config::DBSettings::setServiceType(SERVICE_UNITTEST_WITHWS);
+      std::vector<std::string> args{
+         "--datadir=./fakehomedir",
+         "--dbdir=./ldbtestdir",
+         "--satoshi-datadir=./blkfiletest",
+         "--db-type=DB_BARE",
+         "--thread-count=3",
+         "--public"};
+      if (clearMempool) {
+         args.emplace_back("--clear-mempool");
+      }
+      Config::parseArgs(args, Config::ProcessType::DB);
+      initBDM();
+      nodePtr_ = std::dynamic_pointer_cast<NodeUnitTest>(
+         Config::NetworkSettings::bitcoinNodes().first);
+      nodePtr_->setBDM(theBDMt_->bdm());
+
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer();
+      ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+      ASSERT_TRUE(registerWallets(bridge_));
+      theBDMt_->start(Config::DBSettings::initMode());
+      theBDMt_->bdm()->blockUntilReady();
+      ASSERT_EQ(goOnline(bridge_), 5);
+   };
+
+   BinaryData zcHash1;
+   try {
+      auto sent = sendZc(11 * COIN);
+      zcHash1 = sent.first;
+      ASSERT_EQ(sent.second.toHexStr(), zcHash1.toHexStr());
+   } catch (const std::exception& e) {
+      ASSERT_TRUE(false) << e.what();
+   }
+   auto zcKey1 = dbZcKey(zcHash1);
+   ASSERT_TRUE(Types::isThisAZCKey(zcKey1));
+
+   bool success = false;
+   auto served = getTxDataByHash(bridge_, {zcHash1}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(served.size(), 1U);
+   auto zcTime1 = served[zcHash1].timestamp;
+   EXPECT_NE(zcTime1, UINT32_MAX);
+
+   //the db comes back with the mempool it saved, the zc has the same key:
+   //the wallet lists it, the bridge serves it as a zc
+   restartDb(false);
+   if (HasFatalFailure()) {
+      return;
+   }
+   EXPECT_EQ(dbZcKey(zcHash1), zcKey1);
+   EXPECT_EQ(zcLedgerHashes(), std::set<std::string>{zcHash1.toHexStr()});
+   served = getTxDataByHash(bridge_, {zcHash1}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(served.size(), 1U);
+   EXPECT_EQ(served[zcHash1].height, UINT32_MAX);
+   EXPECT_EQ(served[zcHash1].timestamp, zcTime1);
+
+   //it comes back with its mempool cleared: the wallet lists no zc, and the
+   //bridge serves the zc's unpooled copy only, with no time
+   restartDb(true);
+   if (HasFatalFailure()) {
+      return;
+   }
+   EXPECT_TRUE(zcLedgerHashes().empty());
+   served = getTxDataByHash(bridge_, {zcHash1}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(served.size(), 1U);
+   EXPECT_EQ(served[zcHash1].height, UINT32_MAX);
+   EXPECT_EQ(served[zcHash1].timestamp, UINT32_MAX);
+
+   //a new zc gets the first zc id again, the key the first zc had: the
+   //wallet's ledgers and the bridge show the new tx
+   BinaryData zcHash2;
+   try {
+      auto sent = sendZc(5 * COIN);
+      zcHash2 = sent.first;
+      EXPECT_EQ(sent.second.toHexStr(), zcHash2.toHexStr());
+   } catch (const std::exception& e) {
+      ASSERT_TRUE(false) << e.what();
+   }
+   ASSERT_NE(zcHash2.toHexStr(), zcHash1.toHexStr());
+   EXPECT_EQ(dbZcKey(zcHash2), zcKey1);
+   EXPECT_EQ(zcLedgerHashes(), std::set<std::string>{zcHash2.toHexStr()});
+
+   served = getTxDataByHash(bridge_, {zcHash1, zcHash2}, success);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(served.size(), 2U);
+   EXPECT_EQ(served[zcHash1].timestamp, UINT32_MAX);
+   EXPECT_EQ(served[zcHash2].height, UINT32_MAX);
+   EXPECT_NE(served[zcHash2].timestamp, UINT32_MAX);
+}
+
+namespace
+{
+   //drops its db connection when it takes its lock for the nth time
+   class DbDroppingTxIOCache : public Bridge::TxIOCache
+   {
+   private:
+      std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr_;
+      const unsigned dropAt_;
+      unsigned lockCount_ = 0;
+
+      void initAfterLock(void) override
+      {
+         if (++lockCount_ == dropAt_) {
+            bdvPtr_->unregisterFromDB();
+         }
+      }
+
+   public:
+      DbDroppingTxIOCache(
+         std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr, unsigned at) :
+         bdvPtr_(bdvPtr), dropAt_(at)
+      {}
+
+      unsigned lockCount(void) const { return lockCount_; }
+   };
+}
+
+TEST_F(BridgeChainDataTests, FetchTxs_NoHeaderAskAgain)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+   auto ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgers.size(), 15);
+
+   std::set<BinaryData> hashes;
+   std::map<BinaryData, uint32_t> heights;
+   for (const auto& ledger : ledgers) {
+      hashes.emplace(ledger.getTxHash());
+      heights.emplace(ledger.getTxHash(), ledger.getBlockNum());
+   }
+   auto bdvPtr = bridge_->bdvPtr();
+   ASSERT_NE(bdvPtr, nullptr);
+
+   //every hash has a mined copy with its header in the cache
+   auto checkMined = [&](const Bridge::TxIOCache& txioCache) {
+      auto dbCache = txioCache.getDBCache();
+      for (const auto& txHash : hashes) {
+         try {
+            auto txKey = txioCache.getTxByHash(txHash).getDBKey();
+            ASSERT_FALSE(Types::isThisAZCKey(txKey));
+            auto header = dbCache->getHeader(
+               Types::getBlockIDFromTxKey(txKey));
+            EXPECT_EQ(header->blockHeight, heights[txHash]);
+         } catch (const std::out_of_range& e) {
+            ADD_FAILURE() << e.what();
+         }
+      }
+   };
+
+   //an empty cache gets the mined txs and their headers from the db
+   {
+      Bridge::TxIOCache txioCache;
+      txioCache.fetchTxs(bdvPtr, hashes);
+      checkMined(txioCache);
+   }
+
+   //the db goes away once it has served the txs, before the headers are
+   //asked for: fetchTxs takes the lock to see what the cache misses (1),
+   //then to see which headers it misses (2), then to fill the cache (3)
+   DbDroppingTxIOCache txioCache(bdvPtr, 2);
+   txioCache.fetchTxs(bdvPtr, hashes);
+   EXPECT_FALSE(bdvPtr->isValid());
+   EXPECT_EQ(txioCache.lockCount(), 3U);
+
+   //the bridge lost its db along: wait on its disconnected notif, the
+   //thread that sends it must be done before the bridge goes away
+   while (true) {
+      auto reply = waitOnReply();
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(reply->data.getPtr()),
+         reply->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+      if (fromBridge.which() == Codec::Bridge::FromBridge::NOTIFICATION &&
+         fromBridge.getNotification().which() ==
+            Codec::Bridge::Notification::DISCONNECTED) {
+         break;
+      }
+   }
+
+   //a mined copy with no header is no valid copy
+   for (const auto& txHash : hashes) {
+      EXPECT_THROW(txioCache.getTxByHash(txHash), std::out_of_range);
+   }
+
+   //so the next fetch asks the db for these hashes again
+   bridge_ = std::make_shared<Bridge::CppBridge>(
+      std::make_shared<TestBridgeSocket>());
+   loadWallets({});
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   ASSERT_EQ(goOnline(bridge_), 5);
+   bdvPtr = bridge_->bdvPtr();
+   ASSERT_NE(bdvPtr, nullptr);
+
+   txioCache.fetchTxs(bdvPtr, hashes);
+   checkMined(txioCache);
+}
+
+namespace
+{
+   //runs a function when it takes its lock for the nth time
+   class HookedTxIOCache : public Bridge::TxIOCache
+   {
+   private:
+      const unsigned hookAt_;
+      const std::function<void(Bridge::TxIOCache&)> hook_;
+      unsigned lockCount_ = 0;
+
+      void initAfterLock(void) override
+      {
+         if (++lockCount_ == hookAt_) {
+            hook_(*this);
+         }
+      }
+
+   public:
+      HookedTxIOCache(unsigned at,
+         std::function<void(Bridge::TxIOCache&)> hook) :
+         hookAt_(at), hook_(std::move(hook))
+      {}
+   };
+}
+
+TEST_F(BridgeChainDataTests, GetZcUTXOs_TxNotCached)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   //an rbf zc from the wallet, its change goes back to the wallet
+   auto recipientPrivKey = Cryptography::ECDSA::createNewPrivateKey();
+   auto recipientPubKey = Cryptography::ECDSA::computePublicKey(
+      recipientPrivKey, true);
+   auto recipientAddr = BtcUtils::scrAddrToSegWitAddress(
+      BtcUtils::getHash160(recipientPubKey));
+   BinaryData signedTx;
+   try {
+      signedTx = createAndSignTx(bridge_,
+         walletId_BCDE_, accountId_BCDE_,
+         {}, {{ recipientAddr, 11 * COIN }},
+         TestChain::scrAddrC, 2, true,
+         "privPass1"
+      );
+   } catch (const std::exception& e) {
+      ASSERT_TRUE(false) << e.what();
+   }
+   broadcastTx(bridge_, signedTx);
+   auto zcLedgers = waitOnZc();
+   ASSERT_EQ(zcLedgers.size(), 1U);
+   auto zcHash = Tx(signedTx).getThisHash();
+   auto bdvPtr = bridge_->bdvPtr();
+   ASSERT_NE(bdvPtr, nullptr);
+
+   //an update takes the lock to set the txios (1), then to cache their
+   //txs (2): in between, the zc txios have no tx in the cache
+   auto all = [](const Types::ScrAddr&)->bool { return true; };
+   std::vector<UTXO> zcUtxos, rbfUtxos;
+   std::string error;
+   HookedTxIOCache txioCache(2, [&](Bridge::TxIOCache& cache) {
+      try {
+         zcUtxos = cache.getUTXOs(UINT64_MAX, true, false, all);
+         rbfUtxos = cache.getUTXOs(UINT64_MAX, false, true, all);
+      } catch (const std::exception& e) {
+         error = e.what();
+      }
+   });
+   txioCache.update(bdvPtr,
+      std::make_shared<Bridge::Notifications::Server::Notif_Refresh>(
+         std::string{"refresh"}));
+   EXPECT_TRUE(error.empty()) << error;
+   EXPECT_TRUE(zcUtxos.empty());
+   EXPECT_TRUE(rbfUtxos.empty());
+
+   //once they are cached, the zc's change is listed
+   zcUtxos = txioCache.getUTXOs(UINT64_MAX, true, false, all);
+   ASSERT_EQ(zcUtxos.size(), 1U);
+   EXPECT_EQ(zcUtxos[0].getTxHash().toHexStr(), zcHash.toHexStr());
+   EXPECT_FALSE(txioCache.getUTXOs(UINT64_MAX, false, true, all).empty());
+}
+
+TEST_F(BridgeChainDataTests, FetchTxs_ZcAcrossPurge)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   //a zc from the wallet
+   BinaryData signedTx;
+   try {
+      signedTx = createAndSignTx(bridge_,
+         walletId_BCDE_, accountId_BCDE_,
+         {}, {{ BtcUtils::scrAddrToBase58(TestChain::scrAddrC), 11 * COIN }},
+         TestChain::scrAddrD, 2, false,
+         "privPass1"
+      );
+   } catch (const std::exception& e) {
+      ASSERT_TRUE(false) << e.what();
+   }
+   broadcastTx(bridge_, signedTx);
+   auto zcLedgers = waitOnZc();
+   ASSERT_EQ(zcLedgers.size(), 1U);
+   auto zcHash = Tx(signedTx).getThisHash();
+   auto bdvPtr = bridge_->bdvPtr();
+   ASSERT_NE(bdvPtr, nullptr);
+
+   //and a mined tx of the wallet, in its block
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+   auto ledgers = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_FALSE(ledgers.empty());
+   auto minedHash = ledgers.back().getTxHash();
+   auto minedKey = iface_->getDBKeyForHash(minedHash);
+   ASSERT_TRUE(Types::isTxKeyValid(minedKey));
+   ASSERT_FALSE(Types::isThisAZCKey(minedKey));
+   auto blockId = Types::getBlockIDFromTxKey(minedKey);
+
+   //fetchTxs takes the lock to see what the cache misses (1), then to see
+   //which headers it misses (2), then to fill the cache (3). The zcs are
+   //purged once the db has served the txs and the header, as on a reorg:
+   //none of it is cached
+   HookedTxIOCache txioCache(3, [](Bridge::TxIOCache& cache) {
+      cache.purgeZC();
+   });
+   txioCache.fetchTxs(bdvPtr, {zcHash, minedHash});
+   EXPECT_THROW(txioCache.getTxByHash(zcHash), std::out_of_range);
+   EXPECT_THROW(txioCache.getTxByHash(minedHash), std::out_of_range);
+   EXPECT_THROW(txioCache.getDBCache()->getHeader(blockId),
+      std::out_of_range);
+
+   //the next fetch caches them
+   txioCache.fetchTxs(bdvPtr, {zcHash, minedHash});
+   try {
+      const auto& tx = txioCache.getTxByHash(zcHash);
+      EXPECT_TRUE(Types::isThisAZCKey(tx.getDBKey()));
+      EXPECT_NE(tx.getTxTime(), UINT32_MAX);
+      EXPECT_EQ(txioCache.getTxByHash(minedHash).getDBKey(), minedKey);
+      EXPECT_EQ(txioCache.getDBCache()->getHeader(blockId)->blockHeight,
+         ledgers.back().getBlockNum());
+   } catch (const std::out_of_range& e) {
+      ADD_FAILURE() << e.what();
    }
 }
 
@@ -14709,6 +15933,291 @@ TEST_F(BridgePeersManagement, Remove)
 
    //connect to db
    ASSERT_TRUE(connectToPeer(bridge_, serverKey));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+class BridgeDBCacheTests : public ::testing::Test
+{
+protected:
+   //the 2 txs the inputs of the BIP174 test vector spend from
+   const BinaryData rawTx1 = READHEX("0200000000010158e87a21b56daf0c23be8e7070456c336f7cbaa5c8757924f545887bb2abdd7501000000171600145f275f436b09a8cc9a2eb2a2f528485c68a56323feffffff02d8231f1b0100000017a914aed962d6654f9a2b36608eb9d64d2b260db4f1118700c2eb0b0000000017a914b7f5faf40e3d40a5a459b1db3535f2b72fa921e88702483045022100a22edcc6e5bc511af4cc4ae0de0fcd75c7e04d8c1c3a8aa9d820ed4b967384ec02200642963597b9b1bc22c75e9f3e117284a962188bf5e8a74c895089046a20ad770121035509a48eb623e10aace8bfd0212fdb8a8e5af3c94b0b133b95e114cab89e4f7965000000");
+   const BinaryData rawTx2 = READHEX("0200000001aad73931018bd25f84ae400b68848be09db706eac2ac18298babee71ab656f8b0000000048473044022058f6fc7c6a33e1b31548d481c826c015bd30135aad42cd67790dab66d2ad243b02204a1ced2604c6735b6393e5b41691dd78b00f0c5942fb9f751856faa938157dba01feffffff0280f0fa020000000017a9140fb9463421696b82c833af241c78c17ddbde493487d0f20a270100000017a91429ca74f8a08f81999428185c97b5d852e4063f618765000000");
+   const Types::TxKey minedKey = Types::constructTxKey(10, 3);
+   const Types::TxKey zcKey = Types::constructZCKey(5);
+
+   static void add(Ledgers::DBCache& cache,
+      const BinaryData& raw, Types::TxKey key)
+   {
+      Tx tx(raw);
+      tx.setTxKey(key);
+      cache.addTx(tx);
+   }
+
+   static Types::TxKey keyForHash(const Ledgers::DBCache& cache,
+      const BinaryData& raw)
+   {
+      return cache.getTxByHash(Tx(raw).getThisHash()).getDBKey();
+   }
+};
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, ZcThenMined)
+{
+   Ledgers::DBCache cache;
+   add(cache, rawTx1, zcKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), zcKey);
+
+   //the mined copy takes the hash, the zc entry stays for the ledgers
+   add(cache, rawTx1, minedKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), minedKey);
+   EXPECT_EQ(cache.getTx(zcKey).serialize(), rawTx1);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, MinedThenZc)
+{
+   Ledgers::DBCache cache;
+   add(cache, rawTx1, minedKey);
+   add(cache, rawTx1, zcKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), minedKey);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, MinedThenRemined)
+{
+   //a reorg mines the tx again in another block, the new copy wins
+   Ledgers::DBCache cache;
+   const auto reminedKey = Types::constructTxKey(11, 0);
+   add(cache, rawTx1, minedKey);
+   add(cache, rawTx1, reminedKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), reminedKey);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, EraseZcKeepsMined)
+{
+   Ledgers::DBCache cache;
+   add(cache, rawTx1, zcKey);
+   add(cache, rawTx1, minedKey);
+
+   //dropping the zc copy leaves the mined one
+   cache.eraseTx(zcKey);
+   EXPECT_THROW(cache.getTx(zcKey), std::out_of_range);
+   EXPECT_EQ(keyForHash(cache, rawTx1), minedKey);
+
+   //erasing the key the hash points to still drops the hash
+   cache.eraseTx(minedKey);
+   EXPECT_THROW(cache.getTxByHash(Tx(rawTx1).getThisHash()),
+      std::out_of_range);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, Candidates)
+{
+   //mined > pooled > unpooled, newest first within a kind
+   auto unpooledKey = Types::constructUnpooledKey(7);
+   auto minedKey2 = Types::constructTxKey(11, 0);
+
+   Ledgers::TxKeyCandidates candidates;
+   EXPECT_TRUE(candidates.empty());
+   EXPECT_EQ(candidates.best(), Types::INVALID_TX_KEY);
+
+   candidates.add(unpooledKey);
+   EXPECT_EQ(candidates.best(), unpooledKey);
+   candidates.add(zcKey);
+   EXPECT_EQ(candidates.best(), zcKey);
+   candidates.add(minedKey);
+   EXPECT_EQ(candidates.best(), minedKey);
+   candidates.add(minedKey2);
+   EXPECT_EQ(candidates.best(), minedKey2);
+   candidates.add(unpooledKey);
+   EXPECT_EQ(candidates.keys(), (std::vector<Types::TxKey>{
+      minedKey2, minedKey, zcKey, unpooledKey}));
+
+   EXPECT_TRUE(candidates.remove(minedKey2));
+   EXPECT_FALSE(candidates.remove(minedKey2));
+   EXPECT_EQ(candidates.best(), minedKey);
+   EXPECT_TRUE(candidates.remove(minedKey));
+   EXPECT_EQ(candidates.best(), zcKey);
+   EXPECT_TRUE(candidates.remove(zcKey));
+   EXPECT_EQ(candidates.best(), unpooledKey);
+   EXPECT_TRUE(candidates.remove(unpooledKey));
+   EXPECT_TRUE(candidates.empty());
+
+   //each key goes ahead of its kind and behind the better kinds: within a
+   //kind the newest comes first, whatever its id
+   auto minedKey0 = Types::constructTxKey(9, 0);
+   auto zcKey2 = Types::constructZCKey(6);
+   auto zcKey0 = Types::constructZCKey(4);
+   auto unpooledKey2 = Types::constructUnpooledKey(8);
+   auto unpooledKey0 = Types::constructUnpooledKey(6);
+   for (auto txKey : {minedKey, zcKey, unpooledKey, zcKey2, minedKey2,
+      unpooledKey2, zcKey0, minedKey0, unpooledKey0}) {
+      candidates.add(txKey);
+   }
+   EXPECT_EQ(candidates.keys(), (std::vector<Types::TxKey>{
+      minedKey0, minedKey2, minedKey, zcKey0, zcKey2, zcKey,
+      unpooledKey0, unpooledKey2, unpooledKey}));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, Unpooled)
+{
+   Ledgers::DBCache cache;
+   auto hash1 = Tx(rawTx1).getThisHash();
+
+   //a raw tx gets the next unpooled key, once
+   auto key1 = cache.addUnpooledTx(rawTx1);
+   EXPECT_EQ(key1, Types::constructUnpooledKey(0));
+   EXPECT_EQ(cache.getTx(key1).getBlockId(), Types::INVALID_BLOCK_ID);
+   EXPECT_EQ(cache.getTx(key1).getTxIndex(), UINT16_MAX);
+   EXPECT_EQ(cache.addUnpooledTx(rawTx1), key1);
+   EXPECT_EQ(cache.addUnpooledTx(rawTx2), Types::constructUnpooledKey(1));
+   EXPECT_EQ(cache.getTxByHash(hash1).serialize(), rawTx1);
+   EXPECT_EQ(keyForHash(cache, rawTx1), key1);
+
+   //the pooled and mined copies take over, the unpooled one stays below
+   add(cache, rawTx1, zcKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), zcKey);
+   add(cache, rawTx1, minedKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), minedKey);
+   EXPECT_EQ(cache.addUnpooledTx(rawTx1), minedKey);
+
+   //a purged hash keeps its mined copy only
+   EXPECT_EQ(cache.purgeTxs({hash1}), (std::set<Types::TxKey>{zcKey, key1}));
+   EXPECT_EQ(keyForHash(cache, rawTx1), minedKey);
+   cache.eraseTx(minedKey);
+   EXPECT_THROW(cache.getTxByHash(hash1), std::out_of_range);
+
+   //an erased copy falls back to what's left
+   auto zcKey2 = Types::constructZCKey(6);
+   add(cache, rawTx2, zcKey2);
+   EXPECT_EQ(keyForHash(cache, rawTx2), zcKey2);
+   cache.eraseTx(zcKey2);
+   EXPECT_EQ(keyForHash(cache, rawTx2), Types::constructUnpooledKey(1));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, EraseHashes)
+{
+   //the mined and zc copies of the hash go, its unpooled copy and other
+   //hashes stay
+   Ledgers::DBCache cache;
+   auto unpooledKey = cache.addUnpooledTx(rawTx1);
+   add(cache, rawTx1, zcKey);
+   add(cache, rawTx1, minedKey);
+   auto zcKey2 = Types::constructZCKey(6);
+   add(cache, rawTx2, zcKey2);
+
+   cache.eraseHashes({Tx(rawTx1).getThisHash()});
+   for (auto txKey : {zcKey, minedKey}) {
+      EXPECT_THROW(cache.getTx(txKey), std::out_of_range);
+   }
+   EXPECT_EQ(cache.getKeysForHash(Tx(rawTx1).getThisHash()),
+      std::vector<Types::TxKey>{unpooledKey});
+   EXPECT_EQ(keyForHash(cache, rawTx2), zcKey2);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, ZcIdReuse)
+{
+   //zc ids can be reused after ArmoryDB restarts: a key can come back for
+   //another tx, the old tx goes
+   Ledgers::DBCache cache;
+   add(cache, rawTx1, zcKey);
+   add(cache, rawTx2, zcKey);
+   EXPECT_EQ(cache.getTx(zcKey).serialize(), rawTx2);
+   EXPECT_EQ(keyForHash(cache, rawTx2), zcKey);
+   EXPECT_THROW(cache.getTxByHash(Tx(rawTx1).getThisHash()),
+      std::out_of_range);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, PurgeSkipsMined)
+{
+   Ledgers::DBCache cache;
+   add(cache, rawTx1, minedKey);
+   add(cache, rawTx2, zcKey);
+
+   auto purged = cache.purgeTxs({
+      Tx(rawTx1).getThisHash(), Tx(rawTx2).getThisHash()});
+   EXPECT_EQ(purged, std::set<Types::TxKey>{zcKey});
+   EXPECT_EQ(keyForHash(cache, rawTx1), minedKey);
+   EXPECT_THROW(cache.getTxByHash(Tx(rawTx2).getThisHash()),
+      std::out_of_range);
+   EXPECT_THROW(cache.getTx(zcKey), std::out_of_range);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, PurgeZC)
+{
+   //every zc copy goes, mined and unpooled copies stay
+   Ledgers::DBCache cache;
+   auto hash1 = Tx(rawTx1).getThisHash();
+   auto hash2 = Tx(rawTx2).getThisHash();
+   auto unpooledKey = cache.addUnpooledTx(rawTx1);
+   add(cache, rawTx1, zcKey);
+   add(cache, rawTx1, minedKey);
+   auto zcKey2 = Types::constructZCKey(6);
+   add(cache, rawTx2, zcKey2);
+
+   cache.purgeZC();
+   EXPECT_THROW(cache.getTx(zcKey), std::out_of_range);
+   EXPECT_THROW(cache.getTx(zcKey2), std::out_of_range);
+   EXPECT_EQ(cache.getKeysForHash(hash1),
+      (std::vector<Types::TxKey>{minedKey, unpooledKey}));
+   EXPECT_EQ(cache.getTx(unpooledKey).serialize(), rawTx1);
+   EXPECT_TRUE(cache.getKeysForHash(hash2).empty());
+   EXPECT_THROW(cache.getTxByHash(hash2), std::out_of_range);
+
+   //a zc key that comes back is a new copy
+   add(cache, rawTx2, zcKey);
+   EXPECT_EQ(keyForHash(cache, rawTx2), zcKey);
+   EXPECT_EQ(cache.getKeysForHash(hash1),
+      (std::vector<Types::TxKey>{minedKey, unpooledKey}));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, InvalidKeys)
+{
+   //INVALID_TX_KEY and txio keys aren't tx keys, they are no candidates
+   using Kind = Ledgers::TxKeyCandidates::Kind;
+   const auto txioKey = Types::constructTxIOKey(10, 3, 1);
+   const auto unpooledKey = Types::constructUnpooledKey(7);
+   EXPECT_EQ(Ledgers::TxKeyCandidates::kindOf(Types::INVALID_TX_KEY),
+      Kind::Invalid);
+   EXPECT_EQ(Ledgers::TxKeyCandidates::kindOf(txioKey), Kind::Invalid);
+   EXPECT_EQ(Ledgers::TxKeyCandidates::kindOf(minedKey), Kind::Mined);
+   EXPECT_EQ(Ledgers::TxKeyCandidates::kindOf(zcKey), Kind::Pooled);
+   EXPECT_EQ(Ledgers::TxKeyCandidates::kindOf(unpooledKey), Kind::Unpooled);
+
+   Ledgers::TxKeyCandidates candidates;
+   candidates.add(Types::INVALID_TX_KEY);
+   candidates.add(txioKey);
+   EXPECT_TRUE(candidates.empty());
+   candidates.add(unpooledKey);
+   candidates.add(Types::INVALID_TX_KEY);
+   EXPECT_EQ(candidates.keys(), std::vector<Types::TxKey>{unpooledKey});
+
+   //a tx starts with an invalid key, the cache doesn't take a tx without
+   //a valid one
+   Ledgers::DBCache cache;
+   Tx unkeyed(rawTx2);
+   EXPECT_EQ(unkeyed.getDBKey(), Types::INVALID_TX_KEY);
+   cache.addTx(unkeyed);
+   add(cache, rawTx1, Types::INVALID_TX_KEY);
+   add(cache, rawTx1, txioKey);
+   EXPECT_THROW(cache.getTxByHash(Tx(rawTx1).getThisHash()),
+      std::out_of_range);
+   EXPECT_THROW(cache.getTxByHash(Tx(rawTx2).getThisHash()),
+      std::out_of_range);
+   EXPECT_THROW(cache.getTx(Types::INVALID_TX_KEY), std::out_of_range);
+   EXPECT_THROW(cache.getTx(txioKey), std::out_of_range);
+
+   //a valid key still goes in
+   add(cache, rawTx1, zcKey);
+   EXPECT_EQ(keyForHash(cache, rawTx1), zcKey);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

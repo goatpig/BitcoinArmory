@@ -2761,9 +2761,21 @@ void CppBridge::getAddress(const Wallets::WalletId& wltId,
 ////////////////////////////////////////////////////////////////////////////////
 void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId msgId)
 {
-   auto func = [this, hashes, msgId]()
+   //the db for what the cache can't serve as is (no valid copy, an
+   //unpooled copy, a zc copy no txio points to), its answers go in the
+   //cache, then each hash gets its best valid copy from the cache. The
+   //thread waits on the db, so it doesn't capture this
+   auto bdvPtr = bdvPtr_;
+   if (dbOffline_ || bdvPtr == nullptr || !bdvPtr->isValid()) {
+      bdvPtr = nullptr;
+   }
+   auto func = [wltManager = wltManager_, sockPtr = sockPtr_,
+      bdvPtr, hashes, msgId]() mutable
    {
-      auto txioCache = wltManager_->txioCache();
+      wltManager->fetchTxs(bdvPtr, hashes);
+      bdvPtr.reset();
+
+      auto txioCache = wltManager->txioCache();
       ReentrantLock lock(txioCache.get());
       auto dbCache = txioCache->getDBCache();
 
@@ -2771,9 +2783,9 @@ void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId ms
       txs.reserve(hashes.size());
       for (const auto& txHash : hashes) {
          try {
-            txs.emplace_back(dbCache->getTxByHash(txHash));
+            txs.emplace_back(txioCache->getTxByHash(txHash));
          } catch (const std::out_of_range&) {
-            //no tx for this hash
+            //no valid tx for this hash
             continue;
          }
       }
@@ -2782,22 +2794,24 @@ void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId ms
       auto fromBridge = message.initRoot<FromBridge>();
       auto reply = fromBridge.initReply();
       reply.setReferenceId(msgId);
-      if (txs.empty()) {
-         reply.setSuccess(false);
-         reply.setError("no txs found for requested hashes");
-      } else {
-         auto serviceReply = reply.initService();
-         auto capnTxs = serviceReply.initGetTxsByHash(txs.size());
+      //hashes with no tx are left out, finding none is not an error
+      {
+         auto managerReply = reply.initWalletManager();
+         auto capnTxs = managerReply.initGetTxsByHash(txs.size());
 
          size_t count = 0;
          for (const auto& tx : txs) {
             auto capnTx = capnTxs[count++];
             auto txKey = tx.getDBKey();
-            if (Types::isThisAZCKey(txKey)) {
+            if (Types::isThisAZCKey(txKey) ||
+               Types::isThisAnUnpooledKey(txKey)) {
+               //not in a block: a zc has the time of its mempool entry
+               //if the tx carries it, getTxTime gives UINT32_MAX otherwise
                capnTx.setHeight(UINT32_MAX);
                capnTx.setTimestamp(tx.getTxTime());
                capnTx.setTxIndex(UINT32_MAX);
             } else {
+               //getTxByHash only gives a mined tx whose header is cached
                auto header = dbCache->getHeader(
                   Types::getBlockIDFromTxKey(txKey));
                capnTx.setHeight(header->blockHeight);
@@ -2818,14 +2832,27 @@ void CppBridge::getTxsByHash(const std::set<Types::TxHash>& hashes, MessageId ms
          reply.setSuccess(true);
       }
 
-      auto serialized = serializeCapnp(message);
-      this->writeToClient(serialized);
+      auto payload = std::make_unique<WritePayload_Bridge>();
+      payload->data = serializeCapnp(message);
+
+      //once the reply is out, the bridge may be gone. Let go of the manager
+      //first, so its last copy doesn't close the wallets on this thread
+      //while the caller opens them again: LMDB can't have a db open twice
+      //in one process
+      wltManager.reset();
+      sockPtr->pushPayload(std::move(payload), nullptr);
    };
 
    std::thread run{func};
    if (run.joinable()) {
       run.detach();
    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void CppBridge::addUnpooledTxs(const std::vector<BinaryData>& rawTxs)
+{
+   wltManager_->addUnpooledTxs(rawTxs);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3190,6 +3217,8 @@ std::shared_ptr<CppBridgeSignerStruct> CppBridge::signerInstance(
 ////////////////////////////////////////////////////////////////////////////////
 void CppBridge::broadcastTxs(const std::vector<BinaryData>& rawTxVec, bool isRPC)
 {
+   //cached as unpooled until the db reports them
+   addUnpooledTxs(rawTxVec);
    if (!isRPC) {
       bdvPtr_->broadcastZC(rawTxVec);
    } else {
@@ -3202,8 +3231,10 @@ void CppBridge::broadcastTxs(const std::vector<BinaryData>& rawTxVec, bool isRPC
 ////////////////////////////////////////////////////////////////////////////////
 void CppBridge::getBlockTimeByHeight(uint32_t height, MessageId msgId) const
 {
-   auto dbCache = wltManager_->getDbCache();
-   auto header = dbCache->getHeaderForHeight(height);
+   auto header = [this, height]() {
+      ReentrantLock lock(wltManager_->txioCache().get());
+      return wltManager_->getDbCache()->getHeaderForHeight(height);
+   }();
 
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<FromBridge>();
@@ -3211,8 +3242,8 @@ void CppBridge::getBlockTimeByHeight(uint32_t height, MessageId msgId) const
    reply.setReferenceId(msgId);
 
    if (header != nullptr) {
-      auto service = reply.initService();
-      service.setGetBlockTimeByHeight(header->timestamp);
+      auto managerReply = reply.initWalletManager();
+      managerReply.setGetBlockTimeByHeight(header->timestamp);
       reply.setSuccess(true);
    } else {
       reply.setSuccess(false);
