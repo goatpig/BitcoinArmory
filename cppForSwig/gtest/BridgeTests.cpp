@@ -7638,6 +7638,212 @@ TEST_F(BridgeWalletsWithDBTests, DestroyDuringDisconnectCleanup)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+namespace {
+   //waitOnReply with a timeout, returns nullptr if nothing came in
+   MsgPtr waitOnReplyFor(std::chrono::milliseconds timeout)
+   {
+      std::unique_lock<std::mutex> lock(commsMutex);
+      if (!commsCV.wait_for(lock, timeout, []{ return !replyQueue.empty(); })) {
+         return nullptr;
+      }
+      auto result = std::move(replyQueue.front());
+      replyQueue.pop_front();
+      return result;
+   }
+
+   void replyToKeyPrompt(std::shared_ptr<Bridge::CppBridge> bridge,
+      uint64_t refId, uint32_t counter, bool accept)
+   {
+      capnp::MallocMessageBuilder message;
+      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+      toBridge.setReferenceId(refId);
+      auto notifReply = toBridge.initNotification();
+      notifReply.setCounter(counter);
+      notifReply.setPresentPubkey();
+      notifReply.setSuccess(accept);
+
+      auto rawReq = serializeCapnp(message);
+      pushRequest(bridge, rawReq);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeWalletsWithDBTests, DestroyDuringKeyPrompt)
+{
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   //connect, the bridge's notification thread waits on the reply to the
+   //server key prompt. Queue the command from this thread, so that no
+   //parser thread holds a copy of the bridge
+   uint64_t refId = rand();
+   auto callbackId = Cryptography::PRNG::fortuna.generateRandom(4).toHexStr();
+   bridge_->connectToIp("127.0.0.1", 9001, callbackId, refId);
+
+   bool prompted = false;
+   uint32_t promptCounter = 0;
+   auto deadline = std::chrono::steady_clock::now() + 10s;
+   while (!prompted && std::chrono::steady_clock::now() < deadline) {
+      auto reply = waitOnReplyFor(100ms);
+      if (reply == nullptr) {
+         continue;
+      }
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(reply->data.getPtr()),
+         reply->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+
+      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+      if (fromBridge.which() == Codec::Bridge::FromBridge::NOTIFICATION &&
+         fromBridge.getNotification().which() ==
+            Codec::Bridge::Notification::PRESENT_PUBKEY) {
+         prompted = true;
+         promptCounter = fromBridge.getNotification().getCounter();
+      }
+   }
+   ASSERT_TRUE(prompted) << "no server key prompt";
+   if (bridge_.use_count() != 1) {
+      replyToKeyPrompt(bridge_, refId, promptCounter, false);
+      FAIL() << "the bridge has another owner, resetting it won't destroy it";
+   }
+
+   //does not own the bridge. Only used to answer the prompt if ~CppBridge
+   //doesn't return on its own: it is then still waiting on the notification
+   //thread, so the bridge's members are alive
+   std::shared_ptr<Bridge::CppBridge> bridgeInDtor(
+      bridge_.get(), [](Bridge::CppBridge*){});
+
+   //leave the prompt unanswered, destroy the bridge from another thread
+   std::promise<void> destroyedProm;
+   auto destroyedFut = destroyedProm.get_future();
+   std::thread destroyThr(
+      [bridge = std::move(bridge_), prom = std::move(destroyedProm)]() mutable {
+         bridge.reset();
+         prom.set_value();
+      }
+   );
+
+   if (destroyedFut.wait_for(10s) != std::future_status::ready) {
+      ADD_FAILURE() << "~CppBridge did not return within 10s while the "
+         "server key prompt was pending";
+
+      //reject the key: the connect fails, the notification thread exits and
+      //~CppBridge can return, the rest of the run is unaffected
+      replyToKeyPrompt(bridgeInDtor, refId, promptCounter, false);
+      if (destroyedFut.wait_for(10s) != std::future_status::ready) {
+         destroyThr.detach();
+         FAIL() << "~CppBridge did not return after the key was rejected";
+      }
+   }
+   destroyThr.join();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeWalletsWithDBTests, LateDisconnectAfterReconnect)
+{
+   auto wallets = loadWallets(bridge_);
+   ASSERT_EQ(wallets.size(), 1);
+
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+
+   //start db, go online and wait on ready notif
+   theBDMt_->start(Config::DBSettings::initMode());
+   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(goOnline(bridge_), 5);
+   while (waitOnReplyFor(500ms) != nullptr) {}
+
+   //drop the db connection and reconnect right away, both commands are
+   //queued from this thread in this order. The db cleanup shuts down the
+   //old connection, which then reports its own disconnection: that notif
+   //is pushed while the cleanup runs, by which time the connect command
+   //is normally already queued
+   bridge_->cleanupDbConnection();
+   uint64_t refId = rand();
+   auto callbackId = Cryptography::PRNG::fortuna.generateRandom(4).toHexStr();
+   bridge_->connectToIp("127.0.0.1", 9001, callbackId, refId);
+
+   //accept the key and wait on the connect reply and the setup done notif,
+   //then give a late disconnected notif 1s to come through
+   bool gotReply = false, replySuccess = false, gotSetupDone = false;
+   unsigned disconnectsAfterReply = 0;
+   std::string received;
+   auto deadline = std::chrono::steady_clock::now() + 10s;
+   bool settling = false;
+   while (std::chrono::steady_clock::now() < deadline) {
+      auto reply = waitOnReplyFor(100ms);
+      if (reply == nullptr) {
+         continue;
+      }
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(reply->data.getPtr()),
+         reply->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+
+      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+      if (fromBridge.which() == Codec::Bridge::FromBridge::REPLY) {
+         auto response = fromBridge.getReply();
+         if (response.getReferenceId() != refId) {
+            received += "[other reply] ";
+            continue;
+         }
+         gotReply = true;
+         replySuccess = response.getSuccess();
+         received += replySuccess ? "[connect ok] " : "[connect failed: " +
+            std::string(response.getError()) + "] ";
+      } else if (fromBridge.which() == Codec::Bridge::FromBridge::NOTIFICATION) {
+         auto notif = fromBridge.getNotification();
+         switch (notif.which()) {
+            case Codec::Bridge::Notification::PRESENT_PUBKEY:
+            {
+               received += "[key prompt] ";
+               std::string presentedKey(notif.getPresentPubkey());
+               replyToKeyPrompt(bridge_, refId, notif.getCounter(),
+                  presentedKey == serverPubkey_);
+               break;
+            }
+
+            case Codec::Bridge::Notification::DISCONNECTED:
+               received += "[disconnected] ";
+               if (gotReply) {
+                  ++disconnectsAfterReply;
+               }
+               break;
+
+            case Codec::Bridge::Notification::SETUP_DONE:
+               received += "[setup done] ";
+               gotSetupDone = true;
+               break;
+
+            default:
+               received += "[notif " + std::to_string((int)notif.which()) + "] ";
+               break;
+         }
+      }
+
+      if (gotReply && gotSetupDone && !settling) {
+         settling = true;
+         deadline = std::chrono::steady_clock::now() + 1s;
+      }
+   }
+
+   ASSERT_TRUE(gotReply) << "no reply to the connect request, got: " << received;
+   ASSERT_TRUE(replySuccess) << "got: " << received;
+   EXPECT_TRUE(gotSetupDone) << "got: " << received;
+   EXPECT_EQ(disconnectsAfterReply, 0) << "the old connection's disconnected "
+      "notif tore down the new one, got: " << received;
+
+   auto bdvPtr = bridge_->bdvPtr();
+   ASSERT_NE(bdvPtr, nullptr) << "lost the new db connection";
+   EXPECT_TRUE(bdvPtr->isValid());
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(BridgeWalletsWithDBTests, DeleteWallet)
 {
    //create a fresh wallet
