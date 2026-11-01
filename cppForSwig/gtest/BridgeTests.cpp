@@ -239,6 +239,19 @@ namespace {
       return result;
    }
 
+   //nullptr if no reply comes within timeout
+   MsgPtr waitOnReplyFor(std::chrono::milliseconds timeout)
+   {
+      std::unique_lock<std::mutex> lock(commsMutex);
+      if (!commsCV.wait_for(lock, timeout,
+         []{ return !replyQueue.empty(); })) {
+         return nullptr;
+      }
+      auto result = std::move(replyQueue.front());
+      replyQueue.pop_front();
+      return result;
+   }
+
    void pushRequest(std::shared_ptr<Bridge::CppBridge> bridge,
       const BinaryData& rawRequest)
    {
@@ -7152,6 +7165,36 @@ TEST_F(BridgeWalletTests, GetTxsByHash_AddSupportingTx)
    EXPECT_EQ(txs[hash1].height, UINT32_MAX);
    EXPECT_EQ(txs[hash1].txIndex, UINT32_MAX);
    EXPECT_EQ(txs[hash1].timestamp, UINT32_MAX);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeWalletTests, WalletManager_UnhandledRequest)
+{
+   //a WalletManager request with no field set (unset) isn't handled, it
+   //gets an error reply and the bridge keeps serving
+   uint64_t refId = rand();
+   capnp::MallocMessageBuilder message;
+   auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+   toBridge.setReferenceId(refId);
+   auto request = toBridge.initWalletManager();
+   ASSERT_EQ(request.which(), Codec::Bridge::WalletManagerRequest::UNSET);
+   EXPECT_TRUE(Bridge::ProtoCommandParser::processData(
+      bridge_, serializeCapnp(message)));
+
+   auto resp = waitOnReplyFor(std::chrono::seconds(5));
+   ASSERT_NE(resp, nullptr) << "no reply to an unhandled WalletManager request";
+   kj::ArrayPtr<const capnp::word> words(
+      reinterpret_cast<const capnp::word*>(resp->data.getPtr()),
+      resp->data.getSize() / sizeof(capnp::word));
+   capnp::FlatArrayMessageReader reader(words);
+   auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+   ASSERT_EQ(fromBridge.which(), Codec::Bridge::FromBridge::REPLY);
+   auto reply = fromBridge.getReply();
+   EXPECT_EQ(reply.getReferenceId(), refId);
+   EXPECT_FALSE(reply.getSuccess());
+   EXPECT_EQ(std::string(reply.getError()), "invalid WalletManager request");
+
+   EXPECT_NO_THROW(listWallets(bridge_));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
