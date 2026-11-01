@@ -14,6 +14,7 @@
 #include <Utils/ArmoryErrors.h>
 #include <BlockchainDatabase/txio.h>
 #include <Network/WebSocketMessage.h>
+#include <Node/Status.h>
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>
@@ -70,45 +71,37 @@ namespace {
    }
 
    // deser helpers
-   std::map<unsigned, DBClientClasses::FeeEstimateStruct> capnToFeeSchedules(
+   Node::FeeSchedule capnToFeeSchedules(
       capnp::List<Codec::Types::FeeSchedule, capnp::Kind::STRUCT>::Reader fees)
    {
-      //      FeeEstimateStruct(float val, bool isSmart, const std::string& error) :
-      std::map<unsigned, DBClientClasses::FeeEstimateStruct> result;
+      Node::FeeSchedule result;
       for (auto fee : fees) {
-         result.emplace(fee.getTarget(), DBClientClasses::FeeEstimateStruct{
-            fee.getFeeByte(), fee.getSmartFee(), {}});
+         result.estimates.emplace(fee.getTarget(), Node::FeeEstimate{
+            fee.getSmartFee(), fee.getFeeByte(), {}});
       }
       return result;
    }
 
-   std::shared_ptr<DBClientClasses::NodeStatus> capnToNodeStatus(
+   Node::Status capnToNodeStatus(
       Codec::Types::NodeStatus::Reader nodeStatus)
    {
       if (nodeStatus.hasChain()) {
          auto chainCapn = nodeStatus.getChain();
-         DBClientClasses::NodeChainStatus ncs(
+         Node::ChainStatus ncs{
             Node::ChainState(chainCapn.getChainState()),
-            chainCapn.getBlockSpeed(), chainCapn.getProgress(),
+            chainCapn.getProgress(), chainCapn.getBlockSpeed(),
             chainCapn.getEta(), chainCapn.getBlocksLeft()
-         );
+         };
 
-         auto result = std::make_shared<DBClientClasses::NodeStatus>(
+         return Node::Status{
             Node::NodeState(nodeStatus.getNode()),
             Node::RpcState(nodeStatus.getRpc()),
-            nodeStatus.getIsSW(), ncs
-         );
-
-         return result;
+            ncs, nodeStatus.getIsSW()};
       } else {
-         DBClientClasses::NodeChainStatus ncs;
-         auto result = std::make_shared<DBClientClasses::NodeStatus>(
+         return Node::Status{
             Node::NodeState(nodeStatus.getNode()),
             Node::RpcState(nodeStatus.getRpc()),
-            nodeStatus.getIsSW(), ncs
-         );
-
-         return result;
+            {}, nodeStatus.getIsSW()};
       }
    }
 
@@ -239,7 +232,7 @@ void BlockDataViewer::addPublicKey(const SecureBinaryData& pubkey, bool oneWay)
 std::shared_ptr<BlockDataViewer> BlockDataViewer::getNewBDV(
    const std::string& addr, port_t port,
    std::shared_ptr<NetworkPeers::ClientStore> peers, bool oneWayAuth,
-   std::shared_ptr<RemoteCallback> callbackPtr)
+   std::shared_ptr<ServerPushHandler> callbackPtr)
 {
    //create socket object
    auto sockptr = std::make_shared<WebSocketClient>(
@@ -597,7 +590,7 @@ void BlockDataViewer::getTxsByKey(const std::set<Types::TxKey>& txkeys,
 
 ///////////////////////////////////////////////////////////////////////////////
 void BlockDataViewer::getNodeStatus(std::function<
-   void(ReturnMessage<std::shared_ptr<DBClientClasses::NodeStatus>>)> callback)
+   void(ReturnMessage<Node::Status>)> callback)
 {
    //create capnp request
    capnp::MallocMessageBuilder message;
@@ -635,14 +628,12 @@ void BlockDataViewer::getNodeStatus(std::function<
                   "expected GetNodeStatus reply", WRONG_REPLY_TYPE);
             }
 
-            //convert to header
+            //convert to node status
             auto result = capnToNodeStatus(staticReply.getGetNodeStatus());
-            callback(ReturnMessage<std::shared_ptr<
-               DBClientClasses::NodeStatus>>(result));
+            callback(ReturnMessage<Node::Status>{result});
          } catch (ClientMessageError& e) {
             //something went wrong, set error message and fire callback
-            callback(ReturnMessage<std::shared_ptr<
-               DBClientClasses::NodeStatus>>(e));
+            callback(ReturnMessage<Node::Status>{e});
          }
       });
 
@@ -652,8 +643,7 @@ void BlockDataViewer::getNodeStatus(std::function<
 
 ///////////////////////////////////////////////////////////////////////////////
 void BlockDataViewer::getFeeSchedule(const std::string& strategy,
-   std::function<void(ReturnMessage<
-      std::map<unsigned, DBClientClasses::FeeEstimateStruct>>)> callback)
+   std::function<void(ReturnMessage<Node::FeeSchedule>)> callback)
 {
    //create capnp request
    capnp::MallocMessageBuilder message;
@@ -693,12 +683,10 @@ void BlockDataViewer::getFeeSchedule(const std::string& strategy,
 
             //convert to header
             auto result = capnToFeeSchedules(staticReply.getGetFeeSchedule());
-            callback(ReturnMessage<std::map<
-               unsigned, DBClientClasses::FeeEstimateStruct>>(result));
+            callback(ReturnMessage<Node::FeeSchedule>(result));
          } catch (ClientMessageError& e) {
             //something went wrong, set error message and fire callback
-            callback(ReturnMessage<std::map<
-               unsigned, DBClientClasses::FeeEstimateStruct>>(e));
+            callback(ReturnMessage<Node::FeeSchedule>(e));
          }
       });
 

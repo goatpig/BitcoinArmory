@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -329,25 +329,21 @@ std::shared_ptr<Node::Status> BlockDataManager::getNodeStatus() const
       return nullptr;
    }
 
-   auto nss = std::make_shared<Node::Status>();
-   if (processNode->connected()) {
-      nss->state = Node::NodeState::Online;
+   auto nodeState = processNode->connected() ?
+      Node::NodeState::Online : Node::NodeState::Offline;
+
+   auto rpcState = Node::RpcState::Disabled;
+   if (nodeRPC != nullptr) {
+      rpcState = nodeRPC->testConnection();
    }
 
-   if (processNode->isSegWit()) {
-      nss->segWitEnabled = true;
+   if (rpcState != Node::RpcState::Online) {
+      return std::make_shared<Node::Status>(
+         nodeState, rpcState, Node::ChainStatus{}, processNode->isSegWit());
+   } else {
+      return std::make_shared<Node::Status>(
+         nodeState, rpcState, nodeRPC->getChainStatus(), processNode->isSegWit());
    }
-
-   if (nodeRPC == nullptr) {
-      return nss;
-   }
-
-   nss->rpcState = nodeRPC->testConnection();
-   if (nss->rpcState != Node::RpcState::Online) {
-      return nss;
-   }
-   nss->chainStatus = nodeRPC->getChainStatus();
-   return nss;
 }
 
 ////////

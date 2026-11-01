@@ -20,6 +20,8 @@
 #include <ZeroConf/Notifications.h>
 #include <Network/SocketWritePayload.h>
 #include <Network/WebSocketMessage.h>
+#include <Node/Status.h>
+#include <Node/RPC.h>
 
 #include "Server.h"
 #include "BtcWallet.h"
@@ -474,11 +476,11 @@ namespace {
 
             auto chainNotif = nodeReply.initChain();
             chainNotif.setChainState((Codec::Types::ChainStatus::ChainState)
-               nodeStatus->chainStatus.state());
-            chainNotif.setBlockSpeed(nodeStatus->chainStatus.getBlockSpeed());
-            chainNotif.setEta(nodeStatus->chainStatus.getETA());
-            chainNotif.setProgress(nodeStatus->chainStatus.getProgressPct());
-            chainNotif.setBlocksLeft(nodeStatus->chainStatus.getBlocksLeft());
+               nodeStatus->chainStatus.state);
+            chainNotif.setBlockSpeed(nodeStatus->chainStatus.blockSpeed);
+            chainNotif.setEta(nodeStatus->chainStatus.etaSeconds);
+            chainNotif.setProgress(nodeStatus->chainStatus.progressPct);
+            chainNotif.setBlocksLeft(nodeStatus->chainStatus.blocksLeft);
             break;
          }
 
@@ -488,11 +490,23 @@ namespace {
                std::string strat = request.getGetFeeSchedule();
                auto nodePtr = clients->bdm()->nodeRPC;
                auto feeSchedule = nodePtr->getFeeSchedule(strat);
-               auto capnFeeSchedule = staticReply.initGetFeeSchedule(feeSchedule.size());
 
-               unsigned i=0;
-               for (const auto& fee : feeSchedule) {
-                  auto capnFee = capnFeeSchedule[i++];
+               auto count = 0;
+               for (const auto& fee : feeSchedule.estimates) {
+                  if (fee.second.error.empty()) {
+                     ++count;
+                  }
+               }
+               if (count == 0) {
+                  throw std::runtime_error("could not fetch valid fees");
+               }
+
+               auto capnFeeSchedule = staticReply.initGetFeeSchedule(count);
+               for (const auto& fee : feeSchedule.estimates) {
+                  if (!fee.second.error.empty()) {
+                     continue;
+                  }
+                  auto capnFee = capnFeeSchedule[count++];
                   capnFee.setTarget(fee.first);
                   capnFee.setFeeByte(fee.second.feeByte);
                   capnFee.setSmartFee(fee.second.smartFee);
@@ -1070,11 +1084,11 @@ void BdvClient::processNotification(
 
          auto chainNotif = nodeNotif.getChain();
          chainNotif.setChainState((Codec::Types::ChainStatus::ChainState)
-            nodeStatus->chainStatus.state());
-         chainNotif.setBlockSpeed(nodeStatus->chainStatus.getBlockSpeed());
-         chainNotif.setEta(nodeStatus->chainStatus.getETA());
-         chainNotif.setProgress(nodeStatus->chainStatus.getProgressPct());
-         chainNotif.setBlocksLeft(nodeStatus->chainStatus.getBlocksLeft());
+            nodeStatus->chainStatus.state);
+         chainNotif.setBlockSpeed(nodeStatus->chainStatus.blockSpeed);
+         chainNotif.setEta(nodeStatus->chainStatus.etaSeconds);
+         chainNotif.setProgress(nodeStatus->chainStatus.progressPct);
+         chainNotif.setBlocksLeft(nodeStatus->chainStatus.blocksLeft);
          break;
       }
 
@@ -1087,16 +1101,16 @@ void BdvClient::processNotification(
          auto payload =
             std::dynamic_pointer_cast<BDV_Notification_Error>(notifPtr);
 
-         errorNotif.setCode(payload->errStruct.errCode_);
-         if (!payload->errStruct.errData_.empty()) {
+         errorNotif.setCode(payload->errStruct.errorCode);
+         if (!payload->errStruct.errorData.empty()) {
             errorNotif.setErrData(capnp::Data::Builder(
-               (uint8_t*)payload->errStruct.errData_.getPtr(),
-               payload->errStruct.errData_.getSize()
+               (uint8_t*)payload->errStruct.errorData.getPtr(),
+               payload->errStruct.errorData.getSize()
             ));
          }
 
-         if (!payload->errStruct.errorStr_.empty()) {
-            errorNotif.setErrStr(payload->errStruct.errorStr_);
+         if (!payload->errStruct.errorStr.empty()) {
+            errorNotif.setErrStr(payload->errStruct.errorStr);
          }
          break;
       }
@@ -1304,6 +1318,7 @@ void Clients::bdvOuterNotificationLoop()
          if (notifPtr->actionType() == BDV_UpdateNodeStatus) {
             //replace notif ptr with actual node status notif
             auto nodeStatus = bdm()->getNodeStatus();
+            LOGINFO << "bdm node status broadcast:\n" << nodeStatus->toString();
             notifPtr = std::make_shared<BDV_Notification_NodeStatus>(
                nodeStatus);
          }

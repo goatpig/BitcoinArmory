@@ -15,6 +15,7 @@
 #include <future>
 
 #include <Utils/ArmoryErrors.h>
+#include <Utils/ThreadSafeClasses.h>
 #include "BlockDataViewer.h"
 #include "BDV_Notification.h"
 
@@ -34,6 +35,7 @@ namespace Armory
    namespace Network
    {
       class WebSocketMessagePartial;
+      class Socket_WritePayload;
    }
 }
 

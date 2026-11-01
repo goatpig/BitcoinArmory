@@ -11,6 +11,7 @@
 #include <filesystem>
 
 #include <Utils/ArmoryErrors.h>
+#include <Utils/BinaryData.h>
 #include <Utils/BtcUtils.h>
 #include <Utils/ArmoryConfig.h>
 #include <Utils/JSON_codec.h>
@@ -24,14 +25,15 @@ using namespace Armory;
 using namespace Node;
 using namespace Node::Core;
 
-#define FEE_ESTIMATE_LIFETIME 30
+#define VALID_FEE_ESTIMATE_LIFETIME 30
+#define INVALID_FEE_ESTIMATE_LIFETIME 5
 
 namespace
 {
    static std::vector<unsigned> confTargets{ 2, 3, 4, 5, 6, 10, 20 };
-   static std::vector<std::string> strategies{
-      std::string{ RPC::FEE_STRAT_CONSERVATIVE },
-      std::string{ RPC::FEE_STRAT_ECONOMICAL }
+   static std::vector<std::string_view> strategies{
+      RPC::FEE_STRAT_CONSERVATIVE,
+      RPC::FEE_STRAT_ECONOMICAL
    };
 
    std::filesystem::path getDatadir()
@@ -81,25 +83,22 @@ namespace
          return {};
       }
    }
-
-   uint32_t now()
-   {
-      //all nimbly pimbly
-      auto rightMeow = std::chrono::system_clock::now();
-      return std::chrono::duration_cast<std::chrono::seconds>(
-         rightMeow.time_since_epoch()).count();
-   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// FeeEstimateCache
-RPC::FeeEstimateCache::FeeEstimateCache(EstimateMap eMap) :
-   estimates{std::move(eMap)}, timestamp{now()}
+// FeeSchedulesCache
+RPC::FeeSchedulesCache::FeeSchedulesCache(ScheduleMap sMap) :
+   schedules{std::move(sMap)}, timestamp{now()}
 {}
 
-bool RPC::FeeEstimateCache::isValid() const
+bool RPC::FeeSchedulesCache::isValid() const
 {
-   return timestamp + FEE_ESTIMATE_LIFETIME > now();
+   if (schedules.empty()) {
+      //we don't want to spam the RPC if the fee estimate is wrong
+      return timestamp + INVALID_FEE_ESTIMATE_LIFETIME > now();
+   } else {
+      return timestamp + VALID_FEE_ESTIMATE_LIFETIME > now();
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -134,21 +133,19 @@ void RPC::Iface::disable()
    sleepCV_.notify_all();
 }
 
-const ChainStatus& RPC::Iface::getChainStatus() const
+ChainStatus RPC::Iface::getChainStatus() const
 {
-   ReentrantLock lock(this);
-   return nodeChainStatus_;
+   return Node::ChainStatus::get();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // NodeRPC
 RPC::Client::Client(const std::string& rpcUser, const std::string& rpcPass) :
-   canResetAuthString_{true}
+   explicitAuthString_{!rpcUser.empty() && !rpcPass.empty()}
 {
-   if (!rpcUser.empty() && !rpcPass.empty()) {
-      basicAuthString64_ = BtcUtils::base64_encode(std::format("{}:{}",
-         rpcUser, rpcPass));
-      canResetAuthString_ = false;
+   if (explicitAuthString_) {
+      basicAuthString64_ = BtcUtils::base64_encode(
+         std::format("{}:{}", rpcUser, rpcPass));
    }
 }
 
@@ -224,6 +221,7 @@ RpcState RPC::Client::testConnection()
       state = RpcState::Disabled;
    } catch (const JSON::Exception& e) {
       LOGERR << "RPC connection test error: " << e.what();
+      resetAuthString();
       state = RpcState::BadAuth;
    }
    return state;
@@ -232,7 +230,8 @@ RpcState RPC::Client::testConnection()
 ////////
 void RPC::Client::resetAuthString()
 {
-   if (!canResetAuthString_) {
+   if (explicitAuthString_) {
+      LOGWARN << "tried to reset the RPC AuthString while using explicit credentials";
       return;
    }
    ReentrantLock lock(this);
@@ -266,8 +265,8 @@ float RPC::Client::queryFeeByte(Network::HttpSocket& sock, unsigned blocksToConf
    return feeBytePtr->val;
 }
 
-RPC::FeeEstimate RPC::Client::queryFeeByteSmart(Network::HttpSocket& sock,
-   unsigned& confTarget, const std::string& strategy)
+FeeEstimate RPC::Client::queryFeeByteSmart(Network::HttpSocket& sock,
+   unsigned& confTarget, std::string_view strategy)
 {
    auto fallback = [this, &confTarget, &sock]()->FeeEstimate
    {
@@ -286,7 +285,7 @@ RPC::FeeEstimate RPC::Client::queryFeeByteSmart(Network::HttpSocket& sock,
    jsonArray->append(confTarget);
    if (strategy == FEE_STRAT_CONSERVATIVE ||
       strategy == FEE_STRAT_ECONOMICAL) {
-      jsonArray->append(strategy);
+      jsonArray->append(std::string{strategy});
    }
    jsonObj.append("params"sv, jsonArray);
 
@@ -340,22 +339,23 @@ void RPC::Client::aggregateFeeEstimates()
       throw RpcError("[aggregateFeeEstimates] failed to setup RPC socket");
    }
 
-   FeeEstimateCache::EstimateMap freshEstimates;
+   FeeSchedulesCache::ScheduleMap freshSchedules;
    for (const auto& strat : strategies) {
-      auto insertIter = freshEstimates.emplace(
-         strat, std::map<unsigned, FeeEstimate>{});
-      auto& newMap = insertIter.first->second;
+      auto insertIter = freshSchedules.emplace(
+         strat, FeeSchedule{});
+      auto& newSchedule = insertIter.first->second;
 
       for (auto target : confTargets) {
-         newMap.emplace(target, queryFeeByteSmart(sock, target, strat));
+         newSchedule.estimates.emplace(
+            target, queryFeeByteSmart(sock, target, strat));
       }
    }
-   cachedFees_ = std::make_unique<FeeEstimateCache>(std::move(freshEstimates));
+   cachedFees_ = std::make_unique<FeeSchedulesCache>(std::move(freshSchedules));
 }
 
 ////////
 // grabbing fees from the cache
-const std::map<unsigned, RPC::FeeEstimate>& RPC::Client::getFeeSchedule(
+FeeSchedule RPC::Client::getFeeSchedule(
    const std::string& strategy)
 {
    ReentrantLock lock(this);
@@ -363,8 +363,8 @@ const std::map<unsigned, RPC::FeeEstimate>& RPC::Client::getFeeSchedule(
       if (cachedFees_ != nullptr) {
          if (cachedFees_->isValid()) {
             //we have a valid fee cache, return from it
-            auto iterStrat = cachedFees_->estimates.find(strategy);
-            if (iterStrat == cachedFees_->estimates.end()) {
+            auto iterStrat = cachedFees_->schedules.find(strategy);
+            if (iterStrat == cachedFees_->schedules.end()) {
                throw RpcError{};
             }
             return iterStrat->second;
@@ -372,88 +372,80 @@ const std::map<unsigned, RPC::FeeEstimate>& RPC::Client::getFeeSchedule(
       }
 
       /*
-      If we got this far, we have either lack a fee estimate or it is stale.
-      Let's try to constitute a fresh one. This call will throw on error.
+      If we got this far, we either lack a valid fee estimate or it is stale.
+      Let's try to constitute a fresh one.
       */
-      aggregateFeeEstimates();
+      try {
+         aggregateFeeEstimates();
+      } catch (const RpcError&) {
+         //set an empty estimate to avoid RPC spam, as it will set a
+         //timestamp to check against regardless.
+         cachedFees_ = std::make_unique<FeeSchedulesCache>(
+            FeeSchedulesCache::ScheduleMap{});
+      }
    }
 }
 
-RPC::FeeEstimate RPC::Client::getFeeByte(
+FeeEstimate RPC::Client::getFeeByte(
    unsigned confTarget, const std::string& strategy)
 {
    ReentrantLock lock(this);
    const auto& schedule = getFeeSchedule(strategy);
-   auto targetIter = schedule.upper_bound(confTarget);
-   if (targetIter != schedule.begin()) {
+   auto targetIter = schedule.estimates.upper_bound(confTarget);
+   if (targetIter != schedule.estimates.begin()) {
       --targetIter;
    }
    return targetIter->second;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+////////
+// node chain state
 bool RPC::Client::updateChainStatus()
 {
    ReentrantLock lock(this);
 
-   //get top block header
+   //get chain info
    JSON::Object getblockchaininfo{"method"sv, "getblockchaininfo"sv};
 
-   auto response = JSON::decode(queryRPC(getblockchaininfo));
-   if (!response.isResponseValid(getblockchaininfo.id)) {
+   auto chainInfoReply = JSON::decode(queryRPC(getblockchaininfo));
+   if (!chainInfoReply.isResponseValid(getblockchaininfo.id)) {
       throw JSON::Exception("getblockchaininfo id mismatch");
    }
-
-   auto resultObj = std::dynamic_pointer_cast<JSON::Object>(
-      response.getValForKey("result"sv));
-   if (resultObj == nullptr) {
+   auto chainInfoObj = std::dynamic_pointer_cast<JSON::Object>(
+      chainInfoReply.getValForKey("result"sv));
+   if (chainInfoObj == nullptr) {
       return false;
    }
 
-   auto hashObj = resultObj->getValForKey("bestblockhash"sv);
-   if (hashObj == nullptr) {
+   //get top block header using hash from chain info reply
+   auto hashVal = chainInfoObj->getValForKey("bestblockhash"sv);
+   if (hashVal == nullptr) {
       return false;
    }
-
    auto paramsObj = std::make_shared<JSON::Array>();
-   paramsObj->append(hashObj);
+   paramsObj->append(hashVal);
 
    JSON::Object getheader{"method"sv, "getblockheader"sv};
    getheader.append("params"sv, paramsObj);
 
-   auto blockHeader = JSON::decode(queryRPC(getheader));
-   if (!blockHeader.isResponseValid(getheader.id)) {
+   auto blockHeaderReply = JSON::decode(queryRPC(getheader));
+   if (!blockHeaderReply.isResponseValid(getheader.id)) {
       throw JSON::Exception("getblockheader id mismatch");
    }
-
    auto blockHeaderObj = std::dynamic_pointer_cast<JSON::Object>(
-      blockHeader.getValForKey("result"sv));
+      blockHeaderReply.getValForKey("result"sv));
    if (blockHeaderObj == nullptr) {
       throw JSON::Exception("getheader missing result");
    }
 
-   //append timestamp and height
-   auto heightVal = std::dynamic_pointer_cast<JSON::Number>(
-      blockHeaderObj->getValForKey("height"sv));
-   if (heightVal == nullptr) {
-      throw JSON::Exception("getheader missing height");
-   }
-
-   auto timeVal = std::dynamic_pointer_cast<JSON::Number>(
-      blockHeaderObj->getValForKey("time"sv));
-   if (timeVal == nullptr) {
-      throw JSON::Exception("getheader missing time");
-   }
-
-   //figure out state
-   nodeChainStatus_.appendHeightAndTime(heightVal->val, timeVal->val);
-   return nodeChainStatus_.processState(*resultObj);
+   //feed both to ChainStatus parser
+   return Node::updateHeightTime(*chainInfoObj, *blockHeaderObj);
 }
 
 ////////
+// waiting until node is ready
 void RPC::Client::waitOnChainSync(std::function<void(void)> callbck, bool persist)
 {
-   nodeChainStatus_.reset();
    while (enabled_.load(std::memory_order_relaxed)) {
       //keep trying as long as the node is initializing
       auto state = testConnection();
@@ -473,15 +465,14 @@ void RPC::Client::waitOnChainSync(std::function<void(void)> callbck, bool persis
    while (enabled_.load(std::memory_order_relaxed)) {
       float blkSpeed = 0.0f;
       try {
-         ReentrantLock lock(this);
          if (updateChainStatus()) {
             callbck();
          }
          const auto& chainStatus = getChainStatus();
-         if (chainStatus.state() == ChainState::Ready) {
+         if (chainStatus.state == ChainState::Ready) {
             break;
          }
-         blkSpeed = chainStatus.getBlockSpeed();
+         blkSpeed = chainStatus.blockSpeed;
       } catch (const std::exception& e) {
          auto state = testConnection();
          if (state == RpcState::Online) {
@@ -600,132 +591,4 @@ std::string RPC::Client::queryRPC(Network::HttpSocket& sock, JSON::Object& reque
 
    sock.pushPayload(std::move(writePayload), readPayload);
    return fut.get();
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// NodeChainStatus
-void ChainStatus::reset()
-{
-   heightTimeVec_.clear();
-   state_ = ChainState::Unknown;
-   blockSpeed_ = 0.0f;
-   eta_ = 0;
-}
-
-////////
-ChainState ChainStatus::state() const
-{
-   return state_;
-}
-
-float ChainStatus::getBlockSpeed() const
-{
-   return blockSpeed_;
-}
-
-float ChainStatus::getProgressPct() const
-{
-   return pct_;
-}
-
-uint64_t ChainStatus::getETA() const
-{
-   return eta_;
-}
-
-unsigned ChainStatus::getBlocksLeft() const
-{
-   return blocksLeft_;
-}
-
-////////
-bool ChainStatus::processState(const JSON::Object& jsonObj)
-{
-   if (state_ == ChainState::Ready) {
-      return false;
-   }
-
-   //progress status
-   auto pct_val = std::dynamic_pointer_cast<JSON::Number>(
-      jsonObj.getValForKey("verificationprogress"sv));
-   if (pct_val == nullptr) {
-      return false;
-   }
-
-   pct_ = std::min(pct_val->val, 1.0);
-   auto pct_int = unsigned(pct_ * 10000.0);
-
-   if (pct_int != prevPctInt_) {
-      LOGINFO << "waiting on node sync: " << float(pct_ * 100.0) << "%";
-      prevPctInt_ = pct_int;
-   }
-
-   if (pct_ >= 0.9999999) {
-      state_ = ChainState::Ready;
-      return true;
-   }
-
-   //compare top block timestamp to now
-   if (heightTimeVec_.empty()) {
-      return false;
-   }
-   uint64_t now = time(0);
-   uint64_t diff = 0;
-
-   auto blocktime = std::get<1>(heightTimeVec_.back());
-   if (now > blocktime) {
-      diff = now - blocktime;
-   }
-
-   //we got this far, node is still syncing, let's compute progress and eta
-   state_ = ChainState::Syncing;
-
-   //average amount of blocks left to sync based on timestamp diff
-   auto blocksLeft = diff / 600;
-
-   //compute block syncing speed based off of the last 20 top blocks
-   auto iterend = heightTimeVec_.rbegin();
-   auto time_end = std::get<2>(*iterend);
-
-   auto iterbegin = heightTimeVec_.begin();
-   auto time_begin = std::get<2>(*iterbegin);
-
-   if (time_end <= time_begin) {
-      return false;
-   }
-
-   auto blockdiff = std::get<0>(*iterend) - std::get<0>(*iterbegin);
-   if (blockdiff == 0) {
-      return false;
-   }
-
-   auto timediff = time_end - time_begin;
-   blockSpeed_ = float(blockdiff) / float(timediff);
-   eta_ = uint64_t(float(blocksLeft) * blockSpeed_);
-   blocksLeft_ = blocksLeft;
-   return true;
-}
-
-////////
-unsigned ChainStatus::getTopBlock() const
-{
-   if (heightTimeVec_.empty()) {
-      throw std::runtime_error("");
-   }
-   return std::get<0>(heightTimeVec_.back());
-}
-
-void ChainStatus::appendHeightAndTime(unsigned height, uint64_t timestamp)
-{
-   try {
-      if (getTopBlock() == height) {
-         return;
-      }
-   } catch (...) {}
-   heightTimeVec_.emplace_back(std::make_tuple(height, timestamp, time(0)));
-
-   //force the list at 20 max entries
-   while (heightTimeVec_.size() > 20) {
-      heightTimeVec_.pop_front();
-   }
 }
