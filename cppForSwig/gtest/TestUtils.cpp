@@ -608,28 +608,47 @@ namespace DBTestUtils
 
    /////////////////////////////////////////////////////////////////////////////
    // UTCallback
-   void UTCallback::run(BdmNotification bdmNotif)
+   void UTCallback::pushReady(const NewBlockNotif&) const
    {
-      auto notif = std::make_unique<BdmNotif>();
-      notif->action = bdmNotif.action;
-      notif->requestID = bdmNotif.requestID;
-
-      if (bdmNotif.action == BDMAction_Refresh) {
-         notif->idSet = bdmNotif.ids;
-      } else if (bdmNotif.action == BDMAction_ZC) {
-         notif->txios = std::move(bdmNotif.txios);
-      } else if (bdmNotif.action == BDMAction_NewBlock) {
-         if (bdmNotif.newBlock.isReorg()) {
-            notif->reorgHeight = bdmNotif.newBlock.getBranchHeight();
-         } else {
-            notif->reorgHeight = UINT32_MAX;
-         }
-      } else if (bdmNotif.action == BDMAction_BDV_Error) {
-         notif->error = bdmNotif.error;
-      }
+      auto notif = std::make_unique<BdmNotif>(BDMAction_Ready);
       actionStack_.push_back(std::move(notif));
    }
 
+   void UTCallback::pushNewBlock(
+      const NewBlockNotif& newBlockNotif) const
+   {
+      auto notif = std::make_unique<BdmNotif>(BDMAction_NewBlock);
+      notif->reorgHeight = newBlockNotif.isReorg() ?
+         newBlockNotif.getBranchHeight() : UINT32_MAX;
+      actionStack_.push_back(std::move(notif));
+   }
+
+   void UTCallback::pushRefresh(const std::set<std::string>& ids) const
+   {
+      auto notif = std::make_unique<BdmNotif>(BDMAction_Refresh);
+      notif->idSet = ids;
+      actionStack_.push_back(std::move(notif));
+   }
+
+   void UTCallback::pushZeroConf(
+      const std::string&,
+      std::vector<TxIOPair> txios,
+      std::set<Armory::Types::TxHash>) const
+   {
+      auto notif = std::make_unique<BdmNotif>(BDMAction_ZC);
+      notif->txios = std::move(txios);
+      actionStack_.push_back(std::move(notif));
+   }
+
+   void UTCallback::pushError(const BdvError& error) const
+   {
+      auto notif = std::make_unique<BdmNotif>(BDMAction_BDV_Error);
+      notif->error = std::make_unique<BdvError>(
+         error.requestId, error.errorStr, error.errorData, error.errorCode);
+      actionStack_.push_back(std::move(notif));
+   }
+
+   ////////
    void UTCallback::waitOnZc(
       std::shared_ptr<ZeroConf::ZeroConfContainer> zcPtr,
       const std::set<BinaryData>& hashes)
@@ -662,9 +681,9 @@ namespace DBTestUtils
       const std::set<Types::TxHash>& hashes)
    {
       auto bdHashes = hashes;
-      for (auto& pastNotif : zcNotifVec_) {
+      for (const auto& pastNotif : zcNotifVec_) {
          auto mempoolSnapshot = zcPtr->getSnapshot();
-         for (const auto& txio : pastNotif.txios) {
+         for (const auto& txio : pastNotif->txios) {
             auto hashOut = mempoolSnapshot->getHashForKey(
                txio.getTxKeyOfOutput());
             auto iterOut = bdHashes.find(hashOut);
@@ -690,7 +709,6 @@ namespace DBTestUtils
 
       while (!bdHashes.empty()) {
          auto action = waitOnNotification(BDMAction_ZC);
-         zcNotifVec_.push_back(*action);
          auto mempoolSnapshot = zcPtr->getSnapshot();
 
          for (const auto& txio : action->txios) {
@@ -711,10 +729,10 @@ namespace DBTestUtils
                bdHashes.erase(iterIn);
             }
          }
+         zcNotifVec_.push_back(std::move(action));
       }
    }
 
-   /////////////////////////////////////////////////////////////////////////////
    std::pair<std::vector<TxIOPair>, std::set<Types::TxHash>> waitOnNewZcSignal(
       Clients* clients, Types::BdvId bdvId)
    {
@@ -753,7 +771,7 @@ namespace DBTestUtils
       return txioData;
    }
 
-   /////////////////////////////////////////////////////////////////////////////
+   ////////
    void waitOnWalletRefresh(Clients* clients, Types::BdvId bdvId,
       const std::string& wltId)
    {

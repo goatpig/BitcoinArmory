@@ -2446,7 +2446,9 @@ TEST_F(BlockUtilsBareWithZC, ReloadMempool_ZcIdAbove255)
       DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
          false);
       theBDMt_->start(Config::DBSettings::initMode());
-      theBDMt_->bdm()->blockUntilReady();
+      if (theBDMt_->bdm()->waitUntilReady(5s) != BDMState::Ready) {
+         return UINT64_MAX;
+      }
       DBTestUtils::goOnline(clients_, bdvID);
       DBTestUtils::waitOnBDVReady(clients_, bdvID);
       return bdvID;
@@ -2482,6 +2484,7 @@ TEST_F(BlockUtilsBareWithZC, ReloadMempool_ZcIdAbove255)
    };
 
    auto bdvID = startBDM();
+   ASSERT_NE(bdvID, UINT64_MAX);
    auto bdm = theBDMt_->bdm();
    auto getBal = [&bdm](const BinaryData& scrAddr)->uint64_t
    { return DBTestUtils::getScrAddrBalance(scrAddr, bdm); };
@@ -2518,6 +2521,7 @@ TEST_F(BlockUtilsBareWithZC, ReloadMempool_ZcIdAbove255)
 
    //reload the mempool from the db
    bdvID = restartBDM();
+   ASSERT_NE(bdvID, UINT64_MAX);
    bdm = theBDMt_->bdm();
    {
       auto zcCont = bdm->zeroConfCont();
@@ -2574,6 +2578,7 @@ TEST_F(BlockUtilsBareWithZC, ReloadMempool_ZcIdAbove255)
 
    //all 3 zcs should survive another restart
    bdvID = restartBDM();
+   ASSERT_NE(bdvID, UINT64_MAX);
    bdm = theBDMt_->bdm();
    {
       auto zcCont = bdm->zeroConfCont();
@@ -3139,7 +3144,7 @@ TEST_F(BlockUtilsFull, GetTxsByHash_BadHashSize)
    auto bdvPtr = DBTestUtils::getBDV(clients_, bdvID);
 
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
