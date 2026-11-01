@@ -36,6 +36,12 @@ namespace Armory
    }
 }
 
+namespace Node
+{
+   class Status;
+   struct FeeSchedule;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 class ClientMessageError : public std::runtime_error
 {
@@ -133,10 +139,7 @@ namespace AsyncClient
    class BlockDataViewer
    {
       friend class BtcWallet;
-      friend class RemoteCallback;
-      friend class LedgerDelegate;
       friend class Blockchain;
-      friend class Armory::Bridge::WalletManager;
 
    private:
       bool registered_ = false;
@@ -170,7 +173,7 @@ namespace AsyncClient
       static std::shared_ptr<BlockDataViewer> getNewBDV(
          const std::string&, Armory::Network::port_t,
          std::shared_ptr<Armory::NetworkPeers::ClientStore>, bool,
-         std::shared_ptr<RemoteCallback>);
+         std::shared_ptr<ServerPushHandler>);
 
       void registerWithDB(const std::string&);
       void unregisterFromDB(void);
@@ -188,9 +191,9 @@ namespace AsyncClient
 
       //node & fee
       void getNodeStatus(
-         std::function<void(ReturnMessage<std::shared_ptr<DBClientClasses::NodeStatus>>)>);
-      void getFeeSchedule(const std::string&, std::function<void(ReturnMessage<
-            std::map<unsigned, DBClientClasses::FeeEstimateStruct>>)>);
+         std::function<void(ReturnMessage<Node::Status>)>);
+      void getFeeSchedule(const std::string&, std::function<void(
+         ReturnMessage<Node::FeeSchedule>)>);
 
       void broadcastZC(const std::vector<BinaryData>&);
       void broadcastThroughRPC(const BinaryData&);

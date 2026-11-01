@@ -1099,14 +1099,12 @@ int NodeRPC_UnitTest::broadcastTx(const BinaryDataRef& rawTx, std::string&)
    return (int)ArmoryErrorCodes::Success;
 }
 
-const std::map<unsigned, Node::Core::RPC::FeeEstimate>&
-NodeRPC_UnitTest::getFeeSchedule(
-   const std::string&)
+Node::FeeSchedule NodeRPC_UnitTest::getFeeSchedule(const std::string&)
 {
    throw std::runtime_error("should never get here");
 }
 
-RPC::FeeEstimate NodeRPC_UnitTest::getFeeByte(
+Node::FeeEstimate NodeRPC_UnitTest::getFeeByte(
    unsigned, const std::string&)
 {
    return { false, 1.0f };

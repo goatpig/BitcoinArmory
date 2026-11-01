@@ -174,6 +174,7 @@ ARMORYCLI_SOURCE_FILES = BDM_mainthread.cpp \
 	BDV_Notification.cpp \
 	Node/BitcoinP2P.cpp \
 	Node/RPC.cpp \
+	Node/Status.cpp \
 	BlockDataViewer.cpp \
 	BtcWallet.cpp \
 	Progress.cpp \

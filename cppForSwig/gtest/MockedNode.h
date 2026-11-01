@@ -165,10 +165,8 @@ public:
    void waitOnChainSync(std::function<void(void)>, bool) override;
    int broadcastTx(const BinaryDataRef&, std::string&) override;
 
-   const std::map<unsigned, Node::Core::RPC::FeeEstimate>& getFeeSchedule(
-      const std::string&) override;
-   Node::Core::RPC::FeeEstimate getFeeByte(
-      unsigned, const std::string&) override;
+   Node::FeeSchedule getFeeSchedule(const std::string&) override;
+   Node::FeeEstimate getFeeByte(unsigned, const std::string&) override;
 
    //locals
    void stallNextZc(unsigned);
