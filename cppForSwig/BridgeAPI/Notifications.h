@@ -59,7 +59,8 @@ namespace Armory
 
             struct Notif_Disconnected : public Payload
             {
-               Notif_Disconnected(void);
+               const std::string socketName;
+               Notif_Disconnected(const std::string&);
             };
 
             struct Notif_NewBlock : public Payload
@@ -140,7 +141,7 @@ namespace Armory
                   const std::vector<std::string>&,
                   float, unsigned, unsigned
                ) override;
-               void disconnected(void) override;
+               void disconnected(const std::string&) override;
             };
          }
 

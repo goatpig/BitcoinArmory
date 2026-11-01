@@ -381,7 +381,7 @@ int WebSocketClient::lwsServiceHandler(struct lws* wsi,
             } catch (const std::future_error&) {
                //promise already set, notify of disconnection
                if (instance->callbackPtr_ != nullptr) {
-                  instance->callbackPtr_->disconnected();
+                  instance->callbackPtr_->disconnected(instance->name());
                }
             }
             instance->shutdown();

@@ -212,14 +212,9 @@ void Push::NotifHandler::progress(
 }
 
 ////////
-void Push::NotifHandler::disconnected()
+void Push::NotifHandler::disconnected(const std::string& socketName)
 {
-   capnp::MallocMessageBuilder message;
-   auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
-   auto capnNotif = fromBridge.initNotification();
-   capnNotif.setDisconnected();
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
-   queue_->push_back(std::make_unique<Notif_Disconnected>());
+   queue_->push_back(std::make_unique<Notif_Disconnected>(socketName));
 }
 
 ////////
@@ -237,8 +232,8 @@ bool Push::Payload::syncWalletState() const
 }
 
 ////////
-Push::Notif_Disconnected::Notif_Disconnected() :
-   Payload(PayloadType::DISCONNECTED)
+Push::Notif_Disconnected::Notif_Disconnected(const std::string& name) :
+   Payload(PayloadType::DISCONNECTED), socketName{name}
 {}
 
 ////////

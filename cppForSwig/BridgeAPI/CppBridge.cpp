@@ -568,7 +568,8 @@ CppBridge::~CppBridge()
 void CppBridge::cleanupDbConnection()
 {
    notifQueue_->push_back(
-      std::make_unique<Notifications::Push::Notif_Disconnected>());
+      std::make_unique<Notifications::Push::Notif_Disconnected>(
+         std::string{}));
 }
 
 std::shared_ptr<AsyncClient::BlockDataViewer> CppBridge::bdvPtr() const
@@ -674,19 +675,33 @@ void CppBridge::runNotificationProcessingThread()
 
             case Push::PayloadType::PASS_TO_CLIENT:
             {
-               auto pushPtr = dynamic_cast<Push::Command_PassAlong*>(
+               auto passAlongPtr = dynamic_cast<Push::Command_PassAlong*>(
                   payload.get());
-               if (pushPtr == nullptr || pushPtr->packet.empty()) {
+               if (passAlongPtr == nullptr || passAlongPtr->packet.empty()) {
                   throw std::runtime_error("invalid passAlong command");
                }
-               writeToClient(pushPtr->packet);
+               writeToClient(passAlongPtr->packet);
                break;
             }
 
             case Push::PayloadType::DISCONNECTED:
             {
-               //cleanup bdv
-               cleanup();
+               if (bdvPtr_ == nullptr) {
+                  //nothing to do
+                  break;
+               }
+               auto dcPtr = dynamic_cast<Push::Notif_Disconnected*>(
+                  payload.get());
+               if (dcPtr == nullptr) {
+                  throw std::runtime_error("invalid disconnected notif");
+               }
+
+               if (dcPtr->socketName == bdvPtr_->getSocketName() ||
+                  dcPtr->socketName.empty()) {
+                  //cleanup the bdv if either the dc notification name matches
+                  //the current bdv's socket name, or it was served with no name
+                  cleanup();
+               }
                break;
             }
 
