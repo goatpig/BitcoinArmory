@@ -28,20 +28,27 @@ char *gai_strerrorA(int) { return nullptr; }
 #include <sys/ioctl.h>
 #endif
 
+namespace {
+   std::string saltName(const std::string& name)
+   {
+      return std::format("{}_{}", name,
+         Cryptography::PRNG::fortuna.generateRandom(4).toHexStr());
+   }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 //
 //// SocketPrototype
 //
 ///////////////////////////////////////////////////////////////////////////////
 SocketPrototype::SocketPrototype(const std::string& name) :
-   addr_(""), port_(UINT16_MAX), name_{std::format("{}.{}",
-      name, Cryptography::PRNG::fortuna.generateRandom(4).toHexStr())}
+   addr_{}, port_(UINT16_MAX), name_{saltName(name)}
 {}
 
 ////////
 SocketPrototype::SocketPrototype(const std::string& addr,
    port_t port, const std::string& name, bool doInit) :
-   addr_(addr), port_(port), name_(name)
+   addr_{addr}, port_(port), name_{saltName(name)}
 {
    if (addr.empty() || port == 0 || port == UINT16_MAX) {
       throw std::runtime_error(std::format(
