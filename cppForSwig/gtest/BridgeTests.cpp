@@ -7198,6 +7198,55 @@ TEST_F(BridgeWalletTests, WalletManager_UnhandledRequest)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeWalletTests, DbSetup_UnhandledHelperRequest)
+{
+   //peersHelper and satoshiHelper requests with no field set (unset)
+   //aren't handled, they get an error reply and the bridge keeps serving
+   auto unhandledRequest = [this](
+      const std::function<void(Codec::Bridge::DbSetupRequest::Builder&)>& set,
+      const std::string& expectedError)
+   {
+      uint64_t refId = rand();
+      capnp::MallocMessageBuilder message;
+      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+      toBridge.setReferenceId(refId);
+      auto request = toBridge.initSetup();
+      set(request);
+      EXPECT_TRUE(Bridge::ProtoCommandParser::processData(
+         bridge_, serializeCapnp(message)));
+
+      auto resp = waitOnReplyFor(std::chrono::seconds(5));
+      ASSERT_NE(resp, nullptr) << "no reply, expected: " << expectedError;
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(resp->data.getPtr()),
+         resp->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+      ASSERT_EQ(fromBridge.which(), Codec::Bridge::FromBridge::REPLY);
+      auto reply = fromBridge.getReply();
+      EXPECT_EQ(reply.getReferenceId(), refId);
+      EXPECT_FALSE(reply.getSuccess());
+      EXPECT_EQ(std::string(reply.getError()), expectedError);
+   };
+
+   unhandledRequest([](Codec::Bridge::DbSetupRequest::Builder& req)
+   {
+      auto peers = req.initPeersHelper();
+      ASSERT_EQ(peers.which(),
+         Codec::Bridge::DbSetupRequest::PeersRequest::UNSET);
+   }, "invalid peers helper request");
+
+   unhandledRequest([](Codec::Bridge::DbSetupRequest::Builder& req)
+   {
+      auto satoshi = req.initSatoshiHelper();
+      ASSERT_EQ(satoshi.which(),
+         Codec::Bridge::DbSetupRequest::SatoshiRequest::UNSET);
+   }, "invalid satoshi helper request");
+
+   EXPECT_NO_THROW(listWallets(bridge_));
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // BridgeWalletsWithDBTests
 class BridgeWalletsWithDBTests : public ::testing::Test
 {

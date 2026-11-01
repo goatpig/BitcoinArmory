@@ -168,6 +168,15 @@ namespace
                      labelReq.getKey(), labelReq.getLabel(), referenceId);
                   return true;
                }
+
+               default:
+                  capnp::MallocMessageBuilder message;
+                  auto fromBridge = message.initRoot<FromBridge>();
+                  auto reply = fromBridge.initReply();
+                  reply.setSuccess(false);
+                  reply.setReferenceId(referenceId);
+                  reply.setError("invalid peers helper request");
+                  response = serializeCapnp(message);
             }
             break;
          }
@@ -273,6 +282,15 @@ namespace
                   response = serializeCapnp(message);
                   break;
                }
+
+               default:
+                  capnp::MallocMessageBuilder message;
+                  auto fromBridge = message.initRoot<FromBridge>();
+                  auto reply = fromBridge.initReply();
+                  reply.setSuccess(false);
+                  reply.setReferenceId(referenceId);
+                  reply.setError("invalid satoshi helper request");
+                  response = serializeCapnp(message);
             }
             break;
          }
