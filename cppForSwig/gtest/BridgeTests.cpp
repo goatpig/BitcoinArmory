@@ -7510,7 +7510,7 @@ TEST_F(BridgeWalletsWithDBTests, DestroyDuringDisconnectCleanup)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //kill BDM, the bridge's notification thread stops at the gate
@@ -7662,7 +7662,7 @@ TEST_F(BridgeWalletsWithDBTests, LateDisconnectAfterReconnect)
 
    //start db, go online and wait on ready notif
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
    while (waitOnReplyFor(500ms) != nullptr) {}
 
@@ -8407,7 +8407,7 @@ TEST_F(BridgeChainDataTests, GetTxsByHash_DbFallback)
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //the wallet's txs, served from this bridge's cache
@@ -8482,7 +8482,7 @@ TEST_F(BridgeChainDataTests, GetTxsByHash_PayloadThenDb)
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //a mined tx of the wallet, as its bridge serves it
@@ -8554,7 +8554,7 @@ TEST_F(BridgeChainDataTests, GetTxsByHash_ZcThenMined)
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    //the wallet sends a zc to itself. In DB_BARE the db only resolves
@@ -8644,7 +8644,7 @@ TEST_F(BridgeChainDataTests, GetTxsByHash_DoubleReorg)
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 4);
 
    auto delegateId = getLedgerDelegateId(bridge_);
@@ -8766,7 +8766,7 @@ TEST_F(BridgeChainDataTests, FetchTxs_NoHeaderAskAgain)
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    auto delegateId = getLedgerDelegateId(bridge_);
@@ -11798,7 +11798,7 @@ TEST_F(BridgeChainDataTests, ZeroConf_TxTime)
    ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
    ASSERT_TRUE(registerWallets(bridge_));
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    ASSERT_EQ(goOnline(bridge_), 5);
 
    BinaryData signedTx;

@@ -176,28 +176,62 @@ namespace DBTestUtils
    void setReorgBranchingPoint(BlockDataManagerThread*, const BinaryData&);
 
    /////////////////////////////////////////////////////////////////////////////
-   class UTCallback : public RemoteCallback
+   class UTCallback : public ServerPushHandler
    {
+      enum BDMAction
+      {
+         BDMAction_Ready=1,
+         BDMAction_Registered,
+         BDMAction_NewBlock,
+         BDMAction_ZC,
+         BDMAction_InvalidatedZC,
+         BDMAction_Refresh,
+         BDMAction_Exited,
+         BDMAction_ErrorMsg,
+         BDMAction_NodeStatus,
+         BDMAction_BDV_Error
+      };
+
       struct BdmNotif
       {
-         BDMAction action;
+         const BDMAction action;
          std::set<std::string> idSet;
          std::vector<TxIOPair> txios;
          unsigned reorgHeight = UINT32_MAX;
-         BDV_Error_Struct error;
-         std::string requestID;
+         std::unique_ptr<BdvError> error;
       };
 
    private:
-      Armory::Threading::BlockingQueue<std::unique_ptr<BdmNotif>> actionStack_;
-      std::deque<std::unique_ptr<BdmNotif>> actionDeque_;
-      std::vector<BdmNotif> zcNotifVec_;
+      using NotifPtr = std::unique_ptr<BdmNotif>;
+      mutable Armory::Threading::BlockingQueue<NotifPtr> actionStack_;
+      std::deque<NotifPtr> actionDeque_;
+      std::vector<NotifPtr> zcNotifVec_;
 
    public:
-      UTCallback() : RemoteCallback()
+      UTCallback() :
+         ServerPushHandler{}
       {}
 
-      std::unique_ptr<BdmNotif> waitOnNotification(BDMAction actionType)
+      ////////
+      void pushReady(const NewBlockNotif&) const override;
+      void pushNewBlock(const NewBlockNotif&) const override;
+      void pushRefresh(const std::set<std::string>&) const override;
+      void pushZeroConf(
+         const std::string&,
+         std::vector<TxIOPair>,
+         std::set<Armory::Types::TxHash>) const override;
+      void pushError(const BdvError&) const override;
+
+      ////////
+      void pushRegistered(void) const override {};
+      void pushDisconnected(const std::string&) const override {}
+      void pushNodeStatus(const Node::Status&) const override {}
+      void pushProgress(
+         BDMPhase, const std::vector<std::string>&,
+         float ,unsigned , unsigned) const override {}
+
+      ////////
+      NotifPtr waitOnNotification(BDMAction actionType)
       {
          {
             auto iter = actionDeque_.begin();
@@ -220,19 +254,9 @@ namespace DBTestUtils
          }
       }
 
-      void run(BdmNotification);
-
-      void progress(BDMPhase, const std::vector<std::string>&,
-         float ,unsigned , unsigned)
-      {}
-
-      void disconnected()
-      {}
-
-      unsigned waitOnReorg(void)
+      unsigned waitOnReorg()
       {
-         while (1)
-         {
+         while (true) {
             auto&& action = actionStack_.pop_front();
             if (action->action == BDMAction_NewBlock)
             {
@@ -295,8 +319,8 @@ namespace DBTestUtils
          while (true) {
             auto action = waitOnNotification(BDMAction_BDV_Error);
 
-            if (action->error.errData_ == hash &&
-               action->error.errCode_ == (int)errorCode) {
+            if (action->error->errorData == hash &&
+               action->error->errorCode == (int)errorCode) {
                break;
             }
          }
@@ -311,11 +335,11 @@ namespace DBTestUtils
             }
 
             auto action = waitOnNotification(BDMAction_BDV_Error);
-            auto iter = mapCopy.find(action->error.errData_);
+            auto iter = mapCopy.find(action->error->errorData);
             if (iter == mapCopy.end()) {
                continue;
             }
-            if ((int)iter->second == action->error.errCode_) {
+            if ((int)iter->second == action->error->errorCode) {
                mapCopy.erase(iter);
             }
          }
@@ -325,7 +349,6 @@ namespace DBTestUtils
 
 namespace ResolverUtils
 {
-   ////////////////////////////////////////////////////////////////////////////////
    struct TestResolverFeed : public Armory::Signing::ResolverFeed
    {
    private:

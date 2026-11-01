@@ -493,32 +493,40 @@ namespace {
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   class ShutdownCallback : public RemoteCallback
+   class ShutdownCallback : public ServerPushHandler
    {
    private:
-      std::unique_ptr<std::promise<bool>> promPtr_;
-      std::future<bool> fut_;
+      mutable std::promise<void> prom_;
+      std::future<void> fut_;
 
    public:
       ShutdownCallback()
       {
-         promPtr_ = std::make_unique<std::promise<bool>>();
-         fut_ = promPtr_->get_future();
+         fut_ = prom_.get_future();
       }
 
       //virtuals
-      void run(BdmNotification) override
-      {}
-
-      void progress(BDMPhase,
+      void pushRegistered(void) const override {}
+      void pushNodeStatus(const Node::Status&) const override {}
+      void pushProgress(BDMPhase,
          const std::vector<std::string>&,
          float, unsigned, unsigned
-      ) override
-      {}
+      ) const override {}
 
-      void disconnected(const std::string&) override
+      void pushReady(const NewBlockNotif&) const override {}
+      void pushNewBlock(const NewBlockNotif&) const override {};
+      void pushRefresh(const std::set<std::string>&) const override {};
+
+      void pushZeroConf(
+         const std::string&,
+         std::vector<TxIOPair>,
+         std::set<Armory::Types::TxHash>) const override {};
+      void pushError(const BdvError&) const override {};
+
+      // the overload we actually use
+      void pushDisconnected(const std::string&) const override
       {
-         promPtr_->set_value(true);
+         prom_.set_value();
       }
 
       void waitOnDisconnect()
@@ -533,7 +541,7 @@ BdvPtr Armory::Bridge::setupClientConnection(
    std::shared_ptr<NetworkPeers::ClientStore> peers,
    const std::string& ip, Network::port_t port, bool oneWayAuth,
    const std::function<bool(const BinaryData&)>& presentPubKeyFunc,
-   std::shared_ptr<RemoteCallback> cbPtr)
+   std::shared_ptr<ServerPushHandler> cbPtr)
 {
    LOGINFO << "connecting to ArmoryDB by IP";
 
@@ -581,7 +589,7 @@ BdvPtr Armory::Bridge::setupClientConnection(
 BdvPtr Armory::Bridge::setupClientConnection(
    std::shared_ptr<NetworkPeers::ClientStore> peers,
    const NetworkPeers::PeerKey& peerObj,
-   std::shared_ptr<RemoteCallback> cbPtr)
+   std::shared_ptr<ServerPushHandler> cbPtr)
 {
    LOGINFO << "connecting to ArmoryDB by peer";
 

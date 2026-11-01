@@ -48,20 +48,6 @@ enum BDMPhase
    BDMPhase_Completed
 };
 
-enum BDMAction
-{
-   BDMAction_Ready=1,
-   BDMAction_Registered,
-   BDMAction_NewBlock,
-   BDMAction_ZC,
-   BDMAction_InvalidatedZC,
-   BDMAction_Refresh,
-   BDMAction_Exited,
-   BDMAction_ErrorMsg,
-   BDMAction_NodeStatus,
-   BDMAction_BDV_Error
-};
-
 enum class ARMORY_DB_TYPE : int
 {
    Bare = 1,

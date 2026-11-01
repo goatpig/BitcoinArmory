@@ -21,7 +21,7 @@
 
 #define CLIENT_AUTH_PEER_FILENAME "client.peers"
 
-class RemoteCallback;
+class ServerPushHandler;
 class SecureBinaryData;
 
 namespace Armory
@@ -110,7 +110,7 @@ namespace Armory
          Threading::TransactionalMap<
             uint64_t, std::shared_ptr<WriteAndReadPacket>> readPackets_;
 
-         std::shared_ptr<RemoteCallback> callbackPtr_ = nullptr;
+         std::shared_ptr<ServerPushHandler> callbackPtr_ = nullptr;
          
          WebSocketMessagePartial currentReadMessage_;
          std::promise<bool> connectionReadyProm_;
@@ -143,7 +143,7 @@ namespace Armory
       public:
          WebSocketClient(const std::string&, port_t,
             std::shared_ptr<NetworkPeers::ClientStore>, bool,
-            std::shared_ptr<RemoteCallback>);
+            std::shared_ptr<ServerPushHandler>);
          ~WebSocketClient(void);
 
          //locals
