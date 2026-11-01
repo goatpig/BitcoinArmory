@@ -90,7 +90,6 @@ void BlockDataManagerThread::run()
    };
 
    //new block parsing helper
-   auto newBlockStack = bdm->processNode->getInvBlockStack();
    auto updateChainLambda = [bdm]()
    {
       LOGDEBUG << "readBlkFileUpdate";
@@ -110,11 +109,9 @@ void BlockDataManagerThread::run()
          bdm->triggerOneTimeHooks(notifPtr.get());
          bdm->notificationQueue->push_back(std::move(notifPtr));
 
-         std::stringstream ss;
-         ss << "found new top!" << std::endl;
-         ss << "  hash: " << reorgState.newTop->getThisHash().toHexStr() << std::endl;
-         ss << "  height: " << reorgState.newTop->getBlockHeight();
-         LOGINFO << ss.str();
+         LOGINFO << std::format("found new top!\n  hash: {}\n  height: {}",
+            reorgState.newTop->getThisHash().toHexStr(),
+            reorgState.newTop->getBlockHeight());
       }
    };
 
@@ -151,17 +148,13 @@ void BlockDataManagerThread::run()
 
             //connect to node as async, no need to wait for a succesful
             //connection to init the DB
-            bdm->processNode->connectToNode(true);
-            bdm->processNode->registerNodeStatusCallback(
-               updateNodeStatusLambda);
-            bdm->watchNode->connectToNode(true);
             bdmStep = Sequence::WAIT_ON_CHAIN_SYNC;
             break;
          }
 
          case Sequence::WAIT_ON_CHAIN_SYNC:
          {
-            //if RPC is running, wait on chain sync
+            //try to connect to RPC, wait on chain sync if successful
             try {
                LOGINFO << "Waiting on node sync";
                bdm->nodeRPC->waitOnChainSync(
@@ -172,6 +165,13 @@ void BlockDataManagerThread::run()
                LOGWARN << "Error occured while querying the RPC for sync status";
                LOGWARN << "Message: " << e.what();
             }
+
+            //connect to p2p
+            bdm->processNode->connectToNode(true);
+            bdm->processNode->registerNodeStatusCallback(
+               updateNodeStatusLambda);
+            bdm->watchNode->connectToNode(true);
+
             bdmStep = Sequence::WAIT_ON_START_SIGNAL;
             break;
          }
@@ -229,6 +229,7 @@ void BlockDataManagerThread::run()
 
          case Sequence::LOOP_OVER_BLOCKS:
          {
+            auto newBlockStack = bdm->processNode->getInvBlockStack();
             try {
                //wait on a new block InvEntry, blocking is on
                auto invVec = newBlockStack->pop_front();
