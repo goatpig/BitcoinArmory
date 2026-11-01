@@ -516,7 +516,7 @@ namespace {
       ) override
       {}
 
-      void disconnected() override
+      void disconnected(const std::string&) override
       {
          promPtr_->set_value(true);
       }

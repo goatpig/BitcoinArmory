@@ -89,27 +89,14 @@ namespace
          case DbSetupRequest::CONNECT_TO_IP:
          {
             auto connectReq = request.getConnectToIp();
-            std::string ip = connectReq.getIp();
-            Network::port_t port = connectReq.getPort();
-            std::string callbackId = connectReq.getCallbackId();
-
-            std::thread thr([bridge, ip, port, callbackId, referenceId]{
-               bridge->connectToIp(ip, port, callbackId, referenceId);});
-            if (thr.joinable()) {
-               thr.detach();
-            }
+            bridge->connectToIp(connectReq.getIp(), connectReq.getPort(),
+               connectReq.getCallbackId(), referenceId);
             return true;
          }
 
          case DbSetupRequest::CONNECT_TO_PEER:
          {
-            std::string key = request.getConnectToPeer();
-
-            std::thread thr([bridge, key=std::move(key), referenceId]{
-               bridge->connectToPeer(key, referenceId);});
-            if (thr.joinable()) {
-               thr.detach();
-            }
+            bridge->connectToPeer(request.getConnectToPeer(), referenceId);
             return true;
          }
 

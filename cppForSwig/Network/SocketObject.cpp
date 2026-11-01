@@ -11,6 +11,7 @@
 
 #include "SocketObject.h"
 #include <bdmenums.h>
+#include <Utils/Cryptography.h>
 #include "SocketWritePayload.h"
 
 #include <capnp/message.h>
@@ -33,7 +34,8 @@ char *gai_strerrorA(int) { return nullptr; }
 //
 ///////////////////////////////////////////////////////////////////////////////
 SocketPrototype::SocketPrototype(const std::string& name) :
-   addr_(""), port_(UINT16_MAX), name_(name)
+   addr_(""), port_(UINT16_MAX), name_{std::format("{}.{}",
+      name, Cryptography::PRNG::fortuna.generateRandom(4).toHexStr())}
 {}
 
 ////////
@@ -58,6 +60,11 @@ SocketPrototype::~SocketPrototype()
 const std::string& SocketPrototype::getAddrStr() const
 {
    return addr_;
+}
+
+const std::string& SocketPrototype::name() const
+{
+   return name_;
 }
 
 ////////
