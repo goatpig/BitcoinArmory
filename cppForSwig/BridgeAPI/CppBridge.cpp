@@ -547,11 +547,21 @@ CppBridge::CppBridge(std::shared_ptr<Network::PersistentSocket> sockPtr) :
 
 CppBridge::~CppBridge()
 {
-   //shutdown notif queue
+   //release all futures waiting on a user reply
+   {
+      std::unique_lock<std::mutex> lock(callbackHandlerMu_);
+      for (auto& cbPair : callbackHandlers_) {
+         cbPair.second(Seeds::PromptReply{false, false, {}});
+      }
+   }
+
+   //shutdown notif queue and wait on its thread
    notifQueue_->terminate();
    if (notifThread_.joinable()) {
       notifThread_.join();
    }
+
+   //cleanup manager
    wltManager_.reset();
 }
 
