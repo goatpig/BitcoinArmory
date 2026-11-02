@@ -62,6 +62,9 @@ namespace Armory
    class BlockHeader;
 }
 
+struct VersionMismatchError
+{};
+
 ////////////////////////////////////////////////////////////////////////////////
 struct StoredDBInfo
 {

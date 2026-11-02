@@ -51,10 +51,9 @@ void StoredDBInfo::unserializeDBValue(BinaryRefReader& brr)
    }
    armoryVer = brr.get_uint32_t();
    if (armoryVer != (uint32_t)ARMORY_DB_VERSION) {
-      std::stringstream ss;
-      ss << "DB version mismatch. Use another dbdir or empty the current one!";
-      LOGERR << ss.str();
-      throw DbErrorMsg(ss.str());
+      std::string error{"DB version mismatch. Use another dbdir or empty the current one!"};
+      LOGERR << error;
+      throw DbErrorMsg(error);
    }
    armoryType = (ARMORY_DB_TYPE)brr.get_uint16_t();
    brr.get_BinaryData(magicBytes, 4);
@@ -606,7 +605,7 @@ void StoredTx::unserializeDBValue(BinaryRefReader& brr)
    unserTxType = (TX_SERIALIZE_TYPE)bitunpack.getBits(4);
 
    if (unserArmVer != ARMORY_DB_VERSION) {
-      throw std::runtime_error("StoreTx version mismatch");
+      throw VersionMismatchError{};
    }
    brr.get_BinaryData(thisHash, 32);
 
@@ -734,7 +733,7 @@ void StoredTxOut::unserializeDBValue(BinaryRefReader& brr)
    BitUnpacker<uint32_t> bitunpack(brr);
    unserArmVer = bitunpack.getBits(16);
    if (unserArmVer != ARMORY_DB_VERSION) {
-      throw std::runtime_error("StoreTxOut version mismatch");
+      throw VersionMismatchError{};
    }
    txVersion   = bitunpack.getBits(2);
    isCoinbase  = bitunpack.getBit();

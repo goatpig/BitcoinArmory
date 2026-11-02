@@ -888,12 +888,22 @@ bool LMDBBlockDatabase::getStoredZC(StoredTx& stx, const Types::TxKey& zcKey) co
       // Now actually process the iter value
       if (!Types::isThisATxIOKey(txKey)) {
          // Get everything else from the iter value
-         stx.unserializeDBValue(ldbIter.getValueRef());
+         try {
+            stx.unserializeDBValue(ldbIter.getValueRef());
+         } catch (const VersionMismatchError&) {
+            //don't choke on bad stx deser
+            return false;
+         }
          nbytes += stx.dataCopy.getSize();
       } else {
          auto txOutIdx = Types::getTxIOIndexFromTxIOKey(txKey);
          auto& stxo = stx.stxoMap[txOutIdx];
-         stxo.unserializeDBValue(ldbIter.getValueRef());
+         try {
+            stxo.unserializeDBValue(ldbIter.getValueRef());
+         } catch (const VersionMismatchError&) {
+            //don't choke on bad stxo deser
+            return false;
+         }
          stxo.parentHash = stx.thisHash;
          stxo.txVersion  = stx.version;
          stxo.txOutIndex = txOutIdx;
