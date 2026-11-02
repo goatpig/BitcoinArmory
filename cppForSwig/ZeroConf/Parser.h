@@ -385,7 +385,7 @@ namespace Armory
 
          void parseNewZC(ZcActionStruct);
          void parseNewZC(
-            std::map<Types::TxKey, std::shared_ptr<ParsedTx>>,
+            std::map<Types::ZcId, std::shared_ptr<ParsedTx>>,
             std::shared_ptr<MempoolSnapshot>,
             bool, bool, Types::BdvId,
             std::map<Types::TxHash, std::shared_ptr<WatcherTxBody>>&);
