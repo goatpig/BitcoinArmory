@@ -12,7 +12,7 @@ from qtpy import QtCore
 from armoryengine.ArmoryUtils import coin2str, getNameForAddrType
 from armoryengine.AddressUtils import addrStr_to_hash160
 from armoryengine.BDM import TheBDM
-from armoryengine.Transaction import PyTx, getFeeForTx
+from armoryengine.Transaction import getFeeForTx, getTxsByHash
 from armoryengine.CppBridge import TheBridge
 
 from qtdialogs.qtdefines import GETFONT
@@ -705,10 +705,10 @@ class TreeStructure_RBF():
          #get outpoints for spender tx
          entryList = self.rbfDict[txHashStr]
          txHash = binascii.unhexlify(txHashStr)
-         txList = TheBridge.service.getTxsByHash([txHash])
+         txList = getTxsByHash([txHash])
 
          if txHash in txList:
-            pytx = PyTx().unserialize(txList[txHash].body.raw)
+            pytx = txList[txHash].pytx
          else:
             continue
 
