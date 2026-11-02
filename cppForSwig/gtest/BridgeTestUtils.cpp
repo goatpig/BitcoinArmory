@@ -167,6 +167,72 @@ namespace BridgeTestUtils {
       pushRequest(bridge, rawReq);
    }
 
+   //false if no server key prompt comes within timeout. Drops the replies
+   //that come before the prompt
+   bool waitOnKeyPrompt(std::chrono::milliseconds timeout, uint32_t& counter)
+   {
+      auto deadline = std::chrono::steady_clock::now() + timeout;
+      while (std::chrono::steady_clock::now() < deadline) {
+         auto reply = waitOnReplyFor(100ms);
+         if (reply == nullptr) {
+            continue;
+         }
+
+         bool prompted = false;
+         readFromBridge(reply,
+            [&prompted, &counter](Codec::Bridge::FromBridge::Reader fromBridge)
+         {
+            //a server key prompt: grab its counter
+            if (fromBridge.which() == Codec::Bridge::FromBridge::NOTIFICATION &&
+               fromBridge.getNotification().which() ==
+                  Codec::Bridge::Notification::PRESENT_PUBKEY) {
+               counter = fromBridge.getNotification().getCounter();
+               prompted = true;
+            }
+         });
+         if (prompted) {
+            return true;
+         }
+      }
+      return false;
+   }
+
+   //reads the bridge's messages until none comes for 500ms. Notes the
+   //server key prompts and the reply to the connect request refId
+   ConnectReplies drainConnectReplies(uint64_t refId)
+   {
+      ConnectReplies result;
+      while (auto reply = waitOnReplyFor(500ms)) {
+         readFromBridge(reply,
+            [&result, refId](Codec::Bridge::FromBridge::Reader fromBridge)
+         {
+            //log every message, note the key prompts and the connect reply
+            if (fromBridge.which() == Codec::Bridge::FromBridge::REPLY) {
+               auto response = fromBridge.getReply();
+               if (response.getReferenceId() != refId) {
+                  result.received += "[other reply] ";
+                  return;
+               }
+               result.gotReply = true;
+               result.replySuccess = response.getSuccess();
+               result.received += result.replySuccess ? "[connect ok] " :
+                  "[connect failed: " + std::string(response.getError()) + "] ";
+            } else if (fromBridge.which() ==
+               Codec::Bridge::FromBridge::NOTIFICATION) {
+               auto notifType = fromBridge.getNotification().which();
+               if (notifType == Codec::Bridge::Notification::PRESENT_PUBKEY) {
+                  result.promptPushed = true;
+                  result.received += "[key prompt] ";
+               } else {
+                  result.received += "[notif " +
+                     std::to_string((int)notifType) + "] ";
+               }
+            }
+         });
+      }
+      return result;
+   }
+
    /////////////////////////////////////////////////////////////////////////////
    // wallet creation from manager
    std::string createWOWallet(

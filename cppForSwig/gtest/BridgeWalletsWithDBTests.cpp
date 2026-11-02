@@ -377,26 +377,17 @@ TEST_F(BridgeWalletsWithDBTests, DestroyDuringDisconnectCleanup)
 
    //destroy the bridge from another thread while its notification thread
    //is still in the db cleanup
-   std::promise<void> destroyedProm;
-   auto destroyedFut = destroyedProm.get_future();
-   std::thread destroyThr(
-      [bridge = std::move(bridge_), prom = std::move(destroyedProm)]() mutable {
-         bridge.reset();
-         prom.set_value();
-      }
-   );
+   BridgeDestroyThread destroyThr(std::move(bridge_));
 
    //~CppBridge should wait on the notification thread, which waits on the gate
-   auto status = destroyedFut.wait_for(500ms);
+   auto status = destroyThr.waitFor(500ms);
    gatedSocket->openGate();
    EXPECT_EQ(status, std::future_status::timeout) <<
       "~CppBridge returned while its db cleanup was running";
 
-   if (destroyedFut.wait_for(10s) != std::future_status::ready) {
-      destroyThr.detach();
+   if (!destroyThr.join(10s)) {
       FAIL() << "~CppBridge did not return";
    }
-   destroyThr.join();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -413,28 +404,8 @@ TEST_F(BridgeWalletsWithDBTests, DestroyDuringKeyPrompt)
    auto callbackId = Cryptography::PRNG::fortuna.generateRandom(4).toHexStr();
    bridge_->connectToIp("127.0.0.1", 9001, callbackId, refId);
 
-   bool prompted = false;
    uint32_t promptCounter = 0;
-   auto deadline = std::chrono::steady_clock::now() + 10s;
-   while (!prompted && std::chrono::steady_clock::now() < deadline) {
-      auto reply = waitOnReplyFor(100ms);
-      if (reply == nullptr) {
-         continue;
-      }
-      kj::ArrayPtr<const capnp::word> words(
-         reinterpret_cast<const capnp::word*>(reply->data.getPtr()),
-         reply->data.getSize() / sizeof(capnp::word));
-      capnp::FlatArrayMessageReader reader(words);
-
-      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-      if (fromBridge.which() == Codec::Bridge::FromBridge::NOTIFICATION &&
-         fromBridge.getNotification().which() ==
-            Codec::Bridge::Notification::PRESENT_PUBKEY) {
-         prompted = true;
-         promptCounter = fromBridge.getNotification().getCounter();
-      }
-   }
-   ASSERT_TRUE(prompted) << "no server key prompt";
+   ASSERT_TRUE(waitOnKeyPrompt(10s, promptCounter)) << "no server key prompt";
    if (bridge_.use_count() != 1) {
       replyToKeyPrompt(bridge_, refId, promptCounter, false);
       FAIL() << "the bridge has another owner, resetting it won't destroy it";
@@ -447,28 +418,19 @@ TEST_F(BridgeWalletsWithDBTests, DestroyDuringKeyPrompt)
       bridge_.get(), [](Bridge::CppBridge*){});
 
    //leave the prompt unanswered, destroy the bridge from another thread
-   std::promise<void> destroyedProm;
-   auto destroyedFut = destroyedProm.get_future();
-   std::thread destroyThr(
-      [bridge = std::move(bridge_), prom = std::move(destroyedProm)]() mutable {
-         bridge.reset();
-         prom.set_value();
-      }
-   );
+   BridgeDestroyThread destroyThr(std::move(bridge_));
 
-   if (destroyedFut.wait_for(10s) != std::future_status::ready) {
+   if (destroyThr.waitFor(10s) != std::future_status::ready) {
       ADD_FAILURE() << "~CppBridge did not return within 10s while the "
          "server key prompt was pending";
 
       //reject the key: the connect fails, the notification thread exits and
       //~CppBridge can return, the rest of the run is unaffected
       replyToKeyPrompt(bridgeInDtor, refId, promptCounter, false);
-      if (destroyedFut.wait_for(10s) != std::future_status::ready) {
-         destroyThr.detach();
-         FAIL() << "~CppBridge did not return after the key was rejected";
-      }
    }
-   destroyThr.join();
+   if (!destroyThr.join(10s)) {
+      FAIL() << "~CppBridge did not return after the key was rejected";
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -573,6 +535,209 @@ TEST_F(BridgeWalletsWithDBTests, LateDisconnectAfterReconnect)
    auto bdvPtr = bridge_->bdvPtr();
    ASSERT_NE(bdvPtr, nullptr) << "lost the new db connection";
    EXPECT_TRUE(bdvPtr->isValid());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+namespace {
+   //TCP relay on an ephemeral port: accepts a connection and holds it until
+   //release(), then connects to the upstream port and pumps bytes both ways.
+   //A db connect through it has its TCP connection up, but the server can't
+   //present its key until the relay is released
+   class HeldTcpRelay
+   {
+   private:
+      const Network::port_t upstreamPort_;
+      Network::port_t port_ = 0;
+      SOCKET listenFd_ = SOCK_MAX;
+      std::atomic<bool> stop_{false};
+      std::thread thr_;
+
+      std::mutex mu_;
+      std::condition_variable cv_;
+      bool accepted_ = false;
+      bool released_ = false;
+
+   private:
+      static int pollFor100ms(pollfd* fds, unsigned count)
+      {
+      #ifdef _WIN32
+         return WSAPoll(fds, count, 100);
+      #else
+         return poll(fds, count, 100);
+      #endif
+      }
+
+      static sockaddr_in loopback(Network::port_t port)
+      {
+         sockaddr_in addr{};
+         addr.sin_family = AF_INET;
+         addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+         addr.sin_port = htons(port);
+         return addr;
+      }
+
+      void run()
+      {
+         SOCKET clientFd = SOCK_MAX;
+         while (!stop_) {
+            pollfd pfd{listenFd_, POLLIN, 0};
+            if (pollFor100ms(&pfd, 1) > 0) {
+               clientFd = ::accept(listenFd_, nullptr, nullptr);
+               break;
+            }
+         }
+
+         {
+            std::unique_lock<std::mutex> lock(mu_);
+            accepted_ = true;
+            cv_.notify_all();
+            cv_.wait(lock, [this]{ return released_; });
+         }
+
+         SOCKET upstreamFd = SOCK_MAX;
+         if (!stop_) {
+            upstreamFd = ::socket(AF_INET, SOCK_STREAM, 0);
+            auto addr = loopback(upstreamPort_);
+            if (::connect(upstreamFd, (sockaddr*)&addr, sizeof(addr)) != 0) {
+               Network::SocketPrototype::closeSocket(upstreamFd);
+            }
+         }
+
+         //pump until either side closes
+         std::vector<char> buffer(65536);
+         bool done = (upstreamFd == SOCK_MAX);
+         while (!stop_ && !done) {
+            pollfd fds[2] = {{clientFd, POLLIN, 0}, {upstreamFd, POLLIN, 0}};
+            if (pollFor100ms(fds, 2) <= 0) {
+               continue;
+            }
+
+            for (unsigned i=0; i<2 && !done; i++) {
+               if (fds[i].revents == 0) {
+                  continue;
+               }
+               auto readLen = ::recv(fds[i].fd, buffer.data(), buffer.size(), 0);
+               auto destFd = (i == 0) ? upstreamFd : clientFd;
+               if (readLen <= 0 ||
+                  ::send(destFd, buffer.data(), readLen, 0) != readLen) {
+                  done = true;
+               }
+            }
+         }
+
+         Network::SocketPrototype::closeSocket(clientFd);
+         Network::SocketPrototype::closeSocket(upstreamFd);
+      }
+
+   public:
+      HeldTcpRelay(Network::port_t upstreamPort) :
+         upstreamPort_(upstreamPort)
+      {
+         listenFd_ = ::socket(AF_INET, SOCK_STREAM, 0);
+         auto addr = loopback(0);
+         socklen_t addrLen = sizeof(addr);
+         if (::bind(listenFd_, (sockaddr*)&addr, addrLen) != 0 ||
+            ::listen(listenFd_, 1) != 0 ||
+            ::getsockname(listenFd_, (sockaddr*)&addr, &addrLen) != 0) {
+            Network::SocketPrototype::closeSocket(listenFd_);
+            return;
+         }
+         port_ = ntohs(addr.sin_port);
+         thr_ = std::thread([this]{ run(); });
+      }
+
+      ~HeldTcpRelay()
+      {
+         stop_.store(true);
+         release();
+         if (thr_.joinable()) {
+            thr_.join();
+         }
+         Network::SocketPrototype::closeSocket(listenFd_);
+      }
+
+      Network::port_t port() const
+      {
+         return port_;
+      }
+
+      bool waitOnAccept(std::chrono::milliseconds timeout)
+      {
+         std::unique_lock<std::mutex> lock(mu_);
+         return cv_.wait_for(lock, timeout, [this]{ return accepted_; });
+      }
+
+      void release()
+      {
+         {
+            std::unique_lock<std::mutex> lock(mu_);
+            released_ = true;
+         }
+         cv_.notify_all();
+      }
+   };
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeWalletsWithDBTests, DestroyBeforeKeyPrompt)
+{
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer();
+   HeldTcpRelay relay(9001);
+   ASSERT_NE(relay.port(), 0);
+
+   /* test starts here */
+   //connect through the relay, the bridge's notification thread is then in
+   //the connect with no key prompt yet. Queue the command from this thread,
+   //so that no parser thread holds a copy of the bridge
+   uint64_t refId = rand();
+   auto callbackId = Cryptography::PRNG::fortuna.generateRandom(4).toHexStr();
+   bridge_->connectToIp("127.0.0.1", relay.port(), callbackId, refId);
+   ASSERT_TRUE(relay.waitOnAccept(10s)) << "the connect never reached the relay";
+   ASSERT_EQ(bridge_.use_count(), 1);
+
+   //does not own the bridge. Only used to answer the prompt if ~CppBridge
+   //doesn't return on its own, as in DestroyDuringKeyPrompt
+   std::shared_ptr<Bridge::CppBridge> bridgeInDtor(
+      bridge_.get(), [](Bridge::CppBridge*){});
+
+   //destroy the bridge from another thread
+   BridgeDestroyThread destroyThr(std::move(bridge_));
+
+   //~CppBridge waits on the notification thread, which is still in the
+   //connect. Let the connect through: the server presents its key and the
+   //bridge registers the prompt while ~CppBridge is already running
+   auto status = destroyThr.waitFor(500ms);
+   relay.release();
+   EXPECT_EQ(status, std::future_status::timeout) <<
+      "~CppBridge returned while the connect was underway";
+
+   bool promptPushed = false;
+   if (destroyThr.waitFor(10s) != std::future_status::ready) {
+      ADD_FAILURE() << "~CppBridge did not return within 10s, the server key "
+         "prompt registered while it was running was left pending";
+
+      //reject the key: the connect fails, the notification thread exits and
+      //~CppBridge can return, the rest of the run is unaffected
+      uint32_t promptCounter = 0;
+      promptPushed = waitOnKeyPrompt(10s, promptCounter);
+      if (promptPushed) {
+         replyToKeyPrompt(bridgeInDtor, refId, promptCounter, false);
+      }
+   }
+   if (!destroyThr.join(10s)) {
+      FAIL() << "~CppBridge did not return after the key was rejected";
+   }
+
+   //the bridge pushed the key prompt and the connect failed
+   auto replies = drainConnectReplies(refId);
+   EXPECT_TRUE(promptPushed || replies.promptPushed) << "the bridge never "
+      "pushed the server key prompt, got: " << replies.received;
+   ASSERT_TRUE(replies.gotReply) << "no reply to the connect request, got: " <<
+      replies.received;
+   EXPECT_FALSE(replies.replySuccess) << "the connect succeeded, got: " <<
+      replies.received;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

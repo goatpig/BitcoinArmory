@@ -154,6 +154,83 @@ namespace BridgeTestUtils {
    void replyToKeyPrompt(std::shared_ptr<Bridge::CppBridge> bridge,
       uint64_t refId, uint32_t counter, bool accept);
 
+   //decodes a message the bridge wrote and passes it to readLbd
+   template<typename LbdT>
+   void readFromBridge(const MsgPtr& msg, const LbdT& readLbd)
+   {
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(msg->data.getPtr()),
+         msg->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      readLbd(reader.getRoot<Codec::Bridge::FromBridge>());
+   }
+
+   bool waitOnKeyPrompt(std::chrono::milliseconds timeout, uint32_t& counter);
+
+   struct ConnectReplies
+   {
+      bool promptPushed = false;
+      bool gotReply = false;
+      bool replySuccess = false;
+
+      //what the bridge wrote, in order
+      std::string received;
+   };
+
+   ConnectReplies drainConnectReplies(uint64_t refId);
+
+   //destroys a bridge on a thread of its own. If ~CppBridge doesn't return,
+   //join() leaves that thread detached so that the run goes on
+   class BridgeDestroyThread
+   {
+   private:
+      std::future<void> destroyedFut_;
+      std::thread thr_;
+
+   public:
+      explicit BridgeDestroyThread(std::shared_ptr<Bridge::CppBridge> bridge)
+      {
+         std::promise<void> destroyedProm;
+         destroyedFut_ = destroyedProm.get_future();
+         thr_ = std::thread([bridge = std::move(bridge),
+            prom = std::move(destroyedProm)]() mutable
+         {
+            //drop this thread's reference to the bridge. If it is the last
+            //one ~CppBridge runs here, the promise is set once it returns.
+            //The thread owns the promise: it can outlive this object once
+            //detached
+            bridge.reset();
+            prom.set_value();
+         });
+      }
+
+      //a test that stops before join() leaves the thread detached, rather
+      //than have ~thread terminate the run
+      ~BridgeDestroyThread()
+      {
+         if (thr_.joinable()) {
+            thr_.detach();
+         }
+      }
+
+      std::future_status waitFor(std::chrono::milliseconds timeout)
+      {
+         return destroyedFut_.wait_for(timeout);
+      }
+
+      //joins the thread if ~CppBridge returns within timeout, detaches it
+      //and returns false otherwise
+      bool join(std::chrono::milliseconds timeout)
+      {
+         if (destroyedFut_.wait_for(timeout) != std::future_status::ready) {
+            thr_.detach();
+            return false;
+         }
+         thr_.join();
+         return true;
+      }
+   };
+
    struct TestBridgeSocket : public Network::PersistentSocket
    {
       TestBridgeSocket() :
