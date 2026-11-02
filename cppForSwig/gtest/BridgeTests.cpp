@@ -259,6 +259,21 @@ namespace {
       Bridge::ProtoCommandParser::processData(bridge, rawRequest);
    }
 
+   void replyToKeyPrompt(std::shared_ptr<Bridge::CppBridge> bridge,
+      uint64_t refId, uint32_t counter, bool accept)
+   {
+      capnp::MallocMessageBuilder message;
+      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+      toBridge.setReferenceId(refId);
+      auto notifReply = toBridge.initNotification();
+      notifReply.setCounter(counter);
+      notifReply.setPresentPubkey();
+      notifReply.setSuccess(accept);
+
+      auto rawReq = serializeCapnp(message);
+      pushRequest(bridge, rawReq);
+   }
+
    struct TestBridgeSocket : public Network::PersistentSocket
    {
       TestBridgeSocket() :
@@ -7635,36 +7650,6 @@ TEST_F(BridgeWalletsWithDBTests, DestroyDuringDisconnectCleanup)
       FAIL() << "~CppBridge did not return";
    }
    destroyThr.join();
-}
-
-////////////////////////////////////////////////////////////////////////////////
-namespace {
-   //waitOnReply with a timeout, returns nullptr if nothing came in
-   MsgPtr waitOnReplyFor(std::chrono::milliseconds timeout)
-   {
-      std::unique_lock<std::mutex> lock(commsMutex);
-      if (!commsCV.wait_for(lock, timeout, []{ return !replyQueue.empty(); })) {
-         return nullptr;
-      }
-      auto result = std::move(replyQueue.front());
-      replyQueue.pop_front();
-      return result;
-   }
-
-   void replyToKeyPrompt(std::shared_ptr<Bridge::CppBridge> bridge,
-      uint64_t refId, uint32_t counter, bool accept)
-   {
-      capnp::MallocMessageBuilder message;
-      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
-      toBridge.setReferenceId(refId);
-      auto notifReply = toBridge.initNotification();
-      notifReply.setCounter(counter);
-      notifReply.setPresentPubkey();
-      notifReply.setSuccess(accept);
-
-      auto rawReq = serializeCapnp(message);
-      pushRequest(bridge, rawReq);
-   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

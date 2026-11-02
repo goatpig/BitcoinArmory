@@ -90,7 +90,7 @@ namespace {
          false);
 
       bdmt->start(Config::DBSettings::initMode());
-      bdmt->bdm()->blockUntilReady();
+      ASSERT_EQ(bdmt->bdm()->waitUntilReady(5s), BDMState::Ready);
       DBTestUtils::goOnline(clients, bdvID);
       DBTestUtils::waitOnBDVReady(clients, bdvID);
 
@@ -2178,7 +2178,9 @@ TEST_F(BlockUtilsBareWithZC, ReloadMempool_ChainedZcIdAbove255)
       DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
          false);
       theBDMt_->start(Config::DBSettings::initMode());
-      theBDMt_->bdm()->blockUntilReady();
+      if (theBDMt_->bdm()->waitUntilReady(5s) != BDMState::Ready) {
+         return UINT64_MAX;
+      }
       DBTestUtils::goOnline(clients_, bdvID);
       DBTestUtils::waitOnBDVReady(clients_, bdvID);
       return bdvID;
