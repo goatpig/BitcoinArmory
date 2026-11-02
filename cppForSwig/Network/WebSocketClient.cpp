@@ -39,7 +39,7 @@ static struct lws_protocols protocols[] = {
 // WebSocketClient
 WebSocketClient::WebSocketClient(const std::string& addr, port_t port,
    std::shared_ptr<NetworkPeers::ClientStore> peers, bool oneWayAuth,
-   std::shared_ptr<RemoteCallback> cbPtr) :
+   std::shared_ptr<ServerPushHandler> cbPtr) :
    SocketPrototype(addr, port, std::format("wsclient_{}", addr), false),
    servName_(std::format("{}:{}", addr, port)),
    callbackPtr_(cbPtr), peerStore_(peers)
@@ -381,7 +381,7 @@ int WebSocketClient::lwsServiceHandler(struct lws* wsi,
             } catch (const std::future_error&) {
                //promise already set, notify of disconnection
                if (instance->callbackPtr_ != nullptr) {
-                  instance->callbackPtr_->disconnected(instance->name());
+                  instance->callbackPtr_->pushDisconnected(instance->name());
                }
             }
             instance->shutdown();
@@ -510,7 +510,8 @@ void WebSocketClient::readService()
             }
 
             auto msgReader = currentReadMessage_.getReader();
-            callbackPtr_->processNotifications(msgReader->getReader());
+            callbackPtr_->parseCapnPayload(
+               msgReader->getReader(), name());
             currentReadMessage_.reset();
             break;
          }

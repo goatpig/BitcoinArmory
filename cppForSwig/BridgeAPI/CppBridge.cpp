@@ -263,20 +263,20 @@ namespace
       }
    }
 
-   void nodeStatusToCapnp (std::shared_ptr<DBClientClasses::NodeStatus> nodeStatus,
+   void nodeStatusToCapnp (const Node::Status& nodeStatus,
       NodeStatus::Builder& capnNodeStatus)
    {
-      capnNodeStatus.setNode((NodeStatus::NodeState)nodeStatus->state());
-      capnNodeStatus.setRpc((NodeStatus::RpcState)nodeStatus->rpcState());
-      capnNodeStatus.setIsSW(nodeStatus->isSegWitEnabled());
+      capnNodeStatus.setNode((NodeStatus::NodeState)nodeStatus.state);
+      capnNodeStatus.setRpc((NodeStatus::RpcState)nodeStatus.rpcState);
+      capnNodeStatus.setIsSW(nodeStatus.segWitEnabled);
 
       auto capnChainState = capnNodeStatus.initChain();
-      const auto& chainState = nodeStatus->chainStatus();
-      capnChainState.setChainState((ChainStatus::ChainState)chainState.state());
-      capnChainState.setBlockSpeed(chainState.getBlockSpeed());
-      capnChainState.setProgress(chainState.getProgressPct());
-      capnChainState.setEta(chainState.getETA());
-      capnChainState.setBlocksLeft(chainState.getBlocksLeft());
+      const auto& chainStatus = nodeStatus.chainStatus;
+      capnChainState.setChainState((ChainStatus::ChainState)chainStatus.state);
+      capnChainState.setBlockSpeed(chainStatus.blockSpeed);
+      capnChainState.setProgress(chainStatus.progressPct);
+      capnChainState.setEta(chainStatus.etaSeconds);
+      capnChainState.setBlocksLeft(chainStatus.blocksLeft);
    }
 
    void utxosToCapnp(const std::vector<::UTXO>& utxos,
@@ -625,9 +625,9 @@ void CppBridge::callbackWriter(ServerPushWrapper& wrapper)
 void CppBridge::runNotificationProcessingThread()
 {
    /***
-   The bridge feeds a RemoteCallback object to the WebSocketClient object
+   The bridge feeds a ServerPushHandler object to the WebSocketClient object
    that bdvPtr_ wraps around. On pushes from ArmoryDB, the wsclient passes
-   the packets to the RemoteCallback.
+   the packets to the ServerPushHandler.
 
    Most of the push actions require passing the data up the chain, to the
    client. The push notif type deals with that.
@@ -665,10 +665,17 @@ void CppBridge::runNotificationProcessingThread()
          {
             case Push::PayloadType::IS_REGISTERED:
             {
+               if (bdvPtr_ == nullptr) {
+                  //nothing to do
+                  break;
+               }
+
                if (isDbRunning()) {
                   //if we automate the db, we have to tell it to
                   //start parsing the chain
-                  bdvPtr_->start();
+                  if (payload->socketName == bdvPtr_->getSocketName()) {
+                     bdvPtr_->start();
+                  }
                }
                break;
             }
@@ -690,16 +697,11 @@ void CppBridge::runNotificationProcessingThread()
                   //nothing to do
                   break;
                }
-               auto dcPtr = dynamic_cast<Push::Notif_Disconnected*>(
-                  payload.get());
-               if (dcPtr == nullptr) {
-                  throw std::runtime_error("invalid disconnected notif");
-               }
 
-               if (dcPtr->socketName == bdvPtr_->getSocketName() ||
-                  dcPtr->socketName.empty()) {
-                  //cleanup the bdv if either the dc notification name matches
-                  //the current bdv's socket name, or it was served with no name
+               if (payload->socketName == bdvPtr_->getSocketName() ||
+                  payload->socketName.empty()) {
+                  //cleanup the bdv if either the socket that originated the dc
+                  //notif matches the current bdv, or it was served with no name
                   cleanup();
                }
                break;
@@ -739,6 +741,20 @@ void CppBridge::runNotificationProcessingThread()
             }
 
             default:
+               if (payload->syncWalletState() != SyncState::NoSync) {
+                  /*
+                  This notification can lead to calls which require a
+                  live bdv, so let's run some sanity checks first
+                  */
+                  if (bdvPtr_ == nullptr) {
+                     //no bdv, skip
+                     break;
+                  } else if (bdvPtr_->getSocketName() != payload->socketName) {
+                     //also skip notifications where the originating bdv
+                     //connection mismatches the current one
+                     break;
+                  }
+               }
                wltManager_->updateStateFromDB(std::move(payload));
          }
       }
@@ -2530,16 +2546,14 @@ void CppBridge::getPageCountForDelegate(const std::string& id, MessageId msgId)
 BinaryData CppBridge::getNodeStatus(MessageId msgId)
 {
    //grab node status
-   auto promPtr = std::make_shared<
-      std::promise<std::shared_ptr<DBClientClasses::NodeStatus>>>();
-   auto fut = promPtr->get_future();
-   auto lbd = [promPtr](
-      ReturnMessage<std::shared_ptr<DBClientClasses::NodeStatus>> result)->void
+   std::promise<Node::Status> prom;
+   auto fut = prom.get_future();
+   auto lbd = [&prom](ReturnMessage<Node::Status> result)
    {
       try {
-         promPtr->set_value(result.get());
+         prom.set_value(result.get());
       } catch (const std::exception&) {
-         promPtr->set_exception(std::current_exception());
+         prom.set_exception(std::current_exception());
       }
    };
    bdvPtr_->getNodeStatus(lbd);
@@ -3344,24 +3358,22 @@ void CppBridge::getBlockTimeByHeight(uint32_t height, MessageId msgId) const
 ////////////////////////////////////////////////////////////////////////////////
 void CppBridge::getFeeSchedule(const std::string& strat, MessageId msgId) const
 {
-   auto callback = [this, msgId](ReturnMessage<
-      std::map<uint32_t, DBClientClasses::FeeEstimateStruct>> feeResult)
+   auto callback = [this, msgId](ReturnMessage<Node::FeeSchedule> feeResult)
    {
       capnp::MallocMessageBuilder message;
       auto fromBridge = message.initRoot<FromBridge>();
       auto reply = fromBridge.initReply();
       reply.setReferenceId(msgId);
       try {
-         auto feeMap = feeResult.get();
-
+         auto schedule = feeResult.get();
          auto service = reply.initService();
-         auto capnFees = service.initGetFeeSchedule(feeMap.size());
+         auto capnFees = service.initGetFeeSchedule(schedule.estimates.size());
          unsigned i=0;
-         for (const auto& fee : feeMap) {
+         for (const auto& fee : schedule.estimates) {
             auto capnFee = capnFees[i++];
             capnFee.setTarget(fee.first);
-            capnFee.setFeeByte(fee.second.val_);
-            capnFee.setSmartFee(fee.second.isSmart_);
+            capnFee.setFeeByte(fee.second.feeByte);
+            capnFee.setSmartFee(fee.second.smartFee);
          }
          reply.setSuccess(true);
       } catch (const ClientMessageError& e) {

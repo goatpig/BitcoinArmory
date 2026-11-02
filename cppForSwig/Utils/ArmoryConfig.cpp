@@ -11,7 +11,7 @@
 #include "ArmoryConfig.h"
 #include <Network/SocketObject.h>
 #include <Node/BitcoinP2P.h>
-#include <Node/nodeRPC.h>
+#include <Node/RPC.h>
 
 #include "ArmoryErrors.h"
 #include "FileUtils.h"

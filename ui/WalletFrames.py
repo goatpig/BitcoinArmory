@@ -258,7 +258,6 @@ class SelectWalletFrame(ArmoryFrame):
       wlt = self.main.wallets.get(self.getSelectedWltID())
       if self.dlgcc == None:
          self.dlgcc = CoinControlDlg(self, self.main, wlt)
-
       if not self.dlgcc.exec_():
          return
 
@@ -286,17 +285,14 @@ class SelectWalletFrame(ArmoryFrame):
       self.updateOnCoinControl()
 
    def doRBF(self):
-      wlt = self.main.wallets[self.getSelectedWltID()]
+      wlt = self.main.wallets.get(self.getSelectedWltID())
       if self.dlgrbf == None:
-         self.dlgrbf = \
-            RBFDlg(self, self.main, wlt)
-
+         self.dlgrbf = RBFDlg(self, self.main, wlt)
       if not self.dlgrbf.exec_():
          return
 
       self.customUtxoList = self.dlgrbf.getRBFUtxoList()
       self.altBalance = sum([x.getValue() for x in self.customUtxoList])
-
       nUtxo = len(self.customUtxoList)
 
       #no outputs selected is treated as a cancellation

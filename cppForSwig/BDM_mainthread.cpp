@@ -14,16 +14,12 @@
 #include "BDM_mainthread.h"
 #include <Utils/ArmoryConfig.h>
 #include <BlockchainDatabase/BlockUtils.h>
-#include <BlockchainDatabase/BlockObj.h>
 #include <ZeroConf/Parser.h>
-
 #include <Node/BitcoinP2P.h>
+#include <Node/RPC.h>
 #include "BDV_Notification.h"
 
-using namespace Armory::Config;
-
-BDM_CallBack::~BDM_CallBack()
-{}
+using namespace Armory;
 
 BlockDataManagerThread::BlockDataManagerThread()
 {
@@ -47,12 +43,8 @@ void BlockDataManagerThread::start(BdmInitMode mode)
 {
    pimpl->mode = mode;
    pimpl->run = true;
-   std::promise<void> isReadyPromise;
-   pimpl->bdm->isReadyFuture = isReadyPromise.get_future();
-   pimpl->tID = std::thread(
-      [this](std::promise<void> prom){ this->run(std::move(prom)); },
-      std::move(isReadyPromise)
-   );
+   pimpl->bdm->isReadyFuture = pimpl->readyPromise.get_future();
+   pimpl->tID = std::thread([this](){ this->run(); });
 }
 
 std::shared_ptr<BlockDataManager> BlockDataManagerThread::bdm()
@@ -82,7 +74,7 @@ void BlockDataManagerThread::join()
    }
 }
 
-void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
+void BlockDataManagerThread::run()
 {
    const auto bdm = this->bdm();
 
@@ -98,15 +90,14 @@ void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
    };
 
    //new block parsing helper
-   auto newBlockStack = bdm->processNode->getInvBlockStack();
    auto updateChainLambda = [bdm]()
    {
       LOGDEBUG << "readBlkFileUpdate";
       auto reorgState = bdm->readBlkFileUpdate();
       if (reorgState.hasNewTop) {
          //purge zc container
-         std::shared_ptr<Armory::ZeroConf::ZcPurgePacket> purgePacket = nullptr;
-         if (DBSettings::enableZC()) {
+         std::shared_ptr<ZeroConf::ZcPurgePacket> purgePacket = nullptr;
+         if (Config::DBSettings::enableZC()) {
             auto purgeFuture = bdm->zeroConfCont()->pushNewBlockNotification(
                reorgState);
             purgePacket = purgeFuture.get();
@@ -118,11 +109,9 @@ void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
          bdm->triggerOneTimeHooks(notifPtr.get());
          bdm->notificationQueue->push_back(std::move(notifPtr));
 
-         std::stringstream ss;
-         ss << "found new top!" << std::endl;
-         ss << "  hash: " << reorgState.newTop->getThisHash().toHexStr() << std::endl;
-         ss << "  height: " << reorgState.newTop->getBlockHeight();
-         LOGINFO << ss.str();
+         LOGINFO << std::format("found new top!\n  hash: {}\n  height: {}",
+            reorgState.newTop->getThisHash().toHexStr(),
+            reorgState.newTop->getBlockHeight());
       }
    };
 
@@ -131,6 +120,7 @@ void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
    {
       INIT,
       WAIT_ON_CHAIN_SYNC,
+      CONNECT_P2P,
       WAIT_ON_START_SIGNAL,
       SYNC_DB,
       ENABLE_ZC,
@@ -159,34 +149,42 @@ void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
 
             //connect to node as async, no need to wait for a succesful
             //connection to init the DB
-            bdm->processNode->connectToNode(true);
-            bdm->processNode->registerNodeStatusCallback(
-               updateNodeStatusLambda);
-            bdm->watchNode->connectToNode(true);
             bdmStep = Sequence::WAIT_ON_CHAIN_SYNC;
             break;
          }
 
          case Sequence::WAIT_ON_CHAIN_SYNC:
          {
-            //if RPC is running, wait on chain sync
+            //try to connect to RPC, wait on chain sync if successful
             try {
                LOGINFO << "Waiting on node sync";
                bdm->nodeRPC->waitOnChainSync(
                   updateNodeStatusLambda,
-                  DBSettings::automatedNode()
+                  Config::DBSettings::automatedNode()
                );
             } catch (const std::exception& e) {
                LOGWARN << "Error occured while querying the RPC for sync status";
                LOGWARN << "Message: " << e.what();
             }
+
+            bdmStep = Sequence::CONNECT_P2P;
+            break;
+         }
+
+         case Sequence::CONNECT_P2P:
+         {
+            bdm->processNode->connectToNode(true);
+            bdm->processNode->registerNodeStatusCallback(
+               updateNodeStatusLambda);
+            bdm->watchNode->connectToNode(true);
+
             bdmStep = Sequence::WAIT_ON_START_SIGNAL;
             break;
          }
 
          case Sequence::WAIT_ON_START_SIGNAL:
          {
-            if (NetworkSettings::ephemeralPeers()) {
+            if (Config::NetworkSettings::ephemeralPeers()) {
                //this is an automated db instance, wait on the master's signal
                //to start the db scan
                LOGINFO << "waiting on start signal from master";
@@ -217,6 +215,7 @@ void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
 
             if (!bdm->doInitialSyncOnLoad(pimpl->mode, loadProgress)) {
                //db init failed, exit
+               LOGERR << "bdm failed to initialize";
                bdmStep = Sequence::ERROR;
             } else {
                bdmStep = Sequence::ENABLE_ZC;
@@ -226,16 +225,17 @@ void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
 
          case Sequence::ENABLE_ZC:
          {
-            if (DBSettings::enableZC()) {
-               bdm->enableZeroConf(DBSettings::clearMempool());
+            if (Config::DBSettings::enableZC()) {
+               bdm->enableZeroConf(Config::DBSettings::clearMempool());
             }
-            isReadyPromise.set_value();
+            pimpl->readyPromise.set_value(true);
             bdmStep = Sequence::LOOP_OVER_BLOCKS;
             break;
          }
 
          case Sequence::LOOP_OVER_BLOCKS:
          {
+            auto newBlockStack = bdm->processNode->getInvBlockStack();
             try {
                //wait on a new block InvEntry, blocking is on
                auto invVec = newBlockStack->pop_front();
@@ -270,12 +270,12 @@ void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
                         //wait on new block entry, do not block for the inner loop
                         invVec = move(newBlockStack->pop_front(false));
                         hasNewBlocks = true;
-                     } catch (const Armory::Threading::IsEmpty&) {
+                     } catch (const Threading::IsEmpty&) {
                         break;
                      }
                   }
                }
-            } catch (const Armory::Threading::StopBlockingLoop&) {
+            } catch (const Threading::StopBlockingLoop&) {
                bdmStep = Sequence::EXIT;
             }
             break;
@@ -290,10 +290,11 @@ void BlockDataManagerThread::run(std::promise<void> isReadyPromise)
       }
    }
 
-   if (bdmStep == Sequence::ERROR) {
+   if (bdmStep != Sequence::EXIT) {
       //on errors, isReadyPromise has yet to be set
-      isReadyPromise.set_value();
-      LOGERR << "bdm thread sequence exited with an error";
+      pimpl->readyPromise.set_value(false);
+      LOGERR << "bdm thread failed with status: " << (int)bdmStep;
+   } else {
+      LOGINFO << "bdm thread exited gracefully";
    }
-   LOGINFO << "exiting bdm thread";
 }

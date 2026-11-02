@@ -7,10 +7,9 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "DBClientClasses.h"
-#include <Utils/BtcUtils.h>
-#include <Utils/varint.h>
 #include <Utils/Cryptography.h>
-#include <Network/WebSocketClient.h>
+#include <Utils/BIP150_151.h>
+#include "BDV_Notification.h"
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>
@@ -18,35 +17,30 @@
 
 using namespace DBClientClasses;
 using namespace Armory;
+using namespace std::string_view_literals;
 
 namespace {
-   std::shared_ptr<NodeStatus> capnToNodeStatus(
+   Node::Status capnToNodeStatus(
       Armory::Codec::Types::NodeStatus::Reader nodeStatus)
    {
       if (nodeStatus.hasChain()) {
          auto chainCapn = nodeStatus.getChain();
-         NodeChainStatus ncs(
+         Node::ChainStatus ncs(
             Node::ChainState(chainCapn.getChainState()),
-            chainCapn.getBlockSpeed(), chainCapn.getProgress(),
+            chainCapn.getProgress(), chainCapn.getBlockSpeed(),
             chainCapn.getEta(), chainCapn.getBlocksLeft()
          );
 
-         auto result = std::make_shared<NodeStatus>(
+         return Node::Status{
             Node::NodeState(nodeStatus.getNode()),
             Node::RpcState(nodeStatus.getRpc()),
-            nodeStatus.getIsSW(), ncs
-         );
-
-         return result;
+            ncs, nodeStatus.getIsSW()};
       } else {
-         DBClientClasses::NodeChainStatus ncs;
-         auto result = std::make_shared<NodeStatus>(
+         return Node::Status{
             Node::NodeState(nodeStatus.getNode()),
             Node::RpcState(nodeStatus.getRpc()),
-            nodeStatus.getIsSW(), ncs
-         );
-
-         return result;
+            {}, nodeStatus.getIsSW()
+         };
       }
    }
 
@@ -81,7 +75,8 @@ void initLibrary()
 
 ///////////////////////////////////////////////////////////////////////////////
 // BlockHeader
-BlockHeader::BlockHeader(BinaryDataRef thishash, BinaryDataRef prevhash,
+DBClientClasses::BlockHeader::BlockHeader(
+   BinaryDataRef thishash, BinaryDataRef prevhash,
    Types::BlockId blockId, uint32_t height,
    uint32_t time, uint32_t size, uint32_t ntx,
    bool ismain) :
@@ -92,23 +87,19 @@ BlockHeader::BlockHeader(BinaryDataRef thishash, BinaryDataRef prevhash,
 {}
 
 ///////////////////////////////////////////////////////////////////////////////
-//
-// RemoteCallback
-//
-///////////////////////////////////////////////////////////////////////////////
-RemoteCallback::~RemoteCallback()
+// ServerPushHandler
+ServerPushHandler::ServerPushHandler()
 {}
 
-BdmNotification::BdmNotification(BDMAction action) :
-   action(action)
+ServerPushHandler::~ServerPushHandler()
 {}
 
-///////////////////////////////////////////////////////////////////////////////
-bool RemoteCallback::processNotifications(
-   std::unique_ptr<capnp::MessageReader> reader)
+////////
+bool ServerPushHandler::parseCapnPayload(
+   std::unique_ptr<capnp::MessageReader> reader,
+   const SocketName& socketName)
 {
    using namespace Armory::Codec;
-
    auto notifsCapn = reader->getRoot<BDV::Notifications>();
    auto notifs = notifsCapn.getNotifs();
 
@@ -133,21 +124,20 @@ bool RemoteCallback::processNotifications(
                   }
                }
 
-               BdmNotification bdmNotif(BDMAction_NewBlock);
-               bdmNotif.newBlock = NewBlockNotif{
+               pushNewBlock(socketName, NewBlockNotif{
                   height, branchHeight,
-                  std::move(invalidatedIds), std::move(newMainIds)};
-               run(std::move(bdmNotif));
+                  std::move(invalidatedIds), std::move(newMainIds)
+               });
             }
             break;
          }
 
          case BDV::Notification::ZC:
          {
-            auto zcTxios = notif.getZc();
-            BdmNotification bdmNotif(BDMAction_ZC);
-            bdmNotif.txios = capnToTxios(zcTxios);
-            bdmNotif.requestID = notif.getRequestId();
+            auto capnTxios = notif.getZc();
+            auto txios = capnToTxios(capnTxios);
+            std::set<Armory::Types::TxHash> invalidatedHashes;
+            std::string requestID = notif.getRequestId();
 
             //zc notifs are sometimes delivered along with an
             //invalidated zc notif, let's package both together
@@ -160,16 +150,16 @@ bool RemoteCallback::processNotifications(
 
                auto ids = peekNext.getInvalidatedZc();
                for (auto id : ids) {
-                  bdmNotif.invalidatedZcHashes.emplace(BinaryData{
-                     id.begin(), id.end()
-                  });
+                  invalidatedHashes.emplace(BinaryData{id.begin(), id.end()});
                }
             }
-
-            run(std::move(bdmNotif));
+            pushZeroConf(socketName, requestID,
+               std::move(txios), std::move(invalidatedHashes));
             break;
          }
 
+         //deprecated
+         /*
          case BDV::Notification::INVALIDATED_ZC:
          {
             auto ids = notif.getInvalidatedZc();
@@ -185,40 +175,36 @@ bool RemoteCallback::processNotifications(
             run(std::move(bdmNotif));
             break;
          }
+         */
 
          case BDV::Notification::REFRESH:
          {
             auto refresh = notif.getRefresh();
             auto refreshType = (BDV_refresh)refresh.getType();
-            
-            BdmNotification bdmNotif(BDMAction_Refresh);
-            if (refreshType != BDV_filterChanged) {
-               auto ids = refresh.getIds();
-               for (auto id : ids) {
-                  bdmNotif.ids.emplace(id);
-               }
-            } else {
-               bdmNotif.ids.emplace(FILTER_CHANGE_FLAG);
-            }
 
-            run(std::move(bdmNotif));
+            std::set<std::string> ids;
+            if (refreshType != BDV_filterChanged) {
+               auto capnIds = refresh.getIds();
+               for (auto id : capnIds) {
+                  ids.emplace(id);
+               }
+            }
+            pushRefresh(socketName, ids);
             break;
          }
 
          case BDV::Notification::CONNECTION_IS_READY:
          {
-            BdmNotification bdmNotif(BDMAction_Ready);
             auto newBlock = notif.getConnectionIsReady();
-            bdmNotif.newBlock = NewBlockNotif{
+            NewBlockNotif readyNotif{
                newBlock.getHeight(), newBlock.getBranchHeight(), {}, {}};
-            run(std::move(bdmNotif));
+            pushReady(socketName, readyNotif);
             break;
          }
 
          case BDV::Notification::REGISTRATION_DONE:
          {
-            BdmNotification bdmNotif(BDMAction_Registered);
-            run(std::move(bdmNotif));
+            pushRegistered(socketName);
             break;
          }
 
@@ -233,36 +219,30 @@ bool RemoteCallback::processNotifications(
             }
 
             auto phase = (BDMPhase)capnProgress.getPhase();
-            progress(phase, ids, capnProgress.getProgress(),
+            pushProgress(phase, ids, capnProgress.getProgress(),
                capnProgress.getTime(), capnProgress.getNumericProgress());
             break;
          }
 
          case BDV::Notification::NODE_STATUS:
          {
-            BdmNotification bdmNotif(BDMAction_NodeStatus);
             auto capnNodeStatus = notif.getNodeStatus();
-            bdmNotif.nodeStatus = capnToNodeStatus(capnNodeStatus);
-
-            run(std::move(bdmNotif));
+            pushNodeStatus(capnToNodeStatus(capnNodeStatus));
             break;
          }
 
          case BDV::Notification::ERROR:
          {
-            auto error = notif.getError();
+            auto capnError = notif.getError();
 
-            BdmNotification bdmNotif(BDMAction_BDV_Error);
-            bdmNotif.error.errCode_ = error.getCode();
-            bdmNotif.error.errorStr_ = error.getErrStr();
-            bdmNotif.requestID = notif.getRequestId();
-
-            auto errData = error.getErrData();
-            bdmNotif.error.errData_ = BinaryData(
-               errData.begin(), errData.end()
-            );
-
-            run(std::move(bdmNotif));
+            auto capnErrData = capnError.getErrData();
+            BinaryData errorData{capnErrData.begin(), capnErrData.end()};
+            BdvError error{
+               std::string{notif.getRequestId()},
+               std::string{capnError.getErrStr()},
+               errorData, capnError.getCode()
+            };
+            pushError(error);
             break;
          }
 
@@ -272,116 +252,6 @@ bool RemoteCallback::processNotifications(
    }
 
    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-//
-// NodeStatus
-//
-///////////////////////////////////////////////////////////////////////////////
-NodeStatus::NodeStatus(Node::NodeState nodeState,
-   Node::RpcState rpcState, bool isSW, NodeChainStatus& nodeChainState) :
-   nodeState_(nodeState), rpcState_(rpcState), isSegWitEnabled_(isSW),
-   nodeChainStatus_(std::move(nodeChainState))
-{}
-
-///////////////////////////////////////////////////////////////////////////////
-Node::NodeState NodeStatus::state() const
-{
-   return nodeState_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool NodeStatus::isSegWitEnabled() const
-{
-   return isSegWitEnabled_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-Node::RpcState NodeStatus::rpcState() const
-{
-   return rpcState_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-const NodeChainStatus& NodeStatus::chainStatus() const
-{
-   return nodeChainStatus_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-//
-// NodeChainStatus
-//
-///////////////////////////////////////////////////////////////////////////////
-NodeChainStatus::NodeChainStatus() :
-   chainState_(Node::ChainState::Unknown), blockSpeed_(0), progressPct_(0),
-   etaSeconds_(UINT64_MAX), blocksLeft_(UINT32_MAX)
-{}
-
-NodeChainStatus::NodeChainStatus(Node::ChainState chainState,
-   float speed, float pct, uint64_t eta, unsigned blocksLeft) :
-   chainState_(chainState), blockSpeed_(speed), progressPct_(pct),
-   etaSeconds_(eta), blocksLeft_(blocksLeft)
-{}
-
-///////////////////////////////////////////////////////////////////////////////
-Node::ChainState NodeChainStatus::state() const
-{
-   return chainState_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-float NodeChainStatus::getBlockSpeed() const
-{
-   return blockSpeed_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-float NodeChainStatus::getProgressPct() const
-{
-   return progressPct_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-uint64_t NodeChainStatus::getETA() const
-{
-   return etaSeconds_;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-unsigned NodeChainStatus::getBlocksLeft() const
-{
-   return blocksLeft_;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// BDV_Error_Struct
-BinaryData BDV_Error_Struct::serialize(void) const
-{
-   BinaryWriter bw;
-   bw.put_int32_t(errCode_);
-
-   bw.put_var_int(errData_.getSize());
-   bw.put_BinaryData(errData_);
-
-   bw.put_var_int(errorStr_.size());
-   bw.put_String(errorStr_);
-
-   return bw.getData();
-}
-
-////////////////////////////////////////////////////////////////////////////////
-void BDV_Error_Struct::deserialize(const BinaryData& data)
-{
-   BinaryRefReader brr(data);
-   errCode_ = brr.get_int32_t();
-
-   auto len = brr.get_var_int();
-   errData_ = brr.get_BinaryData(len);
-
-   len = brr.get_var_int();
-   errorStr_ = brr.get_String(len);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
