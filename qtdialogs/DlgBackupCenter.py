@@ -655,7 +655,7 @@ class DlgPrintBackup(ArmoryDialog):
                'Write it in the red box in upper-right corner '
                u'of each printed page. <br><br>SecurePrint\u200b\u2122 code: '
                f'<font color="{textBlue}" '
-               f'size=5><b>{self.randpass.toBinStr()}</b></font> <br><br> '
+               f'size=5><b>{self.backupData.spPass}</b></font> <br><br> '
                '<b>NOTE: the above code <u>is</u> case-sensitive!</b>'),
                QtWidgets.QMessageBox.Ok)
          if self.chkSecurePrint.isChecked():
