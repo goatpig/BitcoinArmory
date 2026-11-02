@@ -120,6 +120,7 @@ void BlockDataManagerThread::run()
    {
       INIT,
       WAIT_ON_CHAIN_SYNC,
+      CONNECT_P2P,
       WAIT_ON_START_SIGNAL,
       SYNC_DB,
       ENABLE_ZC,
@@ -166,7 +167,12 @@ void BlockDataManagerThread::run()
                LOGWARN << "Message: " << e.what();
             }
 
-            //connect to p2p
+            bdmStep = Sequence::CONNECT_P2P;
+            break;
+         }
+
+         case Sequence::CONNECT_P2P:
+         {
             bdm->processNode->connectToNode(true);
             bdm->processNode->registerNodeStatusCallback(
                updateNodeStatusLambda);
