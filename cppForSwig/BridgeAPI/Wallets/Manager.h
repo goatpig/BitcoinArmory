@@ -61,17 +61,16 @@ namespace Armory
       class TxIOCache;
       namespace Notifications
       {
-         namespace Server
+         namespace Push
          {
-            class NotifHandler;
-            class Notif;
+            class Payload;
          }
       }
 
       using AAIdSet = std::set<Wallets::AddressAccountId>;
       using ContainerPtr = std::shared_ptr<WalletContainer>;
       using NotifQueue = Threading::BlockingQueue<
-         std::unique_ptr<Notifications::Server::Notif>>;
+         std::unique_ptr<Notifications::Push::Payload>>;
 
       class WalletManager : public Lockable
       {
@@ -122,7 +121,7 @@ namespace Armory
 
          /* utils */
          const std::filesystem::path& getWalletsDir(void) const;
-         void updateStateFromDB(std::unique_ptr<Notifications::Server::Notif>);
+         void updateStateFromDB(std::unique_ptr<Notifications::Push::Payload>);
          std::shared_ptr<const TxIOCache> txioCache(void) const;
          void addUnpooledTxs(const std::vector<BinaryData>&);
          void fetchTxs(std::shared_ptr<AsyncClient::BlockDataViewer>,
