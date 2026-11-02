@@ -2138,6 +2138,9 @@ void CppBridge::restoreWallet(
       };
 
       auto tempDir = wltManager_->getWalletsDir() / "temp";
+      bool success = false;
+      bool fatal = false;
+      std::string fatalError;
       try {
          //create a temp folder where the wallet will be generated
          FileUtils::createDirectory(tempDir);
@@ -2231,9 +2234,7 @@ void CppBridge::restoreWallet(
             accPtr->getNewAddress(wltPtr->getIface());
          }
 
-         //cleanup & success
-         sendCallbackCleanup(this, callbackId);
-         sendSuccess(this, refId);
+         success = true;
       } catch (const Seeds::RestoreUserException& e) {
          /*
          These type of errors are the result of user actions. They should have
@@ -2244,17 +2245,29 @@ void CppBridge::restoreWallet(
          LOGWARN << "[restoreFromBackup] user exception: " << e.what();
       } catch (const std::exception& e) {
          LOGERR << "[restoreFromBackup] fatal error: " << e.what();
+         fatal = true;
+         fatalError = e.what();
+      }
 
+      /*
+      Delete the temp folder before replying: the client can start another
+      restore as soon as it has the reply, and that restore works in the
+      same folder.
+      */
+      FileUtils::removeDirectory(tempDir);
+
+      if (success) {
+         //cleanup & success
+         sendCallbackCleanup(this, callbackId);
+         sendSuccess(this, refId);
+      } else if (fatal) {
          /*
          Report error to client
          */
          Seeds::RestorePrompt errorPrompt{Seeds::RestorePromptType::Failure};
-         errorPrompt.error = e.what();
+         errorPrompt.error = fatalError;
          callback(errorPrompt);
       }
-
-      //delete the temp folder
-      FileUtils::removeDirectory(tempDir);
    };
 
    auto worker = std::thread(restoreLbd, std::move(backup));
