@@ -53,8 +53,10 @@ namespace Armory
 
             struct Payload
             {
+               const std::string socketName;
                const PayloadType type;
-               Payload(PayloadType);
+
+               Payload(PayloadType, const std::string&);
                virtual ~Payload(void) = 0;
                virtual SyncState syncWalletState(void) const;
             };
@@ -62,12 +64,11 @@ namespace Armory
 
             struct Notif_Registered : public Payload
             {
-               Notif_Registered(void);
+               Notif_Registered(const std::string&);
             };
 
             struct Notif_Disconnected : public Payload
             {
-               const std::string socketName;
                Notif_Disconnected(const std::string&);
             };
 
@@ -76,7 +77,7 @@ namespace Armory
                const NewBlockNotif blockNotif;
                const bool isReadyNotif;
 
-               Notif_NewBlock(
+               Notif_NewBlock(const std::string&,
                   const NewBlockNotif&, bool);
                SyncState syncWalletState(void) const override;
             };
@@ -87,7 +88,8 @@ namespace Armory
                const std::vector<TxIOPair> txios;
                const std::set<BinaryData> invalidatedZCHashes;
 
-               Notif_ZC(std::string, std::vector<TxIOPair>, std::set<BinaryData>);
+               Notif_ZC(const std::string&, std::string,
+                  std::vector<TxIOPair>, std::set<BinaryData>);
                SyncState syncWalletState(void) const override;
             };
 
@@ -103,8 +105,10 @@ namespace Armory
                const std::set<std::string> refreshIds;
                const SyncState syncWalletsWithDB;
 
-               Command_Refresh(const std::set<std::string>&, SyncState);
-               Command_Refresh(const std::string&, SyncState);
+               Command_Refresh(const std::string&,
+                  const std::set<std::string>&, SyncState);
+               Command_Refresh(const std::string&,
+                  const std::string&, SyncState);
                SyncState syncWalletState(void) const override;
             };
 
@@ -146,22 +150,25 @@ namespace Armory
                NotifHandler(std::shared_ptr<NotifQueue>);
 
                //virtuals
-               void pushRegistered(void) const override;
-               void pushDisconnected(const std::string&) const override;
+               void pushRegistered(const SocketName&) const override;
+               void pushDisconnected(const SocketName&) const override;
+
+               void pushReady(const SocketName&,
+                  const NewBlockNotif&) const override;
+               void pushNewBlock(const SocketName&,
+                  const NewBlockNotif&) const override;
+               void pushRefresh(const SocketName&,
+                  const std::set<std::string>&) const override;
+               void pushZeroConf(const SocketName&,
+                  const std::string&,
+                  std::vector<TxIOPair>,
+                  std::set<Armory::Types::TxHash>) const override;
+
                void pushNodeStatus(const Node::Status&) const override;
                void pushProgress(BDMPhase,
                   const std::vector<std::string>&,
                   float, unsigned, unsigned
                ) const override;
-
-               void pushReady(const NewBlockNotif&) const override;
-               void pushNewBlock(const NewBlockNotif&) const override;
-               void pushRefresh(const std::set<std::string>&) const override;
-
-               void pushZeroConf(
-                  const std::string&,
-                  std::vector<TxIOPair>,
-                  std::set<Armory::Types::TxHash>) const override;
                void pushError(const BdvError&) const override;
             };
          }
@@ -177,6 +184,8 @@ namespace Armory
             BinaryData getSetupDonePacket(void);
             BinaryData getWalletsRegisteredPacket(void);
             BinaryData getServerDisconnectedPacket(void);
+            BinaryData getNodeStatusPacket(const Node::Status&);
+            BinaryData getErrorPacket(const BdvError&);
          }
       } // namespace Notifications
    } // namespace Bridge

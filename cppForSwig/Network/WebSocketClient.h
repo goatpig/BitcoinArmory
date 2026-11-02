@@ -21,7 +21,7 @@
 
 #define CLIENT_AUTH_PEER_FILENAME "client.peers"
 
-class ServerPushHandler;
+struct ServerPushHandler;
 class SecureBinaryData;
 
 namespace Armory

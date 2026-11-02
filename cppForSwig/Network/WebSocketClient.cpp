@@ -510,7 +510,8 @@ void WebSocketClient::readService()
             }
 
             auto msgReader = currentReadMessage_.getReader();
-            callbackPtr_->parseCapnPayload(msgReader->getReader());
+            callbackPtr_->parseCapnPayload(
+               msgReader->getReader(), name());
             currentReadMessage_.reset();
             break;
          }

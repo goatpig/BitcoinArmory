@@ -84,28 +84,30 @@ public:
 };
 
 ////////
-class ServerPushHandler
+struct ServerPushHandler
 {
-public:
+   using SocketName = std::string;
+
    ServerPushHandler(void);
    virtual ~ServerPushHandler(void) = 0;
 
-   bool parseCapnPayload(std::unique_ptr<capnp::MessageReader>);
+   bool parseCapnPayload(
+      std::unique_ptr<capnp::MessageReader>, const SocketName&);
 
-   virtual void pushRegistered(void) const = 0;
-   virtual void pushDisconnected(const std::string&) const = 0;
+   virtual void pushRegistered(const SocketName&) const = 0;
+   virtual void pushDisconnected(const SocketName&) const = 0;
    virtual void pushNodeStatus(const Node::Status&) const = 0;
    virtual void pushProgress(BDMPhase,
       const std::vector<std::string>&,
       float, unsigned, unsigned
    ) const = 0;
 
-   virtual void pushReady(const NewBlockNotif&) const = 0;
-   virtual void pushNewBlock(const NewBlockNotif&) const = 0;
-   virtual void pushRefresh(const std::set<std::string>&) const = 0;
+   virtual void pushReady(const SocketName&, const NewBlockNotif&) const = 0;
+   virtual void pushNewBlock(const SocketName&, const NewBlockNotif&) const = 0;
+   virtual void pushRefresh(const SocketName&, const std::set<std::string>&) const = 0;
 
    virtual void pushZeroConf(
-      const std::string&,
+      const SocketName&, const std::string&,
       std::vector<TxIOPair>,
       std::set<Armory::Types::TxHash>) const = 0;
    virtual void pushError(const BdvError&) const = 0;

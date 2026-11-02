@@ -187,6 +187,7 @@ void WalletManager::updateMainLedgerFilter(
    mainLedgerFilter_ = idMap;
    notifQueue_->push_back(
       std::make_unique<Notifications::Push::Command_Refresh>(
+         std::string{}, //socket name is ignored in NoSync refresh
          std::string{"wallet_filter_changed"},
          Notifications::SyncState::NoSync));
 }
@@ -299,6 +300,7 @@ void WalletManager::registerWallet(const Wallets::WalletId& wltId,
    } catch (const OfflineException& e) {
       auto message = Serialization::getRefreshPacket(
          std::make_unique<Push::Command_Refresh>(
+            std::string{}, //socket name is ignored in NoSync refresh
             container->getDbId(), SyncState::NoSync));
       notifQueue_->push_back(std::make_unique<Push::Command_PassAlong>(
          std::move(message)));

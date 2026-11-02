@@ -665,10 +665,17 @@ void CppBridge::runNotificationProcessingThread()
          {
             case Push::PayloadType::IS_REGISTERED:
             {
+               if (bdvPtr_ == nullptr) {
+                  //nothing to do
+                  break;
+               }
+
                if (isDbRunning()) {
                   //if we automate the db, we have to tell it to
                   //start parsing the chain
-                  bdvPtr_->start();
+                  if (payload->socketName == bdvPtr_->getSocketName()) {
+                     bdvPtr_->start();
+                  }
                }
                break;
             }
@@ -690,16 +697,11 @@ void CppBridge::runNotificationProcessingThread()
                   //nothing to do
                   break;
                }
-               auto dcPtr = dynamic_cast<Push::Notif_Disconnected*>(
-                  payload.get());
-               if (dcPtr == nullptr) {
-                  throw std::runtime_error("invalid disconnected notif");
-               }
 
-               if (dcPtr->socketName == bdvPtr_->getSocketName() ||
-                  dcPtr->socketName.empty()) {
-                  //cleanup the bdv if either the dc notification name matches
-                  //the current bdv's socket name, or it was served with no name
+               if (payload->socketName == bdvPtr_->getSocketName() ||
+                  payload->socketName.empty()) {
+                  //cleanup the bdv if either the socket that originated the dc
+                  //notif matches the current bdv, or it was served with no name
                   cleanup();
                }
                break;
@@ -739,6 +741,20 @@ void CppBridge::runNotificationProcessingThread()
             }
 
             default:
+               if (payload->syncWalletState() != SyncState::NoSync) {
+                  /*
+                  This notification can lead to calls which require a
+                  live bdv, so let's run some sanity checks first
+                  */
+                  if (bdvPtr_ == nullptr) {
+                     //no bdv, skip
+                     break;
+                  } else if (bdvPtr_->getSocketName() != payload->socketName) {
+                     //also skip notifications where the originating bdv
+                     //connection mismatches the current one
+                     break;
+                  }
+               }
                wltManager_->updateStateFromDB(std::move(payload));
          }
       }

@@ -213,22 +213,22 @@ namespace DBTestUtils
       {}
 
       ////////
-      void pushReady(const NewBlockNotif&) const override;
-      void pushNewBlock(const NewBlockNotif&) const override;
-      void pushRefresh(const std::set<std::string>&) const override;
+      void pushReady(const SocketName&, const NewBlockNotif&) const override;
+      void pushNewBlock(const SocketName&, const NewBlockNotif&) const override;
+      void pushRefresh(const SocketName&, const std::set<std::string>&) const override;
       void pushZeroConf(
-         const std::string&,
+         const SocketName&, const std::string&,
          std::vector<TxIOPair>,
          std::set<Armory::Types::TxHash>) const override;
       void pushError(const BdvError&) const override;
 
       ////////
-      void pushRegistered(void) const override {};
-      void pushDisconnected(const std::string&) const override {}
+      void pushRegistered(const SocketName&) const override {};
+      void pushDisconnected(const SocketName&) const override {}
       void pushNodeStatus(const Node::Status&) const override {}
       void pushProgress(
          BDMPhase, const std::vector<std::string>&,
-         float ,unsigned , unsigned) const override {}
+         float, unsigned, unsigned) const override {}
 
       ////////
       NotifPtr waitOnNotification(BDMAction actionType)

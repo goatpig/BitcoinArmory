@@ -18,7 +18,7 @@ namespace AsyncClient
 }
 
 class BinaryData;
-class ServerPushHandler;
+struct ServerPushHandler;
 
 namespace Armory
 {

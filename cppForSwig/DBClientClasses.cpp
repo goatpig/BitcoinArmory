@@ -96,7 +96,8 @@ ServerPushHandler::~ServerPushHandler()
 
 ////////
 bool ServerPushHandler::parseCapnPayload(
-   std::unique_ptr<capnp::MessageReader> reader)
+   std::unique_ptr<capnp::MessageReader> reader,
+   const SocketName& socketName)
 {
    using namespace Armory::Codec;
    auto notifsCapn = reader->getRoot<BDV::Notifications>();
@@ -123,7 +124,7 @@ bool ServerPushHandler::parseCapnPayload(
                   }
                }
 
-               pushNewBlock(NewBlockNotif{
+               pushNewBlock(socketName, NewBlockNotif{
                   height, branchHeight,
                   std::move(invalidatedIds), std::move(newMainIds)
                });
@@ -152,7 +153,7 @@ bool ServerPushHandler::parseCapnPayload(
                   invalidatedHashes.emplace(BinaryData{id.begin(), id.end()});
                }
             }
-            pushZeroConf(requestID,
+            pushZeroConf(socketName, requestID,
                std::move(txios), std::move(invalidatedHashes));
             break;
          }
@@ -188,7 +189,7 @@ bool ServerPushHandler::parseCapnPayload(
                   ids.emplace(id);
                }
             }
-            pushRefresh(ids);
+            pushRefresh(socketName, ids);
             break;
          }
 
@@ -197,13 +198,13 @@ bool ServerPushHandler::parseCapnPayload(
             auto newBlock = notif.getConnectionIsReady();
             NewBlockNotif readyNotif{
                newBlock.getHeight(), newBlock.getBranchHeight(), {}, {}};
-            pushReady(readyNotif);
+            pushReady(socketName, readyNotif);
             break;
          }
 
          case BDV::Notification::REGISTRATION_DONE:
          {
-            pushRegistered();
+            pushRegistered(socketName);
             break;
          }
 

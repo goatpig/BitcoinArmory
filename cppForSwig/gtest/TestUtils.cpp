@@ -608,13 +608,14 @@ namespace DBTestUtils
 
    /////////////////////////////////////////////////////////////////////////////
    // UTCallback
-   void UTCallback::pushReady(const NewBlockNotif&) const
+   void UTCallback::pushReady(const SocketName&,
+      const NewBlockNotif&) const
    {
       auto notif = std::make_unique<BdmNotif>(BDMAction_Ready);
       actionStack_.push_back(std::move(notif));
    }
 
-   void UTCallback::pushNewBlock(
+   void UTCallback::pushNewBlock(const SocketName&,
       const NewBlockNotif& newBlockNotif) const
    {
       auto notif = std::make_unique<BdmNotif>(BDMAction_NewBlock);
@@ -623,7 +624,8 @@ namespace DBTestUtils
       actionStack_.push_back(std::move(notif));
    }
 
-   void UTCallback::pushRefresh(const std::set<std::string>& ids) const
+   void UTCallback::pushRefresh(const SocketName&,
+      const std::set<std::string>& ids) const
    {
       auto notif = std::make_unique<BdmNotif>(BDMAction_Refresh);
       notif->idSet = ids;
@@ -631,7 +633,7 @@ namespace DBTestUtils
    }
 
    void UTCallback::pushZeroConf(
-      const std::string&,
+      const SocketName&, const std::string&,
       std::vector<TxIOPair> txios,
       std::set<Armory::Types::TxHash>) const
    {
