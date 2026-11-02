@@ -82,6 +82,8 @@ class DlgSimpleBackup(ArmoryDialog):
          'Create an unencrypted copy of your wallet file, including imported '
          'addresses.'))
       btnDigital = QtWidgets.QPushButton(self.tr('Make Digital Backup'))
+      btnDigital.setEnabled(False)
+      btnDigital.setToolTip(self.tr('Not available yet in 0.97'))
 
       # ## Other
       btnOther = QtWidgets.QPushButton(self.tr('See Other Backup Options'))

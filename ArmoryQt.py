@@ -2764,12 +2764,14 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
                      'Wallet migrated successfully. '
                      'Restart Armory to see it in '
                      'the wallet list.'))
-         elif wltData.which() == 'locked':
-            #wallet control header is locked, offer to unlock
-            pass
-         elif wltData.which() == 'ready':
-            #wallet is ready to be loaded, present its content to the user
-            pass
+         else:
+            #TODO: a wallet file from 0.97: 'locked' (control header is
+            #locked, offer to unlock) and 'ready' (present its content to
+            #the user). One whose control header is encrypted comes back
+            #with neither set.
+            QtWidgets.QMessageBox.information(self, self.tr('Not Available'),
+               self.tr('Importing this wallet file is not available yet '
+                  'in 0.97.'), QtWidgets.QMessageBox.Ok)
 
       except Exception as e:
          QtWidgets.QMessageBox.warning(self, self.tr('Import Error!'),

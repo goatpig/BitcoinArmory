@@ -26,16 +26,17 @@ class DlgUniversalRestoreSelect(ArmoryDialog):
       super(DlgUniversalRestoreSelect, self).__init__(parent, main)
 
       lblDescrTitle = QRichLabel(self.tr('<b><u>Restore Wallet from Backup</u></b>'))
-      lblDescr = QRichLabel(self.tr('You can restore any kind of backup ever created by Armory using '
-         'one of the options below.  If you have a list of private keys '
-         'you should open the target wallet and select "Import/Sweep '
-         'Private Keys."'))
+      lblDescr = QRichLabel(self.tr('Restore a wallet from a backup using '
+         'one of the options below.'))
 
       self.rdoSingle = QtWidgets.QRadioButton(self.tr('Single-Sheet Backup (printed)'))
       self.rdoFragged = QtWidgets.QRadioButton(self.tr('Fragmented Backup (incl. mix of paper and files)'))
       self.rdoDigital = QtWidgets.QRadioButton(self.tr('Import digital backup or watching-only wallet'))
       self.rdoWOData = QtWidgets.QRadioButton(self.tr('Import watching-only wallet data'))
       self.chkTest = QtWidgets.QCheckBox(self.tr('This is a test recovery to make sure my backup works'))
+      for rdo in [self.rdoFragged, self.rdoWOData]:
+         rdo.setEnabled(False)
+         rdo.setToolTip(self.tr('Not available yet in 0.97'))
       btngrp = QtWidgets.QButtonGroup(self)
       btngrp.addButton(self.rdoSingle)
       btngrp.addButton(self.rdoFragged)
