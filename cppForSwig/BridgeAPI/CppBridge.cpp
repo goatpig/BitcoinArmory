@@ -547,16 +547,26 @@ CppBridge::CppBridge(std::shared_ptr<Network::PersistentSocket> sockPtr) :
 
 CppBridge::~CppBridge()
 {
-   //release all futures waiting on a user reply
+   /*
+   Shutdown the notif queue and release all futures waiting on a user reply,
+   both under the callback map lock: a prompt registered after this, such as
+   the server key prompt of a connect that is underway, sees the terminated
+   queue in setCallbackHandler and is rejected there.
+
+   The lock is not held while joining the notif thread. That key prompt is
+   registered from the WebSocketClient's prompt thread, while the notif
+   thread waits on the connection, so the join can depend on that thread
+   getting the lock.
+   */
    {
       std::unique_lock<std::mutex> lock(callbackHandlerMu_);
+      notifQueue_->terminate();
       for (auto& cbPair : callbackHandlers_) {
          cbPair.second(Seeds::PromptReply{false, false, {}});
       }
    }
 
-   //shutdown notif queue and wait on its thread
-   notifQueue_->terminate();
+   //wait on the notif thread
    if (notifThread_.joinable()) {
       notifThread_.join();
    }
@@ -3395,6 +3405,13 @@ void CppBridge::setCallbackHandler(ServerPushWrapper& wrapper)
    }
 
    std::unique_lock<std::mutex> lock(callbackHandlerMu_);
+   if (!notifQueue_->isValid()) {
+      //~CppBridge already released the pending prompts, nothing will
+      //answer this one: reject it
+      wrapper.handler(Seeds::PromptReply{false, false, {}});
+      return;
+   }
+
    auto result = callbackHandlers_.emplace(
       wrapper.referenceId, std::move(wrapper.handler));
    if (!result.second) {
