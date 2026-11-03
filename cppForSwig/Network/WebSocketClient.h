@@ -111,7 +111,6 @@ namespace Armory
             uint64_t, std::shared_ptr<WriteAndReadPacket>> readPackets_;
 
          std::shared_ptr<ServerPushHandler> callbackPtr_ = nullptr;
-         
          WebSocketMessagePartial currentReadMessage_;
          std::promise<bool> connectionReadyProm_;
 
@@ -138,6 +137,7 @@ namespace Armory
          void service(lws_context*);
          bool processAEADHandshake(const WebSocketMessagePartial&);
          void promptUser(const BinaryDataRef&, const std::string&);
+         void cleanupPendingRequests(void);
          void cleanup(void);
 
       public:
