@@ -715,12 +715,18 @@ void WalletManager::updateStateFromDB(
    std::shared_ptr<Push::Payload> sharedPayload{std::move(payload)};
 
    if (sharedPayload->syncWalletState() != SyncState::NoSync) {
-      auto checkFromHeight = txioCache_->update(bdvPtr_, sharedPayload);
+      auto updateResult = txioCache_->update(bdvPtr_, sharedPayload);
+      if (updateResult.first != TxIOCache::PurgeStatus::NoPurge) {
+         txioCache_->purge(updateResult.first);
+         return;
 
-      //the txio chache is updated, resolve txios for wallets
+         //TODO: queue a cache refill command
+      }
+
+      //the txio cache is updated, resolve txios for wallets
       ReentrantLock lock(this);
       for (auto wltCont : walletsByDbId_) {
-         wltCont.second->resolveTxios(checkFromHeight);
+         wltCont.second->resolveTxios(updateResult.second);
          wltCont.second->resolveZcTxios();
 
          if (sharedPayload->syncWalletState() == SyncState::SyncWallets) {
