@@ -2613,8 +2613,9 @@ protected:
    void startWSServer()
    {
       wsServerThr_ = std::thread([bdm=theBDMt_->bdm()](){
-         WebSocketServer::start(bdm); }
-      );
+         auto clients = std::make_shared<Clients>(bdm);
+         WebSocketServer::start(clients);
+      });
 
       //arbitrary wait to give time to WS server to startup
       std::this_thread::sleep_for(100ms);
