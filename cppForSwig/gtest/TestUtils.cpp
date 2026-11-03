@@ -1051,8 +1051,10 @@ namespace DBTestUtils
 /////////////////////////////////////////////////////////////////////////////
 // DBTestUtils::BdvPayloadNinja
 void DBTestUtils::BdvPayloadNinja::run(
-   std::shared_ptr<Clients> clients, Types::BdvId bdvId)
+   std::shared_ptr<Clients> clts, Types::BdvId id)
 {
+   clients = clts;
+   bdvId = id;
    auto bdvPtr = clients->get(bdvId);
    unsigned zero = 0;
    while (!bdvPtr->packetProcessSpinLock.compare_exchange_weak(
@@ -1076,6 +1078,24 @@ void DBTestUtils::BdvPayloadNinja::run(
          clients->queuePayload(payload);
       } else {
          payloadQueue.push_back(std::move(payload));
+      }
+   }
+   payloadQueue.terminate();
+}
+
+std::pair<Network::WebSocketMessagePartial, uint32_t> DBTestUtils::BdvPayloadNinja::getWSMsg()
+{
+   while (true) {
+      try {
+         auto payload = payloadQueue.pop_front();
+         auto bdvPtr = clients->get(bdvId);
+         auto wsMsg = bdvPtr->preparePayload(payload);
+         if (!wsMsg.isReady()) {
+            continue;
+         }
+         return { wsMsg, payload->getMessageID() };
+      } catch (const Threading::StopBlockingLoop&) {
+         return { {}, UINT32_MAX };
       }
    }
 }

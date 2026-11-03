@@ -57,6 +57,11 @@ namespace Armory
       class AssetEntry;
    };
    struct Hash32;
+
+   namespace Network
+   {
+      class WebSocketMessagePartial;
+   }
 };
 
 class BlockDataManagerThread;
@@ -356,9 +361,11 @@ namespace DBTestUtils
       packets into a local queue
       */
       Armory::Threading::BlockingQueue<std::shared_ptr<BDV_Payload>> payloadQueue;
+      std::shared_ptr<Clients> clients;
+      Armory::Types::BdvId bdvId;
 
       void run(std::shared_ptr<Clients>, Armory::Types::BdvId);
-      std::shared_ptr<BDV_Payload> getPayload(void);
+      std::pair<Armory::Network::WebSocketMessagePartial, uint32_t> getWSMsg(void);
       void passPayloadToRegularParser(std::shared_ptr<BDV_Payload>);
    };
 }

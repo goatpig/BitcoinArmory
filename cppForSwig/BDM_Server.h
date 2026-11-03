@@ -152,8 +152,6 @@ public:
 private:
    BdvClient(BdvClient&) = delete; //no copies
    void setup(void);
-   Armory::Network::WebSocketMessagePartial preparePayload(
-      std::shared_ptr<BDV_Payload>);
    std::unique_ptr<BDV_Notification_ZC> createZcNotification(
       const std::set<Armory::Types::ScrAddr>&);
    bool waitOnBDMReady(void);
@@ -172,6 +170,8 @@ public:
    void haltThreads(void);
    std::vector<uint8_t>& getScratchPad(void);
    void flagRefresh(BDV_refresh, const std::string&);
+   Armory::Network::WebSocketMessagePartial preparePayload(
+      std::shared_ptr<BDV_Payload>);
 };
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -44,6 +44,7 @@
 #include <capnp/message.h>
 #include <capnp/serialize.h>
 #include "capnp/Bridge.capnp.h"
+#include "capnp/BDV.capnp.h"
 #include "capnp/Types.capnp.h"
 
 using namespace Armory;
@@ -8160,6 +8161,290 @@ TEST_F(BridgeWalletsWithDBTests, AddNewAddress)
       ASSERT_EQ(walletData.accountId, accountId);
       EXPECT_EQ(walletData.useCount, 4);
       EXPECT_EQ(walletData.lookup, 104);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// TxIOCacheTests
+class TxIOCacheTests : public ::testing::Test
+{
+protected:
+   void initBDM()
+   {
+      theBDMt_ = new BlockDataManagerThread();
+   }
+
+   void prepareWallets()
+   {
+      auto pubKeyB = Cryptography::ECDSA::computePublicKey(TestChain::privKeyAddrB);
+      auto pubKeyC = Cryptography::ECDSA::computePublicKey(TestChain::privKeyAddrC);
+      auto pubKeyD = Cryptography::ECDSA::computePublicKey(TestChain::privKeyAddrD);
+      auto pubKeyE = Cryptography::ECDSA::computePublicKey(TestChain::privKeyAddrE);
+
+      walletId_ = createWOWallet(homedir_, {
+         pubKeyB, pubKeyC, pubKeyD, pubKeyE}
+      );
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   void SetUp() override
+   {
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
+
+      FileUtils::createDirectory(blkdir_ / "blocks");
+      FileUtils::createDirectory(homedir_);
+      FileUtils::createDirectory(ldbdir_);
+
+      Config::DBSettings::setServiceType(SERVICE_UNITTEST_WITHWS);
+
+      // Put the first 5 blocks into the blkdir
+      blk0dat_ = FileUtils::getBlkFilename(blkdir_ / "blocks", 0);
+      TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+
+      WebSocketServer::init();
+      Config::parseArgs({
+         "--datadir=./fakehomedir",
+         "--dbdir=./ldbtestdir",
+         "--satoshi-datadir=./blkfiletest",
+         "--db-type=DB_BARE",
+         "--thread-count=3",
+         "--public"},
+         Config::ProcessType::DB);
+      prepareWallets();
+
+      //setup auth peers for server and client
+      authPeersPassLbd_ = [](const std::set<Wallets::EncryptionKeyId>&)
+      ->Passphrase::Result
+      {
+         return { {}, true };
+      };
+
+      auto createWltLbd = []()->std::unique_ptr<Passphrase::Params>
+      {
+         return std::make_unique<Passphrase::Params>(
+            1ms, 0, SecureBinaryData{});
+      };
+
+      auto serverPeersWlt = NetworkPeers::PeerStore::bootstrapWallet({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, {createWltLbd}});
+      NetworkPeers::ServerStore serverPeers(serverPeersWlt);
+
+      auto clientPeersWlt = NetworkPeers::PeerStore::bootstrapWallet({
+         homedir_ / CLIENT_AUTH_PEER_FILENAME, {createWltLbd}
+      });
+      NetworkPeers::ClientStore clientPeers(clientPeersWlt);
+
+      //share public keys between client and server
+      NetworkPeers::PeerKey servPK{
+         serverPeers.getOwnPublicKey(),
+         NetworkPeers::PeerType::ServerOneWay};
+      clientPeers.addPeer(
+         servPK,
+         {std::format("127.0.0.1:{}", Config::NetworkSettings::dbPort())},
+         {});
+
+      initBDM();
+      auto nodePtr = std::dynamic_pointer_cast<NodeUnitTest>(
+         Config::NetworkSettings::bitcoinNodes().first);
+      nodePtr->setBDM(theBDMt_->bdm());
+      hexMagicBytes = Config::BitcoinSettings::getMagicBytes().toHexStr();
+   }
+
+   void TearDown() override
+   {
+      WebSocketServer::shutdown();
+      if (wsServerThr_.joinable()) {
+         wsServerThr_.join();
+      }
+      theBDMt_->shutdown();
+
+      delete theBDMt_;
+      theBDMt_ = nullptr;
+
+      FileUtils::removeDirectory(blkdir_);
+      FileUtils::removeDirectory(homedir_);
+      FileUtils::removeDirectory(ldbdir_);
+      Config::reset();
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   void startWSServer(std::shared_ptr<Clients> clients)
+   {
+      wsServerThr_ = std::thread(
+         [](std::shared_ptr<Clients> clients){
+            WebSocketServer::start(clients);
+         }, clients
+      );
+
+      //arbitrary wait to give time to WS server to startup
+      std::this_thread::sleep_for(100ms);
+   }
+
+protected:
+   BlockDataManagerThread *theBDMt_;
+   Passphrase::UnlockFunc authPeersPassLbd_;
+
+   std::filesystem::path blkdir_{"./blkfiletest"sv};
+   std::filesystem::path homedir_{"./fakehomedir"sv};
+   std::filesystem::path ldbdir_{"./ldbtestdir"sv};
+   std::filesystem::path blk0dat_;
+
+   std::string hexMagicBytes;
+   std::shared_ptr<Bridge::CppBridge> bridge_;
+   std::string walletId_;
+   std::thread wsServerThr_;
+};
+
+TEST_F(TxIOCacheTests, PurgeStates)
+{
+   /* a bdv request failure in TxIOCache::update should advertize a purge */
+
+   //start WS server
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   auto clients = std::make_shared<Clients>(theBDMt_->bdm());
+   startWSServer(clients);
+
+   //connect a BDV
+   auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+   auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
+      "127.0.0.1", Config::NetworkSettings::dbPort(),
+      std::make_shared<NetworkPeers::ClientStore>(Wallets::IO::ReadOnlyFileParams{
+         homedir_ / CLIENT_AUTH_PEER_FILENAME, authPeersPassLbd_}),
+      true, pCallback
+   );
+
+   bdvObj->connectToRemote();
+   bdvObj->registerWithDB(Config::BitcoinSettings::getMagicBytes().toHexStr());
+
+   //register BCDE
+   {
+      auto asyncWlt = bdvObj->getWalletObj("wallet_bcde");
+      asyncWlt.registerAddresses({
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      }, false);
+   }
+
+   //start BDM
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+
+   bdvObj->goOnline();
+   auto readyNotif = pCallback->waitOnNotification(
+      DBTestUtils::UTCallback::BDMAction_Ready);
+   ASSERT_NE(readyNotif, nullptr);
+   ASSERT_EQ(readyNotif->action, DBTestUtils::UTCallback::BDMAction_Ready);
+   ASSERT_EQ(readyNotif->topHeight, 5);
+
+   //update the cache via ready notif
+   Bridge::TxIOCache cache;
+   auto readyPush = std::make_shared<Bridge::Notifications::Push::Notif_NewBlock>(
+      bdvObj->getSocketName(), NewBlockNotif{5, UINT32_MAX, {}, {}}, true);
+   auto updateResult = cache.update(bdvObj, readyPush);
+   EXPECT_EQ(updateResult.first, Bridge::TxIOCache::PurgeStatus::NoPurge);
+
+   {
+      //run some sanity checks on cache state
+      auto dbCache = cache.getDBCache();
+      try {
+         auto header = dbCache->getHeader(6);
+         EXPECT_EQ(header->thisHash, TestChain::blkHash5);
+      } catch (const std::out_of_range&) {
+         ASSERT_TRUE(false);
+      }
+
+      try {
+         dbCache->getTxByHash(TestChain::hash50);
+         dbCache->getTxByHash(TestChain::hash51);
+         dbCache->getTxByHash(TestChain::hash52);
+      } catch (const std::out_of_range&) {
+         ASSERT_TRUE(false);
+      }
+   }
+
+   //grab id for our bdv
+   Types::BdvId bdvId;
+   {
+      auto bdvMap = clients->getBdvIds();
+      ASSERT_EQ(bdvMap.size(), 1);
+      bdvId = *bdvMap.begin();
+   }
+
+   //start hijacking bdv packets
+   DBTestUtils::BdvPayloadNinja ninja;
+   auto ninjaThread = std::thread([&ninja, clients, bdvId](){
+      ninja.run(clients, bdvId);
+   });
+
+   //update the cache again, fail the getTxios call
+   std::promise<void> getTxiosProm;
+   auto getTxiosFut = getTxiosProm.get_future();
+   auto failGetTxiosThr = std::thread([&ninja, &getTxiosProm, bdvId](){
+      unsigned msgId = UINT32_MAX;
+      unsigned payloadId = UINT32_MAX;
+      try {
+         auto ninjaedPair = ninja.getWSMsg();
+         auto& wsMsg = ninjaedPair.first;
+         payloadId = ninjaedPair.second;
+         if (!wsMsg.isReady()) {
+            throw std::runtime_error("bad msg");
+         }
+
+         auto reader = wsMsg.getReader();
+         if (reader, nullptr) {
+            throw std::runtime_error("bad reader");
+         }
+
+         auto capnReader = reader->getReader();
+         auto request = capnReader->getRoot<Codec::BDV::Request>();
+         msgId = request.getMsgId();
+
+         if (request.which() != Codec::BDV::Request::Which::BDV) {
+            throw std::runtime_error("wrong request which");
+         }
+         auto bdvReq = request.getBdv();
+         if (bdvReq.which() != Codec::BDV::BdvRequest::Which::GET_TXIOS) {
+            throw std::runtime_error("not a getTxios request");
+         }
+         getTxiosProm.set_value();
+      } catch (const std::runtime_error&) {
+         getTxiosProm.set_exception(std::current_exception());
+      }
+
+      //return failure
+      capnp::MallocMessageBuilder message;
+      auto reply = message.initRoot<Codec::BDV::Reply>();
+      reply.setMsgId(msgId);
+      reply.setSuccess(false);
+      auto flat = capnp::messageToFlatArray(message);
+      auto bytes = flat.asBytes();
+      std::vector<uint8_t> serialized{bytes.begin(), bytes.end()};
+      WebSocketServer::write(bdvId, std::make_unique<Network::WritePayload_Raw>(
+         payloadId, serialized));
+   });
+   auto newBlockPush = std::make_shared<Bridge::Notifications::Push::Notif_NewBlock>(
+      bdvObj->getSocketName(), NewBlockNotif{6, UINT32_MAX, {}, {}}, false);
+   updateResult = cache.update(bdvObj, readyPush);
+   EXPECT_EQ(updateResult.first, Bridge::TxIOCache::PurgeStatus::PurgeAll);
+
+   if (failGetTxiosThr.joinable()) {
+      failGetTxiosThr.join();
+   }
+   try {
+      getTxiosFut.get();
+   } catch (const std::exception&) {
+      ASSERT_TRUE(false);
+   }
+
+   //cleanup
+   WebSocketServer::shutdown();
+   if (ninjaThread.joinable()) {
+      ninjaThread.join();
    }
 }
 
