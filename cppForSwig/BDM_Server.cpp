@@ -689,8 +689,8 @@ BdvClient::~BdvClient()
 void BdvClient::setup()
 {
    running_.store(0, std::memory_order_relaxed);
-   packetProcess_threadLock_.store(0, std::memory_order_relaxed);
-   notificationProcess_threadLock_.store(0, std::memory_order_relaxed);
+   packetProcessSpinLock.store(0, std::memory_order_relaxed);
+   notificationProcessSpinLock_.store(0, std::memory_order_relaxed);
    isReadyFuture_ = isReadyPromise_.get_future();
 
    switch (Config::DBSettings::getServiceType())
@@ -698,12 +698,12 @@ void BdvClient::setup()
       case SERVICE_WEBSOCKET:
       case SERVICE_UNITTEST_WITHWS:
       {
-         pushToClient_ = std::make_unique<PushToWSClient>(getID());
+         pushToClient = std::make_unique<PushToWSClient>(getID());
          break;
       }
 
       case SERVICE_UNITTEST:
-         pushToClient_ = std::make_unique<PushToTestClient>();
+         pushToClient = std::make_unique<PushToTestClient>();
          break;
 
       default:
@@ -733,8 +733,8 @@ void BdvClient::haltThreads()
       //this object is instantiated only while the registration mutex is held
       registrationBatch_->halt();
    }
-   if (pushToClient_ != nullptr) {
-      pushToClient_->shutdown();
+   if (pushToClient != nullptr) {
+      pushToClient->shutdown();
    }
    if (initT_.joinable()) {
       initT_.join();
@@ -808,7 +808,7 @@ void BdvClient::init()
       auto flat = capnp::messageToFlatArray(message);
       auto bytes = flat.asBytes();
       std::vector<uint8_t> replyRaw(bytes.begin(), bytes.end());
-      pushToClient_->push(std::make_unique<Network::WritePayload_Raw>(
+      pushToClient->push(std::make_unique<Network::WritePayload_Raw>(
          WEBSOCKET_CALLBACK_ID, replyRaw));
    };
 
@@ -1119,7 +1119,7 @@ void BdvClient::processNotification(
          return;
    }
 
-   pushToClient_->push(
+   pushToClient->push(
       std::make_unique<Network::WritePayload_Capnp>(
          WEBSOCKET_CALLBACK_ID,
          std::move(message), std::move(firstSegment)));
@@ -1300,6 +1300,16 @@ std::shared_ptr<BdvClient> Clients::get(Types::BdvId id) const
    return BDVs_.get(id);
 }
 
+std::set<Armory::Types::BdvId> Clients::getBdvIds() const
+{
+   std::set<Armory::Types::BdvId> ids;
+   auto bdvMap = BDVs_.get();
+   for (auto& mapEntry : bdvMap) {
+      ids.emplace(mapEntry.first);
+   }
+   return ids;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 void Clients::bdvOuterNotificationLoop()
 {
@@ -1322,7 +1332,7 @@ void Clients::bdvOuterNotificationLoop()
             notifPtr = std::make_shared<BDV_Notification_NodeStatus>(
                nodeStatus);
          }
-         const auto& bdvs = BDVs_.get();
+         auto bdvs = BDVs_.get();
          for (const auto& bdv_pair : bdvs) {
             auto notifPacket = std::make_shared<BDV_Notification_Packet>();
             notifPacket->bdvPtr = bdv_pair.second;
@@ -1359,7 +1369,7 @@ void Clients::bdvInnerNotificationLoop()
 
       auto bdvPtr = notifPtr->bdvPtr;
       unsigned zero = 0;
-      if (!bdvPtr->notificationProcess_threadLock_.compare_exchange_weak(
+      if (!bdvPtr->notificationProcessSpinLock_.compare_exchange_weak(
          zero, 1)) {
          //Failed to grab lock, there's already a thread processing a payload
          //for this bdv. Insert the payload back into the queue. Another 
@@ -1373,7 +1383,7 @@ void Clients::bdvInnerNotificationLoop()
       }
 
       bdvPtr->processNotification(notifPtr->notifPtr);
-      bdvPtr->notificationProcess_threadLock_.store(0);
+      bdvPtr->notificationProcessSpinLock_.store(0);
    }
 }
 
@@ -1407,7 +1417,7 @@ void Clients::shutdown()
    //shutdown maintenance threads
    outerBDVNotifStack_->completed();
    innerBDVNotifStack_.completed();
-   packetQueue_.terminate();
+   payloadQueue_.terminate();
 
    //exit BDM notification handler thread
    bdm_->notificationQueue->terminate();
@@ -1586,7 +1596,7 @@ void Clients::messageParserThread()
    while (true) {
       std::shared_ptr<BDV_Payload> payloadPtr;
       try {
-         payloadPtr = std::move(packetQueue_.pop_front());
+         payloadPtr = std::move(payloadQueue_.pop_front());
       } catch (const Threading::StopBlockingLoop&) {
          break;
       }
@@ -1605,12 +1615,12 @@ void Clients::messageParserThread()
       }
 
       unsigned zero = 0;
-      if (bdvPtr && !bdvPtr->packetProcess_threadLock_.compare_exchange_weak(
+      if (bdvPtr && !bdvPtr->packetProcessSpinLock.compare_exchange_weak(
          zero, 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
          //Failed to grab lock, there's already a thread processing a payload
          //for this bdv. Insert the payload back into the queue. Another
          //thread will eventually pick it up and successfully grab the lock
-         packetQueue_.push_back(std::move(payloadPtr));
+         payloadQueue_.push_back(std::move(payloadPtr));
          continue;
       }
 
@@ -1637,20 +1647,20 @@ void Clients::messageParserThread()
 
             This is done because we don't want one bdv to hog a thread
             constantly if it has a lot of queued up messages. It should
-            complete for a thread like all other bdv objects, regardless
+            compete for a thread like all other bdv objects, regardless
             of its message queue depth.
             */
             auto flagPacket = std::make_shared<BDV_Payload>(
                BinaryData{}, bdvPtr, payloadPtr->getBdvID(),
                payloadPtr->getPubkey());
-            packetQueue_.push_back(std::move(flagPacket));
+            payloadQueue_.push_back(std::move(flagPacket));
          }
       }
       //release the locks
       lock.unlock();
-      bdvPtr->packetProcess_threadLock_.store(0);
+      bdvPtr->packetProcessSpinLock.store(0);
 
-      //write return value if any
+      //write back the reply if any
       if (result != nullptr) {
          WebSocketServer::write(
             payloadPtr->getBdvID(),
@@ -1788,9 +1798,18 @@ void Clients::broadcastThroughRPC()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+std::shared_ptr<BDV_Payload> Clients::snoopOnPayloadQueue()
+{
+   if (Config::DBSettings::getServiceType() == SERVICE_UNITTEST_WITHWS) {
+      //only allowed in unit tests
+      return payloadQueue_.pop_front();
+   }
+   throw std::runtime_error("not allowed outside of tests");
+}
+
 void Clients::queuePayload(std::shared_ptr<BDV_Payload>& payload)
 {
-   packetQueue_.push_back(std::move(payload));
+   payloadQueue_.push_back(std::move(payload));
 }
 
 ////////

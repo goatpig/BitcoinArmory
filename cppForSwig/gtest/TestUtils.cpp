@@ -557,7 +557,7 @@ namespace DBTestUtils
       };
 
       auto bdv_obj = clients->get(bdvId);
-      auto cbPtr = bdv_obj->pushToClient_.get();
+      auto cbPtr = bdv_obj->pushToClient.get();
       auto unittest_cbptr = dynamic_cast<PushToTestClient*>(cbPtr);
       if (unittest_cbptr == nullptr) {
          throw std::runtime_error("unexpected callback ptr type");
@@ -609,9 +609,10 @@ namespace DBTestUtils
    /////////////////////////////////////////////////////////////////////////////
    // UTCallback
    void UTCallback::pushReady(const SocketName&,
-      const NewBlockNotif&) const
+      const NewBlockNotif& newBlockNotif) const
    {
       auto notif = std::make_unique<BdmNotif>(BDMAction_Ready);
+      notif->topHeight = newBlockNotif.getHeight();
       actionStack_.push_back(std::move(notif));
    }
 
@@ -619,6 +620,7 @@ namespace DBTestUtils
       const NewBlockNotif& newBlockNotif) const
    {
       auto notif = std::make_unique<BdmNotif>(BDMAction_NewBlock);
+      notif->topHeight = newBlockNotif.getHeight();
       notif->reorgHeight = newBlockNotif.isReorg() ?
          newBlockNotif.getBranchHeight() : UINT32_MAX;
       actionStack_.push_back(std::move(notif));
@@ -1043,5 +1045,37 @@ namespace DBTestUtils
       bdv->getTxsByHash({hash}, lbd);
       auto result = fut.get();
       return result.at(hash);
+   }
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// DBTestUtils::BdvPayloadNinja
+void DBTestUtils::BdvPayloadNinja::run(
+   std::shared_ptr<Clients> clients, Types::BdvId bdvId)
+{
+   auto bdvPtr = clients->get(bdvId);
+   unsigned zero = 0;
+   while (!bdvPtr->packetProcessSpinLock.compare_exchange_weak(
+      zero, 1, std::memory_order_relaxed, std::memory_order_relaxed))
+   {
+      //spin the lock until we own it
+      zero = 0;
+   }
+
+   //we now hold the bdv packet processing spin lock, we can pop from the
+   //clients packet queue and isolate those for our bdv
+   while (true) {
+      std::shared_ptr<BDV_Payload> payload;
+      try {
+         payload = clients->snoopOnPayloadQueue();
+      } catch (const Threading::StopBlockingLoop&) {
+         return;
+      }
+
+      if (payload->getBdvID() != bdvId) {
+         clients->queuePayload(payload);
+      } else {
+         payloadQueue.push_back(std::move(payload));
+      }
    }
 }

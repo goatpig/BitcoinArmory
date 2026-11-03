@@ -2610,12 +2610,16 @@ protected:
       nodePtr->setBDM(theBDMt_->bdm());
    }
 
-   void startWSServer()
+   void startWSServer(std::shared_ptr<Clients> clientsPtr)
    {
-      wsServerThr_ = std::thread([bdm=theBDMt_->bdm()](){
-         auto clients = std::make_shared<Clients>(bdm);
-         WebSocketServer::start(clients);
-      });
+      wsServerThr_ = std::thread([bdm=theBDMt_->bdm()]
+         (std::shared_ptr<Clients> clientsPtr){
+            if (clientsPtr == nullptr) {
+               clientsPtr = std::make_shared<Clients>(bdm);
+            }
+            WebSocketServer::start(clientsPtr);
+         }, clientsPtr
+      );
 
       //arbitrary wait to give time to WS server to startup
       std::this_thread::sleep_for(100ms);
@@ -2726,7 +2730,7 @@ TEST_F(BlockUtilsBareWithServer, ShutdownWithPendingClient)
    TestUtils::setBlocks({ "0", "1" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   startWSServer();
+   startWSServer(nullptr);
 
    std::vector<BinaryData> scrAddrVec {
       TestChain::scrAddrA,
@@ -2767,7 +2771,12 @@ TEST_F(BlockUtilsBareWithServer, WSClientCleanup)
    //start the WS server
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   startWSServer();
+   auto clients = std::make_shared<Clients>(theBDMt_->bdm());
+   startWSServer(clients);
+
+   //start bdm
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
 
    //connect to server
    auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
@@ -2777,15 +2786,32 @@ TEST_F(BlockUtilsBareWithServer, WSClientCleanup)
          homedir_ / CLIENT_AUTH_PEER_FILENAME, authPeersPassLbd_}),
       true, //public server
       pCallback);
+
    bdvObj->connectToRemote();
-   const auto& socketName = bdvObj->getSocketName();
+   bdvObj->registerWithDB(Config::BitcoinSettings::getMagicBytes().toHexStr());
+   bdvObj->goOnline();
+   auto readyNotif = pCallback->waitOnNotification(
+      DBTestUtils::UTCallback::BDMAction_Ready);
+   ASSERT_NE(readyNotif, nullptr);
+   ASSERT_EQ(readyNotif->action, DBTestUtils::UTCallback::BDMAction_Ready);
+   ASSERT_EQ(readyNotif->topHeight, 5);
+
+   //grab id for our bdv
+   Types::BdvId bdvId;
+   {
+      auto bdvMap = clients->getBdvIds();
+      ASSERT_EQ(bdvMap.size(), 1);
+      bdvId = *bdvMap.begin();
+   }
+
+   DBTestUtils::BdvPayloadNinja ninja;
+   auto ninjaThread = std::thread([&ninja, clients, bdvId](){
+      ninja.run(clients, bdvId);
+   });
 
    /*
-   Push a few requests without registering the bdv.
-   Without registeration, all requests are treated as "statics", which
-   will fail to deser because of capnp mismatch, therefor server will
-   ignore them, and they will never receive a reply.
-   This is a trick, something more robust will be introduced shortly.
+   The payload ninja diverts all payloads for our BDV to its own queue.
+   We elect to process none of these payload, leaving them hanging forever
    */
    using TimePoint = std::chrono::time_point<std::chrono::system_clock>;
    std::promise<std::pair<bool, TimePoint>> prom1, prom2, prom3, prom4;
@@ -2794,6 +2820,7 @@ TEST_F(BlockUtilsBareWithServer, WSClientCleanup)
    auto fut3 = prom3.get_future();
    auto fut4 = prom4.get_future();
 
+   const auto& socketName = bdvObj->getSocketName();
    bdvObj->getTxsByHash({READHEX("abcd"), READHEX("ef01")},
       [&prom1, socketName](ReturnMessage<AsyncClient::TxBatchResult> result){
          try {
@@ -2836,7 +2863,7 @@ TEST_F(BlockUtilsBareWithServer, WSClientCleanup)
             std::chrono::system_clock::now()});
       });
 
-   //none of the requests should fulfilled yet
+   //none of the requests should be fulfilled yet
    ASSERT_EQ(fut1.wait_for(0s), std::future_status::timeout);
    ASSERT_EQ(fut2.wait_for(0s), std::future_status::timeout);
    ASSERT_EQ(fut3.wait_for(0s), std::future_status::timeout);
@@ -2844,7 +2871,7 @@ TEST_F(BlockUtilsBareWithServer, WSClientCleanup)
    //squeeze in a wait for the good measure
    std::this_thread::sleep_for(3s);
 
-   //still no request should fulfilled yet
+   //still no request should be fulfilled yet
    ASSERT_EQ(fut1.wait_for(0s), std::future_status::timeout);
    ASSERT_EQ(fut2.wait_for(0s), std::future_status::timeout);
    ASSERT_EQ(fut3.wait_for(0s), std::future_status::timeout);
@@ -2891,6 +2918,9 @@ TEST_F(BlockUtilsBareWithServer, WSClientCleanup)
    //join on the server cleanup before exiting
    if (wsServerThr_.joinable()) {
       wsServerThr_.join();
+   }
+   if (ninjaThread.joinable()) {
+      ninjaThread.join();
    }
 }
 

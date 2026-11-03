@@ -178,6 +178,7 @@ namespace DBTestUtils
    /////////////////////////////////////////////////////////////////////////////
    class UTCallback : public ServerPushHandler
    {
+   public:
       enum BDMAction
       {
          BDMAction_Ready=1,
@@ -197,6 +198,7 @@ namespace DBTestUtils
          const BDMAction action;
          std::set<std::string> idSet;
          std::vector<TxIOPair> txios;
+         unsigned topHeight = UINT32_MAX;
          unsigned reorgHeight = UINT32_MAX;
          std::unique_ptr<BdvError> error;
       };
@@ -344,6 +346,20 @@ namespace DBTestUtils
             }
          }
       }
+   };
+
+   /////////////////////////////////////////////////////////////////////////////
+   struct BdvPayloadNinja
+   {
+      /*
+      Target one bdv by id out of a Clients object and funnel all of its
+      packets into a local queue
+      */
+      Armory::Threading::BlockingQueue<std::shared_ptr<BDV_Payload>> payloadQueue;
+
+      void run(std::shared_ptr<Clients>, Armory::Types::BdvId);
+      std::shared_ptr<BDV_Payload> getPayload(void);
+      void passPayloadToRegularParser(std::shared_ptr<BDV_Payload>);
    };
 }
 
