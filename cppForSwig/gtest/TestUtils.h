@@ -61,6 +61,7 @@ namespace Armory
    namespace Network
    {
       class WebSocketMessagePartial;
+      class CapnpReader;
    }
 };
 
@@ -354,19 +355,27 @@ namespace DBTestUtils
    };
 
    /////////////////////////////////////////////////////////////////////////////
-   struct BdvPayloadNinja
+   class BdvPayloadNinja
    {
       /*
       Target one bdv by id out of a Clients object and funnel all of its
       packets into a local queue
       */
-      Armory::Threading::BlockingQueue<std::shared_ptr<BDV_Payload>> payloadQueue;
-      std::shared_ptr<Clients> clients;
-      Armory::Types::BdvId bdvId;
 
-      void run(std::shared_ptr<Clients>, Armory::Types::BdvId);
-      std::pair<Armory::Network::WebSocketMessagePartial, uint32_t> getWSMsg(void);
-      void passPayloadToRegularParser(std::shared_ptr<BDV_Payload>);
+   private:
+      const std::shared_ptr<Clients> clients_;
+      const Armory::Types::BdvId bdvId_;
+
+      std::vector<std::pair<uint32_t, std::unique_ptr<Armory::Network::CapnpReader>>> payouts_;
+      Armory::Threading::BlockingQueue<std::shared_ptr<BDV_Payload>> payloadQueue_;
+
+   public:
+      BdvPayloadNinja(std::shared_ptr<Clients>, Armory::Types::BdvId);
+
+      void startPayloadCapture(void);
+      std::pair<uint32_t, std::unique_ptr<capnp::MessageReader>> getRequestReader(void);
+      void failMessage(uint32_t);
+      void passMessageToBDM(uint32_t);
    };
 }
 

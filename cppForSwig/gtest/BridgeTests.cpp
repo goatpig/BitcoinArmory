@@ -198,6 +198,31 @@ namespace {
       return result;
    }
 
+   ////////
+   bool checkBDVRequestType(
+      const Codec::BDV::Request::Reader& reader,
+      Codec::BDV::BdvRequest::Which which)
+   {
+      if (reader.which() != Codec::BDV::Request::Which::BDV) {
+         return false;
+      }
+      auto bdvReq = reader.getBdv();
+      if (bdvReq.which() != which) {
+      }
+      return bdvReq.which() == which;
+   }
+
+   bool checkStaticRequestType(
+      const Codec::BDV::Request::Reader& reader,
+      Codec::BDV::StaticRequest::Which which)
+   {
+      if (reader.which() != Codec::BDV::Request::Which::STATIC) {
+         return false;
+      }
+      auto staticReq = reader.getStatic();
+      return staticReq.which() == which;
+   }
+
    /////////////////////////////////////////////////////////////////////////////
    // bridge client side mocked comms layer
    struct NotifQueue
@@ -8366,6 +8391,7 @@ TEST_F(TxIOCacheTests, PurgeStates)
          ASSERT_TRUE(false);
       }
    }
+   //std::this_thread::sleep_for(1s);
 
    //grab id for our bdv
    Types::BdvId bdvId;
@@ -8376,60 +8402,37 @@ TEST_F(TxIOCacheTests, PurgeStates)
    }
 
    //start hijacking bdv packets
-   DBTestUtils::BdvPayloadNinja ninja;
-   auto ninjaThread = std::thread([&ninja, clients, bdvId](){
-      ninja.run(clients, bdvId);
+   DBTestUtils::BdvPayloadNinja ninja{clients, bdvId};
+   auto ninjaThread = std::thread([&ninja](){
+      ninja.startPayloadCapture();
    });
 
-   //update the cache again, fail the getTxios call
+   /** fail at getTxios **/
    std::promise<void> getTxiosProm;
    auto getTxiosFut = getTxiosProm.get_future();
    auto failGetTxiosThr = std::thread([&ninja, &getTxiosProm, bdvId](){
-      unsigned msgId = UINT32_MAX;
-      unsigned payloadId = UINT32_MAX;
+      uint32_t messageIdToFail;
       try {
-         auto ninjaedPair = ninja.getWSMsg();
-         auto& wsMsg = ninjaedPair.first;
-         payloadId = ninjaedPair.second;
-         if (!wsMsg.isReady()) {
-            throw std::runtime_error("bad msg");
-         }
-
-         auto reader = wsMsg.getReader();
-         if (reader, nullptr) {
+         auto reader = ninja.getRequestReader();
+         messageIdToFail = reader.first;
+         if (reader.second == nullptr) {
             throw std::runtime_error("bad reader");
          }
-
-         auto capnReader = reader->getReader();
-         auto request = capnReader->getRoot<Codec::BDV::Request>();
-         msgId = request.getMsgId();
-
-         if (request.which() != Codec::BDV::Request::Which::BDV) {
-            throw std::runtime_error("wrong request which");
-         }
-         auto bdvReq = request.getBdv();
-         if (bdvReq.which() != Codec::BDV::BdvRequest::Which::GET_TXIOS) {
-            throw std::runtime_error("not a getTxios request");
+         auto request = reader.second->getRoot<Codec::BDV::Request>();
+         if (!checkBDVRequestType(request, Codec::BDV::BdvRequest::Which::GET_TXIOS)) {
+            throw std::runtime_error("expected getTxios request");
          }
          getTxiosProm.set_value();
       } catch (const std::runtime_error&) {
          getTxiosProm.set_exception(std::current_exception());
       }
 
-      //return failure
-      capnp::MallocMessageBuilder message;
-      auto reply = message.initRoot<Codec::BDV::Reply>();
-      reply.setMsgId(msgId);
-      reply.setSuccess(false);
-      auto flat = capnp::messageToFlatArray(message);
-      auto bytes = flat.asBytes();
-      std::vector<uint8_t> serialized{bytes.begin(), bytes.end()};
-      WebSocketServer::write(bdvId, std::make_unique<Network::WritePayload_Raw>(
-         payloadId, serialized));
+      //fail getTxios request
+      ninja.failMessage(messageIdToFail);
    });
    auto newBlockPush = std::make_shared<Bridge::Notifications::Push::Notif_NewBlock>(
       bdvObj->getSocketName(), NewBlockNotif{6, UINT32_MAX, {}, {}}, false);
-   updateResult = cache.update(bdvObj, readyPush);
+   updateResult = cache.update(bdvObj, newBlockPush);
    EXPECT_EQ(updateResult.first, Bridge::TxIOCache::PurgeStatus::PurgeAll);
 
    if (failGetTxiosThr.joinable()) {
@@ -8437,6 +8440,170 @@ TEST_F(TxIOCacheTests, PurgeStates)
    }
    try {
       getTxiosFut.get();
+   } catch (const std::exception& e) {
+      std::cout << e.what() << std::endl;
+      ASSERT_TRUE(false);
+   }
+
+   /** fail at getTxs **/
+   std::promise<void> getTxsProm;
+   auto getTxsFut = getTxsProm.get_future();
+   auto failGetTxsThr = std::thread([&ninja, &getTxsProm, bdvId](){
+      uint32_t messageIdToFail;
+      try {
+         //grab intercepted getTxios request
+         auto reader = ninja.getRequestReader();
+         if (reader.second == nullptr) {
+            throw std::runtime_error("bad reader");
+         }
+         auto request = reader.second->getRoot<Codec::BDV::Request>();
+         if (!checkBDVRequestType(request, Codec::BDV::BdvRequest::Which::GET_TXIOS)) {
+            throw std::runtime_error("expected getTxios request");
+         }
+
+         //let db reply to getTxios request
+         ninja.passMessageToBDM(reader.first);
+
+         //grab next 2 intercepted requests
+         std::vector<std::pair<uint32_t, std::unique_ptr<capnp::MessageReader>>> readers;
+         readers.emplace_back(ninja.getRequestReader());
+         readers.emplace_back(ninja.getRequestReader());
+
+         for (unsigned i=0; i<2; i++) {
+            auto& reader = readers[i];
+            if (reader.second == nullptr) {
+               throw std::runtime_error("bad reader");
+            }
+            auto request = reader.second->getRoot<Codec::BDV::Request>();
+            if (checkBDVRequestType(request, Codec::BDV::BdvRequest::Which::GET_TXS_BY_KEY)) {
+               messageIdToFail = reader.first;
+            } else if (checkStaticRequestType(request, Codec::BDV::StaticRequest::Which::GET_HEADERS_BY_ID)) {
+               ninja.passMessageToBDM(reader.first);
+            } else {
+               throw std::runtime_error("expected getTxsByKey or getHeaders request");
+            }
+         }
+
+         getTxsProm.set_value();
+      } catch (const std::runtime_error& e) {
+         std::cout << "blow up at getTxs: " << e.what() << std::endl;
+         getTxsProm.set_exception(std::current_exception());
+      }
+
+      //fail getTxs request
+      ninja.failMessage(messageIdToFail);
+   });
+   newBlockPush = std::make_shared<Bridge::Notifications::Push::Notif_NewBlock>(
+      bdvObj->getSocketName(), NewBlockNotif{7, UINT32_MAX, {}, {}}, false);
+   updateResult = cache.update(bdvObj, newBlockPush);
+   EXPECT_EQ(updateResult.first, Bridge::TxIOCache::PurgeStatus::PurgeAll);
+
+   if (failGetTxsThr.joinable()) {
+      failGetTxsThr.join();
+   }
+   try {
+      getTxsFut.get();
+   } catch (const std::exception&) {
+      ASSERT_TRUE(false);
+   }
+
+   /**  fail at getHeaders **/
+   std::promise<void> getHeadersProm;
+   auto getHeadersFut = getHeadersProm.get_future();
+   auto failGetHeadersThr = std::thread([&ninja, &getHeadersProm, bdvId](){
+      uint32_t messageIdToFail;
+      try {
+         //grab intercepted getTxios request
+         auto reader = ninja.getRequestReader();
+         if (reader.second == nullptr) {
+            throw std::runtime_error("bad reader");
+         }
+         auto request = reader.second->getRoot<Codec::BDV::Request>();
+         if (!checkBDVRequestType(request, Codec::BDV::BdvRequest::Which::GET_TXIOS)) {
+            throw std::runtime_error("expected getTxios request");
+         }
+
+         //let db reply to getTxios request
+         ninja.passMessageToBDM(reader.first);
+
+         //grab next 2 intercepted requests
+         std::vector<std::pair<uint32_t, std::unique_ptr<capnp::MessageReader>>> readers;
+         readers.emplace_back(ninja.getRequestReader());
+         readers.emplace_back(ninja.getRequestReader());
+
+         for (unsigned i=0; i<2; i++) {
+            auto& reader = readers[i];
+            if (reader.second == nullptr) {
+               throw std::runtime_error("bad reader");
+            }
+            auto request = reader.second->getRoot<Codec::BDV::Request>();
+            if (checkBDVRequestType(request, Codec::BDV::BdvRequest::Which::GET_TXS_BY_KEY)) {
+               ninja.passMessageToBDM(reader.first);
+            } else if (checkStaticRequestType(request, Codec::BDV::StaticRequest::Which::GET_HEADERS_BY_ID)) {
+               messageIdToFail = reader.first;
+            } else {
+               throw std::runtime_error("expected getTxsByKey or getHeaders request");
+            }
+         }
+
+         getHeadersProm.set_value();
+      } catch (const std::runtime_error& e) {
+         std::cout << "blow up at getHeaders: " << e.what() << std::endl;
+         getHeadersProm.set_exception(std::current_exception());
+      }
+
+      //fail getHeaders request
+      ninja.failMessage(messageIdToFail);
+   });
+   newBlockPush = std::make_shared<Bridge::Notifications::Push::Notif_NewBlock>(
+      bdvObj->getSocketName(), NewBlockNotif{7, UINT32_MAX, {}, {}}, false);
+   updateResult = cache.update(bdvObj, newBlockPush);
+   EXPECT_EQ(updateResult.first, Bridge::TxIOCache::PurgeStatus::PurgeAll);
+
+   if (failGetHeadersThr.joinable()) {
+      failGetHeadersThr.join();
+   }
+   try {
+      getHeadersFut.get();
+   } catch (const std::exception&) {
+      ASSERT_TRUE(false);
+   }
+
+   /**  fail at updateZC **/
+   std::promise<void> updateZcProm;
+   auto updateZcFut = updateZcProm.get_future();
+   auto failUpdateZcThr = std::thread([&ninja, &updateZcProm, bdvId](){
+      uint32_t messageIdToFail;
+      try {
+         auto reader = ninja.getRequestReader();
+         messageIdToFail = reader.first;
+         if (reader.second == nullptr) {
+            throw std::runtime_error("bad reader");
+         }
+         auto request = reader.second->getRoot<Codec::BDV::Request>();
+         if (!checkBDVRequestType(request, Codec::BDV::BdvRequest::Which::GET_TXS_BY_KEY)) {
+            throw std::runtime_error("expected getTxsByKey request");
+         }
+         updateZcProm.set_value();
+      } catch (const std::runtime_error& e) {
+         std::cout << "blow up at updateZc: " << e.what() << std::endl;
+         updateZcProm.set_exception(std::current_exception());
+      }
+
+      //fail getTxsByKey request
+      ninja.failMessage(messageIdToFail);
+   });
+   auto zcPush = std::make_shared<Bridge::Notifications::Push::Notif_ZC>(
+      bdvObj->getSocketName(), std::string{},
+      std::vector<TxIOPair>{}, std::set<BinaryData>{});
+   updateResult = cache.update(bdvObj, zcPush);
+   EXPECT_EQ(updateResult.first, Bridge::TxIOCache::PurgeStatus::PurgeZC);
+
+   if (failUpdateZcThr.joinable()) {
+      failUpdateZcThr.join();
+   }
+   try {
+      updateZcFut.get();
    } catch (const std::exception&) {
       ASSERT_TRUE(false);
    }

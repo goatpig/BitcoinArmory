@@ -2804,9 +2804,9 @@ TEST_F(BlockUtilsBareWithServer, WSClientCleanup)
       bdvId = *bdvMap.begin();
    }
 
-   DBTestUtils::BdvPayloadNinja ninja;
-   auto ninjaThread = std::thread([&ninja, clients, bdvId](){
-      ninja.run(clients, bdvId);
+   DBTestUtils::BdvPayloadNinja ninja{clients, bdvId};
+   auto ninjaThread = std::thread([&ninja](){
+      ninja.startPayloadCapture();
    });
 
    /*

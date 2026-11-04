@@ -616,7 +616,6 @@ namespace {
          }
 
          default:
-            std::cout << "request.which(): " << request.which() << std::endl;
             reply.setError("invalid static request");
             reply.setSuccess(false);
       }
@@ -1159,19 +1158,19 @@ void BdvClient::flagRefresh(BDV_refresh refresh,
 
 ////////////////////////////////////////////////////////////////////////////////
 Network::WebSocketMessagePartial BdvClient::preparePayload(
-   std::shared_ptr<BDV_Payload> packet)
+   std::shared_ptr<BDV_Payload> payload)
 {
    /*
    Only ever one thread gets this far at any given time, therefor none of the
    underlying objects need to be thread safe
    */
 
-   if (packet == nullptr) {
-      LOGWARN << "null packet";
+   if (payload == nullptr) {
+      LOGWARN << "null payload";
       return {};
    }
 
-   auto msgId = packet->getMessageID();
+   auto msgId = payload->getMessageID();
    if (msgId != UINT32_MAX) {
       //get the PartialMessage object for this id
       auto msgIter = messageMap_.find(msgId);
@@ -1183,12 +1182,12 @@ Network::WebSocketMessagePartial BdvClient::preparePayload(
       auto& msgRef = msgIter->second;
 
       //try to reconstruct the message
-      auto packetData = packet->moveData();
-      auto parsed = msgRef.parsePacket(packetData);
+      auto payloadData = payload->moveData();
+      auto parsed = msgRef.parsePacket(payloadData);
       if (!parsed) {
          //failed to reconstruct from this packet, this
          //shouldn't happen anymore
-         LOGWARN << "failed to parse packet, reinjecting. " <<
+         LOGWARN << "failed to parse payload, reinjecting. " <<
             "!This shouldn't happen anymore!";
          return {};
       }

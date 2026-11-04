@@ -11,12 +11,13 @@
 #include <Utils/BIP15x_Handshake.h>
 #include <Utils/FileUtils.h>
 #include <Wallets/Accounts/AddressAccounts.h>
-#include <Ledgers/LedgerEntry.h>
 #include <BDM_mainthread.h>
 #include <BlockchainDatabase/BlockchainData.h>
 #include <BlockchainDatabase/BlockDataMap.h>
+#include <Network/WebSocketMessage.h>
 #include <ZeroConf/Parser.h>
 #include <ZeroConf/Utils.h>
+#include <Server.h>
 
 using namespace Armory;
 using namespace Armory::Assets;
@@ -755,7 +756,6 @@ namespace DBTestUtils
 
       auto zcNotif = notifList[index];
       if (zcNotif.which() != Codec::BDV::Notification::ZC) {
-         std::cout << "invalid result vector size in waitOnNewZcSignal" << std::endl;
          throw std::runtime_error("");
       }
 
@@ -795,7 +795,6 @@ namespace DBTestUtils
          auto notifList = notifs.getNotifs();
          auto notif = notifList[get<1>(result)];
          if (notif.which() != Codec::BDV::Notification::REFRESH) {
-            std::cout << "invalid result vector size in waitOnWalletRefresh" << std::endl;
             throw std::runtime_error("");
          }
 
@@ -1050,12 +1049,14 @@ namespace DBTestUtils
 
 /////////////////////////////////////////////////////////////////////////////
 // DBTestUtils::BdvPayloadNinja
-void DBTestUtils::BdvPayloadNinja::run(
-   std::shared_ptr<Clients> clts, Types::BdvId id)
+DBTestUtils::BdvPayloadNinja::BdvPayloadNinja(
+   std::shared_ptr<Clients> clients, Types::BdvId id) :
+   clients_{clients}, bdvId_{id}
+{}
+
+void DBTestUtils::BdvPayloadNinja::startPayloadCapture()
 {
-   clients = clts;
-   bdvId = id;
-   auto bdvPtr = clients->get(bdvId);
+   auto bdvPtr = clients_->get(bdvId_);
    unsigned zero = 0;
    while (!bdvPtr->packetProcessSpinLock.compare_exchange_weak(
       zero, 1, std::memory_order_relaxed, std::memory_order_relaxed))
@@ -1069,33 +1070,98 @@ void DBTestUtils::BdvPayloadNinja::run(
    while (true) {
       std::shared_ptr<BDV_Payload> payload;
       try {
-         payload = clients->snoopOnPayloadQueue();
+         payload = clients_->snoopOnPayloadQueue();
       } catch (const Threading::StopBlockingLoop&) {
          return;
       }
 
-      if (payload->getBdvID() != bdvId) {
-         clients->queuePayload(payload);
+      if (payload->getBdvID() != bdvId_) {
+         clients_->queuePayload(payload);
       } else {
-         payloadQueue.push_back(std::move(payload));
+         payloadQueue_.push_back(std::move(payload));
       }
    }
-   payloadQueue.terminate();
+   payloadQueue_.terminate();
 }
 
-std::pair<Network::WebSocketMessagePartial, uint32_t> DBTestUtils::BdvPayloadNinja::getWSMsg()
+std::pair<uint32_t, std::unique_ptr<capnp::MessageReader>> DBTestUtils::BdvPayloadNinja::getRequestReader()
 {
    while (true) {
       try {
-         auto payload = payloadQueue.pop_front();
-         auto bdvPtr = clients->get(bdvId);
+         auto payload = payloadQueue_.pop_front();
+         auto bdvPtr = clients_->get(bdvId_);
          auto wsMsg = bdvPtr->preparePayload(payload);
          if (!wsMsg.isReady()) {
             continue;
          }
-         return { wsMsg, payload->getMessageID() };
+         auto payoutId = payload->getMessageID();
+         auto reader = wsMsg.getReader();
+         if (reader == nullptr) {
+            throw std::runtime_error("fatal message reader error");
+         }
+         payouts_.emplace_back(std::make_pair(payoutId, std::move(reader)));
+         return { payouts_.size() - 1, payouts_.back().second->getReader() };
       } catch (const Threading::StopBlockingLoop&) {
-         return { {}, UINT32_MAX };
+         return { UINT32_MAX, nullptr };
       }
    }
+}
+
+void DBTestUtils::BdvPayloadNinja::failMessage(uint32_t id)
+{
+   if (id >= payouts_.size()) {
+      throw std::runtime_error("no known message for this id");
+   }
+   auto& msgPair = payouts_[id];
+   if (msgPair.second == nullptr) {
+      throw std::runtime_error("nullptr msg");
+   }
+   auto reader = std::move(msgPair.second);
+
+   auto capnReader = reader->getReader();
+   auto request = capnReader->getRoot<Codec::BDV::Request>();
+   auto msgId = request.getMsgId();
+
+   capnp::MallocMessageBuilder message;
+   auto reply = message.initRoot<Codec::BDV::Reply>();
+   reply.setMsgId(msgId);
+   reply.setSuccess(false);
+   auto flat = capnp::messageToFlatArray(message);
+   auto bytes = flat.asBytes();
+   std::vector<uint8_t> serialized{bytes.begin(), bytes.end()};
+   WebSocketServer::write(bdvId_, std::make_unique<Network::WritePayload_Raw>(
+      msgPair.first, serialized));
+}
+
+void DBTestUtils::BdvPayloadNinja::passMessageToBDM(uint32_t id)
+{
+   /*
+   We have to repackage the capn payload to feed it back to ArmoryDB
+   We're expecting simple requests which are fed to a flat reader.
+   Fragmented reader is easy support, but segmented reader will need
+   more work.
+   */
+
+   if (id >= payouts_.size()) {
+      throw std::runtime_error("no known message for this id");
+   }
+   auto& msgPair = payouts_[id];
+   if (msgPair.second == nullptr) {
+      throw std::runtime_error("nullptr msg");
+   }
+
+   auto readerFlat = dynamic_cast<Network::CapnpFlatReader*>(
+      msgPair.second.get());
+   if (readerFlat == nullptr) {
+      throw std::runtime_error("execpted a flat reader");
+   }
+
+   auto bdvPtr = clients_->get(bdvId_);
+   auto payload = std::make_shared<BDV_Payload>(
+      readerFlat->getRawData(), bdvPtr, bdvId_, BinaryDataRef{});
+   auto reply = clients_->processCommand(payload);
+   WebSocketServer::write(bdvId_, std::move(reply));
+
+   //clear the payload
+   msgPair.second.reset();
 }

@@ -574,7 +574,7 @@ void BlockDataViewer::getTxsByKey(const std::set<Types::TxKey>& txkeys,
                   "expected GetTxByHash reply", WRONG_REPLY_TYPE);
             }
 
-            //convert to utxo vector and fire callback
+            //convert to tx vector and fire callback
             auto txns = bdvReply.getGetTxsByKey();
             auto result = capnToTxVec(txns);
             callback(ReturnMessage<std::vector<Tx>>(result));
