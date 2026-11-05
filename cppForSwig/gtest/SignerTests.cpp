@@ -26,6 +26,7 @@
 #include <Wallets/Accounts/AccountTypes.h>
 #include <Wallets/Accounts/AddressAccounts.h>
 #include <Signer/ScriptSpender.h>
+#include <Signer/PSBT.h>
 #include <BDM_mainthread.h>
 #include <CoinSelection.h>
 
@@ -9170,6 +9171,152 @@ TEST_F(ExtrasTest, BitcoinMessage)
       EXPECT_TRUE(Signing::verifyMessageSignature(
          msgBD, addr->getPrefixedHash(), sigDecodeBD));
    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+// The utxo scripts of a PSBT reach the script interpreter: loading the PSBT
+// resolves them (ScriptSpender::fromPSBT) and the signed state the GUI asks
+// the bridge for runs them (getSignedStateForInput ->
+// Signer::evaluateSignedState -> Signer::verify). The scripts below are
+// malformed, the PSBT has to load and evaluate as not signed.
+class MalformedScriptTest : public ExtrasTest
+{
+protected:
+   //a PSBT spending a witness utxo of 100000 sats locked by utxoScript, to
+   //one P2WPKH output (or no output). finalScriptSig, when not empty, is
+   //the input's final scriptSig, so that evaluateSignedState runs the
+   //scripts
+   static BinaryData makePSBT(const BinaryData& utxoScript,
+      const BinaryData& finalScriptSig, bool withOutput = true)
+   {
+      BinaryWriter unsignedTx;
+      unsignedTx.put_uint32_t(2);
+      unsignedTx.put_var_int(1);
+      unsignedTx.put_BinaryData(READHEX(
+         "1111111111111111111111111111111111111111111111111111111111111111"));
+      unsignedTx.put_uint32_t(0);
+      unsignedTx.put_var_int(0);
+      unsignedTx.put_uint32_t(UINT32_MAX);
+      if (withOutput) {
+         auto outputScript = READHEX(
+            "00145555555555555555555555555555555555555555");
+         unsignedTx.put_var_int(1);
+         unsignedTx.put_uint64_t(1000);
+         unsignedTx.put_var_int(outputScript.getSize());
+         unsignedTx.put_BinaryData(outputScript);
+      } else {
+         unsignedTx.put_var_int(0);
+      }
+      unsignedTx.put_uint32_t(0);
+
+      BinaryWriter witnessUtxo;
+      witnessUtxo.put_uint64_t(100000);
+      witnessUtxo.put_var_int(utxoScript.getSize());
+      witnessUtxo.put_BinaryData(utxoScript);
+
+      BinaryWriter psbt;
+      psbt.put_BinaryData(READHEX("70736274ff"));
+
+      //globals
+      psbt.put_var_int(1);
+      psbt.put_uint8_t(PSBT::ENUM_GLOBAL::PSBT_GLOBAL_UNSIGNED_TX);
+      psbt.put_var_int(unsignedTx.getSize());
+      psbt.put_BinaryData(unsignedTx.getData());
+      psbt.put_uint8_t(0);
+
+      //input
+      psbt.put_var_int(1);
+      psbt.put_uint8_t(PSBT::ENUM_INPUT::PSBT_IN_WITNESS_UTXO);
+      psbt.put_var_int(witnessUtxo.getSize());
+      psbt.put_BinaryData(witnessUtxo.getData());
+      if (!finalScriptSig.empty()) {
+         psbt.put_var_int(1);
+         psbt.put_uint8_t(PSBT::ENUM_INPUT::PSBT_IN_FINAL_SCRIPTSIG);
+         psbt.put_var_int(finalScriptSig.getSize());
+         psbt.put_BinaryData(finalScriptSig);
+      }
+      psbt.put_uint8_t(0);
+
+      //output
+      if (withOutput) {
+         psbt.put_uint8_t(0);
+      }
+      return psbt.getData();
+   }
+
+   //loads the PSBT and evaluates its signed state
+   static void checkNotSigned(const BinaryData& psbt)
+   {
+      auto signer = Signer::fromPSBT(psbt.getRef());
+      ASSERT_EQ(signer.getTxInCount(), 1U);
+
+      auto evalState = signer.evaluateSignedState();
+      EXPECT_FALSE(evalState.isValid());
+      EXPECT_FALSE(evalState.getSignedStateForInput(0).isValid());
+   }
+
+   //a 66 byte push that passes for a signature with SIGHASH_ALL
+   const std::string sigPush_ = "42"
+      "3030303030303030303030303030303030303030303030303030303030303030"
+      "303030303030303030303030303030303030303030303030303030303030303030"
+      "01";
+
+   //33 byte compressed pubkey push
+   const std::string pubKeyPush_ = "21"
+      "027979797979797979797979797979797979797979797979797979797979797979";
+};
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(MalformedScriptTest, Drop_EmptyStack)
+{
+   //OP_1 | OP_DROP OP_DROP and OP_1 | OP_2DROP: popping the vector of an
+   //empty stack (UB) instead of throwing
+   checkNotSigned(makePSBT(READHEX("7575"), READHEX("51")));
+   checkNotSigned(makePSBT(READHEX("6d"), READHEX("51")));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(MalformedScriptTest, Pick_NegativeIndex)
+{
+   //OP_1 | -2 OP_PICK: a negative index passed the stack size check
+   checkNotSigned(makePSBT(READHEX("018279"), READHEX("51")));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(MalformedScriptTest, Roll_NegativeIndex)
+{
+   //OP_1 | -1 OP_ROLL: a negative index rolled nothing and the script
+   //went on to leave OP_1 on the stack
+   checkNotSigned(makePSBT(READHEX("01817a"), READHEX("51")));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(MalformedScriptTest, CheckSig_TxWithoutOutputs)
+{
+   //<sig> | <pubkey> OP_CHECKSIG, the unsigned tx has no outputs: the legacy
+   //sighash serialized txouts_[0] of an empty vector
+   checkNotSigned(makePSBT(
+      READHEX(pubKeyPush_ + "ac"), READHEX(sigPush_), false));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(MalformedScriptTest, Resolver_UnresolvedItem)
+{
+   //bare OP_CHECKSIG: the stack resolver gives the pubkey item no value
+   //and resolveStack dereferenced it when loading the PSBT
+   auto signer = Signer::fromPSBT(makePSBT(READHEX("ac"), {}).getRef());
+   EXPECT_EQ(signer.getTxInCount(), 1U);
+   EXPECT_FALSE(signer.evaluateSignedState().isValid());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(MalformedScriptTest, Resolver_UnresolvedReference)
+{
+   //bare OP_EQUALVERIFY: same, through resolveReferenceValue
+   auto signer = Signer::fromPSBT(makePSBT(READHEX("88"), {}).getRef());
+   EXPECT_EQ(signer.getTxInCount(), 1U);
+   EXPECT_FALSE(signer.evaluateSignedState().isValid());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
