@@ -596,6 +596,11 @@ size_t BtcUtils::StoredTxCalcLength(const uint8_t* ptr,
    // Now extract the TxOut list
    size_t nOut = brr.get_var_int();
    if (fragged) {
+      // fragged txouts aren't in the buffer, but a txout id is 16 bits
+      if (nOut > UINT16_MAX) {
+         throw BtcUtils::BlockDeserializingException(std::format(
+            "txout count too large: {}", nOut));
+      }
       if (offsetsOut != nullptr) {
          offsetsOut->resize(nOut+1);
          for (size_t i = 0; i < nOut + 1; i++) {
