@@ -1796,6 +1796,78 @@ TEST_F(BtcUtilsTest, TxOutScriptID_MultiList)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(BtcUtilsTest, TxOutScriptID_TruncatedMultisig)
+{
+   /*
+   OP_1 <33 bytes> that ends in OP_2 OP_CHECKMULTISIG: consensus valid, not
+   standard. It looks like a 1-of-2 multisig with a single key, the scanner
+   gets its scrAddr for every output of every block it scans.
+   */
+   BinaryData script = READHEX(
+      "5121021111111111111111111111111111111111111111111111111111111111"
+      "1152ae");
+
+   vector<BinaryData> pkList;
+   EXPECT_EQ(BtcUtils::getMultisigPubKeyList(script, pkList), 0);
+   EXPECT_FALSE(BtcUtils::isMultisigScript(script));
+
+   //classified as non-standard, with a scrAddr like any other
+   //non-standard output
+   auto scrType = BtcUtils::getTxOutScriptType(script);
+   EXPECT_EQ(scrType, TxOutScriptType::NONSTANDARD);
+   BinaryData scrAddr;
+   EXPECT_NO_THROW(scrAddr = BtcUtils::getTxOutScrAddr(script));
+   EXPECT_EQ(scrAddr, BtcUtils::getTxOutScrAddr(script, scrType));
+   ASSERT_FALSE(scrAddr.empty());
+   EXPECT_EQ(scrAddr[0], (uint8_t)ScriptPrefix::NONSTD);
+
+   //in a tx output
+   BinaryWriter txout;
+   txout.put_uint64_t(1000);
+   txout.put_var_int(script.getSize());
+   txout.put_BinaryData(script);
+   TxOut txOut(txout.getData().getRef());
+   EXPECT_EQ(txOut.getScriptType(), TxOutScriptType::NONSTANDARD);
+   EXPECT_EQ(txOut.getScript(), script);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BtcUtilsTest, TxInScriptID_TruncatedMultisig)
+{
+   /*
+   getTxInScriptType runs the last push of a txin script through
+   getTxOutScriptType: a scriptSig whose last push is the script above
+   threw the same way, from any TxIn copy of such a txin
+   */
+   BinaryData scriptSig = READHEX("23"
+      "5121021111111111111111111111111111111111111111111111111111111111"
+      "1152ae");
+   EXPECT_EQ(BtcUtils::getTxInScriptType(scriptSig, prevHashReg_),
+      TxInScriptType::NONSTANDARD);
+
+   BinaryWriter txin;
+   txin.put_BinaryData(prevHashReg_);
+   txin.put_uint32_t(0);
+   txin.put_var_int(scriptSig.getSize());
+   txin.put_BinaryData(scriptSig);
+   txin.put_uint32_t(UINT32_MAX);
+   TxIn txIn(txin.getData().getRef(), txin.getSize());
+   EXPECT_EQ(txIn.getScriptType(), TxInScriptType::NONSTANDARD);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BtcUtilsTest, MultisigPubKeyList_ShortScript)
+{
+   //scripts too short to hold M, N and OP_CHECKMULTISIG
+   vector<BinaryData> pkList;
+   for (const auto& hexStr : { "", "ae", "52ae" }) {
+      BinaryData script = READHEX(hexStr);
+      EXPECT_EQ(BtcUtils::getMultisigPubKeyList(script, pkList), 0)
+         << "script: " << hexStr;
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(BtcUtilsTest, TxInScriptID_StdUncompr)
 {
    BinaryData script = READHEX(
