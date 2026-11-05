@@ -88,7 +88,7 @@ void TxIOCache::purge(PurgeStatus status)
          lastKnownBlock_ = UINT32_MAX;
          unspentTxios_.clear();
          spentTxios_.clear();
-         dbCache_->clear();
+         dbCache_->purgeDbCopies();
          [[fallthrough]];
       }
 
