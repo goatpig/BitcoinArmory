@@ -1184,6 +1184,10 @@ void BinaryReader::get_BinaryData(uint8_t* targPtr, size_t nBytes)
 
 BinaryDataRef BinaryReader::get_BinaryDataRef(size_t nBytes)
 {
+   // don't move pos_ past the end, the next read would start out of bounds
+   if (getSizeRemaining() < nBytes) {
+      throw std::runtime_error("[get_BinaryDataRef] buffer overflow");
+   }
    auto bdr = bdStr_.getSliceRef(pos_, nBytes);
    pos_ += nBytes;
    return bdr;
