@@ -286,7 +286,8 @@ std::vector<size_t> P2P::Payload::processPacket(
    }
 
    size_t offset = 0, totalsize = data.size();
-   while (offset < totalsize - sizeof(MagicWordType)) {
+   // a header is 24 bytes, don't read one that isn't all there
+   while (offset + MESSAGE_HEADER_LEN <= totalsize) {
       const uint8_t* ptr = &data[offset];
 
       //check magic word
