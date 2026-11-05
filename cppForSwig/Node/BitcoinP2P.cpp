@@ -1107,13 +1107,29 @@ int8_t P2P::Payload_Reject::code() const
 ////////
 void P2P::Payload_Reject::deserialize(const uint8_t* dataptr, size_t len)
 {
+   //a varint cut short by the end of the payload makes a malformed reject,
+   //like the lengths checked below
+   auto readVarint = [](uint64_t& val, const uint8_t* p, size_t size)->int
+   {
+      try {
+         return get_varint(val, p, size);
+      } catch (const std::runtime_error&) {
+         throw PayloadDeserError("reject varint past the payload");
+      }
+   };
+
    uint64_t typeLen;
 
    //message field size in bytes
-   auto varintlen = get_varint(typeLen, dataptr, len);
+   auto varintlen = readVarint(typeLen, dataptr, len);
    auto ptr = dataptr + varintlen;
+   size_t remaining = len - varintlen;
 
-   //message type
+   //message type, then the 1 byte reject code
+   if (typeLen >= remaining) {
+      throw PayloadDeserError("invalid reject type length");
+   }
+   remaining -= typeLen + 1;
    std::string_view msgtype{(const char*)ptr, typeLen};
    auto typeIter = typeToPayload.find(msgtype);
    if (typeIter == typeToPayload.end()) {
@@ -1126,12 +1142,14 @@ void P2P::Payload_Reject::deserialize(const uint8_t* dataptr, size_t len)
    //code_ = (const char)*ptr;
    ptr++;
 
-   auto reasonOffset = typeLen + varintlen + 1;
-
-   //reason str size
+   //reason str size, read from what's left of the payload
    uint64_t reasonLen;
-   varintlen = get_varint(reasonLen, ptr, len);
+   varintlen = readVarint(reasonLen, ptr, remaining);
    ptr += varintlen;
+   remaining -= varintlen;
+   if (reasonLen > remaining) {
+      throw PayloadDeserError("invalid reject reason length");
+   }
 
    //reason str
    reasonStr_ = std::string{(const char*)ptr, reasonLen};
@@ -1139,7 +1157,7 @@ void P2P::Payload_Reject::deserialize(const uint8_t* dataptr, size_t len)
 
    //extra data, final field. size and processing depends on reject code
    //just copy the data, handle when processing the payload
-   auto remaining = len - (reasonLen + varintlen + reasonOffset);
+   remaining -= reasonLen;
    if (remaining == 0) {
       return;
    }
