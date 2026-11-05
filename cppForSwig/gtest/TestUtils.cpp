@@ -615,7 +615,7 @@ namespace DBTestUtils
       const NewBlockNotif& newBlockNotif) const
    {
       auto notif = std::make_unique<BdmNotif>(BDMAction_Ready);
-      notif->topHeight = newBlockNotif.getHeight();
+      notif->newTop = newBlockNotif;
       actionStack_.push_back(std::move(notif));
    }
 
@@ -623,9 +623,7 @@ namespace DBTestUtils
       const NewBlockNotif& newBlockNotif) const
    {
       auto notif = std::make_unique<BdmNotif>(BDMAction_NewBlock);
-      notif->topHeight = newBlockNotif.getHeight();
-      notif->reorgHeight = newBlockNotif.isReorg() ?
-         newBlockNotif.getBranchHeight() : UINT32_MAX;
+      notif->newTop = newBlockNotif;
       actionStack_.push_back(std::move(notif));
    }
 

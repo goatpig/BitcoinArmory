@@ -256,6 +256,10 @@ bool ServerPushHandler::parseCapnPayload(
 
 ////////////////////////////////////////////////////////////////////////////////
 // NewBlockNotif
+NewBlockNotif::NewBlockNotif() :
+   height_(UINT32_MAX), branchHeight_(UINT32_MAX)
+{}
+
 NewBlockNotif::NewBlockNotif(uint32_t hgt, uint32_t branch,
    BlockIdVec invalidIds, BlockIdVec mainIds) :
    height_(hgt), branchHeight_(branch),

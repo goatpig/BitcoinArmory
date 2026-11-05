@@ -2794,7 +2794,7 @@ TEST_F(BlockUtilsBareWithServer, WSClientCleanup)
       DBTestUtils::UTCallback::BDMAction_Ready);
    ASSERT_NE(readyNotif, nullptr);
    ASSERT_EQ(readyNotif->action, DBTestUtils::UTCallback::BDMAction_Ready);
-   ASSERT_EQ(readyNotif->topHeight, 5);
+   ASSERT_EQ(readyNotif->newTop.getHeight(), 5);
 
    //grab id for our bdv
    Types::BdvId bdvId;

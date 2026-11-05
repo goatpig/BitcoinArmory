@@ -246,7 +246,7 @@ std::pair<TxIOCache::PurgeStatus, uint32_t> TxIOCache::update(
       return {updateZcResult.status, UINT32_MAX};
    }
 
-   NewBlockNotif blockNotif{UINT32_MAX, UINT32_MAX, {}, {}};
+   NewBlockNotif blockNotif;
    if (payload->type == PayloadType::NEWBLOCK) {
       auto blockPtr =
          std::dynamic_pointer_cast<Notif_NewBlock>(payload);

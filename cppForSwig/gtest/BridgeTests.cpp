@@ -8374,9 +8374,10 @@ protected:
    }
 
    bool compareLedgers(const Bridge::TxIOCache& cache,
+      const std::vector<Types::ScrAddr>& addresses,
       const std::vector<TestChain::LedgerEntryValue>& expected)
    {
-      std::set<Types::ScrAddr> addrSet{addressesBC.begin(), addressesBC.end()};
+      std::set<Types::ScrAddr> addrSet{addresses.begin(), addresses.end()};
 
       //resolve txios for our addresses
       auto resolveResult = cache.resolve(
@@ -8478,9 +8479,9 @@ TEST_F(TxIOCacheTests, PurgeStates)
    bdvObj->connectToRemote();
    bdvObj->registerWithDB(Config::BitcoinSettings::getMagicBytes().toHexStr());
 
-   //register BCDE
+   //register BC
    {
-      auto asyncWlt = bdvObj->getWalletObj("wallet_bcde");
+      auto asyncWlt = bdvObj->getWalletObj("wallet_bc");
       asyncWlt.registerAddresses(addressesBC, false);
    }
 
@@ -8493,7 +8494,7 @@ TEST_F(TxIOCacheTests, PurgeStates)
       DBTestUtils::UTCallback::BDMAction_Ready);
    ASSERT_NE(readyNotif, nullptr);
    ASSERT_EQ(readyNotif->action, DBTestUtils::UTCallback::BDMAction_Ready);
-   ASSERT_EQ(readyNotif->topHeight, 5);
+   ASSERT_EQ(readyNotif->newTop.getHeight(), 5);
 
    //update the cache via ready notif
    Bridge::TxIOCache cache;
@@ -8502,7 +8503,7 @@ TEST_F(TxIOCacheTests, PurgeStates)
    auto updateResult = cache.update(bdvObj, readyPush);
    EXPECT_EQ(updateResult.first, Bridge::TxIOCache::PurgeStatus::NoPurge);
    ASSERT_TRUE(checkCache(cache, txHashesAt5Blocks, blockHashesAt5));
-   ASSERT_TRUE(compareLedgers(cache, TestChain::ledgersBC));
+   ASSERT_TRUE(compareLedgers(cache, addressesBC, TestChain::ledgersBC));
 
    //grab id for our bdv
    Types::BdvId bdvId;
@@ -8748,7 +8749,7 @@ TEST_F(TxIOCacheTests, Purge)
 
    //register BC
    {
-      auto asyncWlt = bdvObj->getWalletObj("wallet_bcde");
+      auto asyncWlt = bdvObj->getWalletObj("wallet_bc");
       asyncWlt.registerAddresses(addressesBC, false);
    }
 
@@ -8761,27 +8762,27 @@ TEST_F(TxIOCacheTests, Purge)
       DBTestUtils::UTCallback::BDMAction_Ready);
    ASSERT_NE(readyNotif, nullptr);
    ASSERT_EQ(readyNotif->action, DBTestUtils::UTCallback::BDMAction_Ready);
-   ASSERT_EQ(readyNotif->topHeight, 5);
+   ASSERT_EQ(readyNotif->newTop.getHeight(), 5);
 
-   //update the cache via ready notif
+   //bootstrap cache via ready notif
    Bridge::TxIOCache cache;
    auto readyPush = std::make_shared<Bridge::Notifications::Push::Notif_NewBlock>(
       bdvObj->getSocketName(), NewBlockNotif{5, UINT32_MAX, {}, {}}, true);
    auto updateResult = cache.update(bdvObj, readyPush);
    EXPECT_EQ(updateResult.first, Bridge::TxIOCache::PurgeStatus::NoPurge);
    ASSERT_TRUE(checkCache(cache, txHashesAt5Blocks, blockHashesAt5));
-   ASSERT_TRUE(compareLedgers(cache, TestChain::ledgersBC));
+   ASSERT_TRUE(compareLedgers(cache, addressesBC, TestChain::ledgersBC));
 
    //full purge the cache
    cache.purge(Bridge::TxIOCache::PurgeStatus::PurgeAll);
    ASSERT_TRUE(checkCache(cache, {}, {}));
-   ASSERT_TRUE(compareLedgers(cache, {}));
+   ASSERT_TRUE(compareLedgers(cache, addressesBC, {}));
 
    //refill the cache
    updateResult = cache.update(bdvObj, readyPush);
    EXPECT_EQ(updateResult.first, Bridge::TxIOCache::PurgeStatus::NoPurge);
    ASSERT_TRUE(checkCache(cache, txHashesAt5Blocks, blockHashesAt5));
-   ASSERT_TRUE(compareLedgers(cache, TestChain::ledgersBC));
+   ASSERT_TRUE(compareLedgers(cache, addressesBC, TestChain::ledgersBC));
 
    //add a ZC
    auto recipientPrivKey = Cryptography::ECDSA::createNewPrivateKey();
@@ -8853,12 +8854,147 @@ TEST_F(TxIOCacheTests, Purge)
    };
    ledgersWithZc.insert(ledgersWithZc.end(),
       TestChain::ledgersBC.begin(), TestChain::ledgersBC.end());
-   ASSERT_TRUE(compareLedgers(cache, ledgersWithZc));
+   ASSERT_TRUE(compareLedgers(cache, addressesBC, ledgersWithZc));
 
    //purge the ZC then check the cache
    cache.purge(Bridge::TxIOCache::PurgeStatus::PurgeZC);
    ASSERT_TRUE(checkCache(cache, txHashesAt5Blocks, blockHashesAt5));
-   ASSERT_TRUE(compareLedgers(cache, TestChain::ledgersBC));
+   ASSERT_TRUE(compareLedgers(cache, addressesBC, TestChain::ledgersBC));
+}
+
+TEST_F(TxIOCacheTests, DoubleReorg)
+{
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A" }, blk0dat_);
+
+   //start WS server
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   auto clients = std::make_shared<Clients>(theBDMt_->bdm());
+   startWSServer(clients);
+
+   //connect a BDV
+   auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+   auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
+      "127.0.0.1", Config::NetworkSettings::dbPort(),
+      std::make_shared<NetworkPeers::ClientStore>(Wallets::IO::ReadOnlyFileParams{
+         homedir_ / CLIENT_AUTH_PEER_FILENAME, authPeersPassLbd_}),
+      true, pCallback
+   );
+
+   bdvObj->connectToRemote();
+   bdvObj->registerWithDB(Config::BitcoinSettings::getMagicBytes().toHexStr());
+
+   std::vector<Types::ScrAddr> addrBCDE{
+      TestChain::scrAddrB, TestChain::scrAddrC,
+      TestChain::scrAddrD, TestChain::scrAddrE
+   };
+
+   //register addresses
+   std::vector<Types::ScrAddr> addrAFLB{
+      TestChain::scrAddrA, TestChain::scrAddrF,
+      TestChain::lb1ScrAddr, TestChain::lb1ScrAddrP2SH,
+      TestChain::lb2ScrAddr, TestChain::lb2ScrAddrP2SH
+   };
+
+   {
+      auto wltBCDE = bdvObj->getWalletObj("wallet_bcde");
+      wltBCDE.registerAddresses(addrBCDE, false);
+      auto wltAFLB = bdvObj->getWalletObj("wallet_aflb");
+      wltAFLB.registerAddresses(addrAFLB, false);
+   }
+
+   //start BDM
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+
+   bdvObj->goOnline();
+   auto readyNotif = pCallback->waitOnNotification(
+      DBTestUtils::UTCallback::BDMAction_Ready);
+   ASSERT_NE(readyNotif, nullptr);
+   ASSERT_EQ(readyNotif->action, DBTestUtils::UTCallback::BDMAction_Ready);
+   ASSERT_EQ(readyNotif->newTop.getHeight(), 4);
+
+   //init cache
+   Bridge::TxIOCache cache;
+   auto readyPush = std::make_shared<Bridge::Notifications::Push::Notif_NewBlock>(
+      bdvObj->getSocketName(), NewBlockNotif{4, UINT32_MAX, {}, {}}, true);
+   auto updateResult = cache.update(bdvObj, readyPush);
+   EXPECT_EQ(updateResult.first, Bridge::TxIOCache::PurgeStatus::NoPurge);
+
+   //check cache
+   ASSERT_TRUE(checkCache(cache, {
+         TestChain::hash00,
+         TestChain::hash10,
+         TestChain::hash20, TestChain::hash21, TestChain::hash22,
+         TestChain::hash30, TestChain::hash31, TestChain::hash32, TestChain::hash33, TestChain::hash34, TestChain::hash35,
+         READHEX("45aa44ebb8bc87ad006abad80d0f246172289e92a863cca9be10470d05c6de4d") //tx 4A 0
+      }, {
+         TestChain::blkHash0, TestChain::blkHash1, TestChain::blkHash2, TestChain::blkHash3, TestChain::blkHash4A
+      }
+   ));
+   ASSERT_TRUE(compareLedgers(cache, addrBCDE,
+      { TestChain::ledgersBCDE_Reorg.begin() + 2, TestChain::ledgersBCDE_Reorg.end() }));
+   ASSERT_TRUE(compareLedgers(cache, addrAFLB,
+      { TestChain::ledgersAFLB_Reorg.begin() + 2, TestChain::ledgersAFLB_Reorg.end() }));
+
+   /* first reorg */
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5" }, blk0dat_);
+   DBTestUtils::triggerNewBlockNotification(theBDMt_);
+   auto reorgBlock1 = pCallback->waitOnNotification(
+      DBTestUtils::UTCallback::BDMAction_NewBlock);
+   ASSERT_EQ(reorgBlock1->newTop.getHeight(), 5);
+   ASSERT_EQ(reorgBlock1->newTop.getBranchHeight(), 3);
+
+   //update cache with first reorg notif
+   auto reorg1Push = std::make_shared<Bridge::Notifications::Push::Notif_NewBlock>(
+      bdvObj->getSocketName(), reorgBlock1->newTop, false);
+   updateResult = cache.update(bdvObj, reorg1Push);
+   EXPECT_EQ(updateResult.first, Bridge::TxIOCache::PurgeStatus::NoPurge);
+
+   //check cache
+   ASSERT_TRUE(checkCache(cache, {
+         TestChain::hash00,
+         TestChain::hash10,
+         TestChain::hash20, TestChain::hash21, TestChain::hash22,
+         TestChain::hash30, TestChain::hash31, TestChain::hash32, TestChain::hash33, TestChain::hash34, TestChain::hash35,
+         TestChain::hash40, TestChain::hash41, TestChain::hash42, TestChain::hash43,
+         TestChain::hash50, TestChain::hash51, TestChain::hash52
+      }, {
+         TestChain::blkHash0, TestChain::blkHash1, TestChain::blkHash2, TestChain::blkHash3, TestChain::blkHash4, TestChain::blkHash5
+      }
+   ));
+   ASSERT_TRUE(compareLedgers(cache, addrBCDE, TestChain::ledgersBCDE));
+   ASSERT_TRUE(compareLedgers(cache, addrAFLB, TestChain::ledgersAFLB));
+
+   /* second reorg */
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5", "5A" }, blk0dat_);
+   DBTestUtils::triggerNewBlockNotification(theBDMt_);
+   auto reorgBlock2 = pCallback->waitOnNotification(
+      DBTestUtils::UTCallback::BDMAction_NewBlock);
+   ASSERT_EQ(reorgBlock2->newTop.getHeight(), 5);
+   ASSERT_EQ(reorgBlock2->newTop.getBranchHeight(), 3);
+
+   //update cache with first reorg notif
+   auto reorg2Push = std::make_shared<Bridge::Notifications::Push::Notif_NewBlock>(
+      bdvObj->getSocketName(), reorgBlock2->newTop, false);
+   updateResult = cache.update(bdvObj, reorg2Push);
+   EXPECT_EQ(updateResult.first, Bridge::TxIOCache::PurgeStatus::NoPurge);
+
+   //check cache
+   ASSERT_TRUE(checkCache(cache, {
+         TestChain::hash00,
+         TestChain::hash10,
+         TestChain::hash20, TestChain::hash21, TestChain::hash22,
+         TestChain::hash30, TestChain::hash31, TestChain::hash32, TestChain::hash33, TestChain::hash34, TestChain::hash35,
+         READHEX("45aa44ebb8bc87ad006abad80d0f246172289e92a863cca9be10470d05c6de4d"), //tx 4A 0
+         READHEX("9bce56a46508c1ddfb4d8495c8c8eecc1735dcfe61631533ed85d3908bfa33f3"), //tx 5A 0
+         TestChain::hash41, TestChain::hash42
+      }, {
+         TestChain::blkHash0, TestChain::blkHash1, TestChain::blkHash2, TestChain::blkHash3, TestChain::blkHash4A, TestChain::blkHash5A
+      }
+   ));
+   ASSERT_TRUE(compareLedgers(cache, addrBCDE, TestChain::ledgersBCDE_Reorg));
+   ASSERT_TRUE(compareLedgers(cache, addrAFLB, TestChain::ledgersAFLB_Reorg));
 }
 
 ////////////////////////////////////////////////////////////////////////////////

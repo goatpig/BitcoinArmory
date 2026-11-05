@@ -205,8 +205,7 @@ namespace DBTestUtils
          std::set<std::string> idSet;
          std::vector<TxIOPair> txios;
          std::set<BinaryData> invalidatedTxHashes;
-         unsigned topHeight = UINT32_MAX;
-         unsigned reorgHeight = UINT32_MAX;
+         NewBlockNotif newTop;
          std::unique_ptr<BdvError> error;
       };
 
@@ -269,8 +268,8 @@ namespace DBTestUtils
             auto&& action = actionStack_.pop_front();
             if (action->action == BDMAction_NewBlock)
             {
-               if (action->reorgHeight != UINT32_MAX)
-                  return action->reorgHeight;
+               if (action->newTop.isReorg())
+                  return action->newTop.getBranchHeight();
             }
          }
       }
