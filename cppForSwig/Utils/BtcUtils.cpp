@@ -412,14 +412,25 @@ size_t BtcUtils::TxWitnessCalcLength(const uint8_t* ptr, size_t size)
    uint8_t viStackLen;
    size_t stackLen = readVarInt(ptr, size, viStackLen);
    witLen += viStackLen;
+   // each stack item takes at least 1 byte
+   if (stackLen > size - witLen) {
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "witness stack count too large: {}", stackLen));
+   }
    for (size_t i = 0; i < stackLen; i++) {
       if (witLen >= size) {
          throw BtcUtils::BlockDeserializingException(std::format(
             "witness data overflow: expected {} vs actual {}", witLen, size));
       }
       uint8_t viLen;
-      witLen += readVarInt(ptr + witLen, size - witLen, viLen);
+      size_t itemLen = readVarInt(ptr + witLen, size - witLen, viLen);
       witLen += viLen;
+      // compare against what's left so a huge item length can't wrap witLen
+      if (itemLen > size - witLen) {
+         throw BtcUtils::BlockDeserializingException(std::format(
+            "witness item too large: {}", itemLen));
+      }
+      witLen += itemLen;
       if (witLen > size) {
          throw BtcUtils::BlockDeserializingException(std::format(
             "witness data overflow: expected {} vs actual {}", witLen, size));
