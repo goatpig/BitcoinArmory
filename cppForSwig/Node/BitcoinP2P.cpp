@@ -374,13 +374,20 @@ std::shared_ptr<P2P::Payload::DeserializedPayloads> P2P::Payload::deserialize(
       for (const auto& offset : offsetVec) {
          bytesConsumed = offset;
 
+         // the spill offset doesn't go through processPacket, check the
+         // header is all there before reading it
+         if (offset + MESSAGE_HEADER_LEN > data.size()) {
+            break;
+         }
          uint32_t length;
          memcpy(&length, &data[offset] + PAYLOAD_LENGTH_OFFSET, 4);
          size_t localBytesConsumed = (size_t)length + MESSAGE_HEADER_LEN;
          if (localBytesConsumed + offset > data.size()) {
             break;
          }
-         std::string_view messagetype{(const char*)&data[offset] + MESSAGE_TYPE_OFFSET};
+         auto typePtr = (const char*)&data[offset] + MESSAGE_TYPE_OFFSET;
+         std::string_view messagetype{typePtr,
+            strnlen(typePtr, MESSAGE_TYPE_LEN)};
 
          try {
             const uint8_t* payloadptr = nullptr;
