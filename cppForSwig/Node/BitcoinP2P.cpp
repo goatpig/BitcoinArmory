@@ -965,6 +965,9 @@ size_t P2P::Payload_Tx::serializeInner(uint8_t* dataptr) const
 ////////
 void P2P::Payload_Tx::deserialize(const uint8_t* dataptr, size_t len)
 {
+   if (len == 0) {
+      throw PayloadDeserError("empty tx payload");
+   }
    rawTx_.resize(len);
    memcpy(&rawTx_[0], dataptr, len);
 }
