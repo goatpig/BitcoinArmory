@@ -633,6 +633,11 @@ size_t Tx::getSize() const
 ////////
 bool Tx::isCoinbase() const
 {
+   // a coinbase has exactly 1 input, a tx without inputs has no outpoint
+   // hash to look at (offsetsTxIn_[0] would point at the txout count)
+   if (getNumTxIn() != 1) {
+      return false;
+   }
    BinaryDataRef bdr{dataCopy_.getPtr() + offsetsTxIn_[0], 32};
    return bdr == BtcUtils::EmptyHash;
 }
