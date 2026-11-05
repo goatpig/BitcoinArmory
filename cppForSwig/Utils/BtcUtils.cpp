@@ -752,12 +752,12 @@ TxInScriptType BtcUtils::getTxInScriptType(BinaryDataRef script,
       // TODO: Maybe should identify whether the other pushed data
       //       in the script is a potential solution for the
       //       subscript... meh?
-      if (script[2]==0x30 && script[4]==0x02) {
+      if (script.getSize() > 4 && script[2]==0x30 && script[4]==0x02) {
          return TxInScriptType::SPENDMULTI;
       }
    }
 
-   if (!(script[1]==0x30 && script[3]==0x02)) {
+   if (script.getSize() < 4 || !(script[1]==0x30 && script[3]==0x02)) {
       return TxInScriptType::NONSTANDARD;
    }
 
