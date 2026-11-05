@@ -813,7 +813,8 @@ BinaryData BtcUtils::getTxInAddrFromTypeInt(const BinaryData& script,
 uint8_t BtcUtils::getMultisigPubKeyList(const BinaryData& script,
    std::vector<BinaryData>& pkList)
 {
-   if (script[-1] != 0xae) {
+   // M, N and OP_CHECKMULTISIG at the very least
+   if (script.getSize() < 3 || script[-1] != 0xae) {
       return 0;
    }
 
