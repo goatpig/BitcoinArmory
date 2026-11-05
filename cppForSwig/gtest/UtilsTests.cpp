@@ -1928,6 +1928,105 @@ TEST_F(BtcUtilsTest, TxInScriptID_SpendP2SH)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(BtcUtilsTest, TxInScriptID_ShortScript)
+{
+   //getTxInScriptType read script[1] to script[4] whatever the size
+   for (uint8_t opcode : {0x00, 0x51, 0x76}) {
+      BinaryData script;
+      script.append(opcode);
+      EXPECT_EQ(BtcUtils::getTxInScriptType(script, prevHashReg_),
+         TxInScriptType::NONSTANDARD);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BtcUtilsTest, TxCalcLength_ScriptLengthWrap)
+{
+   //txin script length 2^64-28: 36 + 9 + len + 4 wrapped around to 21
+   auto txin = READHEX(
+      "1111111111111111111111111111111111111111111111111111111111111111"
+      "00000000" "ffe4ffffffffffffff" "ffffffff");
+   EXPECT_THROW(BtcUtils::TxInCalcLength(txin.getPtr(), txin.getSize()),
+      BtcUtils::BlockDeserializingException);
+
+   //txout script length 2^64-16: 8 + 9 + len wrapped around to 1
+   auto txout = READHEX("e803000000000000" "fff0ffffffffffffff" "51");
+   EXPECT_THROW(BtcUtils::TxOutCalcLength(txout.getPtr(), txout.getSize()),
+      BtcUtils::BlockDeserializingException);
+
+   //a tx from the fuzzer with such a txin, TxCalcLength took it for a
+   //21 byte txin
+   auto rawTx = READHEX(
+      "0000503001000000cb2b2e7e8649e49c9d9c45c5a1ffff900d0000300100"
+      "0000ffe4ffffffffffffffffe4ffffffffffffff");
+   vector<size_t> offsetsIn, offsetsOut, offsetsWit;
+   EXPECT_THROW(BtcUtils::TxCalcLength(rawTx.getPtr(), rawTx.getSize(),
+      &offsetsIn, &offsetsOut, &offsetsWit),
+      BtcUtils::BlockDeserializingException);
+
+   //same tx as the unsigned tx of a PSBT
+   BinaryWriter psbt;
+   psbt.put_BinaryData(READHEX("70736274ff0100"));
+   psbt.put_var_int(rawTx.getSize());
+   psbt.put_BinaryData(rawTx);
+   psbt.put_uint8_t(0);
+   EXPECT_ANY_THROW(Signing::Signer::fromPSBT(psbt.getData().getRef()));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BtcUtilsTest, TxCalcLength_WitnessLengthWrap)
+{
+   /*
+   2^64-1 stack items, a 0 byte item, then an item of 2^64-10 bytes: adding
+   that length and its 9 byte varint brought the witness length back to
+   where the 0 byte item started, and the loop never ended
+   */
+   auto witness = READHEX("ffffffffffffffffff" "00" "fff6ffffffffffffff");
+   EXPECT_THROW(
+      BtcUtils::TxWitnessCalcLength(witness.getPtr(), witness.getSize()),
+      BtcUtils::BlockDeserializingException);
+
+   //a stack item count larger than what's left
+   auto witnessCount = READHEX("fd0001" "00" "00");
+   EXPECT_THROW(BtcUtils::TxWitnessCalcLength(
+      witnessCount.getPtr(), witnessCount.getSize()),
+      BtcUtils::BlockDeserializingException);
+
+   //in a segwit tx
+   auto rawTx = READHEX("02000000" "0001" "01"
+      "1111111111111111111111111111111111111111111111111111111111111111"
+      "00000000" "00" "ffffffff" "00"
+      "ffffffffffffffffff" "00" "fff6ffffffffffffff" "00000000");
+   vector<size_t> offsetsIn, offsetsOut, offsetsWit;
+   EXPECT_THROW(BtcUtils::TxCalcLength(rawTx.getPtr(), rawTx.getSize(),
+      &offsetsIn, &offsetsOut, &offsetsWit),
+      BtcUtils::BlockDeserializingException);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BtcUtilsTest, StoredTxCalcLength_FraggedTxOutCount)
+{
+   //the txouts of a fragged stored tx aren't in the buffer, their count
+   //sized a vector unchecked
+   auto raw = READHEX("0200000001"
+      "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+      "0000000000ffffffff" "ff0010080068686868" "00000000");
+   vector<size_t> offsetsIn, offsetsOut, offsetsWit;
+   EXPECT_THROW(BtcUtils::StoredTxCalcLength(raw.getPtr(), raw.getSize(),
+      true, &offsetsIn, &offsetsOut, &offsetsWit),
+      BtcUtils::BlockDeserializingException);
+
+   //the largest count a txout id allows is fine
+   auto rawMax = READHEX("0200000001"
+      "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+      "0000000000ffffffff" "fdffff" "00000000");
+   EXPECT_NO_THROW(BtcUtils::StoredTxCalcLength(
+      rawMax.getPtr(), rawMax.getSize(),
+      true, &offsetsIn, &offsetsOut, &offsetsWit));
+   EXPECT_EQ(offsetsOut.size(), 0x10000U);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(BtcUtilsTest, BitsToDifficulty)
 {
    double a = BtcUtils::convertDiffBitsToDouble(READHEX("ffff001d"));
