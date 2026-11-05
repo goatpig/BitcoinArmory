@@ -87,6 +87,20 @@ namespace Armory
       //////////////////////////////////////////////////////////////////////////
       class TxIOCache : public Lockable
       {
+      public:
+         enum class PurgeStatus
+         {
+            NoPurge,
+            PurgeAll,
+            PurgeZC
+         };
+
+         struct UpdateZCResult
+         {
+            const PurgeStatus status;
+            std::set<Types::TxKey> missingTxKeys;
+         };
+
       private:
          std::map<Types::TxIOKey, TxIOPair> unspentTxios_;
          std::map<Types::TxIOKey, TxIOPair> spentTxios_;
@@ -101,7 +115,7 @@ namespace Armory
          bool txKeyIsValid(const Types::TxKey&) const;
          std::pair<std::set<Types::TxKey>, std::set<Types::BlockId>>
          addTxios(std::vector<TxIOPair>&, uint32_t);
-         std::set<Types::TxKey> updateZC(
+         UpdateZCResult updateZC(
             std::shared_ptr<AsyncClient::BlockDataViewer>,
             const std::vector<TxIOPair>&,
             const std::set<BinaryData>&, bool);
@@ -111,9 +125,11 @@ namespace Armory
       public:
          TxIOCache(void);
 
-         void purge(void);
-         uint32_t update(std::shared_ptr<AsyncClient::BlockDataViewer>,
+         void purge(PurgeStatus);
+         std::pair<PurgeStatus, uint32_t> update(
+            std::shared_ptr<AsyncClient::BlockDataViewer>,
             std::shared_ptr<Notifications::Push::Payload>);
+
          std::shared_ptr<const Ledgers::DBCache> getDBCache(void) const;
          CacheResolveResult resolve(const AddressFilter&, uint32_t) const;
          CacheResolveResult resolveZC(const AddressFilter&) const;

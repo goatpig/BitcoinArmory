@@ -57,6 +57,12 @@ namespace Armory
       class AssetEntry;
    };
    struct Hash32;
+
+   namespace Network
+   {
+      class WebSocketMessagePartial;
+      class CapnpReader;
+   }
 };
 
 class BlockDataManagerThread;
@@ -178,6 +184,7 @@ namespace DBTestUtils
    /////////////////////////////////////////////////////////////////////////////
    class UTCallback : public ServerPushHandler
    {
+   public:
       enum BDMAction
       {
          BDMAction_Ready=1,
@@ -197,7 +204,8 @@ namespace DBTestUtils
          const BDMAction action;
          std::set<std::string> idSet;
          std::vector<TxIOPair> txios;
-         unsigned reorgHeight = UINT32_MAX;
+         std::set<BinaryData> invalidatedTxHashes;
+         NewBlockNotif newTop;
          std::unique_ptr<BdvError> error;
       };
 
@@ -260,8 +268,8 @@ namespace DBTestUtils
             auto&& action = actionStack_.pop_front();
             if (action->action == BDMAction_NewBlock)
             {
-               if (action->reorgHeight != UINT32_MAX)
-                  return action->reorgHeight;
+               if (action->newTop.isReorg())
+                  return action->newTop.getBranchHeight();
             }
          }
       }
@@ -344,6 +352,32 @@ namespace DBTestUtils
             }
          }
       }
+   };
+
+   /////////////////////////////////////////////////////////////////////////////
+   class BdvPayloadNinja
+   {
+      /*
+      Target one bdv by id out of a Clients object and funnel all of its
+      packets into a local queue
+      */
+
+   private:
+      const std::shared_ptr<Clients> clients_;
+      const Armory::Types::BdvId bdvId_;
+
+      std::vector<std::pair<uint32_t, std::unique_ptr<Armory::Network::CapnpReader>>> payouts_;
+      Armory::Threading::BlockingQueue<std::shared_ptr<BDV_Payload>> payloadQueue_;
+      std::atomic<bool> run_;
+
+   public:
+      BdvPayloadNinja(std::shared_ptr<Clients>, Armory::Types::BdvId);
+
+      void startPayloadCapture(void);
+      void stopPayloadCapture(void);
+      std::pair<uint32_t, std::unique_ptr<capnp::MessageReader>> getRequestReader(void);
+      void failMessage(uint32_t);
+      void passMessageToBDM(uint32_t);
    };
 }
 
