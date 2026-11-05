@@ -300,6 +300,10 @@ TxInEvalState TransactionVerifier::checkSig(unsigned inputId,
 BinaryDataRef TransactionVerifier::getSerializedOutputScripts() const
 {
    auto txOutCount = theTx_.txouts_.size();
+   if (txOutCount == 0) {
+      // a tx without outputs (e.g. from a PSBT), txouts_[0] doesn't exist
+      return {};
+   }
    auto firstTxOutOffset = theTx_.txouts_[0].first;
    auto lastTxOutOffset = theTx_.txouts_[txOutCount - 1].first +
       theTx_.txouts_[txOutCount - 1].second;
