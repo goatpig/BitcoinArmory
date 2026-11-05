@@ -830,6 +830,11 @@ uint8_t BtcUtils::getMultisigPubKeyList(const BinaryData& script,
    brr.advance(1); // Skip over M-value
    pkList.resize(N);
    for (uint8_t i=0; i<N; i++) {
+      // fewer keys than N: not a multisig script (don't throw, a mined
+      // non-standard output can look like this)
+      if (brr.getSizeRemaining() == 0) {
+         return 0;
+      }
       uint8_t nextSz = brr.get_uint8_t();
       if (nextSz != 0x41 && nextSz != 0x21) {
          return 0;
