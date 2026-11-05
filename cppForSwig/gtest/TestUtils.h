@@ -204,6 +204,7 @@ namespace DBTestUtils
          const BDMAction action;
          std::set<std::string> idSet;
          std::vector<TxIOPair> txios;
+         std::set<BinaryData> invalidatedTxHashes;
          unsigned topHeight = UINT32_MAX;
          unsigned reorgHeight = UINT32_MAX;
          std::unique_ptr<BdvError> error;
@@ -368,11 +369,13 @@ namespace DBTestUtils
 
       std::vector<std::pair<uint32_t, std::unique_ptr<Armory::Network::CapnpReader>>> payouts_;
       Armory::Threading::BlockingQueue<std::shared_ptr<BDV_Payload>> payloadQueue_;
+      std::atomic<bool> run_;
 
    public:
       BdvPayloadNinja(std::shared_ptr<Clients>, Armory::Types::BdvId);
 
       void startPayloadCapture(void);
+      void stopPayloadCapture(void);
       std::pair<uint32_t, std::unique_ptr<capnp::MessageReader>> getRequestReader(void);
       void failMessage(uint32_t);
       void passMessageToBDM(uint32_t);

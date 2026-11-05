@@ -23,6 +23,8 @@ using namespace Armory;
 using namespace Armory::Assets;
 using namespace Armory::Wallets;
 
+using namespace std::chrono_literals;
+
 #include <capnp/message.h>
 #include <capnp/serialize.h>
 #include "capnp/BDV.capnp.h"
@@ -638,10 +640,11 @@ namespace DBTestUtils
    void UTCallback::pushZeroConf(
       const SocketName&, const std::string&,
       std::vector<TxIOPair> txios,
-      std::set<Armory::Types::TxHash>) const
+      std::set<Armory::Types::TxHash> txhashes) const
    {
       auto notif = std::make_unique<BdmNotif>(BDMAction_ZC);
       notif->txios = std::move(txios);
+      notif->invalidatedTxHashes = std::move(txhashes);
       actionStack_.push_back(std::move(notif));
    }
 
@@ -1059,20 +1062,21 @@ void DBTestUtils::BdvPayloadNinja::startPayloadCapture()
    auto bdvPtr = clients_->get(bdvId_);
    unsigned zero = 0;
    while (!bdvPtr->packetProcessSpinLock.compare_exchange_weak(
-      zero, 1, std::memory_order_relaxed, std::memory_order_relaxed))
-   {
+      zero, 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
       //spin the lock until we own it
       zero = 0;
    }
 
    //we now hold the bdv packet processing spin lock, we can pop from the
    //clients packet queue and isolate those for our bdv
-   while (true) {
+   payloadQueue_.clear();
+   run_.store(true);
+   while (run_.load()) {
       std::shared_ptr<BDV_Payload> payload;
       try {
          payload = clients_->snoopOnPayloadQueue();
       } catch (const Threading::StopBlockingLoop&) {
-         return;
+         break;
       }
 
       if (payload->getBdvID() != bdvId_) {
@@ -1082,6 +1086,31 @@ void DBTestUtils::BdvPayloadNinja::startPayloadCapture()
       }
    }
    payloadQueue_.terminate();
+}
+
+void DBTestUtils::BdvPayloadNinja::stopPayloadCapture()
+{
+   auto bdvPtr = clients_->get(bdvId_);
+
+   //stop the capture loop
+   run_.store(false);
+   auto emptyPayload = std::make_shared<BDV_Payload>(
+      BinaryData{}, bdvPtr, bdvId_, BinaryDataRef{});
+   clients_->queuePayload(emptyPayload);
+
+   while (payloadQueue_.isValid()) {
+      std::this_thread::sleep_for(100ms);
+   }
+   auto payloads = payloadQueue_.pop_all();
+
+   //requeue all intercepted payloads, the empty payload we used
+   //to wake the queue will be ignored
+   for (auto& payload : payloads) {
+      clients_->queuePayload(payload);
+   }
+
+   //release bdv parser lock
+   bdvPtr->packetProcessSpinLock.store(0, std::memory_order_relaxed);
 }
 
 std::pair<uint32_t, std::unique_ptr<capnp::MessageReader>> DBTestUtils::BdvPayloadNinja::getRequestReader()

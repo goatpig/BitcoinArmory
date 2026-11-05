@@ -8307,6 +8307,122 @@ protected:
       std::this_thread::sleep_for(100ms);
    }
 
+   /////////////////////////////////////////////////////////////////////////////
+   bool checkCache(const Bridge::TxIOCache& cache,
+      const std::set<BinaryData>& txHashes,
+      const std::set<BinaryData>& blockHashes)
+   {
+      /* first attempt a txio cache check, will need wider coverage */
+      const auto& dbCache = cache.getDBCache();
+
+      //check headers
+      const auto& headerMap = dbCache->getHeaderMap();
+      if (blockHashes.empty()) {
+         if (!headerMap.empty()) {
+            ADD_FAILURE() << "header map should be empty";
+            return false;
+         }
+      } else {
+         std::map<BinaryData, Ledgers::HeaderPtr> headerHashMap;
+         for (const auto headerPair : headerMap) {
+            headerHashMap.emplace(headerPair.second->thisHash, headerPair.second);
+         }
+         for (const auto& headerHash : blockHashes) {
+            auto iter = headerHashMap.find(headerHash);
+            if (iter == headerHashMap.end()) {
+               ADD_FAILURE() << "missing header: " << headerHash.toHexStr();
+               return false;
+            }
+            if (!iter->second->isMainBranch) {
+               ADD_FAILURE() << "header isn't in main branch";
+               return false;
+            }
+         }
+      }
+
+      //check txs
+      for (const auto& txHash : txHashes) {
+         try {
+            auto tx = dbCache->getTxByHash(txHash);
+            if (tx.getThisHash() != txHash) {
+               ADD_FAILURE() << "tx in cache has different hash from expected";
+               return false;
+            }
+            auto txKey = tx.getDBKey();
+            if (!Types::isTxKeyValid(txKey)) {
+               ADD_FAILURE() << "invalid txkey for hash " << txHash.toHexStr();
+               return false;
+            } else if (Types::isThisAZCKey(txKey)) {
+               continue;
+            }
+            auto blockId = Types::getBlockIDFromTxKey(txKey);
+            auto header = dbCache->getHeader(blockId);
+            if (!header->isMainBranch) {
+               ADD_FAILURE() << "header for tx is not in main branch";
+               return false;
+            }
+            if (blockHashes.find(header->thisHash) == blockHashes.end()) {
+               ADD_FAILURE() << "header for tx is not is unexpected";
+               return false;
+            }
+         } catch (const std::out_of_range& e) {
+            ADD_FAILURE() << e.what();
+            return false;
+         }
+      }
+      return true;
+   }
+
+   bool compareLedgers(const Bridge::TxIOCache& cache,
+      const std::vector<TestChain::LedgerEntryValue>& expected)
+   {
+      std::set<Types::ScrAddr> addrSet{addressesBC.begin(), addressesBC.end()};
+
+      //resolve txios for our addresses
+      auto resolveResult = cache.resolve(
+         [&addrSet](const Types::ScrAddr& addr)->bool {
+            return addrSet.find(addr) != addrSet.end();
+         }, 0
+      );
+      auto zcResolveResult = cache.resolveZC(
+         [&addrSet](const Types::ScrAddr& addr)->bool {
+            return addrSet.find(addr) != addrSet.end();
+         }
+      );
+      auto txios = resolveResult.txioMap;
+      for (auto& zcTxioPair : zcResolveResult.txioMap) {
+         auto iter = txios.emplace(zcTxioPair);
+         if (!iter.second) {
+            iter.first->second.merge(zcTxioPair.second);
+         }
+      }
+
+      //build ledger context then ledgers
+      auto context = Ledgers::prepareContext(txios, cache.getDBCache(), addrSet);
+      auto ledgers = Ledgers::computeLedgerMap(txios, 0, UINT32_MAX, "", context);
+
+      //sort ledgers in a vector
+      std::vector<Ledgers::Entry> result;
+      result.reserve(ledgers.size());
+      for (auto& ledger : ledgers) {
+         result.emplace_back(std::move(ledger.second));
+      }
+      std::sort(result.begin(), result.end(), Ledgers::DescendingOrder{});
+
+      //compare with expected
+      if (result.size() != expected.size()) {
+         ADD_FAILURE() << "ledger count mismatch";
+         return false;
+      }
+      for (unsigned i = 0; i < expected.size(); i++) {
+         if (!checkLedgers(result[i], expected[i])) {
+            ADD_FAILURE() << "ledger check failed at index " << i;
+            return false;
+         }
+      }
+      return true;
+   }
+
 protected:
    BlockDataManagerThread *theBDMt_;
    Passphrase::UnlockFunc authPeersPassLbd_;
@@ -8320,6 +8436,24 @@ protected:
    std::shared_ptr<Bridge::CppBridge> bridge_;
    std::string walletId_;
    std::thread wsServerThr_;
+
+   std::vector<BinaryData> addressesBC{
+      TestChain::scrAddrB,
+      TestChain::scrAddrC,
+   };
+
+   std::set<BinaryData> txHashesAt5Blocks{
+      TestChain::hash10,
+      TestChain::hash20, TestChain::hash21, TestChain::hash22,
+      TestChain::hash30, TestChain::hash33, TestChain::hash34,
+      TestChain::hash43,
+      TestChain::hash50, TestChain::hash51
+   };
+
+   std::set<BinaryData> blockHashesAt5{
+      TestChain::blkHash1, TestChain::blkHash2, TestChain::blkHash3,
+      TestChain::blkHash4, TestChain::blkHash5
+   };
 };
 
 TEST_F(TxIOCacheTests, PurgeStates)
@@ -8347,12 +8481,7 @@ TEST_F(TxIOCacheTests, PurgeStates)
    //register BCDE
    {
       auto asyncWlt = bdvObj->getWalletObj("wallet_bcde");
-      asyncWlt.registerAddresses({
-         TestChain::scrAddrB,
-         TestChain::scrAddrC,
-         TestChain::scrAddrD,
-         TestChain::scrAddrE
-      }, false);
+      asyncWlt.registerAddresses(addressesBC, false);
    }
 
    //start BDM
@@ -8372,26 +8501,8 @@ TEST_F(TxIOCacheTests, PurgeStates)
       bdvObj->getSocketName(), NewBlockNotif{5, UINT32_MAX, {}, {}}, true);
    auto updateResult = cache.update(bdvObj, readyPush);
    EXPECT_EQ(updateResult.first, Bridge::TxIOCache::PurgeStatus::NoPurge);
-
-   {
-      //run some sanity checks on cache state
-      auto dbCache = cache.getDBCache();
-      try {
-         auto header = dbCache->getHeader(6);
-         EXPECT_EQ(header->thisHash, TestChain::blkHash5);
-      } catch (const std::out_of_range&) {
-         ASSERT_TRUE(false);
-      }
-
-      try {
-         dbCache->getTxByHash(TestChain::hash50);
-         dbCache->getTxByHash(TestChain::hash51);
-         dbCache->getTxByHash(TestChain::hash52);
-      } catch (const std::out_of_range&) {
-         ASSERT_TRUE(false);
-      }
-   }
-   //std::this_thread::sleep_for(1s);
+   ASSERT_TRUE(checkCache(cache, txHashesAt5Blocks, blockHashesAt5));
+   ASSERT_TRUE(compareLedgers(cache, TestChain::ledgersBC));
 
    //grab id for our bdv
    Types::BdvId bdvId;
@@ -8613,6 +8724,141 @@ TEST_F(TxIOCacheTests, PurgeStates)
    if (ninjaThread.joinable()) {
       ninjaThread.join();
    }
+}
+
+TEST_F(TxIOCacheTests, Purge)
+{
+   //start WS server
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   auto clients = std::make_shared<Clients>(theBDMt_->bdm());
+   startWSServer(clients);
+
+   //connect a BDV
+   auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+   auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
+      "127.0.0.1", Config::NetworkSettings::dbPort(),
+      std::make_shared<NetworkPeers::ClientStore>(Wallets::IO::ReadOnlyFileParams{
+         homedir_ / CLIENT_AUTH_PEER_FILENAME, authPeersPassLbd_}),
+      true, pCallback
+   );
+
+   bdvObj->connectToRemote();
+   bdvObj->registerWithDB(Config::BitcoinSettings::getMagicBytes().toHexStr());
+
+   //register BC
+   {
+      auto asyncWlt = bdvObj->getWalletObj("wallet_bcde");
+      asyncWlt.registerAddresses(addressesBC, false);
+   }
+
+   //start BDM
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+
+   bdvObj->goOnline();
+   auto readyNotif = pCallback->waitOnNotification(
+      DBTestUtils::UTCallback::BDMAction_Ready);
+   ASSERT_NE(readyNotif, nullptr);
+   ASSERT_EQ(readyNotif->action, DBTestUtils::UTCallback::BDMAction_Ready);
+   ASSERT_EQ(readyNotif->topHeight, 5);
+
+   //update the cache via ready notif
+   Bridge::TxIOCache cache;
+   auto readyPush = std::make_shared<Bridge::Notifications::Push::Notif_NewBlock>(
+      bdvObj->getSocketName(), NewBlockNotif{5, UINT32_MAX, {}, {}}, true);
+   auto updateResult = cache.update(bdvObj, readyPush);
+   EXPECT_EQ(updateResult.first, Bridge::TxIOCache::PurgeStatus::NoPurge);
+   ASSERT_TRUE(checkCache(cache, txHashesAt5Blocks, blockHashesAt5));
+   ASSERT_TRUE(compareLedgers(cache, TestChain::ledgersBC));
+
+   //full purge the cache
+   cache.purge(Bridge::TxIOCache::PurgeStatus::PurgeAll);
+   ASSERT_TRUE(checkCache(cache, {}, {}));
+   ASSERT_TRUE(compareLedgers(cache, {}));
+
+   //refill the cache
+   updateResult = cache.update(bdvObj, readyPush);
+   EXPECT_EQ(updateResult.first, Bridge::TxIOCache::PurgeStatus::NoPurge);
+   ASSERT_TRUE(checkCache(cache, txHashesAt5Blocks, blockHashesAt5));
+   ASSERT_TRUE(compareLedgers(cache, TestChain::ledgersBC));
+
+   //add a ZC
+   auto recipientPrivKey = Cryptography::ECDSA::createNewPrivateKey();
+   auto recipientPubKey = Cryptography::ECDSA::computePublicKey(
+      recipientPrivKey, true);
+   auto hash160 =  BtcUtils::getHash160(recipientPubKey);
+   auto recipientAddr = BtcUtils::scrAddrToSegWitAddress(hash160);
+
+   //get signed tx
+   BinaryData signedTx;
+   try {
+      auto utxosC = DBTestUtils::getUTXOsForScrAddrs(
+         theBDMt_->bdm(), { TestChain::scrAddrC });
+      ASSERT_EQ(utxosC.size(), 2U);
+
+      Signing::Signer signer;
+      auto feed = std::make_shared<ResolverUtils::TestResolverFeed>();
+      feed->addPrivKey(TestChain::privKeyAddrC.getRef());
+
+      signer.addSpender(std::make_shared<Signing::ScriptSpender>(utxosC[0]));
+      signer.addRecipient(std::make_shared<Signing::Recipient_P2WPKH>(
+         hash160, utxosC[0].amount - 10000));
+      signer.setFeed(feed);
+      signer.sign();
+      EXPECT_TRUE(signer.verify());
+      signedTx = signer.serializeSignedTx();
+   } catch (const std::exception& e) {
+      ASSERT_TRUE(false) << e.what();
+   }
+   ASSERT_FALSE(signedTx.empty());
+
+   //broadcast
+   auto now = std::chrono::system_clock::now();
+   uint32_t broadcastTime = std::chrono::duration_cast<std::chrono::seconds>(
+      now.time_since_epoch()).count();
+   {
+      DBTestUtils::ZcVector zcVec;
+      zcVec.push_back(signedTx, 14000000);
+      DBTestUtils::pushNewZc(theBDMt_, zcVec);
+   }
+
+   //wait on zc notif
+   auto testNotifPtr = pCallback->waitOnNotification(
+      DBTestUtils::UTCallback::BDMAction_ZC);
+   ASSERT_NE(testNotifPtr, nullptr);
+   ASSERT_EQ(testNotifPtr->txios.size(), 1);
+   ASSERT_TRUE(testNotifPtr->invalidatedTxHashes.empty());
+
+   //have the cache parse the zc
+   auto zcPush = std::make_shared<Bridge::Notifications::Push::Notif_ZC>(
+      std::string{}, std::string{},
+      testNotifPtr->txios, testNotifPtr->invalidatedTxHashes);
+   updateResult = cache.update(bdvObj, zcPush);
+   EXPECT_EQ(updateResult.first, Bridge::TxIOCache::PurgeStatus::NoPurge);
+
+   //check zc in cache
+   Tx zcTx(signedTx);
+   auto hashesAt5WithZc = txHashesAt5Blocks;
+   txHashesAt5Blocks.emplace(zcTx.getThisHash());
+   ASSERT_TRUE(checkCache(cache, hashesAt5WithZc, blockHashesAt5));
+
+   //check ledgers
+   std::vector<TestChain::LedgerEntryValue> ledgersWithZc{
+      TestChain::LedgerEntryValue{
+         -10 * (int64_t)COIN,
+         UINT32_MAX, 0, broadcastTime,
+         zcTx.getThisHash(), false
+      }
+   };
+   ledgersWithZc.insert(ledgersWithZc.end(),
+      TestChain::ledgersBC.begin(), TestChain::ledgersBC.end());
+   ASSERT_TRUE(compareLedgers(cache, ledgersWithZc));
+
+   //purge the ZC then check the cache
+   cache.purge(Bridge::TxIOCache::PurgeStatus::PurgeZC);
+   ASSERT_TRUE(checkCache(cache, txHashesAt5Blocks, blockHashesAt5));
+   ASSERT_TRUE(compareLedgers(cache, TestChain::ledgersBC));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
