@@ -29,8 +29,10 @@ const BinaryData& BCTX::getHash() const
          BinaryData noWitData;
          BinaryDataRef version(data_, 4);
 
-         auto& lastTxOut = txouts_.back();
-         auto witnessOffset = lastTxOut.first + lastTxOut.second;
+         // witness data starts right after the last txout, the first
+         // witness tells where without assuming there is a txout
+         size_t witnessOffset = witnesses_.empty() ?
+            size_ - 4 : witnesses_.front().first;
          BinaryDataRef txinout(data_ + 6, witnessOffset - 6);
          BinaryDataRef locktime(data_ + size_ - 4, 4);
 
