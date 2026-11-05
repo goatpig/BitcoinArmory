@@ -337,7 +337,8 @@ std::vector<size_t> P2P::Payload::processPacket(
       //at this point we don't want to reparse this message if the
       //deser operation fails
       offset += 4;
-      if (length + MESSAGE_HEADER_LEN > totalsize - localOffset) {
+      // size_t math: length + 24 must not wrap around in 32 bits
+      if ((size_t)length + MESSAGE_HEADER_LEN > totalsize - localOffset) {
          return retvec;
       }
 
@@ -375,7 +376,7 @@ std::shared_ptr<P2P::Payload::DeserializedPayloads> P2P::Payload::deserialize(
 
          uint32_t length;
          memcpy(&length, &data[offset] + PAYLOAD_LENGTH_OFFSET, 4);
-         size_t localBytesConsumed = length + MESSAGE_HEADER_LEN;
+         size_t localBytesConsumed = (size_t)length + MESSAGE_HEADER_LEN;
          if (localBytesConsumed + offset > data.size()) {
             break;
          }
