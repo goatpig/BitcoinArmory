@@ -31,6 +31,8 @@
 #include <Wallets/KDF.h>
 #include <hkdf.h>
 #include <Wallets/AuthorizedPeers.h>
+#include <Utils/BCTX.h>
+#include <Utils/TxOutScrRef.h>
 
 using namespace std;
 using namespace Armory;
@@ -1372,6 +1374,20 @@ TEST(BinaryReadWriteTest, ReaderEndian)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST(BinaryReadWriteTest, Reader_DataRefPastEnd)
+{
+   //get_BinaryDataRef moved the position past the end when there weren't
+   //enough bytes left, the next read then started out of bounds
+   BinaryData in = READHEX("0102030405");
+   BinaryReader br(in);
+   EXPECT_EQ(br.get_uint8_t(), 1);
+   EXPECT_THROW(br.get_BinaryDataRef(8), std::runtime_error);
+   EXPECT_EQ(br.getSizeRemaining(), 4U);
+   EXPECT_EQ(br.get_BinaryDataRef(4), READHEX("02030405"));
+   EXPECT_EQ(br.getSizeRemaining(), 0U);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 class BtcUtilsTest : public ::testing::Test
 {
@@ -2004,6 +2020,90 @@ TEST_F(BtcUtilsTest, RpcAuthString)
 
    auto hmac = BtcUtils::getSaltedRpcPass(salt, pass);
    EXPECT_EQ(hmac.toHexStr(), saltedPass);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BtcUtilsTest, TxIn_ScriptPastCopy)
+{
+   //a 21 byte txin, what TxInCalcLength made of a script length of
+   //2^64-28: unserialize_checked read the script length past the copy
+   auto rawTx = READHEX(
+      "0000503001000000cb2b2e7e8649e49c9d9c45c5a1ffff900d0000300100"
+      "0000ffe4ffffffffffffffffe4ffffffffffffff");
+   EXPECT_THROW({ TxIn txin(rawTx.getSliceRef(5, 21), 21); },
+      BtcUtils::BlockDeserializingException);
+
+   //44 bytes: outpoint, a script length of 0xffff, a 1 byte script and the
+   //sequence: the script length was used without checking it against the copy
+   auto shortTxIn = READHEX(
+      "1111111111111111111111111111111111111111111111111111111111111111"
+      "00000000" "fdffff" "51" "ffffffff");
+   EXPECT_THROW({ TxIn txin(shortTxIn.getRef(), shortTxIn.getSize()); },
+      BtcUtils::BlockDeserializingException);
+
+   //the same txin with its 1 byte script fits
+   auto goodTxIn = READHEX(
+      "1111111111111111111111111111111111111111111111111111111111111111"
+      "00000000" "01" "51" "ffffffff");
+   TxIn txin(goodTxIn.getRef(), goodTxIn.getSize());
+   EXPECT_EQ(txin.getScript(), READHEX("51"));
+   EXPECT_EQ(txin.getSequence(), UINT32_MAX);
+
+   //that tx as the unsigned tx of a PSBT: Signer::fromPSBT makes a TxIn
+   //copy of each txin
+   BinaryWriter psbt;
+   psbt.put_BinaryData(READHEX("70736274ff0100"));
+   psbt.put_var_int(rawTx.getSize());
+   psbt.put_BinaryData(rawTx);
+   psbt.put_uint8_t(0);
+   EXPECT_ANY_THROW(Signing::Signer::fromPSBT(psbt.getData().getRef()));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BtcUtilsTest, Tx_IsCoinbase_NoInputs)
+{
+   //isCoinbase read the outpoint hash of txin 0 of a tx without txins
+   auto rawTx = READHEX("02000000" "00" "00" "00000000");
+   Tx tx(rawTx.getPtr(), rawTx.getSize());
+   EXPECT_EQ(tx.getNumTxIn(), 0U);
+   EXPECT_FALSE(tx.isCoinbase());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BtcUtilsTest, BCTX_SegWitNoTxOut)
+{
+   //getHash found the witness data after txouts_.back()
+   auto rawTx = READHEX("02000000" "0001" "01"
+      "1111111111111111111111111111111111111111111111111111111111111111"
+      "00000000" "00" "ffffffff" "00" "0101aa" "00000000");
+   auto noWitness = READHEX("02000000" "01"
+      "1111111111111111111111111111111111111111111111111111111111111111"
+      "00000000" "00" "ffffffff" "00" "00000000");
+   auto bctx = BCTX::parse(rawTx.getPtr(), rawTx.getSize());
+   ASSERT_NE(bctx, nullptr);
+   EXPECT_EQ(bctx->getHash(), BtcUtils::getHash256(noWitness));
+
+   //and with a txout, the hash is still that of the tx without witness
+   auto rawTx2 = READHEX("02000000" "0001" "01"
+      "1111111111111111111111111111111111111111111111111111111111111111"
+      "00000000" "00" "ffffffff" "01" "e803000000000000" "0151"
+      "0101aa" "00000000");
+   auto noWitness2 = READHEX("02000000" "01"
+      "1111111111111111111111111111111111111111111111111111111111111111"
+      "00000000" "00" "ffffffff" "01" "e803000000000000" "0151"
+      "00000000");
+   auto bctx2 = BCTX::parse(rawTx2.getPtr(), rawTx2.getSize());
+   ASSERT_NE(bctx2, nullptr);
+   EXPECT_EQ(bctx2->getHash(), BtcUtils::getHash256(noWitness2));
+   Tx tx2(rawTx2.getPtr(), rawTx2.getSize());
+   EXPECT_EQ(bctx2->getHash(), tx2.getThisHash());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BtcUtilsTest, TxOutScriptRef_EmptyScrAddr)
+{
+   //fromScrAddr read the prefix of an empty scrAddr
+   EXPECT_ANY_THROW(TxOutScriptRef::fromScrAddr(BinaryDataRef{}));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3728,6 +3828,101 @@ TEST_F(TestCryptoECDSA, VerifyPubKeyValidity)
    EXPECT_TRUE(Cryptography::ECDSA::verifyPublicKeyValid(compPointPub2));
    EXPECT_TRUE(Cryptography::ECDSA::verifyPublicKeyValid(uncompPointPub1));
    EXPECT_TRUE(Cryptography::ECDSA::verifyPublicKeyValid(uncompPointPub2));
+}
+
+// Anything that isn't 33 or 65 bytes isn't a public key. Script data gets to
+// verifyPublicKeyValid from op_checksig, it used to be copied whole into a
+// 65 byte buffer.
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(TestCryptoECDSA, VerifyPubKeyValidity_WrongSize)
+{
+   for (size_t size : {200, 72, 66, 64, 34, 32, 1, 0}) {
+      BinaryData pubkey;
+      pubkey.resize(size);
+      if (size > 0) {
+         memset(pubkey.getPtr(), 0x41, size);
+         pubkey.getPtr()[0] = size > 33 ? 0x04 : 0x02;
+      }
+      EXPECT_FALSE(Cryptography::ECDSA::verifyPublicKeyValid(pubkey))
+         << "pubkey size " << size;
+   }
+
+   //a valid key with a trailing byte
+   BinaryData longKey(uncompPointPub1.getPtr(), uncompPointPub1.getSize());
+   longKey.append(0x00);
+   EXPECT_FALSE(Cryptography::ECDSA::verifyPublicKeyValid(longKey));
+}
+
+// verifyData made the same copy of the key it was given.
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(TestCryptoECDSA, VerifyData_WrongSizePubKey)
+{
+   SecureBinaryData privKey{READHEX(
+      "1111111111111111111111111111111111111111111111111111111111111111")};
+   auto pubKey = Cryptography::ECDSA::computePublicKey(
+      privKey.getRef(), true);
+   BinaryData msg = READHEX("0102030405060708");
+   BinaryData sig = Cryptography::ECDSA::signData(msg, privKey);
+   EXPECT_TRUE(Cryptography::ECDSA::verifyData(msg, sig, pubKey));
+
+   for (size_t size : {200, 72, 66, 34, 32, 0}) {
+      BinaryData pubkey(pubKey.getPtr(), std::min(size, pubKey.getSize()));
+      while (pubkey.getSize() < size) {
+         pubkey.append(0x41);
+      }
+      EXPECT_FALSE(Cryptography::ECDSA::verifyData(msg, sig, pubkey))
+         << "pubkey size " << size;
+   }
+}
+
+// The same through the script interpreter: a tx spending an output whose
+// script hands a 100 byte "pubkey" to OP_CHECKSIG or OP_CHECKMULTISIG.
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(TestCryptoECDSA, VerifyPubKeyValidity_FromScript)
+{
+   auto prevHash = READHEX(
+      "2222222222222222222222222222222222222222222222222222222222222222");
+   std::string bigPubKeyPush = "4c64" "04";
+   for (unsigned i = 0; i < 99; i++) {
+      bigPubKeyPush += "41";
+   }
+   //a 66 byte push that passes for a signature with SIGHASH_ALL
+   std::string sigPush = "42";
+   for (unsigned i = 0; i < 65; i++) {
+      sigPush += "30";
+   }
+   sigPush += "01";
+
+   auto verify = [&prevHash](const BinaryData& utxoScript,
+      const BinaryData& scriptSig)->bool
+   {
+      BinaryWriter rawTx;
+      rawTx.put_uint32_t(1);
+      rawTx.put_var_int(1);
+      rawTx.put_BinaryData(prevHash);
+      rawTx.put_uint32_t(0);
+      rawTx.put_var_int(scriptSig.getSize());
+      rawTx.put_BinaryData(scriptSig);
+      rawTx.put_uint32_t(UINT32_MAX);
+      auto outputScript = READHEX(
+         "00145555555555555555555555555555555555555555");
+      rawTx.put_var_int(1);
+      rawTx.put_uint64_t(1000);
+      rawTx.put_var_int(outputScript.getSize());
+      rawTx.put_BinaryData(outputScript);
+      rawTx.put_uint32_t(0);
+
+      std::map<BinaryData, std::map<unsigned, UTXO>> utxoMap;
+      utxoMap[prevHash][0] = UTXO(100000, 0, 0, 0, prevHash, utxoScript);
+      return Signing::Signer::verify(
+         rawTx.getData(), utxoMap, 0, true).isValid();
+   };
+
+   //<sig> | <100 byte pubkey> OP_CHECKSIG
+   EXPECT_FALSE(verify(READHEX(bigPubKeyPush + "ac"), READHEX(sigPush)));
+
+   //OP_0 | OP_1 <100 byte pubkey> OP_1 OP_CHECKMULTISIG
+   EXPECT_FALSE(verify(READHEX("51" + bigPubKeyPush + "51ae"), READHEX("00")));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
