@@ -85,6 +85,37 @@ endif
 gtest_UtilsTests_LDFLAGS = $(AM_LDFLAGS) $(LWSLDFLAGS) $(LDFLAGS) -static
 TESTS += gtest/UtilsTests
 
+# NodeTests - P2P framing and payload parsing (Node folder)
+bin_PROGRAMS += gtest/NodeTests
+gtest_NodeTests_SOURCES = gtest/NodeTests.cpp
+gtest_NodeTests_CXXFLAGS = $(AM_CXXFLAGS) $(UNIT_TEST_CXXFLAGS) $(LIBBTC_FLAGS)
+gtest_NodeTests_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
+gtest_NodeTests_LDADD = gtest/libgtest.la \
+			$(LIBARMORYCOMMON) \
+			$(LIBARMORYCLI) \
+			$(LIBHKDF) \
+			$(LIBBTC) \
+			$(LIBCHACHA20POLY1305) \
+			$(LIBLMDBPP) \
+			$(LIBTREZORCRYPTO) \
+			-llmdb \
+			$(LIBWEBSOCKETS_STATIC)
+if BUILD_OPENSSL_SUPPORT
+gtest_NodeTests_LDADD += $(LIBSSL_STATIC) \
+		 $(LIBCRYPTO_STATIC)
+endif
+if BUILD_LIBUV_SUPPORT
+gtest_NodeTests_LDADD += $(LIBUV_STATIC)
+endif
+if BUILD_LIBEVENT_SUPPORT
+gtest_NodeTests_LDADD += $(LIBEVENT_STATIC)
+endif
+if BUILD_LIBCAP_SUPPORT
+gtest_NodeTests_LDADD += $(LIBCAP_LIBS)
+endif
+gtest_NodeTests_LDFLAGS = $(AM_LDFLAGS) $(LWSLDFLAGS) $(LDFLAGS) -static
+TESTS += gtest/NodeTests
+
 #SignerTests
 bin_PROGRAMS += gtest/SignerTests
 gtest_SignerTests_SOURCES = gtest/SignerTests.cpp
