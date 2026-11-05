@@ -1063,8 +1063,9 @@ void StackInterpreter::processOpCode(const OpCode& oc)
 
       case OP_2DROP:
       {
-         stack_.pop_back();
-         stack_.pop_back();
+         //pop_back() throws on an empty stack, stack_.pop_back() is UB
+         pop_back();
+         pop_back();
          break;
       }
 
@@ -1085,7 +1086,7 @@ void StackInterpreter::processOpCode(const OpCode& oc)
          break;
 
       case OP_DROP:
-         stack_.pop_back();
+         pop_back();
          break;
 
       case OP_DUP:
