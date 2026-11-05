@@ -483,7 +483,7 @@ void StackInterpreter::op_pick()
    auto a = pop_back();
    auto aI = rawBinaryToInt(a);
 
-   if (aI >= (int64_t)stack_.size()) {
+   if (aI < 0 || aI >= (int64_t)stack_.size()) {
       throw ScriptException("op_pick index exceeds stack size");
    }
    auto stackIter = stack_.rbegin() + aI;
@@ -495,7 +495,7 @@ void StackInterpreter::op_roll()
    auto a = pop_back();
    auto rollindex = rawBinaryToInt(a);
 
-   if (rollindex >= (int64_t)stack_.size()) {
+   if (rollindex < 0 || rollindex >= (int64_t)stack_.size()) {
       throw ScriptException("op_roll index exceeds stack size");
    }
 
