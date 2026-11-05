@@ -588,6 +588,10 @@ std::string_view P2P::Payload_Version::typeStr() const
 ////////
 void P2P::Payload_Version::deserialize(const uint8_t* data, size_t len)
 {
+   // fixed part + user agent length varint (>= 1) + start height
+   if (data == nullptr || len < VERSION_MINLENGTH) {
+      throw PayloadDeserError("version payload too short");
+   }
    const uint8_t* dataptr = data;
 
    memcpy(&vheader_.version_, dataptr, 4);
@@ -617,6 +621,10 @@ void P2P::Payload_Version::deserialize(const uint8_t* data, size_t len)
    size_t remaining = len - USERAGENT_OFFSET;
    uint64_t uaLen;
    auto varintlen = get_varint(uaLen, dataptr, remaining);
+   // the user agent and the start height have to fit in the payload
+   if (varintlen + 4 > remaining || uaLen > remaining - varintlen - 4) {
+      throw PayloadDeserError("invalid user agent length");
+   }
    dataptr += varintlen;
    auto userAgentPtr = (const char*)dataptr;
    userAgent_ = std::string(userAgentPtr, uaLen);
