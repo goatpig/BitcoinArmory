@@ -338,6 +338,24 @@ void DBCache::purgeZC()
    }
 }
 
+void DBCache::purgeDbCopies()
+{
+   //drop the headers and every copy the db served, mined or zc. Unpooled
+   //copies are the bridge's own, their keys mean the same to any db: they
+   //stay, and so does the next unpooled id
+   std::vector<Types::TxKey> dbKeys;
+   for (const auto& txPair : txMap_) {
+      if (TxKeyCandidates::kindOf(txPair.first) !=
+         TxKeyCandidates::Kind::Unpooled) {
+         dbKeys.emplace_back(txPair.first);
+      }
+   }
+   for (auto txKey : dbKeys) {
+      eraseTx(txKey);
+   }
+   headers_.clear();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // namespace Ledgers functions
 Context Ledgers::prepareContext(
