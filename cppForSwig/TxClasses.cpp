@@ -277,12 +277,16 @@ BinaryDataRef TxIn::getRawData(const uint8_t* ptr,
 
 void TxIn::unserialize_checked()
 {
-   if (dataCopy_.getSize() - 36 < 1) {
+   // outpoint (36) + script length varint (>= 1) + sequence (4)
+   if (dataCopy_.getSize() < 41) {
       throw BtcUtils::BlockDeserializingException();
    }
-   scriptOffset_ = 36 + BtcUtils::readVarIntLength(getPtr() + 36);
-
-   if (dataCopy_.getSize() < 32) {
+   uint8_t viLen;
+   size_t scrLen = BtcUtils::readVarInt(
+      getPtr() + 36, dataCopy_.getSize() - 36, viLen);
+   scriptOffset_ = 36 + viLen;
+   if (dataCopy_.getSize() < scriptOffset_ + 4 ||
+      scrLen > dataCopy_.getSize() - scriptOffset_ - 4) {
       throw BtcUtils::BlockDeserializingException();
    }
    scriptType_ = BtcUtils::getTxInScriptType(
