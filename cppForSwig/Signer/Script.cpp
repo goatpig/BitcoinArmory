@@ -182,6 +182,10 @@ namespace
          } else if (currentPtr->static_) {
             return currentPtr->staticData_;
          } else {
+            //referenced item that nothing resolved
+            if (currentPtr->resolvedValue_ == nullptr) {
+               throw ScriptException("unresolved stack item reference");
+            }
             switch (currentPtr->resolvedValue_->type())
             {
                case StackValueType::Static:
@@ -1875,6 +1879,12 @@ void StackResolver::resolveStack()
             default:
                throw ScriptException("no resolution rule for opcode");
             }
+      }
+
+      //none of the opcodes gave this item a value (e.g. the pubkey of an
+      //OP_CHECKSIG that isn't in the script)
+      if (stackItem->resolvedValue_ == nullptr) {
+         throw ScriptException("unresolved stack item");
       }
 
       //fulfill resolution
