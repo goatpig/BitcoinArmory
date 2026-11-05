@@ -386,6 +386,11 @@ size_t BtcUtils::TxInCalcLength(const uint8_t* ptr, size_t size)
    }
    uint8_t viLen;
    size_t scrLen = (size_t)readVarInt(ptr+36, size-36, viLen);
+   // a huge script length would wrap the sum below into a small length
+   if (scrLen > size - 36 - viLen) {
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "txin script length too large: {}", scrLen));
+   }
    return (36 + viLen + scrLen + 4);
 }
 
@@ -398,6 +403,10 @@ size_t BtcUtils::TxOutCalcLength(const uint8_t* ptr, size_t size)
 
    uint8_t viLen;
    size_t scrLen = (size_t)readVarInt(ptr+8, size-8, viLen);
+   if (scrLen > size - 8 - viLen) {
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "txout script length too large: {}", scrLen));
+   }
    return (8 + viLen + scrLen);
 }
 
