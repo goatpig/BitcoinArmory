@@ -8872,6 +8872,22 @@ protected:
       iface_ = theBDMt_->bdm()->getIFace();
    }
 
+   void startWSServer(std::shared_ptr<Clients> clients=nullptr)
+   {
+      wsServerThr_ = std::thread([bdm=theBDMt_->bdm()]
+         (std::shared_ptr<Clients> clients) {
+            if (clients == nullptr) {
+               auto clients = std::make_shared<Clients>(bdm);
+            }
+            WebSocketServer::start(clients);
+         }, clients
+      );
+
+      //arbitrary wait to give time to WS server to startup
+      std::this_thread::sleep_for(100ms);
+   }
+
+   ////////
    void prepareWallets()
    {
       auto pubKeyB = Cryptography::ECDSA::computePublicKey(TestChain::privKeyAddrB);
@@ -9084,18 +9100,6 @@ protected:
       FileUtils::removeDirectory(homedir_);
       FileUtils::removeDirectory(ldbdir_);
       Config::reset();
-   }
-
-   ////////
-   void startWSServer()
-   {
-      wsServerThr_ = std::thread([bdm=theBDMt_->bdm()](){
-         auto clients = std::make_shared<Clients>(bdm);
-         WebSocketServer::start(clients);
-      });
-
-      //arbitrary wait to give time to WS server to startup
-      std::this_thread::sleep_for(100ms);
    }
 
 protected:
@@ -9503,6 +9507,134 @@ TEST_F(BridgeChainDataTests, GetTxsByHash_DoubleReorg)
    ASSERT_EQ(waitOnNewBlock(), 5);
    addLedgerHashes();
    checkAgainstDb("on 4A-5A", 5);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// cache purge
+TEST_F(BridgeChainDataTests, TxIOCachePurge)
+{
+   loadWallets({walletId_BCDE_});
+   ASSERT_TRUE(checkHasImports(bridge_, walletId_BCDE_));
+
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   auto clients = std::make_shared<Clients>(theBDMt_->bdm());
+   startWSServer(clients);
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+
+   //start db, go online and wait on ready notif
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+   ASSERT_EQ(goOnline(bridge_), 4);
+
+   //wlt balance
+   auto wltBal = getWalletBalance(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(wltBal.size(), 4);
+   EXPECT_EQ(wltBal[0], TestChain::wltBal_BCDE[4][0]);
+   EXPECT_EQ(wltBal[1], TestChain::wltBal_BCDE[4][1]);
+   EXPECT_EQ(wltBal[2], TestChain::wltBal_BCDE[4][2]);
+   EXPECT_EQ(wltBal[3], TestChain::wltBal_BCDE[4][3]);
+
+   //addr balances
+   auto balances = getAddrBalances(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(balances.size(), 4);
+   checkBalances(balances, 4, false);
+
+   //BCDE ledgers
+   auto delegateId = getLedgerDelegateId(bridge_);
+   auto ledgersAtBlocks = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgersAtBlocks.size(), 12);
+
+   for (unsigned i = 0; i < ledgersAtBlocks.size(); i++) {
+      EXPECT_TRUE(
+         checkLedgers(ledgersAtBlocks[i],
+            TestChain::ledgersBCDE[i + 3]));
+   }
+
+   //start capturing the bdv's requests on the server side
+   Types::BdvId bdvId;
+   {
+      auto bdvMap = clients->getBdvIds();
+      ASSERT_EQ(bdvMap.size(), 1);
+      bdvId = *bdvMap.begin();
+   }
+
+   DBTestUtils::BdvPayloadNinja ninja{clients, bdvId};
+   auto ninjaThread = std::thread([&ninja](){
+      ninja.startPayloadCapture();
+   });
+
+   /* add block 5 */
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   nodePtr_->notifyNewBlock();
+
+   //expecting a call for getTxios
+   {
+      auto reader = ninja.getRequestReader();
+      ASSERT_NE(reader.second, nullptr);
+      auto request = reader.second->getRoot<Codec::BDV::Request>();
+      ASSERT_EQ(request.which(), Codec::BDV::Request::Which::BDV);
+      auto bdvRequest = request.getBdv();
+      ASSERT_EQ(bdvRequest.which(), Codec::BDV::BdvRequest::Which::GET_TXIOS);
+
+      //expecting the txio request to be from height 5
+      ASSERT_EQ(bdvRequest.getGetTxios(), 5);
+
+      //fail the getTxios request
+      ninja.failMessage(reader.first);
+   }
+
+   //this will trigger a purge, that will again lead to a request for txios,
+   //this time from height 0
+   {
+      auto readerAfterPurge = ninja.getRequestReader();
+      ASSERT_NE(readerAfterPurge.second, nullptr);
+      auto request2 = readerAfterPurge.second->getRoot<Codec::BDV::Request>();
+      ASSERT_EQ(request2.which(), Codec::BDV::Request::Which::BDV);
+      auto bdvRequest2 = request2.getBdv();
+      ASSERT_EQ(bdvRequest2.which(), Codec::BDV::BdvRequest::Which::GET_TXIOS);
+
+      //expecting the txio request to be from height 5
+      ASSERT_EQ(bdvRequest2.getGetTxios(), 0);
+
+      //we can now stop capturing requests
+      ninja.stopPayloadCapture();
+
+      //and allow the latest getTxios request through
+      ninja.passMessageToBDM(readerAfterPurge.first);
+   }
+
+   ASSERT_EQ(waitOnNewBlock(), 5);
+
+   //wallet balance
+   wltBal = getWalletBalance(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(wltBal.size(), 4);
+   EXPECT_EQ(wltBal[0], TestChain::wltBal_BCDE[5][0]);
+   EXPECT_EQ(wltBal[1], TestChain::wltBal_BCDE[5][1]);
+   EXPECT_EQ(wltBal[2], TestChain::wltBal_BCDE[5][2]);
+   EXPECT_EQ(wltBal[3], TestChain::wltBal_BCDE[5][3]);
+
+   //addr balances
+   balances = getAddrBalances(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(balances.size(), 4);
+   checkBalances(balances, 5, false);
+
+   //ledgers
+   auto ledgersAt5Blocks = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgersAt5Blocks.size(), 15);
+
+   for (unsigned i = 0; i < ledgersAt5Blocks.size(); i++) {
+      EXPECT_TRUE(
+         checkLedgers(ledgersAt5Blocks[i],
+         TestChain::ledgersBCDE[i])) << i;
+   }
+
+   if (ninjaThread.joinable()) {
+      ninjaThread.join();
+   }
 }
 
 namespace

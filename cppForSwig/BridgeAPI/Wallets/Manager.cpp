@@ -706,7 +706,7 @@ void WalletManager::loadWallets()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void WalletManager::updateStateFromDB(
+bool WalletManager::updateStateFromDB(
    std::unique_ptr<Notifications::Push::Payload> payload)
 {
    using namespace Notifications;
@@ -717,10 +717,15 @@ void WalletManager::updateStateFromDB(
    if (sharedPayload->syncWalletState() != SyncState::NoSync) {
       auto updateResult = txioCache_->update(bdvPtr_, sharedPayload);
       if (updateResult.first != TxIOCache::PurgeStatus::NoPurge) {
-         txioCache_->purge(updateResult.first);
-         return;
-
-         //TODO: queue a cache refill command
+         unsigned retries = 0;
+         while (updateResult.first != TxIOCache::PurgeStatus::NoPurge) {
+            if (retries++ >= 2) {
+               //we cannot get data from this bdv, drop it
+               return false;
+            }
+            txioCache_->purge(updateResult.first);
+            updateResult = txioCache_->update(bdvPtr_, sharedPayload);
+         }
       }
 
       //the txio cache is updated, resolve txios for wallets
@@ -735,7 +740,7 @@ void WalletManager::updateStateFromDB(
       }
    }
 
-      //fire callback
+   //fire callback
    switch (sharedPayload->type)
    {
       case Push::PayloadType::NEWBLOCK:
@@ -781,8 +786,9 @@ void WalletManager::updateStateFromDB(
       }
 
       default:
-         return;
+         break;
    }
+   return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
