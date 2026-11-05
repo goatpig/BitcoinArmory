@@ -273,6 +273,9 @@ void WalletManager::cleanupBdvPtr()
 
    //clean up local reference to bdv shared_ptr
    bdvPtr_.reset();
+
+   //finally, clear the cache
+   txioCache_->purge(TxIOCache::PurgeStatus::PurgeAll);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

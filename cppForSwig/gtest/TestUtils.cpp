@@ -1067,7 +1067,7 @@ void DBTestUtils::BdvPayloadNinja::startPayloadCapture()
 
    //we now hold the bdv packet processing spin lock, we can pop from the
    //clients packet queue and isolate those for our bdv
-   payloadQueue_.clear();
+   //payloadQueue_.clear();
    run_.store(true);
    while (run_.load()) {
       std::shared_ptr<BDV_Payload> payload;
@@ -1109,6 +1109,7 @@ void DBTestUtils::BdvPayloadNinja::stopPayloadCapture()
 
    //release bdv parser lock
    bdvPtr->packetProcessSpinLock.store(0, std::memory_order_relaxed);
+   payloadQueue_.clear();
 }
 
 std::pair<uint32_t, std::unique_ptr<capnp::MessageReader>> DBTestUtils::BdvPayloadNinja::getRequestReader()

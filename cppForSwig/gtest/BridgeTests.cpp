@@ -9013,7 +9013,7 @@ protected:
       wsServerThr_ = std::thread([bdm=theBDMt_->bdm()]
          (std::shared_ptr<Clients> clients) {
             if (clients == nullptr) {
-               auto clients = std::make_shared<Clients>(bdm);
+               clients = std::make_shared<Clients>(bdm);
             }
             WebSocketServer::start(clients);
          }, clients
@@ -9647,7 +9647,7 @@ TEST_F(BridgeChainDataTests, GetTxsByHash_DoubleReorg)
 
 ////////////////////////////////////////////////////////////////////////////////
 // cache purge
-TEST_F(BridgeChainDataTests, TxIOCachePurge)
+TEST_F(BridgeChainDataTests, TxIOCachePurge_Recover)
 {
    loadWallets({walletId_BCDE_});
    ASSERT_TRUE(checkHasImports(bridge_, walletId_BCDE_));
@@ -9681,12 +9681,12 @@ TEST_F(BridgeChainDataTests, TxIOCachePurge)
 
    //BCDE ledgers
    auto delegateId = getLedgerDelegateId(bridge_);
-   auto ledgersAtBlocks = getLedgersPage(bridge_, delegateId, 0);
-   ASSERT_EQ(ledgersAtBlocks.size(), 12);
+   auto ledgersAt4Blocks = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgersAt4Blocks.size(), 12);
 
-   for (unsigned i = 0; i < ledgersAtBlocks.size(); i++) {
+   for (unsigned i = 0; i < ledgersAt4Blocks.size(); i++) {
       EXPECT_TRUE(
-         checkLedgers(ledgersAtBlocks[i],
+         checkLedgers(ledgersAt4Blocks[i],
             TestChain::ledgersBCDE[i + 3]));
    }
 
@@ -9767,6 +9767,133 @@ TEST_F(BridgeChainDataTests, TxIOCachePurge)
          checkLedgers(ledgersAt5Blocks[i],
          TestChain::ledgersBCDE[i])) << i;
    }
+
+   if (ninjaThread.joinable()) {
+      ninjaThread.join();
+   }
+}
+
+TEST_F(BridgeChainDataTests, TxIOCachePurge_DropBDV)
+{
+   loadWallets({walletId_BCDE_});
+   ASSERT_TRUE(checkHasImports(bridge_, walletId_BCDE_));
+
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4" }, blk0dat_);
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   auto clients = std::make_shared<Clients>(theBDMt_->bdm());
+   startWSServer(clients);
+
+   ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+   ASSERT_TRUE(registerWallets(bridge_));
+
+   //start db, go online and wait on ready notif
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+   ASSERT_EQ(goOnline(bridge_), 4);
+
+   //wlt balance
+   auto wltBal = getWalletBalance(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(wltBal.size(), 4);
+   EXPECT_EQ(wltBal[0], TestChain::wltBal_BCDE[4][0]);
+   EXPECT_EQ(wltBal[1], TestChain::wltBal_BCDE[4][1]);
+   EXPECT_EQ(wltBal[2], TestChain::wltBal_BCDE[4][2]);
+   EXPECT_EQ(wltBal[3], TestChain::wltBal_BCDE[4][3]);
+
+   //addr balances
+   auto balances = getAddrBalances(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_EQ(balances.size(), 4);
+   checkBalances(balances, 4, false);
+
+   //BCDE ledgers
+   auto delegateId = getLedgerDelegateId(bridge_);
+   auto ledgersAt4Blocks = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_EQ(ledgersAt4Blocks.size(), 12);
+
+   for (unsigned i = 0; i < ledgersAt4Blocks.size(); i++) {
+      EXPECT_TRUE(
+         checkLedgers(ledgersAt4Blocks[i],
+            TestChain::ledgersBCDE[i + 3]));
+   }
+
+   //start capturing the bdv's requests on the server side
+   Types::BdvId bdvId;
+   {
+      auto bdvMap = clients->getBdvIds();
+      ASSERT_EQ(bdvMap.size(), 1);
+      bdvId = *bdvMap.begin();
+   }
+
+   DBTestUtils::BdvPayloadNinja ninja{clients, bdvId};
+   auto ninjaThread = std::thread([&ninja](){
+      ninja.startPayloadCapture();
+   });
+
+   /* add block 5 */
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   nodePtr_->notifyNewBlock();
+
+   //expecting a call for getTxios
+   {
+      auto reader = ninja.getRequestReader();
+      ASSERT_NE(reader.first, UINT32_MAX);
+      ASSERT_NE(reader.second, nullptr);
+      auto request = reader.second->getRoot<Codec::BDV::Request>();
+      ASSERT_EQ(request.which(), Codec::BDV::Request::Which::BDV);
+      auto bdvRequest = request.getBdv();
+      ASSERT_EQ(bdvRequest.which(), Codec::BDV::BdvRequest::Which::GET_TXIOS);
+
+      //expecting the txio request to be from height 5
+      ASSERT_EQ(bdvRequest.getGetTxios(), 5);
+
+      //fail the getTxios request
+      ninja.failMessage(reader.first);
+   }
+
+   //this will trigger a purge, that will again lead to a request for txios,
+   //this time from height 0, twice
+   unsigned count = 0;
+   while (count++ < 2) {
+      auto readerAfterPurge = ninja.getRequestReader();
+      ASSERT_NE(readerAfterPurge.second, nullptr);
+      auto request2 = readerAfterPurge.second->getRoot<Codec::BDV::Request>();
+      ASSERT_EQ(request2.which(), Codec::BDV::Request::Which::BDV);
+      auto bdvRequest2 = request2.getBdv();
+      ASSERT_EQ(bdvRequest2.which(), Codec::BDV::BdvRequest::Which::GET_TXIOS);
+
+      //expecting the txio request to be from height 5
+      ASSERT_EQ(bdvRequest2.getGetTxios(), 0);
+
+      //fail the getTxios request
+      ninja.failMessage(readerAfterPurge.first);
+   }
+   ninja.stopPayloadCapture();
+
+   //the bridge will drop the bdv connection in consequence
+   auto reply = waitOnReply();
+   kj::ArrayPtr<const capnp::word> words(
+      reinterpret_cast<const capnp::word*>(reply->data.getPtr()),
+      reply->data.getSize() / sizeof(capnp::word));
+   capnp::FlatArrayMessageReader reader(words);
+
+   auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+   ASSERT_EQ(fromBridge.which(), Codec::Bridge::FromBridge::NOTIFICATION);
+   auto bridgeNotif = fromBridge.getNotification();
+   ASSERT_EQ(bridgeNotif.which(), Codec::Bridge::Notification::DISCONNECTED);
+
+   /* check the cache was purged in the process */
+
+   //wallet balance
+   wltBal = getWalletBalance(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_TRUE(wltBal.empty());
+
+   //addr balances
+   balances = getAddrBalances(bridge_, walletId_BCDE_, accountId_BCDE_);
+   ASSERT_TRUE(balances.empty());
+
+   //ledgers
+   auto ledgersAt5Blocks = getLedgersPage(bridge_, delegateId, 0);
+   ASSERT_TRUE(ledgersAt5Blocks.empty());
 
    if (ninjaThread.joinable()) {
       ninjaThread.join();
