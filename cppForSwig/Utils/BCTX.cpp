@@ -26,7 +26,6 @@ const BinaryData& BCTX::getHash() const
 {
    if (txHash_.empty()) {
       if (usesWitness_) {
-         BinaryData noWitData;
          BinaryDataRef version(data_, 4);
 
          // witness data starts right after the last txout, the first
@@ -36,6 +35,9 @@ const BinaryData& BCTX::getHash() const
          BinaryDataRef txinout(data_ + 6, witnessOffset - 6);
          BinaryDataRef locktime(data_ + size_ - 4, 4);
 
+         //avoid unnecessary vector resizing by reserving ahead
+         BinaryData noWitData;
+         noWitData.reserve(txinout.getSize() + 8);
          noWitData.append(version);
          noWitData.append(txinout);
          noWitData.append(locktime);
