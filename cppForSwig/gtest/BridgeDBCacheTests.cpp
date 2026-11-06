@@ -174,7 +174,8 @@ TEST_F(BridgeDBCacheTests, Unpooled)
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(BridgeDBCacheTests, EraseHashes)
 {
-   //every copy of the hash goes, other hashes stay
+   //the mined and zc copies of the hash go, its unpooled copy and other
+   //hashes stay
    Ledgers::DBCache cache;
    auto unpooledKey = cache.addUnpooledTx(rawTx1);
    add(cache, rawTx1, zcKey);
@@ -183,11 +184,11 @@ TEST_F(BridgeDBCacheTests, EraseHashes)
    add(cache, rawTx2, zcKey2);
 
    cache.eraseHashes({Tx(rawTx1).getThisHash()});
-   EXPECT_THROW(cache.getTxByHash(Tx(rawTx1).getThisHash()),
-      std::out_of_range);
-   for (auto txKey : {unpooledKey, zcKey, minedKey}) {
+   for (auto txKey : {zcKey, minedKey}) {
       EXPECT_THROW(cache.getTx(txKey), std::out_of_range);
    }
+   EXPECT_EQ(cache.getKeysForHash(Tx(rawTx1).getThisHash()),
+      std::vector<Types::TxKey>{unpooledKey});
    EXPECT_EQ(keyForHash(cache, rawTx2), zcKey2);
 }
 
@@ -219,6 +220,71 @@ TEST_F(BridgeDBCacheTests, PurgeSkipsMined)
    EXPECT_THROW(cache.getTxByHash(Tx(rawTx2).getThisHash()),
       std::out_of_range);
    EXPECT_THROW(cache.getTx(zcKey), std::out_of_range);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, PurgeZC)
+{
+   //every zc copy goes, mined and unpooled copies stay
+   Ledgers::DBCache cache;
+   auto hash1 = Tx(rawTx1).getThisHash();
+   auto hash2 = Tx(rawTx2).getThisHash();
+   auto unpooledKey = cache.addUnpooledTx(rawTx1);
+   add(cache, rawTx1, zcKey);
+   add(cache, rawTx1, minedKey);
+   auto zcKey2 = Types::constructZCKey(6);
+   add(cache, rawTx2, zcKey2);
+
+   cache.purgeZC();
+   EXPECT_THROW(cache.getTx(zcKey), std::out_of_range);
+   EXPECT_THROW(cache.getTx(zcKey2), std::out_of_range);
+   EXPECT_EQ(cache.getKeysForHash(hash1),
+      (std::vector<Types::TxKey>{minedKey, unpooledKey}));
+   EXPECT_EQ(cache.getTx(unpooledKey).serialize(), rawTx1);
+   EXPECT_TRUE(cache.getKeysForHash(hash2).empty());
+   EXPECT_THROW(cache.getTxByHash(hash2), std::out_of_range);
+
+   //a zc key that comes back is a new copy
+   add(cache, rawTx2, zcKey);
+   EXPECT_EQ(keyForHash(cache, rawTx2), zcKey);
+   EXPECT_EQ(cache.getKeysForHash(hash1),
+      (std::vector<Types::TxKey>{minedKey, unpooledKey}));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeDBCacheTests, PurgeDbCopies)
+{
+   //the mined and zc copies go, unpooled copies stay
+   Ledgers::DBCache cache;
+   auto hash1 = Tx(rawTx1).getThisHash();
+   auto hash2 = Tx(rawTx2).getThisHash();
+   auto unpooledKey = cache.addUnpooledTx(rawTx1);
+   add(cache, rawTx1, zcKey);
+   add(cache, rawTx1, minedKey);
+   add(cache, rawTx2, Types::constructZCKey(6));
+
+   cache.purgeDbCopies();
+   EXPECT_THROW(cache.getTx(zcKey), std::out_of_range);
+   EXPECT_THROW(cache.getTx(minedKey), std::out_of_range);
+   EXPECT_EQ(cache.getKeysForHash(hash1),
+      std::vector<Types::TxKey>{unpooledKey});
+   EXPECT_EQ(cache.getTx(unpooledKey).serialize(), rawTx1);
+   EXPECT_THROW(cache.getTxByHash(hash2), std::out_of_range);
+
+   //the unpooled ids go on, none is reused
+   auto unpooledKey2 = cache.addUnpooledTx(rawTx2);
+   EXPECT_NE(unpooledKey2, unpooledKey);
+   EXPECT_EQ(keyForHash(cache, rawTx2), unpooledKey2);
+
+   //a full purge of a txio cache keeps them too
+   Bridge::TxIOCache txioCache;
+   txioCache.addUnpooledTxs({rawTx1});
+   txioCache.purge(Bridge::TxIOCache::PurgeStatus::PurgeAll);
+   try {
+      EXPECT_EQ(txioCache.getTxByHash(hash1).serialize(), rawTx1);
+   } catch (const std::out_of_range& e) {
+      ADD_FAILURE() << e.what();
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

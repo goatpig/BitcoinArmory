@@ -7,6 +7,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "BridgeTestUtils.h"
+#include <ZeroConf/Parser.h>
+#include <ZeroConf/Utils.h>
 
 ////////////////////////////////////////////////////////////////////////////////
 // BridgeChainDataTests
@@ -173,6 +175,301 @@ protected:
    }
 
    ////////
+   void goOnlineAt(unsigned top)
+   {
+      //serves the blocks set so far, connects the bridge, registers the
+      //wallets and waits on the bridge to go online at height top
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer();
+
+      ASSERT_TRUE(connectToIp(bridge_, "127.0.0.1", 9001, serverPubkey_));
+      ASSERT_TRUE(registerWallets(bridge_));
+      theBDMt_->start(Config::DBSettings::initMode());
+      ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+      ASSERT_EQ(goOnline(bridge_), top);
+   }
+
+   void parseDbArgs(bool clearMempool)
+   {
+      std::vector<std::string> args{
+         "--datadir=./fakehomedir",
+         "--dbdir=./ldbtestdir",
+         "--satoshi-datadir=./blkfiletest",
+         "--db-type=DB_BARE",
+         "--thread-count=3",
+         "--public"};
+      if (clearMempool) {
+         args.emplace_back("--clear-mempool");
+      }
+      Config::parseArgs(args, Config::ProcessType::DB);
+   }
+
+   template<typename Func>
+   auto readFromBridge(const MsgPtr& msg, Func func)
+   {
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(msg->data.getPtr()),
+         msg->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      return func(reader.getRoot<Codec::Bridge::FromBridge>());
+   }
+
+   void waitOnDisconnected()
+   {
+      //skips the notifications that come before it
+      while (true) {
+         auto msg = waitOnReplyFor(10s);
+         ASSERT_NE(msg, nullptr) << "no DISCONNECTED notification";
+         bool disconnected = readFromBridge(msg,
+            [](Codec::Bridge::FromBridge::Reader fromBridge) {
+               return fromBridge.which() ==
+                     Codec::Bridge::FromBridge::NOTIFICATION &&
+                  fromBridge.getNotification().which() ==
+                     Codec::Bridge::Notification::DISCONNECTED;
+            });
+         if (disconnected) {
+            return;
+         }
+      }
+   }
+
+   void restartDb(bool clearMempool)
+   {
+      //the db goes away, comes back on the same blocks, the bridge
+      //reconnects to it
+      WebSocketServer::shutdown();
+      waitOnDisconnected();
+      if (wsServerThr_.joinable()) {
+         wsServerThr_.join();
+      }
+      theBDMt_->shutdown();
+      delete theBDMt_;
+
+      WebSocketServer::init();
+      Config::reset();
+      Config::DBSettings::setServiceType(SERVICE_UNITTEST_WITHWS);
+      parseDbArgs(clearMempool);
+      initBDM();
+      nodePtr_ = std::dynamic_pointer_cast<NodeUnitTest>(
+         Config::NetworkSettings::bitcoinNodes().first);
+      nodePtr_->setBDM(theBDMt_->bdm());
+      goOnlineAt(5);
+   }
+
+   ////////
+   BinaryData signFromBCDE(const std::vector<UTXO>& utxos, uint64_t value)
+   {
+      //pays value to a new address from utxos (the wallet picks them if
+      //empty), rbf, the change going to C
+      auto recipientPrivKey = Cryptography::ECDSA::createNewPrivateKey();
+      auto recipientPubKey = Cryptography::ECDSA::computePublicKey(
+         recipientPrivKey, true);
+      auto recipientAddr = BtcUtils::scrAddrToSegWitAddress(
+         BtcUtils::getHash160(recipientPubKey));
+      return createAndSignTx(bridge_,
+         walletId_BCDE_, accountId_BCDE_,
+         utxos, {{ recipientAddr, value }},
+         TestChain::scrAddrC, 2, true,
+         "privPass1"
+      );
+   }
+
+   BinaryData broadcastZc(const BinaryData& signedTx, bool throughRpc)
+   {
+      //broadcasts, waits on the zc notif and returns the tx hash. Throws
+      //if the notif isn't for that tx: gtest fails the test.
+      //throughRpc: the node knows the hash already and the tx goes
+      //through RPC, so it takes a single zc id wherever the test runs. A P2P
+      //push takes one for its batch and another for the RPC fallback when
+      //the mock watcher misses the tx (its inv queue is static, a node going
+      //away stops it: after restartDb or an earlier test), and a node that
+      //hasn't seen the hash pushes an inv of its own, another batch with
+      //another id
+      auto txHash = Tx(signedTx).getThisHash();
+      if (throughRpc) {
+         nodePtr_->presentZcHash(txHash);
+      }
+      broadcastTx(bridge_, signedTx, throughRpc);
+      auto zcLedgers = waitOnZc();
+      if (zcLedgers.empty() || zcLedgers[0].getTxHash() != txHash) {
+         throw std::runtime_error("no zc notif for the tx");
+      }
+      if (throughRpc && zcLedgers.size() != 1) {
+         throw std::runtime_error("expected 1 zc ledger");
+      }
+      return txHash;
+   }
+
+   BinaryData spendFromBCDE(
+      uint32_t height, uint32_t txIndex, uint32_t txOutIndex)
+   {
+      //a zc spending the BCDE wallet's output at height/txIndex/txOutIndex.
+      //Throws if the wallet has no such output
+      auto utxos = getUTXOs(bridge_, walletId_BCDE_, accountId_BCDE_, 0);
+      auto iter = std::find_if(utxos.begin(), utxos.end(),
+         [&](const UTXO& utxo)->bool {
+            return utxo.getHeight() == height &&
+               utxo.getTxIndex() == txIndex &&
+               utxo.getTxOutIndex() == txOutIndex;
+      });
+      if (iter == utxos.end()) {
+         throw std::runtime_error("no such utxo");
+      }
+      return broadcastZc(signFromBCDE({*iter}, 1 * COIN), false);
+   }
+
+   ////////
+   auto dbZcKey(const BinaryData& txHash)
+   {
+      auto snapshot = theBDMt_->bdm()->zeroConfCont()->getSnapshot();
+      if (snapshot == nullptr) {
+         return Types::INVALID_TX_KEY;
+      }
+      return snapshot->getKeyForHash(txHash);
+   }
+
+   std::map<BinaryData, FetchedTx> getTxsByHash(
+      const std::set<BinaryData>& hashes)
+   {
+      //the bridge serves every one of hashes
+      bool success = false;
+      auto served = getTxDataByHash(bridge_, hashes, success);
+      EXPECT_TRUE(success);
+      EXPECT_EQ(served.size(), hashes.size());
+      return served;
+   }
+
+   std::set<std::string> zcLedgerHashes(const std::string& delegateId)
+   {
+      std::set<std::string> result;
+      for (const auto& ledger : getLedgersPage(bridge_, delegateId, 0)) {
+         if (ledger.getBlockNum() == UINT32_MAX) {
+            result.emplace(ledger.getTxHash().toHexStr());
+         }
+      }
+      return result;
+   }
+
+   std::set<std::pair<std::string, uint32_t>> minedLedgers(
+      const std::string& delegateId)
+   {
+      //hash and height of the mined ledgers
+      std::set<std::pair<std::string, uint32_t>> result;
+      for (const auto& ledger : getLedgersPage(bridge_, delegateId, 0)) {
+         if (ledger.getBlockNum() != UINT32_MAX) {
+            result.emplace(ledger.getTxHash().toHexStr(), ledger.getBlockNum());
+         }
+      }
+      return result;
+   }
+
+   void checkZcsAgainstDb(const std::string& tag,
+      const std::string& delegateId, const std::set<BinaryData>& hashes,
+      size_t inMempool)
+   {
+      //a zc the db's mempool has is served as a zc, with the time the
+      //mempool got it, and the wallet's ledgers list it. One the mempool
+      //doesn't have is neither: this bridge broadcast it, so all it serves
+      //is its unpooled copy, with no time
+      auto snapshot = theBDMt_->bdm()->zeroConfCont()->getSnapshot();
+      ASSERT_NE(snapshot, nullptr) << tag;
+
+      auto zcLedgers = zcLedgerHashes(delegateId);
+      auto served = getTxsByHash(hashes);
+      size_t count = 0;
+      for (const auto& txHash : hashes) {
+         auto hashStr = txHash.toHexStr(true);
+         auto iter = served.find(txHash);
+         if (iter == served.end()) {
+            ADD_FAILURE() << tag << ": " << hashStr << " not served";
+            continue;
+         }
+         EXPECT_EQ(iter->second.height, UINT32_MAX) << tag << ": " << hashStr;
+         EXPECT_EQ(iter->second.txIndex, UINT32_MAX) << tag << ": " << hashStr;
+
+         auto zcKey = snapshot->getKeyForHash(txHash);
+         if (!Types::isTxKeyValid(zcKey)) {
+            EXPECT_EQ(iter->second.timestamp, UINT32_MAX) << tag << ": " <<
+               hashStr << " isn't in the db's mempool, served as a zc";
+            EXPECT_EQ(zcLedgers.count(txHash.toHexStr()), 0U) << tag << ": " <<
+               hashStr;
+            continue;
+         }
+         ++count;
+         auto zcTx = snapshot->getTxByKey(zcKey);
+         ASSERT_NE(zcTx, nullptr);
+         EXPECT_EQ(iter->second.timestamp, zcTx->getTxObj().getTxTime())
+            << tag << ": " << hashStr;
+         EXPECT_EQ(zcLedgers.count(txHash.toHexStr()), 1U) << tag << ": " <<
+            hashStr;
+      }
+      EXPECT_EQ(count, inMempool) << tag;
+   }
+
+   ////////
+   std::pair<bool, std::string> waitOnReplyStatus(uint64_t refId)
+   {
+      //success and error of the reply to refId, skipping notifications and
+      //other replies
+      while (true) {
+         auto msg = waitOnReplyFor(10s);
+         if (msg == nullptr) {
+            return { false, "no reply" };
+         }
+         auto status = readFromBridge(msg,
+            [refId](Codec::Bridge::FromBridge::Reader fromBridge)
+               ->std::optional<std::pair<bool, std::string>> {
+               if (fromBridge.which() != Codec::Bridge::FromBridge::REPLY) {
+                  return std::nullopt;
+               }
+               auto reply = fromBridge.getReply();
+               if (reply.getReferenceId() != refId) {
+                  return std::nullopt;
+               }
+               return std::make_pair(
+                  reply.getSuccess(), std::string(reply.getError().cStr()));
+            });
+         if (status.has_value()) {
+            return *status;
+         }
+      }
+   }
+
+   std::pair<bool, std::string> getLedgerPageStatus(
+      const std::string& delegateId, uint32_t page)
+   {
+      capnp::MallocMessageBuilder message;
+      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+      uint64_t refId = rand();
+      toBridge.setReferenceId(refId);
+      auto request = toBridge.initDelegate();
+      request.setId(delegateId);
+      auto pageReq = request.initGetPages();
+      pageReq.setFirst(page);
+      pageReq.setLast(page);
+      pushRequest(bridge_, serializeCapnp(message));
+      return waitOnReplyStatus(refId);
+   }
+
+   std::pair<bool, std::string> getFeeForMaxValStatus(
+      const std::string& csId, float feeByte)
+   {
+      //the bridge processes the request on this thread: a throw from it
+      //reaches the caller
+      capnp::MallocMessageBuilder message;
+      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+      uint64_t refId = rand();
+      toBridge.setReferenceId(refId);
+      auto request = toBridge.initCoinSelection();
+      request.setId(csId);
+      auto feeReq = request.initGetFeeForMaxVal();
+      feeReq.setFeeByte(feeByte);
+      pushRequest(bridge_, serializeCapnp(message));
+      return waitOnReplyStatus(refId);
+   }
+
+   ////////
    void SetUp() override
    {
       FileUtils::removeDirectory(blkdir_);
@@ -190,14 +487,7 @@ protected:
       TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
 
       WebSocketServer::init();
-      Config::parseArgs({
-         "--datadir=./fakehomedir",
-         "--dbdir=./ldbtestdir",
-         "--satoshi-datadir=./blkfiletest",
-         "--db-type=DB_BARE",
-         "--thread-count=3",
-         "--public"},
-         Config::ProcessType::DB);
+      parseDbArgs(false);
       prepareWallets();
 
       //setup auth peers for server and client
@@ -656,6 +946,95 @@ TEST_F(BridgeChainDataTests, GetTxsByHash_DoubleReorg)
    checkAgainstDb("on 4A-5A", 5);
 }
 
+TEST_F(BridgeChainDataTests, GetTxsByHash_ZcDoubleReorg)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A" }, blk0dat_);
+   ASSERT_NO_FATAL_FAILURE(goOnlineAt(4));
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+
+   /* test starts here */
+
+   //on 4A: one zc spends an output of block 3 all branches keep unspent,
+   //the other one an output of block 3 that block 4 spends
+   std::set<BinaryData> hashes;
+   hashes.emplace(spendFromBCDE(3, 2, 0));
+   hashes.emplace(spendFromBCDE(3, 3, 0));
+   checkZcsAgainstDb("on 4A", delegateId, hashes, 2);
+
+   //reorg onto 4, 5: the second zc is out. A third one spends an output
+   //of block 5, which 5A doesn't have
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5" }, blk0dat_);
+   nodePtr_->notifyNewBlock();
+   ASSERT_EQ(waitOnNewBlock(), 5);
+   checkZcsAgainstDb("on 4-5", delegateId, hashes, 1);
+   hashes.emplace(spendFromBCDE(5, 1, 0));
+   checkZcsAgainstDb("on 4-5, 3rd zc", delegateId, hashes, 2);
+
+   //reorg back onto 4A, 5A: the third zc is out, the first one stays
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4A", "4", "5", "5A" }, blk0dat_);
+   nodePtr_->notifyNewBlock();
+   ASSERT_EQ(waitOnNewBlock(), 5);
+   checkZcsAgainstDb("on 4A-5A", delegateId, hashes, 1);
+}
+
+TEST_F(BridgeChainDataTests, GetTxsByHash_ZcReconnect)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
+   ASSERT_NO_FATAL_FAILURE(goOnlineAt(5));
+   auto delegateId = getLedgerDelegateId(bridge_);
+   ASSERT_FALSE(delegateId.empty());
+
+   //the bridge gets the mined ledgers anew from each db it connects to
+   auto minedAt5 = minedLedgers(delegateId);
+   ASSERT_FALSE(minedAt5.empty());
+
+   /* test starts here */
+
+   auto zcHash1 = broadcastZc(signFromBCDE({}, 11 * COIN), true);
+   auto zcKey1 = dbZcKey(zcHash1);
+   ASSERT_EQ(zcKey1, Types::constructZCKey(0));
+
+   auto served = getTxsByHash({zcHash1});
+   auto zcTime1 = served[zcHash1].timestamp;
+   EXPECT_NE(zcTime1, UINT32_MAX);
+
+   //the db comes back with the mempool it saved, the zc has the same key:
+   //the wallet lists it, the bridge serves it as a zc
+   ASSERT_NO_FATAL_FAILURE(restartDb(false));
+   EXPECT_EQ(minedLedgers(delegateId), minedAt5);
+   EXPECT_EQ(dbZcKey(zcHash1), zcKey1);
+   EXPECT_EQ(zcLedgerHashes(delegateId),
+      std::set<std::string>{zcHash1.toHexStr()});
+   served = getTxsByHash({zcHash1});
+   EXPECT_EQ(served[zcHash1].height, UINT32_MAX);
+   EXPECT_EQ(served[zcHash1].timestamp, zcTime1);
+
+   //it comes back with its mempool cleared: the wallet lists no zc, and the
+   //bridge serves the zc's unpooled copy only, with no time
+   ASSERT_NO_FATAL_FAILURE(restartDb(true));
+   EXPECT_EQ(minedLedgers(delegateId), minedAt5);
+   EXPECT_TRUE(zcLedgerHashes(delegateId).empty());
+   served = getTxsByHash({zcHash1});
+   EXPECT_EQ(served[zcHash1].height, UINT32_MAX);
+   EXPECT_EQ(served[zcHash1].timestamp, UINT32_MAX);
+
+   /* a new zc gets the first zc id again, the key the first zc had */
+   auto zcHash2 = broadcastZc(signFromBCDE({}, 5 * COIN), true);
+   ASSERT_NE(zcHash2.toHexStr(), zcHash1.toHexStr());
+   EXPECT_EQ(dbZcKey(zcHash2), zcKey1);
+
+   //the wallet's ledgers and the bridge show the new tx
+   EXPECT_EQ(zcLedgerHashes(delegateId),
+      std::set<std::string>{zcHash2.toHexStr()});
+   served = getTxsByHash({zcHash1, zcHash2});
+   EXPECT_EQ(served[zcHash1].timestamp, UINT32_MAX);
+   EXPECT_EQ(served[zcHash2].height, UINT32_MAX);
+   EXPECT_NE(served[zcHash2].timestamp, UINT32_MAX);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // cache purge
 TEST_F(BridgeChainDataTests, TxIOCachePurge_Recover)
@@ -879,18 +1258,12 @@ TEST_F(BridgeChainDataTests, TxIOCachePurge_DropBDV)
       ninja.failMessage(readerAfterPurge.first);
    }
    ninja.stopPayloadCapture();
+   if (ninjaThread.joinable()) {
+      ninjaThread.join();
+   }
 
    //the bridge will drop the bdv connection in consequence
-   auto reply = waitOnReply();
-   kj::ArrayPtr<const capnp::word> words(
-      reinterpret_cast<const capnp::word*>(reply->data.getPtr()),
-      reply->data.getSize() / sizeof(capnp::word));
-   capnp::FlatArrayMessageReader reader(words);
-
-   auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-   ASSERT_EQ(fromBridge.which(), Codec::Bridge::FromBridge::NOTIFICATION);
-   auto bridgeNotif = fromBridge.getNotification();
-   ASSERT_EQ(bridgeNotif.which(), Codec::Bridge::Notification::DISCONNECTED);
+   ASSERT_NO_FATAL_FAILURE(waitOnDisconnected());
 
    /* check the cache was purged in the process */
 
@@ -906,9 +1279,22 @@ TEST_F(BridgeChainDataTests, TxIOCachePurge_DropBDV)
    auto ledgersAt5Blocks = getLedgersPage(bridge_, delegateId, 0);
    ASSERT_TRUE(ledgersAt5Blocks.empty());
 
-   if (ninjaThread.joinable()) {
-      ninjaThread.join();
-   }
+   /*
+   the wallet containers dropped their chain data with the bdv: the requests
+   served offline don't run into the txs the purge dropped
+   */
+
+   //a ledger page is empty rather than an error
+   auto pageStatus = getLedgerPageStatus(delegateId, 0);
+   EXPECT_TRUE(pageStatus.first) << pageStatus.second;
+
+   //a coin selection set up now has nothing to spend, and the fee to spend
+   //it all doesn't ask the purged cache for utxos
+   auto csId = getNewCoinSelector(bridge_, walletId_BCDE_, accountId_BCDE_, 5);
+   ASSERT_FALSE(csId.empty());
+   std::pair<bool, std::string> feeStatus;
+   ASSERT_NO_THROW(feeStatus = getFeeForMaxValStatus(csId, 1.0f));
+   EXPECT_TRUE(feeStatus.first) << feeStatus.second;
 }
 
 namespace
