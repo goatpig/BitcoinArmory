@@ -279,7 +279,8 @@ TESTS += gtest/ZeroConfTests
 
 # BridgeTests
 bin_PROGRAMS += gtest/BridgeTests
-gtest_BridgeTests_SOURCES = gtest/BridgeTests.cpp \
+gtest_BridgeTests_SOURCES = gtest/BridgeTestUtils.cpp \
+	gtest/BridgeTests.cpp \
 	${CPPBRIDGE_SOURCE_FILES}
 gtest_BridgeTests_CXXFLAGS = $(AM_CXXFLAGS) $(UNIT_TEST_CXXFLAGS) $(LIBBTC_FLAGS)
 gtest_BridgeTests_CPPFLAGS = $(AM_CPPFLAGS) $(INCLUDE_FILES)
