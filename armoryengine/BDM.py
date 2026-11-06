@@ -38,6 +38,7 @@ NODESTATUS_UPDATE = 'nodeStatus'
 BDM_SCAN_PROGRESS = 'BDM_Progress'
 BDV_ERROR = 'error'
 BDV_DISCONNECTED = 'disconnected'
+BDV_DROPPED = 'bdvDropped'
 
 CPP_BDM_NOTIF_ID      = "bdm_callback"
 CPP_PROGRESS_NOTIF_ID = "progress"
@@ -201,7 +202,7 @@ class BlockDataManager(object):
       elif act == NEW_BLOCK_ACTION:
          TheBDM.topBlockHeight = notifProto.newBlock
 
-      elif act == BDV_DISCONNECTED:
+      elif act in (BDV_DISCONNECTED, BDV_DROPPED):
          TheBDM.setState(BDM_OFFLINE)
 
       listenerList = self.getListenerList()
