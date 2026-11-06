@@ -817,3 +817,263 @@ TEST_F(TxIOCacheTests, DoubleReorg)
    ASSERT_TRUE(compareLedgers(cache, addrBCDE, TestChain::ledgersBCDE_Reorg));
    ASSERT_TRUE(compareLedgers(cache, addrAFLB, TestChain::ledgersAFLB_Reorg));
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// ChainDataTests
+namespace
+{
+   //runs a function when it takes its lock for the nth time
+   class HookedTxIOCache : public Bridge::TxIOCache
+   {
+   private:
+      const unsigned hookAt_;
+      const std::function<void(Bridge::TxIOCache&)> hook_;
+      unsigned lockCount_ = 0;
+
+      void initAfterLock(void) override
+      {
+         if (++lockCount_ == hookAt_) {
+            hook_(*this);
+         }
+      }
+
+   public:
+      HookedTxIOCache(unsigned at,
+         std::function<void(Bridge::TxIOCache&)> hook) :
+         hookAt_(at), hook_(std::move(hook))
+      {}
+   };
+}
+
+class ChainDataTests : public TxIOCacheTests
+{
+protected:
+   void TearDown() override
+   {
+      bdv_.reset();
+      clients_.reset();
+      callback_.reset();
+      TxIOCacheTests::TearDown();
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   //starts the db with BCDE registered as a wallet and connects a bdv to it,
+   //returns the top height once the bdv is online, UINT32_MAX on failure
+   uint32_t goOnline()
+   {
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      clients_ = std::make_shared<Clients>(theBDMt_->bdm());
+      startWSServer(clients_);
+
+      callback_ = std::make_shared<DBTestUtils::UTCallback>();
+      bdv_ = AsyncClient::BlockDataViewer::getNewBDV(
+         "127.0.0.1", Config::NetworkSettings::dbPort(),
+         std::make_shared<NetworkPeers::ClientStore>(Wallets::IO::ReadOnlyFileParams{
+            homedir_ / CLIENT_AUTH_PEER_FILENAME, authPeersPassLbd_}),
+         true, callback_
+      );
+      bdv_->connectToRemote();
+      bdv_->registerWithDB(Config::BitcoinSettings::getMagicBytes().toHexStr());
+      {
+         auto wltBCDE = bdv_->getWalletObj("wallet_bcde");
+         wltBCDE.registerAddresses(addrBCDE_, false);
+      }
+
+      theBDMt_->start(Config::DBSettings::initMode());
+      if (theBDMt_->bdm()->waitUntilReady(5s) != BDMState::Ready) {
+         ADD_FAILURE() << "bdm isn't ready";
+         return UINT32_MAX;
+      }
+      bdv_->goOnline();
+      auto readyNotif = callback_->waitOnNotification(
+         DBTestUtils::UTCallback::BDMAction_Ready);
+      if (readyNotif == nullptr) {
+         ADD_FAILURE() << "no ready notification";
+         return UINT32_MAX;
+      }
+      return readyNotif->newTop.getHeight();
+   }
+
+   /////////////////////////////////////////////////////////////////////////////
+   //a signed tx spending all the utxos of the wallet address 'from': 'value'
+   //goes to 'to', the rest less the fee to 'change' (P2PKH addresses). An rbf
+   //tx flags its inputs as replaceable. Empty on failure
+   BinaryData signTx(const Types::ScrAddr& from,
+      const Types::ScrAddr& to, uint64_t value,
+      const Types::ScrAddr& change, bool rbf)
+   {
+      try {
+         auto utxos = DBTestUtils::getUTXOsForScrAddrs(
+            theBDMt_->bdm(), { from });
+         uint64_t total = 0;
+         for (const auto& utxo : utxos) {
+            total += utxo.amount;
+         }
+         if (total < value + fee_) {
+            ADD_FAILURE() << "not enough coins to spend";
+            return {};
+         }
+
+         Signing::Signer signer;
+         for (const auto& utxo : utxos) {
+            auto spender = std::make_shared<Signing::ScriptSpender>(utxo);
+            if (rbf) {
+               spender->setSequence(UINT32_MAX - 2);
+            }
+            signer.addSpender(spender);
+         }
+         signer.addRecipient(std::make_shared<Signing::Recipient_P2PKH>(
+            to.getSliceCopy(1, 20), value));
+         if (total > value + fee_) {
+            signer.addRecipient(std::make_shared<Signing::Recipient_P2PKH>(
+               change.getSliceCopy(1, 20), total - value - fee_));
+         }
+
+         auto feed = std::make_shared<ResolverUtils::TestResolverFeed>();
+         feed->addPrivKey(TestChain::privKeyAddrB.getRef());
+         feed->addPrivKey(TestChain::privKeyAddrC.getRef());
+         feed->addPrivKey(TestChain::privKeyAddrD.getRef());
+         feed->addPrivKey(TestChain::privKeyAddrE.getRef());
+         signer.setFeed(feed);
+         signer.sign();
+         if (!signer.verify()) {
+            ADD_FAILURE() << "unsigned tx";
+            return {};
+         }
+         return signer.serializeSignedTx();
+      } catch (const std::exception& e) {
+         ADD_FAILURE() << e.what();
+         return {};
+      }
+   }
+
+   //pushes a zc to the db, returns its hash once the bdv was notified of it,
+   //empty on failure
+   Types::TxHash broadcastZc(const BinaryData& rawTx)
+   {
+      if (rawTx.empty()) {
+         return {};
+      }
+      DBTestUtils::ZcVector zcVec;
+      zcVec.push_back(rawTx, 14000000);
+      DBTestUtils::pushNewZc(theBDMt_, zcVec);
+
+      auto zcNotif = callback_->waitOnNotification(
+         DBTestUtils::UTCallback::BDMAction_ZC);
+      if (zcNotif == nullptr || zcNotif->txios.empty()) {
+         ADD_FAILURE() << "no zc notification";
+         return {};
+      }
+      return Tx(rawTx).getThisHash();
+   }
+
+   //what the bridge pushes to have the cache resync with the db
+   std::shared_ptr<Bridge::Notifications::Push::Payload> refreshPush() const
+   {
+      return std::make_shared<Bridge::Notifications::Push::Command_Refresh>(
+         bdv_->getSocketName(), std::string{"refresh"},
+         Bridge::Notifications::SyncState::ScanWallets);
+   }
+
+   Types::TxKey getDBKeyForHash(const Types::TxHash& txHash) const
+   {
+      return theBDMt_->bdm()->getIFace()->getDBKeyForHash(txHash);
+   }
+
+protected:
+   std::shared_ptr<Clients> clients_;
+   std::shared_ptr<DBTestUtils::UTCallback> callback_;
+   std::shared_ptr<AsyncClient::BlockDataViewer> bdv_;
+
+   const uint64_t fee_ = 10000;
+   const Bridge::AddressFilter allAddresses_ =
+      [](const Types::ScrAddr&)->bool { return true; };
+   const std::vector<Types::ScrAddr> addrBCDE_{
+      TestChain::scrAddrB, TestChain::scrAddrC,
+      TestChain::scrAddrD, TestChain::scrAddrE
+   };
+};
+
+TEST_F(ChainDataTests, GetZcUTXOs_TxNotCached)
+{
+   ASSERT_EQ(goOnline(), 5U);
+
+   //an rbf zc from the wallet, its change goes back to the wallet
+   auto zcHash = broadcastZc(signTx(TestChain::scrAddrC,
+      TestChain::scrAddrA, 11 * COIN, TestChain::scrAddrC, true));
+   ASSERT_FALSE(zcHash.empty());
+
+   /* test starts here */
+   std::vector<UTXO> zcUtxos, rbfUtxos;
+   std::string error;
+   HookedTxIOCache txioCache(2, [&](Bridge::TxIOCache& cache) {
+      //an update takes the lock to set the txios (1), then to cache their
+      //txs (2): in between, the zc txios have no tx in the cache. The zc
+      //and rbf utxos are asked for there
+      try {
+         zcUtxos = cache.getUTXOs(UINT64_MAX, true, false, allAddresses_);
+         rbfUtxos = cache.getUTXOs(UINT64_MAX, false, true, allAddresses_);
+      } catch (const std::exception& e) {
+         error = e.what();
+      }
+   });
+   txioCache.update(bdv_, refreshPush());
+
+   /* mid-update: no throw and no utxo */
+   EXPECT_TRUE(error.empty()) << error;
+   EXPECT_TRUE(zcUtxos.empty());
+   EXPECT_TRUE(rbfUtxos.empty());
+
+   //once they are cached, the zc's change is listed
+   zcUtxos = txioCache.getUTXOs(UINT64_MAX, true, false, allAddresses_);
+   ASSERT_EQ(zcUtxos.size(), 1U);
+   EXPECT_EQ(zcUtxos[0].getTxHash().toHexStr(), zcHash.toHexStr());
+   EXPECT_FALSE(txioCache.getUTXOs(
+      UINT64_MAX, false, true, allAddresses_).empty());
+}
+
+TEST_F(ChainDataTests, FetchTxs_ZcAcrossPurge)
+{
+   ASSERT_EQ(goOnline(), 5U);
+
+   //a zc from the wallet
+   auto zcHash = broadcastZc(signTx(TestChain::scrAddrC,
+      TestChain::scrAddrC, 11 * COIN, TestChain::scrAddrD, false));
+   ASSERT_FALSE(zcHash.empty());
+
+   //and a mined tx of the wallet, in its block
+   const auto& mined = TestChain::ledgersBCDE.back();
+   auto minedKey = getDBKeyForHash(mined.txHash);
+   ASSERT_TRUE(Types::isTxKeyValid(minedKey));
+   ASSERT_FALSE(Types::isThisAZCKey(minedKey));
+   auto blockId = Types::getBlockIDFromTxKey(minedKey);
+
+   /* test starts here */
+   HookedTxIOCache txioCache(3, [](Bridge::TxIOCache& cache) {
+      //fetchTxs takes the lock to see what the cache misses (1), then to see
+      //which headers it misses (2), then to fill the cache (3). The zcs are
+      //purged once the db has served the txs and the header, as on a reorg
+      cache.purge(Bridge::TxIOCache::PurgeStatus::PurgeZC);
+   });
+   txioCache.fetchTxs(bdv_, {zcHash, mined.txHash});
+
+   /* a purge ran mid-fetch: none of what the db served is cached */
+   EXPECT_THROW(txioCache.getTxByHash(zcHash), std::out_of_range);
+   EXPECT_THROW(txioCache.getTxByHash(mined.txHash), std::out_of_range);
+   EXPECT_THROW(txioCache.getDBCache()->getHeader(blockId),
+      std::out_of_range);
+
+   //the next fetch caches them
+   txioCache.fetchTxs(bdv_, {zcHash, mined.txHash});
+   try {
+      const auto& tx = txioCache.getTxByHash(zcHash);
+      EXPECT_TRUE(Types::isThisAZCKey(tx.getDBKey()));
+      EXPECT_NE(tx.getTxTime(), UINT32_MAX);
+      EXPECT_EQ(txioCache.getTxByHash(mined.txHash).getDBKey(), minedKey);
+      EXPECT_EQ(txioCache.getDBCache()->getHeader(blockId)->blockHeight,
+         mined.height);
+   } catch (const std::out_of_range& e) {
+      ADD_FAILURE() << e.what();
+   }
+}

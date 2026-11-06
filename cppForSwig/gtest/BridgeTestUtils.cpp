@@ -3588,7 +3588,7 @@ namespace BridgeTestUtils {
    /////////////////////////////////////////////////////////////////////////////
    // zc stuff
    void broadcastTx(std::shared_ptr<Bridge::CppBridge> bridge,
-      const BinaryData& rawTx)
+      const BinaryData& rawTx, bool viaRpc /*= false*/)
    {
       uint64_t refId = rand();
       capnp::MallocMessageBuilder message;
@@ -3596,7 +3596,11 @@ namespace BridgeTestUtils {
       toBridge.setReferenceId(refId);
       auto req = toBridge.initService();
       auto broadcastReq = req.initBroadcastTx();
-      broadcastReq.setViaP2p();
+      if (viaRpc) {
+         broadcastReq.setViaRpc();
+      } else {
+         broadcastReq.setViaP2p();
+      }
       auto rawTxs = broadcastReq.initRawTxs(1);
       rawTxs.set(0, capnp::Data::Builder(
          (uint8_t*)rawTx.getPtr(), rawTx.getSize()));

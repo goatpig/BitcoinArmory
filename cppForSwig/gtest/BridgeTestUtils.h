@@ -543,7 +543,7 @@ namespace BridgeTestUtils {
       const std::string& passphrase);
 
    void broadcastTx(std::shared_ptr<Bridge::CppBridge> bridge,
-      const BinaryData& rawTx);
+      const BinaryData& rawTx, bool viaRpc = false);
 
    std::vector<Ledgers::Entry> waitOnZc();
    std::vector<BinaryData> waitOnInvalidatedZCs();
