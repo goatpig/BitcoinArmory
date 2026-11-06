@@ -286,7 +286,8 @@ std::vector<size_t> P2P::Payload::processPacket(
    }
 
    size_t offset = 0, totalsize = data.size();
-   while (offset < totalsize - sizeof(MagicWordType)) {
+   // a header is 24 bytes, don't read one that isn't all there
+   while (offset + MESSAGE_HEADER_LEN <= totalsize) {
       const uint8_t* ptr = &data[offset];
 
       //check magic word
@@ -336,7 +337,8 @@ std::vector<size_t> P2P::Payload::processPacket(
       //at this point we don't want to reparse this message if the
       //deser operation fails
       offset += 4;
-      if (length + MESSAGE_HEADER_LEN > totalsize - localOffset) {
+      // size_t math: length + 24 must not wrap around in 32 bits
+      if ((size_t)length + MESSAGE_HEADER_LEN > totalsize - localOffset) {
          return retvec;
       }
 
@@ -372,13 +374,20 @@ std::shared_ptr<P2P::Payload::DeserializedPayloads> P2P::Payload::deserialize(
       for (const auto& offset : offsetVec) {
          bytesConsumed = offset;
 
+         // the spill offset doesn't go through processPacket, check the
+         // header is all there before reading it
+         if (offset + MESSAGE_HEADER_LEN > data.size()) {
+            break;
+         }
          uint32_t length;
          memcpy(&length, &data[offset] + PAYLOAD_LENGTH_OFFSET, 4);
-         size_t localBytesConsumed = length + MESSAGE_HEADER_LEN;
+         size_t localBytesConsumed = (size_t)length + MESSAGE_HEADER_LEN;
          if (localBytesConsumed + offset > data.size()) {
             break;
          }
-         std::string_view messagetype{(const char*)&data[offset] + MESSAGE_TYPE_OFFSET};
+         auto typePtr = (const char*)&data[offset] + MESSAGE_TYPE_OFFSET;
+         std::string_view messagetype{typePtr,
+            strnlen(typePtr, MESSAGE_TYPE_LEN)};
 
          try {
             const uint8_t* payloadptr = nullptr;
@@ -586,6 +595,10 @@ std::string_view P2P::Payload_Version::typeStr() const
 ////////
 void P2P::Payload_Version::deserialize(const uint8_t* data, size_t len)
 {
+   // fixed part + user agent length varint (>= 1) + start height
+   if (data == nullptr || len < VERSION_MINLENGTH) {
+      throw PayloadDeserError("version payload too short");
+   }
    const uint8_t* dataptr = data;
 
    memcpy(&vheader_.version_, dataptr, 4);
@@ -615,6 +628,10 @@ void P2P::Payload_Version::deserialize(const uint8_t* data, size_t len)
    size_t remaining = len - USERAGENT_OFFSET;
    uint64_t uaLen;
    auto varintlen = get_varint(uaLen, dataptr, remaining);
+   // the user agent and the start height have to fit in the payload
+   if (varintlen + 4 > remaining || uaLen > remaining - varintlen - 4) {
+      throw PayloadDeserError("invalid user agent length");
+   }
    dataptr += varintlen;
    auto userAgentPtr = (const char*)dataptr;
    userAgent_ = std::string(userAgentPtr, uaLen);
@@ -948,6 +965,9 @@ size_t P2P::Payload_Tx::serializeInner(uint8_t* dataptr) const
 ////////
 void P2P::Payload_Tx::deserialize(const uint8_t* dataptr, size_t len)
 {
+   if (len == 0) {
+      throw PayloadDeserError("empty tx payload");
+   }
    rawTx_.resize(len);
    memcpy(&rawTx_[0], dataptr, len);
 }
@@ -1090,13 +1110,29 @@ int8_t P2P::Payload_Reject::code() const
 ////////
 void P2P::Payload_Reject::deserialize(const uint8_t* dataptr, size_t len)
 {
+   //a varint cut short by the end of the payload makes a malformed reject,
+   //like the lengths checked below
+   auto readVarint = [](uint64_t& val, const uint8_t* p, size_t size)->int
+   {
+      try {
+         return get_varint(val, p, size);
+      } catch (const std::runtime_error&) {
+         throw PayloadDeserError("reject varint past the payload");
+      }
+   };
+
    uint64_t typeLen;
 
    //message field size in bytes
-   auto varintlen = get_varint(typeLen, dataptr, len);
+   auto varintlen = readVarint(typeLen, dataptr, len);
    auto ptr = dataptr + varintlen;
+   size_t remaining = len - varintlen;
 
-   //message type
+   //message type, then the 1 byte reject code
+   if (typeLen >= remaining) {
+      throw PayloadDeserError("invalid reject type length");
+   }
+   remaining -= typeLen + 1;
    std::string_view msgtype{(const char*)ptr, typeLen};
    auto typeIter = typeToPayload.find(msgtype);
    if (typeIter == typeToPayload.end()) {
@@ -1109,12 +1145,14 @@ void P2P::Payload_Reject::deserialize(const uint8_t* dataptr, size_t len)
    //code_ = (const char)*ptr;
    ptr++;
 
-   auto reasonOffset = typeLen + varintlen + 1;
-
-   //reason str size
+   //reason str size, read from what's left of the payload
    uint64_t reasonLen;
-   varintlen = get_varint(reasonLen, ptr, len);
+   varintlen = readVarint(reasonLen, ptr, remaining);
    ptr += varintlen;
+   remaining -= varintlen;
+   if (reasonLen > remaining) {
+      throw PayloadDeserError("invalid reject reason length");
+   }
 
    //reason str
    reasonStr_ = std::string{(const char*)ptr, reasonLen};
@@ -1122,7 +1160,7 @@ void P2P::Payload_Reject::deserialize(const uint8_t* dataptr, size_t len)
 
    //extra data, final field. size and processing depends on reject code
    //just copy the data, handle when processing the payload
-   auto remaining = len - (reasonLen + varintlen + reasonOffset);
+   remaining -= reasonLen;
    if (remaining == 0) {
       return;
    }
