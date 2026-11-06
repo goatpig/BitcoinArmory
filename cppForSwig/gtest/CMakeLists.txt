@@ -193,6 +193,7 @@ add_executable(BridgeTests
     BridgeWalletsWithDBTests.cpp
     BridgeTxIOCacheTests.cpp
     BridgeChainDataTests.cpp
+    BridgeBlocksAutoDBTests.cpp
     BridgeTests.cpp
     ${TEST_SOURCES}
 )
