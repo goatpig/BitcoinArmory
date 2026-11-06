@@ -834,10 +834,12 @@ uint8_t BtcUtils::getMultisigPubKeyList(const BinaryData& script,
       // fewer keys than N: not a multisig script (don't throw, a mined
       // non-standard output can look like this)
       if (brr.getSizeRemaining() == 0) {
+         pkList.clear();
          return 0;
       }
       uint8_t nextSz = brr.get_uint8_t();
       if (nextSz != 0x41 && nextSz != 0x21) {
+         pkList.clear();
          return 0;
       }
 
@@ -847,6 +849,7 @@ uint8_t BtcUtils::getMultisigPubKeyList(const BinaryData& script,
          LOGERR << "Failed to decode pub keys for multisig script," <<
             " with error: " << e.what();
          LOGERR << script.toHexStr();
+         pkList.clear();
          return 0;
       }
    }

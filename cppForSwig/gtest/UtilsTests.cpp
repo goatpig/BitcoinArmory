@@ -1825,6 +1825,7 @@ TEST_F(BtcUtilsTest, TxOutScriptID_TruncatedMultisig)
 
    vector<BinaryData> pkList;
    EXPECT_EQ(BtcUtils::getMultisigPubKeyList(script, pkList), 0);
+   EXPECT_TRUE(pkList.empty());
    EXPECT_FALSE(BtcUtils::isMultisigScript(script));
 
    //classified as non-standard, with a scrAddr like any other
@@ -1875,11 +1876,12 @@ TEST_F(BtcUtilsTest, TxInScriptID_TruncatedMultisig)
 TEST_F(BtcUtilsTest, MultisigPubKeyList_ShortScript)
 {
    //scripts too short to hold M, N and OP_CHECKMULTISIG
-   vector<BinaryData> pkList;
    for (const auto& hexStr : { "", "ae", "52ae" }) {
+      vector<BinaryData> pkList;
       BinaryData script = READHEX(hexStr);
       EXPECT_EQ(BtcUtils::getMultisigPubKeyList(script, pkList), 0)
          << "script: " << hexStr;
+      EXPECT_TRUE(pkList.empty());
    }
 }
 
