@@ -195,6 +195,7 @@ add_executable(BridgeTests
     BridgeChainDataTests.cpp
     BridgeBlocksAutoDBTests.cpp
     BridgePeersManagementTests.cpp
+    BridgeDBCacheTests.cpp
     BridgeTests.cpp
     ${TEST_SOURCES}
 )
