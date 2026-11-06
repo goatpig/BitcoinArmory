@@ -190,6 +190,7 @@ add_executable(BridgeTests
     BridgeWalletManagerTests.cpp
     BridgeSocketTests.cpp
     BridgeWalletTests.cpp
+    BridgeWalletsWithDBTests.cpp
     BridgeTests.cpp
     ${TEST_SOURCES}
 )
