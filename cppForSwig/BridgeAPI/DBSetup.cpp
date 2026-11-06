@@ -626,7 +626,7 @@ std::filesystem::path Node::Core::findDatadir()
 std::filesystem::path Node::Core::findBinary()
 {
    //look for bitcoind
-   for (const auto& candidate : satoshiDirCandidates) {
+   for (const auto& candidate : satoshiBinCandidates) {
       auto binPath = std::filesystem::path{candidate} / bitcoind;
       if (validateSatoshiBinary(binPath, {}).first == true) {
          return binPath;
