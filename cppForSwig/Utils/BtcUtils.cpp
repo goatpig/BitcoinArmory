@@ -386,6 +386,11 @@ size_t BtcUtils::TxInCalcLength(const uint8_t* ptr, size_t size)
    }
    uint8_t viLen;
    size_t scrLen = (size_t)readVarInt(ptr+36, size-36, viLen);
+   // a huge script length would wrap the sum below into a small length
+   if (scrLen > size - 36 - viLen) {
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "txin script length too large: {}", scrLen));
+   }
    return (36 + viLen + scrLen + 4);
 }
 
@@ -398,6 +403,10 @@ size_t BtcUtils::TxOutCalcLength(const uint8_t* ptr, size_t size)
 
    uint8_t viLen;
    size_t scrLen = (size_t)readVarInt(ptr+8, size-8, viLen);
+   if (scrLen > size - 8 - viLen) {
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "txout script length too large: {}", scrLen));
+   }
    return (8 + viLen + scrLen);
 }
 
@@ -412,14 +421,25 @@ size_t BtcUtils::TxWitnessCalcLength(const uint8_t* ptr, size_t size)
    uint8_t viStackLen;
    size_t stackLen = readVarInt(ptr, size, viStackLen);
    witLen += viStackLen;
+   // each stack item takes at least 1 byte
+   if (stackLen > size - witLen) {
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "witness stack count too large: {}", stackLen));
+   }
    for (size_t i = 0; i < stackLen; i++) {
       if (witLen >= size) {
          throw BtcUtils::BlockDeserializingException(std::format(
             "witness data overflow: expected {} vs actual {}", witLen, size));
       }
       uint8_t viLen;
-      witLen += readVarInt(ptr + witLen, size - witLen, viLen);
+      size_t itemLen = readVarInt(ptr + witLen, size - witLen, viLen);
       witLen += viLen;
+      // compare against what's left so a huge item length can't wrap witLen
+      if (itemLen > size - witLen) {
+         throw BtcUtils::BlockDeserializingException(std::format(
+            "witness item too large: {}", itemLen));
+      }
+      witLen += itemLen;
       if (witLen > size) {
          throw BtcUtils::BlockDeserializingException(std::format(
             "witness data overflow: expected {} vs actual {}", witLen, size));
@@ -596,6 +616,11 @@ size_t BtcUtils::StoredTxCalcLength(const uint8_t* ptr,
    // Now extract the TxOut list
    size_t nOut = brr.get_var_int();
    if (fragged) {
+      // fragged txouts aren't in the buffer, but a txout id is 16 bits
+      if (nOut > UINT16_MAX) {
+         throw BtcUtils::BlockDeserializingException(std::format(
+            "txout count too large: {}", nOut));
+      }
       if (offsetsOut != nullptr) {
          offsetsOut->resize(nOut+1);
          for (size_t i = 0; i < nOut + 1; i++) {
@@ -727,12 +752,12 @@ TxInScriptType BtcUtils::getTxInScriptType(BinaryDataRef script,
       // TODO: Maybe should identify whether the other pushed data
       //       in the script is a potential solution for the
       //       subscript... meh?
-      if (script[2]==0x30 && script[4]==0x02) {
+      if (script.getSize() > 4 && script[2]==0x30 && script[4]==0x02) {
          return TxInScriptType::SPENDMULTI;
       }
    }
 
-   if (!(script[1]==0x30 && script[3]==0x02)) {
+   if (script.getSize() < 4 || !(script[1]==0x30 && script[3]==0x02)) {
       return TxInScriptType::NONSTANDARD;
    }
 
