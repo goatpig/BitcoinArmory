@@ -95,6 +95,9 @@ TxOutScriptRef TxOutScriptRef::fromRef(
 
 TxOutScriptRef TxOutScriptRef::fromScrAddr(BinaryDataRef scrAddr)
 {
+   if (scrAddr.empty()) {
+      throw std::runtime_error("empty scrAddr");
+   }
    return TxOutScriptRef{
       (Armory::ScriptPrefix)scrAddr[0],
       scrAddr.getSliceRef(1, scrAddr.getSize() - 1)
