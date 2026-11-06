@@ -188,6 +188,7 @@ target_link_libraries(ZeroConfTests
 add_executable(BridgeTests
     BridgeTestUtils.cpp
     BridgeWalletManagerTests.cpp
+    BridgeSocketTests.cpp
     BridgeTests.cpp
     ${TEST_SOURCES}
 )
