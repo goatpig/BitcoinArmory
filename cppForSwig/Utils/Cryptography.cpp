@@ -638,6 +638,9 @@ bool ECDSA::verifyData(const BinaryData& binMessage,
    const BinaryData& sig, const BinaryData& cppPubKey)
 {
    /* pub keys are already validated by the script parser */
+   if (cppPubKey.getSize() != 33 && cppPubKey.getSize() != 65) {
+      return false;
+   }
 
    // We execute the first SHA256 op, here. Next one is done by Verifier
    BinaryData digest1, digest2;
@@ -647,9 +650,6 @@ bool ECDSA::verifyData(const BinaryData& binMessage,
    sha256_Raw(digest1.getPtr(), 32, digest2.getPtr());
 
    //setup pubkey
-   if (cppPubKey.getSize() != 33 && cppPubKey.getSize() != 65) {
-      return false;
-   }
    btc_pubkey key;
    btc_pubkey_init(&key);
    memcpy(key.pubkey, cppPubKey.getPtr(), cppPubKey.getSize());

@@ -2286,9 +2286,15 @@ class BlockObjTest : public ::testing::Test
 protected:
    void SetUp() override
    {
+      homedir_ = std::filesystem::path("./fakehomedir");
+      FileUtils::removeDirectory(homedir_);
+      std::filesystem::create_directory(homedir_);
+
       Config::reset();
       Config::DBSettings::setServiceType(SERVICE_UNITTEST);
       Config::parseArgs({
+         "--datadir=./fakehomedir",
+         "--offline",
          "--db-type=DB_BARE",
          "--disable-zc"},
          Config::ProcessType::DB);
@@ -2404,6 +2410,7 @@ protected:
 
    void TearDown() override
    {
+      FileUtils::removeDirectory(homedir_);
       Armory::Config::reset();
    }
 
@@ -2419,6 +2426,7 @@ protected:
    BinaryData rawTxOut_;
 
    std::unique_ptr<Armory::BlockHeader> bh_;
+   std::filesystem::path homedir_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
