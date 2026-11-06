@@ -281,6 +281,7 @@ TESTS += gtest/ZeroConfTests
 bin_PROGRAMS += gtest/BridgeTests
 gtest_BridgeTests_SOURCES = gtest/BridgeTestUtils.cpp \
 	gtest/BridgeWalletManagerTests.cpp \
+	gtest/BridgeSocketTests.cpp \
 	gtest/BridgeTests.cpp \
 	${CPPBRIDGE_SOURCE_FILES}
 gtest_BridgeTests_CXXFLAGS = $(AM_CXXFLAGS) $(UNIT_TEST_CXXFLAGS) $(LIBBTC_FLAGS)
