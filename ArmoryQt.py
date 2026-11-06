@@ -63,6 +63,7 @@ from armoryengine.BDM import TheBDM, \
    NEW_ZC_ACTION, NEW_BLOCK_ACTION, \
    REFRESH_ACTION, WARNING_ACTION, WARNING_ACTION, SCAN_ACTION, \
    NODESTATUS_UPDATE, BDM_SCAN_PROGRESS, BDV_ERROR, BDV_DISCONNECTED, \
+   BDV_DROPPED, \
    INIT_DB_CONNECTED, INIT_WALLETS_REGISTERED, INIT_DB_READY, \
    BDMPhase_DBHeaders, BDMPhase_OrganizingChain, \
    BDMPhase_BlockHeaders, BDMPhase_BlockData, BDMPhase_Rescan, \
@@ -4611,7 +4612,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             self.zcBroadcastError(txHash, errorMsg)
          '''
 
-      elif action == BDV_DISCONNECTED:
+      elif action in (BDV_DISCONNECTED, BDV_DROPPED):
          self.setDashboardDetails()
          self.updateStatusBarText()
 

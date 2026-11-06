@@ -184,6 +184,7 @@ namespace Armory
             BinaryData getSetupDonePacket(void);
             BinaryData getWalletsRegisteredPacket(void);
             BinaryData getServerDisconnectedPacket(void);
+            BinaryData getBdvDroppedPacket(void);
             BinaryData getNodeStatusPacket(const Node::Status&);
             BinaryData getErrorPacket(const BdvError&);
          }
