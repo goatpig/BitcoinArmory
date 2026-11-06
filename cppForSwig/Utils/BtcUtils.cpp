@@ -380,7 +380,7 @@ void BtcUtils::TxInCalcLength(const uint8_t* ptr, size_t size,
 
 size_t BtcUtils::TxInCalcLength(const uint8_t* ptr, size_t size)
 {
-   if (size < 37) {
+   if (size < 41) {
       throw BtcUtils::BlockDeserializingException(std::format(
          "not enough txin data: {}", size));
    }
