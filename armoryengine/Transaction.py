@@ -17,7 +17,8 @@ from armoryengine.ArmoryUtils import BlockComponent, BIGENDIAN, \
    CPP_TXIN_STDUNCOMPR, CPP_TXIN_STDCOMPR, CPP_TXIN_SPENDP2SH, \
    CPP_TXIN_P2WPKH_P2SH, CPP_TXIN_P2WSH_P2SH, MIN_RELAY_TX_FEE, \
    int_to_binary, SignatureError, indent, binary_to_hex, \
-   hash160, sha256, ONE_BTC, LOGERROR
+   hash160, sha256, ONE_BTC, LOGERROR, LOGWARN, coin2strNZS, \
+   InvalidHashError, InvalidScriptError, UstxError
 from armoryengine.AddressUtils import hash160_to_addrStr, binary_to_base58, \
    CheckHash160, binScript_to_p2shAddrStr, script_to_addrStr, \
    script_to_scrAddr, scrAddr_to_addrStr, BadAddressError
@@ -1906,14 +1907,6 @@ class UnsignedTransaction(AsciiSerializable):
       txMap       = {} if not txMap     else txMap
       p2shMap     = {} if not p2shMap   else p2shMap
 
-
-      if len(txMap)==0 and not TheBDM.getState()==BDM_BLOCKCHAIN_READY:
-         # TxDP includes the transactions that supply the inputs to this
-         # transaction, so the BDM needs to be available to fetch those.
-         raise BlockchainUnavailableError('Must input supporting transactions '
-                                            'or access to the blockchain, to '
-                                            'create the TxDP')
-
       ustxiList = []
       dtxoList = []
 
@@ -1924,46 +1917,36 @@ class UnsignedTransaction(AsciiSerializable):
          # First, make sure that we have the previous Tx data available
          # We can't continue without it, since BIP 0010 will now require
          # the full tx of outputs being spent
-         outpt = txin.outpoint
-         txhash = outpt.txHash
-         if not txhash in prevTxs:
-            prevTxs[txhash] = {
-               'txOuts' : [],
-               'pyTx' : None
-            }
-         prevTxs[txhash]['txOuts'].append(outpt.txOutIndex)
-         if not prevTxs[txhash]['pyTx']:
-            if txhash in txMap:
-               prevTxs[txhash]['pyTx'] = txMap[txhash].copy()
-            else:
-               missingTxHashes.append(txhash)
+         txhash = txin.outpoint.txHash
+         if txhash in prevTxs:
+            continue
+         if txhash in txMap:
+            prevTxs[txhash] = txMap[txhash].copy()
+         else:
+            prevTxs[txhash] = None
+            missingTxHashes.append(txhash)
 
       if missingTxHashes:
-         #try to get txdata from db for missing hashes
-         if not TheBDM.getState()==BDM_BLOCKCHAIN_READY:
-            raise InvalidScriptError('No previous-tx data available for TxDP')
-
-         capnTxns = TheBridge.service.getTxsByHash(missingTxHashes)
-         for txHash in capnTxns:
+         #the bridge serves the db's txs and the supporting txs of the
+         #signer payloads it has loaded, unknown hashes are left out
+         bridgeTxs = getTxsByHash(missingTxHashes)
+         for txHash in bridgeTxs:
             if not txHash in prevTxs:
                raise InvalidHashError('Could not find the referenced tx')
-            prevTxs[txHash]['pyTx'] = PyTx().unserialize(capnTxns[txHash].body.raw)
+            prevTxs[txHash] = bridgeTxs[txHash].pytx
 
-      count = 0
-      #populate input list with tx data
-      for txHash in prevTxs:
-         pyPrevTx = prevTxs[txHash]['pyTx']
+      #populate input list with tx data, one entry per input, in input order
+      for inputID, txin in enumerate(pytx.inputs):
+         pyPrevTx = prevTxs[txin.outpoint.txHash]
          if not pyPrevTx:
-            raise InvalidScriptError('No previous-tx data available for TxDP')
-         serializedTx = pyPrevTx.serializeWithoutWitness()
+            raise UstxError(
+               f'No previous-tx data available for input {inputID}')
 
-         for txoIdx in prevTxs[txHash]['txOuts']:
-            ustxiList.append(UnsignedTxInput(
-               serializedTx,
-               txoIdx, {},
-               pubKeyMap,
-               sequence=txin.intSeq, inputID=count))
-            count = count + 1
+         ustxiList.append(UnsignedTxInput(
+            pyPrevTx.serializeWithoutWitness(),
+            txin.outpoint.txOutIndex, {},
+            pubKeyMap,
+            sequence=txin.intSeq, inputID=inputID))
 
 
       # Create the DecoratedTxOut for each output.  Without any
@@ -2376,6 +2359,34 @@ class UnsignedTransaction(AsciiSerializable):
       self.signer.signTx(wltId, callback, parentDlg)
 
 #############################################################################
+class BridgeTx(object):
+   """
+   A tx the bridge serves by hash: the PyTx and where the bridge places it.
+   height, timestamp and txIndex are UINT32_MAX when the bridge knows no
+   block for the tx (a zc, an unpooled tx, or a header it doesn't have).
+   A zc's timestamp is its mempool time if the bridge has it.
+   """
+   def __init__(self, pytx, height, timestamp, txIndex):
+      self.pytx = pytx
+      self.height = height
+      self.timestamp = timestamp
+      self.txIndex = txIndex
+
+#############################################################################
+def getTxsByHash(txHashes):
+   """
+   Asks the bridge for txs by hash, returns {hash: BridgeTx}, keyed by the
+   hash of each raw tx. Txs the bridge doesn't have are left out.
+   """
+   bridgeTxs = {}
+   for capnTx in TheBridge.wltManager.getTxsByHash(txHashes):
+      pytx = PyTx().unserialize(bytes(capnTx.body.raw))
+      pytx.setRBF(capnTx.body.isRbf)
+      bridgeTxs[pytx.getHash()] = BridgeTx(
+         pytx, capnTx.height, capnTx.timestamp, capnTx.txIndex)
+   return bridgeTxs
+
+#############################################################################
 def getFeeForTx(txHash):
    if TheBDM.getState()==BDM_BLOCKCHAIN_READY:
       try:
@@ -2412,12 +2423,11 @@ def determineSentToSelfAmt(le, wlt):
    """
    amt = 0
    if le.isSTS:
-      txProto = TheBridge.service.getTxsByHash([le.txHash])
-      if txProto == None or len(txProto) == 0:
+      bridgeTxs = getTxsByHash([le.txHash])
+      if le.txHash not in bridgeTxs:
          return (0, 0)
-      txData = txProto[le.txHash]
 
-      pytx = PyTx().unserialize(txData.body.raw)
+      pytx = bridgeTxs[le.txHash].pytx
       if pytx.getNumTxOut()==1:
          return (pytx.outputs[0].getValue(), -1)
       maxChainIndex = -5

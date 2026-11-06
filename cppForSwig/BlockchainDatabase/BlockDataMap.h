@@ -102,7 +102,7 @@ public:
    const std::filesystem::path& folderPath(void) const;
    unsigned fileCount(void) const;
    const std::filesystem::path& getLastFilePath(void) const;
-   const std::filesystem::path& getFilePathForID(uint16_t) const;
+   const FileStat& getFileStatForID(uint16_t) const;
 };
 
 /////////////////////////////////////////////////////////////////////////////

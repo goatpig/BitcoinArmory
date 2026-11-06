@@ -13,19 +13,30 @@
 #include <string>
 
 #include <Utils/Types.h>
+#include <TxClasses.h>
 
-class Tx;
+class StoredHeader;
 
 namespace Armory
 {
    class Blockchain;
-   class Hash32;
+   struct Hash32;
    class BlockHeader;
 
    ////////
    struct BlockchainDataException : public std::runtime_error
    {
       BlockchainDataException(const std::string&);
+   };
+
+   ////////
+   struct NoSolutionException
+   {};
+
+   struct TxHintSolution
+   {
+      const Types::TxKey txKey;
+      Tx tx;
    };
 
    ////////
@@ -42,10 +53,13 @@ namespace Armory
 
       Hash32 getTxHashForTxKey(const Types::TxKey&) const;
       bool isTxKeyOnMainBranch(const Types::TxKey&) const;
+      TxHintSolution resolveTxHintCollision(const TxHintCollision&);
 
       std::pair<std::vector<uint8_t>, size_t> getRawBlockForId(
          Types::BlockId) const;
       std::pair<std::vector<uint8_t>, size_t> getRawBlockForHeader(
          std::shared_ptr<BlockHeader>) const;
+      bool getStoredHeader(StoredHeader&,
+         std::shared_ptr<Armory::BlockHeader>, bool=true) const;
    };
 }

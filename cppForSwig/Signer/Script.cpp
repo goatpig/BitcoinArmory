@@ -182,6 +182,10 @@ namespace
          } else if (currentPtr->static_) {
             return currentPtr->staticData_;
          } else {
+            //referenced item that nothing resolved
+            if (currentPtr->resolvedValue_ == nullptr) {
+               throw ScriptException("unresolved stack item reference");
+            }
             switch (currentPtr->resolvedValue_->type())
             {
                case StackValueType::Static:
@@ -483,7 +487,7 @@ void StackInterpreter::op_pick()
    auto a = pop_back();
    auto aI = rawBinaryToInt(a);
 
-   if (aI >= (int64_t)stack_.size()) {
+   if (aI < 0 || aI >= (int64_t)stack_.size()) {
       throw ScriptException("op_pick index exceeds stack size");
    }
    auto stackIter = stack_.rbegin() + aI;
@@ -495,7 +499,7 @@ void StackInterpreter::op_roll()
    auto a = pop_back();
    auto rollindex = rawBinaryToInt(a);
 
-   if (rollindex >= (int64_t)stack_.size()) {
+   if (rollindex < 0 || rollindex >= (int64_t)stack_.size()) {
       throw ScriptException("op_roll index exceeds stack size");
    }
 
@@ -1063,8 +1067,9 @@ void StackInterpreter::processOpCode(const OpCode& oc)
 
       case OP_2DROP:
       {
-         stack_.pop_back();
-         stack_.pop_back();
+         //pop_back() throws on an empty stack, stack_.pop_back() is UB
+         pop_back();
+         pop_back();
          break;
       }
 
@@ -1085,7 +1090,7 @@ void StackInterpreter::processOpCode(const OpCode& oc)
          break;
 
       case OP_DROP:
-         stack_.pop_back();
+         pop_back();
          break;
 
       case OP_DUP:
@@ -1874,6 +1879,12 @@ void StackResolver::resolveStack()
             default:
                throw ScriptException("no resolution rule for opcode");
             }
+      }
+
+      //none of the opcodes gave this item a value (e.g. the pubkey of an
+      //OP_CHECKSIG that isn't in the script)
+      if (stackItem->resolvedValue_ == nullptr) {
+         throw ScriptException("unresolved stack item");
       }
 
       //fulfill resolution

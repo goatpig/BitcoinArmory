@@ -12,6 +12,7 @@
 
 import os
 import shutil
+from html import escape
 
 from qtpy import QtCore, QtWidgets
 
@@ -19,10 +20,12 @@ from ui.QtExecuteSignal import TheSignalExecution
 from armoryengine.Transaction import UnsignedTransaction, \
    USTX_TYPE_MODERN, USTX_TYPE_LEGACY, USTX_TYPE_PSBT, USTX_TYPE_UNKNOWN
 from armoryengine.ArmoryUtils import LOGEXCEPT, LOGERROR, LOGINFO, \
-   CPP_TXOUT_STDSINGLESIG, CPP_TXOUT_P2SH, coin2str, enum, binary_to_hex, \
-   coin2strNZS, NetworkIDError, UnserializeError, OS_WINDOWS
+   LOGWARN, CPP_TXOUT_STDSINGLESIG, CPP_TXOUT_P2SH, coin2str, enum, \
+   binary_to_hex, coin2strNZS, NetworkIDError, UnserializeError, OS_WINDOWS, \
+   SignatureError, UstxError, InvalidHashError
 from armoryengine.Settings import TheSettings
 from armoryengine.AddressUtils import script_to_scrAddr, BadAddressError
+from armoryengine.CppBridge import BridgeSignerError, BridgeError
 
 from qtdialogs.qtdefines import ArmoryFrame, tightSizeNChar, \
    GETFONT, QRichLabel, HLINE, QLabelButton, USERMODE, \
@@ -192,6 +195,7 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
       self.sigsValid = False
       self.ustxReadable = False
       self.btnSign.setEnabled(False)
+      loadError = None
 
       ustxStr = str(self.txtUSTX.toPlainText())
       if len(ustxStr) > 0:
@@ -216,7 +220,15 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
                'Did you load the correct transaction?'), QtWidgets.QMessageBox.Ok)
             self.ustxObj = None
             self.ustxReadable = False
-         except (UnserializeError, IndexError, ValueError):
+         except (UnserializeError, IndexError, ValueError,
+            BridgeSignerError):
+            self.ustxObj = None
+            self.ustxReadable = False
+         except (UstxError, InvalidHashError, BridgeError) as e:
+            #the string parsed but the tx can't be built from it, e.g. a
+            #prev tx neither the payload nor the bridge has
+            LOGWARN(f'processUSTX: {e}')
+            loadError = str(e)
             self.ustxObj = None
             self.ustxReadable = False
 
@@ -238,7 +250,11 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
       self.btnSave.setEnabled(True)
       self.btnCopyHex.setEnabled(False)
       if not self.ustxReadable:
-         if len(ustxStr) > 0:
+         if loadError:
+            self.lblStatus.setText(
+               self.tr('<b><font color="red">Unrecognized!</font></b>') +
+               f' ({escape(loadError)})')
+         elif len(ustxStr) > 0:
             self.lblStatus.setText(self.tr('<b><font color="red">Unrecognized!</font></b>'))
          else:
             self.lblStatus.setText('')
@@ -276,10 +292,11 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
 
       # Collect the input wallets (hopefully just one of them)
       fromWlts = set()
-      for addrStr, amt, a, b, c, script in data[FIELDS.InList]:
-         wltID = self.main.wallets.getWltForScrAddr(addrStr)
-         if wltID:
-            fromWlts.add(wltID)
+      for ustxi in self.ustxObj.ustxInputs:
+         wlt = self.main.wallets.getWltForScrAddr(
+            script_to_scrAddr(ustxi.txoScript))
+         if wlt:
+            fromWlts.add(wlt.dbId)
 
       if len(fromWlts) > 1:
          QtWidgets.QMessageBox.warning(self, self.tr('Multiple Input Wallets'), \
@@ -298,22 +315,18 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
          return
 
       spendWltID = fromWlts.pop()
-      self.wlt = self.main.walletMap[spendWltID]
+      self.wlt = self.main.wallets.get(spendWltID)
 
-      toWlts = set()
       myOutSum = 0
       theirOutSum = 0
       rvPairs = []
       idx = 0
       for scrType, amt, binScript, multiSigList in data[FIELDS.OutList]:
          recip = script_to_scrAddr(binScript)
-         try:
-            wltID = self.main.getWalletForAddrHash(recip)
-         except BadAddressError:
-            wltID = ''
+         recipWlt = self.main.wallets.getWltForScrAddr(recip)
+         wltID = recipWlt.dbId if recipWlt else None
 
          if wltID == spendWltID:
-            toWlts.add(wltID)
             myOutSum += amt
             self.idxSelf.append(idx)
          else:
@@ -332,10 +345,8 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
       self.leValue = theirOutSum
       self.makeReviewFrame()
 
-
    ############################################################################
    def makeReviewFrame(self):
-      # ##
       if self.ustxObj == None:
          self.infoLbls[0][2].setText('')
          self.infoLbls[1][2].setText('')
@@ -347,7 +358,7 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
 
          ##### 1
          if self.wlt:
-            self.infoLbls[0][2].setText(self.wlt.uniqueIDB58)
+            self.infoLbls[0][2].setText(self.wlt.walletId)
             self.infoLbls[1][2].setText(self.wlt.labelName)
          else:
             self.infoLbls[0][2].setText(self.tr('[[ Unrelated ]]'))
@@ -365,7 +376,6 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
          self.moreInfo.setVisible(True)
 
    def execMoreTxInfo(self):
-
       if not self.ustxObj:
          self.processUSTX()
 
@@ -378,8 +388,6 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
       dlgTxInfo = DlgDispTxInfo(self.ustxObj, self.wlt, self.parent(), self.main, \
          precomputeIdxGray=self.idxSelf, precomputeAmt=leVal, txtime=-1)
       dlgTxInfo.exec_()
-
-
 
    def signTx(self):
       if not self.ustxObj:
@@ -440,7 +448,8 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
       def completeSignProcess(success):
          def signTxLastStep(success):
             if success:
-               serTx = self.ustxObj.serialize(self.signerTypeSelect.fromType())
+               serTx = self.ustxObj.toTxSigCollect(
+                  self.signerTypeSelect.fromType())
                self.txtUSTX.setText(serTx)
 
                if not self.fileLoaded == None:
@@ -476,6 +485,7 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
          QtWidgets.QMessageBox.warning(self, self.tr('Signature Error'), self.tr(
             'Not all signatures are valid.  This transaction '
             'cannot be broadcast.'), QtWidgets.QMessageBox.Ok)
+         return
       except:
          QtWidgets.QMessageBox.warning(self, self.tr('Error'), self.tr(
             'There was an error processing this transaction, for reasons '

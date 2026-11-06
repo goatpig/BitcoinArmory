@@ -98,6 +98,7 @@ enum BDV_Action
    BDV_ZC,
    BDV_Error,
    BDV_Progress,
+   BDV_UpdateNodeStatus,
    BDV_NodeStatus,
    BDV_Refresh
 };

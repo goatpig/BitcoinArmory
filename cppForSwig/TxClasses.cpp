@@ -49,6 +49,23 @@ uint64_t RecipientReuseException::value() const
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// TxHintCollision
+TxHintCollision::TxHintCollision(
+   const Types::TxHash& hash, std::set<Armory::Types::TxKey>& hints) :
+   txHash_{hash}, candidates_{std::move(hints)}
+{}
+
+const Types::TxHash& TxHintCollision::getTxHash() const
+{
+   return txHash_;
+}
+
+const std::set<Types::TxKey>& TxHintCollision::getCandidates() const
+{
+   return candidates_;
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // Outpoint
 Outpoint::Outpoint(const uint8_t* ptr, size_t remaining)
 {
@@ -260,12 +277,16 @@ BinaryDataRef TxIn::getRawData(const uint8_t* ptr,
 
 void TxIn::unserialize_checked()
 {
-   if (dataCopy_.getSize() - 36 < 1) {
+   // outpoint (36) + script length varint (>= 1) + sequence (4)
+   if (dataCopy_.getSize() < 41) {
       throw BtcUtils::BlockDeserializingException();
    }
-   scriptOffset_ = 36 + BtcUtils::readVarIntLength(getPtr() + 36);
-
-   if (dataCopy_.getSize() < 32) {
+   uint8_t viLen;
+   size_t scrLen = BtcUtils::readVarInt(
+      getPtr() + 36, dataCopy_.getSize() - 36, viLen);
+   scriptOffset_ = 36 + viLen;
+   if (dataCopy_.getSize() < scriptOffset_ + 4 ||
+      scrLen > dataCopy_.getSize() - scriptOffset_ - 4) {
       throw BtcUtils::BlockDeserializingException();
    }
    scriptType_ = BtcUtils::getTxInScriptType(
@@ -574,7 +595,8 @@ Tx Tx::unserialize(const uint8_t* ptr, size_t size)
    uint32_t nBytes = BtcUtils::TxCalcLength(ptr, size,
       &txins, &txouts, &witnesses);
    if (size < 8 || nBytes > size) {
-      throw BtcUtils::BlockDeserializingException();
+      throw BtcUtils::BlockDeserializingException(std::format(
+         "tx size mismatch: expected {} vs actual {}", size, nBytes));
    }
    BinaryDataRef data{ptr, nBytes};
 
@@ -582,7 +604,8 @@ Tx Tx::unserialize(const uint8_t* ptr, size_t size)
    bool usesWitness = BtcUtils::checkSwMarker(ptr + 4);
    uint32_t numWitness = witnesses.size() - 1;
    if (4 > nBytes - witnesses[numWitness]) {
-      throw BtcUtils::BlockDeserializingException();
+      throw BtcUtils::BlockDeserializingException(
+         "not enough data to read witness count");
    }
    uint32_t lockTime = READ_UINT32_LE(ptr + witnesses[numWitness]);
 
@@ -610,6 +633,11 @@ size_t Tx::getSize() const
 ////////
 bool Tx::isCoinbase() const
 {
+   // a coinbase has exactly 1 input, a tx without inputs has no outpoint
+   // hash to look at (offsetsTxIn_[0] would point at the txout count)
+   if (getNumTxIn() != 1) {
+      return false;
+   }
    BinaryDataRef bdr{dataCopy_.getPtr() + offsetsTxIn_[0], 32};
    return bdr == BtcUtils::EmptyHash;
 }
@@ -666,7 +694,7 @@ void Tx::setTxKey(Types::TxKey key)
 
 Types::BlockId Tx::getBlockId() const
 {
-   if (!Types::isThisAZCKey(txKey_)) {
+   if (!Types::isThisAZCKey(txKey_) && !Types::isThisAnUnpooledKey(txKey_)) {
       return Types::getBlockIDFromTxKey(txKey_);
    } else {
       return Types::INVALID_BLOCK_ID;
@@ -675,7 +703,7 @@ Types::BlockId Tx::getBlockId() const
 
 Types::TxId Tx::getTxIndex() const
 {
-   if (!Types::isThisAZCKey(txKey_)) {
+   if (!Types::isThisAZCKey(txKey_) && !Types::isThisAnUnpooledKey(txKey_)) {
       return Types::getTxIndexFromTxKey(txKey_);
    } else {
       return UINT16_MAX;

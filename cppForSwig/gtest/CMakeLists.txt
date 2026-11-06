@@ -87,6 +87,25 @@ target_link_libraries(CppBlockUtilsTests
 #)
 
 ################################################################################
+## NodeTests
+add_executable(NodeTests
+    NodeTests.cpp
+    ${TEST_SOURCES}
+)
+set_target_properties(NodeTests
+    PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}
+)
+target_include_directories(NodeTests
+    ${LIBARMORYCOMMON_INCLUDE_DIRECTORIES}
+)
+target_link_libraries(NodeTests
+    ArmoryCommon
+    ${LIBWEBSOCKETS_LIB}
+    ${OS_SPECIFIC_LIBS}
+    ${GTEST_LIBS}
+)
+
+################################################################################
 ## SignerTests
 add_executable(SignerTests
     SignerTests.cpp

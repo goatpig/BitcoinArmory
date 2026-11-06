@@ -59,9 +59,8 @@ int main(int argc, char* argv[])
    }
 
    auto logFilePath = Config::Pathing::logFilePath(LOG_FILE_NAME).string();
-   STARTLOGGING(logFilePath, LogLvlDebug);
+   STARTLOGGING(logFilePath, LogLvlInfo);
    if (Config::NetworkSettings::ephemeralPeers()) {
-      LOGDISABLESTDOUT();
       if (Config::NetworkSettings::oneWayAuth()) {
          LOGERR << "--ephemeral and --oneWayAuth are mutually exclusive for db";
          exit(-3);
@@ -106,12 +105,6 @@ int main(int argc, char* argv[])
             "server peers store");
          WebSocketServer::initPeerStore({peerFilePath, passLbd});
       }
-      NetworkPeers::PeerKey myKey{WebSocketServer::getOwnPublicKey(),
-         Config::NetworkSettings::oneWayAuth() ?
-         NetworkPeers::PeerType::ServerOneWay :
-         NetworkPeers::PeerType::ServerTwoWay
-      };
-      LOGINFO << "This is my key: " << myKey.toHumanReadable();
    }
 
    LOGINFO << "Running on " << Config::DBSettings::threadCount() << " threads";
@@ -137,12 +130,9 @@ int main(int argc, char* argv[])
 
    //start blockchain service
    bdmThread.start(Config::DBSettings::initMode());
-   if (!Config::DBSettings::checkChain()) {
-      WebSocketServer::start(bdmThread.bdm(), false);
-      LOGINFO << "WS server has shut down" << std::endl;
-   } else {
-      bdmThread.join();
-   }
+
+   //start LWS server, it will return on shutdown
+   WebSocketServer::start(bdmThread.bdm());
 
    //shutdown BDM and cleanup crypto contexts
    bdmThread.shutdown();

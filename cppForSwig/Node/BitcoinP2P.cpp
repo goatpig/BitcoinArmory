@@ -286,7 +286,8 @@ std::vector<size_t> P2P::Payload::processPacket(
    }
 
    size_t offset = 0, totalsize = data.size();
-   while (offset < totalsize - sizeof(MagicWordType)) {
+   // a header is 24 bytes, don't read one that isn't all there
+   while (offset + MESSAGE_HEADER_LEN <= totalsize) {
       const uint8_t* ptr = &data[offset];
 
       //check magic word
@@ -336,7 +337,8 @@ std::vector<size_t> P2P::Payload::processPacket(
       //at this point we don't want to reparse this message if the
       //deser operation fails
       offset += 4;
-      if (length + MESSAGE_HEADER_LEN > totalsize - localOffset) {
+      // size_t math: length + 24 must not wrap around in 32 bits
+      if ((size_t)length + MESSAGE_HEADER_LEN > totalsize - localOffset) {
          return retvec;
       }
 
@@ -372,13 +374,20 @@ std::shared_ptr<P2P::Payload::DeserializedPayloads> P2P::Payload::deserialize(
       for (const auto& offset : offsetVec) {
          bytesConsumed = offset;
 
+         // the spill offset doesn't go through processPacket, check the
+         // header is all there before reading it
+         if (offset + MESSAGE_HEADER_LEN > data.size()) {
+            break;
+         }
          uint32_t length;
          memcpy(&length, &data[offset] + PAYLOAD_LENGTH_OFFSET, 4);
-         size_t localBytesConsumed = length + MESSAGE_HEADER_LEN;
+         size_t localBytesConsumed = (size_t)length + MESSAGE_HEADER_LEN;
          if (localBytesConsumed + offset > data.size()) {
             break;
          }
-         std::string_view messagetype{(const char*)&data[offset] + MESSAGE_TYPE_OFFSET};
+         auto typePtr = (const char*)&data[offset] + MESSAGE_TYPE_OFFSET;
+         std::string_view messagetype{typePtr,
+            strnlen(typePtr, MESSAGE_TYPE_LEN)};
 
          try {
             const uint8_t* payloadptr = nullptr;
@@ -586,6 +595,10 @@ std::string_view P2P::Payload_Version::typeStr() const
 ////////
 void P2P::Payload_Version::deserialize(const uint8_t* data, size_t len)
 {
+   // fixed part + user agent length varint (>= 1) + start height
+   if (data == nullptr || len < VERSION_MINLENGTH) {
+      throw PayloadDeserError("version payload too short");
+   }
    const uint8_t* dataptr = data;
 
    memcpy(&vheader_.version_, dataptr, 4);
@@ -615,6 +628,10 @@ void P2P::Payload_Version::deserialize(const uint8_t* data, size_t len)
    size_t remaining = len - USERAGENT_OFFSET;
    uint64_t uaLen;
    auto varintlen = get_varint(uaLen, dataptr, remaining);
+   // the user agent and the start height have to fit in the payload
+   if (varintlen + 4 > remaining || uaLen > remaining - varintlen - 4) {
+      throw PayloadDeserError("invalid user agent length");
+   }
    dataptr += varintlen;
    auto userAgentPtr = (const char*)dataptr;
    userAgent_ = std::string(userAgentPtr, uaLen);
@@ -948,6 +965,9 @@ size_t P2P::Payload_Tx::serializeInner(uint8_t* dataptr) const
 ////////
 void P2P::Payload_Tx::deserialize(const uint8_t* dataptr, size_t len)
 {
+   if (len == 0) {
+      throw PayloadDeserError("empty tx payload");
+   }
    rawTx_.resize(len);
    memcpy(&rawTx_[0], dataptr, len);
 }
@@ -1090,13 +1110,29 @@ int8_t P2P::Payload_Reject::code() const
 ////////
 void P2P::Payload_Reject::deserialize(const uint8_t* dataptr, size_t len)
 {
+   //a varint cut short by the end of the payload makes a malformed reject,
+   //like the lengths checked below
+   auto readVarint = [](uint64_t& val, const uint8_t* p, size_t size)->int
+   {
+      try {
+         return get_varint(val, p, size);
+      } catch (const std::runtime_error&) {
+         throw PayloadDeserError("reject varint past the payload");
+      }
+   };
+
    uint64_t typeLen;
 
    //message field size in bytes
-   auto varintlen = get_varint(typeLen, dataptr, len);
+   auto varintlen = readVarint(typeLen, dataptr, len);
    auto ptr = dataptr + varintlen;
+   size_t remaining = len - varintlen;
 
-   //message type
+   //message type, then the 1 byte reject code
+   if (typeLen >= remaining) {
+      throw PayloadDeserError("invalid reject type length");
+   }
+   remaining -= typeLen + 1;
    std::string_view msgtype{(const char*)ptr, typeLen};
    auto typeIter = typeToPayload.find(msgtype);
    if (typeIter == typeToPayload.end()) {
@@ -1109,12 +1145,14 @@ void P2P::Payload_Reject::deserialize(const uint8_t* dataptr, size_t len)
    //code_ = (const char)*ptr;
    ptr++;
 
-   auto reasonOffset = typeLen + varintlen + 1;
-
-   //reason str size
+   //reason str size, read from what's left of the payload
    uint64_t reasonLen;
-   varintlen = get_varint(reasonLen, ptr, len);
+   varintlen = readVarint(reasonLen, ptr, remaining);
    ptr += varintlen;
+   remaining -= varintlen;
+   if (reasonLen > remaining) {
+      throw PayloadDeserError("invalid reject reason length");
+   }
 
    //reason str
    reasonStr_ = std::string{(const char*)ptr, reasonLen};
@@ -1122,7 +1160,7 @@ void P2P::Payload_Reject::deserialize(const uint8_t* dataptr, size_t len)
 
    //extra data, final field. size and processing depends on reject code
    //just copy the data, handle when processing the payload
-   auto remaining = len - (reasonLen + varintlen + reasonOffset);
+   remaining -= reasonLen;
    if (remaining == 0) {
       return;
    }
@@ -1280,9 +1318,9 @@ void P2P::Iface::requestTx(InvVector invVec)
 ////////////////////////////////////////////////////////////////////////////////
 // Peer
 P2P::Peer::Peer(
-   const std::string& addrV4, const std::string& port,
+   const std::string& addrV4, Network::port_t port, const std::string& name,
    uint32_t magicword, bool watcher) :
-   Iface(magicword, watcher), addr_(addrV4), port_(port)
+   Iface(magicword, watcher), addr_(addrV4), port_(port), name_{name}
 {
    init();
 }
@@ -1304,15 +1342,20 @@ void P2P::Peer::init()
 void P2P::Peer::connectToNode(bool async)
 {
    std::unique_lock<std::mutex> lock(connectMutex_, std::defer_lock);
-   if (!lock.try_lock() || connectedPromise_ != nullptr) {
+   if (!lock.try_lock()) {
       //return if another thread is already here
-      throw Network::SocketError("another connect attempt is underway");
+      throw Network::SocketError(std::format(
+         "another connect attempt is underway for {}", name_));
    }
 
-   connectedPromise_ = std::unique_ptr<std::promise<bool>>(new std::promise<bool>());
-   auto connectedFuture = connectedPromise_->get_future();
+   std::promise<void> connectedPromise;
+   auto connectedFuture = connectedPromise.get_future();
 
-   std::thread connectthread([this]{ connectLoop(); });
+   std::thread connectthread(
+      [this](std::promise<void> prom)
+      { connectLoop(std::move(prom)); },
+      std::move(connectedPromise)
+   );
    if (connectthread.joinable()) {
       connectthread.detach();
    }
@@ -1321,16 +1364,16 @@ void P2P::Peer::connectToNode(bool async)
       return;
    }
 
-   connectedFuture.get();
+   connectedFuture.wait();
    if (process_except_ != nullptr) {
       std::rethrow_exception(process_except_);
    }
 }
 
-void P2P::Peer::connectLoop()
+void P2P::Peer::connectLoop(std::promise<void> connectedPromise)
 {
    auto waitBeforeReconnect = 0ms;
-   std::promise<bool> shutdownPromise;
+   std::promise<void> shutdownPromise;
    shutdownFuture_ = shutdownPromise.get_future();
 
    if (!invTxLambda_) {
@@ -1339,23 +1382,17 @@ void P2P::Peer::connectLoop()
 
    while (run_.load(std::memory_order_relaxed)) {
       //setup fresh connection
-      dataStack_ = std::make_shared<
-         Threading::BlockingQueue<std::vector<uint8_t>>>();
-      socket_ = std::make_unique<Socket>(addr_, port_, dataStack_);
-      verackPromise_ = std::make_unique<std::promise<bool>>();
+      socket_ = std::make_unique<Socket>(addr_, port_, name_);
+      verackPromise_ = std::make_unique<std::promise<void>>();
       auto verackFuture = verackPromise_->get_future();
 
-      while (run_.load(std::memory_order_relaxed)) {
-         if (socket_->openSocket(false)) {
-            break;
-         }
-
+      if (!socket_->openSocket(false)) {
+         //wait some time to reconnect or until the condvar triggers
          waitBeforeReconnect = std::min(
             waitBeforeReconnect + RECONNECT_DELAY, 5000ms);
-         std::this_thread::sleep_for(waitBeforeReconnect);
-      }
-      if (!socket_->isValid()) {
-         break;
+         std::unique_lock<std::mutex> lock(connectLoopMutex_);
+         connectLoopCV_.wait_for(lock, waitBeforeReconnect);
+         continue;
       }
 
       auto processThread = [this](void)->void
@@ -1377,28 +1414,32 @@ void P2P::Peer::connectLoop()
       try {
          //send version
          if (socket_->getSocketName(clientsocketaddr) != 0) {
-            throw Network::SocketError("failed to get client sockaddr");
+            throw Network::SocketError(
+               std::format("{} failed to get client sockaddr", name_));
          }
          if (socket_->getPeerName(node_addr_) != 0) {
-            throw Network::SocketError("failed to get peer sockaddr");
+            throw Network::SocketError(
+               std::format("failed to get peer sockaddr", name_));
          }
 
          // Services, for future extensibility
          uint32_t services = NODE_WITNESS;
          version->setVersionHeaderIPv4(70012, services, timestamp,
             node_addr_, clientsocketaddr);
-         version->userAgent_ = "Armory:0.96.5";
+         version->userAgent_ = "Armory:0.96.99";
          version->startHeight_ = -1;
          sendMessage(std::move(version));
 
          //wait on verack
          verackFuture.get();
          verackPromise_.reset();
-         LOGINFO << "Connected to Bitcoin node";
+         LOGINFO << std::format("{} is connected to Bitcoin node", name_);
          updateNodeStatus(true);
 
-         //signal calling thread
-         connectedPromise_->set_value(true);
+         try {
+            //notify calling thread the connection is ready on first success
+            connectedPromise.set_value();
+         } catch (const std::future_error&) {}
          waitBeforeReconnect = 0ms;
 
          //signal new blocks for good measure
@@ -1416,10 +1457,10 @@ void P2P::Peer::connectLoop()
       if (socket_->isValid()) {
          socket_->shutdown();
       }
-      LOGINFO << "Disconnected from Bitcoin node";
+      LOGINFO << std::format("{} disconnected from Bitcoin node", name_);
       updateNodeStatus(false);
    }
-   shutdownPromise.set_value(true);
+   shutdownPromise.set_value();
 }
 
 ////////
@@ -1431,7 +1472,7 @@ void P2P::Peer::processDataStackThread()
          auto prevPacket = packetPtr;
          packetPtr.reset();
 
-         auto data = dataStack_->pop_front();
+         auto data = socket_->getPacket();
          auto processedPacket = Payload::deserialize(
             data, getMagicWord(), prevPacket);
 
@@ -1519,7 +1560,7 @@ void P2P::Peer::gotVerack()
       return;
    }
    try {
-      verackPromise_->set_value(true);
+      verackPromise_->set_value();
    } catch (const std::future_error&) {
       //already set or no shared state, move on
    }
@@ -1657,8 +1698,12 @@ void P2P::Peer::shutdown()
 
    if (socket_ != nullptr) {
       socket_->shutdown();
-      shutdownFuture_.wait();
    }
+   connectLoopCV_.notify_all();
+   try {
+      auto fut = shutdownFuture_;
+      fut.wait();
+   } catch (const std::future_error&) {}
 
    //have to call the parent class shutdown explicitly
    Iface::shutdown();
@@ -1679,9 +1724,8 @@ bool P2P::Peer::connected() const
 ////////////////////////////////////////////////////////////////////////////////
 // Socket
 P2P::Socket::Socket(
-   const std::string& addr, const std::string& port,
-   std::shared_ptr<Threading::BlockingQueue<std::vector<uint8_t>>> readStack) :
-   PersistentSocket(addr, port), readDataStack_(readStack)
+   const std::string& addr, Network::port_t port, const std::string& name) :
+   PersistentSocket(addr, port, name)
 {}
 
 SocketType P2P::Socket::type() const
@@ -1689,18 +1733,6 @@ SocketType P2P::Socket::type() const
    return SocketType::BitcoinP2P;
 }
 
-////////
-void P2P::Socket::respond(std::vector<uint8_t>& packet)
-{
-
-   if (!packet.empty()) {
-      readDataStack_->push_back(std::move(packet));
-   } else {
-      readDataStack_->terminate();
-   }
-}
-
-////////
 void P2P::Socket::pushPayload(
    std::unique_ptr<Network::Socket_WritePayload> write_payload,
    std::shared_ptr<Network::Socket_ReadPayload>)

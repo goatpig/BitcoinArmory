@@ -156,6 +156,7 @@ namespace AsyncClient
       std::pair<unsigned, unsigned> getRekeyCount(void) const;
       void setCheckServerKeyPromptLambda(
          const std::function<bool(const BinaryData&)>&);
+      bool valid1WayServerKey(void) const;
       void addPublicKey(const SecureBinaryData&, bool);
 
       //connectivity
@@ -167,7 +168,7 @@ namespace AsyncClient
 
       //setup
       static std::shared_ptr<BlockDataViewer> getNewBDV(
-         const std::string&, const std::string&,
+         const std::string&, Armory::Network::port_t,
          std::shared_ptr<Armory::NetworkPeers::ClientStore>, bool,
          std::shared_ptr<RemoteCallback>);
 

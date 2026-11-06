@@ -350,14 +350,14 @@ class DlgWalletDetails(ArmoryDialog):
       super(DlgWalletDetails, self).closeEvent(event)
 
    #############################################################################
-   def accept(self, *args):
+   def accept(self):
       self.saveGeometrySettings()
-      super(DlgWalletDetails, self).accept(*args)
+      super(DlgWalletDetails, self).accept()
 
    #############################################################################
-   def reject(self, *args):
+   def reject(self):
       self.saveGeometrySettings()
-      super(DlgWalletDetails, self).reject(*args)
+      super(DlgWalletDetails, self).reject()
 
    #############################################################################
    def showContextMenu(self, pos):
@@ -1005,7 +1005,7 @@ class DlgChangeLabels(ArmoryDialog):
 
       self.setWindowTitle(self.tr('Wallet Descriptions'))
 
-   def accept(self, *args):
+   def accept(self):
       try:
          self.edtName.text().encode("ascii")
       except UnicodeDecodeError:
@@ -1016,4 +1016,4 @@ class DlgChangeLabels(ArmoryDialog):
          QtWidgets.QMessageBox.critical(self, self.tr('Empty Name'), \
             self.tr('All wallets must have a name. '), QtWidgets.QMessageBox.Ok)
          return
-      super(DlgChangeLabels, self).accept(*args)
+      super(DlgChangeLabels, self).accept()

@@ -36,8 +36,18 @@ Blockchain::Blockchain(const BinaryData &genesisHash)
    : genesisHash_(genesisHash), topBlockOffset_{0, 0}
 {}
 
+Blockchain::~Blockchain()
+{
+   clear();
+}
+
 void Blockchain::clear()
 {
+   for (auto headerPtr : headersById_) {
+      if (headerPtr != nullptr) {
+         headerPtr->nextPtr_ = nullptr;
+      }
+   }
    newlyParsedHeaders_.clear();
    headersByHeight_.clear();
    headersById_.clear();
@@ -59,7 +69,7 @@ void Blockchain::clear()
 ////////
 HeaderPtr Blockchain::top() const
 {
-   auto ptr = std::atomic_load(&topBlockPtr_);
+   auto ptr = topBlockPtr_.load();
    return ptr;
 }
 
@@ -123,13 +133,11 @@ HeaderPtr Blockchain::getHeaderById(Types::BlockId id) const
 {
    std::unique_lock<std::mutex> lock(mu_);
    if (id > highestBlockID_.load(std::memory_order_relaxed)) {
-      LOGERR << "block id " << id << " is too big";
-      throw std::range_error("block id overflow");
+      throw std::range_error(std::format("block id overflow: {}", id));
    }
    auto header = headersById_[id];
    if (header == nullptr) {
-      LOGERR << "cannot find block for id: " << id;
-      throw std::range_error("Cannot find block by id");
+      throw std::range_error(std::format("cannot find block {} by id", id));
    }
    return header;
 }
@@ -346,7 +354,7 @@ HeaderPtr Blockchain::organizeChain(
    // Last header in the loop didn't get added (the genesis block on first run)
    thisHeaderPtr->isMainBranch_ = true;
    headersByHeight_[thisHeaderPtr->getBlockHeight()] = thisHeaderPtr;
-   std::atomic_store(&topBlockPtr_, newTopBlock);
+   topBlockPtr_.store(newTopBlock);
 
    if (!prevChainStillValid) {
       LOGWARN << "Reorg detected!";
@@ -550,8 +558,10 @@ uint32_t Blockchain::stageNewHeaders(
 {
    std::unique_lock<std::mutex> lock(mu_);
    uint32_t count = 0;
-   if (headersById_.size() < headersById_.size() + newHeaders.size()) {
-      headersById_.resize(headersById_.size() + newHeaders.size() + 150);
+   auto projectedSize = highestBlockID_.load(std::memory_order_relaxed) +
+      newHeaders.size();
+   if (headersById_.size() < projectedSize) {
+      headersById_.resize(projectedSize + 150);
    }
    for (auto newHeader : newHeaders) {
       auto iter = headerSet_.find(newHeader);

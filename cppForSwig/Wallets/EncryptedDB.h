@@ -20,6 +20,7 @@
 #include "Utils/BinaryData.h"
 #include "Utils/SecureBinaryData.h"
 #include "Utils/ReentrantLock.h"
+#include "Utils/AtomicSharedPtr.h"
 
 namespace Armory
 {
@@ -97,7 +98,7 @@ namespace Armory
             const unsigned encrVersion_;
 
             LMDB::DB db_;
-            std::atomic<std::shared_ptr<IfaceDataMap>> dataMapPtr_;
+            Armory::Threading::AtomicSharedPtr<IfaceDataMap> dataMapPtr_;
 
             SecureBinaryData encrPubKey_;
             SecureBinaryData macKey_;

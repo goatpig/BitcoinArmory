@@ -322,6 +322,7 @@ public:
 
    static BinaryDataRef fromString(const std::string&, size_t=SIZE_MAX);
    static BinaryDataRef fromStringView(const std::string_view&, size_t=SIZE_MAX);
+   static BinaryDataRef fromVector(const std::vector<uint8_t>&, size_t=SIZE_MAX);
 
    /////////////////////////////////////////////////////////////////////////////
    // UNSAFE -- you don't know if outData holds enough space for this
