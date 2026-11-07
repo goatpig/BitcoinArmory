@@ -9869,7 +9869,7 @@ TEST_F(BridgeChainDataTests, TxIOCachePurge_DropBDV)
    }
    ninja.stopPayloadCapture();
 
-   //the bridge will drop the bdv connection in consequence
+   //the bridge will drop the bdv connection in consequence, and say so
    auto reply = waitOnReply();
    kj::ArrayPtr<const capnp::word> words(
       reinterpret_cast<const capnp::word*>(reply->data.getPtr()),
@@ -9879,7 +9879,7 @@ TEST_F(BridgeChainDataTests, TxIOCachePurge_DropBDV)
    auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
    ASSERT_EQ(fromBridge.which(), Codec::Bridge::FromBridge::NOTIFICATION);
    auto bridgeNotif = fromBridge.getNotification();
-   ASSERT_EQ(bridgeNotif.which(), Codec::Bridge::Notification::DISCONNECTED);
+   ASSERT_EQ(bridgeNotif.which(), Codec::Bridge::Notification::BDV_DROPPED);
 
    /* check the cache was purged in the process */
 

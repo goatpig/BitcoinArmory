@@ -388,6 +388,16 @@ BinaryData Serialization::getServerDisconnectedPacket()
    return serializeCapnp(message);
 }
 
+BinaryData Serialization::getBdvDroppedPacket()
+{
+   capnp::MallocMessageBuilder message;
+   auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
+   auto capnNotif = fromBridge.initNotification();
+   capnNotif.setBdvDropped();
+   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
+   return serializeCapnp(message);
+}
+
 BinaryData Serialization::getNodeStatusPacket(const Node::Status& nodeStatus)
 {
    capnp::MallocMessageBuilder message;

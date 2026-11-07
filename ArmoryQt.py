@@ -21,6 +21,7 @@ import threading
 import time
 import traceback
 import glob
+from html import escape
 from struct import pack
 import qtpy
 from qtpy import QtCore, QtGui, QtWidgets
@@ -63,6 +64,7 @@ from armoryengine.BDM import TheBDM, \
    NEW_ZC_ACTION, NEW_BLOCK_ACTION, \
    REFRESH_ACTION, WARNING_ACTION, WARNING_ACTION, SCAN_ACTION, \
    NODESTATUS_UPDATE, BDM_SCAN_PROGRESS, BDV_ERROR, BDV_DISCONNECTED, \
+   BDV_DROPPED, \
    INIT_DB_CONNECTED, INIT_WALLETS_REGISTERED, INIT_DB_READY, \
    BDMPhase_DBHeaders, BDMPhase_OrganizingChain, \
    BDMPhase_BlockHeaders, BDMPhase_BlockData, BDMPhase_Rescan, \
@@ -173,6 +175,8 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       super().__init__()
 
       self.isShuttingDown = False
+      self.dropCleanupPending = False
+      self.closeAfterDropCleanup = None
       self.ledgerView = None
 
       # SETUP THE WINDOWS DECORATIONS
@@ -4615,6 +4619,9 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          self.setDashboardDetails()
          self.updateStatusBarText()
 
+      elif action == BDV_DROPPED:
+         self.handleBdvDropped()
+
       #setup notifs
       elif action == INIT_DB_CONNECTED:
          self.registerWalletsWithService()
@@ -4798,6 +4805,14 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          LOGINFO('Attempting to close the main window!')
          TheSignalExecution.executeMethod(QAPP.exit)
 
+      if self.dropCleanupPending:
+         #see handleBdvDropped
+         if self.closeAfterDropCleanup is not None:
+            LOGWARN('closing again, not waiting on the automation cleanup')
+            completeCloseForReal(None)
+            return
+         self.closeAfterDropCleanup = completeCloseForReal
+
       self.showShuttingDownMessage()
       try:
          # Save the main window geometry in the settings file
@@ -4819,6 +4834,10 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          # Remove Temp Modules Directory if it exists:
          if self.tempModulesDirName:
             shutil.rmtree(self.tempModulesDirName)
+
+         if self.dropCleanupPending:
+            #handleBdvDropped closes once its cleanup is done
+            return
 
          automationDlg = DlgAutomations(self, self, False)
          TheBridge.dbSetup.cleanup(
@@ -4886,6 +4905,67 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       self.loadBlockchainIfNecessary()
       self.setDashboardDetails()
       TheBridge.dbSetup.beginDbSession()
+
+   #############################################################################
+   def handleBdvDropped(self):
+      '''
+      The bridge dropped its db connection after failing to update the
+      wallets state. Take the GUI offline, tell the user, then shut down what
+      the bridge automated, ArmoryDB and Bitcoin Core if automated too, so
+      that neither keeps running unused. The setup manager is disabled in a
+      running session for now, connecting again takes a restart.
+
+      The bridge runs each cleanup in a thread of its own with no lock on the
+      automation context: closeForReal waits on this cleanup rather than
+      start a second one, and quits right away on a second close request
+      since the bridge may never answer.
+      '''
+      LOGWARN('the bridge dropped its db connection')
+      if self.isShuttingDown:
+         return
+
+      self.switchNetworkMode(NETWORKMODE.Offline)
+      self.setDashboardDetails()
+
+      QtWidgets.QMessageBox.warning(self,
+         self.tr('Connection to ArmoryDB Dropped'), self.tr(
+         'Armory failed to update your wallets from ArmoryDB and dropped '
+         'its connection to the database. Armory is now offline: balances '
+         'and transaction history will not update.'
+         '<br><br>'
+         'Armory will now shut down the ArmoryDB instance it started, if '
+         'any, along with Bitcoin Core if it started that too. Your wallets '
+         'remain available for offline operations, such as creating '
+         'receiving addresses or signing offline transactions. To connect '
+         'again, restart Armory.'),
+         QtWidgets.QMessageBox.Ok)
+      if self.isShuttingDown:
+         #closeForReal cleans up the automation context itself
+         return
+
+      def onCleanupDone(success, error):
+         self.dropCleanupPending = False
+         if self.closeAfterDropCleanup is not None:
+            self.closeAfterDropCleanup(None)
+         elif not success:
+            QtWidgets.QMessageBox.warning(self,
+               self.tr('Shutdown Failed'), self.tr(
+               'Armory failed to shut down the ArmoryDB or Bitcoin Core '
+               'instance it started:<br><br>{error}<br><br>'
+               'Restart Armory to connect again. If ArmoryDB or Bitcoin '
+               'Core is still running, close it first.').format(
+                  error=escape(error)),
+               QtWidgets.QMessageBox.Ok)
+
+      def onReply(reply):
+         if not reply.success:
+            LOGERROR(f'automation cleanup failed: {reply.error}')
+         TheSignalExecution.executeMethod(
+            onCleanupDone, reply.success, reply.error)
+
+      self.dropCleanupPending = True
+      automationDlg = DlgAutomations(self, self, False)
+      TheBridge.dbSetup.cleanup(automationDlg.callbackId, onReply)
 
    #############################################################################
    def setupLedgerViews(self):
