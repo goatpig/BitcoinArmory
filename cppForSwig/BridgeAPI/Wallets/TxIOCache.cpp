@@ -88,12 +88,16 @@ void TxIOCache::purge(PurgeStatus status)
          lastKnownBlock_ = UINT32_MAX;
          unspentTxios_.clear();
          spentTxios_.clear();
-         dbCache_->clear();
+         dbCache_->purgeDbCopies();
          [[fallthrough]];
       }
 
       case PurgeStatus::PurgeZC:
+         //the zc txios and the zc copies of txs, the next update gets the
+         //wallets' zcs anew
          zcTxios_.clear();
+         dbCache_->purgeZC();
+         ++zcPurges_;
          break;
 
       default:
@@ -323,7 +327,7 @@ std::pair<TxIOCache::PurgeStatus, uint32_t> TxIOCache::update(
    }
    ReentrantLock lock(this);
 
-   //5. a fetched tx replaces the copies of its hash the cache has
+   //5. a fetched tx replaces the mined and zc copies of its hash
    std::set<Types::TxHash> fetchedHashes;
    for (const auto& tx : txs) {
       fetchedHashes.emplace(tx.getThisHash());
@@ -542,21 +546,30 @@ std::vector<UTXO> TxIOCache::getZcUTXOs(bool rbf,
 {
    ReentrantLock lock(this);
    std::vector<UTXO> result;
-   auto addTxio = [this, &result, filter](const TxIOPair& txio, const Tx& tx)
+   auto addTxio = [this, &result, filter](const TxIOPair& txio)
    {
       const auto& scrAddr = txio.getScrAddr();
       if (!filter(scrAddr)) {
          return;
       }
 
-      auto txOut = tx.getTxOutCopy(txio.getIndexOfOutput());
-
+      //an update sets the zc txios before it has their txs, and a mined tx
+      //can be cached before its header: such a txio is left out
+      const Tx* txPtr = nullptr;
       uint32_t height = UINT32_MAX;
-      if (!Types::isThisAZCKey(tx.getDBKey())) {
-         auto blockId = tx.getBlockId();
-         auto header = dbCache_->getHeader(blockId);
-         height = header->blockHeight;
+      try {
+         txPtr = &dbCache_->getTx(txio.getTxKeyOfOutput());
+         if (!Types::isThisAZCKey(txPtr->getDBKey())) {
+            auto blockId = txPtr->getBlockId();
+            auto header = dbCache_->getHeader(blockId);
+            height = header->blockHeight;
+         }
+      } catch (const std::out_of_range&) {
+         return;
       }
+      const auto& tx = *txPtr;
+
+      auto txOut = tx.getTxOutCopy(txio.getIndexOfOutput());
       result.emplace_back(UTXO{txio.getAmount(),
          height, tx.getTxIndex(), txio.getIndexOfOutput(),
          tx.getThisHash(), txOut.getScript()
@@ -564,13 +577,10 @@ std::vector<UTXO> TxIOCache::getZcUTXOs(bool rbf,
    };
 
    for (const auto& txio : zcTxios_) {
-      const auto& txKey = txio.second.getTxKeyOfOutput();
-
       if (rbf) {
          //for rbf outputs, we consider all outputs that are RBF flagged
          if (txio.second.isRBF()) {
-            const auto& tx = dbCache_->getTx(txKey);
-            addTxio(txio.second, tx);
+            addTxio(txio.second);
          }
          continue;
       }
@@ -584,9 +594,7 @@ std::vector<UTXO> TxIOCache::getZcUTXOs(bool rbf,
          //and the output has to be zc as well
          continue;
       }
-
-      const auto& tx = dbCache_->getTx(txKey);
-      addTxio(txio.second, tx);
+      addTxio(txio.second);
    }
    return result;
 }
@@ -793,8 +801,10 @@ void TxIOCache::fetchTxs(
    //only replaces the txs of the wallets)
    std::set<Types::TxHash> missingHashes;
    std::set<Types::BlockId> missingBlockIds;
+   unsigned zcPurges = 0;
    {
       ReentrantLock lock(this);
+      zcPurges = zcPurges_;
       std::set<Types::TxKey> walletZcKeys;
       for (const auto& txioPair : zcTxios_) {
          const auto& txio = txioPair.second;
@@ -915,8 +925,14 @@ void TxIOCache::fetchTxs(
       }
    }
 
-   //4. fill the cache
+   //4. fill the cache. If the zcs were purged while the db was asked (a
+   //reorg, a new db or a failed update), what it served may be stale: a
+   //zc may have left its mempool, a block the main branch. Nothing is
+   //cached, the next fetch asks again
    ReentrantLock lock(this);
+   if (zcPurges != zcPurges_) {
+      return;
+   }
    dbCache_->addHeaders(headers);
    for (auto& tx : txs) {
       dbCache_->addTx(tx);
