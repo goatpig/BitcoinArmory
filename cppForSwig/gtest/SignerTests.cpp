@@ -9448,6 +9448,46 @@ TEST_F(ExtrasTest_Mainnet, Bip32PathDiscovery)
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
+// Signer::getSpender and Signer::injectSignature take an input index: an
+// index equal to the spender count has to throw, like any index past it
+namespace {
+   std::shared_ptr<ScriptSpender> outpointSpender(uint8_t tag, unsigned id)
+   {
+      BinaryData hash;
+      hash.resize(32);
+      memset(hash.getPtr(), tag, 32);
+      return std::make_shared<ScriptSpender>(hash, id);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST(SignerIndexTest, GetSpender_OutOfRange)
+{
+   Signer signer;
+
+   //empty signer: index 0 read through the vector's null data pointer
+   EXPECT_THROW(signer.getSpender(0), ScriptException);
+
+   signer.addSpender(outpointSpender(0xaa, 0));
+   signer.addSpender(outpointSpender(0xbb, 1));
+   ASSERT_EQ(signer.getTxInCount(), 2U);
+
+   EXPECT_NO_THROW(signer.getSpender(1));
+   EXPECT_THROW(signer.getSpender(2), ScriptException);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST(SignerIndexTest, InjectSignature_OutOfRange)
+{
+   Signer signer;
+   signer.addSpender(outpointSpender(0xaa, 0));
+
+   SecureBinaryData sig(71);
+   EXPECT_THROW(signer.injectSignature(1, sig), std::runtime_error);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 // Now actually execute all the tests
 ////////////////////////////////////////////////////////////////////////////////
 GTEST_API_ int main(int argc, char **argv)

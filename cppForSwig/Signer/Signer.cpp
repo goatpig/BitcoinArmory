@@ -891,7 +891,7 @@ SecureBinaryData Signer::signScript(
 ////////
 std::shared_ptr<ScriptSpender> Signer::getSpender(unsigned index) const
 {
-   if (index > spenders_.size()) {
+   if (index >= spenders_.size()) {
       throw ScriptException("invalid spender index");
    }
    return spenders_[index];
@@ -2224,7 +2224,7 @@ bool Signer::hasLegacyInputs() const
 void Signer::injectSignature(
    unsigned inputIndex, SecureBinaryData& sig, unsigned sigId)
 {
-   if (spenders_.size() < inputIndex) {
+   if (inputIndex >= spenders_.size()) {
       throw std::runtime_error("invalid spender index");
    }
    auto& spender = spenders_[inputIndex];
