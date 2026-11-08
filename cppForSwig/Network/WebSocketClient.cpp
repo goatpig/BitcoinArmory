@@ -532,8 +532,11 @@ void WebSocketClient::readService()
                   continue;
                }
 
-               callbackPtr->callback(currentReadMessage_);
-               readPackets_.erase(msgid);
+               //cleanupPendingRequests can release this request from another
+               //thread, only fire the callback if we're the one removing it
+               if (readPackets_.erase(msgid)) {
+                  callbackPtr->callback(currentReadMessage_);
+               }
                currentReadMessage_.reset();
             } else {
                LOGWARN << std::format(

@@ -2925,6 +2925,76 @@ TEST_F(BlockUtilsBareWithServer, WSClientCleanup)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(BlockUtilsBareWithServer, WSClientCleanup_AnsweredRequest)
+{
+   /*
+   A request that got its reply should not be released again
+   when the socket drops while its callback runs
+   */
+
+   //the first call blocks in the callback until released, a second call
+   //flags itself
+   std::atomic<unsigned> callCount{0};
+   std::promise<void> firstCallProm, secondCallProm;
+   auto firstCallFut = firstCallProm.get_future();
+   auto secondCallFut = secondCallProm.get_future();
+   std::mutex cvMutex;
+   std::condition_variable cv;
+   bool release = false;
+
+   //start the WS server
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer(nullptr);
+
+   //start bdm
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+
+   //connect to server
+   auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+   auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
+      "127.0.0.1", Config::NetworkSettings::dbPort(),
+      std::make_shared<NetworkPeers::ClientStore>(Wallets::IO::ReadOnlyFileParams{
+         homedir_ / CLIENT_AUTH_PEER_FILENAME, authPeersPassLbd_}),
+      true, //public server
+      pCallback);
+
+   bdvObj->connectToRemote();
+   bdvObj->registerWithDB(Config::BitcoinSettings::getMagicBytes().toHexStr());
+   bdvObj->goOnline();
+   pCallback->waitOnNotification(DBTestUtils::UTCallback::BDMAction_Ready);
+
+   bdvObj->getTxios(0,
+      [&](ReturnMessage<std::vector<TxIOPair>>) {
+         auto count = callCount.fetch_add(1) + 1;
+         if (count == 1) {
+            firstCallProm.set_value();
+            std::unique_lock<std::mutex> lock{cvMutex};
+            cv.wait_for(lock, 10s, [&release]{ return release; });
+         } else if (count == 2) {
+            secondCallProm.set_value();
+         }
+      });
+
+   //the reply is in and its callback is running
+   ASSERT_EQ(firstCallFut.wait_for(5s), std::future_status::ready);
+
+   //drop the socket while the callback runs
+   WebSocketServer::shutdown();
+
+   //the request was answered, the disconnect should not release it again
+   EXPECT_EQ(secondCallFut.wait_for(3s), std::future_status::timeout);
+
+   //release the callback
+   {
+      std::unique_lock<std::mutex> lock{cvMutex};
+      release = true;
+   }
+   cv.notify_all();
+}
+
+////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 class BlockUtilsFull : public ::testing::Test
