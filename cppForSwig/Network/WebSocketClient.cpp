@@ -266,6 +266,56 @@ void WebSocketClient::shutdown()
    lws_cancel_service(context);
 }
 
+void WebSocketClient::cleanupPendingRequests()
+{
+   //create error message to send to all outsanding read callbacks
+   capnp::MallocMessageBuilder message;
+   auto payload = message.initRoot<Codec::BDV::Reply>();
+   payload.setSuccess(false);
+   payload.setError(std::format("{} was disconnected", name_));
+
+   auto flat = capnp::messageToFlatArray(message);
+   auto bytes = flat.asBytes();
+   BinaryDataRef errPacket(bytes.begin(), bytes.end());
+
+   BinaryWriter msgBW;
+   msgBW.put_uint32_t(12 + errPacket.getSize());
+   msgBW.put_uint64_t(0);
+   msgBW.put_uint8_t((uint8_t)ArmoryAEAD::BIP151_PayloadType::SinglePacket);
+   msgBW.put_uint8_t(0);
+   msgBW.put_uint8_t(0);
+   msgBW.put_uint8_t(0);
+   msgBW.put_BinaryDataRef(errPacket);
+   auto errMsg = msgBW.getData();
+
+   //trigger callbacks for all outstanding query operations
+   std::vector<std::thread> threads;
+   auto readMap = readPackets_.clear();
+   for (auto& readPair : readMap) {
+      auto& msgObjPtr = readPair.second;
+      auto callbackPtr = dynamic_cast<CallbackReturn_WebSocket*>(
+         msgObjPtr->payload_->callbackReturn_.get());
+      if (callbackPtr == nullptr) {
+         continue;
+      }
+
+      //run each callback in its own thread
+      threads.push_back(std::thread(
+         [callbackPtr](BinaryData errReply) {
+            WebSocketMessagePartial errObj;
+            errObj.parsePacket(errReply);
+            callbackPtr->callback(errObj);
+         }, errMsg));
+   }
+
+   //wait on callback threads
+   for (auto& thr : threads) {
+      if (thr.joinable()) {
+         thr.join();
+      }
+   }
+}
+
 void WebSocketClient::cleanup()
 {
    writeSerializationQueue_.terminate();
@@ -287,53 +337,7 @@ void WebSocketClient::cleanup()
       throw errStr;
    }
 
-   //create error message to send to all outsanding read callbacks
-   capnp::MallocMessageBuilder message;
-   auto payload = message.initRoot<Codec::BDV::Notifications>();
-   auto notifs = payload.initNotifs(1);
-   auto error = notifs[0].initError();
-   error.setCode(-1);
-   error.setErrStr(std::format("{} disconnected", name_));
-
-   auto flat = capnp::messageToFlatArray(message);
-   auto bytes = flat.asBytes();
-   BinaryDataRef errPacket(bytes.begin(), bytes.end());
-
-   BinaryWriter msgBW;
-   msgBW.put_uint32_t(5 + errPacket.getSize());
-   msgBW.put_uint8_t((uint8_t)ArmoryAEAD::BIP151_PayloadType::SinglePacket);
-   msgBW.put_uint32_t(0);
-   msgBW.put_BinaryDataRef(errPacket);
-
-   WebSocketMessagePartial errObj;
-   auto errMsg = msgBW.getData();
-   errObj.parsePacket(errMsg);
-
-   //trigger callbacks for all outstanding query operations
-   std::vector<std::thread> threads;
-   {
-      auto readMap = readPackets_.clear();
-      for (auto& readPair : readMap) {
-         auto& msgObjPtr = readPair.second;
-         auto callbackPtr = dynamic_cast<CallbackReturn_WebSocket*>(
-            msgObjPtr->payload_->callbackReturn_.get());
-         if (callbackPtr == nullptr) {
-            continue;
-         }
-
-         //run in its own thread
-         threads.push_back(std::thread([callbackPtr, errObj]{
-            callbackPtr->callback(errObj);
-         }));
-      }
-   }
-
-   //wait on callback threads
-   for (auto& thr : threads) {
-      if (thr.joinable()) {
-         thr.join();
-      }
-   }
+   cleanupPendingRequests();
    LOGINFO << std::format("{} was cleaned up", name_);
 }
 
@@ -385,6 +389,7 @@ int WebSocketClient::lwsServiceHandler(struct lws* wsi,
                }
             }
             instance->shutdown();
+            instance->cleanupPendingRequests();
          } catch (const LWS_Error&) {}
          break;
       }
@@ -527,8 +532,11 @@ void WebSocketClient::readService()
                   continue;
                }
 
-               callbackPtr->callback(currentReadMessage_);
-               readPackets_.erase(msgid);
+               //cleanupPendingRequests can release this request from another
+               //thread, only fire the callback if we're the one removing it
+               if (readPackets_.erase(msgid)) {
+                  callbackPtr->callback(currentReadMessage_);
+               }
                currentReadMessage_.reset();
             } else {
                LOGWARN << std::format(

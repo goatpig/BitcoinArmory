@@ -66,12 +66,13 @@ class NewBlockNotif
    using BlockIdVec = std::vector<Armory::Types::BlockId>;
 
 private:
-   uint32_t height_ = UINT32_MAX;
-   uint32_t branchHeight_ = UINT32_MAX;
+   uint32_t height_;
+   uint32_t branchHeight_;
    BlockIdVec invalidatedBlockIds_;
    BlockIdVec newMainBranchBlockIds_;
 
 public:
+   NewBlockNotif(void);
    NewBlockNotif(uint32_t, uint32_t, BlockIdVec, BlockIdVec);
 
    bool isValid(void) const;

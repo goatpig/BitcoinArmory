@@ -755,7 +755,10 @@ void CppBridge::runNotificationProcessingThread()
                      break;
                   }
                }
-               wltManager_->updateStateFromDB(std::move(payload));
+               if (!wltManager_->updateStateFromDB(std::move(payload))) {
+                  //wallet manager update failed, drop the bdv connection
+                  cleanup();
+               }
          }
       }
 

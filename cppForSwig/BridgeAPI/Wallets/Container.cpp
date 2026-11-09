@@ -81,6 +81,9 @@ void WalletContainer::cleanupBdvPtr()
 {
    asyncWlt_.reset();
    bdvPtr_.reset();
+
+   //the chain data came from that bdv
+   resetCache();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -100,6 +103,10 @@ WalletContainer::getAddressAccount() const
 ////////////////////////////////////////////////////////////////////////////////
 void WalletContainer::resetCache()
 {
+   //runs on the notification thread: the readers of the chain data take the
+   //cache lock, as resolveTxios does. They check both pointers, since the
+   //update resolves the main and zc chain data one after the other
+   ReentrantLock lock(cache_.get());
    chainDataMain_.reset();
    chainDataZC_.reset();
 }
@@ -143,7 +150,8 @@ void WalletContainer::unregisterFromBDV()
 
 Types::Amount WalletContainer::getFullBalance() const
 {
-   if (chainDataMain_ == nullptr) {
+   ReentrantLock lock(cache_.get());
+   if (chainDataMain_ == nullptr || chainDataZC_ == nullptr) {
       return 0;
    }
    return chainDataMain_->totalBalance + chainDataZC_->totalBalance;
@@ -151,7 +159,8 @@ Types::Amount WalletContainer::getFullBalance() const
 
 Types::Amount WalletContainer::getSpendableBalance() const
 {
-   if (chainDataMain_ == nullptr) {
+   ReentrantLock lock(cache_.get());
+   if (chainDataMain_ == nullptr || chainDataZC_ == nullptr) {
       return 0;
    }
    return chainDataMain_->spendableBalance + chainDataZC_->spendableBalance;
@@ -159,7 +168,8 @@ Types::Amount WalletContainer::getSpendableBalance() const
 
 Types::Amount WalletContainer::getUnconfirmedBalance() const
 {
-   if (chainDataMain_ == nullptr) {
+   ReentrantLock lock(cache_.get());
+   if (chainDataMain_ == nullptr || chainDataZC_ == nullptr) {
       return 0;
    }
    return chainDataMain_->unconfirmedBalance + chainDataZC_->unconfirmedBalance;
@@ -167,7 +177,8 @@ Types::Amount WalletContainer::getUnconfirmedBalance() const
 
 size_t WalletContainer::getTxCount() const
 {
-   if (chainDataMain_ == nullptr) {
+   ReentrantLock lock(cache_.get());
+   if (chainDataMain_ == nullptr || chainDataZC_ == nullptr) {
       return 0;
    }
    return chainDataMain_->txCount + chainDataZC_->txCount;
@@ -269,7 +280,8 @@ void WalletContainer::synchronizeAddressChainState()
 ////////////////////////////////////////////////////////////////////////////////
 std::map<Types::ScrAddr, Amounts> WalletContainer::getAddrBalanceMap() const
 {
-   if (chainDataMain_ == nullptr) {
+   ReentrantLock lock(cache_.get());
+   if (chainDataMain_ == nullptr || chainDataZC_ == nullptr) {
       return {};
    }
    std::map<Types::ScrAddr, Amounts> result;
@@ -447,7 +459,8 @@ std::vector<UTXO> WalletContainer::getUTXOs(Types::Amount val, bool zc, bool rbf
 ////////
 const std::map<Types::TxIOKey, TxIOPair> WalletContainer::getTxioMap() const
 {
-   if (chainDataMain_ == nullptr) {
+   //the callers hold the cache lock
+   if (chainDataMain_ == nullptr || chainDataZC_ == nullptr) {
       return {};
    }
 

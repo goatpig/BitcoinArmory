@@ -2610,10 +2610,15 @@ protected:
       nodePtr->setBDM(theBDMt_->bdm());
    }
 
-   void startWSServer()
+   void startWSServer(std::shared_ptr<Clients> clientsPtr)
    {
-      wsServerThr_ = std::thread([bdm=theBDMt_->bdm()](){
-         WebSocketServer::start(bdm); }
+      wsServerThr_ = std::thread([bdm=theBDMt_->bdm()]
+         (std::shared_ptr<Clients> clientsPtr){
+            if (clientsPtr == nullptr) {
+               clientsPtr = std::make_shared<Clients>(bdm);
+            }
+            WebSocketServer::start(clientsPtr);
+         }, clientsPtr
       );
 
       //arbitrary wait to give time to WS server to startup
@@ -2635,7 +2640,7 @@ protected:
       FileUtils::createDirectory(ldbdir_);
 
       Config::reset();
-      Config::DBSettings::setServiceType(SERVICE_UNITTEST);
+      Config::DBSettings::setServiceType(SERVICE_UNITTEST_WITHWS);
       Config::parseArgs({
          "--datadir=./fakehomedir",
          "--dbdir=./ldbtestdir",
@@ -2725,7 +2730,7 @@ TEST_F(BlockUtilsBareWithServer, ShutdownWithPendingClient)
    TestUtils::setBlocks({ "0", "1" }, blk0dat_);
    WebSocketServer::initPeerStore({
       homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
-   startWSServer();
+   startWSServer(nullptr);
 
    std::vector<BinaryData> scrAddrVec {
       TestChain::scrAddrA,
@@ -2754,6 +2759,235 @@ TEST_F(BlockUtilsBareWithServer, ShutdownWithPendingClient)
    if (wsServerThr_.joinable()) {
       wsServerThr_.join();
    }
+}
+
+TEST_F(BlockUtilsBareWithServer, WSClientCleanup)
+{
+   /*
+   Demonstrate a WebSocketClient can release its pending
+   requests on disconnect
+   */
+
+   //start the WS server
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   auto clients = std::make_shared<Clients>(theBDMt_->bdm());
+   startWSServer(clients);
+
+   //start bdm
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+
+   //connect to server
+   auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+   auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
+      "127.0.0.1", Config::NetworkSettings::dbPort(),
+      std::make_shared<NetworkPeers::ClientStore>(Wallets::IO::ReadOnlyFileParams{
+         homedir_ / CLIENT_AUTH_PEER_FILENAME, authPeersPassLbd_}),
+      true, //public server
+      pCallback);
+
+   bdvObj->connectToRemote();
+   bdvObj->registerWithDB(Config::BitcoinSettings::getMagicBytes().toHexStr());
+   bdvObj->goOnline();
+   auto readyNotif = pCallback->waitOnNotification(
+      DBTestUtils::UTCallback::BDMAction_Ready);
+   ASSERT_NE(readyNotif, nullptr);
+   ASSERT_EQ(readyNotif->action, DBTestUtils::UTCallback::BDMAction_Ready);
+   ASSERT_EQ(readyNotif->newTop.getHeight(), 5);
+
+   //grab id for our bdv
+   Types::BdvId bdvId;
+   {
+      auto bdvMap = clients->getBdvIds();
+      ASSERT_EQ(bdvMap.size(), 1);
+      bdvId = *bdvMap.begin();
+   }
+
+   DBTestUtils::BdvPayloadNinja ninja{clients, bdvId};
+   ninja.beginPayloadCapture();
+
+   /*
+   The payload ninja diverts all payloads for our BDV to its own queue.
+   We elect to process none of these payload, leaving them hanging forever
+   */
+   using TimePoint = std::chrono::time_point<std::chrono::system_clock>;
+   std::promise<std::pair<bool, TimePoint>> prom1, prom2, prom3, prom4;
+   auto fut1 = prom1.get_future();
+   auto fut2 = prom2.get_future();
+   auto fut3 = prom3.get_future();
+   auto fut4 = prom4.get_future();
+
+   const auto& socketName = bdvObj->getSocketName();
+   bdvObj->getTxsByHash({READHEX("abcd"), READHEX("ef01")},
+      [&prom1, socketName](ReturnMessage<AsyncClient::TxBatchResult> result){
+         try {
+            result.get();
+            prom1.set_value({true, std::chrono::system_clock::now()});
+         } catch (const ClientMessageError& e) {
+            EXPECT_EQ(e.what(), std::format("{} was disconnected", socketName));
+            prom1.set_value({false, std::chrono::system_clock::now()});
+         }
+      });
+
+   bdvObj->getTxsByKey({0, 1, 2},
+      [&prom2, socketName](ReturnMessage<std::vector<Tx>> result){
+         try {
+            result.get();
+            prom2.set_value({true, std::chrono::system_clock::now()});
+         } catch (const ClientMessageError& e) {
+            EXPECT_EQ(e.what(), std::format("{} was disconnected", socketName));
+            prom2.set_value({false, std::chrono::system_clock::now()});
+         }
+      });
+
+   std::mutex cvMutex;
+   std::condition_variable cv;
+   bdvObj->getTxios(0,
+      [&prom3, &prom4, &cvMutex, &cv, socketName](ReturnMessage<std::vector<TxIOPair>> result){
+         std::unique_lock<std::mutex> lock{cvMutex};
+         try {
+            result.get();
+            prom3.set_value({true, std::chrono::system_clock::now()});
+         } catch (const ClientMessageError& e) {
+            EXPECT_EQ(e.what(), std::format("{} was disconnected", socketName));
+            prom3.set_value({false, std::chrono::system_clock::now()});
+         }
+
+         //we deliberately block this callback by waiting on the condvar
+         auto cvStatus = cv.wait_for(lock, 5s);
+         prom4.set_value({
+            cvStatus == std::cv_status::no_timeout,
+            std::chrono::system_clock::now()});
+      });
+
+   //none of the requests should be fulfilled yet
+   ASSERT_EQ(fut1.wait_for(0s), std::future_status::timeout);
+   ASSERT_EQ(fut2.wait_for(0s), std::future_status::timeout);
+   ASSERT_EQ(fut3.wait_for(0s), std::future_status::timeout);
+
+   //squeeze in a wait for the good measure
+   std::this_thread::sleep_for(3s);
+
+   //still no request should be fulfilled yet
+   ASSERT_EQ(fut1.wait_for(0s), std::future_status::timeout);
+   ASSERT_EQ(fut2.wait_for(0s), std::future_status::timeout);
+   ASSERT_EQ(fut3.wait_for(0s), std::future_status::timeout);
+
+   //cleanup the server, the calls should release
+   auto now = std::chrono::system_clock::now();
+   WebSocketServer::shutdown();
+
+   ASSERT_EQ(fut1.wait_for(3s), std::future_status::ready);
+   auto result1 = fut1.get();
+   //request should have failed
+   EXPECT_EQ(result1.first, false);
+   //and that should have happened after the server shutdown
+   EXPECT_GT(result1.second, now);
+
+   ASSERT_EQ(fut2.wait_for(3s), std::future_status::ready);
+   auto result2 = fut2.get();
+   EXPECT_EQ(result2.first, false);
+   EXPECT_GT(result2.second, now);
+
+   ASSERT_EQ(fut3.wait_for(3s), std::future_status::ready);
+   auto result3 = fut3.get();
+   EXPECT_EQ(result3.first, false);
+   EXPECT_GT(result3.second, now);
+
+   //when fut3 has a result, we know the 3rd request is waiting on the cv
+   //we want to use this window to push a new request to the client, which
+   //should correctly fail to queue a callback
+   auto afterCVnow = std::chrono::system_clock::now();
+   try {
+      bdvObj->getTxios(0, nullptr);
+      ASSERT_TRUE(false);
+   } catch (const LWS_Error& e) {
+      EXPECT_EQ(e.what(), std::string{"lws client down"});
+   }
+
+   //release the cv and consume the last future
+   cv.notify_all();
+   ASSERT_EQ(fut4.wait_for(3s), std::future_status::ready);
+   auto result4 = fut4.get();
+   EXPECT_EQ(result4.first, true);
+   EXPECT_GT(result4.second, afterCVnow);
+
+   //join on the server cleanup before exiting
+   ninja.stopPayloadCapture();
+   if (wsServerThr_.joinable()) {
+      wsServerThr_.join();
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BlockUtilsBareWithServer, WSClientCleanup_AnsweredRequest)
+{
+   /*
+   A request that got its reply should not be released again
+   when the socket drops while its callback runs
+   */
+
+   //the first call blocks in the callback until released, a second call
+   //flags itself
+   std::atomic<unsigned> callCount{0};
+   std::promise<void> firstCallProm, secondCallProm;
+   auto firstCallFut = firstCallProm.get_future();
+   auto secondCallFut = secondCallProm.get_future();
+   std::mutex cvMutex;
+   std::condition_variable cv;
+   bool release = false;
+
+   //start the WS server
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer(nullptr);
+
+   //start bdm
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+
+   //connect to server
+   auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+   auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
+      "127.0.0.1", Config::NetworkSettings::dbPort(),
+      std::make_shared<NetworkPeers::ClientStore>(Wallets::IO::ReadOnlyFileParams{
+         homedir_ / CLIENT_AUTH_PEER_FILENAME, authPeersPassLbd_}),
+      true, //public server
+      pCallback);
+
+   bdvObj->connectToRemote();
+   bdvObj->registerWithDB(Config::BitcoinSettings::getMagicBytes().toHexStr());
+   bdvObj->goOnline();
+   pCallback->waitOnNotification(DBTestUtils::UTCallback::BDMAction_Ready);
+
+   bdvObj->getTxios(0,
+      [&](ReturnMessage<std::vector<TxIOPair>>) {
+         auto count = callCount.fetch_add(1) + 1;
+         if (count == 1) {
+            firstCallProm.set_value();
+            std::unique_lock<std::mutex> lock{cvMutex};
+            cv.wait_for(lock, 10s, [&release]{ return release; });
+         } else if (count == 2) {
+            secondCallProm.set_value();
+         }
+      });
+
+   //the reply is in and its callback is running
+   ASSERT_EQ(firstCallFut.wait_for(5s), std::future_status::ready);
+
+   //drop the socket while the callback runs
+   WebSocketServer::shutdown();
+
+   //the request was answered, the disconnect should not release it again
+   EXPECT_EQ(secondCallFut.wait_for(3s), std::future_status::timeout);
+
+   //release the callback
+   {
+      std::unique_lock<std::mutex> lock{cvMutex};
+      release = true;
+   }
+   cv.notify_all();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
