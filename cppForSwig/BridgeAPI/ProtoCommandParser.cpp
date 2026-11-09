@@ -1076,35 +1076,45 @@ namespace
 
          case CoinSelectionRequest::GET_FEE_FOR_MAX_VAL:
          {
-            auto args = request.getGetFeeForMaxVal();
-            auto capnUtxos = args.getUtxos();
-            float flatFee = 0;
-            if (capnUtxos.size() == 0) {
-               flatFee = cs->getFeeForMaxVal(args.getFeeByte());
-            } else {
-               std::vector<BinaryData> serUtxos;
-               serUtxos.reserve(capnUtxos.size());
-               for (auto capnUtxo : capnUtxos) {
-                  auto capnHash = capnUtxo.getTxHash();
-                  auto hash = BinaryDataRef(capnHash.begin(), capnHash.end());
-
-                  auto capnScript = capnUtxo.getScript();
-                  auto script = BinaryDataRef(capnScript.begin(), capnScript.end());
-
-                  ::UTXO utxo(capnUtxo.getValue(), capnUtxo.getTxHeight(),
-                     capnUtxo.getTxIndex(), capnUtxo.getTxOutIndex(),
-                     hash, script);
-                  serUtxos.emplace_back(utxo.serialize());
-               }
-
-               flatFee = cs->getFeeForMaxValUtxoVector(
-                  serUtxos, args.getFeeByte());
-            }
-
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
             auto reply = fromBridge.initReply();
             reply.setReferenceId(referenceId);
+
+            auto args = request.getGetFeeForMaxVal();
+            auto capnUtxos = args.getUtxos();
+            float flatFee = 0;
+            try {
+               if (capnUtxos.size() == 0) {
+                  flatFee = cs->getFeeForMaxVal(args.getFeeByte());
+               } else {
+                  std::vector<BinaryData> serUtxos;
+                  serUtxos.reserve(capnUtxos.size());
+                  for (auto capnUtxo : capnUtxos) {
+                     auto capnHash = capnUtxo.getTxHash();
+                     auto hash = BinaryDataRef(capnHash.begin(), capnHash.end());
+
+                     auto capnScript = capnUtxo.getScript();
+                     auto script = BinaryDataRef(capnScript.begin(), capnScript.end());
+
+                     ::UTXO utxo(capnUtxo.getValue(), capnUtxo.getTxHeight(),
+                        capnUtxo.getTxIndex(), capnUtxo.getTxOutIndex(),
+                        hash, script);
+                     serUtxos.emplace_back(utxo.serialize());
+                  }
+
+                  flatFee = cs->getFeeForMaxValUtxoVector(
+                     serUtxos, args.getFeeByte());
+               }
+            } catch (const std::exception& e) {
+               //a selection set up before the bdv dropped asks the purged
+               //cache for utxos to cover its old balance, a utxo the client
+               //gives may be to an address the wallet doesn't have
+               reply.setError(e.what());
+               response = serializeCapnp(message);
+               break;
+            }
+
             reply.setSuccess(true);
 
             auto csReply = reply.initCoinSelection();
