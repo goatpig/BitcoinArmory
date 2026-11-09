@@ -1202,20 +1202,16 @@ void CoinSelectionInstance::selectUTXOs(std::vector<UTXO>& vecUtxo,
       cs_.getUtxoSelectionForRecipients(payStruct, vecUtxo));
 }
 
-bool CoinSelectionInstance::selectUTXOs(uint64_t fee, float fee_byte,
+void CoinSelectionInstance::selectUTXOs(uint64_t fee, float fee_byte,
    unsigned flags)
 {
-   try {
-      //sanity check
-      checkSpendVal(spendableBalance_);
-      state_utxoVec_.clear();
+   //sanity check
+   checkSpendVal(spendableBalance_);
+   state_utxoVec_.clear();
 
-      PaymentStruct payStruct(recipients_, fee, fee_byte, flags);
-      selection_ = std::move(cs_.getUtxoSelectionForRecipients(
-         payStruct, std::vector<UTXO>{}));
-      return true;
-   } catch (const CoinSelectionException&) {}
-   return false;
+   PaymentStruct payStruct(recipients_, fee, fee_byte, flags);
+   selection_ = std::move(cs_.getUtxoSelectionForRecipients(
+      payStruct, std::vector<UTXO>{}));
 }
 
 void CoinSelectionInstance::updateState(

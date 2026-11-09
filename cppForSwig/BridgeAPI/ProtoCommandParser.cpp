@@ -952,7 +952,7 @@ namespace
                cs->selectUTXOs(flatFee, feeByte, args.getFlags());
                reply.setSuccess(true);
             } catch (const std::exception& e) {
-               reply.setSuccess(true);
+               reply.setSuccess(false);
                reply.setError(e.what());
             }
             response = serializeCapnp(message);
