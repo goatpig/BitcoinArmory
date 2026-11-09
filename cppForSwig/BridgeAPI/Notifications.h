@@ -15,6 +15,7 @@
 #include <string>
 
 #include <DBClientClasses.h>
+#include <Utils/ThreadSafeClasses.h>
 
 namespace Armory
 {
@@ -27,6 +28,13 @@ namespace Armory
    {
       namespace Notifications
       {
+         enum class SyncState : int
+         {
+            NoSync,
+            ScanWallets,
+            SyncWallets
+         };
+
          namespace Push
          {
             enum class PayloadType : int
@@ -45,21 +53,22 @@ namespace Armory
 
             struct Payload
             {
+               const std::string socketName;
                const PayloadType type;
-               Payload(PayloadType);
+
+               Payload(PayloadType, const std::string&);
                virtual ~Payload(void) = 0;
-               virtual bool syncWalletState(void) const;
+               virtual SyncState syncWalletState(void) const;
             };
 
 
             struct Notif_Registered : public Payload
             {
-               Notif_Registered(void);
+               Notif_Registered(const std::string&);
             };
 
             struct Notif_Disconnected : public Payload
             {
-               const std::string socketName;
                Notif_Disconnected(const std::string&);
             };
 
@@ -68,17 +77,20 @@ namespace Armory
                const NewBlockNotif blockNotif;
                const bool isReadyNotif;
 
-               Notif_NewBlock(
+               Notif_NewBlock(const std::string&,
                   const NewBlockNotif&, bool);
-               bool syncWalletState(void) const override;
+               SyncState syncWalletState(void) const override;
             };
 
             struct Notif_ZC : public Payload
             {
-               std::vector<TxIOPair> txios;
-               std::set<BinaryData> invalidatedZCHashes;
+               const std::string requestId;
+               const std::vector<TxIOPair> txios;
+               const std::set<BinaryData> invalidatedZCHashes;
 
-               Notif_ZC(std::vector<TxIOPair>, std::set<BinaryData>);
+               Notif_ZC(const std::string&, std::string,
+                  std::vector<TxIOPair>, std::set<BinaryData>);
+               SyncState syncWalletState(void) const override;
             };
 
             ////////
@@ -91,10 +103,13 @@ namespace Armory
             struct Command_Refresh : public Payload
             {
                const std::set<std::string> refreshIds;
+               const SyncState syncWalletsWithDB;
 
-               Command_Refresh(const std::set<std::string>&);
-               Command_Refresh(const std::string&);
-               bool syncWalletState(void) const override;
+               Command_Refresh(const std::string&,
+                  const std::set<std::string>&, SyncState);
+               Command_Refresh(const std::string&,
+                  const std::string&, SyncState);
+               SyncState syncWalletState(void) const override;
             };
 
             struct Command_ConnectToIp : public Payload
@@ -125,7 +140,7 @@ namespace Armory
             };
 
             ////////
-            class NotifHandler : public RemoteCallback
+            class NotifHandler : public ServerPushHandler
             {
                using NotifQueue = Threading::BlockingQueue<std::unique_ptr<Payload>>;
             private:
@@ -135,13 +150,26 @@ namespace Armory
                NotifHandler(std::shared_ptr<NotifQueue>);
 
                //virtuals
-               void run(BdmNotification) override;
-               void progress(
-                  BDMPhase,
+               void pushRegistered(const SocketName&) const override;
+               void pushDisconnected(const SocketName&) const override;
+
+               void pushReady(const SocketName&,
+                  const NewBlockNotif&) const override;
+               void pushNewBlock(const SocketName&,
+                  const NewBlockNotif&) const override;
+               void pushRefresh(const SocketName&,
+                  const std::set<std::string>&) const override;
+               void pushZeroConf(const SocketName&,
+                  const std::string&,
+                  std::vector<TxIOPair>,
+                  std::set<Armory::Types::TxHash>) const override;
+
+               void pushNodeStatus(const Node::Status&) const override;
+               void pushProgress(BDMPhase,
                   const std::vector<std::string>&,
                   float, unsigned, unsigned
-               ) override;
-               void disconnected(const std::string&) override;
+               ) const override;
+               void pushError(const BdvError&) const override;
             };
          }
 
@@ -156,6 +184,8 @@ namespace Armory
             BinaryData getSetupDonePacket(void);
             BinaryData getWalletsRegisteredPacket(void);
             BinaryData getServerDisconnectedPacket(void);
+            BinaryData getNodeStatusPacket(const Node::Status&);
+            BinaryData getErrorPacket(const BdvError&);
          }
       } // namespace Notifications
    } // namespace Bridge

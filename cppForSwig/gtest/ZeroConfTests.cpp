@@ -1590,7 +1590,7 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ZC1)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
@@ -1631,7 +1631,7 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ZC1)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
@@ -1722,7 +1722,7 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ZC1)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
@@ -1822,7 +1822,7 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ZC1)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
@@ -1885,7 +1885,7 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ZC2)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
@@ -1983,7 +1983,7 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ZC2)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
@@ -2036,7 +2036,7 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ZC2)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
@@ -2099,7 +2099,7 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ClearMempool)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
@@ -2140,7 +2140,7 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ClearMempool)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
@@ -2231,7 +2231,7 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ClearMempool)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
@@ -2280,7 +2280,7 @@ TEST_F(ZeroConfTests_FullNode, Load4Blocks_ReloadBDM_ClearMempool)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
@@ -2313,7 +2313,7 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_ZC_Plus3)
    TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    std::vector<BinaryData> scrAddrVec {
@@ -2389,7 +2389,7 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_ZC_Plus3)
    initBDM();
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    scrAddrVec.pop_back();
@@ -2471,7 +2471,7 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_ZCchain)
    zc2Vec.push_back(std::move(ZC2), 1500000000);
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    std::vector<BinaryData> scrAddrVec {
@@ -2648,7 +2648,7 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_RBF)
    TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    std::vector<BinaryData> scrAddrVec {
@@ -2724,7 +2724,7 @@ TEST_F(ZeroConfTests_FullNode, Replace_ZC_Test)
    TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    std::vector<BinaryData> scrAddrVec {
@@ -3250,7 +3250,7 @@ TEST_F(ZeroConfTests_FullNode, ChainZC_RBFchild_Test)
    TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    std::vector<BinaryData> scrAddrVec {
@@ -3665,7 +3665,7 @@ TEST_F(ZeroConfTests_FullNode, ZC_InOut_SameBlock)
    TestUtils::setBlocks({ "0", "1" }, blk0dat_);
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    std::vector<BinaryData> scrAddrVec {
@@ -3774,7 +3774,7 @@ TEST_F(ZeroConfTests_FullNode, PoisonTxHints)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
@@ -3973,7 +3973,7 @@ TEST_F(ZeroConfTests_FullNode, PoisonTxHints2)
 
    //wait on signals
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    DBTestUtils::goOnline(clients_, bdvID);
    DBTestUtils::waitOnBDVReady(clients_, bdvID);
 
@@ -4308,7 +4308,7 @@ TEST_F(ZeroConfTests_FullNode, DBBloat)
    TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
    clients_->init();
    theBDMt_->start(Config::DBSettings::initMode());
-   theBDMt_->bdm()->blockUntilReady();
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
    auto bdvID = DBTestUtils::registerBDV(clients_, Config::BitcoinSettings::getMagicBytes());
 
    std::vector<BinaryData> scrAddrVec {

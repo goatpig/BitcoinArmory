@@ -11,7 +11,7 @@
 #include <ZeroConf/Utils.h>
 #include <ZeroConf/Notifications.h>
 #include <Node/BitcoinP2P.h>
-#include <Node/nodeRPC.h>
+#include <Node/RPC.h>
 
 ///////////////////////////////////////////////////////////////////////////////
 // BDV_Notification
@@ -133,12 +133,8 @@ BDV_Action BDV_Notification_NodeStatus::actionType() const
 // BDV_Notification_Error
 BDV_Notification_Error::BDV_Notification_Error(Armory::Types::BdvId bdvID,
    int errCode, const BinaryData& errData, const std::string& errStr) :
-   BDV_Notification(bdvID)
-{
-   errStruct.errCode_ = errCode;
-   errStruct.errData_ = errData;
-   errStruct.errorStr_ = errStr;
-}
+   BDV_Notification(bdvID), errStruct{{}, errStr, errData, errCode}
+{}
 
 BDV_Action BDV_Notification_Error::actionType() const
 {
@@ -147,5 +143,5 @@ BDV_Action BDV_Notification_Error::actionType() const
 
 bool BDV_Notification_Error::fatal() const
 {
-   return errStruct.errCode_ == BDM_FATAL_ERROR_CODE;
+   return errStruct.errorCode == BDM_FATAL_ERROR_CODE;
 }

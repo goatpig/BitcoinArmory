@@ -31,7 +31,8 @@ enum class BDMState : int
 {
    Uninitialized,
    Initializing,
-   Ready
+   Ready,
+   InitializationFailed
 };
 
 enum BDMPhase
@@ -45,20 +46,6 @@ enum BDMPhase
    BDMPhase_SearchHashes,
    BDMPhase_ResolveHashes,
    BDMPhase_Completed
-};
-
-enum BDMAction
-{
-   BDMAction_Ready=1,
-   BDMAction_Registered,
-   BDMAction_NewBlock,
-   BDMAction_ZC,
-   BDMAction_InvalidatedZC,
-   BDMAction_Refresh,
-   BDMAction_Exited,
-   BDMAction_ErrorMsg,
-   BDMAction_NodeStatus,
-   BDMAction_BDV_Error
 };
 
 enum class ARMORY_DB_TYPE : int

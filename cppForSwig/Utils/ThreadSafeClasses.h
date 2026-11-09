@@ -398,13 +398,13 @@ namespace Armory
             map_.store(newMap);
          }
 
-         void erase(const T& id)
+         bool erase(const T& id)
          {
             std::unique_lock<std::mutex> lock(mu_);
             auto thisMap = map_.load();
             auto iter = thisMap->find(id);
             if (iter == thisMap->end()) {
-               return;
+               return false;
             }
 
             auto newMap = std::make_shared<std::map<T, U>>();
@@ -413,6 +413,7 @@ namespace Armory
 
             count_.store(newMap->size(), std::memory_order_relaxed);
             map_.store(newMap);
+            return true;
          }
 
          void erase(const std::vector<T>& idVec)

@@ -186,6 +186,16 @@ target_link_libraries(ZeroConfTests
 ################################################################################
 ## BridgeTests
 add_executable(BridgeTests
+    BridgeTestUtils.cpp
+    BridgeWalletManagerTests.cpp
+    BridgeSocketTests.cpp
+    BridgeWalletTests.cpp
+    BridgeWalletsWithDBTests.cpp
+    BridgeTxIOCacheTests.cpp
+    BridgeChainDataTests.cpp
+    BridgeBlocksAutoDBTests.cpp
+    BridgePeersManagementTests.cpp
+    BridgeDBCacheTests.cpp
     BridgeTests.cpp
     ${TEST_SOURCES}
 )

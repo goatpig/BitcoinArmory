@@ -13,7 +13,6 @@
 #include <Utils/Types.h>
 #include <BlockchainDatabase/Blockchain.h>
 #include "bdmenums.h"
-#include "DBClientClasses.h"
 
 #define BDV_NOTIF_BROADCAST UINT64_MAX
 
@@ -38,6 +37,8 @@ namespace Armory
    struct ReorganizationState;
 }
 
+class TxIOPair;
+
 ///////////////////////////////////////////////////////////////////////////////
 struct BDV_Notification
 {
@@ -55,14 +56,14 @@ public:
    bool broadcast(void) const;
 };
 
-///////////////////////////////////////////////////////////////////////////////
+////////
 struct BDV_Notification_Init : public BDV_Notification
 {
    BDV_Notification_Init(void);
    BDV_Action actionType(void) const override;
 };
 
-///////////////////////////////////////////////////////////////////////////////
+////////
 struct BDV_Notification_NewBlock : public BDV_Notification
 {
    Armory::ReorganizationState reorgState;
@@ -74,7 +75,7 @@ struct BDV_Notification_NewBlock : public BDV_Notification
    BDV_Action actionType(void) const override;
 };
 
-///////////////////////////////////////////////////////////////////////////////
+////////
 struct BDV_Notification_ZC : public BDV_Notification
 {
    const std::shared_ptr<Armory::ZeroConf::ZcNotificationPacket> packet;
@@ -86,7 +87,7 @@ struct BDV_Notification_ZC : public BDV_Notification
    BDV_Action actionType(void) const override;
 };
 
-///////////////////////////////////////////////////////////////////////////////
+////////
 struct BDV_Notification_Refresh : public BDV_Notification
 {
    const BDV_refresh refresh;
@@ -97,7 +98,7 @@ struct BDV_Notification_Refresh : public BDV_Notification
    BDV_Action actionType(void) const override;
 };
 
-///////////////////////////////////////////////////////////////////////////////
+////////
 struct BDV_Notification_Progress : public BDV_Notification
 {
    BDMPhase phase;
@@ -111,7 +112,7 @@ struct BDV_Notification_Progress : public BDV_Notification
    BDV_Action actionType(void) const override;
 };
 
-///////////////////////////////////////////////////////////////////////////////
+////////
 struct BDV_Notification_UpdateNodeStatus : public BDV_Notification
 {
    //request BDV to generate and fan-out a BDV_Notification_NodeStatus
@@ -127,10 +128,18 @@ struct BDV_Notification_NodeStatus : public BDV_Notification
    BDV_Action actionType(void) const override;
 };
 
-///////////////////////////////////////////////////////////////////////////////
+////////
+struct BdvError
+{
+   const std::string requestId;
+   const std::string errorStr;
+   const BinaryData errorData;
+   const int errorCode;
+};
+
 struct BDV_Notification_Error : public BDV_Notification
 {
-   BDV_Error_Struct errStruct;
+   const BdvError errStruct;
 
    BDV_Notification_Error(Armory::Types::BdvId,
       int, const Armory::Types::TxHash&, const std::string&);
@@ -140,14 +149,14 @@ struct BDV_Notification_Error : public BDV_Notification
 
 class BdvClient;
 
-///////////////////////////////////////////////////////////////////////////////
+////////
 struct BDV_Notification_Packet
 {
    std::shared_ptr<BdvClient> bdvPtr;
    std::shared_ptr<BDV_Notification> notifPtr;
 };
 
-///////////////////////////////////////////////////////////////////////////////
+////////
 struct BDVNotificationHook
 {
    std::function<void(BDV_Notification*)> func;
