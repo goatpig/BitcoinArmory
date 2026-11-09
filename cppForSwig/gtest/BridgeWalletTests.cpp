@@ -275,6 +275,67 @@ protected:
       return std::chrono::milliseconds(reply.getWallet().getGetUnlockTime());
    }
 
+   std::pair<std::string, std::string> loadWOWallet()
+   {
+      //a watching only wallet on a new key, loaded into the bridge: its
+      //wallet and account ids, empty if it didn't load
+      auto pubKey = Cryptography::ECDSA::computePublicKey(
+         Cryptography::ECDSA::createNewPrivateKey(), true);
+      auto walletId = createWOWallet(homedir, {pubKey});
+      for (const auto& wltPair : loadWallets(bridge_)) {
+         if (wltPair.second.walletId == walletId) {
+            return { walletId, wltPair.second.accountId };
+         }
+      }
+      return {};
+   }
+
+   std::pair<bool, std::string> getFeeForMaxValStatus(
+      const std::string& csId, const std::vector<UTXO>& utxos)
+   {
+      //success and error of the reply to the fee for spending the utxos the
+      //client gives. The bridge processes the request on this thread: a
+      //throw from it reaches the caller
+      capnp::MallocMessageBuilder message;
+      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+      uint64_t refId = rand();
+      toBridge.setReferenceId(refId);
+      auto request = toBridge.initCoinSelection();
+      request.setId(csId);
+      auto feeReq = request.initGetFeeForMaxVal();
+      feeReq.setFeeByte(1.0f);
+      auto capnUtxos = feeReq.initUtxos(utxos.size());
+      for (unsigned i = 0; i < utxos.size(); i++) {
+         auto capnUtxo = capnUtxos[i];
+         const auto& utxo = utxos[i];
+         capnUtxo.setValue(utxo.getAmount());
+         capnUtxo.setTxHeight(utxo.getHeight());
+         capnUtxo.setTxIndex(utxo.getTxIndex());
+         capnUtxo.setTxOutIndex(utxo.getTxOutIndex());
+         capnUtxo.setTxHash(capnp::Data::Reader(
+            utxo.getTxHash().getPtr(), utxo.getTxHash().getSize()));
+         capnUtxo.setScript(capnp::Data::Reader(
+            utxo.getScript().getPtr(), utxo.getScript().getSize()));
+      }
+      pushRequest(bridge_, serializeCapnp(message));
+
+      auto resp = waitOnReplyFor(std::chrono::seconds(5));
+      if (resp == nullptr) {
+         return { false, "no reply" };
+      }
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(resp->data.getPtr()),
+         resp->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+      if (fromBridge.which() != Codec::Bridge::FromBridge::REPLY ||
+         fromBridge.getReply().getReferenceId() != refId) {
+         return { false, "not the reply" };
+      }
+      auto reply = fromBridge.getReply();
+      return { reply.getSuccess(), std::string(reply.getError().cStr()) };
+   }
+
 public:
    std::filesystem::path homedir;
    std::shared_ptr<Bridge::CppBridge> bridge_;
@@ -2532,4 +2593,29 @@ TEST_F(BridgeWalletTests, DbSetup_UnhandledHelperRequest)
    }, "invalid satoshi helper request");
 
    EXPECT_NO_THROW(listWallets(bridge_));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeWalletTests, CoinSelection_FeeForMaxVal_ForeignUtxo)
+{
+   auto [walletId, accountId] = loadWOWallet();
+   ASSERT_FALSE(walletId.empty());
+   auto csId = getNewCoinSelector(bridge_, walletId, accountId, 0);
+   ASSERT_FALSE(csId.empty());
+
+   //an output to an address the wallet doesn't have
+   auto script = BtcUtils::getP2PKHScript(
+      READHEX("5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"));
+   UTXO foreignUtxo(COIN, 1, 1, 0, READHEX(
+      "1111111111111111111111111111111111111111111111111111111111111111"),
+      script);
+
+   /* test starts here */
+
+   //the fee to spend it looks up the address in the wallet and fails: the
+   //bridge replies with the error
+   std::pair<bool, std::string> feeStatus;
+   ASSERT_NO_THROW(feeStatus = getFeeForMaxValStatus(csId, {foreignUtxo}));
+   EXPECT_FALSE(feeStatus.first);
+   EXPECT_EQ(feeStatus.second, "unknown scrAddr");
 }
