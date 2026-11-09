@@ -29,12 +29,36 @@ namespace Armory
    namespace Ledgers
    {
       using HeaderPtr = std::shared_ptr<DBClientClasses::BlockHeader>;
+
+      /*
+      All the keys the dbCache holds for one tx hash, best first: mined, then
+      pooled (zc), then unpooled. Within a kind, the newest key comes first.
+      A key that isn't a tx key (INVALID_TX_KEY, a txio key) is no candidate.
+      */
+      class TxKeyCandidates
+      {
+      private:
+         std::vector<Types::TxKey> keys_;
+
+      public:
+         enum class Kind : int {
+            Invalid = -1, Unpooled = 0, Pooled = 1, Mined = 2 };
+         static Kind kindOf(Types::TxKey);
+
+         void add(Types::TxKey);
+         bool remove(Types::TxKey);
+         bool empty(void) const;
+         Types::TxKey best(void) const;
+         const std::vector<Types::TxKey>& keys(void) const;
+      };
+
       class DBCache
       {
       private:
          std::map<Types::TxKey, Tx> txMap_;
-         std::map<Types::TxHash, Types::TxKey> txHashToKey_;
+         std::map<Types::TxHash, TxKeyCandidates> txHashToKey_;
          std::map<Types::BlockId, HeaderPtr> headers_;
+         Types::UnpooledId nextUnpooledId_ = 0;
 
       public:
          DBCache(void);
@@ -46,11 +70,12 @@ namespace Armory
          const std::map<Types::BlockId, HeaderPtr>& getHeaderMap(void) const;
 
          void addTx(Tx&);
+         Types::TxKey addUnpooledTx(const BinaryData&);
          void eraseTx(Types::TxKey);
+         void eraseHashes(const std::set<Types::TxHash>&);
          const Tx& getTx(Types::TxKey) const;
          const Tx& getTxByHash(const Types::TxHash&) const;
-         std::map<Types::TxHash, Types::TxKey> getHashesStartingKey(
-            Types::TxKey) const;
+         std::vector<Types::TxKey> getKeysForHash(const Types::TxHash&) const;
          std::set<Types::TxKey> purgeTxs(const std::set<Types::TxHash>&);
       };
 

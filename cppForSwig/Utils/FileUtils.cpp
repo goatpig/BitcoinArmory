@@ -201,7 +201,7 @@ FileCopy::FileCopy(const std::filesystem::path& path, size_t offset)
       if (size == 0) {
          throw std::runtime_error("empty file");
       }
-      _lseek(fd, offset_, SEEK_SET);
+      _lseek(fd, offset, SEEK_SET);
 #else
       auto flag = O_RDONLY;
       fd = open(path.c_str(), flag);
@@ -213,24 +213,27 @@ FileCopy::FileCopy(const std::filesystem::path& path, size_t offset)
       if (size == 0) {
          throw std::runtime_error("empty file");
       }
-      lseek(fd, offset_, SEEK_SET);
+      lseek(fd, offset, SEEK_SET);
 #endif
-      if (offset_ >= size) {
+      if (offset >= size) {
          throw std::runtime_error("offset is too large");
       }
+      size -= offset;
 
-      //8 align the buffer
-      size_t sizeCount = (size - offset + 7) / 8;
-      data_.resize(sizeCount * 8);
+      //size the buffer to the next multiple of 8 so xorMe works on whole
+      //8-byte chunks. The padding has to be within size(): ASan builds flag
+      //any access past size(), even within capacity() (always on with libc++,
+      //on with libstdc++ if built with _GLIBCXX_SANITIZE_VECTOR)
+      data_.resize((size + 7) & ~7);
+      size_ = size;
 
 #ifdef _WIN32
-      _read(fd, &data_[0], size-offset_);
+      _read(fd, &data_[0], size);
       _close(fd);
 #else
-      read(fd, &data_[0], size-offset_);
+      read(fd, &data_[0], size);
       close(fd);
 #endif
-
    } catch (const std::runtime_error &e) {
       if (fd != 0) {
 #ifdef _WIN32
@@ -240,14 +243,16 @@ FileCopy::FileCopy(const std::filesystem::path& path, size_t offset)
 #endif
       }
 
-      LOGERR << "FileCopy error for path: \"" << path.string() <<
-         "\" - error: " << e.what();
+      LOGERR << std::format(
+         "FileCopy error for path: \"{}\" - error: {}",
+         path.string(), e.what());
    }
 }
 
 void FileCopy::clear()
 {
    data_.clear();
+   size_ = 0;
 }
 
 ////
@@ -259,7 +264,7 @@ bool FileCopy::isValid() const
 ////
 size_t FileCopy::size() const
 {
-   return data_.size();
+   return size_;
 }
 
 ////
@@ -272,6 +277,13 @@ void FileCopy::xorMe(uint64_t xorKey)
 {
    if (data_.size() % 8 != 0) {
       throw std::length_error("xored block data is misaligned");
+   }
+
+   //the xor key is aligned to the start of the file, not the start of
+   //this copy, so rotate it to match offset_
+   unsigned shift = (offset_ % 8) * 8;
+   if (shift != 0) {
+      xorKey = (xorKey >> shift) | (xorKey << (64 - shift));
    }
 
    auto data64 = (uint64_t*)&data_[0];

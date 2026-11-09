@@ -86,7 +86,7 @@ namespace Armory
 
          //create sigs
          void sign(void);
-         void injectSignature(unsigned, SecureBinaryData&, unsigned=UINT32_MAX);
+         void injectSignature(unsigned, SecureBinaryData&, unsigned=UINT32_MAX) const;
 
          //sighash prestate methods
          BinaryData serializeAllOutpoints(void) const override;

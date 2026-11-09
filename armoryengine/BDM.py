@@ -183,23 +183,6 @@ class BlockDataManager(object):
 
    #############################################################################
    @ActLikeASingletonBDM
-   def shutdown(self):
-      if self.bdmState == BDM_OFFLINE:
-         return
-
-      try:
-         if CLI_OPTIONS.bip150Used or CLI_OPTIONS.bip151Used:
-            Cpp.DisableBIP151()
-         self.bdv_.unregisterFromDB()
-         self.callback.shutdown()
-
-         cookie = self.getCookie()
-         self.bdv_.shutdown(cookie)
-      except:
-         pass
-
-   #############################################################################
-   @ActLikeASingletonBDM
    def RegisterEventForSignal(self, func, signal):
       def bdmCallback(bdmSignal, args):
          if bdmSignal == signal:

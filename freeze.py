@@ -13,7 +13,7 @@ build_exe_options = {
     ],
     "include_files" : [
         ("cppForSwig/capnp", "cppForSwig/capnp"),
-        ("build/CppBridge.exe", "build/CppBridge.exe")
+        ("build/CppBridge.exe", "build/CppBridge.exe"),
         ("build/ArmoryDB.exe", "build/ArmoryDB.exe")
     ],
     "includes" : [

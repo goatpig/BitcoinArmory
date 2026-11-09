@@ -17,6 +17,8 @@
 #include <Wallets/Seeds/Backups.h>
 #include <Wallets/Seeds/Seeds.h>
 #include <Signer/Signer.h>
+#include <Signer/ScriptSpender.h>
+#include <Signer/PSBT.h>
 #include <Signer/CoinSelection.h>
 #include <AsyncClient.h>
 
@@ -88,7 +90,7 @@ namespace
          {
             auto connectReq = request.getConnectToIp();
             std::string ip = connectReq.getIp();
-            std::string port = connectReq.getPort();
+            Network::port_t port = connectReq.getPort();
             std::string callbackId = connectReq.getCallbackId();
 
             std::thread thr([bridge, ip, port, callbackId, referenceId]{
@@ -166,6 +168,15 @@ namespace
                      labelReq.getKey(), labelReq.getLabel(), referenceId);
                   return true;
                }
+
+               default:
+                  capnp::MallocMessageBuilder message;
+                  auto fromBridge = message.initRoot<FromBridge>();
+                  auto reply = fromBridge.initReply();
+                  reply.setSuccess(false);
+                  reply.setReferenceId(referenceId);
+                  reply.setError("invalid peers helper request");
+                  response = serializeCapnp(message);
             }
             break;
          }
@@ -223,10 +234,10 @@ namespace
                   auto fromBridge = message.initRoot<FromBridge>();
                   auto reply = fromBridge.initReply();
                   reply.setReferenceId(referenceId);
-      
+
                   try {
-                     auto datadir = std::filesystem::path(
-                        satoshiRequest.getValidateDir());
+                     auto datadir = std::filesystem::path{
+                        std::string{satoshiRequest.getValidateDir()}};
                      auto validationResult =
                         Node::Core::validateDatadir(datadir);
 
@@ -254,8 +265,8 @@ namespace
                   reply.setReferenceId(referenceId);
       
                   try {
-                     auto binPath = std::filesystem::path(
-                        satoshiRequest.getValidateBin());
+                     auto binPath = std::filesystem::path{
+                        std::string{satoshiRequest.getValidateBin()}};
                      auto validationResult = Node::Core::validateBinary(binPath);
 
                      auto setupReply = reply.initSetup();
@@ -271,6 +282,15 @@ namespace
                   response = serializeCapnp(message);
                   break;
                }
+
+               default:
+                  capnp::MallocMessageBuilder message;
+                  auto fromBridge = message.initRoot<FromBridge>();
+                  auto reply = fromBridge.initReply();
+                  reply.setSuccess(false);
+                  reply.setReferenceId(referenceId);
+                  reply.setError("invalid satoshi helper request");
+                  response = serializeCapnp(message);
             }
             break;
          }
@@ -280,15 +300,15 @@ namespace
             auto ctxReq = request.getInitAutomationContext();
             std::filesystem::path dbDir;
             if (ctxReq.hasDbDir()) {
-               dbDir = std::filesystem::path{ctxReq.getDbDir()};
+               dbDir = std::filesystem::path{std::string{ctxReq.getDbDir()}};
             }
             std::filesystem::path satoshiDir;
             if (ctxReq.hasSatoshiDir()) {
-               satoshiDir = std::filesystem::path{ctxReq.getSatoshiDir()};
+               satoshiDir = std::filesystem::path{std::string{ctxReq.getSatoshiDir()}};
             }
             std::filesystem::path satoshiBin;
             if (ctxReq.hasSatoshiBin()) {
-               satoshiBin = std::filesystem::path{ctxReq.getSatoshiBin()};
+               satoshiBin = std::filesystem::path{std::string{ctxReq.getSatoshiBin()}};
             }
 
             bool automateDb = false;
@@ -391,17 +411,6 @@ namespace
             break;
          }
 
-         case BlockchainServiceRequest::GET_TXS_BY_HASH:
-         {
-            std::set<Types::TxHash> hashes;
-            auto capnHashes = request.getGetTxsByHash();
-            for (auto hash : capnHashes) {
-               hashes.emplace(BinaryData{hash.begin(), hash.end()});
-            }
-            bridge->getTxsByHash(hashes, referenceId);
-            break;
-         }
-
          case BlockchainServiceRequest::BROADCAST_TX:
          {
             auto broadcastObj = request.getBroadcastTx();
@@ -418,13 +427,6 @@ namespace
                true : false;
 
             bridge->broadcastTxs(rawTxs, isRPC);
-            break;
-         }
-
-         case BlockchainServiceRequest::GET_BLOCK_TIME_BY_HEIGHT:
-         {
-            auto height = request.getGetBlockTimeByHeight();
-            bridge->getBlockTimeByHeight(height, referenceId);
             break;
          }
 
@@ -489,7 +491,7 @@ namespace
          case WalletManagerRequest::MIGRATE_WALLET:
          {
             auto migrateReq = request.getMigrateWallet();
-            const std::filesystem::path walletPath(std::string{migrateReq.getWalletPath()});
+            const std::filesystem::path walletPath{std::string{migrateReq.getWalletPath()}};
             const std::string callbackId(migrateReq.getCallbackId());
             bridge->migrateWallet(walletPath, callbackId, referenceId);
             break;
@@ -558,6 +560,24 @@ namespace
             break;
          }
 
+         case WalletManagerRequest::GET_TXS_BY_HASH:
+         {
+            std::set<Types::TxHash> hashes;
+            auto capnHashes = request.getGetTxsByHash();
+            for (auto hash : capnHashes) {
+               hashes.emplace(BinaryData{hash.begin(), hash.end()});
+            }
+            bridge->getTxsByHash(hashes, referenceId);
+            break;
+         }
+
+         case WalletManagerRequest::GET_BLOCK_TIME_BY_HEIGHT:
+         {
+            auto height = request.getGetBlockTimeByHeight();
+            bridge->getBlockTimeByHeight(height, referenceId);
+            break;
+         }
+
          default:
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
@@ -565,6 +585,7 @@ namespace
             reply.setSuccess(false);
             reply.setReferenceId(referenceId);
             reply.setError("invalid WalletManager request");
+            response = serializeCapnp(message);
       }
 
       if (!response.empty()) {
@@ -1209,6 +1230,7 @@ namespace
             auto capnTx = request.getAddSupportingTx();
             BinaryDataRef txRef(capnTx.begin(), capnTx.end());
             signer->signer->addSupportingTx(txRef);
+            bridge->addUnpooledTxs({BinaryData{txRef}});
 
             replySuccess(true);
             break;
@@ -1252,11 +1274,40 @@ namespace
 
          case SignerRequest::FROM_TX_SIG_COLLECT:
          {
-            auto signerObj = Signing::Signer::fromString(
-               request.getFromTxSigCollect());
-            signer->signer = std::make_unique<Signing::Signer>(std::move(signerObj));
+            //user input, malformed strings get an error reply
+            std::string ustx = request.getFromTxSigCollect();
+            capnp::MallocMessageBuilder message;
+            auto fromBridge = message.initRoot<FromBridge>();
+            auto reply = fromBridge.initReply();
+            reply.setReferenceId(referenceId);
 
-            replySuccess(true);
+            try {
+               auto signerObj = Signing::Signer::fromString(ustx);
+               signer->signer = std::make_unique<Signing::Signer>(
+                  std::move(signerObj));
+               reply.setSuccess(true);
+            } catch (const Signing::PSBT::DeserError&) {
+               //private runtime_error base, see #820
+               reply.setError("invalid PSBT");
+               reply.setSuccess(false);
+            } catch (const std::exception& e) {
+               reply.setError(e.what());
+               reply.setSuccess(false);
+            }
+
+            //the payload's supporting txs go in the cache
+            if (reply.getSuccess()) {
+               std::vector<BinaryData> rawTxs;
+               for (unsigned i=0; i<signer->signer->getTxInCount(); i++) {
+                  auto spender = signer->signer->getSpender(i);
+                  if (spender->haveSupportingTx()) {
+                     rawTxs.emplace_back(spender->getSupportingTx().serialize());
+                  }
+               }
+               bridge->addUnpooledTxs(rawTxs);
+            }
+
+            response = serializeCapnp(message);
             break;
          }
 
@@ -1457,7 +1508,7 @@ namespace
 
          case UtilsRequest::IMPORT_WALLET:
          {
-            std::filesystem::path importPath(std::string{request.getImportWallet()});
+            std::filesystem::path importPath{std::string{request.getImportWallet()}};
             bridge->importWallet(importPath, referenceId);
             break;
          }

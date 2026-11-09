@@ -26,6 +26,7 @@
 #include <Wallets/Accounts/AccountTypes.h>
 #include <Wallets/Accounts/AddressAccounts.h>
 #include <Signer/ScriptSpender.h>
+#include <Signer/PSBT.h>
 #include <BDM_mainthread.h>
 #include <CoinSelection.h>
 
@@ -49,10 +50,10 @@ std::shared_ptr<ScriptSpender> getSpenderPtr(
 class PRNGTest : public ::testing::Test
 {
 protected:
-   virtual void SetUp(void)
+   void SetUp() override
    {}
 
-   virtual void TearDown(void)
+   void TearDown() override
    {}
 };
 
@@ -210,7 +211,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       LOGDISABLESTDOUT();
       ghash_ = READHEX(MAINNET_GENESIS_HASH_HEX);
@@ -248,7 +249,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
+   void TearDown() override
    {
       if (clients_ != nullptr) {
          clients_->shutdown();
@@ -293,7 +294,7 @@ TEST_F(SignerTest, DISABLED_CheckChain_Test)
    //this test fails because the p2sh tx in our unit test chain are botched
    //(the input script has opcode when it should only be push data)
 
-   BlockDataManager bdm(nullptr);
+   BlockDataManager bdm;
    try {
       bdm.doInitialSyncOnLoad(BdmInitMode::RESUME, nullptr);
    } catch (const std::exception&) {
@@ -7420,7 +7421,7 @@ class ExtrasTest : public ::testing::Test
 protected:
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       FileUtils::removeDirectory(homedir_);
       std::filesystem::create_directory(homedir_);
@@ -7438,7 +7439,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
+   void TearDown() override
    {
       FileUtils::removeDirectory(homedir_);
       Config::reset();
@@ -9033,6 +9034,62 @@ TEST_F(ExtrasTest, PSBT)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(ExtrasTest, SerializeState_SupportingTxs)
+{
+   //the 2 txs the inputs of the BIP174 test vector spend from
+   auto supportingTx1 = READHEX("0200000000010158e87a21b56daf0c23be8e7070456c336f7cbaa5c8757924f545887bb2abdd7501000000171600145f275f436b09a8cc9a2eb2a2f528485c68a56323feffffff02d8231f1b0100000017a914aed962d6654f9a2b36608eb9d64d2b260db4f1118700c2eb0b0000000017a914b7f5faf40e3d40a5a459b1db3535f2b72fa921e88702483045022100a22edcc6e5bc511af4cc4ae0de0fcd75c7e04d8c1c3a8aa9d820ed4b967384ec02200642963597b9b1bc22c75e9f3e117284a962188bf5e8a74c895089046a20ad770121035509a48eb623e10aace8bfd0212fdb8a8e5af3c94b0b133b95e114cab89e4f7965000000");
+   auto supportingTx2 = READHEX("0200000001aad73931018bd25f84ae400b68848be09db706eac2ac18298babee71ab656f8b0000000048473044022058f6fc7c6a33e1b31548d481c826c015bd30135aad42cd67790dab66d2ad243b02204a1ced2604c6735b6393e5b41691dd78b00f0c5942fb9f751856faa938157dba01feffffff0280f0fa020000000017a9140fb9463421696b82c833af241c78c17ddbde493487d0f20a270100000017a91429ca74f8a08f81999428185c97b5d852e4063f618765000000");
+   Tx tx1(supportingTx1);
+   Tx tx2(supportingTx2);
+
+   auto getUtxo = [](const Tx& tx, unsigned index)->UTXO
+   {
+      auto txOut = tx.getTxOutCopy(index);
+      return UTXO(txOut.getAmount(), UINT16_MAX, UINT16_MAX, index,
+         tx.getThisHash(), txOut.getScript());
+   };
+
+   //2 spenders, each from a different supporting tx
+   Signer signer;
+   signer.setVersion(2);
+   signer.addSpender(std::make_shared<ScriptSpender>(getUtxo(tx2, 0)));
+   signer.addSpender(std::make_shared<ScriptSpender>(getUtxo(tx1, 1)));
+   signer.addRecipient(std::make_shared<Recipient_P2WPKH>(
+      READHEX("d85c2b71d0060b09c9886aeb815e50991dda124d"), 149990000));
+   signer.addRecipient(std::make_shared<Recipient_P2WPKH>(
+      READHEX("00aea9a2e5f0f876a588df5546e8742d1d87008f"), 100000000));
+   signer.addSupportingTx(supportingTx1);
+   signer.addSupportingTx(supportingTx2);
+
+   auto checkSupportingTxs = [&](const Signer& theSigner)
+   {
+      EXPECT_EQ(theSigner.getTxInCount(), 2U);
+      EXPECT_EQ(theSigner.getSupportingTx(tx1.getThisHash()).serialize(),
+         supportingTx1);
+      EXPECT_EQ(theSigner.getSupportingTx(tx2.getThisHash()).serialize(),
+         supportingTx2);
+   };
+
+   //serializeState round trip
+   {
+      Signer signer2;
+      signer2.deserializeState(signer.serializeState());
+      checkSupportingTxs(signer2);
+      EXPECT_EQ(signer2.toPSBT(), signer.toPSBT());
+   }
+
+   //TxSigCollect round trip (default USTX format)
+   {
+      auto ustx = signer.toString(SignerStringFormat::TxSigCollect_Modern);
+      auto signer3 = Signer::fromString(ustx);
+      EXPECT_EQ(signer3.deserializedFromType(),
+         SignerStringFormat::TxSigCollect_Modern);
+      checkSupportingTxs(signer3);
+      EXPECT_EQ(signer3.toPSBT(), signer.toPSBT());
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(ExtrasTest, BitcoinMessage)
 {
    struct ResolverFeed_SignMessage : public ResolverFeed
@@ -9117,12 +9174,158 @@ TEST_F(ExtrasTest, BitcoinMessage)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+// The utxo scripts of a PSBT reach the script interpreter: loading the PSBT
+// resolves them (ScriptSpender::fromPSBT) and the signed state the GUI asks
+// the bridge for runs them (getSignedStateForInput ->
+// Signer::evaluateSignedState -> Signer::verify). The scripts below are
+// malformed, the PSBT has to load and evaluate as not signed.
+class MalformedScriptTest : public ExtrasTest
+{
+protected:
+   //a PSBT spending a witness utxo of 100000 sats locked by utxoScript, to
+   //one P2WPKH output (or no output). finalScriptSig, when not empty, is
+   //the input's final scriptSig, so that evaluateSignedState runs the
+   //scripts
+   static BinaryData makePSBT(const BinaryData& utxoScript,
+      const BinaryData& finalScriptSig, bool withOutput = true)
+   {
+      BinaryWriter unsignedTx;
+      unsignedTx.put_uint32_t(2);
+      unsignedTx.put_var_int(1);
+      unsignedTx.put_BinaryData(READHEX(
+         "1111111111111111111111111111111111111111111111111111111111111111"));
+      unsignedTx.put_uint32_t(0);
+      unsignedTx.put_var_int(0);
+      unsignedTx.put_uint32_t(UINT32_MAX);
+      if (withOutput) {
+         auto outputScript = READHEX(
+            "00145555555555555555555555555555555555555555");
+         unsignedTx.put_var_int(1);
+         unsignedTx.put_uint64_t(1000);
+         unsignedTx.put_var_int(outputScript.getSize());
+         unsignedTx.put_BinaryData(outputScript);
+      } else {
+         unsignedTx.put_var_int(0);
+      }
+      unsignedTx.put_uint32_t(0);
+
+      BinaryWriter witnessUtxo;
+      witnessUtxo.put_uint64_t(100000);
+      witnessUtxo.put_var_int(utxoScript.getSize());
+      witnessUtxo.put_BinaryData(utxoScript);
+
+      BinaryWriter psbt;
+      psbt.put_BinaryData(READHEX("70736274ff"));
+
+      //globals
+      psbt.put_var_int(1);
+      psbt.put_uint8_t(PSBT::ENUM_GLOBAL::PSBT_GLOBAL_UNSIGNED_TX);
+      psbt.put_var_int(unsignedTx.getSize());
+      psbt.put_BinaryData(unsignedTx.getData());
+      psbt.put_uint8_t(0);
+
+      //input
+      psbt.put_var_int(1);
+      psbt.put_uint8_t(PSBT::ENUM_INPUT::PSBT_IN_WITNESS_UTXO);
+      psbt.put_var_int(witnessUtxo.getSize());
+      psbt.put_BinaryData(witnessUtxo.getData());
+      if (!finalScriptSig.empty()) {
+         psbt.put_var_int(1);
+         psbt.put_uint8_t(PSBT::ENUM_INPUT::PSBT_IN_FINAL_SCRIPTSIG);
+         psbt.put_var_int(finalScriptSig.getSize());
+         psbt.put_BinaryData(finalScriptSig);
+      }
+      psbt.put_uint8_t(0);
+
+      //output
+      if (withOutput) {
+         psbt.put_uint8_t(0);
+      }
+      return psbt.getData();
+   }
+
+   //loads the PSBT and evaluates its signed state
+   static void checkNotSigned(const BinaryData& psbt)
+   {
+      auto signer = Signer::fromPSBT(psbt.getRef());
+      ASSERT_EQ(signer.getTxInCount(), 1U);
+
+      auto evalState = signer.evaluateSignedState();
+      EXPECT_FALSE(evalState.isValid());
+      EXPECT_FALSE(evalState.getSignedStateForInput(0).isValid());
+   }
+
+   //a 66 byte push that passes for a signature with SIGHASH_ALL
+   const std::string sigPush_ = "42"
+      "3030303030303030303030303030303030303030303030303030303030303030"
+      "303030303030303030303030303030303030303030303030303030303030303030"
+      "01";
+
+   //33 byte compressed pubkey push
+   const std::string pubKeyPush_ = "21"
+      "027979797979797979797979797979797979797979797979797979797979797979";
+};
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(MalformedScriptTest, Drop_EmptyStack)
+{
+   //OP_1 | OP_DROP OP_DROP and OP_1 | OP_2DROP: popping the vector of an
+   //empty stack (UB) instead of throwing
+   checkNotSigned(makePSBT(READHEX("7575"), READHEX("51")));
+   checkNotSigned(makePSBT(READHEX("6d"), READHEX("51")));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(MalformedScriptTest, Pick_NegativeIndex)
+{
+   //OP_1 | -2 OP_PICK: a negative index passed the stack size check
+   checkNotSigned(makePSBT(READHEX("018279"), READHEX("51")));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(MalformedScriptTest, Roll_NegativeIndex)
+{
+   //OP_1 | -1 OP_ROLL: a negative index rolled nothing and the script
+   //went on to leave OP_1 on the stack
+   checkNotSigned(makePSBT(READHEX("01817a"), READHEX("51")));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(MalformedScriptTest, CheckSig_TxWithoutOutputs)
+{
+   //<sig> | <pubkey> OP_CHECKSIG, the unsigned tx has no outputs: the legacy
+   //sighash serialized txouts_[0] of an empty vector
+   checkNotSigned(makePSBT(
+      READHEX(pubKeyPush_ + "ac"), READHEX(sigPush_), false));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(MalformedScriptTest, Resolver_UnresolvedItem)
+{
+   //bare OP_CHECKSIG: the stack resolver gives the pubkey item no value
+   //and resolveStack dereferenced it when loading the PSBT
+   auto signer = Signer::fromPSBT(makePSBT(READHEX("ac"), {}).getRef());
+   EXPECT_EQ(signer.getTxInCount(), 1U);
+   EXPECT_FALSE(signer.evaluateSignedState().isValid());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(MalformedScriptTest, Resolver_UnresolvedReference)
+{
+   //bare OP_EQUALVERIFY: same, through resolveReferenceValue
+   auto signer = Signer::fromPSBT(makePSBT(READHEX("88"), {}).getRef());
+   EXPECT_EQ(signer.getTxInCount(), 1U);
+   EXPECT_FALSE(signer.evaluateSignedState().isValid());
+}
+
+////////////////////////////////////////////////////////////////////////////////
 class ExtrasTest_Mainnet : public ::testing::Test
 {
 protected:
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void SetUp()
+   void SetUp() override
    {
       FileUtils::removeDirectory(homedir_);
       std::filesystem::create_directory(homedir_);
@@ -9139,7 +9342,7 @@ protected:
    }
 
    /////////////////////////////////////////////////////////////////////////////
-   virtual void TearDown(void)
+   void TearDown() override
    {
       FileUtils::removeDirectory(homedir_);
 
@@ -9241,6 +9444,46 @@ TEST_F(ExtrasTest_Mainnet, Bip32PathDiscovery)
          EXPECT_EQ(pathVec, keyPathPair.second);
       }
    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+// Signer::getSpender and Signer::injectSignature take an input index: an
+// index equal to the spender count has to throw, like any index past it
+namespace {
+   std::shared_ptr<ScriptSpender> outpointSpender(uint8_t tag, unsigned id)
+   {
+      BinaryData hash;
+      hash.resize(32);
+      memset(hash.getPtr(), tag, 32);
+      return std::make_shared<ScriptSpender>(hash, id);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST(SignerIndexTest, GetSpender_OutOfRange)
+{
+   Signer signer;
+
+   //empty signer: index 0 read through the vector's null data pointer
+   EXPECT_THROW(signer.getSpender(0), ScriptException);
+
+   signer.addSpender(outpointSpender(0xaa, 0));
+   signer.addSpender(outpointSpender(0xbb, 1));
+   ASSERT_EQ(signer.getTxInCount(), 2U);
+
+   EXPECT_NO_THROW(signer.getSpender(1));
+   EXPECT_THROW(signer.getSpender(2), ScriptException);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST(SignerIndexTest, InjectSignature_OutOfRange)
+{
+   Signer signer;
+   signer.addSpender(outpointSpender(0xaa, 0));
+
+   SecureBinaryData sig(71);
+   EXPECT_THROW(signer.injectSignature(1, sig), std::runtime_error);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

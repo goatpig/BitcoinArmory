@@ -23,11 +23,10 @@ from armoryengine.AddressUtils import addrStr_to_hash160, \
 
 from armoryengine.BDM import TheBDM, BDM_BLOCKCHAIN_READY
 from armoryengine.Transaction import UnsignedTransaction, \
-   determineSentToSelfAmt, PyTx, getTxInScriptType, getTxOutScriptType, \
-   TxInExtractAddrStrIfAvail
+   determineSentToSelfAmt, getTxInScriptType, getTxOutScriptType, \
+   TxInExtractAddrStrIfAvail, getTxsByHash
 from armoryengine.Block import PyBlockHeader
 from armoryengine.Script import convertScriptToOpStrings
-from armoryengine.CppBridge import TheBridge
 from armoryengine.Settings import TheSettings
 
 from armorymodels import TxInDispModel, TxOutDispModel, TXINCOLS, TXOUTCOLS
@@ -938,7 +937,7 @@ def extractTxInfo(pytx, rcvTime=None):
    for i in range(pytx.getNumTxIn()):
       txin = pytx.getTxIn(i)
       hashesToFetch.append(txin.getOutPoint().txHash)
-   txns = TheBridge.service.getTxsByHash(hashesToFetch)
+   txns = getTxsByHash(hashesToFetch)
    if txHash in txns:
       txProto = txns[txHash]
       timestamp = txProto.timestamp
@@ -950,7 +949,7 @@ def extractTxInfo(pytx, rcvTime=None):
          txIdx = txProto.txIndex
          txSize = pytx.getSize()
       else:
-         if timestamp == None:
+         if timestamp == None or timestamp >= UINT32_MAX:
             txTime = 'Unknown'
          elif timestamp == -1:
             txTime = '[[Not broadcast yet]]'
@@ -969,14 +968,17 @@ def extractTxInfo(pytx, rcvTime=None):
          prevTxIndex = txin.getOutPoint().txOutIndex
          if prevTxHash in txns:
             prevTxProto = txns[prevTxHash]
-            prevTx = PyTx().unserialize(prevTxProto.body.raw)
+            prevTx = prevTxProto.pytx
             prevTxOut = prevTx.getTxOut(prevTxIndex)
             txinFromList[-1].append(prevTxOut.getScrAddressStr())
             txinFromList[-1].append(prevTxOut.getValue())
             if prevTx.isInitialized():
-               txinFromList[-1].append(prevTxProto.height)
+               #UINT32_MAX: no known block (zc, unpooled, uncached header)
+               prevHeight = prevTxProto.height
+               txinFromList[-1].append(
+                  prevHeight if prevHeight < UINT32_MAX else '')
                txinFromList[-1].append(prevTxHash)
-               txinFromList[-1].append(prevTxProto.txIndex)
+               txinFromList[-1].append(prevTxIndex)
                txinFromList[-1].append(prevTxOut.getScript())
             else:
                LOGERROR('How did we get a bad parent pointer? (extractTxInfo)')

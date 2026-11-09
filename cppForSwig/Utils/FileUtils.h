@@ -38,6 +38,10 @@ namespace Armory
       {
       private:
          size_t offset_ = 0;
+         size_t size_ = 0;
+
+         //padded to the next multiple of 8 bytes, size_ is the length read
+         //from the file (file size minus offset)
          std::vector<uint8_t> data_;
 
       public:

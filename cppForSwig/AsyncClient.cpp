@@ -124,6 +124,7 @@ namespace {
             txObj->setTxKey(capnTx.getKey());
             txObj->setChainedZC(capnTx.getIsChainedZc());
             txObj->setRBF(capnTx.getIsRbf());
+            txObj->setTxTime(capnTx.getTxTime());
             result.emplace(txObj->getThisHash(), std::move(txObj));
          } catch (const BtcUtils::BlockDeserializingException&) {}
       }
@@ -143,6 +144,7 @@ namespace {
             txObj.setTxKey(capnTx.getKey());
             txObj.setChainedZC(capnTx.getIsChainedZc());
             txObj.setRBF(capnTx.getIsRbf());
+            txObj.setTxTime(capnTx.getTxTime());
          } catch (const BtcUtils::BlockDeserializingException&) {}
       }
       return result;
@@ -227,7 +229,7 @@ void BlockDataViewer::addPublicKey(const SecureBinaryData& pubkey, bool oneWay)
 
 ///////////////////////////////////////////////////////////////////////////////
 std::shared_ptr<BlockDataViewer> BlockDataViewer::getNewBDV(
-   const std::string& addr, const std::string& port,
+   const std::string& addr, port_t port,
    std::shared_ptr<NetworkPeers::ClientStore> peers, bool oneWayAuth,
    std::shared_ptr<RemoteCallback> callbackPtr)
 {
@@ -241,7 +243,6 @@ std::shared_ptr<BlockDataViewer> BlockDataViewer::getNewBDV(
    //create shared_ptr of bdv object
    std::shared_ptr<BlockDataViewer> bdvSharedPtr;
    bdvSharedPtr.reset(bdvPtr);
-
    return bdvSharedPtr;
 }
 
@@ -292,10 +293,11 @@ void BlockDataViewer::registerWithDB(const std::string& magicWord)
 ///////////////////////////////////////////////////////////////////////////////
 void BlockDataViewer::unregisterFromDB()
 {
-   if (sock_ == nullptr) {
+   auto wsSock = std::dynamic_pointer_cast<WebSocketClient>(sock_);
+   if (wsSock == nullptr) {
       return;
    }
-   sock_.reset();
+   wsSock->shutdown();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -453,6 +455,7 @@ void BlockDataViewer::getTxios(uint32_t from,
                   capnTxio.getTxOut(), capnTxio.getAmount(),
                   scrAddr, capnTxio.getTxIn()};
 
+               txio.setTxTime(capnTxio.getTxTime());
                txio.setRBF(capnTxio.getRbf());
                txio.setChained(capnTxio.getChained());
                txios.emplace_back(std::move(txio));
@@ -695,7 +698,7 @@ void BlockDataViewer::getFeeSchedule(const std::string& strategy,
    sock_->pushPayload(std::move(write_payload), read_payload);
 }
 
-///////////////////////////////////////////////////////////////////////////////
+////////
 void BlockDataViewer::setCheckServerKeyPromptLambda(
    const std::function<bool(const BinaryData&)>& lbd)
 {
@@ -704,6 +707,15 @@ void BlockDataViewer::setCheckServerKeyPromptLambda(
       return;
    }
    wsSock->setPubkeyPromptLambda(lbd);
+}
+
+bool BlockDataViewer::valid1WayServerKey() const
+{
+   auto wsSock = std::dynamic_pointer_cast<WebSocketClient>(sock_);
+   if (wsSock == nullptr) {
+      return false;
+   }
+   return wsSock->valid1WayServerKey();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

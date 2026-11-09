@@ -429,6 +429,11 @@ SecureBinaryData ECDSA::computePublicKey(
 
 bool ECDSA::verifyPublicKeyValid(BinaryDataRef pubKey)
 {
+   // key.pubkey is 65 bytes, anything that isn't 33 or 65 isn't a pubkey
+   // (and would overflow it: script data reaches here from op_checksig)
+   if (pubKey.getSize() != 33 && pubKey.getSize() != 65) {
+      return false;
+   }
    btc_pubkey key;
    btc_pubkey_init(&key);
    memcpy(key.pubkey, pubKey.getPtr(), pubKey.getSize());
@@ -633,6 +638,9 @@ bool ECDSA::verifyData(const BinaryData& binMessage,
    const BinaryData& sig, const BinaryData& cppPubKey)
 {
    /* pub keys are already validated by the script parser */
+   if (cppPubKey.getSize() != 33 && cppPubKey.getSize() != 65) {
+      return false;
+   }
 
    // We execute the first SHA256 op, here. Next one is done by Verifier
    BinaryData digest1, digest2;

@@ -56,6 +56,7 @@
 #include <set>
 
 #include "SecureBinaryData.h"
+#include "AtomicSharedPtr.h"
 
 #define CRYPTO_DEBUG false
 
@@ -99,7 +100,7 @@ namespace Cryptography
          Use the crypto lib's PRNG directly to generate wallet seeds instead.
          */
       private:
-         mutable std::atomic<std::shared_ptr<SecureBinaryData>> key_;
+         mutable Armory::Threading::AtomicSharedPtr<SecureBinaryData> key_;
          mutable std::atomic<unsigned> counter_;
          mutable std::atomic<unsigned> nBytes_;
 

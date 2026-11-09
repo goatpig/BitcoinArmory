@@ -891,7 +891,7 @@ SecureBinaryData Signer::signScript(
 ////////
 std::shared_ptr<ScriptSpender> Signer::getSpender(unsigned index) const
 {
-   if (index > spenders_.size()) {
+   if (index >= spenders_.size()) {
       throw ScriptException("invalid spender index");
    }
    return spenders_[index];
@@ -1213,7 +1213,7 @@ BinaryData Signer::serializeState() const
       i=0;
       auto capnTxns = capnMsg.initSupportingTxs(supportingTxMap_->size());
       for (const auto& supportingTx : *supportingTxMap_) {
-         capnTxns.set(i, capnp::Data::Builder(
+         capnTxns.set(i++, capnp::Data::Builder(
             (uint8_t*)supportingTx.second.getPtr(),
             supportingTx.second.getSize()
          ));
@@ -2222,12 +2222,12 @@ bool Signer::hasLegacyInputs() const
 }
 
 void Signer::injectSignature(
-   unsigned inputIndex, SecureBinaryData& sig, unsigned sigId)
+   unsigned inputIndex, SecureBinaryData& sig, unsigned sigId) const
 {
-   if (spenders_.size() < inputIndex) {
+   if (inputIndex >= spenders_.size()) {
       throw std::runtime_error("invalid spender index");
    }
-   auto& spender = spenders_[inputIndex];
+   const auto& spender = spenders_[inputIndex];
    spender->injectSignature(sig, sigId);
 }
 

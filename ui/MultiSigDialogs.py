@@ -1813,16 +1813,16 @@ class DlgLockboxManager(ArmoryDialog):
       super(DlgLockboxManager, self).closeEvent(event)
 
     #############################################################################
-   def accept(self, *args):
+   def accept(self):
       self.saveGeometrySettings()
       self.main.lbDialogModel = None
-      super(DlgLockboxManager, self).accept(*args)
+      super(DlgLockboxManager, self).accept()
 
    #############################################################################
-   def reject(self, *args):
+   def reject(self):
       self.saveGeometrySettings()
       self.main.lbDialogModel = None
-      super(DlgLockboxManager, self).reject(*args)
+      super(DlgLockboxManager, self).reject()
 
    #############################################################################
    def changeLBFilter(self):

@@ -217,16 +217,19 @@ class DlgWltRecoverWallet(ArmoryDialog):
         # Had to reimplement the path selection here, because the way this was
         # implemented doesn't let me access self.main.getFileLoad
       ftypes = self.tr('Wallet files (*.wallet);; All files (*)')
+      # getOpenFileName returns a (path, selected filter) tuple
       if not OS_MACOSX:
-         pathSelect = str(QtWidgets.QFileDialog.getOpenFileName(self, \
+         pathSelect = QtWidgets.QFileDialog.getOpenFileName(self, \
                                   self.tr('Recover Wallet'), \
                                   ARMORY_HOME_DIR, \
-                                  ftypes))
+                                  ftypes)[0]
       else:
-         pathSelect = str(QtWidgets.QFileDialog.getOpenFileName(self, \
+         pathSelect = QtWidgets.QFileDialog.getOpenFileName(self, \
                                   self.tr('Recover Wallet'), \
                                   ARMORY_HOME_DIR, \
                                   ftypes, \
-                                  options=QtWidgets.QFileDialog.DontUseNativeDialog))
+                                  options=QtWidgets.QFileDialog.DontUseNativeDialog)[0]
 
-      self.edtWalletPath.setText(pathSelect)
+      # empty path: the dialog was cancelled, keep the current path
+      if pathSelect:
+         self.edtWalletPath.setText(pathSelect)

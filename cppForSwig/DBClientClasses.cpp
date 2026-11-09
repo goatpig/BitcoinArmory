@@ -63,6 +63,7 @@ namespace {
             capnTxio.getTxOut(), capnTxio.getAmount(),
             scrAddr, capnTxio.getTxIn()
          };
+         txio.setTxTime(capnTxio.getTxTime());
          txio.setRBF(capnTxio.getRbf());
          txios.emplace_back(std::move(txio));
       }
@@ -204,17 +205,17 @@ bool RemoteCallback::processNotifications(
             break;
          }
 
-         case BDV::Notification::READY:
+         case BDV::Notification::CONNECTION_IS_READY:
          {
             BdmNotification bdmNotif(BDMAction_Ready);
-            auto newBlock = notif.getReady();
+            auto newBlock = notif.getConnectionIsReady();
             bdmNotif.newBlock = NewBlockNotif{
                newBlock.getHeight(), newBlock.getBranchHeight(), {}, {}};
             run(std::move(bdmNotif));
             break;
          }
 
-         case BDV::Notification::REGISTERED:
+         case BDV::Notification::REGISTRATION_DONE:
          {
             BdmNotification bdmNotif(BDMAction_Registered);
             run(std::move(bdmNotif));
@@ -235,12 +236,6 @@ bool RemoteCallback::processNotifications(
             progress(phase, ids, capnProgress.getProgress(),
                capnProgress.getTime(), capnProgress.getNumericProgress());
             break;
-         }
-
-         case BDV::Notification::TERMINATE:
-         {
-            //shut down command from server
-            return false;
          }
 
          case BDV::Notification::NODE_STATUS:

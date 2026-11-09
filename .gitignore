@@ -69,6 +69,7 @@ BIP150KeyManager
 /cppForSwig/gtest/*.dSYM
 /cppForSwig/gtest/*.lmdb*
 /cppForSwig/gtest/DB1kIterTest
+/cppForSwig/gtest/NodeTests
 /cppForSwig/gtest/SignerTests
 /cppForSwig/gtest/fakehomedir/*
 

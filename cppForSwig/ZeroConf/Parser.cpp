@@ -270,7 +270,7 @@ std::map<Types::TxKey, std::shared_ptr<ParsedTx>> ZeroConfContainer::purge(
 
       - evict all the descendants of mined and invalidated ZCs
       - for descendants, reset all resolved spenders.
-      - return any descendant that wasn't invalidated (for reparsing and 
+      - return any descendant that wasn't invalidated (for reparsing and
         potential reentry in the mempool)
 
     * reorgs are first handled in purgeToBranchpoint
@@ -384,15 +384,15 @@ std::map<Types::TxKey, std::shared_ptr<ParsedTx>> ZeroConfContainer::dropZC(
 {
    /*
    ZeroConfSharedSnapshot will drop the tx and its children and return them.
-   We need to clear our containers all dropped ZCs so we first drop from the
-   snapshot and use the returned map to clear the requested ZC as well as all
-   of its children.
+   We need to clear our containers from all dropped ZCs so we first drop from
+   the snapshot then use the returned map to clear the requested ZC as well as
+   all of its children.
    */
    auto droppedZCs = ss->dropZc(key);
    for (const auto& zcPair : droppedZCs) {
       auto txPtr = zcPair.second;
       if (txPtr == nullptr) {
-         return {};
+         continue;
       }
 
       //drop from outPointsSpentByKey_
@@ -417,6 +417,8 @@ std::map<Types::TxKey, std::shared_ptr<ParsedTx>> ZeroConfContainer::dropZC(
       keyToFundedScrAddr_.erase(key);
       allZcTxHashes_.erase(txPtr->getTxHash());
    }
+
+   //remove the target key from the return set
    return droppedZCs;
 }
 
@@ -430,7 +432,9 @@ std::map<Types::TxKey, std::shared_ptr<ParsedTx>> ZeroConfContainer::dropZCs(
    std::map<Types::TxKey, std::shared_ptr<ParsedTx>> droppedZCs;
    auto rIter = zcKeys.rbegin();
    while (rIter != zcKeys.rend()) {
-      auto dropped = dropZC(ss, *rIter++);
+      auto keyToDrop = *rIter++;
+      auto dropped = dropZC(ss, keyToDrop);
+      dropped.erase(keyToDrop);
       droppedZCs.insert(dropped.begin(), dropped.end());
    }
 
@@ -489,13 +493,14 @@ void ZeroConfContainer::finalizePurgePacket(
    zcAction.resultPromise->set_value(purgePacket);
 }
 
+////////
 void ZeroConfContainer::parseNewZC(ZcActionStruct zcAction)
 {
    bool notify = true;
    auto ss = MempoolSnapshot::copy(
-      snapshot_, MEMPOOL_DEPTH, POOL_MERGE_THRESHOLD);
+      snapshot_.load(), MEMPOOL_DEPTH, POOL_MERGE_THRESHOLD);
 
-   std::map<Types::TxKey, std::shared_ptr<ParsedTx>> zcMap;
+   std::map<Types::ZcId, std::shared_ptr<ParsedTx>> zcMap;
    std::map<BinaryData, std::shared_ptr<WatcherTxBody>> watcherMap;
    Types::BdvId requestor;
 
@@ -507,7 +512,7 @@ void ZeroConfContainer::parseNewZC(ZcActionStruct zcAction)
          auto result = purge(zcAction.reorgState, ss);
          notify = false;
 
-         ss->commitNewZCs();
+         ss->mergeWithParents();
 
          //setup batch with all tracked zc
          if (zcAction.batch == nullptr) {
@@ -523,7 +528,10 @@ void ZeroConfContainer::parseNewZC(ZcActionStruct zcAction)
       {
          try {
             auto batchTxMap = getBatchTxMap(zcAction.batch, ss);
-            zcMap = std::move(batchTxMap.txMap_);
+            for (auto& zcPair : batchTxMap.txMap_) {
+               zcMap.emplace(Types::getZcIdFromTxKey(zcPair.first),
+                  std::move(zcPair.second));
+            }
             watcherMap = std::move(batchTxMap.watcherMap_);
             requestor = std::move(batchTxMap.requestor_);
          } catch (const ZcBatchError&) {
@@ -550,7 +558,7 @@ void ZeroConfContainer::parseNewZC(ZcActionStruct zcAction)
 }
 
 void ZeroConfContainer::parseNewZC(
-   std::map<Types::TxKey, std::shared_ptr<ParsedTx>> zcMap,
+   std::map<Types::ZcId, std::shared_ptr<ParsedTx>> zcMap,
    std::shared_ptr<MempoolSnapshot> ss,
    bool updateDB, bool notify, Types::BdvId requestor,
    std::map<Types::TxHash, std::shared_ptr<WatcherTxBody>>& watcherMap)
@@ -558,11 +566,13 @@ void ZeroConfContainer::parseNewZC(
    std::unique_lock<std::mutex> lock(parserMutex_);
    ZcUpdateBatch batch;
 
+   std::set<Types::TxKey> droppedZcKeys;
    auto iter = zcMap.begin();
    while (iter != zcMap.end()) {
       if (iter->second->state == ParsedTxStatus::Mined ||
          iter->second->state == ParsedTxStatus::Invalid ||
          iter->second->state == ParsedTxStatus::Skip) {
+         droppedZcKeys.emplace(iter->second->getKey());
          zcMap.erase(iter++);
       } else {
          ++iter;
@@ -582,21 +592,21 @@ void ZeroConfContainer::parseNewZC(
             continue;
          }
       } else {
-         if (ss->getTxByKey(newZCPair.first) != nullptr) {
+         if (ss->getTxByKey(newZCPair.second->getKey()) != nullptr) {
             continue;
          }
       }
-      batch.zcToWrite.emplace(newZCPair);
+      batch.zcToWrite.emplace(newZCPair.second->getKey(), newZCPair.second);
    }
 
    bool hasChanges = false;
    std::map<Types::BdvId, ParsedZCData> flaggedBDVs;
    std::map<Types::TxKey, std::shared_ptr<ParsedTx>> invalidatedTx;
 
-   //zc logic
+   //zc logic, in id order: parents are staged before their children
    std::set<Types::TxKey> addedZcKeys;
-   std::set<Types::TxKey> droppedZcKeys;
    for (const auto& newZCPair : zcMap) {
+      const auto& zcKey = newZCPair.second->getKey();
       const auto& txHash = newZCPair.second->getTxHash();
       if (Types::isTxKeyValid(ss->getKeyForHash(txHash))) {
          continue;
@@ -612,7 +622,7 @@ void ZeroConfContainer::parseNewZC(
          }
 
          //add this tx to known valid zcs
-         addedZcKeys.emplace(newZCPair.first);
+         addedZcKeys.emplace(zcKey);
          hasChanges = true;
 
          for (auto& idmap : filterResult.outPointsSpentByKey) {
@@ -648,12 +658,12 @@ void ZeroConfContainer::parseNewZC(
             continue;
          }
          //in bare/full node, zcs that cannot be resolved do not affect
-         //our list of addresses, drop them
-         droppedZcKeys.emplace(newZCPair.first);
+         //our list of addresses, do not track them
+         batch.zcToWrite.erase(zcKey);
       }
    }
 
-   //get rid of invalid zc, only applies to bare/full node
+   //get rid of invalid/mined zc
    dropZCs(ss, droppedZcKeys);
 
    if (updateDB && batch.hasData()) {
@@ -723,6 +733,7 @@ void ZeroConfContainer::parseNewZC(
       watcherMap);
 }
 
+////////
 FilteredZeroConfData ZeroConfContainer::filterTransaction(
    std::shared_ptr<ParsedTx> parsedTx,
    std::shared_ptr<MempoolSnapshot> ss) const
@@ -789,6 +800,7 @@ ZeroConfContainer::checkForCollisions(
    return invalidatedZCs;
 }
 
+////////
 void ZeroConfContainer::clear()
 {
    snapshot_.store(nullptr);
@@ -876,61 +888,64 @@ void ZeroConfContainer::updateZCinDB()
       } catch (const Threading::StopBlockingLoop&) {
          break;
       }
-
-      if (!batch.hasData()) {
-         continue;
-      }
-
-      auto tx = db_->beginTransaction(
-         DB_SELECT::ZERO_CONF, LMDB::Mode::ReadWrite);
-      for (auto& zcPair : batch.zcToWrite) {
-         /*TODO: speed this up*/
-         StoredTx zcTx;
-         auto txObj = zcPair.second->getTxObj();
-         zcTx.createFromTx(txObj, true, true);
-         db_->putStoredZC(zcTx, zcPair.first);
-      }
-
-      for (const auto& txhash : batch.txHashes) {
-         //if the key is not to be found in the txMap_, this is a ZC txhash
-         tx->insert(
-            LMDB::DataRef{txhash.getSize(), txhash.getPtr()},
-            LMDB::DataRef{0, (const char*)nullptr}
-         );
-      }
-
-      for (auto& key : batch.keysToDelete) {
-         BinaryData keyWithPrefix;
-         keyWithPrefix.resize(7);
-         keyWithPrefix[0] = (uint8_t)DbPrefix::ZCDATA;
-         std::memcpy(keyWithPrefix.getPtr() + 1, &key, 6);
-         auto dbIter = tx->getIterator();
-         if (!dbIter.seekToStartsWith(keyWithPrefix.getRef())) {
-            continue;
-         }
-
-         std::set<BinaryData> ktd;
-         do {
-            auto thisKey = dbIter.getKeyRef();
-            if (!thisKey.startsWith(keyWithPrefix.getRef())) {
-               break;
-            }
-            ktd.emplace(thisKey);
-         } while (dbIter.advanceAndRead(DbPrefix::ZCDATA));
-
-         for (const auto& _key : ktd) {
-            tx->erase(LMDB::DataRef{_key.getSize(), _key.getPtr()});
-         }
-      }
-
-      for (const auto& _hash : batch.txHashesToDelete) {
-         tx->erase(LMDB::DataRef{_hash.getSize(), _hash.getPtr()});
-      }
-      batch.setCompleted(true);
+      updateZCinDB(std::move(batch));
    }
 }
 
-unsigned ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
+void ZeroConfContainer::updateZCinDB(ZcUpdateBatch batch)
+{
+   if (!batch.hasData()) {
+      return;
+   }
+   auto tx = db_->beginTransaction(DB_SELECT::ZERO_CONF, LMDB::Mode::ReadWrite);
+
+   for (auto& zcPair : batch.zcToWrite) {
+      /*TODO: speed this up*/
+      StoredTx zcTx;
+      auto txObj = zcPair.second->getTxObj();
+      zcTx.createFromTx(txObj, true, true);
+      db_->putStoredZC(zcTx, zcPair.first);
+   }
+
+   for (const auto& txhash : batch.txHashes) {
+      tx->insert(
+         LMDB::DataRef{txhash.getSize(), txhash.getPtr()},
+         LMDB::DataRef{0, (const char*)nullptr}
+      );
+   }
+
+   for (auto& key : batch.keysToDelete) {
+      BinaryData keyWithPrefix;
+      keyWithPrefix.resize(7);
+      keyWithPrefix[0] = (uint8_t)DbPrefix::ZCDATA;
+      std::memcpy(keyWithPrefix.getPtr() + 1, &key, 6);
+      auto dbIter = tx->getIterator();
+      if (!dbIter.seekToStartsWith(keyWithPrefix.getRef())) {
+         continue;
+      }
+
+      std::set<BinaryData> ktd;
+      do {
+         auto thisKey = dbIter.getKeyRef();
+         if (!thisKey.startsWith(keyWithPrefix.getRef())) {
+            break;
+         }
+         ktd.emplace(thisKey);
+      } while (dbIter.advanceAndRead(DbPrefix::ZCDATA));
+
+      for (const auto& _key : ktd) {
+         tx->erase(LMDB::DataRef{_key.getSize(), _key.getPtr()});
+      }
+   }
+
+   for (const auto& _hash : batch.txHashesToDelete) {
+      tx->erase(LMDB::DataRef{_hash.getSize(), _hash.getPtr()});
+   }
+   batch.setCompleted(true);
+}
+
+////////
+unsigned ZeroConfContainer::loadMempool(bool clearMempool)
 {
    unsigned topId = 0;
    std::map<Types::TxKey, std::shared_ptr<ParsedTx>> zcMap;
@@ -954,11 +969,23 @@ unsigned ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
             }
             //Tx, grab it from DB
             StoredTx zcStx;
-            db_->getStoredZC(zcStx, zckey);
+            if (!db_->getStoredZC(zcStx, zckey)) {
+               LOGDEBUG << std::format("failed to grab zc {:x}", zckey);
+               continue;
+            }
+            if (!zcStx.isInitialized()) {
+               LOGDEBUG << std::format("zc {:x} is invalid", zckey);
+               continue;
+            }
 
             //add to newZCMap_
             auto parsedTx = std::make_shared<ParsedTx>(zckey);
-            parsedTx->setTx(zcStx.getSerializedTx(), zcStx.unixTime);
+            auto serializedTxData = zcStx.getSerializedTx();
+            if (serializedTxData.empty()) {
+               LOGWARN << std::format("mangled zc in db: {:x}", zckey);
+               continue;
+            }
+            parsedTx->setTx(serializedTxData, zcStx.unixTime);
             zcMap.emplace(parsedTx->getKey(), std::move(parsedTx));
          } else if (keyRef.getSize() == 32) {
             //tx hash
@@ -974,30 +1001,33 @@ unsigned ZeroConfContainer::loadZeroConfMempool(bool clearMempool)
    if (clearMempool == true) {
       LOGWARN << "Mempool was flagged for deletion!";
       ZcUpdateBatch batch;
-      auto fut = batch.getCompletedFuture();
-
       for (const auto& zcTx : zcMap) {
          batch.keysToDelete.emplace(zcTx.first);
       }
-      updateBatch_.push_back(std::move(batch));
-      fut.wait();
+      updateZCinDB(std::move(batch));
    } else if (!zcMap.empty()) {
       LOGDEBUG << "parsing " << zcMap.size() << " txns from mempool";
       preprocessZcMap(zcMap, db_, bd_);
 
+      //zcMap is sorted by key value, which isn't the id order: the id
+      //sits big-endian inside the key
+      std::map<Types::ZcId, std::shared_ptr<ParsedTx>> zcsById;
+      for (auto& zcPair : zcMap) {
+         zcsById.emplace(Types::getZcIdFromTxKey(zcPair.first),
+            std::move(zcPair.second));
+      }
+
       //set highest used index
-      auto lastEntry = zcMap.rbegin();
-      auto& topZcKey = lastEntry->first;
-      topId = Types::getZcIdFromTxKey(topZcKey) + 1;
+      topId = zcsById.rbegin()->first + 1;
 
       //no need to update the db nor notify bdvs on init
       std::map<BinaryData, std::shared_ptr<WatcherTxBody>> emptyWatcherMap;
       parseNewZC(
-         std::move(zcMap), nullptr, false, false,
+         std::move(zcsById), nullptr, false, false,
          UINT64_MAX,
          emptyWatcherMap);
       auto thisSnapshot = snapshot_.load(std::memory_order_acquire);
-      thisSnapshot->commitNewZCs();
+      thisSnapshot->mergeWithParents();
    }
    return topId;
 }
@@ -1008,7 +1038,7 @@ void ZeroConfContainer::init(std::shared_ptr<ScrAddrFilter> saf,
    LOGINFO << "Enabling zero-conf tracking";
 
    scrAddrMap_ = saf->getZcFilterMapPtr();
-   auto topId = loadZeroConfMempool(clearMempool);
+   auto topId = loadMempool(clearMempool);
    actionQueue_ = std::make_unique<ZcActionQueue>(
       [this](ZcActionStruct zas){ parseNewZC(std::move(zas)); },
       zcPreprocessQueue_, topId);
@@ -1661,6 +1691,9 @@ BatchTxMap ZeroConfContainer::getBatchTxMap(
 
 unsigned ZeroConfContainer::getMatcherMapSize() const
 {
+   if (actionQueue_ == nullptr) {
+      return UINT32_MAX;
+   }
    return actionQueue_->getMatcherMapSize();
 }
 
@@ -1671,6 +1704,14 @@ unsigned ZeroConfContainer::getMergeCount() const
       return 0;
    }
    return ss->getMergeCount();
+}
+
+uint32_t ZeroConfContainer::getTopZcID() const
+{
+   if (actionQueue_ == nullptr) {
+      return UINT32_MAX;
+   }
+   return actionQueue_->getTopZcID();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1908,9 +1949,15 @@ void ZcActionQueue::getDataToBatchMatcherThread()
    }
 }
 
+////////
 unsigned ZcActionQueue::getMatcherMapSize() const
 {
    return matcherMapSize_.load(std::memory_order_relaxed);
+}
+
+uint32_t ZcActionQueue::getTopZcID() const
+{
+   return topId_.load(std::memory_order_relaxed);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

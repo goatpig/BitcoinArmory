@@ -109,6 +109,16 @@ BDV_Action BDV_Notification_Progress::actionType() const
 
 ///////////////////////////////////////////////////////////////////////////////
 // BDV_Notification_NodeStatus
+BDV_Notification_UpdateNodeStatus::BDV_Notification_UpdateNodeStatus() :
+   BDV_Notification(BDV_NOTIF_BROADCAST)
+{}
+
+BDV_Action BDV_Notification_UpdateNodeStatus::actionType() const
+{
+   return BDV_UpdateNodeStatus;
+}
+
+////
 BDV_Notification_NodeStatus::BDV_Notification_NodeStatus(
    std::shared_ptr<Node::Status> nss) :
    BDV_Notification(BDV_NOTIF_BROADCAST), status(nss)
