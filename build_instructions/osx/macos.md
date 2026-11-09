@@ -17,7 +17,7 @@ You will need:
 
 Armory expects the following libraries to be installed in the system:
 ```
-brew install capnp lmdb
+brew install capnp
 ```
 
 # 3. Building Dependencies
@@ -29,6 +29,7 @@ The following dependencies you have to build from source.
 >    parent
 >        |- libbtc
 >        |- libwebsockets
+>        |- lmdb
 >        |- BitcoinArmory
 > ```
 > Step 4 passes their absolute paths to the configure script.
@@ -53,13 +54,21 @@ The following dependencies you have to build from source.
     make
     ```
 
+3. [LMDB](https://github.com/LMDB/lmdb) 0.9. Don't use Homebrew's `lmdb`: it is LMDB 1.x, whose file format can't open LMDB 0.9 files (and 0.9 can't open 1.x files), so wallets and databases would not move between this build and the Linux and Windows ones. Build only the static library: LMDB's Makefile names its shared library `liblmdb.so` on macOS too, and the linker would pick that for `-llmdb`, leaving binaries that look for `liblmdb.so` at run time (if you already ran a plain `make` there, delete `libraries/liblmdb/liblmdb.so`):
+    ```
+    git clone https://github.com/LMDB/lmdb
+    cd lmdb
+    git checkout LMDB_0.9.36
+    make -C libraries/liblmdb liblmdb.a
+    ```
+
 # 4. Building Armory
 
-Pass the configure script the absolute paths of the libbtc and libwebsockets builds from step 3: without `--with-own-libbtc` it stops, and without `--with-own-lws` it would pick Homebrew's libwebsockets package, if installed, instead of the v4.5.8 build. Homebrew also installs headers and libraries under `$(brew --prefix)` (`/opt/homebrew` on Apple Silicon), which the compiler does not search by default, so pass that too:
+Pass the configure script the absolute paths of the libbtc, libwebsockets and LMDB builds from step 3: without `--with-own-libbtc` it stops, and without `--with-own-lws` it would pick Homebrew's libwebsockets package, if installed, instead of the v4.5.8 build. Homebrew also installs headers and libraries under `$(brew --prefix)` (`/opt/homebrew` on Apple Silicon), which the compiler does not search by default, so pass that too, after the LMDB paths so that a Homebrew `lmdb`, if installed, is not picked up. configure prints the LMDB version it found and stops if that LMDB uses the 1.0 file format:
 ```
 sh autogen.sh
 mkdir build && cd build
-../configure --with-own-libbtc="$(cd ../.. && pwd)/libbtc" --with-own-lws="$(cd ../.. && pwd)/libwebsockets/build" CPPFLAGS="-I$(brew --prefix)/include" LDFLAGS="-L$(brew --prefix)/lib"
+../configure --with-own-libbtc="$(cd ../.. && pwd)/libbtc" --with-own-lws="$(cd ../.. && pwd)/libwebsockets/build" CPPFLAGS="-I$(cd ../.. && pwd)/lmdb/libraries/liblmdb -I$(brew --prefix)/include" LDFLAGS="-L$(cd ../.. && pwd)/lmdb/libraries/liblmdb -L$(brew --prefix)/lib"
 make
 ```
 
