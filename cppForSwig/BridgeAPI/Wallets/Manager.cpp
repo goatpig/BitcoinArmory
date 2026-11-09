@@ -718,6 +718,16 @@ bool WalletManager::updateStateFromDB(
    std::shared_ptr<Push::Payload> sharedPayload{std::move(payload)};
 
    if (sharedPayload->syncWalletState() != SyncState::NoSync) {
+      //a reorg can take zcs out of the db's mempool, and the bridge doesn't
+      //learn which: the cache drops its zcs, the update below gets them anew
+      if (sharedPayload->type == Push::PayloadType::NEWBLOCK) {
+         auto blockPtr =
+            std::dynamic_pointer_cast<Push::Notif_NewBlock>(sharedPayload);
+         if (blockPtr->blockNotif.isReorg()) {
+            txioCache_->purge(TxIOCache::PurgeStatus::PurgeZC);
+         }
+      }
+
       auto updateResult = txioCache_->update(bdvPtr_, sharedPayload);
       if (updateResult.first != TxIOCache::PurgeStatus::NoPurge) {
          unsigned retries = 0;
