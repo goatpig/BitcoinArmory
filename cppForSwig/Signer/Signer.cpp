@@ -2222,12 +2222,12 @@ bool Signer::hasLegacyInputs() const
 }
 
 void Signer::injectSignature(
-   unsigned inputIndex, SecureBinaryData& sig, unsigned sigId)
+   unsigned inputIndex, SecureBinaryData& sig, unsigned sigId) const
 {
    if (inputIndex >= spenders_.size()) {
       throw std::runtime_error("invalid spender index");
    }
-   auto& spender = spenders_[inputIndex];
+   const auto& spender = spenders_[inputIndex];
    spender->injectSignature(sig, sigId);
 }
 
