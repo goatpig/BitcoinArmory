@@ -131,14 +131,7 @@ class DlgRemoveWallet(ArmoryDialog):
          'If you intend to keep using addresses from this '
          'wallet, do not select this option unless the wallet '
          'is backed up elsewhere.'))
-      ttipWatch = createToolTipWidget(self.tr(
-         'This will delete the private keys from your wallet, '
-         'leaving you with a watching-only wallet, which can be '
-         'used to generate addresses and monitor incoming '
-         'payments.  This option would be used if you created '
-         'the wallet on this computer <i>in order to transfer '
-         'it to a different computer or device and want to '
-         'remove the private data from this system for security.</i>'))
+      ttipWatch = createToolTipWidget(self.tr('Not available yet in 0.97'))
 
       self.chkPrintBackup = QtWidgets.QCheckBox(self.tr(
          'Print a paper backup of this wallet before deleting'))
@@ -151,8 +144,8 @@ class DlgRemoveWallet(ArmoryDialog):
          ttipWatch = createToolTipWidget(self.tr(
             'This wallet is already a watching-only wallet so this option '
             'is pointless'))
-         self.radioWatch.setEnabled(False)
          self.chkPrintBackup.setEnabled(False)
+      self.radioWatch.setEnabled(False)
 
       self.frm = []
       rdoFrm = QtWidgets.QFrame()
