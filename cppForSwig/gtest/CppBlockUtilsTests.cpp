@@ -2805,9 +2805,7 @@ TEST_F(BlockUtilsBareWithServer, WSClientCleanup)
    }
 
    DBTestUtils::BdvPayloadNinja ninja{clients, bdvId};
-   auto ninjaThread = std::thread([&ninja](){
-      ninja.startPayloadCapture();
-   });
+   ninja.beginPayloadCapture();
 
    /*
    The payload ninja diverts all payloads for our BDV to its own queue.
@@ -2916,11 +2914,9 @@ TEST_F(BlockUtilsBareWithServer, WSClientCleanup)
    EXPECT_GT(result4.second, afterCVnow);
 
    //join on the server cleanup before exiting
+   ninja.stopPayloadCapture();
    if (wsServerThr_.joinable()) {
       wsServerThr_.join();
-   }
-   if (ninjaThread.joinable()) {
-      ninjaThread.join();
    }
 }
 

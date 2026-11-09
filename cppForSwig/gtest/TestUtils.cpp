@@ -1053,62 +1053,90 @@ namespace DBTestUtils
 DBTestUtils::BdvPayloadNinja::BdvPayloadNinja(
    std::shared_ptr<Clients> clients, Types::BdvId id) :
    clients_{clients}, bdvId_{id}
-{}
-
-void DBTestUtils::BdvPayloadNinja::startPayloadCapture()
 {
-   auto bdvPtr = clients_->get(bdvId_);
-   unsigned zero = 0;
-   while (!bdvPtr->packetProcessSpinLock.compare_exchange_weak(
-      zero, 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
-      //spin the lock until we own it
-      zero = 0;
+   run_.store(false);
+}
+
+DBTestUtils::BdvPayloadNinja::~BdvPayloadNinja()
+{
+   stopPayloadCapture();
+}
+
+void DBTestUtils::BdvPayloadNinja::beginPayloadCapture()
+{
+   if (captureThread_.joinable()) {
+      throw std::runtime_error("already running a capture thread");
    }
 
-   //we now hold the bdv packet processing spin lock, we can pop from the
-   //clients packet queue and isolate those for our bdv
-   //payloadQueue_.clear();
-   run_.store(true);
-   while (run_.load()) {
-      std::shared_ptr<BDV_Payload> payload;
-      try {
-         payload = clients_->snoopOnPayloadQueue();
-      } catch (const Threading::StopBlockingLoop&) {
-         break;
+   std::promise<void> prom;
+   auto fut = prom.get_future();
+   captureThread_ = std::thread([this](std::promise<void> prom) {
+      auto bdvPtr = clients_->get(bdvId_);
+      unsigned zero = 0;
+      while (!bdvPtr->packetProcessSpinLock.compare_exchange_weak(
+         zero, 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
+         //spin the lock until we own it
+         zero = 0;
       }
 
-      if (payload->getBdvID() != bdvId_) {
-         clients_->queuePayload(payload);
-      } else {
-         payloadQueue_.push_back(std::move(payload));
+      //control can be returned to the caller once we own the bdv parser lock
+      prom.set_value();
+
+      //we now hold the bdv packet processing spin lock, we can pop from the
+      //clients packet queue and isolate those for our bdv
+      //payloadQueue_.clear();
+      run_.store(true);
+      while (run_.load()) {
+         std::shared_ptr<BDV_Payload> payload;
+         try {
+            payload = clients_->snoopOnPayloadQueue();
+         } catch (const Threading::StopBlockingLoop&) {
+            break;
+         }
+
+         if (payload->getBdvID() != bdvId_) {
+            clients_->queuePayload(payload);
+         } else {
+            payloadQueue_.push_back(std::move(payload));
+         }
       }
-   }
-   payloadQueue_.terminate();
+      payloadQueue_.terminate();
+   }, std::move(prom));
+
+   //block until the capture thread owns the bdv parser lock
+   fut.get();
 }
 
 void DBTestUtils::BdvPayloadNinja::stopPayloadCapture()
 {
-   auto bdvPtr = clients_->get(bdvId_);
+   if (run_ == false || !captureThread_.joinable()) {
+      return;
+   }
 
-   //stop the capture loop
+   //stop the capture loop by flipping the flag and pushing an empty payload
+   //on the queue to wake it up
    run_.store(false);
+   auto bdvPtr = clients_->get(bdvId_);
    auto emptyPayload = std::make_shared<BDV_Payload>(
       BinaryData{}, bdvPtr, bdvId_, BinaryDataRef{});
    clients_->queuePayload(emptyPayload);
 
-   while (payloadQueue_.isValid()) {
-      std::this_thread::sleep_for(100ms);
+   //we can grab all left over captured payloads once the capture thread exits
+   if (captureThread_.joinable()) {
+      captureThread_.join();
    }
    auto payloads = payloadQueue_.pop_all();
 
    //requeue all intercepted payloads, the empty payload we used
    //to wake the queue will be ignored
-   for (auto& payload : payloads) {
-      clients_->queuePayload(payload);
-   }
+   if (bdvPtr != nullptr) {
+      for (auto& payload : payloads) {
+         clients_->queuePayload(payload);
+      }
 
-   //release bdv parser lock
-   bdvPtr->packetProcessSpinLock.store(0, std::memory_order_relaxed);
+      //release the bdv parser lock and clear the capture queue termination flag
+      bdvPtr->packetProcessSpinLock.store(0, std::memory_order_relaxed);
+   }
    payloadQueue_.clear();
 }
 

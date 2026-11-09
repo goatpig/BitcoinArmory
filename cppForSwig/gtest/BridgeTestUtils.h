@@ -142,32 +142,6 @@ namespace BridgeTestUtils {
 
    /////////////////////////////////////////////////////////////////////////////
    // bridge client side mocked comms layer
-   struct NotifQueue
-   {
-      std::queue<BinaryData> queue;
-      std::mutex mu;
-      std::condition_variable cv;
-
-      void push_back(BinaryData& data)
-      {
-         std::unique_lock<std::mutex> lock(mu);
-         queue.emplace(std::move(data));
-         cv.notify_all();
-      }
-
-      BinaryData pop()
-      {
-         std::unique_lock<std::mutex> lock(mu);
-         while (queue.empty()) {
-            cv.wait(lock);
-         }
-
-         auto data = std::move(queue.front());
-         queue.pop();
-         return data;
-      }
-   };
-
    extern std::mutex commsMutex;
    extern std::deque<MsgPtr> replyQueue;
    extern std::condition_variable commsCV;

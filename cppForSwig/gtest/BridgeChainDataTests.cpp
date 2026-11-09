@@ -1089,9 +1089,7 @@ TEST_F(BridgeChainDataTests, TxIOCachePurge_Recover)
    }
 
    DBTestUtils::BdvPayloadNinja ninja{clients, bdvId};
-   auto ninjaThread = std::thread([&ninja](){
-      ninja.startPayloadCapture();
-   });
+   ninja.beginPayloadCapture();
 
    /* add block 5 */
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
@@ -1157,10 +1155,6 @@ TEST_F(BridgeChainDataTests, TxIOCachePurge_Recover)
          checkLedgers(ledgersAt5Blocks[i],
          TestChain::ledgersBCDE[i])) << i;
    }
-
-   if (ninjaThread.joinable()) {
-      ninjaThread.join();
-   }
 }
 
 TEST_F(BridgeChainDataTests, TxIOCachePurge_DropBDV)
@@ -1215,9 +1209,7 @@ TEST_F(BridgeChainDataTests, TxIOCachePurge_DropBDV)
    }
 
    DBTestUtils::BdvPayloadNinja ninja{clients, bdvId};
-   auto ninjaThread = std::thread([&ninja](){
-      ninja.startPayloadCapture();
-   });
+   ninja.beginPayloadCapture();
 
    /* add block 5 */
    TestUtils::setBlocks({ "0", "1", "2", "3", "4", "5" }, blk0dat_);
@@ -1258,9 +1250,6 @@ TEST_F(BridgeChainDataTests, TxIOCachePurge_DropBDV)
       ninja.failMessage(readerAfterPurge.first);
    }
    ninja.stopPayloadCapture();
-   if (ninjaThread.joinable()) {
-      ninjaThread.join();
-   }
 
    //the bridge will drop the bdv connection in consequence
    ASSERT_NO_FATAL_FAILURE(waitOnDisconnected());

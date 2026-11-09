@@ -334,9 +334,7 @@ TEST_F(TxIOCacheTests, PurgeStates)
 
    //start hijacking bdv packets
    DBTestUtils::BdvPayloadNinja ninja{clients, bdvId};
-   auto ninjaThread = std::thread([&ninja](){
-      ninja.startPayloadCapture();
-   });
+   ninja.beginPayloadCapture();
 
    /** fail at getTxios **/
    std::promise<void> getTxiosProm;
@@ -500,7 +498,7 @@ TEST_F(TxIOCacheTests, PurgeStates)
       ASSERT_TRUE(false);
    }
 
-   /**  fail at updateZC **/
+   /** fail at updateZC **/
    std::promise<void> updateZcProm;
    auto updateZcFut = updateZcProm.get_future();
    auto failUpdateZcThr = std::thread([&ninja, &updateZcProm, bdvId](){
@@ -540,10 +538,8 @@ TEST_F(TxIOCacheTests, PurgeStates)
    }
 
    //cleanup
+   ninja.stopPayloadCapture();
    WebSocketServer::shutdown();
-   if (ninjaThread.joinable()) {
-      ninjaThread.join();
-   }
 }
 
 TEST_F(TxIOCacheTests, Purge)
