@@ -1804,7 +1804,8 @@ namespace BridgeTestUtils {
 
    int automateDb(std::shared_ptr<Bridge::CppBridge> bridge,
       const std::filesystem::path& satoshiDir,
-      const std::filesystem::path& dbDir)
+      const std::filesystem::path& dbDir,
+      BdmInitMode dbInitMode, bool clearMempool)
    {
       //setup automation context
       uint64_t refId = rand();
@@ -1817,6 +1818,22 @@ namespace BridgeTestUtils {
          autoDbReq.setSatoshiDir(satoshiDir.string());
          autoDbReq.setDbDir(dbDir.string());
          autoDbReq.setAutomateDb();
+         using DbInitMode =
+            Codec::Bridge::DbSetupRequest::AutomationContext::DbInitMode;
+         switch (dbInitMode)
+         {
+            case BdmInitMode::RESCAN:
+               autoDbReq.setDbInitMode(DbInitMode::RESCAN);
+               break;
+
+            case BdmInitMode::REBUILD:
+               autoDbReq.setDbInitMode(DbInitMode::REBUILD);
+               break;
+
+            default:
+               break;
+         }
+         autoDbReq.setClearMempool(clearMempool);
          auto rawReq = serializeCapnp(message);
          pushRequest(bridge, rawReq);
       }

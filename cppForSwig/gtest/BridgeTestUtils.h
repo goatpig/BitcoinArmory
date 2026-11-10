@@ -358,7 +358,9 @@ namespace BridgeTestUtils {
 
    int automateDb(std::shared_ptr<Bridge::CppBridge> bridge,
       const std::filesystem::path& satoshiDir,
-      const std::filesystem::path& dbDir);
+      const std::filesystem::path& dbDir,
+      BdmInitMode dbInitMode = BdmInitMode::RESUME,
+      bool clearMempool = false);
 
    bool registerWallets(std::shared_ptr<Bridge::CppBridge> bridge);
 

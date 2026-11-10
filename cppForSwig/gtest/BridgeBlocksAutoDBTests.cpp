@@ -324,6 +324,81 @@ TEST_F(BridgeBlocksAutoDBTests, Connect)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeBlocksAutoDBTests, StartOptions)
+{
+   auto wallets = loadWallets(bridge_);
+   ASSERT_EQ(wallets.size(), 1);
+   auto wltId = wallets.begin()->second.walletId;
+   auto accountId = wallets.begin()->second.accountId;
+   ASSERT_EQ(wltId, walletId_);
+
+   auto runDb = [this, &wltId, &accountId](
+      BdmInitMode mode, bool clearMempool)->void
+   {
+      ASSERT_EQ(automateDb(bridge_, blkdir_, ldbdir_, mode, clearMempool), 0);
+      ASSERT_TRUE(bridge_->isDbRunning());
+      ASSERT_TRUE(registerWallets(bridge_));
+      ASSERT_EQ(goOnline(bridge_, true), 5);
+
+      auto balances = getAddrBalances(bridge_, wltId, accountId);
+      ASSERT_EQ(balances.size(), 4);
+      for (const auto& balPair : balances) {
+         const auto& addrBal = TestChain::testAddrBalances[5].at(balPair.first);
+         EXPECT_EQ(addrBal[0], balPair.second[0]);
+         EXPECT_EQ(addrBal[1], balPair.second[1]);
+         EXPECT_EQ(addrBal[2], balPair.second[2]);
+      }
+
+      ASSERT_EQ(disconnectFromDb(), 0);
+      while (bridge_->isDbRunning()) {
+         std::this_thread::sleep_for(100ms);
+      }
+   };
+
+   //counts the lines of the automated db's log that contain str
+   auto countInDbLog = [](const std::string& str)->unsigned
+   {
+      std::ifstream logFile(Config::getDataDir() / "dbLog.txt");
+      unsigned count = 0;
+      std::string line;
+      while (std::getline(logFile, line)) {
+         if (line.find(str) != std::string::npos) {
+            ++count;
+         }
+      }
+      return count;
+   };
+
+   //log lines so far for each option
+   auto expectInDbLog = [&countInDbLog](
+      unsigned rescan, unsigned rebuild, unsigned clearMempool)->void
+   {
+      EXPECT_EQ(countInDbLog("init mode: rescan"), rescan);
+      EXPECT_EQ(countInDbLog("init mode: rebuild"), rebuild);
+      EXPECT_EQ(countInDbLog("clear mempool: on"), clearMempool);
+   };
+
+   /* test starts here */
+   runDb(BdmInitMode::RESUME, false);
+   if (HasFatalFailure()) {
+      return;
+   }
+   expectInDbLog(0, 0, 0);
+
+   runDb(BdmInitMode::RESCAN, true);
+   if (HasFatalFailure()) {
+      return;
+   }
+   expectInDbLog(1, 0, 1);
+
+   runDb(BdmInitMode::REBUILD, false);
+   if (HasFatalFailure()) {
+      return;
+   }
+   expectInDbLog(1, 1, 1);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(BridgeBlocksAutoDBTests, Connect_NoCleanup)
 {
    auto wltList = listWallets(bridge_);

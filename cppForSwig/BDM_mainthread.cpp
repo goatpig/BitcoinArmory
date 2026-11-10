@@ -226,6 +226,9 @@ void BlockDataManagerThread::run()
          case Sequence::ENABLE_ZC:
          {
             if (Config::DBSettings::enableZC()) {
+               if (Config::DBSettings::clearMempool()) {
+                  LOGINFO << "clear mempool: on";
+               }
                bdm->enableZeroConf(Config::DBSettings::clearMempool());
             }
             pimpl->readyPromise.set_value(true);

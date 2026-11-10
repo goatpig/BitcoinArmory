@@ -210,6 +210,7 @@ void BlockDataManager::resetDatabases(BdmInitMode mode)
    {
       case BdmInitMode::RESCAN:
       {
+         LOGINFO << "init mode: rescan";
          iface_->resetHistoryDatabases();
          try {
             scrAddrData_->updateScannedHash(Hash32{});
@@ -222,6 +223,7 @@ void BlockDataManager::resetDatabases(BdmInitMode mode)
 
       case BdmInitMode::REBUILD:
       {
+         LOGINFO << "init mode: rebuild";
          iface_->destroyAndResetDatabases();
          scrAddrData_->resetSDBI();
          break;
