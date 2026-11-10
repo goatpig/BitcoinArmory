@@ -91,6 +91,8 @@ namespace Armory
 
       ////
       using MessageId = uint64_t;
+
+      //see PassphrasePrompt.h
       using PromptId = std::string;
       using PromptReplyHandler = std::function<bool(const Passphrase::PromptReply&)>;
 
@@ -138,7 +140,7 @@ namespace Armory
          std::map<std::string,
             std::shared_ptr<CppBridgeSignerStruct>> signerMap_;
 
-         //UI related ad hoc callbacks
+         //map of prompt reply handlers, keyed by replyId
          std::mutex promptReplyHandlersMu_;
          std::map<uint32_t, PromptReplyHandler> promptReplyHandlers_;
 

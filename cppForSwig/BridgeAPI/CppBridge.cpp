@@ -550,22 +550,42 @@ CppBridge::CppBridge(std::shared_ptr<Network::PersistentSocket> sockPtr) :
 CppBridge::~CppBridge()
 {
    /*
-   Shutdown the notif queue and release all futures waiting on a user reply,
-   both under the callback map lock: a prompt registered after this, such as
-   the server key prompt of a connect that is underway, sees the terminated
-   queue in setCallbackHandler and is rejected there.
-
-   The lock is not held while joining the notif thread. That key prompt is
-   registered from the WebSocketClient's prompt thread, while the notif
-   thread waits on the connection, so the join can depend on that thread
-   getting the lock.
+   On CppBridge dtor, we have to cleanup the bridge notification thread.
+   We also have to release all PromptReplyHandlers. These are prompts awaiting
+   a reply from the client. See PassphrasePrompt.h for what prompts are.
    */
    {
+      //grab the prompt locks, this ensures no new prompt can register
       std::unique_lock<std::mutex> lock(promptReplyHandlersMu_);
+
+      /*
+      Terminate the notification queue, this will have the notification thread
+      exit its loop. The handler registration loop checks that the notif queue
+      is valid, so this also acts as the flag flip to reject new prompt
+      registrations.
+      */
       notifQueue_->terminate();
+
+      //release all reply handlers
       for (auto& handlerPair : promptReplyHandlers_) {
          handlerPair.second(Passphrase::PromptReply{false, false, {}});
       }
+
+      /* edge case:
+      It is the resonsibility of the notification thread to set and clear
+      the BDV object. Under the hood, a BDV object is a WebSocketClient object.
+
+      The connectToIp command will have the WebSocketClient object prompt the
+      client (to verify the server key).
+
+      Therefor there is a window for WebSocketClient and ~CppBridge to deadlock,
+      as they both want the handler lock.
+
+      With the notifQueue terminated, we are guaranteed no new prompts can be
+      registered. We can therefor safely release the prompt lock, knowing that
+      if the BDV object isn't cleaned up yet, it will not be able to prompt the
+      client regardless.
+      */
    }
 
    //wait on the notif thread
@@ -573,7 +593,9 @@ CppBridge::~CppBridge()
       notifThread_.join();
    }
 
-   //cleanup manager
+   //at this point the notification loop is down, meaning the WalletManager
+   //update process does not run anymore (it lives in that loop). We can now
+   //safely cleanup the manager too.
    wltManager_.reset();
 }
 

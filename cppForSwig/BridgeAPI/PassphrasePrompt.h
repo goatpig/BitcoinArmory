@@ -14,6 +14,19 @@
 #include "../Wallets/WalletIdTypes.h"
 #include "../Wallets/GetPassphrase.h"
 
+/*
+Some client requests require the bridge to interact with the user. Such
+requests come with a promptId attached.
+
+When the bridge has to send a message to the client as part of an interactive
+request, it is called a prompt. A prompt comes with its promptId attached, so
+that the client can tie it to the originating request.
+
+All prompts expect a reply, otherwise it is simply a notification.
+A prompt comes with a replyId, which the client returns in the reply, for the
+bridge to try the reply to its prompt.
+*/
+
 namespace Armory
 {
    namespace Bridge
