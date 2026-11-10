@@ -315,6 +315,21 @@ namespace
                   break;
             }
 
+            auto dbInitMode = BdmInitMode::RESUME;
+            switch (ctxReq.getDbInitMode())
+            {
+               case DbSetupRequest::AutomationContext::DbInitMode::RESCAN:
+                  dbInitMode = BdmInitMode::RESCAN;
+                  break;
+
+               case DbSetupRequest::AutomationContext::DbInitMode::REBUILD:
+                  dbInitMode = BdmInitMode::REBUILD;
+                  break;
+
+               default:
+                  break;
+            }
+
             capnp::MallocMessageBuilder message;
             auto fromBridge = message.initRoot<FromBridge>();
             auto reply = fromBridge.initReply();
@@ -323,7 +338,8 @@ namespace
             try {
                auto automationContext = std::make_unique<AutomationContext>(
                   satoshiDir, satoshiBin, dbDir,
-                  automateNode, automateDb
+                  automateNode, automateDb,
+                  dbInitMode, ctxReq.getClearMempool()
                );
                bridge->setAutomationContext(std::move(automationContext));
                reply.setSuccess(true);

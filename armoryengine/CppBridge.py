@@ -576,8 +576,14 @@ class DbSetupService(ProtoWrapper):
    ## automation context
    def initAutomationContext(self,
       satoshiDir: str, satoshiBin: str, dbDir: str,
-      automateNode: bool, automateDb: bool):
-      """setup a context to automate ArmoryDB and Core instances"""
+      automateNode: bool, automateDb: bool,
+      dbInitMode: str = 'resume', clearMempool: bool = False):
+      """
+      setup a context to automate ArmoryDB and Core instances
+
+      dbInitMode: 'resume', 'rescan' or 'rebuild'
+      clearMempool: delete the db's zero conf transactions on start
+      """
       packet = Bridge.ToBridge.new_message()
       ctxRequest = packet.init("setup").init("initAutomationContext")
       if satoshiDir:
@@ -591,6 +597,9 @@ class DbSetupService(ProtoWrapper):
          ctxRequest.automateNode = None
       elif automateDb == True:
          ctxRequest.automateDb = None
+
+      ctxRequest.dbInitMode = dbInitMode
+      ctxRequest.clearMempool = clearMempool
 
       fut = self.send(packet)
       return fut.getVal(nothrow=True)
