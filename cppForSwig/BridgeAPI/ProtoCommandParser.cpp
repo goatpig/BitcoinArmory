@@ -1661,7 +1661,7 @@ namespace
       NotificationReply::Reader& notif)
    {
       try {
-         auto handler = bridge->getCallbackHandler(notif.getCounter());
+         auto handler = bridge->getPromptReplyHandler(notif.getCounter());
          switch (notif.which())
          {
             case NotificationReply::SET_PASSPHRASE:

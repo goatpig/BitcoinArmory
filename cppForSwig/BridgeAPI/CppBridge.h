@@ -110,7 +110,7 @@ namespace Armory
       };
 
       //////////////////////////////////////////////////////////////////////////
-      using CallbackHandler = std::function<bool(const Seeds::PromptReply&)>;
+      using PromptReplyHandler = std::function<bool(const Seeds::PromptReply&)>;
 
       class CppBridge
       {
@@ -136,8 +136,8 @@ namespace Armory
             std::shared_ptr<CppBridgeSignerStruct>> signerMap_;
 
          //UI related ad hoc callbacks
-         std::mutex callbackHandlerMu_;
-         std::map<uint32_t, CallbackHandler> callbackHandlers_;
+         std::mutex promptReplyHandlersMu_;
+         std::map<uint32_t, PromptReplyHandler> promptReplyHandlers_;
 
          //binary automation
          std::unique_ptr<AutomationContext> automationContext_;
@@ -150,6 +150,7 @@ namespace Armory
          void connectToPeer(const Notifications::Push::Command_ConnectToPeer&);
          void runAutomationContext(
             const Notifications::Push::Command_RunAutomationContext&);
+         void registerPromptReplyHandler(ServerPushWrapper&);
 
       public:
          std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr(void) const;
@@ -291,10 +292,9 @@ namespace Armory
          void getBlockTimeByHeight(uint32_t, MessageId) const;
          void getFeeSchedule(const std::string&, MessageId) const;
 
-         //custom callback handlers
-         void callbackWriter(ServerPushWrapper&);
-         void setCallbackHandler(ServerPushWrapper&);
-         CallbackHandler getCallbackHandler(uint32_t);
+         //prompt helpers
+         void promptClient(ServerPushWrapper&);
+         PromptReplyHandler getPromptReplyHandler(uint32_t);
 
          //sanity checks
          bool isOffline(void) const;

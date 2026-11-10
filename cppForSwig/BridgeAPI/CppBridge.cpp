@@ -469,7 +469,7 @@ namespace
 
          //push prompt to caller
          ServerPushWrapper wrapper{notifCounter, replyLbd, std::move(notifSerialized)};
-         bridgePtr->callbackWriter(wrapper);
+         bridgePtr->promptClient(wrapper);
 
          //wait on reply
          auto reply = fut.get();
@@ -559,10 +559,10 @@ CppBridge::~CppBridge()
    getting the lock.
    */
    {
-      std::unique_lock<std::mutex> lock(callbackHandlerMu_);
+      std::unique_lock<std::mutex> lock(promptReplyHandlersMu_);
       notifQueue_->terminate();
-      for (auto& cbPair : callbackHandlers_) {
-         cbPair.second(Seeds::PromptReply{false, false, {}});
+      for (auto& handlerPair : promptReplyHandlers_) {
+         handlerPair.second(Seeds::PromptReply{false, false, {}});
       }
    }
 
@@ -625,9 +625,9 @@ void CppBridge::writeToClient(BinaryData& payload) const
    sockPtr_->pushPayload(std::move(payloadPtr), nullptr);
 }
 
-void CppBridge::callbackWriter(ServerPushWrapper& wrapper)
+void CppBridge::promptClient(ServerPushWrapper& wrapper)
 {
-   setCallbackHandler(wrapper);
+   registerPromptReplyHandler(wrapper);
    writeToClient(wrapper.payload);
 }
 
@@ -852,7 +852,7 @@ void CppBridge::unlockControlHeader(const std::string& path,
    {
       auto passPromptObj = std::make_shared<BridgePassphrasePrompt>(
          callbackId, [this](ServerPushWrapper wrapper) {
-            this->callbackWriter(wrapper);
+            this->promptClient(wrapper);
       });
       auto lbd = passPromptObj->getLambda();
 
@@ -922,7 +922,7 @@ void CppBridge::migrateWallet(const std::filesystem::path& wltPath,
       //function to unlock private keys in the origin wallet
       auto passPromptObj = std::make_shared<BridgePassphrasePrompt>(
          callbackId, [this](ServerPushWrapper wrapper) {
-            this->callbackWriter(wrapper);
+            this->promptClient(wrapper);
       });
       auto unlockLbd = passPromptObj->getLambda();
 
@@ -1224,7 +1224,7 @@ void CppBridge::exportKeys(const Wallets::WalletId& wltId,
 
             passPromptObj = std::make_shared<BridgePassphrasePrompt>(
                callbackId, [this](ServerPushWrapper wrapper){
-                  this->callbackWriter(wrapper);
+                  this->promptClient(wrapper);
                });
             auto lbd = passPromptObj->getLambda();
             ExportKeysCleanup cleanupGuard{passPromptObj};
@@ -1334,7 +1334,7 @@ void CppBridge::loadPeersDb(const CallbackId& callbackId, MessageId refId)
    try {
       auto passPromptObj = std::make_shared<BridgePassphrasePrompt>(
          callbackId, [this](ServerPushWrapper wrapper) {
-            this->callbackWriter(wrapper);
+            this->promptClient(wrapper);
       });
       peersDb_ = std::make_shared<NetworkPeers::ClientStore>(
          Wallets::IO::ReadOnlyFileParams{
@@ -1627,7 +1627,7 @@ void CppBridge::connectToIp(
       ServerPushWrapper wrapper{
          notifCounter, replyLbd,
          std::move(notifSerialized)};
-      callbackWriter(wrapper);
+      promptClient(wrapper);
 
       //wait on reply
       auto reply = fut.get();
@@ -1904,7 +1904,7 @@ void CppBridge::createBackupStringForWallet(const Wallets::WalletId& wltId,
             //setup passphrase prompt
             auto passPromptObj = std::make_shared<BridgePassphrasePrompt>(
                callbackId, [this](ServerPushWrapper wrapper){
-                  this->callbackWriter(wrapper);
+                  this->promptClient(wrapper);
                });
             auto lbd = passPromptObj->getLambda();
 
@@ -2040,7 +2040,7 @@ void CppBridge::changeWalletPassphrase(const Wallets::WalletId& wltId,
       std::shared_ptr<BridgePassphrasePrompt> unlockObj;
       unlockObj = std::make_shared<BridgePassphrasePrompt>(
          callbackId, [this](ServerPushWrapper wrapper){
-            this->callbackWriter(wrapper);
+            this->promptClient(wrapper);
          });
       Passphrase::SetNew setNewFunc = getSetPassFunc(
          this, callbackId, isPriv);
@@ -2208,14 +2208,14 @@ void CppBridge::restoreWallet(
 
             //push prompt to caller
             ServerPushWrapper wrapper{notifCounter, replyLbd, std::move(message)};
-            callbackWriter(wrapper);
+            promptClient(wrapper);
 
             //wait on reply
             return fut.get();
          } else {
             auto message = createCallbackMessage(prompt, 0);
             ServerPushWrapper wrapper{0, nullptr, std::move(message)};
-            callbackWriter(wrapper);
+            promptClient(wrapper);
             return {false, false, {}};
          }
       };
@@ -3296,7 +3296,7 @@ BinaryData CppBridge::initNewSigner(MessageId msgId)
       [this](const Wallets::WalletId& wltId)->auto {
          return this->getWalletPtr(wltId); },
       [this](ServerPushWrapper wrapper) {
-         callbackWriter(wrapper);
+         promptClient(wrapper);
       }
    ));
 
@@ -3401,13 +3401,13 @@ void CppBridge::getFeeSchedule(const std::string& strat, MessageId msgId) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void CppBridge::setCallbackHandler(ServerPushWrapper& wrapper)
+void CppBridge::registerPromptReplyHandler(ServerPushWrapper& wrapper)
 {
    if (wrapper.referenceId == 0 || wrapper.handler == nullptr) {
       return;
    }
 
-   std::unique_lock<std::mutex> lock(callbackHandlerMu_);
+   std::unique_lock<std::mutex> lock(promptReplyHandlersMu_);
    if (!notifQueue_->isValid()) {
       //~CppBridge already released the pending prompts, nothing will
       //answer this one: reject it
@@ -3415,7 +3415,7 @@ void CppBridge::setCallbackHandler(ServerPushWrapper& wrapper)
       return;
    }
 
-   auto result = callbackHandlers_.emplace(
+   auto result = promptReplyHandlers_.emplace(
       wrapper.referenceId, std::move(wrapper.handler));
    if (!result.second) {
       throw std::runtime_error("handler collision");
@@ -3423,16 +3423,16 @@ void CppBridge::setCallbackHandler(ServerPushWrapper& wrapper)
 }
 
 ////
-CallbackHandler CppBridge::getCallbackHandler(uint32_t id)
+CallbackHandler CppBridge::getPromptReplyHandler(uint32_t id)
 {
-   std::unique_lock<std::mutex> lock(callbackHandlerMu_);
-   auto handlerIter = callbackHandlers_.find(id);
-   if (handlerIter == callbackHandlers_.end()) {
+   std::unique_lock<std::mutex> lock(promptReplyHandlersMu_);
+   auto handlerIter = promptReplyHandlers_.find(id);
+   if (handlerIter == promptReplyHandlers_.end()) {
       throw std::runtime_error("missing handler");
    }
 
    auto handler = std::move(handlerIter->second);
-   callbackHandlers_.erase(handlerIter);
+   promptReplyHandlers_.erase(handlerIter);
    return handler;
 }
 
