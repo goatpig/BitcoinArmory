@@ -11,7 +11,7 @@ import psutil
 
 from qtpy import QtCore, QtWidgets, QtGui
 from armoryengine.ArmoryUtils import ARMORY_DB_DIR, ARMORY_HOME_DIR, \
-   BTC_HOME_DIR, ARMORYDB_DEFAULT_PORT, LOGINFO
+   BTC_HOME_DIR, ARMORYDB_DEFAULT_PORT, LOGINFO, CLI_OPTIONS
 from armoryengine.Settings import TheSettings
 from armoryengine.CppBridge import TheBridge
 from armorycolors import htmlColor
@@ -23,6 +23,9 @@ SCENARIO_DB_AUTOMATED = "Automate ArmoryDB"
 SCENARIO_REMOTE_IP = "Connect to IP"
 SCENARIO_REMOTE_PEER = "Connect to Peer"
 SCENARIO_DB_OFFLINE = "Offline"
+
+# How the automated ArmoryDB starts, by radio id
+DB_INIT_MODES = ('resume', 'rescan', 'rebuild')
 
 def isRemoteScenario(scenario):
    return scenario in (SCENARIO_REMOTE_IP, SCENARIO_REMOTE_PEER)
@@ -206,6 +209,9 @@ class DatabaseTab(QtWidgets.QWidget):
       self.databaseTypeCombo = None
       self.ramUsageEdit = None
       self.threadCountEdit = None
+      self.dbStartFrame = None
+      self.dbInitGroup = None
+      self.clearMempoolCheckbox = None
 
       # Remote mode widgets
       self.remoteSubModeCombo = None
@@ -496,6 +502,10 @@ class DatabaseTab(QtWidgets.QWidget):
       self.createLocalDatabaseFrame()
       sectionLayout.addWidget(self.localDatabaseFrame)
 
+      # How ArmoryDB starts
+      self.createDbStartFrame()
+      sectionLayout.addWidget(self.dbStartFrame)
+
       # CLI command display
       cliFrame = QtWidgets.QGroupBox(
          self.tr('Generated Command Line'))
@@ -532,6 +542,59 @@ class DatabaseTab(QtWidgets.QWidget):
       localDbGrid.setColumnStretch(1, 1)
 
       localDbLayout.addLayout(localDbGrid)
+
+   def createDbStartFrame(self):
+      """Create the frame for how ArmoryDB starts."""
+      self.dbStartFrame = QtWidgets.QGroupBox(
+         self.tr('Database Start'))
+      startLayout = QtWidgets.QVBoxLayout(self.dbStartFrame)
+      startLayout.setContentsMargins(12, 12, 12, 12)
+      startLayout.setSpacing(8)
+
+      resumeRadio = QtWidgets.QRadioButton(self.tr('Normal'))
+      rescanRadio = QtWidgets.QRadioButton(self.tr('Rescan'))
+      rescanRadio.setToolTip(self.tr(
+         'Rebuild the wallet histories from the existing '
+         'database. Takes 10 to 60 minutes.'))
+      rebuildRadio = QtWidgets.QRadioButton(
+         self.tr('Rebuild and rescan'))
+      rebuildRadio.setToolTip(self.tr(
+         'Delete the database and build it again from the '
+         'block files. Takes 30 minutes to 4 hours.'))
+
+      self.dbInitGroup = QtWidgets.QButtonGroup(self)
+      radioLayout = QtWidgets.QHBoxLayout()
+      radioLayout.setSpacing(16)
+      for radioId, radio in enumerate(
+            (resumeRadio, rescanRadio, rebuildRadio)):
+         self.dbInitGroup.addButton(radio, radioId)
+         radioLayout.addWidget(radio)
+      radioLayout.addStretch(1)
+      startLayout.addLayout(radioLayout)
+
+      self.clearMempoolCheckbox = QtWidgets.QCheckBox(
+         self.tr('Clear all unconfirmed transactions'))
+      self.clearMempoolCheckbox.setToolTip(self.tr(
+         'Lets you retry stuck transactions.'))
+      startLayout.addWidget(self.clearMempoolCheckbox)
+
+      # --rescan, --rebuild and the restart flags pick the start, once:
+      # the setup manager opened again in this session starts from Normal
+      if CLI_OPTIONS.rebuild:
+         rebuildRadio.setChecked(True)
+      elif CLI_OPTIONS.rescan:
+         rescanRadio.setChecked(True)
+      else:
+         resumeRadio.setChecked(True)
+      self.clearMempoolCheckbox.setChecked(CLI_OPTIONS.clearMempool)
+      CLI_OPTIONS.rescan = False
+      CLI_OPTIONS.rebuild = False
+      CLI_OPTIONS.clearMempool = False
+
+      self.dbInitGroup.idToggled.connect(
+         lambda radioId, checked: self.updateCliCommandDisplay())
+      self.clearMempoolCheckbox.toggled.connect(
+         lambda checked: self.updateCliCommandDisplay())
 
    def buildConnectSection(self):
       """Build the Connect to remote section widget."""
@@ -714,6 +777,11 @@ class DatabaseTab(QtWidgets.QWidget):
             f'--dbdir="{dbDir}"',
             f'--satoshi-datadir="{satoshiDir}"'
          ]
+         dbInitMode = DB_INIT_MODES[self.dbInitGroup.checkedId()]
+         if dbInitMode != 'resume':
+            cmdParts.append(f'--{dbInitMode}')
+         if self.clearMempoolCheckbox.isChecked():
+            cmdParts.append('--clear-mempool')
       elif scenario == SCENARIO_REMOTE_PEER:
          selected = self.peerList.currentItem()
          peer = selected.data(QtCore.Qt.UserRole) \
@@ -944,6 +1012,7 @@ class DatabaseTab(QtWidgets.QWidget):
       self.databaseTypeCombo.setEnabled(not locked)
       self.ramUsageEdit.setEnabled(not locked)
       self.threadCountEdit.setEnabled(not locked)
+      self.dbStartFrame.setEnabled(not locked)
       self.remoteSubModeCombo.setEnabled(not locked)
       self.ipEdit.setEnabled(not locked)
       self.portEdit.setEnabled(not locked)
@@ -1074,6 +1143,8 @@ class DatabaseTab(QtWidgets.QWidget):
             if isLocal else '',
          'ram': self.memTarget,
          'threads': self.threadCount,
+         'dbInitMode': DB_INIT_MODES[self.dbInitGroup.checkedId()],
+         'clearMempool': self.clearMempoolCheckbox.isChecked(),
          'peerKey': peerKey,
          'ipAddr': ipAddr,
          'dbPort': dbPort
