@@ -52,12 +52,12 @@ protected:
          capnp::FlatArrayMessageReader reader(words);
 
          auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-         if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
+         if (fromBridge.which() != Codec::Bridge::FromBridge::PROMPT) {
             return false;
          }
 
-         auto notif = fromBridge.getNotification();
-         if (notif.which() != Codec::Bridge::Notification::UNLOCK_REQUEST) {
+         auto prompt = fromBridge.getPrompt();
+         if (prompt.which() != Codec::Bridge::Prompt::UNLOCK_REQUEST) {
             return false;
          }
 
@@ -65,13 +65,13 @@ protected:
          capnp::MallocMessageBuilder message;
          auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
          toBridge.setReferenceId(refId);
-         auto notifReply = toBridge.initNotification();
-         notifReply.setCounter(notif.getCounter());
+         auto promptReply = toBridge.initPrompt();
+         promptReply.setReplyId(prompt.getReplyId());
          if (succeed) {
-            notifReply.setUnlockRequest(clientPeersDbPass_);
-            notifReply.setSuccess(true);
+            promptReply.setUnlockRequest(clientPeersDbPass_);
+            promptReply.setSuccess(true);
          } else {
-            notifReply.setSuccess(false);
+            promptReply.setSuccess(false);
          }
 
          auto rawReq = serializeCapnp(message);
@@ -119,17 +119,17 @@ protected:
          capnp::FlatArrayMessageReader reader(words);
 
          auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-         if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
+         if (fromBridge.which() != Codec::Bridge::FromBridge::PROMPT) {
             return false;
          }
 
-         auto notif = fromBridge.getNotification();
-         if (notif.which() != Codec::Bridge::Notification::SET_PASSPHRASE) {
+         auto prompt = fromBridge.getPrompt();
+         if (prompt.which() != Codec::Bridge::Prompt::SET_PASSPHRASE) {
             return false;
          }
 
-         auto passReq = notif.getSetPassphrase();
-         if (passReq.which() != Codec::Bridge::Notification::SetPassphraseRequest::CONTROL_PASS) {
+         auto passReq = prompt.getSetPassphrase();
+         if (passReq.which() != Codec::Bridge::Prompt::SetPassphraseRequest::CONTROL_PASS) {
             return false;
          }
 
@@ -137,11 +137,11 @@ protected:
          capnp::MallocMessageBuilder message;
          auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
          toBridge.setReferenceId(refId);
-         auto notifReply = toBridge.initNotification();
-         notifReply.setCounter(notif.getCounter());
-         notifReply.setSuccess(true);
+         auto promptReply = toBridge.initPrompt();
+         promptReply.setReplyId(prompt.getReplyId());
+         promptReply.setSuccess(true);
 
-         auto passReply = notifReply.initSetPassphrase();
+         auto passReply = promptReply.initSetPassphrase();
          passReply.setPassphrase(passphrase);
          passReply.setKdfTargetMs(1);
          passReply.setKdfTargetMB(0);

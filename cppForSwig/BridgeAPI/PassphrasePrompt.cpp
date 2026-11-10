@@ -48,9 +48,9 @@ Passphrase::PromptReply BridgePassphrasePrompt::processFeedRequest(
    //create payload
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
-   auto notif = fromBridge.initNotification();
-   notif.setCallbackId(promptId_);
-   notif.setCounter(replyId);
+   auto notif = fromBridge.initPrompt();
+   notif.setId(promptId_);
+   notif.setReplyId(replyId);
 
    auto unlockRequest = notif.initUnlockRequest(ids.size());
    unsigned i=0;
@@ -96,8 +96,8 @@ void BridgePassphrasePrompt::cleanup()
 {
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
-   auto notif = fromBridge.initNotification();
-   notif.setCallbackId(promptId_);
+   auto notif = fromBridge.initPrompt();
+   notif.setId(promptId_);
    notif.setCleanup();
 
    auto flat = capnp::messageToFlatArray(message);

@@ -22,7 +22,7 @@ When the bridge has to send a message to the client as part of an interactive
 request, it is called a prompt. A prompt comes with its promptId attached, so
 that the client can tie it to the originating request.
 
-All prompts expect a reply, otherwise it is simply a notification.
+Prompts expect a reply, otherwise they are effectively progress notifications.
 A prompt comes with a replyId, which the client returns in the reply, for the
 bridge to try the reply to its prompt.
 */

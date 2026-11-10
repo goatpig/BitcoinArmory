@@ -120,6 +120,26 @@ struct WalletIdentifier {
 ################################################################################
 ## Notifications
 struct Notification {
+   union {
+      unset          @0 : Void;
+      ready          @1 : Types.Height;
+      setupDone      @2 : Void;
+      registerDone   @3 : Void;
+      refresh        @4 : List(Text);
+      newBlock       @5 : Types.Height;
+      disconnected   @6 : Void;
+      scanProgress   @7 : Types.ScanProgress;
+      nodeStatus     @8 : Types.NodeStatus;
+      zeroConfs      @9 : Types.TxLedger;
+      error          @10: Text;
+      invalidatedZcs @11: List(Types.Hash);
+   }
+}
+
+################################################################################
+## server prompts to client
+struct Prompt
+{
    ## Wallet creation progress notifs
    struct WalletProgress {
       union {
@@ -170,54 +190,39 @@ struct Notification {
    }
 
    ## db/node automation
-   struct AutomationContextNotif {
-      union {
-         unset          @0 : Void;
-         spawnNode      @1 : Void;
-         spawnDb        @2 : Void;
-         connectToDb    @3 : Void;
-         shutdownDb     @4 : Void;
-         shutdownNode   @5 : Void;
-         done           @6 : Void;
-      }
+   enum AutomationProgress {
+      spawnNode      @0;
+      spawnDb        @1;
+      connectToDb    @2;
+      shutdownDb     @3;
+      shutdownNode   @4;
+      done           @5;
    }
 
-   #callbackId is set if this notification is the result
-   #of a RPC request that provided said id
-   callbackId        @0 : Types.CallbackId;
-   counter           @1 : UInt32;
+   ## struct body
+   id                @0 : Types.PromptId;
+   replyId           @1 : UInt32;
 
    union {
       unset          @2 : Void;
-      ready          @3 : Types.Height;
-      setupDone      @4 : Void;
-      registerDone   @5 : Void;
-      refresh        @6 : List(Text);
-      newBlock       @7 : Types.Height;
-      disconnected   @8 : Void;
-      scanProgress   @9 : Types.ScanProgress;
-      nodeStatus     @10: Types.NodeStatus;
-      zeroConfs      @11: Types.TxLedger;
-      error          @12: Text;
-      cleanup        @13: Void;
-      unlockRequest  @14: List(Text);
-      walletProgress @15: WalletProgress;
-      setPassphrase  @16: SetPassphraseRequest;
-      restore        @17: RestorePrompt;
-      presentPubkey  @18: Text; #hexit public key
-      invalidatedZcs @19: List(Types.Hash);
-      automation     @20: AutomationContextNotif;
+      unlockRequest  @3 : List(Text);
+      setPassphrase  @4 : SetPassphraseRequest;
+      restore        @5 : RestorePrompt;
+      walletProgress @6 : WalletProgress;
+      presentPubkey  @7 : Text; #hexit public key
+      automation     @8 : AutomationProgress;
+      cleanup        @9 : Void;
    }
 }
 
-struct NotificationReply {
+struct PromptReply {
    enum RestoreMode {
       overwrite      @0;
       merge          @1;
    }
 
    struct SetPassphraseReply {
-      passphrase     @0 : Text;
+      passphrase        @0 : Text;
       union {
          kdfTargetMs    @1 : UInt32;
          kdfTargetMB    @2 : UInt32;
@@ -226,7 +231,7 @@ struct NotificationReply {
    }
 
    success           @0 : Bool;
-   counter           @1 : UInt32;
+   replyId           @1 : UInt32;
 
    union {
       unlockRequest  @2 : Text;
@@ -242,7 +247,7 @@ struct DbSetupRequest {
    struct IpRequest {
       ip                @0 : Text;
       port              @1 : UInt16;
-      callbackId        @2 : Text;
+      promptId          @2 : Text;
    }
 
    struct PeersRequest {
@@ -254,7 +259,7 @@ struct DbSetupRequest {
       union {
          unset          @0 : Void;
 
-         loadPeersDb    @1 : Types.CallbackId;
+         loadPeersDb    @1 : Types.PromptId;
          listPeers      @2 : Void;
          addPeer        @3 : Peer;
          removePeer     @4 : Text; #remove by key
@@ -296,8 +301,8 @@ struct DbSetupRequest {
 
       #binary automations
       initAutomationContext      @3 : AutomationContext;
-      runAutomationContext       @4 : Types.CallbackId;
-      cleanupAutomationContext   @5 : Types.CallbackId;
+      runAutomationContext       @4 : Types.PromptId;
+      cleanupAutomationContext   @5 : Types.PromptId;
 
       #db connection
       connectToIp                @6 : IpRequest;
@@ -392,12 +397,12 @@ struct WalletManagerRequest {
 
    struct UnlockRequest {
       walletPath  @0 : Text;
-      callbackId  @1 : Text;
+      promptId    @1 : Text;
    }
 
    struct MigrateRequest {
       walletPath  @0 : Text;
-      callbackId  @1 : Text;
+      promptId    @1 : Text;
    }
 
    union {
@@ -492,14 +497,14 @@ struct WalletRequest {
 
    struct ExtendAddressPool {
       count          @0 : UInt32;
-      callbackId     @1 : Types.CallbackId;
+      promptId       @1 : Types.PromptId;
       isNew          @2 : Bool;
    }
 
    struct BackupStringStruct {
       union {
          #requires a callback id to unlock private root
-         private  @0 : Types.CallbackId;
+         private  @0 : Types.PromptId;
 
          #nothing to provide when creating a public root backup
          public   @1 : Void;
@@ -507,7 +512,7 @@ struct WalletRequest {
    }
 
    struct ChangePassphraseRequest {
-      callbackId     @0 : Types.CallbackId;
+      promptId       @0 : Types.PromptId;
       union {
          private     @1 : Void;
          control     @2 : Void;
@@ -540,7 +545,7 @@ struct WalletRequest {
    struct ExportKeyRequest {
       union {
          publicDataOnly @0 : Void;
-         withPrivateKeys @1 : Types.CallbackId;
+         withPrivateKeys @1 : Types.PromptId;
       }
    }
 
@@ -572,7 +577,7 @@ struct WalletRequest {
       setLabels                     @18: SetLabels;
 
       getUnlockTime                 @19: Void;
-      forkWatchingOnly              @20: Types.CallbackId;
+      forkWatchingOnly              @20: Types.PromptId;
       hasImports                    @21: Void;
       exportKeys                    @22: ExportKeyRequest;
    }
@@ -718,7 +723,7 @@ struct SignerRequest {
 
    struct SignTx {
       walletId    @0 : Types.WalletId;
-      callbackId  @1 : Text;
+      promptId    @1 : Text;
    }
 
    id                         @0 : Types.SignerId;
@@ -789,7 +794,7 @@ struct UtilsRequest {
    }
 
    struct CreateWalletStruct {
-      callbackId        @0 : Text;
+      promptId          @0 : Text;
       walletType        @1 : WalletType;
       lookup            @2 : UInt32;
       extraEntropy      @3 : Data;
@@ -803,7 +808,7 @@ struct UtilsRequest {
       chaincode         @1 : List(Text);
       backupId          @2 : Text;
       spPass            @3 : Text;
-      callbackId        @4 : Text;
+      promptId          @4 : Text;
    }
 
    union {
@@ -902,7 +907,7 @@ struct ToBridge {
       utils          @8 : UtilsRequest;
       scriptUtils    @9 : ScriptUtilsRequest;
       delegate       @10: LedgerDelegateRequest;
-      notification   @11: NotificationReply;
+      prompt         @11: PromptReply;
    }
 }
 
@@ -933,5 +938,6 @@ struct FromBridge {
 
       reply          @1 : RpcReply;
       notification   @2 : Notification;
+      prompt         @3 : Prompt;
    }
 }

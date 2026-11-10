@@ -319,8 +319,8 @@ namespace
       {
          capnp::MallocMessageBuilder notifMessage;
          auto fromBridge = notifMessage.initRoot<FromBridge>();
-         auto notif = fromBridge.initNotification();
-         notif.setCallbackId(promptId);
+         auto notif = fromBridge.initPrompt();
+         notif.setId(promptId);
          auto prog = notif.initWalletProgress();
 
          switch (statePtr->type())
@@ -399,8 +399,8 @@ namespace
    void sendPromptCleanup(CppBridge* bridgePtr, const PromptId& promptId)
    {
       capnp::MallocMessageBuilder message;
-      auto notif = message.initRoot<FromBridge>().initNotification();
-      notif.setCallbackId(promptId);
+      auto notif = message.initRoot<FromBridge>().initPrompt();
+      notif.setId(promptId);
       notif.setCleanup();
       auto serialized = serializeCapnp(message);
       bridgePtr->writeToClient(serialized);
@@ -447,9 +447,9 @@ namespace
          //create set passphrase notif
          capnp::MallocMessageBuilder notifMessage;
          auto fromBridge = notifMessage.initRoot<FromBridge>();
-         auto notif = fromBridge.initNotification();
-         notif.setCallbackId(promptId);
-         notif.setCounter(replyId);
+         auto notif = fromBridge.initPrompt();
+         notif.setId(promptId);
+         notif.setReplyId(replyId);
          auto wltCrt = notif.initSetPassphrase();
          if (priv) {
             wltCrt.setPrivatePass();
@@ -493,37 +493,36 @@ namespace
 
          capnp::MallocMessageBuilder message;
          auto fromBridge = message.initRoot<FromBridge>();
-         auto notif = fromBridge.initNotification();
-         notif.setCallbackId(promptId);
+         auto notif = fromBridge.initPrompt();
+         notif.setId(promptId);
 
          if (step == AutomationStep::Cleanup) {
             notif.setCleanup();
          } else {
-            auto automationNotif = notif.initAutomation();
             switch (step)
             {
                case AutomationStep::SpawnNode:
-                  automationNotif.setSpawnNode();
+                  notif.setAutomation(Prompt::AutomationProgress::SPAWN_NODE);
                   break;
 
                case AutomationStep::SpawnDb:
-                  automationNotif.setSpawnDb();
+                  notif.setAutomation(Prompt::AutomationProgress::SPAWN_DB);
                   break;
 
                case AutomationStep::ConnectToDb:
-                  automationNotif.setConnectToDb();
+                  notif.setAutomation(Prompt::AutomationProgress::CONNECT_TO_DB);
                   break;
 
                case AutomationStep::ShutdownDb:
-                  automationNotif.setShutdownDb();
+                  notif.setAutomation(Prompt::AutomationProgress::SHUTDOWN_DB);
                   break;
 
                case AutomationStep::ShutdownNode:
-                  automationNotif.setShutdownNode();
+                  notif.setAutomation(Prompt::AutomationProgress::SHUTDOWN_NODE);
                   break;
 
                case AutomationStep::Done:
-                  automationNotif.setDone();
+                  notif.setAutomation(Prompt::AutomationProgress::DONE);
                   break;
             }
          }
@@ -1632,9 +1631,9 @@ void CppBridge::connectToIp(
       //create present pubkey notif
       capnp::MallocMessageBuilder notifMessage;
       auto fromBridge = notifMessage.initRoot<FromBridge>();
-      auto notif = fromBridge.initNotification();
-      notif.setCallbackId(promptId);
-      notif.setCounter(replyId);
+      auto notif = fromBridge.initPrompt();
+      notif.setId(promptId);
+      notif.setReplyId(replyId);
       notif.setPresentPubkey(peerKey.toHumanReadable());
       auto notifSerialized = serializeCapnp(notifMessage);
 
@@ -2122,13 +2121,13 @@ void CppBridge::restoreWallet(
       std::unique_ptr<Seeds::WalletBackup> backup)
    {
       auto createCallbackMessage = [promptId](
-         const Seeds::RestorePrompt& prompt, uint32_t notifCounter)->BinaryData
+         const Seeds::RestorePrompt& prompt, uint32_t replyId)->BinaryData
       {
          capnp::MallocMessageBuilder message;
          auto promptCapnp = message.initRoot<FromBridge>();
-         auto notifCapnp = promptCapnp.initNotification();
-         notifCapnp.setCallbackId(promptId);
-         notifCapnp.setCounter(notifCounter);
+         auto notifCapnp = promptCapnp.initPrompt();
+         notifCapnp.setId(promptId);
+         notifCapnp.setReplyId(replyId);
 
          switch (prompt.promptType)
          {
@@ -2706,8 +2705,8 @@ void CppBridge::extendAddressPool(const Wallets::WalletId& wltId,
       {
          capnp::MallocMessageBuilder message;
          auto fromBridge = message.initRoot<FromBridge>();
-         auto notif = fromBridge.initNotification();
-         notif.setCallbackId(promptId);
+         auto notif = fromBridge.initPrompt();
+         notif.setId(promptId);
 
          auto progressNotif = notif.initWalletProgress();
          auto countNotif = progressNotif.initExtendChain();

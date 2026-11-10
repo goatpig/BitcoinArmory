@@ -13,7 +13,7 @@ using AccountId         = Text;
 using SignerId          = Text;
 using DelegateId        = Text;
 using BdvId             = UInt64;
-using CallbackId        = Text;
+using PromptId          = Text;
 using CoinSelectionId   = Text;
 
 using Height      = UInt32;

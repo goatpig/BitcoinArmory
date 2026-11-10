@@ -153,13 +153,13 @@ namespace BridgeTestUtils {
    }
 
    void replyToKeyPrompt(std::shared_ptr<Bridge::CppBridge> bridge,
-      uint64_t refId, uint32_t counter, bool accept)
+      uint64_t refId, uint32_t replyId, bool accept)
    {
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
-      auto notifReply = toBridge.initNotification();
-      notifReply.setCounter(counter);
+      auto notifReply = toBridge.initPrompt();
+      notifReply.setReplyId(replyId);
       notifReply.setPresentPubkey();
       notifReply.setSuccess(accept);
 
@@ -169,7 +169,7 @@ namespace BridgeTestUtils {
 
    //false if no server key prompt comes within timeout. Drops the replies
    //that come before the prompt
-   bool waitOnKeyPrompt(std::chrono::milliseconds timeout, uint32_t& counter)
+   bool waitOnKeyPrompt(std::chrono::milliseconds timeout, uint32_t& replyId)
    {
       auto deadline = std::chrono::steady_clock::now() + timeout;
       while (std::chrono::steady_clock::now() < deadline) {
@@ -180,13 +180,13 @@ namespace BridgeTestUtils {
 
          bool prompted = false;
          readFromBridge(reply,
-            [&prompted, &counter](Codec::Bridge::FromBridge::Reader fromBridge)
+            [&prompted, &replyId](Codec::Bridge::FromBridge::Reader fromBridge)
          {
-            //a server key prompt: grab its counter
-            if (fromBridge.which() == Codec::Bridge::FromBridge::NOTIFICATION &&
-               fromBridge.getNotification().which() ==
-                  Codec::Bridge::Notification::PRESENT_PUBKEY) {
-               counter = fromBridge.getNotification().getCounter();
+            //a server key prompt: grab its replyId
+            if (fromBridge.which() == Codec::Bridge::FromBridge::PROMPT &&
+               fromBridge.getPrompt().which() ==
+                  Codec::Bridge::Prompt::PRESENT_PUBKEY) {
+               replyId = fromBridge.getPrompt().getReplyId();
                prompted = true;
             }
          });
@@ -218,9 +218,9 @@ namespace BridgeTestUtils {
                result.received += result.replySuccess ? "[connect ok] " :
                   "[connect failed: " + std::string(response.getError()) + "] ";
             } else if (fromBridge.which() ==
-               Codec::Bridge::FromBridge::NOTIFICATION) {
-               auto notifType = fromBridge.getNotification().which();
-               if (notifType == Codec::Bridge::Notification::PRESENT_PUBKEY) {
+               Codec::Bridge::FromBridge::PROMPT) {
+               auto notifType = fromBridge.getPrompt().which();
+               if (notifType == Codec::Bridge::Prompt::PRESENT_PUBKEY) {
                   result.promptPushed = true;
                   result.received += "[key prompt] ";
                } else {
@@ -318,13 +318,13 @@ namespace BridgeTestUtils {
    /////////////////////////////////////////////////////////////////////////////
    // wallet creation from bridge
    WalletData progressWalletCreation(std::shared_ptr<Bridge::CppBridge> bridge,
-      const std::string& callbackId, const std::string& passphrase,
+      const std::string& promptId, const std::string& passphrase,
       std::chrono::milliseconds targetMs, uint32_t targetMB, int lookup,
       bool WO/*=false*/, bool isBIP32/*=false*/, bool isRestore/*=false*/)
    {
       std::string masterId;
       std::filesystem::path path;
-      int notifCount = 0;
+      int promptCount = 0;
       std::set<std::string> bip32Accs{ "BIP44", "BIP49", "BIP84" };
 
       bool run = true;
@@ -335,53 +335,53 @@ namespace BridgeTestUtils {
             result->data.getSize() / sizeof(capnp::word));
          capnp::FlatArrayMessageReader reader(words);
          auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-         if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
+         if (fromBridge.which() != Codec::Bridge::FromBridge::PROMPT) {
             throw std::runtime_error("invalid FromBridge which");
          }
 
-         auto notif = fromBridge.getNotification();
-         if (notif.getCallbackId() != callbackId) {
-            throw std::runtime_error("invalid callbackId");
+         auto prompt = fromBridge.getPrompt();
+         if (prompt.getId() != promptId) {
+            throw std::runtime_error("invalid promptId");
          }
-         auto counter = notif.getCounter();
 
-         switch (notif.which())
+         auto replyId = prompt.getReplyId();
+         switch (prompt.which())
          {
-            case Codec::Bridge::Notification::SET_PASSPHRASE:
+            case Codec::Bridge::Prompt::SET_PASSPHRASE:
             {
-               auto wltNotif = notif.getSetPassphrase();
-               switch (wltNotif.which())
+               auto passphrasePrompt = prompt.getSetPassphrase();
+               switch (passphrasePrompt.which())
                {
-                  case Codec::Bridge::Notification::SetPassphraseRequest::CONTROL_PASS:
+                  case Codec::Bridge::Prompt::SetPassphraseRequest::CONTROL_PASS:
                   {
-                     if (notifCount++ != 1) {
+                     if (promptCount++ != 1) {
                         throw std::runtime_error("count != 1");
                      }
                      capnp::MallocMessageBuilder message;
                      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
-                     auto notifReply = toBridge.initNotification();
-                     notifReply.setSuccess(false);
-                     notifReply.setCounter(counter);
+                     auto promtpReply = toBridge.initPrompt();
+                     promtpReply.setSuccess(false);
+                     promtpReply.setReplyId(replyId);
                      auto rawReq = serializeCapnp(message);
                      pushRequest(bridge, rawReq);
                      break;
                   }
 
-                  case Codec::Bridge::Notification::SetPassphraseRequest::PRIVATE_PASS:
+                  case Codec::Bridge::Prompt::SetPassphraseRequest::PRIVATE_PASS:
                   {
-                     if (notifCount++ != 3) {
+                     if (promptCount++ != 3) {
                         throw std::runtime_error("count != 3");
                      }
                      capnp::MallocMessageBuilder message;
                      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
-                     auto notifReply = toBridge.initNotification();
-                     notifReply.setCounter(counter);
+                     auto promtpReply = toBridge.initPrompt();
+                     promtpReply.setReplyId(replyId);
 
                      if (passphrase.empty()) {
-                        notifReply.setSuccess(false);
+                        promtpReply.setSuccess(false);
                      } else {
-                        notifReply.setSuccess(true);
-                        auto capnSetPass = notifReply.initSetPassphrase();
+                        promtpReply.setSuccess(true);
+                        auto capnSetPass = promtpReply.initSetPassphrase();
                         capnSetPass.setPassphrase(passphrase);
                         if (targetMB == 0) {
                            capnSetPass.setKdfTargetMs(targetMs.count());
@@ -401,27 +401,27 @@ namespace BridgeTestUtils {
                break;
             }
 
-            case Codec::Bridge::Notification::WALLET_PROGRESS:
+            case Codec::Bridge::Prompt::WALLET_PROGRESS:
             {
-               auto wltNotif = notif.getWalletProgress();
-               switch (wltNotif.which())
+               auto wltPrompt = prompt.getWalletProgress();
+               switch (wltPrompt.which())
                {
-                  case Codec::Bridge::Notification::WalletProgress::CREATE_FILE:
+                  case Codec::Bridge::Prompt::WalletProgress::CREATE_FILE:
                   {
-                     if (notifCount++ != 0) {
+                     if (promptCount++ != 0) {
                         throw std::runtime_error("count != 0");
                      }
-                     path = std::filesystem::path(std::string{wltNotif.getCreateFile()});
+                     path = std::filesystem::path(std::string{wltPrompt.getCreateFile()});
                      break;
                   }
 
-                  case Codec::Bridge::Notification::WalletProgress::INIT_FILE:
+                  case Codec::Bridge::Prompt::WalletProgress::INIT_FILE:
                   {
-                     if (notifCount++ != 2) {
+                     if (promptCount++ != 2) {
                         throw std::runtime_error("count != 2");
                      }
                      if (WO) {
-                        ++notifCount;
+                        ++promptCount;
                      }
 
                      auto fullPath = std::filesystem::path{"./fakehomedir"} / path;
@@ -431,31 +431,31 @@ namespace BridgeTestUtils {
                            throw std::runtime_error("wallet path is invalid!");
                         }
                      }
-                     masterId = wltNotif.getInitFile();
+                     masterId = wltPrompt.getInitFile();
                      break;
                   }
 
-                  case Codec::Bridge::Notification::WalletProgress::READ_FILE:
+                  case Codec::Bridge::Prompt::WalletProgress::READ_FILE:
                   {
-                     if (notifCount++ != 4) {
+                     if (promptCount++ != 4) {
                         throw std::runtime_error("count != 4");
                      }
-                     if (wltNotif.getReadFile() != masterId) {
+                     if (wltPrompt.getReadFile() != masterId) {
                         throw std::runtime_error("masterId mismatch");
                      }
                      break;
                   }
 
-                  case Codec::Bridge::Notification::WalletProgress::CREATE_ACCOUNT:
+                  case Codec::Bridge::Prompt::WalletProgress::CREATE_ACCOUNT:
                   {
                      if (!isBIP32) {
-                        if (notifCount++ != 5) {
+                        if (promptCount++ != 5) {
                            throw std::runtime_error("count != 5");
                         }
-                        EXPECT_EQ(wltNotif.getCreateAccount(), "Armory Legacy");
+                        EXPECT_EQ(wltPrompt.getCreateAccount(), "Armory Legacy");
                      } else {
-                        ++notifCount;
-                        std::string accountName(wltNotif.getCreateAccount());
+                        ++promptCount;
+                        std::string accountName(wltPrompt.getCreateAccount());
                         auto iter = bip32Accs.find(accountName);
                         if (iter == bip32Accs.end()) {
                            throw std::runtime_error("unexpected bip32 acc name");
@@ -465,47 +465,47 @@ namespace BridgeTestUtils {
                      break;
                   }
 
-                  case Codec::Bridge::Notification::WalletProgress::EXTEND_CHAIN:
+                  case Codec::Bridge::Prompt::WalletProgress::EXTEND_CHAIN:
                   {
                      if (!isBIP32) {
-                        if (notifCount++ != 6) {
+                        if (promptCount++ != 6) {
                            throw std::runtime_error("count != 6");
                         }
-                        auto extendNotif = wltNotif.getExtendChain();
-                        EXPECT_EQ(extendNotif.getTotal(), lookup);
-                        EXPECT_EQ(extendNotif.getCurrent(), 0);
+                        auto extendPrompt = wltPrompt.getExtendChain();
+                        EXPECT_EQ(extendPrompt.getTotal(), lookup);
+                        EXPECT_EQ(extendPrompt.getCurrent(), 0);
                      } else {
-                        auto count = notifCount++;
+                        auto count = promptCount++;
                         if (count < 6 || count > 10) {
-                           throw std::runtime_error("invalid extend chain notif count");
+                           throw std::runtime_error("invalid extend chain prompt count");
                         }
-                        auto extendNotif = wltNotif.getExtendChain();
-                        EXPECT_EQ(extendNotif.getTotal(), lookup);
-                        EXPECT_EQ(extendNotif.getCurrent(), 0);
+                        auto extendPrompt = wltPrompt.getExtendChain();
+                        EXPECT_EQ(extendPrompt.getTotal(), lookup);
+                        EXPECT_EQ(extendPrompt.getCurrent(), 0);
                      }
                      break;
                   }
 
                   default:
-                     throw std::runtime_error("unexpected wallet progress notif");
+                     throw std::runtime_error("unexpected wallet progress prompt");
                }
                break;
             }
 
-            case Codec::Bridge::Notification::CLEANUP:
+            case Codec::Bridge::Prompt::CLEANUP:
             {
                run = false;
                break;
             }
 
-            case Codec::Bridge::Notification::RESTORE:
+            case Codec::Bridge::Prompt::RESTORE:
             {
-               throw std::runtime_error("got a restore notif in wallet creation progress!");
+               throw std::runtime_error("got a restore prompt in wallet creation progress!");
             }
 
             default:
                throw std::runtime_error(std::string{
-                  "unexpected wallet notif: " + std::to_string(notif.which())});
+                  "unexpected wallet prompt: " + std::to_string(prompt.which())});
          }
       }
 
@@ -516,7 +516,7 @@ namespace BridgeTestUtils {
       if (isBIP32) {
          totalCount += isRestore ? 2 : 4;
       }
-      if (!passphrase.empty() && notifCount != totalCount) {
+      if (!passphrase.empty() && promptCount != totalCount) {
          throw std::runtime_error("unexpected total notif count");
       }
 
@@ -532,7 +532,7 @@ namespace BridgeTestUtils {
       std::chrono::milliseconds targetMs, uint32_t lookup, bool isBIP32)
    {
       uint64_t refId = rand();
-      auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+      auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
@@ -540,7 +540,7 @@ namespace BridgeTestUtils {
       auto request = toBridge.initUtils();
       auto createWltReq = request.initCreateWallet();
 
-      createWltReq.setCallbackId(callbackId);
+      createWltReq.setPromptId(promptId);
       if (isBIP32) {
          createWltReq.setWalletType(
             Codec::Bridge::UtilsRequest::WalletType::STRUCTURED_BIP32);
@@ -557,7 +557,7 @@ namespace BridgeTestUtils {
 
       //handle progress notifs
       auto walletData = progressWalletCreation(
-         bridge, callbackId,
+         bridge, promptId,
          "pass1", targetMs, 0, lookup, false, isBIP32);
       auto masterId = walletData.masterId;
       auto path = walletData.path;
@@ -593,7 +593,7 @@ namespace BridgeTestUtils {
       const std::string& passphrase, Codec::Bridge::WalletBackup::Type backupType)
    {
       uint64_t refId = rand();
-      auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+      auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
@@ -601,7 +601,7 @@ namespace BridgeTestUtils {
       auto request = toBridge.initWallet();
       request.setWalletId(walletId);
       auto reqBackup = request.initCreateBackupString();
-      reqBackup.setPrivate(callbackId);
+      reqBackup.setPrivate(promptId);
       auto rawReq = serializeCapnp(message);
       pushRequest(bridge, rawReq);
 
@@ -616,22 +616,22 @@ namespace BridgeTestUtils {
          capnp::FlatArrayMessageReader reader(words);
 
          auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-         if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
-            throw std::runtime_error("expected a notif");
+         if (fromBridge.which() != Codec::Bridge::FromBridge::PROMPT) {
+            throw std::runtime_error("expected a prompt");
          }
 
-         auto notif = fromBridge.getNotification();
-         if (notif.getCallbackId() != callbackId) {
+         auto prompt = fromBridge.getPrompt();
+         if (prompt.getId() != promptId) {
             throw std::runtime_error("unexpected callback id");
          }
 
-         switch (notif.which()) {
-            case Codec::Bridge::Notification::UNLOCK_REQUEST:
+         switch (prompt.which()) {
+            case Codec::Bridge::Prompt::UNLOCK_REQUEST:
             {
                capnp::MallocMessageBuilder notifMsg;
                auto notifBridge = notifMsg.initRoot<Codec::Bridge::ToBridge>();
-               auto notifReply = notifBridge.initNotification();
-               notifReply.setCounter(notif.getCounter());
+               auto notifReply = notifBridge.initPrompt();
+               notifReply.setReplyId(prompt.getReplyId());
                if (count == 0) {
                   notifReply.setSuccess(true);
                   notifReply.setUnlockRequest(passphrase);
@@ -646,14 +646,14 @@ namespace BridgeTestUtils {
                break;
             }
 
-            case Codec::Bridge::Notification::CLEANUP:
+            case Codec::Bridge::Prompt::CLEANUP:
             {
                run = false;
                break;
             }
 
             default:
-               throw std::runtime_error("unexpected notif type");
+               throw std::runtime_error("unexpected prompt type");
          }
       }
 
@@ -717,7 +717,7 @@ namespace BridgeTestUtils {
 
       //restore the wallet
       uint64_t refId = rand();
-      auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+      auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
       {
          capnp::MallocMessageBuilder message;
@@ -725,8 +725,7 @@ namespace BridgeTestUtils {
          toBridge.setReferenceId(refId);
          auto request = toBridge.initUtils();
          auto restoreWltReq = request.initRestoreWallet();
-
-         restoreWltReq.setCallbackId(callbackId);
+         restoreWltReq.setPromptId(promptId);
 
          size_t lineIndex = 0;
          if (lines.size() == 5) {
@@ -756,42 +755,42 @@ namespace BridgeTestUtils {
             result->data.getSize() / sizeof(capnp::word));
          capnp::FlatArrayMessageReader reader(words);
          auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-         if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
+         if (fromBridge.which() != Codec::Bridge::FromBridge::PROMPT) {
             throw std::runtime_error("2");
          }
 
-         auto notif = fromBridge.getNotification();
-         if (notif.getCallbackId() != callbackId) {
+         auto prompt = fromBridge.getPrompt();
+         if (prompt.getId() != promptId) {
             throw std::runtime_error("3");
          }
 
-         switch (notif.which())
+         switch (prompt.which())
          {
-            case Codec::Bridge::Notification::RESTORE:
+            case Codec::Bridge::Prompt::RESTORE:
             {
-               auto restoreNotif = notif.getRestore();
-               switch (restoreNotif.which())
+               auto restorePrompt = prompt.getRestore();
+               switch (restorePrompt.which())
                {
-                  case Codec::Bridge::Notification::RestorePrompt::CHECK_WALLET_ID:
+                  case Codec::Bridge::Prompt::RestorePrompt::CHECK_WALLET_ID:
                   {
                      //return merge decision
-                     auto meta = restoreNotif.getCheckWalletId();
+                     auto meta = restorePrompt.getCheckWalletId();
                      if (meta.getWalletId() != expectedWltId ||
                         meta.getBackupType() != backupType) {
                         throw std::runtime_error("4");
                      }
 
-                     auto counter = notif.getCounter();
+                     auto replyId = prompt.getReplyId();
                      capnp::MallocMessageBuilder notifMsg;
                      auto toBridge = notifMsg.initRoot<Codec::Bridge::ToBridge>();
                      toBridge.setReferenceId(rand());
 
-                     auto notifReply = toBridge.initNotification();
+                     auto notifReply = toBridge.initPrompt();
                      notifReply.setSuccess(true);
-                     notifReply.setCounter(counter);
+                     notifReply.setReplyId(replyId);
                      notifReply.setRestore(merge ?
-                        Codec::Bridge::NotificationReply::RestoreMode::MERGE :
-                        Codec::Bridge::NotificationReply::RestoreMode::OVERWRITE
+                        Codec::Bridge::PromptReply::RestoreMode::MERGE :
+                        Codec::Bridge::PromptReply::RestoreMode::OVERWRITE
                      );
 
                      auto rawReq = serializeCapnp(notifMsg);
@@ -814,7 +813,7 @@ namespace BridgeTestUtils {
 
       //create wallet notifs
       auto wltData = progressWalletCreation(
-         bridge, callbackId,
+         bridge, promptId,
          passphrase, targetMs, targetMB,
          expectedLookup, lines.size() == 5, isBIP32, true);
 
@@ -1020,7 +1019,7 @@ namespace BridgeTestUtils {
       const std::string& walletId,
       const std::string& currentPass, const std::string& newPass)
    {
-      auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+      auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
       uint64_t refId = rand();
 
       //start passphrase change sequence
@@ -1032,7 +1031,7 @@ namespace BridgeTestUtils {
          request.setWalletId(walletId);
 
          auto passReq = request.initChangePassphrase();
-         passReq.setCallbackId(callbackId);
+         passReq.setPromptId(promptId);
          passReq.setPrivate();
 
          auto rawReq = serializeCapnp(message);
@@ -1047,25 +1046,25 @@ namespace BridgeTestUtils {
             rawPrompt->data.getSize() / sizeof(capnp::word));
          capnp::FlatArrayMessageReader reader(words);
          auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-         if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
+         if (fromBridge.which() != Codec::Bridge::FromBridge::PROMPT) {
             return false;
          }
 
-         auto notif = fromBridge.getNotification();
-         if (notif.getCallbackId() != callbackId) {
+         auto prompt = fromBridge.getPrompt();
+         if (prompt.getId() != promptId) {
             return false;
          }
-         if (notif.which() != Codec::Bridge::Notification::UNLOCK_REQUEST) {
+         if (prompt.which() != Codec::Bridge::Prompt::UNLOCK_REQUEST) {
             return false;
          }
-         auto counter = notif.getCounter();
+         auto replyId = prompt.getReplyId();
 
          //push passphrase
          capnp::MallocMessageBuilder message;
          auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
-         auto notifReply = toBridge.initNotification();
+         auto notifReply = toBridge.initPrompt();
          notifReply.setSuccess(true);
-         notifReply.setCounter(counter);
+         notifReply.setReplyId(replyId);
          notifReply.setUnlockRequest(currentPass);
 
          auto rawReq = serializeCapnp(message);
@@ -1080,26 +1079,26 @@ namespace BridgeTestUtils {
             rawPrompt->data.getSize() / sizeof(capnp::word));
          capnp::FlatArrayMessageReader reader(words);
          auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-         if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
+         if (fromBridge.which() != Codec::Bridge::FromBridge::PROMPT) {
             return false;
          }
 
-         auto notif = fromBridge.getNotification();
-         if (notif.getCallbackId() != callbackId) {
+         auto prompt = fromBridge.getPrompt();
+         if (prompt.getId() != promptId) {
             return false;
          }
-         if (notif.which() != Codec::Bridge::Notification::SET_PASSPHRASE) {
+         if (prompt.which() != Codec::Bridge::Prompt::SET_PASSPHRASE) {
             return false;
          }
-         auto counter = notif.getCounter();
+         auto replyId = prompt.getReplyId();
 
          //push passphrase
          capnp::MallocMessageBuilder message;
          auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
-         auto notifReply = toBridge.initNotification();
-         notifReply.setSuccess(true);
-         notifReply.setCounter(counter);
-         auto capnSetPass = notifReply.initSetPassphrase();
+         auto promptReply = toBridge.initPrompt();
+         promptReply.setSuccess(true);
+         promptReply.setReplyId(replyId);
+         auto capnSetPass = promptReply.initSetPassphrase();
          capnSetPass.setPassphrase(newPass);
          capnSetPass.setReuseKdf(true);
 
@@ -1133,15 +1132,15 @@ namespace BridgeTestUtils {
             rawPrompt->data.getSize() / sizeof(capnp::word));
          capnp::FlatArrayMessageReader reader(words);
          auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-         if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
+         if (fromBridge.which() != Codec::Bridge::FromBridge::PROMPT) {
             return false;
          }
 
-         auto notif = fromBridge.getNotification();
-         if (notif.getCallbackId() != callbackId) {
+         auto prompt = fromBridge.getPrompt();
+         if (prompt.getId() != promptId) {
             return false;
          }
-         if (notif.which() != Codec::Bridge::Notification::CLEANUP) {
+         if (prompt.which() != Codec::Bridge::Prompt::CLEANUP) {
             return false;
          }
       }
@@ -1363,7 +1362,7 @@ namespace BridgeTestUtils {
       const std::string& accountId /*= {}*/)
    {
       ExportResult out;
-      auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+      auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
       uint64_t refId = rand();
 
       {
@@ -1380,7 +1379,7 @@ namespace BridgeTestUtils {
          if (publicOnly) {
             exportReq.setPublicDataOnly();
          } else {
-            exportReq.setWithPrivateKeys(callbackId);
+            exportReq.setWithPrivateKeys(promptId);
          }
 
          auto rawReq = serializeCapnp(message);
@@ -1439,32 +1438,31 @@ namespace BridgeTestUtils {
             break;
          }
 
-         if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
+         if (fromBridge.which() != Codec::Bridge::FromBridge::PROMPT) {
             out.error = "unexpected message type";
             break;
          }
 
-         auto notif = fromBridge.getNotification();
-         if (notif.getCallbackId() != callbackId) {
+         auto prompt = fromBridge.getPrompt();
+         if (prompt.getId() != promptId) {
             out.error = "callback id mismatch";
             break;
          }
 
-         auto notifType = notif.which();
-         if (notifType == Codec::Bridge::Notification::UNLOCK_REQUEST) {
+         if (prompt.which() == Codec::Bridge::Prompt::UNLOCK_REQUEST) {
             capnp::MallocMessageBuilder notifMsg;
             auto notifBridge = notifMsg.initRoot<Codec::Bridge::ToBridge>();
-            auto notifReply = notifBridge.initNotification();
-            notifReply.setCounter(notif.getCounter());
+            auto promptReply = notifBridge.initPrompt();
+            promptReply.setReplyId(prompt.getReplyId());
             if (provideCorrectPass) {
-               notifReply.setSuccess(true);
-               notifReply.setUnlockRequest(passphrase);
+               promptReply.setSuccess(true);
+               promptReply.setUnlockRequest(passphrase);
             } else {
-               notifReply.setSuccess(false);
+               promptReply.setSuccess(false);
             }
             auto rawNotif = serializeCapnp(notifMsg);
             pushRequest(bridge, rawNotif);
-         } else if (notifType == Codec::Bridge::Notification::CLEANUP) {
+         } else if (prompt.which() == Codec::Bridge::Prompt::CLEANUP) {
             continue;
          } else {
             out.error = "unexpected notification type";
@@ -1499,7 +1497,7 @@ namespace BridgeTestUtils {
       const std::string& walletId, const std::string& accountId,
       const std::string& dbId, unsigned count, bool isNew)
    {
-      auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+      auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
       uint64_t refId = rand();
 
       //start chain extension sequence
@@ -1512,7 +1510,7 @@ namespace BridgeTestUtils {
          request.setAccountId(accountId);
 
          auto extendReq = request.initExtendAddressPool();
-         extendReq.setCallbackId(callbackId);
+         extendReq.setPromptId(promptId);
          extendReq.setCount(count);
          extendReq.setIsNew(isNew);
 
@@ -1534,19 +1532,19 @@ namespace BridgeTestUtils {
 
          switch (fromBridge.which())
          {
-            case Codec::Bridge::FromBridge::NOTIFICATION:
+            case Codec::Bridge::FromBridge::PROMPT:
             {
-               auto notif = fromBridge.getNotification();
-               switch (notif.which())
+               auto prompt = fromBridge.getPrompt();
+               switch (prompt.which())
                {
-                  case Codec::Bridge::Notification::WALLET_PROGRESS:
+                  case Codec::Bridge::Prompt::WALLET_PROGRESS:
                   {
-                     auto wltNotif = notif.getWalletProgress();
-                     switch (wltNotif.which())
+                     auto wltProg = prompt.getWalletProgress();
+                     switch (wltProg.which())
                      {
-                        case Codec::Bridge::Notification::WalletProgress::EXTEND_CHAIN:
+                        case Codec::Bridge::Prompt::WalletProgress::EXTEND_CHAIN:
                         {
-                           auto extNotif = wltNotif.getExtendChain();
+                           auto extNotif = wltProg.getExtendChain();
                            if (extNotif.getTotal() != count) {
                               throw std::runtime_error("invalid total count");
                            }
@@ -1561,11 +1559,19 @@ namespace BridgeTestUtils {
                      break;
                   }
 
+                  default:
+                     throw std::runtime_error("invalid notif which");
+               }
+               break;
+            }
+
+            case Codec::Bridge::FromBridge::NOTIFICATION:
+            {
+               auto notif = fromBridge.getNotification();
+               switch (notif.which())
+               {
                   case Codec::Bridge::Notification::REFRESH:
                   {
-                     if (notif.getCallbackId() != "bdm_callback") {
-                        throw std::runtime_error("invalid callbackId for refresh");
-                     }
                      if (!refreshId.empty()) {
                         throw std::runtime_error("refresh already seen!");
                      }
@@ -1615,35 +1621,47 @@ namespace BridgeTestUtils {
             rawPrompt->data.getSize() / sizeof(capnp::word));
          capnp::FlatArrayMessageReader reader(words);
          auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-         if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
-            throw std::runtime_error("expected notif");
-         }
-
-         auto notif = fromBridge.getNotification();
-         std::string capnCbId = notif.getCallbackId();
-         if (capnCbId == "progress") {
-            continue;
-         } else if (capnCbId != "bdm_callback") {
-            if (capnCbId != callbackId) {
-               throw std::runtime_error(std::format(
-                  "unexpected cleanup callbackId: {} vs {}",
-                  capnCbId, callbackId));
-            }
-            if (notif.which() != Codec::Bridge::Notification::CLEANUP) {
-               throw std::runtime_error("expected cleanup notif");
-            }
-            cleanupNotifCount += 3;
-         } else {
-            if (notif.which() != Codec::Bridge::Notification::REFRESH) {
-               throw std::runtime_error("expected refresh notif");
+         switch (fromBridge.which()) {
+            case Codec::Bridge::FromBridge::PROMPT:
+            {
+               auto prompt = fromBridge.getPrompt();
+               if (promptId != prompt.getId()) {
+                  throw std::runtime_error("promptId mismatch");
+               }
+               if (prompt.which() != Codec::Bridge::Prompt::CLEANUP) {
+                  throw std::runtime_error("expected cleanup prompt");
+               }
+               cleanupNotifCount += 3;
+               break;
             }
 
-            auto refreshIds = notif.getRefresh();
-            if (refreshIds.size() != 1) {
-               throw std::runtime_error("unexpected refreshId");
+            case Codec::Bridge::FromBridge::NOTIFICATION:
+            {
+               auto notif = fromBridge.getNotification();
+               switch (notif.which()) {
+                  case Codec::Bridge::Notification::REFRESH:
+                  {
+                     auto refreshIds = notif.getRefresh();
+                     if (refreshIds.size() != 1) {
+                        throw std::runtime_error("unexpected refreshId");
+                     }
+                     refreshId = refreshIds[0];
+                     cleanupNotifCount += 11;
+                     break;
+                  }
+
+                  case Codec::Bridge::Notification::SCAN_PROGRESS:
+                     continue;
+
+                  default:
+                     throw std::runtime_error(std::format(
+                        "expected refresh notif, got {}", (int)notif.which()));
+               }
+               break;
             }
-            refreshId = refreshIds[0];
-            cleanupNotifCount += 11;
+
+            default:
+               throw std::runtime_error("unexpected bridge payload");
          }
       }
 
@@ -1804,7 +1822,7 @@ namespace BridgeTestUtils {
       const std::string& expectedPubkey)
    {
       uint64_t refId = rand();
-      auto callbackId = Cryptography::PRNG::fortuna.generateRandom(4).toHexStr();
+      auto promptId = Cryptography::PRNG::fortuna.generateRandom(4).toHexStr();
       {
          capnp::MallocMessageBuilder message;
          auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
@@ -1813,7 +1831,7 @@ namespace BridgeTestUtils {
          auto connectReq = request.initConnectToIp();
          connectReq.setIp(ip);
          connectReq.setPort(port);
-         connectReq.setCallbackId(callbackId);
+         connectReq.setPromptId(promptId);
 
          auto rawReq = serializeCapnp(message);
          pushRequest(bridge, rawReq);
@@ -1827,25 +1845,25 @@ namespace BridgeTestUtils {
       capnp::FlatArrayMessageReader reader(words);
 
       auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-      if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
+      if (fromBridge.which() != Codec::Bridge::FromBridge::PROMPT) {
          return false;
       }
 
-      auto notif = fromBridge.getNotification();
-      if (notif.which() != Codec::Bridge::Notification::PRESENT_PUBKEY) {
+      auto prompt = fromBridge.getPrompt();
+      if (prompt.which() != Codec::Bridge::Prompt::PRESENT_PUBKEY) {
          return false;
       }
-      std::string presentedKey(notif.getPresentPubkey());
+      std::string presentedKey(prompt.getPresentPubkey());
 
       //reply to request
       {
          capnp::MallocMessageBuilder message;
          auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
          toBridge.setReferenceId(refId);
-         auto notifReply = toBridge.initNotification();
-         notifReply.setCounter(notif.getCounter());
-         notifReply.setPresentPubkey();
-         notifReply.setSuccess(presentedKey == expectedPubkey);
+         auto promptReply = toBridge.initPrompt();
+         promptReply.setReplyId(prompt.getReplyId());
+         promptReply.setPresentPubkey();
+         promptReply.setSuccess(presentedKey == expectedPubkey);
 
          auto rawReq = serializeCapnp(message);
          pushRequest(bridge, rawReq);
@@ -1907,13 +1925,13 @@ namespace BridgeTestUtils {
 
       //run automation context
       refId = rand();
-      auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+      auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
       {
          capnp::MallocMessageBuilder message;
          auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
          toBridge.setReferenceId(refId);
          auto request = toBridge.initSetup();
-         request.setRunAutomationContext(callbackId);
+         request.setRunAutomationContext(promptId);
          auto rawReq = serializeCapnp(message);
          pushRequest(bridge, rawReq);
       }
@@ -1938,24 +1956,27 @@ namespace BridgeTestUtils {
                      gotSetupDone = true;
                      break;
 
-                  case Codec::Bridge::Notification::CLEANUP:
-                  {
-                     gotCleanup = true;
-                     break;
-                  }
-
                   case Codec::Bridge::Notification::DISCONNECTED:
                      return -4;
 
-                  case Codec::Bridge::Notification::AUTOMATION:
+                  default:
+                     throw std::runtime_error("unexpected connection notif which");
+               }
+               break;
+            }
+
+            case Codec::Bridge::FromBridge::PROMPT:
+            {
+               auto prompt = fromBridge.getPrompt();
+               switch (prompt.which()) {
+                  case Codec::Bridge::Prompt::AUTOMATION:
                   {
-                     if (notif.getCallbackId() != callbackId) {
+                     if (prompt.getId() != promptId) {
                         return -5;
                      }
-                     auto automationStep = notif.getAutomation();
-                     switch (automationStep.which())
+                     switch (prompt.getAutomation())
                      {
-                        case Codec::Bridge::Notification::AutomationContextNotif::SPAWN_DB:
+                        case Codec::Bridge::Prompt::AutomationProgress::SPAWN_DB:
                         {
                            if (step != 0) {
                               return -6;
@@ -1964,7 +1985,7 @@ namespace BridgeTestUtils {
                            break;
                         }
 
-                        case Codec::Bridge::Notification::AutomationContextNotif::CONNECT_TO_DB:
+                        case Codec::Bridge::Prompt::AutomationProgress::CONNECT_TO_DB:
                         {
                            if (step != 1) {
                               return -7;
@@ -1973,7 +1994,7 @@ namespace BridgeTestUtils {
                            break;
                         }
 
-                        case Codec::Bridge::Notification::AutomationContextNotif::DONE:
+                        case Codec::Bridge::Prompt::AutomationProgress::DONE:
                         {
                            if (step != 2) {
                               return -8;
@@ -1988,8 +2009,14 @@ namespace BridgeTestUtils {
                      break;
                   }
 
+                  case Codec::Bridge::Prompt::CLEANUP:
+                  {
+                     gotCleanup = true;
+                     break;
+                  }
+
                   default:
-                     throw std::runtime_error("unexpected connection notif which");
+                     throw std::runtime_error("unexpected connection prompt which");
                }
                break;
             }
@@ -3281,7 +3308,7 @@ namespace BridgeTestUtils {
       const std::string& walletId, const std::string& passphrase)
    {
       uint64_t refId = rand();
-      auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+      auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
@@ -3289,7 +3316,7 @@ namespace BridgeTestUtils {
       req.setId(signerId);
       auto signReq = req.initSignTx();
       signReq.setWalletId(walletId);
-      signReq.setCallbackId(callbackId);
+      signReq.setPromptId(promptId);
       auto rawReq = serializeCapnp(message);
       pushRequest(bridge, rawReq);
 
@@ -3307,32 +3334,31 @@ namespace BridgeTestUtils {
          auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
          switch (fromBridge.which())
          {
-            case Codec::Bridge::FromBridge::NOTIFICATION:
+            case Codec::Bridge::FromBridge::PROMPT:
             {
-               auto notif = fromBridge.getNotification();
-               if (notif.getCallbackId() != callbackId) {
+               auto prompt = fromBridge.getPrompt();
+               if (prompt.getId() != promptId) {
                   return false;
                }
 
-               switch (notif.which())
+               switch (prompt.which())
                {
-                  case Codec::Bridge::Notification::UNLOCK_REQUEST:
+                  case Codec::Bridge::Prompt::UNLOCK_REQUEST:
                   {
                      //reply with passphrase
-                     auto counter = notif.getCounter();
                      capnp::MallocMessageBuilder passReply;
                      auto toBridge = passReply.initRoot<Codec::Bridge::ToBridge>();
-                     auto notifReply = toBridge.initNotification();
-                     notifReply.setSuccess(true);
-                     notifReply.setCounter(counter);
-                     notifReply.setUnlockRequest(passphrase);
+                     auto promptReply = toBridge.initPrompt();
+                     promptReply.setSuccess(true);
+                     promptReply.setReplyId(prompt.getReplyId());
+                     promptReply.setUnlockRequest(passphrase);
 
                      auto rawRep = serializeCapnp(passReply);
                      pushRequest(bridge, rawRep);
                      break;
                   }
 
-                  case Codec::Bridge::Notification::CLEANUP:
+                  case Codec::Bridge::Prompt::CLEANUP:
                   {
                      hasCleanedUp = true;
                      break;
