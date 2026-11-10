@@ -469,6 +469,22 @@ protected:
       return waitOnReplyStatus(refId);
    }
 
+   std::pair<bool, std::string> selectUtxosStatus(
+      const std::string& csId, float feeByte)
+   {
+      capnp::MallocMessageBuilder message;
+      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+      uint64_t refId = rand();
+      toBridge.setReferenceId(refId);
+      auto request = toBridge.initCoinSelection();
+      request.setId(csId);
+      auto selectReq = request.initSelectUtxos();
+      selectReq.setFlags(0);
+      selectReq.setFeeByte(feeByte);
+      pushRequest(bridge_, serializeCapnp(message));
+      return waitOnReplyStatus(refId);
+   }
+
    ////////
    void SetUp() override
    {
@@ -4107,6 +4123,31 @@ TEST_F(BridgeChainDataTests, getUTXOs)
    ASSERT_EQ(utxo.getTxOutIndex(), 1);
    ASSERT_EQ(utxo.getAmount(), 5 * COIN);
    ASSERT_EQ(utxo.getTxHash(), TestChain::hash35);
+}
+
+TEST_F(BridgeChainDataTests, CoinSelection_SelectUtxosFails)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4" }, blk0dat_);
+   ASSERT_NO_FATAL_FAILURE(goOnlineAt(4));
+
+   auto csId = getNewCoinSelector(bridge_, walletId_BCDE_, accountId_BCDE_, 4);
+   ASSERT_FALSE(csId.empty());
+   auto addr = BtcUtils::scrAddrToSegWitAddress(
+      READHEX("5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"));
+
+   //a spend the wallet covers
+   ASSERT_TRUE(setNewCsRecipient(bridge_, csId, 0, addr, COIN));
+   auto selectStatus = selectUtxosStatus(csId, 1.0f);
+   ASSERT_TRUE(selectStatus.first) << selectStatus.second;
+
+   /* test starts here */
+
+   //more than the wallet has: the selection fails and the reply says so
+   ASSERT_TRUE(setNewCsRecipient(bridge_, csId, 0, addr, 21000000 * COIN));
+   selectStatus = selectUtxosStatus(csId, 1.0f);
+   EXPECT_FALSE(selectStatus.first);
+   EXPECT_EQ(selectStatus.second, "Invalid spend value");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
