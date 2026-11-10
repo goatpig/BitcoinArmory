@@ -19,7 +19,7 @@ using namespace Armory;
 using namespace Armory::Bridge;
 using namespace std::chrono_literals;
 
-uint32_t BridgePassphrasePrompt::referenceCounter_ = 1;
+uint32_t BridgePassphrasePrompt::replyIdCounter_ = 1;
 
 ////////////////////////////////////////////////////////////////////////////////
 ////
@@ -27,8 +27,8 @@ uint32_t BridgePassphrasePrompt::referenceCounter_ = 1;
 ////
 ////////////////////////////////////////////////////////////////////////////////
 BridgePassphrasePrompt::BridgePassphrasePrompt(const std::string& id,
-   std::function<void(ServerPushWrapper)> func) :
-   promptId_(id), writeFunc_(move(func))
+   std::function<void(BinaryData, PromptReplyWrapper)> func) :
+   promptId_(id), promptFunc_(move(func))
 {}
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -44,14 +44,14 @@ Seeds::PromptReply BridgePassphrasePrompt::processFeedRequest(
    //cycle the promise & future
    auto promPtr = std::make_shared<std::promise<Seeds::PromptReply>>();
    auto fut = promPtr->get_future();
-   auto refId = referenceCounter_++;
+   auto replyId = replyIdCounter_++;
 
    //create payload
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
    auto notif = fromBridge.initNotification();
    notif.setCallbackId(promptId_);
-   notif.setCounter(refId);
+   notif.setCounter(replyId);
 
    auto unlockRequest = notif.initUnlockRequest(ids.size());
    unsigned i=0;
@@ -77,9 +77,11 @@ Seeds::PromptReply BridgePassphrasePrompt::processFeedRequest(
       return true;
    };
 
-   //push over socket
-   ServerPushWrapper wrapper{ refId, replyHandler, std::move(serialized) };
-   writeFunc_(std::move(wrapper));
+   //prompt client
+   promptFunc_(
+      std::move(serialized),
+      PromptReplyWrapper{replyId, replyHandler}
+   );
 
    //wait on future
    try {
@@ -102,7 +104,7 @@ void BridgePassphrasePrompt::cleanup()
    auto flat = capnp::messageToFlatArray(message);
    auto bytes = flat.asBytes();
    BinaryData serialized(bytes.begin(), bytes.end());
-   writeFunc_(ServerPushWrapper{0, nullptr, std::move(serialized)});
+   promptFunc_(std::move(serialized), PromptReplyWrapper{0, nullptr});
 }
 
 ////////////////////////////////////////////////////////////////////////////////

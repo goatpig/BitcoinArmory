@@ -23,32 +23,32 @@ namespace Armory
 
    namespace Bridge
    {
-      using CallbackHandler = std::function<bool(const Seeds::PromptReply&)>;
+      using PromptId = std::string;
+      using PromptReplyHandler = std::function<bool(const Seeds::PromptReply&)>;
 
       //////////////////////////////////////////////////////////////////////////
-      struct ServerPushWrapper
+      struct PromptReplyWrapper
       {
-         const uint32_t referenceId;
-         CallbackHandler handler = nullptr;
-         BinaryData payload;
+         const uint32_t replyId;
+         PromptReplyHandler handler = nullptr;
       };
 
       //////////////////////////////////////////////////////////////////////////
       class BridgePassphrasePrompt
       {
-         static uint32_t referenceCounter_;
+         static uint32_t replyIdCounter_;
 
       private:
          const std::string promptId_;
-         std::function<void(ServerPushWrapper)> writeFunc_;
+         std::function<void(BinaryData, PromptReplyWrapper)> promptFunc_;
 
       private:
          Seeds::PromptReply processFeedRequest(
             const std::set<Armory::Wallets::EncryptionKeyId>&);
 
       public:
-         BridgePassphrasePrompt(const std::string&,
-            std::function<void(ServerPushWrapper)>);
+         BridgePassphrasePrompt(const PromptId&,
+            std::function<void(BinaryData, PromptReplyWrapper)>);
 
          Passphrase::UnlockFunc getLambda(void);
          void cleanup(void);

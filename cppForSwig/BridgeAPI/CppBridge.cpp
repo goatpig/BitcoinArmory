@@ -312,15 +312,15 @@ namespace
    }
 
    Wallets::Progress::Func getWalletProgressLbd(
-      CppBridge* bridgePtr, const CallbackId& callbackId)
+      CppBridge* bridgePtr, const PromptId& promptId)
    {
-      return [bridgePtr, callbackId](
+      return [bridgePtr, promptId](
          std::unique_ptr<Wallets::Progress::State> statePtr)
       {
          capnp::MallocMessageBuilder notifMessage;
          auto fromBridge = notifMessage.initRoot<FromBridge>();
          auto notif = fromBridge.initNotification();
-         notif.setCallbackId(callbackId);
+         notif.setCallbackId(promptId);
          auto prog = notif.initWalletProgress();
 
          switch (statePtr->type())
@@ -396,11 +396,11 @@ namespace
       bridgePtr->writeToClient(serialized);
    }
 
-   void sendCallbackCleanup(CppBridge* bridgePtr, const CallbackId& callbackId)
+   void sendPromptCleanup(CppBridge* bridgePtr, const PromptId& promptId)
    {
       capnp::MallocMessageBuilder message;
       auto notif = message.initRoot<FromBridge>().initNotification();
-      notif.setCallbackId(callbackId);
+      notif.setCallbackId(promptId);
       notif.setCleanup();
       auto serialized = serializeCapnp(message);
       bridgePtr->writeToClient(serialized);
@@ -437,19 +437,19 @@ namespace
    }
 
    std::function<std::unique_ptr<Passphrase::Params>(void)> getSetPassFunc(
-      CppBridge* bridgePtr, const CallbackId& callbackId, bool priv)
+      CppBridge* bridgePtr, const PromptId& promptId, bool priv)
    {
-      return [bridgePtr, callbackId, priv]()->std::unique_ptr<Passphrase::Params>
+      return [bridgePtr, promptId, priv]()->std::unique_ptr<Passphrase::Params>
       {
          auto counterBd = fortuna.generateRandom(4);
-         auto notifCounter = *(uint32_t*)counterBd.getPtr();
+         auto replyId = *(uint32_t*)counterBd.getPtr();
 
          //create set passphrase notif
          capnp::MallocMessageBuilder notifMessage;
          auto fromBridge = notifMessage.initRoot<FromBridge>();
          auto notif = fromBridge.initNotification();
-         notif.setCallbackId(callbackId);
-         notif.setCounter(notifCounter);
+         notif.setCallbackId(promptId);
+         notif.setCounter(replyId);
          auto wltCrt = notif.initSetPassphrase();
          if (priv) {
             wltCrt.setPrivatePass();
@@ -468,8 +468,10 @@ namespace
          };
 
          //push prompt to caller
-         ServerPushWrapper wrapper{notifCounter, replyLbd, std::move(notifSerialized)};
-         bridgePtr->promptClient(wrapper);
+         bridgePtr->promptClient(
+            std::move(notifSerialized),
+            PromptReplyWrapper{replyId, replyLbd}
+         );
 
          //wait on reply
          auto reply = fut.get();
@@ -481,18 +483,18 @@ namespace
    }
 
    std::function<void(AutomationStep)> getAutomationNotifFunc(
-      CppBridge* bridgePtr, const CallbackId& callbackId)
+      CppBridge* bridgePtr, const PromptId& promptId)
    {
-      return [bridgePtr, callbackId](AutomationStep step)
+      return [bridgePtr, promptId](AutomationStep step)
       {
-         if (callbackId.empty()) {
+         if (promptId.empty()) {
             return;
          }
 
          capnp::MallocMessageBuilder message;
          auto fromBridge = message.initRoot<FromBridge>();
          auto notif = fromBridge.initNotification();
-         notif.setCallbackId(callbackId);
+         notif.setCallbackId(promptId);
 
          if (step == AutomationStep::Cleanup) {
             notif.setCleanup();
@@ -625,10 +627,10 @@ void CppBridge::writeToClient(BinaryData& payload) const
    sockPtr_->pushPayload(std::move(payloadPtr), nullptr);
 }
 
-void CppBridge::promptClient(ServerPushWrapper& wrapper)
+void CppBridge::promptClient(BinaryData payload, PromptReplyWrapper wrapper)
 {
    registerPromptReplyHandler(wrapper);
-   writeToClient(wrapper.payload);
+   writeToClient(payload);
 }
 
 ////////
@@ -846,13 +848,13 @@ BinaryData CppBridge::listWallets(MessageId msgId)
 
 ////////
 void CppBridge::unlockControlHeader(const std::string& path,
-   const CallbackId& callbackId, MessageId refId)
+   const PromptId& promptId, MessageId refId)
 {
-   auto thrLbd = [this, callbackId, path, refId](void)->void
+   auto thrLbd = [this, promptId, path, refId](void)->void
    {
       auto passPromptObj = std::make_shared<BridgePassphrasePrompt>(
-         callbackId, [this](ServerPushWrapper wrapper) {
-            this->promptClient(wrapper);
+         promptId, [this](BinaryData payload, PromptReplyWrapper wrapper) {
+            this->promptClient(std::move(payload), std::move(wrapper));
       });
       auto lbd = passPromptObj->getLambda();
 
@@ -896,10 +898,10 @@ bool CppBridge::stageWallet(const Wallets::WalletId& walletId, bool stage)
 
 ////////////////////////////////////////////////////////////////////////////////
 void CppBridge::migrateWallet(const std::filesystem::path& wltPath,
-   const CallbackId& callbackId, MessageId refId)
+   const PromptId& promptId, MessageId refId)
 {
    auto migrateLbd = [this] (const std::filesystem::path wltPath,
-      const std::string callbackId, MessageId refId)
+      const PromptId promptId, MessageId refId)
    {
       //prepare reply
       capnp::MallocMessageBuilder message;
@@ -908,21 +910,21 @@ void CppBridge::migrateWallet(const std::filesystem::path& wltPath,
       reply.setReferenceId(refId);
 
       //set passphrase functions
-      auto setCtrlPassFunc = getSetPassFunc(this, callbackId, false);
-      auto setPrivPassFunc = getSetPassFunc(this, callbackId, true);
+      auto setCtrlPassFunc = getSetPassFunc(this, promptId, false);
+      auto setPrivPassFunc = getSetPassFunc(this, promptId, true);
 
       //creation params for the wallet receiving the migration
       Wallets::IO::CreateWalletParams params{
          wltManager_->getWalletsDir(),
          Passphrase::SetNew{setPrivPassFunc},
          Passphrase::SetNew{setCtrlPassFunc},
-         getWalletProgressLbd(this, callbackId), 0
+         getWalletProgressLbd(this, promptId), 0
       };
 
       //function to unlock private keys in the origin wallet
       auto passPromptObj = std::make_shared<BridgePassphrasePrompt>(
-         callbackId, [this](ServerPushWrapper wrapper) {
-            this->promptClient(wrapper);
+         promptId, [this](BinaryData payload, PromptReplyWrapper wrapper) {
+            this->promptClient(std::move(payload), std::move(wrapper));
       });
       auto unlockLbd = passPromptObj->getLambda();
 
@@ -938,22 +940,22 @@ void CppBridge::migrateWallet(const std::filesystem::path& wltPath,
          reply.setError(e.what());
       }
 
-      sendCallbackCleanup(this, callbackId);
+      sendPromptCleanup(this, promptId);
       auto response = serializeCapnp(message);
       this->writeToClient(response);
    };
 
-   std::thread thr(migrateLbd, wltPath, callbackId, refId);
+   std::thread thr(migrateLbd, wltPath, promptId, refId);
    if (thr.joinable()) {
       thr.detach();
    }
 }
 
 void CppBridge::forkWatchingOnly(const Wallets::WalletId& wltId,
-   const CallbackId& callbackId, MessageId refId)
+   const PromptId& promptId, MessageId refId)
 {
    auto forkLbd = [this](const Wallets::WalletId wltId,
-      const CallbackId callbackId, MessageId refId)
+      const PromptId promptId, MessageId refId)
    {
       //prepare reply
       capnp::MallocMessageBuilder message;
@@ -963,7 +965,7 @@ void CppBridge::forkWatchingOnly(const Wallets::WalletId& wltId,
 
       auto wltCont = wltManager_->getContainer(wltId);
       try {
-         auto ctrlPassFunc = getSetPassFunc(this, callbackId, false);
+         auto ctrlPassFunc = getSetPassFunc(this, promptId, false);
          auto woPath = wltCont->forkWatchingOnly(
             Passphrase::SetNew{ctrlPassFunc});
 
@@ -975,12 +977,12 @@ void CppBridge::forkWatchingOnly(const Wallets::WalletId& wltId,
          reply.setError(e.what());
       }
 
-      sendCallbackCleanup(this, callbackId);
+      sendPromptCleanup(this, promptId);
       auto response = serializeCapnp(message);
       this->writeToClient(response);
    };
 
-   std::thread thr(forkLbd, wltId, callbackId, refId);
+   std::thread thr(forkLbd, wltId, promptId, refId);
    if (thr.joinable()) {
       thr.detach();
    }
@@ -1187,9 +1189,9 @@ namespace {
 
 void CppBridge::exportKeys(const Wallets::WalletId& wltId,
    const Wallets::AddressAccountId& accId,
-   bool includePrivateKeys, const CallbackId& callbackId, MessageId msgId)
+   bool includePrivateKeys, const PromptId& promptId, MessageId msgId)
 {
-   auto func = [this, wltId, accId, includePrivateKeys, callbackId, msgId]()
+   auto func = [this, wltId, accId, includePrivateKeys, promptId, msgId]()
    {
       std::vector<ExportedKeyData> exportedKeys;
       BinaryData serialized;
@@ -1223,8 +1225,8 @@ void CppBridge::exportKeys(const Wallets::WalletId& wltId,
             }
 
             passPromptObj = std::make_shared<BridgePassphrasePrompt>(
-               callbackId, [this](ServerPushWrapper wrapper){
-                  this->promptClient(wrapper);
+               promptId, [this](BinaryData payload, PromptReplyWrapper wrapper){
+                  this->promptClient(std::move(payload), std::move(wrapper));
                });
             auto lbd = passPromptObj->getLambda();
             ExportKeysCleanup cleanupGuard{passPromptObj};
@@ -1317,7 +1319,7 @@ bool CppBridge::deleteWallet(const Wallets::WalletId& wltId)
 
 ////////////////////////////////////////////////////////////////////////////////
 // peers db stuff
-void CppBridge::loadPeersDb(const CallbackId& callbackId, MessageId refId)
+void CppBridge::loadPeersDb(const PromptId& promptId, MessageId refId)
 {
    /*
    * Should call this method from a dedicated thread
@@ -1333,8 +1335,8 @@ void CppBridge::loadPeersDb(const CallbackId& callbackId, MessageId refId)
 
    try {
       auto passPromptObj = std::make_shared<BridgePassphrasePrompt>(
-         callbackId, [this](ServerPushWrapper wrapper) {
-            this->promptClient(wrapper);
+         promptId, [this](BinaryData payload, PromptReplyWrapper wrapper) {
+            this->promptClient(std::move(payload), std::move(wrapper));
       });
       peersDb_ = std::make_shared<NetworkPeers::ClientStore>(
          Wallets::IO::ReadOnlyFileParams{
@@ -1348,7 +1350,7 @@ void CppBridge::loadPeersDb(const CallbackId& callbackId, MessageId refId)
          short term solution: auto generate the auth peer db if its missing
          long term soution: implement UI for user to boostrap/encrypt the store
       ***/
-      auto setCtrlPassFunc = getSetPassFunc(this, callbackId, false);
+      auto setCtrlPassFunc = getSetPassFunc(this, promptId, false);
       auto wlt = NetworkPeers::PeerStore::bootstrapWallet(
          Wallets::IO::CreateFileParams{
             path_ / CLIENT_AUTH_PEER_FILENAME,
@@ -1557,11 +1559,11 @@ void CppBridge::setPeerLabel(
 ////////////////////////////////////////////////////////////////////////////////
 // db connection routines
 void CppBridge::connectToIp(const std::string& ip, Network::port_t port,
-   const CallbackId& callbackId, MessageId refId)
+   const PromptId& promptId, MessageId refId)
 {
    notifQueue_->push_back(
       std::make_unique<Notifications::Push::Command_ConnectToIp>(
-         ip, port, callbackId, refId));
+         ip, port, promptId, refId));
 }
 
 void CppBridge::connectToIp(
@@ -1598,19 +1600,19 @@ void CppBridge::connectToIp(
       return;
    }
 
-   auto presentServerKeyCallback = [callbackId=command.callbackId, this]
+   auto presentServerKeyCallback = [promptId=command.callbackId, this]
    (const BinaryData& key)->bool
    {
       auto counterBd = fortuna.generateRandom(4);
-      auto notifCounter = *(uint32_t*)counterBd.getPtr();
+      auto replyId = *(uint32_t*)counterBd.getPtr();
       NetworkPeers::PeerKey peerKey{key, NetworkPeers::PeerType::ServerOneWay};
 
       //create present pubkey notif
       capnp::MallocMessageBuilder notifMessage;
       auto fromBridge = notifMessage.initRoot<FromBridge>();
       auto notif = fromBridge.initNotification();
-      notif.setCallbackId(callbackId);
-      notif.setCounter(notifCounter);
+      notif.setCallbackId(promptId);
+      notif.setCounter(replyId);
       notif.setPresentPubkey(peerKey.toHumanReadable());
       auto notifSerialized = serializeCapnp(notifMessage);
 
@@ -1624,10 +1626,10 @@ void CppBridge::connectToIp(
       };
 
       //push prompt to caller
-      ServerPushWrapper wrapper{
-         notifCounter, replyLbd,
-         std::move(notifSerialized)};
-      promptClient(wrapper);
+      promptClient(
+         std::move(notifSerialized),
+         PromptReplyWrapper{replyId, replyLbd}
+      );
 
       //wait on reply
       auto reply = fut.get();
@@ -1754,11 +1756,11 @@ void CppBridge::setAutomationContext(std::unique_ptr<AutomationContext> ctxPtr)
    automationContext_ = std::move(ctxPtr);
 }
 
-void CppBridge::runAutomationContext(CallbackId cbId, MessageId refId)
+void CppBridge::runAutomationContext(PromptId promptId, MessageId refId)
 {
    notifQueue_->push_back(
       std::make_unique<Notifications::Push::Command_RunAutomationContext>(
-         cbId, refId));
+         promptId, refId));
 }
 
 void CppBridge::runAutomationContext(
@@ -1833,16 +1835,16 @@ void CppBridge::runAutomationContext(
    this->writeToClient(response);
 }
 
-void CppBridge::cleanupAutomationContext(CallbackId cbId, MessageId refId)
+void CppBridge::cleanupAutomationContext(PromptId promptId, MessageId refId)
 {
-   auto threadBody = [this, refId, cbId]()
+   auto threadBody = [this, refId, promptId]()
    {
       capnp::MallocMessageBuilder message;
       auto fromBridge = message.initRoot<FromBridge>();
       auto reply = fromBridge.initReply();
       reply.setReferenceId(refId);
 
-      auto notifFunc = getAutomationNotifFunc(this, cbId);
+      auto notifFunc = getAutomationNotifFunc(this, promptId);
       try {
          if (automationContext_ != nullptr) {
             automationContext_->cleanup(notifFunc);
@@ -1889,9 +1891,9 @@ void CppBridge::registerWallet(const Wallets::WalletId& wltId,
 
 ////////////////////////////////////////////////////////////////////////////////
 void CppBridge::createBackupStringForWallet(const Wallets::WalletId& wltId,
-   bool isPriv, const CallbackId& callbackId, MessageId msgId)
+   bool isPriv, const PromptId& promptId, MessageId msgId)
 {
-   auto func = [this, wltId, isPriv, callbackId, msgId]()
+   auto func = [this, wltId, isPriv, promptId, msgId]()
    {
       std::unique_ptr<Seeds::WalletBackup> backupData;
       std::string error;
@@ -1903,8 +1905,8 @@ void CppBridge::createBackupStringForWallet(const Wallets::WalletId& wltId,
          if (isPriv) {
             //setup passphrase prompt
             auto passPromptObj = std::make_shared<BridgePassphrasePrompt>(
-               callbackId, [this](ServerPushWrapper wrapper){
-                  this->promptClient(wrapper);
+               promptId, [this](BinaryData payload, PromptReplyWrapper wrapper){
+                  this->promptClient(std::move(payload), std::move(wrapper));
                });
             auto lbd = passPromptObj->getLambda();
 
@@ -2033,17 +2035,17 @@ void CppBridge::createBackupStringForWallet(const Wallets::WalletId& wltId,
 
 ////////////////////////////////////////////////////////////////////////////////
 void CppBridge::changeWalletPassphrase(const Wallets::WalletId& wltId,
-   const CallbackId& callbackId, bool isPriv, MessageId msgId)
+   const PromptId& promptId, bool isPriv, MessageId msgId)
 {
-   auto func = [this, wltId, callbackId, isPriv, msgId]()
+   auto func = [this, wltId, promptId, isPriv, msgId]()
    {
       std::shared_ptr<BridgePassphrasePrompt> unlockObj;
       unlockObj = std::make_shared<BridgePassphrasePrompt>(
-         callbackId, [this](ServerPushWrapper wrapper){
-            this->promptClient(wrapper);
+         promptId, [this](BinaryData payload, PromptReplyWrapper wrapper){
+            this->promptClient(std::move(payload), std::move(wrapper));
          });
       Passphrase::SetNew setNewFunc = getSetPassFunc(
-         this, callbackId, isPriv);
+         this, promptId, isPriv);
 
       try {
          //grab wallet
@@ -2057,8 +2059,8 @@ void CppBridge::changeWalletPassphrase(const Wallets::WalletId& wltId,
          sendSuccess(this, msgId, false, e.what());
       }
 
-      //tell caller to cleanup the callback id
-      sendCallbackCleanup(this, callbackId);
+      //tell caller to cleanup the prompt id
+      sendPromptCleanup(this, promptId);
    };
 
    std::thread thr(func);
@@ -2071,7 +2073,7 @@ void CppBridge::changeWalletPassphrase(const Wallets::WalletId& wltId,
 void CppBridge::restoreWallet(
    const std::vector<std::string_view>& lines_sv,
    const std::string_view& spPass_sv,
-   const CallbackId& callbackId, MessageId refId)
+   const PromptId& promptId, MessageId refId)
 {
    //NOTE: easy16 only for now, will need a dedicated call for BIP39
 
@@ -2094,16 +2096,16 @@ void CppBridge::restoreWallet(
 
    //
    auto restoreLbd = [
-      this, refId, callbackId, isWO](
+      this, refId, promptId, isWO](
       std::unique_ptr<Seeds::WalletBackup> backup)
    {
-      auto createCallbackMessage = [callbackId](
+      auto createCallbackMessage = [promptId](
          const Seeds::RestorePrompt& prompt, uint32_t notifCounter)->BinaryData
       {
          capnp::MallocMessageBuilder message;
          auto promptCapnp = message.initRoot<FromBridge>();
          auto notifCapnp = promptCapnp.initNotification();
-         notifCapnp.setCallbackId(callbackId);
+         notifCapnp.setCallbackId(promptId);
          notifCapnp.setCounter(notifCounter);
 
          switch (prompt.promptType)
@@ -2194,8 +2196,8 @@ void CppBridge::restoreWallet(
       {
          if (prompt.needsReply()) {
             auto counterBd = fortuna.generateRandom(4);
-            auto notifCounter = *(uint32_t*)counterBd.getPtr();
-            auto message = createCallbackMessage(prompt, notifCounter);
+            auto replyId = *(uint32_t*)counterBd.getPtr();
+            auto message = createCallbackMessage(prompt, replyId);
 
             //setup reply lambda
             auto prom = std::make_shared<std::promise<Seeds::PromptReply>>();
@@ -2207,15 +2209,18 @@ void CppBridge::restoreWallet(
             };
 
             //push prompt to caller
-            ServerPushWrapper wrapper{notifCounter, replyLbd, std::move(message)};
-            promptClient(wrapper);
+            promptClient(
+               std::move(message),
+               PromptReplyWrapper{replyId, replyLbd}
+            );
 
             //wait on reply
             return fut.get();
          } else {
-            auto message = createCallbackMessage(prompt, 0);
-            ServerPushWrapper wrapper{0, nullptr, std::move(message)};
-            promptClient(wrapper);
+            promptClient(
+               createCallbackMessage(prompt, 0),
+               PromptReplyWrapper{0, nullptr}
+            );
             return {false, false, {}};
          }
       };
@@ -2249,7 +2254,7 @@ void CppBridge::restoreWallet(
          FileUtils::createDirectory(tempDir);
 
          //create wallet from backup
-         auto progFunc = getWalletProgressLbd(this, callbackId);
+         auto progFunc = getWalletProgressLbd(this, promptId);
          Wallets::IO::CreateWalletParams params{
             tempDir,
             Passphrase::SetNew{setNewPrivFunc},
@@ -2361,7 +2366,7 @@ void CppBridge::restoreWallet(
 
       if (success) {
          //cleanup & success
-         sendCallbackCleanup(this, callbackId);
+         sendPromptCleanup(this, promptId);
          sendSuccess(this, refId);
       } else if (fatal) {
          /*
@@ -2660,9 +2665,9 @@ BinaryData CppBridge::getAddrCombinedList(const Wallets::WalletId& wltId,
 ////////////////////////////////////////////////////////////////////////////////
 void CppBridge::extendAddressPool(const Wallets::WalletId& wltId,
    const Wallets::AddressAccountId& accId, unsigned count, bool isNew,
-   const CallbackId& callbackId, MessageId msgId)
+   const PromptId& promptId, MessageId msgId)
 {
-   auto extendChain = [this, msgId, callbackId](
+   auto extendChain = [this, msgId, promptId](
       const Wallets::WalletId& wltId,
       const Wallets::AddressAccountId accId,
       unsigned count, bool isNew)
@@ -2673,12 +2678,12 @@ void CppBridge::extendAddressPool(const Wallets::WalletId& wltId,
       auto now = std::chrono::system_clock::now();
 
       //count notif
-      auto notifyCount = [this, callbackId, tickTotal](int currentCount)
+      auto notifyCount = [this, promptId, tickTotal](int currentCount)
       {
          capnp::MallocMessageBuilder message;
          auto fromBridge = message.initRoot<FromBridge>();
          auto notif = fromBridge.initNotification();
-         notif.setCallbackId(callbackId);
+         notif.setCallbackId(promptId);
 
          auto progressNotif = notif.initWalletProgress();
          auto countNotif = progressNotif.initExtendChain();
@@ -2724,7 +2729,7 @@ void CppBridge::extendAddressPool(const Wallets::WalletId& wltId,
       this->writeToClient(replySerialized);
 
       //cleanup
-      sendCallbackCleanup(this, callbackId);
+      sendPromptCleanup(this, promptId);
    };
 
    //run chain extention in another thread
@@ -2737,21 +2742,21 @@ void CppBridge::extendAddressPool(const Wallets::WalletId& wltId,
 ////////////////////////////////////////////////////////////////////////////////
 void CppBridge::createWallet(Seeds::SeedType sType,
    SecureBinaryData extraEntropy, Wallets::IO::CreateWalletParams params,
-   const CallbackId& callbackId, MessageId refId)
+   const PromptId& promptId, MessageId refId)
 {
-   auto setCtrlPassFunc = getSetPassFunc(this, callbackId, false);
-   auto setPrivPassFunc = getSetPassFunc(this, callbackId, true);
+   auto setCtrlPassFunc = getSetPassFunc(this, promptId, false);
+   auto setPrivPassFunc = getSetPassFunc(this, promptId, true);
 
    auto paramsCopy = std::make_unique<Wallets::IO::CreateWalletParams>(
       params.folder,
       Passphrase::SetNew{setPrivPassFunc},
       Passphrase::SetNew(setCtrlPassFunc),
-      getWalletProgressLbd(this, callbackId),
+      getWalletProgressLbd(this, promptId),
       params.lookup, params.label, params.description
    );
 
    //this is a long process (several seconds), run in its own thread
-   auto createWltFunc = [this, sType, callbackId,
+   auto createWltFunc = [this, sType, promptId,
       extraEntropy=std::move(extraEntropy),
       refId](std::unique_ptr<Wallets::IO::CreateWalletParams> paramPtr) {
       //prepare reply
@@ -2774,7 +2779,7 @@ void CppBridge::createWallet(Seeds::SeedType sType,
       }
 
       //callback cleanup
-      sendCallbackCleanup(this, callbackId);
+      sendPromptCleanup(this, promptId);
 
       //reply to caller
       auto replySerialized = serializeCapnp(replyMessage);
@@ -3295,8 +3300,8 @@ BinaryData CppBridge::initNewSigner(MessageId msgId)
    signerMap_.emplace(id, std::make_shared<CppBridgeSignerStruct>(
       [this](const Wallets::WalletId& wltId)->auto {
          return this->getWalletPtr(wltId); },
-      [this](ServerPushWrapper wrapper) {
-         promptClient(wrapper);
+      [this](BinaryData payload, PromptReplyWrapper wrapper) {
+         promptClient(std::move(payload), std::move(wrapper));
       }
    ));
 
@@ -3401,9 +3406,9 @@ void CppBridge::getFeeSchedule(const std::string& strat, MessageId msgId) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void CppBridge::registerPromptReplyHandler(ServerPushWrapper& wrapper)
+void CppBridge::registerPromptReplyHandler(PromptReplyWrapper& wrapper)
 {
-   if (wrapper.referenceId == 0 || wrapper.handler == nullptr) {
+   if (wrapper.replyId == 0 || wrapper.handler == nullptr) {
       return;
    }
 
@@ -3416,14 +3421,14 @@ void CppBridge::registerPromptReplyHandler(ServerPushWrapper& wrapper)
    }
 
    auto result = promptReplyHandlers_.emplace(
-      wrapper.referenceId, std::move(wrapper.handler));
+      wrapper.replyId, std::move(wrapper.handler));
    if (!result.second) {
       throw std::runtime_error("handler collision");
    }
 }
 
 ////
-CallbackHandler CppBridge::getPromptReplyHandler(uint32_t id)
+PromptReplyHandler CppBridge::getPromptReplyHandler(uint32_t id)
 {
    std::unique_lock<std::mutex> lock(promptReplyHandlersMu_);
    auto handlerIter = promptReplyHandlers_.find(id);
@@ -3529,27 +3534,27 @@ bool CppBridge::doesWalletHaveImports(const Wallets::WalletId& walletId) const
 ////////////////////////////////////////////////////////////////////////////////
 CppBridgeSignerStruct::CppBridgeSignerStruct(
    std::function<WalletPtr(const Wallets::WalletId&)> getWalletFunc,
-   std::function<void(ServerPushWrapper)> writeFunc) :
-   getWalletFunc_(getWalletFunc), writeFunc_(writeFunc)
+   std::function<void(BinaryData, PromptReplyWrapper)> promptFunc) :
+   getWalletFunc_(getWalletFunc), promptFunc_(promptFunc)
 {
    signer = std::make_unique<Signing::Signer>();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 void CppBridgeSignerStruct::signTx(const Wallets::WalletId& wltId,
-   const CallbackId& callbackId, MessageId referenceId)
+   const PromptId& promptId, MessageId referenceId)
 {
    //grab wallet
    auto wltPtr = getWalletFunc_(wltId);
 
    //run signature process in its own thread, as it's an async process
-   auto signLbd = [this, wltPtr, callbackId, referenceId](void)->void
+   auto signLbd = [this, wltPtr, promptId, referenceId](void)->void
    {
       bool success = true;
 
       //create passphrase lambda
       auto passPromptObj = std::make_shared<BridgePassphrasePrompt>(
-         callbackId, writeFunc_);
+         promptId, promptFunc_);
       auto passLbd = passPromptObj->getLambda();
 
       try {
@@ -3582,8 +3587,10 @@ void CppBridgeSignerStruct::signTx(const Wallets::WalletId& wltId,
       reply.setSuccess(success);
       reply.setReferenceId(referenceId);
 
-      ServerPushWrapper wrapper{ 0, nullptr, serializeCapnp(message) };
-      writeFunc_(std::move(wrapper));
+      promptFunc_(
+         serializeCapnp(message),
+         PromptReplyWrapper{0, nullptr}
+      );
 
       //wind down passphrase prompt
       passPromptObj->cleanup();

@@ -80,14 +80,15 @@ namespace Armory
             struct Command_RunAutomationContext;
          }
       }
-      struct ServerPushWrapper;
+      struct PromptReplyWrapper;
       struct WritePayload_Bridge;
       class WalletManager;
       class AutomationContext;
 
       ////
       using MessageId = uint64_t;
-      using CallbackId = std::string;
+      using PromptId = std::string;
+      using PromptReplyHandler = std::function<bool(const Seeds::PromptReply&)>;
 
       //////////////////////////////////////////////////////////////////////////
       using WalletPtr = std::shared_ptr<Armory::Wallets::AssetWallet>;
@@ -95,23 +96,21 @@ namespace Armory
       {
       private:
          const std::function<WalletPtr(const Wallets::WalletId&)> getWalletFunc_;
-         const std::function<void(ServerPushWrapper)> writeFunc_;
+         const std::function<void(BinaryData, PromptReplyWrapper)> promptFunc_;
 
       public:
          std::unique_ptr<Signing::Signer> signer;
 
       public:
          CppBridgeSignerStruct(std::function<WalletPtr(const Wallets::WalletId&)>,
-            std::function<void(ServerPushWrapper)>);
+            std::function<void(BinaryData, PromptReplyWrapper)>);
 
-         void signTx(const Wallets::WalletId&, const CallbackId&, MessageId);
+         void signTx(const Wallets::WalletId&, const PromptId&, MessageId);
          bool resolve(const Wallets::WalletId&);
          BinaryData getSignedStateForInput(unsigned, MessageId);
       };
 
       //////////////////////////////////////////////////////////////////////////
-      using PromptReplyHandler = std::function<bool(const Seeds::PromptReply&)>;
-
       class CppBridge
       {
       private:
@@ -150,18 +149,18 @@ namespace Armory
          void connectToPeer(const Notifications::Push::Command_ConnectToPeer&);
          void runAutomationContext(
             const Notifications::Push::Command_RunAutomationContext&);
-         void registerPromptReplyHandler(ServerPushWrapper&);
+         void registerPromptReplyHandler(PromptReplyWrapper&);
 
       public:
          std::shared_ptr<AsyncClient::BlockDataViewer> bdvPtr(void) const;
 
          //wallet manager init methods
          BinaryData listWallets(MessageId);
-         void unlockControlHeader(const std::string&, const CallbackId&,
+         void unlockControlHeader(const std::string&, const PromptId&,
             MessageId);
          bool stageWallet(const Wallets::WalletId&, bool);
          void migrateWallet(const std::filesystem::path&,
-            const CallbackId&, MessageId);
+            const PromptId&, MessageId);
          BinaryData loadWallets(MessageId);
 
          //wallets
@@ -174,18 +173,18 @@ namespace Armory
 
          //binary automation
          void setAutomationContext(std::unique_ptr<AutomationContext>);
-         void runAutomationContext(CallbackId, MessageId);
-         void cleanupAutomationContext(CallbackId, MessageId);
+         void runAutomationContext(PromptId, MessageId);
+         void cleanupAutomationContext(PromptId, MessageId);
 
          //db setup
          void connectToIp(const std::string&, uint16_t,
-            const CallbackId&, MessageId);
+            const PromptId&, MessageId);
          void connectToPeer(const std::string&, MessageId);
          void beginDbSession(void);
          bool isDbRunning(void);
 
          //peers db
-         void loadPeersDb(const CallbackId&, MessageId);
+         void loadPeersDb(const PromptId&, MessageId);
          void listPeers(MessageId);
          void addPeer(const std::string&,
             std::vector<std::string>&, const std::string&, MessageId);
@@ -207,7 +206,7 @@ namespace Armory
          //create/generate wallet & addresses
          void extendAddressPool(const Wallets::WalletId&,
             const Wallets::AddressAccountId&, unsigned, bool,
-            const CallbackId&, MessageId);
+            const PromptId&, MessageId);
          void getAddress(const Wallets::WalletId&,
             const Wallets::AddressAccountId&, uint32_t,
             uint32_t, MessageId);
@@ -215,22 +214,22 @@ namespace Armory
             Seeds::SeedType,
             SecureBinaryData, //extra entropy
             Wallets::IO::CreateWalletParams,
-            const CallbackId&,
+            const PromptId&,
             MessageId);
          void createBackupStringForWallet(const Wallets::WalletId&,
-            bool, const CallbackId&, MessageId);
+            bool, const PromptId&, MessageId);
          void changeWalletPassphrase(const Wallets::WalletId&,
-            const CallbackId&, bool, MessageId);
+            const PromptId&, bool, MessageId);
          void restoreWallet(
             const std::vector<std::string_view>&,
             const std::string_view&,
-            const CallbackId&, MessageId);
+            const PromptId&, MessageId);
          void importWallet(const std::filesystem::path&, MessageId);
          void forkWatchingOnly(const Wallets::WalletId&,
-            const CallbackId&, MessageId);
+            const PromptId&, MessageId);
          void exportKeys(const Wallets::WalletId&,
             const Wallets::AddressAccountId&, bool,
-            const CallbackId&, MessageId);
+            const PromptId&, MessageId);
 
          //ledgers
          const std::string& getLedgerDelegateId(void);
@@ -293,7 +292,7 @@ namespace Armory
          void getFeeSchedule(const std::string&, MessageId) const;
 
          //prompt helpers
-         void promptClient(ServerPushWrapper&);
+         void promptClient(BinaryData, PromptReplyWrapper);
          PromptReplyHandler getPromptReplyHandler(uint32_t);
 
          //sanity checks
