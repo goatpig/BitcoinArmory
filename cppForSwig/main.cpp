@@ -81,13 +81,13 @@ int main(int argc, char* argv[])
          LOGINFO << "no server peers store found, creating one...";
          auto passLbd = TerminalPassphrasePrompt::getLambda(
             "new server peers store");
-         auto passWrapper = [&passLbd]()->std::unique_ptr<Passphrase::Params>
+         auto passWrapper = [&passLbd]()
          {
             auto result = passLbd({});
             if (!result.success) {
                throw std::runtime_error("peers store init was rejected");
             }
-            return std::make_unique<Passphrase::Params>(
+            return std::make_unique<Passphrase::PassAndParams>(
                250ms, 0, std::move(result.passphrase));
          };
          NetworkPeers::PeerStore::bootstrapWallet(

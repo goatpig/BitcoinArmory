@@ -42,7 +42,7 @@ protected:
    bool unlockWallet(const std::string& path, const std::string& passphrase)
    {
       uint64_t refId = rand();
-      auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+      auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
       //request unlock
       {
@@ -52,7 +52,7 @@ protected:
          auto request = toBridge.initWalletManager();
          auto unlockReq = request.initUnlockControlHeader();
 
-         unlockReq.setCallbackId(callbackId);
+         unlockReq.setPromptId(promptId);
          unlockReq.setWalletPath(path);
 
          auto rawReq = serializeCapnp(message);
@@ -66,27 +66,26 @@ protected:
          rawPrompt->data.getSize() / sizeof(capnp::word));
       capnp::FlatArrayMessageReader reader(words);
       auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-      if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
+      if (fromBridge.which() != Codec::Bridge::FromBridge::PROMPT) {
          return false;
       }
 
-      auto notif = fromBridge.getNotification();
-      if (notif.getCallbackId() != callbackId) {
+      auto prompt = fromBridge.getPrompt();
+      if (prompt.getId() != promptId) {
          return false;
       }
-      if (notif.which() != Codec::Bridge::Notification::UNLOCK_REQUEST) {
+      if (prompt.which() != Codec::Bridge::Prompt::UNLOCK_REQUEST) {
          return false;
       }
-      auto counter = notif.getCounter();
 
       //push passphrase
       {
          capnp::MallocMessageBuilder message;
          auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
-         auto notifReply = toBridge.initNotification();
-         notifReply.setSuccess(true);
-         notifReply.setCounter(counter);
-         notifReply.setUnlockRequest(passphrase);
+         auto promptReply = toBridge.initPrompt();
+         promptReply.setSuccess(true);
+         promptReply.setReplyId(prompt.getReplyId());
+         promptReply.setUnlockRequest(passphrase);
 
          auto rawReq = serializeCapnp(message);
          pushRequest(bridge_, rawReq);
@@ -121,15 +120,15 @@ protected:
             rawReply->data.getSize() / sizeof(capnp::word));
          capnp::FlatArrayMessageReader reader(words);
          auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-         if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
+         if (fromBridge.which() != Codec::Bridge::FromBridge::PROMPT) {
             return false;
          }
    
-         auto notif = fromBridge.getNotification();
-         if (notif.getCallbackId() != callbackId) {
+         auto prompt = fromBridge.getPrompt();
+         if (prompt.getId() != promptId) {
             return false;
          }
-         if (notif.which() != Codec::Bridge::Notification::CLEANUP) {
+         if (prompt.which() != Codec::Bridge::Prompt::CLEANUP) {
             return false;
          }
       }
@@ -140,7 +139,7 @@ protected:
    int failToUnlockWallet(const std::string& path, unsigned count)
    {
       uint64_t refId = rand();
-      auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+      auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
       //request unlock
       {
@@ -150,7 +149,7 @@ protected:
          auto request = toBridge.initWalletManager();
          auto unlockReq = request.initUnlockControlHeader();
 
-         unlockReq.setCallbackId(callbackId);
+         unlockReq.setPromptId(promptId);
          unlockReq.setWalletPath(path);
 
          auto rawReq = serializeCapnp(message);
@@ -166,32 +165,31 @@ protected:
             rawPrompt->data.getSize() / sizeof(capnp::word));
          capnp::FlatArrayMessageReader reader(words);
          auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-         if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
+         if (fromBridge.which() != Codec::Bridge::FromBridge::PROMPT) {
             return -1;
          }
 
-         auto notif = fromBridge.getNotification();
-         if (notif.getCallbackId() != callbackId) {
+         auto prompt = fromBridge.getPrompt();
+         if (prompt.getId() != promptId) {
             return -2;
          }
-         if (notif.which() != Codec::Bridge::Notification::UNLOCK_REQUEST) {
+         if (prompt.which() != Codec::Bridge::Prompt::UNLOCK_REQUEST) {
             return -3;
          }
-         auto counter = notif.getCounter();
 
          //push passphrase
          {
             capnp::MallocMessageBuilder message;
             auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
-            auto notifReply = toBridge.initNotification();
-            notifReply.setCounter(counter);
+            auto promptReply = toBridge.initPrompt();
+            promptReply.setReplyId(prompt.getReplyId());
 
             if (attempts != count) {
-               notifReply.setSuccess(true);
+               promptReply.setSuccess(true);
                auto badPass = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
-               notifReply.setUnlockRequest(badPass);
+               promptReply.setUnlockRequest(badPass);
             } else {
-               notifReply.setSuccess(false);
+               promptReply.setSuccess(false);
             }
 
             auto rawReq = serializeCapnp(message);
@@ -234,15 +232,15 @@ protected:
             rawReply->data.getSize() / sizeof(capnp::word));
          capnp::FlatArrayMessageReader reader(words);
          auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-         if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
+         if (fromBridge.which() != Codec::Bridge::FromBridge::PROMPT) {
             return -8;
          }
    
-         auto notif = fromBridge.getNotification();
-         if (notif.getCallbackId() != callbackId) {
+         auto prompt = fromBridge.getPrompt();
+         if (prompt.getId() != promptId) {
             return -9;
          }
-         if (notif.which() != Codec::Bridge::Notification::CLEANUP) {
+         if (prompt.which() != Codec::Bridge::Prompt::CLEANUP) {
             return -10;
          }
       }
@@ -579,7 +577,7 @@ TEST_F(BridgeWalletTests, CreateWallet)
 {
    //create the wallet
    uint64_t refId = rand();
-   auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+   auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
    capnp::MallocMessageBuilder message;
    auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
@@ -587,7 +585,7 @@ TEST_F(BridgeWalletTests, CreateWallet)
    auto request = toBridge.initUtils();
    auto createWltReq = request.initCreateWallet();
 
-   createWltReq.setCallbackId(callbackId);
+   createWltReq.setPromptId(promptId);
    createWltReq.setWalletType(Codec::Bridge::UtilsRequest::WalletType::LEGACY);
    createWltReq.setLookup(100);
    createWltReq.setLabel("labl");
@@ -601,7 +599,7 @@ TEST_F(BridgeWalletTests, CreateWallet)
    std::filesystem::path path;
    try {
       auto walletData = progressWalletCreation(
-         bridge_, callbackId,
+         bridge_, promptId,
          "pass1", 500ms, 128, 100);
       masterId = walletData.masterId;
       path = walletData.path;
@@ -657,7 +655,7 @@ TEST_F(BridgeWalletTests, CreateWallet_BIP32)
 {
    //create the wallet
    uint64_t refId = rand();
-   auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+   auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
    capnp::MallocMessageBuilder message;
    auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
@@ -665,7 +663,7 @@ TEST_F(BridgeWalletTests, CreateWallet_BIP32)
    auto request = toBridge.initUtils();
    auto createWltReq = request.initCreateWallet();
 
-   createWltReq.setCallbackId(callbackId);
+   createWltReq.setPromptId(promptId);
    createWltReq.setWalletType(Codec::Bridge::UtilsRequest::WalletType::STRUCTURED_BIP32);
    createWltReq.setLookup(100);
    createWltReq.setLabel("labl");
@@ -679,7 +677,7 @@ TEST_F(BridgeWalletTests, CreateWallet_BIP32)
    std::filesystem::path path;
    try {
       auto walletData = progressWalletCreation(
-         bridge_, callbackId,
+         bridge_, promptId,
          "pass1", 500ms, 128, 100, false, true);
       masterId = walletData.masterId;
       path = walletData.path;
@@ -740,7 +738,7 @@ TEST_F(BridgeWalletTests, DeleteWallet)
    {
       //create the wallet
       uint64_t refId = rand();
-      auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+      auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
@@ -748,7 +746,7 @@ TEST_F(BridgeWalletTests, DeleteWallet)
       auto request = toBridge.initUtils();
       auto createWltReq = request.initCreateWallet();
 
-      createWltReq.setCallbackId(callbackId);
+      createWltReq.setPromptId(promptId);
       createWltReq.setLookup(100);
       createWltReq.setLabel("labl");
       createWltReq.setDescription("desc");
@@ -759,7 +757,7 @@ TEST_F(BridgeWalletTests, DeleteWallet)
       //handle progress notifs
       try {
          auto walletData = progressWalletCreation(
-            bridge_, callbackId,
+            bridge_, promptId,
             "pass1", 500ms, 0, 100);
          masterId = walletData.masterId;
          path = walletData.path;
@@ -834,7 +832,7 @@ TEST_F(BridgeWalletTests, CreateWallet_Reject)
 {
    //create the wallet
    uint64_t refId = rand();
-   auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+   auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
    capnp::MallocMessageBuilder message;
    auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
@@ -842,7 +840,7 @@ TEST_F(BridgeWalletTests, CreateWallet_Reject)
    auto request = toBridge.initUtils();
    auto createWltReq = request.initCreateWallet();
 
-   createWltReq.setCallbackId(callbackId);
+   createWltReq.setPromptId(promptId);
    createWltReq.setLookup(100);
    createWltReq.setLabel("labl");
    createWltReq.setDescription("desc");
@@ -853,7 +851,7 @@ TEST_F(BridgeWalletTests, CreateWallet_Reject)
    //handle progress notifs
    try {
       auto walletData = progressWalletCreation(
-         bridge_, callbackId,
+         bridge_, promptId,
          std::string{}, 500ms, 128, 100);
       ASSERT_FALSE(walletData.masterId.empty());
       ASSERT_FALSE(walletData.path.empty());
@@ -916,7 +914,7 @@ TEST_F(BridgeWalletTests, RestoreWallet_Legacy)
    //grab backup strings via callback
    {
       uint64_t refId = rand();
-      auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+      auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
@@ -924,7 +922,7 @@ TEST_F(BridgeWalletTests, RestoreWallet_Legacy)
       auto request = toBridge.initWallet();
       request.setWalletId(walletId);
       auto reqBackup = request.initCreateBackupString();
-      reqBackup.setPrivate(callbackId);
+      reqBackup.setPrivate(promptId);
       auto rawReq = serializeCapnp(message);
       pushRequest(bridge_, rawReq);
 
@@ -935,17 +933,17 @@ TEST_F(BridgeWalletTests, RestoreWallet_Legacy)
          result->data.getSize() / sizeof(capnp::word));
       capnp::FlatArrayMessageReader reader(words);
       auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-      auto notif = fromBridge.getNotification();
-      ASSERT_EQ(notif.getCallbackId(), callbackId);
-      ASSERT_EQ(notif.which(), Codec::Bridge::Notification::UNLOCK_REQUEST);
+      auto prompt = fromBridge.getPrompt();
+      ASSERT_EQ(prompt.getId(), promptId);
+      ASSERT_EQ(prompt.which(), Codec::Bridge::Prompt::UNLOCK_REQUEST);
 
       //reply with passphrase
       capnp::MallocMessageBuilder notifMsg;
       auto notifBridge = notifMsg.initRoot<Codec::Bridge::ToBridge>();
-      auto notifReply = notifBridge.initNotification();
-      notifReply.setSuccess(true);
-      notifReply.setCounter(notif.getCounter());
-      notifReply.setUnlockRequest(passphrase);
+      auto promptReply = notifBridge.initPrompt();
+      promptReply.setSuccess(true);
+      promptReply.setReplyId(prompt.getReplyId());
+      promptReply.setUnlockRequest(passphrase);
 
       auto rawNotif = serializeCapnp(notifMsg);
       pushRequest(bridge_, rawNotif);
@@ -957,8 +955,8 @@ TEST_F(BridgeWalletTests, RestoreWallet_Legacy)
          result->data.getSize() / sizeof(capnp::word));
       reader = capnp::FlatArrayMessageReader(words);
       fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-      notif = fromBridge.getNotification();
-      ASSERT_EQ(notif.which(), Codec::Bridge::Notification::CLEANUP);
+      prompt = fromBridge.getPrompt();
+      ASSERT_EQ(prompt.which(), Codec::Bridge::Prompt::CLEANUP);
 
       //check the backup
       auto backup = waitOnReply();
@@ -1160,7 +1158,7 @@ TEST_F(BridgeWalletTests, RestoreMerge)
 {
    //create the wallet
    uint64_t refId = rand();
-   auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+   auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
    std::string passphrase{"pass2"};
    std::string passphrase2{"pass3"};
    unsigned lookup = 46;
@@ -1171,7 +1169,7 @@ TEST_F(BridgeWalletTests, RestoreMerge)
    auto request = toBridge.initUtils();
    auto createWltReq = request.initCreateWallet();
 
-   createWltReq.setCallbackId(callbackId);
+   createWltReq.setPromptId(promptId);
    createWltReq.setLookup(lookup);
    createWltReq.setLabel("labl2");
    createWltReq.setDescription("desc2");
@@ -1184,7 +1182,7 @@ TEST_F(BridgeWalletTests, RestoreMerge)
    std::filesystem::path path;
    try {
       auto walletData = progressWalletCreation(
-         bridge_, callbackId,
+         bridge_, promptId,
          passphrase, 500ms, 128, lookup);
       masterId = walletData.masterId;
       path = walletData.path;
@@ -1322,7 +1320,7 @@ TEST_F(BridgeWalletTests, Migrate_Legacy)
    }
 
    //migrate it
-   auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+   auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
    uint64_t refId = rand();
    {
       capnp::MallocMessageBuilder message;
@@ -1331,7 +1329,7 @@ TEST_F(BridgeWalletTests, Migrate_Legacy)
       auto mgrRequest = toBridge.initWalletManager();
       auto migrationRequest = mgrRequest.initMigrateWallet();
       migrationRequest.setWalletPath(fileName);
-      migrationRequest.setCallbackId(callbackId);
+      migrationRequest.setPromptId(promptId);
       auto rawReq = serializeCapnp(message);
       pushRequest(bridge_, rawReq);
    }
@@ -1346,27 +1344,25 @@ TEST_F(BridgeWalletTests, Migrate_Legacy)
          result->data.getSize() / sizeof(capnp::word));
       capnp::FlatArrayMessageReader reader(words);
       auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-      ASSERT_EQ(fromBridge.which(), Codec::Bridge::FromBridge::NOTIFICATION);
+      ASSERT_EQ(fromBridge.which(), Codec::Bridge::FromBridge::PROMPT);
 
-      auto notif = fromBridge.getNotification();
-      ASSERT_EQ (notif.getCallbackId(), callbackId);
-      auto counter = notif.getCounter();
-
-      ASSERT_EQ(notif.which(), Codec::Bridge::Notification::UNLOCK_REQUEST);
+      auto prompt = fromBridge.getPrompt();
+      ASSERT_EQ(prompt.getId(), promptId);
+      ASSERT_EQ(prompt.which(), Codec::Bridge::Prompt::UNLOCK_REQUEST);
 
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
-      auto notifReply = toBridge.initNotification();
-      notifReply.setSuccess(true);
-      notifReply.setCounter(counter);
-      notifReply.setUnlockRequest("testnet");
+      auto promptReply = toBridge.initPrompt();
+      promptReply.setSuccess(true);
+      promptReply.setReplyId(prompt.getReplyId());
+      promptReply.setUnlockRequest("testnet");
       auto rawReq = serializeCapnp(message);
       pushRequest(bridge_, rawReq);
    }
 
    //progress new wallet creation
    auto wltData = progressWalletCreation(
-      bridge_, callbackId, "newpass", 250ms, 32, 104);
+      bridge_, promptId, "newpass", 250ms, 32, 104);
 
    //validate success
    auto result = waitOnReply();
@@ -1492,7 +1488,7 @@ TEST_F(BridgeWalletTests, ImportWallet_Legacy)
    }
 
    /* migrate the wallet */
-   auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+   auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
    refId = rand();
    {
       capnp::MallocMessageBuilder message;
@@ -1501,7 +1497,7 @@ TEST_F(BridgeWalletTests, ImportWallet_Legacy)
       auto mgrRequest = toBridge.initWalletManager();
       auto migrationRequest = mgrRequest.initMigrateWallet();
       migrationRequest.setWalletPath(legacyWalletFile.filename().string());
-      migrationRequest.setCallbackId(callbackId);
+      migrationRequest.setPromptId(promptId);
       auto rawReq = serializeCapnp(message);
       pushRequest(bridge_, rawReq);
    }
@@ -1516,27 +1512,25 @@ TEST_F(BridgeWalletTests, ImportWallet_Legacy)
          result->data.getSize() / sizeof(capnp::word));
       capnp::FlatArrayMessageReader reader(words);
       auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-      ASSERT_EQ(fromBridge.which(), Codec::Bridge::FromBridge::NOTIFICATION);
+      ASSERT_EQ(fromBridge.which(), Codec::Bridge::FromBridge::PROMPT);
 
-      auto notif = fromBridge.getNotification();
-      ASSERT_EQ (notif.getCallbackId(), callbackId);
-      auto counter = notif.getCounter();
-
-      ASSERT_EQ(notif.which(), Codec::Bridge::Notification::UNLOCK_REQUEST);
+      auto prompt = fromBridge.getPrompt();
+      ASSERT_EQ(prompt.getId(), promptId);
+      ASSERT_EQ(prompt.which(), Codec::Bridge::Prompt::UNLOCK_REQUEST);
 
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
-      auto notifReply = toBridge.initNotification();
-      notifReply.setSuccess(true);
-      notifReply.setCounter(counter);
-      notifReply.setUnlockRequest("testnet");
+      auto promptReply = toBridge.initPrompt();
+      promptReply.setSuccess(true);
+      promptReply.setReplyId(prompt.getReplyId());
+      promptReply.setUnlockRequest("testnet");
       auto rawReq = serializeCapnp(message);
       pushRequest(bridge_, rawReq);
    }
 
    //progress new wallet creation
    auto wltData = progressWalletCreation(
-      bridge_, callbackId, "newpass", 250ms, 32, 104);
+      bridge_, promptId, "newpass", 250ms, 32, 104);
 
    //validate success
    result = waitOnReply();
@@ -1844,7 +1838,7 @@ TEST_F(BridgeWalletTests, ExportPublicKeysLegacy)
    auto reply = fromBridge.getReply();
    ASSERT_TRUE(reply.getSuccess());
 
-   auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+   auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
    refId = rand();
    {
       capnp::MallocMessageBuilder message;
@@ -1853,7 +1847,7 @@ TEST_F(BridgeWalletTests, ExportPublicKeysLegacy)
       auto mgrRequest = toBridge.initWalletManager();
       auto migrationRequest = mgrRequest.initMigrateWallet();
       migrationRequest.setWalletPath(wltPath.filename().string());
-      migrationRequest.setCallbackId(callbackId);
+      migrationRequest.setPromptId(promptId);
       pushRequest(bridge_, serializeCapnp(message));
    }
 
@@ -1864,20 +1858,20 @@ TEST_F(BridgeWalletTests, ExportPublicKeysLegacy)
          unlockReply->data.getSize() / sizeof(capnp::word));
       capnp::FlatArrayMessageReader unlockReader(unlockWords);
       auto unlockBridge = unlockReader.getRoot<Codec::Bridge::FromBridge>();
-      ASSERT_EQ(unlockBridge.which(), Codec::Bridge::FromBridge::NOTIFICATION);
-      auto notif = unlockBridge.getNotification();
-      ASSERT_EQ(notif.which(), Codec::Bridge::Notification::UNLOCK_REQUEST);
+      ASSERT_EQ(unlockBridge.which(), Codec::Bridge::FromBridge::PROMPT);
+      auto prompt = unlockBridge.getPrompt();
+      ASSERT_EQ(prompt.which(), Codec::Bridge::Prompt::UNLOCK_REQUEST);
 
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
-      auto notifReply = toBridge.initNotification();
-      notifReply.setSuccess(true);
-      notifReply.setCounter(notif.getCounter());
-      notifReply.setUnlockRequest("testnet");
+      auto promptReply = toBridge.initPrompt();
+      promptReply.setSuccess(true);
+      promptReply.setReplyId(prompt.getReplyId());
+      promptReply.setUnlockRequest("testnet");
       pushRequest(bridge_, serializeCapnp(message));
    }
 
-   progressWalletCreation(bridge_, callbackId, "newpass", 250ms, 32, 104);
+   progressWalletCreation(bridge_, promptId, "newpass", 250ms, 32, 104);
 
    {
       auto migResult = waitOnReply();
@@ -2134,14 +2128,14 @@ TEST_F(BridgeWalletTests, ForkWO)
    /* 3. fork it */
    uint64_t refId = rand();
    {
-      auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+      auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
 
       capnp::MallocMessageBuilder message;
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
       auto request = toBridge.initWallet();
       request.setWalletId(walletId);
-      request.setForkWatchingOnly(callbackId);
+      request.setForkWatchingOnly(promptId);
 
       auto rawReq = serializeCapnp(message);
       pushRequest(bridge_, rawReq);
@@ -2156,22 +2150,20 @@ TEST_F(BridgeWalletTests, ForkWO)
          capnp::FlatArrayMessageReader reader(words);
          auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
 
-         ASSERT_EQ(fromBridge.which(), Codec::Bridge::FromBridge::NOTIFICATION);
-         auto notif = fromBridge.getNotification();
-         ASSERT_EQ(notif.getCallbackId(), callbackId);
-         switch (notif.which())
+         ASSERT_EQ(fromBridge.which(), Codec::Bridge::FromBridge::PROMPT);
+         auto prompt = fromBridge.getPrompt();
+         ASSERT_EQ(prompt.getId(), promptId);
+         switch (prompt.which())
          {
-            case Codec::Bridge::Notification::SET_PASSPHRASE:
+            case Codec::Bridge::Prompt::SET_PASSPHRASE:
             {
-               auto counter = notif.getCounter();
-
                //push passphrase
                capnp::MallocMessageBuilder message;
                auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
-               auto notifReply = toBridge.initNotification();
-               notifReply.setSuccess(true);
-               notifReply.setCounter(counter);
-               auto capnSetPass = notifReply.initSetPassphrase();
+               auto promptReply = toBridge.initPrompt();
+               promptReply.setSuccess(true);
+               promptReply.setReplyId(prompt.getReplyId());
+               auto capnSetPass = promptReply.initSetPassphrase();
                capnSetPass.setPassphrase("woCtrlPass");
                capnSetPass.setReuseKdf(true);
 
@@ -2180,20 +2172,11 @@ TEST_F(BridgeWalletTests, ForkWO)
                break;
             }
 
-            case Codec::Bridge::Notification::CLEANUP:
+            case Codec::Bridge::Prompt::CLEANUP:
             {
                run = false;
                break;
             }
-
-            /*case Bridge::Notification::WALLET_PROGRESS:
-            {
-               auto prog = notif.getWalletProgress();
-               switch (prog.which())
-               {
-               }
-               break;
-            }*/
 
             default:
                ASSERT_TRUE(false);

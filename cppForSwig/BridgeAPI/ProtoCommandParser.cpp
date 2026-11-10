@@ -90,7 +90,7 @@ namespace
          {
             auto connectReq = request.getConnectToIp();
             bridge->connectToIp(connectReq.getIp(), connectReq.getPort(),
-               connectReq.getCallbackId(), referenceId);
+               connectReq.getPromptId(), referenceId);
             return true;
          }
 
@@ -113,9 +113,9 @@ namespace
             {
                case DbSetupRequest::PeersRequest::LOAD_PEERS_DB:
                {
-                  std::string callbackId(peersRequest.getLoadPeersDb());
-                  std::thread thr([bridge, callbackId, referenceId]() {
-                     bridge->loadPeersDb(callbackId, referenceId);
+                  std::string promptId(peersRequest.getLoadPeersDb());
+                  std::thread thr([bridge, promptId, referenceId]() {
+                     bridge->loadPeersDb(promptId, referenceId);
                   });
                   if (thr.joinable()) {
                      thr.detach();
@@ -445,8 +445,8 @@ namespace
          {
             auto unlockReq = request.getUnlockControlHeader();
             std::string path = unlockReq.getWalletPath();
-            std::string callbackId = unlockReq.getCallbackId();
-            bridge->unlockControlHeader(path, callbackId, referenceId);
+            std::string promptId = unlockReq.getPromptId();
+            bridge->unlockControlHeader(path, promptId, referenceId);
             break;
          }
 
@@ -477,8 +477,8 @@ namespace
          {
             auto migrateReq = request.getMigrateWallet();
             const std::filesystem::path walletPath{std::string{migrateReq.getWalletPath()}};
-            const std::string callbackId(migrateReq.getCallbackId());
-            bridge->migrateWallet(walletPath, callbackId, referenceId);
+            const std::string promptId(migrateReq.getPromptId());
+            bridge->migrateWallet(walletPath, promptId, referenceId);
             break;
          }
 
@@ -614,28 +614,28 @@ namespace
       {
          case WalletRequest::CREATE_BACKUP_STRING:
          {
-            std::string callbackId;
+            std::string promptId;
             bool isPriv = false;
             auto backupStruct = request.getCreateBackupString();
             if (backupStruct.which() == WalletRequest::BackupStringStruct::PRIVATE) {
-               callbackId = backupStruct.getPrivate();
+               promptId = backupStruct.getPrivate();
                isPriv = true;
             }
 
             bridge->createBackupStringForWallet(walletId, isPriv,
-               callbackId, referenceId);
+               promptId, referenceId);
             break;
          }
 
          case WalletRequest::CHANGE_PASSPHRASE:
          {
             auto passStruct = request.getChangePassphrase();
-            std::string callbackId = passStruct.getCallbackId();
+            std::string promptId = passStruct.getPromptId();
             bool isPriv =
                passStruct.which() == WalletRequest::ChangePassphraseRequest::PRIVATE ?
                true : false;
 
-            bridge->changeWalletPassphrase(walletId, callbackId, isPriv, referenceId);
+            bridge->changeWalletPassphrase(walletId, promptId, isPriv, referenceId);
             break;
          }
 
@@ -716,7 +716,7 @@ namespace
          {
             auto args = request.getExtendAddressPool();
             bridge->extendAddressPool(walletId, accountId,
-               args.getCount(), args.getIsNew(), args.getCallbackId(),
+               args.getCount(), args.getIsNew(), args.getPromptId(),
                referenceId);
             break;
          }
@@ -804,8 +804,8 @@ namespace
 
          case WalletRequest::FORK_WATCHING_ONLY:
          {
-            std::string callbackId{request.getForkWatchingOnly()};
-            bridge->forkWatchingOnly(walletId, callbackId, referenceId);
+            std::string promptId{request.getForkWatchingOnly()};
+            bridge->forkWatchingOnly(walletId, promptId, referenceId);
             break;
          }
 
@@ -835,12 +835,12 @@ namespace
             auto exportRequest = request.getExportKeys();
             const bool includePrivateKeys = exportRequest.which() ==
                WalletRequest::ExportKeyRequest::WITH_PRIVATE_KEYS;
-            std::string callbackId;
+            std::string promptId;
             if (includePrivateKeys) {
-               callbackId = exportRequest.getWithPrivateKeys();
+               promptId = exportRequest.getWithPrivateKeys();
             }
             bridge->exportKeys(walletId, accountId, includePrivateKeys,
-               callbackId, referenceId);
+               promptId, referenceId);
             break;
          }
 
@@ -1304,7 +1304,7 @@ namespace
             auto args = request.getSignTx();
             auto capnId = args.getWalletId();
             const Wallets::WalletId wltId{capnId.begin(), capnId.size()};
-            signer->signTx(wltId, args.getCallbackId(),
+            signer->signTx(wltId, args.getPromptId(),
                referenceId);
             break;
          }
@@ -1420,7 +1420,7 @@ namespace
          case UtilsRequest::CREATE_WALLET:
          {
             auto args = request.getCreateWallet();
-            std::string callbackId = args.getCallbackId();
+            std::string promptId = args.getPromptId();
 
             auto capnEntropy = args.getExtraEntropy();
             SecureBinaryData sbdEntropy{
@@ -1452,7 +1452,7 @@ namespace
                   nullptr,
                   args.getLookup(),
                   args.getLabel(), args.getDescription()},
-               callbackId, referenceId
+               promptId, referenceId
             );
             break;
          }
@@ -1486,11 +1486,11 @@ namespace
             auto spPassCapnp = walletRequest.getSpPass();
             std::string_view spPass{spPassCapnp.begin(), spPassCapnp.size()};
 
-            auto cbIdCapnp = walletRequest.getCallbackId();
-            std::string callbackId{cbIdCapnp.begin(), cbIdCapnp.size()};
+            auto cbIdCapnp = walletRequest.getPromptId();
+            std::string promptId{cbIdCapnp.begin(), cbIdCapnp.size()};
 
             bridge->restoreWallet(lines, spPass,
-               callbackId, referenceId);
+               promptId, referenceId);
             break;
          }
 
@@ -1656,51 +1656,51 @@ namespace
       return true;
    }
 
-   bool processNotificationReply(
+   bool processPromptReply(
       std::shared_ptr<CppBridge> bridge,
-      NotificationReply::Reader& notif)
+      PromptReply::Reader& notif)
    {
       try {
-         auto handler = bridge->getCallbackHandler(notif.getCounter());
+         auto handler = bridge->getPromptReplyHandler(notif.getReplyId());
          switch (notif.which())
          {
-            case NotificationReply::SET_PASSPHRASE:
+            case PromptReply::SET_PASSPHRASE:
             {
                auto capnpPassStruct = notif.getSetPassphrase();
                auto pass = SecureBinaryData::fromString(
                   capnpPassStruct.getPassphrase());
 
                if (notif.getSuccess() == false) {
-                  return handler(Seeds::PromptReply{
-                     false, false, Passphrase::Params{}
+                  return handler(Passphrase::PromptReply{
+                     false, false, Passphrase::PassAndParams{}
                   });
                }
 
                switch (capnpPassStruct.which())
                {
-                  case NotificationReply::SetPassphraseReply::KDF_TARGET_MS:
+                  case PromptReply::SetPassphraseReply::KDF_TARGET_MS:
                   {
                      auto kdfMs = std::chrono::milliseconds{
                         capnpPassStruct.getKdfTargetMs()};
-                     return handler(Seeds::PromptReply{
-                        true, false, Passphrase::Params{
+                     return handler(Passphrase::PromptReply{
+                        true, false, Passphrase::PassAndParams{
                            kdfMs, 1, std::move(pass) }
                      });
                   }
 
-                  case NotificationReply::SetPassphraseReply::KDF_TARGET_M_B:
+                  case PromptReply::SetPassphraseReply::KDF_TARGET_M_B:
                   {
                      uint32_t kdfMB = capnpPassStruct.getKdfTargetMB();
-                     return handler(Seeds::PromptReply{
-                        true, false, Passphrase::Params{
+                     return handler(Passphrase::PromptReply{
+                        true, false, Passphrase::PassAndParams{
                            1ms, kdfMB, std::move(pass) }
                      });
                   }
 
-                  case NotificationReply::SetPassphraseReply::REUSE_KDF:
+                  case PromptReply::SetPassphraseReply::REUSE_KDF:
                   {
-                     return handler(Seeds::PromptReply{
-                        true, false, Passphrase::Params{
+                     return handler(Passphrase::PromptReply{
+                        true, false, Passphrase::PassAndParams{
                            std::move(pass), true }
                      });
                   }
@@ -1708,35 +1708,35 @@ namespace
                break;
             }
 
-            case NotificationReply::RESTORE:
+            case PromptReply::RESTORE:
             {
                bool restore = notif.getRestore() ==
-                  NotificationReply::RestoreMode::MERGE ? true : false;
-               return handler(Seeds::PromptReply{
+                  PromptReply::RestoreMode::MERGE ? true : false;
+               return handler(Passphrase::PromptReply{
                   notif.getSuccess(), restore, {}
                });
             }
 
-            case NotificationReply::UNLOCK_REQUEST:
+            case PromptReply::UNLOCK_REQUEST:
             {
                auto pass = SecureBinaryData::fromString(notif.getUnlockRequest());
-               return handler(Seeds::PromptReply{
+               return handler(Passphrase::PromptReply{
                   notif.getSuccess(), false,
-                  Passphrase::Params{std::move(pass)}
+                  Passphrase::PassAndParams{std::move(pass)}
                });
             }
 
-            case NotificationReply::PRESENT_PUBKEY:
+            case PromptReply::PRESENT_PUBKEY:
             {
-               return handler(Seeds::PromptReply{notif.getSuccess(), false, {}});
+               return handler(Passphrase::PromptReply{notif.getSuccess(), false, {}});
             }
 
             default:
-               throw std::runtime_error("invalid NotificationReply which");
+               throw std::runtime_error("invalid PromptReply which");
          }
          return false;
       } catch (const std::runtime_error& e) {
-         LOGERR << "failed notif handling with error: " << e.what();
+         LOGERR << "failed prompt reply handling with error: " << e.what();
          return false;
       }
    }
@@ -1818,11 +1818,11 @@ bool ProtoCommandParser::processData(
             bridge, referenceId, delegate);
       }
 
-      case Codec::Bridge::ToBridge::NOTIFICATION:
+      case Codec::Bridge::ToBridge::PROMPT:
       {
-         auto notifReply = toBridge.getNotification();
-         return processNotificationReply(
-            bridge, notifReply);
+         auto promptReply = toBridge.getPrompt();
+         return processPromptReply(
+            bridge, promptReply);
       }
 
       default:

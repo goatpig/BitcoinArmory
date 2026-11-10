@@ -66,9 +66,9 @@ protected:
          return { {}, true };
       };
 
-      auto createWltLbd = []()->std::unique_ptr<Passphrase::Params>
+      auto createWltLbd = []()
       {
-         return std::make_unique<Passphrase::Params>(
+         return std::make_unique<Passphrase::PassAndParams>(
             1ms, 0, SecureBinaryData{});
       };
 
@@ -493,15 +493,6 @@ TEST_F(BridgeWalletsWithDBTests, LateDisconnectAfterReconnect)
       } else if (fromBridge.which() == Codec::Bridge::FromBridge::NOTIFICATION) {
          auto notif = fromBridge.getNotification();
          switch (notif.which()) {
-            case Codec::Bridge::Notification::PRESENT_PUBKEY:
-            {
-               received += "[key prompt] ";
-               std::string presentedKey(notif.getPresentPubkey());
-               replyToKeyPrompt(bridge_, refId, notif.getCounter(),
-                  presentedKey == serverPubkey_);
-               break;
-            }
-
             case Codec::Bridge::Notification::DISCONNECTED:
                received += "[disconnected] ";
                if (gotReply) {
@@ -516,6 +507,22 @@ TEST_F(BridgeWalletsWithDBTests, LateDisconnectAfterReconnect)
 
             default:
                received += "[notif " + std::to_string((int)notif.which()) + "] ";
+               break;
+         }
+      } else if (fromBridge.which() == Codec::Bridge::FromBridge::PROMPT) {
+         auto prompt = fromBridge.getPrompt();
+         switch (prompt.which()) {
+            case Codec::Bridge::Prompt::PRESENT_PUBKEY:
+            {
+               received += "[key prompt] ";
+               std::string presentedKey(prompt.getPresentPubkey());
+               replyToKeyPrompt(bridge_, refId, prompt.getReplyId(),
+                  presentedKey == serverPubkey_);
+               break;
+            }
+
+            default:
+               received += "[prompt " + std::to_string((int)prompt.which()) + "] ";
                break;
          }
       }

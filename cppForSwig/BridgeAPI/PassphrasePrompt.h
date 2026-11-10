@@ -14,41 +14,49 @@
 #include "../Wallets/WalletIdTypes.h"
 #include "../Wallets/GetPassphrase.h"
 
+/*
+Some client requests require the bridge to interact with the user. Such
+requests come with a promptId attached.
+
+When the bridge has to send a message to the client as part of an interactive
+request, it is called a prompt. A prompt comes with its promptId attached, so
+that the client can tie it to the originating request.
+
+Prompts expect a reply, otherwise they are effectively progress notifications.
+A prompt comes with a replyId, which the client returns in the reply, for the
+bridge to try the reply to its prompt.
+*/
+
 namespace Armory
 {
-   namespace Seeds
-   {
-      struct PromptReply;
-   }
-
    namespace Bridge
    {
-      using CallbackHandler = std::function<bool(const Seeds::PromptReply&)>;
+      using PromptId = std::string;
+      using PromptReplyHandler = std::function<bool(const Passphrase::PromptReply&)>;
 
       //////////////////////////////////////////////////////////////////////////
-      struct ServerPushWrapper
+      struct PromptReplyWrapper
       {
-         const uint32_t referenceId;
-         CallbackHandler handler = nullptr;
-         BinaryData payload;
+         const uint32_t replyId;
+         PromptReplyHandler handler = nullptr;
       };
 
       //////////////////////////////////////////////////////////////////////////
       class BridgePassphrasePrompt
       {
-         static uint32_t referenceCounter_;
+         static uint32_t replyIdCounter_;
 
       private:
          const std::string promptId_;
-         std::function<void(ServerPushWrapper)> writeFunc_;
+         std::function<void(BinaryData, PromptReplyWrapper)> promptFunc_;
 
       private:
-         Seeds::PromptReply processFeedRequest(
-            const std::set<Armory::Wallets::EncryptionKeyId>&);
+         Passphrase::PromptReply processFeedRequest(
+            const std::set<Wallets::EncryptionKeyId>&);
 
       public:
-         BridgePassphrasePrompt(const std::string&,
-            std::function<void(ServerPushWrapper)>);
+         BridgePassphrasePrompt(const PromptId&,
+            std::function<void(BinaryData, PromptReplyWrapper)>);
 
          Passphrase::UnlockFunc getLambda(void);
          void cleanup(void);

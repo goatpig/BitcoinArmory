@@ -46,7 +46,7 @@ namespace Armory
          const std::set<Wallets::EncryptionKeyId>&)>;
 
       /* to get passphrase and kdf params at encrypted container creation */
-      struct Params
+      struct PassAndParams
       {
          enum class Type : int
          {
@@ -61,10 +61,10 @@ namespace Armory
          const bool reuseKdf;
          SecureBinaryData passphrase{};
 
-         Params(void);
-         Params(std::chrono::milliseconds, uint32_t,
+         PassAndParams(void);
+         PassAndParams(std::chrono::milliseconds, uint32_t,
             SecureBinaryData);
-         Params(SecureBinaryData, bool reuseKdf=false);
+         PassAndParams(SecureBinaryData, bool reuseKdf=false);
       };
 
       class SetNew
@@ -72,13 +72,13 @@ namespace Armory
          friend struct Armory::Wallets::Encryption::ClearTextEncryptionKey;
 
       private:
-         using SetNewPassFunc = std::function<std::unique_ptr<Params>(void)>;
+         using SetNewPassFunc = std::function<std::unique_ptr<PassAndParams>(void)>;
 
-         mutable std::unique_ptr<Params> params_;
+         mutable std::unique_ptr<PassAndParams> passAndparams_;
          const SetNewPassFunc setNewPassphrase_;
 
       private:
-         std::unique_ptr<Params> moveParams(void);
+         std::unique_ptr<PassAndParams> movePassAndParams(void);
 
       public:
          SetNew(void);
@@ -86,9 +86,17 @@ namespace Armory
          SetNew(const SetNewPassFunc&);
          SetNew(const SetNew&);
 
-         const Params& get(void) const;
+         const PassAndParams& get(void) const;
          SetNew copy(void) const;
          UnlockFunc getUnlockFunc(void) const;
+      };
+
+      struct PromptReply
+      {
+         const bool success;
+         const bool merge;
+
+         PassAndParams passAndParams;
       };
    }
 }

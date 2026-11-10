@@ -9,7 +9,6 @@
 
 #include "PassphrasePrompt.h"
 #include "Utils/log.h"
-#include "Wallets/Seeds/Backups.h"
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>
@@ -19,7 +18,7 @@ using namespace Armory;
 using namespace Armory::Bridge;
 using namespace std::chrono_literals;
 
-uint32_t BridgePassphrasePrompt::referenceCounter_ = 1;
+uint32_t BridgePassphrasePrompt::replyIdCounter_ = 1;
 
 ////////////////////////////////////////////////////////////////////////////////
 ////
@@ -27,12 +26,12 @@ uint32_t BridgePassphrasePrompt::referenceCounter_ = 1;
 ////
 ////////////////////////////////////////////////////////////////////////////////
 BridgePassphrasePrompt::BridgePassphrasePrompt(const std::string& id,
-   std::function<void(ServerPushWrapper)> func) :
-   promptId_(id), writeFunc_(move(func))
+   std::function<void(BinaryData, PromptReplyWrapper)> func) :
+   promptId_(id), promptFunc_(move(func))
 {}
 
 ////////////////////////////////////////////////////////////////////////////////
-Seeds::PromptReply BridgePassphrasePrompt::processFeedRequest(
+Passphrase::PromptReply BridgePassphrasePrompt::processFeedRequest(
    const std::set<Wallets::EncryptionKeyId>& ids)
 {
    if (ids.empty()) {
@@ -42,16 +41,16 @@ Seeds::PromptReply BridgePassphrasePrompt::processFeedRequest(
    }
 
    //cycle the promise & future
-   auto promPtr = std::make_shared<std::promise<Seeds::PromptReply>>();
+   auto promPtr = std::make_shared<std::promise<Passphrase::PromptReply>>();
    auto fut = promPtr->get_future();
-   auto refId = referenceCounter_++;
+   auto replyId = replyIdCounter_++;
 
    //create payload
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
-   auto notif = fromBridge.initNotification();
-   notif.setCallbackId(promptId_);
-   notif.setCounter(refId);
+   auto notif = fromBridge.initPrompt();
+   notif.setId(promptId_);
+   notif.setReplyId(replyId);
 
    auto unlockRequest = notif.initUnlockRequest(ids.size());
    unsigned i=0;
@@ -66,7 +65,7 @@ Seeds::PromptReply BridgePassphrasePrompt::processFeedRequest(
    BinaryData serialized(bytes.begin(), bytes.end());
 
    //reply handler
-   auto replyHandler = [promPtr](const Seeds::PromptReply& reply)->bool
+   auto replyHandler = [promPtr](const Passphrase::PromptReply& reply)->bool
    {
       if (!reply.success) {
          promPtr->set_exception(std::make_exception_ptr(
@@ -77,9 +76,11 @@ Seeds::PromptReply BridgePassphrasePrompt::processFeedRequest(
       return true;
    };
 
-   //push over socket
-   ServerPushWrapper wrapper{ refId, replyHandler, std::move(serialized) };
-   writeFunc_(std::move(wrapper));
+   //prompt client
+   promptFunc_(
+      std::move(serialized),
+      PromptReplyWrapper{replyId, replyHandler}
+   );
 
    //wait on future
    try {
@@ -95,14 +96,14 @@ void BridgePassphrasePrompt::cleanup()
 {
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
-   auto notif = fromBridge.initNotification();
-   notif.setCallbackId(promptId_);
+   auto notif = fromBridge.initPrompt();
+   notif.setId(promptId_);
    notif.setCleanup();
 
    auto flat = capnp::messageToFlatArray(message);
    auto bytes = flat.asBytes();
    BinaryData serialized(bytes.begin(), bytes.end());
-   writeFunc_(ServerPushWrapper{0, nullptr, std::move(serialized)});
+   promptFunc_(std::move(serialized), PromptReplyWrapper{0, nullptr});
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -112,9 +113,9 @@ Passphrase::UnlockFunc BridgePassphrasePrompt::getLambda()
    ->Passphrase::Result
    {
       auto reply = processFeedRequest(ids);
-      if (reply.passParams.type != Passphrase::Params::Type::Unlock) {
+      if (reply.passAndParams.type != Passphrase::PassAndParams::Type::Unlock) {
          return { {}, false };
       }
-      return { std::move(reply.passParams.passphrase), reply.success };
+      return { std::move(reply.passAndParams.passphrase), reply.success };
    };
 }

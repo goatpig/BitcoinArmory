@@ -19,10 +19,6 @@ using namespace Armory;
 using namespace Armory::Bridge;
 using namespace Armory::Bridge::Notifications;
 
-#define BRIDGE_CALLBACK_BDM         "bdm_callback"
-#define BRIDGE_CALLBACK_PROGRESS    "progress"
-#define DISCONNECTED_CALLBACK_ID    "disconnected"
-
 ////////////////////////////////////////////////////////////////////////////////
 // anon namespace
 namespace
@@ -167,7 +163,6 @@ void Push::NotifHandler::pushProgress(
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
    auto capnNotif = fromBridge.initNotification();
    auto capnProgress = capnNotif.initScanProgress();
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_PROGRESS);
 
    capnProgress.setPhase((uint32_t)phase);
    capnProgress.setProgress(progress);
@@ -301,7 +296,6 @@ BinaryData Serialization::getNewBlockPacket(
    } else {
       capnNotif.setNewBlock(notifPtr->blockNotif.getHeight());
    }
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
    return serializeCapnp(message);
 }
 
@@ -311,7 +305,6 @@ BinaryData Serialization::getRefreshPacket(
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
    auto capnNotif = fromBridge.initNotification();
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
 
    auto capnIds = capnNotif.initRefresh(notifPtr->refreshIds.size());
    unsigned i=0;
@@ -330,7 +323,6 @@ std::pair<BinaryData, BinaryData> Serialization::getZcPacket(
    capnp::MallocMessageBuilder messageLedgers;
    auto fromBridge = messageLedgers.initRoot<Codec::Bridge::FromBridge>();
    auto capnNotif = fromBridge.initNotification();
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
 
    auto capnZCs = capnNotif.initZeroConfs();
    ledgersToCapnp(zcLedgers, capnZCs);
@@ -344,7 +336,6 @@ std::pair<BinaryData, BinaryData> Serialization::getZcPacket(
    capnp::MallocMessageBuilder messageIZC;
    fromBridge = messageIZC.initRoot<Codec::Bridge::FromBridge>();
    capnNotif = fromBridge.initNotification();
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
 
    auto zcHashes = capnNotif.initInvalidatedZcs(
       invalidatedZCs.size());
@@ -364,7 +355,6 @@ BinaryData Serialization::getSetupDonePacket()
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
    auto capnNotif = fromBridge.initNotification();
    capnNotif.setSetupDone();
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
    return serializeCapnp(message);
 }
 
@@ -374,7 +364,6 @@ BinaryData Serialization::getWalletsRegisteredPacket()
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
    auto capnNotif = fromBridge.initNotification();
    capnNotif.setRegisterDone();
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
    return serializeCapnp(message);
 }
 
@@ -384,7 +373,6 @@ BinaryData Serialization::getServerDisconnectedPacket()
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
    auto capnNotif = fromBridge.initNotification();
    capnNotif.setDisconnected();
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
    return serializeCapnp(message);
 }
 
@@ -393,7 +381,6 @@ BinaryData Serialization::getNodeStatusPacket(const Node::Status& nodeStatus)
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
    auto capnNotif = fromBridge.initNotification();
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
    auto capnNode = capnNotif.initNodeStatus();
    nodeStatusToCapnp(nodeStatus, capnNode);
    return serializeCapnp(message);
@@ -404,7 +391,6 @@ BinaryData Serialization::getErrorPacket(const BdvError& error)
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
    auto capnNotif = fromBridge.initNotification();
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
    capnNotif.setError(error.errorStr);
    return serializeCapnp(message);
 }
