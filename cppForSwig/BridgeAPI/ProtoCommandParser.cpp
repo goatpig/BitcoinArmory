@@ -1671,8 +1671,8 @@ namespace
                   capnpPassStruct.getPassphrase());
 
                if (notif.getSuccess() == false) {
-                  return handler(Seeds::PromptReply{
-                     false, false, Passphrase::Params{}
+                  return handler(Passphrase::PromptReply{
+                     false, false, Passphrase::PassAndParams{}
                   });
                }
 
@@ -1682,8 +1682,8 @@ namespace
                   {
                      auto kdfMs = std::chrono::milliseconds{
                         capnpPassStruct.getKdfTargetMs()};
-                     return handler(Seeds::PromptReply{
-                        true, false, Passphrase::Params{
+                     return handler(Passphrase::PromptReply{
+                        true, false, Passphrase::PassAndParams{
                            kdfMs, 1, std::move(pass) }
                      });
                   }
@@ -1691,16 +1691,16 @@ namespace
                   case NotificationReply::SetPassphraseReply::KDF_TARGET_M_B:
                   {
                      uint32_t kdfMB = capnpPassStruct.getKdfTargetMB();
-                     return handler(Seeds::PromptReply{
-                        true, false, Passphrase::Params{
+                     return handler(Passphrase::PromptReply{
+                        true, false, Passphrase::PassAndParams{
                            1ms, kdfMB, std::move(pass) }
                      });
                   }
 
                   case NotificationReply::SetPassphraseReply::REUSE_KDF:
                   {
-                     return handler(Seeds::PromptReply{
-                        true, false, Passphrase::Params{
+                     return handler(Passphrase::PromptReply{
+                        true, false, Passphrase::PassAndParams{
                            std::move(pass), true }
                      });
                   }
@@ -1712,7 +1712,7 @@ namespace
             {
                bool restore = notif.getRestore() ==
                   NotificationReply::RestoreMode::MERGE ? true : false;
-               return handler(Seeds::PromptReply{
+               return handler(Passphrase::PromptReply{
                   notif.getSuccess(), restore, {}
                });
             }
@@ -1720,15 +1720,15 @@ namespace
             case NotificationReply::UNLOCK_REQUEST:
             {
                auto pass = SecureBinaryData::fromString(notif.getUnlockRequest());
-               return handler(Seeds::PromptReply{
+               return handler(Passphrase::PromptReply{
                   notif.getSuccess(), false,
-                  Passphrase::Params{std::move(pass)}
+                  Passphrase::PassAndParams{std::move(pass)}
                });
             }
 
             case NotificationReply::PRESENT_PUBKEY:
             {
-               return handler(Seeds::PromptReply{notif.getSuccess(), false, {}});
+               return handler(Passphrase::PromptReply{notif.getSuccess(), false, {}});
             }
 
             default:

@@ -468,7 +468,7 @@ ClearTextEncryptionKey::ClearTextEncryptionKey(SecureBinaryData& key) :
 {}
 
 ClearTextEncryptionKey::ClearTextEncryptionKey(Passphrase::SetNew& setNewObj) :
-   rawKey_(std::move(setNewObj.moveParams()->passphrase))
+   rawKey_(std::move(setNewObj.movePassAndParams()->passphrase))
 {}
 
 ////////

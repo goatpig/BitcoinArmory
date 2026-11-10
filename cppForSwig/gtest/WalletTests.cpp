@@ -118,12 +118,12 @@ TEST_F(PassphraseTests, InvalidParams)
 {
    using namespace Passphrase;
 
-   Params invalidParams{};
-   ASSERT_EQ(invalidParams.type, Params::Type::Invalid);
+   PassAndParams invalidParams{};
+   ASSERT_EQ(invalidParams.type, PassAndParams::Type::Invalid);
 
    SetNew invalidObj{};
    const auto& params = invalidObj.get();
-   ASSERT_EQ(params.type, Params::Type::Invalid);
+   ASSERT_EQ(params.type, PassAndParams::Type::Invalid);
 
    try {
       auto unlockFunc = invalidObj.getUnlockFunc();
@@ -135,8 +135,8 @@ TEST_F(PassphraseTests, InvalidParams)
 
    IO::CreateWalletParams wltParams{
       {}, {}, {}, nullptr, 0};
-   ASSERT_EQ(wltParams.setPrivPassObj.get().type, Params::Type::Invalid);
-   ASSERT_EQ(wltParams.setCtrlPassObj.get().type, Params::Type::Invalid);
+   ASSERT_EQ(wltParams.setPrivPassObj.get().type, PassAndParams::Type::Invalid);
+   ASSERT_EQ(wltParams.setCtrlPassObj.get().type, PassAndParams::Type::Invalid);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1462,7 +1462,7 @@ TEST_F(DerivationTests, DerivationTree_FromWalletRoot)
       auto whs = std::make_shared<IO::WalletHeader_Single>(
          Config::BitcoinSettings::getMagicBytes());
       whs->walletID_ = "abc"sv;
-      Passphrase::Params params{1ms, 0, {}};
+      Passphrase::PassAndParams params{1ms, 0, {}};
       auto mks = IO::WalletDBInterface::initWalletHeaderObject(whs, params);
 
       auto rootCipher = mks.cipher_->getCopy(
@@ -3218,9 +3218,9 @@ TEST_F(WalletInterfaceTest, Passphrase_Test)
    {
       return { thePassphrase, true };
    };
-   auto setPassLbd = [&thePassphrase]()->std::unique_ptr<Passphrase::Params>
+   auto setPassLbd = [&thePassphrase]()->std::unique_ptr<Passphrase::PassAndParams>
    {
-      return std::make_unique<Passphrase::Params>(400ms, 0, thePassphrase);
+      return std::make_unique<Passphrase::PassAndParams>(400ms, 0, thePassphrase);
    };
 
    int count=0;
@@ -3292,9 +3292,9 @@ TEST_F(WalletInterfaceTest, Passphrase_Test)
    auto dbPath2 = homedir_ / "db2_test";
    {
       //create wallet iface with empty passphrase lambda
-      auto setPassLbd2 = []()->std::unique_ptr<Passphrase::Params>
+      auto setPassLbd2 = []()->std::unique_ptr<Passphrase::PassAndParams>
       {
-         return std::make_unique<Passphrase::Params>(600ms, 0, SecureBinaryData{});
+         return std::make_unique<Passphrase::PassAndParams>(600ms, 0, SecureBinaryData{});
       };
    
       IO::WalletDBInterface dbIface;
@@ -3342,9 +3342,9 @@ TEST_F(WalletInterfaceTest, DbCount_Test)
    {
       return { thePassphrase, true };
    };
-   auto setPassLbd = [&thePassphrase]()->std::unique_ptr<Passphrase::Params>
+   auto setPassLbd = [&thePassphrase]()->std::unique_ptr<Passphrase::PassAndParams>
    {
-      return std::make_unique<Passphrase::Params>(1ms, 0, thePassphrase);
+      return std::make_unique<Passphrase::PassAndParams>(1ms, 0, thePassphrase);
    };
 
    auto checkDbValues = [](IO::WalletDBInterface& iface, std::string dbName,
@@ -4165,13 +4165,13 @@ TEST_F(WalletsTest, RejectCreationAtPassphrase)
       "armory_" + seed->getMasterId() + "_wallet.lmdb"};
 
    bool fileExists = false;
-   auto passFunc = [&fileExists, filename]()->std::unique_ptr<Passphrase::Params>
+   auto passFunc = [&fileExists, filename]()->std::unique_ptr<Passphrase::PassAndParams>
    {
       //check the file exists
       if (FileUtils::pathExists(filename, 0)) {
          fileExists = true;
       }
-      return std::make_unique<Passphrase::Params>();
+      return std::make_unique<Passphrase::PassAndParams>();
    };
 
    IO::CreateWalletParams params{
@@ -5742,9 +5742,9 @@ TEST_F(WalletsTest, ChangePassphrase)
       }
    };
 
-   auto newPassLbd = [&newPassphrase](void)->std::unique_ptr<Passphrase::Params>
+   auto newPassLbd = [&newPassphrase](void)->std::unique_ptr<Passphrase::PassAndParams>
    {
-      return std::make_unique<Passphrase::Params>(1ms, 0, newPassphrase);
+      return std::make_unique<Passphrase::PassAndParams>(1ms, 0, newPassphrase);
    };
 
    {
@@ -6068,8 +6068,8 @@ TEST_F(WalletsTest, ChangePassphrase_ChangeKDF)
    auto thirdPass = SecureBinaryData::fromString("thrid passphrase");
    {
       Passphrase::SetNew pass3{
-         [&thirdPass](void)->std::unique_ptr<Passphrase::Params>
-         { return std::make_unique<Passphrase::Params>(thirdPass, true); }
+         [&thirdPass](void)->std::unique_ptr<Passphrase::PassAndParams>
+         { return std::make_unique<Passphrase::PassAndParams>(thirdPass, true); }
       };
       auto start = std::chrono::system_clock::now();
       reloadAssetWlt->addPrivateKeyPassphrase(
@@ -6096,8 +6096,8 @@ TEST_F(WalletsTest, ChangePassphrase_ChangeKDF)
    auto fourthPass = SecureBinaryData::fromString("4th passphrase");
    {
       Passphrase::SetNew pass4{
-         [&fourthPass](void)->std::unique_ptr<Passphrase::Params>
-         { return std::make_unique<Passphrase::Params>(500ms, 0, fourthPass); }
+         [&fourthPass](void)->std::unique_ptr<Passphrase::PassAndParams>
+         { return std::make_unique<Passphrase::PassAndParams>(500ms, 0, fourthPass); }
       };
       auto start = std::chrono::system_clock::now();
       reloadAssetWlt->addPrivateKeyPassphrase(
@@ -6139,8 +6139,8 @@ TEST_F(WalletsTest, ChangePassphrase_ChangeKDF)
    auto fifthPass = SecureBinaryData::fromString("passphrase 5");
    {
       Passphrase::SetNew pass5{
-         [&fifthPass](void)->std::unique_ptr<Passphrase::Params>
-         { return std::make_unique<Passphrase::Params>(1500ms, 0, fifthPass); }
+         [&fifthPass](void)->std::unique_ptr<Passphrase::PassAndParams>
+         { return std::make_unique<Passphrase::PassAndParams>(1500ms, 0, fifthPass); }
       };
       auto start = std::chrono::system_clock::now();
       reloadAssetWlt->addPrivateKeyPassphrase(
@@ -6203,8 +6203,8 @@ TEST_F(WalletsTest, ChangePassphrase_ChangeKDF)
    auto newPass2 = SecureBinaryData::fromString("new pass2");
    {
       Passphrase::SetNew nPass2{
-         [&newPass2](void)->std::unique_ptr<Passphrase::Params>
-         { return std::make_unique<Passphrase::Params>(newPass2, true); }
+         [&newPass2](void)->std::unique_ptr<Passphrase::PassAndParams>
+         { return std::make_unique<Passphrase::PassAndParams>(newPass2, true); }
       };
       auto start = std::chrono::system_clock::now();
       reloadAssetWlt->changePrivateKeyPassphrase(
@@ -6231,8 +6231,8 @@ TEST_F(WalletsTest, ChangePassphrase_ChangeKDF)
    auto newPass3 = SecureBinaryData::fromString("new pass3");
    {
       Passphrase::SetNew nPass3{
-         [&newPass3](void)->std::unique_ptr<Passphrase::Params>
-         { return std::make_unique<Passphrase::Params>(1500ms, 0, newPass3); }
+         [&newPass3](void)->std::unique_ptr<Passphrase::PassAndParams>
+         { return std::make_unique<Passphrase::PassAndParams>(1500ms, 0, newPass3); }
       };
       auto start = std::chrono::system_clock::now();
       reloadAssetWlt->changePrivateKeyPassphrase(
@@ -6344,9 +6344,9 @@ TEST_F(WalletsTest, ChangePassphrase_FromUnencryptedWallet)
 
    //try to set new passphrase with reused kdf
    //should fail since no encryption is applied yet
-   auto reuseKdfLbd = [&newPass](void)->std::unique_ptr<Passphrase::Params>
+   auto reuseKdfLbd = [&newPass](void)->std::unique_ptr<Passphrase::PassAndParams>
    {
-      return std::make_unique<Passphrase::Params>(newPass, true);
+      return std::make_unique<Passphrase::PassAndParams>(newPass, true);
    };
 
    try {
@@ -6359,13 +6359,13 @@ TEST_F(WalletsTest, ChangePassphrase_FromUnencryptedWallet)
 
 
    //try to add passhrase to an unencrypted wallet, should fail
-   auto changePassLbd = [&newPass](void)->std::unique_ptr<Passphrase::Params>
+   auto changePassLbd = [&newPass](void)->std::unique_ptr<Passphrase::PassAndParams>
    {
-      return std::make_unique<Passphrase::Params>(1200ms, 0, newPass);
+      return std::make_unique<Passphrase::PassAndParams>(1200ms, 0, newPass);
    };
-   auto reusePassLbd = [&newPass](void)->std::unique_ptr<Passphrase::Params>
+   auto reusePassLbd = [&newPass](void)->std::unique_ptr<Passphrase::PassAndParams>
    {
-      return std::make_unique<Passphrase::Params>(newPass, true);
+      return std::make_unique<Passphrase::PassAndParams>(newPass, true);
    };
 
    try {
@@ -6461,10 +6461,10 @@ TEST_F(WalletsTest, ChangePassphrase_FromUnencryptedWallet)
 
    //add another passphrase
    auto newPass2 = SecureBinaryData::fromString("another pass");
-   auto changePass2Lbd = [&newPass2](void)->std::unique_ptr<Passphrase::Params>
+   auto changePass2Lbd = [&newPass2](void)->std::unique_ptr<Passphrase::PassAndParams>
    {
       //set to reuse existing kdf
-      return std::make_unique<Passphrase::Params>(newPass2, true);
+      return std::make_unique<Passphrase::PassAndParams>(newPass2, true);
    };
    {
       auto start = std::chrono::system_clock::now();
@@ -6693,9 +6693,9 @@ TEST_F(WalletsTest, ChangePassphrase_SeedBIP32)
    }
 
    //try to add passhrase to an unencrypted wallet, should fail
-   auto changePassLbd = [&newPass](void)->std::unique_ptr<Passphrase::Params>
+   auto changePassLbd = [&newPass](void)->std::unique_ptr<Passphrase::PassAndParams>
    {
-      return std::make_unique<Passphrase::Params>(1200ms, 0, newPass);
+      return std::make_unique<Passphrase::PassAndParams>(1200ms, 0, newPass);
    };
 
    try {
@@ -7165,9 +7165,9 @@ TEST_F(WalletsTest, MultiplePassphrase)
       return { SecureBinaryData::fromString("abcdedfg"), true };
    };
 
-   auto newPassLbd = [](void)->std::unique_ptr<Passphrase::Params>
+   auto newPassLbd = [](void)->std::unique_ptr<Passphrase::PassAndParams>
    {
-      return std::make_unique<Passphrase::Params>(
+      return std::make_unique<Passphrase::PassAndParams>(
          1ms, 0, SecureBinaryData::fromString("abcdedfg"));
    };
 
@@ -9167,9 +9167,9 @@ TEST_F(WalletMetaDataTest, PeerStore)
    using namespace NetworkPeers;
 
    auto peersWalletPass = SecureBinaryData::fromString("authpeerpass");
-   auto peerPassLbd = [&peersWalletPass]()->std::unique_ptr<Passphrase::Params>
+   auto peerPassLbd = [&peersWalletPass]()->std::unique_ptr<Passphrase::PassAndParams>
    {
-      return std::make_unique<Passphrase::Params>(
+      return std::make_unique<Passphrase::PassAndParams>(
          100ms, 0, peersWalletPass);
    };
    IO::CreateFileParams createFileParams{homedir_ / "test.peers", {peerPassLbd}};
@@ -9689,9 +9689,9 @@ TEST_F(WalletMetaDataTest, PeerStoreMasterKey)
 {
    using namespace NetworkPeers;
    auto peersWalletPass = SecureBinaryData::fromString("authpeerpass");
-   auto peerPassLbd = [&peersWalletPass]()->std::unique_ptr<Passphrase::Params>
+   auto peerPassLbd = [&peersWalletPass]()->std::unique_ptr<Passphrase::PassAndParams>
    {
-      return std::make_unique<Passphrase::Params>(
+      return std::make_unique<Passphrase::PassAndParams>(
          100ms, 0, peersWalletPass);
    };
    IO::CreateFileParams createFileParams{homedir_ / "test.peers", {peerPassLbd}};
@@ -10561,7 +10561,7 @@ TEST_F(BackupTests, BackupStrings_Legacy)
 
    auto newPass = Cryptography::PRNG::generateRandomStrong(10).toHexStr();
    auto callback = [&backupData](
-      const Seeds::RestorePrompt& prompt)->Seeds::PromptReply
+      const Seeds::RestorePrompt& prompt)
    {
       capnp::MallocMessageBuilder reply;
       switch (prompt.promptType)
@@ -10576,11 +10576,11 @@ TEST_F(BackupTests, BackupStrings_Legacy)
          {
             EXPECT_EQ(prompt.walletId, backupData->getWalletId());
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory135c);
-            return Seeds::PromptReply{ true, false, {} };
+            return Passphrase::PromptReply{ true, false, {} };
          }
 
          default:
-            return Seeds::PromptReply{ false, false, {} };
+            return Passphrase::PromptReply{ false, false, {} };
       }
    };
 
@@ -10663,7 +10663,7 @@ TEST_F(BackupTests, BackupStrings_Legacy_Armory200a)
    auto newPass = Cryptography::PRNG::generateRandomStrong(10).toHexStr();
    auto newCtrl = Cryptography::PRNG::generateRandomStrong(10).toHexStr();
    auto callback = [&backupData](
-      const Seeds::RestorePrompt& prompt)->Seeds::PromptReply
+      const Seeds::RestorePrompt& prompt)
    {
       switch (prompt.promptType)
       {
@@ -10677,11 +10677,11 @@ TEST_F(BackupTests, BackupStrings_Legacy_Armory200a)
          {
             EXPECT_EQ(prompt.walletId, backupData->getWalletId());
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory200a);
-            return Seeds::PromptReply{ true, false, {} };
+            return Passphrase::PromptReply{ true, false, {} };
          }
 
          default:
-            return Seeds::PromptReply{ false, false, {} };
+            return Passphrase::PromptReply{ false, false, {} };
       }
    };
 
@@ -10766,7 +10766,7 @@ TEST_F(BackupTests, BackupStrings_Legacy_SecurePrint)
    auto newPass = Cryptography::PRNG::generateRandomStrong(10).toHexStr();
    auto newCtrl = Cryptography::PRNG::generateRandomStrong(10).toHexStr();
    auto callback = [&backupData](
-      const Seeds::RestorePrompt& prompt)->Seeds::PromptReply
+      const Seeds::RestorePrompt& prompt)
    {
       switch (prompt.promptType)
       {
@@ -10779,12 +10779,12 @@ TEST_F(BackupTests, BackupStrings_Legacy_SecurePrint)
          case Seeds::RestorePromptType::Id:
          {
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory135c);
-            return Seeds::PromptReply{
+            return Passphrase::PromptReply{
                prompt.walletId == backupData->getWalletId(), false, {} };
          }
 
          default:
-            return Seeds::PromptReply{ false, true, {} };
+            return Passphrase::PromptReply{ false, true, {} };
       }
    };
 
@@ -10954,7 +10954,7 @@ TEST_F(BackupTests, Easy16_AutoRepair)
       //attempt to restore wallet from corrupted backup
       try {
          auto userPrompt = [&wltID, &decoded, &succesfulRepairs](
-            const Seeds::RestorePrompt& prompt)->Seeds::PromptReply
+            const Seeds::RestorePrompt& prompt)->Passphrase::PromptReply
          {
             switch (prompt.promptType)
             {
@@ -10962,7 +10962,7 @@ TEST_F(BackupTests, Easy16_AutoRepair)
                {
                   EXPECT_EQ(prompt.checksumResult.at(0), decoded.checksumIndexes[0]);
                   EXPECT_EQ(prompt.checksumResult.at(1), decoded.checksumIndexes[1]);
-                  return Seeds::PromptReply{ false, false, {} };
+                  return Passphrase::PromptReply{ false, false, {} };
                }
 
                case Seeds::RestorePromptType::Id:
@@ -10971,11 +10971,11 @@ TEST_F(BackupTests, Easy16_AutoRepair)
                   if (prompt.walletId == wltID) {
                      ++succesfulRepairs;
                   }
-                  return Seeds::PromptReply{ false, false, {} };
+                  return Passphrase::PromptReply{ false, false, {} };
                }
 
                default:
-                  return Seeds::PromptReply{ false, false, {} };
+                  return Passphrase::PromptReply{ false, false, {} };
             }
          };
 
@@ -11062,7 +11062,7 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode)
    int corruptionCounter = 0;
 
    auto callback = [&backupData, &corruptions, &corruptionCounter](
-      const Seeds::RestorePrompt& prompt)->Seeds::PromptReply
+      const Seeds::RestorePrompt& prompt)->Passphrase::PromptReply
    {
       switch (prompt.promptType)
       {
@@ -11075,7 +11075,7 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode)
          case Seeds::RestorePromptType::Id:
          {
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory135a);
-            return Seeds::PromptReply{
+            return Passphrase::PromptReply{
                prompt.walletId == backupData->getWalletId(), false, {} };
          }
 
@@ -11091,11 +11091,11 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode)
                   EXPECT_EQ(linePair.second, 0);
                }
             }
-            return Seeds::PromptReply{ false, false, {} };
+            return Passphrase::PromptReply{ false, false, {} };
          }
 
          default:
-            return Seeds::PromptReply{ false, false, {} };
+            return Passphrase::PromptReply{ false, false, {} };
       }
    };
 
@@ -11226,7 +11226,7 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode_SecurePrint)
    auto newPass = Cryptography::PRNG::generateRandomStrong(10).toHexStr();
    auto newCtrl = Cryptography::PRNG::generateRandomStrong(10).toHexStr();
    auto callback = [&backupData](
-      const Seeds::RestorePrompt& prompt)->Seeds::PromptReply
+      const Seeds::RestorePrompt& prompt)->Passphrase::PromptReply
    {
       switch (prompt.promptType)
       {
@@ -11239,12 +11239,12 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode_SecurePrint)
          case Seeds::RestorePromptType::Id:
          {
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory135a);
-            return Seeds::PromptReply{
+            return Passphrase::PromptReply{
                prompt.walletId == backupData->getWalletId(), false, {} };
          }
 
          default:
-            return Seeds::PromptReply{ false, false, {} };
+            return Passphrase::PromptReply{ false, false, {} };
       }
    };
 
@@ -11371,7 +11371,7 @@ TEST_F(BackupTests, BackupString_LegacyWO)
       });
 
       auto callback = [&originalWalletId](
-         const Seeds::RestorePrompt& prompt)->Seeds::PromptReply
+         const Seeds::RestorePrompt& prompt)->Passphrase::PromptReply
       {
          switch (prompt.promptType)
          {
@@ -11385,11 +11385,11 @@ TEST_F(BackupTests, BackupString_LegacyWO)
             {
                EXPECT_EQ(prompt.walletId, originalWalletId);
                EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory200a);
-               return Seeds::PromptReply{ true, false, {} };
+               return Passphrase::PromptReply{ true, false, {} };
             }
 
             default:
-               return Seeds::PromptReply{ false, false, {} };
+               return Passphrase::PromptReply{ false, false, {} };
          }
       };
 
@@ -11447,7 +11447,7 @@ TEST_F(BackupTests, BackupString_LegacyStatic)
    auto backupWO = Seeds::Backup_Easy16Public::fromLines(woBackup);
 
    auto callback = [&walletId](
-      const Seeds::RestorePrompt& prompt)->Seeds::PromptReply
+      const Seeds::RestorePrompt& prompt)->Passphrase::PromptReply
    {
       switch (prompt.promptType)
       {
@@ -11461,11 +11461,11 @@ TEST_F(BackupTests, BackupString_LegacyStatic)
          {
             EXPECT_EQ(prompt.walletId, walletId);
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory135a);
-            return Seeds::PromptReply{ true, false, {} };
+            return Passphrase::PromptReply{ true, false, {} };
          }
 
          default:
-            return Seeds::PromptReply{ false, false, {} };
+            return Passphrase::PromptReply{ false, false, {} };
       }
    };
 
@@ -11571,7 +11571,7 @@ TEST_F(BackupTests, BackupStrings_BIP32)
    auto newPass = Cryptography::PRNG::generateRandomStrong(10).toHexStr();
    auto newCtrl = Cryptography::PRNG::generateRandomStrong(10).toHexStr();
    auto callback = [&backupData](
-      const Seeds::RestorePrompt& prompt)->Seeds::PromptReply
+      const Seeds::RestorePrompt& prompt)->Passphrase::PromptReply
    {
       switch (prompt.promptType)
       {
@@ -11585,11 +11585,11 @@ TEST_F(BackupTests, BackupStrings_BIP32)
          {
             EXPECT_EQ(prompt.walletId, backupData->getWalletId());
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory200b);
-            return Seeds::PromptReply{ true, false, {} };
+            return Passphrase::PromptReply{ true, false, {} };
          }
 
          default:
-            return Seeds::PromptReply{ false, false, {} };
+            return Passphrase::PromptReply{ false, false, {} };
       }
    };
 
@@ -11713,7 +11713,7 @@ TEST_F(BackupTests, BackupStrings_BIP32_Virgin)
    auto newPass = Cryptography::PRNG::generateRandomStrong(10).toHexStr();
    auto newCtrl = Cryptography::PRNG::generateRandomStrong(10).toHexStr();
    auto callback = [&backupData](
-      const Seeds::RestorePrompt& prompt)->Seeds::PromptReply
+      const Seeds::RestorePrompt& prompt)->Passphrase::PromptReply
    {
       switch (prompt.promptType)
       {
@@ -11727,11 +11727,11 @@ TEST_F(BackupTests, BackupStrings_BIP32_Virgin)
          {
             EXPECT_EQ(prompt.walletId, backupData->getWalletId());
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory200c);
-            return Seeds::PromptReply{ true, false, {} };
+            return Passphrase::PromptReply{ true, false, {} };
          }
 
          default:
-            return Seeds::PromptReply{ false, false, {} };
+            return Passphrase::PromptReply{ false, false, {} };
       }
    };
 
@@ -11794,7 +11794,7 @@ TEST_F(BackupTests, BackupStrings_BIP32_FromBase58)
 
    auto newPass = Cryptography::PRNG::generateRandomStrong(10).toHexStr();
    auto newCtrl = Cryptography::PRNG::generateRandomStrong(10).toHexStr();
-   auto callback = [](const Seeds::RestorePrompt& prompt)->Seeds::PromptReply
+   auto callback = [](const Seeds::RestorePrompt& prompt)->Passphrase::PromptReply
    {
       switch (prompt.promptType)
       {
@@ -11808,11 +11808,11 @@ TEST_F(BackupTests, BackupStrings_BIP32_FromBase58)
          {
             EXPECT_EQ(prompt.walletId, "poUtmfmp");
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Base58);
-            return Seeds::PromptReply{ true, false, {} };
+            return Passphrase::PromptReply{ true, false, {} };
          }
 
          default:
-            return Seeds::PromptReply{ false, false, {} };
+            return Passphrase::PromptReply{ false, false, {} };
       }
    };
 
@@ -11916,7 +11916,7 @@ TEST_F(BackupTests, BackupStrings_BIP39)
    auto newPass = Cryptography::PRNG::generateRandomStrong(10).toHexStr();
    auto newCtrl = Cryptography::PRNG::generateRandomStrong(10).toHexStr();
    auto callback = [&walletId](
-      const Seeds::RestorePrompt& prompt)->Seeds::PromptReply
+      const Seeds::RestorePrompt& prompt)->Passphrase::PromptReply
    {
       switch (prompt.promptType)
       {
@@ -11930,11 +11930,11 @@ TEST_F(BackupTests, BackupStrings_BIP39)
          {
             EXPECT_EQ(prompt.walletId, walletId);
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::Armory200d);
-            return Seeds::PromptReply{ true, false, {} };
+            return Passphrase::PromptReply{ true, false, {} };
          }
 
          default:
-            return Seeds::PromptReply{ false, false, {} };
+            return Passphrase::PromptReply{ false, false, {} };
       }
    };
 
@@ -11988,7 +11988,7 @@ TEST_F(BackupTests, BackupStrings_BIP39)
    auto newPass2 = Cryptography::PRNG::generateRandomStrong(10).toHexStr();
    auto newCtrl2 = Cryptography::PRNG::generateRandomStrong(10).toHexStr();
    auto callbackBip39 = [&walletId](
-      const Seeds::RestorePrompt& prompt)->Seeds::PromptReply
+      const Seeds::RestorePrompt& prompt)->Passphrase::PromptReply
    {
       switch (prompt.promptType)
       {
@@ -12002,11 +12002,11 @@ TEST_F(BackupTests, BackupStrings_BIP39)
          {
             EXPECT_EQ(prompt.walletId, walletId);
             EXPECT_EQ(prompt.backupType, Seeds::BackupType::BIP39);
-            return Seeds::PromptReply{ true, false, {} };
+            return Passphrase::PromptReply{ true, false, {} };
          }
 
          default:
-            return Seeds::PromptReply{ false, false, {} };
+            return Passphrase::PromptReply{ false, false, {} };
       }
    };
 

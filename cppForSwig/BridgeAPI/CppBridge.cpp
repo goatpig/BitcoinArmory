@@ -436,10 +436,10 @@ namespace
       }
    }
 
-   std::function<std::unique_ptr<Passphrase::Params>(void)> getSetPassFunc(
+   std::function<std::unique_ptr<Passphrase::PassAndParams>(void)> getSetPassFunc(
       CppBridge* bridgePtr, const PromptId& promptId, bool priv)
    {
-      return [bridgePtr, promptId, priv]()->std::unique_ptr<Passphrase::Params>
+      return [bridgePtr, promptId, priv]()
       {
          auto counterBd = fortuna.generateRandom(4);
          auto replyId = *(uint32_t*)counterBd.getPtr();
@@ -459,9 +459,9 @@ namespace
          auto notifSerialized = serializeCapnp(notifMessage);
 
          //reply handler
-         auto prom = std::make_shared<std::promise<Seeds::PromptReply>>();
+         auto prom = std::make_shared<std::promise<Passphrase::PromptReply>>();
          auto fut = prom->get_future();
-         auto replyLbd = [prom](const Seeds::PromptReply& reply)->bool
+         auto replyLbd = [prom](const Passphrase::PromptReply& reply)->bool
          {
             prom->set_value(reply);
             return true;
@@ -476,9 +476,9 @@ namespace
          //wait on reply
          auto reply = fut.get();
          if (!reply.success) {
-            return std::make_unique<Passphrase::Params>();
+            return std::make_unique<Passphrase::PassAndParams>();
          }
-         return std::make_unique<Passphrase::Params>(reply.passParams);
+         return std::make_unique<Passphrase::PassAndParams>(reply.passAndParams);
       };
    }
 
@@ -564,7 +564,7 @@ CppBridge::~CppBridge()
       std::unique_lock<std::mutex> lock(promptReplyHandlersMu_);
       notifQueue_->terminate();
       for (auto& handlerPair : promptReplyHandlers_) {
-         handlerPair.second(Seeds::PromptReply{false, false, {}});
+         handlerPair.second(Passphrase::PromptReply{false, false, {}});
       }
    }
 
@@ -1617,9 +1617,9 @@ void CppBridge::connectToIp(
       auto notifSerialized = serializeCapnp(notifMessage);
 
       //reply handler
-      auto prom = std::make_shared<std::promise<Seeds::PromptReply>>();
+      auto prom = std::make_shared<std::promise<Passphrase::PromptReply>>();
       auto fut = prom->get_future();
-      auto replyLbd = [prom](const Seeds::PromptReply& reply)->bool
+      auto replyLbd = [prom](const Passphrase::PromptReply& reply)->bool
       {
          prom->set_value(reply);
          return true;
@@ -2192,7 +2192,7 @@ void CppBridge::restoreWallet(
       };
 
       auto callback = [this, createCallbackMessage](
-         const Seeds::RestorePrompt& prompt)->Seeds::PromptReply
+         const Seeds::RestorePrompt& prompt)->Passphrase::PromptReply
       {
          if (prompt.needsReply()) {
             auto counterBd = fortuna.generateRandom(4);
@@ -2200,9 +2200,9 @@ void CppBridge::restoreWallet(
             auto message = createCallbackMessage(prompt, replyId);
 
             //setup reply lambda
-            auto prom = std::make_shared<std::promise<Seeds::PromptReply>>();
+            auto prom = std::make_shared<std::promise<Passphrase::PromptReply>>();
             auto fut = prom->get_future();
-            auto replyLbd = [prom](const Seeds::PromptReply& reply)->bool
+            auto replyLbd = [prom](const Passphrase::PromptReply& reply)->bool
             {
                prom->set_value(reply);
                return true;
@@ -2225,24 +2225,26 @@ void CppBridge::restoreWallet(
          }
       };
 
-      auto setNewCtrlFunc = [callback]()->std::unique_ptr<Passphrase::Params>
+      auto setNewCtrlFunc = [callback]()
       {
          auto reply = callback(Seeds::RestorePrompt{
             Seeds::RestorePromptType::ControlPassphrase});
          if (!reply.success) {
-            return std::make_unique<Passphrase::Params>();
+            return std::make_unique<Passphrase::PassAndParams>();
          }
-         return std::make_unique<Passphrase::Params>(reply.passParams);
+         return std::make_unique<Passphrase::PassAndParams>(
+            reply.passAndParams);
       };
 
-      auto setNewPrivFunc = [callback]()->std::unique_ptr<Passphrase::Params>
+      auto setNewPrivFunc = [callback]()
       {
          auto reply = callback(Seeds::RestorePrompt{
             Seeds::RestorePromptType::PrivatePassphrase});
          if (!reply.success) {
-            return std::make_unique<Passphrase::Params>();
+            return std::make_unique<Passphrase::PassAndParams>();
          }
-         return std::make_unique<Passphrase::Params>(reply.passParams);
+         return std::make_unique<Passphrase::PassAndParams>(
+            reply.passAndParams);
       };
 
       auto tempDir = wltManager_->getWalletsDir() / "temp";
@@ -3416,7 +3418,7 @@ void CppBridge::registerPromptReplyHandler(PromptReplyWrapper& wrapper)
    if (!notifQueue_->isValid()) {
       //~CppBridge already released the pending prompts, nothing will
       //answer this one: reject it
-      wrapper.handler(Seeds::PromptReply{false, false, {}});
+      wrapper.handler(Passphrase::PromptReply{false, false, {}});
       return;
    }
 

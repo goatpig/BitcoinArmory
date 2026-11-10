@@ -16,15 +16,10 @@
 
 namespace Armory
 {
-   namespace Seeds
-   {
-      struct PromptReply;
-   }
-
    namespace Bridge
    {
       using PromptId = std::string;
-      using PromptReplyHandler = std::function<bool(const Seeds::PromptReply&)>;
+      using PromptReplyHandler = std::function<bool(const Passphrase::PromptReply&)>;
 
       //////////////////////////////////////////////////////////////////////////
       struct PromptReplyWrapper
@@ -43,8 +38,8 @@ namespace Armory
          std::function<void(BinaryData, PromptReplyWrapper)> promptFunc_;
 
       private:
-         Seeds::PromptReply processFeedRequest(
-            const std::set<Armory::Wallets::EncryptionKeyId>&);
+         Passphrase::PromptReply processFeedRequest(
+            const std::set<Wallets::EncryptionKeyId>&);
 
       public:
          BridgePassphrasePrompt(const PromptId&,

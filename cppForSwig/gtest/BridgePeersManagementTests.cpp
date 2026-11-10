@@ -345,8 +345,8 @@ protected:
 
       auto serverPeersWlt = NetworkPeers::PeerStore::bootstrapWallet({
          homedir_ / SERVER_AUTH_PEER_FILENAME, {
-            []()->std::unique_ptr<Passphrase::Params>
-            { return std::make_unique<Passphrase::Params>
+            []() {
+               return std::make_unique<Passphrase::PassAndParams>
                (1ms, 0, SecureBinaryData{});
             }
          }
@@ -355,8 +355,8 @@ protected:
 
       auto clientPeersWlt = NetworkPeers::PeerStore::bootstrapWallet({
          homedir_ / CLIENT_AUTH_PEER_FILENAME, {
-            [pass=clientPeersDbPass_]()->std::unique_ptr<Passphrase::Params>
-            { return std::make_unique<Passphrase::Params>
+            [pass=clientPeersDbPass_]()
+            { return std::make_unique<Passphrase::PassAndParams>
                (1ms, 0, SecureBinaryData::fromString(pass));
             }
          }

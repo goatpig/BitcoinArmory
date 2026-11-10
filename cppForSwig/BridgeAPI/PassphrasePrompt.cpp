@@ -9,7 +9,6 @@
 
 #include "PassphrasePrompt.h"
 #include "Utils/log.h"
-#include "Wallets/Seeds/Backups.h"
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>
@@ -32,7 +31,7 @@ BridgePassphrasePrompt::BridgePassphrasePrompt(const std::string& id,
 {}
 
 ////////////////////////////////////////////////////////////////////////////////
-Seeds::PromptReply BridgePassphrasePrompt::processFeedRequest(
+Passphrase::PromptReply BridgePassphrasePrompt::processFeedRequest(
    const std::set<Wallets::EncryptionKeyId>& ids)
 {
    if (ids.empty()) {
@@ -42,7 +41,7 @@ Seeds::PromptReply BridgePassphrasePrompt::processFeedRequest(
    }
 
    //cycle the promise & future
-   auto promPtr = std::make_shared<std::promise<Seeds::PromptReply>>();
+   auto promPtr = std::make_shared<std::promise<Passphrase::PromptReply>>();
    auto fut = promPtr->get_future();
    auto replyId = replyIdCounter_++;
 
@@ -66,7 +65,7 @@ Seeds::PromptReply BridgePassphrasePrompt::processFeedRequest(
    BinaryData serialized(bytes.begin(), bytes.end());
 
    //reply handler
-   auto replyHandler = [promPtr](const Seeds::PromptReply& reply)->bool
+   auto replyHandler = [promPtr](const Passphrase::PromptReply& reply)->bool
    {
       if (!reply.success) {
          promPtr->set_exception(std::make_exception_ptr(
@@ -114,9 +113,9 @@ Passphrase::UnlockFunc BridgePassphrasePrompt::getLambda()
    ->Passphrase::Result
    {
       auto reply = processFeedRequest(ids);
-      if (reply.passParams.type != Passphrase::Params::Type::Unlock) {
+      if (reply.passAndParams.type != Passphrase::PassAndParams::Type::Unlock) {
          return { {}, false };
       }
-      return { std::move(reply.passParams.passphrase), reply.success };
+      return { std::move(reply.passAndParams.passphrase), reply.success };
    };
 }

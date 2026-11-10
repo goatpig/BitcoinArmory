@@ -198,7 +198,7 @@ namespace Armory
 
             //headers
             static MasterKeyStruct initWalletHeaderObject(
-               std::shared_ptr<WalletHeader>, Passphrase::Params&);
+               std::shared_ptr<WalletHeader>, Passphrase::PassAndParams&);
             void addHeader(std::shared_ptr<WalletHeader>);
             std::shared_ptr<WalletHeader> getWalletHeader(
                const std::string&) const;

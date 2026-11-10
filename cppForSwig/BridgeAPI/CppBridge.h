@@ -31,9 +31,13 @@ namespace Armory
 {
    namespace Seeds
    {
-      struct PromptReply;
       enum class SeedType : int;
-   };
+   }
+
+   namespace Passphrase
+   {
+      struct PromptReply;
+   }
 
    namespace Signing
    {
@@ -88,7 +92,7 @@ namespace Armory
       ////
       using MessageId = uint64_t;
       using PromptId = std::string;
-      using PromptReplyHandler = std::function<bool(const Seeds::PromptReply&)>;
+      using PromptReplyHandler = std::function<bool(const Passphrase::PromptReply&)>;
 
       //////////////////////////////////////////////////////////////////////////
       using WalletPtr = std::shared_ptr<Armory::Wallets::AssetWallet>;
