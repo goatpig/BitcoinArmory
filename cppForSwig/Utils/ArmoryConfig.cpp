@@ -333,7 +333,7 @@ std::string_view SettingsUtils::stripQuotes(const std::string_view& input)
       --len;
    }
 
-   if (last_char == '\"' || last_char == '\'') {
+   if (len > 0 && (last_char == '\"' || last_char == '\'')) {
       --len;
    }
 

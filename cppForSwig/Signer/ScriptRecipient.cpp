@@ -392,7 +392,7 @@ size_t Recipient_OPRETURN::getSize() const
    else if (size > 0)
       size += 1;
 
-   size += 9; //8 for value, one for op_return
+   size += 10; //8 for value, one for the script size, one for op_return
    return size;
 }
 

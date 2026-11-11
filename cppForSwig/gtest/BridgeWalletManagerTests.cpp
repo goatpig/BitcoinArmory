@@ -357,6 +357,10 @@ TEST_F(WalletManagerTests, Migrate_Legacy)
       EXPECT_EQ(iter->second->state(), Bridge::WalletLoadState::Legacy);
       EXPECT_EQ(iter->second->walletId(), wltId);
       EXPECT_FALSE(iter->second->staged());
+
+      //a legacy wallet cannot be staged
+      EXPECT_FALSE(mgr.stageWallet(iter->second->walletId(), true));
+      EXPECT_FALSE(iter->second->staged());
    }
 
    //migrate the wallet
