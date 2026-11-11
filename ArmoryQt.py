@@ -84,6 +84,7 @@ from qtdialogs.qtdefines import GETFONT, NETWORKMODE, \
 from qtdialogs.ArmoryDialog import ArmoryDialog
 from qtdialogs.qtdialogs import URLHandler, ArmorySplashScreen, LoadingDisp
 from qtdialogs.DlgMigrateWallet import DlgMigrateWallet
+from qtdialogs.DlgBrowserWarn import DlgBrowserWarn
 from qtdialogs.DlgSendBitcoins import DlgSendBitcoins
 from qtdialogs.DlgAddressBook import DlgAddressBook, createAddrBookButton
 from qtdialogs.DlgEULA import DlgEULA

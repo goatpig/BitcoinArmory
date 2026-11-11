@@ -38,6 +38,7 @@ from qtdialogs.qtdefines import USERMODE, GETFONT, tightSizeStr, \
 
 from qtdialogs.ArmoryDialog import ArmoryDialog
 from qtdialogs.MsgBoxCustom import MsgBoxCustom
+from qtdialogs.DlgBrowserWarn import DlgBrowserWarn
 
 NO_CHANGE = 'NoChange'
 BACKUP_TYPE_135A = '1.35a'
@@ -2046,6 +2047,6 @@ class DlgRegAndTest(ArmoryDialog):
 
 #############################################################################
 class URLHandler(QtCore.QObject):
-   #@pyqtSignature("QUrl")
+   @QtCore.Slot(QtCore.QUrl)
    def handleURL(self, link):
       DlgBrowserWarn(link.toString()).exec_()
