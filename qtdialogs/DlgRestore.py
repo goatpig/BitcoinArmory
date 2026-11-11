@@ -265,6 +265,12 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
                   QtWidgets.QMessageBox.Ok)
                packet.success = False
                self.reject()
+         else:
+            # no encryption: an empty passphrase, a rejected prompt
+            # fails the restore
+            packet.success = True
+            passPacket.passphrase = ""
+            passPacket.kdfTargetMs = 250
       else:
          packet.success = False
       self.reply()
