@@ -548,6 +548,14 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
          self.callbackId, wrapperFunc)
 
    ####
+   def accept(self):
+      """Done button: only a migration that worked is Accepted."""
+      if self.migrationFailed:
+         super().reject()
+      else:
+         super().accept()
+
+   ####
    def reject(self):
       """Handle dialog rejection (cancel button or close)."""
       if self.migrationComplete:

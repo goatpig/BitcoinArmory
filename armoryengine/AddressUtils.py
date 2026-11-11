@@ -16,7 +16,9 @@ import binascii
 from armoryengine.BinaryPacker import BinaryPacker, UINT8, BINARY_CHUNK
 from armoryengine.ArmoryUtils import DATATYPE, ADDRBYTE, P2SHBYTE, \
    binary_to_hex, prettyHex, hash256, hash160, SCRADDR_BYTE_LIST, \
-   ADDRBYTE, P2SHBYTE, PRIVKEYBYTE, computeChecksum, LOGERROR
+   ADDRBYTE, P2SHBYTE, PRIVKEYBYTE, computeChecksum, LOGERROR, \
+   BASE16CHARS, ChecksumError, InvalidHashError, P2SHNotSupportedError, \
+   checkAddrStrValid
 
 
 ################################################################################
@@ -174,7 +176,7 @@ def addrStr_is_p2sh(b58Str):
    if not hash256(binStr[:21])[:4] == binStr[-4:]:
       return False
 
-   return (binStr[0] == P2SHBYTE)
+   return (binStr[0:1] == P2SHBYTE)
 
 ################################################################################
 # As of version 0.90.1, this returns the prefix byte with the hash160.  This is
@@ -187,7 +189,7 @@ def addrStr_to_hash160(b58Str, p2shAllowed=True, \
    addrByteInt = int.from_bytes(addrByte, "little")
    p2shByteInt = int.from_bytes(p2shByte, "little")
 
-   if not p2shAllowed and binStr[0]==addrByteInt:
+   if not p2shAllowed and binStr[0:1]==p2shByte:
       raise P2SHNotSupportedError
    if not len(binStr) == 25:
       raise BadAddressError('Address string is %d bytes' % len(binStr))
@@ -196,7 +198,7 @@ def addrStr_to_hash160(b58Str, p2shAllowed=True, \
       raise ChecksumError('Address string has invalid checksum')
 
    if not binStr[0] in (addrByteInt, p2shByteInt):
-      raise BadAddressError('Unknown addr prefix: %s' % binary_to_hex(binStr[0]))
+      raise BadAddressError('Unknown addr prefix: %s' % binary_to_hex(binStr[0:1]))
 
    return (binStr[0], binStr[1:-4])
 
@@ -281,7 +283,7 @@ def addrStr_to_scrAddr(addrStr, p2pkhByte = ADDRBYTE, p2shByte = P2SHBYTE):
       return ''
 
    if not checkAddrStrValid(addrStr, [p2pkhByte, p2shByte]):
-      BadAddressError('Invalid address: "%s"' % addrStr)
+      raise BadAddressError('Invalid address: "%s"' % addrStr)
 
    atype, a160 = addrStr_to_hash160(addrStr, True, p2pkhByte, p2shByte)
    if atype==int.from_bytes(p2pkhByte, "little"):
@@ -289,7 +291,7 @@ def addrStr_to_scrAddr(addrStr, p2pkhByte = ADDRBYTE, p2shByte = P2SHBYTE):
    elif atype==int.from_bytes(p2shByte, "little"):
       return p2shByte + a160
    else:
-      BadAddressError('Invalid address: "%s"' % addrStr)
+      raise BadAddressError('Invalid address: "%s"' % addrStr)
 
 ################################################################################
 # output script type to address type resolution

@@ -13,7 +13,7 @@ if os.path.exists('.git') \
 
     # First try to determine head using Git...
     try:
-        build = check_output(git_cmd.split(), shell=False)
+        build = check_output(git_cmd.split(), shell=False).decode().strip()
     except OSError as err:
         print("Failed to execute '%s': %s" % (git_cmd, err.strerror))
     except CalledProcessError as err:

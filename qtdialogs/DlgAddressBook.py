@@ -246,8 +246,11 @@ class DlgAddressBook(ArmoryDialog):
 
       # Auto-select the default wallet, if there is one
       rowNum = 0
-      if defaultWltID and defaultWltID in self.main.walletMap:
-         rowNum = self.main.walletIndices[defaultWltID]
+      if defaultWltID:
+         for i in range(self.main.wallets.count()):
+            if self.main.wallets.getByIndex(i).dbId == defaultWltID:
+               rowNum = i
+               break
       rowIndex = self.wltDispModel.index(rowNum, 0)
       self.wltDispView.setCurrentIndex(rowIndex)
 
