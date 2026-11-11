@@ -2171,13 +2171,14 @@ def checkAddrBinValid(addrBin, validPrefixes=None):
       validPrefixes = [validPrefixes]
       
    prefix = checkAddrType(addrBin)
-   return (prefix in validPrefixes)
+   return (prefix in [p[0] for p in validPrefixes])
 
 ################################################################################
 def checkAddrStrValid(addrStr, validPrefixes=[ADDRBYTE, P2SHBYTE]):
    """ Check that a Base58 address-string is valid on this network """
    if(addrStr == ''):
       return False
+   from armoryengine.AddressUtils import base58_to_binary
    return checkAddrBinValid(base58_to_binary(addrStr), validPrefixes)
 
 ################################################################################
