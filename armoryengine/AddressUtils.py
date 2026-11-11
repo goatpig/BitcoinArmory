@@ -67,7 +67,7 @@ def binary_to_base58(binstr):
    """
    padding = 0
    for b in binstr:
-      if b==b'\x00':
+      if b==0:
          padding+=1
       else:
          break
