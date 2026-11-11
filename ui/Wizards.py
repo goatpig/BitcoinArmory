@@ -12,7 +12,8 @@
 
 from qtpy import QtCore, QtGui, QtWidgets
 
-from armoryengine.ArmoryUtils import USE_TESTNET, USE_REGTEST, int_to_binary
+from armoryengine.ArmoryUtils import USE_TESTNET, USE_REGTEST, int_to_binary, \
+   LOGDEBUG
 from ui.WalletFrames import NewWalletFrame, SetPassphraseFrame, \
    VerifyPassphraseFrame, WalletBackupFrame, WalletProgressFrame, \
    WizardCreateWatchingOnlyWalletFrame, CardDeckFrame
