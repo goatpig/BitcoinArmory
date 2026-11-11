@@ -1340,7 +1340,7 @@ class ScriptUtils(ProtoWrapper):
       packet.scriptUtils.getLastPushDataInScript = None
 
       fut = self.send(packet)
-      reply = fut.getVal()
+      reply = fut.getVal(nothrow=True)
       if reply.success == False:
          return b''
       return reply.scriptUtils.getLastPushDataInScript
