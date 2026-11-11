@@ -1779,9 +1779,9 @@ def bytesToHumanSize(nBytes):
 def packVarInt(n):
    """ Writes 1,3,5 or 9 bytes depending on the size of n """
    if   n < 0xfd:  return pack('B', n)
-   elif n < 1<<16: return [b'\xfd'+pack('<H',n), 3]
-   elif n < 1<<32: return [b'\xfe'+pack('<I',n), 5]
-   else:           return [b'\xff'+pack('<Q',n), 9]
+   elif n < 1<<16: return b'\xfd'+pack('<H',n)
+   elif n < 1<<32: return b'\xfe'+pack('<I',n)
+   else:           return b'\xff'+pack('<Q',n)
 
 def unpackVarInt(hvi):
    """ Returns a pair: the integer value and number of bytes read """
