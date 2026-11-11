@@ -377,6 +377,18 @@ TEST_F(SignerTest, Signer_Test)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST(RecipientTest, OpReturn_Size)
+{
+   //getSize has to match the serialized txout
+   for (size_t len : {0, 1, 17, 75, 76, 80}) {
+      Recipient_OPRETURN recipient{
+         BinaryData::fromString(std::string(len, 'a'))};
+      EXPECT_EQ(recipient.getSize(),
+         recipient.getSerializedScript().getSize()) << len;
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(SignerTest, SpendTest_SizeEstimates)
 {
    TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
