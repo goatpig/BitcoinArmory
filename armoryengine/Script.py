@@ -297,7 +297,7 @@ def getOpCode(name):
 
 ################################################################################
 def convertScriptToOpStrings(binScript):
-   from armoryengine.ArmoryUtils import binary_to_hex
+   from armoryengine.ArmoryUtils import binary_to_hex, binary_to_int
    opList = []
 
    i = 0
@@ -333,12 +333,12 @@ def convertScriptToOpStrings(binScript):
          opList.append('['+binary_to_hex(binObj)[:512] + '...]')
          i += nb+3
       elif nextOp == 78:
-         nb = binScript[i+1:i+5]
+         nb = binary_to_int(binScript[i+1:i+5])
          if i+1+4+nb > sz:
             error = True
             break
          nbprint = min(nb,256)
-         binObj = binScript[i+5,i+5+nbprint]
+         binObj = binScript[i+5:i+5+nbprint]
          opList.append('[OP_PUSHDATA4(%s)]' % str(nb))
          opList.append('['+binary_to_hex(binObj)[:512] + '...]')
          i += nb+5
