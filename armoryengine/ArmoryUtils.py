@@ -13,6 +13,7 @@ from __future__ import (absolute_import, division,
 ##############################################################################
 
 import ast
+from decimal import Decimal, InvalidOperation
 import codecs
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
@@ -1191,8 +1192,10 @@ def str2coin(theStr, negAllowed=True, maxDec=8, roundHighPrec=True):
    if len(coinStr.strip())==0:
       raise ValueError
 
-   floatVal = float(coinStr)
-   satoshiVal = int(floatVal * ONE_BTC)
+   try:
+      satoshiVal = int(Decimal(coinStr.strip()) * ONE_BTC)
+   except InvalidOperation:
+      raise ValueError(coinStr)
    if satoshiVal < 0 and negAllowed == False:
       raise NegativeValueError
    return satoshiVal
