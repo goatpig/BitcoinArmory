@@ -44,7 +44,7 @@ from armoryengine.ArmoryUtils import HMAC256, \
    enum, GetExecDir, RightNow, CLI_ARGS, ARMORY_HOME_DIR, DEFAULT, \
    ARMORY_DB_DIR, coin2str, DEFAULT_DATE_FORMAT, \
    unixTimeToFormatStr, binary_to_hex, BTC_HOME_DIR, secondsToHumanTime, \
-   LEVELDB_BLKDATA, LOGPPRINT, hex_to_binary, \
+   LEVELDB_BLKDATA, LEVELDB_HEADERS, LOGPPRINT, hex_to_binary, \
    getRandomHexits_NotSecure, coin2strNZS, bytesToHumanSize, hash256, \
    DEFAULT_ADDR_TYPE, hex_switchEndian, BLOCKEXPLORE_NAME, getBridgeArgList, \
    getLastBytesOfFile, ARMORY_LOG_FILE, ARMCPP_LOG_FILE, ARMDB_LOG_FILE
