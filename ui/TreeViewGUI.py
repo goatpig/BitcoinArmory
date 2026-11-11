@@ -160,7 +160,8 @@ class RBFutxoItem():
       return self.state
 
    def setCheckState(self, val):
-      self.state = val
+      self.state = QtCore.Qt.CheckState(val)
+      self.utxo.setChecked(self.state == QtCore.Qt.Checked)
 
    def isCheckable(self):
       return True
