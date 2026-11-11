@@ -68,7 +68,7 @@ void WalletFileInfo::setState(WalletLoadState state)
 void WalletFileInfo::setStaged(bool staged)
 {
    if (staged && loadState_ != WalletLoadState::Ready) {
-      std::runtime_error("state and stage mismatch");
+      throw std::runtime_error("state and stage mismatch");
    }
    staged_ = staged;
 }
