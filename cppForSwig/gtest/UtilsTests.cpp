@@ -55,6 +55,23 @@ TEST(SettingsUtilsTest, GetKeyValsFromLines_SkipsEmptyLines)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST(SettingsUtilsTest, StripQuotes)
+{
+   namespace SettingsUtils = Config::SettingsUtils;
+   EXPECT_EQ(SettingsUtils::stripQuotes("abc"), "abc");
+   EXPECT_EQ(SettingsUtils::stripQuotes("\"abc\""), "abc");
+   EXPECT_EQ(SettingsUtils::stripQuotes("'abc'"), "abc");
+   EXPECT_EQ(SettingsUtils::stripQuotes("\"abc"), "abc");
+   EXPECT_EQ(SettingsUtils::stripQuotes("abc\""), "abc");
+   EXPECT_EQ(SettingsUtils::stripQuotes("\"\""), "");
+   EXPECT_EQ(SettingsUtils::stripQuotes(""), "");
+
+   //a lone quote is both the first and the last character
+   EXPECT_EQ(SettingsUtils::stripQuotes("\"").size(), 0ULL);
+   EXPECT_EQ(SettingsUtils::stripQuotes("'").size(), 0ULL);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // RFC 5869 (HKDF) unit tests for SHA-256.
 class HKDF256Test : public ::testing::Test
 {
