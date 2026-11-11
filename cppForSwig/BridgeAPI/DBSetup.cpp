@@ -920,7 +920,8 @@ void AutomationContext::automateDb()
    };
 
    //generate random db port & set it
-   dbPort_ = (rand() % 10000) + 50000;
+   std::random_device rd;
+   dbPort_ = (rd() % 10000) + 50000;
    Armory::Config::NetworkSettings::setDbPort(dbPort_);
 
    //args
