@@ -1294,7 +1294,7 @@ void DatabaseContainer::eraseOnDisk()
    std::filesystem::path dbPath = baseDir_ / name_;
    std::filesystem::remove(dbPath);
 
-   dbPath.append("-lock");
+   dbPath += "-lock";
    std::filesystem::remove(dbPath);
 }
 
