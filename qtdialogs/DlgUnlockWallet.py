@@ -10,6 +10,8 @@
 #                                                                            #
 ##############################################################################
 
+import os
+
 from ui.QtExecuteSignal import TheSignalExecution
 from armoryengine.CppBridge import ServerPush
 
@@ -224,13 +226,13 @@ class DlgUnlockWallet(ArmoryDialog):
       elif self.rdoScrambleLite.isChecked():
          opt = 1
          nchar = len(self.btnList)
-         rnd = SecureBinaryData().GenerateRandom(2 * nchar).toBinStr()
+         rnd = os.urandom(2 * nchar)
          newBtnList = [[self.btnList[i], rnd[2 * i:2 * (i + 1)]] for i in range(nchar)]
          newBtnList.sort(key=lambda x: x[1])
          prevRow = 0
          col = 0
          for i, btn in enumerate(newBtnList):
-            row = i / 12
+            row = i // 12
             if not row == prevRow:
                col = 0
             prevRow = row
@@ -247,13 +249,13 @@ class DlgUnlockWallet(ArmoryDialog):
          extBtnList = self.btnList[:]
          extBtnList.extend([self.btnShift, self.btnSpace])
          nchar = len(extBtnList)
-         rnd = SecureBinaryData().GenerateRandom(2 * nchar).toBinStr()
+         rnd = os.urandom(2 * nchar)
          newBtnList = [[extBtnList[i], rnd[2 * i:2 * (i + 1)]] for i in range(nchar)]
          newBtnList.sort(key=lambda x: x[1])
          prevRow = 0
          col = 0
          for i, btn in enumerate(newBtnList):
-            row = i / 12
+            row = i // 12
             if not row == prevRow:
                col = 0
             prevRow = row
