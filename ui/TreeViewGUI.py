@@ -616,7 +616,8 @@ class TreeStructure_CoinControl():
          addrStr = addrObj.getAddressString()
          addrType = addrObj.addrType
 
-         addrDict = self.treeData['UTXO'][addrType]
+         #the imports account doesn't list the types of its addresses
+         addrDict = self.treeData['UTXO'].setdefault(addrType, dict())
          if not addrStr in addrDict:
             addrDict[addrStr] = []
          addrDict[addrStr].append(utxo)
@@ -637,7 +638,7 @@ class TreeStructure_CoinControl():
 
       def createUtxoNode(name):
          nodeMain = CoinControlTreeNode(self, name, True, None)
-         addrTypes = self.wallet.getAddressTypes()
+         addrTypes = list(self.treeData['UTXO'].keys())
 
          def ccFilter(addrType):
             return self.treeData['UTXO'][addrType]
