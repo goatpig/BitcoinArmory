@@ -7300,6 +7300,8 @@ TEST_F(WalletsTest, WalletDisplayNames)
    auto importAcc = legacyWlt->getAccountForID(importAccId);
    ASSERT_NE(importAcc, nullptr);
    EXPECT_EQ(importAcc->getDerivationSchemeDisplay(), "N/A");
+   //the imports account sets no default address type
+   EXPECT_EQ(importAcc->getDefaultAddressType(), AddressEntryType::Default);
 
    SecureBinaryData bip32Seed = READHEX("000102030405060708090a0b0c0d0e0f");
    auto bip32Dir = homedir_ / "display_bip32";
