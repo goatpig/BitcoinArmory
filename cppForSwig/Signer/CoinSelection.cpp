@@ -836,6 +836,8 @@ std::vector<UTXO> CoinSubSelection::selectManyUtxo_DoubleSpendVal(
       auto currdiff = std::abs(idealTarget - tally);
       auto newdiff = std::abs(idealTarget - newtally);
       if (currdiff < newdiff) {
+         //this utxo takes the tally away from the target, leave it out
+         --count;
          break;
       }
       tally = newtally;

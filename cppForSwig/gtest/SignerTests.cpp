@@ -9331,6 +9331,19 @@ TEST_F(ExtrasTest, CoinSelection_NoDuplicateUtxo)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST(CoinSelectionTest, ManyUtxo_DoubleSpendVal_StopsAtBestTally)
+{
+   std::vector<UTXO> utxos(3);
+   for (unsigned i = 0; i < 3; i++) {
+      utxos[i].amount = 10 * COIN;
+      utxos[i].txOutIndex = i;
+   }
+   auto selection = CoinSelection::CoinSubSelection::
+      selectManyUtxo_DoubleSpendVal(utxos, 10 * COIN, 0);
+   EXPECT_EQ(selection.size(), 2U);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(ExtrasTest, BitcoinMessage)
 {
    struct ResolverFeed_SignMessage : public ResolverFeed
