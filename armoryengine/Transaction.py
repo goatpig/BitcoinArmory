@@ -186,27 +186,33 @@ def getMultisigScriptInfo(rawScript):
    if not getTxOutScriptType(rawScript)==CPP_TXOUT_MULTISIG:
       return [0, 0, None, None]
 
-   scrAddr = ''
+   # OP_M <pubkey 1> ... <pubkey N> OP_N OP_CHECKMULTISIG
    addr160List = []
-   pubKeyList   = []
+   pubKeyList  = []
 
-   M,N = 0,0
-
-   pubKeyStr = Cpp.BtcUtils().getMultisigPubKeyInfoStr(rawScript)
-
-   bu = BinaryUnpacker(pubKeyStr)
-   M = bu.get(UINT8)
-   N = bu.get(UINT8)
-
-   if M==0:
+   if len(rawScript) < 3 or rawScript[-1] != 0xae:
       return [0, 0, None, None]
 
+   M = rawScript[0]  - 0x50
+   N = rawScript[-2] - 0x50
+   if not (1 <= M <= N <= 16):
+      return [0, 0, None, None]
+
+   pos = 1
+   end = len(rawScript) - 2
    for i in range(N):
-      pkstr = bu.get(BINARY_CHUNK, 33)
-      if pkstr[0] == '\x04':
-         pkstr += bu.get(BINARY_CHUNK, 32)
+      if pos >= end:
+         return [0, 0, None, None]
+      pkLen = rawScript[pos]
+      if pkLen not in (33, 65) or pos + 1 + pkLen > end:
+         return [0, 0, None, None]
+      pkstr = rawScript[pos+1:pos+1+pkLen]
       pubKeyList.append(pkstr)
       addr160List.append(hash160(pkstr))
+      pos += 1 + pkLen
+
+   if pos != end:
+      return [0, 0, None, None]
 
    return M, N, addr160List, pubKeyList
 
