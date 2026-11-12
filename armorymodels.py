@@ -22,7 +22,7 @@ from armoryengine.ArmoryUtils import enum, coin2str, binary_to_hex, \
    CPP_TXIN_SCRIPT_NAMES, ADDRBYTE, P2SHBYTE
 from armoryengine.UserAddressUtils import getDisplayStringForScriptImpl
 from armoryengine.Transaction import UnsignedTransaction, \
-   getTxInScriptType
+   getTxInScriptType, TxInExtractAddrStrIfAvail
 from armoryengine.MultiSigUtils import calcLockboxID
 from armoryengine.Timer import TimeThisFunction
 from armoryengine.BDM import TheBDM, BDM_BLOCKCHAIN_READY
