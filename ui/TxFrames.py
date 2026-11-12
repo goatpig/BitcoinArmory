@@ -31,7 +31,9 @@ from armoryengine.MultiSigUtils import createLockboxEntryStr
 from armoryengine.ArmoryUtils import MAX_COMMENT_LENGTH, getAddrByte, \
    LOGEXCEPT, LOGERROR, LOGINFO, NegativeValueError, TooMuchPrecisionError, \
    str2coin, CPP_TXOUT_STDSINGLESIG, CPP_TXOUT_P2SH, coin2str, \
-   coin2str_approx, MIN_FEE_BYTE, getNameForAddrType, binary_to_hex
+   coin2str_approx, MIN_FEE_BYTE, getNameForAddrType, binary_to_hex, \
+   CPP_TXOUT_HAS_ADDRSTR, CPP_TXOUT_MULTISIG, script_to_p2sh_script, \
+   checkAddrStrValid
 from armoryengine.Settings import TheSettings
 from armoryengine.AddressUtils import hash160_to_addrStr, addrTypeInSet, \
    addrStr_to_hash160, script_to_addrStr, getAddressTypeForOutputType, \
@@ -465,7 +467,12 @@ class SendBitcoinsFrame(ArmoryFrame):
             self.radioFeedback.setChecked(False)
             self.radioSpecify.setChecked(True)
             self.toggleChngAddr(True)
-            if checkAddrStrValid(chngAddr):
+            try:
+               validChngAddr = checkAddrStrValid(chngAddr)
+            except Exception:
+               # not a base58 address (bech32), or the helper failed
+               validChngAddr = False
+            if validChngAddr:
                self.edtChangeAddr.setText(chngAddr)
                self.edtChangeAddr.setCursorPosition(0)
                self.chkRememberChng.setChecked(True)

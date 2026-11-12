@@ -251,8 +251,6 @@ class P2SHNotSupportedError(Exception): pass
 class isMSWallet(Exception): pass
 class SignerException(Exception): pass
 
-if getattr(sys, 'frozen', False):
-   sys.argv = [arg.decode('utf8') for arg in sys.argv]
 
 CLI_OPTIONS = None
 CLI_ARGS = None

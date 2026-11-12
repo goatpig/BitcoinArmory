@@ -10,7 +10,11 @@
 #                                                                            #
 ##############################################################################
 
+from qtpy import QtWidgets
+
 from qtdialogs.ArmoryDialog import ArmoryDialog
+from qtdialogs.qtdefines import QRichLabel, makeHorizFrame, makeVertFrame, \
+   STRETCH
 
 ################################################################################
 class DlgBrowserWarn(ArmoryDialog):
