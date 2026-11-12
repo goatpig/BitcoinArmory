@@ -561,7 +561,12 @@ class DlgDispTxInfo(ArmoryDialog):
             else:
                rlbls[-1].extend([QtWidgets.QLabel(), QtWidgets.QLabel()])
 
-            rlbls[-1].append(QtWidgets.QLabel(scrAddr_to_addrStr(sv[0])))
+            try:
+               recipStr = scrAddr_to_addrStr(sv[0])
+            except Exception:
+               # no address string for this output (bare multisig, ...)
+               recipStr = self.tr('[no address]')
+            rlbls[-1].append(QtWidgets.QLabel(recipStr))
             if numRV > 1:
                rlbls[-1].append(QtWidgets.QLabel(coin2str(sv[1], maxZeros=1) + '  BTC'))
             else:
