@@ -11,7 +11,7 @@
 ################################################################################
 
 from armoryengine.BDM import TheBDM, BDM_BLOCKCHAIN_READY
-from armoryengine.ArmoryUtils import LOGINFO, LOGERROR
+from armoryengine.ArmoryUtils import LOGINFO, LOGERROR, coin2str
 
 from qtpy import QtCore, QtGui, QtWidgets
 from qtdialogs.ArmoryDialog import ArmoryDialog

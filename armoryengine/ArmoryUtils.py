@@ -13,6 +13,7 @@ from __future__ import (absolute_import, division,
 ##############################################################################
 
 import ast
+from decimal import Decimal, DecimalException, ROUND_DOWN
 import codecs
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
@@ -1191,8 +1192,14 @@ def str2coin(theStr, negAllowed=True, maxDec=8, roundHighPrec=True):
    if len(coinStr.strip())==0:
       raise ValueError
 
-   floatVal = float(coinStr)
-   satoshiVal = int(floatVal * ONE_BTC)
+   try:
+      # round to satoshis before scaling: int() of a huge exponent
+      # ("1e999990") would build a million digit number, quantize
+      # raises instead
+      satoshiVal = int(Decimal(coinStr.strip()).quantize(
+         Decimal('1e-8'), rounding=ROUND_DOWN) * ONE_BTC)
+   except DecimalException:
+      raise ValueError(coinStr)
    if satoshiVal < 0 and negAllowed == False:
       raise NegativeValueError
    return satoshiVal
@@ -1776,9 +1783,9 @@ def bytesToHumanSize(nBytes):
 def packVarInt(n):
    """ Writes 1,3,5 or 9 bytes depending on the size of n """
    if   n < 0xfd:  return pack('B', n)
-   elif n < 1<<16: return [b'\xfd'+pack('<H',n), 3]
-   elif n < 1<<32: return [b'\xfe'+pack('<I',n), 5]
-   else:           return [b'\xff'+pack('<Q',n), 9]
+   elif n < 1<<16: return b'\xfd'+pack('<H',n)
+   elif n < 1<<32: return b'\xfe'+pack('<I',n)
+   else:           return b'\xff'+pack('<Q',n)
 
 def unpackVarInt(hvi):
    """ Returns a pair: the integer value and number of bytes read """

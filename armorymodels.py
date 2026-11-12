@@ -294,7 +294,7 @@ class LedgerDispModelSimple(QtCore.QAbstractTableModel):
             else:
                tooltipStr = ''
                if isCB:
-                  tooltipStr = self.tr('%d/120 confirmations' & nConf)
+                  tooltipStr = self.tr('%d/120 confirmations' % nConf)
                   tooltipStr += ( self.tr('\n\nThis is a "generation" transaction from\n'
                                  'Bitcoin mining.  These transactions take\n'
                                  '120 confirmations (approximately one day)\n'
