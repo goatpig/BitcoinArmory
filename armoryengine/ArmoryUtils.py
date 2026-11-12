@@ -13,7 +13,7 @@ from __future__ import (absolute_import, division,
 ##############################################################################
 
 import ast
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, DecimalException, ROUND_DOWN
 import codecs
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
@@ -1193,8 +1193,12 @@ def str2coin(theStr, negAllowed=True, maxDec=8, roundHighPrec=True):
       raise ValueError
 
    try:
-      satoshiVal = int(Decimal(coinStr.strip()) * ONE_BTC)
-   except InvalidOperation:
+      # round to satoshis before scaling: int() of a huge exponent
+      # ("1e999990") would build a million digit number, quantize
+      # raises instead
+      satoshiVal = int(Decimal(coinStr.strip()).quantize(
+         Decimal('1e-8'), rounding=ROUND_DOWN) * ONE_BTC)
+   except DecimalException:
       raise ValueError(coinStr)
    if satoshiVal < 0 and negAllowed == False:
       raise NegativeValueError
