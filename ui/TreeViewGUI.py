@@ -225,8 +225,8 @@ class TreeNode(object):
       return self.checkStatus
 
    def checkDown(self, val):
-      #set own state
-      self.checkStatus = val
+      #set own state (PySide6 passes an int, compare as a CheckState)
+      self.checkStatus = QtCore.Qt.CheckState(val)
 
       #set children
       self.populate()
