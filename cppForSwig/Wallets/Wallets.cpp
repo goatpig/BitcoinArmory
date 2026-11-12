@@ -958,6 +958,12 @@ void AssetWallet::eraseControlPassphrase(const Passphrase::UnlockFunc& passLbd)
 ////////////////////////////////////////////////////////////////////////////////
 void AssetWallet::setComment(const BinaryData& key, const std::string& comment)
 {
+   //the GUI clears a comment by setting it to an empty string
+   if (comment.empty()) {
+      deleteComment(key);
+      return;
+   }
+
    auto accPtr = getMetaAccount(MetaAccountType::Comments);
    auto uniqueTx = iface_->beginWriteTransaction(dbName_);
    std::shared_ptr<IO::DBIfaceTransaction> sharedTx(move(uniqueTx));

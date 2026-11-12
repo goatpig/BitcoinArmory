@@ -9162,6 +9162,45 @@ protected:
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(WalletMetaDataTest, Comments_EmptyStringClears)
+{
+   auto controlPass = SecureBinaryData::fromString("control");
+   auto controlLbd = [controlPass](const std::set<EncryptionKeyId>&)->Passphrase::Result
+   {
+      return { controlPass, true };
+   };
+   const auto key = READHEX("aabbccdd");
+
+   std::filesystem::path filename;
+   {
+      IO::CreateWalletParams params{
+         homedir_,
+         Passphrase::SetNew{1ms, 0, SecureBinaryData::fromString("password")},
+         Passphrase::SetNew{1ms, 0, controlPass},
+         nullptr, 10
+      };
+      std::unique_ptr<Seeds::ClearTextSeed> seed(
+         new Seeds::ClearTextSeed_BIP32(Seeds::SeedType::BIP32_Structured));
+      auto wlt = AssetWallet_Single::createFromSeed(std::move(seed), params);
+      filename = wlt->getDbFilename();
+
+      wlt->setComment(key, "comment1");
+      ASSERT_EQ(wlt->getComment(key), "comment1");
+
+      //this is what the GUI sends when the user empties the comment field
+      wlt->setComment(key, "");
+      EXPECT_EQ(wlt->getCommentMap().count(key), 0U);
+   }
+
+   {
+      //the comment must not come back after a reload
+      auto wlt = AssetWallet::loadMainWalletFromFile(
+         IO::ReadOnlyFileParams{filename, controlLbd});
+      EXPECT_TRUE(wlt->getCommentMap().empty());
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(WalletMetaDataTest, PeerStore)
 {
    using namespace NetworkPeers;
