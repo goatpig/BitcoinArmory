@@ -1714,7 +1714,7 @@ void ScriptSpender::toPSBT(BinaryWriter& bw) const
          if (!bip32Path.second.isValid()) {
             continue;
          }
-         bw.put_uint8_t(34);
+         bw.put_var_int(bip32Path.first.getSize() + 1); //key length
          bw.put_uint8_t(PSBT::ENUM_INPUT::PSBT_IN_BIP32_DERIVATION);
          bw.put_BinaryData(bip32Path.first);
 

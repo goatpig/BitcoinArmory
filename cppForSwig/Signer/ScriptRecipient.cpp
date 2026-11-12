@@ -183,7 +183,7 @@ void ScriptRecipient::toPSBT(BinaryWriter& bw) const
    }
 
    for (const auto& bip32Path : bip32Paths_) {
-      bw.put_uint8_t(34); //key length
+      bw.put_var_int(bip32Path.first.getSize() + 1); //key length
       bw.put_uint8_t( //key type
          PSBT::ENUM_OUTPUT::PSBT_OUT_BIP32_DERIVATION);
       bw.put_BinaryData(bip32Path.first);
