@@ -988,6 +988,7 @@ def extractTxInfo(pytx, rcvTime=None):
                txinFromList[-1].append('')
          else:
             haveAllInput = False
+            scraddr = ''
             try:
                scraddr = addrStr_to_scrAddr(TxInExtractAddrStrIfAvail(txin))
             except:
