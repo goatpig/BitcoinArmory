@@ -9033,6 +9033,50 @@ TEST_F(ExtrasTest, PSBT)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(ExtrasTest, PSBT_OutputScripts)
+{
+   //change outputs as Bitcoin Core's walletprocesspsbt fills them:
+   //P2SH-P2WPKH with its redeem script, P2WSH with its witness script
+   auto redeemScript = BtcUtils::getP2WPKHOutputScript(
+      READHEX("2222222222222222222222222222222222222222"));
+   auto witnessScript = BtcUtils::getP2PKHScript(
+      READHEX("3333333333333333333333333333333333333333"));
+
+   std::vector<std::pair<std::shared_ptr<ScriptRecipient>, BinaryData>> cases;
+   cases.emplace_back(std::make_shared<Recipient_P2SH>(
+      BtcUtils::getHash160(redeemScript), 1000), redeemScript);
+   cases.emplace_back(std::make_shared<Recipient_P2WSH>(
+      BtcUtils::getSha256(witnessScript), 2000), witnessScript);
+
+   uint8_t keyType = 0x00; //PSBT_OUT_REDEEM_SCRIPT
+   for (auto& testCase : cases) {
+      TxOut txout(testCase.first->getSerializedScript().getRef());
+
+      BinaryWriter bw;
+      bw.put_uint8_t(1); //key length
+      bw.put_uint8_t(keyType);
+      bw.put_var_int(testCase.second.getSize());
+      bw.put_BinaryData(testCase.second);
+      bw.put_uint8_t(0); //end of the output map
+
+      BinaryRefReader brr(bw.getDataRef());
+      std::shared_ptr<ScriptRecipient> recipient;
+      EXPECT_NO_THROW(recipient = ScriptRecipient::fromPSBT(brr, txout));
+      ASSERT_NE(recipient, nullptr);
+      EXPECT_EQ(recipient->getSerializedScript(),
+         testCase.first->getSerializedScript());
+      EXPECT_EQ(brr.getSizeRemaining(), 0U);
+
+      //carried over
+      BinaryWriter bwOut;
+      recipient->toPSBT(bwOut);
+      EXPECT_EQ(bwOut.getData(), bw.getData());
+
+      keyType = 0x01; //PSBT_OUT_WITNESS_SCRIPT
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(ExtrasTest, SerializeState_SupportingTxs)
 {
    //the 2 txs the inputs of the BIP174 test vector spend from

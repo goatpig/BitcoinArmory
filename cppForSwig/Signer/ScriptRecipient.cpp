@@ -119,6 +119,7 @@ std::shared_ptr<ScriptRecipient> ScriptRecipient::fromPSBT(
    auto globalDataPairs = BtcUtils::getPSBTDataPairs(brr);
    std::map<BinaryData, BIP32_AssetPath> bip32Paths;
    std::map<BinaryData, BinaryData> prioprietaryPSBTData;
+   std::map<BinaryData, BinaryData> scriptsPSBTData;
 
    for (const auto& dataPair : globalDataPairs) {
       const auto& key = dataPair.first;
@@ -148,6 +149,18 @@ std::shared_ptr<ScriptRecipient> ScriptRecipient::fromPSBT(
             break;
          }
 
+         case PSBT::ENUM_OUTPUT::PSBT_OUT_REDEEM_SCRIPT:
+         case PSBT::ENUM_OUTPUT::PSBT_OUT_WITNESS_SCRIPT:
+         {
+            if (key.getSize() != 1) {
+               throw PSBT::DeserError("invalid txout script key len");
+            }
+
+            //not needed to sign, but needs carried over
+            scriptsPSBTData.emplace(key, val);
+            break;
+         }
+
          default:
             throw PSBT::DeserError("unexpected txout key");
       }
@@ -156,11 +169,19 @@ std::shared_ptr<ScriptRecipient> ScriptRecipient::fromPSBT(
    auto scriptRecipient = ScriptRecipient::fromScript(txout.serializeRef());
    scriptRecipient->bip32Paths_ = std::move(bip32Paths);
    scriptRecipient->prioprietaryPSBTData_ = std::move(prioprietaryPSBTData);
+   scriptRecipient->scriptsPSBTData_ = std::move(scriptsPSBTData);
    return scriptRecipient;
 }
 
 void ScriptRecipient::toPSBT(BinaryWriter& bw) const
 {
+   for (const auto& data : scriptsPSBTData_) {
+      bw.put_var_int(data.first.getSize());
+      bw.put_BinaryData(data.first);
+      bw.put_var_int(data.second.getSize());
+      bw.put_BinaryData(data.second);
+   }
+
    for (const auto& bip32Path : bip32Paths_) {
       bw.put_uint8_t(34); //key length
       bw.put_uint8_t( //key type
@@ -218,6 +239,10 @@ void ScriptRecipient::merge(std::shared_ptr<ScriptRecipient> recipientPtr)
    prioprietaryPSBTData_.insert(
       recipientPtr->prioprietaryPSBTData_.begin(),
       recipientPtr->prioprietaryPSBTData_.end());
+
+   scriptsPSBTData_.insert(
+      recipientPtr->scriptsPSBTData_.begin(),
+      recipientPtr->scriptsPSBTData_.end());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
