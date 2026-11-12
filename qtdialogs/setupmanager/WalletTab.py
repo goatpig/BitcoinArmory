@@ -157,7 +157,7 @@ class WalletTab(QtWidgets.QWidget):
                True, True,
                lambda state, wid=walletEntry.walletId: (
                   self.onStageCheckboxChanged(wid,
-                     state == QtCore.Qt.Checked)))
+                     QtCore.Qt.CheckState(state) == QtCore.Qt.Checked)))
             self.walletList.setItemWidget(item, qtdefines.WLTLISTCOLS.Checkbox,
                cell)
             self.walletIdToCheckbox[walletEntry.walletId] = cb
