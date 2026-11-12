@@ -918,18 +918,15 @@ float SelectionScoring::computeScore(
    }
 
    //compute input priority
-   if (score.hasZC_ != 0.0f) {
-      float fPriority = float(valConf)/float(utxoSelect.size_);
-
-      if (fPriority < priorityThreshold) {
-         score.priorityFactor_ = 0.0f;
-      } else if (fPriority < 10.0f*priorityThreshold) {
-         score.priorityFactor_ = 0.7f;
-      } else if (fPriority < 100.0f*priorityThreshold) {
-         score.priorityFactor_ = 0.9f;
-      } else {
-         score.priorityFactor_ = 1.0f;
-      }
+   float fPriority = float(valConf)/float(utxoSelect.size_);
+   if (fPriority < priorityThreshold) {
+      score.priorityFactor_ = 0.0f;
+   } else if (fPriority < 10.0f*priorityThreshold) {
+      score.priorityFactor_ = 0.7f;
+   } else if (fPriority < 100.0f*priorityThreshold) {
+      score.priorityFactor_ = 0.9f;
+   } else {
+      score.priorityFactor_ = 1.0f;
    }
 
    //compute tx size factor

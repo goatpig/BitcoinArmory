@@ -9344,6 +9344,63 @@ TEST(CoinSelectionTest, ManyUtxo_DoubleSpendVal_StopsAtBestTally)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(ExtrasTest, CoinSelection_PreferConfirmedUtxos)
+{
+   const unsigned topHeight = 1000;
+   auto script = BtcUtils::getP2PKHScript(
+      READHEX("00112233445566778899aabbccddeeff00112233"));
+
+   UTXO confirmed(COIN, topHeight - 10, 0, 0, READHEX(
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), script);
+   confirmed.txinRedeemSizeBytes = 148;
+   UTXO zc(COIN, UINT32_MAX, 0, 0, READHEX(
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), script);
+   zc.txinRedeemSizeBytes = 148;
+
+   std::map<unsigned, std::vector<std::shared_ptr<ScriptRecipient>>> recipients;
+   recipients[0].push_back(std::make_shared<Recipient_P2PKH>(
+      READHEX("1111111111111111111111111111111111111111"), COIN / 2));
+   CoinSelection::PaymentStruct payStruct(recipients, 0, 10.0f, 0);
+
+   std::vector<UTXO> v1{confirmed}, v2{zc};
+   CoinSelection::UtxoSelection selConfirmed(v1), selZc(v2);
+   auto scoreConfirmed = CoinSelection::SelectionScoring::computeScore(
+      selConfirmed, payStruct, topHeight);
+   auto scoreZc = CoinSelection::SelectionScoring::computeScore(
+      selZc, payStruct, topHeight);
+   EXPECT_GT(scoreConfirmed, scoreZc);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(ExtrasTest, CoinSelection_PreferOlderUtxos)
+{
+   //same value and script, only the confirmation count differs
+   const unsigned topHeight = 1000;
+   auto script = BtcUtils::getP2PKHScript(
+      READHEX("00112233445566778899aabbccddeeff00112233"));
+
+   UTXO old(COIN, 1, 0, 0, READHEX(
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), script);
+   old.txinRedeemSizeBytes = 148;
+   UTXO recent(COIN, topHeight, 0, 0, READHEX(
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), script);
+   recent.txinRedeemSizeBytes = 148;
+
+   std::map<unsigned, std::vector<std::shared_ptr<ScriptRecipient>>> recipients;
+   recipients[0].push_back(std::make_shared<Recipient_P2PKH>(
+      READHEX("1111111111111111111111111111111111111111"), COIN / 2));
+   CoinSelection::PaymentStruct payStruct(recipients, 0, 10.0f, 0);
+
+   std::vector<UTXO> v1{old}, v2{recent};
+   CoinSelection::UtxoSelection selOld(v1), selRecent(v2);
+   auto scoreOld = CoinSelection::SelectionScoring::computeScore(
+      selOld, payStruct, topHeight);
+   auto scoreRecent = CoinSelection::SelectionScoring::computeScore(
+      selRecent, payStruct, topHeight);
+   EXPECT_GT(scoreOld, scoreRecent);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(ExtrasTest, BitcoinMessage)
 {
    struct ResolverFeed_SignMessage : public ResolverFeed
