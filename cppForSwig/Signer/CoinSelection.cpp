@@ -400,10 +400,13 @@ void Selector::fleshOutSelection(
          continue;
       }
 
+      //already in the selection
+      if (std::find(utxoSelect.utxoVec_.begin(), utxoSelect.utxoVec_.end(),
+         utxo) != utxoSelect.utxoVec_.end()) {
+         continue;
+      }
+
       for (auto& selected : utxoSelect.utxoVec_) {
-         if (utxo == selected) {
-            continue;
-         }
          if (utxo.getScript() != selected.getScript()) {
             continue;
          }

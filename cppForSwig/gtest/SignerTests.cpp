@@ -9297,6 +9297,40 @@ TEST_F(ExtrasTest, SerializeState_SupportingTxs)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(ExtrasTest, CoinSelection_NoDuplicateUtxo)
+{
+   //two utxos on the same script, both needed, more outputs than inputs
+   const unsigned topHeight = 1000;
+   auto script = BtcUtils::getP2PKHScript(
+      READHEX("00112233445566778899aabbccddeeff00112233"));
+   auto txHash = READHEX(
+      "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899");
+
+   std::vector<UTXO> utxos;
+   for (unsigned i = 0; i < 2; i++) {
+      UTXO utxo(COIN, topHeight - 10, 0, i, txHash, script);
+      utxo.txinRedeemSizeBytes = 148;
+      utxos.push_back(utxo);
+   }
+
+   std::map<unsigned, std::vector<std::shared_ptr<ScriptRecipient>>> recipients;
+   recipients[0].push_back(std::make_shared<Recipient_P2PKH>(
+      READHEX("1111111111111111111111111111111111111111"), 75000000));
+   recipients[0].push_back(std::make_shared<Recipient_P2PKH>(
+      READHEX("2222222222222222222222222222222222222222"), 75000000));
+
+   CoinSelection::PaymentStruct payStruct(recipients, 0, 10.0f, 0);
+   CoinSelection::Selector selector(
+      [&utxos](uint64_t)->std::vector<UTXO> { return utxos; },
+      {}, 2 * COIN, topHeight);
+
+   auto selection = selector.getUtxoSelectionForRecipients(payStruct, utxos);
+   std::set<UTXO> unique(selection.utxoVec_.begin(), selection.utxoVec_.end());
+   EXPECT_EQ(selection.utxoVec_.size(), 2U);
+   EXPECT_EQ(unique.size(), selection.utxoVec_.size());
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(ExtrasTest, BitcoinMessage)
 {
    struct ResolverFeed_SignMessage : public ResolverFeed
