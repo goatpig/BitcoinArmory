@@ -9142,6 +9142,32 @@ TEST_F(ExtrasTest, PSBT_MultisigMorePartialSigsThanM)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(ExtrasTest, PSBT_GlobalProprietaryRoundTrip)
+{
+   //unsigned PSBT from the ExtrasTest.PSBT vectors
+   auto psbt = READHEX(
+      "70736274ff01009a020000000258e87a21b56daf0c23be8e7070456c336f7cba"
+      "a5c8757924f545887bb2abdd750000000000ffffffff838d0427d0ec650a68aa"
+      "46bb0b098aea4422c071b2ca78352a077959d07cea1d0100000000ffffffff02"
+      "70aaf00800000000160014d85c2b71d0060b09c9886aeb815e50991dda124d00"
+      "e1f5050000000016001400aea9a2e5f0f876a588df5546e8742d1d87008f0000"
+      "00000000000000");
+
+   //magic (5 bytes) + unsigned tx record (3 + 154): the global separator is next
+   ASSERT_EQ(psbt.getSize(), 167U);
+   ASSERT_EQ(psbt[162], 0x00);
+
+   //global proprietary record: key fc01, value aa
+   BinaryWriter bw;
+   bw.put_BinaryDataRef(psbt.getSliceRef(0, 162));
+   bw.put_BinaryData(READHEX("02fc0101aa"));
+   bw.put_BinaryDataRef(psbt.getSliceRef(162, psbt.getSize() - 162));
+
+   auto signer = Signer::fromPSBT(bw.getDataRef());
+   EXPECT_EQ(signer.toPSBT(), bw.getData());
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(ExtrasTest, SerializeState_SupportingTxs)
 {
    //the 2 txs the inputs of the BIP174 test vector spend from
