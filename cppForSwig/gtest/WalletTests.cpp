@@ -11129,12 +11129,14 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode)
       chaincode lines (2-3). It can still fix a line changed in 3 places: 2
       of the changes can land on the same character and undo each other, and
       a one byte change can match the 2 byte checksum of a line with more
-      errors (that line then decodes to other data). It can also throw. Draw
-      the corruption again in those cases: this test is about corruption
-      auto repair gives up on.
+      errors (that line then decodes to other data). It can also throw. And
+      a changed line can still pass its checksum (the 3 changes undo each
+      other, or it matches another index). Draw the corruption again in
+      those cases: this test is about lines that fail their checksum and
+      that auto repair gives up on.
       */
       auto repairs = [](const std::vector<std::string>& lines,
-         unsigned first)->bool
+         unsigned first, const std::set<uint8_t>& corrupted)->bool
       {
          std::vector<BinaryDataRef> pair;
          for (unsigned i=first; i<first+2; i++) {
@@ -11142,6 +11144,13 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode)
                (const uint8_t*)lines[i].data(), lines[i].size()});
          }
          auto decoded = Seeds::Easy16Codec::decode(pair);
+         for (unsigned i=0; i<2; i++) {
+            if (corrupted.count(first + i) &&
+               decoded.checksumIndexes[i] != EASY16_INVALID_CHECKSUM_INDEX)
+            {
+               return true;
+            }
+         }
          try {
             return Seeds::Easy16Codec::repair(decoded);
          } catch (const Seeds::Easy16RepairError&) {
@@ -11152,7 +11161,10 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode)
       //attempts with corrupted lines
       for (const auto& corruption : corruptions) {
          std::vector<std::string> backupCopy;
-         while (true) {
+         for (unsigned draw=0; ; draw++) {
+            //auto repair would have to fix nearly everything to get here
+            ASSERT_LT(draw, 100U);
+
             //copy the backup
             backupCopy = backupLines;
 
@@ -11171,7 +11183,7 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode)
             bool repairable = false;
             for (unsigned first : {0u, 2u}) {
                if ((corruption.count(first) || corruption.count(first + 1)) &&
-                  repairs(backupCopy, first))
+                  repairs(backupCopy, first, corruption))
                {
                   repairable = true;
                }
