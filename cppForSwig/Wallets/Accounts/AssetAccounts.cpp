@@ -408,7 +408,8 @@ void AssetAccount::extendPublicChain(
    std::shared_ptr<Assets::AssetEntry> assetPtr, int32_t count,
    const std::function<void(int)>& progressCallback)
 {
-   if (count <= 0) {
+   //the imports account has no derivation scheme, so no chain to extend
+   if (count <= 0 || data_->derScheme_ == nullptr) {
       return;
    }
    ReentrantLock lock(this);
@@ -508,7 +509,7 @@ void AssetAccount::extendPrivateChain(
    std::shared_ptr<Wallets::Encryption::DecryptedDataContainer> ddc,
    std::shared_ptr<Assets::AssetEntry> assetPtr, int32_t count)
 {
-   if (count <= 0) {
+   if (count <= 0 || data_->derScheme_ == nullptr) {
       return;
    }
 
