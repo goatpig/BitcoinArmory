@@ -409,7 +409,8 @@ class SendBitcoinsFrame(ArmoryFrame):
       injecting either fancy script types, or special keywords into the 
       address field, such as a lockbox ID
       """
-      if label is not None and addr160:
+      #an empty label is no label, not a request to clear the comment
+      if label and addr160:
          self.wlt.setComment(addr160, label)
 
       if len(self.widgetTable) > 0:
@@ -1678,6 +1679,9 @@ class SendBitcoinsFrame(ArmoryFrame):
             continue
 
          addr_comment = str(self.widgetTable[row]['QLE_COMM'].text())
+         if not addr_comment:
+            #nothing typed, keep the address' comment as it is
+            continue
          addr_str = str(self.widgetTable[row]['QLE_ADDR'].text())
 
          try:
