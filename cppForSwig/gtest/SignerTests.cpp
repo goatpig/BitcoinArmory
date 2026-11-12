@@ -9077,6 +9077,71 @@ TEST_F(ExtrasTest, PSBT_OutputScripts)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(ExtrasTest, PSBT_MultisigMorePartialSigsThanM)
+{
+   std::vector<BinaryData> pubkeys {
+      READHEX("029583bf39ae0a609747ad199addd634fa6108559d6c5cd39b4c2183f1ab96e07f"),
+      READHEX("02dab61ff49a14db6a7d02b0cd1fbb78fc4b18312b5b4e54dae4dba2fbfef536d7"),
+      READHEX("03089dc10c7ac6db54f91329af617333db388cead0c231f723379d1b99030b02dc")
+   };
+
+   //1-of-3 multisig paid to as P2WSH
+   BinaryWriter bwMs;
+   bwMs.put_uint8_t(0x51); //OP_1
+   for (const auto& pubkey : pubkeys) {
+      bwMs.put_uint8_t(33);
+      bwMs.put_BinaryData(pubkey);
+   }
+   bwMs.put_uint8_t(0x53); //OP_3
+   bwMs.put_uint8_t(OP_CHECKMULTISIG);
+   auto msScript = bwMs.getData();
+   auto scriptHash = BtcUtils::getSha256(msScript);
+   auto p2wshScript = BtcUtils::getP2WSHOutputScript(scriptHash);
+
+   BinaryData txHash;
+   txHash.resize(32);
+   memset(txHash.getPtr(), 0xaa, 32);
+   UTXO utxo(100000000, UINT32_MAX, UINT16_MAX, 0, txHash, p2wshScript);
+
+   Signer signer;
+   signer.addSpender(std::make_shared<ScriptSpender>(utxo));
+   signer.addRecipient(std::make_shared<Recipient_P2WPKH>(
+      READHEX("d85c2b71d0060b09c9886aeb815e50991dda124d"), 99990000));
+
+   auto feed = std::make_shared<ResolverFeed_SpenderResolutionChecks>();
+   feed->hashMap.emplace(scriptHash, msScript);
+   signer.setFeed(feed);
+   signer.resolvePublicData();
+   ASSERT_TRUE(signer.isResolved());
+   ASSERT_FALSE(signer.isSigned());
+
+   //resolved PSBT ends with the input map's 0 then the output map's 0
+   auto psbt = signer.toPSBT();
+   ASSERT_EQ(psbt.getSliceRef(psbt.getSize() - 2, 2), READHEX("0000"));
+
+   //add a partial sig for each of the 3 keys to the input map
+   auto sigBd = READHEX("3044022074018ad4180097b873323c0015720b3684cc8123891048e7dbcd9b55ad679c99022073d369b740e3eb53dcefa33823c8070514ca55a7dd9544f157c167913261118c01");
+   BinaryWriter bw;
+   bw.put_BinaryDataRef(psbt.getSliceRef(0, psbt.getSize() - 2));
+   for (const auto& pubkey : pubkeys) {
+      bw.put_var_int(pubkey.getSize() + 1);
+      bw.put_uint8_t(0x02); //PSBT_IN_PARTIAL_SIG
+      bw.put_BinaryData(pubkey);
+      bw.put_var_int(sigBd.getSize());
+      bw.put_BinaryData(sigBd);
+   }
+   bw.put_uint8_t(0); //end of the input map
+   bw.put_uint8_t(0); //end of the output map
+
+   try {
+      auto signer2 = Signer::fromPSBT(bw.getDataRef());
+      EXPECT_TRUE(signer2.isSigned());
+   } catch (const std::exception& e) {
+      FAIL() << "fromPSBT threw: " << e.what();
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(ExtrasTest, SerializeState_SupportingTxs)
 {
    //the 2 txs the inputs of the BIP174 test vector spend from

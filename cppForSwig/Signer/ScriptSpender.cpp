@@ -1981,8 +1981,12 @@ std::shared_ptr<ScriptSpender> ScriptSpender::fromPSBT(
                continue;
             }
 
-            SecureBinaryData sig(iter->second);
-            spender->injectSignature(sig, pubkey.first);
+            //a PSBT can carry more partial sigs than the script needs
+            //(BIP174 combiner), stop injecting once the spender is signed
+            if (!spender->isSigned()) {
+               SecureBinaryData sig(iter->second);
+               spender->injectSignature(sig, pubkey.first);
+            }
             partialSigs.erase(iter);
          }
 
