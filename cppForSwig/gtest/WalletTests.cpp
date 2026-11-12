@@ -11124,20 +11124,60 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode)
          std::string{backupEasy16->getChaincode(Seeds::LineIndex::Two, false)},
       };
 
+      /*
+      The restore runs auto repair on the root lines (0-1) and on the
+      chaincode lines (2-3). It can still fix a line changed in 3 places: 2
+      of the changes can land on the same character and undo each other, and
+      a one byte change can match the 2 byte checksum of a line with more
+      errors (that line then decodes to other data). It can also throw. Draw
+      the corruption again in those cases: this test is about corruption
+      auto repair gives up on.
+      */
+      auto repairs = [](const std::vector<std::string>& lines,
+         unsigned first)->bool
+      {
+         std::vector<BinaryDataRef> pair;
+         for (unsigned i=first; i<first+2; i++) {
+            pair.emplace_back(BinaryDataRef{
+               (const uint8_t*)lines[i].data(), lines[i].size()});
+         }
+         auto decoded = Seeds::Easy16Codec::decode(pair);
+         try {
+            return Seeds::Easy16Codec::repair(decoded);
+         } catch (const Seeds::Easy16RepairError&) {
+            return true;
+         }
+      };
+
       //attempts with corrupted lines
       for (const auto& corruption : corruptions) {
-         //copy the backup
-         auto backupCopy = backupLines;
+         std::vector<std::string> backupCopy;
+         while (true) {
+            //copy the backup
+            backupCopy = backupLines;
 
-         //corrupt each affected line in 3 places so as to fail auto repair
-         for (const auto& line : corruption) {
-            for (unsigned i=0; i<3; i++) {
-               auto randomSelection = prng.generateRandom(4);
-               auto wordSelect = (uint8_t)(randomSelection.getPtr()[1]) % 8;
-               auto charSelect = (uint8_t)(randomSelection.getPtr()[2]) % 4;
-               auto newVal = (uint8_t)(randomSelection.getPtr()[3]) % 15 + 1;
+            //corrupt each affected line in 3 places so as to fail auto repair
+            for (const auto& line : corruption) {
+               for (unsigned i=0; i<3; i++) {
+                  auto randomSelection = prng.generateRandom(4);
+                  auto wordSelect = (uint8_t)(randomSelection.getPtr()[1]) % 8;
+                  auto charSelect = (uint8_t)(randomSelection.getPtr()[2]) % 4;
+                  auto newVal = (uint8_t)(randomSelection.getPtr()[3]) % 15 + 1;
 
-               corruptLine(backupCopy[line], wordSelect, charSelect, newVal);
+                  corruptLine(backupCopy[line], wordSelect, charSelect, newVal);
+               }
+            }
+
+            bool repairable = false;
+            for (unsigned first : {0u, 2u}) {
+               if ((corruption.count(first) || corruption.count(first + 1)) &&
+                  repairs(backupCopy, first))
+               {
+                  repairable = true;
+               }
+            }
+            if (!repairable) {
+               break;
             }
          }
 
