@@ -10047,6 +10047,15 @@ TEST_F(WalletMetaDataTest, AuthPeers_Unlocked)
       ASSERT_NE(peersWlt, nullptr);
    }
 
+   //bootstrapWallet renames the wallet file it created: the lock file of
+   //the old name shouldn't be left behind
+   for (const auto& entry : std::filesystem::directory_iterator(homedir_)) {
+      auto name = entry.path().filename().string();
+      if (name.size() > 5 && name.substr(name.size() - 5) == "-lock") {
+         EXPECT_EQ(name, path.filename().string() + "-lock");
+      }
+   }
+
    //try to load it
    try {
       auto peers = std::make_shared<ClientStore>(
