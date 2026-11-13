@@ -7300,6 +7300,8 @@ TEST_F(WalletsTest, WalletDisplayNames)
    auto importAcc = legacyWlt->getAccountForID(importAccId);
    ASSERT_NE(importAcc, nullptr);
    EXPECT_EQ(importAcc->getDerivationSchemeDisplay(), "N/A");
+   //the imports account sets no default address type
+   EXPECT_EQ(importAcc->getDefaultAddressType(), AddressEntryType::Default);
 
    SecureBinaryData bip32Seed = READHEX("000102030405060708090a0b0c0d0e0f");
    auto bip32Dir = homedir_ / "display_bip32";
@@ -10045,6 +10047,15 @@ TEST_F(WalletMetaDataTest, AuthPeers_Unlocked)
       ASSERT_NE(peersWlt, nullptr);
    }
 
+   //bootstrapWallet renames the wallet file it created: the lock file of
+   //the old name shouldn't be left behind
+   for (const auto& entry : std::filesystem::directory_iterator(homedir_)) {
+      auto name = entry.path().filename().string();
+      if (name.size() > 5 && name.substr(name.size() - 5) == "-lock") {
+         EXPECT_EQ(name, path.filename().string() + "-lock");
+      }
+   }
+
    //try to load it
    try {
       auto peers = std::make_shared<ClientStore>(
@@ -11113,20 +11124,72 @@ TEST_F(BackupTests, BackupStrings_LegacyWithChaincode)
          std::string{backupEasy16->getChaincode(Seeds::LineIndex::Two, false)},
       };
 
+      /*
+      The restore runs auto repair on the root lines (0-1) and on the
+      chaincode lines (2-3). It can still fix a line changed in 3 places: 2
+      of the changes can land on the same character and undo each other, and
+      a one byte change can match the 2 byte checksum of a line with more
+      errors (that line then decodes to other data). It can also throw. And
+      a changed line can still pass its checksum (the 3 changes undo each
+      other, or it matches another index). Draw the corruption again in
+      those cases: this test is about lines that fail their checksum and
+      that auto repair gives up on.
+      */
+      auto repairs = [](const std::vector<std::string>& lines,
+         unsigned first, const std::set<uint8_t>& corrupted)->bool
+      {
+         std::vector<BinaryDataRef> pair;
+         for (unsigned i=first; i<first+2; i++) {
+            pair.emplace_back(BinaryDataRef{
+               (const uint8_t*)lines[i].data(), lines[i].size()});
+         }
+         auto decoded = Seeds::Easy16Codec::decode(pair);
+         for (unsigned i=0; i<2; i++) {
+            if (corrupted.count(first + i) &&
+               decoded.checksumIndexes[i] != EASY16_INVALID_CHECKSUM_INDEX)
+            {
+               return true;
+            }
+         }
+         try {
+            return Seeds::Easy16Codec::repair(decoded);
+         } catch (const Seeds::Easy16RepairError&) {
+            return true;
+         }
+      };
+
       //attempts with corrupted lines
       for (const auto& corruption : corruptions) {
-         //copy the backup
-         auto backupCopy = backupLines;
+         std::vector<std::string> backupCopy;
+         for (unsigned draw=0; ; draw++) {
+            //auto repair would have to fix nearly everything to get here
+            ASSERT_LT(draw, 100U);
 
-         //corrupt each affected line in 3 places so as to fail auto repair
-         for (const auto& line : corruption) {
-            for (unsigned i=0; i<3; i++) {
-               auto randomSelection = prng.generateRandom(4);
-               auto wordSelect = (uint8_t)(randomSelection.getPtr()[1]) % 8;
-               auto charSelect = (uint8_t)(randomSelection.getPtr()[2]) % 4;
-               auto newVal = (uint8_t)(randomSelection.getPtr()[3]) % 15 + 1;
+            //copy the backup
+            backupCopy = backupLines;
 
-               corruptLine(backupCopy[line], wordSelect, charSelect, newVal);
+            //corrupt each affected line in 3 places so as to fail auto repair
+            for (const auto& line : corruption) {
+               for (unsigned i=0; i<3; i++) {
+                  auto randomSelection = prng.generateRandom(4);
+                  auto wordSelect = (uint8_t)(randomSelection.getPtr()[1]) % 8;
+                  auto charSelect = (uint8_t)(randomSelection.getPtr()[2]) % 4;
+                  auto newVal = (uint8_t)(randomSelection.getPtr()[3]) % 15 + 1;
+
+                  corruptLine(backupCopy[line], wordSelect, charSelect, newVal);
+               }
+            }
+
+            bool repairable = false;
+            for (unsigned first : {0u, 2u}) {
+               if ((corruption.count(first) || corruption.count(first + 1)) &&
+                  repairs(backupCopy, first, corruption))
+               {
+                  repairable = true;
+               }
+            }
+            if (!repairable) {
+               break;
             }
          }
 

@@ -103,7 +103,7 @@ namespace Armory
       {
       protected:
          std::set<AddressEntryType> addressTypes_;
-         AddressEntryType defaultAddressEntryType_;
+         AddressEntryType defaultAddressEntryType_ = AddressEntryType::Default;
          bool isMain_ = false;
 
       public:

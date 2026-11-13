@@ -9325,3 +9325,17 @@ GTEST_API_ int main(int argc, char **argv)
 
    return exitCode;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+TEST(RecipientTest, P2PK_Size)
+{
+   //getSize has to match the serialized txout
+   for (size_t len : {33, 65}) {
+      std::string raw(len, '\x11');
+      raw[0] = len == 33 ? '\x02' : '\x04';
+      auto pubkey = BinaryData::fromString(raw);
+      Recipient_P2PK recipient{pubkey, 1000};
+      EXPECT_EQ(recipient.getSize(),
+         recipient.getSerializedScript().getSize()) << len;
+   }
+}

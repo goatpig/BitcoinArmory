@@ -269,7 +269,8 @@ void Recipient_P2PK::serialize() const
 
 size_t Recipient_P2PK::getSize() const
 {
-   return 10 + pubkey_.getSize();
+   //8 for value, 1 for the script size, push byte + pubkey + OP_CHECKSIG
+   return 11 + pubkey_.getSize();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

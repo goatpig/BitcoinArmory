@@ -162,7 +162,7 @@ std::shared_ptr<Wallets::AssetWallet> PeerStore::bootstrapWallet(
    } catch (const std::filesystem::filesystem_error&) {
       throw Exception("failed to setup peers wallet");
    }
-   currentname.append("-lock");
+   currentname += "-lock";
    std::filesystem::remove(currentname);
 
    Wallets::IO::ReadOnlyFileParams roFileParams{params.filePath,
