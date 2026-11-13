@@ -7698,6 +7698,48 @@ TEST_F(WalletsTest, BIP32_Chain_AddAccount)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(WalletsTest, ImportsAccount_ExtendChains)
+{
+   auto passphrase = SecureBinaryData::fromString("password");
+   IO::CreateWalletParams params{
+      homedir_,
+      Passphrase::SetNew{1ms, 0, passphrase},
+      Passphrase::SetNew{1ms, 0, controlPass_},
+      nullptr, 10
+   };
+   std::unique_ptr<Seeds::ClearTextSeed> seed(
+      new Seeds::ClearTextSeed_BIP32(Seeds::SeedType::BIP32_Structured));
+   auto wlt = AssetWallet_Single::createFromSeed(std::move(seed), params);
+   auto importAccId = wlt->setupImportAccount();
+   auto importAcc = wlt->getAccountForID(importAccId);
+
+   //empty imports account: no root, no derivation scheme
+   EXPECT_NO_THROW(wlt->extendPublicChain(importAccId, 10));
+   EXPECT_EQ(importAcc->getOuterAccount()->getAssetCount(), 0U);
+
+   auto passLbd = [&passphrase](const std::set<EncryptionKeyId>&)
+      ->Passphrase::Result
+   {
+      return { passphrase, true };
+   };
+   {
+      auto lock = wlt->lockDecryptedContainer(passLbd);
+      SecureBinaryData keyB{TestChain::privKeyAddrB};
+      wlt->importPrivateKey(keyB, AddressEntryType(
+         AddressEntryType::P2PKH | AddressEntryType::Uncompressed));
+
+      //imports account with a key, public then private side
+      EXPECT_NO_THROW(wlt->extendPublicChain(importAccId, 10));
+      EXPECT_NO_THROW(wlt->extendPrivateChain(10));
+   }
+
+   //the imports account didn't grow, the main account did
+   EXPECT_EQ(importAcc->getOuterAccount()->getAssetCount(), 1U);
+   auto mainAcc = wlt->getAccountForID(wlt->getMainAccountID());
+   EXPECT_EQ(mainAcc->getOuterAccount()->getLastComputedIndex(), 19);
+}
+
 TEST_F(WalletsTest, BIP32_Fork_WatchingOnly)
 {
    auto passphrase = SecureBinaryData::fromString("password");
