@@ -399,6 +399,8 @@ if test x$want_tests = xyes; then
     AC_CONFIG_LINKS(cppForSwig/reorgTest/ZCtx.tx:cppForSwig/reorgTest/ZCtx.tx)
 
     AC_CONFIG_LINKS(cppForSwig/gtest/input_files/legacy.wallet:cppForSwig/gtest/input_files/legacy.wallet)
+    AC_CONFIG_LINKS(cppForSwig/gtest/input_files/bip150v0_srv1/identity-key-ipv4:cppForSwig/gtest/input_files/bip150v0_srv1/identity-key-ipv4)
+    AC_CONFIG_LINKS(cppForSwig/gtest/input_files/bip150v0_cli1/identity-key-ipv4:cppForSwig/gtest/input_files/bip150v0_cli1/identity-key-ipv4)
 fi
 
 AC_OUTPUT
