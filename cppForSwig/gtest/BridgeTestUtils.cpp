@@ -1599,7 +1599,10 @@ namespace BridgeTestUtils {
          }
       }
 
-      if (notifCount < 3) {
+      //the bridge notifies on the first derived address, then every 250ms
+      //and once more when done: only the first and the last are certain,
+      //a fast machine can extend the chain in less than 250ms
+      if (notifCount < 2) {
          throw std::runtime_error("too few notifs");
       }
       if (lastKnownCount != count) {
