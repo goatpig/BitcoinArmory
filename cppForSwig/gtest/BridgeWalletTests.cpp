@@ -2355,6 +2355,62 @@ TEST_F(BridgeWalletTests, Signer_FromTxSigCollect_Malformed)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeWalletTests, RequestThatThrows_GetsErrorReply)
+{
+   /*
+   A request that throws gets an error reply and the bridge carries on.
+   This scriptSig is a 70 byte push with only 3 bytes left, which makes
+   getLastPushDataInScript throw.
+   */
+   auto lastPushData = [this](const BinaryData& script,
+      bool& success)->BinaryData
+   {
+      uint64_t refId = rand();
+      capnp::MallocMessageBuilder message;
+      auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
+      toBridge.setReferenceId(refId);
+      auto req = toBridge.initScriptUtils();
+      req.setScript(capnp::Data::Builder(
+         (uint8_t*)script.getPtr(), script.getSize()));
+      req.setGetLastPushDataInScript();
+      EXPECT_NO_THROW(pushRequest(bridge_, serializeCapnp(message)));
+
+      success = false;
+      auto resp = waitOnReplyFor(5s);
+      if (resp == nullptr) {
+         ADD_FAILURE() << "no reply";
+         return {};
+      }
+      kj::ArrayPtr<const capnp::word> words(
+         reinterpret_cast<const capnp::word*>(resp->data.getPtr()),
+         resp->data.getSize() / sizeof(capnp::word));
+      capnp::FlatArrayMessageReader reader(words);
+      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+      if (fromBridge.which() != Codec::Bridge::FromBridge::REPLY) {
+         ADD_FAILURE() << "not a reply";
+         return {};
+      }
+      auto reply = fromBridge.getReply();
+      EXPECT_EQ(reply.getReferenceId(), refId);
+      success = reply.getSuccess();
+      if (!success || !reply.hasScriptUtils()) {
+         return {};
+      }
+      auto data = reply.getScriptUtils().getGetLastPushDataInScript();
+      return BinaryData(data.begin(), data.size());
+   };
+
+   bool success = true;
+   lastPushData(READHEX("467d480a"), success);
+   EXPECT_FALSE(success);
+
+   //the next request is served as usual
+   EXPECT_EQ(lastPushData(READHEX("0401020304"), success),
+      READHEX("01020304"));
+   EXPECT_TRUE(success);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(BridgeWalletTests, GetTxsByHash_OfflinePayload)
 {
    //the 2 txs the inputs of the BIP174 test vector spend from
