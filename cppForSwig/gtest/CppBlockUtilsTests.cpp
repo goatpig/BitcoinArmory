@@ -28,12 +28,17 @@
 #include <Wallets/AuthorizedPeers.h>
 #include <Signer/ScriptSpender.h>
 #include <Network/WebSocketClient.h>
+#include <Network/SocketWritePayload.h>
 #include <BlockchainDatabase/BlockchainData.h>
 #include <ZeroConf/Parser.h>
 #include <ZeroConf/Utils.h>
 
 #include "BDM_mainthread.h"
 #include "Server.h"
+
+#include <capnp/message.h>
+#include <capnp/serialize.h>
+#include "capnp/BDV.capnp.h"
 
 using namespace std::string_view_literals;
 using namespace std::chrono_literals;
@@ -2988,6 +2993,248 @@ TEST_F(BlockUtilsBareWithServer, WSClientCleanup_AnsweredRequest)
       release = true;
    }
    cv.notify_all();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+class BlockUtilsBareWithServerDeathTest : public BlockUtilsBareWithServer
+{
+   /*
+   Scenarios that take the whole process down when they fail: they run in a
+   death test child, which sets the fixture up and tears it down on its own,
+   and has to exit cleanly to pass.
+   */
+
+protected:
+   void SetUp() override
+   {
+      GTEST_FLAG_SET(death_test_style, "threadsafe");
+   }
+
+   void TearDown() override
+   {}
+
+   void runScenario(const std::function<void(void)>& scenario)
+   {
+      //a hung scenario fails instead of blocking the suite
+      std::thread watchdog([]{
+         std::this_thread::sleep_for(30s);
+         std::_Exit(3);
+      });
+      watchdog.detach();
+
+      BlockUtilsBareWithServer::SetUp();
+      scenario();
+      BlockUtilsBareWithServer::TearDown();
+      std::_Exit(::testing::Test::HasFailure() ? 1 : 0);
+   }
+
+   std::shared_ptr<AsyncClient::BlockDataViewer> connectClient(
+      std::shared_ptr<DBTestUtils::UTCallback> callback)
+   {
+      auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
+         "127.0.0.1", Config::NetworkSettings::dbPort(),
+         std::make_shared<NetworkPeers::ClientStore>(
+            Wallets::IO::ReadOnlyFileParams{
+               homedir_ / CLIENT_AUTH_PEER_FILENAME, authPeersPassLbd_}),
+         true, //public server
+         callback);
+      bdvObj->connectToRemote();
+      return bdvObj;
+   }
+
+   //true if the node status request got a valid reply in time
+   bool nodeStatusReplies(AsyncClient::BlockDataViewer& bdvObj)
+   {
+      auto prom = std::make_shared<std::promise<bool>>();
+      auto fut = prom->get_future();
+      bdvObj.getNodeStatus([prom](ReturnMessage<Node::Status> result){
+         try {
+            result.get();
+            prom->set_value(true);
+         } catch (const std::exception&) {
+            prom->set_value(false);
+         }
+      });
+
+      if (fut.wait_for(5s) != std::future_status::ready) {
+         return false;
+      }
+      return fut.get();
+   }
+
+   struct RawReply
+   {
+      bool success = false;
+      std::string error;
+      uint32_t value = UINT32_MAX;
+   };
+
+   /*
+   Sends a request payload as is and hands back the reply, inspect pulls a
+   value out of it
+   */
+   std::future<RawReply> sendRawRequest(
+      AsyncClient::BlockDataViewer& bdvObj, std::vector<uint8_t> data,
+      std::function<uint32_t(Codec::BDV::Reply::Reader)> inspect = nullptr)
+   {
+      class ReplyCallback : public Network::CallbackReturn_WebSocket
+      {
+      private:
+         std::shared_ptr<std::promise<RawReply>> prom_;
+         std::function<uint32_t(Codec::BDV::Reply::Reader)> inspect_;
+
+      public:
+         ReplyCallback(std::shared_ptr<std::promise<RawReply>> prom,
+            std::function<uint32_t(Codec::BDV::Reply::Reader)> inspect) :
+            prom_(prom), inspect_(inspect)
+         {}
+
+         void callback(const Network::WebSocketMessagePartial& msg) override
+         {
+            RawReply result;
+            try {
+               auto msgReader = msg.getReader();
+               auto capnReader = msgReader->getReader();
+               auto reply = capnReader->getRoot<Codec::BDV::Reply>();
+               result.success = reply.getSuccess();
+               result.error = std::string(reply.getError());
+               if (inspect_) {
+                  result.value = inspect_(reply);
+               }
+            } catch (const std::exception& e) {
+               result.success = false;
+               result.error = std::string{"unreadable reply: "} + e.what();
+            }
+            prom_->set_value(std::move(result));
+         }
+      };
+
+      auto prom = std::make_shared<std::promise<RawReply>>();
+      auto readPayload = std::make_shared<Network::Socket_ReadPayload>();
+      readPayload->callbackReturn_ =
+         std::make_unique<ReplyCallback>(prom, inspect);
+      bdvObj.getSocketObject()->pushPayload(
+         std::make_unique<Network::WritePayload_Raw>(data), readPayload);
+      return prom->get_future();
+   }
+
+   static std::vector<uint8_t> toBytes(capnp::MallocMessageBuilder& message)
+   {
+      auto flat = capnp::messageToFlatArray(message);
+      auto bytes = flat.asBytes();
+      return std::vector<uint8_t>(bytes.begin(), bytes.end());
+   }
+};
+
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, ChainRequests_BDMNotReady)
+{
+   /*
+   Requests that need a ready bdm are rejected until it is ready, the
+   others are served all along
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer(nullptr);
+
+      auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+      auto bdvObj = connectClient(pCallback);
+      bdvObj->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+
+      auto topBlockHeight = [this, &bdvObj]()->RawReply
+      {
+         capnp::MallocMessageBuilder message;
+         auto request = message.initRoot<Codec::BDV::Request>();
+         request.initChain().setGetTopBlockHeight();
+
+         auto fut = sendRawRequest(*bdvObj, toBytes(message),
+            [](Codec::BDV::Reply::Reader reply)->uint32_t {
+               if (!reply.isChain() ||
+                  !reply.getChain().isGetTopBlockHeight()) {
+                  return UINT32_MAX;
+               }
+               return reply.getChain().getGetTopBlockHeight();
+            });
+         if (fut.wait_for(5s) != std::future_status::ready) {
+            return RawReply{false, "no reply", UINT32_MAX};
+         }
+         return fut.get();
+      };
+
+      struct HeadersResult
+      {
+         bool success = false;
+         std::string error;
+         AsyncClient::HeaderVec headers;
+      };
+      auto waitOnHeaders = [](std::future<HeadersResult>& fut)->HeadersResult
+      {
+         if (fut.wait_for(5s) != std::future_status::ready) {
+            return HeadersResult{false, "no reply", {}};
+         }
+         return fut.get();
+      };
+      auto headersCallback = [](std::shared_ptr<std::promise<HeadersResult>> prom)
+      {
+         return [prom](ReturnMessage<AsyncClient::HeaderVec> result) {
+            try {
+               prom->set_value(HeadersResult{true, {}, result.get()});
+            } catch (const std::exception& e) {
+               prom->set_value(HeadersResult{false, e.what(), {}});
+            }
+         };
+      };
+      auto headersByHeight = [&](const std::set<unsigned>& heights)
+      {
+         auto prom = std::make_shared<std::promise<HeadersResult>>();
+         auto fut = prom->get_future();
+         bdvObj->blockchain().getHeadersByHeight(heights, headersCallback(prom));
+         return waitOnHeaders(fut);
+      };
+      auto headersById = [&](const std::set<Types::BlockId>& ids)
+      {
+         auto prom = std::make_shared<std::promise<HeadersResult>>();
+         auto fut = prom->get_future();
+         bdvObj->blockchain().getHeadersById(ids, headersCallback(prom));
+         return waitOnHeaders(fut);
+      };
+
+      //the bdm isn't started, the chain is empty: chain requests get
+      //rejected, a missing reply does not count as a rejection
+      EXPECT_TRUE(nodeStatusReplies(*bdvObj));
+      auto topReply = topBlockHeight();
+      EXPECT_FALSE(topReply.success);
+      EXPECT_EQ(topReply.error, "bdm is not ready");
+
+      auto byIdReply = headersById({0, 1, 2});
+      EXPECT_FALSE(byIdReply.success);
+      EXPECT_EQ(byIdReply.error, "bdm is not ready");
+
+      auto byHeightReply = headersByHeight({0});
+      EXPECT_FALSE(byHeightReply.success);
+      EXPECT_EQ(byHeightReply.error, "bdm is not ready");
+
+      //start the bdm
+      theBDMt_->start(Config::DBSettings::initMode());
+      ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+
+      EXPECT_TRUE(nodeStatusReplies(*bdvObj));
+      auto top = topBlockHeight();
+      EXPECT_TRUE(top.success) << top.error;
+      EXPECT_EQ(top.value, 5U);
+
+      auto byHeight = headersByHeight({5});
+      ASSERT_TRUE(byHeight.success) << byHeight.error;
+      ASSERT_EQ(byHeight.headers.size(), 1U);
+      EXPECT_EQ(byHeight.headers[0]->blockHeight, 5U);
+
+      auto byId = headersById({byHeight.headers[0]->blockId});
+      ASSERT_TRUE(byId.success) << byId.error;
+      ASSERT_EQ(byId.headers.size(), 1U);
+      EXPECT_EQ(byId.headers[0]->thisHash, byHeight.headers[0]->thisHash);
+   }), ::testing::ExitedWithCode(0), "");
 }
 
 ////////////////////////////////////////////////////////////////////////////////

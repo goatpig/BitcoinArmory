@@ -368,8 +368,8 @@ void BlockDataViewer::broadcastZC(const std::vector<BinaryData>& rawTxVec)
    capnp::MallocMessageBuilder message;
    auto payload = message.initRoot<Codec::BDV::Request>();
 
-   auto staticRequest = payload.initStatic();
-   auto txList = staticRequest.initBroadcast(rawTxVec.size());
+   auto chainRequest = payload.initChain();
+   auto txList = chainRequest.initBroadcast(rawTxVec.size());
 
    unsigned i=0;
    for (auto& rawTx : rawTxVec) {
@@ -393,8 +393,8 @@ void BlockDataViewer::broadcastThroughRPC(const BinaryData& rawTx)
    capnp::MallocMessageBuilder message;
    auto payload = message.initRoot<Codec::BDV::Request>();
 
-   auto staticRequest = payload.initStatic();
-   staticRequest.setRpcBroadcast(
+   auto chainRequest = payload.initChain();
+   chainRequest.setRpcBroadcast(
       capnp::Data::Builder((uint8_t*)rawTx.getPtr(), rawTx.getSize()));
 
    //serialize and add to payload
@@ -649,8 +649,8 @@ void BlockDataViewer::getFeeSchedule(const std::string& strategy,
    capnp::MallocMessageBuilder message;
    auto payload = message.initRoot<Codec::BDV::Request>();
 
-   auto staticRequest = payload.initStatic();
-   staticRequest.setGetFeeSchedule(strategy);
+   auto chainRequest = payload.initChain();
+   chainRequest.setGetFeeSchedule(strategy);
 
    //serialize and add to payload
    auto write_payload = toWritePayload(message);
@@ -671,18 +671,18 @@ void BlockDataViewer::getFeeSchedule(const std::string& strategy,
                throw ClientMessageError(reply.getError(), -1);
             }
 
-            if (!reply.isStatic()) {
-               throw ClientMessageError("expected static reply", WRONG_REPLY_CLASS);
+            if (!reply.isChain()) {
+               throw ClientMessageError("expected chain reply", WRONG_REPLY_CLASS);
             }
 
-            auto staticReply = reply.getStatic();
-            if (!staticReply.isGetFeeSchedule()) {
+            auto chainReply = reply.getChain();
+            if (!chainReply.isGetFeeSchedule()) {
                throw ClientMessageError(
                   "expected GetFeeSchedule reply", WRONG_REPLY_TYPE);
             }
 
             //convert to header
-            auto result = capnToFeeSchedules(staticReply.getGetFeeSchedule());
+            auto result = capnToFeeSchedules(chainReply.getGetFeeSchedule());
             callback(ReturnMessage<Node::FeeSchedule>(result));
          } catch (ClientMessageError& e) {
             //something went wrong, set error message and fire callback
@@ -811,8 +811,8 @@ void AsyncClient::Blockchain::getHeadersByHeight(
    capnp::MallocMessageBuilder message;
    auto payload = message.initRoot<Codec::BDV::Request>();
 
-   auto staticRequest = payload.initStatic();
-   auto getHeaders = staticRequest.initGetHeadersByHeight(heights.size());
+   auto chainRequest = payload.initChain();
+   auto getHeaders = chainRequest.initGetHeadersByHeight(heights.size());
    unsigned i = 0;
    for (const auto& height : heights) {
       getHeaders.set(i++, height);
@@ -837,18 +837,18 @@ void AsyncClient::Blockchain::getHeadersByHeight(
                throw ClientMessageError(reply.getError(), -1);
             }
 
-            if (!reply.isStatic()) {
-               throw ClientMessageError("expected static reply", WRONG_REPLY_CLASS);
+            if (!reply.isChain()) {
+               throw ClientMessageError("expected chain reply", WRONG_REPLY_CLASS);
             }
 
-            auto staticReply = reply.getStatic();
-            if (!staticReply.isGetHeadersByHeight()) {
+            auto chainReply = reply.getChain();
+            if (!chainReply.isGetHeadersByHeight()) {
                throw ClientMessageError(
                   "expected getHeadersByHeight reply", WRONG_REPLY_TYPE);
             }
 
             //convert to header
-            auto result = capnToHeaderVec(staticReply.getGetHeadersByHeight());
+            auto result = capnToHeaderVec(chainReply.getGetHeadersByHeight());
             callback(ReturnMessage<HeaderVec>(std::move(result)));
          } catch (ClientMessageError& e) {
             //something went wrong, set error message and fire callback
@@ -868,8 +868,8 @@ void AsyncClient::Blockchain::getHeadersById(
    capnp::MallocMessageBuilder message;
    auto payload = message.initRoot<Codec::BDV::Request>();
 
-   auto staticRequest = payload.initStatic();
-   auto getHeaders = staticRequest.initGetHeadersById(blockIds.size());
+   auto chainRequest = payload.initChain();
+   auto getHeaders = chainRequest.initGetHeadersById(blockIds.size());
    unsigned i = 0;
    for (const auto& blockId : blockIds) {
       getHeaders.set(i++, blockId);
@@ -894,18 +894,18 @@ void AsyncClient::Blockchain::getHeadersById(
                throw ClientMessageError(reply.getError(), -1);
             }
 
-            if (!reply.isStatic()) {
-               throw ClientMessageError("expected static reply", WRONG_REPLY_CLASS);
+            if (!reply.isChain()) {
+               throw ClientMessageError("expected chain reply", WRONG_REPLY_CLASS);
             }
 
-            auto staticReply = reply.getStatic();
-            if (!staticReply.isGetHeadersById()) {
+            auto chainReply = reply.getChain();
+            if (!chainReply.isGetHeadersById()) {
                throw ClientMessageError(
                   "expected getHeadersById reply", WRONG_REPLY_TYPE);
             }
 
             //convert to header
-            auto result = capnToHeaderVec(staticReply.getGetHeadersById());
+            auto result = capnToHeaderVec(chainReply.getGetHeadersById());
             callback(ReturnMessage<HeaderVec>(std::move(result)));
          } catch (ClientMessageError& e) {
             //something went wrong, set error message and fire callback
