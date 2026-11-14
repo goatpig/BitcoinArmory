@@ -790,6 +790,14 @@ void AsyncClient::BtcWallet::unregisterAddresses(
 ///////////////////////////////////////////////////////////////////////////////
 void AsyncClient::BtcWallet::unregister()
 {
+   /*
+   This sends an empty address set, so the db keeps tracking the wallet's
+   addresses, in its ScrAddrFilter and in this bdv's filter. That is fine:
+   the ScrAddrFilter is kept append only, keeping addresses is cheap while
+   resyncing ones that were dropped for a while can take a rescan. The bdv's filter stays larger than the bridge's, and the bridge
+   filters txios and zc notifications again with its own filters. Clearing
+   the db side bdv filter would be cleaner, but isn't required.
+   */
    unregisterAddresses({});
 }
 
