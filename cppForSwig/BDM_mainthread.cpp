@@ -131,6 +131,7 @@ void BlockDataManagerThread::run()
 
    //bdmThread star sequence
    auto bdmStep = Sequence::INIT;
+   bool readySignaled = false;
    while (pimpl->run) {
       switch (bdmStep)
       {
@@ -229,6 +230,7 @@ void BlockDataManagerThread::run()
                bdm->enableZeroConf(Config::DBSettings::clearMempool());
             }
             pimpl->readyPromise.set_value(true);
+            readySignaled = true;
             bdmStep = Sequence::LOOP_OVER_BLOCKS;
             break;
          }
@@ -290,8 +292,13 @@ void BlockDataManagerThread::run()
       }
    }
 
-   if (bdmStep != Sequence::EXIT) {
-      //on errors, isReadyPromise has yet to be set
+   /*
+   shutdown() clears the run flag before it terminates the new block queue,
+   so the loop can also end in LOOP_OVER_BLOCKS (not just EXIT) when the
+   thread was busy at that moment. The ready promise is set by then, only
+   fail it if the db never got ready (init error or early shutdown).
+   */
+   if (!readySignaled) {
       pimpl->readyPromise.set_value(false);
       LOGERR << "bdm thread failed with status: " << (int)bdmStep;
    } else {

@@ -32,11 +32,14 @@
 #include <Network/WebSocketClient.h>
 
 #include "BDM_mainthread.h"
+#include "BDV_Notification.h"
 #include "Server.h"
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>
 #include "capnp/BDV.capnp.h"
+
+#include <cstdlib>
 
 using namespace Armory;
 using namespace Armory::ZeroConf;
@@ -4397,6 +4400,53 @@ TEST_F(ZeroConfTests_FullNode, DBBloat)
          }
       } while (dbIter.advanceAndRead(DbPrefix::ZCDATA));
    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(ZeroConfTests_FullNode, Shutdown_WhileBdmThreadIsBusy)
+{
+   /*
+   BlockDataManagerThread::shutdown() clears the run flag before
+   BlockDataManager::shutdown() terminates the new block queue. If the bdm
+   thread is busy (here: parsing a new block) when shutdown starts, it sees
+   the cleared flag on its next loop check and leaves the loop in the
+   LOOP_OVER_BLOCKS state. The ready promise was already set to true by then;
+   setting it again throws std::future_error and terminates the process.
+
+   The bdm thread is parked inside a one time hook (it runs on the bdm thread
+   while a new block is processed) until shutdown has started: shutdown()
+   clears the run flag, then signals the start promise first thing in
+   BlockDataManager::shutdown(). Ran as a death test so the abort is reported
+   as a failure instead of taking down the whole binary.
+   */
+   GTEST_FLAG_SET(death_test_style, "threadsafe");
+   auto body = [this]()
+   {
+      theBDMt_->start(Config::DBSettings::initMode());
+      if (theBDMt_->bdm()->waitUntilReady(5s) != BDMState::Ready) {
+         std::_Exit(2);
+      }
+
+      //park the bdm thread on the new block until shutdown starts
+      auto bdm = theBDMt_->bdm();
+      auto parked = std::make_shared<std::promise<void>>();
+      auto parkedFut = parked->get_future();
+      auto hook = std::make_shared<BDVNotificationHook>();
+      hook->func = [bdmPtr=bdm.get(), parked](BDV_Notification*)
+      {
+         parked->set_value();
+         bdmPtr->waitOnStartSignal();
+      };
+      bdm->registerOneTimeHook(hook);
+
+      DBTestUtils::mineNewBlock(theBDMt_, TestChain::addrA, 1);
+      if (parkedFut.wait_for(10s) != std::future_status::ready) {
+         std::_Exit(3);
+      }
+      theBDMt_->shutdown();
+      std::_Exit(0);
+   };
+   EXPECT_EXIT(body(), ::testing::ExitedWithCode(0), "");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
