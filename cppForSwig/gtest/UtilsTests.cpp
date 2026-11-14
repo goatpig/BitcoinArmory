@@ -4617,6 +4617,26 @@ TEST(FileCopyTests, XorPartialChunk)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST(ConfigTests, DefaultBlockPath_Regtest)
+{
+   std::filesystem::path datadir{"./fakehomedir_regtest"};
+   FileUtils::removeDirectory(datadir);
+   std::filesystem::create_directory(datadir);
+   Armory::Config::reset();
+   Armory::Config::parseArgs({
+      "--datadir=./fakehomedir_regtest", "--regtest", "--offline"},
+      Armory::Config::ProcessType::DB);
+
+   //only the last two components: the rest is platform specific (#862)
+   const auto& blkPath = Armory::Config::Pathing::blkFilePath();
+   EXPECT_EQ(blkPath.filename(), "blocks");
+   EXPECT_EQ(blkPath.parent_path().filename(), "regtest");
+
+   Armory::Config::reset();
+   FileUtils::removeDirectory(datadir);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 // Now actually execute all the tests
 ////////////////////////////////////////////////////////////////////////////////

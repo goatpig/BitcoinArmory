@@ -820,6 +820,10 @@ void AutomationContext::automateSatoshi()
       if (satoshiDir_.stem() == "testnet3") {
          datadir = satoshiDir_.parent_path();
       }
+   } else if (Config::BitcoinSettings::getMode() == Config::NETWORK_MODE_REGTEST) {
+      if (satoshiDir_.stem() == "regtest") {
+         datadir = satoshiDir_.parent_path();
+      }
    }
 
    std::vector<std::string> args{
@@ -828,6 +832,8 @@ void AutomationContext::automateSatoshi()
    };
    if (Config::BitcoinSettings::getMode() == Config::NETWORK_MODE_TESTNET) {
       args.emplace_back("--testnet");
+   } else if (Config::BitcoinSettings::getMode() == Config::NETWORK_MODE_REGTEST) {
+      args.emplace_back("--regtest");
    }
    auto result = spawnProcess(satoshiBin_,
       {{"--datadir", datadir}},

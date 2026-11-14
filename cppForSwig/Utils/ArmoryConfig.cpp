@@ -990,6 +990,12 @@ void Pathing::processArgs(const std::map<std::string, std::string>& args,
             break;
          }
 
+         case NETWORK_MODE_REGTEST:
+         {
+            blkFilePath_ = REGTEST_DEFAULT_BLOCKPATH;
+            break;
+         }
+
          default:
             blkFilePath_ = TESTNET_DEFAULT_BLOCKPATH;
       }

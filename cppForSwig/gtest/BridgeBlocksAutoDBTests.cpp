@@ -487,3 +487,51 @@ TEST_F(BridgeBlocksAutoDBTests, DontOverscan)
       std::this_thread::sleep_for(100ms);
    }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+#ifndef _WIN32
+TEST(AutomationContextTests, AutomateNode_Regtest)
+{
+   //fake bitcoind: writes its arguments, one per line, and exits.
+   //posix_spawn gets an empty environment, so only absolute paths
+   auto tmpDir = std::filesystem::absolute("./automatenodetest");
+   FileUtils::removeDirectory(tmpDir);
+   std::filesystem::create_directories(tmpDir / "regtest" / "blocks");
+   std::filesystem::create_directories(tmpDir / "bin");
+   std::filesystem::create_directories(tmpDir / "home");
+   auto argsPath = tmpDir / "args.txt";
+   auto fakeBin = tmpDir / "bin" / "bitcoind";
+   {
+      std::ofstream script(fakeBin);
+      script << "#!/bin/sh\n"
+         << "printf '%s\\n' \"$@\" > \"" << argsPath.string() << ".tmp\"\n"
+         << "/bin/mv \"" << argsPath.string() << ".tmp\" \""
+         << argsPath.string() << "\"\n";
+   }
+   std::filesystem::permissions(fakeBin, std::filesystem::perms::owner_all);
+
+   //runningDir() is tmpDir/bin, which has no ArmoryDB: run() spawns the
+   //node, then automateDb() throws before spawning anything else
+   auto own = (tmpDir / "bin" / "test").string();
+   auto datadirArg = "--datadir=" + (tmpDir / "home").string();
+   char* argv[] = { own.data(), datadirArg.data(), (char*)"--regtest" };
+   Config::parseArgs(3, argv, Config::ProcessType::Bridge);
+
+   Bridge::AutomationContext ctx(
+      tmpDir / "regtest", fakeBin, tmpDir / "db", true, true);
+   EXPECT_THROW(ctx.run([](Bridge::AutomationStep){}), std::runtime_error);
+
+   for (unsigned i=0; i<50 && !FileUtils::pathExists(argsPath, 0); i++) {
+      std::this_thread::sleep_for(100ms);
+   }
+   auto lines = Config::SettingsUtils::getLines(argsPath);
+   auto has = [&lines](const std::string& arg) {
+      return std::find(lines.begin(), lines.end(), arg) != lines.end();
+   };
+   EXPECT_TRUE(has("--regtest"));
+   EXPECT_TRUE(has("--datadir=" + tmpDir.string()));
+
+   Config::reset();
+   FileUtils::removeDirectory(tmpDir);
+}
+#endif
