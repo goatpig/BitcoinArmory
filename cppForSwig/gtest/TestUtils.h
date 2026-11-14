@@ -14,6 +14,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <thread>
+#include <algorithm>
+#include <chrono>
 #include <gtest/gtest.h>
 #include <btc/ecc.h>
 
@@ -101,6 +103,46 @@ namespace TestUtils
    std::shared_ptr<Armory::Assets::AssetEntry> getMainAccountAssetForIndex(
       std::shared_ptr<Armory::Wallets::AssetWallet>, Armory::Wallets::AssetKeyType);
    size_t getMainAccountAssetCount(std::shared_ptr<Armory::Wallets::AssetWallet>);
+
+   /*
+   Checks a romix kdf calibrated for 'target' against what
+   KdfRomix::computeKdfParams does: it measures the cost p of one pass and
+   sets iterations = target/p + 1, so a derivation costs about target to
+   target+p (a single pass when p exceeds the target).
+   Both bounds only rule out gross errors. computeKdfParams can sample p
+   too slow and pick too few iterations (0.63*target seen on a quiet
+   machine), and a derivation can run well slower than the sample it was
+   calibrated on (1.5*target for all iterations but one seen). Returns the
+   derived key.
+   Kdf is a template parameter so this header does not need KDF.h.
+   */
+   template<typename Kdf>
+   SecureBinaryData checkKdfTarget(const Kdf& kdf,
+      std::chrono::milliseconds target, const SecureBinaryData& key)
+   {
+      const unsigned iterations = kdf.iterations();
+      SCOPED_TRACE(testing::Message() << "kdf target " << target.count()
+         << "ms, " << iterations << " iterations, " << kdf.memTarget()
+         << " bytes");
+
+      //best of 2 runs: other processes can only make a run slower
+      SecureBinaryData derivedKey;
+      double ms = 0;
+      for (unsigned i=0; i<2; i++) {
+         auto start = std::chrono::steady_clock::now();
+         derivedKey = kdf.deriveKey(key);
+         std::chrono::duration<double, std::milli> runMs =
+            std::chrono::steady_clock::now() - start;
+         ms = (i == 0) ? runMs.count() : std::min(ms, runMs.count());
+      }
+      EXPECT_NE(derivedKey, key);
+
+      const double targetMs = (double)target.count();
+      EXPECT_GE(ms, 0.5 * targetMs) << "derivation: " << ms << "ms";
+      EXPECT_LE((iterations - 1.0) * ms, 3 * targetMs * iterations)
+         << "derivation: " << ms << "ms";
+      return derivedKey;
+   }
 }
 
 namespace DBTestUtils

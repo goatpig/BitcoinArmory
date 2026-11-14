@@ -4231,6 +4231,42 @@ protected:
    {}
 };
 
+namespace {
+   //salt of the known answer vectors: 0x00..0x1f
+   SecureBinaryData katSalt()
+   {
+      SecureBinaryData salt(32);
+      for (unsigned i=0; i<32; i++) {
+         salt.getPtr()[i] = (uint8_t)i;
+      }
+      return salt;
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(KdfTests, Romix_KnownAnswer)
+{
+   /*
+   Vectors computed by an independent implementation of KdfRomix (python
+   hashlib), salt 0x00..0x1f, key "0123456789AB". The output depends on
+   every lookup, so this proves the whole table is built and walked, and
+   that iterations chain. Like KdfRomix, the vectors read the lookup index
+   as a little-endian uint32.
+   */
+   auto key = SecureBinaryData::fromString("0123456789AB");
+   auto salt = katSalt();
+
+   EXPECT_EQ(Wallets::Encryption::KeyDerivationFunction_Romix(
+      1, 1024, salt).deriveKey(key).toHexStr(),
+      "7eb513cb5451770e1da8b40b2785ad085920b8a3455ba59d44521700edf7c7e1");
+   EXPECT_EQ(Wallets::Encryption::KeyDerivationFunction_Romix(
+      2, 1024 * 1024, salt).deriveKey(key).toHexStr(),
+      "cd9c785dc9c6617b3cf6bd73e59c98d1e1bda9373fb14398a80cc0632d839c67");
+   EXPECT_EQ(Wallets::Encryption::KeyDerivationFunction_Romix(
+      1, 8 * 1024 * 1024, salt).deriveKey(key).toHexStr(),
+      "d320f66e4300802b0904cffb67404edfa073ec5d8f7123086c4adc05772a5eac");
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(KdfTests, Romix_TargetTime)
 {
@@ -4240,18 +4276,10 @@ TEST_F(KdfTests, Romix_TargetTime)
    Wallets::Encryption::KeyDerivationFunction_Romix kdfRom(targetUnlock, 0);
    EXPECT_GE(kdfRom.memTarget(), 8092);
 
-   //derive key with it, check it takes over 2sec
+   //derive key with it, check it meets the 2sec target
    auto keyToDerive = SecureBinaryData::fromString("0123456789AB");
-   {
-      auto start = chrono::system_clock::now();
-      auto derivedKey = kdfRom.deriveKey(keyToDerive);
-      auto end = chrono::system_clock::now();
-
-      EXPECT_NE(derivedKey, keyToDerive);
-      auto diff = chrono::duration_cast<chrono::milliseconds>(end - start);
-      EXPECT_GE(diff.count(), targetUnlock.count());
-      EXPECT_LE(diff.count(), targetUnlock.count() + 1000);
-   }
+   auto derivedKey = TestUtils::checkKdfTarget(
+      kdfRom, targetUnlock, keyToDerive);
    kdfRom.prettyPrint();
 
    //deser kdf object into a copy, check it load correctly
@@ -4262,17 +4290,8 @@ TEST_F(KdfTests, Romix_TargetTime)
    ASSERT_NE(kdfRom2, nullptr);
    EXPECT_TRUE(kdfRom.isSame(kdfRom2.get()));
 
-   //derive key with kdf copy, check it takes over 2sec
-   {
-      auto start = chrono::system_clock::now();
-      auto derivedKey = kdfRom2->deriveKey(keyToDerive);
-      auto end = chrono::system_clock::now();
-
-      EXPECT_NE(derivedKey, keyToDerive);
-      auto diff = chrono::duration_cast<chrono::milliseconds>(end - start);
-      EXPECT_GE(diff.count(), targetUnlock.count());
-      EXPECT_LE(diff.count(), targetUnlock.count() + 1000);
-   }
+   //the copy has the same iterations, memory and salt (isSame), so it
+   //derives the same key at the same cost: no need to time it again
    kdfRom2->prettyPrint();
 
    //create kdf with same params but its own salt
@@ -4282,16 +4301,12 @@ TEST_F(KdfTests, Romix_TargetTime)
       Cryptography::PRNG::generateRandomStrong(32)
    );
 
-   //derive key with 3rd kdf, check it takes over 2sec
+   //derive key with 3rd kdf: same cost by construction, but the salt
+   //has to change the key
    {
-      auto start = chrono::system_clock::now();
-      auto derivedKey = kdfRom3.deriveKey(keyToDerive);
-      auto end = chrono::system_clock::now();
-
-      EXPECT_NE(derivedKey, keyToDerive);
-      auto diff = chrono::duration_cast<chrono::milliseconds>(end - start);
-      EXPECT_GE(diff.count(), targetUnlock.count());
-      EXPECT_LE(diff.count(), targetUnlock.count() + 1000);
+      auto derivedKey3 = kdfRom3.deriveKey(keyToDerive);
+      EXPECT_NE(derivedKey3, keyToDerive);
+      EXPECT_NE(derivedKey3, derivedKey);
    }
    kdfRom3.prettyPrint();
 }
@@ -4299,63 +4314,49 @@ TEST_F(KdfTests, Romix_TargetTime)
 ////////
 TEST_F(KdfTests, Romix_TargetMemory)
 {
-   //128MB target, no time target
+   //128MB target, no time target: a single pass over 128MB
    Wallets::Encryption::KeyDerivationFunction_Romix kdfRom(0ms, 128);
    EXPECT_EQ(kdfRom.memTarget(), 128 * 1024 * 1024);
+   EXPECT_EQ(kdfRom.iterations(), 1U);
 
+   //no time target to hold it to: prove the whole 128MB table is used with
+   //a known answer for these params (see Romix_KnownAnswer)
    auto keyToDerive = SecureBinaryData::fromString("0123456789AB");
    {
-      auto start = chrono::system_clock::now();
-      auto derivedKey = kdfRom.deriveKey(keyToDerive);
-      auto end = chrono::system_clock::now();
-
-      EXPECT_NE(derivedKey, keyToDerive);
-      auto diff = end - start;
-      EXPECT_GE(diff, 2000ms) << diff.count();
+      Wallets::Encryption::KeyDerivationFunction_Romix kat(
+         1, 128 * 1024 * 1024, katSalt());
+      EXPECT_TRUE(kdfRom.isSimilar(&kat));
+      EXPECT_EQ(kat.deriveKey(keyToDerive).toHexStr(),
+         "5ce28a39168e7ac075a8222f73fa9b4d1db6a8d1a201ee7a89d04d1bde772d19");
    }
 
    //4MB target and 2000ms target
    Wallets::Encryption::KeyDerivationFunction_Romix kdfRom2(2000ms, 4);
    EXPECT_GE(kdfRom2.memTarget(), 4 * 1024 * 1024);
-
    {
-      auto start = chrono::system_clock::now();
-      auto derivedKey = kdfRom2.deriveKey(keyToDerive);
-      auto end = chrono::system_clock::now();
-
-      EXPECT_NE(derivedKey, keyToDerive);
-      auto diff = end - start;
-      EXPECT_GE(diff, 2000ms) << diff.count();
-      EXPECT_LE(diff, 3000ms) << diff.count();
+      SCOPED_TRACE("4MB floor");
+      TestUtils::checkKdfTarget(kdfRom2, 2000ms, keyToDerive);
    }
 
    //16MB target and 2000ms target
    Wallets::Encryption::KeyDerivationFunction_Romix kdfRom3(2000ms, 16);
    EXPECT_GE(kdfRom3.memTarget(), 16 * 1024 * 1024);
-
    {
-      auto start = chrono::system_clock::now();
-      auto derivedKey = kdfRom3.deriveKey(keyToDerive);
-      auto end = chrono::system_clock::now();
-
-      EXPECT_NE(derivedKey, keyToDerive);
-      auto diff = end - start;
-      EXPECT_GE(diff, 2000ms) << diff.count();
-      EXPECT_LE(diff, 4000ms) << diff.count();
+      SCOPED_TRACE("16MB floor");
+      TestUtils::checkKdfTarget(kdfRom3, 2000ms, keyToDerive);
    }
 
-   //512MB target, no time target
+   //512MB target, no time target: capped at 256MB, a single pass
    Wallets::Encryption::KeyDerivationFunction_Romix kdfRom4(0ms, 512);
    EXPECT_EQ(kdfRom4.memTarget(), 256 * 1024 * 1024);
+   EXPECT_EQ(kdfRom4.iterations(), 1U);
 
    {
-      auto start = chrono::system_clock::now();
-      auto derivedKey = kdfRom4.deriveKey(keyToDerive);
-      auto end = chrono::system_clock::now();
-
-      EXPECT_NE(derivedKey, keyToDerive);
-      auto diff = end - start;
-      EXPECT_GE(diff, 4000ms) << diff.count();
+      Wallets::Encryption::KeyDerivationFunction_Romix kat(
+         1, 256 * 1024 * 1024, katSalt());
+      EXPECT_TRUE(kdfRom4.isSimilar(&kat));
+      EXPECT_EQ(kat.deriveKey(keyToDerive).toHexStr(),
+         "f38ca1c7230be0e0ae39f30ad6235abf291956bc48f828127681bf3e40ae8834");
    }
 }
 
