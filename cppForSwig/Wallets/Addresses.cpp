@@ -250,13 +250,9 @@ std::shared_ptr<Signing::ScriptRecipient> AddressEntry_P2PK::getRecipient(
 
 size_t AddressEntry_P2PK::getInputSize() const
 {
-   size_t size = 114; //outpoint, sequence and sig + varint overhead
-   if (isCompressed()) {
-      size += 33;
-   } else {
-      size += 65;
-   }
-   return size;
+   //outpoint, sequence and sig + varint overhead, the pubkey is in the
+   //output script, not in the input
+   return 114;
 }
 
 const Wallets::AssetId& AddressEntry_P2PK::getID() const

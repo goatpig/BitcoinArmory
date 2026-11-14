@@ -287,7 +287,7 @@ namespace Armory
             {
                float finalVal = 0.0f;
 
-               finalVal += hasZC_ * WEIGHT_NOZC;
+               finalVal += (1.0f - hasZC_) * WEIGHT_NOZC;
                finalVal += priorityFactor_ * WEIGHT_PRIORITY;
                finalVal += numAddrFactor_ * WEIGHT_NUMADDR;
                finalVal += txSizeFactor_ * WEIGHT_TXSIZE;

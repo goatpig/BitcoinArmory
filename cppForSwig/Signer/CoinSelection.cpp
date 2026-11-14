@@ -400,10 +400,13 @@ void Selector::fleshOutSelection(
          continue;
       }
 
+      //already in the selection
+      if (std::find(utxoSelect.utxoVec_.begin(), utxoSelect.utxoVec_.end(),
+         utxo) != utxoSelect.utxoVec_.end()) {
+         continue;
+      }
+
       for (auto& selected : utxoSelect.utxoVec_) {
-         if (utxo == selected) {
-            continue;
-         }
          if (utxo.getScript() != selected.getScript()) {
             continue;
          }
@@ -833,6 +836,8 @@ std::vector<UTXO> CoinSubSelection::selectManyUtxo_DoubleSpendVal(
       auto currdiff = std::abs(idealTarget - tally);
       auto newdiff = std::abs(idealTarget - newtally);
       if (currdiff < newdiff) {
+         //this utxo takes the tally away from the target, leave it out
+         --count;
          break;
       }
       tally = newtally;
@@ -913,18 +918,15 @@ float SelectionScoring::computeScore(
    }
 
    //compute input priority
-   if (score.hasZC_ != 0.0f) {
-      float fPriority = float(valConf)/float(utxoSelect.size_);
-
-      if (fPriority < priorityThreshold) {
-         score.priorityFactor_ = 0.0f;
-      } else if (fPriority < 10.0f*priorityThreshold) {
-         score.priorityFactor_ = 0.7f;
-      } else if (fPriority < 100.0f*priorityThreshold) {
-         score.priorityFactor_ = 0.9f;
-      } else {
-         score.priorityFactor_ = 1.0f;
-      }
+   float fPriority = float(valConf)/float(utxoSelect.size_);
+   if (fPriority < priorityThreshold) {
+      score.priorityFactor_ = 0.0f;
+   } else if (fPriority < 10.0f*priorityThreshold) {
+      score.priorityFactor_ = 0.7f;
+   } else if (fPriority < 100.0f*priorityThreshold) {
+      score.priorityFactor_ = 0.9f;
+   } else {
+      score.priorityFactor_ = 1.0f;
    }
 
    //compute tx size factor

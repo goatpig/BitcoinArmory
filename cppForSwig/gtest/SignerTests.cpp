@@ -739,6 +739,214 @@ TEST_F(SignerTest, SpendTest_SizeEstimates)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(SignerTest, SpendTest_SizeEstimates_P2SH_P2PK)
+{
+   TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
+
+   initBDM();
+   clients_->init();
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+   auto bdvID = DBTestUtils::registerBDV(
+      clients_, Config::BitcoinSettings::getMagicBytes());
+
+   std::vector<BinaryData> scrAddrVec {
+      TestChain::scrAddrA,
+      TestChain::scrAddrB,
+      TestChain::scrAddrC,
+      TestChain::scrAddrD,
+      TestChain::scrAddrE
+   };
+
+   //// create assetWlt ////
+   Wallets::IO::CreateWalletParams params{
+      homedir_,
+      Passphrase::SetNew{1ms, 0, {}},
+      Passphrase::SetNew{1ms, 0, {}},
+      nullptr, 5
+   };
+
+   std::unique_ptr<Seeds::ClearTextSeed> seed(
+      new Seeds::ClearTextSeed_Armory());
+   auto assetWlt = Wallets::AssetWallet_Single::createFromSeed(
+      std::move(seed), params);
+
+   //register with db
+   std::vector<BinaryData> addrVec;
+
+   auto hashSet = assetWlt->getAddrHashSet();
+   std::vector<BinaryData> hashVec;
+   hashVec.insert(hashVec.begin(), hashSet.begin(), hashSet.end());
+
+   DBTestUtils::registerWallet(clients_, bdvID, hashVec, assetWlt->getID(),
+      false);
+   DBTestUtils::registerWallet(clients_, bdvID, scrAddrVec, "wallet1",
+      false);
+
+   //wait on signals
+   DBTestUtils::goOnline(clients_, bdvID);
+   DBTestUtils::waitOnBDVReady(clients_, bdvID);
+   auto bdm = theBDMt_->bdm();
+
+   {
+      ////spend 27 from wlt to 2 nested P2PK addresses of assetWlt
+
+      auto spendVal = 27 * COIN;
+      Signer signer;
+
+      //instantiate resolver feed overloaded object
+      auto feed = std::make_shared<ResolverUtils::TestResolverFeed>();
+      feed->addPrivKey(TestChain::privKeyAddrB.getRef());
+      feed->addPrivKey(TestChain::privKeyAddrC.getRef());
+      feed->addPrivKey(TestChain::privKeyAddrD.getRef());
+      feed->addPrivKey(TestChain::privKeyAddrE.getRef());
+
+      //get utxo list for spend value
+      auto unspentVec = DBTestUtils::getUTXOsForScrAddrs(bdm, {
+         TestChain::scrAddrB,
+         TestChain::scrAddrC,
+         TestChain::scrAddrD,
+         TestChain::scrAddrE
+      });
+
+      std::vector<UTXO> utxoVec;
+      uint64_t tval = 0;
+      auto utxoIter = unspentVec.begin();
+      while (utxoIter != unspentVec.end()) {
+         tval += utxoIter->getAmount();
+         utxoVec.push_back(*utxoIter);
+
+         if (tval > spendVal) {
+            break;
+         }
+         ++utxoIter;
+      }
+
+      //create script spender objects
+      uint64_t total = 0;
+      for (auto& utxo : utxoVec) {
+         total += utxo.getAmount();
+         signer.addSpender(getSpenderPtr(utxo));
+      }
+
+      //spend 12 to first address, nested P2PK
+      auto addr0 = assetWlt->getNewAddress(
+         AddressEntryType(AddressEntryType::P2PK | AddressEntryType::P2SH));
+      signer.addRecipient(addr0->getRecipient(12 * COIN));
+      addrVec.push_back(addr0->getPrefixedHash());
+
+      //spend 15 to addr 1, nested P2PK
+      auto addr1 = assetWlt->getNewAddress(
+         AddressEntryType(AddressEntryType::P2PK | AddressEntryType::P2SH));
+      signer.addRecipient(addr1->getRecipient(15 * COIN));
+      addrVec.push_back(addr1->getPrefixedHash());
+
+      if (total > spendVal) {
+         //deal with change, no fee
+         auto changeVal = total - spendVal;
+         auto addr2 = assetWlt->getNewChangeAddress();
+         signer.addRecipient(addr2->getRecipient(changeVal));
+         addrVec.push_back(addr2->getPrefixedHash());
+      }
+
+      //sign, verify then broadcast
+      signer.setFeed(feed);
+      signer.sign();
+      EXPECT_TRUE(signer.verify());
+
+      DBTestUtils::ZcVector zcVec;
+      zcVec.push_back(signer.serializeSignedTx(), 14000000);
+
+      DBTestUtils::pushNewZc(theBDMt_, zcVec);
+      DBTestUtils::waitOnNewZcSignal(clients_, bdvID);
+   }
+
+   {
+      ////spend 18 from them, the size estimate should match the signed tx
+
+      auto spendVal = 18 * COIN;
+      Signer signer2;
+
+      auto getUtxos = [bdm, &addrVec](uint64_t)->std::vector<UTXO>
+      {
+         auto unspentVec = DBTestUtils::getZCUTXOs(bdm, {
+            addrVec[0], addrVec[1]
+         });
+         std::vector<UTXO> utxoVec;
+         for (auto& unspentTxo : unspentVec) {
+            UTXO entry(unspentTxo.amount, unspentTxo.txHeight,
+               unspentTxo.txIndex, unspentTxo.txOutIndex,
+               std::move(unspentTxo.txHash),
+               std::move(unspentTxo.script));
+            utxoVec.emplace_back(entry);
+         }
+         return utxoVec;
+      };
+
+      auto topBlock = theBDMt_->bdm()->blockchain()->top()->getBlockHeight();
+      CoinSelection::CoinSelectionInstance csi(assetWlt, getUtxos,
+         {}, 30 * COIN, topBlock);
+
+      //spend 18 to addr B, use P2PKH
+      csi.addRecipient(TestChain::scrAddrB, spendVal);
+
+      float desiredFeeByte = 200.0f;
+      csi.selectUTXOs(0, desiredFeeByte, 0);
+      auto utxoSelect = csi.getUtxoSelection();
+      ASSERT_EQ(utxoSelect.size(), 2ULL);
+
+      //create feed from asset wallet
+      auto assetFeed = std::make_shared<ResolverFeed_AssetWalletSingle>(
+         assetWlt);
+
+      //create spenders
+      uint64_t total = 0;
+      for (auto& utxo : utxoSelect) {
+         total += utxo.getAmount();
+         signer2.addSpender(std::make_shared<ScriptSpender>(utxo));
+      }
+
+      //add recipients to signer
+      auto& csRecipients = csi.getRecipients();
+      for (const auto& group : csRecipients) {
+         for (const auto& recipient : group.second) {
+            signer2.addRecipient(recipient, group.first);
+         }
+      }
+
+      if (total > spendVal) {
+         //deal with change
+         auto changeVal = total - spendVal - csi.getFlatFee();
+         auto addr3 = assetWlt->getNewChangeAddress(
+            AddressEntryType(AddressEntryType::P2WPKH | AddressEntryType::P2SH));
+         signer2.addRecipient(addr3->getRecipient(changeVal));
+         addrVec.push_back(addr3->getPrefixedHash());
+      }
+
+      //sign, verify & broadcast
+      {
+         auto lock = assetWlt->lockDecryptedContainer({});
+         signer2.setFeed(assetFeed);
+         signer2.sign();
+      }
+
+      EXPECT_TRUE(signer2.verify());
+
+      DBTestUtils::ZcVector zcVec2;
+      auto txref = signer2.serializeSignedTx();
+
+      //the signed tx can be a few bytes smaller than the estimate,
+      //depending on the signature sizes (DER)
+      EXPECT_GE(csi.getSizeEstimate(), txref.getSize());
+      EXPECT_LE(csi.getSizeEstimate(), txref.getSize() + utxoSelect.size() * 4);
+      zcVec2.push_back(signer2.serializeSignedTx(), 15000000);
+
+      //the fee is the coin selection's
+      auto totalFee = total - zcVec2.zcVec_[0].first.getSumOfOutputs();
+      EXPECT_EQ(totalFee, csi.getFlatFee());
+   }
+}
+
 TEST_F(SignerTest, SpendTest_P2WPKH)
 {
    TestUtils::setBlocks({ "0", "1", "2", "3" }, blk0dat_);
@@ -9086,6 +9294,110 @@ TEST_F(ExtrasTest, SerializeState_SupportingTxs)
       checkSupportingTxs(signer3);
       EXPECT_EQ(signer3.toPSBT(), signer.toPSBT());
    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(ExtrasTest, CoinSelection_NoDuplicateUtxo)
+{
+   //two utxos on the same script, both needed, more outputs than inputs
+   const unsigned topHeight = 1000;
+   auto script = BtcUtils::getP2PKHScript(
+      READHEX("00112233445566778899aabbccddeeff00112233"));
+   auto txHash = READHEX(
+      "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899");
+
+   std::vector<UTXO> utxos;
+   for (unsigned i = 0; i < 2; i++) {
+      UTXO utxo(COIN, topHeight - 10, 0, i, txHash, script);
+      utxo.txinRedeemSizeBytes = 148;
+      utxos.push_back(utxo);
+   }
+
+   std::map<unsigned, std::vector<std::shared_ptr<ScriptRecipient>>> recipients;
+   recipients[0].push_back(std::make_shared<Recipient_P2PKH>(
+      READHEX("1111111111111111111111111111111111111111"), 75000000));
+   recipients[0].push_back(std::make_shared<Recipient_P2PKH>(
+      READHEX("2222222222222222222222222222222222222222"), 75000000));
+
+   CoinSelection::PaymentStruct payStruct(recipients, 0, 10.0f, 0);
+   CoinSelection::Selector selector(
+      [&utxos](uint64_t)->std::vector<UTXO> { return utxos; },
+      {}, 2 * COIN, topHeight);
+
+   auto selection = selector.getUtxoSelectionForRecipients(payStruct, utxos);
+   std::set<UTXO> unique(selection.utxoVec_.begin(), selection.utxoVec_.end());
+   EXPECT_EQ(selection.utxoVec_.size(), 2U);
+   EXPECT_EQ(unique.size(), selection.utxoVec_.size());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST(CoinSelectionTest, ManyUtxo_DoubleSpendVal_StopsAtBestTally)
+{
+   std::vector<UTXO> utxos(3);
+   for (unsigned i = 0; i < 3; i++) {
+      utxos[i].amount = 10 * COIN;
+      utxos[i].txOutIndex = i;
+   }
+   auto selection = CoinSelection::CoinSubSelection::
+      selectManyUtxo_DoubleSpendVal(utxos, 10 * COIN, 0);
+   EXPECT_EQ(selection.size(), 2U);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(ExtrasTest, CoinSelection_PreferConfirmedUtxos)
+{
+   const unsigned topHeight = 1000;
+   auto script = BtcUtils::getP2PKHScript(
+      READHEX("00112233445566778899aabbccddeeff00112233"));
+
+   UTXO confirmed(COIN, topHeight - 10, 0, 0, READHEX(
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), script);
+   confirmed.txinRedeemSizeBytes = 148;
+   UTXO zc(COIN, UINT32_MAX, 0, 0, READHEX(
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), script);
+   zc.txinRedeemSizeBytes = 148;
+
+   std::map<unsigned, std::vector<std::shared_ptr<ScriptRecipient>>> recipients;
+   recipients[0].push_back(std::make_shared<Recipient_P2PKH>(
+      READHEX("1111111111111111111111111111111111111111"), COIN / 2));
+   CoinSelection::PaymentStruct payStruct(recipients, 0, 10.0f, 0);
+
+   std::vector<UTXO> v1{confirmed}, v2{zc};
+   CoinSelection::UtxoSelection selConfirmed(v1), selZc(v2);
+   auto scoreConfirmed = CoinSelection::SelectionScoring::computeScore(
+      selConfirmed, payStruct, topHeight);
+   auto scoreZc = CoinSelection::SelectionScoring::computeScore(
+      selZc, payStruct, topHeight);
+   EXPECT_GT(scoreConfirmed, scoreZc);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(ExtrasTest, CoinSelection_PreferOlderUtxos)
+{
+   //same value and script, only the confirmation count differs
+   const unsigned topHeight = 1000;
+   auto script = BtcUtils::getP2PKHScript(
+      READHEX("00112233445566778899aabbccddeeff00112233"));
+
+   UTXO old(COIN, 1, 0, 0, READHEX(
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), script);
+   old.txinRedeemSizeBytes = 148;
+   UTXO recent(COIN, topHeight, 0, 0, READHEX(
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), script);
+   recent.txinRedeemSizeBytes = 148;
+
+   std::map<unsigned, std::vector<std::shared_ptr<ScriptRecipient>>> recipients;
+   recipients[0].push_back(std::make_shared<Recipient_P2PKH>(
+      READHEX("1111111111111111111111111111111111111111"), COIN / 2));
+   CoinSelection::PaymentStruct payStruct(recipients, 0, 10.0f, 0);
+
+   std::vector<UTXO> v1{old}, v2{recent};
+   CoinSelection::UtxoSelection selOld(v1), selRecent(v2);
+   auto scoreOld = CoinSelection::SelectionScoring::computeScore(
+      selOld, payStruct, topHeight);
+   auto scoreRecent = CoinSelection::SelectionScoring::computeScore(
+      selRecent, payStruct, topHeight);
+   EXPECT_GT(scoreOld, scoreRecent);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
