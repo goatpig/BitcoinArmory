@@ -28,6 +28,8 @@
 #include <Wallets/AuthorizedPeers.h>
 #include <Signer/ScriptSpender.h>
 #include <Network/WebSocketClient.h>
+#include <Network/WebSocketMessage.h>
+#include <Utils/BIP15x_Handshake.h>
 #include <BlockchainDatabase/BlockchainData.h>
 #include <ZeroConf/Parser.h>
 #include <ZeroConf/Utils.h>
@@ -2988,6 +2990,337 @@ TEST_F(BlockUtilsBareWithServer, WSClientCleanup_AnsweredRequest)
       release = true;
    }
    cv.notify_all();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+namespace {
+   BinaryData zeroedBytes(size_t size)
+   {
+      return BinaryData(std::vector<uint8_t>(size, 0));
+   }
+
+   /*
+   Bare websocket client: completes the websocket handshake with the server
+   and writes a single frame of our choosing, without going through the AEAD
+   layer the regular client enforces.
+   */
+   class RawWsClient
+   {
+   private:
+      struct lws_context* context_ = nullptr;
+      std::thread serviceThr_;
+      std::atomic<bool> run_{true};
+
+      BinaryData frame_;
+      bool written_ = false;
+      std::promise<bool> writtenProm_;
+
+   private:
+      static int callback(struct lws* wsi, enum lws_callback_reasons reason,
+         void* user, void*, size_t)
+      {
+         auto instance = (RawWsClient*)user;
+         if (instance == nullptr) {
+            return 0;
+         }
+
+         switch (reason)
+         {
+            case LWS_CALLBACK_CLIENT_ESTABLISHED:
+               lws_callback_on_writable(wsi);
+               break;
+
+            case LWS_CALLBACK_CLIENT_WRITEABLE:
+            {
+               if (instance->written_) {
+                  break;
+               }
+               instance->written_ = true;
+               auto size = instance->frame_.getSize() - LWS_PRE;
+               auto result = lws_write(wsi,
+                  instance->frame_.getPtr() + LWS_PRE, size, LWS_WRITE_BINARY);
+               instance->writtenProm_.set_value(result == (int)size);
+               break;
+            }
+
+            case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
+            {
+               if (!instance->written_) {
+                  instance->written_ = true;
+                  instance->writtenProm_.set_value(false);
+               }
+               break;
+            }
+
+            default:
+               break;
+         }
+         return 0;
+      }
+
+   public:
+      RawWsClient(const BinaryData& frame)
+      {
+         frame_.resize(LWS_PRE);
+         frame_.append(frame);
+      }
+
+      ~RawWsClient()
+      {
+         run_.store(false);
+         if (context_ != nullptr) {
+            lws_cancel_service(context_);
+         }
+         if (serviceThr_.joinable()) {
+            serviceThr_.join();
+         }
+         if (context_ != nullptr) {
+            lws_context_destroy(context_);
+         }
+      }
+
+      bool write(uint16_t port, std::chrono::milliseconds timeout)
+      {
+         static struct lws_protocols protocols[] = {
+            { "armory-bdm-protocol", RawWsClient::callback,
+               sizeof(void*), 8000, 0, nullptr, 0 },
+            { nullptr, nullptr, 0, 0, 0, nullptr, 0 }
+         };
+
+         struct lws_context_creation_info info;
+         memset(&info, 0, sizeof(info));
+         info.port = CONTEXT_PORT_NO_LISTEN;
+         info.protocols = protocols;
+         info.gid = -1;
+         info.uid = -1;
+         context_ = lws_create_context(&info);
+         if (context_ == nullptr) {
+            return false;
+         }
+
+         struct lws_client_connect_info connInfo;
+         memset(&connInfo, 0, sizeof(connInfo));
+         connInfo.context = context_;
+         connInfo.address = "127.0.0.1";
+         connInfo.port = port;
+         connInfo.path = "/";
+         connInfo.host = connInfo.address;
+         connInfo.origin = connInfo.address;
+         connInfo.ietf_version_or_minus_one = -1;
+         connInfo.protocol = protocols[0].name;
+         connInfo.userdata = this;
+         if (lws_client_connect_via_info(&connInfo) == nullptr) {
+            return false;
+         }
+
+         auto fut = writtenProm_.get_future();
+         serviceThr_ = std::thread([this]{
+            while (run_.load()) {
+               lws_service(context_, 50);
+            }
+         });
+
+         if (fut.wait_for(timeout) != std::future_status::ready) {
+            return false;
+         }
+         return fut.get();
+      }
+   };
+}
+
+////////////////////////////////////////////////////////////////////////////////
+class BlockUtilsBareWithServerDeathTest : public BlockUtilsBareWithServer
+{
+   /*
+   Scenarios that take the whole process down when they fail: they run in a
+   death test child, which sets the fixture up and tears it down on its own,
+   and has to exit cleanly to pass.
+   */
+
+protected:
+   void SetUp() override
+   {
+      GTEST_FLAG_SET(death_test_style, "threadsafe");
+   }
+
+   void TearDown() override
+   {}
+
+   void runScenario(const std::function<void(void)>& scenario)
+   {
+      //a hung scenario fails instead of blocking the suite
+      std::thread watchdog([]{
+         std::this_thread::sleep_for(30s);
+         std::_Exit(3);
+      });
+      watchdog.detach();
+
+      BlockUtilsBareWithServer::SetUp();
+      scenario();
+      BlockUtilsBareWithServer::TearDown();
+      std::_Exit(::testing::Test::HasFailure() ? 1 : 0);
+   }
+
+   std::shared_ptr<AsyncClient::BlockDataViewer> connectClient(
+      std::shared_ptr<DBTestUtils::UTCallback> callback)
+   {
+      auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
+         "127.0.0.1", Config::NetworkSettings::dbPort(),
+         std::make_shared<NetworkPeers::ClientStore>(
+            Wallets::IO::ReadOnlyFileParams{
+               homedir_ / CLIENT_AUTH_PEER_FILENAME, authPeersPassLbd_}),
+         true, //public server
+         callback);
+      bdvObj->connectToRemote();
+      return bdvObj;
+   }
+
+   //true if the node status request got a valid reply in time
+   bool nodeStatusReplies(AsyncClient::BlockDataViewer& bdvObj)
+   {
+      auto prom = std::make_shared<std::promise<bool>>();
+      auto fut = prom->get_future();
+      bdvObj.getNodeStatus([prom](ReturnMessage<Node::Status> result){
+         try {
+            result.get();
+            prom->set_value(true);
+         } catch (const std::exception&) {
+            prom->set_value(false);
+         }
+      });
+
+      if (fut.wait_for(5s) != std::future_status::ready) {
+         return false;
+      }
+      return fut.get();
+   }
+};
+
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, ShortFrameBeforeHandshake)
+{
+   /*
+   A frame too short to carry a packet type, sent before the AEAD
+   handshake, should get its connection dropped without taking the
+   server down
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer(nullptr);
+
+      for (unsigned size=1; size<5; size++) {
+         RawWsClient rawClient(zeroedBytes(size));
+         ASSERT_TRUE(rawClient.write(Config::NetworkSettings::dbPort(), 5s));
+
+         //give the server time to process the frame before disconnecting
+         std::this_thread::sleep_for(200ms);
+      }
+
+      //the server still serves regular clients
+      auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+      auto bdvObj = connectClient(pCallback);
+      bdvObj->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+      EXPECT_TRUE(nodeStatusReplies(*bdvObj));
+   }), ::testing::ExitedWithCode(0), "");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+class WebSocketMessageTests : public ::testing::Test
+{
+protected:
+   void SetUp() override
+   {
+      startupBIP151CTX();
+      startupBIP150CTX(4);
+   }
+
+   //serialized packets start with LWS_PRE bytes of room for lws, which
+   //are not sent over the wire
+   static BinaryData toWire(const BinaryData& packet)
+   {
+      return packet.getSliceCopy(LWS_PRE, packet.getSize() - LWS_PRE);
+   }
+};
+
+////
+TEST_F(WebSocketMessageTests, ReadPacketType_ShortPacket)
+{
+   //a packet needs 4 bytes of size and 1 byte of type to carry a type
+   for (unsigned size=0; size<5; size++) {
+      BinaryData packet(std::vector<uint8_t>(size, 0x65));
+      EXPECT_EQ(Network::WebSocketMessagePartial::readPacketType(packet.getRef()),
+         ArmoryAEAD::BIP151_PayloadType::Undefined) << "size: " << size;
+   }
+
+   //an aead packet without an id
+   auto packet = zeroedBytes(5);
+   packet.getPtr()[4] = (uint8_t)ArmoryAEAD::BIP151_PayloadType::Start;
+   EXPECT_EQ(Network::WebSocketMessagePartial::readPacketType(packet.getRef()),
+      ArmoryAEAD::BIP151_PayloadType::Start);
+}
+
+////
+TEST_F(WebSocketMessageTests, ParsePacket_ShortPacket)
+{
+   for (unsigned size=0; size<5; size++) {
+      //zeroed packets: a 4 bytes packet carries a valid size field
+      auto packet = zeroedBytes(size);
+
+      Network::WebSocketMessagePartial msg;
+      EXPECT_FALSE(msg.parsePacket(packet)) << "size: " << size;
+      EXPECT_FALSE(msg.isReady());
+   }
+
+   //an aead packet without an id still parses
+   auto packet = zeroedBytes(5);
+   uint32_t packetSize = 1;
+   memcpy(packet.getPtr(), &packetSize, 4);
+   packet.getPtr()[4] = (uint8_t)ArmoryAEAD::BIP151_PayloadType::Start;
+
+   Network::WebSocketMessagePartial msg;
+   EXPECT_TRUE(msg.parsePacket(packet));
+   EXPECT_TRUE(msg.isReady());
+   EXPECT_EQ(msg.getType(), ArmoryAEAD::BIP151_PayloadType::Start);
+}
+
+////
+TEST_F(WebSocketMessageTests, ParsePacket_TypeMismatch)
+{
+   //an aead packet then a single packet on the same message
+   auto aeadPacket = toWire(Network::WebSocketMessageCodec::serialize(
+      zeroedBytes(32).getRef(), nullptr,
+      ArmoryAEAD::BIP151_PayloadType::EncInit, 0)[0]);
+   auto singlePacket = toWire(Network::WebSocketMessageCodec::serialize(
+      zeroedBytes(32).getRef(), nullptr,
+      ArmoryAEAD::BIP151_PayloadType::SinglePacket, 1)[0]);
+
+   Network::WebSocketMessagePartial msg;
+   ASSERT_TRUE(msg.parsePacket(aeadPacket));
+   EXPECT_FALSE(msg.parsePacket(singlePacket));
+}
+
+////
+TEST_F(WebSocketMessageTests, ClientConnection_ShortPacket)
+{
+   /*
+   Before the AEAD handshake, packets reach processReadQueue straight off
+   the socket. One too short to carry a type closes the connection.
+   */
+   auto peers = std::make_shared<NetworkPeers::ServerStore>();
+   for (unsigned size=1; size<5; size++) {
+      ClientConnection conn(nullptr, size, peers->getView(), true);
+      conn.readQueue_->push_back(zeroedBytes(size));
+
+      EXPECT_NO_THROW(conn.processReadQueue(nullptr, nullptr)) <<
+         "size: " << size;
+      EXPECT_EQ(conn.run_->load(), -1) << "size: " << size;
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

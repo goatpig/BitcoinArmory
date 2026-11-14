@@ -797,6 +797,12 @@ void ClientConnection::processReadQueue(
 
       auto msgType = Network::WebSocketMessagePartial::readPacketType(
          packetData.getRef());
+      if (msgType == ArmoryAEAD::BIP151_PayloadType::Undefined) {
+         //packet is too short to carry a type or carries none, kill connection
+         closeConnection();
+         continue;
+      }
+
       if (msgType > ArmoryAEAD::BIP151_PayloadType::Threshold_Begin) {
          processAEADHandshake(std::move(packetData), instance);
          if (bip151Connection_->getBIP150State() == BIP150State::SUCCESS &&

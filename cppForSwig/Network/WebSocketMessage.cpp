@@ -419,7 +419,8 @@ void WebSocketMessagePartial::reset()
 ///////////////////////////////////////////////////////////////////////////////
 bool WebSocketMessagePartial::parsePacket(BinaryData& packet)
 {
-   if (packet.empty()) {
+   //a packet carries at least its size (4 bytes) and its type (1 byte)
+   if (packet.getSize() < 5) {
       return false;
    }
 
@@ -484,7 +485,7 @@ bool WebSocketMessagePartial::parseSinglePacket(BinaryData& packet)
    if (myType_ == SerializedType::Undefined) {
       myType_ = SerializedType::Single;
    } else if (myType_ != SerializedType::Single) {
-      throw std::runtime_error("message type mismatch");
+      return false;
    }
 
    packets_.emplace(0, std::move(packet));
@@ -717,7 +718,8 @@ ArmoryAEAD::BIP151_PayloadType WebSocketMessagePartial::readPacketType(
    const BinaryDataRef& bdr)
 {
    if (bdr.getSize() < 5) {
-      throw std::runtime_error("packet is too small to be serialized fragment");
+      //too short to carry a type
+      return ArmoryAEAD::BIP151_PayloadType::Undefined;
    } else if (bdr.getSize() < PAYLOAD_HEADER) {
       return (ArmoryAEAD::BIP151_PayloadType)bdr.getPtr()[4];
    } else {
