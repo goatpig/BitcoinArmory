@@ -331,28 +331,23 @@ void ScrAddrFilter::run()
                throw std::runtime_error("unexpected batch ptr type");
             }
 
-            bool bdmReady = false;
-            while (!bdmReady) {
-               if (!batchPtr->keepTrying.load(std::memory_order_relaxed)) {
+            //wait on the bdm, give up on the batch if it is halted (its
+            //client is gone) or if the bdm failed to initialize
+            auto state = BDMState::Uninitialized;
+            while (batchPtr->keepTrying.load(std::memory_order_relaxed)) {
+               state = waitOnBDMReady(1s);
+               if (state == BDMState::Ready ||
+                  state == BDMState::InitializationFailed) {
+                  break;
+               }
+            }
+
+            if (state != BDMState::Ready) {
+               //halt() already fired the callback of halted batches
+               if (state == BDMState::InitializationFailed) {
                   batchPtr->callback(false);
-                  return;
                }
-
-               auto state = waitOnBDMReady(1s);
-               switch (state)
-               {
-                  case BDMState::Uninitialized:
-                  case BDMState::Initializing:
-                     break;
-
-                  case BDMState::Ready:
-                     bdmReady = true;
-                     break;
-
-                  case BDMState::InitializationFailed:
-                     batchPtr->callback(false);
-                     break;
-               }
+               break;
             }
 
             //prepare the batch, it will also wrap up registration for edge case.

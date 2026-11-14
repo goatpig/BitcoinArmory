@@ -35,6 +35,7 @@
 #include <ZeroConf/Parser.h>
 #include <ZeroConf/Utils.h>
 #include <ZeroConf/Notifications.h>
+#include <BlockchainDatabase/ScrAddrFilter.h>
 
 #include "BDM_mainthread.h"
 #include "Server.h"
@@ -3470,6 +3471,170 @@ TEST_F(BlockUtilsBareWithServer, ZcError_BdvGone)
       ASSERT_NE(error, nullptr);
       EXPECT_EQ(error->errorData, ourHash);
       EXPECT_EQ(error->errorCode, (int)ArmoryErrorCodes::ZcBroadcast_Error);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+namespace {
+   //scrAddr filter running against a bdm state of our choosing
+   class ScrAddrFilter_ControlledBDM : public ScrAddrFilter
+   {
+   private:
+      const std::shared_ptr<Blockchain> blockchain_;
+
+   public:
+      std::atomic<BDMState> state{BDMState::Initializing};
+
+      ScrAddrFilter_ControlledBDM(LMDBBlockDatabase* db, uint16_t sdbiId,
+         std::shared_ptr<Blockchain> bc) :
+         ScrAddrFilter(db, sdbiId), blockchain_(bc)
+      {}
+
+      ~ScrAddrFilter_ControlledBDM() override
+      {
+         //the filter thread calls our overrides, stop it while they exist
+         shutdown();
+      }
+
+   protected:
+      bool bdmIsRunning() const override
+      {
+         return true;
+      }
+
+      BDMState waitOnBDMReady(std::chrono::milliseconds) const override
+      {
+         auto current = state.load();
+         if (current == BDMState::Uninitialized ||
+            current == BDMState::Initializing) {
+            std::this_thread::sleep_for(10ms);
+         }
+         return current;
+      }
+
+      Hash32 applyBlockRangeToDB(
+         uint32_t, const std::vector<std::string>&, bool) override
+      {
+         return Hash32{};
+      }
+
+      std::shared_ptr<Blockchain> blockchain() const override
+      {
+         return blockchain_;
+      }
+
+      std::shared_ptr<ScrAddrFilter> getNew(unsigned) override
+      {
+         return nullptr;
+      }
+   };
+
+   //counts the calls to a registration batch callback
+   class BatchCallbackTracker
+   {
+   private:
+      std::promise<bool> firstCall_;
+
+   public:
+      std::atomic<unsigned> calls{0};
+      std::future<bool> firstCall = firstCall_.get_future();
+
+      RegistrationBatch::Callback get()
+      {
+         return [this](bool success) {
+            if (calls.fetch_add(1) == 0) {
+               firstCall_.set_value(success);
+            }
+         };
+      }
+
+      //empty address set: the batch completes as soon as the bdm is ready
+      std::shared_ptr<RegistrationBatch> makeBatch(const std::string& id)
+      {
+         return std::make_shared<RegistrationBatch>(
+            std::vector<std::string>{id}, std::vector<Types::ScrAddr>{},
+            true, get());
+      }
+   };
+}
+
+////
+TEST_F(BlockUtilsBare, ScrAddrFilter_BatchHaltedWhileWaitingOnBDM)
+{
+   /*
+   A client disconnecting while its registration batch waits on the bdm
+   halts the batch: the filter should drop it and keep processing the
+   batches that come after it, and the halted batch callback should fire
+   only once
+   */
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+
+   BatchCallbackTracker haltedTracker, nextTracker;
+   auto haltedBatch = haltedTracker.makeBatch("halted");
+   auto nextBatch = nextTracker.makeBatch("next");
+   {
+      ScrAddrFilter_ControlledBDM saf(
+         iface_, 0x42, theBDMt_->bdm()->blockchain());
+      saf.start();
+
+      //let the filter pick up the batch and wait on the bdm, then halt it
+      saf.pushAddressBatch(haltedBatch);
+      std::this_thread::sleep_for(200ms);
+      haltedBatch->halt();
+
+      saf.pushAddressBatch(nextBatch);
+      saf.state.store(BDMState::Ready);
+
+      ASSERT_EQ(nextTracker.firstCall.wait_for(5s), std::future_status::ready);
+      EXPECT_TRUE(nextTracker.firstCall.get());
+   }
+
+   //the filter thread is gone, all calls are in
+   EXPECT_EQ(haltedTracker.calls.load(), 1U);
+   EXPECT_EQ(nextTracker.calls.load(), 1U);
+}
+
+////
+TEST_F(BlockUtilsBare, ScrAddrFilter_BDMInitFailed)
+{
+   /*
+   Batches waiting on a bdm that failed to initialize fail, once each,
+   and the filter moves on to the next batch
+   */
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+
+   BatchCallbackTracker tracker1, tracker2;
+   auto batch1 = tracker1.makeBatch("batch1");
+   auto batch2 = tracker2.makeBatch("batch2");
+   {
+      ScrAddrFilter_ControlledBDM saf(
+         iface_, 0x42, theBDMt_->bdm()->blockchain());
+
+      //halt the batches before the filter goes away, a filter thread
+      //looping on a batch only exits once it is halted
+      auto haltBatches = [&batch1, &batch2](void*) {
+         batch1->halt();
+         batch2->halt();
+      };
+      std::unique_ptr<void, decltype(haltBatches)> haltOnExit(
+         &saf, haltBatches);
+
+      saf.state.store(BDMState::InitializationFailed);
+      saf.start();
+      saf.pushAddressBatch(batch1);
+      saf.pushAddressBatch(batch2);
+
+      ASSERT_EQ(tracker1.firstCall.wait_for(5s), std::future_status::ready);
+      EXPECT_FALSE(tracker1.firstCall.get());
+      ASSERT_EQ(tracker2.firstCall.wait_for(5s), std::future_status::ready);
+      EXPECT_FALSE(tracker2.firstCall.get());
+
+      //give a looping filter thread time to show
+      std::this_thread::sleep_for(200ms);
+      EXPECT_EQ(tracker1.calls.load(), 1U);
+      EXPECT_EQ(tracker2.calls.load(), 1U);
    }
 }
 
