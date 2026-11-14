@@ -1714,7 +1714,7 @@ void ScriptSpender::toPSBT(BinaryWriter& bw) const
          if (!bip32Path.second.isValid()) {
             continue;
          }
-         bw.put_uint8_t(34);
+         bw.put_var_int(bip32Path.first.getSize() + 1); //key length
          bw.put_uint8_t(PSBT::ENUM_INPUT::PSBT_IN_BIP32_DERIVATION);
          bw.put_BinaryData(bip32Path.first);
 
@@ -1981,8 +1981,12 @@ std::shared_ptr<ScriptSpender> ScriptSpender::fromPSBT(
                continue;
             }
 
-            SecureBinaryData sig(iter->second);
-            spender->injectSignature(sig, pubkey.first);
+            //a PSBT can carry more partial sigs than the script needs
+            //(BIP174 combiner), stop injecting once the spender is signed
+            if (!spender->isSigned()) {
+               SecureBinaryData sig(iter->second);
+               spender->injectSignature(sig, pubkey.first);
+            }
             partialSigs.erase(iter);
          }
 

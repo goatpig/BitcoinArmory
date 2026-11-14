@@ -2373,7 +2373,9 @@ Signer Signer::fromPSBT(BinaryDataRef psbtRef)
 
          case PSBT::ENUM_GLOBAL::PSBT_GLOBAL_PROPRIETARY:
          {
-            //skip for now
+            //not interpreted, carried over to toPSBT
+            signer.prioprietaryPSBTData_.emplace(
+               key.getSliceRef(1, key.getSize() - 1), val);
             break;
          }
 

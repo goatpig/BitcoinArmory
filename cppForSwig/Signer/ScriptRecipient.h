@@ -49,6 +49,9 @@ namespace Armory
          std::map<BinaryData, BIP32_AssetPath> bip32Paths_;
          std::map<BinaryData, BinaryData> prioprietaryPSBTData_;
 
+         //PSBT redeem and witness scripts, by key, carried over as is
+         std::map<BinaryData, BinaryData> scriptsPSBTData_;
+
       public:
          ScriptRecipient(SpendScriptType, uint64_t);
          virtual ~ScriptRecipient(void) = 0;

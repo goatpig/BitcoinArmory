@@ -9033,6 +9033,219 @@ TEST_F(ExtrasTest, PSBT)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(ExtrasTest, PSBT_OutputScripts)
+{
+   //change outputs as Bitcoin Core's walletprocesspsbt fills them:
+   //P2SH-P2WPKH with its redeem script, P2WSH with its witness script
+   auto redeemScript = BtcUtils::getP2WPKHOutputScript(
+      READHEX("2222222222222222222222222222222222222222"));
+   auto witnessScript = BtcUtils::getP2PKHScript(
+      READHEX("3333333333333333333333333333333333333333"));
+
+   std::vector<std::pair<std::shared_ptr<ScriptRecipient>, BinaryData>> cases;
+   cases.emplace_back(std::make_shared<Recipient_P2SH>(
+      BtcUtils::getHash160(redeemScript), 1000), redeemScript);
+   cases.emplace_back(std::make_shared<Recipient_P2WSH>(
+      BtcUtils::getSha256(witnessScript), 2000), witnessScript);
+
+   uint8_t keyType = 0x00; //PSBT_OUT_REDEEM_SCRIPT
+   for (auto& testCase : cases) {
+      TxOut txout(testCase.first->getSerializedScript().getRef());
+
+      BinaryWriter bw;
+      bw.put_uint8_t(1); //key length
+      bw.put_uint8_t(keyType);
+      bw.put_var_int(testCase.second.getSize());
+      bw.put_BinaryData(testCase.second);
+      bw.put_uint8_t(0); //end of the output map
+
+      BinaryRefReader brr(bw.getDataRef());
+      std::shared_ptr<ScriptRecipient> recipient;
+      EXPECT_NO_THROW(recipient = ScriptRecipient::fromPSBT(brr, txout));
+      ASSERT_NE(recipient, nullptr);
+      EXPECT_EQ(recipient->getSerializedScript(),
+         testCase.first->getSerializedScript());
+      EXPECT_EQ(brr.getSizeRemaining(), 0U);
+
+      //carried over
+      BinaryWriter bwOut;
+      recipient->toPSBT(bwOut);
+      EXPECT_EQ(bwOut.getData(), bw.getData());
+
+      keyType = 0x01; //PSBT_OUT_WITNESS_SCRIPT
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(ExtrasTest, PSBT_MultisigMorePartialSigsThanM)
+{
+   std::vector<BinaryData> pubkeys {
+      READHEX("029583bf39ae0a609747ad199addd634fa6108559d6c5cd39b4c2183f1ab96e07f"),
+      READHEX("02dab61ff49a14db6a7d02b0cd1fbb78fc4b18312b5b4e54dae4dba2fbfef536d7"),
+      READHEX("03089dc10c7ac6db54f91329af617333db388cead0c231f723379d1b99030b02dc")
+   };
+
+   //1-of-3 multisig paid to as P2WSH
+   BinaryWriter bwMs;
+   bwMs.put_uint8_t(0x51); //OP_1
+   for (const auto& pubkey : pubkeys) {
+      bwMs.put_uint8_t(33);
+      bwMs.put_BinaryData(pubkey);
+   }
+   bwMs.put_uint8_t(0x53); //OP_3
+   bwMs.put_uint8_t(OP_CHECKMULTISIG);
+   auto msScript = bwMs.getData();
+   auto scriptHash = BtcUtils::getSha256(msScript);
+   auto p2wshScript = BtcUtils::getP2WSHOutputScript(scriptHash);
+
+   BinaryData txHash;
+   txHash.resize(32);
+   memset(txHash.getPtr(), 0xaa, 32);
+   UTXO utxo(100000000, UINT32_MAX, UINT16_MAX, 0, txHash, p2wshScript);
+
+   Signer signer;
+   signer.addSpender(std::make_shared<ScriptSpender>(utxo));
+   signer.addRecipient(std::make_shared<Recipient_P2WPKH>(
+      READHEX("d85c2b71d0060b09c9886aeb815e50991dda124d"), 99990000));
+
+   auto feed = std::make_shared<ResolverFeed_SpenderResolutionChecks>();
+   feed->hashMap.emplace(scriptHash, msScript);
+   signer.setFeed(feed);
+   signer.resolvePublicData();
+   ASSERT_TRUE(signer.isResolved());
+   ASSERT_FALSE(signer.isSigned());
+
+   //resolved PSBT ends with the input map's 0 then the output map's 0
+   auto psbt = signer.toPSBT();
+   ASSERT_EQ(psbt.getSliceRef(psbt.getSize() - 2, 2), READHEX("0000"));
+
+   //add a partial sig for each of the 3 keys to the input map
+   auto sigBd = READHEX("3044022074018ad4180097b873323c0015720b3684cc8123891048e7dbcd9b55ad679c99022073d369b740e3eb53dcefa33823c8070514ca55a7dd9544f157c167913261118c01");
+   BinaryWriter bw;
+   bw.put_BinaryDataRef(psbt.getSliceRef(0, psbt.getSize() - 2));
+   for (const auto& pubkey : pubkeys) {
+      bw.put_var_int(pubkey.getSize() + 1);
+      bw.put_uint8_t(0x02); //PSBT_IN_PARTIAL_SIG
+      bw.put_BinaryData(pubkey);
+      bw.put_var_int(sigBd.getSize());
+      bw.put_BinaryData(sigBd);
+   }
+   bw.put_uint8_t(0); //end of the input map
+   bw.put_uint8_t(0); //end of the output map
+
+   try {
+      auto signer2 = Signer::fromPSBT(bw.getDataRef());
+      EXPECT_TRUE(signer2.isSigned());
+   } catch (const std::exception& e) {
+      FAIL() << "fromPSBT threw: " << e.what();
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(ExtrasTest, PSBT_GlobalProprietaryRoundTrip)
+{
+   //unsigned PSBT from the ExtrasTest.PSBT vectors
+   auto psbt = READHEX(
+      "70736274ff01009a020000000258e87a21b56daf0c23be8e7070456c336f7cba"
+      "a5c8757924f545887bb2abdd750000000000ffffffff838d0427d0ec650a68aa"
+      "46bb0b098aea4422c071b2ca78352a077959d07cea1d0100000000ffffffff02"
+      "70aaf00800000000160014d85c2b71d0060b09c9886aeb815e50991dda124d00"
+      "e1f5050000000016001400aea9a2e5f0f876a588df5546e8742d1d87008f0000"
+      "00000000000000");
+
+   //magic (5 bytes) + unsigned tx record (3 + 154): the global separator is next
+   ASSERT_EQ(psbt.getSize(), 167U);
+   ASSERT_EQ(psbt[162], 0x00);
+
+   //global proprietary record: key fc01, value aa
+   BinaryWriter bw;
+   bw.put_BinaryDataRef(psbt.getSliceRef(0, 162));
+   bw.put_BinaryData(READHEX("02fc0101aa"));
+   bw.put_BinaryDataRef(psbt.getSliceRef(162, psbt.getSize() - 162));
+
+   auto signer = Signer::fromPSBT(bw.getDataRef());
+   EXPECT_EQ(signer.toPSBT(), bw.getData());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(ExtrasTest, PSBT_OutputBip32_UncompressedKey)
+{
+   Recipient_P2WPKH rec(READHEX("1111111111111111111111111111111111111111"), 1000);
+   TxOut txout(rec.getSerializedScript().getRef());
+   auto pubkey = READHEX("04" + std::string(128, '1'));
+
+   BinaryWriter bw;
+   bw.put_uint8_t(66);   //key length: type + 65 byte pubkey
+   bw.put_uint8_t(0x02); //PSBT_OUT_BIP32_DERIVATION
+   bw.put_BinaryData(pubkey);
+   bw.put_var_int(8);    //fingerprint + 1 step
+   bw.put_uint32_t(0x01020304);
+   bw.put_uint32_t(0x80000000);
+   bw.put_uint8_t(0);    //end of the output map
+
+   BinaryRefReader brr(bw.getDataRef());
+   auto recipient = ScriptRecipient::fromPSBT(brr, txout);
+   BinaryWriter bwOut;
+   recipient->toPSBT(bwOut);
+   EXPECT_EQ(bwOut.getData(), bw.getData());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(ExtrasTest, PSBT_InputBip32_UncompressedKey)
+{
+   auto pubkey = READHEX(
+      "04ae1a62fe09c5f51b13905f07f06b99a2f7159b2225f374cd378d71302fa28414"
+      "e7aab37397f554a7df5f142c21c1b7303b8a0626f1baded5c72a704f7e6cd84c");
+
+   //1-of-1 multisig with an uncompressed key, paid to as P2WSH so that
+   //the PSBT carries the utxo
+   BinaryWriter bwMs;
+   bwMs.put_uint8_t(0x51); //OP_1
+   bwMs.put_uint8_t(65);
+   bwMs.put_BinaryData(pubkey);
+   bwMs.put_uint8_t(0x51); //OP_1
+   bwMs.put_uint8_t(OP_CHECKMULTISIG);
+   auto msScript = bwMs.getData();
+   auto scriptHash = BtcUtils::getSha256(msScript);
+   auto p2wshScript = BtcUtils::getP2WSHOutputScript(scriptHash);
+
+   BinaryData txHash;
+   txHash.resize(32);
+   memset(txHash.getPtr(), 0xaa, 32);
+   UTXO utxo(100000000, UINT32_MAX, UINT16_MAX, 0, txHash, p2wshScript);
+
+   Signer signer;
+   signer.addSpender(std::make_shared<ScriptSpender>(utxo));
+   signer.addRecipient(std::make_shared<Recipient_P2WPKH>(
+      READHEX("d85c2b71d0060b09c9886aeb815e50991dda124d"), 99990000));
+
+   auto feed = std::make_shared<ResolverFeed_SpenderResolutionChecks>();
+   feed->hashMap.emplace(scriptHash, msScript);
+   signer.setFeed(feed);
+   signer.resolvePublicData();
+   ASSERT_TRUE(signer.isResolved());
+
+   //resolved PSBT ends with the input map's 0 then the output map's 0
+   auto psbt = signer.toPSBT();
+   ASSERT_EQ(psbt.getSliceRef(psbt.getSize() - 2, 2), READHEX("0000"));
+
+   //add a bip32 derivation for the uncompressed key to the input map
+   BinaryWriter bw;
+   bw.put_BinaryDataRef(psbt.getSliceRef(0, psbt.getSize() - 2));
+   bw.put_var_int(66);   //key length: type + 65 byte pubkey
+   bw.put_uint8_t(0x06); //PSBT_IN_BIP32_DERIVATION
+   bw.put_BinaryData(pubkey);
+   bw.put_var_int(8);    //fingerprint + 1 step
+   bw.put_uint32_t(0x01020304);
+   bw.put_uint32_t(0x80000000);
+   bw.put_uint8_t(0);    //end of the input map
+   bw.put_uint8_t(0);    //end of the output map
+
+   auto signer2 = Signer::fromPSBT(bw.getDataRef());
+   EXPECT_EQ(signer2.toPSBT(), bw.getData());
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(ExtrasTest, SerializeState_SupportingTxs)
 {
    //the 2 txs the inputs of the BIP174 test vector spend from
