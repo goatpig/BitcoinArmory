@@ -12,6 +12,7 @@
 #include <thread>
 #include <atomic>
 #include <future>
+#include <memory>
 #include <gtest/gtest.h>
 
 #include "Utils/ThreadSafeClasses.h"
@@ -461,6 +462,67 @@ TEST_F(ContainerTests, BlockingQueue_Concurrent)
    EXPECT_EQ(theStack.count(), threadCount_ * (iterCount - 1));
    theStack.clear();
    EXPECT_EQ(theStack.count(), 0ULL);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+namespace {
+   /*
+   Park consumers on an empty queue and terminate it once they are all inside
+   pop_front: some of them may be between the flag check and the wait at that
+   point, which is where a notification sent without the lock gets lost.
+   Returns the trial at which a consumer missed terminate(), 0 if none did.
+   The consumers are detached and own the queue, so a lost wakeup fails the
+   test instead of hanging it.
+   */
+   template<typename Q, typename PopFunc>
+   unsigned terminateWakesConsumers(unsigned trials, unsigned consumers,
+      PopFunc popFunc)
+   {
+      for (unsigned trial = 1; trial <= trials; trial++) {
+         auto queue = std::make_shared<Q>();
+         auto stopped = std::make_shared<std::atomic<unsigned>>(0);
+         for (unsigned i = 0; i < consumers; i++) {
+            std::thread([queue, stopped, popFunc]() {
+               try {
+                  popFunc(*queue);
+               } catch (const StopBlockingLoop&) {
+                  ++*stopped;
+               } catch (...) {}
+            }).detach();
+         }
+
+         while (queue->waiting() < (int)consumers) {
+            std::this_thread::yield();
+         }
+         queue->terminate();
+
+         auto deadline = std::chrono::steady_clock::now() + 5s;
+         while (stopped->load() < consumers) {
+            if (std::chrono::steady_clock::now() > deadline) {
+               return trial;
+            }
+            std::this_thread::sleep_for(1ms);
+         }
+      }
+      return 0;
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(ContainerTests, BlockingQueue_TerminateWakesConsumers)
+{
+   auto lostAt = terminateWakesConsumers<BlockingQueue<int>>(
+      1000, 4, [](BlockingQueue<int>& q) { q.pop_front(); });
+   EXPECT_EQ(lostAt, 0U) << "a consumer missed terminate()";
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(ContainerTests, TimedQueue_TerminateWakesConsumers)
+{
+   //a missed terminate() leaves the consumer waiting until its timeout
+   auto lostAt = terminateWakesConsumers<TimedQueue<int>>(
+      1000, 4, [](TimedQueue<int>& q) { q.pop_front(60s); });
+   EXPECT_EQ(lostAt, 0U) << "a consumer missed terminate()";
 }
 
 ////////////////////////////////////////////////////////////////////////////////

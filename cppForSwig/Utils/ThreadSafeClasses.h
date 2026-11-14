@@ -168,8 +168,13 @@ namespace Armory
 
          void terminate(void)
          {
-            terminated_.store(true, std::memory_order_release);
-            completed_.store(true, std::memory_order_release);
+            {
+               //set the flags under the lock: a consumer that checked them
+               //and is about to wait would otherwise miss this notification
+               std::unique_lock<std::mutex> lock(condVarMutex_);
+               terminated_.store(true, std::memory_order_release);
+               completed_.store(true, std::memory_order_release);
+            }
             condVar_.notify_all();
          }
 
@@ -314,7 +319,11 @@ namespace Armory
 
          void terminate(void)
          {
-            terminate_.store(true, std::memory_order_release);
+            {
+               //same as BlockingQueue::terminate
+               std::unique_lock<std::mutex> lock(condVarMutex_);
+               terminate_.store(true, std::memory_order_release);
+            }
             condVar_.notify_all();
          }
 
