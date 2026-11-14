@@ -3444,6 +3444,25 @@ protected:
    {
       return packet.getSliceCopy(LWS_PRE, packet.getSize() - LWS_PRE);
    }
+
+   /*
+   packet header for fragments and segments:
+     uint32_t size, uint32_t msg id, uint32_t packet id or count,
+     uint8_t type, 3 bytes of padding
+   */
+   static BinaryData makePacket(uint32_t msgId, uint32_t idOrCount,
+      ArmoryAEAD::BIP151_PayloadType type, const BinaryDataRef& body)
+   {
+      BinaryWriter bw;
+      bw.put_uint32_t(body.getSize() + 12);
+      bw.put_uint32_t(msgId);
+      bw.put_uint32_t(idOrCount);
+      bw.put_uint8_t((uint8_t)type);
+      bw.put_uint8_t(0);
+      bw.put_uint16_t(0);
+      bw.put_BinaryDataRef(body);
+      return bw.getData();
+   }
 };
 
 ////
@@ -3501,6 +3520,84 @@ TEST_F(WebSocketMessageTests, ParsePacket_TypeMismatch)
    Network::WebSocketMessagePartial msg;
    ASSERT_TRUE(msg.parsePacket(aeadPacket));
    EXPECT_FALSE(msg.parsePacket(singlePacket));
+}
+
+////
+TEST_F(WebSocketMessageTests, SegmentedMessage)
+{
+   //a capnp message spread over several segments
+   std::string errStr(1000, 'a');
+   capnp::MallocMessageBuilder message(16, capnp::AllocationStrategy::FIXED_SIZE);
+   auto reply = message.initRoot<Codec::BDV::Reply>();
+   reply.setError(errStr);
+   auto segments = message.getSegmentsForOutput();
+   ASSERT_GT(segments.size(), 1U);
+
+   std::vector<BinaryData> packets;
+   for (uint32_t i=0; i<segments.size(); i++) {
+      BinaryDataRef body(
+         (const uint8_t*)segments[i].begin(),
+         segments[i].size() * sizeof(capnp::word));
+      if (i == 0) {
+         packets.emplace_back(makePacket(10, segments.size(),
+            ArmoryAEAD::BIP151_PayloadType::FirstSegment, body));
+      } else {
+         packets.emplace_back(makePacket(10, i,
+            ArmoryAEAD::BIP151_PayloadType::Segment, body));
+      }
+   }
+
+   //segments can come in any order
+   Network::WebSocketMessagePartial msg;
+   for (auto iter = packets.rbegin(); iter != packets.rend(); ++iter) {
+      EXPECT_FALSE(msg.isReady());
+      ASSERT_TRUE(msg.parsePacket(*iter));
+   }
+   ASSERT_TRUE(msg.isReady());
+
+   auto msgReader = msg.getReader();
+   ASSERT_NE(msgReader, nullptr);
+   auto capnReader = msgReader->getReader();
+   auto readReply = capnReader->getRoot<Codec::BDV::Reply>();
+   EXPECT_EQ(std::string(readReply.getError()), errStr);
+}
+
+////
+TEST_F(WebSocketMessageTests, SegmentedMessage_IdOutOfRange)
+{
+   /*
+   A message announcing 2 segments, carrying segment ids 0 and 5: the
+   segment count matches the announced count, but the segmented reader
+   would write segment 5 past the end of its 2 entries
+   */
+   auto body = zeroedBytes(8);
+   Network::WebSocketMessagePartial msg;
+   auto packet1 = makePacket(10, 2,
+      ArmoryAEAD::BIP151_PayloadType::FirstSegment, body.getRef());
+   auto packet2 = makePacket(10, 5,
+      ArmoryAEAD::BIP151_PayloadType::Segment, body.getRef());
+   ASSERT_TRUE(msg.parsePacket(packet1));
+   ASSERT_TRUE(msg.parsePacket(packet2));
+
+   ASSERT_FALSE(msg.isReady());
+   EXPECT_EQ(msg.getReader(), nullptr);
+}
+
+////
+TEST_F(WebSocketMessageTests, FragmentedMessage_IdOutOfRange)
+{
+   //same with fragments: 2 announced, ids 0 and 3
+   auto body = zeroedBytes(8);
+   Network::WebSocketMessagePartial msg;
+   auto packet1 = makePacket(10, 2,
+      ArmoryAEAD::BIP151_PayloadType::FragmentHeader, body.getRef());
+   auto packet2 = makePacket(10, 3,
+      ArmoryAEAD::BIP151_PayloadType::FragmentPacket, body.getRef());
+   ASSERT_TRUE(msg.parsePacket(packet1));
+   ASSERT_TRUE(msg.parsePacket(packet2));
+
+   ASSERT_FALSE(msg.isReady());
+   EXPECT_EQ(msg.getReader(), nullptr);
 }
 
 ////

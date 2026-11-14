@@ -697,10 +697,16 @@ std::unique_ptr<CapnpReader> WebSocketMessagePartial::getReader() const
 ///////////////////////////////////////////////////////////////////////////////
 bool WebSocketMessagePartial::isReady() const
 {
-   if (packetCount_ == 0) {
+   if (packetCount_ == 0 || packets_.size() != packetCount_) {
       return false;
    }
-   return packets_.size() == packetCount_;
+
+   /*
+   Packet ids have to run from 0 to packetCount_ - 1, the readers index
+   their buffers with them. The map holds packetCount_ distinct ids in
+   order, it is enough that the last one is packetCount_ - 1.
+   */
+   return packets_.rbegin()->first == packetCount_ - 1;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
