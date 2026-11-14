@@ -11,6 +11,9 @@
    #include <windows.h>
 #endif
 
+#include <map>
+#include <set>
+
 #include "TestUtils.h"
 #include <reorgTest/blkdata.h>
 #include <Utils/FileUtils.h>
@@ -37,6 +40,15 @@ using namespace Armory::Wallets;
 using namespace std::chrono_literals;
 using namespace std::string_view_literals;
 
+namespace Armory::Wallets
+{
+   //kdf ids as hex in gtest failure messages (KdfCounts comparisons)
+   static void PrintTo(const KdfId& kdfId, std::ostream* os)
+   {
+      *os << kdfId.toHexStr();
+   }
+}
+
 namespace
 {
    struct EncryptionKeyEx : public Encryption::EncryptionKey
@@ -47,6 +59,44 @@ namespace
          return cipherDataMap_;
       }
    };
+
+   ////
+   using KdfCounts = std::map<KdfId, unsigned>;
+
+   //a romix kdf that counts its key derivations
+   class CountingRomix : public Encryption::KeyDerivationFunction_Romix
+   {
+   private:
+      std::shared_ptr<KdfCounts> counts_;
+
+   public:
+      CountingRomix(unsigned iterations, unsigned memTarget,
+         SecureBinaryData salt, std::shared_ptr<KdfCounts> counts) :
+         KeyDerivationFunction_Romix(iterations, memTarget, std::move(salt)),
+         counts_(std::move(counts))
+      {}
+
+      SecureBinaryData deriveKey(const SecureBinaryData& key) const override
+      {
+         ++(*counts_)[getId()];
+         return KeyDerivationFunction_Romix::deriveKey(key);
+      }
+   };
+
+   //salt of a romix kdf, read back from its serialized form (KDF.cpp)
+   SecureBinaryData getRomixSalt(
+      const Encryption::KeyDerivationFunction_Romix& kdf)
+   {
+      auto data = kdf.serialize();
+      BinaryRefReader brr(data.getRef());
+      brr.get_var_int(); //total len
+      brr.get_uint32_t(); //version
+      brr.get_uint16_t(); //prefix
+      brr.get_uint32_t(); //iterations
+      brr.get_uint32_t(); //mem target
+      auto len = brr.get_var_int();
+      return SecureBinaryData(brr.get_BinaryData(len));
+   }
 
    struct DecryptedDataContainerEx : private Encryption::DecryptedDataContainer
    {
@@ -85,6 +135,46 @@ namespace
       {
          return kdfMap_;
       }
+
+      //<key id, kdf id> of each cipher wrapping the master key, i.e. which
+      //kdf protects each passphrase
+      std::map<EncryptionKeyId, KdfId> getMasterKeyCiphers() const
+      {
+         std::map<EncryptionKeyId, KdfId> result;
+         auto iter = encryptedKeys_.find(getMasterEncryptionKeyId());
+         if (iter == encryptedKeys_.end()) {
+            return result;
+         }
+
+         auto encrKeyPtr = (EncryptionKeyEx*)iter->second.get();
+         for (auto& cipherPair : encrKeyPtr->getCipherDataMap()) {
+            result.emplace(cipherPair.first,
+               cipherPair.second->cipher->getKdfId());
+         }
+         return result;
+      }
+
+      /*
+      Swap the romix kdfs on file for counting copies (same iterations,
+      memory and salt, so same id, same keys, same cost). Kdfs added later
+      by the container are not counted until this runs again.
+      */
+      void countDerivations(const std::shared_ptr<KdfCounts>& counts)
+      {
+         for (auto& kdfPair : kdfMap_) {
+            if (std::dynamic_pointer_cast<CountingRomix>(kdfPair.second)) {
+               continue;
+            }
+            auto romix = std::dynamic_pointer_cast<
+               Encryption::KeyDerivationFunction_Romix>(kdfPair.second);
+            if (romix == nullptr) {
+               continue;
+            }
+            kdfPair.second = std::make_shared<CountingRomix>(
+               romix->iterations(), romix->memTarget(),
+               getRomixSalt(*romix), counts);
+         }
+      }
    };
 
    struct AssetWalletEx : public AssetWallet_Single
@@ -95,6 +185,94 @@ namespace
          return decryptedData_;
       }
    };
+
+   DecryptedDataContainerEx* getDecrEx(
+      const std::shared_ptr<AssetWallet_Single>& wlt)
+   {
+      auto wltEx = (AssetWalletEx*)wlt.get();
+      return (DecryptedDataContainerEx*)
+         wltEx->getDecryptedDataContainer().get();
+   }
+
+   //kdf of the single cipher added between 2 snapshots of the master key
+   KdfId addedCipherKdf(const std::map<EncryptionKeyId, KdfId>& before,
+      const std::map<EncryptionKeyId, KdfId>& after)
+   {
+      KdfId result;
+      unsigned count = 0;
+      for (const auto& cipher : after) {
+         if (before.count(cipher.first) == 0) {
+            result = cipher.second;
+            ++count;
+         }
+      }
+      EXPECT_EQ(count, 1U) << "ciphers added to the master key";
+      return result;
+   }
+
+   //derivations that happened between 2 snapshots of the counters
+   KdfCounts countsSince(const KdfCounts& before, const KdfCounts& after)
+   {
+      KdfCounts result;
+      for (const auto& count : after) {
+         auto iter = before.find(count.first);
+         auto prev = (iter == before.end()) ? 0U : iter->second;
+         if (count.second != prev) {
+            result[count.first] = count.second - prev;
+         }
+      }
+      return result;
+   }
+
+   /*
+   Derivations an unlock runs: DecryptedDataContainer::promptPassphrase
+   tries the kdfs of the master key ciphers in KdfId order, once each, and
+   stops at the one that protects the passphrase. Kdf ids come from random
+   salts, so how many kdfs run before the right one changes from run to run.
+   */
+   KdfCounts unlockPasses(const std::map<EncryptionKeyId, KdfId>& ciphers,
+      const KdfId& passKdf)
+   {
+      std::set<KdfId> kdfs;
+      for (const auto& cipher : ciphers) {
+         kdfs.insert(cipher.second);
+      }
+
+      KdfCounts result;
+      for (const auto& kdfId : kdfs) {
+         ++result[kdfId];
+         if (kdfId == passKdf) {
+            return result;
+         }
+      }
+      ADD_FAILURE() << "passphrase kdf " << passKdf.toHexStr()
+         << " is not on the master key";
+      return result;
+   }
+
+   //getKdfForSetNew never adds a kdf similar to one already on file
+   void expectNoSimilarKdfs(const std::map<KdfId,
+      std::shared_ptr<Encryption::KeyDerivationFunction>>& kdfs)
+   {
+      for (auto iterA = kdfs.begin(); iterA != kdfs.end(); ++iterA) {
+         for (auto iterB = std::next(iterA); iterB != kdfs.end(); ++iterB) {
+            EXPECT_FALSE(iterA->second->isSimilar(iterB->second.get()))
+               << iterA->first.toHexStr() << " and " << iterB->first.toHexStr();
+         }
+      }
+   }
+
+   //a kdf calibrated for 'target' meets it (TestUtils::checkKdfTarget)
+   void checkTargetKdf(
+      const std::shared_ptr<Encryption::KeyDerivationFunction>& kdf,
+      std::chrono::milliseconds target)
+   {
+      auto kdfRomix =
+         std::dynamic_pointer_cast<Encryption::KeyDerivationFunction_Romix>(kdf);
+      ASSERT_NE(kdfRomix, nullptr);
+      TestUtils::checkKdfTarget(*kdfRomix, target,
+         SecureBinaryData::fromString("test key"));
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4650,14 +4828,10 @@ TEST_F(WalletsTest, SeedEncryption)
    auto filename = wlt->getDbFilename();
    ASSERT_FALSE(TestUtils::searchFile(filename, rawEntropy));
 
-   {
-      auto kdfPtr = wlt->getPrimaryKdf();
-      auto start = std::chrono::system_clock::now();
-      kdfPtr->deriveKey(SecureBinaryData::fromString("test key"));
-      auto end = std::chrono::system_clock::now();
-      ASSERT_GE(end-start, 350ms);
-      ASSERT_LE(end-start, 500ms);
-   }
+   //the passphrase kdf meets its 350ms calibration
+   checkTargetKdf(wlt->getPrimaryKdf(), 350ms);
+   auto counts = std::make_shared<KdfCounts>();
+   getDecrEx(wlt)->countDerivations(counts);
 
    //grab without passphrase lbd, should fail
    try {
@@ -4682,7 +4856,7 @@ TEST_F(WalletsTest, SeedEncryption)
    } catch (const Encryption::DecryptedDataContainerException&) {}
 
    //lock, grab and check
-   auto start = std::chrono::system_clock::now();
+   auto countsBefore = *counts;
    try {
       auto lock = wlt->lockDecryptedContainer(passLbd);
       auto clearTextSeed = Seeds::ClearTextSeed::deserialize(
@@ -4693,10 +4867,10 @@ TEST_F(WalletsTest, SeedEncryption)
    } catch (const Encryption::DecryptedDataContainerException&) {
       ASSERT_TRUE(false);
    }
-   auto end = std::chrono::system_clock::now();
-   auto timeTaken = end-start;
-   EXPECT_GE(timeTaken, 350ms);
-   EXPECT_LE(timeTaken, 500ms);
+
+   //one passphrase on the master key: the unlock derives it exactly once
+   EXPECT_EQ(countsSince(countsBefore, *counts),
+      (KdfCounts{{wlt->getPrimaryKdf()->getId(), 1}}));
 
    //grab without passphrase lambda again, should fail
    try {
@@ -5922,22 +6096,18 @@ TEST_F(WalletsTest, ChangePassphrase_ChangeKDF)
    ASSERT_NE(asset0_single, nullptr);
    asset0.reset();
 
-   auto timeUnlock = [&privkey_ex](
+   //true if the passphrase decrypts the asset
+   auto unlock = [&privkey_ex](
       std::shared_ptr<AssetWallet_Single> wltPtr,
       std::shared_ptr<Assets::AssetEntry_Single> assetPtr,
-      const SecureBinaryData& pass)->std::chrono::milliseconds
+      const SecureBinaryData& pass)->bool
    {
       auto lock = wltPtr->lockDecryptedContainer(
          [&pass](const std::set<EncryptionKeyId>&)->Passphrase::Result
          { return { pass, true }; }
       );
-      auto start = std::chrono::system_clock::now();
       auto& decryptedKey = wltPtr->getDecryptedValue(assetPtr->getPrivKey());
-      auto end = std::chrono::system_clock::now();
-      if (decryptedKey != privkey_ex) {
-         return 0ms;
-      }
-      return std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
+      return decryptedKey == privkey_ex;
    };
 
    auto failUnlock = [](
@@ -5966,9 +6136,18 @@ TEST_F(WalletsTest, ChangePassphrase_ChangeKDF)
       }
    };
 
-   //test wallet unlock time, should be <10ms
-   auto elapsed = timeUnlock(assetWlt, asset0_single, passphrase);
-   EXPECT_LE(elapsed, 10ms);
+   /*
+   Instead of timing operations against absolute limits that only hold on
+   some CPUs, count the key derivations each one runs (CountingRomix) and
+   check which kdf protects each passphrase. Each kdf's own cost is checked
+   once against its calibration (checkTargetKdf).
+   */
+   auto counts = std::make_shared<KdfCounts>();
+   getDecrEx(assetWlt)->countDerivations(counts);
+
+   //test wallet unlock: one derivation of the 1ms kdf
+   auto countsBefore = *counts;
+   EXPECT_TRUE(unlock(assetWlt, asset0_single, passphrase));
 
    //check wallet has 1 KDF on record
    std::shared_ptr<Encryption::KeyDerivationFunction_Romix> firstKdf;
@@ -5992,6 +6171,9 @@ TEST_F(WalletsTest, ChangePassphrase_ChangeKDF)
          firstKdf = kdfRomix;
       }
    }
+   ASSERT_NE(firstKdf, nullptr);
+   EXPECT_EQ(countsSince(countsBefore, *counts),
+      (KdfCounts{{firstKdf->getId(), 1}}));
 
    //encrypt the wallet
    auto newPassphrase = SecureBinaryData::fromString("new pass");
@@ -6007,10 +6189,6 @@ TEST_F(WalletsTest, ChangePassphrase_ChangeKDF)
 
    //try to decrypt with first passphrase, should fail
    ASSERT_TRUE(failUnlock(assetWlt, passphrase));
-
-   //test unlock with new passphrase and stronger kdf, should be >500ms
-   elapsed = timeUnlock(assetWlt, asset0_single, newPassphrase);
-   EXPECT_GE(elapsed, 500ms) << elapsed.count();
 
    //check wallet has 2 KDFs on record now
    std::shared_ptr<Encryption::KeyDerivationFunction_Romix> secondKdf;
@@ -6036,10 +6214,25 @@ TEST_F(WalletsTest, ChangePassphrase_ChangeKDF)
          //new kdf should be bigger
          ASSERT_NE(kdfRomix, nullptr);
          ASSERT_GE(kdfRomix->iterations(), 1);
-         ASSERT_GE(kdfRomix->memTarget(), 8388608);
+         ASSERT_GT(kdfRomix->memTarget(), firstKdf->memTarget());
          secondKdf = kdfRomix;
       }
    }
+   ASSERT_NE(secondKdf, nullptr);
+   const auto kdf2Id = secondKdf->getId();
+
+   //the new passphrase is alone on the master key, behind the new kdf,
+   //which meets its 500ms calibration
+   auto ciphers = getDecrEx(assetWlt)->getMasterKeyCiphers();
+   ASSERT_EQ(ciphers.size(), 1U);
+   EXPECT_EQ(ciphers.begin()->second, kdf2Id);
+   checkTargetKdf(secondKdf, 500ms);
+
+   //test unlock with new passphrase and stronger kdf
+   getDecrEx(assetWlt)->countDerivations(counts);
+   countsBefore = *counts;
+   EXPECT_TRUE(unlock(assetWlt, asset0_single, newPassphrase));
+   EXPECT_EQ(countsSince(countsBefore, *counts), (KdfCounts{{kdf2Id, 1}}));
 
    //shutdown wallet, reopen, check new kdf is there
    auto walletId = assetWlt->getID();
@@ -6051,18 +6244,60 @@ TEST_F(WalletsTest, ChangePassphrase_ChangeKDF)
    ASSERT_EQ(walletId, reloadWlt->getID());
    auto reloadAssetWlt = std::dynamic_pointer_cast<AssetWallet_Single>(reloadWlt);
    ASSERT_NE(reloadAssetWlt, nullptr);
+   auto masterCiphers = [&reloadAssetWlt](void)
+   {
+      return getDecrEx(reloadAssetWlt)->getMasterKeyCiphers();
+   };
+
+   /*
+   Around an operation: opStart snapshots the master key ciphers and the
+   derivation counters, opEnd returns the kdf of the cipher the operation
+   added (if any) and the derivations it ran. Kdfs on file are counted, a
+   kdf the operation adds is counted from the next operation on.
+   */
+   using OpStart = std::pair<std::map<EncryptionKeyId, KdfId>, KdfCounts>;
+   auto opStart = [&](void)->OpStart
+   {
+      getDecrEx(reloadAssetWlt)->countDerivations(counts);
+      return { masterCiphers(), *counts };
+   };
+   auto opEnd = [&](const OpStart& start)->std::pair<KdfId, KdfCounts>
+   {
+      auto passes = countsSince(start.second, *counts);
+      auto ciphersAfter = masterCiphers();
+
+      KdfId added;
+      for (const auto& cipher : ciphersAfter) {
+         if (start.first.count(cipher.first) == 0) {
+            added = addedCipherKdf(start.first, ciphersAfter);
+            break;
+         }
+      }
+      return {added, passes};
+   };
 
    asset0 = TestUtils::getMainAccountAssetForIndex(reloadAssetWlt, 0);
    auto asset0_reloaded = std::dynamic_pointer_cast<Assets::AssetEntry_Single>(asset0);
    ASSERT_NE(asset0_reloaded, nullptr);
    asset0.reset();
 
+   //unlock with a passphrase: derivations match promptPassphrase's walk
+   auto checkUnlock = [&](const SecureBinaryData& pass, const KdfId& passKdf)
+   {
+      SCOPED_TRACE("unlock with " +
+         std::string(pass.getCharPtr(), pass.getSize()));
+      auto op = opStart();
+      EXPECT_TRUE(unlock(reloadAssetWlt, asset0_reloaded, pass));
+      auto result = opEnd(op);
+      EXPECT_EQ(result.second, unlockPasses(op.first, passKdf));
+   };
+
    //try to decrypt with first passphrase, should fail
    ASSERT_TRUE(failUnlock(reloadAssetWlt, passphrase));
 
-   //test unlock with new passphrase and stronger kdf, should be >500ms
-   elapsed = timeUnlock(reloadAssetWlt, asset0_reloaded, newPassphrase);
-   EXPECT_GE(elapsed, 500ms) << elapsed.count();
+   //test unlock with new passphrase and stronger kdf
+   EXPECT_EQ(masterCiphers(), ciphers);
+   checkUnlock(newPassphrase, kdf2Id);
 
    //add another passphrase, reuse kdf
    auto thirdPass = SecureBinaryData::fromString("thrid passphrase");
@@ -6071,7 +6306,7 @@ TEST_F(WalletsTest, ChangePassphrase_ChangeKDF)
          [&thirdPass](void)->std::unique_ptr<Passphrase::Params>
          { return std::make_unique<Passphrase::Params>(thirdPass, true); }
       };
-      auto start = std::chrono::system_clock::now();
+      auto op = opStart();
       reloadAssetWlt->addPrivateKeyPassphrase(
          [&newPassphrase](const std::set<EncryptionKeyId>&)
          ->Passphrase::Result{
@@ -6079,125 +6314,107 @@ TEST_F(WalletsTest, ChangePassphrase_ChangeKDF)
             return { newPassphrase, true };
          }, pass3
       );
-      auto end = std::chrono::system_clock::now();
-      auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
+      auto result = opEnd(op);
+
+      //reuse: the new passphrase sits on the kdf of the unlocking one
+      EXPECT_EQ(result.first, kdf2Id);
 
       //one pass to unlock, one pass to encrypt
-      EXPECT_GE(dur, 1000ms) << dur.count();
-      EXPECT_LE(dur, 1500ms) << dur.count();
+      auto expected = unlockPasses(op.first, kdf2Id);
+      ++expected[kdf2Id];
+      EXPECT_EQ(result.second, expected);
    }
 
    //unlock with 3rd pass
-   elapsed = timeUnlock(reloadAssetWlt, asset0_reloaded, thirdPass);
-   EXPECT_GE(elapsed, 500ms) << elapsed.count();
-   EXPECT_LE(elapsed, 750ms) << elapsed.count();
+   checkUnlock(thirdPass, kdf2Id);
+
+   /*
+   New kdf params: getKdfForSetNew calibrates a kdf for them, and reuses a
+   kdf on file only if that calibration computes the same iterations and
+   memory (isSimilar). Calibration is timed, so a kdf with the same target
+   is reused on most runs, not all of them. Either way the passphrase has
+   to sit on a kdf that meets the requested target, no 2 kdfs on file may
+   be similar, and a reused kdf costs the pass that encrypts with it.
+   */
+   auto checkSetNew = [&](const OpStart& op,
+      const std::pair<KdfId, KdfCounts>& result,
+      const KdfId& unlockKdf, std::chrono::milliseconds target)
+   {
+      SCOPED_TRACE("new kdf for " + std::to_string(target.count()) + "ms");
+      auto kdfs = getDecrEx(reloadAssetWlt)->getKdfMap();
+      expectNoSimilarKdfs(kdfs);
+
+      auto kdfIter = kdfs.find(result.first);
+      ASSERT_TRUE(kdfIter != kdfs.end());
+
+      auto expected = unlockPasses(op.first, unlockKdf);
+      auto wasOnFile = std::dynamic_pointer_cast<CountingRomix>(
+         kdfIter->second) != nullptr;
+      if (wasOnFile) {
+         //counted kdf: the pass that encrypts the new passphrase shows up
+         ++expected[result.first];
+      } else {
+         checkTargetKdf(kdfIter->second, target);
+      }
+      EXPECT_EQ(result.second, expected);
+   };
 
    //add a 4th passphrase, same unlock target as current kdf
    auto fourthPass = SecureBinaryData::fromString("4th passphrase");
+   KdfId kdf4Id;
    {
       Passphrase::SetNew pass4{
          [&fourthPass](void)->std::unique_ptr<Passphrase::Params>
          { return std::make_unique<Passphrase::Params>(500ms, 0, fourthPass); }
       };
-      auto start = std::chrono::system_clock::now();
+      auto op = opStart();
       reloadAssetWlt->addPrivateKeyPassphrase(
          [&newPassphrase](const std::set<EncryptionKeyId>&)
          ->Passphrase::Result
          { return { newPassphrase, true }; },
          pass4
       );
-      auto end = std::chrono::system_clock::now();
-      auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
-
-      //one pass to unlock, one pass to compare kdfs, one pass to encrypt
-      EXPECT_GE(dur, 1500ms) << dur.count();
-      EXPECT_LE(dur, 1950ms) << dur.count();
+      auto result = opEnd(op);
+      checkSetNew(op, result, kdf2Id, 500ms);
+      kdf4Id = result.first;
    }
 
-   //check wallet still only has 2 KDFs on record
-   {
-      auto assetWltEx = (AssetWalletEx*)reloadAssetWlt.get();
-      auto decryptedDataEx = (DecryptedDataContainerEx*)
-         assetWltEx->getDecryptedDataContainer().get();
-      auto kdfs = decryptedDataEx->getKdfMap();
-      EXPECT_EQ(kdfs.size(), 3);
-
-      for (const auto& kdf : kdfs) {
-         if (kdf.first == Encryption::passthroughKdfId) {
-            continue;
-         }
-
-         if (kdf.second->isSame(firstKdf.get()) ||
-            kdf.second->isSame(secondKdf.get())) {
-            continue;
-         }
-         ASSERT_TRUE(false);
-      }
-   }
+   //the wallet has the first 2 KDFs on record, plus the 4th passphrase's
+   //if it was not similar to the 2nd
+   const bool kdf4IsNew = (kdf4Id != kdf2Id);
+   EXPECT_EQ(getDecrEx(reloadAssetWlt)->getKdfMap().size(), kdf4IsNew ? 4U : 3U);
 
    //add 5th pass, with new KDF
    auto fifthPass = SecureBinaryData::fromString("passphrase 5");
+   std::shared_ptr<Encryption::KeyDerivationFunction_Romix> thirdKdf;
    {
       Passphrase::SetNew pass5{
          [&fifthPass](void)->std::unique_ptr<Passphrase::Params>
          { return std::make_unique<Passphrase::Params>(1500ms, 0, fifthPass); }
       };
-      auto start = std::chrono::system_clock::now();
+      auto op = opStart();
       reloadAssetWlt->addPrivateKeyPassphrase(
          [&fourthPass](const std::set<EncryptionKeyId>&)
          ->Passphrase::Result
          { return { fourthPass, true }; },
          pass5
       );
-      auto end = std::chrono::system_clock::now();
-      auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
+      auto result = opEnd(op);
+      checkSetNew(op, result, kdf4Id, 1500ms);
 
-      //one pass to unlock, one pass to compare kdfs, one pass to encrypt
-      EXPECT_GE(dur, 3500ms) << dur.count();
-      EXPECT_LE(dur, 4800ms) << dur.count();
+      //new kdf should be bigger
+      auto kdfs = getDecrEx(reloadAssetWlt)->getKdfMap();
+      EXPECT_EQ(kdfs.size(), kdf4IsNew ? 5U : 4U);
+      thirdKdf = std::dynamic_pointer_cast<Encryption::KeyDerivationFunction_Romix>(
+         kdfs.at(result.first));
+      ASSERT_NE(thirdKdf, nullptr);
+      EXPECT_FALSE(thirdKdf->isSimilar(secondKdf.get()));
+      EXPECT_GE(thirdKdf->memTarget(), secondKdf->memTarget());
    }
-
-   //check wallet has 3 KDFs now
-   std::shared_ptr<Encryption::KeyDerivationFunction_Romix> thirdKdf;
-   {
-      auto assetWltEx = (AssetWalletEx*)reloadAssetWlt.get();
-      auto decryptedDataEx = (DecryptedDataContainerEx*)
-         assetWltEx->getDecryptedDataContainer().get();
-      auto kdfs = decryptedDataEx->getKdfMap();
-      EXPECT_EQ(kdfs.size(), 4);
-
-      for (const auto& kdf : kdfs) {
-         if (kdf.first == Encryption::passthroughKdfId) {
-            continue;
-         }
-
-         if (kdf.second->isSame(firstKdf.get()) ||
-            kdf.second->isSame(secondKdf.get())) {
-            continue;
-         }
-
-         auto kdfRomix = std::dynamic_pointer_cast<Encryption::KeyDerivationFunction_Romix>(
-            kdf.second);
-         ASSERT_NE(kdfRomix, nullptr);
-
-         //new kdf should be bigger
-         ASSERT_NE(kdfRomix, nullptr);
-         ASSERT_GE(kdfRomix->iterations(), 3);
-         ASSERT_GE(kdfRomix->memTarget(), 33554432);
-         thirdKdf = kdfRomix;
-      }
-   }
-   auto baseline = 0ms;
-   if (thirdKdf->getId() < secondKdf->getId()) {
-      auto now = std::chrono::system_clock::now();
-      thirdKdf->deriveKey(SecureBinaryData::fromString("test key"));
-      baseline = std::chrono::duration_cast<std::chrono::milliseconds>(
-         std::chrono::system_clock::now() - now);
-   }
+   const auto kdf3Id = thirdKdf->getId();
 
    //unlock with 5th pass
-   elapsed = timeUnlock(reloadAssetWlt, asset0_reloaded, fifthPass);
-   EXPECT_GE(elapsed, 1500ms) << elapsed.count();
+   checkUnlock(fifthPass, kdf3Id);
 
    //change pass 2, reuse kdf
    auto newPass2 = SecureBinaryData::fromString("new pass2");
@@ -6206,78 +6423,105 @@ TEST_F(WalletsTest, ChangePassphrase_ChangeKDF)
          [&newPass2](void)->std::unique_ptr<Passphrase::Params>
          { return std::make_unique<Passphrase::Params>(newPass2, true); }
       };
-      auto start = std::chrono::system_clock::now();
+      auto op = opStart();
       reloadAssetWlt->changePrivateKeyPassphrase(
          [&newPassphrase](const std::set<EncryptionKeyId>&)
          ->Passphrase::Result
          { return { newPassphrase, true }; },
          nPass2
       );
-      auto end = std::chrono::system_clock::now();
-      auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
-      EXPECT_GE(dur, baseline+1000ms) << dur.count();
-      EXPECT_LE(dur, baseline+1300ms) << dur.count();
+      auto result = opEnd(op);
+      EXPECT_EQ(result.first, kdf2Id);
+
+      //one pass to unlock, one pass to encrypt
+      auto expected = unlockPasses(op.first, kdf2Id);
+      ++expected[kdf2Id];
+      EXPECT_EQ(result.second, expected);
    }
 
    //fail unlock with old pass 2
    ASSERT_TRUE(failUnlock(reloadAssetWlt, newPassphrase));
 
    //unlock with new pass 2
-   elapsed = timeUnlock(reloadAssetWlt, asset0_reloaded, newPass2);
-   EXPECT_GE(elapsed, baseline+500ms) << elapsed.count();
-   EXPECT_LE(elapsed, baseline+800ms) << elapsed.count();
+   checkUnlock(newPass2, kdf2Id);
 
    //change pass 3, change kdf
    auto newPass3 = SecureBinaryData::fromString("new pass3");
+   KdfId kdf6Id;
    {
       Passphrase::SetNew nPass3{
          [&newPass3](void)->std::unique_ptr<Passphrase::Params>
          { return std::make_unique<Passphrase::Params>(1500ms, 0, newPass3); }
       };
-      auto start = std::chrono::system_clock::now();
+      auto op = opStart();
       reloadAssetWlt->changePrivateKeyPassphrase(
          [&thirdPass](const std::set<EncryptionKeyId>&)
          ->Passphrase::Result
          { return { thirdPass, true }; },
          nPass3
       );
-      auto end = std::chrono::system_clock::now();
-      auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
-      EXPECT_GE(dur, 3500ms+baseline) << dur.count();
-      EXPECT_LE(dur, 5000ms+baseline) << dur.count();
+      auto result = opEnd(op);
+      checkSetNew(op, result, kdf2Id, 1500ms);
+      kdf6Id = result.first;
    }
 
    //fail unlock with old pass 3
    ASSERT_TRUE(failUnlock(reloadAssetWlt, thirdPass));
 
    //unlock with new pass 3
-   auto extraBaseline = (baseline == 0ms) ? 600ms : 0ms;
-   elapsed = timeUnlock(reloadAssetWlt, asset0_reloaded, newPass3);
-   EXPECT_GE(elapsed, extraBaseline+1500ms) << elapsed.count();
-   EXPECT_LE(elapsed, extraBaseline+2000ms) << elapsed.count();
+   checkUnlock(newPass3, kdf6Id);
 
-   //check wallet has 3 KDFs still
+   //check the wallet only has the KDFs seen above
    {
-      auto assetWltEx = (AssetWalletEx*)reloadAssetWlt.get();
-      auto decryptedDataEx = (DecryptedDataContainerEx*)
-         assetWltEx->getDecryptedDataContainer().get();
-      auto kdfs = decryptedDataEx->getKdfMap();
-      EXPECT_EQ(kdfs.size(), 4);
+      auto kdfs = getDecrEx(reloadAssetWlt)->getKdfMap();
+      EXPECT_EQ(kdfs.size(), 4U + (kdf4IsNew ? 1 : 0) + (kdf6Id != kdf3Id ? 1 : 0));
 
+      std::set<KdfId> known{ firstKdf->getId(), kdf2Id, kdf3Id, kdf4Id, kdf6Id };
       for (const auto& kdf : kdfs) {
          if (kdf.first == Encryption::passthroughKdfId) {
             continue;
          }
-
-         if (kdf.second->isSame(firstKdf.get()) ||
-            kdf.second->isSame(secondKdf.get()) ||
-            kdf.second->isSame(thirdKdf.get())) {
-            continue;
-         }
-
-         ASSERT_TRUE(false);
+         EXPECT_EQ(known.count(kdf.first), 1U);
       }
    }
+
+   /*
+   Without a time target the calibration does not depend on the clock: a
+   single pass at the requested memory. So the same request has to land on
+   the same kdf every time: the 1st passphrase below adds a kdf, the 2nd
+   one reuses it.
+   */
+   auto addZeroTarget = [&](const SecureBinaryData& pass)->KdfId
+   {
+      SCOPED_TRACE("0ms kdf for " +
+         std::string(pass.getCharPtr(), pass.getSize()));
+      Passphrase::SetNew passObj{
+         [&pass](void)->std::unique_ptr<Passphrase::Params>
+         { return std::make_unique<Passphrase::Params>(0ms, 2, pass); }
+      };
+      auto op = opStart();
+      reloadAssetWlt->addPrivateKeyPassphrase(
+         [&newPass3](const std::set<EncryptionKeyId>&)
+         ->Passphrase::Result
+         { return { newPass3, true }; },
+         passObj
+      );
+      auto result = opEnd(op);
+      checkSetNew(op, result, kdf6Id, 0ms);
+      return result.first;
+   };
+
+   auto kdfCount = getDecrEx(reloadAssetWlt)->getKdfMap().size();
+   auto zeroKdfId = addZeroTarget(SecureBinaryData::fromString("0ms pass A"));
+   auto zeroKdf = std::dynamic_pointer_cast<Encryption::KeyDerivationFunction_Romix>(
+      getDecrEx(reloadAssetWlt)->getKdfMap().at(zeroKdfId));
+   ASSERT_NE(zeroKdf, nullptr);
+   EXPECT_EQ(zeroKdf->iterations(), 1U);
+   EXPECT_EQ(zeroKdf->memTarget(), 2U * 1024 * 1024);
+   EXPECT_EQ(getDecrEx(reloadAssetWlt)->getKdfMap().size(), kdfCount + 1);
+
+   EXPECT_EQ(addZeroTarget(SecureBinaryData::fromString("0ms pass B")), zeroKdfId);
+   EXPECT_EQ(getDecrEx(reloadAssetWlt)->getKdfMap().size(), kdfCount + 1);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -6377,19 +6621,24 @@ TEST_F(WalletsTest, ChangePassphrase_FromUnencryptedWallet)
    }
 
    //encrypt with new pass
+   KdfId passKdfId;
    {
-      auto start = std::chrono::system_clock::now();
+      auto before = getDecrEx(assetWlt)->getMasterKeyCiphers();
       Passphrase::SetNew newPassObj{changePassLbd};
       assetWlt->changePrivateKeyPassphrase({}, newPassObj);
-      auto end = std::chrono::system_clock::now();
-      auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-      //should compute the kdf twice:
-      // once to test params for comparison purposes (~75% of target unlock)
-      // once to apply it to the key
-      EXPECT_GE(diff, 2100ms) << diff.count();
-      EXPECT_LE(diff, 2600ms) << diff.count();
+      //the new passphrase sits on a kdf that meets its 1200ms target
+      passKdfId = addedCipherKdf(before, getDecrEx(assetWlt)->getMasterKeyCiphers());
+      checkTargetKdf(getDecrEx(assetWlt)->getKdfMap().at(passKdfId), 1200ms);
    }
+
+   /*
+   Count key derivations instead of timing unlocks against absolute limits:
+   the passphrase kdf has to run exactly once per unlock.
+   */
+   auto counts = std::make_shared<KdfCounts>();
+   getDecrEx(assetWlt)->countDerivations(counts);
+   const KdfCounts onePass{{passKdfId, 1}};
 
    //check the wallet can't be decrypted without a passphrase anymore
    auto failUnlockLbd = [](const std::set<EncryptionKeyId>&)
@@ -6418,29 +6667,20 @@ TEST_F(WalletsTest, ChangePassphrase_FromUnencryptedWallet)
       return { newPass, true };
    };
 
-   std::chrono::milliseconds baseline;
    {
-      auto start = std::chrono::system_clock::now();
+      auto countsBefore = *counts;
       auto lock = assetWlt->lockDecryptedContainer(newPassLbd);
       auto& decryptedKey = assetWlt->getDecryptedValue(asset0_single->getPrivKey());
-      auto end = std::chrono::system_clock::now();
       ASSERT_EQ(decryptedKey, privkey_ex);
-      baseline = std::chrono::duration_cast<std::chrono::milliseconds>(end - start) - 20ms;
-
-      EXPECT_GE(baseline, 1160ms) << baseline.count();
-      EXPECT_LE(baseline, 1600ms) << baseline.count();
-      std::cout << "baseline is: " << baseline.count() << "ms" << std::endl;
+      EXPECT_EQ(countsSince(countsBefore, *counts), onePass);
    }
 
    {
-      auto start = std::chrono::system_clock::now();
+      auto countsBefore = *counts;
       auto lock = assetWlt->lockDecryptedContainer(newPassLbd);
       auto& decryptedKey = assetWlt->getDecryptedValue(root_single->getPrivKey());
-      auto end = std::chrono::system_clock::now();
       ASSERT_EQ(decryptedKey, clearRoot);
-      auto diff = end - start;
-      EXPECT_GE(diff, baseline) << diff.count();
-      EXPECT_LE(diff, baseline*1.2) << diff.count();
+      EXPECT_EQ(countsSince(countsBefore, *counts), onePass);
    }
 
    //try to add the same passphrase
@@ -6467,31 +6707,30 @@ TEST_F(WalletsTest, ChangePassphrase_FromUnencryptedWallet)
       return std::make_unique<Passphrase::Params>(newPass2, true);
    };
    {
-      auto start = std::chrono::system_clock::now();
+      auto before = getDecrEx(assetWlt)->getMasterKeyCiphers();
+      auto countsBefore = *counts;
       Passphrase::SetNew newPassObj{changePass2Lbd};
       assetWlt->addPrivateKeyPassphrase(newPassLbd, newPassObj);
-      auto end = std::chrono::system_clock::now();
-      auto diff = end - start;
+
+      //reuse: the new passphrase sits on the same kdf
+      EXPECT_EQ(addedCipherKdf(before, getDecrEx(assetWlt)->getMasterKeyCiphers()),
+         passKdfId);
 
       //2 KDF extensions: one for current key, one for new key
-      EXPECT_GE(diff, baseline*2) << diff.count();
-      EXPECT_LE(diff, baseline*2.4) << diff.count();
+      EXPECT_EQ(countsSince(countsBefore, *counts),
+         (KdfCounts{{passKdfId, 2}}));
    }
 
    //check old pass works
    {
-      auto start = std::chrono::system_clock::now();
+      auto countsBefore = *counts;
       auto lock = assetWlt->lockDecryptedContainer(newPassLbd);
       auto decryptedKey = assetWlt->getDecryptedValue(asset0_single->getPrivKey());
       ASSERT_EQ(decryptedKey, privkey_ex);
       decryptedKey = assetWlt->getDecryptedValue(root_single->getPrivKey());
       ASSERT_EQ(decryptedKey, clearRoot);
-      auto end = std::chrono::system_clock::now();
-      auto diff = end - start;
-
       //only need to extend passprhase once for both decryption
-      EXPECT_GE(diff, baseline) << diff.count();
-      EXPECT_LE(diff, baseline*1.2) << diff.count();
+      EXPECT_EQ(countsSince(countsBefore, *counts), onePass);
    }
 
    //check new pass works
@@ -6502,16 +6741,13 @@ TEST_F(WalletsTest, ChangePassphrase_FromUnencryptedWallet)
    };
 
    {
-      auto start = std::chrono::system_clock::now();
+      auto countsBefore = *counts;
       auto lock = assetWlt->lockDecryptedContainer(newPass2Lbd);
       auto decryptedKey = assetWlt->getDecryptedValue(asset0_single->getPrivKey());
       ASSERT_EQ(decryptedKey, privkey_ex);
       decryptedKey = assetWlt->getDecryptedValue(root_single->getPrivKey());
       ASSERT_EQ(decryptedKey, clearRoot);
-      auto end = std::chrono::system_clock::now();
-      auto diff = end - start;
-      EXPECT_GE(diff, baseline) << diff.count();
-      EXPECT_LE(diff, baseline*1.2) << diff.count();
+      EXPECT_EQ(countsSince(countsBefore, *counts), onePass);
    }
 
    //reload the wallet
@@ -6527,6 +6763,7 @@ TEST_F(WalletsTest, ChangePassphrase_FromUnencryptedWallet)
    auto assetWlt2 = std::dynamic_pointer_cast<AssetWallet_Single>(wlt2);
    ASSERT_NE(assetWlt2, nullptr);
    wlt2.reset();
+   getDecrEx(assetWlt2)->countDerivations(counts);
 
    auto asset1 = TestUtils::getMainAccountAssetForIndex(assetWlt2, 0);
    auto asset1_single = std::dynamic_pointer_cast<Assets::AssetEntry_Single>(asset1);
@@ -6540,29 +6777,23 @@ TEST_F(WalletsTest, ChangePassphrase_FromUnencryptedWallet)
 
    //check old pass works
    {
-      auto start = std::chrono::system_clock::now();
+      auto countsBefore = *counts;
       auto lock = assetWlt2->lockDecryptedContainer(newPassLbd);
       auto decryptedKey = assetWlt2->getDecryptedValue(asset1_single->getPrivKey());
       ASSERT_EQ(decryptedKey, privkey_ex);
       decryptedKey = assetWlt2->getDecryptedValue(root1_single->getPrivKey());
       ASSERT_EQ(decryptedKey, clearRoot);
-      auto end = std::chrono::system_clock::now();
-      auto diff = end - start;
-      EXPECT_GE(diff, baseline) << diff.count();
-      EXPECT_LE(diff, baseline*1.2) << diff.count();
+      EXPECT_EQ(countsSince(countsBefore, *counts), onePass);
    }
 
    {
-      auto start = std::chrono::system_clock::now();
+      auto countsBefore = *counts;
       auto lock = assetWlt2->lockDecryptedContainer(newPass2Lbd);
       auto decryptedKey = assetWlt2->getDecryptedValue(asset1_single->getPrivKey());
       ASSERT_EQ(decryptedKey, privkey_ex);
       decryptedKey = assetWlt2->getDecryptedValue(root1_single->getPrivKey());
       ASSERT_EQ(decryptedKey, clearRoot);
-      auto end = std::chrono::system_clock::now();
-      auto diff = end - start;
-      EXPECT_GE(diff, baseline) << diff.count();
-      EXPECT_LE(diff, baseline*1.2) << diff.count();
+      EXPECT_EQ(countsSince(countsBefore, *counts), onePass);
    }
 
    //delete old pass
@@ -6600,25 +6831,19 @@ TEST_F(WalletsTest, ChangePassphrase_FromUnencryptedWallet)
 
    //check new pass works
    {
-      auto start = std::chrono::system_clock::now();
+      auto countsBefore = *counts;
       auto lock = assetWlt2->lockDecryptedContainer(newPass2Lbd);
       auto& decryptedKey = assetWlt2->getDecryptedValue(asset1_single->getPrivKey());
-      auto end = std::chrono::system_clock::now();
       ASSERT_EQ(decryptedKey, privkey_ex);
-      auto diff = end - start;
-      EXPECT_GE(diff, baseline) << diff.count();
-      EXPECT_LE(diff, baseline*1.2) << diff.count();
+      EXPECT_EQ(countsSince(countsBefore, *counts), onePass);
    }
 
    {
-      auto start = std::chrono::system_clock::now();
+      auto countsBefore = *counts;
       auto lock = assetWlt2->lockDecryptedContainer(newPass2Lbd);
       auto& decryptedKey = assetWlt2->getDecryptedValue(root1_single->getPrivKey());
-      auto end = std::chrono::system_clock::now();
       ASSERT_EQ(decryptedKey, clearRoot);
-      auto diff = end - start;
-      EXPECT_GE(diff, baseline) << diff.count();
-      EXPECT_LE(diff, baseline*1.2) << diff.count();
+      EXPECT_EQ(countsSince(countsBefore, *counts), onePass);
    }
 
    //delete new pass
@@ -6707,15 +6932,22 @@ TEST_F(WalletsTest, ChangePassphrase_SeedBIP32)
    }
 
    //encrypt with new pass
+   KdfId passKdfId;
    {
-      auto start = std::chrono::system_clock::now();
+      auto before = getDecrEx(assetWlt)->getMasterKeyCiphers();
       Passphrase::SetNew newPassObj{changePassLbd};
       assetWlt->changePrivateKeyPassphrase({}, newPassObj);
-      auto end = std::chrono::system_clock::now();
-      auto diff = end - start;
-      EXPECT_GE(diff, 2100ms) << diff.count();
-      EXPECT_LE(diff, 2600ms) << diff.count();
+
+      //the new passphrase sits on a kdf that meets its 1200ms target
+      passKdfId = addedCipherKdf(
+         before, getDecrEx(assetWlt)->getMasterKeyCiphers());
+      checkTargetKdf(getDecrEx(assetWlt)->getKdfMap().at(passKdfId), 1200ms);
    }
+
+   //count key derivations: one per unlock
+   auto counts = std::make_shared<KdfCounts>();
+   getDecrEx(assetWlt)->countDerivations(counts);
+   const KdfCounts onePass{{passKdfId, 1}};
 
    //check the wallet can't be decrypted without a passphrase anymore
    auto rejectPassLbd = [](const std::set<EncryptionKeyId>&)->
@@ -6737,16 +6969,13 @@ TEST_F(WalletsTest, ChangePassphrase_SeedBIP32)
    };
 
    {
-      auto start = std::chrono::system_clock::now();
+      auto countsBefore = *counts;
       auto lock = assetWlt->lockDecryptedContainer(newPassLbd);
       auto clearTextSeed = Seeds::ClearTextSeed::deserialize(
          assetWlt->getDecryptedValue(assetWlt->getEncryptedSeed()));
       auto seedBip32 = dynamic_cast<Seeds::ClearTextSeed_BIP32*>(clearTextSeed.get());
       EXPECT_EQ(seedBip32->getRawEntropy(), rawEntropy);
-      auto end = std::chrono::system_clock::now();
-      auto diff = end - start;
-      EXPECT_GE(diff, 1200ms) << diff.count();
-      EXPECT_LE(diff, 1320ms) << diff.count();
+      EXPECT_EQ(countsSince(countsBefore, *counts), onePass);
    }
 
    //reload the wallet
@@ -6760,6 +6989,7 @@ TEST_F(WalletsTest, ChangePassphrase_SeedBIP32)
    auto assetWlt2 = std::dynamic_pointer_cast<AssetWallet_Single>(wlt);
    ASSERT_NE(assetWlt2, nullptr);
    wlt.reset();
+   getDecrEx(assetWlt2)->countDerivations(counts);
 
    //check the wallet can't be decrypted without a passphrase
    try {
@@ -6772,16 +7002,13 @@ TEST_F(WalletsTest, ChangePassphrase_SeedBIP32)
 
    //check the new pass works
    {
-      auto start = std::chrono::system_clock::now();
+      auto countsBefore = *counts;
       auto lock = assetWlt2->lockDecryptedContainer(newPassLbd);
       auto clearTextSeed = Seeds::ClearTextSeed::deserialize(
          assetWlt2->getDecryptedValue(assetWlt2->getEncryptedSeed()));
       auto seedBip32 = dynamic_cast<Seeds::ClearTextSeed_BIP32*>(clearTextSeed.get());
       EXPECT_EQ(seedBip32->getRawEntropy(), rawEntropy);
-      auto end = std::chrono::system_clock::now();
-      auto diff = end - start;
-      EXPECT_GE(diff, 1200ms) << diff.count();
-      EXPECT_LE(diff, 1320ms) << diff.count();
+      EXPECT_EQ(countsSince(countsBefore, *counts), onePass);
    }
 
    //delete the new pass
