@@ -44,6 +44,18 @@ namespace {
       return UINT32_MAX;
    }
 
+   std::unique_ptr<Network::Socket_WritePayload> makeErrorReply(
+      uint32_t msgId, const std::string& errStr)
+   {
+      auto builder = std::make_unique<capnp::MallocMessageBuilder>();
+      auto reply = builder->initRoot<Codec::BDV::Reply>();
+      reply.setMsgId(msgId);
+      reply.setSuccess(false);
+      reply.setError(errStr);
+      return std::make_unique<Network::WritePayload_Capnp>(
+         msgId, std::move(builder), std::vector<uint8_t>{});
+   }
+
    /////////////////////////////////////////////////////////////////////////////
    using namespace Armory::Codec::BDV;
 
@@ -1564,9 +1576,9 @@ void Clients::parseStandAlonePayload(std::shared_ptr<BDV_Payload> payloadPtr)
       return;
    }
 
-   auto msgReader = msg.getReader();
-   auto capnReader = msgReader->getReader();
    try {
+      auto msgReader = msg.getReader();
+      auto capnReader = msgReader->getReader();
       auto request = capnReader->getRoot<Codec::BDV::Request>();
       if (!request.isStatic()) {
          //we only allow static requests in here
@@ -1584,8 +1596,11 @@ void Clients::parseStandAlonePayload(std::shared_ptr<BDV_Payload> payloadPtr)
                std::move(builderPtr), std::vector<uint8_t>{})
          );
       }
-   } catch (const std::runtime_error& e) {
-      LOGDEBUG << "failed to parse msg with error: " << e.what();
+   } catch (const std::exception& e) {
+      //capnp exceptions do not derive from std::runtime_error
+      LOGWARN << "failed to parse msg with error: " << e.what();
+      WebSocketServer::write(payloadPtr->getBdvID(),
+         makeErrorReply(payloadPtr->getMessageID(), e.what()));
    }
 }
 
@@ -1633,7 +1648,14 @@ void Clients::messageParserThread()
       */
 
       std::unique_lock<std::mutex> lock(bdvPtr->processPacketMutex_);
-      auto result = processCommand(payloadPtr);
+      std::unique_ptr<Network::Socket_WritePayload> result;
+      try {
+         result = processCommand(payloadPtr);
+      } catch (const std::exception& e) {
+         //a malformed request should fail on its own, not end this thread
+         LOGWARN << "failed to process command with error: " << e.what();
+         result = makeErrorReply(payloadPtr->getMessageID(), e.what());
+      }
 
       //check if the map has the next message
       {
@@ -1693,8 +1715,17 @@ void Clients::broadcastThroughRPC()
       }
 
       //create & set a zc batch for this tx
-      Tx tx(*packet.rawTx_);
-      std::vector<BinaryData> hashes = { tx.getThisHash() };
+      std::vector<BinaryData> hashes;
+      try {
+         Tx tx(*packet.rawTx_);
+         hashes.emplace_back(tx.getThisHash());
+      } catch (const std::exception& e) {
+         //invalid tx, notify the bdv and move on to the next broadcast
+         LOGWARN << "rpc broadcast: invalid tx: " << e.what();
+         notifyError({}, packet.bdvPtr_,
+            (int)ArmoryErrorCodes::ZcBroadcast_Error, e.what());
+         continue;
+      }
       auto zcPtr = bdm_->zeroConfCont();
 
       //feed the watcher map with all relevant bdv ids

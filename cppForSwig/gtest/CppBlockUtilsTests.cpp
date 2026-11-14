@@ -30,12 +30,17 @@
 #include <Network/WebSocketClient.h>
 #include <Network/WebSocketMessage.h>
 #include <Utils/BIP15x_Handshake.h>
+#include <Network/SocketWritePayload.h>
 #include <BlockchainDatabase/BlockchainData.h>
 #include <ZeroConf/Parser.h>
 #include <ZeroConf/Utils.h>
 
 #include "BDM_mainthread.h"
 #include "Server.h"
+
+#include <capnp/message.h>
+#include <capnp/serialize.h>
+#include "capnp/BDV.capnp.h"
 
 using namespace std::string_view_literals;
 using namespace std::chrono_literals;
@@ -3128,6 +3133,29 @@ namespace {
          return fut.get();
       }
    };
+
+   //collects error notifications so tests can wait on them with a timeout
+   class ErrorCatcher : public DBTestUtils::UTCallback
+   {
+   private:
+      mutable Threading::TimedQueue<std::shared_ptr<BdvError>> errors_;
+
+   public:
+      void pushError(const BdvError& error) const override
+      {
+         errors_.push_back(std::make_shared<BdvError>(error));
+         DBTestUtils::UTCallback::pushError(error);
+      }
+
+      std::shared_ptr<BdvError> nextError(std::chrono::milliseconds timeout)
+      {
+         try {
+            return errors_.pop_front(timeout);
+         } catch (const Threading::StackTimedOutException&) {
+            return nullptr;
+         }
+      }
+   };
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3196,6 +3224,83 @@ protected:
       }
       return fut.get();
    }
+
+   struct RawReply
+   {
+      bool success = false;
+      std::string error;
+      uint32_t value = UINT32_MAX;
+   };
+
+   /*
+   Sends a request payload as is and hands back the reply, inspect pulls a
+   value out of it
+   */
+   std::future<RawReply> sendRawRequest(
+      AsyncClient::BlockDataViewer& bdvObj, std::vector<uint8_t> data,
+      std::function<uint32_t(Codec::BDV::Reply::Reader)> inspect = nullptr)
+   {
+      class ReplyCallback : public Network::CallbackReturn_WebSocket
+      {
+      private:
+         std::shared_ptr<std::promise<RawReply>> prom_;
+         std::function<uint32_t(Codec::BDV::Reply::Reader)> inspect_;
+
+      public:
+         ReplyCallback(std::shared_ptr<std::promise<RawReply>> prom,
+            std::function<uint32_t(Codec::BDV::Reply::Reader)> inspect) :
+            prom_(prom), inspect_(inspect)
+         {}
+
+         void callback(const Network::WebSocketMessagePartial& msg) override
+         {
+            RawReply result;
+            try {
+               auto msgReader = msg.getReader();
+               auto capnReader = msgReader->getReader();
+               auto reply = capnReader->getRoot<Codec::BDV::Reply>();
+               result.success = reply.getSuccess();
+               result.error = std::string(reply.getError());
+               if (inspect_) {
+                  result.value = inspect_(reply);
+               }
+            } catch (const std::exception& e) {
+               result.success = false;
+               result.error = std::string{"unreadable reply: "} + e.what();
+            }
+            prom_->set_value(std::move(result));
+         }
+      };
+
+      auto prom = std::make_shared<std::promise<RawReply>>();
+      auto readPayload = std::make_shared<Network::Socket_ReadPayload>();
+      readPayload->callbackReturn_ =
+         std::make_unique<ReplyCallback>(prom, inspect);
+      bdvObj.getSocketObject()->pushPayload(
+         std::make_unique<Network::WritePayload_Raw>(data), readPayload);
+      return prom->get_future();
+   }
+
+   static std::vector<uint8_t> toBytes(capnp::MallocMessageBuilder& message)
+   {
+      auto flat = capnp::messageToFlatArray(message);
+      auto bytes = flat.asBytes();
+      return std::vector<uint8_t>(bytes.begin(), bytes.end());
+   }
+
+   /*
+   Not a capnp message: the segment table claims more segments than
+   there is data for
+   */
+   static std::vector<uint8_t> malformedRequest()
+   {
+      std::vector<uint8_t> data(16, 0);
+      data[0] = 0xFF;
+      data[1] = 0xFF;
+      data[2] = 0xFF;
+      data[3] = 0x7F;
+      return data;
+   }
 };
 
 ////
@@ -3225,6 +3330,99 @@ TEST_F(BlockUtilsBareWithServerDeathTest, ShortFrameBeforeHandshake)
       bdvObj->registerWithDB(
          Config::BitcoinSettings::getMagicBytes().toHexStr());
       EXPECT_TRUE(nodeStatusReplies(*bdvObj));
+   }), ::testing::ExitedWithCode(0), "");
+}
+
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, MalformedRequest_RegisteredBdv)
+{
+   /*
+   A request from a registered client that fails to parse gets an error
+   reply, and the client's next request is processed
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer(nullptr);
+
+      auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+      auto bdvObj = connectClient(pCallback);
+      bdvObj->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+
+      auto fut = sendRawRequest(*bdvObj, malformedRequest());
+      ASSERT_EQ(fut.wait_for(5s), std::future_status::ready);
+      auto reply = fut.get();
+      EXPECT_FALSE(reply.success);
+      EXPECT_FALSE(reply.error.empty());
+
+      EXPECT_TRUE(nodeStatusReplies(*bdvObj));
+   }), ::testing::ExitedWithCode(0), "");
+}
+
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, MalformedRequest_UnregisteredClient)
+{
+   /*
+   Same as above, from a client that has yet to register its bdv
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer(nullptr);
+
+      auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+      auto bdvObj = connectClient(pCallback);
+
+      auto fut = sendRawRequest(*bdvObj, malformedRequest());
+      ASSERT_EQ(fut.wait_for(5s), std::future_status::ready);
+      auto reply = fut.get();
+      EXPECT_FALSE(reply.success);
+      EXPECT_FALSE(reply.error.empty());
+
+      bdvObj->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+      EXPECT_TRUE(nodeStatusReplies(*bdvObj));
+   }), ::testing::ExitedWithCode(0), "");
+}
+
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, RpcBroadcast_InvalidTx)
+{
+   /*
+   A tx that fails to deserialize in the rpc broadcast thread is reported
+   to its bdv, the thread moves on to the next broadcast
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer(nullptr);
+      theBDMt_->start(Config::DBSettings::initMode());
+      ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+
+      auto pCallback = std::make_shared<ErrorCatcher>();
+      auto bdvObj = connectClient(pCallback);
+      bdvObj->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+      bdvObj->goOnline();
+      pCallback->waitOnNotification(DBTestUtils::UTCallback::BDMAction_Ready);
+
+      for (unsigned i=0; i<2; i++) {
+         std::vector<uint8_t> invalidTx{1, 2, 3};
+         capnp::MallocMessageBuilder message;
+         auto request = message.initRoot<Codec::BDV::Request>();
+         auto staticRequest = request.initStatic();
+         staticRequest.setRpcBroadcast(
+            capnp::Data::Reader(invalidTx.data(), invalidTx.size()));
+
+         auto fut = sendRawRequest(*bdvObj, toBytes(message));
+         ASSERT_EQ(fut.wait_for(5s), std::future_status::ready);
+         EXPECT_TRUE(fut.get().success);
+
+         auto error = pCallback->nextError(5s);
+         ASSERT_NE(error, nullptr) << "broadcast #" << i;
+         EXPECT_EQ(error->errorCode, (int)ArmoryErrorCodes::ZcBroadcast_Error);
+      }
    }), ::testing::ExitedWithCode(0), "");
 }
 
