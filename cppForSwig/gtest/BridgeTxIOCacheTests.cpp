@@ -7,6 +7,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "BridgeTestUtils.h"
+#include <cstdlib>
 
 ////////////////////////////////////////////////////////////////////////////////
 // TxIOCacheTests
@@ -540,6 +541,62 @@ TEST_F(TxIOCacheTests, PurgeStates)
    //cleanup
    ninja.stopPayloadCapture();
    WebSocketServer::shutdown();
+}
+
+TEST_F(TxIOCacheTests, UnregisterUnknownWallet)
+{
+   /*
+   A wallet request for an id the bdv doesn't know gets an "unknown wallet"
+   reply. BlockDataViewer::getWallet used to throw instead of returning
+   nullptr, and nothing caught the exception: std::terminate took the
+   whole process down, hence the death test.
+   */
+   GTEST_FLAG_SET(death_test_style, "threadsafe");
+   auto body = [this]()
+   {
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      auto clients = std::make_shared<Clients>(theBDMt_->bdm());
+      startWSServer(clients);
+
+      auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+      auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
+         "127.0.0.1", Config::NetworkSettings::dbPort(),
+         std::make_shared<NetworkPeers::ClientStore>(Wallets::IO::ReadOnlyFileParams{
+            homedir_ / CLIENT_AUTH_PEER_FILENAME, authPeersPassLbd_}),
+         true, pCallback
+      );
+      bdvObj->connectToRemote();
+      bdvObj->registerWithDB(Config::BitcoinSettings::getMagicBytes().toHexStr());
+      bdvObj->getWalletObj("wallet_bc").registerAddresses(addressesBC, false);
+
+      theBDMt_->start(Config::DBSettings::initMode());
+      if (theBDMt_->bdm()->waitUntilReady(5s) != BDMState::Ready) {
+         std::_Exit(2);
+      }
+      bdvObj->goOnline();
+      pCallback->waitOnNotification(DBTestUtils::UTCallback::BDMAction_Ready);
+
+      //an id this bdv never registered
+      bdvObj->getWalletObj("ghost").unregister();
+
+      //the server still answers this bdv, with wallet_bc's txios
+      auto prom = std::make_shared<std::promise<size_t>>();
+      auto fut = prom->get_future();
+      bdvObj->getTxios(0, [prom](ReturnMessage<std::vector<TxIOPair>> msg)
+      {
+         try {
+            prom->set_value(msg.get().size());
+         } catch (const std::exception&) {
+            prom->set_value(0);
+         }
+      });
+      if (fut.wait_for(10s) != std::future_status::ready) {
+         std::_Exit(4);
+      }
+      std::_Exit(fut.get() > 0 ? 0 : 5);
+   };
+   EXPECT_EXIT(body(), ::testing::ExitedWithCode(0), "");
 }
 
 TEST_F(TxIOCacheTests, Purge)

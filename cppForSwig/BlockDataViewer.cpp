@@ -208,7 +208,7 @@ std::shared_ptr<BtcWallet> BlockDataViewer::getWallet(
    if (iter != wallets_.end()) {
       return iter->second;
    } else {
-      throw std::runtime_error(std::format("unknown wallet id: {}", wltID));
+      return nullptr;
    }
 }
 
