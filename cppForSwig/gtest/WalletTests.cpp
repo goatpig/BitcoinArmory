@@ -3448,8 +3448,18 @@ TEST_F(WalletInterfaceTest, Passphrase_Test)
       }
       end = std::chrono::system_clock::now();
       timeTaken = end-start;
-      EXPECT_GE(timeTaken, 400ms);
-      EXPECT_LE(timeTaken, 600ms);
+
+      /*
+      The bad passphrase runs the 400ms kdf once. Its calibration can land
+      well short of the target or above it (see TestUtils::checkKdfTarget),
+      so only check that the kdf ran: at least half the target. One
+      derivation was measured anywhere from 283ms to 802ms, so no time
+      window can tell one derivation from two.
+      */
+      EXPECT_GE(timeTaken, 400ms / 2);
+
+      //one bad passphrase tried, then the prompt gave up
+      EXPECT_EQ(count, 2);
 
       //open with proper passphrase
       try {
@@ -3458,8 +3468,7 @@ TEST_F(WalletInterfaceTest, Passphrase_Test)
          dbIface.setupEnv(IO::ReadOnlyFileParams{dbPath_, unlockLbd});
          end = std::chrono::system_clock::now();
          timeTaken = end-start;
-         EXPECT_GE(timeTaken, 400ms);
-         EXPECT_LE(timeTaken, 600ms);
+         EXPECT_GE(timeTaken, 400ms / 2);
 
          dbIface.shutdown();
       } catch (...) {
