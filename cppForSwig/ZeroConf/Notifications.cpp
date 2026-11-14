@@ -204,8 +204,9 @@ void ZeroConfCallbacks_BDV::processNotifRequests()
 
             auto bdvPtr = clientsPtr_->BDVs_.get(reqPtr->bdvId);
             if (bdvPtr == nullptr) {
+               //the bdv is gone, skip this error
                LOGWARN << "pushed zc error with invalid bdvid";
-               return;
+               break;
             }
 
             auto notifPacket = std::make_shared<BDV_Notification_Packet>();

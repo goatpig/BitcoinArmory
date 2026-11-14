@@ -34,6 +34,7 @@
 #include <BlockchainDatabase/BlockchainData.h>
 #include <ZeroConf/Parser.h>
 #include <ZeroConf/Utils.h>
+#include <ZeroConf/Notifications.h>
 
 #include "BDM_mainthread.h"
 #include "Server.h"
@@ -3424,6 +3425,52 @@ TEST_F(BlockUtilsBareWithServerDeathTest, RpcBroadcast_InvalidTx)
          EXPECT_EQ(error->errorCode, (int)ArmoryErrorCodes::ZcBroadcast_Error);
       }
    }), ::testing::ExitedWithCode(0), "");
+}
+
+////
+TEST_F(BlockUtilsBareWithServer, ZcError_BdvGone)
+{
+   /*
+   A zc error for a bdv that is gone should not stop the zc notification
+   thread: errors for other bdvs still go through
+   */
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   auto clients = std::make_shared<Clients>(theBDMt_->bdm());
+   startWSServer(clients);
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+
+   auto pCallback = std::make_shared<ErrorCatcher>();
+   auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
+      "127.0.0.1", Config::NetworkSettings::dbPort(),
+      std::make_shared<NetworkPeers::ClientStore>(Wallets::IO::ReadOnlyFileParams{
+         homedir_ / CLIENT_AUTH_PEER_FILENAME, authPeersPassLbd_}),
+      true, //public server
+      pCallback);
+   bdvObj->connectToRemote();
+   bdvObj->registerWithDB(Config::BitcoinSettings::getMagicBytes().toHexStr());
+   bdvObj->goOnline();
+   pCallback->waitOnNotification(DBTestUtils::UTCallback::BDMAction_Ready);
+
+   auto bdvIds = clients->getBdvIds();
+   ASSERT_EQ(bdvIds.size(), 1U);
+   auto bdvId = *bdvIds.begin();
+
+   auto goneHash = READHEX("0000000000000000000000000000000000000000000000000000000000000001");
+   auto ourHash = READHEX("0000000000000000000000000000000000000000000000000000000000000002");
+   {
+      ZeroConf::ZeroConfCallbacks_BDV zcCallbacks(clients.get());
+      zcCallbacks.pushZcError(bdvId + 1, goneHash,
+         ArmoryErrorCodes::ZcBroadcast_Error, "bdv is gone");
+      zcCallbacks.pushZcError(bdvId, ourHash,
+         ArmoryErrorCodes::ZcBroadcast_Error, "bdv is here");
+
+      auto error = pCallback->nextError(5s);
+      ASSERT_NE(error, nullptr);
+      EXPECT_EQ(error->errorData, ourHash);
+      EXPECT_EQ(error->errorCode, (int)ArmoryErrorCodes::ZcBroadcast_Error);
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
