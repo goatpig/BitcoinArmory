@@ -2843,8 +2843,9 @@ TEST_F(BlockUtilsBareWithServer, WSClientCleanup)
 
    std::mutex cvMutex;
    std::condition_variable cv;
+   bool release = false;
    bdvObj->getTxios(0,
-      [&prom3, &prom4, &cvMutex, &cv, socketName](ReturnMessage<std::vector<TxIOPair>> result){
+      [&prom3, &prom4, &cvMutex, &cv, &release, socketName](ReturnMessage<std::vector<TxIOPair>> result){
          std::unique_lock<std::mutex> lock{cvMutex};
          try {
             result.get();
@@ -2855,10 +2856,10 @@ TEST_F(BlockUtilsBareWithServer, WSClientCleanup)
          }
 
          //we deliberately block this callback by waiting on the condvar
-         auto cvStatus = cv.wait_for(lock, 5s);
-         prom4.set_value({
-            cvStatus == std::cv_status::no_timeout,
-            std::chrono::system_clock::now()});
+         //until the test releases it; the flag keeps a spurious wakeup
+         //from passing for a release
+         auto released = cv.wait_for(lock, 5s, [&release]{ return release; });
+         prom4.set_value({released, std::chrono::system_clock::now()});
       });
 
    //none of the requests should be fulfilled yet
@@ -2895,7 +2896,8 @@ TEST_F(BlockUtilsBareWithServer, WSClientCleanup)
    EXPECT_EQ(result3.first, false);
    EXPECT_GT(result3.second, now);
 
-   //when fut3 has a result, we know the 3rd request is waiting on the cv
+   //when fut3 has a result, the 3rd callback is running and holds until we
+   //release it
    //we want to use this window to push a new request to the client, which
    //should correctly fail to queue a callback
    auto afterCVnow = std::chrono::system_clock::now();
@@ -2907,6 +2909,10 @@ TEST_F(BlockUtilsBareWithServer, WSClientCleanup)
    }
 
    //release the cv and consume the last future
+   {
+      std::unique_lock<std::mutex> lock{cvMutex};
+      release = true;
+   }
    cv.notify_all();
    ASSERT_EQ(fut4.wait_for(3s), std::future_status::ready);
    auto result4 = fut4.get();
