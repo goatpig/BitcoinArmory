@@ -207,6 +207,10 @@ struct Notification {
       presentPubkey  @18: Text; #hexit public key
       invalidatedZcs @19: List(Types.Hash);
       automation     @20: AutomationContextNotif;
+
+      #sent in place of disconnected when the bridge drops the db
+      #connection after failing to update the wallets state
+      bdvDropped     @21: Void;
    }
 }
 

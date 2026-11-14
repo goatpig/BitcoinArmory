@@ -215,6 +215,25 @@ protected:
       return func(reader.getRoot<Codec::Bridge::FromBridge>());
    }
 
+   void waitOnBdvDropped()
+   {
+      //skips the notifications that come before it
+      while (true) {
+         auto msg = waitOnReplyFor(10s);
+         ASSERT_NE(msg, nullptr) << "no BDV_DROPPED notification";
+         bool dropped = readFromBridge(msg,
+            [](Codec::Bridge::FromBridge::Reader fromBridge) {
+               return fromBridge.which() ==
+                     Codec::Bridge::FromBridge::NOTIFICATION &&
+                  fromBridge.getNotification().which() ==
+                     Codec::Bridge::Notification::BDV_DROPPED;
+            });
+         if (dropped) {
+            return;
+         }
+      }
+   }
+
    void waitOnDisconnected()
    {
       //skips the notifications that come before it
@@ -1251,8 +1270,8 @@ TEST_F(BridgeChainDataTests, TxIOCachePurge_DropBDV)
    }
    ninja.stopPayloadCapture();
 
-   //the bridge will drop the bdv connection in consequence
-   ASSERT_NO_FATAL_FAILURE(waitOnDisconnected());
+   //the bridge will drop the bdv connection in consequence, and say so
+   ASSERT_NO_FATAL_FAILURE(waitOnBdvDropped());
 
    /* check the cache was purged in the process */
 

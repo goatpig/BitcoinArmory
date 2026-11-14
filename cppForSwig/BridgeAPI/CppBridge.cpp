@@ -649,7 +649,7 @@ void CppBridge::runNotificationProcessingThread()
 
    auto thr = [this]()
    {
-      auto cleanup = [this]()
+      auto cleanup = [this](bool updateFailed = false)
       {
          if (bdvPtr_) {
             if (bdvPtr_->isValid()) {
@@ -657,7 +657,11 @@ void CppBridge::runNotificationProcessingThread()
             }
             wltManager_->cleanupBdvPtr();
             bdvPtr_.reset();
-            auto message = Serialization::getServerDisconnectedPacket();
+
+            //tell the client the bridge dropped the connection itself
+            auto message = updateFailed ?
+               Serialization::getBdvDroppedPacket() :
+               Serialization::getServerDisconnectedPacket();
             writeToClient(message);
          }
       };
@@ -767,7 +771,7 @@ void CppBridge::runNotificationProcessingThread()
                }
                if (!wltManager_->updateStateFromDB(std::move(payload))) {
                   //wallet manager update failed, drop the bdv connection
-                  cleanup();
+                  cleanup(true);
                }
          }
       }
