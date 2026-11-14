@@ -10,6 +10,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <thread>
+#include <atomic>
+#include <future>
 #include <gtest/gtest.h>
 
 #include "Utils/ThreadSafeClasses.h"
@@ -408,15 +410,33 @@ TEST_F(ContainerTests, BlockingQueue_Concurrent)
    push_threads.clear();
    pop_threads.clear();
 
-   //run again
+   //run again, then terminate with entries left in the queue. Consumers
+   //popping as fast as the producers push can empty it before terminate()
+   //runs, so each one takes a single entry and waits for terminate() before
+   //popping again
+   std::promise<void> terminatedProm;
+   std::shared_future<void> terminatedFut = terminatedProm.get_future();
+   std::atomic<unsigned> popCount{0};
+   std::atomic<unsigned> stopCount{0};
+   auto pop_once_thread = [&theStack, &popCount, &stopCount, terminatedFut]()
+   {
+      theStack.pop_front();
+      ++popCount;
+      terminatedFut.wait();
+      try {
+         theStack.pop_front();
+      } catch (const StopBlockingLoop&) {
+         ++stopCount;
+      }
+   };
+
    for (unsigned i = 0; i < threadCount_; i++) {
       push_threads.emplace_back(
          std::thread(push_thread, &push_tallies[i]));
    }
 
    for (unsigned y = 0; y < threadCount_; y++) {
-      pop_threads.emplace_back(
-         std::thread(pop_thread, &pop_tallies[y]));
+      pop_threads.emplace_back(std::thread(pop_once_thread));
    }
 
    for (auto& pushthr : push_threads) {
@@ -424,7 +444,11 @@ TEST_F(ContainerTests, BlockingQueue_Concurrent)
          pushthr.join();
       }
    }
+   while (popCount.load() < threadCount_) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+   }
    theStack.terminate();
+   terminatedProm.set_value();
 
    for (auto& popthr : pop_threads) {
       if (popthr.joinable()) {
@@ -432,7 +456,9 @@ TEST_F(ContainerTests, BlockingQueue_Concurrent)
       }
    }
 
-   EXPECT_NE(theStack.count(), 0ULL);
+   //every consumer's pop_front() after terminate() throws StopBlockingLoop
+   EXPECT_EQ(stopCount.load(), threadCount_);
+   EXPECT_EQ(theStack.count(), threadCount_ * (iterCount - 1));
    theStack.clear();
    EXPECT_EQ(theStack.count(), 0ULL);
 }
