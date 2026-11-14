@@ -1743,7 +1743,7 @@ namespace
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool ProtoCommandParser::processData(
+static bool processRequest(
    std::shared_ptr<CppBridge> bridge, BinaryDataRef socketData)
 {
    kj::ArrayPtr<const capnp::word> words(
@@ -1839,4 +1839,46 @@ bool ProtoCommandParser::processData(
    }
 
    return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+bool ProtoCommandParser::processData(
+   std::shared_ptr<CppBridge> bridge, BinaryDataRef socketData)
+{
+   //a request that throws gets an error reply instead of ending the bridge
+   try {
+      return processRequest(bridge, socketData);
+   } catch (const std::exception& e) {
+      LOGERR << "bridge request failed with error: " << e.what();
+
+      MessageId referenceId;
+      try {
+         kj::ArrayPtr<const capnp::word> words(
+            reinterpret_cast<const capnp::word*>(socketData.getPtr()),
+            socketData.getSize() / sizeof(capnp::word));
+         capnp::FlatArrayMessageReader reader(words);
+         auto toBridge = reader.getRoot<Codec::Bridge::ToBridge>();
+
+         //a prompt's handler is gone once its reply is processed, keep
+         //that failure fatal as before
+         if (toBridge.which() == Codec::Bridge::ToBridge::NOTIFICATION) {
+            return false;
+         }
+         referenceId = toBridge.getReferenceId();
+      } catch (const std::exception&) {
+         //no reference id to reply to
+         return true;
+      }
+
+      capnp::MallocMessageBuilder message;
+      auto fromBridge = message.initRoot<FromBridge>();
+      auto reply = fromBridge.initReply();
+      reply.setReferenceId(referenceId);
+      reply.setSuccess(false);
+      reply.setError(e.what());
+
+      auto serialized = serializeCapnp(message);
+      bridge->writeToClient(serialized);
+      return true;
+   }
 }
