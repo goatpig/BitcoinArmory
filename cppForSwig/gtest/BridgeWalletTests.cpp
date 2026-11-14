@@ -641,9 +641,10 @@ TEST_F(BridgeWalletTests, CreateWallet)
    EXPECT_EQ(wltData.addresses.size(), 1);
    EXPECT_EQ(wltData.kdfMemReq, 128);
 
-   //request KDF unlock time
+   //request KDF unlock time: at least half the target (see
+   //TestUtils::checkKdfTarget, the calibration can land short of it)
    auto unlockTime = testKDFUnlock(wltId);
-   EXPECT_GE(unlockTime, 500ms) << unlockTime.count();
+   EXPECT_GE(unlockTime, 500ms / 2) << unlockTime.count();
 
    //grab backup string
    auto backup = getWalletBackup(bridge_, wltId, "pass1",
@@ -719,9 +720,10 @@ TEST_F(BridgeWalletTests, CreateWallet_BIP32)
    EXPECT_EQ(wltData.addresses.size(), 1);
    EXPECT_EQ(wltData.kdfMemReq, 128);
 
-   //request KDF unlock time
+   //request KDF unlock time: at least half the target (see
+   //TestUtils::checkKdfTarget, the calibration can land short of it)
    auto unlockTime = testKDFUnlock(wltId);
-   EXPECT_GE(unlockTime, 500ms) << unlockTime.count();
+   EXPECT_GE(unlockTime, 500ms / 2) << unlockTime.count();
 
    //grab backup string
    auto backup = getWalletBackup(bridge_, wltId, "pass1",
@@ -909,9 +911,10 @@ TEST_F(BridgeWalletTests, RestoreWallet_Legacy)
    EXPECT_EQ(wltData.lookup, 501);
    EXPECT_EQ(wltData.kdfMemReq, 32);
 
-   //request KDF unlock time
+   //request KDF unlock time: at least half the target (see
+   //TestUtils::checkKdfTarget, the calibration can land short of it)
    auto unlockTime = testKDFUnlock(walletId);
-   EXPECT_GE(unlockTime, 300ms) << unlockTime.count();
+   EXPECT_GE(unlockTime, 300ms / 2) << unlockTime.count();
 
    //grab backup strings via callback
    {
