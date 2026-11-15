@@ -40,13 +40,13 @@ using namespace Armory::Config;
 #define REGTEST_DEFAULT_BLOCKPATH "Bitcoin/regtest/blocks"
 
 #elif defined(__APPLE__)
-#define MAINNET_DEFAULT_DATADIR "~/Library/Application Support/Armory"
-#define TESTNET_DEFAULT_DATADIR "~/Library/Application Support/Armory/testnet3"
-#define REGTEST_DEFAULT_DATADIR "~/Library/Application Support/Armory/regtest"
+#define MAINNET_DEFAULT_DATADIR "Library/Application Support/Armory"
+#define TESTNET_DEFAULT_DATADIR "Library/Application Support/Armory/testnet3"
+#define REGTEST_DEFAULT_DATADIR "Library/Application Support/Armory/regtest"
 
-#define MAINNET_DEFAULT_BLOCKPATH "~/Library/Application Support/Bitcoin/blocks"
-#define TESTNET_DEFAULT_BLOCKPATH "~/Library/Application Support/Bitcoin/testnet3/blocks"
-#define REGTEST_DEFAULT_BLOCKPATH "~/Library/Application Support/Bitcoin/regtest/blocks"
+#define MAINNET_DEFAULT_BLOCKPATH "Library/Application Support/Bitcoin/blocks"
+#define TESTNET_DEFAULT_BLOCKPATH "Library/Application Support/Bitcoin/testnet3/blocks"
+#define REGTEST_DEFAULT_BLOCKPATH "Library/Application Support/Bitcoin/regtest/blocks"
 
 #else
 #define MAINNET_DEFAULT_DATADIR ".armory"

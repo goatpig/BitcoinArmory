@@ -4466,6 +4466,45 @@ TEST_F(TestJSONCodec, decode)
    EXPECT_EQ(chain->val, "main");
 }
 
+#ifndef _WIN32
+////////////////////////////////////////////////////////////////////////////////
+TEST(ConfigTests, DefaultPaths_UnderHome)
+{
+   /*
+   Without --datadir and --satoshi-datadir, the Armory datadir and the
+   blocks folder are the platform's default folders under HOME
+   */
+   std::string home;
+   auto homePtr = std::getenv("HOME");
+   ASSERT_NE(homePtr, nullptr);
+   home = homePtr;
+
+   auto fakeHome = std::filesystem::absolute("./fakehome_defaultpaths");
+   FileUtils::removeDirectory(fakeHome);
+   std::filesystem::create_directory(fakeHome);
+   setenv("HOME", fakeHome.string().c_str(), 1);
+
+   Armory::Config::reset();
+   Armory::Config::parseArgs({"--offline"},
+      Armory::Config::ProcessType::DB);
+
+#ifdef __APPLE__
+   auto armoryDir = fakeHome / "Library/Application Support/Armory";
+   auto blocksDir = fakeHome / "Library/Application Support/Bitcoin/blocks";
+#else
+   auto armoryDir = fakeHome / ".armory";
+   auto blocksDir = fakeHome / ".bitcoin/blocks";
+#endif
+   EXPECT_EQ(Armory::Config::getDataDir(), armoryDir);
+   EXPECT_TRUE(std::filesystem::is_directory(armoryDir));
+   EXPECT_EQ(Armory::Config::Pathing::blkFilePath(), blocksDir);
+
+   Armory::Config::reset();
+   setenv("HOME", home.c_str(), 1);
+   FileUtils::removeDirectory(fakeHome);
+}
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 class TypesTests : public ::testing::Test
 {};
