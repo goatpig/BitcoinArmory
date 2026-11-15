@@ -198,9 +198,7 @@ ARMORYCOMMON_SOURCE_FILES = capnp/Types.capnp.c++ \
 	Network/WebSocketMessage.cpp
 
 ################################################################################
-## LMDB (DB used by Armory). On macOS, don't use SYSV semaphores (the default),
-## which cause crashes due to mutex lock/unlock issues. Use POSIX semaphores
-## (same as Linux).
+## lmdbpp, the C++ wrapper of LMDB (DB used by Armory, linked from the system)
 noinst_LTLIBRARIES += $(LIBLMDBPP)
 liblmdbpp_la_SOURCES = lmdbpp/lmdbpp.cpp
 liblmdbpp_la_CPPFLAGS = -Ilmdbpp -fPIC

@@ -141,7 +141,7 @@ case $host in
             export PKG_CONFIG_PATH
         fi
         libuv_prefix=`$BREW --prefix libuv 2>/dev/null`
-        if test x$openssl_prefix != x; then
+        if test x$libuv_prefix != x; then
             PKG_CONFIG_PATH="$libuv_prefix/lib/pkgconfig:$PKG_CONFIG_PATH"
             export PKG_CONFIG_PATH
         fi
