@@ -67,12 +67,6 @@ make
 
 Add `--enable-tests` to the configure line above (this needs `brew install googletest`). The test binaries end up in `build/cppForSwig/gtest`.
 
-> [!NOTE]
-> macOS limits each process to 256 open files by default. Some tests run the database in DB_FULL mode (in CppBlockUtilsTests and ZeroConfTests, at least) and need more, otherwise the BDM fails with `Too many open files`. Raise the limit in the terminal you run them from:
-> ```
-> ulimit -n 4096
-> ```
-
 # 5. Building c20p1305
 > [!NOTE]
 > you do not need to rebuild this package every time you build Armory, you only need to make sure the resulting .so is in your armoryengine folder
