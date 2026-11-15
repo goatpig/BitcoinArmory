@@ -438,6 +438,7 @@ void WebSocketServer::webSocketService(int port)
    try {
       while (run_.load(std::memory_order_relaxed) != 0 && n >= 0) {
          n = lws_service(contextPtr_, 10000);
+         closeDroppedConnections();
          updateWriteMap();
       }
    } catch (const std::exception& e) {
@@ -640,7 +641,8 @@ void WebSocketServer::closeClientConnection(uint64_t id)
    bool isMaster = false;
    {
       auto cc = const_cast<ClientConnection*>(&iter->second);
-      cc->closeConnection();
+      //the socket is closed already, only stop processing its packets
+      cc->closeConnection(nullptr);
       isMaster = cc->isMaster();
       clientStateMap_.erase(id);
    }
@@ -691,6 +693,30 @@ void WebSocketServer::updateWriteMap()
       pendingWritesIter_ = pendingWrites_.begin();
    }
    lws_callback_on_writable(*pendingWritesIter_);
+}
+
+void WebSocketServer::closeDroppedConnections()
+{
+   while (true) {
+      uint64_t id;
+      try {
+         id = closeQueue_.pop_front();
+      } catch (const Threading::IsEmpty&) {
+         return;
+      }
+
+      //a connection that closed in the meantime is gone along with its wsi
+      auto stateMap = getConnectionStateMap();
+      auto iter = stateMap->find(id);
+      if (iter == stateMap->end()) {
+         continue;
+      }
+
+      //this runs on the service thread outside of any lws callback, the
+      //socket can be closed right away, LWS_CALLBACK_CLOSED cleans up
+      lws_set_timeout(iter->second.wsiPtr_,
+         PENDING_TIMEOUT_CLOSE_SEND, LWS_TO_KILL_SYNC);
+   }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -788,7 +814,7 @@ void ClientConnection::processReadQueue(
             }
 
             //failed to decrypt, kill connection
-            closeConnection();
+            closeConnection(instance);
             continue;
          }
 
@@ -799,7 +825,7 @@ void ClientConnection::processReadQueue(
          packetData.getRef());
       if (msgType == ArmoryAEAD::BIP151_PayloadType::Undefined) {
          //packet is too short to carry a type or carries none, kill connection
-         closeConnection();
+         closeConnection(instance);
          continue;
       }
 
@@ -815,7 +841,7 @@ void ClientConnection::processReadQueue(
 
       if (bip151Connection_->getBIP150State() != BIP150State::SUCCESS) {
          //can't get this far without fully setup AEAD
-         closeConnection();
+         closeConnection(instance);
          continue;
       }
 
@@ -898,14 +924,20 @@ void ClientConnection::processAEADHandshake(
    };
 
    if (!processHandshake(msg)) {
-      closeConnection();
+      closeConnection(instance);
    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void ClientConnection::closeConnection()
+void ClientConnection::closeConnection(WebSocketServer* instance)
 {
    run_->store(-1, std::memory_order_relaxed);
+
+   //have the service thread close the socket
+   if (instance != nullptr) {
+      instance->closeQueue_.push_back(uint64_t{id_});
+      lws_cancel_service(instance->contextPtr_);
+   }
 }
 
 bool ClientConnection::isMaster() const

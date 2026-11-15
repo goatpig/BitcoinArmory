@@ -3011,7 +3011,8 @@ namespace {
    /*
    Bare websocket client: completes the websocket handshake with the server
    and writes a single frame of our choosing, without going through the AEAD
-   layer the regular client enforces.
+   layer the regular client enforces. With keepWriting, it writes that frame
+   again every 10ms for as long as the connection is open.
    */
    class RawWsClient
    {
@@ -3023,6 +3024,10 @@ namespace {
       BinaryData frame_;
       bool written_ = false;
       std::promise<bool> writtenProm_;
+
+      const bool keepWriting_;
+      struct lws* wsi_ = nullptr;
+      std::atomic<bool> closed_{false};
 
    private:
       static int callback(struct lws* wsi, enum lws_callback_reasons reason,
@@ -3036,21 +3041,29 @@ namespace {
          switch (reason)
          {
             case LWS_CALLBACK_CLIENT_ESTABLISHED:
+               instance->wsi_ = wsi;
                lws_callback_on_writable(wsi);
                break;
 
             case LWS_CALLBACK_CLIENT_WRITEABLE:
             {
-               if (instance->written_) {
+               if (instance->written_ && !instance->keepWriting_) {
                   break;
                }
-               instance->written_ = true;
                auto size = instance->frame_.getSize() - LWS_PRE;
                auto result = lws_write(wsi,
                   instance->frame_.getPtr() + LWS_PRE, size, LWS_WRITE_BINARY);
-               instance->writtenProm_.set_value(result == (int)size);
+               if (!instance->written_) {
+                  instance->written_ = true;
+                  instance->writtenProm_.set_value(result == (int)size);
+               }
                break;
             }
+
+            case LWS_CALLBACK_CLIENT_CLOSED:
+               instance->wsi_ = nullptr;
+               instance->closed_.store(true);
+               break;
 
             case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
             {
@@ -3068,7 +3081,8 @@ namespace {
       }
 
    public:
-      RawWsClient(const BinaryData& frame)
+      RawWsClient(const BinaryData& frame, bool keepWriting = false) :
+         keepWriting_(keepWriting)
       {
          frame_.resize(LWS_PRE);
          frame_.append(frame);
@@ -3088,6 +3102,24 @@ namespace {
          }
       }
 
+      static lws_log_cx_t* logContext()
+      {
+         /*
+         lws counts the contexts and connections bound to a logging
+         context, without a lock unless it is built with LWS_MAX_SMP > 1.
+         The server uses the default one from its own thread: give the raw
+         clients theirs, so the two threads never update the same count.
+         The raw clients run one at a time.
+         */
+         static lws_log_cx_t cx = []() {
+            lws_log_cx_t result{};
+            result.u.emit = lwsl_emit_stderr;
+            result.lll_flags = LLL_ERR | LLL_WARN | LLL_NOTICE;
+            return result;
+         }();
+         return &cx;
+      }
+
       bool write(uint16_t port, std::chrono::milliseconds timeout)
       {
          static struct lws_protocols protocols[] = {
@@ -3102,6 +3134,7 @@ namespace {
          info.protocols = protocols;
          info.gid = -1;
          info.uid = -1;
+         info.log_cx = logContext();
          context_ = lws_create_context(&info);
          if (context_ == nullptr) {
             return false;
@@ -3125,6 +3158,10 @@ namespace {
          auto fut = writtenProm_.get_future();
          serviceThr_ = std::thread([this]{
             while (run_.load()) {
+               if (keepWriting_ && written_ && wsi_ != nullptr) {
+                  std::this_thread::sleep_for(10ms);
+                  lws_callback_on_writable(wsi_);
+               }
                lws_service(context_, 50);
             }
          });
@@ -3133,6 +3170,19 @@ namespace {
             return false;
          }
          return fut.get();
+      }
+
+      //true if the server closed the connection within the timeout
+      bool waitClosed(std::chrono::milliseconds timeout)
+      {
+         auto deadline = std::chrono::steady_clock::now() + timeout;
+         while (!closed_.load()) {
+            if (std::chrono::steady_clock::now() >= deadline) {
+               return false;
+            }
+            std::this_thread::sleep_for(10ms);
+         }
+         return true;
       }
    };
 
@@ -3327,6 +3377,108 @@ TEST_F(BlockUtilsBareWithServerDeathTest, ShortFrameBeforeHandshake)
       }
 
       //the server still serves regular clients
+      auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+      auto bdvObj = connectClient(pCallback);
+      bdvObj->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+      EXPECT_TRUE(nodeStatusReplies(*bdvObj));
+   }), ::testing::ExitedWithCode(0), "");
+}
+
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, DroppedConnection_SocketClosed)
+{
+   /*
+   A connection the server drops gets its socket closed by the server: a
+   short frame, a handshake packet of a type the server does not take and
+   a request sent ahead of the encryption handshake each end the connection
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer(nullptr);
+
+      //serialized packets start with LWS_PRE bytes of room for lws
+      auto toWire = [](const BinaryData& packet)->BinaryData
+      {
+         return packet.getSliceCopy(LWS_PRE, packet.getSize() - LWS_PRE);
+      };
+
+      std::vector<BinaryData> frames {
+         zeroedBytes(1),
+         toWire(Network::WebSocketMessageCodec::serializePacketWithoutId(
+            zeroedBytes(33).getRef(), nullptr,
+            ArmoryAEAD::BIP151_PayloadType::PresentPubKey)[0]),
+         toWire(Network::WebSocketMessageCodec::serialize(
+            zeroedBytes(33).getRef(), nullptr,
+            ArmoryAEAD::BIP151_PayloadType::SinglePacket, 1)[0])
+      };
+
+      for (unsigned i=0; i<frames.size(); i++) {
+         RawWsClient rawClient(frames[i]);
+         ASSERT_TRUE(rawClient.write(
+            Config::NetworkSettings::dbPort(), 5s)) << "frame #" << i;
+         EXPECT_TRUE(rawClient.waitClosed(5s)) << "frame #" << i;
+      }
+
+      //the server still serves regular clients
+      auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+      auto bdvObj = connectClient(pCallback);
+      bdvObj->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+      EXPECT_TRUE(nodeStatusReplies(*bdvObj));
+   }), ::testing::ExitedWithCode(0), "");
+}
+
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, DroppedConnection_KeepsSending)
+{
+   /*
+   A dropped connection that keeps sending frames gets its socket closed
+   all the same, so nothing it sends afterwards is queued. A client
+   connected next to it is served all along.
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer(nullptr);
+
+      auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+      auto bdvObj = connectClient(pCallback);
+      bdvObj->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+
+      RawWsClient rawClient(zeroedBytes(1), true);
+      ASSERT_TRUE(rawClient.write(Config::NetworkSettings::dbPort(), 5s));
+      EXPECT_TRUE(nodeStatusReplies(*bdvObj));
+      EXPECT_TRUE(rawClient.waitClosed(5s));
+      EXPECT_TRUE(nodeStatusReplies(*bdvObj));
+   }), ::testing::ExitedWithCode(0), "");
+}
+
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, DroppedConnection_ClientLeaves)
+{
+   /*
+   Raw clients that send a frame that gets them dropped and leave right
+   away: the connection may be gone by the time the server gets to close
+   it, the server skips it and keeps serving
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer(nullptr);
+
+      for (unsigned i=0; i<300; i++) {
+         RawWsClient rawClient(zeroedBytes(1), i % 2 == 1);
+         ASSERT_TRUE(rawClient.write(
+            Config::NetworkSettings::dbPort(), 5s)) << "iter #" << i;
+         if (i % 3 == 0) {
+            std::this_thread::sleep_for(
+               std::chrono::microseconds(200 * (i % 7)));
+         }
+      }
+
       auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
       auto bdvObj = connectClient(pCallback);
       bdvObj->registerWithDB(
