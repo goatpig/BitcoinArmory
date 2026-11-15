@@ -11,6 +11,12 @@
 ////////////////////////////////////////////////////////////////////////////////
 GTEST_API_ int main(int argc, char **argv)
 {
+#ifdef _WIN32
+   WSADATA wsaData;
+   WORD wVersion = MAKEWORD(2, 0);
+   WSAStartup(wVersion, &wsaData);
+#endif
+
    Cryptography::ECDSA::setupContext();
 
    srand(time(0));

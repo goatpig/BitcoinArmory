@@ -331,6 +331,32 @@ namespace {
    }
 
    ////////
+   Network::port_t freePort()
+   {
+      /*
+      Bind a socket to port 0 on the wildcard address, which is where
+      ArmoryDB listens, and read back the port the OS picked. Returns 0
+      if that fails.
+      */
+      SOCKET sockfd = socket(AF_INET, SOCK_STREAM, 0);
+#ifdef _WIN32
+      if (sockfd == INVALID_SOCKET) {
+#else
+      if (sockfd < 0) {
+#endif
+         return 0;
+      }
+
+      sockaddr_in addr{}; //zeroed: INADDR_ANY, port 0
+      addr.sin_family = AF_INET;
+      socklen_t addrLen = sizeof(addr);
+      auto result = ::bind(sockfd, (sockaddr*)&addr, addrLen) == 0 &&
+         getsockname(sockfd, (sockaddr*)&addr, &addrLen) == 0;
+      Network::SocketPrototype::closeSocket(sockfd);
+      return result ? ntohs(addr.sin_port) : 0;
+   }
+
+   ////////
    constexpr std::string_view blocksDir = "blocks"sv;
    constexpr std::string_view bitcoind = "bitcoind"sv;
    constexpr std::string_view xorFile = "xor.dat"sv;
@@ -919,8 +945,11 @@ void AutomationContext::automateDb()
       NetworkPeers::PeerType::Client
    };
 
-   //generate random db port & set it
-   dbPort_ = (rand() % 10000) + 50000;
+   //let the OS pick a free port & set it
+   dbPort_ = freePort();
+   if (dbPort_ == 0) {
+      throw std::runtime_error("could not find a free port for ArmoryDB");
+   }
    Armory::Config::NetworkSettings::setDbPort(dbPort_);
 
    //args

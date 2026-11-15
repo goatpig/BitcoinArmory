@@ -369,6 +369,54 @@ TEST_F(BridgeBlocksAutoDBTests, Connect_NoCleanup)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+TEST_F(BridgeBlocksAutoDBTests, Connect_PortsInUse)
+{
+   /*
+   Any program can hold a port in the range ArmoryDB is spawned on, if
+   only as the local end of a connection. Hold the ports a pick based on
+   rand() would land on, without listening on them so that ArmoryDB's
+   own startup check does not see them, and check the automated db still
+   comes up.
+   */
+   struct HeldPorts
+   {
+      std::vector<SOCKET> sockets;
+      ~HeldPorts()
+      {
+         for (auto& sockfd : sockets) {
+            Network::SocketPrototype::closeSocket(sockfd);
+         }
+      }
+   } held;
+
+   const unsigned seed = 1;
+   srand(seed);
+   for (unsigned i = 0; i < 8; i++) {
+      sockaddr_in addr{};
+      addr.sin_family = AF_INET;
+      addr.sin_port = htons((rand() % 10000) + 50000);
+      SOCKET sockfd = socket(AF_INET, SOCK_STREAM, 0);
+      held.sockets.push_back(sockfd);
+
+      //if the bind fails, the port is in use already
+      ::bind(sockfd, (sockaddr*)&addr, sizeof(addr));
+   }
+   srand(seed);
+
+   ASSERT_EQ(loadWallets(bridge_).size(), 1);
+   ASSERT_EQ(automateDb(bridge_, blkdir_, ldbdir_), 0);
+   ASSERT_TRUE(bridge_->isDbRunning());
+   ASSERT_TRUE(registerWallets(bridge_));
+   ASSERT_EQ(goOnline(bridge_), 5);
+
+   //cleanup
+   ASSERT_EQ(disconnectFromDb(), 0);
+   while (bridge_->isDbRunning()) {
+      std::this_thread::sleep_for(100ms);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 TEST_F(BridgeBlocksAutoDBTests, DontOverscan)
 {
    /*
