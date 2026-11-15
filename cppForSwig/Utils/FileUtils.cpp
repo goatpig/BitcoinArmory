@@ -10,11 +10,13 @@
    #include <windows.h>
 #else
    #include <sys/mman.h>
+   #include <pwd.h>
 #endif
 #include <fcntl.h>
 #include <unistd.h>
 #include <string_view>
 #include <cstring>
+#include <cerrno>
 
 #include "FileUtils.h"
 #include "log.h"
@@ -483,7 +485,29 @@ std::filesystem::path FileUtils::getUserHomePath()
 #ifdef _WIN32
    return std::filesystem::path(std::getenv("APPDATA"));
 #else
-   return std::filesystem::path{std::getenv("HOME")};
+   const char* home = std::getenv("HOME");
+   if (home != nullptr && *home != '\0') {
+      return std::filesystem::path{home};
+   }
+
+   //no HOME (or an empty one, which would make the path relative): take
+   //the user's home folder from the password database instead
+   long bufSize = sysconf(_SC_GETPW_R_SIZE_MAX);
+   std::vector<char> buf(bufSize > 0 ? bufSize : 16384);
+   struct passwd pwd;
+   struct passwd* result = nullptr;
+   int rc;
+   while ((rc = getpwuid_r(getuid(), &pwd, buf.data(), buf.size(),
+      &result)) == ERANGE && buf.size() < 1024 * 1024) {
+      //the entry doesn't fit, the size above is only a hint
+      buf.resize(buf.size() * 2);
+   }
+   if (rc == 0 && result != nullptr && result->pw_dir != nullptr &&
+      *result->pw_dir != '\0') {
+      return std::filesystem::path{result->pw_dir};
+   }
+   throw std::runtime_error(
+      "HOME is not set and no home folder was found for the user");
 #endif
 }
 
